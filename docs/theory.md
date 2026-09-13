@@ -25,7 +25,7 @@ polymorphic constants, and a fragment of closed dependent function bodies
 extends every model of its source axioms under explicit execution witnesses.
 Binder inference uses the declared type's separate formation check to turn
 `Model.CheckingClaim` into semantic typing. Application spines headed by locals
-or admitted monomorphic constants derive their type's validity from the context
+or admitted polymorphic constants derive their type's validity from the context
 or dependency model, then check arguments and substitute the dependent result.
 Full checker consistency
 and compiler/backend refinement remain open.

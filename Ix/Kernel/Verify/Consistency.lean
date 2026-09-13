@@ -11,6 +11,8 @@ import Ix.Kernel.Verify.Consistency.InstUniv
 import Ix.Kernel.Verify.Consistency.Constant
 import Ix.Kernel.Verify.Consistency.Atomic
 import Ix.Kernel.Verify.Consistency.ScopedExpr
+import Ix.Kernel.Verify.Consistency.ScopedInstUniv
+import Ix.Kernel.Verify.Consistency.ScopedConstant
 import Ix.Kernel.Verify.Consistency.Context
 import Ix.Kernel.Verify.Consistency.BinderOpening
 import Ix.Kernel.Verify.Consistency.Application
@@ -27,7 +29,7 @@ transport keeps its representation, arithmetic, and dependency assumptions
 explicit. A production `checkEnvAnon` fragment preserves models of its
 axiom set for monomorphic aliases, closed sorts, monomorphic specializations of
 polymorphic constants, and closed function bodies built from sorts, locals,
-monomorphic references, applications, dependent functions, and full-mode lambdas
+polymorphic references, applications, dependent functions, and full-mode lambdas
 under the stated execution resources.
 Constant inference supports arbitrary readable entry types, using the actual
 universe-instantiation walker and explicit lookup and finite-support resources.
@@ -37,7 +39,9 @@ preceding interface. Its separate declared-type inference turns semantic checkin
 into typing. Local cache hits agree with the actual declaration type; other
 inference nodes retain cache-miss boundaries.
 Applications use syntactic Pi exposure, full argument checking, hash conversion,
-and the ordinary eager-marker path. Constant- and local-headed spines derive
-type validity from the admitted model or local context; their arguments may be lambdas.
+and arguments without eager-reduction markers. Constant- and local-headed spines
+derive type validity from the admitted model or local context; their arguments may be lambdas.
+Polymorphic nodes use closed source readings, finite substitution resources,
+and a pure prediction of the returned syntax with matching occurrence annotations.
 General checker soundness remains outside this fragment.
 -/

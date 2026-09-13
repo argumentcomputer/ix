@@ -172,6 +172,28 @@ theorem readScopedExpr?_all_parts {resolve : Address → Option (ConstRef β)}
   cases reading
   exact ⟨domainReads, bodyReads⟩
 
+/-- A term readable without registered locals keeps that reading in any
+local context. Its syntactic binders retain the same indices. -/
+theorem readScopedExpr?_weaken_closed {resolve : Address → Option (ConstRef β)}
+    {term : KExpr m} {source : VExpr β} {depth : Nat}
+    (reading : readScopedExpr? resolve [] term depth = some source) (locals : List FVarId) :
+    readScopedExpr? resolve locals term depth = some source := by
+  induction term generalizing source depth with
+  | var _ _ _ | sort _ _ | const _ _ _ | nat _ _ _ => exact reading
+  | fvar _ _ _ | letE _ _ _ _ _ _ _ _ _ | str _ _ _ => contradiction
+  | app fn arg info hf ha | lam _ _ fn arg info hf ha | all _ _ fn arg info hf ha =>
+      rw [readScopedExpr?] at reading
+      obtain ⟨f, fReads, reading⟩ := option_bind_success reading
+      obtain ⟨a, aReads, reading⟩ := option_bind_success reading
+      cases reading
+      simp [readScopedExpr?, hf fReads, ha aReads]
+  | prj id index value info ih =>
+      rw [readScopedExpr?] at reading
+      obtain ⟨ref, resolved, reading⟩ := option_bind_success reading
+      obtain ⟨value, valueReads, reading⟩ := option_bind_success reading
+      cases reading
+      simp [readScopedExpr?, resolved, ih valueReads]
+
 /-- Closing the local context recovers the original reader exactly. -/
 theorem readScopedExpr?_closed {resolve : Address → Option (ConstRef β)}
     {term : KExpr m} {source : VExpr β} {depth : Nat}

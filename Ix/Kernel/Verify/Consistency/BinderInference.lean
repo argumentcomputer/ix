@@ -4,6 +4,7 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 -/
 
 import Ix.Kernel.Verify.Consistency.Application
+import Ix.Kernel.Verify.Consistency.ScopedConstant
 import Ix.Theory.Model.Checking
 
 /-!
@@ -228,6 +229,14 @@ inductive BinderInference {β : Type u}
         readScopedExpr? resolve locals concrete.ty = some entry.type.erase) :
       BinderInference resolve entries locals context fuel before (.const id #[] info)
         (.const ref []) entry.type
+  | polymorphic {locals context fuel before id arguments info ref entry type}
+      (miss : UncachedInference before (.const id arguments info))
+      (support : ScopedConstantInferenceSupport resolve entries miss.keyed id arguments ref entry)
+      (prediction : ∀ concrete loaded, TcM.getConst id miss.keyed = .ok concrete loaded →
+        readInstantiatedType? resolve concrete.ty arguments = some type.erase)
+      (conditions : (entry.type.instL (arguments.toList.map readLevel)).annotations = type.annotations) :
+      BinderInference resolve entries locals context fuel before (.const id arguments info)
+        (.const ref (arguments.toList.map readLevel)) type
   | app {locals context fuel before fn arg info f a A A' B condition}
       (full : before.inferOnly = false)
       (miss : UncachedInference before (.app fn arg info))
@@ -320,6 +329,9 @@ theorem BinderInference.soundWithSynthesis {β : Type u}
         simpa only [stable] using
           (TypingClaim.const (Γ := context) (ls := []) found (by simpa using monomorphic.symm))
       exact ⟨inferUncached_monomorphic_const_scoped lookup run, typed.checking, fun _ => typed⟩
+  | polymorphic miss support prediction conditions =>
+      obtain ⟨typeReads, typed⟩ := infer_const_scoped_annotated miss support prediction conditions accepted
+      exact ⟨typeReads, typed.checking, fun _ => typed⟩
   | @app locals context fuel before fn arg info f a A A' B condition
       full miss trace functionTree head argumentTree conditions hashPath comparisonFaithful
       bodyConstructed argConstructed bodyBound argBound coherent faithful ihFunction ihArgument =>

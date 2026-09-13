@@ -48,8 +48,13 @@ private def instantiationRoots : Array Lean.Name := #[
   ``instUnivSpec_readExpr?, ``instUnivSpec_readExpr?_withScope,
   ``instantiateUnivParams_readExpr?, ``instantiateUnivParams_readAnnotated,
   ``instantiateUnivParams_readAnnotated_scoped,
+  ``instUnivSpec_scoped_eq, ``instantiateUnivParamsSpec_scoped_eq,
+  ``instantiateUnivParams_scoped_eq, ``instantiateUnivParams_readScopedAnnotated,
   ``inferUncached_const_refinement, ``infer_const_refinement,
-  ``inferUncached_const_sound, ``infer_const_sound
+  ``inferUncached_const_sound, ``infer_const_sound,
+  ``inferUncached_const_instantiation, ``ScopedConstantInferenceSupport.closed,
+  ``inferUncached_const_scoped_refinement, ``inferUncached_const_scoped_sound,
+  ``inferUncached_const_predicted_type, ``infer_const_scoped_annotated
 ]
 
 private def productionRoots : Array Lean.Name := #[
@@ -63,7 +68,7 @@ private def productionRoots : Array Lean.Name := #[
 
 private def scopedRoots : Array Lean.Name := #[
   ``localIndex?_mem, ``localIndex?_getElem, ``localIndex?_fresh,
-  ``readScopedExpr?_closed, ``readScopedExpr?_eraseMeta,
+  ``readScopedExpr?_closed, ``readScopedExpr?_weaken_closed, ``readScopedExpr?_eraseMeta,
   ``beq_readScopedExpr?, ``internExpr_readScopedExpr?, ``readScopedExpr?_push,
   ``LocalContextReading.empty
 ]

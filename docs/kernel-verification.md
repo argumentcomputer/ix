@@ -59,19 +59,26 @@ increasing sequence of strongly inaccessible cardinals.
   primitive False when its environment has been admitted by the certified
   interface and the set-theory assumption has an instance.
 - `BinderInference.sound` follows finite production inference trees for sorts,
-  locals, monomorphic constants, applications, dependent functions, and
+  locals, polymorphic constants, applications, dependent functions, and
   full-mode lambdas. `LocalContextReading.push`
   and `openBinder_sound` connect actual declaration lookup and fresh-variable
   opening to the model's dependent context. Singleton abstraction closes the
   resulting function type, and the simplifying `imax` constructor preserves
   its universe interpretation.
 - `BinderInference.synthesis` derives full typing for application spines
-  headed by a local or an admitted monomorphic constant. The function's type
+  headed by a local or an admitted constant. The function's type
   supplies hereditary validity of its domain, so arguments may be checked
   lambdas. Faithful hash conversion identifies the argument's inferred type
   with that domain, with matching occurrence annotations.
   `subst_readScopedExpr?` connects the actual memoized and interned codomain
   substitution to model substitution, including active locals and nested binders.
+- `instantiateUnivParams_readScopedAnnotated` brings the actual substituted
+  declaration type into any active local context, preserving its closed term
+  scope and occurrence annotations. `infer_const_scoped_annotated` uses this
+  result for polymorphic references in binder trees. A pure substitution and
+  syntax-reading check fixes the tree's result annotation; the admitted model
+  and actual execution establish typing. Runtime success supplies arity, while
+  scoped arguments also give scope of the returned type.
 - `FVarInferenceSupport.sound` handles both local-variable cache partitions
   when a cached answer equals the current declaration's concrete type. These
   are structural cache checks, with no assumed semantic typing of cached data.
@@ -113,6 +120,7 @@ def propIdent : (α : Prop) → α → α := ident.{0}
 def idProp (P : Prop) (p : P) : P := p
 def useId (P : Prop) (p : P) : P := idProp P p
 def applyProp (P Q : Prop) (f : P → Q) (p : P) : Q := f p
+def usePoly (P : Prop) (p : P) : P := ident.{0} P p
 ```
 
 `AtomicEnvironmentFragment` records the precise execution boundary:
@@ -144,10 +152,13 @@ def applyProp (P Q : Prop) (f : P → Q) (p : P) : Q := f p
   without an eager-reduction marker, and the hash-equality conversion path.
   Their witnesses retain the actual recursive calls, context preservation
   during function inference, and finite substitution resources. Function
-  spines start with locals or monomorphic constants; the latter use exact
-  lazy-lookup agreement and empty universe substitution. Applying a lambda
-  directly, polymorphic references within binder trees, and reduction to
-  expose a Pi require further refinement.
+  spines start with locals or admitted constants. Polymorphic constants supply
+  exact lazy-lookup agreement, a closed scoped reading of the selected entry's
+  type, and finite universe-substitution resources. Their result type is fixed
+  by a pure `readInstantiatedType?` check with the substituted occurrence
+  annotations, including when levels simplify. Monomorphic references retain
+  their simpler empty-substitution rule. Applying a lambda directly and
+  reduction to expose a Pi require further refinement.
 - Conversion takes the initial hash-equality path, with faithfulness of the
   compared expressions. General reduction and conversion caches are outside
   this fragment.
@@ -219,7 +230,7 @@ lake test --wfail -- tc-unit
 lake -d Models/SetTheory build --wfail
 ```
 
-The consistency target checks 110 exact theorem boundaries. The production
+The consistency target checks 121 exact theorem boundaries. The production
 environment roots retain four existing generated output-length proofs,
 reached through expression/universe construction, names, and the full
 production method table. They introduce no new native proofs. The model
@@ -244,6 +255,10 @@ Function-body regressions cover calls to earlier Prop/Type identities,
 transitive theorem calls, local functions with distinct domains and codomains,
 dependent result families, lambda arguments, exact local results through cache
 reuse and scope cleanup, and rejected argument/function types.
+Polymorphic-call regressions include Prop/Type instances in real function
+bodies, `max`/`imax` simplification inside Pi domains, closed nested references
+under active locals, separate cache keys for different universe instances,
+and rejected universe arities and argument types.
 
 ## Certified host adapters
 
@@ -270,6 +285,7 @@ The VM pilot is preserved in the frozen archive and excluded from the host gate.
 | Certified checker contracts | [`Ix/Kernel/Certified.lean`](../Ix/Kernel/Certified.lean), [`CertifiedClaims.lean`](../Ix/Kernel/CertifiedClaims.lean) |
 | Direct production refinement and its audit | [`Ix/Kernel/Verify/Consistency.lean`](../Ix/Kernel/Verify/Consistency.lean) |
 | Polymorphic inference and universe substitution | [`Consistency/Constant.lean`](../Ix/Kernel/Verify/Consistency/Constant.lean), [`InstUniv.lean`](../Ix/Kernel/Verify/Consistency/InstUniv.lean), [`Model/LevelCongruence.lean`](../Ix/Theory/Model/LevelCongruence.lean) |
+| Polymorphic calls inside binders | [`Consistency/ScopedConstant.lean`](../Ix/Kernel/Verify/Consistency/ScopedConstant.lean), [`ScopedInstUniv.lean`](../Ix/Kernel/Verify/Consistency/ScopedInstUniv.lean) |
 | Dependent binders and function bodies | [`Consistency/BinderInference.lean`](../Ix/Kernel/Verify/Consistency/BinderInference.lean), [`Application.lean`](../Ix/Kernel/Verify/Consistency/Application.lean), [`BinderOpening.lean`](../Ix/Kernel/Verify/Consistency/BinderOpening.lean), [`Context.lean`](../Ix/Kernel/Verify/Consistency/Context.lean), [`Model/Checking.lean`](../Ix/Theory/Model/Checking.lean) |
 | Production environment fragment and relative axiom policy | [`Consistency/Environment.lean`](../Ix/Kernel/Verify/Consistency/Environment.lean), [`Production.lean`](../Ix/Kernel/Verify/Consistency/Production.lean) |
 | Foundation assumptions, theorem contracts, and provenance | [Consistency model guide](theory.md) |

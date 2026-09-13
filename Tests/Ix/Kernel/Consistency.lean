@@ -404,7 +404,98 @@ private def applicationCases : TestSeq :=
   ++ test "application environment: applying a proof with no function type fails"
     (let (env, target) := failedBinder (.app (.var 0) (.var 0)); rowFailed env target)
 
+/-- Call a polymorphic identity from a monomorphic function body. Universe
+indices select entries in the declaration's explicit level table. -/
+private def storePolymorphicCall (env : Ixon.Env) (identity : Address)
+    (levels : Array Ixon.Univ) (domain : UInt64) (arguments : Array UInt64)
+    (kind : Ix.DefKind := .defn) : Ixon.Env × Address :=
+  storeConst env
+    ⟨.defn ⟨kind, .safe, 0,
+      .leanAll (.sort domain) (.leanAll (.var 0) (.var 1)),
+      .leanLam (.sort domain) (.leanLam (.var 0)
+        (.app (.app (.ref 0 arguments) (.var 1)) (.var 0)))⟩,
+      #[], #[identity], levels⟩
+
+private def polymorphicApplicationEnvironment : Ixon.Env := Id.run do
+  let (env, identity) := polymorphicIdentity
+  let (env, propCall) := storePolymorphicCall env identity #[.zero] 0 #[0]
+  let (env, _) := storePolymorphicCall env identity #[.succ .zero] 0 #[0] .opaq
+  let (env, _) := storePolymorphicCall env propCall #[.zero] 0 #[] .thm
+  return env
+
+/-- The source type retains a compound level until its two parameters are
+substituted. This exercises simplification inside the returned Pi domain. -/
+private def computedIdentity (level : Ixon.Univ) : Ixon.Env × Address :=
+  storeConst {}
+    ⟨.axio ⟨false, 2, .leanAll (.sort 0) (.leanAll (.var 0) (.var 1))⟩,
+      #[], #[], #[level]⟩
+
+private def simplifiedPolymorphicCall (imax : Bool) : Ixon.Env :=
+  let (env, identity) := computedIdentity
+    (if imax then .imax (.var 0) (.var 1) else .max (.var 0) (.var 1))
+  let levels := if imax then #[.succ (.succ .zero), .zero] else #[.zero, .succ .zero]
+  (storePolymorphicCall env identity levels 1 #[0, 1]).1
+
+/-- A declaration type containing instantiated references must stay closed
+when inferred beneath an unrelated active local. -/
+private def scopedPolymorphicReferences : Bool :=
+  let (env, function, carrier) := polymorphicReferences
+  let propType := KExpr.mkSort (m := .anon) .mkZero
+  let carrierType := KExpr.mkConst (m := .anon) ⟨carrier, ()⟩ #[levelOne]
+  let expected := KExpr.mkAll () () carrierType carrierType
+  let action : RecM .anon Bool := RecM.withLctxScope do
+    let _ ← TcM.openBinder () () propType (.mkVar 0 ())
+    let inferred ← RecM.inferCall (.mkConst ⟨function, ()⟩ #[levelOne])
+    return inferred.addr == expected.addr && inferred.lbr == 0 && (← get).lctx.size == 1
+  match TcM.runRec action (TcState.newLazyAnon env) with
+  | .ok passed after => passed && after.lctx.size == 0 && after.env.nextFVarId == 1
+  | .error _ _ => false
+
+/-- Different level instances use different inference keys, while neither
+returned type can capture the active local. -/
+private def scopedPolymorphicInstances : Bool :=
+  let propType := KExpr.mkSort (m := .anon) .mkZero
+  let propIdentity := KExpr.mkAll () () propType (.mkAll () () (.mkVar 0 ()) (.mkVar 1 ()))
+  let action : RecM .anon Bool := RecM.withLctxScope do
+    let _ ← TcM.openBinder () () propType (.mkVar 0 ())
+    let first ← RecM.inferCall (.mkConst ⟨polymorphicIdentity.2, ()⟩ #[.mkZero])
+    let second ← RecM.inferCall (.mkConst ⟨polymorphicIdentity.2, ()⟩ #[levelOne])
+    let state ← get
+    return first.addr == propIdentity.addr && second.addr == identityType.addr &&
+      first.addr != second.addr && first.lbr == 0 && second.lbr == 0 &&
+      state.env.inferCache.size == 2 && state.lctx.size == 1
+  match TcM.runRec action (TcState.newLazyAnon polymorphicIdentity.1) with
+  | .ok passed after => passed && after.lctx.size == 0 && after.env.nextFVarId == 1
+  | .error _ _ => false
+
+private def polymorphicApplicationCases : TestSeq :=
+  test "polymorphic calls: Prop/Type instances and a transitive theorem check"
+    (allSucceeded polymorphicApplicationEnvironment 4 { clearEvery := 0 })
+  ++ test "polymorphic calls: function bodies check with fresh per-item caches"
+    (allSucceeded polymorphicApplicationEnvironment 4 { clearEvery := 1 })
+  ++ test "polymorphic calls: max simplification exposes the Type domain"
+    (allSucceeded (simplifiedPolymorphicCall false) 2)
+  ++ test "polymorphic calls: imax simplification exposes the Prop domain"
+    (allSucceeded (simplifiedPolymorphicCall true) 2)
+  ++ test "polymorphic inference: nested reference arguments stay closed under an active local"
+    scopedPolymorphicReferences
+  ++ test "polymorphic inference: distinct instances retain closed types and separate cache keys"
+    scopedPolymorphicInstances
+  ++ test "polymorphic calls: a Type argument cannot use the Prop instance"
+    (let (env, identity) := polymorphicIdentity
+      let (env, target) := storePolymorphicCall env identity #[.zero, .succ .zero] 1 #[0]
+      rowFailed env target)
+  ++ test "polymorphic calls: missing universe arguments reject inside a function body"
+    (let (env, identity) := polymorphicIdentity
+      let (env, target) := storePolymorphicCall env identity #[.zero] 0 #[]
+      rowFailed env target)
+  ++ test "polymorphic calls: excess universe arguments reject inside a function body"
+    (let (env, identity) := polymorphicIdentity
+      let (env, target) := storePolymorphicCall env identity #[.zero] 0 #[0, 0]
+      rowFailed env target)
+
 public def suite : List TestSeq :=
-  [cases, polymorphicCases, specializationCases, binderCases, applicationCases]
+  [cases, polymorphicCases, specializationCases, binderCases, applicationCases,
+    polymorphicApplicationCases]
 
 end Tests.Kernel.Consistency
