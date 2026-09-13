@@ -7,8 +7,9 @@ public section
 namespace Tests.Ix.IxVM.SubstProjection
 open Aiur LSpec
 
-/-- Frozen pre-projection walker. It shares lifting/lowering, not the new
-prefix summary or projected recursion. Test-only, pruned from production. -/
+/-- Regression oracle retained from the prefix-sharing experiment. The
+production walker again uses full substitution lists; the independent Nat
+model below checks binding semantics. This oracle is test-only. -/
 private def reference := ⟦
   fn legacy_inst_many(e: KExpr, substs: List‹KExpr›, depth: G) -> KExpr {
     let n = list_length(substs);
@@ -248,10 +249,10 @@ private def fixtures := ⟦
         let (substs, next) = projection_read_substs(n, next);
         let (expected, after) = projection_read_expr(next);
         match mode {
-          0 => assert_eq!(expr_inst_many(e, substs, depth), expected, "projected substitution"); (),
+          0 => assert_eq!(expr_inst_many(e, substs, depth), expected, "production substitution"); (),
           1 => assert_eq!(legacy_inst_many(e, substs, depth), expected, "reference substitution"); (),
           2 =>
-            assert_eq!(expr_inst_many(e, substs, depth), expected, "projected substitution");
+            assert_eq!(expr_inst_many(e, substs, depth), expected, "production substitution");
             assert_eq!(legacy_inst_many(e, substs, depth), expected, "reference substitution"); (),
         };
         projection_batch_loop(mode, ncases - 1, after),
@@ -313,39 +314,10 @@ private def boundaryCases : List Case := Id.run do
         cases := cases ++ [{ e, ss, depth := d }]
   return cases
 
-private def sharingCases (variants nodes : Nat) : List Case :=
+private def unusedTailCases (variants nodes : Nat) : List Case :=
   let e := (List.range nodes).foldl (fun e i => Expr.app (.sort i) e) (.var 0)
   (List.range variants).map fun i =>
     { e, ss := [.app (.var 0) (.sort 777), .sort (1000+i), .sort (2000+i), .sort (3000+i)] }
-
-private def familyRows (env : AiurTestEnv) (qc : Array QueryCount) (legacy : Bool) : Nat :=
-  let names := if legacy then
-    [`legacy_inst_many, `legacy_inst_many_walk, `legacy_inst_many_bvar, `legacy_inst_many_let]
-  else [`expr_inst_many, `expr_inst_many_start, `expr_inst_many_projected, `expr_inst_many_walk,
-    `expr_inst_many_bvar, `expr_inst_many_let]
-  names.foldl (fun total name => match env.compiled.getFuncIdx name with
-    | some idx => total + (qc[idx]?.map (·.uniqueRows)).getD 0
-    | none => total) 0
-
-private def sharingTests (env : AiurTestEnv) : IO TestSeq := do
-  let mut seq := .done
-  for (variants, nodes) in [(8, 16), (32, 64)] do
-    let cases := sharingCases variants nodes
-    let some idx := env.compiled.getFuncIdx `projection_batch | return test "entry missing" false
-    let current := testCase cases 0 "projected sharing"
-    let previous := testCase cases 1 "reference sharing"
-    match env.compiled.bytecode.execute idx current.input current.inputIOBuffer,
-        env.compiled.bytecode.execute idx previous.input previous.inputIOBuffer with
-    | .ok (_, _, now), .ok (_, _, old) =>
-      let rows := familyRows env now false
-      let oldRows := familyRows env old true
-      let fft := (computeStats env.compiled now env.shapes).totalFftCost
-      let oldFft := (computeStats env.compiled old env.shapes).totalFftCost
-      IO.println s!"[subst-projection] variants={variants} nodes={nodes} family_rows={rows}/{oldRows} FFT={fft}/{oldFft} (new/old)"
-      seq := seq ++ test s!"{variants}/{nodes}: fewer substitution and summary rows" (rows < oldRows)
-        ++ test s!"{variants}/{nodes}: total fixture FFT improves" (fft < oldFft)
-    | _, _ => seq := seq ++ test s!"sharing fixture {variants}/{nodes} executes" false
-  return seq
 
 def run : IO UInt32 := do
   let .ok env := AiurTestEnv.build source
@@ -357,9 +329,13 @@ def run : IO UInt32 := do
     let r ← lspecEachIO [testCase batch 2 s!"substitution boundary batch {i}"]
       fun tc => pure (env.runTestCase tc)
     if r != 0 then status := r
-  let shares ← sharingTests env
-  let r ← lspecIO (.ofList [("ixvm-subst-projection", [shares])]) []
-  if r != 0 then status := r
+  -- Keep unused-tail coverage without requiring an inactive optimization to
+  -- reduce rows. Both walkers must still agree with the independent model.
+  for (variants, nodes) in [(8, 16), (32, 64)] do
+    let tc := testCase (unusedTailCases variants nodes) 2
+      s!"substitution unused-tail regression {variants}/{nodes}"
+    let r ← lspecEachIO [tc] fun tc => pure (env.runTestCase tc)
+    if r != 0 then status := r
   let proofCases : List Case := [
     { e := .app (.var 0) (.var 9), ss := [.var 1, .sort 7, .sort 8] },
     { e := .lam (.var 1) (.app (.var 0) (.app (.var 2) (.var 12))),
@@ -367,13 +343,11 @@ def run : IO UInt32 := do
     { e := .letE (.var 0) (.var 0) (.proj (.app (.var 1) (.var 8))),
       ss := [.all (.sort 1) (.var 2), .sort 2] }]
   for (c, i) in proofCases.zipIdx do
-    let tc := { testCase [c] 2 s!"substitution projection proof {i}" with withProof := true }
+    let tc := { testCase [c] 2 s!"substitution binding proof {i}" with withProof := true }
     let r ← lspecEachIO [tc] fun tc => pure (env.runTestCase tc)
     if r != 0 then status := r
   return status
 
 end Tests.Ix.IxVM.SubstProjection
 end
-
-
 
