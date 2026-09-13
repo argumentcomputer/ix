@@ -381,7 +381,7 @@ private theorem consumerApply (argument : Ixon.Eval.Value) :
   dsimp only [consumerClosure]
   rw [Ixon.Eval.eval.eq_def]
   change (match ectx.blobs resultBlob with
-    | some (.natB n) =>
+    | some (.natB n) | some (.dualB n _) =>
         Except.ok (Ixon.Eval.Value.litV (Ixon.Eval.Lit.natL n))
     | some (.strB _) => Except.error
         (Ixon.Eval.Err.stuck "nat literal address holds a string blob")

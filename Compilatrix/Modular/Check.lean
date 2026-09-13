@@ -108,6 +108,7 @@ private def prepareContext (limits : Limits) (policy : Policy) (input : Input)
     let size := match blob with
       | .natB value => value.log2 / 7 + 1
       | .strB value => value.utf8ByteSize
+      | .dualB n s => n.log2 / 7 + 1 + s.utf8ByteSize
     ensure (size ≤ limits.record.maxBlobBytes) "unit literal payload byte limit"
     blobSize := blobSize + size + 64
     ensure (blobSize ≤ limits.record.maxBlobBytes) "unit literal table byte limit"

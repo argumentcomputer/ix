@@ -71,23 +71,51 @@ with the retained raw files and checks the generated module's exact digest.
 
 ## Current compilation boundary
 
-Compilatrix rejects both closures during catalog canonical-address admission.
+The default compiler resource configuration rejects both closures during
+catalog canonical-address admission.
 The first declaration is
 `_private.Init.Data.Int.DivMod.Bootstrap.0.Int.emod_add_mul_ediv.aux`, address
 `001bba8a1cbe777fb4950a7b58f2a500a6608dcd6151c75e3b63d859cab4a6e5`.
 Its compression input has 13,195 units; the unchanged default limit is 4,096.
 
-A separate exploratory run with a 65,536-unit limit reached another resource
-rejection: `Lean.Omega.Constraint.combine_sat` requires 66,861 units. Raising
-the limit further made the current structural canonicalizer too costly for
-that exploration, which was stopped without a semantic result. The fixture
-preserves the original full closure and default rejection. It does not omit
-proof dependencies or silently raise compiler or guest limits.
+The indexed canonicality checker is now proved equal to the original
+recognizer, including ordering, structural equality, and resource rejection.
+With the explicit [Stage2 compiler budgets](../Compilatrix/Ixby/Stage2.lean),
+all 10,757 constants pass full catalog admission with their original addresses
+and manifest. A native run took 326 seconds. The largest single compression
+input has 403,187 units; aggregate counts are 3,173,456 stored expression units,
+10,374,993 expanded units, and 186,475,983 layer-1 visits. Guest limits and the
+default compiler configuration are unchanged.
+
+The next checked boundary is usage: the first declaration above reports
+`freezeNeeded`. The admission report scans all constants and records 1,316 usage rejections:
+1,090 ownership-freeze restrictions, 125 type-binder runtime-use restrictions,
+and 101 syntactic lambda-telescope restrictions. The scan does not certify
+these declarations. With dual Nat/String literal interpretation, raw erasure
+succeeds for all 10,757 declarations, but all five externs remain reachable
+in its dependency graph: `propext`, `Quot.sound`, `Classical.choice`,
+`Lean.opaqueId`, and `String.Internal.append`. Typed proof erasure and runtime
+primitive support remain necessary before this result can become an executable
+Ixby guest.
+
+The existing erasure relation uses an untyped, strict Ixon source evaluator.
+Its syntactic type-scheme detection does not classify arbitrary terms of type
+`Prop`. Dropping the usage check or deleting logical extern declarations would
+not supply the typed source correspondence required here. A diagnostic kernel
+replay identified 1,601 proof declarations and 215 type declarations in the
+named closure. Lean's native compiler removes those proof dependencies; with
+the two fixed key roots treated as constant-data boundaries, its diagnostic
+runtime inventory contains 672 entries (including those two boundaries) and
+51 standard-library externs.
+That inventory describes Lean IR, not an emitted Ixby image or an accepted
+Ixby primitive mapping.
 
 | Requested artifact or evidence | Current result |
 | --- | --- |
 | Fixed source, keys, entrypoints, limits and complete Ixon closure | Retained and pinned |
-| Ixby guest image and serialized profile | Unavailable: source admission rejects first |
+| Complete catalog admission under explicit Stage2 compiler budgets | Passed |
+| Native execution of the unchanged source verifier | Valid proof accepted with exact claim; seven invalid cases rejected |
+| Ixby guest image and serialized profile | Unavailable: checked source erasure remains open |
 | Exact target operation inventory and measured capacities | Unavailable until lowering succeeds |
 | Source-to-image reflection | Unavailable for this guest |
 | Current Flock executor compatibility | Not established |
@@ -119,19 +147,18 @@ soundness.
 
 ## Route to an executable, certified guest
 
-The next milestone is complete catalog admission of this exact guest. It is
-not yet evidence that the guest compiles or runs. The remaining work has these
-observable completion conditions:
+Complete catalog admission now passes for this exact guest. It does not
+establish guest compilation or execution. The milestones have these observable
+completion conditions:
 
-1. **Scale exact canonical-address checking.** The current compressor repeatedly
-   enumerates and deduplicates structural subtrees, scans occurrences for each
-   representative, recomputes subtree hashes while sorting, and searches sharing
-   tables while rewriting. Use an indexed DAG with exact structural keys,
-   cached sizes/hashes, occurrence multiplicities, and indexed rewriting. Prove
-   equality with the existing pinned-ix recognizer, including its ordering and
-   collision tie-breaks. Retain explicit work bounds. Completion means that all
-   10,757 constants pass the original address and full-catalog checks under a
-   documented, measured compiler resource configuration.
+1. **Scale exact canonical-address checking — passed.** Structural hash tables
+   now retain first-occurrence order, cache subtree sizes and hashes, count
+   occurrences once, and index sharing rewrites. Lean proofs equate the complete
+   optimized checker with the original recognizer, including resource
+   rejection and collision tie-breaks. All 10,757 original constants pass under
+   the measured Stage2 compiler budgets. The native regression gate checks
+   original upstream vectors, exact resource boundaries, malformed sharing, and
+   the complete retained source catalog.
 2. **Obtain checked erasure for the complete runtime closure.** Run usage and
    source-certificate checks after ingress and record their actual failures.
    The current whole-program certificate path has a 512-candidate default and
@@ -166,8 +193,8 @@ observable completion conditions:
    and execution statement, then produce and verify an execution proof. Terminal
    composition additionally retains its own compression-soundness obligations.
 
-These are implementation milestones, not completed claims. Ingress and checked
-erasure should expose the next concrete compiler failures before selecting
+The remaining milestones are open. Checked erasure must resolve its concrete
+source failures before selecting
 target capacities. Primitive and control-flow proofs can be developed on small
 runtime-input examples while that source work proceeds, with the unchanged
 full verifier retained as the integration target.
@@ -175,18 +202,43 @@ full verifier retained as the integration target.
 ## Reproduction
 
 ```sh
-lake build source-ixby-stage2 check-ixby-stage2
-lake exe check-ixby-stage2 --fixture .lake/build/bin/source-ixby-stage2
+lake build source-ixby-stage2 check-ixby-stage2 stage2-source-run
+lake exe check-ixby-stage2 --fixture .lake/build/bin/source-ixby-stage2 \
+  --source-runner .lake/build/bin/stage2-source-run
 nix build .#checks.x86_64-linux.ixby-stage2
 
 lake exe source-ixby-stage2 --freeze fixtures/ixby-stage2 /tmp/Stage2Guest.lean
 lake exe source-ixby-stage2 fixtures/ixby-stage2 /tmp/stage2-report
+lake exe source-ixby-stage2 --admit fixtures/ixby-stage2 /tmp/stage2-admission
+lake exe stage2-source-run fixtures/ixby-stage2 valid
 ```
 
-The gate checks two fresh complete output sets, both current catalog
+The gate checks two fresh complete output sets, both default catalog
 rejections, complete fixed key data, generated source equality, the original
-decompressed Ixon bytes, and rejection of a changed byte in either key.
-It does not build or run an Ixby guest.
+decompressed Ixon bytes, and rejection of a changed byte in either key. It also
+runs complete admission under the Stage2 compiler budgets and compares every
+field with the retained [admission report](../fixtures/ixby-stage2/admitted.json).
+A source-byte mutation must be rejected without an admission report.
+It does not build or run an Ixby guest. `--admit` performs full catalog
+admission under the recorded Stage2 compiler budgets, then reports the usage
+boundary, dual literal payloads, and unvalidated raw erasure inventory.
+
+`stage2-source-run` executes the unchanged source reference using the repository
+Lean toolchain. Its [35-module import closure](../vendor/stage2/upstream.json)
+is retained byte for byte, and the gate checks its complete file inventory.
+The two imported Goldilocks/BLAKE3 modules match the already vendored reference.
+All eight source cases run in fresh processes. The valid case returns exactly
+the 34-byte public claim. The seven rejection cases cover a changed root,
+empty, truncated or malformed proof bytes, trailing public or private bytes,
+and a wrong claim kind. Both keys and every source resource bound remain fixed.
+
+The [smoke fixture](../fixtures/ixby-stage2/smoke.json) retains the valid raw
+8,555,808-byte multiproof with lossless gzip compression and its exact 34-byte
+claim. It comes from the grouped singleton fixture with the approved keys; it
+is a valid runtime input for this guest, not the Init claim. The original
+Ixon proof-envelope digest, checked extraction layout, raw proof digest, and
+compressed file digest are retained separately. These runs test the source;
+they do not supply an Ixby execution or universal source/image reflection.
 
 To regenerate the source exports, use the recorded exporter and Lean 4.33.1
 environment with the pinned upstream imports already built. Generate

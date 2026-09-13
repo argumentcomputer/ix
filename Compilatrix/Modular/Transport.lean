@@ -142,6 +142,8 @@ theorem PErase.extend {sc refs muts sa mask source output}
   | .recurR (scope := .(oldScope)) hs hm hr hi hx member => .recurR hs (extension.resolveMut hm) hr hi hx (scope member)
   | .natE (scope := .(oldScope)) href blob => .natE href (extension.blob blob)
   | .strE (scope := .(oldScope)) href blob => .strE href (extension.blob blob)
+  | .natDualE (scope := .(oldScope)) href blob => .natDualE href (extension.blob blob)
+  | .strDualE (scope := .(oldScope)) href blob => .strDualE href (extension.blob blob)
   | .prjE (scope := .(oldScope)) val => .prjE (val.extend extension scope)
 termination_by structural related
 

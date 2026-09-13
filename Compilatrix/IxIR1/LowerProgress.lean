@@ -3670,11 +3670,11 @@ private theorem projectionSafeErasureAt_all :
     exact .ref ⟨targetFuel, htarget⟩
   | recurR hblock hresolve hrefs hmuts hindices hplan =>
     exact .ref ⟨targetFuel, htarget⟩
-  | natE href hblob =>
+  | natE href hblob | natDualE href hblob =>
     have hvalue := sourceEval_lit_inv htarget
     subst targetValue
     exact .lit
-  | strE href hblob =>
+  | strE href hblob | strDualE href hblob =>
     have hvalue := sourceEval_lit_inv htarget
     subst targetValue
     exact .lit

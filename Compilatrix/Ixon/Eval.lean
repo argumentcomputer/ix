@@ -120,6 +120,9 @@ layer's concern). -/
 inductive Blob where
   | natB (n : Nat)
   | strB (s : String)
+  /-- A content-addressed byte payload may have both literal interpretations.
+  For example, the byte `0x30` encodes Nat 48 and the UTF-8 string "0". -/
+  | dualB (n : Nat) (s : String)
   deriving BEq, Repr
 
 /-- Well-known constants used by the kernel's String-literal constructor
@@ -641,7 +644,7 @@ def eval (ctx : EvalCtx) (fuel : Nat) (F : Frame) (env : List Value)
       | none => .error (.stuck s!"nat literal: ref index {idx.toNat} out of range")
       | some a =>
         match ctx.blobs a with
-        | some (.natB n) => .ok (.litV (.natL n))
+        | some (.natB n) | some (.dualB n _) => .ok (.litV (.natL n))
         | some (.strB _) => .error (.stuck "nat literal address holds a string blob")
         | none => .error (.unknownBlob a)
     | .str idx =>
@@ -649,7 +652,7 @@ def eval (ctx : EvalCtx) (fuel : Nat) (F : Frame) (env : List Value)
       | none => .error (.stuck s!"str literal: ref index {idx.toNat} out of range")
       | some a =>
         match ctx.blobs a with
-        | some (.strB s) => .ok (.litV (.strL s))
+        | some (.strB s) | some (.dualB _ s) => .ok (.litV (.strL s))
         | some (.natB _) => .error (.stuck "str literal address holds a nat blob")
         | none => .error (.unknownBlob a)
     | .lam u dom body => .ok (.closV u F env dom body)

@@ -9,6 +9,11 @@ lean_lib Ixby where
   srcDir := "vendor/ixby"
   roots := #[`Ix.Ixby]
 
+/- Exact source reference for Stage2 differential execution tests. -/
+lean_lib Stage2Source where
+  srcDir := "vendor/stage2"
+  roots := #[`Ix.MultiStark.Verify]
+
 /- Blake3 FFI. Keep this revision in lockstep with the flake's
 `blake3-lean` input and `lake-manifest.json`. -/
 require Blake3 from git
@@ -60,6 +65,10 @@ lean_exe «source-ixby-symbolic» where
 
 lean_exe «source-ixby-stage2» where
   root := `SourceIxbyStage2
+
+lean_exe «stage2-source-run» where
+  srcDir := "scripts"
+  root := `Stage2SourceRun
 
 lean_exe «check-ixby-stage2» where
   srcDir := "scripts"

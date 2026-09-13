@@ -620,6 +620,16 @@ mutual
         refs[idx.toNat]? = some a →
         ectx.blobs a = some (.strB s) →
         PErase ectx ictx sc refs muts sa mask (.str idx) (.lit (.str s))
+    | natDualE {ectx ictx sc refs muts sa} {mask : List Bool} {idx : UInt64}
+        {a : Ixon.Address} {n : Nat} {s : String} :
+        refs[idx.toNat]? = some a →
+        ectx.blobs a = some (.dualB n s) →
+        PErase ectx ictx sc refs muts sa mask (.nat idx) (.lit (.nat n))
+    | strDualE {ectx ictx sc refs muts sa} {mask : List Bool} {idx : UInt64}
+        {a : Ixon.Address} {n : Nat} {s : String} :
+        refs[idx.toNat]? = some a →
+        ectx.blobs a = some (.dualB n s) →
+        PErase ectx ictx sc refs muts sa mask (.str idx) (.lit (.str s))
     | prjE {ectx ictx sc refs muts sa} {mask : List Bool}
         {tyRef fieldIdx : UInt64} {val : Ixon.Expr} {val' : IxIR0.Expr} :
         PErase ectx ictx sc refs muts sa mask val val' →
@@ -2850,7 +2860,7 @@ private theorem simAt : ∀ fuel, SimAt fuel := by
         exact IxIR0.eval_mono (show n₂ ≤ n₁ + n₂ by omega) hv'
         exact .letE (htraceW.mono_le (by omega))
           (htraceBody.mono_le (by omega))
-    | natE hrefs hblob =>
+    | natE hrefs hblob | natDualE hrefs hblob =>
       rw [Ixon.Eval.eval.eq_def] at hev
       dsimp only at hev
       rw [hrefs] at hev
@@ -2860,7 +2870,7 @@ private theorem simAt : ∀ fuel, SimAt fuel := by
       injection hev with hv
       subst hv
       exact ⟨1, _, by rw [IxIR0.eval.eq_def], .litNat, .lit⟩
-    | strE hrefs hblob =>
+    | strE hrefs hblob | strDualE hrefs hblob =>
       rw [Ixon.Eval.eval.eq_def] at hev
       dsimp only at hev
       rw [hrefs] at hev

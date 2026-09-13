@@ -682,6 +682,11 @@ mutual
                 subst n'
                 exact .ok ⟨.natE hr hb⟩
               else fail "nat literal value mismatch"
+            | some (.dualB n _) =>
+              if hn : n = n' then by
+                subst n'
+                exact .ok ⟨.natDualE hr hb⟩
+              else fail "nat literal value mismatch"
             | _ => fail "nat literal blob mismatch"
           | none => fail s!"nat literal ref {idx.toNat} is out of range"
         | .str idx, .lit (.str s') =>
@@ -692,6 +697,11 @@ mutual
               if hs : s = s' then by
                 subst s'
                 exact .ok ⟨.strE hr hb⟩
+              else fail "string literal value mismatch"
+            | some (.dualB _ s) =>
+              if hs : s = s' then by
+                subst s'
+                exact .ok ⟨.strDualE hr hb⟩
               else fail "string literal value mismatch"
             | _ => fail "string literal blob mismatch"
           | none => fail s!"string literal ref {idx.toNat} is out of range"

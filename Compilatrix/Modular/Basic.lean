@@ -78,6 +78,7 @@ def sourceEntryBytes (entry : Address × Constant) : ByteArray :=
 def blobBytes : Ixon.Eval.Blob → ByteArray
   | .natB value => Encoding.tag 0 ++ Encoding.nat value
   | .strB value => Encoding.tag 1 ++ Encoding.string value
+  | .dualB n s => Encoding.tag 2 ++ Encoding.nat n ++ Encoding.string s
 
 def blobEntryBytes (entry : Address × Ixon.Eval.Blob) : ByteArray :=
   Encoding.address entry.1 ++ blobBytes entry.2

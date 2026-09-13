@@ -1067,7 +1067,7 @@ private theorem coherentAt : ∀ fuel, CoherentAt fuel := by
           | some blob =>
             cases blob with
             | natB n => rw [hblob] at hev; contradiction
-            | strB s =>
+            | strB s | dualB _ s =>
               rw [hblob] at hev
               simp only at hev ⊢
               cases hev
@@ -1087,7 +1087,7 @@ private theorem coherentAt : ∀ fuel, CoherentAt fuel := by
           | some blob =>
             cases blob with
             | strB s => rw [hblob] at hev; contradiction
-            | natB n =>
+            | natB n | dualB n _ =>
               rw [hblob] at hev
               simp only at hev ⊢
               cases hev

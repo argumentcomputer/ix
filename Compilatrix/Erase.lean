@@ -406,7 +406,7 @@ def eraseExpr (ctx : EraseCtx) (fuel : Nat) (T : ETables)
       | none => .error (.unsupported s!"nat literal ref {idx.toNat} out of range")
       | some a =>
         match ctx.blobs a with
-        | some (.natB n) => .ok (.lit (.nat n))
+        | some (.natB n) | some (.dualB n _) => .ok (.lit (.nat n))
         | some (.strB _) => .error (.unsupported "nat literal address holds a string")
         | none => .error (.unknownBlob a)
     | .str idx =>
@@ -414,7 +414,7 @@ def eraseExpr (ctx : EraseCtx) (fuel : Nat) (T : ETables)
       | none => .error (.unsupported s!"str literal ref {idx.toNat} out of range")
       | some a =>
         match ctx.blobs a with
-        | some (.strB s) => .ok (.lit (.str s))
+        | some (.strB s) | some (.dualB _ s) => .ok (.lit (.str s))
         | some (.natB _) => .error (.unsupported "str literal address holds a nat")
         | none => .error (.unknownBlob a)
     | .share i =>

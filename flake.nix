@@ -114,6 +114,7 @@
             ./SourceIxbyStage2.lean
             ./IxonToIxby.lean
             ./vendor/ixby
+            ./vendor/stage2
             ./fixtures/ixby
             ./fixtures/ixby-symbolic
             ./fixtures/ixby-stage2
@@ -189,6 +190,7 @@
             ./SourceIxbyStage2.lean
             ./IxonToIxby.lean
             ./vendor/ixby
+            ./vendor/stage2
             ./fixtures/ixby
             ./fixtures/ixby-symbolic
             ./fixtures/ixby-stage2
@@ -545,9 +547,11 @@
           name = "source-ixby-stage2";
           installArtifacts = false;
           postBuild = ''
-            lake build check-ixby-stage2
+            lake build check-ixby-stage2 stage2-source-run
             ./.lake/build/bin/check-ixby-stage2 \
               --fixture ./.lake/build/bin/source-ixby-stage2 \
+              --source-runner ./.lake/build/bin/stage2-source-run \
+              --root ${auditSrc} \
               --inputs ${auditSrc}/fixtures/ixby-stage2 \
               --expected ${auditSrc}/fixtures/ixby-stage2/expected.json
           '';

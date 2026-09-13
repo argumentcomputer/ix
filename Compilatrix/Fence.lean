@@ -1,4 +1,5 @@
 import Compilatrix.Sim
+import Compilatrix.Ixon.Sharing.Indexed
 import Compilatrix.X86.NatCallsSim
 import Compilatrix.X86.ScalarSourceObject
 import Compilatrix.X86.PhysicalScalarSourceObject
@@ -7762,3 +7763,21 @@ program/context recovery. Raw codec laws need no hash-native axiom. -/
 
 /-- info: 'Compilatrix.X86.HeapGraph.checkCandidate_program' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.X86.HeapGraph.checkCandidate_program
+
+/-- info: 'Compilatrix.Ixon.Sharing.Indexed.compress_eq' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.Ixon.Sharing.Indexed.compress_eq
+
+/-- info: 'Compilatrix.Ixon.Sharing.Indexed.canonicalWith_eq' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.Ixon.Sharing.Indexed.canonicalWith_eq
+
+/-- info: 'Compilatrix.Ixon.Sharing.Indexed.compile_ixonV2CanonicalWith' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.Ixon.Sharing.Indexed.compile_ixonV2CanonicalWith

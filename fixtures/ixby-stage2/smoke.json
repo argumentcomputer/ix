@@ -1,0 +1,26 @@
+{
+  "format": "compilatrix/stage2-source-smoke/1",
+  "fixture": "singleton-grouped-2026-09-09",
+  "role": "A valid runtime input for the fixed Stage2 verifier, not the Init claim.",
+  "proof_bytes": 8555808,
+  "proof_sha256": "c495ab47db90bdb3b245391c18967e7c264ffb8d51c4c39605ee6f47cd0e7bb9",
+  "original_ixon_proof_bytes": 8555846,
+  "original_ixon_proof_sha256": "8fe7469ee4d0e6e3bac1e8e997ed3c747e76f708f2cea2624bf0e49e6dc8bc49",
+  "extraction": "Original tag 0xf2, 32-byte matching root, no assumptions (0), then Tag0 byte-vector header 0x82 with u24 little-endian length; remove exactly 38 bytes and require EOF.",
+  "files_sha256": {
+    "smoke-native-proof.bin.gz": "2a0669f42d71f62683d091b0505739cb2b7e4485fe20141d0b8a588463f1d1a0",
+    "smoke-public.claim": "a24d07d226d1822c499f7b8fa32006d5c1ea336cb16fd266da7f86f8f3073586"
+  },
+  "expected": {
+    "valid": "exact-public-claim",
+    "claim-mismatch": "none",
+    "empty-proof": "none",
+    "truncated-proof": "none",
+    "trailing-public": "none",
+    "trailing-proof": "none",
+    "wrong-claim-kind": "none",
+    "malformed-proof": "none"
+  },
+  "ixby_execution": false,
+  "source_image_reflection": false
+}

@@ -45,8 +45,8 @@ to the `n` supplied arguments in order. The Nat-block argument configures the
 existing source literal-recursor semantics; no declaration name is guessed.
 Catalog ingress validates the original bytes. Blob interpretation uses the
 literal occurrence's kind, canonical little-endian Nat bytes (zero is `[0]`),
-and strict UTF-8. The current source evaluator's single-kind blob map rejects
-an address used as both Nat and String.
+and strict UTF-8. Identical raw bytes used as both Nat and String retain both
+checked interpretations in the source evaluator and erasure certificate.
 
 The Lean API is also usable without a catalog:
 

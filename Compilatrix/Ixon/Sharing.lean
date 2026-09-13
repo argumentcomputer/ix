@@ -1,5 +1,6 @@
 import Compilatrix.Ixon.Sharing.Basic
 import Compilatrix.Ixon.Sharing.Compress
+import Compilatrix.Ixon.Sharing.Indexed
 import Compilatrix.Ixon.Const
 import Compilatrix.Ixon.DecodeCheck
 import Compilatrix.Ixon.Work

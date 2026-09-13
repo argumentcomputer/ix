@@ -5794,6 +5794,27 @@ def main : IO UInt32 := do
         !Sharing.ixonV2Canonical c.ixOutput.bodies c.ixOutput.table then
       IO.eprintln s!"FAIL: pinned ixon-v2 recognizer diverged for {c.name}"
       ok := false
+    if Sharing.Indexed.compress c.input != some c.ixOutput ||
+        !Sharing.Indexed.canonical c.ixOutput.bodies c.ixOutput.table then
+      IO.eprintln s!"FAIL: indexed ixon-v2 checker changed upstream bytes for {c.name}"
+      ok := false
+    let units := (Work.expandedUnits? c.ixOutput.table c.ixOutput.bodies).getD 0
+    let visits := Work.layer1NodeVisits c.ixOutput.table c.ixOutput.bodies
+    let exact : Sharing.ResourceLimits := {
+      maxLayer1NodeVisits := visits, maxCompressionInputUnits := units }
+    if (Sharing.Indexed.canonicalWith exact c.ixOutput.bodies c.ixOutput.table).toOption != some true then
+      IO.eprintln s!"FAIL: indexed ixon-v2 exact resource boundary for {c.name}"
+      ok := false
+    for limits in [{ exact with maxCompressionInputUnits := units - 1 },
+        { exact with maxLayer1NodeVisits := visits - 1 }] do
+      if units > 0 && visits > 0 &&
+          (Sharing.Indexed.canonicalWith limits c.ixOutput.bodies c.ixOutput.table).isOk then
+        IO.eprintln s!"FAIL: indexed ixon-v2 accepted insufficient resources for {c.name}"
+        ok := false
+    let malformed := c.ixOutput.table.push (.share c.ixOutput.table.size.toUInt64)
+    if Sharing.Indexed.canonical c.ixOutput.bodies malformed then
+      IO.eprintln s!"FAIL: indexed ixon-v2 accepted cyclic sharing for {c.name}"
+      ok := false
     if !Sharing.layer1WF c.v2Output.table c.v2Output.bodies ||
         !Sharing.deletionLocalOptimal c.v2Output ||
         !Sharing.allEntriesPay c.v2Output ||
