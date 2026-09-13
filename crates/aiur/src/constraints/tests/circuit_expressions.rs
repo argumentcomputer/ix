@@ -12,7 +12,7 @@ use super::{
 };
 use crate::bytecode::{Circuit, FunctionLayout};
 
-fn write_layout(
+pub(super) fn write_layout(
   out: &mut impl Write,
   layout: FunctionLayout,
 ) -> io::Result<()> {

@@ -6444,6 +6444,409 @@ ROOT Aiur.BoundVerifier.Backend.key_graph_reflects
                                 Aiur.NativeAIR.readLookup lookupValues lookup =
                                   Aiur.NativeAIR.evalLookup ops values trees lookup
 AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.BoundVerifier.CompiledBackend.circuits_bound
+∀ {selection : Aiur.BoundVerifier.Selection} (backend : Aiur.BoundVerifier.CompiledBackend selection),
+  Aiur.NativeAIR.CompiledKey.circuits backend.compiled.bytecode = some backend.keyData.circuits
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.BoundVerifier.CompiledBackend.preprocessed_indices
+∀ {selection : Aiur.BoundVerifier.Selection} (backend : Aiur.BoundVerifier.CompiledBackend selection),
+  backend.keyData.preprocessedIndices = Aiur.NativeAIR.CompiledKey.preprocessedIndices backend.compiled.bytecode
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.BoundVerifier.verifyCompiled_success
+∀ {selection : Aiur.BoundVerifier.Selection} {backend : Aiur.BoundVerifier.CompiledBackend selection}
+  {input : Array Aiur.G} {bytes : ByteArray},
+  Aiur.BoundVerifier.verifyCompiled backend input bytes = Except.ok () →
+    input.size = selection.inputSize ∧
+      ∃ proof,
+        Aiur.Proof.ofBytesChecked bytes = Except.ok proof ∧
+          backend.system.verify (Aiur.buildClaim selection.function input selection.success) proof = Except.ok ()
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Compiler.compileExpr_widen
+∀ {small large : Aiur.NativeAIR.GraphWidths},
+  small.Le large →
+    ∀ (allowStage2 : Bool) (expr : Aiur.NativeAIR.Expr) {nodes : List Aiur.NativeAIR.Node}
+      {result : List Aiur.NativeAIR.Node × Nat},
+      Aiur.NativeAIR.Compiler.compileExpr small allowStage2 expr nodes = some result →
+        Aiur.NativeAIR.Compiler.compileExpr large allowStage2 expr nodes = some result
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.Compiler.compileExprs_widen
+∀ {small large : Aiur.NativeAIR.GraphWidths},
+  small.Le large →
+    ∀ (allowStage2 : Bool) (exprs : List Aiur.NativeAIR.Expr) {nodes : List Aiur.NativeAIR.Node}
+      {result : List Aiur.NativeAIR.Node × List Nat},
+      Aiur.NativeAIR.Compiler.compileExprs small allowStage2 exprs nodes = some result →
+        Aiur.NativeAIR.Compiler.compileExprs large allowStage2 exprs nodes = some result
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.Compiler.compileLookup_widen
+∀ {small large : Aiur.NativeAIR.GraphWidths},
+  small.Le large →
+    ∀ (lookup : Aiur.NativeAIR.Compiler.ExprLookup) {nodes : List Aiur.NativeAIR.Node}
+      {result : List Aiur.NativeAIR.Node × Aiur.NativeAIR.Lookup},
+      Aiur.NativeAIR.Compiler.compileLookup small lookup nodes = some result →
+        Aiur.NativeAIR.Compiler.compileLookup large lookup nodes = some result
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.Compiler.compileLookups_widen
+∀ {small large : Aiur.NativeAIR.GraphWidths},
+  small.Le large →
+    ∀ (lookups : List Aiur.NativeAIR.Compiler.ExprLookup) {nodes : List Aiur.NativeAIR.Node}
+      {result : List Aiur.NativeAIR.Node × List Aiur.NativeAIR.Lookup},
+      Aiur.NativeAIR.Compiler.compileLookups small lookups nodes = some result →
+        Aiur.NativeAIR.Compiler.compileLookups large lookups nodes = some result
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.Compiler.compileZeros_widen
+∀ {small large : Aiur.NativeAIR.GraphWidths},
+  small.Le large →
+    ∀ (exprs : List Aiur.NativeAIR.Expr) {nodes : List Aiur.NativeAIR.Node}
+      {result : List Aiur.NativeAIR.Node × List Nat},
+      Aiur.NativeAIR.Compiler.compileZeros small exprs nodes = some result →
+        Aiur.NativeAIR.Compiler.compileZeros large exprs nodes = some result
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Compiler.compileBase_widen
+∀ {small large : Aiur.NativeAIR.GraphWidths},
+  small.Le large →
+    ∀ (lookups : List Aiur.NativeAIR.Compiler.ExprLookup) (constraints : List Aiur.NativeAIR.Expr)
+      {result : Aiur.NativeAIR.Compiler.BaseCompilation},
+      Aiur.NativeAIR.Compiler.compileBase small lookups constraints = some result →
+        Aiur.NativeAIR.Compiler.compileBase large lookups constraints = some result
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.CircuitEmitter.compileCircuit_widen
+∀ {small large : Aiur.NativeAIR.GraphWidths},
+  small.Le large →
+    ∀ (program : Aiur.Bytecode.Toplevel) (circuit : Aiur.Bytecode.Circuit)
+      {compiled : Aiur.NativeAIR.CircuitEmitter.Compiled},
+      Aiur.NativeAIR.CircuitEmitter.compileCircuit small program circuit = some compiled →
+        Aiur.NativeAIR.CircuitEmitter.compileCircuit large program circuit = some compiled
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.CircuitEmitter.circuitWidths_le
+∀ {circuit : Aiur.Bytecode.Circuit} {widths : Aiur.NativeAIR.GraphWidths},
+  circuit.layout.width ≤ widths.main → (Aiur.NativeAIR.CircuitEmitter.circuitWidths circuit).Le widths
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.CompiledKey.column_eval
+∀ {values : Aiur.NativeAIR.Values Aiur.G} {widths : Aiur.NativeAIR.GraphWidths},
+  values.Fits widths →
+    ∀ (source : Aiur.NativeAIR.Source) (offset : Aiur.NativeAIR.RowOffset) {width : Nat},
+      width ≤ widths.width source →
+        ∀ (index : Fin width),
+          Aiur.NativeAIR.Expr.eval Aiur.NativeAIR.goldilocksOps values
+              (Aiur.NativeAIR.Expr.var { source := source, offset := offset, index := ↑index }) =
+            some (Aiur.NativeAIR.CompiledKey.columns values source offset width index)
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.CompiledKey.memoryEquations_eval
+∀ {values : Aiur.NativeAIR.Values Aiur.G} {widths : Aiur.NativeAIR.GraphWidths},
+  values.Fits widths →
+    ∀ (width : Nat),
+      3 + width ≤ widths.main →
+        List.mapM (Aiur.NativeAIR.Expr.eval Aiur.NativeAIR.goldilocksOps values)
+            Aiur.NativeAIR.CompiledKey.memoryEquations =
+          some
+            (Aiur.AIR.memoryColumnEquations width
+              (Aiur.NativeAIR.CompiledKey.columns values Aiur.NativeAIR.Source.main Aiur.NativeAIR.RowOffset.current
+                (3 + width))
+              (Aiur.NativeAIR.CompiledKey.columns values Aiur.NativeAIR.Source.main Aiur.NativeAIR.RowOffset.next
+                (3 + width))
+              values.isTransition)
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.CompiledKey.memoryLookup_eval
+∀ {values : Aiur.NativeAIR.Values Aiur.G} {widths : Aiur.NativeAIR.GraphWidths},
+  values.Fits widths →
+    ∀ (width : Nat),
+      3 + width ≤ widths.main →
+        Aiur.NativeAIR.Compiler.ExprLookup.eval Aiur.NativeAIR.goldilocksOps values
+            (Aiur.NativeAIR.CompiledKey.memoryLookup width) =
+          some
+            (Aiur.AIR.memoryColumnLookup width
+              (Aiur.NativeAIR.CompiledKey.columns values Aiur.NativeAIR.Source.main Aiur.NativeAIR.RowOffset.current
+                (3 + width)))
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.CompiledKey.byte1Lookup_eval
+∀ {values : Aiur.NativeAIR.Values Aiur.G} {widths : Aiur.NativeAIR.GraphWidths},
+  values.Fits widths →
+    3 ≤ widths.main →
+      11 ≤ widths.preprocessed →
+        ∀ (kind : Aiur.AIR.Byte1Kind),
+          Aiur.NativeAIR.Compiler.ExprLookup.eval Aiur.NativeAIR.goldilocksOps values
+              (Aiur.NativeAIR.CompiledKey.byte1Lookup kind) =
+            some
+              (Aiur.AIR.byte1ColumnLookup kind
+                (Aiur.NativeAIR.CompiledKey.columns values Aiur.NativeAIR.Source.preprocessed
+                  Aiur.NativeAIR.RowOffset.current 11)
+                (Aiur.NativeAIR.CompiledKey.columns values Aiur.NativeAIR.Source.main Aiur.NativeAIR.RowOffset.current
+                  3))
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.CompiledKey.byte2Lookup_eval
+∀ {values : Aiur.NativeAIR.Values Aiur.G} {widths : Aiur.NativeAIR.GraphWidths},
+  values.Fits widths →
+    10 ≤ widths.main →
+      14 ≤ widths.preprocessed →
+        ∀ (kind : Aiur.AIR.Byte2Kind),
+          Aiur.NativeAIR.Compiler.ExprLookup.eval Aiur.NativeAIR.goldilocksOps values
+              (Aiur.NativeAIR.CompiledKey.byte2Lookup kind) =
+            some
+              (Aiur.AIR.byte2ColumnLookup kind
+                (Aiur.NativeAIR.CompiledKey.columns values Aiur.NativeAIR.Source.preprocessed
+                  Aiur.NativeAIR.RowOffset.current 14)
+                (Aiur.NativeAIR.CompiledKey.columns values Aiur.NativeAIR.Source.main Aiur.NativeAIR.RowOffset.current
+                  10))
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.CompiledKey.circuit_success
+∀ {mainWidth preprocessedWidth preprocessedHeight groupSize : Nat} {base : Aiur.NativeAIR.Compiler.BaseCompilation}
+  {result : Aiur.NativeAIR.KeyCodec.Circuit},
+  Aiur.NativeAIR.CompiledKey.circuit mainWidth preprocessedWidth preprocessedHeight groupSize base = some result →
+    result.graph = base.graph ∧
+      result.mainWidth = mainWidth ∧
+        result.preprocessedWidth = preprocessedWidth ∧
+          result.preprocessedHeight = preprocessedHeight ∧ result.lookupGroupSize = groupSize ∧ result.valid = true
+AXIOMS [Quot.sound]
+ROOT Aiur.NativeAIR.CompiledKey.functionCircuit_success
+∀ {program : Aiur.Bytecode.Toplevel} {source : Aiur.Bytecode.Circuit} {result : Aiur.NativeAIR.KeyCodec.Circuit},
+  Aiur.NativeAIR.CompiledKey.functionCircuit program source = some result →
+    ∃ compiled,
+      Aiur.NativeAIR.CircuitEmitter.compileCircuit (Aiur.NativeAIR.CircuitEmitter.circuitWidths source) program source =
+          some compiled ∧
+        result.graph = compiled.base.graph ∧
+          result.mainWidth = source.layout.width ∧
+            result.preprocessedWidth = 0 ∧
+              result.preprocessedHeight = 0 ∧
+                result.lookupGroupSize =
+                  if (compiled.emission.branchless && decide (2 ≤ compiled.emission.lookups.length)) = true then 2
+                  else 1
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.CompiledKey.memoryCircuit_success
+∀ {width : Nat} {result : Aiur.NativeAIR.KeyCodec.Circuit},
+  Aiur.NativeAIR.CompiledKey.memoryCircuit width = some result →
+    ∃ base,
+      Aiur.NativeAIR.Compiler.compileBase { preprocessed := 0, main := 3 + width, stage2 := 0, publics := 0 }
+            [Aiur.NativeAIR.CompiledKey.memoryLookup width] Aiur.NativeAIR.CompiledKey.memoryEquations =
+          some base ∧
+        result.graph = base.graph ∧
+          result.mainWidth = 3 + width ∧
+            result.preprocessedWidth = 0 ∧ result.preprocessedHeight = 0 ∧ result.lookupGroupSize = 1
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.CompiledKey.byte1Circuit_success
+∀ {result : Aiur.NativeAIR.KeyCodec.Circuit},
+  Aiur.NativeAIR.CompiledKey.byte1Circuit = some result →
+    ∃ base,
+      Aiur.NativeAIR.Compiler.compileBase { preprocessed := 11, main := 3, stage2 := 0, publics := 0 }
+            (List.map Aiur.NativeAIR.CompiledKey.byte1Lookup Aiur.AIR.Byte1Kind.all) [] =
+          some base ∧
+        result.graph = base.graph ∧
+          result.mainWidth = 3 ∧
+            result.preprocessedWidth = 11 ∧ result.preprocessedHeight = 256 ∧ result.lookupGroupSize = 2
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.CompiledKey.byte2Circuit_success
+∀ {result : Aiur.NativeAIR.KeyCodec.Circuit},
+  Aiur.NativeAIR.CompiledKey.byte2Circuit = some result →
+    ∃ base,
+      Aiur.NativeAIR.Compiler.compileBase { preprocessed := 14, main := 10, stage2 := 0, publics := 0 }
+            (List.map Aiur.NativeAIR.CompiledKey.byte2Lookup Aiur.AIR.Byte2Kind.all) [] =
+          some base ∧
+        result.graph = base.graph ∧
+          result.mainWidth = 10 ∧
+            result.preprocessedWidth = 14 ∧ result.preprocessedHeight = 65536 ∧ result.lookupGroupSize = 2
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.CompiledKey.circuits_parts
+∀ {program : Aiur.Bytecode.Toplevel} {result : List Aiur.NativeAIR.KeyCodec.Circuit},
+  Aiur.NativeAIR.CompiledKey.circuits program = some result →
+    ∃ functions memories byte1 byte2,
+      List.mapM (Aiur.NativeAIR.CompiledKey.functionCircuit program) program.circuits.toList = some functions ∧
+        List.mapM Aiur.NativeAIR.CompiledKey.memoryCircuit program.memorySizes.toList = some memories ∧
+          Aiur.NativeAIR.CompiledKey.byte1Circuit = some byte1 ∧
+            Aiur.NativeAIR.CompiledKey.byte2Circuit = some byte2 ∧ result = functions ++ memories ++ [byte1, byte2]
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.CompiledKey.circuits_length
+∀ {program : Aiur.Bytecode.Toplevel} {result : List Aiur.NativeAIR.KeyCodec.Circuit},
+  Aiur.NativeAIR.CompiledKey.circuits program = some result →
+    result.length = program.circuits.size + program.memorySizes.size + 2
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.CompiledKey.circuits_function
+∀ {program : Aiur.Bytecode.Toplevel} {result : List Aiur.NativeAIR.KeyCodec.Circuit},
+  Aiur.NativeAIR.CompiledKey.circuits program = some result →
+    ∀ {index : Nat} {source : Aiur.Bytecode.Circuit} {artifact : Aiur.NativeAIR.KeyCodec.Circuit},
+      program.circuits[index]? = some source →
+        result[index]? = some artifact → Aiur.NativeAIR.CompiledKey.functionCircuit program source = some artifact
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.CompiledKey.circuits_memory
+∀ {program : Aiur.Bytecode.Toplevel} {result : List Aiur.NativeAIR.KeyCodec.Circuit},
+  Aiur.NativeAIR.CompiledKey.circuits program = some result →
+    ∀ {index width : Nat} {artifact : Aiur.NativeAIR.KeyCodec.Circuit},
+      program.memorySizes[index]? = some width →
+        result[program.circuits.size + index]? = some artifact →
+          Aiur.NativeAIR.CompiledKey.memoryCircuit width = some artifact
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.CompiledKey.circuits_bytes
+∀ {program : Aiur.Bytecode.Toplevel} {result : List Aiur.NativeAIR.KeyCodec.Circuit},
+  Aiur.NativeAIR.CompiledKey.circuits program = some result →
+    ∃ byte1 byte2,
+      Aiur.NativeAIR.CompiledKey.byte1Circuit = some byte1 ∧
+        Aiur.NativeAIR.CompiledKey.byte2Circuit = some byte2 ∧
+          result[program.circuits.size + program.memorySizes.size]? = some byte1 ∧
+            result[program.circuits.size + program.memorySizes.size + 1]? = some byte2
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.CompiledKey.memoryCircuit_reflects
+∀ {width : Nat} {artifact : Aiur.NativeAIR.KeyCodec.Circuit},
+  Aiur.NativeAIR.CompiledKey.memoryCircuit width = some artifact →
+    ∀ {values : Aiur.NativeAIR.Values Aiur.G},
+      values.Fits artifact.widths →
+        ∃ buffer,
+          artifact.graph.sweep Aiur.NativeAIR.goldilocksOps values = some buffer ∧
+            (Aiur.NativeAIR.Compiler.Vanishes Aiur.NativeAIR.goldilocksOps buffer artifact.graph.zeros ↔
+                ∀ (equation : Aiur.G),
+                  equation ∈
+                      Aiur.AIR.memoryColumnEquations width
+                        (Aiur.NativeAIR.CompiledKey.columns values Aiur.NativeAIR.Source.main
+                          Aiur.NativeAIR.RowOffset.current (3 + width))
+                        (Aiur.NativeAIR.CompiledKey.columns values Aiur.NativeAIR.Source.main
+                          Aiur.NativeAIR.RowOffset.next (3 + width))
+                        values.isTransition →
+                    equation = 0) ∧
+              List.mapM (Aiur.NativeAIR.readLookup buffer) artifact.graph.lookups =
+                some
+                  [Aiur.AIR.memoryColumnLookup width
+                      (Aiur.NativeAIR.CompiledKey.columns values Aiur.NativeAIR.Source.main
+                        Aiur.NativeAIR.RowOffset.current (3 + width))]
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.CompiledKey.byte1Circuit_reflects
+∀ {artifact : Aiur.NativeAIR.KeyCodec.Circuit},
+  Aiur.NativeAIR.CompiledKey.byte1Circuit = some artifact →
+    ∀ {values : Aiur.NativeAIR.Values Aiur.G},
+      values.Fits artifact.widths →
+        ∃ buffer,
+          artifact.graph.sweep Aiur.NativeAIR.goldilocksOps values = some buffer ∧
+            Aiur.NativeAIR.Compiler.Vanishes Aiur.NativeAIR.goldilocksOps buffer artifact.graph.zeros ∧
+              List.mapM (Aiur.NativeAIR.readLookup buffer) artifact.graph.lookups =
+                some
+                  (List.map
+                    (fun kind =>
+                      Aiur.AIR.byte1ColumnLookup kind
+                        (Aiur.NativeAIR.CompiledKey.columns values Aiur.NativeAIR.Source.preprocessed
+                          Aiur.NativeAIR.RowOffset.current 11)
+                        (Aiur.NativeAIR.CompiledKey.columns values Aiur.NativeAIR.Source.main
+                          Aiur.NativeAIR.RowOffset.current 3))
+                    Aiur.AIR.Byte1Kind.all)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.CompiledKey.byte2Circuit_reflects
+∀ {artifact : Aiur.NativeAIR.KeyCodec.Circuit},
+  Aiur.NativeAIR.CompiledKey.byte2Circuit = some artifact →
+    ∀ {values : Aiur.NativeAIR.Values Aiur.G},
+      values.Fits artifact.widths →
+        ∃ buffer,
+          artifact.graph.sweep Aiur.NativeAIR.goldilocksOps values = some buffer ∧
+            Aiur.NativeAIR.Compiler.Vanishes Aiur.NativeAIR.goldilocksOps buffer artifact.graph.zeros ∧
+              List.mapM (Aiur.NativeAIR.readLookup buffer) artifact.graph.lookups =
+                some
+                  (List.map
+                    (fun kind =>
+                      Aiur.AIR.byte2ColumnLookup kind
+                        (Aiur.NativeAIR.CompiledKey.columns values Aiur.NativeAIR.Source.preprocessed
+                          Aiur.NativeAIR.RowOffset.current 14)
+                        (Aiur.NativeAIR.CompiledKey.columns values Aiur.NativeAIR.Source.main
+                          Aiur.NativeAIR.RowOffset.current 10))
+                    Aiur.AIR.Byte2Kind.all)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.BoundVerifier.CompiledBackend.circuit_count
+∀ {selection : Aiur.BoundVerifier.Selection} (backend : Aiur.BoundVerifier.CompiledBackend selection),
+  backend.keyData.circuits.length =
+    backend.compiled.bytecode.circuits.size + backend.compiled.bytecode.memorySizes.size + 2
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.BoundVerifier.CompiledBackend.function_graph_reflects
+∀ {selection : Aiur.BoundVerifier.Selection} (backend : Aiur.BoundVerifier.CompiledBackend selection) {index : Nat}
+  {source : Aiur.Bytecode.Circuit} {artifact : Aiur.NativeAIR.KeyCodec.Circuit},
+  backend.compiled.bytecode.circuits[index]? = some source →
+    backend.keyData.circuits[index]? = some artifact →
+      ∀ {values : Aiur.NativeAIR.Values Aiur.G},
+        values.Fits artifact.widths →
+          ∃ result buffer,
+            Aiur.Bytecode.Circuit.emitRow
+                  (fun index =>
+                    (values.columns Aiur.NativeAIR.Source.main Aiur.NativeAIR.RowOffset.current)[index]?.getD 0)
+                  backend.compiled.bytecode source =
+                some result ∧
+              artifact.graph.sweep Aiur.NativeAIR.goldilocksOps values = some buffer ∧
+                (Aiur.NativeAIR.Compiler.Vanishes Aiur.NativeAIR.goldilocksOps buffer artifact.graph.zeros ↔
+                    ∀ (equation : Aiur.G), equation ∈ result.equations → equation = 0) ∧
+                  List.mapM (Aiur.NativeAIR.readLookup buffer) artifact.graph.lookups =
+                    some (List.ofFn fun slot => result.lookup ↑slot)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.BoundVerifier.CompiledBackend.memory_graph_reflects
+∀ {selection : Aiur.BoundVerifier.Selection} (backend : Aiur.BoundVerifier.CompiledBackend selection)
+  {index width : Nat} {artifact : Aiur.NativeAIR.KeyCodec.Circuit},
+  backend.compiled.bytecode.memorySizes[index]? = some width →
+    backend.keyData.circuits[backend.compiled.bytecode.circuits.size + index]? = some artifact →
+      ∀ {values : Aiur.NativeAIR.Values Aiur.G},
+        values.Fits artifact.widths →
+          ∃ buffer,
+            artifact.graph.sweep Aiur.NativeAIR.goldilocksOps values = some buffer ∧
+              (Aiur.NativeAIR.Compiler.Vanishes Aiur.NativeAIR.goldilocksOps buffer artifact.graph.zeros ↔
+                  ∀ (equation : Aiur.G),
+                    equation ∈
+                        Aiur.AIR.memoryColumnEquations width
+                          (Aiur.NativeAIR.CompiledKey.columns values Aiur.NativeAIR.Source.main
+                            Aiur.NativeAIR.RowOffset.current (3 + width))
+                          (Aiur.NativeAIR.CompiledKey.columns values Aiur.NativeAIR.Source.main
+                            Aiur.NativeAIR.RowOffset.next (3 + width))
+                          values.isTransition →
+                      equation = 0) ∧
+                List.mapM (Aiur.NativeAIR.readLookup buffer) artifact.graph.lookups =
+                  some
+                    [Aiur.AIR.memoryColumnLookup width
+                        (Aiur.NativeAIR.CompiledKey.columns values Aiur.NativeAIR.Source.main
+                          Aiur.NativeAIR.RowOffset.current (3 + width))]
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.BoundVerifier.CompiledBackend.byte_graphs
+∀ {selection : Aiur.BoundVerifier.Selection} (backend : Aiur.BoundVerifier.CompiledBackend selection),
+  ∃ byte1 byte2,
+    Aiur.NativeAIR.CompiledKey.byte1Circuit = some byte1 ∧
+      Aiur.NativeAIR.CompiledKey.byte2Circuit = some byte2 ∧
+        backend.keyData.circuits[backend.compiled.bytecode.circuits.size +
+                backend.compiled.bytecode.memorySizes.size]? =
+            some byte1 ∧
+          backend.keyData.circuits[backend.compiled.bytecode.circuits.size +
+                  backend.compiled.bytecode.memorySizes.size +
+                1]? =
+            some byte2
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.BoundVerifier.CompiledBackend.byte1_graph_reflects
+∀ {selection : Aiur.BoundVerifier.Selection} (backend : Aiur.BoundVerifier.CompiledBackend selection)
+  {artifact : Aiur.NativeAIR.KeyCodec.Circuit},
+  backend.keyData.circuits[backend.compiled.bytecode.circuits.size + backend.compiled.bytecode.memorySizes.size]? =
+      some artifact →
+    ∀ {values : Aiur.NativeAIR.Values Aiur.G},
+      values.Fits artifact.widths →
+        ∃ buffer,
+          artifact.graph.sweep Aiur.NativeAIR.goldilocksOps values = some buffer ∧
+            Aiur.NativeAIR.Compiler.Vanishes Aiur.NativeAIR.goldilocksOps buffer artifact.graph.zeros ∧
+              List.mapM (Aiur.NativeAIR.readLookup buffer) artifact.graph.lookups =
+                some
+                  (List.map
+                    (fun kind =>
+                      Aiur.AIR.byte1ColumnLookup kind
+                        (Aiur.NativeAIR.CompiledKey.columns values Aiur.NativeAIR.Source.preprocessed
+                          Aiur.NativeAIR.RowOffset.current 11)
+                        (Aiur.NativeAIR.CompiledKey.columns values Aiur.NativeAIR.Source.main
+                          Aiur.NativeAIR.RowOffset.current 3))
+                    Aiur.AIR.Byte1Kind.all)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.BoundVerifier.CompiledBackend.byte2_graph_reflects
+∀ {selection : Aiur.BoundVerifier.Selection} (backend : Aiur.BoundVerifier.CompiledBackend selection)
+  {artifact : Aiur.NativeAIR.KeyCodec.Circuit},
+  backend.keyData.circuits[backend.compiled.bytecode.circuits.size + backend.compiled.bytecode.memorySizes.size + 1]? =
+      some artifact →
+    ∀ {values : Aiur.NativeAIR.Values Aiur.G},
+      values.Fits artifact.widths →
+        ∃ buffer,
+          artifact.graph.sweep Aiur.NativeAIR.goldilocksOps values = some buffer ∧
+            Aiur.NativeAIR.Compiler.Vanishes Aiur.NativeAIR.goldilocksOps buffer artifact.graph.zeros ∧
+              List.mapM (Aiur.NativeAIR.readLookup buffer) artifact.graph.lookups =
+                some
+                  (List.map
+                    (fun kind =>
+                      Aiur.AIR.byte2ColumnLookup kind
+                        (Aiur.NativeAIR.CompiledKey.columns values Aiur.NativeAIR.Source.preprocessed
+                          Aiur.NativeAIR.RowOffset.current 14)
+                        (Aiur.NativeAIR.CompiledKey.columns values Aiur.NativeAIR.Source.main
+                          Aiur.NativeAIR.RowOffset.current 10))
+                    Aiur.AIR.Byte2Kind.all)
+AXIOMS [propext, Classical.choice, Quot.sound]
 PREMISE Aiur.AIR.activityConstraint
 Aiur.G → Aiur.G → Aiur.G
 DEFINITION
@@ -11175,6 +11578,176 @@ fun x =>
   match x with
   | none => True
   | some cap => (List.length cap).isPowerOfTwo ∧ ∀ (digest : List UInt8), digest ∈ cap → digest.length = 32
+PREMISE Aiur.NativeAIR.CompiledKey.main
+Nat → Aiur.NativeAIR.Expr
+DEFINITION
+fun index =>
+  Aiur.NativeAIR.Expr.var
+    { source := Aiur.NativeAIR.Source.main, offset := Aiur.NativeAIR.RowOffset.current, index := index }
+PREMISE Aiur.NativeAIR.CompiledKey.next
+Nat → Aiur.NativeAIR.Expr
+DEFINITION
+fun index =>
+  Aiur.NativeAIR.Expr.var
+    { source := Aiur.NativeAIR.Source.main, offset := Aiur.NativeAIR.RowOffset.next, index := index }
+PREMISE Aiur.NativeAIR.CompiledKey.preprocessed
+Nat → Aiur.NativeAIR.Expr
+DEFINITION
+fun index =>
+  Aiur.NativeAIR.Expr.var
+    { source := Aiur.NativeAIR.Source.preprocessed, offset := Aiur.NativeAIR.RowOffset.current, index := index }
+PREMISE Aiur.NativeAIR.CompiledKey.memoryEquations
+List Aiur.NativeAIR.Expr
+DEFINITION
+have selector := Aiur.NativeAIR.CompiledKey.main 1;
+have transition := (Aiur.NativeAIR.CompiledKey.next 1).frontMul Aiur.NativeAIR.Expr.isTransition;
+[selector.frontMul (selector.frontSub (Aiur.NativeAIR.Expr.konst 1)),
+  (Aiur.NativeAIR.CompiledKey.main 0).frontMul ((Aiur.NativeAIR.Expr.konst 1).frontSub selector),
+  transition.frontMul (selector.frontSub (Aiur.NativeAIR.Expr.konst 1)),
+  transition.frontMul
+    (((Aiur.NativeAIR.CompiledKey.main 2).frontAdd (Aiur.NativeAIR.Expr.konst 1)).frontSub
+      (Aiur.NativeAIR.CompiledKey.next 2))]
+PREMISE Aiur.NativeAIR.CompiledKey.memoryLookup
+Nat → Aiur.NativeAIR.Compiler.ExprLookup
+DEFINITION
+fun width =>
+  { multiplicity := (Aiur.NativeAIR.CompiledKey.main 0).frontNeg,
+    args :=
+      List.map (Aiur.NativeAIR.CompiledKey.main 1).frontMul
+          [Aiur.NativeAIR.Expr.konst 1, Aiur.NativeAIR.Expr.konst (Aiur.G.ofNat width),
+            Aiur.NativeAIR.CompiledKey.main 2] ++
+        List.ofFn fun i => (Aiur.NativeAIR.CompiledKey.main 1).frontMul (Aiur.NativeAIR.CompiledKey.main (3 + ↑i)) }
+PREMISE Aiur.NativeAIR.CompiledKey.byte1Lookup
+Aiur.AIR.Byte1Kind → Aiur.NativeAIR.Compiler.ExprLookup
+DEFINITION
+fun kind =>
+  { multiplicity := (Aiur.NativeAIR.CompiledKey.main ↑kind.column).frontNeg,
+    args :=
+      match kind with
+      | Aiur.AIR.Byte1Kind.bits =>
+        [Aiur.NativeAIR.Expr.konst 2, Aiur.NativeAIR.CompiledKey.preprocessed 0] ++
+          List.ofFn fun i => Aiur.NativeAIR.CompiledKey.preprocessed (1 + ↑i)
+      | Aiur.AIR.Byte1Kind.shiftLeft =>
+        [Aiur.NativeAIR.Expr.konst 3, Aiur.NativeAIR.CompiledKey.preprocessed 0,
+          Aiur.NativeAIR.CompiledKey.preprocessed 9]
+      | Aiur.AIR.Byte1Kind.shiftRight =>
+        [Aiur.NativeAIR.Expr.konst 4, Aiur.NativeAIR.CompiledKey.preprocessed 0,
+          Aiur.NativeAIR.CompiledKey.preprocessed 10] }
+PREMISE Aiur.NativeAIR.CompiledKey.byte2Lookup
+Aiur.AIR.Byte2Kind → Aiur.NativeAIR.Compiler.ExprLookup
+DEFINITION
+fun kind =>
+  { multiplicity := (Aiur.NativeAIR.CompiledKey.main ↑kind.column).frontNeg,
+    args :=
+      [Aiur.NativeAIR.Expr.konst kind.channel, Aiur.NativeAIR.CompiledKey.preprocessed 0,
+          Aiur.NativeAIR.CompiledKey.preprocessed 1] ++
+        match kind with
+        | Aiur.AIR.Byte2Kind.xor => [Aiur.NativeAIR.CompiledKey.preprocessed 2]
+        | Aiur.AIR.Byte2Kind.add => [Aiur.NativeAIR.CompiledKey.preprocessed 3]
+        | Aiur.AIR.Byte2Kind.sub => [Aiur.NativeAIR.CompiledKey.preprocessed 4]
+        | Aiur.AIR.Byte2Kind.and => [Aiur.NativeAIR.CompiledKey.preprocessed 5]
+        | Aiur.AIR.Byte2Kind.or => [Aiur.NativeAIR.CompiledKey.preprocessed 6]
+        | Aiur.AIR.Byte2Kind.lessThan => [Aiur.NativeAIR.CompiledKey.preprocessed 7]
+        | Aiur.AIR.Byte2Kind.range => []
+        | Aiur.AIR.Byte2Kind.mul =>
+          [Aiur.NativeAIR.CompiledKey.preprocessed 8, Aiur.NativeAIR.CompiledKey.preprocessed 9]
+        | Aiur.AIR.Byte2Kind.split7 =>
+          [Aiur.NativeAIR.CompiledKey.preprocessed 10, Aiur.NativeAIR.CompiledKey.preprocessed 11]
+        | Aiur.AIR.Byte2Kind.split4 =>
+          [Aiur.NativeAIR.CompiledKey.preprocessed 12, Aiur.NativeAIR.CompiledKey.preprocessed 13] }
+PREMISE Aiur.NativeAIR.CompiledKey.circuit
+Nat → Nat → Nat → Nat → Aiur.NativeAIR.Compiler.BaseCompilation → Option Aiur.NativeAIR.KeyCodec.Circuit
+DEFINITION
+fun mainWidth preprocessedWidth preprocessedHeight groupSize base =>
+  have raw :=
+    { mainWidth := mainWidth, preprocessedWidth := preprocessedWidth, preprocessedHeight := preprocessedHeight,
+      maxConstraintDegree := 0, lookupGroupSize := groupSize, graph := base.graph };
+  do
+  let degree ← raw.computedDegree
+  have result : Aiur.NativeAIR.KeyCodec.Circuit :=
+    { mainWidth := raw.mainWidth, preprocessedWidth := raw.preprocessedWidth,
+      preprocessedHeight := raw.preprocessedHeight, maxConstraintDegree := degree,
+      lookupGroupSize := raw.lookupGroupSize, graph := raw.graph }
+  if result.valid = true then some result else none
+PREMISE Aiur.NativeAIR.CompiledKey.functionCircuit
+Aiur.Bytecode.Toplevel → Aiur.Bytecode.Circuit → Option Aiur.NativeAIR.KeyCodec.Circuit
+DEFINITION
+fun program source => do
+  let compiled ←
+    Aiur.NativeAIR.CircuitEmitter.compileCircuit (Aiur.NativeAIR.CircuitEmitter.circuitWidths source) program source
+  have groupSize : Nat :=
+    if (compiled.emission.branchless && decide (2 ≤ compiled.emission.lookups.length)) = true then 2 else 1
+  Aiur.NativeAIR.CompiledKey.circuit source.layout.width 0 0 groupSize compiled.base
+PREMISE Aiur.NativeAIR.CompiledKey.memoryCircuit
+Nat → Option Aiur.NativeAIR.KeyCodec.Circuit
+DEFINITION
+fun width => do
+  let base ←
+    Aiur.NativeAIR.Compiler.compileBase { preprocessed := 0, main := 3 + width, stage2 := 0, publics := 0 }
+        [Aiur.NativeAIR.CompiledKey.memoryLookup width] Aiur.NativeAIR.CompiledKey.memoryEquations
+  Aiur.NativeAIR.CompiledKey.circuit (3 + width) 0 0 1 base
+PREMISE Aiur.NativeAIR.CompiledKey.byte1Circuit
+Option Aiur.NativeAIR.KeyCodec.Circuit
+DEFINITION
+do
+  let base ←
+    Aiur.NativeAIR.Compiler.compileBase { preprocessed := 11, main := 3, stage2 := 0, publics := 0 }
+        (List.map Aiur.NativeAIR.CompiledKey.byte1Lookup Aiur.AIR.Byte1Kind.all) []
+  Aiur.NativeAIR.CompiledKey.circuit 3 11 256 2 base
+PREMISE Aiur.NativeAIR.CompiledKey.byte2Circuit
+Option Aiur.NativeAIR.KeyCodec.Circuit
+DEFINITION
+do
+  let base ←
+    Aiur.NativeAIR.Compiler.compileBase { preprocessed := 14, main := 10, stage2 := 0, publics := 0 }
+        (List.map Aiur.NativeAIR.CompiledKey.byte2Lookup Aiur.AIR.Byte2Kind.all) []
+  Aiur.NativeAIR.CompiledKey.circuit 10 14 65536 2 base
+PREMISE Aiur.NativeAIR.CompiledKey.circuits
+Aiur.Bytecode.Toplevel → Option (List Aiur.NativeAIR.KeyCodec.Circuit)
+DEFINITION
+fun program => do
+  let functions ← List.mapM (Aiur.NativeAIR.CompiledKey.functionCircuit program) program.circuits.toList
+  let memories ← List.mapM Aiur.NativeAIR.CompiledKey.memoryCircuit program.memorySizes.toList
+  let byte1 ← Aiur.NativeAIR.CompiledKey.byte1Circuit
+  let byte2 ← Aiur.NativeAIR.CompiledKey.byte2Circuit
+  pure (functions ++ memories ++ [byte1, byte2])
+PREMISE Aiur.NativeAIR.CompiledKey.preprocessedIndices
+Aiur.Bytecode.Toplevel → List (Option Nat)
+DEFINITION
+fun program => List.replicate (program.circuits.size + program.memorySizes.size) none ++ [some 0, some 1]
+PREMISE Aiur.NativeAIR.CompiledKey.check
+Aiur.Bytecode.Toplevel → Aiur.NativeAIR.KeyCodec.Key → Bool
+DEFINITION
+fun program key =>
+  Aiur.NativeAIR.CompiledKey.circuits program == some key.circuits &&
+    key.preprocessedIndices == Aiur.NativeAIR.CompiledKey.preprocessedIndices program
+PREMISE Aiur.BoundVerifier.CompiledBackend.mk
+{selection : Aiur.BoundVerifier.Selection} →
+  (toBackend : Aiur.BoundVerifier.Backend selection) →
+    Aiur.NativeAIR.CompiledKey.check toBackend.compiled.bytecode toBackend.keyData = true →
+      Aiur.BoundVerifier.CompiledBackend selection
+PREMISE Aiur.BoundVerifier.buildCompiled
+(selection : Aiur.BoundVerifier.Selection) → Except String (Aiur.BoundVerifier.CompiledBackend selection)
+DEFINITION
+fun selection => do
+  let backend ← Aiur.BoundVerifier.build selection
+  if checked : Aiur.NativeAIR.CompiledKey.check backend.compiled.bytecode backend.keyData = true then
+      pure { toBackend := backend, graphsChecked := checked }
+    else throw "verification key circuits differ from the checked compilation"
+PREMISE Aiur.BoundVerifier.verifyCompiled
+{selection : Aiur.BoundVerifier.Selection} →
+  Aiur.BoundVerifier.CompiledBackend selection → Array Aiur.G → ByteArray → Except String Unit
+DEFINITION
+fun {selection} backend input bytes => Aiur.BoundVerifier.verify backend.toBackend input bytes
+PREMISE Aiur.NativeAIR.GraphWidths.Le
+Aiur.NativeAIR.GraphWidths → Aiur.NativeAIR.GraphWidths → Prop
+DEFINITION
+fun small large =>
+  (∀ (source : Aiur.NativeAIR.Source), small.width source ≤ large.width source) ∧ small.publics ≤ large.publics
+PREMISE Aiur.NativeAIR.CompiledKey.columns
+Aiur.NativeAIR.Values Aiur.G → Aiur.NativeAIR.Source → Aiur.NativeAIR.RowOffset → (width : Nat) → Fin width → Aiur.G
+DEFINITION
+fun values source offset width index => (values.columns source offset)[↑index]?.getD 0
 RECURSION WORKER Aiur.buildArgs._unsafe_rec
 Aiur.LayoutMap →
   Std.HashMap Aiur.Local (Array Aiur.Bytecode.ValIdx) →
@@ -18238,7 +18811,7 @@ fun initId decls renames clauses branches body =>
     let clause : Aiur.MatchCompiler.Clause :=
       { pat := Aiur.MatchCompiler.SPattern.pointer var innerTyp, guards := guards, body := term }
     Aiur.MatchCompiler.dnfProd.aux._unsafe_rec✝ initId decls renames (clauses.push clause) rest body
-C8 component ROOTS 796; LOGICAL DECLARATIONS 17477; WITH RUNTIME 18253
+C8 component ROOTS 831; LOGICAL DECLARATIONS 17597; WITH RUNTIME 18373
 IX RUNTIME EXTERNS [Aiur.AiurSystem.build, Aiur.AiurSystem.verify, Aiur.AiurSystem.vkBytes, Aiur.Proof.ofBytesChecked]
 PARTIAL OPAQUE SOURCES [Aiur.instHashableTyp.hash, Aiur.instReprPattern.repr, Aiur.instReprTyp.repr]
 OTHER UNSAFE RUNTIME []

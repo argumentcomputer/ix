@@ -40,6 +40,7 @@ import Ix.Aiur.Proofs.CircuitAllocation
 import Ix.Aiur.Proofs.CircuitCompletion
 import Ix.Aiur.Proofs.CheckedCircuit
 import Ix.Aiur.Proofs.KeyArtifact
+import Ix.Aiur.Proofs.CompiledKey
 import Ix.Aiur.Proofs.Grouping
 import Ix.Aiur.Proofs.TailMatches
 import Ix.Aiur.Proofs.NormalizationFrames
@@ -1498,6 +1499,100 @@ def keyCodecPremises : Array Lean.Name := #[
   `Aiur.NativeAIR.KeyCodec.Returns,
   `Aiur.NativeAIR.KeyCodec.CommitmentValid]
 
+def compiledKeyRoots : Array Lean.Name := #[
+  `Aiur.BoundVerifier.CompiledBackend.circuits_bound,
+  `Aiur.BoundVerifier.CompiledBackend.preprocessed_indices,
+  `Aiur.BoundVerifier.verifyCompiled_success,
+  `Aiur.NativeAIR.Compiler.compileExpr_widen,
+  `Aiur.NativeAIR.Compiler.compileExprs_widen,
+  `Aiur.NativeAIR.Compiler.compileLookup_widen,
+  `Aiur.NativeAIR.Compiler.compileLookups_widen,
+  `Aiur.NativeAIR.Compiler.compileZeros_widen,
+  `Aiur.NativeAIR.Compiler.compileBase_widen,
+  `Aiur.NativeAIR.CircuitEmitter.compileCircuit_widen,
+  `Aiur.NativeAIR.CircuitEmitter.circuitWidths_le,
+  `Aiur.NativeAIR.CompiledKey.column_eval,
+  `Aiur.NativeAIR.CompiledKey.memoryEquations_eval,
+  `Aiur.NativeAIR.CompiledKey.memoryLookup_eval,
+  `Aiur.NativeAIR.CompiledKey.byte1Lookup_eval,
+  `Aiur.NativeAIR.CompiledKey.byte2Lookup_eval,
+  `Aiur.NativeAIR.CompiledKey.circuit_success,
+  `Aiur.NativeAIR.CompiledKey.functionCircuit_success,
+  `Aiur.NativeAIR.CompiledKey.memoryCircuit_success,
+  `Aiur.NativeAIR.CompiledKey.byte1Circuit_success,
+  `Aiur.NativeAIR.CompiledKey.byte2Circuit_success,
+  `Aiur.NativeAIR.CompiledKey.circuits_parts,
+  `Aiur.NativeAIR.CompiledKey.circuits_length,
+  `Aiur.NativeAIR.CompiledKey.circuits_function,
+  `Aiur.NativeAIR.CompiledKey.circuits_memory,
+  `Aiur.NativeAIR.CompiledKey.circuits_bytes,
+  `Aiur.NativeAIR.CompiledKey.memoryCircuit_reflects,
+  `Aiur.NativeAIR.CompiledKey.byte1Circuit_reflects,
+  `Aiur.NativeAIR.CompiledKey.byte2Circuit_reflects,
+  `Aiur.BoundVerifier.CompiledBackend.circuit_count,
+  `Aiur.BoundVerifier.CompiledBackend.function_graph_reflects,
+  `Aiur.BoundVerifier.CompiledBackend.memory_graph_reflects,
+  `Aiur.BoundVerifier.CompiledBackend.byte_graphs,
+  `Aiur.BoundVerifier.CompiledBackend.byte1_graph_reflects,
+  `Aiur.BoundVerifier.CompiledBackend.byte2_graph_reflects]
+
+def compiledKeyQuotOnlyRoots : Array Lean.Name := #[
+  `Aiur.NativeAIR.CompiledKey.circuit_success]
+
+def compiledKeyQuotRoots : Array Lean.Name := #[
+  `Aiur.NativeAIR.Compiler.compileZeros_widen,
+  `Aiur.NativeAIR.Compiler.compileBase_widen,
+  `Aiur.NativeAIR.CompiledKey.memoryEquations_eval,
+  `Aiur.NativeAIR.CompiledKey.byte1Lookup_eval,
+  `Aiur.NativeAIR.CompiledKey.byte2Lookup_eval,
+  `Aiur.NativeAIR.CompiledKey.memoryCircuit_success,
+  `Aiur.NativeAIR.CompiledKey.byte1Circuit_success,
+  `Aiur.NativeAIR.CompiledKey.byte2Circuit_success]
+
+def compiledKeyClassicalRoots : Array Lean.Name := #[
+  `Aiur.BoundVerifier.CompiledBackend.circuits_bound,
+  `Aiur.BoundVerifier.CompiledBackend.preprocessed_indices,
+  `Aiur.BoundVerifier.verifyCompiled_success,
+  `Aiur.NativeAIR.CircuitEmitter.compileCircuit_widen,
+  `Aiur.NativeAIR.CompiledKey.memoryLookup_eval,
+  `Aiur.NativeAIR.CompiledKey.functionCircuit_success,
+  `Aiur.NativeAIR.CompiledKey.circuits_parts,
+  `Aiur.NativeAIR.CompiledKey.circuits_length,
+  `Aiur.NativeAIR.CompiledKey.circuits_function,
+  `Aiur.NativeAIR.CompiledKey.circuits_memory,
+  `Aiur.NativeAIR.CompiledKey.circuits_bytes,
+  `Aiur.NativeAIR.CompiledKey.memoryCircuit_reflects,
+  `Aiur.NativeAIR.CompiledKey.byte1Circuit_reflects,
+  `Aiur.NativeAIR.CompiledKey.byte2Circuit_reflects,
+  `Aiur.BoundVerifier.CompiledBackend.circuit_count,
+  `Aiur.BoundVerifier.CompiledBackend.function_graph_reflects,
+  `Aiur.BoundVerifier.CompiledBackend.memory_graph_reflects,
+  `Aiur.BoundVerifier.CompiledBackend.byte_graphs,
+  `Aiur.BoundVerifier.CompiledBackend.byte1_graph_reflects,
+  `Aiur.BoundVerifier.CompiledBackend.byte2_graph_reflects]
+
+def compiledKeyPremises : Array Lean.Name := #[
+  `Aiur.NativeAIR.CompiledKey.main,
+  `Aiur.NativeAIR.CompiledKey.next,
+  `Aiur.NativeAIR.CompiledKey.preprocessed,
+  `Aiur.NativeAIR.CompiledKey.memoryEquations,
+  `Aiur.NativeAIR.CompiledKey.memoryLookup,
+  `Aiur.NativeAIR.CompiledKey.byte1Lookup,
+  `Aiur.NativeAIR.CompiledKey.byte2Lookup,
+  `Aiur.NativeAIR.CompiledKey.circuit,
+  `Aiur.NativeAIR.CompiledKey.functionCircuit,
+  `Aiur.NativeAIR.CompiledKey.memoryCircuit,
+  `Aiur.NativeAIR.CompiledKey.byte1Circuit,
+  `Aiur.NativeAIR.CompiledKey.byte2Circuit,
+  `Aiur.NativeAIR.CompiledKey.circuits,
+  `Aiur.NativeAIR.CompiledKey.preprocessedIndices,
+  `Aiur.NativeAIR.CompiledKey.check,
+  `Aiur.BoundVerifier.CompiledBackend.mk,
+  `Aiur.BoundVerifier.buildCompiled,
+  `Aiur.BoundVerifier.verifyCompiled,
+  `Aiur.NativeAIR.GraphWidths.Le,
+  `Aiur.NativeAIR.CompiledKey.columns]
+
 def roots : Array Lean.Name := #[
   `Aiur.G.ofNat_n, `Aiur.G.mul_one, `Aiur.G.mul_zero,
   `Aiur.AIR.inactive_multiplicity_zero,
@@ -1534,7 +1629,7 @@ def roots : Array Lean.Name := #[
     fieldRoots ++ localConstraintRoots ++ byteArithmeticRoots ++ byteLookupRoots ++
     lookupMessageRoots ++ lookupShapeRoots ++ globalLookupRoots ++ lookupBudgetRoots ++
     selectorControlRoots ++ operationRowRoots ++ blockRowRoots ++ querySlotRoots ++ circuitRowRoots ++
-    rowCountRoots ++ circuitTableRoots ++ branchlessRoots ++ circuitTraceRoots ++ circuitMembershipRoots ++ lookupLayoutRoots ++ memoryColumnRoots ++ byteColumnRoots ++ expressionGraphRoots ++ frontendExpressionRoots ++ graphCompilationRoots ++ operationExpressionRoots ++ blockCircuitRoots ++ allocationRoots ++ circuitAllocationRoots ++ circuitCompletionRoots ++ checkedCircuitRoots ++ keyCodecRoots
+    rowCountRoots ++ circuitTableRoots ++ branchlessRoots ++ circuitTraceRoots ++ circuitMembershipRoots ++ lookupLayoutRoots ++ memoryColumnRoots ++ byteColumnRoots ++ expressionGraphRoots ++ frontendExpressionRoots ++ graphCompilationRoots ++ operationExpressionRoots ++ blockCircuitRoots ++ allocationRoots ++ circuitAllocationRoots ++ circuitCompletionRoots ++ checkedCircuitRoots ++ keyCodecRoots ++ compiledKeyRoots
 
 def premises : Array Lean.Name := #[
   `Aiur.AIR.activityConstraint,
@@ -1773,7 +1868,7 @@ def premises : Array Lean.Name := #[
   `Aiur.NativeAIR.evalRoots,
   `Aiur.NativeAIR.readLookup,
   `Aiur.NativeAIR.evalLookup,
-  `Aiur.NativeAIR.goldilocksOps] ++ frontendExpressionPremises ++ graphCompilationPremises ++ operationExpressionPremises ++ blockCircuitPremises ++ allocationPremises ++ circuitAllocationPremises ++ circuitCompletionPremises ++ checkedCircuitPremises ++ keyCodecPremises
+  `Aiur.NativeAIR.goldilocksOps] ++ frontendExpressionPremises ++ graphCompilationPremises ++ operationExpressionPremises ++ blockCircuitPremises ++ allocationPremises ++ circuitAllocationPremises ++ circuitCompletionPremises ++ checkedCircuitPremises ++ keyCodecPremises ++ compiledKeyPremises
 
 private def constants (info : Lean.ConstantInfo) : Array Lean.Name :=
   info.type.getUsedConstants ++ match info with
@@ -1852,7 +1947,12 @@ run_cmd do
   let env ← getEnv
   for root in roots do
     let some info := env.checked.get.find? root | throwError "C8 component audit: missing root {root}"
-    let expected := if keyCodecRoots.contains root then
+    let expected := if compiledKeyRoots.contains root then
+        if compiledKeyQuotOnlyRoots.contains root then #[``Quot.sound]
+        else if compiledKeyClassicalRoots.contains root then #[``propext, ``Classical.choice, ``Quot.sound]
+        else if compiledKeyQuotRoots.contains root then #[``propext, ``Quot.sound]
+        else #[``propext]
+      else if keyCodecRoots.contains root then
         if keyCodecAxiomFreeRoots.contains root then #[]
         else if keyCodecClassicalRoots.contains root then #[``propext, ``Classical.choice, ``Quot.sound]
         else if keyCodecQuotRoots.contains root then #[``propext, ``Quot.sound]

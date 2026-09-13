@@ -410,11 +410,12 @@ sizes, constrained and advice calls, nested continuations, visibility and
 public-claim widths. All 54 parallel release Rust tests pass, including the
 supplied rank/output ambiguity regression; release Clippy denies warnings.
 
-The audit checks 796 roots by traversing checked types, bodies and inductive
-constructors. Seventeen roots use no axioms; 125 depend only on `propext`;
-216 use exactly `propext` and `Quot.sound`; the other 438 use exactly
+The audit checks 831 roots by traversing checked types, bodies and inductive
+constructors. Seventeen roots use no axioms; one uses only `Quot.sound`;
+131 depend only on `propext`; 224 use exactly `propext` and `Quot.sound`;
+the other 458 use exactly
 `propext`, `Classical.choice` and `Quot.sound`. The combined closure
-has 17,477 logical declarations and 18,253 declarations after following runtime
+has 17,597 logical declarations and 18,373 declarations after following runtime
 workers and replacements. The frozen report records four native runtime entry points,
 three partial opaque sources and all 169 Ix recursion worker implementations.
 Bytecode comparison/hashing, tail-match restoration and source-value hashing
@@ -756,6 +757,37 @@ two accepted/fifteen rejected native binding cases. The strict 332-job build
 and full component gate pass with all nineteen native corpora. Native AIR expressions,
 layouts and serialized keys are unchanged.
 
+`BoundVerifier.buildCompiled` now checks the entire decoded circuit list
+against a total compiler model and returns a `CompiledBackend` retaining that
+check. Function circuits appear in compilation order, followed by the memory
+widths and both byte tables. Equality covers every graph node, constraint
+root, ordered lookup, matrix dimension, degree, grouping choice and
+preprocessed index. The existing generic `build` remains available.
+
+Successful graph compilation is unchanged when additional columns are
+available. This connects the function compiler's physical main width to the
+key's complete layout, including stage-two and public-input columns. The
+memory and byte expression builders evaluate to their physical column models.
+The `CompiledBackend` graph-reflection theorems use the enforced comparison
+to supply graph equality, compilation success and dimensions for every circuit
+family. They derive the same equations and ordered weighted messages from
+values fitting the selected key. No independent graph-equality or read-bound
+premise is required. Native verifier execution, preprocessed commitment
+meaning, parameter admissibility and cryptographic acceptance remain open.
+
+Native comparison covers twelve complete systems, 180 circuits and 720
+assignments to all matrix families, public values and row selectors. It
+compares the actual encoded keys and emitted equations and lookups with the
+checked compiler and physical models. All 168 altered keys retain valid
+canonical syntax and fail the new circuit-binding guard. The ordinary and
+grouped backend tests now use `buildCompiled`: two valid proofs are accepted
+and fifteen altered cases are rejected. All 75 parallel Rust release tests
+and release Clippy pass. The 831-root audit adds 35 roots and twenty frozen
+definitions; every prior statement, axiom set, definition and all 169 worker
+bodies are unchanged. The strict 346-job build and complete component gate
+pass with all twenty native corpora. Native production code and key bytes
+are unchanged.
+
 The budget comparison covers
 21,964 Rust/Lean cases, including
 all byte-sized degree values, field and machine boundaries, inactive circuits
@@ -812,14 +844,26 @@ Replaying the compiler from before the hoisting repair on all 81 pinned
 constants gives identical outputs, I/O, query counts, circuit shapes and costs
 to the repaired compiler. The hoisting repair adds no cost on that corpus.
 
-These results reach the bytecode produced by lowering. Full C8 still needs
-backward reflection through lowering and the earlier compiler passes, execution
-extraction from arbitrary satisfying AIR witnesses, certified source/claim
-checking inside the selected VM program, enforced certified release/key
-selection, and the cryptographic reduction with explicit bad events. The
-grouping result concerns reference execution. The valued model composes
-grouped circuit rows; connecting accepted native proofs to the reflected
-grouped AIR remains open.
+These results reach the bytecode produced by lowering. Full C8 requires public
+certified verification to imply the claim's intended source meaning, under
+the explicit set-theory hypothesis and a quantitative cryptographic failure
+bound. The remaining components are:
+
+| Component | Remaining obligation |
+| --- | --- |
+| Native verifier | Connect the actual decoder and verifier to the mathematical protocol and extract satisfying committed traces from acceptance. |
+| Cryptography | Prove the commitment, polynomial-testing, FRI and Fiat–Shamir guarantees with admissible parameters and explicit failure bounds. |
+| Randomized lookups | Derive the exact bounded weighted message balance used by execution extraction, excluding specified compression collisions and denominator failures. |
+| Fixed tables | Bind the preprocessed commitments and openings to the proved byte tables and their required dimensions. |
+| Compiler | Complete backward execution reflection through lowering and the remaining source transformations. |
+| Certified checker | Connect successful execution of the selected checker program to the host checker and claim-semantic results. |
+| Public release and runtime | Instantiate that checker, entrypoint, statement encoding, parameters and key in the public path, with the required native/FFI and cache correspondence. |
+
+Satisfying physical function, memory and byte rows already compose with
+bounded exact lookup balance to give execution of the selected bytecode
+success call. The conditions must still be derived from actual verifier
+acceptance, and that execution must be carried back to the certified claim.
+Taking these conditions as theorem hypotheses does not discharge them.
 
 The source and bytecode references use uncached calls. Repeated effectful calls
 can behave differently in the caching interpreter and native runtime: writes
@@ -838,8 +882,8 @@ an unconstrained u32 sum are advice, but its carry remains a field expression.
 Memory facts relate a width and pointer to contents. `Proofs/Memory.lean`
 proves their functionality from the local memory constraints and trace-height
 bound, and extracts queried facts from exact balance with bounded query counts.
-Decoding the native memory rows and deriving these conditions from verification,
-along with the selected certified program's checks, remain open.
+Extracting these rows and their satisfaction from native verifier acceptance,
+along with the selected certified program's checks, remains open.
 
 The component gate exercises 45 operation fixtures, the virtual carry
 equation, and checked derivations for shared callees, memory, continuation
