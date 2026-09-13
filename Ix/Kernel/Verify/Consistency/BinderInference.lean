@@ -63,14 +63,15 @@ theorem inferUncached_monomorphic_const_scoped {β : Type u}
 private theorem withLctxScope_success {action : RecM .anon α}
     {methods : Methods .anon} {before after : TcState .anon} {result : α}
     (accepted : (RecM.withLctxScope action).run methods before = .ok result after) :
-    ∃ state, action.run methods before = .ok result state := by
+    ∃ state, action.run methods before = .ok result state ∧
+      after = {state with lctx := state.lctx.truncate before.lctx.size} := by
   rw [withLctxScope_eq] at accepted
   cases run : action.run methods before with
   | error err state => rw [run] at accepted; contradiction
   | ok value state =>
       rw [run] at accepted
       cases accepted
-      exact ⟨state, rfl⟩
+      exact ⟨state, rfl, rfl⟩
 
 /-- The exact recursive calls and opening prefix of a forall branch.
 Both sort exposures take the production syntactic fast path. -/
@@ -95,14 +96,18 @@ structure ForallInferenceTrace (fuel : Nat) (before : TcState .anon)
 
 /-- Inversion reaches the actual final interning operation after both recursive
 calls, sort exposures, and binder opening. -/
-theorem ForallInferenceTrace.output {fuel : Nat} {before after : TcState .anon}
+theorem ForallInferenceTrace.output_state {fuel : Nat} {before after : TcState .anon}
     {name : Mode.anon.F Name} {bi : Mode.anon.F Lean.BinderInfo}
     {domain body result : KExpr .anon} {info : ExprInfo .anon} {inferOnly : Bool}
     (trace : ForallInferenceTrace fuel before name bi domain body)
     (accepted : RecM.inferUncached RecM.inferCall inferOnly (.all name bi domain body info)
       (methodsN (fuel + 1)) before = .ok result after) :
     result = (trace.bodyState.env.intern.internExpr
-      (KExpr.mkSort (KUniv.mkIMax trace.domainLevel trace.bodyLevel))).1 := by
+      (KExpr.mkSort (KUniv.mkIMax trace.domainLevel trace.bodyLevel))).1 ∧
+      after = {trace.bodyState with
+        env := {trace.bodyState.env with intern := (trace.bodyState.env.intern.internExpr
+          (KExpr.mkSort (KUniv.mkIMax trace.domainLevel trace.bodyLevel))).2}
+        lctx := trace.bodyState.lctx.truncate trace.domainState.lctx.size} := by
   change (RecM.inferUncached RecM.inferCall inferOnly (.all name bi domain body info)).run
     (methodsN (fuel + 1)) before = .ok result after at accepted
   unfold RecM.inferUncached at accepted
@@ -110,7 +115,7 @@ theorem ForallInferenceTrace.output {fuel : Nat} {before after : TcState .anon}
   change EStateM.bind (RecM.infer domain (methodsN fuel)) _ before = _ at accepted
   rw [EStateM.bind, trace.domainRun] at accepted
   change (RecM.withLctxScope _).run (methodsN (fuel + 1)) trace.domainState = _ at accepted
-  obtain ⟨scopedState, accepted⟩ := withLctxScope_success accepted
+  obtain ⟨scopedState, accepted, cleanup⟩ := withLctxScope_success accepted
   simp only [ReaderT.run_bind, ReaderT.run_monadLift] at accepted
   change EStateM.bind (TcM.openBinder name bi domain body) _ trace.domainState =
     .ok result scopedState at accepted
@@ -121,7 +126,17 @@ theorem ForallInferenceTrace.output {fuel : Nat} {before after : TcState .anon}
     _ trace.openedState = .ok result scopedState at accepted
   rw [EStateM.bind, bodyRun] at accepted
   cases accepted
-  rfl
+  exact ⟨rfl, cleanup⟩
+
+theorem ForallInferenceTrace.output {fuel : Nat} {before after : TcState .anon}
+    {name : Mode.anon.F Name} {bi : Mode.anon.F Lean.BinderInfo}
+    {domain body result : KExpr .anon} {info : ExprInfo .anon} {inferOnly : Bool}
+    (trace : ForallInferenceTrace fuel before name bi domain body)
+    (accepted : RecM.inferUncached RecM.inferCall inferOnly (.all name bi domain body info)
+      (methodsN (fuel + 1)) before = .ok result after) :
+    result = (trace.bodyState.env.intern.internExpr
+      (KExpr.mkSort (KUniv.mkIMax trace.domainLevel trace.bodyLevel))).1 :=
+  (trace.output_state accepted).1
 
 /-- Full-mode lambda inference validates its domain, opens the binder, and
 infers the body. The current fragment takes the unchanged cheap-beta path. -/
@@ -150,13 +165,17 @@ def LambdaInferenceTrace.abstracted {fuel : Nat} {before : TcState .anon}
 
 /-- The returned lambda type is the actual abstracted body type, wrapped in
 the production Pi constructor and passed through the final intern table. -/
-theorem LambdaInferenceTrace.output {fuel : Nat} {before after : TcState .anon}
+theorem LambdaInferenceTrace.output_state {fuel : Nat} {before after : TcState .anon}
     {name : Mode.anon.F Name} {bi : Mode.anon.F Lean.BinderInfo}
     {domain body result : KExpr .anon} {info : ExprInfo .anon}
     (trace : LambdaInferenceTrace fuel before name bi domain body)
     (accepted : RecM.inferUncached RecM.inferCall false (.lam name bi domain body info)
       (methodsN (fuel + 1)) before = .ok result after) :
-    result = (trace.abstracted.2.internExpr (KExpr.mkAll () () domain trace.abstracted.1)).1 := by
+    result = (trace.abstracted.2.internExpr (KExpr.mkAll () () domain trace.abstracted.1)).1 ∧
+      after = {trace.bodyState with
+        env := {trace.bodyState.env with
+          intern := (trace.abstracted.2.internExpr (KExpr.mkAll () () domain trace.abstracted.1)).2}
+        lctx := trace.bodyState.lctx.truncate trace.domainState.lctx.size} := by
   change (RecM.inferUncached RecM.inferCall false (.lam name bi domain body info)).run
     (methodsN (fuel + 1)) before = .ok result after at accepted
   unfold RecM.inferUncached at accepted
@@ -164,7 +183,7 @@ theorem LambdaInferenceTrace.output {fuel : Nat} {before after : TcState .anon}
   change EStateM.bind (RecM.infer domain (methodsN fuel)) _ before = _ at accepted
   rw [EStateM.bind, trace.domainRun] at accepted
   change (RecM.withLctxScope _).run (methodsN (fuel + 1)) trace.domainState = _ at accepted
-  obtain ⟨scopedState, accepted⟩ := withLctxScope_success accepted
+  obtain ⟨scopedState, accepted, cleanup⟩ := withLctxScope_success accepted
   simp only [ReaderT.run_bind, ReaderT.run_monadLift] at accepted
   change EStateM.bind (TcM.openBinder name bi domain body) _ trace.domainState =
     .ok result scopedState at accepted
@@ -176,7 +195,16 @@ theorem LambdaInferenceTrace.output {fuel : Nat} {before after : TcState .anon}
   rw [EStateM.bind, bodyRun] at accepted
   simp only [cheapBetaReduce, trace.betaUnchanged] at accepted
   cases accepted
-  rfl
+  exact ⟨rfl, cleanup⟩
+
+theorem LambdaInferenceTrace.output {fuel : Nat} {before after : TcState .anon}
+    {name : Mode.anon.F Name} {bi : Mode.anon.F Lean.BinderInfo}
+    {domain body result : KExpr .anon} {info : ExprInfo .anon}
+    (trace : LambdaInferenceTrace fuel before name bi domain body)
+    (accepted : RecM.inferUncached RecM.inferCall false (.lam name bi domain body info)
+      (methodsN (fuel + 1)) before = .ok result after) :
+    result = (trace.abstracted.2.internExpr (KExpr.mkAll () () domain trace.abstracted.1)).1 :=
+  (trace.output_state accepted).1
 
 /-- Structural and operational support for a finite production inference
 tree. The source reading and local-context agreement are inputs to soundness,

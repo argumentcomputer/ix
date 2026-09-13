@@ -214,12 +214,14 @@ structure ApplicationInferenceTrace (fuel : Nat) (before : TcState .anon)
 
 /-- Inverting the successful production branch reaches its exact interned
 codomain substitution after the real argument check. -/
-theorem ApplicationInferenceTrace.output {fuel : Nat} {before after : TcState .anon}
+theorem ApplicationInferenceTrace.output_state {fuel : Nat} {before after : TcState .anon}
     {fn arg result : KExpr .anon} {info : ExprInfo .anon}
     (trace : ApplicationInferenceTrace fuel before fn arg)
     (accepted : RecM.inferUncached RecM.inferCall false (.app fn arg info)
       (methodsN (fuel + 1)) before = .ok result after) :
-    result = (subst trace.codomain arg 0 trace.comparedState.env.intern).1 := by
+    result = (subst trace.codomain arg 0 trace.comparedState.env.intern).1 ∧
+      after = {trace.comparedState with env := {trace.comparedState.env with
+        intern := (subst trace.codomain arg 0 trace.comparedState.env.intern).2}} := by
   change (RecM.inferUncached RecM.inferCall false (.app fn arg info)).run
     (methodsN (fuel + 1)) before = .ok result after at accepted
   unfold RecM.inferUncached at accepted
@@ -234,6 +236,14 @@ theorem ApplicationInferenceTrace.output {fuel : Nat} {before after : TcState .a
     _ trace.argumentState = _ at accepted
   rw [EStateM.bind, trace.compareRun] at accepted
   cases accepted
-  rfl
+  exact ⟨rfl, rfl⟩
+
+theorem ApplicationInferenceTrace.output {fuel : Nat} {before after : TcState .anon}
+    {fn arg result : KExpr .anon} {info : ExprInfo .anon}
+    (trace : ApplicationInferenceTrace fuel before fn arg)
+    (accepted : RecM.inferUncached RecM.inferCall false (.app fn arg info)
+      (methodsN (fuel + 1)) before = .ok result after) :
+    result = (subst trace.codomain arg 0 trace.comparedState.env.intern).1 :=
+  (trace.output_state accepted).1
 
 end Ix.Kernel.Consistency

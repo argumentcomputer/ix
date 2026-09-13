@@ -723,8 +723,93 @@ private def cacheInvariantCases : TestSeq :=
   ++ test "cache invariants: clearing both partitions permits fresh inference-only synthesis"
     (inferenceAfterClearing true)
 
+/-- Preserve warm constant and sort entries through entire recursive calls.
+The application checks a lambda argument; the lambda itself uses the watched
+constant twice. Replaying the composite result also exercises a root cache hit.
+These are operational preservation cases; composite cache-hit typing remains
+a separate refinement boundary. -/
+private def cacheAfterComposite (shape : Nat) (inferOnly stats surroundingScope : Bool) : Bool :=
+  let id : KId .anon := ⟨polymorphicIdentity.2, ()⟩
+  let watched := KExpr.mkConst (m := .anon) id #[levelOne]
+  let sortType := KExpr.mkSort (m := .anon) levelOne
+  let useIdentity : KExpr .anon → KExpr .anon := fun arg =>
+    .mkApp (.mkApp watched (.mkVar 1 ())) arg
+  let body := KExpr.mkLam () () sortType
+    (.mkLam () () (.mkVar 0 ()) (useIdentity (useIdentity (.mkVar 0 ()))))
+  let application := KExpr.mkApp (.mkApp (.mkConst id #[levelTwo]) identityType) body
+  let term := if shape == 0 then identityType else if shape == 1 then body else application
+  let expected := if shape == 0 then KExpr.mkSort levelTwo else identityType
+  let action : RecM .anon Bool := do
+    let constantType ← RecM.inferCall watched
+    let sortResult ← RecM.inferCall sortType
+    let key ← TcM.inferKey watched
+    let sortKey ← TcM.inferKey sortType
+    let initial ← get
+    RecM.withLctxScope do
+      if surroundingScope then
+        let _ ← TcM.openBinder () () sortType (.mkVar 0 ())
+        pure ()
+      let activeSize := (← get).lctx.size
+      let rootKey ← TcM.inferKey term
+      let result ← RecM.inferCall term
+      let after ← get
+      let cache := if inferOnly then after.env.inferOnlyCache else after.env.inferCache
+      let oldCache := if inferOnly then initial.env.inferOnlyCache else initial.env.inferCache
+      let opposite := if inferOnly then after.env.inferCache else after.env.inferOnlyCache
+      let replay ← RecM.inferCall term
+      let constantReuse ← RecM.inferCall watched
+      let sortReuse ← RecM.inferCall sortType
+      let final ← get
+      return result.addr == expected.addr && result.lbr == 0 && replay.addr == result.addr &&
+        constantReuse.addr == constantType.addr && constantType.addr == identityType.addr &&
+        sortReuse.addr == sortResult.addr && sortResult.addr == (.mkSort levelTwo : KExpr .anon).addr &&
+        rootKey != key && rootKey != sortKey && key != sortKey &&
+        cache[key]?.map (·.addr) == oldCache[key]?.map (·.addr) &&
+        cache[sortKey]?.map (·.addr) == oldCache[sortKey]?.map (·.addr) &&
+        cache[rootKey]?.any (fun cached => cached.addr == result.addr) &&
+        cache.size > oldCache.size && opposite.isEmpty &&
+        after.env.consts.size == initial.env.consts.size &&
+        (after.env.get? id).map (·.ty.addr) == (initial.env.get? id).map (·.ty.addr) &&
+        after.lctx.size == activeSize && after.inferOnly == inferOnly &&
+        (if stats && shape != 0 then after.deqCalls > initial.deqCalls
+         else after.deqCalls == initial.deqCalls) && final.deqCalls == after.deqCalls
+  match TcM.runRec action { TcState.newLazyAnon polymorphicIdentity.1 with inferOnly, stats } with
+  | .ok passed after => passed && after.lctx.size == 0 && after.inferOnly == inferOnly
+  | .error _ _ => false
+
+private def recursiveCacheEnvironment : Ixon.Env := Id.run do
+  let (env, identity) := polymorphicIdentity
+  let nestedCall : Ixon.Expr → Ixon.Expr := fun arg =>
+    .app (.app (.ref 0 #[0]) (.var 1)) arg
+  let definition : Ixon.Univ → Ix.DefKind → Ixon.Constant := fun level kind =>
+    ⟨.defn ⟨kind, .safe, 0,
+      .leanAll (.sort 0) (.leanAll (.var 0) (.var 1)),
+      .leanLam (.sort 0) (.leanLam (.var 0) (nestedCall (nestedCall (.var 0))))⟩,
+      #[], #[identity], #[level]⟩
+  let (env, _) := storeConst env (definition (.succ .zero) .defn)
+  let (env, _) := storeConst env (definition (.succ (.succ .zero)) .opaq)
+  return env
+
+private def recursiveCacheCases : TestSeq :=
+  test "recursive cache: full dependent type inference retains warm sort and constant entries"
+    (cacheAfterComposite 0 false false false)
+  ++ test "recursive cache: inference-only dependent type inference retains warm entries"
+    (cacheAfterComposite 0 true false false)
+  ++ test "recursive cache: nested lambda applications retain repeatedly used constant entries"
+    (cacheAfterComposite 1 false false false)
+  ++ test "recursive cache: application with a lambda argument retains warm entries"
+    (cacheAfterComposite 2 false false false)
+  ++ test "recursive cache: hash-conversion statistics preserve entries and root replay is read-only"
+    (cacheAfterComposite 2 false true false)
+  ++ test "recursive cache: nested inference preserves an existing outer local scope"
+    (cacheAfterComposite 2 false true true)
+  ++ test "recursive cache: nested polymorphic calls check with persistent caches"
+    (allSucceeded recursiveCacheEnvironment 3 { clearEvery := 0 })
+  ++ test "recursive cache: nested polymorphic calls check with per-item clearing"
+    (allSucceeded recursiveCacheEnvironment 3 { clearEvery := 1 })
+
 public def suite : List TestSeq :=
   [cases, polymorphicCases, specializationCases, binderCases, applicationCases,
-    polymorphicApplicationCases, constantCacheCases, cacheInvariantCases]
+    polymorphicApplicationCases, constantCacheCases, cacheInvariantCases, recursiveCacheCases]
 
 end Tests.Kernel.Consistency

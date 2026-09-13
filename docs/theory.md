@@ -33,8 +33,12 @@ successor sort. Sort and already-loaded constant inference preserve agreement
 at their cache key and retain other entries. Structural preservation composes
 through binder opening, interning, unrelated writes, and scope/policy cleanup,
 including errors. It transports closed constant witnesses, and maintained
-agreement constructs sort leaves. Initial agreement, lazy loading, environment
-extension, and preservation through composite inference remain obligations.
+agreement constructs sort leaves. A finite operational trace now carries
+preservation through recursive applications, dependent types, and full-mode
+lambdas for keys absent from the recorded writes. It derives later constant
+witnesses and sort leaves without repeated cache-hit observations. Initial
+agreement, trace construction, lazy loading, environment extension, and
+preservation for keys that are written remain obligations.
 Full checker consistency
 and compiler/backend refinement remain open.
 

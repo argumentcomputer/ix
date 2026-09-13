@@ -6,6 +6,7 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 import Ix.Kernel.Verify.Consistency.Infer
 import Ix.Kernel.Verify.Consistency.Constant
 import Ix.Kernel.Verify.Consistency.Environment
+import Ix.Kernel.Verify.Consistency.RecursiveCache
 import Ix.Kernel.Verify.Audit.Basic
 
 /-! Exact full-dependency boundaries for the direct model-refinement roots.
@@ -79,10 +80,20 @@ private def cacheMapRoots : Array Lean.Name := #[
 ]
 
 private def cacheKeyRoots : Array Lean.Name := #[
-  ``inferKey_closed, ``InferenceCacheHit.key_closed, ``observeInferenceCache,
+  ``inferKey_closed, ``inferKey_policy, ``InferenceCacheHit.key_closed, ``observeInferenceCache,
   ``InferenceCacheAgreement.selected, ``InferenceCacheHit.transport,
   ``PreservesInferenceCache.inferKey, ``PreservesInferenceCache.openBinder,
   ``withLctxScope_eq, ``PreservesInferenceCache.withLctxScope
+]
+
+private def recursiveCacheRoots : Array Lean.Name := #[
+  ``ApplicationInferenceTrace.output_state, ``ForallInferenceTrace.output_state,
+  ``LambdaInferenceTrace.output_state, ``isDefEq_hash_state, ``isDefEq_hash_frame,
+  ``InferenceCacheTrace.writes, ``InferenceCacheTrace.sortOfKey,
+  ``InferenceCacheTrace.fvarOfKey, ``InferenceCacheTrace.constOfKey,
+  ``InferenceCacheTrace.frame, ``InferenceCacheTrace.agreement,
+  ``InferenceCacheHit.afterInference, ``CachedConstantInferenceSupport.afterInference,
+  ``CachedConstantInferenceSupport.sound_after_inference, ``BinderInference.sortAfterInference
 ]
 
 private def productionRoots : Array Lean.Name := #[
@@ -184,7 +195,7 @@ def roots : Array RootAllowance := #[
 }) ++ (binderWalkerRoots ++ cacheKeyRoots).map (fun root => {
   root, standardAxioms := standard, nativeAxioms := #[expressionNative],
   forbiddenDependencies := forbiddenProduction
-}) ++ (atomicRoots ++ instantiationRoots).map (fun root => {
+}) ++ (atomicRoots ++ instantiationRoots ++ recursiveCacheRoots).map (fun root => {
   root, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative],
   forbiddenDependencies := forbiddenProduction
 }) ++ productionRoots.map (fun root => {

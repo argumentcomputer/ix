@@ -20,6 +20,7 @@ import Ix.Kernel.Verify.Consistency.Context
 import Ix.Kernel.Verify.Consistency.BinderOpening
 import Ix.Kernel.Verify.Consistency.Application
 import Ix.Kernel.Verify.Consistency.BinderInference
+import Ix.Kernel.Verify.Consistency.RecursiveCache
 import Ix.Kernel.Verify.Consistency.Production
 import Ix.Kernel.Verify.Consistency.Environment
 import Ix.Kernel.Verify.Consistency.Audit
@@ -54,7 +55,12 @@ Concrete cache agreement is preserved by sort and already-loaded constant
 inference. Cache frames compose through interning, key computation, binder
 opening, unrelated writes, and scope/policy cleanup, including errors.
 These frames transport closed constant witnesses; maintained agreement also
-constructs sort leaves. Initial agreement, finite execution resources, lazy
-loading, and preservation through composite inference remain explicit obligations.
+constructs sort leaves. A finite InferenceCacheTrace computes the keys written
+by recursive applications, dependent functions, and full-mode lambdas, including
+domain validation and outer cache writes. Successful inference preserves entries
+outside that footprint, loaded declarations, and checking policy. This derives
+later constant witnesses and sort leaves without new cache-hit observations.
+Initial agreement, finite execution resources, trace construction, lazy loading,
+and preservation for keys inside the footprint remain explicit obligations.
 General checker soundness remains outside this fragment.
 -/

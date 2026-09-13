@@ -106,7 +106,18 @@ increasing sequence of strongly inaccessible cardinals.
   after such a frame; `BinderInference.sortOfAgreement` constructs a sort leaf
   from maintained agreement. Initial agreement and finite execution resources
   remain premises. General preservation through lazy loading, environment
-  extension, and composite inference remains open.
+  extension, and all recursive paths remains open.
+- `InferenceCacheTrace.frame` carries preservation through finite recursive
+  application, forall, and full-mode lambda trees. The trace computes the keys
+  written by misses, including recursive calls and the final outer insertion;
+  hits contribute no writes. Entries outside this footprint, loaded declarations,
+  and checking policy survive the entire successful call. The proof accounts
+  for lambda domain validation, binder cleanup, and hash conversion's optional
+  statistics update. `CachedConstantInferenceSupport.afterInference` transports
+  a closed constant witness through that call, and `BinderInference.sortAfterInference`
+  constructs a later sort leaf from preserved agreement. Neither needs another
+  cache-hit observation after the call. The operational tree and exclusion of
+  the protected key from its writes remain explicit inputs.
 - `checkEnvAnon_atomic_preserves_model` connects a supported production
   environment run to model extension. `checkEnvAnon_atomic_no_false` excludes
   a declaration at an axiom type interpreted as empty, including False.
@@ -178,8 +189,14 @@ def useF (x : T.{1}) : T.{1} := f.{1} x
   preserve their key's entries and the loaded-constant map. Actual sort and
   already-loaded constant inference provide frames for other keys. These
   results reduce repeated witnesses; they do not yet derive initial agreement
-  or preservation through lazy loading, environment extension, or the entire
-  recursive inference tree.
+  or preservation through lazy loading or environment extension.
+  A separate `InferenceCacheTrace` derives a frame for an entire supported
+  recursive call at any key outside its computed writes. It shares the existing
+  application and binder execution traces and additionally follows lambda-domain
+  inference. Constant misses require already-loaded declarations and finite
+  universe-walker resources; applications use full mode and hash conversion.
+  The operational trace can frame any selected cache hit, while semantic typing
+  of composite hits remains outside `BinderInference`.
 - Binder definitions supply finite inference trees for both the value and its
   separately checked declared type, exact source readings, closed annotated
   syntax, and references to the preceding interface. Recursive calls use the actual
@@ -273,7 +290,7 @@ lake test --wfail -- tc-unit
 lake -d Models/SetTheory build --wfail
 ```
 
-The consistency target checks 161 exact theorem boundaries. The production
+The consistency target checks 177 exact theorem boundaries. The production
 environment roots retain four existing generated output-length proofs,
 reached through expression/universe construction, names, and the full
 production method table. They introduce no new native proofs. The model
@@ -311,6 +328,11 @@ Cache-preservation regressions add repeated sort domains, sort reuse and
 partition priority, preservation through intervening sort and loaded-constant
 inference, successful and failed scope cleanup, policy restoration, and
 fresh inference after clearing both partitions.
+Recursive preservation regressions retain warm sort and constant entries
+through dependent types in both policies, nested lambda applications, and
+applications with lambda arguments. They also check reuse of the whole cached
+result, statistics updates during hash conversion, an existing outer local
+scope, and nested polymorphic declarations with persistent or cleared caches.
 
 ## Certified host adapters
 
@@ -340,6 +362,7 @@ The VM pilot is preserved in the frozen archive and excluded from the host gate.
 | Polymorphic calls inside binders | [`Consistency/ScopedConstant.lean`](../Ix/Kernel/Verify/Consistency/ScopedConstant.lean), [`ScopedInstUniv.lean`](../Ix/Kernel/Verify/Consistency/ScopedInstUniv.lean) |
 | Constant cache selection, writes, and typing | [`Consistency/ConstantCache.lean`](../Ix/Kernel/Verify/Consistency/ConstantCache.lean) |
 | Cache invariants and sort cache typing | [`Consistency/InferenceCache.lean`](../Ix/Kernel/Verify/Consistency/InferenceCache.lean), [`SortCache.lean`](../Ix/Kernel/Verify/Consistency/SortCache.lean) |
+| Recursive cache preservation and witness reuse | [`Consistency/RecursiveCache.lean`](../Ix/Kernel/Verify/Consistency/RecursiveCache.lean) |
 | Dependent binders and function bodies | [`Consistency/BinderInference.lean`](../Ix/Kernel/Verify/Consistency/BinderInference.lean), [`Application.lean`](../Ix/Kernel/Verify/Consistency/Application.lean), [`BinderOpening.lean`](../Ix/Kernel/Verify/Consistency/BinderOpening.lean), [`Context.lean`](../Ix/Kernel/Verify/Consistency/Context.lean), [`Model/Checking.lean`](../Ix/Theory/Model/Checking.lean) |
 | Production environment fragment and relative axiom policy | [`Consistency/Environment.lean`](../Ix/Kernel/Verify/Consistency/Environment.lean), [`Production.lean`](../Ix/Kernel/Verify/Consistency/Production.lean) |
 | Foundation assumptions, theorem contracts, and provenance | [Consistency model guide](theory.md) |
