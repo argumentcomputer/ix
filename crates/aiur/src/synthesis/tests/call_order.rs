@@ -18,7 +18,7 @@ fn cycle_toplevel(grouped: bool) -> Toplevel {
       layout: FunctionLayout {
         input_size: 1,
         selectors: 1,
-        auxiliaries: 15,
+        auxiliaries: 14,
         lookups: 8,
       },
       entry: i == 0,
@@ -33,7 +33,7 @@ fn cycle_toplevel(grouped: bool) -> Toplevel {
       layout: FunctionLayout {
         input_size: 1,
         selectors: 2,
-        auxiliaries: 15,
+        auxiliaries: 14,
         lookups: 8,
       },
     });
@@ -71,13 +71,13 @@ fn normalized(mut args: Vec<G>) -> Vec<G> {
   args
 }
 
-/// Verify exact tuple balance independently of random lookup compression.
-fn assert_lookup_balance(
+/// Compute exact tuple balance independently of random lookup compression.
+fn lookup_balance(
   top: &Toplevel,
   traces: &[RowMajorMatrix<G>],
   ranges: &RankRanges,
   claim: &[G],
-) {
+) -> FxHashMap<Vec<G>, G> {
   let mut balance = FxHashMap::<Vec<G>, G>::default();
   *balance.entry(normalized(claim.to_vec())).or_insert(G::ZERO) += G::ONE;
   for (i, circuit) in top.circuits.iter().enumerate() {
@@ -101,14 +101,12 @@ fn assert_lookup_balance(
       ]))
       .or_insert(G::ZERO) -= *count;
   }
-  assert!(
-    balance.values().all(|count| *count == G::ZERO),
-    "unbalanced supplied witness"
-  );
+  balance.retain(|_, count| *count != G::ZERO);
+  balance
 }
 
 #[test]
-fn mutual_cycles_reject_with_balanced_lookups_in_both_partitions() {
+fn mutual_cycles_reject_at_the_closing_lookup_in_both_partitions() {
   for grouped in [false, true] {
     let (cp, fp) = test_parameters();
     let system = AiurSystem::build(cycle_toplevel(grouped), cp, fp);
@@ -134,10 +132,8 @@ fn mutual_cycles_reject_with_balanced_lookups_in_both_partitions() {
           row[aux] = if member == 1 { G::from_u8(2) } else { G::ONE };
           fill_bytes(&mut row[aux + 1..aux + 7], member as u64, &mut ranges);
           row[aux + 7] = output;
-          row[aux + 8] =
-            G::from_usize(if member == 2 { 1 } else { member + 1 });
           let gap = if member == 2 { RANK_BOUND - 2 } else { 0 };
-          fill_bytes(&mut row[aux + 9..aux + 15], gap, &mut ranges);
+          fill_bytes(&mut row[aux + 8..aux + 14], gap, &mut ranges);
           violated += constraints
             .zeros
             .iter()
@@ -153,11 +149,17 @@ fn mutual_cycles_reject_with_balanced_lookups_in_both_partitions() {
       }
       traces.push(RowMajorMatrix::new(rows, shape.main_width));
     }
+    assert_eq!(violated, 0, "all local polynomial constraints hold");
+    // Only the closing h -> g lookup fails: its derived rank exceeds the
+    // bounded rank on g's return. All byte-range lookups balance exactly.
+    let message =
+      |rank| vec![function_channel(), G::ONE, input, output, G::from_u64(rank)];
     assert_eq!(
-      violated, 1,
-      "only the closing h -> g call should violate a polynomial"
+      lookup_balance(&system.toplevel, &traces, &ranges, &claim),
+      [(message(RANK_BOUND + 1), G::ONE), (message(1), -G::ONE)]
+        .into_iter()
+        .collect()
     );
-    assert_lookup_balance(&system.toplevel, &traces, &ranges, &claim);
     let witness = SystemWitness::from_stage_1(traces, &system.system);
     let proof = system.system.prove(&system.key, &claim, witness);
     assert!(
@@ -168,9 +170,9 @@ fn mutual_cycles_reject_with_balanced_lookups_in_both_partitions() {
 }
 
 #[test]
-fn call_order_polynomial_checks_strict_unsigned_order() {
+fn call_lookup_checks_strict_unsigned_order() {
   let top = cycle_toplevel(false);
-  let (constraints, _) = top.build_constraints(0);
+  let (constraints, lookups) = top.build_constraints(0);
   for (parent, child, gap, accepted) in [
     (0, 1, 0, true),
     (0, RANK_BOUND - 1, RANK_BOUND - 2, true),
@@ -184,13 +186,20 @@ fn call_order_polynomial_checks_strict_unsigned_order() {
     row[1] = G::ONE;
     row[2] = G::ONE;
     fill_bytes(&mut row[3..9], parent, &mut ranges);
-    row[10] = G::from_u64(child);
-    fill_bytes(&mut row[11..17], gap, &mut ranges);
-    let satisfied = constraints
-      .zeros
-      .iter()
-      .all(|expr| eval_expr(expr, &row_values(&row)) == G::ZERO);
-    assert_eq!(satisfied, accepted, "ranks {parent} -> {child}, gap {gap}");
+    fill_bytes(&mut row[10..16], gap, &mut ranges);
+    assert!(
+      constraints
+        .zeros
+        .iter()
+        .all(|expr| eval_expr(expr, &row_values(&row)) == G::ZERO)
+    );
+    let requested_rank =
+      eval_expr(lookups[4].args.last().unwrap(), &row_values(&row));
+    assert_eq!(
+      requested_rank == G::from_u64(child),
+      accepted,
+      "ranks {parent} -> {child}, gap {gap}"
+    );
   }
 }
 
@@ -218,9 +227,9 @@ fn out_of_range_gaps_cannot_hide_a_cycle_in_field_arithmetic() {
           rows[1] = G::ONE;
           rows[2] = G::from_u8(if i == 1 { 2 } else { 1 });
           rows[9] = claim[3];
-          // All ranks are zero. A forged "byte" -1 makes 0 - 0 - 1 - gap
-          // vanish as a field expression, but cannot pass the byte table.
-          rows[11] = -G::ONE;
+          // All ranks are zero. A forged "byte" -1 makes caller + 1 + gap
+          // request rank zero, but cannot pass the byte table.
+          rows[10] = -G::ONE;
           let (constraints, _) = system.toplevel.build_constraints(i);
           assert!(constraints.zeros.iter().all(|expr| eval_expr(
             expr,
@@ -277,11 +286,10 @@ fn out_of_range_function_rank_is_rejected_by_the_byte_table() {
           rows[2] = G::ONE;
           if i == 0 {
             rows[9] = claim[3];
-            rows[10] = G::from_u64(RANK_BOUND);
-            rows[11..17].fill(G::from_u8(255));
+            rows[10..16].fill(G::from_u8(255));
           } else {
-            // 256 in the high byte packs to 2^48. The edge's field equality
-            // and all ordinary constraints hold; the rank range check must fail.
+            // 256 in the high byte packs to 2^48. The call lookup matches
+            // this rank, but the function's rank range check must fail.
             rows[8] = G::from_u64(256);
           }
           let (constraints, _) = system.toplevel.build_constraints(i);
@@ -326,7 +334,7 @@ fn finite_recursive_calls_verify() {
     layout: FunctionLayout {
       input_size: 1,
       selectors: 2,
-      auxiliaries: 16,
+      auxiliaries: 15,
       lookups: 8,
     },
     entry: true,
@@ -360,7 +368,7 @@ fn shared_callee_keeps_one_consistent_rank() {
     layout: FunctionLayout {
       input_size: 1,
       selectors: 1,
-      auxiliaries: 23,
+      auxiliaries: 21,
       lookups: 12,
     },
     entry: true,

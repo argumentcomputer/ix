@@ -51,7 +51,11 @@ fn public_output_cannot_be_supplied_by_a_displaced_rank() {
 #[test]
 fn public_claim_shape_checks_channel_visibility_and_arity() {
   let top = mul_toplevel();
-  assert!(top.valid_claim_shape(&[G::ZERO, G::ZERO, G::ONE, G::ONE, G::ONE]));
+  let shapes = top.checked_claim_shapes().unwrap();
+  assert!(valid_claim_shape(
+    &shapes,
+    &[G::ZERO, G::ZERO, G::ONE, G::ONE, G::ONE]
+  ));
   for claim in [
     vec![],
     vec![G::ZERO],
@@ -61,13 +65,16 @@ fn public_claim_shape_checks_channel_visibility_and_arity() {
     vec![G::ZERO, G::ZERO, G::ONE, G::ONE],
     vec![G::ZERO, G::ZERO, G::ONE, G::ONE, G::ONE, G::ZERO],
   ] {
-    assert!(!top.valid_claim_shape(&claim));
+    assert!(!valid_claim_shape(&shapes, &claim));
   }
   for constrained in [true, false] {
     let mut top = mul_toplevel();
     top.functions[0].entry = !constrained;
     top.functions[0].constrained = constrained;
-    assert!(!top.valid_claim_shape(&[G::ZERO; 5]));
+    assert!(!valid_claim_shape(
+      &top.checked_claim_shapes().unwrap(),
+      &[G::ZERO; 5]
+    ));
   }
 }
 
@@ -92,6 +99,77 @@ fn constrained_calls_check_both_message_boundaries() {
   let mut top = mul_toplevel();
   top.functions[0].body.ops.push(Op::Call(99, vec![], 17, true));
   top.validate_lookup_shapes().unwrap();
+}
+
+#[test]
+fn cached_arities_match_recursive_checks_for_nested_control_flow() {
+  fn returning(size: usize) -> Block {
+    Block { ops: vec![], ctrl: Ctrl::Return(0, vec![0; size]) }
+  }
+  fn yielding() -> Block {
+    Block { ops: vec![], ctrl: Ctrl::Yield(0, vec![0; 2]) }
+  }
+  fn matching(arms: Vec<Block>, fallback: Option<Block>) -> Block {
+    Block {
+      ops: vec![],
+      ctrl: Ctrl::Match(
+        0,
+        arms
+          .into_iter()
+          .enumerate()
+          .map(|(i, b)| (G::from_usize(i), b))
+          .collect(),
+        fallback.map(Box::new),
+      ),
+    }
+  }
+  fn continued(arm: Block, continuation: Block) -> Block {
+    Block {
+      ops: vec![],
+      ctrl: Ctrl::MatchContinue(
+        0,
+        [(G::ZERO, arm)].into_iter().collect(),
+        Some(Box::new(yielding())),
+        2,
+        0,
+        0,
+        Box::new(continuation),
+      ),
+    }
+  }
+  let mut bodies = vec![
+    matching(vec![], None),
+    matching(vec![], Some(returning(0))),
+    continued(yielding(), matching(vec![], None)),
+  ];
+  for a in 0..3 {
+    bodies.push(returning(a));
+    bodies.push(continued(yielding(), returning(a)));
+    bodies.push(continued(continued(returning(a), yielding()), returning(a)));
+    for b in 0..3 {
+      bodies.push(matching(vec![returning(a), returning(b)], None));
+      bodies.push(matching(vec![returning(a)], Some(returning(b))));
+      bodies.push(continued(returning(a), returning(b)));
+      bodies.push(continued(continued(returning(a), yielding()), returning(b)));
+    }
+  }
+  for body in bodies {
+    let mut top = call_and_memory_toplevel();
+    // Test the cached public boundary and each call-site boundary against
+    // the original recursive predicate, including vacuous and mixed returns.
+    top.functions[0].body.ops.clear();
+    top.functions[1].entry = true;
+    top.functions[1].body = body;
+    let shapes = top.checked_claim_shapes().unwrap();
+    for outputs in 0..4 {
+      let expected = top.functions[1].body.returns_have_size(outputs);
+      let mut claim = vec![function_channel(), G::ONE, G::ZERO];
+      claim.resize(3 + outputs, G::ZERO);
+      assert_eq!(valid_claim_shape(&shapes, &claim), expected);
+      top.functions[0].body.ops = vec![Op::Call(1, vec![0], outputs, false)];
+      assert_eq!(top.validate_lookup_shapes().is_ok(), expected);
+    }
+  }
 }
 
 #[test]

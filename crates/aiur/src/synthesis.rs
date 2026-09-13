@@ -21,6 +21,7 @@ use crate::{
   function_channel,
   gadgets::{AiurGadget, bytes1::Bytes1, bytes2::Bytes2},
   lookup_budget::lookup_query_bound,
+  lookup_shapes::{ClaimShape, valid_claim_shape},
   memory::Memory,
   trace_heights::fixed_trace_heights,
 };
@@ -76,6 +77,7 @@ pub enum GatedProve {
 
 pub struct AiurSystem {
   toplevel: Toplevel,
+  claim_shapes: Vec<Option<ClaimShape>>,
   // perhaps remove the key from the system in verifier only mode?
   key: ProverKey<AiurConfig>,
   /// The parameters the system's config was built from, kept for the
@@ -136,7 +138,8 @@ impl AiurSystem {
     commitment_parameters: CommitmentParameters,
     fri_parameters: FriParameters,
   ) -> Self {
-    toplevel.validate_lookup_shapes().expect("invalid Aiur lookup shapes");
+    let claim_shapes =
+      toplevel.checked_claim_shapes().expect("invalid Aiur lookup shapes");
     toplevel.validate_row_counts().expect("invalid Aiur control counts");
     let mut circuit_inputs: Vec<CircuitInputs<G>> = Vec::new();
     let mut slot_widths: Vec<Vec<usize>> = Vec::new();
@@ -211,6 +214,7 @@ impl AiurSystem {
       system,
       key,
       toplevel,
+      claim_shapes,
       commitment_parameters,
       fri_parameters,
       slot_widths,
@@ -595,7 +599,7 @@ impl AiurSystem {
     claim: &[G],
     proof: &AiurProof,
   ) -> Result<(), VerificationError<PcsError>> {
-    if !self.toplevel.valid_claim_shape(claim) {
+    if !valid_claim_shape(&self.claim_shapes, claim) {
       return Err(VerificationError::InvalidClaim);
     }
     if !fixed_trace_heights(
@@ -780,7 +784,7 @@ mod tests {
   /// - `f` (idx 0, entry): `f(a, b) = g(a) * b`, but routing `b` through
   ///   memory so the memory path is live:
   ///   - `Call(1, [a], 1, false)` → `g(a)` at value idx 2, allocating one
-  ///     output auxiliary, seven order auxiliaries and four lookup slots.
+  ///     output auxiliary, six gap auxiliaries and four lookup slots.
   ///   - `Store([b])` → pointer at value idx 3, allocating one pointer
   ///     auxiliary + one memory-channel lookup slot (multiplicity pushed).
   ///   - `Load(1, 3)` → the loaded `b` at value idx 4, allocating one value
@@ -793,8 +797,8 @@ mod tests {
   ///   the block:
   ///   - `input_size = 2` (`a`, `b`).
   ///   - `selectors = 1` (the single `Return`).
-  ///   - `auxiliaries = 18`: multiplicity(1), rank bytes(6), call output(1),
-  ///     call order(7), store pointer(1), load value(1), multiplication(1).
+  ///   - `auxiliaries = 17`: multiplicity(1), rank bytes(6), call output(1),
+  ///     call gap(6), store pointer(1), load value(1), multiplication(1).
   ///   - `lookups = 10`: return(1), rank ranges(3), call/order(4), memory(2).
   ///
   /// - `g` (idx 1): `g(x) = x + 1`:
@@ -824,7 +828,7 @@ mod tests {
       layout: FunctionLayout {
         input_size: 2,
         selectors: 1,
-        auxiliaries: 18,
+        auxiliaries: 17,
         lookups: 10,
       },
       entry: true,
@@ -904,7 +908,7 @@ mod tests {
       layout: FunctionLayout {
         input_size: 1,
         selectors: 1,
-        auxiliaries: 16,
+        auxiliaries: 15,
         lookups: 8,
       },
       entry: true,
@@ -919,7 +923,7 @@ mod tests {
       layout: FunctionLayout {
         input_size: 1,
         selectors: 1,
-        auxiliaries: 15,
+        auxiliaries: 14,
         lookups: 8,
       },
       entry: false,
@@ -1015,7 +1019,7 @@ mod tests {
 
     // Function circuits: main width = inputs + selectors + auxiliaries, no
     // preprocessed matrix.
-    assert_eq!(shapes[0].main_width, 2 + 1 + 18);
+    assert_eq!(shapes[0].main_width, 2 + 1 + 17);
     assert_eq!(shapes[1].main_width, 1 + 1 + 7);
     // Memory of size 1: multiplicity + selector + pointer + 1 value.
     assert_eq!(shapes[2].main_width, 3 + 1);

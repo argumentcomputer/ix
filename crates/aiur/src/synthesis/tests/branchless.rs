@@ -26,7 +26,7 @@ fn empty_branch_toplevel() -> Toplevel {
     layout: FunctionLayout {
       input_size: 1,
       selectors: 1,
-      auxiliaries: 15,
+      auxiliaries: 14,
       lookups: 8,
     },
     entry: true,
@@ -79,7 +79,6 @@ fn empty_branch_cannot_redirect_a_call_to_memory() {
   row[1] = G::ONE;
   row[2] = G::ONE;
   row[9] = forged;
-  row[10] = G::ONE;
   let values = VarValues {
     preprocessed: [&[], &[]],
     main: [&row, &row],
