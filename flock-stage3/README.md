@@ -1,11 +1,11 @@
 # Experimental IxBy / Flock native workspace
 
 This independent workspace starts the generic IxBy execution backend. Its
-current implementation contains reusable primitive gates, constrained bounded
-bank access, full fixed-capacity BLAKE3 and IxBy byte-commitment circuits,
-ordered-frame control transitions with exact fuel/halting, and
-labelled native gadget proof regressions, not a complete IxBy interpreter or
-compiled Stage 2 verifier.
+current implementation connects canonical byte admission, a fixed-capacity
+scalar/control interpreter, BLAKE3/Exec commitments, and direct Flock proofs,
+alongside labelled native gadget regressions. The native constraint-to-reference
+refinement, broader crypto guest profile, and compiled Stage 2 verifier remain
+unfinished. See [the direct scalar execution boundary](../docs/IxbyFlockScalar.md).
 It is excluded from the root Cargo workspace and has no `aiur`, `multi-stark`,
 or `ix-terminal` dependency. Test-only Plonky3 field crates provide arithmetic
 differential oracles at the same revision used by the original tests.
@@ -40,7 +40,7 @@ cargo fmt --manifest-path flock-stage3/Cargo.toml --all -- --check
 cargo clippy --release --locked --manifest-path flock-stage3/Cargo.toml --workspace --all-targets -- -D warnings
 ```
 
-The current ordinary suite passed 62 tests. The two imported conformance proofs
+The current ordinary suite passed 88 tests. The two imported conformance proofs
 are opt-in and also passed locally on 2026-09-12, including their serialized
 round trips and malicious operand/path/root/proof mutations:
 
@@ -59,11 +59,20 @@ production capacity evidence.
 RAYON_NUM_THREADS=8 cargo test --release --locked --manifest-path flock-stage3/Cargo.toml --workspace conformance:: -- --ignored --test-threads=1
 ```
 
-The new backend must instantiate the proof-free setup contract in
-`Ix/Ixby/Flock/Contract.lean`, use a distinct Exec domain/public template, and
-compile one fixed interpreter topology per approved capacity/primitive class.
-Guest code, branch outcomes, private input, Stage 2 keys, and witness geometry
-must not determine its setup. See `docs/IxbyExec.md` for the theorem boundary.
+The native `ixby::exec::compile_exec_profile` now mirrors the proof-free input
+boundary in `Ix/Ixby/Flock/Contract.lean`, with a distinct Exec domain and a
+fixed public template containing only two varying statement-digest limbs.
+Guest code, branch outcomes, private input, Stage 2 keys and witness geometry
+do not determine its setup. The Lean compiler instance and native refinement
+remain to be supplied. See `docs/IxbyExec.md` for the theorem boundary.
+
+The direct execution regression proved 39 changed programs/inputs covering
+scalar values, both branch outcomes, recursion depths and all 20 enabled
+scalar opcodes under one setup. Each complete proof was 296,091 bytes. Fresh
+verification consumed only approved setup, the expected 32-byte full statement
+digest and proof; recomputed, locally valid advice for substituted program/input
+bytes rejected at the wiring check. These are small native Stage 3 executions,
+not completed formal M3 refinement, a certified Stage 2 guest, or Stage 4 proofs.
 
 ## Generic interpreter access component
 

@@ -139,7 +139,14 @@ jobs:
           RAYON_NUM_THREADS: 8
         run: |
           ulimit -v 33554432
-          timeout 300 cargo test --release --locked --manifest-path flock-stage3/Cargo.toml --workspace -- --ignored --test-threads=1
+          timeout 300 cargo test --release --locked --manifest-path flock-stage3/Cargo.toml --workspace -- --ignored --skip ixby::exec::proof_tests:: --test-threads=1
+      - name: Prove direct generic scalar executions
+        if: github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch'
+        env:
+          RAYON_NUM_THREADS: 4
+        run: |
+          ulimit -v 33554432
+          timeout 600 cargo test --release --locked --manifest-path flock-stage3/Cargo.toml --workspace ixby::exec::proof_tests:: -- --ignored --test-threads=1
 
   # The isolated terminal workspace is not part of root Cargo operations.
   # These are native core regressions, not the full closed IxBy proof gate.

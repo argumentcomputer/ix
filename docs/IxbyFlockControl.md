@@ -1,10 +1,11 @@
 # Fixed-capacity Flock control component
 
 Status: constrained ordered-frame control updates and real component proofs,
-with a Lean decoded-control refinement and finite-trace theorem. This is **not
-yet a generic Exec proof**. The native gate's resolved action still needs
-constrained instruction/operand/primitive resolution from authenticated code.
-The packing/table-to-decoded-rule proof and full codec wiring are unfinished.
+with a Lean decoded-control refinement and finite-trace theorem. The component
+proofs described here are not Exec proofs. The newer
+[scalar Exec network](IxbyFlockScalar.md) now connects this gate to canonical
+bytes and constrained instruction/operand/primitive resolution and has direct
+Flock proofs. The packing/table-to-decoded-rule proof remains unfinished.
 
 ## Representation and capacity
 
@@ -130,9 +131,10 @@ proof bytes, framing and domains reject. A recomputed, locally valid second
 step with a changed current function is rejected by fresh verification with
 `Wiring(Gkr(ProductMismatch))`, testing the actual inter-step connections.
 
-The complete native regression suite passes 62 ordinary and six opt-in
-real-proof tests. The merge-queue/manual CI tier runs all six; ordinary PR
-tests do not start a prover. All are bounded regressions, not production security review,
+The complete native regression suite passes 88 ordinary and seven opt-in
+real-proof tests, including the separately documented scalar Exec corpus.
+The merge-queue/manual CI tier runs all seven; ordinary PR tests do not start
+a prover. All are bounded regressions, not production security review,
 peak-resource measurements, or completion of the M3 execution gate.
 
 ```sh

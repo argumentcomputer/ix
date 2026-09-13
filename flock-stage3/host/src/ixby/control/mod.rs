@@ -1,7 +1,7 @@
 //! Fixed-capacity scalar/control CEK transitions. The action is an interface
 //! to constrained instruction fetch/operand/primitive resolution, NOT trusted
-//! advice and NOT another guest instruction set. Until that resolution and
-//! canonical byte admission are wired in, this is only a control component.
+//! advice and NOT another guest instruction set. `machine`/`exec` wire this
+//! component to canonical decoding and constrained instruction resolution.
 //!
 //! State words: (kind, remaining fuel, depth, 0), current frame, return value,
 //! then a live-prefix stack of saved frames. A frame is (function, block,

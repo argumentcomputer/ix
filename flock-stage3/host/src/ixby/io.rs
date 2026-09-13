@@ -1,6 +1,6 @@
 //! Setup-owned input/public layouts for generic circuit components. Recording
 //! the layout never evaluates private inputs. This is not an artifact decoder
-//! or the final Exec ABI: that adapter must additionally require exactly the
+//! or by itself the Exec ABI: the `exec` adapter additionally requires exactly
 //! two statement digest limbs and an approved setup/configuration.
 //!
 //! The shape builder consumes fixed public constants as input values as well.
@@ -33,6 +33,19 @@ pub struct InputLayout {
 }
 
 impl InputLayout {
+  /// Bind positions as well as values; a zero fixed word is not private advice.
+  pub fn digest(&self) -> [u8; 32] {
+    let mut bytes = b"IxBy/Flock/input-layout/v0\0".to_vec();
+    bytes.extend_from_slice(&(self.words.len() as u64).to_le_bytes());
+    bytes.extend_from_slice(&(self.private_words as u64).to_le_bytes());
+    for word in &self.words {
+      match word {
+        InputWord::Fixed(value) => fixed(&mut bytes, *value),
+        InputWord::Private(index) => indexed(&mut bytes, *index),
+      }
+    }
+    *blake3::hash(&bytes).as_bytes()
+  }
   pub fn private_words(&self) -> usize {
     self.private_words
   }
@@ -58,6 +71,19 @@ pub struct PublicLayout {
 }
 
 impl PublicLayout {
+  /// The template identity includes each fixed word and each output index.
+  pub fn digest(&self) -> [u8; 32] {
+    let mut bytes = b"IxBy/Flock/public-layout/v0\0".to_vec();
+    bytes.extend_from_slice(&(self.words.len() as u64).to_le_bytes());
+    bytes.extend_from_slice(&(self.outputs as u64).to_le_bytes());
+    for word in &self.words {
+      match word {
+        PublicWord::Fixed(value) => fixed(&mut bytes, *value),
+        PublicWord::Output(index) => indexed(&mut bytes, *index),
+      }
+    }
+    *blake3::hash(&bytes).as_bytes()
+  }
   pub fn outputs(&self) -> usize {
     self.outputs
   }
@@ -74,6 +100,16 @@ impl PublicLayout {
         .collect(),
     )
   }
+}
+
+fn fixed(bytes: &mut Vec<u8>, value: F128) {
+  bytes.push(0);
+  bytes.extend_from_slice(&value.lo.to_le_bytes());
+  bytes.extend_from_slice(&value.hi.to_le_bytes());
+}
+fn indexed(bytes: &mut Vec<u8>, index: usize) {
+  bytes.push(1);
+  bytes.extend_from_slice(&(index as u64).to_le_bytes());
 }
 
 pub struct LayoutEmitter<'a, B> {
@@ -166,5 +202,56 @@ mod tests {
     assert!(inputs.assign(&[value; 2]).is_err());
     assert!(public.instantiate(&[value]).is_err());
     assert!(public.instantiate(&[value; 3]).is_err());
+  }
+
+  #[test]
+  fn identities_bind_fixed_zero_positions_output_order_and_private_layout() {
+    let template = PublicLayout {
+      words: vec![
+        PublicWord::Fixed(F128::ZERO),
+        PublicWord::Output(0),
+        PublicWord::Output(1),
+      ],
+      outputs: 2,
+    };
+    for words in [
+      vec![
+        PublicWord::Output(0),
+        PublicWord::Fixed(F128::ZERO),
+        PublicWord::Output(1),
+      ],
+      vec![
+        PublicWord::Fixed(F128::ZERO),
+        PublicWord::Output(1),
+        PublicWord::Output(0),
+      ],
+      vec![
+        PublicWord::Fixed(F128::new(1, 0)),
+        PublicWord::Output(0),
+        PublicWord::Output(1),
+      ],
+    ] {
+      assert_ne!(
+        template.digest(),
+        PublicLayout { words, outputs: 2 }.digest()
+      );
+    }
+    let first = InputLayout {
+      words: vec![InputWord::Fixed(F128::ZERO), InputWord::Private(0)],
+      private_words: 1,
+    };
+    let second = InputLayout {
+      words: vec![InputWord::Private(0), InputWord::Fixed(F128::ZERO)],
+      private_words: 1,
+    };
+    assert_eq!(
+      first.assign(&[F128::ZERO]).unwrap(),
+      second.assign(&[F128::ZERO]).unwrap()
+    );
+    assert_ne!(first.digest(), second.digest());
+    assert_ne!(
+      PublicLayout::default().digest(),
+      InputLayout::default().digest()
+    );
   }
 }

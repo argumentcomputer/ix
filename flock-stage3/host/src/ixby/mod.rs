@@ -1,16 +1,21 @@
-//! Fixed-capacity components of the generic IxBy execution relation.
+//! Fixed-capacity scalar/control IxBy execution and reusable components.
 //!
-//! These gates are interpreter building blocks, not an Exec proof or a host
-//! execution oracle. The complete machine and its refinement remain in progress.
+//! `exec` connects canonical bytes, the machine, commitments and direct Flock
+//! proofs. Native constraint-to-reference refinement and the broader crypto
+//! guest profile remain unfinished; this is not a Stage 4 compact proof.
 
 pub mod access;
 mod bits;
 pub mod bounded_hash;
 pub mod commitment;
 pub mod control;
+pub mod decode;
+pub mod exec;
 pub mod hash_control;
 pub mod io;
 pub mod length;
+pub mod machine;
+pub mod primitive;
 pub mod select;
 pub mod value;
 

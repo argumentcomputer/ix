@@ -2,8 +2,10 @@
 
 Status: execution statements, public-claim binding, setup interfaces, and
 conditional composition are implemented. The optional Stage 2 specialization
-now composes the independent source refinement. The generic Flock interpreter,
-complete terminal relation, and Compilatrix certificate remain unfinished.
+now composes the independent source refinement. Direct native Flock proofs of
+the small scalar/control interpreter are implemented; native refinement, the
+larger crypto guest profile, complete terminal relation and Compilatrix
+certificate remain unfinished.
 
 ## Statements and public claims
 
@@ -83,24 +85,25 @@ unsupported/duplicate opcodes, invalid profiles, and undersized capacities.
 The fixed public template distinguishes fixed F128 words from the low/high
 limbs of the complete Exec digest and requires exactly one slot for each limb.
 Terminal setup consumes that compiled generic verifier artifact plus terminal
-protocol, implementation, and SRS identities. These are typed interfaces;
-the native compilers and their constraint soundness are still to be supplied.
+protocol, implementation, and SRS identities. The native scalar compiler now
+mirrors the proof-free Exec input boundary. Its Lean instance/refinement and
+the native terminal compiler remain to be supplied.
 
-The native interpreter work now has constrained bounded-bank access, full
-fixed-capacity BLAKE3, the exact four-component/final-digest byte-commitment
-chain, and ordered-frame control transitions with exact fuel and halting
-padding. Different reads, private byte lengths and resolved control traces
-have real Flock conformance proofs under fixed setups, including fresh
-verification and corrupted inter-step wiring rejection. The verifier does not
-run a host hash/execution oracle on private artifacts.
+The native scalar interpreter now connects whole-image/input decoding,
+instruction fetch, operand selection, all 20 enabled scalar primitives,
+ordered-frame transitions, exact fuel/halting, derived canonical output bytes,
+and the exact four-component/final-digest byte-commitment chain. Thirty-nine
+changed executions have real direct Flock proofs under one setup. Fresh
+verification uses only the approved interpreter, expected S and proof, and
+rejects locally valid substituted decoder advice at the wiring check. It does
+not run a host hash/execution oracle on private artifacts.
 The Lean decoded-control rules now refine reference steps and finite byte
 execution with explicit instruction, operand, callee and codec premises.
-These remain components only: canonical image/input decoding and whole-image
-admission, constrained instruction/operand/primitive resolution,
-execution-derived output serialization, and the native constraint-to-
-`Codec.Evaluates` theorem are unfinished. A matching hash of arbitrary bytes
-or a trace of freely resolved actions does not establish those properties.
-See the [native hash/commitment construction](IxbyFlockHash.md) and
+The native constraint-to-`Codec.Evaluates` theorem remains unfinished, as do
+the broader byte/structured-value profile and complete terminal relation.
+Native acceptance and matching regression outputs do not establish formal
+refinement. See the [direct scalar execution construction](IxbyFlockScalar.md),
+[native hash/commitment construction](IxbyFlockHash.md) and
 [control construction and logical proof boundary](IxbyFlockControl.md).
 
 Application policy must pin the exact source declaration closure/version,
