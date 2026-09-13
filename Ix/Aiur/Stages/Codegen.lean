@@ -389,12 +389,10 @@ private def emitCall (out : Nat) (callee : FunIdx) (args : Array ValIdx)
     if opUn then ""
     else
       s!" if !unconstrained \{ record.function_queries[{callee}].bump_multiplicity(__i); }"
-  -- Skip `try_into().unwrap()` on the cache hit: we statically know
-  -- the cached output has exactly `OUT_{callee}` elements (only we
-  -- ever insert into this slot via the matching aiur_fn_{callee}
-  -- `Ctrl::Return`). An unchecked array copy is sound.
+  -- Decode the cached output directly into a stack array. The row width
+  -- is checked and each packed column widens losslessly on insertion.
   let retExpr : String :=
-    s!" let __ret: [G; OUT_{callee}] = unsafe \{ *(record.function_queries[{callee}].output_at(__i).as_ptr() as *const [G; OUT_{callee}]) }; __ret"
+    s!" record.function_queries[{callee}].output_at(__i).to_array::<OUT_{callee}>()"
   -- A zero-multiplicity entry was computed only as an unconstrained
   -- hint; a constrained caller replays the body (constrained: `__cu` is
   -- false on that path) so promotion recurses through the whole
@@ -427,7 +425,7 @@ private def emitStore (out : Nat) (values : Array ValIdx) : Array RustStmt :=
     s!" let __mq = record.memory_queries.get_mut(&{size}).ok_or(ExecError::InvalidMemorySize({size}))?;" ++
     s!" if let Some(__i) = __mq.get_index_of(&__values[..]) \{" ++
     s!" if !unconstrained \{ __mq.bump_multiplicity(__i); }" ++
-    s!" __mq.output_at(__i)[0]" ++
+    s!" __mq.output_at(__i).at(0)" ++
     s!" } else \{" ++
     s!" let __ptr = G::from_usize(__mq.len());" ++
     s!" __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained));" ++
@@ -444,7 +442,7 @@ private def emitLoad (out : Nat) (size : Nat) (ptr : ValIdx) : Array RustStmt :=
     s!" if __ptr_usize >= __mq.len() \{ return Err(ExecError::UnboundPointer \{ ptr: __ptr_u64, size: {size} }); }" ++
     s!" if !unconstrained \{ __mq.bump_multiplicity(__ptr_usize); }" ++
     s!" let (__args, _) = __mq.get_index(__ptr_usize).expect(\"bounds checked above\");" ++
-    s!" let __arr: [G; {size}] = __args[..{size}].try_into().unwrap(); __arr }"
+    s!" __args.to_array::<{size}>() }"
   let mut stmts : Array RustStmt := #[
     .letStmt false "__loaded" (some s!"[G; {size}]") (.lit blockExpr)
   ]

@@ -26,7 +26,7 @@ use crate::{
   function_channel,
   gadgets::{bytes1::Bytes1, bytes2::Bytes2},
   memory::Memory,
-  querymap::QueryMap,
+  querymap::{QueryMap, QuerySlice},
   u8_add_channel, u8_and_channel, u8_bit_decomposition_channel,
   u8_less_than_channel, u8_mul_channel, u8_or_channel, u8_range_check_channel,
   u8_shift_left_channel, u8_shift_right_channel, u8_sub_channel,
@@ -123,8 +123,8 @@ struct TraceContext<'a> {
   function_index: G,
   multiplicity: G,
   rank: u64,
-  inputs: &'a [G],
-  output: &'a [G],
+  inputs: QuerySlice<'a>,
+  output: QuerySlice<'a>,
   query_record: &'a QueryRecord,
 }
 
@@ -268,14 +268,12 @@ impl Function {
       context.inputs.len(),
       "Argument mismatch"
     );
-    // Variable to value map
-    let map = &mut context.inputs.iter().map(|arg| (*arg, 1)).collect();
-    // One column per input
-    context
-      .inputs
-      .iter()
-      .enumerate()
-      .for_each(|(i, arg)| slice.inputs[i] = *arg);
+    // Decode once for both the input columns and the variable-to-value map.
+    let map = &mut Vec::with_capacity(context.inputs.len());
+    for (i, arg) in context.inputs.iter().enumerate() {
+      slice.inputs[i] = arg;
+      map.push((arg, 1));
+    }
     // Push the multiplicity
     slice.push_auxiliary(index, context.multiplicity);
     if row_uses_rank(context.call_components, context.function) {
@@ -448,8 +446,8 @@ impl Op {
         let queries = &context.query_record.function_queries[*function_index];
         let result = queries.get(&inputs).expect("Cannot find query result");
         for f in result.output.iter() {
-          map.push((*f, 1));
-          slice.push_auxiliary(index, *f);
+          map.push((f, 1));
+          slice.push_auxiliary(index, f);
         }
         if !op_unconstrained {
           let kind = call_rank(
@@ -460,7 +458,7 @@ impl Op {
           let rank = if kind == CallRank::Zero { 0 } else { result.rank };
           let args = function_lookup_args(
             G::from_usize(*function_index),
-            &inputs,
+            QuerySlice::Fields(&inputs),
             result.output,
             rank,
           );
@@ -490,7 +488,11 @@ impl Op {
         );
         map.push((ptr, 1));
         slice.push_auxiliary(index, ptr);
-        let args = Memory::lookup_args(G::from_usize(size), ptr, &values);
+        let args = Memory::lookup_args(
+          G::from_usize(size),
+          ptr,
+          QuerySlice::Fields(&values),
+        );
         slice.push_lookup(index, G::ONE, &args);
       },
       Op::Load(size, ptr) => {
@@ -505,8 +507,8 @@ impl Op {
         let (values, _) =
           memory_queries.get_index(ptr_usize).expect("Unbound pointer");
         for f in values.iter() {
-          map.push((*f, 1));
-          slice.push_auxiliary(index, *f);
+          map.push((f, 1));
+          slice.push_auxiliary(index, f);
         }
         let args = Memory::lookup_args(G::from_usize(*size), ptr, values);
         slice.push_lookup(index, G::ONE, &args);
@@ -776,13 +778,13 @@ impl Op {
 
 fn function_lookup_args(
   function_index: G,
-  inputs: &[G],
-  output: &[G],
+  inputs: QuerySlice<'_>,
+  output: QuerySlice<'_>,
   rank: u64,
 ) -> Vec<G> {
   let mut args = vec![function_channel(), function_index];
-  args.extend(inputs);
-  args.extend(output);
+  args.extend(inputs.iter());
+  args.extend(output.iter());
   args.push(G::from_u64(rank));
   args
 }

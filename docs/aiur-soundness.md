@@ -227,6 +227,29 @@ avoids retaining a growing tree of unconstrained queries; the byte checks
 and constrained arithmetic are unchanged. [Byte-hint regressions](../Tests/Ix/IxVM/ByteHints.lean)
 cover boundary values, incorrect advice and native prove/verify cases.
 
+Query keys and cached outputs use segmented, per-column byte, u32 or
+full-field storage. Widths come from actual canonical field values. A wider
+value widens only the active segment; completed segments keep their original
+layout. Every lookup still hashes canonical values and compares the complete
+decoded key, so hash collisions and alternative field representations cannot
+alias distinct keys. Insertion indices, multiplicities and completion
+timestamps retain their existing meaning.
+
+The interpreter, generated executors and witness builders decode these
+values into their existing field representations. Cache hits decode directly
+into stack arrays. The storage encoding adds no trace columns or constraints
+and does not change the AIR or verification key. The Rust query-view API does
+change, so regenerate all three executors and rebuild them together.
+[Storage regressions](../crates/aiur/src/querymap/tests.rs) compare full-width
+and packed rows, segment-boundary widening, hint promotion, function and
+memory traces, and stage-two lookup witnesses.
+
+Record memory estimates count the actual encoded key/output payload, plus
+hashes, multiplicities, table-index estimates and retained completion times.
+They exclude layout/allocation overhead and temporary coexistence of old and
+new active segments during widening; they remain estimates rather than
+process RSS bounds.
+
 Function witness construction stores a member index and query index per
 active row, sharing function metadata across the member's rows. On a 64-bit
 host this reduces per-row metadata from 72 to 16 bytes. Counting active
@@ -254,8 +277,11 @@ specialization also changes the IxVM AIR and key, and extends the internal
 Lean/Rust bytecode representation; rebuild both sides of the FFI together.
 Lookup retuning changes affected stage-2 layouts, quotient degrees and keys,
 so it also requires rebuilding systems and regenerating proofs.
-The removed byte-advice helper changes compiled function indices; regenerate
-the IxVM executor and rebuild its systems together with the Lean sources.
+The byte-advice, carry, multiplication and substitution changes alter IxVM
+function indices; regenerate its executor and matching systems from the
+updated Lean sources. Packed query views also change the internal Rust API
+used by all three executors: regenerate and rebuild all three, even though
+packing alone leaves the AIR and keys unchanged.
 
 The native regressions cover supplied false witnesses as well as honest
 execution, finite recursion, shared callees, advice promotion and grouped
@@ -268,12 +294,10 @@ Aiur proving corpus with specialized layouts. Run them with:
 cargo test --locked --release -p aiur --features parallel
 cargo clippy --locked --release -p aiur --all-targets --features parallel -- -D warnings
 lake exe ix codegen --check
-lake test -- aiur-cross aiur-cost aiur-prove aiur-components ixvm-byte-hints recursive-verifier ix-aggr
+lake test -- ixvm-subst-projection ixvm-fused-mul ixvm-carry-add aiur-cross aiur-cost aiur-prove aiur-components ixvm-byte-hints recursive-verifier ix-aggr
 lake test -- --ignored ixvm
 ```
 
 These repairs and regression tests address the defects above. They do not
 establish complete compiler preservation or cryptographic soundness.
-
-
 

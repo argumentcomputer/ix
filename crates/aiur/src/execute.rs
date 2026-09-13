@@ -236,6 +236,16 @@ fn dump_query_stats(record: &QueryRecord, tag: &str) {
     completion_entries * size_of::<u64>(),
     record_retained_bytes(record)
   );
+  let function_payload: usize =
+    record.function_queries.iter().map(QueryMap::retained_bytes).sum();
+  let memory_payload: usize =
+    record.memory_queries.values().map(QueryMap::retained_bytes).sum();
+  let memory_elems: usize =
+    record.memory_queries.values().map(QueryMap::retained_elems).sum();
+  eprintln!(
+    "[aiur-stats {tag}] query payload: functions {function_payload} bytes, memory {memory_payload} bytes; full-field equivalent {} bytes",
+    (total_elems + memory_elems) * size_of::<G>()
+  );
   for (i, n, e) in rows.iter().take(30) {
     eprintln!("  fn{i:<4} entries={n:<12} g_elems={e}");
   }
@@ -393,7 +403,7 @@ impl Function {
             if !unconstrained {
               memory_queries.bump_multiplicity(i);
             }
-            map.extend_from_slice(memory_queries.output_at(i));
+            map.extend(memory_queries.output_at(i).iter());
           } else {
             let ptr = G::from_usize(memory_queries.len());
             memory_queries.insert(
@@ -425,7 +435,7 @@ impl Function {
           }
           let (args, _) =
             memory_queries.get_index(ptr_usize).expect("bounds checked above");
-          map.extend_from_slice(args);
+          map.extend(args.iter());
         },
         ExecEntry::Op(Op::AssertEq(xs, ys, msg)) => {
           if xs.len() != ys.len() {
@@ -982,7 +992,8 @@ fn find_klimbs_u64(
   let mut tail_ptr = queries
     .get(&nil_key)
     .ok_or_else(|| "List<U64> Nil node not recorded".to_string())?
-    .output[0];
+    .output
+    .at(0);
   for limb in limbs.iter().rev() {
     let mut key: Vec<G> = Vec::with_capacity(10);
     key.push(G::ZERO); // Cons tag (first variant of ListNode‹U64›)
@@ -995,7 +1006,8 @@ fn find_klimbs_u64(
       .ok_or_else(|| {
         format!("List<U64> Cons node for limb {limb} not recorded")
       })?
-      .output[0];
+      .output
+      .at(0);
   }
   Ok(tail_ptr)
 }
@@ -1020,7 +1032,7 @@ fn read_klimbs_u64(
     let (key, _) = queries.get_index(ptr_idx).ok_or_else(|| {
       format!("unbound ptr {ptr_u64} in memory[10] (walking List<U64>)")
     })?;
-    let tag = key[0].as_canonical_u64();
+    let tag = key.at(0).as_canonical_u64();
     // `enum ListNode { Cons, Nil }` in Ix/IxVM/Core.lean — Cons is the
     // first variant (tag 0), Nil the second (tag 1).
     if tag == 1 {
@@ -1032,15 +1044,15 @@ fn read_klimbs_u64(
       ));
     }
     let mut limb_bytes = [0u8; 8];
-    for k in 0..8 {
-      let b = key[1 + k].as_canonical_u64();
+    for (k, byte) in limb_bytes.iter_mut().enumerate() {
+      let b = key.at(1 + k).as_canonical_u64();
       if b >= 256 {
         return Err(format!("limb byte {b} out of u8 range"));
       }
-      limb_bytes[k] = u8::try_from(b).expect("range-checked above");
+      *byte = u8::try_from(b).expect("range-checked above");
     }
     limbs.push(u64::from_le_bytes(limb_bytes));
-    ptr = key[9];
+    ptr = key.at(9);
   }
 }
 
@@ -1086,7 +1098,7 @@ fn build_klimbs_u64(
   let nil_key: Vec<G> =
     std::iter::once(G::ONE).chain((0..9).map(|_| G::ZERO)).collect();
   let mut tail_ptr = if let Some(out) = queries.get_mut(&nil_key) {
-    out.output[0]
+    out.output.at(0)
   } else {
     let ptr = G::from_usize(queries.len());
     queries.insert(&nil_key, &[ptr], G::ZERO);
@@ -1102,7 +1114,7 @@ fn build_klimbs_u64(
     }
     key.push(tail_ptr);
     tail_ptr = if let Some(out) = queries.get_mut(&key) {
-      out.output[0]
+      out.output.at(0)
     } else {
       let ptr = G::from_usize(queries.len());
       queries.insert(&key, &[ptr], G::ZERO);
@@ -1112,24 +1124,24 @@ fn build_klimbs_u64(
   Ok(tail_ptr)
 }
 
-/// Approximate retained bytes of a record's query maps: field elements
-/// (keys + outputs) at 8 bytes plus ~21 bytes of per-entry index
+/// Approximate retained bytes of a record's query maps: encoded key/output
+/// payload plus ~21 bytes of per-entry index
 /// overhead (hash-table slot, stored hash, multiplicity), and 8 bytes per
 /// ranked function entry for completion order. Feeds the
 /// witness phase of the prover RAM model
 /// ([`crate::synthesis::AiurSystem::peak_prove_bytes`]).
 pub fn record_retained_bytes(record: &QueryRecord) -> usize {
-  let mut elems = 0usize;
+  let mut payload = 0usize;
   let mut entries = 0usize;
   let mut completion_entries = 0usize;
   for m in &record.function_queries {
-    elems += m.retained_elems();
+    payload += m.retained_bytes();
     entries += m.len();
     completion_entries += m.completion_entries();
   }
   for (_, m) in &record.memory_queries {
-    elems += m.retained_elems();
+    payload += m.retained_bytes();
     entries += m.len();
   }
-  elems * size_of::<G>() + entries * 21 + completion_entries * size_of::<u64>()
+  payload + entries * 21 + completion_entries * size_of::<u64>()
 }

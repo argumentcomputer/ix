@@ -227,11 +227,11 @@ fn acyclic_maps_omit_timestamps_without_changing_promoted_call_order() {
     assert_eq!(row.multiplicity, G::from_u8(if n == 4 { 2 } else { 1 }));
   }
   let payload: usize =
-    record.function_queries.iter().map(|m| m.retained_elems()).sum();
+    record.function_queries.iter().map(|m| m.retained_bytes()).sum();
   let entries: usize = record.function_queries.iter().map(|m| m.len()).sum();
   assert_eq!(
     crate::execute::record_retained_bytes(&record),
-    payload * size_of::<G>() + entries * 21 + 5 * size_of::<u64>()
+    payload + entries * 21 + 5 * size_of::<u64>()
   );
 }
 

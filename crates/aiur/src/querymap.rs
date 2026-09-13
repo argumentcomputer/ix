@@ -6,10 +6,14 @@ use std::sync::{
 
 use crate::{G, call_order::RANK_BOUND};
 
+mod storage;
+use storage::PackedStore;
+pub use storage::{PackedRow, QuerySlice};
+
 /// Immutable view of one query entry.
 #[derive(Clone, Copy)]
 pub struct QueryRef<'a> {
-  pub(crate) output: &'a [G],
+  pub(crate) output: QuerySlice<'a>,
   pub multiplicity: G,
   pub(crate) rank: u64,
 }
@@ -17,7 +21,7 @@ pub struct QueryRef<'a> {
 /// Mutable view of one query entry: the output is fixed at insertion,
 /// only the multiplicity is bumped on memo hits.
 pub struct QueryRefMut<'a> {
-  pub output: &'a [G],
+  pub output: QuerySlice<'a>,
   pub multiplicity: &'a mut G,
 }
 
@@ -30,14 +34,11 @@ fn hash_g_slice(key: &[G]) -> u64 {
   h.finish()
 }
 
-/// Entries per storage segment (2^20). Segments are fixed-size, so growth
-/// never reallocates or copies: appending past a segment boundary just
-/// allocates the next segment. This removes the O(len) memmove of a growing
-/// `Vec` AND its transient 2x memory spike — on kernel-heavy executions the
-/// arenas reach tens of GB, where a doubling copy is both seconds of pure
-/// memmove and the difference between fitting in RAM and OOM. Capacity is
-/// only reserved virtual address space; physical pages are committed on
-/// first touch, so idle circuits stay tiny.
+/// Entries per storage segment (2^20). Crossing a segment boundary allocates
+/// a new segment without copying older rows. Packed columns may widen by
+/// copying the active segment; closed segments retain their original layout.
+/// Capacity reserves virtual address space, with physical pages committed
+/// on first touch.
 const SEG_BITS: usize = 20;
 const SEG_ENTRIES: usize = 1 << SEG_BITS;
 const SEG_MASK: usize = SEG_ENTRIES - 1;
@@ -72,7 +73,7 @@ impl<T: Copy> HugeVec<T> {
   #[cfg(target_os = "linux")]
   fn with_capacity(cap: usize) -> Self {
     assert!(cap > 0, "HugeVec capacity must be positive");
-    let bytes = cap * size_of::<T>();
+    let bytes = cap.checked_mul(size_of::<T>()).expect("query arena overflow");
     let ptr = unsafe {
       let p = libc::mmap(
         std::ptr::null_mut(),
@@ -195,10 +196,6 @@ impl SegStore {
     }
     self.entries += 1;
   }
-
-  fn retained_elems(&self) -> usize {
-    self.entries * self.stride
-  }
 }
 
 /// Segmented store of per-entry `u64` key hashes. Keeping the hashes lets
@@ -261,18 +258,14 @@ impl CompletionOrder {
 
 /// Append-only query store with a hash index.
 ///
-/// Functionally the insertion-ordered map `args -> (output, multiplicity)`
-/// it replaces (`FxIndexMap<Vec<G>, QueryResult>`) — but every circuit has
-/// a FIXED key arity and output width, so keys and outputs live in flat
-/// segmented `G` arenas addressed by entry index, and the hash table holds
-/// only `u32` indices. This cuts per-entry overhead from ~130 B (two heap
-/// `Vec`s + IndexMap bucket + allocator metadata) to the raw field
-/// elements plus ~21 B of index + stored hash. The record IS the proof
-/// witness, so entries cannot be dropped — only stored compactly; on
-/// kernel-heavy executions it is the dominant RAM consumer (billions of
-/// entries). Segmented storage keeps growth copy-free (no doubling
-/// memmove, no transient 2x RSS), stored hashes make table growth a cheap
-/// sequential pass, and segments are hugepage-advised (see `advise_huge`).
+/// Every circuit has a fixed key arity and output width. Keys and outputs
+/// use segmented byte/u32/full-field columns selected from canonical values.
+/// Encoding preserves exact field equality; stored hashes accelerate table
+/// growth but never replace key comparison. Multiplicities retain full-field
+/// storage, and ranked function maps retain their completion timestamps.
+///
+/// The hash table stores stable u32 row indices. Compressed rows decode into
+/// the existing field traces, without retaining another full-width copy.
 ///
 /// Entry index == insertion order; memory circuits use it as the pointer
 /// value, mirroring the old `IndexMap::get_index_of` semantics.
@@ -280,8 +273,8 @@ pub struct QueryMap {
   /// Output width; inferred on first insert (not statically available in
   /// `FunctionLayout`).
   out_stride_set: bool,
-  keys: SegStore,
-  outs: SegStore,
+  keys: PackedStore,
+  outs: PackedStore,
   mults: SegStore,
   hashes: SegU64s,
   table: hashbrown::HashTable<u32>,
@@ -290,10 +283,14 @@ pub struct QueryMap {
 
 impl QueryMap {
   pub fn new(key_stride: usize) -> Self {
+    Self::with_storage(key_stride, true)
+  }
+
+  fn with_storage(key_stride: usize, compact: bool) -> Self {
     Self {
       out_stride_set: false,
-      keys: SegStore::new(key_stride),
-      outs: SegStore::new(0),
+      keys: PackedStore::new(key_stride, compact),
+      outs: PackedStore::new(0, compact),
       mults: SegStore::new(1),
       hashes: SegU64s::new(),
       table: hashbrown::HashTable::new(),
@@ -321,10 +318,15 @@ impl QueryMap {
     self.mults.entries == 0
   }
 
-  /// Total retained field elements (keys + outputs); used by the
+  /// Logical field elements (keys + outputs), before encoding; used by the
   /// `IX_AIUR_QUERY_STATS` RAM-attribution dump.
   pub fn retained_elems(&self) -> usize {
     self.keys.retained_elems() + self.outs.retained_elems()
+  }
+
+  /// Encoded key/output payload, excluding hashes, multiplicities and index.
+  pub fn retained_bytes(&self) -> usize {
+    self.keys.retained_bytes() + self.outs.retained_bytes()
   }
 
   /// Number of stored completion timestamps. Certified acyclic functions
@@ -335,10 +337,13 @@ impl QueryMap {
 
   pub fn get_index_of(&self, key: &[G]) -> Option<usize> {
     debug_assert_eq!(key.len(), self.keys.stride);
-    let hash = hash_g_slice(key);
+    self.find_hashed(key, hash_g_slice(key))
+  }
+
+  fn find_hashed(&self, key: &[G], hash: u64) -> Option<usize> {
     self
       .table
-      .find(hash, |&i| self.keys.at(i as usize) == key)
+      .find(hash, |&i| self.keys.at(i as usize).matches(key))
       .map(|&i| i as usize)
   }
 
@@ -365,9 +370,9 @@ impl QueryMap {
     self.mults.at(i)[0]
   }
 
-  /// Output slice of entry `i`.
+  /// Lossless output view of entry `i`.
   #[inline]
-  pub fn output_at(&self, i: usize) -> &[G] {
+  pub fn output_at(&self, i: usize) -> QuerySlice<'_> {
     self.outs.at(i)
   }
 
@@ -383,7 +388,7 @@ impl QueryMap {
     if let Some(i) = self.get_index_of(key) {
       // The only ordinary way to execute an already cached function is
       // constrained promotion of an unconstrained hint entry.
-      debug_assert_eq!(self.outs.at(i), output);
+      debug_assert!(self.outs.at(i).matches(output));
       if constrained {
         self.bump_multiplicity(i);
         // Promotion executes/promotes children first, so its new completion
@@ -402,18 +407,16 @@ impl QueryMap {
   /// only insert on a confirmed miss, and a same-key re-entrant call
   /// would loop forever before reaching its own insert.
   pub fn insert(&mut self, key: &[G], output: &[G], multiplicity: G) {
-    debug_assert_eq!(key.len(), self.keys.stride);
+    assert_eq!(key.len(), self.keys.stride);
     debug_assert!(self.get_index_of(key).is_none());
-    if !self.out_stride_set {
-      self.outs.stride = output.len();
-      self.out_stride_set = true;
-    } else {
-      debug_assert_eq!(output.len(), self.outs.stride);
+    if self.out_stride_set {
+      assert_eq!(output.len(), self.outs.stride);
     }
     let hash = hash_g_slice(key);
     let i = u32::try_from(self.mults.entries).expect("query map overflow");
     self.keys.push(key);
     self.outs.push(output);
+    self.out_stride_set = true;
     self.mults.push(&[multiplicity]);
     self.hashes.push(hash);
     if let Some(order) = &mut self.completion {
@@ -426,14 +429,17 @@ impl QueryMap {
 
   /// Entry at insertion index `i`: the key slice plus a mutable handle on
   /// the multiplicity (memory `Load` bumps the pointed-to row's count).
-  pub fn get_index_mut(&mut self, i: usize) -> Option<(&[G], &mut G)> {
+  pub fn get_index_mut(
+    &mut self,
+    i: usize,
+  ) -> Option<(QuerySlice<'_>, &mut G)> {
     if i >= self.mults.entries {
       return None;
     }
     Some((self.keys.at(i), &mut self.mults.at_mut(i)[0]))
   }
 
-  pub fn get_index(&self, i: usize) -> Option<(&[G], QueryRef<'_>)> {
+  pub fn get_index(&self, i: usize) -> Option<(QuerySlice<'_>, QueryRef<'_>)> {
     if i >= self.len() {
       return None;
     }
@@ -447,7 +453,7 @@ impl QueryMap {
     ))
   }
 
-  pub fn iter(&self) -> impl Iterator<Item = (&[G], QueryRef<'_>)> {
+  pub fn iter(&self) -> impl Iterator<Item = (QuerySlice<'_>, QueryRef<'_>)> {
     (0..self.len()).map(|i| {
       (
         self.keys.at(i),
@@ -460,3 +466,6 @@ impl QueryMap {
     })
   }
 }
+
+#[cfg(test)]
+mod tests;
