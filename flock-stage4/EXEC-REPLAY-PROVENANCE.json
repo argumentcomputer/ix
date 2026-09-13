@@ -1,0 +1,32 @@
+{
+  "schema": "ixby-stage4-exec-replay-import-v0",
+  "source_revision": "8fdb3eab26491f2e79a6004016c2b7b96d0b4bda",
+  "source_branch": "jcb/flock-stage4",
+  "source_snapshot": "/home/jcb/projects/00/ix-flock-stage4",
+  "recorded_before_import": true,
+  "scope": "Generic native Flock recording and algebra exporters only. The historical Stage3ArtifactV1 reconstruction, statement wrapper, root-slot mapping, proof codec, and terminal acceptance API are excluded.",
+  "sources": [
+    {
+      "path": "flock-stage3/host/src/stage4.rs",
+      "sha256": "a57d977c673648fad530976de40bf94406fc2a0b2aed4b9e5f8b94d6ae31c18d",
+      "destination": "flock-stage4/exec/src/replay.rs"
+    },
+    {
+      "path": "flock-stage3/host/src/fri.rs",
+      "sha256": "f39bbb2001b24d5bdba2b3add65a2d59496a52aa9954e7596392cd65a2a05b0b",
+      "reuse": "record_fri_circuit_verifier phase composition is a reference for the new generic Exec adapter; the source file is not imported."
+    },
+    {
+      "path": "flock-stage3/host/src/stage4_terminal.rs",
+      "sha256": "f757d5150e5292f1c649e0ad76e0bd1c46938517c0b61b30bc3f774dd8fa5602",
+      "reuse": "Read-only reference. Not imported; native root-discharge callbacks are not closed-relation terminal acceptance."
+    }
+  ],
+  "semantic_changes": [
+    "Public-slot constants come from the approved CompiledExec template, not mutation probes against one proof's public vector.",
+    "Exec-only strict decoding and native verification are owned by ixby-flock; no Stage 2 artifact or legacy fallback is admitted.",
+    "Generic circuit binding constrains S = H4(P,B,I,O), public Q = H5(P,B,O), and the exact approved Flock statement prefix. It reconstructs the public vector from fixed words and computed S.",
+    "Independent proof-free symbolic wiring and Boolean PIOP compilers reconstruct exact DAGs and PCS claim wires from CompiledExec; native replay must match them structurally.",
+    "Witness replay is not a proof-free setup compiler or terminal acceptance certificate. Those obligations are tracked separately."
+  ]
+}

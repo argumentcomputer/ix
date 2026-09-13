@@ -286,7 +286,7 @@ fn payload<'a>(
     .ok_or(F128StatementCircuitError::MissingPayload(kind))
 }
 
-fn bind_constant_digest(
+pub(crate) fn bind_constant_digest(
   builder: &mut R1csBuilder,
   payload: &[F128TranscriptWordV1],
   expected: [u8; 32],
@@ -317,7 +317,7 @@ fn bind_constant_digest(
   Ok(())
 }
 
-fn bind_computed_digest(
+pub(crate) fn bind_computed_digest(
   builder: &mut R1csBuilder,
   computed: &[Word32; 8],
   payload: &[F128TranscriptWordV1],
@@ -352,7 +352,7 @@ fn bind_computed_digest(
   Ok(())
 }
 
-fn constrain_public_values_digest(
+pub(crate) fn constrain_public_values_digest(
   builder: &mut R1csBuilder,
   public_values: &[F128VariablesV1],
 ) -> Result<[Word32; 8], F128StatementCircuitError> {
@@ -399,7 +399,7 @@ fn f128_words(values: &[F128VariablesV1]) -> Vec<Word32> {
     .collect()
 }
 
-fn constrain_chunk(
+pub(crate) fn constrain_chunk(
   builder: &mut R1csBuilder,
   words: &[Word32],
   byte_length: usize,
@@ -473,7 +473,7 @@ fn constrain_parent(
     .map_err(|_| F128StatementCircuitError::InternalShape("BLAKE3 parent CV"))
 }
 
-fn digest_bytes(words: &[Word32; 8]) -> [u8; 32] {
+pub(crate) fn digest_bytes(words: &[Word32; 8]) -> [u8; 32] {
   let mut output = [0; 32];
   for (index, word) in words.iter().enumerate() {
     output[4 * index..4 * index + 4].copy_from_slice(&word.value.to_le_bytes());
@@ -481,7 +481,9 @@ fn digest_bytes(words: &[Word32; 8]) -> [u8; 32] {
   output
 }
 
-fn native_public_values_digest(public_values: &[[u8; 16]]) -> [u8; 32] {
+pub(crate) fn native_public_values_digest(
+  public_values: &[[u8; 16]],
+) -> [u8; 32] {
   use blake3::hazmat::{HasherExt, Mode, merge_subtrees_non_root};
 
   let bytes = public_values.iter().flatten().copied().collect::<Vec<_>>();

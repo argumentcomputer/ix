@@ -164,6 +164,13 @@ jobs:
         run: cargo clippy --release --locked --manifest-path flock-stage4/Cargo.toml --workspace --all-targets -- -D warnings
       - name: Test Stage 4 native core
         run: cargo test --release --locked --manifest-path flock-stage4/Cargo.toml --workspace
+      - name: Verify generic Exec replay across guests
+        if: github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch'
+        env:
+          RAYON_NUM_THREADS: 4
+        run: |
+          ulimit -v 33554432
+          timeout 180 cargo test --release --locked --manifest-path flock-stage4/Cargo.toml -p ixby-stage4-exec native::tests::different_guests_have_identical_complete_replay_topology -- --ignored --test-threads=1
 
   # Compile and link the opt-in backend without requiring a GPU. Runtime and
   # proof-byte equivalence are covered by multi-stark's NVIDIA smoke suite.

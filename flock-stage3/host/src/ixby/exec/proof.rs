@@ -27,6 +27,35 @@ struct Bundle {
   proof: R1csProofCircuitMerged,
 }
 
+/// Read-only complete proof for replay/export, already checked by the native
+/// verifier against this exact approved setup and externally expected S.
+/// It is not a Stage 4 certificate: a replay circuit must constrain all phases
+/// and discharge the terminal roots independently of this host check.
+pub struct VerifiedExecProof<'a> {
+  setup: &'a CompiledExec,
+  expected: ExecStatementDigest,
+  public: Vec<F128>,
+  bundle: Bundle,
+}
+
+impl VerifiedExecProof<'_> {
+  pub fn setup(&self) -> &CompiledExec {
+    self.setup
+  }
+  pub fn expected(&self) -> ExecStatementDigest {
+    self.expected
+  }
+  pub fn public_values(&self) -> &[F128] {
+    &self.public
+  }
+  pub fn commitment(&self) -> &Commitment {
+    &self.bundle.commitment
+  }
+  pub fn proof(&self) -> &R1csProofCircuitMerged {
+    &self.bundle.proof
+  }
+}
+
 fn codec() -> impl Options {
   bincode::DefaultOptions::new()
     .with_fixint_encoding()
@@ -36,6 +65,22 @@ fn codec() -> impl Options {
 }
 
 impl CompiledExec {
+  /// Strict Exec-only entry for the terminal witness generator. This shares
+  /// the complete native acceptance check; it cannot admit a deferred-root
+  /// or legacy bundle merely because its message fields can be decoded.
+  pub fn verify_for_replay(
+    &self,
+    expected: ExecStatementDigest,
+    bytes: &[u8],
+  ) -> Result<VerifiedExecProof<'_>> {
+    self.verify(expected, bytes)?;
+    Ok(VerifiedExecProof {
+      setup: self,
+      expected,
+      public: self.public.instantiate(&expected.limbs())?,
+      bundle: codec().deserialize(bytes)?,
+    })
+  }
   /// Generate a direct Flock execution proof from raw canonical code and input
   /// bytes. No output, trace, or resolved instruction is accepted as advice.
   /// The witness generator is untrusted; only `verify` establishes acceptance.

@@ -15,6 +15,7 @@ mod witness;
 pub use profile::{
   ExecIdentities, ExecStatementDigest, SemanticProfile, expected_statement,
 };
+pub use proof::VerifiedExecProof;
 
 use super::{
   commitment::{ByteBuffer, ByteCommitmentSlots, CommitmentCapacities},
@@ -27,6 +28,7 @@ use anyhow::{Result, ensure};
 use flock_prover::{
   circuit::builder::{CircuitShape, ShapeBuilder},
   hash::HashKind,
+  lincheck::LincheckCircuit,
   pcs::{
     PcsParams,
     ligerito::{LigeritoProfile, embedded_initial_k_or_default},
@@ -69,6 +71,19 @@ impl CompiledExec {
   }
   pub fn pcs_params(&self) -> &PcsParams {
     &self.params
+  }
+  /// Read-only native replay inputs; no proof-supplied table is accepted.
+  pub fn lincheck_circuits(&self) -> Vec<&dyn LincheckCircuit> {
+    self
+      .tables
+      .iter()
+      .map(|table| table.csc_lincheck_circuit() as &dyn LincheckCircuit)
+      .collect()
+  }
+  pub fn transcript_domain(&self) -> Vec<u8> {
+    let mut domain = profile::TRANSCRIPT_DOMAIN.to_vec();
+    domain.extend_from_slice(&self.identities.digest());
+    domain
   }
 }
 

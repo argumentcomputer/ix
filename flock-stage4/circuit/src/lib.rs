@@ -6,6 +6,8 @@
 
 mod algebra;
 mod blake3;
+mod exec_binding;
+mod exec_relation;
 mod f128;
 mod jagged_fold;
 mod ligerito;
@@ -30,6 +32,14 @@ pub use algebra::{
 pub use blake3::{
   BLAKE3_IV, Blake3CompressionInputV1, Blake3CompressionOutputV1,
   build_blake3_compression_r1cs,
+};
+pub use exec_binding::{
+  ExecBindingCircuitError, ExecBindingCircuitInputsV0,
+  ExecBindingCircuitOutputV0, constrain_exec_binding,
+};
+pub use exec_relation::{
+  ExecRootConditionalError, ExecRootConditionalPublicV0,
+  ExecRootConditionalWitnessV0, constrain_exec_root_conditional,
 };
 pub use f128::{
   F128_BITS, F128VariablesV1, alloc_f128_private,

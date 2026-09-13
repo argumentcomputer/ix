@@ -21,7 +21,7 @@ enum InputWord {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum PublicWord {
+pub enum PublicWord {
   Fixed(F128),
   Output(usize),
 }
@@ -71,6 +71,11 @@ pub struct PublicLayout {
 }
 
 impl PublicLayout {
+  /// Verifier-owned positions, including fixed zero words. A replay adapter
+  /// must use this template rather than infer fixed positions from values.
+  pub fn words(&self) -> &[PublicWord] {
+    &self.words
+  }
   /// The template identity includes each fixed word and each output index.
   pub fn digest(&self) -> [u8; 32] {
     let mut bytes = b"IxBy/Flock/public-layout/v0\0".to_vec();

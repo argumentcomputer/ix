@@ -117,6 +117,15 @@ fn negatives(
   expected: ExecStatementDigest,
   bytes: &[u8],
 ) {
+  let replay = compiled.verify_for_replay(expected, bytes).unwrap();
+  assert_eq!(replay.expected(), expected);
+  assert_eq!(replay.setup().identities(), compiled.identities());
+  assert_eq!(
+    replay.public_values(),
+    compiled.public.instantiate(&expected.limbs()).unwrap()
+  );
+  assert!(replay.proof().boolean.is_some());
+  assert_eq!(replay.commitment().params.m, compiled.params.m);
   let mut parameters = compiled.profile().parameters();
   parameters[13] += 1;
   let changed = SemanticProfile::new(parameters).unwrap();

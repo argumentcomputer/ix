@@ -70,6 +70,24 @@ fn canonical_profile_and_setup_admission_are_independent_of_guest_artifacts() {
   );
   assert_eq!(first.public.outputs(), 2);
   assert_eq!(
+    first
+      .public
+      .words()
+      .iter()
+      .filter(|word| matches!(word, crate::ixby::io::PublicWord::Output(_)))
+      .count(),
+    2
+  );
+  assert_eq!(first.lincheck_circuits().len(), 23);
+  assert_eq!(
+    first.transcript_domain(),
+    [profile::TRANSCRIPT_DOMAIN, first.identities().digest().as_slice()]
+      .concat()
+  );
+  assert!(
+    first.verify_for_replay(ExecStatementDigest([0; 32]), &[0; 128]).is_err()
+  );
+  assert_eq!(
     first.input.private_words(),
     1 + CAPACITY.program.data_words() + 1 + CAPACITY.input.data_words()
   );

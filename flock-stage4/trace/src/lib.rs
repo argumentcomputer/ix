@@ -4,6 +4,7 @@
 //! recording challenger. The terminal circuit consumes it without importing
 //! Flock's field, proof serialization, or circuit implementation.
 
+mod exec;
 mod f128;
 mod jagged_fold;
 mod ligerito;
@@ -14,6 +15,9 @@ mod statement;
 mod structure_fold;
 mod wiring;
 
+pub use exec::{
+  ExecBindingError, ExecBindingV0, ExecCommitmentsV0, ExecPublicWordV0,
+};
 pub use f128::{
   F128AlgebraCensusV1, F128AlgebraTraceError, F128AlgebraTraceV1,
   F128DeferredMatrixClaimV1, F128EqualityV1, F128InputSourceV1,
