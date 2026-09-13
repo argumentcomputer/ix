@@ -16,7 +16,7 @@ namespace AiurTests.ProofShapes
 private def readBytes : Reader ByteArray := do takeBytes (← readCount 16777216)
 
 private def readCorpus : Reader (Nat × Nat × Nat) := do
-  let header := "Aiur proof shapes v1\n".toUTF8
+  let header := "Aiur proof shapes v2\n".toUTF8
   unless (← takeBytes header.size) == header do throw "proof shape snapshot version differs"
   let systems ← readCount
   let mut total := 0
@@ -32,13 +32,15 @@ private def readCorpus : Reader (Nat × Nat × Nat) := do
       let expected ← readOption (do readList (← readCount) readNat)
       let fixed ← readBool
       let bound ← readOption readNat
+      let cap ← readBool
       let checked := ProofShape.check key proof
       unless checked.map (List.map (ProofShape.quotientDegree ∘ ProofShape.Row.circuit)) == expected do
         throw s!"native opening shape differs at system {system}, case {index}"
       unless ProofShape.fixedHeights key proof == fixed do throw "fixed proof heights differ"
       unless ProofShape.queryBound key proof == bound do throw "proof lookup budget differs"
+      unless MerkleCap.check key proof == cap do throw "proof Merkle cap coverage differs"
       let ready := (BoundVerifier.readProof key bytes).isOk
-      unless ready == (expected.isSome && fixed && bound.isSome) do throw "checked proof guard differs"
+      unless ready == (expected.isSome && fixed && bound.isSome && cap) do throw "checked proof guard differs"
       if checked.isSome then accepted := accepted + 1
       if ready then guarded := guarded + 1
   unless systems == 4 do throw "missing proof shape systems"

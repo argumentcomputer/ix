@@ -87,6 +87,28 @@ regressions and all 17,910 native/Lean guard cases pass. This is not an addition
 demonstrated false-claim acceptance. [Guard and regressions](../crates/aiur/src/synthesis/tests/byte_shapes.rs),
 [checked model and column extraction](../Ix/Aiur/Proofs/ByteColumns.lean).
 
+A subsequent **native Merkle cap binding defect** was reproduced during
+commitment-verifier reflection. With heights eight and two and cap height
+two, the native path stops before the shorter matrix is injected. Replacing
+that whole matrix produces the same commitment; individual and shared
+opening verifiers also accept altered rows from it. This is an additional
+demonstrated commitment-binding failure, distinct from the four forged
+public-claim examples in the main table.
+
+The native Aiur verifier and checked Lean wrapper now require every active
+matrix's injection to occur within the authenticated path. The guard
+includes LDE blowup and effective cap clamping. Its regression failed
+before the repair and passes afterward; a cap at the exact shortest height
+still verifies, while a changed public output rejects. All 288,225 native/Lean
+guard cases and 91 native release tests pass. The proof codec preserves
+its existing bytes and tests native acceptance separately from the new
+checked coverage requirement. No forged IxVM public claim was demonstrated
+for this cap defect. The pinned MMCS dependency remains unchanged, so callers
+that bypass the Aiur guard still need their own coverage check.
+[Native reproducer and regressions](../crates/aiur/src/synthesis/tests/mmcs.rs),
+[native guard](../crates/aiur/src/trace_heights.rs),
+[checked coverage and injection bounds](../Ix/Aiur/Proofs/MerkleCap.lean).
+
 The separate effectful-call memoization mismatch remains unresolved:
 the reference evaluators omit the runtime cache, so repeated identical calls
 can have different I/O behavior. This mismatch is not counted as fixed here.

@@ -120,7 +120,7 @@ fn variants(system: &AiurSystem, proof: &AiurProof) -> Vec<AiurProof> {
 
 #[test]
 fn proof_shape_snapshot() -> std::io::Result<()> {
-  let mut out = b"Aiur proof shapes v1\n".to_vec();
+  let mut out = b"Aiur proof shapes v2\n".to_vec();
   out.extend(4_u64.to_le_bytes());
   let mut total = 0;
   let mut accepted = 0;
@@ -179,6 +179,11 @@ fn proof_shape_snapshot() -> std::io::Result<()> {
       if let Some(bound) = budget {
         out.extend(bound.to_le_bytes());
       }
+      out.push(u8::from(crate::trace_heights::trace_cap_coverage(
+        cp.log_blowup,
+        cp.cap_height,
+        &case.log_degrees,
+      )));
     }
   }
   if let Some(path) = std::env::var_os("IX_PROOF_SHAPE_SNAPSHOT") {

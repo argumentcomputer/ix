@@ -48,6 +48,7 @@ import Ix.Aiur.Proofs.DomainAccumulator
 import Ix.Aiur.Proofs.Quotient
 import Ix.Aiur.Proofs.VerifierAccumulator
 import Ix.Aiur.Proofs.Blake3
+import Ix.Aiur.Proofs.MerkleCap
 import Ix.Aiur.Proofs.Transcript
 import Ix.Aiur.Proofs.Grouping
 import Ix.Aiur.Proofs.TailMatches
@@ -2717,6 +2718,45 @@ def blake3Premises : Array Lean.Name := #[
   `Aiur.NativeAIR.Blake3.ChunkAt.left,
   `Aiur.NativeAIR.Blake3.ChunkAt.right]
 
+def merkleCapRoots : Array Lean.Name := #[
+  `Aiur.NativeAIR.MerkleCap.maxDegree_nil,
+  `Aiur.NativeAIR.MerkleCap.maxDegree_cons,
+  `Aiur.NativeAIR.MerkleCap.degree_le_max,
+  `Aiur.NativeAIR.MerkleCap.maxDegree_le,
+  `Aiur.NativeAIR.MerkleCap.maxDegree_mono,
+  `Aiur.NativeAIR.MerkleCap.coverage_iff,
+  `Aiur.NativeAIR.MerkleCap.coverage_height_iff,
+  `Aiur.NativeAIR.MerkleCap.coverage_empty,
+  `Aiur.NativeAIR.MerkleCap.coverage_low_cap,
+  `Aiur.NativeAIR.MerkleCap.coverage_uniform,
+  `Aiur.NativeAIR.MerkleCap.coverage_subset,
+  `Aiur.NativeAIR.MerkleCap.coverage_injection,
+  `Aiur.NativeAIR.MerkleCap.coverage_cap_size,
+  `Aiur.NativeAIR.MerkleCap.omitted_rejected,
+  `Aiur.NativeAIR.MerkleCap.shorter_matrix_rejected,
+  `Aiur.NativeAIR.MerkleCap.exact_injection_accepted,
+  `Aiur.NativeAIR.MerkleCap.check_iff,
+  `Aiur.NativeAIR.MerkleCap.check_degree,
+  `Aiur.BoundVerifier.CheckedProof.cap_coverage,
+  `Aiur.BoundVerifier.CheckedProof.row_cap,
+  `Aiur.BoundVerifier.CheckedProof.row_injection,
+  `Aiur.BoundVerifier.verifyShaped_cap]
+
+def merkleCapAxiomFreeRoots : Array Lean.Name := #[
+  `Aiur.NativeAIR.MerkleCap.maxDegree_nil,
+  `Aiur.NativeAIR.MerkleCap.maxDegree_cons,
+  `Aiur.NativeAIR.MerkleCap.coverage_empty,
+  `Aiur.NativeAIR.MerkleCap.shorter_matrix_rejected,
+  `Aiur.NativeAIR.MerkleCap.exact_injection_accepted]
+
+def merkleCapClassicalRoots : Array Lean.Name := #[
+  `Aiur.BoundVerifier.verifyShaped_cap]
+
+def merkleCapPremises : Array Lean.Name := #[
+  `Aiur.NativeAIR.MerkleCap.maxDegree,
+  `Aiur.NativeAIR.MerkleCap.coverage,
+  `Aiur.NativeAIR.MerkleCap.check]
+
 def roots : Array Lean.Name := #[
   `Aiur.G.ofNat_n, `Aiur.G.mul_one, `Aiur.G.mul_zero,
   `Aiur.AIR.inactive_multiplicity_zero,
@@ -2753,7 +2793,7 @@ def roots : Array Lean.Name := #[
     fieldRoots ++ localConstraintRoots ++ byteArithmeticRoots ++ byteLookupRoots ++
     lookupMessageRoots ++ lookupShapeRoots ++ globalLookupRoots ++ lookupBudgetRoots ++
     selectorControlRoots ++ operationRowRoots ++ blockRowRoots ++ querySlotRoots ++ circuitRowRoots ++
-    rowCountRoots ++ circuitTableRoots ++ branchlessRoots ++ circuitTraceRoots ++ circuitMembershipRoots ++ lookupLayoutRoots ++ memoryColumnRoots ++ byteColumnRoots ++ expressionGraphRoots ++ frontendExpressionRoots ++ graphCompilationRoots ++ operationExpressionRoots ++ blockCircuitRoots ++ allocationRoots ++ circuitAllocationRoots ++ circuitCompletionRoots ++ checkedCircuitRoots ++ keyCodecRoots ++ compiledKeyRoots ++ proofAcceptanceRoots ++ extensionRoots ++ logUpRoots ++ domainRoots ++ verifierArithmeticRoots ++ transcriptRoots ++ blake3Roots
+    rowCountRoots ++ circuitTableRoots ++ branchlessRoots ++ circuitTraceRoots ++ circuitMembershipRoots ++ lookupLayoutRoots ++ memoryColumnRoots ++ byteColumnRoots ++ expressionGraphRoots ++ frontendExpressionRoots ++ graphCompilationRoots ++ operationExpressionRoots ++ blockCircuitRoots ++ allocationRoots ++ circuitAllocationRoots ++ circuitCompletionRoots ++ checkedCircuitRoots ++ keyCodecRoots ++ compiledKeyRoots ++ proofAcceptanceRoots ++ extensionRoots ++ logUpRoots ++ domainRoots ++ verifierArithmeticRoots ++ transcriptRoots ++ blake3Roots ++ merkleCapRoots
 
 def premises : Array Lean.Name := #[
   `Aiur.AIR.activityConstraint,
@@ -2992,7 +3032,7 @@ def premises : Array Lean.Name := #[
   `Aiur.NativeAIR.evalRoots,
   `Aiur.NativeAIR.readLookup,
   `Aiur.NativeAIR.evalLookup,
-  `Aiur.NativeAIR.goldilocksOps] ++ frontendExpressionPremises ++ graphCompilationPremises ++ operationExpressionPremises ++ blockCircuitPremises ++ allocationPremises ++ circuitAllocationPremises ++ circuitCompletionPremises ++ checkedCircuitPremises ++ keyCodecPremises ++ compiledKeyPremises ++ proofAcceptancePremises ++ extensionPremises ++ logUpPremises ++ domainPremises ++ verifierArithmeticPremises ++ transcriptPremises ++ blake3Premises
+  `Aiur.NativeAIR.goldilocksOps] ++ frontendExpressionPremises ++ graphCompilationPremises ++ operationExpressionPremises ++ blockCircuitPremises ++ allocationPremises ++ circuitAllocationPremises ++ circuitCompletionPremises ++ checkedCircuitPremises ++ keyCodecPremises ++ compiledKeyPremises ++ proofAcceptancePremises ++ extensionPremises ++ logUpPremises ++ domainPremises ++ verifierArithmeticPremises ++ transcriptPremises ++ blake3Premises ++ merkleCapPremises
 
 private def constants (info : Lean.ConstantInfo) : Array Lean.Name :=
   info.type.getUsedConstants ++ match info with
@@ -3071,7 +3111,11 @@ run_cmd do
   let env ← getEnv
   for root in roots do
     let some info := env.checked.get.find? root | throwError "C8 component audit: missing root {root}"
-    let expected := if blake3Roots.contains root then
+    let expected := if merkleCapRoots.contains root then
+        if merkleCapAxiomFreeRoots.contains root then #[]
+        else if merkleCapClassicalRoots.contains root then #[``propext, ``Classical.choice, ``Quot.sound]
+        else #[``propext, ``Quot.sound]
+      else if blake3Roots.contains root then
         if blake3AxiomFreeRoots.contains root then #[]
         else if blake3ClassicalRoots.contains root then #[``propext, ``Classical.choice, ``Quot.sound]
         else if blake3QuotRoots.contains root then #[``propext, ``Quot.sound]

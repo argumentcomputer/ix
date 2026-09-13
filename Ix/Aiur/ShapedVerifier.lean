@@ -5,9 +5,10 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 
 import Ix.Aiur.CompiledVerifier
 import Ix.Aiur.ProofShape
+import Ix.Aiur.MerkleCap
 
 /-! The selected compiled key determines proof framing, active opening
-dimensions, fixed trace heights and the lookup budget before native
+dimensions, fixed trace heights, cap coverage and the lookup budget before native
 verification. This still delegates the transcript/PCS/AIR acceptance checks
 to the existing FFI and does not instantiate a certified checker release. -/
 
@@ -21,6 +22,7 @@ structure CheckedProof (key : NativeAIR.KeyCodec.Key) (bytes : ByteArray) where
   shape : NativeAIR.ProofShape.check key data = some rows
   fixed : NativeAIR.ProofShape.fixedHeights key data = true
   budget : NativeAIR.ProofShape.queryBound key data = some bound
+  cap : NativeAIR.MerkleCap.check key data = true
 
 def readProof (key : NativeAIR.KeyCodec.Key) (bytes : ByteArray) : Except String (CheckedProof key bytes) :=
   match parsed : NativeAIR.ProofCodec.decodeCanonical bytes with
@@ -32,7 +34,10 @@ def readProof (key : NativeAIR.KeyCodec.Key) (bytes : ByteArray) : Except String
       if fixed : NativeAIR.ProofShape.fixedHeights key data = true then
         match budget : NativeAIR.ProofShape.queryBound key data with
         | none => .error "proof lookup budget exceeds its bound"
-        | some bound => .ok ⟨data, rows, bound, parsed, shape, fixed, budget⟩
+        | some bound =>
+          if cap : NativeAIR.MerkleCap.check key data = true then
+            .ok ⟨data, rows, bound, parsed, shape, fixed, budget, cap⟩
+          else .error "proof Merkle cap omits a committed matrix height"
       else .error "proof fixed table heights differ from the selected key"
 
 def verifyShaped {selection : Selection} (backend : CompiledBackend selection)

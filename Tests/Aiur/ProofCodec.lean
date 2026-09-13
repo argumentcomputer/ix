@@ -61,7 +61,10 @@ private def readCorpus : Reader (Nat × Nat × Nat) := do
       unless ProofCodec.encode value == canonical do throw s!"native proof encoding differs at case {index}"
       if accepted % 5 == 0 then
         let some key := keys[accepted / 5]? | throw "missing honest proof key"
-        unless (BoundVerifier.readProof key canonical).isOk do throw "honest proof fails checked shape guards"
+        unless (ProofShape.check key value).isSome && ProofShape.fixedHeights key value &&
+            (ProofShape.queryBound key value).isSome do throw "native proof fails preceding shape guards"
+        unless (BoundVerifier.readProof key canonical).isOk == MerkleCap.check key value do
+          throw "native proof cap coverage differs from checked admission"
       unless ProofCodec.decodeCanonical canonical == some value do throw "canonical proof round trip failed"
       unless (ProofCodec.decodeCanonical bytes).isSome == (bytes == canonical) do
         throw "canonical proof framing differs"

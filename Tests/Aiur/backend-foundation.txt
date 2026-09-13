@@ -9312,6 +9312,133 @@ ROOT Aiur.BoundVerifier.CompiledBackend.blake3_transcript_row
                         Aiur.NativeAIR.Domain.vanishing evaluation.domain result.challenges.zeta *
                           evaluation.quotientValue
 AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.MerkleCap.maxDegree_nil
+Aiur.NativeAIR.MerkleCap.maxDegree [] = 0
+AXIOMS []
+ROOT Aiur.NativeAIR.MerkleCap.maxDegree_cons
+∀ (degree : Nat) (degrees : List Nat),
+  Aiur.NativeAIR.MerkleCap.maxDegree (degree :: degrees) = max degree (Aiur.NativeAIR.MerkleCap.maxDegree degrees)
+AXIOMS []
+ROOT Aiur.NativeAIR.MerkleCap.degree_le_max
+∀ {degree : Nat} {degrees : List Nat}, degree ∈ degrees → degree ≤ Aiur.NativeAIR.MerkleCap.maxDegree degrees
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.MerkleCap.maxDegree_le
+∀ {degrees : List Nat} {bound : Nat},
+  (∀ (degree : Nat), degree ∈ degrees → degree ≤ bound) → Aiur.NativeAIR.MerkleCap.maxDegree degrees ≤ bound
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.MerkleCap.maxDegree_mono
+∀ {selected degrees : List Nat},
+  (∀ (degree : Nat), degree ∈ selected → degree ∈ degrees) →
+    Aiur.NativeAIR.MerkleCap.maxDegree selected ≤ Aiur.NativeAIR.MerkleCap.maxDegree degrees
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.MerkleCap.coverage_iff
+∀ {logBlowup capHeight : Nat} {degrees : List Nat},
+  Aiur.NativeAIR.MerkleCap.coverage logBlowup capHeight degrees = true ↔
+    ∀ (degree : Nat),
+      degree ∈ degrees → min (capHeight - logBlowup) (Aiur.NativeAIR.MerkleCap.maxDegree degrees) ≤ degree
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.MerkleCap.coverage_height_iff
+∀ {logBlowup capHeight : Nat} {degrees : List Nat},
+  Aiur.NativeAIR.MerkleCap.coverage logBlowup capHeight degrees = true ↔
+    ∀ (degree : Nat),
+      degree ∈ degrees → min capHeight (logBlowup + Aiur.NativeAIR.MerkleCap.maxDegree degrees) ≤ logBlowup + degree
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.MerkleCap.coverage_empty
+∀ (logBlowup capHeight : Nat), Aiur.NativeAIR.MerkleCap.coverage logBlowup capHeight [] = true
+AXIOMS []
+ROOT Aiur.NativeAIR.MerkleCap.coverage_low_cap
+∀ {logBlowup capHeight : Nat},
+  capHeight ≤ logBlowup → ∀ (degrees : List Nat), Aiur.NativeAIR.MerkleCap.coverage logBlowup capHeight degrees = true
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.MerkleCap.coverage_uniform
+∀ {logBlowup capHeight degree : Nat} {degrees : List Nat},
+  (∀ (d : Nat), d ∈ degrees → d = degree) → Aiur.NativeAIR.MerkleCap.coverage logBlowup capHeight degrees = true
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.MerkleCap.coverage_subset
+∀ {logBlowup capHeight : Nat} {degrees selected : List Nat},
+  Aiur.NativeAIR.MerkleCap.coverage logBlowup capHeight degrees = true →
+    (∀ (degree : Nat), degree ∈ selected → degree ∈ degrees) →
+      Aiur.NativeAIR.MerkleCap.coverage logBlowup capHeight selected = true
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.MerkleCap.coverage_injection
+∀ {logBlowup capHeight : Nat} {degrees : List Nat},
+  Aiur.NativeAIR.MerkleCap.coverage logBlowup capHeight degrees = true →
+    ∀ {degree : Nat},
+      degree ∈ degrees →
+        logBlowup + Aiur.NativeAIR.MerkleCap.maxDegree degrees - (logBlowup + degree) ≤
+          logBlowup + Aiur.NativeAIR.MerkleCap.maxDegree degrees -
+            min capHeight (logBlowup + Aiur.NativeAIR.MerkleCap.maxDegree degrees)
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.MerkleCap.coverage_cap_size
+∀ {logBlowup capHeight : Nat} {degrees : List Nat},
+  Aiur.NativeAIR.MerkleCap.coverage logBlowup capHeight degrees = true →
+    ∀ {degree : Nat},
+      degree ∈ degrees →
+        2 ^ min capHeight (logBlowup + Aiur.NativeAIR.MerkleCap.maxDegree degrees) ≤ 2 ^ (logBlowup + degree)
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.MerkleCap.omitted_rejected
+∀ {logBlowup capHeight degree : Nat} {degrees : List Nat},
+  degree ∈ degrees →
+    logBlowup + Aiur.NativeAIR.MerkleCap.maxDegree degrees -
+          min capHeight (logBlowup + Aiur.NativeAIR.MerkleCap.maxDegree degrees) <
+        logBlowup + Aiur.NativeAIR.MerkleCap.maxDegree degrees - (logBlowup + degree) →
+      Aiur.NativeAIR.MerkleCap.coverage logBlowup capHeight degrees = false
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.MerkleCap.shorter_matrix_rejected
+Aiur.NativeAIR.MerkleCap.coverage 0 2 [3, 1] = false
+AXIOMS []
+ROOT Aiur.NativeAIR.MerkleCap.exact_injection_accepted
+Aiur.NativeAIR.MerkleCap.coverage 0 1 [3, 1] = true
+AXIOMS []
+ROOT Aiur.NativeAIR.MerkleCap.check_iff
+∀ {key : Aiur.NativeAIR.KeyCodec.Key} {proof : Aiur.NativeAIR.ProofCodec.Data},
+  Aiur.NativeAIR.MerkleCap.check key proof = true ↔
+    ∀ (degree : UInt8),
+      degree ∈ proof.logDegrees →
+        min key.parameters.capHeight
+            (key.parameters.logBlowup + Aiur.NativeAIR.MerkleCap.maxDegree (List.map UInt8.toNat proof.logDegrees)) ≤
+          key.parameters.logBlowup + degree.toNat
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.MerkleCap.check_degree
+∀ {key : Aiur.NativeAIR.KeyCodec.Key} {proof : Aiur.NativeAIR.ProofCodec.Data},
+  Aiur.NativeAIR.MerkleCap.check key proof = true →
+    ∀ {position : Nat} {degree : UInt8},
+      proof.logDegrees[position]? = some degree →
+        min key.parameters.capHeight
+            (key.parameters.logBlowup + Aiur.NativeAIR.MerkleCap.maxDegree (List.map UInt8.toNat proof.logDegrees)) ≤
+          key.parameters.logBlowup + degree.toNat
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.BoundVerifier.CheckedProof.cap_coverage
+∀ {key : Aiur.NativeAIR.KeyCodec.Key} {bytes : ByteArray} (checked : Aiur.BoundVerifier.CheckedProof key bytes),
+  Aiur.NativeAIR.MerkleCap.coverage key.parameters.logBlowup key.parameters.capHeight
+      (List.map UInt8.toNat checked.data.logDegrees) =
+    true
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.BoundVerifier.CheckedProof.row_cap
+∀ {key : Aiur.NativeAIR.KeyCodec.Key} {bytes : ByteArray} (checked : Aiur.BoundVerifier.CheckedProof key bytes)
+  {position : Nat} {row : Aiur.NativeAIR.ProofShape.Row},
+  checked.rows[position]? = some row →
+    min key.parameters.capHeight
+        (key.parameters.logBlowup + Aiur.NativeAIR.MerkleCap.maxDegree (List.map UInt8.toNat checked.data.logDegrees)) ≤
+      key.parameters.logBlowup + row.logDegree.toNat
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.BoundVerifier.CheckedProof.row_injection
+∀ {key : Aiur.NativeAIR.KeyCodec.Key} {bytes : ByteArray} (checked : Aiur.BoundVerifier.CheckedProof key bytes)
+  {position : Nat} {row : Aiur.NativeAIR.ProofShape.Row},
+  checked.rows[position]? = some row →
+    key.parameters.logBlowup + Aiur.NativeAIR.MerkleCap.maxDegree (List.map UInt8.toNat checked.data.logDegrees) -
+        (key.parameters.logBlowup + row.logDegree.toNat) ≤
+      key.parameters.logBlowup + Aiur.NativeAIR.MerkleCap.maxDegree (List.map UInt8.toNat checked.data.logDegrees) -
+        key.parameters.capHeight
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.BoundVerifier.verifyShaped_cap
+∀ {selection : Aiur.BoundVerifier.Selection} {backend : Aiur.BoundVerifier.CompiledBackend selection}
+  {input : Array Aiur.G} {bytes : ByteArray},
+  Aiur.BoundVerifier.verifyShaped backend input bytes = Except.ok () →
+    ∃ checked,
+      Aiur.BoundVerifier.readProof backend.keyData bytes = Except.ok checked ∧
+        Aiur.NativeAIR.MerkleCap.check backend.keyData checked.data = true
+AXIOMS [propext, Classical.choice, Quot.sound]
 PREMISE Aiur.AIR.activityConstraint
 Aiur.G → Aiur.G → Aiur.G
 DEFINITION
@@ -14596,7 +14723,8 @@ PREMISE Aiur.BoundVerifier.CheckedProof.mk
           Aiur.NativeAIR.ProofCodec.decodeCanonical bytes = some data →
             Aiur.NativeAIR.ProofShape.check key data = some rows →
               Aiur.NativeAIR.ProofShape.fixedHeights key data = true →
-                Aiur.NativeAIR.ProofShape.queryBound key data = some bound → Aiur.BoundVerifier.CheckedProof key bytes
+                Aiur.NativeAIR.ProofShape.queryBound key data = some bound →
+                  Aiur.NativeAIR.MerkleCap.check key data = true → Aiur.BoundVerifier.CheckedProof key bytes
 PREMISE Aiur.BoundVerifier.readProof
 (key : Aiur.NativeAIR.KeyCodec.Key) → (bytes : ByteArray) → Except String (Aiur.BoundVerifier.CheckedProof key bytes)
 DEFINITION
@@ -14611,9 +14739,11 @@ fun key bytes =>
         match budget : Aiur.NativeAIR.ProofShape.queryBound key data with
         | none => Except.error "proof lookup budget exceeds its bound"
         | some bound =>
-          Except.ok
-            { data := data, rows := rows, bound := bound, decoded := parsed, shape := shape, fixed := fixed,
-              budget := budget }
+          if cap : Aiur.NativeAIR.MerkleCap.check key data = true then
+            Except.ok
+              { data := data, rows := rows, bound := bound, decoded := parsed, shape := shape, fixed := fixed,
+                budget := budget, cap := cap }
+          else Except.error "proof Merkle cap omits a committed matrix height"
       else Except.error "proof fixed table heights differ from the selected key"
 PREMISE Aiur.BoundVerifier.verifyShaped
 {selection : Aiur.BoundVerifier.Selection} →
@@ -15794,6 +15924,22 @@ PREMISE Aiur.NativeAIR.Blake3.ChunkAt.right
     Aiur.NativeAIR.Blake3.ChunkAt (counter + Aiur.NativeAIR.Blake3.leftLen input.length / 1024)
         (List.drop (Aiur.NativeAIR.Blake3.leftLen input.length) input) leaf bytes →
       Aiur.NativeAIR.Blake3.ChunkAt counter input leaf bytes
+PREMISE Aiur.NativeAIR.MerkleCap.maxDegree
+List Nat → Nat
+DEFINITION
+fun degrees => List.foldr max 0 degrees
+PREMISE Aiur.NativeAIR.MerkleCap.coverage
+Nat → Nat → List Nat → Bool
+DEFINITION
+fun logBlowup capHeight degrees =>
+  have effective := min (capHeight - logBlowup) (Aiur.NativeAIR.MerkleCap.maxDegree degrees);
+  degrees.all fun degree => decide (effective ≤ degree)
+PREMISE Aiur.NativeAIR.MerkleCap.check
+Aiur.NativeAIR.KeyCodec.Key → Aiur.NativeAIR.ProofCodec.Data → Bool
+DEFINITION
+fun key proof =>
+  Aiur.NativeAIR.MerkleCap.coverage key.parameters.logBlowup key.parameters.capHeight
+    (List.map UInt8.toNat proof.logDegrees)
 RECURSION WORKER Aiur.buildArgs._unsafe_rec
 Aiur.LayoutMap →
   Std.HashMap Aiur.Local (Array Aiur.Bytecode.ValIdx) →
@@ -22951,7 +23097,7 @@ fun value exponent x =>
       let half := Aiur.NativeAIR.ProofCodec.Extension.powBits._unsafe_rec value (exponent / 2) fuel;
       let square := half * half;
       if (exponent % 2 == 0) = true then square else square * value
-C8 component ROOTS 1280; LOGICAL DECLARATIONS 19329; WITH RUNTIME 20116
+C8 component ROOTS 1302; LOGICAL DECLARATIONS 19371; WITH RUNTIME 20158
 IX RUNTIME EXTERNS [Aiur.AiurSystem.build, Aiur.AiurSystem.verify, Aiur.AiurSystem.vkBytes, Aiur.Proof.ofBytesChecked]
 PARTIAL OPAQUE SOURCES [Aiur.instHashableTyp.hash, Aiur.instReprPattern.repr, Aiur.instReprTyp.repr]
 OTHER UNSAFE RUNTIME []

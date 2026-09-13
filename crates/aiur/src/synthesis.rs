@@ -606,6 +606,13 @@ impl AiurSystem {
     ) {
       return Err(VerificationError::InvalidProofShape);
     }
+    if !crate::trace_heights::trace_cap_coverage(
+      self.commitment_parameters.log_blowup,
+      self.commitment_parameters.cap_height,
+      &proof.log_degrees,
+    ) {
+      return Err(VerificationError::InvalidProofShape);
+    }
     if lookup_query_bound(
       self.slot_widths.iter().map(Vec::len),
       &proof.active,
@@ -643,6 +650,7 @@ mod tests {
   mod lookup_budget;
   mod lookup_shapes;
   mod memory;
+  mod mmcs;
   mod proof_codec;
   mod proof_shapes;
   mod scalar;

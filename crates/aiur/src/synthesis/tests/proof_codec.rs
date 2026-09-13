@@ -162,7 +162,17 @@ fn proof_codec_snapshot() -> std::io::Result<()> {
     };
     let system = AiurSystem::build(top, cp, fp);
     let (claim, proof) = system.prove(0, &input, &mut empty_io_buffer());
-    system.verify(&claim, &proof).unwrap();
+    system.system.verify(&claim, &proof).unwrap();
+    // Preserve the original wire corpus, including native-accepted caps
+    // whose shortest trace is now excluded by the Aiur coverage guard.
+    assert_eq!(
+      system.verify(&claim, &proof).is_ok(),
+      crate::trace_heights::trace_cap_coverage(
+        cp.log_blowup,
+        cp.cap_height,
+        &proof.log_degrees
+      )
+    );
     keys.push(crate::vk_codec::to_bytes(&system.system, cp, fp));
     cases.push(proof.to_bytes().unwrap());
     let fixture = sparse(&proof);

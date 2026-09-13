@@ -410,12 +410,12 @@ sizes, constrained and advice calls, nested continuations, visibility and
 public-claim widths. All 54 parallel release Rust tests pass, including the
 supplied rank/output ambiguity regression; release Clippy denies warnings.
 
-The audit checks 1,280 roots by traversing checked types, bodies and inductive
-constructors. Forty-five roots use no axioms; one uses only `Quot.sound`;
-217 depend only on `propext`; 362 use exactly `propext` and `Quot.sound`;
-the other 655 use exactly
+The audit checks 1,302 roots by traversing checked types, bodies and inductive
+constructors. Fifty roots use no axioms; one uses only `Quot.sound`;
+217 depend only on `propext`; 378 use exactly `propext` and `Quot.sound`;
+the other 656 use exactly
 `propext`, `Classical.choice` and `Quot.sound`. The combined closure
-has 19,329 logical declarations and 20,116 declarations after following runtime
+has 19,371 logical declarations and 20,158 declarations after following runtime
 workers and replacements. The frozen report records four native runtime entry points,
 three partial opaque sources and all 178 Ix recursion worker implementations.
 Bytecode comparison/hashing, tail-match restoration and source-value hashing
@@ -1088,6 +1088,48 @@ accepted and seventeen rejected, with no unexpected outcomes.
 The native hash test dependency uses the already locked
 BLAKE3 1.8.5 version. Production native behavior and serialized formats do
 not change.
+
+The subsequent Merkle cap coverage check closes a demonstrated native
+commitment-binding defect. In the pinned binary MMCS, a cap can stop the
+authentication path before shorter matrices are injected. With matrix
+heights eight and two and cap height two, changing the entire shorter
+matrix leaves the commitment unchanged. Both individual and shared native
+opening verification accept changed shorter rows. The regression also
+checks duplicate and reordered query indices. This is a commitment-binding
+failure; no forged IxVM public claim was demonstrated for this defect.
+
+`MerkleCap.coverage` requires the effective cap to include every active
+matrix height, accounting for the shared LDE blowup and the native clamp
+to the tallest tree's depth. Its checked arithmetic avoids machine
+addition overflow. The guard is enforced by native `AiurSystem.verify`
+and the selected Lean `readProof` wrapper. `CheckedProof` retains success
+as a field; each selected row consequently has its injection depth within
+the authenticated path length. Coverage is preserved by matrix subsets,
+and a uniformly sized batch permits the native cap clamp. Actual hashing
+of the path and cryptographic extraction remain separate obligations.
+
+The repair adds 22 roots and three definitions. All 1,280 prior root
+statements and axiom sets, 856 prior premise definitions and 178 worker
+bodies are unchanged. The two changed premises are the checked-proof
+constructor and reader, which now require cap coverage. The native guard
+matches Lean on 288,225 cases covering every degree byte, mixed and uniform
+heights, empty batches and machine parameter boundaries. Native tests
+reject the uncovered cap at the Aiur boundary, accept a cap at the exact
+shortest height, and reject an altered public result under that valid cap.
+All 91 parallel Rust release tests, strict Clippy, the strict 459-job build
+and the full gate with thirty-two fresh native corpora pass. The backend
+cases remain two accepted and seventeen rejected, with no unexpected
+outcomes. All 1,345 broader Aiur assertions pass. The rebuilt C2 VM pilot
+retains twelve accepted packets, sixteen rejected packets, two documented
+profile exclusions and no unexpected errors.
+
+Proofs whose caps omit a committed matrix now reject before PCS verification.
+The proof codec retains its original 3,636 cases and four native-accepted
+proofs; its checked-admission assertions distinguish the uncovered caps.
+The proof-shape corpus additionally compares cap coverage for all 4,696
+records. The AIR, serialized keys and proof format do not change; affected
+parameter selections need a cap that covers every matrix and new proofs
+under that selection. The pinned upstream MMCS itself remains unchanged.
 
 The budget comparison covers
 21,964 Rust/Lean cases, including
