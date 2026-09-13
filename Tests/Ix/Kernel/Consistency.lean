@@ -494,8 +494,117 @@ private def polymorphicApplicationCases : TestSeq :=
       let (env, target) := storePolymorphicCall env identity #[.zero] 0 #[0, 0]
       rowFailed env target)
 
+/-- Every wrapper repeats the same closed carrier in its declared domain,
+codomain, and lambda domain. The second and later references hit the cache
+even when the driver clears caches before every declaration. -/
+private def repeatedReferenceEnvironment : Ixon.Env := Id.run do
+  let (env, function, carrier) := polymorphicReferences
+  let wrapper : Address → Ixon.Univ → Array UInt64 → Ix.DefKind → Ixon.Constant :=
+    fun callee level arguments kind =>
+      ⟨.defn ⟨kind, .safe, 0,
+        .leanAll (.ref 0 #[0]) (.ref 0 #[0]),
+        .leanLam (.ref 0 #[0]) (.app (.ref 1 arguments) (.var 0))⟩,
+        #[], #[carrier, callee], #[level]⟩
+  let (env, first) := storeConst env (wrapper function .zero #[0] .defn)
+  let (env, _) := storeConst env (wrapper function (.succ .zero) #[0] .opaq)
+  let (env, _) := storeConst env (wrapper first .zero #[] .thm)
+  return env
+
+/-- The selected entry is populated by real inference, then reused in two
+different local scopes. Cache keys and closed returned types stay stable. -/
+private def cachedConstantAcrossScopes (source : Ixon.Env × Address)
+    (arguments : Array (KUniv .anon)) (expected : KExpr .anon) (inferOnly : Bool) : Bool :=
+  let term := KExpr.mkConst (m := .anon) ⟨source.2, ()⟩ arguments
+  let propType := KExpr.mkSort (m := .anon) .mkZero
+  let action : RecM .anon Bool := do
+    let first ← RecM.inferCall term
+    let key ← TcM.inferKey term
+    let initial ← get
+    let reuse : RecM .anon Bool := RecM.withLctxScope do
+      let _ ← TcM.openBinder () () propType (.mkVar 0 ())
+      let activeKey ← TcM.inferKey term
+      let result ← RecM.inferCall term
+      return activeKey == key && result.addr == expected.addr && result.lbr == 0 &&
+        (← get).lctx.size == 1
+    let second ← reuse
+    let third ← reuse
+    let final ← get
+    return first.addr == expected.addr && second && third &&
+      (if inferOnly then initial.env.inferOnlyCache[key]?.isSome &&
+        final.env.inferOnlyCache.size == initial.env.inferOnlyCache.size && final.env.inferCache.isEmpty
+      else initial.env.inferCache[key]?.isSome &&
+        final.env.inferCache.size == initial.env.inferCache.size && final.env.inferOnlyCache.isEmpty)
+  match TcM.runRec action { TcState.newLazyAnon source.1 with inferOnly } with
+  | .ok passed after => passed && after.lctx.size == 0 && after.env.nextFVarId == 2
+  | .error _ _ => false
+
+/-- A deliberately different result in the ineligible partition makes the
+selection policy observable. Full mode must compute a checked answer when
+only that entry exists; inference-only mode must prefer a full result. -/
+private def constantCachePriority (fullHit : Bool) : Bool :=
+  let term := KExpr.mkConst (m := .anon) ⟨polymorphicIdentity.2, ()⟩ #[levelOne]
+  let sentinel := KExpr.mkSort (m := .anon) .mkZero
+  let action : RecM .anon Bool := do
+    let expected ← RecM.inferOnlyCall term
+    let key ← TcM.inferKey term
+    modify fun state => { state with inferOnly := fullHit, env := { state.env with
+      inferCache := if fullHit then state.env.inferCache.insert key expected else state.env.inferCache
+      inferOnlyCache := state.env.inferOnlyCache.insert key sentinel } }
+    let result ← RecM.inferCall term
+    let state ← get
+    return result.addr == identityType.addr && result.addr != sentinel.addr &&
+      state.env.inferCache[key]?.any (fun cached => cached.addr == expected.addr) &&
+      state.env.inferOnlyCache[key]?.any (fun cached => cached.addr == sentinel.addr)
+  match TcM.runRec action (TcState.newLazyAnon polymorphicIdentity.1) with
+  | .ok passed _ => passed
+  | .error _ _ => false
+
+/-- Alternating two instances after their first use must retrieve the type
+for that instance, while retaining only two closed constant cache entries. -/
+private def repeatedConstantInstances : Bool :=
+  let propType := KExpr.mkSort (m := .anon) .mkZero
+  let propIdentity := KExpr.mkAll () () propType (.mkAll () () (.mkVar 0 ()) (.mkVar 1 ()))
+  let propTerm := KExpr.mkConst (m := .anon) ⟨polymorphicIdentity.2, ()⟩ #[.mkZero]
+  let typeTerm := KExpr.mkConst (m := .anon) ⟨polymorphicIdentity.2, ()⟩ #[levelOne]
+  let action : RecM .anon Bool := do
+    let _ ← RecM.inferCall propTerm
+    let _ ← RecM.inferCall typeTerm
+    let propResult ← RecM.inferCall propTerm
+    let typeResult ← RecM.inferCall typeTerm
+    return propTerm.addr != typeTerm.addr && propResult.addr == propIdentity.addr &&
+      typeResult.addr == identityType.addr && (← get).env.inferCache.size == 2
+  match TcM.runRec action (TcState.newLazyAnon polymorphicIdentity.1) with
+  | .ok passed _ => passed
+  | .error _ _ => false
+
+private def constantCacheCases : TestSeq :=
+  test "constant cache: repeated carrier references and transitive calls check"
+    (allSucceeded repeatedReferenceEnvironment 5 { clearEvery := 0 })
+  ++ test "constant cache: repeated references within one declaration survive per-item clearing"
+    (allSucceeded repeatedReferenceEnvironment 5 { clearEvery := 1 })
+  ++ test "constant cache: polymorphic full results survive two fresh local scopes"
+    (cachedConstantAcrossScopes polymorphicIdentity #[levelOne] identityType false)
+  ++ test "constant cache: polymorphic inference-only results survive two fresh local scopes"
+    (cachedConstantAcrossScopes polymorphicIdentity #[levelOne] identityType true)
+  ++ test "constant cache: empty universe substitution reuses a monomorphic definition type"
+    (cachedConstantAcrossScopes (monomorphicIdentity (.succ .zero)) #[] identityType false)
+  ++ test "constant cache: repeated max substitution retains its simplified type"
+    (cachedConstantAcrossScopes (computedIdentity (.max (.var 0) (.var 1)))
+      #[.mkZero, levelOne] identityType false)
+  ++ test "constant cache: repeated imax substitution retains its simplified type"
+    (let propType := KExpr.mkSort (m := .anon) .mkZero
+      let expected := KExpr.mkAll () () propType (.mkAll () () (.mkVar 0 ()) (.mkVar 1 ()))
+      cachedConstantAcrossScopes (computedIdentity (.imax (.var 0) (.var 1)))
+        #[levelOne, .mkZero] expected true)
+  ++ test "constant cache: inference-only mode gives the full result priority"
+    (constantCachePriority true)
+  ++ test "constant cache: full mode ignores an inference-only answer and checks the constant"
+    (constantCachePriority false)
+  ++ test "constant cache: alternating universe instances retrieve their own cached types"
+    repeatedConstantInstances
+
 public def suite : List TestSeq :=
   [cases, polymorphicCases, specializationCases, binderCases, applicationCases,
-    polymorphicApplicationCases]
+    polymorphicApplicationCases, constantCacheCases]
 
 end Tests.Kernel.Consistency

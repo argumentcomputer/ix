@@ -33,11 +33,12 @@ private def productionNative : Array Lean.Name := #[
 ]
 
 private def atomicRoots : Array Lean.Name := #[
-  ``infer_uncached_success, ``AtomicInferenceSupport.typing,
+  ``infer_uncached_success_state, ``infer_uncached_success, ``AtomicInferenceSupport.typing,
   ``AtomicInferenceSupport.reads, ``AtomicInferenceSupport.output,
   ``AtomicInferenceSupport.scopeAndReferences, ``AtomicInference.sound,
   ``inferUncached_fvar_sound, ``infer_fvar_sound,
   ``FVarInferenceSupport.output, ``FVarInferenceSupport.sound,
+  ``InferenceCacheHit.run,
   ``ForallInferenceTrace.output, ``LambdaInferenceTrace.output, ``BinderInference.sound,
   ``inferUncached_monomorphic_const_scoped, ``ApplicationInferenceTrace.output,
   ``BinderInference.soundWithSynthesis, ``BinderInference.synthesis,
@@ -50,11 +51,14 @@ private def instantiationRoots : Array Lean.Name := #[
   ``instantiateUnivParams_readAnnotated_scoped,
   ``instUnivSpec_scoped_eq, ``instantiateUnivParamsSpec_scoped_eq,
   ``instantiateUnivParams_scoped_eq, ``instantiateUnivParams_readScopedAnnotated,
+  ``instantiateUnivParamsSpec_readScopedAnnotated,
   ``inferUncached_const_refinement, ``infer_const_refinement,
   ``inferUncached_const_sound, ``infer_const_sound,
   ``inferUncached_const_instantiation, ``ScopedConstantInferenceSupport.closed,
   ``inferUncached_const_scoped_refinement, ``inferUncached_const_scoped_sound,
-  ``inferUncached_const_predicted_type, ``infer_const_scoped_annotated
+  ``inferUncached_const_predicted_type, ``infer_const_scoped_annotated,
+  ``infer_const_cache_write, ``CachedConstantInferenceSupport.refinement,
+  ``CachedConstantInferenceSupport.sound
 ]
 
 private def productionRoots : Array Lean.Name := #[

@@ -27,6 +27,9 @@ Binder inference uses the declared type's separate formation check to turn
 `Model.CheckingClaim` into semantic typing. Application spines headed by locals
 or admitted polymorphic constants derive their type's validity from the context
 or dependency model, then check arguments and substitute the dependent result.
+Constant cache hits derive the same typing from concrete agreement with pure
+universe substitution of a loaded declaration. Cache selection and successful
+miss writes are proved; general cache maintenance remains a separate obligation.
 Full checker consistency
 and compiler/backend refinement remain open.
 

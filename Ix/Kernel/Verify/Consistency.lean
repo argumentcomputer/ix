@@ -13,6 +13,7 @@ import Ix.Kernel.Verify.Consistency.Atomic
 import Ix.Kernel.Verify.Consistency.ScopedExpr
 import Ix.Kernel.Verify.Consistency.ScopedInstUniv
 import Ix.Kernel.Verify.Consistency.ScopedConstant
+import Ix.Kernel.Verify.Consistency.ConstantCache
 import Ix.Kernel.Verify.Consistency.Context
 import Ix.Kernel.Verify.Consistency.BinderOpening
 import Ix.Kernel.Verify.Consistency.Application
@@ -36,12 +37,16 @@ universe-instantiation walker and explicit lookup and finite-support resources.
 The returned type's scope and references justify declaration admission.
 The binder case also requires explicit syntactic scope and references to the
 preceding interface. Its separate declared-type inference turns semantic checking
-into typing. Local cache hits agree with the actual declaration type; other
-inference nodes retain cache-miss boundaries.
+into typing. Local cache hits agree with the actual declaration type. Constant
+hits agree with pure universe substitution of a loaded, admitted declaration;
+the other inference nodes retain cache-miss boundaries.
 Applications use syntactic Pi exposure, full argument checking, hash conversion,
 and arguments without eager-reduction markers. Constant- and local-headed spines
 derive type validity from the admitted model or local context; their arguments may be lambdas.
 Polymorphic nodes use closed source readings, finite substitution resources,
 and a pure prediction of the returned syntax with matching occurrence annotations.
+Cache hits additionally check arity because they skip the runtime guard. Exact
+cache selection and successful constant writes are proved; general preservation
+of cache agreement across checker operations remains an explicit obligation.
 General checker soundness remains outside this fragment.
 -/

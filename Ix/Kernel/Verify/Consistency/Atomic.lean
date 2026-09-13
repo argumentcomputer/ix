@@ -29,14 +29,20 @@ structure UncachedInference (before : TcState .anon) (term : KExpr .anon) where
   fullMiss : keyed.env.inferCache[key]? = none
   onlyMiss : keyed.env.inferOnlyCache[key]? = none
 
-/-- Strip only key lookup and the final cache write from an actual successful
-inference. The recursive method table and returned type are unchanged. -/
-theorem infer_uncached_success {term type : KExpr .anon}
+/-- Recover the uncached execution and the exact final cache write from a
+successful miss. The policy is read before production computes the key. -/
+theorem infer_uncached_success_state {term type : KExpr .anon}
     {methods : Methods .anon} {before after : TcState .anon}
     (miss : UncachedInference before term)
     (accepted : RecM.infer term methods before = .ok type after) :
     ∃ inferredState, RecM.inferUncached RecM.inferCall before.inferOnly term
-      methods miss.keyed = .ok type inferredState := by
+      methods miss.keyed = .ok type inferredState ∧
+      after = if before.inferOnly then
+        { inferredState with env := { inferredState.env with
+          inferOnlyCache := inferredState.env.inferOnlyCache.insert miss.key type } }
+      else
+        { inferredState with env := { inferredState.env with
+          inferCache := inferredState.env.inferCache.insert miss.key type } } := by
   change (RecM.infer term).run methods before = .ok type after at accepted
   unfold RecM.infer RecM.inferWith at accepted
   simp only [ReaderT.run_bind, ReaderT.run_monadLift] at accepted
@@ -59,7 +65,7 @@ theorem infer_uncached_success {term type : KExpr .anon}
           change EStateM.Result.ok ty { state with env := { state.env with
             inferCache := state.env.inferCache.insert miss.key ty } } = .ok type after at accepted
           cases accepted
-          exact ⟨state, rfl⟩
+          exact ⟨state, rfl, rfl⟩
   | true =>
       simp only [policy, if_true] at accepted
       simp only [ReaderT.run_bind] at accepted
@@ -77,7 +83,18 @@ theorem infer_uncached_success {term type : KExpr .anon}
           change EStateM.Result.ok ty { state with env := { state.env with
             inferOnlyCache := state.env.inferOnlyCache.insert miss.key ty } } = .ok type after at accepted
           cases accepted
-          exact ⟨state, rfl⟩
+          exact ⟨state, rfl, rfl⟩
+
+/-- Strip only key lookup and the final cache write from an actual successful
+inference. The recursive method table and returned type are unchanged. -/
+theorem infer_uncached_success {term type : KExpr .anon}
+    {methods : Methods .anon} {before after : TcState .anon}
+    (miss : UncachedInference before term)
+    (accepted : RecM.infer term methods before = .ok type after) :
+    ∃ inferredState, RecM.inferUncached RecM.inferCall before.inferOnly term
+      methods miss.keyed = .ok type inferredState := by
+  obtain ⟨state, run, _⟩ := infer_uncached_success_state miss accepted
+  exact ⟨state, run⟩
 
 /-- Supported syntax plus the concrete resources needed by its uncached
 production branch. A constant's semantic type comes from an existing entry,

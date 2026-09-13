@@ -4,14 +4,14 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 -/
 
 import Ix.Kernel.Verify.Consistency.Application
-import Ix.Kernel.Verify.Consistency.ScopedConstant
+import Ix.Kernel.Verify.Consistency.ConstantCache
 import Ix.Theory.Model.Checking
 
 /-!
 # Production dependent function inference
 
 Finite inference trees follow the production method table's decreasing fuel.
-Their premises record cache misses, actual execution prefixes, local-context
+Their premises record cache observations, actual execution prefixes, local-context
 frames, finite interning support, and index bounds. Semantic checking is
 derived from these trees. A declaration's separate type inference supplies
 the expected type's hereditary validity before checking becomes typing.
@@ -237,6 +237,10 @@ inductive BinderInference {β : Type u}
       (conditions : (entry.type.instL (arguments.toList.map readLevel)).annotations = type.annotations) :
       BinderInference resolve entries locals context fuel before (.const id arguments info)
         (.const ref (arguments.toList.map readLevel)) type
+  | cachedConst {locals context fuel before id arguments info ref entry type}
+      (cache : CachedConstantInferenceSupport resolve entries before id arguments info ref entry type) :
+      BinderInference resolve entries locals context fuel before (.const id arguments info)
+        (.const ref (arguments.toList.map readLevel)) type
   | app {locals context fuel before fn arg info f a A A' B condition}
       (full : before.inferOnly = false)
       (miss : UncachedInference before (.app fn arg info))
@@ -331,6 +335,9 @@ theorem BinderInference.soundWithSynthesis {β : Type u}
       exact ⟨inferUncached_monomorphic_const_scoped lookup run, typed.checking, fun _ => typed⟩
   | polymorphic miss support prediction conditions =>
       obtain ⟨typeReads, typed⟩ := infer_const_scoped_annotated miss support prediction conditions accepted
+      exact ⟨typeReads, typed.checking, fun _ => typed⟩
+  | cachedConst cache =>
+      obtain ⟨typeReads, typed⟩ := cache.sound accepted
       exact ⟨typeReads, typed.checking, fun _ => typed⟩
   | @app locals context fuel before fn arg info f a A A' B condition
       full miss trace functionTree head argumentTree conditions hashPath comparisonFaithful

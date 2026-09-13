@@ -82,6 +82,15 @@ increasing sequence of strongly inaccessible cardinals.
 - `FVarInferenceSupport.sound` handles both local-variable cache partitions
   when a cached answer equals the current declaration's concrete type. These
   are structural cache checks, with no assumed semantic typing of cached data.
+- `CachedConstantInferenceSupport.sound` brings monomorphic and polymorphic
+  constant hits into binder trees. The selected cached value equals pure
+  universe substitution of the current loaded declaration, whose type agrees
+  with the admitted entry. Pure substitution establishes semantic congruence,
+  including simplifying levels, without mutable interning resources.
+  `InferenceCacheHit.run` proves the exact cache selection and returned state;
+  full results take priority, and inference-only results require that policy.
+  `infer_const_cache_write` establishes substitution agreement for a successful
+  miss's insertion. General preservation of that agreement remains open.
 - `checkEnvAnon_atomic_preserves_model` connects a supported production
   environment run to model extension. `checkEnvAnon_atomic_no_false` excludes
   a declaration at an axiom type interpreted as empty, including False.
@@ -121,6 +130,9 @@ def idProp (P : Prop) (p : P) : P := p
 def useId (P : Prop) (p : P) : P := idProp P p
 def applyProp (P Q : Prop) (f : P → Q) (p : P) : Q := f p
 def usePoly (P : Prop) (p : P) : P := ident.{0} P p
+axiom T.{u} : Sort u
+axiom f.{u} : T.{u} → T.{u}
+def useF (x : T.{1}) : T.{1} := f.{1} x
 ```
 
 `AtomicEnvironmentFragment` records the precise execution boundary:
@@ -128,10 +140,13 @@ def usePoly (P : Prop) (p : P) : P := ident.{0} P p
 - Every source key occurs in the `buildAnonWork` result, and every work item
   represents an axiom or a definition. Lookup, routing, and reset witnesses
   identify the checked `KConst`.
-- Sort, constant, application, forall, and lambda nodes in the inference witnesses miss both cache partitions.
+- Sort, application, forall, and lambda nodes in the inference witnesses miss both cache partitions.
   Local-variable hits must match the current production declaration type.
-  Constant lookup agrees with
-  an already admitted type and universe count. A specialization supplies
+  Constant nodes use either the existing miss rule or a selected cache hit.
+  A hit checks the loaded declaration, universe arity, finite level resources,
+  and equality of the cached value with pure substitution of its type.
+  Its arity agreement is explicit because no runtime arity guard executes.
+  A miss's lookup agrees with an already admitted type and universe count. A specialization supplies
   closed universe arguments and finite interning/substitution resources at
   the actual post-lookup state. The occurrence annotations on the declared
   type agree with the substituted entry's annotations. These are structural
@@ -153,8 +168,9 @@ def usePoly (P : Prop) (p : P) : P := ident.{0} P p
   Their witnesses retain the actual recursive calls, context preservation
   during function inference, and finite substitution resources. Function
   spines start with locals or admitted constants. Polymorphic constants supply
-  exact lazy-lookup agreement, a closed scoped reading of the selected entry's
-  type, and finite universe-substitution resources. Their result type is fixed
+  lazy-lookup agreement on misses or loaded-declaration agreement on hits, a
+  closed scoped reading of the selected entry's type, and finite
+  universe-substitution resources. Their result type is fixed
   by a pure `readInstantiatedType?` check with the substituted occurrence
   annotations, including when levels simplify. Monomorphic references retain
   their simpler empty-substitution rule. Applying a lambda directly and
@@ -230,7 +246,7 @@ lake test --wfail -- tc-unit
 lake -d Models/SetTheory build --wfail
 ```
 
-The consistency target checks 121 exact theorem boundaries. The production
+The consistency target checks 127 exact theorem boundaries. The production
 environment roots retain four existing generated output-length proofs,
 reached through expression/universe construction, names, and the full
 production method table. They introduce no new native proofs. The model
@@ -259,6 +275,11 @@ Polymorphic-call regressions include Prop/Type instances in real function
 bodies, `max`/`imax` simplification inside Pi domains, closed nested references
 under active locals, separate cache keys for different universe instances,
 and rejected universe arities and argument types.
+Constant-cache regressions cover repeated carrier references within declared
+types and bodies, including per-item cache clearing; full and inference-only
+reuse across fresh local scopes; monomorphic and simplifying substitutions;
+partition priority; and alternating universe instances. Deliberately different
+values in an ineligible partition make the selection tests observable.
 
 ## Certified host adapters
 
@@ -286,6 +307,7 @@ The VM pilot is preserved in the frozen archive and excluded from the host gate.
 | Direct production refinement and its audit | [`Ix/Kernel/Verify/Consistency.lean`](../Ix/Kernel/Verify/Consistency.lean) |
 | Polymorphic inference and universe substitution | [`Consistency/Constant.lean`](../Ix/Kernel/Verify/Consistency/Constant.lean), [`InstUniv.lean`](../Ix/Kernel/Verify/Consistency/InstUniv.lean), [`Model/LevelCongruence.lean`](../Ix/Theory/Model/LevelCongruence.lean) |
 | Polymorphic calls inside binders | [`Consistency/ScopedConstant.lean`](../Ix/Kernel/Verify/Consistency/ScopedConstant.lean), [`ScopedInstUniv.lean`](../Ix/Kernel/Verify/Consistency/ScopedInstUniv.lean) |
+| Constant cache selection, writes, and typing | [`Consistency/ConstantCache.lean`](../Ix/Kernel/Verify/Consistency/ConstantCache.lean) |
 | Dependent binders and function bodies | [`Consistency/BinderInference.lean`](../Ix/Kernel/Verify/Consistency/BinderInference.lean), [`Application.lean`](../Ix/Kernel/Verify/Consistency/Application.lean), [`BinderOpening.lean`](../Ix/Kernel/Verify/Consistency/BinderOpening.lean), [`Context.lean`](../Ix/Kernel/Verify/Consistency/Context.lean), [`Model/Checking.lean`](../Ix/Theory/Model/Checking.lean) |
 | Production environment fragment and relative axiom policy | [`Consistency/Environment.lean`](../Ix/Kernel/Verify/Consistency/Environment.lean), [`Production.lean`](../Ix/Kernel/Verify/Consistency/Production.lean) |
 | Foundation assumptions, theorem contracts, and provenance | [Consistency model guide](theory.md) |
