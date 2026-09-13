@@ -34,7 +34,7 @@ fn fixtures() -> Vec<Expr> {
   result
 }
 
-fn write_expr(out: &mut impl Write, expr: &Expr) -> io::Result<()> {
+pub(super) fn write_expr(out: &mut impl Write, expr: &Expr) -> io::Result<()> {
   match expr {
     Expr::Const(value) => {
       out.write_all(&[0])?;

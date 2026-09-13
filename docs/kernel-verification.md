@@ -410,13 +410,13 @@ sizes, constrained and advice calls, nested continuations, visibility and
 public-claim widths. All 54 parallel release Rust tests pass, including the
 supplied rank/output ambiguity regression; release Clippy denies warnings.
 
-The audit checks 425 roots by traversing checked types, bodies and inductive
-constructors. Six roots use no axioms; seventy-two depend only on `propext`;
-115 use exactly `propext` and `Quot.sound`; the other 232 use exactly
+The audit checks 520 roots by traversing checked types, bodies and inductive
+constructors. Six roots use no axioms; eighty-eight depend only on `propext`;
+159 use exactly `propext` and `Quot.sound`; the other 267 use exactly
 `propext`, `Classical.choice` and `Quot.sound`. The combined closure
-has 16,338 logical declarations and 17,100 declarations after following runtime
+has 16,580 logical declarations and 17,344 declarations after following runtime
 workers and replacements. The frozen report records four native runtime entry points,
-three partial opaque sources and all 155 Ix recursion worker implementations.
+three partial opaque sources and all 157 Ix recursion worker implementations.
 Bytecode comparison/hashing, tail-match restoration and source-value hashing
 use total definitions. Type hashing and type/pattern formatting remain partial.
 These remaining implementations and
@@ -537,9 +537,38 @@ suite passes 63 tests and release Clippy; the strict 140-job proof/test build
 and complete component gate pass with fourteen native comparison corpora.
 The graph model uses natural-number indices and a linear structural interner.
 Rust execution and hash-table refinement, machine bounds, extension-coordinate
-expansion, remaining emitter forms and native acceptance-to-satisfaction
+expansion, control/circuit emission and native acceptance-to-satisfaction
 reduction remain open. Aiur's native system builder supplies no user extension
 constraints: its function, memory and byte circuits all use the base graph.
+
+`OperationExpressions`, `OperationReflection` and `OperationSequences` cover all
+34 operation forms and complete operation lists. Successful symbolic emission
+and evaluation of the incoming value map derive the entire valued emission:
+output expressions and tracked metadata, fresh-column cursor, equations, raw
+queries, and call records with their six rank-gap expressions. The normal-form
+invariant is preserved across every output and sequence. Fresh reads are
+required only for allocated columns, with the sequence theorem requiring
+exactly the consumed interval. Selector values need not be Boolean for this
+reflection. Checked incoming indices still have to be connected to the native
+store's reads after its pointer is appended.
+
+`LookupExpressions` proves selector gating and argument accumulation evaluate
+to the existing physical-slot multiplicity and message definitions. It covers
+unequal message widths, empty slots and repeated writers, in emission order.
+Its expression lookups feed the checked base-graph compiler. The native corpus
+provides the actual operations, incoming trees and assignments; all 1,752
+sequences, 7,008 assignments and 438 cases with shared slots match. It checks
+exact output and constraint trees, independent degree metadata, both cursors,
+and the full combined lookup expressions under both gating modes.
+The 520-root audit preserves every prior 425 statement and axiom set, all 430
+frozen definitions and all 155 worker bodies. It adds 95 roots, 44 definitions
+and constructors, and two inspected total recursion workers. The strict build,
+64 parallel release Rust tests, release Clippy and the component gate with
+fifteen native comparison corpora pass. This checkpoint changes no native AIR,
+compiler output or verification-key format. Control/circuit emission, runtime
+refinement, compiler reflection and the semantic/cryptographic endpoint remain
+separate obligations.
+
 The budget comparison covers
 21,964 Rust/Lean cases, including
 all byte-sized degree values, field and machine boundaries, inactive circuits

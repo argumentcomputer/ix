@@ -53,6 +53,10 @@ import Ix.Aiur.Proofs.ByteColumns
 import Ix.Aiur.Proofs.ExpressionGraph
 import Ix.Aiur.Proofs.FrontendExpressions
 import Ix.Aiur.Proofs.GraphCompilation
+import Ix.Aiur.Proofs.OperationExpressions
+import Ix.Aiur.Proofs.OperationReflection
+import Ix.Aiur.Proofs.OperationSequences
+import Ix.Aiur.Proofs.LookupExpressions
 import Ix.Aiur.Proofs.Metadata
 import Ix.Aiur.Proofs.Renaming
 import Ix.Aiur.Proofs.Dedup

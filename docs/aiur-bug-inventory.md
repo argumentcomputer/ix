@@ -105,3 +105,11 @@ audit preserves every earlier statement, axiom set and frozen definition.
 All 1,484 native base graphs, 38 rejected specifications and 11,872 assignments
 match Lean. This work adds no observed bug class; Rust refinement, extension
 expansion and the cryptographic reduction remain open.
+
+The operation checkpoint covers symbolic emission for all 34 operations,
+complete sequences and lookup-slot accumulation. All 1,752 native sequences,
+7,008 assignments and 438 cases with shared slots match exact expression trees
+and evaluated results. Its 520-root audit preserves all prior statements,
+axiom sets and frozen definitions. It adds no observed bug class or native AIR
+change; control/circuit reflection and the semantic/cryptographic endpoint
+remain open.

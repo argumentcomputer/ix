@@ -9,7 +9,7 @@ use std::collections::HashSet;
 
 use super::*;
 
-fn fixtures() -> Vec<Vec<Op>> {
+pub(super) fn fixtures() -> Vec<Vec<Op>> {
   use Op::*;
   vec![
     vec![Const(G::ZERO)],
@@ -103,7 +103,7 @@ fn fixtures() -> Vec<Vec<Op>> {
   ]
 }
 
-fn input_map() -> Vec<(Expr, Degree)> {
+pub(super) fn input_map() -> Vec<(Expr, Degree)> {
   vec![
     (konst(G::ZERO), 0),
     (konst(G::ONE), 0),
@@ -116,7 +116,7 @@ fn input_map() -> Vec<(Expr, Degree)> {
   ]
 }
 
-fn row(seed: usize, selector: G) -> Vec<G> {
+pub(super) fn row(seed: usize, selector: G) -> Vec<G> {
   let choices = [
     G::ZERO,
     G::ONE,
@@ -214,10 +214,9 @@ fn operation_rows_snapshot() -> io::Result<()> {
   Ok(())
 }
 
-#[test]
-fn constant_degree_rows_snapshot() -> io::Result<()> {
+pub(super) fn constant_degree_fixtures() -> Vec<Vec<Op>> {
   use Op::*;
-  let fixtures = vec![
+  vec![
     vec![Const(G::ZERO), Mul(8, 3), EqZero(9)],
     vec![Const(G::ZERO), Mul(3, 8), EqZero(9)],
     vec![Mul(0, 3), Add(8, 1), EqZero(9)],
@@ -226,7 +225,12 @@ fn constant_degree_rows_snapshot() -> io::Result<()> {
     vec![Mul(0, 3), EqZero(8), Mul(9, 3)],
     vec![Mul(0, 3), Mul(8, 1), EqZero(9)],
     vec![Mul(0, 3), Sub(2, 8), EqZero(9)],
-  ];
+  ]
+}
+
+#[test]
+fn constant_degree_rows_snapshot() -> io::Result<()> {
+  let fixtures = constant_degree_fixtures();
   let (out, checked) =
     write_corpus(b"Aiur constant degree rows v1\n", &fixtures)?;
   assert_eq!(checked, 768);
