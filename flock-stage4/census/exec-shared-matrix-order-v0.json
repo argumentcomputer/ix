@@ -1,0 +1,158 @@
+{
+  "schema": "ixby-stage4-shared-matrix-order-exploration-v0",
+  "measurement_date": "2026-09-13",
+  "base_revision": "89a9487813d1fe20ae33882f14b22b927ccd8662",
+  "status": "bounded_setup_only_order_exploration_not_adopted_or_constraint_counted",
+  "source_hashes": [
+    {
+      "path": "flock-stage4/exec/src/shared_matrix_tests.rs",
+      "sha256": "a5ffc83f92cf0920eb9835d7be5d63f315356b75f6a77552e6206173856d6610"
+    },
+    {
+      "path": "flock-stage4/exec/src/shared_matrix_order_tests.rs",
+      "sha256": "b7e7890629a4eafe437c679cece685df010d1236823bffa5ac833fdc6213ffbb"
+    }
+  ],
+  "baseline_program_digest": "942c6cff1fb8d6f32e9229118e017d5cd6e5d128b51dfb22a8d0faede57ce676",
+  "scope": "The same 64 setup-owned packed small-class matrices, low-vector pairs/blocks and high coordinates as the refused original-claim composition. Only high Shannon coordinate order is varied in a test-only compiler. No production compiler, field gadget, proof parameter, transcript, circuit identity or key is changed.",
+  "checks": [
+    "The baseline test compiler reproduces the production program's entire node vector and all 64 ordered outputs exactly.",
+    "All 16 uniform coordinate-order candidates and the final per-matrix sifted candidate match the independent Flock bilinear evaluator for every matrix at three low/high input vector sets.",
+    "All fixed source entries contribute through their canonical low block. Original low pairs, block patterns and output identities are unchanged.",
+    "Sifting decisions inspect only exact setup diagram size, never private input values, guest code or proof bytes."
+  ],
+  "uniform_candidates": [
+    {
+      "id": 0,
+      "name": "interleaved_msb",
+      "nodes": 63971,
+      "branches": 52740
+    },
+    {
+      "id": 1,
+      "name": "interleaved_lsb",
+      "nodes": 156712,
+      "branches": 145481
+    },
+    {
+      "id": 2,
+      "name": "column_first_interleaved_msb",
+      "nodes": 67951,
+      "branches": 56720
+    },
+    {
+      "id": 3,
+      "name": "column_first_interleaved_lsb",
+      "nodes": 159241,
+      "branches": 148010
+    },
+    {
+      "id": 4,
+      "name": "rows_msb_then_columns_msb",
+      "nodes": 86888,
+      "branches": 75657
+    },
+    {
+      "id": 5,
+      "name": "columns_msb_then_rows_msb",
+      "nodes": 97050,
+      "branches": 85819
+    },
+    {
+      "id": 6,
+      "name": "rows_lsb_then_columns_lsb",
+      "nodes": 150278,
+      "branches": 139047
+    },
+    {
+      "id": 7,
+      "name": "columns_lsb_then_rows_lsb",
+      "nodes": 141527,
+      "branches": 130296
+    },
+    {
+      "id": 8,
+      "name": "chunk2_row_first_msb",
+      "nodes": 63504,
+      "branches": 52273
+    },
+    {
+      "id": 9,
+      "name": "chunk2_column_first_msb",
+      "nodes": 72951,
+      "branches": 61720
+    },
+    {
+      "id": 10,
+      "name": "chunk3_row_first_msb",
+      "nodes": 66588,
+      "branches": 55357
+    },
+    {
+      "id": 11,
+      "name": "chunk3_column_first_msb",
+      "nodes": 70061,
+      "branches": 58830
+    },
+    {
+      "id": 12,
+      "name": "chunk4_row_first_msb",
+      "nodes": 67040,
+      "branches": 55809
+    },
+    {
+      "id": 13,
+      "name": "chunk4_column_first_msb",
+      "nodes": 75060,
+      "branches": 63829
+    },
+    {
+      "id": 14,
+      "name": "chunk6_row_first_msb",
+      "nodes": 67184,
+      "branches": 55953
+    },
+    {
+      "id": 15,
+      "name": "chunk6_column_first_msb",
+      "nodes": 78499,
+      "branches": 67268
+    }
+  ],
+  "sifted_candidate": {
+    "nodes": 58928,
+    "branches": 47697,
+    "fixed_low_pairs": 4096,
+    "baseline_branches": 52740,
+    "branches_removed": 5043,
+    "branch_reduction_fraction": 0.09562002275312856,
+    "algorithm": "Per matrix, choose the best of the 16 fixed orders by exact standalone node count, then make one deterministic pass moving each coordinate through every position, accepting only strict improvements. Finally rebuild and share equal nodes across all 64 matrices.",
+    "sifting_and_native_check_seconds": 3.61
+  },
+  "bounds": {
+    "virtual_address_limit_gib": 16,
+    "rayon_threads": 4,
+    "timeout_seconds": 180,
+    "per_diagram_source_entry_limit": 1000000,
+    "per_diagram_node_limit": 200000,
+    "shared_candidate_node_limit": 1000000,
+    "maximum_high_coordinates": 22
+  },
+  "test_result": {
+    "passed": 1,
+    "failed": 0,
+    "test_seconds": 4.53,
+    "clippy_all_targets_warnings_denied": "PASS",
+    "format_check": "PASS"
+  },
+  "raw_log": {
+    "path": "flock-stage4/census/exec-shared-matrix-order-v0.log",
+    "sha256": "613b0252391ff4ee5f0c03df9c72bd921744d74c12dcdd93399dd65a0f0b4df5",
+    "capture_normalization": "One trailing blank line removed from captured test output."
+  },
+  "command": "ulimit -v 16777216 && RAYON_NUM_THREADS=4 timeout 180 cargo test --manifest-path flock-stage4/Cargo.toml --release --offline --locked -p ixby-stage4-exec packed_small_shared_matrix_order_diagnostic -- --ignored --nocapture --test-threads=1",
+  "interpretation": "The best uniform order removes fewer than one percent of baseline branches; per-matrix sifting removes about 9.56 percent. Node counts are not PLONK counts, peak prover memory, or a whole-relation domain fit. The candidate has not been emitted as a circuit or adopted. More substantial exact arithmetic/cofactor sharing remains the next optimization target.",
+  "candidate_adopted": false,
+  "candidate_r1cs_or_plonk_census_completed": false,
+  "whole_closed_proof_generated": false
+}

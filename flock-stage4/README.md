@@ -23,7 +23,7 @@ nonzero blinding admission, authenticated scratch corruption, and identical
 proof/key results across memory and file backends for fixed test randomness.
 Small proofs use development setup and randomness, not production security.
 The generic replay and root-closure/setup prototypes pass 228 ordinary tests
-(89 FFLONK, 43 trace, 79 circuit, 17 replay/setup); thirty-one heavier native,
+(89 FFLONK, 43 trace, 79 circuit, 17 replay/setup); thirty-two heavier native,
 materialization, and census/optimization tests remain opt-in.
 
 ## Generic Exec replay
@@ -332,6 +332,12 @@ only matrix-free census memory, not prover memory. The [report](census/exec-orig
 and [raw log](census/exec-original-claims-closed-v0.log) retain source identities,
 bounds, negative tests and measurement scope. Further exact cost reduction,
 whole-pipeline RAM/disk admission and an actual full closed proof remain required.
+
+A subsequent test-only [coordinate-order exploration](census/exec-shared-matrix-order-v0.json)
+checks all 64 native evaluations for sixteen fixed orders and one per-matrix
+sifting candidate. The latter reduces high interpolation branches from 52,740
+to 47,697; the low products/blocks are unchanged. It is not adopted or emitted
+as a circuit, and the 9.56% branch saving is not a PLONK-row or whole-fit claim.
 
 ## File-key storage without a duplicated C0
 

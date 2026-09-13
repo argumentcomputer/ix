@@ -140,11 +140,12 @@ phase/topology digests agree. No Stage 4 key or FFLONK proof is generated.
 | Accumulator transcript compression rows / PoW predicates | 4,947 / 1,373 |
 | Terminal diagnostic root families | 46 matrix roots, 1 structure, 1 jagged |
 
-The current ordinary Stage 4 workspace suite passes 228 tests; 31 tests are
+The current ordinary Stage 4 workspace suite passes 228 tests; 32 tests are
 ignored by default. These separately labelled opt-in tests cover native
 proof/replay, component materialization, and bounded whole-circuit census;
 none is a full terminal proving test. This count includes the later packed
-backend integration, direct original-claim closure and derived-C0 storage below.
+backend integration, direct original-claim closure, table-order exploration and
+derived-C0 storage below.
 The real three-execution replay regression passes under a 32 GiB
 address-space cap with four Rayon threads. The complete matrix-free census
 finished successfully in 1,161.51 seconds, including setup, under that cap.
