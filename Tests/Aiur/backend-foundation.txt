@@ -8320,6 +8320,356 @@ ROOT Aiur.NativeAIR.Quotient.check_true_iff
             Aiur.NativeAIR.Domain.vanishing domain point *
               Aiur.NativeAIR.Quotient.horner (point ^ Aiur.NativeAIR.Domain.size domain) values
 AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.CompiledKey.preprocessedIndices_none
+∀ (program : Aiur.Bytecode.Toplevel) (index : Nat),
+  (Aiur.NativeAIR.CompiledKey.preprocessedIndices program)[index]? = some none ↔
+    index < program.circuits.size + program.memorySizes.size
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.CompiledKey.circuits_preprocessed_absent
+∀ {program : Aiur.Bytecode.Toplevel} {result : List Aiur.NativeAIR.KeyCodec.Circuit},
+  Aiur.NativeAIR.CompiledKey.circuits program = some result →
+    ∀ {index : Nat} {artifact : Aiur.NativeAIR.KeyCodec.Circuit},
+      result[index]? = some artifact →
+        (Aiur.NativeAIR.CompiledKey.preprocessedIndices program)[index]? = some none → artifact.preprocessedWidth = 0
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.BoundVerifier.CompiledBackend.row_preprocessed_absent
+∀ {selection : Aiur.BoundVerifier.Selection} (backend : Aiur.BoundVerifier.CompiledBackend selection)
+  {proof : Aiur.NativeAIR.ProofCodec.Data} {index position : Nat} {row : Aiur.NativeAIR.ProofShape.Row},
+  Aiur.NativeAIR.ProofShape.Row.Sourced backend.keyData proof index position row →
+    row.preprocessed = none → row.circuit.preprocessedWidth = 0
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.VerifierArithmetic.publics_size
+∀ (challenges : Aiur.NativeAIR.VerifierArithmetic.Challenges) (entering leaving : Aiur.NativeAIR.ProofCodec.Extension),
+  (Aiur.NativeAIR.VerifierArithmetic.publics challenges entering leaving).size = 8
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.VerifierArithmetic.publics_beta
+∀ (challenges : Aiur.NativeAIR.VerifierArithmetic.Challenges) (entering leaving : Aiur.NativeAIR.ProofCodec.Extension),
+  Aiur.NativeAIR.LogUp.Coordinates.read (Aiur.NativeAIR.VerifierArithmetic.publics challenges entering leaving) 0 =
+    some
+      (Aiur.NativeAIR.LogUp.Coordinates.map Aiur.NativeAIR.ProofCodec.Extension.ofBase
+        (Aiur.NativeAIR.LogUp.Coordinates.fromExtension challenges.beta))
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.VerifierArithmetic.publics_gamma
+∀ (challenges : Aiur.NativeAIR.VerifierArithmetic.Challenges) (entering leaving : Aiur.NativeAIR.ProofCodec.Extension),
+  Aiur.NativeAIR.LogUp.Coordinates.read (Aiur.NativeAIR.VerifierArithmetic.publics challenges entering leaving) 1 =
+    some
+      (Aiur.NativeAIR.LogUp.Coordinates.map Aiur.NativeAIR.ProofCodec.Extension.ofBase
+        (Aiur.NativeAIR.LogUp.Coordinates.fromExtension challenges.gamma))
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.VerifierArithmetic.publics_entering
+∀ (challenges : Aiur.NativeAIR.VerifierArithmetic.Challenges) (entering leaving : Aiur.NativeAIR.ProofCodec.Extension),
+  Aiur.NativeAIR.LogUp.Coordinates.read (Aiur.NativeAIR.VerifierArithmetic.publics challenges entering leaving) 2 =
+    some
+      (Aiur.NativeAIR.LogUp.Coordinates.map Aiur.NativeAIR.ProofCodec.Extension.ofBase
+        (Aiur.NativeAIR.LogUp.Coordinates.fromExtension entering))
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.VerifierArithmetic.publics_leaving
+∀ (challenges : Aiur.NativeAIR.VerifierArithmetic.Challenges) (entering leaving : Aiur.NativeAIR.ProofCodec.Extension),
+  Aiur.NativeAIR.LogUp.Coordinates.read (Aiur.NativeAIR.VerifierArithmetic.publics challenges entering leaving) 3 =
+    some
+      (Aiur.NativeAIR.LogUp.Coordinates.map Aiur.NativeAIR.ProofCodec.Extension.ofBase
+        (Aiur.NativeAIR.LogUp.Coordinates.fromExtension leaving))
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.VerifierArithmetic.deltaScaled_size
+∀ (domain : Aiur.NativeAIR.Domain.Subgroup) (entering leaving : Aiur.NativeAIR.ProofCodec.Extension),
+  (Aiur.NativeAIR.VerifierArithmetic.deltaScaled domain entering leaving).size = 2
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.VerifierArithmetic.deltaScaled_coordinates
+∀ (domain : Aiur.NativeAIR.Domain.Subgroup) (entering leaving : Aiur.NativeAIR.ProofCodec.Extension),
+  Aiur.NativeAIR.LogUp.Coordinates.read (Aiur.NativeAIR.VerifierArithmetic.deltaScaled domain entering leaving) 0 =
+    some
+      (Aiur.NativeAIR.LogUp.Coordinates.map Aiur.NativeAIR.ProofCodec.Extension.ofBase
+        ((Aiur.NativeAIR.LogUp.Coordinates.fromExtension (leaving - entering)).scale
+          (Aiur.NativeAIR.Domain.normalizer domain).inverse))
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.VerifierArithmetic.view_fits
+∀ {parameters : Aiur.NativeAIR.KeyCodec.Parameters} {row : Aiur.NativeAIR.ProofShape.Row},
+  Aiur.NativeAIR.ProofShape.Row.Fits parameters row →
+    (row.preprocessed = none → row.circuit.preprocessedWidth = 0) →
+      ∀ (challenges : Aiur.NativeAIR.VerifierArithmetic.Challenges) (entering : Aiur.NativeAIR.ProofCodec.Extension)
+        (selectors : Aiur.NativeAIR.Domain.Selectors Aiur.NativeAIR.ProofCodec.Extension),
+        (Aiur.NativeAIR.VerifierArithmetic.view challenges row entering selectors).Fits row.circuit.widths
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.VerifierArithmetic.domain_defined
+∀ {parameters : Aiur.NativeAIR.KeyCodec.Parameters} {row : Aiur.NativeAIR.ProofShape.Row},
+  Aiur.NativeAIR.ProofShape.Row.Fits parameters row →
+    ∃ domain, Aiur.NativeAIR.Domain.ofLogSize row.logDegree.toNat = some domain
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.VerifierArithmetic.stage2_width
+∀ {parameters : Aiur.NativeAIR.KeyCodec.Parameters} {row : Aiur.NativeAIR.ProofShape.Row},
+  Aiur.NativeAIR.ProofShape.Row.Fits parameters row →
+    0 < row.circuit.lookupGroupSize →
+      Aiur.NativeAIR.LogUp.groupCount row.circuit.lookupGroupSize row.circuit.graph.lookups.length * 2 ≤
+          (Aiur.NativeAIR.VerifierArithmetic.rowColumns row Aiur.NativeAIR.Source.stage2
+              Aiur.NativeAIR.RowOffset.current).size ∧
+        2 ≤
+          (Aiur.NativeAIR.VerifierArithmetic.rowColumns row Aiur.NativeAIR.Source.stage2
+              Aiur.NativeAIR.RowOffset.next).size
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.VerifierArithmetic.evaluate_success
+∀ {challenges : Aiur.NativeAIR.VerifierArithmetic.Challenges} {row : Aiur.NativeAIR.ProofShape.Row}
+  {entering : Aiur.NativeAIR.ProofCodec.Extension} {result : Aiur.NativeAIR.VerifierArithmetic.Evaluation},
+  Aiur.NativeAIR.VerifierArithmetic.evaluate challenges row entering = some result →
+    Aiur.NativeAIR.VerifierArithmetic.Evaluation.Reads challenges row entering result
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.VerifierArithmetic.Evaluation.Reads.evaluate
+∀ {challenges : Aiur.NativeAIR.VerifierArithmetic.Challenges} {row : Aiur.NativeAIR.ProofShape.Row}
+  {entering : Aiur.NativeAIR.ProofCodec.Extension} {result : Aiur.NativeAIR.VerifierArithmetic.Evaluation},
+  Aiur.NativeAIR.VerifierArithmetic.Evaluation.Reads challenges row entering result →
+    Aiur.NativeAIR.VerifierArithmetic.evaluate challenges row entering = some result
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.VerifierArithmetic.evaluate_defined
+∀ {parameters : Aiur.NativeAIR.KeyCodec.Parameters} {row : Aiur.NativeAIR.ProofShape.Row},
+  Aiur.NativeAIR.ProofShape.Row.Fits parameters row →
+    row.circuit.valid = true →
+      (row.preprocessed = none → row.circuit.preprocessedWidth = 0) →
+        ∀ (challenges : Aiur.NativeAIR.VerifierArithmetic.Challenges) (entering : Aiur.NativeAIR.ProofCodec.Extension)
+          {domain : Aiur.NativeAIR.Domain.Subgroup},
+          Aiur.NativeAIR.Domain.ofLogSize row.logDegree.toNat = some domain →
+            Aiur.NativeAIR.Domain.vanishing domain challenges.zeta ≠ 0 →
+              ∃ result, Aiur.NativeAIR.VerifierArithmetic.evaluate challenges row entering = some result
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.VerifierArithmetic.evaluate_defined_iff
+∀ {parameters : Aiur.NativeAIR.KeyCodec.Parameters} {row : Aiur.NativeAIR.ProofShape.Row},
+  Aiur.NativeAIR.ProofShape.Row.Fits parameters row →
+    row.circuit.valid = true →
+      (row.preprocessed = none → row.circuit.preprocessedWidth = 0) →
+        ∀ (challenges : Aiur.NativeAIR.VerifierArithmetic.Challenges) (entering : Aiur.NativeAIR.ProofCodec.Extension),
+          (∃ result, Aiur.NativeAIR.VerifierArithmetic.evaluate challenges row entering = some result) ↔
+            ∃ domain,
+              Aiur.NativeAIR.Domain.ofLogSize row.logDegree.toNat = some domain ∧
+                Aiur.NativeAIR.Domain.vanishing domain challenges.zeta ≠ 0
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.VerifierArithmetic.evaluate_constraint_count
+∀ {challenges : Aiur.NativeAIR.VerifierArithmetic.Challenges} {row : Aiur.NativeAIR.ProofShape.Row}
+  {entering : Aiur.NativeAIR.ProofCodec.Extension} {result : Aiur.NativeAIR.VerifierArithmetic.Evaluation},
+  Aiur.NativeAIR.VerifierArithmetic.evaluate challenges row entering = some result →
+    0 < row.circuit.lookupGroupSize → result.constraints.length = row.circuit.constraintCount
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.VerifierArithmetic.evaluate_reflects
+∀ {challenges : Aiur.NativeAIR.VerifierArithmetic.Challenges} {row : Aiur.NativeAIR.ProofShape.Row}
+  {entering : Aiur.NativeAIR.ProofCodec.Extension} {result : Aiur.NativeAIR.VerifierArithmetic.Evaluation},
+  Aiur.NativeAIR.VerifierArithmetic.evaluate challenges row entering = some result →
+    Aiur.NativeAIR.Graph.Valid row.circuit.widths row.circuit.graph →
+      ∃ trees lookups coordinates,
+        row.circuit.graph.unfold = some trees ∧
+          Aiur.NativeAIR.Reflects Aiur.NativeAIR.ProofCodec.Extension.evalOps
+              (Aiur.NativeAIR.VerifierArithmetic.view challenges row entering result.selectors) trees
+              result.nodeValues ∧
+            Aiur.NativeAIR.evalRoots Aiur.NativeAIR.ProofCodec.Extension.evalOps
+                  (Aiur.NativeAIR.VerifierArithmetic.view challenges row entering result.selectors) trees
+                  row.circuit.graph.zeros =
+                some result.userValues ∧
+              List.mapM
+                    (Aiur.NativeAIR.evalLookup Aiur.NativeAIR.ProofCodec.Extension.evalOps
+                      (Aiur.NativeAIR.VerifierArithmetic.view challenges row entering result.selectors) trees)
+                    row.circuit.graph.lookups =
+                  some lookups ∧
+                Aiur.NativeAIR.LogUp.equations lookups
+                      (Aiur.NativeAIR.VerifierArithmetic.rowColumns row Aiur.NativeAIR.Source.stage2
+                        Aiur.NativeAIR.RowOffset.current)
+                      (Aiur.NativeAIR.VerifierArithmetic.rowColumns row Aiur.NativeAIR.Source.stage2
+                        Aiur.NativeAIR.RowOffset.next)
+                      (Aiur.NativeAIR.VerifierArithmetic.publics challenges entering row.accumulator)
+                      (Aiur.NativeAIR.VerifierArithmetic.deltaScaled result.domain entering row.accumulator)
+                      result.selectors.isLast row.circuit.lookupGroupSize =
+                    some coordinates ∧
+                  result.lookupValues = Aiur.NativeAIR.LogUp.Coordinates.flatten coordinates
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.VerifierArithmetic.Evaluation.Reads.identity
+∀ {challenges : Aiur.NativeAIR.VerifierArithmetic.Challenges} {row : Aiur.NativeAIR.ProofShape.Row}
+  {entering : Aiur.NativeAIR.ProofCodec.Extension} {result : Aiur.NativeAIR.VerifierArithmetic.Evaluation},
+  Aiur.NativeAIR.VerifierArithmetic.Evaluation.Reads challenges row entering result →
+    (result.accepts challenges.alpha = true ↔
+      Aiur.NativeAIR.Quotient.composition challenges.alpha result.constraints =
+        Aiur.NativeAIR.Domain.vanishing result.domain challenges.zeta * result.quotientValue)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.VerifierArithmetic.check_true_iff
+∀ (challenges : Aiur.NativeAIR.VerifierArithmetic.Challenges) (row : Aiur.NativeAIR.ProofShape.Row)
+  (entering : Aiur.NativeAIR.ProofCodec.Extension),
+  Aiur.NativeAIR.VerifierArithmetic.check challenges row entering = some true ↔
+    ∃ result,
+      Aiur.NativeAIR.VerifierArithmetic.evaluate challenges row entering = some result ∧
+        Aiur.NativeAIR.Quotient.composition challenges.alpha result.constraints =
+          Aiur.NativeAIR.Domain.vanishing result.domain challenges.zeta * result.quotientValue
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.VerifierArithmetic.check_quotient
+∀ {challenges : Aiur.NativeAIR.VerifierArithmetic.Challenges} {row : Aiur.NativeAIR.ProofShape.Row}
+  {entering : Aiur.NativeAIR.ProofCodec.Extension} {result : Aiur.NativeAIR.VerifierArithmetic.Evaluation},
+  Aiur.NativeAIR.VerifierArithmetic.evaluate challenges row entering = some result →
+    Aiur.NativeAIR.VerifierArithmetic.check challenges row entering =
+      Aiur.NativeAIR.Quotient.check result.domain challenges.zeta challenges.alpha result.constraints row.quotient
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.BoundVerifier.CompiledBackend.checked_row_arithmetic
+∀ {selection : Aiur.BoundVerifier.Selection} (backend : Aiur.BoundVerifier.CompiledBackend selection)
+  {bytes : ByteArray} (checked : Aiur.BoundVerifier.CheckedProof backend.keyData bytes) {position : Nat}
+  {row : Aiur.NativeAIR.ProofShape.Row},
+  checked.rows[position]? = some row →
+    ∀ (challenges : Aiur.NativeAIR.VerifierArithmetic.Challenges) (entering : Aiur.NativeAIR.ProofCodec.Extension),
+      ∃ domain,
+        Aiur.NativeAIR.Domain.ofLogSize row.logDegree.toNat = some domain ∧
+          ((∃ result, Aiur.NativeAIR.VerifierArithmetic.evaluate challenges row entering = some result) ↔
+            Aiur.NativeAIR.Domain.vanishing domain challenges.zeta ≠ 0)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.VerifierArithmetic.claimMessage_native
+∀ (challenges : Aiur.NativeAIR.VerifierArithmetic.Challenges) (claim : List Aiur.G),
+  Aiur.NativeAIR.VerifierArithmetic.claimMessage challenges claim =
+    challenges.beta +
+      List.foldr
+        (fun arg accumulated => accumulated * challenges.gamma + Aiur.NativeAIR.ProofCodec.Extension.ofBase arg) 0 claim
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.VerifierArithmetic.publicEntries_compress
+∀ (challenges : Aiur.NativeAIR.VerifierArithmetic.Challenges) (claims : List (List Aiur.G)),
+  Aiur.NativeAIR.LogUp.fieldEntries
+      (Aiur.NativeAIR.LogUp.compress (Aiur.NativeAIR.LogUp.Coordinates.fromExtension challenges.beta)
+        (Aiur.NativeAIR.LogUp.Coordinates.fromExtension challenges.gamma) (List.map (fun claim => (1, claim)) claims)) =
+    Aiur.NativeAIR.VerifierArithmetic.publicEntries challenges claims
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.VerifierArithmetic.initialAccumulator_nil
+∀ (challenges : Aiur.NativeAIR.VerifierArithmetic.Challenges),
+  Aiur.NativeAIR.VerifierArithmetic.initialAccumulator challenges [] = some 0
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.VerifierArithmetic.initialAccumulator_cons
+∀ (challenges : Aiur.NativeAIR.VerifierArithmetic.Challenges) (claim : List Aiur.G) (claims : List (List Aiur.G)),
+  Aiur.NativeAIR.VerifierArithmetic.initialAccumulator challenges (claim :: claims) = do
+    let inverse ← (Aiur.NativeAIR.VerifierArithmetic.claimMessage challenges claim).tryInverse
+    let rest ← Aiur.NativeAIR.VerifierArithmetic.initialAccumulator challenges claims
+    pure (inverse + rest)
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.VerifierArithmetic.initialAccumulator_success
+∀ {challenges : Aiur.NativeAIR.VerifierArithmetic.Challenges} {claims : List (List Aiur.G)}
+  {accumulator : Aiur.NativeAIR.ProofCodec.Extension},
+  Aiur.NativeAIR.VerifierArithmetic.initialAccumulator challenges claims = some accumulator →
+    Aiur.NativeAIR.LogUp.PoleFree (Aiur.NativeAIR.VerifierArithmetic.publicEntries challenges claims) ∧
+      accumulator = Aiur.NativeAIR.LogUp.fractionSum (Aiur.NativeAIR.VerifierArithmetic.publicEntries challenges claims)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.VerifierArithmetic.initialAccumulator_defined
+∀ (challenges : Aiur.NativeAIR.VerifierArithmetic.Challenges) (claims : List (List Aiur.G)),
+  Aiur.NativeAIR.LogUp.PoleFree (Aiur.NativeAIR.VerifierArithmetic.publicEntries challenges claims) →
+    ∃ accumulator, Aiur.NativeAIR.VerifierArithmetic.initialAccumulator challenges claims = some accumulator
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.VerifierArithmetic.initialAccumulator_defined_iff
+∀ (challenges : Aiur.NativeAIR.VerifierArithmetic.Challenges) (claims : List (List Aiur.G)),
+  (∃ accumulator, Aiur.NativeAIR.VerifierArithmetic.initialAccumulator challenges claims = some accumulator) ↔
+    Aiur.NativeAIR.LogUp.PoleFree (Aiur.NativeAIR.VerifierArithmetic.publicEntries challenges claims)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.VerifierArithmetic.initialAccumulator_lookupFractions
+∀ {challenges : Aiur.NativeAIR.VerifierArithmetic.Challenges} {claims : List (List Aiur.G)}
+  {accumulator : Aiur.NativeAIR.ProofCodec.Extension},
+  Aiur.NativeAIR.VerifierArithmetic.initialAccumulator challenges claims = some accumulator →
+    accumulator =
+      Aiur.NativeAIR.LogUp.lookupFractions (Aiur.NativeAIR.LogUp.Coordinates.fromExtension challenges.beta)
+        (Aiur.NativeAIR.LogUp.Coordinates.fromExtension challenges.gamma) (List.map (fun claim => (1, claim)) claims)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.VerifierArithmetic.checkRows_cons
+∀ (challenges : Aiur.NativeAIR.VerifierArithmetic.Challenges) (row : Aiur.NativeAIR.ProofShape.Row)
+  (rows : List Aiur.NativeAIR.ProofShape.Row) (entering final : Aiur.NativeAIR.ProofCodec.Extension),
+  Aiur.NativeAIR.VerifierArithmetic.checkRows challenges (row :: rows) entering = some final ↔
+    Aiur.NativeAIR.VerifierArithmetic.check challenges row entering = some true ∧
+      Aiur.NativeAIR.VerifierArithmetic.checkRows challenges rows row.accumulator = some final
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.VerifierArithmetic.checkRows_final
+∀ {challenges : Aiur.NativeAIR.VerifierArithmetic.Challenges} {rows : List Aiur.NativeAIR.ProofShape.Row}
+  {entering final : Aiur.NativeAIR.ProofCodec.Extension},
+  Aiur.NativeAIR.VerifierArithmetic.checkRows challenges rows entering = some final →
+    List.foldl (fun x row => row.accumulator) entering rows = final
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.VerifierArithmetic.checkRows_row
+∀ {challenges : Aiur.NativeAIR.VerifierArithmetic.Challenges} {rows : List Aiur.NativeAIR.ProofShape.Row}
+  {entering final : Aiur.NativeAIR.ProofCodec.Extension},
+  Aiur.NativeAIR.VerifierArithmetic.checkRows challenges rows entering = some final →
+    ∀ {position : Nat} {row : Aiur.NativeAIR.ProofShape.Row},
+      rows[position]? = some row →
+        ∃ before,
+          (entering :: List.map (fun x => x.accumulator) rows)[position]? = some before ∧
+            Aiur.NativeAIR.VerifierArithmetic.check challenges row before = some true
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.VerifierArithmetic.checkRows_sum
+∀ {challenges : Aiur.NativeAIR.VerifierArithmetic.Challenges} {rows : List Aiur.NativeAIR.ProofShape.Row}
+  {entering final : Aiur.NativeAIR.ProofCodec.Extension},
+  Aiur.NativeAIR.VerifierArithmetic.checkRows challenges rows entering = some final →
+    ∀ (fraction : Aiur.NativeAIR.ProofShape.Row → Aiur.NativeAIR.ProofCodec.Extension),
+      (∀ (row : Aiur.NativeAIR.ProofShape.Row),
+          row ∈ rows →
+            ∀ (before : Aiur.NativeAIR.ProofCodec.Extension),
+              Aiur.NativeAIR.VerifierArithmetic.check challenges row before = some true →
+                fraction row = row.accumulator - before) →
+        Aiur.NativeAIR.LogUp.sum (List.map fraction rows) = final - entering
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.VerifierArithmetic.verify_true_iff
+∀ (challenges : Aiur.NativeAIR.VerifierArithmetic.Challenges) (claims : List (List Aiur.G))
+  (rows : List Aiur.NativeAIR.ProofShape.Row),
+  Aiur.NativeAIR.VerifierArithmetic.verify challenges claims rows = some true ↔
+    rows ≠ [] ∧
+      ∃ entering,
+        Aiur.NativeAIR.VerifierArithmetic.initialAccumulator challenges claims = some entering ∧
+          Aiur.NativeAIR.VerifierArithmetic.checkRows challenges rows entering = some 0
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.VerifierArithmetic.verify_lookup_balance
+∀ {challenges : Aiur.NativeAIR.VerifierArithmetic.Challenges} {claims : List (List Aiur.G)}
+  {rows : List Aiur.NativeAIR.ProofShape.Row},
+  Aiur.NativeAIR.VerifierArithmetic.verify challenges claims rows = some true →
+    ∀ (fraction : Aiur.NativeAIR.ProofShape.Row → Aiur.NativeAIR.ProofCodec.Extension),
+      (∀ (row : Aiur.NativeAIR.ProofShape.Row),
+          row ∈ rows →
+            ∀ (before : Aiur.NativeAIR.ProofCodec.Extension),
+              Aiur.NativeAIR.VerifierArithmetic.check challenges row before = some true →
+                fraction row = row.accumulator - before) →
+        Aiur.NativeAIR.LogUp.lookupFractions (Aiur.NativeAIR.LogUp.Coordinates.fromExtension challenges.beta)
+              (Aiur.NativeAIR.LogUp.Coordinates.fromExtension challenges.gamma)
+              (List.map (fun claim => (1, claim)) claims) +
+            Aiur.NativeAIR.LogUp.sum (List.map fraction rows) =
+          0
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.VerifierArithmetic.verify_row
+∀ {challenges : Aiur.NativeAIR.VerifierArithmetic.Challenges} {claims : List (List Aiur.G)}
+  {rows : List Aiur.NativeAIR.ProofShape.Row},
+  Aiur.NativeAIR.VerifierArithmetic.verify challenges claims rows = some true →
+    ∀ {position : Nat} {row : Aiur.NativeAIR.ProofShape.Row},
+      rows[position]? = some row →
+        ∃ initial before result,
+          Aiur.NativeAIR.VerifierArithmetic.initialAccumulator challenges claims = some initial ∧
+            (initial :: List.map (fun x => x.accumulator) rows)[position]? = some before ∧
+              Aiur.NativeAIR.VerifierArithmetic.evaluate challenges row before = some result ∧
+                Aiur.NativeAIR.Quotient.composition challenges.alpha result.constraints =
+                  Aiur.NativeAIR.Domain.vanishing result.domain challenges.zeta * result.quotientValue
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.BoundVerifier.CompiledBackend.checked_row_values
+∀ {selection : Aiur.BoundVerifier.Selection} (backend : Aiur.BoundVerifier.CompiledBackend selection)
+  {bytes : ByteArray} (checked : Aiur.BoundVerifier.CheckedProof backend.keyData bytes)
+  {challenges : Aiur.NativeAIR.VerifierArithmetic.Challenges} {claims : List (List Aiur.G)},
+  Aiur.NativeAIR.VerifierArithmetic.verify challenges claims checked.rows = some true →
+    ∀ {position : Nat} {row : Aiur.NativeAIR.ProofShape.Row},
+      checked.rows[position]? = some row →
+        Aiur.NativeAIR.ProofShape.Row.Sourced backend.keyData checked.data row.circuitIndex position row ∧
+          Aiur.NativeAIR.ProofShape.Row.Fits backend.keyData.parameters row ∧
+            ∃ initial before result trees lookups coordinates,
+              Aiur.NativeAIR.VerifierArithmetic.initialAccumulator challenges claims = some initial ∧
+                (initial :: List.map (fun x => x.accumulator) checked.rows)[position]? = some before ∧
+                  Aiur.NativeAIR.VerifierArithmetic.evaluate challenges row before = some result ∧
+                    row.circuit.graph.unfold = some trees ∧
+                      Aiur.NativeAIR.evalRoots Aiur.NativeAIR.ProofCodec.Extension.evalOps
+                            (Aiur.NativeAIR.VerifierArithmetic.view challenges row before result.selectors) trees
+                            row.circuit.graph.zeros =
+                          some result.userValues ∧
+                        List.mapM
+                              (Aiur.NativeAIR.evalLookup Aiur.NativeAIR.ProofCodec.Extension.evalOps
+                                (Aiur.NativeAIR.VerifierArithmetic.view challenges row before result.selectors) trees)
+                              row.circuit.graph.lookups =
+                            some lookups ∧
+                          Aiur.NativeAIR.LogUp.equations lookups
+                                (Aiur.NativeAIR.VerifierArithmetic.rowColumns row Aiur.NativeAIR.Source.stage2
+                                  Aiur.NativeAIR.RowOffset.current)
+                                (Aiur.NativeAIR.VerifierArithmetic.rowColumns row Aiur.NativeAIR.Source.stage2
+                                  Aiur.NativeAIR.RowOffset.next)
+                                (Aiur.NativeAIR.VerifierArithmetic.publics challenges before row.accumulator)
+                                (Aiur.NativeAIR.VerifierArithmetic.deltaScaled result.domain before row.accumulator)
+                                result.selectors.isLast row.circuit.lookupGroupSize =
+                              some coordinates ∧
+                            result.lookupValues = Aiur.NativeAIR.LogUp.Coordinates.flatten coordinates ∧
+                              Aiur.NativeAIR.Quotient.composition challenges.alpha result.constraints =
+                                Aiur.NativeAIR.Domain.vanishing result.domain challenges.zeta * result.quotientValue
+AXIOMS [propext, Classical.choice, Quot.sound]
 PREMISE Aiur.AIR.activityConstraint
 Aiur.G → Aiur.G → Aiur.G
 DEFINITION
@@ -14229,6 +14579,165 @@ PREMISE Aiur.NativeAIR.Domain.Algebra.dividedPowers
 {R : Type} → [Grind.CommRing R] → R → R → Nat → R
 DEFINITION
 fun {R} [Grind.CommRing R] x a x_1 => Nat.brecOn x_1 (Aiur.NativeAIR.Domain.Algebra.dividedPowers._f x a)
+PREMISE Aiur.NativeAIR.VerifierArithmetic.Challenges.mk
+Aiur.NativeAIR.ProofCodec.Extension →
+  Aiur.NativeAIR.ProofCodec.Extension →
+    Aiur.NativeAIR.ProofCodec.Extension →
+      Aiur.NativeAIR.ProofCodec.Extension → Aiur.NativeAIR.VerifierArithmetic.Challenges
+PREMISE Aiur.NativeAIR.VerifierArithmetic.pairColumns
+Aiur.NativeAIR.ProofShape.Pair → Aiur.NativeAIR.RowOffset → Array Aiur.NativeAIR.ProofCodec.Extension
+DEFINITION
+fun pair x =>
+  match x with
+  | Aiur.NativeAIR.RowOffset.current => pair.current.toArray
+  | Aiur.NativeAIR.RowOffset.next => pair.next.toArray
+PREMISE Aiur.NativeAIR.VerifierArithmetic.rowColumns
+Aiur.NativeAIR.ProofShape.Row →
+  Aiur.NativeAIR.Source → Aiur.NativeAIR.RowOffset → Array Aiur.NativeAIR.ProofCodec.Extension
+DEFINITION
+fun row x =>
+  match (motive := Aiur.NativeAIR.Source → Aiur.NativeAIR.RowOffset → Array Aiur.NativeAIR.ProofCodec.Extension) x with
+  | Aiur.NativeAIR.Source.preprocessed =>
+    match (motive :=
+      Option Aiur.NativeAIR.ProofShape.Pair → Aiur.NativeAIR.RowOffset → Array Aiur.NativeAIR.ProofCodec.Extension)
+      row.preprocessed with
+    | none => fun x => #[]
+    | some pair => Aiur.NativeAIR.VerifierArithmetic.pairColumns pair
+  | Aiur.NativeAIR.Source.main => Aiur.NativeAIR.VerifierArithmetic.pairColumns row.stage1
+  | Aiur.NativeAIR.Source.stage2 => Aiur.NativeAIR.VerifierArithmetic.pairColumns row.stage2
+PREMISE Aiur.NativeAIR.VerifierArithmetic.publics
+Aiur.NativeAIR.VerifierArithmetic.Challenges →
+  Aiur.NativeAIR.ProofCodec.Extension → Aiur.NativeAIR.ProofCodec.Extension → Array Aiur.NativeAIR.ProofCodec.Extension
+DEFINITION
+fun challenges entering leaving =>
+  #[Aiur.NativeAIR.ProofCodec.Extension.ofBase challenges.beta.c0,
+    Aiur.NativeAIR.ProofCodec.Extension.ofBase challenges.beta.c1,
+    Aiur.NativeAIR.ProofCodec.Extension.ofBase challenges.gamma.c0,
+    Aiur.NativeAIR.ProofCodec.Extension.ofBase challenges.gamma.c1,
+    Aiur.NativeAIR.ProofCodec.Extension.ofBase entering.c0, Aiur.NativeAIR.ProofCodec.Extension.ofBase entering.c1,
+    Aiur.NativeAIR.ProofCodec.Extension.ofBase leaving.c0, Aiur.NativeAIR.ProofCodec.Extension.ofBase leaving.c1]
+PREMISE Aiur.NativeAIR.VerifierArithmetic.deltaScaled
+Aiur.NativeAIR.Domain.Subgroup →
+  Aiur.NativeAIR.ProofCodec.Extension → Aiur.NativeAIR.ProofCodec.Extension → Array Aiur.NativeAIR.ProofCodec.Extension
+DEFINITION
+fun domain entering leaving =>
+  have normalizer := Aiur.NativeAIR.ProofCodec.Extension.ofBase (Aiur.NativeAIR.Domain.normalizer domain).inverse;
+  #[(Aiur.NativeAIR.ProofCodec.Extension.ofBase leaving.c0 - Aiur.NativeAIR.ProofCodec.Extension.ofBase entering.c0) *
+      normalizer,
+    (Aiur.NativeAIR.ProofCodec.Extension.ofBase leaving.c1 - Aiur.NativeAIR.ProofCodec.Extension.ofBase entering.c1) *
+      normalizer]
+PREMISE Aiur.NativeAIR.VerifierArithmetic.view
+Aiur.NativeAIR.VerifierArithmetic.Challenges →
+  Aiur.NativeAIR.ProofShape.Row →
+    Aiur.NativeAIR.ProofCodec.Extension →
+      Aiur.NativeAIR.Domain.Selectors Aiur.NativeAIR.ProofCodec.Extension →
+        Aiur.NativeAIR.Values Aiur.NativeAIR.ProofCodec.Extension
+DEFINITION
+fun challenges row entering selectors =>
+  { columns := Aiur.NativeAIR.VerifierArithmetic.rowColumns row,
+    publics := Aiur.NativeAIR.VerifierArithmetic.publics challenges entering row.accumulator,
+    isFirstRow := selectors.isFirst, isLastRow := selectors.isLast, isTransition := selectors.isTransition }
+PREMISE Aiur.NativeAIR.VerifierArithmetic.Evaluation.mk
+Aiur.NativeAIR.Domain.Subgroup →
+  Aiur.NativeAIR.Domain.Selectors Aiur.NativeAIR.ProofCodec.Extension →
+    Array Aiur.NativeAIR.ProofCodec.Extension →
+      List Aiur.NativeAIR.ProofCodec.Extension →
+        List Aiur.NativeAIR.ProofCodec.Extension →
+          Aiur.NativeAIR.ProofCodec.Extension → Aiur.NativeAIR.VerifierArithmetic.Evaluation
+PREMISE Aiur.NativeAIR.VerifierArithmetic.Evaluation.constraints
+Aiur.NativeAIR.VerifierArithmetic.Evaluation → List Aiur.NativeAIR.ProofCodec.Extension
+DEFINITION
+fun result => result.userValues ++ result.lookupValues
+PREMISE Aiur.NativeAIR.VerifierArithmetic.Evaluation.accepts
+Aiur.NativeAIR.VerifierArithmetic.Evaluation → Aiur.NativeAIR.ProofCodec.Extension → Bool
+DEFINITION
+fun result alpha =>
+  Aiur.NativeAIR.Quotient.composition alpha result.constraints * result.selectors.invVanishing == result.quotientValue
+PREMISE Aiur.NativeAIR.VerifierArithmetic.evaluate
+Aiur.NativeAIR.VerifierArithmetic.Challenges →
+  Aiur.NativeAIR.ProofShape.Row →
+    Aiur.NativeAIR.ProofCodec.Extension → Option Aiur.NativeAIR.VerifierArithmetic.Evaluation
+DEFINITION
+fun challenges row entering => do
+  let domain ← Aiur.NativeAIR.Domain.ofLogSize row.logDegree.toNat
+  let selectors ← Aiur.NativeAIR.Domain.selectors domain challenges.zeta
+  have values : Aiur.NativeAIR.Values Aiur.NativeAIR.ProofCodec.Extension :=
+    Aiur.NativeAIR.VerifierArithmetic.view challenges row entering selectors
+  let nodes ← row.circuit.graph.sweep Aiur.NativeAIR.ProofCodec.Extension.evalOps values
+  let userValues ← Aiur.NativeAIR.readNodes nodes row.circuit.graph.zeros
+  let lookupValues ←
+    Aiur.NativeAIR.LogUp.constraintValues row.circuit.graph.lookups nodes
+        (values.columns Aiur.NativeAIR.Source.stage2 Aiur.NativeAIR.RowOffset.current)
+        (values.columns Aiur.NativeAIR.Source.stage2 Aiur.NativeAIR.RowOffset.next) values.publics
+        (Aiur.NativeAIR.VerifierArithmetic.deltaScaled domain entering row.accumulator) values.isLastRow
+        row.circuit.lookupGroupSize
+  let quotientValue ← Aiur.NativeAIR.Quotient.evaluate domain challenges.zeta row.quotient
+  pure
+      { domain := domain, selectors := selectors, nodeValues := nodes, userValues := userValues,
+        lookupValues := lookupValues, quotientValue := quotientValue }
+PREMISE Aiur.NativeAIR.VerifierArithmetic.check
+Aiur.NativeAIR.VerifierArithmetic.Challenges →
+  Aiur.NativeAIR.ProofShape.Row → Aiur.NativeAIR.ProofCodec.Extension → Option Bool
+DEFINITION
+fun challenges row entering => do
+  let __do_lift ← Aiur.NativeAIR.VerifierArithmetic.evaluate challenges row entering
+  pure (__do_lift.accepts challenges.alpha)
+PREMISE Aiur.NativeAIR.VerifierArithmetic.checkRows
+Aiur.NativeAIR.VerifierArithmetic.Challenges →
+  List Aiur.NativeAIR.ProofShape.Row → Aiur.NativeAIR.ProofCodec.Extension → Option Aiur.NativeAIR.ProofCodec.Extension
+DEFINITION
+fun challenges x x_1 =>
+  List.brecOn (motive := fun x => Aiur.NativeAIR.ProofCodec.Extension → Option Aiur.NativeAIR.ProofCodec.Extension) x
+    (Aiur.NativeAIR.VerifierArithmetic.checkRows._f challenges) x_1
+PREMISE Aiur.NativeAIR.VerifierArithmetic.claimMessage
+Aiur.NativeAIR.VerifierArithmetic.Challenges → List Aiur.G → Aiur.NativeAIR.ProofCodec.Extension
+DEFINITION
+fun challenges claim =>
+  challenges.beta +
+    (Aiur.NativeAIR.LogUp.fingerprint (Aiur.NativeAIR.LogUp.Coordinates.fromExtension challenges.gamma)
+        claim).toExtension
+PREMISE Aiur.NativeAIR.VerifierArithmetic.initialAccumulator
+Aiur.NativeAIR.VerifierArithmetic.Challenges → List (List Aiur.G) → Option Aiur.NativeAIR.ProofCodec.Extension
+DEFINITION
+fun challenges claims => do
+  let inverses ←
+    List.mapM (fun claim => (Aiur.NativeAIR.VerifierArithmetic.claimMessage challenges claim).tryInverse) claims
+  pure (Aiur.NativeAIR.LogUp.sum inverses)
+PREMISE Aiur.NativeAIR.VerifierArithmetic.verify
+Aiur.NativeAIR.VerifierArithmetic.Challenges → List (List Aiur.G) → List Aiur.NativeAIR.ProofShape.Row → Option Bool
+DEFINITION
+fun challenges claims rows =>
+  if rows.isEmpty = true then none
+  else do
+    let entering ← Aiur.NativeAIR.VerifierArithmetic.initialAccumulator challenges claims
+    let __do_lift ← Aiur.NativeAIR.VerifierArithmetic.checkRows challenges rows entering
+    pure (__do_lift == 0)
+PREMISE Aiur.NativeAIR.VerifierArithmetic.Evaluation.Reads.mk
+∀ {challenges : Aiur.NativeAIR.VerifierArithmetic.Challenges} {row : Aiur.NativeAIR.ProofShape.Row}
+  {entering : Aiur.NativeAIR.ProofCodec.Extension} {result : Aiur.NativeAIR.VerifierArithmetic.Evaluation},
+  Aiur.NativeAIR.Domain.ofLogSize row.logDegree.toNat = some result.domain →
+    Aiur.NativeAIR.Domain.selectors result.domain challenges.zeta = some result.selectors →
+      row.circuit.graph.sweep Aiur.NativeAIR.ProofCodec.Extension.evalOps
+            (Aiur.NativeAIR.VerifierArithmetic.view challenges row entering result.selectors) =
+          some result.nodeValues →
+        Aiur.NativeAIR.readNodes result.nodeValues row.circuit.graph.zeros = some result.userValues →
+          Aiur.NativeAIR.LogUp.constraintValues row.circuit.graph.lookups result.nodeValues
+                (Aiur.NativeAIR.VerifierArithmetic.rowColumns row Aiur.NativeAIR.Source.stage2
+                  Aiur.NativeAIR.RowOffset.current)
+                (Aiur.NativeAIR.VerifierArithmetic.rowColumns row Aiur.NativeAIR.Source.stage2
+                  Aiur.NativeAIR.RowOffset.next)
+                (Aiur.NativeAIR.VerifierArithmetic.publics challenges entering row.accumulator)
+                (Aiur.NativeAIR.VerifierArithmetic.deltaScaled result.domain entering row.accumulator)
+                result.selectors.isLast row.circuit.lookupGroupSize =
+              some result.lookupValues →
+            Aiur.NativeAIR.Quotient.evaluate result.domain challenges.zeta row.quotient = some result.quotientValue →
+              Aiur.NativeAIR.VerifierArithmetic.Evaluation.Reads challenges row entering result
+PREMISE Aiur.NativeAIR.VerifierArithmetic.publicEntries
+Aiur.NativeAIR.VerifierArithmetic.Challenges →
+  List (List Aiur.G) → List (Aiur.NativeAIR.ProofCodec.Extension × Aiur.NativeAIR.ProofCodec.Extension)
+DEFINITION
+fun challenges claims =>
+  List.map (fun claim => (1, Aiur.NativeAIR.VerifierArithmetic.claimMessage challenges claim)) claims
 RECURSION WORKER Aiur.buildArgs._unsafe_rec
 Aiur.LayoutMap →
   Std.HashMap Aiur.Local (Array Aiur.Bytecode.ValIdx) →
@@ -19351,6 +19860,17 @@ fun x =>
   | first :: second :: rest => do
     let __do_lift ← Aiur.NativeAIR.Quotient.coefficients._unsafe_rec rest
     pure ((first + second * Aiur.NativeAIR.ProofCodec.Extension.basis) :: __do_lift)
+RECURSION WORKER Aiur.NativeAIR.VerifierArithmetic.checkRows._unsafe_rec
+Aiur.NativeAIR.VerifierArithmetic.Challenges →
+  List Aiur.NativeAIR.ProofShape.Row → Aiur.NativeAIR.ProofCodec.Extension → Option Aiur.NativeAIR.ProofCodec.Extension
+IMPLEMENTATION
+fun challenges x x_1 =>
+  match x, x_1 with
+  | [], entering => some entering
+  | row :: rows, entering => do
+    let __do_lift ← Aiur.NativeAIR.VerifierArithmetic.check challenges row entering
+    if __do_lift = true then Aiur.NativeAIR.VerifierArithmetic.checkRows._unsafe_rec challenges rows row.accumulator
+      else none
 RECURSION WORKER Aiur.Source.Eval.applyGlobal._unsafe_rec
 Aiur.Source.Decls → Nat → Aiur.Global → List Aiur.Value → Aiur.Source.Eval.EvalState → Aiur.Source.Eval.EvalResult
 IMPLEMENTATION
@@ -21330,10 +21850,10 @@ fun value exponent x =>
       let half := Aiur.NativeAIR.ProofCodec.Extension.powBits._unsafe_rec value (exponent / 2) fuel;
       let square := half * half;
       if (exponent % 2 == 0) = true then square else square * value
-C8 component ROOTS 1123; LOGICAL DECLARATIONS 18654; WITH RUNTIME 19435
+C8 component ROOTS 1162; LOGICAL DECLARATIONS 18768; WITH RUNTIME 19550
 IX RUNTIME EXTERNS [Aiur.AiurSystem.build, Aiur.AiurSystem.verify, Aiur.AiurSystem.vkBytes, Aiur.Proof.ofBytesChecked]
 PARTIAL OPAQUE SOURCES [Aiur.instHashableTyp.hash, Aiur.instReprPattern.repr, Aiur.instReprTyp.repr]
 OTHER UNSAFE RUNTIME []
-RECURSION WORKERS 173
+RECURSION WORKERS 174
 Runtime diagnostics cover Ix modules, including private constants. Lean/Std runtime primitives remain an external execution boundary. Partial opaque implementations are inventoried, not proved to refine their logical defaults.
 The runtime inventory and theorem premises are frozen separately. These roots do not establish full compiler/AIR reflection or public certified claim semantics.

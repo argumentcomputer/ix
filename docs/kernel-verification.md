@@ -410,14 +410,14 @@ sizes, constrained and advice calls, nested continuations, visibility and
 public-claim widths. All 54 parallel release Rust tests pass, including the
 supplied rank/output ambiguity regression; release Clippy denies warnings.
 
-The audit checks 1,123 roots by traversing checked types, bodies and inductive
+The audit checks 1,162 roots by traversing checked types, bodies and inductive
 constructors. Thirty-three roots use no axioms; one uses only `Quot.sound`;
-184 depend only on `propext`; 288 use exactly `propext` and `Quot.sound`;
-the other 617 use exactly
+192 depend only on `propext`; 299 use exactly `propext` and `Quot.sound`;
+the other 637 use exactly
 `propext`, `Classical.choice` and `Quot.sound`. The combined closure
-has 18,654 logical declarations and 19,435 declarations after following runtime
+has 18,768 logical declarations and 19,550 declarations after following runtime
 workers and replacements. The frozen report records four native runtime entry points,
-three partial opaque sources and all 173 Ix recursion worker implementations.
+three partial opaque sources and all 174 Ix recursion worker implementations.
 Bytecode comparison/hashing, tail-match restoration and source-value hashing
 use total definitions. Type hashing and type/pattern formatting remain partial.
 These remaining implementations and
@@ -951,6 +951,49 @@ formatting, the strict 415-job build and the complete component gate pass.
 The gate covers all twenty-eight native corpora and the unchanged two
 accepted and seventeen rejected backend cases.
 
+`VerifierArithmetic` connects the opened rows to the complete arithmetic
+check with explicit `beta`, `gamma`, `alpha` and `zeta` inputs. It embeds the
+eight base coordinates of the lookup challenges and entering/leaving
+accumulators separately, sweeps the graph once, reads the user roots, and
+appends both coordinates of every grouped lookup equation. The boundary
+difference uses the proved inverse of `n * generator`. Quotient coordinates
+are paired and folded in the native order.
+
+`OpeningShape` derives an invariant not supplied by row dimensions alone:
+an absent preprocessed slot in the selected compiled key implies width zero.
+The key binding and checked proof shape then supply every graph and lookup
+read. Evaluation is defined exactly when the challenge avoids the domain's
+vanishing polynomial. `CompiledBackend.checked_row_values` ties each
+arithmetic-accepted row to its actual proof position, entering accumulator,
+unfolded user and lookup expressions, and the quotient identity. The
+initial accumulator equals the positive fraction sum of the public claims;
+the checked active-row chain passes each leaving accumulator to the next
+row and ends at zero. Combining this chain with per-circuit fraction
+identities gives their sum plus the public claim sum equal to zero.
+Deriving the circuit identities from authenticated trace polynomials
+remains part of extraction.
+
+The combined corpus calls the native graph sweep, direct LogUp evaluator
+and domain selectors. It reproduces the private verifier's surrounding
+wiring, fold, quotient recombination and claim loop. All 960 opening cases
+and 32,064 graph values match Lean, with 480 accepting and 480 rejecting
+arithmetic cases. The comparison also rejects malformed stage-two reads,
+roots, exponents, quotient rows, missing preprocessed data and selector
+poles, and detects altered accepted quotients. Public initialization matches
+52 defined cases and 20 poles. Forty-eight ordered accumulator chains cover
+16 accepted, 16 unbalanced and 16 rejected interior-equation cases. These
+constructed openings are arithmetic fixtures, not authenticated proofs.
+
+The arithmetic integration adds 39 roots, 17 definitions and one inspected
+structural row-chain worker. All 1,123 prior statements and axiom sets,
+774 definitions and 173 worker bodies are unchanged. Native entry points
+and partial opaque sources remain the same. All 85 parallel Rust release
+tests, release Clippy with warnings denied, formatting, the strict 426-job
+build and the complete component gate pass. The gate covers twenty-nine
+native corpora and the unchanged two accepted and seventeen rejected
+backend cases. This checkpoint changes no native production behavior,
+compiler output or serialized encoding.
+
 The budget comparison covers
 21,964 Rust/Lean cases, including
 all byte-sized degree values, field and machine boundaries, inactive circuits
@@ -1014,7 +1057,7 @@ bound. The remaining components are:
 
 | Component | Remaining obligation |
 | --- | --- |
-| Native verifier | Connect the enforced proof codec and shape checks and proved field, grouped lookup, domain and quotient models to native transcript and PCS checks, then extract satisfying committed traces from acceptance. |
+| Native verifier | Connect the enforced proof codec and shape checks and the complete opened-row arithmetic/accumulator model to native transcript and PCS checks, then extract satisfying committed traces from acceptance. |
 | Cryptography | Prove the commitment, polynomial-testing, FRI and Fiat–Shamir guarantees with admissible parameters and explicit failure bounds. |
 | Randomized lookups | Derive the exact bounded weighted message balance used by execution extraction, excluding specified compression collisions and denominator failures. |
 | Fixed tables | Bind the preprocessed commitments and openings to the proved byte tables and their required dimensions. |

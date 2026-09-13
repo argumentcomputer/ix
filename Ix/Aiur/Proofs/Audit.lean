@@ -46,6 +46,7 @@ import Ix.Aiur.Proofs.ExtensionField
 import Ix.Aiur.Proofs.LogUpAccumulator
 import Ix.Aiur.Proofs.DomainAccumulator
 import Ix.Aiur.Proofs.Quotient
+import Ix.Aiur.Proofs.VerifierAccumulator
 import Ix.Aiur.Proofs.Grouping
 import Ix.Aiur.Proofs.TailMatches
 import Ix.Aiur.Proofs.NormalizationFrames
@@ -2319,6 +2320,103 @@ def domainPremises : Array Lean.Name := #[
   `Aiur.NativeAIR.Quotient.check,
   `Aiur.NativeAIR.Domain.Algebra.dividedPowers]
 
+def verifierArithmeticRoots : Array Lean.Name := #[
+  `Aiur.NativeAIR.CompiledKey.preprocessedIndices_none,
+  `Aiur.NativeAIR.CompiledKey.circuits_preprocessed_absent,
+  `Aiur.BoundVerifier.CompiledBackend.row_preprocessed_absent,
+  `Aiur.NativeAIR.VerifierArithmetic.publics_size,
+  `Aiur.NativeAIR.VerifierArithmetic.publics_beta,
+  `Aiur.NativeAIR.VerifierArithmetic.publics_gamma,
+  `Aiur.NativeAIR.VerifierArithmetic.publics_entering,
+  `Aiur.NativeAIR.VerifierArithmetic.publics_leaving,
+  `Aiur.NativeAIR.VerifierArithmetic.deltaScaled_size,
+  `Aiur.NativeAIR.VerifierArithmetic.deltaScaled_coordinates,
+  `Aiur.NativeAIR.VerifierArithmetic.view_fits,
+  `Aiur.NativeAIR.VerifierArithmetic.domain_defined,
+  `Aiur.NativeAIR.VerifierArithmetic.stage2_width,
+  `Aiur.NativeAIR.VerifierArithmetic.evaluate_success,
+  `Aiur.NativeAIR.VerifierArithmetic.Evaluation.Reads.evaluate,
+  `Aiur.NativeAIR.VerifierArithmetic.evaluate_defined,
+  `Aiur.NativeAIR.VerifierArithmetic.evaluate_defined_iff,
+  `Aiur.NativeAIR.VerifierArithmetic.evaluate_constraint_count,
+  `Aiur.NativeAIR.VerifierArithmetic.evaluate_reflects,
+  `Aiur.NativeAIR.VerifierArithmetic.Evaluation.Reads.identity,
+  `Aiur.NativeAIR.VerifierArithmetic.check_true_iff,
+  `Aiur.NativeAIR.VerifierArithmetic.check_quotient,
+  `Aiur.BoundVerifier.CompiledBackend.checked_row_arithmetic,
+  `Aiur.NativeAIR.VerifierArithmetic.claimMessage_native,
+  `Aiur.NativeAIR.VerifierArithmetic.publicEntries_compress,
+  `Aiur.NativeAIR.VerifierArithmetic.initialAccumulator_nil,
+  `Aiur.NativeAIR.VerifierArithmetic.initialAccumulator_cons,
+  `Aiur.NativeAIR.VerifierArithmetic.initialAccumulator_success,
+  `Aiur.NativeAIR.VerifierArithmetic.initialAccumulator_defined,
+  `Aiur.NativeAIR.VerifierArithmetic.initialAccumulator_defined_iff,
+  `Aiur.NativeAIR.VerifierArithmetic.initialAccumulator_lookupFractions,
+  `Aiur.NativeAIR.VerifierArithmetic.checkRows_cons,
+  `Aiur.NativeAIR.VerifierArithmetic.checkRows_final,
+  `Aiur.NativeAIR.VerifierArithmetic.checkRows_row,
+  `Aiur.NativeAIR.VerifierArithmetic.checkRows_sum,
+  `Aiur.NativeAIR.VerifierArithmetic.verify_true_iff,
+  `Aiur.NativeAIR.VerifierArithmetic.verify_lookup_balance,
+  `Aiur.NativeAIR.VerifierArithmetic.verify_row,
+  `Aiur.BoundVerifier.CompiledBackend.checked_row_values]
+
+def verifierArithmeticAxiomFreeRoots : Array Lean.Name := #[]
+
+def verifierArithmeticQuotRoots : Array Lean.Name := #[
+  `Aiur.NativeAIR.VerifierArithmetic.view_fits,
+  `Aiur.NativeAIR.VerifierArithmetic.domain_defined,
+  `Aiur.NativeAIR.VerifierArithmetic.evaluate_success,
+  `Aiur.NativeAIR.VerifierArithmetic.Evaluation.Reads.evaluate,
+  `Aiur.NativeAIR.VerifierArithmetic.check_quotient,
+  `Aiur.NativeAIR.VerifierArithmetic.publicEntries_compress,
+  `Aiur.NativeAIR.VerifierArithmetic.initialAccumulator_cons,
+  `Aiur.NativeAIR.VerifierArithmetic.checkRows_cons,
+  `Aiur.NativeAIR.VerifierArithmetic.checkRows_final,
+  `Aiur.NativeAIR.VerifierArithmetic.checkRows_row,
+  `Aiur.NativeAIR.VerifierArithmetic.verify_true_iff]
+
+def verifierArithmeticClassicalRoots : Array Lean.Name := #[
+  `Aiur.NativeAIR.CompiledKey.circuits_preprocessed_absent,
+  `Aiur.BoundVerifier.CompiledBackend.row_preprocessed_absent,
+  `Aiur.NativeAIR.VerifierArithmetic.deltaScaled_coordinates,
+  `Aiur.NativeAIR.VerifierArithmetic.stage2_width,
+  `Aiur.NativeAIR.VerifierArithmetic.evaluate_defined,
+  `Aiur.NativeAIR.VerifierArithmetic.evaluate_defined_iff,
+  `Aiur.NativeAIR.VerifierArithmetic.evaluate_constraint_count,
+  `Aiur.NativeAIR.VerifierArithmetic.evaluate_reflects,
+  `Aiur.NativeAIR.VerifierArithmetic.Evaluation.Reads.identity,
+  `Aiur.NativeAIR.VerifierArithmetic.check_true_iff,
+  `Aiur.BoundVerifier.CompiledBackend.checked_row_arithmetic,
+  `Aiur.NativeAIR.VerifierArithmetic.claimMessage_native,
+  `Aiur.NativeAIR.VerifierArithmetic.initialAccumulator_success,
+  `Aiur.NativeAIR.VerifierArithmetic.initialAccumulator_defined,
+  `Aiur.NativeAIR.VerifierArithmetic.initialAccumulator_defined_iff,
+  `Aiur.NativeAIR.VerifierArithmetic.initialAccumulator_lookupFractions,
+  `Aiur.NativeAIR.VerifierArithmetic.checkRows_sum,
+  `Aiur.NativeAIR.VerifierArithmetic.verify_lookup_balance,
+  `Aiur.NativeAIR.VerifierArithmetic.verify_row,
+  `Aiur.BoundVerifier.CompiledBackend.checked_row_values]
+
+def verifierArithmeticPremises : Array Lean.Name := #[
+  `Aiur.NativeAIR.VerifierArithmetic.Challenges.mk,
+  `Aiur.NativeAIR.VerifierArithmetic.pairColumns,
+  `Aiur.NativeAIR.VerifierArithmetic.rowColumns,
+  `Aiur.NativeAIR.VerifierArithmetic.publics,
+  `Aiur.NativeAIR.VerifierArithmetic.deltaScaled,
+  `Aiur.NativeAIR.VerifierArithmetic.view,
+  `Aiur.NativeAIR.VerifierArithmetic.Evaluation.mk,
+  `Aiur.NativeAIR.VerifierArithmetic.Evaluation.constraints,
+  `Aiur.NativeAIR.VerifierArithmetic.Evaluation.accepts,
+  `Aiur.NativeAIR.VerifierArithmetic.evaluate,
+  `Aiur.NativeAIR.VerifierArithmetic.check,
+  `Aiur.NativeAIR.VerifierArithmetic.checkRows,
+  `Aiur.NativeAIR.VerifierArithmetic.claimMessage,
+  `Aiur.NativeAIR.VerifierArithmetic.initialAccumulator,
+  `Aiur.NativeAIR.VerifierArithmetic.verify,
+  `Aiur.NativeAIR.VerifierArithmetic.Evaluation.Reads.mk,
+  `Aiur.NativeAIR.VerifierArithmetic.publicEntries]
+
 def roots : Array Lean.Name := #[
   `Aiur.G.ofNat_n, `Aiur.G.mul_one, `Aiur.G.mul_zero,
   `Aiur.AIR.inactive_multiplicity_zero,
@@ -2355,7 +2453,7 @@ def roots : Array Lean.Name := #[
     fieldRoots ++ localConstraintRoots ++ byteArithmeticRoots ++ byteLookupRoots ++
     lookupMessageRoots ++ lookupShapeRoots ++ globalLookupRoots ++ lookupBudgetRoots ++
     selectorControlRoots ++ operationRowRoots ++ blockRowRoots ++ querySlotRoots ++ circuitRowRoots ++
-    rowCountRoots ++ circuitTableRoots ++ branchlessRoots ++ circuitTraceRoots ++ circuitMembershipRoots ++ lookupLayoutRoots ++ memoryColumnRoots ++ byteColumnRoots ++ expressionGraphRoots ++ frontendExpressionRoots ++ graphCompilationRoots ++ operationExpressionRoots ++ blockCircuitRoots ++ allocationRoots ++ circuitAllocationRoots ++ circuitCompletionRoots ++ checkedCircuitRoots ++ keyCodecRoots ++ compiledKeyRoots ++ proofAcceptanceRoots ++ extensionRoots ++ logUpRoots ++ domainRoots
+    rowCountRoots ++ circuitTableRoots ++ branchlessRoots ++ circuitTraceRoots ++ circuitMembershipRoots ++ lookupLayoutRoots ++ memoryColumnRoots ++ byteColumnRoots ++ expressionGraphRoots ++ frontendExpressionRoots ++ graphCompilationRoots ++ operationExpressionRoots ++ blockCircuitRoots ++ allocationRoots ++ circuitAllocationRoots ++ circuitCompletionRoots ++ checkedCircuitRoots ++ keyCodecRoots ++ compiledKeyRoots ++ proofAcceptanceRoots ++ extensionRoots ++ logUpRoots ++ domainRoots ++ verifierArithmeticRoots
 
 def premises : Array Lean.Name := #[
   `Aiur.AIR.activityConstraint,
@@ -2594,7 +2692,7 @@ def premises : Array Lean.Name := #[
   `Aiur.NativeAIR.evalRoots,
   `Aiur.NativeAIR.readLookup,
   `Aiur.NativeAIR.evalLookup,
-  `Aiur.NativeAIR.goldilocksOps] ++ frontendExpressionPremises ++ graphCompilationPremises ++ operationExpressionPremises ++ blockCircuitPremises ++ allocationPremises ++ circuitAllocationPremises ++ circuitCompletionPremises ++ checkedCircuitPremises ++ keyCodecPremises ++ compiledKeyPremises ++ proofAcceptancePremises ++ extensionPremises ++ logUpPremises ++ domainPremises
+  `Aiur.NativeAIR.goldilocksOps] ++ frontendExpressionPremises ++ graphCompilationPremises ++ operationExpressionPremises ++ blockCircuitPremises ++ allocationPremises ++ circuitAllocationPremises ++ circuitCompletionPremises ++ checkedCircuitPremises ++ keyCodecPremises ++ compiledKeyPremises ++ proofAcceptancePremises ++ extensionPremises ++ logUpPremises ++ domainPremises ++ verifierArithmeticPremises
 
 private def constants (info : Lean.ConstantInfo) : Array Lean.Name :=
   info.type.getUsedConstants ++ match info with
@@ -2673,7 +2771,12 @@ run_cmd do
   let env ← getEnv
   for root in roots do
     let some info := env.checked.get.find? root | throwError "C8 component audit: missing root {root}"
-    let expected := if domainRoots.contains root then
+    let expected := if verifierArithmeticRoots.contains root then
+        if verifierArithmeticAxiomFreeRoots.contains root then #[]
+        else if verifierArithmeticClassicalRoots.contains root then #[``propext, ``Classical.choice, ``Quot.sound]
+        else if verifierArithmeticQuotRoots.contains root then #[``propext, ``Quot.sound]
+        else #[``propext]
+      else if domainRoots.contains root then
         if domainAxiomFreeRoots.contains root then #[]
         else if domainClassicalRoots.contains root then #[``propext, ``Classical.choice, ``Quot.sound]
         else if domainQuotRoots.contains root then #[``propext, ``Quot.sound]
