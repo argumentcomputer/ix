@@ -1,0 +1,81 @@
+{
+  "schema": "ixby-stage4-fflonk-derived-sigma-storage-evidence-v1",
+  "measurement_date": "2026-09-13",
+  "base_revision": "31663e60942824c6139f6d324b6e0de2bc7d16f2",
+  "status": "eight_column_file_key_with_small_proof_equivalence_not_whole_pipeline_admission",
+  "rustc": "1.98.0 (88d9e12ae 2026-08-18)",
+  "scope": "Storage representation only. Sigma evaluations are computed exactly from the key's immutable copy-permutation targets and bounded domain-power windows. The eight coefficient polynomials, C0, preprocessing digest, commitments, VK, SRS checks, public inputs and proof format are unchanged.",
+  "source_hashes": [
+    {
+      "path": "flock-stage4/fflonk/src/permutation_evaluations.rs",
+      "sha256": "e1dd8d3511f484b1663aa0139795a44b06c73b73889d4ef244f637cce1f0e5f6"
+    },
+    {
+      "path": "flock-stage4/fflonk/src/permutation_evaluations_tests.rs",
+      "sha256": "0802bd2e5acd8aba13e456777041dfa09cac6eb5e6dd52cda443157f8a3e46bf"
+    },
+    {
+      "path": "flock-stage4/fflonk/src/preprocessing_file.rs",
+      "sha256": "86b076ea77bed5b1419f66681b92cb5c2996fad6ef8290b6a1f8258be7a42fce"
+    },
+    {
+      "path": "flock-stage4/fflonk/src/capacity.rs",
+      "sha256": "f468ac66c5ffd39dd346db7d910696aeb54c02b9fa15dfa108fdd2f394e627f3"
+    },
+    {
+      "path": "flock-stage4/fflonk/src/lib.rs",
+      "sha256": "7287878019677c9af41a5df4fc537ca794d83d5a6fbe27a48f9aab0a146c4568"
+    }
+  ],
+  "file_layout": {
+    "coefficient_columns": 8,
+    "sigma_evaluation_columns": 0,
+    "stored_c0_columns": 0,
+    "canonical_field_bytes": 32,
+    "payload_bytes_formula": "8 * n * 32",
+    "previous_payload_bytes_formula": "11 * n * 32",
+    "authentication_bytes_formula": "8 * ceil(n / 65536) * 32",
+    "sigma_power_table_fields_formula": "w + 3*n/w, where w = 2^ceil(log2(n)/2)",
+    "sigma_evaluation_formula": "low[row % w] * high[column][row / w] = omega^row * coset[column]",
+    "reopen_raw_file_as_trusted_key_supported": false,
+    "integrity": "All eight stored coefficient columns remain chunk-authenticated on each read. Sigma sources depend only on sealed in-memory copy targets and internally generated powers; no mutable file evaluation region, witness-supplied table value, or new callback is introduced."
+  },
+  "conditional_domain_2_pow_30_model": {
+    "domain_size": 1073741824,
+    "previous_file_key_polynomial_bytes": 377957122048,
+    "file_key_polynomial_bytes": 274877906944,
+    "saved_payload_bytes": 103079215104,
+    "file_key_authentication_bytes": 4194304,
+    "retained_sigma_power_windows_bytes": 4194304,
+    "avoided_full_omega_power_vector_bytes": 34359738368,
+    "compressed_file_srs_bytes_unchanged": 463856469048,
+    "key_plus_compressed_srs_bytes": 738734375992,
+    "single_largest_fft_array_bytes_unchanged": 137438953472,
+    "scope": "Checked payload arithmetic, not measured full-domain RSS/disk. The key decreases from 352 GiB to 256 GiB; key plus compressed SRS remains about 688 GiB before scratch and other artifacts, exceeding the CPU box's approximately 397 GiB free disk. Avoiding the old omega vector does not by itself establish peak-memory savings."
+  },
+  "regressions": {
+    "new_sigma_tests_passed": 3,
+    "fflonk_ordinary_tests_passed": 93,
+    "workspace_ordinary_tests_passed": 244,
+    "workspace_ignored_tests": 35,
+    "checks": [
+      "Every literal domain power and all three cosets agree for n from 1 through selected powers up to 2^17; reads include permuted targets, unaligned ranges and chunk/window boundaries.",
+      "Power windows at n=2^29,2^30,2^31,2^32 agree with independent field exponentiation on boundary and mixed rows; the largest allocates only 8 MiB of window fields, not n entries.",
+      "Invalid target rows/columns, wrong dimensions, overflow and out-of-range reads reject before modifying output.",
+      "Every coefficient, sigma evaluation, C0 value, preprocessing digest, commitment, VK, public input and proof remains equal across existing memory/file key and workspace fixtures and checked-witness APIs.",
+      "Actual file sizes and authentication/root-window payloads match capacity metadata.",
+      "Mutations in each of the eight file columns reject both repeated C0 reads and proving; restoring bytes restores verification.",
+      "Workspace Clippy with warnings denied and the complete ordinary workspace suite pass."
+    ],
+    "setup_scope": "Actual small arithmetic proofs with deterministic development tau/blinding only. These are not full closed Exec proofs or production setup."
+  },
+  "remaining_resource_work": [
+    "Large-domain derived-sigma read throughput is not measured.",
+    "The eight-column file key and separate SRS still exceed available box disk before prover scratch; no whole-pipeline admission is established.",
+    "The prior whole prepared-operand census used a frozen source snapshot before this storage change and remains a typed domain refusal, not a proving result."
+  ],
+  "whole_exec_key_generated": false,
+  "whole_exec_proof_generated": false,
+  "whole_pipeline_resource_admitted": false,
+  "production_setup_approved": false
+}

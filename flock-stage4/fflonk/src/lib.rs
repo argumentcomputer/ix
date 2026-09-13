@@ -14,6 +14,7 @@ mod capacity;
 mod eip2537;
 mod kzg;
 mod kzg_srs_file;
+mod permutation_evaluations;
 mod polynomial_storage;
 mod preprocessing;
 mod preprocessing_file;

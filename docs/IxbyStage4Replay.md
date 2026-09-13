@@ -664,7 +664,12 @@ Independently, the [derived-C0 storage change](../flock-stage4/census/fflonk-der
 reduces the file proving key from 19 to 11 field columns, preserving the
 polynomial, digest, commitment, VK and small-test proof bytes. At `2^30` this
 saves 256 GiB, but key plus compressed SRS still needs about 784 GiB before
-scratch space. Neither this saving nor the low census RSS admits full proving.
+scratch space. The subsequent [derived-sigma change](../flock-stage4/census/fflonk-derived-sigma-storage-v1.json)
+reduces the key to eight columns (256 GiB), computing exact evaluations from
+immutable copy targets and 4 MiB of power windows. All small-key and proof
+equivalence tests still pass. Key plus compressed SRS now needs about 688 GiB
+before scratch, still above the box's approximately 397 GiB free disk.
+Neither these savings nor the low census RSS admits full proving.
 
 ## Explicit prepared-F128 arithmetic
 

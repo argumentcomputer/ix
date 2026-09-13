@@ -22,7 +22,7 @@ Tests include strict scalar/curve/subgroup decoding, invalid SRS/key rejection,
 nonzero blinding admission, authenticated scratch corruption, and identical
 proof/key results across memory and file backends for fixed test randomness.
 Small proofs use development setup and randomness, not production security.
-The generic replay and root-closure/setup prototypes pass 241 ordinary tests
+The generic replay and root-closure/setup prototypes pass 244 ordinary tests
 (90 FFLONK, 48 trace, 86 circuit, 17 replay/setup); thirty-five heavier native,
 materialization, and census/optimization tests remain opt-in.
 
@@ -377,25 +377,31 @@ uses 20,783,679 fewer PLONK rows than the uncached version, but the complete
 count and assigned census remain unavailable. Further arithmetic reduction
 is required; the optimization is not a domain-fit or proving result.
 
-## File-key storage without a duplicated C0
+## File-key storage with derived C0 and sigma evaluations
 
-`preprocess_fflonk_to_file` stores eight fixed coefficient columns and three
-sigma evaluation columns. Its C0 source now interleaves the authenticated
-coefficients on demand, instead of writing another eight columns. This is a
+`preprocess_fflonk_to_file` stores only eight fixed coefficient columns. Its
+C0 source interleaves the authenticated coefficients on demand. Its sigma
+sources derive exact evaluations from the immutable copy-permutation targets
+using bounded domain-power windows, instead of storing three more columns.
+This is a
 storage change, not a different polynomial, commitment, preprocessing digest,
 verification key or proof format. The file remains caller-owned scratch;
 reopening its raw bytes cannot reconstruct a trusted key.
 
-The payload is exactly `11*n*32` bytes, down from `19*n*32`. At `n=2^30`, this
-is 352 GiB instead of 608 GiB, saving 256 GiB. Small real-file and proof
+The payload is exactly `8*n*32` bytes, down from `11*n*32` after the earlier
+C0 change (`19*n*32` originally). At `n=2^30`, this is 256 GiB, saving another
+96 GiB; the retained sigma power windows cost 4 MiB and replace a size-n
+omega-power vector during preprocessing. Small real-file and proof
 equivalence tests, chunk-boundary/range checks, and mutations in every stored
 column pass. Every C0 read still authenticates its source chunks. The
-[storage report](census/fflonk-derived-c0-storage-v1.json) records source hashes,
+[sigma storage report](census/fflonk-derived-sigma-storage-v1.json) records source hashes,
 the exact capacity model, tests and development-setup scope.
 
 The saving trades extra coefficient I/O for less storage; large-domain
 throughput is not measured. The separate compressed SRS is still about
-432 GiB at that domain, and the largest FFT array alone is 128 GiB. The
+432 GiB at that domain: key plus SRS still needs about 688 GiB before scratch,
+more than the CPU box's approximately 397 GiB free disk. The largest FFT array
+alone is 128 GiB. The
 existing prover workspace already recycles released extents. Neither that
 reuse nor a RAM disk establishes whole-pipeline RAM/disk admission. Historical
 censuses retain the former file-key model under their pinned source revisions.

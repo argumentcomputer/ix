@@ -63,13 +63,17 @@ pub struct FflonkCapacityPlanV1 {
   /// same exclusions as the resident-SRS bound, and excludes temporary SRS
   /// decoding/MSM buffers, reader state, filesystem cache, and I/O buffers.
   pub file_srs_and_key_minimum_bytes: u64,
-  /// Eight fixed coefficient columns and three sigma evaluation columns in
-  /// canonical field storage. The file key derives C0 on demand and omits five
-  /// unused selector evaluation columns retained by the materialized key.
+  /// Eight fixed coefficient columns in canonical field storage. The file
+  /// key derives C0 and sigma evaluations and omits the five unused selector
+  /// evaluation columns retained by the materialized key.
   pub file_key_polynomial_bytes: u64,
   /// One 32-byte authentication digest per stored polynomial chunk.
   pub file_key_authentication_bytes: u64,
-  /// Typed gates/copy cells plus file-SRS and file-key authentication indexes.
+  /// Exact bounded power windows used to derive sigma evaluations from the
+  /// immutable copy targets. Excludes Vec headers and allocator overhead.
+  pub file_key_sigma_roots_bytes: u64,
+  /// Typed gates/copy cells, file-SRS/file-key authentication indexes and
+  /// sigma evaluation power windows.
   /// Uses the same exclusions as `file_srs_and_key_minimum_bytes`, also
   /// excluding polynomial reader state, read buffers, and filesystem cache.
   pub file_srs_and_file_key_minimum_bytes: u64,
@@ -178,9 +182,18 @@ pub fn plan_fflonk_capacity(
       .ok_or(FflonkCapacityError::CountOverflow)?;
   let polynomial_chunks = bytes(
     census.domain_size.div_ceil(FFLONK_POLYNOMIAL_CHUNK_FIELDS as u64),
-    11,
+    8,
   )?;
   let file_key_authentication_bytes = bytes(polynomial_chunks, 32)?;
+  let native_field_bytes = u64::try_from(size_of::<Fr>())
+    .map_err(|_| FflonkCapacityError::CountOverflow)?;
+  let file_key_sigma_roots_bytes = bytes(
+    crate::permutation_evaluations::sigma_power_table_fields(
+      census.domain_size,
+    )
+    .ok_or(FflonkCapacityError::CountOverflow)?,
+    native_field_bytes,
+  )?;
   let arithmetization_bytes_per_row =
     u64::try_from(size_of::<PlonkGateV1>() + 3 * size_of::<PlonkCellV1>())
       .map_err(|_| FflonkCapacityError::CountOverflow)?;
@@ -188,9 +201,8 @@ pub fn plan_fflonk_capacity(
     bytes(census.domain_size, arithmetization_bytes_per_row)?
       .checked_add(file_srs_authentication_bytes)
       .and_then(|total| total.checked_add(file_key_authentication_bytes))
+      .and_then(|total| total.checked_add(file_key_sigma_roots_bytes))
       .ok_or(FflonkCapacityError::CountOverflow)?;
-  let native_field_bytes = u64::try_from(size_of::<Fr>())
-    .map_err(|_| FflonkCapacityError::CountOverflow)?;
   let file_workspace_fft_buffer_bytes =
     bytes(polynomial_fft_domain_size, native_field_bytes)?;
   let file_workspace_fft_roots_bytes = bytes(
@@ -241,8 +253,9 @@ pub fn plan_fflonk_capacity(
     uncompressed_file_srs_bytes,
     file_srs_authentication_bytes,
     file_srs_and_key_minimum_bytes,
-    file_key_polynomial_bytes: bytes(field_column_bytes, 11)?,
+    file_key_polynomial_bytes: bytes(field_column_bytes, 8)?,
     file_key_authentication_bytes,
+    file_key_sigma_roots_bytes,
     file_srs_and_file_key_minimum_bytes,
     file_workspace_fft_buffer_bytes,
     file_workspace_fft_roots_bytes,
@@ -288,8 +301,9 @@ mod tests {
     assert_eq!(plan.compressed_file_srs_bytes, 4_536);
     assert_eq!(plan.uncompressed_file_srs_bytes, 8_856);
     assert_eq!(plan.file_srs_authentication_bytes, 32);
-    assert_eq!(plan.file_key_polynomial_bytes, 2_816);
-    assert_eq!(plan.file_key_authentication_bytes, 352);
+    assert_eq!(plan.file_key_polynomial_bytes, 2_048);
+    assert_eq!(plan.file_key_authentication_bytes, 256);
+    assert_eq!(plan.file_key_sigma_roots_bytes, 320);
     assert_eq!(plan.polynomial_fft_domain_size, 32);
     assert!(plan.supported_polynomial_fft_domain);
     assert_eq!(
@@ -325,8 +339,9 @@ mod tests {
     assert!(plan.supported_polynomial_fft_domain);
     assert_eq!(plan.file_srs_authentication_bytes, 4_718_624);
     assert!(plan.file_srs_and_key_minimum_bytes > 512_000_000_000);
-    assert_eq!(plan.file_key_polynomial_bytes, 377_957_122_048);
-    assert_eq!(plan.file_key_authentication_bytes, 5_767_168);
+    assert_eq!(plan.file_key_polynomial_bytes, 274_877_906_944);
+    assert_eq!(plan.file_key_authentication_bytes, 4_194_304);
+    assert_eq!(plan.file_key_sigma_roots_bytes, 4_194_304);
     assert_eq!(
       plan.file_workspace_fft_buffer_bytes,
       (1u64 << 32) * size_of::<Fr>() as u64
@@ -346,7 +361,7 @@ mod tests {
         .unwrap();
     assert_eq!(
       plan.file_srs_and_file_key_minimum_bytes,
-      arithmetization_bytes + 5_767_168 + 4_718_624
+      arithmetization_bytes + 4_194_304 + 4_718_624 + 4_194_304
     );
     assert!(plan.file_srs_and_file_key_minimum_bytes < 512_000_000_000);
     assert!(
