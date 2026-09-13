@@ -79,6 +79,10 @@ const NO_PREP_INDEX: u16 = u16::MAX;
 #[path = "vk_codec/tests/graphs.rs"]
 mod graph_tests;
 
+#[cfg(test)]
+#[path = "vk_codec/tests/compilation.rs"]
+mod compilation_tests;
+
 // ════════════════════════════════════════════════════════════════════════════
 // Encoder — System<AiurConfig> -> bytes
 // ════════════════════════════════════════════════════════════════════════════

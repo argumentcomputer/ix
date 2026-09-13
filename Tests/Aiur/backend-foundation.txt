@@ -3081,6 +3081,326 @@ ROOT Aiur.NativeAIR.emitSub_reflects
         Aiur.NativeAIR.ScalarEmission.eval values { output := left.sub right } =
           Aiur.AIR.emitOp row selector rank (Aiur.Bytecode.Op.sub 0 1) #[a, b]
 AXIOMS [propext, Quot.sound]
+ROOT Aiur.G.sub_self
+∀ (value : Aiur.G), value - value = 0
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.goldilocksGraphLaws
+Aiur.NativeAIR.GraphEvalLaws Aiur.NativeAIR.goldilocksOps
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Compiler.Extends.refl
+∀ {W : Type u_1} (buffer : Array W), Aiur.NativeAIR.Compiler.Extends buffer buffer
+AXIOMS []
+ROOT Aiur.NativeAIR.Compiler.Extends.trans
+∀ {W : Type u_1} {first second third : Array W},
+  Aiur.NativeAIR.Compiler.Extends first second →
+    Aiur.NativeAIR.Compiler.Extends second third → Aiur.NativeAIR.Compiler.Extends first third
+AXIOMS []
+ROOT Aiur.NativeAIR.Compiler.Extends.push
+∀ {W : Type u_1} (buffer : Array W) (value : W), Aiur.NativeAIR.Compiler.Extends buffer (buffer.push value)
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.Compiler.eval_extends
+∀ {W : Type u_1} (ops : Aiur.NativeAIR.EvalOps W) (values : Aiur.NativeAIR.Values W) {before after : Array W},
+  Aiur.NativeAIR.Compiler.Extends before after →
+    ∀ (node : Aiur.NativeAIR.Node) {value : W},
+      Aiur.NativeAIR.Node.eval ops values before node = some value →
+        Aiur.NativeAIR.Node.eval ops values after node = some value
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Compiler.Evaluation.empty
+∀ {W : Type u_1} (ops : Aiur.NativeAIR.EvalOps W) (values : Aiur.NativeAIR.Values W),
+  Aiur.NativeAIR.Compiler.Evaluation ops values [] #[]
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.Compiler.Evaluation.push
+∀ {W : Type u_1} {ops : Aiur.NativeAIR.EvalOps W} {values : Aiur.NativeAIR.Values W} {nodes : List Aiur.NativeAIR.Node}
+  {buffer : Array W},
+  Aiur.NativeAIR.Compiler.Evaluation ops values nodes buffer →
+    ∀ (node : Aiur.NativeAIR.Node) (value : W),
+      Aiur.NativeAIR.Node.eval ops values buffer node = some value →
+        Aiur.NativeAIR.Compiler.Evaluation ops values (nodes ++ [node]) (buffer.push value)
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Compiler.result_same
+∀ {W : Type u_1} {ops : Aiur.NativeAIR.EvalOps W} {values : Aiur.NativeAIR.Values W} {nodes : List Aiur.NativeAIR.Node}
+  {buffer : Array W},
+  Aiur.NativeAIR.Compiler.Evaluation ops values nodes buffer →
+    ∀ {index : Nat} {value : W},
+      buffer[index]? = some value → Aiur.NativeAIR.Compiler.Result ops values buffer (nodes, index) value
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.Compiler.intern_reflects
+∀ {W : Type u_1} {ops : Aiur.NativeAIR.EvalOps W} {values : Aiur.NativeAIR.Values W} {nodes : List Aiur.NativeAIR.Node}
+  {buffer : Array W},
+  Aiur.NativeAIR.Compiler.Evaluation ops values nodes buffer →
+    ∀ (node : Aiur.NativeAIR.Node) {value : W},
+      Aiur.NativeAIR.Node.eval ops values buffer node = some value →
+        Aiur.NativeAIR.Compiler.Result ops values buffer (Aiur.NativeAIR.Compiler.intern nodes node) value
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Compiler.asConst_reflects
+∀ {W : Type u_1} {ops : Aiur.NativeAIR.EvalOps W} {values : Aiur.NativeAIR.Values W} {nodes : List Aiur.NativeAIR.Node}
+  {buffer : Array W},
+  Aiur.NativeAIR.Compiler.Evaluation ops values nodes buffer →
+    ∀ {index : Nat} {constant : Aiur.G},
+      Aiur.NativeAIR.Compiler.asConst nodes index = some constant → buffer[index]? = some (ops.konst constant)
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.Compiler.asConst_value
+∀ {W : Type u_1} {ops : Aiur.NativeAIR.EvalOps W} {values : Aiur.NativeAIR.Values W} {nodes : List Aiur.NativeAIR.Node}
+  {buffer : Array W},
+  Aiur.NativeAIR.Compiler.Evaluation ops values nodes buffer →
+    ∀ {index : Nat} {constant : Aiur.G} {value : W},
+      Aiur.NativeAIR.Compiler.asConst nodes index = some constant →
+        buffer[index]? = some value → value = ops.konst constant
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.Compiler.konst_reflects
+∀ {W : Type u_1} {ops : Aiur.NativeAIR.EvalOps W} {values : Aiur.NativeAIR.Values W} {nodes : List Aiur.NativeAIR.Node}
+  {buffer : Array W},
+  Aiur.NativeAIR.Compiler.Evaluation ops values nodes buffer →
+    ∀ (value : Aiur.G),
+      Aiur.NativeAIR.Compiler.Result ops values buffer
+        (Aiur.NativeAIR.Compiler.intern nodes (Aiur.NativeAIR.Node.konst value)) (ops.konst value)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Compiler.neg_reflects
+∀ {W : Type u_1} {ops : Aiur.NativeAIR.EvalOps W},
+  Aiur.NativeAIR.EvalLaws ops →
+    ∀ {values : Aiur.NativeAIR.Values W} {nodes : List Aiur.NativeAIR.Node} {buffer : Array W},
+      Aiur.NativeAIR.Compiler.Evaluation ops values nodes buffer →
+        ∀ {a : Nat} {value : W},
+          buffer[a]? = some value →
+            Aiur.NativeAIR.Compiler.Result ops values buffer (Aiur.NativeAIR.Compiler.neg nodes a) (ops.neg value)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Compiler.sortedAdd_reflects
+∀ {W : Type u_1} {ops : Aiur.NativeAIR.EvalOps W},
+  Aiur.NativeAIR.GraphEvalLaws ops →
+    ∀ {values : Aiur.NativeAIR.Values W} {nodes : List Aiur.NativeAIR.Node} {buffer : Array W},
+      Aiur.NativeAIR.Compiler.Evaluation ops values nodes buffer →
+        ∀ {a b : Nat} {left right : W},
+          buffer[a]? = some left →
+            buffer[b]? = some right →
+              Aiur.NativeAIR.Compiler.Result ops values buffer (Aiur.NativeAIR.Compiler.sortedAdd nodes a b)
+                (ops.add left right)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Compiler.sortedMul_reflects
+∀ {W : Type u_1} {ops : Aiur.NativeAIR.EvalOps W},
+  Aiur.NativeAIR.GraphEvalLaws ops →
+    ∀ {values : Aiur.NativeAIR.Values W} {nodes : List Aiur.NativeAIR.Node} {buffer : Array W},
+      Aiur.NativeAIR.Compiler.Evaluation ops values nodes buffer →
+        ∀ {a b : Nat} {left right : W},
+          buffer[a]? = some left →
+            buffer[b]? = some right →
+              Aiur.NativeAIR.Compiler.Result ops values buffer (Aiur.NativeAIR.Compiler.sortedMul nodes a b)
+                (ops.mul left right)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Compiler.add_reflects
+∀ {W : Type u_1} {ops : Aiur.NativeAIR.EvalOps W},
+  Aiur.NativeAIR.GraphEvalLaws ops →
+    ∀ {values : Aiur.NativeAIR.Values W} {nodes : List Aiur.NativeAIR.Node} {buffer : Array W},
+      Aiur.NativeAIR.Compiler.Evaluation ops values nodes buffer →
+        ∀ {a b : Nat} {left right : W},
+          buffer[a]? = some left →
+            buffer[b]? = some right →
+              Aiur.NativeAIR.Compiler.Result ops values buffer (Aiur.NativeAIR.Compiler.add nodes a b)
+                (ops.add left right)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Compiler.sub_reflects
+∀ {W : Type u_1} {ops : Aiur.NativeAIR.EvalOps W},
+  Aiur.NativeAIR.GraphEvalLaws ops →
+    ∀ {values : Aiur.NativeAIR.Values W} {nodes : List Aiur.NativeAIR.Node} {buffer : Array W},
+      Aiur.NativeAIR.Compiler.Evaluation ops values nodes buffer →
+        ∀ {a b : Nat} {left right : W},
+          buffer[a]? = some left →
+            buffer[b]? = some right →
+              Aiur.NativeAIR.Compiler.Result ops values buffer (Aiur.NativeAIR.Compiler.sub nodes a b)
+                (ops.sub left right)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Compiler.mul_reflects
+∀ {W : Type u_1} {ops : Aiur.NativeAIR.EvalOps W},
+  Aiur.NativeAIR.GraphEvalLaws ops →
+    ∀ {values : Aiur.NativeAIR.Values W} {nodes : List Aiur.NativeAIR.Node} {buffer : Array W},
+      Aiur.NativeAIR.Compiler.Evaluation ops values nodes buffer →
+        ∀ {a b : Nat} {left right : W},
+          buffer[a]? = some left →
+            buffer[b]? = some right →
+              Aiur.NativeAIR.Compiler.Result ops values buffer (Aiur.NativeAIR.Compiler.mul nodes a b)
+                (ops.mul left right)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Compiler.result_prepend
+∀ {W : Type u_1} {ops : Aiur.NativeAIR.EvalOps W} {values : Aiur.NativeAIR.Values W} {before middle : Array W},
+  Aiur.NativeAIR.Compiler.Extends before middle →
+    ∀ {result : List Aiur.NativeAIR.Node × Nat} {value : W},
+      Aiur.NativeAIR.Compiler.Result ops values middle result value →
+        Aiur.NativeAIR.Compiler.Result ops values before result value
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.Compiler.compileExpr_reflects
+∀ {W : Type u_1} {ops : Aiur.NativeAIR.EvalOps W},
+  Aiur.NativeAIR.GraphEvalLaws ops →
+    ∀ {values : Aiur.NativeAIR.Values W} {widths : Aiur.NativeAIR.GraphWidths},
+      values.Fits widths →
+        ∀ (allowStage2 : Bool) (expr : Aiur.NativeAIR.Expr) {nodes : List Aiur.NativeAIR.Node} {buffer : Array W},
+          Aiur.NativeAIR.Compiler.Evaluation ops values nodes buffer →
+            ∀ {result : List Aiur.NativeAIR.Node × Nat},
+              Aiur.NativeAIR.Compiler.compileExpr widths allowStage2 expr nodes = some result →
+                ∃ value,
+                  Aiur.NativeAIR.Expr.eval ops values expr = some value ∧
+                    Aiur.NativeAIR.Compiler.Result ops values buffer result value
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Compiler.compileExpr_sweep
+∀ {W : Type u_1} {ops : Aiur.NativeAIR.EvalOps W},
+  Aiur.NativeAIR.GraphEvalLaws ops →
+    ∀ {values : Aiur.NativeAIR.Values W} {widths : Aiur.NativeAIR.GraphWidths},
+      values.Fits widths →
+        ∀ (allowStage2 : Bool) (expr : Aiur.NativeAIR.Expr) {result : List Aiur.NativeAIR.Node × Nat},
+          Aiur.NativeAIR.Compiler.compileExpr widths allowStage2 expr [] = some result →
+            ∃ buffer,
+              Aiur.NativeAIR.sweepFrom ops values result.fst #[] = some buffer ∧
+                buffer[result.snd]? = Aiur.NativeAIR.Expr.eval ops values expr
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Compiler.RootsReflect.grow
+∀ {W : Type u_1} {ops : Aiur.NativeAIR.EvalOps W} {values : Aiur.NativeAIR.Values W} {before after : Array W},
+  Aiur.NativeAIR.Compiler.Extends before after →
+    ∀ {roots : List Nat} {exprs : List Aiur.NativeAIR.Expr},
+      Aiur.NativeAIR.Compiler.RootsReflect ops values before roots exprs →
+        Aiur.NativeAIR.Compiler.RootsReflect ops values after roots exprs
+AXIOMS []
+ROOT Aiur.NativeAIR.Compiler.compileExprs_reflects
+∀ {W : Type u_1} {ops : Aiur.NativeAIR.EvalOps W},
+  Aiur.NativeAIR.GraphEvalLaws ops →
+    ∀ {values : Aiur.NativeAIR.Values W} {widths : Aiur.NativeAIR.GraphWidths},
+      values.Fits widths →
+        ∀ (allowStage2 : Bool) (exprs : List Aiur.NativeAIR.Expr) {nodes : List Aiur.NativeAIR.Node} {buffer : Array W},
+          Aiur.NativeAIR.Compiler.Evaluation ops values nodes buffer →
+            ∀ {result : List Aiur.NativeAIR.Node × List Nat},
+              Aiur.NativeAIR.Compiler.compileExprs widths allowStage2 exprs nodes = some result →
+                ∃ after,
+                  Aiur.NativeAIR.Compiler.Evaluation ops values result.fst after ∧
+                    Aiur.NativeAIR.Compiler.Extends buffer after ∧
+                      Aiur.NativeAIR.Compiler.RootsReflect ops values after result.snd exprs
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Compiler.RootsReflect.read
+∀ {W : Type u_1} {ops : Aiur.NativeAIR.EvalOps W} {values : Aiur.NativeAIR.Values W} {buffer : Array W}
+  {roots : List Nat} {exprs : List Aiur.NativeAIR.Expr},
+  Aiur.NativeAIR.Compiler.RootsReflect ops values buffer roots exprs →
+    ∃ result,
+      Aiur.NativeAIR.Compiler.evalExprs ops values exprs = some result ∧
+        Aiur.NativeAIR.readNodes buffer roots = some result
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Compiler.compileLookup_reflects
+∀ {W : Type u_1} {ops : Aiur.NativeAIR.EvalOps W},
+  Aiur.NativeAIR.GraphEvalLaws ops →
+    ∀ {values : Aiur.NativeAIR.Values W} {widths : Aiur.NativeAIR.GraphWidths},
+      values.Fits widths →
+        ∀ (lookup : Aiur.NativeAIR.Compiler.ExprLookup) {nodes : List Aiur.NativeAIR.Node} {buffer : Array W},
+          Aiur.NativeAIR.Compiler.Evaluation ops values nodes buffer →
+            ∀ {result : List Aiur.NativeAIR.Node × Aiur.NativeAIR.Lookup},
+              Aiur.NativeAIR.Compiler.compileLookup widths lookup nodes = some result →
+                ∃ after,
+                  Aiur.NativeAIR.Compiler.Evaluation ops values result.fst after ∧
+                    Aiur.NativeAIR.Compiler.Extends buffer after ∧
+                      Aiur.NativeAIR.Compiler.RootsReflect ops values after result.snd.roots lookup.exprs
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Compiler.RootsReflect.readLookup
+∀ {W : Type u_1} {ops : Aiur.NativeAIR.EvalOps W} {values : Aiur.NativeAIR.Values W} {buffer : Array W}
+  {lookup : Aiur.NativeAIR.Lookup} {exprs : Aiur.NativeAIR.Compiler.ExprLookup},
+  Aiur.NativeAIR.Compiler.RootsReflect ops values buffer lookup.roots exprs.exprs →
+    ∃ read,
+      Aiur.NativeAIR.Compiler.ExprLookup.eval ops values exprs = some read ∧
+        Aiur.NativeAIR.readLookup buffer lookup = some read
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Compiler.LookupsReflect.grow
+∀ {W : Type u_1} {ops : Aiur.NativeAIR.EvalOps W} {values : Aiur.NativeAIR.Values W} {before after : Array W},
+  Aiur.NativeAIR.Compiler.Extends before after →
+    ∀ {lookups : List Aiur.NativeAIR.Lookup} {exprs : List Aiur.NativeAIR.Compiler.ExprLookup},
+      Aiur.NativeAIR.Compiler.LookupsReflect ops values before lookups exprs →
+        Aiur.NativeAIR.Compiler.LookupsReflect ops values after lookups exprs
+AXIOMS []
+ROOT Aiur.NativeAIR.Compiler.compileLookups_reflects
+∀ {W : Type u_1} {ops : Aiur.NativeAIR.EvalOps W},
+  Aiur.NativeAIR.GraphEvalLaws ops →
+    ∀ {values : Aiur.NativeAIR.Values W} {widths : Aiur.NativeAIR.GraphWidths},
+      values.Fits widths →
+        ∀ (lookups : List Aiur.NativeAIR.Compiler.ExprLookup) {nodes : List Aiur.NativeAIR.Node} {buffer : Array W},
+          Aiur.NativeAIR.Compiler.Evaluation ops values nodes buffer →
+            ∀ {result : List Aiur.NativeAIR.Node × List Aiur.NativeAIR.Lookup},
+              Aiur.NativeAIR.Compiler.compileLookups widths lookups nodes = some result →
+                ∃ after,
+                  Aiur.NativeAIR.Compiler.Evaluation ops values result.fst after ∧
+                    Aiur.NativeAIR.Compiler.Extends buffer after ∧
+                      Aiur.NativeAIR.Compiler.LookupsReflect ops values after result.snd lookups
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Compiler.recordZero_reflects
+∀ {W : Type u_1} {ops : Aiur.NativeAIR.EvalOps W} {values : Aiur.NativeAIR.Values W} {nodes : List Aiur.NativeAIR.Node}
+  {buffer after : Array W},
+  Aiur.NativeAIR.Compiler.Evaluation ops values nodes buffer →
+    Aiur.NativeAIR.Compiler.Extends buffer after →
+      ∀ {root : Nat} {value : W},
+        buffer[root]? = some value →
+          ∀ {roots : List Nat},
+            Aiur.NativeAIR.Compiler.recordZero nodes root = some roots →
+              (Aiur.NativeAIR.Compiler.Vanishes ops after roots ↔ value = ops.konst 0)
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Compiler.Vanishes.append
+∀ {W : Type u_1} (ops : Aiur.NativeAIR.EvalOps W) (buffer : Array W) (left right : List Nat),
+  Aiur.NativeAIR.Compiler.Vanishes ops buffer (left ++ right) ↔
+    Aiur.NativeAIR.Compiler.Vanishes ops buffer left ∧ Aiur.NativeAIR.Compiler.Vanishes ops buffer right
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Compiler.ExprsVanish.cons
+∀ {W : Type u_1} (ops : Aiur.NativeAIR.EvalOps W) (values : Aiur.NativeAIR.Values W) (head : Aiur.NativeAIR.Expr)
+  (tail : List Aiur.NativeAIR.Expr),
+  Aiur.NativeAIR.Compiler.ExprsVanish ops values (head :: tail) ↔
+    Aiur.NativeAIR.Expr.eval ops values head = some (ops.konst 0) ∧ Aiur.NativeAIR.Compiler.ExprsVanish ops values tail
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.Compiler.compileZeros_reflects
+∀ {W : Type u_1} {ops : Aiur.NativeAIR.EvalOps W},
+  Aiur.NativeAIR.GraphEvalLaws ops →
+    ∀ {values : Aiur.NativeAIR.Values W} {widths : Aiur.NativeAIR.GraphWidths},
+      values.Fits widths →
+        ∀ (exprs : List Aiur.NativeAIR.Expr) {nodes : List Aiur.NativeAIR.Node} {buffer : Array W},
+          Aiur.NativeAIR.Compiler.Evaluation ops values nodes buffer →
+            ∀ {result : List Aiur.NativeAIR.Node × List Nat},
+              Aiur.NativeAIR.Compiler.compileZeros widths exprs nodes = some result →
+                ∃ after,
+                  Aiur.NativeAIR.Compiler.Evaluation ops values result.fst after ∧
+                    Aiur.NativeAIR.Compiler.Extends buffer after ∧
+                      (Aiur.NativeAIR.Compiler.Vanishes ops after result.snd ↔
+                        Aiur.NativeAIR.Compiler.ExprsVanish ops values exprs)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Compiler.canonicalZeros_vanish
+∀ {W : Type u_1} (ops : Aiur.NativeAIR.EvalOps W) (buffer : Array W) (roots : List Nat),
+  Aiur.NativeAIR.Compiler.Vanishes ops buffer (Aiur.NativeAIR.Compiler.canonicalZeros roots) ↔
+    Aiur.NativeAIR.Compiler.Vanishes ops buffer roots
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Compiler.compileBase_reflects
+∀ {W : Type u_1} {ops : Aiur.NativeAIR.EvalOps W},
+  Aiur.NativeAIR.GraphEvalLaws ops →
+    ∀ {values : Aiur.NativeAIR.Values W} {widths : Aiur.NativeAIR.GraphWidths},
+      values.Fits widths →
+        ∀ (lookups : List Aiur.NativeAIR.Compiler.ExprLookup) (constraints : List Aiur.NativeAIR.Expr)
+          {result : Aiur.NativeAIR.Compiler.BaseCompilation},
+          Aiur.NativeAIR.Compiler.compileBase widths lookups constraints = some result →
+            ∃ buffer,
+              result.graph.sweep ops values = some buffer ∧
+                Aiur.NativeAIR.Compiler.LookupsReflect ops values buffer result.graph.lookups lookups ∧
+                  (Aiur.NativeAIR.Compiler.Vanishes ops buffer result.graph.zeros ↔
+                    Aiur.NativeAIR.Compiler.ExprsVanish ops values constraints)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Compiler.LookupsReflect.read
+∀ {W : Type u_1} {ops : Aiur.NativeAIR.EvalOps W} {values : Aiur.NativeAIR.Values W} {buffer : Array W}
+  {lookups : List Aiur.NativeAIR.Lookup} {exprs : List Aiur.NativeAIR.Compiler.ExprLookup},
+  Aiur.NativeAIR.Compiler.LookupsReflect ops values buffer lookups exprs →
+    ∃ result,
+      List.mapM (Aiur.NativeAIR.Compiler.ExprLookup.eval ops values) exprs = some result ∧
+        List.mapM (Aiur.NativeAIR.readLookup buffer) lookups = some result
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Compiler.compileBase_satisfaction
+∀ {W : Type u_1} {ops : Aiur.NativeAIR.EvalOps W},
+  Aiur.NativeAIR.GraphEvalLaws ops →
+    ∀ {values : Aiur.NativeAIR.Values W} {widths : Aiur.NativeAIR.GraphWidths},
+      values.Fits widths →
+        ∀ (lookups : List Aiur.NativeAIR.Compiler.ExprLookup) (constraints : List Aiur.NativeAIR.Expr)
+          {result : Aiur.NativeAIR.Compiler.BaseCompilation},
+          Aiur.NativeAIR.Compiler.compileBase widths lookups constraints = some result →
+            ∀ {buffer : Array W},
+              result.graph.sweep ops values = some buffer →
+                (Aiur.NativeAIR.Compiler.Vanishes ops buffer result.graph.zeros ↔
+                    Aiur.NativeAIR.Compiler.ExprsVanish ops values constraints) ∧
+                  List.mapM (Aiur.NativeAIR.readLookup buffer) result.graph.lookups =
+                    List.mapM (Aiur.NativeAIR.Compiler.ExprLookup.eval ops values) lookups
+AXIOMS [propext, Classical.choice, Quot.sound]
 PREMISE Aiur.AIR.activityConstraint
 Aiur.G → Aiur.G → Aiur.G
 DEFINITION
@@ -5995,6 +6315,217 @@ DEFINITION
 fun selector first left right =>
   have product := left.mul right;
   if product.degree < 2 then { output := product } else Aiur.NativeAIR.mulRegular selector first product
+PREMISE Aiur.NativeAIR.GraphEvalLaws.mk
+∀ {W : Type u_1} {ops : Aiur.NativeAIR.EvalOps W},
+  Aiur.NativeAIR.EvalLaws ops →
+    (∀ (a b : W), ops.add a b = ops.add b a) →
+      (∀ (a b : W), ops.mul a b = ops.mul b a) →
+        (∀ (a : W), ops.sub a a = ops.konst 0) → Aiur.NativeAIR.GraphEvalLaws ops
+PREMISE Aiur.NativeAIR.Compiler.Extends
+{W : Type u_1} → Array W → Array W → Prop
+DEFINITION
+fun {W} before after => ∀ (index : Nat) (value : W), before[index]? = some value → after[index]? = some value
+PREMISE Aiur.NativeAIR.Compiler.Evaluation.mk
+∀ {W : Type u_1} {ops : Aiur.NativeAIR.EvalOps W} {values : Aiur.NativeAIR.Values W} {nodes : List Aiur.NativeAIR.Node}
+  {buffer : Array W},
+  buffer.size = nodes.length →
+    Aiur.NativeAIR.sweepFrom ops values nodes #[] = some buffer →
+      (∀ (index : Nat) (node : Aiur.NativeAIR.Node),
+          nodes[index]? = some node → Aiur.NativeAIR.Node.eval ops values buffer node = buffer[index]?) →
+        Aiur.NativeAIR.Compiler.Evaluation ops values nodes buffer
+PREMISE Aiur.NativeAIR.Compiler.intern
+List Aiur.NativeAIR.Node → Aiur.NativeAIR.Node → List Aiur.NativeAIR.Node × Nat
+DEFINITION
+fun nodes node =>
+  match List.findIdx? (fun old => decide (old = node)) nodes with
+  | some index => (nodes, index)
+  | none => (nodes ++ [node], nodes.length)
+PREMISE Aiur.NativeAIR.Compiler.asConst
+List Aiur.NativeAIR.Node → Nat → Option Aiur.G
+DEFINITION
+fun nodes index =>
+  match nodes[index]? with
+  | some (Aiur.NativeAIR.Node.konst value) => some value
+  | x => none
+PREMISE Aiur.NativeAIR.Compiler.Result
+{W : Type u_1} →
+  Aiur.NativeAIR.EvalOps W → Aiur.NativeAIR.Values W → Array W → List Aiur.NativeAIR.Node × Nat → W → Prop
+DEFINITION
+fun {W} ops values before result value =>
+  ∃ after,
+    Aiur.NativeAIR.Compiler.Evaluation ops values result.fst after ∧
+      Aiur.NativeAIR.Compiler.Extends before after ∧ after[result.snd]? = some value
+PREMISE Aiur.NativeAIR.Compiler.neg
+List Aiur.NativeAIR.Node → Nat → List Aiur.NativeAIR.Node × Nat
+DEFINITION
+fun nodes a =>
+  match Aiur.NativeAIR.Compiler.asConst nodes a with
+  | some value => Aiur.NativeAIR.Compiler.intern nodes (Aiur.NativeAIR.Node.konst (0 - value))
+  | none =>
+    match nodes[a]? with
+    | some (Aiur.NativeAIR.Node.neg inner) => (nodes, inner)
+    | x => Aiur.NativeAIR.Compiler.intern nodes (Aiur.NativeAIR.Node.neg a)
+PREMISE Aiur.NativeAIR.Compiler.sortedAdd
+List Aiur.NativeAIR.Node → Nat → Nat → List Aiur.NativeAIR.Node × Nat
+DEFINITION
+fun nodes a b =>
+  Aiur.NativeAIR.Compiler.intern nodes (if a ≤ b then Aiur.NativeAIR.Node.add a b else Aiur.NativeAIR.Node.add b a)
+PREMISE Aiur.NativeAIR.Compiler.sortedMul
+List Aiur.NativeAIR.Node → Nat → Nat → List Aiur.NativeAIR.Node × Nat
+DEFINITION
+fun nodes a b =>
+  Aiur.NativeAIR.Compiler.intern nodes (if a ≤ b then Aiur.NativeAIR.Node.mul a b else Aiur.NativeAIR.Node.mul b a)
+PREMISE Aiur.NativeAIR.Compiler.add
+List Aiur.NativeAIR.Node → Nat → Nat → List Aiur.NativeAIR.Node × Nat
+DEFINITION
+fun nodes a b =>
+  match Aiur.NativeAIR.Compiler.asConst nodes a, Aiur.NativeAIR.Compiler.asConst nodes b with
+  | some x, some y => Aiur.NativeAIR.Compiler.intern nodes (Aiur.NativeAIR.Node.konst (x + y))
+  | some x, none => if (x == 0) = true then (nodes, b) else Aiur.NativeAIR.Compiler.sortedAdd nodes a b
+  | none, some y => if (y == 0) = true then (nodes, a) else Aiur.NativeAIR.Compiler.sortedAdd nodes a b
+  | none, none => Aiur.NativeAIR.Compiler.sortedAdd nodes a b
+PREMISE Aiur.NativeAIR.Compiler.sub
+List Aiur.NativeAIR.Node → Nat → Nat → List Aiur.NativeAIR.Node × Nat
+DEFINITION
+fun nodes a b =>
+  if a = b then Aiur.NativeAIR.Compiler.intern nodes (Aiur.NativeAIR.Node.konst 0)
+  else
+    match Aiur.NativeAIR.Compiler.asConst nodes a, Aiur.NativeAIR.Compiler.asConst nodes b with
+    | some x, some y => Aiur.NativeAIR.Compiler.intern nodes (Aiur.NativeAIR.Node.konst (x - y))
+    | none, some y =>
+      if (y == 0) = true then (nodes, a) else Aiur.NativeAIR.Compiler.intern nodes (Aiur.NativeAIR.Node.sub a b)
+    | some x, none =>
+      if (x == 0) = true then Aiur.NativeAIR.Compiler.neg nodes b
+      else Aiur.NativeAIR.Compiler.intern nodes (Aiur.NativeAIR.Node.sub a b)
+    | none, none => Aiur.NativeAIR.Compiler.intern nodes (Aiur.NativeAIR.Node.sub a b)
+PREMISE Aiur.NativeAIR.Compiler.mul
+List Aiur.NativeAIR.Node → Nat → Nat → List Aiur.NativeAIR.Node × Nat
+DEFINITION
+fun nodes a b =>
+  match Aiur.NativeAIR.Compiler.asConst nodes a, Aiur.NativeAIR.Compiler.asConst nodes b with
+  | some x, some y => Aiur.NativeAIR.Compiler.intern nodes (Aiur.NativeAIR.Node.konst (x * y))
+  | some x, none =>
+    if (x == 0) = true then (nodes, a)
+    else if (x == 1) = true then (nodes, b) else Aiur.NativeAIR.Compiler.sortedMul nodes a b
+  | none, some y =>
+    if (y == 0) = true then (nodes, b)
+    else if (y == 1) = true then (nodes, a) else Aiur.NativeAIR.Compiler.sortedMul nodes a b
+  | none, none => Aiur.NativeAIR.Compiler.sortedMul nodes a b
+PREMISE Aiur.NativeAIR.Compiler.compileExpr
+Aiur.NativeAIR.GraphWidths →
+  Bool → Aiur.NativeAIR.Expr → List Aiur.NativeAIR.Node → Option (List Aiur.NativeAIR.Node × Nat)
+DEFINITION
+fun widths allowStage2 x x_1 =>
+  Aiur.NativeAIR.Expr.brecOn (motive := fun x => List Aiur.NativeAIR.Node → Option (List Aiur.NativeAIR.Node × Nat)) x
+    (Aiur.NativeAIR.Compiler.compileExpr._f widths allowStage2) x_1
+PREMISE Aiur.NativeAIR.Compiler.compileExprs
+Aiur.NativeAIR.GraphWidths →
+  Bool → List Aiur.NativeAIR.Expr → List Aiur.NativeAIR.Node → Option (List Aiur.NativeAIR.Node × List Nat)
+DEFINITION
+fun widths allowStage2 x x_1 =>
+  List.brecOn (motive := fun x => List Aiur.NativeAIR.Node → Option (List Aiur.NativeAIR.Node × List Nat)) x
+    (Aiur.NativeAIR.Compiler.compileExprs._f widths allowStage2) x_1
+PREMISE Aiur.NativeAIR.Compiler.RootsReflect.nil
+∀ {W : Type u_1} {ops : Aiur.NativeAIR.EvalOps W} {values : Aiur.NativeAIR.Values W} {buffer : Array W},
+  Aiur.NativeAIR.Compiler.RootsReflect ops values buffer [] []
+PREMISE Aiur.NativeAIR.Compiler.RootsReflect.cons
+∀ {W : Type u_1} {ops : Aiur.NativeAIR.EvalOps W} {values : Aiur.NativeAIR.Values W} {buffer : Array W} {root : Nat}
+  {expr : Aiur.NativeAIR.Expr} {roots : List Nat} {exprs : List Aiur.NativeAIR.Expr},
+  (∃ value, Aiur.NativeAIR.Expr.eval ops values expr = some value ∧ buffer[root]? = some value) →
+    Aiur.NativeAIR.Compiler.RootsReflect ops values buffer roots exprs →
+      Aiur.NativeAIR.Compiler.RootsReflect ops values buffer (root :: roots) (expr :: exprs)
+PREMISE Aiur.NativeAIR.Compiler.evalExprs
+{W : Type u_1} → Aiur.NativeAIR.EvalOps W → Aiur.NativeAIR.Values W → List Aiur.NativeAIR.Expr → Option (List W)
+DEFINITION
+fun {W} ops values exprs => List.mapM (Aiur.NativeAIR.Expr.eval ops values) exprs
+PREMISE Aiur.NativeAIR.Compiler.ExprLookup.mk
+Aiur.NativeAIR.Expr → List Aiur.NativeAIR.Expr → Aiur.NativeAIR.Compiler.ExprLookup
+PREMISE Aiur.NativeAIR.Compiler.ExprLookup.exprs
+Aiur.NativeAIR.Compiler.ExprLookup → List Aiur.NativeAIR.Expr
+DEFINITION
+fun lookup => lookup.multiplicity :: lookup.args
+PREMISE Aiur.NativeAIR.Compiler.ExprLookup.eval
+{W : Type u_1} →
+  Aiur.NativeAIR.EvalOps W → Aiur.NativeAIR.Values W → Aiur.NativeAIR.Compiler.ExprLookup → Option (W × List W)
+DEFINITION
+fun {W} ops values lookup => do
+  let multiplicity ← Aiur.NativeAIR.Expr.eval ops values lookup.multiplicity
+  let args ← Aiur.NativeAIR.Compiler.evalExprs ops values lookup.args
+  pure (multiplicity, args)
+PREMISE Aiur.NativeAIR.Compiler.compileLookup
+Aiur.NativeAIR.GraphWidths →
+  Aiur.NativeAIR.Compiler.ExprLookup →
+    List Aiur.NativeAIR.Node → Option (List Aiur.NativeAIR.Node × Aiur.NativeAIR.Lookup)
+DEFINITION
+fun widths lookup nodes => do
+  let __x ← Aiur.NativeAIR.Compiler.compileExprs widths false lookup.exprs nodes
+  match __x with
+    | (nodes, roots) =>
+      match roots with
+      | [] => none
+      | root :: roots => pure (nodes, { multiplicity := root, args := roots })
+PREMISE Aiur.NativeAIR.Compiler.compileLookups
+Aiur.NativeAIR.GraphWidths →
+  List Aiur.NativeAIR.Compiler.ExprLookup →
+    List Aiur.NativeAIR.Node → Option (List Aiur.NativeAIR.Node × List Aiur.NativeAIR.Lookup)
+DEFINITION
+fun widths x x_1 =>
+  List.brecOn (motive := fun x =>
+    List Aiur.NativeAIR.Node → Option (List Aiur.NativeAIR.Node × List Aiur.NativeAIR.Lookup)) x
+    (Aiur.NativeAIR.Compiler.compileLookups._f widths) x_1
+PREMISE Aiur.NativeAIR.Compiler.LookupsReflect.nil
+∀ {W : Type u_1} {ops : Aiur.NativeAIR.EvalOps W} {values : Aiur.NativeAIR.Values W} {buffer : Array W},
+  Aiur.NativeAIR.Compiler.LookupsReflect ops values buffer [] []
+PREMISE Aiur.NativeAIR.Compiler.LookupsReflect.cons
+∀ {W : Type u_1} {ops : Aiur.NativeAIR.EvalOps W} {values : Aiur.NativeAIR.Values W} {buffer : Array W}
+  {lookup : Aiur.NativeAIR.Lookup} {expr : Aiur.NativeAIR.Compiler.ExprLookup} {lookups : List Aiur.NativeAIR.Lookup}
+  {exprs : List Aiur.NativeAIR.Compiler.ExprLookup},
+  Aiur.NativeAIR.Compiler.RootsReflect ops values buffer lookup.roots expr.exprs →
+    Aiur.NativeAIR.Compiler.LookupsReflect ops values buffer lookups exprs →
+      Aiur.NativeAIR.Compiler.LookupsReflect ops values buffer (lookup :: lookups) (expr :: exprs)
+PREMISE Aiur.NativeAIR.Compiler.recordZero
+List Aiur.NativeAIR.Node → Nat → Option (List Nat)
+DEFINITION
+fun nodes root =>
+  match Aiur.NativeAIR.Compiler.asConst nodes root with
+  | none => some [root]
+  | some value => if (value == 0) = true then some [] else none
+PREMISE Aiur.NativeAIR.Compiler.Vanishes
+{W : Type u_1} → Aiur.NativeAIR.EvalOps W → Array W → List Nat → Prop
+DEFINITION
+fun {W} ops buffer roots => ∀ (root : Nat), root ∈ roots → buffer[root]? = some (ops.konst 0)
+PREMISE Aiur.NativeAIR.Compiler.ExprsVanish
+{W : Type u_1} → Aiur.NativeAIR.EvalOps W → Aiur.NativeAIR.Values W → List Aiur.NativeAIR.Expr → Prop
+DEFINITION
+fun {W} ops values exprs =>
+  ∀ (expr : Aiur.NativeAIR.Expr), expr ∈ exprs → Aiur.NativeAIR.Expr.eval ops values expr = some (ops.konst 0)
+PREMISE Aiur.NativeAIR.Compiler.compileZeros
+Aiur.NativeAIR.GraphWidths →
+  List Aiur.NativeAIR.Expr → List Aiur.NativeAIR.Node → Option (List Aiur.NativeAIR.Node × List Nat)
+DEFINITION
+fun widths x x_1 =>
+  List.brecOn (motive := fun x => List Aiur.NativeAIR.Node → Option (List Aiur.NativeAIR.Node × List Nat)) x
+    (Aiur.NativeAIR.Compiler.compileZeros._f widths) x_1
+PREMISE Aiur.NativeAIR.Compiler.canonicalZeros
+List Nat → List Nat
+DEFINITION
+fun roots => (roots.mergeSort fun x1 x2 => decide (x1 ≤ x2)).eraseDups
+PREMISE Aiur.NativeAIR.Compiler.BaseCompilation.mk
+Aiur.NativeAIR.Graph → Nat → Aiur.NativeAIR.Compiler.BaseCompilation
+PREMISE Aiur.NativeAIR.Compiler.compileBase
+Aiur.NativeAIR.GraphWidths →
+  List Aiur.NativeAIR.Compiler.ExprLookup → List Aiur.NativeAIR.Expr → Option Aiur.NativeAIR.Compiler.BaseCompilation
+DEFINITION
+fun widths lookups constraints => do
+  let __x ← Aiur.NativeAIR.Compiler.compileLookups widths lookups []
+  match __x with
+    | (lookupNodes, lookups) => do
+      let __x ← Aiur.NativeAIR.Compiler.compileZeros widths constraints lookupNodes
+      match __x with
+        | (nodes, zeros) =>
+          pure
+            { graph := { nodes := nodes, zeros := Aiur.NativeAIR.Compiler.canonicalZeros zeros, lookups := lookups },
+              lookupEnd := lookupNodes.length }
 RECURSION WORKER Aiur.buildArgs._unsafe_rec
 Aiur.LayoutMap →
   Std.HashMap Aiur.Local (Array Aiur.Bytecode.ValIdx) →
@@ -10695,6 +11226,97 @@ fun decls x x_1 x_2 =>
     | some (Aiur.Concrete.Declaration.dataType dt) =>
       Aiur.Concrete.DataType.sizeBound._unsafe_rec decls bound visited dt
     | x => throw (toString "Datatype not found: `" ++ toString g ++ toString "`")
+RECURSION WORKER Aiur.NativeAIR.Compiler.compileExpr._unsafe_rec
+Aiur.NativeAIR.GraphWidths →
+  Bool → Aiur.NativeAIR.Expr → List Aiur.NativeAIR.Node → Option (List Aiur.NativeAIR.Node × Nat)
+IMPLEMENTATION
+fun widths allowStage2 x x_1 =>
+  match x, x_1 with
+  | Aiur.NativeAIR.Expr.konst value, nodes =>
+    some (Aiur.NativeAIR.Compiler.intern nodes (Aiur.NativeAIR.Node.konst value))
+  | Aiur.NativeAIR.Expr.var column, nodes =>
+    if
+        ((column.source != Aiur.NativeAIR.Source.stage2 || allowStage2) &&
+            decide (column.index < widths.width column.source)) =
+          true then
+      some (Aiur.NativeAIR.Compiler.intern nodes (Aiur.NativeAIR.Node.var column))
+    else none
+  | Aiur.NativeAIR.Expr.publicInput index, nodes =>
+    if index < widths.publics then some (Aiur.NativeAIR.Compiler.intern nodes (Aiur.NativeAIR.Node.publicInput index))
+    else none
+  | Aiur.NativeAIR.Expr.isFirstRow, nodes => some (Aiur.NativeAIR.Compiler.intern nodes Aiur.NativeAIR.Node.isFirstRow)
+  | Aiur.NativeAIR.Expr.isLastRow, nodes => some (Aiur.NativeAIR.Compiler.intern nodes Aiur.NativeAIR.Node.isLastRow)
+  | Aiur.NativeAIR.Expr.isTransition, nodes =>
+    some (Aiur.NativeAIR.Compiler.intern nodes Aiur.NativeAIR.Node.isTransition)
+  | left.add right, nodes => do
+    let __x ← Aiur.NativeAIR.Compiler.compileExpr._unsafe_rec widths allowStage2 left nodes
+    match __x with
+      | (nodes, a) => do
+        let __x ← Aiur.NativeAIR.Compiler.compileExpr._unsafe_rec widths allowStage2 right nodes
+        match __x with
+          | (nodes, b) => pure (Aiur.NativeAIR.Compiler.add nodes a b)
+  | left.sub right, nodes => do
+    let __x ← Aiur.NativeAIR.Compiler.compileExpr._unsafe_rec widths allowStage2 left nodes
+    match __x with
+      | (nodes, a) => do
+        let __x ← Aiur.NativeAIR.Compiler.compileExpr._unsafe_rec widths allowStage2 right nodes
+        match __x with
+          | (nodes, b) => pure (Aiur.NativeAIR.Compiler.sub nodes a b)
+  | left.mul right, nodes => do
+    let __x ← Aiur.NativeAIR.Compiler.compileExpr._unsafe_rec widths allowStage2 left nodes
+    match __x with
+      | (nodes, a) => do
+        let __x ← Aiur.NativeAIR.Compiler.compileExpr._unsafe_rec widths allowStage2 right nodes
+        match __x with
+          | (nodes, b) => pure (Aiur.NativeAIR.Compiler.mul nodes a b)
+  | child.neg, nodes => do
+    let __x ← Aiur.NativeAIR.Compiler.compileExpr._unsafe_rec widths allowStage2 child nodes
+    match __x with
+      | (nodes, a) => pure (Aiur.NativeAIR.Compiler.neg nodes a)
+RECURSION WORKER Aiur.NativeAIR.Compiler.compileExprs._unsafe_rec
+Aiur.NativeAIR.GraphWidths →
+  Bool → List Aiur.NativeAIR.Expr → List Aiur.NativeAIR.Node → Option (List Aiur.NativeAIR.Node × List Nat)
+IMPLEMENTATION
+fun widths allowStage2 x x_1 =>
+  match x, x_1 with
+  | [], nodes => some (nodes, [])
+  | expr :: exprs, nodes => do
+    let __x ← Aiur.NativeAIR.Compiler.compileExpr widths allowStage2 expr nodes
+    match __x with
+      | (nodes, root) => do
+        let __x ← Aiur.NativeAIR.Compiler.compileExprs._unsafe_rec widths allowStage2 exprs nodes
+        match __x with
+          | (nodes, roots) => pure (nodes, root :: roots)
+RECURSION WORKER Aiur.NativeAIR.Compiler.compileLookups._unsafe_rec
+Aiur.NativeAIR.GraphWidths →
+  List Aiur.NativeAIR.Compiler.ExprLookup →
+    List Aiur.NativeAIR.Node → Option (List Aiur.NativeAIR.Node × List Aiur.NativeAIR.Lookup)
+IMPLEMENTATION
+fun widths x x_1 =>
+  match x, x_1 with
+  | [], nodes => some (nodes, [])
+  | lookup :: lookups, nodes => do
+    let __x ← Aiur.NativeAIR.Compiler.compileLookup widths lookup nodes
+    match __x with
+      | (nodes, root) => do
+        let __x ← Aiur.NativeAIR.Compiler.compileLookups._unsafe_rec widths lookups nodes
+        match __x with
+          | (nodes, roots) => pure (nodes, root :: roots)
+RECURSION WORKER Aiur.NativeAIR.Compiler.compileZeros._unsafe_rec
+Aiur.NativeAIR.GraphWidths →
+  List Aiur.NativeAIR.Expr → List Aiur.NativeAIR.Node → Option (List Aiur.NativeAIR.Node × List Nat)
+IMPLEMENTATION
+fun widths x x_1 =>
+  match x, x_1 with
+  | [], nodes => some (nodes, [])
+  | expr :: exprs, nodes => do
+    let __x ← Aiur.NativeAIR.Compiler.compileExpr widths false expr nodes
+    match __x with
+      | (nodes, root) => do
+        let head ← Aiur.NativeAIR.Compiler.recordZero nodes root
+        let __x ← Aiur.NativeAIR.Compiler.compileZeros._unsafe_rec widths exprs nodes
+        match __x with
+          | (nodes, roots) => pure (nodes, head ++ roots)
 RECURSION WORKER Aiur.NativeAIR.Expr.eval._unsafe_rec
 {W : Type u_1} → Aiur.NativeAIR.EvalOps W → Aiur.NativeAIR.Values W → Aiur.NativeAIR.Expr → Option W
 IMPLEMENTATION
@@ -12698,10 +13320,10 @@ fun initId decls renames clauses branches body =>
     let clause : Aiur.MatchCompiler.Clause :=
       { pat := Aiur.MatchCompiler.SPattern.pointer var innerTyp, guards := guards, body := term }
     Aiur.MatchCompiler.dnfProd.aux._unsafe_rec✝ initId decls renames (clauses.push clause) rest body
-C8 component ROOTS 388; LOGICAL DECLARATIONS 16039; WITH RUNTIME 16750
+C8 component ROOTS 425; LOGICAL DECLARATIONS 16338; WITH RUNTIME 17100
 IX RUNTIME EXTERNS [Aiur.AiurSystem.build, Aiur.AiurSystem.verify, Aiur.AiurSystem.vkBytes, Aiur.Proof.ofBytesChecked]
 PARTIAL OPAQUE SOURCES [Aiur.instHashableTyp.hash, Aiur.instReprPattern.repr, Aiur.instReprTyp.repr]
 OTHER UNSAFE RUNTIME []
-RECURSION WORKERS 151
+RECURSION WORKERS 155
 Runtime diagnostics cover Ix modules, including private constants. Lean/Std runtime primitives remain an external execution boundary. Partial opaque implementations are inventoried, not proved to refine their logical defaults.
 The runtime inventory and theorem premises are frozen separately. These roots do not establish full compiler/AIR reflection or public certified claim semantics.

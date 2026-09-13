@@ -410,13 +410,13 @@ sizes, constrained and advice calls, nested continuations, visibility and
 public-claim widths. All 54 parallel release Rust tests pass, including the
 supplied rank/output ambiguity regression; release Clippy denies warnings.
 
-The audit checks 388 roots by traversing checked types, bodies and inductive
-constructors. Two roots use no axioms; sixty-five depend only on `propext`;
-105 use exactly `propext` and `Quot.sound`; the other 216 use exactly
+The audit checks 425 roots by traversing checked types, bodies and inductive
+constructors. Six roots use no axioms; seventy-two depend only on `propext`;
+115 use exactly `propext` and `Quot.sound`; the other 232 use exactly
 `propext`, `Classical.choice` and `Quot.sound`. The combined closure
-has 16,039 logical declarations and 16,750 declarations after following runtime
+has 16,338 logical declarations and 17,100 declarations after following runtime
 workers and replacements. The frozen report records four native runtime entry points,
-three partial opaque sources and all 151 Ix recursion worker implementations.
+three partial opaque sources and all 155 Ix recursion worker implementations.
 Bytecode comparison/hashing, tail-match restoration and source-value hashing
 use total definitions. Type hashing and type/pattern formatting remain partial.
 These remaining implementations and
@@ -515,13 +515,31 @@ every equation. The reflection theorems require reads only from allocated
 columns. The native corpus compares 1,752 exact smart-constructor trees and
 9,804 actual scalar emissions at four assignments each, for 46,224 matching
 evaluations. It includes raw negated constants outside the invariant and
-degree metadata zero, one and two. The 388-root audit preserves all 338 earlier
+degree metadata zero, one and two. That 388-root audit preserved all 338 earlier
 root statements and axiom sets, 376 frozen definitions and 150 worker bodies.
-It adds 50 roots, 23 definitions/constructors and the total negation-check worker.
-Rust execution refinement, remaining emitter forms, graph compilation and
-native acceptance-to-satisfaction reduction remain open. The native release
-suite passes 62 tests and release Clippy; the complete component gate passes
-with thirteen native comparison corpora.
+It added 50 roots, 23 definitions/constructors and the total negation-check worker.
+`GraphCompilation` extends reflection through the native base graph's structural
+sharing, sorted commutative operands, equal-id subtraction and constant folds.
+Every compilation step preserves previously assigned node values. Successful
+base compilation preserves constraint satisfaction in both directions, including
+dropped zero constants and sorted, deduplicated roots. Compiled lookup
+multiplicities and arguments equal the original expressions in their original
+order. These results hold for compatible working algebras, with the additional
+commutativity and self-subtraction laws proved for Goldilocks.
+The native corpus compares all nodes, degrees, root ids and stored lookup
+prefixes in 1,484 actual base graphs. All 38 rejected source specifications,
+11,872 assignments and 86,680 node values match Lean. Invalid children remain
+rejected even inside raw multiplication by zero or equal-expression subtraction.
+The 425-root audit preserves all 388 earlier statements and axiom sets, all 399
+frozen definitions and all 151 prior workers. It adds 37 roots, 31 frozen
+definitions/constructors and four total recursion workers. The native release
+suite passes 63 tests and release Clippy; the strict 140-job proof/test build
+and complete component gate pass with fourteen native comparison corpora.
+The graph model uses natural-number indices and a linear structural interner.
+Rust execution and hash-table refinement, machine bounds, extension-coordinate
+expansion, remaining emitter forms and native acceptance-to-satisfaction
+reduction remain open. Aiur's native system builder supplies no user extension
+constraints: its function, memory and byte circuits all use the base graph.
 The budget comparison covers
 21,964 Rust/Lean cases, including
 all byte-sized degree values, field and machine boundaries, inactive circuits

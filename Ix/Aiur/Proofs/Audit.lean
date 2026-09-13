@@ -32,6 +32,7 @@ import Ix.Aiur.Proofs.MemoryColumns
 import Ix.Aiur.Proofs.ByteColumns
 import Ix.Aiur.Proofs.ExpressionGraph
 import Ix.Aiur.Proofs.FrontendExpressions
+import Ix.Aiur.Proofs.GraphCompilation
 import Ix.Aiur.Proofs.Grouping
 import Ix.Aiur.Proofs.TailMatches
 import Ix.Aiur.Proofs.NormalizationFrames
@@ -501,6 +502,114 @@ def frontendExpressionPremises : Array Lean.Name := #[
   `Aiur.NativeAIR.mulRegular,
   `Aiur.NativeAIR.emitMul]
 
+def graphCompilationRoots : Array Lean.Name := #[
+  `Aiur.G.sub_self,
+  `Aiur.NativeAIR.goldilocksGraphLaws,
+  `Aiur.NativeAIR.Compiler.Extends.refl,
+  `Aiur.NativeAIR.Compiler.Extends.trans,
+  `Aiur.NativeAIR.Compiler.Extends.push,
+  `Aiur.NativeAIR.Compiler.eval_extends,
+  `Aiur.NativeAIR.Compiler.Evaluation.empty,
+  `Aiur.NativeAIR.Compiler.Evaluation.push,
+  `Aiur.NativeAIR.Compiler.result_same,
+  `Aiur.NativeAIR.Compiler.intern_reflects,
+  `Aiur.NativeAIR.Compiler.asConst_reflects,
+  `Aiur.NativeAIR.Compiler.asConst_value,
+  `Aiur.NativeAIR.Compiler.konst_reflects,
+  `Aiur.NativeAIR.Compiler.neg_reflects,
+  `Aiur.NativeAIR.Compiler.sortedAdd_reflects,
+  `Aiur.NativeAIR.Compiler.sortedMul_reflects,
+  `Aiur.NativeAIR.Compiler.add_reflects,
+  `Aiur.NativeAIR.Compiler.sub_reflects,
+  `Aiur.NativeAIR.Compiler.mul_reflects,
+  `Aiur.NativeAIR.Compiler.result_prepend,
+  `Aiur.NativeAIR.Compiler.compileExpr_reflects,
+  `Aiur.NativeAIR.Compiler.compileExpr_sweep,
+  `Aiur.NativeAIR.Compiler.RootsReflect.grow,
+  `Aiur.NativeAIR.Compiler.compileExprs_reflects,
+  `Aiur.NativeAIR.Compiler.RootsReflect.read,
+  `Aiur.NativeAIR.Compiler.compileLookup_reflects,
+  `Aiur.NativeAIR.Compiler.RootsReflect.readLookup,
+  `Aiur.NativeAIR.Compiler.LookupsReflect.grow,
+  `Aiur.NativeAIR.Compiler.compileLookups_reflects,
+  `Aiur.NativeAIR.Compiler.recordZero_reflects,
+  `Aiur.NativeAIR.Compiler.Vanishes.append,
+  `Aiur.NativeAIR.Compiler.ExprsVanish.cons,
+  `Aiur.NativeAIR.Compiler.compileZeros_reflects,
+  `Aiur.NativeAIR.Compiler.canonicalZeros_vanish,
+  `Aiur.NativeAIR.Compiler.compileBase_reflects,
+  `Aiur.NativeAIR.Compiler.LookupsReflect.read,
+  `Aiur.NativeAIR.Compiler.compileBase_satisfaction]
+
+def graphCompilationAxiomFreeRoots : Array Lean.Name := #[
+  `Aiur.NativeAIR.Compiler.Extends.refl,
+  `Aiur.NativeAIR.Compiler.Extends.trans,
+  `Aiur.NativeAIR.Compiler.RootsReflect.grow,
+  `Aiur.NativeAIR.Compiler.LookupsReflect.grow]
+
+def graphCompilationQuotRoots : Array Lean.Name := #[
+  `Aiur.G.sub_self,
+  `Aiur.NativeAIR.goldilocksGraphLaws,
+  `Aiur.NativeAIR.Compiler.eval_extends,
+  `Aiur.NativeAIR.Compiler.Evaluation.push,
+  `Aiur.NativeAIR.Compiler.RootsReflect.read,
+  `Aiur.NativeAIR.Compiler.RootsReflect.readLookup,
+  `Aiur.NativeAIR.Compiler.recordZero_reflects,
+  `Aiur.NativeAIR.Compiler.Vanishes.append,
+  `Aiur.NativeAIR.Compiler.canonicalZeros_vanish,
+  `Aiur.NativeAIR.Compiler.LookupsReflect.read]
+
+def graphCompilationClassicalRoots : Array Lean.Name := #[
+  `Aiur.NativeAIR.Compiler.intern_reflects,
+  `Aiur.NativeAIR.Compiler.konst_reflects,
+  `Aiur.NativeAIR.Compiler.neg_reflects,
+  `Aiur.NativeAIR.Compiler.sortedAdd_reflects,
+  `Aiur.NativeAIR.Compiler.sortedMul_reflects,
+  `Aiur.NativeAIR.Compiler.add_reflects,
+  `Aiur.NativeAIR.Compiler.sub_reflects,
+  `Aiur.NativeAIR.Compiler.mul_reflects,
+  `Aiur.NativeAIR.Compiler.compileExpr_reflects,
+  `Aiur.NativeAIR.Compiler.compileExpr_sweep,
+  `Aiur.NativeAIR.Compiler.compileExprs_reflects,
+  `Aiur.NativeAIR.Compiler.compileLookup_reflects,
+  `Aiur.NativeAIR.Compiler.compileLookups_reflects,
+  `Aiur.NativeAIR.Compiler.compileZeros_reflects,
+  `Aiur.NativeAIR.Compiler.compileBase_reflects,
+  `Aiur.NativeAIR.Compiler.compileBase_satisfaction]
+
+def graphCompilationPremises : Array Lean.Name := #[
+  `Aiur.NativeAIR.GraphEvalLaws.mk,
+  `Aiur.NativeAIR.Compiler.Extends,
+  `Aiur.NativeAIR.Compiler.Evaluation.mk,
+  `Aiur.NativeAIR.Compiler.intern,
+  `Aiur.NativeAIR.Compiler.asConst,
+  `Aiur.NativeAIR.Compiler.Result,
+  `Aiur.NativeAIR.Compiler.neg,
+  `Aiur.NativeAIR.Compiler.sortedAdd,
+  `Aiur.NativeAIR.Compiler.sortedMul,
+  `Aiur.NativeAIR.Compiler.add,
+  `Aiur.NativeAIR.Compiler.sub,
+  `Aiur.NativeAIR.Compiler.mul,
+  `Aiur.NativeAIR.Compiler.compileExpr,
+  `Aiur.NativeAIR.Compiler.compileExprs,
+  `Aiur.NativeAIR.Compiler.RootsReflect.nil,
+  `Aiur.NativeAIR.Compiler.RootsReflect.cons,
+  `Aiur.NativeAIR.Compiler.evalExprs,
+  `Aiur.NativeAIR.Compiler.ExprLookup.mk,
+  `Aiur.NativeAIR.Compiler.ExprLookup.exprs,
+  `Aiur.NativeAIR.Compiler.ExprLookup.eval,
+  `Aiur.NativeAIR.Compiler.compileLookup,
+  `Aiur.NativeAIR.Compiler.compileLookups,
+  `Aiur.NativeAIR.Compiler.LookupsReflect.nil,
+  `Aiur.NativeAIR.Compiler.LookupsReflect.cons,
+  `Aiur.NativeAIR.Compiler.recordZero,
+  `Aiur.NativeAIR.Compiler.Vanishes,
+  `Aiur.NativeAIR.Compiler.ExprsVanish,
+  `Aiur.NativeAIR.Compiler.compileZeros,
+  `Aiur.NativeAIR.Compiler.canonicalZeros,
+  `Aiur.NativeAIR.Compiler.BaseCompilation.mk,
+  `Aiur.NativeAIR.Compiler.compileBase]
+
 def roots : Array Lean.Name := #[
   `Aiur.G.ofNat_n, `Aiur.G.mul_one, `Aiur.G.mul_zero,
   `Aiur.AIR.inactive_multiplicity_zero,
@@ -537,7 +646,7 @@ def roots : Array Lean.Name := #[
     fieldRoots ++ localConstraintRoots ++ byteArithmeticRoots ++ byteLookupRoots ++
     lookupMessageRoots ++ lookupShapeRoots ++ globalLookupRoots ++ lookupBudgetRoots ++
     selectorControlRoots ++ operationRowRoots ++ blockRowRoots ++ querySlotRoots ++ circuitRowRoots ++
-    rowCountRoots ++ circuitTableRoots ++ branchlessRoots ++ circuitTraceRoots ++ circuitMembershipRoots ++ lookupLayoutRoots ++ memoryColumnRoots ++ byteColumnRoots ++ expressionGraphRoots ++ frontendExpressionRoots
+    rowCountRoots ++ circuitTableRoots ++ branchlessRoots ++ circuitTraceRoots ++ circuitMembershipRoots ++ lookupLayoutRoots ++ memoryColumnRoots ++ byteColumnRoots ++ expressionGraphRoots ++ frontendExpressionRoots ++ graphCompilationRoots
 
 def premises : Array Lean.Name := #[
   `Aiur.AIR.activityConstraint,
@@ -776,7 +885,7 @@ def premises : Array Lean.Name := #[
   `Aiur.NativeAIR.evalRoots,
   `Aiur.NativeAIR.readLookup,
   `Aiur.NativeAIR.evalLookup,
-  `Aiur.NativeAIR.goldilocksOps] ++ frontendExpressionPremises
+  `Aiur.NativeAIR.goldilocksOps] ++ frontendExpressionPremises ++ graphCompilationPremises
 
 private def constants (info : Lean.ConstantInfo) : Array Lean.Name :=
   info.type.getUsedConstants ++ match info with
@@ -855,7 +964,12 @@ run_cmd do
   let env ← getEnv
   for root in roots do
     let some info := env.checked.get.find? root | throwError "C8 component audit: missing root {root}"
-    let expected := if frontendExpressionRoots.contains root then
+    let expected := if graphCompilationRoots.contains root then
+        if graphCompilationAxiomFreeRoots.contains root then #[]
+        else if graphCompilationClassicalRoots.contains root then #[``propext, ``Classical.choice, ``Quot.sound]
+        else if graphCompilationQuotRoots.contains root then #[``propext, ``Quot.sound]
+        else #[``propext]
+      else if frontendExpressionRoots.contains root then
         if frontendClassicalRoots.contains root then #[``propext, ``Classical.choice, ``Quot.sound]
         else if frontendQuotRoots.contains root then #[``propext, ``Quot.sound]
         else #[``propext]

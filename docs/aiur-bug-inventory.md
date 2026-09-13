@@ -98,3 +98,10 @@ trees, 9,804 scalar emissions and 46,224 evaluated assignments match the actual
 Rust frontend. Its 388-root audit preserves the repaired emitter and all 338
 earlier root statements, axiom sets and worker bodies. This proof work adds no
 new observed bug class; full compiler and cryptographic soundness remain open.
+
+The base-graph checkpoint extends reflection through node sharing, graph folds,
+constraint-root canonicalization and ordered lookup compilation. Its 425-root
+audit preserves every earlier statement, axiom set and frozen definition.
+All 1,484 native base graphs, 38 rejected specifications and 11,872 assignments
+match Lean. This work adds no observed bug class; Rust refinement, extension
+expansion and the cryptographic reduction remain open.

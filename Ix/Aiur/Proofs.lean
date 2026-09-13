@@ -52,6 +52,7 @@ import Ix.Aiur.Proofs.MemoryColumns
 import Ix.Aiur.Proofs.ByteColumns
 import Ix.Aiur.Proofs.ExpressionGraph
 import Ix.Aiur.Proofs.FrontendExpressions
+import Ix.Aiur.Proofs.GraphCompilation
 import Ix.Aiur.Proofs.Metadata
 import Ix.Aiur.Proofs.Renaming
 import Ix.Aiur.Proofs.Dedup
