@@ -337,6 +337,15 @@ impl Witness {
   }
 }
 
+/// Hard bounds for materializing setup-only matrices. Counts include the
+/// constant-one wire and all sparse A/B/C terms; they are not a peak-RAM model.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct R1csShapeLimitsV0 {
+  pub variables: u32,
+  pub constraints: u64,
+  pub nonzero_terms: u64,
+}
+
 pub struct R1csBuilder {
   public_variables: usize,
   private_variables: usize,
@@ -352,9 +361,15 @@ enum BuilderStorage {
     private_values: Vec<Fr>,
     constraints: Vec<Constraint>,
   },
+  Shape {
+    constraints: Vec<Constraint>,
+    nonzero_terms: u64,
+    limits: R1csShapeLimitsV0,
+  },
   Projection {
     accumulator: Box<ProjectionAccumulator>,
     observer: Option<Box<dyn FnMut(&Constraint) -> Result<(), R1csError>>>,
+    shape_only: bool,
   },
 }
 
@@ -379,10 +394,53 @@ impl R1csBuilder {
     }
   }
 
+  /// Materialize matrices without an assignment. Gadgets may suppress only
+  /// redundant native-value diagnostics in this mode, never constraints or
+  /// structural validation. Scratch values are not witnesses and cannot be
+  /// exported by `finish`; only `finish_shape` can return these matrices.
+  pub fn new_shape(limits: R1csShapeLimitsV0) -> Result<Self, R1csError> {
+    if limits.variables == 0 {
+      return Err(R1csError::ResourceLimit {
+        resource: "R1CS variables",
+        limit: 0,
+        actual: 1,
+      });
+    }
+    Ok(Self {
+      public_variables: 0,
+      private_variables: 0,
+      storage: BuilderStorage::Shape {
+        constraints: Vec::new(),
+        nonzero_terms: 0,
+        limits,
+      },
+      error: None,
+    })
+  }
+
+  /// This mode is fixed at construction and never turns into a witness
+  /// builder. It is NOT permission to omit any relation constraints.
+  pub fn is_shape_only(&self) -> bool {
+    matches!(
+      self.storage,
+      BuilderStorage::Shape { .. }
+        | BuilderStorage::Projection { shape_only: true, .. }
+    )
+  }
+
+  /// Surface a sticky emission refusal, including one on the final
+  /// infallible `enforce`. Finishing also performs this check.
+  pub fn check_status(&self) -> Result<(), R1csError> {
+    match &self.error {
+      Some(error) => Err(error.clone()),
+      None => Ok(()),
+    }
+  }
+
   /// Create a builder that hashes and counts constraints without retaining
   /// matrices or the full witness assignment.
   pub fn new_projection() -> Self {
-    Self::new_projection_inner(None)
+    Self::new_projection_inner(None, false)
   }
 
   /// Create a matrix-free builder that also streams every normalized
@@ -410,11 +468,36 @@ impl R1csBuilder {
   pub fn new_projection_observed_fallible(
     observer: impl FnMut(&Constraint) -> Result<(), R1csError> + 'static,
   ) -> Self {
-    Self::new_projection_inner(Some(Box::new(observer)))
+    Self::new_projection_inner(Some(Box::new(observer)), false)
+  }
+
+  /// Setup-only matrix-free emission. No assignment is checked or retained;
+  /// use a fallible observer to impose backend-specific geometry limits.
+  pub fn new_shape_projection() -> Self {
+    Self::new_projection_inner(None, true)
+  }
+
+  pub fn new_shape_projection_observed(
+    mut observer: impl FnMut(&Constraint) + 'static,
+  ) -> Self {
+    Self::new_shape_projection_observed_fallible(move |constraint| {
+      observer(constraint);
+      Ok(())
+    })
+  }
+
+  /// Shape-only counterpart with the same sticky refusal semantics as
+  /// [`Self::new_projection_observed_fallible`]. Neither projection mode can
+  /// produce an assignment, and a refused stream cannot finish a prefix.
+  pub fn new_shape_projection_observed_fallible(
+    observer: impl FnMut(&Constraint) -> Result<(), R1csError> + 'static,
+  ) -> Self {
+    Self::new_projection_inner(Some(Box::new(observer)), true)
   }
 
   fn new_projection_inner(
     observer: Option<Box<dyn FnMut(&Constraint) -> Result<(), R1csError>>>,
+    shape_only: bool,
   ) -> Self {
     let mut hasher = blake3::Hasher::new();
     hasher.update(PROJECTION_DIGEST_DOMAIN);
@@ -430,6 +513,7 @@ impl R1csBuilder {
           hasher,
         }),
         observer,
+        shape_only,
       },
     }
   }
@@ -444,6 +528,7 @@ impl R1csBuilder {
     let index = 1usize
       .checked_add(self.public_variables)
       .ok_or(R1csError::TooManyVariables)?;
+    self.check_shape_variable_limit(index)?;
     self.public_variables = self
       .public_variables
       .checked_add(1)
@@ -464,6 +549,7 @@ impl R1csBuilder {
       .checked_add(self.public_variables)
       .and_then(|value| value.checked_add(self.private_variables))
       .ok_or(R1csError::TooManyVariables)?;
+    self.check_shape_variable_limit(index)?;
     self.private_variables = self
       .private_variables
       .checked_add(1)
@@ -474,6 +560,28 @@ impl R1csBuilder {
       private_values.push(value);
     }
     Ok(Variable(u32::try_from(index).map_err(|_| R1csError::TooManyVariables)?))
+  }
+
+  fn check_shape_variable_limit(
+    &mut self,
+    index: usize,
+  ) -> Result<(), R1csError> {
+    if let BuilderStorage::Shape { limits, .. } = &self.storage {
+      let actual = u64::try_from(index)
+        .ok()
+        .and_then(|n| n.checked_add(1))
+        .ok_or(R1csError::CountOverflow)?;
+      if actual > u64::from(limits.variables) {
+        let error = R1csError::ResourceLimit {
+          resource: "R1CS variables",
+          limit: u64::from(limits.variables),
+          actual,
+        };
+        self.error = Some(error.clone());
+        return Err(error);
+      }
+    }
+    Ok(())
   }
 
   pub fn enforce(
@@ -491,7 +599,35 @@ impl R1csBuilder {
       BuilderStorage::Materialized { constraints, .. } => {
         constraints.push(constraint);
       },
-      BuilderStorage::Projection { accumulator, observer } => {
+      BuilderStorage::Shape { constraints, nonzero_terms, limits } => {
+        let rows =
+          u64::try_from(constraints.len()).ok().and_then(|n| n.checked_add(1));
+        let terms = constraint
+          .a
+          .terms
+          .len()
+          .checked_add(constraint.b.terms.len())
+          .and_then(|n| n.checked_add(constraint.c.terms.len()))
+          .and_then(|n| u64::try_from(n).ok())
+          .and_then(|n| nonzero_terms.checked_add(n));
+        let (Some(rows), Some(terms)) = (rows, terms) else {
+          self.error = Some(R1csError::CountOverflow);
+          return;
+        };
+        for (resource, limit, actual) in [
+          ("R1CS constraints", limits.constraints, rows),
+          ("R1CS nonzero terms", limits.nonzero_terms, terms),
+        ] {
+          if actual > limit {
+            self.error =
+              Some(R1csError::ResourceLimit { resource, limit, actual });
+            return;
+          }
+        }
+        *nonzero_terms = terms;
+        constraints.push(constraint);
+      },
+      BuilderStorage::Projection { accumulator, observer, .. } => {
         accumulator.constraints += 1;
         accumulator.nonzero_terms += u64::try_from(
           constraint.a.terms.len()
@@ -565,6 +701,39 @@ impl R1csBuilder {
     Ok((r1cs, witness))
   }
 
+  /// Return setup-only matrices, never a made-up satisfying assignment.
+  /// Callers must propagate every emitter error before calling this method.
+  pub fn finish_shape(self) -> Result<CanonicalR1csV1, R1csError> {
+    if let Some(error) = self.error {
+      return Err(error);
+    }
+    let BuilderStorage::Shape { constraints, .. } = self.storage else {
+      return Err(R1csError::WrongBuilderMode);
+    };
+    let public_variables = u32::try_from(self.public_variables)
+      .map_err(|_| R1csError::TooManyVariables)?;
+    let private_variables = u32::try_from(self.private_variables)
+      .map_err(|_| R1csError::TooManyVariables)?;
+    let variables = 1u32
+      .checked_add(public_variables)
+      .and_then(|n| n.checked_add(private_variables))
+      .ok_or(R1csError::TooManyVariables)?;
+    for constraint in &constraints {
+      for (variable, _) in constraint
+        .a
+        .terms
+        .iter()
+        .chain(&constraint.b.terms)
+        .chain(&constraint.c.terms)
+      {
+        if variable.index() >= variables {
+          return Err(R1csError::UnknownVariable(*variable));
+        }
+      }
+    }
+    Ok(CanonicalR1csV1 { public_variables, private_variables, constraints })
+  }
+
   pub fn finish_projection(self) -> Result<R1csProjectionV1, R1csError> {
     if let Some(error) = self.error {
       return Err(error);
@@ -606,6 +775,7 @@ impl Default for R1csBuilder {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum R1csError {
   TooManyVariables,
+  CountOverflow,
   PublicAfterPrivate,
   InternalShape,
   NonInvertibleBinaryFieldElement,
@@ -624,6 +794,7 @@ impl std::fmt::Display for R1csError {
       Self::TooManyVariables => {
         write!(formatter, "R1CS variable count exceeds u32")
       },
+      Self::CountOverflow => write!(formatter, "R1CS count overflow"),
       Self::PublicAfterPrivate => {
         write!(formatter, "public variables must precede private variables")
       },
@@ -659,8 +830,191 @@ impl std::fmt::Display for R1csError {
 impl std::error::Error for R1csError {}
 
 #[cfg(test)]
+pub(crate) fn test_shape_builder() -> R1csBuilder {
+  R1csBuilder::new_shape(R1csShapeLimitsV0 {
+    variables: 5_000_000,
+    constraints: 5_000_000,
+    nonzero_terms: 30_000_000,
+  })
+  .unwrap()
+}
+
+#[cfg(test)]
 mod tests {
   use super::*;
+
+  fn shape_limits() -> R1csShapeLimitsV0 {
+    R1csShapeLimitsV0 { variables: 8, constraints: 8, nonzero_terms: 32 }
+  }
+
+  #[test]
+  fn setup_matrices_ignore_assignments_and_match_witness_emission() {
+    fn emit(builder: &mut R1csBuilder, value: Fr) {
+      let public = builder.alloc_public(value).unwrap();
+      let private = builder.alloc_private(value).unwrap();
+      builder.enforce_boolean(ConstraintPhase::Statement, private);
+      builder.enforce_zero(
+        ConstraintPhase::Transcript,
+        LinearCombination::from_variable(public)
+          .minus(&LinearCombination::from_variable(private)),
+      );
+    }
+    let mut setup = R1csBuilder::new_shape(shape_limits()).unwrap();
+    assert!(setup.is_shape_only());
+    // Deliberately not Boolean: setup must not check or export this scratch.
+    emit(&mut setup, Fr::from(42u64));
+    let setup = setup.finish_shape().unwrap();
+    for value in [Fr::ZERO, Fr::ONE] {
+      let mut assigned = R1csBuilder::new();
+      assert!(!assigned.is_shape_only());
+      emit(&mut assigned, value);
+      let (r1cs, mut witness) = assigned.finish().unwrap();
+      assert_eq!(setup, r1cs);
+      setup.check(&witness).unwrap();
+      witness.set(Variable(2), Fr::from(2u64)).unwrap();
+      assert!(setup.check(&witness).is_err());
+    }
+    let mut setup_projection = R1csBuilder::new_shape_projection();
+    let mut assigned_projection = R1csBuilder::new_projection();
+    emit(&mut setup_projection, Fr::from(42u64));
+    emit(&mut assigned_projection, Fr::ONE);
+    let projected = setup_projection.finish_projection().unwrap();
+    assert_eq!(projected, assigned_projection.finish_projection().unwrap());
+    assert_eq!(projected.census(), &setup.census());
+  }
+
+  #[test]
+  fn setup_modes_cannot_export_witnesses_or_ignore_unknown_wires() {
+    assert_eq!(
+      R1csBuilder::new_shape(shape_limits()).unwrap().finish().unwrap_err(),
+      R1csError::WrongBuilderMode,
+    );
+    assert_eq!(
+      R1csBuilder::new_shape_projection().finish().unwrap_err(),
+      R1csError::WrongBuilderMode,
+    );
+    assert_eq!(
+      R1csBuilder::new_shape(shape_limits())
+        .unwrap()
+        .finish_projection()
+        .unwrap_err(),
+      R1csError::WrongBuilderMode,
+    );
+    assert_eq!(
+      R1csBuilder::new().finish_shape().unwrap_err(),
+      R1csError::WrongBuilderMode,
+    );
+    assert_eq!(
+      R1csBuilder::new_shape_projection().finish_shape().unwrap_err(),
+      R1csError::WrongBuilderMode,
+    );
+    let mut builder = R1csBuilder::new_shape(shape_limits()).unwrap();
+    builder.enforce_boolean(ConstraintPhase::Statement, Variable(1));
+    assert_eq!(
+      builder.finish_shape().unwrap_err(),
+      R1csError::UnknownVariable(Variable(1)),
+    );
+  }
+
+  #[test]
+  fn setup_limits_refuse_before_retaining_over_budget_data() {
+    assert!(matches!(
+      R1csBuilder::new_shape(R1csShapeLimitsV0 {
+        variables: 0,
+        ..shape_limits()
+      }),
+      Err(R1csError::ResourceLimit {
+        resource: "R1CS variables",
+        limit: 0,
+        actual: 1,
+      }),
+    ));
+    for public in [false, true] {
+      let mut builder = R1csBuilder::new_shape(R1csShapeLimitsV0 {
+        variables: 1,
+        ..shape_limits()
+      })
+      .unwrap();
+      let expected = R1csError::ResourceLimit {
+        resource: "R1CS variables",
+        limit: 1,
+        actual: 2,
+      };
+      let result = if public {
+        builder.alloc_public(Fr::ZERO)
+      } else {
+        builder.alloc_private(Fr::ZERO)
+      };
+      assert_eq!(result, Err(expected.clone()));
+      assert_eq!(builder.public_variables, 0);
+      assert_eq!(builder.private_variables, 0);
+      assert_eq!(builder.finish_shape().unwrap_err(), expected);
+    }
+    for terms_limit in [false, true] {
+      let (limits, expected) = if terms_limit {
+        (
+          R1csShapeLimitsV0 { nonzero_terms: 3, ..shape_limits() },
+          R1csError::ResourceLimit {
+            resource: "R1CS nonzero terms",
+            limit: 3,
+            actual: 6,
+          },
+        )
+      } else {
+        (
+          R1csShapeLimitsV0 { constraints: 1, ..shape_limits() },
+          R1csError::ResourceLimit {
+            resource: "R1CS constraints",
+            limit: 1,
+            actual: 2,
+          },
+        )
+      };
+      for finish in 0..3 {
+        let mut builder = R1csBuilder::new_shape(limits).unwrap();
+        let bit = builder.alloc_private(Fr::ZERO).unwrap();
+        for _ in 0..3 {
+          builder.enforce_boolean(ConstraintPhase::Statement, bit);
+        }
+        let BuilderStorage::Shape { constraints, nonzero_terms, .. } =
+          &builder.storage
+        else {
+          panic!("shape mode")
+        };
+        assert_eq!(constraints.len(), 1);
+        assert_eq!(*nonzero_terms, 3);
+        assert_eq!(builder.alloc_private(Fr::ZERO), Err(expected.clone()));
+        assert_eq!(builder.alloc_public(Fr::ZERO), Err(expected.clone()));
+        let error = match finish {
+          0 => builder.finish_shape().unwrap_err(),
+          1 => builder.finish_projection().unwrap_err(),
+          _ => builder.finish().unwrap_err(),
+        };
+        assert_eq!(error, expected);
+      }
+    }
+  }
+
+  #[test]
+  fn shape_projection_refusal_cannot_finish_a_prefix() {
+    for finish in 0..3 {
+      let mut builder =
+        R1csBuilder::new_shape_projection_observed_fallible(|_| {
+          Err(R1csError::ObserverFailure("setup refused".into()))
+        });
+      assert!(builder.is_shape_only());
+      let bit = builder.alloc_private(Fr::ZERO).unwrap();
+      builder.enforce_boolean(ConstraintPhase::Statement, bit);
+      let expected = R1csError::ObserverFailure("setup refused".into());
+      assert_eq!(builder.alloc_private(Fr::ZERO), Err(expected.clone()));
+      let error = match finish {
+        0 => builder.finish_shape().unwrap_err(),
+        1 => builder.finish_projection().unwrap_err(),
+        _ => builder.finish().unwrap_err(),
+      };
+      assert_eq!(error, expected);
+    }
+  }
 
   #[test]
   fn normalization_makes_equivalent_linear_combinations_identical() {

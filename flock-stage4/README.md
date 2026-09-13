@@ -22,8 +22,8 @@ Tests include strict scalar/curve/subgroup decoding, invalid SRS/key rejection,
 nonzero blinding admission, authenticated scratch corruption, and identical
 proof/key results across memory and file backends for fixed test randomness.
 Small proofs use development setup and randomness, not production security.
-The generic replay and root-closure prototypes pass 187 ordinary tests
-(88 FFLONK, 29 trace, 55 circuit, 15 replay/setup); eleven heavier native,
+The generic replay and root-closure/setup prototypes pass 200 ordinary tests
+(88 FFLONK, 29 trace, 67 circuit, 16 replay/setup); twelve heavier native,
 materialization, and census/optimization tests remain opt-in.
 
 ## Generic Exec replay
@@ -52,9 +52,9 @@ Proof-free symbolic compilers reconstruct wiring, zerocheck, lincheck, merged
 PCS, multipoint/anchor assist, inner Ligerito, and all three accumulator folds,
 plus both complete transcript operation trees and their BLAKE3 compression
 topology. Native replay must match their exact structures, not just operation
-counts. Component identities remain distinct. These are replay blueprints,
-not a proof-free R1CS/key compiler. No terminal key or full FFLONK proof is
-produced here.
+counts. Component identities remain distinct. The root-closure setup emitter
+below consumes these blueprints directly, without a valid assignment. No
+terminal key or full FFLONK proof is produced here.
 
 ```sh
 ulimit -v 33554432
@@ -153,8 +153,45 @@ that prefix already exceeds the supported domain. The complete relation's
 count is unknown; this is not a full census or a nearly fitting proof. The
 [admission report](census/exec-root-closed-admission-v0.json) records source
 hashes, exact counts, commands, and measurement scope. Cost reduction,
-proof-free R1CS/key compilation, and a complete closed-relation FFLONK proof
+complete materialization/key preprocessing, and a closed-relation FFLONK proof
 with isolated verification remain required.
+
+## Assignment-free setup emission
+
+`CompiledExecRootClosure::build_setup_r1cs` takes only allocation limits and
+returns canonical matrices, never a witness. `emit_setup` streams the same
+whole closed composition to a shape-only builder. Its inputs are the immutable
+approved replay/table programs: no guest, commitment, expected Q, Flock proof,
+or native replay witness is accepted. The two Q slots remain public variables;
+their zero scratch assignments do not become circuit constants.
+
+Setup mode suppresses only redundant native-value diagnostics. It still emits
+all transcript/PoW, statement, algebra/inverse, PCS/Merkle, fold and exact-root
+constraints, with structural validation intact. Private zero scratch remains
+private, and this mode cannot export an assignment. Ordinary witness emission
+still rejects inconsistent values and zero inverses.
+
+Materialized setup has explicit variable/row/nonzero-term limits. Source-slot
+payload is checked before allocation; the current scalar setup uses 514,449
+bytes for 27,611 F128 words, 1,484 digests and 25,185 payload bytes. This excludes
+container/allocator overhead, approved setup, gadget intermediates and matrices:
+it is not a RAM admission. Matrix/observer refusals are sticky; all emitter
+errors must be propagated, including source preflight errors.
+
+Materialized component tests compare setup matrices with several real
+assignments and reject mutations in challenge/inverse/statement/root/CAP wires.
+The real-Exec regression compares the first 4,096 exact constraints and bounded
+admission results for three executions with setup emission performed before
+any guest/proof existed. That small prefix is not a full circuit identity.
+`census_exec_root_closed_setup_observed` separately attempts the whole relation
+without a Flock proof and retains the same supported-domain cutoff. Its run
+returned `RejectedBudget` after 1,240.765 seconds of emission at exactly the
+earlier witness-driven prefix counts: 643,831,813 R1CS constraints and
+1,073,741,821 PLONK rows. The [separate proof-free report](census/exec-proof-free-root-closed-emission-v0.json)
+records source hashes, bounds, component/native/debug tests and measurement
+scope. This is count agreement up to a cutoff, not complete matrix/key equality
+or a proof. A complete closed matrix/key and isolated terminal proof remain
+outstanding and require cost reduction.
 
 See [generic replay and remaining gates](../docs/IxbyStage4Replay.md).
 `EXEC-REPLAY-PROVENANCE.json` records the donor hashes before this port,

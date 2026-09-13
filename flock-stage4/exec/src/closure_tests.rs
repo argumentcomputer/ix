@@ -1,7 +1,8 @@
 use super::{hash, memory_summary, output, program, prove, setup};
 use crate::{
   ExecRootClosedCensusLimitsV0, ExecRootClosedCensusOutcomeV0,
-  ExecRootClosureCompilationLimitsV0, census_exec_root_closed_observed,
+  ExecRootClosureCompilationLimitsV0, ExecSetupR1csLimitsV0,
+  census_exec_root_closed_observed, census_exec_root_closed_setup_observed,
   compile_exec_replay, compile_exec_root_closure,
 };
 use flock_prover::field::F128;
@@ -11,8 +12,11 @@ use ix_stage4_trace::{
   F128FixedMatrixProgramV0 as Program, F128FixedTableLimitsV0,
   F128FixedTableNodeV0 as Node,
 };
-use ix_terminal_circuit::{R1csBuilder, R1csError, Stage4PublicInputsV1};
+use ix_terminal_circuit::{
+  Constraint, R1csBuilder, R1csError, R1csShapeLimitsV0, Stage4PublicInputsV1,
+};
 use std::time::Instant;
+use std::{cell::RefCell, rc::Rc};
 
 const LIMITS: ExecRootClosureCompilationLimitsV0 =
   ExecRootClosureCompilationLimitsV0 {
@@ -113,6 +117,43 @@ fn expected_public(
   )
 }
 
+// A deliberately small EXACT prefix comparison, not a full-circuit digest.
+// Nontrivial hashing/field/fold/Merkle/root matrix equality is covered by the
+// materialized component tests; this also checks the real setup entry point.
+fn captured_prefix(
+  shape_only: bool,
+  emit: impl FnOnce(&mut R1csBuilder) -> anyhow::Result<()>,
+) -> Vec<Constraint> {
+  const LIMIT: usize = 4096;
+  let rows = Rc::new(RefCell::new(Vec::new()));
+  let target = Rc::clone(&rows);
+  let observer = move |c: &Constraint| {
+    target.borrow_mut().push(c.clone());
+    if target.borrow().len() == LIMIT {
+      Err(R1csError::ResourceLimit {
+        resource: "test R1CS prefix",
+        limit: (LIMIT - 1) as u64,
+        actual: LIMIT as u64,
+      })
+    } else {
+      Ok(())
+    }
+  };
+  let mut builder = if shape_only {
+    R1csBuilder::new_shape_projection_observed_fallible(observer)
+  } else {
+    R1csBuilder::new_projection_observed_fallible(observer)
+  };
+  assert!(emit(&mut builder).is_err());
+  assert!(matches!(
+    builder.finish_projection(),
+    Err(R1csError::ResourceLimit { resource: "test R1CS prefix", .. })
+  ));
+  let rows = Rc::try_unwrap(rows).unwrap().into_inner();
+  assert_eq!(rows.len(), LIMIT);
+  rows
+}
+
 #[test]
 #[ignore = "real Exec proofs, setup-owned closure tables and bounded emission; not a full closed census/proof"]
 fn setup_owned_closure_matches_all_real_fold_roots() {
@@ -125,13 +166,74 @@ fn setup_owned_closure_matches_all_real_fold_roots() {
   assert_eq!(closure.digest(), rebuilt.digest());
   assert_eq!(closure.tables(), rebuilt.tables());
   assert!(std::ptr::eq(closure.replay_setup(), &replay));
+  let slots = closure.setup_source_slots().unwrap();
+  assert_eq!(slots, rebuilt.setup_source_slots().unwrap());
   drop(rebuilt);
+  let slot_bytes = slots.payload_bytes().unwrap();
+  assert!(slot_bytes > 0);
+  let setup_prefix =
+    captured_prefix(true, |builder| closure.emit_setup(builder, slot_bytes));
+  let setup_censuses = [0, 4, 1000].map(|limit| {
+    census_exec_root_closed_setup_observed(
+      &closure,
+      slot_bytes,
+      ExecRootClosedCensusLimitsV0 { required_domain_rows: limit },
+      |_| {},
+    )
+    .unwrap()
+  });
+  let matrix_limits = R1csShapeLimitsV0 {
+    variables: 1_000_000,
+    constraints: 1000,
+    nonzero_terms: 1_000_000,
+  };
+  let limited = |source_payload_bytes| ExecSetupR1csLimitsV0 {
+    source_payload_bytes,
+    r1cs: matrix_limits,
+  };
+  let refused = closure.build_setup_r1cs(limited(slot_bytes - 1)).unwrap_err();
+  assert!(
+    matches!(refused.downcast_ref::<R1csError>(), Some(R1csError::ResourceLimit {
+    resource: "Exec setup source-slot payload bytes", limit, actual,
+  }) if *limit == slot_bytes - 1 && *actual == slot_bytes)
+  );
+  let refused = closure.build_setup_r1cs(limited(slot_bytes)).unwrap_err();
+  assert!(matches!(
+    refused.downcast_ref::<R1csError>(),
+    Some(R1csError::ResourceLimit {
+      resource: "R1CS constraints",
+      limit: 1000,
+      actual: 1001,
+    })
+  ));
+  let mut wrong_mode = R1csBuilder::new_projection();
+  assert!(closure.emit_setup(&mut wrong_mode, slot_bytes).is_err());
+  assert_eq!(wrong_mode.finish_projection().unwrap().census().constraints, 0);
+  let mut under_budget = R1csBuilder::new_shape_projection();
+  assert!(closure.emit_setup(&mut under_budget, slot_bytes - 1).is_err());
+  let empty = under_budget.finish_projection().unwrap();
+  assert_eq!(empty.public_variables(), 0);
+  assert_eq!(empty.census().constraints, 0);
+  assert!(
+    census_exec_root_closed_setup_observed(
+      &closure,
+      slot_bytes,
+      ExecRootClosedCensusLimitsV0 {
+        required_domain_rows: ix_fflonk::FFLONK_MAX_BASE_DOMAIN + 1
+      },
+      |_| {}
+    )
+    .is_err()
+  );
   eprintln!(
     "closed composition compiled twice before proofs in {:.3}s; composition {:?}; tables {:?}; {}",
     started.elapsed().as_secs_f64(),
     closure.digest(),
     closure.tables().digest(),
     memory_summary()
+  );
+  eprintln!(
+    "proof-free source slots before any guest/proof: {slots:?}; payload {slot_bytes} bytes; matched bounded materialization/refusal"
   );
   assert_eq!(closure.tables().matrices().len(), 46);
   assert_eq!(
@@ -147,6 +249,21 @@ fn setup_owned_closure_matches_all_real_fold_roots() {
     let (commitments, bytes) = prove(&setup, branch, value);
     let mut witness = replay.replay(commitments, &bytes).unwrap();
     let public = expected_public(setup.identities().profile, branch, value);
+    let assigned_prefix = captured_prefix(false, |builder| {
+      closure.constrain(builder, public, &witness).map(|_| ())
+    });
+    assert_eq!(setup_prefix, assigned_prefix);
+    for (limit, expected) in [0, 4, 1000].into_iter().zip(&setup_censuses) {
+      let actual = census_exec_root_closed_observed(
+        &closure,
+        public,
+        &witness,
+        ExecRootClosedCensusLimitsV0 { required_domain_rows: limit },
+        |_| {},
+      )
+      .unwrap();
+      assert_eq!(&actual, expected);
+    }
     assert_eq!(public.statement_digest(), witness.public_digest());
     let roots = witness.matrix_accumulator();
     assert_eq!(roots.root_claims().len(), closure.tables().matrices().len());
@@ -308,6 +425,75 @@ fn root_closed_supported_domain_admission_census() {
       assert_eq!(limit, ix_fflonk::FFLONK_MAX_BASE_DOMAIN);
       assert!(required_rows > limit);
       assert!(prefix.plonk.r1cs_constraints > 0);
+    },
+  }
+}
+
+#[test]
+#[ignore = "bounded WHOLE proof-free root-closed emission; potentially minutes; no guest, Flock proof, R1CS assignment, key or terminal proof"]
+fn proof_free_root_closed_supported_domain_admission_census() {
+  let setup = setup();
+  let replay = compile_exec_replay(&setup).unwrap();
+  let closure = compile_exec_root_closure(&replay, LIMITS).unwrap();
+  let slots = closure.setup_source_slots().unwrap();
+  let slot_bytes = slots.payload_bytes().unwrap();
+  assert!(slot_bytes <= 32_000_000);
+  let start = Instant::now();
+  eprintln!(
+    "starting WHOLE proof-free root-closed setup emission: composition {:?}; tables {:?}; slots {slots:?}; source payload {slot_bytes} bytes; {}",
+    closure.digest(),
+    closure.tables().digest(),
+    memory_summary()
+  );
+  let result = census_exec_root_closed_setup_observed(
+    &closure,
+    slot_bytes,
+    ExecRootClosedCensusLimitsV0 {
+      required_domain_rows: ix_fflonk::FFLONK_MAX_BASE_DOMAIN,
+    },
+    move |progress| {
+      eprintln!(
+        "proof-free root-closed prefix {:.3}s: {progress:?}; {}",
+        start.elapsed().as_secs_f64(),
+        memory_summary()
+      )
+    },
+  )
+  .unwrap();
+  eprintln!(
+    "proof-free root-closed setup admission finished in {:.3}s (NOT a key/proof): {result:#?}; {}",
+    start.elapsed().as_secs_f64(),
+    memory_summary()
+  );
+  match result {
+    ExecRootClosedCensusOutcomeV0::Complete(census) => {
+      assert_eq!(census.public_scalar_bytes, 64);
+      assert_eq!(census.r1cs.census().constraints_by_phase.len(), 7);
+      assert!(
+        ix_fflonk::plan_fflonk_capacity(&census.plonk)
+          .unwrap()
+          .supported_polynomial_fft_domain
+      );
+    },
+    ExecRootClosedCensusOutcomeV0::RejectedBudget {
+      limit,
+      required_rows,
+      prefix,
+    } => {
+      assert_eq!(limit, ix_fflonk::FFLONK_MAX_BASE_DOMAIN);
+      assert!(required_rows > limit);
+      // Current lowering must reach exactly the recorded f57a0194 native
+      // witness census cutoff. This is a prefix COUNT differential, not a
+      // complete R1CS identity or completed circuit. Component tests compare
+      // actual matrices and assignments. Deliberate cost changes need a new
+      // recorded baseline rather than silently reusing these figures.
+      assert_eq!(prefix.plonk.r1cs_constraints, 643_831_813);
+      assert_eq!(prefix.plonk.constraint_rows, 1_073_741_821);
+      assert_eq!(prefix.plonk.auxiliary_wires, 429_910_008);
+      assert_eq!(
+        prefix.last_phase,
+        Some(ix_terminal_circuit::ConstraintPhase::MatrixFold)
+      );
     },
   }
 }

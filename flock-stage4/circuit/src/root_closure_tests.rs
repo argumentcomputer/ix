@@ -179,6 +179,33 @@ fn materialize(
 }
 
 #[test]
+fn setup_root_closure_matrices_match_all_assigned_root_families() {
+  let tables = tables();
+  let mut builder = crate::r1cs::test_shape_builder();
+  // An initially false claim still emits the whole root equality in setup.
+  let (matrices, structure, jagged) = roots(&mut builder, &tables, 0, Some(0));
+  constrain_f128_matrix_root_tables(&mut builder, &tables, &matrices).unwrap();
+  constrain_f128_structure_root_table(&mut builder, &tables, &structure)
+    .unwrap();
+  constrain_f128_jagged_root_table(&mut builder, &tables, &jagged).unwrap();
+  let shape = builder.finish_shape().unwrap();
+  for seed in [0, 1, 0x71] {
+    let (assigned, witness, claims) = materialize(seed, None).unwrap();
+    assert_eq!(shape, assigned);
+    shape.check(&witness).unwrap();
+    for claim in claims {
+      for &bit in claim.bit_variables() {
+        let mut bad = witness.clone();
+        bad
+          .set(bit, Fr::ONE - witness.assignment()[bit.index() as usize])
+          .unwrap();
+        assert!(shape.check(&bad).is_err());
+      }
+    }
+  }
+}
+
+#[test]
 fn every_root_family_is_constrained_without_public_root_inputs() {
   let mut shape = None;
   for seed in [0, 1, 0x71] {

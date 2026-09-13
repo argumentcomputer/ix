@@ -66,21 +66,70 @@ pub fn census_exec_root_closed_observed(
   report: impl FnMut(ExecRootClosedCensusPrefixV0) + 'static,
 ) -> Result<ExecRootClosedCensusOutcomeV0> {
   compiled.validate_witness(witness)?;
+  if let Some(rejected) = check_budget(limits)? {
+    return Ok(rejected);
+  }
+  let (mut builder, projection, prefix) =
+    bounded_projection(limits.required_domain_rows, report, false);
+  let output = compiled.constrain(&mut builder, public, witness);
+  let emitted = output.and_then(|output| {
+    ensure!(
+      output.root_tables_digest() == compiled.tables().digest(),
+      "closed relation root-table identity mismatch"
+    );
+    crate::census::check_roots(
+      output.replay(),
+      &witness.diagnostic_public_inputs(),
+    )
+  });
+  finish_census(compiled, builder, projection, prefix, emitted)
+}
+
+/// Proof-free counterpart: the approved setup is the ONLY relation input.
+/// Calls the complete setup emitter, including all root families, with the
+/// same hard PLONK limit as native diagnostics. No guest/proof/statement is
+/// constructed or inspected. Completion means only a full constraint census,
+/// NOT a checked assignment, materialized key, admission to prove, or proof.
+pub fn census_exec_root_closed_setup_observed(
+  compiled: &CompiledExecRootClosure<'_, '_>,
+  source_payload_limit: u64,
+  limits: ExecRootClosedCensusLimitsV0,
+  report: impl FnMut(ExecRootClosedCensusPrefixV0) + 'static,
+) -> Result<ExecRootClosedCensusOutcomeV0> {
+  if let Some(rejected) = check_budget(limits)? {
+    return Ok(rejected);
+  }
+  let (mut builder, projection, prefix) =
+    bounded_projection(limits.required_domain_rows, report, true);
+  let emitted = compiled.emit_setup(&mut builder, source_payload_limit);
+  finish_census(compiled, builder, projection, prefix, emitted)
+}
+
+fn check_budget(
+  limits: ExecRootClosedCensusLimitsV0,
+) -> Result<Option<ExecRootClosedCensusOutcomeV0>> {
   ensure!(
     limits.required_domain_rows <= FFLONK_MAX_BASE_DOMAIN,
     "root-closed census budget exceeds the supported FFLONK size-4n FFT domain"
   );
   let reserved = PUBLIC_ROWS + FFLONK_BLINDING_ROWS;
   if limits.required_domain_rows < reserved {
-    return Ok(ExecRootClosedCensusOutcomeV0::RejectedBudget {
+    return Ok(Some(ExecRootClosedCensusOutcomeV0::RejectedBudget {
       prefix: ExecRootClosedCensusPrefixV0::default(),
       limit: limits.required_domain_rows,
       required_rows: reserved,
-    });
+    }));
   }
-  let (mut builder, projection, prefix) =
-    bounded_projection(limits.required_domain_rows, report);
-  let output = compiled.constrain(&mut builder, public, witness);
+  Ok(None)
+}
+
+fn finish_census(
+  compiled: &CompiledExecRootClosure<'_, '_>,
+  builder: R1csBuilder,
+  projection: PlonkGateProjectionV1,
+  prefix: Rc<Cell<ExecRootClosedCensusPrefixV0>>,
+  emitted: Result<()>,
+) -> Result<ExecRootClosedCensusOutcomeV0> {
   // Always finish the builder, including when the final infallible enforce
   // refused the stream without a later allocation to propagate that error.
   let r1cs = match builder.finish_projection() {
@@ -93,16 +142,11 @@ pub fn census_exec_root_closed_observed(
     },
     other => other?,
   };
-  let output = output?;
+  emitted?;
   ensure!(
-    u64::from(r1cs.public_variables()) == PUBLIC_ROWS
-      && output.root_tables_digest() == compiled.tables().digest(),
-    "closed relation public/root-table identity mismatch"
+    u64::from(r1cs.public_variables()) == PUBLIC_ROWS,
+    "closed relation public identity mismatch"
   );
-  crate::census::check_roots(
-    output.replay(),
-    &witness.diagnostic_public_inputs(),
-  )?;
   let plonk = projection.finish(&r1cs)?;
   ensure!(
     plonk.domain_size <= FFLONK_MAX_BASE_DOMAIN,
@@ -121,6 +165,7 @@ pub fn census_exec_root_closed_observed(
 fn bounded_projection(
   row_limit: u64,
   mut report: impl FnMut(ExecRootClosedCensusPrefixV0) + 'static,
+  shape_only: bool,
 ) -> (R1csBuilder, PlonkGateProjectionV1, Rc<Cell<ExecRootClosedCensusPrefixV0>>)
 {
   let projection = PlonkGateProjectionV1::new();
@@ -128,7 +173,7 @@ fn bounded_projection(
   let mut project = projection.observer();
   let prefix = Rc::new(Cell::new(ExecRootClosedCensusPrefixV0::default()));
   let observed = Rc::clone(&prefix);
-  let builder = R1csBuilder::new_projection_observed_fallible(move |c| {
+  let observer = move |c: &ix_terminal_circuit::Constraint| {
     project(c);
     let plonk = progress
       .prefix()
@@ -154,7 +199,12 @@ fn bounded_projection(
       });
     }
     Ok(())
-  });
+  };
+  let builder = if shape_only {
+    R1csBuilder::new_shape_projection_observed_fallible(observer)
+  } else {
+    R1csBuilder::new_projection_observed_fallible(observer)
+  };
   (builder, projection, prefix)
 }
 
@@ -165,8 +215,10 @@ mod tests {
 
   #[test]
   fn row_budget_counts_public_and_blinding_rows_and_rejects_final_emit() {
-    for limit in [5, 6] {
-      let (mut builder, projection, prefix) = bounded_projection(limit, |_| {});
+    for (limit, shape_only) in [(5, false), (6, false), (5, true), (6, true)] {
+      let (mut builder, projection, prefix) =
+        bounded_projection(limit, |_| {}, shape_only);
+      assert_eq!(builder.is_shape_only(), shape_only);
       let a = builder.alloc_public(Fr::from(1u64)).unwrap();
       let b = builder.alloc_public(Fr::from(0u64)).unwrap();
       builder.enforce_boolean(ConstraintPhase::Statement, a);

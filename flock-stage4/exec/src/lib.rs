@@ -1,8 +1,9 @@
 //! Generic IxBy execution to native Flock replay.
 //!
 //! Replay and census are diagnostics, not terminal acceptance. A complete
-//! terminal proof additionally needs proof-free R1CS/key compilation and all
-//! matrix, circuit-structure, and jagged roots closed inside its relation.
+//! terminal proof additionally needs feasible closed-relation geometry,
+//! proof-free key preprocessing and actual proving/isolated verification.
+//! The setup-only R1CS emitter and closed-root prototype are not that proof.
 
 mod blake3_table;
 mod blueprint;
@@ -13,6 +14,7 @@ mod native;
 pub mod replay;
 mod root_tables;
 mod setup;
+mod setup_emission;
 
 pub use blake3_table::{
   CompiledExecBlake3RootMaps, compile_exec_blake3_root_maps,
@@ -28,10 +30,11 @@ pub use closure::{
 pub use closure_census::{
   ExecRootClosedCensusLimitsV0, ExecRootClosedCensusOutcomeV0,
   ExecRootClosedCensusPrefixV0, ExecRootClosedCensusV0,
-  census_exec_root_closed_observed,
+  census_exec_root_closed_observed, census_exec_root_closed_setup_observed,
 };
 pub use native::{ExecReplayWitness, compile_exec_binding, replay_exec};
 pub use root_tables::{CompiledExecRootTables, compile_exec_root_tables};
 pub use setup::{
   CompiledExecReplay, ExecReplayIdentitiesV0, compile_exec_replay,
 };
+pub use setup_emission::{ExecSetupR1csLimitsV0, ExecSetupSourceSlotsV0};

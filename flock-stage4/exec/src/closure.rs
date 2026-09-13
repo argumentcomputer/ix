@@ -1,5 +1,6 @@
 //! Approved setup ownership for the prototype root-closed composition.
-//! This is not a terminal key compiler, resource admission, or proof API.
+//! Its separate setup emitter produces assignment-free matrices under bounds;
+//! this is not terminal key preprocessing, whole-pipeline admission or proving.
 
 use crate::{CompiledExecReplay, ExecReplayWitness};
 use anyhow::{Result, ensure};
@@ -49,8 +50,8 @@ impl<'r, 's> CompiledExecRootClosure<'r, 's> {
   /// Emit using already-validated native replay values and the caller's
   /// EXTERNALLY EXPECTED public Q, never a Q selected from the witness here.
   /// Native replay is witness generation, not the circuit's soundness proof.
-  /// The current emitter still needs a witness; this is not proof-free setup
-  /// of R1CS matrices or a terminal verification key.
+  /// This is the witness-driven path. Use `build_setup_r1cs` or `emit_setup`
+  /// for proof-free matrices. Neither path constructs a verification key.
   pub fn constrain(
     &self,
     builder: &mut R1csBuilder,

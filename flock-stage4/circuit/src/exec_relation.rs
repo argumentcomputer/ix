@@ -2,7 +2,7 @@
 //!
 //! The historical diagnostic path publishes conditional roots; the closed
 //! prototype constrains their exact table evaluations and publishes only Q.
-//! Neither emission nor census is a terminal proof or proof-free key compiler.
+//! Neither emission nor census is a terminal proof or key compiler.
 
 use crate::*;
 use ark_bls12_381::Fr;
@@ -265,8 +265,9 @@ pub fn constrain_exec_root_conditional(
 /// Emit the complete replay and all three exact root families with ONLY the
 /// two public Q limbs. The setup must supply approved coefficient-checked
 /// tables and topology; no sidecar, hinted value, or callback discharges a root.
-/// This prototype still needs proof-free R1CS/key compilation, resource
-/// admission and an actual complete proof before terminal deployment.
+/// The Exec setup owner separately supplies proof-free R1CS emission. This
+/// prototype still needs feasible cost, key preprocessing, resource admission
+/// and an actual complete proof before terminal deployment.
 pub fn constrain_exec_root_closed(
   builder: &mut R1csBuilder,
   public: Stage4PublicInputsV1,

@@ -299,8 +299,9 @@ pub(crate) fn bind_constant_digest(
       actual: payload.len(),
     });
   }
-  if payload.iter().flat_map(|word| word.value()).copied().collect::<Vec<_>>()
-    != expected
+  if !builder.is_shape_only()
+    && payload.iter().flat_map(|word| word.value()).copied().collect::<Vec<_>>()
+      != expected
   {
     return Err(F128StatementCircuitError::PayloadMismatch(kind));
   }
@@ -334,7 +335,7 @@ pub(crate) fn bind_computed_digest(
   }
   let actual =
     payload.iter().flat_map(|word| word.value()).copied().collect::<Vec<_>>();
-  if actual != expected {
+  if !builder.is_shape_only() && actual != expected {
     return Err(F128StatementCircuitError::PayloadMismatch(kind));
   }
   for (word, payload_word) in computed.iter().enumerate() {

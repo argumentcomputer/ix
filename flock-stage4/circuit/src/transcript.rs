@@ -211,7 +211,7 @@ pub fn constrain_chained_blake3_transcript(
   for (index, (word, expected)) in
     challenge_words.iter().zip(challenges).enumerate()
   {
-    if word128_bytes(word) != *expected {
+    if !builder.is_shape_only() && word128_bytes(word) != *expected {
       return Err(TranscriptCircuitError::ChallengeMismatch {
         challenge: index,
       });
@@ -330,8 +330,10 @@ fn compile_chain(
         }
       }
     }
-    if chaining_value.each_ref().map(|word| word.value) != row.chaining_value
-      || message.each_ref().map(|word| word.value) != row.message
+    if !builder.is_shape_only()
+      && (chaining_value.each_ref().map(|word| word.value)
+        != row.chaining_value
+        || message.each_ref().map(|word| word.value) != row.message)
     {
       return Err(TranscriptCircuitError::CompressionWitnessMismatch {
         chain: chain_index,
@@ -629,6 +631,7 @@ fn to_usize(
 #[cfg(test)]
 mod tests {
   use super::*;
+  use ark_bls12_381::Fr;
   use ix_stage4_trace::{
     ChainedBlake3ChallengeSourceV1, CompressionLinkV1, CompressionOutputWordV1,
     CompressionRowV1,
@@ -733,6 +736,58 @@ mod tests {
     )
     .unwrap();
     assert_eq!(first.digest(), second.digest());
+  }
+
+  #[test]
+  fn setup_trace_ignores_only_witness_columns_and_matches_real_matrices() {
+    let (mut setup_trace, _, _) = one_block_fixture([0; 16]);
+    for row in &mut setup_trace.parent.compression_rows {
+      row.chaining_value = [0; 8];
+      row.message = [0; 16];
+    }
+    let mut builder = crate::r1cs::test_shape_builder();
+    constrain_chained_blake3_transcript(
+      &mut builder,
+      &setup_trace,
+      &[],
+      &[vec![0; 16]],
+      &[[0; 16]],
+    )
+    .unwrap();
+    let setup = builder.finish_shape().unwrap();
+    for message in [*b"0123456789abcdef", *b"fedcba9876543210", [0; 16]] {
+      let (trace, payloads, challenges) = one_block_fixture(message);
+      let (assigned, witness, output) = build_chained_blake3_transcript_r1cs(
+        &trace,
+        &[],
+        &payloads,
+        &challenges,
+      )
+      .unwrap();
+      assert_eq!(setup, assigned);
+      setup.check(&witness).unwrap();
+      // Computed challenge bits remain bound to the actual compression.
+      for &bit in output.challenges[0].bit_variables() {
+        let mut bad = witness.clone();
+        bad
+          .set(bit, Fr::from(1u64) - witness.assignment()[bit.index() as usize])
+          .unwrap();
+        assert!(setup.check(&bad).is_err());
+      }
+    }
+    setup_trace.challenge_sources[0].squeeze_word = 9;
+    let mut builder = R1csBuilder::new_shape_projection();
+    assert!(
+      constrain_chained_blake3_transcript(
+        &mut builder,
+        &setup_trace,
+        &[],
+        &[vec![0; 16]],
+        &[[0; 16]],
+      )
+      .is_err()
+    );
+    assert_eq!(builder.finish_projection().unwrap().census().constraints, 0);
   }
 
   #[test]

@@ -91,7 +91,8 @@ pub use public_inputs::{
 };
 pub use r1cs::{
   CanonicalR1csV1, Constraint, ConstraintPhase, LinearCombination, R1csBuilder,
-  R1csCensusV1, R1csError, R1csProjectionV1, Variable, Witness,
+  R1csCensusV1, R1csError, R1csProjectionV1, R1csShapeLimitsV0, Variable,
+  Witness,
 };
 pub use relation::{
   Stage4RelationCircuitOutputV1, Stage4RelationError,

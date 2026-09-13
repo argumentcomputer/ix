@@ -231,7 +231,7 @@ fn bind_constant_bytes(
     let start = 16 * word_index;
     let count = 16.min(expected.len() - start);
     bytes[..count].copy_from_slice(&expected[start..start + count]);
-    if word.value() != &bytes {
+    if !builder.is_shape_only() && word.value() != &bytes {
       return Err(ExecBindingCircuitError::Internal("counts payload value"));
     }
     for (bit, expression) in word.bit_expressions().iter().enumerate() {
@@ -413,6 +413,41 @@ mod tests {
     let projected = builder.finish_projection().unwrap();
     assert_eq!(projected.census(), &second.census());
     assert_ne!(projected.digest(), [0; 32]);
+  }
+
+  #[test]
+  fn setup_binding_is_independent_of_every_statement_and_payload_value() {
+    let template = template();
+    let mut builder = crate::r1cs::test_shape_builder();
+    let bytes = payload_bytes(&template, commitments(0))
+      .iter()
+      .map(|payload| vec![0; payload.len()])
+      .collect::<Vec<_>>();
+    let (_, targets) = emit(
+      &mut builder,
+      &template,
+      ExecCommitmentsV0 { program: [0; 32], input: [0; 32], output: [0; 32] },
+      &bytes,
+      [0; 32],
+    )
+    .unwrap();
+    let setup = builder.finish_shape().unwrap();
+    for seed in [9, 19, 129] {
+      let (assigned, witness, _, actual_targets) = compile(seed);
+      assert_eq!(setup, assigned);
+      assert_eq!(targets, actual_targets);
+      setup.check(&witness).unwrap();
+      for &variable in &targets {
+        let mut bad = witness.clone();
+        bad
+          .set(
+            variable,
+            witness.assignment()[variable.index() as usize] + Fr::from(1u64),
+          )
+          .unwrap();
+        assert!(setup.check(&bad).is_err());
+      }
+    }
   }
 
   #[test]

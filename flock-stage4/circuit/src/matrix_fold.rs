@@ -532,7 +532,7 @@ fn bind_payload(
     });
   }
   for (word, (actual, expected)) in actual.iter().zip(expected).enumerate() {
-    if actual.value() != expected {
+    if !builder.is_shape_only() && actual.value() != expected {
       return Err(F128MatrixAccumulatorCircuitError::RegistryPayloadMismatch {
         kind,
         word,
@@ -649,7 +649,7 @@ fn bind_equal(
   component: &'static str,
   element: usize,
 ) -> Result<(), F128MatrixAccumulatorCircuitError> {
-  if value.value() != observed.value() {
+  if !builder.is_shape_only() && value.value() != observed.value() {
     return Err(F128MatrixAccumulatorCircuitError::BindingMismatch {
       fold,
       claim,
@@ -776,7 +776,7 @@ fn enforce_consistency(
   fold: usize,
   which: &'static str,
 ) -> Result<(), F128MatrixAccumulatorCircuitError> {
-  if actual.value() != expected.value() {
+  if !builder.is_shape_only() && actual.value() != expected.value() {
     return Err(F128MatrixAccumulatorCircuitError::ConsistencyMismatch {
       fold,
       which,
@@ -973,7 +973,18 @@ mod tests {
     ),
     F128MatrixAccumulatorCircuitError,
   > {
-    let mut builder = R1csBuilder::new();
+    let (builder, output) = emit(R1csBuilder::new(), fixture)?;
+    let (r1cs, witness) = builder.finish()?;
+    Ok((r1cs, witness, output))
+  }
+
+  fn emit(
+    mut builder: R1csBuilder,
+    fixture: &Fixture,
+  ) -> Result<
+    (R1csBuilder, F128MatrixAccumulatorCircuitOutputV1),
+    F128MatrixAccumulatorCircuitError,
+  > {
     let matrix = fixture.trace.folds[0].matrix;
     let public_roots = alloc_f128_matrix_root_public_inputs(
       &mut builder,
@@ -1019,9 +1030,10 @@ mod tests {
       .copied()
       .map(|value| alloc_f128_private(&mut builder, value, PHASE))
       .collect::<Result<Vec<_>, _>>()?;
+    let digest = if builder.is_shape_only() { [0; 16] } else { [7; 16] };
     let registry_words = [
-      alloc_f128_private(&mut builder, [7; 16], PHASE)?,
-      alloc_f128_private(&mut builder, [7; 16], PHASE)?,
+      alloc_f128_private(&mut builder, digest, PHASE)?,
+      alloc_f128_private(&mut builder, digest, PHASE)?,
     ];
     let prior = [alloc_f128_private(&mut builder, [0; 16], PHASE)?];
     let payloads = vec![
@@ -1046,8 +1058,33 @@ mod tests {
       &public_roots,
       &output.root_claims,
     )?;
-    let (r1cs, witness) = builder.finish()?;
-    Ok((r1cs, witness, output))
+    Ok((builder, output))
+  }
+
+  #[test]
+  fn setup_matrix_fold_matches_assigned_constraints_despite_zero_slots() {
+    let mut scratch = fixture();
+    scratch.row.fill([0; 16]);
+    scratch.column.fill([0; 16]);
+    scratch.claim_value = [0; 16];
+    scratch.observations.fill([0; 16]);
+    scratch.challenges.fill([0; 16]);
+    let (builder, _) =
+      emit(crate::r1cs::test_shape_builder(), &scratch).unwrap();
+    let shape = builder.finish_shape().unwrap();
+    let (assigned, witness, output) = compile(&fixture()).unwrap();
+    assert_eq!(shape, assigned);
+    shape.check(&witness).unwrap();
+    for &bit in output.root_claims[0].value.bit_variables() {
+      let mut bad = witness.clone();
+      bad
+        .set(bit, Fr::ONE - witness.assignment()[bit.index() as usize])
+        .unwrap();
+      assert!(shape.check(&bad).is_err());
+    }
+    // Value freedom does not waive the fixed claim/round topology.
+    scratch.trace.folds[0].claims.clear();
+    assert!(emit(crate::r1cs::test_shape_builder(), &scratch).is_err());
   }
 
   #[test]

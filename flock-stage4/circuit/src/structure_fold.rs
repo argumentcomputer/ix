@@ -422,7 +422,7 @@ fn bind_circuit_digest(
     );
   }
   for (word, (actual, expected)) in payload.iter().zip(expected).enumerate() {
-    if actual.value() != &expected {
+    if !builder.is_shape_only() && actual.value() != &expected {
       return Err(
         F128CircuitStructureAccumulatorCircuitError::DigestPayloadMismatch {
           word,
@@ -487,7 +487,7 @@ fn bind_observed(
   element: usize,
 ) -> Result<(), F128CircuitStructureAccumulatorCircuitError> {
   let observed = resolve_index(observation, sources, "claim observation")?;
-  if value.value() != observed.value() {
+  if !builder.is_shape_only() && value.value() != observed.value() {
     return Err(F128CircuitStructureAccumulatorCircuitError::BindingMismatch {
       claim,
       component,
@@ -570,7 +570,7 @@ fn enforce_consistency(
   expected: &F128VariablesV1,
   which: &'static str,
 ) -> Result<(), F128CircuitStructureAccumulatorCircuitError> {
-  if actual.value() != expected.value() {
+  if !builder.is_shape_only() && actual.value() != expected.value() {
     return Err(
       F128CircuitStructureAccumulatorCircuitError::ConsistencyMismatch {
         which,
@@ -857,7 +857,18 @@ mod tests {
     ),
     F128CircuitStructureAccumulatorCircuitError,
   > {
-    let mut builder = R1csBuilder::new();
+    let (builder, output) = emit(R1csBuilder::new(), fixture)?;
+    let (r1cs, witness) = builder.finish()?;
+    Ok((r1cs, witness, output))
+  }
+
+  fn emit(
+    mut builder: R1csBuilder,
+    fixture: &Fixture,
+  ) -> Result<
+    (R1csBuilder, F128CircuitStructureAccumulatorCircuitOutputV1),
+    F128CircuitStructureAccumulatorCircuitError,
+  > {
     let public_root = alloc_f128_circuit_structure_root_public_input(
       &mut builder,
       &F128CircuitStructureRootClaimPublicInputV1 {
@@ -893,9 +904,10 @@ mod tests {
       .copied()
       .map(|value| alloc_f128_private(&mut builder, value, PHASE))
       .collect::<Result<Vec<_>, _>>()?;
+    let digest = if builder.is_shape_only() { [0; 16] } else { [4; 16] };
     let digest_words = [
-      alloc_f128_private(&mut builder, [4; 16], PHASE)?,
-      alloc_f128_private(&mut builder, [4; 16], PHASE)?,
+      alloc_f128_private(&mut builder, digest, PHASE)?,
+      alloc_f128_private(&mut builder, digest, PHASE)?,
     ];
     let payloads = vec![
       digest_words
@@ -918,8 +930,32 @@ mod tests {
       &public_root,
       &output.root_claim,
     )?;
-    let (r1cs, witness) = builder.finish()?;
-    Ok((r1cs, witness, output))
+    Ok((builder, output))
+  }
+
+  #[test]
+  fn setup_structure_fold_matches_assigned_constraints_despite_zero_slots() {
+    let mut scratch = fixture();
+    scratch.row_point = [0; 16];
+    scratch.column_point = [0; 16];
+    scratch.claim_value = [0; 16];
+    scratch.observations.fill([0; 16]);
+    scratch.challenges.fill([0; 16]);
+    let (builder, _) =
+      emit(crate::r1cs::test_shape_builder(), &scratch).unwrap();
+    let shape = builder.finish_shape().unwrap();
+    let (assigned, witness, output) = compile(&fixture()).unwrap();
+    assert_eq!(shape, assigned);
+    shape.check(&witness).unwrap();
+    for &bit in output.root_claim.value.bit_variables() {
+      let mut bad = witness.clone();
+      bad
+        .set(bit, Fr::ONE - witness.assignment()[bit.index() as usize])
+        .unwrap();
+      assert!(shape.check(&bad).is_err());
+    }
+    scratch.trace.claims.clear();
+    assert!(emit(crate::r1cs::test_shape_builder(), &scratch).is_err());
   }
 
   #[test]

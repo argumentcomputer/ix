@@ -450,7 +450,7 @@ fn bind_digest(
     });
   }
   for (word, (actual, expected)) in payload.iter().zip(expected).enumerate() {
-    if actual.value() != &expected {
+    if !builder.is_shape_only() && actual.value() != &expected {
       return Err(F128JaggedAccumulatorCircuitError::DigestPayloadMismatch {
         word,
       });
@@ -500,7 +500,7 @@ fn bind_observed(
   component: &'static str,
 ) -> Result<(), F128JaggedAccumulatorCircuitError> {
   let observed = resolve_index(index, observations, "claim observation")?;
-  if value.value() != observed.value() {
+  if !builder.is_shape_only() && value.value() != observed.value() {
     return Err(F128JaggedAccumulatorCircuitError::ClaimMismatch {
       claim,
       component,
@@ -707,3 +707,7 @@ fn fr_from_f128(value: [u8; 16]) -> Fr {
 fn f128_from_u64s(low: u64, high: u64) -> [u8; 16] {
   (u128::from(low) | (u128::from(high) << 64)).to_le_bytes()
 }
+
+#[cfg(test)]
+#[path = "jagged_fold_tests.rs"]
+mod tests;

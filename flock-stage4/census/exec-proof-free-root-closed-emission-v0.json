@@ -1,0 +1,260 @@
+{
+  "schema": "ixby-stage4-proof-free-root-closed-emission-v0",
+  "measurement_date": "2026-09-13",
+  "base_revision": "f57a01942ef6543a4e3a4059bd819f984d6c19ca",
+  "status": "proof_free_emitter_implemented_whole_relation_refused_at_supported_domain_prefix_not_a_complete_census_key_or_proof",
+  "setup_digest": "41163b87f03675917ac93824d8b1c11ab0c489c2fc2e03abece34d11fa3255f7",
+  "flock_revision": "b310f35f35f68095537150a1c8c0a43caca9a29e",
+  "rustc": "1.98.0 (88d9e12ae 2026-08-18)",
+  "composition_digest": "64caf60bc1fe39846d95e195e3ecf598b75a1bcf22820e5ef72836399c868bdc",
+  "root_table_set_digest": "f020d4867674049eb517f7e7be472614f2e34453adaacbb9834374c6783a3199",
+  "digest_scope": "Setup-owned replay/table program identities, NOT a complete R1CS, verification-key or proof identity.",
+  "proof_free_r1cs_emitter_implemented": true,
+  "complete_closed_r1cs_materialized": false,
+  "complete_closed_assignment_checked": false,
+  "complete_closed_census_produced": false,
+  "terminal_key_generated": false,
+  "terminal_proof_generated": false,
+  "stage3_tables_profile_key_or_transcript_changed": false,
+  "fflonk_protocol_lowering_or_transport_changed": false,
+  "source_hashes_scope": "Every new or modified Rust source relative to base_revision, frozen before the bounded proof-free run. No Rust source changed during measurement. Other code/dependencies are unchanged; documentation/report edits do not affect the running binary.",
+  "source_hashes": [
+    {
+      "path": "flock-stage4/circuit/src/algebra.rs",
+      "sha256": "a936c231ba5b06cc6607ab0f5c57e27c830e0bf181c2bda7e1564b11362a090e"
+    },
+    {
+      "path": "flock-stage4/circuit/src/exec_binding.rs",
+      "sha256": "78247b7dc50f3071912e50a499f1f47c9989895dafcac682ef66fb5dfe5f92eb"
+    },
+    {
+      "path": "flock-stage4/circuit/src/exec_relation.rs",
+      "sha256": "343fea3556c1fbd96540d724f907805ca615ffb3c7143972e73546da72e09468"
+    },
+    {
+      "path": "flock-stage4/circuit/src/f128.rs",
+      "sha256": "0793e3b0cd8e8e3a539271750461fae48085829ccabb448021db77bf1adc1090"
+    },
+    {
+      "path": "flock-stage4/circuit/src/jagged_fold_tests.rs",
+      "sha256": "ab7f6be278730e3f259f079621a64cb0e695910c797c1a9c5b8e0ca7681a69ef"
+    },
+    {
+      "path": "flock-stage4/circuit/src/jagged_fold.rs",
+      "sha256": "3bbeed74a82060f79a979300f488d5c972bfbe14996f5842977ac10585435892"
+    },
+    {
+      "path": "flock-stage4/circuit/src/lib.rs",
+      "sha256": "e47498936d6600da1e360595bf32765248db1bf3a248f3c8f70b60fd28108eff"
+    },
+    {
+      "path": "flock-stage4/circuit/src/ligerito.rs",
+      "sha256": "71466227962f9fb85384623488aafc4d6ac3b6a7b232cf874acd7669515bfa1a"
+    },
+    {
+      "path": "flock-stage4/circuit/src/matrix_fold.rs",
+      "sha256": "7fa420ace8c2c4b78b628ca08b6c8b99274fb258a81e336037ecb6204b2e93d9"
+    },
+    {
+      "path": "flock-stage4/circuit/src/r1cs.rs",
+      "sha256": "613e1e9d429d0a8c86a5b8ee52f3dc398bc2423e29e59fdd1717b86b11399444"
+    },
+    {
+      "path": "flock-stage4/circuit/src/root_closure_tests.rs",
+      "sha256": "04f8babf11b03e371367931458d08e6f8e4320440be47f0d010f5779aaa8bdb1"
+    },
+    {
+      "path": "flock-stage4/circuit/src/statement.rs",
+      "sha256": "eb207b2d88e5468217a7a5dfc02ba197fd49259c132bd0152ad8e25f5ba5a921"
+    },
+    {
+      "path": "flock-stage4/circuit/src/structure_fold.rs",
+      "sha256": "a4f824857398856f0065359852215792ec7d22bcb15d37de46cb94696f2e538d"
+    },
+    {
+      "path": "flock-stage4/circuit/src/transcript.rs",
+      "sha256": "7a3343b03502b4f2b48186152e29f4a01e8b36ebc34609eb3e9de6abc58b57e0"
+    },
+    {
+      "path": "flock-stage4/exec/src/blueprint/hash.rs",
+      "sha256": "69a91b8b270142600d9c4a094e4dfdcd4095528ed969b023e3d6345c34f9f86c"
+    },
+    {
+      "path": "flock-stage4/exec/src/closure_census.rs",
+      "sha256": "e0e132821e4f226ce8d3281a31313b6cd67c77f10afc9446e7ec0e3f77209fa2"
+    },
+    {
+      "path": "flock-stage4/exec/src/closure_tests.rs",
+      "sha256": "1b973575abd4963fc58073959d4f90a3cd95d52d1b60e95c5f7c666ee427ad5d"
+    },
+    {
+      "path": "flock-stage4/exec/src/closure.rs",
+      "sha256": "ce54b13fc4b797869284a629012675406b252dac90e18e8e5801e94df55b1aa2"
+    },
+    {
+      "path": "flock-stage4/exec/src/lib.rs",
+      "sha256": "f7c1937265a209e09cff2efd32ccd73777f19e147df58f89eb606aa05c87fba9"
+    },
+    {
+      "path": "flock-stage4/exec/src/setup_emission.rs",
+      "sha256": "6daea15509f09cedee51ec8d6d60d3ec917797f0d15697122713f69650f5d62a"
+    }
+  ],
+  "setup_emission": {
+    "owner": "Immutable CompiledExecRootClosure, borrowing approved CompiledExecReplay and owning all exact root programs.",
+    "relation_inputs": "Approved setup only. No guest, statement, expected Q, commitment components, proof, native replay witness or replacement trace.",
+    "matrix_api": "build_setup_r1cs(ExecSetupR1csLimitsV0) creates a shape-only builder, calls the whole closed composition, checks builder and emitter errors, validates exactly two public variables, and returns only CanonicalR1csV1 on complete success.",
+    "stream_api": "emit_setup(shape_only_builder, source_payload_limit) emits that same whole composition. Source preflight errors must be propagated; builder/observer refusals are sticky. No replay/assignment/acceptance output is returned.",
+    "values": "All source slots use non-witness zero scratch. Private zero is never a shape constant. Inline B/I/O stay private and Q stays two public variables; zero scratch does not pin a guest or expected public digest.",
+    "checks": "Only redundant native-value diagnostics are suppressed in shape mode. Structural validation and transcript/PoW, statement, inverse x*inv=1, algebra, PCS/Merkle, all folds and exact-root equalities remain. Ordinary witness diagnostics are preserved.",
+    "matrix_limits": [
+      "variables including ONE",
+      "constraints",
+      "sparse A/B/C terms"
+    ],
+    "source_slots": {
+      "f128_words": 27611,
+      "digest32_words": 1484,
+      "byte_payloads": 1705,
+      "byte_payload_bytes": 25185,
+      "logical_payload_bytes": 514449
+    },
+    "source_budget_scope": "Heap-backed source-slot payload only, checked before allocation; excludes Vec/allocator overhead, inline B/I/O/Q, approved setup/tables, gadget intermediates and matrices. Not a peak-RAM or whole-pipeline admission."
+  },
+  "ordinary_regression": {
+    "command": "cargo test --release --locked --manifest-path flock-stage4/Cargo.toml --workspace",
+    "exit_code": 0,
+    "passed": 200,
+    "ignored": 12,
+    "passed_by_crate": {
+      "fflonk": 88,
+      "trace": 29,
+      "circuit": 67,
+      "exec": 16
+    },
+    "new_ordinary_tests": 13,
+    "shape_tests": "Modes cannot export a witness; exact matrix equality with valid assignments; bounds include ONE and reject before retaining over-budget rows/terms; first error remains sticky across allocations/enforcement/all finish modes; malformed wire indices/topology fail.",
+    "materialized_components": [
+      {
+        "component": "chained BLAKE3",
+        "assignments": 3,
+        "negatives": "Every challenge bit; invalid challenge-source geometry. Setup zeroes compression witness columns, payload and expected challenge."
+      },
+      {
+        "component": "Exec statement binding",
+        "assignments": 3,
+        "negatives": "Public Q, fixed words, statement outputs, registry/circuit/counts/padding/public-vector payload wires."
+      },
+      {
+        "component": "algebra and inverse",
+        "assignments": 3,
+        "negatives": "All result/inverse bits. Setup has an initially false equality and zero inverse scratch; ordinary zero inverse still fails."
+      },
+      {
+        "component": "matrix fold",
+        "assignments": 1,
+        "negatives": "All root-value bits and missing claim topology; setup zeroes source/digest values."
+      },
+      {
+        "component": "structure fold",
+        "assignments": 1,
+        "negatives": "All root-value bits and missing claim topology; setup zeroes source/digest values."
+      },
+      {
+        "component": "jagged fold",
+        "assignments": 6,
+        "negatives": "Both Eq and Combo row encodings; all root-value bits, header/scale/address/value/digest source mutations; malformed challenge count; ordinary invalid digest rejection."
+      },
+      {
+        "component": "all root program families",
+        "assignments": 3,
+        "negatives": "All bits of both matrix claims plus structure and jagged; setup starts with a forged claim; both exact program kinds covered."
+      },
+      {
+        "component": "two-level inner Ligerito",
+        "assignments": 3,
+        "negatives": "Query words 0, 3 and all-ff yield identical matrices; 20 CAP bit mutations per assignment fail; setup uses invalid zero CAP/path scratch."
+      }
+    ],
+    "scope": "Actual canonical component matrix equality and satisfying-assignment checks, NOT complete closed Exec matrices or a terminal proof.",
+    "formatting_clippy_all_targets_and_diff": "passed"
+  },
+  "debug_setup_regression": {
+    "command": "ulimit -v 33554432 && timeout 180 cargo test --locked --manifest-path flock-stage4/Cargo.toml -p ix-terminal-circuit setup_",
+    "exit_code": 0,
+    "passed": 11,
+    "test_duration_seconds": 61.18,
+    "scope": "Unoptimized build with debug assertions enabled; all setup-mode builder/component tests selected by setup_. Overlapped the bounded whole-relation emission; neither duration is a controlled throughput comparison."
+  },
+  "native_regression": {
+    "command": "ulimit -v 33554432 && RAYON_NUM_THREADS=4 timeout 180 cargo test --release --locked --manifest-path flock-stage4/Cargo.toml -p ixby-stage4-exec native::tests::closure_tests::setup_owned_closure_matches_all_real_fold_roots -- --ignored --test-threads=1 --nocapture",
+    "exit_code": 0,
+    "test_duration_seconds": 26.65,
+    "preproof_compilation_and_bounded_checks_seconds": 15.374,
+    "timing_scope": "The preproof interval includes both root compilations and source/prefix/budget checks. The full ordinary suite overlapped this regression; these are observed timings, not a controlled performance comparison.",
+    "executions": [
+      {
+        "branch": false,
+        "value": false
+      },
+      {
+        "branch": true,
+        "value": false
+      },
+      {
+        "branch": true,
+        "value": true
+      }
+    ],
+    "roots_compared_per_execution": 48,
+    "exact_normalized_prefix_constraints_per_execution": 4096,
+    "prefix_scope": "Captured setup prefix exists before any guest/proof and is compared exactly with all three witness-driven prefixes. This early prefix is not a full-circuit digest or full matrix equality claim.",
+    "matched_domain_caps": [
+      0,
+      4,
+      1000
+    ],
+    "unsupported_domain_cap_rejected": 1073741825,
+    "source_payload_budget_rejected_before_allocation": 514448,
+    "materialized_constraint_limit": 1000,
+    "materialized_first_refused_constraint": 1001,
+    "complete_matrices_returned_on_refusal": false,
+    "ordinary_builder_mode_rejected_before_emission": true,
+    "last_observed_process_vm_hwm_kib": 3366948,
+    "last_observed_process_vm_peak_kib": 3997564,
+    "memory_scope": "Cumulative test-process counters including approved native setup, not a terminal prover or process-tree measurement."
+  },
+  "bounded_emission": {
+    "command": "ulimit -v 33554432 && RAYON_NUM_THREADS=4 timeout 1800 cargo test --release --locked --manifest-path flock-stage4/Cargo.toml -p ixby-stage4-exec native::tests::closure_tests::proof_free_root_closed_supported_domain_admission_census -- --ignored --test-threads=1 --nocapture",
+    "address_space_limit_kib": 33554432,
+    "rayon_threads": 4,
+    "timeout_seconds": 1800,
+    "maximum_required_domain_rows": 1073741824,
+    "reserved_public_rows": 2,
+    "reserved_blinding_rows": 2,
+    "status": "completed_with_budget_rejection",
+    "exit_code": 0,
+    "test_duration_seconds": 1253.75,
+    "emission_and_admission_seconds": 1240.765,
+    "timing_scope": "Emission timing starts after approved setup and root compilation; total test duration includes them and excludes Cargo compilation. The run constructed no guest or Flock proof. Clippy overlapped its start and the 61.18-second debug setup suite overlapped later emission, so this is not a controlled throughput comparison with the witness-driven baseline.",
+    "final_outcome": "RejectedBudget",
+    "prefix": {
+      "r1cs_constraints": 643831813,
+      "plonk_constraint_rows": 1073741821,
+      "plonk_auxiliary_wires": 429910008,
+      "last_constraint_phase": "MatrixFold",
+      "required_rows_including_reservations": 1073741825
+    },
+    "witness_driven_baseline_report": "exec-root-closed-admission-v0.json",
+    "prefix_counts_match_witness_driven_baseline": true,
+    "comparison_scope": "The three prefix counts and last phase exactly match the earlier witness-driven cutoff. Neither rejected stream produces a full R1CS digest; this is not whole-matrix equality or a reusable complete key. Exact materialized component matrices and the 4096-row real-Exec prefix are checked separately.",
+    "last_observed_process_vm_hwm_kib": 3219264,
+    "last_observed_process_vm_peak_kib": 3516620,
+    "memory_scope": "Linux cumulative test-process counters, including approved native setup and root programs. Not terminal prover RSS, a process-tree measurement, or a memory minimum. No complete matrices/assignment or terminal SRS/key are retained.",
+    "minimum_base_domain_implied_by_prefix": 2147483648,
+    "minimum_polynomial_fft_domain_implied_by_prefix": 8589934592,
+    "interpretation": "The emitted prefix plus two public and two blinding rows already exceeds the supported 2^30 domain. Full relation cost is still unknown. Stopping at the first over-budget row does not mean deleting one row would make the relation fit. Cost redesign is required before full materialization, key preprocessing and proving.",
+    "scope": "Same entire closed relation, emitted ONLY from approved setup and stopped by the supported-domain cap. No guest, Flock proof, valid assignment, terminal SRS/key or complete matrices are constructed. A refused prefix cannot establish a completed census or authorize terminal proving."
+  },
+  "remaining_gates": "Feasible complete closed geometry, complete materialization and proof-free key preprocessing, actual FFLONK proof and fresh isolated verification, whole-pipeline resource admission, and the original M3/M4/M7/M8 formal/scaling/compiler/upgrade obligations remain."
+}

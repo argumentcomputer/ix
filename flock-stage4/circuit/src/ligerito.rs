@@ -1863,8 +1863,16 @@ mod tests {
     challenge_values[1] = query_word;
     challenge_values[5] = query_word;
     let challenges = allocate_values(builder, &challenge_values);
-    let (cap_0, path_0) = cap_and_path(2 * F128_BYTES);
-    let (cap_1, path_1) = cap_and_path(4 * F128_BYTES);
+    let (cap_0, path_0) = if builder.is_shape_only() {
+      ([0; 32], [[0; 32]; 2])
+    } else {
+      cap_and_path(2 * F128_BYTES)
+    };
+    let (cap_1, path_1) = if builder.is_shape_only() {
+      ([0; 32], [[0; 32]; 2])
+    } else {
+      cap_and_path(4 * F128_BYTES)
+    };
     let cap_values = [cap_0, cap_1]
       .into_iter()
       .map(|digest| digest.as_chunks::<16>().0.to_vec())
@@ -1916,6 +1924,35 @@ mod tests {
     assert_eq!(output.authenticated_queries, 2);
     let (r1cs, witness) = builder.finish().unwrap();
     r1cs.check(&witness).unwrap();
+  }
+
+  #[test]
+  fn setup_ligerito_matches_different_query_paths_and_rejects_cap_mutation() {
+    let mut builder = crate::r1cs::test_shape_builder();
+    constrain_fixture(&mut builder, [0; 16]);
+    let shape = builder.finish_shape().unwrap();
+    for query in [0u128.to_le_bytes(), 3u128.to_le_bytes(), [0xff; 16]] {
+      let mut builder = R1csBuilder::new();
+      constrain_fixture(&mut builder, query);
+      let (assigned, witness) = builder.finish().unwrap();
+      assert_eq!(shape, assigned);
+      shape.check(&witness).unwrap();
+      // Source order above: 26 observations, 11 challenges, then four CAP
+      // halves. Private source words each allocate exactly 128 Boolean bits.
+      for half in 0..4 {
+        for bit in [0, 31, 63, 95, 127] {
+          let target = Variable::from_index(1 + 128 * (26 + 11 + half) + bit);
+          let mut bad = witness.clone();
+          bad
+            .set(
+              target,
+              Fr::from(1u64) - witness.assignment()[target.index() as usize],
+            )
+            .unwrap();
+          assert!(shape.check(&bad).is_err());
+        }
+      }
+    }
   }
 
   #[test]

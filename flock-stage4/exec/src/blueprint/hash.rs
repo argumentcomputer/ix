@@ -1,7 +1,7 @@
 //! Pure operation-tree -> chained-BLAKE3 topology lowering. No compression is
 //! evaluated and no dummy proof/nonce/message is generated. The two witness
-//! columns of each row are deliberately zero placeholders, ignored only by
-//! the exact structural comparison below, never fed into a proof circuit.
+//! columns of each row are deliberately zero placeholders. They are ignored
+//! by structural comparison and setup-only emission, never used as a witness.
 
 use super::algebra::Addresses;
 use crate::replay::Stage4TranscriptOpV1 as Op;
@@ -26,6 +26,11 @@ pub(crate) struct HashBlueprint {
 }
 
 impl HashBlueprint {
+  /// Only the shape-only builder may consume this value-free trace directly.
+  pub(crate) fn setup_topology(&self) -> &Transcript {
+    &self.topology
+  }
+
   pub(crate) fn topology_digest(&self) -> [u8; 32] {
     self.topology.topology_digest()
   }

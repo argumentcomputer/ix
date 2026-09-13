@@ -1,7 +1,8 @@
 # Generic IxBy → Stage 4 replay
 
-Status: native replay, public/private statement binding, and a root-closed
-composition prototype are implemented. This is progress toward M5/M6, not
+Status: native replay, public/private statement binding, a root-closed
+composition prototype and bounded proof-free R1CS emission are implemented.
+This is progress toward M5/M6, not
 completion of M5–M8. There is no approved full terminal topology/key,
 materialized complete closed-root relation, or complete FFLONK proof yet.
 The native Flock constraint-to-IxBy refinement obligation in M3 remains too.
@@ -110,9 +111,9 @@ borrowed from its approved Exec setup and has no public field replacement or
 prover-export constructor. The regression compiles it twice before creating
 any guest, then reuses the same object for all three executions. Repeated
 native equality is additional evidence, not permission to derive a key from
-an arbitrary proof. A proof-free R1CS emitter and terminal key compiler still
-need to consume the approved topology without relying on a valid assignment;
-no such key-generation API is exposed here.
+an arbitrary proof. The proof-free R1CS emitter below consumes this topology
+without relying on a valid assignment. Complete materialization and terminal
+key preprocessing remain unfinished; no terminal key-generation API is exposed.
 
 ## Current evidence
 
@@ -139,10 +140,10 @@ phase/topology digests agree. No Stage 4 key or FFLONK proof is generated.
 | Accumulator transcript compression rows / PoW predicates | 4,947 / 1,373 |
 | Terminal diagnostic root families | 46 matrix roots, 1 structure, 1 jagged |
 
-The 187 ordinary workspace tests pass; eleven tests are ignored by default
+The 200 ordinary workspace tests pass; twelve tests are ignored by default
 (the retained large two-ring projection, native replay/census, and the four
 decision-diagram native/materialization/optimization tests, plus two
-structural BLAKE3 component tests and two closed-composition/admission tests).
+structural BLAKE3 component tests and three closed-composition/admission tests).
 The real three-execution replay regression passes under a 32 GiB
 address-space cap with four Rayon threads. The complete matrix-free census
 finished successfully in 1,161.51 seconds, including setup, under that cap.
@@ -295,8 +296,8 @@ Exec compiler derives and validates these programs from the actual setup.
 The compiled closure owns the table set and borrows that same approved replay.
 Its `constrain` method rejects mismatched setup/topology/binding before any
 allocation and takes externally expected public Q explicitly, not from the
-replay witness. The current emitter still needs witness values; this object
-is not proof-free R1CS/key setup or an acceptance certificate.
+replay witness. This is its witness-driven path; the separate setup-only path
+below accepts no such witness. Neither is a terminal key or acceptance certificate.
 
 `constrain_exec_root_closed` and the existing root-conditional API share the
 same complete replay body. At each original family-binding site, the closed
@@ -312,7 +313,7 @@ claims reach R1CS satisfaction checking rather than failing a native value
 comparison. Matrix identity/order/count and family geometry failures emit no
 constraints. Three point assignments retain identical matrices.
 
-The native closure regression compiled the complete root set twice before
+The initial native closure regression compiled the complete root set twice before
 creating any proof (15.258 seconds), then matched all 48 native folded roots
 for a return program and both branch outcomes (25.58 seconds total). Its
 composition digest is
@@ -356,9 +357,82 @@ pins every changed Rust source hash, native regression, hard bounds, exact
 prefix and timing/memory scope. This establishes that the current encoding
 needs cost reduction before proving, not that M6's compact-proof gate passed.
 
+## Proof-free R1CS emission from approved setup
+
+`CompiledExecRootClosure::build_setup_r1cs(ExecSetupR1csLimitsV0)` is an
+assignment-free matrix emitter. It takes no guest, statement, expected Q,
+commitment components, Flock proof, native replay or replacement trace. Its
+`emit_setup` counterpart takes a shape-only streaming builder and a source-slot
+payload limit. Both call the same complete closed composition, using only the
+immutable approved blueprints and coefficient-checked root programs.
+
+The source-slot layout is derived from approved main/auxiliary observation,
+challenge and payload counts; Boolean matrix claims; the fixed wiring and
+multipoint private slots; and every inner-Ligerito row/path slot. References,
+geometry, uniqueness and hash links are validated. Zero scratch arrays supply
+only the existing gadgets' host-value computations. They are not a fabricated
+native proof or a satisfying assignment, and no scratch output is returned.
+B/I/O and the two public Q limbs stay variable in the physical circuit.
+
+The builder has a construction-time shape mode, distinct from materialized
+witness generation. It stores no assignment. `finish_shape` returns only
+canonical matrices and validates every variable index; the witness-returning
+`finish` rejects shape mode. A shape-only projection can return counts/digests,
+never an assignment. Native builders keep their original diagnostic checks.
+
+Only early native-value comparisons are suppressed: transcript compression
+columns/challenge hints, binding payloads, algebra assertions and fold value
+consistency. Structural checks and their actual equalities remain. An unknown
+zero inverse slot uses scratch zero but still emits the same private inverse,
+multiplication and `x * inverse = 1` constraint. Neither PoW nor root-table
+discharge is skipped. Fixed constants and wire identity, never private scratch
+values, determine constant folding and circuit shape.
+
+`R1csShapeLimitsV0` caps variables (including ONE), rows and sparse terms before
+retaining over-budget data. Observer/matrix refusals are sticky, including on
+the last infallible constraint. Source preflight errors occur before source
+allocation and must also be propagated. The owned materialization and census
+APIs propagate both emitter and builder errors and never return a partial
+circuit as a successful whole relation.
+
+The real scalar setup reports 27,611 F128 source words, 1,484 private digest
+words, and 1,705 byte payloads totaling 25,185 bytes: 514,449 bytes of logical
+heap-backed source payload. The limit excludes Vec/allocator overhead, inline
+B/I/O/Q scratch, approved setup/table storage, gadget intermediates and R1CS
+matrices. It is not a peak-RAM or whole-pipeline admission claim.
+
+Evidence is deliberately split by scope:
+
+- Materialized setup matrices exactly match several valid assignments for
+  transcript, Exec binding, inverse/algebra, matrix/structure/jagged folds,
+  two-level Ligerito and all root-program families. Mutation tests use the
+  emitted matrices, not only native rejections. Malformed topology still fails.
+- The updated real-Exec regression builds setup and performs bounded emission
+  before any guest/proof. Its first 4,096 normalized constraints match all three
+  native executions exactly; tiny domain caps and source/matrix refusals pass.
+  This prefix is not a whole-circuit digest or verification-key identity.
+- `census_exec_root_closed_setup_observed` attempts the whole relation without
+  constructing a Flock proof. It has the same public/blinding reservations and
+  hard supported-domain limit as the witness-driven diagnostic. A rejected
+  prefix contains no complete R1CS digest, full census, terminal key or proof.
+
+The whole proof-free run returned `RejectedBudget` after 1,240.765 seconds of
+emission (1,253.75 seconds total test time). It reached exactly the previous
+witness-driven cutoff: 643,831,813 R1CS constraints, 1,073,741,821 PLONK rows,
+429,910,008 auxiliary wires, last phase `MatrixFold`. Including public/blinding
+reservations again exceeds the supported domain. This is prefix count agreement,
+not a full matrix digest or completed relation. No guest, Flock proof, valid
+assignment, terminal key or full R1CS matrices were constructed by this run.
+Its test-process high-water RSS was 3,219,264 KiB and peak virtual size
+3,516,620 KiB, including approved native setup. These are not process-tree or
+terminal-prover measurements. The 11 setup tests also passed with debug
+assertions enabled; that run overlapped emission, so the timings are not a
+controlled throughput comparison. The [proof-free emission report](../flock-stage4/census/exec-proof-free-root-closed-emission-v0.json)
+records the frozen source hashes, commands, actual limits and separate scopes.
+
 ## Remaining gates
 
-Implement proof-free R1CS/key compilation from the approved replay blueprints;
+Complete proof-free materialization/key preprocessing at feasible geometry;
 extend phase-specific hostile message tests; reduce and fully measure the
 closed prototype; then actually prove and isolate-verify that complete
 relation with only an

@@ -208,8 +208,13 @@ pub fn constrain_f128_inverse(
   value: &F128VariablesV1,
   phase: ConstraintPhase,
 ) -> Result<F128VariablesV1, R1csError> {
-  let inverse_value = inverse_value(value.value)
-    .ok_or(R1csError::NonInvertibleBinaryFieldElement)?;
+  let inverse_value = match inverse_value(value.value) {
+    Some(inverse) => inverse,
+    // Unknown setup slots may use zero scratch. This is not an inverse;
+    // the SAME x * inverse = 1 constraint below still rules out zero.
+    None if builder.is_shape_only() => [0; 16],
+    None => return Err(R1csError::NonInvertibleBinaryFieldElement),
+  };
   let inverse = alloc_f128_private(builder, inverse_value, phase)?;
   let product = constrain_f128_multiply(builder, value, &inverse, phase)?;
   enforce_f128_equal_constant(builder, &product, one_value(), phase);

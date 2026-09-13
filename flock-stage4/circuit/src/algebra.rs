@@ -234,10 +234,11 @@ pub fn constrain_f128_algebra_trace_deferred(
           &operations,
           &mut constants,
         )?;
-        let expected = native_f128_inverse(*value.value())
-          .ok_or(R1csError::NonInvertibleBinaryFieldElement)?;
+        let expected = native_f128_inverse(*value.value());
         let output = constrain_f128_inverse(builder, &value, phase)?;
-        debug_assert_eq!(output.value(), &expected);
+        debug_assert!(
+          builder.is_shape_only() || Some(*output.value()) == expected
+        );
         output
       },
     };
@@ -262,7 +263,7 @@ pub fn constrain_f128_algebra_trace_deferred(
       &operations,
       &mut constants,
     )?;
-    if left.value() != right.value() {
+    if !builder.is_shape_only() && left.value() != right.value() {
       return Err(F128AlgebraCircuitError::AssertionMismatch {
         assertion: index,
       });
@@ -433,6 +434,7 @@ fn to_usize(
 #[cfg(test)]
 mod tests {
   use super::*;
+  use ark_bls12_381::Fr;
   use ix_stage4_trace::{
     F128DeferredMatrixClaimV1, F128EqualityV1, F128MatrixSideV1,
     F128StaticMatrixIdV1, F128StructuredWeightV1, F128VerifierPhaseV1,
@@ -505,6 +507,81 @@ mod tests {
     assert!(matches!(
       result,
       Err(F128AlgebraCircuitError::AssertionMismatch { assertion: 0 })
+    ));
+  }
+
+  #[test]
+  fn setup_algebra_retains_inverse_and_false_assertion_constraints() {
+    let mut trace = identity_trace();
+    let observed = F128ReferenceV1::Input(F128InputSourceV1::ObservedValue(0));
+    trace.operations.extend([
+      F128OperationV1::Inverse {
+        phase: F128VerifierPhaseV1::Lincheck,
+        value: observed,
+      },
+      F128OperationV1::Multiply {
+        phase: F128VerifierPhaseV1::Lincheck,
+        left: observed,
+        right: F128ReferenceV1::Operation(3),
+      },
+    ]);
+    trace.equalities.push(F128EqualityV1 {
+      phase: F128VerifierPhaseV1::Lincheck,
+      left: F128ReferenceV1::Operation(4),
+      right: F128ReferenceV1::Input(F128InputSourceV1::Constant(value(1, 0))),
+    });
+    let mut builder = crate::r1cs::test_shape_builder();
+    // Both the equality (1 != 0) and zero inverse are invalid native values.
+    let public = alloc_sources(&mut builder, &[value(1, 0)]).unwrap();
+    let observed = alloc_sources(&mut builder, &[[0; 16]]).unwrap();
+    let challenges = alloc_sources(&mut builder, &[[0; 16]]).unwrap();
+    constrain_f128_algebra_trace(
+      &mut builder,
+      &trace,
+      F128AlgebraCircuitInputsV1 {
+        public_values: &public,
+        observed_values: &observed,
+        challenges: &challenges,
+        private_values: &[],
+      },
+    )
+    .unwrap();
+    let setup = builder.finish_shape().unwrap();
+    for sample in [value(1, 0), value(3, 5), [0xff; 16]] {
+      let (assigned, witness, output) = build_f128_algebra_trace_r1cs(
+        &trace,
+        &[sample],
+        &[sample],
+        &[value(7, 11)],
+        &[],
+      )
+      .unwrap();
+      assert_eq!(setup, assigned);
+      setup.check(&witness).unwrap();
+      for word in [&output.operations[2], &output.operations[3]] {
+        for &bit in word.bit_variables() {
+          let mut bad = witness.clone();
+          bad
+            .set(
+              bit,
+              Fr::from(1u64) - witness.assignment()[bit.index() as usize],
+            )
+            .unwrap();
+          assert!(setup.check(&bad).is_err());
+        }
+      }
+    }
+    assert!(matches!(
+      build_f128_algebra_trace_r1cs(
+        &trace,
+        &[[0; 16]],
+        &[[0; 16]],
+        &[[0; 16]],
+        &[]
+      ),
+      Err(F128AlgebraCircuitError::R1cs(
+        R1csError::NonInvertibleBinaryFieldElement
+      )),
     ));
   }
 
