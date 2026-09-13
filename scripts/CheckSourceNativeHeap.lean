@@ -15,8 +15,8 @@ def main (args : List String) : IO UInt32 := cli "source native heap check faile
   let some consumer := optional args "--consumer" | throw (IO.userError "--consumer is required")
   let expected ← readJson (option args "--expected" "fixtures/source-native-heap/expected.json")
   let emission := option args "--emission" "tree"
-  need (emission == "tree" || emission == "shared") "unknown heap emission mode"
-  let extra := if emission == "shared" then #["shared"] else #[]
+  need (emission == "tree" || emission == "shared" || emission == "graph") "unknown heap emission mode"
+  let extra := if emission == "tree" then #[] else #[emission]
   let native ← nativeArgs args
   let readelf := option args "--readelf" "readelf"
   let objdump := option args "--objdump" "objdump"
@@ -36,6 +36,10 @@ def main (args : List String) : IO UInt32 := cli "source native heap check faile
       "borrowed-parameter", "three-field-leaf", "missing-schema", "missing-callee", "recursive-call", "cyclic-block",
       "value-slots", "duplicate-owner", "duplicate-credit", "reuse-layout", "nat-overflow", "pap-in-body",
       "higher-order-apply", "external-call", "edge-copies", "cfg-expansion"] : List String)) "heap admission inventory drifted"
+    if emission == "graph" then
+      let original ← arrField report "admission_rejections"
+      need ((← field report "graph_admission_rejections") == toJson (original.filter (· != toJson "cfg-expansion")) &&
+        (← field report "graph_expansion_accepted") == toJson true) "heap graph admission inventory drifted"
     let rows ← arrField expected "cases"
     need (rows.size == names.size) "heap source/physical inventory drifted"
     let mut inventory := ["report.json"]
@@ -51,11 +55,13 @@ def main (args : List String) : IO UInt32 := cli "source native heap check faile
       inventory := snapshotName :: objectName :: wireName :: inventory
       if emission == "shared" then
         need ((← strField row "emission") == "heap-block-sharing/1") "heap shared emission policy disagrees"
+      if emission == "graph" then
+        need ((← strField row "emission") == "heap-cfg-graph/1") "heap graph emission policy disagrees"
       let snapshot ← readJson (first / snapshotName)
       let bytes ← IO.FS.readBinFile (first / objectName)
       let wire ← IO.FS.readBinFile (first / wireName)
-      inspect row snapshot bytes wire (emission == "shared")
-      corruptionCount := corruptionCount + (← regressions row snapshot bytes wire (emission == "shared"))
+      inspect row snapshot bytes wire (emission == "shared") (emission == "graph")
+      corruptionCount := corruptionCount + (← regressions row snapshot bytes wire (emission == "shared") (emission == "graph"))
       let elf ← inspectElf readelf (first / objectName) "compilatrix_heap_cfg"
       requireAll elf ["There are no relocations"] "heap local-call object"
       let assembly ← disassemble objdump (first / objectName) "compilatrix_heap_cfg"

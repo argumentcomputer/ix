@@ -7,7 +7,7 @@ fixture provenance depend on the chosen emitter. -/
 namespace Benchmark.NativeSharing
 open Lean System Compilatrix Compilatrix.X86 Compilatrix.Tools.Check
 
-private def timed (measurements : IO.Ref (Array Json)) (label stage : String)
+def timed (measurements : IO.Ref (Array Json)) (label stage : String)
     (operation : Unit → Except String α) : IO α := do
   let start ← IO.monoNanosNow
   let result := operation ()
@@ -21,14 +21,14 @@ private def targets : Terminator → Array BlockId
   | .branch _ _ zero successor => #[zero, successor]
   | .ret => #[]
 
-private def joinedBlocks (program : X86.Program) : Nat := Id.run do
+def joinedBlocks (program : X86.Program) : Nat := Id.run do
   let mut incoming := Array.replicate program.blocks.size (0 : Nat)
   for block in program.blocks do
     for entry in targets block.terminator do
       incoming := incoming.modify entry.toNat (· + 1)
   return (incoming.filter (· > 1)).size
 
-private def mutations {schemas program root baseline}
+def mutations {schemas program root baseline}
     (selected : PhysicalHeap.Selected schemas program root) (candidate : HeapTarget.Candidate)
     (_output : HeapTarget.Output selected baseline) : IO Nat := do
   let mut count := 0
@@ -44,7 +44,7 @@ private def mutations {schemas program root baseline}
   | .ok _ => throw (IO.userError "shared certificate accepted missing function coverage")
   | .error _ => return count + 1
 
-private def observe {schemas program root}
+def observe {schemas program root}
     (selected : PhysicalHeap.Selected schemas program root) (native : HeapTarget.Output selected true)
     (object : ByteArray) (count : Nat) : IO (Array Json) := do
   let text ← present (ELFRead.text? object) "join ELF has no text"

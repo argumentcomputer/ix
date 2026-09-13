@@ -208,7 +208,7 @@ def EntryPlan.matches (program : X86.Program) (baseline : Bool) (target : BlockI
   Scalar.blockMatches program plan.adapter (HeapTarget.adapter baseline target) .ret &&
   Scalar.blockMatches program plan.reject rejectInstructions .ret
 
-private def emitEntry (baseline : Bool) (target : BlockId) (demand : Nat) : BlockSharing.Emit EntryPlan := do
+def emitEntry (baseline : Bool) (target : BlockId) (demand : Nat) : BlockSharing.Emit EntryPlan := do
   let reject ← BlockSharing.emit rejectInstructions .ret
   let adapter ← BlockSharing.emit (HeapTarget.adapter baseline target) .ret
   let lower ← BlockSharing.emit [] (.branch (capacityCompare demand) .unsignedLt reject adapter)
@@ -227,15 +227,17 @@ structure Output {schemas program root} (selected : PhysicalHeap.Selected schema
   entryVerified : entry.matches target.program baseline ((plans.map (·.entry))[selected.entry]?.getD 0)
     selected.entryInterface.allocations = true
 
-/-- Both strategies use the same templates and consumer certificate. The
-tree strategy retains the previous block order and exact output bytes. -/
+/-- Object compilation strategies. `graph` additionally preserves selected
+control-flow sharing and checks a graph certificate through `HeapGraph`.
+The two tree-selection strategies retain their exact previous artifacts. -/
 inductive Emission where
-  | tree | shared
+  | tree | shared | graph
   deriving BEq, DecidableEq, Repr, Inhabited
 
 def Emission.policy : Emission → String
   | .tree => "heap-block-tree/1"
   | .shared => "heap-block-sharing/1"
+  | .graph => "heap-cfg-graph/1"
 
 /-- An untrusted emission proposal, also used for independent rechecking. -/
 structure Candidate where
@@ -248,6 +250,7 @@ def Candidate.program (candidate : Candidate) : X86.Program :=
 
 def emitCandidate {schemas program root} (selected : PhysicalHeap.Selected schemas program root)
     (baseline : Bool := false) (emission : Emission := .tree) : Except String Candidate := do
+  if emission == .graph then throw "graph emission requires HeapGraph.emitCandidate and checked graph selection"
   let ((plans, entry), state) ← (do
     let mut plans : Array FunctionPlan := #[]
     for row in selected.rows do

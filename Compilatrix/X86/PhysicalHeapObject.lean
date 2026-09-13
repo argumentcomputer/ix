@@ -1,4 +1,5 @@
 import Compilatrix.X86.PhysicalHeapRoot
+import Compilatrix.X86.HeapGraph
 import Compilatrix.IxIR2.WirePipeline
 
 namespace Compilatrix.X86.PhysicalHeap
@@ -20,12 +21,24 @@ structure Compiled (schemas : Schemas) (program : IxIR2.Program) (root : Ixon.Ad
 
 def compile (schemas : Schemas) (program : IxIR2.Program) (root : Ixon.Address)
     (baseline : Bool) (provenance : ELF.Provenance) (name : String := "compilatrix_heap_cfg")
-    (emission : HeapTarget.Emission := .shared) :
+    (emission : HeapTarget.Emission := .graph) (graphLimits : Graph.Limits := {}) :
     Except String (Compiled schemas program root baseline provenance) := do
-  let selected ← select schemas program root
-  let native ← match emission with
-    | .tree => HeapTarget.compile selected baseline
-    | .shared => HeapTarget.compileShared selected baseline
+  let produced : (selected : Selected schemas program root) × HeapTarget.Output selected baseline ←
+    match emission with
+    | .graph => do
+      let selection ← Graph.select schemas program root graphLimits
+      let native ← HeapGraph.compile selection baseline
+      pure ⟨selection.selected, native⟩
+    | .tree => do
+      let selected ← select schemas program root
+      let native ← HeapTarget.compile selected baseline
+      pure ⟨selected, native⟩
+    | .shared => do
+      let selected ← select schemas program root
+      let native ← HeapTarget.compileShared selected baseline
+      pure ⟨selected, native⟩
+  let selected := produced.1
+  let native := produced.2
   let stream ← (Stream.encode native.target).mapError reprStr
   let input : ELF.Input := { encoded := stream.output, entryBlock := native.target.program.entry, exportName := name, provenance }
   let object ← (ELF.writeChecked input).mapError reprStr
@@ -35,9 +48,9 @@ def compile (schemas : Schemas) (program : IxIR2.Program) (root : Ixon.Address)
 layout preimages and the versioned source ownership policy. -/
 def compileSnapshot (artifact : IxIR2.Wire.Artifact) {limits : IxIR2.Validate.Limits}
     (_checked : IxIR2.Wire.Checked limits artifact) (root : Ixon.Address) (baseline : Bool := false)
-    (name : String := "compilatrix_heap_cfg") (emission : HeapTarget.Emission := .shared) :
+    (name : String := "compilatrix_heap_cfg") (emission : HeapTarget.Emission := .graph) (graphLimits : Graph.Limits := {}) :
     Except String (Compiled artifact.context.schemas artifact.program root baseline (.ixir2 artifact.address)) :=
-  compile artifact.context.schemas artifact.program root baseline (.ixir2 artifact.address) name emission
+  compile artifact.context.schemas artifact.program root baseline (.ixir2 artifact.address) name emission graphLimits
 
 /-- Execution of the exact parsed ELF with finite heap and stack capacity,
 exact counters, complete reclamation, and preserved caller state. -/

@@ -30,7 +30,7 @@ Checked attachments extend it to IxIR₂ and selected x86-64 programs.
 Native support is still bounded. Runtime reversal accepts at most 64 exact
 64-bit payloads; physical IxIR₂ selection covers scalars and
 [bounded leaf allocation/reuse](docs/source-native-heap.md) across calls and joins,
-with [shared native blocks](docs/native-sharing.md) and a selectable tree baseline.
+with [shared selection and native certificates](docs/native-graph.md) and selectable tree baselines.
 Broader recursion, general shared native heaps, and self-hosting remain open. Theorems
 retain their stated source, ownership, and environment premises. Reference ISA agreement and
 system linker/loader behavior remain explicit assumptions.

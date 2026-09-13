@@ -213,6 +213,14 @@ lean_exe «native-sharing» where
   srcDir := "benchmarks"
   root := `NativeSharing
 
+lean_exe «native-graph» where
+  srcDir := "benchmarks"
+  root := `NativeGraph
+
+lean_exe «check-native-graph» where
+  srcDir := "scripts"
+  root := `CheckNativeGraph
+
 lean_exe «check-native-sharing» where
   srcDir := "scripts"
   root := `CheckNativeSharing

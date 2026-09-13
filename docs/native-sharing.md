@@ -1,10 +1,14 @@
 # Shared native blocks
 
-The physical heap object APIs use shared emission by default. Repeated native
-continuations are emitted once, with jumps from their incoming edges. The
+The shared emitter emits repeated native
+continuations once, with jumps from their incoming edges. The
 original tree emitter remains selectable. Both return the same checked output
 and use the existing source, physical execution, ownership, workspace, and ELF
 preservation theorems.
+
+The current object API default additionally uses
+[graph selection and certificates](native-graph.md). Pass `(emission := .shared)`
+to select the tree-selection path measured on this page.
 
 This addresses the code expansion measured in the
 [compiler scaling reference](performance/compiler-scaling-2026-09-12/README.md).
@@ -27,7 +31,7 @@ and allocating CFG fixtures exercise the same emitter with calls and ownership.
 
 [`PhysicalHeap.compile`, `compileSnapshot`](../Compilatrix/X86/PhysicalHeapObject.lean)
 and [`compileExport`, `compileSnapshotExport`, `compileSourceExport`](../Compilatrix/X86/PhysicalHeapExport.lean)
-accept a final `emission : HeapTarget.Emission := .shared` argument. Pass
+accept `emission : HeapTarget.Emission := .graph` and graph consumer limits. Pass
 `(emission := .tree)` to retain the prior output bytes. The low-level
 [`HeapTarget.compile`](../Compilatrix/X86/HeapTarget.lean) remains the original
 tree entry point; `HeapTarget.compileShared` checks shared emission.
@@ -64,11 +68,12 @@ BLAKE3 boundary. No new axiom, native interface, allocator, or ABI is introduced
 
 ## Limits and identity
 
-Selection still unfolds a tree, bounded by depth 128 and work 4,096. The checker
+The `.tree` and `.shared` paths unfold a tree, bounded by depth 128 and work 4,096. Their checker
 still traverses that tree. The fixed ten-join fixture remains rejected. Linear
 emitted code growth for this family does **not** establish linear selection or
 certificate-checking cost, nor admission of larger CFGs. Preserving sharing in
-the selector and certificate representation remains future work.
+the selector and certificate representation is supplied separately by the
+current `.graph` default.
 
 Both modes consume identical snapshot bytes, use identical selector limits and
 workspace bounds, and execute the same instruction templates. ELF provenance

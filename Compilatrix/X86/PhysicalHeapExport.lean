@@ -9,21 +9,21 @@ structure Exported (schemas : Schemas) (program : IxIR2.Program) (provenance : E
   same : compiled.selected.entryInterface.definition = source.target
 
 def compileExport (schemas : Schemas) (program : IxIR2.Program) (provenance : ELF.Provenance)
-    (name : String := "compilatrix_heap_cfg") (emission : HeapTarget.Emission := .shared) : Except String (Exported schemas program provenance) := do
+    (name : String := "compilatrix_heap_cfg") (emission : HeapTarget.Emission := .graph) (graphLimits : Graph.Limits := {}) : Except String (Exported schemas program provenance) := do
   let source ← PhysicalScalar.resolveExport program
-  let compiled ← compile schemas program source.address true provenance name emission
+  let compiled ← compile schemas program source.address true provenance name emission graphLimits
   if same : compiled.selected.entryInterface.definition = source.target then return { source, compiled, same }
   else throw "heap CFG export differs from the selected function"
 
 def compileSnapshotExport (artifact : IxIR2.Wire.Artifact) {limits : IxIR2.Validate.Limits}
-    (_checked : IxIR2.Wire.Checked limits artifact) (name : String := "compilatrix_heap_cfg") (emission : HeapTarget.Emission := .shared) :
+    (_checked : IxIR2.Wire.Checked limits artifact) (name : String := "compilatrix_heap_cfg") (emission : HeapTarget.Emission := .graph) (graphLimits : Graph.Limits := {}) :
     Except String (Exported artifact.context.schemas artifact.program (.ixir2 artifact.address)) :=
-  compileExport artifact.context.schemas artifact.program (.ixir2 artifact.address) name emission
+  compileExport artifact.context.schemas artifact.program (.ixir2 artifact.address) name emission graphLimits
 
 def compileSourceExport {constants root config world eraseFuel lowerFuel}
     (attached : IxIR2.Pipeline.Attached constants root config world eraseFuel lowerFuel)
-    (name : String := "compilatrix_heap_cfg") (emission : HeapTarget.Emission := .shared) :
+    (name : String := "compilatrix_heap_cfg") (emission : HeapTarget.Emission := .graph) (graphLimits : Graph.Limits := {}) :
     Except String (Exported attached.target.artifact.validationContext.schemas attached.target.artifact.program (sourceProvenance attached)) :=
-  compileExport attached.target.artifact.validationContext.schemas attached.target.artifact.program (sourceProvenance attached) name emission
+  compileExport attached.target.artifact.validationContext.schemas attached.target.artifact.program (sourceProvenance attached) name emission graphLimits
 
 end Compilatrix.X86.PhysicalHeap

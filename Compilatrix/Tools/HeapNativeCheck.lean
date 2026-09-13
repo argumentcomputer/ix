@@ -89,8 +89,9 @@ def inspectObject (bytes text provenance : ByteArray) (entry : Nat)
     note.extract 24 (24 + provenance.size) == provenance &&
     note.size == 24 + (provenance.size + 3) / 4 * 4) "heap ELF provenance disagrees"
 
-def inspect (row snapshot : Json) (bytes wire : ByteArray) (shared : Bool := false) : IO Unit := do
+def inspect (row snapshot : Json) (bytes wire : ByteArray) (shared : Bool := false) (graph : Bool := false) : IO Unit := do
   if shared then need ((← strField row "emission") == "heap-block-sharing/1") "heap shared emission policy disagrees"
+  if graph then need ((← strField row "emission") == "heap-cfg-graph/1") "heap graph emission policy disagrees"
   need ((← strField snapshot "format") == "compilatrix/source-native-heap/1" &&
     (← strField snapshot "policy") == "physical-leaf-cfg/1" && (← field snapshot "row") == row)
     "heap snapshot policy/row disagrees"
@@ -181,7 +182,14 @@ def inspect (row snapshot : Json) (bytes wire : ByteArray) (shared : Bool := fal
     else ["alloc", "call", "dropUnique"]
   need (required.all operations.contains) "heap fixture CFG features disappeared"
   let nativeBlocks ← number row "native_blocks"
-  need ((← number row "certificate_checks") == (if shared then 4 + 2 * nativeBlocks else 3) &&
+  let certificateChecks ← if graph then do
+      let nodes ← number row "graph_nodes"
+      let nonterminal ← number row "graph_nonterminal_nodes"
+      need (functions ≤ nodes && nodes ≤ 4096 * functions && nonterminal ≤ nodes - functions)
+        "heap graph certificate node bounds disagree"
+      pure (4 + 2 * (nodes + nonterminal + nativeBlocks) + 6 * functions)
+    else pure (if shared then 4 + 2 * nativeBlocks else 3)
+  need ((← number row "certificate_checks") == certificateChecks &&
     (← number row "capacity_checks") == (if ["shared-pair", "leaf-switch"].contains name then 4 else 5))
     "heap rejection inventory disagrees"
   let observations ← arrField snapshot "observations"
@@ -209,8 +217,8 @@ def inspect (row snapshot : Json) (bytes wire : ByteArray) (shared : Bool := fal
       ("arguments", toJson (if arity name == 1 then #[a] else #[a,b])), ("heap", heap)] else Json.null
     need ((← field observation "source") == sourceObservation) "heap source application/reclamation disagrees"
 
-def regressions (row snapshot : Json) (bytes wire : ByteArray) (shared : Bool := false) : IO Nat := do
-  let inspect := fun row snapshot bytes wire => HeapNativeCheck.inspect row snapshot bytes wire shared
+def regressions (row snapshot : Json) (bytes wire : ByteArray) (shared : Bool := false) (graph : Bool := false) : IO Nat := do
+  let inspect := fun row snapshot bytes wire => HeapNativeCheck.inspect row snapshot bytes wire shared graph
   let mut count := 0
   for (name, path, replacement, fragment) in [
       ("policy", ["policy"], toJson "unknown/1", "policy/row"),

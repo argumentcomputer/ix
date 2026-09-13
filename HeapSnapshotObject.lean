@@ -18,9 +18,11 @@ def main (args : List String) : IO UInt32 := cli "heap snapshot object failed" d
   let (args, emission) := match args with
     | [path, root, entry, mode, output, "shared"] =>
         ([path, root, entry, mode, output], HeapTarget.Emission.shared)
+    | [path, root, entry, mode, output, "graph"] =>
+        ([path, root, entry, mode, output], HeapTarget.Emission.graph)
     | _ => (args, HeapTarget.Emission.tree)
   let [path, root, entry, mode, output] := args
-    | throw (IO.userError "usage: heap-snapshot-object SNAPSHOT ROOT ENTRY source|physical|export OUTPUT [shared] [--name SYMBOL]")
+    | throw (IO.userError "usage: heap-snapshot-object SNAPSHOT ROOT ENTRY source|physical|export OUTPUT [shared|graph] [--name SYMBOL]")
   let bytes ← IxIR2.Wire.readBounded path ({} : IxIR.Bounded.Limits).maxBytes
   let root ← checked (rootOfHex root)
   let entry ← checked (rootOfHex entry)

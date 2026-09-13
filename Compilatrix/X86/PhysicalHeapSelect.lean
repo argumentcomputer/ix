@@ -138,7 +138,7 @@ private def dependencies (definition : IxIR2.Function) : List Ixon.Address :=
     block.instructions.toList.filterMap (fun | .call address _ => some address | _ => none) ++
       match block.terminator with | .tailCall address _ => [address] | _ => []
 
-private def discover (program : IxIR2.Program) : Nat → PhysicalScalar.Entries → Ixon.Address → Except String PhysicalScalar.Entries
+def discover (program : IxIR2.Program) : Nat → PhysicalScalar.Entries → Ixon.Address → Except String PhysicalScalar.Entries
   | 0, _, _ => throw "heap CFG call graph is recursive or exceeds 32 functions"
   | fuel + 1, entries, address => do
     if entries.any (·.1 == address) then return entries
@@ -156,7 +156,7 @@ private def instructionConstructors : IxIR2.Instr → List IxIR2.CtorId
     .freeUnique _ cid | .fetch _ cid _ => [cid]
   | _ => []
 
-private def collectConstructors (entries : PhysicalScalar.Entries) : Except String (Array IxIR2.CtorId) := do
+def collectConstructors (entries : PhysicalScalar.Entries) : Except String (Array IxIR2.CtorId) := do
   let mut constructors := #[]
   for (_, definition) in entries do
     for block in definition.blocks do
@@ -211,7 +211,7 @@ structure Row (schemas : Schemas) (constructors : Array IxIR2.CtorId) (entries :
   found : entries[index]? = some interface
   source : FunctionCode schemas constructors entries index interface
 
-private def finishRow (schemas : Schemas) (constructors : Array IxIR2.CtorId) (entries : Interfaces)
+def finishRow (schemas : Schemas) (constructors : Array IxIR2.CtorId) (entries : Interfaces)
     (pending : PendingRow schemas constructors) : Except String (Row schemas constructors entries) := do
   if found : entries[pending.prior.size]? = some pending.interface then
     if accepted : pending.prior.toList.zipIdx.all (fun (entry, index) => entries[index]? == some entry) = true then
@@ -223,6 +223,17 @@ private def finishRow (schemas : Schemas) (constructors : Array IxIR2.CtorId) (e
       return { index := pending.prior.size, interface := pending.interface, found, source := pending.source.weaken same }
     else throw "heap CFG earlier interfaces changed during selection"
   else throw "heap CFG interface order changed during selection"
+
+theorem finishRow_tree {schemas constructors entries pending row}
+    (accepted : finishRow schemas constructors entries pending = .ok row) :
+    row.source.tree = pending.source.tree := by
+  unfold finishRow at accepted
+  split at accepted
+  · split at accepted
+    · cases Except.ok.inj accepted
+      rfl
+    · contradiction
+  · contradiction
 
 structure Selected (schemas : Schemas) (program : IxIR2.Program) (root : Ixon.Address) where
   constructors : Array IxIR2.CtorId

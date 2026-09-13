@@ -133,6 +133,7 @@
             ./fixtures/source-modular
             ./fixtures/compiler-scaling
             ./fixtures/native-sharing
+            ./fixtures/native-graph
             ./fixtures/source-recursion
             ./fixtures/source-call-reuse
             ./fixtures/source-space
@@ -197,6 +198,7 @@
             ./fixtures/source-modular
             ./fixtures/compiler-scaling
             ./fixtures/native-sharing
+            ./fixtures/native-graph
             ./fixtures/source-recursion
             ./fixtures/source-call-reuse
             ./fixtures/source-space
@@ -643,6 +645,14 @@
               --readelf ${pkgs.binutils}/bin/readelf --objdump ${pkgs.binutils}/bin/objdump \
               ${pkgs.lib.optionalString (system == "x86_64-linux")
                 "--cc ${pkgs.stdenv.cc}/bin/cc --harness ${auditSrc}/fixtures/source-native-heap/native_harness.c"}
+            ./.lake/build/bin/check-source-native-heap \
+              --fixture ./.lake/build/bin/source-native-heap \
+              --consumer ./.lake/build/bin/heap-snapshot-object \
+              --expected ${auditSrc}/fixtures/source-native-heap/expected-graph.json \
+              --emission graph \
+              --readelf ${pkgs.binutils}/bin/readelf --objdump ${pkgs.binutils}/bin/objdump \
+              ${pkgs.lib.optionalString (system == "x86_64-linux")
+                "--cc ${pkgs.stdenv.cc}/bin/cc --harness ${auditSrc}/fixtures/source-native-heap/native_harness.c"}
           '';
         };
 
@@ -740,6 +750,24 @@
           '';
         };
 
+        nativeGraphCheck = lake2nix.mkPackage {
+          inherit lakeDeps;
+          lakeArtifacts = compilatrixLib;
+          src = leanSrc;
+          buildInputs = leanBuildInputs ++ [pkgs.gcc pkgs.binutils];
+          name = "native-graph";
+          installArtifacts = false;
+          postBuild = ''
+            lake build heap-snapshot-object check-native-graph
+            ./.lake/build/bin/check-native-graph \
+              --fixture ./.lake/build/bin/native-graph \
+              --consumer ./.lake/build/bin/heap-snapshot-object \
+              --expected ${auditSrc}/fixtures/native-graph/expected.json \
+              --cc ${pkgs.gcc}/bin/gcc --harness ${auditSrc}/benchmarks/native/scaling_harness.c \
+              --readelf ${pkgs.binutils}/bin/readelf --objdump ${pkgs.binutils}/bin/objdump
+          '';
+        };
+
         # Checked borrowed calls from Ixon, whole caller/callee reconstruction,
         # independent heap execution, RC improvement, and baseline fallbacks.
         sourceBorrowCheck = lake2nix.mkPackage {
@@ -828,6 +856,7 @@
           benchmark-correctness-smoke = benchmarkCheck;
           compiler-scaling-correctness-smoke = compilerScalingCheck;
           native-sharing = nativeSharingCheck;
+          native-graph = nativeGraphCheck;
         };
 
         devShells.default = pkgs.mkShell {

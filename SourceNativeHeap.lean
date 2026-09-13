@@ -2,6 +2,7 @@ import Compilatrix.X86.PhysicalHeapSources
 import Compilatrix.X86.PhysicalHeapRejections
 import Compilatrix.X86.PhysicalHeapSourceObject
 import Compilatrix.X86.HeapReject
+import Compilatrix.X86.HeapGraphTests
 import Compilatrix.Coverage.Snapshot
 import Compilatrix.IxIR2.WireJson
 import Compilatrix.Tools.Check
@@ -138,6 +139,12 @@ def certificateRejections {schemas program root baseline provenance}
   let stream := compiled.stream.output
   need (!(Stream.check target { stream with text := stream.text.set! 0 0 })) "heap stream certificate accepted corrupted code"
   if emission == .tree then return 3
+  if emission == .graph then
+    let selection ← checked (PhysicalHeap.Graph.select schemas program root)
+    let candidate ← checked (HeapGraph.emitCandidate selection baseline)
+    need (candidate.program == compiled.native.target.program) "heap graph certificate describes a different native program"
+    let (sourceChecks, nativeChecks) ← HeapGraphTests.mutations selection candidate baseline
+    return 3 + sourceChecks + nativeChecks
   let candidate : HeapTarget.Candidate := {
     blocks := target.blocks, plans := compiled.native.plans, entry := compiled.native.entry }
   let _ ← checked (HeapTarget.checkCandidate compiled.selected baseline candidate)
@@ -163,6 +170,17 @@ def admission : IO (Array String) := do
     let artifact := PhysicalHeap.Examples.artifact name
     let legacy := { artifact with policy := { artifact.policy with credits := .callLocalV0 } }
     rejectExcept s!"{name}/call-local-policy" (legacy.check IxIR2.Validate.defaultLimits)
+  return rejected
+
+def graphAdmission : IO (Array String) := do
+  let mut rejected := #[]
+  for (name, artifact) in PhysicalHeap.Examples.rejections do
+    if name == "cfg-expansion" then
+      let _ ← checked (PhysicalHeap.Graph.select artifact.context.schemas artifact.program PhysicalHeap.Examples.root)
+      pure ()
+    else
+      rejectExcept name (PhysicalHeap.Graph.select artifact.context.schemas artifact.program PhysicalHeap.Examples.root)
+      rejected := rejected.push name
   return rejected
 
 def sourceObservation (source : Coverage.Source) (attached : source.Attached)
@@ -233,7 +251,13 @@ def emit {schemas program root baseline provenance}
     ("native_blocks", toJson compiled.native.target.program.blocks.size), ("text_bytes", toJson text.size),
     ("text_hash", toJson (Coverage.hex (Blake3.Rust.hash text).val)), ("object_bytes", toJson compiled.object.bytes.size),
     ("snapshot_bytes", toJson encoded.bytes.size), ("capacity_checks", toJson capacityChecks), ("certificate_checks", toJson certificateChecks)]
-  let row := Json.mkObj (rowFields ++ if emission == .shared then [("emission", toJson emission.policy)] else [])
+  let graphFields ← if emission == .graph then do
+      let selection ← checked (PhysicalHeap.Graph.select schemas program root)
+      let cells := selection.graphs.flatMap (·.graph.body.cells)
+      pure [("graph_nodes", toJson cells.size),
+        ("graph_nonterminal_nodes", toJson ((cells.filter (fun cell => !cell.node.shape.children.isEmpty)).size))]
+    else pure []
+  let row := Json.mkObj (rowFields ++ graphFields ++ if emission != .tree then [("emission", toJson emission.policy)] else [])
   let snapshot := Json.mkObj [("format", toJson "compilatrix/source-native-heap/1"), ("policy", toJson PhysicalHeap.policy),
     ("row", row), ("artifact", IxIR2.Wire.artifactJson artifact), ("text", toJson (Coverage.hex text)),
     ("entry_offset", toJson offset), ("provenance", toJson (Coverage.hex compiled.input.provenance.bytes)),
@@ -249,10 +273,15 @@ def main (args : List String) : IO UInt32 := cli "source native heap failed" do
   let (directory, emission) ← match args with
     | [directory] => pure (directory, HeapTarget.Emission.tree)
     | [directory, "shared"] => pure (directory, HeapTarget.Emission.shared)
-    | _ => throw (IO.userError "usage: source-native-heap NEW-OUTPUT-DIRECTORY [shared]")
+    | [directory, "graph"] => pure (directory, HeapTarget.Emission.graph)
+    | _ => throw (IO.userError "usage: source-native-heap NEW-OUTPUT-DIRECTORY [shared|graph]")
   let directory : System.FilePath := directory
   need (!(← directory.pathExists)) "heap producer requires a fresh output directory"
   let rejected ← HeapGate.admission
+  let graphFields ← if emission == .graph then do
+      let rejected ← HeapGate.graphAdmission
+      pure [("graph_admission_rejections", toJson rejected), ("graph_expansion_accepted", toJson true)]
+    else pure []
   IO.FS.createDirAll directory
   let mut rows := #[]
   for name in PhysicalHeap.Examples.sourceNames do
@@ -272,9 +301,9 @@ def main (args : List String) : IO UInt32 := cli "source native heap failed" do
     let certificate ← checked (artifact.check IxIR2.Validate.defaultLimits)
     let compiled ← checked (PhysicalHeap.compileSnapshot artifact certificate PhysicalHeap.Examples.root (emission := emission))
     rows := rows.push (← HeapGate.emit directory name "physical" Json.null artifact compiled (fun _ _ _ => pure Json.null) emission)
-  let report := Json.mkObj [("format", toJson "compilatrix/source-native-heap-report/1"), ("policy", toJson PhysicalHeap.policy),
+  let report := Json.mkObj ([("format", toJson "compilatrix/source-native-heap-report/1"), ("policy", toJson PhysicalHeap.policy),
     ("source_evaluations", toJson (PhysicalHeap.Examples.sourceNames.length * HeapGate.inputs.length)),
     ("object_executions", toJson (rows.size * HeapGate.inputs.length)), ("snapshot_roundtrips", toJson rows.size),
-    ("admission_rejections", toJson rejected), ("legacy_policy_rejections", toJson (2 : Nat)), ("cases", toJson rows)]
+    ("admission_rejections", toJson rejected), ("legacy_policy_rejections", toJson (2 : Nat)), ("cases", toJson rows)] ++ graphFields)
   IO.FS.writeFile (directory / "report.json") (report.pretty 100 ++ "\n")
   IO.println s!"source native heap ok: {rows.size} source/CFG objects, {rows.size * HeapGate.inputs.length} ELF executions, snapshots and rejections"

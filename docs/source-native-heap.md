@@ -42,16 +42,19 @@ arithmetic overflow remains the separate
 The selector bounds value positions to 16, credit positions to four, and
 simultaneous transfers to 12 staged copies. Each activation has 32 spill
 slots. Source functions have at most 128 blocks and 128 instructions per
-block; expansion has depth 128 and a shared 4,096-point work budget. There
+block. Graph selection has depth 128, at most 4,096 typed contexts and 8,192
+edges per profile. There
 are at most 32 constructor identities and 32 admitted function profiles,
 including separate scalar/node/erased profiles for the same declaration.
 Each profile has at most two parameters. Calls and CFG expansion are acyclic;
 non-topological block numbering and joins are allowed. The root's conservative
 bound is at most 64 fresh allocations and 1,048,576 physical control steps.
-The object APIs use [shared native emission](native-sharing.md) by default;
-`(emission := .tree)` retains the original artifacts. Selection and plan
-checking still traverse the bounded tree. Shared emission leaves these
-admission limits unchanged.
+The object APIs use [graph selection and certificates](native-graph.md) by
+default. `(emission := .shared)` retains tree selection with shared native
+blocks; `(emission := .tree)` retains the original fully expanded artifacts.
+Both legacy paths retain the 4,096-visit expansion budget. Graph selection
+checks each typed context once and uses cached resource summaries. The fixed
+join family now reaches 42 joins; 43 exceeds the unchanged source block bound.
 
 Selection proves successful-run preservation, not termination of arbitrary
 source programs. A single-constructor switch and a known-present credit

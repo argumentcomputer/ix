@@ -7709,3 +7709,9 @@ program/context recovery. Raw codec laws need no hash-native axiom. -/
 
 /-- info: 'Compilatrix.X86.HeapTarget.checkCandidate_program' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.X86.HeapTarget.checkCandidate_program
+
+/-- info: 'Compilatrix.X86.PhysicalHeap.Graph.checkFunction' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.PhysicalHeap.Graph.checkFunction
+
+/-- info: 'Compilatrix.X86.HeapGraph.checkCandidate_program' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.HeapGraph.checkCandidate_program
