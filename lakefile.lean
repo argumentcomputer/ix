@@ -342,6 +342,9 @@ lean_exe «aiur-circuit-expression-tests» where
 lean_exe «aiur-emission-check-tests» where
   root := `Tests.Aiur.EmissionChecks
 
+lean_exe «aiur-key-codec-tests» where
+  root := `Tests.Aiur.KeyCodec
+
 section IxCompileVerify
 
 /- Formal verification of the Lean-to-Ixon compiler against the same
@@ -717,7 +720,7 @@ script "check-aiur" := do
     "aiur-block-row-tests", "aiur-circuit-row-tests", "aiur-memory-row-tests", "aiur-trace-height-tests",
     "aiur-expression-graph-tests", "aiur-constant-degree-tests", "aiur-frontend-expression-tests",
     "aiur-graph-compilation-tests", "aiur-operation-expression-tests", "aiur-block-expression-tests",
-    "aiur-circuit-expression-tests", "aiur-emission-check-tests"]
+    "aiur-circuit-expression-tests", "aiur-emission-check-tests", "aiur-key-codec-tests"]
   let report ← IO.Process.output {
     cmd := "lake", args := #["env", "lean", "-DwarningAsError=true", "Ix/Aiur/Proofs/Audit.lean"] }
   unless report.exitCode == 0 do throw (IO.userError s!"{report.stdout}{report.stderr}")
@@ -773,6 +776,7 @@ script "check-aiur" := do
     let blockExpressionSnapshot := directory / "native-block-expressions.bin"
     let circuitExpressionSnapshot := directory / "native-circuit-expressions.bin"
     let emissionCheckSnapshot := directory / "native-emission-checks.bin"
+    let keyCodecSnapshot := directory / "native-key-codec.bin"
     let exporter ← IO.Process.spawn {
       cmd := "cargo"
       args := #["test", "--locked", "--release", "-p", "aiur",
@@ -794,7 +798,8 @@ script "check-aiur" := do
         ("IX_OPERATION_EXPRESSION_SNAPSHOT", some operationExpressionSnapshot.toString),
         ("IX_BLOCK_EXPRESSION_SNAPSHOT", some blockExpressionSnapshot.toString),
         ("IX_CIRCUIT_EXPRESSION_SNAPSHOT", some circuitExpressionSnapshot.toString),
-        ("IX_EMISSION_CHECK_SNAPSHOT", some emissionCheckSnapshot.toString)]
+        ("IX_EMISSION_CHECK_SNAPSHOT", some emissionCheckSnapshot.toString),
+        ("IX_KEY_CODEC_SNAPSHOT", some keyCodecSnapshot.toString)]
       stdout := .inherit
       stderr := .inherit }
     unless (← exporter.wait) == 0 do
@@ -810,6 +815,7 @@ script "check-aiur" := do
     run ".lake/build/bin/aiur-block-expression-tests" #[blockExpressionSnapshot.toString]
     run ".lake/build/bin/aiur-circuit-expression-tests" #[circuitExpressionSnapshot.toString]
     run ".lake/build/bin/aiur-emission-check-tests" #[emissionCheckSnapshot.toString]
+    run ".lake/build/bin/aiur-key-codec-tests" #[keyCodecSnapshot.toString]
     run ".lake/build/bin/aiur-block-row-tests" #[blockSnapshot.toString]
     run ".lake/build/bin/aiur-circuit-row-tests" #[circuitSnapshot.toString]
     run ".lake/build/bin/aiur-memory-row-tests" #[memorySnapshot.toString]

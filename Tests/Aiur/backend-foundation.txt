@@ -6167,6 +6167,283 @@ ROOT Aiur.BoundVerifier.Backend.circuit_graph_reflects
                   List.mapM (Aiur.NativeAIR.readLookup buffer) compiled.base.graph.lookups =
                     some (List.ofFn fun slot => result.lookup ↑slot)
 AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.KeyCodec.Reads.pure
+∀ {α : Type} (value : α), Aiur.NativeAIR.KeyCodec.Reads (pure value) [] value
+AXIOMS []
+ROOT Aiur.NativeAIR.KeyCodec.Reads.bind
+∀ {α β : Type} {read : Aiur.NativeAIR.KeyCodec.Reader α} {next : α → Aiur.NativeAIR.KeyCodec.Reader β}
+  {left right : List UInt8} {middle : α} {value : β},
+  Aiur.NativeAIR.KeyCodec.Reads read left middle →
+    Aiur.NativeAIR.KeyCodec.Reads (next middle) right value →
+      Aiur.NativeAIR.KeyCodec.Reads (read >>= next) (left ++ right) value
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.KeyCodec.Reads.map
+∀ {α β : Type} {read : Aiur.NativeAIR.KeyCodec.Reader α} {bytes : List UInt8} {value : α},
+  Aiur.NativeAIR.KeyCodec.Reads read bytes value →
+    ∀ (f : α → β), Aiur.NativeAIR.KeyCodec.Reads (f <$> read) bytes (f value)
+AXIOMS []
+ROOT Aiur.NativeAIR.KeyCodec.Reads.result
+∀ {α β : Type} {read : Aiur.NativeAIR.KeyCodec.Reader α} {bytes : List UInt8} {value : α},
+  Aiur.NativeAIR.KeyCodec.Reads read bytes value →
+    ∀ (f : α → β),
+      Aiur.NativeAIR.KeyCodec.Reads
+        (do
+          let value ← read
+          pure (f value))
+        bytes (f value)
+AXIOMS []
+ROOT Aiur.NativeAIR.KeyCodec.readByte_reads
+∀ (byte : UInt8), Aiur.NativeAIR.KeyCodec.Reads Aiur.NativeAIR.KeyCodec.readByte [byte] byte
+AXIOMS []
+ROOT Aiur.NativeAIR.KeyCodec.Reads.byte
+∀ {α : Type} {next : UInt8 → Aiur.NativeAIR.KeyCodec.Reader α} {byte : UInt8} {bytes : List UInt8} {value : α},
+  Aiur.NativeAIR.KeyCodec.Reads (next byte) bytes value →
+    Aiur.NativeAIR.KeyCodec.Reads (Aiur.NativeAIR.KeyCodec.readByte >>= next) (byte :: bytes) value
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.KeyCodec.encodeNat_length
+∀ (count value : Nat), (Aiur.NativeAIR.KeyCodec.encodeNat count value).length = count
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.KeyCodec.readNat_reads
+∀ (count value : Nat),
+  value < 256 ^ count →
+    Aiur.NativeAIR.KeyCodec.Reads (Aiur.NativeAIR.KeyCodec.readNat count)
+      (Aiur.NativeAIR.KeyCodec.encodeNat count value) value
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.KeyCodec.readMany_reads
+∀ {α : Type} {read : Aiur.NativeAIR.KeyCodec.Reader α} (encode : α → List UInt8) (values : List α),
+  (∀ (value : α), value ∈ values → Aiur.NativeAIR.KeyCodec.Reads read (encode value) value) →
+    Aiur.NativeAIR.KeyCodec.Reads (Aiur.NativeAIR.KeyCodec.readMany read values.length) (List.flatMap encode values)
+      values
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.KeyCodec.readVector_reads
+∀ {α : Type} {read : Aiur.NativeAIR.KeyCodec.Reader α} (encode : α → List UInt8) (values : List α),
+  values.length < 65536 →
+    (∀ (value : α), value ∈ values → Aiur.NativeAIR.KeyCodec.Reads read (encode value) value) →
+      Aiur.NativeAIR.KeyCodec.Reads (Aiur.NativeAIR.KeyCodec.readVector read)
+        (Aiur.NativeAIR.KeyCodec.encodeVector encode values) values
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.KeyCodec.readNode_reads
+∀ (node : Aiur.NativeAIR.Node),
+  Aiur.NativeAIR.KeyCodec.NodeWireFits node →
+    Aiur.NativeAIR.KeyCodec.Reads Aiur.NativeAIR.KeyCodec.readNode (Aiur.NativeAIR.KeyCodec.encodeNode node) node
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.KeyCodec.readLookup_reads
+∀ (lookup : Aiur.NativeAIR.Lookup),
+  Aiur.NativeAIR.KeyCodec.LookupWireFits lookup →
+    Aiur.NativeAIR.KeyCodec.Reads Aiur.NativeAIR.KeyCodec.readLookup (Aiur.NativeAIR.KeyCodec.encodeLookup lookup)
+      lookup
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.KeyCodec.readCircuitData_reads
+∀ (circuit : Aiur.NativeAIR.KeyCodec.Circuit),
+  Aiur.NativeAIR.KeyCodec.CircuitWireFits circuit →
+    Aiur.NativeAIR.KeyCodec.Reads Aiur.NativeAIR.KeyCodec.readCircuitData
+      (Aiur.NativeAIR.KeyCodec.encodeCircuit circuit) circuit
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.KeyCodec.readCircuit_reads
+∀ (circuit : Aiur.NativeAIR.KeyCodec.Circuit),
+  Aiur.NativeAIR.KeyCodec.CircuitWireFits circuit →
+    circuit.valid = true →
+      Aiur.NativeAIR.KeyCodec.Reads Aiur.NativeAIR.KeyCodec.readCircuit (Aiur.NativeAIR.KeyCodec.encodeCircuit circuit)
+        circuit
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.KeyCodec.readParameters_reads
+∀ (parameters : Aiur.NativeAIR.KeyCodec.Parameters),
+  Aiur.NativeAIR.KeyCodec.ParametersWireFits parameters →
+    Aiur.NativeAIR.KeyCodec.Reads Aiur.NativeAIR.KeyCodec.readParameters
+      (Aiur.NativeAIR.KeyCodec.encodeParameters parameters) parameters
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.KeyCodec.readCommitment_reads
+∀ (commitment : Option Aiur.NativeAIR.KeyCodec.MerkleCap),
+  Aiur.NativeAIR.KeyCodec.CommitmentWireFits commitment →
+    Aiur.NativeAIR.KeyCodec.Reads Aiur.NativeAIR.KeyCodec.readCommitment
+      (Aiur.NativeAIR.KeyCodec.encodeCommitment commitment) commitment
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.KeyCodec.readIndex_reads
+∀ (index : Option Nat),
+  Aiur.NativeAIR.KeyCodec.IndexWireFits index →
+    Aiur.NativeAIR.KeyCodec.Reads Aiur.NativeAIR.KeyCodec.readIndex (Aiur.NativeAIR.KeyCodec.encodeIndex index) index
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.KeyCodec.readKey_reads
+∀ (key : Aiur.NativeAIR.KeyCodec.Key),
+  Aiur.NativeAIR.KeyCodec.KeyWireFits key →
+    (∀ (circuit : Aiur.NativeAIR.KeyCodec.Circuit), circuit ∈ key.circuits → circuit.valid = true) →
+      Aiur.NativeAIR.KeyCodec.Reads Aiur.NativeAIR.KeyCodec.readKey (Aiur.NativeAIR.KeyCodec.encodeKey key) key
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.KeyCodec.decode_encode
+∀ (key : Aiur.NativeAIR.KeyCodec.Key),
+  Aiur.NativeAIR.KeyCodec.KeyWireFits key →
+    (∀ (circuit : Aiur.NativeAIR.KeyCodec.Circuit), circuit ∈ key.circuits → circuit.valid = true) →
+      Aiur.NativeAIR.KeyCodec.decode (Aiur.NativeAIR.KeyCodec.encode key) = some key
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.KeyCodec.decodeCanonical_success
+∀ {bytes : ByteArray} {key : Aiur.NativeAIR.KeyCodec.Key},
+  Aiur.NativeAIR.KeyCodec.decodeCanonical bytes = some key →
+    Aiur.NativeAIR.KeyCodec.decode bytes = some key ∧ Aiur.NativeAIR.KeyCodec.encode key = bytes
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.KeyCodec.decodeCanonical_encode
+∀ (key : Aiur.NativeAIR.KeyCodec.Key),
+  Aiur.NativeAIR.KeyCodec.KeyWireFits key →
+    (∀ (circuit : Aiur.NativeAIR.KeyCodec.Circuit), circuit ∈ key.circuits → circuit.valid = true) →
+      Aiur.NativeAIR.KeyCodec.decodeCanonical (Aiur.NativeAIR.KeyCodec.encode key) = some key
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.KeyCodec.canonical_bytes_unique
+∀ {first second : ByteArray} {key : Aiur.NativeAIR.KeyCodec.Key},
+  Aiur.NativeAIR.KeyCodec.decodeCanonical first = some key →
+    Aiur.NativeAIR.KeyCodec.decodeCanonical second = some key → first = second
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.KeyCodec.encode_injective
+∀ {first second : Aiur.NativeAIR.KeyCodec.Key},
+  Aiur.NativeAIR.KeyCodec.KeyWireFits first →
+    Aiur.NativeAIR.KeyCodec.KeyWireFits second →
+      (∀ (circuit : Aiur.NativeAIR.KeyCodec.Circuit), circuit ∈ first.circuits → circuit.valid = true) →
+        (∀ (circuit : Aiur.NativeAIR.KeyCodec.Circuit), circuit ∈ second.circuits → circuit.valid = true) →
+          Aiur.NativeAIR.KeyCodec.encode first = Aiur.NativeAIR.KeyCodec.encode second → first = second
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.KeyCodec.Returns.pure
+∀ {α : Type} {value : α} {property : α → Prop}, property value → Aiur.NativeAIR.KeyCodec.Returns (pure value) property
+AXIOMS []
+ROOT Aiur.NativeAIR.KeyCodec.Returns.failure
+∀ {α : Type} (property : α → Prop), Aiur.NativeAIR.KeyCodec.Returns failure property
+AXIOMS []
+ROOT Aiur.NativeAIR.KeyCodec.Returns.bind
+∀ {α β : Type} {read : Aiur.NativeAIR.KeyCodec.Reader α} {next : α → Aiur.NativeAIR.KeyCodec.Reader β} {left : α → Prop}
+  {right : β → Prop},
+  Aiur.NativeAIR.KeyCodec.Returns read left →
+    (∀ (value : α), left value → Aiur.NativeAIR.KeyCodec.Returns (next value) right) →
+      Aiur.NativeAIR.KeyCodec.Returns (read >>= next) right
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.KeyCodec.Returns.bind_any
+∀ {α β : Type} {read : Aiur.NativeAIR.KeyCodec.Reader α} {next : α → Aiur.NativeAIR.KeyCodec.Reader β}
+  {property : β → Prop},
+  (∀ (value : α), Aiur.NativeAIR.KeyCodec.Returns (next value) property) →
+    Aiur.NativeAIR.KeyCodec.Returns (read >>= next) property
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.KeyCodec.Returns.weaken
+∀ {α : Type} {read : Aiur.NativeAIR.KeyCodec.Reader α} {left right : α → Prop},
+  Aiur.NativeAIR.KeyCodec.Returns read left →
+    (∀ (value : α), left value → right value) → Aiur.NativeAIR.KeyCodec.Returns read right
+AXIOMS []
+ROOT Aiur.NativeAIR.KeyCodec.Returns.result
+∀ {α β : Type} {read : Aiur.NativeAIR.KeyCodec.Reader α} {left : α → Prop} {right : β → Prop},
+  Aiur.NativeAIR.KeyCodec.Returns read left →
+    ∀ (f : α → β),
+      (∀ (value : α), left value → right (f value)) →
+        Aiur.NativeAIR.KeyCodec.Returns
+          (do
+            let value ← read
+            pure (f value))
+          right
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.KeyCodec.readMany_returns
+∀ {α : Type} {read : Aiur.NativeAIR.KeyCodec.Reader α} {property : α → Prop},
+  Aiur.NativeAIR.KeyCodec.Returns read property →
+    ∀ (count : Nat),
+      Aiur.NativeAIR.KeyCodec.Returns (Aiur.NativeAIR.KeyCodec.readMany read count) fun values =>
+        values.length = count ∧ ∀ (value : α), value ∈ values → property value
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.KeyCodec.readVector_returns
+∀ {α : Type} {read : Aiur.NativeAIR.KeyCodec.Reader α} {property : α → Prop},
+  Aiur.NativeAIR.KeyCodec.Returns read property →
+    Aiur.NativeAIR.KeyCodec.Returns (Aiur.NativeAIR.KeyCodec.readVector read) fun values =>
+      ∀ (value : α), value ∈ values → property value
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.KeyCodec.readCircuit_returns
+Aiur.NativeAIR.KeyCodec.Returns Aiur.NativeAIR.KeyCodec.readCircuit fun circuit => circuit.valid = true
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.KeyCodec.readCommitment_returns
+Aiur.NativeAIR.KeyCodec.Returns Aiur.NativeAIR.KeyCodec.readCommitment Aiur.NativeAIR.KeyCodec.CommitmentValid
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.KeyCodec.readKey_returns
+Aiur.NativeAIR.KeyCodec.Returns Aiur.NativeAIR.KeyCodec.readKey fun key =>
+  (∀ (circuit : Aiur.NativeAIR.KeyCodec.Circuit), circuit ∈ key.circuits → circuit.valid = true) ∧
+    key.preprocessedIndices.length = key.circuits.length
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.KeyCodec.decode_success
+∀ {bytes : ByteArray} {key : Aiur.NativeAIR.KeyCodec.Key},
+  Aiur.NativeAIR.KeyCodec.decode bytes = some key → Aiur.NativeAIR.KeyCodec.readKey bytes.data.toList = some (key, [])
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.KeyCodec.decode_valid
+∀ {bytes : ByteArray} {key : Aiur.NativeAIR.KeyCodec.Key},
+  Aiur.NativeAIR.KeyCodec.decode bytes = some key →
+    (∀ (circuit : Aiur.NativeAIR.KeyCodec.Circuit), circuit ∈ key.circuits → circuit.valid = true) ∧
+      key.preprocessedIndices.length = key.circuits.length
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.KeyCodec.readKey_commitment
+Aiur.NativeAIR.KeyCodec.Returns Aiur.NativeAIR.KeyCodec.readKey fun key =>
+  Aiur.NativeAIR.KeyCodec.CommitmentValid key.preprocessedCommitment
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.KeyCodec.decode_commitment
+∀ {bytes : ByteArray} {key : Aiur.NativeAIR.KeyCodec.Key},
+  Aiur.NativeAIR.KeyCodec.decode bytes = some key → Aiur.NativeAIR.KeyCodec.CommitmentValid key.preprocessedCommitment
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.KeyCodec.Circuit.valid_graph
+∀ {circuit : Aiur.NativeAIR.KeyCodec.Circuit},
+  circuit.valid = true →
+    1 ≤ circuit.lookupGroupSize ∧
+      circuit.lookupGroupSize ≤ 8 ∧
+        Aiur.NativeAIR.Graph.Valid circuit.widths circuit.graph ∧
+          circuit.computedDegree = some circuit.maxConstraintDegree
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.KeyCodec.decoded_graph_sweeps
+∀ {W : Type u_1} {bytes : ByteArray} {key : Aiur.NativeAIR.KeyCodec.Key},
+  Aiur.NativeAIR.KeyCodec.decode bytes = some key →
+    ∀ {circuit : Aiur.NativeAIR.KeyCodec.Circuit},
+      circuit ∈ key.circuits →
+        ∀ (ops : Aiur.NativeAIR.EvalOps W) (values : Aiur.NativeAIR.Values W),
+          values.Fits circuit.widths →
+            ∃ buffer, circuit.graph.sweep ops values = some buffer ∧ buffer.size = circuit.graph.nodes.length
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.KeyCodec.decode_encoded_suffix
+∀ (key : Aiur.NativeAIR.KeyCodec.Key),
+  Aiur.NativeAIR.KeyCodec.KeyWireFits key →
+    (∀ (circuit : Aiur.NativeAIR.KeyCodec.Circuit), circuit ∈ key.circuits → circuit.valid = true) →
+      ∀ (rest : List UInt8),
+        Aiur.NativeAIR.KeyCodec.decode (Aiur.NativeAIR.KeyCodec.encodeKey key ++ rest).toByteArray =
+          if rest = [] then some key else none
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.BoundVerifier.Backend.key_decodes
+∀ {selection : Aiur.BoundVerifier.Selection} (backend : Aiur.BoundVerifier.Backend selection),
+  Aiur.NativeAIR.KeyCodec.decode selection.key = some backend.keyData
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.BoundVerifier.Backend.native_key_decodes
+∀ {selection : Aiur.BoundVerifier.Selection} (backend : Aiur.BoundVerifier.Backend selection),
+  Aiur.NativeAIR.KeyCodec.decodeCanonical backend.system.vkBytes = some backend.keyData
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.BoundVerifier.Backend.native_key_encoding
+∀ {selection : Aiur.BoundVerifier.Selection} (backend : Aiur.BoundVerifier.Backend selection),
+  Aiur.NativeAIR.KeyCodec.encode backend.keyData = backend.system.vkBytes
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.BoundVerifier.Backend.key_commitment
+∀ {selection : Aiur.BoundVerifier.Selection} (backend : Aiur.BoundVerifier.Backend selection),
+  Aiur.NativeAIR.KeyCodec.CommitmentValid backend.keyData.preprocessedCommitment
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.BoundVerifier.Backend.key_graph_valid
+∀ {selection : Aiur.BoundVerifier.Selection} (backend : Aiur.BoundVerifier.Backend selection)
+  {circuit : Aiur.NativeAIR.KeyCodec.Circuit},
+  circuit ∈ backend.keyData.circuits → Aiur.NativeAIR.Graph.Valid circuit.widths circuit.graph
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.BoundVerifier.Backend.key_graph_reflects
+∀ {W : Type u_1} {selection : Aiur.BoundVerifier.Selection} (backend : Aiur.BoundVerifier.Backend selection)
+  {circuit : Aiur.NativeAIR.KeyCodec.Circuit},
+  circuit ∈ backend.keyData.circuits →
+    ∀ (ops : Aiur.NativeAIR.EvalOps W) (values : Aiur.NativeAIR.Values W),
+      values.Fits circuit.widths →
+        ∃ trees full lookupValues,
+          circuit.graph.unfold = some trees ∧
+            circuit.graph.sweep ops values = some full ∧
+              circuit.graph.sweepLookupPrefix ops values = some lookupValues ∧
+                trees.size = circuit.graph.nodes.length ∧
+                  full.size = circuit.graph.nodes.length ∧
+                    lookupValues.size = circuit.graph.lookupPrefix ∧
+                      Aiur.NativeAIR.Reflects ops values trees full ∧
+                        Aiur.NativeAIR.readNodes full circuit.graph.zeros =
+                            Aiur.NativeAIR.evalRoots ops values trees circuit.graph.zeros ∧
+                          ∀ (lookup : Aiur.NativeAIR.Lookup),
+                            lookup ∈ circuit.graph.lookups →
+                              Aiur.NativeAIR.readLookup lookupValues lookup = Aiur.NativeAIR.readLookup full lookup ∧
+                                Aiur.NativeAIR.readLookup lookupValues lookup =
+                                  Aiur.NativeAIR.evalLookup ops values trees lookup
+AXIOMS [propext, Classical.choice, Quot.sound]
 PREMISE Aiur.AIR.activityConstraint
 Aiur.G → Aiur.G → Aiur.G
 DEFINITION
@@ -6233,7 +6510,11 @@ PREMISE Aiur.BoundVerifier.Backend.mk
                           compiled.bytecode.validateLookupShapes = true →
                             compiled.bytecode.validateRowCounts = true →
                               compiled.bytecode.validateEmission = true →
-                                system.vkBytes = selection.key → Aiur.BoundVerifier.Backend selection
+                                system.vkBytes = selection.key →
+                                  (keyData : Aiur.NativeAIR.KeyCodec.Key) →
+                                    Aiur.NativeAIR.KeyCodec.decodeCanonical selection.key = some keyData →
+                                      keyData.parameters = selection.keyParameters →
+                                        Aiur.BoundVerifier.Backend selection
 PREMISE Aiur.BoundVerifier.verify
 {selection : Aiur.BoundVerifier.Selection} →
   Aiur.BoundVerifier.Backend selection → Array Aiur.G → ByteArray → Except String Unit
@@ -8166,11 +8447,17 @@ fun selection =>
                   if hi : compiled.bytecode.validateEmission = true then
                     let system := selection.system compiled;
                     if hk : system.vkBytes = selection.key then
-                      Except.ok
-                        { compiled := compiled, compilation := hc, system := system, systemBuilt := ⋯, selected := hs,
-                          functionRange := hr, entry := entry, present := hp, publicEntry := ⋯, constrained := ⋯,
-                          arity := ⋯, returnArity := ho, lookupShapes := hl, rowCounts := hn, emissionChecks := hi,
-                          keyBound := hk }
+                      match hd : Aiur.NativeAIR.KeyCodec.decodeCanonical selection.key with
+                      | none => Except.error "verification key is not a checked canonical v5 artifact"
+                      | some keyData =>
+                        if hm : keyData.parameters = selection.keyParameters then
+                          Except.ok
+                            { compiled := compiled, compilation := hc, system := system, systemBuilt := ⋯,
+                              selected := hs, functionRange := hr, entry := entry, present := hp, publicEntry := ⋯,
+                              constrained := ⋯, arity := ⋯, returnArity := ho, lookupShapes := hl, rowCounts := hn,
+                              emissionChecks := hi, keyBound := hk, keyData := keyData, keyDecoded := hd,
+                              keyParameters := hm }
+                        else Except.error "verification key parameters differ from the selected parameters"
                     else Except.error "verification key differs from the selected key"
                   else Except.error "compiled circuit reads an invalid logical value or selector"
                 else Except.error "compiled circuit control counts exceed their bounds"
@@ -10442,6 +10729,452 @@ Option Nat → Aiur.NativeAIR.BlockEmitter.Emission → Prop
 DEFINITION
 fun size emission =>
   ∀ (part : Aiur.NativeAIR.BlockEmitter.YieldExpr), part ∈ emission.yields → size = some part.values.size
+PREMISE Aiur.BoundVerifier.Selection.keyParameters
+Aiur.BoundVerifier.Selection → Aiur.NativeAIR.KeyCodec.Parameters
+DEFINITION
+fun selection =>
+  { logBlowup := selection.commitment.logBlowup, capHeight := selection.commitment.capHeight,
+    logFinalPolyLen := selection.fri.logFinalPolyLen, maxLogArity := selection.fri.maxLogArity,
+    numQueries := selection.fri.numQueries, commitProofOfWorkBits := selection.fri.commitProofOfWorkBits,
+    queryProofOfWorkBits := selection.fri.queryProofOfWorkBits }
+PREMISE Aiur.NativeAIR.KeyCodec.Reader
+Type → Type
+DEFINITION
+StateT (List UInt8) Option
+PREMISE Aiur.NativeAIR.KeyCodec.readByte
+Aiur.NativeAIR.KeyCodec.Reader UInt8
+DEFINITION
+fun x =>
+  match x with
+  | [] => none
+  | byte :: rest => some (byte, rest)
+PREMISE Aiur.NativeAIR.KeyCodec.readNat
+Nat → Aiur.NativeAIR.KeyCodec.Reader Nat
+DEFINITION
+fun x => Nat.brecOn x Aiur.NativeAIR.KeyCodec.readNat._f
+PREMISE Aiur.NativeAIR.KeyCodec.readMany
+{α : Type} → Aiur.NativeAIR.KeyCodec.Reader α → Nat → Aiur.NativeAIR.KeyCodec.Reader (List α)
+DEFINITION
+fun {α} read x => Nat.brecOn x (Aiur.NativeAIR.KeyCodec.readMany._f read)
+PREMISE Aiur.NativeAIR.KeyCodec.readVector
+{α : Type} → Aiur.NativeAIR.KeyCodec.Reader α → Aiur.NativeAIR.KeyCodec.Reader (List α)
+DEFINITION
+fun {α} read => do
+  let __do_lift ← Aiur.NativeAIR.KeyCodec.readNat 2
+  Aiur.NativeAIR.KeyCodec.readMany read __do_lift
+PREMISE Aiur.NativeAIR.KeyCodec.encodeNat
+Nat → Nat → List UInt8
+DEFINITION
+fun x x_1 => Nat.brecOn (motive := fun x => Nat → List UInt8) x Aiur.NativeAIR.KeyCodec.encodeNat._f x_1
+PREMISE Aiur.NativeAIR.KeyCodec.encodeVector
+{α : Type u_1} → (α → List UInt8) → List α → List UInt8
+DEFINITION
+fun {α} encode values => Aiur.NativeAIR.KeyCodec.encodeNat 2 values.length ++ List.flatMap encode values
+PREMISE Aiur.NativeAIR.KeyCodec.readNode
+Aiur.NativeAIR.KeyCodec.Reader Aiur.NativeAIR.Node
+DEFINITION
+do
+  let __do_lift ← Aiur.NativeAIR.KeyCodec.readByte
+  match __do_lift.toNat with
+    | 0 => do
+      let __do_lift ← Aiur.NativeAIR.KeyCodec.readNat 2
+      pure (Aiur.NativeAIR.Node.konst (Aiur.G.ofNat __do_lift))
+    | 1 => do
+      let __do_lift ← Aiur.NativeAIR.KeyCodec.readNat 8
+      pure (Aiur.NativeAIR.Node.konst (Aiur.G.ofNat __do_lift))
+    | 2 => do
+      let __do_lift ← Aiur.NativeAIR.KeyCodec.readNat 1
+      pure (Aiur.NativeAIR.Node.publicInput __do_lift)
+    | 3 => pure Aiur.NativeAIR.Node.isFirstRow
+    | 4 => pure Aiur.NativeAIR.Node.isLastRow
+    | 5 => pure Aiur.NativeAIR.Node.isTransition
+    | 6 => do
+      let __do_lift ← Aiur.NativeAIR.KeyCodec.readNat 2
+      let __do_lift_1 ← Aiur.NativeAIR.KeyCodec.readNat 2
+      pure (Aiur.NativeAIR.Node.add __do_lift __do_lift_1)
+    | 7 => do
+      let __do_lift ← Aiur.NativeAIR.KeyCodec.readNat 2
+      let __do_lift_1 ← Aiur.NativeAIR.KeyCodec.readNat 2
+      pure (Aiur.NativeAIR.Node.sub __do_lift __do_lift_1)
+    | 8 => do
+      let __do_lift ← Aiur.NativeAIR.KeyCodec.readNat 2
+      let __do_lift_1 ← Aiur.NativeAIR.KeyCodec.readNat 2
+      pure (Aiur.NativeAIR.Node.mul __do_lift __do_lift_1)
+    | 9 => do
+      let __do_lift ← Aiur.NativeAIR.KeyCodec.readNat 2
+      pure (Aiur.NativeAIR.Node.neg __do_lift)
+    | 10 => do
+      let __do_lift ← Aiur.NativeAIR.KeyCodec.readNat 2
+      pure
+          (Aiur.NativeAIR.Node.var
+            { source := Aiur.NativeAIR.Source.preprocessed, offset := Aiur.NativeAIR.RowOffset.current,
+              index := __do_lift })
+    | 11 => do
+      let __do_lift ← Aiur.NativeAIR.KeyCodec.readNat 2
+      pure
+          (Aiur.NativeAIR.Node.var
+            { source := Aiur.NativeAIR.Source.preprocessed, offset := Aiur.NativeAIR.RowOffset.next,
+              index := __do_lift })
+    | 12 => do
+      let __do_lift ← Aiur.NativeAIR.KeyCodec.readNat 2
+      pure
+          (Aiur.NativeAIR.Node.var
+            { source := Aiur.NativeAIR.Source.main, offset := Aiur.NativeAIR.RowOffset.current, index := __do_lift })
+    | 13 => do
+      let __do_lift ← Aiur.NativeAIR.KeyCodec.readNat 2
+      pure
+          (Aiur.NativeAIR.Node.var
+            { source := Aiur.NativeAIR.Source.main, offset := Aiur.NativeAIR.RowOffset.next, index := __do_lift })
+    | 14 => do
+      let __do_lift ← Aiur.NativeAIR.KeyCodec.readNat 2
+      pure
+          (Aiur.NativeAIR.Node.var
+            { source := Aiur.NativeAIR.Source.stage2, offset := Aiur.NativeAIR.RowOffset.current, index := __do_lift })
+    | 15 => do
+      let __do_lift ← Aiur.NativeAIR.KeyCodec.readNat 2
+      pure
+          (Aiur.NativeAIR.Node.var
+            { source := Aiur.NativeAIR.Source.stage2, offset := Aiur.NativeAIR.RowOffset.next, index := __do_lift })
+    | x => failure
+PREMISE Aiur.NativeAIR.KeyCodec.encodeNode
+Aiur.NativeAIR.Node → List UInt8
+DEFINITION
+fun x =>
+  match x with
+  | Aiur.NativeAIR.Node.konst value =>
+    if value.n < 65536 then 0 :: Aiur.NativeAIR.KeyCodec.encodeNat 2 value.n
+    else 1 :: Aiur.NativeAIR.KeyCodec.encodeNat 8 value.n
+  | Aiur.NativeAIR.Node.publicInput index => 2 :: Aiur.NativeAIR.KeyCodec.encodeNat 1 index
+  | Aiur.NativeAIR.Node.isFirstRow => [3]
+  | Aiur.NativeAIR.Node.isLastRow => [4]
+  | Aiur.NativeAIR.Node.isTransition => [5]
+  | Aiur.NativeAIR.Node.add a b => 6 :: (Aiur.NativeAIR.KeyCodec.encodeNat 2 a ++ Aiur.NativeAIR.KeyCodec.encodeNat 2 b)
+  | Aiur.NativeAIR.Node.sub a b => 7 :: (Aiur.NativeAIR.KeyCodec.encodeNat 2 a ++ Aiur.NativeAIR.KeyCodec.encodeNat 2 b)
+  | Aiur.NativeAIR.Node.mul a b => 8 :: (Aiur.NativeAIR.KeyCodec.encodeNat 2 a ++ Aiur.NativeAIR.KeyCodec.encodeNat 2 b)
+  | Aiur.NativeAIR.Node.neg child => 9 :: Aiur.NativeAIR.KeyCodec.encodeNat 2 child
+  | Aiur.NativeAIR.Node.var column =>
+    have tag :=
+      match column.source, column.offset with
+      | Aiur.NativeAIR.Source.preprocessed, Aiur.NativeAIR.RowOffset.current => 10
+      | Aiur.NativeAIR.Source.preprocessed, Aiur.NativeAIR.RowOffset.next => 11
+      | Aiur.NativeAIR.Source.main, Aiur.NativeAIR.RowOffset.current => 12
+      | Aiur.NativeAIR.Source.main, Aiur.NativeAIR.RowOffset.next => 13
+      | Aiur.NativeAIR.Source.stage2, Aiur.NativeAIR.RowOffset.current => 14
+      | Aiur.NativeAIR.Source.stage2, Aiur.NativeAIR.RowOffset.next => 15;
+    tag :: Aiur.NativeAIR.KeyCodec.encodeNat 2 column.index
+PREMISE Aiur.NativeAIR.KeyCodec.readLookup
+Aiur.NativeAIR.KeyCodec.Reader Aiur.NativeAIR.Lookup
+DEFINITION
+do
+  let multiplicity ← Aiur.NativeAIR.KeyCodec.readNat 2
+  let args ← Aiur.NativeAIR.KeyCodec.readVector (Aiur.NativeAIR.KeyCodec.readNat 2)
+  pure { multiplicity := multiplicity, args := args }
+PREMISE Aiur.NativeAIR.KeyCodec.encodeLookup
+Aiur.NativeAIR.Lookup → List UInt8
+DEFINITION
+fun lookup =>
+  Aiur.NativeAIR.KeyCodec.encodeNat 2 lookup.multiplicity ++
+    Aiur.NativeAIR.KeyCodec.encodeVector (Aiur.NativeAIR.KeyCodec.encodeNat 2) lookup.args
+PREMISE Aiur.NativeAIR.KeyCodec.Circuit.mk
+Nat → Nat → Nat → Nat → Nat → Aiur.NativeAIR.Graph → Aiur.NativeAIR.KeyCodec.Circuit
+PREMISE Aiur.NativeAIR.KeyCodec.Circuit.groups
+Aiur.NativeAIR.KeyCodec.Circuit → Nat
+DEFINITION
+fun circuit => max 1 ((circuit.graph.lookups.length + circuit.lookupGroupSize - 1) / circuit.lookupGroupSize)
+PREMISE Aiur.NativeAIR.KeyCodec.Circuit.widths
+Aiur.NativeAIR.KeyCodec.Circuit → Aiur.NativeAIR.GraphWidths
+DEFINITION
+fun circuit =>
+  { preprocessed := circuit.preprocessedWidth, main := circuit.mainWidth, stage2 := circuit.groups * 2, publics := 8 }
+PREMISE Aiur.NativeAIR.KeyCodec.Circuit.constraintCount
+Aiur.NativeAIR.KeyCodec.Circuit → Nat
+DEFINITION
+fun circuit => circuit.graph.zeros.length + circuit.groups * 2
+PREMISE Aiur.NativeAIR.KeyCodec.nodeDegree
+Array Nat → Aiur.NativeAIR.Node → Option Nat
+DEFINITION
+fun degrees x =>
+  match x with
+  | Aiur.NativeAIR.Node.konst value => some 0
+  | Aiur.NativeAIR.Node.publicInput index => some 0
+  | Aiur.NativeAIR.Node.isTransition => some 0
+  | Aiur.NativeAIR.Node.var column => some 1
+  | Aiur.NativeAIR.Node.isFirstRow => some 1
+  | Aiur.NativeAIR.Node.isLastRow => some 1
+  | Aiur.NativeAIR.Node.add a b => do
+    let __do_lift ← degrees[a]?
+    let __do_lift_1 ← degrees[b]?
+    pure (max __do_lift __do_lift_1)
+  | Aiur.NativeAIR.Node.sub a b => do
+    let __do_lift ← degrees[a]?
+    let __do_lift_1 ← degrees[b]?
+    pure (max __do_lift __do_lift_1)
+  | Aiur.NativeAIR.Node.mul a b => do
+    let __do_lift ← degrees[a]?
+    let __do_lift_1 ← degrees[b]?
+    have sum : Nat := __do_lift + __do_lift_1
+    if sum < 2 ^ 32 then some sum else none
+  | Aiur.NativeAIR.Node.neg child => degrees[child]?
+PREMISE Aiur.NativeAIR.KeyCodec.nodeDegreesFrom
+List Aiur.NativeAIR.Node → Array Nat → Option (Array Nat)
+DEFINITION
+fun x x_1 =>
+  List.brecOn (motive := fun x => Array Nat → Option (Array Nat)) x Aiur.NativeAIR.KeyCodec.nodeDegreesFrom._f x_1
+PREMISE Aiur.NativeAIR.KeyCodec.lookupDegrees
+Array Nat → Aiur.NativeAIR.Lookup → Option (Nat × Nat)
+DEFINITION
+fun degrees lookup => do
+  let multiplicity ← degrees[lookup.multiplicity]?
+  let args ← List.mapM (fun index => degrees[index]?) lookup.args
+  pure (multiplicity, List.foldr max 0 args)
+PREMISE Aiur.NativeAIR.KeyCodec.groupDegree
+List (Nat × Nat) → Nat
+DEFINITION
+fun degrees =>
+  have sum := (List.map Prod.snd degrees).sum;
+  List.foldr max (sum + 1)
+    (List.map
+      (fun x =>
+        match x with
+        | (multiplicity, message) => multiplicity + sum - message)
+      degrees)
+PREMISE Aiur.NativeAIR.KeyCodec.Circuit.computedDegree
+Aiur.NativeAIR.KeyCodec.Circuit → Option Nat
+DEFINITION
+fun circuit => do
+  let degrees ← Aiur.NativeAIR.KeyCodec.nodeDegreesFrom circuit.graph.nodes #[]
+  let zeros ← List.mapM (fun index => degrees[index]?) circuit.graph.zeros
+  let lookups ← List.mapM (Aiur.NativeAIR.KeyCodec.lookupDegrees degrees) circuit.graph.lookups
+  have groups : List Nat :=
+    List.map
+      (fun index =>
+        Aiur.NativeAIR.KeyCodec.groupDegree
+          (List.take circuit.lookupGroupSize (List.drop (index * circuit.lookupGroupSize) lookups)))
+      (List.range circuit.groups)
+  pure (List.foldr max (max 1 (List.foldr max 0 zeros)) groups)
+PREMISE Aiur.NativeAIR.KeyCodec.Circuit.valid
+Aiur.NativeAIR.KeyCodec.Circuit → Bool
+DEFINITION
+fun circuit =>
+  decide (1 ≤ circuit.lookupGroupSize) && decide (circuit.lookupGroupSize ≤ 8) &&
+      (Aiur.NativeAIR.checkedGraphPrefix circuit.widths circuit.graph).isSome &&
+    circuit.computedDegree == some circuit.maxConstraintDegree
+PREMISE Aiur.NativeAIR.KeyCodec.readCircuitData
+Aiur.NativeAIR.KeyCodec.Reader Aiur.NativeAIR.KeyCodec.Circuit
+DEFINITION
+do
+  let main ← Aiur.NativeAIR.KeyCodec.readNat 2
+  let preprocessed ← Aiur.NativeAIR.KeyCodec.readNat 2
+  let height ← Aiur.NativeAIR.KeyCodec.readNat 4
+  let degree ← Aiur.NativeAIR.KeyCodec.readNat 2
+  let group ← Aiur.NativeAIR.KeyCodec.readNat 1
+  let nodes ← Aiur.NativeAIR.KeyCodec.readVector Aiur.NativeAIR.KeyCodec.readNode
+  let zeros ← Aiur.NativeAIR.KeyCodec.readVector (Aiur.NativeAIR.KeyCodec.readNat 2)
+  let lookups ← Aiur.NativeAIR.KeyCodec.readVector Aiur.NativeAIR.KeyCodec.readLookup
+  pure
+      { mainWidth := main, preprocessedWidth := preprocessed, preprocessedHeight := height,
+        maxConstraintDegree := degree, lookupGroupSize := group,
+        graph := { nodes := nodes, zeros := zeros, lookups := lookups } }
+PREMISE Aiur.NativeAIR.KeyCodec.readCircuit
+Aiur.NativeAIR.KeyCodec.Reader Aiur.NativeAIR.KeyCodec.Circuit
+DEFINITION
+do
+  let circuit ← Aiur.NativeAIR.KeyCodec.readCircuitData
+  if circuit.valid = true then pure circuit else failure
+PREMISE Aiur.NativeAIR.KeyCodec.encodeCircuit
+Aiur.NativeAIR.KeyCodec.Circuit → List UInt8
+DEFINITION
+fun circuit =>
+  Aiur.NativeAIR.KeyCodec.encodeNat 2 circuit.mainWidth ++
+                Aiur.NativeAIR.KeyCodec.encodeNat 2 circuit.preprocessedWidth ++
+              Aiur.NativeAIR.KeyCodec.encodeNat 4 circuit.preprocessedHeight ++
+            Aiur.NativeAIR.KeyCodec.encodeNat 2 circuit.maxConstraintDegree ++
+          Aiur.NativeAIR.KeyCodec.encodeNat 1 circuit.lookupGroupSize ++
+        Aiur.NativeAIR.KeyCodec.encodeVector Aiur.NativeAIR.KeyCodec.encodeNode circuit.graph.nodes ++
+      Aiur.NativeAIR.KeyCodec.encodeVector (Aiur.NativeAIR.KeyCodec.encodeNat 2) circuit.graph.zeros ++
+    Aiur.NativeAIR.KeyCodec.encodeVector Aiur.NativeAIR.KeyCodec.encodeLookup circuit.graph.lookups
+PREMISE Aiur.NativeAIR.KeyCodec.Parameters.mk
+Nat → Nat → Nat → Nat → Nat → Nat → Nat → Aiur.NativeAIR.KeyCodec.Parameters
+PREMISE Aiur.NativeAIR.KeyCodec.readParameters
+Aiur.NativeAIR.KeyCodec.Reader Aiur.NativeAIR.KeyCodec.Parameters
+DEFINITION
+do
+  let __do_lift ← Aiur.NativeAIR.KeyCodec.readNat 2
+  let __do_lift_1 ← Aiur.NativeAIR.KeyCodec.readNat 2
+  let __do_lift_2 ← Aiur.NativeAIR.KeyCodec.readNat 2
+  let __do_lift_3 ← Aiur.NativeAIR.KeyCodec.readNat 2
+  let __do_lift_4 ← Aiur.NativeAIR.KeyCodec.readNat 2
+  let __do_lift_5 ← Aiur.NativeAIR.KeyCodec.readNat 2
+  let __do_lift_6 ← Aiur.NativeAIR.KeyCodec.readNat 2
+  pure
+      { logBlowup := __do_lift, capHeight := __do_lift_1, logFinalPolyLen := __do_lift_2, maxLogArity := __do_lift_3,
+        numQueries := __do_lift_4, commitProofOfWorkBits := __do_lift_5, queryProofOfWorkBits := __do_lift_6 }
+PREMISE Aiur.NativeAIR.KeyCodec.encodeParameters
+Aiur.NativeAIR.KeyCodec.Parameters → List UInt8
+DEFINITION
+fun parameters =>
+  List.flatMap (Aiur.NativeAIR.KeyCodec.encodeNat 2)
+    [parameters.logBlowup, parameters.capHeight, parameters.logFinalPolyLen, parameters.maxLogArity,
+      parameters.numQueries, parameters.commitProofOfWorkBits, parameters.queryProofOfWorkBits]
+PREMISE Aiur.NativeAIR.KeyCodec.MerkleCap
+Type
+DEFINITION
+List (List UInt8)
+PREMISE Aiur.NativeAIR.KeyCodec.readCommitment
+Aiur.NativeAIR.KeyCodec.Reader (Option Aiur.NativeAIR.KeyCodec.MerkleCap)
+DEFINITION
+do
+  let __do_lift ← Aiur.NativeAIR.KeyCodec.readByte
+  match __do_lift.toNat with
+    | 0 => pure none
+    | 1 => do
+      let cap ←
+        Aiur.NativeAIR.KeyCodec.readVector (Aiur.NativeAIR.KeyCodec.readMany Aiur.NativeAIR.KeyCodec.readByte 32)
+      if cap.length.isPowerOfTwo then pure (some cap) else failure
+    | x => failure
+PREMISE Aiur.NativeAIR.KeyCodec.encodeCommitment
+Option Aiur.NativeAIR.KeyCodec.MerkleCap → List UInt8
+DEFINITION
+fun x =>
+  match x with
+  | none => [0]
+  | some cap => 1 :: Aiur.NativeAIR.KeyCodec.encodeVector id cap
+PREMISE Aiur.NativeAIR.KeyCodec.readIndex
+Aiur.NativeAIR.KeyCodec.Reader (Option Nat)
+DEFINITION
+do
+  let index ← Aiur.NativeAIR.KeyCodec.readNat 2
+  pure (if index = 65535 then none else some index)
+PREMISE Aiur.NativeAIR.KeyCodec.encodeIndex
+Option Nat → List UInt8
+DEFINITION
+fun index => Aiur.NativeAIR.KeyCodec.encodeNat 2 (index.getD 65535)
+PREMISE Aiur.NativeAIR.KeyCodec.Key.mk
+Aiur.NativeAIR.KeyCodec.Parameters →
+  List Aiur.NativeAIR.KeyCodec.Circuit →
+    Option Aiur.NativeAIR.KeyCodec.MerkleCap → List (Option Nat) → Aiur.NativeAIR.KeyCodec.Key
+PREMISE Aiur.NativeAIR.KeyCodec.readKey
+Aiur.NativeAIR.KeyCodec.Reader Aiur.NativeAIR.KeyCodec.Key
+DEFINITION
+do
+  let parameters ← Aiur.NativeAIR.KeyCodec.readParameters
+  let circuits ← Aiur.NativeAIR.KeyCodec.readVector Aiur.NativeAIR.KeyCodec.readCircuit
+  let commitment ← Aiur.NativeAIR.KeyCodec.readCommitment
+  let indices ← Aiur.NativeAIR.KeyCodec.readMany Aiur.NativeAIR.KeyCodec.readIndex circuits.length
+  pure
+      { parameters := parameters, circuits := circuits, preprocessedCommitment := commitment,
+        preprocessedIndices := indices }
+PREMISE Aiur.NativeAIR.KeyCodec.encodeKey
+Aiur.NativeAIR.KeyCodec.Key → List UInt8
+DEFINITION
+fun key =>
+  Aiur.NativeAIR.KeyCodec.encodeParameters key.parameters ++
+        Aiur.NativeAIR.KeyCodec.encodeVector Aiur.NativeAIR.KeyCodec.encodeCircuit key.circuits ++
+      Aiur.NativeAIR.KeyCodec.encodeCommitment key.preprocessedCommitment ++
+    List.flatMap Aiur.NativeAIR.KeyCodec.encodeIndex key.preprocessedIndices
+PREMISE Aiur.NativeAIR.KeyCodec.decode
+ByteArray → Option Aiur.NativeAIR.KeyCodec.Key
+DEFINITION
+fun bytes => do
+  let __x ← Aiur.NativeAIR.KeyCodec.readKey bytes.data.toList
+  match __x with
+    | (key, rest) => if rest.isEmpty = true then some key else none
+PREMISE Aiur.NativeAIR.KeyCodec.encode
+Aiur.NativeAIR.KeyCodec.Key → ByteArray
+DEFINITION
+fun key => (Aiur.NativeAIR.KeyCodec.encodeKey key).toByteArray
+PREMISE Aiur.NativeAIR.KeyCodec.decodeCanonical
+ByteArray → Option Aiur.NativeAIR.KeyCodec.Key
+DEFINITION
+fun bytes => do
+  let key ← Aiur.NativeAIR.KeyCodec.decode bytes
+  if Aiur.NativeAIR.KeyCodec.encode key = bytes then some key else none
+PREMISE Aiur.NativeAIR.KeyCodec.Reads
+{α : Type} → Aiur.NativeAIR.KeyCodec.Reader α → List UInt8 → α → Prop
+DEFINITION
+fun {α} read bytes value => ∀ (rest : List UInt8), read (bytes ++ rest) = some (value, rest)
+PREMISE Aiur.NativeAIR.KeyCodec.NodeWireFits
+Aiur.NativeAIR.Node → Prop
+DEFINITION
+fun x =>
+  match x with
+  | Aiur.NativeAIR.Node.konst value => True
+  | Aiur.NativeAIR.Node.isFirstRow => True
+  | Aiur.NativeAIR.Node.isLastRow => True
+  | Aiur.NativeAIR.Node.isTransition => True
+  | Aiur.NativeAIR.Node.var column => column.index < 65536
+  | Aiur.NativeAIR.Node.publicInput index => index < 256
+  | Aiur.NativeAIR.Node.add a b => a < 65536 ∧ b < 65536
+  | Aiur.NativeAIR.Node.sub a b => a < 65536 ∧ b < 65536
+  | Aiur.NativeAIR.Node.mul a b => a < 65536 ∧ b < 65536
+  | Aiur.NativeAIR.Node.neg child => child < 65536
+PREMISE Aiur.NativeAIR.KeyCodec.LookupWireFits.mk
+∀ {lookup : Aiur.NativeAIR.Lookup},
+  lookup.multiplicity < 65536 →
+    lookup.args.length < 65536 →
+      (∀ (arg : Nat), arg ∈ lookup.args → arg < 65536) → Aiur.NativeAIR.KeyCodec.LookupWireFits lookup
+PREMISE Aiur.NativeAIR.KeyCodec.CircuitWireFits.mk
+∀ {circuit : Aiur.NativeAIR.KeyCodec.Circuit},
+  circuit.mainWidth < 65536 →
+    circuit.preprocessedWidth < 65536 →
+      circuit.preprocessedHeight < 2 ^ 32 →
+        circuit.maxConstraintDegree < 65536 →
+          circuit.lookupGroupSize < 256 →
+            circuit.graph.nodes.length < 65536 →
+              (∀ (node : Aiur.NativeAIR.Node), node ∈ circuit.graph.nodes → Aiur.NativeAIR.KeyCodec.NodeWireFits node) →
+                circuit.graph.zeros.length < 65536 →
+                  (∀ (index : Nat), index ∈ circuit.graph.zeros → index < 65536) →
+                    circuit.graph.lookups.length < 65536 →
+                      (∀ (lookup : Aiur.NativeAIR.Lookup),
+                          lookup ∈ circuit.graph.lookups → Aiur.NativeAIR.KeyCodec.LookupWireFits lookup) →
+                        Aiur.NativeAIR.KeyCodec.CircuitWireFits circuit
+PREMISE Aiur.NativeAIR.KeyCodec.ParametersWireFits
+Aiur.NativeAIR.KeyCodec.Parameters → Prop
+DEFINITION
+fun parameters =>
+  ∀ (value : Nat),
+    value ∈
+        [parameters.logBlowup, parameters.capHeight, parameters.logFinalPolyLen, parameters.maxLogArity,
+          parameters.numQueries, parameters.commitProofOfWorkBits, parameters.queryProofOfWorkBits] →
+      value < 65536
+PREMISE Aiur.NativeAIR.KeyCodec.CommitmentWireFits
+Option Aiur.NativeAIR.KeyCodec.MerkleCap → Prop
+DEFINITION
+fun x =>
+  match x with
+  | none => True
+  | some cap =>
+    List.length cap < 65536 ∧
+      (List.length cap).isPowerOfTwo ∧ ∀ (digest : List UInt8), digest ∈ cap → digest.length = 32
+PREMISE Aiur.NativeAIR.KeyCodec.IndexWireFits
+Option Nat → Prop
+DEFINITION
+fun x =>
+  match x with
+  | none => True
+  | some index => index < 65535
+PREMISE Aiur.NativeAIR.KeyCodec.KeyWireFits.mk
+∀ {key : Aiur.NativeAIR.KeyCodec.Key},
+  Aiur.NativeAIR.KeyCodec.ParametersWireFits key.parameters →
+    key.circuits.length < 65536 →
+      (∀ (circuit : Aiur.NativeAIR.KeyCodec.Circuit),
+          circuit ∈ key.circuits → Aiur.NativeAIR.KeyCodec.CircuitWireFits circuit) →
+        Aiur.NativeAIR.KeyCodec.CommitmentWireFits key.preprocessedCommitment →
+          key.preprocessedIndices.length = key.circuits.length →
+            (∀ (index : Option Nat), index ∈ key.preprocessedIndices → Aiur.NativeAIR.KeyCodec.IndexWireFits index) →
+              Aiur.NativeAIR.KeyCodec.KeyWireFits key
+PREMISE Aiur.NativeAIR.KeyCodec.Returns
+{α : Type} → Aiur.NativeAIR.KeyCodec.Reader α → (α → Prop) → Prop
+DEFINITION
+fun {α} read property =>
+  ∀ (bytes : List UInt8) (value : α) (rest : List UInt8), read bytes = some (value, rest) → property value
+PREMISE Aiur.NativeAIR.KeyCodec.CommitmentValid
+Option Aiur.NativeAIR.KeyCodec.MerkleCap → Prop
+DEFINITION
+fun x =>
+  match x with
+  | none => True
+  | some cap => (List.length cap).isPowerOfTwo ∧ ∀ (digest : List UInt8), digest ∈ cap → digest.length = 32
 RECURSION WORKER Aiur.buildArgs._unsafe_rec
 Aiur.LayoutMap →
   Std.HashMap Aiur.Local (Array Aiur.Bytecode.ValIdx) →
@@ -15479,6 +16212,42 @@ fun x =>
   | a.sub b => Aiur.NativeAIR.Expr.noConstantNegs._unsafe_rec a && Aiur.NativeAIR.Expr.noConstantNegs._unsafe_rec b
   | a.mul b => Aiur.NativeAIR.Expr.noConstantNegs._unsafe_rec a && Aiur.NativeAIR.Expr.noConstantNegs._unsafe_rec b
   | x => true
+RECURSION WORKER Aiur.NativeAIR.KeyCodec.encodeNat._unsafe_rec
+Nat → Nat → List UInt8
+IMPLEMENTATION
+fun x x_1 =>
+  match x, x_1 with
+  | 0, x => []
+  | count.succ, value => value.toUInt8 :: Aiur.NativeAIR.KeyCodec.encodeNat._unsafe_rec count (value / 256)
+RECURSION WORKER Aiur.NativeAIR.KeyCodec.nodeDegreesFrom._unsafe_rec
+List Aiur.NativeAIR.Node → Array Nat → Option (Array Nat)
+IMPLEMENTATION
+fun x x_1 =>
+  match x, x_1 with
+  | [], degrees => some degrees
+  | node :: nodes, degrees => do
+    let __do_lift ← Aiur.NativeAIR.KeyCodec.nodeDegree degrees node
+    Aiur.NativeAIR.KeyCodec.nodeDegreesFrom._unsafe_rec nodes (degrees.push __do_lift)
+RECURSION WORKER Aiur.NativeAIR.KeyCodec.readMany._unsafe_rec
+{α : Type} → Aiur.NativeAIR.KeyCodec.Reader α → Nat → Aiur.NativeAIR.KeyCodec.Reader (List α)
+IMPLEMENTATION
+fun {α} read x =>
+  match x with
+  | 0 => pure []
+  | count.succ => do
+    let first ← read
+    let rest ← Aiur.NativeAIR.KeyCodec.readMany._unsafe_rec read count
+    pure (first :: rest)
+RECURSION WORKER Aiur.NativeAIR.KeyCodec.readNat._unsafe_rec
+Nat → Aiur.NativeAIR.KeyCodec.Reader Nat
+IMPLEMENTATION
+fun x =>
+  match x with
+  | 0 => pure 0
+  | count.succ => do
+    let byte ← Aiur.NativeAIR.KeyCodec.readByte
+    let rest ← Aiur.NativeAIR.KeyCodec.readNat._unsafe_rec count
+    pure (byte.toNat + 256 * rest)
 RECURSION WORKER Aiur.NativeAIR.LookupEmitter.addArgs._unsafe_rec
 List Aiur.NativeAIR.Expr → List Aiur.NativeAIR.Expr → List Aiur.NativeAIR.Expr
 IMPLEMENTATION
@@ -17469,10 +18238,10 @@ fun initId decls renames clauses branches body =>
     let clause : Aiur.MatchCompiler.Clause :=
       { pat := Aiur.MatchCompiler.SPattern.pointer var innerTyp, guards := guards, body := term }
     Aiur.MatchCompiler.dnfProd.aux._unsafe_rec✝ initId decls renames (clauses.push clause) rest body
-C8 component ROOTS 749; LOGICAL DECLARATIONS 17227; WITH RUNTIME 17999
+C8 component ROOTS 796; LOGICAL DECLARATIONS 17477; WITH RUNTIME 18253
 IX RUNTIME EXTERNS [Aiur.AiurSystem.build, Aiur.AiurSystem.verify, Aiur.AiurSystem.vkBytes, Aiur.Proof.ofBytesChecked]
 PARTIAL OPAQUE SOURCES [Aiur.instHashableTyp.hash, Aiur.instReprPattern.repr, Aiur.instReprTyp.repr]
 OTHER UNSAFE RUNTIME []
-RECURSION WORKERS 165
+RECURSION WORKERS 169
 Runtime diagnostics cover Ix modules, including private constants. Lean/Std runtime primitives remain an external execution boundary. Partial opaque implementations are inventoried, not proved to refine their logical defaults.
 The runtime inventory and theorem premises are frozen separately. These roots do not establish full compiler/AIR reflection or public certified claim semantics.

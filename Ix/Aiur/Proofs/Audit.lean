@@ -39,6 +39,7 @@ import Ix.Aiur.Proofs.BlockAllocation
 import Ix.Aiur.Proofs.CircuitAllocation
 import Ix.Aiur.Proofs.CircuitCompletion
 import Ix.Aiur.Proofs.CheckedCircuit
+import Ix.Aiur.Proofs.KeyArtifact
 import Ix.Aiur.Proofs.Grouping
 import Ix.Aiur.Proofs.TailMatches
 import Ix.Aiur.Proofs.NormalizationFrames
@@ -1357,6 +1358,146 @@ def checkedCircuitPremises : Array Lean.Name := #[
   `Aiur.Bytecode.Toplevel.validateEmission,
   `Aiur.NativeAIR.BlockEmitter.Emission.YieldShape]
 
+def keyCodecRoots : Array Lean.Name := #[
+  `Aiur.NativeAIR.KeyCodec.Reads.pure,
+  `Aiur.NativeAIR.KeyCodec.Reads.bind,
+  `Aiur.NativeAIR.KeyCodec.Reads.map,
+  `Aiur.NativeAIR.KeyCodec.Reads.result,
+  `Aiur.NativeAIR.KeyCodec.readByte_reads,
+  `Aiur.NativeAIR.KeyCodec.Reads.byte,
+  `Aiur.NativeAIR.KeyCodec.encodeNat_length,
+  `Aiur.NativeAIR.KeyCodec.readNat_reads,
+  `Aiur.NativeAIR.KeyCodec.readMany_reads,
+  `Aiur.NativeAIR.KeyCodec.readVector_reads,
+  `Aiur.NativeAIR.KeyCodec.readNode_reads,
+  `Aiur.NativeAIR.KeyCodec.readLookup_reads,
+  `Aiur.NativeAIR.KeyCodec.readCircuitData_reads,
+  `Aiur.NativeAIR.KeyCodec.readCircuit_reads,
+  `Aiur.NativeAIR.KeyCodec.readParameters_reads,
+  `Aiur.NativeAIR.KeyCodec.readCommitment_reads,
+  `Aiur.NativeAIR.KeyCodec.readIndex_reads,
+  `Aiur.NativeAIR.KeyCodec.readKey_reads,
+  `Aiur.NativeAIR.KeyCodec.decode_encode,
+  `Aiur.NativeAIR.KeyCodec.decodeCanonical_success,
+  `Aiur.NativeAIR.KeyCodec.decodeCanonical_encode,
+  `Aiur.NativeAIR.KeyCodec.canonical_bytes_unique,
+  `Aiur.NativeAIR.KeyCodec.encode_injective,
+  `Aiur.NativeAIR.KeyCodec.Returns.pure,
+  `Aiur.NativeAIR.KeyCodec.Returns.failure,
+  `Aiur.NativeAIR.KeyCodec.Returns.bind,
+  `Aiur.NativeAIR.KeyCodec.Returns.bind_any,
+  `Aiur.NativeAIR.KeyCodec.Returns.weaken,
+  `Aiur.NativeAIR.KeyCodec.Returns.result,
+  `Aiur.NativeAIR.KeyCodec.readMany_returns,
+  `Aiur.NativeAIR.KeyCodec.readVector_returns,
+  `Aiur.NativeAIR.KeyCodec.readCircuit_returns,
+  `Aiur.NativeAIR.KeyCodec.readCommitment_returns,
+  `Aiur.NativeAIR.KeyCodec.readKey_returns,
+  `Aiur.NativeAIR.KeyCodec.decode_success,
+  `Aiur.NativeAIR.KeyCodec.decode_valid,
+  `Aiur.NativeAIR.KeyCodec.readKey_commitment,
+  `Aiur.NativeAIR.KeyCodec.decode_commitment,
+  `Aiur.NativeAIR.KeyCodec.Circuit.valid_graph,
+  `Aiur.NativeAIR.KeyCodec.decoded_graph_sweeps,
+  `Aiur.NativeAIR.KeyCodec.decode_encoded_suffix,
+  `Aiur.BoundVerifier.Backend.key_decodes,
+  `Aiur.BoundVerifier.Backend.native_key_decodes,
+  `Aiur.BoundVerifier.Backend.native_key_encoding,
+  `Aiur.BoundVerifier.Backend.key_commitment,
+  `Aiur.BoundVerifier.Backend.key_graph_valid,
+  `Aiur.BoundVerifier.Backend.key_graph_reflects]
+
+def keyCodecAxiomFreeRoots : Array Lean.Name := #[
+  `Aiur.NativeAIR.KeyCodec.Reads.pure,
+  `Aiur.NativeAIR.KeyCodec.Reads.map,
+  `Aiur.NativeAIR.KeyCodec.Reads.result,
+  `Aiur.NativeAIR.KeyCodec.readByte_reads,
+  `Aiur.NativeAIR.KeyCodec.Returns.pure,
+  `Aiur.NativeAIR.KeyCodec.Returns.failure,
+  `Aiur.NativeAIR.KeyCodec.Returns.weaken]
+
+def keyCodecQuotRoots : Array Lean.Name := #[
+  `Aiur.NativeAIR.KeyCodec.readCircuit_reads,
+  `Aiur.NativeAIR.KeyCodec.readParameters_reads,
+  `Aiur.NativeAIR.KeyCodec.readIndex_reads,
+  `Aiur.NativeAIR.KeyCodec.readMany_returns,
+  `Aiur.NativeAIR.KeyCodec.readVector_returns,
+  `Aiur.NativeAIR.KeyCodec.Circuit.valid_graph]
+
+def keyCodecClassicalRoots : Array Lean.Name := #[
+  `Aiur.NativeAIR.KeyCodec.readCommitment_reads,
+  `Aiur.NativeAIR.KeyCodec.readKey_reads,
+  `Aiur.NativeAIR.KeyCodec.decode_encode,
+  `Aiur.NativeAIR.KeyCodec.decodeCanonical_success,
+  `Aiur.NativeAIR.KeyCodec.decodeCanonical_encode,
+  `Aiur.NativeAIR.KeyCodec.canonical_bytes_unique,
+  `Aiur.NativeAIR.KeyCodec.encode_injective,
+  `Aiur.NativeAIR.KeyCodec.readCommitment_returns,
+  `Aiur.NativeAIR.KeyCodec.readKey_returns,
+  `Aiur.NativeAIR.KeyCodec.decode_success,
+  `Aiur.NativeAIR.KeyCodec.decode_valid,
+  `Aiur.NativeAIR.KeyCodec.readKey_commitment,
+  `Aiur.NativeAIR.KeyCodec.decode_commitment,
+  `Aiur.NativeAIR.KeyCodec.decoded_graph_sweeps,
+  `Aiur.NativeAIR.KeyCodec.decode_encoded_suffix,
+  `Aiur.BoundVerifier.Backend.key_decodes,
+  `Aiur.BoundVerifier.Backend.native_key_decodes,
+  `Aiur.BoundVerifier.Backend.native_key_encoding,
+  `Aiur.BoundVerifier.Backend.key_commitment,
+  `Aiur.BoundVerifier.Backend.key_graph_valid,
+  `Aiur.BoundVerifier.Backend.key_graph_reflects]
+
+def keyCodecPremises : Array Lean.Name := #[
+  `Aiur.BoundVerifier.Selection.keyParameters,
+  `Aiur.NativeAIR.KeyCodec.Reader,
+  `Aiur.NativeAIR.KeyCodec.readByte,
+  `Aiur.NativeAIR.KeyCodec.readNat,
+  `Aiur.NativeAIR.KeyCodec.readMany,
+  `Aiur.NativeAIR.KeyCodec.readVector,
+  `Aiur.NativeAIR.KeyCodec.encodeNat,
+  `Aiur.NativeAIR.KeyCodec.encodeVector,
+  `Aiur.NativeAIR.KeyCodec.readNode,
+  `Aiur.NativeAIR.KeyCodec.encodeNode,
+  `Aiur.NativeAIR.KeyCodec.readLookup,
+  `Aiur.NativeAIR.KeyCodec.encodeLookup,
+  `Aiur.NativeAIR.KeyCodec.Circuit.mk,
+  `Aiur.NativeAIR.KeyCodec.Circuit.groups,
+  `Aiur.NativeAIR.KeyCodec.Circuit.widths,
+  `Aiur.NativeAIR.KeyCodec.Circuit.constraintCount,
+  `Aiur.NativeAIR.KeyCodec.nodeDegree,
+  `Aiur.NativeAIR.KeyCodec.nodeDegreesFrom,
+  `Aiur.NativeAIR.KeyCodec.lookupDegrees,
+  `Aiur.NativeAIR.KeyCodec.groupDegree,
+  `Aiur.NativeAIR.KeyCodec.Circuit.computedDegree,
+  `Aiur.NativeAIR.KeyCodec.Circuit.valid,
+  `Aiur.NativeAIR.KeyCodec.readCircuitData,
+  `Aiur.NativeAIR.KeyCodec.readCircuit,
+  `Aiur.NativeAIR.KeyCodec.encodeCircuit,
+  `Aiur.NativeAIR.KeyCodec.Parameters.mk,
+  `Aiur.NativeAIR.KeyCodec.readParameters,
+  `Aiur.NativeAIR.KeyCodec.encodeParameters,
+  `Aiur.NativeAIR.KeyCodec.MerkleCap,
+  `Aiur.NativeAIR.KeyCodec.readCommitment,
+  `Aiur.NativeAIR.KeyCodec.encodeCommitment,
+  `Aiur.NativeAIR.KeyCodec.readIndex,
+  `Aiur.NativeAIR.KeyCodec.encodeIndex,
+  `Aiur.NativeAIR.KeyCodec.Key.mk,
+  `Aiur.NativeAIR.KeyCodec.readKey,
+  `Aiur.NativeAIR.KeyCodec.encodeKey,
+  `Aiur.NativeAIR.KeyCodec.decode,
+  `Aiur.NativeAIR.KeyCodec.encode,
+  `Aiur.NativeAIR.KeyCodec.decodeCanonical,
+  `Aiur.NativeAIR.KeyCodec.Reads,
+  `Aiur.NativeAIR.KeyCodec.NodeWireFits,
+  `Aiur.NativeAIR.KeyCodec.LookupWireFits.mk,
+  `Aiur.NativeAIR.KeyCodec.CircuitWireFits.mk,
+  `Aiur.NativeAIR.KeyCodec.ParametersWireFits,
+  `Aiur.NativeAIR.KeyCodec.CommitmentWireFits,
+  `Aiur.NativeAIR.KeyCodec.IndexWireFits,
+  `Aiur.NativeAIR.KeyCodec.KeyWireFits.mk,
+  `Aiur.NativeAIR.KeyCodec.Returns,
+  `Aiur.NativeAIR.KeyCodec.CommitmentValid]
+
 def roots : Array Lean.Name := #[
   `Aiur.G.ofNat_n, `Aiur.G.mul_one, `Aiur.G.mul_zero,
   `Aiur.AIR.inactive_multiplicity_zero,
@@ -1393,7 +1534,7 @@ def roots : Array Lean.Name := #[
     fieldRoots ++ localConstraintRoots ++ byteArithmeticRoots ++ byteLookupRoots ++
     lookupMessageRoots ++ lookupShapeRoots ++ globalLookupRoots ++ lookupBudgetRoots ++
     selectorControlRoots ++ operationRowRoots ++ blockRowRoots ++ querySlotRoots ++ circuitRowRoots ++
-    rowCountRoots ++ circuitTableRoots ++ branchlessRoots ++ circuitTraceRoots ++ circuitMembershipRoots ++ lookupLayoutRoots ++ memoryColumnRoots ++ byteColumnRoots ++ expressionGraphRoots ++ frontendExpressionRoots ++ graphCompilationRoots ++ operationExpressionRoots ++ blockCircuitRoots ++ allocationRoots ++ circuitAllocationRoots ++ circuitCompletionRoots ++ checkedCircuitRoots
+    rowCountRoots ++ circuitTableRoots ++ branchlessRoots ++ circuitTraceRoots ++ circuitMembershipRoots ++ lookupLayoutRoots ++ memoryColumnRoots ++ byteColumnRoots ++ expressionGraphRoots ++ frontendExpressionRoots ++ graphCompilationRoots ++ operationExpressionRoots ++ blockCircuitRoots ++ allocationRoots ++ circuitAllocationRoots ++ circuitCompletionRoots ++ checkedCircuitRoots ++ keyCodecRoots
 
 def premises : Array Lean.Name := #[
   `Aiur.AIR.activityConstraint,
@@ -1632,7 +1773,7 @@ def premises : Array Lean.Name := #[
   `Aiur.NativeAIR.evalRoots,
   `Aiur.NativeAIR.readLookup,
   `Aiur.NativeAIR.evalLookup,
-  `Aiur.NativeAIR.goldilocksOps] ++ frontendExpressionPremises ++ graphCompilationPremises ++ operationExpressionPremises ++ blockCircuitPremises ++ allocationPremises ++ circuitAllocationPremises ++ circuitCompletionPremises ++ checkedCircuitPremises
+  `Aiur.NativeAIR.goldilocksOps] ++ frontendExpressionPremises ++ graphCompilationPremises ++ operationExpressionPremises ++ blockCircuitPremises ++ allocationPremises ++ circuitAllocationPremises ++ circuitCompletionPremises ++ checkedCircuitPremises ++ keyCodecPremises
 
 private def constants (info : Lean.ConstantInfo) : Array Lean.Name :=
   info.type.getUsedConstants ++ match info with
@@ -1711,7 +1852,12 @@ run_cmd do
   let env ← getEnv
   for root in roots do
     let some info := env.checked.get.find? root | throwError "C8 component audit: missing root {root}"
-    let expected := if checkedCircuitRoots.contains root then
+    let expected := if keyCodecRoots.contains root then
+        if keyCodecAxiomFreeRoots.contains root then #[]
+        else if keyCodecClassicalRoots.contains root then #[``propext, ``Classical.choice, ``Quot.sound]
+        else if keyCodecQuotRoots.contains root then #[``propext, ``Quot.sound]
+        else #[``propext]
+      else if checkedCircuitRoots.contains root then
         if checkedCircuitAxiomFreeRoots.contains root then #[]
         else if checkedCircuitClassicalRoots.contains root then #[``propext, ``Classical.choice, ``Quot.sound]
         else if checkedCircuitQuotRoots.contains root then #[``propext, ``Quot.sound]

@@ -3,7 +3,7 @@ Copyright (c) 2026 Argument Computer Corporation.
 SPDX-License-Identifier: MIT OR Apache-2.0
 -/
 
-import Ix.Aiur.Proofs.ExpressionGraph
+import Ix.Aiur.Proofs.KeyCodec
 
 open Aiur Aiur.NativeAIR
 
@@ -73,40 +73,6 @@ private def readValues : Reader (Array G) := do
   let count ← readNat 8
   return (← readList count (return G.ofNat (← readNat 8))).toArray
 
-private def readNode : Reader Node := do
-  match ← readNat 1 with
-  | 0 => return .konst (G.ofNat (← readNat 2))
-  | 1 => return .konst (G.ofNat (← readNat 8))
-  | 2 => return .publicInput (← readNat 1)
-  | 3 => return .isFirstRow
-  | 4 => return .isLastRow
-  | 5 => return .isTransition
-  | 6 => return .add (← readNat 2) (← readNat 2)
-  | 7 => return .sub (← readNat 2) (← readNat 2)
-  | 8 => return .mul (← readNat 2) (← readNat 2)
-  | 9 => return .neg (← readNat 2)
-  | tag =>
-    if tag < 10 || tag > 15 then throw s!"invalid graph node tag {tag}"
-    let source := match (tag - 10) / 2 with | 0 => Source.preprocessed | 1 => .main | _ => .stage2
-    let offset := if (tag - 10) % 2 == 0 then RowOffset.current else .next
-    return .var ⟨source, offset, ← readNat 2⟩
-
-private def readCircuit : Reader (GraphWidths × Graph) := do
-  let main ← readNat 2
-  let preprocessed ← readNat 2
-  let _ ← readNat 4
-  let _ ← readNat 2
-  let groupSize ← readNat 1
-  unless 1 ≤ groupSize && groupSize ≤ 8 do throw "invalid graph lookup group size"
-  let nodes ← readList (← readNat 2) readNode
-  let zeros ← readList (← readNat 2) (readNat 2)
-  let lookups ← readList (← readNat 2) do
-    let multiplicity ← readNat 2
-    let args ← readList (← readNat 2) (readNat 2)
-    return Lookup.mk multiplicity args
-  let stage2 := max 1 ((lookups.length + groupSize - 1) / groupSize) * 2
-  return (⟨preprocessed, main, stage2, 8⟩, ⟨nodes, zeros, lookups⟩)
-
 private def readAssignment (widths : GraphWidths) (graph : Graph) (trees : Array Expr) : Reader Nat := do
   let preCurrent ← readValues
   let preNext ← readValues
@@ -153,10 +119,11 @@ private def readGraphs : Reader (Nat × Nat) := do
   unless count == 10 do throw "incomplete native graph circuit corpus"
   for _ in [:count] do
     let bytes ← takeBytes (← readNat 8)
-    let ((widths, graph), (_, consumed)) ← match readCircuit.run (bytes, 0) with
-      | .error error => throw error
-      | .ok result => pure result
-    unless consumed == bytes.size do throw "native graph circuit has trailing bytes"
+    let some (circuit, rest) := KeyCodec.readCircuit bytes.data.toList
+      | throw "native graph circuit failed checked v5 decoding"
+    unless rest.isEmpty do throw "native graph circuit has trailing bytes"
+    let widths := circuit.widths
+    let graph := circuit.graph
     let some lookupEnd := checkedGraphPrefix widths graph | throw "actual native graph layout rejected"
     unless lookupEnd ≤ graph.nodes.length do throw "native graph lookup prefix out of range"
     let some trees := graph.unfold | throw "actual native graph unfolding failed"

@@ -7,6 +7,7 @@ import Ix.Aiur.Proofs.Compilation
 import Ix.Aiur.LookupShapes
 import Ix.Aiur.RowCounts
 import Ix.Aiur.EmissionChecks
+import Ix.Aiur.KeyCodec
 import Ix.Aiur.Protocol
 
 /-! A verifier whose caller selects the source, entrypoint, parameters and
@@ -44,6 +45,11 @@ It is derived, rather than accepted as a second independent caller argument. -/
 def Selection.system (selection : Selection) (compiled : CompiledToplevel) : AiurSystem :=
   AiurSystem.build compiled.bytecode selection.commitment selection.fri
 
+def Selection.keyParameters (selection : Selection) : NativeAIR.KeyCodec.Parameters :=
+  ⟨selection.commitment.logBlowup, selection.commitment.capHeight,
+    selection.fri.logFinalPolyLen, selection.fri.maxLogArity, selection.fri.numQueries,
+    selection.fri.commitProofOfWorkBits, selection.fri.queryProofOfWorkBits⟩
+
 structure Backend (selection : Selection) where
   compiled : CompiledToplevel
   compilation : selection.compile = .ok compiled
@@ -61,6 +67,9 @@ structure Backend (selection : Selection) where
   rowCounts : compiled.bytecode.validateRowCounts = true
   emissionChecks : compiled.bytecode.validateEmission = true
   keyBound : system.vkBytes = selection.key
+  keyData : NativeAIR.KeyCodec.Key
+  keyDecoded : NativeAIR.KeyCodec.decodeCanonical selection.key = some keyData
+  keyParameters : keyData.parameters = selection.keyParameters
 
 def build (selection : Selection) : Except String (Backend selection) :=
   match hc : selection.compile with
@@ -79,7 +88,13 @@ def build (selection : Selection) : Except String (Backend selection) :=
                   if hi : compiled.bytecode.validateEmission = true then
                     let system := selection.system compiled
                     if hk : system.vkBytes = selection.key then
-                      .ok ⟨compiled, hc, system, rfl, hs, hr, entry, hp, he.1, he.2.1, he.2.2, ho, hl, hn, hi, hk⟩
+                      match hd : NativeAIR.KeyCodec.decodeCanonical selection.key with
+                      | none => .error "verification key is not a checked canonical v5 artifact"
+                      | some keyData =>
+                        if hm : keyData.parameters = selection.keyParameters then
+                          .ok ⟨compiled, hc, system, rfl, hs, hr, entry, hp, he.1, he.2.1, he.2.2, ho, hl, hn, hi, hk,
+                            keyData, hd, hm⟩
+                        else .error "verification key parameters differ from the selected parameters"
                     else .error "verification key differs from the selected key"
                   else .error "compiled circuit reads an invalid logical value or selector"
                 else .error "compiled circuit control counts exceed their bounds"

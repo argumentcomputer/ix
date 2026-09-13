@@ -410,13 +410,13 @@ sizes, constrained and advice calls, nested continuations, visibility and
 public-claim widths. All 54 parallel release Rust tests pass, including the
 supplied rank/output ambiguity regression; release Clippy denies warnings.
 
-The audit checks 749 roots by traversing checked types, bodies and inductive
-constructors. Ten roots use no axioms; 112 depend only on `propext`;
-210 use exactly `propext` and `Quot.sound`; the other 417 use exactly
+The audit checks 796 roots by traversing checked types, bodies and inductive
+constructors. Seventeen roots use no axioms; 125 depend only on `propext`;
+216 use exactly `propext` and `Quot.sound`; the other 438 use exactly
 `propext`, `Classical.choice` and `Quot.sound`. The combined closure
-has 17,227 logical declarations and 17,999 declarations after following runtime
+has 17,477 logical declarations and 18,253 declarations after following runtime
 workers and replacements. The frozen report records four native runtime entry points,
-three partial opaque sources and all 165 Ix recursion worker implementations.
+three partial opaque sources and all 169 Ix recursion worker implementations.
 Bytecode comparison/hashing, tail-match restoration and source-value hashing
 use total definitions. Type hashing and type/pattern formatting remain partial.
 These remaining implementations and
@@ -714,6 +714,47 @@ comparison corpora. All 1,345 broader Aiur assertions pass. The C2 VM recheck
 passes with 12 accepted packets, 16 rejections, the same two documented profile
 exclusions and no unexpected errors. The guard preserves the emitted equations,
 layouts and key bytes of programs that pass it.
+
+`KeyCodec` supplies a total host decoder and encoder for the complete native
+v5 key: all seven parameters, circuit metadata, every node tag, constraint
+roots, lookup records, preprocessed Merkle cap and circuit indices. Checked
+decoding validates graph reads, node-degree arithmetic, the combined user and
+logUp degree, lookup grouping and the cap's power-of-two root count. Derived
+widths and constraint counts retain the pass-through accumulator even for a
+circuit with no lookups. Parsing consumes the complete byte array.
+
+The codec proofs establish round trips within the wire bounds, including
+arbitrary surrounding bytes, and injectivity of canonical encoding. Accepted
+decoding supplies valid graphs and a well-shaped cap. The optional canonical
+gate rejects the native decoder's alternative representations of constants.
+`BoundVerifier.build` enforces that gate on the selected key, retains its
+decoded value and checks all parameters against the deployment selection.
+`Backend.key_graph_reflects` supplies full and lookup-prefix sweeps of each
+decoded graph and identifies their roots and messages with expression
+evaluation. It takes neither a parsing-success nor a graph-validity premise.
+It does not identify that graph with the compiler model or prove native
+verifier execution. Parameter admissibility, preprocessed commitment meaning,
+accepted-proof extraction and the remaining certified semantic/cryptographic
+endpoint remain separate obligations.
+
+The new native comparison covers 4,536 full-key byte cases: 509 accepted keys,
+22 accepted noncanonical encodings and 517 decoded circuit records. It checks
+exact canonical bytes, every derived metadata field and every node degree.
+Cases include all tags, truncations, suffixes, malformed graph reads, degree
+overflow, all supported lookup group sizes, empty circuits and maximum wire
+fields. The existing ten-graph evaluation corpus now uses this checked codec.
+An empty Merkle cap exposed a native constructor panic; zero and non-power-of-two
+cap sizes now return an error. The native decoder still has no production
+callers in the workspace, and no false-claim acceptance was shown.
+
+The 796-root audit preserves all 749 prior theorem statements and axiom sets,
+553 frozen definitions and 165 worker bodies. Its two reviewed definition
+changes are the backend constructor and builder; 47 roots, 49 definitions and
+four inspected total codec workers are added. All 74 Rust release tests and
+release Clippy pass, as do the canonical-key comparisons and the existing
+two accepted/fifteen rejected native binding cases. The strict 332-job build
+and full component gate pass with all nineteen native corpora. Native AIR expressions,
+layouts and serialized keys are unchanged.
 
 The budget comparison covers
 21,964 Rust/Lean cases, including

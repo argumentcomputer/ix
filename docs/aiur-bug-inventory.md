@@ -1,7 +1,7 @@
 # Aiur bug inventory
 
 This records the fixes completed during the C8 work, including the subsequent
-graph-decoder, constant-degree and operand-scope repairs. The nine main entries group
+graph-decoder, constant-degree, operand-scope and key-cap repairs. The nine main entries group
 related failures by cause: four demonstrated verifier soundness defects,
 three compiler defects, one reference-evaluator defect and one constraint
 construction defect. Regression cases
@@ -26,7 +26,7 @@ three Rust VM files; generated-code parity and the existing VM checks passed.
 The compiler repairs have regression coverage and supporting lemmas; complete
 preservation proofs for normalization and inlining remain open.
 
-Four additional implementation bugs were fixed during this work:
+Five additional implementation bugs were fixed during this work:
 
 - **Deduplication emitted panic diagnostics for invalid callees.** Unchecked
   indexing printed panic messages even when the process returned success.
@@ -60,6 +60,15 @@ Four additional implementation bugs were fixed during this work:
   shown. [Native guard and regressions](../crates/aiur/src/emission_checks.rs),
   [total checker](../Ix/Aiur/EmissionChecks.lean),
   [emission-completion proofs](../Ix/Aiur/Proofs/CheckedCircuit.lean).
+- **Malformed key commitment caps could panic during decoding.** A present
+  cap with zero roots reached a native constructor that asserts its root count
+  is a power of two. The decoder now rejects zero and non-power-of-two counts
+  before constructing the cap. Regressions cover counts 0, 3, 5 and 7; the
+  full-key corpus compares 4,536 native/Lean cases. This decoder has no
+  production callers in the workspace, and no accepted false claim was shown.
+  [Decoder](../crates/aiur/src/vk_codec.rs),
+  [regressions and native corpus](../crates/aiur/src/vk_codec/tests/codec.rs),
+  [total codec and proofs](../Ix/Aiur/Proofs/KeyCodec.lean).
 
 Several checks were added to discharge proof obligations without a demonstrated
 accepted false claim for each one: checked deduplication with identity fallback,
@@ -164,3 +173,11 @@ cases. Its 749-root audit preserves all 719 earlier theorem statements and
 axiom sets; the backend now records and enforces the new guard. Native runtime
 refinement and the remaining compiler/semantic/cryptographic obligations stay
 open. Accepted programs retain their AIR expressions, layouts and keys.
+
+The key-codec checkpoint adds canonical byte interpretation to backend
+construction, retaining the decoded graph and selected parameters. Its
+796-root audit preserves all 749 earlier theorem statements and axiom sets.
+All 74 native release tests, release Clippy, the 4,536 full-key comparisons
+and the nineteen-corpus component gate pass. The cap repair changes no serialized key bytes or AIR. Equality between
+the decoded key graph and the compiler model, native acceptance and the
+remaining semantic/cryptographic obligations stay open.

@@ -83,6 +83,10 @@ mod graph_tests;
 #[path = "vk_codec/tests/compilation.rs"]
 mod compilation_tests;
 
+#[cfg(test)]
+#[path = "vk_codec/tests/codec.rs"]
+mod codec_tests;
+
 // ════════════════════════════════════════════════════════════════════════════
 // Encoder — System<AiurConfig> -> bytes
 // ════════════════════════════════════════════════════════════════════════════
@@ -503,6 +507,9 @@ pub(crate) fn from_bytes(
     0 => None,
     1 => {
       let n = r.u16()? as usize;
+      if !n.is_power_of_two() {
+        return Err("preprocessed cap size must be a power of two".into());
+      }
       let mut caps = Vec::with_capacity(n.min(1 << 16));
       for _ in 0..n {
         let mut d = [0u8; 32];

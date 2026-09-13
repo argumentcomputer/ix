@@ -103,7 +103,7 @@ fn function_inputs() -> Vec<CircuitInputs<Val>> {
     .collect()
 }
 
-fn graph_system() -> System<AiurConfig> {
+pub(super) fn graph_system() -> System<AiurConfig> {
   let mut inputs = vec![expression_input()];
   for size in [0, 1, 2, 4, 8] {
     let (memory, constraints, lookups) = Memory::build(size);
