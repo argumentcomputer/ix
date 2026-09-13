@@ -9,7 +9,7 @@ use crate::{
       add, any, equal, equal_constant, fill_words, not, or, read_words,
       require, require_zero, subtract,
     },
-    decode::PrimitiveSet,
+    decode::{EXTRA_WORD_PRIMITIVES, PrimitiveSet},
     value::{BOOL_TAG, EXT_TAG, FIELD_TAG, WORD32_TAG, scalar_cell},
   },
   multiplication::goldilocks_mul,
@@ -39,6 +39,12 @@ pub struct PrimitivePrepareRow {
   pub(super) inverse: F128,
 }
 
+impl PrimitivePrepareRow {
+  pub fn inputs(&self) -> &[F128] {
+    &self.input
+  }
+}
+
 impl PrimitivePrepareGate {
   pub fn new(
     nu: usize,
@@ -47,6 +53,10 @@ impl PrimitivePrepareGate {
   ) -> Result<Self> {
     ensure!((3..=20).contains(&nu), "primitive row-domain admission");
     ensure!((1..=4).contains(&operands), "primitive operand capacity");
+    ensure!(
+      registry == registry.crypto_scalar_subset(),
+      "byte primitive requires byte dispatch"
+    );
     Ok(Self { nu, operands, registry, plan: Arc::new(OnceLock::new()) })
   }
   pub fn operands(&self) -> usize {
@@ -177,7 +187,11 @@ fn choose(
 fn build(gate: &PrimitivePrepareGate) -> BooleanR1csPlan {
   let inputs = gate.input_count();
   let reserved = 128 * (inputs + gate.output_count());
-  let mut b = BooleanR1csBuilder::new(14, reserved);
+  let extended =
+    EXTRA_WORD_PRIMITIVES.iter().any(|code| gate.registry.contains(*code));
+  // Keep the original matrix/column layout unchanged for the two older
+  // registries. Only a setup explicitly admitting these word ops grows.
+  let mut b = BooleanR1csBuilder::new(if extended { 15 } else { 14 }, reserved);
   for bit in 0..inputs * 128 {
     b.free_boolean_at(bit);
   }
@@ -233,7 +247,14 @@ fn build(gate: &PrimitivePrepareGate) -> BooleanR1csPlan {
     );
   }
   for (codes, tag) in [
-    (&[0, 3, 4, 5, 9, 10, 13][..], 1),
+    (
+      if extended {
+        &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 13][..]
+      } else {
+        &[0, 3, 4, 5, 9, 10, 13][..]
+      },
+      1,
+    ),
     (&[14, 15, 16, 17, 18, 26][..], 2),
     (&[21, 22, 23, 24, 25, 27, 28][..], 3),
   ] {
@@ -298,17 +319,24 @@ fn build(gate: &PrimitivePrepareGate) -> BooleanR1csPlan {
   let bool_eq = b.and(equality, same);
   let bool_lt = b.and(flags[10], less);
   let mut direct = vec![zero; 128];
-  let result_word = choose(
-    &mut b,
-    one,
-    &[
-      (flags[0], &word_add),
-      (flags[3], &word_and),
-      (flags[4], &word_or),
-      (flags[5], &word_xor),
-    ],
-    32,
-  );
+  let extra = extended.then(|| {
+    super::word::operations(&mut b, one, zero, &args[0][..32], &args[1][..32])
+  });
+  let mut word_sources = vec![
+    (flags[0], word_add.as_slice()),
+    (flags[3], word_and.as_slice()),
+    (flags[4], word_or.as_slice()),
+    (flags[5], word_xor.as_slice()),
+  ];
+  if let Some(extra) = &extra {
+    word_sources.extend(
+      EXTRA_WORD_PRIMITIVES
+        .iter()
+        .zip(extra)
+        .map(|(opcode, bits)| (flags[*opcode as usize], bits.as_slice())),
+    );
+  }
+  let result_word = choose(&mut b, one, &word_sources, 32);
   direct[..32].copy_from_slice(&result_word);
   direct[0] = b.xor(&[direct[0], bool_eq, bool_lt], one);
   for (bit, target) in direct.iter_mut().enumerate() {
@@ -325,7 +353,14 @@ fn build(gate: &PrimitivePrepareGate) -> BooleanR1csPlan {
   }
   let mut tag = vec![zero; 128];
   for (value, codes) in [
-    (WORD32_TAG, &[0, 3, 4, 5][..]),
+    (
+      WORD32_TAG,
+      if extended {
+        &[0, 1, 2, 3, 4, 5, 6, 7, 8][..]
+      } else {
+        &[0, 3, 4, 5][..]
+      },
+    ),
     (BOOL_TAG, &[9, 10, 18, 25][..]),
     (FIELD_TAG, &[13, 14, 15, 16, 17, 27, 28][..]),
     (EXT_TAG, &[21, 22, 23, 24, 26][..]),

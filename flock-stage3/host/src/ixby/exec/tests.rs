@@ -44,6 +44,27 @@ fn canonical_profile_and_setup_admission_are_independent_of_guest_artifacts() {
     bytes[position] ^= 1;
     assert!(SemanticProfile::from_bytes(&bytes).is_err());
   }
+  // Parsing revision 1 does not upgrade an approved revision-0 setup.
+  let mut nat_v1 = profile.to_bytes();
+  nat_v1[4] = 1;
+  nat_v1[8] = 1;
+  assert!(
+    compile_exec_profile(
+      SemanticProfile::from_bytes(&nat_v1).unwrap(),
+      CAPACITY,
+      PrimitiveSet::scalar()
+    )
+    .is_err()
+  );
+  nat_v1[40] = 96;
+  assert!(
+    compile_exec_profile(
+      SemanticProfile::from_bytes(&nat_v1).unwrap(),
+      CAPACITY,
+      PrimitiveSet::scalar()
+    )
+    .is_err()
+  );
   assert!(SemanticProfile::from_bytes(&profile.to_bytes()[..67]).is_err());
   assert!(
     SemanticProfile::from_bytes(

@@ -21,7 +21,10 @@ physical bounds, zero constructor/Nat/String/byte-array bounds, value depth
 one, and equal input/output byte capacities. This does not admit every value
 or instruction of the broader crypto profile: the supported class explicitly
 excludes byte scalars, constructors, closures/PAPs, and application. Those are
-M4 work, not silently assumed compiler coverage.
+M4 work, not silently assumed compiler coverage. A separate
+[byte-capable setup](IxbyFlockBytes.md) supports byte scalars and, with the
+explicit full registry, all 35 existing crypto-v0 primitives without changing
+this scalar profile or its keys.
 
 The first proof corpus uses this fixed capacity:
 

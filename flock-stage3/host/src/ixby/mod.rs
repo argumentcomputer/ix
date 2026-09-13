@@ -7,6 +7,7 @@
 pub mod access;
 mod bits;
 pub mod bounded_hash;
+pub mod byte_value;
 pub mod commitment;
 pub mod control;
 pub mod decode;
@@ -15,6 +16,8 @@ pub mod hash_control;
 pub mod io;
 pub mod length;
 pub mod machine;
+pub mod nat_value;
+pub mod object_value;
 pub mod primitive;
 pub mod select;
 pub mod value;

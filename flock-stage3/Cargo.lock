@@ -224,6 +224,7 @@ dependencies = [
  "bincode",
  "blake3",
  "flock-prover",
+ "num-bigint",
  "p3-field",
  "p3-goldilocks",
  "rayon",

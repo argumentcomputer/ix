@@ -20,7 +20,15 @@ def writeScalar (profile : Profile) (scalar : Scalar) : Encoder Unit := do
   | .extField value =>
     writeByte 3; writeNat 8 value.c0.val; writeNat 8 value.c1.val
   | .bytes value => writeByte 4; writeU32 value.size; writeBytes value
-  | .nat _ | .str _ => throw (.profile .unsupportedScalar)
+  | .nat value =>
+    unless profile.revision == .cryptoNatV1 do throw (.profile .unsupportedScalar)
+    -- Minimal unsigned little-endian magnitude; zero has an empty payload.
+    let width := if value == 0 then 0 else value.log2 / 8 + 1
+    -- Reject before allocating the variable-size magnitude, not after it.
+    let state ← get
+    if state.bytes.size + 5 + width > state.limit then throw .byteLimit
+    writeByte 5; writeU32 width; writeNat width value
+  | .str _ => throw (.profile .unsupportedScalar)
 
 def writeCtorId (id : CtorId) : Encoder Unit := do
   writeNat 32 id.block.val
@@ -53,7 +61,7 @@ def writeOp (profile : Profile) : Op → Encoder Unit
   | .copy value => do writeByte 0; writeOperand profile value
   | .primitive primitive args => do
     writeByte 1
-    let some opcode := primitive.cryptoOpcode | throw (.profile .unsupportedInstruction)
+    let some opcode := profile.primitiveOpcode primitive | throw (.profile .unsupportedInstruction)
     writeNat 1 opcode
     writeOperands profile args
   | .construct ctor fields => do writeByte 2; writeU32 ctor; writeOperands profile fields
@@ -76,7 +84,9 @@ def writeInstr (profile : Profile) : Instr → Encoder Unit
   | .caseCtor value alternatives => do
     writeByte 5; writeOperand profile value
     writeVector writeAlternative alternatives.toArray
-  | .caseNat .. => throw (.profile .unsupportedInstruction)
+  | .caseNat value ifZero ifSucc => do
+    unless profile.revision == .cryptoNatV1 do throw (.profile .unsupportedInstruction)
+    writeByte 7; writeOperand profile value; writeU32 ifZero; writeU32 ifSucc
   | .branch condition ifTrue ifFalse => do
     writeByte 6; writeOperand profile condition; writeU32 ifTrue; writeU32 ifFalse
 
@@ -88,7 +98,7 @@ def writeFunction (profile : Profile) (function : Function) : Encoder Unit := do
     writeInstr profile block.instruction) function.blocks
 
 def writeProgram (profile : Profile) (program : Program) : Encoder Unit := do
-  writeHeader "IXBY"
+  writeHeader "IXBY" profile.revision.number
   writeU32 program.entry
   writeVector (fun ctor => do writeCtorId ctor.id; writeU32 ctor.fields) program.constructors
   writeVector (writeFunction profile) program.functions
@@ -102,8 +112,8 @@ and the fourteen capacities in `Profile.parameters`, all little-endian u32. -/
 def encodeProfile (profile : Profile) : Except Error Bytes := do
   profile.validate |>.mapError .profile
   encode 68 0 do
-    writeHeader "IXBP"
-    writeU32 semanticVersion
+    writeHeader "IXBP" profile.revision.number
+    writeU32 profile.revision.number
     for parameter in profile.parameters do writeU32 parameter
 
 def encodeProgram (profile : Profile) (program : Program) : Except Error Bytes := do
@@ -123,7 +133,7 @@ def encodeInput (profile : Profile) (program : Program) (input : Array Value) :
     Except Error Bytes := do
   validateInput profile program input
   encode profile.valueBytes profile.limits.inputNodes do
-    writeHeader "IXBI"
+    writeHeader "IXBI" profile.revision.number
     writeVector (writeValue profile profile.valueDepth) input
 
 def encodeOutput (profile : Profile) (program : Program) (output : Value) :
@@ -131,7 +141,7 @@ def encodeOutput (profile : Profile) (program : Program) (output : Value) :
   profile.validateProgram program |>.mapError .profile
   profile.validateValues program #[output] |>.mapError .profile
   encode profile.valueBytes profile.limits.inputNodes do
-    writeHeader "IXBO"
+    writeHeader "IXBO" profile.revision.number
     writeValue profile profile.valueDepth output
 
 end Ix.Ixby.Codec

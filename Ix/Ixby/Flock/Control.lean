@@ -73,6 +73,21 @@ inductive Resolves (limits : Limits) (program : Program) (frame : Frame) :
       (read : frame.readOperands operands = .ok args)
       (evaluated : primitive.eval limits args = .ok value) :
       Resolves limits program frame (.primitive primitive operands) (.value value)
+  | construct {constructor : Constructor} {declaration : CtorDecl}
+      {operands : List Operand} {fields : List Value}
+      (found : program.getConstructor constructor = .ok declaration)
+      (read : frame.readOperands operands = .ok fields)
+      (arity : fields.length = declaration.fields) :
+      Resolves limits program frame (.construct constructor operands)
+        (.value (.ctor declaration.id fields.toArray))
+  | project {operand : Operand} {id : CtorId} {fields : Array Value}
+      {index : Nat} {value : Value}
+      (read : frame.read operand = .ok (.ctor id fields))
+      (found : fields[index]? = some value) :
+      Resolves limits program frame (.project operand index) (.value value)
+  | projectErased {operand : Operand} {index : Nat}
+      (read : frame.read operand = .ok .erased) :
+      Resolves limits program frame (.project operand index) (.value .erased)
   | call {callee : FunctionId} {operands : List Operand} {args : List Value}
       (read : frame.readOperands operands = .ok args) :
       Resolves limits program frame (.call callee operands) (.call callee args.toArray)
@@ -86,6 +101,9 @@ theorem Resolves.reference {limits : Limits} {program : Program} {frame : Frame}
   cases resolved with
   | copy read => simp [evalOp, read]
   | primitive read evaluated => simp [evalOp, read, evaluated]
+  | construct found read arity => simp [evalOp, found, read, arity, Pure.pure, Except.pure]
+  | project read found => simp [evalOp, read, found, Pure.pure, Except.pure]
+  | projectErased read => simp [evalOp, read, Pure.pure, Except.pure]
   | call read => simp [evalOp, read]
   | callSelf read => simp [evalOp, read]
 
@@ -165,6 +183,30 @@ inductive Step (limits : Limits) (program : Program) : Machine → Outcome → P
         limits program = .ok next) :
       Step limits program ⟨.eval frame, stack⟩
         (.next ⟨.eval { frame with block := if condition then yes else no }, stack⟩)
+  | caseCtor {frame : Frame} {stack : Array Frame} {operand : Operand}
+      {alternatives : List Alternative} {id : CtorId} {fields : Array Value}
+      {target : BlockId} {declared : Nat} {next : Block}
+      (checked : frame.check limits program = .ok ⟨declared, .caseCtor operand alternatives⟩)
+      (read : frame.read operand = .ok (.ctor id fields))
+      (selected : selectCase program id alternatives = .ok target)
+      (destination : ({ frame with block := target, locals := frame.locals ++ fields } : Frame).check
+        limits program = .ok next) :
+      Step limits program ⟨.eval frame, stack⟩
+        (.next ⟨.eval { frame with block := target, locals := frame.locals ++ fields }, stack⟩)
+  | caseNatZero {frame : Frame} {stack : Array Frame} {operand : Operand}
+      {ifZero ifSucc : BlockId} {declared : Nat} {next : Block}
+      (checked : frame.check limits program = .ok ⟨declared, .caseNat operand ifZero ifSucc⟩)
+      (read : frame.read operand = .ok (.scalar (.nat 0)))
+      (destination : ({ frame with block := ifZero } : Frame).check limits program = .ok next) :
+      Step limits program ⟨.eval frame, stack⟩
+        (.next ⟨.eval { frame with block := ifZero }, stack⟩)
+  | caseNatSucc {frame : Frame} {stack : Array Frame} {operand : Operand}
+      {ifZero ifSucc : BlockId} {pred declared : Nat} {next : Block}
+      (checked : frame.check limits program = .ok ⟨declared, .caseNat operand ifZero ifSucc⟩)
+      (read : frame.read operand = .ok (.scalar (.nat (pred + 1))))
+      (destination : (append frame ifSucc (.scalar (.nat pred))).check limits program = .ok next) :
+      Step limits program ⟨.eval frame, stack⟩
+        (.next ⟨.eval (append frame ifSucc (.scalar (.nat pred))), stack⟩)
   | resume {value : Value} {saved : Frame} {rest : Array Frame} {next : Block}
       (destination : (append saved saved.block value).check limits program = .ok next) :
       Step limits program ⟨.ret value, rest.push saved⟩
@@ -197,6 +239,15 @@ theorem Step.reference {limits : Limits} {program : Program} {before : Machine}
   | branch checked read destination =>
     simp [Ix.Ixby.step, stepEval, Machine.decode, ActiveControl.decode, Outcome.decode,
       checked, read, branch_transfer destination]
+  | caseCtor checked read selected destination =>
+    simp [Ix.Ixby.step, stepEval, Frame.transfer, Machine.decode, ActiveControl.decode,
+      Outcome.decode, checked, read, selected, destination]
+  | caseNatZero checked read destination =>
+    simp [Ix.Ixby.step, stepEval, Machine.decode, ActiveControl.decode, Outcome.decode,
+      checked, read, branch_transfer destination]
+  | caseNatSucc checked read destination =>
+    simp [Ix.Ixby.step, stepEval, Machine.decode, ActiveControl.decode, Outcome.decode,
+      checked, read, append_transfer destination]
   | resume destination =>
     simp [Ix.Ixby.step, Machine.decode, ActiveControl.decode, Outcome.decode,
       append_transfer destination]

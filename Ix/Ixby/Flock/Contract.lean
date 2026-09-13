@@ -43,6 +43,7 @@ structure ExecSetupInput where
 
 inductive SetupError where
   | profile (error : ProfileError)
+  | revision
   | capacity
   | primitive
   | template
@@ -51,13 +52,16 @@ inductive SetupError where
 
 def ExecSetupInput.validate (request : ExecSetupInput) : Except SetupError Unit := do
   request.profile.validate |>.mapError .profile
+  -- This is profile-indexed interface admission. Concrete native compilation
+  -- additionally chooses the matching implementation and physical bit bounds.
   let c := request.capacity
   unless #[c.steps, c.programBytes, c.inputBytes, c.outputBytes, c.memoryCells, c.frameCells].all
       (fun n => 0 < n && n < 2 ^ 32) do throw .capacity
   unless request.profile.maxSteps ≤ c.steps && request.profile.programBytes ≤ c.programBytes &&
       request.profile.valueBytes ≤ c.inputBytes && request.profile.valueBytes ≤ c.outputBytes do
     throw .capacity
-  unless request.primitives.enabled.all (·.cryptoOpcode.isSome) do throw .primitive
+  unless request.primitives.enabled.all (fun op => (request.profile.primitiveOpcode op).isSome) do
+    throw .primitive
   unless request.primitives.enabled.toList.Nodup do throw .primitive
 
 /-- The only varying public F128 slots are the two 128-bit limbs of the full

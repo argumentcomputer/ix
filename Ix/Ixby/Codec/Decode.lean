@@ -30,6 +30,15 @@ def readScalar (profile : Profile) : Decoder Scalar := do
     let c1 ← readField
     return .extField ⟨c0, c1⟩
   | 4 => return .bytes (← readBytes (← readCount profile.limits.byteArrayBytes))
+  | 5 =>
+    unless profile.revision == .cryptoNatV1 do throw (.tag 5)
+    let width ← readCount ((profile.limits.natBits + 7) / 8)
+    let bytes ← readBytes width
+    if width != 0 && bytes[width - 1]! == 0 then throw .nonCanonical
+    let scalar := Scalar.nat (natOfBytesLE bytes)
+    -- The last byte may be only partially available under `natBits`.
+    scalar.validate profile.limits |>.mapError (Error.profile ∘ ProfileError.reference)
+    return scalar
   | tag => throw (.tag tag)
 
 def readCtorId : Decoder CtorId := do
@@ -71,7 +80,7 @@ def readOp (profile : Profile) : Decoder Op := do
   | 0 => return .copy (← readOperand profile)
   | 1 =>
     let opcode := (← readByte).toNat
-    let some primitive := cryptoPrimitives[opcode]? | throw (.tag opcode)
+    let some primitive := profile.primitives[opcode]? | throw (.tag opcode)
     return .primitive primitive (← readOperands profile)
   | 2 =>
     let ctor ← readU32
@@ -117,6 +126,12 @@ def readInstr (profile : Profile) : Decoder Instr := do
     let ifTrue ← readU32
     let ifFalse ← readU32
     return .branch condition ifTrue ifFalse
+  | 7 =>
+    unless profile.revision == .cryptoNatV1 do throw (.tag 7)
+    let value ← readOperand profile
+    let ifZero ← readU32
+    let ifSucc ← readU32
+    return .caseNat value ifZero ifSucc
   | tag => throw (.tag tag)
 
 def readFunction (profile : Profile) : Decoder Function := do
@@ -129,7 +144,7 @@ def readFunction (profile : Profile) : Decoder Function := do
   return { arity, entry, blocks }
 
 def readProgram (profile : Profile) : Decoder Program := do
-  readHeader "IXBY"
+  readHeader "IXBY" profile.revision.number
   let entry ← readU32
   let constructors ← readVector profile.limits.constructors do
     let id ← readCtorId
@@ -139,8 +154,13 @@ def readProgram (profile : Profile) : Decoder Program := do
   return { entry, constructors, functions }
 
 def readProfile : Decoder Profile := do
-  readHeader "IXBP"
-  unless (← readU32) == semanticVersion do throw .version
+  unless (← readBytes 4) == "IXBP".toUTF8.data do throw .header
+  let wire ← readU32
+  let semantic ← readU32
+  let revision ← match wire, semantic with
+    | 0, 0 => pure ProfileRevision.cryptoV0
+    | 1, 1 => pure ProfileRevision.cryptoNatV1
+    | _, _ => throw .version
   let functions ← readU32
   let constructors ← readU32
   let blocks ← readU32
@@ -161,7 +181,7 @@ def readProfile : Decoder Profile := do
       locals := locals, operands := operands, continuations := continuations,
       inputNodes := inputNodes, natBits := natBits, stringBytes := stringBytes,
       byteArrayBytes := byteArrayBytes },
-    programBytes, valueBytes, valueDepth, maxSteps }
+    programBytes, valueBytes, valueDepth, maxSteps, revision }
 
 end Internal
 
@@ -183,7 +203,7 @@ def decodeInput (profile : Profile) (program : Program) (bytes : Bytes) :
     Except Error (Decoded (encodeInput profile program) bytes) := do
   profile.validate |>.mapError .profile
   let input ← decode profile.valueBytes profile.limits.inputNodes bytes do
-    readHeader "IXBI"
+    readHeader "IXBI" profile.revision.number
     readVector profile.limits.operands (readValue profile profile.valueDepth)
   canonicalize (encodeInput profile program) bytes input
 
@@ -191,7 +211,7 @@ def decodeOutput (profile : Profile) (program : Program) (bytes : Bytes) :
     Except Error (Decoded (encodeOutput profile program) bytes) := do
   profile.validate |>.mapError .profile
   let output ← decode profile.valueBytes profile.limits.inputNodes bytes do
-    readHeader "IXBO"
+    readHeader "IXBO" profile.revision.number
     readValue profile profile.valueDepth
   canonicalize (encodeOutput profile program) bytes output
 

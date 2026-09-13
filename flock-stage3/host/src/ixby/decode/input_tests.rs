@@ -41,11 +41,87 @@ fn rejected(gate: &InputDecodeGate, r1cs: &BlockR1cs, input: &[F128]) {
   gate
     .plan()
     .fill_row(&mut bits[..gate.plan().k()], |bits| fill_words(input, bits));
-  let residual = (gate.input_count() + gate.capacity.value_words()) * 128;
+  let residual = (gate.input_count() + gate.decoded_words()) * 128;
   assert!(bits[residual]);
   assert!(r1cs.satisfies(&bits));
   bits[residual] = false;
   assert!(!r1cs.satisfies(&bits));
+}
+
+#[test]
+fn byte_input_decodes_every_partial_chunk_without_consuming_following_values() {
+  use crate::ixby::{
+    byte_value::{ByteCapacity, ByteDecodeLayout},
+    decode::test_support::byte_record,
+    value::BYTES_TAG,
+  };
+  let capacity = InputCapacities { bytes: 192, values: 3 };
+  let bytes = ByteCapacity::new(65).unwrap();
+  let gate = InputDecodeGate::new(3, capacity)
+    .unwrap()
+    .with_byte_values(ByteDecodeLayout { capacity: bytes, base: 7 })
+    .unwrap();
+  let r1cs = gate.r1cs();
+  for length in 0..=65 {
+    let data: Vec<_> = (0..length).map(|i| (i * 73 + 19) as u8).collect();
+    let encoded = input(&[
+      Value::Bytes(data.clone()),
+      Value::Word(0xdead_beef),
+      Value::Bytes(vec![]),
+    ]);
+    let inputs = advice(capacity.bytes, &encoded);
+    let mut expected =
+      vec![F128::new(3, 0), F128::new(BYTES_TAG, 0), F128::new(7, 0)];
+    expected.extend(Value::Word(0xdead_beef).words());
+    expected.extend([F128::new(BYTES_TAG, 0), F128::new(9, 0)]);
+    expected.extend(byte_record(65, Some(&data)));
+    expected.extend(byte_record(65, None));
+    expected.extend(byte_record(65, Some(&[])));
+    expected.push(F128::ZERO);
+    assert_eq!(
+      evaluate(gate.plan(), &inputs, gate.output_count()),
+      expected,
+      "length {length}"
+    );
+    let mut bits = vec![false; r1cs.n()];
+    gate
+      .plan()
+      .fill_row(&mut bits[..gate.plan().k()], |bits| fill_words(&inputs, bits));
+    assert!(r1cs.satisfies(&bits));
+  }
+  let encoded = input(&[Value::Bytes(vec![1; 17]), Value::Word(42)]);
+  for length in [66u32, 1 << 31, u32::MAX] {
+    let mut bad = encoded.clone();
+    bad[14..18].copy_from_slice(&length.to_le_bytes());
+    rejected(&gate, &r1cs, &advice(capacity.bytes, &bad));
+  }
+  for end in 0..encoded.len() {
+    rejected(&gate, &r1cs, &advice(capacity.bytes, &encoded[..end]));
+  }
+  let mut trailing = encoded.clone();
+  trailing.push(0);
+  rejected(&gate, &r1cs, &advice(capacity.bytes, &trailing));
+  let row = InputDecodeRow(advice(capacity.bytes, &encoded));
+  let mut bits = vec![false; r1cs.n()];
+  gate
+    .plan()
+    .fill_row(&mut bits[..gate.plan().k()], |bits| fill_words(&row.0, bits));
+  for word in 0..gate.output_count() {
+    for bit in [0, 7, 31, 32, 63, 64, 95, 127] {
+      let at = 128 * (gate.input_count() + word) + bit;
+      bits[at] ^= true;
+      assert!(!r1cs.satisfies(&bits));
+      bits[at] ^= true;
+    }
+  }
+  for rows in [vec![], vec![row.clone()], vec![row; 3]] {
+    crate::ixby::test_support::padding(
+      gate.plan(),
+      &rows,
+      |row, bits| fill_words(&row.0, bits),
+      |dst| gate.generate_witness_into(&rows, dst),
+    );
+  }
 }
 
 #[test]

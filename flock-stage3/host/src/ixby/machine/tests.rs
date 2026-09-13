@@ -315,6 +315,74 @@ fn output_bytes_are_canonical_and_require_a_genuine_empty_stack_terminal_state()
   }
 }
 
+#[test]
+fn byte_output_binds_the_complete_buffer_and_enforces_terminal_and_capacity_checks()
+ {
+  use crate::ixby::{byte_value::ByteCapacity, value::BYTES_TAG};
+  let capacity = ByteCapacity::new(65).unwrap();
+  let gate = OutputEncodeGate::new(3, CONTROL, 96)
+    .unwrap()
+    .with_byte_values(capacity, 7)
+    .unwrap();
+  let r1cs = gate.r1cs();
+  for length in [0, 1, 15, 16, 17, 31, 32, 33, 64, 65] {
+    let data: Vec<_> = (0..length).map(|i| (i * 73 + 19) as u8).collect();
+    let mut state = ControlState {
+      control: Control::Halted([F128::new(BYTES_TAG, 0), F128::new(6, 0)]),
+      continuation: vec![],
+      remaining: 2,
+    }
+    .words(CONTROL)
+    .unwrap();
+    state.extend(advice(65, &data));
+    let mut result = Vec::new();
+    gate.eval(&state, &(), &mut result);
+    let mut expected = advice(96, &output(&V::Bytes(data.clone())));
+    expected.push(F128::ZERO);
+    assert_eq!(result, expected);
+    check(gate.plan(), &r1cs, &state, gate.output_count(), true);
+    let exact = OutputEncodeGate::new(3, CONTROL, 14 + length)
+      .unwrap()
+      .with_byte_values(capacity, 7)
+      .unwrap();
+    check(exact.plan(), &exact.r1cs(), &state, exact.output_count(), true);
+    let narrow = OutputEncodeGate::new(3, CONTROL, 13 + length)
+      .unwrap()
+      .with_byte_values(capacity, 7)
+      .unwrap();
+    check(narrow.plan(), &narrow.r1cs(), &state, narrow.output_count(), false);
+    for bit in [0, 31, 63, 64, 127] {
+      let mut bad = state.clone();
+      flip(&mut bad[1], bit);
+      check(gate.plan(), &r1cs, &bad, gate.output_count(), false);
+    }
+    for bit in 32..128 {
+      let mut bad = state.clone();
+      flip(&mut bad[CONTROL.state_words()], bit);
+      check(gate.plan(), &r1cs, &bad, gate.output_count(), false);
+    }
+    let padding_byte = length;
+    let mut bad = state.clone();
+    flip(
+      &mut bad[CONTROL.state_words() + 1 + padding_byte / 16],
+      8 * (padding_byte % 16),
+    );
+    check(gate.plan(), &r1cs, &bad, gate.output_count(), false);
+    mutations(gate.plan(), &r1cs, &state, gate.output_count());
+  }
+  let mut scalar = ControlState {
+    control: Control::Halted(V::Word(42).words()),
+    continuation: vec![],
+    remaining: 2,
+  }
+  .words(CONTROL)
+  .unwrap();
+  scalar.extend(advice(65, &[]));
+  check(gate.plan(), &r1cs, &scalar, gate.output_count(), true);
+  scalar[CONTROL.state_words()] = F128::new(1, 0);
+  check(gate.plan(), &r1cs, &scalar, gate.output_count(), false);
+}
+
 pub(crate) fn cases() -> Vec<(Vec<u8>, Vec<u8>, Vec<u8>)> {
   let mut cases = Vec::new();
   let identity =

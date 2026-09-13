@@ -13,7 +13,10 @@ use crate::{
       any, bounded_prefix, equal_constant, not, require, require_zero, select,
       subtract,
     },
-    value::scalar_cell,
+    value::{
+      cell_with_byte_handles, cell_with_nat_handles, cell_with_object_handles,
+      scalar_cell,
+    },
   },
   sizing::{CircuitEmitter, CountedGate},
 };
@@ -32,6 +35,9 @@ pub struct OperandResolveGate {
   nu: usize,
   locals: usize,
   operands: usize,
+  byte_entries: Option<usize>,
+  object_entries: Option<usize>,
+  nat_values: bool,
   plan: Arc<OnceLock<BooleanR1csPlan>>,
 }
 
@@ -43,10 +49,42 @@ impl OperandResolveGate {
     ensure!((3..=20).contains(&nu), "operand row-domain admission");
     ensure!((1..=16).contains(&locals), "operand local capacity");
     ensure!((1..=4).contains(&operands), "operand capacity");
-    Ok(Self { nu, locals, operands, plan: Arc::new(OnceLock::new()) })
+    Ok(Self {
+      nu,
+      locals,
+      operands,
+      byte_entries: None,
+      object_entries: None,
+      nat_values: false,
+      plan: Arc::new(OnceLock::new()),
+    })
+  }
+  pub(crate) fn with_byte_handles(mut self, entries: usize) -> Result<Self> {
+    crate::ixby::byte_value::validate_entries(entries)?;
+    self.byte_entries = Some(entries);
+    self.plan = Arc::new(OnceLock::new());
+    Ok(self)
+  }
+  pub(crate) fn with_object_handles(mut self, entries: usize) -> Result<Self> {
+    ensure!(
+      self.byte_entries.is_some() && (1..=128).contains(&entries),
+      "object operand arena capacity"
+    );
+    self.object_entries = Some(entries);
+    self.plan = Arc::new(OnceLock::new());
+    Ok(self)
   }
   fn frame_words(&self) -> usize {
     1 + 2 * self.locals
+  }
+  pub(crate) fn with_nat_handles(mut self) -> Result<Self> {
+    ensure!(
+      self.byte_entries.is_some(),
+      "Nat operands require a magnitude arena"
+    );
+    self.nat_values = true;
+    self.plan = Arc::new(OnceLock::new());
+    Ok(self)
   }
   fn block_words(&self) -> usize {
     2 + 3 * self.operands
@@ -157,8 +195,16 @@ impl OperandResolveSlot {
 fn build(gate: &OperandResolveGate) -> BooleanR1csPlan {
   let reserved = 128 * (gate.input_count() + gate.output_count());
   let columns = reserved
+    + if gate.nat_values {
+      2048 * (gate.locals + gate.operands + 4)
+    } else {
+      0
+    }
     + 1024 * (gate.locals + gate.operands + 4)
-    + 384 * gate.operands * (gate.locals + 2);
+    + 384 * gate.operands * (gate.locals + 2)
+    + gate
+      .object_entries
+      .map_or(0, |_| 1024 * (gate.locals + gate.operands + 4));
   let mut b = BooleanR1csBuilder::new(
     columns.next_power_of_two().ilog2() as usize,
     reserved,
@@ -173,13 +219,44 @@ fn build(gate: &OperandResolveGate) -> BooleanR1csPlan {
   let live = bounded_prefix(&mut b, one, &mut violations, &locals, gate.locals);
   for (index, flag) in live.iter().enumerate() {
     let base = 128 * (1 + 2 * index);
-    scalar_cell(
-      &mut b,
-      one,
-      &mut violations,
-      *flag,
-      &(base..base + 256).collect::<Vec<_>>(),
-    );
+    let value: Vec<_> = (base..base + 256).collect();
+    match (gate.byte_entries, gate.object_entries) {
+      (Some(entries), objects) if gate.nat_values => {
+        cell_with_nat_handles(
+          &mut b,
+          one,
+          &mut violations,
+          *flag,
+          &value,
+          entries,
+          objects,
+        );
+      },
+      (None, _) => {
+        scalar_cell(&mut b, one, &mut violations, *flag, &value);
+      },
+      (Some(entries), None) => {
+        cell_with_byte_handles(
+          &mut b,
+          one,
+          &mut violations,
+          *flag,
+          &value,
+          entries,
+        );
+      },
+      (Some(bytes), Some(objects)) => {
+        cell_with_object_handles(
+          &mut b,
+          one,
+          &mut violations,
+          *flag,
+          &value,
+          bytes,
+          objects,
+        );
+      },
+    }
   }
   let block = 128 * gate.frame_words();
   let count: Vec<_> = (block + 192..block + 224).collect();
@@ -199,7 +276,43 @@ fn build(gate: &OperandResolveGate) -> BooleanR1csPlan {
     let local = b.and(*enabled, local);
     let constant = b.and(*enabled, constant);
     require_zero(&mut b, one, &mut violations, constant, &header[32..64]);
-    scalar_cell(&mut b, one, &mut violations, constant, &value);
+    match (gate.byte_entries, gate.object_entries) {
+      (Some(entries), objects) if gate.nat_values => {
+        cell_with_nat_handles(
+          &mut b,
+          one,
+          &mut violations,
+          constant,
+          &value,
+          entries,
+          objects,
+        );
+      },
+      (None, _) => {
+        scalar_cell(&mut b, one, &mut violations, constant, &value);
+      },
+      (Some(entries), None) => {
+        cell_with_byte_handles(
+          &mut b,
+          one,
+          &mut violations,
+          constant,
+          &value,
+          entries,
+        );
+      },
+      (Some(bytes), Some(objects)) => {
+        cell_with_object_handles(
+          &mut b,
+          one,
+          &mut violations,
+          constant,
+          &value,
+          bytes,
+          objects,
+        );
+      },
+    }
     let in_range = subtract(&mut b, one, zero, &header[32..64], &locals).1;
     require(&mut b, one, &mut violations, local, in_range);
     let mut sources: Vec<_> = (0..gate.locals)

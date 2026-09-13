@@ -22,6 +22,7 @@ pub(super) struct Decoder {
   pub b: BooleanR1csBuilder,
   pub one: usize,
   pub zero: usize,
+  pub nat_capacity: Option<crate::ixby::nat_value::NatCapacity>,
   data_words: usize,
   length: Bits,
   cursor: Bits,
@@ -49,6 +50,7 @@ impl Decoder {
       b,
       one,
       zero,
+      nat_capacity: None,
       data_words: capacity.div_ceil(16),
       length: (0..32).collect(),
       cursor: vec![zero; 32],
@@ -258,7 +260,12 @@ impl Decoder {
     let matched = self.eq_const(&word, u32::from_le_bytes(*magic) as u64);
     self.require(self.one, matched);
     let version = self.u32(self.one);
-    self.require_zero(self.one, &version);
+    if self.nat_capacity.is_some() {
+      let correct = self.eq_const(&version, 1);
+      self.require(self.one, correct);
+    } else {
+      self.require_zero(self.one, &version);
+    }
   }
   pub(super) fn finish(mut self, residual_word: usize) -> BooleanR1csPlan {
     let consumed = self.equal(&self.cursor.clone(), &self.length.clone());

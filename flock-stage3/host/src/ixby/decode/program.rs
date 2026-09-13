@@ -1,13 +1,15 @@
 use super::{
   PrimitiveSet,
   bytes::{Bits, Decoder},
-  evaluate, fill_words, scalar_primitive_arity,
+  evaluate, fill_words, primitive_arity,
 };
 use crate::{
   boolean::{BooleanR1csPlan, generate_boolean_witness_into},
   ixby::{
     bits::add,
+    byte_value::ByteDecodeLayout,
     control::{ControlCapacities, ControlStepGate},
+    object_value::ObjectLayout,
   },
   sizing::{CircuitEmitter, CountedGate},
 };
@@ -21,6 +23,12 @@ use flock_prover::{
 };
 use std::sync::{Arc, OnceLock};
 
+#[cfg(test)]
+#[path = "program_nat_tests.rs"]
+mod nat_tests;
+#[cfg(test)]
+#[path = "program_object_tests.rs"]
+mod object_tests;
 #[cfg(test)]
 #[path = "program_tests.rs"]
 mod tests;
@@ -90,6 +98,9 @@ pub struct ProgramDecodeGate {
   capacity: ProgramCapacities,
   control: ControlCapacities,
   primitives: PrimitiveSet,
+  byte_layout: Option<ByteDecodeLayout>,
+  object_layout: Option<ObjectLayout>,
+  nat_capacity: Option<crate::ixby::nat_value::NatCapacity>,
   plan: Arc<OnceLock<BooleanR1csPlan>>,
 }
 
@@ -114,8 +125,59 @@ impl ProgramDecodeGate {
       capacity,
       control,
       primitives,
+      byte_layout: None,
+      object_layout: None,
+      nat_capacity: None,
       plan: Arc::new(OnceLock::new()),
     })
+  }
+  pub(crate) fn with_byte_values(
+    mut self,
+    layout: ByteDecodeLayout,
+  ) -> Result<Self> {
+    layout.validate(self.byte_records())?;
+    self.byte_layout = Some(layout);
+    self.plan = Arc::new(OnceLock::new());
+    Ok(self)
+  }
+  fn byte_records(&self) -> usize {
+    self.capacity.functions * self.capacity.blocks * self.capacity.operands
+  }
+  pub(crate) fn with_objects(mut self, layout: ObjectLayout) -> Result<Self> {
+    ensure!(
+      self.byte_layout.is_some(),
+      "object programs require byte-capable literals"
+    );
+    self.object_layout = Some(layout);
+    self.plan = Arc::new(OnceLock::new());
+    Ok(self)
+  }
+  pub(crate) fn object_data_word(&self) -> usize {
+    self.layout().words()
+      + self.byte_layout.map_or(0, |layout| {
+        self.byte_records() * layout.capacity.record_words()
+      })
+  }
+  pub(crate) fn with_nat_values(
+    mut self,
+    capacity: crate::ixby::nat_value::NatCapacity,
+  ) -> Result<Self> {
+    ensure!(
+      self
+        .byte_layout
+        .is_some_and(|bytes| bytes.capacity.bytes() >= capacity.bytes()),
+      "Nat literal magnitude capacity"
+    );
+    self.nat_capacity = Some(capacity);
+    self.plan = Arc::new(OnceLock::new());
+    Ok(self)
+  }
+  pub fn decoded_words(&self) -> usize {
+    self.layout().words()
+      + self.byte_layout.map_or(0, |layout| {
+        self.byte_records() * layout.capacity.record_words()
+      })
+      + self.object_layout.map_or(0, ObjectLayout::program_words)
   }
   pub fn capacity(&self) -> ProgramCapacities {
     self.capacity
@@ -124,9 +186,16 @@ impl ProgramDecodeGate {
     self.capacity.layout()
   }
   fn plan(&self) -> &BooleanR1csPlan {
-    self
-      .plan
-      .get_or_init(|| build(self.capacity, self.control, self.primitives))
+    self.plan.get_or_init(|| {
+      build(
+        self.capacity,
+        self.control,
+        self.primitives,
+        self.byte_layout,
+        self.object_layout,
+        self.nat_capacity,
+      )
+    })
   }
   pub fn r1cs(&self) -> BlockR1cs {
     self.plan().block_r1cs(self.nu)
@@ -152,7 +221,7 @@ impl CountedGate for ProgramDecodeGate {
     1 + self.capacity.data_words()
   }
   fn output_count(&self) -> usize {
-    self.layout().words() + 1
+    self.decoded_words() + 1
   }
   fn table_at(&self, nu: usize) -> TableType {
     let mut gate = self.clone();
@@ -193,12 +262,19 @@ pub struct ProgramDecodeSlot {
   slot: SlotId,
   zero: Wire,
   layout: ProgramLayout,
+  words: usize,
 }
 
 impl ProgramDecodeSlot {
   pub fn declare(b: &mut impl CircuitEmitter, gate: ProgramDecodeGate) -> Self {
     let layout = gate.layout();
-    Self { slot: b.slot(gate), zero: b.fixed_public_input(F128::ZERO), layout }
+    let words = gate.decoded_words();
+    Self {
+      slot: b.slot(gate),
+      zero: b.fixed_public_input(F128::ZERO),
+      layout,
+      words,
+    }
   }
   pub fn slot(&self) -> SlotId {
     self.slot
@@ -213,8 +289,8 @@ impl ProgramDecodeSlot {
     let mut input = vec![length];
     input.extend_from_slice(data);
     let output = b.gate(self.slot, &input);
-    b.connect(output[self.layout.words()], self.zero);
-    output[..self.layout.words()].to_vec()
+    b.connect(output[self.words], self.zero);
+    output[..self.words].to_vec()
   }
 }
 
@@ -227,6 +303,19 @@ struct Block {
   binding: usize,
   entering: usize,
   branch: usize,
+  nat_case: usize,
+  cases: Vec<(usize, Bits, Bits)>,
+}
+
+struct ObjectBlock<'a> {
+  layout: ObjectLayout,
+  output: usize,
+  count: &'a Bits,
+  declarations: &'a [[Bits; 4]],
+}
+struct BlockExtras<'a> {
+  bytes: Option<(ByteDecodeLayout, usize, usize)>,
+  objects: Option<ObjectBlock<'a>>,
 }
 
 struct Function {
@@ -263,41 +352,69 @@ fn block(
   c: ProgramCapacities,
   control: ControlCapacities,
   primitives: PrimitiveSet,
-  function: usize,
+  location: (usize, usize),
   enabled: usize,
-  output: usize,
+  extras: BlockExtras<'_>,
 ) -> Block {
+  let (function, output) = location;
   let locals = d.u32(enabled);
   d.bounded(&locals, control.locals, enabled);
   let instruction = d.byte(enabled);
-  let matches: Vec<_> =
+  let mut matches: Vec<_> =
     [0, 1, 2, 3, 6].map(|tag| d.eq_const(&instruction, tag)).into();
+  if extras.objects.is_some() {
+    matches.push(d.eq_const(&instruction, 5));
+  }
+  if d.nat_capacity.is_some() {
+    matches.push(d.eq_const(&instruction, 7));
+  }
   let valid = d.sum(&matches);
   d.require(enabled, valid);
   let modes: Vec<_> =
     matches.into_iter().map(|matched| d.and(enabled, matched)).collect();
   let [let_op, returning, tail_direct, tail_self, branch]: [usize; 5] =
-    modes.try_into().unwrap();
+    modes[..5].try_into().unwrap();
+  let case = if extras.objects.is_some() { modes[5] } else { d.zero };
+  let nat_case =
+    if d.nat_capacity.is_some() { *modes.last().unwrap() } else { d.zero };
   let op = d.byte(let_op);
-  let matches: Vec<_> = [0, 1, 5, 6].map(|tag| d.eq_const(&op, tag)).into();
+  let mut matches: Vec<_> = [0, 1, 5, 6].map(|tag| d.eq_const(&op, tag)).into();
+  if extras.objects.is_some() {
+    matches.extend([2, 3].map(|tag| d.eq_const(&op, tag)));
+  }
   let valid = d.sum(&matches);
   d.require(let_op, valid);
   let modes: Vec<_> =
     matches.into_iter().map(|matched| d.and(let_op, matched)).collect();
   let [copy, primitive, call_direct, call_self]: [usize; 4] =
-    modes.try_into().unwrap();
+    modes[..4].try_into().unwrap();
+  let construct = modes.get(4).copied().unwrap_or(d.zero);
+  let project = modes.get(5).copied().unwrap_or(d.zero);
   let opcode = d.byte(primitive);
   let direct = d.sum(&[call_direct, tail_direct]);
   let direct_callee = d.u32(direct);
   let self_call = d.sum(&[call_self, tail_self]);
   let self_index = d.constant(32, function as u64);
-  let callee = d.choose(&[(d.one, &direct_callee), (self_call, &self_index)]);
+  let mut callee =
+    d.choose(&[(d.one, &direct_callee), (self_call, &self_index)]);
+  let declaration = extras.objects.as_ref().map(|_| d.u32(construct));
   let call = d.sum(&[call_direct, call_self]);
   let tail = d.sum(&[tail_direct, tail_self]);
   let entering = d.sum(&[call, tail]);
-  let vector = d.sum(&[primitive, entering]);
+  let vector = if extras.objects.is_some() {
+    d.sum(&[primitive, entering, construct])
+  } else {
+    d.sum(&[primitive, entering])
+  };
   let vector_count = d.u32(vector);
-  let single = d.sum(&[copy, returning, branch]);
+  let mut single = if extras.objects.is_some() {
+    d.sum(&[copy, returning, branch, project, case])
+  } else {
+    d.sum(&[copy, returning, branch])
+  };
+  if d.nat_capacity.is_some() {
+    single = d.sum(&[single, nat_case]);
+  }
   let one = d.constant(32, 1);
   let args = d.choose(&[(d.one, &vector_count), (single, &one)]);
   let counts = d.bounded(&args, c.operands, enabled);
@@ -306,7 +423,7 @@ fn block(
     .map(|opcode_value| {
       (
         d.eq_const(&opcode, u64::from(opcode_value)),
-        scalar_primitive_arity(opcode_value).unwrap() as u32,
+        primitive_arity(opcode_value).unwrap() as u32,
       )
     })
     .collect();
@@ -317,51 +434,186 @@ fn block(
   let arity = enum_bits(d, &primitive_matches);
   let arity_matches = d.equal(&args, &arity);
   d.require(primitive, arity_matches);
+  if let (Some(objects), Some(declaration)) = (&extras.objects, &declaration) {
+    let in_range = d.less(declaration, objects.count);
+    d.require(construct, in_range);
+    let fields: Vec<_> =
+      objects.declarations.iter().map(|record| &record[3][..32]).collect();
+    let expected = selected(d, declaration, &fields);
+    let same = d.equal(&args, &expected);
+    d.require(construct, same);
+  }
   for operand in 0..c.operands {
     let active = d.live(&counts, operand, enabled);
-    let record = d.operand(active, &locals);
+    let record = match extras.bytes {
+      None => d.operand(active, &locals),
+      Some((layout, first_slot, byte_output)) => {
+        let (record, data) =
+          d.operand_with_bytes(active, &locals, layout, first_slot + operand);
+        for (word, bits) in data.iter().enumerate() {
+          d.write(
+            byte_output + operand * layout.capacity.record_words() + word,
+            bits,
+          );
+        }
+        record
+      },
+    };
     for (word, value) in record.iter().enumerate() {
       d.write(output + 2 + 3 * operand + word, value);
     }
   }
-  let transfer = d.sum(&[let_op, branch]);
+  let mut cases: Vec<(usize, Bits, Bits)> = Vec::new();
+  if let Some(objects) = &extras.objects {
+    let field = d.u32(project);
+    callee = d.choose(&[
+      (d.one, &callee),
+      (d.one, declaration.as_ref().unwrap()),
+      (d.one, &field),
+    ]);
+    let count = d.u32(case);
+    let alternatives =
+      d.bounded(&count, objects.layout.capacity.constructors(), case);
+    d.write(objects.output, &count);
+    for index in 0..objects.layout.capacity.constructors() {
+      let active = d.live(&alternatives, index, case);
+      let ctor = d.u32(active);
+      let target = d.u32(active);
+      let valid = d.less(&ctor, objects.count);
+      d.require(active, valid);
+      for (previous, previous_ctor, _) in &cases {
+        let same = d.equal(&ctor, previous_ctor);
+        let both = d.and(active, *previous);
+        let duplicate = d.and(both, same);
+        d.violate(duplicate);
+      }
+      let word = d.pack(&[&ctor, &target]);
+      d.write(objects.output + 1 + index, &word);
+      cases.push((active, ctor, target));
+    }
+  }
+  let branching =
+    if d.nat_capacity.is_some() { d.sum(&[branch, nat_case]) } else { branch };
+  let transfer = d.sum(&[let_op, branching]);
   let target = d.u32(transfer);
-  let alternative = d.u32(branch);
-  let kind = enum_bits(
-    d,
-    &[
-      (copy, 1),
-      (primitive, 2),
-      (call, 3),
-      (returning, 4),
-      (tail, 5),
-      (branch, 6),
-    ],
-  );
+  let alternative = d.u32(branching);
+  let mut kinds = vec![
+    (copy, 1),
+    (primitive, 2),
+    (call, 3),
+    (returning, 4),
+    (tail, 5),
+    (branch, 6),
+  ];
+  if extras.objects.is_some() {
+    kinds.extend([(construct, 7), (project, 8), (case, 9)]);
+  }
+  if d.nat_capacity.is_some() {
+    kinds.push((nat_case, 10));
+  }
+  let kind = enum_bits(d, &kinds);
   let header = d.pack(&[&locals, &kind, &target, &alternative]);
   d.write(output, &header);
   let header = d.pack(&[&callee, &opcode, &args]);
   d.write(output + 1, &header);
-  let binding = d.sum(&[copy, primitive, call]);
-  Block { locals, target, alternative, callee, args, binding, entering, branch }
+  let binding = if extras.objects.is_some() {
+    d.sum(&[copy, primitive, call, construct, project])
+  } else {
+    d.sum(&[copy, primitive, call])
+  };
+  Block {
+    locals,
+    target,
+    alternative,
+    callee,
+    args,
+    binding,
+    entering,
+    branch,
+    nat_case,
+    cases,
+  }
 }
 
 fn build(
   c: ProgramCapacities,
   control: ControlCapacities,
   primitives: PrimitiveSet,
+  byte_layout: Option<ByteDecodeLayout>,
+  object_layout: Option<ObjectLayout>,
+  nat_capacity: Option<crate::ixby::nat_value::NatCapacity>,
 ) -> BooleanR1csPlan {
+  // A registry alone cannot enable revision-1 guest instructions in v0.
+  let primitives = if nat_capacity.is_some() {
+    primitives
+  } else {
+    primitives.crypto_subset()
+  };
   let layout = c.layout();
   let output = 1 + c.data_words();
-  let reads = 5 + c.functions * (3 + c.blocks * (8 + 4 * c.operands));
+  let records = c.functions * c.blocks * c.operands;
+  let reads = 5
+    + c.functions * (3 + c.blocks * (8 + 4 * c.operands))
+    + byte_layout
+      .map_or(0, |layout| records * (1 + layout.capacity.data_words()))
+    + object_layout.map_or(0, |layout| {
+      5 * layout.capacity.constructors()
+        + c.functions * c.blocks * (3 + 2 * layout.capacity.constructors())
+    });
   let extra = 4096
     + 4096 * c.functions * c.blocks
-    + 1024 * (c.functions + c.blocks).pow(2);
-  let mut d = Decoder::new(c.bytes, output, layout.words() + 1, reads, extra);
+    + 1024 * (c.functions + c.blocks).pow(2)
+    + byte_layout
+      .map_or(0, |layout| 256 * records * (layout.capacity.bytes() + 1))
+    + object_layout.map_or(0, |layout| {
+      8192
+        * layout.capacity.constructors()
+        * (layout.capacity.constructors() + c.functions * c.blocks)
+    });
+  let words = layout.words()
+    + byte_layout.map_or(0, |layout| records * layout.capacity.record_words())
+    + object_layout.map_or(0, ObjectLayout::program_words);
+  let object_output =
+    output + words - object_layout.map_or(0, ObjectLayout::program_words);
+  let mut d = Decoder::new(c.bytes, output, words + 1, reads, extra);
+  d.nat_capacity = nat_capacity;
   d.header(b"IXBY");
   let entry = d.u32(d.one);
   let constructors = d.u32(d.one);
-  d.require_zero(d.one, &constructors);
+  let mut declarations: Vec<[Bits; 4]> = Vec::new();
+  if let Some(objects) = object_layout {
+    let live = d.bounded(&constructors, objects.capacity.constructors(), d.one);
+    d.write(object_output, &constructors);
+    for index in 0..objects.capacity.constructors() {
+      let enabled = d.live(&live, index, d.one);
+      let first = d.read(128, &[(enabled, 16)]);
+      let second = d.read(128, &[(enabled, 16)]);
+      let member = d.u32(enabled);
+      let tag = d.u32(enabled);
+      let fields = d.u32(enabled);
+      d.bounded(&fields, c.operands, enabled);
+      let record = [
+        first,
+        second,
+        d.pack(&[&member, &tag]),
+        d.pack(&[&fields, &[enabled]]),
+      ];
+      for previous in &declarations {
+        let mut same = d.and(enabled, previous[3][32]);
+        for word in 0..3 {
+          let equal = d.equal(&record[word], &previous[word]);
+          same = d.and(same, equal);
+        }
+        d.violate(same);
+      }
+      for (word, bits) in record.iter().enumerate() {
+        d.write(object_output + 1 + 4 * index + word, bits);
+      }
+      declarations.push(record);
+    }
+  } else {
+    d.require_zero(d.one, &constructors);
+  }
   let count = d.u32(d.one);
   let counts = d.bounded(&count, c.functions, d.one);
   let entry_in_range = d.less(&entry, &count);
@@ -388,9 +640,24 @@ fn build(
           c,
           control,
           primitives,
-          function,
+          (function, output + layout.block_word(function, index)),
           active,
-          output + layout.block_word(function, index),
+          BlockExtras {
+            bytes: byte_layout.map(|bytes| {
+              let first = (function * c.blocks + index) * c.operands;
+              (
+                bytes,
+                first,
+                output + layout.words() + first * bytes.capacity.record_words(),
+              )
+            }),
+            objects: object_layout.map(|objects| ObjectBlock {
+              layout: objects,
+              output: object_output + objects.case_word(function, index),
+              count: &constructors,
+              declarations: &declarations,
+            }),
+          },
         )
       })
       .collect();
@@ -407,7 +674,12 @@ fn build(
     let entry_contract = d.equal(&entry_locals, &function.arity);
     d.require(function.enabled, entry_contract);
     for block in &function.blocks {
-      let transfers = d.sum(&[block.binding, block.branch]);
+      let branching = if nat_capacity.is_some() {
+        d.sum(&[block.branch, block.nat_case])
+      } else {
+        block.branch
+      };
+      let transfers = d.sum(&[block.binding, branching]);
       let valid = d.less(&block.target, &function.count);
       d.require(transfers, valid);
       let destination = selected(&mut d, &block.target, &block_locals);
@@ -416,20 +688,43 @@ fn build(
       let overflow = d.and(block.binding, carry);
       d.violate(overflow);
       let expected =
-        d.choose(&[(block.binding, &appended), (block.branch, &block.locals)]);
+        d.choose(&[(block.binding, &appended), (branching, &block.locals)]);
       let same = d.equal(&destination, &expected);
       d.require(transfers, same);
       let valid = d.less(&block.alternative, &function.count);
-      d.require(block.branch, valid);
+      d.require(branching, valid);
       let alternative = selected(&mut d, &block.alternative, &block_locals);
-      let same = d.equal(&alternative, &block.locals);
-      d.require(block.branch, same);
+      let expected = if nat_capacity.is_some() {
+        let overflow = d.and(block.nat_case, carry);
+        d.violate(overflow);
+        d.choose(&[(block.branch, &block.locals), (block.nat_case, &appended)])
+      } else {
+        block.locals.clone()
+      };
+      let same = d.equal(&alternative, &expected);
+      d.require(branching, same);
       let valid = d.less(&block.callee, &count);
       d.require(block.entering, valid);
       let callee_arity = selected(&mut d, &block.callee, &arities);
       let same = d.equal(&callee_arity, &block.args);
       d.require(block.entering, same);
+      if object_layout.is_some() {
+        let fields: Vec<_> =
+          declarations.iter().map(|record| &record[3][..32]).collect();
+        for (enabled, ctor, target) in &block.cases {
+          let valid = d.less(target, &function.count);
+          d.require(*enabled, valid);
+          let fields = selected(&mut d, ctor, &fields);
+          let (appended, carry) =
+            add(&mut d.b, d.one, d.zero, &block.locals, &fields);
+          let overflow = d.and(*enabled, carry);
+          d.violate(overflow);
+          let destination = selected(&mut d, target, &block_locals);
+          let same = d.equal(&destination, &appended);
+          d.require(*enabled, same);
+        }
+      }
     }
   }
-  d.finish(output + layout.words())
+  d.finish(output + words)
 }

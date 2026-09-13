@@ -14,7 +14,24 @@ pub(crate) enum Value {
   Word(u32),
   Field(u64),
   Ext(u64, u64),
+  Bytes(Vec<u8>),
+  Nat(Vec<u8>),
+  Ctor(CtorId, Vec<Value>),
   Erased,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct CtorId {
+  pub block: [u8; 32],
+  pub member: u32,
+  pub tag: u32,
+}
+impl CtorId {
+  fn encode(&self, bytes: &mut Vec<u8>) {
+    bytes.extend(self.block);
+    bytes.extend(self.member.to_le_bytes());
+    bytes.extend(self.tag.to_le_bytes());
+  }
 }
 
 impl Value {
@@ -25,6 +42,9 @@ impl Value {
       Self::Field(x) => (FIELD_TAG, x, 0),
       Self::Ext(x, y) => (EXT_TAG, x, y),
       Self::Erased => (ERASED_TAG, 0, 0),
+      Self::Bytes(_) | Self::Nat(_) | Self::Ctor(..) => {
+        panic!("immutable handles require the decoder's allocation context")
+      },
     };
     [F128::new(tag, 0), F128::new(lo, hi)]
   }
@@ -45,6 +65,34 @@ impl Value {
         bytes.extend(y.to_le_bytes());
       },
       Self::Erased => panic!("erased is a value/operand, not a scalar"),
+      Self::Ctor(..) => panic!("constructor is not a scalar literal"),
+      Self::Bytes(ref data) => {
+        bytes.push(4);
+        bytes.extend((data.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(data);
+      },
+      Self::Nat(ref data) => {
+        bytes.push(5);
+        bytes.extend((data.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(data);
+      },
+    }
+  }
+  fn encode(&self, bytes: &mut Vec<u8>) {
+    match self {
+      Self::Erased => bytes.push(3),
+      Self::Ctor(id, fields) => {
+        bytes.push(1);
+        id.encode(bytes);
+        bytes.extend((fields.len() as u32).to_le_bytes());
+        for field in fields {
+          field.encode(bytes);
+        }
+      },
+      _ => {
+        bytes.push(0);
+        self.scalar(bytes);
+      },
     }
   }
 }
@@ -88,6 +136,10 @@ pub(crate) enum Instruction {
   Ret(Operand),
   Tail(Option<u32>, Vec<Operand>),
   Branch(Operand, u32, u32),
+  Construct(u32, Vec<Operand>, u32),
+  Project(Operand, u32, u32),
+  CaseCtor(Operand, Vec<(u32, u32)>),
+  CaseNat(Operand, u32, u32),
 }
 
 fn vector(bytes: &mut Vec<u8>, operands: &[Operand]) {
@@ -135,6 +187,33 @@ impl Instruction {
         bytes.extend(yes.to_le_bytes());
         bytes.extend(no.to_le_bytes());
       },
+      Self::Construct(ctor, operands, target) => {
+        bytes.extend([0, 2]);
+        bytes.extend(ctor.to_le_bytes());
+        vector(bytes, operands);
+        bytes.extend(target.to_le_bytes());
+      },
+      Self::Project(operand, field, target) => {
+        bytes.extend([0, 3]);
+        operand.encode(bytes);
+        bytes.extend(field.to_le_bytes());
+        bytes.extend(target.to_le_bytes());
+      },
+      Self::CaseCtor(operand, alternatives) => {
+        bytes.push(5);
+        operand.encode(bytes);
+        bytes.extend((alternatives.len() as u32).to_le_bytes());
+        for (ctor, target) in alternatives {
+          bytes.extend(ctor.to_le_bytes());
+          bytes.extend(target.to_le_bytes());
+        }
+      },
+      Self::CaseNat(operand, zero, successor) => {
+        bytes.push(7);
+        operand.encode(bytes);
+        bytes.extend(zero.to_le_bytes());
+        bytes.extend(successor.to_le_bytes());
+      },
     }
   }
   fn words(
@@ -160,6 +239,16 @@ impl Instruction {
       Self::Branch(operand, yes, no) => {
         (6, *yes, *no, 0, 0, vec![operand.clone()])
       },
+      Self::Construct(ctor, operands, target) => {
+        (7, *target, 0, *ctor, 0, operands.clone())
+      },
+      Self::Project(operand, field, target) => {
+        (8, *target, 0, *field, 0, vec![operand.clone()])
+      },
+      Self::CaseCtor(operand, _) => (9, 0, 0, 0, 0, vec![operand.clone()]),
+      Self::CaseNat(operand, zero, successor) => {
+        (10, *zero, *successor, 0, 0, vec![operand.clone()])
+      },
     };
     let mut result = vec![
       meta(locals, kind, target, alternative),
@@ -181,9 +270,20 @@ pub(crate) struct FunctionImage {
 }
 
 pub(crate) fn program(entry: u32, functions: &[FunctionImage]) -> Vec<u8> {
+  object_program(entry, &[], functions)
+}
+pub(crate) fn object_program(
+  entry: u32,
+  constructors: &[(CtorId, u32)],
+  functions: &[FunctionImage],
+) -> Vec<u8> {
   let mut bytes = b"IXBY\0\0\0\0".to_vec();
   bytes.extend(entry.to_le_bytes());
-  bytes.extend(0u32.to_le_bytes());
+  bytes.extend((constructors.len() as u32).to_le_bytes());
+  for (id, fields) in constructors {
+    id.encode(&mut bytes);
+    bytes.extend(fields.to_le_bytes());
+  }
   bytes.extend((functions.len() as u32).to_le_bytes());
   for function in functions {
     bytes.extend(function.arity.to_le_bytes());
@@ -222,12 +322,7 @@ pub(crate) fn input(values: &[Value]) -> Vec<u8> {
   let mut bytes = b"IXBI\0\0\0\0".to_vec();
   bytes.extend((values.len() as u32).to_le_bytes());
   for value in values {
-    if matches!(value, Value::Erased) {
-      bytes.push(3);
-    } else {
-      bytes.push(0);
-      value.scalar(&mut bytes);
-    }
+    value.encode(&mut bytes);
   }
   bytes
 }
@@ -247,6 +342,14 @@ pub(crate) fn advice(capacity: usize, bytes: &[u8]) -> Vec<F128> {
   words
 }
 
+pub(crate) fn byte_record(capacity: usize, data: Option<&[u8]>) -> Vec<F128> {
+  let mut record = advice(capacity, data.unwrap_or(&[]));
+  if data.is_some() {
+    record[0].lo |= 1 << 32;
+  }
+  record
+}
+
 pub(crate) fn meta(a: u32, b: u32, c: u32, d: u32) -> F128 {
   F128::new(
     u64::from(a) | (u64::from(b) << 32),
@@ -256,11 +359,6 @@ pub(crate) fn meta(a: u32, b: u32, c: u32, d: u32) -> F128 {
 
 pub(crate) fn output(value: &Value) -> Vec<u8> {
   let mut bytes = b"IXBO\0\0\0\0".to_vec();
-  if matches!(value, Value::Erased) {
-    bytes.push(3);
-  } else {
-    bytes.push(0);
-    value.scalar(&mut bytes);
-  }
+  value.encode(&mut bytes);
   bytes
 }

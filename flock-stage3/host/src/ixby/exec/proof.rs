@@ -1,6 +1,4 @@
-use super::{
-  CompiledExec, ExecStatementDigest, profile::TRANSCRIPT_DOMAIN, witness,
-};
+use super::{CompiledExec, ExecStatementDigest, witness};
 use anyhow::{Context, Result, ensure};
 use bincode::Options;
 use flock_prover::{
@@ -18,6 +16,18 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 
 const MAGIC: [u8; 8] = *b"IXBYEX00";
 pub(super) const MAX_BYTES: u64 = 16 * 1024 * 1024;
+
+/// Observational completion events for the ordinary prover path. These do
+/// not establish verification or change the relation, setup or transcript.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ExecProvingPhaseV0 {
+  InputAssignment,
+  ExecutionWitness,
+  RowDriverPreparation,
+  /// Includes the native prover's deferred dense witness construction.
+  NativeFlockProving,
+  ProofEncoding,
+}
 
 #[derive(Serialize, Deserialize)]
 struct Bundle {
@@ -90,12 +100,27 @@ impl CompiledExec {
     program: &[u8],
     input: &[u8],
   ) -> Result<Vec<u8>> {
+    self.prove_observed(expected, program, input, |_| {})
+  }
+
+  /// The same prover as `prove`, with one event after each completed phase.
+  /// Callbacks receive no witness data. A failed phase emits no completion
+  /// event; only ordinary `verify` establishes acceptance. Native proving
+  /// includes dense witness construction by its deferred row drivers.
+  pub fn prove_observed(
+    &self,
+    expected: ExecStatementDigest,
+    program: &[u8],
+    input: &[u8],
+    mut observe: impl FnMut(ExecProvingPhaseV0),
+  ) -> Result<Vec<u8>> {
     let private = [
       buffer(self.capacity.program.bytes, program)?,
       buffer(self.capacity.input.bytes, input)?,
     ]
     .concat();
     let assigned = self.input.assign(&private)?;
+    observe(ExecProvingPhaseV0::InputAssignment);
     let witness =
       catch_unwind(AssertUnwindSafe(|| self.shape.run(&assigned, &[])))
         .map_err(|_| {
@@ -106,13 +131,26 @@ impl CompiledExec {
       witness.public == public,
       "execution output does not match expected statement"
     );
-    self.prove_rows(&public, witness::drivers(self, &witness))
+    observe(ExecProvingPhaseV0::ExecutionWitness);
+    let drivers = witness::drivers(self, &witness);
+    observe(ExecProvingPhaseV0::RowDriverPreparation);
+    self.prove_rows_observed(&public, drivers, &mut observe)
   }
 
+  #[cfg(test)]
   pub(super) fn prove_rows(
     &self,
     public: &[F128],
     drivers: Vec<UnionSlotProverInput<'_>>,
+  ) -> Result<Vec<u8>> {
+    self.prove_rows_observed(public, drivers, &mut |_| {})
+  }
+
+  fn prove_rows_observed(
+    &self,
+    public: &[F128],
+    drivers: Vec<UnionSlotProverInput<'_>>,
+    observe: &mut impl FnMut(ExecProvingPhaseV0),
   ) -> Result<Vec<u8>> {
     let union =
       UnionInstance::new(&self.shape.registry, self.shape.counts.clone());
@@ -126,14 +164,17 @@ impl CompiledExec {
       Vec::new(),
       &mut challenger,
     );
-    codec()
+    observe(ExecProvingPhaseV0::NativeFlockProving);
+    let bytes = codec()
       .serialize(&Bundle {
         magic: MAGIC,
         setup: self.identities.digest(),
         commitment,
         proof,
       })
-      .context("encode Exec proof")
+      .context("encode Exec proof")?;
+    observe(ExecProvingPhaseV0::ProofEncoding);
+    Ok(bytes)
   }
 
   /// Only approved setup, externally expected S, and strict Exec proof bytes
@@ -188,9 +229,7 @@ impl CompiledExec {
   fn challenger(&self) -> FsChallenger {
     // Setup identity is fixed verifier policy, not a proof-supplied challenge
     // prefix. The native verifier also binds registry/circuit/public words.
-    let mut domain = TRANSCRIPT_DOMAIN.to_vec();
-    domain.extend_from_slice(&self.identities.digest());
-    FsChallenger::with_chained_blake3(&domain)
+    FsChallenger::with_chained_blake3(&self.transcript_domain())
   }
 }
 

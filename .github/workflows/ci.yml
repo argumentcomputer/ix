@@ -121,7 +121,7 @@ jobs:
   # The generic interpreter's gate library is an independent Cargo workspace.
   stage3-core:
     runs-on: warp-ubuntu-latest-x64-8x
-    timeout-minutes: 20
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-rust-toolchain
@@ -139,7 +139,9 @@ jobs:
           RAYON_NUM_THREADS: 8
         run: |
           ulimit -v 33554432
-          timeout 300 cargo test --release --locked --manifest-path flock-stage3/Cargo.toml --workspace -- --ignored --skip ixby::exec::proof_tests:: --test-threads=1
+          # Exec corpora have separate budgets below. Diagnostic benchmarks
+          # remain explicitly opt-in instead of joining conformance tests.
+          timeout 300 cargo test --release --locked --manifest-path flock-stage3/Cargo.toml --workspace -- --ignored --skip ixby::exec:: --test-threads=1
       - name: Prove direct generic scalar executions
         if: github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch'
         env:
@@ -147,6 +149,37 @@ jobs:
         run: |
           ulimit -v 33554432
           timeout 600 cargo test --release --locked --manifest-path flock-stage3/Cargo.toml --workspace ixby::exec::proof_tests:: -- --ignored --test-threads=1
+      - name: Prove packed generic scalar executions
+        if: github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch'
+        env:
+          RAYON_NUM_THREADS: 4
+        run: |
+          ulimit -v 33554432
+          timeout 900 cargo test --release --locked --manifest-path flock-stage3/Cargo.toml --workspace ixby::exec::backend_tests:: -- --ignored --test-threads=1
+      - name: Prove direct generic byte executions
+        if: github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch'
+        env:
+          RAYON_NUM_THREADS: 4
+        run: |
+          ulimit -v 33554432
+          timeout 600 cargo test --release --locked --manifest-path flock-stage3/Cargo.toml --workspace ixby::exec::byte_tests:: -- --ignored --test-threads=1
+      - name: Prove complete crypto primitive executions
+        if: github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch'
+        env:
+          RAYON_NUM_THREADS: 4
+        run: |
+          ulimit -v 33554432
+          timeout 600 cargo test --release --locked --manifest-path flock-stage3/Cargo.toml --workspace ixby::exec::crypto_tests:: -- --ignored --test-threads=1
+      - name: Prove immutable constructor executions
+        if: github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch'
+        env:
+          RAYON_NUM_THREADS: 4
+        run: |
+          # Measured ~26 GiB peak RSS locally, but 32 GiB address space was
+          # insufficient. This changes the virtual-address guard, not keys.
+          ulimit -c 0
+          ulimit -v 67108864
+          timeout 900 cargo test --release --locked --manifest-path flock-stage3/Cargo.toml --workspace ixby::exec::object_tests:: -- --ignored --test-threads=1
 
   # The isolated terminal workspace is not part of root Cargo operations.
   # These are native core regressions, not the full closed IxBy proof gate.

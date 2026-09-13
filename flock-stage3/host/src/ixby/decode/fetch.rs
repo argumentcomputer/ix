@@ -25,6 +25,8 @@ use std::sync::{Arc, OnceLock};
 pub struct ProgramFetchGate {
   nu: usize,
   layout: ProgramLayout,
+  objects: bool,
+  nats: bool,
   plan: Arc<OnceLock<BooleanR1csPlan>>,
 }
 
@@ -35,13 +37,29 @@ impl ProgramFetchGate {
   pub fn new(nu: usize, layout: ProgramLayout) -> Result<Self> {
     ensure!((3..=20).contains(&nu), "program fetch row-domain admission");
     layout.capacity().validate()?;
-    Ok(Self { nu, layout, plan: Arc::new(OnceLock::new()) })
+    Ok(Self {
+      nu,
+      layout,
+      objects: false,
+      nats: false,
+      plan: Arc::new(OnceLock::new()),
+    })
+  }
+  pub(crate) fn with_objects(mut self) -> Self {
+    self.objects = true;
+    self.plan = Arc::new(OnceLock::new());
+    self
   }
   pub fn layout(&self) -> ProgramLayout {
     self.layout
   }
+  pub(crate) fn with_nats(mut self) -> Self {
+    self.nats = true;
+    self.plan = Arc::new(OnceLock::new());
+    self
+  }
   fn plan(&self) -> &BooleanR1csPlan {
-    self.plan.get_or_init(|| build(self.layout))
+    self.plan.get_or_init(|| build(self.layout, self.objects, self.nats))
   }
   pub fn r1cs(&self) -> BlockR1cs {
     self.plan().block_r1cs(self.nu)
@@ -136,7 +154,7 @@ impl ProgramFetchSlot {
   }
 }
 
-fn build(layout: ProgramLayout) -> BooleanR1csPlan {
+fn build(layout: ProgramLayout, objects: bool, nats: bool) -> BooleanR1csPlan {
   let c = layout.capacity();
   let input_words = 2 + layout.words();
   let output_words = layout.block_words() + 2;
@@ -192,9 +210,12 @@ fn build(layout: ProgramLayout) -> BooleanR1csPlan {
   let record = select(&mut b, one, zero, &blocks, 128 * layout.block_words());
   let locals_match = equal(&mut b, one, &locals, &record[..32]);
   require(&mut b, one, &mut violations, active, locals_match);
-  let valid_opcodes: Vec<_> = (1..=6)
+  let mut valid_opcodes: Vec<_> = (1..=if objects { 9 } else { 6 })
     .map(|opcode| equal_constant(&mut b, one, &record[32..64], opcode))
     .collect();
+  if nats {
+    valid_opcodes.push(equal_constant(&mut b, one, &record[32..64], 10));
+  }
   let valid = b.xor(&valid_opcodes, one);
   require(&mut b, one, &mut violations, active, valid);
   let entering = b.xor(&[valid_opcodes[2], valid_opcodes[4]], one);

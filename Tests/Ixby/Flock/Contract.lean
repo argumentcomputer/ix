@@ -21,6 +21,14 @@ private def request : ExecSetupInput := {
 
 private def rejects (request : ExecSetupInput) : Bool := !request.validate.isOk
 
+private def natRequest : ExecSetupInput := {
+  request with
+  profile := { request.profile with
+    revision := .cryptoNatV1
+    limits := { request.profile.limits with natBits := 192 } }
+  primitives := { request.primitives with enabled := #[.natAdd, .natDiv, .natMod] }
+}
+
 private def checks : IO (List Check) := do
   return [
     ("exact physical admission boundary", request.validate.isOk),
@@ -31,6 +39,8 @@ private def checks : IO (List Check) := do
     ("insufficient input capacity rejected", rejects { request with capacity.inputBytes := 63 }),
     ("insufficient output capacity rejected", rejects { request with capacity.outputBytes := 63 }),
     ("invalid semantic profile rejected", rejects { request with profile.limits.natBits := 1 }),
+    ("explicit Nat revision has profile-indexed interface admission",
+      natRequest.validate.isOk),
     ("unregistered semantic primitive rejected", rejects
       { request with primitives.enabled := #[.natAdd] }),
     ("duplicate registry opcode rejected", rejects

@@ -340,7 +340,8 @@ codec. These are fixed in the verifying key, never supplied as prover advice. -/
 def profileConstants (profile : Profile) : Except Codec.Error Aiur.Source.Toplevel := do
   -- The parser and opcode table above implement exactly these revisions.
   -- A future codec change must not silently build a stale interpreter key.
-  unless Codec.wireVersion == 0 && Codec.semanticVersion == 0 do throw .version
+  unless profile.revision == .cryptoV0 && Codec.wireVersion == 0 &&
+      Codec.semanticVersion == 0 do throw .version
   let bytes ← Codec.encodeProfile profile
   let digest := (Commitment.hash .profile bytes).bytes
   let hashBody := Aiur.Source.Term.array ((Array.range 8).map fun i =>

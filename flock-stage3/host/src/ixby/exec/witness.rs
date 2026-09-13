@@ -8,6 +8,7 @@ use crate::{
   goldilocks::{self, CanonicalGoldilocksQuadGate, GoldilocksAddPairGate},
   hash::Blake3Gate,
   ixby::{
+    byte_value::{BytePrimitiveGate, ByteReadGate},
     control::ControlStepGate,
     decode::{
       InputDecodeGate, OperandResolveGate, ProgramDecodeGate, ProgramFetchGate,
@@ -15,6 +16,8 @@ use crate::{
     hash_control::{HashBlockGate, RootParamsGate},
     length::CheckedLengthAddGate,
     machine::{ActionAssembleGate, InitialStateGate, OutputEncodeGate},
+    nat_value::NatDispatchGate,
+    object_value::ObjectDispatchGate,
     primitive::{PrimitiveFinishGate, PrimitivePrepareGate},
     select::SelectWordsGate,
   },
@@ -57,6 +60,20 @@ pub(super) fn tables(
     (h.length_slot().slot(), h.length_gate().r1cs()),
   ];
   tables.extend(common.compression().tables());
+  if let Some(objects) = &m.objects {
+    tables.push((objects.slot, objects.gate.r1cs()));
+  }
+  if let Some(nats) = &m.nats {
+    tables.push((nats.slot, nats.gate.r1cs()));
+  }
+  if let Some(bytes) = &m.bytes {
+    tables.extend([
+      (bytes.read_slot.slot(), bytes.read_gate.r1cs()),
+      (bytes.primitive_slot, bytes.primitive_gate.r1cs()),
+      (bytes.select_slot.slot(), bytes.select_gate.r1cs()),
+      (bytes.hash.block_slot(), bytes.hash.block_gate().r1cs()),
+    ]);
+  }
   tables.extend(
     h.hashes().iter().map(|hash| (hash.block_slot(), hash.block_gate().r1cs())),
   );
@@ -141,6 +158,12 @@ pub(super) fn drivers<'a>(
   gate!(m.control_slot.slot(), ControlStepGate, &m.control_gate);
   gate!(m.initial_slot.slot(), InitialStateGate, &m.initial_gate);
   gate!(m.output_slot.slot(), OutputEncodeGate, &m.output_gate);
+  if let Some(objects) = &m.objects {
+    gate!(objects.slot, ObjectDispatchGate, &objects.gate);
+  }
+  if let Some(nats) = &m.nats {
+    gate!(nats.slot, NatDispatchGate, &nats.gate);
+  }
   let a = &m.primitive_slots.arithmetic;
   native!(
     a.add,
@@ -181,6 +204,12 @@ pub(super) fn drivers<'a>(
   gate!(h.length_slot().slot(), CheckedLengthAddGate, h.length_gate());
   for hash in h.hashes() {
     gate!(hash.block_slot(), HashBlockGate, hash.block_gate());
+  }
+  if let Some(bytes) = &m.bytes {
+    gate!(bytes.read_slot.slot(), ByteReadGate, &bytes.read_gate);
+    gate!(bytes.primitive_slot, BytePrimitiveGate, &bytes.primitive_gate);
+    gate!(bytes.select_slot.slot(), SelectWordsGate, &bytes.select_gate);
+    gate!(bytes.hash.block_slot(), HashBlockGate, bytes.hash.block_gate());
   }
   drivers.sort_by_key(|(slot, _)| compiled.shape.registry_slot(*slot));
   assert_eq!(drivers.len(), compiled.shape.counts.len());

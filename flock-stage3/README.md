@@ -2,13 +2,19 @@
 
 This independent workspace starts the generic IxBy execution backend. Its
 current implementation connects canonical byte admission, a fixed-capacity
-scalar/control interpreter, BLAKE3/Exec commitments, and direct Flock proofs,
-alongside labelled native gadget regressions. The native constraint-to-reference
-refinement, broader crypto guest profile, and compiled Stage 2 verifier remain
-unfinished. See [the direct scalar execution boundary](../docs/IxbyFlockScalar.md).
+scalar/control and byte-capable interpreters, all 35 existing crypto-v0
+primitives, bounded immutable constructors, explicit revision-1 exact Nats,
+BLAKE3/Exec commitments, and direct Flock proofs, alongside labelled native
+gadget regressions. The native constraint-to-reference refinement, PAPs,
+scalable guest execution, and compiled Stage 2 verifier remain unfinished.
+See [the scalar execution boundary](../docs/IxbyFlockScalar.md)
+and the explicit [byte](../docs/IxbyFlockBytes.md) and
+[constructor](../docs/IxbyFlockObjects.md) setup upgrades, plus the
+[exact-Nat setup and proof results](../docs/IxbyFlockNats.md).
 It is excluded from the root Cargo workspace and has no `aiur`, `multi-stark`,
 or `ix-terminal` dependency. Test-only Plonky3 field crates provide arithmetic
-differential oracles at the same revision used by the original tests.
+differential oracles at the same revision used by the original tests. Test-only
+`num-bigint` supplies independent multiword Nat arithmetic differentials.
 
 Flock is pinned to `b310f35f35f68095537150a1c8c0a43caca9a29e`; no experimental
 m37 patch/profile is enabled. `IMPORT-PROVENANCE.json` records the donor HEAD
@@ -40,8 +46,9 @@ cargo fmt --manifest-path flock-stage3/Cargo.toml --all -- --check
 cargo clippy --release --locked --manifest-path flock-stage3/Cargo.toml --workspace --all-targets -- -D warnings
 ```
 
-The current ordinary suite passed 97 tests. The two imported conformance proofs
-are opt-in and also passed locally on 2026-09-12, including their serialized
+The ordinary suite passes 140 tests, including byte, word, constructor and
+Nat regressions; 17 proof/benchmark tests are opt-in. The two imported
+conformance proofs are opt-in and also passed locally on 2026-09-12, including their serialized
 round trips and malicious operand/path/root/proof mutations:
 
 | Label | Flock proof bundle bytes | Scope |

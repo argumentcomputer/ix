@@ -13,6 +13,7 @@ rayon.workspace = true
 serde.workspace = true
 
 [dev-dependencies]
+num-bigint = "=0.5.1"
 # Arithmetic differential oracles only; the native multi-stark verifier and
 # its Stage 2-specific advice export API are not dependencies of this backend.
 p3-field = { git = "https://github.com/Plonky3/Plonky3", rev = "3152b14a89067c83775a8076cc262ffc48a1fd7c" }

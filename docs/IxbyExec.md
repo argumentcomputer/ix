@@ -3,9 +3,9 @@
 Status: execution statements, public-claim binding, setup interfaces, and
 conditional composition are implemented. The optional Stage 2 specialization
 now composes the independent source refinement. Direct native Flock proofs of
-the small scalar/control interpreter are implemented; native refinement, the
-larger crypto guest profile, complete terminal relation and Compilatrix
-certificate remain unfinished.
+the small scalar/control, byte-capable, immutable-constructor and exact-Nat interpreters are implemented;
+native refinement, the larger crypto guest profile, complete terminal relation
+and Compilatrix certificate remain unfinished.
 
 ## Statements and public claims
 
@@ -81,6 +81,10 @@ Flock protocol identity, and backend implementation identity. No guest image,
 Stage 2 key/AIR, proof, or execution trace is accepted. The primitive registry
 uses existing IxBy opcodes, not a `verifyStage2` oracle. Admission checks reject
 unsupported/duplicate opcodes, invalid profiles, and undersized capacities.
+The setup interface admits registered operations against the selected semantic
+profile. Existing native v0 factories still reject revision 1. The separate
+[exact-Nat factory](IxbyFlockNats.md) admits it only with matching bit/storage
+capacities and an explicitly approved implementation/key upgrade.
 
 The fixed public template distinguishes fixed F128 words from the low/high
 limbs of the complete Exec digest and requires exactly one slot for each limb.
@@ -100,11 +104,34 @@ not run a host hash/execution oracle on private artifacts.
 The Lean decoded-control rules now refine reference steps and finite byte
 execution with explicit instruction, operand, callee and codec premises.
 The native constraint-to-`Codec.Evaluates` theorem remains unfinished, as do
-the broader byte/structured-value profile and complete terminal relation.
+PAPs, scalable guest capacities and the complete terminal relation.
 Native acceptance and matching regression outputs do not establish formal
 refinement. See the [direct scalar execution construction](IxbyFlockScalar.md),
 [native hash/commitment construction](IxbyFlockHash.md) and
 [control construction and logical proof boundary](IxbyFlockControl.md).
+
+The explicit [byte-capable setup](IxbyFlockBytes.md) adds immutable byte values,
+all ten byte/conversion/hash operations and constrained guest BLAKE3. Its full
+registry also supports the five remaining Word32 operations, covering all 35
+existing crypto-v0 primitives. Real proofs cover canonical byte results,
+calls/returns, word/byte/hash composition and hostile record/digest/word-row
+substitution. The original scalar and thirty-opcode byte setup identities
+remain unchanged. This supplies the byte-result representation for the wrapper
+ABI above, but not its source certificate, full Stage 2 guest or native refinement.
+
+The separate [constructor setup](IxbyFlockObjects.md) adds immutable
+construction/projection/cases and canonical tree I/O, preserving the prior
+byte-only keys. Twenty-one real executions and two recomputed hostile-row
+rejections pass under its fixed setup. The decoded Lean rules now cover these
+operations, but their native constraint refinement remains an obligation.
+
+The separate [exact-Nat setup](IxbyFlockNats.md) adds all seven bounded Nat
+primitives and `caseNat`, canonical Nat I/O, and transport through constructors
+and first-order calls. Thirty real executions and two fully recomputed hostile
+arithmetic/case-row rejections pass. Word32 remains a separate wrapping type;
+the older v0 factories and setup identities are preserved. Its 192-bit proof
+fixture used about 39.69 GiB maximum RSS, so it is not yet admitted to the
+existing CI proof budget or evidence of full-guest capacity.
 
 Application policy must pin the exact source declaration closure/version,
 compiler configuration, ABI, semantic profile, image bytes, and execution-

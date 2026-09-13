@@ -84,10 +84,14 @@ padding, including recycled buffers and absent rows with either elision hint.
 ## Logical proof boundary
 
 `Ix/Ixby/Flock/Control.lean` models decoded frames in the same oldest-first
-array order. `Resolves` checks actual copy/primitive/call/self-call operands;
+array order. `Resolves` checks actual copy/primitive/call/self-call operands,
+constructor declarations/fields, and constructor/Erased projections;
 `Entry` requires a real callee declaration, matching arity and checked entry
 frame. `Step` additionally checks the current instruction and destination
-block. Primitive evaluation is an explicit semantic premise. The proved
+block, including full-identity constructor cases and ordered field appends.
+`Step.caseNatZero` and `Step.caseNatSucc` additionally model exact Nat cases,
+preserving the old frame or appending the exact predecessor, respectively.
+Primitive evaluation is an explicit semantic premise. The proved
 `Step.reference` reaches the existing `Ix.Ixby.step` from those local premises,
 without assuming correctness of a whole reference step or native evaluator.
 
@@ -105,10 +109,13 @@ and the instruction/operand/callee premises. Unauthenticated resolved actions
 cannot supply `Step`. Native scalar/primitive correspondence and the complete
 byte/commitment-to-trace connection remain required.
 
-The exact IxBy audit now covers 333 public roots and scans 3,227 theorem
+The exact IxBy audit now covers 333 public roots and scans 3,238 theorem
 declarations, permitting only the existing standard Lean axioms. A concrete
 six-transition call/Word32-add/return example is kernel proved; runtime tests
 also check its canonical byte execution and the five-transition exhaustion.
+Kernel-checked zero/successor Nat traces in `Tests/Ixby/Flock/Nats.lean` use
+three transitions and reject two-step fuel. See the
+[native Nat guide](IxbyFlockNats.md) for its separate physical implementation.
 
 ## Native evidence
 
@@ -131,10 +138,12 @@ proof bytes, framing and domains reject. A recomputed, locally valid second
 step with a changed current function is rejected by fresh verification with
 `Wiring(Gkr(ProductMismatch))`, testing the actual inter-step connections.
 
-The complete native regression suite passes 88 ordinary and seven opt-in
+The original scalar/control milestone passed 88 ordinary and seven opt-in
 real-proof tests, including the separately documented scalar Exec corpus.
-The merge-queue/manual CI tier runs all seven; ordinary PR tests do not start
-a prover. All are bounded regressions, not production security review,
+The merge-queue/manual CI tier runs those seven; ordinary PR tests do not start
+a prover. The [workspace guide](../flock-stage3/README.md) records the expanded
+byte/constructor/Nat suites and their separate opt-in proof tests.
+All are bounded regressions, not production security review,
 peak-resource measurements, or completion of the M3 execution gate.
 
 ```sh

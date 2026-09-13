@@ -148,7 +148,11 @@ public def suite (withProofs := true) (withStats := false) : IO UInt32 :=
   let programs := successfulCases.foldl (init := (#[] : Array Program)) fun acc (_, p, _) =>
     if acc.contains p then acc else acc.push p
   IO.println s!"{successfulCases.length} success cases over {programs.size} distinct guest programs"
-  let mut checks : List Check := []
+  let mut checks : List Check := [
+    ("Nat codec revision cannot build a stale Aiur interpreter", match
+        profileConstants { profile with revision := .cryptoNatV1 } with
+      | .error .version => true
+      | _ => false)]
   for (label, program, input) in successfulCases do
     checks := checks ++ [succeeds label (fixture program input >>= executeFixture backend)]
   let .ok base := fixture identity #[w 0x12345678]

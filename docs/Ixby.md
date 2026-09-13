@@ -7,7 +7,13 @@ Compilatrix lowering or source-to-IxBy certification is implemented here.
 The ISA, profiles, wire format, and proof parameters remain provisional.
 
 Existing production claims, Stage 1/2 keys, Flock relations, and deployment
-policies are unchanged. There is no new Flock interpreter or terminal SNARK.
+policies are unchanged. Experimental native Flock scalar and byte-capable
+interpreters are separate from those production relations. The explicit
+[full-crypto setup](IxbyFlockBytes.md) now implements all 35 reference crypto
+primitives. An explicit [constructor setup](IxbyFlockObjects.md) additionally
+proves bounded immutable objects. The separate [Nat setup](IxbyFlockNats.md)
+adds exact bounded arithmetic and Nat cases under revision 1. PAPs, a compiled
+Stage 2 guest proof and a complete terminal SNARK remain unfinished.
 This document describes the current architecture and semantic boundaries;
 the [design roadmap](../plans/ixby-plan.md) records longer-term integration work.
 
@@ -24,6 +30,8 @@ the [design roadmap](../plans/ixby-plan.md) records longer-term integration work
   [Commitment.lean](../Ix/Ixby/Commitment.lean): bounded crypto-profile admission,
   strict canonical artifacts, checked byte execution, and domain-separated
   commitments. See the [encoding specification](IxbyEncoding.md).
+  Explicit [Nat revision 1](IxbyNat.md) extends reference/codec admission and
+  has a matching native Flock setup; legacy factories and Aiur remain v0.
 - [Composition.lean](../Ix/Ixby/Composition.lean): conditional source/target
   refinement and composition. Its concrete example is not an IxIR₀ lowering
   theorem or general compiler certification.
@@ -36,6 +44,16 @@ the [design roadmap](../plans/ixby-plan.md) records longer-term integration work
   exact fuel/halting, and decoded-rule-to-byte-execution refinement. The
   [native control guide](IxbyFlockControl.md) distinguishes the real component
   proofs from the unfinished native constraint and instruction/codec bridge.
+- [Native byte execution](IxbyFlockBytes.md): an explicit Flock setup upgrade
+  with immutable byte values, all ten byte primitives, guest BLAKE3, canonical
+  byte results and real proofs. Scalar-only keys remain unchanged; native
+  refinement and the full guest-size profile remain open. The separate
+  [constructor setup](IxbyFlockObjects.md) adds finite constructor trees,
+  projection and cases, without changing the byte-only keys.
+- [Native exact-Nat execution](IxbyFlockNats.md): an explicit revision-1 setup
+  with typed immutable magnitudes, all seven Nat primitives, exact Nat cases,
+  canonical I/O and real proofs, composed with first-order control and optional
+  constructors. Word32 keeps its existing semantics and v0 keys are unchanged.
 - [Aiur.lean](../Ix/Ixby/Aiur.lean): the host adapter for
   [scalar](IxbyAiur.md), [control](IxbyControl.md), and
   [object](IxbyObjects.md) interpreters. It is a separate import from the pure
@@ -296,12 +314,20 @@ or certify its accelerator, so this baseline cannot establish proving efficiency
 
 ### Experimental crypto profile
 
-`Profile` admits the same functional control with Bool, Word32, canonical base
-and extension fields, and bounded bytes. It explicitly rejects Nat/String
+The default `Profile` revision, `cryptoV0`, admits the same functional control
+with Bool, Word32, canonical base and extension fields, and bounded bytes.
+It explicitly rejects Nat/String
 operations, literals, and nested runtime values, and rejects `caseNat`, even in
 unused code. The broader reference evaluator still supports those operations;
 their exclusion is an initial proving-fragment choice, not their removal from
 the permanent execution plan. Raising a capacity cannot re-enable them.
+
+Explicit `cryptoNatV1` adds exact Nat scalars, all seven Nat primitives and
+`caseNat` to reference/codec admission. Its `natBits` limit rejects overflow;
+it does not reinterpret Nat as Word32. String remains excluded. An explicit
+[native Flock factory](IxbyFlockNats.md) now constrains this revision within
+its bounded physical class; legacy factories and Aiur still reject it.
+See the [compiler handoff](IxbyNat.md).
 
 Profile execution checks the reference admission rules, a step bound, and
 shared node/depth limits on inputs and outputs. Numeric profile parameters
@@ -334,7 +360,7 @@ that its output was executed. `Commitment.executeAndCheck` performs reference
 execution and checks all expected commitments; it is not a STARK verifier or
 application program-authorization policy. Hash security, constrained admission,
 authenticated lookup, and circuit/reference correspondence remain separate
-obligations. Wire/semantic revision 0 and the commitment domain are experimental,
+obligations. Both wire/semantic revisions and the commitment domain are experimental,
 not changes to production claim encodings or permanent interpreter keys.
 
 ### Constrained execution backends

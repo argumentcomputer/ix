@@ -175,6 +175,9 @@ fn canonical_scalar_cells_are_checked_even_when_unread_and_outputs_cannot_be_for
         V::Field(_) => 64,
         V::Ext(..) => 128,
         V::Erased => 0,
+        V::Bytes(_) | V::Nat(_) | V::Ctor(..) => {
+          unreachable!("legacy scalar corpus")
+        },
       };
       for bit in start..128 {
         let mut bad = good.clone();

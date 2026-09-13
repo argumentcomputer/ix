@@ -32,14 +32,14 @@ fn field(a: u64) -> ValueWords {
 fn ext(a: u64, b: u64) -> ValueWords {
   [F128::new(EXT_TAG, 0), F128::new(a, b)]
 }
-fn inputs(opcode: u8, values: &[ValueWords]) -> Vec<F128> {
+pub(super) fn inputs(opcode: u8, values: &[ValueWords]) -> Vec<F128> {
   let mut input =
     vec![meta(1, 2, 1, 0), meta(0, u32::from(opcode), values.len() as u32, 0)];
   input.extend(values.iter().flatten().copied());
   input.resize(6, F128::ZERO);
   input
 }
-fn row_bits(
+pub(super) fn row_bits(
   plan: &BooleanR1csPlan,
   r1cs: &BlockR1cs,
   fill: impl FnOnce(&mut [bool]),
@@ -152,7 +152,11 @@ fn all_scalar_opcodes_and_boundary_values_use_one_fixed_arithmetic_network() {
   }
 }
 
-fn reject(gate: &PrimitivePrepareGate, r1cs: &BlockR1cs, input: &[F128]) {
+pub(super) fn reject(
+  gate: &PrimitivePrepareGate,
+  r1cs: &BlockR1cs,
+  input: &[F128],
+) {
   let row = gate.eval(input, &(), &mut Vec::new());
   let mut bits =
     row_bits(gate.plan(), r1cs, |bits| prepare::fill_free(&row, bits));
@@ -220,7 +224,7 @@ fn runtime_dispatch_rejects_wrong_types_arity_registry_and_noncanonical_cells()
   reject(&only_add, &only_add.r1cs(), &inputs(16, &[field(2), field(3)]));
 }
 
-fn flip(word: &mut F128, bit: usize) {
+pub(super) fn flip(word: &mut F128, bit: usize) {
   if bit < 64 {
     word.lo ^= 1 << bit;
   } else {

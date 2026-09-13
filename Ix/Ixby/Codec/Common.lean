@@ -58,9 +58,9 @@ def writeNat (width n : Nat) : Encoder Unit := do
 
 def writeU32 (n : Nat) : Encoder Unit := writeNat 4 n
 
-def writeHeader (magic : String) : Encoder Unit := do
+def writeHeader (magic : String) (version : Nat := wireVersion) : Encoder Unit := do
   writeBytes magic.toUTF8.data
-  writeU32 wireVersion
+  writeU32 version
 
 def writeVector {α : Type} (write : α → Encoder Unit) (values : Array α) : Encoder Unit := do
   writeU32 values.size
@@ -101,9 +101,9 @@ def readByte : Decoder UInt8 := do
 def readNat (width : Nat) : Decoder Nat := return natOfBytesLE (← readBytes width)
 def readU32 : Decoder Nat := readNat 4
 
-def readHeader (magic : String) : Decoder Unit := do
+def readHeader (magic : String) (version : Nat := wireVersion) : Decoder Unit := do
   unless (← readBytes magic.utf8ByteSize) == magic.toUTF8.data do throw .header
-  unless (← readU32) == wireVersion do throw .version
+  unless (← readU32) == version do throw .version
 
 def readCount (bound : Nat) : Decoder Nat := do
   let count ← readU32

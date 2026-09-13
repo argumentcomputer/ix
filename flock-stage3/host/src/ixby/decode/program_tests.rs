@@ -1,4 +1,5 @@
 use super::*;
+use crate::ixby::decode::scalar_primitive_arity;
 use crate::ixby::decode::test_support::{
   FunctionImage, Instruction as I, Operand as O, Value as V, advice, program,
   program_table,
@@ -136,13 +137,119 @@ fn rejected(gate: &ProgramDecodeGate, r1cs: &BlockR1cs, input: &[F128]) {
   gate
     .plan()
     .fill_row(&mut bits[..gate.plan().k()], |bits| fill_words(input, bits));
-  let residual = (gate.input_count() + gate.layout().words()) * 128;
+  let residual = (gate.input_count() + gate.decoded_words()) * 128;
   assert!(bits[residual], "malformed program was accepted");
   assert!(r1cs.satisfies(&bits));
   // Recompute every internal and output bit, then forge the zero required
   // by the actual slot wrapper. No host rejection or stale advice is used.
   bits[residual] = false;
   assert!(!r1cs.satisfies(&bits));
+}
+
+#[test]
+fn byte_literals_have_setup_fixed_handles_and_exact_independent_records() {
+  use crate::ixby::{
+    byte_value::{ByteCapacity, ByteDecodeLayout},
+    decode::test_support::{byte_record, meta},
+    value::BYTES_TAG,
+  };
+  let capacity =
+    ProgramCapacities { bytes: 192, functions: 2, blocks: 2, operands: 3 };
+  let bytes = ByteCapacity::new(33).unwrap();
+  let gate =
+    ProgramDecodeGate::new(3, capacity, CONTROL, PrimitiveSet::crypto_bytes())
+      .unwrap()
+      .with_byte_values(ByteDecodeLayout { capacity: bytes, base: 0 })
+      .unwrap();
+  let r1cs = gate.r1cs();
+  let data: Vec<_> = (0..33).map(|i| (i * 73 + 19) as u8).collect();
+  let code = program(
+    0,
+    &[
+      FunctionImage {
+        arity: 0,
+        entry: 0,
+        blocks: vec![
+          (
+            0,
+            I::Primitive(
+              31,
+              vec![
+                O::Literal(V::Bytes(data.clone())),
+                O::Literal(V::Bytes(vec![])),
+              ],
+              1,
+            ),
+          ),
+          (1, I::Ret(O::Local(0))),
+        ],
+      },
+      FunctionImage {
+        arity: 0,
+        entry: 0,
+        blocks: vec![(0, I::Ret(O::Literal(V::Bytes(vec![7, 8, 9]))))],
+      },
+    ],
+  );
+  let inputs = advice(capacity.bytes, &code);
+  let result = evaluate(gate.plan(), &inputs, gate.output_count());
+  assert_eq!(result.last(), Some(&F128::ZERO));
+  for (function, block, operand, allocation) in
+    [(0, 0, 0, 0), (0, 0, 1, 1), (1, 0, 0, 6)]
+  {
+    let at = capacity.layout().block_word(function, block) + 2 + 3 * operand;
+    assert_eq!(
+      &result[at..at + 3],
+      &[meta(2, 0, 0, 0), F128::new(BYTES_TAG, 0), F128::new(allocation, 0)]
+    );
+  }
+  let mut records = Vec::new();
+  for index in 0..12 {
+    records.extend(byte_record(
+      33,
+      match index {
+        0 => Some(data.as_slice()),
+        1 => Some(&[]),
+        6 => Some(&[7, 8, 9]),
+        _ => None,
+      },
+    ));
+  }
+  assert_eq!(&result[capacity.layout().words()..gate.decoded_words()], records);
+  let mut bits = vec![false; r1cs.n()];
+  gate
+    .plan()
+    .fill_row(&mut bits[..gate.plan().k()], |bits| fill_words(&inputs, bits));
+  assert!(r1cs.satisfies(&bits));
+  for word in capacity.layout().words()..gate.decoded_words() {
+    for bit in [0, 31, 32, 63, 64, 127] {
+      let at = 128 * (gate.input_count() + word) + bit;
+      bits[at] ^= true;
+      assert!(!r1cs.satisfies(&bits));
+      bits[at] ^= true;
+    }
+  }
+  for end in [0, 8, 20, 47, code.len() - 1] {
+    rejected(&gate, &r1cs, &advice(capacity.bytes, &code[..end]));
+  }
+  let oversized = program(
+    0,
+    &[FunctionImage {
+      arity: 0,
+      entry: 0,
+      blocks: vec![(0, I::Ret(O::Literal(V::Bytes(vec![0; 34]))))],
+    }],
+  );
+  rejected(&gate, &r1cs, &advice(capacity.bytes, &oversized));
+  let row = ProgramDecodeRow(inputs);
+  for rows in [vec![], vec![row.clone()], vec![row; 3]] {
+    crate::ixby::test_support::padding(
+      gate.plan(),
+      &rows,
+      |row, bits| fill_words(&row.0, bits),
+      |dst| gate.generate_witness_into(&rows, dst),
+    );
+  }
 }
 
 #[test]

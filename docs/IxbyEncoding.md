@@ -1,8 +1,9 @@
 # IxBy experimental crypto encoding
 
 This documents the reference codec in `Ix/Ixby/Codec/` and commitments in
-`Ix/Ixby/Commitment.lean`. The wire revision and crypto semantic revision are
-both **0**. This is an experimental target artifact format, not a new
+`Ix/Ixby/Commitment.lean`. The default `cryptoV0` has wire/semantic revisions
+**0/0**; explicit `cryptoNatV1` has **1/1** and adds exact bounded Nat. Mixed
+or unknown revision pairs are rejected. This is an experimental target artifact format, not a new
 production `Claim` variant, a frozen source ABI, or a circuit-soundness proof.
 See [IxBy semantics and implementation status](Ixby.md).
 
@@ -19,7 +20,7 @@ if execution would never inspect them. Byte-array lengths count raw bytes,
 not characters. Unknown tags, wrong revisions, truncation, and trailing bytes
 are rejected; there is no permissive fallback decoder.
 
-All top-level artifacts start with four literal ASCII bytes and `u32(0)`:
+All top-level artifacts start with four literal ASCII bytes and `u32(wireRevision)`:
 
 | Artifact | Magic | Body after the eight-byte header |
 | --- | --- | --- |
@@ -34,7 +35,7 @@ from the program bytes; the program commitment binds it explicitly.
 ## Profile envelope
 
 The complete envelope is exactly 68 bytes. Offset 8 holds semantic revision
-0. The remaining fields, in order, are all `u32`:
+0 or 1, matching the selected wire revision. The remaining fields, in order, are all `u32`:
 
 | Byte offset | Parameter | Bound or meaning |
 | --- | --- | --- |
@@ -45,7 +46,7 @@ The complete envelope is exactly 68 bytes. Offset 8 holds semantic revision
 | 28 | `limits.operands` | Operand vectors, function arity, fields, and captures |
 | 32 | `limits.continuations` | Continuation stack depth |
 | 36 | `limits.inputNodes` | Total nodes across the input forest; separately, output nodes |
-| 40 | `limits.natBits` | Must be zero; does not enable Nat scalars |
+| 40 | `limits.natBits` | V0: must be zero and does not enable Nat. V1: exact Nat bit bound; zero admits only Nat zero |
 | 44 | `limits.stringBytes` | Must be zero; does not enable String scalars |
 | 48 | `limits.byteArrayBytes` | Individual byte scalars, including literals and primitive results |
 | 52 | `programBytes` | Complete encoded program size, including header |
@@ -119,8 +120,10 @@ Each variant begins with the indicated `u8` tag. Payload order is exact.
 | 4 | `tailApply` | `Operand || Vec(Operand)` |
 | 5 | `caseCtor` | `Operand || Vec(constructorIndex:u32 || targetBlock:u32)` |
 | 6 | `branch` | `Operand || ifTrueBlock:u32 || ifFalseBlock:u32` |
+| 7 (v1 only) | `caseNat` | `Operand || ifZeroBlock:u32 || ifSuccBlock:u32` |
 
-`caseNat` has no tag in this profile. Whole-image admission enforces local and
+`caseNat` is rejected in v0. Its successor branch appends the exact predecessor
+to the original local frame; its zero branch appends nothing. Whole-image admission enforces local and
 successor-frame bounds, call/capture/constructor arities, valid references,
 unique constructor identities, and unique case alternatives. It does not
 statically prove operand types or that every execution succeeds.
@@ -169,8 +172,19 @@ result types, and failures are defined by `Primitive.eval` and the
 | 32 | `bytesSlice` | 3 |
 | 33 | `bytesEq` | 2 |
 | 34 | `blake3` | 1 |
+| 35 (v1 only) | `natAdd` | 2 |
+| 36 (v1 only) | `natSub` | 2 |
+| 37 (v1 only) | `natMul` | 2 |
+| 38 (v1 only) | `natDiv` | 2 |
+| 39 (v1 only) | `natMod` | 2 |
+| 40 (v1 only) | `natEq` | 2 |
+| 41 (v1 only) | `natLt` | 2 |
 
-Nat and String primitives have no opcodes. Word32 remains a scalar value;
+V1 appends `cryptoNatPrimitives` without changing opcodes 0–34. String primitives
+have no opcodes in either revision. Nat operations retain the exact reference
+semantics and reject input/result overflow against `natBits`, never wrap.
+No implicit or explicit Nat/Word32 conversion opcode is introduced here.
+Word32 remains a scalar value;
 fixed-width bytecode indices do not turn CEK-family control into mutable
 register-machine execution.
 
@@ -185,10 +199,15 @@ Scalars start with a `u8` tag:
 | 2 | Goldilocks | `u64`, strictly less than `18446744069414584321` |
 | 3 | Extension field | Two canonical Goldilocks `u64`s, `c0` then `c1`, for `c0 + c1*X`, `X² = 7` |
 | 4 | Bytes | `u32` byte count followed by the raw bytes |
+| 5 (v1 only) | Nat | `u32` magnitude byte count followed by minimal unsigned little-endian magnitude |
 
 Field decoding rejects noncanonical integers instead of reducing them modulo
-the field. Bytes need not be UTF-8. Nat and String scalars, including zero and
-the empty string, are excluded rather than coerced to Word32 or Bytes.
+the field. Bytes need not be UTF-8. V0 excludes Nat, including zero. V1 encodes
+Nat zero with a zero byte count and no payload; every nonzero magnitude must
+end in a nonzero byte. Its count is bounded by `ceil(natBits / 8)` before reading,
+then the exact bit bound is checked, including partially available final bytes.
+String scalars, including the empty string, remain excluded. No scalar is
+implicitly coerced to Word32 or Bytes.
 
 Values start with a separate `u8` tag:
 
@@ -235,6 +254,12 @@ unambiguous. All profile parameters and every encoded program record are
 bound. The statement is the four digests `(P, B, I, O)`; its compact digest is
 available separately. There is no production statement/claim envelope yet.
 
+The commitment framing and its `v0` domain separator are unchanged in Nat v1:
+the profile and artifact revision fields are already part of the hashed
+payloads. The separate experimental Claim/Exec envelope also remains v0.
+Changing revisions therefore changes semantic identities without silently
+changing existing v0 artifacts or backend keys.
+
 `Commitment.ofArtifacts` admits the program, inputs, and output before computing
 this statement. **It does not check that execution produces that output.**
 `Commitment.ofExecution` derives the statement from a successful reference run.
@@ -266,7 +291,7 @@ a separate committed field: the profile's `maxSteps` is bound, and the witness
 must respect it. Nonterminal runs, failed admission, primitive errors, or output
 encoding failures do not establish successful execution.
 
-`Tests/Ixby/Codec.lean` covers independent golden bytes, every primitive and
+`Tests/Ixby/Codec.lean` covers v0 independent golden bytes, every primitive and
 operation, structured values, strict-prefix truncation, malformed tags/ranges,
 resource boundaries, execution, and altered commitments. These tests and Lean
 equations do not implement constrained decoding, authenticated program fetch,
@@ -276,9 +301,14 @@ straight-line subset with real proofs. The [control backend](IxbyControl.md)
 adds whole-image tables, scalar branches, direct/tail calls, and explicit
 continuations. The [object backend](IxbyObjects.md) adds immutable constructors,
 projections, and constructor cases, with shared I/O budgets and a ranked-heap
-contract. All use the same wire/semantic revision. General application, byte
-scalars, the remaining primitives, and a formal circuit-to-reference
-refinement remain backend obligations; source lowering and the source-value
+contract. All Aiur slices and the legacy native Flock factories still use v0;
+they reject `cryptoNatV1`. The explicit [native Nat setup](IxbyFlockNats.md)
+constrains v1 arithmetic, Nat cases and canonical I/O under new approved keys.
+[Nat handoff](IxbyNat.md) describes the compiler API and the 64 additional
+reference/codec checks.
+General application and a formal circuit-to-reference refinement remain backend
+obligations. Aiur's byte/remaining-primitive and Nat constraints are also
+incomplete. Source lowering and the source-value
 ABI proof remain the later Compilatrix companion work.
 
 Any encoding or opcode-assignment change requires an explicit wire revision;

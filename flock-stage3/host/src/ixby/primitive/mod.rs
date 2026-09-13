@@ -8,6 +8,9 @@ mod finish;
 mod prepare;
 #[cfg(test)]
 pub(crate) mod tests;
+mod word;
+#[cfg(test)]
+mod word_tests;
 
 pub use finish::{PrimitiveFinishGate, PrimitiveFinishRow};
 pub use prepare::{PrimitivePrepareGate, PrimitivePrepareRow};

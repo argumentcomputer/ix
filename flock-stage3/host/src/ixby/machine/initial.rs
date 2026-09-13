@@ -8,7 +8,10 @@ use crate::{
       evaluate_words, fill_words, require, select, subtract,
     },
     control::{ControlCapacities, ControlStepGate},
-    value::scalar_cell,
+    value::{
+      cell_with_byte_handles, cell_with_nat_handles, cell_with_object_handles,
+      scalar_cell,
+    },
   },
   sizing::{CircuitEmitter, CountedGate},
 };
@@ -29,6 +32,9 @@ pub struct InitialStateGate {
   functions: usize,
   inputs: usize,
   fuel: u32,
+  byte_entries: Option<usize>,
+  object_entries: Option<usize>,
+  nat_values: bool,
   pub(super) plan: Arc<OnceLock<BooleanR1csPlan>>,
 }
 #[derive(Clone, Debug)]
@@ -50,11 +56,38 @@ impl InitialStateGate {
       functions,
       inputs,
       fuel,
+      byte_entries: None,
+      object_entries: None,
+      nat_values: false,
       plan: Arc::new(OnceLock::new()),
     })
   }
+  pub(crate) fn with_byte_handles(mut self, entries: usize) -> Result<Self> {
+    crate::ixby::byte_value::validate_entries(entries)?;
+    self.byte_entries = Some(entries);
+    self.plan = Arc::new(OnceLock::new());
+    Ok(self)
+  }
+  pub(crate) fn with_object_handles(mut self, entries: usize) -> Result<Self> {
+    ensure!(
+      self.byte_entries.is_some() && (1..=128).contains(&entries),
+      "initial object arena capacity"
+    );
+    self.object_entries = Some(entries);
+    self.plan = Arc::new(OnceLock::new());
+    Ok(self)
+  }
   pub(super) fn plan(&self) -> &BooleanR1csPlan {
     self.plan.get_or_init(|| build(self))
+  }
+  pub(crate) fn with_nat_handles(mut self) -> Result<Self> {
+    ensure!(
+      self.byte_entries.is_some(),
+      "Nat initial values require a magnitude arena"
+    );
+    self.nat_values = true;
+    self.plan = Arc::new(OnceLock::new());
+    Ok(self)
   }
   pub fn r1cs(&self) -> BlockR1cs {
     self.plan().block_r1cs(self.nu)
@@ -150,7 +183,11 @@ impl InitialStateSlot {
 }
 fn build(gate: &InitialStateGate) -> BooleanR1csPlan {
   let reserved = 128 * (gate.input_count() + gate.output_count());
-  let columns = reserved + 4096 + 1024 * (gate.functions + gate.inputs);
+  let columns = reserved
+    + if gate.nat_values { 2048 * (gate.inputs + 4) } else { 0 }
+    + 4096
+    + 1024 * (gate.functions + gate.inputs)
+    + gate.object_entries.map_or(0, |_| 1024 * gate.inputs);
   let mut b = BooleanR1csBuilder::new(
     columns.next_power_of_two().ilog2() as usize,
     reserved,
@@ -190,7 +227,43 @@ fn build(gate: &InitialStateGate) -> BooleanR1csPlan {
   for (index, enabled) in live.iter().enumerate() {
     let base = input_base + 128 * (1 + 2 * index);
     let value: Vec<_> = (base..base + 256).collect();
-    scalar_cell(&mut b, one, &mut violations, *enabled, &value);
+    match (gate.byte_entries, gate.object_entries) {
+      (Some(entries), objects) if gate.nat_values => {
+        cell_with_nat_handles(
+          &mut b,
+          one,
+          &mut violations,
+          *enabled,
+          &value,
+          entries,
+          objects,
+        );
+      },
+      (None, _) => {
+        scalar_cell(&mut b, one, &mut violations, *enabled, &value);
+      },
+      (Some(entries), None) => {
+        cell_with_byte_handles(
+          &mut b,
+          one,
+          &mut violations,
+          *enabled,
+          &value,
+          entries,
+        );
+      },
+      (Some(bytes), Some(objects)) => {
+        cell_with_object_handles(
+          &mut b,
+          one,
+          &mut violations,
+          *enabled,
+          &value,
+          bytes,
+          objects,
+        );
+      },
+    }
     out[256 + 256 * index..512 + 256 * index].copy_from_slice(&value);
   }
   for (bit, source) in out.iter().enumerate() {
