@@ -3,8 +3,7 @@ Copyright (c) 2026 Argument Computer Corporation.
 SPDX-License-Identifier: MIT OR Apache-2.0
 -/
 
-import Ix.Aiur.Proofs.CompiledCircuitRows
-import Ix.Aiur.Proofs.BlockAllocation
+import Ix.Aiur.Proofs.CircuitAllocation
 import Tests.Aiur.EmissionReader
 
 /-! Actual native function and circuit records drive both symbolic and valued
@@ -33,6 +32,11 @@ private def sameEmission (left right : AIR.CircuitEmission) : Bool :=
       right.queries.map (fun part => (part.slot, part.selector, part.message)) && left.returns == right.returns
 
 private def readCircuit (program : Bytecode.Toplevel) (circuit : Bytecode.Circuit) (label : String) : Reader Nat := do
+  unless circuit.validateRowCounts program do throw s!"native circuit fails checked selector bounds: {label}"
+  unless 7 ≤ circuit.layout.auxiliaries && circuit.members.all (fun index =>
+      program.functions[index]!.layout.inputSize ≤ circuit.layout.inputSize &&
+      program.functions[index]!.layout.auxiliaries ≤ circuit.layout.auxiliaries) do
+    throw s!"native circuit fails compiler column bounds: {label}"
   let some emitted := emitCircuit program circuit | throw s!"symbolic circuit rejected native inputs: {label}"
   unless (← readBool) == emitted.branchless do throw s!"native circuit branchless decision differs: {label}"
   unless (← readNat) == emitted.width && (← readNat) == emitted.selectorStart && (← readNat) == emitted.selectorCount do
@@ -43,7 +47,7 @@ private def readCircuit (program : Bytecode.Toplevel) (circuit : Bytecode.Circui
   let lookups ← readList (← readCount 4096) do
     return ExprLookup.mk (← readExpr 256) (← readList (← readCount) (readExpr 256))
   unless lookups == emitted.lookups do throw s!"native circuit lookup trees differ: {label}"
-  let some compiled := compileBase ⟨0, emitted.width, 0, 0⟩ lookups equations
+  let some compiled := compileCircuit ⟨0, emitted.width, 0, 0⟩ program circuit
     | throw s!"base compilation rejected native circuit expressions: {label}"
   let count ← readCount
   unless count == 4 do throw "incomplete native circuit assignments"
@@ -57,13 +61,13 @@ private def readCircuit (program : Bytecode.Toplevel) (circuit : Bytecode.Circui
     let some valued := circuit.emitRow (fun index => row[index]?.getD 0) program
       | throw s!"valued circuit rejected symbolic inputs: {label}"
     unless sameEmission evaluated valued do throw s!"symbolic/valued circuit differs: {label}, assignment {seed}"
-    let some buffer := compiled.graph.sweep goldilocksOps values
+    let some buffer := compiled.base.graph.sweep goldilocksOps values
       | throw s!"compiled circuit sweep is undefined: {label}"
-    let some graphLookups := compiled.graph.lookups.mapM (readLookup buffer)
+    let some graphLookups := compiled.base.graph.lookups.mapM (readLookup buffer)
       | throw s!"compiled circuit lookup roots are undefined: {label}"
     unless graphLookups == List.ofFn (fun slot : Fin valued.lookupCount => valued.lookup slot.val) do
       throw s!"compiled circuit lookup meanings differ: {label}, assignment {seed}"
-    unless compiled.graph.zeros.all (fun root => buffer[root]? == some 0) == valued.equations.all (· == 0) do
+    unless compiled.base.graph.zeros.all (fun root => buffer[root]? == some 0) == valued.equations.all (· == 0) do
       throw s!"compiled circuit satisfaction differs: {label}, assignment {seed}"
     for (lookup, slot) in lookups.zipIdx do
       let weight ← readField
@@ -102,7 +106,7 @@ def run (path : System.FilePath) : IO Unit := do
   let bytes ← IO.FS.readBinFile path
   match readCorpus.run (bytes, 0) with
   | .error error => throw (IO.userError error)
-  | .ok _ => IO.println "circuit expressions: 96 native circuits, 48 compiler function layouts and 384 assignments match"
+  | .ok _ => IO.println "circuit expressions: 96 native circuit bounds, 48 compiler function layouts and 384 assignments match"
 
 end AiurTests.CircuitExpressions
 

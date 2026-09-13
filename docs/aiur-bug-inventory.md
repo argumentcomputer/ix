@@ -129,3 +129,10 @@ native comparisons cover 1,168 operation sequences satisfying the degree-zero
 constant invariant, 384 block layouts and 48 function layouts. No new bug or
 native behavior change was found; complete compiler validity and the remaining
 full-C8 obligations remain open.
+
+The circuit-allocation checkpoint derives physical read bounds from successful
+compilation and the checked circuit layout, including grouped selector regions.
+Its 687-root audit preserves every earlier statement, axiom set, frozen
+definition and recursion worker. All 96 native circuit bounds and 384 composed
+graph assignments match. No new bug or native behavior change was found;
+successful symbolic compilation and the remaining full-C8 obligations stay open.

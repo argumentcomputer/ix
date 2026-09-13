@@ -5316,6 +5316,361 @@ ROOT Aiur.NativeAIR.BlockEmitter.emitBlock_layout
             emission.column =
               base + (StateT.run (Aiur.Concrete.Bytecode.blockLayout block) initial).snd.functionLayout.auxiliaries
 AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.Concrete.Bytecode.opLayout_fixed
+∀ (op : Aiur.Bytecode.Op) (initial : Aiur.Concrete.Bytecode.LayoutMState),
+  (StateT.run (Aiur.Concrete.Bytecode.opLayout op) initial).snd.functionLayout.inputSize =
+      initial.functionLayout.inputSize ∧
+    (StateT.run (Aiur.Concrete.Bytecode.opLayout op) initial).snd.functionLayout.selectors =
+      initial.functionLayout.selectors
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.Concrete.Bytecode.opsLayout_fields
+∀ (ops : Array Aiur.Bytecode.Op) (initial : Aiur.Concrete.Bytecode.LayoutMState),
+  have final := (StateT.run (Array.forM Aiur.Concrete.Bytecode.opLayout ops) initial).snd.functionLayout;
+  final.inputSize = initial.functionLayout.inputSize ∧
+    final.selectors = initial.functionLayout.selectors ∧ initial.functionLayout.auxiliaries ≤ final.auxiliaries
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.Concrete.Bytecode.allocationBranchStep_fields
+∀ (shared : Aiur.Concrete.Bytecode.SharedData) (degrees : Array Nat) (acc : Aiur.Concrete.Bytecode.SharedData)
+  (block : Aiur.Bytecode.Block) (initial : Aiur.Concrete.Bytecode.LayoutMState),
+  (∀ (state : Aiur.Concrete.Bytecode.LayoutMState),
+      (StateT.run (Aiur.Concrete.Bytecode.blockLayout block) state).snd.functionLayout.inputSize =
+          state.functionLayout.inputSize ∧
+        (StateT.run (Aiur.Concrete.Bytecode.blockLayout block) state).snd.functionLayout.selectors =
+          state.functionLayout.selectors + block.controlCounts.leaves) →
+    have final := StateT.run (Aiur.Concrete.Bytecode.allocationBranchStep shared degrees acc block) initial;
+    final.snd.functionLayout.inputSize = initial.functionLayout.inputSize ∧
+      final.snd.functionLayout.selectors = initial.functionLayout.selectors + block.controlCounts.leaves ∧
+        acc.auxiliaries ≤ final.fst.auxiliaries
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.Concrete.Bytecode.allocationBranchFold_fields
+∀ {α : Type} (items : List α) (blockOf : α → Aiur.Bytecode.Block) (shared : Aiur.Concrete.Bytecode.SharedData)
+  (degrees : Array Nat) (acc : Aiur.Concrete.Bytecode.SharedData) (initial : Aiur.Concrete.Bytecode.LayoutMState),
+  (∀ (item : α),
+      item ∈ items →
+        ∀ (state : Aiur.Concrete.Bytecode.LayoutMState),
+          (StateT.run (Aiur.Concrete.Bytecode.blockLayout (blockOf item)) state).snd.functionLayout.inputSize =
+              state.functionLayout.inputSize ∧
+            (StateT.run (Aiur.Concrete.Bytecode.blockLayout (blockOf item)) state).snd.functionLayout.selectors =
+              state.functionLayout.selectors + (blockOf item).controlCounts.leaves) →
+    have final :=
+      StateT.run
+        (List.foldlM (fun acc item => Aiur.Concrete.Bytecode.allocationBranchStep shared degrees acc (blockOf item)) acc
+          items)
+        initial;
+    final.snd.functionLayout.inputSize = initial.functionLayout.inputSize ∧
+      final.snd.functionLayout.selectors =
+          initial.functionLayout.selectors + (List.map (fun item => (blockOf item).controlCounts.leaves) items).sum ∧
+        acc.auxiliaries ≤ final.fst.auxiliaries
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.Concrete.Bytecode.matchLayout_fields
+∀ (index : Aiur.Bytecode.ValIdx) (branches : Array (Aiur.G × Aiur.Bytecode.Block))
+  (fallback : Option Aiur.Bytecode.Block) (initial : Aiur.Concrete.Bytecode.LayoutMState),
+  (∀ (pair : Aiur.G × Aiur.Bytecode.Block),
+      pair ∈ branches.toList →
+        ∀ (state : Aiur.Concrete.Bytecode.LayoutMState),
+          (StateT.run (Aiur.Concrete.Bytecode.blockLayout pair.snd) state).snd.functionLayout.inputSize =
+              state.functionLayout.inputSize ∧
+            (StateT.run (Aiur.Concrete.Bytecode.blockLayout pair.snd) state).snd.functionLayout.selectors =
+              state.functionLayout.selectors + pair.snd.controlCounts.leaves) →
+    (∀ (block : Aiur.Bytecode.Block),
+        fallback = some block →
+          ∀ (state : Aiur.Concrete.Bytecode.LayoutMState),
+            (StateT.run (Aiur.Concrete.Bytecode.blockLayout block) state).snd.functionLayout.inputSize =
+                state.functionLayout.inputSize ∧
+              (StateT.run (Aiur.Concrete.Bytecode.blockLayout block) state).snd.functionLayout.selectors =
+                state.functionLayout.selectors + block.controlCounts.leaves) →
+      have final :=
+        (StateT.run (Aiur.Concrete.Bytecode.ctrlLayout (Aiur.Bytecode.Ctrl.match index branches fallback))
+              initial).snd.functionLayout;
+      final.inputSize = initial.functionLayout.inputSize ∧
+        final.selectors =
+            initial.functionLayout.selectors +
+              (Aiur.Bytecode.ControlCounts.sum (Aiur.Bytecode.branchControlCounts branches fallback)).leaves ∧
+          initial.functionLayout.auxiliaries ≤ final.auxiliaries
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.Concrete.Bytecode.ctrlLayout_fields
+∀ (ctrl : Aiur.Bytecode.Ctrl) (initial : Aiur.Concrete.Bytecode.LayoutMState),
+  have final := (StateT.run (Aiur.Concrete.Bytecode.ctrlLayout ctrl) initial).snd.functionLayout;
+  final.inputSize = initial.functionLayout.inputSize ∧
+    final.selectors = initial.functionLayout.selectors + ctrl.controlCounts.leaves ∧
+      initial.functionLayout.auxiliaries ≤ final.auxiliaries
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.Concrete.Bytecode.blockLayout_fields
+∀ (block : Aiur.Bytecode.Block) (initial : Aiur.Concrete.Bytecode.LayoutMState),
+  have final := (StateT.run (Aiur.Concrete.Bytecode.blockLayout block) initial).snd.functionLayout;
+  final.inputSize = initial.functionLayout.inputSize ∧
+    final.selectors = initial.functionLayout.selectors + block.controlCounts.leaves ∧
+      initial.functionLayout.auxiliaries ≤ final.auxiliaries
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.Concrete.Bytecode.ctrlLayout_match_list
+∀ (index : Aiur.Bytecode.ValIdx) (branches : Array (Aiur.G × Aiur.Bytecode.Block))
+  (fallback : Option Aiur.Bytecode.Block),
+  Aiur.Concrete.Bytecode.ctrlLayout (Aiur.Bytecode.Ctrl.match index branches fallback) = do
+    let shared ← Aiur.Concrete.Bytecode.getSharedData
+    let degrees ← Aiur.Concrete.Bytecode.getDegrees
+    let acc ←
+      List.foldlM (fun acc pair => Aiur.Concrete.Bytecode.allocationBranchStep shared degrees acc pair.snd) shared
+          branches.toList
+    have __do_jp : Aiur.Concrete.Bytecode.SharedData → Aiur.Concrete.Bytecode.LayoutM Unit := fun final =>
+      Aiur.Concrete.Bytecode.setSharedData final
+    match fallback with
+      | none => do
+        let final ← pure acc
+        __do_jp final
+      | some block => do
+        Aiur.Concrete.Bytecode.setSharedData shared
+        Aiur.Concrete.Bytecode.bumpAuxiliaries branches.size
+        Aiur.Concrete.Bytecode.blockLayout block
+        let used ← Aiur.Concrete.Bytecode.getSharedData
+        Aiur.Concrete.Bytecode.setDegrees degrees
+        let final ← pure (acc.maximals used)
+        __do_jp final
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.Concrete.Bytecode.rewriteOp_layout
+∀ (rename : Aiur.Bytecode.FunIdx → Aiur.Bytecode.FunIdx) (op : Aiur.Bytecode.Op),
+  Aiur.Concrete.Bytecode.opLayout (Aiur.Bytecode.rewriteOp rename op) = Aiur.Concrete.Bytecode.opLayout op
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.Concrete.Bytecode.matchLayout_rewrite
+∀ (rename : Aiur.Bytecode.FunIdx → Aiur.Bytecode.FunIdx) (index : Aiur.Bytecode.ValIdx)
+  (branches : Array (Aiur.G × Aiur.Bytecode.Block)) (fallback : Option Aiur.Bytecode.Block),
+  (∀ (pair : Aiur.G × Aiur.Bytecode.Block),
+      pair ∈ branches.toList →
+        Aiur.Concrete.Bytecode.blockLayout (Aiur.Bytecode.rewriteBlock rename pair.snd) =
+          Aiur.Concrete.Bytecode.blockLayout pair.snd) →
+    (∀ (block : Aiur.Bytecode.Block),
+        fallback = some block →
+          Aiur.Concrete.Bytecode.blockLayout (Aiur.Bytecode.rewriteBlock rename block) =
+            Aiur.Concrete.Bytecode.blockLayout block) →
+      Aiur.Concrete.Bytecode.ctrlLayout
+          (Aiur.Bytecode.Ctrl.match index
+            (Array.map
+              (fun x =>
+                match x with
+                | ⟨(tag, block), property⟩ => (tag, Aiur.Bytecode.rewriteBlock rename block))
+              branches.attach)
+            (Option.map (Aiur.Bytecode.rewriteBlock rename) fallback)) =
+        Aiur.Concrete.Bytecode.ctrlLayout (Aiur.Bytecode.Ctrl.match index branches fallback)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.Concrete.Bytecode.rewriteCtrl_layout
+∀ (rename : Aiur.Bytecode.FunIdx → Aiur.Bytecode.FunIdx) (ctrl : Aiur.Bytecode.Ctrl),
+  Aiur.Concrete.Bytecode.ctrlLayout (Aiur.Bytecode.rewriteCtrl rename ctrl) = Aiur.Concrete.Bytecode.ctrlLayout ctrl
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.Concrete.Bytecode.rewriteBlock_layout
+∀ (rename : Aiur.Bytecode.FunIdx → Aiur.Bytecode.FunIdx) (block : Aiur.Bytecode.Block),
+  Aiur.Concrete.Bytecode.blockLayout (Aiur.Bytecode.rewriteBlock rename block) =
+    Aiur.Concrete.Bytecode.blockLayout block
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.Bytecode.functionsComputedLayout_empty
+Aiur.Bytecode.FunctionsComputedLayout #[]
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.Bytecode.functionsComputedLayout_push
+∀ {functions : Array Aiur.Bytecode.Function} {function : Aiur.Bytecode.Function},
+  Aiur.Bytecode.FunctionsComputedLayout functions →
+    function.ComputedLayout → Aiur.Bytecode.FunctionsComputedLayout (functions.push function)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.Bytecode.Function.ComputedLayout.auxiliaries
+∀ {function : Aiur.Bytecode.Function},
+  function.ComputedLayout →
+    function.layout.auxiliaries =
+      (StateT.run (Aiur.Concrete.Bytecode.blockLayout function.body)
+              (Aiur.Concrete.Bytecode.LayoutMState.new function.layout.inputSize)).snd.functionLayout.auxiliaries
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.Bytecode.Function.ComputedLayout.reserved
+∀ {function : Aiur.Bytecode.Function}, function.ComputedLayout → 7 ≤ function.layout.auxiliaries
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.Bytecode.Function.ComputedLayout.selectors
+∀ {function : Aiur.Bytecode.Function},
+  function.ComputedLayout → function.layout.selectors = function.body.controlCounts.leaves
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.Concrete.Function.compile_computedLayout
+∀ {layoutMap : Aiur.LayoutMap} {function : Aiur.Concrete.Function} {body : Aiur.Bytecode.Block}
+  {state : Aiur.Concrete.Bytecode.LayoutMState},
+  Aiur.Concrete.Function.compile layoutMap function = Except.ok (body, state) →
+    ∀ (entry constrained : Bool),
+      { body := body, layout := state.functionLayout, entry := entry, constrained := constrained }.ComputedLayout
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.Concrete.Decls.toBytecode_computedLayout
+∀ {decls : Aiur.Concrete.Decls} {program : Aiur.Bytecode.Toplevel}
+  {names : Std.HashMap Aiur.Global Aiur.Bytecode.FunIdx},
+  decls.toBytecode = Except.ok (program, names) → Aiur.Bytecode.FunctionsComputedLayout program.functions
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.Bytecode.Function.ComputedLayout.rewrite
+∀ {function : Aiur.Bytecode.Function},
+  function.ComputedLayout →
+    ∀ (rename : Aiur.Bytecode.FunIdx → Aiur.Bytecode.FunIdx),
+      { body := Aiur.Bytecode.rewriteBlock rename function.body, layout := function.layout, entry := function.entry,
+          constrained := function.constrained }.ComputedLayout
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.Bytecode.deduplicate_newFunctions_computedLayout
+∀ (functions : Array Aiur.Bytecode.Function) (classes : Array Nat) (canonical : Array Bool)
+  (rename : Aiur.Bytecode.FunIdx → Aiur.Bytecode.FunIdx),
+  Aiur.Bytecode.FunctionsComputedLayout functions →
+    Aiur.Bytecode.FunctionsComputedLayout (Aiur.Bytecode.deduplicate_newFunctions functions classes canonical rename)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.Bytecode.Toplevel.deduplicateCandidate_computedLayout
+∀ (program : Aiur.Bytecode.Toplevel),
+  Aiur.Bytecode.FunctionsComputedLayout program.functions →
+    Aiur.Bytecode.FunctionsComputedLayout program.deduplicateCandidate.fst.functions
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.Bytecode.Toplevel.deduplicate_computedLayout
+∀ (program : Aiur.Bytecode.Toplevel),
+  Aiur.Bytecode.FunctionsComputedLayout program.functions →
+    Aiur.Bytecode.FunctionsComputedLayout program.deduplicate.fst.functions
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.finishCompilation_computedLayout
+∀ (source : Aiur.Source.Toplevel) (raw : Aiur.Bytecode.Toplevel) (names : Std.HashMap Aiur.Global Aiur.Bytecode.FunIdx),
+  Aiur.Bytecode.FunctionsComputedLayout raw.functions →
+    Aiur.Bytecode.FunctionsComputedLayout (Aiur.finishCompilation source raw names).bytecode.functions
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.Source.Toplevel.compile_computedLayout
+∀ {source : Aiur.Source.Toplevel} {compiled : Aiur.CompiledToplevel},
+  source.compile = Except.ok compiled → Aiur.Bytecode.FunctionsComputedLayout compiled.bytecode.functions
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.BoundVerifier.Backend.functions_computedLayout
+∀ {selection : Aiur.BoundVerifier.Selection} (backend : Aiur.BoundVerifier.Backend selection),
+  Aiur.Bytecode.FunctionsComputedLayout backend.compiled.bytecode.functions
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.Bytecode.merged_columnBound
+∀ (functions : Array Aiur.Bytecode.Function) (members : Array Aiur.Bytecode.FunIdx),
+  Aiur.Bytecode.FunctionsComputedLayout functions →
+    0 < functions.size →
+      Aiur.Bytecode.MembersConstrained functions members →
+        Aiur.Bytecode.MembersColumnBound functions members
+          (Array.foldl
+            (fun acc index => if (index == members[0]!) = true then acc else acc.merge functions[index]!.layout)
+            functions[members[0]!]!.layout members)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.Bytecode.singletonCircuits_columnBound
+∀ (program : Aiur.Bytecode.Toplevel) (nameOf : Aiur.Bytecode.FunIdx → String),
+  Aiur.Bytecode.FunctionsComputedLayout program.functions →
+    Aiur.Bytecode.CircuitsColumnBound program.functions (program.singletonCircuits nameOf)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.CompiledToplevel.groupFunctions_columnBound
+∀ {before after : Aiur.CompiledToplevel} {groups : Array (String × Array String)},
+  Aiur.Bytecode.FunctionsComputedLayout before.bytecode.functions →
+    0 < before.bytecode.functions.size →
+      Aiur.Bytecode.CircuitsColumnBound before.bytecode.functions before.bytecode.circuits →
+        before.groupFunctions groups = Except.ok after →
+          Aiur.Bytecode.CircuitsColumnBound after.bytecode.functions after.bytecode.circuits
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.finishCompilation_columnBound
+∀ (source : Aiur.Source.Toplevel) (raw : Aiur.Bytecode.Toplevel) (names : Std.HashMap Aiur.Global Aiur.Bytecode.FunIdx),
+  Aiur.Bytecode.FunctionsComputedLayout raw.functions →
+    Aiur.Bytecode.CircuitsColumnBound (Aiur.finishCompilation source raw names).bytecode.functions
+      (Aiur.finishCompilation source raw names).bytecode.circuits
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.Source.Toplevel.compile_columnBound
+∀ {source : Aiur.Source.Toplevel} {compiled : Aiur.CompiledToplevel},
+  source.compile = Except.ok compiled →
+    Aiur.Bytecode.CircuitsColumnBound compiled.bytecode.functions compiled.bytecode.circuits
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.BoundVerifier.Backend.circuits_columnBound
+∀ {selection : Aiur.BoundVerifier.Selection} (backend : Aiur.BoundVerifier.Backend selection),
+  Aiur.Bytecode.CircuitsColumnBound backend.compiled.bytecode.functions backend.compiled.bytecode.circuits
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.CircuitEmitter.emitMember_layout
+∀ {rank : Aiur.NativeAIR.Expr} {column lookup selectorBase base : Nat} {program : Aiur.Bytecode.Toplevel}
+  {functionIndex : Nat} {member : Aiur.NativeAIR.CircuitEmitter.Member},
+  Aiur.Bytecode.FunctionsComputedLayout program.functions →
+    column = base + 7 →
+      Aiur.NativeAIR.CircuitEmitter.emitMember rank column lookup selectorBase program functionIndex = some member →
+        member.functionIndex = functionIndex ∧
+          program.functions[functionIndex]? = some member.function ∧
+            member.selectorBase = selectorBase ∧ member.body.column = base + member.function.layout.auxiliaries
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.CircuitEmitter.emitMembers_layout
+∀ {rank : Aiur.NativeAIR.Expr} (column lookup selectorBase base : Nat) (program : Aiur.Bytecode.Toplevel)
+  (indices : List Nat) {members : List Aiur.NativeAIR.CircuitEmitter.Member},
+  Aiur.Bytecode.FunctionsComputedLayout program.functions →
+    column = base + 7 →
+      Aiur.NativeAIR.CircuitEmitter.emitMembers rank column lookup selectorBase program indices = some members →
+        List.map Aiur.NativeAIR.CircuitEmitter.Member.functionIndex members = indices ∧
+          ∀ (member : Aiur.NativeAIR.CircuitEmitter.Member),
+            member ∈ members →
+              program.functions[member.functionIndex]? = some member.function ∧
+                member.body.column = base + member.function.layout.auxiliaries ∧
+                  member.selectorBase + member.function.layout.selectors ≤
+                    selectorBase + (List.map (fun part => part.function.layout.selectors) members).sum
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.CircuitEmitter.emitMembers_selectors
+∀ {rank : Aiur.NativeAIR.Expr} (column lookup selectorBase base : Nat) (program : Aiur.Bytecode.Toplevel)
+  (circuit : Aiur.Bytecode.Circuit) {members : List Aiur.NativeAIR.CircuitEmitter.Member},
+  Aiur.Bytecode.FunctionsComputedLayout program.functions →
+    column = base + 7 →
+      Aiur.Bytecode.Circuit.validateRowCounts program circuit = true →
+        Aiur.NativeAIR.CircuitEmitter.emitMembers rank column lookup selectorBase program circuit.members.toList =
+            some members →
+          (List.map (fun member => member.function.layout.selectors) members).sum ≤ circuit.layout.selectors
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.CircuitEmitter.emitCircuit_readBound
+∀ (program : Aiur.Bytecode.Toplevel) (circuit : Aiur.Bytecode.Circuit)
+  {emission : Aiur.NativeAIR.CircuitEmitter.Emission},
+  Aiur.Bytecode.FunctionsComputedLayout program.functions →
+    Aiur.Bytecode.MembersColumnBound program.functions circuit.members circuit.layout →
+      Aiur.Bytecode.Circuit.validateRowCounts program circuit = true →
+        Aiur.NativeAIR.CircuitEmitter.emitCircuit program circuit = some emission →
+          emission.readBound ≤ circuit.layout.width
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.CircuitEmitter.compileCircuit_readBound
+∀ {widths : Aiur.NativeAIR.GraphWidths} (program : Aiur.Bytecode.Toplevel) (circuit : Aiur.Bytecode.Circuit)
+  {compiled : Aiur.NativeAIR.CircuitEmitter.Compiled},
+  Aiur.Bytecode.FunctionsComputedLayout program.functions →
+    Aiur.Bytecode.MembersColumnBound program.functions circuit.members circuit.layout →
+      Aiur.Bytecode.Circuit.validateRowCounts program circuit = true →
+        Aiur.NativeAIR.CircuitEmitter.compileCircuit widths program circuit = some compiled →
+          compiled.emission.readBound ≤ circuit.layout.width
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.CircuitEmitter.compileCircuit_physical_reflects
+∀ {values : Aiur.NativeAIR.Values Aiur.G} {widths : Aiur.NativeAIR.GraphWidths},
+  values.Fits widths →
+    ∀ (program : Aiur.Bytecode.Toplevel) (circuit : Aiur.Bytecode.Circuit)
+      {compiled : Aiur.NativeAIR.CircuitEmitter.Compiled},
+      Aiur.Bytecode.FunctionsComputedLayout program.functions →
+        Aiur.Bytecode.MembersColumnBound program.functions circuit.members circuit.layout →
+          Aiur.Bytecode.Circuit.validateRowCounts program circuit = true →
+            widths.main = circuit.layout.width →
+              Aiur.NativeAIR.CircuitEmitter.compileCircuit widths program circuit = some compiled →
+                ∃ result buffer,
+                  Aiur.Bytecode.Circuit.emitRow
+                        (fun index =>
+                          (values.columns Aiur.NativeAIR.Source.main Aiur.NativeAIR.RowOffset.current)[index]?.getD 0)
+                        program circuit =
+                      some result ∧
+                    compiled.base.graph.sweep Aiur.NativeAIR.goldilocksOps values = some buffer ∧
+                      (Aiur.NativeAIR.Compiler.Vanishes Aiur.NativeAIR.goldilocksOps buffer compiled.base.graph.zeros ↔
+                          ∀ (equation : Aiur.G), equation ∈ result.equations → equation = 0) ∧
+                        List.mapM (Aiur.NativeAIR.readLookup buffer) compiled.base.graph.lookups =
+                          some (List.ofFn fun slot => result.lookup ↑slot)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.BoundVerifier.Backend.circuit_readBound
+∀ {selection : Aiur.BoundVerifier.Selection} (backend : Aiur.BoundVerifier.Backend selection)
+  {circuit : Aiur.Bytecode.Circuit},
+  circuit ∈ backend.compiled.bytecode.circuits →
+    ∀ {emission : Aiur.NativeAIR.CircuitEmitter.Emission},
+      Aiur.NativeAIR.CircuitEmitter.emitCircuit backend.compiled.bytecode circuit = some emission →
+        emission.readBound ≤ circuit.layout.width
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.BoundVerifier.Backend.compileCircuit_reflects
+∀ {selection : Aiur.BoundVerifier.Selection} (backend : Aiur.BoundVerifier.Backend selection)
+  {values : Aiur.NativeAIR.Values Aiur.G} {widths : Aiur.NativeAIR.GraphWidths},
+  values.Fits widths →
+    ∀ {circuit : Aiur.Bytecode.Circuit},
+      circuit ∈ backend.compiled.bytecode.circuits →
+        ∀ {compiled : Aiur.NativeAIR.CircuitEmitter.Compiled},
+          widths.main = circuit.layout.width →
+            Aiur.NativeAIR.CircuitEmitter.compileCircuit widths backend.compiled.bytecode circuit = some compiled →
+              ∃ result buffer,
+                Aiur.Bytecode.Circuit.emitRow
+                      (fun index =>
+                        (values.columns Aiur.NativeAIR.Source.main Aiur.NativeAIR.RowOffset.current)[index]?.getD 0)
+                      backend.compiled.bytecode circuit =
+                    some result ∧
+                  compiled.base.graph.sweep Aiur.NativeAIR.goldilocksOps values = some buffer ∧
+                    (Aiur.NativeAIR.Compiler.Vanishes Aiur.NativeAIR.goldilocksOps buffer compiled.base.graph.zeros ↔
+                        ∀ (equation : Aiur.G), equation ∈ result.equations → equation = 0) ∧
+                      List.mapM (Aiur.NativeAIR.readLookup buffer) compiled.base.graph.lookups =
+                        some (List.ofFn fun slot => result.lookup ↑slot)
+AXIOMS [propext, Classical.choice, Quot.sound]
 PREMISE Aiur.AIR.activityConstraint
 Aiur.G → Aiur.G → Aiur.G
 DEFINITION
@@ -9420,6 +9775,35 @@ fun shared degrees acc block => do
   let used ← Aiur.Concrete.Bytecode.getSharedData
   Aiur.Concrete.Bytecode.setDegrees degrees
   pure (acc.maximals used)
+PREMISE Aiur.Bytecode.Function.ComputedLayout
+Aiur.Bytecode.Function → Prop
+DEFINITION
+fun function =>
+  have computed :=
+    (StateT.run (Aiur.Concrete.Bytecode.blockLayout function.body)
+          (Aiur.Concrete.Bytecode.LayoutMState.new function.layout.inputSize)).snd.functionLayout;
+  function.layout =
+    { inputSize := computed.inputSize, selectors := computed.selectors, auxiliaries := computed.auxiliaries,
+      lookups := computed.lookups + 1 }
+PREMISE Aiur.Bytecode.FunctionsComputedLayout
+Array Aiur.Bytecode.Function → Prop
+DEFINITION
+fun functions => ∀ (function : Aiur.Bytecode.Function), function ∈ functions → function.ComputedLayout
+PREMISE Aiur.Bytecode.MembersColumnBound
+Array Aiur.Bytecode.Function → Array Aiur.Bytecode.FunIdx → Aiur.Bytecode.FunctionLayout → Prop
+DEFINITION
+fun functions members layout =>
+  7 ≤ layout.auxiliaries ∧
+    ∀ (index : Aiur.Bytecode.FunIdx),
+      index ∈ members →
+        functions[index]!.layout.inputSize ≤ layout.inputSize ∧
+          functions[index]!.layout.auxiliaries ≤ layout.auxiliaries
+PREMISE Aiur.Bytecode.CircuitsColumnBound
+Array Aiur.Bytecode.Function → Array Aiur.Bytecode.Circuit → Prop
+DEFINITION
+fun functions circuits =>
+  ∀ (circuit : Aiur.Bytecode.Circuit),
+    circuit ∈ circuits → Aiur.Bytecode.MembersColumnBound functions circuit.members circuit.layout
 RECURSION WORKER Aiur.buildArgs._unsafe_rec
 Aiur.LayoutMap →
   Std.HashMap Aiur.Local (Array Aiur.Bytecode.ValIdx) →
@@ -16399,7 +16783,7 @@ fun initId decls renames clauses branches body =>
     let clause : Aiur.MatchCompiler.Clause :=
       { pat := Aiur.MatchCompiler.SPattern.pointer var innerTyp, guards := guards, body := term }
     Aiur.MatchCompiler.dnfProd.aux._unsafe_rec✝ initId decls renames (clauses.push clause) rest body
-C8 component ROOTS 647; LOGICAL DECLARATIONS 16956; WITH RUNTIME 17725
+C8 component ROOTS 687; LOGICAL DECLARATIONS 17051; WITH RUNTIME 17820
 IX RUNTIME EXTERNS [Aiur.AiurSystem.build, Aiur.AiurSystem.verify, Aiur.AiurSystem.vkBytes, Aiur.Proof.ofBytesChecked]
 PARTIAL OPAQUE SOURCES [Aiur.instHashableTyp.hash, Aiur.instReprPattern.repr, Aiur.instReprTyp.repr]
 OTHER UNSAFE RUNTIME []

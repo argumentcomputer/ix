@@ -410,11 +410,11 @@ sizes, constrained and advice calls, nested continuations, visibility and
 public-claim widths. All 54 parallel release Rust tests pass, including the
 supplied rank/output ambiguity regression; release Clippy denies warnings.
 
-The audit checks 647 roots by traversing checked types, bodies and inductive
+The audit checks 687 roots by traversing checked types, bodies and inductive
 constructors. Eight roots use no axioms; 104 depend only on `propext`;
-198 use exactly `propext` and `Quot.sound`; the other 337 use exactly
+198 use exactly `propext` and `Quot.sound`; the other 377 use exactly
 `propext`, `Classical.choice` and `Quot.sound`. The combined closure
-has 16,956 logical declarations and 17,725 declarations after following runtime
+has 17,051 logical declarations and 17,820 declarations after following runtime
 workers and replacements. The frozen report records four native runtime entry points,
 three partial opaque sources and all 162 Ix recursion worker implementations.
 Bytecode comparison/hashing, tail-match restoration and source-value hashing
@@ -628,9 +628,31 @@ their earlier expression and value comparisons still run. The 647-root audit
 preserves all 586 earlier statements and axiom sets, 528 frozen definitions and
 162 worker bodies, adding 61 roots and nine definitions/constructors. The strict
 297-job build and complete component gate pass with seventeen native comparison
-corpora. This checkpoint adds no native behavior change. Deriving successful symbolic emission
-and circuit-width bounds from the complete compiler and checked program remains
-open, alongside Rust refinement and the certified endpoint.
+corpora. This checkpoint adds no native behavior change.
+
+`CompilerLayout` proves input-width preservation, exact leaf-selector allocation,
+monotonic auxiliary allocation, and preservation of the entire computed layout
+state under function renaming. `FunctionLayout` carries the exact layout through
+successful lowering, deduplication and final compilation to the checked backend.
+`CircuitLayout` proves that singleton and grouped circuits contain every member's
+input and auxiliary columns, including the seven reserved header columns.
+These facts combine with the existing checked row counts in `CircuitAllocation`
+to bound consecutive member selector regions and every symbolic read by the
+physical circuit width.
+
+`Backend.compileCircuit_reflects` now derives the valued row from the supplied
+physical columns, with graph-root satisfaction and the complete lookup vector.
+It has no independent read-bound premise. Successful symbolic compilation,
+the graph-width binding and values fitting those widths remain explicit;
+Rust execution and cryptographic acceptance are not assumed proved. All 96
+native circuit layouts satisfy the column and selector bounds, and all 384
+assignments pass the complete symbolic-circuit/base-graph composition.
+The 687-root audit adds 40 roots and four definitions while preserving all 647
+prior statements and axiom sets, 537 frozen definitions and 162 worker bodies.
+The strict 305-job build and full component gate pass with seventeen native
+comparison corpora. No native implementation changes. Deriving successful symbolic compilation,
+earlier compiler-pass reflection, runtime refinement and the certified
+semantic/cryptographic endpoint remain open.
 
 The budget comparison covers
 21,964 Rust/Lean cases, including

@@ -36,6 +36,7 @@ import Ix.Aiur.Proofs.GraphCompilation
 import Ix.Aiur.Proofs.LookupExpressions
 import Ix.Aiur.Proofs.CompiledCircuitRows
 import Ix.Aiur.Proofs.BlockAllocation
+import Ix.Aiur.Proofs.CircuitAllocation
 import Ix.Aiur.Proofs.Grouping
 import Ix.Aiur.Proofs.TailMatches
 import Ix.Aiur.Proofs.NormalizationFrames
@@ -1158,6 +1159,54 @@ def allocationPremises : Array Lean.Name := #[
   `Aiur.NativeAIR.OpEmitter.Emission.allocation,
   `Aiur.Concrete.Bytecode.allocationBranchStep]
 
+def circuitAllocationRoots : Array Lean.Name := #[
+  `Aiur.Concrete.Bytecode.opLayout_fixed,
+  `Aiur.Concrete.Bytecode.opsLayout_fields,
+  `Aiur.Concrete.Bytecode.allocationBranchStep_fields,
+  `Aiur.Concrete.Bytecode.allocationBranchFold_fields,
+  `Aiur.Concrete.Bytecode.matchLayout_fields,
+  `Aiur.Concrete.Bytecode.ctrlLayout_fields,
+  `Aiur.Concrete.Bytecode.blockLayout_fields,
+  `Aiur.Concrete.Bytecode.ctrlLayout_match_list,
+  `Aiur.Concrete.Bytecode.rewriteOp_layout,
+  `Aiur.Concrete.Bytecode.matchLayout_rewrite,
+  `Aiur.Concrete.Bytecode.rewriteCtrl_layout,
+  `Aiur.Concrete.Bytecode.rewriteBlock_layout,
+  `Aiur.Bytecode.functionsComputedLayout_empty,
+  `Aiur.Bytecode.functionsComputedLayout_push,
+  `Aiur.Bytecode.Function.ComputedLayout.auxiliaries,
+  `Aiur.Bytecode.Function.ComputedLayout.reserved,
+  `Aiur.Bytecode.Function.ComputedLayout.selectors,
+  `Aiur.Concrete.Function.compile_computedLayout,
+  `Aiur.Concrete.Decls.toBytecode_computedLayout,
+  `Aiur.Bytecode.Function.ComputedLayout.rewrite,
+  `Aiur.Bytecode.deduplicate_newFunctions_computedLayout,
+  `Aiur.Bytecode.Toplevel.deduplicateCandidate_computedLayout,
+  `Aiur.Bytecode.Toplevel.deduplicate_computedLayout,
+  `Aiur.finishCompilation_computedLayout,
+  `Aiur.Source.Toplevel.compile_computedLayout,
+  `Aiur.BoundVerifier.Backend.functions_computedLayout,
+  `Aiur.Bytecode.merged_columnBound,
+  `Aiur.Bytecode.singletonCircuits_columnBound,
+  `Aiur.CompiledToplevel.groupFunctions_columnBound,
+  `Aiur.finishCompilation_columnBound,
+  `Aiur.Source.Toplevel.compile_columnBound,
+  `Aiur.BoundVerifier.Backend.circuits_columnBound,
+  `Aiur.NativeAIR.CircuitEmitter.emitMember_layout,
+  `Aiur.NativeAIR.CircuitEmitter.emitMembers_layout,
+  `Aiur.NativeAIR.CircuitEmitter.emitMembers_selectors,
+  `Aiur.NativeAIR.CircuitEmitter.emitCircuit_readBound,
+  `Aiur.NativeAIR.CircuitEmitter.compileCircuit_readBound,
+  `Aiur.NativeAIR.CircuitEmitter.compileCircuit_physical_reflects,
+  `Aiur.BoundVerifier.Backend.circuit_readBound,
+  `Aiur.BoundVerifier.Backend.compileCircuit_reflects]
+
+def circuitAllocationPremises : Array Lean.Name := #[
+  `Aiur.Bytecode.Function.ComputedLayout,
+  `Aiur.Bytecode.FunctionsComputedLayout,
+  `Aiur.Bytecode.MembersColumnBound,
+  `Aiur.Bytecode.CircuitsColumnBound]
+
 def roots : Array Lean.Name := #[
   `Aiur.G.ofNat_n, `Aiur.G.mul_one, `Aiur.G.mul_zero,
   `Aiur.AIR.inactive_multiplicity_zero,
@@ -1194,7 +1243,7 @@ def roots : Array Lean.Name := #[
     fieldRoots ++ localConstraintRoots ++ byteArithmeticRoots ++ byteLookupRoots ++
     lookupMessageRoots ++ lookupShapeRoots ++ globalLookupRoots ++ lookupBudgetRoots ++
     selectorControlRoots ++ operationRowRoots ++ blockRowRoots ++ querySlotRoots ++ circuitRowRoots ++
-    rowCountRoots ++ circuitTableRoots ++ branchlessRoots ++ circuitTraceRoots ++ circuitMembershipRoots ++ lookupLayoutRoots ++ memoryColumnRoots ++ byteColumnRoots ++ expressionGraphRoots ++ frontendExpressionRoots ++ graphCompilationRoots ++ operationExpressionRoots ++ blockCircuitRoots ++ allocationRoots
+    rowCountRoots ++ circuitTableRoots ++ branchlessRoots ++ circuitTraceRoots ++ circuitMembershipRoots ++ lookupLayoutRoots ++ memoryColumnRoots ++ byteColumnRoots ++ expressionGraphRoots ++ frontendExpressionRoots ++ graphCompilationRoots ++ operationExpressionRoots ++ blockCircuitRoots ++ allocationRoots ++ circuitAllocationRoots
 
 def premises : Array Lean.Name := #[
   `Aiur.AIR.activityConstraint,
@@ -1433,7 +1482,7 @@ def premises : Array Lean.Name := #[
   `Aiur.NativeAIR.evalRoots,
   `Aiur.NativeAIR.readLookup,
   `Aiur.NativeAIR.evalLookup,
-  `Aiur.NativeAIR.goldilocksOps] ++ frontendExpressionPremises ++ graphCompilationPremises ++ operationExpressionPremises ++ blockCircuitPremises ++ allocationPremises
+  `Aiur.NativeAIR.goldilocksOps] ++ frontendExpressionPremises ++ graphCompilationPremises ++ operationExpressionPremises ++ blockCircuitPremises ++ allocationPremises ++ circuitAllocationPremises
 
 private def constants (info : Lean.ConstantInfo) : Array Lean.Name :=
   info.type.getUsedConstants ++ match info with
@@ -1512,7 +1561,8 @@ run_cmd do
   let env ← getEnv
   for root in roots do
     let some info := env.checked.get.find? root | throwError "C8 component audit: missing root {root}"
-    let expected := if allocationRoots.contains root then
+    let expected := if circuitAllocationRoots.contains root then #[``propext, ``Classical.choice, ``Quot.sound]
+      else if allocationRoots.contains root then
         if allocationAxiomFreeRoots.contains root then #[]
         else if allocationClassicalRoots.contains root then #[``propext, ``Classical.choice, ``Quot.sound]
         else if allocationQuotRoots.contains root then #[``propext, ``Quot.sound]
