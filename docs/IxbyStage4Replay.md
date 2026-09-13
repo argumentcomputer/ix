@@ -136,9 +136,10 @@ phase/topology digests agree. No Stage 4 key or FFLONK proof is generated.
 | Accumulator transcript compression rows / PoW predicates | 4,947 / 1,373 |
 | Terminal diagnostic root families | 46 matrix roots, 1 structure, 1 jagged |
 
-The 173 ordinary workspace tests pass; seven tests are ignored by default
+The 179 ordinary workspace tests pass; nine tests are ignored by default
 (the retained large two-ring projection, native replay/census, and the four
-fixed-table native/materialization/optimization tests).
+decision-diagram native/materialization/optimization tests, plus two
+structural BLAKE3 component tests).
 The real three-execution replay regression passes under a 32 GiB
 address-space cap with four Rayon threads. The complete matrix-free census
 finished successfully in 1,161.51 seconds, including setup, under that cap.
@@ -228,6 +229,51 @@ prove the complete result. The current root-conditional relation, Stage 3
 tables/profile, and backend keys are unchanged. Structural formulas and
 complete-verifier cost reductions are the next step; no oversized terminal
 materialization, SRS generation, or proving run has been started.
+
+### Structural BLAKE3 matrices
+
+The next prototype, `compile_exec_blake3_root_maps`, preserves the approved
+Stage 3 BLAKE3 table exactly. It ports only the pinned Option-F linear row
+formulas into a shared XOR program: carry prefixes, fused partial sums, lane
+rotations, and finalization reuse intermediate expressions. An IV bit is a
+coefficient of the constant-pin **input column**, not a literal F128 one.
+The setup compiler then expands every output coefficient and compares it
+against the actual registry A/B rows, including their constant and padding
+rows. Geometry, graph references, sparse-entry count, and coefficient-memory
+limits are checked. There is no sampled-match or digest-only admission path.
+
+Both 16,384-square maps match all 44,442,498 nonzero coefficients. A uses
+38,756 retained XORs and B uses 47,867; exact compilation/checking takes
+0.155 seconds after approved setup. Native multilinear evaluations agree at
+three different point pairs per matrix. Altered constant/padding formulas and
+insufficient resource bounds fail. No Stage 3 matrix, profile, key, transcript,
+or upstream source is changed.
+
+The neutral `constrain_f128_binary_linear_table` gadget generates only the
+referenced column basis weights, applies the immutable XOR network, and folds
+its output rows at the supplied row point. All inputs are already constrained
+point wires, and sharing decisions compare fixed wire identities, not witness
+values. Small materialized rectangular examples agree with literal sparse
+MLEs, reject all claimed-bit mutations, and preserve identical matrices across
+different values. The application must still authorize the map and bind its
+point/value wires to the exact deferred claim.
+
+| Structural BLAKE3 component | A | B |
+| --- | ---: | ---: |
+| R1CS constraints | 139,902,339 | 132,705,987 |
+| PLONK constraint rows | 221,560,957 | 209,357,185 |
+| Matrix-free census seconds | 248.527 | 237.700 |
+
+These complete component counts include 28 freshly allocated private F128
+point coordinates each; they exclude a claimed-value input, transcript/Exec
+binding, and every other verifier/root component. The full test completed in
+491.59 seconds under a 32 GiB address-space cap, without storing the matrices
+or checking a complete satisfying assignment. The source/formula/map hashes,
+projection identities, native negatives, commands, and memory scope are in the
+[structural report](../flock-stage4/census/exec-structural-blake3-root-v0.json).
+This is a substantial improvement over the decision-diagram product-cost
+reference, but not a measured full-closure census or an admitted terminal
+proving job. Further cost reduction and the original M5–M8 gates remain.
 
 ## Remaining gates
 

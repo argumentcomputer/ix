@@ -5,6 +5,7 @@
 //! on this crate's circuit digest rather than compiling separate relations.
 
 mod algebra;
+mod binary_linear_table;
 mod blake3;
 mod exec_binding;
 mod exec_relation;
@@ -30,6 +31,7 @@ pub use algebra::{
   constrain_f128_algebra_trace, constrain_f128_algebra_trace_deferred,
   project_f128_algebra_trace_r1cs,
 };
+pub use binary_linear_table::constrain_f128_binary_linear_table;
 pub use blake3::{
   BLAKE3_IV, Blake3CompressionInputV1, Blake3CompressionOutputV1,
   build_blake3_compression_r1cs,

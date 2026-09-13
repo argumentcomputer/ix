@@ -4,6 +4,7 @@
 //! recording challenger. The terminal circuit consumes it without importing
 //! Flock's field, proof serialization, or circuit implementation.
 
+mod binary_linear_map;
 mod exec;
 mod f128;
 mod fixed_table;
@@ -16,6 +17,10 @@ mod statement;
 mod structure_fold;
 mod wiring;
 
+pub use binary_linear_map::{
+  BinaryLinearMapError, BinaryLinearMapLimitsV0, BinaryLinearMapV0,
+  BinaryLinearReferenceV0, BinaryLinearValidationLimitsV0,
+};
 pub use exec::{
   ExecBindingError, ExecBindingV0, ExecCommitmentsV0, ExecPublicWordV0,
 };

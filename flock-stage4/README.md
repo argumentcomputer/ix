@@ -22,8 +22,8 @@ Tests include strict scalar/curve/subgroup decoding, invalid SRS/key rejection,
 nonzero blinding admission, authenticated scratch corruption, and identical
 proof/key results across memory and file backends for fixed test randomness.
 Small proofs use development setup and randomness, not production security.
-The generic replay and fixed-table prototypes pass 173 ordinary tests
-(88 FFLONK, 24 trace, 48 circuit, 13 replay/setup); seven heavier native,
+The generic replay and fixed-table prototypes pass 179 ordinary tests
+(88 FFLONK, 27 trace, 50 circuit, 14 replay/setup); nine heavier native,
 materialization, and census/optimization tests remain opt-in.
 
 ## Generic Exec replay
@@ -94,6 +94,20 @@ default compiler. See the [prototype census](census/exec-fixed-root-table-protot
 for exact counts, bounds, reproduction commands, and failed alternatives.
 Structural formulas and further verifier cost reduction are needed before
 full terminal proving can be admitted.
+
+The separate `compile_exec_blake3_root_maps` prototype reconstructs the pinned
+BLAKE3 tables as shared XOR programs and checks **every coefficient** against
+the approved registry before returning them. It does not modify Stage 3's
+matrices or replace coefficient validation with a digest or sample test.
+`constrain_f128_binary_linear_table` applies such a map to constrained column
+basis weights and interpolates its rows. No matrix-value hint is accepted.
+The A/B programs have 38,756/47,867 XORs; both match native MLE evaluation.
+The complete component-only matrix-free census totals 272,608,326 R1CS
+constraints and 430,918,142 PLONK rows, including fresh private point wires
+but excluding the rest of the verifier and terminal claim binding.
+This remains an oversized prototype, not a closed-root proof. Its
+[separate report](census/exec-structural-blake3-root-v0.json) records the exact
+counts, original formula provenance, source/map hashes, bounds, and tests.
 
 See [generic replay and remaining gates](../docs/IxbyStage4Replay.md).
 `EXEC-REPLAY-PROVENANCE.json` records the donor hashes before this port,

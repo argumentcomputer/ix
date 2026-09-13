@@ -7,6 +7,9 @@ use ixby_flock::ixby::{
 };
 use std::time::Instant;
 
+#[path = "blake3_table_tests.rs"]
+mod blake3_table_tests;
+
 const CAPACITY: MachineCapacities = MachineCapacities {
   program: ProgramCapacities {
     bytes: 256,
