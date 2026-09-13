@@ -162,6 +162,7 @@ execute at module initialization for unrelated invocations. All are
 seconds-scale (measured 2026-08-05: aiur-prove ~11s, the rest 2-4s
 each). -/
 def primaryRunners : List (String × IO UInt32) := [
+  ("aiur-components", AiurTests.CallOrder.suite),
   ("aiur-prove", do
     IO.println "aiur-prove"
     match AiurTestEnv.build (pure toplevel) with
@@ -229,6 +230,11 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
     | .error e, _ | _, .error e =>
       IO.eprintln s!"IxVM env build failed: {e}"; return 1
     | .ok v2Env, .ok v2FullEnv =>
+      let componentSeq :=
+        LSpec.test "production IxVM has a checked component certificate"
+          v2Env.compiled.bytecode.validCallComponents ++
+        LSpec.test "full IxVM has a checked component certificate"
+          v2FullEnv.compiled.bytecode.validCallComponents
       -- Kernel-arena fixtures: the repo's NEGATIVE corpus (every
       -- `bad_*` must be rejected by an in-kernel assert_eq!). Runs
       -- through the kernel's subject-only `verify_const` debug
@@ -272,16 +278,16 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
           | .ok (_, _, qc) =>
             -- Exact pin, same convention as `kernelCheckEntries`
             -- (`.round.toUInt64.toNat`): any cost shift must be an
-            -- explicit, reviewed bump. Includes call-order rank columns
-            -- and their byte-range lookups.
+            -- explicit, reviewed bump. Includes component-local call ranks
+            -- and their remaining byte-range lookups.
             let actual :=
               (Aiur.computeStats v2Env.compiled qc v2Env.shapes).totalFftCost.round.toUInt64.toNat
             pure (LSpec.test
-              s!"Shard pipeline FFT matches: expected 10_431_803_035, got {actual}"
-              (actual = 10_431_803_035))
+              s!"Shard pipeline FFT matches: expected 9_407_996_708, got {actual}"
+              (actual = 9_407_996_708))
       LSpec.lspecIO
         (.ofList [("ixvm",
-          [fullSeq, aiurSeq, arenaSeq, exploitSeq, paritySeq, shardSeq])]) []),
+          [componentSeq, fullSeq, aiurSeq, arenaSeq, exploitSeq, paritySeq, shardSeq])]) []),
   ("validate-aux", runCompileValidateAux env),
   -- Cross-compiler differential over the same fixture corpus: pure-Lean
   -- Ix.CompileM per-block vs Rust, root-cause classified (see

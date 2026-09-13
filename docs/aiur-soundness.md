@@ -8,14 +8,14 @@ a native Merkle commitment-binding defect.
 | Failure | Required invariant | Regression |
 | --- | --- | --- |
 | An inactive function row supplied a public proof of `3 * 5 = 16`. | Function and memory rows satisfy `multiplicity * (1 - selector) = 0`. | [Inactive rows](../crates/aiur/src/synthesis/tests/acceptance.rs) |
-| Self-recursive and mutually recursive rows balanced their own calls without a finite execution. | Every constrained call strictly increases a range-checked rank. | [Self recursion](../crates/aiur/src/synthesis/tests/acceptance.rs), [call ordering](../crates/aiur/src/synthesis/tests/call_order.rs) |
+| Self-recursive and mutually recursive rows balanced their own calls without a finite execution. | Calls advance a checked static component order, or strictly increase a range-checked rank within one component. | [Self recursion](../crates/aiur/src/synthesis/tests/acceptance.rs), [call ordering](../crates/aiur/src/synthesis/tests/call_order.rs) |
 | An empty return at rank seven supplied a public claim with output seven because lookup messages are zero-padded. | Public claims and constrained calls agree with the function's input and output arities; yields agree with their continuation. | [Message shapes](../crates/aiur/src/synthesis/tests/lookup_shapes.rs) |
 | An inactive branch's store arguments changed a live call's lookup channel and supplied output seven for a program returning one. | Ungated arguments require a single function with terminal control and one selector. Constraint emission and lookup grouping use the same predicate. | [Empty branches](../crates/aiur/src/synthesis/tests/branchless.rs) |
 | A large native Merkle cap omitted a shorter matrix: changing its values preserved the commitment, and altered openings verified. | The cap retains the injection layer of every committed matrix. | [Merkle cap coverage](../crates/aiur/src/synthesis/tests/mmcs.rs) |
 
 ## Call ranks and witness generation
 
-Each function row has six little-endian rank bytes. A constrained call adds
+The general Aiur layout gives each function row six little-endian rank bytes. A constrained call adds
 six bytes for `callee_rank - caller_rank - 1` and requests the derived rank
 `caller_rank + 1 + gap` in its lookup. The callee's return binds this rank
 without a separate callee-rank column or equality constraint. Three byte-pair
@@ -30,12 +30,56 @@ children are promoted. Shared callees retain a consistent rank. Witness
 workers accumulate their byte-range queries locally; the prover merges those
 counts before constructing the binary byte-table trace.
 
-The compiler reserves six additional columns and three lookup slots per
-function, and six columns and three additional lookup slots per constrained
-call. These columns belong to the compiled proving layout and witness
-generator. Regenerating the IxVM, aggregation and recursive-verifier execution
-sources produces identical files because their instructions and function
-indices are preserved.
+## Checked IxVM component ordering
+
+IxVM enables a compiler pass that computes strongly connected components of
+its constrained call graph after lowering and deduplication. An independent
+checker validates every constrained bytecode edge: it must advance the static
+component order, or stay within a component whose endpoints both retain
+dynamic ranks. It also checks the assignment's size and order bounds. The
+native system constructor repeats these checks over branches, defaults and
+shared continuations before constructing the AIR and verification key.
+The certificate is part of the fixed program, not advice from the prover.
+
+The resulting layouts use these rank witnesses:
+
+| Location | Additional columns | Additional byte-pair lookups |
+| --- | ---: | ---: |
+| Acyclic function row | 0; return rank is zero | 0 |
+| Recursive function row | 6 rank bytes | 3 |
+| Call to an acyclic function | 0; requested rank is zero | 0 |
+| Call across components to a recursive function | 1 callee-rank field | 0 |
+| Call within a recursive component | 6 gap bytes | 3 |
+
+A boundary call must still bind its recursive callee's rank through the return
+lookup. Setting it to zero would break shared callees. Within a recursive
+component, the bounded rank and gap retain the original strict ordering.
+The Lean theorem `CallComponent.wellFounded_calls` in
+[the compiler pass](../Ix/Aiur/Compiler/CallOrder.lean) proves that the bounded
+static order and bounded dynamic ranks together give a well-founded call
+relation. Its premises still rely on activity, exact lookup balance and the
+byte-range constraints; it is not a complete AIR extraction theorem.
+
+The compiler recomputes function and shared-continuation layouts before
+grouping. In a mixed circuit, acyclic operations reuse recursive members'
+rank columns and lookup slots, so rank-range queries are gated only by ranked
+members. General Aiur programs retain the dynamic layout unless explicitly
+enabled through `Source.Toplevel.componentRanks`.
+
+For the current production IxVM, this removes row ranks from 365 of 753
+constrained functions and gap checks at 2,428 of 3,357 call sites. Of its
+181 function circuits, 139 become narrower and 138 use fewer lookup slots.
+Existing function groups are retained. These counts are not weighted by
+execution frequency. The optimization reduces modeled FFT work on all 83
+kernel fixtures: median 6.65%, with 9.73% for `Nat.add_comm`, 15.09% for
+`Vector.append`, and 9.81% for the shard pipeline, relative to the repaired
+dynamic-rank layout. These are model estimates, not wall-clock timings.
+
+Query records still retain their completion timestamps, including for acyclic
+functions; this pass reduces AIR and witness work rather than record storage.
+The remaining recursive components keep explicit ranks. Regenerating the
+IxVM, aggregation and recursive-verifier execution sources produces identical
+files because instructions and function indices are preserved.
 
 ## Structural bounds
 
@@ -84,17 +128,22 @@ are rejected; the recursive verifier already requires cap height zero.
 The activity, call-order and branch-gating repairs change affected AIR
 expressions and verification keys. Rebuild proving systems and keys, and
 regenerate stored proofs against the repaired systems. Public claim encoding
-is preserved: its omitted rank is zero under lookup padding.
+is preserved: its omitted rank is zero under lookup padding. Component
+specialization also changes the IxVM AIR and key, and extends the internal
+Lean/Rust bytecode representation; rebuild both sides of the FFI together.
 
 The native regressions cover supplied false witnesses as well as honest
 execution, finite recursion, shared callees, advice promotion and grouped
-circuits. Run them with:
+circuits. Component tests also reject forged assignments and displaced
+boundary ranks, check the component producer against an independent
+reachability oracle on all 512 three-vertex graphs, and run the existing
+Aiur proving corpus with specialized layouts. Run them with:
 
 ```sh
 cargo test --locked --release -p aiur --features parallel
 cargo clippy --locked --release -p aiur --all-targets --features parallel -- -D warnings
 lake exe ix codegen --check
-lake test -- aiur-cross aiur-cost aiur-prove recursive-verifier ix-aggr
+lake test -- aiur-cross aiur-cost aiur-prove aiur-components recursive-verifier ix-aggr
 lake test -- --ignored ixvm
 ```
 

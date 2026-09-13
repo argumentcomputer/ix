@@ -309,11 +309,19 @@ pub(crate) fn decode_toplevel(
   obj: &LeanAiurToplevel<impl LeanRef>,
 ) -> Toplevel {
   let ctor = obj.as_ctor();
-  let [functions_obj, memory_sizes_obj, circuits_obj] = ctor.objs::<3>();
+  let [functions_obj, memory_sizes_obj, circuits_obj, components_obj] =
+    ctor.objs::<4>();
   let functions =
     functions_obj.as_array().map(|o| decode_function(o.as_ctor()));
   let memory_sizes =
     memory_sizes_obj.as_array().map(|x| lean_unbox_nat_as_usize(&x));
   let circuits = circuits_obj.as_array().map(|o| decode_circuit(o.as_ctor()));
-  Toplevel { functions, memory_sizes, circuits }
+  let call_components = components_obj.as_array().map(|o| {
+    let component = crate::lean::LeanAiurCallComponent::from_ctor(o.as_ctor());
+    aiur::bytecode::CallComponent {
+      order: lean_unbox_nat_as_usize(&component.get_obj(0)),
+      ranked: component.get_num_8(0) != 0,
+    }
+  });
+  Toplevel { functions, memory_sizes, circuits, call_components }
 }

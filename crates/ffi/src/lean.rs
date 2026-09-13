@@ -275,7 +275,8 @@ lean_ffi::lean_inductive! {
 
   // --- Aiur types ---
 
-  LeanAiurToplevel [ { num_obj: 3 } ];
+  LeanAiurToplevel [ { num_obj: 4 } ];
+  LeanAiurCallComponent [ { num_obj: 1, num_8: 1 } ];
   LeanAiurFunction [ { num_obj: 2, num_8: 2 } ];
   LeanAiurCircuit  [ { num_obj: 3 } ];
 

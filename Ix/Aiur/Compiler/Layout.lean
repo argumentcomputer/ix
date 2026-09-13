@@ -107,10 +107,23 @@ structure LayoutMState where
   functionLayout : Aiur.Bytecode.FunctionLayout
   memSizes : MemSizes
   degrees : Array Nat
+  /-- Empty retains the general six-byte gap at every constrained call. -/
+  callRanks : Array Aiur.Bytecode.CallRank := #[]
 
 @[inline] def LayoutMState.new (inputSize : Nat) : LayoutMState :=
   -- Multiplicity plus six rank bytes, with three byte-pair range lookups.
-  ⟨{ inputSize, selectors := 0, auxiliaries := 7, lookups := 3 }, .empty, Array.replicate inputSize 1⟩
+  ⟨{ inputSize, selectors := 0, auxiliaries := 7, lookups := 3 }, .empty, Array.replicate inputSize 1, #[]⟩
+
+def LayoutMState.withCallRanks (inputSize : Nat) (ranked : Bool)
+    (callRanks : Array Aiur.Bytecode.CallRank) : LayoutMState :=
+  { functionLayout := {
+      inputSize := inputSize
+      selectors := 0
+      auxiliaries := if ranked then 7 else 1
+      lookups := if ranked then 3 else 0 }
+    memSizes := .empty
+    degrees := Array.replicate inputSize 1
+    callRanks }
 
 abbrev LayoutM := StateM LayoutMState
 
@@ -172,13 +185,15 @@ def opLayout : Bytecode.Op → LayoutM Unit
     let degree ← getDegree a
     if degree = 0 then pushDegree 0
     else do pushDegree 1; bumpAuxiliaries 2
-  | .call _ _ outputSize unconstrained => do
+  | .call function _ outputSize unconstrained => do
     pushDegrees $ .replicate outputSize 1
     bumpAuxiliaries outputSize
     if !unconstrained then
-      -- Six gap bytes; the lookup derives the callee rank as caller + 1 + gap.
-      bumpAuxiliaries 6
-      bumpLookups 4
+      bumpLookups
+      match (← get).callRanks[function]?.getD .ordered with
+      | .zero => pure ()
+      | .bound => bumpAuxiliaries
+      | .ordered => bumpAuxiliaries 6; bumpLookups 3
   | .store values => do
     pushDegree 1; bumpAuxiliaries; bumpLookups; addMemSize values.size
   | .load size _ => do
@@ -239,54 +254,58 @@ private theorem Bytecode.Block.sizeOf_ctrl_lt_layout (b : Bytecode.Block) :
 
 mutual
 
-def ctrlLayout (c : Bytecode.Ctrl) : LayoutM Unit := match c with
-  | .match _ branches defaultBranch => do
+def relayoutCtrl (c : Bytecode.Ctrl) : LayoutM Bytecode.Ctrl := match c with
+  | .match value branches defaultBranch => do
     let initSharedData ← getSharedData
     let degrees ← getDegrees
     -- Fold over branches, tracking the running maximum shared data.
-    let maximalSharedData ← branches.attach.foldlM (init := initSharedData)
-      fun currMax ⟨(_, block), _⟩ => do
+    let (branches, maximalSharedData) ← branches.attach.foldlM (init := (#[], initSharedData))
+      fun (done, currMax) ⟨(value, block), _⟩ => do
         setSharedData initSharedData
-        blockLayout block
+        let block ← relayoutBlock block
         let blockSharedData ← getSharedData
         setDegrees degrees
-        pure (currMax.maximals blockSharedData)
+        pure (done.push (value, block), currMax.maximals blockSharedData)
     -- Apply default branch if present.
-    let finalMax ← match defaultBranch with
-      | none => pure maximalSharedData
+    let (defaultBranch, finalMax) ← match defaultBranch with
+      | none => pure (none, maximalSharedData)
       | some defaultBlock => do
         setSharedData initSharedData
         bumpAuxiliaries branches.size
-        blockLayout defaultBlock
+        let defaultBlock ← relayoutBlock defaultBlock
         let defaultBlockSharedData ← getSharedData
         setDegrees degrees
-        pure (maximalSharedData.maximals defaultBlockSharedData)
+        pure (some defaultBlock, maximalSharedData.maximals defaultBlockSharedData)
     setSharedData finalMax
-  | .return .. => bumpSelectors
-  | .yield .. => bumpSelectors
-  | .matchContinue _ branches defaultBranch outputSize _sharedAux _sharedLookups continuation => do
+    pure (.match value branches defaultBranch)
+  | .return .. => do bumpSelectors; pure c
+  | .yield .. => do bumpSelectors; pure c
+  | .matchContinue value branches defaultBranch outputSize _sharedAux _sharedLookups continuation => do
     let initSharedData ← getSharedData
     let degrees ← getDegrees
-    let maximalSharedData ← branches.attach.foldlM (init := initSharedData)
-      fun currMax ⟨(_, block), _⟩ => do
+    let (branches, maximalSharedData) ← branches.attach.foldlM (init := (#[], initSharedData))
+      fun (done, currMax) ⟨(value, block), _⟩ => do
         setSharedData initSharedData
-        blockLayout block
+        let block ← relayoutBlock block
         let blockSharedData ← getSharedData
         setDegrees degrees
-        pure (currMax.maximals blockSharedData)
-    let finalMax ← match defaultBranch with
-      | none => pure maximalSharedData
+        pure (done.push (value, block), currMax.maximals blockSharedData)
+    let (defaultBranch, finalMax) ← match defaultBranch with
+      | none => pure (none, maximalSharedData)
       | some defaultBlock => do
         setSharedData initSharedData
         bumpAuxiliaries branches.size
-        blockLayout defaultBlock
+        let defaultBlock ← relayoutBlock defaultBlock
         let defaultBlockSharedData ← getSharedData
         setDegrees degrees
-        pure (maximalSharedData.maximals defaultBlockSharedData)
+        pure (some defaultBlock, maximalSharedData.maximals defaultBlockSharedData)
     setSharedData finalMax
     bumpAuxiliaries outputSize
     pushDegrees (.replicate outputSize 1)
-    blockLayout continuation
+    let continuation ← relayoutBlock continuation
+    pure (.matchContinue value branches defaultBranch outputSize
+      (finalMax.auxiliaries - initSharedData.auxiliaries)
+      (finalMax.lookups - initSharedData.lookups) continuation)
 termination_by (sizeOf c, 0)
 decreasing_by
   all_goals first
@@ -294,9 +313,9 @@ decreasing_by
     | (have := Array.sizeOf_lt_of_mem ‹_ ∈ _›; grind)
     | grind
 
-def blockLayout (block : Bytecode.Block) : LayoutM Unit := do
+def relayoutBlock (block : Bytecode.Block) : LayoutM Bytecode.Block := do
   block.ops.forM opLayout
-  ctrlLayout block.ctrl
+  return { block with ctrl := ← relayoutCtrl block.ctrl }
 termination_by (sizeOf block, 1)
 decreasing_by
   all_goals first
@@ -304,6 +323,9 @@ decreasing_by
     | (apply Prod.Lex.left; exact Bytecode.Block.sizeOf_ctrl_lt_layout _)
 
 end
+
+def blockLayout (block : Bytecode.Block) : LayoutM Unit :=
+  discard (relayoutBlock block)
 
 end Bytecode
 
