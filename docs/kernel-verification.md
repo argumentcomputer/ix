@@ -410,14 +410,14 @@ sizes, constrained and advice calls, nested continuations, visibility and
 public-claim widths. All 54 parallel release Rust tests pass, including the
 supplied rank/output ambiguity regression; release Clippy denies warnings.
 
-The audit checks 884 roots by traversing checked types, bodies and inductive
-constructors. Eighteen roots use no axioms; one uses only `Quot.sound`;
-149 depend only on `propext`; 256 use exactly `propext` and `Quot.sound`;
-the other 460 use exactly
+The audit checks 955 roots by traversing checked types, bodies and inductive
+constructors. Twenty roots use no axioms; one uses only `Quot.sound`;
+165 depend only on `propext`; 260 use exactly `propext` and `Quot.sound`;
+the other 509 use exactly
 `propext`, `Classical.choice` and `Quot.sound`. The combined closure
-has 17,843 logical declarations and 18,619 declarations after following runtime
+has 18,163 logical declarations and 18,942 declarations after following runtime
 workers and replacements. The frozen report records four native runtime entry points,
-three partial opaque sources and all 169 Ix recursion worker implementations.
+three partial opaque sources and all 171 Ix recursion worker implementations.
 Bytecode comparison/hashing, tail-match restoration and source-value hashing
 use total definitions. Type hashing and type/pattern formatting remain partial.
 These remaining implementations and
@@ -822,6 +822,38 @@ constructors, preserving all prior statements, axiom sets, definitions and
 with all twenty-two native corpora.
 Native production behavior and serialized proof/key bytes are unchanged.
 
+`Extension` gives the proof codec's two canonical coordinates their pinned
+arithmetic meaning, with basis `1, u` and `u² = 7`. It implements addition,
+subtraction, negation, multiplication, conjugation, norm, scalar multiplication,
+binary exponentiation and checked inversion. `GoldilocksAlgebra` proves the
+ring laws through an injective residue map, and relates the existing
+64-bit repeated-squaring routine to mathematical powers.
+`GoldilocksInverse` proves Fermat's theorem by permuting the nonzero residues
+and cancelling their product. The enumeration is a noncomputable proof
+definition and generates no runtime initialization code.
+
+`ExtensionField` proves that seven has no square root using a
+kernel-evaluated Euler certificate and the proved Fermat theorem. It derives
+the absence of zero divisors, the nonzero norm of every nonzero extension
+value, and correctness and uniqueness of the concrete inverse formula.
+Checked inversion returns a value exactly when its product with the input
+is one; zero returns `none`. The extension ring laws instantiate the same
+working-operation interface used by the existing expression reflection.
+
+The native comparisons cover sixteen base inverses, 384 extension values,
+7,680 powers and 147,456 ordered operand pairs. Exponents include both field
+boundaries, `2^64`, the quadratic-field inverse exponent, and `2^128 - 1`.
+All 240 extension assignments and 8,016 node values from ten actual compiled
+graphs agree with both graph sweeping and expression evaluation. The audit
+adds 71 roots, 32 definitions and instances, and two inspected recursion
+workers; all 884 prior statements and axiom sets, 689 definitions and 169
+worker bodies are unchanged. Native field-instruction refinement and the
+connection through logUp, quotient, transcript and PCS checks remain open.
+All 80 parallel Rust release tests, release Clippy with warnings denied and
+formatting pass. The strict 379-job build and complete component gate pass
+with all twenty-four native corpora and the unchanged two accepted and
+seventeen rejected backend cases.
+
 The budget comparison covers
 21,964 Rust/Lean cases, including
 all byte-sized degree values, field and machine boundaries, inactive circuits
@@ -885,7 +917,7 @@ bound. The remaining components are:
 
 | Component | Remaining obligation |
 | --- | --- |
-| Native verifier | Extend the enforced proof codec and shape checks through the native transcript, PCS and AIR checks, then extract satisfying committed traces from acceptance. |
+| Native verifier | Connect the enforced proof codec and shape checks and proved field arithmetic to native logUp, quotient, transcript and PCS checks, then extract satisfying committed traces from acceptance. |
 | Cryptography | Prove the commitment, polynomial-testing, FRI and Fiat–Shamir guarantees with admissible parameters and explicit failure bounds. |
 | Randomized lookups | Derive the exact bounded weighted message balance used by execution extraction, excluding specified compression collisions and denominator failures. |
 | Fixed tables | Bind the preprocessed commitments and openings to the proved byte tables and their required dimensions. |

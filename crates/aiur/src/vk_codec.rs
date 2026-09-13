@@ -87,6 +87,10 @@ mod compilation_tests;
 #[path = "vk_codec/tests/codec.rs"]
 mod codec_tests;
 
+#[cfg(test)]
+#[path = "vk_codec/tests/extension_arithmetic.rs"]
+mod extension_arithmetic_tests;
+
 // ════════════════════════════════════════════════════════════════════════════
 // Encoder — System<AiurConfig> -> bytes
 // ════════════════════════════════════════════════════════════════════════════

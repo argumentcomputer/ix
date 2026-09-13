@@ -7133,6 +7133,237 @@ ROOT Aiur.BoundVerifier.verifyShaped_acceptance
           Aiur.Proof.ofBytesChecked bytes = Except.ok native ∧
             backend.system.verify (Aiur.buildClaim selection.function input selection.success) native = Except.ok ()
 AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.G.residue_injective
+∀ {a b : Aiur.G}, a.residue = b.residue → a = b
+AXIOMS []
+ROOT Aiur.G.residue_ofNat
+∀ (n : Nat), (Aiur.G.ofNat n).residue = Fin.ofNat Aiur.gSize.toNat n
+AXIOMS [propext]
+ROOT Aiur.G.residue_add
+∀ (a b : Aiur.G), (a + b).residue = a.residue + b.residue
+AXIOMS [propext]
+ROOT Aiur.G.residue_mul
+∀ (a b : Aiur.G), (a * b).residue = a.residue * b.residue
+AXIOMS [propext]
+ROOT Aiur.G.residue_sub
+∀ (a b : Aiur.G), (a - b).residue = a.residue - b.residue
+AXIOMS [propext]
+ROOT Aiur.G.residue_numeral
+∀ (n : Nat), Aiur.G.residue (OfNat.ofNat n) = OfNat.ofNat n
+AXIOMS [propext]
+ROOT Aiur.G.residue_zero
+Aiur.G.residue 0 = 0
+AXIOMS [propext]
+ROOT Aiur.G.residue_one
+Aiur.G.residue 1 = 1
+AXIOMS [propext]
+ROOT Aiur.G.residue_neg
+∀ (a : Aiur.G), (-a).residue = -a.residue
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.G.residue_ofInt
+∀ (n : Int), (Aiur.G.ofInt n).residue = ↑n
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.G.left_distrib
+∀ (a b c : Aiur.G), a * (b + c) = a * b + a * c
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.G.neg_add_cancel
+∀ (a : Aiur.G), -a + a = 0
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.G.sub_eq_add_neg
+∀ (a b : Aiur.G), a - b = a + -b
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.G.ofInt_neg
+∀ (n : Int), Aiur.G.ofInt (-n) = -Aiur.G.ofInt n
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.G.neg_mul
+∀ (a b : Aiur.G), -a * b = -(a * b)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.G.pow_go_eq
+∀ (a : Aiur.G) (n fuel : Nat), n < 2 ^ fuel → Aiur.G.pow.go✝ a n fuel = a ^ n
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.G.pow_eq
+∀ (a : Aiur.G) (n : Nat), n < 2 ^ 64 → a.pow n = a ^ n
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.G.inverse_eq_power
+∀ (a : Aiur.G), a.inverse = a ^ (Aiur.gSize.toNat - 2)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.G.n_power
+∀ (a : Aiur.G) (n : Nat), (a ^ n).n = a.n ^ n % Aiur.gSize.toNat
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.G.mul_right_cancel
+∀ {a b c : Aiur.G}, c ≠ 0 → a * c = b * c → a = b
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.G.nonzeroResidues_length
+Aiur.G.nonzeroResidues.length = Aiur.gSize.toNat - 1
+AXIOMS [propext]
+ROOT Aiur.G.mem_nonzeroResidues
+∀ (a : Aiur.G), a ∈ Aiur.G.nonzeroResidues ↔ a ≠ 0
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.G.nonzeroResidues_nodup
+Aiur.G.nonzeroResidues.Nodup
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.G.map_perm_of_injective
+∀ (values : List Aiur.G) (f : Aiur.G → Aiur.G),
+  values.Nodup → (∀ {x y : Aiur.G}, f x = f y → x = y) → List.map f values ⊆ values → (List.map f values).Perm values
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.G.multiplication_perm
+∀ (a : Aiur.G), a ≠ 0 → (List.map (fun x => a * x) Aiur.G.nonzeroResidues).Perm Aiur.G.nonzeroResidues
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.G.product_nonzero
+∀ (values : List Aiur.G), (∀ (x : Aiur.G), x ∈ values → x ≠ 0) → Aiur.G.product values ≠ 0
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.G.product_perm
+∀ {left right : List Aiur.G}, left.Perm right → Aiur.G.product left = Aiur.G.product right
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.G.product_map_mul
+∀ (a : Aiur.G) (values : List Aiur.G),
+  Aiur.G.product (List.map (fun x => a * x) values) = a ^ values.length * Aiur.G.product values
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.G.power_eq_one_of_perm
+∀ (a : Aiur.G) (values : List Aiur.G),
+  (∀ (x : Aiur.G), x ∈ values → x ≠ 0) → (List.map (fun x => a * x) values).Perm values → a ^ values.length = 1
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.G.fermat
+∀ (a : Aiur.G), a ≠ 0 → a ^ (Aiur.gSize.toNat - 1) = 1
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.G.inverse_zero
+Aiur.G.inverse 0 = 0
+AXIOMS [propext]
+ROOT Aiur.G.mul_inverse_cancel
+∀ (a : Aiur.G), a ≠ 0 → a * a.inverse = 1
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.ProofCodec.Extension.ext
+∀ {a b : Aiur.NativeAIR.ProofCodec.Extension}, a.c0 = b.c0 → a.c1 = b.c1 → a = b
+AXIOMS []
+ROOT Aiur.NativeAIR.ProofCodec.Extension.ofBase_injective
+∀ {a b : Aiur.G}, Aiur.NativeAIR.ProofCodec.Extension.ofBase a = Aiur.NativeAIR.ProofCodec.Extension.ofBase b → a = b
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.ProofCodec.Extension.ofBase_add
+∀ (a b : Aiur.G),
+  Aiur.NativeAIR.ProofCodec.Extension.ofBase (a + b) =
+    Aiur.NativeAIR.ProofCodec.Extension.ofBase a + Aiur.NativeAIR.ProofCodec.Extension.ofBase b
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.ProofCodec.Extension.ofBase_sub
+∀ (a b : Aiur.G),
+  Aiur.NativeAIR.ProofCodec.Extension.ofBase (a - b) =
+    Aiur.NativeAIR.ProofCodec.Extension.ofBase a - Aiur.NativeAIR.ProofCodec.Extension.ofBase b
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.ProofCodec.Extension.ofBase_neg
+∀ (a : Aiur.G), Aiur.NativeAIR.ProofCodec.Extension.ofBase (-a) = -Aiur.NativeAIR.ProofCodec.Extension.ofBase a
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.ProofCodec.Extension.ofBase_mul
+∀ (a b : Aiur.G),
+  Aiur.NativeAIR.ProofCodec.Extension.ofBase (a * b) =
+    Aiur.NativeAIR.ProofCodec.Extension.ofBase a * Aiur.NativeAIR.ProofCodec.Extension.ofBase b
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.ProofCodec.Extension.add_zero
+∀ (a : Aiur.NativeAIR.ProofCodec.Extension), a + 0 = a
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.ProofCodec.Extension.add_comm
+∀ (a b : Aiur.NativeAIR.ProofCodec.Extension), a + b = b + a
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.ProofCodec.Extension.add_assoc
+∀ (a b c : Aiur.NativeAIR.ProofCodec.Extension), a + b + c = a + (b + c)
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.ProofCodec.Extension.mul_one
+∀ (a : Aiur.NativeAIR.ProofCodec.Extension), a * 1 = a
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.ProofCodec.Extension.zero_mul
+∀ (a : Aiur.NativeAIR.ProofCodec.Extension), 0 * a = 0
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.ProofCodec.Extension.mul_comm
+∀ (a b : Aiur.NativeAIR.ProofCodec.Extension), a * b = b * a
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.ProofCodec.Extension.mul_assoc
+∀ (a b c : Aiur.NativeAIR.ProofCodec.Extension), a * b * c = a * (b * c)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.ProofCodec.Extension.left_distrib
+∀ (a b c : Aiur.NativeAIR.ProofCodec.Extension), a * (b + c) = a * b + a * c
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.ProofCodec.Extension.neg_add_cancel
+∀ (a : Aiur.NativeAIR.ProofCodec.Extension), -a + a = 0
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.ProofCodec.Extension.sub_eq_add_neg
+∀ (a b : Aiur.NativeAIR.ProofCodec.Extension), a - b = a + -b
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.ProofCodec.Extension.neg_mul
+∀ (a b : Aiur.NativeAIR.ProofCodec.Extension), -a * b = -(a * b)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.ProofCodec.Extension.basis_square
+Aiur.NativeAIR.ProofCodec.Extension.basis * Aiur.NativeAIR.ProofCodec.Extension.basis =
+  Aiur.NativeAIR.ProofCodec.Extension.ofBase 7
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.ProofCodec.Extension.coordinates
+∀ (a : Aiur.NativeAIR.ProofCodec.Extension),
+  a =
+    Aiur.NativeAIR.ProofCodec.Extension.ofBase a.c0 +
+      Aiur.NativeAIR.ProofCodec.Extension.ofBase a.c1 * Aiur.NativeAIR.ProofCodec.Extension.basis
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.ProofCodec.Extension.scale_eq_mul
+∀ (a : Aiur.NativeAIR.ProofCodec.Extension) (b : Aiur.G), a.scale b = a * Aiur.NativeAIR.ProofCodec.Extension.ofBase b
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.ProofCodec.Extension.conjugate_conjugate
+∀ (a : Aiur.NativeAIR.ProofCodec.Extension), a.conjugate.conjugate = a
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.ProofCodec.Extension.mul_conjugate
+∀ (a : Aiur.NativeAIR.ProofCodec.Extension), a * a.conjugate = Aiur.NativeAIR.ProofCodec.Extension.ofBase a.norm
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.ProofCodec.Extension.conjugate_mul
+∀ (a b : Aiur.NativeAIR.ProofCodec.Extension), (a * b).conjugate = a.conjugate * b.conjugate
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.ProofCodec.Extension.norm_mul
+∀ (a b : Aiur.NativeAIR.ProofCodec.Extension), (a * b).norm = a.norm * b.norm
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.ProofCodec.Extension.evalLaws
+Aiur.NativeAIR.EvalLaws Aiur.NativeAIR.ProofCodec.Extension.evalOps
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.ProofCodec.Extension.powBits_eq
+∀ (a : Aiur.NativeAIR.ProofCodec.Extension) (n fuel : Nat), n < 2 ^ fuel → a.powBits n fuel = a ^ n
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.ProofCodec.Extension.power_eq
+∀ (a : Aiur.NativeAIR.ProofCodec.Extension) (n : Nat), a.power n = a ^ n
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.ProofCodec.Extension.ofBase_power
+∀ (a : Aiur.G) (n : Nat),
+  Aiur.NativeAIR.ProofCodec.Extension.ofBase (a ^ n) = Aiur.NativeAIR.ProofCodec.Extension.ofBase a ^ n
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.ProofCodec.Extension.inverse_formula
+∀ (a : Aiur.NativeAIR.ProofCodec.Extension),
+  a.tryInverse =
+    if a = 0 then none
+    else some (a.conjugate * Aiur.NativeAIR.ProofCodec.Extension.ofBase (a.norm ^ (Aiur.gSize.toNat - 2)))
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.G.seven_euler_certificate
+Aiur.G.pow 7 ((Aiur.gSize.toNat - 1) / 2) = 0 - 1
+AXIOMS [propext]
+ROOT Aiur.G.seven_not_square
+∀ (a : Aiur.G), a * a ≠ 7
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.G.square_ratio
+∀ (x y inverse : Aiur.G), x * x = 7 * (y * y) → y * inverse = 1 → x * inverse * (x * inverse) = 7
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.ProofCodec.Extension.norm_zero_iff
+∀ (a : Aiur.NativeAIR.ProofCodec.Extension), a.norm = 0 ↔ a = 0
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.ProofCodec.Extension.mul_eq_zero_iff
+∀ (a b : Aiur.NativeAIR.ProofCodec.Extension), a * b = 0 ↔ a = 0 ∨ b = 0
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.ProofCodec.Extension.one_ne_zero
+1 ≠ 0
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.ProofCodec.Extension.mul_left_cancel
+∀ {a b c : Aiur.NativeAIR.ProofCodec.Extension}, a ≠ 0 → a * b = a * c → b = c
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.ProofCodec.Extension.inverse_correct
+∀ (a : Aiur.NativeAIR.ProofCodec.Extension),
+  a ≠ 0 → a.tryInverse = some (a.conjugate.scale a.norm.inverse) ∧ a * a.conjugate.scale a.norm.inverse = 1
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.ProofCodec.Extension.tryInverse_none_iff
+∀ (a : Aiur.NativeAIR.ProofCodec.Extension), a.tryInverse = none ↔ a = 0
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.ProofCodec.Extension.tryInverse_some_iff
+∀ (a b : Aiur.NativeAIR.ProofCodec.Extension), a.tryInverse = some b ↔ a * b = 1
+AXIOMS [propext, Classical.choice, Quot.sound]
 PREMISE Aiur.AIR.activityConstraint
 Aiur.G → Aiur.G → Aiur.G
 DEFINITION
@@ -12515,6 +12746,172 @@ PREMISE Aiur.NativeAIR.ProofShape.Row.Fits.mk
           row.logDegree.toNat + (Aiur.NativeAIR.ProofShape.quotientDegree row.circuit).log2 ≤
               32 - parameters.logBlowup →
             Aiur.NativeAIR.ProofShape.Row.Fits parameters row
+PREMISE Aiur.NativeAIR.ProofCodec.Extension.ofBase
+Aiur.G → Aiur.NativeAIR.ProofCodec.Extension
+DEFINITION
+fun value => { c0 := value, c1 := 0 }
+PREMISE Aiur.NativeAIR.ProofCodec.Extension.ofNat
+{n : Nat} → OfNat Aiur.NativeAIR.ProofCodec.Extension n
+DEFINITION
+fun {n} => { ofNat := Aiur.NativeAIR.ProofCodec.Extension.ofBase (Aiur.G.ofNat n) }
+PREMISE Aiur.NativeAIR.ProofCodec.Extension.add
+Add Aiur.NativeAIR.ProofCodec.Extension
+DEFINITION
+{ add := fun a b => { c0 := a.c0 + b.c0, c1 := a.c1 + b.c1 } }
+PREMISE Aiur.NativeAIR.ProofCodec.Extension.sub
+Sub Aiur.NativeAIR.ProofCodec.Extension
+DEFINITION
+{ sub := fun a b => { c0 := a.c0 - b.c0, c1 := a.c1 - b.c1 } }
+PREMISE Aiur.NativeAIR.ProofCodec.Extension.neg
+Neg Aiur.NativeAIR.ProofCodec.Extension
+DEFINITION
+{ neg := fun a => { c0 := 0 - a.c0, c1 := 0 - a.c1 } }
+PREMISE Aiur.NativeAIR.ProofCodec.Extension.mul
+Mul Aiur.NativeAIR.ProofCodec.Extension
+DEFINITION
+{ mul := fun a b => { c0 := a.c0 * b.c0 + a.c1 * (b.c1 * 7), c1 := a.c0 * b.c1 + a.c1 * b.c0 } }
+PREMISE Aiur.NativeAIR.ProofCodec.Extension.basis
+Aiur.NativeAIR.ProofCodec.Extension
+DEFINITION
+{ c0 := 0, c1 := 1 }
+PREMISE Aiur.NativeAIR.ProofCodec.Extension.conjugate
+Aiur.NativeAIR.ProofCodec.Extension → Aiur.NativeAIR.ProofCodec.Extension
+DEFINITION
+fun value => { c0 := value.c0, c1 := 0 - value.c1 }
+PREMISE Aiur.NativeAIR.ProofCodec.Extension.norm
+Aiur.NativeAIR.ProofCodec.Extension → Aiur.G
+DEFINITION
+fun value => value.c0 * value.c0 - 7 * (value.c1 * value.c1)
+PREMISE Aiur.NativeAIR.ProofCodec.Extension.scale
+Aiur.NativeAIR.ProofCodec.Extension → Aiur.G → Aiur.NativeAIR.ProofCodec.Extension
+DEFINITION
+fun value scalar => { c0 := value.c0 * scalar, c1 := value.c1 * scalar }
+PREMISE Aiur.NativeAIR.ProofCodec.Extension.powBits
+Aiur.NativeAIR.ProofCodec.Extension → Nat → Nat → Aiur.NativeAIR.ProofCodec.Extension
+DEFINITION
+fun value exponent x =>
+  Nat.brecOn (motive := fun x => Nat → Aiur.NativeAIR.ProofCodec.Extension) x
+    (Aiur.NativeAIR.ProofCodec.Extension.powBits._f value) exponent
+PREMISE Aiur.NativeAIR.ProofCodec.Extension.power
+Aiur.NativeAIR.ProofCodec.Extension → Nat → Aiur.NativeAIR.ProofCodec.Extension
+DEFINITION
+fun value exponent => value.powBits exponent (exponent.log2 + 1)
+PREMISE Aiur.NativeAIR.ProofCodec.Extension.tryInverse
+Aiur.NativeAIR.ProofCodec.Extension → Option Aiur.NativeAIR.ProofCodec.Extension
+DEFINITION
+fun value => if (value == 0) = true then none else some (value.conjugate.scale value.norm.inverse)
+PREMISE Aiur.NativeAIR.ProofCodec.Extension.evalOps
+Aiur.NativeAIR.EvalOps Aiur.NativeAIR.ProofCodec.Extension
+DEFINITION
+{ konst := Aiur.NativeAIR.ProofCodec.Extension.ofBase, add := fun x1 x2 => x1 + x2, sub := fun x1 x2 => x1 - x2,
+  mul := fun x1 x2 => x1 * x2, neg := fun x => -x }
+PREMISE Aiur.G.characteristicNeZero
+NeZero Aiur.gSize.toNat
+PREMISE Aiur.G.residue
+Aiur.G → Fin Aiur.gSize.toNat
+DEFINITION
+fun value => ⟨value.n, ⋯⟩
+PREMISE Aiur.G.neg
+Neg Aiur.G
+DEFINITION
+{ neg := fun x => 0 - x }
+PREMISE Aiur.G.natCast
+NatCast Aiur.G
+DEFINITION
+{ natCast := Aiur.G.ofNat }
+PREMISE Aiur.G.ofInt
+Int → Aiur.G
+DEFINITION
+fun x =>
+  match x with
+  | Int.ofNat n => Aiur.G.ofNat n
+  | Int.negSucc n => -Aiur.G.ofNat (n + 1)
+PREMISE Aiur.G.intCast
+IntCast Aiur.G
+DEFINITION
+{ intCast := Aiur.G.ofInt }
+PREMISE Aiur.G.nsmul
+SMul Nat Aiur.G
+DEFINITION
+{ smul := fun n a => Aiur.G.ofNat n * a }
+PREMISE Aiur.G.zsmul
+SMul Int Aiur.G
+DEFINITION
+{ smul := fun n a => Aiur.G.ofInt n * a }
+PREMISE Aiur.G.npow
+HPow Aiur.G Nat Aiur.G
+DEFINITION
+{ hPow := fun a n => npowRec n a }
+PREMISE Aiur.G.commRing
+Grind.CommRing Aiur.G
+DEFINITION
+{ toAdd := Aiur.instAddG, toMul := Aiur.instMulG, natCast := Aiur.G.natCast, ofNat := @Aiur.instOfNatG,
+  nsmul := Aiur.G.nsmul, npow := Aiur.G.npow, add_zero := Aiur.G.add_zero, add_comm := Aiur.G.add_comm,
+  add_assoc := Aiur.G.add_assoc, mul_assoc := Aiur.G.mul_assoc, mul_one := Aiur.G.mul_one,
+  one_mul := Aiur.G.commRing._proof_1, left_distrib := Aiur.G.left_distrib, right_distrib := Aiur.G.commRing._proof_2,
+  zero_mul := Aiur.G.commRing._proof_3, mul_zero := Aiur.G.mul_zero, pow_zero := Aiur.G.commRing._proof_4,
+  pow_succ := Aiur.G.commRing._proof_5, ofNat_succ := Aiur.G.commRing._proof_6,
+  ofNat_eq_natCast := Aiur.G.commRing._proof_7, nsmul_eq_natCast_mul := Aiur.G.commRing._proof_8, toNeg := Aiur.G.neg,
+  toSub := Aiur.instSubG, intCast := Aiur.G.intCast, zsmul := Aiur.G.zsmul, neg_add_cancel := Aiur.G.neg_add_cancel,
+  sub_eq_add_neg := Aiur.G.sub_eq_add_neg, neg_zsmul := Aiur.G.commRing._proof_9,
+  zsmul_natCast_eq_nsmul := Aiur.G.commRing._proof_10, intCast_ofNat := Aiur.G.commRing._proof_11,
+  intCast_neg := Aiur.G.ofInt_neg, mul_comm := Aiur.G.mul_comm }
+PREMISE Aiur.G.nonzeroResidues
+List Aiur.G
+DEFINITION
+List.ofFn fun index => Aiur.G.ofNat (↑index + 1)
+PREMISE Aiur.G.product
+List Aiur.G → Aiur.G
+DEFINITION
+fun x => List.brecOn x Aiur.G.product._f
+PREMISE Aiur.NativeAIR.ProofCodec.Extension.natCast
+NatCast Aiur.NativeAIR.ProofCodec.Extension
+DEFINITION
+{ natCast := fun n => Aiur.NativeAIR.ProofCodec.Extension.ofBase (Aiur.G.ofNat n) }
+PREMISE Aiur.NativeAIR.ProofCodec.Extension.intCast
+IntCast Aiur.NativeAIR.ProofCodec.Extension
+DEFINITION
+{ intCast := fun n => Aiur.NativeAIR.ProofCodec.Extension.ofBase (Aiur.G.ofInt n) }
+PREMISE Aiur.NativeAIR.ProofCodec.Extension.nsmul
+SMul Nat Aiur.NativeAIR.ProofCodec.Extension
+DEFINITION
+{ smul := fun n a => Aiur.NativeAIR.ProofCodec.Extension.ofBase (Aiur.G.ofNat n) * a }
+PREMISE Aiur.NativeAIR.ProofCodec.Extension.zsmul
+SMul Int Aiur.NativeAIR.ProofCodec.Extension
+DEFINITION
+{ smul := fun n a => Aiur.NativeAIR.ProofCodec.Extension.ofBase (Aiur.G.ofInt n) * a }
+PREMISE Aiur.NativeAIR.ProofCodec.Extension.npow
+HPow Aiur.NativeAIR.ProofCodec.Extension Nat Aiur.NativeAIR.ProofCodec.Extension
+DEFINITION
+{ hPow := fun a n => npowRec n a }
+PREMISE Aiur.NativeAIR.ProofCodec.Extension.commRing
+Grind.CommRing Aiur.NativeAIR.ProofCodec.Extension
+DEFINITION
+{ toAdd := Aiur.NativeAIR.ProofCodec.Extension.add, toMul := Aiur.NativeAIR.ProofCodec.Extension.mul,
+  natCast := Aiur.NativeAIR.ProofCodec.Extension.natCast, ofNat := @Aiur.NativeAIR.ProofCodec.Extension.ofNat,
+  nsmul := Aiur.NativeAIR.ProofCodec.Extension.nsmul, npow := Aiur.NativeAIR.ProofCodec.Extension.npow,
+  add_zero := Aiur.NativeAIR.ProofCodec.Extension.add_zero, add_comm := Aiur.NativeAIR.ProofCodec.Extension.add_comm,
+  add_assoc := Aiur.NativeAIR.ProofCodec.Extension.add_assoc,
+  mul_assoc := Aiur.NativeAIR.ProofCodec.Extension.mul_assoc, mul_one := Aiur.NativeAIR.ProofCodec.Extension.mul_one,
+  one_mul := Aiur.NativeAIR.ProofCodec.Extension.commRing._proof_1,
+  left_distrib := Aiur.NativeAIR.ProofCodec.Extension.left_distrib,
+  right_distrib := Aiur.NativeAIR.ProofCodec.Extension.commRing._proof_2,
+  zero_mul := Aiur.NativeAIR.ProofCodec.Extension.zero_mul,
+  mul_zero := Aiur.NativeAIR.ProofCodec.Extension.commRing._proof_3,
+  pow_zero := Aiur.NativeAIR.ProofCodec.Extension.commRing._proof_4,
+  pow_succ := Aiur.NativeAIR.ProofCodec.Extension.commRing._proof_5,
+  ofNat_succ := Aiur.NativeAIR.ProofCodec.Extension.commRing._proof_6,
+  ofNat_eq_natCast := Aiur.NativeAIR.ProofCodec.Extension.commRing._proof_7,
+  nsmul_eq_natCast_mul := Aiur.NativeAIR.ProofCodec.Extension.commRing._proof_8,
+  toNeg := Aiur.NativeAIR.ProofCodec.Extension.neg, toSub := Aiur.NativeAIR.ProofCodec.Extension.sub,
+  intCast := Aiur.NativeAIR.ProofCodec.Extension.intCast, zsmul := Aiur.NativeAIR.ProofCodec.Extension.zsmul,
+  neg_add_cancel := Aiur.NativeAIR.ProofCodec.Extension.neg_add_cancel,
+  sub_eq_add_neg := Aiur.NativeAIR.ProofCodec.Extension.sub_eq_add_neg,
+  neg_zsmul := Aiur.NativeAIR.ProofCodec.Extension.commRing._proof_9,
+  zsmul_natCast_eq_nsmul := Aiur.NativeAIR.ProofCodec.Extension.commRing._proof_10,
+  intCast_ofNat := Aiur.NativeAIR.ProofCodec.Extension.commRing._proof_11,
+  intCast_neg := Aiur.NativeAIR.ProofCodec.Extension.commRing._proof_12,
+  mul_comm := Aiur.NativeAIR.ProofCodec.Extension.mul_comm }
 RECURSION WORKER Aiur.buildArgs._unsafe_rec
 Aiur.LayoutMap →
   Std.HashMap Aiur.Local (Array Aiur.Bytecode.ValIdx) →
@@ -15495,6 +15892,13 @@ fun layoutMap bindings returnTyp idxs yieldCtrl x x_1 =>
               degrees := initState.degrees }
         pure (cases, some term)
       | x => throw "addCase: unsupported pattern in concrete lower"
+RECURSION WORKER Aiur.G.product._unsafe_rec
+List Aiur.G → Aiur.G
+IMPLEMENTATION
+fun x =>
+  match x with
+  | [] => 1
+  | value :: values => value * Aiur.G.product._unsafe_rec values
 RECURSION WORKER Aiur.GoldilocksProof.squareMod._unsafe_rec
 Nat → Nat → Nat → Nat
 IMPLEMENTATION
@@ -19578,10 +19982,22 @@ fun initId decls renames clauses branches body =>
     let clause : Aiur.MatchCompiler.Clause :=
       { pat := Aiur.MatchCompiler.SPattern.pointer var innerTyp, guards := guards, body := term }
     Aiur.MatchCompiler.dnfProd.aux._unsafe_rec✝ initId decls renames (clauses.push clause) rest body
-C8 component ROOTS 884; LOGICAL DECLARATIONS 17843; WITH RUNTIME 18619
+RECURSION WORKER Aiur.NativeAIR.ProofCodec.Extension.powBits._unsafe_rec
+Aiur.NativeAIR.ProofCodec.Extension → Nat → Nat → Aiur.NativeAIR.ProofCodec.Extension
+IMPLEMENTATION
+fun value exponent x =>
+  match x with
+  | 0 => 1
+  | fuel.succ =>
+    if (exponent == 0) = true then 1
+    else
+      let half := Aiur.NativeAIR.ProofCodec.Extension.powBits._unsafe_rec value (exponent / 2) fuel;
+      let square := half * half;
+      if (exponent % 2 == 0) = true then square else square * value
+C8 component ROOTS 955; LOGICAL DECLARATIONS 18163; WITH RUNTIME 18942
 IX RUNTIME EXTERNS [Aiur.AiurSystem.build, Aiur.AiurSystem.verify, Aiur.AiurSystem.vkBytes, Aiur.Proof.ofBytesChecked]
 PARTIAL OPAQUE SOURCES [Aiur.instHashableTyp.hash, Aiur.instReprPattern.repr, Aiur.instReprTyp.repr]
 OTHER UNSAFE RUNTIME []
-RECURSION WORKERS 169
+RECURSION WORKERS 171
 Runtime diagnostics cover Ix modules, including private constants. Lean/Std runtime primitives remain an external execution boundary. Partial opaque implementations are inventoried, not proved to refine their logical defaults.
 The runtime inventory and theorem premises are frozen separately. These roots do not establish full compiler/AIR reflection or public certified claim semantics.

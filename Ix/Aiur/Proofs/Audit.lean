@@ -42,6 +42,7 @@ import Ix.Aiur.Proofs.CheckedCircuit
 import Ix.Aiur.Proofs.KeyArtifact
 import Ix.Aiur.Proofs.CompiledKey
 import Ix.Aiur.Proofs.ShapedVerifier
+import Ix.Aiur.Proofs.ExtensionField
 import Ix.Aiur.Proofs.Grouping
 import Ix.Aiur.Proofs.TailMatches
 import Ix.Aiur.Proofs.NormalizationFrames
@@ -1757,6 +1758,174 @@ def proofAcceptancePremises : Array Lean.Name := #[
   `Aiur.NativeAIR.ProofShape.Row.Sourced.mk,
   `Aiur.NativeAIR.ProofShape.Row.Fits.mk]
 
+def extensionRoots : Array Lean.Name := #[
+  `Aiur.G.residue_injective,
+  `Aiur.G.residue_ofNat,
+  `Aiur.G.residue_add,
+  `Aiur.G.residue_mul,
+  `Aiur.G.residue_sub,
+  `Aiur.G.residue_numeral,
+  `Aiur.G.residue_zero,
+  `Aiur.G.residue_one,
+  `Aiur.G.residue_neg,
+  `Aiur.G.residue_ofInt,
+  `Aiur.G.left_distrib,
+  `Aiur.G.neg_add_cancel,
+  `Aiur.G.sub_eq_add_neg,
+  `Aiur.G.ofInt_neg,
+  `Aiur.G.neg_mul,
+  `Aiur.G.pow_go_eq,
+  `Aiur.G.pow_eq,
+  `Aiur.G.inverse_eq_power,
+  `Aiur.G.n_power,
+  `Aiur.G.mul_right_cancel,
+  `Aiur.G.nonzeroResidues_length,
+  `Aiur.G.mem_nonzeroResidues,
+  `Aiur.G.nonzeroResidues_nodup,
+  `Aiur.G.map_perm_of_injective,
+  `Aiur.G.multiplication_perm,
+  `Aiur.G.product_nonzero,
+  `Aiur.G.product_perm,
+  `Aiur.G.product_map_mul,
+  `Aiur.G.power_eq_one_of_perm,
+  `Aiur.G.fermat,
+  `Aiur.G.inverse_zero,
+  `Aiur.G.mul_inverse_cancel,
+  `Aiur.NativeAIR.ProofCodec.Extension.ext,
+  `Aiur.NativeAIR.ProofCodec.Extension.ofBase_injective,
+  `Aiur.NativeAIR.ProofCodec.Extension.ofBase_add,
+  `Aiur.NativeAIR.ProofCodec.Extension.ofBase_sub,
+  `Aiur.NativeAIR.ProofCodec.Extension.ofBase_neg,
+  `Aiur.NativeAIR.ProofCodec.Extension.ofBase_mul,
+  `Aiur.NativeAIR.ProofCodec.Extension.add_zero,
+  `Aiur.NativeAIR.ProofCodec.Extension.add_comm,
+  `Aiur.NativeAIR.ProofCodec.Extension.add_assoc,
+  `Aiur.NativeAIR.ProofCodec.Extension.mul_one,
+  `Aiur.NativeAIR.ProofCodec.Extension.zero_mul,
+  `Aiur.NativeAIR.ProofCodec.Extension.mul_comm,
+  `Aiur.NativeAIR.ProofCodec.Extension.mul_assoc,
+  `Aiur.NativeAIR.ProofCodec.Extension.left_distrib,
+  `Aiur.NativeAIR.ProofCodec.Extension.neg_add_cancel,
+  `Aiur.NativeAIR.ProofCodec.Extension.sub_eq_add_neg,
+  `Aiur.NativeAIR.ProofCodec.Extension.neg_mul,
+  `Aiur.NativeAIR.ProofCodec.Extension.basis_square,
+  `Aiur.NativeAIR.ProofCodec.Extension.coordinates,
+  `Aiur.NativeAIR.ProofCodec.Extension.scale_eq_mul,
+  `Aiur.NativeAIR.ProofCodec.Extension.conjugate_conjugate,
+  `Aiur.NativeAIR.ProofCodec.Extension.mul_conjugate,
+  `Aiur.NativeAIR.ProofCodec.Extension.conjugate_mul,
+  `Aiur.NativeAIR.ProofCodec.Extension.norm_mul,
+  `Aiur.NativeAIR.ProofCodec.Extension.evalLaws,
+  `Aiur.NativeAIR.ProofCodec.Extension.powBits_eq,
+  `Aiur.NativeAIR.ProofCodec.Extension.power_eq,
+  `Aiur.NativeAIR.ProofCodec.Extension.ofBase_power,
+  `Aiur.NativeAIR.ProofCodec.Extension.inverse_formula,
+  `Aiur.G.seven_euler_certificate,
+  `Aiur.G.seven_not_square,
+  `Aiur.G.square_ratio,
+  `Aiur.NativeAIR.ProofCodec.Extension.norm_zero_iff,
+  `Aiur.NativeAIR.ProofCodec.Extension.mul_eq_zero_iff,
+  `Aiur.NativeAIR.ProofCodec.Extension.one_ne_zero,
+  `Aiur.NativeAIR.ProofCodec.Extension.mul_left_cancel,
+  `Aiur.NativeAIR.ProofCodec.Extension.inverse_correct,
+  `Aiur.NativeAIR.ProofCodec.Extension.tryInverse_none_iff,
+  `Aiur.NativeAIR.ProofCodec.Extension.tryInverse_some_iff]
+
+def extensionAxiomFreeRoots : Array Lean.Name := #[
+  `Aiur.G.residue_injective,
+  `Aiur.NativeAIR.ProofCodec.Extension.ext]
+
+def extensionQuotRoots : Array Lean.Name := #[
+  `Aiur.G.mem_nonzeroResidues,
+  `Aiur.G.nonzeroResidues_nodup,
+  `Aiur.NativeAIR.ProofCodec.Extension.add_comm,
+  `Aiur.NativeAIR.ProofCodec.Extension.conjugate_conjugate]
+
+def extensionClassicalRoots : Array Lean.Name := #[
+  `Aiur.G.residue_neg,
+  `Aiur.G.residue_ofInt,
+  `Aiur.G.left_distrib,
+  `Aiur.G.neg_add_cancel,
+  `Aiur.G.sub_eq_add_neg,
+  `Aiur.G.ofInt_neg,
+  `Aiur.G.neg_mul,
+  `Aiur.G.pow_go_eq,
+  `Aiur.G.pow_eq,
+  `Aiur.G.inverse_eq_power,
+  `Aiur.G.n_power,
+  `Aiur.G.mul_right_cancel,
+  `Aiur.G.map_perm_of_injective,
+  `Aiur.G.multiplication_perm,
+  `Aiur.G.product_nonzero,
+  `Aiur.G.product_perm,
+  `Aiur.G.product_map_mul,
+  `Aiur.G.power_eq_one_of_perm,
+  `Aiur.G.fermat,
+  `Aiur.G.mul_inverse_cancel,
+  `Aiur.NativeAIR.ProofCodec.Extension.ofBase_add,
+  `Aiur.NativeAIR.ProofCodec.Extension.ofBase_sub,
+  `Aiur.NativeAIR.ProofCodec.Extension.ofBase_neg,
+  `Aiur.NativeAIR.ProofCodec.Extension.ofBase_mul,
+  `Aiur.NativeAIR.ProofCodec.Extension.mul_one,
+  `Aiur.NativeAIR.ProofCodec.Extension.zero_mul,
+  `Aiur.NativeAIR.ProofCodec.Extension.mul_comm,
+  `Aiur.NativeAIR.ProofCodec.Extension.mul_assoc,
+  `Aiur.NativeAIR.ProofCodec.Extension.left_distrib,
+  `Aiur.NativeAIR.ProofCodec.Extension.neg_add_cancel,
+  `Aiur.NativeAIR.ProofCodec.Extension.sub_eq_add_neg,
+  `Aiur.NativeAIR.ProofCodec.Extension.neg_mul,
+  `Aiur.NativeAIR.ProofCodec.Extension.coordinates,
+  `Aiur.NativeAIR.ProofCodec.Extension.scale_eq_mul,
+  `Aiur.NativeAIR.ProofCodec.Extension.mul_conjugate,
+  `Aiur.NativeAIR.ProofCodec.Extension.conjugate_mul,
+  `Aiur.NativeAIR.ProofCodec.Extension.norm_mul,
+  `Aiur.NativeAIR.ProofCodec.Extension.evalLaws,
+  `Aiur.NativeAIR.ProofCodec.Extension.powBits_eq,
+  `Aiur.NativeAIR.ProofCodec.Extension.power_eq,
+  `Aiur.NativeAIR.ProofCodec.Extension.ofBase_power,
+  `Aiur.NativeAIR.ProofCodec.Extension.inverse_formula,
+  `Aiur.G.seven_not_square,
+  `Aiur.G.square_ratio,
+  `Aiur.NativeAIR.ProofCodec.Extension.norm_zero_iff,
+  `Aiur.NativeAIR.ProofCodec.Extension.mul_eq_zero_iff,
+  `Aiur.NativeAIR.ProofCodec.Extension.mul_left_cancel,
+  `Aiur.NativeAIR.ProofCodec.Extension.inverse_correct,
+  `Aiur.NativeAIR.ProofCodec.Extension.tryInverse_some_iff]
+
+def extensionPremises : Array Lean.Name := #[
+  `Aiur.NativeAIR.ProofCodec.Extension.ofBase,
+  `Aiur.NativeAIR.ProofCodec.Extension.ofNat,
+  `Aiur.NativeAIR.ProofCodec.Extension.add,
+  `Aiur.NativeAIR.ProofCodec.Extension.sub,
+  `Aiur.NativeAIR.ProofCodec.Extension.neg,
+  `Aiur.NativeAIR.ProofCodec.Extension.mul,
+  `Aiur.NativeAIR.ProofCodec.Extension.basis,
+  `Aiur.NativeAIR.ProofCodec.Extension.conjugate,
+  `Aiur.NativeAIR.ProofCodec.Extension.norm,
+  `Aiur.NativeAIR.ProofCodec.Extension.scale,
+  `Aiur.NativeAIR.ProofCodec.Extension.powBits,
+  `Aiur.NativeAIR.ProofCodec.Extension.power,
+  `Aiur.NativeAIR.ProofCodec.Extension.tryInverse,
+  `Aiur.NativeAIR.ProofCodec.Extension.evalOps,
+  `Aiur.G.characteristicNeZero,
+  `Aiur.G.residue,
+  `Aiur.G.neg,
+  `Aiur.G.natCast,
+  `Aiur.G.ofInt,
+  `Aiur.G.intCast,
+  `Aiur.G.nsmul,
+  `Aiur.G.zsmul,
+  `Aiur.G.npow,
+  `Aiur.G.commRing,
+  `Aiur.G.nonzeroResidues,
+  `Aiur.G.product,
+  `Aiur.NativeAIR.ProofCodec.Extension.natCast,
+  `Aiur.NativeAIR.ProofCodec.Extension.intCast,
+  `Aiur.NativeAIR.ProofCodec.Extension.nsmul,
+  `Aiur.NativeAIR.ProofCodec.Extension.zsmul,
+  `Aiur.NativeAIR.ProofCodec.Extension.npow,
+  `Aiur.NativeAIR.ProofCodec.Extension.commRing]
+
 def roots : Array Lean.Name := #[
   `Aiur.G.ofNat_n, `Aiur.G.mul_one, `Aiur.G.mul_zero,
   `Aiur.AIR.inactive_multiplicity_zero,
@@ -1793,7 +1962,7 @@ def roots : Array Lean.Name := #[
     fieldRoots ++ localConstraintRoots ++ byteArithmeticRoots ++ byteLookupRoots ++
     lookupMessageRoots ++ lookupShapeRoots ++ globalLookupRoots ++ lookupBudgetRoots ++
     selectorControlRoots ++ operationRowRoots ++ blockRowRoots ++ querySlotRoots ++ circuitRowRoots ++
-    rowCountRoots ++ circuitTableRoots ++ branchlessRoots ++ circuitTraceRoots ++ circuitMembershipRoots ++ lookupLayoutRoots ++ memoryColumnRoots ++ byteColumnRoots ++ expressionGraphRoots ++ frontendExpressionRoots ++ graphCompilationRoots ++ operationExpressionRoots ++ blockCircuitRoots ++ allocationRoots ++ circuitAllocationRoots ++ circuitCompletionRoots ++ checkedCircuitRoots ++ keyCodecRoots ++ compiledKeyRoots ++ proofAcceptanceRoots
+    rowCountRoots ++ circuitTableRoots ++ branchlessRoots ++ circuitTraceRoots ++ circuitMembershipRoots ++ lookupLayoutRoots ++ memoryColumnRoots ++ byteColumnRoots ++ expressionGraphRoots ++ frontendExpressionRoots ++ graphCompilationRoots ++ operationExpressionRoots ++ blockCircuitRoots ++ allocationRoots ++ circuitAllocationRoots ++ circuitCompletionRoots ++ checkedCircuitRoots ++ keyCodecRoots ++ compiledKeyRoots ++ proofAcceptanceRoots ++ extensionRoots
 
 def premises : Array Lean.Name := #[
   `Aiur.AIR.activityConstraint,
@@ -2032,7 +2201,7 @@ def premises : Array Lean.Name := #[
   `Aiur.NativeAIR.evalRoots,
   `Aiur.NativeAIR.readLookup,
   `Aiur.NativeAIR.evalLookup,
-  `Aiur.NativeAIR.goldilocksOps] ++ frontendExpressionPremises ++ graphCompilationPremises ++ operationExpressionPremises ++ blockCircuitPremises ++ allocationPremises ++ circuitAllocationPremises ++ circuitCompletionPremises ++ checkedCircuitPremises ++ keyCodecPremises ++ compiledKeyPremises ++ proofAcceptancePremises
+  `Aiur.NativeAIR.goldilocksOps] ++ frontendExpressionPremises ++ graphCompilationPremises ++ operationExpressionPremises ++ blockCircuitPremises ++ allocationPremises ++ circuitAllocationPremises ++ circuitCompletionPremises ++ checkedCircuitPremises ++ keyCodecPremises ++ compiledKeyPremises ++ proofAcceptancePremises ++ extensionPremises
 
 private def constants (info : Lean.ConstantInfo) : Array Lean.Name :=
   info.type.getUsedConstants ++ match info with
@@ -2111,7 +2280,12 @@ run_cmd do
   let env ← getEnv
   for root in roots do
     let some info := env.checked.get.find? root | throwError "C8 component audit: missing root {root}"
-    let expected := if proofAcceptanceRoots.contains root then
+    let expected := if extensionRoots.contains root then
+        if extensionAxiomFreeRoots.contains root then #[]
+        else if extensionClassicalRoots.contains root then #[``propext, ``Classical.choice, ``Quot.sound]
+        else if extensionQuotRoots.contains root then #[``propext, ``Quot.sound]
+        else #[``propext]
+      else if proofAcceptanceRoots.contains root then
         if proofAcceptanceAxiomFreeRoots.contains root then #[]
         else if proofAcceptanceClassicalRoots.contains root then #[``propext, ``Classical.choice, ``Quot.sound]
         else if proofAcceptanceQuotRoots.contains root then #[``propext, ``Quot.sound]
