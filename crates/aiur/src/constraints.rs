@@ -475,10 +475,12 @@ impl Op {
       },
       Op::EqZero(a) => {
         let (a, deg) = state.map[*a].clone();
-        if let Expr::Const(a) = a {
-          assert_eq!(deg, 0);
-          state.map.push((konst(G::from_bool(a == G::ZERO)), 0));
+        if let (Expr::Const(value), 0) = (&a, deg) {
+          state.map.push((konst(G::from_bool(*value == G::ZERO)), 0));
         } else {
+          // Folding (for example 0*x) can produce a constant while its
+          // tracked degree remains positive. Keep the compiler/witness
+          // allocation and constrain the result through the normal path.
           // We have two constraints:
           // 1. ax = 0
           // 2. ad + x = 1

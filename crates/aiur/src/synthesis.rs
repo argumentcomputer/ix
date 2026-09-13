@@ -151,6 +151,7 @@ impl AiurSystem {
       toplevel.checked_claim_shapes().expect("invalid Aiur lookup shapes");
     toplevel.validate_call_components().expect("invalid Aiur call components");
     toplevel.validate_row_counts().expect("invalid Aiur control counts");
+    toplevel.validate_emission().expect("invalid Aiur emission inputs");
     let mut circuit_inputs: Vec<CircuitInputs<G>> = Vec::new();
     let mut slot_widths: Vec<Vec<usize>> = Vec::new();
 
@@ -677,6 +678,7 @@ mod tests {
   mod branchless;
   mod byte_shapes;
   mod call_order;
+  mod constant_degree;
   mod host_timings;
   mod lookup_budget;
   mod lookup_groups;

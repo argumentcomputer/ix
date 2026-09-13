@@ -129,6 +129,22 @@ the fixed-table and global-count regressions do not claim another demonstrated
 false-result acceptance. See [metadata bounds](../crates/aiur/src/synthesis/tests/lookup_budget.rs)
 and [fixed tables](../crates/aiur/src/synthesis/tests/byte_shapes.rs).
 
+## Constraint construction checks
+
+Before constructing a circuit, synthesis checks every constrained function's
+logical operands, selector indices, word widths, and continuation merge
+scopes. Sibling branches retain their incoming scope; a continuation sees
+only the values yielded to it. Virtual carry outputs count as logical values
+even when they allocate no column. These checks also apply to functions whose
+component certificate removes all dynamic rank columns. Advice and I/O
+operands unused by the constraint builder remain outside this scope check.
+
+Expression folding can produce a constant while conservative degree tracking
+still assigns a positive degree, for example after multiplying an input by
+zero. `EqZero` uses its constant shortcut only when the tracked degree is
+also zero. Otherwise it retains the witness columns and constraints selected
+by the compiler, so construction and execution agree on the allocation.
+
 ## Native Merkle cap coverage
 
 The native binary MMCS injects shorter matrices while walking from the
