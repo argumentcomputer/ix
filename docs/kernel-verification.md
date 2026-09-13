@@ -6,8 +6,11 @@ proofs. Their named specification and reference implementation lemmas are local
 under `Ix.Theory.Named`. Building or checking them requires no external
 formalization repository.
 
-The certified receipt interface and a fragment of production `checkEnvAnon`
-have relative consistency theorems. Full checker consistency remains open.
+Certified acceptance has model-construction and relative consistency theorems,
+with a concrete set-model construction in the separate Mathlib package. A
+direct theorem also connects a fragment of production `checkEnvAnon` to that
+semantics. Extending this connection to all paths of the ordinary Lean checker
+requires the remaining production-refinement proofs described below.
 
 The [recursion audit](kernel-recursion.md) explains the production call graph
 and fuel bounds. The [context-digest guide](tc-context-digest-collision-boundary.md)

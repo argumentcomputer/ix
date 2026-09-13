@@ -3,8 +3,7 @@ Copyright (c) 2026 Argument Computer Corporation.
 SPDX-License-Identifier: MIT OR Apache-2.0
 -/
 
-import Ix.Certified.Command
-import Ix.Certified.ClaimCommand
+import Ix.Certified.CLI
 
 /-! Source and claim adapters for the explicit certified profile.
 Their validation receipts connect authenticated Ixon inputs to the set model.

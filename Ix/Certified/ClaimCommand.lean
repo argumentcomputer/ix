@@ -6,9 +6,10 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 import Ix.Certified.ClaimSuggest
 import Ix.Kernel.CertifiedClaims
 
-/-! Generic command for the versioned public claim protocol. Public bytes
-and their expected address are inputs; JSON supplies only untrusted search
-hints. Each successful command ends in the certified TcM claim checker. -/
+/-! Typed checking for the versioned public claim protocol. Public bytes and
+their expected address are inputs; requests supply untrusted search hints.
+The JSON reader supports legacy requests. Command-line input formats are in
+`Ix.Certified.CLI`. Each successful run ends in the certified TcM claim checker. -/
 
 namespace Ix.Certified.ClaimCommand
 
@@ -94,24 +95,5 @@ theorem run_meaning {fuel : Nat} {source : Ixon.Env} {bytes : ByteArray} {reques
   obtain ⟨witness, hw⟩ := run_success h
   obtain ⟨receipt, _, ha, hb, hm⟩ := Kernel.accepted_tc_claim_meaning hw
   exact ⟨receipt, ha, hb, hm⟩
-
-def main (args : List String) : IO UInt32 := do
-  let [sourcePath, envelopePath, requestPath] := args | do
-    IO.eprintln "usage: certified-claim-check SOURCE.ixe ENVELOPE.bin REQUEST.json"
-    return 2
-  let sourceBytes ← IO.FS.readBinFile sourcePath
-  let envelope ← IO.FS.readBinFile envelopePath
-  let requestText ← IO.FS.readFile requestPath
-  let result := do
-    let request ← readRequest (← Lean.Json.parse requestText)
-    let parts ← Ixon.deEnvVerifiedLazy sourceBytes
-    run.{0} 6400 parts.env envelope request
-    return request.address
-  match result with
-  | .error error => IO.eprintln error; return 1
-  | .ok address =>
-    IO.println <| (Lean.Json.mkObj [("accepted", Lean.toJson true),
-      ("address", Lean.toJson (hexOfBytes address.hash))]).compress
-    return 0
 
 end Ix.Certified.ClaimCommand

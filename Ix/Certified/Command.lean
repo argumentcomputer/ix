@@ -6,10 +6,11 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 import Ix.Certified.Suggest
 import Ix.Kernel.Certified
 
-/-! Generic source-file driver for the certified profile. The JSON request
+/-! Typed source checking for the certified profile. The request
 selects the expected target/subjects, primitive signature and finite source
 closure. Witness search is untrusted and always followed by certified TcM
-validation. There is no inference-only or unchecked fallback command. -/
+validation. The JSON reader supports legacy request files; the command-line
+input formats are defined in `Ix.Certified.CLI`. -/
 
 namespace Ix.Certified.Command
 
@@ -76,21 +77,5 @@ theorem run_success {mode : String} {fuel : Nat} {source : Ixon.Env} {request : 
         · exact .inr ⟨hs, witness, ha⟩
         · simp [run, hs, hw, ha] at h
     · simp [run, hp, hs] at h
-
-def main (args : List String) : IO UInt32 := do
-  let [mode, sourcePath, requestPath] := args | do
-    IO.eprintln "usage: certified-check proof|store SOURCE.ixe REQUEST.json"
-    return 2
-  let bytes ← IO.FS.readBinFile sourcePath
-  let requestText ← IO.FS.readFile requestPath
-  let result := do
-    let request ← readRequest (← Lean.Json.parse requestText)
-    let parts ← Ixon.deEnvVerifiedLazy bytes
-    run.{0} mode 6400 parts.env request
-  match result with
-  | .error error => IO.eprintln error; return 1
-  | .ok () =>
-    IO.println <| (Lean.Json.mkObj [("accepted", Lean.toJson true), ("mode", Lean.toJson mode)]).compress
-    return 0
 
 end Ix.Certified.Command

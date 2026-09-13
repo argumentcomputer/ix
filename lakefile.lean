@@ -380,6 +380,11 @@ lean_exe «certified-cli-tests» where
   root := `Tests.Certified.CLI
   supportInterpreter := true
 
+lean_exe «certified-input-tests» where
+  root := `Tests.Certified.Inputs
+  supportInterpreter := true
+  moreLinkObjs := #[ix_rs]
+
 lean_exe «certified-adapter-tests» where
   root := `Tests.Certified.Check
   supportInterpreter := true
@@ -464,7 +469,7 @@ script "check-certified" := do
   run "lake" #["build", "--wfail", "IxCertified", "IxCertifiedAudit",
     "certified-check", "certified-claim-check", "certified-feature-tests",
     "certified-ordinary-tests", "certified-source-tests", "certified-fidelity-tests",
-    "certified-claim-tests", "certified-modeled-tests", "certified-cli-tests",
+    "certified-claim-tests", "certified-modeled-tests", "certified-cli-tests", "certified-input-tests",
     "certified-adapter-tests"]
   checkReport "Ix/Certified/AuditAll.lean" "Tests/Certified/foundation.txt"
   run ".lake/build/bin/certified-adapter-tests"

@@ -7,7 +7,7 @@ import Ix.Certified.Bytes
 import Ix.Theory.Certificate.Modeled
 
 /-! Optional untrusted model-package hints refer to actual stored objects.
-No mathematical declaration is imported from JSON: model definitions and
+No mathematical declaration is supplied by a hint: model definitions and
 equation proofs come from the selected authenticated source store and are
 admitted before the original block by the ordinary certified checker. -/
 

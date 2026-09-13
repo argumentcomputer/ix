@@ -129,6 +129,8 @@ def main (args : List String) : IO UInt32 := do
       IO.FS.createDirAll output
       runNative frozen output
       runCLI frozen output
+      let formats ← run ".lake/build/bin/certified-input-tests" #[frozen.toString, (output / "formats").toString]
+      IO.print formats.stdout
     IO.println "Certified adapter checks passed."
     return 0
   | ["--compare", frozen, actual] =>

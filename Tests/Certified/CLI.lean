@@ -6,7 +6,8 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 import Lean
 
 /-! Native command regressions ported from the frozen source and claim CLI drivers.
-JSON is retained for the existing command protocol and differential evidence. -/
+JSON compatibility is selected explicitly to preserve the frozen protocol
+and differential evidence. Binary and text inputs have separate regressions. -/
 
 open Lean System
 
@@ -51,7 +52,8 @@ private def check (executable : String) (directory : FilePath) (source : ByteArr
       IO.FS.writeBinFile envelopePath envelope
       pure (#[sourcePath.toString, envelopePath.toString, requestPath.toString],
         Json.mkObj [("accepted", .bool true), ("address", field request "address")])
-  let result ← IO.Process.output { cmd := "timeout", args := #["60", executable] ++ args }
+  let result ← IO.Process.output {
+    cmd := "timeout", args := #["60", executable, "--request-format", "json"] ++ args }
   IO.FS.writeFile (directory / "stdout.txt") result.stdout
   IO.FS.writeFile (directory / "stderr.txt") result.stderr
   unless result.exitCode == 0 || result.exitCode == 1 do

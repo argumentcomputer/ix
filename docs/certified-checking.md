@@ -21,38 +21,115 @@ Build the source and claim commands:
 lake build --wfail certified-check certified-claim-check
 ```
 
-Source checking takes a lazy `.ixe` file and a JSON request that selects the
-target or subjects, primitive addresses, source objects and natural values:
+Source checking takes a lazy `.ixe` file and a typed request that selects the
+target or subjects, primitive addresses, source objects and natural values.
+Binary Ixon is the default input format:
 
 ```sh
-.lake/build/bin/certified-check proof SOURCE.ixe REQUEST.json
-.lake/build/bin/certified-check store SOURCE.ixe REQUEST.json
+.lake/build/bin/certified-check proof SOURCE.ixe REQUEST.ix
+.lake/build/bin/certified-check store SOURCE.ixe REQUEST.ix
+.lake/build/bin/certified-claim-check SOURCE.ixe ENVELOPE.ix REQUEST.ix
 ```
 
-The request fields are `target`, `subjects`, `objects`, `naturals`,
-`falseType`, `falseElim`, nullable `natType`, and optional `models`. Addresses
-are 32-byte hexadecimal strings. Model hints select earlier source
-declarations; the validator checks their types and complete source equations.
-The request parser is defined in
-[`Command.lean`](../Ix/Certified/Command.lean).
-
-For a runnable source example:
+Use `--request-format text` for a readable `.ixon` request. Claim checking
+selects the request and envelope encodings independently:
 
 ```sh
-lake build certified-source-tests
-.lake/build/bin/certified-source-tests /tmp/ix-certified-examples
-.lake/build/bin/certified-check proof \
-  /tmp/ix-certified-examples/identity/source.ixe \
-  /tmp/ix-certified-examples/identity/request.json
+.lake/build/bin/certified-check --request-format text proof SOURCE.ixe REQUEST.ixon
+.lake/build/bin/certified-check --request-format text store SOURCE.ixe REQUEST.ixon
+.lake/build/bin/certified-claim-check \
+  --request-format text --envelope-format text \
+  SOURCE.ixe ENVELOPE.ixon REQUEST.ixon
+.lake/build/bin/certified-claim-check \
+  --request-format text --envelope-format binary \
+  SOURCE.ixe ENVELOPE.ix REQUEST.ixon
 ```
 
-Claim checking also takes the exact serialized envelope. The JSON request
-selects its expected address and supplies logical, membership or revelation
-witness hints:
+Both flags accept `binary` or `text`, including `--request-format=text`
+syntax. The selected flag determines the encoding independently of the file
+suffix. `SOURCE.ixe` always contains a serialized Ixon environment.
+
+For runnable examples in both encodings:
 
 ```sh
-.lake/build/bin/certified-claim-check SOURCE.ixe ENVELOPE.bin REQUEST.json
+lake build certified-input-tests
+.lake/build/bin/certified-input-tests --examples /tmp/ix-certified-examples
+.lake/build/bin/certified-check --request-format text proof \
+  /tmp/ix-certified-examples/source/source.ixe \
+  /tmp/ix-certified-examples/source/request.ixon
+.lake/build/bin/certified-claim-check --request-format text --envelope-format binary \
+  /tmp/ix-certified-examples/claim/source.ixe \
+  /tmp/ix-certified-examples/claim/envelope.ix \
+  /tmp/ix-certified-examples/claim/request.ixon
 ```
+
+Both commands use fuel 6,400. Success exits 0 and prints a JSON acceptance
+record; rejection or a file-reading error exits 1, and invalid command-line
+arguments exit 2. Fuel or witness-search failure can reject a valid source,
+so success and completeness are separate properties.
+
+### Lean API
+
+Import `Ix.Certified` to construct the actual Lean values:
+
+| Value | Type |
+| --- | --- |
+| Source proof/store request | `Ix.Certified.Command.Request` |
+| Claim request and witness hints | `Ix.Certified.ClaimCommand.Request` |
+| Public claim envelope | `Ix.Certified.Envelope` |
+
+Source requests contain `profile`, `target`, `subjects`, `selection`, and
+`models`. The profile pins `falseType`, `falseElim`, and optional `natType`;
+the selection lists object and natural-value addresses. Model hints select
+earlier source declarations whose types and complete equations the validator
+checks. Claim requests contain the expected envelope `address` and a typed
+`.logical`, `.contains`, or `.reveal` hint.
+
+Each of the three types provides `toIxon`/`ofIxon` and `toText`/`ofText`.
+They also have `Ixon.Serialize` instances. Use the named `ofIxon` decoders
+when reading a complete input: they reject trailing and noncanonical bytes.
+For example, a Lean program can export a source request without JSON:
+
+```lean
+import Ix.Certified
+
+def saveRequest (directory : System.FilePath)
+    (request : Ix.Certified.Command.Request) : IO Unit := do
+  IO.FS.createDirAll directory
+  IO.FS.writeBinFile (directory / "request.ix") request.toIxon
+  IO.FS.writeFile (directory / "request.ixon") request.toText
+```
+
+`Command.run` and `ClaimCommand.run` also accept these typed requests directly
+when the source environment is already loaded. Lean authoring supports normal
+record syntax and computation; the exported `.ixon` file contains the resulting
+data value.
+
+### Input representations
+
+Text inputs use the existing Ixon parser and printer. Each file contains one
+safe monomorphic `def` or one annotated main expression. The reader checks
+the type annotation, constructor names, argument counts, and literal values.
+Lists, options, claims, model hints, and revelation fields use their actual
+Lean constructors, with explicit type arguments as required by Ixon syntax.
+`Ix.Certified.Text.address!` and `bytes!` provide hexadecimal literals.
+The data reader accepts constructor expressions and checks their contents;
+imports, extra declarations, and arbitrary computation are rejected.
+
+Binary requests have an `IX-CERTIFIED-REQUEST` header, request-format version
+1, and a distinct source/claim tag. Addresses occupy 32 bytes; list and byte
+lengths use Ixon `Tag0` encoding, and options use tags 0 and 1. Complete binary
+decoding requires canonical re-encoding. Request decoding is capped at 1 MiB;
+text additionally uses the standard Ixon parser's node and depth limits.
+See [`RequestCodec.lean`](../Ix/Certified/RequestCodec.lean),
+[`TextCodec.lean`](../Ix/Certified/TextCodec.lean), and
+[`InputText.lean`](../Ix/Certified/InputText.lean).
+
+Claim envelopes retain their existing canonical Ixon representation. With
+binary input, authentication checks the exact bytes read from the file.
+With text input, the authenticated object is the parsed envelope's canonical
+binary encoding. The request's expected address must match the BLAKE3 hash
+of those bytes. Text formatting therefore does not change the claim address.
 
 The envelope binds the claim, primitive profile, logical-axiom manifest and
 protocol versions. The current checker version is **2**; format, codec,
@@ -62,10 +139,10 @@ Trailing bytes and older checker envelopes reject. See
 [`Envelope.lean`](../Ix/Certified/Envelope.lean) and
 [`ClaimCommand.lean`](../Ix/Certified/ClaimCommand.lean).
 
-Both commands currently use fuel 6,400. Success exits 0 and prints a JSON
-acceptance record; a rejected request exits 1. Fuel or witness-search failure
-can reject a valid source, so success and completeness are separate
-properties.
+Existing JSON requests remain available with `--request-format json` for
+compatibility. The frozen CLI corpus selects this mode explicitly. All
+formats pass through the same witness search and certified validation.
+The file interface is implemented in [`CLI.lean`](../Ix/Certified/CLI.lean).
 
 ## Semantic contract
 
@@ -93,7 +170,7 @@ definitions and statements are in
 [`LogicalPolicy.lean`](../Ix/Theory/Certified/LogicalPolicy.lean).
 
 The mathematical contract concerns the Lean functions. Native Lean
-execution, filesystem loading and the BLAKE3 foreign interface remain
+execution, transport parsing, filesystem loading and the BLAKE3 foreign interface remain
 execution boundaries. Full production-checker refinement and execution
 of this certification inside an authenticated Aiur proof remain separate
 obligations described in
@@ -110,8 +187,9 @@ lake run check-certified
 The gate builds the adapters, audits and test programs with warnings treated
 as errors. It compares the exact foundation report, checks the frozen source
 archive and maintained import identities, runs six native host test programs,
-and exercises the actual source and claim executables on all three CLI
-corpora. CI runs the same gate.
+and exercises the actual source and claim executables on all three legacy CLI
+corpora. It also checks the binary/text input codecs and format-selection
+regressions. CI runs the same gate.
 
 The combined audit covers **86 distinct roots**, **74 premise definitions or
 constructor types**, **9,682 logical declarations** and **10,957 declarations
@@ -151,7 +229,11 @@ non-VM field; only `pilotDeclined` and `pilotDeclines` are projected away
 from the three historical reports that mixed host and VM checks. The VM
 pilot, packet encoder and VM execution suite are archived for a later change.
 CLI JSON requests and aggregate records are compared as parsed values because
-the maintained Lean driver formats JSON differently. The archive, source
+the maintained Lean driver formats JSON differently. Typed binary/text
+roundtrips cover all 86 source requests and 1,652 claim requests and envelopes
+from the source, claim, and modeled corpora. Additional process tests exercise
+mixed input formats, malformed encodings, wrong digests, unsupported versions,
+and command-line errors. The archive, source
 mappings, licenses and historical reproduction limits are documented in
 [`Tests/Fixtures/Certified`](../Tests/Fixtures/Certified/README.md). The archive
 recovers the selected adapter sources and fixtures; it does not include the
