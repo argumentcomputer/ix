@@ -23,7 +23,7 @@ nonzero blinding admission, authenticated scratch corruption, and identical
 proof/key results across memory and file backends for fixed test randomness.
 Small proofs use development setup and randomness, not production security.
 The generic replay and root-closure/setup prototypes pass 207 ordinary tests
-(88 FFLONK, 34 trace, 69 circuit, 16 replay/setup); fifteen heavier native,
+(88 FFLONK, 34 trace, 69 circuit, 16 replay/setup); eighteen heavier native,
 materialization, and census/optimization tests remain opt-in.
 
 ## Generic Exec replay
@@ -217,6 +217,35 @@ outstanding and require cost reduction.
 See [generic replay and remaining gates](../docs/IxbyStage4Replay.md).
 `EXEC-REPLAY-PROVENANCE.json` records the donor hashes before this port,
 excluded legacy interfaces, and semantic changes separately from M1.
+
+## Explicit small-class diagnostic
+
+The separate `capacity_tests` use a generic scalar class with 64 code bytes,
+one function/block/operand/local/continuation/argument/input value, 32-byte
+input/output buffers and four transitions. This is an explicit profile/setup
+change, not a baseline replacement or a capacity suitable for Stage 2 guests.
+The same pinned Fast128 configuration machinery admits `m=22`, its embedded
+floor, with 14 live lanes instead of the baseline's 43 at `m=23`. All 371
+queries and their grinding policy remain; no development query schedule is
+installed. BLAKE3's full fixed matrices are unchanged.
+
+Three real proofs (two local-return inputs and a different literal-return
+image) reuse that one setup. All 48 native roots match its exact table programs,
+and all three 4,096-row assigned prefixes match proof-free emission. Changed
+commitments and proof bytes fail native replay. Each complete native Exec
+bundle is 165,667 bytes; this is not a terminal FFLONK artifact.
+
+`small_capacity_complete_root_closed_admission_census` separately measures
+the whole closed relation, not a sum or subtraction of component counts.
+It retains the hard `2^30` supported-domain cutoff and does not materialize
+terminal matrices, check an entire assignment, create a key or prove anything.
+The run returned `RejectedBudget` after 1,246.958 seconds of emission:
+651,198,742 R1CS constraints and 1,073,741,821 PLONK constraint rows. Including
+four public/blinding rows crosses the domain limit before the relation ends.
+The full closed count is still unknown; reducing capacity alone did not make
+this encoding feasible. This is a new refused prefix, not a full census.
+The [small-class report](census/exec-small-class-root-closed-admission-v0.json)
+records source hashes, setup identities, reproduction commands and result scope.
 
 ## Boundary that is not yet closed
 

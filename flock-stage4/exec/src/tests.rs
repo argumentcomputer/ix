@@ -16,6 +16,9 @@ mod basis_table_tests;
 #[path = "closure_tests.rs"]
 mod closure_tests;
 
+#[path = "capacity_tests.rs"]
+mod capacity_tests;
+
 const CAPACITY: MachineCapacities = MachineCapacities {
   program: ProgramCapacities {
     bytes: 256,

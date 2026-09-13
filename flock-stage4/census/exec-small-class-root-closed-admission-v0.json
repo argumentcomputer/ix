@@ -1,0 +1,235 @@
+{
+  "schema": "ixby-stage4-small-class-root-closed-admission-v0",
+  "measurement_date": "2026-09-13",
+  "base_revision": "ecb4c7356cfe0e50c1a792455663f297ab950669",
+  "status": "whole_closed_emission_refused_at_supported_domain_prefix_not_a_complete_census_key_or_proof",
+  "flock_revision": "b310f35f35f68095537150a1c8c0a43caca9a29e",
+  "rustc": "1.98.0 (88d9e12ae 2026-08-18)",
+  "scope": "An explicit smaller generic scalar capacity class, not a replacement for the baseline or the Stage 2/crypto-verifier capacity requirements. No guest specialization, query/security relaxation, new Stage 3 implementation, or terminal proof.",
+  "production_code_changed": false,
+  "baseline_profile_or_parameters_changed": false,
+  "complete_closed_r1cs_materialized": false,
+  "complete_closed_assignment_checked": false,
+  "complete_closed_census_produced": false,
+  "terminal_key_generated": false,
+  "terminal_proof_generated": false,
+  "source_hashes_scope": "All changed or added Rust sources relative to base_revision. Frozen before native checks and whole-circuit measurement; all production sources and dependencies are unchanged.",
+  "source_hashes": [
+    {
+      "path": "flock-stage4/exec/src/capacity_tests.rs",
+      "sha256": "e57177769ba49fa1b66f0b3cb51421febcf3593e17c83dd3fc9da14f1f898a46"
+    },
+    {
+      "path": "flock-stage4/exec/src/tests.rs",
+      "sha256": "9d83bf9ee6b5f2c12ac21c4123bf37130959cb80097f2198624a9c80fd3f5a6b"
+    },
+    {
+      "path": "flock-stage4/exec/src/closure_tests.rs",
+      "sha256": "b83777490b8e719c4c04f1941d9ee037dad78975a67ec7880ee284164cb05a33"
+    }
+  ],
+  "small_class": {
+    "setup_digest": "4fe87f091aef3cd1e54f290874eb5f148c8a31a3bbbafdac5a242b3e2d7081f5",
+    "replay_digest": "cdea1a08e3f270ae87c9db9258d994172167a0d8488b249ad3c4a709ffd87ac0",
+    "composition_digest": "7c4ce17ecb07358d058e45d8f153f2b8ed39e0389b4f5626b4c626935a55c8a1",
+    "root_table_set_digest": "485571a0e3a0e29bcfea0261b3b97f80753c49f8b5e8ab76f5426e3b35722360",
+    "digest_scope": "Setup/replay/root-program identities, not full R1CS, verification-key or proof identities.",
+    "capacities": {
+      "program_bytes": 64,
+      "functions": 1,
+      "blocks_per_function": 1,
+      "operands": 1,
+      "locals": 1,
+      "continuations": 1,
+      "arguments": 1,
+      "input_bytes": 32,
+      "input_values": 1,
+      "output_bytes": 32,
+      "steps": 4
+    },
+    "semantic_fragment": "The same first-order scalar semantics and primitive registry, with these explicit bounds. This is not a byte/structured-value verifier profile, a Stage 2 guest, or the M8 upgrade test.",
+    "outer_row_log": 8,
+    "dense_words": 7124,
+    "committed_words": 32768,
+    "pcs_m": 22,
+    "live_lanes": 14,
+    "log_batch_size": 6,
+    "queries": [
+      244,
+      79,
+      48
+    ],
+    "query_grinding_bits": [
+      16,
+      16,
+      16
+    ],
+    "boolean_types": 23,
+    "matrix_root_claims": 46,
+    "matrix_fold_rounds": 1172,
+    "inner_opened_f128_words": 5448,
+    "inner_path_digests": 1113,
+    "source_slots": {
+      "f128_words": 19262,
+      "digest32_words": 1113,
+      "byte_payloads": 1635,
+      "byte_payload_bytes": 24625,
+      "logical_payload_bytes": 368433
+    },
+    "source_payload_scope": "Source-slot heap payload only. Not approved setup, matrix storage, allocator overhead, process-tree RSS, or whole-pipeline memory admission."
+  },
+  "baseline_comparison": {
+    "setup_digest": "41163b87f03675917ac93824d8b1c11ab0c489c2fc2e03abece34d11fa3255f7",
+    "capacities": {
+      "program_bytes": 256,
+      "functions": 2,
+      "blocks_per_function": 4,
+      "operands": 2,
+      "locals": 4,
+      "continuations": 2,
+      "arguments": 2,
+      "input_bytes": 64,
+      "input_values": 2,
+      "output_bytes": 64,
+      "steps": 24
+    },
+    "outer_row_log": 8,
+    "dense_words": 43028,
+    "committed_words": 65536,
+    "pcs_m": 23,
+    "live_lanes": 43,
+    "log_batch_size": 6,
+    "queries": [
+      244,
+      79,
+      48
+    ],
+    "query_grinding_bits": [
+      16,
+      16,
+      16
+    ],
+    "boolean_types": 23,
+    "matrix_root_claims": 46,
+    "matrix_fold_rounds": 1208,
+    "inner_opened_f128_words": 12524,
+    "inner_path_digests": 1484,
+    "observations": "The smaller class reaches the embedded m22 configuration floor without reducing query counts. BLAKE3 remains exactly the same 44,442,498-nonzero A/B table pair; its sorted registry slot changes from 9 to 7 and is discovered and exhaustively validated, never hard-coded."
+  },
+  "geometry_probe": {
+    "command": "ulimit -v 16777216 && RAYON_NUM_THREADS=4 timeout 180 cargo test --release --locked --manifest-path flock-stage4/Cargo.toml -p ixby-stage4-exec explicit_capacity_classes_keep_pinned_security_schedule -- --ignored --test-threads=1 --nocapture",
+    "exit_code": 0,
+    "test_duration_seconds": 8.2,
+    "baseline_setup_and_two_replay_compilations_seconds": 4.861,
+    "small_setup_and_two_replay_compilations_seconds": 3.011,
+    "last_observed_process_vm_hwm_kib": 2655040,
+    "last_observed_process_vm_peak_kib": 2754920,
+    "scope": "One process compiles both profiles serially, with two exact replay reconstructions each and no guest or proof. Repeated after the final test-source freeze; all identities and geometry match the preliminary run. Cumulative memory includes the baseline compilation; this run overlaps the whole census."
+  },
+  "native_regression": {
+    "command": "ulimit -v 16777216 && RAYON_NUM_THREADS=4 timeout 240 cargo test --release --locked --manifest-path flock-stage4/Cargo.toml -p ixby-stage4-exec small_capacity_guests_match_complete_setup_owned_replay -- --ignored --test-threads=1 --nocapture",
+    "exit_code": 0,
+    "test_duration_seconds": 15.17,
+    "cases": [
+      {
+        "guest": "ret local(0)",
+        "input": false,
+        "output": false,
+        "native_exec_bundle_bytes": 165667,
+        "prove_replay_roots_and_negatives_seconds": 0.544
+      },
+      {
+        "guest": "ret local(0)",
+        "input": true,
+        "output": true,
+        "native_exec_bundle_bytes": 165667,
+        "prove_replay_roots_and_negatives_seconds": 0.332
+      },
+      {
+        "guest": "ret literal(Bool.true)",
+        "input": false,
+        "output": true,
+        "native_exec_bundle_bytes": 165667,
+        "prove_replay_roots_and_negatives_seconds": 0.33
+      }
+    ],
+    "positive_checks": "The same approved setup is compiled twice before guests, then one replay/closure is reused. All 46 matrix, one structure and one jagged root match independent native F128 evaluation for each actual proof. Every case has the exact same first 4096 canonical constraints as the proof-free setup emitter.",
+    "negative_checks": "For each case, independent program, input and output commitment changes and a trailing proof-byte mutation are rejected by strict native replay.",
+    "limitations": "The 4096-row prefix is not a complete R1CS identity. Native root comparisons are differentials, not in-circuit discharge or terminal FFLONK proof evidence. A literal true result is valid generic Exec and has no application Stage 2 authorization.",
+    "last_observed_process_vm_hwm_kib": 2819136,
+    "last_observed_process_vm_peak_kib": 3152804
+  },
+  "ordinary_regression": {
+    "command": "ulimit -v 16777216 && RAYON_NUM_THREADS=4 timeout 240 cargo test --release --locked --manifest-path flock-stage4/Cargo.toml --workspace",
+    "exit_code": 0,
+    "passed": 207,
+    "ignored": 18,
+    "passed_by_crate": {
+      "fflonk": 88,
+      "trace": 34,
+      "circuit": 69,
+      "exec": 16
+    },
+    "duration_seconds_by_crate": {
+      "fflonk": 14.53,
+      "trace": 0.01,
+      "circuit": 6.26,
+      "exec": 0.06
+    },
+    "clippy": "cargo clippy --release --locked --manifest-path flock-stage4/Cargo.toml --workspace --all-targets -- -D warnings",
+    "clippy_exit_code": 0,
+    "format_check_exit_code": 0,
+    "timing_scope": "The ordinary tests overlapped the beginning of the whole closed-circuit census. Timings are diagnostic, not controlled performance measurements."
+  },
+  "baseline_native_regression": {
+    "command": "ulimit -v 16777216 && RAYON_NUM_THREADS=4 timeout 240 cargo test --release --locked --manifest-path flock-stage4/Cargo.toml -p ixby-stage4-exec setup_owned_closure_matches_all_real_fold_roots -- --ignored --test-threads=1 --nocapture",
+    "exit_code": 0,
+    "test_duration_seconds": 33.48,
+    "two_closed_compilations_and_preproof_bounds_seconds": 15.459,
+    "last_observed_process_vm_hwm_kib": 3379832,
+    "last_observed_process_vm_peak_kib": 3997712,
+    "result": "The existing baseline return/branch-false/branch-true cases still match all 48 roots, exact 4096-row setup prefixes and bounded-entry negatives. Baseline composition and table-program digests are unchanged.",
+    "scope": "Separate native Flock test process; overlapped the small-class full census. Not a terminal-prover or process-tree measurement."
+  },
+  "whole_closed_census": {
+    "status": "RejectedBudget",
+    "command": "ulimit -v 16777216 && RAYON_NUM_THREADS=4 timeout 1800 cargo test --release --locked --manifest-path flock-stage4/Cargo.toml -p ixby-stage4-exec small_capacity_complete_root_closed_admission_census -- --ignored --test-threads=1 --nocapture",
+    "max_required_domain_rows": 1073741824,
+    "reserved_public_and_blinding_rows": 4,
+    "virtual_memory_limit_kib": 16777216,
+    "rayon_threads": 4,
+    "timeout_seconds": 1800,
+    "exit_code": 0,
+    "test_duration_seconds": 1257.41,
+    "emission_seconds": 1246.958,
+    "last_over_limit_observer_seconds": 1246.953,
+    "rejected_prefix": {
+      "r1cs_constraints": 651198742,
+      "plonk_constraint_rows": 1073741821,
+      "plonk_auxiliary_wires": 422543079,
+      "last_phase": "MatrixFold",
+      "required_domain_rows": 1073741825,
+      "limit": 1073741824
+    },
+    "last_observed_process_vm_hwm_kib": 2157240,
+    "last_observed_process_vm_peak_kib": 2364232,
+    "memory_scope": "Cumulative Linux /proc/self/status counters sampled at completion, including native setup and exact table compilation. Not a process-tree measurement, terminal-prover peak, or whole-pipeline RAM admission.",
+    "timing_scope": "The ordinary workspace suite, repeated setup geometry probe and baseline native regression overlapped portions of emission. Not a controlled benchmark comparison.",
+    "scope": "The complete setup-owned root-closed emitter with no guest or proof, streamed through the actual R1CS-to-PLONK lowering observer. Matrices and assignments are not retained. The run refused during matrix-fold/root work before reaching the end of the relation; there is no full R1CS digest or complete closed census. Exit zero means the test correctly reported its bounded refusal, not that a circuit or proof completed."
+  },
+  "root_compilation_limits": {
+    "diagram_source_entries": 64000000,
+    "diagram_nodes": 2000000,
+    "linear_map_inputs": 16384,
+    "linear_map_outputs": 16384,
+    "linear_map_xors": 100000,
+    "linear_coefficient_words": 64000000,
+    "linear_source_entries": 48000000,
+    "structure_basis_state_slots": 4000000,
+    "structure_basis_dense_words": 16000000,
+    "structure_basis_word_operations": 200000000,
+    "structure_basis_coefficient_terms": 8000000,
+    "scope": "The same explicit compiler limits as the baseline closure regression, not peak-RAM or proving limits. No fallback or larger-budget retry was used."
+  },
+  "interpretation": "Reducing this generic capacity class lowers setup/native proof geometry but does not make the present complete closed encoding fit the pinned FFLONK size-4n domain. The one-row overrun is only the stopping threshold, not the amount needed to make a complete relation fit. The full closed count is unknown. Keep the larger-profile, certified Stage 2/Compilatrix, complete-key/materialization, isolated full-proof and resource/security gates open. Further exact circuit/table cost reduction is required; no terminal setup ceremony, key or prover was started."
+}

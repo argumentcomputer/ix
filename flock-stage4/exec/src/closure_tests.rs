@@ -18,7 +18,7 @@ use ix_terminal_circuit::{
 use std::time::Instant;
 use std::{cell::RefCell, rc::Rc};
 
-const LIMITS: ExecRootClosureCompilationLimitsV0 =
+pub(super) const LIMITS: ExecRootClosureCompilationLimitsV0 =
   ExecRootClosureCompilationLimitsV0 {
     diagrams: F128FixedTableLimitsV0 { entries: 64_000_000, nodes: 2_000_000 },
     linear_program: BinaryLinearMapLimitsV0 {
@@ -38,7 +38,7 @@ const LIMITS: ExecRootClosureCompilationLimitsV0 =
     },
   };
 
-fn decode(bytes: &[u8; 16]) -> F128 {
+pub(super) fn decode(bytes: &[u8; 16]) -> F128 {
   F128::new(
     u64::from_le_bytes(bytes[..8].try_into().unwrap()),
     u64::from_le_bytes(bytes[8..].try_into().unwrap()),
@@ -47,7 +47,11 @@ fn decode(bytes: &[u8; 16]) -> F128 {
 
 // Test-only native-field evaluator, independent of the R1CS implementations.
 // Comparison with native fold roots is a differential, NOT root discharge.
-fn evaluate(table: &Program, row: &[[u8; 16]], col: &[[u8; 16]]) -> F128 {
+pub(super) fn evaluate(
+  table: &Program,
+  row: &[[u8; 16]],
+  col: &[[u8; 16]],
+) -> F128 {
   let row: Vec<_> = row.iter().map(decode).collect();
   let col: Vec<_> = col.iter().map(decode).collect();
   match table {
@@ -144,7 +148,7 @@ fn expected_public(
 // A deliberately small EXACT prefix comparison, not a full-circuit digest.
 // Nontrivial hashing/field/fold/Merkle/root matrix equality is covered by the
 // materialized component tests; this also checks the real setup entry point.
-fn captured_prefix(
+pub(super) fn captured_prefix(
   shape_only: bool,
   emit: impl FnOnce(&mut R1csBuilder) -> anyhow::Result<()>,
 ) -> Vec<Constraint> {

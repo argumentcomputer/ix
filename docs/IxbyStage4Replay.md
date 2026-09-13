@@ -140,11 +140,12 @@ phase/topology digests agree. No Stage 4 key or FFLONK proof is generated.
 | Accumulator transcript compression rows / PoW predicates | 4,947 / 1,373 |
 | Terminal diagnostic root families | 46 matrix roots, 1 structure, 1 jagged |
 
-The 207 ordinary workspace tests pass; fifteen tests are ignored by default
+The 207 ordinary workspace tests pass; eighteen tests are ignored by default
 (the retained large two-ring projection, native replay/census, and the four
 decision-diagram native/materialization/optimization tests, plus two
 structural BLAKE3 component tests, three closed-composition/admission tests,
-and three bounded cofactor-basis experiments).
+three bounded cofactor-basis experiments, and three explicit small-class
+geometry/native/full-census tests).
 The real three-execution replay regression passes under a 32 GiB
 address-space cap with four Rayon threads. The complete matrix-free census
 finished successfully in 1,161.51 seconds, including setup, under that cap.
@@ -180,6 +181,63 @@ padding, and reject changed P/B/I/O or registry/circuit/counts. Different
 component values produce identical binding matrices. Native bundle mutations,
 wrong commitment openings, truncation, trailing bytes, and both historical
 artifact domains are rejected.
+
+### Explicit small generic class
+
+The setup API also admits a separately identified scalar class with 64 program
+bytes, one function and one block, one operand/local/continuation/argument,
+one input value, 32 input/output bytes, and four transitions. Both capacity
+and semantic-profile identities change; the scalar primitive meanings and
+pinned implementation remain the same. This is an M6 cost diagnostic, not a
+replacement for the baseline or the larger crypto/Stage 2 workloads in M4/M8.
+
+| Setup-owned geometry | Baseline | Small class |
+| --- | ---: | ---: |
+| Dense witness words | 43,028 | 7,124 |
+| Committed words / PCS dimension | 65,536 / `m=23` | 32,768 / `m=22` |
+| Live PCS lanes | 43 | 14 |
+| Ligerito queries | 371 | 371 |
+| Opened F128 words / path digests | 12,524 / 1,484 | 5,448 / 1,113 |
+| Boolean matrix root claims | 46 | 46 |
+| Matrix-fold rounds | 1,208 | 1,172 |
+
+The smaller class reaches the upstream embedded configuration floor, without
+lowering security/query/grinding settings. BLAKE3's 44,442,498 A/B nonzeros
+remain exactly unchanged. Its sorted registry index moves from 9 to 7;
+the root compiler discovers and exhaustively validates the actual table.
+No setup or circuit topology is chosen from guest instructions or proof data.
+
+The small setup digest is
+`4fe87f091aef3cd1e54f290874eb5f148c8a31a3bbbafdac5a242b3e2d7081f5`.
+Its closed-composition program digest is
+`7c4ce17ecb07358d058e45d8f153f2b8ed39e0389b4f5626b4c626935a55c8a1`,
+not a full R1CS or verification-key digest. The regression compiles setup
+twice before creating a guest and reuses it for local return with false/true
+inputs and a distinct image returning literal true. All three complete native
+bundles are 165,667 bytes. Every native matrix/structure/jagged root matches
+the setup-owned program, and each assigned 4,096-constraint prefix equals
+proof-free setup emission. Program/input/output commitment changes and proof
+mutation are rejected. Generic execution of a true-returning image does not
+authorize that image as an application Stage 2 verifier.
+
+The whole closed-circuit measurement is a separate, bounded, proof-free test:
+`small_capacity_complete_root_closed_admission_census`. It uses the real
+composition and PLONK observer with the same `2^30` hard cutoff; it does not
+infer a full result from component savings or prefix counts. Source hashes,
+parameters, native cases and measurement outcomes are in the
+[small-class report](../flock-stage4/census/exec-small-class-root-closed-admission-v0.json).
+It returned `RejectedBudget` after 1,246.958 seconds of emission (1,257.41
+seconds including setup), at 651,198,742 R1CS constraints and 1,073,741,821
+PLONK constraint rows in `MatrixFold`. The two public and two blinding rows
+require 1,073,741,825 rows, crossing `2^30` before root closure finishes.
+This is not the full relation's count, and removing one row would not establish
+that it fits. Last sampled process high-water RSS was 2,157,240 KiB, including
+native setup; the streamed matrices/witness were not retained. Other tests
+overlapped emission, so timing is not a controlled comparison. The smaller
+capacity does not solve the current encoding's supported-domain failure.
+Neither a native root differential nor a successful sizing result establishes
+the full satisfying assignment, terminal key/proof, isolated verification or
+larger-profile acceptance gates.
 
 ## Exact fixed-table components (M6)
 
