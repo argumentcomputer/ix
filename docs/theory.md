@@ -28,8 +28,13 @@ Binder inference uses the declared type's separate formation check to turn
 or admitted polymorphic constants derive their type's validity from the context
 or dependency model, then check arguments and substitute the dependent result.
 Constant cache hits derive the same typing from concrete agreement with pure
-universe substitution of a loaded declaration. Cache selection and successful
-miss writes are proved; general cache maintenance remains a separate obligation.
+universe substitution of a loaded declaration; sort hits use the canonical
+successor sort. Sort and already-loaded constant inference preserve agreement
+at their cache key and retain other entries. Structural preservation composes
+through binder opening, interning, unrelated writes, and scope/policy cleanup,
+including errors. It transports closed constant witnesses, and maintained
+agreement constructs sort leaves. Initial agreement, lazy loading, environment
+extension, and preservation through composite inference remain obligations.
 Full checker consistency
 and compiler/backend refinement remain open.
 

@@ -20,14 +20,14 @@ open Theory Theory.Model
 
 universe u v
 
-/-- The two inference-cache partitions miss at the actual key computed by
-production. Both misses are required, so this applies in either policy mode. -/
+/-- Every eligible inference-cache partition misses at the actual production
+key. Full mode does not inspect or constrain the inference-only partition. -/
 structure UncachedInference (before : TcState .anon) (term : KExpr .anon) where
   key : Address × Address
   keyed : TcState .anon
   keyRun : TcM.inferKey term before = .ok key keyed
   fullMiss : keyed.env.inferCache[key]? = none
-  onlyMiss : keyed.env.inferOnlyCache[key]? = none
+  onlyMiss : before.inferOnly = true → keyed.env.inferOnlyCache[key]? = none
 
 /-- Recover the uncached execution and the exact final cache write from a
 successful miss. The policy is read before production computes the key. -/
@@ -73,7 +73,7 @@ theorem infer_uncached_success_state {term type : KExpr .anon}
       rw [EStateM.bind, show (get : TcM .anon (TcState .anon)) miss.keyed =
         .ok miss.keyed miss.keyed from rfl] at accepted
       simp only at accepted
-      rw [miss.onlyMiss] at accepted
+      rw [miss.onlyMiss policy] at accepted
       change EStateM.bind (RecM.inferUncached RecM.inferCall true term methods)
         _ miss.keyed = _ at accepted
       cases run : RecM.inferUncached RecM.inferCall true term methods miss.keyed with

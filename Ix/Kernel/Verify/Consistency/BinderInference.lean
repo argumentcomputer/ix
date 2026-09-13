@@ -5,6 +5,7 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 
 import Ix.Kernel.Verify.Consistency.Application
 import Ix.Kernel.Verify.Consistency.ConstantCache
+import Ix.Kernel.Verify.Consistency.SortCache
 import Ix.Theory.Model.Checking
 
 /-!
@@ -58,29 +59,6 @@ theorem inferUncached_monomorphic_const_scoped {β : Type u}
       · change EStateM.Result.ok concrete.ty loaded = .ok result after at accepted
         cases accepted
         exact lookup concrete _ got
-
-private theorem withLctxScope_eq (action : RecM .anon α)
-    (methods : Methods .anon) (before : TcState .anon) :
-    (RecM.withLctxScope action).run methods before =
-      match action.run methods before with
-      | .ok value after =>
-          .ok value {after with lctx := after.lctx.truncate before.lctx.size}
-      | .error err after =>
-          .error err {after with lctx := after.lctx.truncate before.lctx.size} := by
-  unfold RecM.withLctxScope
-  rw [ReaderT.run_bind]
-  change EStateM.bind (get : TcM .anon (TcState .anon)) _ before = _
-  unfold EStateM.bind
-  rw [show (get : TcM .anon (TcState .anon)) before = .ok before before from rfl]
-  simp only
-  unfold tryFinally
-  change EStateM.map (fun pair : α × PUnit => pair.1)
-    (tryFinally' (action.run methods) (fun _ =>
-      (modify (fun after : TcState .anon =>
-        {after with lctx := after.lctx.truncate before.lctx.size}) :
-        TcM .anon PUnit))) before = _
-  unfold EStateM.map MonadFinally.tryFinally' EStateM.instMonadFinally
-  cases run : action.run methods before <;> simp only [run] <;> rfl
 
 private theorem withLctxScope_success {action : RecM .anon α}
     {methods : Methods .anon} {before after : TcState .anon} {result : α}
@@ -214,6 +192,11 @@ inductive BinderInference {β : Type u}
         miss.keyed.env.intern.ExprSupport term ∨ term = KExpr.mkSort (KUniv.mkSucc level)) :
       BinderInference resolve entries locals context fuel before (.sort level info)
         (.sort (readLevel level)) (.sort (.succ (readLevel level)))
+  | cachedSort {locals context fuel before level info}
+      (hit : InferenceCacheHit before (.sort level info))
+      (canonical : hit.cached = KExpr.mkSort (KUniv.mkSucc level)) :
+      BinderInference resolve entries locals context fuel before (.sort level info)
+        (.sort (readLevel level)) (.sort (.succ (readLevel level)))
   | fvar {locals context fuel before id name info index A}
       (cache : FVarInferenceSupport before id name info)
       (registered : localIndex? locals id = some index)
@@ -300,6 +283,28 @@ inductive BinderInference {β : Type u}
       BinderInference resolve entries locals context (fuel + 1) before (.lam name bi domain body info)
         (.lam condition A b) (.forallE condition A B)
 
+/-- Construct the sort leaf from a maintained cache invariant. The production
+key and eligible hit/miss observation are derived, including when only the
+ignored partition is populated in full mode. -/
+def BinderInference.sortOfAgreement {β : Type u}
+    {resolve : Address → Option (ConstRef β)} {entries : Model.Environment β}
+    {locals : List FVarId} {context : Model.Context β} {fuel : Nat}
+    {before : TcState .anon} {level : KUniv .anon} {info : ExprInfo .anon}
+    (closed : (KExpr.sort level info).lbr = 0)
+    (agreement : InferenceCacheAgreement before ((KExpr.sort level info).addr, emptyCtxAddr)
+      (KExpr.mkSort (KUniv.mkSucc level)))
+    (coherent : before.env.intern.WF)
+    (faithful : KExpr.KeyCollisionFree fun term => before.env.intern.ExprSupport term ∨
+      term = KExpr.mkSort (KUniv.mkSucc level)) :
+    BinderInference resolve entries locals context fuel before (.sort level info)
+      (.sort (readLevel level)) (.sort (.succ (readLevel level))) := by
+  rcases observeInferenceCache (inferKey_closed closed before) with
+    ⟨hit, keyEq, stateEq⟩ | ⟨miss, _, stateEq⟩
+  · refine .cachedSort hit (InferenceCacheAgreement.selected hit ?_)
+    simpa only [keyEq, stateEq] using agreement
+  · exact .sort miss (by simpa only [stateEq] using coherent)
+      (by simpa only [stateEq] using faithful)
+
 /-- Successful production inference reads the expected model type and checks
 the actual source term against it. No recursive semantic premise is supplied
 by the caller: induction follows the finite operational support tree. -/
@@ -324,6 +329,9 @@ theorem BinderInference.soundWithSynthesis {β : Type u}
       refine ⟨?_, (TypingClaim.sort _).checking, fun head => by cases head⟩
       rw [internExpr_readScopedExpr? coherent faithful]
       simp [AExpr.erase]
+  | cachedSort hit canonical =>
+      obtain ⟨typeReads, typed⟩ := infer_sort_cached_sound hit canonical accepted
+      exact ⟨typeReads, typed.checking, fun head => by cases head⟩
   | fvar cache registered atIndex =>
       obtain ⟨typeReads, typed⟩ := cache.sound agreement registered atIndex accepted
       exact ⟨typeReads, typed.checking, fun _ => typed⟩

@@ -191,7 +191,8 @@ structure FVarInferenceSupport (before : TcState .anon) (id : FVarId)
   keyRun : TcM.inferKey (.fvar id name info) before = .ok key keyed
   fullMatches : ∀ cached decl, keyed.env.inferCache[key]? = some cached →
     keyed.lctx.find? id = some decl → cached = decl.ty
-  onlyMatches : ∀ cached decl, keyed.env.inferOnlyCache[key]? = some cached →
+  onlyMatches : before.inferOnly = true →
+    ∀ cached decl, keyed.env.inferOnlyCache[key]? = some cached →
     keyed.lctx.find? id = some decl → cached = decl.ty
 
 def FVarInferenceSupport.ofMiss {before : TcState .anon} {id : FVarId}
@@ -255,7 +256,7 @@ theorem FVarInferenceSupport.output {before after : TcState .anon} {id : FVarId}
           | some cached =>
               simp only [only] at accepted
               cases accepted
-              exact support.onlyMatches _ _ only found
+              exact support.onlyMatches policy _ _ only found
           | none =>
               simp only [only] at accepted
               have lookup : RecM.inferUncached RecM.inferCall true (.fvar id name info)

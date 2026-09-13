@@ -38,7 +38,8 @@ private def atomicRoots : Array Lean.Name := #[
   ``AtomicInferenceSupport.scopeAndReferences, ``AtomicInference.sound,
   ``inferUncached_fvar_sound, ``infer_fvar_sound,
   ``FVarInferenceSupport.output, ``FVarInferenceSupport.sound,
-  ``InferenceCacheHit.run,
+  ``InferenceCacheHit.run, ``infer_sort_cached_sound,
+  ``infer_sort_cache_agreement, ``infer_sort_cache_frame, ``BinderInference.sortOfAgreement,
   ``ForallInferenceTrace.output, ``LambdaInferenceTrace.output, ``BinderInference.sound,
   ``inferUncached_monomorphic_const_scoped, ``ApplicationInferenceTrace.output,
   ``BinderInference.soundWithSynthesis, ``BinderInference.synthesis,
@@ -58,7 +59,30 @@ private def instantiationRoots : Array Lean.Name := #[
   ``inferUncached_const_scoped_refinement, ``inferUncached_const_scoped_sound,
   ``inferUncached_const_predicted_type, ``infer_const_scoped_annotated,
   ``infer_const_cache_write, ``CachedConstantInferenceSupport.refinement,
-  ``CachedConstantInferenceSupport.sound
+  ``CachedConstantInferenceSupport.sound,
+  ``instantiateUnivParams_cache_frame, ``infer_const_cache_frame,
+  ``infer_const_cache_agreement, ``CachedConstantInferenceSupport.transport,
+  ``CachedConstantInferenceSupport.openBinder, ``CachedConstantInferenceSupport.sound_after_frame
+]
+
+private def cacheFrameRoots : Array Lean.Name := #[
+  ``InferenceCacheFrame.refl, ``InferenceCacheFrame.trans, ``InferenceCacheAgreement.frame,
+  ``cacheInferResult_eq, ``PreservesInferenceCache.pure, ``PreservesInferenceCache.bind,
+  ``PreservesInferenceCache.runIntern, ``InferenceCacheFrame.localContext,
+  ``InferenceCacheAgreement.policy, ``withInferOnly_eq,
+  ``PreservesInferenceCache.withInferOnly, ``getConst_loaded
+]
+
+private def cacheMapRoots : Array Lean.Name := #[
+  ``InferenceCacheAgreement.write, ``PreservesInferenceCache.write_other,
+  ``InferenceCacheAgreement.clearReductionCaches
+]
+
+private def cacheKeyRoots : Array Lean.Name := #[
+  ``inferKey_closed, ``InferenceCacheHit.key_closed, ``observeInferenceCache,
+  ``InferenceCacheAgreement.selected, ``InferenceCacheHit.transport,
+  ``PreservesInferenceCache.inferKey, ``PreservesInferenceCache.openBinder,
+  ``withLctxScope_eq, ``PreservesInferenceCache.withLctxScope
 ]
 
 private def productionRoots : Array Lean.Name := #[
@@ -153,11 +177,11 @@ def roots : Array RootAllowance := #[
   { root := ``Theory.Model.CheckingClaim.typing, standardAxioms := standard },
   { root := ``Theory.Model.CheckingClaim.typingSort, standardAxioms := standard },
   { root := ``Theory.Model.CheckingClaim.lam, standardAxioms := standard }
-] ++ scopedRoots.map (fun root => {
+] ++ (scopedRoots ++ cacheFrameRoots).map (fun root => {
   root, standardAxioms := #[``propext, ``Quot.sound], forbiddenDependencies := forbiddenProduction
-}) ++ contextRoots.map (fun root => {
+}) ++ (contextRoots ++ cacheMapRoots).map (fun root => {
   root, standardAxioms := standard, forbiddenDependencies := forbiddenProduction
-}) ++ binderWalkerRoots.map (fun root => {
+}) ++ (binderWalkerRoots ++ cacheKeyRoots).map (fun root => {
   root, standardAxioms := standard, nativeAxioms := #[expressionNative],
   forbiddenDependencies := forbiddenProduction
 }) ++ (atomicRoots ++ instantiationRoots).map (fun root => {

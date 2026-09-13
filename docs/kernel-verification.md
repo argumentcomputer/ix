@@ -39,6 +39,8 @@ increasing sequence of strongly inaccessible cardinals.
 - `inferUncached_sort_sound` interprets an actual successful execution of the
   production sort-inference branch. It proves the model typing postcondition
   for the returned type, including intern-table reuse.
+  `infer_sort_cached_sound` derives the same typing when the eligible cached
+  value is the canonical successor sort.
 - `instantiateUnivParams_readAnnotated` connects the actual memoized universe
   substitution walker to model substitution for every readable expression.
   Simplifying `max` and `imax` may change the returned syntax; the proof
@@ -54,7 +56,8 @@ increasing sequence of strongly inaccessible cardinals.
   Production success supplies the universe-arity check. The premises retain
   a well-formed model interface, agreement with the actual lazy-loaded
   declaration, finite interning and level-substitution resources, and (for
-  `infer`) misses in both cache partitions at the computed key.
+  `infer`) misses in every eligible cache partition at the computed key.
+  Full mode imposes no condition on the ignored inference-only partition.
 - `ModelTyping.no_false` rules out a closed model-typed kernel expression at
   primitive False when its environment has been admitted by the certified
   interface and the set-theory assumption has an instance.
@@ -90,7 +93,20 @@ increasing sequence of strongly inaccessible cardinals.
   `InferenceCacheHit.run` proves the exact cache selection and returned state;
   full results take priority, and inference-only results require that policy.
   `infer_const_cache_write` establishes substitution agreement for a successful
-  miss's insertion. General preservation of that agreement remains open.
+  miss's insertion.
+- `InferenceCacheAgreement` records the expected concrete value in both
+  partitions at one key. Sort inference and inference of an already-loaded
+  constant preserve this agreement at their own key and leave other keys and
+  loaded declarations unchanged. The miss proofs use the actual interning or
+  universe-substitution operation and its final cache write.
+  `PreservesInferenceCache` composes structural preservation through key
+  computation, interning, binder opening, unrelated writes, and scope/policy
+  cleanup, including errors. Cache clearing establishes empty-cache agreement.
+  `CachedConstantInferenceSupport.transport` reuses a closed constant witness
+  after such a frame; `BinderInference.sortOfAgreement` constructs a sort leaf
+  from maintained agreement. Initial agreement and finite execution resources
+  remain premises. General preservation through lazy loading, environment
+  extension, and composite inference remains open.
 - `checkEnvAnon_atomic_preserves_model` connects a supported production
   environment run to model extension. `checkEnvAnon_atomic_no_false` excludes
   a declaration at an axiom type interpreted as empty, including False.
@@ -130,6 +146,7 @@ def idProp (P : Prop) (p : P) : P := p
 def useId (P : Prop) (p : P) : P := idProp P p
 def applyProp (P Q : Prop) (f : P → Q) (p : P) : Q := f p
 def usePoly (P : Prop) (p : P) : P := ident.{0} P p
+def chooseLeft (P Q : Prop) (p : P) (q : Q) : P := p
 axiom T.{u} : Sort u
 axiom f.{u} : T.{u} → T.{u}
 def useF (x : T.{1}) : T.{1} := f.{1} x
@@ -140,7 +157,10 @@ def useF (x : T.{1}) : T.{1} := f.{1} x
 - Every source key occurs in the `buildAnonWork` result, and every work item
   represents an axiom or a definition. Lookup, routing, and reset witnesses
   identify the checked `KConst`.
-- Sort, application, forall, and lambda nodes in the inference witnesses miss both cache partitions.
+- Application, forall, and lambda nodes in the inference witnesses miss every
+  eligible cache partition. Full mode may have a populated inference-only
+  partition. Sort nodes use a miss or a hit equal to the canonical successor
+  sort; a maintained agreement can construct that leaf's cache observation.
   Local-variable hits must match the current production declaration type.
   Constant nodes use either the existing miss rule or a selected cache hit.
   A hit checks the loaded declaration, universe arity, finite level resources,
@@ -151,8 +171,15 @@ def useF (x : T.{1}) : T.{1} := f.{1} x
   the actual post-lookup state. The occurrence annotations on the declared
   type agree with the substituted entry's annotations. These are structural
   data checks; successful inference derives typing, scope, and references.
-  Ordinary aliases retain the simpler empty-substitution path. Sort inference
-  retains finite interning coherence and address-faithfulness premises.
+  Ordinary aliases retain the simpler empty-substitution path. Sort misses
+  retain finite interning coherence and address-faithfulness premises.
+- Cache agreement covers both partitions so it survives policy changes.
+  Closed constant witnesses can be transported through composed frames that
+  preserve their key's entries and the loaded-constant map. Actual sort and
+  already-loaded constant inference provide frames for other keys. These
+  results reduce repeated witnesses; they do not yet derive initial agreement
+  or preservation through lazy loading, environment extension, or the entire
+  recursive inference tree.
 - Binder definitions supply finite inference trees for both the value and its
   separately checked declared type, exact source readings, closed annotated
   syntax, and references to the preceding interface. Recursive calls use the actual
@@ -190,7 +217,7 @@ Callers must establish these operational and representation witnesses for
 the run. They supply no typing or checker-soundness premise. The proof
 extracts the validation, type-inference, theorem-guard, value-inference, and
 conversion steps from public success, then derives body typing to extend
-the preceding model. Automatic witness construction, broader application and
+the preceding model. General automatic witness construction, broader application and
 lambda paths, lets, inductives, coordinated blocks, and other
 conversion paths remain outside the fragment. Polymorphic constant inference is composed into declaration
 admission and model extension for the monomorphic specializations described
@@ -246,7 +273,7 @@ lake test --wfail -- tc-unit
 lake -d Models/SetTheory build --wfail
 ```
 
-The consistency target checks 127 exact theorem boundaries. The production
+The consistency target checks 161 exact theorem boundaries. The production
 environment roots retain four existing generated output-length proofs,
 reached through expression/universe construction, names, and the full
 production method table. They introduce no new native proofs. The model
@@ -280,6 +307,10 @@ types and bodies, including per-item cache clearing; full and inference-only
 reuse across fresh local scopes; monomorphic and simplifying substitutions;
 partition priority; and alternating universe instances. Deliberately different
 values in an ineligible partition make the selection tests observable.
+Cache-preservation regressions add repeated sort domains, sort reuse and
+partition priority, preservation through intervening sort and loaded-constant
+inference, successful and failed scope cleanup, policy restoration, and
+fresh inference after clearing both partitions.
 
 ## Certified host adapters
 
@@ -308,6 +339,7 @@ The VM pilot is preserved in the frozen archive and excluded from the host gate.
 | Polymorphic inference and universe substitution | [`Consistency/Constant.lean`](../Ix/Kernel/Verify/Consistency/Constant.lean), [`InstUniv.lean`](../Ix/Kernel/Verify/Consistency/InstUniv.lean), [`Model/LevelCongruence.lean`](../Ix/Theory/Model/LevelCongruence.lean) |
 | Polymorphic calls inside binders | [`Consistency/ScopedConstant.lean`](../Ix/Kernel/Verify/Consistency/ScopedConstant.lean), [`ScopedInstUniv.lean`](../Ix/Kernel/Verify/Consistency/ScopedInstUniv.lean) |
 | Constant cache selection, writes, and typing | [`Consistency/ConstantCache.lean`](../Ix/Kernel/Verify/Consistency/ConstantCache.lean) |
+| Cache invariants and sort cache typing | [`Consistency/InferenceCache.lean`](../Ix/Kernel/Verify/Consistency/InferenceCache.lean), [`SortCache.lean`](../Ix/Kernel/Verify/Consistency/SortCache.lean) |
 | Dependent binders and function bodies | [`Consistency/BinderInference.lean`](../Ix/Kernel/Verify/Consistency/BinderInference.lean), [`Application.lean`](../Ix/Kernel/Verify/Consistency/Application.lean), [`BinderOpening.lean`](../Ix/Kernel/Verify/Consistency/BinderOpening.lean), [`Context.lean`](../Ix/Kernel/Verify/Consistency/Context.lean), [`Model/Checking.lean`](../Ix/Theory/Model/Checking.lean) |
 | Production environment fragment and relative axiom policy | [`Consistency/Environment.lean`](../Ix/Kernel/Verify/Consistency/Environment.lean), [`Production.lean`](../Ix/Kernel/Verify/Consistency/Production.lean) |
 | Foundation assumptions, theorem contracts, and provenance | [Consistency model guide](theory.md) |

@@ -13,6 +13,8 @@ import Ix.Kernel.Verify.Consistency.Atomic
 import Ix.Kernel.Verify.Consistency.ScopedExpr
 import Ix.Kernel.Verify.Consistency.ScopedInstUniv
 import Ix.Kernel.Verify.Consistency.ScopedConstant
+import Ix.Kernel.Verify.Consistency.InferenceCache
+import Ix.Kernel.Verify.Consistency.SortCache
 import Ix.Kernel.Verify.Consistency.ConstantCache
 import Ix.Kernel.Verify.Consistency.Context
 import Ix.Kernel.Verify.Consistency.BinderOpening
@@ -39,14 +41,20 @@ The binder case also requires explicit syntactic scope and references to the
 preceding interface. Its separate declared-type inference turns semantic checking
 into typing. Local cache hits agree with the actual declaration type. Constant
 hits agree with pure universe substitution of a loaded, admitted declaration;
-the other inference nodes retain cache-miss boundaries.
+sort hits return the canonical successor sort. Application, forall, and lambda
+nodes retain misses in every eligible cache partition. Full mode leaves the
+inference-only partition unconstrained at a miss.
 Applications use syntactic Pi exposure, full argument checking, hash conversion,
 and arguments without eager-reduction markers. Constant- and local-headed spines
 derive type validity from the admitted model or local context; their arguments may be lambdas.
 Polymorphic nodes use closed source readings, finite substitution resources,
 and a pure prediction of the returned syntax with matching occurrence annotations.
-Cache hits additionally check arity because they skip the runtime guard. Exact
-cache selection and successful constant writes are proved; general preservation
-of cache agreement across checker operations remains an explicit obligation.
+Constant hits additionally check arity because they skip the runtime guard.
+Concrete cache agreement is preserved by sort and already-loaded constant
+inference. Cache frames compose through interning, key computation, binder
+opening, unrelated writes, and scope/policy cleanup, including errors.
+These frames transport closed constant witnesses; maintained agreement also
+constructs sort leaves. Initial agreement, finite execution resources, lazy
+loading, and preservation through composite inference remain explicit obligations.
 General checker soundness remains outside this fragment.
 -/

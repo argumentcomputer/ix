@@ -512,9 +512,9 @@ private def repeatedReferenceEnvironment : Ixon.Env := Id.run do
 
 /-- The selected entry is populated by real inference, then reused in two
 different local scopes. Cache keys and closed returned types stay stable. -/
-private def cachedConstantAcrossScopes (source : Ixon.Env × Address)
-    (arguments : Array (KUniv .anon)) (expected : KExpr .anon) (inferOnly : Bool) : Bool :=
-  let term := KExpr.mkConst (m := .anon) ⟨source.2, ()⟩ arguments
+private def cachedInferenceAcrossScopes (term expected : KExpr .anon)
+    (state : TcState .anon) : Bool :=
+  let inferOnly := state.inferOnly
   let propType := KExpr.mkSort (m := .anon) .mkZero
   let action : RecM .anon Bool := do
     let first ← RecM.inferCall term
@@ -534,15 +534,20 @@ private def cachedConstantAcrossScopes (source : Ixon.Env × Address)
         final.env.inferOnlyCache.size == initial.env.inferOnlyCache.size && final.env.inferCache.isEmpty
       else initial.env.inferCache[key]?.isSome &&
         final.env.inferCache.size == initial.env.inferCache.size && final.env.inferOnlyCache.isEmpty)
-  match TcM.runRec action { TcState.newLazyAnon source.1 with inferOnly } with
+  match TcM.runRec action state with
   | .ok passed after => passed && after.lctx.size == 0 && after.env.nextFVarId == 2
   | .error _ _ => false
+
+private def cachedConstantAcrossScopes (source : Ixon.Env × Address)
+    (arguments : Array (KUniv .anon)) (expected : KExpr .anon) (inferOnly : Bool) : Bool :=
+  cachedInferenceAcrossScopes (.mkConst ⟨source.2, ()⟩ arguments) expected
+    { TcState.newLazyAnon source.1 with inferOnly }
 
 /-- A deliberately different result in the ineligible partition makes the
 selection policy observable. Full mode must compute a checked answer when
 only that entry exists; inference-only mode must prefer a full result. -/
-private def constantCachePriority (fullHit : Bool) : Bool :=
-  let term := KExpr.mkConst (m := .anon) ⟨polymorphicIdentity.2, ()⟩ #[levelOne]
+private def inferenceCachePriority (term knownType : KExpr .anon)
+    (initial : TcState .anon) (fullHit : Bool) : Bool :=
   let sentinel := KExpr.mkSort (m := .anon) .mkZero
   let action : RecM .anon Bool := do
     let expected ← RecM.inferOnlyCall term
@@ -552,12 +557,16 @@ private def constantCachePriority (fullHit : Bool) : Bool :=
       inferOnlyCache := state.env.inferOnlyCache.insert key sentinel } }
     let result ← RecM.inferCall term
     let state ← get
-    return result.addr == identityType.addr && result.addr != sentinel.addr &&
+    return result.addr == knownType.addr && result.addr != sentinel.addr &&
       state.env.inferCache[key]?.any (fun cached => cached.addr == expected.addr) &&
       state.env.inferOnlyCache[key]?.any (fun cached => cached.addr == sentinel.addr)
-  match TcM.runRec action (TcState.newLazyAnon polymorphicIdentity.1) with
+  match TcM.runRec action initial with
   | .ok passed _ => passed
   | .error _ _ => false
+
+private def constantCachePriority (fullHit : Bool) : Bool :=
+  inferenceCachePriority (.mkConst ⟨polymorphicIdentity.2, ()⟩ #[levelOne]) identityType
+    (TcState.newLazyAnon polymorphicIdentity.1) fullHit
 
 /-- Alternating two instances after their first use must retrieve the type
 for that instance, while retaining only two closed constant cache entries. -/
@@ -603,8 +612,119 @@ private def constantCacheCases : TestSeq :=
   ++ test "constant cache: alternating universe instances retrieve their own cached types"
     repeatedConstantInstances
 
+/-- Repeated `Sort u` domains in both the declaration and its value exercise
+sort hits under fresh local scopes: `fun P Q p q => p`, at Prop and Type. -/
+private def repeatedSortEnvironment : Ixon.Env := Id.run do
+  let definition : Ixon.Univ → Ix.DefKind → Ixon.Constant := fun level kind =>
+    ⟨.defn ⟨kind, .safe, 0,
+      .leanAll (.sort 0) (.leanAll (.sort 0)
+        (.leanAll (.var 1) (.leanAll (.var 1) (.var 3)))),
+      .leanLam (.sort 0) (.leanLam (.sort 0)
+        (.leanLam (.var 1) (.leanLam (.var 1) (.var 1))))⟩, #[], #[], #[level]⟩
+  let (env, _) := storeConst {} (definition .zero .defn)
+  let (env, _) := storeConst env (definition (.succ .zero) .opaq)
+  return env
+
+/-- Warm a constant, then infer a sort and another instance of the loaded
+constant inside a scope. Both successful cleanup and an error from an
+inference-only call retain the original entry and the intervening writes. -/
+private def constantCacheThroughInference (inferOnly fail : Bool) : Bool :=
+  let id : KId .anon := ⟨polymorphicIdentity.2, ()⟩
+  let term := KExpr.mkConst (m := .anon) id #[levelOne]
+  let other := KExpr.mkConst (m := .anon) id #[.mkZero]
+  let propType := KExpr.mkSort (m := .anon) .mkZero
+  let propIdentity := KExpr.mkAll () () propType (.mkAll () () (.mkVar 0 ()) (.mkVar 1 ()))
+  let action : RecM .anon Bool := do
+    let first ← RecM.inferCall term
+    let key ← TcM.inferKey term
+    let otherKey ← TcM.inferKey other
+    let sortKey ← TcM.inferKey propType
+    let initial ← get
+    let expectedExit ← try
+      RecM.withLctxScope do
+        let _ ← TcM.openBinder () () propType (.mkVar 0 ())
+        let _ ← RecM.inferCall propType
+        let _ ← RecM.inferCall other
+        if fail then
+          let _ ← RecM.inferOnlyCall (.mkFVar ⟨99⟩ ())
+          return false
+        return true
+    catch _ => pure fail
+    let later ← get
+    let cache := if inferOnly then later.env.inferOnlyCache else later.env.inferCache
+    let opposite := if inferOnly then later.env.inferCache else later.env.inferOnlyCache
+    let reused ← RecM.inferCall term
+    return expectedExit && first.addr == identityType.addr && reused.addr == first.addr &&
+      key != otherKey && key != sortKey && otherKey != sortKey &&
+      cache[key]?.any (fun cached => cached.addr == first.addr) &&
+      cache[otherKey]?.any (fun cached => cached.addr == propIdentity.addr) &&
+      cache[sortKey]?.any (fun cached => cached.addr == (.mkSort levelOne : KExpr .anon).addr) &&
+      opposite.isEmpty && later.env.consts.size == initial.env.consts.size &&
+      (later.env.get? id).map (·.ty.addr) == (initial.env.get? id).map (·.ty.addr) &&
+      later.lctx.size == 0 && later.env.nextFVarId == 1 && later.inferOnly == inferOnly
+  match TcM.runRec action { TcState.newLazyAnon polymorphicIdentity.1 with inferOnly } with
+  | .ok passed _ => passed
+  | .error _ _ => false
+
+/-- Populate both partitions, clear them through the production operation,
+then re-infer with a loaded source under the selected policy. -/
+private def inferenceAfterClearing (inferOnly : Bool) : Bool :=
+  let id : KId .anon := ⟨polymorphicIdentity.2, ()⟩
+  let term := KExpr.mkConst (m := .anon) id #[levelOne]
+  let propType := KExpr.mkSort (m := .anon) .mkZero
+  let action : RecM .anon Bool := do
+    let _ ← RecM.inferOnlyCall term
+    let _ ← RecM.inferCall term
+    let _ ← RecM.inferOnlyCall propType
+    let _ ← RecM.inferCall propType
+    let key ← TcM.inferKey term
+    let sortKey ← TcM.inferKey propType
+    let populated ← get
+    modify fun state => { state with inferOnly, env := state.env.clearReductionCaches }
+    let cleared ← get
+    let constantResult ← RecM.inferCall term
+    let sortResult ← RecM.inferCall propType
+    let final ← get
+    let cache := if inferOnly then final.env.inferOnlyCache else final.env.inferCache
+    let opposite := if inferOnly then final.env.inferCache else final.env.inferOnlyCache
+    return populated.env.inferCache.size == 2 && populated.env.inferOnlyCache.size == 2 &&
+      cleared.env.inferCache.isEmpty && cleared.env.inferOnlyCache.isEmpty &&
+      (cleared.env.get? id).isSome && cleared.env.consts.size == populated.env.consts.size &&
+      constantResult.addr == identityType.addr && sortResult.addr == (.mkSort levelOne : KExpr .anon).addr &&
+      cache[key]?.isSome && cache[sortKey]?.isSome && cache.size == 2 && opposite.isEmpty
+  match TcM.runRec action (TcState.newLazyAnon polymorphicIdentity.1) with
+  | .ok passed _ => passed
+  | .error _ _ => false
+
+private def cacheInvariantCases : TestSeq :=
+  test "cache invariants: repeated sort domains check with persistent caches"
+    (allSucceeded repeatedSortEnvironment 2 { clearEvery := 0 })
+  ++ test "cache invariants: repeated sort domains check with per-item clearing"
+    (allSucceeded repeatedSortEnvironment 2 { clearEvery := 1 })
+  ++ test "cache invariants: full sort results survive two fresh scopes"
+    (cachedInferenceAcrossScopes (.mkSort .mkZero) (.mkSort levelOne) (TcState.ofEnvAnon {}))
+  ++ test "cache invariants: inference-only sort results survive two fresh scopes"
+    (cachedInferenceAcrossScopes (.mkSort .mkZero) (.mkSort levelOne)
+      { TcState.ofEnvAnon {} with inferOnly := true })
+  ++ test "cache invariants: sort inference gives the full result priority"
+    (inferenceCachePriority (.mkSort .mkZero) (.mkSort levelOne) (TcState.ofEnvAnon {}) true)
+  ++ test "cache invariants: full sort inference ignores the inference-only entry"
+    (inferenceCachePriority (.mkSort .mkZero) (.mkSort levelOne) (TcState.ofEnvAnon {}) false)
+  ++ test "cache invariants: full entries survive other inference and scope cleanup"
+    (constantCacheThroughInference false false)
+  ++ test "cache invariants: inference-only entries survive other inference and scope cleanup"
+    (constantCacheThroughInference true false)
+  ++ test "cache invariants: full entries and policy survive failed inference-only scope"
+    (constantCacheThroughInference false true)
+  ++ test "cache invariants: inference-only entries and policy survive failed scope"
+    (constantCacheThroughInference true true)
+  ++ test "cache invariants: clearing both partitions permits fresh full inference"
+    (inferenceAfterClearing false)
+  ++ test "cache invariants: clearing both partitions permits fresh inference-only synthesis"
+    (inferenceAfterClearing true)
+
 public def suite : List TestSeq :=
   [cases, polymorphicCases, specializationCases, binderCases, applicationCases,
-    polymorphicApplicationCases, constantCacheCases]
+    polymorphicApplicationCases, constantCacheCases, cacheInvariantCases]
 
 end Tests.Kernel.Consistency
