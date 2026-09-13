@@ -37,8 +37,9 @@ pub use closure_census::{
 };
 pub use native::{ExecReplayWitness, compile_exec_binding, replay_exec};
 pub use original_closure::{
-  CompiledExecOriginalClaimsClosure, ExecOriginalClosureLimitsV0,
-  compile_exec_original_claims_closure,
+  CompiledExecOriginalClaimsClosure, ExecOriginalClosureArithmeticV0,
+  ExecOriginalClosureLimitsV0, compile_exec_original_claims_closure,
+  compile_exec_original_claims_closure_with_arithmetic,
 };
 pub use root_tables::{CompiledExecRootTables, compile_exec_root_tables};
 pub use setup::{

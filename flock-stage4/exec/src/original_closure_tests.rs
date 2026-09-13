@@ -8,11 +8,13 @@ use super::{
   hash, input, memory_summary, output, program,
 };
 use crate::{
-  CompiledExecReplay, ExecOriginalClosureLimitsV0,
-  ExecRootClosedCensusLimitsV0, ExecRootClosedCensusOutcomeV0,
-  ExecSetupR1csLimitsV0, census_exec_original_claims_observed,
+  CompiledExecReplay, ExecOriginalClosureArithmeticV0,
+  ExecOriginalClosureLimitsV0, ExecRootClosedCensusLimitsV0,
+  ExecRootClosedCensusOutcomeV0, ExecSetupR1csLimitsV0,
+  census_exec_original_claims_observed,
   census_exec_original_claims_setup_observed,
-  compile_exec_original_claims_closure, compile_exec_replay,
+  compile_exec_original_claims_closure,
+  compile_exec_original_claims_closure_with_arithmetic, compile_exec_replay,
 };
 use ix_stage4_trace::{
   ExecCommitmentsV0, F128JaggedDirectLimitsV0, F128StructuredMatricesLimitsV0,
@@ -323,11 +325,25 @@ fn packed_small_original_claim_closure_is_owned_and_matches_native_prefixes() {
 #[test]
 #[ignore = "bounded WHOLE original-claim-closed setup census, followed by whole native replay census ONLY if setup fits the supported domain; not R1CS materialization, key or proof"]
 fn packed_small_whole_original_claims_closed_census() {
+  whole_census(ExecOriginalClosureArithmeticV0::UncachedV0);
+}
+
+#[test]
+#[ignore = "bounded WHOLE prepared-F128 original-claim-closed setup census, followed by whole native replay census ONLY if setup fits; not materialization, key or proof"]
+fn packed_small_whole_prepared_original_claims_closed_census() {
+  whole_census(ExecOriginalClosureArithmeticV0::PreparedF128Fifo1024V0);
+}
+
+fn whole_census(arithmetic: ExecOriginalClosureArithmeticV0) {
   let started = Instant::now();
   let setup = setup();
   let replay = compile_exec_replay(&setup).unwrap();
-  let closure =
-    compile_exec_original_claims_closure(&replay, DIRECT_LIMITS).unwrap();
+  let closure = compile_exec_original_claims_closure_with_arithmetic(
+    &replay,
+    DIRECT_LIMITS,
+    arithmetic,
+  )
+  .unwrap();
   let slots = closure.setup_source_slots().unwrap();
   let limits = ExecRootClosedCensusLimitsV0 {
     required_domain_rows: ix_fflonk::FFLONK_MAX_BASE_DOMAIN,
@@ -336,7 +352,7 @@ fn packed_small_whole_original_claims_closed_census() {
   assert_eq!(config.queries, [244, 79, 48]);
   assert_eq!(config.grinding_bits, [16, 16, 16]);
   eprintln!(
-    "WHOLE direct original-claim closed census: composition={}, tables={}, matrices={}, structure=3 jagged=3; source_slots={slots:?}, bytes={}; pinned queries {:?}, grinding {:?}; {}",
+    "WHOLE direct original-claim closed census: arithmetic={arithmetic:?}, composition={}, tables={}, matrices={}, structure=3 jagged=3; source_slots={slots:?}, bytes={}; pinned queries {:?}, grinding {:?}; {}",
     blake3::Hash::from(closure.digest()),
     blake3::Hash::from(closure.tables().digest()),
     closure.tables().matrices().outputs().len(),
@@ -412,4 +428,84 @@ fn packed_small_whole_original_claims_closed_census() {
       );
     },
   }
+}
+
+#[test]
+#[ignore = "bounded prepared-F128 setup ownership and actual native Exec replay prefixes; not whole census, terminal key or proof"]
+fn packed_small_prepared_original_closure_owns_arithmetic_for_both_emitters() {
+  let setup = setup();
+  let replay = compile_exec_replay(&setup).unwrap();
+  let plain =
+    compile_exec_original_claims_closure(&replay, DIRECT_LIMITS).unwrap();
+  let prepared = compile_exec_original_claims_closure_with_arithmetic(
+    &replay,
+    DIRECT_LIMITS,
+    ExecOriginalClosureArithmeticV0::PreparedF128Fifo1024V0,
+  )
+  .unwrap();
+  assert_eq!(plain.arithmetic(), ExecOriginalClosureArithmeticV0::UncachedV0);
+  assert_ne!(plain.digest(), prepared.digest());
+  assert_eq!(plain.tables(), prepared.tables());
+  assert_eq!(
+    plain.setup_source_slots().unwrap(),
+    prepared.setup_source_slots().unwrap()
+  );
+  let bytes = prepared.setup_source_slots().unwrap().payload_bytes().unwrap();
+  let prefix = captured_prefix(true, |builder| {
+    let result = prepared.emit_setup(builder, bytes);
+    assert_eq!(builder.f128_preparation_cache_capacity(), Some(1024));
+    result
+  });
+  let empty = R1csBuilder::new_shape_projection().finish_projection().unwrap();
+  for capacity in [1, 1024] {
+    for closure in [&plain, &prepared] {
+      let mut builder = R1csBuilder::new_shape_projection();
+      builder.enable_f128_preparation_cache(capacity).unwrap();
+      assert!(closure.emit_setup(&mut builder, bytes).is_err());
+      assert_eq!(builder.finish_projection().unwrap(), empty);
+    }
+  }
+  let mut builder = R1csBuilder::new_shape_projection();
+  assert!(prepared.emit_setup(&mut builder, bytes - 1).is_err());
+  assert_eq!(builder.f128_preparation_cache_capacity(), None);
+  assert_eq!(builder.finish_projection().unwrap(), empty);
+  let caps = [4, 1000].map(|cap| {
+    census_exec_original_claims_setup_observed(
+      &prepared,
+      bytes,
+      ExecRootClosedCensusLimitsV0 { required_domain_rows: cap },
+      |_| {},
+    )
+    .unwrap()
+  });
+  for (literal, value) in [(false, false), (false, true), (true, false)] {
+    let (commitments, public, proof) = prove(&setup, literal, value);
+    let witness = replay.replay(commitments, &proof).unwrap();
+    assert_eq!(
+      captured_prefix(false, |builder| {
+        let result = prepared.constrain(builder, public, &witness).map(|_| ());
+        assert_eq!(builder.f128_preparation_cache_capacity(), Some(1024));
+        result
+      }),
+      prefix,
+    );
+    for (cap, expected) in [4, 1000].into_iter().zip(&caps) {
+      assert_eq!(
+        &census_exec_original_claims_observed(
+          &prepared,
+          public,
+          &witness,
+          ExecRootClosedCensusLimitsV0 { required_domain_rows: cap },
+          |_| {},
+        )
+        .unwrap(),
+        expected,
+      );
+    }
+  }
+  eprintln!(
+    "prepared arithmetic ownership, rejected ambient cache selection, and 3 native/setup PREFIX comparisons PASS; composition={}; tables={}; not complete census/key/proof",
+    blake3::Hash::from(prepared.digest()),
+    blake3::Hash::from(prepared.tables().digest()),
+  );
 }

@@ -666,6 +666,30 @@ polynomial, digest, commitment, VK and small-test proof bytes. At `2^30` this
 saves 256 GiB, but key plus compressed SRS still needs about 784 GiB before
 scratch space. Neither this saving nor the low census RSS admits full proving.
 
+## Explicit prepared-F128 arithmetic
+
+The separate `compile_exec_original_claims_closure_with_arithmetic` API fixes
+an arithmetic implementation before any proof exists. `PreparedF128Fifo1024V0`
+uses the same complete tables and original-claim obligations as the default,
+but pins a bounded exact-wire FIFO operand cache in its composition identity.
+Both setup and assigned emitters configure it before allocation; a caller's
+pre-enabled cache is rejected. The default uncached identity is preserved.
+
+Every cached Karatsuba decomposition and packed Fr wire has its own defining
+constraints. Reuse removes repeated definitions, not product, range, reduction,
+transcript, or root checks. Private equal values on different wires do not
+share entries, and eviction is independent of witness assignments. The dense
+component fixtures save exactly 709 PLONK rows per reused preparation, with
+setup/assigned count equality and materialized mutation checks. Three native
+Exec proofs also match bounded setup prefixes for the new identity. The
+[evidence report](../flock-stage4/census/f128-prepared-operands-v0.json) does not
+claim a whole-relation fit, key, satisfying assignment or terminal proof.
+
+The new whole-census test retains the hard `2^30` required-domain-row cap and
+the complete 371-query schedule. If the setup census completes, it must then
+match a complete native replay census. Only that separate result can establish
+the new full geometry; even a match still does not satisfy the proving gate.
+
 ## Remaining gates
 
 Complete proof-free materialization/key preprocessing at feasible geometry;

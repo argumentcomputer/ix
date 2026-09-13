@@ -353,6 +353,7 @@ pub struct R1csBuilder {
   // A refused stream is never a completed relation, even when emission ends
   // without another fallible allocation to propagate the observer's error.
   error: Option<R1csError>,
+  f128_preparations: Option<crate::f128::F128PreparationCache>,
 }
 
 enum BuilderStorage {
@@ -386,6 +387,7 @@ impl R1csBuilder {
       public_variables: 0,
       private_variables: 0,
       error: None,
+      f128_preparations: None,
       storage: BuilderStorage::Materialized {
         public_values: Vec::new(),
         private_values: Vec::new(),
@@ -415,6 +417,7 @@ impl R1csBuilder {
         limits,
       },
       error: None,
+      f128_preparations: None,
     })
   }
 
@@ -435,6 +438,47 @@ impl R1csBuilder {
       Some(error) => Err(error.clone()),
       None => Ok(()),
     }
+  }
+
+  /// Opt in BEFORE any allocation or constraint, once per fresh builder.
+  /// Default emission is unchanged. The capacity and deterministic FIFO
+  /// policy affect geometry and must be pinned by the caller's implementation
+  /// identity, identically for setup and assignment. Neither is witness data.
+  pub fn enable_f128_preparation_cache(
+    &mut self,
+    capacity: usize,
+  ) -> Result<(), R1csError> {
+    self.check_status()?;
+    let constraints_started = match &self.storage {
+      BuilderStorage::Materialized { constraints, .. }
+      | BuilderStorage::Shape { constraints, .. } => !constraints.is_empty(),
+      BuilderStorage::Projection { accumulator, .. } => {
+        accumulator.constraints != 0
+      },
+    };
+    if self.f128_preparations.is_some()
+      || self.public_variables != 0
+      || self.private_variables != 0
+      || constraints_started
+    {
+      return Err(R1csError::BuilderConfigurationLocked);
+    }
+    if capacity == 0 || capacity > crate::F128_PREPARATION_CACHE_MAX_CAPACITY {
+      return Err(R1csError::InvalidF128PreparationCacheCapacity { capacity });
+    }
+    self.f128_preparations =
+      Some(crate::f128::F128PreparationCache::new(capacity));
+    Ok(())
+  }
+
+  pub fn f128_preparation_cache_capacity(&self) -> Option<usize> {
+    self.f128_preparations.as_ref().map(|cache| cache.capacity())
+  }
+
+  pub(crate) fn f128_preparation_cache(
+    &mut self,
+  ) -> Option<&mut crate::f128::F128PreparationCache> {
+    self.f128_preparations.as_mut()
   }
 
   /// Create a builder that hashes and counts constraints without retaining
@@ -505,6 +549,7 @@ impl R1csBuilder {
       public_variables: 0,
       private_variables: 0,
       error: None,
+      f128_preparations: None,
       storage: BuilderStorage::Projection {
         accumulator: Box::new(ProjectionAccumulator {
           constraints: 0,
@@ -780,6 +825,8 @@ pub enum R1csError {
   InternalShape,
   NonInvertibleBinaryFieldElement,
   WrongBuilderMode,
+  BuilderConfigurationLocked,
+  InvalidF128PreparationCacheCapacity { capacity: usize },
   ResourceLimit { resource: &'static str, limit: u64, actual: u64 },
   ObserverFailure(String),
   AssignmentLength { actual: usize, expected: usize },
@@ -803,6 +850,14 @@ impl std::fmt::Display for R1csError {
         write!(formatter, "cannot invert zero in GF(2^128)")
       },
       Self::WrongBuilderMode => write!(formatter, "wrong R1CS builder mode"),
+      Self::BuilderConfigurationLocked => {
+        write!(formatter, "R1CS builder configuration is already fixed")
+      },
+      Self::InvalidF128PreparationCacheCapacity { capacity } => write!(
+        formatter,
+        "F128 preparation cache capacity {capacity} is outside 1..={}",
+        crate::F128_PREPARATION_CACHE_MAX_CAPACITY,
+      ),
       Self::ResourceLimit { resource, limit, actual } => write!(
         formatter,
         "R1CS stream exceeded {resource} limit {limit} (observed {actual})",

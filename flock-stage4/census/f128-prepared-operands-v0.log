@@ -1,0 +1,13 @@
+   Compiling ix-terminal-circuit v0.1.0 (/tmp/ixby-publish.yueY3c/flock-stage4/circuit)
+   Compiling ix-fflonk v0.1.0 (/tmp/ixby-publish.yueY3c/flock-stage4/fflonk)
+    Finished `release` profile [optimized] target(s) in 12.92s
+     Running unittests src/lib.rs (flock-stage4/target/release/deps/ix_fflonk-4689a59a297f998d)
+
+running 1 test
+test arithmetization::prepared_tests::prepared_f128_operands_preserve_single_use_cost_and_save_repeated_packs ... prepared F128 single: baseline=9516 prepared=9516 PLONK constraint rows; saving=0; complete COMPONENT counts only
+prepared F128 one common operand: baseline=37680 prepared=35553 PLONK constraint rows; saving=2127; complete COMPONENT counts only
+prepared F128 two by two grid: baseline=37552 prepared=34716 PLONK constraint rows; saving=2836; complete COMPONENT counts only
+prepared F128 both repeated: baseline=37296 prepared=33042 PLONK constraint rows; saving=4254; complete COMPONENT counts only
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 89 filtered out; finished in 0.72s

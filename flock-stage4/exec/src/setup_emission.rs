@@ -208,6 +208,7 @@ impl CompiledExecOriginalClaimsClosure<'_, '_> {
         .into(),
       );
     }
+    self.configure_builder(builder)?;
     let main = TranscriptScratch::new(
       layout.main_observed,
       layout.main_challenges,

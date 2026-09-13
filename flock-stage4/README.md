@@ -22,8 +22,8 @@ Tests include strict scalar/curve/subgroup decoding, invalid SRS/key rejection,
 nonzero blinding admission, authenticated scratch corruption, and identical
 proof/key results across memory and file backends for fixed test randomness.
 Small proofs use development setup and randomness, not production security.
-The generic replay and root-closure/setup prototypes pass 228 ordinary tests
-(89 FFLONK, 43 trace, 79 circuit, 17 replay/setup); thirty-two heavier native,
+The generic replay and root-closure/setup prototypes pass 241 ordinary tests
+(90 FFLONK, 48 trace, 86 circuit, 17 replay/setup); thirty-five heavier native,
 materialization, and census/optimization tests remain opt-in.
 
 ## Generic Exec replay
@@ -345,6 +345,29 @@ differentials. It removes fewer than 2.2% of high product sites while adding
 substantial XOR reconstruction. These are symbolic component counts, not
 PLONK savings or whole-circuit admission. The candidate has no circuit gadget
 or automatic selection and is not adopted by either closed composition.
+
+## Reusable constrained multiplication operands
+
+The explicit `ExecOriginalClosureArithmeticV0::PreparedF128Fifo1024V0` route
+shares previously constrained Karatsuba XORs and radix-32 operand packs.
+Its bounded, per-builder FIFO cache uses exact bit-wire identities, never
+private values. Setup and assigned emission select the same arithmetic through
+the approved composition; ambient cache configuration is rejected. The default
+uncached circuit and its composition identity remain unchanged.
+
+Complete dense-input multiplication components save 709 PLONK rows per reused
+operand preparation, with no row increase for a single use. The original
+integer-convolution bounds, Boolean decompositions, reconstruction and field
+reduction remain enforced. Materialized setup/assignment equality, every
+input/output/pack-wire mutation, deterministic eviction, and three real native
+Exec prefix comparisons pass. The [component report](census/f128-prepared-operands-v0.json)
+records exact source hashes, cases and limitations.
+
+The separate `packed_small_whole_prepared_original_claims_closed_census` test
+measures the complete new composition with all original claims and pinned
+queries, stopping at the supported domain limit. Only if setup finishes does it
+run the whole native replay census and require exact equality. Component or
+prefix checks do not establish this whole count, terminal key, or proof.
 
 ## File-key storage without a duplicated C0
 

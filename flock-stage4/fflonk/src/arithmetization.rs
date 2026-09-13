@@ -6,6 +6,10 @@ use ix_terminal_circuit::{
 };
 use std::{cell::RefCell, collections::BTreeMap, rc::Rc};
 
+#[cfg(test)]
+#[path = "arithmetization_prepared_tests.rs"]
+mod prepared_tests;
+
 /// Rows reserved at the end of the evaluation domain for prover blinding.
 pub const FFLONK_BLINDING_ROWS: u64 = 2;
 

@@ -7,6 +7,14 @@ use ark_ff::{AdditiveGroup, Field};
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex, OnceLock};
 
+#[path = "f128_prepared.rs"]
+mod prepared;
+pub(crate) use prepared::F128PreparationCache;
+pub use prepared::{
+  F128_PREPARATION_CACHE_MAX_CAPACITY, F128PreparedOperandV0,
+  constrain_f128_multiply_prepared, prepare_f128_operand,
+};
+
 pub const F128_BITS: usize = 128;
 
 /// Canonical little-endian bit wires for one Flock `GF(2^128)` element.
@@ -135,6 +143,7 @@ pub fn constrain_f128_multiply(
   right: &F128VariablesV1,
   phase: ConstraintPhase,
 ) -> Result<F128VariablesV1, R1csError> {
+  builder.check_status()?;
   if left.constant {
     if left.value == [0; 16] {
       return Ok(left.clone());
@@ -150,10 +159,25 @@ pub fn constrain_f128_multiply(
   if left.bit_variables == right.bit_variables {
     return constrain_f128_frobenius(builder, left, 1, phase);
   }
+  if builder.f128_preparation_cache_capacity().is_some() {
+    let left = prepared::cached_prepare_f128_operand(builder, left, phase)?;
+    let right = prepared::cached_prepare_f128_operand(builder, right, phase)?;
+    return constrain_f128_multiply_prepared(builder, &left, &right, phase);
+  }
   let left_bits = import_variables(left);
   let right_bits = import_variables(right);
-  let mut coefficients =
+  let coefficients =
     karatsuba_product(builder, &left_bits, &right_bits, phase)?;
+  export_product(builder, left.value, right.value, coefficients, phase)
+}
+
+fn export_product(
+  builder: &mut R1csBuilder,
+  left: [u8; 16],
+  right: [u8; 16],
+  mut coefficients: Vec<BitWire>,
+  phase: ConstraintPhase,
+) -> Result<F128VariablesV1, R1csError> {
   // Descending polynomial reduction: x^128 = x^7 + x^2 + x + 1.
   for degree in (F128_BITS..coefficients.len()).rev() {
     let high = coefficients[degree].clone();
@@ -164,7 +188,7 @@ pub fn constrain_f128_multiply(
     }
   }
   coefficients.truncate(F128_BITS);
-  let value = multiply_values(left.value, right.value);
+  let value = multiply_values(left, right);
   debug_assert_eq!(wire_values(&coefficients), value_bits(&value));
   export_variables(builder, value, coefficients, phase)
 }
@@ -424,23 +448,38 @@ fn packed_polynomial_product(
   right: &[BitWire],
   phase: ConstraintPhase,
 ) -> Result<Vec<BitWire>, R1csError> {
+  packed_polynomial_product_with_prepared(
+    builder, left, right, None, None, phase,
+  )
+}
+
+fn pack_polynomial_bits(bits: &[BitWire]) -> LinearCombination {
+  LinearCombination::from_terms(bits.iter().enumerate().flat_map(
+    |(index, bit)| {
+      let place = Fr::from(1u128 << (PACKED_COEFFICIENT_BITS * index));
+      bit
+        .expression
+        .terms()
+        .iter()
+        .map(move |&(variable, coefficient)| (variable, coefficient * place))
+    },
+  ))
+}
+
+fn packed_polynomial_product_with_prepared(
+  builder: &mut R1csBuilder,
+  left: &[BitWire],
+  right: &[BitWire],
+  packed_left: Option<Variable>,
+  packed_right: Option<Variable>,
+  phase: ConstraintPhase,
+) -> Result<Vec<BitWire>, R1csError> {
   if left.is_empty()
     || left.len() != right.len()
     || left.len() > PACKED_PRODUCT_BITS
   {
     return Err(R1csError::InternalShape);
   }
-  let pack =
-    |bits: &[BitWire]| {
-      LinearCombination::from_terms(bits.iter().enumerate().flat_map(
-        |(index, bit)| {
-          let place = Fr::from(1u128 << (PACKED_COEFFICIENT_BITS * index));
-          bit.expression.terms().iter().map(move |&(variable, coefficient)| {
-            (variable, coefficient * place)
-          })
-        },
-      ))
-    };
   let mut terms = Vec::new();
   let mut output = Vec::with_capacity(2 * left.len() - 1);
   let mut place = Fr::ONE;
@@ -472,8 +511,14 @@ fn packed_polynomial_product(
   }
   builder.enforce(
     phase,
-    pack(left),
-    pack(right),
+    packed_left.map_or_else(
+      || pack_polynomial_bits(left),
+      LinearCombination::from_variable,
+    ),
+    packed_right.map_or_else(
+      || pack_polynomial_bits(right),
+      LinearCombination::from_variable,
+    ),
     LinearCombination::from_terms(terms),
   );
   Ok(output)

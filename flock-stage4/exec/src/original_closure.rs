@@ -27,12 +27,23 @@ pub struct ExecOriginalClosureLimitsV0 {
   pub jagged: F128JaggedDirectLimitsV0,
 }
 
+/// Explicit proof-free implementation selection. Neither variant changes
+/// the Flock protocol, original claims, fixed tables, or query schedule.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ExecOriginalClosureArithmeticV0 {
+  #[default]
+  UncachedV0,
+  /// Exact-wire, insertion-order FIFO; at most 1024 prepared operands.
+  PreparedF128Fifo1024V0,
+}
+
 /// No public constructor, replacement fields, or prover-selected programs.
 /// This object borrows the complete approved replay and owns exact programs
 /// derived from its registry/circuit/layout. Its digest is NOT a terminal key.
 pub struct CompiledExecOriginalClaimsClosure<'r, 's> {
   replay: &'r CompiledExecReplay<'s>,
   tables: F128OriginalClaimTablesV0,
+  arithmetic: ExecOriginalClosureArithmeticV0,
 }
 impl<'r, 's> CompiledExecOriginalClaimsClosure<'r, 's> {
   pub fn replay_setup(&self) -> &'r CompiledExecReplay<'s> {
@@ -41,11 +52,21 @@ impl<'r, 's> CompiledExecOriginalClaimsClosure<'r, 's> {
   pub fn tables(&self) -> &F128OriginalClaimTablesV0 {
     &self.tables
   }
+  pub fn arithmetic(&self) -> ExecOriginalClosureArithmeticV0 {
+    self.arithmetic
+  }
   pub fn digest(&self) -> [u8; 32] {
     let mut hash = blake3::Hasher::new();
     hash.update(b"IxBy/Stage4/original-claims-closed-composition/v0\0");
     hash.update(&self.replay.identities().digest());
     hash.update(&self.tables.digest());
+    // Preserve the existing uncached composition byte-for-byte. The new
+    // implementation has its own tagged identity before any guest exists.
+    if self.arithmetic
+      == ExecOriginalClosureArithmeticV0::PreparedF128Fifo1024V0
+    {
+      hash.update(b"\0F128/prepared-operands/fifo/1024/v0\0");
+    }
     *hash.finalize().as_bytes()
   }
   pub fn constrain(
@@ -55,12 +76,29 @@ impl<'r, 's> CompiledExecOriginalClaimsClosure<'r, 's> {
     witness: &ExecReplayWitness<'_>,
   ) -> Result<ExecOriginalClaimsClosedOutputV0> {
     self.validate_witness(witness)?;
+    self.configure_builder(builder)?;
     Ok(constrain_exec_original_claims_closed(
       builder,
       public,
       &self.tables,
       witness.diagnostic_witness().original_claims(),
     )?)
+  }
+  pub(crate) fn configure_builder(
+    &self,
+    builder: &mut R1csBuilder,
+  ) -> Result<()> {
+    builder.check_status()?;
+    ensure!(
+      builder.f128_preparation_cache_capacity().is_none(),
+      "original-claim arithmetic must be selected by the approved composition"
+    );
+    if self.arithmetic
+      == ExecOriginalClosureArithmeticV0::PreparedF128Fifo1024V0
+    {
+      builder.enable_f128_preparation_cache(1024)?;
+    }
+    Ok(())
   }
   pub(crate) fn validate_witness(
     &self,
@@ -82,6 +120,20 @@ impl<'r, 's> CompiledExecOriginalClaimsClosure<'r, 's> {
 pub fn compile_exec_original_claims_closure<'r, 's>(
   replay: &'r CompiledExecReplay<'s>,
   limits: ExecOriginalClosureLimitsV0,
+) -> Result<CompiledExecOriginalClaimsClosure<'r, 's>> {
+  compile_exec_original_claims_closure_with_arithmetic(
+    replay,
+    limits,
+    ExecOriginalClosureArithmeticV0::UncachedV0,
+  )
+}
+
+/// Same complete source-owned programs, with an explicit arithmetic identity.
+/// This selection is fixed at setup, never inferred from witness values.
+pub fn compile_exec_original_claims_closure_with_arithmetic<'r, 's>(
+  replay: &'r CompiledExecReplay<'s>,
+  limits: ExecOriginalClosureLimitsV0,
+  arithmetic: ExecOriginalClosureArithmeticV0,
 ) -> Result<CompiledExecOriginalClaimsClosure<'r, 's>> {
   let setup = replay.exec_setup();
   let shape = setup.verifier_shape();
@@ -216,5 +268,5 @@ pub fn compile_exec_original_claims_closure<'r, 's>(
     &replay.wiring,
     &replay.pcs.multipoint,
   )?;
-  Ok(CompiledExecOriginalClaimsClosure { replay, tables })
+  Ok(CompiledExecOriginalClaimsClosure { replay, tables, arithmetic })
 }
