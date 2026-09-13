@@ -1,0 +1,508 @@
+{
+  "schema": "ixby-stage4-fixed-root-table-prototype-census-v0",
+  "measurement_date": "2026-09-13",
+  "base_revision": "790dc56f",
+  "status": "exact_fixed_table_program_and_component_r1cs_prototype_not_a_closed_relation",
+  "setup_digest": "41163b87f03675917ac93824d8b1c11ab0c489c2fc2e03abece34d11fa3255f7",
+  "flock_revision": "b310f35f35f68095537150a1c8c0a43caca9a29e",
+  "roots_closed": false,
+  "terminal_key_generated": false,
+  "terminal_proof_generated": false,
+  "source_hashes": [
+    {
+      "path": "flock-stage4/trace/src/fixed_table.rs",
+      "sha256": "07e629caae2041e3ef7da69c3b00b253afcd89dd1126ca1b90883e38986396da"
+    },
+    {
+      "path": "flock-stage4/trace/src/fixed_table_davio.rs",
+      "sha256": "63e9c8b2b1f2f28412e3b90461650e18555595a751600e36162a5e3c42434e3b"
+    },
+    {
+      "path": "flock-stage4/circuit/src/fixed_table.rs",
+      "sha256": "48c9bffd404c93e00c60c00bcd87e3b4b0783883fcb641a6bda6b500bda99398"
+    },
+    {
+      "path": "flock-stage4/exec/src/root_tables.rs",
+      "sha256": "f4976d4e519e1b56e11162a6cb7b53efbfe853fb89ad62ab01ca4e7f103466d1"
+    },
+    {
+      "path": "flock-stage4/exec/src/tests.rs",
+      "sha256": "02233014da52f3aa31b9fa5d3153284b8e3e5f825ece65de1a4859fbe9965817"
+    }
+  ],
+  "root_tables_digest": "9d2be8a8e0a1288cb2530830efc3ef2df98cfda721243132c318741504c58021",
+  "execution": {
+    "command": "ulimit -v 33554432 && RAYON_NUM_THREADS=4 timeout 180 cargo test --release --locked --manifest-path flock-stage4/Cargo.toml -p ixby-stage4-exec exact_fixed_root_tables_match_all_native_evaluators -- --ignored --test-threads=1 --nocapture",
+    "working_directory": "repository root",
+    "exit_code": 0,
+    "test_duration_seconds": 13.43,
+    "table_compilation_seconds": 7.434,
+    "sample_after_table_compilation": {
+      "vm_hwm_kib": 3217828,
+      "vm_peak_kib": 3516364
+    },
+    "memory_scope": "Single Linux process cumulative counters sampled after table compilation. This is not the peak of the complete test, process-tree RSS, or terminal prover memory.",
+    "bounds": {
+      "source_entries": 64000000,
+      "retained_nodes": 2000000
+    },
+    "native_differential": "All 46 approved Boolean A/B matrices, the complete eight-plane structure matrix including constant-pin plane 5, and the exact jagged layout matched the pinned native evaluators at two non-Boolean F128 points each. No guest or proof was generated.",
+    "variable_order": "Interleave row and column bits, MSB first. Point-coordinate addresses remain LSB-first row coordinates followed by LSB-first column coordinates."
+  },
+  "totals": {
+    "source_entries": 46914681,
+    "normalized_nonzero_entries": 46913775,
+    "nodes": 1515960,
+    "constant_nodes": 7975,
+    "general_product_sites": 1501595
+  },
+  "boolean_matrices": [
+    {
+      "registry_slot": 0,
+      "A": {
+        "nonzeros": 1116437,
+        "nodes": 100224,
+        "general_product_sites": 100218
+      },
+      "B": {
+        "nonzeros": 778619,
+        "nodes": 115460,
+        "general_product_sites": 115453
+      }
+    },
+    {
+      "registry_slot": 1,
+      "A": {
+        "nonzeros": 40471,
+        "nodes": 7594,
+        "general_product_sites": 7588
+      },
+      "B": {
+        "nonzeros": 34172,
+        "nodes": 8527,
+        "general_product_sites": 8520
+      }
+    },
+    {
+      "registry_slot": 2,
+      "A": {
+        "nonzeros": 67311,
+        "nodes": 24118,
+        "general_product_sites": 24113
+      },
+      "B": {
+        "nonzeros": 50419,
+        "nodes": 22263,
+        "general_product_sites": 22259
+      }
+    },
+    {
+      "registry_slot": 3,
+      "A": {
+        "nonzeros": 38930,
+        "nodes": 4423,
+        "general_product_sites": 4417
+      },
+      "B": {
+        "nonzeros": 37760,
+        "nodes": 6189,
+        "general_product_sites": 6185
+      }
+    },
+    {
+      "registry_slot": 4,
+      "A": {
+        "nonzeros": 29305,
+        "nodes": 2646,
+        "general_product_sites": 2640
+      },
+      "B": {
+        "nonzeros": 22203,
+        "nodes": 3474,
+        "general_product_sites": 3470
+      }
+    },
+    {
+      "registry_slot": 5,
+      "A": {
+        "nonzeros": 17071,
+        "nodes": 3669,
+        "general_product_sites": 3663
+      },
+      "B": {
+        "nonzeros": 22359,
+        "nodes": 4541,
+        "general_product_sites": 4537
+      }
+    },
+    {
+      "registry_slot": 6,
+      "A": {
+        "nonzeros": 11179,
+        "nodes": 3923,
+        "general_product_sites": 3916
+      },
+      "B": {
+        "nonzeros": 14404,
+        "nodes": 3923,
+        "general_product_sites": 3916
+      }
+    },
+    {
+      "registry_slot": 7,
+      "A": {
+        "nonzeros": 9002,
+        "nodes": 1653,
+        "general_product_sites": 1648
+      },
+      "B": {
+        "nonzeros": 11203,
+        "nodes": 1857,
+        "general_product_sites": 1853
+      }
+    },
+    {
+      "registry_slot": 8,
+      "A": {
+        "nonzeros": 9423,
+        "nodes": 882,
+        "general_product_sites": 875
+      },
+      "B": {
+        "nonzeros": 13983,
+        "nodes": 928,
+        "general_product_sites": 924
+      }
+    },
+    {
+      "registry_slot": 9,
+      "A": {
+        "nonzeros": 27251212,
+        "nodes": 677865,
+        "general_product_sites": 677850
+      },
+      "B": {
+        "nonzeros": 17191286,
+        "nodes": 458053,
+        "general_product_sites": 458037
+      }
+    },
+    {
+      "registry_slot": 10,
+      "A": {
+        "nonzeros": 6044,
+        "nodes": 1335,
+        "general_product_sites": 1330
+      },
+      "B": {
+        "nonzeros": 7329,
+        "nodes": 1136,
+        "general_product_sites": 1132
+      }
+    },
+    {
+      "registry_slot": 11,
+      "A": {
+        "nonzeros": 6016,
+        "nodes": 181,
+        "general_product_sites": 177
+      },
+      "B": {
+        "nonzeros": 6016,
+        "nodes": 176,
+        "general_product_sites": 172
+      }
+    },
+    {
+      "registry_slot": 12,
+      "A": {
+        "nonzeros": 3945,
+        "nodes": 1015,
+        "general_product_sites": 1009
+      },
+      "B": {
+        "nonzeros": 5303,
+        "nodes": 1679,
+        "general_product_sites": 1675
+      }
+    },
+    {
+      "registry_slot": 13,
+      "A": {
+        "nonzeros": 5546,
+        "nodes": 1394,
+        "general_product_sites": 1388
+      },
+      "B": {
+        "nonzeros": 3987,
+        "nodes": 1209,
+        "general_product_sites": 1205
+      }
+    },
+    {
+      "registry_slot": 14,
+      "A": {
+        "nonzeros": 5546,
+        "nodes": 1405,
+        "general_product_sites": 1398
+      },
+      "B": {
+        "nonzeros": 3987,
+        "nodes": 1208,
+        "general_product_sites": 1204
+      }
+    },
+    {
+      "registry_slot": 15,
+      "A": {
+        "nonzeros": 5546,
+        "nodes": 1397,
+        "general_product_sites": 1391
+      },
+      "B": {
+        "nonzeros": 3987,
+        "nodes": 1209,
+        "general_product_sites": 1205
+      }
+    },
+    {
+      "registry_slot": 16,
+      "A": {
+        "nonzeros": 5546,
+        "nodes": 1397,
+        "general_product_sites": 1391
+      },
+      "B": {
+        "nonzeros": 3987,
+        "nodes": 1209,
+        "general_product_sites": 1205
+      }
+    },
+    {
+      "registry_slot": 17,
+      "A": {
+        "nonzeros": 5550,
+        "nodes": 1405,
+        "general_product_sites": 1398
+      },
+      "B": {
+        "nonzeros": 3987,
+        "nodes": 1208,
+        "general_product_sites": 1204
+      }
+    },
+    {
+      "registry_slot": 18,
+      "A": {
+        "nonzeros": 2365,
+        "nodes": 1070,
+        "general_product_sites": 1065
+      },
+      "B": {
+        "nonzeros": 1599,
+        "nodes": 675,
+        "general_product_sites": 671
+      }
+    },
+    {
+      "registry_slot": 19,
+      "A": {
+        "nonzeros": 768,
+        "nodes": 43,
+        "general_product_sites": 39
+      },
+      "B": {
+        "nonzeros": 768,
+        "nodes": 43,
+        "general_product_sites": 39
+      }
+    },
+    {
+      "registry_slot": 20,
+      "A": {
+        "nonzeros": 515,
+        "nodes": 277,
+        "general_product_sites": 273
+      },
+      "B": {
+        "nonzeros": 486,
+        "nodes": 180,
+        "general_product_sites": 176
+      }
+    },
+    {
+      "registry_slot": 21,
+      "A": {
+        "nonzeros": 508,
+        "nodes": 161,
+        "general_product_sites": 157
+      },
+      "B": {
+        "nonzeros": 508,
+        "nodes": 137,
+        "general_product_sites": 133
+      }
+    },
+    {
+      "registry_slot": 22,
+      "A": {
+        "nonzeros": 193,
+        "nodes": 71,
+        "general_product_sites": 67
+      },
+      "B": {
+        "nonzeros": 193,
+        "nodes": 52,
+        "general_product_sites": 48
+      }
+    }
+  ],
+  "structure": {
+    "nonzeros": 24033,
+    "nodes": 23469,
+    "constant_nodes": 7881,
+    "coordinates": 20,
+    "general_product_sites": 9358
+  },
+  "jagged": {
+    "nonzeros": 32768,
+    "nodes": 19007,
+    "constant_nodes": 2,
+    "coordinates": 49,
+    "general_product_sites": 19003
+  },
+  "cost_interpretation": {
+    "general_product_site": "A Shannon branch with at least one nonliteral-constant child; a Davio branch with a nonliteral-constant slope. This is static program classification, not an emitted R1CS/PLONK census.",
+    "isolated_fresh_private_input_f128_multiplication_constraints": 5696,
+    "reference_product_cost": 8553085120,
+    "reference_scope": "Product sites times the current isolated general multiplication cost, excluding input allocation, additions, constants, point bindings, claims, and the rest of the verifier. Operand aliases/partial constant propagation may change emitted gadget costs. This is neither a measured complete-closure constraint count nor an unconditional lower bound.",
+    "conclusion": "The default diagram encoding is not admitted for a full terminal proving run. Structural formulas and further complete-verifier cost reduction are required."
+  },
+  "actual_table_component": {
+    "registry_slot": 19,
+    "side": "A",
+    "nonzeros": 768,
+    "nodes": 43,
+    "point_coordinates": 20,
+    "command": "ulimit -v 33554432 && RAYON_NUM_THREADS=4 timeout 180 cargo test --release --locked --manifest-path flock-stage4/Cargo.toml -p ixby-stage4-exec actual_registry_table_materialization_matches_native -- --ignored --test-threads=1 --nocapture",
+    "exit_code": 0,
+    "test_duration_seconds": 6.28,
+    "r1cs": {
+      "public_variables": 0,
+      "private_variables": 229797,
+      "constraints": 230853,
+      "nonzero_terms": 1068466
+    },
+    "satisfying_assignment_checked": true,
+    "shape_equal_at_two_points": true,
+    "mutated_claim_bits_rejected": [
+      0,
+      127
+    ],
+    "scope": "Only the exact fixed-table gadget, twenty private point coordinates, and one private claimed value with equality constraints. The native bilinear evaluator supplies the test oracle, not an accepted relation hint. Not the closed Exec relation, a terminal key, or a FFLONK proof."
+  },
+  "bounded_rewrite_experiments": {
+    "adopted_by_default": false,
+    "reproduction": "RAYON_NUM_THREADS=4 timeout 240 cargo test --release --locked --manifest-path flock-stage4/Cargo.toml -p ixby-stage4-exec fixed_root_table_davio_census -- --ignored --test-threads=1 --nocapture",
+    "per_table_limits": {
+      "working_shannon_nodes": 4000000,
+      "emitted_davio_nodes": 2000000,
+      "xor_calls": 20000000
+    },
+    "native_check": "Every successful rewrite was compared against the native table at the same two non-Boolean points. Reaching a hard bound is a failed optimization attempt, not successful compilation of that table.",
+    "representative_nodes": [
+      {
+        "table": "Boolean 3 A",
+        "shannon": 4423,
+        "positive_davio": 1397418,
+        "mixed_davio": 472251
+      },
+      {
+        "table": "Boolean 19 A and B, each",
+        "shannon": 43,
+        "positive_davio": 40,
+        "mixed_davio": 35
+      },
+      {
+        "table": "structure",
+        "shannon": 23469,
+        "positive_davio": 70296,
+        "mixed_davio": 19762
+      }
+    ],
+    "mixed_node_limit_failures": [
+      "Boolean 0 A",
+      "Boolean 0 B",
+      "Boolean 1 A",
+      "Boolean 1 B",
+      "Boolean 2 A",
+      "Boolean 2 B",
+      "Boolean 9 A",
+      "Boolean 9 B",
+      "jagged"
+    ],
+    "conclusion": "Most successful rewrites grow substantially; the small structure/slot-19 savings do not solve the dominant costs."
+  },
+  "variable_order_experiment": {
+    "reproduction": "RAYON_NUM_THREADS=4 timeout 180 cargo test --release --locked --manifest-path flock-stage4/Cargo.toml -p ixby-stage4-exec fixed_root_table_variable_order_census -- --ignored --test-threads=1 --nocapture",
+    "per_table_limits": {
+      "source_entries": 32000000,
+      "nodes": 2000000
+    },
+    "orders": [
+      "row-msb/col-msb",
+      "col-msb/row-msb",
+      "row-lsb/col-lsb",
+      "col-lsb/row-lsb",
+      "interleaved-lsb",
+      "interleaved-msb"
+    ],
+    "node_counts": [
+      {
+        "table": "Boolean 0 A",
+        "nodes": [
+          1978302,
+          1474452,
+          1532075,
+          1501170,
+          630644,
+          100224
+        ]
+      },
+      {
+        "table": "Boolean 0 B",
+        "nodes": [
+          947741,
+          1315269,
+          1039899,
+          889110,
+          617793,
+          115460
+        ]
+      },
+      {
+        "table": "Boolean 9 A",
+        "nodes": [
+          1572786,
+          1821124,
+          "NodeLimit",
+          "NodeLimit",
+          "NodeLimit",
+          677865
+        ]
+      },
+      {
+        "table": "Boolean 9 B",
+        "nodes": [
+          1259219,
+          1479958,
+          "NodeLimit",
+          "NodeLimit",
+          "NodeLimit",
+          458053
+        ]
+      }
+    ],
+    "conclusion": "MSB interleaving is the smallest of these six tested orders, not a proof of global optimality."
+  }
+}

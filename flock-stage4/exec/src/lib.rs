@@ -8,6 +8,7 @@ mod blueprint;
 mod census;
 mod native;
 pub mod replay;
+mod root_tables;
 mod setup;
 
 pub use census::{
@@ -15,6 +16,7 @@ pub use census::{
   census_exec_replay_observed,
 };
 pub use native::{ExecReplayWitness, compile_exec_binding, replay_exec};
+pub use root_tables::{CompiledExecRootTables, compile_exec_root_tables};
 pub use setup::{
   CompiledExecReplay, ExecReplayIdentitiesV0, compile_exec_replay,
 };

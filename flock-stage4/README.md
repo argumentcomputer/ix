@@ -22,8 +22,9 @@ Tests include strict scalar/curve/subgroup decoding, invalid SRS/key rejection,
 nonzero blinding admission, authenticated scratch corruption, and identical
 proof/key results across memory and file backends for fixed test randomness.
 Small proofs use development setup and randomness, not production security.
-The generic replay addition passes 164 ordinary tests (88 FFLONK, 20 trace,
-46 circuit, 10 replay/setup); three heavyweight tests remain opt-in.
+The generic replay and fixed-table prototypes pass 173 ordinary tests
+(88 FFLONK, 24 trace, 48 circuit, 13 replay/setup); seven heavier native,
+materialization, and census/optimization tests remain opt-in.
 
 ## Generic Exec replay
 
@@ -72,6 +73,27 @@ file-key/SRS/FFT resident payload minimum before several excluded costs.
 The [retained report](census/exec-scalar-root-conditional-v0.json) records exact
 counts and scope. Cost reduction and root closure are required; no expensive
 terminal-prover or SRS job has been launched.
+
+## Exact fixed-root table prototype
+
+`exec::compile_exec_root_tables` derives immutable decision diagrams from the
+approved registry, complete eight-plane circuit structure, and jagged layout.
+The neutral `constrain_f128_fixed_table` gadget evaluates their exact
+multilinear extensions at constrained point wires. It accepts no table-value
+hint. This is a standalone prototype: the root-conditional composition above
+has not been changed, and the final point/value/identity connections remain
+required before root closure can be claimed.
+
+All 48 tables match the native evaluators at two non-Boolean points. One actual
+registry-table gadget was materialized and checked at two points with identical
+R1CS matrices; claimed-value mutations fail. Its 230,853 constraints are a
+component measurement, not the full relation's cost. The complete diagram
+census has 1,515,960 nodes and 1,501,595 general product sites. The bounded
+cofactor-XOR rewrites mostly grow or hit their limits; none is adopted by the
+default compiler. See the [prototype census](census/exec-fixed-root-table-prototype-v0.json)
+for exact counts, bounds, reproduction commands, and failed alternatives.
+Structural formulas and further verifier cost reduction are needed before
+full terminal proving can be admitted.
 
 See [generic replay and remaining gates](../docs/IxbyStage4Replay.md).
 `EXEC-REPLAY-PROVENANCE.json` records the donor hashes before this port,
