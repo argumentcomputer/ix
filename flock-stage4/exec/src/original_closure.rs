@@ -13,8 +13,9 @@ use ix_stage4_trace::{
   F128StructuredMatricesV0,
 };
 use ix_terminal_circuit::{
-  ExecOriginalClaimsClosedOutputV0, R1csBuilder, Stage4PublicInputsV1,
-  constrain_exec_original_claims_closed, validate_exec_original_claim_tables,
+  ExecOriginalClaimsClosedOutputV0, F128PreparedProductV1, R1csBuilder,
+  Stage4PublicInputsV1, constrain_exec_original_claims_closed,
+  validate_exec_original_claim_tables,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -27,7 +28,7 @@ pub struct ExecOriginalClosureLimitsV0 {
   pub jagged: F128JaggedDirectLimitsV0,
 }
 
-/// Explicit proof-free implementation selection. Neither variant changes
+/// Explicit proof-free implementation selection. No variant changes
 /// the Flock protocol, original claims, fixed tables, or query schedule.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ExecOriginalClosureArithmeticV0 {
@@ -35,6 +36,8 @@ pub enum ExecOriginalClosureArithmeticV0 {
   UncachedV0,
   /// Exact-wire, insertion-order FIFO; at most 1024 prepared operands.
   PreparedF128Fifo1024V0,
+  /// The same bounded cache with exact polynomial-range carry constraints.
+  PreparedRangedF128Fifo1024V1,
 }
 
 /// No public constructor, replacement fields, or prover-selected programs.
@@ -62,10 +65,16 @@ impl<'r, 's> CompiledExecOriginalClaimsClosure<'r, 's> {
     hash.update(&self.tables.digest());
     // Preserve the existing uncached composition byte-for-byte. The new
     // implementation has its own tagged identity before any guest exists.
-    if self.arithmetic
-      == ExecOriginalClosureArithmeticV0::PreparedF128Fifo1024V0
-    {
-      hash.update(b"\0F128/prepared-operands/fifo/1024/v0\0");
+    match self.arithmetic {
+      ExecOriginalClosureArithmeticV0::UncachedV0 => {},
+      ExecOriginalClosureArithmeticV0::PreparedF128Fifo1024V0 => {
+        hash.update(b"\0F128/prepared-operands/fifo/1024/v0\0");
+      },
+      ExecOriginalClosureArithmeticV0::PreparedRangedF128Fifo1024V1 => {
+        hash.update(
+          b"\0F128/prepared-operands/fifo/1024/polynomial-carries/v1\0",
+        );
+      },
     }
     *hash.finalize().as_bytes()
   }
@@ -93,10 +102,17 @@ impl<'r, 's> CompiledExecOriginalClaimsClosure<'r, 's> {
       builder.f128_preparation_cache_capacity().is_none(),
       "original-claim arithmetic must be selected by the approved composition"
     );
-    if self.arithmetic
-      == ExecOriginalClosureArithmeticV0::PreparedF128Fifo1024V0
-    {
-      builder.enable_f128_preparation_cache(1024)?;
+    match self.arithmetic {
+      ExecOriginalClosureArithmeticV0::UncachedV0 => {},
+      ExecOriginalClosureArithmeticV0::PreparedF128Fifo1024V0 => {
+        builder.enable_f128_preparation_cache(1024)?;
+      },
+      ExecOriginalClosureArithmeticV0::PreparedRangedF128Fifo1024V1 => {
+        builder.enable_f128_preparation_cache_with_product(
+          1024,
+          F128PreparedProductV1::PolynomialCarriesV1,
+        )?;
+      },
     }
     Ok(())
   }

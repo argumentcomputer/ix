@@ -22,8 +22,8 @@ Tests include strict scalar/curve/subgroup decoding, invalid SRS/key rejection,
 nonzero blinding admission, authenticated scratch corruption, and identical
 proof/key results across memory and file backends for fixed test randomness.
 Small proofs use development setup and randomness, not production security.
-The generic replay and root-closure/setup prototypes pass 244 ordinary tests
-(90 FFLONK, 48 trace, 86 circuit, 17 replay/setup); thirty-five heavier native,
+The generic replay and root-closure/setup prototypes pass 253 ordinary tests
+(95 FFLONK, 48 trace, 93 circuit, 17 replay/setup); thirty-seven heavier native,
 materialization, and census/optimization tests remain opt-in.
 
 ## Generic Exec replay
@@ -376,6 +376,25 @@ the supported domain. At the first closure row, the main-verifier boundary
 uses 20,783,679 fewer PLONK rows than the uncached version, but the complete
 count and assigned census remain unavailable. Further arithmetic reduction
 is required; the optimization is not a domain-fit or proving result.
+
+## Exact polynomial-range multiplication carries
+
+`PreparedRangedF128Fifo1024V1` selects a separate arithmetic identity, retaining
+the same original claims, fixed tables, query schedule and bounded FIFO cache.
+Each radix-32 convolution digit now uses one Boolean parity wire and one
+carry constrained to its exact small integer range by a factored vanishing
+polynomial. Every digit remains below 32 and both packed sides below the Fr
+modulus, so no integer-carry or field-wrap alias is introduced. Operand
+preparation, Karatsuba reconstruction and field reduction are unchanged.
+
+The [component report](census/f128-polynomial-carries-v1.json) records a
+918-row saving per dense F128 multiplication: 9,516 → 8,598 for a single
+prepared product, and 34,716 → 31,044 for a four-product 2×2 grid. Setup and
+assigned counts agree. Tests symbolically eliminate the actual range
+constraints and compare the resulting polynomial coefficients; materialized
+tests reject altered parity, carry, product-auxiliary, input and output wires.
+This does not establish whole-relation fit, a terminal key, or a full proof.
+The earlier Boolean-carry and uncached modes retain their geometry/identities.
 
 ## File-key storage with derived C0 and sigma evaluations
 

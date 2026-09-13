@@ -9,21 +9,41 @@ use std::collections::VecDeque;
 /// Hard per-builder bound for the optional operand-preparation cache.
 pub const F128_PREPARATION_CACHE_MAX_CAPACITY: usize = 1024;
 
+/// Explicit product encoding: preparation is identical, but the product
+/// constraints and hence the circuit identity differ. The default preserves
+/// the original Boolean-carry geometry byte for byte.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum F128PreparedProductV1 {
+  #[default]
+  BooleanCarriesV0,
+  PolynomialCarriesV1,
+}
+
 /// The queue alone determines eviction; randomized map iteration is never
 /// used to choose circuit topology. Keys are exact bit WIRES, not values.
 pub(crate) struct F128PreparationCache {
   capacity: usize,
+  encoding: F128PreparedProductV1,
   order: VecDeque<[Variable; F128_BITS]>,
   operands: HashMap<[Variable; F128_BITS], Arc<F128PreparedOperandV0>>,
 }
 
 impl F128PreparationCache {
-  pub(crate) fn new(capacity: usize) -> Self {
-    Self { capacity, order: VecDeque::new(), operands: HashMap::new() }
+  pub(crate) fn new(capacity: usize, encoding: F128PreparedProductV1) -> Self {
+    Self {
+      capacity,
+      encoding,
+      order: VecDeque::new(),
+      operands: HashMap::new(),
+    }
   }
 
   pub(crate) fn capacity(&self) -> usize {
     self.capacity
+  }
+
+  pub(crate) fn encoding(&self) -> F128PreparedProductV1 {
+    self.encoding
   }
 
   fn get(
@@ -148,6 +168,24 @@ pub fn constrain_f128_multiply_prepared(
   right: &F128PreparedOperandV0,
   phase: ConstraintPhase,
 ) -> Result<F128VariablesV1, R1csError> {
+  constrain_f128_multiply_prepared_with_product(
+    builder,
+    left,
+    right,
+    F128PreparedProductV1::BooleanCarriesV0,
+    phase,
+  )
+}
+
+/// Multiply using an explicitly selected exact carry encoding. This does
+/// not alter a builder's default arithmetic or optional operand cache.
+pub fn constrain_f128_multiply_prepared_with_product(
+  builder: &mut R1csBuilder,
+  left: &F128PreparedOperandV0,
+  right: &F128PreparedOperandV0,
+  encoding: F128PreparedProductV1,
+  phase: ConstraintPhase,
+) -> Result<F128VariablesV1, R1csError> {
   builder.check_status()?;
   if left.source.constant
     || right.source.constant
@@ -164,7 +202,8 @@ pub fn constrain_f128_multiply_prepared(
     return Err(R1csError::InternalShape);
   }
   let mut cursor = 0;
-  let product = multiply(builder, left, right, F128_BITS, &mut cursor, phase)?;
+  let product =
+    multiply(builder, left, right, F128_BITS, &mut cursor, encoding, phase)?;
   if cursor != 27 {
     return Err(R1csError::InternalShape);
   }
@@ -185,25 +224,35 @@ fn multiply(
   right: &F128PreparedOperandV0,
   width: usize,
   cursor: &mut usize,
+  encoding: F128PreparedProductV1,
   phase: ConstraintPhase,
 ) -> Result<Vec<BitWire>, R1csError> {
   if width == PACKED_PRODUCT_BITS {
     let a = &left.leaves[*cursor];
     let b = &right.leaves[*cursor];
     *cursor += 1;
-    return packed_polynomial_product_with_prepared(
-      builder,
-      &a.bits,
-      &b.bits,
-      Some(a.packed),
-      Some(b.packed),
-      phase,
-    );
+    return match encoding {
+      F128PreparedProductV1::BooleanCarriesV0 => {
+        packed_polynomial_product_with_prepared(
+          builder,
+          &a.bits,
+          &b.bits,
+          Some(a.packed),
+          Some(b.packed),
+          phase,
+        )
+      },
+      F128PreparedProductV1::PolynomialCarriesV1 => {
+        ranged::packed_polynomial_product_ranged(
+          builder, &a.bits, &b.bits, a.packed, b.packed, phase,
+        )
+      },
+    };
   }
   let half = width / 2;
-  let low = multiply(builder, left, right, half, cursor, phase)?;
-  let high = multiply(builder, left, right, half, cursor, phase)?;
-  let sum = multiply(builder, left, right, half, cursor, phase)?;
+  let low = multiply(builder, left, right, half, cursor, encoding, phase)?;
+  let high = multiply(builder, left, right, half, cursor, encoding, phase)?;
+  let sum = multiply(builder, left, right, half, cursor, encoding, phase)?;
   let mut output = vec![BitWire::constant(false); 2 * width - 1];
   output[..low.len()].clone_from_slice(&low);
   output[width..].clone_from_slice(&high);

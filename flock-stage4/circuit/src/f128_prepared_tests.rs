@@ -25,6 +25,14 @@ fn fixture(
   builder: &mut R1csBuilder,
   seed: u128,
 ) -> (Vec<F128VariablesV1>, Vec<Variable>) {
+  fixture_with_product(builder, seed, F128PreparedProductV1::BooleanCarriesV0)
+}
+
+fn fixture_with_product(
+  builder: &mut R1csBuilder,
+  seed: u128,
+  encoding: F128PreparedProductV1,
+) -> (Vec<F128VariablesV1>, Vec<Variable>) {
   let inputs = (0..4)
     .map(|index| {
       alloc_f128_private(
@@ -49,10 +57,11 @@ fn fixture(
   let mut outputs = inputs.clone();
   for a in 0..2 {
     for b in 2..4 {
-      let result = constrain_f128_multiply_prepared(
+      let result = constrain_f128_multiply_prepared_with_product(
         builder,
         &prepared[a],
         &prepared[b],
+        encoding,
         PHASE,
       )
       .unwrap();
@@ -64,6 +73,118 @@ fn fixture(
     }
   }
   (outputs, packed)
+}
+
+#[test]
+fn ranged_prepared_products_have_fixed_geometry_and_bind_words_and_packs() {
+  let mut first = None;
+  for seed in [0, 0x81a7_bd49_6910_e87f_251d_03bf_812a_3495, u128::MAX] {
+    let mut builder = R1csBuilder::new();
+    let (words, packed) = fixture_with_product(
+      &mut builder,
+      seed,
+      F128PreparedProductV1::PolynomialCarriesV1,
+    );
+    let (r1cs, witness) = builder.finish().unwrap();
+    assert_eq!(packed.len(), 4 * 27);
+    for variable in words
+      .iter()
+      .flat_map(|word| word.bit_variables().iter().copied())
+      .chain(packed)
+    {
+      let mut corrupt = witness.clone();
+      corrupt
+        .set(
+          variable,
+          witness.assignment()[variable.index() as usize] + Fr::ONE,
+        )
+        .unwrap();
+      assert!(r1cs.check(&corrupt).is_err());
+    }
+    if let Some(expected) = &first {
+      assert_eq!(&r1cs, expected);
+    } else {
+      first = Some(r1cs);
+    }
+  }
+  let mut builder = R1csBuilder::new_shape(R1csShapeLimitsV0 {
+    variables: 100_000,
+    constraints: 100_000,
+    nonzero_terms: 1_000_000,
+  })
+  .unwrap();
+  fixture_with_product(
+    &mut builder,
+    0,
+    F128PreparedProductV1::PolynomialCarriesV1,
+  );
+  assert_eq!(builder.finish_shape().unwrap(), first.unwrap());
+}
+
+#[test]
+fn ranged_encoding_preserves_constant_square_and_default_product_paths() {
+  for encoding in [
+    F128PreparedProductV1::BooleanCarriesV0,
+    F128PreparedProductV1::PolynomialCarriesV1,
+  ] {
+    for seed in [0u128, 0x29f0_b18d_a037_6612_4572_7810_0abc_249a] {
+      let mut builder = R1csBuilder::new();
+      let input =
+        alloc_f128_private(&mut builder, seed.to_le_bytes(), PHASE).unwrap();
+      let prepared = prepare_f128_operand(&mut builder, &input, PHASE).unwrap();
+      for raw in [0u128, 1, 2, u128::MAX] {
+        let constant =
+          alloc_f128_constant(&mut builder, raw.to_le_bytes(), PHASE).unwrap();
+        let constant =
+          prepare_f128_operand(&mut builder, &constant, PHASE).unwrap();
+        for (left, right) in [
+          (&prepared, &constant),
+          (&constant, &prepared),
+          (&prepared, &prepared),
+        ] {
+          let out = constrain_f128_multiply_prepared_with_product(
+            &mut builder,
+            left,
+            right,
+            encoding,
+            PHASE,
+          )
+          .unwrap();
+          assert_eq!(
+            *out.value(),
+            oracle(*left.source.value(), *right.source.value())
+          );
+        }
+      }
+      builder.finish().unwrap();
+    }
+  }
+  let mut expected = None;
+  for explicit in [false, true] {
+    let mut builder = R1csBuilder::new();
+    let a = alloc_f128_private(&mut builder, [19; 16], PHASE).unwrap();
+    let b = alloc_f128_private(&mut builder, [71; 16], PHASE).unwrap();
+    let a = prepare_f128_operand(&mut builder, &a, PHASE).unwrap();
+    let b = prepare_f128_operand(&mut builder, &b, PHASE).unwrap();
+    if explicit {
+      constrain_f128_multiply_prepared_with_product(
+        &mut builder,
+        &a,
+        &b,
+        F128PreparedProductV1::default(),
+        PHASE,
+      )
+      .unwrap();
+    } else {
+      constrain_f128_multiply_prepared(&mut builder, &a, &b, PHASE).unwrap();
+    }
+    let result = builder.finish().unwrap();
+    if let Some(expected) = &expected {
+      assert_eq!(&result, expected);
+    } else {
+      expected = Some(result);
+    }
+  }
 }
 
 #[test]
@@ -369,4 +490,72 @@ fn disabled_cache_keeps_the_original_materialized_relation() {
     builder.finish().unwrap().0
   }
   assert_eq!(emit(false), emit(true));
+}
+
+#[test]
+fn ranged_cache_is_value_independent_bounded_and_configuration_is_locked() {
+  let encoding = F128PreparedProductV1::PolynomialCarriesV1;
+  let pairs = [(0, 1), (0, 2), (0, 1), (2, 3), (3, 2), (0, 1)];
+  for capacity in [1, 2, 4] {
+    let mut expected = None;
+    for seed in [0u128, 1, u128::MAX] {
+      let mut builder = R1csBuilder::new();
+      assert_eq!(builder.f128_prepared_product_encoding(), None);
+      builder
+        .enable_f128_preparation_cache_with_product(capacity, encoding)
+        .unwrap();
+      assert_eq!(builder.f128_prepared_product_encoding(), Some(encoding));
+      assert_eq!(
+        builder.enable_f128_preparation_cache(2),
+        Err(R1csError::BuilderConfigurationLocked)
+      );
+      assert_eq!(builder.f128_prepared_product_encoding(), Some(encoding));
+      let (words, packed) = cached_fixture(&mut builder, seed, &pairs);
+      let (r1cs, witness) = builder.finish().unwrap();
+      for variable in words
+        .iter()
+        .flat_map(|word| word.bit_variables().iter().copied())
+        .chain(packed)
+      {
+        let mut corrupt = witness.clone();
+        corrupt
+          .set(
+            variable,
+            witness.assignment()[variable.index() as usize] + Fr::ONE,
+          )
+          .unwrap();
+        assert!(r1cs.check(&corrupt).is_err());
+      }
+      if let Some(expected) = &expected {
+        assert_eq!(&r1cs, expected);
+      } else {
+        expected = Some(r1cs);
+      }
+    }
+    let mut builder = crate::r1cs::test_shape_builder();
+    builder
+      .enable_f128_preparation_cache_with_product(capacity, encoding)
+      .unwrap();
+    cached_fixture(&mut builder, 0, &pairs);
+    assert_eq!(builder.finish_shape().unwrap(), expected.unwrap());
+  }
+  for mut builder in [
+    R1csBuilder::new(),
+    crate::r1cs::test_shape_builder(),
+    R1csBuilder::new_projection(),
+    R1csBuilder::new_shape_projection(),
+  ] {
+    for capacity in [0, F128_PREPARATION_CACHE_MAX_CAPACITY + 1, usize::MAX] {
+      assert_eq!(
+        builder.enable_f128_preparation_cache_with_product(capacity, encoding),
+        Err(R1csError::InvalidF128PreparationCacheCapacity { capacity })
+      );
+      assert_eq!(builder.f128_prepared_product_encoding(), None);
+    }
+    builder.enforce_zero(PHASE, LinearCombination::zero());
+    assert_eq!(
+      builder.enable_f128_preparation_cache_with_product(2, encoding),
+      Err(R1csError::BuilderConfigurationLocked)
+    );
+  }
 }

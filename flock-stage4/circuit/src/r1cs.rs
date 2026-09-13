@@ -448,6 +448,20 @@ impl R1csBuilder {
     &mut self,
     capacity: usize,
   ) -> Result<(), R1csError> {
+    self.enable_f128_preparation_cache_with_product(
+      capacity,
+      crate::F128PreparedProductV1::BooleanCarriesV0,
+    )
+  }
+
+  /// As above, also pinning the product's carry encoding. Both settings
+  /// become immutable before any allocation or constraint. No runtime
+  /// witness value can switch the arithmetic or the cache policy.
+  pub fn enable_f128_preparation_cache_with_product(
+    &mut self,
+    capacity: usize,
+    encoding: crate::F128PreparedProductV1,
+  ) -> Result<(), R1csError> {
     self.check_status()?;
     let constraints_started = match &self.storage {
       BuilderStorage::Materialized { constraints, .. }
@@ -467,12 +481,18 @@ impl R1csBuilder {
       return Err(R1csError::InvalidF128PreparationCacheCapacity { capacity });
     }
     self.f128_preparations =
-      Some(crate::f128::F128PreparationCache::new(capacity));
+      Some(crate::f128::F128PreparationCache::new(capacity, encoding));
     Ok(())
   }
 
   pub fn f128_preparation_cache_capacity(&self) -> Option<usize> {
     self.f128_preparations.as_ref().map(|cache| cache.capacity())
+  }
+
+  pub fn f128_prepared_product_encoding(
+    &self,
+  ) -> Option<crate::F128PreparedProductV1> {
+    self.f128_preparations.as_ref().map(|cache| cache.encoding())
   }
 
   pub(crate) fn f128_preparation_cache(

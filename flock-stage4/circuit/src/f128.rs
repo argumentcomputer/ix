@@ -9,10 +9,13 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 #[path = "f128_prepared.rs"]
 mod prepared;
+#[path = "f128_ranged.rs"]
+mod ranged;
 pub(crate) use prepared::F128PreparationCache;
 pub use prepared::{
   F128_PREPARATION_CACHE_MAX_CAPACITY, F128PreparedOperandV0,
-  constrain_f128_multiply_prepared, prepare_f128_operand,
+  F128PreparedProductV1, constrain_f128_multiply_prepared,
+  constrain_f128_multiply_prepared_with_product, prepare_f128_operand,
 };
 
 pub const F128_BITS: usize = 128;
@@ -159,10 +162,12 @@ pub fn constrain_f128_multiply(
   if left.bit_variables == right.bit_variables {
     return constrain_f128_frobenius(builder, left, 1, phase);
   }
-  if builder.f128_preparation_cache_capacity().is_some() {
+  if let Some(encoding) = builder.f128_prepared_product_encoding() {
     let left = prepared::cached_prepare_f128_operand(builder, left, phase)?;
     let right = prepared::cached_prepare_f128_operand(builder, right, phase)?;
-    return constrain_f128_multiply_prepared(builder, &left, &right, phase);
+    return constrain_f128_multiply_prepared_with_product(
+      builder, &left, &right, encoding, phase,
+    );
   }
   let left_bits = import_variables(left);
   let right_bits = import_variables(right);

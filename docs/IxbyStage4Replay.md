@@ -701,6 +701,21 @@ rows, including no completed suffix. The first closure-row boundary is
 20,783,679 PLONK rows smaller than the uncached version. This proves a real
 partial cost reduction, not a full circuit fit, complete assignment or proof.
 
+## Exact polynomial-range carries
+
+The separate `PreparedRangedF128Fifo1024V1` composition uses the same bounded
+prepared-operand cache with exact polynomial constraints for convolution
+carries. A Boolean parity wire plus twice one range-constrained carry replaces
+the binary carry digits; the radix and no-wrap bounds are retained. The
+[component evidence](../flock-stage4/census/f128-polynomial-carries-v1.json)
+records a 918-PLONK-row saving per dense product and complete materialized
+setup/assignment equality tests. Symbolic elimination checks the exact roots
+of the emitted range polynomial, and altered-wire tests cover carries and
+all product auxiliaries. This is not a full closed-relation count or proof.
+Its composition digest is
+`158396e249b6f752582f456cc852a55fa994310866bf4f95e3f9f03e3ec7f00e`;
+the prior arithmetic identities and all 70 table obligations are unchanged.
+
 ## Remaining gates
 
 Complete proof-free materialization/key preprocessing at feasible geometry;

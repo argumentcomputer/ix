@@ -55,11 +55,12 @@ pub use exec_relation::{
 };
 pub use f128::{
   F128_BITS, F128_PREPARATION_CACHE_MAX_CAPACITY, F128PreparedOperandV0,
-  F128VariablesV1, alloc_f128_constant, alloc_f128_private,
-  build_f128_multiplication_r1cs, constrain_f128_add, constrain_f128_frobenius,
-  constrain_f128_inverse, constrain_f128_multiply,
+  F128PreparedProductV1, F128VariablesV1, alloc_f128_constant,
+  alloc_f128_private, build_f128_multiplication_r1cs, constrain_f128_add,
+  constrain_f128_frobenius, constrain_f128_inverse, constrain_f128_multiply,
   constrain_f128_multiply_constant, constrain_f128_multiply_prepared,
-  enforce_f128_equal, prepare_f128_operand,
+  constrain_f128_multiply_prepared_with_product, enforce_f128_equal,
+  prepare_f128_operand,
 };
 pub use fixed_table::constrain_f128_fixed_table;
 pub use fixed_table_basis::constrain_f128_fixed_table_basis;

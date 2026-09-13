@@ -334,6 +334,12 @@ fn packed_small_whole_prepared_original_claims_closed_census() {
   whole_census(ExecOriginalClosureArithmeticV0::PreparedF128Fifo1024V0);
 }
 
+#[test]
+#[ignore = "bounded WHOLE prepared/ranged-F128 closed setup census, followed by whole native replay census ONLY if setup fits; not materialization, key or proof"]
+fn packed_small_whole_ranged_original_claims_closed_census() {
+  whole_census(ExecOriginalClosureArithmeticV0::PreparedRangedF128Fifo1024V1);
+}
+
 fn whole_census(arithmetic: ExecOriginalClosureArithmeticV0) {
   let started = Instant::now();
   let setup = setup();
@@ -433,6 +439,18 @@ fn whole_census(arithmetic: ExecOriginalClosureArithmeticV0) {
 #[test]
 #[ignore = "bounded prepared-F128 setup ownership and actual native Exec replay prefixes; not whole census, terminal key or proof"]
 fn packed_small_prepared_original_closure_owns_arithmetic_for_both_emitters() {
+  owns_arithmetic(ExecOriginalClosureArithmeticV0::PreparedF128Fifo1024V0);
+}
+
+#[test]
+#[ignore = "bounded ranged-F128 setup ownership and actual native Exec replay prefixes; not whole census, terminal key or proof"]
+fn packed_small_ranged_original_closure_owns_arithmetic_for_both_emitters() {
+  owns_arithmetic(
+    ExecOriginalClosureArithmeticV0::PreparedRangedF128Fifo1024V1,
+  );
+}
+
+fn owns_arithmetic(arithmetic: ExecOriginalClosureArithmeticV0) {
   let setup = setup();
   let replay = compile_exec_replay(&setup).unwrap();
   let plain =
@@ -440,11 +458,12 @@ fn packed_small_prepared_original_closure_owns_arithmetic_for_both_emitters() {
   let prepared = compile_exec_original_claims_closure_with_arithmetic(
     &replay,
     DIRECT_LIMITS,
-    ExecOriginalClosureArithmeticV0::PreparedF128Fifo1024V0,
+    arithmetic,
   )
   .unwrap();
   assert_eq!(plain.arithmetic(), ExecOriginalClosureArithmeticV0::UncachedV0);
   assert_ne!(plain.digest(), prepared.digest());
+  assert_eq!(prepared.arithmetic(), arithmetic);
   assert_eq!(plain.tables(), prepared.tables());
   assert_eq!(
     plain.setup_source_slots().unwrap(),
@@ -454,15 +473,33 @@ fn packed_small_prepared_original_closure_owns_arithmetic_for_both_emitters() {
   let prefix = captured_prefix(true, |builder| {
     let result = prepared.emit_setup(builder, bytes);
     assert_eq!(builder.f128_preparation_cache_capacity(), Some(1024));
+    assert_eq!(
+      builder.f128_prepared_product_encoding(),
+      Some(match arithmetic {
+        ExecOriginalClosureArithmeticV0::PreparedF128Fifo1024V0 =>
+          ix_terminal_circuit::F128PreparedProductV1::BooleanCarriesV0,
+        ExecOriginalClosureArithmeticV0::PreparedRangedF128Fifo1024V1 =>
+          ix_terminal_circuit::F128PreparedProductV1::PolynomialCarriesV1,
+        ExecOriginalClosureArithmeticV0::UncachedV0 =>
+          panic!("this test selects cached arithmetic"),
+      })
+    );
     result
   });
   let empty = R1csBuilder::new_shape_projection().finish_projection().unwrap();
   for capacity in [1, 1024] {
-    for closure in [&plain, &prepared] {
-      let mut builder = R1csBuilder::new_shape_projection();
-      builder.enable_f128_preparation_cache(capacity).unwrap();
-      assert!(closure.emit_setup(&mut builder, bytes).is_err());
-      assert_eq!(builder.finish_projection().unwrap(), empty);
+    for encoding in [
+      ix_terminal_circuit::F128PreparedProductV1::BooleanCarriesV0,
+      ix_terminal_circuit::F128PreparedProductV1::PolynomialCarriesV1,
+    ] {
+      for closure in [&plain, &prepared] {
+        let mut builder = R1csBuilder::new_shape_projection();
+        builder
+          .enable_f128_preparation_cache_with_product(capacity, encoding)
+          .unwrap();
+        assert!(closure.emit_setup(&mut builder, bytes).is_err());
+        assert_eq!(builder.finish_projection().unwrap(), empty);
+      }
     }
   }
   let mut builder = R1csBuilder::new_shape_projection();
@@ -481,6 +518,21 @@ fn packed_small_prepared_original_closure_owns_arithmetic_for_both_emitters() {
   for (literal, value) in [(false, false), (false, true), (true, false)] {
     let (commitments, public, proof) = prove(&setup, literal, value);
     let witness = replay.replay(commitments, &proof).unwrap();
+    // Preconfigured arithmetic is also rejected by the assigned emitter,
+    // before any constraint or allocation, for both available encodings.
+    for encoding in [
+      ix_terminal_circuit::F128PreparedProductV1::BooleanCarriesV0,
+      ix_terminal_circuit::F128PreparedProductV1::PolynomialCarriesV1,
+    ] {
+      for closure in [&plain, &prepared] {
+        let mut builder = R1csBuilder::new_projection();
+        builder
+          .enable_f128_preparation_cache_with_product(1024, encoding)
+          .unwrap();
+        assert!(closure.constrain(&mut builder, public, &witness).is_err());
+        assert_eq!(builder.finish_projection().unwrap(), empty);
+      }
+    }
     assert_eq!(
       captured_prefix(false, |builder| {
         let result = prepared.constrain(builder, public, &witness).map(|_| ());
@@ -504,7 +556,7 @@ fn packed_small_prepared_original_closure_owns_arithmetic_for_both_emitters() {
     }
   }
   eprintln!(
-    "prepared arithmetic ownership, rejected ambient cache selection, and 3 native/setup PREFIX comparisons PASS; composition={}; tables={}; not complete census/key/proof",
+    "{arithmetic:?} ownership, rejected ambient cache selection, and 3 native/setup PREFIX comparisons PASS; composition={}; tables={}; not complete census/key/proof",
     blake3::Hash::from(prepared.digest()),
     blake3::Hash::from(prepared.tables().digest()),
   );
