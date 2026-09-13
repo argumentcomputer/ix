@@ -6,6 +6,7 @@ import Compilatrix.UniqueReuse.RuntimeNative
 import Compilatrix.UniqueReuse.NativeObservations
 import Compilatrix.X86.RuntimeExecution
 import Compilatrix.X86.RuntimeInput
+import Compilatrix.X86.DecodeWindow
 
 /-! Finite regression evidence for the independent decoder and byte evaluator.
 The universal local laws live in EncodeExecution/ByteBranch/ByteCall. This gate
@@ -61,8 +62,11 @@ private def instructionCase (target : Checked) (instruction : Instr) (core : Cor
   let text := Encode.bytes [0xaa, 0xbb] ++ bytes ++ Encode.bytes [0xc3, 0xff]
   need (Decode.decodeAt text 2 == some ⟨Encode.instructionOperation instruction, bytes.size⟩)
     s!"decode or length: {repr instruction}"
+  need (Decode.decodeWindowAt text 2 == Decode.decodeAt text 2)
+    s!"bounded decode or length: {repr instruction}"
   for cut in [:bytes.size] do
     need ((Decode.decodeAt (bytes.extract 0 cut) 0).isNone) s!"accepted truncated form: {repr instruction}, {cut}"
+    need ((Decode.decodeWindowAt (bytes.extract 0 cut) 0).isNone) s!"bounded decoder accepted truncated form: {repr instruction}, {cut}"
   if Encode.linearInstruction instruction then
     let typed := executeInstr Runtime.rejecting target instruction (Machine.initial target core)
     match ByteEval.step text 0x1000 ⟨core, 0x1002, {}⟩ with
@@ -131,6 +135,8 @@ private def branchMatrix : Except String Nat := do
             let comparisonSize := (Encode.encodeCompare comparison).size
             let bytes ← (Encode.patchSigned32 raw (comparisonSize + 2) 13).mapError reprStr
             let bytes ← (Encode.patchSigned32 bytes (comparisonSize + 7) (-19)).mapError reprStr
+            for offset in [0, comparisonSize, comparisonSize + 6] do
+              need (Decode.decodeWindowAt bytes offset == Decode.decodeAt bytes offset) "bounded branch decode differs"
             let take := comparison.holds condition core
             let result ← (ByteEval.run bytes 0x2000 (if take then 2 else 3) ⟨core, 0x2000, {}⟩).mapError reprStr
             let expected := if take then 0x2000 + UInt64.ofNat (comparisonSize + 6) + 13
@@ -140,11 +146,31 @@ private def branchMatrix : Except String Nat := do
             count := count + 1
   return count
 
+private def windowCases : Except String Nat := do
+  let mut count := 0
+  -- Exhaust the two-byte opcode/prefix space both truncated and followed by
+  -- operands beyond the bounded window, with a nonzero instruction position.
+  let suffix := ByteArray.mk ((List.range 32).map UInt8.ofNat).toArray
+  for first in [:256] do
+    for second in [:256] do
+      let bytes := Encode.bytes [UInt8.ofNat first, UInt8.ofNat second]
+      for (text, offset) in [(bytes, 0), (Encode.bytes [0xff, 0xf0, 0x90] ++ bytes ++ suffix, 3)] do
+        need (Decode.decodeWindowAt text offset == Decode.decodeAt text offset)
+          s!"bounded decoder differs for {first}/{second} at {offset}"
+        count := count + 1
+  for text in [ByteArray.empty, Encode.byte 0xc3, suffix] do
+    for offset in [text.size, text.size + 1, UInt64.size, 2^128] do
+      need ((Decode.decodeWindowAt text offset).isNone && (Decode.decodeAt text offset).isNone)
+        "out-of-range decode accepted"
+      count := count + 1
+  return count
+
 private def failureCases (target : Checked) : Except String Unit := do
   for bytes in ([[], [0x90], [0x66, 0x66, 0x48, 0x89, 0xc0], [0x48, 0x48, 0x89, 0xc0],
       [0x66, 0x48, 0x89, 0xc0], [0x42, 0x89, 0xc0], [0x88, 0xe0],
       [0xf0, 0x48, 0x01, 0xc0], [0x0f, 0x0b]] : List (List UInt8)) do
     need ((Decode.decodeAt (Encode.bytes bytes) 0).isNone) s!"unsupported encoding accepted: {repr bytes}"
+    need ((Decode.decodeWindowAt (Encode.bytes bytes) 0).isNone) s!"bounded decoder accepted unsupported encoding: {repr bytes}"
   for width in widths do
     for byte in [:width.bytes] do
       let memory : Memory := { initial.memory with
@@ -256,7 +282,8 @@ def main : IO UInt32 := cli "x86 byte execution check failed" do
   let target ← checked (Examples.arithmeticProgram.check.mapError reprStr)
   let forms ← checked (instructionMatrix target)
   let branches ← checked branchMatrix
+  let windows ← checked windowCases
   checked (failureCases target)
   checked smallPrograms
   let runtimeSteps ← checked runtimePrograms
-  IO.println s!"x86 byte execution check ok: {forms} instruction cases, {branches} patched branches, truncation/fault/corruption checks, four complete streams, eight source-selected runtime main/release inputs ({runtimeSteps} byte steps)"
+  IO.println s!"x86 byte execution check ok: {forms} instruction cases, {branches} patched branches, {windows} bounded-window cases, truncation/fault/corruption checks, four complete streams, eight source-selected runtime main/release inputs ({runtimeSteps} byte steps)"

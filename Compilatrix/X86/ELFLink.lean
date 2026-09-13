@@ -100,8 +100,8 @@ def resolve (checked : Checked) (input : ELF.Input) (object : ELF.Certified inpu
   | some view =>
       let linked ← apply symbols view.relocations.toList input.encoded.text
       let output := { input.encoded with text := linked.text }
-      if accepted : Stream.check checked.program output (targets symbols) = true then
-        return ⟨view, parsed, object.valid.fields_of_parse parsed, output, Stream.check_sound accepted, linked.applied⟩
+      if accepted : Stream.checkIndexed checked.program output (targets symbols) = true then
+        return ⟨view, parsed, object.valid.fields_of_parse parsed, output, Stream.checkIndexed_sound accepted, linked.applied⟩
       else throw .invalidLinkedStream
 
 theorem Applied.resolves {symbols : Symbols} {relocations : List ELFRead.Relocation} {before after : ByteArray}

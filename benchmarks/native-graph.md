@@ -41,13 +41,26 @@ belongs to the complete matrix worker, including execution, mutations,
 representation formatting, replay, hashing, and IO. It does not isolate a
 compiler phase or mode, and is separate from the generated program's workspace.
 
-Eight `IO.monoNanosNow` intervals cover one invocation each of snapshot
+Eight production `IO.monoNanosNow` intervals cover one invocation each of snapshot
 encoding/checking, decoding/checking, export resolution, selection, native
 emission, native certificate checking, x86 encoding/checking, and ELF
 writing/checking. Mutation tests and inspection formatting run after these
 intervals. Fixture construction, API replay, semantic runs, budget/context
 tests, inspection formatting/hashing, and file writes are excluded from
 the intervals but included in process costs.
+
+Measurement format `compilatrix/native-graph-measurements/2` additionally
+times raw x86 encoding, the retained reference stream checker, canonical
+layout construction, checking with that prepared layout, and complete
+indexed checking (including layout construction). These five intervals
+precede the ordinary `x86-encode-check` interval. Each invokes its operation
+once on the same target/output, in a fixed order. All three checker calls
+must accept; the ordinary certified emitter must return exactly the raw
+encoder's text, offsets, and relocations. The indexed and prepared intervals
+overlap in scope, as does ordinary encoding/checking with the isolated phases;
+do not sum all thirteen intervals as a compiler total. Timings have no CI
+threshold. The [stream checking implementation](../docs/stream-checking.md)
+proves exact acceptance and rejection agreement with the reference checker.
 
 Retain canonical snapshots, exact ELF, per-case observations, selection/plan
 inspection JSON, report JSON, raw samples, tool identities, source snapshot,

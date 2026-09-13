@@ -297,6 +297,12 @@ independent ELF interpretation, and the N2 source endpoint consumes actual
 object execution. The JSON retains stable boundary identifiers and records
 exactly which portions are discharged.
 
+The [indexed stream checker](stream-checking.md) preserves this boundary:
+bounded decoding and cached canonical positions are proved exactly equal
+to the original decoder and stream checker on all inputs. Production
+emission and relocation validation use the same `Stream.Valid` certificate.
+Four additional public fences retain the ordinary logical axiom basis.
+
 | Boundary | Current scope | Evidence and remaining work |
 | --- | --- | --- |
 | Local ISA semantics | Agreement of the local byte machine with actual x86-64, including canonical addresses, unified code fetch, memory permissions, flags, faults, and the caller ABI. Compiler-contract traps must be proved unreachable; they are not hardware exceptions. | E1 and E2 prove local-to-local agreement. The [S0 readiness decision](x86-reference-model.md) pins the Sail snapshot; reference execution comparison, the Lean adapter, and S2 agreement remain pending. |

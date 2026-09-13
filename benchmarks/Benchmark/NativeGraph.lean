@@ -72,7 +72,15 @@ private def row (directory : FilePath) (measurements : IO.Ref (Array Json)) (cou
             ("entry", toJson (reprStr candidate.entry)), ("functions", toJson (candidate.plans.map reprStr))] })
   let selected := result.1.1
   let native := result.1.2
+  let encoded ← NativeSharing.timed measurements label "x86-encode" fun _ => (Encode.encode native.target).mapError reprStr
+  let reference ← NativeSharing.timed measurements label "stream-reference-check" fun _ => .ok (Stream.check native.target.program encoded)
+  let layout ← NativeSharing.timed measurements label "stream-layout" fun _ => .ok (Stream.prepareLayout native.target.program)
+  let prepared ← NativeSharing.timed measurements label "stream-prepared-check" fun _ => .ok (Stream.checkPrepared layout encoded)
+  let indexed ← NativeSharing.timed measurements label "stream-indexed-check" fun _ => .ok (Stream.checkIndexed native.target.program encoded)
+  need (reference && prepared && indexed) "reference or indexed stream checker rejected the encoder"
   let stream ← NativeSharing.timed measurements label "x86-encode-check" fun _ => (Stream.encode native.target).mapError reprStr
+  need (encoded.text == stream.output.text && encoded.blockOffsets == stream.output.blockOffsets &&
+    encoded.relocations == stream.output.relocations) "certified stream encoding changed bytes or layout"
   let input : ELF.Input := {
     encoded := stream.output, entryBlock := native.target.program.entry
     exportName := "compilatrix_scaling", provenance := .ixir2 artifact.address }
@@ -181,7 +189,7 @@ def produce (directory : FilePath) (profile : String) : IO Unit := do
     ("typed_join_source_rejections", toJson contextSource), ("typed_join_native_rejections", toJson contextNative),
     ("cases", toJson rows)])
   Scaling.writeJson (directory / "measurements.json") (Json.mkObj [
-    ("format", toJson "compilatrix/native-graph-measurements/1"),
+    ("format", toJson "compilatrix/native-graph-measurements/2"),
     ("clock", toJson "IO.monoNanosNow; one invocation per stage, fixed shared/graph order"),
     ("excluded", toJson "fixture construction, API replay, semantic execution, mutations, budget/context tests, inspection formatting, hashing reported artifacts, file writes"),
     ("stages", toJson (← measurements.get))])

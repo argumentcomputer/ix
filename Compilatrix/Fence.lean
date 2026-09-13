@@ -7112,6 +7112,18 @@ endpoint. Only indexed source claims retain the existing native hash axiom. -/
 /-- info: 'Compilatrix.X86.Stream.check_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.X86.Stream.check_sound
 
+/-- info: 'Compilatrix.X86.Decode.decodeWindowAt_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.Decode.decodeWindowAt_eq
+
+/-- info: 'Compilatrix.X86.Stream.checkPrepared_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.Stream.checkPrepared_eq
+
+/-- info: 'Compilatrix.X86.Stream.checkIndexed_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.Stream.checkIndexed_eq
+
+/-- info: 'Compilatrix.X86.Stream.checkIndexed_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.X86.Stream.checkIndexed_sound
+
 /-- info: 'Compilatrix.X86.Stream.linear_step' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.X86.Stream.linear_step
 

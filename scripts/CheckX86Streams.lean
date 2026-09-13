@@ -14,6 +14,12 @@ open Compilatrix.Tools.Check (checked cli)
 private def need (condition : Bool) (message : String) : Except String Unit :=
   if condition then .ok () else .error message
 
+private def streamResult (program : Program) (output : Encode.Output) (expected : Bool)
+    (externals : Stream.ExternalTargets := Stream.unresolved) : Except String Unit := do
+  need (Stream.check program output externals == expected) "reference stream result differs"
+  need (Stream.checkIndexed program output externals == expected) "indexed stream result differs"
+  need (Stream.checkPrepared (Stream.prepareLayout program) output externals == expected) "prepared stream result differs"
+
 private def registers : List GPR :=
   [.rax, .rcx, .rdx, .rbx, .rsp, .rbp, .rsi, .rdi,
    .r8, .r9, .r10, .r11, .r12, .r13, .r14, .r15]
@@ -32,6 +38,7 @@ private def textBase : Word := 0x100000
 private def artifact (program : Program) (name := "stream_test") : Except String (Checked × ELF.Input × ByteArray) := do
   let target ← program.check.mapError reprStr
   let stream ← (Stream.encode target).mapError reprStr
+  streamResult program stream.output true
   let input : ELF.Input := { encoded := stream.output, entryBlock := program.entry, exportName := name, provenance }
   let object ← (ELF.writeChecked input).mapError reprStr
   return (target, input, object.bytes)
@@ -121,7 +128,8 @@ private def streamCorruptions : Except String Nat := do
     ("wrong conditional target", { encoded with text := encoded.text.set! (jcc + 2) 1 }),
     ("wrong fallthrough target", { encoded with text := encoded.text.set! (jcc + 7) 0 }),
     ("changed unreachable block", { encoded with text := encoded.text.set! (encoded.text.size - 1) 0x90 })]
-  for (name, changed) in corruptions do need (!Stream.check target.program changed) s!"stream accepted {name}"
+  for (name, changed) in corruptions do
+    (streamResult target.program changed false).mapError (fun error => s!"{name}: {error}")
   let (runtime, runtimeInput, _) ← artifact Examples.runtimeProgram
   let encoded := runtimeInput.encoded
   let relocation := encoded.relocations[0]!
@@ -131,8 +139,42 @@ private def streamCorruptions : Except String Nat := do
     { encoded with relocations := #[{ relocation with symbol := "wrong_runtime" }] },
     { encoded with relocations := #[{ relocation with addend := 0 }] },
     { encoded with text := encoded.text.set! relocation.offset 1 }]
-  for changed in runtimeCorruptions do need (!Stream.check runtime.program changed) "stream accepted corrupted external fixup"
+  for changed in runtimeCorruptions do streamResult runtime.program changed false
   return corruptions.length + runtimeCorruptions.length
+
+private def indexedLayouts : Except String Nat := do
+  let mut cases := 0
+  -- Direct typed-x86 fixtures exercise long instruction arrays independently
+  -- of the unchanged limits on source/physical graph selection.
+  for length in [0, 1, 2, 16, 128, 1024] do
+    let body : Block := { instructions := ((List.range length).map fun index =>
+      if index % 2 == 0 then Instr.mov .w64 .r9 (.imm (UInt64.ofNat index))
+      else Instr.push .r12).toArray, terminator := .jump 1 }
+    let program : Program := { entry := 0, blocks := #[body, { instructions := #[], terminator := .ret }] }
+    let target ← program.check.mapError reprStr
+    let output ← (Encode.encode target).mapError reprStr
+    let layout := Stream.prepareLayout program
+    streamResult program output true
+    need (Stream.checkPrepared layout output) "layout reuse rejected"
+    for changed in [
+        { output with blockOffsets := output.blockOffsets.push output.text.size },
+        { output with blockOffsets := output.blockOffsets.set! 1 (output.blockOffsets[1]! + 1) },
+        { output with text := output.text.set! (output.text.size - 2) 0xff }] do
+      streamResult program changed false
+      need (!Stream.checkPrepared layout changed) "reused layout accepted corruption"
+    let badJump := { program with blocks := program.blocks.set! 0 { body with terminator := .jump 2 } }
+    streamResult badJump output false
+    let badTail := { program with blocks := program.blocks.set! 0 { body with terminator := .tailCall 2 } }
+    streamResult badTail output false
+    cases := cases + 6
+  let (target, input, _) ← artifact Examples.callProgram
+  let first := target.program.blocks[0]!
+  let badBlock := { first with instructions := first.instructions.map fun instruction =>
+    match instruction with | .call _ => .call (UInt32.ofNat target.program.blocks.size) | _ => instruction }
+  let badCall := { target.program with blocks := target.program.blocks.set! 0 badBlock }
+  streamResult badCall input.encoded false
+  streamResult { entry := 0, blocks := #[] } { text := ByteArray.empty, blockOffsets := #[], relocations := #[] } true
+  return cases + 2
 
 -- Mutate little-endian fields without calling the serializer or its helpers.
 private def putNatural (bytes : ByteArray) (offset count value : Nat) : ByteArray :=
@@ -206,6 +248,7 @@ private def relocationCases : Except String Nat := do
   for destination in targets do
     let symbols : ELFLink.Symbols := fun name => if name == "compilatrix_rt_allocate" then some destination else none
     let linked ← (ELFLink.resolve target input object symbols).mapError reprStr
+    streamResult target.program linked.output true (ELFLink.targets symbols)
     need (linked.view.relocations == view.relocations) "linker changed relocation interpretation"
     let state ← (ByteEval.run linked.output.text textBase 4 ⟨StreamExamples.core, textBase, {}⟩).mapError reprStr
     need (state.rip == ELFLink.address textBase destination && state.core.readReg .rsp == 0x7ff8 &&
@@ -213,10 +256,10 @@ private def relocationCases : Except String Nat := do
     for index in [:stream.output.text.size] do
       if index < relocation.offset || relocation.offset + 4 ≤ index then
         need (linked.output.text[index]? == stream.output.text[index]?) "relocation changed an unrelated byte"
-    need (!Stream.check target.program { linked.output with text := linked.output.text.set! 0 0xf0 } (ELFLink.targets symbols))
-      "linked stream accepted unrelated corruption"
+    streamResult target.program { linked.output with text := linked.output.text.set! 0 0xf0 } false (ELFLink.targets symbols)
   let .error (.missingSymbol _) := ELFLink.resolve target input object (fun _ => none) | throw "missing runtime symbol accepted"
   for displacement in ([-2147483649, 2147483648] : List Int) do
+    streamResult target.program stream.output false (fun _ => some ((next : Int) + displacement))
     let .error (.overflow _ _) := ELFLink.resolve target input object (fun _ => some ((next : Int) + displacement))
       | throw "overflowing runtime relocation accepted"
   let symbols : ELFLink.Symbols := fun _ => some 42
@@ -301,9 +344,10 @@ def main : IO UInt32 := cli "x86 stream/object check failed" do
   let streams ← checked completePrograms
   let branches ← checked branchCases
   let streamNegatives ← checked streamCorruptions
+  let layouts ← checked indexedLayouts
   let objectNegatives ← checked objectCorruptions
   let relocations ← checked relocationCases
   checked returnFault
   let contracts ← checked contractCases
   let runtimeSteps ← checked runtimeObjects
-  IO.println s!"x86 stream/object check ok: {streams} complete streams, {branches} branch objects, {streamNegatives} stream corruptions, {objectNegatives} object corruptions/truncations, {relocations} relocation cases, {contracts} stack contracts, caller-slot fault, eight actual runtime object pairs ({runtimeSteps} byte steps)"
+  IO.println s!"x86 stream/object check ok: {streams} complete streams, {branches} branch objects, {streamNegatives} stream corruptions, {layouts} indexed layout cases, {objectNegatives} object corruptions/truncations, {relocations} relocation cases, {contracts} stack contracts, caller-slot fault, eight actual runtime object pairs ({runtimeSteps} byte steps)"

@@ -114,6 +114,11 @@ recompilation, complete file identity, and 330 guarded linked calls. Independent
 inspection rejects 80 corruptions. Every source point and native block/node
 also receives mutations through the ordinary compiler checkers.
 
+The current worker also compares the reference and [indexed stream
+checkers](stream-checking.md) on each emitted object, with separate encoding,
+layout, and checking intervals. It preserves the same artifact goldens and
+independent execution checks.
+
 Exact graph limits admit 42 joins; lowering each node, edge, or depth budget
 by one rejects it. A separately proposed eight-join graph exercises the longer
 cached-path depth check. Another fixture reaches the same source block with

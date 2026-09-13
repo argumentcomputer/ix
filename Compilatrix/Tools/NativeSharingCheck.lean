@@ -175,14 +175,17 @@ private def checkDirectory (directory temporary : FilePath) (expected : Json) (c
     "native sharing complete file inventory changed"
   let measurements ← readJson (directory / "measurements.json")
   let stages ← arrField measurements "stages"
-  need ((← strField measurements "format") == (if graphReport then "compilatrix/native-graph-measurements/1" else "compilatrix/native-sharing-measurements/1") && stages.size == rows.size * 8)
+  need ((← strField measurements "format") == (if graphReport then "compilatrix/native-graph-measurements/2" else "compilatrix/native-sharing-measurements/1") && stages.size == rows.size * (if graphReport then 13 else 8))
     "native sharing measurement inventory changed"
   for row in rows do
     let label ← strField row "case"
     let measured ← stages.filterM fun item => return (← strField item "case") == label
     let names ← measured.mapM fun item => strField item "stage"
+    let split := if graphReport then #["x86-encode", "stream-reference-check", "stream-layout",
+      "stream-prepared-check", "stream-indexed-check"] else #[]
     need (names == #["snapshot-encode-check", "snapshot-decode-check", "native-export", "native-select",
-      "native-emit", "native-certificate-check", "x86-encode-check", "elf-write-check"]) "native sharing stage order changed"
+      "native-emit", "native-certificate-check"] ++ split ++ #["x86-encode-check", "elf-write-check"])
+      "native sharing stage order changed"
     for item in measured do let _ ← number item "ns"
   return Json.mkObj [("passed", toJson true), ("objects", toJson rows.size), ("persisted_replays", toJson rows.size),
     ("independent_corruptions", toJson corruptionCount), ("native_calls", toJson nativeCalls)]

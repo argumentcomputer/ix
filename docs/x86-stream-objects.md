@@ -18,6 +18,10 @@ must contain the expected zero displacement and its named PC32 relocation.
 
 `Stream.check_sound` converts acceptance into concrete decoding and layout
 facts. `Stream.encode` returns bytes together with that proof, or an error.
+Production emission and linked-stream validation use the
+[indexed checker](stream-checking.md), proved exactly equal to the retained
+reference checker for every program, output, and external target assignment.
+It decodes bounded windows and computes canonical offset tables once.
 This is translation validation: soundness covers every accepted output;
 there is no completeness claim that the unchecked encoder succeeds and
 passes validation for every possible input. Equivalent encodings are allowed

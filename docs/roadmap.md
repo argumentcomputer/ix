@@ -256,6 +256,10 @@ baseline and all selector limits. [Graph selection and certification](native-gra
 then remove repeated continuation traversal from those phases. Its separate
 node/edge budgets retain the physical and source bounds; the legacy paths
 remain selectable. All retain raw data, correctness, artifact replay, and analysis.
+[Indexed stream validation](stream-checking.md) removes repeated whole-text
+decoding and prefix sums while proving exact equality with the reference
+checker. Its retained comparison separates encoding, layout, and checking
+costs on identical objects through 42 joins under the same resource bounds.
 [Benchmark design](benchmark-plan.md) owns the
 comparison rules; the [implemented protocol](../benchmarks/protocol.md) owns
 commands and exact sampling details.
