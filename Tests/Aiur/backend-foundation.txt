@@ -9730,6 +9730,368 @@ ROOT Aiur.NativeAIR.Merkle.replay_native_input
     rows.flatten.length < 2 ^ 61 →
       ∀ {input : List UInt8}, input ∈ result.hashing.inputs → Aiur.NativeAIR.Blake3.NativeInput input
 AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Merkle.walk_append
+∀ (hash : Aiur.NativeAIR.Merkle.Hash) (dimensions : List Aiur.NativeAIR.Merkle.Dimensions) (rows : List (List Aiur.G))
+  (height index : Nat) (current : Aiur.NativeAIR.Merkle.Digest) (before after : List Aiur.NativeAIR.Merkle.Digest),
+  Aiur.NativeAIR.Merkle.walk hash dimensions rows height index current (before ++ after) =
+    have middle := Aiur.NativeAIR.Merkle.walk hash dimensions rows height index current before;
+    have final :=
+      Aiur.NativeAIR.Merkle.walk hash dimensions rows (height - before.length) (index / 2 ^ before.length) middle.digest
+        after;
+    { digest := final.digest, inputs := middle.inputs ++ final.inputs }
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.PrunedMerkle.Logged.bind_success
+∀ {α β : Type} {first : Aiur.NativeAIR.PrunedMerkle.Logged α} {next : α → Aiur.NativeAIR.PrunedMerkle.Logged β}
+  {value : β},
+  (first >>= next).result = some value →
+    ∃ middle,
+      first.result = some middle ∧
+        (next middle).result = some value ∧ (first >>= next).inputs = first.inputs ++ (next middle).inputs
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.PrunedMerkle.Logged.bind_input_left
+∀ {α β : Type} {first : Aiur.NativeAIR.PrunedMerkle.Logged α} {next : α → Aiur.NativeAIR.PrunedMerkle.Logged β}
+  {input : List UInt8}, input ∈ first.inputs → input ∈ (first >>= next).inputs
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.PrunedMerkle.Logged.bind_input_right
+∀ {α β : Type} {first : Aiur.NativeAIR.PrunedMerkle.Logged α} {next : α → Aiur.NativeAIR.PrunedMerkle.Logged β}
+  {middle : α},
+  first.result = some middle → ∀ {input : List UInt8}, input ∈ (next middle).inputs → input ∈ (first >>= next).inputs
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.PrunedMerkle.Logged.bind_if
+∀ {α β : Type} (condition : Prop) [inst : Decidable condition] (left right : Aiur.NativeAIR.PrunedMerkle.Logged α)
+  (next : α → Aiur.NativeAIR.PrunedMerkle.Logged β),
+  (if condition then left else right) >>= next = if condition then left >>= next else right >>= next
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.PrunedMerkle.hashInput_value
+∀ (hash : Aiur.NativeAIR.Merkle.Hash) (input : List UInt8),
+  (Aiur.NativeAIR.PrunedMerkle.hashInput hash input).result = some (hash input)
+AXIOMS []
+ROOT Aiur.NativeAIR.PrunedMerkle.hashInput_inputs
+∀ (hash : Aiur.NativeAIR.Merkle.Hash) (input : List UInt8),
+  (Aiur.NativeAIR.PrunedMerkle.hashInput hash input).inputs = [input]
+AXIOMS []
+ROOT Aiur.NativeAIR.PrunedMerkle.TicketAt.mono
+∀ {hash : Aiur.NativeAIR.Merkle.Hash} {dimensions : List Aiur.NativeAIR.Merkle.Dimensions} {height index : Nat}
+  {digest : Aiur.NativeAIR.Merkle.Digest} {before after : List (List UInt8)}
+  {ticket : Aiur.NativeAIR.PrunedMerkle.Ticket},
+  Aiur.NativeAIR.PrunedMerkle.TicketAt hash dimensions height index digest before ticket →
+    before ⊆ after → Aiur.NativeAIR.PrunedMerkle.TicketAt hash dimensions height index digest after ticket
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.PrunedMerkle.NodeAt.mono
+∀ {hash : Aiur.NativeAIR.Merkle.Hash} {dimensions : List Aiur.NativeAIR.Merkle.Dimensions} {height : Nat}
+  {before after : List (List UInt8)} {node : Aiur.NativeAIR.PrunedMerkle.Node},
+  Aiur.NativeAIR.PrunedMerkle.NodeAt hash dimensions height before node →
+    before ⊆ after → Aiur.NativeAIR.PrunedMerkle.NodeAt hash dimensions height after node
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.PrunedMerkle.PendingAt.mono
+∀ {hash : Aiur.NativeAIR.Merkle.Hash} {dimensions : List Aiur.NativeAIR.Merkle.Dimensions} {height index : Nat}
+  {digest : Aiur.NativeAIR.Merkle.Digest} {before after : List (List UInt8)}
+  {ticket : Aiur.NativeAIR.PrunedMerkle.Ticket},
+  Aiur.NativeAIR.PrunedMerkle.PendingAt hash dimensions height index digest before ticket →
+    before ⊆ after → Aiur.NativeAIR.PrunedMerkle.PendingAt hash dimensions height index digest after ticket
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.PrunedMerkle.PendingNode.mono
+∀ {hash : Aiur.NativeAIR.Merkle.Hash} {dimensions : List Aiur.NativeAIR.Merkle.Dimensions} {height : Nat}
+  {before after : List (List UInt8)} {node : Aiur.NativeAIR.PrunedMerkle.Node},
+  Aiur.NativeAIR.PrunedMerkle.PendingNode hash dimensions height before node →
+    before ⊆ after → Aiur.NativeAIR.PrunedMerkle.PendingNode hash dimensions height after node
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.PrunedMerkle.TicketAt.extend
+∀ {hash : Aiur.NativeAIR.Merkle.Hash} {dimensions : List Aiur.NativeAIR.Merkle.Dimensions} {height index : Nat}
+  {digest : Aiur.NativeAIR.Merkle.Digest} {inputs : List (List UInt8)} {ticket : Aiur.NativeAIR.PrunedMerkle.Ticket}
+  (sibling : Aiur.NativeAIR.Merkle.Digest),
+  Aiur.NativeAIR.PrunedMerkle.TicketAt hash dimensions (height + 1) index digest inputs ticket →
+    Aiur.NativeAIR.Merkle.branchBytes index digest sibling ∈ inputs →
+      Aiur.NativeAIR.PrunedMerkle.PendingAt hash dimensions height (index / 2)
+        (hash (Aiur.NativeAIR.Merkle.branchBytes index digest sibling)) inputs
+        (Aiur.NativeAIR.PrunedMerkle.Ticket.extend sibling ticket)
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.PrunedMerkle.TicketAt.finish
+∀ {hash : Aiur.NativeAIR.Merkle.Hash} {dimensions : List Aiur.NativeAIR.Merkle.Dimensions} {height index : Nat}
+  {digest : Aiur.NativeAIR.Merkle.Digest} {inputs : List (List UInt8)} {ticket : Aiur.NativeAIR.PrunedMerkle.Ticket}
+  (sibling : Aiur.NativeAIR.Merkle.Digest),
+  Aiur.NativeAIR.PrunedMerkle.TicketAt hash dimensions (height + 1) index digest inputs ticket →
+    (Aiur.NativeAIR.Merkle.step hash dimensions ticket.rows height index digest sibling).inputs ⊆ inputs →
+      Aiur.NativeAIR.PrunedMerkle.TicketAt hash dimensions height (index / 2)
+        (Aiur.NativeAIR.Merkle.step hash dimensions ticket.rows height index digest sibling).digest inputs
+        (Aiur.NativeAIR.PrunedMerkle.Ticket.extend sibling ticket)
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.PrunedMerkle.PendingAt.finish_absent
+∀ {hash : Aiur.NativeAIR.Merkle.Hash} {dimensions : List Aiur.NativeAIR.Merkle.Dimensions} {height index : Nat}
+  {digest : Aiur.NativeAIR.Merkle.Digest} {inputs : List (List UInt8)} {ticket : Aiur.NativeAIR.PrunedMerkle.Ticket},
+  Aiur.NativeAIR.PrunedMerkle.PendingAt hash dimensions height index digest inputs ticket →
+    Aiur.NativeAIR.Merkle.hasHeight dimensions height = false →
+      Aiur.NativeAIR.PrunedMerkle.TicketAt hash dimensions height index digest inputs ticket
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.PrunedMerkle.PendingAt.finish_injected
+∀ {hash : Aiur.NativeAIR.Merkle.Hash} {dimensions : List Aiur.NativeAIR.Merkle.Dimensions} {height index : Nat}
+  {digest : Aiur.NativeAIR.Merkle.Digest} {inputs : List (List UInt8)} {ticket : Aiur.NativeAIR.PrunedMerkle.Ticket}
+  {rows : List (List Aiur.G)},
+  Aiur.NativeAIR.PrunedMerkle.PendingAt hash dimensions height index digest inputs ticket →
+    Aiur.NativeAIR.Merkle.hasHeight dimensions height = true →
+      Aiur.NativeAIR.Merkle.rowsAt dimensions ticket.rows height = Aiur.NativeAIR.Merkle.rowsAt dimensions rows height →
+        Aiur.NativeAIR.Merkle.rowBytes dimensions rows height ∈ inputs →
+          Aiur.NativeAIR.Merkle.pairBytes digest (hash (Aiur.NativeAIR.Merkle.rowBytes dimensions rows height)) ∈
+              inputs →
+            Aiur.NativeAIR.PrunedMerkle.TicketAt hash dimensions height index
+              (hash
+                (Aiur.NativeAIR.Merkle.pairBytes digest (hash (Aiur.NativeAIR.Merkle.rowBytes dimensions rows height))))
+              inputs ticket
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.PrunedMerkle.NodeAt.singleton
+∀ {hash : Aiur.NativeAIR.Merkle.Hash} {dimensions : List Aiur.NativeAIR.Merkle.Dimensions} {height : Nat}
+  {inputs : List (List UInt8)} {node : Aiur.NativeAIR.PrunedMerkle.Node} (sibling : Aiur.NativeAIR.Merkle.Digest),
+  Aiur.NativeAIR.PrunedMerkle.NodeAt hash dimensions (height + 1) inputs node →
+    Aiur.NativeAIR.Merkle.branchBytes node.index node.digest sibling ∈ inputs →
+      Aiur.NativeAIR.PrunedMerkle.PendingNode hash dimensions height inputs
+        { index := node.index / 2, digest := hash (Aiur.NativeAIR.Merkle.branchBytes node.index node.digest sibling),
+          tickets := List.map (Aiur.NativeAIR.PrunedMerkle.Ticket.extend sibling) node.tickets }
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.PrunedMerkle.NodeAt.pair
+∀ {hash : Aiur.NativeAIR.Merkle.Hash} {dimensions : List Aiur.NativeAIR.Merkle.Dimensions} {height : Nat}
+  {inputs : List (List UInt8)} {first second : Aiur.NativeAIR.PrunedMerkle.Node},
+  Aiur.NativeAIR.PrunedMerkle.NodeAt hash dimensions (height + 1) inputs first →
+    Aiur.NativeAIR.PrunedMerkle.NodeAt hash dimensions (height + 1) inputs second →
+      first.index % 2 = 0 ∧ second.index = first.index + 1 →
+        Aiur.NativeAIR.Merkle.pairBytes first.digest second.digest ∈ inputs →
+          Aiur.NativeAIR.PrunedMerkle.PendingNode hash dimensions height inputs
+            { index := first.index / 2, digest := hash (Aiur.NativeAIR.Merkle.pairBytes first.digest second.digest),
+              tickets :=
+                List.map (Aiur.NativeAIR.PrunedMerkle.Ticket.extend second.digest) first.tickets ++
+                  List.map (Aiur.NativeAIR.PrunedMerkle.Ticket.extend first.digest) second.tickets }
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.PrunedMerkle.origins_cons
+∀ (node : Aiur.NativeAIR.PrunedMerkle.Node) (nodes : List Aiur.NativeAIR.PrunedMerkle.Node),
+  Aiur.NativeAIR.PrunedMerkle.origins (node :: nodes) =
+    List.map (fun ticket => (ticket.index, ticket.rows)) node.tickets ++ Aiur.NativeAIR.PrunedMerkle.origins nodes
+AXIOMS []
+ROOT Aiur.NativeAIR.PrunedMerkle.origins_extend
+∀ (tickets : List Aiur.NativeAIR.PrunedMerkle.Ticket) (sibling : Aiur.NativeAIR.Merkle.Digest),
+  List.map (fun ticket => (ticket.index, ticket.rows))
+      (List.map (Aiur.NativeAIR.PrunedMerkle.Ticket.extend sibling) tickets) =
+    List.map (fun ticket => (ticket.index, ticket.rows)) tickets
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.PrunedMerkle.combine_refines
+∀ {hash : Aiur.NativeAIR.Merkle.Hash} {dimensions : List Aiur.NativeAIR.Merkle.Dimensions} {height : Nat}
+  {inputs : List (List UInt8)} {nodes : List Aiur.NativeAIR.PrunedMerkle.Node}
+  {proof : List Aiur.NativeAIR.Merkle.Digest} {parents : List Aiur.NativeAIR.PrunedMerkle.Node}
+  {remaining : List Aiur.NativeAIR.Merkle.Digest},
+  (∀ (node : Aiur.NativeAIR.PrunedMerkle.Node),
+      node ∈ nodes → Aiur.NativeAIR.PrunedMerkle.NodeAt hash dimensions (height + 1) inputs node) →
+    (Aiur.NativeAIR.PrunedMerkle.combine hash nodes proof).result = some (parents, remaining) →
+      (∀ (parent : Aiur.NativeAIR.PrunedMerkle.Node),
+          parent ∈ parents →
+            Aiur.NativeAIR.PrunedMerkle.PendingNode hash dimensions height
+              (inputs ++ (Aiur.NativeAIR.PrunedMerkle.combine hash nodes proof).inputs) parent) ∧
+        Aiur.NativeAIR.PrunedMerkle.origins parents = Aiur.NativeAIR.PrunedMerkle.origins nodes
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.PrunedMerkle.inject_refines
+∀ {hash : Aiur.NativeAIR.Merkle.Hash} {dimensions : List Aiur.NativeAIR.Merkle.Dimensions} {height : Nat}
+  {inputs : List (List UInt8)} {nodes output : List Aiur.NativeAIR.PrunedMerkle.Node},
+  Aiur.NativeAIR.Merkle.hasHeight dimensions height = true →
+    (∀ (node : Aiur.NativeAIR.PrunedMerkle.Node),
+        node ∈ nodes → Aiur.NativeAIR.PrunedMerkle.PendingNode hash dimensions height inputs node) →
+      (Aiur.NativeAIR.PrunedMerkle.inject hash dimensions height nodes).result = some output →
+        (∀ (node : Aiur.NativeAIR.PrunedMerkle.Node),
+            node ∈ output →
+              Aiur.NativeAIR.PrunedMerkle.NodeAt hash dimensions height
+                (inputs ++ (Aiur.NativeAIR.PrunedMerkle.inject hash dimensions height nodes).inputs) node) ∧
+          Aiur.NativeAIR.PrunedMerkle.origins output = Aiur.NativeAIR.PrunedMerkle.origins nodes
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.PrunedMerkle.initial_refines
+∀ {hash : Aiur.NativeAIR.Merkle.Hash} {dimensions : List Aiur.NativeAIR.Merkle.Dimensions} {inputs : List (List UInt8)}
+  {tickets : List Aiur.NativeAIR.PrunedMerkle.Ticket} {nodes : List Aiur.NativeAIR.PrunedMerkle.Node},
+  (∀ (ticket : Aiur.NativeAIR.PrunedMerkle.Ticket),
+      ticket ∈ tickets →
+        Aiur.NativeAIR.Merkle.shape dimensions ticket.rows = true ∧
+          ticket.index < 2 ^ Aiur.NativeAIR.Merkle.maxHeight dimensions ∧ ticket.proof = []) →
+    (Aiur.NativeAIR.PrunedMerkle.initial hash dimensions (Aiur.NativeAIR.Merkle.maxHeight dimensions) tickets).result =
+        some nodes →
+      (∀ (node : Aiur.NativeAIR.PrunedMerkle.Node),
+          node ∈ nodes →
+            Aiur.NativeAIR.PrunedMerkle.NodeAt hash dimensions (Aiur.NativeAIR.Merkle.maxHeight dimensions)
+              (inputs ++
+                (Aiur.NativeAIR.PrunedMerkle.initial hash dimensions (Aiur.NativeAIR.Merkle.maxHeight dimensions)
+                    tickets).inputs)
+              node) ∧
+        Aiur.NativeAIR.PrunedMerkle.origins nodes = List.map (fun ticket => (ticket.index, ticket.rows)) tickets
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.PrunedMerkle.walk_refines
+∀ {hash : Aiur.NativeAIR.Merkle.Hash} {dimensions : List Aiur.NativeAIR.Merkle.Dimensions} {steps height : Nat}
+  {inputs : List (List UInt8)} {nodes output : List Aiur.NativeAIR.PrunedMerkle.Node}
+  {proof remaining : List Aiur.NativeAIR.Merkle.Digest},
+  steps ≤ height →
+    (∀ (node : Aiur.NativeAIR.PrunedMerkle.Node),
+        node ∈ nodes → Aiur.NativeAIR.PrunedMerkle.NodeAt hash dimensions height inputs node) →
+      (Aiur.NativeAIR.PrunedMerkle.walk hash dimensions steps height nodes proof).result = some (output, remaining) →
+        (∀ (node : Aiur.NativeAIR.PrunedMerkle.Node),
+            node ∈ output →
+              Aiur.NativeAIR.PrunedMerkle.NodeAt hash dimensions (height - steps)
+                (inputs ++ (Aiur.NativeAIR.PrunedMerkle.walk hash dimensions steps height nodes proof).inputs) node) ∧
+          Aiur.NativeAIR.PrunedMerkle.origins output = Aiur.NativeAIR.PrunedMerkle.origins nodes
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.PrunedMerkle.mapM_members
+∀ {α : Type u_1} {β : Type u_2} {read : α → Option β} {inputs : List α} {outputs : List β},
+  List.mapM read inputs = some outputs →
+    (∀ (input : α), input ∈ inputs → ∃ output, output ∈ outputs ∧ read input = some output) ∧
+      ∀ (output : β), output ∈ outputs → ∃ input, input ∈ inputs ∧ read input = some output
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.PrunedMerkle.representatives_refines
+∀ {indices : List Nat} {rows : List (List (List Aiur.G))} {tickets : List Aiur.NativeAIR.PrunedMerkle.Ticket},
+  Aiur.NativeAIR.PrunedMerkle.representatives indices rows = some tickets →
+    (∀ (ticket : Aiur.NativeAIR.PrunedMerkle.Ticket), ticket ∈ tickets → ticket.index ∈ indices ∧ ticket.proof = []) ∧
+      ∀ (source : Nat × List (List Aiur.G)),
+        source ∈ indices.zip rows → ∃ ticket, ticket ∈ tickets ∧ ticket.index = source.fst ∧ ticket.rows = source.snd
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.PrunedMerkle.replay_refines
+∀ {hash : Aiur.NativeAIR.Merkle.Hash} {dimensions : List Aiur.NativeAIR.Merkle.Dimensions} {capHeight : Nat}
+  {indices : List Nat} {rows : List (List (List Aiur.G))} {proof : List Aiur.NativeAIR.Merkle.Digest}
+  {nodes : List Aiur.NativeAIR.PrunedMerkle.Node},
+  (Aiur.NativeAIR.PrunedMerkle.replay hash dimensions capHeight indices rows proof).result = some nodes →
+    dimensions ≠ [] ∧
+      rows.length = indices.length ∧
+        (∀ (node : Aiur.NativeAIR.PrunedMerkle.Node),
+            node ∈ nodes →
+              Aiur.NativeAIR.PrunedMerkle.NodeAt hash dimensions
+                (min capHeight (Aiur.NativeAIR.Merkle.maxHeight dimensions))
+                (Aiur.NativeAIR.PrunedMerkle.replay hash dimensions capHeight indices rows proof).inputs node) ∧
+          ∀ (source : Nat × List (List Aiur.G)),
+            source ∈ indices.zip rows → source ∈ Aiur.NativeAIR.PrunedMerkle.origins nodes
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.PrunedMerkle.replay_individual
+∀ {hash : Aiur.NativeAIR.Merkle.Hash} {dimensions : List Aiur.NativeAIR.Merkle.Dimensions} {capHeight index : Nat}
+  {indices : List Nat} {rows : List (List (List Aiur.G))} {query : List (List Aiur.G)}
+  {proof : List Aiur.NativeAIR.Merkle.Digest} {nodes : List Aiur.NativeAIR.PrunedMerkle.Node},
+  (Aiur.NativeAIR.PrunedMerkle.replay hash dimensions capHeight indices rows proof).result = some nodes →
+    (index, query) ∈ indices.zip rows →
+      ∃ node,
+        node ∈ nodes ∧
+          ∃ path result,
+            Aiur.NativeAIR.Merkle.replay hash dimensions capHeight index query path = some result ∧
+              result.index = node.index ∧
+                result.hashing.digest = node.digest ∧
+                  result.hashing.inputs ⊆
+                    (Aiur.NativeAIR.PrunedMerkle.replay hash dimensions capHeight indices rows proof).inputs
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.PrunedMerkle.verify_individual
+∀ {hash : Aiur.NativeAIR.Merkle.Hash} {dimensions : List Aiur.NativeAIR.Merkle.Dimensions} {capHeight index : Nat}
+  {indices : List Nat} {cap : List Aiur.NativeAIR.Merkle.Digest} {rows : List (List (List Aiur.G))}
+  {query : List (List Aiur.G)} {proof : List Aiur.NativeAIR.Merkle.Digest},
+  Aiur.NativeAIR.PrunedMerkle.verify hash dimensions capHeight indices cap rows proof = true →
+    (index, query) ∈ indices.zip rows →
+      ∃ path result,
+        Aiur.NativeAIR.Merkle.replay hash dimensions capHeight index query path = some result ∧
+          Aiur.NativeAIR.Merkle.verify hash dimensions capHeight index cap query path = true ∧
+            result.hashing.inputs ⊆
+              (Aiur.NativeAIR.PrunedMerkle.replay hash dimensions capHeight indices rows proof).inputs
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.PrunedMerkle.verifyCovered_individual
+∀ {hash : Aiur.NativeAIR.Merkle.Hash} {dimensions : List Aiur.NativeAIR.Merkle.Dimensions} {capHeight index : Nat}
+  {indices : List Nat} {cap : List Aiur.NativeAIR.Merkle.Digest} {rows : List (List (List Aiur.G))}
+  {query : List (List Aiur.G)} {proof : List Aiur.NativeAIR.Merkle.Digest},
+  Aiur.NativeAIR.PrunedMerkle.verifyCovered hash dimensions capHeight indices cap rows proof = true →
+    (index, query) ∈ indices.zip rows →
+      ∃ path result,
+        Aiur.NativeAIR.Merkle.replay hash dimensions capHeight index query path = some result ∧
+          Aiur.NativeAIR.Merkle.verifyCovered hash dimensions capHeight index cap query path = true ∧
+            result.hashing.inputs ⊆
+              (Aiur.NativeAIR.PrunedMerkle.replay hash dimensions capHeight indices rows proof).inputs
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.PrunedMerkle.verify_collision
+∀ {hash : Aiur.NativeAIR.Merkle.Hash} {dimensions : List Aiur.NativeAIR.Merkle.Dimensions} {capHeight index : Nat}
+  {leftIndices rightIndices : List Nat} {cap : List Aiur.NativeAIR.Merkle.Digest}
+  {leftRows rightRows : List (List (List Aiur.G))} {leftQuery rightQuery : List (List Aiur.G)}
+  {leftProof rightProof : List Aiur.NativeAIR.Merkle.Digest},
+  Aiur.NativeAIR.Merkle.covered dimensions capHeight = true →
+    Aiur.NativeAIR.PrunedMerkle.verify hash dimensions capHeight leftIndices cap leftRows leftProof = true →
+      Aiur.NativeAIR.PrunedMerkle.verify hash dimensions capHeight rightIndices cap rightRows rightProof = true →
+        (index, leftQuery) ∈ leftIndices.zip leftRows →
+          (index, rightQuery) ∈ rightIndices.zip rightRows →
+            leftQuery ≠ rightQuery →
+              ∃ inputs,
+                inputs ⊆
+                    (Aiur.NativeAIR.PrunedMerkle.replay hash dimensions capHeight leftIndices leftRows
+                          leftProof).inputs ++
+                      (Aiur.NativeAIR.PrunedMerkle.replay hash dimensions capHeight rightIndices rightRows
+                          rightProof).inputs ∧
+                  Aiur.NativeAIR.Merkle.CollisionOn hash inputs ∧
+                    inputs.length ≤ 2 + 6 * (Aiur.NativeAIR.Merkle.maxHeight dimensions - capHeight) ∧
+                      ∀ (input : List UInt8),
+                        input ∈ inputs →
+                          input.length ≤ max 64 (8 * max leftQuery.flatten.length rightQuery.flatten.length)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.PrunedMerkle.verifyCovered_collision
+∀ {hash : Aiur.NativeAIR.Merkle.Hash} {dimensions : List Aiur.NativeAIR.Merkle.Dimensions} {capHeight index : Nat}
+  {leftIndices rightIndices : List Nat} {cap : List Aiur.NativeAIR.Merkle.Digest}
+  {leftRows rightRows : List (List (List Aiur.G))} {leftQuery rightQuery : List (List Aiur.G)}
+  {leftProof rightProof : List Aiur.NativeAIR.Merkle.Digest},
+  Aiur.NativeAIR.PrunedMerkle.verifyCovered hash dimensions capHeight leftIndices cap leftRows leftProof = true →
+    Aiur.NativeAIR.PrunedMerkle.verifyCovered hash dimensions capHeight rightIndices cap rightRows rightProof = true →
+      (index, leftQuery) ∈ leftIndices.zip leftRows →
+        (index, rightQuery) ∈ rightIndices.zip rightRows →
+          leftQuery ≠ rightQuery →
+            ∃ inputs,
+              inputs ⊆
+                  (Aiur.NativeAIR.PrunedMerkle.replay hash dimensions capHeight leftIndices leftRows
+                        leftProof).inputs ++
+                    (Aiur.NativeAIR.PrunedMerkle.replay hash dimensions capHeight rightIndices rightRows
+                        rightProof).inputs ∧
+                Aiur.NativeAIR.Merkle.CollisionOn hash inputs ∧
+                  inputs.length ≤ 2 + 6 * (Aiur.NativeAIR.Merkle.maxHeight dimensions - capHeight) ∧
+                    ∀ (input : List UInt8),
+                      input ∈ inputs →
+                        input.length ≤ max 64 (8 * max leftQuery.flatten.length rightQuery.flatten.length)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.PrunedMerkle.blake3_collision
+∀ {dimensions : List Aiur.NativeAIR.Merkle.Dimensions} {capHeight index : Nat} {leftIndices rightIndices : List Nat}
+  {cap : List Aiur.NativeAIR.Merkle.Digest} {leftRows rightRows : List (List (List Aiur.G))}
+  {leftQuery rightQuery : List (List Aiur.G)} {leftProof rightProof : List Aiur.NativeAIR.Merkle.Digest},
+  Aiur.NativeAIR.PrunedMerkle.verifyCovered Aiur.NativeAIR.Blake3.digest dimensions capHeight leftIndices cap leftRows
+        leftProof =
+      true →
+    Aiur.NativeAIR.PrunedMerkle.verifyCovered Aiur.NativeAIR.Blake3.digest dimensions capHeight rightIndices cap
+          rightRows rightProof =
+        true →
+      (index, leftQuery) ∈ leftIndices.zip leftRows →
+        (index, rightQuery) ∈ rightIndices.zip rightRows →
+          leftQuery ≠ rightQuery →
+            ∃ inputs,
+              inputs ⊆
+                  (Aiur.NativeAIR.PrunedMerkle.replay Aiur.NativeAIR.Blake3.digest dimensions capHeight leftIndices
+                        leftRows leftProof).inputs ++
+                    (Aiur.NativeAIR.PrunedMerkle.replay Aiur.NativeAIR.Blake3.digest dimensions capHeight rightIndices
+                        rightRows rightProof).inputs ∧
+                Aiur.NativeAIR.Merkle.CollisionOn Aiur.NativeAIR.Blake3.digest inputs ∧
+                  inputs.length ≤ 2 + 6 * (Aiur.NativeAIR.Merkle.maxHeight dimensions - capHeight) ∧
+                    ∀ (input : List UInt8),
+                      input ∈ inputs →
+                        input.length ≤ max 64 (8 * max leftQuery.flatten.length rightQuery.flatten.length)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.PrunedMerkle.blake3_native_collision
+∀ {dimensions : List Aiur.NativeAIR.Merkle.Dimensions} {capHeight index : Nat} {leftIndices rightIndices : List Nat}
+  {cap : List Aiur.NativeAIR.Merkle.Digest} {leftRows rightRows : List (List (List Aiur.G))}
+  {leftQuery rightQuery : List (List Aiur.G)} {leftProof rightProof : List Aiur.NativeAIR.Merkle.Digest},
+  Aiur.NativeAIR.PrunedMerkle.verifyCovered Aiur.NativeAIR.Blake3.digest dimensions capHeight leftIndices cap leftRows
+        leftProof =
+      true →
+    Aiur.NativeAIR.PrunedMerkle.verifyCovered Aiur.NativeAIR.Blake3.digest dimensions capHeight rightIndices cap
+          rightRows rightProof =
+        true →
+      (index, leftQuery) ∈ leftIndices.zip leftRows →
+        (index, rightQuery) ∈ rightIndices.zip rightRows →
+          leftQuery ≠ rightQuery →
+            leftQuery.flatten.length < 2 ^ 61 →
+              rightQuery.flatten.length < 2 ^ 61 →
+                ∃ inputs,
+                  inputs ⊆
+                      (Aiur.NativeAIR.PrunedMerkle.replay Aiur.NativeAIR.Blake3.digest dimensions capHeight leftIndices
+                            leftRows leftProof).inputs ++
+                        (Aiur.NativeAIR.PrunedMerkle.replay Aiur.NativeAIR.Blake3.digest dimensions capHeight
+                            rightIndices rightRows rightProof).inputs ∧
+                    Aiur.NativeAIR.Merkle.CollisionOn Aiur.NativeAIR.Blake3.digest inputs ∧
+                      inputs.length ≤ 2 + 6 * (Aiur.NativeAIR.Merkle.maxHeight dimensions - capHeight) ∧
+                        ∀ (input : List UInt8), input ∈ inputs → Aiur.NativeAIR.Blake3.NativeInput input
+AXIOMS [propext, Classical.choice, Quot.sound]
 PREMISE Aiur.AIR.activityConstraint
 Aiur.G → Aiur.G → Aiur.G
 DEFINITION
@@ -16349,6 +16711,233 @@ PREMISE Aiur.NativeAIR.Merkle.CollisionOn
 Aiur.NativeAIR.Merkle.Hash → List (List UInt8) → Prop
 DEFINITION
 fun hash inputs => ∃ left, left ∈ inputs ∧ ∃ right, right ∈ inputs ∧ left ≠ right ∧ hash left = hash right
+PREMISE Aiur.NativeAIR.PrunedMerkle.Logged.mk
+{α : Type} → Option α → List (List UInt8) → Aiur.NativeAIR.PrunedMerkle.Logged α
+PREMISE Aiur.NativeAIR.PrunedMerkle.Logged.pure
+{α : Type} → α → Aiur.NativeAIR.PrunedMerkle.Logged α
+DEFINITION
+fun {α} value => { result := some value, inputs := [] }
+PREMISE Aiur.NativeAIR.PrunedMerkle.Logged.bind
+{α β : Type} →
+  Aiur.NativeAIR.PrunedMerkle.Logged α →
+    (α → Aiur.NativeAIR.PrunedMerkle.Logged β) → Aiur.NativeAIR.PrunedMerkle.Logged β
+DEFINITION
+fun {α β} first next =>
+  match first.result with
+  | none => { result := none, inputs := first.inputs }
+  | some value =>
+    have rest := next value;
+    { result := rest.result, inputs := first.inputs ++ rest.inputs }
+PREMISE Aiur.NativeAIR.PrunedMerkle.reject
+{α : Type} → Aiur.NativeAIR.PrunedMerkle.Logged α
+DEFINITION
+fun {α} => { result := none, inputs := [] }
+PREMISE Aiur.NativeAIR.PrunedMerkle.ofOption
+{α : Type} → Option α → Aiur.NativeAIR.PrunedMerkle.Logged α
+DEFINITION
+fun {α} value => { result := value, inputs := [] }
+PREMISE Aiur.NativeAIR.PrunedMerkle.hashInput
+Aiur.NativeAIR.Merkle.Hash → List UInt8 → Aiur.NativeAIR.PrunedMerkle.Logged Aiur.NativeAIR.Merkle.Digest
+DEFINITION
+fun hash input => { result := some (hash input), inputs := [input] }
+PREMISE Aiur.NativeAIR.PrunedMerkle.Ticket.mk
+Nat → List (List Aiur.G) → List Aiur.NativeAIR.Merkle.Digest → Aiur.NativeAIR.PrunedMerkle.Ticket
+PREMISE Aiur.NativeAIR.PrunedMerkle.Ticket.extend
+Aiur.NativeAIR.Merkle.Digest → Aiur.NativeAIR.PrunedMerkle.Ticket → Aiur.NativeAIR.PrunedMerkle.Ticket
+DEFINITION
+fun sibling ticket => { index := ticket.index, rows := ticket.rows, proof := ticket.proof ++ [sibling] }
+PREMISE Aiur.NativeAIR.PrunedMerkle.Node.mk
+Nat → Aiur.NativeAIR.Merkle.Digest → List Aiur.NativeAIR.PrunedMerkle.Ticket → Aiur.NativeAIR.PrunedMerkle.Node
+PREMISE Aiur.NativeAIR.PrunedMerkle.uniqueIndices
+List Nat → List Nat
+DEFINITION
+fun indices => (indices.mergeSort fun x1 x2 => decide (x1 ≤ x2)).eraseDups
+PREMISE Aiur.NativeAIR.PrunedMerkle.parentIndices
+List Nat → List Nat
+DEFINITION
+fun indices => (List.map (fun x => x / 2) indices).eraseDups
+PREMISE Aiur.NativeAIR.PrunedMerkle.boundaryCount
+Nat → List Nat → Nat
+DEFINITION
+fun x x_1 => Nat.brecOn (motive := fun x => List Nat → Nat) x Aiur.NativeAIR.PrunedMerkle.boundaryCount._f x_1
+PREMISE Aiur.NativeAIR.PrunedMerkle.representatives
+List Nat → List (List (List Aiur.G)) → Option (List Aiur.NativeAIR.PrunedMerkle.Ticket)
+DEFINITION
+fun indices rows =>
+  have originals := indices.zip rows;
+  List.mapM
+    (fun index => do
+      let __x ← List.find? (fun entry => entry.fst == index) originals
+      match __x with
+        | (fst, values) =>
+          if (originals.all fun entry => entry.fst != index || entry.snd == values) = true then
+            some { index := index, rows := values, proof := [] }
+          else none)
+    (Aiur.NativeAIR.PrunedMerkle.uniqueIndices indices)
+PREMISE Aiur.NativeAIR.PrunedMerkle.initial
+Aiur.NativeAIR.Merkle.Hash →
+  List Aiur.NativeAIR.Merkle.Dimensions →
+    Nat →
+      List Aiur.NativeAIR.PrunedMerkle.Ticket →
+        Aiur.NativeAIR.PrunedMerkle.Logged (List Aiur.NativeAIR.PrunedMerkle.Node)
+DEFINITION
+fun hash dimensions height x => List.brecOn x (Aiur.NativeAIR.PrunedMerkle.initial._f hash dimensions height)
+PREMISE Aiur.NativeAIR.PrunedMerkle.combine
+Aiur.NativeAIR.Merkle.Hash →
+  List Aiur.NativeAIR.PrunedMerkle.Node →
+    List Aiur.NativeAIR.Merkle.Digest →
+      Aiur.NativeAIR.PrunedMerkle.Logged (List Aiur.NativeAIR.PrunedMerkle.Node × List Aiur.NativeAIR.Merkle.Digest)
+DEFINITION
+fun hash a a_1 => Aiur.NativeAIR.PrunedMerkle.combine._unary hash ⟨a, a_1⟩
+PREMISE Aiur.NativeAIR.PrunedMerkle.inject
+Aiur.NativeAIR.Merkle.Hash →
+  List Aiur.NativeAIR.Merkle.Dimensions →
+    Nat →
+      List Aiur.NativeAIR.PrunedMerkle.Node → Aiur.NativeAIR.PrunedMerkle.Logged (List Aiur.NativeAIR.PrunedMerkle.Node)
+DEFINITION
+fun hash dimensions height x => List.brecOn x (Aiur.NativeAIR.PrunedMerkle.inject._f hash dimensions height)
+PREMISE Aiur.NativeAIR.PrunedMerkle.walk
+Aiur.NativeAIR.Merkle.Hash →
+  List Aiur.NativeAIR.Merkle.Dimensions →
+    Nat →
+      Nat →
+        List Aiur.NativeAIR.PrunedMerkle.Node →
+          List Aiur.NativeAIR.Merkle.Digest →
+            Aiur.NativeAIR.PrunedMerkle.Logged
+              (List Aiur.NativeAIR.PrunedMerkle.Node × List Aiur.NativeAIR.Merkle.Digest)
+DEFINITION
+fun hash dimensions x x_1 x_2 x_3 =>
+  Nat.brecOn (motive := fun x =>
+    Nat →
+      List Aiur.NativeAIR.PrunedMerkle.Node →
+        List Aiur.NativeAIR.Merkle.Digest →
+          Aiur.NativeAIR.PrunedMerkle.Logged
+            (List Aiur.NativeAIR.PrunedMerkle.Node × List Aiur.NativeAIR.Merkle.Digest))
+    x (Aiur.NativeAIR.PrunedMerkle.walk._f hash dimensions) x_1 x_2 x_3
+PREMISE Aiur.NativeAIR.PrunedMerkle.replay
+Aiur.NativeAIR.Merkle.Hash →
+  List Aiur.NativeAIR.Merkle.Dimensions →
+    Nat →
+      List Nat →
+        List (List (List Aiur.G)) →
+          List Aiur.NativeAIR.Merkle.Digest → Aiur.NativeAIR.PrunedMerkle.Logged (List Aiur.NativeAIR.PrunedMerkle.Node)
+DEFINITION
+fun hash dimensions capHeight indices rows proof =>
+  if (dimensions.isEmpty || rows.length != indices.length) = true then Aiur.NativeAIR.PrunedMerkle.reject
+  else
+    have height := Aiur.NativeAIR.Merkle.maxHeight dimensions;
+    have steps := height - capHeight;
+    if (!indices.all fun index => decide (index < 2 ^ height)) = true then Aiur.NativeAIR.PrunedMerkle.reject
+    else do
+      let tickets ← Aiur.NativeAIR.PrunedMerkle.ofOption (Aiur.NativeAIR.PrunedMerkle.representatives indices rows)
+      if
+            (proof.length !=
+                  Aiur.NativeAIR.PrunedMerkle.boundaryCount steps (Aiur.NativeAIR.PrunedMerkle.uniqueIndices indices) ||
+                !tickets.all fun ticket => Aiur.NativeAIR.Merkle.shape dimensions ticket.rows) =
+              true then
+          Aiur.NativeAIR.PrunedMerkle.reject
+        else do
+          let leaves ← Aiur.NativeAIR.PrunedMerkle.initial hash dimensions height tickets
+          let __x ← Aiur.NativeAIR.PrunedMerkle.walk hash dimensions steps height leaves proof
+          match __x with
+            | (nodes, remaining) => if remaining.isEmpty = true then pure nodes else Aiur.NativeAIR.PrunedMerkle.reject
+PREMISE Aiur.NativeAIR.PrunedMerkle.accepts
+List Aiur.NativeAIR.Merkle.Digest → List Aiur.NativeAIR.PrunedMerkle.Node → Bool
+DEFINITION
+fun cap nodes => nodes.all fun node => cap[node.index]? == some node.digest
+PREMISE Aiur.NativeAIR.PrunedMerkle.verify
+Aiur.NativeAIR.Merkle.Hash →
+  List Aiur.NativeAIR.Merkle.Dimensions →
+    Nat →
+      List Nat →
+        List Aiur.NativeAIR.Merkle.Digest → List (List (List Aiur.G)) → List Aiur.NativeAIR.Merkle.Digest → Bool
+DEFINITION
+fun hash dimensions capHeight indices cap rows proof =>
+  match (Aiur.NativeAIR.PrunedMerkle.replay hash dimensions capHeight indices rows proof).result with
+  | none => false
+  | some nodes => Aiur.NativeAIR.PrunedMerkle.accepts cap nodes
+PREMISE Aiur.NativeAIR.PrunedMerkle.verifyCovered
+Aiur.NativeAIR.Merkle.Hash →
+  List Aiur.NativeAIR.Merkle.Dimensions →
+    Nat →
+      List Nat →
+        List Aiur.NativeAIR.Merkle.Digest → List (List (List Aiur.G)) → List Aiur.NativeAIR.Merkle.Digest → Bool
+DEFINITION
+fun hash dimensions capHeight indices cap rows proof =>
+  Aiur.NativeAIR.Merkle.covered dimensions capHeight &&
+    Aiur.NativeAIR.PrunedMerkle.verify hash dimensions capHeight indices cap rows proof
+PREMISE Aiur.NativeAIR.PrunedMerkle.TicketAt.mk
+∀ {hash : Aiur.NativeAIR.Merkle.Hash} {dimensions : List Aiur.NativeAIR.Merkle.Dimensions} {height index : Nat}
+  {digest : Aiur.NativeAIR.Merkle.Digest} {inputs : List (List UInt8)} {ticket : Aiur.NativeAIR.PrunedMerkle.Ticket},
+  Aiur.NativeAIR.Merkle.shape dimensions ticket.rows = true →
+    ticket.index < 2 ^ Aiur.NativeAIR.Merkle.maxHeight dimensions →
+      ticket.proof.length + height = Aiur.NativeAIR.Merkle.maxHeight dimensions →
+        ticket.index / 2 ^ ticket.proof.length = index →
+          (Aiur.NativeAIR.Merkle.walk hash dimensions ticket.rows (Aiur.NativeAIR.Merkle.maxHeight dimensions)
+                  ticket.index
+                  (hash
+                    (Aiur.NativeAIR.Merkle.rowBytes dimensions ticket.rows
+                      (Aiur.NativeAIR.Merkle.maxHeight dimensions)))
+                  ticket.proof).digest =
+              digest →
+            Aiur.NativeAIR.Merkle.rowBytes dimensions ticket.rows (Aiur.NativeAIR.Merkle.maxHeight dimensions) ::
+                  (Aiur.NativeAIR.Merkle.walk hash dimensions ticket.rows (Aiur.NativeAIR.Merkle.maxHeight dimensions)
+                      ticket.index
+                      (hash
+                        (Aiur.NativeAIR.Merkle.rowBytes dimensions ticket.rows
+                          (Aiur.NativeAIR.Merkle.maxHeight dimensions)))
+                      ticket.proof).inputs ⊆
+                inputs →
+              Aiur.NativeAIR.PrunedMerkle.TicketAt hash dimensions height index digest inputs ticket
+PREMISE Aiur.NativeAIR.PrunedMerkle.NodeAt
+Aiur.NativeAIR.Merkle.Hash →
+  List Aiur.NativeAIR.Merkle.Dimensions → Nat → List (List UInt8) → Aiur.NativeAIR.PrunedMerkle.Node → Prop
+DEFINITION
+fun hash dimensions height inputs node =>
+  ∀ (ticket : Aiur.NativeAIR.PrunedMerkle.Ticket),
+    ticket ∈ node.tickets →
+      Aiur.NativeAIR.PrunedMerkle.TicketAt hash dimensions height node.index node.digest inputs ticket
+PREMISE Aiur.NativeAIR.PrunedMerkle.PendingAt
+Aiur.NativeAIR.Merkle.Hash →
+  List Aiur.NativeAIR.Merkle.Dimensions →
+    Nat → Nat → Aiur.NativeAIR.Merkle.Digest → List (List UInt8) → Aiur.NativeAIR.PrunedMerkle.Ticket → Prop
+DEFINITION
+fun hash dimensions height index digest inputs ticket =>
+  ∃ before sibling previousIndex previousDigest,
+    ticket = Aiur.NativeAIR.PrunedMerkle.Ticket.extend sibling before ∧
+      Aiur.NativeAIR.PrunedMerkle.TicketAt hash dimensions (height + 1) previousIndex previousDigest inputs before ∧
+        index = previousIndex / 2 ∧
+          digest = hash (Aiur.NativeAIR.Merkle.branchBytes previousIndex previousDigest sibling) ∧
+            Aiur.NativeAIR.Merkle.branchBytes previousIndex previousDigest sibling ∈ inputs
+PREMISE Aiur.NativeAIR.PrunedMerkle.PendingNode
+Aiur.NativeAIR.Merkle.Hash →
+  List Aiur.NativeAIR.Merkle.Dimensions → Nat → List (List UInt8) → Aiur.NativeAIR.PrunedMerkle.Node → Prop
+DEFINITION
+fun hash dimensions height inputs node =>
+  ∀ (ticket : Aiur.NativeAIR.PrunedMerkle.Ticket),
+    ticket ∈ node.tickets →
+      Aiur.NativeAIR.PrunedMerkle.PendingAt hash dimensions height node.index node.digest inputs ticket
+PREMISE Aiur.NativeAIR.PrunedMerkle.origins
+List Aiur.NativeAIR.PrunedMerkle.Node → List (Nat × List (List Aiur.G))
+DEFINITION
+fun nodes => List.flatMap (fun node => List.map (fun ticket => (ticket.index, ticket.rows)) node.tickets) nodes
+PREMISE Aiur.NativeAIR.PrunedMerkle.instMonadLogged
+Monad Aiur.NativeAIR.PrunedMerkle.Logged
+DEFINITION
+{
+  map := fun {α β} f x =>
+    (fun {α β} => Aiur.NativeAIR.PrunedMerkle.Logged.bind) x ((fun {α} => Aiur.NativeAIR.PrunedMerkle.Logged.pure) ∘ f),
+  pure := fun {α} => Aiur.NativeAIR.PrunedMerkle.Logged.pure,
+  seq := fun {α β} f x =>
+    (fun {α β} => Aiur.NativeAIR.PrunedMerkle.Logged.bind) f fun y =>
+      (fun {α β} => Aiur.NativeAIR.PrunedMerkle.Logged.bind) (x ())
+        ((fun {α} => Aiur.NativeAIR.PrunedMerkle.Logged.pure) ∘ y),
+  seqLeft := fun {α β} x y =>
+    (fun {α β} => Aiur.NativeAIR.PrunedMerkle.Logged.bind) x fun a =>
+      (fun {α β} => Aiur.NativeAIR.PrunedMerkle.Logged.bind) (y ()) fun x =>
+        (fun {α} => Aiur.NativeAIR.PrunedMerkle.Logged.pure) a,
+  seqRight := fun {α β} x y => (fun {α β} => Aiur.NativeAIR.PrunedMerkle.Logged.bind) x fun x => y (),
+  bind := fun {α β} => Aiur.NativeAIR.PrunedMerkle.Logged.bind }
 RECURSION WORKER Aiur.buildArgs._unsafe_rec
 Aiur.LayoutMap →
   Std.HashMap Aiur.Local (Array Aiur.Bytecode.ValIdx) →
@@ -21537,6 +22126,128 @@ fun selector rank x x_1 x_2 =>
     pure
         { values := rest.values, column := rest.column, equations := first.equations ++ rest.equations,
           queries := first.queries ++ rest.queries, calls := first.calls ++ rest.calls }
+RECURSION WORKER Aiur.NativeAIR.PrunedMerkle.boundaryCount._unsafe_rec
+Nat → List Nat → Nat
+IMPLEMENTATION
+fun x x_1 =>
+  match x, x_1 with
+  | 0, x => 0
+  | steps.succ, indices =>
+    let parents := Aiur.NativeAIR.PrunedMerkle.parentIndices indices;
+    2 * parents.length - indices.length + Aiur.NativeAIR.PrunedMerkle.boundaryCount._unsafe_rec steps parents
+RECURSION WORKER Aiur.NativeAIR.PrunedMerkle.combine._unsafe_rec
+Aiur.NativeAIR.Merkle.Hash →
+  List Aiur.NativeAIR.PrunedMerkle.Node →
+    List Aiur.NativeAIR.Merkle.Digest →
+      Aiur.NativeAIR.PrunedMerkle.Logged (List Aiur.NativeAIR.PrunedMerkle.Node × List Aiur.NativeAIR.Merkle.Digest)
+IMPLEMENTATION
+fun hash x x_1 =>
+  match x, x_1 with
+  | [], proof => pure ([], proof)
+  | first :: rest, proof =>
+    match rest with
+    | second :: tail =>
+      if first.index % 2 = 0 ∧ second.index = first.index + 1 then do
+        let digest ←
+          Aiur.NativeAIR.PrunedMerkle.hashInput hash (Aiur.NativeAIR.Merkle.pairBytes first.digest second.digest)
+        let __x ← Aiur.NativeAIR.PrunedMerkle.combine._unsafe_rec hash tail proof
+        match __x with
+          | (nodes, remaining) =>
+            let tickets :=
+              List.map (Aiur.NativeAIR.PrunedMerkle.Ticket.extend second.digest) first.tickets ++
+                List.map (Aiur.NativeAIR.PrunedMerkle.Ticket.extend first.digest) second.tickets;
+            pure ({ index := first.index / 2, digest := digest, tickets := tickets } :: nodes, remaining)
+      else
+        match proof with
+        | sibling :: remaining => do
+          let digest ←
+            Aiur.NativeAIR.PrunedMerkle.hashInput hash
+                (Aiur.NativeAIR.Merkle.branchBytes first.index first.digest sibling)
+          let __x ← Aiur.NativeAIR.PrunedMerkle.combine._unsafe_rec hash rest remaining
+          match __x with
+            | (nodes, remaining) =>
+              pure
+                ({ index := first.index / 2, digest := digest,
+                      tickets := List.map (Aiur.NativeAIR.PrunedMerkle.Ticket.extend sibling) first.tickets } ::
+                    nodes,
+                  remaining)
+        | x => Aiur.NativeAIR.PrunedMerkle.reject
+    | [] =>
+      match proof with
+      | sibling :: remaining => do
+        let digest ←
+          Aiur.NativeAIR.PrunedMerkle.hashInput hash
+              (Aiur.NativeAIR.Merkle.branchBytes first.index first.digest sibling)
+        pure
+            ([{ index := first.index / 2, digest := digest,
+                  tickets := List.map (Aiur.NativeAIR.PrunedMerkle.Ticket.extend sibling) first.tickets }],
+              remaining)
+      | x => Aiur.NativeAIR.PrunedMerkle.reject
+RECURSION WORKER Aiur.NativeAIR.PrunedMerkle.initial._unsafe_rec
+Aiur.NativeAIR.Merkle.Hash →
+  List Aiur.NativeAIR.Merkle.Dimensions →
+    Nat →
+      List Aiur.NativeAIR.PrunedMerkle.Ticket →
+        Aiur.NativeAIR.PrunedMerkle.Logged (List Aiur.NativeAIR.PrunedMerkle.Node)
+IMPLEMENTATION
+fun hash dimensions height x =>
+  match x with
+  | [] => pure []
+  | ticket :: tickets => do
+    let digest ←
+      Aiur.NativeAIR.PrunedMerkle.hashInput hash (Aiur.NativeAIR.Merkle.rowBytes dimensions ticket.rows height)
+    let rest ← Aiur.NativeAIR.PrunedMerkle.initial._unsafe_rec hash dimensions height tickets
+    pure ({ index := ticket.index, digest := digest, tickets := [ticket] } :: rest)
+RECURSION WORKER Aiur.NativeAIR.PrunedMerkle.inject._unsafe_rec
+Aiur.NativeAIR.Merkle.Hash →
+  List Aiur.NativeAIR.Merkle.Dimensions →
+    Nat →
+      List Aiur.NativeAIR.PrunedMerkle.Node → Aiur.NativeAIR.PrunedMerkle.Logged (List Aiur.NativeAIR.PrunedMerkle.Node)
+IMPLEMENTATION
+fun hash dimensions height x =>
+  match x with
+  | [] => pure []
+  | node :: nodes =>
+    match node.tickets with
+    | lead :: members =>
+      if
+          (!members.all fun ticket =>
+                Aiur.NativeAIR.Merkle.rowsAt dimensions ticket.rows height ==
+                  Aiur.NativeAIR.Merkle.rowsAt dimensions lead.rows height) =
+            true then
+        Aiur.NativeAIR.PrunedMerkle.reject
+      else do
+        let leaf ←
+          Aiur.NativeAIR.PrunedMerkle.hashInput hash (Aiur.NativeAIR.Merkle.rowBytes dimensions lead.rows height)
+        let digest ← Aiur.NativeAIR.PrunedMerkle.hashInput hash (Aiur.NativeAIR.Merkle.pairBytes node.digest leaf)
+        let rest ← Aiur.NativeAIR.PrunedMerkle.inject._unsafe_rec hash dimensions height nodes
+        pure ({ index := node.index, digest := digest, tickets := node.tickets } :: rest)
+    | x => Aiur.NativeAIR.PrunedMerkle.reject
+RECURSION WORKER Aiur.NativeAIR.PrunedMerkle.walk._unsafe_rec
+Aiur.NativeAIR.Merkle.Hash →
+  List Aiur.NativeAIR.Merkle.Dimensions →
+    Nat →
+      Nat →
+        List Aiur.NativeAIR.PrunedMerkle.Node →
+          List Aiur.NativeAIR.Merkle.Digest →
+            Aiur.NativeAIR.PrunedMerkle.Logged
+              (List Aiur.NativeAIR.PrunedMerkle.Node × List Aiur.NativeAIR.Merkle.Digest)
+IMPLEMENTATION
+fun hash dimensions x x_1 x_2 x_3 =>
+  match x, x_1, x_2, x_3 with
+  | 0, x, nodes, proof => pure (nodes, proof)
+  | steps.succ, height, nodes, proof => do
+    let __x ← Aiur.NativeAIR.PrunedMerkle.combine hash nodes proof
+    match __x with
+      | (parents, remaining) =>
+        have __do_jp := fun next =>
+          Aiur.NativeAIR.PrunedMerkle.walk._unsafe_rec hash dimensions steps (height - 1) next remaining;
+        if Aiur.NativeAIR.Merkle.hasHeight dimensions (height - 1) = true then do
+          let next ← Aiur.NativeAIR.PrunedMerkle.inject hash dimensions (height - 1) parents
+          __do_jp next
+        else do
+          let next ← pure parents
+          __do_jp next
 RECURSION WORKER Aiur.NativeAIR.Quotient.coefficients._unsafe_rec
 List Aiur.NativeAIR.ProofCodec.Extension → Option (List Aiur.NativeAIR.ProofCodec.Extension)
 IMPLEMENTATION
@@ -23537,10 +24248,10 @@ fun value exponent x =>
       let half := Aiur.NativeAIR.ProofCodec.Extension.powBits._unsafe_rec value (exponent / 2) fuel;
       let square := half * half;
       if (exponent % 2 == 0) = true then square else square * value
-C8 component ROOTS 1336; LOGICAL DECLARATIONS 19499; WITH RUNTIME 20289
+C8 component ROOTS 1369; LOGICAL DECLARATIONS 19698; WITH RUNTIME 20493
 IX RUNTIME EXTERNS [Aiur.AiurSystem.build, Aiur.AiurSystem.verify, Aiur.AiurSystem.vkBytes, Aiur.Proof.ofBytesChecked]
 PARTIAL OPAQUE SOURCES [Aiur.instHashableTyp.hash, Aiur.instReprPattern.repr, Aiur.instReprTyp.repr]
 OTHER UNSAFE RUNTIME []
-RECURSION WORKERS 181
+RECURSION WORKERS 186
 Runtime diagnostics cover Ix modules, including private constants. Lean/Std runtime primitives remain an external execution boundary. Partial opaque implementations are inventoried, not proved to refine their logical defaults.
 The runtime inventory and theorem premises are frozen separately. These roots do not establish full compiler/AIR reflection or public certified claim semantics.

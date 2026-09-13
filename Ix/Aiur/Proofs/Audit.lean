@@ -50,6 +50,7 @@ import Ix.Aiur.Proofs.VerifierAccumulator
 import Ix.Aiur.Proofs.Blake3
 import Ix.Aiur.Proofs.MerkleCap
 import Ix.Aiur.Proofs.Merkle
+import Ix.Aiur.Proofs.PrunedMerkle
 import Ix.Aiur.Proofs.Transcript
 import Ix.Aiur.Proofs.Grouping
 import Ix.Aiur.Proofs.TailMatches
@@ -2851,6 +2852,99 @@ def merklePremises : Array Lean.Name := #[
   `Aiur.NativeAIR.Merkle.verifyCovered,
   `Aiur.NativeAIR.Merkle.CollisionOn]
 
+def prunedMerkleRoots : Array Lean.Name := #[
+  `Aiur.NativeAIR.Merkle.walk_append,
+  `Aiur.NativeAIR.PrunedMerkle.Logged.bind_success,
+  `Aiur.NativeAIR.PrunedMerkle.Logged.bind_input_left,
+  `Aiur.NativeAIR.PrunedMerkle.Logged.bind_input_right,
+  `Aiur.NativeAIR.PrunedMerkle.Logged.bind_if,
+  `Aiur.NativeAIR.PrunedMerkle.hashInput_value,
+  `Aiur.NativeAIR.PrunedMerkle.hashInput_inputs,
+  `Aiur.NativeAIR.PrunedMerkle.TicketAt.mono,
+  `Aiur.NativeAIR.PrunedMerkle.NodeAt.mono,
+  `Aiur.NativeAIR.PrunedMerkle.PendingAt.mono,
+  `Aiur.NativeAIR.PrunedMerkle.PendingNode.mono,
+  `Aiur.NativeAIR.PrunedMerkle.TicketAt.extend,
+  `Aiur.NativeAIR.PrunedMerkle.TicketAt.finish,
+  `Aiur.NativeAIR.PrunedMerkle.PendingAt.finish_absent,
+  `Aiur.NativeAIR.PrunedMerkle.PendingAt.finish_injected,
+  `Aiur.NativeAIR.PrunedMerkle.NodeAt.singleton,
+  `Aiur.NativeAIR.PrunedMerkle.NodeAt.pair,
+  `Aiur.NativeAIR.PrunedMerkle.origins_cons,
+  `Aiur.NativeAIR.PrunedMerkle.origins_extend,
+  `Aiur.NativeAIR.PrunedMerkle.combine_refines,
+  `Aiur.NativeAIR.PrunedMerkle.inject_refines,
+  `Aiur.NativeAIR.PrunedMerkle.initial_refines,
+  `Aiur.NativeAIR.PrunedMerkle.walk_refines,
+  `Aiur.NativeAIR.PrunedMerkle.mapM_members,
+  `Aiur.NativeAIR.PrunedMerkle.representatives_refines,
+  `Aiur.NativeAIR.PrunedMerkle.replay_refines,
+  `Aiur.NativeAIR.PrunedMerkle.replay_individual,
+  `Aiur.NativeAIR.PrunedMerkle.verify_individual,
+  `Aiur.NativeAIR.PrunedMerkle.verifyCovered_individual,
+  `Aiur.NativeAIR.PrunedMerkle.verify_collision,
+  `Aiur.NativeAIR.PrunedMerkle.verifyCovered_collision,
+  `Aiur.NativeAIR.PrunedMerkle.blake3_collision,
+  `Aiur.NativeAIR.PrunedMerkle.blake3_native_collision]
+
+def prunedMerkleAxiomFreeRoots : Array Lean.Name := #[
+  `Aiur.NativeAIR.PrunedMerkle.hashInput_value,
+  `Aiur.NativeAIR.PrunedMerkle.hashInput_inputs,
+  `Aiur.NativeAIR.PrunedMerkle.origins_cons]
+
+def prunedMerkleQuotRoots : Array Lean.Name := #[
+  `Aiur.NativeAIR.Merkle.walk_append,
+  `Aiur.NativeAIR.PrunedMerkle.TicketAt.finish,
+  `Aiur.NativeAIR.PrunedMerkle.PendingAt.finish_absent,
+  `Aiur.NativeAIR.PrunedMerkle.PendingAt.finish_injected,
+  `Aiur.NativeAIR.PrunedMerkle.NodeAt.singleton,
+  `Aiur.NativeAIR.PrunedMerkle.NodeAt.pair,
+  `Aiur.NativeAIR.PrunedMerkle.combine_refines,
+  `Aiur.NativeAIR.PrunedMerkle.inject_refines,
+  `Aiur.NativeAIR.PrunedMerkle.initial_refines,
+  `Aiur.NativeAIR.PrunedMerkle.walk_refines,
+  `Aiur.NativeAIR.PrunedMerkle.mapM_members,
+  `Aiur.NativeAIR.PrunedMerkle.representatives_refines,
+  `Aiur.NativeAIR.PrunedMerkle.replay_refines,
+  `Aiur.NativeAIR.PrunedMerkle.replay_individual]
+
+def prunedMerkleClassicalRoots : Array Lean.Name := #[
+  `Aiur.NativeAIR.PrunedMerkle.verify_individual,
+  `Aiur.NativeAIR.PrunedMerkle.verifyCovered_individual,
+  `Aiur.NativeAIR.PrunedMerkle.verify_collision,
+  `Aiur.NativeAIR.PrunedMerkle.verifyCovered_collision,
+  `Aiur.NativeAIR.PrunedMerkle.blake3_collision,
+  `Aiur.NativeAIR.PrunedMerkle.blake3_native_collision]
+
+def prunedMerklePremises : Array Lean.Name := #[
+  `Aiur.NativeAIR.PrunedMerkle.Logged.mk,
+  `Aiur.NativeAIR.PrunedMerkle.Logged.pure,
+  `Aiur.NativeAIR.PrunedMerkle.Logged.bind,
+  `Aiur.NativeAIR.PrunedMerkle.reject,
+  `Aiur.NativeAIR.PrunedMerkle.ofOption,
+  `Aiur.NativeAIR.PrunedMerkle.hashInput,
+  `Aiur.NativeAIR.PrunedMerkle.Ticket.mk,
+  `Aiur.NativeAIR.PrunedMerkle.Ticket.extend,
+  `Aiur.NativeAIR.PrunedMerkle.Node.mk,
+  `Aiur.NativeAIR.PrunedMerkle.uniqueIndices,
+  `Aiur.NativeAIR.PrunedMerkle.parentIndices,
+  `Aiur.NativeAIR.PrunedMerkle.boundaryCount,
+  `Aiur.NativeAIR.PrunedMerkle.representatives,
+  `Aiur.NativeAIR.PrunedMerkle.initial,
+  `Aiur.NativeAIR.PrunedMerkle.combine,
+  `Aiur.NativeAIR.PrunedMerkle.inject,
+  `Aiur.NativeAIR.PrunedMerkle.walk,
+  `Aiur.NativeAIR.PrunedMerkle.replay,
+  `Aiur.NativeAIR.PrunedMerkle.accepts,
+  `Aiur.NativeAIR.PrunedMerkle.verify,
+  `Aiur.NativeAIR.PrunedMerkle.verifyCovered,
+  `Aiur.NativeAIR.PrunedMerkle.TicketAt.mk,
+  `Aiur.NativeAIR.PrunedMerkle.NodeAt,
+  `Aiur.NativeAIR.PrunedMerkle.PendingAt,
+  `Aiur.NativeAIR.PrunedMerkle.PendingNode,
+  `Aiur.NativeAIR.PrunedMerkle.origins,
+  `Aiur.NativeAIR.PrunedMerkle.instMonadLogged]
+
 def roots : Array Lean.Name := #[
   `Aiur.G.ofNat_n, `Aiur.G.mul_one, `Aiur.G.mul_zero,
   `Aiur.AIR.inactive_multiplicity_zero,
@@ -2887,7 +2981,7 @@ def roots : Array Lean.Name := #[
     fieldRoots ++ localConstraintRoots ++ byteArithmeticRoots ++ byteLookupRoots ++
     lookupMessageRoots ++ lookupShapeRoots ++ globalLookupRoots ++ lookupBudgetRoots ++
     selectorControlRoots ++ operationRowRoots ++ blockRowRoots ++ querySlotRoots ++ circuitRowRoots ++
-    rowCountRoots ++ circuitTableRoots ++ branchlessRoots ++ circuitTraceRoots ++ circuitMembershipRoots ++ lookupLayoutRoots ++ memoryColumnRoots ++ byteColumnRoots ++ expressionGraphRoots ++ frontendExpressionRoots ++ graphCompilationRoots ++ operationExpressionRoots ++ blockCircuitRoots ++ allocationRoots ++ circuitAllocationRoots ++ circuitCompletionRoots ++ checkedCircuitRoots ++ keyCodecRoots ++ compiledKeyRoots ++ proofAcceptanceRoots ++ extensionRoots ++ logUpRoots ++ domainRoots ++ verifierArithmeticRoots ++ transcriptRoots ++ blake3Roots ++ merkleCapRoots ++ merkleRoots
+    rowCountRoots ++ circuitTableRoots ++ branchlessRoots ++ circuitTraceRoots ++ circuitMembershipRoots ++ lookupLayoutRoots ++ memoryColumnRoots ++ byteColumnRoots ++ expressionGraphRoots ++ frontendExpressionRoots ++ graphCompilationRoots ++ operationExpressionRoots ++ blockCircuitRoots ++ allocationRoots ++ circuitAllocationRoots ++ circuitCompletionRoots ++ checkedCircuitRoots ++ keyCodecRoots ++ compiledKeyRoots ++ proofAcceptanceRoots ++ extensionRoots ++ logUpRoots ++ domainRoots ++ verifierArithmeticRoots ++ transcriptRoots ++ blake3Roots ++ merkleCapRoots ++ merkleRoots ++ prunedMerkleRoots
 
 def premises : Array Lean.Name := #[
   `Aiur.AIR.activityConstraint,
@@ -3126,7 +3220,7 @@ def premises : Array Lean.Name := #[
   `Aiur.NativeAIR.evalRoots,
   `Aiur.NativeAIR.readLookup,
   `Aiur.NativeAIR.evalLookup,
-  `Aiur.NativeAIR.goldilocksOps] ++ frontendExpressionPremises ++ graphCompilationPremises ++ operationExpressionPremises ++ blockCircuitPremises ++ allocationPremises ++ circuitAllocationPremises ++ circuitCompletionPremises ++ checkedCircuitPremises ++ keyCodecPremises ++ compiledKeyPremises ++ proofAcceptancePremises ++ extensionPremises ++ logUpPremises ++ domainPremises ++ verifierArithmeticPremises ++ transcriptPremises ++ blake3Premises ++ merkleCapPremises ++ merklePremises
+  `Aiur.NativeAIR.goldilocksOps] ++ frontendExpressionPremises ++ graphCompilationPremises ++ operationExpressionPremises ++ blockCircuitPremises ++ allocationPremises ++ circuitAllocationPremises ++ circuitCompletionPremises ++ checkedCircuitPremises ++ keyCodecPremises ++ compiledKeyPremises ++ proofAcceptancePremises ++ extensionPremises ++ logUpPremises ++ domainPremises ++ verifierArithmeticPremises ++ transcriptPremises ++ blake3Premises ++ merkleCapPremises ++ merklePremises ++ prunedMerklePremises
 
 private def constants (info : Lean.ConstantInfo) : Array Lean.Name :=
   info.type.getUsedConstants ++ match info with
@@ -3205,7 +3299,12 @@ run_cmd do
   let env ← getEnv
   for root in roots do
     let some info := env.checked.get.find? root | throwError "C8 component audit: missing root {root}"
-    let expected := if merkleRoots.contains root then
+    let expected := if prunedMerkleRoots.contains root then
+        if prunedMerkleAxiomFreeRoots.contains root then #[]
+        else if prunedMerkleClassicalRoots.contains root then #[``propext, ``Classical.choice, ``Quot.sound]
+        else if prunedMerkleQuotRoots.contains root then #[``propext, ``Quot.sound]
+        else #[``propext]
+      else if merkleRoots.contains root then
         if merkleAxiomFreeRoots.contains root then #[]
         else if merkleClassicalRoots.contains root then #[``propext, ``Classical.choice, ``Quot.sound]
         else if merkleQuotRoots.contains root then #[``propext, ``Quot.sound]

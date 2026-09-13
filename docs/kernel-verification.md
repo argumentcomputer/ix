@@ -410,14 +410,14 @@ sizes, constrained and advice calls, nested continuations, visibility and
 public-claim widths. All 54 parallel release Rust tests pass, including the
 supplied rank/output ambiguity regression; release Clippy denies warnings.
 
-The audit checks 1,336 roots by traversing checked types, bodies and inductive
-constructors. Fifty-two roots use no axioms; one uses only `Quot.sound`;
-222 depend only on `propext`; 401 use exactly `propext` and `Quot.sound`;
-the other 660 use exactly
+The audit checks 1,369 roots by traversing checked types, bodies and inductive
+constructors. Fifty-five roots use no axioms; one uses only `Quot.sound`;
+232 depend only on `propext`; 415 use exactly `propext` and `Quot.sound`;
+the other 666 use exactly
 `propext`, `Classical.choice` and `Quot.sound`. The combined closure
-has 19,499 logical declarations and 20,289 declarations after following runtime
+has 19,698 logical declarations and 20,493 declarations after following runtime
 workers and replacements. The frozen report records four native runtime entry points,
-three partial opaque sources and all 181 Ix recursion worker implementations.
+three partial opaque sources and all 186 Ix recursion worker implementations.
 Bytecode comparison/hashing, tail-match restoration and source-value hashing
 use total definitions. Type hashing and type/pattern formatting remain partial.
 These remaining implementations and
@@ -1106,8 +1106,8 @@ and the selected Lean `readProof` wrapper. `CheckedProof` retains success
 as a field; each selected row consequently has its injection depth within
 the authenticated path length. Coverage is preserved by matrix subsets,
 and a uniformly sized batch permits the native cap clamp. The individual
-path theorem below uses these cap properties; shared-opening verification
-and cryptographic extraction remain open.
+path and shared-opening theorems below use these cap properties;
+cryptographic extraction remains open.
 
 The repair adds 22 roots and three definitions. All 1,280 prior root
 statements and axiom sets, 856 prior premise definitions and 178 worker
@@ -1169,9 +1169,57 @@ complete gate with thirty-three fresh native corpora pass. The backend cases
 remain two accepted and seventeen rejected, with no unexpected outcomes.
 The added test dependency
 uses the existing Plonky3 revision. Native production code and serialized
-encodings are unchanged. The actual PCS uses shared, pruned openings;
-its frontier algorithm, PCS/FRI extraction and native refinement remain
-separate obligations.
+encodings are unchanged. The actual PCS uses the shared openings described
+below. PCS/FRI extraction and native refinement remain separate obligations.
+
+`NativeAIR.PrunedMerkle` replays the binary shared-opening algorithm. It sorts
+and deduplicates query indices, requires duplicate indices to supply identical
+rows, checks the frontier's boundary-proof length, and hashes each unique
+initial row group. Adjacent even/odd nodes share their parent hash; other
+nodes consume a boundary sibling. The whole layer is paired before any
+shorter rows are injected. Merged queries must agree on each injected row
+group. The replay retains hash inputs even when a later group rejects.
+
+The checked refinement follows every original query through deduplication,
+pairing and injection. It constructs an individual sibling path ending at
+the same cap index and digest and proves that every input on that path
+occurs in the shared execution log. An intermediate invariant describes
+paired nodes before shorter rows are injected, preserving the native order
+of operations. Acceptance of a shared opening implies acceptance of each
+reconstructed individual opening.
+
+With cap coverage, different rows accepted at a common public index,
+dimensions and cap expose a collision in the concrete checked BLAKE3
+function. The witness uses at most
+`2 + 6 * (maxLogHeight - capHeight)` inputs from two reconstructed paths,
+all included in the actual shared hash logs. Each witness input has at most
+64 bytes or eight times the larger opening's field count. Openings with
+fewer than 2^61 fields therefore give collision witnesses within BLAKE3's
+native input bound. This is a collision reduction; quantitative security
+still requires a cryptographic failure bound.
+
+Native comparisons cover 7,946 shared openings, including empty, full,
+reordered and repeated query sets, mixed and repeated matrix heights,
+wide rows, cap clamps and malformed inputs. Production commit/open creates
+the fixtures, and instrumented verification must agree with the production
+verifier. Every decision and all 42,803 hash inputs and outputs match Lean.
+All 19,709 reconstructed individual paths also reach their shared node and
+use inputs from its execution log. The corpus includes 1,619 acceptances,
+1,069 acceptances with uncovered caps, and 2,534 rejections after hashing.
+An explicit merged-row disagreement rejects after exactly five hash calls
+in both implementations. Covered verification excludes the cap omission.
+
+The shared-opening proof adds 33 roots and 27 definitions and constructors,
+including the logging monad and path invariants, and five inspected structural
+recursion workers. All 1,336 prior root statements and axiom sets, 881 premise
+definitions and 181 worker bodies remain unchanged. All 93 parallel native
+release tests, Clippy with warnings denied, the strict 473-job build and
+the complete gate with thirty-four fresh native corpora pass. The backend
+cases remain two accepted and seventeen rejected, with no unexpected outcomes.
+
+The extension-field MMCS adapter, PCS/FRI verification and extraction,
+quantitative security, and universal Rust refinement remain separate
+obligations. Native comparisons establish compatibility on the corpus.
 
 The budget comparison covers
 21,964 Rust/Lean cases, including

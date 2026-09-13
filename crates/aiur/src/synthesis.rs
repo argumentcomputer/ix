@@ -655,6 +655,8 @@ mod tests {
   mod mmcs;
   mod proof_codec;
   mod proof_shapes;
+  #[cfg(not(feature = "cuda"))]
+  mod pruned_merkle;
   mod scalar;
   mod transcript;
 
