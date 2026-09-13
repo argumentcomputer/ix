@@ -11,6 +11,7 @@ mod census;
 mod closure;
 mod closure_census;
 mod native;
+mod original_closure;
 pub mod replay;
 mod root_tables;
 mod setup;
@@ -30,9 +31,15 @@ pub use closure::{
 pub use closure_census::{
   ExecRootClosedCensusLimitsV0, ExecRootClosedCensusOutcomeV0,
   ExecRootClosedCensusPrefixV0, ExecRootClosedCensusV0,
-  census_exec_root_closed_observed, census_exec_root_closed_setup_observed,
+  census_exec_original_claims_observed,
+  census_exec_original_claims_setup_observed, census_exec_root_closed_observed,
+  census_exec_root_closed_setup_observed,
 };
 pub use native::{ExecReplayWitness, compile_exec_binding, replay_exec};
+pub use original_closure::{
+  CompiledExecOriginalClaimsClosure, ExecOriginalClosureLimitsV0,
+  compile_exec_original_claims_closure,
+};
 pub use root_tables::{CompiledExecRootTables, compile_exec_root_tables};
 pub use setup::{
   CompiledExecReplay, ExecReplayIdentitiesV0, compile_exec_replay,

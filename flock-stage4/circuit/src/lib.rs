@@ -12,17 +12,21 @@ mod exec_relation;
 mod f128;
 mod fixed_table;
 mod fixed_table_basis;
+mod fixed_table_batch;
+mod jagged_direct;
 mod jagged_fold;
 mod ligerito;
 mod matrix_fold;
 mod merged_pcs;
 mod multipoint;
+mod original_claims;
 mod public_inputs;
 mod r1cs;
 mod relation;
 mod root_closure;
 mod statement;
 mod structure_fold;
+mod structured_matrices;
 mod transcript;
 mod wiring;
 
@@ -43,19 +47,25 @@ pub use exec_binding::{
   ExecBindingCircuitOutputV0, constrain_exec_binding,
 };
 pub use exec_relation::{
+  ExecOriginalClaimsClosedOutputV0, ExecOriginalClaimsWitnessV0,
   ExecReplayCircuitWitnessV0, ExecRootClosedCircuitOutputV0,
   ExecRootConditionalError, ExecRootConditionalPublicV0,
-  ExecRootConditionalWitnessV0, constrain_exec_root_closed,
-  constrain_exec_root_conditional,
+  ExecRootConditionalWitnessV0, constrain_exec_original_claims_closed,
+  constrain_exec_root_closed, constrain_exec_root_conditional,
 };
 pub use f128::{
-  F128_BITS, F128VariablesV1, alloc_f128_private,
+  F128_BITS, F128VariablesV1, alloc_f128_constant, alloc_f128_private,
   build_f128_multiplication_r1cs, constrain_f128_add, constrain_f128_frobenius,
   constrain_f128_inverse, constrain_f128_multiply,
   constrain_f128_multiply_constant, enforce_f128_equal,
 };
 pub use fixed_table::constrain_f128_fixed_table;
 pub use fixed_table_basis::constrain_f128_fixed_table_basis;
+pub use fixed_table_batch::{
+  constrain_f128_fixed_table_basis_batch,
+  constrain_f128_structure_original_claims,
+};
+pub use jagged_direct::constrain_f128_jagged_direct;
 pub use jagged_fold::{
   F128JaggedAccumulatorCircuitError, F128JaggedAccumulatorCircuitInputsV1,
   F128JaggedAccumulatorCircuitOutputV1, F128JaggedRootClaimPublicInputV1,
@@ -86,6 +96,7 @@ pub use multipoint::{
   F128MultipointTwistedAssistCircuitOutputV1,
   constrain_f128_multipoint_twisted_assist,
 };
+pub use original_claims::validate_exec_original_claim_tables;
 pub use public_inputs::{
   STAGE4_PUBLIC_INPUT_LIMBS, Stage4PublicInputVariablesV1,
   Stage4PublicInputsV1, alloc_stage4_public_inputs,
@@ -121,6 +132,9 @@ pub use structure_fold::{
   alloc_f128_circuit_structure_root_public_input,
   constrain_f128_circuit_structure_accumulator,
   constrain_f128_circuit_structure_root_public_input,
+};
+pub use structured_matrices::{
+  constrain_f128_structured_matrices, constrain_f128_structured_matrix_claims,
 };
 pub use transcript::{
   ChainedBlake3CircuitOutputV1, F128TranscriptVariablesV1,

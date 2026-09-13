@@ -140,11 +140,11 @@ phase/topology digests agree. No Stage 4 key or FFLONK proof is generated.
 | Accumulator transcript compression rows / PoW predicates | 4,947 / 1,373 |
 | Terminal diagnostic root families | 46 matrix roots, 1 structure, 1 jagged |
 
-The current ordinary Stage 4 workspace suite passes 208 tests; 23 tests are
+The current ordinary Stage 4 workspace suite passes 228 tests; 31 tests are
 ignored by default. These separately labelled opt-in tests cover native
 proof/replay, component materialization, and bounded whole-circuit census;
 none is a full terminal proving test. This count includes the later packed
-backend integration below.
+backend integration, direct original-claim closure and derived-C0 storage below.
 The real three-execution replay regression passes under a 32 GiB
 address-space cap with four Rayon threads. The complete matrix-free census
 finished successfully in 1,161.51 seconds, including setup, under that cap.
@@ -624,6 +624,46 @@ terminal-prover measurements. The 11 setup tests also passed with debug
 assertions enabled; that run overlapped emission, so the timings are not a
 controlled throughput comparison. The [proof-free emission report](../flock-stage4/census/exec-proof-free-root-closed-emission-v0.json)
 records the frozen source hashes, commands, actual limits and separate scopes.
+
+## Direct original-claim closure and the CPU-box census
+
+The separate `compile_exec_original_claims_closure` path compiles exact shared
+programs for every original packed small-class claim: 64 Boolean matrices,
+three structure evaluations and three jagged evaluations. The full original
+verifier body and its statement/transcript/PoW/PCS checks are unchanged. It
+replaces only the auxiliary folds created by the Stage 4 replay adapter, not
+any part of the original Stage 3 proof. All 371 queries and their grinding
+policy remain pinned. Q's two limbs are the only public circuit inputs.
+
+Setup owns the source matrices, the complete eight-plane structure table and
+the jagged layout. Shared computations require identical constrained point
+wires, never merely equal private values. Ordered identities, complete claim
+coverage, geometry and source-slot budgets are checked before allocation.
+Every computed evaluation is constrained equal to its original claimed value.
+Compilation/emission failures propagate without a fallback to an unchecked path.
+
+Three native executions, each with a 236,307-byte Exec bundle, pass ownership,
+native differentials and exact 4,096-row setup/assigned prefix tests. The
+complete paired component censuses report 552,381,742 / 37,492,660 / 78,835,570
+PLONK rows for matrices / structure / jagged respectively. They independently
+allocate their inputs and are not a full circuit count or satisfaction check.
+
+The actual whole setup census on the 64-vCPU, 496-GiB CPU box ended in a typed
+`RejectedBudget`: 667,661,260 R1CS constraints and 1,073,741,821 PLONK rows,
+still in matrix closure, after 1,462.311 seconds. With the two public and two
+blinding rows the prefix exceeds `2^30`; the remaining matrix/structure/jagged
+work was not counted. The full count/digest and whole assigned census are not
+available. Test exit zero means correct refusal, not domain admission. Peak
+test-process RSS was 564,120 KiB under a 32-GiB virtual-address cap; this is
+matrix-free census memory, not a full prover peak. The [evidence report](../flock-stage4/census/exec-original-claims-closed-v0.json)
+and [raw log](../flock-stage4/census/exec-original-claims-closed-v0.log) pin the source archive,
+exact bounds, component identities and separate test scopes.
+
+Independently, the [derived-C0 storage change](../flock-stage4/census/fflonk-derived-c0-storage-v1.json)
+reduces the file proving key from 19 to 11 field columns, preserving the
+polynomial, digest, commitment, VK and small-test proof bytes. At `2^30` this
+saves 256 GiB, but key plus compressed SRS still needs about 784 GiB before
+scratch space. Neither this saving nor the low census RSS admits full proving.
 
 ## Remaining gates
 

@@ -1,7 +1,9 @@
 //! Bounded matrix-free measurement of the complete root-closed composition.
 //! A refused prefix is deliberately a different type from a full census.
 
-use crate::{CompiledExecRootClosure, ExecReplayWitness};
+use crate::{
+  CompiledExecOriginalClaimsClosure, CompiledExecRootClosure, ExecReplayWitness,
+};
 use anyhow::{Result, ensure};
 use ix_fflonk::{
   FFLONK_BLINDING_ROWS, FFLONK_MAX_BASE_DOMAIN, PlonkGateCensusV1,
@@ -82,7 +84,7 @@ pub fn census_exec_root_closed_observed(
       &witness.diagnostic_public_inputs(),
     )
   });
-  finish_census(compiled, builder, projection, prefix, emitted)
+  finish_census(compiled.digest(), builder, projection, prefix, emitted)
 }
 
 /// Proof-free counterpart: the approved setup is the ONLY relation input.
@@ -102,7 +104,93 @@ pub fn census_exec_root_closed_setup_observed(
   let (mut builder, projection, prefix) =
     bounded_projection(limits.required_domain_rows, report, true);
   let emitted = compiled.emit_setup(&mut builder, source_payload_limit);
-  finish_census(compiled, builder, projection, prefix, emitted)
+  finish_census(compiled.digest(), builder, projection, prefix, emitted)
+}
+
+/// Whole direct-claim composition census. Keeps every original claim and the
+/// complete main replay, and uses the same strict backend domain cap. This
+/// counts emitted equations; it does not check a full satisfying assignment.
+pub fn census_exec_original_claims_observed(
+  compiled: &CompiledExecOriginalClaimsClosure<'_, '_>,
+  public: Stage4PublicInputsV1,
+  witness: &ExecReplayWitness<'_>,
+  limits: ExecRootClosedCensusLimitsV0,
+  report: impl FnMut(ExecRootClosedCensusPrefixV0) + 'static,
+) -> Result<ExecRootClosedCensusOutcomeV0> {
+  compiled.validate_witness(witness)?;
+  if let Some(rejected) = check_budget(limits)? {
+    return Ok(rejected);
+  }
+  let (mut builder, projection, prefix) =
+    bounded_projection(limits.required_domain_rows, report, false);
+  let emitted =
+    compiled.constrain(&mut builder, public, witness).and_then(|output| {
+      ensure!(
+        output.tables_digest() == compiled.tables().digest(),
+        "original-claim table identity"
+      );
+      let families = [
+        (
+          output.matrix_evaluations(),
+          output
+            .algebra()
+            .deferred_matrix_claims
+            .iter()
+            .map(|c| &c.value)
+            .collect::<Vec<_>>(),
+        ),
+        (
+          output.structure_evaluations(),
+          output
+            .wiring()
+            .circuit_structure_claims
+            .iter()
+            .map(|c| &c.value)
+            .collect(),
+        ),
+        (
+          output.jagged_evaluations(),
+          output
+            .multipoint()
+            .jagged_assertion
+            .claims
+            .iter()
+            .map(|c| &c.value)
+            .collect(),
+        ),
+      ];
+      for (values, claims) in families {
+        ensure!(
+          values.len() == claims.len(),
+          "original-claim differential coverage"
+        );
+        for (value, claim) in values.iter().zip(claims) {
+          ensure!(
+            value.value() == claim.value(),
+            "original-claim native value differential"
+          );
+        }
+      }
+      Ok(())
+    });
+  finish_census(compiled.digest(), builder, projection, prefix, emitted)
+}
+
+/// Proof-free whole direct-claim counterpart. No auxiliary fold scratch,
+/// proof, commitment, source assignment or native acceptance is an input.
+pub fn census_exec_original_claims_setup_observed(
+  compiled: &CompiledExecOriginalClaimsClosure<'_, '_>,
+  source_payload_limit: u64,
+  limits: ExecRootClosedCensusLimitsV0,
+  report: impl FnMut(ExecRootClosedCensusPrefixV0) + 'static,
+) -> Result<ExecRootClosedCensusOutcomeV0> {
+  if let Some(rejected) = check_budget(limits)? {
+    return Ok(rejected);
+  }
+  let (mut builder, projection, prefix) =
+    bounded_projection(limits.required_domain_rows, report, true);
+  let emitted = compiled.emit_setup(&mut builder, source_payload_limit);
+  finish_census(compiled.digest(), builder, projection, prefix, emitted)
 }
 
 fn check_budget(
@@ -124,7 +212,7 @@ fn check_budget(
 }
 
 fn finish_census(
-  compiled: &CompiledExecRootClosure<'_, '_>,
+  composition_digest: [u8; 32],
   builder: R1csBuilder,
   projection: PlonkGateProjectionV1,
   prefix: Rc<Cell<ExecRootClosedCensusPrefixV0>>,
@@ -154,7 +242,7 @@ fn finish_census(
   );
   Ok(ExecRootClosedCensusOutcomeV0::Complete(Box::new(
     ExecRootClosedCensusV0 {
-      composition_digest: compiled.digest(),
+      composition_digest,
       r1cs,
       plonk,
       public_scalar_bytes: 32 * PUBLIC_ROWS,

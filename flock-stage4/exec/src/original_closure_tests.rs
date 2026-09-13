@@ -1,0 +1,415 @@
+//! Complete direct-original-claim composition tests. Prefix comparisons,
+//! native proofs and WHOLE censuses are separately labelled; none is a
+//! terminal FFLONK proof or evidence of whole-pipeline resource admission.
+
+use super::{
+  capacity_tests::SMALL,
+  closure_tests::{LIMITS, captured_prefix},
+  hash, input, memory_summary, output, program,
+};
+use crate::{
+  CompiledExecReplay, ExecOriginalClosureLimitsV0,
+  ExecRootClosedCensusLimitsV0, ExecRootClosedCensusOutcomeV0,
+  ExecSetupR1csLimitsV0, census_exec_original_claims_observed,
+  census_exec_original_claims_setup_observed,
+  compile_exec_original_claims_closure, compile_exec_replay,
+};
+use ix_stage4_trace::{
+  ExecCommitmentsV0, F128JaggedDirectLimitsV0, F128StructuredMatricesLimitsV0,
+};
+use ix_terminal_circuit::{
+  ExecOriginalClaimsWitnessV0, R1csBuilder, R1csError, R1csShapeLimitsV0,
+  Stage4PublicInputsV1, Stage4TraceWitnessV1, Stage4TranscriptWitnessV1,
+  constrain_exec_original_claims_closed, validate_exec_original_claim_tables,
+};
+use ixby_flock::{
+  blake3_backend::Blake3Backend,
+  ixby::{
+    decode::PrimitiveSet,
+    exec::{
+      CompiledExec, SemanticProfile, compile_exec_profile_with_backend,
+      expected_statement,
+    },
+  },
+};
+use std::time::Instant;
+
+const DIRECT_LIMITS: ExecOriginalClosureLimitsV0 =
+  ExecOriginalClosureLimitsV0 {
+    matrices: F128StructuredMatricesLimitsV0 {
+      tables: 64,
+      source_entries: 2_000_000,
+      blocks: 100_000,
+      coefficient_terms: 2_000_000,
+      shared_nodes: 1_000_000,
+      temporary_nodes: 1_000_000,
+    },
+    source_tables: LIMITS.diagrams,
+    structure: LIMITS.structure_basis,
+    jagged: F128JaggedDirectLimitsV0 {
+      runs: 100_000,
+      combo_terms: 100_000,
+      row_nodes: 1_000_000,
+      equality_nodes: 1_000_000,
+    },
+  };
+fn setup() -> CompiledExec {
+  compile_exec_profile_with_backend(
+    SemanticProfile::scalar(SMALL).unwrap(),
+    SMALL,
+    PrimitiveSet::scalar(),
+    Blake3Backend::PackedWordsV0,
+  )
+  .unwrap()
+}
+
+fn prove(
+  setup: &CompiledExec,
+  literal: bool,
+  value: bool,
+) -> (ExecCommitmentsV0, Stage4PublicInputsV1, Vec<u8>) {
+  let mut code = program(false);
+  let result = if literal {
+    code.truncate(code.len() - 6);
+    code.extend([1, 1, 0, 1]);
+    true
+  } else {
+    value
+  };
+  let input = input(value);
+  let output = output(result);
+  let expected = expected_statement(setup.profile(), &code, &input, &output);
+  let program = hash(1, &setup.identities().profile, &code);
+  let commitments = ExecCommitmentsV0 {
+    program,
+    input: hash(2, &program, &input),
+    output: hash(3, &program, &output),
+  };
+  assert_eq!(
+    commitments.statement_digest(setup.identities().profile),
+    expected.0
+  );
+  let public = Stage4PublicInputsV1::from_statement_digest(
+    commitments.public_digest(setup.identities().profile),
+  );
+  (commitments, public, setup.prove(expected, &code, &input).unwrap())
+}
+
+// Each mutation must fail the table preflight BEFORE even the two public
+// variables or transcript sources are allocated. Empty values are deliberate:
+// the failure must occur before a missing source could explain rejection.
+fn preflight_negatives(
+  replay: &CompiledExecReplay<'_>,
+  tables: &ix_stage4_trace::F128OriginalClaimTablesV0,
+) {
+  validate_exec_original_claim_tables(
+    tables,
+    replay.binding(),
+    &replay.boolean.trace,
+    &replay.wiring,
+    &replay.pcs.multipoint,
+  )
+  .unwrap();
+  let empty = R1csBuilder::new_projection().finish_projection().unwrap();
+  for case in 0..16 {
+    let mut binding = replay.binding().clone();
+    let mut algebra = replay.boolean.trace.clone();
+    let mut wiring = replay.wiring.clone();
+    let mut multipoint = replay.pcs.multipoint.clone();
+    match case {
+      0 => binding.registry_digest[0] ^= 1,
+      1 => binding.circuit_digest[0] ^= 1,
+      2 => {
+        algebra.deferred_matrix_claims.pop();
+      },
+      3 => algebra
+        .deferred_matrix_claims
+        .push(algebra.deferred_matrix_claims[0].clone()),
+      4 => algebra.deferred_matrix_claims.swap(0, 2),
+      5 => algebra.deferred_matrix_claims[0].matrix.registry_digest[0] ^= 1,
+      6 => {
+        algebra.deferred_matrix_claims[0].row.low.pop();
+      },
+      7 => {
+        algebra.deferred_matrix_claims[0].column.point.pop();
+      },
+      8 => {
+        algebra.deferred_matrix_claims[1].row.low[0] =
+          ix_stage4_trace::F128ReferenceV1::Input(
+            ix_stage4_trace::F128InputSourceV1::Constant([9; 16]),
+          )
+      },
+      9 => wiring.circuit_digest[0] ^= 1,
+      10 => wiring.structure_base_variables = u32::MAX,
+      11 => wiring.row_variables += 1,
+      12 => multipoint.matrix.circuit_digest[0] ^= 1,
+      13 => {
+        multipoint.group_column_addresses.pop();
+      },
+      14 => multipoint.group_column_addresses.swap(0, 1),
+      15 => multipoint.matrix.row_variables += 1,
+      _ => unreachable!(),
+    }
+    let mut builder = R1csBuilder::new_projection();
+    assert!(
+      constrain_exec_original_claims_closed(
+        &mut builder,
+        Stage4PublicInputsV1::from_statement_digest([0; 32]),
+        tables,
+        ExecOriginalClaimsWitnessV0 {
+          statement_binding: &binding,
+          commitments: ExecCommitmentsV0 {
+            program: [0; 32],
+            input: [0; 32],
+            output: [0; 32]
+          },
+          transcript: Stage4TranscriptWitnessV1 {
+            trace: replay.main.hash.setup_topology(),
+            observed_values: &[],
+            challenges: &[],
+            byte_payloads: &[]
+          },
+          algebra: Stage4TraceWitnessV1 {
+            trace: &algebra,
+            private_values: &[]
+          },
+          wiring: Stage4TraceWitnessV1 { trace: &wiring, private_values: &[] },
+          merged_pcs: &replay.pcs.frontend,
+          multipoint: Stage4TraceWitnessV1 {
+            trace: &multipoint,
+            private_values: &[]
+          },
+          inner_ligerito: Stage4TraceWitnessV1 {
+            trace: &replay.main.inner,
+            private_values: &[]
+          },
+          inner_ligerito_private_digests: &[],
+        }
+      )
+      .is_err(),
+      "preflight mutation {case}"
+    );
+    assert_eq!(
+      builder.finish_projection().unwrap(),
+      empty,
+      "preflight mutation {case} emitted constraints"
+    );
+  }
+}
+
+#[test]
+#[ignore = "bounded proof-free ownership, malformed preflights and 3 actual native Exec replay prefixes; not whole census or terminal proof"]
+fn packed_small_original_claim_closure_is_owned_and_matches_native_prefixes() {
+  let setup = setup();
+  let replay = compile_exec_replay(&setup).unwrap();
+  let closure =
+    compile_exec_original_claims_closure(&replay, DIRECT_LIMITS).unwrap();
+  let rebuilt =
+    compile_exec_original_claims_closure(&replay, DIRECT_LIMITS).unwrap();
+  assert_eq!(closure.digest(), rebuilt.digest());
+  assert_eq!(closure.tables(), rebuilt.tables());
+  assert!(std::ptr::eq(closure.replay_setup(), &replay));
+  drop(rebuilt);
+  preflight_negatives(&replay, closure.tables());
+  for family in 0..4 {
+    let mut limits = DIRECT_LIMITS;
+    match family {
+      0 => limits.matrices.tables = 63,
+      1 => limits.source_tables.entries = 0,
+      2 => limits.structure.state_slots = 0,
+      3 => limits.jagged.combo_terms = 0,
+      _ => unreachable!(),
+    }
+    assert!(compile_exec_original_claims_closure(&replay, limits).is_err());
+  }
+  let slots = closure.setup_source_slots().unwrap();
+  let bytes = slots.payload_bytes().unwrap();
+  assert!(bytes > 0);
+  let legacy = crate::compile_exec_root_closure(&replay, LIMITS).unwrap();
+  assert!(
+    legacy.setup_source_slots().unwrap().payload_bytes().unwrap() > bytes
+  );
+  assert_ne!(closure.digest(), legacy.digest());
+  let prefix =
+    captured_prefix(true, |builder| closure.emit_setup(builder, bytes));
+  // The extracted common main emitter retains EXACT original row order.
+  assert_eq!(
+    prefix,
+    captured_prefix(true, |builder| legacy.emit_setup(
+      builder,
+      legacy.setup_source_slots().unwrap().payload_bytes().unwrap()
+    ))
+  );
+  let limits = ExecSetupR1csLimitsV0 {
+    source_payload_bytes: bytes - 1,
+    r1cs: R1csShapeLimitsV0 {
+      variables: 100_000,
+      constraints: 1000,
+      nonzero_terms: 1_000_000,
+    },
+  };
+  let err = closure.build_setup_r1cs(limits).unwrap_err();
+  assert!(matches!(
+    err.downcast_ref::<R1csError>(),
+    Some(R1csError::ResourceLimit {
+      resource: "Exec setup source-slot payload bytes",
+      ..
+    })
+  ));
+  let err = closure
+    .build_setup_r1cs(ExecSetupR1csLimitsV0 {
+      source_payload_bytes: bytes,
+      ..limits
+    })
+    .unwrap_err();
+  assert!(matches!(
+    err.downcast_ref::<R1csError>(),
+    Some(R1csError::ResourceLimit {
+      resource: "R1CS constraints",
+      actual: 1001,
+      ..
+    })
+  ));
+  let mut wrong_mode = R1csBuilder::new_projection();
+  assert!(closure.emit_setup(&mut wrong_mode, bytes).is_err());
+  assert_eq!(
+    wrong_mode.finish_projection().unwrap(),
+    R1csBuilder::new_projection().finish_projection().unwrap()
+  );
+  let caps = [0, 4, 1000].map(|cap| {
+    census_exec_original_claims_setup_observed(
+      &closure,
+      bytes,
+      ExecRootClosedCensusLimitsV0 { required_domain_rows: cap },
+      |_| {},
+    )
+    .unwrap()
+  });
+  for (literal, value) in [(false, false), (false, true), (true, false)] {
+    let (commitments, public, proof) = prove(&setup, literal, value);
+    let witness = replay.replay(commitments, &proof).unwrap();
+    assert_eq!(
+      captured_prefix(false, |builder| closure
+        .constrain(builder, public, &witness)
+        .map(|_| ())),
+      prefix
+    );
+    for (cap, expected) in [0, 4, 1000].into_iter().zip(&caps) {
+      assert_eq!(
+        &census_exec_original_claims_observed(
+          &closure,
+          public,
+          &witness,
+          ExecRootClosedCensusLimitsV0 { required_domain_rows: cap },
+          |_| {}
+        )
+        .unwrap(),
+        expected
+      );
+    }
+    eprintln!(
+      "native direct composition literal={literal} value={value}: {} proof bytes, matching bounded setup/native prefixes; {}",
+      proof.len(),
+      memory_summary()
+    );
+  }
+  eprintln!(
+    "direct original claims ownership/preflight/native PREFIX tests PASS, composition={}, tables={}, source_slots={slots:?}, source_bytes={bytes}. NOT a complete census, terminal key, or proof.",
+    blake3::Hash::from(closure.digest()),
+    blake3::Hash::from(closure.tables().digest())
+  );
+}
+
+#[test]
+#[ignore = "bounded WHOLE original-claim-closed setup census, followed by whole native replay census ONLY if setup fits the supported domain; not R1CS materialization, key or proof"]
+fn packed_small_whole_original_claims_closed_census() {
+  let started = Instant::now();
+  let setup = setup();
+  let replay = compile_exec_replay(&setup).unwrap();
+  let closure =
+    compile_exec_original_claims_closure(&replay, DIRECT_LIMITS).unwrap();
+  let slots = closure.setup_source_slots().unwrap();
+  let limits = ExecRootClosedCensusLimitsV0 {
+    required_domain_rows: ix_fflonk::FFLONK_MAX_BASE_DOMAIN,
+  };
+  let config = setup.pcs_params().ligerito_verifier_config().unwrap();
+  assert_eq!(config.queries, [244, 79, 48]);
+  assert_eq!(config.grinding_bits, [16, 16, 16]);
+  eprintln!(
+    "WHOLE direct original-claim closed census: composition={}, tables={}, matrices={}, structure=3 jagged=3; source_slots={slots:?}, bytes={}; pinned queries {:?}, grinding {:?}; {}",
+    blake3::Hash::from(closure.digest()),
+    blake3::Hash::from(closure.tables().digest()),
+    closure.tables().matrices().outputs().len(),
+    slots.payload_bytes().unwrap(),
+    config.queries,
+    config.grinding_bits,
+    memory_summary()
+  );
+  let outcome = census_exec_original_claims_setup_observed(
+    &closure,
+    slots.payload_bytes().unwrap(),
+    limits,
+    move |p| {
+      eprintln!(
+        "whole direct setup {:?}: {} R1CS, {} PLONK; {:.2}s; {}",
+        p.last_phase,
+        p.plonk.r1cs_constraints,
+        p.plonk.constraint_rows,
+        started.elapsed().as_secs_f64(),
+        memory_summary()
+      );
+    },
+  )
+  .unwrap();
+  match outcome {
+    ExecRootClosedCensusOutcomeV0::Complete(expected) => {
+      eprintln!(
+        "COMPLETE WHOLE direct SETUP census: {expected:?}; {:.3}s; {}. No complete witness, key, or proof.",
+        started.elapsed().as_secs_f64(),
+        memory_summary()
+      );
+      let (commitments, public, proof) = prove(&setup, false, true);
+      let witness = replay.replay(commitments, &proof).unwrap();
+      let assigned_started = Instant::now();
+      let actual = census_exec_original_claims_observed(
+        &closure,
+        public,
+        &witness,
+        limits,
+        move |p| {
+          eprintln!(
+            "whole direct assigned {:?}: {} R1CS, {} PLONK; {:.2}s; {}",
+            p.last_phase,
+            p.plonk.r1cs_constraints,
+            p.plonk.constraint_rows,
+            assigned_started.elapsed().as_secs_f64(),
+            memory_summary()
+          );
+        },
+      )
+      .unwrap();
+      let ExecRootClosedCensusOutcomeV0::Complete(actual) = actual else {
+        panic!("whole assigned census diverged from complete setup: {actual:?}")
+      };
+      assert_eq!(actual, expected);
+      eprintln!(
+        "COMPLETE WHOLE direct SETUP==ASSIGNED R1CS/PLONK census; {:.3}s total; {}. No materialized complete witness, terminal key or proof.",
+        started.elapsed().as_secs_f64(),
+        memory_summary()
+      );
+    },
+    ExecRootClosedCensusOutcomeV0::RejectedBudget {
+      prefix,
+      limit,
+      required_rows,
+    } => {
+      assert!(required_rows > limit);
+      assert_eq!(limit, ix_fflonk::FFLONK_MAX_BASE_DOMAIN);
+      eprintln!(
+        "REFUSED WHOLE direct closed SETUP at {prefix:?}; required_rows={required_rows} > limit={limit}; {:.3}s; {}. This is an incomplete prefix, NO full circuit size/digest/domain/key/proof.",
+        started.elapsed().as_secs_f64(),
+        memory_summary()
+      );
+    },
+  }
+}

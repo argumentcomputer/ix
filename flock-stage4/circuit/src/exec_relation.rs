@@ -1,4 +1,4 @@
-//! Complete generic Exec replay composition with two root-binding paths.
+//! Complete generic Exec replay with explicitly distinct closure paths.
 //!
 //! The historical diagnostic path publishes conditional roots; the closed
 //! prototype constrains their exact table evaluations and publishes only Q.
@@ -12,7 +12,7 @@ use ix_stage4_trace::{
   F128CircuitStructureAccumulatorTraceV1, F128InnerLigeritoTraceV1,
   F128JaggedAccumulatorTraceV1, F128MatrixAccumulatorTraceV1,
   F128MergedPcsFrontendTraceV1, F128MultipointTwistedAssistTraceV1,
-  F128RootTableSetV0, F128WiringTraceV1,
+  F128OriginalClaimTablesV0, F128RootTableSetV0, F128WiringTraceV1,
 };
 use std::{error::Error, fmt};
 
@@ -33,6 +33,98 @@ pub struct ExecReplayCircuitWitnessV0<'a> {
   pub matrix_fold: &'a F128MatrixAccumulatorTraceV1,
   pub structure_fold: &'a F128CircuitStructureAccumulatorTraceV1,
   pub jagged_fold: &'a F128JaggedAccumulatorTraceV1,
+}
+
+/// The complete ORIGINAL Flock verifier input, without auxiliary fold proofs
+/// added by the old Stage 4 adapter. The direct composition below discharges
+/// every original matrix/structure/jagged claim inside its constraints.
+pub struct ExecOriginalClaimsWitnessV0<'a> {
+  pub statement_binding: &'a ExecBindingV0,
+  pub commitments: ExecCommitmentsV0,
+  pub transcript: Stage4TranscriptWitnessV1<'a>,
+  pub algebra: Stage4TraceWitnessV1<'a, F128AlgebraTraceV1>,
+  pub wiring: Stage4TraceWitnessV1<'a, F128WiringTraceV1>,
+  pub merged_pcs: &'a F128MergedPcsFrontendTraceV1,
+  pub multipoint: Stage4TraceWitnessV1<'a, F128MultipointTwistedAssistTraceV1>,
+  pub inner_ligerito: Stage4TraceWitnessV1<'a, F128InnerLigeritoTraceV1>,
+  pub inner_ligerito_private_digests: &'a [[u8; 32]],
+}
+
+impl<'a> ExecReplayCircuitWitnessV0<'a> {
+  pub fn original_claims(&self) -> ExecOriginalClaimsWitnessV0<'a> {
+    ExecOriginalClaimsWitnessV0 {
+      statement_binding: self.statement_binding,
+      commitments: self.commitments,
+      transcript: self.transcript,
+      algebra: Stage4TraceWitnessV1 {
+        trace: self.algebra.trace,
+        private_values: self.algebra.private_values,
+      },
+      wiring: Stage4TraceWitnessV1 {
+        trace: self.wiring.trace,
+        private_values: self.wiring.private_values,
+      },
+      merged_pcs: self.merged_pcs,
+      multipoint: Stage4TraceWitnessV1 {
+        trace: self.multipoint.trace,
+        private_values: self.multipoint.private_values,
+      },
+      inner_ligerito: Stage4TraceWitnessV1 {
+        trace: self.inner_ligerito.trace,
+        private_values: self.inner_ligerito.private_values,
+      },
+      inner_ligerito_private_digests: self.inner_ligerito_private_digests,
+    }
+  }
+}
+
+// Only enclosing complete compositions can call the main emitter. There is
+// no public unchecked-claim emission/acceptance entry point here.
+struct ExecMainCircuitOutput {
+  wiring: F128WiringCircuitOutputV1,
+  algebra: F128AlgebraCircuitOutputV1,
+  frontend: F128MergedPcsFrontendCircuitOutputV1,
+  multipoint: F128MultipointTwistedAssistCircuitOutputV1,
+  inner_ligerito: F128InnerLigeritoCircuitOutputV1,
+}
+
+/// Diagnostic output after EVERY original claim's equality was emitted.
+/// Not a satisfying assignment, key, proof, or native acceptance certificate.
+pub struct ExecOriginalClaimsClosedOutputV0 {
+  main: ExecMainCircuitOutput,
+  tables_digest: [u8; 32],
+  matrix_evaluations: Vec<F128VariablesV1>,
+  structure_evaluations: Vec<F128VariablesV1>,
+  jagged_evaluations: Vec<F128VariablesV1>,
+}
+impl ExecOriginalClaimsClosedOutputV0 {
+  pub fn matrix_evaluations(&self) -> &[F128VariablesV1] {
+    &self.matrix_evaluations
+  }
+  pub fn structure_evaluations(&self) -> &[F128VariablesV1] {
+    &self.structure_evaluations
+  }
+  pub fn jagged_evaluations(&self) -> &[F128VariablesV1] {
+    &self.jagged_evaluations
+  }
+  pub fn tables_digest(&self) -> [u8; 32] {
+    self.tables_digest
+  }
+  pub fn wiring(&self) -> &F128WiringCircuitOutputV1 {
+    &self.main.wiring
+  }
+  pub fn algebra(&self) -> &F128AlgebraCircuitOutputV1 {
+    &self.main.algebra
+  }
+  pub fn merged_pcs(&self) -> &F128MergedPcsFrontendCircuitOutputV1 {
+    &self.main.frontend
+  }
+  pub fn multipoint(&self) -> &F128MultipointTwistedAssistCircuitOutputV1 {
+    &self.main.multipoint
+  }
+  pub fn inner_ligerito(&self) -> &F128InnerLigeritoCircuitOutputV1 {
+    &self.main.inner_ligerito
+  }
 }
 
 /// Compatibility name for the diagnostic public-root entry point. The
@@ -306,6 +398,80 @@ fn constrain_exec_with_roots(
   witness: ExecReplayCircuitWitnessV0<'_>,
   roots: RootBindings<'_>,
 ) -> Result<Stage4RelationCircuitOutputV1, ExecRootConditionalError> {
+  let main =
+    constrain_exec_main(builder, statement_public, witness.original_claims())?;
+  constrain_exec_folds(builder, witness, roots, main)
+}
+
+/// An explicitly distinct closed composition: preserve the full main
+/// transcript/PoW/PIOP/PCS and Q binding, and discharge EVERY original claim
+/// directly. Auxiliary adapter folds are replaced by exact table equations,
+/// not dropped leaving unchecked claims. All fixed programs are setup-owned.
+pub fn constrain_exec_original_claims_closed(
+  builder: &mut R1csBuilder,
+  public: Stage4PublicInputsV1,
+  tables: &F128OriginalClaimTablesV0,
+  witness: ExecOriginalClaimsWitnessV0<'_>,
+) -> Result<ExecOriginalClaimsClosedOutputV0, ExecRootConditionalError> {
+  phase(
+    "original-claim table setup",
+    validate_exec_original_claim_tables(
+      tables,
+      witness.statement_binding,
+      witness.algebra.trace,
+      witness.wiring.trace,
+      witness.multipoint.trace,
+    ),
+  )?;
+  let statement = phase(
+    "statement public inputs",
+    alloc_stage4_public_inputs(builder, public),
+  )?;
+  let main = constrain_exec_main(builder, statement, witness)?;
+  let closure_phase = ConstraintPhase::MatrixFold;
+  let matrix_evaluations = phase(
+    "original Boolean matrix closure",
+    constrain_f128_structured_matrix_claims(
+      builder,
+      tables.matrices(),
+      &main.algebra.deferred_matrix_claims,
+      closure_phase,
+    ),
+  )?;
+  let structure_evaluations = phase(
+    "original structure closure",
+    constrain_f128_structure_original_claims(
+      builder,
+      tables.structure().0,
+      &tables.structure().1,
+      &main.wiring.circuit_structure_claims,
+      closure_phase,
+    ),
+  )?;
+  let jagged_evaluations = phase(
+    "original jagged closure",
+    constrain_f128_jagged_direct(
+      builder,
+      tables.jagged(),
+      &main.multipoint.jagged_assertion,
+      closure_phase,
+    ),
+  )?;
+  phase("original-claim final status", builder.check_status())?;
+  Ok(ExecOriginalClaimsClosedOutputV0 {
+    main,
+    tables_digest: tables.digest(),
+    matrix_evaluations,
+    structure_evaluations,
+    jagged_evaluations,
+  })
+}
+
+fn constrain_exec_main(
+  builder: &mut R1csBuilder,
+  statement_public: Stage4PublicInputVariablesV1,
+  witness: ExecOriginalClaimsWitnessV0<'_>,
+) -> Result<ExecMainCircuitOutput, ExecRootConditionalError> {
   let transcript = witness.transcript;
   let transcript = phase(
     "main transcript",
@@ -412,6 +578,28 @@ fn constrain_exec_with_roots(
     ),
   )?;
 
+  Ok(ExecMainCircuitOutput {
+    wiring,
+    algebra,
+    frontend,
+    multipoint,
+    inner_ligerito,
+  })
+}
+
+fn constrain_exec_folds(
+  builder: &mut R1csBuilder,
+  witness: ExecReplayCircuitWitnessV0<'_>,
+  roots: RootBindings<'_>,
+  main: ExecMainCircuitOutput,
+) -> Result<Stage4RelationCircuitOutputV1, ExecRootConditionalError> {
+  let ExecMainCircuitOutput {
+    wiring,
+    algebra,
+    frontend,
+    multipoint,
+    inner_ligerito,
+  } = main;
   let accumulator = witness.accumulator_transcript;
   let accumulator = phase(
     "accumulator transcript",

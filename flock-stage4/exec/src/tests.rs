@@ -25,6 +25,21 @@ mod packed_blake3_tests;
 #[path = "packed_exec_tests.rs"]
 mod packed_exec_tests;
 
+#[path = "packed_root_cost_tests.rs"]
+mod packed_root_cost_tests;
+
+#[path = "shared_matrix_tests.rs"]
+mod shared_matrix_tests;
+
+#[path = "direct_jagged_tests.rs"]
+mod direct_jagged_tests;
+
+#[path = "direct_structure_tests.rs"]
+mod direct_structure_tests;
+
+#[path = "original_closure_tests.rs"]
+mod original_closure_tests;
+
 const CAPACITY: MachineCapacities = MachineCapacities {
   program: ProgramCapacities {
     bytes: 256,

@@ -9,14 +9,17 @@ mod exec;
 mod f128;
 mod fixed_table;
 mod fixed_table_basis;
+mod jagged_direct;
 mod jagged_fold;
 mod ligerito;
 mod matrix_fold;
 mod merged_pcs;
 mod multipoint;
+mod original_claim_tables;
 mod root_tables;
 mod statement;
 mod structure_fold;
+mod structured_matrices;
 mod wiring;
 
 pub use binary_linear_map::{
@@ -40,6 +43,10 @@ pub use fixed_table_basis::{
   F128FixedTableBasisCensusV0, F128FixedTableBasisError,
   F128FixedTableBasisLayerV0, F128FixedTableBasisLimitsV0,
   F128FixedTableBasisRowV0, F128FixedTableBasisV0,
+};
+pub use jagged_direct::{
+  F128JaggedDirectError, F128JaggedDirectLimitsV0, F128JaggedDirectTableV0,
+  F128JaggedEqualityNodeV0, F128JaggedRowNodeV0,
 };
 pub use jagged_fold::{
   F128JaggedAccumulatorCensusV1, F128JaggedAccumulatorTraceError,
@@ -70,6 +77,7 @@ pub use multipoint::{
   F128MultipointRoundV1, F128MultipointTraceError,
   F128MultipointTwistedAssistCensusV1, F128MultipointTwistedAssistTraceV1,
 };
+pub use original_claim_tables::F128OriginalClaimTablesV0;
 pub use root_tables::{
   F128FixedMatrixProgramV0, F128RootTableSetError, F128RootTableSetV0,
 };
@@ -80,6 +88,11 @@ pub use structure_fold::{
   F128CircuitStructureAccumulatorCensusV1,
   F128CircuitStructureAccumulatorTraceError,
   F128CircuitStructureAccumulatorTraceV1,
+};
+pub use structured_matrices::{
+  F128StructuredMatricesCensusV0, F128StructuredMatricesError,
+  F128StructuredMatricesLimitsV0, F128StructuredMatricesV0,
+  F128StructuredMatrixNodeV0,
 };
 pub use wiring::{
   F128_WIRING_PRIVATE_VALUES, F128CircuitStructureMatrixIdV1,

@@ -66,7 +66,9 @@ pub fn alloc_f128_private(
   export_variables(builder, value, bits, phase)
 }
 
-pub(crate) fn alloc_f128_constant(
+/// Allocate and constrain every bit of a shape-time constant. Private values
+/// must use `alloc_f128_private`; an assignment alone never marks it constant.
+pub fn alloc_f128_constant(
   builder: &mut R1csBuilder,
   value: [u8; 16],
   phase: ConstraintPhase,

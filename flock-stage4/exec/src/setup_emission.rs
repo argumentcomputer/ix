@@ -2,15 +2,19 @@
 //! Zero scratch values do not make private slots constants. All constraints
 //! and structural validation run; native witness diagnostics do not.
 
-use crate::{CompiledExecReplay, CompiledExecRootClosure};
+use crate::{
+  CompiledExecOriginalClaimsClosure, CompiledExecReplay,
+  CompiledExecRootClosure,
+};
 use anyhow::{Result, ensure};
 use ix_stage4_trace::{
   ExecCommitmentsV0, F128_MULTIPOINT_JAGGED_CLAIMS, F128_WIRING_PRIVATE_VALUES,
 };
 use ix_terminal_circuit::{
-  CanonicalR1csV1, ExecReplayCircuitWitnessV0, R1csBuilder, R1csError,
-  R1csShapeLimitsV0, Stage4PublicInputsV1, Stage4TraceWitnessV1,
-  Stage4TranscriptWitnessV1, constrain_exec_root_closed,
+  CanonicalR1csV1, ExecOriginalClaimsWitnessV0, ExecReplayCircuitWitnessV0,
+  R1csBuilder, R1csError, R1csShapeLimitsV0, Stage4PublicInputsV1,
+  Stage4TraceWitnessV1, Stage4TranscriptWitnessV1,
+  constrain_exec_original_claims_closed, constrain_exec_root_closed,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -159,6 +163,98 @@ impl CompiledExecRootClosure<'_, '_> {
   }
 }
 
+impl CompiledExecOriginalClaimsClosure<'_, '_> {
+  /// Counts the complete main replay's source slots, with no auxiliary fold
+  /// scratch. These logical payload bytes are NOT whole-pipeline RAM usage.
+  pub fn setup_source_slots(&self) -> Result<ExecSetupSourceSlotsV0> {
+    Ok(SourceLayout::with_auxiliary(self.replay_setup(), false)?.counts)
+  }
+  pub fn build_setup_r1cs(
+    &self,
+    limits: ExecSetupR1csLimitsV0,
+  ) -> Result<CanonicalR1csV1> {
+    let mut builder = R1csBuilder::new_shape(limits.r1cs)?;
+    let emitted = self.emit_setup(&mut builder, limits.source_payload_bytes);
+    let r1cs = builder.finish_shape()?;
+    emitted?;
+    ensure!(
+      r1cs.public_variables() == 2,
+      "original-claim setup requires exactly two Q limbs"
+    );
+    Ok(r1cs)
+  }
+  /// Emit the WHOLE new composition using only approved setup data. Zeroes
+  /// are private scratch assignments, never shape-time constant substitutes.
+  pub fn emit_setup(
+    &self,
+    builder: &mut R1csBuilder,
+    source_payload_limit: u64,
+  ) -> Result<()> {
+    ensure!(
+      builder.is_shape_only(),
+      "setup emission needs a shape-only builder"
+    );
+    builder.check_status()?;
+    let replay = self.replay_setup();
+    let layout = SourceLayout::with_auxiliary(replay, false)?;
+    let payload_bytes = layout.counts.payload_bytes()?;
+    if payload_bytes > source_payload_limit {
+      return Err(
+        R1csError::ResourceLimit {
+          resource: "Exec setup source-slot payload bytes",
+          limit: source_payload_limit,
+          actual: payload_bytes,
+        }
+        .into(),
+      );
+    }
+    let main = TranscriptScratch::new(
+      layout.main_observed,
+      layout.main_challenges,
+      &replay.main.payload_lengths,
+    )?;
+    let boolean = zeroed::<16>(layout.boolean)?;
+    let wiring = zeroed::<16>(F128_WIRING_PRIVATE_VALUES)?;
+    let multipoint = zeroed::<16>(F128_MULTIPOINT_JAGGED_CLAIMS)?;
+    let inner = zeroed::<16>(layout.inner_values)?;
+    let digests = zeroed::<32>(layout.inner_digests)?;
+    constrain_exec_original_claims_closed(
+      builder,
+      Stage4PublicInputsV1::from_statement_digest([0; 32]),
+      self.tables(),
+      ExecOriginalClaimsWitnessV0 {
+        statement_binding: replay.binding(),
+        commitments: ExecCommitmentsV0 {
+          program: [0; 32],
+          input: [0; 32],
+          output: [0; 32],
+        },
+        transcript: main.inputs(replay.main.hash.setup_topology()),
+        algebra: Stage4TraceWitnessV1 {
+          trace: &replay.boolean.trace,
+          private_values: &boolean,
+        },
+        wiring: Stage4TraceWitnessV1 {
+          trace: &replay.wiring,
+          private_values: &wiring,
+        },
+        merged_pcs: &replay.pcs.frontend,
+        multipoint: Stage4TraceWitnessV1 {
+          trace: &replay.pcs.multipoint,
+          private_values: &multipoint,
+        },
+        inner_ligerito: Stage4TraceWitnessV1 {
+          trace: &replay.main.inner,
+          private_values: &inner,
+        },
+        inner_ligerito_private_digests: &digests,
+      },
+    )?;
+    builder.check_status()?;
+    Ok(())
+  }
+}
+
 struct SourceLayout {
   main_observed: usize,
   main_challenges: usize,
@@ -172,10 +268,23 @@ struct SourceLayout {
 
 impl SourceLayout {
   fn new(replay: &CompiledExecReplay<'_>) -> Result<Self> {
+    Self::with_auxiliary(replay, true)
+  }
+  fn with_auxiliary(
+    replay: &CompiledExecReplay<'_>,
+    auxiliary: bool,
+  ) -> Result<Self> {
     let main_observed = usize::try_from(replay.main.observed_values)?;
     let main_challenges = usize::try_from(replay.main.challenges)?;
-    let fold_observed = usize::try_from(replay.folds.observed_values)?;
-    let fold_challenges = usize::try_from(replay.folds.challenges)?;
+    let fold_observed = if auxiliary {
+      usize::try_from(replay.folds.observed_values)?
+    } else {
+      0
+    };
+    let fold_challenges =
+      if auxiliary { usize::try_from(replay.folds.challenges)? } else { 0 };
+    let fold_payloads: &[usize] =
+      if auxiliary { &replay.folds.payload_lengths } else { &[] };
     // The approved Boolean compiler has one private evaluation per matrix;
     // each table contributes A at 2t and B at 2t+1. Validate its references.
     let boolean = replay.boolean.trace.deferred_matrix_claims.len();
@@ -227,11 +336,13 @@ impl SourceLayout {
       .hash
       .setup_topology()
       .validate(main_observed, &replay.main.payload_lengths)?;
-    replay
-      .folds
-      .hash
-      .setup_topology()
-      .validate(fold_observed, &replay.folds.payload_lengths)?;
+    if auxiliary {
+      replay
+        .folds
+        .hash
+        .setup_topology()
+        .validate(fold_observed, fold_payloads)?;
+    }
     let f128_words = sum_counts([
       main_observed,
       main_challenges,
@@ -243,17 +354,10 @@ impl SourceLayout {
       inner_values,
     ])?;
     let byte_payload_bytes = sum_counts(
-      replay
-        .main
-        .payload_lengths
-        .iter()
-        .chain(&replay.folds.payload_lengths)
-        .copied(),
+      replay.main.payload_lengths.iter().chain(fold_payloads).copied(),
     )?;
-    let byte_payloads = sum_counts([
-      replay.main.payload_lengths.len(),
-      replay.folds.payload_lengths.len(),
-    ])?;
+    let byte_payloads =
+      sum_counts([replay.main.payload_lengths.len(), fold_payloads.len()])?;
     let counts = ExecSetupSourceSlotsV0 {
       f128_words: u64::try_from(f128_words)?,
       digest32_words: u64::try_from(inner_digests)?,
