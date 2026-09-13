@@ -25,15 +25,15 @@ def main (args : List String) : IO Unit := do
   let actual := ((← (FilePath.mk "Ix/Theory").walkDir).filter (·.extension == some "lean")).map (·.toString)
   let named := actual.filter (·.startsWith "Ix/Theory/Named/")
   sameFiles ((actual.filter (!·.startsWith "Ix/Theory/Named/")).push "Ix/Theory.lean")
-    (selected.map (·.target))
+    (selected.map (·.target) ++ authored)
   sameFiles named ((Tests.Theory.NamedManifest.selected.map (·.target)).push
     "Ix/Theory/Named/Std/AxiomAudit.lean")
   need (← (FilePath.mk "Ix/Theory/Named/LICENSE").pathExists) "missing named-specification Apache license"
   need (← (FilePath.mk "Ix/Theory/Named/NOTICE").pathExists) "missing named-specification attribution"
-  for row in selected do
-    let contents ← IO.FS.readFile row.target
+  for path in selected.map (·.target) ++ authored do
+    let contents ← IO.FS.readFile path
     need (!(contents.contains "import Ix.Theory.Named"))
-      s!"set-model foundation depends on named checker proof support: {row.target}"
+      s!"set-model foundation depends on named checker proof support: {path}"
   let mut ports := #[]
   for directory in ["Ix/Theory/Model/SetTheory", "Ix/Theory/Model/SetModel"] do
     ports := ports ++ ((← (FilePath.mk directory).walkDir).filter (·.extension == some "lean")).map (·.toString)
@@ -53,5 +53,5 @@ def main (args : List String) : IO Unit := do
         handle.putStr blob.stdout
         handle.flush
         need ((← sha256 path) == row.sourceSha256) s!"con-leche upstream hash mismatch: {row.source}"
-  IO.println s!"Theory provenance OK: {selected.size} selected source files; {conLeche.size} con-leche ports, exact content and notices."
+  IO.println s!"Theory provenance OK: {selected.size} selected source files; {authored.size} Ix-authored modules; {conLeche.size} con-leche ports, exact content and notices."
   IO.println s!"Named proof support: {named.size} local source files; separate from the set-model foundation."

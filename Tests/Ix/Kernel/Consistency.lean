@@ -5,9 +5,10 @@ public import Ix.Kernel
 public import Tests.Ix.Kernel.IxonFixtures
 
 /-!
-Production regressions for the atomic consistency fragment. These execute
-the lazy serial driver on content-addressed Ixon declarations. The fragment's
-theorems and resource premises are checked by `IxKernelConsistency`.
+Production regressions for the atomic consistency fragment and polymorphic
+constant inference. These execute the lazy loader, inference, and serial driver
+on content-addressed Ixon declarations. The theorems and their resource
+premises are checked separately by `IxKernelConsistency`.
 -/
 
 namespace Tests.Kernel.Consistency
@@ -85,6 +86,96 @@ private def cases : TestSeq :=
   ++ test "atomic fragment: empty input returns an empty successful result"
     (allSucceeded {} 0)
 
-public def suite : List TestSeq := [cases]
+/-- A polymorphic identity axiom with a dependent function type. Inferring its
+reference substitutes under binders without invoking binder inference. -/
+private def polymorphicIdentity : Ixon.Env × Address :=
+  storeConst {}
+    ⟨.axio ⟨false, 1, .leanAll (.sort 0) (.leanAll (.var 0) (.var 1))⟩,
+      #[], #[], #[.var 0]⟩
+
+private def levelOne : KUniv .anon := .mkSucc .mkZero
+private def levelTwo : KUniv .anon := .mkSucc levelOne
+
+private def identityType : KExpr .anon :=
+  .mkAll () () (.mkSort levelOne) (.mkAll () () (.mkVar 0 ()) (.mkVar 1 ()))
+
+/-- Two occurrences of the same instantiated reference exercise both the
+level-argument array and the walker's per-call memo reuse. -/
+private def polymorphicReferences : Ixon.Env × Address × Address := Id.run do
+  let (env, carrier) := storeConst {}
+    ⟨.axio ⟨false, 1, .sort 0⟩, #[], #[], #[.var 0]⟩
+  let (env, function) := storeConst env
+    ⟨.axio ⟨false, 1, .leanAll (.ref 0 #[0]) (.ref 0 #[0])⟩,
+      #[], #[carrier], #[.var 0]⟩
+  return (env, function, carrier)
+
+private def polymorphicLet : Ixon.Env × Address :=
+  storeConst {}
+    ⟨.axio ⟨false, 1,
+      .letE false (.sort 1) (.sort 0) (.leanAll (.var 0) (.var 1))⟩,
+      #[], #[], #[.var 0, .succ (.var 0)]⟩
+
+private def simplifyingUniverses : Ixon.Env × Address :=
+  storeConst {}
+    ⟨.axio ⟨false, 2, .sort 0⟩, #[], #[],
+      #[.imax (.max (.var 0) (.var 1)) (.var 1)]⟩
+
+private def inferStored (fixture : Ixon.Env × Address) (arguments : Array (KUniv .anon))
+    (expected : KExpr .anon) (inferOnly := false) (warmIntern := false) : Bool :=
+  let action : TcM .anon (KExpr .anon) := do
+    if warmIntern then
+      let _ ← TcM.intern expected
+    TcM.infer (.mkConst ⟨fixture.2, ()⟩ arguments)
+  match action { TcState.newLazyAnon fixture.1 with inferOnly } with
+  | .ok type after =>
+      type.addr == expected.addr && after.env.consts.size > 0 &&
+        (if inferOnly then after.env.inferOnlyCache.size == 1
+          else after.env.inferCache.size == 1)
+  | .error _ _ => false
+
+private def arityRejected (arguments : Array (KUniv .anon)) : Bool :=
+  match TcM.infer (.mkConst ⟨polymorphicIdentity.2, ()⟩ arguments)
+      (TcState.newLazyAnon polymorphicIdentity.1) with
+  | .error (.univParamMismatch expected actual) after =>
+      expected == 1 && actual == arguments.size && after.env.inferCache.isEmpty
+  | _ => false
+
+private def polymorphicCases : TestSeq :=
+  test "polymorphic constant: lazy inference substitutes a dependent function type"
+    (inferStored polymorphicIdentity #[levelOne] identityType)
+  ++ test "polymorphic constant: inference-only policy records its own cache partition"
+    (inferStored polymorphicIdentity #[levelOne] identityType true)
+  ++ test "polymorphic constant: an existing interned result is reused on a cache miss"
+    (inferStored polymorphicIdentity #[levelOne] identityType false true)
+  ++ test "polymorphic constant: shared nested references retain their universe arguments"
+    (let (env, function, carrier) := polymorphicReferences
+      let type := KExpr.mkConst ⟨carrier, ()⟩ #[levelOne]
+      inferStored (env, function) #[levelOne] (.mkAll () () type type))
+  ++ test "polymorphic constant: substitution preserves let and de Bruijn structure"
+    (inferStored polymorphicLet #[levelOne]
+      (.mkLet () (.mkSort levelTwo) (.mkSort levelOne)
+        (.mkAll () () (.mkVar 0 ()) (.mkVar 1 ())) false))
+  ++ test "polymorphic constant: imax with zero simplifies the returned sort"
+    (inferStored simplifyingUniverses #[levelTwo, .mkZero] (.mkSort .mkZero))
+  ++ test "polymorphic constant: swapped universe arguments change imax's result"
+    (inferStored simplifyingUniverses #[.mkZero, levelTwo] (.mkSort levelTwo))
+  ++ test "polymorphic constant: missing universe arguments reject before cache insertion"
+    (arityRejected #[])
+  ++ test "polymorphic constant: excess universe arguments reject before cache insertion"
+    (arityRejected #[levelOne, levelTwo])
+  ++ test "universe instantiation: nonempty arguments reject an out-of-range parameter"
+    (match TcM.instantiateUnivParams (.mkSort (.mkParam 1 ())) #[.mkZero]
+        (TcState.ofEnvAnon {}) with
+      | .error (.univParamOutOfRange index count) _ => index == 1 && count == 1
+      | _ => false : Bool)
+  -- This deliberately invalid input records why the refinement theorem needs
+  -- declaration scope: the production empty shortcut performs no range check.
+  ++ test "universe instantiation: empty shortcut requires an external scope invariant"
+    (match TcM.instantiateUnivParams (.mkSort (.mkParam 0 ())) #[]
+        (TcState.ofEnvAnon {}) with
+      | .ok (.sort (.param index _ _) _) _ => index == 0
+      | _ => false : Bool)
+
+public def suite : List TestSeq := [cases, polymorphicCases]
 
 end Tests.Kernel.Consistency

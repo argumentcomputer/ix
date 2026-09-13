@@ -6,13 +6,17 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 /-! Import provenance, recorded from the Lean4Ix working tree on 2026-09-11.
 The working tree contained the new, uncommitted consistency model; the base
 revision alone does not identify these inputs. Source hashes identify each file.
-The selected file inventory is enforced by `Tests/Theory/Provenance.lean`.
+The selected and Ix-authored file inventories are enforced separately by
+`Tests/Theory/Provenance.lean`.
 The generated `Ix/Theory.lean` umbrella records its sole upstream import. -/
 
 namespace Tests.Theory.ImportManifest
 
 def lean4IxBaseRevision : String := "ab42e79e2a4e2615a3ca6ef983d510f374057a38"
 def conLecheRevision : String := "86cd20a65660d757cedc81561a44579099b565d0"
+
+/-- New mathematical modules authored in Ix, with no imported source hash. -/
+def authored : Array String := #["Ix/Theory/Model/LevelCongruence.lean"]
 
 structure SourceFile where
   source : String

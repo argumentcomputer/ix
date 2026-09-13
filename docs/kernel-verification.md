@@ -37,6 +37,18 @@ increasing sequence of strongly inaccessible cardinals.
 - `inferUncached_sort_sound` interprets an actual successful execution of the
   production sort-inference branch. It proves the model typing postcondition
   for the returned type, including intern-table reuse.
+- `instantiateUnivParams_readAnnotated` connects the actual memoized universe
+  substitution walker to model substitution for every readable expression.
+  Simplifying `max` and `imax` may change the returned syntax; the proof
+  preserves both interpretation and hereditary validity, including beneath
+  binders and through let substitution. The empty-argument shortcut is
+  justified by the source type's universe scope.
+- `inferUncached_const_sound` and `infer_const_sound` derive model typing for
+  polymorphic constant references with arbitrary readable declaration types.
+  Production success supplies the universe-arity check. The premises retain
+  a well-formed model interface, agreement with the actual lazy-loaded
+  declaration, finite interning and level-substitution resources, and (for
+  `infer`) misses in both cache partitions at the computed key.
 - `ModelTyping.no_false` rules out a closed model-typed kernel expression at
   primitive False when its environment has been admitted by the certified
   interface and the set-theory assumption has an instance.
@@ -96,8 +108,10 @@ the run. They supply no typing or checker-soundness premise. The proof
 extracts the validation, type-inference, theorem-guard, value-inference, and
 conversion steps from public success, then derives body typing to extend
 the preceding model. Automatic witness construction, lambdas, applications,
-polymorphic instantiation, inductives, coordinated blocks, and other conversion
-paths remain outside the fragment.
+inductives, coordinated blocks, and other conversion paths remain outside the
+fragment. The polymorphic constant-inference theorem above is a separate proof
+increment; composing it into general declaration admission and environment
+model extension remains to be done.
 
 `checkEnvAnon_atomic_represents_source` ties every source address to an
 interface with the type and body reached by production lookup. The independent
@@ -148,7 +162,7 @@ lake test --wfail -- tc-unit
 lake -d Models/SetTheory build --wfail
 ```
 
-The consistency target checks 36 exact theorem boundaries. The production
+The consistency target checks 51 exact theorem boundaries. The production
 environment roots retain four existing generated output-length proofs,
 reached through expression/universe construction, names, and the full
 production method table. They introduce no new native proofs. The model
@@ -157,6 +171,13 @@ extension lemma and `ModelTyping.no_false` use only `propext`,
 The production roots additionally forbid the abstract
 `CheckSuccessSound`/`SupportedCheckFragment` interfaces and the independent
 certificate validator in their dependency closures.
+
+The polymorphic inference and substitution roots retain only the two existing
+expression/universe output-length proofs, alongside the standard Lean axioms.
+Their model-side level congruence introduces no native proof dependency.
+Kernel unit regressions cover lazy loading, both inference policies, interning
+reuse, dependent function types, shared references, lets, `imax` simplification,
+argument order, and rejection of wrong arities and out-of-range parameters.
 
 ## Certified host adapters
 
@@ -182,6 +203,7 @@ The VM pilot is preserved in the frozen archive and excluded from the host gate.
 | --- | --- |
 | Certified checker contracts | [`Ix/Kernel/Certified.lean`](../Ix/Kernel/Certified.lean), [`CertifiedClaims.lean`](../Ix/Kernel/CertifiedClaims.lean) |
 | Direct production refinement and its audit | [`Ix/Kernel/Verify/Consistency.lean`](../Ix/Kernel/Verify/Consistency.lean) |
+| Polymorphic inference and universe substitution | [`Consistency/Constant.lean`](../Ix/Kernel/Verify/Consistency/Constant.lean), [`InstUniv.lean`](../Ix/Kernel/Verify/Consistency/InstUniv.lean), [`Model/LevelCongruence.lean`](../Ix/Theory/Model/LevelCongruence.lean) |
 | Production environment fragment and relative axiom policy | [`Consistency/Environment.lean`](../Ix/Kernel/Verify/Consistency/Environment.lean), [`Production.lean`](../Ix/Kernel/Verify/Consistency/Production.lean) |
 | Foundation assumptions, theorem contracts, and provenance | [Consistency model guide](theory.md) |
 | Host commands, receipts, and frozen regression evidence | [Certified checking guide](certified-checking.md) |
@@ -195,3 +217,5 @@ fixtures used by the existing proofs. Source hashes and attribution are in
 [`Tests/Theory/NamedManifest.lean`](../Tests/Theory/NamedManifest.lean); the
 Apache license is preserved alongside the sources. The axiom-audit helper
 and direct production-fragment proofs are authored in Ix.
+`Model/LevelCongruence.lean` is an Ix-authored mathematical addition, listed
+separately from the imported files in the theory provenance manifest.
