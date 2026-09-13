@@ -152,6 +152,22 @@ without scanning degrees. Larger caps require a linear metadata check. No
 AIR, trace width, FFT cost or proof encoding changes. Unsafe configurations
 are rejected; the recursive verifier already requires cap height zero.
 
+## Limb addition
+
+The checked successor uses eight byte additions and an eight-byte input key.
+Adding two limbs with carry one uses sixteen byte additions in one helper.
+In each byte column the two overflow bits are mutually exclusive, so their
+sum is still a bit; the [carry tests](../Tests/Ix/IxVM/CarryAdd.lean) include
+the corresponding natural-number identity. A zero carry uses the existing
+limb adder directly. The list adder accepts only carry zero or one, including
+when either list is empty.
+
+Every input and result byte remains checked by a byte-add lookup. The tests
+compare against independent integer addition through all byte carry boundaries,
+exercise asymmetric/empty tails and invalid carry values, and prove and verify
+maximal overflow and both dispatch branches. The radix-2^16 multiplier is
+unchanged by this addition optimization.
+
 ## Host memory and byte advice
 
 `split_u32` obtains its four low bytes from the native field-to-bytes hint.
