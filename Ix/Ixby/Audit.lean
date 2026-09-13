@@ -1,6 +1,7 @@
 import Ix.Tc.Verify.Audit.Basic
 import Ix.Ixby
 import Ix.Ixby.Flock.Contract
+import Ix.Ixby.Flock.Trace
 import Ix.Ixby.Aiur.Objects.Operands
 
 /-!
@@ -9,7 +10,7 @@ import Ix.Ixby.Aiur.Objects.Operands
 Run with `lake build --wfail Ix.Ixby.Audit`. This audit is deliberately not
 imported by the pure `Ix.Ixby` API or by the host proving adapter.
 
-The exact allowances below cover all 322 source-authored public theorems
+The exact allowances below cover all 333 source-authored public theorems
 in the current logical/reference and object-parser proof modules. Only
 `propext`, `Classical.choice`, and `Quot.sound` are permitted: no upstream,
 native, pending, or sorry allowances. Updating a proof's exact dependency set
@@ -37,6 +38,16 @@ private def withAxioms (axioms : Array Lean.Name) (names : Array Lean.Name) : Ar
 
 private def roots : Array RootAllowance :=
   withAxioms standard #[
+    ``FlockBackend.ControlModel.Resolves.reference,
+    ``FlockBackend.ControlModel.Step.reference,
+    ``FlockBackend.ControlModel.TimedStep.result,
+    ``FlockBackend.ControlModel.TimedStep.active_consumes_one,
+    ``FlockBackend.ControlModel.TimedStep.zero_fuel_rejects,
+    ``FlockBackend.ControlModel.TimedStep.halted_freezes,
+    ``FlockBackend.ControlModel.Trace.result,
+    ``FlockBackend.ControlModel.Trace.reference_run,
+    ``FlockBackend.ControlModel.Trace.reference_execution,
+    ``FlockBackend.ControlModel.Trace.byte_execution,
     ``AiurBackend.Objects.Admission.checked_advice_call,
     ``AiurBackend.Objects.Admission.checked_advice_eval,
     ``AiurBackend.Objects.Admission.checked_advice_head_reject,
@@ -217,6 +228,7 @@ private def roots : Array RootAllowance :=
     ``run_add_fuel
   ] ++
   withAxioms noChoice #[
+    ``FlockBackend.ControlModel.Entry.reference,
     ``Claim.public_bind,
     ``AiurBackend.Objects.Admission.advice_bytes_exact,
     ``AiurBackend.Objects.Admission.advice_reader_checked,

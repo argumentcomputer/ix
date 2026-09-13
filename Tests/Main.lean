@@ -222,6 +222,7 @@ def primaryRunners : List (String × IO UInt32) := [
   ("stage2-source", Tests.MultiStark.Verify.Source.suite),
   ("ixby-claim", Tests.Ixby.Claim.suite),
   ("ixby-flock-contract", Tests.Ixby.Flock.Contract.suite),
+  ("ixby-flock-control", Tests.Ixby.Flock.Control.suite),
   ("ixby-aiur", Tests.Ixby.Aiur.Scalar.suite (withProofs := false)),
   ("ixby-control", Tests.Ixby.Aiur.Control.suite (withProofs := false)),
   ("ixby-objects", Tests.Ixby.Aiur.Objects.suite (withProofs := false)),

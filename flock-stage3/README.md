@@ -2,7 +2,8 @@
 
 This independent workspace starts the generic IxBy execution backend. Its
 current implementation contains reusable primitive gates, constrained bounded
-bank access, full fixed-capacity BLAKE3 and IxBy byte-commitment circuits, and
+bank access, full fixed-capacity BLAKE3 and IxBy byte-commitment circuits,
+ordered-frame control transitions with exact fuel/halting, and
 labelled native gadget proof regressions, not a complete IxBy interpreter or
 compiled Stage 2 verifier.
 It is excluded from the root Cargo workspace and has no `aiur`, `multi-stark`,
@@ -39,7 +40,7 @@ cargo fmt --manifest-path flock-stage3/Cargo.toml --all -- --check
 cargo clippy --release --locked --manifest-path flock-stage3/Cargo.toml --workspace --all-targets -- -D warnings
 ```
 
-The current ordinary suite passed 53 tests. The two imported conformance proofs
+The current ordinary suite passed 62 tests. The two imported conformance proofs
 are opt-in and also passed locally on 2026-09-12, including their serialized
 round trips and malicious operand/path/root/proof mutations:
 
@@ -136,4 +137,30 @@ RAYON_NUM_THREADS=4 cargo test --release --locked --manifest-path flock-stage3/C
   --workspace ixby::hash_proof_tests:: -- --ignored --test-threads=1
 RAYON_NUM_THREADS=4 cargo test --release --locked --manifest-path flock-stage3/Cargo.toml \
   --workspace ixby::commitment_proof_tests:: -- --ignored --test-threads=1
+```
+
+## Generic ordered-frame control component
+
+`host/src/ixby/control` constrains fixed-capacity local/continuation banks,
+binding, typed Bool branches, calls, tail calls, returns, exact fuel and
+absorbing terminal padding. Every reserved field and unused cell is checked;
+selectors are derived from full metadata, not supplied as one-hot advice.
+
+Five real eight-step conformance traces share one setup and each produce a
+117,107-byte Flock bundle. Fresh-process verification takes only externally
+expected endpoints and the proof. A locally valid but spliced intermediate
+state is rejected by the inter-step wiring argument. Nine ordinary tests
+exercise hostile advice, output/padding corruption, full banks, count/emit
+geometry and complete scratch initialization.
+
+These are **control-component proofs**: resolved actions are still private,
+unauthenticated advice, so they are not generic program executions. The new
+Lean ordered-bank rules and finite-trace theorem reach reference and byte
+execution with explicit instruction/operand/codec premises; the native
+constraint/representation bridge remains unfinished. See
+[the control construction and exact proof boundary](../docs/IxbyFlockControl.md).
+
+```sh
+RAYON_NUM_THREADS=4 cargo test --release --locked --manifest-path flock-stage3/Cargo.toml \
+  --workspace ixby::control::proof_tests:: -- --ignored --test-threads=1
 ```

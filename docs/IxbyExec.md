@@ -87,18 +87,21 @@ protocol, implementation, and SRS identities. These are typed interfaces;
 the native compilers and their constraint soundness are still to be supplied.
 
 The native interpreter work now has constrained bounded-bank access, full
-fixed-capacity BLAKE3, and the exact four-component/final-digest byte-commitment
-chain. Different reads and private byte lengths have real Flock conformance
-proofs under fixed setups. The byte-binding component also verifies in fresh
-processes from only an externally expected digest and proof. The hash schedule,
-all length/padding/flag checks, and commitment dependencies are constrained;
-the verifier does not run a host hash/execution oracle on private artifacts.
-These are components only: canonical image/input decoding and whole-image
-admission, instruction/frame/control transitions, exact fuel/halting,
-execution-derived output serialization, and the complete constraint-to-
-`Codec.Evaluates` theorem remain unfinished. A matching hash of arbitrary
-bytes does not establish those missing properties. See the
-[native hash/commitment construction](IxbyFlockHash.md).
+fixed-capacity BLAKE3, the exact four-component/final-digest byte-commitment
+chain, and ordered-frame control transitions with exact fuel and halting
+padding. Different reads, private byte lengths and resolved control traces
+have real Flock conformance proofs under fixed setups, including fresh
+verification and corrupted inter-step wiring rejection. The verifier does not
+run a host hash/execution oracle on private artifacts.
+The Lean decoded-control rules now refine reference steps and finite byte
+execution with explicit instruction, operand, callee and codec premises.
+These remain components only: canonical image/input decoding and whole-image
+admission, constrained instruction/operand/primitive resolution,
+execution-derived output serialization, and the native constraint-to-
+`Codec.Evaluates` theorem are unfinished. A matching hash of arbitrary bytes
+or a trace of freely resolved actions does not establish those properties.
+See the [native hash/commitment construction](IxbyFlockHash.md) and
+[control construction and logical proof boundary](IxbyFlockControl.md).
 
 Application policy must pin the exact source declaration closure/version,
 compiler configuration, ABI, semantic profile, image bytes, and execution-

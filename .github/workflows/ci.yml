@@ -133,13 +133,13 @@ jobs:
         run: cargo clippy --release --locked --manifest-path flock-stage3/Cargo.toml --workspace --all-targets -- -D warnings
       - name: Test Stage 3 native gates
         run: cargo test --release --locked --manifest-path flock-stage3/Cargo.toml --workspace
-      - name: Prove retained gadget conformance circuits
+      - name: Prove retained and generic-component conformance circuits
         if: github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch'
         env:
           RAYON_NUM_THREADS: 8
         run: |
           ulimit -v 33554432
-          timeout 300 cargo test --release --locked --manifest-path flock-stage3/Cargo.toml --workspace conformance:: -- --ignored --test-threads=1
+          timeout 300 cargo test --release --locked --manifest-path flock-stage3/Cargo.toml --workspace -- --ignored --test-threads=1
 
   # The isolated terminal workspace is not part of root Cargo operations.
   # These are native core regressions, not the full closed IxBy proof gate.

@@ -7,10 +7,12 @@ pub mod access;
 mod bits;
 pub mod bounded_hash;
 pub mod commitment;
+pub mod control;
 pub mod hash_control;
 pub mod io;
 pub mod length;
 pub mod select;
+pub mod value;
 
 #[cfg(test)]
 mod commitment_proof_tests;

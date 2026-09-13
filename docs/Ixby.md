@@ -31,6 +31,11 @@ the [design roadmap](../plans/ixby-plan.md) records longer-term integration work
   experimental Exec/public-result wire, canonical public Ixon adapter,
   proof-free setup interfaces, and conditional byte/source/terminal composition.
   See the [Exec contract](IxbyExec.md) for implemented and remaining boundaries.
+- [Flock/Control.lean](../Ix/Ixby/Flock/Control.lean) and
+  [Flock/Trace.lean](../Ix/Ixby/Flock/Trace.lean): ordered-frame control rules,
+  exact fuel/halting, and decoded-rule-to-byte-execution refinement. The
+  [native control guide](IxbyFlockControl.md) distinguishes the real component
+  proofs from the unfinished native constraint and instruction/codec bridge.
 - [Aiur.lean](../Ix/Ixby/Aiur.lean): the host adapter for
   [scalar](IxbyAiur.md), [control](IxbyControl.md), and
   [object](IxbyObjects.md) interpreters. It is a separate import from the pure
@@ -40,12 +45,12 @@ the [design roadmap](../plans/ixby-plan.md) records longer-term integration work
   store, and parser-component contracts. The
   [object proof guide](IxbyObjects.md#formal-contract-and-remaining-bridge)
   owns the detailed premises and remaining boundaries.
-- [Audit.lean](../Ix/Ixby/Audit.lean): exact standard-axiom allowances for 322
+- [Audit.lean](../Ix/Ixby/Audit.lean): exact standard-axiom allowances for 333
   public theorems, plus a source-module scan of private/generated theorems and
   global axioms. CI builds the audit and its negative regression tests.
 
 Tests mirror the implementation under `Tests/Ixby/`: reference, crypto, and
-codec suites at the root; backend suites under `Aiur/`; object conformance
+codec suites at the root; backend suites under `Aiur/` and `Flock/`; object conformance
 tests under `Aiur/Objects/`. The parser suite delegates to focused reader,
 identity, uniqueness, declaration, loader, program-prefix, code-header, and
 operand modules under `Aiur/Objects/Parser/`, sharing one full and one pruned
