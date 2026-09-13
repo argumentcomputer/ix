@@ -10307,6 +10307,182 @@ ROOT Aiur.NativeAIR.ExtensionMmcs.blake3_multi_native_collision
                       inputs.length ≤ 2 + 6 * (Aiur.NativeAIR.Merkle.maxHeight dimensions - capHeight) ∧
                         ∀ (input : List UInt8), input ∈ inputs → Aiur.NativeAIR.Blake3.NativeInput input
 AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.FriDomain.reverseBits_bound
+∀ (bits index : Nat), Aiur.NativeAIR.FriDomain.reverseBits bits index < 2 ^ bits
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.FriDomain.reverseBits_zero
+∀ (bits : Nat), Aiur.NativeAIR.FriDomain.reverseBits bits 0 = 0
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.FriDomain.reverseBits_zero_width
+∀ (index : Nat), Aiur.NativeAIR.FriDomain.reverseBits 0 index = 0
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.FriDomain.reverseBits_mod
+∀ (bits index : Nat),
+  Aiur.NativeAIR.FriDomain.reverseBits bits (index % 2 ^ bits) = Aiur.NativeAIR.FriDomain.reverseBits bits index
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.FriDomain.reverseBits_involution
+∀ (bits index : Nat),
+  Aiur.NativeAIR.FriDomain.reverseBits bits (Aiur.NativeAIR.FriDomain.reverseBits bits index) = index % 2 ^ bits
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.FriDomain.reverseBits_injective
+∀ {bits left right : Nat},
+  left < 2 ^ bits →
+    right < 2 ^ bits →
+      Aiur.NativeAIR.FriDomain.reverseBits bits left = Aiur.NativeAIR.FriDomain.reverseBits bits right → left = right
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.FriDomain.reverseBits_surjective
+∀ {bits index : Nat},
+  index < 2 ^ bits → ∃ original, original < 2 ^ bits ∧ Aiur.NativeAIR.FriDomain.reverseBits bits original = index
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.FriDomain.index_split_bound
+∀ {low high index : Nat}, index < 2 ^ (high + low) → index / 2 ^ low < 2 ^ high
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.FriDomain.reverseBits_split
+∀ {high low index : Nat},
+  index < 2 ^ (high + low) →
+    Aiur.NativeAIR.FriDomain.reverseBits (high + low) index =
+      Aiur.NativeAIR.FriDomain.reverseBits low (index % 2 ^ low) * 2 ^ high +
+        Aiur.NativeAIR.FriDomain.reverseBits high (index / 2 ^ low)
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.FriDomain.reverseBits_padding
+∀ {bits index : Nat},
+  index < 2 ^ bits →
+    ∀ (extra : Nat),
+      Aiur.NativeAIR.FriDomain.reverseBits (extra + bits) index =
+        Aiur.NativeAIR.FriDomain.reverseBits bits index * 2 ^ extra
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.FriDomain.wordReverse_eq
+∀ {wordBits bits index : Nat},
+  bits ≤ wordBits →
+    index < 2 ^ bits →
+      Aiur.NativeAIR.FriDomain.wordReverse wordBits bits index = Aiur.NativeAIR.FriDomain.reverseBits bits index
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.FriDomain.generator_nested
+∀ (parent child : Aiur.NativeAIR.Domain.Subgroup),
+  ↑child ≤ ↑parent →
+    Aiur.NativeAIR.Domain.generator parent ^ 2 ^ (↑parent - ↑child) = Aiur.NativeAIR.Domain.generator child
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.FriDomain.queryPoint_eq
+∀ (domain : Aiur.NativeAIR.Domain.Subgroup) (index : Nat),
+  Aiur.NativeAIR.FriDomain.queryPoint domain index =
+    Aiur.NativeAIR.Domain.generator domain ^ Aiur.NativeAIR.FriDomain.reverseBits (↑domain) index
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.FriDomain.queryPoint_domain
+∀ (domain : Aiur.NativeAIR.Domain.Subgroup) (index : Nat),
+  Aiur.NativeAIR.FriDomain.queryPoint domain index =
+    Aiur.NativeAIR.Domain.point domain ⟨Aiur.NativeAIR.FriDomain.reverseBits (↑domain) index, ⋯⟩
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.FriDomain.queryPoint_injective
+∀ (domain : Aiur.NativeAIR.Domain.Subgroup) {left right : Nat},
+  left < Aiur.NativeAIR.Domain.size domain →
+    right < Aiur.NativeAIR.Domain.size domain →
+      Aiur.NativeAIR.FriDomain.queryPoint domain left = Aiur.NativeAIR.FriDomain.queryPoint domain right → left = right
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.FriDomain.queryPoint_surjective
+∀ (domain : Aiur.NativeAIR.Domain.Subgroup) (index : Fin (Aiur.NativeAIR.Domain.size domain)),
+  ∃ query,
+    query < Aiur.NativeAIR.Domain.size domain ∧
+      Aiur.NativeAIR.FriDomain.queryPoint domain query = Aiur.NativeAIR.Domain.point domain index
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.FriDomain.queryPoint_nonzero
+∀ (domain : Aiur.NativeAIR.Domain.Subgroup) (index : Nat), Aiur.NativeAIR.FriDomain.queryPoint domain index ≠ 0
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.FriDomain.queryPoint_power
+∀ (domain : Aiur.NativeAIR.Domain.Subgroup) (index : Nat),
+  Aiur.NativeAIR.FriDomain.queryPoint domain index ^ Aiur.NativeAIR.Domain.size domain = 1
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.FriDomain.queryPoint_zero
+∀ (domain : Aiur.NativeAIR.Domain.Subgroup), Aiur.NativeAIR.FriDomain.queryPoint domain 0 = 1
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.FriDomain.queryPoint_padding
+∀ (parent child : Aiur.NativeAIR.Domain.Subgroup),
+  ↑child ≤ ↑parent →
+    ∀ {index : Nat},
+      index < Aiur.NativeAIR.Domain.size child →
+        Aiur.NativeAIR.FriDomain.queryPoint parent index = Aiur.NativeAIR.FriDomain.queryPoint child index
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.FriDomain.index_join_bound
+∀ {high low index slot : Nat}, index < 2 ^ high → slot < 2 ^ low → index * 2 ^ low + slot < 2 ^ (high + low)
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.FriDomain.reverseBits_join
+∀ {high low index slot : Nat},
+  index < 2 ^ high →
+    slot < 2 ^ low →
+      Aiur.NativeAIR.FriDomain.reverseBits (high + low) (index * 2 ^ low + slot) =
+        Aiur.NativeAIR.FriDomain.reverseBits low slot * 2 ^ high + Aiur.NativeAIR.FriDomain.reverseBits high index
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.FriDomain.foldNode_eq
+∀ (parent arity : Aiur.NativeAIR.Domain.Subgroup),
+  ↑arity ≤ ↑parent →
+    ∀ {index slot : Nat},
+      index < 2 ^ (↑parent - ↑arity) →
+        slot < Aiur.NativeAIR.Domain.size arity →
+          Aiur.NativeAIR.FriDomain.foldNode parent arity index slot =
+            Aiur.NativeAIR.FriDomain.queryPoint parent (index * Aiur.NativeAIR.Domain.size arity + slot)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.FriDomain.foldNode_injective
+∀ (parent arity : Aiur.NativeAIR.Domain.Subgroup),
+  ↑arity ≤ ↑parent →
+    ∀ {index left right : Nat},
+      index < 2 ^ (↑parent - ↑arity) →
+        left < Aiur.NativeAIR.Domain.size arity →
+          right < Aiur.NativeAIR.Domain.size arity →
+            Aiur.NativeAIR.FriDomain.foldNode parent arity index left =
+                Aiur.NativeAIR.FriDomain.foldNode parent arity index right →
+              left = right
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.FriDomain.foldNode_nonzero
+∀ (parent arity : Aiur.NativeAIR.Domain.Subgroup),
+  ↑arity ≤ ↑parent →
+    ∀ {index slot : Nat},
+      index < 2 ^ (↑parent - ↑arity) →
+        slot < Aiur.NativeAIR.Domain.size arity → Aiur.NativeAIR.FriDomain.foldNode parent arity index slot ≠ 0
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.FriDomain.foldNode_power
+∀ (parent child arity : Aiur.NativeAIR.Domain.Subgroup),
+  ↑parent = ↑child + ↑arity →
+    ∀ (index slot : Nat),
+      Aiur.NativeAIR.FriDomain.foldNode parent arity index slot ^ Aiur.NativeAIR.Domain.size arity =
+        Aiur.NativeAIR.FriDomain.queryPoint child index
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.FriDomain.queryPoint_reduce
+∀ (parent child arity : Aiur.NativeAIR.Domain.Subgroup),
+  ↑parent = ↑child + ↑arity →
+    ∀ {index : Nat},
+      index < Aiur.NativeAIR.Domain.size parent →
+        Aiur.NativeAIR.FriDomain.queryPoint parent index ^ Aiur.NativeAIR.Domain.size arity =
+          Aiur.NativeAIR.FriDomain.queryPoint child (index / Aiur.NativeAIR.Domain.size arity)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.FriDomain.inputPoint_nonzero
+∀ (domain : Aiur.NativeAIR.Domain.Subgroup) (index : Nat), Aiur.NativeAIR.FriDomain.inputPoint domain index ≠ 0
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.FriDomain.inputPoint_injective
+∀ (domain : Aiur.NativeAIR.Domain.Subgroup) {left right : Nat},
+  left < Aiur.NativeAIR.Domain.size domain →
+    right < Aiur.NativeAIR.Domain.size domain →
+      Aiur.NativeAIR.FriDomain.inputPoint domain left = Aiur.NativeAIR.FriDomain.inputPoint domain right → left = right
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.FriDomain.inputPoint_power
+∀ (domain : Aiur.NativeAIR.Domain.Subgroup) (index : Nat),
+  Aiur.NativeAIR.FriDomain.inputPoint domain index ^ Aiur.NativeAIR.Domain.size domain =
+    7 ^ Aiur.NativeAIR.Domain.size domain
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.FriDomain.coset_shift_certificate
+Aiur.G.pow 7 (2 ^ 32) ≠ 1
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.FriDomain.coset_shift_not_root
+∀ (domain : Aiur.NativeAIR.Domain.Subgroup), 7 ^ Aiur.NativeAIR.Domain.size domain ≠ 1
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.FriDomain.inputPoint_not_root
+∀ (domain : Aiur.NativeAIR.Domain.Subgroup) (index : Nat),
+  Aiur.NativeAIR.FriDomain.inputPoint domain index ^ Aiur.NativeAIR.Domain.size domain ≠ 1
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.FriDomain.inputPoint_trace_disjoint
+∀ (query trace : Aiur.NativeAIR.Domain.Subgroup),
+  ↑trace ≤ ↑query →
+    ∀ (index : Nat) (row : Fin (Aiur.NativeAIR.Domain.size trace)),
+      Aiur.NativeAIR.FriDomain.inputPoint query index ≠ Aiur.NativeAIR.Domain.point trace row
+AXIOMS [propext, Classical.choice, Quot.sound]
 PREMISE Aiur.AIR.activityConstraint
 Aiur.G → Aiur.G → Aiur.G
 DEFINITION
@@ -17251,6 +17427,28 @@ DEFINITION
 fun hash wordBits dimensions capHeight indices cap rows proof =>
   Aiur.NativeAIR.Merkle.covered dimensions capHeight &&
     Aiur.NativeAIR.ExtensionMmcs.verifyMulti hash wordBits dimensions capHeight indices cap rows proof
+PREMISE Aiur.NativeAIR.FriDomain.reverseBits
+Nat → Nat → Nat
+DEFINITION
+fun bits index => (BitVec.ofNat bits index).reverse.toNat
+PREMISE Aiur.NativeAIR.FriDomain.wordReverse
+Nat → Nat → Nat → Nat
+DEFINITION
+fun wordBits bits index => ((BitVec.ofNat wordBits index).reverse >>> ((wordBits - bits) % wordBits)).toNat
+PREMISE Aiur.NativeAIR.FriDomain.queryPoint
+Aiur.NativeAIR.Domain.Subgroup → Nat → Aiur.G
+DEFINITION
+fun domain index => (Aiur.NativeAIR.Domain.generator domain).pow (Aiur.NativeAIR.FriDomain.reverseBits (↑domain) index)
+PREMISE Aiur.NativeAIR.FriDomain.inputPoint
+Aiur.NativeAIR.Domain.Subgroup → Nat → Aiur.G
+DEFINITION
+fun domain index => 7 * Aiur.NativeAIR.FriDomain.queryPoint domain index
+PREMISE Aiur.NativeAIR.FriDomain.foldNode
+Aiur.NativeAIR.Domain.Subgroup → Aiur.NativeAIR.Domain.Subgroup → Nat → Nat → Aiur.G
+DEFINITION
+fun parent arity index slot =>
+  (Aiur.NativeAIR.Domain.generator parent).pow (Aiur.NativeAIR.FriDomain.reverseBits (↑parent - ↑arity) index) *
+    (Aiur.NativeAIR.Domain.generator arity).pow (Aiur.NativeAIR.FriDomain.reverseBits (↑arity) slot)
 RECURSION WORKER Aiur.buildArgs._unsafe_rec
 Aiur.LayoutMap →
   Std.HashMap Aiur.Local (Array Aiur.Bytecode.ValIdx) →
@@ -24570,7 +24768,7 @@ fun value exponent x =>
       let half := Aiur.NativeAIR.ProofCodec.Extension.powBits._unsafe_rec value (exponent / 2) fuel;
       let square := half * half;
       if (exponent % 2 == 0) = true then square else square * value
-C8 component ROOTS 1391; LOGICAL DECLARATIONS 19752; WITH RUNTIME 20548
+C8 component ROOTS 1425; LOGICAL DECLARATIONS 19885; WITH RUNTIME 20682
 IX RUNTIME EXTERNS [Aiur.AiurSystem.build, Aiur.AiurSystem.verify, Aiur.AiurSystem.vkBytes, Aiur.Proof.ofBytesChecked]
 PARTIAL OPAQUE SOURCES [Aiur.instHashableTyp.hash, Aiur.instReprPattern.repr, Aiur.instReprTyp.repr]
 OTHER UNSAFE RUNTIME []

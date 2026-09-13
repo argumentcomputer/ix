@@ -52,6 +52,7 @@ import Ix.Aiur.Proofs.MerkleCap
 import Ix.Aiur.Proofs.Merkle
 import Ix.Aiur.Proofs.PrunedMerkle
 import Ix.Aiur.Proofs.ExtensionMmcs
+import Ix.Aiur.Proofs.FriDomain
 import Ix.Aiur.Proofs.Transcript
 import Ix.Aiur.Proofs.Grouping
 import Ix.Aiur.Proofs.TailMatches
@@ -3006,6 +3007,85 @@ def extensionMmcsPremises : Array Lean.Name := #[
   `Aiur.NativeAIR.ExtensionMmcs.verifyMulti,
   `Aiur.NativeAIR.ExtensionMmcs.verifyMultiCovered]
 
+def friDomainRoots : Array Lean.Name := #[
+  `Aiur.NativeAIR.FriDomain.reverseBits_bound,
+  `Aiur.NativeAIR.FriDomain.reverseBits_zero,
+  `Aiur.NativeAIR.FriDomain.reverseBits_zero_width,
+  `Aiur.NativeAIR.FriDomain.reverseBits_mod,
+  `Aiur.NativeAIR.FriDomain.reverseBits_involution,
+  `Aiur.NativeAIR.FriDomain.reverseBits_injective,
+  `Aiur.NativeAIR.FriDomain.reverseBits_surjective,
+  `Aiur.NativeAIR.FriDomain.index_split_bound,
+  `Aiur.NativeAIR.FriDomain.reverseBits_split,
+  `Aiur.NativeAIR.FriDomain.reverseBits_padding,
+  `Aiur.NativeAIR.FriDomain.wordReverse_eq,
+  `Aiur.NativeAIR.FriDomain.generator_nested,
+  `Aiur.NativeAIR.FriDomain.queryPoint_eq,
+  `Aiur.NativeAIR.FriDomain.queryPoint_domain,
+  `Aiur.NativeAIR.FriDomain.queryPoint_injective,
+  `Aiur.NativeAIR.FriDomain.queryPoint_surjective,
+  `Aiur.NativeAIR.FriDomain.queryPoint_nonzero,
+  `Aiur.NativeAIR.FriDomain.queryPoint_power,
+  `Aiur.NativeAIR.FriDomain.queryPoint_zero,
+  `Aiur.NativeAIR.FriDomain.queryPoint_padding,
+  `Aiur.NativeAIR.FriDomain.index_join_bound,
+  `Aiur.NativeAIR.FriDomain.reverseBits_join,
+  `Aiur.NativeAIR.FriDomain.foldNode_eq,
+  `Aiur.NativeAIR.FriDomain.foldNode_injective,
+  `Aiur.NativeAIR.FriDomain.foldNode_nonzero,
+  `Aiur.NativeAIR.FriDomain.foldNode_power,
+  `Aiur.NativeAIR.FriDomain.queryPoint_reduce,
+  `Aiur.NativeAIR.FriDomain.inputPoint_nonzero,
+  `Aiur.NativeAIR.FriDomain.inputPoint_injective,
+  `Aiur.NativeAIR.FriDomain.inputPoint_power,
+  `Aiur.NativeAIR.FriDomain.coset_shift_certificate,
+  `Aiur.NativeAIR.FriDomain.coset_shift_not_root,
+  `Aiur.NativeAIR.FriDomain.inputPoint_not_root,
+  `Aiur.NativeAIR.FriDomain.inputPoint_trace_disjoint]
+
+def friDomainQuotRoots : Array Lean.Name := #[
+  `Aiur.NativeAIR.FriDomain.reverseBits_bound,
+  `Aiur.NativeAIR.FriDomain.reverseBits_zero,
+  `Aiur.NativeAIR.FriDomain.reverseBits_zero_width,
+  `Aiur.NativeAIR.FriDomain.reverseBits_mod,
+  `Aiur.NativeAIR.FriDomain.reverseBits_involution,
+  `Aiur.NativeAIR.FriDomain.reverseBits_injective,
+  `Aiur.NativeAIR.FriDomain.reverseBits_surjective,
+  `Aiur.NativeAIR.FriDomain.reverseBits_split,
+  `Aiur.NativeAIR.FriDomain.reverseBits_padding,
+  `Aiur.NativeAIR.FriDomain.wordReverse_eq,
+  `Aiur.NativeAIR.FriDomain.queryPoint_domain,
+  `Aiur.NativeAIR.FriDomain.queryPoint_surjective,
+  `Aiur.NativeAIR.FriDomain.index_join_bound,
+  `Aiur.NativeAIR.FriDomain.reverseBits_join]
+
+def friDomainClassicalRoots : Array Lean.Name := #[
+  `Aiur.NativeAIR.FriDomain.generator_nested,
+  `Aiur.NativeAIR.FriDomain.queryPoint_eq,
+  `Aiur.NativeAIR.FriDomain.queryPoint_injective,
+  `Aiur.NativeAIR.FriDomain.queryPoint_nonzero,
+  `Aiur.NativeAIR.FriDomain.queryPoint_power,
+  `Aiur.NativeAIR.FriDomain.queryPoint_zero,
+  `Aiur.NativeAIR.FriDomain.queryPoint_padding,
+  `Aiur.NativeAIR.FriDomain.foldNode_eq,
+  `Aiur.NativeAIR.FriDomain.foldNode_injective,
+  `Aiur.NativeAIR.FriDomain.foldNode_nonzero,
+  `Aiur.NativeAIR.FriDomain.foldNode_power,
+  `Aiur.NativeAIR.FriDomain.queryPoint_reduce,
+  `Aiur.NativeAIR.FriDomain.inputPoint_nonzero,
+  `Aiur.NativeAIR.FriDomain.inputPoint_injective,
+  `Aiur.NativeAIR.FriDomain.inputPoint_power,
+  `Aiur.NativeAIR.FriDomain.coset_shift_not_root,
+  `Aiur.NativeAIR.FriDomain.inputPoint_not_root,
+  `Aiur.NativeAIR.FriDomain.inputPoint_trace_disjoint]
+
+def friDomainPremises : Array Lean.Name := #[
+  `Aiur.NativeAIR.FriDomain.reverseBits,
+  `Aiur.NativeAIR.FriDomain.wordReverse,
+  `Aiur.NativeAIR.FriDomain.queryPoint,
+  `Aiur.NativeAIR.FriDomain.inputPoint,
+  `Aiur.NativeAIR.FriDomain.foldNode]
+
 def roots : Array Lean.Name := #[
   `Aiur.G.ofNat_n, `Aiur.G.mul_one, `Aiur.G.mul_zero,
   `Aiur.AIR.inactive_multiplicity_zero,
@@ -3042,7 +3122,7 @@ def roots : Array Lean.Name := #[
     fieldRoots ++ localConstraintRoots ++ byteArithmeticRoots ++ byteLookupRoots ++
     lookupMessageRoots ++ lookupShapeRoots ++ globalLookupRoots ++ lookupBudgetRoots ++
     selectorControlRoots ++ operationRowRoots ++ blockRowRoots ++ querySlotRoots ++ circuitRowRoots ++
-    rowCountRoots ++ circuitTableRoots ++ branchlessRoots ++ circuitTraceRoots ++ circuitMembershipRoots ++ lookupLayoutRoots ++ memoryColumnRoots ++ byteColumnRoots ++ expressionGraphRoots ++ frontendExpressionRoots ++ graphCompilationRoots ++ operationExpressionRoots ++ blockCircuitRoots ++ allocationRoots ++ circuitAllocationRoots ++ circuitCompletionRoots ++ checkedCircuitRoots ++ keyCodecRoots ++ compiledKeyRoots ++ proofAcceptanceRoots ++ extensionRoots ++ logUpRoots ++ domainRoots ++ verifierArithmeticRoots ++ transcriptRoots ++ blake3Roots ++ merkleCapRoots ++ merkleRoots ++ prunedMerkleRoots ++ extensionMmcsRoots
+    rowCountRoots ++ circuitTableRoots ++ branchlessRoots ++ circuitTraceRoots ++ circuitMembershipRoots ++ lookupLayoutRoots ++ memoryColumnRoots ++ byteColumnRoots ++ expressionGraphRoots ++ frontendExpressionRoots ++ graphCompilationRoots ++ operationExpressionRoots ++ blockCircuitRoots ++ allocationRoots ++ circuitAllocationRoots ++ circuitCompletionRoots ++ checkedCircuitRoots ++ keyCodecRoots ++ compiledKeyRoots ++ proofAcceptanceRoots ++ extensionRoots ++ logUpRoots ++ domainRoots ++ verifierArithmeticRoots ++ transcriptRoots ++ blake3Roots ++ merkleCapRoots ++ merkleRoots ++ prunedMerkleRoots ++ extensionMmcsRoots ++ friDomainRoots
 
 def premises : Array Lean.Name := #[
   `Aiur.AIR.activityConstraint,
@@ -3281,7 +3361,7 @@ def premises : Array Lean.Name := #[
   `Aiur.NativeAIR.evalRoots,
   `Aiur.NativeAIR.readLookup,
   `Aiur.NativeAIR.evalLookup,
-  `Aiur.NativeAIR.goldilocksOps] ++ frontendExpressionPremises ++ graphCompilationPremises ++ operationExpressionPremises ++ blockCircuitPremises ++ allocationPremises ++ circuitAllocationPremises ++ circuitCompletionPremises ++ checkedCircuitPremises ++ keyCodecPremises ++ compiledKeyPremises ++ proofAcceptancePremises ++ extensionPremises ++ logUpPremises ++ domainPremises ++ verifierArithmeticPremises ++ transcriptPremises ++ blake3Premises ++ merkleCapPremises ++ merklePremises ++ prunedMerklePremises ++ extensionMmcsPremises
+  `Aiur.NativeAIR.goldilocksOps] ++ frontendExpressionPremises ++ graphCompilationPremises ++ operationExpressionPremises ++ blockCircuitPremises ++ allocationPremises ++ circuitAllocationPremises ++ circuitCompletionPremises ++ checkedCircuitPremises ++ keyCodecPremises ++ compiledKeyPremises ++ proofAcceptancePremises ++ extensionPremises ++ logUpPremises ++ domainPremises ++ verifierArithmeticPremises ++ transcriptPremises ++ blake3Premises ++ merkleCapPremises ++ merklePremises ++ prunedMerklePremises ++ extensionMmcsPremises ++ friDomainPremises
 
 private def constants (info : Lean.ConstantInfo) : Array Lean.Name :=
   info.type.getUsedConstants ++ match info with
@@ -3360,7 +3440,11 @@ run_cmd do
   let env ← getEnv
   for root in roots do
     let some info := env.checked.get.find? root | throwError "C8 component audit: missing root {root}"
-    let expected := if extensionMmcsRoots.contains root then
+    let expected := if friDomainRoots.contains root then
+        if friDomainClassicalRoots.contains root then #[``propext, ``Classical.choice, ``Quot.sound]
+        else if friDomainQuotRoots.contains root then #[``propext, ``Quot.sound]
+        else #[``propext]
+      else if extensionMmcsRoots.contains root then
         if extensionMmcsAxiomFreeRoots.contains root then #[]
         else if extensionMmcsClassicalRoots.contains root then #[``propext, ``Classical.choice, ``Quot.sound]
         else if extensionMmcsQuotRoots.contains root then #[``propext, ``Quot.sound]

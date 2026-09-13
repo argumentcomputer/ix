@@ -410,12 +410,12 @@ sizes, constrained and advice calls, nested continuations, visibility and
 public-claim widths. All 54 parallel release Rust tests pass, including the
 supplied rank/output ambiguity regression; release Clippy denies warnings.
 
-The audit checks 1,391 roots by traversing checked types, bodies and inductive
+The audit checks 1,425 roots by traversing checked types, bodies and inductive
 constructors. Fifty-five roots use no axioms; one uses only `Quot.sound`;
-237 depend only on `propext`; 422 use exactly `propext` and `Quot.sound`;
-the other 676 use exactly
+239 depend only on `propext`; 436 use exactly `propext` and `Quot.sound`;
+the other 694 use exactly
 `propext`, `Classical.choice` and `Quot.sound`. The combined closure
-has 19,752 logical declarations and 20,548 declarations after following runtime
+has 19,885 logical declarations and 20,682 declarations after following runtime
 workers and replacements. The frozen report records four native runtime entry points,
 three partial opaque sources and all 187 Ix recursion worker implementations.
 Bytecode comparison/hashing, tail-match restoration and source-value hashing
@@ -1261,6 +1261,40 @@ definitions and 186 worker bodies remain unchanged. All 94 parallel native
 release tests, Clippy with warnings denied, the strict 480-job build and the
 complete gate with thirty-five fresh native corpora pass. The backend cases
 remain two accepted and seventeen rejected, with no unexpected outcomes.
+
+`NativeAIR.FriDomain` connects FRI query indices to the checked Goldilocks
+domains. Bit reversal is an involution and a permutation on admitted indices.
+Its split and padding identities relate the native word operations, folding
+groups and final-domain queries. The machine-operation correspondence needs
+both a supported bit count and an index bound: at width zero, the native
+overflowing shift retains a nonzero input's full-word reverse, while the
+only admitted index is zero.
+
+Nested generators have the required power relation. Every interpolation node
+in a folding row equals the corresponding parent query point; the nodes are
+distinct and nonzero. Raising any node to the folding arity yields the reduced
+query point. Evaluating a bounded final index using the original global
+generator and bit width agrees with evaluation in the final domain. The
+input-opening points use the separate shift by seven, whose checked power
+certificate proves that this coset is disjoint from the trace subgroups.
+
+The native comparison covers 58,295 bit reversals through the full 64-bit word
+width, 24,951 query points across all 33 field domains, 9,617 nested-domain
+points and 990 folding rows. It calls the actual FRI `fold_row` method at all
+50,042 sampled interpolation nodes, with both extension coordinates populated.
+The folding corpus uses arity logarithms zero through eight; zero tests the
+public helper's singleton boundary, while accepted FRI rounds require a
+positive logarithm. The proofs apply to every admitted field domain and arity.
+General interpolation, the full FRI verifier and quantitative proximity
+soundness remain separate obligations.
+
+These domain proofs add 34 roots and five definitions. All 1,391 prior root
+statements and axiom sets, 919 premise definitions and 187 worker bodies
+remain unchanged. The native and Lean values agree throughout the corpus.
+All 95 parallel native release tests, Clippy with warnings denied, the
+487-job strict build and the full gate with thirty-six fresh native corpora
+pass. The backend still accepts two cases and rejects seventeen, with no
+unexpected outcomes.
 
 The budget comparison covers
 21,964 Rust/Lean cases, including

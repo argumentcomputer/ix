@@ -26,6 +26,9 @@ p3-challenger = { git = "https://github.com/Plonky3/Plonky3", rev = "3152b14a890
 p3-symmetric = { git = "https://github.com/Plonky3/Plonky3", rev = "3152b14a89067c83775a8076cc262ffc48a1fd7c" }
 # Capture actual binary MMCS hash calls at the same pinned revision.
 p3-merkle-tree = { git = "https://github.com/Plonky3/Plonky3", rev = "3152b14a89067c83775a8076cc262ffc48a1fd7c" }
+# Exercise the actual FRI folding strategy and its index permutation.
+p3-fri = { git = "https://github.com/Plonky3/Plonky3", rev = "3152b14a89067c83775a8076cc262ffc48a1fd7c" }
+p3-util = { git = "https://github.com/Plonky3/Plonky3", rev = "3152b14a89067c83775a8076cc262ffc48a1fd7c" }
 
 [features]
 default = []

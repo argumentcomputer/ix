@@ -649,6 +649,7 @@ mod tests {
   mod constant_degree;
   #[cfg(not(feature = "cuda"))]
   mod extension_mmcs;
+  mod fri_domain;
   mod lookup_budget;
   mod lookup_shapes;
   mod memory;
