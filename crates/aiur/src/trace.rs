@@ -419,7 +419,6 @@ impl Op {
             result.output,
             result.rank,
           );
-          slice.push_auxiliary(index, G::from_u64(result.rank));
           slice.push_lookup(index, G::ONE, &args);
           let gap = result
             .rank

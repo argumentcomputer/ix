@@ -26,7 +26,7 @@ fn grouped_promotion_toplevel() -> Toplevel {
     layout: FunctionLayout {
       input_size: 1,
       selectors: 2,
-      auxiliaries: 15,
+      auxiliaries: 14,
       lookups: 8,
     },
   });
@@ -178,7 +178,7 @@ fn recursive_cycle_cannot_supply_claim() {
     layout: FunctionLayout {
       input_size: 1,
       selectors: 1,
-      auxiliaries: 15,
+      auxiliaries: 14,
       lookups: 8,
     },
     entry: true,

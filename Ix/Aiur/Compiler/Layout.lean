@@ -176,8 +176,8 @@ def opLayout : Bytecode.Op → LayoutM Unit
     pushDegrees $ .replicate outputSize 1
     bumpAuxiliaries outputSize
     if !unconstrained then
-      -- Callee rank and six bytes for (callee rank - caller rank - 1).
-      bumpAuxiliaries 7
+      -- Six gap bytes; the lookup derives the callee rank as caller + 1 + gap.
+      bumpAuxiliaries 6
       bumpLookups 4
   | .store values => do
     pushDegree 1; bumpAuxiliaries; bumpLookups; addMemSize values.size

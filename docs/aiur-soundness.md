@@ -13,11 +13,13 @@ rows directly, without running the interpreter. The regressions in
 
 ## Call ranks and witness generation
 
-Each function row has six little-endian rank bytes. A constrained call adds a
-callee rank and six bytes for `callee_rank - caller_rank - 1`. Three byte-pair
+Each function row has six little-endian rank bytes. A constrained call adds
+six bytes for `callee_rank - caller_rank - 1` and requests the derived rank
+`caller_rank + 1 + gap` in its lookup. The callee's return binds this rank
+without a separate callee-rank column or equality constraint. Three byte-pair
 lookups range-check each six-byte value. Ranks and gaps are below `2^48`, so
-their sum is below `2^49`, below the Goldilocks characteristic. A satisfied
-call-order equation therefore cannot wrap around the field to permit a cycle.
+the derived rank is below `2^49`, below the Goldilocks characteristic. The
+call lookup therefore cannot wrap around the field to permit a cycle.
 
 Function query maps share a completion counter. Reversing completion order
 assigns the root rank zero and gives each constrained callee a larger rank.
@@ -27,7 +29,7 @@ workers accumulate their byte-range queries locally; the prover merges those
 counts before constructing the binary byte-table trace.
 
 The compiler reserves six additional columns and three lookup slots per
-function, and seven columns and three additional lookup slots per constrained
+function, and six columns and three additional lookup slots per constrained
 call. These columns belong to the compiled proving layout and witness
 generator. Regenerating the IxVM, aggregation and recursive-verifier execution
 sources produces identical files because their instructions and function
@@ -39,6 +41,10 @@ System construction validates constrained-call arities, continuation yields,
 canonical function-index and memory-width domains, circuit membership and
 control counts. A circuit must reserve at least as many selectors as its
 return/yield leaves, including yields consumed by a continuation.
+Each constrained function's return arity is summarized once and reused at
+every call site. Public-entry shapes are retained with the immutable program
+so verifying a claim's shape takes constant time. Summaries include early
+returns from nested continuations and reject inconsistent return arities.
 
 Before checking proof openings, the public verifier validates the claim's
 channel, entry visibility and arity. It also requires fixed byte tables to be

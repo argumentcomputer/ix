@@ -509,13 +509,6 @@ impl Op {
           lookup_args
             .extend(output.into_iter().map(|col| state.gate(sel, col)));
 
-          let callee_rank = state.next_auxiliary();
-          lookup_args.push(state.gate(sel, callee_rank.clone()));
-
-          let lookup = state.next_lookup();
-          combine_lookup_args(lookup, lookup_args);
-          lookup.multiplicity = lookup.multiplicity.clone() + sel.clone();
-
           let gap_bytes: [Expr; RANK_BYTES] =
             array::from_fn(|_| state.next_auxiliary());
           let gap = gap_bytes.iter().enumerate().fold(
@@ -524,10 +517,15 @@ impl Op {
               acc + byte.clone() * konst(G::from_u64(1 << (8 * i)))
             },
           );
-          state.constraints.zeros.push(
-            sel.clone()
-              * (callee_rank - state.rank.clone() - konst(G::ONE) - gap),
-          );
+          // Bind the derived rank directly through the callee's return
+          // lookup. Both row ranks and gaps are range checked, so this
+          // cannot wrap the field to close a cycle. The expression stays
+          // linear and needs no separate rank column or equality.
+          let callee_rank = state.rank.clone() + konst(G::ONE) + gap;
+          lookup_args.push(state.gate(sel, callee_rank));
+          let lookup = state.next_lookup();
+          combine_lookup_args(lookup, lookup_args);
+          lookup.multiplicity = lookup.multiplicity.clone() + sel.clone();
           for pair in gap_bytes.as_chunks::<2>().0 {
             state.range_pair(sel, pair[0].clone(), pair[1].clone());
           }
