@@ -35,6 +35,18 @@ theorem TypingClaim.checking {e A : AExpr β} (typed : TypingClaim.{u,v} entries
   have checked := typed V constants realizes levels env valid
   exact ⟨checked.1, checked.2.2⟩
 
+/-- A synthesized function supplies the domain's hereditary validity, so its
+argument may be checked without a separate universe-formation derivation. -/
+theorem TypingClaim.appChecking {f a A B : AExpr β} {condition : PropWhen}
+    (function : TypingClaim.{u,v} entries Γ f (.forallE condition A B))
+    (argument : CheckingClaim.{u,v} entries Γ a A) :
+    TypingClaim.{u,v} entries Γ (.app f a) (B.inst a) := by
+  apply function.app
+  intro V _ constants realizes levels env valid
+  have domainValid := (function V constants realizes levels env valid).2.1.1
+  obtain ⟨argumentValid, member⟩ := argument V constants realizes levels env valid domainValid
+  exact ⟨argumentValid, domainValid, member⟩
+
 namespace CheckingClaim
 
 theorem typing {e A : AExpr β} {level : VLevel}

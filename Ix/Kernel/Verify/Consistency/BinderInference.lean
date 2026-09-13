@@ -3,8 +3,7 @@ Copyright (c) 2026 Argument Computer Corporation.
 SPDX-License-Identifier: MIT OR Apache-2.0
 -/
 
-import Ix.Kernel.Verify.Consistency.BinderOpening
-import Ix.Kernel.Knot
+import Ix.Kernel.Verify.Consistency.Application
 import Ix.Theory.Model.Checking
 
 /-!
@@ -22,6 +21,42 @@ namespace Ix.Kernel.Consistency
 open Theory Theory.Model
 
 universe u v
+
+/-- Application spines whose type validity comes from the current local
+declaration or an admitted constant. Lambda arguments may still be checked
+against the domain supplied by such a function. -/
+inductive SynthesisHead {β : Type u} : AExpr β → Prop
+  | bvar (index : Nat) : SynthesisHead (.bvar index)
+  | const (ref : ConstRef β) (levels : List VLevel) : SynthesisHead (.const ref levels)
+  | app {fn arg : AExpr β} (head : SynthesisHead fn) : SynthesisHead (.app fn arg)
+
+/-- Empty universe instantiation returns the exact declaration type reached
+by lazy lookup. The scoped reading can include dependent Pi types. -/
+theorem inferUncached_monomorphic_const_scoped {β : Type u}
+    {resolve : Address → Option (ConstRef β)} {locals : List FVarId}
+    {id : KId .anon} {info : ExprInfo .anon} {type : AExpr β}
+    {inferRec : KExpr .anon → RecM .anon (KExpr .anon)} {inferOnly : Bool}
+    {methods : Methods .anon} {before after : TcState .anon} {result : KExpr .anon}
+    (lookup : ∀ concrete loaded, TcM.getConst id before = .ok concrete loaded →
+      readScopedExpr? resolve locals concrete.ty = some type.erase)
+    (accepted : RecM.inferUncached inferRec inferOnly (.const id #[] info)
+      methods before = .ok result after) :
+    readScopedExpr? resolve locals result = some type.erase := by
+  change (RecM.inferUncached inferRec inferOnly (.const id #[] info)).run
+    methods before = .ok result after at accepted
+  unfold RecM.inferUncached at accepted
+  simp only [ReaderT.run_bind, ReaderT.run_monadLift] at accepted
+  change EStateM.bind (TcM.getConst id) _ before = _ at accepted
+  cases got : TcM.getConst id before with
+  | error err failed => rw [EStateM.bind, got] at accepted; contradiction
+  | ok concrete loaded =>
+      rw [EStateM.bind, got] at accepted
+      simp only at accepted
+      split at accepted
+      · contradiction
+      · change EStateM.Result.ok concrete.ty loaded = .ok result after at accepted
+        cases accepted
+        exact lookup concrete _ got
 
 private theorem withLctxScope_eq (action : RecM .anon α)
     (methods : Methods .anon) (before : TcState .anon) :
@@ -183,6 +218,36 @@ inductive BinderInference {β : Type u}
       (registered : localIndex? locals id = some index)
       (atIndex : context[index]? = some A) :
       BinderInference resolve entries locals context fuel before (.fvar id name info) (.bvar index) A
+  | const {locals context fuel before id info ref entry}
+      (miss : UncachedInference before (.const id #[] info))
+      (resolved : resolve id.addr = some ref)
+      (found : entries ref = some entry)
+      (monomorphic : entry.universes = 0)
+      (stable : entry.type.instL [] = entry.type)
+      (lookup : ∀ concrete loaded, TcM.getConst id miss.keyed = .ok concrete loaded →
+        readScopedExpr? resolve locals concrete.ty = some entry.type.erase) :
+      BinderInference resolve entries locals context fuel before (.const id #[] info)
+        (.const ref []) entry.type
+  | app {locals context fuel before fn arg info f a A A' B condition}
+      (full : before.inferOnly = false)
+      (miss : UncachedInference before (.app fn arg info))
+      (trace : ApplicationInferenceTrace fuel miss.keyed fn arg)
+      (functionTree : BinderInference resolve entries locals context fuel miss.keyed fn
+        f (.forallE condition A B))
+      (head : SynthesisHead f)
+      (argumentTree : BinderInference resolve entries locals context fuel trace.functionState arg a A')
+      (conditions : A'.annotations = A.annotations)
+      (hashPath : (trace.argumentType == trace.domain) = true)
+      (comparisonFaithful : trace.argumentType.AddrFaithful trace.domain)
+      (bodyConstructed : trace.codomain.Constructed)
+      (argConstructed : arg.Constructed)
+      (bodyBound : trace.codomain.size + 1 < UInt64.size)
+      (argBound : arg.size < UInt64.size)
+      (coherent : trace.comparedState.env.intern.WF)
+      (faithful : KExpr.CollisionFree fun term => trace.comparedState.env.intern.ExprSupport term ∨
+        KExpr.SubstReach arg trace.codomain 0 term) :
+      BinderInference resolve entries locals context (fuel + 1) before (.app fn arg info)
+        (.app f a) (B.inst a)
   | forallE {locals context fuel before name bi domain body info A B}
       (miss : UncachedInference before (.all name bi domain body info))
       (trace : ForallInferenceTrace fuel miss.keyed name bi domain body)
@@ -225,7 +290,7 @@ inductive BinderInference {β : Type u}
 /-- Successful production inference reads the expected model type and checks
 the actual source term against it. No recursive semantic premise is supplied
 by the caller: induction follows the finite operational support tree. -/
-theorem BinderInference.sound {β : Type u}
+theorem BinderInference.soundWithSynthesis {β : Type u}
     {resolve : Address → Option (ConstRef β)} {entries : Model.Environment β}
     {locals : List FVarId} {context : Model.Context β} {fuel : Nat}
     {before after : TcState .anon} {term result : KExpr .anon} {e A : AExpr β}
@@ -234,7 +299,8 @@ theorem BinderInference.sound {β : Type u}
     (reading : readScopedExpr? resolve locals term = some e.erase)
     (accepted : RecM.infer term (methodsN fuel) before = .ok result after) :
     readScopedExpr? resolve locals result = some A.erase ∧
-      CheckingClaim.{u,v} entries context e A := by
+      CheckingClaim.{u,v} entries context e A ∧
+      (SynthesisHead e → TypingClaim.{u,v} entries context e A) := by
   induction support generalizing result after with
   | sort miss coherent faithful =>
       obtain ⟨state, run⟩ := infer_uncached_success miss accepted
@@ -242,23 +308,50 @@ theorem BinderInference.sound {β : Type u}
         (miss.keyed.env.intern.internExpr (KExpr.mkSort (KUniv.mkSucc _))).1 _ =
           .ok result state at run
       cases run
-      refine ⟨?_, (TypingClaim.sort _).checking⟩
+      refine ⟨?_, (TypingClaim.sort _).checking, fun head => by cases head⟩
       rw [internExpr_readScopedExpr? coherent faithful]
       simp [AExpr.erase]
   | fvar cache registered atIndex =>
       obtain ⟨typeReads, typed⟩ := cache.sound agreement registered atIndex accepted
-      exact ⟨typeReads, typed.checking⟩
+      exact ⟨typeReads, typed.checking, fun _ => typed⟩
+  | @const locals context fuel before id info ref entry miss resolved found monomorphic stable lookup =>
+      obtain ⟨state, run⟩ := infer_uncached_success miss accepted
+      have typed : TypingClaim.{u,v} entries context (.const ref []) entry.type := by
+        simpa only [stable] using
+          (TypingClaim.const (Γ := context) (ls := []) found (by simpa using monomorphic.symm))
+      exact ⟨inferUncached_monomorphic_const_scoped lookup run, typed.checking, fun _ => typed⟩
+  | @app locals context fuel before fn arg info f a A A' B condition
+      full miss trace functionTree head argumentTree conditions hashPath comparisonFaithful
+      bodyConstructed argConstructed bodyBound argBound coherent faithful ihFunction ihArgument =>
+      obtain ⟨state, run⟩ := infer_uncached_success miss accepted
+      rw [full] at run
+      obtain ⟨fnReads, argReads⟩ := readScopedExpr?_app_parts reading
+      have keyedAgreement := miss.localContext.symm ▸ agreement
+      obtain ⟨functionTypeReads, _, functionTyped⟩ := ihFunction keyedAgreement fnReads trace.functionRun
+      obtain ⟨domainReads, codomainReads⟩ := readScopedExpr?_all_parts functionTypeReads
+      have argumentAgreement := trace.contextPreserved.symm ▸ keyedAgreement
+      obtain ⟨argumentTypeReads, argumentChecked, _⟩ := ihArgument argumentAgreement argReads trace.argumentRun
+      have sameReading := beq_readScopedExpr? (resolve := resolve) (locals := locals)
+        (depth := 0) comparisonFaithful hashPath
+      have sameType := AExpr.eq_of_erase_annotations
+        (Option.some.inj (argumentTypeReads.symm.trans (sameReading.trans domainReads))) conditions
+      have checked := sameType ▸ argumentChecked
+      have typed := (functionTyped head).appChecking checked
+      refine ⟨?_, typed.checking, fun _ => typed⟩
+      rw [trace.output run, AExpr.erase_inst]
+      exact (subst_readScopedExpr? bodyConstructed argConstructed bodyBound argBound
+        coherent faithful codomainReads argReads).1
   | forallE miss trace opening absent domainTree bodyTree levelFaithful domainBound bodyBound
       coherent faithful ihDomain ihBody =>
       obtain ⟨state, run⟩ := infer_uncached_success miss accepted
       obtain ⟨domainReads, bodyReads⟩ := readScopedExpr?_all_parts reading
       have keyedAgreement := miss.localContext.symm ▸ agreement
-      obtain ⟨_, domainChecked⟩ := ihDomain keyedAgreement domainReads trace.domainRun
+      obtain ⟨_, domainChecked, _⟩ := ihDomain keyedAgreement domainReads trace.domainRun
       have domainAgreement := trace.contextPreserved.symm ▸ keyedAgreement
       obtain ⟨_, openedReads, openedAgreement, _⟩ :=
         openBinder_sound opening domainAgreement absent domainReads bodyReads trace.openRun
-      obtain ⟨_, bodyChecked⟩ := ihBody openedAgreement openedReads trace.bodyRun
-      refine ⟨?_, ?_⟩
+      obtain ⟨_, bodyChecked, _⟩ := ihBody openedAgreement openedReads trace.bodyRun
+      refine ⟨?_, ?_, fun head => by cases head⟩
       · rw [trace.output run, internExpr_readScopedExpr? coherent faithful]
         rfl
       · have formed := TypingClaim.forallE domainChecked.typingSort bodyChecked.typingSort rfl
@@ -275,12 +368,41 @@ theorem BinderInference.sound {β : Type u}
       have domainAgreement := trace.contextPreserved.symm ▸ keyedAgreement
       obtain ⟨_, openedReads, openedAgreement, _⟩ :=
         openBinder_sound opening domainAgreement absent domainReads bodyReads trace.openRun
-      obtain ⟨bodyTypeReads, bodyChecked⟩ := ihBody openedAgreement openedReads trace.bodyRun
+      obtain ⟨bodyTypeReads, bodyChecked, _⟩ := ihBody openedAgreement openedReads trace.bodyRun
       obtain ⟨closedReads, closedCoherent⟩ := abstractFVars_readScopedExpr? constructed bound coherent
         closingFaithful bodyTypeReads
-      refine ⟨?_, bodyChecked.lam⟩
+      refine ⟨?_, bodyChecked.lam, fun head => by cases head⟩
       rw [trace.output run,
         internExpr_readScopedExpr? (table := trace.abstracted.2) closedCoherent faithful]
       simp [LambdaInferenceTrace.abstracted, domainReads, closedReads, AExpr.erase]
+
+/-- The checking conclusion applies to all supported finite trees. -/
+theorem BinderInference.sound {β : Type u}
+    {resolve : Address → Option (ConstRef β)} {entries : Model.Environment β}
+    {locals : List FVarId} {context : Model.Context β} {fuel : Nat}
+    {before after : TcState .anon} {term result : KExpr .anon} {e A : AExpr β}
+    (support : BinderInference resolve entries locals context fuel before term e A)
+    (agreement : LocalContextReading resolve locals before.lctx context)
+    (reading : readScopedExpr? resolve locals term = some e.erase)
+    (accepted : RecM.infer term (methodsN fuel) before = .ok result after) :
+    readScopedExpr? resolve locals result = some A.erase ∧
+      CheckingClaim.{u,v} entries context e A := by
+  obtain ⟨reads, checked, _⟩ := support.soundWithSynthesis agreement reading accepted
+  exact ⟨reads, checked⟩
+
+/-- Constant- and local-headed application spines synthesize full typing,
+including hereditary validity of the exact returned dependent type. -/
+theorem BinderInference.synthesis {β : Type u}
+    {resolve : Address → Option (ConstRef β)} {entries : Model.Environment β}
+    {locals : List FVarId} {context : Model.Context β} {fuel : Nat}
+    {before after : TcState .anon} {term result : KExpr .anon} {e A : AExpr β}
+    (support : BinderInference resolve entries locals context fuel before term e A)
+    (head : SynthesisHead e)
+    (agreement : LocalContextReading resolve locals before.lctx context)
+    (reading : readScopedExpr? resolve locals term = some e.erase)
+    (accepted : RecM.infer term (methodsN fuel) before = .ok result after) :
+    readScopedExpr? resolve locals result = some A.erase ∧ TypingClaim.{u,v} entries context e A := by
+  obtain ⟨reads, _, typed⟩ := support.soundWithSynthesis agreement reading accepted
+  exact ⟨reads, typed head⟩
 
 end Ix.Kernel.Consistency

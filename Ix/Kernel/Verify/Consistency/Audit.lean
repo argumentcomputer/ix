@@ -39,6 +39,8 @@ private def atomicRoots : Array Lean.Name := #[
   ``inferUncached_fvar_sound, ``infer_fvar_sound,
   ``FVarInferenceSupport.output, ``FVarInferenceSupport.sound,
   ``ForallInferenceTrace.output, ``LambdaInferenceTrace.output, ``BinderInference.sound,
+  ``inferUncached_monomorphic_const_scoped, ``ApplicationInferenceTrace.output,
+  ``BinderInference.soundWithSynthesis, ``BinderInference.synthesis,
   ``DefinitionBodySupport.sound
 ]
 
@@ -75,7 +77,8 @@ private def binderWalkerRoots : Array Lean.Name := #[
   ``inferKey_lctx, ``UncachedInference.localContext,
   ``readScopedExpr?_instantiateRevSpec, ``readScopedExpr?_abstractFVarsSpec,
   ``openBinder_eq, ``openBinder_sound,
-  ``abstractFVars_singleton_spec, ``abstractFVars_readScopedExpr?
+  ``abstractFVars_singleton_spec, ``abstractFVars_readScopedExpr?,
+  ``readScopedExpr?_liftSpec, ``readScopedExpr?_substSpec, ``subst_readScopedExpr?
 ]
 
 /-- Production roots must not acquire a checker-soundness assumption
@@ -102,6 +105,7 @@ def roots : Array RootAllowance := #[
     nativeAxioms := #[expressionNative] },
   { root := ``readExpr?_eraseMeta, standardAxioms := #[``propext, ``Quot.sound] },
   { root := ``readScopedExpr?_lam_parts },
+  { root := ``readScopedExpr?_app_parts },
   { root := ``readScopedExpr?_all_parts },
   { root := ``beq_readExpr?, standardAxioms := #[``propext, ``Quot.sound] },
   { root := ``internExpr_readExpr?, standardAxioms := #[``propext, ``Quot.sound] },
@@ -136,6 +140,7 @@ def roots : Array RootAllowance := #[
   { root := ``Theory.Model.AExpr.LevelEquivalent.wellDenoted, standardAxioms := standard },
   { root := ``Theory.Model.AExpr.LevelEquivalent.typing, standardAxioms := standard },
   { root := ``Theory.Model.TypingClaim.checking, standardAxioms := standard },
+  { root := ``Theory.Model.TypingClaim.appChecking, standardAxioms := standard },
   { root := ``Theory.Model.CheckingClaim.typing, standardAxioms := standard },
   { root := ``Theory.Model.CheckingClaim.typingSort, standardAxioms := standard },
   { root := ``Theory.Model.CheckingClaim.lam, standardAxioms := standard }

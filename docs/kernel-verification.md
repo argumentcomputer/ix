@@ -59,11 +59,19 @@ increasing sequence of strongly inaccessible cardinals.
   primitive False when its environment has been admitted by the certified
   interface and the set-theory assumption has an instance.
 - `BinderInference.sound` follows finite production inference trees for sorts,
-  locals, dependent functions, and full-mode lambdas. `LocalContextReading.push`
+  locals, monomorphic constants, applications, dependent functions, and
+  full-mode lambdas. `LocalContextReading.push`
   and `openBinder_sound` connect actual declaration lookup and fresh-variable
   opening to the model's dependent context. Singleton abstraction closes the
   resulting function type, and the simplifying `imax` constructor preserves
   its universe interpretation.
+- `BinderInference.synthesis` derives full typing for application spines
+  headed by a local or an admitted monomorphic constant. The function's type
+  supplies hereditary validity of its domain, so arguments may be checked
+  lambdas. Faithful hash conversion identifies the argument's inferred type
+  with that domain, with matching occurrence annotations.
+  `subst_readScopedExpr?` connects the actual memoized and interned codomain
+  substitution to model substitution, including active locals and nested binders.
 - `FVarInferenceSupport.sound` handles both local-variable cache partitions
   when a cached answer equals the current declaration's concrete type. These
   are structural cache checks, with no assumed semantic typing of cached data.
@@ -103,6 +111,8 @@ def typeAlias : Type := Prop
 axiom ident.{u} : (α : Sort u) → α → α
 def propIdent : (α : Prop) → α → α := ident.{0}
 def idProp (P : Prop) (p : P) : P := p
+def useId (P : Prop) (p : P) : P := idProp P p
+def applyProp (P Q : Prop) (f : P → Q) (p : P) : Q := f p
 ```
 
 `AtomicEnvironmentFragment` records the precise execution boundary:
@@ -110,7 +120,7 @@ def idProp (P : Prop) (p : P) : P := p
 - Every source key occurs in the `buildAnonWork` result, and every work item
   represents an axiom or a definition. Lookup, routing, and reset witnesses
   identify the checked `KConst`.
-- Sort, constant, forall, and lambda nodes in the inference witnesses miss both cache partitions.
+- Sort, constant, application, forall, and lambda nodes in the inference witnesses miss both cache partitions.
   Local-variable hits must match the current production declaration type.
   Constant lookup agrees with
   an already admitted type and universe count. A specialization supplies
@@ -122,7 +132,7 @@ def idProp (P : Prop) (p : P) : P := p
   retains finite interning coherence and address-faithfulness premises.
 - Binder definitions supply finite inference trees for both the value and its
   separately checked declared type, exact source readings, closed annotated
-  syntax, and empty constant-reference lists. Recursive calls use the actual
+  syntax, and references to the preceding interface. Recursive calls use the actual
   smaller method table. Binder-opening and abstraction resources cover fresh
   ids, context preservation during domain inference, intern-table coherence,
   finite collision freedom, and bounds preventing index overflow. Sort
@@ -130,6 +140,14 @@ def idProp (P : Prop) (p : P) : P := p
   path. `CheckingClaim` derives body validity and membership once declared-type
   inference establishes hereditary validity. No codomain-typing premise is
   added to the production proof.
+- Applications use full mode, syntactic Pi exposure, an ordinary argument
+  without an eager-reduction marker, and the hash-equality conversion path.
+  Their witnesses retain the actual recursive calls, context preservation
+  during function inference, and finite substitution resources. Function
+  spines start with locals or monomorphic constants; the latter use exact
+  lazy-lookup agreement and empty universe substitution. Applying a lambda
+  directly, polymorphic references within binder trees, and reduction to
+  expose a Pi require further refinement.
 - Conversion takes the initial hash-equality path, with faithfulness of the
   compared expressions. General reduction and conversion caches are outside
   this fragment.
@@ -145,8 +163,8 @@ Callers must establish these operational and representation witnesses for
 the run. They supply no typing or checker-soundness premise. The proof
 extracts the validation, type-inference, theorem-guard, value-inference, and
 conversion steps from public success, then derives body typing to extend
-the preceding model. Automatic witness construction, application inference,
-lets, more general lambda paths, inductives, coordinated blocks, and other
+the preceding model. Automatic witness construction, broader application and
+lambda paths, lets, inductives, coordinated blocks, and other
 conversion paths remain outside the fragment. Polymorphic constant inference is composed into declaration
 admission and model extension for the monomorphic specializations described
 above. Definitions with their own universe parameters remain outside this
@@ -201,7 +219,7 @@ lake test --wfail -- tc-unit
 lake -d Models/SetTheory build --wfail
 ```
 
-The consistency target checks 101 exact theorem boundaries. The production
+The consistency target checks 110 exact theorem boundaries. The production
 environment roots retain four existing generated output-length proofs,
 reached through expression/universe construction, names, and the full
 production method table. They introduce no new native proofs. The model
@@ -222,6 +240,10 @@ Environment regressions additionally check Prop/Type specializations,
 transitive aliases, nested references, simplified declaration types, cache
 clearing, and admission failures for wrong arities, open parameters, and a
 mismatched declared specialization.
+Function-body regressions cover calls to earlier Prop/Type identities,
+transitive theorem calls, local functions with distinct domains and codomains,
+dependent result families, lambda arguments, exact local results through cache
+reuse and scope cleanup, and rejected argument/function types.
 
 ## Certified host adapters
 
@@ -248,7 +270,7 @@ The VM pilot is preserved in the frozen archive and excluded from the host gate.
 | Certified checker contracts | [`Ix/Kernel/Certified.lean`](../Ix/Kernel/Certified.lean), [`CertifiedClaims.lean`](../Ix/Kernel/CertifiedClaims.lean) |
 | Direct production refinement and its audit | [`Ix/Kernel/Verify/Consistency.lean`](../Ix/Kernel/Verify/Consistency.lean) |
 | Polymorphic inference and universe substitution | [`Consistency/Constant.lean`](../Ix/Kernel/Verify/Consistency/Constant.lean), [`InstUniv.lean`](../Ix/Kernel/Verify/Consistency/InstUniv.lean), [`Model/LevelCongruence.lean`](../Ix/Theory/Model/LevelCongruence.lean) |
-| Dependent binders and function bodies | [`Consistency/BinderInference.lean`](../Ix/Kernel/Verify/Consistency/BinderInference.lean), [`BinderOpening.lean`](../Ix/Kernel/Verify/Consistency/BinderOpening.lean), [`Context.lean`](../Ix/Kernel/Verify/Consistency/Context.lean), [`Model/Checking.lean`](../Ix/Theory/Model/Checking.lean) |
+| Dependent binders and function bodies | [`Consistency/BinderInference.lean`](../Ix/Kernel/Verify/Consistency/BinderInference.lean), [`Application.lean`](../Ix/Kernel/Verify/Consistency/Application.lean), [`BinderOpening.lean`](../Ix/Kernel/Verify/Consistency/BinderOpening.lean), [`Context.lean`](../Ix/Kernel/Verify/Consistency/Context.lean), [`Model/Checking.lean`](../Ix/Theory/Model/Checking.lean) |
 | Production environment fragment and relative axiom policy | [`Consistency/Environment.lean`](../Ix/Kernel/Verify/Consistency/Environment.lean), [`Production.lean`](../Ix/Kernel/Verify/Consistency/Production.lean) |
 | Foundation assumptions, theorem contracts, and provenance | [Consistency model guide](theory.md) |
 | Host commands, receipts, and frozen regression evidence | [Certified checking guide](certified-checking.md) |

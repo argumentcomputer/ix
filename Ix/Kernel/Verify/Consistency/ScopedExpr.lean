@@ -147,6 +147,18 @@ theorem readScopedExpr?_lam_parts {resolve : Address → Option (ConstRef β)}
   cases reading
   exact ⟨domainReads, bodyReads⟩
 
+theorem readScopedExpr?_app_parts {resolve : Address → Option (ConstRef β)}
+    {locals : List FVarId} {fn arg : KExpr m} {info : ExprInfo m}
+    {f a : VExpr β} {depth : Nat}
+    (reading : readScopedExpr? resolve locals (.app fn arg info) depth = some (.app f a)) :
+    readScopedExpr? resolve locals fn depth = some f ∧
+      readScopedExpr? resolve locals arg depth = some a := by
+  rw [readScopedExpr?] at reading
+  obtain ⟨f', fnReads, reading⟩ := option_bind_success reading
+  obtain ⟨a', argReads, reading⟩ := option_bind_success reading
+  cases reading
+  exact ⟨fnReads, argReads⟩
+
 theorem readScopedExpr?_all_parts {resolve : Address → Option (ConstRef β)}
     {locals : List FVarId} {name : m.F Name} {bi : m.F Lean.BinderInfo}
     {domain body : KExpr m} {info : ExprInfo m} {A B : VExpr β} {depth : Nat}

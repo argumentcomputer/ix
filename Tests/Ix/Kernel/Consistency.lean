@@ -6,7 +6,7 @@ public import Tests.Ix.Kernel.IxonFixtures
 
 /-!
 Production regressions for the consistency fragment, polymorphic constant
-inference, and dependent binders. These execute the lazy loader, inference, and serial driver
+inference, dependent binders, and applications. These execute the lazy loader, inference, and serial driver
 on content-addressed Ixon declarations. The theorems and their resource
 premises are checked separately by `IxKernelConsistency`.
 -/
@@ -303,6 +303,108 @@ private def binderCases : TestSeq :=
   ++ test "binder environment: an escaping bound variable fails validation"
     (let (env, target) := failedBinder (.var 2); rowFailed env target)
 
-public def suite : List TestSeq := [cases, polymorphicCases, specializationCases, binderCases]
+private def monomorphicIdentity (level : Ixon.Univ) (env : Ixon.Env := {}) : Ixon.Env × Address :=
+  storeConst env
+    ⟨.defn ⟨.defn, .safe, 0,
+      .leanAll (.sort 0) (.leanAll (.var 0) (.var 1)),
+      .leanLam (.sort 0) (.leanLam (.var 0) (.var 0))⟩, #[], #[], #[level]⟩
+
+/-- Real definitions call an earlier identity at Prop and Type. A theorem
+then calls the first wrapper, exercising a second semantic dependency. -/
+private def applicationEnvironment : Ixon.Env := Id.run do
+  let (env, propIdentity) := monomorphicIdentity .zero
+  let (env, typeIdentity) := monomorphicIdentity (.succ .zero) env
+  let type := Ixon.Expr.leanAll (.sort 0) (.leanAll (.var 0) (.var 1))
+  let value := Ixon.Expr.leanLam (.sort 0) (.leanLam (.var 0)
+    (.app (.app (.ref 0 #[]) (.var 1)) (.var 0)))
+  let (env, wrapper) := storeConst env
+    ⟨.defn ⟨.defn, .safe, 0, type, value⟩, #[], #[propIdentity], #[.zero]⟩
+  let (env, _) := storeConst env
+    ⟨.defn ⟨.thm, .safe, 0, type, value⟩, #[], #[wrapper], #[.zero]⟩
+  let (env, _) := storeConst env
+    ⟨.defn ⟨.opaq, .safe, 0, type, value⟩, #[], #[typeIdentity], #[.succ .zero]⟩
+  return env
+
+/-- `(P Q : Prop) → (P → Q) → P → Q`, with body `f p`. -/
+private def localApplication : Ixon.Env :=
+  let functionType := Ixon.Expr.leanAll (.var 1) (.var 1)
+  (storeConst {}
+    ⟨.defn ⟨.defn, .safe, 0,
+      .leanAll (.sort 0) (.leanAll (.sort 0)
+        (.leanAll functionType (.leanAll (.var 2) (.var 2)))),
+      .leanLam (.sort 0) (.leanLam (.sort 0)
+        (.leanLam functionType (.leanLam (.var 2) (.app (.var 1) (.var 0)))))⟩,
+      #[], #[], #[.zero]⟩).1
+
+/-- `(A : Type) → (B : A → Type) → ((x : A) → B x) → (x : A) → B x`.
+Substitution must retain both active locals in the resulting `B x`. -/
+private def dependentApplication : Ixon.Env :=
+  let familyType := Ixon.Expr.leanAll (.var 0) (.sort 0)
+  let functionType := Ixon.Expr.leanAll (.var 1) (.app (.var 1) (.var 0))
+  (storeConst {}
+    ⟨.defn ⟨.defn, .safe, 0,
+      .leanAll (.sort 0) (.leanAll familyType
+        (.leanAll functionType (.leanAll (.var 2) (.app (.var 2) (.var 0))))),
+      .leanLam (.sort 0) (.leanLam familyType
+        (.leanLam functionType (.leanLam (.var 2) (.app (.var 1) (.var 0)))))⟩,
+      #[], #[], #[.succ .zero]⟩).1
+
+/-- `(P : Prop) → ((P → P) → P) → P`, with body `f (fun p => p)`.
+The function supplies the expected Pi's validity for the lambda argument. -/
+private def lambdaArgument : Ixon.Env :=
+  let functionType := Ixon.Expr.leanAll (.leanAll (.var 0) (.var 1)) (.var 1)
+  (storeConst {}
+    ⟨.defn ⟨.defn, .safe, 0,
+      .leanAll (.sort 0) (.leanAll functionType (.var 1)),
+      .leanLam (.sort 0) (.leanLam functionType
+        (.app (.var 0) (.leanLam (.var 1) (.var 0))))⟩,
+      #[], #[], #[.zero]⟩).1
+
+private def failedApplication : Ixon.Env × Address :=
+  let (env, identity) := monomorphicIdentity .zero
+  storeConst env
+    ⟨.defn ⟨.defn, .safe, 0,
+      .leanAll (.sort 0) (.leanAll (.var 0) (.var 1)),
+      .leanLam (.sort 0) (.leanLam (.var 0)
+        (.app (.app (.ref 0 #[]) (.var 1)) (.var 1)))⟩,
+      #[], #[identity], #[.zero]⟩
+
+/-- Inspect the exact dependent result before leaving the scope. A repeated
+application must preserve it when the production inference cache is warm. -/
+private def applicationLocalResult : Bool :=
+  let (env, identity) := monomorphicIdentity .zero
+  let propType := KExpr.mkSort (m := .anon) .mkZero
+  let action : RecM .anon Bool := RecM.withLctxScope do
+    let (proposition, _) ← TcM.openBinder () () propType (.mkVar 0 ())
+    let (witness, _) ← TcM.openBinder () () proposition (.mkVar 0 ())
+    let term := KExpr.mkApp (.mkApp (.mkConst ⟨identity, ()⟩ #[]) proposition) witness
+    let first ← RecM.inferCall term
+    let second ← RecM.inferCall term
+    let state ← get
+    return first.addr == proposition.addr && second.addr == proposition.addr && state.lctx.size == 2
+  match TcM.runRec action (TcState.newLazyAnon env) with
+  | .ok passed after => passed && after.lctx.size == 0 && after.env.nextFVarId == 2
+  | .error _ _ => false
+
+private def applicationCases : TestSeq :=
+  test "application environment: Prop/Type identity calls and transitive theorem calls check"
+    (allSucceeded applicationEnvironment 5 { clearEvery := 0 })
+  ++ test "application environment: calls check with fresh per-item caches"
+    (allSucceeded applicationEnvironment 5 { clearEvery := 1 })
+  ++ test "application environment: a local function checks its argument against a distinct domain"
+    (allSucceeded localApplication 1)
+  ++ test "application environment: a dependent local function returns the substituted family"
+    (allSucceeded dependentApplication 1)
+  ++ test "application environment: a local function accepts a checked lambda argument"
+    (allSucceeded lambdaArgument 1)
+  ++ test "application inference: exact local result survives cache reuse and scope cleanup"
+    applicationLocalResult
+  ++ test "application environment: passing the proposition instead of its witness fails"
+    (let (env, target) := failedApplication; rowFailed env target)
+  ++ test "application environment: applying a proof with no function type fails"
+    (let (env, target) := failedBinder (.app (.var 0) (.var 0)); rowFailed env target)
+
+public def suite : List TestSeq :=
+  [cases, polymorphicCases, specializationCases, binderCases, applicationCases]
 
 end Tests.Kernel.Consistency

@@ -102,7 +102,7 @@ def DefinitionInput.constant (input : DefinitionInput) : KConst .anon :=
 or a finite binder inference tree with a separately checked declared type.
 Specializations supply raw syntax and occurrence annotations; successful
 inference derives their typing, scope, and references. Binder definitions
-also supply syntactic scope and empty constant-reference inventories. Every
+also supply syntactic scope and references to the preceding interface. Every
 case derives body typing without a semantic typing premise. -/
 inductive DefinitionBodySupport {β : Type u}
     (resolve : Address → Option (ConstRef β)) (entries : Model.Environment β)
@@ -131,7 +131,7 @@ inductive DefinitionBodySupport {β : Type u}
       (valueReading : readScopedExpr? resolve [] term = some body.erase)
       (typeReading : readScopedExpr? resolve [] declared = some type.erase)
       (scope : body.Scope 0 0 ∧ type.Scope 0 0)
-      (noConstants : body.references = [] ∧ type.references = []) :
+      (references : body.ReferencesIn entries ∧ type.ReferencesIn entries) :
       DefinitionBodySupport resolve entries methods before declared term body type
 
 theorem DefinitionBodySupport.sound {β : Type u}
@@ -174,18 +174,14 @@ theorem DefinitionBodySupport.sound {β : Type u}
       · intro ref member
         rw [← equal, references] at member
         exact wellFormed.typeReferences _ _ support.found ref member
-  | binder tied valueInference typeInference typeRun valueReading typeReading scope noConstants =>
+  | binder tied valueInference typeInference typeRun valueReading typeReading scope references =>
       subst methods
       obtain ⟨_, typeChecked⟩ := typeInference.sound (LocalContextReading.empty _ _)
         typeReading typeRun
       obtain ⟨_, valueChecked⟩ := valueInference.sound (LocalContextReading.empty _ _)
         valueReading accepted
-      refine ⟨readScopedExpr?_closed valueReading, readScopedExpr?_closed typeReading,
-        scope.1, scope.2, ?_, ?_, valueChecked.typing typeChecked.typingSort⟩
-      · intro ref member
-        simp only [noConstants.1, List.not_mem_nil] at member
-      · intro ref member
-        simp only [noConstants.2, List.not_mem_nil] at member
+      exact ⟨readScopedExpr?_closed valueReading, readScopedExpr?_closed typeReading,
+        scope.1, scope.2, references.1, references.2, valueChecked.typing typeChecked.typingSort⟩
 
 /-- The execution prefix through value conversion. A successful member check
 also passes the subsequent safety checks. -/
