@@ -36,6 +36,9 @@ private def atomicRoots : Array Lean.Name := #[
   ``infer_uncached_success, ``AtomicInferenceSupport.typing,
   ``AtomicInferenceSupport.reads, ``AtomicInferenceSupport.output,
   ``AtomicInferenceSupport.scopeAndReferences, ``AtomicInference.sound,
+  ``inferUncached_fvar_sound, ``infer_fvar_sound,
+  ``FVarInferenceSupport.output, ``FVarInferenceSupport.sound,
+  ``ForallInferenceTrace.output, ``LambdaInferenceTrace.output, ``BinderInference.sound,
   ``DefinitionBodySupport.sound
 ]
 
@@ -56,6 +59,25 @@ private def productionRoots : Array Lean.Name := #[
   ``checkEnvAnon_atomic_no_false
 ]
 
+private def scopedRoots : Array Lean.Name := #[
+  ``localIndex?_mem, ``localIndex?_getElem, ``localIndex?_fresh,
+  ``readScopedExpr?_closed, ``readScopedExpr?_eraseMeta,
+  ``beq_readScopedExpr?, ``internExpr_readScopedExpr?, ``readScopedExpr?_push,
+  ``LocalContextReading.empty
+]
+
+private def contextRoots : Array Lean.Name := #[
+  ``localContext_find?_push_same, ``localContext_find?_push_ne,
+  ``LocalContextReading.push, ``ScopedModelTyping.closed
+]
+
+private def binderWalkerRoots : Array Lean.Name := #[
+  ``inferKey_lctx, ``UncachedInference.localContext,
+  ``readScopedExpr?_instantiateRevSpec, ``readScopedExpr?_abstractFVarsSpec,
+  ``openBinder_eq, ``openBinder_sound,
+  ``abstractFVars_singleton_spec, ``abstractFVars_readScopedExpr?
+]
+
 /-- Production roots must not acquire a checker-soundness assumption
 or invoke the independent certificate validator to establish acceptance. -/
 private def forbiddenProduction : Array Lean.Name := #[
@@ -72,11 +94,15 @@ def roots : Array RootAllowance := #[
   { root := ``readLevel_eraseMeta, standardAxioms := #[``propext] },
   { root := ``readLevel_mkSucc, standardAxioms := #[``propext, ``Classical.choice],
     nativeAxioms := #[levelNative] },
+  { root := ``readLevel_mkIMax, standardAxioms := standard,
+    nativeAxioms := #[levelNative] },
   { root := ``univEq_sound, standardAxioms := standard },
   { root := ``univGeq_sound, standardAxioms := standard },
   { root := ``readExpr?_mkSort, standardAxioms := standard,
     nativeAxioms := #[expressionNative] },
   { root := ``readExpr?_eraseMeta, standardAxioms := #[``propext, ``Quot.sound] },
+  { root := ``readScopedExpr?_lam_parts },
+  { root := ``readScopedExpr?_all_parts },
   { root := ``beq_readExpr?, standardAxioms := #[``propext, ``Quot.sound] },
   { root := ``internExpr_readExpr?, standardAxioms := #[``propext, ``Quot.sound] },
   { root := ``ModelTyping.sort, standardAxioms := standard,
@@ -108,8 +134,19 @@ def roots : Array RootAllowance := #[
     standardAxioms := #[``propext] },
   { root := ``Theory.Model.AExpr.LevelEquivalent.interp, standardAxioms := standard },
   { root := ``Theory.Model.AExpr.LevelEquivalent.wellDenoted, standardAxioms := standard },
-  { root := ``Theory.Model.AExpr.LevelEquivalent.typing, standardAxioms := standard }
-] ++ (atomicRoots ++ instantiationRoots).map (fun root => {
+  { root := ``Theory.Model.AExpr.LevelEquivalent.typing, standardAxioms := standard },
+  { root := ``Theory.Model.TypingClaim.checking, standardAxioms := standard },
+  { root := ``Theory.Model.CheckingClaim.typing, standardAxioms := standard },
+  { root := ``Theory.Model.CheckingClaim.typingSort, standardAxioms := standard },
+  { root := ``Theory.Model.CheckingClaim.lam, standardAxioms := standard }
+] ++ scopedRoots.map (fun root => {
+  root, standardAxioms := #[``propext, ``Quot.sound], forbiddenDependencies := forbiddenProduction
+}) ++ contextRoots.map (fun root => {
+  root, standardAxioms := standard, forbiddenDependencies := forbiddenProduction
+}) ++ binderWalkerRoots.map (fun root => {
+  root, standardAxioms := standard, nativeAxioms := #[expressionNative],
+  forbiddenDependencies := forbiddenProduction
+}) ++ (atomicRoots ++ instantiationRoots).map (fun root => {
   root, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative],
   forbiddenDependencies := forbiddenProduction
 }) ++ productionRoots.map (fun root => {

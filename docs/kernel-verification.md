@@ -30,8 +30,10 @@ increasing sequence of strongly inaccessible cardinals.
   under the existing finite address-faithfulness and arithmetic bounds.
 - A structural reader maps kernel expressions to model syntax, resolves
   addresses to explicit store references, preserves projections and natural
-  literals, and substitutes let values. Free variables, unresolved addresses,
-  and string literals are outside the current reader's domain.
+  literals, and substitutes let values. This closed reader excludes free
+  variables, unresolved addresses, and string literals. The binder reader
+  `readScopedExpr?` maps registered free variables to model context indices;
+  unknown locals, loose legacy variables, lets, and strings fail that reader.
 - Hash equality and intern-table reuse preserve that reading under their
   stated address/key collision assumptions. Metadata cannot change it.
 - `inferUncached_sort_sound` interprets an actual successful execution of the
@@ -56,6 +58,15 @@ increasing sequence of strongly inaccessible cardinals.
 - `ModelTyping.no_false` rules out a closed model-typed kernel expression at
   primitive False when its environment has been admitted by the certified
   interface and the set-theory assumption has an instance.
+- `BinderInference.sound` follows finite production inference trees for sorts,
+  locals, dependent functions, and full-mode lambdas. `LocalContextReading.push`
+  and `openBinder_sound` connect actual declaration lookup and fresh-variable
+  opening to the model's dependent context. Singleton abstraction closes the
+  resulting function type, and the simplifying `imax` constructor preserves
+  its universe interpretation.
+- `FVarInferenceSupport.sound` handles both local-variable cache partitions
+  when a cached answer equals the current declaration's concrete type. These
+  are structural cache checks, with no assumed semantic typing of cached data.
 - `checkEnvAnon_atomic_preserves_model` connects a supported production
   environment run to model extension. `checkEnvAnon_atomic_no_false` excludes
   a declaration at an axiom type interpreted as empty, including False.
@@ -78,9 +89,9 @@ these axioms. The hypothesis is model existence; a theorem connecting
 arbitrary syntactic consistency to model existence is outside this result.
 
 The fragment covers monomorphic standalone definitions, theorems,
-and opaque definitions whose values are either closed universe terms or
-references to preceding interface entries, including monomorphic
-specializations of polymorphic constants. Referenced types may contain
+and opaque definitions whose values are closed universe terms, references to
+preceding interface entries, monomorphic specializations of polymorphic
+constants, or closed function bodies in the binder fragment. Referenced types may contain
 dependent functions and other readable expression forms. Examples include:
 
 ```lean
@@ -91,6 +102,7 @@ theorem r : P := q
 def typeAlias : Type := Prop
 axiom ident.{u} : (α : Sort u) → α → α
 def propIdent : (α : Prop) → α → α := ident.{0}
+def idProp (P : Prop) (p : P) : P := p
 ```
 
 `AtomicEnvironmentFragment` records the precise execution boundary:
@@ -98,7 +110,9 @@ def propIdent : (α : Prop) → α → α := ident.{0}
 - Every source key occurs in the `buildAnonWork` result, and every work item
   represents an axiom or a definition. Lookup, routing, and reset witnesses
   identify the checked `KConst`.
-- Value inference misses both cache partitions. Constant lookup agrees with
+- Sort, constant, forall, and lambda nodes in the inference witnesses miss both cache partitions.
+  Local-variable hits must match the current production declaration type.
+  Constant lookup agrees with
   an already admitted type and universe count. A specialization supplies
   closed universe arguments and finite interning/substitution resources at
   the actual post-lookup state. The occurrence annotations on the declared
@@ -106,6 +120,16 @@ def propIdent : (α : Prop) → α → α := ident.{0}
   data checks; successful inference derives typing, scope, and references.
   Ordinary aliases retain the simpler empty-substitution path. Sort inference
   retains finite interning coherence and address-faithfulness premises.
+- Binder definitions supply finite inference trees for both the value and its
+  separately checked declared type, exact source readings, closed annotated
+  syntax, and empty constant-reference lists. Recursive calls use the actual
+  smaller method table. Binder-opening and abstraction resources cover fresh
+  ids, context preservation during domain inference, intern-table coherence,
+  finite collision freedom, and bounds preventing index overflow. Sort
+  exposures are syntactic; lambdas use full mode and the unchanged cheap-beta
+  path. `CheckingClaim` derives body validity and membership once declared-type
+  inference establishes hereditary validity. No codomain-typing premise is
+  added to the production proof.
 - Conversion takes the initial hash-equality path, with faithfulness of the
   compared expressions. General reduction and conversion caches are outside
   this fragment.
@@ -121,9 +145,9 @@ Callers must establish these operational and representation witnesses for
 the run. They supply no typing or checker-soundness premise. The proof
 extracts the validation, type-inference, theorem-guard, value-inference, and
 conversion steps from public success, then derives body typing to extend
-the preceding model. Automatic witness construction, lambdas, applications,
-inductives, coordinated blocks, and other conversion paths remain outside the
-fragment. Polymorphic constant inference is composed into declaration
+the preceding model. Automatic witness construction, application inference,
+lets, more general lambda paths, inductives, coordinated blocks, and other
+conversion paths remain outside the fragment. Polymorphic constant inference is composed into declaration
 admission and model extension for the monomorphic specializations described
 above. Definitions with their own universe parameters remain outside this
 environment fragment.
@@ -177,7 +201,7 @@ lake test --wfail -- tc-unit
 lake -d Models/SetTheory build --wfail
 ```
 
-The consistency target checks 66 exact theorem boundaries. The production
+The consistency target checks 101 exact theorem boundaries. The production
 environment roots retain four existing generated output-length proofs,
 reached through expression/universe construction, names, and the full
 production method table. They introduce no new native proofs. The model
@@ -187,9 +211,10 @@ The production roots additionally forbid the abstract
 `CheckSuccessSound`/`SupportedCheckFragment` interfaces and the independent
 certificate validator in their dependency closures.
 
-The polymorphic inference and substitution roots retain only the two existing
+The polymorphic inference, substitution, and binder inference roots retain only the two existing
 expression/universe output-length proofs, alongside the standard Lean axioms.
 Their model-side level congruence introduces no native proof dependency.
+Semantic checking against a formed type also uses only standard Lean axioms.
 Kernel unit regressions cover lazy loading, both inference policies, interning
 reuse, dependent function types, shared references, lets, `imax` simplification,
 argument order, and rejection of wrong arities and out-of-range parameters.
@@ -223,6 +248,7 @@ The VM pilot is preserved in the frozen archive and excluded from the host gate.
 | Certified checker contracts | [`Ix/Kernel/Certified.lean`](../Ix/Kernel/Certified.lean), [`CertifiedClaims.lean`](../Ix/Kernel/CertifiedClaims.lean) |
 | Direct production refinement and its audit | [`Ix/Kernel/Verify/Consistency.lean`](../Ix/Kernel/Verify/Consistency.lean) |
 | Polymorphic inference and universe substitution | [`Consistency/Constant.lean`](../Ix/Kernel/Verify/Consistency/Constant.lean), [`InstUniv.lean`](../Ix/Kernel/Verify/Consistency/InstUniv.lean), [`Model/LevelCongruence.lean`](../Ix/Theory/Model/LevelCongruence.lean) |
+| Dependent binders and function bodies | [`Consistency/BinderInference.lean`](../Ix/Kernel/Verify/Consistency/BinderInference.lean), [`BinderOpening.lean`](../Ix/Kernel/Verify/Consistency/BinderOpening.lean), [`Context.lean`](../Ix/Kernel/Verify/Consistency/Context.lean), [`Model/Checking.lean`](../Ix/Theory/Model/Checking.lean) |
 | Production environment fragment and relative axiom policy | [`Consistency/Environment.lean`](../Ix/Kernel/Verify/Consistency/Environment.lean), [`Production.lean`](../Ix/Kernel/Verify/Consistency/Production.lean) |
 | Foundation assumptions, theorem contracts, and provenance | [Consistency model guide](theory.md) |
 | Host commands, receipts, and frozen regression evidence | [Certified checking guide](certified-checking.md) |
@@ -236,5 +262,6 @@ fixtures used by the existing proofs. Source hashes and attribution are in
 [`Tests/Theory/NamedManifest.lean`](../Tests/Theory/NamedManifest.lean); the
 Apache license is preserved alongside the sources. The axiom-audit helper
 and direct production-fragment proofs are authored in Ix.
-`Model/LevelCongruence.lean` is an Ix-authored mathematical addition, listed
+`Model/LevelCongruence.lean` and `Model/Checking.lean` are Ix-authored mathematical
+additions, listed
 separately from the imported files in the theory provenance manifest.

@@ -5,6 +5,7 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 
 import Ix.Kernel.Driver
 import Ix.Kernel.Verify.Consistency.Constant
+import Ix.Kernel.Verify.Consistency.BinderInference
 
 /-!
 # Standalone production declaration checks
@@ -97,16 +98,20 @@ structure DefinitionInput where
 def DefinitionInput.constant (input : DefinitionInput) : KConst .anon :=
   .defn () () input.kind input.safety input.hints 0 input.type input.value () input.block
 
-/-- Closed sort/alias inference, or a specialization of an existing constant.
-The declared type supplies only raw syntax and occurrence annotations. Its
-typing, scope, and references are derived from successful production inference. -/
+/-- Closed sort/alias inference, a specialization of an existing constant,
+or a finite binder inference tree with a separately checked declared type.
+Specializations supply raw syntax and occurrence annotations; successful
+inference derives their typing, scope, and references. Binder definitions
+also supply syntactic scope and empty constant-reference inventories. Every
+case derives body typing without a semantic typing premise. -/
 inductive DefinitionBodySupport {β : Type u}
     (resolve : Address → Option (ConstRef β)) (entries : Model.Environment β)
+    (methods : Methods .anon)
     (before : TcState .anon) (declared : KExpr .anon) :
     KExpr .anon → AExpr β → AExpr β → Type u
   | atomic {term : KExpr .anon} {body type : AExpr β}
       (inference : AtomicInference resolve entries before term body type) :
-      DefinitionBodySupport resolve entries before declared term body type
+      DefinitionBodySupport resolve entries methods before declared term body type
   | specialization {id : KId .anon} {arguments : Array (KUniv .anon)}
       {info : ExprInfo .anon} {ref : ConstRef β} {entry : ConstantEntry β} {type : AExpr β}
       (misses : UncachedInference before (.const id arguments info))
@@ -115,14 +120,25 @@ inductive DefinitionBodySupport {β : Type u}
       (reading : readExpr? resolve declared = some type.erase)
       (conditions : (entry.type.instL (arguments.toList.map readLevel)).annotations =
         type.annotations) :
-      DefinitionBodySupport resolve entries before declared (.const id arguments info)
+      DefinitionBodySupport resolve entries methods before declared (.const id arguments info)
         (.const ref (arguments.toList.map readLevel)) type
+  | binder {fuel : Nat} {term inferredType : KExpr .anon}
+      {body type : AExpr β} {level : VLevel} {typeBefore typeAfter : TcState .anon}
+      (tied : methods = methodsN fuel)
+      (valueInference : BinderInference resolve entries [] [] fuel before term body type)
+      (typeInference : BinderInference resolve entries [] [] fuel typeBefore declared type (.sort level))
+      (typeRun : RecM.infer declared methods typeBefore = .ok inferredType typeAfter)
+      (valueReading : readScopedExpr? resolve [] term = some body.erase)
+      (typeReading : readScopedExpr? resolve [] declared = some type.erase)
+      (scope : body.Scope 0 0 ∧ type.Scope 0 0)
+      (noConstants : body.references = [] ∧ type.references = []) :
+      DefinitionBodySupport resolve entries methods before declared term body type
 
 theorem DefinitionBodySupport.sound {β : Type u}
     {resolve : Address → Option (ConstRef β)} {entries : Model.Environment β}
     {before after : TcState .anon} {term declared inferred : KExpr .anon}
     {body type : AExpr β} {methods : Methods .anon}
-    (fragment : DefinitionBodySupport resolve entries before declared term body type)
+    (fragment : DefinitionBodySupport resolve entries methods before declared term body type)
     (wellFormed : entries.WF)
     (accepted : RecM.infer term methods before = .ok inferred after)
     (faithful : inferred.AddrFaithful declared) (hashPath : (inferred == declared) = true) :
@@ -158,6 +174,18 @@ theorem DefinitionBodySupport.sound {β : Type u}
       · intro ref member
         rw [← equal, references] at member
         exact wellFormed.typeReferences _ _ support.found ref member
+  | binder tied valueInference typeInference typeRun valueReading typeReading scope noConstants =>
+      subst methods
+      obtain ⟨_, typeChecked⟩ := typeInference.sound (LocalContextReading.empty _ _)
+        typeReading typeRun
+      obtain ⟨_, valueChecked⟩ := valueInference.sound (LocalContextReading.empty _ _)
+        valueReading accepted
+      refine ⟨readScopedExpr?_closed valueReading, readScopedExpr?_closed typeReading,
+        scope.1, scope.2, ?_, ?_, valueChecked.typing typeChecked.typingSort⟩
+      · intro ref member
+        simp only [noConstants.1, List.not_mem_nil] at member
+      · intro ref member
+        simp only [noConstants.2, List.not_mem_nil] at member
 
 /-- The execution prefix through value conversion. A successful member check
 also passes the subsequent safety checks. -/
@@ -224,7 +252,8 @@ structure AtomicDefinitionRun {β : Type u} (resolve : Address → Option (Const
     (body type : AExpr β) where
   path : StandalonePrefix input.id before input.constant
   inference : ∀ trace : DefinitionBodyTrace input (methodsN before.recFuel.toNat) path.ready,
-    DefinitionBodySupport resolve entries trace.valueStart input.type input.value body type
+    DefinitionBodySupport resolve entries (methodsN before.recFuel.toNat)
+      trace.valueStart input.type input.value body type
   hashPath : ∀ trace : DefinitionBodyTrace input (methodsN before.recFuel.toNat) path.ready,
     (trace.inferredValue == input.type) = true
   faithful : ∀ trace : DefinitionBodyTrace input (methodsN before.recFuel.toNat) path.ready,

@@ -16,7 +16,9 @@ def lean4IxBaseRevision : String := "ab42e79e2a4e2615a3ca6ef983d510f374057a38"
 def conLecheRevision : String := "86cd20a65660d757cedc81561a44579099b565d0"
 
 /-- New mathematical modules authored in Ix, with no imported source hash. -/
-def authored : Array String := #["Ix/Theory/Model/LevelCongruence.lean"]
+def authored : Array String := #[
+  "Ix/Theory/Model/Checking.lean", "Ix/Theory/Model/LevelCongruence.lean"
+]
 
 structure SourceFile where
   source : String

@@ -5,8 +5,8 @@ public import Ix.Kernel
 public import Tests.Ix.Kernel.IxonFixtures
 
 /-!
-Production regressions for the atomic consistency fragment and polymorphic
-constant inference. These execute the lazy loader, inference, and serial driver
+Production regressions for the consistency fragment, polymorphic constant
+inference, and dependent binders. These execute the lazy loader, inference, and serial driver
 on content-addressed Ixon declarations. The theorems and their resource
 premises are checked separately by `IxKernelConsistency`.
 -/
@@ -238,6 +238,71 @@ private def specializationCases : TestSeq :=
   ++ test "polymorphic environment: a monomorphic body cannot retain a universe parameter"
     (let (env, target) := failedSpecialization #[0] (.var 0); rowFailed env target)
 
-public def suite : List TestSeq := [cases, polymorphicCases, specializationCases]
+/-- Real function bodies, with no source axiom supplying their values:
+`idProp (P : Prop) (p : P) : P := p`, its Type analogue, and a theorem alias. -/
+private def binderEnvironment : Ixon.Env := Id.run do
+  let type := Ixon.Expr.leanAll (.sort 0) (.leanAll (.var 0) (.var 1))
+  let value := Ixon.Expr.leanLam (.sort 0) (.leanLam (.var 0) (.var 0))
+  let (env, propIdentity) := storeConst {}
+    ⟨.defn ⟨.defn, .safe, 0, type, value⟩, #[], #[], #[.zero]⟩
+  let (env, _) := storeConst env
+    ⟨.defn ⟨.opaq, .safe, 0, type, value⟩, #[], #[], #[.succ .zero]⟩
+  let (env, _) := storeConst env
+    ⟨.defn ⟨.thm, .safe, 0, type, .ref 0 #[]⟩, #[], #[propIdentity], #[.zero]⟩
+  return env
+
+private def failedBinder (body : Ixon.Expr) : Ixon.Env × Address :=
+  storeConst {}
+    ⟨.defn ⟨.defn, .safe, 0,
+      .leanAll (.sort 0) (.leanAll (.var 0) (.var 1)),
+      .leanLam (.sort 0) (.leanLam (.var 0) body)⟩, #[], #[], #[.zero]⟩
+
+/-- Inferring the same older local after a dependent push must reuse its
+concrete type. Both cache partitions and scope cleanup are observable here. -/
+private def dependentLocalCache (inferOnly : Bool) : Bool :=
+  let propType := KExpr.mkSort (m := .anon) .mkZero
+  let action : RecM .anon Bool := RecM.withLctxScope do
+    let (first, firstId) ← TcM.openBinder () () propType (.mkVar 0 ())
+    let firstType ← RecM.inferCall first
+    let (_, secondId) ← TcM.openBinder () () first (.mkVar 1 ())
+    let cachedType ← RecM.inferCall first
+    let state ← get
+    let key ← TcM.inferKey first
+    return firstId != secondId && firstType.addr == propType.addr &&
+      cachedType.addr == propType.addr && state.lctx.size == 2 &&
+      (if inferOnly then state.env.inferOnlyCache[key]?.isSome
+        else state.env.inferCache[key]?.isSome)
+  match TcM.runRec action { TcState.ofEnvAnon {} with inferOnly } with
+  | .ok passed after => passed && after.lctx.size == 0 && after.env.nextFVarId == 2
+  | .error _ _ => false
+
+private def nestedBinderInference (inferOnly : Bool) : Bool :=
+  let propType := KExpr.mkSort (m := .anon) .mkZero
+  let type := KExpr.mkAll () () propType (.mkAll () () (.mkVar 0 ()) (.mkVar 1 ()))
+  let body := KExpr.mkLam () () propType (.mkLam () () (.mkVar 0 ()) (.mkVar 0 ()))
+  match TcM.infer body { TcState.ofEnvAnon {} with inferOnly } with
+  | .ok inferred after => inferred.addr == type.addr && after.lctx.size == 0 &&
+      after.env.nextFVarId == 2
+  | .error _ _ => false
+
+private def binderCases : TestSeq :=
+  test "binder environment: real Prop and Type identity bodies and theorem alias check"
+    (allSucceeded binderEnvironment 3 { clearEvery := 0 })
+  ++ test "binder environment: identity bodies check with fresh per-item caches"
+    (allSucceeded binderEnvironment 3 { clearEvery := 1 })
+  ++ test "binder inference: nested dependent lambdas close their local context"
+    (nestedBinderInference false)
+  ++ test "binder inference: inference-only lambdas return the same closed type"
+    (nestedBinderInference true)
+  ++ test "binder cache: full-mode lookup survives a newer dependent local"
+    (dependentLocalCache false)
+  ++ test "binder cache: inference-only lookup survives a newer dependent local"
+    (dependentLocalCache true)
+  ++ test "binder environment: returning the type variable instead of its witness fails"
+    (let (env, target) := failedBinder (.var 1); rowFailed env target)
+  ++ test "binder environment: an escaping bound variable fails validation"
+    (let (env, target) := failedBinder (.var 2); rowFailed env target)
+
+public def suite : List TestSeq := [cases, polymorphicCases, specializationCases, binderCases]
 
 end Tests.Kernel.Consistency

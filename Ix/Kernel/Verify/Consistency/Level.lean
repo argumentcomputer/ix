@@ -43,6 +43,15 @@ theorem readLevel_eq (u : KUniv m) : readLevel u = u.toVLevel := by
     readLevel (KUniv.mkSucc u) = .succ (readLevel u) := by
   rw [readLevel_eq, KUniv.toVLevel_mkSucc, ← readLevel_eq]
 
+/-- The simplifying Pi-universe constructor preserves evaluation on its
+finite input subterms, including its Prop and nonzero branches. -/
+theorem readLevel_mkIMax {left right : KUniv m}
+    (faithful : ∀ a b, (KUniv.Sub a left ∨ KUniv.Sub a right) →
+      (KUniv.Sub b left ∨ KUniv.Sub b right) → a.AddrFaithful b)
+    (leftBound : left.size < UInt64.size) (rightBound : right.size < UInt64.size) :
+    readLevel (KUniv.mkIMax left right) ≈ .imax (readLevel left) (readLevel right) := by
+  simpa only [readLevel_eq] using KUniv.toVLevel_mkIMax faithful leftBound rightBound
+
 /-- The structural reader preserves universe evaluation. -/
 theorem readLevel_eval (levels : List Nat) (u : KUniv m) :
     (readLevel u).eval levels = u.toVLevel.eval levels := by

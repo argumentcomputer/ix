@@ -1,0 +1,286 @@
+/-
+Copyright (c) 2026 Argument Computer Corporation.
+SPDX-License-Identifier: MIT OR Apache-2.0
+-/
+
+import Ix.Kernel.Verify.Consistency.BinderOpening
+import Ix.Kernel.Knot
+import Ix.Theory.Model.Checking
+
+/-!
+# Production dependent function inference
+
+Finite inference trees follow the production method table's decreasing fuel.
+Their premises record cache misses, actual execution prefixes, local-context
+frames, finite interning support, and index bounds. Semantic checking is
+derived from these trees. A declaration's separate type inference supplies
+the expected type's hereditary validity before checking becomes typing.
+-/
+
+namespace Ix.Kernel.Consistency
+
+open Theory Theory.Model
+
+universe u v
+
+private theorem withLctxScope_eq (action : RecM .anon α)
+    (methods : Methods .anon) (before : TcState .anon) :
+    (RecM.withLctxScope action).run methods before =
+      match action.run methods before with
+      | .ok value after =>
+          .ok value {after with lctx := after.lctx.truncate before.lctx.size}
+      | .error err after =>
+          .error err {after with lctx := after.lctx.truncate before.lctx.size} := by
+  unfold RecM.withLctxScope
+  rw [ReaderT.run_bind]
+  change EStateM.bind (get : TcM .anon (TcState .anon)) _ before = _
+  unfold EStateM.bind
+  rw [show (get : TcM .anon (TcState .anon)) before = .ok before before from rfl]
+  simp only
+  unfold tryFinally
+  change EStateM.map (fun pair : α × PUnit => pair.1)
+    (tryFinally' (action.run methods) (fun _ =>
+      (modify (fun after : TcState .anon =>
+        {after with lctx := after.lctx.truncate before.lctx.size}) :
+        TcM .anon PUnit))) before = _
+  unfold EStateM.map MonadFinally.tryFinally' EStateM.instMonadFinally
+  cases run : action.run methods before <;> simp only [run] <;> rfl
+
+private theorem withLctxScope_success {action : RecM .anon α}
+    {methods : Methods .anon} {before after : TcState .anon} {result : α}
+    (accepted : (RecM.withLctxScope action).run methods before = .ok result after) :
+    ∃ state, action.run methods before = .ok result state := by
+  rw [withLctxScope_eq] at accepted
+  cases run : action.run methods before with
+  | error err state => rw [run] at accepted; contradiction
+  | ok value state =>
+      rw [run] at accepted
+      cases accepted
+      exact ⟨state, rfl⟩
+
+/-- The exact recursive calls and opening prefix of a forall branch.
+Both sort exposures take the production syntactic fast path. -/
+structure ForallInferenceTrace (fuel : Nat) (before : TcState .anon)
+    (name : Mode.anon.F Name) (bi : Mode.anon.F Lean.BinderInfo)
+    (domain body : KExpr .anon) where
+  domainLevel : KUniv .anon
+  domainInfo : ExprInfo .anon
+  domainState : TcState .anon
+  opened : KExpr .anon
+  fresh : FVarId
+  openedState : TcState .anon
+  bodyLevel : KUniv .anon
+  bodyInfo : ExprInfo .anon
+  bodyState : TcState .anon
+  domainRun : RecM.infer domain (methodsN fuel) before =
+    .ok (.sort domainLevel domainInfo) domainState
+  openRun : TcM.openBinder name bi domain body domainState = .ok (opened, fresh) openedState
+  bodyRun : RecM.infer opened (methodsN fuel) openedState =
+    .ok (.sort bodyLevel bodyInfo) bodyState
+  contextPreserved : domainState.lctx = before.lctx
+
+/-- Inversion reaches the actual final interning operation after both recursive
+calls, sort exposures, and binder opening. -/
+theorem ForallInferenceTrace.output {fuel : Nat} {before after : TcState .anon}
+    {name : Mode.anon.F Name} {bi : Mode.anon.F Lean.BinderInfo}
+    {domain body result : KExpr .anon} {info : ExprInfo .anon} {inferOnly : Bool}
+    (trace : ForallInferenceTrace fuel before name bi domain body)
+    (accepted : RecM.inferUncached RecM.inferCall inferOnly (.all name bi domain body info)
+      (methodsN (fuel + 1)) before = .ok result after) :
+    result = (trace.bodyState.env.intern.internExpr
+      (KExpr.mkSort (KUniv.mkIMax trace.domainLevel trace.bodyLevel))).1 := by
+  change (RecM.inferUncached RecM.inferCall inferOnly (.all name bi domain body info)).run
+    (methodsN (fuel + 1)) before = .ok result after at accepted
+  unfold RecM.inferUncached at accepted
+  simp only [ReaderT.run_bind] at accepted
+  change EStateM.bind (RecM.infer domain (methodsN fuel)) _ before = _ at accepted
+  rw [EStateM.bind, trace.domainRun] at accepted
+  change (RecM.withLctxScope _).run (methodsN (fuel + 1)) trace.domainState = _ at accepted
+  obtain ⟨scopedState, accepted⟩ := withLctxScope_success accepted
+  simp only [ReaderT.run_bind, ReaderT.run_monadLift] at accepted
+  change EStateM.bind (TcM.openBinder name bi domain body) _ trace.domainState =
+    .ok result scopedState at accepted
+  rw [EStateM.bind, trace.openRun] at accepted
+  have bodyRun : (RecM.inferCall trace.opened).run (methodsN (fuel + 1))
+      trace.openedState = .ok (.sort trace.bodyLevel trace.bodyInfo) trace.bodyState := trace.bodyRun
+  change EStateM.bind ((RecM.inferCall trace.opened).run (methodsN (fuel + 1)))
+    _ trace.openedState = .ok result scopedState at accepted
+  rw [EStateM.bind, bodyRun] at accepted
+  cases accepted
+  rfl
+
+/-- Full-mode lambda inference validates its domain, opens the binder, and
+infers the body. The current fragment takes the unchanged cheap-beta path. -/
+structure LambdaInferenceTrace (fuel : Nat) (before : TcState .anon)
+    (name : Mode.anon.F Name) (bi : Mode.anon.F Lean.BinderInfo)
+    (domain body : KExpr .anon) where
+  domainLevel : KUniv .anon
+  domainInfo : ExprInfo .anon
+  domainState : TcState .anon
+  opened : KExpr .anon
+  fresh : FVarId
+  openedState : TcState .anon
+  bodyType : KExpr .anon
+  bodyState : TcState .anon
+  domainRun : RecM.infer domain (methodsN fuel) before =
+    .ok (.sort domainLevel domainInfo) domainState
+  openRun : TcM.openBinder name bi domain body domainState = .ok (opened, fresh) openedState
+  bodyRun : RecM.infer opened (methodsN fuel) openedState = .ok bodyType bodyState
+  contextPreserved : domainState.lctx = before.lctx
+  betaUnchanged : cheapBetaPlan? bodyType = none
+
+def LambdaInferenceTrace.abstracted {fuel : Nat} {before : TcState .anon}
+    {name : Mode.anon.F Name} {bi : Mode.anon.F Lean.BinderInfo}
+    {domain body : KExpr .anon} (trace : LambdaInferenceTrace fuel before name bi domain body) :=
+  abstractFVars trace.bodyType #[trace.fresh] trace.bodyState.env.intern
+
+/-- The returned lambda type is the actual abstracted body type, wrapped in
+the production Pi constructor and passed through the final intern table. -/
+theorem LambdaInferenceTrace.output {fuel : Nat} {before after : TcState .anon}
+    {name : Mode.anon.F Name} {bi : Mode.anon.F Lean.BinderInfo}
+    {domain body result : KExpr .anon} {info : ExprInfo .anon}
+    (trace : LambdaInferenceTrace fuel before name bi domain body)
+    (accepted : RecM.inferUncached RecM.inferCall false (.lam name bi domain body info)
+      (methodsN (fuel + 1)) before = .ok result after) :
+    result = (trace.abstracted.2.internExpr (KExpr.mkAll () () domain trace.abstracted.1)).1 := by
+  change (RecM.inferUncached RecM.inferCall false (.lam name bi domain body info)).run
+    (methodsN (fuel + 1)) before = .ok result after at accepted
+  unfold RecM.inferUncached at accepted
+  simp only [Bool.not_false, if_true, ReaderT.run_bind] at accepted
+  change EStateM.bind (RecM.infer domain (methodsN fuel)) _ before = _ at accepted
+  rw [EStateM.bind, trace.domainRun] at accepted
+  change (RecM.withLctxScope _).run (methodsN (fuel + 1)) trace.domainState = _ at accepted
+  obtain ⟨scopedState, accepted⟩ := withLctxScope_success accepted
+  simp only [ReaderT.run_bind, ReaderT.run_monadLift] at accepted
+  change EStateM.bind (TcM.openBinder name bi domain body) _ trace.domainState =
+    .ok result scopedState at accepted
+  rw [EStateM.bind, trace.openRun] at accepted
+  have bodyRun : (RecM.inferCall trace.opened).run (methodsN (fuel + 1))
+      trace.openedState = .ok trace.bodyType trace.bodyState := trace.bodyRun
+  change EStateM.bind ((RecM.inferCall trace.opened).run (methodsN (fuel + 1)))
+    _ trace.openedState = .ok result scopedState at accepted
+  rw [EStateM.bind, bodyRun] at accepted
+  simp only [cheapBetaReduce, trace.betaUnchanged] at accepted
+  cases accepted
+  rfl
+
+/-- Structural and operational support for a finite production inference
+tree. The source reading and local-context agreement are inputs to soundness,
+so each recursive body's reading must be derived by opening its binder. -/
+inductive BinderInference {β : Type u}
+    (resolve : Address → Option (ConstRef β)) (entries : Model.Environment β) :
+    List FVarId → Model.Context β → Nat → TcState .anon → KExpr .anon →
+      AExpr β → AExpr β → Type u
+  | sort {locals context fuel before level info}
+      (miss : UncachedInference before (.sort level info))
+      (coherent : miss.keyed.env.intern.WF)
+      (faithful : KExpr.KeyCollisionFree fun term =>
+        miss.keyed.env.intern.ExprSupport term ∨ term = KExpr.mkSort (KUniv.mkSucc level)) :
+      BinderInference resolve entries locals context fuel before (.sort level info)
+        (.sort (readLevel level)) (.sort (.succ (readLevel level)))
+  | fvar {locals context fuel before id name info index A}
+      (cache : FVarInferenceSupport before id name info)
+      (registered : localIndex? locals id = some index)
+      (atIndex : context[index]? = some A) :
+      BinderInference resolve entries locals context fuel before (.fvar id name info) (.bvar index) A
+  | forallE {locals context fuel before name bi domain body info A B}
+      (miss : UncachedInference before (.all name bi domain body info))
+      (trace : ForallInferenceTrace fuel miss.keyed name bi domain body)
+      (opening : BinderOpeningSupport trace.domainState body)
+      (absent : (⟨trace.domainState.env.nextFVarId⟩ : FVarId) ∉ locals)
+      (domainTree : BinderInference resolve entries locals context fuel miss.keyed domain
+        A (.sort (readLevel trace.domainLevel)))
+      (bodyTree : BinderInference resolve entries (trace.fresh :: locals) (context.push A)
+        fuel trace.openedState trace.opened B (.sort (readLevel trace.bodyLevel)))
+      (levelFaithful : ∀ a b,
+        (KUniv.Sub a trace.domainLevel ∨ KUniv.Sub a trace.bodyLevel) →
+        (KUniv.Sub b trace.domainLevel ∨ KUniv.Sub b trace.bodyLevel) → a.AddrFaithful b)
+      (domainBound : trace.domainLevel.size < UInt64.size)
+      (bodyBound : trace.bodyLevel.size < UInt64.size)
+      (coherent : trace.bodyState.env.intern.WF)
+      (faithful : KExpr.KeyCollisionFree fun term => trace.bodyState.env.intern.ExprSupport term ∨
+        term = KExpr.mkSort (KUniv.mkIMax trace.domainLevel trace.bodyLevel)) :
+      BinderInference resolve entries locals context (fuel + 1) before (.all name bi domain body info)
+        (.forallE (Certified.zeroCondition (readLevel trace.bodyLevel)) A B)
+        (.sort (readLevel (KUniv.mkIMax trace.domainLevel trace.bodyLevel)))
+  | lam {locals context fuel before name bi domain body info A b B condition}
+      (full : before.inferOnly = false)
+      (miss : UncachedInference before (.lam name bi domain body info))
+      (trace : LambdaInferenceTrace fuel miss.keyed name bi domain body)
+      (opening : BinderOpeningSupport trace.domainState body)
+      (absent : (⟨trace.domainState.env.nextFVarId⟩ : FVarId) ∉ locals)
+      (bodyTree : BinderInference resolve entries (trace.fresh :: locals) (context.push A)
+        fuel trace.openedState trace.opened b B)
+      (constructed : trace.bodyType.Constructed)
+      (bound : trace.bodyType.size + 1 < UInt64.size)
+      (coherent : trace.bodyState.env.intern.WF)
+      (closingFaithful : KExpr.CollisionFree fun term => trace.bodyState.env.intern.ExprSupport term ∨
+        KExpr.AbstractReach ((∅ : Std.HashMap FVarId UInt64).insert trace.fresh 0)
+          1 trace.bodyType 0 term)
+      (faithful : KExpr.KeyCollisionFree fun term => trace.abstracted.2.ExprSupport term ∨
+        term = KExpr.mkAll () () domain trace.abstracted.1) :
+      BinderInference resolve entries locals context (fuel + 1) before (.lam name bi domain body info)
+        (.lam condition A b) (.forallE condition A B)
+
+/-- Successful production inference reads the expected model type and checks
+the actual source term against it. No recursive semantic premise is supplied
+by the caller: induction follows the finite operational support tree. -/
+theorem BinderInference.sound {β : Type u}
+    {resolve : Address → Option (ConstRef β)} {entries : Model.Environment β}
+    {locals : List FVarId} {context : Model.Context β} {fuel : Nat}
+    {before after : TcState .anon} {term result : KExpr .anon} {e A : AExpr β}
+    (support : BinderInference resolve entries locals context fuel before term e A)
+    (agreement : LocalContextReading resolve locals before.lctx context)
+    (reading : readScopedExpr? resolve locals term = some e.erase)
+    (accepted : RecM.infer term (methodsN fuel) before = .ok result after) :
+    readScopedExpr? resolve locals result = some A.erase ∧
+      CheckingClaim.{u,v} entries context e A := by
+  induction support generalizing result after with
+  | sort miss coherent faithful =>
+      obtain ⟨state, run⟩ := infer_uncached_success miss accepted
+      change EStateM.Result.ok
+        (miss.keyed.env.intern.internExpr (KExpr.mkSort (KUniv.mkSucc _))).1 _ =
+          .ok result state at run
+      cases run
+      refine ⟨?_, (TypingClaim.sort _).checking⟩
+      rw [internExpr_readScopedExpr? coherent faithful]
+      simp [AExpr.erase]
+  | fvar cache registered atIndex =>
+      obtain ⟨typeReads, typed⟩ := cache.sound agreement registered atIndex accepted
+      exact ⟨typeReads, typed.checking⟩
+  | forallE miss trace opening absent domainTree bodyTree levelFaithful domainBound bodyBound
+      coherent faithful ihDomain ihBody =>
+      obtain ⟨state, run⟩ := infer_uncached_success miss accepted
+      obtain ⟨domainReads, bodyReads⟩ := readScopedExpr?_all_parts reading
+      have keyedAgreement := miss.localContext.symm ▸ agreement
+      obtain ⟨_, domainChecked⟩ := ihDomain keyedAgreement domainReads trace.domainRun
+      have domainAgreement := trace.contextPreserved.symm ▸ keyedAgreement
+      obtain ⟨_, openedReads, openedAgreement, _⟩ :=
+        openBinder_sound opening domainAgreement absent domainReads bodyReads trace.openRun
+      obtain ⟨_, bodyChecked⟩ := ihBody openedAgreement openedReads trace.bodyRun
+      refine ⟨?_, ?_⟩
+      · rw [trace.output run, internExpr_readScopedExpr? coherent faithful]
+        rfl
+      · have formed := TypingClaim.forallE domainChecked.typingSort bodyChecked.typingSort rfl
+        exact (AExpr.LevelEquivalent.sort
+          (Theory.VLevel.equiv_def.mpr fun levels =>
+            (Theory.VLevel.equiv_def.mp (readLevel_mkIMax levelFaithful domainBound bodyBound)
+              levels).symm) |>.typing formed).checking
+  | lam full miss trace opening absent bodyTree constructed bound coherent closingFaithful
+      faithful ihBody =>
+      obtain ⟨state, run⟩ := infer_uncached_success miss accepted
+      rw [full] at run
+      obtain ⟨domainReads, bodyReads⟩ := readScopedExpr?_lam_parts reading
+      have keyedAgreement := miss.localContext.symm ▸ agreement
+      have domainAgreement := trace.contextPreserved.symm ▸ keyedAgreement
+      obtain ⟨_, openedReads, openedAgreement, _⟩ :=
+        openBinder_sound opening domainAgreement absent domainReads bodyReads trace.openRun
+      obtain ⟨bodyTypeReads, bodyChecked⟩ := ihBody openedAgreement openedReads trace.bodyRun
+      obtain ⟨closedReads, closedCoherent⟩ := abstractFVars_readScopedExpr? constructed bound coherent
+        closingFaithful bodyTypeReads
+      refine ⟨?_, bodyChecked.lam⟩
+      rw [trace.output run,
+        internExpr_readScopedExpr? (table := trace.abstracted.2) closedCoherent faithful]
+      simp [LambdaInferenceTrace.abstracted, domainReads, closedReads, AExpr.erase]
+
+end Ix.Kernel.Consistency
