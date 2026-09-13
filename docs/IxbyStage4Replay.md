@@ -140,10 +140,11 @@ phase/topology digests agree. No Stage 4 key or FFLONK proof is generated.
 | Accumulator transcript compression rows / PoW predicates | 4,947 / 1,373 |
 | Terminal diagnostic root families | 46 matrix roots, 1 structure, 1 jagged |
 
-The 200 ordinary workspace tests pass; twelve tests are ignored by default
+The 207 ordinary workspace tests pass; fifteen tests are ignored by default
 (the retained large two-ring projection, native replay/census, and the four
 decision-diagram native/materialization/optimization tests, plus two
-structural BLAKE3 component tests and three closed-composition/admission tests).
+structural BLAKE3 component tests, three closed-composition/admission tests,
+and three bounded cofactor-basis experiments).
 The real three-execution replay regression passes under a 32 GiB
 address-space cap with four Rayon threads. The complete matrix-free census
 finished successfully in 1,161.51 seconds, including setup, under that cap.
@@ -222,8 +223,8 @@ the isolated fresh-input multiplication gadget's 5,696 constraints gives an
 closure census or an unconditional lower bound. The dense BLAKE3 slot and
 largest decoder dominate. Six variable orders were tested on those matrices;
 MSB interleaving was smallest among those candidates. Bounded positive/mixed
-cofactor-XOR rewrites preserve exact values when they finish, but usually grow
-or reach the node limit. Only limited structure/small-table savings were found;
+Davio rewrites preserve exact values when they finish, but usually grow or
+reach the node limit. Only limited structure/small-table savings were found;
 the default compiler does not adopt the rewrites.
 
 These are reusable exact-evaluation components and cost evidence. The new
@@ -279,15 +280,78 @@ This is a substantial improvement over the decision-diagram product-cost
 reference, but not a measured full-closure census or an admitted terminal
 proving job. Further cost reduction and the original M5–M8 gates remain.
 
+### Exact structure cofactor bases
+
+`F128FixedTableBasisV0::compile` constructs immutable, layered GF(2) bases
+from the exact setup-owned Shannon diagram. At a layer, each source cofactor
+is represented by its low/high coefficient vectors in the next layer's basis.
+Gaussian elimination records residual basis vectors and an exact XOR decoder
+for every source vector. Leaf elimination includes all 128 coefficient bits;
+skipped coordinates retain the same cofactor on both sides. Davio input is
+rejected rather than expanded into an unbounded set of new cofactors.
+
+This is an algebraic construction, not a randomized rank test: induction on
+the layers identifies every Boolean-cube coefficient with the source diagram.
+Each layer evaluates `low + x * (low + high)` using fixed XOR coefficients,
+and a coordinate occurs only once on each path. Thus it represents the same
+multilinear polynomial over F128. The Rust implementation and circuit gadgets
+still require their stated implementation/refinement review; these tests are
+not a new kernel-checked theorem or cryptographic assumption.
+
+State slots, cumulative dense-word allocations, word operations and retained
+coefficient terms have independent hard compilation bounds. These exclude the
+source table, container overhead and the rest of setup and are not an RSS or
+prover-admission model. No constructor accepts arbitrary unvalidated layers,
+table-value advice, guest data, or proof-derived topology. The program digest
+binds its source identity, constants, coordinate order and every coefficient.
+
+The first bounded experiment completes 44 of the 48 actual table programs,
+each matching the source diagram at four points in native Flock F128. Slots
+0 and 9, both sides, exceed the work bound. A larger diagnostic with 4 billion
+word operations and 16 million coefficient terms still refuses all four:
+three work-limit failures and one term-limit failure. Reducing rank does not
+necessarily reduce circuit cost; none of those matrix/jagged candidates is
+automatically selected.
+
+The structure component does show a measured reduction:
+
+| Complete structure-table component | Shannon diagram | Cofactor basis |
+| --- | ---: | ---: |
+| R1CS constraints | 57,687,119 | 15,998,468 |
+| R1CS nonzero terms | 267,174,632 | 76,719,487 |
+| PLONK constraint rows | 92,024,156 | 21,653,222 |
+| Component base domain | `2^27` | `2^25` |
+
+These matrix-free counts include twenty fresh private F128 point coordinates
+and the complete table evaluation, but exclude the claim binding and remaining
+verifier. Each emission had an independent 200-million-PLONK-row cutoff.
+The 70,370,934-row saving is 76.47% of this component, not of the complete
+relation. Both runs completed; neither checked a full satisfying assignment
+or generated a terminal proof. The [cofactor report](../flock-stage4/census/exec-cofactor-root-basis-v0.json)
+records source hashes, program identities, paired runs and measurement scope.
+
+`compile_exec_root_closure` now selects the basis only for structure and requires
+an explicit `.structure_basis` budget. Failure propagates without fallback.
+Stage 3's tables/profile/transcript remain identical, while the Stage 4
+table-program/composition identities change. Materialized tests cover all three
+program kinds, every root family and every claim bit, including exact equality
+between proof-free matrices and several assignments. The real-Exec regression
+recompiles before three guest/outcome proofs and compares every native fold root.
+The previous supported-domain refusal occurs in unchanged work before structure
+evaluation. This improvement does not produce a feasible whole-relation census,
+materialized closed circuit, terminal key or full FFLONK proof.
+
 ## Root-closed composition and hard domain budget
 
 `compile_exec_root_closure(approvedReplay, limits)` compiles all 48 exact
 programs before any guest/proof exists. Two BLAKE3 matrix diagrams are replaced
-by the exhaustively coefficient-checked linear programs; all 44 other matrix
-diagrams and both rectangular families remain exact. The current compiler
-temporarily builds the complete diagram set first, so its global entry/node
-budgets include those temporary BLAKE3 diagrams. Linear construction and the
-additional exhaustive coefficient pass have separate explicit bounds.
+by the exhaustively coefficient-checked linear programs; structure uses the
+exact cofactor basis above; the 44 other matrix and jagged diagrams remain.
+The current compiler temporarily builds the complete diagram set first, so
+its global entry/node budgets include those temporary BLAKE3 diagrams.
+Linear construction and the
+additional exhaustive coefficient pass and structure-basis construction have
+separate explicit bounds.
 
 The immutable table set binds ordered matrix IDs, registry/circuit identities,
 program kinds/digests, and every row/column dimension. Its neutral constructor
@@ -307,8 +371,8 @@ or public root sidecar. The only public inputs are Q's two limbs. There is no
 unchecked/private binding mode or native-discharge callback. The old path's
 public allocation and constraint order are preserved by this refactor.
 
-Synthetic materialized tests exercise both program kinds and all three root
-families. All 128 bits of every claim are mutated and rejected; freshly forged
+Synthetic materialized tests exercise all three program kinds and all three
+root families. All 128 bits of every claim are mutated and rejected; freshly forged
 claims reach R1CS satisfaction checking rather than failing a native value
 comparison. Matrix identity/order/count and family geometry failures emit no
 constraints. Three point assignments retain identical matrices.
@@ -316,11 +380,16 @@ constraints. Three point assignments retain identical matrices.
 The initial native closure regression compiled the complete root set twice before
 creating any proof (15.258 seconds), then matched all 48 native folded roots
 for a return program and both branch outcomes (25.58 seconds total). Its
-composition digest is
+original, pre-cofactor composition digest is
 `64caf60bc1fe39846d95e195e3ecf598b75a1bcf22820e5ef72836399c868bdc`;
 the table-set digest is
 `f020d4867674049eb517f7e7be472614f2e34453adaacbb9834374c6783a3199`.
 Those are setup-program identities, NOT R1CS or terminal key digests.
+The structure-basis version instead has composition digest
+`2a5197d95f015ded732322e73a999bb128faab2e8ffd4c873a15a6c759db2d24`
+and table-set digest
+`2100cce6c5b5aa4136b68217fda000d2a10189f7863c530507e76cfb94e4a073`;
+the same distinction from a terminal key applies.
 The same test checks setup-identity corruption before allocation, confirms
 that the first private transcript bit follows the two Q limbs, and refuses
 zero/tiny or above-supported row budgets. This is native differential and
@@ -337,8 +406,8 @@ Successful census still does not check a satisfying assignment, approve host
 resources/setup, or generate a proof. Use a bounded subprocess for RAM/time
 limits in addition to the internal geometry cap.
 
-The bounded full-emission test returned `RejectedBudget` in 1,245.361 seconds
-after setup/proof replay (1,260.47 seconds total test time). At refusal it had
+The initial bounded full-emission test returned `RejectedBudget` in 1,245.361
+seconds after setup/proof replay (1,260.47 seconds total test time). At refusal it had
 emitted 643,831,813 R1CS constraints, 1,073,741,821 PLONK constraint rows, and
 429,910,008 lowering auxiliary wires, in the `MatrixFold` phase. Adding the
 four public/blinding reservations requires 1,073,741,825 rows, beyond the
@@ -416,8 +485,9 @@ Evidence is deliberately split by scope:
   hard supported-domain limit as the witness-driven diagnostic. A rejected
   prefix contains no complete R1CS digest, full census, terminal key or proof.
 
-The whole proof-free run returned `RejectedBudget` after 1,240.765 seconds of
-emission (1,253.75 seconds total test time). It reached exactly the previous
+The initial whole proof-free run, before the structure-basis optimization,
+returned `RejectedBudget` after 1,240.765 seconds of emission (1,253.75 seconds
+total test time). It reached exactly the previous
 witness-driven cutoff: 643,831,813 R1CS constraints, 1,073,741,821 PLONK rows,
 429,910,008 auxiliary wires, last phase `MatrixFold`. Including public/blinding
 reservations again exceeds the supported domain. This is prefix count agreement,

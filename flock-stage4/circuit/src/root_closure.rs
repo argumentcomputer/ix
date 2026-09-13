@@ -6,7 +6,8 @@ use crate::{
   ConstraintPhase, F128CircuitStructureRootClaimVariablesV1,
   F128JaggedRootClaimVariablesV1, F128RootMatrixClaimVariablesV1,
   F128VariablesV1, R1csBuilder, R1csError, constrain_f128_binary_linear_table,
-  constrain_f128_fixed_table, enforce_f128_equal,
+  constrain_f128_fixed_table, constrain_f128_fixed_table_basis,
+  enforce_f128_equal,
 };
 use ix_stage4_trace::{
   ExecBindingV0, F128CircuitStructureAccumulatorTraceV1,
@@ -146,6 +147,10 @@ fn bind(
     },
     F128FixedMatrixProgramV0::BinaryLinear(map) => {
       constrain_f128_binary_linear_table(builder, map, row, column, PHASE)?
+    },
+    F128FixedMatrixProgramV0::CofactorBasis(table) => {
+      let point = row.iter().chain(column).cloned().collect::<Vec<_>>();
+      constrain_f128_fixed_table_basis(builder, table, &point, PHASE)?
     },
   };
   enforce_f128_equal(builder, &value, claim, PHASE);

@@ -6,8 +6,8 @@ use crate::{CompiledExecReplay, ExecReplayWitness};
 use anyhow::{Result, ensure};
 use ix_stage4_trace::{
   BinaryLinearMapLimitsV0, BinaryLinearValidationLimitsV0,
-  F128FixedMatrixProgramV0 as Program, F128FixedTableLimitsV0,
-  F128RootTableSetV0,
+  F128FixedMatrixProgramV0 as Program, F128FixedTableBasisLimitsV0,
+  F128FixedTableBasisV0, F128FixedTableLimitsV0, F128RootTableSetV0,
 };
 use ix_terminal_circuit::{
   ExecRootClosedCircuitOutputV0, R1csBuilder, Stage4PublicInputsV1,
@@ -22,6 +22,9 @@ pub struct ExecRootClosureCompilationLimitsV0 {
   pub linear_program: BinaryLinearMapLimitsV0,
   /// Additional exhaustive A/B coefficient-check pass.
   pub linear_validation: BinaryLinearValidationLimitsV0,
+  /// Exact structure-table cofactor bases. Other diagrams are not rewritten.
+  /// A refusal propagates; it never selects an unmeasured fallback program.
+  pub structure_basis: F128FixedTableBasisLimitsV0,
 }
 
 /// The topology and tables are both borrowed/derived from the same approved
@@ -82,7 +85,9 @@ impl<'r, 's> CompiledExecRootClosure<'r, 's> {
 }
 
 /// Compile a complete root set with BLAKE3's exhaustively checked linear
-/// formulas and exact diagrams for every other matrix, structure, and layout.
+/// formulas, measured cofactor bases for structure, and exact diagrams for
+/// every other matrix and layout. The coefficient relation and Stage 3 setup
+/// are unchanged; the new program kind changes the Stage 4 composition digest.
 /// No point, value, statement, image, or proof is a setup input.
 pub fn compile_exec_root_closure<'r, 's>(
   replay: &'r CompiledExecReplay<'s>,
@@ -115,13 +120,19 @@ pub fn compile_exec_root_closure<'r, 's>(
     "both approved BLAKE3 matrices must be covered exactly once"
   );
   let (structure_id, structure) = diagrams.structure();
+  let structure =
+    F128FixedTableBasisV0::compile(structure, limits.structure_basis)?;
+  ensure!(
+    structure.source_digest() == diagrams.structure().1.digest(),
+    "structure cofactor source identity"
+  );
   let (jagged_id, jagged) = diagrams.jagged();
   let binding = replay.binding();
   let tables = F128RootTableSetV0::new(
     binding.registry_digest,
     binding.circuit_digest,
     matrices,
-    (*structure_id, Program::DecisionDiagram(structure.clone())),
+    (*structure_id, Program::CofactorBasis(structure)),
     (*jagged_id, Program::DecisionDiagram(jagged.clone())),
   )?;
   validate_exec_root_tables(

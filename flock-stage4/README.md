@@ -22,8 +22,8 @@ Tests include strict scalar/curve/subgroup decoding, invalid SRS/key rejection,
 nonzero blinding admission, authenticated scratch corruption, and identical
 proof/key results across memory and file backends for fixed test randomness.
 Small proofs use development setup and randomness, not production security.
-The generic replay and root-closure/setup prototypes pass 200 ordinary tests
-(88 FFLONK, 29 trace, 67 circuit, 16 replay/setup); twelve heavier native,
+The generic replay and root-closure/setup prototypes pass 207 ordinary tests
+(88 FFLONK, 34 trace, 69 circuit, 16 replay/setup); fifteen heavier native,
 materialization, and census/optimization tests remain opt-in.
 
 ## Generic Exec replay
@@ -91,8 +91,8 @@ registry-table gadget was materialized and checked at two points with identical
 R1CS matrices; claimed-value mutations fail. Its 230,853 constraints are a
 component measurement, not the full relation's cost. The complete diagram
 census has 1,515,960 nodes and 1,501,595 general product sites. The bounded
-cofactor-XOR rewrites mostly grow or hit their limits; none is adopted by the
-default compiler. See the [prototype census](census/exec-fixed-root-table-prototype-v0.json)
+positive/mixed Davio rewrites mostly grow or hit their limits; none is adopted
+by the default compiler. See the [prototype census](census/exec-fixed-root-table-prototype-v0.json)
 for exact counts, bounds, reproduction commands, and failed alternatives.
 Structural formulas and further verifier cost reduction are needed before
 full terminal proving can be admitted.
@@ -111,12 +111,31 @@ This remains an oversized prototype, not a closed-root proof. Its
 [separate report](census/exec-structural-blake3-root-v0.json) records the exact
 counts, original formula provenance, source/map hashes, bounds, and tests.
 
+The structure table now uses an exact cofactor-basis program. Gaussian
+elimination on fixed cofactor coefficient pairs reduces its representation;
+the circuit still interpolates every coordinate and enforces the original
+folded claim. No sampled-value hint or new commitment replaces the table.
+The paired, complete component census falls from 57,687,119 to 15,998,468 R1CS
+constraints and from 92,024,156 to 21,653,222 PLONK constraint rows (76.47% fewer).
+These counts include twenty fresh private F128 coordinates and table evaluation
+only, not the whole verifier or terminal claim binding.
+
+Only structure adopts this representation. Other large-table attempts hit
+explicit compiler work/term limits, even in a separately bounded larger trial.
+The new `.structure_basis` compilation budget has no fallback on failure.
+The [cofactor report](census/exec-cofactor-root-basis-v0.json) records exact
+source/program identities, native and materialized tests, paired counts and
+bounded failures. Stage 3 matrices/profile/transcript are unchanged; Stage 4's
+composition identity changes. This later-phase saving does not remove the
+previous domain refusal in the unchanged earlier matrix-root work, and no
+complete closed proof or terminal key has been produced.
+
 ## Root-closed composition and bounded admission
 
 `compile_exec_root_closure` derives an immutable, complete root program set
 from the approved replay setup alone: the two exhaustively checked BLAKE3
-linear maps, 44 other matrix diagrams, and structure/jagged diagrams. No guest,
-point, value, statement, or proof is an input. The shared replay composition
+linear maps, 44 other matrix diagrams, a structure cofactor basis, and a jagged
+diagram. No guest, point, value, statement, or proof is an input. The shared replay composition
 binds each deferred root to its exact table evaluation using the already
 constrained transcript point and claim wires. There is no new root witness,
 unchecked acceptance bit, or native table-discharge callback in this path.
@@ -145,7 +164,8 @@ RAYON_NUM_THREADS=4 timeout 180 cargo test --release --locked \
   -- --ignored --test-threads=1 --nocapture
 ```
 
-The separately ignored `root_closed_supported_domain_admission_census` test
+Before the structure-basis optimization, the separately ignored
+`root_closed_supported_domain_admission_census` test
 attempted whole-relation emission with that hard supported-domain cutoff. It
 returned `RejectedBudget` after 1,245.361 seconds of emission: 643,831,813 R1CS
 constraints and 1,073,741,821 PLONK constraint rows. With four reserved rows,
@@ -184,7 +204,8 @@ The real-Exec regression compares the first 4,096 exact constraints and bounded
 admission results for three executions with setup emission performed before
 any guest/proof existed. That small prefix is not a full circuit identity.
 `census_exec_root_closed_setup_observed` separately attempts the whole relation
-without a Flock proof and retains the same supported-domain cutoff. Its run
+without a Flock proof and retains the same supported-domain cutoff. Its initial
+run, before the later structure-basis optimization,
 returned `RejectedBudget` after 1,240.765 seconds of emission at exactly the
 earlier witness-driven prefix counts: 643,831,813 R1CS constraints and
 1,073,741,821 PLONK rows. The [separate proof-free report](census/exec-proof-free-root-closed-emission-v0.json)

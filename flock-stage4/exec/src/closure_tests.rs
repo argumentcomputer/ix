@@ -9,8 +9,8 @@ use flock_prover::field::F128;
 use ix_stage4_trace::{
   BinaryLinearMapLimitsV0, BinaryLinearReferenceV0 as Ref,
   BinaryLinearValidationLimitsV0, ExecCommitmentsV0,
-  F128FixedMatrixProgramV0 as Program, F128FixedTableLimitsV0,
-  F128FixedTableNodeV0 as Node,
+  F128FixedMatrixProgramV0 as Program, F128FixedTableBasisLimitsV0,
+  F128FixedTableLimitsV0, F128FixedTableNodeV0 as Node,
 };
 use ix_terminal_circuit::{
   Constraint, R1csBuilder, R1csError, R1csShapeLimitsV0, Stage4PublicInputsV1,
@@ -29,6 +29,12 @@ const LIMITS: ExecRootClosureCompilationLimitsV0 =
     linear_validation: BinaryLinearValidationLimitsV0 {
       coefficient_words: 64_000_000,
       source_entries: 48_000_000,
+    },
+    structure_basis: F128FixedTableBasisLimitsV0 {
+      state_slots: 4_000_000,
+      dense_words: 16_000_000,
+      word_operations: 200_000_000,
+      coefficient_terms: 8_000_000,
     },
   };
 
@@ -99,6 +105,24 @@ fn evaluate(table: &Program, row: &[[u8; 16]], col: &[[u8; 16]]) -> F128 {
       assert_eq!(values.len(), 1);
       values[0]
     },
+    Program::CofactorBasis(table) => {
+      let point = [row, col].concat();
+      let mut values = table.constants().iter().map(decode).collect::<Vec<_>>();
+      let sum = |indices: &[u32], values: &[F128]| {
+        indices.iter().fold(F128::ZERO, |a, &i| a + values[i as usize])
+      };
+      for layer in table.layers().iter().rev() {
+        values = layer
+          .rows()
+          .iter()
+          .map(|r| {
+            sum(r.low(), &values)
+              + point[layer.coordinate() as usize] * sum(r.slope(), &values)
+          })
+          .collect();
+      }
+      sum(table.output(), &values)
+    },
   }
 }
 
@@ -165,6 +189,8 @@ fn setup_owned_closure_matches_all_real_fold_roots() {
   let rebuilt = compile_exec_root_closure(&replay, LIMITS).unwrap();
   assert_eq!(closure.digest(), rebuilt.digest());
   assert_eq!(closure.tables(), rebuilt.tables());
+  assert!(matches!(&closure.tables().structure().1, Program::CofactorBasis(_)));
+  assert!(matches!(&closure.tables().jagged().1, Program::DecisionDiagram(_)));
   assert!(std::ptr::eq(closure.replay_setup(), &replay));
   let slots = closure.setup_source_slots().unwrap();
   assert_eq!(slots, rebuilt.setup_source_slots().unwrap());
@@ -234,6 +260,22 @@ fn setup_owned_closure_matches_all_real_fold_roots() {
   );
   eprintln!(
     "proof-free source slots before any guest/proof: {slots:?}; payload {slot_bytes} bytes; matched bounded materialization/refusal"
+  );
+  let error = compile_exec_root_closure(
+    &replay,
+    ExecRootClosureCompilationLimitsV0 {
+      structure_basis: F128FixedTableBasisLimitsV0 {
+        state_slots: 0,
+        ..LIMITS.structure_basis
+      },
+      ..LIMITS
+    },
+  )
+  .err()
+  .expect("missing structure basis budget must not select a fallback");
+  assert_eq!(
+    error.downcast_ref::<ix_stage4_trace::F128FixedTableBasisError>(),
+    Some(&ix_stage4_trace::F128FixedTableBasisError::StateLimit)
   );
   assert_eq!(closure.tables().matrices().len(), 46);
   assert_eq!(

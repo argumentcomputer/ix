@@ -7,7 +7,8 @@ use ark_bls12_381::Fr;
 use ark_ff::Field;
 use ix_stage4_trace::{
   BinaryLinearMapLimitsV0, BinaryLinearMapV0, BinaryLinearReferenceV0 as Ref,
-  F128CircuitStructureMatrixIdV1, F128FixedTableLimitsV0, F128FixedTableV0,
+  F128CircuitStructureMatrixIdV1, F128FixedTableBasisLimitsV0,
+  F128FixedTableBasisV0, F128FixedTableLimitsV0, F128FixedTableV0,
   F128JaggedMatrixIdV1, F128MatrixFoldTraceV1, F128MatrixSideV1,
   F128StaticMatrixIdV1,
 };
@@ -60,7 +61,7 @@ fn tables() -> F128RootTableSetV0 {
         row_variables: 1,
         column_variables: 1,
       },
-      diagram(2, &S),
+      basis(diagram(2, &S)),
     ),
     (
       F128JaggedMatrixIdV1 {
@@ -70,6 +71,40 @@ fn tables() -> F128RootTableSetV0 {
       },
       diagram(1, &J),
     ),
+  )
+  .unwrap()
+}
+
+fn basis(program: F128FixedMatrixProgramV0) -> F128FixedMatrixProgramV0 {
+  if let F128FixedMatrixProgramV0::DecisionDiagram(table) = program {
+    F128FixedMatrixProgramV0::CofactorBasis(
+      F128FixedTableBasisV0::compile(
+        &table,
+        F128FixedTableBasisLimitsV0 {
+          state_slots: 1000,
+          dense_words: 1000,
+          word_operations: 10000,
+          coefficient_terms: 1000,
+        },
+      )
+      .unwrap(),
+    )
+  } else {
+    program
+  }
+}
+
+fn all_basis_tables() -> F128RootTableSetV0 {
+  let t = tables();
+  F128RootTableSetV0::new(
+    t.registry_digest(),
+    t.circuit_digest(),
+    t.matrices()
+      .iter()
+      .map(|(id, table)| (*id, basis(table.clone())))
+      .collect(),
+    (t.structure().0, basis(t.structure().1.clone())),
+    (t.jagged().0, basis(t.jagged().1.clone())),
   )
   .unwrap()
 }
@@ -147,21 +182,18 @@ fn roots(
 }
 
 fn materialize(
+  tables: &F128RootTableSetV0,
   seed: u8,
   forged: Option<usize>,
 ) -> Result<(CanonicalR1csV1, Witness, Vec<F128VariablesV1>), R1csError> {
-  let tables = tables();
   let mut builder = R1csBuilder::new();
-  let (matrices, structure, jagged) =
-    roots(&mut builder, &tables, seed, forged);
+  let (matrices, structure, jagged) = roots(&mut builder, tables, seed, forged);
   let outputs =
-    constrain_f128_matrix_root_tables(&mut builder, &tables, &matrices)
-      .unwrap();
-  let s =
-    constrain_f128_structure_root_table(&mut builder, &tables, &structure)
-      .unwrap();
+    constrain_f128_matrix_root_tables(&mut builder, tables, &matrices).unwrap();
+  let s = constrain_f128_structure_root_table(&mut builder, tables, &structure)
+    .unwrap();
   let j =
-    constrain_f128_jagged_root_table(&mut builder, &tables, &jagged).unwrap();
+    constrain_f128_jagged_root_table(&mut builder, tables, &jagged).unwrap();
   let claims = matrices
     .into_iter()
     .map(|r| r.value)
@@ -180,26 +212,30 @@ fn materialize(
 
 #[test]
 fn setup_root_closure_matrices_match_all_assigned_root_families() {
-  let tables = tables();
-  let mut builder = crate::r1cs::test_shape_builder();
-  // An initially false claim still emits the whole root equality in setup.
-  let (matrices, structure, jagged) = roots(&mut builder, &tables, 0, Some(0));
-  constrain_f128_matrix_root_tables(&mut builder, &tables, &matrices).unwrap();
-  constrain_f128_structure_root_table(&mut builder, &tables, &structure)
-    .unwrap();
-  constrain_f128_jagged_root_table(&mut builder, &tables, &jagged).unwrap();
-  let shape = builder.finish_shape().unwrap();
-  for seed in [0, 1, 0x71] {
-    let (assigned, witness, claims) = materialize(seed, None).unwrap();
-    assert_eq!(shape, assigned);
-    shape.check(&witness).unwrap();
-    for claim in claims {
-      for &bit in claim.bit_variables() {
-        let mut bad = witness.clone();
-        bad
-          .set(bit, Fr::ONE - witness.assignment()[bit.index() as usize])
-          .unwrap();
-        assert!(shape.check(&bad).is_err());
+  for tables in [tables(), all_basis_tables()] {
+    let mut builder = crate::r1cs::test_shape_builder();
+    // An initially false claim still emits the whole root equality in setup.
+    let (matrices, structure, jagged) =
+      roots(&mut builder, &tables, 0, Some(0));
+    constrain_f128_matrix_root_tables(&mut builder, &tables, &matrices)
+      .unwrap();
+    constrain_f128_structure_root_table(&mut builder, &tables, &structure)
+      .unwrap();
+    constrain_f128_jagged_root_table(&mut builder, &tables, &jagged).unwrap();
+    let shape = builder.finish_shape().unwrap();
+    for seed in [0, 1, 0x71] {
+      let (assigned, witness, claims) =
+        materialize(&tables, seed, None).unwrap();
+      assert_eq!(shape, assigned);
+      shape.check(&witness).unwrap();
+      for claim in claims {
+        for &bit in claim.bit_variables() {
+          let mut bad = witness.clone();
+          bad
+            .set(bit, Fr::ONE - witness.assignment()[bit.index() as usize])
+            .unwrap();
+          assert!(shape.check(&bad).is_err());
+        }
       }
     }
   }
@@ -207,26 +243,30 @@ fn setup_root_closure_matrices_match_all_assigned_root_families() {
 
 #[test]
 fn every_root_family_is_constrained_without_public_root_inputs() {
-  let mut shape = None;
-  for seed in [0, 1, 0x71] {
-    let (r1cs, witness, claims) = materialize(seed, None).unwrap();
-    assert_eq!(r1cs.public_variables(), 0);
-    r1cs.check(&witness).unwrap();
-    for claim in claims {
-      for &bit in claim.bit_variables() {
-        let mut bad = witness.clone();
-        bad.set(bit, Fr::ONE - bad.assignment()[bit.index() as usize]).unwrap();
-        assert!(r1cs.check(&bad).is_err());
+  for tables in [tables(), all_basis_tables()] {
+    let mut shape = None;
+    for seed in [0, 1, 0x71] {
+      let (r1cs, witness, claims) = materialize(&tables, seed, None).unwrap();
+      assert_eq!(r1cs.public_variables(), 0);
+      r1cs.check(&witness).unwrap();
+      for claim in claims {
+        for &bit in claim.bit_variables() {
+          let mut bad = witness.clone();
+          bad
+            .set(bit, Fr::ONE - bad.assignment()[bit.index() as usize])
+            .unwrap();
+          assert!(r1cs.check(&bad).is_err());
+        }
+      }
+      if let Some(digest) = shape {
+        assert_eq!(r1cs.digest(), digest);
+      } else {
+        shape = Some(r1cs.digest());
       }
     }
-    if let Some(digest) = shape {
-      assert_eq!(r1cs.digest(), digest);
-    } else {
-      shape = Some(r1cs.digest());
+    for family in 0..4 {
+      assert!(materialize(&tables, 0x31, Some(family)).is_err());
     }
-  }
-  for family in 0..4 {
-    assert!(materialize(0x31, Some(family)).is_err());
   }
 }
 

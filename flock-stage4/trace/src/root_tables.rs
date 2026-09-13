@@ -3,8 +3,8 @@
 //! must derive or exhaustively check every program's coefficients.
 
 use crate::{
-  BinaryLinearMapV0, F128CircuitStructureMatrixIdV1, F128FixedTableV0,
-  F128JaggedMatrixIdV1, F128StaticMatrixIdV1,
+  BinaryLinearMapV0, F128CircuitStructureMatrixIdV1, F128FixedTableBasisV0,
+  F128FixedTableV0, F128JaggedMatrixIdV1, F128StaticMatrixIdV1,
 };
 use std::{collections::BTreeSet, fmt};
 
@@ -12,6 +12,7 @@ use std::{collections::BTreeSet, fmt};
 pub enum F128FixedMatrixProgramV0 {
   DecisionDiagram(F128FixedTableV0),
   BinaryLinear(BinaryLinearMapV0),
+  CofactorBasis(F128FixedTableBasisV0),
 }
 
 impl F128FixedMatrixProgramV0 {
@@ -24,6 +25,9 @@ impl F128FixedMatrixProgramV0 {
         1usize.checked_shl(row) == Some(map.outputs().len())
           && 1u32.checked_shl(column) == Some(map.inputs())
       },
+      Self::CofactorBasis(table) => row
+        .checked_add(column)
+        .is_some_and(|n| n as usize == table.layers().len()),
     }
   }
 
@@ -33,6 +37,7 @@ impl F128FixedMatrixProgramV0 {
     let (tag, digest) = match self {
       Self::DecisionDiagram(table) => (0, table.digest()),
       Self::BinaryLinear(map) => (1, map.digest()),
+      Self::CofactorBasis(table) => (2, table.digest()),
     };
     hash.update(&[tag]);
     hash.update(&digest);
@@ -267,5 +272,55 @@ mod tests {
     changed.structure.0.row_variables = 0;
     changed.structure.0.column_variables = 2;
     assert_ne!(rebuild(changed).unwrap().digest(), original);
+  }
+
+  #[test]
+  fn cofactor_program_kind_and_each_family_geometry_are_bound() {
+    use crate::{F128FixedTableBasisLimitsV0, F128FixedTableBasisV0};
+    let t = fixture();
+    let F128FixedMatrixProgramV0::DecisionDiagram(source) = &t.structure.1
+    else {
+      unreachable!();
+    };
+    let program = F128FixedMatrixProgramV0::CofactorBasis(
+      F128FixedTableBasisV0::compile(
+        source,
+        F128FixedTableBasisLimitsV0 {
+          state_slots: 10,
+          dense_words: 10,
+          word_operations: 100,
+          coefficient_terms: 0,
+        },
+      )
+      .unwrap(),
+    );
+    assert!(program.has_shape(1, 1));
+    assert!(program.has_shape(0, 2));
+    assert!(!program.has_shape(u32::MAX, 1));
+    assert_ne!(program.digest(), t.structure.1.digest());
+    for family in 0..3 {
+      let mut changed = t.clone();
+      match family {
+        0 => changed.matrices[0].1 = program.clone(),
+        1 => changed.structure.1 = program.clone(),
+        _ => changed.jagged.1 = program.clone(),
+      }
+      assert_ne!(rebuild(changed.clone()).unwrap().digest(), t.digest());
+      let expected = match family {
+        0 => {
+          changed.matrices[0].0.variables = 0;
+          F128RootTableSetError::MatrixGeometry
+        },
+        1 => {
+          changed.structure.0.row_variables = 0;
+          F128RootTableSetError::StructureGeometry
+        },
+        _ => {
+          changed.jagged.0.column_variables = 0;
+          F128RootTableSetError::JaggedGeometry
+        },
+      };
+      assert_eq!(rebuild(changed), Err(expected));
+    }
   }
 }

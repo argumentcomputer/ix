@@ -11,6 +11,7 @@ mod exec_binding;
 mod exec_relation;
 mod f128;
 mod fixed_table;
+mod fixed_table_basis;
 mod jagged_fold;
 mod ligerito;
 mod matrix_fold;
@@ -54,6 +55,7 @@ pub use f128::{
   constrain_f128_multiply_constant, enforce_f128_equal,
 };
 pub use fixed_table::constrain_f128_fixed_table;
+pub use fixed_table_basis::constrain_f128_fixed_table_basis;
 pub use jagged_fold::{
   F128JaggedAccumulatorCircuitError, F128JaggedAccumulatorCircuitInputsV1,
   F128JaggedAccumulatorCircuitOutputV1, F128JaggedRootClaimPublicInputV1,

@@ -8,6 +8,7 @@ mod binary_linear_map;
 mod exec;
 mod f128;
 mod fixed_table;
+mod fixed_table_basis;
 mod jagged_fold;
 mod ligerito;
 mod matrix_fold;
@@ -34,6 +35,11 @@ pub use f128::{
 pub use fixed_table::{
   F128FixedTableDavioLimitsV0, F128FixedTableError, F128FixedTableLimitsV0,
   F128FixedTableNodeV0, F128FixedTableV0,
+};
+pub use fixed_table_basis::{
+  F128FixedTableBasisCensusV0, F128FixedTableBasisError,
+  F128FixedTableBasisLayerV0, F128FixedTableBasisLimitsV0,
+  F128FixedTableBasisRowV0, F128FixedTableBasisV0,
 };
 pub use jagged_fold::{
   F128JaggedAccumulatorCensusV1, F128JaggedAccumulatorTraceError,
