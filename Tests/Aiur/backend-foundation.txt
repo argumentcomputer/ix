@@ -2529,6 +2529,115 @@ ROOT Aiur.BoundVerifier.Backend.memory_trace_execution
                       Aiur.Bytecode.AIR.Execution backend.compiled.bytecode (Aiur.AIR.memoryFacts memories.rows)
                         { function := selection.function, inputs := input, outputs := selection.success, rank := 0 }
 AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.fixedTraceHeights_sound
+∀ {heights : List Nat} {active : List Bool} {degrees : List Nat},
+  Aiur.fixedTraceHeights heights active degrees = true → Aiur.FixedTraceHeights heights active degrees
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.fixedTraceHeights_complete
+∀ {heights : List Nat} {active : List Bool} {degrees : List Nat},
+  Aiur.FixedTraceHeights heights active degrees → Aiur.fixedTraceHeights heights active degrees = true
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.FixedTraceHeights.alignment
+∀ {heights : List Nat} {active : List Bool} {degrees : List Nat},
+  Aiur.FixedTraceHeights heights active degrees →
+    heights.length = active.length ∧ degrees.length = (List.filter id active).length
+AXIOMS [propext]
+ROOT Aiur.fixedTraceHeights_bytes
+∀ {active : List Bool} {degrees : List Nat},
+  Aiur.fixedTraceHeights [256, 65536] active degrees = true → active = [true, true] ∧ degrees = [8, 16]
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.AIR.byte1ColumnProvider_reflect
+∀ (kind : Aiur.AIR.Byte1Kind) (row : Fin 256) (columns : Aiur.AIR.Byte1Columns),
+  Aiur.AIR.byte1ColumnProvider kind row columns =
+    (Aiur.AIR.byte1Request kind (Aiur.G.ofNat ↑row) (Aiur.AIR.byte1Outputs kind row), columns kind.column)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.AIR.byte2ColumnProvider_reflect
+∀ (kind : Aiur.AIR.Byte2Kind) (row : Fin 65536) (columns : Aiur.AIR.Byte2Columns),
+  Aiur.AIR.byte2ColumnProvider kind row columns =
+    (Aiur.AIR.byte2Request kind (Aiur.AIR.byteRangeMessage row).fst (Aiur.AIR.byteRangeMessage row).snd
+        (Aiur.AIR.byte2Outputs kind row),
+      columns kind.column)
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.AIR.CircuitTraces.fixed_heights_append
+∀ {circuits : List Aiur.Bytecode.Circuit} (traces : Aiur.AIR.CircuitTraces circuits) (heights : List Nat)
+  (active : List Bool) (degrees : List Nat),
+  Aiur.fixedTraceHeights (List.replicate circuits.length 0 ++ heights) (traces.bitmap ++ active)
+      (traces.degrees ++ degrees) =
+    Aiur.fixedTraceHeights heights active degrees
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.AIR.MemoryTraces.fixed_heights_append
+∀ {widths : List Nat} (traces : Aiur.AIR.MemoryTraces widths) (heights : List Nat) (active : List Bool)
+  (degrees : List Nat),
+  Aiur.fixedTraceHeights (List.replicate widths.length 0 ++ heights) (traces.bitmap ++ active)
+      (traces.degrees ++ degrees) =
+    Aiur.fixedTraceHeights heights active degrees
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.AIR.canonical_byte_metadata
+∀ {circuits : List Aiur.Bytecode.Circuit} (functions : Aiur.AIR.CircuitTraces circuits) {widths : List Nat}
+  (memories : Aiur.AIR.MemoryTraces widths) {active : List Bool} {degrees : List Nat},
+  Aiur.fixedTraceHeights (List.replicate circuits.length 0 ++ (List.replicate widths.length 0 ++ [256, 65536]))
+        (functions.bitmap ++ (memories.bitmap ++ active)) (functions.degrees ++ (memories.degrees ++ degrees)) =
+      true →
+    active = [true, true] ∧ degrees = [8, 16]
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.AIR.suppliedWeight_perm
+∀ {α : Type} [inst : DecidableEq α] {left right : List (Aiur.AIR.Provider α)},
+  left.Perm right → ∀ (message : α), Aiur.AIR.suppliedWeight message left = Aiur.AIR.suppliedWeight message right
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.AIR.PaddedLookupBalance.perm_providers
+∀ {width : Nat} {queries : List (List Aiur.G)} {left right : List (Aiur.AIR.Provider (List Aiur.G))},
+  Aiur.AIR.PaddedLookupBalance width queries left → left.Perm right → Aiur.AIR.PaddedLookupBalance width queries right
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.AIR.flatMap_map_swap
+∀ {α β γ : Type} (left : List α) (right : List β) (value : α → β → γ),
+  (List.flatMap (fun a => List.map (value a) right) left).Perm
+    (List.flatMap (fun b => List.map (fun a => value a b) left) right)
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.AIR.byte1MatrixProviders_reflect
+∀ (matrix : Fin 256 → Aiur.AIR.Byte1Columns),
+  (Aiur.AIR.byte1MatrixProviders matrix).Perm (Aiur.AIR.byte1Providers fun kind row => matrix row kind.column)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.AIR.byte2MatrixProviders_reflect
+∀ (matrix : Fin 65536 → Aiur.AIR.Byte2Columns),
+  (Aiur.AIR.byte2MatrixProviders matrix).Perm (Aiur.AIR.byte2Providers fun kind row => matrix row kind.column)
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.AIR.ByteTraces.providers_reflect
+∀ (traces : Aiur.AIR.ByteTraces),
+  traces.providers.Perm (Aiur.AIR.byte1Providers traces.byte1Weights ++ Aiur.AIR.byte2Providers traces.byte2Weights)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.AIR.SystemTraces.fixed_heights
+∀ {program : Aiur.Bytecode.Toplevel} (traces : Aiur.AIR.SystemTraces program),
+  Aiur.fixedTraceHeights (Aiur.AIR.systemFixedHeights program) traces.bitmap traces.degrees = true
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.AIR.SystemTraces.memory_functional
+∀ {program : Aiur.Bytecode.Toplevel} (traces : Aiur.AIR.SystemTraces program) {result : Nat},
+  traces.queryBound = some result →
+    traces.memories.Satisfied →
+      ∀ {width : Nat} {pointer : Aiur.G} {left right : Array Aiur.G},
+        Aiur.AIR.memoryFacts traces.memories.rows width pointer left →
+          Aiur.AIR.memoryFacts traces.memories.rows width pointer right → left = right
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.BoundVerifier.Backend.column_trace_execution
+∀ {selection : Aiur.BoundVerifier.Selection} (backend : Aiur.BoundVerifier.Backend selection)
+  (traces : Aiur.AIR.SystemTraces backend.compiled.bytecode) {witnesses : List Aiur.AIR.CircuitWitness},
+  Aiur.AIR.CircuitTraces.emitWitnesses backend.compiled.bytecode traces.functions = some witnesses →
+    ∀ {result : Nat},
+      traces.queryBound = some result →
+        ∀ (width : Nat) (input : Array Aiur.G),
+          input.size = selection.inputSize →
+            Aiur.AIR.PaddedLookupBalance width
+                ((Aiur.buildClaim selection.function input selection.success).toList ::
+                  Aiur.AIR.encodedCircuitQueryPool (List.map (fun x => x.emission) witnesses))
+                (traces.providers (List.map (fun x => x.emission) witnesses)) →
+              (Aiur.buildClaim selection.function input selection.success).size + 1 ≤ width →
+                (∀ (query : List Aiur.G),
+                    query ∈ Aiur.AIR.encodedCircuitQueryPool (List.map (fun x => x.emission) witnesses) →
+                      query.length ≤ width) →
+                  (∀ (witness : Aiur.AIR.CircuitWitness), witness ∈ witnesses → witness.Satisfied) →
+                    traces.memories.Satisfied →
+                      Aiur.Bytecode.AIR.Execution backend.compiled.bytecode (Aiur.AIR.memoryFacts traces.memories.rows)
+                        { function := selection.function, inputs := input, outputs := selection.success, rank := 0 }
+AXIOMS [propext, Classical.choice, Quot.sound]
 PREMISE Aiur.AIR.activityConstraint
 Aiur.G → Aiur.G → Aiur.G
 DEFINITION
@@ -4865,6 +4974,154 @@ PREMISE Aiur.AIR.MemoryTraces.auxiliary
     (Aiur.AIR.Byte1Kind → Fin 256 → Aiur.G) → (Aiur.AIR.Byte2Kind → Fin 65536 → Aiur.G) → Aiur.AIR.AuxiliaryTables
 DEFINITION
 fun {widths} traces byte1 byte2 => { memoryWidths := widths, memory := traces.rows, byte1 := byte1, byte2 := byte2 }
+PREMISE Aiur.fixedTraceHeights
+List Nat → List Bool → List Nat → Bool
+DEFINITION
+fun x x_1 x_2 => List.brecOn (motive := fun x => List Bool → List Nat → Bool) x Aiur.fixedTraceHeights._f x_1 x_2
+PREMISE Aiur.FixedTraceHeights.nil
+Aiur.FixedTraceHeights [] [] []
+PREMISE Aiur.FixedTraceHeights.inactive
+∀ {heights : List Nat} {active : List Bool} {degrees : List Nat},
+  Aiur.FixedTraceHeights heights active degrees → Aiur.FixedTraceHeights (0 :: heights) (false :: active) degrees
+PREMISE Aiur.FixedTraceHeights.active
+∀ (height degree : Nat) {heights : List Nat} {active : List Bool} {degrees : List Nat},
+  height = 0 ∨ degree < 64 ∧ height = 2 ^ degree →
+    Aiur.FixedTraceHeights heights active degrees →
+      Aiur.FixedTraceHeights (height :: heights) (true :: active) (degree :: degrees)
+PREMISE Aiur.AIR.Byte1Columns
+Type
+DEFINITION
+Fin 3 → Aiur.G
+PREMISE Aiur.AIR.Byte2Columns
+Type
+DEFINITION
+Fin 10 → Aiur.G
+PREMISE Aiur.AIR.Byte1Kind.column
+Aiur.AIR.Byte1Kind → Fin 3
+DEFINITION
+fun x =>
+  match x with
+  | Aiur.AIR.Byte1Kind.bits => 0
+  | Aiur.AIR.Byte1Kind.shiftLeft => 1
+  | Aiur.AIR.Byte1Kind.shiftRight => 2
+PREMISE Aiur.AIR.Byte2Kind.column
+Aiur.AIR.Byte2Kind → Fin 10
+DEFINITION
+fun x =>
+  match x with
+  | Aiur.AIR.Byte2Kind.xor => 0
+  | Aiur.AIR.Byte2Kind.add => 1
+  | Aiur.AIR.Byte2Kind.sub => 2
+  | Aiur.AIR.Byte2Kind.and => 3
+  | Aiur.AIR.Byte2Kind.or => 4
+  | Aiur.AIR.Byte2Kind.lessThan => 5
+  | Aiur.AIR.Byte2Kind.range => 6
+  | Aiur.AIR.Byte2Kind.mul => 7
+  | Aiur.AIR.Byte2Kind.split7 => 8
+  | Aiur.AIR.Byte2Kind.split4 => 9
+PREMISE Aiur.AIR.byte1PreprocessedColumns
+Fin 256 → Fin 11 → Aiur.G
+DEFINITION
+fun row column => (Aiur.AIR.byte1Preprocessed row)[↑column]?.getD 0
+PREMISE Aiur.AIR.byte2PreprocessedColumns
+Fin 65536 → Fin 14 → Aiur.G
+DEFINITION
+fun row column => (Aiur.AIR.byte2Preprocessed row)[↑column]?.getD 0
+PREMISE Aiur.AIR.byte1ColumnLookup
+Aiur.AIR.Byte1Kind → (Fin 11 → Aiur.G) → Aiur.AIR.Byte1Columns → Aiur.G × List Aiur.G
+DEFINITION
+fun kind preprocessed columns =>
+  (0 - columns kind.column,
+    match kind with
+    | Aiur.AIR.Byte1Kind.bits => [2, preprocessed 0] ++ List.ofFn fun bit => preprocessed ⟨1 + ↑bit, ⋯⟩
+    | Aiur.AIR.Byte1Kind.shiftLeft => [3, preprocessed 0, preprocessed 9]
+    | Aiur.AIR.Byte1Kind.shiftRight => [4, preprocessed 0, preprocessed 10])
+PREMISE Aiur.AIR.byte2ColumnLookup
+Aiur.AIR.Byte2Kind → (Fin 14 → Aiur.G) → Aiur.AIR.Byte2Columns → Aiur.G × List Aiur.G
+DEFINITION
+fun kind preprocessed columns =>
+  (0 - columns kind.column,
+    [kind.channel, preprocessed 0, preprocessed 1] ++
+      match kind with
+      | Aiur.AIR.Byte2Kind.xor => [preprocessed 2]
+      | Aiur.AIR.Byte2Kind.add => [preprocessed 3]
+      | Aiur.AIR.Byte2Kind.sub => [preprocessed 4]
+      | Aiur.AIR.Byte2Kind.and => [preprocessed 5]
+      | Aiur.AIR.Byte2Kind.or => [preprocessed 6]
+      | Aiur.AIR.Byte2Kind.lessThan => [preprocessed 7]
+      | Aiur.AIR.Byte2Kind.range => []
+      | Aiur.AIR.Byte2Kind.mul => [preprocessed 8, preprocessed 9]
+      | Aiur.AIR.Byte2Kind.split7 => [preprocessed 10, preprocessed 11]
+      | Aiur.AIR.Byte2Kind.split4 => [preprocessed 12, preprocessed 13])
+PREMISE Aiur.AIR.byte1ColumnProvider
+Aiur.AIR.Byte1Kind → Fin 256 → Aiur.AIR.Byte1Columns → Aiur.AIR.Provider (List Aiur.G)
+DEFINITION
+fun kind row columns =>
+  ((Aiur.AIR.byte1ColumnLookup kind (Aiur.AIR.byte1PreprocessedColumns row) columns).snd, columns kind.column)
+PREMISE Aiur.AIR.byte2ColumnProvider
+Aiur.AIR.Byte2Kind → Fin 65536 → Aiur.AIR.Byte2Columns → Aiur.AIR.Provider (List Aiur.G)
+DEFINITION
+fun kind row columns =>
+  ((Aiur.AIR.byte2ColumnLookup kind (Aiur.AIR.byte2PreprocessedColumns row) columns).snd, columns kind.column)
+PREMISE Aiur.AIR.byte1MatrixProviders
+(Fin 256 → Aiur.AIR.Byte1Columns) → List (Aiur.AIR.Provider (List Aiur.G))
+DEFINITION
+fun matrix =>
+  List.flatMap
+    (fun row => List.map (fun kind => Aiur.AIR.byte1ColumnProvider kind row (matrix row)) Aiur.AIR.Byte1Kind.all)
+    (List.finRange 256)
+PREMISE Aiur.AIR.byte2MatrixProviders
+(Fin 65536 → Aiur.AIR.Byte2Columns) → List (Aiur.AIR.Provider (List Aiur.G))
+DEFINITION
+fun matrix =>
+  List.flatMap
+    (fun row => List.map (fun kind => Aiur.AIR.byte2ColumnProvider kind row (matrix row)) Aiur.AIR.Byte2Kind.all)
+    (List.finRange 65536)
+PREMISE Aiur.AIR.ByteTraces.mk
+(Fin 256 → Aiur.AIR.Byte1Columns) → (Fin 65536 → Aiur.AIR.Byte2Columns) → Aiur.AIR.ByteTraces
+PREMISE Aiur.AIR.ByteTraces.providers
+Aiur.AIR.ByteTraces → List (Aiur.AIR.Provider (List Aiur.G))
+DEFINITION
+fun traces => Aiur.AIR.byte1MatrixProviders traces.unary ++ Aiur.AIR.byte2MatrixProviders traces.binary
+PREMISE Aiur.AIR.ByteTraces.byte1Weights
+Aiur.AIR.ByteTraces → Aiur.AIR.Byte1Kind → Fin 256 → Aiur.G
+DEFINITION
+fun traces kind row => traces.unary row kind.column
+PREMISE Aiur.AIR.ByteTraces.byte2Weights
+Aiur.AIR.ByteTraces → Aiur.AIR.Byte2Kind → Fin 65536 → Aiur.G
+DEFINITION
+fun traces kind row => traces.binary row kind.column
+PREMISE Aiur.AIR.SystemTraces.mk
+{program : Aiur.Bytecode.Toplevel} →
+  Aiur.AIR.CircuitTraces program.circuits.toList →
+    Aiur.AIR.MemoryTraces program.memorySizes.toList → Aiur.AIR.ByteTraces → Aiur.AIR.SystemTraces program
+PREMISE Aiur.AIR.SystemTraces.bitmap
+{program : Aiur.Bytecode.Toplevel} → Aiur.AIR.SystemTraces program → List Bool
+DEFINITION
+fun {program} traces => traces.functions.bitmap ++ (traces.memories.bitmap ++ [true, true])
+PREMISE Aiur.AIR.SystemTraces.degrees
+{program : Aiur.Bytecode.Toplevel} → Aiur.AIR.SystemTraces program → List Nat
+DEFINITION
+fun {program} traces => traces.functions.degrees ++ (traces.memories.degrees ++ [8, 16])
+PREMISE Aiur.AIR.SystemTraces.queryBound
+{program : Aiur.Bytecode.Toplevel} → Aiur.AIR.SystemTraces program → Option Nat
+DEFINITION
+fun {program} traces => Aiur.lookupQueryBound (Aiur.AIR.systemLookupSlots program) traces.bitmap traces.degrees
+PREMISE Aiur.AIR.SystemTraces.providers
+{program : Aiur.Bytecode.Toplevel} →
+  Aiur.AIR.SystemTraces program → List Aiur.AIR.CircuitEmission → List (Aiur.AIR.Provider (List Aiur.G))
+DEFINITION
+fun {program} traces circuits =>
+  Aiur.AIR.circuitProviders circuits ++ (traces.memories.providers ++ traces.bytes.providers)
+PREMISE Aiur.AIR.systemFixedHeights
+Aiur.Bytecode.Toplevel → List Nat
+DEFINITION
+fun program => List.replicate program.circuits.size 0 ++ (List.replicate program.memorySizes.size 0 ++ [256, 65536])
+PREMISE Aiur.AIR.systemLookupSlots
+Aiur.Bytecode.Toplevel → List Nat
+DEFINITION
+fun program =>
+  List.map (fun x => x.layout.lookups) program.circuits.toList ++ (List.replicate program.memorySizes.size 1 ++ [3, 10])
 RECURSION WORKER Aiur.buildArgs._unsafe_rec
 Aiur.LayoutMap →
   Std.HashMap Aiur.Local (Array Aiur.Bytecode.ValIdx) →
@@ -5500,6 +5757,18 @@ fun layoutMap bindings term => do
       have this := ⋯;
       pure idxs[0]
     else throw "Term is not of size 1"
+RECURSION WORKER Aiur.fixedTraceHeights._unsafe_rec
+List Nat → List Bool → List Nat → Bool
+IMPLEMENTATION
+fun x x_1 x_2 =>
+  match x, x_1, x_2 with
+  | [], [], [] => true
+  | height :: heights, false :: active, degrees =>
+    height == 0 && Aiur.fixedTraceHeights._unsafe_rec heights active degrees
+  | height :: heights, true :: active, degree :: degrees =>
+    (height == 0 || decide (degree < 64) && height == 2 ^ degree) &&
+      Aiur.fixedTraceHeights._unsafe_rec heights active degrees
+  | x, x_3, x_4 => false
 RECURSION WORKER Aiur.flattenValue._unsafe_rec
 Aiur.Source.Decls → (Aiur.Global → Option Nat) → Aiur.Value → Array Aiur.G
 IMPLEMENTATION
@@ -11492,10 +11761,10 @@ fun initId decls renames clauses branches body =>
     let clause : Aiur.MatchCompiler.Clause :=
       { pat := Aiur.MatchCompiler.SPattern.pointer var innerTyp, guards := guards, body := term }
     Aiur.MatchCompiler.dnfProd.aux._unsafe_rec✝ initId decls renames (clauses.push clause) rest body
-C8 component ROOTS 290; LOGICAL DECLARATIONS 15636; WITH RUNTIME 16341
+C8 component ROOTS 308; LOGICAL DECLARATIONS 15721; WITH RUNTIME 16427
 IX RUNTIME EXTERNS [Aiur.AiurSystem.build, Aiur.AiurSystem.verify, Aiur.AiurSystem.vkBytes, Aiur.Proof.ofBytesChecked]
 PARTIAL OPAQUE SOURCES [Aiur.instHashableTyp.hash, Aiur.instReprPattern.repr, Aiur.instReprTyp.repr]
 OTHER UNSAFE RUNTIME []
-RECURSION WORKERS 145
+RECURSION WORKERS 146
 Runtime diagnostics cover Ix modules, including private constants. Lean/Std runtime primitives remain an external execution boundary. Partial opaque implementations are inventoried, not proved to refine their logical defaults.
 The runtime inventory and theorem premises are frozen separately. These roots do not establish full compiler/AIR reflection or public certified claim semantics.

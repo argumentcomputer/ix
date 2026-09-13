@@ -3,7 +3,7 @@ Copyright (c) 2026 Argument Computer Corporation.
 SPDX-License-Identifier: MIT OR Apache-2.0
 -/
 
-import Ix.Aiur.Proofs.ByteLookups
+import Ix.Aiur.Proofs.ByteColumns
 
 /-! Exhaustive comparison with the actual Rust preprocessed byte-chip rows,
 lookup arguments and multiplicity columns. The component gate exports its
@@ -29,9 +29,11 @@ private def byte1Snapshot (bytes : ByteArray) : ByteArray := Id.run do
     if h : index < 256 then
       let row : Fin 256 := ⟨index, h⟩
       bytes := appendValues bytes (byte1Preprocessed row).toList
-      for (kind, column) in Byte1Kind.all.zipIdx do
-        bytes := appendNat bytes (gSize.toNat - (column + 17))
-        bytes := appendValues bytes (byte1Request kind (G.ofNat index) (byte1Outputs kind row))
+      for kind in Byte1Kind.all do
+        let (multiplicity, message) := byte1ColumnLookup kind (byte1PreprocessedColumns row)
+          (fun column => G.ofNat (column.val + 17))
+        bytes := appendNat bytes multiplicity.n
+        bytes := appendValues bytes message
   return bytes
 
 private def byte2Snapshot (bytes : ByteArray) : ByteArray := Id.run do
@@ -40,11 +42,12 @@ private def byte2Snapshot (bytes : ByteArray) : ByteArray := Id.run do
   for index in [:65536] do
     if h : index < 65536 then
       let row : Fin 65536 := ⟨index, h⟩
-      let inputs := byteRangeMessage row
       bytes := appendValues bytes (byte2Preprocessed row).toList
-      for (kind, column) in Byte2Kind.all.zipIdx do
-        bytes := appendNat bytes (gSize.toNat - (column + 17))
-        bytes := appendValues bytes (byte2Request kind inputs.1 inputs.2 (byte2Outputs kind row))
+      for kind in Byte2Kind.all do
+        let (multiplicity, message) := byte2ColumnLookup kind (byte2PreprocessedColumns row)
+          (fun column => G.ofNat (column.val + 17))
+        bytes := appendNat bytes multiplicity.n
+        bytes := appendValues bytes message
   return bytes
 
 private def expected : ByteArray :=

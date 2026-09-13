@@ -29,6 +29,7 @@ import Ix.Aiur.Proofs.CircuitTraces
 import Ix.Aiur.Proofs.CircuitMembership
 import Ix.Aiur.Proofs.LookupLayout
 import Ix.Aiur.Proofs.MemoryColumns
+import Ix.Aiur.Proofs.ByteColumns
 import Ix.Aiur.Proofs.Grouping
 import Ix.Aiur.Proofs.TailMatches
 import Ix.Aiur.Proofs.NormalizationFrames
@@ -333,6 +334,26 @@ def memoryColumnRoots : Array Lean.Name := #[
   `Aiur.AIR.MemoryTraces.circuitProviders_reflect,
   `Aiur.BoundVerifier.Backend.memory_trace_execution]
 
+def byteColumnRoots : Array Lean.Name := #[
+  `Aiur.fixedTraceHeights_sound,
+  `Aiur.fixedTraceHeights_complete,
+  `Aiur.FixedTraceHeights.alignment,
+  `Aiur.fixedTraceHeights_bytes,
+  `Aiur.AIR.byte1ColumnProvider_reflect,
+  `Aiur.AIR.byte2ColumnProvider_reflect,
+  `Aiur.AIR.CircuitTraces.fixed_heights_append,
+  `Aiur.AIR.MemoryTraces.fixed_heights_append,
+  `Aiur.AIR.canonical_byte_metadata,
+  `Aiur.AIR.suppliedWeight_perm,
+  `Aiur.AIR.PaddedLookupBalance.perm_providers,
+  `Aiur.AIR.flatMap_map_swap,
+  `Aiur.AIR.byte1MatrixProviders_reflect,
+  `Aiur.AIR.byte2MatrixProviders_reflect,
+  `Aiur.AIR.ByteTraces.providers_reflect,
+  `Aiur.AIR.SystemTraces.fixed_heights,
+  `Aiur.AIR.SystemTraces.memory_functional,
+  `Aiur.BoundVerifier.Backend.column_trace_execution]
+
 def roots : Array Lean.Name := #[
   `Aiur.G.ofNat_n, `Aiur.G.mul_one, `Aiur.G.mul_zero,
   `Aiur.AIR.inactive_multiplicity_zero,
@@ -369,7 +390,7 @@ def roots : Array Lean.Name := #[
     fieldRoots ++ localConstraintRoots ++ byteArithmeticRoots ++ byteLookupRoots ++
     lookupMessageRoots ++ lookupShapeRoots ++ globalLookupRoots ++ lookupBudgetRoots ++
     selectorControlRoots ++ operationRowRoots ++ blockRowRoots ++ querySlotRoots ++ circuitRowRoots ++
-    rowCountRoots ++ circuitTableRoots ++ branchlessRoots ++ circuitTraceRoots ++ circuitMembershipRoots ++ lookupLayoutRoots ++ memoryColumnRoots
+    rowCountRoots ++ circuitTableRoots ++ branchlessRoots ++ circuitTraceRoots ++ circuitMembershipRoots ++ lookupLayoutRoots ++ memoryColumnRoots ++ byteColumnRoots
 
 def premises : Array Lean.Name := #[
   `Aiur.AIR.activityConstraint,
@@ -523,7 +544,34 @@ def premises : Array Lean.Name := #[
   `Aiur.AIR.MemoryTraces.providers,
   `Aiur.AIR.MemoryTraces.Satisfied,
   `Aiur.AIR.memoryTableProviders,
-  `Aiur.AIR.MemoryTraces.auxiliary]
+  `Aiur.AIR.MemoryTraces.auxiliary,
+  `Aiur.fixedTraceHeights,
+  `Aiur.FixedTraceHeights.nil,
+  `Aiur.FixedTraceHeights.inactive,
+  `Aiur.FixedTraceHeights.active,
+  `Aiur.AIR.Byte1Columns,
+  `Aiur.AIR.Byte2Columns,
+  `Aiur.AIR.Byte1Kind.column,
+  `Aiur.AIR.Byte2Kind.column,
+  `Aiur.AIR.byte1PreprocessedColumns,
+  `Aiur.AIR.byte2PreprocessedColumns,
+  `Aiur.AIR.byte1ColumnLookup,
+  `Aiur.AIR.byte2ColumnLookup,
+  `Aiur.AIR.byte1ColumnProvider,
+  `Aiur.AIR.byte2ColumnProvider,
+  `Aiur.AIR.byte1MatrixProviders,
+  `Aiur.AIR.byte2MatrixProviders,
+  `Aiur.AIR.ByteTraces.mk,
+  `Aiur.AIR.ByteTraces.providers,
+  `Aiur.AIR.ByteTraces.byte1Weights,
+  `Aiur.AIR.ByteTraces.byte2Weights,
+  `Aiur.AIR.SystemTraces.mk,
+  `Aiur.AIR.SystemTraces.bitmap,
+  `Aiur.AIR.SystemTraces.degrees,
+  `Aiur.AIR.SystemTraces.queryBound,
+  `Aiur.AIR.SystemTraces.providers,
+  `Aiur.AIR.systemFixedHeights,
+  `Aiur.AIR.systemLookupSlots]
 
 private def constants (info : Lean.ConstantInfo) : Array Lean.Name :=
   info.type.getUsedConstants ++ match info with
@@ -612,6 +660,7 @@ run_cmd do
           `Aiur.AIR.slotMessage_member_length,
           `Aiur.AIR.suppliedWeight_padded_congr,
           `Aiur.AIR.PaddedLookupBalance.congr_providers,
+          `Aiur.FixedTraceHeights.alignment,
           `Aiur.AIR.PaddedLookupBalance.congr_queries].contains root
       then #[``propext]
       else if callOrderRoots.contains root || lookupRoots.contains root ||
@@ -632,6 +681,10 @@ run_cmd do
             `Aiur.AIR.decodeMemoryRow_width, `Aiur.AIR.decodeMemoryRows_size,
             `Aiur.AIR.MemoryTraces.slot_sum_append, `Aiur.AIR.MemoryTraces.rows_size_le,
             `Aiur.AIR.MemoryTraces.capacity_bounded,
+            `Aiur.fixedTraceHeights_sound, `Aiur.fixedTraceHeights_complete,
+            `Aiur.AIR.byte2ColumnProvider_reflect, `Aiur.AIR.suppliedWeight_perm,
+            `Aiur.AIR.PaddedLookupBalance.perm_providers, `Aiur.AIR.flatMap_map_swap,
+            `Aiur.AIR.byte2MatrixProviders_reflect,
             `Aiur.AIR.encodedCircuitQueryPool_uniform_bound,
             `Aiur.lookupQueryBound_shape, `Aiur.lookupQueryBound_complete,
             `Aiur.lookupSlotSum_bounded, `Aiur.lookupQueryBound_encodedKey,

@@ -407,16 +407,16 @@ and accept seven supplied 32-bit comparison witnesses while rejecting three
 that isolate carry, decomposition and byte-range constraints.
 The gate also compares 21,556 native and Lean structural checks across return
 sizes, constrained and advice calls, nested continuations, visibility and
-public-claim widths. All 50 parallel release Rust tests pass, including the
+public-claim widths. All 54 parallel release Rust tests pass, including the
 supplied rank/output ambiguity regression; release Clippy denies warnings.
 
-The audit checks 290 roots by traversing checked types, bodies and inductive
-constructors. Twenty-two roots depend only on `propext`; seventy use exactly
-`propext` and `Quot.sound`; the other 198 use exactly
+The audit checks 308 roots by traversing checked types, bodies and inductive
+constructors. Twenty-three roots depend only on `propext`; seventy-seven use exactly
+`propext` and `Quot.sound`; the other 208 use exactly
 `propext`, `Classical.choice` and `Quot.sound`. The combined closure
-has 15,636 logical declarations and 16,341 declarations after following runtime
+has 15,721 logical declarations and 16,427 declarations after following runtime
 workers and replacements. The frozen report records four native operations,
-three partial opaque sources and all 145 Ix recursion worker implementations.
+three partial opaque sources and all 146 Ix recursion worker implementations.
 Bytecode comparison/hashing, tail-match restoration and source-value hashing
 use total definitions. Type hashing and type/pattern formatting remain partial.
 These remaining implementations and
@@ -470,11 +470,23 @@ requires no independent memory-validity or canonical-width premise. The
 memory comparison checks 1,800 native/Lean assignments over five widths and
 five heights, including empty tables, cyclic next-row openings, final-row
 transition gates, wrapping pointers, invalid selectors and inactive advice.
-All prior 268 root statements and axiom sets, 270 premise definitions and 139
-worker bodies remain byte-for-byte unchanged; 22 roots, 21 frozen definitions
-and six safe-source memory-trace workers are added. The preceding branchless
-repair's reviewed emitter change remains frozen. Native verifier extraction
-must still establish satisfaction and balance for these exact columns.
+`ByteColumns` identifies all thirteen physical byte lookup slots with the
+logical fixed-table providers, including their differing enumeration order.
+The native Aiur verifier now checks that fixed preprocessed tables are active
+and have the exact committed heights before entering the cryptographic
+verifier. Its total Lean counterpart recovers byte degrees 8 and 16 from
+canonical and active-order metadata. All 17,910 guard comparisons match;
+the exhaustive byte corpus now evaluates the physical column lookup model.
+The guard adds no AIR expression or key-format change. `SystemTraces` combines
+function, memory and byte columns with their exact metadata and global budget.
+`Backend.column_trace_execution` derives the selected public execution from
+satisfaction and padded balance of these columns. Native extraction must still
+establish those conditions for an accepted proof.
+All prior 290 root statements and axiom sets, 291 premise definitions and 145
+worker bodies remain byte-for-byte unchanged; 18 roots, 27 frozen definitions
+and one safe-source height-check worker are added. The preceding branchless
+repair's reviewed emitter change remains frozen. The concrete failures and
+repairs are recorded in the [Aiur bug inventory](aiur-bug-inventory.md).
 The budget comparison covers
 21,964 Rust/Lean cases, including
 all byte-sized degree values, field and machine boundaries, inactive circuits
