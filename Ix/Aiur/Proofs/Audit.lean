@@ -54,6 +54,7 @@ import Ix.Aiur.Proofs.PrunedMerkle
 import Ix.Aiur.Proofs.ExtensionMmcs
 import Ix.Aiur.Proofs.FriDomain
 import Ix.Aiur.Proofs.Polynomial
+import Ix.Aiur.Proofs.Interpolation
 import Ix.Aiur.Proofs.Transcript
 import Ix.Aiur.Proofs.Grouping
 import Ix.Aiur.Proofs.TailMatches
@@ -3204,6 +3205,75 @@ def polynomialPremises : Array Lean.Name := #[
   `Aiur.NativeAIR.Polynomial.divide,
   `Aiur.NativeAIR.Polynomial.foldingNodes]
 
+def interpolationRoots : Array Lean.Name := #[
+  `Aiur.NativeAIR.Interpolation.derivative_zero,
+  `Aiur.NativeAIR.Interpolation.derivative_neg,
+  `Aiur.NativeAIR.Interpolation.derivative_sub,
+  `Aiur.NativeAIR.Interpolation.divide_diagonal,
+  `Aiur.NativeAIR.Interpolation.monomial_value,
+  `Aiur.NativeAIR.Interpolation.monomial_derivative,
+  `Aiur.NativeAIR.Interpolation.powerMinus_derivative,
+  `Aiur.NativeAIR.Interpolation.root_product_derivative,
+  `Aiur.NativeAIR.Interpolation.root_quotient_diagonal,
+  `Aiur.NativeAIR.Interpolation.closed_weight_diagonal,
+  `Aiur.NativeAIR.Interpolation.combine_length,
+  `Aiur.NativeAIR.Interpolation.coefficients_length,
+  `Aiur.NativeAIR.Interpolation.combine_zero,
+  `Aiur.NativeAIR.Interpolation.combine_at_node,
+  `Aiur.NativeAIR.Interpolation.coefficients_at_node,
+  `Aiur.NativeAIR.Interpolation.coefficients_unique,
+  `Aiur.NativeAIR.Interpolation.coefficients_evaluate,
+  `Aiur.NativeAIR.Interpolation.divide_inverse_value,
+  `Aiur.NativeAIR.Interpolation.weightedSum_polynomial,
+  `Aiur.NativeAIR.Interpolation.evaluate_polynomial,
+  `Aiur.NativeAIR.Interpolation.foldSamples_roots,
+  `Aiur.NativeAIR.Interpolation.foldSamples_length,
+  `Aiur.NativeAIR.Interpolation.foldSamples_nodup,
+  `Aiur.NativeAIR.Interpolation.foldSamples_powers,
+  `Aiur.NativeAIR.Interpolation.foldScale_inverse,
+  `Aiur.NativeAIR.Interpolation.foldRow_polynomial,
+  `Aiur.NativeAIR.Interpolation.foldRow_reject_shape,
+  `Aiur.NativeAIR.Interpolation.foldRow_at_node,
+  `Aiur.NativeAIR.Interpolation.foldRow_evaluate,
+  `Aiur.NativeAIR.Interpolation.foldRow_success]
+
+def interpolationClassicalRoots : Array Lean.Name := #[
+  `Aiur.NativeAIR.Interpolation.derivative_zero,
+  `Aiur.NativeAIR.Interpolation.derivative_neg,
+  `Aiur.NativeAIR.Interpolation.derivative_sub,
+  `Aiur.NativeAIR.Interpolation.divide_diagonal,
+  `Aiur.NativeAIR.Interpolation.monomial_value,
+  `Aiur.NativeAIR.Interpolation.monomial_derivative,
+  `Aiur.NativeAIR.Interpolation.powerMinus_derivative,
+  `Aiur.NativeAIR.Interpolation.root_product_derivative,
+  `Aiur.NativeAIR.Interpolation.root_quotient_diagonal,
+  `Aiur.NativeAIR.Interpolation.closed_weight_diagonal,
+  `Aiur.NativeAIR.Interpolation.combine_zero,
+  `Aiur.NativeAIR.Interpolation.combine_at_node,
+  `Aiur.NativeAIR.Interpolation.coefficients_at_node,
+  `Aiur.NativeAIR.Interpolation.coefficients_unique,
+  `Aiur.NativeAIR.Interpolation.coefficients_evaluate,
+  `Aiur.NativeAIR.Interpolation.divide_inverse_value,
+  `Aiur.NativeAIR.Interpolation.weightedSum_polynomial,
+  `Aiur.NativeAIR.Interpolation.evaluate_polynomial,
+  `Aiur.NativeAIR.Interpolation.foldSamples_nodup,
+  `Aiur.NativeAIR.Interpolation.foldSamples_powers,
+  `Aiur.NativeAIR.Interpolation.foldScale_inverse,
+  `Aiur.NativeAIR.Interpolation.foldRow_polynomial,
+  `Aiur.NativeAIR.Interpolation.foldRow_at_node,
+  `Aiur.NativeAIR.Interpolation.foldRow_evaluate,
+  `Aiur.NativeAIR.Interpolation.foldRow_success]
+
+def interpolationPremises : Array Lean.Name := #[
+  `Aiur.NativeAIR.Interpolation.derivativeValue,
+  `Aiur.NativeAIR.Interpolation.combine,
+  `Aiur.NativeAIR.Interpolation.coefficients,
+  `Aiur.NativeAIR.Interpolation.weightedSum,
+  `Aiur.NativeAIR.Interpolation.evaluate,
+  `Aiur.NativeAIR.Interpolation.foldSamples,
+  `Aiur.NativeAIR.Interpolation.foldScale,
+  `Aiur.NativeAIR.Interpolation.foldRow]
+
 def roots : Array Lean.Name := #[
   `Aiur.G.ofNat_n, `Aiur.G.mul_one, `Aiur.G.mul_zero,
   `Aiur.AIR.inactive_multiplicity_zero,
@@ -3240,7 +3310,7 @@ def roots : Array Lean.Name := #[
     fieldRoots ++ localConstraintRoots ++ byteArithmeticRoots ++ byteLookupRoots ++
     lookupMessageRoots ++ lookupShapeRoots ++ globalLookupRoots ++ lookupBudgetRoots ++
     selectorControlRoots ++ operationRowRoots ++ blockRowRoots ++ querySlotRoots ++ circuitRowRoots ++
-    rowCountRoots ++ circuitTableRoots ++ branchlessRoots ++ circuitTraceRoots ++ circuitMembershipRoots ++ lookupLayoutRoots ++ memoryColumnRoots ++ byteColumnRoots ++ expressionGraphRoots ++ frontendExpressionRoots ++ graphCompilationRoots ++ operationExpressionRoots ++ blockCircuitRoots ++ allocationRoots ++ circuitAllocationRoots ++ circuitCompletionRoots ++ checkedCircuitRoots ++ keyCodecRoots ++ compiledKeyRoots ++ proofAcceptanceRoots ++ extensionRoots ++ logUpRoots ++ domainRoots ++ verifierArithmeticRoots ++ transcriptRoots ++ blake3Roots ++ merkleCapRoots ++ merkleRoots ++ prunedMerkleRoots ++ extensionMmcsRoots ++ friDomainRoots ++ polynomialRoots
+    rowCountRoots ++ circuitTableRoots ++ branchlessRoots ++ circuitTraceRoots ++ circuitMembershipRoots ++ lookupLayoutRoots ++ memoryColumnRoots ++ byteColumnRoots ++ expressionGraphRoots ++ frontendExpressionRoots ++ graphCompilationRoots ++ operationExpressionRoots ++ blockCircuitRoots ++ allocationRoots ++ circuitAllocationRoots ++ circuitCompletionRoots ++ checkedCircuitRoots ++ keyCodecRoots ++ compiledKeyRoots ++ proofAcceptanceRoots ++ extensionRoots ++ logUpRoots ++ domainRoots ++ verifierArithmeticRoots ++ transcriptRoots ++ blake3Roots ++ merkleCapRoots ++ merkleRoots ++ prunedMerkleRoots ++ extensionMmcsRoots ++ friDomainRoots ++ polynomialRoots ++ interpolationRoots
 
 def premises : Array Lean.Name := #[
   `Aiur.AIR.activityConstraint,
@@ -3479,7 +3549,7 @@ def premises : Array Lean.Name := #[
   `Aiur.NativeAIR.evalRoots,
   `Aiur.NativeAIR.readLookup,
   `Aiur.NativeAIR.evalLookup,
-  `Aiur.NativeAIR.goldilocksOps] ++ frontendExpressionPremises ++ graphCompilationPremises ++ operationExpressionPremises ++ blockCircuitPremises ++ allocationPremises ++ circuitAllocationPremises ++ circuitCompletionPremises ++ checkedCircuitPremises ++ keyCodecPremises ++ compiledKeyPremises ++ proofAcceptancePremises ++ extensionPremises ++ logUpPremises ++ domainPremises ++ verifierArithmeticPremises ++ transcriptPremises ++ blake3Premises ++ merkleCapPremises ++ merklePremises ++ prunedMerklePremises ++ extensionMmcsPremises ++ friDomainPremises ++ polynomialPremises
+  `Aiur.NativeAIR.goldilocksOps] ++ frontendExpressionPremises ++ graphCompilationPremises ++ operationExpressionPremises ++ blockCircuitPremises ++ allocationPremises ++ circuitAllocationPremises ++ circuitCompletionPremises ++ checkedCircuitPremises ++ keyCodecPremises ++ compiledKeyPremises ++ proofAcceptancePremises ++ extensionPremises ++ logUpPremises ++ domainPremises ++ verifierArithmeticPremises ++ transcriptPremises ++ blake3Premises ++ merkleCapPremises ++ merklePremises ++ prunedMerklePremises ++ extensionMmcsPremises ++ friDomainPremises ++ polynomialPremises ++ interpolationPremises
 
 private def constants (info : Lean.ConstantInfo) : Array Lean.Name :=
   info.type.getUsedConstants ++ match info with
@@ -3558,7 +3628,10 @@ run_cmd do
   let env ← getEnv
   for root in roots do
     let some info := env.checked.get.find? root | throwError "C8 component audit: missing root {root}"
-    let expected := if polynomialRoots.contains root then
+    let expected := if interpolationRoots.contains root then
+        if interpolationClassicalRoots.contains root then #[``propext, ``Classical.choice, ``Quot.sound]
+        else #[``propext, ``Quot.sound]
+      else if polynomialRoots.contains root then
         if polynomialAxiomFreeRoots.contains root then #[]
         else if polynomialClassicalRoots.contains root then #[``propext, ``Classical.choice, ``Quot.sound]
         else if polynomialQuotRoots.contains root then #[``propext, ``Quot.sound]

@@ -410,14 +410,14 @@ sizes, constrained and advice calls, nested continuations, visibility and
 public-claim widths. All 54 parallel release Rust tests pass, including the
 supplied rank/output ambiguity regression; release Clippy denies warnings.
 
-The audit checks 1,476 roots by traversing checked types, bodies and inductive
+The audit checks 1,506 roots by traversing checked types, bodies and inductive
 constructors. Fifty-seven roots use no axioms; one uses only `Quot.sound`;
-244 depend only on `propext`; 452 use exactly `propext` and `Quot.sound`;
-the other 722 use exactly
+244 depend only on `propext`; 457 use exactly `propext` and `Quot.sound`;
+the other 747 use exactly
 `propext`, `Classical.choice` and `Quot.sound`. The combined closure
-has 20,017 logical declarations and 20,816 declarations after following runtime
+has 20,113 logical declarations and 20,915 declarations after following runtime
 workers and replacements. The frozen report records four native runtime entry points,
-three partial opaque sources and all 190 Ix recursion worker implementations.
+three partial opaque sources and all 193 Ix recursion worker implementations.
 Bytecode comparison/hashing, tail-match restoration and source-value hashing
 use total definitions. Type hashing and type/pattern formatting remain partial.
 These remaining implementations and
@@ -1285,8 +1285,9 @@ points and 990 folding rows. It calls the actual FRI `fold_row` method at all
 The folding corpus uses arity logarithms zero through eight; zero tests the
 public helper's singleton boundary, while accepted FRI rounds require a
 positive logarithm. The proofs apply to every admitted field domain and arity.
-General interpolation, the full FRI verifier and quantitative proximity
-soundness remain separate obligations.
+The polynomial and interpolation components below supply the folding algebra.
+The full FRI verifier and quantitative proximity soundness remain separate
+obligations.
 
 These domain proofs add 34 roots and five definitions. All 1,391 prior root
 statements and axiom sets, 919 premise definitions and 187 worker bodies
@@ -1316,8 +1317,9 @@ Monic polynomial identity gives the exact FRI vanishing polynomial. For
 every admitted folding row and every extension-field point `x`, the product
 of differences from the row's nodes is `x^n - c`, where `n` is the arity and
 `c` is the reduced query point. This instantiates the nodes, distinctness and
-common-power hypotheses using the domain theorems above. Deriving the full
-interpolation formula and FRI proximity guarantee remains separate work.
+common-power hypotheses using the domain theorems above. The interpolation
+component below derives the evaluation formula. The FRI proximity guarantee
+remains separate work.
 
 The native comparison calls the actual `HornerIter` used by the FRI final
 polynomial check. It also compares the pinned upstream STIR coefficient
@@ -1338,6 +1340,46 @@ All 96 parallel native release tests, Clippy with warnings denied, the
 494-job strict build and the complete gate with thirty-seven fresh native
 corpora pass. The backend still accepts two cases and rejects seventeen,
 with no unexpected outcomes.
+
+`NativeAIR.Interpolation` constructs the polynomial for each FRI folding row.
+For nodes satisfying `x_i^n = c`, differentiating the checked vanishing
+polynomial gives the diagonal weight `x_i / (n*c)`. Synthetic division gives
+zero at the other nodes. Their weighted sum has coefficient length at most
+`n` and agrees with every row value. The root bound proves uniqueness up to
+zero padding and equality with every other polynomial of degree below `n`
+that agrees on the row.
+
+The executable evaluator first returns the row value when the challenge
+equals a node. Otherwise, it sums the weighted inverse differences and
+multiplies by the vanishing product. Both branches are proved to evaluate
+the constructed coefficients. For the actual FRI domains, distinctness,
+common powers and the invertibility of `n*c` follow from the checked domain
+and field theorems. The accepted-fold theorem extracts the row shape, a
+polynomial of the required degree, agreement at every node and the result's
+evaluation equation. Invalid arities, query indices and row lengths reject.
+
+The native corpus calls the actual `TwoAdicFriFolding.fold_row`, including
+its private interpolation helper and batch inversion. It checks 2,436 rows
+and 12,180 challenge evaluations across all 33 field domains, with folding
+arity logarithms zero through six. Zero, constant, highest-degree monomial
+and dense extension polynomials exercise both node returns and challenges
+outside the nodes. The Lean replay also checks constructed coefficients and
+diagonal weights for arities up to eight. A further 117 native matrices with
+arbitrary extension values give 3,006 row comparisons, exercising the binary
+fast path and the larger-arity path with successive squared challenges.
+The matrix implementation is compared by execution; the formal theorem
+establishes the row interpolator's mathematical behavior. The model checks
+individual inverses, while the native helper batches them.
+
+This component adds 30 roots, eight definitions and three inspected
+structural recursion workers. All 1,476 prior root statements and axiom
+sets, 934 premise definitions and 190 worker bodies remain unchanged.
+All 97 parallel native release tests, Clippy with warnings denied, the
+501-job strict build and the complete gate with thirty-eight fresh native
+corpora pass. The backend accepts two cases and rejects seventeen, with no
+unexpected outcomes.
+Connecting these folds to the complete authenticated FRI transcript and
+deriving quantitative proximity soundness remain separate obligations.
 
 The budget comparison covers
 21,964 Rust/Lean cases, including

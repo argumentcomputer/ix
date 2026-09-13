@@ -10801,6 +10801,272 @@ ROOT Aiur.NativeAIR.Polynomial.folding_product_identity
             point ^ Aiur.NativeAIR.Domain.size arity -
               Aiur.NativeAIR.ProofCodec.Extension.ofBase (Aiur.NativeAIR.FriDomain.queryPoint child index)
 AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Interpolation.derivative_zero
+∀ {R : Type} [inst : Grind.CommRing R] (point : R) {coefficients : List R},
+  Aiur.NativeAIR.Polynomial.IsZero coefficients → Aiur.NativeAIR.Interpolation.derivativeValue point coefficients = 0
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Interpolation.derivative_neg
+∀ {R : Type} [inst : Grind.CommRing R] (point : R) (coefficients : List R),
+  Aiur.NativeAIR.Interpolation.derivativeValue point (List.map (fun x => 0 - x) coefficients) =
+    0 - Aiur.NativeAIR.Interpolation.derivativeValue point coefficients
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Interpolation.derivative_sub
+∀ {R : Type} [inst : Grind.CommRing R] (point : R) (left right : List R),
+  Aiur.NativeAIR.Interpolation.derivativeValue point (Aiur.NativeAIR.Polynomial.sub left right) =
+    Aiur.NativeAIR.Interpolation.derivativeValue point left - Aiur.NativeAIR.Interpolation.derivativeValue point right
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Interpolation.divide_diagonal
+∀ {R : Type} [inst : Grind.CommRing R] (point : R) (coefficients : List R),
+  Aiur.NativeAIR.Quotient.horner point (Aiur.NativeAIR.Polynomial.divide point coefficients) =
+    Aiur.NativeAIR.Interpolation.derivativeValue point coefficients
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Interpolation.monomial_value
+∀ {R : Type} [inst : Grind.CommRing R] (point : R) (degree : Nat),
+  Aiur.NativeAIR.Quotient.horner point (List.replicate degree 0 ++ [1]) = point ^ degree
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Interpolation.monomial_derivative
+∀ {R : Type} [inst : Grind.CommRing R] (point : R) (degree : Nat),
+  Aiur.NativeAIR.Interpolation.derivativeValue point (List.replicate degree 0 ++ [1]) = ↑degree * point ^ (degree - 1)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Interpolation.powerMinus_derivative
+∀ {R : Type} [inst : Grind.CommRing R] (point constant : R) (degree : Nat),
+  Aiur.NativeAIR.Interpolation.derivativeValue point (Aiur.NativeAIR.Polynomial.powerMinus degree constant) =
+    ↑degree * point ^ (degree - 1)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Interpolation.root_product_derivative
+∀ {R : Type} [inst : Grind.CommRing R],
+  (∀ (a b : R), a * b = 0 → a = 0 ∨ b = 0) →
+    ∀ (roots : List R) (constant : R),
+      roots.Nodup →
+        0 < roots.length →
+          (∀ (root : R), root ∈ roots → root ^ roots.length = constant) →
+            ∀ (point : R),
+              Aiur.NativeAIR.Interpolation.derivativeValue point (Aiur.NativeAIR.Polynomial.fromRoots roots) =
+                ↑roots.length * point ^ (roots.length - 1)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Interpolation.root_quotient_diagonal
+∀ {R : Type} [inst : Grind.CommRing R],
+  (∀ (a b : R), a * b = 0 → a = 0 ∨ b = 0) →
+    ∀ (roots : List R) (constant : R),
+      roots.Nodup →
+        0 < roots.length →
+          (∀ (root : R), root ∈ roots → root ^ roots.length = constant) →
+            ∀ (point : R),
+              Aiur.NativeAIR.Quotient.horner point
+                  (Aiur.NativeAIR.Polynomial.divide point (Aiur.NativeAIR.Polynomial.fromRoots roots)) =
+                ↑roots.length * point ^ (roots.length - 1)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Interpolation.closed_weight_diagonal
+∀ {R : Type} [inst : Grind.CommRing R],
+  (∀ (a b : R), a * b = 0 → a = 0 ∨ b = 0) →
+    ∀ (roots : List R) (constant scale root : R),
+      roots.Nodup →
+        0 < roots.length →
+          (∀ (root : R), root ∈ roots → root ^ roots.length = constant) →
+            root ∈ roots →
+              ↑roots.length * constant * scale = 1 →
+                root * scale *
+                    Aiur.NativeAIR.Quotient.horner root
+                      (Aiur.NativeAIR.Polynomial.divide root (Aiur.NativeAIR.Polynomial.fromRoots roots)) =
+                  1
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Interpolation.combine_length
+∀ {R : Type} [inst : Grind.CommRing R] (vanishing : List R) (scale : R) (samples : List (R × R)),
+  (Aiur.NativeAIR.Interpolation.combine vanishing scale samples).length ≤ vanishing.length - 1
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Interpolation.coefficients_length
+∀ {R : Type} [inst : Grind.CommRing R] (samples : List (R × R)) (scale : R),
+  (Aiur.NativeAIR.Interpolation.coefficients samples scale).length ≤ samples.length
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Interpolation.combine_zero
+∀ {R : Type} [inst : Grind.CommRing R] (vanishing : List R) (scale point : R) (samples : List (R × R)),
+  (∀ (sample : R × R),
+      sample ∈ samples →
+        Aiur.NativeAIR.Quotient.horner point (Aiur.NativeAIR.Polynomial.divide sample.fst vanishing) = 0) →
+    Aiur.NativeAIR.Quotient.horner point (Aiur.NativeAIR.Interpolation.combine vanishing scale samples) = 0
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Interpolation.combine_at_node
+∀ {R : Type} [inst : Grind.CommRing R] (vanishing : List R) (scale root value : R) (samples : List (R × R)),
+  (List.map Prod.fst samples).Nodup →
+    (root, value) ∈ samples →
+      root * scale * Aiur.NativeAIR.Quotient.horner root (Aiur.NativeAIR.Polynomial.divide root vanishing) = 1 →
+        (∀ (sample : R × R),
+            sample ∈ samples →
+              sample.fst ≠ root →
+                Aiur.NativeAIR.Quotient.horner root (Aiur.NativeAIR.Polynomial.divide sample.fst vanishing) = 0) →
+          Aiur.NativeAIR.Quotient.horner root (Aiur.NativeAIR.Interpolation.combine vanishing scale samples) = value
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Interpolation.coefficients_at_node
+∀ {R : Type} [inst : Grind.CommRing R],
+  (∀ (a b : R), a * b = 0 → a = 0 ∨ b = 0) →
+    ∀ (samples : List (R × R)) (constant scale root value : R),
+      (List.map Prod.fst samples).Nodup →
+        0 < samples.length →
+          (∀ (sample : R × R), sample ∈ samples → sample.fst ^ samples.length = constant) →
+            ↑samples.length * constant * scale = 1 →
+              (root, value) ∈ samples →
+                Aiur.NativeAIR.Quotient.horner root (Aiur.NativeAIR.Interpolation.coefficients samples scale) = value
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Interpolation.coefficients_unique
+∀ {R : Type} [inst : Grind.CommRing R],
+  (∀ (a b : R), a * b = 0 → a = 0 ∨ b = 0) →
+    ∀ (samples : List (R × R)) (constant scale : R) (candidate : List R),
+      (List.map Prod.fst samples).Nodup →
+        0 < samples.length →
+          (∀ (sample : R × R), sample ∈ samples → sample.fst ^ samples.length = constant) →
+            ↑samples.length * constant * scale = 1 →
+              candidate.length ≤ samples.length →
+                (∀ (sample : R × R),
+                    sample ∈ samples → Aiur.NativeAIR.Quotient.horner sample.fst candidate = sample.snd) →
+                  Aiur.NativeAIR.Polynomial.IsZero
+                    (Aiur.NativeAIR.Polynomial.sub candidate (Aiur.NativeAIR.Interpolation.coefficients samples scale))
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Interpolation.coefficients_evaluate
+∀ {R : Type} [inst : Grind.CommRing R],
+  (∀ (a b : R), a * b = 0 → a = 0 ∨ b = 0) →
+    ∀ (samples : List (R × R)) (constant scale : R) (candidate : List R),
+      (List.map Prod.fst samples).Nodup →
+        0 < samples.length →
+          (∀ (sample : R × R), sample ∈ samples → sample.fst ^ samples.length = constant) →
+            ↑samples.length * constant * scale = 1 →
+              candidate.length ≤ samples.length →
+                (∀ (sample : R × R),
+                    sample ∈ samples → Aiur.NativeAIR.Quotient.horner sample.fst candidate = sample.snd) →
+                  ∀ (point : R),
+                    Aiur.NativeAIR.Quotient.horner point (Aiur.NativeAIR.Interpolation.coefficients samples scale) =
+                      Aiur.NativeAIR.Quotient.horner point candidate
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Interpolation.divide_inverse_value
+∀ {R : Type} [inst : Grind.CommRing R] (vanishing : List R) (point root inverse : R),
+  Aiur.NativeAIR.Quotient.horner root vanishing = 0 →
+    (point - root) * inverse = 1 →
+      inverse * Aiur.NativeAIR.Quotient.horner point vanishing =
+        Aiur.NativeAIR.Quotient.horner point (Aiur.NativeAIR.Polynomial.divide root vanishing)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Interpolation.weightedSum_polynomial
+∀ (vanishing : List Aiur.NativeAIR.ProofCodec.Extension) (scale point : Aiur.NativeAIR.ProofCodec.Extension)
+  (samples : List (Aiur.NativeAIR.ProofCodec.Extension × Aiur.NativeAIR.ProofCodec.Extension)),
+  (∀ (sample : Aiur.NativeAIR.ProofCodec.Extension × Aiur.NativeAIR.ProofCodec.Extension),
+      sample ∈ samples → Aiur.NativeAIR.Quotient.horner sample.fst vanishing = 0) →
+    (∀ (sample : Aiur.NativeAIR.ProofCodec.Extension × Aiur.NativeAIR.ProofCodec.Extension),
+        sample ∈ samples → point ≠ sample.fst) →
+      ∃ result,
+        Aiur.NativeAIR.Interpolation.weightedSum scale point samples = some result ∧
+          result * Aiur.NativeAIR.Quotient.horner point vanishing =
+            Aiur.NativeAIR.Quotient.horner point (Aiur.NativeAIR.Interpolation.combine vanishing scale samples)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Interpolation.evaluate_polynomial
+∀ (samples : List (Aiur.NativeAIR.ProofCodec.Extension × Aiur.NativeAIR.ProofCodec.Extension))
+  (constant scale point : Aiur.NativeAIR.ProofCodec.Extension),
+  (List.map Prod.fst samples).Nodup →
+    0 < samples.length →
+      (∀ (sample : Aiur.NativeAIR.ProofCodec.Extension × Aiur.NativeAIR.ProofCodec.Extension),
+          sample ∈ samples → sample.fst ^ samples.length = constant) →
+        ↑samples.length * constant * scale = 1 →
+          Aiur.NativeAIR.Interpolation.evaluate scale point samples =
+            some (Aiur.NativeAIR.Quotient.horner point (Aiur.NativeAIR.Interpolation.coefficients samples scale))
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Interpolation.foldSamples_roots
+∀ (parent arity : Aiur.NativeAIR.Domain.Subgroup) (index : Nat) (values : List Aiur.NativeAIR.ProofCodec.Extension),
+  values.length = Aiur.NativeAIR.Domain.size arity →
+    List.map Prod.fst (Aiur.NativeAIR.Interpolation.foldSamples parent arity index values) =
+      List.map Aiur.NativeAIR.ProofCodec.Extension.ofBase (Aiur.NativeAIR.Polynomial.foldingNodes parent arity index)
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Interpolation.foldSamples_length
+∀ (parent arity : Aiur.NativeAIR.Domain.Subgroup) (index : Nat) (values : List Aiur.NativeAIR.ProofCodec.Extension),
+  values.length = Aiur.NativeAIR.Domain.size arity →
+    (Aiur.NativeAIR.Interpolation.foldSamples parent arity index values).length = Aiur.NativeAIR.Domain.size arity
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Interpolation.foldSamples_nodup
+∀ (parent arity : Aiur.NativeAIR.Domain.Subgroup),
+  ↑arity ≤ ↑parent →
+    ∀ {index : Nat},
+      index < 2 ^ (↑parent - ↑arity) →
+        ∀ (values : List Aiur.NativeAIR.ProofCodec.Extension),
+          values.length = Aiur.NativeAIR.Domain.size arity →
+            (List.map Prod.fst (Aiur.NativeAIR.Interpolation.foldSamples parent arity index values)).Nodup
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Interpolation.foldSamples_powers
+∀ (parent child arity : Aiur.NativeAIR.Domain.Subgroup),
+  ↑parent = ↑child + ↑arity →
+    ∀ (index : Nat) (values : List Aiur.NativeAIR.ProofCodec.Extension),
+      values.length = Aiur.NativeAIR.Domain.size arity →
+        ∀ (sample : Aiur.NativeAIR.ProofCodec.Extension × Aiur.NativeAIR.ProofCodec.Extension),
+          sample ∈ Aiur.NativeAIR.Interpolation.foldSamples parent arity index values →
+            sample.fst ^ (Aiur.NativeAIR.Interpolation.foldSamples parent arity index values).length =
+              Aiur.NativeAIR.ProofCodec.Extension.ofBase (Aiur.NativeAIR.FriDomain.queryPoint child index)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Interpolation.foldScale_inverse
+∀ (parent child arity : Aiur.NativeAIR.Domain.Subgroup),
+  ↑parent = ↑child + ↑arity →
+    ∀ (index : Nat),
+      ↑(Aiur.NativeAIR.Domain.size arity) *
+            Aiur.NativeAIR.ProofCodec.Extension.ofBase (Aiur.NativeAIR.FriDomain.queryPoint child index) *
+          Aiur.NativeAIR.ProofCodec.Extension.ofBase (Aiur.NativeAIR.Interpolation.foldScale parent arity index) =
+        1
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Interpolation.foldRow_polynomial
+∀ (parent child arity : Aiur.NativeAIR.Domain.Subgroup),
+  ↑parent = ↑child + ↑arity →
+    ∀ {index : Nat},
+      index < 2 ^ (↑parent - ↑arity) →
+        ∀ (values : List Aiur.NativeAIR.ProofCodec.Extension),
+          values.length = Aiur.NativeAIR.Domain.size arity →
+            ∀ (point : Aiur.NativeAIR.ProofCodec.Extension),
+              Aiur.NativeAIR.Interpolation.foldRow parent arity index values point =
+                some
+                  (Aiur.NativeAIR.Quotient.horner point
+                    (Aiur.NativeAIR.Interpolation.coefficients
+                      (Aiur.NativeAIR.Interpolation.foldSamples parent arity index values)
+                      (Aiur.NativeAIR.ProofCodec.Extension.ofBase
+                        (Aiur.NativeAIR.Interpolation.foldScale parent arity index))))
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Interpolation.foldRow_reject_shape
+∀ (parent arity : Aiur.NativeAIR.Domain.Subgroup) (index : Nat) (values : List Aiur.NativeAIR.ProofCodec.Extension)
+  (point : Aiur.NativeAIR.ProofCodec.Extension),
+  ↑arity > ↑parent ∨ index ≥ 2 ^ (↑parent - ↑arity) ∨ values.length ≠ Aiur.NativeAIR.Domain.size arity →
+    Aiur.NativeAIR.Interpolation.foldRow parent arity index values point = none
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Interpolation.foldRow_at_node
+∀ (parent child arity : Aiur.NativeAIR.Domain.Subgroup),
+  ↑parent = ↑child + ↑arity →
+    ∀ {index : Nat},
+      index < 2 ^ (↑parent - ↑arity) →
+        ∀ (values : List Aiur.NativeAIR.ProofCodec.Extension),
+          values.length = Aiur.NativeAIR.Domain.size arity →
+            ∀ (root value : Aiur.NativeAIR.ProofCodec.Extension),
+              (root, value) ∈ Aiur.NativeAIR.Interpolation.foldSamples parent arity index values →
+                Aiur.NativeAIR.Interpolation.foldRow parent arity index values root = some value
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Interpolation.foldRow_evaluate
+∀ (parent child arity : Aiur.NativeAIR.Domain.Subgroup),
+  ↑parent = ↑child + ↑arity →
+    ∀ {index : Nat},
+      index < 2 ^ (↑parent - ↑arity) →
+        ∀ (values candidate : List Aiur.NativeAIR.ProofCodec.Extension),
+          values.length = Aiur.NativeAIR.Domain.size arity →
+            candidate.length ≤ Aiur.NativeAIR.Domain.size arity →
+              (∀ (sample : Aiur.NativeAIR.ProofCodec.Extension × Aiur.NativeAIR.ProofCodec.Extension),
+                  sample ∈ Aiur.NativeAIR.Interpolation.foldSamples parent arity index values →
+                    Aiur.NativeAIR.Quotient.horner sample.fst candidate = sample.snd) →
+                ∀ (point : Aiur.NativeAIR.ProofCodec.Extension),
+                  Aiur.NativeAIR.Interpolation.foldRow parent arity index values point =
+                    some (Aiur.NativeAIR.Quotient.horner point candidate)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Interpolation.foldRow_success
+∀ {parent arity : Aiur.NativeAIR.Domain.Subgroup} {index : Nat} {values : List Aiur.NativeAIR.ProofCodec.Extension}
+  {point result : Aiur.NativeAIR.ProofCodec.Extension},
+  Aiur.NativeAIR.Interpolation.foldRow parent arity index values point = some result →
+    ↑arity ≤ ↑parent ∧
+      index < 2 ^ (↑parent - ↑arity) ∧
+        values.length = Aiur.NativeAIR.Domain.size arity ∧
+          ∃ candidate,
+            candidate.length ≤ Aiur.NativeAIR.Domain.size arity ∧
+              (∀ (sample : Aiur.NativeAIR.ProofCodec.Extension × Aiur.NativeAIR.ProofCodec.Extension),
+                  sample ∈ Aiur.NativeAIR.Interpolation.foldSamples parent arity index values →
+                    Aiur.NativeAIR.Quotient.horner sample.fst candidate = sample.snd) ∧
+                result = Aiur.NativeAIR.Quotient.horner point candidate
+AXIOMS [propext, Classical.choice, Quot.sound]
 PREMISE Aiur.AIR.activityConstraint
 Aiur.G → Aiur.G → Aiur.G
 DEFINITION
@@ -17811,6 +18077,72 @@ Aiur.NativeAIR.Domain.Subgroup → Aiur.NativeAIR.Domain.Subgroup → Nat → Li
 DEFINITION
 fun parent arity index =>
   List.map (Aiur.NativeAIR.FriDomain.foldNode parent arity index) (List.range (Aiur.NativeAIR.Domain.size arity))
+PREMISE Aiur.NativeAIR.Interpolation.derivativeValue
+{R : Type u_1} → [OfNat R 0] → [Add R] → [Mul R] → R → List R → R
+DEFINITION
+fun {R} [OfNat R 0] [Add R] [Mul R] point x => List.brecOn x (Aiur.NativeAIR.Interpolation.derivativeValue._f point)
+PREMISE Aiur.NativeAIR.Interpolation.combine
+{R : Type u_1} → [OfNat R 0] → [Add R] → [Mul R] → List R → R → List (R × R) → List R
+DEFINITION
+fun {R} [OfNat R 0] [Add R] [Mul R] vanishing scale x =>
+  List.brecOn x (Aiur.NativeAIR.Interpolation.combine._f vanishing scale)
+PREMISE Aiur.NativeAIR.Interpolation.coefficients
+{R : Type u_1} → [OfNat R 0] → [OfNat R 1] → [Add R] → [Sub R] → [Mul R] → List (R × R) → R → List R
+DEFINITION
+fun {R} [OfNat R 0] [OfNat R 1] [Add R] [Sub R] [Mul R] samples scale =>
+  Aiur.NativeAIR.Interpolation.combine (Aiur.NativeAIR.Polynomial.fromRoots (List.map Prod.fst samples)) scale samples
+PREMISE Aiur.NativeAIR.Interpolation.weightedSum
+Aiur.NativeAIR.ProofCodec.Extension →
+  Aiur.NativeAIR.ProofCodec.Extension →
+    List (Aiur.NativeAIR.ProofCodec.Extension × Aiur.NativeAIR.ProofCodec.Extension) →
+      Option Aiur.NativeAIR.ProofCodec.Extension
+DEFINITION
+fun scale point x => List.brecOn x (Aiur.NativeAIR.Interpolation.weightedSum._f scale point)
+PREMISE Aiur.NativeAIR.Interpolation.evaluate
+Aiur.NativeAIR.ProofCodec.Extension →
+  Aiur.NativeAIR.ProofCodec.Extension →
+    List (Aiur.NativeAIR.ProofCodec.Extension × Aiur.NativeAIR.ProofCodec.Extension) →
+      Option Aiur.NativeAIR.ProofCodec.Extension
+DEFINITION
+fun scale point samples =>
+  match List.find? (fun sample => point == sample.fst) samples with
+  | some sample => some sample.snd
+  | none => do
+    let sum ← Aiur.NativeAIR.Interpolation.weightedSum scale point samples
+    pure (sum * Aiur.NativeAIR.LogUp.product (List.map (fun sample => point - sample.fst) samples))
+PREMISE Aiur.NativeAIR.Interpolation.foldSamples
+Aiur.NativeAIR.Domain.Subgroup →
+  Aiur.NativeAIR.Domain.Subgroup →
+    Nat →
+      List Aiur.NativeAIR.ProofCodec.Extension →
+        List (Aiur.NativeAIR.ProofCodec.Extension × Aiur.NativeAIR.ProofCodec.Extension)
+DEFINITION
+fun parent arity index values =>
+  (List.map Aiur.NativeAIR.ProofCodec.Extension.ofBase (Aiur.NativeAIR.Polynomial.foldingNodes parent arity index)).zip
+    values
+PREMISE Aiur.NativeAIR.Interpolation.foldScale
+Aiur.NativeAIR.Domain.Subgroup → Aiur.NativeAIR.Domain.Subgroup → Nat → Aiur.G
+DEFINITION
+fun parent arity index =>
+  (Aiur.G.ofNat (Aiur.NativeAIR.Domain.size arity) *
+      (Aiur.NativeAIR.FriDomain.foldNode parent arity index 0).pow (Aiur.NativeAIR.Domain.size arity)).inverse
+PREMISE Aiur.NativeAIR.Interpolation.foldRow
+Aiur.NativeAIR.Domain.Subgroup →
+  Aiur.NativeAIR.Domain.Subgroup →
+    Nat →
+      List Aiur.NativeAIR.ProofCodec.Extension →
+        Aiur.NativeAIR.ProofCodec.Extension → Option Aiur.NativeAIR.ProofCodec.Extension
+DEFINITION
+fun parent arity index values point =>
+  if
+      (decide (↑arity > ↑parent) || decide (index ≥ 2 ^ (↑parent - ↑arity)) ||
+          values.length != Aiur.NativeAIR.Domain.size arity) =
+        true then
+    none
+  else
+    Aiur.NativeAIR.Interpolation.evaluate
+      (Aiur.NativeAIR.ProofCodec.Extension.ofBase (Aiur.NativeAIR.Interpolation.foldScale parent arity index)) point
+      (Aiur.NativeAIR.Interpolation.foldSamples parent arity index values)
 RECURSION WORKER Aiur.buildArgs._unsafe_rec
 Aiur.LayoutMap →
   Std.HashMap Aiur.Local (Array Aiur.Bytecode.ValIdx) →
@@ -22909,6 +23241,38 @@ fun x x_1 =>
   | dimension :: dimensions, row :: rows =>
     row.length == dimension.width && Aiur.NativeAIR.ExtensionMmcs.shape._unsafe_rec dimensions rows
   | x, x_2 => false
+RECURSION WORKER Aiur.NativeAIR.Interpolation.combine._unsafe_rec
+{R : Type u_1} → [OfNat R 0] → [Add R] → [Mul R] → List R → R → List (R × R) → List R
+IMPLEMENTATION
+fun {R} [OfNat R 0] [Add R] [Mul R] vanishing scale x =>
+  match x with
+  | [] => []
+  | (root, value) :: rest =>
+    Aiur.NativeAIR.Polynomial.add
+      (Aiur.NativeAIR.Polynomial.scale (value * (root * scale)) (Aiur.NativeAIR.Polynomial.divide root vanishing))
+      (Aiur.NativeAIR.Interpolation.combine._unsafe_rec vanishing scale rest)
+RECURSION WORKER Aiur.NativeAIR.Interpolation.derivativeValue._unsafe_rec
+{R : Type u_1} → [OfNat R 0] → [Add R] → [Mul R] → R → List R → R
+IMPLEMENTATION
+fun {R} [OfNat R 0] [Add R] [Mul R] point x =>
+  match x with
+  | [] => 0
+  | head :: rest =>
+    Aiur.NativeAIR.Quotient.horner point rest +
+      point * Aiur.NativeAIR.Interpolation.derivativeValue._unsafe_rec point rest
+RECURSION WORKER Aiur.NativeAIR.Interpolation.weightedSum._unsafe_rec
+Aiur.NativeAIR.ProofCodec.Extension →
+  Aiur.NativeAIR.ProofCodec.Extension →
+    List (Aiur.NativeAIR.ProofCodec.Extension × Aiur.NativeAIR.ProofCodec.Extension) →
+      Option Aiur.NativeAIR.ProofCodec.Extension
+IMPLEMENTATION
+fun scale point x =>
+  match x with
+  | [] => some 0
+  | (root, value) :: rest => do
+    let inverse ← (point - root).tryInverse
+    let tail ← Aiur.NativeAIR.Interpolation.weightedSum._unsafe_rec scale point rest
+    pure (value * (root * scale) * inverse + tail)
 RECURSION WORKER Aiur.NativeAIR.KeyCodec.encodeNat._unsafe_rec
 Nat → Nat → List UInt8
 IMPLEMENTATION
@@ -25156,10 +25520,10 @@ fun value exponent x =>
       let half := Aiur.NativeAIR.ProofCodec.Extension.powBits._unsafe_rec value (exponent / 2) fuel;
       let square := half * half;
       if (exponent % 2 == 0) = true then square else square * value
-C8 component ROOTS 1476; LOGICAL DECLARATIONS 20017; WITH RUNTIME 20816
+C8 component ROOTS 1506; LOGICAL DECLARATIONS 20113; WITH RUNTIME 20915
 IX RUNTIME EXTERNS [Aiur.AiurSystem.build, Aiur.AiurSystem.verify, Aiur.AiurSystem.vkBytes, Aiur.Proof.ofBytesChecked]
 PARTIAL OPAQUE SOURCES [Aiur.instHashableTyp.hash, Aiur.instReprPattern.repr, Aiur.instReprTyp.repr]
 OTHER UNSAFE RUNTIME []
-RECURSION WORKERS 190
+RECURSION WORKERS 193
 Runtime diagnostics cover Ix modules, including private constants. Lean/Std runtime primitives remain an external execution boundary. Partial opaque implementations are inventoried, not proved to refine their logical defaults.
 The runtime inventory and theorem premises are frozen separately. These roots do not establish full compiler/AIR reflection or public certified claim semantics.

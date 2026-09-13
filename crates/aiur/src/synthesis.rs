@@ -650,6 +650,7 @@ mod tests {
   #[cfg(not(feature = "cuda"))]
   mod extension_mmcs;
   mod fri_domain;
+  mod interpolation;
   mod lookup_budget;
   mod lookup_shapes;
   mod memory;
