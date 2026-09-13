@@ -16,10 +16,21 @@ tracing = { workspace = true }
 tracing-texray = { workspace = true }
 
 [dev-dependencies]
-# Exercise the native MMCS at the same Plonky3 revision as multi-stark.
-p3-blake3 = { git = "https://github.com/Plonky3/Plonky3", rev = "3152b14a89067c83775a8076cc262ffc48a1fd7c" }
+# Compare checked chunk and parent hashing with the pinned native implementation.
+blake3 = "=1.8.5"
+# Test the actual selector methods from the same Plonky3 revision as multi-stark.
 p3-commit = { git = "https://github.com/Plonky3/Plonky3", rev = "3152b14a89067c83775a8076cc262ffc48a1fd7c" }
+# Instrument the native verifier's actual challenger without changing the protocol.
+p3-blake3 = { git = "https://github.com/Plonky3/Plonky3", rev = "3152b14a89067c83775a8076cc262ffc48a1fd7c" }
+p3-challenger = { git = "https://github.com/Plonky3/Plonky3", rev = "3152b14a89067c83775a8076cc262ffc48a1fd7c" }
 p3-symmetric = { git = "https://github.com/Plonky3/Plonky3", rev = "3152b14a89067c83775a8076cc262ffc48a1fd7c" }
+# Capture actual binary MMCS hash calls at the same pinned revision.
+p3-merkle-tree = { git = "https://github.com/Plonky3/Plonky3", rev = "3152b14a89067c83775a8076cc262ffc48a1fd7c" }
+# Exercise the actual FRI folding strategy and its index permutation.
+p3-fri = { git = "https://github.com/Plonky3/Plonky3", rev = "3152b14a89067c83775a8076cc262ffc48a1fd7c" }
+p3-util = { git = "https://github.com/Plonky3/Plonky3", rev = "3152b14a89067c83775a8076cc262ffc48a1fd7c" }
+# Compare coefficient arithmetic with the pinned upstream polynomial utilities.
+p3-stir = { git = "https://github.com/Plonky3/Plonky3", rev = "3152b14a89067c83775a8076cc262ffc48a1fd7c" }
 
 [features]
 default = []

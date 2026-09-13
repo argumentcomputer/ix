@@ -967,3 +967,5 @@ fn combine_lookup_args(
   );
   lookup.args.extend(args_iterator);
 }
+#[cfg(test)]
+mod tests;

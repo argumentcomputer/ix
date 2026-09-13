@@ -28,12 +28,11 @@
 //!                log_final_poly_len, max_log_arity, num_queries,
 //!                commit_proof_of_work_bits, query_proof_of_work_bits)
 //!   u16          circuit count
-//! PER-CIRCUIT RECORDS (circuit count times; each is `u32 LE len` + `len` bytes
-//!                      so a record is a contiguous byte range)
+//! PER-CIRCUIT RECORDS (circuit count times, without a length prefix)
 //!   u16 main_width, u16 preprocessed_width, u32 preprocessed_height,
 //!   u16 max_constraint_degree (combined user + logUp),
 //!   u8 lookup_group_size (k: lookups per chained accumulator step)
-//!   node_count nodes, each a u8 tag then payload:
+//!   u16 node_count, then node_count nodes, each a u8 tag then payload:
 //!     0  ConstSmall: u16 LE canonical value
 //!     1  ConstBig:   u64 LE canonical value
 //!     2  Public:     u8 index
@@ -42,8 +41,8 @@
 //!     9  Neg: u16 LE child node id
 //!     10..=15  Var (tag = 10 + 2*source + offset; source 0 Preprocessed
 //!              1 Main 2 Stage2, offset 0 current 1 next): u16 LE column
-//!   u32 zero_count, then zero_count x u16 LE constraint-root node ids
-//!   u32 lookup_count, then per lookup:
+//!   u16 zero_count, then zero_count x u16 LE constraint-root node ids
+//!   u16 lookup_count, then per lookup:
 //!     u16 LE multiplicity node id
 //!     u16 LE arg count, then arg_count x u16 LE arg node ids
 //! TRAILER
@@ -70,10 +69,39 @@ use multi_stark::{
   types::{Commitment, CommitmentParameters, FriParameters, Val},
 };
 
+use crate::graph_shape::{GraphWidths, checked_graph_prefix};
 use crate::synthesis::{AiurConfig, AiurSystem};
 
 /// Sentinel for `None` in the preprocessed-index trailer.
 const NO_PREP_INDEX: u16 = u16::MAX;
+
+#[cfg(test)]
+#[path = "vk_codec/tests/graphs.rs"]
+mod graph_tests;
+
+#[cfg(test)]
+#[path = "vk_codec/tests/compilation.rs"]
+mod compilation_tests;
+
+#[cfg(test)]
+#[path = "vk_codec/tests/codec.rs"]
+mod codec_tests;
+
+#[cfg(test)]
+#[path = "vk_codec/tests/extension_arithmetic.rs"]
+mod extension_arithmetic_tests;
+
+#[cfg(test)]
+#[path = "vk_codec/tests/logup.rs"]
+mod logup_tests;
+
+#[cfg(test)]
+#[path = "vk_codec/tests/domain.rs"]
+mod domain_tests;
+
+#[cfg(test)]
+#[path = "vk_codec/tests/verifier_arithmetic.rs"]
+mod verifier_arithmetic_tests;
 
 // ════════════════════════════════════════════════════════════════════════════
 // Encoder — System<AiurConfig> -> bytes
@@ -321,7 +349,7 @@ fn decode_node(seg: &mut Seg<'_>) -> Result<Node<Val>, String> {
 
 /// Recompute per-node degree multiples in node order (children precede parents
 /// in the compiled vector).
-fn recompute_degrees(nodes: &[Node<Val>]) -> Vec<u32> {
+fn recompute_degrees(nodes: &[Node<Val>]) -> Result<Vec<u32>, String> {
   let mut degrees: Vec<u32> = Vec::with_capacity(nodes.len());
   for node in nodes {
     let d = match *node {
@@ -330,12 +358,37 @@ fn recompute_degrees(nodes: &[Node<Val>]) -> Vec<u32> {
       Node::Add(a, b) | Node::Sub(a, b) => {
         degrees[a.0 as usize].max(degrees[b.0 as usize])
       },
-      Node::Mul(a, b) => degrees[a.0 as usize] + degrees[b.0 as usize],
+      Node::Mul(a, b) => degrees[a.0 as usize]
+        .checked_add(degrees[b.0 as usize])
+        .ok_or("node degree overflow")?,
       Node::Neg(a) => degrees[a.0 as usize],
     };
     degrees.push(d);
   }
-  degrees
+  Ok(degrees)
+}
+
+/// Use u64 for the at-most-eight-term degree sums so malformed graphs cannot
+/// overflow the native u32 analytic logUp calculation before rejection.
+fn checked_max_degree(
+  graph: &ConstraintGraph<Val>,
+  group_size: usize,
+) -> Result<usize, String> {
+  let degree = |id: NodeId| u64::from(graph.degrees[id.index()]);
+  let mut maximum = u64::from(graph.max_constraint_degree).max(1);
+  for group in graph.lookups.chunks(group_size) {
+    let messages: Vec<_> = group
+      .iter()
+      .map(|lookup| lookup.args.iter().copied().map(degree).max().unwrap_or(0))
+      .collect();
+    let sum: u64 = messages.iter().sum();
+    maximum = maximum.max(sum + 1);
+    for (lookup, message_degree) in group.iter().zip(messages) {
+      maximum = maximum.max(degree(lookup.multiplicity) + sum - message_degree);
+    }
+  }
+  usize::try_from(maximum)
+    .map_err(|error| format!("constraint degree overflow: {error}"))
 }
 
 fn decode_circuit(seg: &mut Seg<'_>) -> Result<Circuit<Val>, String> {
@@ -369,21 +422,35 @@ fn decode_circuit(seg: &mut Seg<'_>) -> Result<Circuit<Val>, String> {
     lookups.push(Lookup { multiplicity, args });
   }
 
-  let degrees = recompute_degrees(&nodes);
+  let num_lookups = lookups.len();
+  let ext_degree =
+    <multi_stark::types::ExtVal as multi_stark::p3_field::BasedVectorSpace<
+      Val,
+    >>::DIMENSION;
+  let stage_2_width = multi_stark::lookup::stage2_width(
+    num_lookups,
+    lookup_group_size,
+    ext_degree,
+  );
+  let num_publics = multi_stark::lookup::num_publics(ext_degree);
+  let lookup_prefix_len = checked_graph_prefix(
+    &nodes,
+    &zeros,
+    &lookups,
+    GraphWidths {
+      preprocessed: preprocessed_width,
+      main: main_width,
+      stage2: stage_2_width,
+      publics: num_publics,
+    },
+  )
+  .ok_or("invalid graph indices or lookup prefix")?;
+  let degrees = recompute_degrees(&nodes)?;
   // The graph's own max degree covers only the user roots (the serialized
   // `max_constraint_degree` is the combined user + analytic-logUp value).
   let user_max_degree = zeros
     .iter()
     .map(|z| degrees[usize::try_from(z.0).expect("node id")])
-    .max()
-    .unwrap_or(0);
-  // The lookup prefix is exactly the nodes interned while compiling the
-  // lookup expressions, all of which are reachable from (and bounded by)
-  // the lookup roots — children always precede parents.
-  let lookup_prefix_len = lookups
-    .iter()
-    .flat_map(|l| std::iter::once(l.multiplicity).chain(l.args.iter().copied()))
-    .map(|id| id.0 as usize + 1)
     .max()
     .unwrap_or(0);
   let graph = ConstraintGraph {
@@ -394,11 +461,9 @@ fn decode_circuit(seg: &mut Seg<'_>) -> Result<Circuit<Val>, String> {
     lookup_prefix_len,
     max_constraint_degree: user_max_degree,
   };
-  let num_lookups = graph.lookups.len();
-  let ext_degree =
-    <multi_stark::types::ExtVal as multi_stark::p3_field::BasedVectorSpace<
-      Val,
-    >>::DIMENSION;
+  if checked_max_degree(&graph, lookup_group_size)? != max_constraint_degree {
+    return Err("incorrect maximum constraint degree".into());
+  }
   Ok(Circuit {
     graph,
     main_width,
@@ -406,12 +471,8 @@ fn decode_circuit(seg: &mut Seg<'_>) -> Result<Circuit<Val>, String> {
     preprocessed_width,
     preprocessed_height,
     num_lookups,
-    stage_2_width: multi_stark::lookup::stage2_width(
-      num_lookups,
-      lookup_group_size,
-      ext_degree,
-    ),
-    num_publics: multi_stark::lookup::num_publics(ext_degree),
+    stage_2_width,
+    num_publics,
     lookup_group_size,
     constraint_count: zeros_plus_logup(
       zero_count,
@@ -462,6 +523,9 @@ pub(crate) fn from_bytes(
     0 => None,
     1 => {
       let n = r.u16()? as usize;
+      if !n.is_power_of_two() {
+        return Err("preprocessed cap size must be a power of two".into());
+      }
       let mut caps = Vec::with_capacity(n.min(1 << 16));
       for _ in 0..n {
         let mut d = [0u8; 32];
@@ -571,8 +635,7 @@ mod tests {
     assert!(from_bytes(&bytes).is_err(), "should reject trailing data");
   }
 
-  /// A tampered per-circuit record length must be rejected (the record reader
-  /// enforces exact consumption).
+  /// Truncation and trailing bytes must be rejected for the unframed stream.
   #[test]
   fn rejects_bad_record_length() {
     let (system, cp, fp) = test_system();
@@ -587,5 +650,120 @@ mod tests {
     let mut padded = bytes.clone();
     padded.push(0);
     assert!(from_bytes(&padded).is_err(), "should reject padded vk");
+  }
+
+  #[test]
+  fn rejects_forward_node_reference_without_panicking() {
+    let mut bytes = Vec::new();
+    for width in [1, 0] {
+      push_u16(&mut bytes, width);
+    }
+    push_u32(&mut bytes, 0);
+    push_u16(&mut bytes, 2);
+    bytes.push(1);
+    push_u16(&mut bytes, 1);
+    push_node(&mut bytes, &Node::Neg(NodeId(0)));
+    push_u16(&mut bytes, 0);
+    push_u16(&mut bytes, 0);
+    let decoded = std::panic::catch_unwind(|| {
+      decode_circuit(&mut Seg { buf: &bytes, pos: 0 })
+    });
+    assert!(decoded.is_ok(), "malformed graph must return an error");
+    assert!(decoded.unwrap().is_err(), "self-reference must be rejected");
+  }
+
+  fn circuit_bytes(
+    nodes: &[Node<Val>],
+    zeros: &[NodeId],
+    lookups: &[Lookup<NodeId>],
+    maximum: usize,
+  ) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    push_u16(&mut bytes, 1);
+    push_u16(&mut bytes, 1);
+    push_u32(&mut bytes, 256);
+    push_u16(&mut bytes, maximum);
+    bytes.push(1);
+    push_u16(&mut bytes, nodes.len());
+    for node in nodes {
+      push_node(&mut bytes, node);
+    }
+    push_u16(&mut bytes, zeros.len());
+    for &root in zeros {
+      push_node_id(&mut bytes, root);
+    }
+    push_u16(&mut bytes, lookups.len());
+    for lookup in lookups {
+      push_node_id(&mut bytes, lookup.multiplicity);
+      push_u16(&mut bytes, lookup.args.len());
+      for &arg in &lookup.args {
+        push_node_id(&mut bytes, arg);
+      }
+    }
+    bytes
+  }
+
+  fn assert_bad_graph(bytes: &[u8]) {
+    let decoded = std::panic::catch_unwind(|| {
+      decode_circuit(&mut Seg { buf: bytes, pos: 0 })
+    });
+    assert!(decoded.is_ok(), "invalid graph must not panic");
+    assert!(decoded.unwrap().is_err(), "invalid graph must be rejected");
+  }
+
+  #[test]
+  fn rejects_malformed_graph_reads() {
+    let leaf = Node::Const(Val::ONE);
+    for node in [
+      Node::Add(NodeId(0), NodeId(1)),
+      Node::Sub(NodeId(1), NodeId(0)),
+      Node::Mul(NodeId(0), NodeId(u16::MAX.into())),
+      Node::Neg(NodeId(2)),
+    ] {
+      assert_bad_graph(&circuit_bytes(&[leaf, node], &[], &[], 1));
+    }
+    assert_bad_graph(&circuit_bytes(&[leaf], &[NodeId(1)], &[], 1));
+    for lookup in [
+      Lookup { multiplicity: NodeId(1), args: vec![] },
+      Lookup { multiplicity: NodeId(0), args: vec![NodeId(1)] },
+    ] {
+      assert_bad_graph(&circuit_bytes(&[leaf], &[], &[lookup], 1));
+    }
+    for source in [Source::Preprocessed, Source::Main, Source::Stage2] {
+      for offset in [RowOffset::Current, RowOffset::Next] {
+        let index = if source == Source::Stage2 { 2 } else { 1 };
+        let node = Node::Var(ColRef { source, offset, index });
+        assert_bad_graph(&circuit_bytes(&[node], &[], &[], 1));
+      }
+    }
+    assert_bad_graph(&circuit_bytes(&[Node::Public(8)], &[], &[], 1));
+    let stage2 = Node::Var(ColRef {
+      source: Source::Stage2,
+      offset: RowOffset::Current,
+      index: 0,
+    });
+    // Even an unreachable stage-2 node in the dense prefix is read by its sweep.
+    let lookup = Lookup { multiplicity: NodeId(1), args: vec![] };
+    assert_bad_graph(&circuit_bytes(&[stage2, leaf], &[], &[lookup], 1));
+    let bytes = circuit_bytes(&[stage2], &[NodeId(0)], &[], 1);
+    assert!(decode_circuit(&mut Seg { buf: &bytes, pos: 0 }).is_ok());
+  }
+
+  #[test]
+  fn rejects_overflowing_and_incorrect_graph_degrees() {
+    let mut nodes = vec![Node::IsFirstRow];
+    for i in 0..32 {
+      nodes.push(Node::Mul(NodeId(i), NodeId(i)));
+    }
+    assert_bad_graph(&circuit_bytes(&nodes, &[], &[], 1));
+    // Each node fits u32, but the product's analytic logUp degree exceeds it.
+    nodes.pop();
+    let lookup = Lookup { multiplicity: NodeId(31), args: vec![NodeId(31)] };
+    let mut bytes = circuit_bytes(&nodes, &[], &[lookup.clone(), lookup], 1);
+    bytes[10] = 2;
+    assert_bad_graph(&bytes);
+    for maximum in [0, 2, u16::MAX.into()] {
+      assert_bad_graph(&circuit_bytes(&[Node::IsFirstRow], &[], &[], maximum));
+    }
   }
 }

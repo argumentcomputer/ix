@@ -10,7 +10,7 @@ public import Ix.MultiStark.Deserialize
 Aiur port of `crates/aiur/src/vk_codec.rs` — reconstructs the verifier's
 `System<AiurConfig>` from the bytes the prover places on the IO channel.
 
-Wire format (v3, mirrors `vk_codec.rs` — see its module docs for the full
+Wire format (v5, mirrors `vk_codec.rs` — see its module docs for the full
 layout). The multi-stark constraint-IR migration replaced the per-circuit
 *symbolic* AIR (`SymbolicExpression` trees + `LookupAir`) with a *compiled*
 flat base-field node graph, so this reader parses that compiled form:
@@ -75,10 +75,10 @@ def systemDeserialize := ⟦
     Neg(G)
   }
 
-  -- A compiled circuit: the flat node vector, its length, the constraint-root
-  -- NodeIds (`zeros`), and the maximum constraint degree (for the quotient
-  -- degree). The lookups are omitted — their constraints are compiled into
-  -- `zeros`, so the verifier never needs them.
+  -- A compiled circuit retains the flat node vector, its length, user
+  -- constraint-root NodeIds (`zeros`), the combined maximum degree, lookups
+  -- and their group size. The verifier evaluates logUp directly after the
+  -- user roots; logUp constraints are not compiled into `zeros`.
   -- A compiled lookup: multiplicity node id + argument node ids (all into
   -- the graph's lookup prefix). Drives the direct logUp evaluation.
   enum SysLookup { Mk(G, List‹G›) }

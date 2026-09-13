@@ -3,6 +3,169 @@
 
 use super::*;
 
+fn snapshot_body(tag: usize) -> Block {
+  fn ret(size: usize) -> Block {
+    Block { ops: vec![], ctrl: Ctrl::Return(0, vec![0; size]) }
+  }
+  fn yield_values(size: usize) -> Block {
+    Block { ops: vec![], ctrl: Ctrl::Yield(0, vec![0; size]) }
+  }
+  fn matched(arm: Option<Block>, fallback: Option<Block>) -> Block {
+    Block {
+      ops: vec![],
+      ctrl: Ctrl::Match(
+        0,
+        arm.into_iter().map(|block| (G::ZERO, block)).collect(),
+        fallback.map(Box::new),
+      ),
+    }
+  }
+  fn continued(arm: Block, continuation: Block) -> Block {
+    Block {
+      ops: vec![],
+      ctrl: Ctrl::MatchContinue(
+        0,
+        [(G::ZERO, arm)].into_iter().collect(),
+        Some(Box::new(yield_values(2))),
+        2,
+        0,
+        0,
+        Box::new(continuation),
+      ),
+    }
+  }
+  match tag {
+    0..=2 => ret(tag),
+    3 => yield_values(0),
+    4 => yield_values(1),
+    5 => matched(Some(ret(1)), Some(ret(1))),
+    6 => matched(Some(ret(0)), Some(ret(1))),
+    7 => matched(Some(ret(1)), None),
+    8 => matched(None, None),
+    9 => continued(yield_values(2), ret(1)),
+    10 => continued(ret(1), ret(1)),
+    11 => continued(ret(0), ret(1)),
+    12 => continued(yield_values(1), ret(1)),
+    13 => continued(yield_values(2), yield_values(0)),
+    14 => continued(continued(yield_values(2), yield_values(2)), ret(1)),
+    15 => continued(continued(yield_values(2), yield_values(1)), ret(1)),
+    16 => matched(Some(continued(ret(1), ret(1))), Some(ret(1))),
+    _ => unreachable!(),
+  }
+}
+
+fn snapshot_function(
+  body: Block,
+  inputs: usize,
+  entry: bool,
+  constrained: bool,
+) -> Function {
+  Function {
+    body,
+    layout: FunctionLayout {
+      input_size: inputs,
+      selectors: 1,
+      auxiliaries: 7,
+      lookups: 4,
+    },
+    entry,
+    constrained,
+  }
+}
+
+/// Compare the Rust guards with the total Lean validators across nested
+/// control forms, all small arities, visibility and advice-call modes.
+/// These fixtures test structural checks independently of layout/value
+/// validation; they are never passed to the constraint emitter.
+#[test]
+fn lookup_shape_snapshot() -> std::io::Result<()> {
+  let header = b"Aiur lookup shapes v2\n";
+  let mut out = header.to_vec();
+  for tag in 0..17 {
+    for size in 0..4 {
+      out.push(u8::from(snapshot_body(tag).returns_have_size(size)));
+    }
+  }
+  for tag in 0..17 {
+    for callee_inputs in 0..4 {
+      for caller_inputs in 0..4 {
+        for outputs in 0..4 {
+          for advice in [false, true] {
+            for constrained in [false, true] {
+              let caller = snapshot_function(
+                Block {
+                  ops: vec![Op::Call(
+                    1,
+                    vec![0; caller_inputs],
+                    outputs,
+                    advice,
+                  )],
+                  ctrl: Ctrl::Return(0, vec![]),
+                },
+                3,
+                true,
+                true,
+              );
+              let callee = snapshot_function(
+                snapshot_body(tag),
+                callee_inputs,
+                false,
+                constrained,
+              );
+              let top = Toplevel {
+                functions: vec![caller, callee],
+                memory_sizes: vec![],
+                circuits: vec![],
+                call_components: vec![],
+              };
+              out.push(u8::from(top.validate_lookup_shapes().is_ok()));
+            }
+          }
+        }
+      }
+    }
+  }
+  for tag in 0..17 {
+    for inputs in 0..4 {
+      for entry in [false, true] {
+        for constrained in [false, true] {
+          let top = Toplevel {
+            functions: vec![snapshot_function(
+              snapshot_body(tag),
+              inputs,
+              entry,
+              constrained,
+            )],
+            memory_sizes: vec![],
+            circuits: vec![],
+            call_components: vec![],
+          };
+          // Cache construction includes the structural program guard.
+          let shapes = top.checked_claim_shapes();
+          for channel in 0..3 {
+            for function in [0, 1, 99] {
+              for arguments in 0..7 {
+                let mut claim = vec![G::from_u8(channel), G::from_u8(function)];
+                claim.extend(std::iter::repeat_n(G::ZERO, arguments));
+                out.push(u8::from(
+                  shapes
+                    .as_ref()
+                    .is_ok_and(|shapes| valid_claim_shape(shapes, &claim)),
+                ));
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  assert_eq!(out.len(), header.len() + 21_556);
+  if let Some(path) = std::env::var_os("IX_LOOKUP_SHAPE_SNAPSHOT") {
+    std::fs::write(path, out)?;
+  }
+  Ok(())
+}
+
 /// The public claim omits rank zero. A short return at rank seven must not
 /// be interpreted as a public return value of seven through zero padding.
 #[test]

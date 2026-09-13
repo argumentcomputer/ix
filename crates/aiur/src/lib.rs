@@ -4,6 +4,7 @@ pub mod constraints;
 mod emission_checks;
 pub mod execute;
 pub mod gadgets;
+mod graph_shape;
 mod lookup_budget;
 mod lookup_groups;
 mod lookup_shapes;

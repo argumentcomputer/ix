@@ -260,6 +260,145 @@ lean_lib IxKernelConsistency where
   roots := #[`Ix.Kernel.Verify.Consistency]
   globs := #[.andSubmodules `Ix.Kernel.Verify.Consistency]
 
+/- Compiler and verifier-binding components with an independent exact audit. -/
+lean_lib IxAiurVerify where
+  roots := #[`Ix.Aiur.Proofs]
+  globs := #[.andSubmodules `Ix.Aiur.Proofs]
+
+lean_exe «aiur-backend-tests» where
+  root := `Tests.Aiur.Backend
+
+lean_exe «aiur-bytecode-tests» where
+  root := `Tests.Aiur.BytecodeCompare
+  supportInterpreter := true
+
+lean_exe «aiur-dedup-tests» where
+  root := `Tests.Aiur.Dedup
+  supportInterpreter := true
+
+lean_exe «aiur-tail-match-tests» where
+  root := `Tests.Aiur.TailMatches
+  supportInterpreter := true
+
+lean_exe «aiur-source-value-tests» where
+  root := `Tests.Aiur.SourceValues
+  supportInterpreter := true
+
+lean_exe «aiur-hoisting-tests» where
+  root := `Tests.Aiur.Hoisting
+  supportInterpreter := true
+
+lean_exe «aiur-air-tests» where
+  root := `Tests.Aiur.AIRSemantics
+
+lean_exe «aiur-byte-gadget-tests» where
+  root := `Tests.Aiur.ByteGadgets
+
+lean_exe «aiur-lookup-shape-tests» where
+  root := `Tests.Aiur.LookupShapes
+
+lean_exe «aiur-lookup-budget-tests» where
+  root := `Tests.Aiur.LookupBudget
+
+lean_exe «aiur-selector-control-tests» where
+  root := `Tests.Aiur.SelectorControl
+
+lean_exe «aiur-operation-row-tests» where
+  root := `Tests.Aiur.OperationRows
+
+lean_exe «aiur-block-row-tests» where
+  root := `Tests.Aiur.BlockRows
+
+lean_exe «aiur-circuit-row-tests» where
+  root := `Tests.Aiur.CircuitRows
+
+lean_exe «aiur-memory-row-tests» where
+  root := `Tests.Aiur.MemoryRows
+
+lean_exe «aiur-trace-height-tests» where
+  root := `Tests.Aiur.TraceHeights
+
+lean_exe «aiur-expression-graph-tests» where
+  root := `Tests.Aiur.ExpressionGraph
+
+lean_exe «aiur-constant-degree-tests» where
+  root := `Tests.Aiur.ConstantDegree
+
+lean_exe «aiur-frontend-expression-tests» where
+  root := `Tests.Aiur.FrontendExpressions
+
+lean_exe «aiur-graph-compilation-tests» where
+  root := `Tests.Aiur.GraphCompilation
+
+lean_exe «aiur-operation-expression-tests» where
+  root := `Tests.Aiur.OperationExpressions
+
+lean_exe «aiur-block-expression-tests» where
+  root := `Tests.Aiur.BlockExpressions
+
+lean_exe «aiur-circuit-expression-tests» where
+  root := `Tests.Aiur.CircuitExpressions
+
+lean_exe «aiur-emission-check-tests» where
+  root := `Tests.Aiur.EmissionChecks
+
+lean_exe «aiur-key-codec-tests» where
+  root := `Tests.Aiur.KeyCodec
+
+lean_exe «aiur-compiled-key-tests» where
+  root := `Tests.Aiur.CompiledKey
+
+lean_exe «aiur-proof-codec-tests» where
+  root := `Tests.Aiur.ProofCodec
+
+lean_exe «aiur-proof-shape-tests» where
+  root := `Tests.Aiur.ProofShape
+
+lean_exe «aiur-extension-tests» where
+  root := `Tests.Aiur.Extension
+
+lean_exe «aiur-logup-tests» where
+  root := `Tests.Aiur.LogUp
+
+lean_exe «aiur-domain-tests» where
+  root := `Tests.Aiur.Domain
+
+lean_exe «aiur-verifier-arithmetic-tests» where
+  root := `Tests.Aiur.VerifierArithmetic
+
+lean_exe «aiur-transcript-tests» where
+  root := `Tests.Aiur.Transcript
+
+lean_exe «aiur-blake3-tests» where
+  root := `Tests.Aiur.Blake3
+
+lean_exe «aiur-merkle-cap-tests» where
+  root := `Tests.Aiur.MerkleCap
+
+lean_exe «aiur-merkle-tests» where
+  root := `Tests.Aiur.Merkle
+
+lean_exe «aiur-pruned-merkle-tests» where
+  root := `Tests.Aiur.PrunedMerkle
+
+lean_exe «aiur-extension-mmcs-tests» where
+  root := `Tests.Aiur.ExtensionMmcs
+
+lean_exe «aiur-fri-domain-tests» where
+  root := `Tests.Aiur.FriDomain
+
+lean_exe «aiur-polynomial-tests» where
+  root := `Tests.Aiur.Polynomial
+
+lean_exe «aiur-interpolation-tests» where
+  root := `Tests.Aiur.Interpolation
+
+lean_exe «aiur-folding-tests» where
+  root := `Tests.Aiur.Folding
+
+lean_exe «aiur-fri-query-tests» where
+  root := `Tests.Aiur.FriQuery
+
 section IxCompileVerify
 
 /- Formal verification of the Lean-to-Ixon compiler against the same
@@ -489,3 +628,182 @@ script "check-kernel" (args) := do
     run "lake" #["-d", "Models/SetTheory", "build", "--wfail"]
   IO.println "Kernel certification checks passed."
   return 0
+
+/-- Audit Aiur components and exercise their actual native verifier binding. -/
+script "check-aiur" := do
+  run "lake" #["build", "--wfail", "IxAiurVerify", "aiur-backend-tests",
+    "aiur-bytecode-tests", "aiur-dedup-tests", "aiur-tail-match-tests", "aiur-source-value-tests",
+    "aiur-hoisting-tests", "aiur-air-tests", "aiur-byte-gadget-tests", "aiur-lookup-shape-tests",
+    "aiur-lookup-budget-tests", "aiur-selector-control-tests", "aiur-operation-row-tests",
+    "aiur-block-row-tests", "aiur-circuit-row-tests", "aiur-memory-row-tests", "aiur-trace-height-tests",
+    "aiur-expression-graph-tests", "aiur-constant-degree-tests", "aiur-frontend-expression-tests",
+    "aiur-graph-compilation-tests", "aiur-operation-expression-tests", "aiur-block-expression-tests",
+    "aiur-circuit-expression-tests", "aiur-emission-check-tests", "aiur-key-codec-tests", "aiur-compiled-key-tests",
+    "aiur-proof-codec-tests", "aiur-proof-shape-tests", "aiur-extension-tests", "aiur-logup-tests", "aiur-domain-tests",
+    "aiur-verifier-arithmetic-tests", "aiur-transcript-tests", "aiur-blake3-tests", "aiur-merkle-cap-tests",
+    "aiur-merkle-tests", "aiur-pruned-merkle-tests", "aiur-extension-mmcs-tests", "aiur-fri-domain-tests",
+    "aiur-polynomial-tests", "aiur-interpolation-tests", "aiur-folding-tests", "aiur-fri-query-tests"]
+  let report ← IO.Process.output {
+    cmd := "lake", args := #["env", "lean", "-DwarningAsError=true", "Ix/Aiur/Proofs/Audit.lean"] }
+  unless report.exitCode == 0 do throw (IO.userError s!"{report.stdout}{report.stderr}")
+  let expectedPath := "Tests/Aiur/backend-foundation.txt"
+  let expected ← IO.FS.readFile expectedPath
+  unless report.stdout == expected do
+    IO.FS.withTempFile fun handle path => do
+      handle.putStr report.stdout
+      handle.flush
+      let child ← IO.Process.spawn {
+        cmd := "diff", args := #["-u", expectedPath, path.toString]
+        stdout := .inherit, stderr := .inherit }
+      let _ ← child.wait
+      throw (IO.userError "Aiur component report differs from the reviewed manifest")
+  let snapshots : Array (String × Array String × String) := #[
+    ("aiur-bytecode-tests", #[], "Tests/Aiur/bytecode-compatibility.txt"),
+    ("aiur-dedup-tests", #["--snapshot"], "Tests/Aiur/dedup-compatibility.txt"),
+    ("aiur-tail-match-tests", #[], "Tests/Aiur/tail-match-compatibility.txt"),
+    ("aiur-source-value-tests", #[], "Tests/Aiur/source-value-compatibility.txt")]
+  for (program, args, comparisonPath) in snapshots do
+    let comparison ← IO.Process.output { cmd := s!".lake/build/bin/{program}", args }
+    unless comparison.exitCode == 0 && comparison.stderr.isEmpty do
+      throw (IO.userError s!"{comparison.stdout}{comparison.stderr}")
+    unless comparison.stdout == (← IO.FS.readFile comparisonPath) do
+      IO.FS.withTempFile fun handle path => do
+        handle.putStr comparison.stdout
+        handle.flush
+        let child ← IO.Process.spawn {
+          cmd := "diff", args := #["-u", comparisonPath, path.toString]
+          stdout := .inherit, stderr := .inherit }
+        let _ ← child.wait
+        throw (IO.userError s!"{program} differs from its original native snapshot")
+  run ".lake/build/bin/aiur-dedup-tests"
+  run ".lake/build/bin/aiur-hoisting-tests"
+  run ".lake/build/bin/aiur-air-tests"
+  run ".lake/build/bin/aiur-constant-degree-tests"
+  IO.FS.withTempDir fun directory => do
+    let snapshot := directory / "native-byte-gadgets.bin"
+    let shapeSnapshot := directory / "native-lookup-shapes.bin"
+    let budgetSnapshot := directory / "native-lookup-budget.bin"
+    let selectorSnapshot := directory / "native-selector-control.bin"
+    let operationSnapshot := directory / "native-operation-rows.bin"
+    let blockSnapshot := directory / "native-block-rows.bin"
+    let circuitSnapshot := directory / "native-circuit-rows.bin"
+    let memorySnapshot := directory / "native-memory-rows.bin"
+    let traceHeightSnapshot := directory / "native-trace-heights.bin"
+    let graphShapeSnapshot := directory / "native-graph-shapes.bin"
+    let expressionGraphSnapshot := directory / "native-expression-graphs.bin"
+    let constantDegreeSnapshot := directory / "native-constant-degree-rows.bin"
+    let frontendSnapshot := directory / "native-frontend-expressions.bin"
+    let compilationSnapshot := directory / "native-graph-compilation.bin"
+    let operationExpressionSnapshot := directory / "native-operation-expressions.bin"
+    let blockExpressionSnapshot := directory / "native-block-expressions.bin"
+    let circuitExpressionSnapshot := directory / "native-circuit-expressions.bin"
+    let emissionCheckSnapshot := directory / "native-emission-checks.bin"
+    let keyCodecSnapshot := directory / "native-key-codec.bin"
+    let compiledKeySnapshot := directory / "native-compiled-keys.bin"
+    let proofCodecSnapshot := directory / "native-proof-codec.bin"
+    let proofShapeSnapshot := directory / "native-proof-shapes.bin"
+    let extensionSnapshot := directory / "native-extension-arithmetic.bin"
+    let extensionGraphSnapshot := directory / "native-extension-graphs.bin"
+    let logupSnapshot := directory / "native-logup.bin"
+    let logupStageSnapshot := directory / "native-logup-stages.bin"
+    let domainSnapshot := directory / "native-domains.bin"
+    let quotientSnapshot := directory / "native-quotients.bin"
+    let verifierArithmeticSnapshot := directory / "native-verifier-arithmetic.bin"
+    let transcriptSnapshot := directory / "native-transcript.bin"
+    let blake3Snapshot := directory / "native-blake3.bin"
+    let merkleCapSnapshot := directory / "native-merkle-cap.bin"
+    let merklePathSnapshot := directory / "native-merkle-path.bin"
+    let prunedMerkleSnapshot := directory / "native-pruned-merkle.bin"
+    let extensionMmcsSnapshot := directory / "native-extension-mmcs.bin"
+    let friDomainSnapshot := directory / "native-fri-domains.bin"
+    let polynomialSnapshot := directory / "native-polynomials.bin"
+    let interpolationSnapshot := directory / "native-interpolation.bin"
+    let foldingSnapshot := directory / "native-folding.bin"
+    let friQuerySnapshot := directory / "native-fri-query.bin"
+    let exporter ← IO.Process.spawn {
+      cmd := "cargo"
+      args := #["test", "--locked", "--release", "-p", "aiur",
+        "_snapshot"]
+      env := #[("IX_BYTE_GADGET_SNAPSHOT", some snapshot.toString),
+        ("IX_LOOKUP_SHAPE_SNAPSHOT", some shapeSnapshot.toString),
+        ("IX_LOOKUP_BUDGET_SNAPSHOT", some budgetSnapshot.toString),
+        ("IX_SELECTOR_CONTROL_SNAPSHOT", some selectorSnapshot.toString),
+        ("IX_OPERATION_ROW_SNAPSHOT", some operationSnapshot.toString),
+        ("IX_BLOCK_ROW_SNAPSHOT", some blockSnapshot.toString),
+        ("IX_CIRCUIT_ROW_SNAPSHOT", some circuitSnapshot.toString),
+        ("IX_MEMORY_ROW_SNAPSHOT", some memorySnapshot.toString),
+        ("IX_FIXED_TRACE_HEIGHT_SNAPSHOT", some traceHeightSnapshot.toString),
+        ("IX_GRAPH_SHAPE_SNAPSHOT", some graphShapeSnapshot.toString),
+        ("IX_EXPRESSION_GRAPH_SNAPSHOT", some expressionGraphSnapshot.toString),
+        ("IX_CONSTANT_DEGREE_ROW_SNAPSHOT", some constantDegreeSnapshot.toString),
+        ("IX_FRONTEND_EXPRESSION_SNAPSHOT", some frontendSnapshot.toString),
+        ("IX_GRAPH_COMPILATION_SNAPSHOT", some compilationSnapshot.toString),
+        ("IX_OPERATION_EXPRESSION_SNAPSHOT", some operationExpressionSnapshot.toString),
+        ("IX_BLOCK_EXPRESSION_SNAPSHOT", some blockExpressionSnapshot.toString),
+        ("IX_CIRCUIT_EXPRESSION_SNAPSHOT", some circuitExpressionSnapshot.toString),
+        ("IX_EMISSION_CHECK_SNAPSHOT", some emissionCheckSnapshot.toString),
+        ("IX_KEY_CODEC_SNAPSHOT", some keyCodecSnapshot.toString),
+        ("IX_COMPILED_KEY_SNAPSHOT", some compiledKeySnapshot.toString),
+        ("IX_PROOF_CODEC_SNAPSHOT", some proofCodecSnapshot.toString),
+        ("IX_PROOF_SHAPE_SNAPSHOT", some proofShapeSnapshot.toString),
+        ("IX_EXTENSION_ARITHMETIC_SNAPSHOT", some extensionSnapshot.toString),
+        ("IX_EXTENSION_GRAPH_SNAPSHOT", some extensionGraphSnapshot.toString),
+        ("IX_LOGUP_SNAPSHOT", some logupSnapshot.toString),
+        ("IX_LOGUP_STAGE_SNAPSHOT", some logupStageSnapshot.toString),
+        ("IX_DOMAIN_SNAPSHOT", some domainSnapshot.toString),
+        ("IX_QUOTIENT_SNAPSHOT", some quotientSnapshot.toString),
+        ("IX_VERIFIER_ARITHMETIC_SNAPSHOT", some verifierArithmeticSnapshot.toString),
+        ("IX_TRANSCRIPT_SNAPSHOT", some transcriptSnapshot.toString),
+        ("IX_BLAKE3_SNAPSHOT", some blake3Snapshot.toString),
+        ("IX_MERKLE_CAP_SNAPSHOT", some merkleCapSnapshot.toString),
+        ("IX_MERKLE_PATH_SNAPSHOT", some merklePathSnapshot.toString),
+        ("IX_PRUNED_MERKLE_SNAPSHOT", some prunedMerkleSnapshot.toString),
+        ("IX_EXTENSION_MMCS_SNAPSHOT", some extensionMmcsSnapshot.toString),
+        ("IX_FRI_DOMAIN_SNAPSHOT", some friDomainSnapshot.toString),
+        ("IX_POLYNOMIAL_SNAPSHOT", some polynomialSnapshot.toString),
+        ("IX_INTERPOLATION_SNAPSHOT", some interpolationSnapshot.toString),
+        ("IX_FOLDING_SNAPSHOT", some foldingSnapshot.toString),
+        ("IX_FRI_QUERY_SNAPSHOT", some friQuerySnapshot.toString)]
+      stdout := .inherit
+      stderr := .inherit }
+    unless (← exporter.wait) == 0 do
+      throw (IO.userError "native Aiur component snapshot export failed")
+    run ".lake/build/bin/aiur-byte-gadget-tests" #[snapshot.toString]
+    run ".lake/build/bin/aiur-lookup-shape-tests" #[shapeSnapshot.toString]
+    run ".lake/build/bin/aiur-lookup-budget-tests" #[budgetSnapshot.toString]
+    run ".lake/build/bin/aiur-selector-control-tests" #[selectorSnapshot.toString]
+    run ".lake/build/bin/aiur-operation-row-tests" #[operationSnapshot.toString, constantDegreeSnapshot.toString]
+    run ".lake/build/bin/aiur-frontend-expression-tests" #[frontendSnapshot.toString]
+    run ".lake/build/bin/aiur-graph-compilation-tests" #[compilationSnapshot.toString]
+    run ".lake/build/bin/aiur-operation-expression-tests" #[operationExpressionSnapshot.toString]
+    run ".lake/build/bin/aiur-block-expression-tests" #[blockExpressionSnapshot.toString]
+    run ".lake/build/bin/aiur-circuit-expression-tests" #[circuitExpressionSnapshot.toString]
+    run ".lake/build/bin/aiur-emission-check-tests" #[emissionCheckSnapshot.toString]
+    run ".lake/build/bin/aiur-key-codec-tests" #[keyCodecSnapshot.toString]
+    run ".lake/build/bin/aiur-compiled-key-tests" #[compiledKeySnapshot.toString]
+    run ".lake/build/bin/aiur-proof-codec-tests" #[proofCodecSnapshot.toString]
+    run ".lake/build/bin/aiur-proof-shape-tests" #[proofShapeSnapshot.toString]
+    run ".lake/build/bin/aiur-extension-tests" #[extensionSnapshot.toString, extensionGraphSnapshot.toString]
+    run ".lake/build/bin/aiur-logup-tests" #[logupSnapshot.toString, logupStageSnapshot.toString]
+    run ".lake/build/bin/aiur-domain-tests" #[domainSnapshot.toString, quotientSnapshot.toString]
+    run ".lake/build/bin/aiur-verifier-arithmetic-tests" #[verifierArithmeticSnapshot.toString]
+    run ".lake/build/bin/aiur-transcript-tests" #[transcriptSnapshot.toString]
+    run ".lake/build/bin/aiur-blake3-tests" #[blake3Snapshot.toString]
+    run ".lake/build/bin/aiur-merkle-cap-tests" #[merkleCapSnapshot.toString]
+    run ".lake/build/bin/aiur-merkle-tests" #[merklePathSnapshot.toString]
+    run ".lake/build/bin/aiur-pruned-merkle-tests" #[prunedMerkleSnapshot.toString]
+    run ".lake/build/bin/aiur-extension-mmcs-tests" #[extensionMmcsSnapshot.toString]
+    run ".lake/build/bin/aiur-fri-domain-tests" #[friDomainSnapshot.toString]
+    run ".lake/build/bin/aiur-polynomial-tests" #[polynomialSnapshot.toString]
+    run ".lake/build/bin/aiur-interpolation-tests" #[interpolationSnapshot.toString]
+    run ".lake/build/bin/aiur-folding-tests" #[foldingSnapshot.toString]
+    run ".lake/build/bin/aiur-fri-query-tests" #[friQuerySnapshot.toString]
+    run ".lake/build/bin/aiur-block-row-tests" #[blockSnapshot.toString]
+    run ".lake/build/bin/aiur-circuit-row-tests" #[circuitSnapshot.toString]
+    run ".lake/build/bin/aiur-memory-row-tests" #[memorySnapshot.toString]
+    run ".lake/build/bin/aiur-trace-height-tests" #[traceHeightSnapshot.toString]
+    run ".lake/build/bin/aiur-expression-graph-tests" #[graphShapeSnapshot.toString, expressionGraphSnapshot.toString]
+  run ".lake/build/bin/aiur-backend-tests"
+  IO.println "Aiur component checks passed: exact proof/runtime boundaries, compiler compatibility and native binding."
+  return 0
+

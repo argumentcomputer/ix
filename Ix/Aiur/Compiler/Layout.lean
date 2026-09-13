@@ -324,8 +324,13 @@ decreasing_by
 
 end
 
-def blockLayout (block : Bytecode.Block) : LayoutM Unit :=
-  discard (relayoutBlock block)
+/-- State projection of continuation relayout. -/
+def ctrlLayout (ctrl : Bytecode.Ctrl) : LayoutM Unit :=
+  discard (relayoutCtrl ctrl)
+
+def blockLayout (block : Bytecode.Block) : LayoutM Unit := do
+  block.ops.forM opLayout
+  ctrlLayout block.ctrl
 
 end Bytecode
 

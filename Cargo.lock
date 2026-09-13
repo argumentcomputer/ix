@@ -50,14 +50,20 @@ dependencies = [
 name = "aiur"
 version = "0.1.0"
 dependencies = [
+ "blake3",
  "hashbrown 0.15.5",
  "indexmap",
  "libc",
  "multi-stark",
  "num-bigint 0.4.6",
  "p3-blake3",
+ "p3-challenger",
  "p3-commit",
+ "p3-fri",
+ "p3-merkle-tree",
+ "p3-stir",
  "p3-symmetric",
+ "p3-util",
  "rayon",
  "rustc-hash",
  "tracing",
@@ -2763,6 +2769,27 @@ dependencies = [
  "p3-field",
  "p3-util",
  "serde",
+]
+
+[[package]]
+name = "p3-stir"
+version = "0.6.0"
+source = "git+https://github.com/Plonky3/Plonky3?rev=3152b14a89067c83775a8076cc262ffc48a1fd7c#3152b14a89067c83775a8076cc262ffc48a1fd7c"
+dependencies = [
+ "itertools 0.15.0",
+ "libm",
+ "p3-challenger",
+ "p3-commit",
+ "p3-dft",
+ "p3-field",
+ "p3-matrix",
+ "p3-maybe-rayon",
+ "p3-security",
+ "p3-util",
+ "serde",
+ "spin 0.12.3",
+ "thiserror",
+ "tracing",
 ]
 
 [[package]]

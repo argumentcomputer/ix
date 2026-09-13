@@ -33,6 +33,55 @@ fn fixed_heights_follow_active_positions_and_require_fixed_tables() {
   }
 }
 
+/// All degree bytes, non-power-of-two heights, inactive positions and
+/// independently malformed sequence lengths match the total Lean guard.
+#[cfg(target_pointer_width = "64")]
+#[test]
+fn fixed_trace_height_snapshot() -> std::io::Result<()> {
+  let header = b"Aiur fixed trace heights v1\n";
+  let mut out = header.to_vec();
+  for height in [0, 1, 2, 3, 256, 65536, 1 << 31, 1 << 32, 1 << 63, usize::MAX]
+  {
+    for degree in 0..=255 {
+      out.push(u8::from(fixed(&[height], &[true], &[degree])));
+      out.push(u8::from(fixed(
+        &[0, height, 0],
+        &[false, true, false],
+        &[degree],
+      )));
+      out.push(u8::from(fixed(
+        &[0, height, 65536],
+        &[true, true, true],
+        &[2, degree, 16],
+      )));
+    }
+  }
+  let heights = [0, 256, 0, 65536];
+  for height_count in 0..=4 {
+    for active_count in 0..=4 {
+      for mask in 0..(1 << active_count) {
+        let active = (0..active_count)
+          .map(|bit| mask & (1 << bit) != 0)
+          .collect::<Vec<_>>();
+        for degree_count in 0..=5 {
+          for degree in [0, 1, 7, 8, 9, 15, 16, 17, 63, 64, 255] {
+            out.push(u8::from(fixed(
+              &heights[..height_count],
+              &active,
+              &vec![degree; degree_count],
+            )));
+          }
+        }
+      }
+    }
+  }
+  assert_eq!(out.len(), header.len() + 17_910);
+  if let Some(path) = std::env::var_os("IX_FIXED_TRACE_HEIGHT_SNAPSHOT") {
+    std::fs::write(path, out)?;
+  }
+  Ok(())
+}
+
 #[test]
 fn public_verify_checks_fixed_byte_heights_before_openings() {
   let (cp, fp) = test_parameters();

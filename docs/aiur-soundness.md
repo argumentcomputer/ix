@@ -222,3 +222,43 @@ lake test -- --ignored ixvm
 
 These repairs and regression tests address the defects above. They do not
 establish complete compiler preservation or cryptographic soundness.
+
+## Checked proof components
+
+`IxAiurVerify` contains the migrated Aiur row, expression, key, verifier
+arithmetic and FRI query components. `lake run check-aiur` checks their exact
+theorem types, premise definitions, transitive axioms and project runtime
+implementations against `Tests/Aiur/backend-foundation.txt`. The audit also
+rejects a dependency on the independent `Ix.Compiler` library. Native/Lean
+corpora check the executable models against the pinned backend; this is
+regression evidence, separate from a universal native refinement theorem.
+
+Generic call emission now uses the six gap columns and derived child rank
+described above. The call-order equation is proved identically zero; it is
+not an extra native constraint. The corresponding allocation and extraction
+results state their generic-layout premise explicitly. The component layout
+pass is proved to preserve input arity and complete evaluator results,
+including shared continuations, while its allocation model covers zero,
+boundary and ordered call ranks. Extracting execution from physical rows in
+all component modes remains the next proof obligation.
+
+Compiled-key comparison includes production lookup retuning with the key's
+blowup parameter. Its total selector retains the machine-size and overflow
+guards and the baseline FFT cost comparison. Retuning preserves the authored
+graph, main width and preprocessed dimensions; the compared key includes the
+resulting group and degree. The key corpus exercises three blowup settings,
+function and memory circuits, both byte tables, empty circuits and validly
+encoded altered keys.
+
+The source compatibility checks also cover strict effect order and explicit
+returns. Array update evaluates its new value before the array expression,
+consistently with the interpreter. Inlining leaves a normal call around a
+callee with an explicit return, preserving its return boundary. These repairs
+do not supply the still-missing general backward compiler theorem.
+
+These component theorems are conditional building blocks for IxVM consistency.
+Public verifier acceptance still needs authenticated satisfying traces and
+exact bounded lookup balance, compiler and guest reflection, general kernel
+model preservation, and the quantitative cryptographic composition. The
+runtime inventory names the native verifier interface; it does not establish
+its soundness.

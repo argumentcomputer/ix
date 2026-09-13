@@ -675,16 +675,32 @@ impl AiurSystem {
 #[cfg(test)]
 mod tests {
   mod acceptance;
+  mod advice;
+  mod blake3;
   mod branchless;
+  mod byte_gadgets;
   mod byte_shapes;
   mod call_order;
   mod constant_degree;
+  mod extension_mmcs;
+  mod folding;
+  mod fri_domain;
+  mod fri_query;
   mod host_timings;
+  mod interpolation;
   mod lookup_budget;
   mod lookup_groups;
   mod lookup_shapes;
+  mod memory;
+  mod merkle;
   mod mmcs;
   mod peak;
+  mod polynomial;
+  mod proof_codec;
+  mod proof_shapes;
+  mod pruned_merkle;
+  mod scalar;
+  mod transcript;
 
   use super::*;
   use crate::{

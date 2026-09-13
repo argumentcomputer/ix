@@ -88,8 +88,10 @@ fn public_verify_accepts_a_cap_at_the_shortest_trace_lde() {
   assert!(system.verify(&changed, &proof).is_err());
 }
 
+#[cfg(target_pointer_width = "64")]
 #[test]
-fn cap_coverage_matches_injection_geometry_at_integer_boundaries() {
+fn merkle_cap_snapshot() -> std::io::Result<()> {
+  let mut out = b"Aiur Merkle caps v1\n".to_vec();
   let parameters = [
     0,
     1,
@@ -111,6 +113,7 @@ fn cap_coverage_matches_injection_geometry_at_integer_boundaries() {
   for blowup in parameters {
     for cap in parameters {
       assert!(trace_cap_coverage(blowup, cap, &[]));
+      out.push(u8::from(trace_cap_coverage(blowup, cap, &[])));
       total += 1;
       for degree in 0..=255 {
         for degrees in [
@@ -132,10 +135,15 @@ fn cap_coverage_matches_injection_geometry_at_integer_boundaries() {
             expected,
             "blowup={blowup}, cap={cap}, degrees={degrees:?}"
           );
+          out.push(u8::from(trace_cap_coverage(blowup, cap, &degrees)));
           total += 1;
         }
       }
     }
   }
   assert_eq!(total, 288225);
+  if let Some(path) = std::env::var_os("IX_MERKLE_CAP_SNAPSHOT") {
+    std::fs::write(path, out)?;
+  }
+  Ok(())
 }

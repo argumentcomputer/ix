@@ -379,8 +379,9 @@ namespace Source
   output columns at the call site).
 * `unconstrained` — a call whose callee is trusted (no lookup / circuit
   constraint); the old `unconstrained := true`.
-* `inlined` — the callee's body is spliced into the caller at compile
-  time (no separate circuit, no interface columns). Eliminated by
+* `inlined` — request that the callee's body be spliced into the caller.
+  Callees with explicit returns retain a normal function-call boundary.
+  Eliminated by
   `Toplevel.inlineCalls` before typechecking; forbidden for callees that
   are (transitively) inline-recursive. -/
 inductive CallMode
@@ -842,9 +843,47 @@ decreasing_by
     | (have := Array.sizeOf_lt_of_mem ‹_ ∈ _›; grind)
     | (have := List.sizeOf_lt_of_mem ‹_ ∈ _›; grind)
 
-/-- Structurally splice every `.app g args .inlined` in `t`, given `done`,
+/-- Explicit returns require a function-call boundary when considering
+inlining. Splicing them would let a callee return from its caller. -/
+def Term.hasExplicitReturn : Term → Bool
+  | .ret _ => true
+  | .var _ | .unit | .field _ | .u8Lit _ | .ref _ => false
+  | .app _ args _ => args.attach.any fun arg => Term.hasExplicitReturn arg.val
+  | .tuple terms | .array terms => terms.attach.any fun term => Term.hasExplicitReturn term.val
+  | .let _ value body => Term.hasExplicitReturn value || Term.hasExplicitReturn body
+  | .match scrut arms => Term.hasExplicitReturn scrut ||
+      arms.attach.any fun arm => Term.hasExplicitReturn arm.val.2
+  | .eqZero a | .proj a _ | .get a _ | .slice a _ _
+  | .store a | .load a | .ptrVal a | .ann _ a
+  | .u8BitDecomposition a | .u8ShiftLeft a | .u8ShiftRight a
+  | .u32ToField a | .unconstrainedGToBytes a | .unconstrainedGInverse a
+  | .toField a | .u8FromFieldUnsafe a => Term.hasExplicitReturn a
+  | .add a b | .sub a b | .mul a b | .set a _ b | .ioGetInfo a b | .ioRead a b _
+  | .u8Xor a b | .u8Add a b | .u8Mul a b | .u8Sub a b | .u8And a b | .u8Or a b
+  | .u8LessThan a b | .u32LessThan a b | .u8XorSplit7 a b | .u8XorSplit4 a b
+  | .unconstrainedU32Add a b | .unconstrainedBigUintDivMod a b | .u8RangeCheck a b =>
+    Term.hasExplicitReturn a || Term.hasExplicitReturn b
+  | .assertEq a b _ c | .ioWrite a b c | .unconstrainedU32Add3 a b c =>
+    Term.hasExplicitReturn a || Term.hasExplicitReturn b || Term.hasExplicitReturn c
+  | .ioSetInfo a b c d e => Term.hasExplicitReturn a || Term.hasExplicitReturn b ||
+      Term.hasExplicitReturn c || Term.hasExplicitReturn d || Term.hasExplicitReturn e
+  | .debug _ none continuation => Term.hasExplicitReturn continuation
+  | .debug _ (some value) continuation =>
+    Term.hasExplicitReturn value || Term.hasExplicitReturn continuation
+termination_by term => sizeOf term
+decreasing_by
+  all_goals first
+    | decreasing_tactic
+    | (have := Array.sizeOf_lt_of_mem term.property; grind)
+    | (have := List.sizeOf_lt_of_mem arg.property; grind)
+    | (have := List.sizeOf_lt_of_mem arm.property
+       have : sizeOf arm.val.2 < sizeOf arm.val := by cases arm.val; simp; omega
+       simp_all; omega)
+
+/-- Structurally splice `.app g args .inlined` in `t`, given `done`,
 which maps each already-expanded callee to its input locals and its (already
-inline-free) body. At an inline site the callee's inputs and body are
+inline-free) body. Callees with explicit returns become normal calls so their
+return cannot escape the caller. At other inline sites the inputs and body are
 α-renamed to fresh `inl#N` names (`Term.freshen`, seeded with the inputs),
 then each fresh input is bound to its argument via a `let`. Freshening the
 inputs BEFORE binding the arguments is essential: arguments are caller terms,
@@ -864,6 +903,7 @@ def Term.expandOnce (done : Std.HashMap Global (List Local × Term)) (cnt : Nat)
     match done[g]? with
     | none => (cnt, .app g args' .inlined)
     | some (ins, body) =>
+      if body.hasExplicitReturn then (cnt, .app g args' .normal) else
       let (cnt, subst, freshInputs) := ins.foldl
         (init := (cnt, (∅ : Std.HashMap Local Local), ([] : List Local)))
         fun (cnt, subst, acc) inp =>
@@ -1059,7 +1099,7 @@ def Term.hoistLetsAux : Term → StateM Nat Term := fun t => do
   | .proj a n => return Term.hoistUnaryLets (fun a => .proj a n) (← a.hoistLetsAux)
   | .get a n => return Term.hoistUnaryLets (fun a => .get a n) (← a.hoistLetsAux)
   | .slice a i j => return Term.hoistUnaryLets (fun a => .slice a i j) (← a.hoistLetsAux)
-  | .set a n v => Term.hoistBinaryLets (fun a v => .set a n v) (← a.hoistLetsAux) (← v.hoistLetsAux)
+  | .set a n v => Term.hoistBinaryLets (fun v a => .set a n v) (← v.hoistLetsAux) (← a.hoistLetsAux)
   | .store a => return Term.hoistUnaryLets .store (← a.hoistLetsAux)
   | .load a => return Term.hoistUnaryLets .load (← a.hoistLetsAux)
   | .ptrVal a => return Term.hoistUnaryLets .ptrVal (← a.hoistLetsAux)
@@ -1139,14 +1179,22 @@ context; left in tail position it turns a legal tail match into a
 lowering rejects ("non-tail match in arbitrary position"). The rewrite
 is the eta step `let x = v; x → v`, applied only through tail positions
 (let bodies and match arms), so non-tail wraps are untouched. -/
-partial def Term.restoreTailMatches : Term → Term
-  | .let p v b =>
-    match p, b with
-    | .var x, .var y =>
-      if x == y then Term.restoreTailMatches v else .let p v b
-    | _, _ => .let p v (Term.restoreTailMatches b)
-  | .match s arms => .match s (arms.map fun (p, a) => (p, Term.restoreTailMatches a))
+def Term.restoreTailMatches : Term → Term
+  | .let (.var x) v (.var y) =>
+    if x == y then Term.restoreTailMatches v else .let (.var x) v (.var y)
+  | .let p v b => .let p v (Term.restoreTailMatches b)
+  | .match s arms =>
+    .match s (arms.attach.map fun arm => (arm.val.1, Term.restoreTailMatches arm.val.2))
   | t => t
+termination_by term => sizeOf term
+decreasing_by
+  all_goals first
+    | decreasing_tactic
+    | (have listBound := List.sizeOf_lt_of_mem arm.property
+       have pairBound : sizeOf arm.val.2 < sizeOf arm.val := by
+         cases arm.val; simp; omega
+       simp_all
+       omega)
 
 /-- Inline-expand every function body in the toplevel, eliminating all
 `.inlined` applications. Run before typechecking.
