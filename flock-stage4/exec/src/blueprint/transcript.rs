@@ -16,6 +16,7 @@ use ix_stage4_trace::F128InnerLigeritoTraceV1;
 use ixby_flock::ixby::exec::CompiledExec;
 
 pub(crate) struct MainBlueprint {
+  pub(crate) hash: super::hash::HashBlueprint,
   pub(crate) operations: Vec<Stage4TranscriptOpV1>,
   pub(crate) payload_lengths: Vec<usize>,
   pub(crate) observed_values: u64,
@@ -191,6 +192,13 @@ pub(crate) fn compile_transcript(
   let inner = super::inner::compile_inner(setup, &pcs.frontend, &mut tape)?;
   tape.merge(assist);
   Ok(MainBlueprint {
+    hash: super::hash::compile_hash(
+      &tape.ops,
+      &setup.transcript_domain(),
+      tape.address.observed,
+      tape.address.challenges,
+      &tape.payload_lengths,
+    )?,
     operations: tape.ops,
     payload_lengths: tape.payload_lengths,
     observed_values: tape.address.observed,

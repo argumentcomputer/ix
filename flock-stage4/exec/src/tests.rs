@@ -120,12 +120,23 @@ fn topology(w: &ExecReplayWitness<'_>) -> Vec<[u8; 32]> {
 fn different_guests_have_identical_complete_replay_topology() {
   let setup = setup();
   let binding = compile_exec_binding(&setup).unwrap();
+  let compiled = crate::compile_exec_replay(&setup).unwrap();
+  let recompiled = crate::compile_exec_replay(&setup).unwrap();
+  assert_eq!(compiled.identities(), recompiled.identities());
+  assert_ne!(compiled.identities().digest(), [0; 32]);
+  assert_eq!(compiled.binding(), &binding);
+  assert!(std::ptr::eq(compiled.exec_setup(), &setup));
   let identity = setup.identities();
   let mut first_topology = None;
   for (branch, value) in [(false, false), (true, false), (true, true)] {
     let start = Instant::now();
     let (commitments, bytes) = prove(&setup, branch, value);
-    let witness = replay_exec(&setup, commitments, &bytes).unwrap();
+    let witness = compiled.replay(commitments, &bytes).unwrap();
+    assert_eq!(witness.topology_digest(), compiled.identities().digest());
+    assert_eq!(
+      crate::compile_exec_replay(&setup).unwrap().identities(),
+      compiled.identities()
+    );
     eprintln!(
       "Exec replay branch={branch} value={value}: {:.3}s; {:?}",
       start.elapsed().as_secs_f64(),

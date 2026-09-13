@@ -14,8 +14,11 @@ Root Cargo/Lean dependencies and the experimental m37 configuration are
 unchanged. The donor file hashes and excluded legacy APIs were recorded in
 `flock-stage4/EXEC-REPLAY-PROVENANCE.json` before import.
 
-`replay_exec(approvedExec, commitments, completeProofBytes)` uses the strict
-Exec decoder and complete native verifier. Its read-only `VerifiedExecProof`
+`compile_exec_replay(approvedExec)` constructs an immutable `CompiledExecReplay`
+using only the approved generic setup. It takes no guest image, commitment,
+statement, or proof. Its `replay(commitments, completeProofBytes)` method uses
+the strict Exec decoder and complete native verifier; `replay_exec` remains
+the compile-and-replay convenience entry point. Its read-only `VerifiedExecProof`
 input projection is borrowed from that exact approved setup. There is no
 legacy decoder, Stage 2 artifact reconstruction, program/input decoding,
 host interpreter, or prover-selected public vector in this boundary.
@@ -89,10 +92,24 @@ one-word vector and scalar squeezes. Query values are never sampled during
 setup and cannot alter the row/path allocation. All compilers run before the
 strict native proof decoder.
 
-The auxiliary fold and low-level hash-topology compilers remain unfinished.
-Repeated equality of
-exported topology across valid proofs is a regression, not permission to
-derive a key from an arbitrary proof. No such key-generation API is exposed.
+The auxiliary compiler fixes every matrix/structure/jagged claim, fold round,
+bridge, root slot, and auxiliary transcript operation. Both transcripts are
+lowered to exact BLAKE3 stream sources, compression geometry, CV links, squeeze
+sources, fork links, and PoW predicates without hashing or inventing dummy
+messages/nonces. Native comparison excludes only the concrete CV/message
+witness columns; the existing compression constraints must check their values.
+Hash-layout differentials cover absorb/XOF/PoW boundaries with 336 native
+instances, and 27 structural mutations are rejected.
+
+The compiled object retains fourteen separate setup/component identities,
+including domain-separated main and auxiliary operation-tree digests. It is
+borrowed from its approved Exec setup and has no public field replacement or
+prover-export constructor. The regression compiles it twice before creating
+any guest, then reuses the same object for all three executions. Repeated
+native equality is additional evidence, not permission to derive a key from
+an arbitrary proof. A proof-free R1CS emitter and terminal key compiler still
+need to consume the approved topology without relying on a valid assignment;
+no such key-generation API is exposed here.
 
 ## Current evidence
 
@@ -119,7 +136,7 @@ phase/topology digests agree. No Stage 4 key or FFLONK proof is generated.
 | Accumulator transcript compression rows / PoW predicates | 4,947 / 1,373 |
 | Terminal diagnostic root families | 46 matrix roots, 1 structure, 1 jagged |
 
-The 159 ordinary workspace tests pass; three tests are ignored by default
+The 164 ordinary workspace tests pass; three tests are ignored by default
 (the retained large two-ring projection and the two new native replay/census
 tests). The real three-execution replay regression passes under a 32 GiB
 address-space cap with four Rayon threads. The complete matrix-free census
@@ -159,9 +176,9 @@ artifact domains are rejected.
 
 ## Remaining gates
 
-Complete the proof-free hash-lowering and auxiliary fold topology compilers;
-extend phase-specific hostile
-message tests; close every unresolved table evaluation in the final relation;
+Implement proof-free R1CS/key compilation from the approved replay blueprints;
+extend phase-specific hostile message tests; close every unresolved table
+evaluation in the final relation;
 then actually prove and isolate-verify that complete relation with only an
 approved terminal configuration, externally expected statement, and compact
 proof. Resource admission must use the new complete geometry including root

@@ -25,11 +25,12 @@ use ixby_flock::ixby::{
 
 /// Complete native replay diagnostic. Its private fields are tied to one
 /// approved setup, but this is neither a Stage 4 key nor terminal acceptance:
-/// the exported phase topologies must still be checked against a proof-free
-/// compiler, and the folded roots must be constrained inside the final proof.
+/// every exported phase topology is checked against the proof-free replay
+/// compiler, but the folded roots still need constraints in the final proof.
 #[derive(Clone)]
 pub struct ExecReplayWitness<'a> {
   setup: &'a CompiledExec,
+  topology_digest: [u8; 32],
   commitments: ExecCommitmentsV0,
   binding: ExecBindingV0,
   public_values: Vec<[u8; 16]>,
@@ -43,6 +44,9 @@ pub struct ExecReplayWitness<'a> {
 }
 
 impl ExecReplayWitness<'_> {
+  pub fn topology_digest(&self) -> [u8; 32] {
+    self.topology_digest
+  }
   pub fn setup(&self) -> &CompiledExec {
     self.setup
   }
@@ -137,16 +141,21 @@ pub fn replay_exec<'a>(
   commitments: ExecCommitmentsV0,
   proof_bytes: &[u8],
 ) -> Result<ExecReplayWitness<'a>> {
-  let binding = compile_exec_binding(setup)?;
-  let approved_wiring = crate::blueprint::compile_wiring(setup)?;
-  let approved_boolean = crate::blueprint::compile_boolean(setup)?;
-  let approved_pcs =
-    crate::blueprint::compile_pcs(setup, &approved_wiring, &approved_boolean)?;
-  let approved_main = crate::blueprint::compile_transcript(
-    setup,
-    &approved_boolean,
-    &approved_pcs,
-  )?;
+  crate::compile_exec_replay(setup)?.replay(commitments, proof_bytes)
+}
+
+pub(crate) fn replay_compiled<'a>(
+  compiled: &crate::CompiledExecReplay<'a>,
+  commitments: ExecCommitmentsV0,
+  proof_bytes: &[u8],
+) -> Result<ExecReplayWitness<'a>> {
+  let setup = compiled.setup;
+  let binding = compiled.binding.clone();
+  let approved_wiring = &compiled.wiring;
+  let approved_boolean = &compiled.boolean;
+  let approved_pcs = &compiled.pcs;
+  let approved_main = &compiled.main;
+  let approved_folds = &compiled.folds;
   let expected =
     ExecStatementDigest(commitments.statement_digest(binding.profile_digest));
   let verified = setup.verify_for_replay(expected, proof_bytes)?;
@@ -194,7 +203,7 @@ pub fn replay_exec<'a>(
     fixed_public,
   )?;
   ensure!(
-    *wiring.trace() == approved_wiring,
+    wiring.trace() == approved_wiring,
     "Exec wiring differs from proof-free blueprint"
   );
   let boolean = proof
@@ -353,6 +362,28 @@ pub fn replay_exec<'a>(
     matrix_accumulator.jagged_root_claim().check(&jagged_params),
     "Exec native jagged terminal differential"
   );
+  ensure!(
+    *matrix_accumulator.trace() == approved_folds.matrices
+      && *matrix_accumulator.circuit_structure_trace()
+        == approved_folds.structure
+      && *matrix_accumulator.jagged_trace() == approved_folds.jagged
+      && matrix_accumulator.operations() == approved_folds.operations
+      && matrix_accumulator.observed_values().len() as u64
+        == approved_folds.observed_values
+      && matrix_accumulator.challenges().len() as u64
+        == approved_folds.challenges
+      && matrix_accumulator
+        .byte_payloads()
+        .iter()
+        .map(Vec::len)
+        .collect::<Vec<_>>()
+        == approved_folds.payload_lengths,
+    "Exec leaf accumulator differs from proof-free blueprint"
+  );
+  ensure!(
+    approved_folds.hash.matches(matrix_accumulator.chained_blake3()),
+    "Exec accumulator hash topology differs from proof-free blueprint"
+  );
   let transcript = Stage4FlockTranscriptWitnessV1::from_recording_with_algebra(
     &challenger,
     &domain,
@@ -369,6 +400,10 @@ pub fn replay_exec<'a>(
         == approved_main.payload_lengths,
     "Exec main transcript differs from proof-free blueprint"
   );
+  ensure!(
+    approved_main.hash.matches(transcript.chained_blake3()),
+    "Exec main hash topology differs from proof-free blueprint"
+  );
   replay::validate_components(
     public.len(),
     binding.circuit_digest,
@@ -381,6 +416,7 @@ pub fn replay_exec<'a>(
   )?;
   Ok(ExecReplayWitness {
     setup,
+    topology_digest: compiled.identities().digest(),
     commitments,
     binding,
     public_values: public.iter().copied().map(encode_f128).collect(),

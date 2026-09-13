@@ -28,6 +28,8 @@
     "Generic circuit binding constrains S = H4(P,B,I,O), public Q = H5(P,B,O), and the exact approved Flock statement prefix. It reconstructs the public vector from fixed words and computed S.",
     "Independent proof-free symbolic wiring and Boolean PIOP compilers reconstruct exact DAGs and PCS claim wires from CompiledExec; native replay must match them structurally.",
     "Proof-free merged PCS, multipoint/anchor, inner Ligerito, and complete main transcript operation-tree compilers pin all fixed dimensions, addresses, labels, forks/merges, private slots, and PoW policies; no verifier/prover or witness value is used to construct them.",
-    "Witness replay is not a proof-free setup compiler or terminal acceptance certificate. Those obligations are tracked separately."
+    "Proof-free auxiliary matrix/structure/jagged fold compilation and pure operation-tree-to-BLAKE3 lowering cover both complete transcripts without hash evaluation or dummy values. Exact native topology comparison excludes only concrete CV/message witness columns, whose validity remains a circuit obligation.",
+    "compile_exec_replay accepts only approved CompiledExec setup and returns an immutable borrowed topology with fourteen distinct component identities. The same compiled object is reused for different guests and branch outcomes; no proof-dependent shape is adopted as key material.",
+    "Witness replay and its proof-free topology compiler are not proof-free R1CS/key compilation or terminal acceptance certificates. Root closure, full proving, and those remaining setup obligations are tracked separately."
   ]
 }

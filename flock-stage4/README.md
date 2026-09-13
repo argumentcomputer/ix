@@ -22,13 +22,16 @@ Tests include strict scalar/curve/subgroup decoding, invalid SRS/key rejection,
 nonzero blinding admission, authenticated scratch corruption, and identical
 proof/key results across memory and file backends for fixed test randomness.
 Small proofs use development setup and randomness, not production security.
-The generic replay addition passes 156 ordinary tests (88 FFLONK, 20 trace,
-46 circuit, 2 replay); three heavyweight tests remain opt-in.
+The generic replay addition passes 164 ordinary tests (88 FFLONK, 20 trace,
+46 circuit, 10 replay/setup); three heavyweight tests remain opt-in.
 
 ## Generic Exec replay
 
-`exec::replay_exec` consumes an approved `CompiledExec`, commitment components,
-and the strict `IXBYEX00` bundle. It never reconstructs a native Stage 2 proof,
+`exec::compile_exec_replay` takes only an approved `CompiledExec` and produces
+an immutable replay topology before any guest or proof exists. Its `replay`
+method consumes commitment components and the strict `IXBYEX00` bundle;
+`exec::replay_exec` is a compile-and-replay convenience wrapper.
+It never reconstructs a native Stage 2 proof,
 guest image, input bytes, or execution trace. The complete native verifier,
 recorded transcript, algebra, Product-GKR, merged PCS, multipoint/untwisted
 assist, inner Ligerito/Merkle, and all accumulator folds are exercised on
@@ -43,11 +46,12 @@ The complete replay composition is deliberately named
 `constrain_exec_root_conditional`; its roots still require closure.
 
 Proof-free symbolic compilers reconstruct wiring, zerocheck, lincheck, merged
-PCS, multipoint/anchor assist, and inner Ligerito, plus the complete main
-transcript operation tree. Native replay must match their exact structures,
-not just operation counts. Low-level hash topology and auxiliary fold setup
-are still required before any Stage 4 key can be approved. No terminal setup
-or full FFLONK proof is produced here.
+PCS, multipoint/anchor assist, inner Ligerito, and all three accumulator folds,
+plus both complete transcript operation trees and their BLAKE3 compression
+topology. Native replay must match their exact structures, not just operation
+counts. Component identities remain distinct. These are replay blueprints,
+not a proof-free R1CS/key compiler. No terminal key or full FFLONK proof is
+produced here.
 
 ```sh
 ulimit -v 33554432

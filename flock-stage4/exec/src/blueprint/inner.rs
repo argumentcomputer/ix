@@ -51,8 +51,9 @@ pub(super) fn compile_inner(
     q_eval_observation == frontend.q_eval_observation,
     "inner/frontend q address"
   );
-  // The sole packed-direct claim uses a one-word VECTOR squeeze, no batch
-  // nonce. Replacing it with a scalar squeeze changes the hash transcript.
+  // The sole packed-direct claim uses a one-word vector squeeze, no batch
+  // nonce. Preserve that exact operation kind even though the pinned chained
+  // hash has no squeeze header and emits the same word for a scalar squeeze.
   let batching_challenge = tape.squeeze_slice(1, None)[0];
   tape.label(b"flock-ligerito-basis-f256-split-v0");
   let target_observation = tape.observe();
