@@ -1,0 +1,494 @@
+{
+  "fixed_plan": {
+    "comparison_order": [
+      [
+        "reference",
+        "prepared"
+      ],
+      [
+        "prepared",
+        "reference"
+      ],
+      [
+        "reference",
+        "prepared"
+      ]
+    ],
+    "cpu": 0,
+    "environment_overrides": {
+      "LC_ALL": "C",
+      "LEAN_NUM_THREADS": "1",
+      "MALLOC_ARENA_MAX": "1"
+    },
+    "format": "compilatrix/source-evidence-observation-plan/1",
+    "frozen_utc": "2026-09-13T13:37:07.524573+00:00",
+    "matrix_case_order": [
+      "baseline",
+      "edited",
+      "blob-edited",
+      "mutual",
+      "wide-32",
+      "wide-600"
+    ],
+    "memory_scope": "Separate GNU time envelopes for the identical old/new six-case process and the additional diagnostic profile.",
+    "phase_scope": "One call per named clock; profile preparation/checking/build intervals overlap and must not be summed.",
+    "profile_processes_after_comparisons": 3,
+    "profile_width_order": [
+      32,
+      64,
+      128,
+      256,
+      600
+    ],
+    "repetitions": 3,
+    "replay_scope": "Fresh source directory plus retained executable seeds; independently check retained certificates and all artifact bytes. No executable rebuild during replay.",
+    "scope": "Descriptive fresh-process observations. All values retained; no significance claim or timing threshold.",
+    "seed": {
+      "check-source-evidence": {
+        "bytes": 119270688,
+        "sha256": "cce840be73085b4ff8073ea52200e5d73a13726d0528171f4f482c2f021b833f"
+      },
+      "check-source-modular": {
+        "bytes": 119277504,
+        "sha256": "531f7e47e639f3273db87ebab013030026de3cb6c65172e5a3ba9d37d51cb8f9"
+      },
+      "source-evidence": {
+        "bytes": 124382760,
+        "sha256": "d3ffcd4f20e5a1f3c99bf7fdcc533f9973347f82409a1bca1081e2333def3752"
+      },
+      "source-modular": {
+        "bytes": 124109416,
+        "sha256": "b1fcb8b1500e634e4ba62d15a96528ba46698655b8149053884d05753bdb7fb3"
+      },
+      "source-modular-reference": {
+        "bytes": 124085888,
+        "sha256": "932fc37a26bdade3b7ba2cb12d6c1c5ed89498e3c36636d872ddfef6f1a2f693"
+      }
+    }
+  },
+  "format": "compilatrix/source-evidence-reproduction/1",
+  "host_after": {
+    "allowed_cpus": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29,
+      30,
+      31
+    ],
+    "build_processes": {
+      "argv": [
+        "ps",
+        "-C",
+        "lean,lake,nix,gcc,cc1,clang",
+        "-o",
+        "pid=,comm="
+      ],
+      "exit_code": 1,
+      "output": ""
+    },
+    "environment_overrides": {
+      "LC_ALL": "C",
+      "LEAN_NUM_THREADS": "1",
+      "MALLOC_ARENA_MAX": "1"
+    },
+    "lscpu": {
+      "argv": [
+        "lscpu"
+      ],
+      "exit_code": 0,
+      "output": "Architecture:                            x86_64\nCPU op-mode(s):                          32-bit, 64-bit\nAddress sizes:                           48 bits physical, 48 bits virtual\nByte Order:                              Little Endian\nCPU(s):                                  32\nOn-line CPU(s) list:                     0-31\nVendor ID:                               AuthenticAMD\nModel name:                              AMD Ryzen 9 7950X3D 16-Core Processor\nCPU family:                              25\nModel:                                   97\nThread(s) per core:                      2\nCore(s) per socket:                      16\nSocket(s):                               1\nStepping:                                2\nMicrocode version:                       0xa60120a\nFrequency boost:                         enabled\nCPU(s) scaling MHz:                      66%\nCPU max MHz:                             5763.3560\nCPU min MHz:                             416.6290\nBogoMIPS:                                8384.15\nFlags:                                   fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ht syscall nx mmxext fxsr_opt pdpe1gb rdtscp lm constant_tsc rep_good amd_lbr_v2 nopl xtopology nonstop_tsc cpuid extd_apicid aperfmperf rapl pni pclmulqdq monitor ssse3 fma cx16 sse4_1 sse4_2 x2apic movbe popcnt aes xsave avx f16c rdrand lahf_lm cmp_legacy svm extapic cr8_legacy abm sse4a misalignsse 3dnowprefetch osvw ibs skinit wdt tce topoext perfctr_core perfctr_nb bpext perfctr_llc mwaitx cpuid_fault cpb cat_l3 cdp_l3 hw_pstate ssbd mba perfmon_v2 ibrs ibpb stibp ibrs_enhanced vmmcall fsgsbase bmi1 avx2 smep bmi2 erms invpcid cqm rdt_a avx512f avx512dq rdseed adx smap avx512ifma clflushopt clwb avx512cd sha_ni avx512bw avx512vl xsaveopt xsavec xgetbv1 xsaves cqm_llc cqm_occup_llc cqm_mbm_total cqm_mbm_local user_shstk avx512_bf16 clzero irperf xsaveerptr rdpru wbnoinvd cppc arat npt lbrv svm_lock nrip_save tsc_scale vmcb_clean flushbyasid decodeassists pausefilter pfthreshold avic vgif x2avic v_spec_ctrl vnmi avx512vbmi umip pku ospke avx512_vbmi2 gfni vaes vpclmulqdq avx512_vnni avx512_bitalg avx512_vpopcntdq rdpid overflow_recov succor smca fsrm flush_l1d\nVirtualization:                          AMD-V\nL1d cache:                               512 KiB (16 instances)\nL1i cache:                               512 KiB (16 instances)\nL2 cache:                                16 MiB (16 instances)\nL3 cache:                                128 MiB (2 instances)\nNUMA node(s):                            1\nNUMA node0 CPU(s):                       0-31\nVulnerability Gather data sampling:      Not affected\nVulnerability Ghostwrite:                Not affected\nVulnerability Indirect target selection: Not affected\nVulnerability Itlb multihit:             Not affected\nVulnerability L1tf:                      Not affected\nVulnerability Mds:                       Not affected\nVulnerability Meltdown:                  Not affected\nVulnerability Mmio stale data:           Not affected\nVulnerability Old microcode:             Not affected\nVulnerability Reg file data sampling:    Not affected\nVulnerability Retbleed:                  Not affected\nVulnerability Spec rstack overflow:      Mitigation; Safe RET\nVulnerability Spec store bypass:         Mitigation; Speculative Store Bypass disabled via prctl\nVulnerability Spectre v1:                Mitigation; usercopy/swapgs barriers and __user pointer sanitization\nVulnerability Spectre v2:                Mitigation; Enhanced / Automatic IBRS; IBPB conditional; STIBP always-on; PBRSB-eIBRS Not affected; BHI Not affected\nVulnerability Srbds:                     Not affected\nVulnerability Tsa:                       Mitigation; Clear CPU buffers\nVulnerability Tsx async abort:           Not affected\nVulnerability Vmscape:                   Mitigation; IBPB before exit to userspace\n"
+    },
+    "power_and_load": {
+      "/proc/loadavg": "1.98 10.78 17.21 2/4573 2249894",
+      "/sys/devices/system/cpu/cpu0/cpufreq/scaling_driver": "amd-pstate-epp",
+      "/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor": "powersave",
+      "/sys/devices/system/cpu/cpufreq/boost": "1"
+    },
+    "recorded_utc": "2026-09-13T13:38:45.438119+00:00",
+    "selected_cpu": 0,
+    "selected_environment": {
+      "LD_LIBRARY_PATH": "/nix/store/anxs5hnqyx2jd9z843n0pswiwj6wbm9v-pipewire-1.6.5-jack/lib",
+      "LEAN_CC": null,
+      "LEAN_SYSROOT": null,
+      "PATH": "/home/jcb/.codex-work/tmp/arg0/codex-arg0LB4SDh:/nix/store/v24sx9l1jmvvia3z8iznrd7jwhvc8kcf-bubblewrap-0.11.2/bin:/nix/store/fbgp3pw492kzs76jb8c62zwy8ndz6a58-lean-4.33.0/bin:/nix/store/sqlnjj8c3n3si3sjnadhdbcwgrk97g2w-clang-wrapper-21.1.2/bin:/nix/store/xrnlavkjfxarwxzqh7vk3yjbva16rpbc-clang-21.1.2/bin:/nix/store/q6wgv06q39bfhx2xl8ysc05wi6m2zdss-glibc-2.40-66-bin/bin:/nix/store/imad8dvhp77h0pjbckp6wvmnyhp8dpgg-coreutils-9.8/bin:/nix/store/l87z7vxm5gp0n21ddrlx4dmrrqg92a7w-binutils-wrapper-2.44/bin:/nix/store/dc9vaz50jg7mibk9xvqw5dqv89cxzla3-binutils-2.44/bin:/nix/store/xwydcyvlsa3cvssk0y5llgdhlhjvmqdm-binutils-wrapper-2.44/bin:/nix/store/742kq790y4nd92s4l4arg7ij8h7is5ar-cargo-1.91.1/bin:/nix/store/3lll9y925zz9393sa59h653xik66srjb-python3-3.13.9/bin:/nix/store/4sj19dch0zhnhhdsbrz9pxz55bc2xhb9-rustc-wrapper-1.91.1/bin:/nix/store/8q2582rd22xp8jlcg1xn1w219q5lx5xa-patchelf-0.15.2/bin:/nix/store/vr15iyyykg9zai6fpgvhcgyw7gckl78w-gcc-wrapper-14.3.0/bin:/nix/store/kzq78n13l8w24jn8bx4djj79k5j717f1-gcc-14.3.0/bin:/nix/store/a7rbw0ymxzcfj355byxig3bnq8ysp1qi-compiler-rt-libc-21.1.2/bin:/nix/store/imad8dvhp77h0pjbckp6wvmnyhp8dpgg-coreutils-9.8/bin:/nix/store/av4xw9f56xlx5pgv862wabfif6m1yc0a-findutils-4.10.0/bin:/nix/store/20axvl7mgj15m23jgmnq97hx37fgz7bk-diffutils-3.12/bin:/nix/store/drc7kang929jaza6cy9zdx10s4gw1z5p-gnused-4.9/bin:/nix/store/x3zjxxz8m4ki88axp0gn8q8m6bldybba-gnugrep-3.12/bin:/nix/store/y2wdhdcrffp9hnkzk06d178hq3g98jay-gawk-5.3.2/bin:/nix/store/yi3c5karhx764ham5rfwk7iynr8mjf6q-gnutar-1.35/bin:/nix/store/d471xb7sfbah076s8rx02i68zpxc2r5n-gzip-1.14/bin:/nix/store/qm9rxn2sc1vrz91i443rr6f0vxm0zd82-bzip2-1.0.8-bin/bin:/nix/store/3fmzbq9y4m9nk235il7scmvwn8j9zy3p-gnumake-4.4.1/bin:/nix/store/rlq03x4cwf8zn73hxaxnx0zn5q9kifls-bash-5.3p3/bin:/nix/store/qrwznp1ikdf0qw05wia2haiwi32ik5n0-patch-2.8/bin:/nix/store/v0rfdwhg6w6i0yb6dbry4srk6pnj3xp0-xz-5.8.1-bin/bin:/nix/store/paj6a1lpzp57hz1djm5bs86b7ci221r0-file-5.45/bin:/run/wrappers/bin:/home/jcb/.nix-profile/bin:/nix/profile/bin:/home/jcb/.local/state/nix/profile/bin:/etc/profiles/per-user/jcb/bin:/nix/var/nix/profiles/default/bin:/run/current-system/sw/bin:/home/jcb/.local/bin"
+    },
+    "uname": [
+      "Linux",
+      "sharkanfahr",
+      "7.1.2",
+      "#1-NixOS SMP PREEMPT_DYNAMIC Sat Jun 27 10:08:18 UTC 2026",
+      "x86_64"
+    ]
+  },
+  "host_before": {
+    "allowed_cpus": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29,
+      30,
+      31
+    ],
+    "build_processes": {
+      "argv": [
+        "ps",
+        "-C",
+        "lean,lake,nix,gcc,cc1,clang",
+        "-o",
+        "pid=,comm="
+      ],
+      "exit_code": 1,
+      "output": ""
+    },
+    "environment_overrides": {
+      "LC_ALL": "C",
+      "LEAN_NUM_THREADS": "1",
+      "MALLOC_ARENA_MAX": "1"
+    },
+    "lscpu": {
+      "argv": [
+        "lscpu"
+      ],
+      "exit_code": 0,
+      "output": "Architecture:                            x86_64\nCPU op-mode(s):                          32-bit, 64-bit\nAddress sizes:                           48 bits physical, 48 bits virtual\nByte Order:                              Little Endian\nCPU(s):                                  32\nOn-line CPU(s) list:                     0-31\nVendor ID:                               AuthenticAMD\nModel name:                              AMD Ryzen 9 7950X3D 16-Core Processor\nCPU family:                              25\nModel:                                   97\nThread(s) per core:                      2\nCore(s) per socket:                      16\nSocket(s):                               1\nStepping:                                2\nMicrocode version:                       0xa60120a\nFrequency boost:                         enabled\nCPU(s) scaling MHz:                      69%\nCPU max MHz:                             5763.3560\nCPU min MHz:                             416.6290\nBogoMIPS:                                8384.15\nFlags:                                   fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ht syscall nx mmxext fxsr_opt pdpe1gb rdtscp lm constant_tsc rep_good amd_lbr_v2 nopl xtopology nonstop_tsc cpuid extd_apicid aperfmperf rapl pni pclmulqdq monitor ssse3 fma cx16 sse4_1 sse4_2 x2apic movbe popcnt aes xsave avx f16c rdrand lahf_lm cmp_legacy svm extapic cr8_legacy abm sse4a misalignsse 3dnowprefetch osvw ibs skinit wdt tce topoext perfctr_core perfctr_nb bpext perfctr_llc mwaitx cpuid_fault cpb cat_l3 cdp_l3 hw_pstate ssbd mba perfmon_v2 ibrs ibpb stibp ibrs_enhanced vmmcall fsgsbase bmi1 avx2 smep bmi2 erms invpcid cqm rdt_a avx512f avx512dq rdseed adx smap avx512ifma clflushopt clwb avx512cd sha_ni avx512bw avx512vl xsaveopt xsavec xgetbv1 xsaves cqm_llc cqm_occup_llc cqm_mbm_total cqm_mbm_local user_shstk avx512_bf16 clzero irperf xsaveerptr rdpru wbnoinvd cppc arat npt lbrv svm_lock nrip_save tsc_scale vmcb_clean flushbyasid decodeassists pausefilter pfthreshold avic vgif x2avic v_spec_ctrl vnmi avx512vbmi umip pku ospke avx512_vbmi2 gfni vaes vpclmulqdq avx512_vnni avx512_bitalg avx512_vpopcntdq rdpid overflow_recov succor smca fsrm flush_l1d\nVirtualization:                          AMD-V\nL1d cache:                               512 KiB (16 instances)\nL1i cache:                               512 KiB (16 instances)\nL2 cache:                                16 MiB (16 instances)\nL3 cache:                                128 MiB (2 instances)\nNUMA node(s):                            1\nNUMA node0 CPU(s):                       0-31\nVulnerability Gather data sampling:      Not affected\nVulnerability Ghostwrite:                Not affected\nVulnerability Indirect target selection: Not affected\nVulnerability Itlb multihit:             Not affected\nVulnerability L1tf:                      Not affected\nVulnerability Mds:                       Not affected\nVulnerability Meltdown:                  Not affected\nVulnerability Mmio stale data:           Not affected\nVulnerability Old microcode:             Not affected\nVulnerability Reg file data sampling:    Not affected\nVulnerability Retbleed:                  Not affected\nVulnerability Spec rstack overflow:      Mitigation; Safe RET\nVulnerability Spec store bypass:         Mitigation; Speculative Store Bypass disabled via prctl\nVulnerability Spectre v1:                Mitigation; usercopy/swapgs barriers and __user pointer sanitization\nVulnerability Spectre v2:                Mitigation; Enhanced / Automatic IBRS; IBPB conditional; STIBP always-on; PBRSB-eIBRS Not affected; BHI Not affected\nVulnerability Srbds:                     Not affected\nVulnerability Tsa:                       Mitigation; Clear CPU buffers\nVulnerability Tsx async abort:           Not affected\nVulnerability Vmscape:                   Mitigation; IBPB before exit to userspace\n"
+    },
+    "power_and_load": {
+      "/proc/loadavg": "1.95 13.13 18.42 2/4587 2249556",
+      "/sys/devices/system/cpu/cpu0/cpufreq/scaling_driver": "amd-pstate-epp",
+      "/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor": "powersave",
+      "/sys/devices/system/cpu/cpufreq/boost": "1"
+    },
+    "recorded_utc": "2026-09-13T13:37:39.115259+00:00",
+    "selected_cpu": 0,
+    "selected_environment": {
+      "LD_LIBRARY_PATH": "/nix/store/anxs5hnqyx2jd9z843n0pswiwj6wbm9v-pipewire-1.6.5-jack/lib",
+      "LEAN_CC": null,
+      "LEAN_SYSROOT": null,
+      "PATH": "/home/jcb/.codex-work/tmp/arg0/codex-arg0LB4SDh:/nix/store/v24sx9l1jmvvia3z8iznrd7jwhvc8kcf-bubblewrap-0.11.2/bin:/nix/store/fbgp3pw492kzs76jb8c62zwy8ndz6a58-lean-4.33.0/bin:/nix/store/sqlnjj8c3n3si3sjnadhdbcwgrk97g2w-clang-wrapper-21.1.2/bin:/nix/store/xrnlavkjfxarwxzqh7vk3yjbva16rpbc-clang-21.1.2/bin:/nix/store/q6wgv06q39bfhx2xl8ysc05wi6m2zdss-glibc-2.40-66-bin/bin:/nix/store/imad8dvhp77h0pjbckp6wvmnyhp8dpgg-coreutils-9.8/bin:/nix/store/l87z7vxm5gp0n21ddrlx4dmrrqg92a7w-binutils-wrapper-2.44/bin:/nix/store/dc9vaz50jg7mibk9xvqw5dqv89cxzla3-binutils-2.44/bin:/nix/store/xwydcyvlsa3cvssk0y5llgdhlhjvmqdm-binutils-wrapper-2.44/bin:/nix/store/742kq790y4nd92s4l4arg7ij8h7is5ar-cargo-1.91.1/bin:/nix/store/3lll9y925zz9393sa59h653xik66srjb-python3-3.13.9/bin:/nix/store/4sj19dch0zhnhhdsbrz9pxz55bc2xhb9-rustc-wrapper-1.91.1/bin:/nix/store/8q2582rd22xp8jlcg1xn1w219q5lx5xa-patchelf-0.15.2/bin:/nix/store/vr15iyyykg9zai6fpgvhcgyw7gckl78w-gcc-wrapper-14.3.0/bin:/nix/store/kzq78n13l8w24jn8bx4djj79k5j717f1-gcc-14.3.0/bin:/nix/store/a7rbw0ymxzcfj355byxig3bnq8ysp1qi-compiler-rt-libc-21.1.2/bin:/nix/store/imad8dvhp77h0pjbckp6wvmnyhp8dpgg-coreutils-9.8/bin:/nix/store/av4xw9f56xlx5pgv862wabfif6m1yc0a-findutils-4.10.0/bin:/nix/store/20axvl7mgj15m23jgmnq97hx37fgz7bk-diffutils-3.12/bin:/nix/store/drc7kang929jaza6cy9zdx10s4gw1z5p-gnused-4.9/bin:/nix/store/x3zjxxz8m4ki88axp0gn8q8m6bldybba-gnugrep-3.12/bin:/nix/store/y2wdhdcrffp9hnkzk06d178hq3g98jay-gawk-5.3.2/bin:/nix/store/yi3c5karhx764ham5rfwk7iynr8mjf6q-gnutar-1.35/bin:/nix/store/d471xb7sfbah076s8rx02i68zpxc2r5n-gzip-1.14/bin:/nix/store/qm9rxn2sc1vrz91i443rr6f0vxm0zd82-bzip2-1.0.8-bin/bin:/nix/store/3fmzbq9y4m9nk235il7scmvwn8j9zy3p-gnumake-4.4.1/bin:/nix/store/rlq03x4cwf8zn73hxaxnx0zn5q9kifls-bash-5.3p3/bin:/nix/store/qrwznp1ikdf0qw05wia2haiwi32ik5n0-patch-2.8/bin:/nix/store/v0rfdwhg6w6i0yb6dbry4srk6pnj3xp0-xz-5.8.1-bin/bin:/nix/store/paj6a1lpzp57hz1djm5bs86b7ci221r0-file-5.45/bin:/run/wrappers/bin:/home/jcb/.nix-profile/bin:/nix/profile/bin:/home/jcb/.local/state/nix/profile/bin:/etc/profiles/per-user/jcb/bin:/nix/var/nix/profiles/default/bin:/run/current-system/sw/bin:/home/jcb/.local/bin"
+    },
+    "uname": [
+      "Linux",
+      "sharkanfahr",
+      "7.1.2",
+      "#1-NixOS SMP PREEMPT_DYNAMIC Sat Jun 27 10:08:18 UTC 2026",
+      "x86_64"
+    ]
+  },
+  "host_frozen": {
+    "allowed_cpus": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29,
+      30,
+      31
+    ],
+    "build_processes": {
+      "argv": [
+        "ps",
+        "-C",
+        "lean,lake,nix,gcc,cc1,clang",
+        "-o",
+        "pid=,comm="
+      ],
+      "exit_code": 1,
+      "output": ""
+    },
+    "environment_overrides": {
+      "LC_ALL": "C",
+      "LEAN_NUM_THREADS": "1",
+      "MALLOC_ARENA_MAX": "1"
+    },
+    "lscpu": {
+      "argv": [
+        "lscpu"
+      ],
+      "exit_code": 0,
+      "output": "Architecture:                            x86_64\nCPU op-mode(s):                          32-bit, 64-bit\nAddress sizes:                           48 bits physical, 48 bits virtual\nByte Order:                              Little Endian\nCPU(s):                                  32\nOn-line CPU(s) list:                     0-31\nVendor ID:                               AuthenticAMD\nModel name:                              AMD Ryzen 9 7950X3D 16-Core Processor\nCPU family:                              25\nModel:                                   97\nThread(s) per core:                      2\nCore(s) per socket:                      16\nSocket(s):                               1\nStepping:                                2\nMicrocode version:                       0xa60120a\nFrequency boost:                         enabled\nCPU(s) scaling MHz:                      67%\nCPU max MHz:                             5763.3560\nCPU min MHz:                             416.6290\nBogoMIPS:                                8384.15\nFlags:                                   fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ht syscall nx mmxext fxsr_opt pdpe1gb rdtscp lm constant_tsc rep_good amd_lbr_v2 nopl xtopology nonstop_tsc cpuid extd_apicid aperfmperf rapl pni pclmulqdq monitor ssse3 fma cx16 sse4_1 sse4_2 x2apic movbe popcnt aes xsave avx f16c rdrand lahf_lm cmp_legacy svm extapic cr8_legacy abm sse4a misalignsse 3dnowprefetch osvw ibs skinit wdt tce topoext perfctr_core perfctr_nb bpext perfctr_llc mwaitx cpuid_fault cpb cat_l3 cdp_l3 hw_pstate ssbd mba perfmon_v2 ibrs ibpb stibp ibrs_enhanced vmmcall fsgsbase bmi1 avx2 smep bmi2 erms invpcid cqm rdt_a avx512f avx512dq rdseed adx smap avx512ifma clflushopt clwb avx512cd sha_ni avx512bw avx512vl xsaveopt xsavec xgetbv1 xsaves cqm_llc cqm_occup_llc cqm_mbm_total cqm_mbm_local user_shstk avx512_bf16 clzero irperf xsaveerptr rdpru wbnoinvd cppc arat npt lbrv svm_lock nrip_save tsc_scale vmcb_clean flushbyasid decodeassists pausefilter pfthreshold avic vgif x2avic v_spec_ctrl vnmi avx512vbmi umip pku ospke avx512_vbmi2 gfni vaes vpclmulqdq avx512_vnni avx512_bitalg avx512_vpopcntdq rdpid overflow_recov succor smca fsrm flush_l1d\nVirtualization:                          AMD-V\nL1d cache:                               512 KiB (16 instances)\nL1i cache:                               512 KiB (16 instances)\nL2 cache:                                16 MiB (16 instances)\nL3 cache:                                128 MiB (2 instances)\nNUMA node(s):                            1\nNUMA node0 CPU(s):                       0-31\nVulnerability Gather data sampling:      Not affected\nVulnerability Ghostwrite:                Not affected\nVulnerability Indirect target selection: Not affected\nVulnerability Itlb multihit:             Not affected\nVulnerability L1tf:                      Not affected\nVulnerability Mds:                       Not affected\nVulnerability Meltdown:                  Not affected\nVulnerability Mmio stale data:           Not affected\nVulnerability Old microcode:             Not affected\nVulnerability Reg file data sampling:    Not affected\nVulnerability Retbleed:                  Not affected\nVulnerability Spec rstack overflow:      Mitigation; Safe RET\nVulnerability Spec store bypass:         Mitigation; Speculative Store Bypass disabled via prctl\nVulnerability Spectre v1:                Mitigation; usercopy/swapgs barriers and __user pointer sanitization\nVulnerability Spectre v2:                Mitigation; Enhanced / Automatic IBRS; IBPB conditional; STIBP always-on; PBRSB-eIBRS Not affected; BHI Not affected\nVulnerability Srbds:                     Not affected\nVulnerability Tsa:                       Mitigation; Clear CPU buffers\nVulnerability Tsx async abort:           Not affected\nVulnerability Vmscape:                   Mitigation; IBPB before exit to userspace\n"
+    },
+    "power_and_load": {
+      "/proc/loadavg": "2.23 14.36 18.97 2/4574 2249387",
+      "/sys/devices/system/cpu/cpu0/cpufreq/scaling_driver": "amd-pstate-epp",
+      "/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor": "powersave",
+      "/sys/devices/system/cpu/cpufreq/boost": "1"
+    },
+    "recorded_utc": "2026-09-13T13:37:07.826072+00:00",
+    "selected_cpu": 0,
+    "selected_environment": {
+      "LD_LIBRARY_PATH": "/nix/store/anxs5hnqyx2jd9z843n0pswiwj6wbm9v-pipewire-1.6.5-jack/lib",
+      "LEAN_CC": null,
+      "LEAN_SYSROOT": null,
+      "PATH": "/home/jcb/.codex-work/tmp/arg0/codex-arg0LB4SDh:/nix/store/v24sx9l1jmvvia3z8iznrd7jwhvc8kcf-bubblewrap-0.11.2/bin:/nix/store/fbgp3pw492kzs76jb8c62zwy8ndz6a58-lean-4.33.0/bin:/nix/store/sqlnjj8c3n3si3sjnadhdbcwgrk97g2w-clang-wrapper-21.1.2/bin:/nix/store/xrnlavkjfxarwxzqh7vk3yjbva16rpbc-clang-21.1.2/bin:/nix/store/q6wgv06q39bfhx2xl8ysc05wi6m2zdss-glibc-2.40-66-bin/bin:/nix/store/imad8dvhp77h0pjbckp6wvmnyhp8dpgg-coreutils-9.8/bin:/nix/store/l87z7vxm5gp0n21ddrlx4dmrrqg92a7w-binutils-wrapper-2.44/bin:/nix/store/dc9vaz50jg7mibk9xvqw5dqv89cxzla3-binutils-2.44/bin:/nix/store/xwydcyvlsa3cvssk0y5llgdhlhjvmqdm-binutils-wrapper-2.44/bin:/nix/store/742kq790y4nd92s4l4arg7ij8h7is5ar-cargo-1.91.1/bin:/nix/store/3lll9y925zz9393sa59h653xik66srjb-python3-3.13.9/bin:/nix/store/4sj19dch0zhnhhdsbrz9pxz55bc2xhb9-rustc-wrapper-1.91.1/bin:/nix/store/8q2582rd22xp8jlcg1xn1w219q5lx5xa-patchelf-0.15.2/bin:/nix/store/vr15iyyykg9zai6fpgvhcgyw7gckl78w-gcc-wrapper-14.3.0/bin:/nix/store/kzq78n13l8w24jn8bx4djj79k5j717f1-gcc-14.3.0/bin:/nix/store/a7rbw0ymxzcfj355byxig3bnq8ysp1qi-compiler-rt-libc-21.1.2/bin:/nix/store/imad8dvhp77h0pjbckp6wvmnyhp8dpgg-coreutils-9.8/bin:/nix/store/av4xw9f56xlx5pgv862wabfif6m1yc0a-findutils-4.10.0/bin:/nix/store/20axvl7mgj15m23jgmnq97hx37fgz7bk-diffutils-3.12/bin:/nix/store/drc7kang929jaza6cy9zdx10s4gw1z5p-gnused-4.9/bin:/nix/store/x3zjxxz8m4ki88axp0gn8q8m6bldybba-gnugrep-3.12/bin:/nix/store/y2wdhdcrffp9hnkzk06d178hq3g98jay-gawk-5.3.2/bin:/nix/store/yi3c5karhx764ham5rfwk7iynr8mjf6q-gnutar-1.35/bin:/nix/store/d471xb7sfbah076s8rx02i68zpxc2r5n-gzip-1.14/bin:/nix/store/qm9rxn2sc1vrz91i443rr6f0vxm0zd82-bzip2-1.0.8-bin/bin:/nix/store/3fmzbq9y4m9nk235il7scmvwn8j9zy3p-gnumake-4.4.1/bin:/nix/store/rlq03x4cwf8zn73hxaxnx0zn5q9kifls-bash-5.3p3/bin:/nix/store/qrwznp1ikdf0qw05wia2haiwi32ik5n0-patch-2.8/bin:/nix/store/v0rfdwhg6w6i0yb6dbry4srk6pnj3xp0-xz-5.8.1-bin/bin:/nix/store/paj6a1lpzp57hz1djm5bs86b7ci221r0-file-5.45/bin:/run/wrappers/bin:/home/jcb/.nix-profile/bin:/nix/profile/bin:/home/jcb/.local/state/nix/profile/bin:/etc/profiles/per-user/jcb/bin:/nix/var/nix/profiles/default/bin:/run/current-system/sw/bin:/home/jcb/.local/bin"
+    },
+    "uname": [
+      "Linux",
+      "sharkanfahr",
+      "7.1.2",
+      "#1-NixOS SMP PREEMPT_DYNAMIC Sat Jun 27 10:08:18 UTC 2026",
+      "x86_64"
+    ]
+  },
+  "nix_closure": {
+    "argv": [
+      "/nix/store/b8y93ncn8bqndj3iid6lla4hvjhhy9ps-nix-2.34.8/bin/nix-store",
+      "--query",
+      "--requisites",
+      "/nix/store/3lll9y925zz9393sa59h653xik66srjb-python3-3.13.9",
+      "/nix/store/4n075ll5jdwbjv142yg8ymz5f3yf4pam-util-linux-2.42.2-bin",
+      "/nix/store/b8y93ncn8bqndj3iid6lla4hvjhhy9ps-nix-2.34.8",
+      "/nix/store/d471xb7sfbah076s8rx02i68zpxc2r5n-gzip-1.14",
+      "/nix/store/fbgp3pw492kzs76jb8c62zwy8ndz6a58-lean-4.33.0",
+      "/nix/store/xx7cm72qy2c0643cm1ipngd87aqwkcdp-glibc-2.40-66",
+      "/nix/store/y51431wmnm7vli4l347dpn44nyhmcrw7-time-1.10",
+      "/nix/store/yi3c5karhx764ham5rfwk7iynr8mjf6q-gnutar-1.35"
+    ],
+    "exit_code": 0,
+    "output": "/nix/store/rdw0n35z6xhipyiq6sc8qv0mg7vrldaj-xgcc-15.2.0-libgcc\n/nix/store/fp6wnyklwzdncp0nvhdy9d5fnir0mjq5-libunistring-1.4.2\n/nix/store/xidgjdv05b8yz6w6qrhk4mmjxm4l2zjf-libidn2-2.3.8\n/nix/store/m07h00fl6538s4gavrp66a20ka4hg7fy-glibc-2.42-67\n/nix/store/07691h50630my15fdg1syr9f2ip7y0ca-hwloc-2.13.0-lib\n/nix/store/0q9vgj48awrcm6l14fccdbjjqsbmh921-libcap-ng-0.9.3\n/nix/store/2a3izq4hffdd9r9gb2w6q2ibdc86kss6-xgcc-14.3.0-libgcc\n/nix/store/3rkccxj7vi0p2a0d48c4a4z2vv2cni88-libunistring-1.4.1\n/nix/store/hxcmad417fd8ql9ylx96xpak7da06yiv-libidn2-2.3.8\n/nix/store/xx7cm72qy2c0643cm1ipngd87aqwkcdp-glibc-2.40-66\n/nix/store/0rxahp0ckjwz7kmnh8vzwfs8ir8yrf5r-gmp-6.3.0\n/nix/store/12qcfbv6bgmxi1jd2dcddy25ijpcgj60-attr-2.5.2\n/nix/store/14cfdqp8w2iw188vhjfaz2wg8pzbghp3-openssl-3.6.3\n/nix/store/1b33vj4q35nqkswznwkhnhzwk5sy6q5h-llhttp-9.4.3\n/nix/store/1y3r9lplj9xkh98figa0hs8lgpxhanvy-lowdown-3.0.1-lib\n/nix/store/shs2lyjm5yv7fmg4pwyvrlv9zr4macmv-gcc-14.3.0-libgcc\n/nix/store/xm08aqdd7pxcdhm0ak6aqb1v7hw5q6ri-gcc-14.3.0-lib\n/nix/store/2f7yzmvcsydw38zr369l9xpk63v1ld5q-gmp-with-cxx-6.3.0\n/nix/store/cjp9j188a8p8lw8a8dcqmvlr2478wmfs-aws-c-common-0.12.4\n/nix/store/67d7rs9hz38azp6w3hjx6zd7zlxih25h-aws-c-cal-0.9.2\n/nix/store/nm95jgm7w3qbrd44b63qnv2sr78k60ly-s2n-tls-1.7.6\n/nix/store/fn422cz3hayvd8sz2iwhykf4f48cj5bn-aws-c-io-0.27.2\n/nix/store/ga9zfcn9i5p3qnsnjyilglhz49c6brmc-aws-c-compression-0.3.1\n/nix/store/2p1njlxaznf22syr8l5x53ymlhj8lbc1-aws-c-http-0.11.0\n/nix/store/j5m1y5k6qp5iwb23j5k6w2y8ffv9lxvl-pcre2-10.46\n/nix/store/l68i51npb6nlxi6z18gvgb45dz3xr5yp-zlib-1.3.2\n/nix/store/m905d92wqbq630rz24r8jcfhfizvmn0i-libssh2-1.11.1\n/nix/store/2x7810p4cwkk0psriydhqbyl54yb92z0-libgit2-1.9.7-lib\n/nix/store/31qzjx1vrkwcrl4zlhiarn2y9ynpyxr5-libseccomp-2.6.1-lib\n/nix/store/yijhn548p2589pkybgvbhll09bqsxy0q-ncurses-6.5\n/nix/store/41cgbkwax6pd1sgi8l81mamv6rvarryj-readline-8.3p1\n/nix/store/61i74yjkj9p1qphfl7018ja4sdwkipx0-openssl-3.6.0\n/nix/store/b9p0zpa93hwvh4d0r1rmgc2500yx2ldn-libffi-3.5.2\n/nix/store/cky5dqng037hhbd41arkza29cv0hqab6-gdbm-1.26-lib\n/nix/store/g4z9m2pl1wcv35yzgjg1934gmj83gx9m-mailcap-2.1.54\n/nix/store/jnjcxanszfrp8ln69wp0n9s237xbh7bz-expat-2.7.3\n/nix/store/l7xwm1f6f3zj2x8jwdbi8gdyfbx07sh7-zlib-1.3.1\n/nix/store/l30c488dws7z5mazacqsmj25izb9jlp2-sqlite-3.50.4\n/nix/store/lcwnhmdd6fqf84y35ll4i6ivi2x8vvd5-mpdecimal-4.0.1\n/nix/store/mzl19fy0j4fl395z3pbkwxcmkxi1733v-util-linux-minimal-2.41.2-lib\n/nix/store/q5vlz5jl6p7mv220s2vf6z5pqi1n935z-xz-5.8.1\n/nix/store/rlq03x4cwf8zn73hxaxnx0zn5q9kifls-bash-5.3p3\n/nix/store/xaa75rd44q62nc9mrbvym9d1m6gy0fj8-tzdata-2025b\n/nix/store/xgavznqg1ay2hycpp7yy9ia1n751jcla-bzip2-1.0.8\n/nix/store/3lll9y925zz9393sa59h653xik66srjb-python3-3.13.9\n/nix/store/49ma9vimj6wlsbrhqsra6g6fzvsj6shh-ncurses-6.6\n/nix/store/k5j2kwjcap1zgdh4xn1fvvlsrzy55g1i-libxcrypt-4.5.2\n/nix/store/c4f8bfak9m1z7210rkdhz2gl9dggk9vh-util-linux-minimal-2.42.2-login\n/nix/store/aadqqqrfvi7mdnk28h366irf6f1s09mb-systemd-minimal-libs-260.2\n/nix/store/p774nkfb6frncliffdsyppg93n3cpb4b-sqlite-3.51.2\n/nix/store/w8kk5aaq618hnsm3rqalksdgrd8qlyjy-util-linux-2.42.2-lib\n/nix/store/90rjmhrzh960fl8y34xbx035sxkn5zc0-util-linux-2.42.2-mount\n/nix/store/5055c2cpww9vrjz27yvhssagf1hd5ah6-attr-2.6.0\n/nix/store/k8rbpjlq071djhghgnxm2kcng6h2b035-gcc-15.2.0-libgcc\n/nix/store/z0n70pxyzi87why1bcq81zgd7b924nfj-gcc-15.2.0-lib\n/nix/store/pp5x67y8iy6wj09xndk4grjgjdizbw24-gmp-with-cxx-6.3.0\n/nix/store/spyq8j3kdj6dlbhv5nbnr7a15nficin9-acl-2.4.0\n/nix/store/gph17gb73p6qbrqqjnypfjj5npf0ldyx-coreutils-9.11\n/nix/store/4qhmizki1n0i0rp64203wnqff73anv8l-audit-4.2.1-lib\n/nix/store/mgzzwkjcrbvqbi9w7mi4abal8fsh8b1c-db-4.8.30\n/nix/store/khbxm3c02xklnz8jgh4cdikkgz73ssh2-linux-pam-1.7.2\n/nix/store/9bls42pnwrggsa8qjaqndnm3j9bxg6lw-util-linux-2.42.2-lastlog\n/nix/store/dmw3jqvrx6mjvdkqmdlsfa4wamn4n8qb-util-linux-2.42.2-swap\n/nix/store/9djar9h5rr86qbz9n7ip6g3i8r40f51w-tcb-1.2\n/nix/store/lzi4zg1ngjwqfjs0wyjf6bwrcl814mxb-glibc-2.42-67-bin\n/nix/store/g4v56b4x1cx5rdhgaim1aykld24f9w5g-libmd-1.1.0\n/nix/store/r74c1k3sqjjw1g8qg0p2rcjai8xdyqjh-libbsd-0.12.2\n/nix/store/gdalsnb0bbj02c9vbskyzg4qisdlcf3p-shadow-4.19.4\n/nix/store/sxwaql61rw36w5hmim26931h8qhiljf6-util-linux-2.42.2-login\n/nix/store/4n075ll5jdwbjv142yg8ymz5f3yf4pam-util-linux-2.42.2-bin\n/nix/store/51hyxk9wipkgfjaj73c9w8a4biip99l8-xz-5.8.3\n/nix/store/99jnamfydw5iwmmnh3w9jn8ksypal4si-aws-c-sdkutils-0.2.4\n/nix/store/6b4bajw7kj3pyb9amay795qiicn1gzwp-aws-c-auth-0.9.1\n/nix/store/vvs4k6c58b8hq66346hrpks726qns0ig-onetbb-2022.3.0\n/nix/store/6dfcwgp47y4syzqgzhc01vgjv0wl24pa-libblake3-1.8.5\n/nix/store/am2hi8dgk0qfngq41nvr4835m19b68j8-zstd-1.5.7\n/nix/store/lczq4f5z4yf2h8v0i2w4jcy4bi43qfbs-bzip2-1.0.8\n/nix/store/qnphs4p3xbzfkyk441wprkxj1qaq72h1-icu4c-76.1\n/nix/store/6i41qlsh8gf7vwqp81hhcp19xpzvi5xa-boost-1.89.0\n/nix/store/alffmd3v47nm00x625pwa5viq4z8kbx6-brotli-1.2.0-lib\n/nix/store/pi4h22d7id0z6hjjf7jg6djbbhszb379-libxml2-2.15.3\n/nix/store/p0znk6v2nv5vwq7kjqylnhv7zskzdhxf-libarchive-3.8.8-lib\n/nix/store/pcy0rcpy1dhlvd5h6dkhcv0a85fzs1db-libcpuid-0.8.1\n/nix/store/vs6w5krsc2n319mxm3fd6bmy3fzv6rvc-libsodium-1.0.22-unstable-2026-04-09\n/nix/store/qs56yj9gzlv1k8fjzvcd2vlpm9v57hfz-nix-util-2.34.8\n/nix/store/zifx9q7kjslmajccpv3hwrw2v9n27kdd-publicsuffix-list-0-unstable-2026-05-13\n/nix/store/kp7qcdqfxcn1wg2fzszf0x3ra89n4akx-libpsl-0.21.5\n/nix/store/p314bwbyiw87wssqwvxl9y4c3cmmxklj-nghttp2-1.69.0-lib\n/nix/store/hlki0nb8yfbvb67bam4sqns33h0mw02y-keyutils-1.6.3-lib\n/nix/store/v6ibq54l47kz8m62gm5p4dqr8sjgy4c9-krb5-1.22.2-lib\n/nix/store/xharm39n4viqb8d6lbmwynlnx2ih8zr2-nghttp3-1.15.0\n/nix/store/ylm8cvvqs455m3cnfqlx08hh8k81ijj0-ngtcp2-1.22.1\n/nix/store/brrzhh73q6h5c17gi3004svz8659aj52-curl-8.21.0\n/nix/store/csshf3ycx2wsxjaqrva1vr8rwgp382jw-busybox-1.37.0\n/nix/store/f0k1kpgd7aikykdw7fzw1qplz7qswp10-aws-c-mqtt-0.13.3\n/nix/store/gcgbbl2lp2kbhakn56043638lk9dbf88-aws-checksums-0.2.7\n/nix/store/fsxbih8cqjkb1f9nv3fsc07a18kyisiz-aws-c-event-stream-0.7.0\n/nix/store/sb2apk3hs8g9ljq80srvhb35ddzbqrcx-aws-c-s3-0.8.7\n/nix/store/yw45wg7dwysi8cmcbkcdfav09qrqmjj9-aws-crt-cpp-0.34.3\n/nix/store/ra1885ms4h4wajgg1pzmxjk6ijdqq609-nix-store-2.34.8\n/nix/store/jd31avabsm15zfjmidymhcwrw54fmfhm-nix-fetchers-2.34.8\n/nix/store/xa2vziacbhijgphb7w8a1dlfqyx32ccc-boehm-gc-8.2.12\n/nix/store/g24g3y8qrn3jwgfnzq99m3c82cl2k4mz-nix-expr-2.34.8\n/nix/store/ab6cflwqj1006lwlghw9vvfc8v467n3i-nix-flake-2.34.8\n/nix/store/q3qzi4hjp44k5ikk9i4nc7ib2y2z6q50-editline-1.17.1-unstable-2025-05-24\n/nix/store/ssrjh8dwzzj1vb2xsyp74sp9any5f1fi-nix-main-2.34.8\n/nix/store/6likqwy33cgh1whw1fmn7a958cqw1r01-nix-cmd-2.34.8\n/nix/store/6y07blp88mrgn05wxbif8yzmd0g2ss4x-pcre2-10.46\n/nix/store/7iwv8dcgsjmkrnn752hnfdxh3f7wahmd-linux-headers-6.16.7\n/nix/store/a7rbw0ymxzcfj355byxig3bnq8ysp1qi-compiler-rt-libc-21.1.2\n/nix/store/b8y93ncn8bqndj3iid6lla4hvjhhy9ps-nix-2.34.8\n/nix/store/czkzgcvcdc0c977cdmhaddyzhwp07x2g-mpfr-4.2.2\n/nix/store/d471xb7sfbah076s8rx02i68zpxc2r5n-gzip-1.14\n/nix/store/rmv4h4x475k2p321ln3pd0ddng7vv8k6-binutils-2.44-lib\n/nix/store/dc9vaz50jg7mibk9xvqw5dqv89cxzla3-binutils-2.44\n/nix/store/di5cjcy52dlrcs3ahzgiwywpnn1p6bgy-cadical-2.2.0\n/nix/store/jcr97i4l3gqxyy6x3rb5yjwwxhi4454l-libxml2-2.15.1\n/nix/store/swch85kls1srlrji1i0g28wpa4y607hk-llvm-21.1.2-lib\n/nix/store/nla41igcnyykzirqfs1fi167ssxhc37p-lld-21.1.2\n/nix/store/q6wgv06q39bfhx2xl8ysc05wi6m2zdss-glibc-2.40-66-bin\n/nix/store/gi4cz4ir3zlwhf1azqfgxqdnczfrwsr7-glibc-2.40-66-dev\n/nix/store/gj06hl0vb46kf66zpsss4gk5wphfh5lk-compiler-rt-libc-21.1.2-dev\n/nix/store/fwfpzqrvzhpjp91rbnq64z07diyicbwh-acl-2.3.2\n/nix/store/imad8dvhp77h0pjbckp6wvmnyhp8dpgg-coreutils-9.8\n/nix/store/kl4w4f8bb77faahsdv40gjmfzg2d081d-clang-21.1.2-lib\n/nix/store/kk64v6spb2sfj8br6h729vgqd2d13pn7-isl-0.20\n/nix/store/qpvs11qdbqcx4q41pzmzld9phgbw4vv8-libmpc-1.3.1\n/nix/store/kzq78n13l8w24jn8bx4djj79k5j717f1-gcc-14.3.0\n/nix/store/v6mw27776hslr98hwfsav1iv0h70agfz-expand-response-params\n/nix/store/l87z7vxm5gp0n21ddrlx4dmrrqg92a7w-binutils-wrapper-2.44\n/nix/store/x3zjxxz8m4ki88axp0gn8q8m6bldybba-gnugrep-3.12\n/nix/store/xrnlavkjfxarwxzqh7vk3yjbva16rpbc-clang-21.1.2\n/nix/store/sqlnjj8c3n3si3sjnadhdbcwgrk97g2w-clang-wrapper-21.1.2\n/nix/store/fbgp3pw492kzs76jb8c62zwy8ndz6a58-lean-4.33.0\n/nix/store/y51431wmnm7vli4l347dpn44nyhmcrw7-time-1.10\n/nix/store/yi3c5karhx764ham5rfwk7iynr8mjf6q-gnutar-1.35\n"
+  },
+  "seed_linkage": {
+    "check-source-evidence": {
+      "argv": [
+        "ldd",
+        "/tmp/source-evidence-reference-001/seed/check-source-evidence"
+      ],
+      "exit_code": 0,
+      "output": "\tlinux-vdso.so.1 (0x00007abb5e7f9000)\n\tlibc.so.6 => /nix/store/xx7cm72qy2c0643cm1ipngd87aqwkcdp-glibc-2.40-66/lib/libc.so.6 (0x00007abb59600000)\n\t/nix/store/xx7cm72qy2c0643cm1ipngd87aqwkcdp-glibc-2.40-66/lib/ld-linux-x86-64.so.2 => /nix/store/xx7cm72qy2c0643cm1ipngd87aqwkcdp-glibc-2.40-66/lib64/ld-linux-x86-64.so.2 (0x00007abb5e7fb000)\n\tlibpthread.so.0 => /nix/store/xx7cm72qy2c0643cm1ipngd87aqwkcdp-glibc-2.40-66/lib/libpthread.so.0 (0x00007abb5e7ec000)\n\tlibdl.so.2 => /nix/store/xx7cm72qy2c0643cm1ipngd87aqwkcdp-glibc-2.40-66/lib/libdl.so.2 (0x00007abb5e7e7000)\n\tlibrt.so.1 => /nix/store/xx7cm72qy2c0643cm1ipngd87aqwkcdp-glibc-2.40-66/lib/librt.so.1 (0x00007abb5e7e2000)\n\tlibm.so.6 => /nix/store/xx7cm72qy2c0643cm1ipngd87aqwkcdp-glibc-2.40-66/lib/libm.so.6 (0x00007abb5e6fa000)\n"
+    },
+    "check-source-modular": {
+      "argv": [
+        "ldd",
+        "/tmp/source-evidence-reference-001/seed/check-source-modular"
+      ],
+      "exit_code": 0,
+      "output": "\tlinux-vdso.so.1 (0x00007351bbbd8000)\n\tlibc.so.6 => /nix/store/xx7cm72qy2c0643cm1ipngd87aqwkcdp-glibc-2.40-66/lib/libc.so.6 (0x00007351b6a00000)\n\t/nix/store/xx7cm72qy2c0643cm1ipngd87aqwkcdp-glibc-2.40-66/lib/ld-linux-x86-64.so.2 => /nix/store/xx7cm72qy2c0643cm1ipngd87aqwkcdp-glibc-2.40-66/lib64/ld-linux-x86-64.so.2 (0x00007351bbbda000)\n\tlibpthread.so.0 => /nix/store/xx7cm72qy2c0643cm1ipngd87aqwkcdp-glibc-2.40-66/lib/libpthread.so.0 (0x00007351bbbcb000)\n\tlibdl.so.2 => /nix/store/xx7cm72qy2c0643cm1ipngd87aqwkcdp-glibc-2.40-66/lib/libdl.so.2 (0x00007351bbbc6000)\n\tlibrt.so.1 => /nix/store/xx7cm72qy2c0643cm1ipngd87aqwkcdp-glibc-2.40-66/lib/librt.so.1 (0x00007351bbbc1000)\n\tlibm.so.6 => /nix/store/xx7cm72qy2c0643cm1ipngd87aqwkcdp-glibc-2.40-66/lib/libm.so.6 (0x00007351bbad9000)\n"
+    },
+    "source-evidence": {
+      "argv": [
+        "ldd",
+        "/tmp/source-evidence-reference-001/seed/source-evidence"
+      ],
+      "exit_code": 0,
+      "output": "\tlinux-vdso.so.1 (0x00007f860e879000)\n\tlibc.so.6 => /nix/store/xx7cm72qy2c0643cm1ipngd87aqwkcdp-glibc-2.40-66/lib/libc.so.6 (0x00007f8609400000)\n\t/nix/store/xx7cm72qy2c0643cm1ipngd87aqwkcdp-glibc-2.40-66/lib/ld-linux-x86-64.so.2 => /nix/store/xx7cm72qy2c0643cm1ipngd87aqwkcdp-glibc-2.40-66/lib64/ld-linux-x86-64.so.2 (0x00007f860e87b000)\n\tlibpthread.so.0 => /nix/store/xx7cm72qy2c0643cm1ipngd87aqwkcdp-glibc-2.40-66/lib/libpthread.so.0 (0x00007f860e86c000)\n\tlibdl.so.2 => /nix/store/xx7cm72qy2c0643cm1ipngd87aqwkcdp-glibc-2.40-66/lib/libdl.so.2 (0x00007f860e867000)\n\tlibrt.so.1 => /nix/store/xx7cm72qy2c0643cm1ipngd87aqwkcdp-glibc-2.40-66/lib/librt.so.1 (0x00007f860e862000)\n\tlibm.so.6 => /nix/store/xx7cm72qy2c0643cm1ipngd87aqwkcdp-glibc-2.40-66/lib/libm.so.6 (0x00007f8609718000)\n"
+    },
+    "source-modular": {
+      "argv": [
+        "ldd",
+        "/tmp/source-evidence-reference-001/seed/source-modular"
+      ],
+      "exit_code": 0,
+      "output": "\tlinux-vdso.so.1 (0x000072199ea98000)\n\tlibc.so.6 => /nix/store/xx7cm72qy2c0643cm1ipngd87aqwkcdp-glibc-2.40-66/lib/libc.so.6 (0x0000721999600000)\n\t/nix/store/xx7cm72qy2c0643cm1ipngd87aqwkcdp-glibc-2.40-66/lib/ld-linux-x86-64.so.2 => /nix/store/xx7cm72qy2c0643cm1ipngd87aqwkcdp-glibc-2.40-66/lib64/ld-linux-x86-64.so.2 (0x000072199ea9a000)\n\tlibpthread.so.0 => /nix/store/xx7cm72qy2c0643cm1ipngd87aqwkcdp-glibc-2.40-66/lib/libpthread.so.0 (0x000072199ea8b000)\n\tlibdl.so.2 => /nix/store/xx7cm72qy2c0643cm1ipngd87aqwkcdp-glibc-2.40-66/lib/libdl.so.2 (0x000072199ea86000)\n\tlibrt.so.1 => /nix/store/xx7cm72qy2c0643cm1ipngd87aqwkcdp-glibc-2.40-66/lib/librt.so.1 (0x000072199ea81000)\n\tlibm.so.6 => /nix/store/xx7cm72qy2c0643cm1ipngd87aqwkcdp-glibc-2.40-66/lib/libm.so.6 (0x0000721999918000)\n"
+    },
+    "source-modular-reference": {
+      "argv": [
+        "ldd",
+        "/tmp/source-evidence-reference-001/seed/source-modular-reference"
+      ],
+      "exit_code": 0,
+      "output": "\tlinux-vdso.so.1 (0x00007e6143bb8000)\n\tlibc.so.6 => /nix/store/xx7cm72qy2c0643cm1ipngd87aqwkcdp-glibc-2.40-66/lib/libc.so.6 (0x00007e613e600000)\n\t/nix/store/xx7cm72qy2c0643cm1ipngd87aqwkcdp-glibc-2.40-66/lib/ld-linux-x86-64.so.2 => /nix/store/xx7cm72qy2c0643cm1ipngd87aqwkcdp-glibc-2.40-66/lib64/ld-linux-x86-64.so.2 (0x00007e6143bba000)\n\tlibpthread.so.0 => /nix/store/xx7cm72qy2c0643cm1ipngd87aqwkcdp-glibc-2.40-66/lib/libpthread.so.0 (0x00007e6143bab000)\n\tlibdl.so.2 => /nix/store/xx7cm72qy2c0643cm1ipngd87aqwkcdp-glibc-2.40-66/lib/libdl.so.2 (0x00007e6143ba6000)\n\tlibrt.so.1 => /nix/store/xx7cm72qy2c0643cm1ipngd87aqwkcdp-glibc-2.40-66/lib/librt.so.1 (0x00007e6143ba1000)\n\tlibm.so.6 => /nix/store/xx7cm72qy2c0643cm1ipngd87aqwkcdp-glibc-2.40-66/lib/libm.so.6 (0x00007e6143ab9000)\n"
+    }
+  },
+  "tools": {
+    "identities": {
+      "gzip": {
+        "bytes": 190,
+        "sha256": "280ba57ed18063a67f97779c7385b2f3d4ec386179017baa5fdcc74ee2fda2a3"
+      },
+      "lake": {
+        "bytes": 626,
+        "sha256": "6bb1bacafa162e08e0accc5c95e8f84700e7596a4e7e733b126ea6f990b82df0"
+      },
+      "lean": {
+        "bytes": 626,
+        "sha256": "b6f4b517ce0e27fa9b9abfa5a392a0c00b5b89f18adf98c79c66af967ac857f6"
+      },
+      "nix": {
+        "bytes": 4036808,
+        "sha256": "1ad08d058ae2da483f7cab327dfd8afa00a704c1b93bb786ffea2ccd93ea53ea"
+      },
+      "nix-store": {
+        "bytes": 4036808,
+        "sha256": "1ad08d058ae2da483f7cab327dfd8afa00a704c1b93bb786ffea2ccd93ea53ea"
+      },
+      "python3": {
+        "bytes": 15776,
+        "sha256": "28ada63b45e038a2812819ef2ff28020b03f86aa63da3f7f196256de6cd34e05"
+      },
+      "tar": {
+        "bytes": 516200,
+        "sha256": "2990db321ccb74fc92e0ec68a8baa62dd13570e4603aa10eeaca0149f95418bf"
+      },
+      "taskset": {
+        "bytes": 90408,
+        "sha256": "77c3242aac2b49dfad8bd2c661791b9a62dbb9709666aa2e0449bf3c3bba56fe"
+      },
+      "time": {
+        "bytes": 31040,
+        "sha256": "e8b9f5440e01a81e0692e68d07dfacb8059c434cae100c1fbb60b7ec52848480"
+      }
+    },
+    "paths": {
+      "gzip": "/nix/store/d471xb7sfbah076s8rx02i68zpxc2r5n-gzip-1.14/bin/gzip",
+      "lake": "/nix/store/fbgp3pw492kzs76jb8c62zwy8ndz6a58-lean-4.33.0/bin/lake",
+      "lean": "/nix/store/fbgp3pw492kzs76jb8c62zwy8ndz6a58-lean-4.33.0/bin/lean",
+      "nix": "/nix/store/b8y93ncn8bqndj3iid6lla4hvjhhy9ps-nix-2.34.8/bin/nix",
+      "nix-store": "/nix/store/b8y93ncn8bqndj3iid6lla4hvjhhy9ps-nix-2.34.8/bin/nix-store",
+      "python3": "/nix/store/3lll9y925zz9393sa59h653xik66srjb-python3-3.13.9/bin/python3",
+      "tar": "/nix/store/yi3c5karhx764ham5rfwk7iynr8mjf6q-gnutar-1.35/bin/tar",
+      "taskset": "/nix/store/4n075ll5jdwbjv142yg8ymz5f3yf4pam-util-linux-2.42.2-bin/bin/taskset",
+      "time": "/nix/store/y51431wmnm7vli4l347dpn44nyhmcrw7-time-1.10/bin/time"
+    },
+    "versions": {
+      "gzip": {
+        "argv": [
+          "/nix/store/d471xb7sfbah076s8rx02i68zpxc2r5n-gzip-1.14/bin/gzip",
+          "--version"
+        ],
+        "exit_code": 0,
+        "output": "gzip 1.14\nCopyright (C) 2025 Free Software Foundation, Inc.\nCopyright (C) 1993 Jean-loup Gailly.\nThis is free software.  You may redistribute copies of it under the terms of\nthe GNU General Public License <https://www.gnu.org/licenses/gpl.html>.\nThere is NO WARRANTY, to the extent permitted by law.\n\nWritten by Jean-loup Gailly.\n"
+      },
+      "lake": {
+        "argv": [
+          "/nix/store/fbgp3pw492kzs76jb8c62zwy8ndz6a58-lean-4.33.0/bin/lake",
+          "--version"
+        ],
+        "exit_code": 0,
+        "output": "Lake version 5.0.0-src+d8b1897 (Lean version 4.33.0)\n"
+      },
+      "lean": {
+        "argv": [
+          "/nix/store/fbgp3pw492kzs76jb8c62zwy8ndz6a58-lean-4.33.0/bin/lean",
+          "--version"
+        ],
+        "exit_code": 0,
+        "output": "Lean (version 4.33.0, x86_64-unknown-linux-gnu, commit d8b18978322de05a8f3dba51ef03cf5461676c17, Release)\n"
+      },
+      "nix": {
+        "argv": [
+          "/nix/store/b8y93ncn8bqndj3iid6lla4hvjhhy9ps-nix-2.34.8/bin/nix",
+          "--version"
+        ],
+        "exit_code": 0,
+        "output": "nix (Nix) 2.34.8\n"
+      },
+      "nix-store": {
+        "argv": [
+          "/nix/store/b8y93ncn8bqndj3iid6lla4hvjhhy9ps-nix-2.34.8/bin/nix-store",
+          "--version"
+        ],
+        "exit_code": 0,
+        "output": "nix-store (Nix) 2.34.8\n"
+      },
+      "python3": {
+        "argv": [
+          "/nix/store/3lll9y925zz9393sa59h653xik66srjb-python3-3.13.9/bin/python3",
+          "--version"
+        ],
+        "exit_code": 0,
+        "output": "Python 3.13.9\n"
+      },
+      "tar": {
+        "argv": [
+          "/nix/store/yi3c5karhx764ham5rfwk7iynr8mjf6q-gnutar-1.35/bin/tar",
+          "--version"
+        ],
+        "exit_code": 0,
+        "output": "tar (GNU tar) 1.35\nCopyright (C) 2023 Free Software Foundation, Inc.\nLicense GPLv3+: GNU GPL version 3 or later <https://gnu.org/licenses/gpl.html>.\nThis is free software: you are free to change and redistribute it.\nThere is NO WARRANTY, to the extent permitted by law.\n\nWritten by John Gilmore and Jay Fenlason.\n"
+      },
+      "taskset": {
+        "argv": [
+          "/nix/store/4n075ll5jdwbjv142yg8ymz5f3yf4pam-util-linux-2.42.2-bin/bin/taskset",
+          "--version"
+        ],
+        "exit_code": 0,
+        "output": "taskset from util-linux 2.42.2\n"
+      },
+      "time": {
+        "argv": [
+          "/nix/store/y51431wmnm7vli4l347dpn44nyhmcrw7-time-1.10/bin/time",
+          "--version"
+        ],
+        "exit_code": 0,
+        "output": "time (GNU Time) 1.10\nCopyright (C) 2026 Free Software Foundation, Inc.\nLicense GPLv3+: GNU GPL version 3 or later <https://gnu.org/licenses/gpl.html>.\nThis is free software: you are free to change and redistribute it.\nThere is NO WARRANTY, to the extent permitted by law.\n\nWritten by David Keppel, David MacKenzie, and Assaf Gordon.\n"
+      }
+    }
+  }
+}

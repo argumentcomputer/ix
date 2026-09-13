@@ -239,6 +239,14 @@ artifact equality and the unchanged semantic certificate predicates. Its
 width series reaches the same 611-source-declaration closure, with retained
 proof recovery and fresh-process checks under the existing limits.
 
+The [source preparation suite](../benchmarks/source-evidence.md) separates
+canonical address checks, current context preparation, prepared/fresh record
+checking, cache lookup, and public cold/unchanged/recovery calls. It compares
+complete unit data and retained artifacts, including literal edits that reuse
+canonical facts while invalidating source certificates. The existing modular
+report remains unchanged; 38 targeted result/reuse cases and five additional
+file mutations exercise this boundary without a timing threshold.
+
 Name input/output boundaries when comparing compiler times. Compilatrix starts
 from Ixon; a source-to-executable comparison includes required upstream
 frontend/export work. Toolchain installation and bootstrapping are setup costs.

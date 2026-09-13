@@ -1,0 +1,3343 @@
+{
+  "all_source_certificate_artifact_bytes_exact": true,
+  "comparisons": [
+    {
+      "case": "baseline",
+      "correctness": {
+        "IxIR1_declarations": 6,
+        "artifact_blake3": "61531a61814d4a8dbcf30549780fda79713c17829d248f8e76e7d063e6f86769",
+        "artifact_bytes": 7123,
+        "build": [
+          {
+            "action": "produced",
+            "candidates": 1,
+            "context_constants": 1,
+            "import_bindings": 3,
+            "key": "9760da1c0da3674f45a2d8656fcbe726b890bcf91753739e96d19bf203c47d26",
+            "name": "unaffected",
+            "output_bytes": 68,
+            "proof_obligations": 1,
+            "query_bytes": 413,
+            "source_node_work": 12
+          },
+          {
+            "action": "produced",
+            "candidates": 1,
+            "context_constants": 1,
+            "import_bindings": 3,
+            "key": "44599375c6cf887796196739bf6503709f63c30a6f53d972ec742972a52a4d51",
+            "name": "leaf",
+            "output_bytes": 68,
+            "proof_obligations": 1,
+            "query_bytes": 407,
+            "source_node_work": 12
+          },
+          {
+            "action": "produced",
+            "candidates": 1,
+            "context_constants": 2,
+            "import_bindings": 5,
+            "key": "b811c9556068ee3165867fcf1c5347d6501d6d4aa5c11d152e1c8dff752cf7a1",
+            "name": "dependent",
+            "output_bytes": 94,
+            "proof_obligations": 1,
+            "query_bytes": 582,
+            "source_node_work": 16
+          },
+          {
+            "action": "produced",
+            "candidates": 1,
+            "context_constants": 4,
+            "import_bindings": 10,
+            "key": "461a1630a3051b772538772d09302d628b8a72de3490f0a6259a69507e59bd5d",
+            "name": "root",
+            "output_bytes": 129,
+            "proof_obligations": 1,
+            "query_bytes": 858,
+            "source_node_work": 38
+          }
+        ],
+        "certificate_candidates": 4,
+        "certificate_store_blake3": "eb2cdad68363b0eddadf9d1fd76b4d9ed3a21ef5616270124a73fb1a8fcd81cb",
+        "certificate_store_bytes": 2963,
+        "expected_value": 37,
+        "monolithic": {
+          "artifact_exact": true,
+          "status": "accepted"
+        },
+        "name": "baseline",
+        "proof_obligations": 4,
+        "reachable_source_constants": 4,
+        "restored_artifact_exact": true,
+        "root": "656f02cdc72a20242cde06465d156e372b6da4fa5f741132ec89c1c57d72015a",
+        "simultaneous_members": 0,
+        "source_and_IR_execution_agree": true,
+        "source_blake3": "f4e3ef80c65e73a836eab9dac7972b32950cc80d305e169ff230c6625a6cd4c2",
+        "source_bytes": 618,
+        "source_constants": 4,
+        "unchanged": [
+          {
+            "action": "reused",
+            "candidates": 1,
+            "context_constants": 1,
+            "import_bindings": 3,
+            "key": "9760da1c0da3674f45a2d8656fcbe726b890bcf91753739e96d19bf203c47d26",
+            "name": "unaffected",
+            "output_bytes": 68,
+            "proof_obligations": 1,
+            "query_bytes": 413,
+            "source_node_work": 12
+          },
+          {
+            "action": "reused",
+            "candidates": 1,
+            "context_constants": 1,
+            "import_bindings": 3,
+            "key": "44599375c6cf887796196739bf6503709f63c30a6f53d972ec742972a52a4d51",
+            "name": "leaf",
+            "output_bytes": 68,
+            "proof_obligations": 1,
+            "query_bytes": 407,
+            "source_node_work": 12
+          },
+          {
+            "action": "reused",
+            "candidates": 1,
+            "context_constants": 2,
+            "import_bindings": 5,
+            "key": "b811c9556068ee3165867fcf1c5347d6501d6d4aa5c11d152e1c8dff752cf7a1",
+            "name": "dependent",
+            "output_bytes": 94,
+            "proof_obligations": 1,
+            "query_bytes": 582,
+            "source_node_work": 16
+          },
+          {
+            "action": "reused",
+            "candidates": 1,
+            "context_constants": 4,
+            "import_bindings": 10,
+            "key": "461a1630a3051b772538772d09302d628b8a72de3490f0a6259a69507e59bd5d",
+            "name": "root",
+            "output_bytes": 129,
+            "proof_obligations": 1,
+            "query_bytes": 858,
+            "source_node_work": 38
+          }
+        ],
+        "unchanged_artifact_exact": true,
+        "units": 4
+      },
+      "measurements": {
+        "prepared": {
+          "assembly_and_IxIR1_lowering": {
+            "maximum_ns": 165060,
+            "median_ns": 152176,
+            "minimum_ns": 136487,
+            "samples_ns": [
+              136487,
+              165060,
+              152176
+            ]
+          },
+          "check_retained_source_certificates": {
+            "maximum_ns": 303961,
+            "median_ns": 292780,
+            "minimum_ns": 283502,
+            "samples_ns": [
+              303961,
+              292780,
+              283502
+            ]
+          },
+          "decode_retained_store": {
+            "maximum_ns": 30637,
+            "median_ns": 30568,
+            "minimum_ns": 29716,
+            "samples_ns": [
+              29716,
+              30568,
+              30637
+            ]
+          },
+          "monolithic_compilation": {
+            "maximum_ns": 120857,
+            "median_ns": 117231,
+            "minimum_ns": 115597,
+            "samples_ns": [
+              115597,
+              120857,
+              117231
+            ]
+          },
+          "restored_assembly_and_IxIR1_lowering": {
+            "maximum_ns": 130495,
+            "median_ns": 130024,
+            "minimum_ns": 127019,
+            "samples_ns": [
+              130495,
+              130024,
+              127019
+            ]
+          },
+          "source_certificates": {
+            "maximum_ns": 474481,
+            "median_ns": 465374,
+            "minimum_ns": 455847,
+            "samples_ns": [
+              455847,
+              474481,
+              465374
+            ]
+          },
+          "unchanged_assembly_and_IxIR1_lowering": {
+            "maximum_ns": 136176,
+            "median_ns": 128412,
+            "minimum_ns": 127159,
+            "samples_ns": [
+              127159,
+              128412,
+              136176
+            ]
+          },
+          "unchanged_source_certificates": {
+            "maximum_ns": 242575,
+            "median_ns": 240823,
+            "minimum_ns": 240261,
+            "samples_ns": [
+              240823,
+              242575,
+              240261
+            ]
+          }
+        },
+        "reference": {
+          "assembly_and_IxIR1_lowering": {
+            "maximum_ns": 162375,
+            "median_ns": 152677,
+            "minimum_ns": 147558,
+            "samples_ns": [
+              147558,
+              152677,
+              162375
+            ]
+          },
+          "check_retained_source_certificates": {
+            "maximum_ns": 399240,
+            "median_ns": 395803,
+            "minimum_ns": 392717,
+            "samples_ns": [
+              392717,
+              395803,
+              399240
+            ]
+          },
+          "decode_retained_store": {
+            "maximum_ns": 32090,
+            "median_ns": 30548,
+            "minimum_ns": 30407,
+            "samples_ns": [
+              30407,
+              30548,
+              32090
+            ]
+          },
+          "monolithic_compilation": {
+            "maximum_ns": 119234,
+            "median_ns": 118903,
+            "minimum_ns": 117140,
+            "samples_ns": [
+              117140,
+              118903,
+              119234
+            ]
+          },
+          "restored_assembly_and_IxIR1_lowering": {
+            "maximum_ns": 132929,
+            "median_ns": 126508,
+            "minimum_ns": 125726,
+            "samples_ns": [
+              132929,
+              125726,
+              126508
+            ]
+          },
+          "source_certificates": {
+            "maximum_ns": 674637,
+            "median_ns": 666431,
+            "minimum_ns": 645222,
+            "samples_ns": [
+              645222,
+              674637,
+              666431
+            ]
+          },
+          "unchanged_assembly_and_IxIR1_lowering": {
+            "maximum_ns": 139301,
+            "median_ns": 136557,
+            "minimum_ns": 136105,
+            "samples_ns": [
+              136557,
+              139301,
+              136105
+            ]
+          },
+          "unchanged_source_certificates": {
+            "maximum_ns": 352812,
+            "median_ns": 345068,
+            "minimum_ns": 341421,
+            "samples_ns": [
+              352812,
+              345068,
+              341421
+            ]
+          }
+        }
+      }
+    },
+    {
+      "case": "edited",
+      "correctness": {
+        "IxIR1_declarations": 6,
+        "artifact_blake3": "ae5daef53a6fad01ff80b2865af7eceb7f3338fc0a542d8aac2c7e76e234af17",
+        "artifact_bytes": 7123,
+        "build": [
+          {
+            "action": "reused",
+            "candidates": 1,
+            "context_constants": 1,
+            "import_bindings": 3,
+            "key": "9760da1c0da3674f45a2d8656fcbe726b890bcf91753739e96d19bf203c47d26",
+            "name": "unaffected",
+            "output_bytes": 68,
+            "proof_obligations": 1,
+            "query_bytes": 413,
+            "source_node_work": 12
+          },
+          {
+            "action": "produced",
+            "candidates": 1,
+            "context_constants": 1,
+            "import_bindings": 3,
+            "key": "c82abd32ac553022b5570c6e2ab26f3b3412aea69a6305873d64e33b5b6ca533",
+            "name": "leaf",
+            "output_bytes": 68,
+            "proof_obligations": 1,
+            "query_bytes": 407,
+            "source_node_work": 12
+          },
+          {
+            "action": "produced",
+            "candidates": 1,
+            "context_constants": 2,
+            "import_bindings": 5,
+            "key": "5dbeb73fb300d5286d68448f39f62a6c770aef30fe2cae0a944afff4a3b6dc01",
+            "name": "dependent",
+            "output_bytes": 94,
+            "proof_obligations": 1,
+            "query_bytes": 582,
+            "source_node_work": 16
+          },
+          {
+            "action": "produced",
+            "candidates": 1,
+            "context_constants": 4,
+            "import_bindings": 10,
+            "key": "d858e82f27fa2f8806d0d546d137b07a5d9bbdc4edcdee26ef994a1cc0d15916",
+            "name": "root",
+            "output_bytes": 129,
+            "proof_obligations": 1,
+            "query_bytes": 858,
+            "source_node_work": 38
+          }
+        ],
+        "certificate_candidates": 4,
+        "certificate_store_blake3": "1102acd4f02d3266d4ddb6e2a5cec2784a6b1b2203a6b4ff796ae916e95dc87f",
+        "certificate_store_bytes": 2963,
+        "expected_value": 38,
+        "monolithic": {
+          "artifact_exact": true,
+          "status": "accepted"
+        },
+        "name": "edited",
+        "proof_obligations": 4,
+        "reachable_source_constants": 4,
+        "restored_artifact_exact": true,
+        "root": "13643562157a5256995a1468193ea6e5ba7e0ed28f1db6ead357c19ef64fc35f",
+        "simultaneous_members": 0,
+        "source_and_IR_execution_agree": true,
+        "source_blake3": "35adbdeab0b6195f70e5d7225d0fc86bdae7f25954ecdc09cdd2a702801ed1d4",
+        "source_bytes": 618,
+        "source_constants": 4,
+        "unchanged": [
+          {
+            "action": "reused",
+            "candidates": 1,
+            "context_constants": 1,
+            "import_bindings": 3,
+            "key": "9760da1c0da3674f45a2d8656fcbe726b890bcf91753739e96d19bf203c47d26",
+            "name": "unaffected",
+            "output_bytes": 68,
+            "proof_obligations": 1,
+            "query_bytes": 413,
+            "source_node_work": 12
+          },
+          {
+            "action": "reused",
+            "candidates": 1,
+            "context_constants": 1,
+            "import_bindings": 3,
+            "key": "c82abd32ac553022b5570c6e2ab26f3b3412aea69a6305873d64e33b5b6ca533",
+            "name": "leaf",
+            "output_bytes": 68,
+            "proof_obligations": 1,
+            "query_bytes": 407,
+            "source_node_work": 12
+          },
+          {
+            "action": "reused",
+            "candidates": 1,
+            "context_constants": 2,
+            "import_bindings": 5,
+            "key": "5dbeb73fb300d5286d68448f39f62a6c770aef30fe2cae0a944afff4a3b6dc01",
+            "name": "dependent",
+            "output_bytes": 94,
+            "proof_obligations": 1,
+            "query_bytes": 582,
+            "source_node_work": 16
+          },
+          {
+            "action": "reused",
+            "candidates": 1,
+            "context_constants": 4,
+            "import_bindings": 10,
+            "key": "d858e82f27fa2f8806d0d546d137b07a5d9bbdc4edcdee26ef994a1cc0d15916",
+            "name": "root",
+            "output_bytes": 129,
+            "proof_obligations": 1,
+            "query_bytes": 858,
+            "source_node_work": 38
+          }
+        ],
+        "unchanged_artifact_exact": true,
+        "units": 4
+      },
+      "measurements": {
+        "prepared": {
+          "assembly_and_IxIR1_lowering": {
+            "maximum_ns": 151174,
+            "median_ns": 135855,
+            "minimum_ns": 134382,
+            "samples_ns": [
+              135855,
+              151174,
+              134382
+            ]
+          },
+          "check_retained_source_certificates": {
+            "maximum_ns": 328938,
+            "median_ns": 291457,
+            "minimum_ns": 286158,
+            "samples_ns": [
+              286158,
+              328938,
+              291457
+            ]
+          },
+          "decode_retained_store": {
+            "maximum_ns": 27462,
+            "median_ns": 26730,
+            "minimum_ns": 26700,
+            "samples_ns": [
+              27462,
+              26700,
+              26730
+            ]
+          },
+          "monolithic_compilation": {
+            "maximum_ns": 115988,
+            "median_ns": 115487,
+            "minimum_ns": 114505,
+            "samples_ns": [
+              114505,
+              115988,
+              115487
+            ]
+          },
+          "restored_assembly_and_IxIR1_lowering": {
+            "maximum_ns": 133891,
+            "median_ns": 127179,
+            "minimum_ns": 127158,
+            "samples_ns": [
+              127158,
+              133891,
+              127179
+            ]
+          },
+          "source_certificates": {
+            "maximum_ns": 425238,
+            "median_ns": 414749,
+            "minimum_ns": 410440,
+            "samples_ns": [
+              410440,
+              414749,
+              425238
+            ]
+          },
+          "unchanged_assembly_and_IxIR1_lowering": {
+            "maximum_ns": 130305,
+            "median_ns": 126959,
+            "minimum_ns": 125857,
+            "samples_ns": [
+              126959,
+              130305,
+              125857
+            ]
+          },
+          "unchanged_source_certificates": {
+            "maximum_ns": 435127,
+            "median_ns": 249028,
+            "minimum_ns": 242435,
+            "samples_ns": [
+              249028,
+              435127,
+              242435
+            ]
+          }
+        },
+        "reference": {
+          "assembly_and_IxIR1_lowering": {
+            "maximum_ns": 145353,
+            "median_ns": 139161,
+            "minimum_ns": 135234,
+            "samples_ns": [
+              135234,
+              145353,
+              139161
+            ]
+          },
+          "check_retained_source_certificates": {
+            "maximum_ns": 396886,
+            "median_ns": 391886,
+            "minimum_ns": 386546,
+            "samples_ns": [
+              386546,
+              391886,
+              396886
+            ]
+          },
+          "decode_retained_store": {
+            "maximum_ns": 34865,
+            "median_ns": 26951,
+            "minimum_ns": 26510,
+            "samples_ns": [
+              26510,
+              34865,
+              26951
+            ]
+          },
+          "monolithic_compilation": {
+            "maximum_ns": 116850,
+            "median_ns": 114004,
+            "minimum_ns": 113392,
+            "samples_ns": [
+              114004,
+              116850,
+              113392
+            ]
+          },
+          "restored_assembly_and_IxIR1_lowering": {
+            "maximum_ns": 130595,
+            "median_ns": 127509,
+            "minimum_ns": 127259,
+            "samples_ns": [
+              130595,
+              127509,
+              127259
+            ]
+          },
+          "source_certificates": {
+            "maximum_ns": 585940,
+            "median_ns": 580190,
+            "minimum_ns": 575601,
+            "samples_ns": [
+              575601,
+              580190,
+              585940
+            ]
+          },
+          "unchanged_assembly_and_IxIR1_lowering": {
+            "maximum_ns": 133300,
+            "median_ns": 132018,
+            "minimum_ns": 130015,
+            "samples_ns": [
+              130015,
+              132018,
+              133300
+            ]
+          },
+          "unchanged_source_certificates": {
+            "maximum_ns": 340259,
+            "median_ns": 337995,
+            "minimum_ns": 334749,
+            "samples_ns": [
+              337995,
+              340259,
+              334749
+            ]
+          }
+        }
+      }
+    },
+    {
+      "case": "blob-edited",
+      "correctness": {
+        "IxIR1_declarations": 6,
+        "artifact_blake3": "d87c6305e7c186963b06d3c105dd56513984303606820970343dae20751c1365",
+        "artifact_bytes": 7123,
+        "build": [
+          {
+            "action": "reused",
+            "candidates": 1,
+            "context_constants": 1,
+            "import_bindings": 3,
+            "key": "9760da1c0da3674f45a2d8656fcbe726b890bcf91753739e96d19bf203c47d26",
+            "name": "unaffected",
+            "output_bytes": 68,
+            "proof_obligations": 1,
+            "query_bytes": 413,
+            "source_node_work": 12
+          },
+          {
+            "action": "produced",
+            "candidates": 1,
+            "context_constants": 1,
+            "import_bindings": 3,
+            "key": "9414c706c2dd6bd307ec665b4decc5a888e60bf6aae431b5e7c738fb76fc1a7c",
+            "name": "leaf",
+            "output_bytes": 68,
+            "proof_obligations": 1,
+            "query_bytes": 407,
+            "source_node_work": 12
+          },
+          {
+            "action": "produced",
+            "candidates": 1,
+            "context_constants": 2,
+            "import_bindings": 5,
+            "key": "82590dbdf74bfb40684ca618793f16c6d4ccd1e378b8566b86b2bf50461977d9",
+            "name": "dependent",
+            "output_bytes": 94,
+            "proof_obligations": 1,
+            "query_bytes": 582,
+            "source_node_work": 16
+          },
+          {
+            "action": "produced",
+            "candidates": 1,
+            "context_constants": 4,
+            "import_bindings": 10,
+            "key": "70375fb94d2c77f7487656f85bae15ba7c4bd8d161362e63557fac2e7a1bbd97",
+            "name": "root",
+            "output_bytes": 129,
+            "proof_obligations": 1,
+            "query_bytes": 858,
+            "source_node_work": 38
+          }
+        ],
+        "certificate_candidates": 4,
+        "certificate_store_blake3": "973c54e51e0063328cf6a883858978fa30743aaf5d232f3f72f6adca4c1a7fb1",
+        "certificate_store_bytes": 2963,
+        "expected_value": 38,
+        "monolithic": {
+          "artifact_exact": true,
+          "status": "accepted"
+        },
+        "name": "blob-edited",
+        "proof_obligations": 4,
+        "reachable_source_constants": 4,
+        "restored_artifact_exact": true,
+        "root": "656f02cdc72a20242cde06465d156e372b6da4fa5f741132ec89c1c57d72015a",
+        "simultaneous_members": 0,
+        "source_and_IR_execution_agree": true,
+        "source_blake3": "3f5cac8eef9127e863a5f6fd80942a3dc6467d213e1b905758b25798288c0724",
+        "source_bytes": 618,
+        "source_constants": 4,
+        "unchanged": [
+          {
+            "action": "reused",
+            "candidates": 1,
+            "context_constants": 1,
+            "import_bindings": 3,
+            "key": "9760da1c0da3674f45a2d8656fcbe726b890bcf91753739e96d19bf203c47d26",
+            "name": "unaffected",
+            "output_bytes": 68,
+            "proof_obligations": 1,
+            "query_bytes": 413,
+            "source_node_work": 12
+          },
+          {
+            "action": "reused",
+            "candidates": 1,
+            "context_constants": 1,
+            "import_bindings": 3,
+            "key": "9414c706c2dd6bd307ec665b4decc5a888e60bf6aae431b5e7c738fb76fc1a7c",
+            "name": "leaf",
+            "output_bytes": 68,
+            "proof_obligations": 1,
+            "query_bytes": 407,
+            "source_node_work": 12
+          },
+          {
+            "action": "reused",
+            "candidates": 1,
+            "context_constants": 2,
+            "import_bindings": 5,
+            "key": "82590dbdf74bfb40684ca618793f16c6d4ccd1e378b8566b86b2bf50461977d9",
+            "name": "dependent",
+            "output_bytes": 94,
+            "proof_obligations": 1,
+            "query_bytes": 582,
+            "source_node_work": 16
+          },
+          {
+            "action": "reused",
+            "candidates": 1,
+            "context_constants": 4,
+            "import_bindings": 10,
+            "key": "70375fb94d2c77f7487656f85bae15ba7c4bd8d161362e63557fac2e7a1bbd97",
+            "name": "root",
+            "output_bytes": 129,
+            "proof_obligations": 1,
+            "query_bytes": 858,
+            "source_node_work": 38
+          }
+        ],
+        "unchanged_artifact_exact": true,
+        "units": 4
+      },
+      "measurements": {
+        "prepared": {
+          "assembly_and_IxIR1_lowering": {
+            "maximum_ns": 130275,
+            "median_ns": 129683,
+            "minimum_ns": 126959,
+            "samples_ns": [
+              130275,
+              129683,
+              126959
+            ]
+          },
+          "check_retained_source_certificates": {
+            "maximum_ns": 543430,
+            "median_ns": 299973,
+            "minimum_ns": 285416,
+            "samples_ns": [
+              285416,
+              543430,
+              299973
+            ]
+          },
+          "decode_retained_store": {
+            "maximum_ns": 31449,
+            "median_ns": 26319,
+            "minimum_ns": 26169,
+            "samples_ns": [
+              26319,
+              31449,
+              26169
+            ]
+          },
+          "monolithic_compilation": {
+            "maximum_ns": 113733,
+            "median_ns": 112471,
+            "minimum_ns": 111609,
+            "samples_ns": [
+              112471,
+              113733,
+              111609
+            ]
+          },
+          "restored_assembly_and_IxIR1_lowering": {
+            "maximum_ns": 134262,
+            "median_ns": 133120,
+            "minimum_ns": 125195,
+            "samples_ns": [
+              133120,
+              134262,
+              125195
+            ]
+          },
+          "source_certificates": {
+            "maximum_ns": 345388,
+            "median_ns": 337484,
+            "minimum_ns": 337274,
+            "samples_ns": [
+              337484,
+              345388,
+              337274
+            ]
+          },
+          "unchanged_assembly_and_IxIR1_lowering": {
+            "maximum_ns": 127790,
+            "median_ns": 125806,
+            "minimum_ns": 125736,
+            "samples_ns": [
+              125736,
+              127790,
+              125806
+            ]
+          },
+          "unchanged_source_certificates": {
+            "maximum_ns": 249839,
+            "median_ns": 239930,
+            "minimum_ns": 233860,
+            "samples_ns": [
+              249839,
+              239930,
+              233860
+            ]
+          }
+        },
+        "reference": {
+          "assembly_and_IxIR1_lowering": {
+            "maximum_ns": 133681,
+            "median_ns": 128822,
+            "minimum_ns": 127129,
+            "samples_ns": [
+              128822,
+              127129,
+              133681
+            ]
+          },
+          "check_retained_source_certificates": {
+            "maximum_ns": 398468,
+            "median_ns": 383631,
+            "minimum_ns": 381837,
+            "samples_ns": [
+              383631,
+              381837,
+              398468
+            ]
+          },
+          "decode_retained_store": {
+            "maximum_ns": 26841,
+            "median_ns": 26660,
+            "minimum_ns": 26430,
+            "samples_ns": [
+              26430,
+              26841,
+              26660
+            ]
+          },
+          "monolithic_compilation": {
+            "maximum_ns": 110819,
+            "median_ns": 109125,
+            "minimum_ns": 108233,
+            "samples_ns": [
+              109125,
+              108233,
+              110819
+            ]
+          },
+          "restored_assembly_and_IxIR1_lowering": {
+            "maximum_ns": 127099,
+            "median_ns": 126728,
+            "minimum_ns": 123672,
+            "samples_ns": [
+              126728,
+              123672,
+              127099
+            ]
+          },
+          "source_certificates": {
+            "maximum_ns": 583375,
+            "median_ns": 576313,
+            "minimum_ns": 574960,
+            "samples_ns": [
+              574960,
+              576313,
+              583375
+            ]
+          },
+          "unchanged_assembly_and_IxIR1_lowering": {
+            "maximum_ns": 133911,
+            "median_ns": 127559,
+            "minimum_ns": 126949,
+            "samples_ns": [
+              127559,
+              133911,
+              126949
+            ]
+          },
+          "unchanged_source_certificates": {
+            "maximum_ns": 337824,
+            "median_ns": 335661,
+            "minimum_ns": 324640,
+            "samples_ns": [
+              337824,
+              324640,
+              335661
+            ]
+          }
+        }
+      }
+    },
+    {
+      "case": "mutual",
+      "correctness": {
+        "IxIR1_declarations": 7,
+        "artifact_blake3": "839057b510ae665d055609b08fd120580b6c575ea05a5b0fc03795dd6e5b54f1",
+        "artifact_bytes": 11447,
+        "build": [
+          {
+            "action": "produced",
+            "candidates": 0,
+            "context_constants": 1,
+            "import_bindings": 5,
+            "key": "39139f4f736fc0fe19458f2fa712262a5b2444fd003cb830c4ccce533af95e07",
+            "name": "recursive-group",
+            "output_bytes": 229,
+            "proof_obligations": 2,
+            "query_bytes": 461,
+            "source_node_work": 100
+          },
+          {
+            "action": "produced",
+            "candidates": 2,
+            "context_constants": 4,
+            "import_bindings": 12,
+            "key": "ba80388915e4818f2ad864b18ac1415dc65e8ce990e2fefcd13ec76d2fef03f6",
+            "name": "entry",
+            "output_bytes": 288,
+            "proof_obligations": 3,
+            "query_bytes": 996,
+            "source_node_work": 252
+          }
+        ],
+        "certificate_candidates": 2,
+        "certificate_store_blake3": "d8d836d8e280ce4c4bc6094d3db5750323f9d3138ed5ef901422dd3c48687708",
+        "certificate_store_bytes": 2169,
+        "expected_value": 4,
+        "monolithic": {
+          "artifact_exact": true,
+          "status": "accepted"
+        },
+        "name": "mutual",
+        "proof_obligations": 5,
+        "reachable_source_constants": 4,
+        "restored_artifact_exact": true,
+        "root": "e27999cc300bd5d2114112363b7ab86c1e51729d1d0d67e5301e9d2e1c745532",
+        "simultaneous_members": 3,
+        "source_and_IR_execution_agree": true,
+        "source_blake3": "ad056f1b78e6032317b28fef0e8043e37e6f3f03fb8f8540aba95c5e6f5c707b",
+        "source_bytes": 622,
+        "source_constants": 4,
+        "unchanged": [
+          {
+            "action": "reused",
+            "candidates": 0,
+            "context_constants": 1,
+            "import_bindings": 5,
+            "key": "39139f4f736fc0fe19458f2fa712262a5b2444fd003cb830c4ccce533af95e07",
+            "name": "recursive-group",
+            "output_bytes": 229,
+            "proof_obligations": 2,
+            "query_bytes": 461,
+            "source_node_work": 100
+          },
+          {
+            "action": "reused",
+            "candidates": 2,
+            "context_constants": 4,
+            "import_bindings": 12,
+            "key": "ba80388915e4818f2ad864b18ac1415dc65e8ce990e2fefcd13ec76d2fef03f6",
+            "name": "entry",
+            "output_bytes": 288,
+            "proof_obligations": 3,
+            "query_bytes": 996,
+            "source_node_work": 252
+          }
+        ],
+        "unchanged_artifact_exact": true,
+        "units": 2
+      },
+      "measurements": {
+        "prepared": {
+          "assembly_and_IxIR1_lowering": {
+            "maximum_ns": 272773,
+            "median_ns": 265077,
+            "minimum_ns": 264797,
+            "samples_ns": [
+              272773,
+              265077,
+              264797
+            ]
+          },
+          "check_retained_source_certificates": {
+            "maximum_ns": 681120,
+            "median_ns": 399640,
+            "minimum_ns": 396815,
+            "samples_ns": [
+              399640,
+              681120,
+              396815
+            ]
+          },
+          "decode_retained_store": {
+            "maximum_ns": 28003,
+            "median_ns": 27792,
+            "minimum_ns": 27151,
+            "samples_ns": [
+              27792,
+              28003,
+              27151
+            ]
+          },
+          "monolithic_compilation": {
+            "maximum_ns": 300384,
+            "median_ns": 287480,
+            "minimum_ns": 269356,
+            "samples_ns": [
+              287480,
+              300384,
+              269356
+            ]
+          },
+          "restored_assembly_and_IxIR1_lowering": {
+            "maximum_ns": 259467,
+            "median_ns": 247365,
+            "minimum_ns": 245031,
+            "samples_ns": [
+              247365,
+              245031,
+              259467
+            ]
+          },
+          "source_certificates": {
+            "maximum_ns": 510518,
+            "median_ns": 497545,
+            "minimum_ns": 486072,
+            "samples_ns": [
+              486072,
+              510518,
+              497545
+            ]
+          },
+          "unchanged_assembly_and_IxIR1_lowering": {
+            "maximum_ns": 270338,
+            "median_ns": 258556,
+            "minimum_ns": 250481,
+            "samples_ns": [
+              258556,
+              250481,
+              270338
+            ]
+          },
+          "unchanged_source_certificates": {
+            "maximum_ns": 192221,
+            "median_ns": 187512,
+            "minimum_ns": 185959,
+            "samples_ns": [
+              185959,
+              192221,
+              187512
+            ]
+          }
+        },
+        "reference": {
+          "assembly_and_IxIR1_lowering": {
+            "maximum_ns": 282250,
+            "median_ns": 272151,
+            "minimum_ns": 260289,
+            "samples_ns": [
+              260289,
+              272151,
+              282250
+            ]
+          },
+          "check_retained_source_certificates": {
+            "maximum_ns": 587393,
+            "median_ns": 585921,
+            "minimum_ns": 575581,
+            "samples_ns": [
+              585921,
+              587393,
+              575581
+            ]
+          },
+          "decode_retained_store": {
+            "maximum_ns": 28534,
+            "median_ns": 27642,
+            "minimum_ns": 27381,
+            "samples_ns": [
+              28534,
+              27381,
+              27642
+            ]
+          },
+          "monolithic_compilation": {
+            "maximum_ns": 290065,
+            "median_ns": 281198,
+            "minimum_ns": 271430,
+            "samples_ns": [
+              271430,
+              290065,
+              281198
+            ]
+          },
+          "restored_assembly_and_IxIR1_lowering": {
+            "maximum_ns": 257614,
+            "median_ns": 253576,
+            "minimum_ns": 252133,
+            "samples_ns": [
+              252133,
+              253576,
+              257614
+            ]
+          },
+          "source_certificates": {
+            "maximum_ns": 1035845,
+            "median_ns": 886205,
+            "minimum_ns": 874723,
+            "samples_ns": [
+              1035845,
+              886205,
+              874723
+            ]
+          },
+          "unchanged_assembly_and_IxIR1_lowering": {
+            "maximum_ns": 262453,
+            "median_ns": 254468,
+            "minimum_ns": 248627,
+            "samples_ns": [
+              262453,
+              248627,
+              254468
+            ]
+          },
+          "unchanged_source_certificates": {
+            "maximum_ns": 403107,
+            "median_ns": 381837,
+            "minimum_ns": 373431,
+            "samples_ns": [
+              403107,
+              381837,
+              373431
+            ]
+          }
+        }
+      }
+    },
+    {
+      "case": "wide-32",
+      "correctness": {
+        "IxIR1_declarations": 66,
+        "artifact_blake3": "e1aa91ea73ffb87d37fd0488c7f0b5e3bff3437c5e57133cd79805c15a383a3f",
+        "artifact_bytes": 70473,
+        "build": [
+          {
+            "action": "produced",
+            "candidates": 33,
+            "context_constants": 33,
+            "import_bindings": 98,
+            "key": "e9519f204931b136ead04f7b618d66115ad41ce50f0e661d8423ecfc0cf54114",
+            "name": "group-0",
+            "output_bytes": 3356,
+            "proof_obligations": 33,
+            "query_bytes": 6161,
+            "source_node_work": 170478
+          },
+          {
+            "action": "produced",
+            "candidates": 1,
+            "context_constants": 34,
+            "import_bindings": 100,
+            "key": "4d988730cd132700e7b567be2ebffb9622a155130c93c23b6f2b8a10d373e49c",
+            "name": "root",
+            "output_bytes": 94,
+            "proof_obligations": 1,
+            "query_bytes": 4892,
+            "source_node_work": 578
+          }
+        ],
+        "certificate_candidates": 34,
+        "certificate_store_blake3": "ea2e58ba3627ac1c156c8b51a39cfe3de7da84e9c5d371c908c45b9635dcf668",
+        "certificate_store_bytes": 15713,
+        "expected_value": 1031,
+        "monolithic": {
+          "artifact_exact": true,
+          "status": "accepted"
+        },
+        "name": "wide-32",
+        "proof_obligations": 34,
+        "reachable_source_constants": 34,
+        "restored_artifact_exact": true,
+        "root": "64e261c37ddaaea077ab351c0076c2fb8200eaa2e03d5c5bc7f291d16ab78859",
+        "simultaneous_members": 0,
+        "source_and_IR_execution_agree": true,
+        "source_blake3": "d9bb989769d2c23811868e9216ca6798f11312508fd340793d028b9a5df86f10",
+        "source_bytes": 6035,
+        "source_constants": 34,
+        "unchanged": [
+          {
+            "action": "reused",
+            "candidates": 33,
+            "context_constants": 33,
+            "import_bindings": 98,
+            "key": "e9519f204931b136ead04f7b618d66115ad41ce50f0e661d8423ecfc0cf54114",
+            "name": "group-0",
+            "output_bytes": 3356,
+            "proof_obligations": 33,
+            "query_bytes": 6161,
+            "source_node_work": 170478
+          },
+          {
+            "action": "reused",
+            "candidates": 1,
+            "context_constants": 34,
+            "import_bindings": 100,
+            "key": "4d988730cd132700e7b567be2ebffb9622a155130c93c23b6f2b8a10d373e49c",
+            "name": "root",
+            "output_bytes": 94,
+            "proof_obligations": 1,
+            "query_bytes": 4892,
+            "source_node_work": 578
+          }
+        ],
+        "unchanged_artifact_exact": true,
+        "units": 2
+      },
+      "measurements": {
+        "prepared": {
+          "assembly_and_IxIR1_lowering": {
+            "maximum_ns": 1389239,
+            "median_ns": 1386384,
+            "minimum_ns": 1367238,
+            "samples_ns": [
+              1367238,
+              1386384,
+              1389239
+            ]
+          },
+          "check_retained_source_certificates": {
+            "maximum_ns": 10920339,
+            "median_ns": 10784845,
+            "minimum_ns": 10778152,
+            "samples_ns": [
+              10778152,
+              10920339,
+              10784845
+            ]
+          },
+          "decode_retained_store": {
+            "maximum_ns": 217318,
+            "median_ns": 210305,
+            "minimum_ns": 208161,
+            "samples_ns": [
+              208161,
+              210305,
+              217318
+            ]
+          },
+          "monolithic_compilation": {
+            "maximum_ns": 1315250,
+            "median_ns": 1273873,
+            "minimum_ns": 1267521,
+            "samples_ns": [
+              1273873,
+              1315250,
+              1267521
+            ]
+          },
+          "restored_assembly_and_IxIR1_lowering": {
+            "maximum_ns": 1365053,
+            "median_ns": 1361016,
+            "minimum_ns": 1353812,
+            "samples_ns": [
+              1353812,
+              1361016,
+              1365053
+            ]
+          },
+          "source_certificates": {
+            "maximum_ns": 11382086,
+            "median_ns": 11233737,
+            "minimum_ns": 11191910,
+            "samples_ns": [
+              11233737,
+              11382086,
+              11191910
+            ]
+          },
+          "unchanged_assembly_and_IxIR1_lowering": {
+            "maximum_ns": 1423724,
+            "median_ns": 1394108,
+            "minimum_ns": 1392666,
+            "samples_ns": [
+              1394108,
+              1392666,
+              1423724
+            ]
+          },
+          "unchanged_source_certificates": {
+            "maximum_ns": 1043019,
+            "median_ns": 1025776,
+            "minimum_ns": 1025306,
+            "samples_ns": [
+              1025776,
+              1043019,
+              1025306
+            ]
+          }
+        },
+        "reference": {
+          "assembly_and_IxIR1_lowering": {
+            "maximum_ns": 1409136,
+            "median_ns": 1395651,
+            "minimum_ns": 1384411,
+            "samples_ns": [
+              1395651,
+              1384411,
+              1409136
+            ]
+          },
+          "check_retained_source_certificates": {
+            "maximum_ns": 20825692,
+            "median_ns": 20512834,
+            "minimum_ns": 20384673,
+            "samples_ns": [
+              20384673,
+              20825692,
+              20512834
+            ]
+          },
+          "decode_retained_store": {
+            "maximum_ns": 147346,
+            "median_ns": 142908,
+            "minimum_ns": 141586,
+            "samples_ns": [
+              142908,
+              147346,
+              141586
+            ]
+          },
+          "monolithic_compilation": {
+            "maximum_ns": 1320660,
+            "median_ns": 1300503,
+            "minimum_ns": 1241431,
+            "samples_ns": [
+              1320660,
+              1241431,
+              1300503
+            ]
+          },
+          "restored_assembly_and_IxIR1_lowering": {
+            "maximum_ns": 1340428,
+            "median_ns": 1336991,
+            "minimum_ns": 1331360,
+            "samples_ns": [
+              1336991,
+              1331360,
+              1340428
+            ]
+          },
+          "source_certificates": {
+            "maximum_ns": 31404359,
+            "median_ns": 30581654,
+            "minimum_ns": 30577887,
+            "samples_ns": [
+              30581654,
+              31404359,
+              30577887
+            ]
+          },
+          "unchanged_assembly_and_IxIR1_lowering": {
+            "maximum_ns": 1408716,
+            "median_ns": 1389830,
+            "minimum_ns": 1385923,
+            "samples_ns": [
+              1389830,
+              1385923,
+              1408716
+            ]
+          },
+          "unchanged_source_certificates": {
+            "maximum_ns": 10641846,
+            "median_ns": 10563789,
+            "minimum_ns": 10471977,
+            "samples_ns": [
+              10471977,
+              10641846,
+              10563789
+            ]
+          }
+        }
+      }
+    },
+    {
+      "case": "wide-600",
+      "correctness": {
+        "IxIR1_declarations": 1211,
+        "artifact_blake3": "e2c9a50d8282b638eef06e915a200a8cb84ad1dda7eca6f0a4b9a2d7acf23ae6",
+        "artifact_bytes": 1281788,
+        "build": [
+          {
+            "action": "produced",
+            "candidates": 65,
+            "context_constants": 65,
+            "import_bindings": 194,
+            "key": "76f4110620e9d14472fad98fee78af33c42acb6a700adb245ce358f0bc1815e3",
+            "name": "group-0",
+            "output_bytes": 6652,
+            "proof_obligations": 65,
+            "query_bytes": 11985,
+            "source_node_work": 1270750
+          },
+          {
+            "action": "produced",
+            "candidates": 65,
+            "context_constants": 65,
+            "import_bindings": 194,
+            "key": "32eb63027763b93c1085cb3e68c7d457bc9916e77d252f4fd8f3288fce6b2de8",
+            "name": "group-1",
+            "output_bytes": 6652,
+            "proof_obligations": 65,
+            "query_bytes": 11985,
+            "source_node_work": 1270750
+          },
+          {
+            "action": "produced",
+            "candidates": 65,
+            "context_constants": 65,
+            "import_bindings": 194,
+            "key": "89c703ac00f14a8a0a80e65dc727e94a8a798cf5f4a1a317d7ab39d897cc1a63",
+            "name": "group-2",
+            "output_bytes": 6652,
+            "proof_obligations": 65,
+            "query_bytes": 11985,
+            "source_node_work": 1270750
+          },
+          {
+            "action": "produced",
+            "candidates": 65,
+            "context_constants": 65,
+            "import_bindings": 194,
+            "key": "6f4070d967eabf655fefc274956e4121b16ea6be4c60da8f87fdb1bbda133b8d",
+            "name": "group-3",
+            "output_bytes": 6652,
+            "proof_obligations": 65,
+            "query_bytes": 11985,
+            "source_node_work": 1270750
+          },
+          {
+            "action": "produced",
+            "candidates": 65,
+            "context_constants": 65,
+            "import_bindings": 194,
+            "key": "4b4b8494ded55d1cb2fc561b58ec8e01db36cd7ce14fde266ebfdb602ca75032",
+            "name": "group-4",
+            "output_bytes": 6652,
+            "proof_obligations": 65,
+            "query_bytes": 11985,
+            "source_node_work": 1270750
+          },
+          {
+            "action": "produced",
+            "candidates": 65,
+            "context_constants": 65,
+            "import_bindings": 194,
+            "key": "29c4d4392a4f7b09dc52c85d4a08c55b9cdb2c4213ac7120c12eb32c1502de28",
+            "name": "group-5",
+            "output_bytes": 6652,
+            "proof_obligations": 65,
+            "query_bytes": 11985,
+            "source_node_work": 1270750
+          },
+          {
+            "action": "produced",
+            "candidates": 65,
+            "context_constants": 65,
+            "import_bindings": 194,
+            "key": "805165f4e60919e74c691db33475679aa5dbe7d48297bcdff141e9de4e973029",
+            "name": "group-6",
+            "output_bytes": 6652,
+            "proof_obligations": 65,
+            "query_bytes": 11985,
+            "source_node_work": 1270750
+          },
+          {
+            "action": "produced",
+            "candidates": 65,
+            "context_constants": 65,
+            "import_bindings": 194,
+            "key": "5bde8ac1ec432b49e396d6fae853afd0a73a11165b6c5537ac0af66e64cd52ca",
+            "name": "group-7",
+            "output_bytes": 6652,
+            "proof_obligations": 65,
+            "query_bytes": 11985,
+            "source_node_work": 1270750
+          },
+          {
+            "action": "produced",
+            "candidates": 65,
+            "context_constants": 65,
+            "import_bindings": 194,
+            "key": "96897f3b9fa5b0618113ac86cb3d288ccc99235fbdfb5cf1d833cae71f7fd48e",
+            "name": "group-8",
+            "output_bytes": 6652,
+            "proof_obligations": 65,
+            "query_bytes": 11985,
+            "source_node_work": 1270750
+          },
+          {
+            "action": "produced",
+            "candidates": 25,
+            "context_constants": 25,
+            "import_bindings": 74,
+            "key": "c2fd0ed1d9dccb1841888ff086d8cb8bf9a66f9aeeed70d9752f3258a5858a0b",
+            "name": "group-9",
+            "output_bytes": 2532,
+            "proof_obligations": 25,
+            "query_bytes": 4705,
+            "source_node_work": 75250
+          },
+          {
+            "action": "produced",
+            "candidates": 1,
+            "context_constants": 611,
+            "import_bindings": 1822,
+            "key": "1876c6dc452fcf7285f573ac1c398a25be00d82d2e5257bd47948e14dfbce469",
+            "name": "root",
+            "output_bytes": 410,
+            "proof_obligations": 1,
+            "query_bytes": 83724,
+            "source_node_work": 10838
+          }
+        ],
+        "certificate_candidates": 611,
+        "certificate_store_blake3": "6342a41276ebb114eb4cbf1ccc3e359486d6555300e5ad59aa4222e4091e3732",
+        "certificate_store_bytes": 279203,
+        "expected_value": 1599,
+        "monolithic": {
+          "reason": "Compilatrix.Pipeline.Error.resource\n  { metric := Compilatrix.Ixon.Work.Metric.certificateCandidates, actual := 611, limit := 512 }",
+          "status": "rejected"
+        },
+        "name": "wide-600",
+        "proof_obligations": 611,
+        "reachable_source_constants": 611,
+        "restored_artifact_exact": true,
+        "root": "61a8bc14b4b6068d8133ca3202485a1e3ab4038c5e4395b5c5a6c16412102dcb",
+        "simultaneous_members": 0,
+        "source_and_IR_execution_agree": true,
+        "source_blake3": "8f1d2b72d087eed63d8c5d9b18ff68a061485d29bba0eeb0cbe0ee54aac4d751",
+        "source_bytes": 110573,
+        "source_constants": 611,
+        "unchanged": [
+          {
+            "action": "reused",
+            "candidates": 65,
+            "context_constants": 65,
+            "import_bindings": 194,
+            "key": "76f4110620e9d14472fad98fee78af33c42acb6a700adb245ce358f0bc1815e3",
+            "name": "group-0",
+            "output_bytes": 6652,
+            "proof_obligations": 65,
+            "query_bytes": 11985,
+            "source_node_work": 1270750
+          },
+          {
+            "action": "reused",
+            "candidates": 65,
+            "context_constants": 65,
+            "import_bindings": 194,
+            "key": "32eb63027763b93c1085cb3e68c7d457bc9916e77d252f4fd8f3288fce6b2de8",
+            "name": "group-1",
+            "output_bytes": 6652,
+            "proof_obligations": 65,
+            "query_bytes": 11985,
+            "source_node_work": 1270750
+          },
+          {
+            "action": "reused",
+            "candidates": 65,
+            "context_constants": 65,
+            "import_bindings": 194,
+            "key": "89c703ac00f14a8a0a80e65dc727e94a8a798cf5f4a1a317d7ab39d897cc1a63",
+            "name": "group-2",
+            "output_bytes": 6652,
+            "proof_obligations": 65,
+            "query_bytes": 11985,
+            "source_node_work": 1270750
+          },
+          {
+            "action": "reused",
+            "candidates": 65,
+            "context_constants": 65,
+            "import_bindings": 194,
+            "key": "6f4070d967eabf655fefc274956e4121b16ea6be4c60da8f87fdb1bbda133b8d",
+            "name": "group-3",
+            "output_bytes": 6652,
+            "proof_obligations": 65,
+            "query_bytes": 11985,
+            "source_node_work": 1270750
+          },
+          {
+            "action": "reused",
+            "candidates": 65,
+            "context_constants": 65,
+            "import_bindings": 194,
+            "key": "4b4b8494ded55d1cb2fc561b58ec8e01db36cd7ce14fde266ebfdb602ca75032",
+            "name": "group-4",
+            "output_bytes": 6652,
+            "proof_obligations": 65,
+            "query_bytes": 11985,
+            "source_node_work": 1270750
+          },
+          {
+            "action": "reused",
+            "candidates": 65,
+            "context_constants": 65,
+            "import_bindings": 194,
+            "key": "29c4d4392a4f7b09dc52c85d4a08c55b9cdb2c4213ac7120c12eb32c1502de28",
+            "name": "group-5",
+            "output_bytes": 6652,
+            "proof_obligations": 65,
+            "query_bytes": 11985,
+            "source_node_work": 1270750
+          },
+          {
+            "action": "reused",
+            "candidates": 65,
+            "context_constants": 65,
+            "import_bindings": 194,
+            "key": "805165f4e60919e74c691db33475679aa5dbe7d48297bcdff141e9de4e973029",
+            "name": "group-6",
+            "output_bytes": 6652,
+            "proof_obligations": 65,
+            "query_bytes": 11985,
+            "source_node_work": 1270750
+          },
+          {
+            "action": "reused",
+            "candidates": 65,
+            "context_constants": 65,
+            "import_bindings": 194,
+            "key": "5bde8ac1ec432b49e396d6fae853afd0a73a11165b6c5537ac0af66e64cd52ca",
+            "name": "group-7",
+            "output_bytes": 6652,
+            "proof_obligations": 65,
+            "query_bytes": 11985,
+            "source_node_work": 1270750
+          },
+          {
+            "action": "reused",
+            "candidates": 65,
+            "context_constants": 65,
+            "import_bindings": 194,
+            "key": "96897f3b9fa5b0618113ac86cb3d288ccc99235fbdfb5cf1d833cae71f7fd48e",
+            "name": "group-8",
+            "output_bytes": 6652,
+            "proof_obligations": 65,
+            "query_bytes": 11985,
+            "source_node_work": 1270750
+          },
+          {
+            "action": "reused",
+            "candidates": 25,
+            "context_constants": 25,
+            "import_bindings": 74,
+            "key": "c2fd0ed1d9dccb1841888ff086d8cb8bf9a66f9aeeed70d9752f3258a5858a0b",
+            "name": "group-9",
+            "output_bytes": 2532,
+            "proof_obligations": 25,
+            "query_bytes": 4705,
+            "source_node_work": 75250
+          },
+          {
+            "action": "reused",
+            "candidates": 1,
+            "context_constants": 611,
+            "import_bindings": 1822,
+            "key": "1876c6dc452fcf7285f573ac1c398a25be00d82d2e5257bd47948e14dfbce469",
+            "name": "root",
+            "output_bytes": 410,
+            "proof_obligations": 1,
+            "query_bytes": 83724,
+            "source_node_work": 10838
+          }
+        ],
+        "unchanged_artifact_exact": true,
+        "units": 11
+      },
+      "measurements": {
+        "prepared": {
+          "assembly_and_IxIR1_lowering": {
+            "maximum_ns": 128311356,
+            "median_ns": 127742897,
+            "minimum_ns": 125721595,
+            "samples_ns": [
+              127742897,
+              128311356,
+              125721595
+            ]
+          },
+          "check_retained_source_certificates": {
+            "maximum_ns": 490983184,
+            "median_ns": 489264824,
+            "minimum_ns": 482882401,
+            "samples_ns": [
+              489264824,
+              490983184,
+              482882401
+            ]
+          },
+          "decode_retained_store": {
+            "maximum_ns": 2686325,
+            "median_ns": 2627455,
+            "minimum_ns": 2606616,
+            "samples_ns": [
+              2686325,
+              2627455,
+              2606616
+            ]
+          },
+          "monolithic_compilation": {
+            "maximum_ns": 214062,
+            "median_ns": 211768,
+            "minimum_ns": 155261,
+            "samples_ns": [
+              211768,
+              155261,
+              214062
+            ]
+          },
+          "restored_assembly_and_IxIR1_lowering": {
+            "maximum_ns": 129638698,
+            "median_ns": 129226107,
+            "minimum_ns": 128023326,
+            "samples_ns": [
+              129638698,
+              128023326,
+              129226107
+            ]
+          },
+          "source_certificates": {
+            "maximum_ns": 502522504,
+            "median_ns": 499177620,
+            "minimum_ns": 497769639,
+            "samples_ns": [
+              499177620,
+              502522504,
+              497769639
+            ]
+          },
+          "unchanged_assembly_and_IxIR1_lowering": {
+            "maximum_ns": 138455117,
+            "median_ns": 129369085,
+            "minimum_ns": 127791809,
+            "samples_ns": [
+              127791809,
+              138455117,
+              129369085
+            ]
+          },
+          "unchanged_source_certificates": {
+            "maximum_ns": 44094102,
+            "median_ns": 41440819,
+            "minimum_ns": 40893730,
+            "samples_ns": [
+              40893730,
+              44094102,
+              41440819
+            ]
+          }
+        },
+        "reference": {
+          "assembly_and_IxIR1_lowering": {
+            "maximum_ns": 142263671,
+            "median_ns": 129181528,
+            "minimum_ns": 128289776,
+            "samples_ns": [
+              129181528,
+              128289776,
+              142263671
+            ]
+          },
+          "check_retained_source_certificates": {
+            "maximum_ns": 926105212,
+            "median_ns": 925913194,
+            "minimum_ns": 910396165,
+            "samples_ns": [
+              910396165,
+              925913194,
+              926105212
+            ]
+          },
+          "decode_retained_store": {
+            "maximum_ns": 2729335,
+            "median_ns": 2723725,
+            "minimum_ns": 2693318,
+            "samples_ns": [
+              2729335,
+              2723725,
+              2693318
+            ]
+          },
+          "monolithic_compilation": {
+            "maximum_ns": 235783,
+            "median_ns": 175680,
+            "minimum_ns": 150102,
+            "samples_ns": [
+              150102,
+              175680,
+              235783
+            ]
+          },
+          "restored_assembly_and_IxIR1_lowering": {
+            "maximum_ns": 132839669,
+            "median_ns": 130972315,
+            "minimum_ns": 129538052,
+            "samples_ns": [
+              132839669,
+              130972315,
+              129538052
+            ]
+          },
+          "source_certificates": {
+            "maximum_ns": 1389161359,
+            "median_ns": 1362834228,
+            "minimum_ns": 1361400793,
+            "samples_ns": [
+              1362834228,
+              1389161359,
+              1361400793
+            ]
+          },
+          "unchanged_assembly_and_IxIR1_lowering": {
+            "maximum_ns": 128980694,
+            "median_ns": 128429106,
+            "minimum_ns": 128326997,
+            "samples_ns": [
+              128429106,
+              128980694,
+              128326997
+            ]
+          },
+          "unchanged_source_certificates": {
+            "maximum_ns": 479271882,
+            "median_ns": 474603449,
+            "minimum_ns": 467221331,
+            "samples_ns": [
+              467221331,
+              479271882,
+              474603449
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "format": "compilatrix/source-evidence-cost-summary/1",
+  "phase_unit": "nanoseconds",
+  "preparation_regressions": {
+    "cases": [
+      {
+        "accepted": true,
+        "kind": "record",
+        "name": "accepted-root",
+        "reason": ""
+      },
+      {
+        "hit": true,
+        "kind": "address-lookup",
+        "name": "unchanged-root"
+      },
+      {
+        "accepted": true,
+        "kind": "record",
+        "name": "accepted-dependent",
+        "reason": ""
+      },
+      {
+        "hit": true,
+        "kind": "address-lookup",
+        "name": "unchanged-dependent"
+      },
+      {
+        "accepted": true,
+        "kind": "record",
+        "name": "accepted-unaffected",
+        "reason": ""
+      },
+      {
+        "hit": true,
+        "kind": "address-lookup",
+        "name": "unchanged-unaffected"
+      },
+      {
+        "accepted": true,
+        "kind": "record",
+        "name": "accepted-leaf",
+        "reason": ""
+      },
+      {
+        "hit": true,
+        "kind": "address-lookup",
+        "name": "unchanged-leaf"
+      },
+      {
+        "accepted": false,
+        "kind": "record",
+        "name": "changed-query",
+        "reason": "stale or incompatible source certificate query"
+      },
+      {
+        "accepted": false,
+        "kind": "record",
+        "name": "changed-output",
+        "reason": "source certificate output differs from the actual eraser"
+      },
+      {
+        "accepted": false,
+        "kind": "record",
+        "name": "missing-coverage",
+        "reason": "malformed source coverage schedule"
+      },
+      {
+        "accepted": false,
+        "kind": "record",
+        "name": "duplicate-coverage",
+        "reason": "malformed source coverage schedule"
+      },
+      {
+        "accepted": false,
+        "kind": "record",
+        "name": "deep-record",
+        "reason": "source record declaration structural limit"
+      },
+      {
+        "accepted": false,
+        "kind": "record",
+        "name": "record-limit-after-preparation",
+        "reason": "source record byte limit"
+      },
+      {
+        "hit": false,
+        "kind": "address-lookup",
+        "name": "same-key-changed-body"
+      },
+      {
+        "accepted": false,
+        "kind": "preparation",
+        "name": "same-key-changed-body",
+        "reason": "Compilatrix.Ixon.Constant.AddressError.invalid\n  (Compilatrix.Ixon.DecodeCheck.Error.refIndex\n    { member := none, root := Compilatrix.Ixon.DecodeCheck.Root.definitionValue }\n    (Compilatrix.Ixon.DecodeCheck.RefKind.natural)\n    999\n    1)"
+      },
+      {
+        "hit": false,
+        "kind": "address-lookup",
+        "name": "same-key-changed-refs"
+      },
+      {
+        "accepted": false,
+        "kind": "preparation",
+        "name": "same-key-changed-refs",
+        "reason": "source address does not match its exact canonical constant"
+      },
+      {
+        "hit": false,
+        "kind": "address-lookup",
+        "name": "same-key-changed-sharing"
+      },
+      {
+        "accepted": false,
+        "kind": "preparation",
+        "name": "same-key-changed-sharing",
+        "reason": "Compilatrix.Ixon.Constant.AddressError.invalid (Compilatrix.Ixon.DecodeCheck.Error.sharingInvariant)"
+      },
+      {
+        "hit": true,
+        "kind": "address-lookup",
+        "name": "literal-edit-root"
+      },
+      {
+        "hit": true,
+        "kind": "address-lookup",
+        "name": "literal-edit-dependent"
+      },
+      {
+        "hit": true,
+        "kind": "address-lookup",
+        "name": "literal-edit-unaffected"
+      },
+      {
+        "hit": true,
+        "kind": "address-lookup",
+        "name": "literal-edit-leaf"
+      },
+      {
+        "accepted": false,
+        "kind": "record",
+        "name": "literal-edit-stale-record",
+        "reason": "stale or incompatible source certificate query"
+      },
+      {
+        "hit": false,
+        "kind": "address-lookup",
+        "name": "source-edit-root"
+      },
+      {
+        "hit": false,
+        "kind": "address-lookup",
+        "name": "source-edit-dependent"
+      },
+      {
+        "hit": true,
+        "kind": "address-lookup",
+        "name": "source-edit-unaffected"
+      },
+      {
+        "hit": false,
+        "kind": "address-lookup",
+        "name": "source-edit-leaf"
+      },
+      {
+        "accepted": true,
+        "kind": "preparation",
+        "name": "known-address-current-input",
+        "reason": ""
+      },
+      {
+        "accepted": false,
+        "kind": "preparation",
+        "name": "known-address-empty-name",
+        "reason": "invalid unit name"
+      },
+      {
+        "accepted": false,
+        "kind": "preparation",
+        "name": "known-address-missing-literal",
+        "reason": "source reference is absent from the declared dependency closure"
+      },
+      {
+        "accepted": false,
+        "kind": "preparation",
+        "name": "known-address-missing-import",
+        "reason": "missing, stale, or unordered unit imports"
+      },
+      {
+        "accepted": false,
+        "kind": "preparation",
+        "name": "known-address-usage-fuel",
+        "reason": "unit usage check: Compilatrix.Ixon.UsageCheck.UsageErr.fuel"
+      },
+      {
+        "accepted": false,
+        "kind": "preparation",
+        "name": "known-address-candidate-limit",
+        "reason": "Compilatrix.Pipeline.Error.resource\n  { metric := Compilatrix.Ixon.Work.Metric.certificateCandidates, actual := 1, limit := 0 }"
+      },
+      {
+        "accepted": false,
+        "kind": "preparation",
+        "name": "known-address-import-limit",
+        "reason": "unit import binding limit"
+      },
+      {
+        "accepted": false,
+        "kind": "preparation",
+        "name": "known-address-input-byte-limit",
+        "reason": "unit input byte limit"
+      },
+      {
+        "accepted": false,
+        "kind": "preparation",
+        "name": "known-address-duplicate-ownership",
+        "reason": "duplicate owned source or blob binding"
+      }
+    ],
+    "literal_edit_matches_cold": true
+  },
+  "processes": [
+    {
+      "argv": [
+        "/nix/store/4n075ll5jdwbjv142yg8ymz5f3yf4pam-util-linux-2.42.2-bin/bin/taskset",
+        "-c",
+        "0",
+        "/nix/store/y51431wmnm7vli4l347dpn44nyhmcrw7-time-1.10/bin/time",
+        "-f",
+        "{\"wall_seconds\":%e,\"user_seconds\":%U,\"system_seconds\":%S,\"peak_rss_kib\":%M,\"minor_faults\":%R,\"major_faults\":%F,\"voluntary_context_switches\":%w,\"involuntary_context_switches\":%c,\"exit_code\":%x}",
+        "-o",
+        "/tmp/source-evidence-reference-001/logs/reference-1.resources.json",
+        "/tmp/source-evidence-reference-001/seed/source-modular-reference",
+        "run",
+        "/tmp/source-evidence-reference-001/comparisons/reference-1"
+      ],
+      "cwd": "/home/jcb/projects/compilatrix",
+      "exit_code": 0,
+      "finished_utc": "2026-09-13T13:37:45.298037+00:00",
+      "name": "reference-1",
+      "resources": {
+        "exit_code": 0,
+        "involuntary_context_switches": 16,
+        "major_faults": 0,
+        "minor_faults": 5685,
+        "peak_rss_kib": 90420,
+        "system_seconds": 0.0,
+        "user_seconds": 6.11,
+        "voluntary_context_switches": 4,
+        "wall_seconds": 6.14
+      },
+      "started_utc": "2026-09-13T13:37:39.150743+00:00"
+    },
+    {
+      "argv": [
+        "/nix/store/4n075ll5jdwbjv142yg8ymz5f3yf4pam-util-linux-2.42.2-bin/bin/taskset",
+        "-c",
+        "0",
+        "/nix/store/y51431wmnm7vli4l347dpn44nyhmcrw7-time-1.10/bin/time",
+        "-f",
+        "{\"wall_seconds\":%e,\"user_seconds\":%U,\"system_seconds\":%S,\"peak_rss_kib\":%M,\"minor_faults\":%R,\"major_faults\":%F,\"voluntary_context_switches\":%w,\"involuntary_context_switches\":%c,\"exit_code\":%x}",
+        "-o",
+        "/tmp/source-evidence-reference-001/logs/prepared-1.resources.json",
+        "/tmp/source-evidence-reference-001/seed/source-modular",
+        "run",
+        "/tmp/source-evidence-reference-001/comparisons/prepared-1"
+      ],
+      "cwd": "/home/jcb/projects/compilatrix",
+      "exit_code": 0,
+      "finished_utc": "2026-09-13T13:37:49.728975+00:00",
+      "name": "prepared-1",
+      "resources": {
+        "exit_code": 0,
+        "involuntary_context_switches": 16,
+        "major_faults": 0,
+        "minor_faults": 3113,
+        "peak_rss_kib": 91496,
+        "system_seconds": 0.0,
+        "user_seconds": 4.4,
+        "voluntary_context_switches": 4,
+        "wall_seconds": 4.42
+      },
+      "started_utc": "2026-09-13T13:37:45.301163+00:00"
+    },
+    {
+      "argv": [
+        "/nix/store/4n075ll5jdwbjv142yg8ymz5f3yf4pam-util-linux-2.42.2-bin/bin/taskset",
+        "-c",
+        "0",
+        "/nix/store/y51431wmnm7vli4l347dpn44nyhmcrw7-time-1.10/bin/time",
+        "-f",
+        "{\"wall_seconds\":%e,\"user_seconds\":%U,\"system_seconds\":%S,\"peak_rss_kib\":%M,\"minor_faults\":%R,\"major_faults\":%F,\"voluntary_context_switches\":%w,\"involuntary_context_switches\":%c,\"exit_code\":%x}",
+        "-o",
+        "/tmp/source-evidence-reference-001/logs/prepared-2.resources.json",
+        "/tmp/source-evidence-reference-001/seed/source-modular",
+        "run",
+        "/tmp/source-evidence-reference-001/comparisons/prepared-2"
+      ],
+      "cwd": "/home/jcb/projects/compilatrix",
+      "exit_code": 0,
+      "finished_utc": "2026-09-13T13:37:54.200594+00:00",
+      "name": "prepared-2",
+      "resources": {
+        "exit_code": 0,
+        "involuntary_context_switches": 21,
+        "major_faults": 0,
+        "minor_faults": 3000,
+        "peak_rss_kib": 90696,
+        "system_seconds": 0.0,
+        "user_seconds": 4.44,
+        "voluntary_context_switches": 4,
+        "wall_seconds": 4.46
+      },
+      "started_utc": "2026-09-13T13:37:49.731723+00:00"
+    },
+    {
+      "argv": [
+        "/nix/store/4n075ll5jdwbjv142yg8ymz5f3yf4pam-util-linux-2.42.2-bin/bin/taskset",
+        "-c",
+        "0",
+        "/nix/store/y51431wmnm7vli4l347dpn44nyhmcrw7-time-1.10/bin/time",
+        "-f",
+        "{\"wall_seconds\":%e,\"user_seconds\":%U,\"system_seconds\":%S,\"peak_rss_kib\":%M,\"minor_faults\":%R,\"major_faults\":%F,\"voluntary_context_switches\":%w,\"involuntary_context_switches\":%c,\"exit_code\":%x}",
+        "-o",
+        "/tmp/source-evidence-reference-001/logs/reference-2.resources.json",
+        "/tmp/source-evidence-reference-001/seed/source-modular-reference",
+        "run",
+        "/tmp/source-evidence-reference-001/comparisons/reference-2"
+      ],
+      "cwd": "/home/jcb/projects/compilatrix",
+      "exit_code": 0,
+      "finished_utc": "2026-09-13T13:38:00.420774+00:00",
+      "name": "reference-2",
+      "resources": {
+        "exit_code": 0,
+        "involuntary_context_switches": 30,
+        "major_faults": 0,
+        "minor_faults": 5138,
+        "peak_rss_kib": 90784,
+        "system_seconds": 0.01,
+        "user_seconds": 6.18,
+        "voluntary_context_switches": 4,
+        "wall_seconds": 6.21
+      },
+      "started_utc": "2026-09-13T13:37:54.203386+00:00"
+    },
+    {
+      "argv": [
+        "/nix/store/4n075ll5jdwbjv142yg8ymz5f3yf4pam-util-linux-2.42.2-bin/bin/taskset",
+        "-c",
+        "0",
+        "/nix/store/y51431wmnm7vli4l347dpn44nyhmcrw7-time-1.10/bin/time",
+        "-f",
+        "{\"wall_seconds\":%e,\"user_seconds\":%U,\"system_seconds\":%S,\"peak_rss_kib\":%M,\"minor_faults\":%R,\"major_faults\":%F,\"voluntary_context_switches\":%w,\"involuntary_context_switches\":%c,\"exit_code\":%x}",
+        "-o",
+        "/tmp/source-evidence-reference-001/logs/reference-3.resources.json",
+        "/tmp/source-evidence-reference-001/seed/source-modular-reference",
+        "run",
+        "/tmp/source-evidence-reference-001/comparisons/reference-3"
+      ],
+      "cwd": "/home/jcb/projects/compilatrix",
+      "exit_code": 0,
+      "finished_utc": "2026-09-13T13:38:06.624968+00:00",
+      "name": "reference-3",
+      "resources": {
+        "exit_code": 0,
+        "involuntary_context_switches": 30,
+        "major_faults": 0,
+        "minor_faults": 5515,
+        "peak_rss_kib": 90964,
+        "system_seconds": 0.01,
+        "user_seconds": 6.16,
+        "voluntary_context_switches": 4,
+        "wall_seconds": 6.19
+      },
+      "started_utc": "2026-09-13T13:38:00.423757+00:00"
+    },
+    {
+      "argv": [
+        "/nix/store/4n075ll5jdwbjv142yg8ymz5f3yf4pam-util-linux-2.42.2-bin/bin/taskset",
+        "-c",
+        "0",
+        "/nix/store/y51431wmnm7vli4l347dpn44nyhmcrw7-time-1.10/bin/time",
+        "-f",
+        "{\"wall_seconds\":%e,\"user_seconds\":%U,\"system_seconds\":%S,\"peak_rss_kib\":%M,\"minor_faults\":%R,\"major_faults\":%F,\"voluntary_context_switches\":%w,\"involuntary_context_switches\":%c,\"exit_code\":%x}",
+        "-o",
+        "/tmp/source-evidence-reference-001/logs/prepared-3.resources.json",
+        "/tmp/source-evidence-reference-001/seed/source-modular",
+        "run",
+        "/tmp/source-evidence-reference-001/comparisons/prepared-3"
+      ],
+      "cwd": "/home/jcb/projects/compilatrix",
+      "exit_code": 0,
+      "finished_utc": "2026-09-13T13:38:11.070672+00:00",
+      "name": "prepared-3",
+      "resources": {
+        "exit_code": 0,
+        "involuntary_context_switches": 26,
+        "major_faults": 0,
+        "minor_faults": 3092,
+        "peak_rss_kib": 90580,
+        "system_seconds": 0.0,
+        "user_seconds": 4.42,
+        "voluntary_context_switches": 4,
+        "wall_seconds": 4.44
+      },
+      "started_utc": "2026-09-13T13:38:06.627666+00:00"
+    },
+    {
+      "argv": [
+        "/nix/store/4n075ll5jdwbjv142yg8ymz5f3yf4pam-util-linux-2.42.2-bin/bin/taskset",
+        "-c",
+        "0",
+        "/nix/store/y51431wmnm7vli4l347dpn44nyhmcrw7-time-1.10/bin/time",
+        "-f",
+        "{\"wall_seconds\":%e,\"user_seconds\":%U,\"system_seconds\":%S,\"peak_rss_kib\":%M,\"minor_faults\":%R,\"major_faults\":%F,\"voluntary_context_switches\":%w,\"involuntary_context_switches\":%c,\"exit_code\":%x}",
+        "-o",
+        "/tmp/source-evidence-reference-001/logs/profile-1.resources.json",
+        "/tmp/source-evidence-reference-001/seed/source-evidence",
+        "run",
+        "/tmp/source-evidence-reference-001/profile-1",
+        "reference"
+      ],
+      "cwd": "/home/jcb/projects/compilatrix",
+      "exit_code": 0,
+      "finished_utc": "2026-09-13T13:38:22.486124+00:00",
+      "name": "profile-1",
+      "resources": {
+        "exit_code": 0,
+        "involuntary_context_switches": 81,
+        "major_faults": 0,
+        "minor_faults": 11714,
+        "peak_rss_kib": 84288,
+        "system_seconds": 0.02,
+        "user_seconds": 11.34,
+        "voluntary_context_switches": 4,
+        "wall_seconds": 11.41
+      },
+      "started_utc": "2026-09-13T13:38:11.073722+00:00"
+    },
+    {
+      "argv": [
+        "/nix/store/4n075ll5jdwbjv142yg8ymz5f3yf4pam-util-linux-2.42.2-bin/bin/taskset",
+        "-c",
+        "0",
+        "/nix/store/y51431wmnm7vli4l347dpn44nyhmcrw7-time-1.10/bin/time",
+        "-f",
+        "{\"wall_seconds\":%e,\"user_seconds\":%U,\"system_seconds\":%S,\"peak_rss_kib\":%M,\"minor_faults\":%R,\"major_faults\":%F,\"voluntary_context_switches\":%w,\"involuntary_context_switches\":%c,\"exit_code\":%x}",
+        "-o",
+        "/tmp/source-evidence-reference-001/logs/profile-2.resources.json",
+        "/tmp/source-evidence-reference-001/seed/source-evidence",
+        "run",
+        "/tmp/source-evidence-reference-001/profile-2",
+        "reference"
+      ],
+      "cwd": "/home/jcb/projects/compilatrix",
+      "exit_code": 0,
+      "finished_utc": "2026-09-13T13:38:33.948042+00:00",
+      "name": "profile-2",
+      "resources": {
+        "exit_code": 0,
+        "involuntary_context_switches": 85,
+        "major_faults": 0,
+        "minor_faults": 11514,
+        "peak_rss_kib": 91544,
+        "system_seconds": 0.02,
+        "user_seconds": 11.38,
+        "voluntary_context_switches": 4,
+        "wall_seconds": 11.45
+      },
+      "started_utc": "2026-09-13T13:38:22.491446+00:00"
+    },
+    {
+      "argv": [
+        "/nix/store/4n075ll5jdwbjv142yg8ymz5f3yf4pam-util-linux-2.42.2-bin/bin/taskset",
+        "-c",
+        "0",
+        "/nix/store/y51431wmnm7vli4l347dpn44nyhmcrw7-time-1.10/bin/time",
+        "-f",
+        "{\"wall_seconds\":%e,\"user_seconds\":%U,\"system_seconds\":%S,\"peak_rss_kib\":%M,\"minor_faults\":%R,\"major_faults\":%F,\"voluntary_context_switches\":%w,\"involuntary_context_switches\":%c,\"exit_code\":%x}",
+        "-o",
+        "/tmp/source-evidence-reference-001/logs/profile-3.resources.json",
+        "/tmp/source-evidence-reference-001/seed/source-evidence",
+        "run",
+        "/tmp/source-evidence-reference-001/profile-3",
+        "reference"
+      ],
+      "cwd": "/home/jcb/projects/compilatrix",
+      "exit_code": 0,
+      "finished_utc": "2026-09-13T13:38:45.432385+00:00",
+      "name": "profile-3",
+      "resources": {
+        "exit_code": 0,
+        "involuntary_context_switches": 72,
+        "major_faults": 0,
+        "minor_faults": 11502,
+        "peak_rss_kib": 90712,
+        "system_seconds": 0.03,
+        "user_seconds": 11.41,
+        "voluntary_context_switches": 4,
+        "wall_seconds": 11.47
+      },
+      "started_utc": "2026-09-13T13:38:33.953826+00:00"
+    }
+  ],
+  "profiles": [
+    {
+      "IxIR1_declarations": 66,
+      "artifact_blake3": "e1aa91ea73ffb87d37fd0488c7f0b5e3bff3437c5e57133cd79805c15a383a3f",
+      "artifact_bytes": 70473,
+      "certificate_blake3": "ea2e58ba3627ac1c156c8b51a39cfe3de7da84e9c5d371c908c45b9635dcf668",
+      "certificate_bytes": 15713,
+      "expected_value": 1031,
+      "fresh_prepared_unit_data_exact": true,
+      "measurements": {
+        "aggregate_preflight": {
+          "maximum_ns": 63640,
+          "median_ns": 63099,
+          "minimum_ns": 62627,
+          "samples_ns": [
+            62627,
+            63099,
+            63640
+          ]
+        },
+        "assembly_total": {
+          "maximum_ns": 1354484,
+          "median_ns": 1352681,
+          "minimum_ns": 1351178,
+          "samples_ns": [
+            1354484,
+            1352681,
+            1351178
+          ]
+        },
+        "cache_record_preflight": {
+          "maximum_ns": 50134,
+          "median_ns": 49954,
+          "minimum_ns": 49432,
+          "samples_ns": [
+            49432,
+            49954,
+            50134
+          ]
+        },
+        "canonical_address_checks": {
+          "maximum_ns": 9782353,
+          "median_ns": 9779938,
+          "minimum_ns": 9770680,
+          "samples_ns": [
+            9770680,
+            9779938,
+            9782353
+          ]
+        },
+        "check_units_fresh": {
+          "maximum_ns": 11021570,
+          "median_ns": 10933935,
+          "minimum_ns": 10925429,
+          "samples_ns": [
+            10925429,
+            10933935,
+            11021570
+          ]
+        },
+        "check_units_prepared": {
+          "maximum_ns": 498978,
+          "median_ns": 479380,
+          "minimum_ns": 478228,
+          "samples_ns": [
+            498978,
+            478228,
+            479380
+          ]
+        },
+        "cold_build": {
+          "maximum_ns": 11401403,
+          "median_ns": 11392727,
+          "minimum_ns": 11311654,
+          "samples_ns": [
+            11392727,
+            11401403,
+            11311654
+          ]
+        },
+        "decode_retained_store": {
+          "maximum_ns": 140053,
+          "median_ns": 138500,
+          "minimum_ns": 134753,
+          "samples_ns": [
+            140053,
+            134753,
+            138500
+          ]
+        },
+        "encode_inputs": {
+          "maximum_ns": 32642,
+          "median_ns": 31439,
+          "minimum_ns": 31148,
+          "samples_ns": [
+            32642,
+            31439,
+            31148
+          ]
+        },
+        "encode_interfaces": {
+          "maximum_ns": 72937,
+          "median_ns": 72175,
+          "minimum_ns": 71535,
+          "samples_ns": [
+            72175,
+            72937,
+            71535
+          ]
+        },
+        "lookup_checked_units": {
+          "maximum_ns": 227076,
+          "median_ns": 221126,
+          "minimum_ns": 221115,
+          "samples_ns": [
+            227076,
+            221115,
+            221126
+          ]
+        },
+        "prepare_units_fresh": {
+          "maximum_ns": 10003568,
+          "median_ns": 9928496,
+          "minimum_ns": 9914680,
+          "samples_ns": [
+            9914680,
+            9928496,
+            10003568
+          ]
+        },
+        "prepare_units_with_addresses": {
+          "maximum_ns": 248577,
+          "median_ns": 244930,
+          "minimum_ns": 239800,
+          "samples_ns": [
+            244930,
+            248577,
+            239800
+          ]
+        },
+        "produce_units_prepared": {
+          "maximum_ns": 770066,
+          "median_ns": 765307,
+          "minimum_ns": 729871,
+          "samples_ns": [
+            765307,
+            770066,
+            729871
+          ]
+        },
+        "restore_source_units": {
+          "maximum_ns": 10904049,
+          "median_ns": 10819711,
+          "minimum_ns": 10818037,
+          "samples_ns": [
+            10819711,
+            10904049,
+            10818037
+          ]
+        },
+        "unchanged_build": {
+          "maximum_ns": 1010077,
+          "median_ns": 987545,
+          "minimum_ns": 974902,
+          "samples_ns": [
+            1010077,
+            987545,
+            974902
+          ]
+        },
+        "unit_observations": {
+          "maximum_ns": 120927,
+          "median_ns": 120517,
+          "minimum_ns": 119374,
+          "samples_ns": [
+            120517,
+            119374,
+            120927
+          ]
+        },
+        "usage_checks": {
+          "maximum_ns": 54883,
+          "median_ns": 54853,
+          "minimum_ns": 53471,
+          "samples_ns": [
+            54883,
+            54853,
+            53471
+          ]
+        }
+      },
+      "reachable_source_constants": 34,
+      "source_and_IR_execution_agree": true,
+      "source_blake3": "d9bb989769d2c23811868e9216ca6798f11312508fd340793d028b9a5df86f10",
+      "source_bytes": 6035,
+      "source_constants": 34,
+      "source_root": "64e261c37ddaaea077ab351c0076c2fb8200eaa2e03d5c5bc7f291d16ab78859",
+      "units": 2,
+      "width": 32
+    },
+    {
+      "IxIR1_declarations": 130,
+      "artifact_blake3": "f1929aacc11fe5cfa95bc9c6ce96ee297b543f08344010440fa6e4158e418eac",
+      "artifact_bytes": 138025,
+      "certificate_blake3": "46e54a6d7866a5519d91a3327e215d1e5b89a359cbcd860aeb883f48e456a270",
+      "certificate_bytes": 30178,
+      "expected_value": 1063,
+      "fresh_prepared_unit_data_exact": true,
+      "measurements": {
+        "aggregate_preflight": {
+          "maximum_ns": 172534,
+          "median_ns": 172334,
+          "minimum_ns": 169318,
+          "samples_ns": [
+            172534,
+            172334,
+            169318
+          ]
+        },
+        "assembly_total": {
+          "maximum_ns": 3185202,
+          "median_ns": 3182076,
+          "minimum_ns": 3109630,
+          "samples_ns": [
+            3182076,
+            3185202,
+            3109630
+          ]
+        },
+        "cache_record_preflight": {
+          "maximum_ns": 94407,
+          "median_ns": 93095,
+          "minimum_ns": 91852,
+          "samples_ns": [
+            94407,
+            93095,
+            91852
+          ]
+        },
+        "canonical_address_checks": {
+          "maximum_ns": 48466345,
+          "median_ns": 47787510,
+          "minimum_ns": 47601439,
+          "samples_ns": [
+            47601439,
+            47787510,
+            48466345
+          ]
+        },
+        "check_units_fresh": {
+          "maximum_ns": 50595443,
+          "median_ns": 49806402,
+          "minimum_ns": 49386552,
+          "samples_ns": [
+            49386552,
+            50595443,
+            49806402
+          ]
+        },
+        "check_units_prepared": {
+          "maximum_ns": 1149219,
+          "median_ns": 1092241,
+          "minimum_ns": 1046576,
+          "samples_ns": [
+            1092241,
+            1149219,
+            1046576
+          ]
+        },
+        "cold_build": {
+          "maximum_ns": 53497644,
+          "median_ns": 52445188,
+          "minimum_ns": 51595390,
+          "samples_ns": [
+            51595390,
+            53497644,
+            52445188
+          ]
+        },
+        "decode_retained_store": {
+          "maximum_ns": 282240,
+          "median_ns": 275447,
+          "minimum_ns": 269326,
+          "samples_ns": [
+            269326,
+            275447,
+            282240
+          ]
+        },
+        "encode_inputs": {
+          "maximum_ns": 72546,
+          "median_ns": 61736,
+          "minimum_ns": 60694,
+          "samples_ns": [
+            72546,
+            60694,
+            61736
+          ]
+        },
+        "encode_interfaces": {
+          "maximum_ns": 160862,
+          "median_ns": 153969,
+          "minimum_ns": 148779,
+          "samples_ns": [
+            148779,
+            153969,
+            160862
+          ]
+        },
+        "lookup_checked_units": {
+          "maximum_ns": 448252,
+          "median_ns": 442321,
+          "minimum_ns": 440667,
+          "samples_ns": [
+            442321,
+            448252,
+            440667
+          ]
+        },
+        "prepare_units_fresh": {
+          "maximum_ns": 49428000,
+          "median_ns": 48229088,
+          "minimum_ns": 48043170,
+          "samples_ns": [
+            48229088,
+            49428000,
+            48043170
+          ]
+        },
+        "prepare_units_with_addresses": {
+          "maximum_ns": 696228,
+          "median_ns": 652295,
+          "minimum_ns": 627940,
+          "samples_ns": [
+            652295,
+            696228,
+            627940
+          ]
+        },
+        "produce_units_prepared": {
+          "maximum_ns": 1771608,
+          "median_ns": 1764825,
+          "minimum_ns": 1681227,
+          "samples_ns": [
+            1764825,
+            1771608,
+            1681227
+          ]
+        },
+        "restore_source_units": {
+          "maximum_ns": 51471238,
+          "median_ns": 51129626,
+          "minimum_ns": 50906238,
+          "samples_ns": [
+            51129626,
+            51471238,
+            50906238
+          ]
+        },
+        "unchanged_build": {
+          "maximum_ns": 2233084,
+          "median_ns": 2146922,
+          "minimum_ns": 2135681,
+          "samples_ns": [
+            2146922,
+            2233084,
+            2135681
+          ]
+        },
+        "unit_observations": {
+          "maximum_ns": 228309,
+          "median_ns": 222417,
+          "minimum_ns": 220955,
+          "samples_ns": [
+            228309,
+            222417,
+            220955
+          ]
+        },
+        "usage_checks": {
+          "maximum_ns": 175019,
+          "median_ns": 147607,
+          "minimum_ns": 143970,
+          "samples_ns": [
+            175019,
+            143970,
+            147607
+          ]
+        }
+      },
+      "reachable_source_constants": 66,
+      "source_and_IR_execution_agree": true,
+      "source_blake3": "614666b60a8419384ee89189b84d1c3afe09b7abcd8f2bb0ac09ab7b1cc669bd",
+      "source_bytes": 11859,
+      "source_constants": 66,
+      "source_root": "16d9e8f910b827608d7f8c065c4b4944ee9cf2d23bf59f272d15ec8f993a0655",
+      "units": 2,
+      "width": 64
+    },
+    {
+      "IxIR1_declarations": 259,
+      "artifact_blake3": "76ca41fb90a5e328e7526f75bba1401e0c9babbf11828b8b7f11a44a5a821567",
+      "artifact_bytes": 274492,
+      "certificate_blake3": "1208e0d39b5469e96ef3aaffb41b1f000ba621a89a2a445abba844caaf5e3d99",
+      "certificate_bytes": 59858,
+      "expected_value": 1127,
+      "fresh_prepared_unit_data_exact": true,
+      "measurements": {
+        "aggregate_preflight": {
+          "maximum_ns": 581963,
+          "median_ns": 549011,
+          "minimum_ns": 545735,
+          "samples_ns": [
+            545735,
+            549011,
+            581963
+          ]
+        },
+        "assembly_total": {
+          "maximum_ns": 8500084,
+          "median_ns": 8429501,
+          "minimum_ns": 8422668,
+          "samples_ns": [
+            8429501,
+            8500084,
+            8422668
+          ]
+        },
+        "cache_record_preflight": {
+          "maximum_ns": 239761,
+          "median_ns": 234731,
+          "minimum_ns": 233198,
+          "samples_ns": [
+            233198,
+            234731,
+            239761
+          ]
+        },
+        "canonical_address_checks": {
+          "maximum_ns": 97209009,
+          "median_ns": 96307094,
+          "minimum_ns": 96174905,
+          "samples_ns": [
+            96174905,
+            96307094,
+            97209009
+          ]
+        },
+        "check_units_fresh": {
+          "maximum_ns": 102485689,
+          "median_ns": 101909237,
+          "minimum_ns": 99890833,
+          "samples_ns": [
+            99890833,
+            102485689,
+            101909237
+          ]
+        },
+        "check_units_prepared": {
+          "maximum_ns": 2473796,
+          "median_ns": 2442467,
+          "minimum_ns": 2411138,
+          "samples_ns": [
+            2411138,
+            2473796,
+            2442467
+          ]
+        },
+        "cold_build": {
+          "maximum_ns": 106671540,
+          "median_ns": 105244270,
+          "minimum_ns": 103203826,
+          "samples_ns": [
+            103203826,
+            106671540,
+            105244270
+          ]
+        },
+        "decode_retained_store": {
+          "maximum_ns": 615326,
+          "median_ns": 555553,
+          "minimum_ns": 534444,
+          "samples_ns": [
+            615326,
+            555553,
+            534444
+          ]
+        },
+        "encode_inputs": {
+          "maximum_ns": 134452,
+          "median_ns": 131046,
+          "minimum_ns": 128992,
+          "samples_ns": [
+            128992,
+            134452,
+            131046
+          ]
+        },
+        "encode_interfaces": {
+          "maximum_ns": 297339,
+          "median_ns": 296707,
+          "minimum_ns": 296056,
+          "samples_ns": [
+            296056,
+            297339,
+            296707
+          ]
+        },
+        "lookup_checked_units": {
+          "maximum_ns": 933834,
+          "median_ns": 927632,
+          "minimum_ns": 906081,
+          "samples_ns": [
+            906081,
+            927632,
+            933834
+          ]
+        },
+        "prepare_units_fresh": {
+          "maximum_ns": 99554613,
+          "median_ns": 97961363,
+          "minimum_ns": 96751367,
+          "samples_ns": [
+            96751367,
+            99554613,
+            97961363
+          ]
+        },
+        "prepare_units_with_addresses": {
+          "maximum_ns": 1277840,
+          "median_ns": 1255088,
+          "minimum_ns": 1232956,
+          "samples_ns": [
+            1277840,
+            1255088,
+            1232956
+          ]
+        },
+        "produce_units_prepared": {
+          "maximum_ns": 3978883,
+          "median_ns": 3829653,
+          "minimum_ns": 3796310,
+          "samples_ns": [
+            3796310,
+            3978883,
+            3829653
+          ]
+        },
+        "restore_source_units": {
+          "maximum_ns": 103739493,
+          "median_ns": 103282165,
+          "minimum_ns": 101479958,
+          "samples_ns": [
+            101479958,
+            103739493,
+            103282165
+          ]
+        },
+        "unchanged_build": {
+          "maximum_ns": 4928035,
+          "median_ns": 4881828,
+          "minimum_ns": 4833057,
+          "samples_ns": [
+            4833057,
+            4881828,
+            4928035
+          ]
+        },
+        "unit_observations": {
+          "maximum_ns": 449143,
+          "median_ns": 440458,
+          "minimum_ns": 436650,
+          "samples_ns": [
+            449143,
+            436650,
+            440458
+          ]
+        },
+        "usage_checks": {
+          "maximum_ns": 305373,
+          "median_ns": 302148,
+          "minimum_ns": 296217,
+          "samples_ns": [
+            296217,
+            305373,
+            302148
+          ]
+        }
+      },
+      "reachable_source_constants": 131,
+      "source_and_IR_execution_agree": true,
+      "source_blake3": "c0ec0bdbed619006b51680bf38e971ecdf084c595aa59708b0522ed6757b1a00",
+      "source_bytes": 23636,
+      "source_constants": 131,
+      "source_root": "664f6cda2798ef0ddd64815df4fc8779125ef1fbd774f265510168604040e253",
+      "units": 3,
+      "width": 128
+    },
+    {
+      "IxIR1_declarations": 517,
+      "artifact_blake3": "32df42507bf090203d5696d40bb2e70b0d084982a49ccc954aa10ec060f6254e",
+      "artifact_bytes": 547426,
+      "certificate_blake3": "b3f506f4480ee69a574d38f3860f6723153ef6270318ae3ce75e49b1c6ef7a27",
+      "certificate_bytes": 119216,
+      "expected_value": 1255,
+      "fresh_prepared_unit_data_exact": true,
+      "measurements": {
+        "aggregate_preflight": {
+          "maximum_ns": 1985259,
+          "median_ns": 1969088,
+          "minimum_ns": 1937048,
+          "samples_ns": [
+            1937048,
+            1969088,
+            1985259
+          ]
+        },
+        "assembly_total": {
+          "maximum_ns": 25834289,
+          "median_ns": 25780428,
+          "minimum_ns": 25753939,
+          "samples_ns": [
+            25780428,
+            25753939,
+            25834289
+          ]
+        },
+        "cache_record_preflight": {
+          "maximum_ns": 386727,
+          "median_ns": 380945,
+          "minimum_ns": 369564,
+          "samples_ns": [
+            380945,
+            369564,
+            386727
+          ]
+        },
+        "canonical_address_checks": {
+          "maximum_ns": 194801430,
+          "median_ns": 193868572,
+          "minimum_ns": 190556755,
+          "samples_ns": [
+            193868572,
+            190556755,
+            194801430
+          ]
+        },
+        "check_units_fresh": {
+          "maximum_ns": 203024510,
+          "median_ns": 202857129,
+          "minimum_ns": 201334204,
+          "samples_ns": [
+            201334204,
+            203024510,
+            202857129
+          ]
+        },
+        "check_units_prepared": {
+          "maximum_ns": 5535225,
+          "median_ns": 5534986,
+          "minimum_ns": 5205106,
+          "samples_ns": [
+            5535225,
+            5205106,
+            5534986
+          ]
+        },
+        "cold_build": {
+          "maximum_ns": 216306117,
+          "median_ns": 214800617,
+          "minimum_ns": 210293730,
+          "samples_ns": [
+            210293730,
+            214800617,
+            216306117
+          ]
+        },
+        "decode_retained_store": {
+          "maximum_ns": 1206125,
+          "median_ns": 1198671,
+          "minimum_ns": 1173264,
+          "samples_ns": [
+            1173264,
+            1198671,
+            1206125
+          ]
+        },
+        "encode_inputs": {
+          "maximum_ns": 276019,
+          "median_ns": 268745,
+          "minimum_ns": 259738,
+          "samples_ns": [
+            276019,
+            268745,
+            259738
+          ]
+        },
+        "encode_interfaces": {
+          "maximum_ns": 638449,
+          "median_ns": 596310,
+          "minimum_ns": 590178,
+          "samples_ns": [
+            638449,
+            596310,
+            590178
+          ]
+        },
+        "lookup_checked_units": {
+          "maximum_ns": 2166639,
+          "median_ns": 2144287,
+          "minimum_ns": 2141562,
+          "samples_ns": [
+            2166639,
+            2141562,
+            2144287
+          ]
+        },
+        "prepare_units_fresh": {
+          "maximum_ns": 199120459,
+          "median_ns": 197659547,
+          "minimum_ns": 195885389,
+          "samples_ns": [
+            195885389,
+            199120459,
+            197659547
+          ]
+        },
+        "prepare_units_with_addresses": {
+          "maximum_ns": 2690823,
+          "median_ns": 2668993,
+          "minimum_ns": 2610503,
+          "samples_ns": [
+            2610503,
+            2690823,
+            2668993
+          ]
+        },
+        "produce_units_prepared": {
+          "maximum_ns": 9070175,
+          "median_ns": 8897711,
+          "minimum_ns": 8829573,
+          "samples_ns": [
+            8897711,
+            8829573,
+            9070175
+          ]
+        },
+        "restore_source_units": {
+          "maximum_ns": 211414447,
+          "median_ns": 209229822,
+          "minimum_ns": 207322435,
+          "samples_ns": [
+            209229822,
+            211414447,
+            207322435
+          ]
+        },
+        "unchanged_build": {
+          "maximum_ns": 11714911,
+          "median_ns": 11616868,
+          "minimum_ns": 11610105,
+          "samples_ns": [
+            11714911,
+            11610105,
+            11616868
+          ]
+        },
+        "unit_observations": {
+          "maximum_ns": 896143,
+          "median_ns": 895352,
+          "minimum_ns": 884290,
+          "samples_ns": [
+            896143,
+            884290,
+            895352
+          ]
+        },
+        "usage_checks": {
+          "maximum_ns": 601009,
+          "median_ns": 596770,
+          "minimum_ns": 579929,
+          "samples_ns": [
+            601009,
+            596770,
+            579929
+          ]
+        }
+      },
+      "reachable_source_constants": 261,
+      "source_and_IR_execution_agree": true,
+      "source_blake3": "f298a127339880c65c39081a4865bb44b65a37a6fd2510bedb00e1e4633478d9",
+      "source_bytes": 47191,
+      "source_constants": 261,
+      "source_root": "707701c00838ca8c1a80de33a35fde4cd500c268c662ee892bcd581032321e3d",
+      "units": 5,
+      "width": 256
+    },
+    {
+      "IxIR1_declarations": 1211,
+      "artifact_blake3": "e2c9a50d8282b638eef06e915a200a8cb84ad1dda7eca6f0a4b9a2d7acf23ae6",
+      "artifact_bytes": 1281788,
+      "certificate_blake3": "6342a41276ebb114eb4cbf1ccc3e359486d6555300e5ad59aa4222e4091e3732",
+      "certificate_bytes": 279203,
+      "expected_value": 1599,
+      "fresh_prepared_unit_data_exact": true,
+      "measurements": {
+        "aggregate_preflight": {
+          "maximum_ns": 9847385,
+          "median_ns": 9785208,
+          "minimum_ns": 9763697,
+          "samples_ns": [
+            9785208,
+            9847385,
+            9763697
+          ]
+        },
+        "assembly_total": {
+          "maximum_ns": 126884835,
+          "median_ns": 117338995,
+          "minimum_ns": 117274813,
+          "samples_ns": [
+            117274813,
+            117338995,
+            126884835
+          ]
+        },
+        "cache_record_preflight": {
+          "maximum_ns": 982886,
+          "median_ns": 911933,
+          "minimum_ns": 906302,
+          "samples_ns": [
+            982886,
+            906302,
+            911933
+          ]
+        },
+        "canonical_address_checks": {
+          "maximum_ns": 440483831,
+          "median_ns": 438127149,
+          "minimum_ns": 436938300,
+          "samples_ns": [
+            436938300,
+            438127149,
+            440483831
+          ]
+        },
+        "check_units_fresh": {
+          "maximum_ns": 472361886,
+          "median_ns": 466598408,
+          "minimum_ns": 459760633,
+          "samples_ns": [
+            459760633,
+            472361886,
+            466598408
+          ]
+        },
+        "check_units_prepared": {
+          "maximum_ns": 17233707,
+          "median_ns": 16896263,
+          "minimum_ns": 16599616,
+          "samples_ns": [
+            16896263,
+            16599616,
+            17233707
+          ]
+        },
+        "cold_build": {
+          "maximum_ns": 511974825,
+          "median_ns": 509190693,
+          "minimum_ns": 504165512,
+          "samples_ns": [
+            511974825,
+            509190693,
+            504165512
+          ]
+        },
+        "decode_retained_store": {
+          "maximum_ns": 2981339,
+          "median_ns": 2924924,
+          "minimum_ns": 2881913,
+          "samples_ns": [
+            2981339,
+            2924924,
+            2881913
+          ]
+        },
+        "encode_inputs": {
+          "maximum_ns": 640794,
+          "median_ns": 628741,
+          "minimum_ns": 621687,
+          "samples_ns": [
+            628741,
+            621687,
+            640794
+          ]
+        },
+        "encode_interfaces": {
+          "maximum_ns": 1435365,
+          "median_ns": 1367959,
+          "minimum_ns": 1354013,
+          "samples_ns": [
+            1367959,
+            1354013,
+            1435365
+          ]
+        },
+        "lookup_checked_units": {
+          "maximum_ns": 7507490,
+          "median_ns": 7459149,
+          "minimum_ns": 7406359,
+          "samples_ns": [
+            7406359,
+            7507490,
+            7459149
+          ]
+        },
+        "prepare_units_fresh": {
+          "maximum_ns": 452145447,
+          "median_ns": 449655897,
+          "minimum_ns": 443417007,
+          "samples_ns": [
+            443417007,
+            452145447,
+            449655897
+          ]
+        },
+        "prepare_units_with_addresses": {
+          "maximum_ns": 6437911,
+          "median_ns": 6193792,
+          "minimum_ns": 6161542,
+          "samples_ns": [
+            6193792,
+            6161542,
+            6437911
+          ]
+        },
+        "produce_units_prepared": {
+          "maximum_ns": 29226050,
+          "median_ns": 28366866,
+          "minimum_ns": 28070780,
+          "samples_ns": [
+            28366866,
+            28070780,
+            29226050
+          ]
+        },
+        "restore_source_units": {
+          "maximum_ns": 496785182,
+          "median_ns": 493298176,
+          "minimum_ns": 489755365,
+          "samples_ns": [
+            489755365,
+            493298176,
+            496785182
+          ]
+        },
+        "unchanged_build": {
+          "maximum_ns": 40016786,
+          "median_ns": 39993422,
+          "minimum_ns": 39862838,
+          "samples_ns": [
+            39993422,
+            40016786,
+            39862838
+          ]
+        },
+        "unit_observations": {
+          "maximum_ns": 2224769,
+          "median_ns": 2140720,
+          "minimum_ns": 2140551,
+          "samples_ns": [
+            2140720,
+            2140551,
+            2224769
+          ]
+        },
+        "usage_checks": {
+          "maximum_ns": 1488686,
+          "median_ns": 1438191,
+          "minimum_ns": 1426609,
+          "samples_ns": [
+            1438191,
+            1426609,
+            1488686
+          ]
+        }
+      },
+      "reachable_source_constants": 611,
+      "source_and_IR_execution_agree": true,
+      "source_blake3": "8f1d2b72d087eed63d8c5d9b18ff68a061485d29bba0eeb0cbe0ee54aac4d751",
+      "source_bytes": 110573,
+      "source_constants": 611,
+      "source_root": "61a8bc14b4b6068d8133ca3202485a1e3ab4038c5e4395b5c5a6c16412102dcb",
+      "units": 11,
+      "width": 600
+    }
+  ],
+  "repetitions_per_variant": 3
+}

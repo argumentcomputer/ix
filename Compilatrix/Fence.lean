@@ -135,6 +135,26 @@ source theorem retains the pipeline's existing production BLAKE3 dependency. -/
  Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
 #guard_msgs in #print axioms Compilatrix.Modular.Compiled.sourcePreservation
 
+/-! Reused canonical-address facts and completed preparations retain the
+existing native hash dependency and exactly the fresh checker result. -/
+/-- info: 'Compilatrix.Modular.SourceCheck.checkKnown_eq' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.Modular.SourceCheck.checkKnown_eq
+
+/-- info: 'Compilatrix.Modular.prepareChecked_eq' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.Modular.prepareChecked_eq
+
+/-- info: 'Compilatrix.Modular.checkUnitPrepared_eq' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.Modular.checkUnitPrepared_eq
+
 /-- info: 'Compilatrix.Ixon.Eval.projectValue_ok_of_strict' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.Ixon.Eval.projectValue_ok_of_strict
 

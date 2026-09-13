@@ -68,6 +68,14 @@ def Cache.find? {policy} (cache : Cache policy) (input : Input)
 def Cache.insert {policy} (cache : Cache policy) (unit : CheckedUnit policy) : Cache policy :=
   ⟨unit :: cache.units.filter (fun old => old.input.name != unit.input.name)⟩
 
+/-- A canonical-address hit still compares complete owned constants. The
+ordinary certificate lookup separately checks all current input, interface,
+literal, policy, and target-context bindings. -/
+def Cache.addressEvidence? {policy} (cache : Cache policy) (input : Input) :
+    Option (PLift (AddressEvidence input.constants)) :=
+  cache.units.findSome? fun unit =>
+    if unit.input.name == input.name then unit.addressEvidence? input.constants else none
+
 /-- Consumer-supplied partitions retain each Ixon mutual constant intact.
 Cross-unit cycles are rejected; a recursive SCC must belong to one unit. -/
 def preflightInputs (limits : Limits) (policy : Policy) (inputs : List Input) : Except String Unit := do
@@ -128,22 +136,25 @@ private def schedule (limits : Limits) (policy : Policy)
         match lookupImports completed input with
         | none => next := input :: next
         | some imports =>
-            let prepared ← (prepare limits policy input imports).mapError
+            let known := match records with
+              | some _ => none
+              | none => retained.addressEvidence? input
+            let prepared ← (prepareChecked limits policy input imports known).mapError
               (fun message => s!"{input.name}: {message}")
-            let (nextBindings, nextWork, nextBytes) ← charge limits policy input prepared
+            let (nextBindings, nextWork, nextBytes) ← charge limits policy input prepared.context
               bindings work bytes imports
             let (unit, action) ← match records with
               | some supplied => do
                   let some (_, record) := supplied.find? (fun entry => entry.1 == input.name)
                     | throw s!"missing retained source certificate for {input.name}"
-                  let unit ← (checkUnit limits policy input imports record).mapError
+                  let unit ← (checkUnitPrepared limits policy input imports prepared record).mapError
                     (fun message => s!"{input.name}: {message}")
                   pure (unit, Action.checkedRecord)
               | none =>
-                  match retained.find? input imports prepared with
+                  match retained.find? input imports prepared.context with
                   | some unit => pure (unit, Action.reused)
                   | none => do
-                      let unit ← (produceUnit limits policy input imports).mapError
+                      let unit ← (produceUnitPrepared limits policy input imports prepared).mapError
                         (fun message => s!"{input.name}: {message}")
                       pure (unit, Action.produced)
             let outputBytes := (IxIR.Encoding.list targetEntryBytes unit.output).size

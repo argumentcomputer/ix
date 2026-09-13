@@ -1,5 +1,6 @@
 import Compilatrix
 import Compilatrix.IxIR1.ReaddressIndexTests
+import Compilatrix.Modular.PreparationTests
 
 /-!
 Runtime test executable: everything that must *execute* FFI (blake3)
@@ -5151,6 +5152,7 @@ def main : IO UInt32 := do
     ok := false
 
   let _ ← Compilatrix.IxIR1.ReaddressIndexTests.run
+  let _ ← Compilatrix.Modular.PreparationTests.run
 
   if !IxIR1ReaddressAllFixtures.componentsOk then
     IO.eprintln "FAIL: IxIR₁ SCC discovery did not preserve deterministic source-member order"

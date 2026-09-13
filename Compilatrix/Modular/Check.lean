@@ -1,4 +1,4 @@
-import Compilatrix.Modular.Basic
+import Compilatrix.Modular.SourceCheck
 
 /-!
 # Independently checked source units
@@ -52,6 +52,7 @@ structure CheckedUnit (policy : Policy) where
   context : Context
   output : TargetEntries
   order : List Address
+  addresses : AddressEvidence input.constants
   erased : Erase.eraseProgram (EraseValidator.eraseCtxOf context.source)
     input.constants policy.eraseFuel = .ok output
   coverage : @EraseValidator.CoverageDB context.scope
@@ -78,20 +79,20 @@ def CheckedUnit.interface {policy} (unit : CheckedUnit policy) : ByteArray :=
 def CheckedUnit.record {policy} (unit : CheckedUnit policy) : Record :=
   ⟨unit.query, unit.output, unit.order⟩
 
-def constantDependencies (constant : Constant) : List Address :=
-  constant.refs.toList ++ match constant.info with
-    | .cPrj projection => [projection.block]
-    | .rPrj projection => [projection.block]
-    | .iPrj projection => [projection.block]
-    | .dPrj projection => [projection.block]
-    | _ => []
+/-- Canonical facts transfer only after full structural equality of the owned
+source entries, including their sharing tables and claimed addresses. These
+facts do not certify the current literal table or imported environment. -/
+def CheckedUnit.addressEvidence? {policy} (unit : CheckedUnit policy)
+    (constants : SourceEntries) : Option (PLift (AddressEvidence constants)) :=
+  if same : unit.input.constants = constants then some ⟨same ▸ unit.addresses⟩
+  else none
 
 private def uniqueAddresses (entries : List (Address × α)) : Bool :=
   (entries.map (·.1)).eraseDups.length == entries.length
 
 /-- Preflight precedes serialization, canonicalization, inlining, and
 validation. The combined unit charge includes the imported source context. -/
-def prepare (limits : Limits) (policy : Policy) (input : Input)
+private def prepareContext (limits : Limits) (policy : Policy) (input : Input)
     (imports : List (CheckedUnit policy)) : Except String Context := do
   ensure (!input.name.isEmpty && input.name.utf8ByteSize ≤ 256) "invalid unit name"
   ensure (!input.constants.isEmpty) "empty source unit"
@@ -129,19 +130,92 @@ def prepare (limits : Limits) (policy : Policy) (input : Input)
     contextStats.expandedExpressionUnits ≤ limits.maxExpandedUnits) "unit context size limit"
   ensure (proofWork input.constants constants ≤
     policy.unit.maxCertificateSourceNodeWork) "unit certificate source-node work limit"
-  let source := context.source
-  for (address, constant) in input.constants do
-    let actual ← (Constant.addressChecked constant).mapError (fun err => reprStr err)
-    ensure (actual == address) "source address does not match its exact canonical constant"
-    for dependency in constantDependencies constant do
-      ensure ((source.resolve dependency).isSome || (source.blobs dependency).isSome)
-        "source reference is absent from the declared dependency closure"
-    match Ixon.UsageCheck.checkConstant source.resolve constant policy.checkFuel with
-    | .ok _ => pure ()
-    | .error err => throw s!"unit usage check: {repr err}"
+  return context
+
+/-- Fresh preparation retains the original admission checks and their order.
+The source loop also retains its successful canonical-address facts. -/
+def prepare (limits : Limits) (policy : Policy) (input : Input)
+    (imports : List (CheckedUnit policy)) : Except String Context := do
+  let context ← prepareContext limits policy input imports
+  let _ ← SourceCheck.check policy context.source input.constants
   -- The input is already finite; these byte caps bound the retained query.
   ensure (input.bytes.size ≤ limits.record.maxBlobBytes) "unit input byte limit"
   return context
+
+/-- A completed preparation belongs to these exact inputs, imports, policy,
+and consumer limits. Its proof permits reuse inside production and checking. -/
+structure Preparation (limits : Limits) (policy : Policy) (input : Input)
+    (imports : List (CheckedUnit policy)) where
+  context : Context
+  addresses : AddressEvidence input.constants
+  checked : prepare limits policy input imports = .ok context
+
+theorem Preparation.ext {limits policy input imports}
+    {first second : Preparation limits policy input imports}
+    (same : first.context = second.context) : first = second := by
+  cases first
+  cases second
+  cases same
+  rfl
+
+/-- All current resource, dependency, usage, literal, and input-byte checks
+run afresh. Optional canonical facts are bound to the complete owned entries. -/
+def prepareChecked (limits : Limits) (policy : Policy) (input : Input)
+    (imports : List (CheckedUnit policy))
+    (known : Option (PLift (AddressEvidence input.constants)) := none) :
+    Except String (Preparation limits policy input imports) := do
+  let context ← SourceCheck.attachResult (prepareContext limits policy input imports)
+  let source ← SourceCheck.run policy context.val.source input.constants known
+  let bytes ← SourceCheck.attachResult
+    (ensure (input.bytes.size ≤ limits.record.maxBlobBytes) "unit input byte limit")
+  return {
+    context := context.val, addresses := source.val.down
+    checked := by simp [prepare, context.property, source.property, bytes.property]; rfl }
+
+theorem prepareChecked_eq (limits : Limits) (policy : Policy) (input : Input)
+    (imports : List (CheckedUnit policy))
+    (known : Option (PLift (AddressEvidence input.constants))) :
+    (prepareChecked limits policy input imports known).map (·.context) =
+      prepare limits policy input imports := by
+  have attached := SourceCheck.attachResult_map (prepareContext limits policy input imports)
+  cases prepared : SourceCheck.attachResult (prepareContext limits policy input imports) with
+  | error error =>
+      have fresh : prepareContext limits policy input imports = .error error := by
+        simpa [prepared, Except.map] using attached.symm
+      simp [prepareChecked, prepare, prepared, fresh, Except.map] <;> rfl
+  | ok context =>
+      have equal := SourceCheck.run_eq policy context.val.source input.constants known
+      cases source : SourceCheck.run policy context.val.source input.constants known with
+      | error error =>
+          have fresh : SourceCheck.check policy context.val.source input.constants = .error error := by
+            simpa [source, Except.map] using equal.symm
+          simp [prepareChecked, prepare, prepared, context.property, source, fresh, Except.map] <;> rfl
+      | ok checked =>
+          have fresh := checked.property
+          have sizeEqual := SourceCheck.attachResult_map
+            (ensure (input.bytes.size ≤ limits.record.maxBlobBytes) "unit input byte limit")
+          cases bytes : SourceCheck.attachResult
+              (ensure (input.bytes.size ≤ limits.record.maxBlobBytes) "unit input byte limit") with
+          | error error =>
+              have sizeCheck : ensure (input.bytes.size ≤ limits.record.maxBlobBytes)
+                  "unit input byte limit" = .error error := by
+                simpa [bytes, Except.map] using sizeEqual.symm
+              simp [prepareChecked, prepare, prepared, context.property,
+                source, fresh, bytes, sizeCheck, Except.map] <;> rfl
+          | ok value =>
+              simp [prepareChecked, prepare, prepared, context.property,
+                source, fresh, bytes, value.property, Except.map] <;> rfl
+
+theorem Preparation.fresh_eq {limits policy input imports}
+    (prepared : Preparation limits policy input imports) :
+    prepareChecked limits policy input imports = .ok prepared := by
+  have equal := prepareChecked_eq limits policy input imports none
+  rw [prepared.checked] at equal
+  cases fresh : prepareChecked limits policy input imports with
+  | error error => simp [fresh, Except.map] at equal
+  | ok result =>
+      have same : result.context = prepared.context := by simpa [fresh, Except.map] using equal
+      exact congrArg Except.ok (Preparation.ext same)
 
 structure MemberPacket (context : Context) where
   keys : List Sim.MemberKey
@@ -199,11 +273,11 @@ private def withOutput (limits : Limits) (context : Context) (output : TargetEnt
 /-- Check supplied evidence against the actual eraser, current imported
 certificates, and exact source query. A bad record is rejected, never trusted
 because its hash or coverage schedule matches a previous run. -/
-def checkUnit (limits : Limits) (policy : Policy) (input : Input)
-    (imports : List (CheckedUnit policy)) (record : Record) :
+private def checkUnitCore (limits : Limits) (policy : Policy) (input : Input)
+    (imports : List (CheckedUnit policy))
+    (preparation : Preparation limits policy input imports) (record : Record) :
     Except String (CheckedUnit policy) := do
-  let _ ← record.preflight limits
-  let prepared ← prepare limits policy input imports
+  let prepared := preparation.context
   let interfaces := imports.map (·.interface)
   ensure (record.query == queryBytes policy input interfaces) "stale or incompatible source certificate query"
   ensure (record.query.size ≤ limits.record.maxBytes) "source certificate query byte limit"
@@ -230,15 +304,42 @@ def checkUnit (limits : Limits) (policy : Policy) (input : Input)
       context.scope.plan
     return {
       input, interfaces, context, output := record.output, order := record.order
+      addresses := preparation.addresses
       erased := by simpa only [context, Context.source, agrees] using output.2
       coverage, members := members.down }
   else throw "source certificate output differs from the actual eraser"
 
+/-- The independent checker may consume a completed preparation for exactly
+its current inputs. Record bounds, query, actual erasure, and coverage checks
+remain in the checker. -/
+def checkUnitPrepared (limits : Limits) (policy : Policy) (input : Input)
+    (imports : List (CheckedUnit policy))
+    (prepared : Preparation limits policy input imports) (record : Record) :
+    Except String (CheckedUnit policy) := do
+  let _ ← record.preflight limits
+  checkUnitCore limits policy input imports prepared record
+
+def checkUnit (limits : Limits) (policy : Policy) (input : Input)
+    (imports : List (CheckedUnit policy)) (record : Record) :
+    Except String (CheckedUnit policy) := do
+  let _ ← record.preflight limits
+  let prepared ← prepareChecked limits policy input imports
+  checkUnitCore limits policy input imports prepared record
+
+theorem checkUnitPrepared_eq (limits : Limits) (policy : Policy) (input : Input)
+    (imports : List (CheckedUnit policy))
+    (prepared : Preparation limits policy input imports) (record : Record) :
+    checkUnitPrepared limits policy input imports prepared record =
+      checkUnit limits policy input imports record := by
+  simp only [checkUnitPrepared, checkUnit, prepared.fresh_eq]
+  rfl
+
 /-- Coverage discovery is a producer. The resulting record still crosses the
 independent checker above, including its exact-output comparison. -/
-def produceUnit (limits : Limits) (policy : Policy) (input : Input)
-    (imports : List (CheckedUnit policy)) : Except String (CheckedUnit policy) := do
-  let prepared ← prepare limits policy input imports
+def produceUnitPrepared (limits : Limits) (policy : Policy) (input : Input)
+    (imports : List (CheckedUnit policy)) (preparation : Preparation limits policy input imports) :
+    Except String (CheckedUnit policy) := do
+  let prepared := preparation.context
   let output ← (Erase.eraseProgram (EraseValidator.eraseCtxOf prepared.source)
     input.constants policy.eraseFuel).mapError (fun err => s!"unit erasure: {repr err}")
   let context ← withOutput limits prepared output
@@ -247,7 +348,12 @@ def produceUnit (limits : Limits) (policy : Policy) (input : Input)
   let order ← (@Pipeline.coveragePlan context.scope context.source.inlineSharing context.target
     policy.validateFuel (expected.length + 1) imported [] expected).mapError
       (fun (_, message) => s!"unit coverage discovery: {message}")
-  checkUnit limits policy input imports {
+  checkUnitPrepared limits policy input imports preparation {
     query := queryBytes policy input (imports.map (·.interface)), output, order }
+
+def produceUnit (limits : Limits) (policy : Policy) (input : Input)
+    (imports : List (CheckedUnit policy)) : Except String (CheckedUnit policy) := do
+  let prepared ← prepareChecked limits policy input imports
+  produceUnitPrepared limits policy input imports prepared
 
 end Compilatrix.Modular

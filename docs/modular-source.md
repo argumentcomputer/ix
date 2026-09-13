@@ -13,6 +13,12 @@ checking costs, retained sizes, and replay information. Whole-program erasure,
 readdressing, and IxIR₁ lowering still run during assembly. Automatic catalog
 partitioning and the compiler's complete source closure remain follow-up work.
 
+The [source preparation reference](performance/source-evidence-2026-09-13/README.md)
+records exact baseline/optimized artifacts, canonical-address reuse, fresh
+checking equivalence, and retained recovery. At 611 declarations, source
+evidence takes 499 ms cold and 41 ms unchanged on the recorded host; all
+original query, proof, and resource boundaries remain in place.
+
 ## Units and exact dependencies
 
 An `Input` names a unit and supplies owned addressed Ixon constants, a finite
@@ -84,6 +90,24 @@ Changed units produce new evidence; only the current unit set is retained in
 the returned cache. Existing cached records also cross the current consumer's
 byte, syntax-depth, and aggregate binding limits before lookup.
 
+Checked units now retain erased proofs that their complete owned constants
+passed canonical source-address validation. Reuse compares the full ordered
+entries, including claimed addresses, syntax, references, and sharing tables.
+Current preparation still checks resource bounds, ownership, imports, literal
+bindings, dependency resolution, usage, and input bytes. A literal edit can
+reuse these context-independent address facts while invalidating the affected
+source certificates through the existing exact query/context checks.
+
+The scheduler prepares each ready unit once. Its `Preparation` value is indexed
+by exact input, checked imports, policy, and consumer limits, with a proof that
+fresh preparation returns that context. Production and record checking share
+that value. The checker still bounds the record, compares the full query,
+reruns the actual eraser, compares its exact output, and validates coverage
+and mutual members. Lean proves equality with fresh preparation and checking,
+including rejection results for every supplied record. The
+[source preparation suite](../benchmarks/source-evidence.md) compares complete
+unit data, retains 38 targeted cases, and separates these costs.
+
 Disk records contain a query, complete raw eraser output, and a coverage
 schedule. They contain no serialized proof and are not checked cache objects.
 `Wire.decodeRecord` and `Wire.decodeStore` accept canonical framed bytes under
@@ -92,6 +116,10 @@ schedule. They contain no serialized proof and are not checked cache objects.
 in dependency order. Missing, duplicate, stale, incompatible, or malformed
 records reject recovery. Ordinary compilation can produce a fresh record;
 strict retained replay does not silently replace bad evidence.
+
+Recovery validates canonical addresses afresh and shares only the resulting
+completed preparation within that recovery call. It does not read serialized
+canonical facts or completed preparations as trusted proofs.
 
 The bounded decoder checks total bytes before parsing, sequence and natural
 widths before allocating their contents, and nested IxIR₀ expression depth.

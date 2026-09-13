@@ -219,6 +219,13 @@ equivalence proofs retain the original certificate predicates. The
 [assembly suite](../benchmarks/assembly-scaling.md) compares complete reference
 artifacts, separates phase costs, and replays the same source-edit matrix.
 
+Source units also retain proofs of canonical-address validation for exact
+owned entries. Completed preparation is shared within construction and
+checking; current dependency, literal, usage, and resource checks remain in
+place. [Source preparation measurements](../benchmarks/source-evidence.md)
+compare fresh/prepared complete results, unchanged and edited reuse, and
+independent retained recovery under the original queries and bounds.
+
 Automatic catalog/SCC partitioning, the compiler's full source closure,
 transactional source caches, and avoiding repeated whole-program
 erasure/readdressing/lowering remain extensions. Native linking retains its
@@ -269,6 +276,9 @@ costs on identical objects through 42 joins under the same resource bounds.
 [Indexed assembly](modular-source.md#indexed-assembly-checks) similarly retains
 the original address builder and predicates for complete artifact comparisons,
 with separate source evidence, erasure, lowering, and addressing observations.
+[Source preparation](../benchmarks/source-evidence.md) reuses proved canonical
+facts and completed preparations, with exact fresh-checker equality, complete
+unit/artifact comparisons, and the same cold/unchanged/edit/recovery matrix.
 [Benchmark design](benchmark-plan.md) owns the
 comparison rules; the [implemented protocol](../benchmarks/protocol.md) owns
 commands and exact sampling details.

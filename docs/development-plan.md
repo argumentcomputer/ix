@@ -56,12 +56,12 @@ compiled regression surface is:
 
 ```sh
 lake build Compilatrix tests catalog-contact x86-object-fixture ixir2-fixture \
-  source-coverage source-modular assembly-scaling source-recursion source-call-reuse source-unique-reuse \
+  source-coverage source-modular assembly-scaling source-evidence source-recursion source-call-reuse source-unique-reuse \
   source-native-unique source-native-runtime source-native-allocating source-native-upstream source-native-scalar \
   source-native-physical-scalar source-native-heap heap-snapshot-object source-native-captured-scalar source-borrow source-borrow-runtime \
   check-trusted-externs check-ixir2 check-x86-encoder check-x86-bytes check-x86-streams \
   check-x86-object check-source-coverage check-source-modular check-assembly-scaling check-source-recursion \
-  check-source-call-reuse check-source-unique-reuse \
+  check-source-evidence check-source-call-reuse check-source-unique-reuse \
   check-source-native-unique check-source-native-runtime check-source-native-allocating check-source-native-upstream check-source-native-scalar \
   check-source-native-physical-scalar check-source-native-heap check-source-native-captured-scalar check-source-borrow \
   check-source-borrow-runtime check-tools-tests benchmark
@@ -81,6 +81,7 @@ lake build Compilatrix tests catalog-contact x86-object-fixture ixir2-fixture \
 ./.lake/build/bin/check-source-recursion --fixture .lake/build/bin/source-recursion
 ./.lake/build/bin/check-source-modular --fixture .lake/build/bin/source-modular
 ./.lake/build/bin/check-assembly-scaling --fixture .lake/build/bin/assembly-scaling
+./.lake/build/bin/check-source-evidence --fixture .lake/build/bin/source-evidence
 ./.lake/build/bin/check-source-call-reuse --fixture .lake/build/bin/source-call-reuse
 ./.lake/build/bin/check-ixir2 --fixture .lake/build/bin/ixir2-fixture
 ./.lake/build/bin/check-source-unique-reuse --fixture .lake/build/bin/source-unique-reuse

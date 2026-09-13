@@ -233,3 +233,11 @@ lean_exe «assembly-scaling» where
 lean_exe «check-assembly-scaling» where
   srcDir := "scripts"
   root := `CheckAssemblyScaling
+
+lean_exe «source-evidence» where
+  srcDir := "benchmarks"
+  root := `SourceEvidence
+
+lean_exe «check-source-evidence» where
+  srcDir := "scripts"
+  root := `CheckSourceEvidence
