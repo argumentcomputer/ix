@@ -140,15 +140,12 @@ fn row(seed: usize, selector: G) -> Vec<G> {
   row
 }
 
-#[test]
-fn operation_rows_snapshot() -> io::Result<()> {
-  let fixtures = fixtures();
-  let kinds: HashSet<_> =
-    fixtures.iter().flatten().map(std::mem::discriminant).collect();
-  assert_eq!(kinds.len(), 34, "every bytecode operation constructor");
-  assert_eq!(fixtures.len(), 65, "operation and sequence corpus");
+fn write_corpus(
+  header: &[u8],
+  fixtures: &[Vec<Op>],
+) -> io::Result<(Vec<u8>, usize)> {
   let mut out = Vec::new();
-  out.write_all(b"Aiur operation rows v1\n")?;
+  out.write_all(header)?;
   write_u64(&mut out, fixtures.len() as u64)?;
   let mut checked = 0;
   for branchless in [false, true] {
@@ -156,7 +153,7 @@ fn operation_rows_snapshot() -> io::Result<()> {
       for selector in [G::ZERO, G::ONE, G::TWO, -G::ONE] {
         let row = row(seed, selector);
         let values = local_values(&row);
-        for ops in &fixtures {
+        for ops in fixtures {
           let mut state = state(0, branchless);
           state.column = 4;
           state.lookup = 0;
@@ -196,6 +193,17 @@ fn operation_rows_snapshot() -> io::Result<()> {
       }
     }
   }
+  Ok((out, checked))
+}
+
+#[test]
+fn operation_rows_snapshot() -> io::Result<()> {
+  let fixtures = fixtures();
+  let kinds: HashSet<_> =
+    fixtures.iter().flatten().map(std::mem::discriminant).collect();
+  assert_eq!(kinds.len(), 34, "every bytecode operation constructor");
+  assert_eq!(fixtures.len(), 65, "operation and sequence corpus");
+  let (out, checked) = write_corpus(b"Aiur operation rows v1\n", &fixtures)?;
   assert_eq!(checked, 6240);
   if let Some(path) = std::env::var_os("IX_OPERATION_ROW_SNAPSHOT") {
     let mut file = BufWriter::new(File::create(path)?);
@@ -203,5 +211,32 @@ fn operation_rows_snapshot() -> io::Result<()> {
     file.flush()?;
   }
   eprintln!("operation rows: {checked} assignments across all 34 constructors");
+  Ok(())
+}
+
+#[test]
+fn constant_degree_rows_snapshot() -> io::Result<()> {
+  use Op::*;
+  let fixtures = vec![
+    vec![Const(G::ZERO), Mul(8, 3), EqZero(9)],
+    vec![Const(G::ZERO), Mul(3, 8), EqZero(9)],
+    vec![Mul(0, 3), Add(8, 1), EqZero(9)],
+    vec![Mul(0, 3), Sub(0, 8), EqZero(9)],
+    vec![Mul(0, 3), EqZero(8), EqZero(9)],
+    vec![Mul(0, 3), EqZero(8), Mul(9, 3)],
+    vec![Mul(0, 3), Mul(8, 1), EqZero(9)],
+    vec![Mul(0, 3), Sub(2, 8), EqZero(9)],
+  ];
+  let (out, checked) =
+    write_corpus(b"Aiur constant degree rows v1\n", &fixtures)?;
+  assert_eq!(checked, 768);
+  if let Some(path) = std::env::var_os("IX_CONSTANT_DEGREE_ROW_SNAPSHOT") {
+    let mut file = BufWriter::new(File::create(path)?);
+    file.write_all(&out)?;
+    file.flush()?;
+  }
+  eprintln!(
+    "constant degree rows: {checked} arbitrary assignments across eight sequences"
+  );
   Ok(())
 }

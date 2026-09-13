@@ -1,9 +1,10 @@
 # Aiur bug inventory
 
 This records the fixes completed during the C8 work, including the subsequent
-graph-decoder repair. The eight main entries group
+graph-decoder and constant-degree repairs. The nine main entries group
 related failures by cause: four demonstrated verifier soundness defects,
-three compiler defects and one reference-evaluator defect. Regression cases
+three compiler defects, one reference-evaluator defect and one constraint
+construction defect. Regression cases
 are counted separately from bug classes.
 
 | Defect | Observed failure | Implemented repair and regression evidence |
@@ -16,6 +17,7 @@ are counted separately from bug classes.
 | Hoisting captured a shadowed variable | `let x = 10; (let x = 3; x) + x` compiled to six instead of thirteen. | Use distinct local names during argument normalization and preserve lexical scope during renaming. Renaming also preserves shared binders in pattern alternatives and local function-call occurrences. The `lexical-binding-scope` regression returns thirteen in both bytecode engines. [Regression](../Tests/Aiur/Hoisting.lean), [implementation](../Ix/Aiur/Stages/Source.lean). |
 | Inlining lost the callee's return boundary | An explicit tail return was rejected after inlining; an early return escaped its callee and produced seven instead of ten in the caller. | Retain a normal call when the expanded callee contains an explicit return. Both tail-return and early-return cases pass in both bytecode engines. [Regressions](../Tests/Aiur/Hoisting.lean), [inlining guard](../Ix/Aiur/Stages/Source.lean). |
 | The source reference skipped debug-argument effects | An argument that wrote one before a continuation wrote two produced `[2]` in the source reference and `[1, 2]` in the source interpreter. | Evaluate the optional debug argument, including its errors and early returns, before the continuation. The ninth compiler/reference fixture requires `[1, 2]` across all four evaluators. [Regression](../Tests/Aiur/Hoisting.lean), [reference evaluator](../Ix/Aiur/Semantics/SourceEval.lean). |
+| Constant folding could crash constraint construction | The honest source program `eq_zero(0 * x)` panicked: the expression folded to a constant, but its independently tracked degree remained one. The emitter asserted that a constant must have degree zero. | Take the constant shortcut only at tracked degree zero; otherwise emit the usual two auxiliary columns and equations, as reserved by the compiler and witness generator. Six source variants verify at four inputs under singleton and grouped circuits; eight altered public outputs reject. A further 768 native/Lean row assignments compare outputs, metadata, column allocation and constraints. [Source/proving regressions](../Tests/Aiur/ConstantDegree.lean), [native regression](../crates/aiur/src/synthesis/tests/constant_degree.rs), [valued emission](../Ix/Aiur/Proofs/OperationRows.lean). |
 
 The activity, rank and branchless AIR repairs change affected verification
 keys; those systems need rebuilt keys. The arity repair adds validation without
@@ -54,7 +56,7 @@ global lookup-count/overflow bounds, and circuit membership/control-count
 validation. Total comparison, hashing and tail-match definitions also removed
 partial implementation boundaries. These are tracked in the
 [verification documentation](kernel-verification.md); they are not additional
-observed semantic bugs in the eight-entry count above.
+observed semantic bugs in the nine-entry count above.
 
 Subsequent fixed-table hardening adds explicit activity and height checks at
 the Aiur verifier boundary. The generic shape check permits altered byte-table
@@ -81,3 +83,11 @@ release Rust tests, release Clippy, eleven native comparison corpora and the
 complete component gate. Its 338-root audit preserves every earlier root,
 frozen definition and worker body. The new graph corpora compare 88,228 layout
 checks and 240 assignments across ten actual native graphs.
+
+The constant-degree repair preserves the original 6,240 operation-row records
+byte for byte. Its exact audit changes only the `eq_zero` branch of the frozen
+valued emitter; all 338 theorem statements and axiom sets remain unchanged.
+The native release suite passes 61 tests and release Clippy. This failure
+prevented honest proof construction; it did not demonstrate acceptance of a
+false claim. Existing programs that built successfully retain their emitted
+AIR, column layouts and verification keys.

@@ -321,6 +321,9 @@ lean_exe «aiur-trace-height-tests» where
 lean_exe «aiur-expression-graph-tests» where
   root := `Tests.Aiur.ExpressionGraph
 
+lean_exe «aiur-constant-degree-tests» where
+  root := `Tests.Aiur.ConstantDegree
+
 section IxCompileVerify
 
 /- Formal verification of the Lean-to-Ixon compiler against the same
@@ -694,7 +697,7 @@ script "check-aiur" := do
     "aiur-hoisting-tests", "aiur-air-tests", "aiur-byte-gadget-tests", "aiur-lookup-shape-tests",
     "aiur-lookup-budget-tests", "aiur-selector-control-tests", "aiur-operation-row-tests",
     "aiur-block-row-tests", "aiur-circuit-row-tests", "aiur-memory-row-tests", "aiur-trace-height-tests",
-    "aiur-expression-graph-tests"]
+    "aiur-expression-graph-tests", "aiur-constant-degree-tests"]
   let report ← IO.Process.output {
     cmd := "lake", args := #["env", "lean", "-DwarningAsError=true", "Ix/Aiur/Proofs/Audit.lean"] }
   unless report.exitCode == 0 do throw (IO.userError s!"{report.stdout}{report.stderr}")
@@ -730,6 +733,7 @@ script "check-aiur" := do
   run ".lake/build/bin/aiur-dedup-tests"
   run ".lake/build/bin/aiur-hoisting-tests"
   run ".lake/build/bin/aiur-air-tests"
+  run ".lake/build/bin/aiur-constant-degree-tests"
   IO.FS.withTempDir fun directory => do
     let snapshot := directory / "native-byte-gadgets.bin"
     let shapeSnapshot := directory / "native-lookup-shapes.bin"
@@ -742,6 +746,7 @@ script "check-aiur" := do
     let traceHeightSnapshot := directory / "native-trace-heights.bin"
     let graphShapeSnapshot := directory / "native-graph-shapes.bin"
     let expressionGraphSnapshot := directory / "native-expression-graphs.bin"
+    let constantDegreeSnapshot := directory / "native-constant-degree-rows.bin"
     let exporter ← IO.Process.spawn {
       cmd := "cargo"
       args := #["test", "--locked", "--release", "-p", "aiur",
@@ -756,7 +761,8 @@ script "check-aiur" := do
         ("IX_MEMORY_ROW_SNAPSHOT", some memorySnapshot.toString),
         ("IX_FIXED_TRACE_HEIGHT_SNAPSHOT", some traceHeightSnapshot.toString),
         ("IX_GRAPH_SHAPE_SNAPSHOT", some graphShapeSnapshot.toString),
-        ("IX_EXPRESSION_GRAPH_SNAPSHOT", some expressionGraphSnapshot.toString)]
+        ("IX_EXPRESSION_GRAPH_SNAPSHOT", some expressionGraphSnapshot.toString),
+        ("IX_CONSTANT_DEGREE_ROW_SNAPSHOT", some constantDegreeSnapshot.toString)]
       stdout := .inherit
       stderr := .inherit }
     unless (← exporter.wait) == 0 do
@@ -765,7 +771,7 @@ script "check-aiur" := do
     run ".lake/build/bin/aiur-lookup-shape-tests" #[shapeSnapshot.toString]
     run ".lake/build/bin/aiur-lookup-budget-tests" #[budgetSnapshot.toString]
     run ".lake/build/bin/aiur-selector-control-tests" #[selectorSnapshot.toString]
-    run ".lake/build/bin/aiur-operation-row-tests" #[operationSnapshot.toString]
+    run ".lake/build/bin/aiur-operation-row-tests" #[operationSnapshot.toString, constantDegreeSnapshot.toString]
     run ".lake/build/bin/aiur-block-row-tests" #[blockSnapshot.toString]
     run ".lake/build/bin/aiur-circuit-row-tests" #[circuitSnapshot.toString]
     run ".lake/build/bin/aiur-memory-row-tests" #[memorySnapshot.toString]

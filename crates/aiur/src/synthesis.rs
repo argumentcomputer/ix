@@ -637,6 +637,7 @@ mod tests {
   mod byte_gadgets;
   mod byte_shapes;
   mod call_order;
+  mod constant_degree;
   mod lookup_budget;
   mod lookup_shapes;
   mod memory;

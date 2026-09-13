@@ -83,9 +83,8 @@ private def encode (branchless : Bool) (selector : G) (emission : OpsEmission) :
     out := appendValues out (gateMessage branchless selector query)
   return out
 
-private def expected : Except String (Array (String × ByteArray)) := do
-  if fixtures.length != 65 then throw "incomplete operation fixture corpus"
-  let mut records := #[("header", appendNat "Aiur operation rows v1\n".toUTF8 fixtures.length)]
+private def expected (header : String) (fixtures : List (List Op)) : Except String (Array (String × ByteArray)) := do
+  let mut records := #[("header", appendNat header.toUTF8 fixtures.length)]
   for branchless in [false, true] do
     for seed in [:12] do
       for selector in ([0, 1, 2, 0 - 1] : List G) do
@@ -97,12 +96,13 @@ private def expected : Except String (Array (String × ByteArray)) := do
           records := records.push (label, encode branchless selector emission)
   return records
 
-def run (path : System.FilePath) : IO Unit := do
+private def compare (path : System.FilePath) (header : String) (fixtures : List (List Op))
+    (count : Nat) : IO Unit := do
   let native ← IO.FS.readBinFile path
-  let records ← match expected with
+  let records ← match expected header fixtures with
     | .ok records => pure records
     | .error error => throw (IO.userError error)
-  unless records.size == 6241 do
+  unless records.size == count + 1 do
     throw (IO.userError s!"incomplete operation-row corpus: {records.size - 1}")
   let mut position := 0
   for (label, expected) in records do
@@ -114,11 +114,31 @@ def run (path : System.FilePath) : IO Unit := do
     position := position + expected.size
   unless position == native.size do
     throw (IO.userError s!"extra operation-row snapshot data: {native.size - position} bytes")
+
+def run (path : System.FilePath) : IO Unit := do
+  unless fixtures.length == 65 do throw (IO.userError "incomplete operation fixture corpus")
+  compare path "Aiur operation rows v1\n" fixtures 6240
   IO.println "operation rows: 6,240 native/Lean assignments across all 34 constructors and output-reusing sequences match"
+
+def runConstantDegree (path : System.FilePath) : IO Unit := do
+  let fixtures : List (List Op) := [
+    [.const 0, .mul 8 3, .eqZero 9],
+    [.const 0, .mul 3 8, .eqZero 9],
+    [.mul 0 3, .add 8 1, .eqZero 9],
+    [.mul 0 3, .sub 0 8, .eqZero 9],
+    [.mul 0 3, .eqZero 8, .eqZero 9],
+    [.mul 0 3, .eqZero 8, .mul 9 3],
+    [.mul 0 3, .mul 8 1, .eqZero 9],
+    [.mul 0 3, .sub 2 8, .eqZero 9]]
+  compare path "Aiur constant degree rows v1\n" fixtures 768
+  IO.println "constant degree rows: 768 native/Lean arbitrary assignments across eight sequences match"
 
 end AiurTests.OperationRows
 
 def main (args : List String) : IO Unit := do
   match args with
   | [path] => AiurTests.OperationRows.run path
-  | _ => throw (IO.userError "expected native operation-row snapshot path")
+  | [path, constantPath] =>
+    AiurTests.OperationRows.run path
+    AiurTests.OperationRows.runConstantDegree constantPath
+  | _ => throw (IO.userError "expected native operation-row snapshot and optional constant-degree snapshot")

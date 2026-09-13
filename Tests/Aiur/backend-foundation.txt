@@ -4279,8 +4279,8 @@ fun row selector rank op values =>
             equations := [selector * (row 0 - product.value)] }
   | Aiur.Bytecode.Op.eqZero a => do
     let input ← values[a]?
-    if input.constant = true then
-        if input.degree = 0 then pure { outputs := #[Aiur.AIR.RowValue.konst input.value.eqZero] } else none
+    if (input.constant && input.degree == 0) = true then
+        pure { outputs := #[Aiur.AIR.RowValue.konst input.value.eqZero] }
       else
         pure
           { outputs := #[Aiur.AIR.RowValue.variable (row 1)], used := 2,

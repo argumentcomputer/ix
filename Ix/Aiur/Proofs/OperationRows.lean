@@ -125,8 +125,9 @@ def emitU32Add (row : Nat → G) (left right : Array ValIdx)
   return { outputs := bytes.push ⟨(sum.value - packed.value) * 0xfffffffe00000002,
       max sum.degree packed.degree, false⟩, used := 4 }
 
-/-- Valued model of one native operation. Invalid reads, malformed word
-widths and the native constant-`eq_zero` degree assertion return `none`.
+/-- Valued model of one native operation. Invalid reads and malformed word
+widths return `none`. Constant `eq_zero` inputs with positive tracked degree
+use the ordinary two-column emission, preserving the compiled layout.
 Store operands are checked in the incoming logical scope; identifying that
 scope with the Rust emitter's post-pointer reads requires index validity. -/
 def emitOp (row : Nat → G) (selector rank : G) (op : Op)
@@ -145,9 +146,8 @@ def emitOp (row : Nat → G) (selector rank : G) (op : Op)
       equations := [selector * (row 0 - product.value)] }
   | .eqZero a => do
     let input ← values[a]?
-    if input.constant then
-      if input.degree = 0 then return { outputs := #[RowValue.konst (G.eqZero input.value)] }
-      else none
+    if input.constant && input.degree == 0 then
+      return { outputs := #[RowValue.konst (G.eqZero input.value)] }
     else return {
       outputs := #[RowValue.variable (row 1)], used := 2
       equations := [selector * input.value * row 1,
@@ -452,13 +452,11 @@ theorem emitOp_step {tables : LookupTables} {width : Nat} {queries : List (List 
     · rename_i input read
       dsimp only at emitted
       split at emitted
-      · split at emitted
-        · have equal := Option.some.inj emitted
-          subst emission
-          apply Bytecode.AIR.Step.primitive (advice := #[])
-          simp only [Bytecode.AIR.primitive, rowValues_read read, bind, Option.bind,
-            pure, rowValues_singleton, RowValue.konst]
-        · cases emitted
+      · have equal := Option.some.inj emitted
+        subst emission
+        apply Bytecode.AIR.Step.primitive (advice := #[])
+        simp only [Bytecode.AIR.primitive, rowValues_read read, bind, Option.bind,
+          pure, rowValues_singleton, RowValue.konst]
       · have equal := Option.some.inj emitted
         subst emission
         have result := active_eqZero active (satisfied _ List.mem_cons_self)

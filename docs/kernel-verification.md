@@ -513,7 +513,17 @@ escaping-yield collection and return arguments, including unsatisfied link
 equations and different raw message lengths. The operation comparison covers
 6,240 assignments across all 34 constructors and sequences that reuse outputs.
 It compares logical values, degree and constant metadata, column and lookup
-cursors, all polynomial values and all gated query arguments. The whole-block
+cursors, all polynomial values and all gated query arguments. A further 768
+assignments cover folded constants with positive tracked degree, including
+`eq_zero(0 * x)`. Those inputs previously crashed native constraint construction.
+The repair emits the ordinary two-column equality test when the tracked degree
+is positive, matching the compiler and witness layout. Six source variants
+pass at four inputs in singleton and grouped circuits, with eight honest proofs
+accepted and eight altered public outputs rejected. The original 6,240 records
+are unchanged. The 338-root audit changes only the frozen valued emitter's
+`eq_zero` branch; its theorem statements, axiom sets and recursion workers are
+unchanged. The native release suite passes 61 tests and release Clippy.
+The whole-block
 comparison covers 2,028 assignments across 96 fixtures with shared branch
 columns and lookup slots, default inverse advice, nonempty yields, early
 returns and continuation scope. It compares all emitted equations and lookup
