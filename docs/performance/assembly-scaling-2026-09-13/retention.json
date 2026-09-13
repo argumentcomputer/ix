@@ -1,0 +1,15 @@
+{
+  "archive": {
+    "bytes": 189004138,
+    "sha256": "68dbcee833934af0ae395647db31e574e246781b5fd304bcecda31718b0b3294"
+  },
+  "archive_inventory_exact": true,
+  "archive_path": "benchmarks/runs/assembly-scaling-2026-09-13.tar.gz",
+  "current_code_files_match_frozen": 640,
+  "current_optimized_executables_match_frozen": 4,
+  "format": "compilatrix/assembly-scaling-retention/1",
+  "inventory_files_verified": 450,
+  "root": "assembly-scaling-reference-001",
+  "uploaded": false,
+  "verified_utc": "2026-09-13T12:12:18.119177+00:00"
+}

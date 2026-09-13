@@ -1,0 +1,15 @@
+{
+  "all_profile_and_matrix_artifact_bytes_exact": true,
+  "compiler_executables_rebuilt_during_replay": false,
+  "completed_utc": "2026-09-13T12:09:54.724483+00:00",
+  "executable_seeds_checked": true,
+  "format": "compilatrix/assembly-source-replay/1",
+  "independent_gates_passed": true,
+  "passed": true,
+  "retained_certificates_rechecked": true,
+  "source": {
+    "bytes": 3654988,
+    "sha256": "d2d7856ab60ee42d788a2cd74a734badd4105643d0932df43a2585b55e16c2e2"
+  },
+  "source_files_checked": 789
+}

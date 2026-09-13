@@ -1,4 +1,5 @@
 import Compilatrix
+import Compilatrix.IxIR1.ReaddressIndexTests
 
 /-!
 Runtime test executable: everything that must *execute* FFI (blake3)
@@ -5148,6 +5149,8 @@ def main : IO UInt32 := do
   if !IxIRReaddressFixtures.protectedSourceIdentityRejected then
     IO.eprintln "FAIL: a transient key rewrote a constructor source identity"
     ok := false
+
+  let _ ← Compilatrix.IxIR1.ReaddressIndexTests.run
 
   if !IxIR1ReaddressAllFixtures.componentsOk then
     IO.eprintln "FAIL: IxIR₁ SCC discovery did not preserve deterministic source-member order"

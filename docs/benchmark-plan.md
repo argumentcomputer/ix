@@ -231,6 +231,14 @@ separate scopes. The [reference report](performance/compiler-scaling-2026-09-12/
 retains all observations and exact rejection boundaries. Its CI smoke checks
 correctness, corrupted records and artifact/analysis replay without thresholds.
 
+The [modular assembly suite](../benchmarks/assembly-scaling.md) retains the
+source-unit cold/unchanged/dependency-edit/literal-premise-edit matrix and
+separates assembly's main phases. It compares indexed IxIR₁ addressing with
+the original list builder on the same raw program, requiring complete
+artifact equality and the unchanged semantic certificate predicates. Its
+width series reaches the same 611-source-declaration closure, with retained
+proof recovery and fresh-process checks under the existing limits.
+
 Name input/output boundaries when comparing compiler times. Compilatrix starts
 from Ixon; a source-to-executable comparison includes required upstream
 frontend/export work. Toolchain installation and bootstrapping are setup costs.

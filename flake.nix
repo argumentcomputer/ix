@@ -131,6 +131,7 @@
             ./fixtures/ixon-upstream
             ./fixtures/source-coverage
             ./fixtures/source-modular
+            ./fixtures/assembly-scaling
             ./fixtures/compiler-scaling
             ./fixtures/native-sharing
             ./fixtures/native-graph
@@ -196,6 +197,7 @@
             ./fixtures/ixon-upstream
             ./fixtures/source-coverage
             ./fixtures/source-modular
+            ./fixtures/assembly-scaling
             ./fixtures/compiler-scaling
             ./fixtures/native-sharing
             ./fixtures/native-graph
@@ -440,6 +442,23 @@
             ./.lake/build/bin/check-source-modular \
               --fixture ./.lake/build/bin/source-modular \
               --expected ${auditSrc}/fixtures/source-modular/expected.json
+          '';
+        };
+
+        # Indexed assembly, reference artifacts, source edits, and retained checks.
+        assemblyScalingCheck = lake2nix.mkPackage {
+          inherit lakeDeps;
+          lakeArtifacts = compilatrixLib;
+          src = leanSrc;
+          buildInputs = leanBuildInputs;
+          name = "assembly-scaling";
+          installArtifacts = false;
+          postBuild = ''
+            lake build check-assembly-scaling
+            ./.lake/build/bin/check-assembly-scaling \
+              --fixture ./.lake/build/bin/assembly-scaling \
+              --expected ${auditSrc}/fixtures/assembly-scaling/expected.json \
+              --modular-expected ${auditSrc}/fixtures/source-modular/expected.json
           '';
         };
 
@@ -838,6 +857,7 @@
           source-call-reuse = sourceCallReuseCheck;
           source-space = sourceSpaceCheck;
           source-modular = sourceModularCheck;
+          assembly-scaling = assemblyScalingCheck;
           ixir2-identity = ixir2Check;
           source-unique-reuse = sourceUniqueReuseCheck;
           source-native-unique = sourceNativeUniqueCheck;

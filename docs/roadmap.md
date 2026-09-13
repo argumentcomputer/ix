@@ -213,6 +213,12 @@ Per-unit and aggregate budgets count executable mutual-member obligations.
 The independent gate checks fresh artifacts, retained replay, 40 evidence and
 resource rejections, and six file mutations. Monolithic defaults stay fixed.
 
+The [indexed assembly checks](modular-source.md#indexed-assembly-checks)
+replace repeated IxIR₁ list lookups and the repeated semantic audit. Their
+equivalence proofs retain the original certificate predicates. The
+[assembly suite](../benchmarks/assembly-scaling.md) compares complete reference
+artifacts, separates phase costs, and replays the same source-edit matrix.
+
 Automatic catalog/SCC partitioning, the compiler's full source closure,
 transactional source caches, and avoiding repeated whole-program
 erasure/readdressing/lowering remain extensions. Native linking retains its
@@ -260,6 +266,9 @@ remain selectable. All retain raw data, correctness, artifact replay, and analys
 decoding and prefix sums while proving exact equality with the reference
 checker. Its retained comparison separates encoding, layout, and checking
 costs on identical objects through 42 joins under the same resource bounds.
+[Indexed assembly](modular-source.md#indexed-assembly-checks) similarly retains
+the original address builder and predicates for complete artifact comparisons,
+with separate source evidence, erasure, lowering, and addressing observations.
 [Benchmark design](benchmark-plan.md) owns the
 comparison rules; the [implemented protocol](../benchmarks/protocol.md) owns
 commands and exact sampling details.

@@ -101,7 +101,7 @@
         }
       ],
       "semantics_assumed": "The active init/update/finalize path returns the standard BLAKE3 extendable-output hash of exactly the supplied bytes; a 32-byte request returns the standard 256-bit digest. The FFI respects Lean ownership, lifetime, array-size, and C-ABI contracts. Uncalled keyed, derive-key, and version exports are covered because importing Blake3.Rust makes them reachable to downstream Lean code, but Compilatr.ix does not currently rely on their results. The sibling Blake3.C module binds the vendored C implementation behind six c_blake3_* externs; Compilatr.ix does not import it, so they are inventoried as present-but-unimported and any drift in the package tree's extern set fails the check.",
-      "proof_effect": "Content addresses use this result operationally. There is no Lean theorem connecting the returned bytes to a pure BLAKE3 specification, so collision resistance and conformance are explicit assumptions rather than proved facts. Generic evaluator readdressing, HPT evaluator and case-binder-field concretization, owner-sensitive case pruning, exact scalar fetch forwarding, local PAP/application refinement, and the rooted-restriction fuel induction are hash-independent and remain in the ordinary logical axiom set, while the indexed production addressed-lowering, checked HPT cache/summary/accepted-result/consumer theorem cones, and public reachability theorems that validate an exact input digest intentionally expose Blake3.HasherOps.hash._native.native_decide.ax_1\u271d because they consume actual native digests; Compilatrix/Fence.lean pins that exact exception. The opaque FFI declarations also cross a proof-bearing subtype boundary for output length. Canonical IxIR2 snapshot byte-codec laws use only existing logical axioms; addressed ingress and exact checked-source program/context recovery retain this same native hash exception, with an explicit pairwise collision premise for recovering artifact equality from root equality. Modular source context transport uses exact binding equality and only ordinary logical axioms; its assembled closed-source theorem retains the same production BLAKE3 dependency. Reuse also compares full finite contexts, and serialized source records reconstruct proofs through the ordinary checker.",
+      "proof_effect": "Content addresses use this result operationally. There is no Lean theorem connecting the returned bytes to a pure BLAKE3 specification, so collision resistance and conformance are explicit assumptions rather than proved facts. Generic evaluator readdressing, HPT evaluator and case-binder-field concretization, owner-sensitive case pruning, exact scalar fetch forwarding, local PAP/application refinement, and the rooted-restriction fuel induction are hash-independent and remain in the ordinary logical axiom set, while the indexed production addressed-lowering, checked HPT cache/summary/accepted-result/consumer theorem cones, and public reachability theorems that validate an exact input digest intentionally expose Blake3.HasherOps.hash._native.native_decide.ax_1\u271d because they consume actual native digests; Compilatrix/Fence.lean pins that exact exception. The opaque FFI declarations also cross a proof-bearing subtype boundary for output length. Canonical IxIR2 snapshot byte-codec laws use only existing logical axioms; addressed ingress and exact checked-source program/context recovery retain this same native hash exception, with an explicit pairwise collision premise for recovering artifact equality from root equality. Modular source context transport uses exact binding equality and only ordinary logical axioms; its assembled closed-source theorem retains the same production BLAKE3 dependency. Reuse also compares full finite contexts, and serialized source records reconstruct proofs through the ordinary checker. Indexed whole-program IxIR1 addressing proves exact equality with the original semantic and exact-source audit predicates, including malformed inputs. Its prepared lookup indexes retain first-binding precedence and reverse preimages; the returned compilation certificate and native hash exception are unchanged.",
       "trust_basis": [
         "Blake3.lean and lean-ffi are revision-pinned",
         "every .lean file in the pinned package tree is scanned for @[extern] declarations, so sibling modules cannot add symbols silently",
@@ -110,7 +110,8 @@
         "Nix builds the Rust static library in a sandbox and records its closure",
         "the source-borrow gate checks eighteen accepted Ixon call chains, full caller/callee reconstruction, independent complete heap execution, actual RC reduction, checked baseline fallback, and thirteen corrupted artifacts; its four indexed source fences retain the existing addressed-source hash dependency while six core borrow fences use only propext and Quot.sound",
         "the source-borrow-runtime gate checks nine accepted open source functions, 144 independent direct/PAP comparisons, nine aliased lenders, exact baseline fallback, and twenty corrupted artifacts; structural proofs select before runtime arguments arrive and derive source/function/continuation preservation and complete owned-input reclamation with two fewer RC ticks and unchanged peak; ten new core/source-shape/input fences use only existing logical axioms and five indexed source fences retain the addressed-source hash dependency",
-        "the version-1 IxIR2 snapshot gate uses an independent strict binary parser, complete source/program/context inspection views, fixed expected roots, and two fresh artifact sets; twenty exact axiom fences distinguish hash-independent codec laws from the existing addressed-source dependency"
+        "the version-1 IxIR2 snapshot gate uses an independent strict binary parser, complete source/program/context inspection views, fixed expected roots, and two fresh artifact sets; twenty exact axiom fences distinguish hash-independent codec laws from the existing addressed-source dependency",
+        "The assembly-scaling gate compares the retained list builder and indexed builder on complete canonical artifacts, preserves the existing six-case modular source report, checks 20 addressing cases and 11 malformed audit inputs, and performs fresh retained-certificate replay plus five file mutations. Three additional fences distinguish the pure environment/renaming equality from the existing content-address predicate dependency."
       ],
       "tests": [
         "Tests.expectedEmptyBlake3",
@@ -706,10 +707,10 @@
     "tracked_files": {
       ".envrc": "87816b617d65211b5bc9a1141332863f8e3cb05c387ef539d87f459e81eb8d06",
       "flake.lock": "3c4a89a3d87dd10ac70c1c1a11449055f94abb1ad857b339c29f302160a6445f",
-      "flake.nix": "d99a81928c8cdf98a2b490e8f18ecb594a3c7d7985c4dfe0630c4db09d5ecc28",
+      "flake.nix": "2bf623052c44510c0ea27f0853308ccca283183faf58f5d7f526899918466d14",
       "fixtures/x86/native_harness.c": "95defbf83b11bc9d7d8dd5d6caf9b48c49ac1ecdf97913b540be9865eca50f52",
       "lake-manifest.json": "96a10cee37eac24e288f45d01365c96c2333428c871593d74d9da3baaa9ea7c0",
-      "lakefile.lean": "0cff6be8b4aa3c2bb67e3b6df9bdea244380fd99169e90c82e93364e1a3a85f8",
+      "lakefile.lean": "74a304dfe8c245922af265b01bb5c686aad1ef8b0efb157f15118a9211a0b6b1",
       "lean-toolchain": "302cd63c54178885b89e669f33b38f12f4dd7ae7e5cac537b3203e3768d8fb2b",
       "native/hpt_cache_sync.c": "f44c087cf80b2f5499ac1e25c0bb63be0f1e0687bc49a941c6b0ace8b03248f5",
       "Compilatrix/Tools/Check.lean": "680a94c630dc94304cccffed796178d3d0d77f1ea595a052176fef98c8b11e23",
@@ -821,7 +822,7 @@
       "benchmarks/native/scaling_harness.c": "7f59e2b78577d435c26176099df11e0bdd4d93f24cb173d567f7d04af13fc809",
       "fixtures/compiler-scaling/expected.json": "05921bd48b52d526890e1ceea2f6838fd965532e2ee3474db1ad1af94bc8a77e",
       "Compilatrix.lean": "ef49810b6bd529396a2c8b0dc54ad81794adc1f8a75e58975d6e4dbb24ed70fc",
-      "Compilatrix/Fence.lean": "4f257052a470f900f86d2791401f9cafacf5a69c706a33ed7bafeb7bb3f05868",
+      "Compilatrix/Fence.lean": "4fb65b9c4e6a237786cc283cc0bf62fc3c92a7320f709266dd29388d81f13e02",
       "SourceModular.lean": "56c6636156b6f5d94fae525e3e6b16e7a0f7a982c337bc48f0478c339b2c5e53",
       "scripts/CheckSourceModular.lean": "a1f7d5cf152ace936026bea821b0ad32ab5ca8ff5d6cab2aa996ec9f1320f979",
       "fixtures/source-modular/expected.json": "1b6842f8705f23d67c6834ad669fcdda62ecb6691c05e677526dcb6a602e5c5b",
@@ -866,7 +867,16 @@
       "fixtures/native-graph/README.md": "035ca0b9d8e511ce8d5b8d814c02eaf16b9d6fc974982dd722f14ab879ce0935",
       "fixtures/native-graph/expected.json": "67e97ef053df1e915697d0eae048551915be2bc4325235c3fb00591feb85ab27",
       "fixtures/native-graph/expected-reference.json": "5e673508d30c6f46c504f013fb32cb9bec296da38fc4dfd6d689b3951b47ab2f",
-      "fixtures/source-native-heap/expected-graph.json": "8df499b7d03b52c0f962da28e34826fa1e66be6d3204a87ee92918947ead540a"
+      "fixtures/source-native-heap/expected-graph.json": "8df499b7d03b52c0f962da28e34826fa1e66be6d3204a87ee92918947ead540a",
+      "Compilatrix/IxIR1/ReaddressAll.lean": "a389f66028883588e0b157e945105feea016efd8a60977587f754d41133dae88",
+      "Compilatrix/IxIR1/ReaddressIndex.lean": "0e8bc711fa257ed674b24abee5961ff5fc27712d87b7c714773660d29666fdfe",
+      "Compilatrix/IxIR1/ReaddressIndexTests.lean": "7a1dbd7ecd9a19a17712542e28dcd734f7ef597b2648dc48a8d6c55d5306f057",
+      "Tests.lean": "0f957600f713879ab90284da59012f1a139ab61042e035750e0ee530dbff7684",
+      "benchmarks/AssemblyScaling.lean": "63e2eb086efa04453c7ea753f98e3cb5d4e70bc405b7cbf29496ed6b34e1b6a4",
+      "benchmarks/Benchmark/Assembly.lean": "4b75cafb36cdf0ed1b622d911fad16c337c52a7d1115da56b5fd334d6432be1d",
+      "benchmarks/assembly-scaling.md": "3dd4dc620111eb736e871f05d1d252b41a86390f76d44c99f501543679aa82a6",
+      "scripts/CheckAssemblyScaling.lean": "6b781db52908a52f32f4a5b258dfe6cdac5d22562f2bba42312b9d7ce05fb02c",
+      "fixtures/assembly-scaling/expected.json": "d44be2ac04306eb7f072a11001f195164805e9e54b1381f43e13c0cbd22326f8"
     },
     "flake_nodes": {
       "blake3": "b97a24f8754819755ef78d8016c0391c65c943c5",

@@ -142,6 +142,36 @@ declaration, and lowering budgets. These limits bound different phases; the
 aggregate modular limits do not promise acceptance for every source below
 their individual maxima. See [resource budgets](resource-budgets.md).
 
+## Indexed assembly checks
+
+Whole-program IxIR₁ addressing now builds hash indexes for producer names,
+emitted identities, ordinary declarations, and mutual blocks. It accumulates
+the address map in reverse and restores the original order once. Dependency
+and member order, exact-preimage collision checks, stable extern identities,
+and canonical artifact bytes retain their original definitions.
+
+The checker prepares shared original/emitted environments, forward and
+reverse maps, and membership indexes. Reverse lookup preserves the first
+producer when identical content is deduplicated. Lean proofs show that the
+indexed semantic audit equals the original predicate, and that its additional
+exact-image checks combined with semantic checking equal the original
+exact-source predicate, including on malformed inputs. The production
+checker uses those equalities to return the existing `CertifiedResult`;
+it does not rerun an already successful semantic audit. The proof fence
+retains the same native BLAKE3 dependency and logical axiom set.
+
+The original list builder and audits remain callable as
+`ReaddressAll.runReferenceCertified`. The
+[assembly measurement suite](../benchmarks/assembly-scaling.md) compares their
+complete artifacts, splits the assembly costs, and retains cold, unchanged,
+dependency-edit, literal-premise-edit, and restored source cases. This change
+does not remove repeated whole-program erasure, source context comparisons,
+or bounded mutual-block work.
+
+The [recorded assembly comparison](performance/assembly-scaling-2026-09-13/README.md)
+reduces median assembly for the 611-declaration closure from 2,180 to 131 ms
+with exact retained artifacts. Source evidence costs remain separate.
+
 ## Reproduction and validation
 
 ```sh

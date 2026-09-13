@@ -1,4 +1,5 @@
 import Compilatrix.IxIR1.MutualBlock
+import Compilatrix.IxIR1.ReaddressIndex
 
 /-!
 # Whole-program IxIR₁ content addressing
@@ -460,6 +461,127 @@ abbrev RebuildCertifiedResult (reserved : List Address)
     result.semanticAudit raw rawMain = true ∧ result.reserved = reserved ∧
       result.rebuildSemanticAudit raw rawMain = true }
 
+/-! ## Shared indexes for the unchanged certificate predicates -/
+
+namespace Result
+
+structure AuditIndex where
+  image : Readdress.ImageIndex
+  transient : Std.HashSet Address
+  images : Std.HashSet Address
+  unique : Bool
+
+private def buildAuditIndex (result : Result) (raw : List (Address × Decl)) : AuditIndex :=
+  { image := Readdress.ImageIndex.build raw result.declarations result.addressMap
+    transient := Std.HashSet.ofList result.transientAddresses
+    images := Std.HashSet.ofList (result.addressMap.map (·.2))
+    unique := Readdress.uniqueIndexed result.finalAddresses }
+
+/-- A prepared index belongs to the complete result and raw declaration list.
+It is an implementation of the certificate's lookups, not an accepted claim
+about the result's validity. -/
+abbrev PreparedAudit (result : Result) (raw : List (Address × Decl)) :=
+  { index : AuditIndex // index = buildAuditIndex result raw }
+
+def prepareAudit (result : Result) (raw : List (Address × Decl)) : PreparedAudit result raw :=
+  ⟨buildAuditIndex result raw, rfl⟩
+
+def AuditIndex.protectsReserved (index : AuditIndex) (result : Result) : Bool :=
+  result.reserved.all fun address => index.image.forward.apply address == address
+
+def AuditIndex.mappingComplete (index : AuditIndex) (result : Result)
+    (raw : List (Address × Decl)) : Bool :=
+  result.addressMap.length == raw.length &&
+    raw.all fun entry => index.image.forward.contains entry.1
+
+def AuditIndex.noTransientKeys (index : AuditIndex) (result : Result) : Bool :=
+  !result.finalAddresses.any index.transient.contains
+
+def AuditIndex.noTransientReferences (index : AuditIndex) (result : Result) : Bool :=
+  let references := result.declarations.flatMap fun entry => Readdress.Decl.references entry.2
+  !(references ++ Readdress.Code.references result.main).any index.transient.contains
+
+def AuditIndex.semanticAudit (index : AuditIndex) (result : Result)
+    (raw : List (Address × Decl)) (rawMain : Code) : Bool :=
+  index.image.semanticAudit raw result.declarations result.main rawMain &&
+    (index.protectsReserved result && index.mappingComplete result raw &&
+      result.contentAddressed && index.unique &&
+      index.noTransientKeys result && index.noTransientReferences result)
+
+def AuditIndex.rebuildRename (index : AuditIndex) : Address → Address :=
+  fun address =>
+    match index.image.original.toEnv address with
+    | some _ => index.image.forward.apply address
+    | none => (AddressEnv.lookup index.image.backward address).getD address
+
+/-- The additional exact-source conditions, separated so certification need
+not repeat the already successful semantic audit. -/
+def AuditIndex.rebuildImageAudit (index : AuditIndex) (result : Result)
+    (raw : List (Address × Decl)) (rawMain : Code) : Bool :=
+  let rename := index.rebuildRename
+  let emitted := index.image.emitted.toEnv
+  let original := index.image.original.toEnv
+  Readdress.Code.structurallyEq result.main (Readdress.Code.mapAddresses rename rawMain) &&
+    raw.all (fun entry =>
+      match original entry.1, emitted (rename entry.1) with
+      | some before, some after =>
+          Readdress.Decl.structurallyEq before entry.2 &&
+            Readdress.Decl.structurallyEq after (Readdress.Decl.mapAddresses rename before)
+      | _, _ => false) &&
+    result.addressMap.all (fun entry =>
+      (match original entry.2 with
+       | some _ => true
+       | none => (emitted entry.1).isNone) &&
+      match original entry.1 with
+      | some _ => rename entry.1 == entry.2
+      | none => false) &&
+    result.declarations.all (fun entry => index.images.contains entry.1)
+
+private theorem uniqueIndexed_eq (addresses : List Address) :
+    Readdress.uniqueIndexed addresses = allUnique addresses := by
+  induction addresses with
+  | nil => rfl
+  | cons address rest ih => rw [Readdress.uniqueIndexed_cons, ih]; rfl
+
+private theorem rebuildRename_build (result : Result) (raw : List (Address × Decl)) :
+    (buildAuditIndex result raw).rebuildRename = result.rebuildRename raw := by
+  funext address
+  simp only [AuditIndex.rebuildRename, buildAuditIndex, Readdress.ImageIndex.build,
+    Env.Index.toEnv_ofList, Readdress.Renaming.Index.apply_ofList,
+    Readdress.Renaming.lookup_reverseIndex, rebuildRename]
+  cases Env.ofList raw address <;> simp
+  cases result.addressMap.find? (fun entry => entry.2 == address) <;> rfl
+
+theorem PreparedAudit.semanticAudit_eq {result : Result} {raw : List (Address × Decl)}
+    (prepared : PreparedAudit result raw) (rawMain : Code) :
+    prepared.val.semanticAudit result raw rawMain = result.semanticAudit raw rawMain := by
+  rw [prepared.property]
+  have image := Readdress.ImageIndex.semanticAudit_build result.asReaddressResult raw rawMain
+  simp only [asReaddressResult, Readdress.Result.declarations, List.append_nil] at image
+  simp only [AuditIndex.semanticAudit]
+  rw [show (buildAuditIndex result raw).image =
+    Readdress.ImageIndex.build raw result.declarations result.addressMap from rfl, image]
+  simp only [AuditIndex.protectsReserved, AuditIndex.mappingComplete,
+    AuditIndex.noTransientKeys, AuditIndex.noTransientReferences,
+    buildAuditIndex, Readdress.ImageIndex.build, Readdress.Renaming.Index.apply_ofList,
+    Readdress.Renaming.Index.contains_ofList, Readdress.setContains_ofList,
+    uniqueIndexed_eq, semanticAudit, protectsReserved, mappingComplete,
+    noTransientKeys, noTransientReferences]
+  rfl
+
+theorem PreparedAudit.rebuildSemanticAudit_eq {result : Result}
+    {raw : List (Address × Decl)} (prepared : PreparedAudit result raw) (rawMain : Code) :
+    (prepared.val.semanticAudit result raw rawMain &&
+      prepared.val.rebuildImageAudit result raw rawMain) = result.rebuildSemanticAudit raw rawMain := by
+  rw [prepared.semanticAudit_eq, prepared.property]
+  simp only [AuditIndex.rebuildImageAudit]
+  rw [rebuildRename_build]
+  simp only [buildAuditIndex, Readdress.ImageIndex.build, Env.Index.toEnv_ofList,
+    Std.HashSet.contains_ofList, Readdress.contains_map_snd, rebuildSemanticAudit]
+  simp only [Bool.and_assoc]
+
+end Result
+
 /-! ## Dependency-ordered construction -/
 
 private def firstDuplicate? : List Address → Option Address
@@ -618,6 +740,129 @@ private def build (keys protectedIdentities : List Address) :
       let state ← installComponent keys protectedIdentities component state
       build keys protectedIdentities rest state
 
+/-! The reference builder above deliberately retains its list scans. The
+production builder keeps the same dependency/member order and collision
+checks, but stores lookup indexes and accumulates the final map in reverse.
+Every candidate still passes the original whole-program certificate. -/
+
+private structure IndexedBuildState where
+  addressMapRev : Renaming := []
+  forward : Readdress.Renaming.Index := {}
+  artifactsRev : List Artifact := []
+  ordinary : Std.HashMap Address Decl := {}
+  blocks : Std.HashMap Address MutualBlock.Result := {}
+  identities : Std.HashSet Address := {}
+
+private def appendMapIndexed (state : IndexedBuildState)
+    (mapping : Renaming) : IndexedBuildState :=
+  mapping.foldl (fun state entry =>
+    { state with addressMapRev := entry :: state.addressMapRev
+                 forward := state.forward.insert entry.1 entry.2 }) state
+
+private def installStableIndexed (old : Address) (declaration : Decl)
+    (state : IndexedBuildState) : Except String IndexedBuildState :=
+  match declaration with
+  | .extern _ =>
+      .ok { (appendMapIndexed state [(old, old)]) with
+        artifactsRev := .stable old declaration :: state.artifactsRev
+        identities := state.identities.insert old }
+  | _ => .error "internal: non-extern declaration reached stable installation"
+
+private def installOrdinaryIndexed (keys protectedIdentities : Std.HashSet Address)
+    (old : Address) (rawDeclaration : Decl)
+    (state : IndexedBuildState) : Except String IndexedBuildState := do
+  let declaration := Readdress.Decl.mapAddresses state.forward.apply rawDeclaration
+  let address := declaration.address
+  if keys.contains address then
+    throw s!"IxIR1 content address overlaps transient namespace {Address.toHex address}"
+  if protectedIdentities.contains address then
+    throw s!"IxIR1 content address collides with protected identity {Address.toHex address}"
+  match state.ordinary.get? address with
+  | some found =>
+      if samePreimage found declaration then
+        return appendMapIndexed state [(old, address)]
+      else
+        throw s!"BLAKE3 collision while readdressing IxIR1 declaration {Address.toHex old}"
+  | none =>
+      if state.identities.contains address then
+        .error s!"IxIR1 declaration address collides with a mutual-block identity {Address.toHex address}"
+      else
+        .ok { (appendMapIndexed state [(old, address)]) with
+          artifactsRev := .ordinary address declaration :: state.artifactsRev
+          ordinary := state.ordinary.insert address declaration
+          identities := state.identities.insert address }
+
+private def installMutualIndexed (keys protectedIdentities : List Address)
+    (component : Component) (state : IndexedBuildState) : Except String IndexedBuildState := do
+  let localKeys := Std.HashSet.ofList component.keys
+  let rewritten := component.members.map fun entry =>
+    (entry.1, Readdress.Decl.mapAddresses state.forward.apply entry.2)
+  let otherTransient := keys.filter fun address => !localKeys.contains address
+  let candidate ← MutualBlock.run (protectedIdentities ++ otherTransient) rewritten
+  match state.blocks.get? candidate.blockAddress with
+  | some existing =>
+      if MutualBlock.DeclList.structurallyEq existing.blockMembers candidate.blockMembers then
+        if existing.derivedAddresses == candidate.derivedAddresses then
+          return appendMapIndexed state candidate.addressMap
+        else
+          throw "internal: equal IxIR1 mutual blocks derived different member keys"
+      else
+        throw s!"BLAKE3 collision between IxIR1 mutual blocks {Address.toHex candidate.blockAddress}"
+  | none =>
+      if state.identities.contains candidate.blockAddress then
+        .error s!"IxIR1 mutual-block identity collides with an emitted identity {Address.toHex candidate.blockAddress}"
+      else
+        match candidate.derivedAddresses.find? state.identities.contains with
+        | some overlap =>
+            .error s!"IxIR1 mutual-block member key collides with an emitted identity {Address.toHex overlap}"
+        | none =>
+            .ok { (appendMapIndexed state candidate.addressMap) with
+              artifactsRev := .mutual candidate :: state.artifactsRev
+              blocks := state.blocks.insert candidate.blockAddress candidate
+              identities := candidate.derivedAddresses.foldl Std.HashSet.insert
+                (state.identities.insert candidate.blockAddress) }
+
+private structure BuildInput where
+  keys : List Address
+  protectedIdentities : List Address
+  keyIndex : Std.HashSet Address
+  protectedIndex : Std.HashSet Address
+
+private def prepareBuild (reserved : List Address)
+    (raw : List (Address × Decl)) (main : Code) : Except String BuildInput := do
+  let keys := raw.map (·.1)
+  let (keyIndex, duplicate) := Readdress.duplicateIndex keys
+  if let some duplicate := duplicate then
+    throw s!"duplicate IxIR1 declaration producer key {Address.toHex duplicate}"
+  let reservedIndex := Std.HashSet.ofList reserved
+  if let some overlap := keys.find? reservedIndex.contains then
+    throw s!"IxIR1 declaration producer key overlaps reserved identity {Address.toHex overlap}"
+  let references := raw.flatMap (fun entry => Readdress.Decl.references entry.2) ++
+    Readdress.Code.references main
+  let protectedIdentities := reserved ++ stableExternKeys raw ++
+    references.filter (fun address => !keyIndex.contains address)
+  return {
+    keys, protectedIdentities, keyIndex,
+    protectedIndex := Std.HashSet.ofList protectedIdentities }
+
+private def installComponentIndexed (input : BuildInput)
+    (component : Component) (state : IndexedBuildState) : Except String IndexedBuildState :=
+  if component.cyclic then
+    installMutualIndexed input.keys input.protectedIdentities component state
+  else
+    match component.members with
+    | [(old, declaration@(.extern _))] => installStableIndexed old declaration state
+    | [(old, declaration)] =>
+        installOrdinaryIndexed input.keyIndex input.protectedIndex old declaration state
+    | _ => .error "internal: non-cyclic IxIR1 SCC was not a singleton"
+
+private def buildIndexed (input : BuildInput) :
+    List Component → IndexedBuildState → Except String IndexedBuildState
+  | [], state => .ok state
+  | component :: rest, state => do
+      let state ← installComponentIndexed input component state
+      buildIndexed input rest state
+
 private def certify (reserved : List Address)
     (raw : List (Address × Decl)) (rawMain : Code)
     (result : Result) : Except String (CertifiedResult reserved raw rawMain) :=
@@ -632,10 +877,26 @@ private def certify (reserved : List Address)
   else
     .error "internal: whole-program IxIR1 readdressing failed semantic audit"
 
-/-- Discover, dependency-order, and content-address a complete flat IxIR₁
-environment.  `reserved` contains caller-owned identities that are not
-declaration producer keys (notably constructor/oracle identities). -/
-def runCertified (reserved : List Address)
+/-- Consume indexed checks while returning the existing certificate predicates. -/
+private def certifyPrepared (reserved : List Address)
+    (raw : List (Address × Decl)) (rawMain : Code) (result : Result)
+    (prepared : result.PreparedAudit raw) : Except String (CertifiedResult reserved raw rawMain) :=
+  if haudit : prepared.val.semanticAudit result raw rawMain then
+    if hreserved : result.reserved = reserved then
+      if hexact : prepared.val.rebuildImageAudit result raw rawMain then
+        .ok ⟨result, (prepared.semanticAudit_eq rawMain) ▸ haudit, hreserved, by
+          rw [← prepared.rebuildSemanticAudit_eq rawMain, haudit, hexact]
+          rfl⟩
+      else
+        .error "internal: whole-program IxIR1 readdressing failed exact-source semantic audit"
+    else
+      .error "internal: whole-program IxIR1 readdressing retained the wrong reserved identities"
+  else
+    .error "internal: whole-program IxIR1 readdressing failed semantic audit"
+
+/-- Retained reference builder and list audits for exact artifact comparisons.
+Production callers use `runCertified`. -/
+def runReferenceCertified (reserved : List Address)
     (raw : List (Address × Decl)) (main : Code) :
     Except String (CertifiedResult reserved raw main) := do
   let keys := raw.map (·.1)
@@ -662,6 +923,33 @@ def runCertified (reserved : List Address)
   unless result.protectsReserved do
     throw "internal: whole-program IxIR1 readdressing rewrote a reserved identity"
   certify reserved raw main result
+
+/-- Discover, dependency-order, and content-address a complete flat IxIR₁
+environment using indexed construction and audits. `reserved` contains
+caller-owned identities absent from the declaration producer environment.
+The returned certificate uses the original transparent predicates. -/
+def runCertified (reserved : List Address)
+    (raw : List (Address × Decl)) (main : Code) :
+    Except String (CertifiedResult reserved raw main) := do
+  let input ← prepareBuild reserved raw main
+  let components := discoverComponentsDependencyFirst raw
+  let state ← buildIndexed input components {}
+  let result : Result :=
+    { artifacts := state.artifactsRev.reverse
+      main := Readdress.Code.mapAddresses
+        state.forward.apply main
+      addressMap := state.addressMapRev.reverse
+      reserved }
+  let prepared := result.prepareAudit raw
+  unless prepared.val.mappingComplete result raw do
+    throw "internal: whole-program IxIR1 readdressing produced an incomplete map"
+  unless prepared.val.noTransientKeys result do
+    throw "internal: whole-program IxIR1 readdressing emitted a transient key"
+  unless prepared.val.noTransientReferences result do
+    throw "internal: whole-program IxIR1 readdressing left a transient reference"
+  unless prepared.val.protectsReserved result do
+    throw "internal: whole-program IxIR1 readdressing rewrote a reserved identity"
+  certifyPrepared reserved raw main result prepared
 
 def run (reserved : List Address)
     (raw : List (Address × Decl)) (main : Code) : Except String Result := do

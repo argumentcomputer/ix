@@ -667,6 +667,21 @@ materialization intentionally crosses the same native BLAKE3 boundary. -/
  Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
 #guard_msgs in #print axioms Compilatrix.IxIR1.MutualBlock.semanticAudit_of_run_eq_ok
 
+/-- info: 'Compilatrix.IxIR1.Readdress.ImageIndex.semanticAudit_build' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.IxIR1.Readdress.ImageIndex.semanticAudit_build
+
+/-- info: 'Compilatrix.IxIR1.ReaddressAll.Result.PreparedAudit.semanticAudit_eq' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.IxIR1.ReaddressAll.Result.PreparedAudit.semanticAudit_eq
+
+/-- info: 'Compilatrix.IxIR1.ReaddressAll.Result.PreparedAudit.rebuildSemanticAudit_eq' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+#guard_msgs in #print axioms Compilatrix.IxIR1.ReaddressAll.Result.PreparedAudit.rebuildSemanticAudit_eq
+
 /-- info: 'Compilatrix.IxIR1.ReaddressAll.semanticAudit_of_run_eq_ok' depends on axioms: [propext,
  Classical.choice,
  Quot.sound,

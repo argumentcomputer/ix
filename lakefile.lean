@@ -224,3 +224,12 @@ lean_exe «check-native-graph» where
 lean_exe «check-native-sharing» where
   srcDir := "scripts"
   root := `CheckNativeSharing
+
+/- Modular assembly phases and exact reference addressing comparisons. -/
+lean_exe «assembly-scaling» where
+  srcDir := "benchmarks"
+  root := `AssemblyScaling
+
+lean_exe «check-assembly-scaling» where
+  srcDir := "scripts"
+  root := `CheckAssemblyScaling

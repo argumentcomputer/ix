@@ -1,0 +1,3208 @@
+{
+  "address_regressions": {
+    "cases": [
+      {
+        "artifacts": 0,
+        "declarations": 0,
+        "map_entries": 0,
+        "name": "empty",
+        "status": "accepted"
+      },
+      {
+        "artifacts": 0,
+        "declarations": 0,
+        "map_entries": 0,
+        "name": "duplicate-unused-reserved",
+        "status": "accepted"
+      },
+      {
+        "artifacts": 2,
+        "declarations": 2,
+        "map_entries": 2,
+        "name": "distinct-stable-externs",
+        "status": "accepted"
+      },
+      {
+        "artifacts": 1,
+        "declarations": 1,
+        "map_entries": 2,
+        "name": "ordinary-deduplication",
+        "status": "accepted"
+      },
+      {
+        "artifacts": 1,
+        "declarations": 1,
+        "map_entries": 1,
+        "name": "explicit-self-block",
+        "status": "accepted"
+      },
+      {
+        "artifacts": 1,
+        "declarations": 1,
+        "map_entries": 1,
+        "name": "address-free-callSelf",
+        "status": "accepted"
+      },
+      {
+        "artifacts": 1,
+        "declarations": 2,
+        "map_entries": 2,
+        "name": "mutual-member-order",
+        "status": "accepted"
+      },
+      {
+        "artifacts": 1,
+        "declarations": 2,
+        "map_entries": 2,
+        "name": "reversed-mutual-members",
+        "status": "accepted"
+      },
+      {
+        "artifacts": 1,
+        "declarations": 1,
+        "map_entries": 2,
+        "name": "mutual-block-deduplication",
+        "status": "accepted"
+      },
+      {
+        "artifacts": 2,
+        "declarations": 3,
+        "map_entries": 3,
+        "name": "dependency-before-user",
+        "status": "accepted"
+      },
+      {
+        "artifacts": 1,
+        "declarations": 1,
+        "map_entries": 1,
+        "name": "external-reference",
+        "status": "accepted"
+      },
+      {
+        "name": "duplicate-producer-first-match",
+        "reason": "duplicate IxIR1 declaration producer key a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+        "status": "rejected"
+      },
+      {
+        "name": "reserved-producer-first-match",
+        "reason": "IxIR1 declaration producer key overlaps reserved identity a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+        "status": "rejected"
+      },
+      {
+        "name": "ordinary-protected-content",
+        "reason": "IxIR1 content address collides with protected identity bffd28385492968a674f7090824348301087119dfa377a6b682bff177ede78d1",
+        "status": "rejected"
+      },
+      {
+        "name": "ordinary-transient-content",
+        "reason": "IxIR1 content address overlaps transient namespace bffd28385492968a674f7090824348301087119dfa377a6b682bff177ede78d1",
+        "status": "rejected"
+      },
+      {
+        "name": "ordinary-external-capture",
+        "reason": "IxIR1 content address collides with protected identity bffd28385492968a674f7090824348301087119dfa377a6b682bff177ede78d1",
+        "status": "rejected"
+      },
+      {
+        "name": "block-protected-identity",
+        "reason": "IxIR1 mutual-block identity collides with reserved identity fac6d302eab5f14bed2ed92b66ffe59e0d20b8c02c8e0e134352ce8ad5409463",
+        "status": "rejected"
+      },
+      {
+        "name": "block-protected-member",
+        "reason": "IxIR1 mutual-block member key collides with reserved identity 5cd27b5ee4d09e2f5096f3cffcc053be857ec839f5a7ad08515078650d9f4c24",
+        "status": "rejected"
+      },
+      {
+        "name": "block-transient-identity",
+        "reason": "IxIR1 mutual-block identity collides with reserved identity fac6d302eab5f14bed2ed92b66ffe59e0d20b8c02c8e0e134352ce8ad5409463",
+        "status": "rejected"
+      },
+      {
+        "name": "block-transient-member",
+        "reason": "IxIR1 mutual-block member key collides with reserved identity 5cd27b5ee4d09e2f5096f3cffcc053be857ec839f5a7ad08515078650d9f4c24",
+        "status": "rejected"
+      }
+    ],
+    "lookup_precedence_and_misses": true,
+    "malformed_result_rejections": 11
+  },
+  "all_source_certificate_artifact_bytes_exact": true,
+  "comparisons": [
+    {
+      "case": "baseline",
+      "correctness": {
+        "IxIR1_declarations": 6,
+        "artifact_blake3": "61531a61814d4a8dbcf30549780fda79713c17829d248f8e76e7d063e6f86769",
+        "artifact_bytes": 7123,
+        "build": [
+          {
+            "action": "produced",
+            "candidates": 1,
+            "context_constants": 1,
+            "import_bindings": 3,
+            "key": "9760da1c0da3674f45a2d8656fcbe726b890bcf91753739e96d19bf203c47d26",
+            "name": "unaffected",
+            "output_bytes": 68,
+            "proof_obligations": 1,
+            "query_bytes": 413,
+            "source_node_work": 12
+          },
+          {
+            "action": "produced",
+            "candidates": 1,
+            "context_constants": 1,
+            "import_bindings": 3,
+            "key": "44599375c6cf887796196739bf6503709f63c30a6f53d972ec742972a52a4d51",
+            "name": "leaf",
+            "output_bytes": 68,
+            "proof_obligations": 1,
+            "query_bytes": 407,
+            "source_node_work": 12
+          },
+          {
+            "action": "produced",
+            "candidates": 1,
+            "context_constants": 2,
+            "import_bindings": 5,
+            "key": "b811c9556068ee3165867fcf1c5347d6501d6d4aa5c11d152e1c8dff752cf7a1",
+            "name": "dependent",
+            "output_bytes": 94,
+            "proof_obligations": 1,
+            "query_bytes": 582,
+            "source_node_work": 16
+          },
+          {
+            "action": "produced",
+            "candidates": 1,
+            "context_constants": 4,
+            "import_bindings": 10,
+            "key": "461a1630a3051b772538772d09302d628b8a72de3490f0a6259a69507e59bd5d",
+            "name": "root",
+            "output_bytes": 129,
+            "proof_obligations": 1,
+            "query_bytes": 858,
+            "source_node_work": 38
+          }
+        ],
+        "certificate_candidates": 4,
+        "certificate_store_blake3": "eb2cdad68363b0eddadf9d1fd76b4d9ed3a21ef5616270124a73fb1a8fcd81cb",
+        "certificate_store_bytes": 2963,
+        "expected_value": 37,
+        "monolithic": {
+          "artifact_exact": true,
+          "status": "accepted"
+        },
+        "name": "baseline",
+        "proof_obligations": 4,
+        "reachable_source_constants": 4,
+        "restored_artifact_exact": true,
+        "root": "656f02cdc72a20242cde06465d156e372b6da4fa5f741132ec89c1c57d72015a",
+        "simultaneous_members": 0,
+        "source_and_IR_execution_agree": true,
+        "source_blake3": "f4e3ef80c65e73a836eab9dac7972b32950cc80d305e169ff230c6625a6cd4c2",
+        "source_bytes": 618,
+        "source_constants": 4,
+        "unchanged": [
+          {
+            "action": "reused",
+            "candidates": 1,
+            "context_constants": 1,
+            "import_bindings": 3,
+            "key": "9760da1c0da3674f45a2d8656fcbe726b890bcf91753739e96d19bf203c47d26",
+            "name": "unaffected",
+            "output_bytes": 68,
+            "proof_obligations": 1,
+            "query_bytes": 413,
+            "source_node_work": 12
+          },
+          {
+            "action": "reused",
+            "candidates": 1,
+            "context_constants": 1,
+            "import_bindings": 3,
+            "key": "44599375c6cf887796196739bf6503709f63c30a6f53d972ec742972a52a4d51",
+            "name": "leaf",
+            "output_bytes": 68,
+            "proof_obligations": 1,
+            "query_bytes": 407,
+            "source_node_work": 12
+          },
+          {
+            "action": "reused",
+            "candidates": 1,
+            "context_constants": 2,
+            "import_bindings": 5,
+            "key": "b811c9556068ee3165867fcf1c5347d6501d6d4aa5c11d152e1c8dff752cf7a1",
+            "name": "dependent",
+            "output_bytes": 94,
+            "proof_obligations": 1,
+            "query_bytes": 582,
+            "source_node_work": 16
+          },
+          {
+            "action": "reused",
+            "candidates": 1,
+            "context_constants": 4,
+            "import_bindings": 10,
+            "key": "461a1630a3051b772538772d09302d628b8a72de3490f0a6259a69507e59bd5d",
+            "name": "root",
+            "output_bytes": 129,
+            "proof_obligations": 1,
+            "query_bytes": 858,
+            "source_node_work": 38
+          }
+        ],
+        "unchanged_artifact_exact": true,
+        "units": 4
+      },
+      "measurements": {
+        "indexed": {
+          "assembly_and_IxIR1_lowering": {
+            "maximum_ns": 168518,
+            "median_ns": 160673,
+            "minimum_ns": 160373,
+            "samples_ns": [
+              160673,
+              160373,
+              168518
+            ]
+          },
+          "check_retained_source_certificates": {
+            "maximum_ns": 392191,
+            "median_ns": 389266,
+            "minimum_ns": 388484,
+            "samples_ns": [
+              389266,
+              392191,
+              388484
+            ]
+          },
+          "decode_retained_store": {
+            "maximum_ns": 31259,
+            "median_ns": 30658,
+            "minimum_ns": 30608,
+            "samples_ns": [
+              31259,
+              30608,
+              30658
+            ]
+          },
+          "monolithic_compilation": {
+            "maximum_ns": 123664,
+            "median_ns": 122642,
+            "minimum_ns": 121089,
+            "samples_ns": [
+              123664,
+              121089,
+              122642
+            ]
+          },
+          "restored_assembly_and_IxIR1_lowering": {
+            "maximum_ns": 127791,
+            "median_ns": 127692,
+            "minimum_ns": 124936,
+            "samples_ns": [
+              127791,
+              124936,
+              127692
+            ]
+          },
+          "source_certificates": {
+            "maximum_ns": 688340,
+            "median_ns": 678863,
+            "minimum_ns": 668293,
+            "samples_ns": [
+              678863,
+              668293,
+              688340
+            ]
+          },
+          "unchanged_assembly_and_IxIR1_lowering": {
+            "maximum_ns": 156225,
+            "median_ns": 135907,
+            "minimum_ns": 134804,
+            "samples_ns": [
+              156225,
+              134804,
+              135907
+            ]
+          },
+          "unchanged_source_certificates": {
+            "maximum_ns": 336826,
+            "median_ns": 335343,
+            "minimum_ns": 332007,
+            "samples_ns": [
+              332007,
+              336826,
+              335343
+            ]
+          }
+        },
+        "reference": {
+          "assembly_and_IxIR1_lowering": {
+            "maximum_ns": 209015,
+            "median_ns": 201160,
+            "minimum_ns": 193656,
+            "samples_ns": [
+              201160,
+              209015,
+              193656
+            ]
+          },
+          "check_retained_source_certificates": {
+            "maximum_ns": 393764,
+            "median_ns": 387513,
+            "minimum_ns": 380559,
+            "samples_ns": [
+              387513,
+              393764,
+              380559
+            ]
+          },
+          "decode_retained_store": {
+            "maximum_ns": 32601,
+            "median_ns": 30558,
+            "minimum_ns": 29796,
+            "samples_ns": [
+              32601,
+              30558,
+              29796
+            ]
+          },
+          "monolithic_compilation": {
+            "maximum_ns": 162026,
+            "median_ns": 159461,
+            "minimum_ns": 159251,
+            "samples_ns": [
+              159461,
+              159251,
+              162026
+            ]
+          },
+          "restored_assembly_and_IxIR1_lowering": {
+            "maximum_ns": 180631,
+            "median_ns": 171334,
+            "minimum_ns": 166805,
+            "samples_ns": [
+              171334,
+              166805,
+              180631
+            ]
+          },
+          "source_certificates": {
+            "maximum_ns": 687690,
+            "median_ns": 672531,
+            "minimum_ns": 671569,
+            "samples_ns": [
+              687690,
+              671569,
+              672531
+            ]
+          },
+          "unchanged_assembly_and_IxIR1_lowering": {
+            "maximum_ns": 177736,
+            "median_ns": 169370,
+            "minimum_ns": 165713,
+            "samples_ns": [
+              169370,
+              177736,
+              165713
+            ]
+          },
+          "unchanged_source_certificates": {
+            "maximum_ns": 350212,
+            "median_ns": 343559,
+            "minimum_ns": 335745,
+            "samples_ns": [
+              350212,
+              343559,
+              335745
+            ]
+          }
+        }
+      }
+    },
+    {
+      "case": "edited",
+      "correctness": {
+        "IxIR1_declarations": 6,
+        "artifact_blake3": "ae5daef53a6fad01ff80b2865af7eceb7f3338fc0a542d8aac2c7e76e234af17",
+        "artifact_bytes": 7123,
+        "build": [
+          {
+            "action": "reused",
+            "candidates": 1,
+            "context_constants": 1,
+            "import_bindings": 3,
+            "key": "9760da1c0da3674f45a2d8656fcbe726b890bcf91753739e96d19bf203c47d26",
+            "name": "unaffected",
+            "output_bytes": 68,
+            "proof_obligations": 1,
+            "query_bytes": 413,
+            "source_node_work": 12
+          },
+          {
+            "action": "produced",
+            "candidates": 1,
+            "context_constants": 1,
+            "import_bindings": 3,
+            "key": "c82abd32ac553022b5570c6e2ab26f3b3412aea69a6305873d64e33b5b6ca533",
+            "name": "leaf",
+            "output_bytes": 68,
+            "proof_obligations": 1,
+            "query_bytes": 407,
+            "source_node_work": 12
+          },
+          {
+            "action": "produced",
+            "candidates": 1,
+            "context_constants": 2,
+            "import_bindings": 5,
+            "key": "5dbeb73fb300d5286d68448f39f62a6c770aef30fe2cae0a944afff4a3b6dc01",
+            "name": "dependent",
+            "output_bytes": 94,
+            "proof_obligations": 1,
+            "query_bytes": 582,
+            "source_node_work": 16
+          },
+          {
+            "action": "produced",
+            "candidates": 1,
+            "context_constants": 4,
+            "import_bindings": 10,
+            "key": "d858e82f27fa2f8806d0d546d137b07a5d9bbdc4edcdee26ef994a1cc0d15916",
+            "name": "root",
+            "output_bytes": 129,
+            "proof_obligations": 1,
+            "query_bytes": 858,
+            "source_node_work": 38
+          }
+        ],
+        "certificate_candidates": 4,
+        "certificate_store_blake3": "1102acd4f02d3266d4ddb6e2a5cec2784a6b1b2203a6b4ff796ae916e95dc87f",
+        "certificate_store_bytes": 2963,
+        "expected_value": 38,
+        "monolithic": {
+          "artifact_exact": true,
+          "status": "accepted"
+        },
+        "name": "edited",
+        "proof_obligations": 4,
+        "reachable_source_constants": 4,
+        "restored_artifact_exact": true,
+        "root": "13643562157a5256995a1468193ea6e5ba7e0ed28f1db6ead357c19ef64fc35f",
+        "simultaneous_members": 0,
+        "source_and_IR_execution_agree": true,
+        "source_blake3": "35adbdeab0b6195f70e5d7225d0fc86bdae7f25954ecdc09cdd2a702801ed1d4",
+        "source_bytes": 618,
+        "source_constants": 4,
+        "unchanged": [
+          {
+            "action": "reused",
+            "candidates": 1,
+            "context_constants": 1,
+            "import_bindings": 3,
+            "key": "9760da1c0da3674f45a2d8656fcbe726b890bcf91753739e96d19bf203c47d26",
+            "name": "unaffected",
+            "output_bytes": 68,
+            "proof_obligations": 1,
+            "query_bytes": 413,
+            "source_node_work": 12
+          },
+          {
+            "action": "reused",
+            "candidates": 1,
+            "context_constants": 1,
+            "import_bindings": 3,
+            "key": "c82abd32ac553022b5570c6e2ab26f3b3412aea69a6305873d64e33b5b6ca533",
+            "name": "leaf",
+            "output_bytes": 68,
+            "proof_obligations": 1,
+            "query_bytes": 407,
+            "source_node_work": 12
+          },
+          {
+            "action": "reused",
+            "candidates": 1,
+            "context_constants": 2,
+            "import_bindings": 5,
+            "key": "5dbeb73fb300d5286d68448f39f62a6c770aef30fe2cae0a944afff4a3b6dc01",
+            "name": "dependent",
+            "output_bytes": 94,
+            "proof_obligations": 1,
+            "query_bytes": 582,
+            "source_node_work": 16
+          },
+          {
+            "action": "reused",
+            "candidates": 1,
+            "context_constants": 4,
+            "import_bindings": 10,
+            "key": "d858e82f27fa2f8806d0d546d137b07a5d9bbdc4edcdee26ef994a1cc0d15916",
+            "name": "root",
+            "output_bytes": 129,
+            "proof_obligations": 1,
+            "query_bytes": 858,
+            "source_node_work": 38
+          }
+        ],
+        "unchanged_artifact_exact": true,
+        "units": 4
+      },
+      "measurements": {
+        "indexed": {
+          "assembly_and_IxIR1_lowering": {
+            "maximum_ns": 135075,
+            "median_ns": 134965,
+            "minimum_ns": 134815,
+            "samples_ns": [
+              134965,
+              135075,
+              134815
+            ]
+          },
+          "check_retained_source_certificates": {
+            "maximum_ns": 391189,
+            "median_ns": 389676,
+            "minimum_ns": 379608,
+            "samples_ns": [
+              379608,
+              391189,
+              389676
+            ]
+          },
+          "decode_retained_store": {
+            "maximum_ns": 26991,
+            "median_ns": 26490,
+            "minimum_ns": 26019,
+            "samples_ns": [
+              26019,
+              26991,
+              26490
+            ]
+          },
+          "monolithic_compilation": {
+            "maximum_ns": 116971,
+            "median_ns": 114757,
+            "minimum_ns": 114196,
+            "samples_ns": [
+              114196,
+              114757,
+              116971
+            ]
+          },
+          "restored_assembly_and_IxIR1_lowering": {
+            "maximum_ns": 131338,
+            "median_ns": 129886,
+            "minimum_ns": 128884,
+            "samples_ns": [
+              128884,
+              129886,
+              131338
+            ]
+          },
+          "source_certificates": {
+            "maximum_ns": 582541,
+            "median_ns": 580958,
+            "minimum_ns": 569045,
+            "samples_ns": [
+              580958,
+              569045,
+              582541
+            ]
+          },
+          "unchanged_assembly_and_IxIR1_lowering": {
+            "maximum_ns": 131820,
+            "median_ns": 129705,
+            "minimum_ns": 129655,
+            "samples_ns": [
+              129655,
+              129705,
+              131820
+            ]
+          },
+          "unchanged_source_certificates": {
+            "maximum_ns": 334081,
+            "median_ns": 329543,
+            "minimum_ns": 328370,
+            "samples_ns": [
+              329543,
+              334081,
+              328370
+            ]
+          }
+        },
+        "reference": {
+          "assembly_and_IxIR1_lowering": {
+            "maximum_ns": 176203,
+            "median_ns": 176003,
+            "minimum_ns": 171614,
+            "samples_ns": [
+              176203,
+              176003,
+              171614
+            ]
+          },
+          "check_retained_source_certificates": {
+            "maximum_ns": 391230,
+            "median_ns": 388133,
+            "minimum_ns": 387422,
+            "samples_ns": [
+              391230,
+              387422,
+              388133
+            ]
+          },
+          "decode_retained_store": {
+            "maximum_ns": 27132,
+            "median_ns": 26931,
+            "minimum_ns": 26450,
+            "samples_ns": [
+              26931,
+              26450,
+              27132
+            ]
+          },
+          "monolithic_compilation": {
+            "maximum_ns": 166144,
+            "median_ns": 160494,
+            "minimum_ns": 154091,
+            "samples_ns": [
+              160494,
+              154091,
+              166144
+            ]
+          },
+          "restored_assembly_and_IxIR1_lowering": {
+            "maximum_ns": 166425,
+            "median_ns": 164882,
+            "minimum_ns": 164281,
+            "samples_ns": [
+              166425,
+              164882,
+              164281
+            ]
+          },
+          "source_certificates": {
+            "maximum_ns": 922763,
+            "median_ns": 581860,
+            "minimum_ns": 568524,
+            "samples_ns": [
+              581860,
+              568524,
+              922763
+            ]
+          },
+          "unchanged_assembly_and_IxIR1_lowering": {
+            "maximum_ns": 175492,
+            "median_ns": 168489,
+            "minimum_ns": 166424,
+            "samples_ns": [
+              166424,
+              168489,
+              175492
+            ]
+          },
+          "unchanged_source_certificates": {
+            "maximum_ns": 333150,
+            "median_ns": 332158,
+            "minimum_ns": 326196,
+            "samples_ns": [
+              332158,
+              333150,
+              326196
+            ]
+          }
+        }
+      }
+    },
+    {
+      "case": "blob-edited",
+      "correctness": {
+        "IxIR1_declarations": 6,
+        "artifact_blake3": "d87c6305e7c186963b06d3c105dd56513984303606820970343dae20751c1365",
+        "artifact_bytes": 7123,
+        "build": [
+          {
+            "action": "reused",
+            "candidates": 1,
+            "context_constants": 1,
+            "import_bindings": 3,
+            "key": "9760da1c0da3674f45a2d8656fcbe726b890bcf91753739e96d19bf203c47d26",
+            "name": "unaffected",
+            "output_bytes": 68,
+            "proof_obligations": 1,
+            "query_bytes": 413,
+            "source_node_work": 12
+          },
+          {
+            "action": "produced",
+            "candidates": 1,
+            "context_constants": 1,
+            "import_bindings": 3,
+            "key": "9414c706c2dd6bd307ec665b4decc5a888e60bf6aae431b5e7c738fb76fc1a7c",
+            "name": "leaf",
+            "output_bytes": 68,
+            "proof_obligations": 1,
+            "query_bytes": 407,
+            "source_node_work": 12
+          },
+          {
+            "action": "produced",
+            "candidates": 1,
+            "context_constants": 2,
+            "import_bindings": 5,
+            "key": "82590dbdf74bfb40684ca618793f16c6d4ccd1e378b8566b86b2bf50461977d9",
+            "name": "dependent",
+            "output_bytes": 94,
+            "proof_obligations": 1,
+            "query_bytes": 582,
+            "source_node_work": 16
+          },
+          {
+            "action": "produced",
+            "candidates": 1,
+            "context_constants": 4,
+            "import_bindings": 10,
+            "key": "70375fb94d2c77f7487656f85bae15ba7c4bd8d161362e63557fac2e7a1bbd97",
+            "name": "root",
+            "output_bytes": 129,
+            "proof_obligations": 1,
+            "query_bytes": 858,
+            "source_node_work": 38
+          }
+        ],
+        "certificate_candidates": 4,
+        "certificate_store_blake3": "973c54e51e0063328cf6a883858978fa30743aaf5d232f3f72f6adca4c1a7fb1",
+        "certificate_store_bytes": 2963,
+        "expected_value": 38,
+        "monolithic": {
+          "artifact_exact": true,
+          "status": "accepted"
+        },
+        "name": "blob-edited",
+        "proof_obligations": 4,
+        "reachable_source_constants": 4,
+        "restored_artifact_exact": true,
+        "root": "656f02cdc72a20242cde06465d156e372b6da4fa5f741132ec89c1c57d72015a",
+        "simultaneous_members": 0,
+        "source_and_IR_execution_agree": true,
+        "source_blake3": "3f5cac8eef9127e863a5f6fd80942a3dc6467d213e1b905758b25798288c0724",
+        "source_bytes": 618,
+        "source_constants": 4,
+        "unchanged": [
+          {
+            "action": "reused",
+            "candidates": 1,
+            "context_constants": 1,
+            "import_bindings": 3,
+            "key": "9760da1c0da3674f45a2d8656fcbe726b890bcf91753739e96d19bf203c47d26",
+            "name": "unaffected",
+            "output_bytes": 68,
+            "proof_obligations": 1,
+            "query_bytes": 413,
+            "source_node_work": 12
+          },
+          {
+            "action": "reused",
+            "candidates": 1,
+            "context_constants": 1,
+            "import_bindings": 3,
+            "key": "9414c706c2dd6bd307ec665b4decc5a888e60bf6aae431b5e7c738fb76fc1a7c",
+            "name": "leaf",
+            "output_bytes": 68,
+            "proof_obligations": 1,
+            "query_bytes": 407,
+            "source_node_work": 12
+          },
+          {
+            "action": "reused",
+            "candidates": 1,
+            "context_constants": 2,
+            "import_bindings": 5,
+            "key": "82590dbdf74bfb40684ca618793f16c6d4ccd1e378b8566b86b2bf50461977d9",
+            "name": "dependent",
+            "output_bytes": 94,
+            "proof_obligations": 1,
+            "query_bytes": 582,
+            "source_node_work": 16
+          },
+          {
+            "action": "reused",
+            "candidates": 1,
+            "context_constants": 4,
+            "import_bindings": 10,
+            "key": "70375fb94d2c77f7487656f85bae15ba7c4bd8d161362e63557fac2e7a1bbd97",
+            "name": "root",
+            "output_bytes": 129,
+            "proof_obligations": 1,
+            "query_bytes": 858,
+            "source_node_work": 38
+          }
+        ],
+        "unchanged_artifact_exact": true,
+        "units": 4
+      },
+      "measurements": {
+        "indexed": {
+          "assembly_and_IxIR1_lowering": {
+            "maximum_ns": 132851,
+            "median_ns": 128704,
+            "minimum_ns": 126389,
+            "samples_ns": [
+              128704,
+              126389,
+              132851
+            ]
+          },
+          "check_retained_source_certificates": {
+            "maximum_ns": 390538,
+            "median_ns": 386330,
+            "minimum_ns": 377814,
+            "samples_ns": [
+              386330,
+              377814,
+              390538
+            ]
+          },
+          "decode_retained_store": {
+            "maximum_ns": 27031,
+            "median_ns": 26790,
+            "minimum_ns": 26741,
+            "samples_ns": [
+              27031,
+              26790,
+              26741
+            ]
+          },
+          "monolithic_compilation": {
+            "maximum_ns": 112793,
+            "median_ns": 110859,
+            "minimum_ns": 109086,
+            "samples_ns": [
+              109086,
+              110859,
+              112793
+            ]
+          },
+          "restored_assembly_and_IxIR1_lowering": {
+            "maximum_ns": 126019,
+            "median_ns": 125367,
+            "minimum_ns": 123022,
+            "samples_ns": [
+              125367,
+              126019,
+              123022
+            ]
+          },
+          "source_certificates": {
+            "maximum_ns": 594464,
+            "median_ns": 570778,
+            "minimum_ns": 569486,
+            "samples_ns": [
+              594464,
+              570778,
+              569486
+            ]
+          },
+          "unchanged_assembly_and_IxIR1_lowering": {
+            "maximum_ns": 139023,
+            "median_ns": 124005,
+            "minimum_ns": 123764,
+            "samples_ns": [
+              139023,
+              123764,
+              124005
+            ]
+          },
+          "unchanged_source_certificates": {
+            "maximum_ns": 329052,
+            "median_ns": 328110,
+            "minimum_ns": 322028,
+            "samples_ns": [
+              328110,
+              329052,
+              322028
+            ]
+          }
+        },
+        "reference": {
+          "assembly_and_IxIR1_lowering": {
+            "maximum_ns": 176884,
+            "median_ns": 168038,
+            "minimum_ns": 167135,
+            "samples_ns": [
+              168038,
+              167135,
+              176884
+            ]
+          },
+          "check_retained_source_certificates": {
+            "maximum_ns": 388414,
+            "median_ns": 387132,
+            "minimum_ns": 382442,
+            "samples_ns": [
+              387132,
+              388414,
+              382442
+            ]
+          },
+          "decode_retained_store": {
+            "maximum_ns": 26720,
+            "median_ns": 26700,
+            "minimum_ns": 26661,
+            "samples_ns": [
+              26720,
+              26661,
+              26700
+            ]
+          },
+          "monolithic_compilation": {
+            "maximum_ns": 163790,
+            "median_ns": 160002,
+            "minimum_ns": 156596,
+            "samples_ns": [
+              160002,
+              156596,
+              163790
+            ]
+          },
+          "restored_assembly_and_IxIR1_lowering": {
+            "maximum_ns": 178798,
+            "median_ns": 174760,
+            "minimum_ns": 162758,
+            "samples_ns": [
+              162758,
+              174760,
+              178798
+            ]
+          },
+          "source_certificates": {
+            "maximum_ns": 567824,
+            "median_ns": 566451,
+            "minimum_ns": 565889,
+            "samples_ns": [
+              567824,
+              566451,
+              565889
+            ]
+          },
+          "unchanged_assembly_and_IxIR1_lowering": {
+            "maximum_ns": 371212,
+            "median_ns": 165102,
+            "minimum_ns": 163659,
+            "samples_ns": [
+              165102,
+              163659,
+              371212
+            ]
+          },
+          "unchanged_source_certificates": {
+            "maximum_ns": 476280,
+            "median_ns": 333691,
+            "minimum_ns": 329493,
+            "samples_ns": [
+              333691,
+              329493,
+              476280
+            ]
+          }
+        }
+      }
+    },
+    {
+      "case": "mutual",
+      "correctness": {
+        "IxIR1_declarations": 7,
+        "artifact_blake3": "839057b510ae665d055609b08fd120580b6c575ea05a5b0fc03795dd6e5b54f1",
+        "artifact_bytes": 11447,
+        "build": [
+          {
+            "action": "produced",
+            "candidates": 0,
+            "context_constants": 1,
+            "import_bindings": 5,
+            "key": "39139f4f736fc0fe19458f2fa712262a5b2444fd003cb830c4ccce533af95e07",
+            "name": "recursive-group",
+            "output_bytes": 229,
+            "proof_obligations": 2,
+            "query_bytes": 461,
+            "source_node_work": 100
+          },
+          {
+            "action": "produced",
+            "candidates": 2,
+            "context_constants": 4,
+            "import_bindings": 12,
+            "key": "ba80388915e4818f2ad864b18ac1415dc65e8ce990e2fefcd13ec76d2fef03f6",
+            "name": "entry",
+            "output_bytes": 288,
+            "proof_obligations": 3,
+            "query_bytes": 996,
+            "source_node_work": 252
+          }
+        ],
+        "certificate_candidates": 2,
+        "certificate_store_blake3": "d8d836d8e280ce4c4bc6094d3db5750323f9d3138ed5ef901422dd3c48687708",
+        "certificate_store_bytes": 2169,
+        "expected_value": 4,
+        "monolithic": {
+          "artifact_exact": true,
+          "status": "accepted"
+        },
+        "name": "mutual",
+        "proof_obligations": 5,
+        "reachable_source_constants": 4,
+        "restored_artifact_exact": true,
+        "root": "e27999cc300bd5d2114112363b7ab86c1e51729d1d0d67e5301e9d2e1c745532",
+        "simultaneous_members": 3,
+        "source_and_IR_execution_agree": true,
+        "source_blake3": "ad056f1b78e6032317b28fef0e8043e37e6f3f03fb8f8540aba95c5e6f5c707b",
+        "source_bytes": 622,
+        "source_constants": 4,
+        "unchanged": [
+          {
+            "action": "reused",
+            "candidates": 0,
+            "context_constants": 1,
+            "import_bindings": 5,
+            "key": "39139f4f736fc0fe19458f2fa712262a5b2444fd003cb830c4ccce533af95e07",
+            "name": "recursive-group",
+            "output_bytes": 229,
+            "proof_obligations": 2,
+            "query_bytes": 461,
+            "source_node_work": 100
+          },
+          {
+            "action": "reused",
+            "candidates": 2,
+            "context_constants": 4,
+            "import_bindings": 12,
+            "key": "ba80388915e4818f2ad864b18ac1415dc65e8ce990e2fefcd13ec76d2fef03f6",
+            "name": "entry",
+            "output_bytes": 288,
+            "proof_obligations": 3,
+            "query_bytes": 996,
+            "source_node_work": 252
+          }
+        ],
+        "unchanged_artifact_exact": true,
+        "units": 2
+      },
+      "measurements": {
+        "indexed": {
+          "assembly_and_IxIR1_lowering": {
+            "maximum_ns": 274909,
+            "median_ns": 268066,
+            "minimum_ns": 266194,
+            "samples_ns": [
+              266194,
+              274909,
+              268066
+            ]
+          },
+          "check_retained_source_certificates": {
+            "maximum_ns": 591157,
+            "median_ns": 587710,
+            "minimum_ns": 584615,
+            "samples_ns": [
+              591157,
+              587710,
+              584615
+            ]
+          },
+          "decode_retained_store": {
+            "maximum_ns": 28314,
+            "median_ns": 27773,
+            "minimum_ns": 27281,
+            "samples_ns": [
+              28314,
+              27281,
+              27773
+            ]
+          },
+          "monolithic_compilation": {
+            "maximum_ns": 291451,
+            "median_ns": 270552,
+            "minimum_ns": 269379,
+            "samples_ns": [
+              270552,
+              291451,
+              269379
+            ]
+          },
+          "restored_assembly_and_IxIR1_lowering": {
+            "maximum_ns": 255693,
+            "median_ns": 252027,
+            "minimum_ns": 249462,
+            "samples_ns": [
+              249462,
+              252027,
+              255693
+            ]
+          },
+          "source_certificates": {
+            "maximum_ns": 884231,
+            "median_ns": 876827,
+            "minimum_ns": 873962,
+            "samples_ns": [
+              876827,
+              884231,
+              873962
+            ]
+          },
+          "unchanged_assembly_and_IxIR1_lowering": {
+            "maximum_ns": 262065,
+            "median_ns": 256915,
+            "minimum_ns": 251395,
+            "samples_ns": [
+              262065,
+              251395,
+              256915
+            ]
+          },
+          "unchanged_source_certificates": {
+            "maximum_ns": 379707,
+            "median_ns": 369929,
+            "minimum_ns": 363366,
+            "samples_ns": [
+              369929,
+              379707,
+              363366
+            ]
+          }
+        },
+        "reference": {
+          "assembly_and_IxIR1_lowering": {
+            "maximum_ns": 333149,
+            "median_ns": 331496,
+            "minimum_ns": 328992,
+            "samples_ns": [
+              328992,
+              331496,
+              333149
+            ]
+          },
+          "check_retained_source_certificates": {
+            "maximum_ns": 603881,
+            "median_ns": 590677,
+            "minimum_ns": 583012,
+            "samples_ns": [
+              590677,
+              603881,
+              583012
+            ]
+          },
+          "decode_retained_store": {
+            "maximum_ns": 27833,
+            "median_ns": 27512,
+            "minimum_ns": 27402,
+            "samples_ns": [
+              27833,
+              27402,
+              27512
+            ]
+          },
+          "monolithic_compilation": {
+            "maximum_ns": 328120,
+            "median_ns": 320055,
+            "minimum_ns": 319083,
+            "samples_ns": [
+              328120,
+              320055,
+              319083
+            ]
+          },
+          "restored_assembly_and_IxIR1_lowering": {
+            "maximum_ns": 317730,
+            "median_ns": 298614,
+            "minimum_ns": 291811,
+            "samples_ns": [
+              291811,
+              317730,
+              298614
+            ]
+          },
+          "source_certificates": {
+            "maximum_ns": 1262576,
+            "median_ns": 896985,
+            "minimum_ns": 893269,
+            "samples_ns": [
+              893269,
+              896985,
+              1262576
+            ]
+          },
+          "unchanged_assembly_and_IxIR1_lowering": {
+            "maximum_ns": 308382,
+            "median_ns": 306228,
+            "minimum_ns": 299375,
+            "samples_ns": [
+              306228,
+              308382,
+              299375
+            ]
+          },
+          "unchanged_source_certificates": {
+            "maximum_ns": 372263,
+            "median_ns": 372174,
+            "minimum_ns": 370520,
+            "samples_ns": [
+              372174,
+              372263,
+              370520
+            ]
+          }
+        }
+      }
+    },
+    {
+      "case": "wide-32",
+      "correctness": {
+        "IxIR1_declarations": 66,
+        "artifact_blake3": "e1aa91ea73ffb87d37fd0488c7f0b5e3bff3437c5e57133cd79805c15a383a3f",
+        "artifact_bytes": 70473,
+        "build": [
+          {
+            "action": "produced",
+            "candidates": 33,
+            "context_constants": 33,
+            "import_bindings": 98,
+            "key": "e9519f204931b136ead04f7b618d66115ad41ce50f0e661d8423ecfc0cf54114",
+            "name": "group-0",
+            "output_bytes": 3356,
+            "proof_obligations": 33,
+            "query_bytes": 6161,
+            "source_node_work": 170478
+          },
+          {
+            "action": "produced",
+            "candidates": 1,
+            "context_constants": 34,
+            "import_bindings": 100,
+            "key": "4d988730cd132700e7b567be2ebffb9622a155130c93c23b6f2b8a10d373e49c",
+            "name": "root",
+            "output_bytes": 94,
+            "proof_obligations": 1,
+            "query_bytes": 4892,
+            "source_node_work": 578
+          }
+        ],
+        "certificate_candidates": 34,
+        "certificate_store_blake3": "ea2e58ba3627ac1c156c8b51a39cfe3de7da84e9c5d371c908c45b9635dcf668",
+        "certificate_store_bytes": 15713,
+        "expected_value": 1031,
+        "monolithic": {
+          "artifact_exact": true,
+          "status": "accepted"
+        },
+        "name": "wide-32",
+        "proof_obligations": 34,
+        "reachable_source_constants": 34,
+        "restored_artifact_exact": true,
+        "root": "64e261c37ddaaea077ab351c0076c2fb8200eaa2e03d5c5bc7f291d16ab78859",
+        "simultaneous_members": 0,
+        "source_and_IR_execution_agree": true,
+        "source_blake3": "d9bb989769d2c23811868e9216ca6798f11312508fd340793d028b9a5df86f10",
+        "source_bytes": 6035,
+        "source_constants": 34,
+        "unchanged": [
+          {
+            "action": "reused",
+            "candidates": 33,
+            "context_constants": 33,
+            "import_bindings": 98,
+            "key": "e9519f204931b136ead04f7b618d66115ad41ce50f0e661d8423ecfc0cf54114",
+            "name": "group-0",
+            "output_bytes": 3356,
+            "proof_obligations": 33,
+            "query_bytes": 6161,
+            "source_node_work": 170478
+          },
+          {
+            "action": "reused",
+            "candidates": 1,
+            "context_constants": 34,
+            "import_bindings": 100,
+            "key": "4d988730cd132700e7b567be2ebffb9622a155130c93c23b6f2b8a10d373e49c",
+            "name": "root",
+            "output_bytes": 94,
+            "proof_obligations": 1,
+            "query_bytes": 4892,
+            "source_node_work": 578
+          }
+        ],
+        "unchanged_artifact_exact": true,
+        "units": 2
+      },
+      "measurements": {
+        "indexed": {
+          "assembly_and_IxIR1_lowering": {
+            "maximum_ns": 1458746,
+            "median_ns": 1424803,
+            "minimum_ns": 1395878,
+            "samples_ns": [
+              1424803,
+              1395878,
+              1458746
+            ]
+          },
+          "check_retained_source_certificates": {
+            "maximum_ns": 20907943,
+            "median_ns": 20615683,
+            "minimum_ns": 20595433,
+            "samples_ns": [
+              20615683,
+              20595433,
+              20907943
+            ]
+          },
+          "decode_retained_store": {
+            "maximum_ns": 150895,
+            "median_ns": 142029,
+            "minimum_ns": 140125,
+            "samples_ns": [
+              140125,
+              142029,
+              150895
+            ]
+          },
+          "monolithic_compilation": {
+            "maximum_ns": 1292071,
+            "median_ns": 1285008,
+            "minimum_ns": 1268648,
+            "samples_ns": [
+              1268648,
+              1285008,
+              1292071
+            ]
+          },
+          "restored_assembly_and_IxIR1_lowering": {
+            "maximum_ns": 1381260,
+            "median_ns": 1366833,
+            "minimum_ns": 1349680,
+            "samples_ns": [
+              1349680,
+              1381260,
+              1366833
+            ]
+          },
+          "source_certificates": {
+            "maximum_ns": 31922023,
+            "median_ns": 30941259,
+            "minimum_ns": 30738502,
+            "samples_ns": [
+              30941259,
+              30738502,
+              31922023
+            ]
+          },
+          "unchanged_assembly_and_IxIR1_lowering": {
+            "maximum_ns": 1607648,
+            "median_ns": 1502218,
+            "minimum_ns": 1374468,
+            "samples_ns": [
+              1374468,
+              1607648,
+              1502218
+            ]
+          },
+          "unchanged_source_certificates": {
+            "maximum_ns": 10666564,
+            "median_ns": 10505375,
+            "minimum_ns": 10482751,
+            "samples_ns": [
+              10505375,
+              10482751,
+              10666564
+            ]
+          }
+        },
+        "reference": {
+          "assembly_and_IxIR1_lowering": {
+            "maximum_ns": 7335621,
+            "median_ns": 7038411,
+            "minimum_ns": 6967730,
+            "samples_ns": [
+              6967730,
+              7038411,
+              7335621
+            ]
+          },
+          "check_retained_source_certificates": {
+            "maximum_ns": 21328982,
+            "median_ns": 20804666,
+            "minimum_ns": 20766181,
+            "samples_ns": [
+              20766181,
+              20804666,
+              21328982
+            ]
+          },
+          "decode_retained_store": {
+            "maximum_ns": 148050,
+            "median_ns": 142640,
+            "minimum_ns": 141928,
+            "samples_ns": [
+              148050,
+              142640,
+              141928
+            ]
+          },
+          "monolithic_compilation": {
+            "maximum_ns": 7073095,
+            "median_ns": 6551453,
+            "minimum_ns": 6479124,
+            "samples_ns": [
+              6551453,
+              6479124,
+              7073095
+            ]
+          },
+          "restored_assembly_and_IxIR1_lowering": {
+            "maximum_ns": 7414350,
+            "median_ns": 6712836,
+            "minimum_ns": 6460531,
+            "samples_ns": [
+              6460531,
+              6712836,
+              7414350
+            ]
+          },
+          "source_certificates": {
+            "maximum_ns": 33080698,
+            "median_ns": 31191915,
+            "minimum_ns": 30913222,
+            "samples_ns": [
+              30913222,
+              31191915,
+              33080698
+            ]
+          },
+          "unchanged_assembly_and_IxIR1_lowering": {
+            "maximum_ns": 7625851,
+            "median_ns": 7416193,
+            "minimum_ns": 7159804,
+            "samples_ns": [
+              7159804,
+              7625851,
+              7416193
+            ]
+          },
+          "unchanged_source_certificates": {
+            "maximum_ns": 11062223,
+            "median_ns": 10740217,
+            "minimum_ns": 10715684,
+            "samples_ns": [
+              10715684,
+              10740217,
+              11062223
+            ]
+          }
+        }
+      }
+    },
+    {
+      "case": "wide-600",
+      "correctness": {
+        "IxIR1_declarations": 1211,
+        "artifact_blake3": "e2c9a50d8282b638eef06e915a200a8cb84ad1dda7eca6f0a4b9a2d7acf23ae6",
+        "artifact_bytes": 1281788,
+        "build": [
+          {
+            "action": "produced",
+            "candidates": 65,
+            "context_constants": 65,
+            "import_bindings": 194,
+            "key": "76f4110620e9d14472fad98fee78af33c42acb6a700adb245ce358f0bc1815e3",
+            "name": "group-0",
+            "output_bytes": 6652,
+            "proof_obligations": 65,
+            "query_bytes": 11985,
+            "source_node_work": 1270750
+          },
+          {
+            "action": "produced",
+            "candidates": 65,
+            "context_constants": 65,
+            "import_bindings": 194,
+            "key": "32eb63027763b93c1085cb3e68c7d457bc9916e77d252f4fd8f3288fce6b2de8",
+            "name": "group-1",
+            "output_bytes": 6652,
+            "proof_obligations": 65,
+            "query_bytes": 11985,
+            "source_node_work": 1270750
+          },
+          {
+            "action": "produced",
+            "candidates": 65,
+            "context_constants": 65,
+            "import_bindings": 194,
+            "key": "89c703ac00f14a8a0a80e65dc727e94a8a798cf5f4a1a317d7ab39d897cc1a63",
+            "name": "group-2",
+            "output_bytes": 6652,
+            "proof_obligations": 65,
+            "query_bytes": 11985,
+            "source_node_work": 1270750
+          },
+          {
+            "action": "produced",
+            "candidates": 65,
+            "context_constants": 65,
+            "import_bindings": 194,
+            "key": "6f4070d967eabf655fefc274956e4121b16ea6be4c60da8f87fdb1bbda133b8d",
+            "name": "group-3",
+            "output_bytes": 6652,
+            "proof_obligations": 65,
+            "query_bytes": 11985,
+            "source_node_work": 1270750
+          },
+          {
+            "action": "produced",
+            "candidates": 65,
+            "context_constants": 65,
+            "import_bindings": 194,
+            "key": "4b4b8494ded55d1cb2fc561b58ec8e01db36cd7ce14fde266ebfdb602ca75032",
+            "name": "group-4",
+            "output_bytes": 6652,
+            "proof_obligations": 65,
+            "query_bytes": 11985,
+            "source_node_work": 1270750
+          },
+          {
+            "action": "produced",
+            "candidates": 65,
+            "context_constants": 65,
+            "import_bindings": 194,
+            "key": "29c4d4392a4f7b09dc52c85d4a08c55b9cdb2c4213ac7120c12eb32c1502de28",
+            "name": "group-5",
+            "output_bytes": 6652,
+            "proof_obligations": 65,
+            "query_bytes": 11985,
+            "source_node_work": 1270750
+          },
+          {
+            "action": "produced",
+            "candidates": 65,
+            "context_constants": 65,
+            "import_bindings": 194,
+            "key": "805165f4e60919e74c691db33475679aa5dbe7d48297bcdff141e9de4e973029",
+            "name": "group-6",
+            "output_bytes": 6652,
+            "proof_obligations": 65,
+            "query_bytes": 11985,
+            "source_node_work": 1270750
+          },
+          {
+            "action": "produced",
+            "candidates": 65,
+            "context_constants": 65,
+            "import_bindings": 194,
+            "key": "5bde8ac1ec432b49e396d6fae853afd0a73a11165b6c5537ac0af66e64cd52ca",
+            "name": "group-7",
+            "output_bytes": 6652,
+            "proof_obligations": 65,
+            "query_bytes": 11985,
+            "source_node_work": 1270750
+          },
+          {
+            "action": "produced",
+            "candidates": 65,
+            "context_constants": 65,
+            "import_bindings": 194,
+            "key": "96897f3b9fa5b0618113ac86cb3d288ccc99235fbdfb5cf1d833cae71f7fd48e",
+            "name": "group-8",
+            "output_bytes": 6652,
+            "proof_obligations": 65,
+            "query_bytes": 11985,
+            "source_node_work": 1270750
+          },
+          {
+            "action": "produced",
+            "candidates": 25,
+            "context_constants": 25,
+            "import_bindings": 74,
+            "key": "c2fd0ed1d9dccb1841888ff086d8cb8bf9a66f9aeeed70d9752f3258a5858a0b",
+            "name": "group-9",
+            "output_bytes": 2532,
+            "proof_obligations": 25,
+            "query_bytes": 4705,
+            "source_node_work": 75250
+          },
+          {
+            "action": "produced",
+            "candidates": 1,
+            "context_constants": 611,
+            "import_bindings": 1822,
+            "key": "1876c6dc452fcf7285f573ac1c398a25be00d82d2e5257bd47948e14dfbce469",
+            "name": "root",
+            "output_bytes": 410,
+            "proof_obligations": 1,
+            "query_bytes": 83724,
+            "source_node_work": 10838
+          }
+        ],
+        "certificate_candidates": 611,
+        "certificate_store_blake3": "6342a41276ebb114eb4cbf1ccc3e359486d6555300e5ad59aa4222e4091e3732",
+        "certificate_store_bytes": 279203,
+        "expected_value": 1599,
+        "monolithic": {
+          "reason": "Compilatrix.Pipeline.Error.resource\n  { metric := Compilatrix.Ixon.Work.Metric.certificateCandidates, actual := 611, limit := 512 }",
+          "status": "rejected"
+        },
+        "name": "wide-600",
+        "proof_obligations": 611,
+        "reachable_source_constants": 611,
+        "restored_artifact_exact": true,
+        "root": "61a8bc14b4b6068d8133ca3202485a1e3ab4038c5e4395b5c5a6c16412102dcb",
+        "simultaneous_members": 0,
+        "source_and_IR_execution_agree": true,
+        "source_blake3": "8f1d2b72d087eed63d8c5d9b18ff68a061485d29bba0eeb0cbe0ee54aac4d751",
+        "source_bytes": 110573,
+        "source_constants": 611,
+        "unchanged": [
+          {
+            "action": "reused",
+            "candidates": 65,
+            "context_constants": 65,
+            "import_bindings": 194,
+            "key": "76f4110620e9d14472fad98fee78af33c42acb6a700adb245ce358f0bc1815e3",
+            "name": "group-0",
+            "output_bytes": 6652,
+            "proof_obligations": 65,
+            "query_bytes": 11985,
+            "source_node_work": 1270750
+          },
+          {
+            "action": "reused",
+            "candidates": 65,
+            "context_constants": 65,
+            "import_bindings": 194,
+            "key": "32eb63027763b93c1085cb3e68c7d457bc9916e77d252f4fd8f3288fce6b2de8",
+            "name": "group-1",
+            "output_bytes": 6652,
+            "proof_obligations": 65,
+            "query_bytes": 11985,
+            "source_node_work": 1270750
+          },
+          {
+            "action": "reused",
+            "candidates": 65,
+            "context_constants": 65,
+            "import_bindings": 194,
+            "key": "89c703ac00f14a8a0a80e65dc727e94a8a798cf5f4a1a317d7ab39d897cc1a63",
+            "name": "group-2",
+            "output_bytes": 6652,
+            "proof_obligations": 65,
+            "query_bytes": 11985,
+            "source_node_work": 1270750
+          },
+          {
+            "action": "reused",
+            "candidates": 65,
+            "context_constants": 65,
+            "import_bindings": 194,
+            "key": "6f4070d967eabf655fefc274956e4121b16ea6be4c60da8f87fdb1bbda133b8d",
+            "name": "group-3",
+            "output_bytes": 6652,
+            "proof_obligations": 65,
+            "query_bytes": 11985,
+            "source_node_work": 1270750
+          },
+          {
+            "action": "reused",
+            "candidates": 65,
+            "context_constants": 65,
+            "import_bindings": 194,
+            "key": "4b4b8494ded55d1cb2fc561b58ec8e01db36cd7ce14fde266ebfdb602ca75032",
+            "name": "group-4",
+            "output_bytes": 6652,
+            "proof_obligations": 65,
+            "query_bytes": 11985,
+            "source_node_work": 1270750
+          },
+          {
+            "action": "reused",
+            "candidates": 65,
+            "context_constants": 65,
+            "import_bindings": 194,
+            "key": "29c4d4392a4f7b09dc52c85d4a08c55b9cdb2c4213ac7120c12eb32c1502de28",
+            "name": "group-5",
+            "output_bytes": 6652,
+            "proof_obligations": 65,
+            "query_bytes": 11985,
+            "source_node_work": 1270750
+          },
+          {
+            "action": "reused",
+            "candidates": 65,
+            "context_constants": 65,
+            "import_bindings": 194,
+            "key": "805165f4e60919e74c691db33475679aa5dbe7d48297bcdff141e9de4e973029",
+            "name": "group-6",
+            "output_bytes": 6652,
+            "proof_obligations": 65,
+            "query_bytes": 11985,
+            "source_node_work": 1270750
+          },
+          {
+            "action": "reused",
+            "candidates": 65,
+            "context_constants": 65,
+            "import_bindings": 194,
+            "key": "5bde8ac1ec432b49e396d6fae853afd0a73a11165b6c5537ac0af66e64cd52ca",
+            "name": "group-7",
+            "output_bytes": 6652,
+            "proof_obligations": 65,
+            "query_bytes": 11985,
+            "source_node_work": 1270750
+          },
+          {
+            "action": "reused",
+            "candidates": 65,
+            "context_constants": 65,
+            "import_bindings": 194,
+            "key": "96897f3b9fa5b0618113ac86cb3d288ccc99235fbdfb5cf1d833cae71f7fd48e",
+            "name": "group-8",
+            "output_bytes": 6652,
+            "proof_obligations": 65,
+            "query_bytes": 11985,
+            "source_node_work": 1270750
+          },
+          {
+            "action": "reused",
+            "candidates": 25,
+            "context_constants": 25,
+            "import_bindings": 74,
+            "key": "c2fd0ed1d9dccb1841888ff086d8cb8bf9a66f9aeeed70d9752f3258a5858a0b",
+            "name": "group-9",
+            "output_bytes": 2532,
+            "proof_obligations": 25,
+            "query_bytes": 4705,
+            "source_node_work": 75250
+          },
+          {
+            "action": "reused",
+            "candidates": 1,
+            "context_constants": 611,
+            "import_bindings": 1822,
+            "key": "1876c6dc452fcf7285f573ac1c398a25be00d82d2e5257bd47948e14dfbce469",
+            "name": "root",
+            "output_bytes": 410,
+            "proof_obligations": 1,
+            "query_bytes": 83724,
+            "source_node_work": 10838
+          }
+        ],
+        "unchanged_artifact_exact": true,
+        "units": 11
+      },
+      "measurements": {
+        "indexed": {
+          "assembly_and_IxIR1_lowering": {
+            "maximum_ns": 131795041,
+            "median_ns": 130866190,
+            "minimum_ns": 130098751,
+            "samples_ns": [
+              130866190,
+              131795041,
+              130098751
+            ]
+          },
+          "check_retained_source_certificates": {
+            "maximum_ns": 929138165,
+            "median_ns": 919863601,
+            "minimum_ns": 915608897,
+            "samples_ns": [
+              919863601,
+              915608897,
+              929138165
+            ]
+          },
+          "decode_retained_store": {
+            "maximum_ns": 2718628,
+            "median_ns": 2627184,
+            "minimum_ns": 2578182,
+            "samples_ns": [
+              2718628,
+              2578182,
+              2627184
+            ]
+          },
+          "monolithic_compilation": {
+            "maximum_ns": 258117,
+            "median_ns": 250673,
+            "minimum_ns": 247408,
+            "samples_ns": [
+              258117,
+              247408,
+              250673
+            ]
+          },
+          "restored_assembly_and_IxIR1_lowering": {
+            "maximum_ns": 132048128,
+            "median_ns": 131024142,
+            "minimum_ns": 129718771,
+            "samples_ns": [
+              131024142,
+              129718771,
+              132048128
+            ]
+          },
+          "source_certificates": {
+            "maximum_ns": 1385331767,
+            "median_ns": 1377288134,
+            "minimum_ns": 1370270097,
+            "samples_ns": [
+              1385331767,
+              1370270097,
+              1377288134
+            ]
+          },
+          "unchanged_assembly_and_IxIR1_lowering": {
+            "maximum_ns": 131341085,
+            "median_ns": 130456579,
+            "minimum_ns": 129824037,
+            "samples_ns": [
+              129824037,
+              130456579,
+              131341085
+            ]
+          },
+          "unchanged_source_certificates": {
+            "maximum_ns": 477192842,
+            "median_ns": 476398708,
+            "minimum_ns": 476358474,
+            "samples_ns": [
+              476358474,
+              476398708,
+              477192842
+            ]
+          }
+        },
+        "reference": {
+          "assembly_and_IxIR1_lowering": {
+            "maximum_ns": 2207232300,
+            "median_ns": 2180306498,
+            "minimum_ns": 2149649069,
+            "samples_ns": [
+              2149649069,
+              2180306498,
+              2207232300
+            ]
+          },
+          "check_retained_source_certificates": {
+            "maximum_ns": 921064138,
+            "median_ns": 919550488,
+            "minimum_ns": 915604044,
+            "samples_ns": [
+              919550488,
+              915604044,
+              921064138
+            ]
+          },
+          "decode_retained_store": {
+            "maximum_ns": 2633136,
+            "median_ns": 2624649,
+            "minimum_ns": 2615182,
+            "samples_ns": [
+              2615182,
+              2633136,
+              2624649
+            ]
+          },
+          "monolithic_compilation": {
+            "maximum_ns": 240304,
+            "median_ns": 223061,
+            "minimum_ns": 169831,
+            "samples_ns": [
+              169831,
+              223061,
+              240304
+            ]
+          },
+          "restored_assembly_and_IxIR1_lowering": {
+            "maximum_ns": 2227375584,
+            "median_ns": 2190407086,
+            "minimum_ns": 2158820683,
+            "samples_ns": [
+              2227375584,
+              2190407086,
+              2158820683
+            ]
+          },
+          "source_certificates": {
+            "maximum_ns": 1391486471,
+            "median_ns": 1372439534,
+            "minimum_ns": 1368949480,
+            "samples_ns": [
+              1368949480,
+              1372439534,
+              1391486471
+            ]
+          },
+          "unchanged_assembly_and_IxIR1_lowering": {
+            "maximum_ns": 2234725410,
+            "median_ns": 2171637511,
+            "minimum_ns": 2158522697,
+            "samples_ns": [
+              2234725410,
+              2171637511,
+              2158522697
+            ]
+          },
+          "unchanged_source_certificates": {
+            "maximum_ns": 476372972,
+            "median_ns": 473112515,
+            "minimum_ns": 466506275,
+            "samples_ns": [
+              466506275,
+              473112515,
+              476372972
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "format": "compilatrix/assembly-scaling-cost-summary/1",
+  "phase_unit": "nanoseconds",
+  "processes": [
+    {
+      "argv": [
+        "/nix/store/4n075ll5jdwbjv142yg8ymz5f3yf4pam-util-linux-2.42.2-bin/bin/taskset",
+        "-c",
+        "0",
+        "/nix/store/y51431wmnm7vli4l347dpn44nyhmcrw7-time-1.10/bin/time",
+        "-f",
+        "{\"wall_seconds\":%e,\"user_seconds\":%U,\"system_seconds\":%S,\"peak_rss_kib\":%M,\"minor_faults\":%R,\"major_faults\":%F,\"voluntary_context_switches\":%w,\"involuntary_context_switches\":%c,\"exit_code\":%x}",
+        "-o",
+        "/tmp/assembly-scaling-reference-001/logs/reference-1.resources.json",
+        "/tmp/assembly-scaling-reference-001/seed/source-modular-reference",
+        "run",
+        "/tmp/assembly-scaling-reference-001/comparisons/reference-1"
+      ],
+      "cwd": "/home/jcb/projects/compilatrix",
+      "exit_code": 0,
+      "finished_utc": "2026-09-13T12:06:55.493255+00:00",
+      "name": "reference-1",
+      "resources": {
+        "exit_code": 0,
+        "involuntary_context_switches": 57,
+        "major_faults": 0,
+        "minor_faults": 3968,
+        "peak_rss_kib": 90956,
+        "system_seconds": 0.01,
+        "user_seconds": 12.37,
+        "voluntary_context_switches": 3,
+        "wall_seconds": 12.42
+      },
+      "started_utc": "2026-09-13T12:06:43.064047+00:00"
+    },
+    {
+      "argv": [
+        "/nix/store/4n075ll5jdwbjv142yg8ymz5f3yf4pam-util-linux-2.42.2-bin/bin/taskset",
+        "-c",
+        "0",
+        "/nix/store/y51431wmnm7vli4l347dpn44nyhmcrw7-time-1.10/bin/time",
+        "-f",
+        "{\"wall_seconds\":%e,\"user_seconds\":%U,\"system_seconds\":%S,\"peak_rss_kib\":%M,\"minor_faults\":%R,\"major_faults\":%F,\"voluntary_context_switches\":%w,\"involuntary_context_switches\":%c,\"exit_code\":%x}",
+        "-o",
+        "/tmp/assembly-scaling-reference-001/logs/indexed-1.resources.json",
+        "/tmp/assembly-scaling-reference-001/seed/source-modular",
+        "run",
+        "/tmp/assembly-scaling-reference-001/comparisons/indexed-1"
+      ],
+      "cwd": "/home/jcb/projects/compilatrix",
+      "exit_code": 0,
+      "finished_utc": "2026-09-13T12:07:01.728554+00:00",
+      "name": "indexed-1",
+      "resources": {
+        "exit_code": 0,
+        "involuntary_context_switches": 43,
+        "major_faults": 0,
+        "minor_faults": 5459,
+        "peak_rss_kib": 90540,
+        "system_seconds": 0.01,
+        "user_seconds": 6.19,
+        "voluntary_context_switches": 3,
+        "wall_seconds": 6.23
+      },
+      "started_utc": "2026-09-13T12:06:55.495916+00:00"
+    },
+    {
+      "argv": [
+        "/nix/store/4n075ll5jdwbjv142yg8ymz5f3yf4pam-util-linux-2.42.2-bin/bin/taskset",
+        "-c",
+        "0",
+        "/nix/store/y51431wmnm7vli4l347dpn44nyhmcrw7-time-1.10/bin/time",
+        "-f",
+        "{\"wall_seconds\":%e,\"user_seconds\":%U,\"system_seconds\":%S,\"peak_rss_kib\":%M,\"minor_faults\":%R,\"major_faults\":%F,\"voluntary_context_switches\":%w,\"involuntary_context_switches\":%c,\"exit_code\":%x}",
+        "-o",
+        "/tmp/assembly-scaling-reference-001/logs/indexed-2.resources.json",
+        "/tmp/assembly-scaling-reference-001/seed/source-modular",
+        "run",
+        "/tmp/assembly-scaling-reference-001/comparisons/indexed-2"
+      ],
+      "cwd": "/home/jcb/projects/compilatrix",
+      "exit_code": 0,
+      "finished_utc": "2026-09-13T12:07:07.948918+00:00",
+      "name": "indexed-2",
+      "resources": {
+        "exit_code": 0,
+        "involuntary_context_switches": 51,
+        "major_faults": 0,
+        "minor_faults": 5689,
+        "peak_rss_kib": 83948,
+        "system_seconds": 0.01,
+        "user_seconds": 6.17,
+        "voluntary_context_switches": 3,
+        "wall_seconds": 6.21
+      },
+      "started_utc": "2026-09-13T12:07:01.731043+00:00"
+    },
+    {
+      "argv": [
+        "/nix/store/4n075ll5jdwbjv142yg8ymz5f3yf4pam-util-linux-2.42.2-bin/bin/taskset",
+        "-c",
+        "0",
+        "/nix/store/y51431wmnm7vli4l347dpn44nyhmcrw7-time-1.10/bin/time",
+        "-f",
+        "{\"wall_seconds\":%e,\"user_seconds\":%U,\"system_seconds\":%S,\"peak_rss_kib\":%M,\"minor_faults\":%R,\"major_faults\":%F,\"voluntary_context_switches\":%w,\"involuntary_context_switches\":%c,\"exit_code\":%x}",
+        "-o",
+        "/tmp/assembly-scaling-reference-001/logs/reference-2.resources.json",
+        "/tmp/assembly-scaling-reference-001/seed/source-modular-reference",
+        "run",
+        "/tmp/assembly-scaling-reference-001/comparisons/reference-2"
+      ],
+      "cwd": "/home/jcb/projects/compilatrix",
+      "exit_code": 0,
+      "finished_utc": "2026-09-13T12:07:20.363727+00:00",
+      "name": "reference-2",
+      "resources": {
+        "exit_code": 0,
+        "involuntary_context_switches": 83,
+        "major_faults": 0,
+        "minor_faults": 3988,
+        "peak_rss_kib": 90464,
+        "system_seconds": 0.01,
+        "user_seconds": 12.36,
+        "voluntary_context_switches": 3,
+        "wall_seconds": 12.41
+      },
+      "started_utc": "2026-09-13T12:07:07.951862+00:00"
+    },
+    {
+      "argv": [
+        "/nix/store/4n075ll5jdwbjv142yg8ymz5f3yf4pam-util-linux-2.42.2-bin/bin/taskset",
+        "-c",
+        "0",
+        "/nix/store/y51431wmnm7vli4l347dpn44nyhmcrw7-time-1.10/bin/time",
+        "-f",
+        "{\"wall_seconds\":%e,\"user_seconds\":%U,\"system_seconds\":%S,\"peak_rss_kib\":%M,\"minor_faults\":%R,\"major_faults\":%F,\"voluntary_context_switches\":%w,\"involuntary_context_switches\":%c,\"exit_code\":%x}",
+        "-o",
+        "/tmp/assembly-scaling-reference-001/logs/reference-3.resources.json",
+        "/tmp/assembly-scaling-reference-001/seed/source-modular-reference",
+        "run",
+        "/tmp/assembly-scaling-reference-001/comparisons/reference-3"
+      ],
+      "cwd": "/home/jcb/projects/compilatrix",
+      "exit_code": 0,
+      "finished_utc": "2026-09-13T12:07:32.774896+00:00",
+      "name": "reference-3",
+      "resources": {
+        "exit_code": 0,
+        "involuntary_context_switches": 76,
+        "major_faults": 0,
+        "minor_faults": 3938,
+        "peak_rss_kib": 90452,
+        "system_seconds": 0.01,
+        "user_seconds": 12.35,
+        "voluntary_context_switches": 3,
+        "wall_seconds": 12.4
+      },
+      "started_utc": "2026-09-13T12:07:20.366664+00:00"
+    },
+    {
+      "argv": [
+        "/nix/store/4n075ll5jdwbjv142yg8ymz5f3yf4pam-util-linux-2.42.2-bin/bin/taskset",
+        "-c",
+        "0",
+        "/nix/store/y51431wmnm7vli4l347dpn44nyhmcrw7-time-1.10/bin/time",
+        "-f",
+        "{\"wall_seconds\":%e,\"user_seconds\":%U,\"system_seconds\":%S,\"peak_rss_kib\":%M,\"minor_faults\":%R,\"major_faults\":%F,\"voluntary_context_switches\":%w,\"involuntary_context_switches\":%c,\"exit_code\":%x}",
+        "-o",
+        "/tmp/assembly-scaling-reference-001/logs/indexed-3.resources.json",
+        "/tmp/assembly-scaling-reference-001/seed/source-modular",
+        "run",
+        "/tmp/assembly-scaling-reference-001/comparisons/indexed-3"
+      ],
+      "cwd": "/home/jcb/projects/compilatrix",
+      "exit_code": 0,
+      "finished_utc": "2026-09-13T12:07:39.018795+00:00",
+      "name": "indexed-3",
+      "resources": {
+        "exit_code": 0,
+        "involuntary_context_switches": 41,
+        "major_faults": 0,
+        "minor_faults": 5190,
+        "peak_rss_kib": 90248,
+        "system_seconds": 0.01,
+        "user_seconds": 6.2,
+        "voluntary_context_switches": 3,
+        "wall_seconds": 6.23
+      },
+      "started_utc": "2026-09-13T12:07:32.777380+00:00"
+    },
+    {
+      "argv": [
+        "/nix/store/4n075ll5jdwbjv142yg8ymz5f3yf4pam-util-linux-2.42.2-bin/bin/taskset",
+        "-c",
+        "0",
+        "/nix/store/y51431wmnm7vli4l347dpn44nyhmcrw7-time-1.10/bin/time",
+        "-f",
+        "{\"wall_seconds\":%e,\"user_seconds\":%U,\"system_seconds\":%S,\"peak_rss_kib\":%M,\"minor_faults\":%R,\"major_faults\":%F,\"voluntary_context_switches\":%w,\"involuntary_context_switches\":%c,\"exit_code\":%x}",
+        "-o",
+        "/tmp/assembly-scaling-reference-001/logs/profile-1.resources.json",
+        "/tmp/assembly-scaling-reference-001/seed/assembly-scaling",
+        "run",
+        "/tmp/assembly-scaling-reference-001/profile-1",
+        "reference"
+      ],
+      "cwd": "/home/jcb/projects/compilatrix",
+      "exit_code": 0,
+      "finished_utc": "2026-09-13T12:07:55.041805+00:00",
+      "name": "profile-1",
+      "resources": {
+        "exit_code": 0,
+        "involuntary_context_switches": 134,
+        "major_faults": 0,
+        "minor_faults": 14977,
+        "peak_rss_kib": 92192,
+        "system_seconds": 0.03,
+        "user_seconds": 15.9,
+        "voluntary_context_switches": 4,
+        "wall_seconds": 16.01
+      },
+      "started_utc": "2026-09-13T12:07:39.021446+00:00"
+    },
+    {
+      "argv": [
+        "/nix/store/4n075ll5jdwbjv142yg8ymz5f3yf4pam-util-linux-2.42.2-bin/bin/taskset",
+        "-c",
+        "0",
+        "/nix/store/y51431wmnm7vli4l347dpn44nyhmcrw7-time-1.10/bin/time",
+        "-f",
+        "{\"wall_seconds\":%e,\"user_seconds\":%U,\"system_seconds\":%S,\"peak_rss_kib\":%M,\"minor_faults\":%R,\"major_faults\":%F,\"voluntary_context_switches\":%w,\"involuntary_context_switches\":%c,\"exit_code\":%x}",
+        "-o",
+        "/tmp/assembly-scaling-reference-001/logs/profile-2.resources.json",
+        "/tmp/assembly-scaling-reference-001/seed/assembly-scaling",
+        "run",
+        "/tmp/assembly-scaling-reference-001/profile-2",
+        "reference"
+      ],
+      "cwd": "/home/jcb/projects/compilatrix",
+      "exit_code": 0,
+      "finished_utc": "2026-09-13T12:08:10.976728+00:00",
+      "name": "profile-2",
+      "resources": {
+        "exit_code": 0,
+        "involuntary_context_switches": 113,
+        "major_faults": 0,
+        "minor_faults": 15093,
+        "peak_rss_kib": 92456,
+        "system_seconds": 0.03,
+        "user_seconds": 15.84,
+        "voluntary_context_switches": 3,
+        "wall_seconds": 15.92
+      },
+      "started_utc": "2026-09-13T12:07:55.047501+00:00"
+    },
+    {
+      "argv": [
+        "/nix/store/4n075ll5jdwbjv142yg8ymz5f3yf4pam-util-linux-2.42.2-bin/bin/taskset",
+        "-c",
+        "0",
+        "/nix/store/y51431wmnm7vli4l347dpn44nyhmcrw7-time-1.10/bin/time",
+        "-f",
+        "{\"wall_seconds\":%e,\"user_seconds\":%U,\"system_seconds\":%S,\"peak_rss_kib\":%M,\"minor_faults\":%R,\"major_faults\":%F,\"voluntary_context_switches\":%w,\"involuntary_context_switches\":%c,\"exit_code\":%x}",
+        "-o",
+        "/tmp/assembly-scaling-reference-001/logs/profile-3.resources.json",
+        "/tmp/assembly-scaling-reference-001/seed/assembly-scaling",
+        "run",
+        "/tmp/assembly-scaling-reference-001/profile-3",
+        "reference"
+      ],
+      "cwd": "/home/jcb/projects/compilatrix",
+      "exit_code": 0,
+      "finished_utc": "2026-09-13T12:08:26.987400+00:00",
+      "name": "profile-3",
+      "resources": {
+        "exit_code": 0,
+        "involuntary_context_switches": 106,
+        "major_faults": 0,
+        "minor_faults": 15013,
+        "peak_rss_kib": 92424,
+        "system_seconds": 0.03,
+        "user_seconds": 15.92,
+        "voluntary_context_switches": 3,
+        "wall_seconds": 16.0
+      },
+      "started_utc": "2026-09-13T12:08:10.983212+00:00"
+    }
+  ],
+  "profiles": [
+    {
+      "addressed": {
+        "blake3": "cc7fce85b1585b121b6c2240b8675d6163d620588e46dae0d6bec977b5e540d3",
+        "bytes": 43898
+      },
+      "artifact": {
+        "blake3": "e1aa91ea73ffb87d37fd0488c7f0b5e3bff3437c5e57133cd79805c15a383a3f",
+        "bytes": 70473
+      },
+      "certificate_blake3": "ea2e58ba3627ac1c156c8b51a39cfe3de7da84e9c5d371c908c45b9635dcf668",
+      "certificate_bytes": 15713,
+      "emitted_IxIR1_declarations": 66,
+      "expected_value": 1031,
+      "measurements": {
+        "IxIR1_indexed_addressing": {
+          "maximum_ns": 1103455,
+          "median_ns": 656239,
+          "minimum_ns": 650699,
+          "samples_ns": [
+            650699,
+            1103455,
+            656239
+          ]
+        },
+        "IxIR1_raw_lowering": {
+          "maximum_ns": 60554,
+          "median_ns": 57168,
+          "minimum_ns": 55464,
+          "samples_ns": [
+            57168,
+            60554,
+            55464
+          ]
+        },
+        "IxIR1_reference_addressing": {
+          "maximum_ns": 5879988,
+          "median_ns": 5655352,
+          "minimum_ns": 5557156,
+          "samples_ns": [
+            5879988,
+            5655352,
+            5557156
+          ]
+        },
+        "assembly_total": {
+          "maximum_ns": 1321286,
+          "median_ns": 1305225,
+          "minimum_ns": 1298734,
+          "samples_ns": [
+            1298734,
+            1321286,
+            1305225
+          ]
+        },
+        "build_source_units": {
+          "maximum_ns": 32342206,
+          "median_ns": 31184173,
+          "minimum_ns": 31043470,
+          "samples_ns": [
+            31184173,
+            31043470,
+            32342206
+          ]
+        },
+        "close_members": {
+          "maximum_ns": 240,
+          "median_ns": 231,
+          "minimum_ns": 211,
+          "samples_ns": [
+            211,
+            240,
+            231
+          ]
+        },
+        "entry_certificate": {
+          "maximum_ns": 17764,
+          "median_ns": 17663,
+          "minimum_ns": 17593,
+          "samples_ns": [
+            17663,
+            17764,
+            17593
+          ]
+        },
+        "erasure_and_IxIR0_addressing": {
+          "maximum_ns": 391530,
+          "median_ns": 385428,
+          "minimum_ns": 382352,
+          "samples_ns": [
+            391530,
+            382352,
+            385428
+          ]
+        },
+        "imported_evidence": {
+          "maximum_ns": 111010,
+          "median_ns": 109767,
+          "minimum_ns": 109367,
+          "samples_ns": [
+            111010,
+            109767,
+            109367
+          ]
+        },
+        "indexed_exact_image_audit": {
+          "maximum_ns": 130587,
+          "median_ns": 125848,
+          "minimum_ns": 123874,
+          "samples_ns": [
+            130587,
+            123874,
+            125848
+          ]
+        },
+        "indexed_semantic_audit": {
+          "maximum_ns": 158279,
+          "median_ns": 155855,
+          "minimum_ns": 154351,
+          "samples_ns": [
+            158279,
+            155855,
+            154351
+          ]
+        },
+        "prepare_audit_indexes": {
+          "maximum_ns": 100510,
+          "median_ns": 100129,
+          "minimum_ns": 99057,
+          "samples_ns": [
+            100129,
+            99057,
+            100510
+          ]
+        },
+        "program_preflight": {
+          "maximum_ns": 117442,
+          "median_ns": 113945,
+          "minimum_ns": 109036,
+          "samples_ns": [
+            113945,
+            117442,
+            109036
+          ]
+        },
+        "reference_exact_source_audit": {
+          "maximum_ns": 3077243,
+          "median_ns": 2950824,
+          "minimum_ns": 2861906,
+          "samples_ns": [
+            3077243,
+            2950824,
+            2861906
+          ]
+        },
+        "reference_semantic_audit": {
+          "maximum_ns": 1388203,
+          "median_ns": 1382311,
+          "minimum_ns": 1379155,
+          "samples_ns": [
+            1388203,
+            1379155,
+            1382311
+          ]
+        },
+        "source_context": {
+          "maximum_ns": 10310,
+          "median_ns": 10009,
+          "minimum_ns": 9869,
+          "samples_ns": [
+            10310,
+            10009,
+            9869
+          ]
+        }
+      },
+      "raw": {
+        "blake3": "94f2751dc8881aaf621c4763cd4027c3c959a3072e70ad5c662746c03a27c32e",
+        "bytes": 16467
+      },
+      "raw_IxIR1_declarations": 66,
+      "reachable_source_constants": 34,
+      "reference_addressing_exact": true,
+      "source_and_IR_execution_agree": true,
+      "source_blake3": "d9bb989769d2c23811868e9216ca6798f11312508fd340793d028b9a5df86f10",
+      "source_bytes": 6035,
+      "source_constants": 34,
+      "source_root": "64e261c37ddaaea077ab351c0076c2fb8200eaa2e03d5c5bc7f291d16ab78859",
+      "units": 2,
+      "width": 32
+    },
+    {
+      "addressed": {
+        "blake3": "4383decf6fbc6e05dbbfcbdc445e1453fbdab3a318b3c21a1eb5e707f56f6282",
+        "bytes": 86522
+      },
+      "artifact": {
+        "blake3": "f1929aacc11fe5cfa95bc9c6ce96ee297b543f08344010440fa6e4158e418eac",
+        "bytes": 138025
+      },
+      "certificate_blake3": "46e54a6d7866a5519d91a3327e215d1e5b89a359cbcd860aeb883f48e456a270",
+      "certificate_bytes": 30178,
+      "emitted_IxIR1_declarations": 130,
+      "expected_value": 1063,
+      "measurements": {
+        "IxIR1_indexed_addressing": {
+          "maximum_ns": 1311177,
+          "median_ns": 1276471,
+          "minimum_ns": 1253337,
+          "samples_ns": [
+            1311177,
+            1253337,
+            1276471
+          ]
+        },
+        "IxIR1_raw_lowering": {
+          "maximum_ns": 106481,
+          "median_ns": 98496,
+          "minimum_ns": 98096,
+          "samples_ns": [
+            106481,
+            98096,
+            98496
+          ]
+        },
+        "IxIR1_reference_addressing": {
+          "maximum_ns": 21989613,
+          "median_ns": 21333814,
+          "minimum_ns": 21231215,
+          "samples_ns": [
+            21989613,
+            21231215,
+            21333814
+          ]
+        },
+        "assembly_total": {
+          "maximum_ns": 3101419,
+          "median_ns": 3068155,
+          "minimum_ns": 3026506,
+          "samples_ns": [
+            3101419,
+            3068155,
+            3026506
+          ]
+        },
+        "build_source_units": {
+          "maximum_ns": 154949786,
+          "median_ns": 147987936,
+          "minimum_ns": 146106437,
+          "samples_ns": [
+            147987936,
+            146106437,
+            154949786
+          ]
+        },
+        "close_members": {
+          "maximum_ns": 371,
+          "median_ns": 351,
+          "minimum_ns": 341,
+          "samples_ns": [
+            351,
+            371,
+            341
+          ]
+        },
+        "entry_certificate": {
+          "maximum_ns": 36349,
+          "median_ns": 35788,
+          "minimum_ns": 35457,
+          "samples_ns": [
+            36349,
+            35457,
+            35788
+          ]
+        },
+        "erasure_and_IxIR0_addressing": {
+          "maximum_ns": 1168317,
+          "median_ns": 1163166,
+          "minimum_ns": 1159731,
+          "samples_ns": [
+            1159731,
+            1168317,
+            1163166
+          ]
+        },
+        "imported_evidence": {
+          "maximum_ns": 238220,
+          "median_ns": 234012,
+          "minimum_ns": 232199,
+          "samples_ns": [
+            234012,
+            232199,
+            238220
+          ]
+        },
+        "indexed_exact_image_audit": {
+          "maximum_ns": 273006,
+          "median_ns": 247868,
+          "minimum_ns": 247558,
+          "samples_ns": [
+            247558,
+            247868,
+            273006
+          ]
+        },
+        "indexed_semantic_audit": {
+          "maximum_ns": 310867,
+          "median_ns": 308984,
+          "minimum_ns": 302060,
+          "samples_ns": [
+            308984,
+            302060,
+            310867
+          ]
+        },
+        "prepare_audit_indexes": {
+          "maximum_ns": 231607,
+          "median_ns": 223853,
+          "minimum_ns": 220126,
+          "samples_ns": [
+            223853,
+            231607,
+            220126
+          ]
+        },
+        "program_preflight": {
+          "maximum_ns": 263397,
+          "median_ns": 263036,
+          "minimum_ns": 261283,
+          "samples_ns": [
+            263036,
+            263397,
+            261283
+          ]
+        },
+        "reference_exact_source_audit": {
+          "maximum_ns": 11040057,
+          "median_ns": 10950094,
+          "minimum_ns": 10947246,
+          "samples_ns": [
+            11040057,
+            10950094,
+            10947246
+          ]
+        },
+        "reference_semantic_audit": {
+          "maximum_ns": 5492927,
+          "median_ns": 5217584,
+          "minimum_ns": 5198831,
+          "samples_ns": [
+            5492927,
+            5198831,
+            5217584
+          ]
+        },
+        "source_context": {
+          "maximum_ns": 22111,
+          "median_ns": 21991,
+          "minimum_ns": 21951,
+          "samples_ns": [
+            21951,
+            22111,
+            21991
+          ]
+        }
+      },
+      "raw": {
+        "blake3": "a54d46e03a27126f32d1fc35153f5d168167fdff3f95361a778d995067682d8d",
+        "bytes": 32435
+      },
+      "raw_IxIR1_declarations": 130,
+      "reachable_source_constants": 66,
+      "reference_addressing_exact": true,
+      "source_and_IR_execution_agree": true,
+      "source_blake3": "614666b60a8419384ee89189b84d1c3afe09b7abcd8f2bb0ac09ab7b1cc669bd",
+      "source_bytes": 11859,
+      "source_constants": 66,
+      "source_root": "16d9e8f910b827608d7f8c065c4b4944ee9cf2d23bf59f272d15ec8f993a0655",
+      "units": 2,
+      "width": 64
+    },
+    {
+      "addressed": {
+        "blake3": "55fc45e29abf4d9da8330718760a102a153c16c6ff823292aed107519286257e",
+        "bytes": 172407
+      },
+      "artifact": {
+        "blake3": "76ca41fb90a5e328e7526f75bba1401e0c9babbf11828b8b7f11a44a5a821567",
+        "bytes": 274492
+      },
+      "certificate_blake3": "1208e0d39b5469e96ef3aaffb41b1f000ba621a89a2a445abba844caaf5e3d99",
+      "certificate_bytes": 59858,
+      "emitted_IxIR1_declarations": 259,
+      "expected_value": 1127,
+      "measurements": {
+        "IxIR1_indexed_addressing": {
+          "maximum_ns": 2717864,
+          "median_ns": 2696483,
+          "minimum_ns": 2680644,
+          "samples_ns": [
+            2717864,
+            2680644,
+            2696483
+          ]
+        },
+        "IxIR1_raw_lowering": {
+          "maximum_ns": 212201,
+          "median_ns": 204837,
+          "minimum_ns": 203194,
+          "samples_ns": [
+            212201,
+            204837,
+            203194
+          ]
+        },
+        "IxIR1_reference_addressing": {
+          "maximum_ns": 86996530,
+          "median_ns": 83849646,
+          "minimum_ns": 82714381,
+          "samples_ns": [
+            82714381,
+            83849646,
+            86996530
+          ]
+        },
+        "assembly_total": {
+          "maximum_ns": 8476523,
+          "median_ns": 8311741,
+          "minimum_ns": 8261884,
+          "samples_ns": [
+            8476523,
+            8311741,
+            8261884
+          ]
+        },
+        "build_source_units": {
+          "maximum_ns": 309827552,
+          "median_ns": 296989205,
+          "minimum_ns": 296782997,
+          "samples_ns": [
+            296782997,
+            296989205,
+            309827552
+          ]
+        },
+        "close_members": {
+          "maximum_ns": 681,
+          "median_ns": 681,
+          "minimum_ns": 662,
+          "samples_ns": [
+            681,
+            662,
+            681
+          ]
+        },
+        "entry_certificate": {
+          "maximum_ns": 75713,
+          "median_ns": 73289,
+          "minimum_ns": 73208,
+          "samples_ns": [
+            75713,
+            73208,
+            73289
+          ]
+        },
+        "erasure_and_IxIR0_addressing": {
+          "maximum_ns": 4068475,
+          "median_ns": 4026577,
+          "minimum_ns": 3993693,
+          "samples_ns": [
+            4026577,
+            4068475,
+            3993693
+          ]
+        },
+        "imported_evidence": {
+          "maximum_ns": 648776,
+          "median_ns": 624098,
+          "minimum_ns": 623197,
+          "samples_ns": [
+            648776,
+            623197,
+            624098
+          ]
+        },
+        "indexed_exact_image_audit": {
+          "maximum_ns": 522457,
+          "median_ns": 502600,
+          "minimum_ns": 496097,
+          "samples_ns": [
+            522457,
+            502600,
+            496097
+          ]
+        },
+        "indexed_semantic_audit": {
+          "maximum_ns": 631242,
+          "median_ns": 614681,
+          "minimum_ns": 594633,
+          "samples_ns": [
+            631242,
+            614681,
+            594633
+          ]
+        },
+        "prepare_audit_indexes": {
+          "maximum_ns": 515954,
+          "median_ns": 499764,
+          "minimum_ns": 493893,
+          "samples_ns": [
+            499764,
+            515954,
+            493893
+          ]
+        },
+        "program_preflight": {
+          "maximum_ns": 729418,
+          "median_ns": 725861,
+          "minimum_ns": 712516,
+          "samples_ns": [
+            729418,
+            725861,
+            712516
+          ]
+        },
+        "reference_exact_source_audit": {
+          "maximum_ns": 47516856,
+          "median_ns": 43274553,
+          "minimum_ns": 42992169,
+          "samples_ns": [
+            43274553,
+            47516856,
+            42992169
+          ]
+        },
+        "reference_semantic_audit": {
+          "maximum_ns": 20508479,
+          "median_ns": 20387035,
+          "minimum_ns": 20265686,
+          "samples_ns": [
+            20387035,
+            20508479,
+            20265686
+          ]
+        },
+        "source_context": {
+          "maximum_ns": 47730,
+          "median_ns": 46257,
+          "minimum_ns": 45947,
+          "samples_ns": [
+            45947,
+            46257,
+            47730
+          ]
+        }
+      },
+      "raw": {
+        "blake3": "1dc03b95f378feadce01ea2219bfb77343901a734f979c186cbb5255560e8b9d",
+        "bytes": 64606
+      },
+      "raw_IxIR1_declarations": 259,
+      "reachable_source_constants": 131,
+      "reference_addressing_exact": true,
+      "source_and_IR_execution_agree": true,
+      "source_blake3": "c0ec0bdbed619006b51680bf38e971ecdf084c595aa59708b0522ed6757b1a00",
+      "source_bytes": 23636,
+      "source_constants": 131,
+      "source_root": "664f6cda2798ef0ddd64815df4fc8779125ef1fbd774f265510168604040e253",
+      "units": 3,
+      "width": 128
+    },
+    {
+      "addressed": {
+        "blake3": "9bd9dd0b43c0d4316361c14785dee80a14afa2320b508f3fae329f9cf35e4962",
+        "bytes": 344177
+      },
+      "artifact": {
+        "blake3": "32df42507bf090203d5696d40bb2e70b0d084982a49ccc954aa10ec060f6254e",
+        "bytes": 547426
+      },
+      "certificate_blake3": "b3f506f4480ee69a574d38f3860f6723153ef6270318ae3ce75e49b1c6ef7a27",
+      "certificate_bytes": 119216,
+      "emitted_IxIR1_declarations": 517,
+      "expected_value": 1255,
+      "measurements": {
+        "IxIR1_indexed_addressing": {
+          "maximum_ns": 6175657,
+          "median_ns": 5842946,
+          "minimum_ns": 5811055,
+          "samples_ns": [
+            6175657,
+            5842946,
+            5811055
+          ]
+        },
+        "IxIR1_raw_lowering": {
+          "maximum_ns": 489094,
+          "median_ns": 488172,
+          "minimum_ns": 469116,
+          "samples_ns": [
+            488172,
+            489094,
+            469116
+          ]
+        },
+        "IxIR1_reference_addressing": {
+          "maximum_ns": 349047234,
+          "median_ns": 336744584,
+          "minimum_ns": 335145892,
+          "samples_ns": [
+            349047234,
+            335145892,
+            336744584
+          ]
+        },
+        "assembly_total": {
+          "maximum_ns": 26829840,
+          "median_ns": 26255260,
+          "minimum_ns": 25801821,
+          "samples_ns": [
+            26255260,
+            26829840,
+            25801821
+          ]
+        },
+        "build_source_units": {
+          "maximum_ns": 618500954,
+          "median_ns": 604876008,
+          "minimum_ns": 599817028,
+          "samples_ns": [
+            604876008,
+            599817028,
+            618500954
+          ]
+        },
+        "close_members": {
+          "maximum_ns": 1233,
+          "median_ns": 1213,
+          "minimum_ns": 1202,
+          "samples_ns": [
+            1213,
+            1233,
+            1202
+          ]
+        },
+        "entry_certificate": {
+          "maximum_ns": 150805,
+          "median_ns": 147909,
+          "minimum_ns": 141598,
+          "samples_ns": [
+            150805,
+            147909,
+            141598
+          ]
+        },
+        "erasure_and_IxIR0_addressing": {
+          "maximum_ns": 15192761,
+          "median_ns": 15098069,
+          "minimum_ns": 14956528,
+          "samples_ns": [
+            15192761,
+            15098069,
+            14956528
+          ]
+        },
+        "imported_evidence": {
+          "maximum_ns": 1829336,
+          "median_ns": 1815930,
+          "minimum_ns": 1797985,
+          "samples_ns": [
+            1829336,
+            1815930,
+            1797985
+          ]
+        },
+        "indexed_exact_image_audit": {
+          "maximum_ns": 1128141,
+          "median_ns": 1103925,
+          "minimum_ns": 1006000,
+          "samples_ns": [
+            1128141,
+            1103925,
+            1006000
+          ]
+        },
+        "indexed_semantic_audit": {
+          "maximum_ns": 1378524,
+          "median_ns": 1263477,
+          "minimum_ns": 1225655,
+          "samples_ns": [
+            1378524,
+            1263477,
+            1225655
+          ]
+        },
+        "prepare_audit_indexes": {
+          "maximum_ns": 1252827,
+          "median_ns": 1170070,
+          "minimum_ns": 1169860,
+          "samples_ns": [
+            1252827,
+            1169860,
+            1170070
+          ]
+        },
+        "program_preflight": {
+          "maximum_ns": 2595782,
+          "median_ns": 2314242,
+          "minimum_ns": 2287130,
+          "samples_ns": [
+            2314242,
+            2287130,
+            2595782
+          ]
+        },
+        "reference_exact_source_audit": {
+          "maximum_ns": 275521992,
+          "median_ns": 189969045,
+          "minimum_ns": 178048696,
+          "samples_ns": [
+            275521992,
+            189969045,
+            178048696
+          ]
+        },
+        "reference_semantic_audit": {
+          "maximum_ns": 150799033,
+          "median_ns": 90298216,
+          "minimum_ns": 89767633,
+          "samples_ns": [
+            150799033,
+            90298216,
+            89767633
+          ]
+        },
+        "source_context": {
+          "maximum_ns": 95150,
+          "median_ns": 94428,
+          "minimum_ns": 92685,
+          "samples_ns": [
+            92685,
+            95150,
+            94428
+          ]
+        }
+      },
+      "raw": {
+        "blake3": "bebbeb9217f42225324b9d467c321f912ceaba9b2a13b5c2c7ef5a674f7a50c2",
+        "bytes": 128948
+      },
+      "raw_IxIR1_declarations": 517,
+      "reachable_source_constants": 261,
+      "reference_addressing_exact": true,
+      "source_and_IR_execution_agree": true,
+      "source_blake3": "f298a127339880c65c39081a4865bb44b65a37a6fd2510bedb00e1e4633478d9",
+      "source_bytes": 47191,
+      "source_constants": 261,
+      "source_root": "707701c00838ca8c1a80de33a35fde4cd500c268c662ee892bcd581032321e3d",
+      "units": 5,
+      "width": 256
+    },
+    {
+      "addressed": {
+        "blake3": "7e711c9857fd0ec3bb1dcd09ea4e3d3ce8fadfd968987e4c4712341d5057828d",
+        "bytes": 806207
+      },
+      "artifact": {
+        "blake3": "e2c9a50d8282b638eef06e915a200a8cb84ad1dda7eca6f0a4b9a2d7acf23ae6",
+        "bytes": 1281788
+      },
+      "certificate_blake3": "6342a41276ebb114eb4cbf1ccc3e359486d6555300e5ad59aa4222e4091e3732",
+      "certificate_bytes": 279203,
+      "emitted_IxIR1_declarations": 1211,
+      "expected_value": 1599,
+      "measurements": {
+        "IxIR1_indexed_addressing": {
+          "maximum_ns": 16242861,
+          "median_ns": 16203300,
+          "minimum_ns": 16170951,
+          "samples_ns": [
+            16203300,
+            16242861,
+            16170951
+          ]
+        },
+        "IxIR1_raw_lowering": {
+          "maximum_ns": 1034985,
+          "median_ns": 1031298,
+          "minimum_ns": 1014837,
+          "samples_ns": [
+            1031298,
+            1034985,
+            1014837
+          ]
+        },
+        "IxIR1_reference_addressing": {
+          "maximum_ns": 1952040244,
+          "median_ns": 1864551424,
+          "minimum_ns": 1839933007,
+          "samples_ns": [
+            1839933007,
+            1952040244,
+            1864551424
+          ]
+        },
+        "assembly_total": {
+          "maximum_ns": 128945514,
+          "median_ns": 120432406,
+          "minimum_ns": 120020895,
+          "samples_ns": [
+            120020895,
+            128945514,
+            120432406
+          ]
+        },
+        "build_source_units": {
+          "maximum_ns": 1436726431,
+          "median_ns": 1384277045,
+          "minimum_ns": 1377520705,
+          "samples_ns": [
+            1377520705,
+            1384277045,
+            1436726431
+          ]
+        },
+        "close_members": {
+          "maximum_ns": 3537,
+          "median_ns": 3486,
+          "minimum_ns": 3196,
+          "samples_ns": [
+            3486,
+            3537,
+            3196
+          ]
+        },
+        "entry_certificate": {
+          "maximum_ns": 341224,
+          "median_ns": 335304,
+          "minimum_ns": 326466,
+          "samples_ns": [
+            326466,
+            335304,
+            341224
+          ]
+        },
+        "erasure_and_IxIR0_addressing": {
+          "maximum_ns": 84670201,
+          "median_ns": 82919714,
+          "minimum_ns": 81907724,
+          "samples_ns": [
+            82919714,
+            84670201,
+            81907724
+          ]
+        },
+        "imported_evidence": {
+          "maximum_ns": 8332337,
+          "median_ns": 8316219,
+          "minimum_ns": 8306562,
+          "samples_ns": [
+            8306562,
+            8316219,
+            8332337
+          ]
+        },
+        "indexed_exact_image_audit": {
+          "maximum_ns": 2603117,
+          "median_ns": 2515873,
+          "minimum_ns": 2416464,
+          "samples_ns": [
+            2515873,
+            2603117,
+            2416464
+          ]
+        },
+        "indexed_semantic_audit": {
+          "maximum_ns": 3131475,
+          "median_ns": 3081552,
+          "minimum_ns": 2942006,
+          "samples_ns": [
+            3081552,
+            3131475,
+            2942006
+          ]
+        },
+        "prepare_audit_indexes": {
+          "maximum_ns": 3787665,
+          "median_ns": 3737679,
+          "minimum_ns": 3728012,
+          "samples_ns": [
+            3728012,
+            3787665,
+            3737679
+          ]
+        },
+        "program_preflight": {
+          "maximum_ns": 10439722,
+          "median_ns": 10292040,
+          "minimum_ns": 10276869,
+          "samples_ns": [
+            10439722,
+            10292040,
+            10276869
+          ]
+        },
+        "reference_exact_source_audit": {
+          "maximum_ns": 1095898131,
+          "median_ns": 977775457,
+          "minimum_ns": 972372329,
+          "samples_ns": [
+            977775457,
+            1095898131,
+            972372329
+          ]
+        },
+        "reference_semantic_audit": {
+          "maximum_ns": 499291342,
+          "median_ns": 456432725,
+          "minimum_ns": 451225989,
+          "samples_ns": [
+            456432725,
+            499291342,
+            451225989
+          ]
+        },
+        "source_context": {
+          "maximum_ns": 213694,
+          "median_ns": 208514,
+          "minimum_ns": 207292,
+          "samples_ns": [
+            208514,
+            207292,
+            213694
+          ]
+        }
+      },
+      "raw": {
+        "blake3": "be0f9b6e01f708871abf58bc7c6b8b286e14bd0516e83dc1f88e245a9cae369f",
+        "bytes": 302014
+      },
+      "raw_IxIR1_declarations": 1211,
+      "reachable_source_constants": 611,
+      "reference_addressing_exact": true,
+      "source_and_IR_execution_agree": true,
+      "source_blake3": "8f1d2b72d087eed63d8c5d9b18ff68a061485d29bba0eeb0cbe0ee54aac4d751",
+      "source_bytes": 110573,
+      "source_constants": 611,
+      "source_root": "61a8bc14b4b6068d8133ca3202485a1e3ab4038c5e4395b5c5a6c16412102dcb",
+      "units": 11,
+      "width": 600
+    }
+  ],
+  "repetitions_per_variant": 3
+}
