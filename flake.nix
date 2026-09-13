@@ -109,6 +109,10 @@
             ./CatalogContact.lean
             ./X86ObjectFixture.lean
             ./SourceCoverage.lean
+            ./SourceIxby.lean
+            ./IxonToIxby.lean
+            ./vendor/ixby
+            ./fixtures/ixby
             ./SourceModular.lean
             ./SourceRecursion.lean
             ./SourceCallReuse.lean
@@ -176,6 +180,10 @@
             ./CatalogContact.lean
             ./X86ObjectFixture.lean
             ./SourceCoverage.lean
+            ./SourceIxby.lean
+            ./IxonToIxby.lean
+            ./vendor/ixby
+            ./fixtures/ixby
             ./SourceModular.lean
             ./SourceRecursion.lean
             ./SourceCallReuse.lean
@@ -478,6 +486,26 @@
               --fixture ./.lake/build/bin/source-evidence \
               --expected ${auditSrc}/fixtures/source-evidence/expected.json \
               --modular-expected ${auditSrc}/fixtures/source-modular/expected.json
+          '';
+        };
+
+        # Checked Ixon-to-Ixby compilation against the exact pinned reference machine.
+        ixbyCheck = lake2nix.mkPackage {
+          inherit lakeDeps;
+          lakeArtifacts = compilatrixLib;
+          src = leanSrc;
+          buildInputs = leanBuildInputs ++ [pkgs.coreutils];
+          name = "source-ixby";
+          installArtifacts = false;
+          postBuild = ''
+            lake build check-ixby ixby-run ixon-to-ixby
+            ./.lake/build/bin/check-ixby \
+              --fixture ./.lake/build/bin/source-ixby \
+              --runner ./.lake/build/bin/ixby-run \
+              --compiler ./.lake/build/bin/ixon-to-ixby \
+              --root ${auditSrc} \
+              --expected ${auditSrc}/fixtures/ixby/expected.json \
+              --upstream ${auditSrc}/fixtures/ixon-upstream
           '';
         };
 
@@ -878,6 +906,7 @@
           source-modular = sourceModularCheck;
           assembly-scaling = assemblyScalingCheck;
           source-evidence = sourceEvidenceCheck;
+          ixby = ixbyCheck;
           ixir2-identity = ixir2Check;
           source-unique-reuse = sourceUniqueReuseCheck;
           source-native-unique = sourceNativeUniqueCheck;

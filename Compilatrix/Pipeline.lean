@@ -983,6 +983,31 @@ def validatedMainFrame (mainAddress : Address) : Ixon.Eval.Frame :=
 /-- Canonical closed Ixon entry expression for `compileValidated`. -/
 def validatedMainSource : Ixon.Expr := .ref 0 #[]
 
+/-- Checked Ixon erasure, independent of any backend's ownership or calling
+convention. Retains the exact source certificate and erased declarations. -/
+structure ValidatedErasure
+    (constants : List (Address × Constant)) (mainAddress : Address)
+    (config : Config) (eraseFuel : Nat) where
+  memberScope : Sim.MemberScope
+  erasure : EraseAddressed.RunTrace
+    (EraseValidator.eraseCtxOf (validatedEvalCtx constants config))
+    constants (.ref mainAddress) eraseFuel
+  entry : @EraseValidator.CertifiedSharedExpr
+    (validatedEvalCtx constants config)
+    { env := IxIR0.Env.ofList erasure.result.raw }
+    none (EraseValidator.tablesOfFrame (validatedMainFrame mainAddress))
+    (validatedMainFrame mainAddress).selfAddr [] eraseFuel
+    validatedMainSource memberScope
+  entryTarget : entry.target = (.ref mainAddress : IxIR0.Expr)
+  members : Sim.MemberCoverage
+    (validatedEvalCtx constants config).inlineSharing
+    { env := IxIR0.Env.ofList erasure.result.raw } memberScope.plan
+  strict : (validatedEvalCtx constants config).Strict
+  /-- The exact addressed IxIR₀ graph admitted to lowering contains no extern
+  declaration. This is the conservative certified ownership ABI: reopening
+  the boundary requires replacing this field with an explicit policy. -/
+  externsRejected : ValidatedExternsRejected erasure.result.declarations
+
 /-- Proof-facing result of validator-gated compilation.  It retains the exact
 closed-expression erasure certificate and both successful execution traces
 consumed by the fully addressed semantic theorem.  The production artifact is
@@ -1119,26 +1144,16 @@ def coveragePlan [Sim.MemberScope]
       coveragePlan ectx ictx validateFuel rounds db'
         (oks.reverse ++ done) (failed.map (·.1))
 
-/-- Check, erase, **validate the exact erased output**, and lower.
-
-The composition of `compile` with the proof-producing erasure validator:
-after `checkProgram` and the strict eraser, every non-block constant must earn
-a `Covered` certificate against the erased environment. The whole program is
-then re-certified through the sharing-aware entry point, whose result records
-the erasure equation and simultaneous-member coverage for this exact constant
-list. The closed main is certified in the same runtime-derived member scope,
-and both lowering address passes retain their successful equations. The first
-declaration the validator rejects is reported as `Error.validate` with the
-validator's own diagnostic; `mainAddress` itself must be a certifiable
-declaration. Out-of-fragment programs belong to `compile`. -/
-private def compileValidatedCore [Sim.MemberScope]
+/-- Check usage and certify the exact erased program and closed entry.
+Callers perform resource preflight before entering this shared core. Coverage
+validation is sharing-aware and retains the simultaneous-member scope. The
+IxIR₁ compiler extends this result with its existing addressed lowering trace;
+other backends can consume the same checked IxIR₀ boundary directly. -/
+private def eraseValidatedCore [Sim.MemberScope]
     (constants : List (Address × Constant))
     (mainAddress : Address) (config : Config)
-    (mainWorld : Owned) (checkFuel eraseFuel validateFuel lowerFuel : Nat) :
-    Except Error (ValidatedCompilation constants mainAddress config
-      mainWorld eraseFuel lowerFuel) := do
-  let _ ← preflightValidated config.limits constants checkFuel eraseFuel
-    validateFuel lowerFuel
+    (checkFuel eraseFuel validateFuel : Nat) :
+    Except Error (ValidatedErasure constants mainAddress config eraseFuel) := do
   checkProgramCore constants checkFuel
   let ectx := validatedEvalCtx constants config
   -- the artifact of record: the strict pipeline eraser (split
@@ -1200,22 +1215,6 @@ private def compileValidatedCore [Sim.MemberScope]
     if hentryTarget : entry.target == (.ref mainAddress : IxIR0.Expr) then
       have hentryTargetEq : entry.target =
           (.ref mainAddress : IxIR0.Expr) := beq_iff_eq.mp hentryTarget
-      let lowering ←
-        match IxIR1.Lower.lowerAllIndexedFullyAddressedWithTrace
-            erased.declarations erased.main mainWorld lowerFuel with
-        | .ok trace => pure trace
-        | .error message => throw (.lower message)
-      let targetExternsRejected : PLift
-          (ValidatedTargetExternsRejected
-            (lowering.result.artifacts.flatMap
-              IxIR1.ReaddressAll.Artifact.declarations)) ←
-        match hboundary : firstValidatedTargetExtern?
-            (lowering.result.artifacts.flatMap
-              IxIR1.ReaddressAll.Artifact.declarations) with
-        | none => pure ⟨hboundary⟩
-        | some address =>
-          throw (.validate address
-            "certified lowering emitted an extern outside its ownership ABI")
       let retainedEntry : @EraseValidator.CertifiedSharedExpr
           (validatedEvalCtx constants config)
           { env := IxIR0.Env.ofList erasure.result.raw }
@@ -1247,15 +1246,52 @@ private def compileValidatedCore [Sim.MemberScope]
             { neutralElims := by simpa using hstrictInline.neutralElims
               stringLiterals := by
                 simpa using hstrictInline.stringLiterals }
-          externsRejected := externsRejected.down
-          lowering
-          targetExternsRejected := targetExternsRejected.down }
+          externsRejected := externsRejected.down }
     else
       throw (.validate mainAddress
         "certified main differs from the compiled main reference")
   else
     throw (.validate mainAddress
       "certified erasure differs from the compiled erasure")
+
+/-- Checked erasure entry for backends that refine IxIR₀ directly. -/
+def eraseValidatedWithTrace (constants : List (Address × Constant))
+    (mainAddress : Address) (config : Config := {})
+    (checkFuel : Nat := Ixon.UsageCheck.defaultFuel)
+    (eraseFuel : Nat := Erase.defaultFuel)
+    (validateFuel : Nat := Erase.defaultFuel) :
+    Except Error (ValidatedErasure constants mainAddress config eraseFuel) := do
+  let _ ← preflightValidated config.limits constants checkFuel eraseFuel validateFuel 0
+  letI _memberScope : Sim.MemberScope := { plan := programMemberPlan constants }
+  eraseValidatedCore constants mainAddress config checkFuel eraseFuel validateFuel
+
+private def compileValidatedCore [Sim.MemberScope]
+    (constants : List (Address × Constant))
+    (mainAddress : Address) (config : Config)
+    (mainWorld : Owned) (checkFuel eraseFuel validateFuel lowerFuel : Nat) :
+    Except Error (ValidatedCompilation constants mainAddress config
+      mainWorld eraseFuel lowerFuel) := do
+  let _ ← preflightValidated config.limits constants checkFuel eraseFuel
+    validateFuel lowerFuel
+  let source ← eraseValidatedCore constants mainAddress config checkFuel eraseFuel validateFuel
+  let lowering ←
+    match IxIR1.Lower.lowerAllIndexedFullyAddressedWithTrace
+        source.erasure.result.declarations source.erasure.result.main mainWorld lowerFuel with
+    | .ok trace => pure trace
+    | .error message => throw (.lower message)
+  let targetExternsRejected : PLift
+      (ValidatedTargetExternsRejected
+        (lowering.result.artifacts.flatMap IxIR1.ReaddressAll.Artifact.declarations)) ←
+    match hboundary : firstValidatedTargetExtern?
+        (lowering.result.artifacts.flatMap IxIR1.ReaddressAll.Artifact.declarations) with
+    | none => pure ⟨hboundary⟩
+    | some address => throw (.validate address
+        "certified lowering emitted an extern outside its ownership ABI")
+  return {
+    memberScope := source.memberScope, erasure := source.erasure, entry := source.entry
+    entryTarget := source.entryTarget, members := source.members, strict := source.strict
+    externsRejected := source.externsRejected, lowering
+    targetExternsRejected := targetExternsRejected.down }
 
 /-- Validator-gated production compiler with a simultaneous-member scope
 derived from the exact runtime program and all proof-facing pass equations

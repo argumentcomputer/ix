@@ -73,6 +73,7 @@ and linked source-family documents give their current scope.
 
 | Interface | Result and selection boundary |
 | --- | --- |
+| [`Ixby.compileIxon`](../Compilatrix/Ixby/Source.lean) | Checked erasure → immutable Ixby. [Per-input execution certificates and canonical profile export](ixby-backend.md); global structural lowering correctness remains open. |
 | [`Pipeline.compileValidated`](../Compilatrix/Pipeline.lean) | Checked source erasure and owned IxIR₁. `Pipeline.compile` bypasses erasure certification and is not interchangeable for certified clients. |
 | [`Modular.build` / `restore`](../Compilatrix/Modular/Build.lean) and [`Modular.assemble`](../Compilatrix/Modular/Assemble.lean) | [Bounded source units](modular-source.md), exact evidence reuse or fresh retained checking, and proved composition into the existing source-validated IxIR₁ artifact. |
 | [`IxIR2.Pipeline.compileValidated`](../Compilatrix/IxIR2/Pipeline.lean) | Separate checked baseline CFG attachment with trace and provenance; exact logical/physical baseline composition uses the credit-free inventory. |

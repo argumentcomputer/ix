@@ -174,3 +174,8 @@ import Compilatrix.Borrow.RuntimeSim
 import Compilatrix.Borrow.RuntimeInput
 import Compilatrix.IxIR2.Borrow.OpenExamples
 import Compilatrix.Fence
+
+import Compilatrix.Ixby.Catalog
+import Compilatrix.Ixby.Examples
+import Compilatrix.Ixby.Report
+import Compilatrix.Ixby.Fence

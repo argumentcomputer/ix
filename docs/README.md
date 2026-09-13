@@ -79,3 +79,5 @@ evidence](thesis-counter-evidence.md) records deterministic interpreter counts.
 The [2026-09-09 code and documentation review](review-2026-09-09.md) is a
 historical snapshot; use the roadmap and focused specifications for current
 status.
+
+- [Ixby backend](ixby-backend.md): checked Ixon compilation, functional bytecode, canonical profile export, and per-input execution certificates.

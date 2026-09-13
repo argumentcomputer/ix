@@ -4,6 +4,11 @@ open System Lake DSL
 
 package compilatrix
 
+/- Exact pure Ixby reference, pinned independently of its proving backends. -/
+lean_lib Ixby where
+  srcDir := "vendor/ixby"
+  roots := #[`Ix.Ixby]
+
 /- Blake3 FFI. Keep this revision in lockstep with the flake's
 `blake3-lean` input and `lake-manifest.json`. -/
 require Blake3 from git
@@ -36,6 +41,20 @@ lean_exe «x86-object-fixture» where
   root := `X86ObjectFixture
 
 /- Source-stage coverage and fresh-process compiler artifact snapshots. -/
+lean_exe «ixon-to-ixby» where
+  root := `IxonToIxby
+
+lean_exe «ixby-run» where
+  srcDir := "scripts"
+  root := `IxbyRun
+
+lean_exe «check-ixby» where
+  srcDir := "scripts"
+  root := `CheckIxby
+
+lean_exe «source-ixby» where
+  root := `SourceIxby
+
 lean_exe «source-coverage» where
   root := `SourceCoverage
 

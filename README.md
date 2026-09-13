@@ -19,10 +19,14 @@ The design combines two ideas:
 
 The validated pipeline compiles the supported Ixon fragment to owned IxIR₁.
 Checked attachments extend it to IxIR₂ and selected x86-64 programs.
+The [Ixby backend](docs/ixby-backend.md) compiles checked Ixon directly from
+IxIR₀ to the pinned functional machine, with canonical export and per-input
+execution certificates.
 
 | Area | Current scope |
 | --- | --- |
 | Source and identity | Strict Ixon codecs, bounded catalog ingress, [modular source certificates](docs/modular-source.md), cycle-safe IxIR₀/IxIR₁ addressing, and canonical [IxIR₂ snapshots](docs/ixir2-wire.md) |
+| Functional bytecode | [Ixby](docs/ixby-backend.md): closures, constructors, recursors, runtime data arguments, and checked reference execution |
 | Ownership and optimization | Checked shape analysis, shrinking passes, shared and unique reuse, borrowed calls, and resource/reclamation proofs |
 | Native code | Source-to-ELF proofs for selected families and physical scalar/allocating CFGs, including static Word captures, runtime application, reclamation, branches, joins, direct calls, and finite heap/stack proofs |
 | Validation | Axiom fences, independent artifact/ABI checks, malformed-input tests, fresh-process reproducibility, and retained performance experiments |
