@@ -4,6 +4,7 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 -/
 
 import Ix.Aiur.Proofs.CompiledCircuitRows
+import Ix.Aiur.Proofs.BlockAllocation
 import Tests.Aiur.EmissionReader
 
 /-! Actual native function and circuit records drive both symbolic and valued
@@ -84,6 +85,11 @@ private def readCorpus : Reader Unit := do
     let circuits := (← readList (← readCount) do
       return Bytecode.Circuit.mk "native" (← readIndices) (← readLayout)).toArray
     unless functions.size == 4 && circuits.size == 8 do throw "incomplete native circuit shapes"
+    for (function, index) in functions.toList.zipIdx do
+      let layout := ((Concrete.Bytecode.blockLayout function.body).run
+        (.new function.layout.inputSize)).2.functionLayout
+      unless function.layout == { layout with lookups := layout.lookups + 1 } do
+        throw s!"native function layout differs from compiler: program {seed}, function {index}"
     let program : Bytecode.Toplevel := ⟨functions, #[], circuits⟩
     for (circuit, index) in circuits.toList.zipIdx do
       assignments := assignments + (← readCircuit program circuit s!"program {seed}, circuit {index}")
@@ -96,7 +102,7 @@ def run (path : System.FilePath) : IO Unit := do
   let bytes ← IO.FS.readBinFile path
   match readCorpus.run (bytes, 0) with
   | .error error => throw (IO.userError error)
-  | .ok _ => IO.println "circuit expressions: 96 native circuits and 384 assignments match"
+  | .ok _ => IO.println "circuit expressions: 96 native circuits, 48 compiler function layouts and 384 assignments match"
 
 end AiurTests.CircuitExpressions
 

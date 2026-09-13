@@ -410,11 +410,11 @@ sizes, constrained and advice calls, nested continuations, visibility and
 public-claim widths. All 54 parallel release Rust tests pass, including the
 supplied rank/output ambiguity regression; release Clippy denies warnings.
 
-The audit checks 586 roots by traversing checked types, bodies and inductive
-constructors. Six roots use no axioms; ninety-five depend only on `propext`;
-182 use exactly `propext` and `Quot.sound`; the other 303 use exactly
+The audit checks 647 roots by traversing checked types, bodies and inductive
+constructors. Eight roots use no axioms; 104 depend only on `propext`;
+198 use exactly `propext` and `Quot.sound`; the other 337 use exactly
 `propext`, `Classical.choice` and `Quot.sound`. The combined closure
-has 16,839 logical declarations and 17,608 declarations after following runtime
+has 16,956 logical declarations and 17,725 declarations after following runtime
 workers and replacements. The frozen report records four native runtime entry points,
 three partial opaque sources and all 162 Ix recursion worker implementations.
 Bytecode comparison/hashing, tail-match restoration and source-value hashing
@@ -606,6 +606,31 @@ Native AIR, compiler output
 and verification-key formats are unchanged. Earlier compiler-pass reflection,
 runtime refinement and the certified semantic/cryptographic endpoint remain
 separate obligations.
+
+`OperationDegrees` and `BlockDegrees` prove that tracked degree zero implies a
+constant expression, starting from advice inputs and surviving every operation,
+branch and continuation. Positive tracked degrees may accompany folded
+constants. This distinction justifies the compiler's zero-column equality-test
+case without excluding conservative metadata used by native emission.
+`OperationAllocation` and `CompilerAllocation` identify the actual compiler's
+logical output degrees and auxiliary allocation for all 34 operations.
+`EmissionAllocation`, `CompilerBranches` and `BlockAllocation` prove agreement
+with successful symbolic emission through complete operation sequences and
+recursive blocks. The proofs account for degree-based multiplication allocation,
+word packing and carries, branch reuse, default inverse columns and continuation
+advice. They do not assume equality of compiler and emitter allocation.
+
+The allocation comparisons reuse the native expression corpora. All 1,168
+sequences whose inputs satisfy the degree-zero invariant, all 384 block layouts
+and all 48 function layouts agree with the actual compiler. The remaining 584
+operation sequences deliberately contain degree-zero nonconstant inputs; all
+their earlier expression and value comparisons still run. The 647-root audit
+preserves all 586 earlier statements and axiom sets, 528 frozen definitions and
+162 worker bodies, adding 61 roots and nine definitions/constructors. The strict
+297-job build and complete component gate pass with seventeen native comparison
+corpora. This checkpoint adds no native behavior change. Deriving successful symbolic emission
+and circuit-width bounds from the complete compiler and checked program remains
+open, alongside Rust refinement and the certified endpoint.
 
 The budget comparison covers
 21,964 Rust/Lean cases, including

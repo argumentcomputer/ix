@@ -121,3 +121,11 @@ results. Its 586-root audit preserves every earlier statement, axiom set,
 frozen definition and recursion worker. No new bug or native AIR change was
 found. Rust refinement, accepted-proof extraction, earlier compiler passes
 and the certified semantic/cryptographic endpoint remain open.
+
+The allocation checkpoint proves agreement between actual compiler layout and
+successful symbolic operation/block emission. Its 647-root audit preserves all
+earlier statements, axiom sets, frozen definitions and recursion workers. The
+native comparisons cover 1,168 operation sequences satisfying the degree-zero
+constant invariant, 384 block layouts and 48 function layouts. No new bug or
+native behavior change was found; complete compiler validity and the remaining
+full-C8 obligations remain open.

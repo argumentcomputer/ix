@@ -4873,6 +4873,449 @@ ROOT Aiur.NativeAIR.CircuitEmitter.compileCircuit_reflects
                   List.mapM (Aiur.NativeAIR.readLookup buffer) compiled.base.graph.lookups =
                     some (List.ofFn fun slot => result.lookup ↑slot)
 AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.Bytecode.selectedDegree_initial
+∀ (degrees indices : Array Nat) (initial : Nat),
+  Aiur.Bytecode.selectedDegree degrees indices initial = max initial (Aiur.Bytecode.selectedDegree degrees indices 0)
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.Bytecode.selectedDegree_append
+∀ (degrees left right : Array Nat) (initial : Nat),
+  Aiur.Bytecode.selectedDegree degrees (left ++ right) initial =
+    max (Aiur.Bytecode.selectedDegree degrees left initial) (Aiur.Bytecode.selectedDegree degrees right 0)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.Concrete.Bytecode.getDegree_list
+∀ (indices : List Aiur.Bytecode.ValIdx) (initial : Aiur.Concrete.Bytecode.LayoutMState),
+  StateT.run (List.mapM Aiur.Concrete.Bytecode.getDegree indices) initial =
+    (List.map (fun i => initial.degrees[i]?.getD 0) indices, initial)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.Concrete.Bytecode.getDegree_array
+∀ (indices : Array Aiur.Bytecode.ValIdx),
+  Array.mapM Aiur.Concrete.Bytecode.getDegree indices = fun initial =>
+    pure (Array.map (fun i => initial.degrees[i]?.getD 0) indices, initial)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.Concrete.Bytecode.opLayout_allocation
+∀ (op : Aiur.Bytecode.Op) (initial : Aiur.Concrete.Bytecode.LayoutMState),
+  (StateT.run (Aiur.Concrete.Bytecode.opLayout op) initial).snd.degrees =
+      initial.degrees ++ (Aiur.Bytecode.Op.allocation initial.degrees op).degrees ∧
+    (StateT.run (Aiur.Concrete.Bytecode.opLayout op) initial).snd.functionLayout.auxiliaries =
+      initial.functionLayout.auxiliaries + (Aiur.Bytecode.Op.allocation initial.degrees op).auxiliaries
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.RowExpr.ZeroConstant.konst
+∀ (value : Aiur.G), (Aiur.NativeAIR.RowExpr.konst value).ZeroConstant
+AXIOMS []
+ROOT Aiur.NativeAIR.RowExpr.ZeroConstant.variable
+∀ (column : Aiur.NativeAIR.ColRef), (Aiur.NativeAIR.RowExpr.variable column).ZeroConstant
+AXIOMS []
+ROOT Aiur.NativeAIR.RowExpr.ZeroConstant.add
+∀ {left right : Aiur.NativeAIR.RowExpr}, left.ZeroConstant → right.ZeroConstant → (left.add right).ZeroConstant
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.RowExpr.ZeroConstant.sub
+∀ {left right : Aiur.NativeAIR.RowExpr}, left.ZeroConstant → right.ZeroConstant → (left.sub right).ZeroConstant
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.RowExpr.ZeroConstant.mul
+∀ {left right : Aiur.NativeAIR.RowExpr}, left.ZeroConstant → right.ZeroConstant → (left.mul right).ZeroConstant
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.OpEmitter.DegreeValid.empty
+Aiur.NativeAIR.OpEmitter.DegreeValid #[]
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.OpEmitter.DegreeValid.singleton
+∀ {row : Aiur.NativeAIR.RowExpr}, row.ZeroConstant → Aiur.NativeAIR.OpEmitter.DegreeValid #[row]
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.OpEmitter.DegreeValid.append
+∀ {left right : Array Aiur.NativeAIR.RowExpr},
+  Aiur.NativeAIR.OpEmitter.DegreeValid left →
+    Aiur.NativeAIR.OpEmitter.DegreeValid right → Aiur.NativeAIR.OpEmitter.DegreeValid (left ++ right)
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.OpEmitter.DegreeValid.push
+∀ {rows : Array Aiur.NativeAIR.RowExpr} {row : Aiur.NativeAIR.RowExpr},
+  Aiur.NativeAIR.OpEmitter.DegreeValid rows → row.ZeroConstant → Aiur.NativeAIR.OpEmitter.DegreeValid (rows.push row)
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.OpEmitter.DegreeValid.read
+∀ {rows : Array Aiur.NativeAIR.RowExpr},
+  Aiur.NativeAIR.OpEmitter.DegreeValid rows →
+    ∀ {index : Nat} {row : Aiur.NativeAIR.RowExpr}, rows[index]? = some row → row.ZeroConstant
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.OpEmitter.DegreeValid.getD
+∀ {rows : Array Aiur.NativeAIR.RowExpr},
+  Aiur.NativeAIR.OpEmitter.DegreeValid rows →
+    ∀ (index : Nat), (rows[index]?.getD (Aiur.NativeAIR.RowExpr.konst 0)).ZeroConstant
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.OpEmitter.DegreeValid.select
+∀ {rows : Array Aiur.NativeAIR.RowExpr},
+  Aiur.NativeAIR.OpEmitter.DegreeValid rows →
+    ∀ {indices : Array Nat} {selected : Array Aiur.NativeAIR.RowExpr},
+      Aiur.NativeAIR.OpEmitter.select rows indices = some selected → Aiur.NativeAIR.OpEmitter.DegreeValid selected
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.OpEmitter.advice_degreeValid
+∀ (first count : Nat), Aiur.NativeAIR.OpEmitter.DegreeValid (Aiur.NativeAIR.OpEmitter.advice first count)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.OpEmitter.packFour_degreeValid
+∀ (bytes : Fin 4 → Aiur.NativeAIR.RowExpr),
+  (∀ (index : Fin 4), (bytes index).ZeroConstant) → (Aiur.NativeAIR.OpEmitter.packFour bytes).ZeroConstant
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.OpEmitter.readWord_degreeValid
+∀ {rows : Array Aiur.NativeAIR.RowExpr},
+  Aiur.NativeAIR.OpEmitter.DegreeValid rows →
+    ∀ {indices : Array Nat} {word : Aiur.NativeAIR.RowExpr},
+      Aiur.NativeAIR.OpEmitter.readWord rows indices = some word → word.ZeroConstant
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.OpEmitter.fromScalar_degreeValid
+∀ {scalar : Aiur.NativeAIR.ScalarEmission},
+  scalar.output.ZeroConstant → Aiur.NativeAIR.OpEmitter.DegreeValid (Aiur.NativeAIR.OpEmitter.fromScalar scalar).outputs
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.OpEmitter.emitMul_degreeValid
+∀ (selector : Aiur.NativeAIR.Expr) (first : Nat) {left right : Aiur.NativeAIR.RowExpr},
+  left.ZeroConstant → right.ZeroConstant → (Aiur.NativeAIR.emitMul selector first left right).output.ZeroConstant
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.OpEmitter.emitEqZero_degreeValid
+∀ (selector : Aiur.NativeAIR.Expr) (first : Nat) (input : Aiur.NativeAIR.RowExpr),
+  (Aiur.NativeAIR.emitEqZero selector first input).output.ZeroConstant
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.OpEmitter.emitByte2_degreeValid
+∀ (first : Nat) (kind : Aiur.AIR.Byte2Kind) (left right : Aiur.NativeAIR.RowExpr),
+  Aiur.NativeAIR.OpEmitter.DegreeValid (Aiur.NativeAIR.OpEmitter.emitByte2 first kind left right).outputs
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.OpEmitter.emitWordSum_degreeValid
+∀ (first : Nat) {sum : Aiur.NativeAIR.RowExpr},
+  sum.ZeroConstant → Aiur.NativeAIR.OpEmitter.DegreeValid (Aiur.NativeAIR.OpEmitter.emitWordSum first sum).outputs
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.OpEmitter.emitU32LessThan_degreeValid
+∀ (selector : Aiur.NativeAIR.Expr) (first : Nat) (left right : Aiur.NativeAIR.RowExpr),
+  Aiur.NativeAIR.OpEmitter.DegreeValid (Aiur.NativeAIR.OpEmitter.emitU32LessThan selector first left right).outputs
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.OpEmitter.emitByte1_dispatch_degreeValid
+∀ (selector rank : Aiur.NativeAIR.Expr) (first : Nat) (kind : Aiur.AIR.Byte1Kind) (index : Nat)
+  {rows : Array Aiur.NativeAIR.RowExpr} {emission : Aiur.NativeAIR.OpEmitter.Emission},
+  Aiur.NativeAIR.OpEmitter.emitOp selector rank first (kind.op index) rows = some emission →
+    Aiur.NativeAIR.OpEmitter.DegreeValid emission.outputs
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.OpEmitter.emitByte2_dispatch_degreeValid
+∀ (selector rank : Aiur.NativeAIR.Expr) (first : Nat) (kind : Aiur.AIR.Byte2Kind) (a b : Nat)
+  {rows : Array Aiur.NativeAIR.RowExpr} {emission : Aiur.NativeAIR.OpEmitter.Emission},
+  Aiur.NativeAIR.OpEmitter.emitOp selector rank first (kind.op a b) rows = some emission →
+    Aiur.NativeAIR.OpEmitter.DegreeValid emission.outputs
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.OpEmitter.emitOp_degreeValid
+∀ {selector rank : Aiur.NativeAIR.Expr} {first : Nat} {op : Aiur.Bytecode.Op} {rows : Array Aiur.NativeAIR.RowExpr}
+  {emission : Aiur.NativeAIR.OpEmitter.Emission},
+  Aiur.NativeAIR.OpEmitter.DegreeValid rows →
+    Aiur.NativeAIR.OpEmitter.emitOp selector rank first op rows = some emission →
+      Aiur.NativeAIR.OpEmitter.DegreeValid emission.outputs
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.OpEmitter.emitOps_degreeValid
+∀ {selector rank : Aiur.NativeAIR.Expr} {ops : List Aiur.Bytecode.Op} {rows : Array Aiur.NativeAIR.RowExpr}
+  {column : Nat} {emission : Aiur.NativeAIR.OpEmitter.OpsEmission},
+  Aiur.NativeAIR.OpEmitter.DegreeValid rows →
+    Aiur.NativeAIR.OpEmitter.emitOps selector rank ops rows column = some emission →
+      Aiur.NativeAIR.OpEmitter.DegreeValid emission.values
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.OpEmitter.emitEqZero_allocation
+∀ (selector : Aiur.NativeAIR.Expr) (first : Nat) {input : Aiur.NativeAIR.RowExpr},
+  input.ZeroConstant →
+    ((Aiur.NativeAIR.emitEqZero selector first input).used,
+        (Aiur.NativeAIR.emitEqZero selector first input).output.degree) =
+      if input.degree = 0 then (0, 0) else (2, 1)
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.OpEmitter.rowDegrees_empty
+Aiur.NativeAIR.OpEmitter.rowDegrees #[] = #[]
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.OpEmitter.rowDegrees_append
+∀ (left right : Array Aiur.NativeAIR.RowExpr),
+  Aiur.NativeAIR.OpEmitter.rowDegrees (left ++ right) =
+    Aiur.NativeAIR.OpEmitter.rowDegrees left ++ Aiur.NativeAIR.OpEmitter.rowDegrees right
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.OpEmitter.rowDegrees_push
+∀ (rows : Array Aiur.NativeAIR.RowExpr) (row : Aiur.NativeAIR.RowExpr),
+  Aiur.NativeAIR.OpEmitter.rowDegrees (rows.push row) = (Aiur.NativeAIR.OpEmitter.rowDegrees rows).push row.degree
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.OpEmitter.rowDegrees_singleton
+∀ (row : Aiur.NativeAIR.RowExpr), Aiur.NativeAIR.OpEmitter.rowDegrees #[row] = #[row.degree]
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.OpEmitter.rowDegrees_getD
+∀ (rows : Array Aiur.NativeAIR.RowExpr) (index : Nat),
+  (Aiur.NativeAIR.OpEmitter.rowDegrees rows)[index]?.getD 0 =
+    (rows[index]?.getD (Aiur.NativeAIR.RowExpr.konst 0)).degree
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.OpEmitter.rowDegrees_read
+∀ {rows : Array Aiur.NativeAIR.RowExpr} {index : Nat} {row : Aiur.NativeAIR.RowExpr},
+  rows[index]? = some row → (Aiur.NativeAIR.OpEmitter.rowDegrees rows)[index]?.getD 0 = row.degree
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.OpEmitter.select_degrees
+∀ {rows : Array Aiur.NativeAIR.RowExpr} {indices : Array Nat} {selected : Array Aiur.NativeAIR.RowExpr},
+  Aiur.NativeAIR.OpEmitter.select rows indices = some selected →
+    Array.map (fun index => (Aiur.NativeAIR.OpEmitter.rowDegrees rows)[index]?.getD 0) indices =
+      Aiur.NativeAIR.OpEmitter.rowDegrees selected
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.OpEmitter.advice_degrees
+∀ (first count : Nat),
+  Aiur.NativeAIR.OpEmitter.rowDegrees (Aiur.NativeAIR.OpEmitter.advice first count) = Array.replicate count 1
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.OpEmitter.packFour_degree
+∀ (bytes : Fin 4 → Aiur.NativeAIR.RowExpr),
+  (Aiur.NativeAIR.OpEmitter.packFour bytes).degree =
+    Array.foldl Nat.max 0 (Aiur.NativeAIR.OpEmitter.rowDegrees (Array.ofFn bytes))
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.OpEmitter.readWord_degree
+∀ {rows : Array Aiur.NativeAIR.RowExpr} {indices : Array Nat} {word : Aiur.NativeAIR.RowExpr},
+  Aiur.NativeAIR.OpEmitter.readWord rows indices = some word →
+    word.degree = Aiur.Bytecode.selectedDegree (Aiur.NativeAIR.OpEmitter.rowDegrees rows) indices 0
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.OpEmitter.emitAdvice_allocation
+∀ (first count : Nat),
+  (Aiur.NativeAIR.OpEmitter.emitAdvice first count).allocation = Aiur.Bytecode.OpAllocation.advice count
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.OpEmitter.emitWordSum_allocation
+∀ (first : Nat) (sum : Aiur.NativeAIR.RowExpr),
+  (Aiur.NativeAIR.OpEmitter.emitWordSum first sum).allocation =
+    { degrees := (Array.replicate 4 1).push (max sum.degree 1), auxiliaries := 4 }
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.OpEmitter.emitByte1_dispatch_allocation
+∀ (selector rank : Aiur.NativeAIR.Expr) (first : Nat) (kind : Aiur.AIR.Byte1Kind) (index : Nat)
+  {rows : Array Aiur.NativeAIR.RowExpr} {emission : Aiur.NativeAIR.OpEmitter.Emission},
+  Aiur.NativeAIR.OpEmitter.emitOp selector rank first (kind.op index) rows = some emission →
+    emission.allocation = Aiur.Bytecode.Op.allocation (Aiur.NativeAIR.OpEmitter.rowDegrees rows) (kind.op index)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.OpEmitter.emitByte2_dispatch_allocation
+∀ (selector rank : Aiur.NativeAIR.Expr) (first : Nat) (kind : Aiur.AIR.Byte2Kind) (a b : Nat)
+  {rows : Array Aiur.NativeAIR.RowExpr} {emission : Aiur.NativeAIR.OpEmitter.Emission},
+  Aiur.NativeAIR.OpEmitter.emitOp selector rank first (kind.op a b) rows = some emission →
+    emission.allocation = Aiur.Bytecode.Op.allocation (Aiur.NativeAIR.OpEmitter.rowDegrees rows) (kind.op a b)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.OpEmitter.emitOp_allocation
+∀ {selector rank : Aiur.NativeAIR.Expr} {first : Nat} {op : Aiur.Bytecode.Op} {rows : Array Aiur.NativeAIR.RowExpr}
+  {emission : Aiur.NativeAIR.OpEmitter.Emission},
+  Aiur.NativeAIR.OpEmitter.DegreeValid rows →
+    Aiur.NativeAIR.OpEmitter.emitOp selector rank first op rows = some emission →
+      emission.allocation = Aiur.Bytecode.Op.allocation (Aiur.NativeAIR.OpEmitter.rowDegrees rows) op
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.OpEmitter.emitOp_layout
+∀ {selector rank : Aiur.NativeAIR.Expr} {first : Nat} {op : Aiur.Bytecode.Op} {rows : Array Aiur.NativeAIR.RowExpr}
+  {emission : Aiur.NativeAIR.OpEmitter.Emission} (initial : Aiur.Concrete.Bytecode.LayoutMState),
+  Aiur.NativeAIR.OpEmitter.DegreeValid rows →
+    Aiur.NativeAIR.OpEmitter.rowDegrees rows = initial.degrees →
+      Aiur.NativeAIR.OpEmitter.emitOp selector rank first op rows = some emission →
+        (StateT.run (Aiur.Concrete.Bytecode.opLayout op) initial).snd.degrees =
+            Aiur.NativeAIR.OpEmitter.rowDegrees (rows ++ emission.outputs) ∧
+          (StateT.run (Aiur.Concrete.Bytecode.opLayout op) initial).snd.functionLayout.auxiliaries =
+            initial.functionLayout.auxiliaries + emission.used
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.OpEmitter.emitOps_fold_layout
+∀ {selector rank : Aiur.NativeAIR.Expr} {ops : List Aiur.Bytecode.Op} {rows : Array Aiur.NativeAIR.RowExpr}
+  {column : Nat} {emission : Aiur.NativeAIR.OpEmitter.OpsEmission} (initial : Aiur.Concrete.Bytecode.LayoutMState)
+  (base : Nat),
+  Aiur.NativeAIR.OpEmitter.DegreeValid rows →
+    Aiur.NativeAIR.OpEmitter.rowDegrees rows = initial.degrees →
+      column = base + initial.functionLayout.auxiliaries →
+        Aiur.NativeAIR.OpEmitter.emitOps selector rank ops rows column = some emission →
+          (StateT.run (List.foldlM (fun x op => Aiur.Concrete.Bytecode.opLayout op) () ops) initial).snd.degrees =
+              Aiur.NativeAIR.OpEmitter.rowDegrees emission.values ∧
+            emission.column =
+              base +
+                (StateT.run (List.foldlM (fun x op => Aiur.Concrete.Bytecode.opLayout op) () ops)
+                        initial).snd.functionLayout.auxiliaries
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.OpEmitter.emitOps_layout
+∀ {selector rank : Aiur.NativeAIR.Expr} {ops : Array Aiur.Bytecode.Op} {rows : Array Aiur.NativeAIR.RowExpr}
+  {column : Nat} {emission : Aiur.NativeAIR.OpEmitter.OpsEmission} (initial : Aiur.Concrete.Bytecode.LayoutMState)
+  (base : Nat),
+  Aiur.NativeAIR.OpEmitter.DegreeValid rows →
+    Aiur.NativeAIR.OpEmitter.rowDegrees rows = initial.degrees →
+      column = base + initial.functionLayout.auxiliaries →
+        Aiur.NativeAIR.OpEmitter.emitOps selector rank ops.toList rows column = some emission →
+          (StateT.run (Array.forM Aiur.Concrete.Bytecode.opLayout ops) initial).snd.degrees =
+              Aiur.NativeAIR.OpEmitter.rowDegrees emission.values ∧
+            emission.column =
+              base +
+                (StateT.run (Array.forM Aiur.Concrete.Bytecode.opLayout ops) initial).snd.functionLayout.auxiliaries
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.Concrete.Bytecode.allocationBranchStep_degrees
+∀ (shared : Aiur.Concrete.Bytecode.SharedData) (degrees : Array Nat) (acc : Aiur.Concrete.Bytecode.SharedData)
+  (block : Aiur.Bytecode.Block) (initial : Aiur.Concrete.Bytecode.LayoutMState),
+  (StateT.run (Aiur.Concrete.Bytecode.allocationBranchStep shared degrees acc block) initial).snd.degrees = degrees
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.Concrete.Bytecode.allocationBranchStep_column
+∀ (shared : Aiur.Concrete.Bytecode.SharedData) (degrees : Array Nat) (acc : Aiur.Concrete.Bytecode.SharedData)
+  (block : Aiur.Bytecode.Block) (initial : Aiur.Concrete.Bytecode.LayoutMState) (base column : Nat),
+  initial.degrees = degrees →
+    (∀ (state : Aiur.Concrete.Bytecode.LayoutMState),
+        state.degrees = degrees →
+          state.functionLayout.auxiliaries = shared.auxiliaries →
+            column =
+              base + (StateT.run (Aiur.Concrete.Bytecode.blockLayout block) state).snd.functionLayout.auxiliaries) →
+      base +
+          (StateT.run (Aiur.Concrete.Bytecode.allocationBranchStep shared degrees acc block) initial).fst.auxiliaries =
+        max (base + acc.auxiliaries) column
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.Concrete.Bytecode.allocationBranchFold
+∀ {α β : Type} {items : List α} {emissions : List β} (blockOf : α → Aiur.Bytecode.Block) (measure : β → Nat)
+  (shared : Aiur.Concrete.Bytecode.SharedData) (degrees : Array Nat) (base : Nat),
+  List.Forall₂
+      (fun item emission =>
+        ∀ (state : Aiur.Concrete.Bytecode.LayoutMState),
+          state.degrees = degrees →
+            state.functionLayout.auxiliaries = shared.auxiliaries →
+              measure emission =
+                base +
+                  (StateT.run (Aiur.Concrete.Bytecode.blockLayout (blockOf item)) state).snd.functionLayout.auxiliaries)
+      items emissions →
+    ∀ (acc : Aiur.Concrete.Bytecode.SharedData) (initial : Aiur.Concrete.Bytecode.LayoutMState),
+      initial.degrees = degrees →
+        (StateT.run
+                  (List.foldlM
+                    (fun acc item => Aiur.Concrete.Bytecode.allocationBranchStep shared degrees acc (blockOf item)) acc
+                    items)
+                  initial).snd.degrees =
+            degrees ∧
+          base +
+              (StateT.run
+                    (List.foldlM
+                      (fun acc item => Aiur.Concrete.Bytecode.allocationBranchStep shared degrees acc (blockOf item))
+                      acc items)
+                    initial).fst.auxiliaries =
+            List.foldl (fun current emission => max current (measure emission)) (base + acc.auxiliaries) emissions
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.Concrete.Bytecode.allocationBranchLoop
+∀ (branches : Array (Aiur.G × Aiur.Bytecode.Block)) (shared : Aiur.Concrete.Bytecode.SharedData) (degrees : Array Nat),
+  Array.foldlM (fun acc pair => Aiur.Concrete.Bytecode.allocationBranchStep shared degrees acc pair.val.snd) shared
+      branches.attach =
+    List.foldlM (fun acc pair => Aiur.Concrete.Bytecode.allocationBranchStep shared degrees acc pair.snd) shared
+      branches.toList
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.Concrete.Bytecode.matchLayout_allocation
+∀ {β : Type} (index : Aiur.Bytecode.ValIdx) (branches : Array (Aiur.G × Aiur.Bytecode.Block))
+  (fallback : Option Aiur.Bytecode.Block) (initial : Aiur.Concrete.Bytecode.LayoutMState) (base : Nat)
+  (measure : β → Nat) {cases defaults : List β},
+  List.Forall₂
+      (fun pair emission =>
+        ∀ (state : Aiur.Concrete.Bytecode.LayoutMState),
+          state.degrees = initial.degrees →
+            state.functionLayout.auxiliaries = initial.functionLayout.auxiliaries →
+              measure emission =
+                base + (StateT.run (Aiur.Concrete.Bytecode.blockLayout pair.snd) state).snd.functionLayout.auxiliaries)
+      branches.toList cases →
+    List.Forall₂
+        (fun block emission =>
+          ∀ (state : Aiur.Concrete.Bytecode.LayoutMState),
+            state.degrees = initial.degrees →
+              state.functionLayout.auxiliaries = initial.functionLayout.auxiliaries + branches.size →
+                measure emission =
+                  base + (StateT.run (Aiur.Concrete.Bytecode.blockLayout block) state).snd.functionLayout.auxiliaries)
+        fallback.toList defaults →
+      (StateT.run (Aiur.Concrete.Bytecode.ctrlLayout (Aiur.Bytecode.Ctrl.match index branches fallback))
+                initial).snd.degrees =
+          initial.degrees ∧
+        base +
+            (StateT.run (Aiur.Concrete.Bytecode.ctrlLayout (Aiur.Bytecode.Ctrl.match index branches fallback))
+                    initial).snd.functionLayout.auxiliaries =
+          List.foldl (fun current emission => max current (measure emission))
+            (base + initial.functionLayout.auxiliaries) (cases ++ defaults)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.Concrete.Bytecode.ctrlLayout_continue
+∀ (index : Aiur.Bytecode.ValIdx) (branches : Array (Aiur.G × Aiur.Bytecode.Block))
+  (fallback : Option Aiur.Bytecode.Block) (size aux slots : Nat) (continuation : Aiur.Bytecode.Block),
+  Aiur.Concrete.Bytecode.ctrlLayout
+      (Aiur.Bytecode.Ctrl.matchContinue index branches fallback size aux slots continuation) =
+    do
+    Aiur.Concrete.Bytecode.ctrlLayout (Aiur.Bytecode.Ctrl.match index branches fallback)
+    Aiur.Concrete.Bytecode.bumpAuxiliaries size
+    Aiur.Concrete.Bytecode.pushDegrees (Array.replicate size 1)
+    Aiur.Concrete.Bytecode.blockLayout continuation
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.BlockEmitter.branchRows_values
+∀ {selectors : Array Aiur.NativeAIR.Expr} {context : Aiur.NativeAIR.BlockEmitter.Context}
+  {matched : Aiur.NativeAIR.RowExpr} {rows : Array Aiur.NativeAIR.RowExpr} {column lookup : Nat}
+  {branches : Array (Aiur.G × Aiur.Bytecode.Block)} {fallback : Option Aiur.Bytecode.Block}
+  {emission : Aiur.NativeAIR.BlockEmitter.Emission},
+  Aiur.NativeAIR.BlockEmitter.branchRows selectors context matched rows column lookup branches fallback =
+      some emission →
+    emission.values = rows
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.BlockEmitter.emitCtrl_degreeValid
+∀ {selectors : Array Aiur.NativeAIR.Expr} {context : Aiur.NativeAIR.BlockEmitter.Context}
+  {incoming : Aiur.NativeAIR.Expr} {rows : Array Aiur.NativeAIR.RowExpr} {column lookup : Nat}
+  (ctrl : Aiur.Bytecode.Ctrl) {emission : Aiur.NativeAIR.BlockEmitter.Emission},
+  Aiur.NativeAIR.OpEmitter.DegreeValid rows →
+    Aiur.NativeAIR.BlockEmitter.emitCtrl selectors context incoming rows column lookup ctrl = some emission →
+      Aiur.NativeAIR.OpEmitter.DegreeValid emission.values
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.BlockEmitter.emitBlock_degreeValid
+∀ {selectors : Array Aiur.NativeAIR.Expr} {context : Aiur.NativeAIR.BlockEmitter.Context}
+  {incoming : Aiur.NativeAIR.Expr} {rows : Array Aiur.NativeAIR.RowExpr} {column lookup : Nat}
+  (block : Aiur.Bytecode.Block) {emission : Aiur.NativeAIR.BlockEmitter.Emission},
+  Aiur.NativeAIR.OpEmitter.DegreeValid rows →
+    Aiur.NativeAIR.BlockEmitter.emitBlock selectors context incoming rows column lookup block = some emission →
+      Aiur.NativeAIR.OpEmitter.DegreeValid emission.values
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.BlockEmitter.branchRows_layout
+∀ {selectors : Array Aiur.NativeAIR.Expr} {context : Aiur.NativeAIR.BlockEmitter.Context}
+  {matched : Aiur.NativeAIR.RowExpr} {rows : Array Aiur.NativeAIR.RowExpr} {column lookup : Nat}
+  {branches : Array (Aiur.G × Aiur.Bytecode.Block)} {fallback : Option Aiur.Bytecode.Block}
+  {emission : Aiur.NativeAIR.BlockEmitter.Emission} (index : Nat) (initial : Aiur.Concrete.Bytecode.LayoutMState)
+  (base : Nat),
+  Aiur.NativeAIR.OpEmitter.rowDegrees rows = initial.degrees →
+    column = base + initial.functionLayout.auxiliaries →
+      Aiur.NativeAIR.BlockEmitter.branchRows selectors context matched rows column lookup branches fallback =
+          some emission →
+        (∀ (pair : Aiur.G × Aiur.Bytecode.Block),
+            pair ∈ branches.toList →
+              ∀ (entry : Aiur.NativeAIR.Expr) (result : Aiur.NativeAIR.BlockEmitter.Emission)
+                (state : Aiur.Concrete.Bytecode.LayoutMState),
+                Aiur.NativeAIR.OpEmitter.rowDegrees rows = state.degrees →
+                  column = base + state.functionLayout.auxiliaries →
+                    Aiur.NativeAIR.BlockEmitter.emitBlock selectors context entry rows column lookup pair.snd =
+                        some result →
+                      result.column =
+                        base +
+                          (StateT.run (Aiur.Concrete.Bytecode.blockLayout pair.snd)
+                                  state).snd.functionLayout.auxiliaries) →
+          (∀ (block : Aiur.Bytecode.Block),
+              fallback = some block →
+                ∀ (entry : Aiur.NativeAIR.Expr) (result : Aiur.NativeAIR.BlockEmitter.Emission)
+                  (state : Aiur.Concrete.Bytecode.LayoutMState),
+                  Aiur.NativeAIR.OpEmitter.rowDegrees rows = state.degrees →
+                    column + branches.size = base + state.functionLayout.auxiliaries →
+                      Aiur.NativeAIR.BlockEmitter.emitBlock selectors context entry rows (column + branches.size) lookup
+                            block =
+                          some result →
+                        result.column =
+                          base +
+                            (StateT.run (Aiur.Concrete.Bytecode.blockLayout block)
+                                    state).snd.functionLayout.auxiliaries) →
+            (StateT.run (Aiur.Concrete.Bytecode.ctrlLayout (Aiur.Bytecode.Ctrl.match index branches fallback))
+                      initial).snd.degrees =
+                Aiur.NativeAIR.OpEmitter.rowDegrees emission.values ∧
+              emission.column =
+                base +
+                  (StateT.run (Aiur.Concrete.Bytecode.ctrlLayout (Aiur.Bytecode.Ctrl.match index branches fallback))
+                          initial).snd.functionLayout.auxiliaries
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.BlockEmitter.emitCtrl_layout
+∀ {selectors : Array Aiur.NativeAIR.Expr} {context : Aiur.NativeAIR.BlockEmitter.Context}
+  {incoming : Aiur.NativeAIR.Expr} {rows : Array Aiur.NativeAIR.RowExpr} {column lookup : Nat}
+  (ctrl : Aiur.Bytecode.Ctrl) {emission : Aiur.NativeAIR.BlockEmitter.Emission}
+  (initial : Aiur.Concrete.Bytecode.LayoutMState) (base : Nat),
+  Aiur.NativeAIR.OpEmitter.DegreeValid rows →
+    Aiur.NativeAIR.OpEmitter.rowDegrees rows = initial.degrees →
+      column = base + initial.functionLayout.auxiliaries →
+        Aiur.NativeAIR.BlockEmitter.emitCtrl selectors context incoming rows column lookup ctrl = some emission →
+          (StateT.run (Aiur.Concrete.Bytecode.ctrlLayout ctrl) initial).snd.degrees =
+              Aiur.NativeAIR.OpEmitter.rowDegrees emission.values ∧
+            emission.column =
+              base + (StateT.run (Aiur.Concrete.Bytecode.ctrlLayout ctrl) initial).snd.functionLayout.auxiliaries
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.BlockEmitter.emitBlock_layout
+∀ {selectors : Array Aiur.NativeAIR.Expr} {context : Aiur.NativeAIR.BlockEmitter.Context}
+  {incoming : Aiur.NativeAIR.Expr} {rows : Array Aiur.NativeAIR.RowExpr} {column lookup : Nat}
+  (block : Aiur.Bytecode.Block) {emission : Aiur.NativeAIR.BlockEmitter.Emission}
+  (initial : Aiur.Concrete.Bytecode.LayoutMState) (base : Nat),
+  Aiur.NativeAIR.OpEmitter.DegreeValid rows →
+    Aiur.NativeAIR.OpEmitter.rowDegrees rows = initial.degrees →
+      column = base + initial.functionLayout.auxiliaries →
+        Aiur.NativeAIR.BlockEmitter.emitBlock selectors context incoming rows column lookup block = some emission →
+          (StateT.run (Aiur.Concrete.Bytecode.blockLayout block) initial).snd.degrees =
+              Aiur.NativeAIR.OpEmitter.rowDegrees emission.values ∧
+            emission.column =
+              base + (StateT.run (Aiur.Concrete.Bytecode.blockLayout block) initial).snd.functionLayout.auxiliaries
+AXIOMS [propext, Classical.choice, Quot.sound]
 PREMISE Aiur.AIR.activityConstraint
 Aiur.G → Aiur.G → Aiur.G
 DEFINITION
@@ -8891,6 +9334,92 @@ fun widths program circuit => do
   let emission ← Aiur.NativeAIR.CircuitEmitter.emitCircuit program circuit
   let base ← Aiur.NativeAIR.Compiler.compileBase widths emission.lookups emission.equations
   pure { emission := emission, base := base }
+PREMISE Aiur.Bytecode.OpAllocation.mk
+Array Nat → Nat → Aiur.Bytecode.OpAllocation
+PREMISE Aiur.Bytecode.OpAllocation.advice
+Nat → Aiur.Bytecode.OpAllocation
+DEFINITION
+fun size => { degrees := Array.replicate size 1, auxiliaries := size }
+PREMISE Aiur.Bytecode.selectedDegree
+Array Nat → Array Nat → Nat → Nat
+DEFINITION
+fun degrees indices initial => Array.foldl Nat.max initial (Array.map (fun index => degrees[index]?.getD 0) indices)
+PREMISE Aiur.Bytecode.Op.allocation
+Array Nat → Aiur.Bytecode.Op → Aiur.Bytecode.OpAllocation
+DEFINITION
+fun degrees x =>
+  match x with
+  | Aiur.Bytecode.Op.const a => { degrees := #[0], auxiliaries := 0 }
+  | Aiur.Bytecode.Op.add a b => { degrees := #[max (degrees[a]?.getD 0) (degrees[b]?.getD 0)], auxiliaries := 0 }
+  | Aiur.Bytecode.Op.sub a b => { degrees := #[max (degrees[a]?.getD 0) (degrees[b]?.getD 0)], auxiliaries := 0 }
+  | Aiur.Bytecode.Op.mul a b =>
+    have degree := degrees[a]?.getD 0 + degrees[b]?.getD 0;
+    if degree < 2 then { degrees := #[degree], auxiliaries := 0 } else Aiur.Bytecode.OpAllocation.advice 1
+  | Aiur.Bytecode.Op.eqZero a =>
+    if degrees[a]?.getD 0 = 0 then { degrees := #[0], auxiliaries := 0 } else { degrees := #[1], auxiliaries := 2 }
+  | Aiur.Bytecode.Op.call a a_1 size unconstrained =>
+    { degrees := Array.replicate size 1, auxiliaries := size + if unconstrained = true then 0 else 7 }
+  | Aiur.Bytecode.Op.store a => Aiur.Bytecode.OpAllocation.advice 1
+  | Aiur.Bytecode.Op.load size a => Aiur.Bytecode.OpAllocation.advice size
+  | Aiur.Bytecode.Op.ioRead a a_1 size => Aiur.Bytecode.OpAllocation.advice size
+  | Aiur.Bytecode.Op.assertEq a a_1 a_2 => { degrees := #[], auxiliaries := 0 }
+  | Aiur.Bytecode.Op.ioSetInfo a a_1 a_2 a_3 => { degrees := #[], auxiliaries := 0 }
+  | Aiur.Bytecode.Op.ioWrite a a_1 => { degrees := #[], auxiliaries := 0 }
+  | Aiur.Bytecode.Op.debug a a_1 => { degrees := #[], auxiliaries := 0 }
+  | Aiur.Bytecode.Op.u8RangeCheck a a_1 => { degrees := #[], auxiliaries := 0 }
+  | Aiur.Bytecode.Op.ioGetInfo a a_1 => Aiur.Bytecode.OpAllocation.advice 2
+  | Aiur.Bytecode.Op.unconstrainedBigUintDivMod a a_1 => Aiur.Bytecode.OpAllocation.advice 2
+  | Aiur.Bytecode.Op.u8BitDecomposition a => Aiur.Bytecode.OpAllocation.advice 8
+  | Aiur.Bytecode.Op.unconstrainedGToBytes a => Aiur.Bytecode.OpAllocation.advice 8
+  | Aiur.Bytecode.Op.u8ShiftLeft a => Aiur.Bytecode.OpAllocation.advice 1
+  | Aiur.Bytecode.Op.u8ShiftRight a => Aiur.Bytecode.OpAllocation.advice 1
+  | Aiur.Bytecode.Op.u8Xor a a_1 => Aiur.Bytecode.OpAllocation.advice 1
+  | Aiur.Bytecode.Op.u8And a a_1 => Aiur.Bytecode.OpAllocation.advice 1
+  | Aiur.Bytecode.Op.u8Or a a_1 => Aiur.Bytecode.OpAllocation.advice 1
+  | Aiur.Bytecode.Op.u8LessThan a a_1 => Aiur.Bytecode.OpAllocation.advice 1
+  | Aiur.Bytecode.Op.unconstrainedGInverse a => Aiur.Bytecode.OpAllocation.advice 1
+  | Aiur.Bytecode.Op.u8Add a b =>
+    { degrees := #[1, max (max (degrees[a]?.getD 0) (degrees[b]?.getD 0)) 1], auxiliaries := 1 }
+  | Aiur.Bytecode.Op.u8Sub a b =>
+    { degrees := #[1, max (max (degrees[a]?.getD 0) (degrees[b]?.getD 0)) 1], auxiliaries := 1 }
+  | Aiur.Bytecode.Op.u8Mul a a_1 => Aiur.Bytecode.OpAllocation.advice 2
+  | Aiur.Bytecode.Op.u8XorSplit7 a a_1 => Aiur.Bytecode.OpAllocation.advice 2
+  | Aiur.Bytecode.Op.u8XorSplit4 a a_1 => Aiur.Bytecode.OpAllocation.advice 2
+  | Aiur.Bytecode.Op.u32LessThan a a_1 => { degrees := #[1], auxiliaries := 12 }
+  | Aiur.Bytecode.Op.unconstrainedU32Add a b =>
+    { degrees := (Array.replicate 4 1).push (Aiur.Bytecode.selectedDegree degrees (a ++ b) 1), auxiliaries := 4 }
+  | Aiur.Bytecode.Op.unconstrainedU32Add3 a b c =>
+    { degrees := (Array.replicate 4 1).push (Aiur.Bytecode.selectedDegree degrees (a ++ b ++ c) 1), auxiliaries := 4 }
+  | Aiur.Bytecode.Op.u32ToField indices =>
+    { degrees := #[Aiur.Bytecode.selectedDegree degrees indices 0], auxiliaries := 0 }
+PREMISE Aiur.NativeAIR.RowExpr.ZeroConstant
+Aiur.NativeAIR.RowExpr → Prop
+DEFINITION
+fun row => row.degree = 0 → ∃ value, row.expr = Aiur.NativeAIR.Expr.konst value
+PREMISE Aiur.NativeAIR.OpEmitter.DegreeValid
+Array Aiur.NativeAIR.RowExpr → Prop
+DEFINITION
+fun rows => ∀ (row : Aiur.NativeAIR.RowExpr), row ∈ rows → row.ZeroConstant
+PREMISE Aiur.NativeAIR.OpEmitter.rowDegrees
+Array Aiur.NativeAIR.RowExpr → Array Nat
+DEFINITION
+fun rows => Array.map Aiur.NativeAIR.RowExpr.degree rows
+PREMISE Aiur.NativeAIR.OpEmitter.Emission.allocation
+Aiur.NativeAIR.OpEmitter.Emission → Aiur.Bytecode.OpAllocation
+DEFINITION
+fun emission => { degrees := Aiur.NativeAIR.OpEmitter.rowDegrees emission.outputs, auxiliaries := emission.used }
+PREMISE Aiur.Concrete.Bytecode.allocationBranchStep
+Aiur.Concrete.Bytecode.SharedData →
+  Array Nat →
+    Aiur.Concrete.Bytecode.SharedData →
+      Aiur.Bytecode.Block → Aiur.Concrete.Bytecode.LayoutM Aiur.Concrete.Bytecode.SharedData
+DEFINITION
+fun shared degrees acc block => do
+  Aiur.Concrete.Bytecode.setSharedData shared
+  Aiur.Concrete.Bytecode.blockLayout block
+  let used ← Aiur.Concrete.Bytecode.getSharedData
+  Aiur.Concrete.Bytecode.setDegrees degrees
+  pure (acc.maximals used)
 RECURSION WORKER Aiur.buildArgs._unsafe_rec
 Aiur.LayoutMap →
   Std.HashMap Aiur.Local (Array Aiur.Bytecode.ValIdx) →
@@ -15870,7 +16399,7 @@ fun initId decls renames clauses branches body =>
     let clause : Aiur.MatchCompiler.Clause :=
       { pat := Aiur.MatchCompiler.SPattern.pointer var innerTyp, guards := guards, body := term }
     Aiur.MatchCompiler.dnfProd.aux._unsafe_rec✝ initId decls renames (clauses.push clause) rest body
-C8 component ROOTS 586; LOGICAL DECLARATIONS 16839; WITH RUNTIME 17608
+C8 component ROOTS 647; LOGICAL DECLARATIONS 16956; WITH RUNTIME 17725
 IX RUNTIME EXTERNS [Aiur.AiurSystem.build, Aiur.AiurSystem.verify, Aiur.AiurSystem.vkBytes, Aiur.Proof.ofBytesChecked]
 PARTIAL OPAQUE SOURCES [Aiur.instHashableTyp.hash, Aiur.instReprPattern.repr, Aiur.instReprTyp.repr]
 OTHER UNSAFE RUNTIME []

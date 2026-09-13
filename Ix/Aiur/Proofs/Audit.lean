@@ -35,6 +35,7 @@ import Ix.Aiur.Proofs.FrontendExpressions
 import Ix.Aiur.Proofs.GraphCompilation
 import Ix.Aiur.Proofs.LookupExpressions
 import Ix.Aiur.Proofs.CompiledCircuitRows
+import Ix.Aiur.Proofs.BlockAllocation
 import Ix.Aiur.Proofs.Grouping
 import Ix.Aiur.Proofs.TailMatches
 import Ix.Aiur.Proofs.NormalizationFrames
@@ -1025,6 +1026,138 @@ def blockCircuitPremises : Array Lean.Name := #[
   `Aiur.NativeAIR.CircuitEmitter.Compiled.mk,
   `Aiur.NativeAIR.CircuitEmitter.compileCircuit]
 
+def allocationRoots : Array Lean.Name := #[
+  `Aiur.Bytecode.selectedDegree_initial,
+  `Aiur.Bytecode.selectedDegree_append,
+  `Aiur.Concrete.Bytecode.getDegree_list,
+  `Aiur.Concrete.Bytecode.getDegree_array,
+  `Aiur.Concrete.Bytecode.opLayout_allocation,
+  `Aiur.NativeAIR.RowExpr.ZeroConstant.konst,
+  `Aiur.NativeAIR.RowExpr.ZeroConstant.variable,
+  `Aiur.NativeAIR.RowExpr.ZeroConstant.add,
+  `Aiur.NativeAIR.RowExpr.ZeroConstant.sub,
+  `Aiur.NativeAIR.RowExpr.ZeroConstant.mul,
+  `Aiur.NativeAIR.OpEmitter.DegreeValid.empty,
+  `Aiur.NativeAIR.OpEmitter.DegreeValid.singleton,
+  `Aiur.NativeAIR.OpEmitter.DegreeValid.append,
+  `Aiur.NativeAIR.OpEmitter.DegreeValid.push,
+  `Aiur.NativeAIR.OpEmitter.DegreeValid.read,
+  `Aiur.NativeAIR.OpEmitter.DegreeValid.getD,
+  `Aiur.NativeAIR.OpEmitter.DegreeValid.select,
+  `Aiur.NativeAIR.OpEmitter.advice_degreeValid,
+  `Aiur.NativeAIR.OpEmitter.packFour_degreeValid,
+  `Aiur.NativeAIR.OpEmitter.readWord_degreeValid,
+  `Aiur.NativeAIR.OpEmitter.fromScalar_degreeValid,
+  `Aiur.NativeAIR.OpEmitter.emitMul_degreeValid,
+  `Aiur.NativeAIR.OpEmitter.emitEqZero_degreeValid,
+  `Aiur.NativeAIR.OpEmitter.emitByte2_degreeValid,
+  `Aiur.NativeAIR.OpEmitter.emitWordSum_degreeValid,
+  `Aiur.NativeAIR.OpEmitter.emitU32LessThan_degreeValid,
+  `Aiur.NativeAIR.OpEmitter.emitByte1_dispatch_degreeValid,
+  `Aiur.NativeAIR.OpEmitter.emitByte2_dispatch_degreeValid,
+  `Aiur.NativeAIR.OpEmitter.emitOp_degreeValid,
+  `Aiur.NativeAIR.OpEmitter.emitOps_degreeValid,
+  `Aiur.NativeAIR.OpEmitter.emitEqZero_allocation,
+  `Aiur.NativeAIR.OpEmitter.rowDegrees_empty,
+  `Aiur.NativeAIR.OpEmitter.rowDegrees_append,
+  `Aiur.NativeAIR.OpEmitter.rowDegrees_push,
+  `Aiur.NativeAIR.OpEmitter.rowDegrees_singleton,
+  `Aiur.NativeAIR.OpEmitter.rowDegrees_getD,
+  `Aiur.NativeAIR.OpEmitter.rowDegrees_read,
+  `Aiur.NativeAIR.OpEmitter.select_degrees,
+  `Aiur.NativeAIR.OpEmitter.advice_degrees,
+  `Aiur.NativeAIR.OpEmitter.packFour_degree,
+  `Aiur.NativeAIR.OpEmitter.readWord_degree,
+  `Aiur.NativeAIR.OpEmitter.emitAdvice_allocation,
+  `Aiur.NativeAIR.OpEmitter.emitWordSum_allocation,
+  `Aiur.NativeAIR.OpEmitter.emitByte1_dispatch_allocation,
+  `Aiur.NativeAIR.OpEmitter.emitByte2_dispatch_allocation,
+  `Aiur.NativeAIR.OpEmitter.emitOp_allocation,
+  `Aiur.NativeAIR.OpEmitter.emitOp_layout,
+  `Aiur.NativeAIR.OpEmitter.emitOps_fold_layout,
+  `Aiur.NativeAIR.OpEmitter.emitOps_layout,
+  `Aiur.Concrete.Bytecode.allocationBranchStep_degrees,
+  `Aiur.Concrete.Bytecode.allocationBranchStep_column,
+  `Aiur.Concrete.Bytecode.allocationBranchFold,
+  `Aiur.Concrete.Bytecode.allocationBranchLoop,
+  `Aiur.Concrete.Bytecode.matchLayout_allocation,
+  `Aiur.Concrete.Bytecode.ctrlLayout_continue,
+  `Aiur.NativeAIR.BlockEmitter.branchRows_values,
+  `Aiur.NativeAIR.BlockEmitter.emitCtrl_degreeValid,
+  `Aiur.NativeAIR.BlockEmitter.emitBlock_degreeValid,
+  `Aiur.NativeAIR.BlockEmitter.branchRows_layout,
+  `Aiur.NativeAIR.BlockEmitter.emitCtrl_layout,
+  `Aiur.NativeAIR.BlockEmitter.emitBlock_layout]
+
+def allocationAxiomFreeRoots : Array Lean.Name := #[
+  `Aiur.NativeAIR.RowExpr.ZeroConstant.konst,
+  `Aiur.NativeAIR.RowExpr.ZeroConstant.variable]
+
+def allocationQuotRoots : Array Lean.Name := #[
+  `Aiur.Bytecode.selectedDegree_initial,
+  `Aiur.NativeAIR.RowExpr.ZeroConstant.add,
+  `Aiur.NativeAIR.RowExpr.ZeroConstant.sub,
+  `Aiur.NativeAIR.RowExpr.ZeroConstant.mul,
+  `Aiur.NativeAIR.OpEmitter.DegreeValid.append,
+  `Aiur.NativeAIR.OpEmitter.DegreeValid.select,
+  `Aiur.NativeAIR.OpEmitter.packFour_degreeValid,
+  `Aiur.NativeAIR.OpEmitter.readWord_degreeValid,
+  `Aiur.NativeAIR.OpEmitter.emitMul_degreeValid,
+  `Aiur.NativeAIR.OpEmitter.rowDegrees_empty,
+  `Aiur.NativeAIR.OpEmitter.rowDegrees_append,
+  `Aiur.NativeAIR.OpEmitter.rowDegrees_push,
+  `Aiur.NativeAIR.OpEmitter.rowDegrees_singleton,
+  `Aiur.NativeAIR.OpEmitter.rowDegrees_getD,
+  `Aiur.NativeAIR.OpEmitter.rowDegrees_read,
+  `Aiur.NativeAIR.OpEmitter.select_degrees]
+
+def allocationClassicalRoots : Array Lean.Name := #[
+  `Aiur.Bytecode.selectedDegree_append,
+  `Aiur.Concrete.Bytecode.getDegree_list,
+  `Aiur.Concrete.Bytecode.getDegree_array,
+  `Aiur.Concrete.Bytecode.opLayout_allocation,
+  `Aiur.NativeAIR.OpEmitter.advice_degreeValid,
+  `Aiur.NativeAIR.OpEmitter.emitByte2_degreeValid,
+  `Aiur.NativeAIR.OpEmitter.emitWordSum_degreeValid,
+  `Aiur.NativeAIR.OpEmitter.emitByte1_dispatch_degreeValid,
+  `Aiur.NativeAIR.OpEmitter.emitByte2_dispatch_degreeValid,
+  `Aiur.NativeAIR.OpEmitter.emitOp_degreeValid,
+  `Aiur.NativeAIR.OpEmitter.emitOps_degreeValid,
+  `Aiur.NativeAIR.OpEmitter.advice_degrees,
+  `Aiur.NativeAIR.OpEmitter.packFour_degree,
+  `Aiur.NativeAIR.OpEmitter.readWord_degree,
+  `Aiur.NativeAIR.OpEmitter.emitAdvice_allocation,
+  `Aiur.NativeAIR.OpEmitter.emitWordSum_allocation,
+  `Aiur.NativeAIR.OpEmitter.emitByte1_dispatch_allocation,
+  `Aiur.NativeAIR.OpEmitter.emitByte2_dispatch_allocation,
+  `Aiur.NativeAIR.OpEmitter.emitOp_allocation,
+  `Aiur.NativeAIR.OpEmitter.emitOp_layout,
+  `Aiur.NativeAIR.OpEmitter.emitOps_fold_layout,
+  `Aiur.NativeAIR.OpEmitter.emitOps_layout,
+  `Aiur.Concrete.Bytecode.allocationBranchStep_degrees,
+  `Aiur.Concrete.Bytecode.allocationBranchStep_column,
+  `Aiur.Concrete.Bytecode.allocationBranchFold,
+  `Aiur.Concrete.Bytecode.allocationBranchLoop,
+  `Aiur.Concrete.Bytecode.matchLayout_allocation,
+  `Aiur.Concrete.Bytecode.ctrlLayout_continue,
+  `Aiur.NativeAIR.BlockEmitter.branchRows_values,
+  `Aiur.NativeAIR.BlockEmitter.emitCtrl_degreeValid,
+  `Aiur.NativeAIR.BlockEmitter.emitBlock_degreeValid,
+  `Aiur.NativeAIR.BlockEmitter.branchRows_layout,
+  `Aiur.NativeAIR.BlockEmitter.emitCtrl_layout,
+  `Aiur.NativeAIR.BlockEmitter.emitBlock_layout]
+
+def allocationPremises : Array Lean.Name := #[
+  `Aiur.Bytecode.OpAllocation.mk,
+  `Aiur.Bytecode.OpAllocation.advice,
+  `Aiur.Bytecode.selectedDegree,
+  `Aiur.Bytecode.Op.allocation,
+  `Aiur.NativeAIR.RowExpr.ZeroConstant,
+  `Aiur.NativeAIR.OpEmitter.DegreeValid,
+  `Aiur.NativeAIR.OpEmitter.rowDegrees,
+  `Aiur.NativeAIR.OpEmitter.Emission.allocation,
+  `Aiur.Concrete.Bytecode.allocationBranchStep]
+
 def roots : Array Lean.Name := #[
   `Aiur.G.ofNat_n, `Aiur.G.mul_one, `Aiur.G.mul_zero,
   `Aiur.AIR.inactive_multiplicity_zero,
@@ -1061,7 +1194,7 @@ def roots : Array Lean.Name := #[
     fieldRoots ++ localConstraintRoots ++ byteArithmeticRoots ++ byteLookupRoots ++
     lookupMessageRoots ++ lookupShapeRoots ++ globalLookupRoots ++ lookupBudgetRoots ++
     selectorControlRoots ++ operationRowRoots ++ blockRowRoots ++ querySlotRoots ++ circuitRowRoots ++
-    rowCountRoots ++ circuitTableRoots ++ branchlessRoots ++ circuitTraceRoots ++ circuitMembershipRoots ++ lookupLayoutRoots ++ memoryColumnRoots ++ byteColumnRoots ++ expressionGraphRoots ++ frontendExpressionRoots ++ graphCompilationRoots ++ operationExpressionRoots ++ blockCircuitRoots
+    rowCountRoots ++ circuitTableRoots ++ branchlessRoots ++ circuitTraceRoots ++ circuitMembershipRoots ++ lookupLayoutRoots ++ memoryColumnRoots ++ byteColumnRoots ++ expressionGraphRoots ++ frontendExpressionRoots ++ graphCompilationRoots ++ operationExpressionRoots ++ blockCircuitRoots ++ allocationRoots
 
 def premises : Array Lean.Name := #[
   `Aiur.AIR.activityConstraint,
@@ -1300,7 +1433,7 @@ def premises : Array Lean.Name := #[
   `Aiur.NativeAIR.evalRoots,
   `Aiur.NativeAIR.readLookup,
   `Aiur.NativeAIR.evalLookup,
-  `Aiur.NativeAIR.goldilocksOps] ++ frontendExpressionPremises ++ graphCompilationPremises ++ operationExpressionPremises ++ blockCircuitPremises
+  `Aiur.NativeAIR.goldilocksOps] ++ frontendExpressionPremises ++ graphCompilationPremises ++ operationExpressionPremises ++ blockCircuitPremises ++ allocationPremises
 
 private def constants (info : Lean.ConstantInfo) : Array Lean.Name :=
   info.type.getUsedConstants ++ match info with
@@ -1379,7 +1512,12 @@ run_cmd do
   let env ← getEnv
   for root in roots do
     let some info := env.checked.get.find? root | throwError "C8 component audit: missing root {root}"
-    let expected := if blockCircuitRoots.contains root then
+    let expected := if allocationRoots.contains root then
+        if allocationAxiomFreeRoots.contains root then #[]
+        else if allocationClassicalRoots.contains root then #[``propext, ``Classical.choice, ``Quot.sound]
+        else if allocationQuotRoots.contains root then #[``propext, ``Quot.sound]
+        else #[``propext]
+      else if blockCircuitRoots.contains root then
         if blockCircuitClassicalRoots.contains root then #[``propext, ``Classical.choice, ``Quot.sound]
         else if blockCircuitQuotRoots.contains root then #[``propext, ``Quot.sound]
         else #[``propext]

@@ -4,6 +4,7 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 -/
 
 import Ix.Aiur.Proofs.BlockLookups
+import Ix.Aiur.Proofs.BlockAllocation
 import Tests.Aiur.EmissionReader
 
 /-! Compare actual native control trees and full symbolic block emission,
@@ -13,8 +14,6 @@ open Aiur Aiur.NativeAIR Aiur.NativeAIR.OpEmitter Aiur.NativeAIR.Compiler
 open Aiur.NativeAIR.BlockEmitter AiurTests.EmissionReader
 
 namespace AiurTests.BlockExpressions
-
-
 
 private def readEvaluatedMap (size : Nat) : Reader (Array AIR.RowValue) := do
   return (← readList size do return AIR.RowValue.mk (← readField) (← readNat) (← readBool)).toArray
@@ -41,6 +40,15 @@ private def readReport (index : Nat) : Reader Nat := do
   unless equations == emitted.equations do throw s!"native block constraint trees differ: {label}"
   unless inputs.all (·.expr.noConstantNegs) && emitted.values.all (·.expr.noConstantNegs) do
     throw s!"block lost the negation invariant: {label}"
+  unless inputs.all (fun row => row.degree != 0 || row.expr.isConstant) &&
+      emitted.values.all (fun row => row.degree != 0 || row.expr.isConstant) do
+    throw s!"block lost the degree-zero constant invariant: {label}"
+  let initial : Concrete.Bytecode.LayoutMState :=
+    ⟨{ inputSize := context.inputSize, selectors := 0, auxiliaries := column, lookups := lookup },
+      .empty, rowDegrees inputs⟩
+  let layout := ((Concrete.Bytecode.blockLayout block).run initial).2
+  unless rowDegrees nativeMap == layout.degrees && emitted.column == layout.functionLayout.auxiliaries do
+    throw s!"native block degrees or column allocation differs from compiler: {label}"
   let lookupCount ← readCount 4096
   unless lookupCount == emitted.lookup + 2 do throw "incomplete native lookup range"
   let lookups ← readList lookupCount do
@@ -101,7 +109,7 @@ def run (path : System.FilePath) : IO Unit := do
   let bytes ← IO.FS.readBinFile path
   match readCorpus.run (bytes, 0) with
   | .error error => throw (IO.userError error)
-  | .ok _ => IO.println "block expressions: 384 native control trees and 1,536 assignments match"
+  | .ok _ => IO.println "block expressions: 384 native control trees and compiler allocations, 1,536 assignments match"
 
 end AiurTests.BlockExpressions
 
