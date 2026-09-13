@@ -4,15 +4,15 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 -/
 
 import Ix.Kernel.Verify.Consistency.Production
+import Ix.Theory.Model.Extension
 
 /-!
 # Relative consistency of a production environment fragment
 
-The initial interface contains exactly the supplied axiom declarations. A
-dependency order adds fresh monomorphic definitions, using successful calls
-from the real serial `checkEnvAnon` run. Each addition constructs its value in
-every model of the previous interface. Thus definitions preserve any given
-model of the axiom set; no axiom is silently assumed to be inhabited.
+The initial interface contains exactly the supplied axiom declarations.
+Successful calls from the serial `checkEnvAnon` run add fresh monomorphic
+definitions in dependency order. Each addition extends every model of the
+previous interface and preserves its existing interpretations.
 -/
 
 namespace Ix.Kernel.Consistency
@@ -52,14 +52,9 @@ private theorem finish_results (cfg : CheckCfg) (before : AnonCheckLoopState)
 private theorem item_keeps_result (cfg : CheckCfg) (before : AnonCheckLoopState)
     (item : AnonWorkItem) {result : CheckResult} (found : result ∈ before.results) :
     result ∈ (runAnonCheckItem cfg before item).results := by
-  cases run : TcM.checkConst (⟨item.primary, ()⟩ : KId .anon) before.checker with
-  | ok value after =>
-      cases value
-      simp only [runAnonCheckItem, EStateM.run, run, finish_results]
-      exact Array.mem_append.mpr (.inl found)
-  | error err after =>
-      simp only [runAnonCheckItem, EStateM.run, run, finish_results]
-      exact Array.mem_append.mpr (.inl found)
+  cases run : TcM.checkConst (⟨item.primary, ()⟩ : KId .anon) before.checker <;>
+    simp only [runAnonCheckItem, EStateM.run, run, finish_results] <;>
+    exact Array.mem_append.mpr (.inl found)
 
 private theorem list_keeps_result (cfg : CheckCfg) (work : List AnonWorkItem)
     (before : AnonCheckLoopState) {result : CheckResult} (found : result ∈ before.results) :
@@ -97,14 +92,12 @@ theorem WorkPosition.check_success {env : Ixon.Env} {cfg : CheckCfg}
         (list_keeps_result cfg position.trailing _ appears)
       simp [failed] at contradiction
 
-/-- The semantic entry published for a monomorphic definition. No reduction
-equations or extra typed facts are manufactured by this fragment. -/
+/-- A monomorphic definition entry, with its body and no additional laws or facts. -/
 def definitionEntry {β : Type u} (body type : AExpr β) : ConstantEntry β :=
   { universes := 0, type, body := some body }
 
-/-- Body typing already includes hereditary validity of the declared type.
-This constructs a model extension directly, without separately assuming a
-model for the pending declaration. -/
+/-- Interpret a fresh definition's body to extend the preceding model.
+Body typing supplies hereditary validity of the declared type. -/
 theorem extend_atomic_definition {β : Type u} [DecidableEq β]
     {entries : Model.Environment β} {ref : ConstRef β} {body type : AExpr β}
     (wellFormed : entries.WF) (fresh : entries ref = none)
@@ -133,12 +126,12 @@ theorem extend_atomic_definition {β : Type u} [DecidableEq β]
     exact (typed V constants realizes levels env (Context.valid_nil constants levels env)).2.2
   · intro candidate present levels _ env
     change some body = some candidate at present
-    cases Option.some.inj present
+    cases present
     exact (agrees.wellDenoted bodyRefs levels env).mpr
       (typed V constants realizes levels env (Context.valid_nil constants levels env)).1
   · intro candidate present levels _ env
     change some body = some candidate at present
-    cases Option.some.inj present
+    cases present
     rw [value, agrees.interp bodyRefs]
   · intro law present
     exact (List.not_mem_nil present).elim
@@ -164,22 +157,21 @@ private theorem insert_definition_wf {β : Type u} [DecidableEq β]
   apply wellFormed.insert typeScope
   · intro candidate present
     change some body = some candidate at present
-    cases Option.some.inj present
+    cases present
     exact bodyScope
   · exact typeRefs
   · intro candidate present
     change some body = some candidate at present
-    cases Option.some.inj present
+    cases present
     exact bodyRefs
   · simp [definitionEntry]
   · simp [definitionEntry]
   · simp [definitionEntry]
   · simp [definitionEntry]
 
-/-- A dependency order over the checked definitions. Each reference is fresh
-and each atomic body reads only the preceding interface. The work position
-retains the original serial order, which may differ from this dependency
-order. No semantic acceptance premise appears in this plan. -/
+/-- Definitions in dependency order, with fresh references and bodies that
+read the preceding interface. Work positions retain the runtime serial order,
+which may differ from this dependency order. -/
 inductive AtomicDefinitionPlan {β : Type u} [DecidableEq β]
     (env : Ixon.Env) (cfg : CheckCfg) (work : Array AnonWorkItem)
     (resolve : Address → Option (ConstRef β)) :
@@ -219,9 +211,7 @@ private theorem anon_id (id : KId .anon) : (⟨id.addr, ()⟩ : KId .anon) = id 
   cases id with
   | mk addr name => cases name; rfl
 
-/-- Every accepted definition in the dependency order extends the preceding
-model. The initial interface need only have a model; its axioms need not be
-part of a fixed whitelist. -/
+/-- Accepted definitions extend every model of the preceding interface. -/
 theorem AtomicDefinitionPlan.sound {β : Type u} [DecidableEq β]
     {env : Ixon.Env} {cfg : CheckCfg} {work : Array AnonWorkItem}
     {resolve : Address → Option (ConstRef β)}
@@ -238,16 +228,15 @@ theorem AtomicDefinitionPlan.sound {β : Type u} [DecidableEq β]
   | @cons before after rest spec resolved fresh position run tail ih =>
       obtain ⟨checkedState, accepted⟩ := position.check_success succeeded
       rw [anon_id] at accepted
-      have bodySound := run.sound wellFormed accepted
+      obtain ⟨_, _, bodyScope, typeScope, bodyRefs, typeRefs, typed⟩ :=
+        run.sound wellFormed accepted
       have formed : (before.insert spec.ref spec.entry).WF :=
-        insert_definition_wf wellFormed bodySound.2.2.1 bodySound.2.2.2.1
-          bodySound.2.2.2.2.1 bodySound.2.2.2.2.2.1
+        insert_definition_wf wellFormed bodyScope typeScope bodyRefs typeRefs
       obtain ⟨finalFormed, preserve⟩ := ih formed
       refine ⟨finalFormed, ?_⟩
       intro V _ constants realizes
       obtain ⟨next, nextModel, agrees⟩ := extend_atomic_definition wellFormed fresh
-        bodySound.2.2.1 bodySound.2.2.2.2.1 bodySound.2.2.2.2.2.1
-        bodySound.2.2.2.2.2.2 constants realizes
+        bodyScope bodyRefs typeRefs typed constants realizes
       obtain ⟨final, finalModel, finalAgrees⟩ := preserve V next nextModel
       refine ⟨final, finalModel, ?_⟩
       intro ref entry present levels
@@ -273,15 +262,15 @@ theorem AtomicDefinitionPlan.represents {β : Type u} [DecidableEq β]
   | @cons before after rest spec resolved fresh position run tail ih =>
       obtain ⟨checkedState, accepted⟩ := position.check_success succeeded
       rw [anon_id] at accepted
-      have bodySound := AtomicDefinitionRun.sound.{u,0} run wellFormed accepted
+      obtain ⟨valueReads, typeReads, bodyScope, typeScope, bodyRefs, typeRefs, _⟩ :=
+        AtomicDefinitionRun.sound.{u,0} run wellFormed accepted
       have formed : (before.insert spec.ref spec.entry).WF :=
-        insert_definition_wf wellFormed bodySound.2.2.1 bodySound.2.2.2.1
-          bodySound.2.2.2.2.1 bodySound.2.2.2.2.2.1
+        insert_definition_wf wellFormed bodyScope typeScope bodyRefs typeRefs
       intro candidate present
       rcases List.mem_cons.mp present with same | later
       · subst candidate
         exact ⟨resolved, tail.extends _ _ (Model.Environment.insert_same ..),
-          bodySound.1, bodySound.2.1⟩
+          valueReads, typeReads⟩
       · exact ih formed candidate later
 
 private theorem AtomicDefinitionPlan.locations {β : Type u} [DecidableEq β]
@@ -362,9 +351,8 @@ private theorem AtomicEnvironmentFragment.serial_success {β : Type u} [Decidabl
   cases accepted
   exact succeeded
 
-/-- A successful `checkEnvAnon` run in the supported fragment extends every
-model of its axiom set while preserving all axiom interpretations. This is a
-relative model theorem, not a claim that arbitrary axioms are consistent. -/
+/-- A successful `checkEnvAnon` run in the fragment extends every model of
+its axiom set while preserving all axiom interpretations. -/
 theorem checkEnvAnon_atomic_preserves_model {β : Type u} [DecidableEq β]
     {env : Ixon.Env} {cfg : CheckCfg} {resolve : Address → Option (ConstRef β)}
     (fragment : AtomicEnvironmentFragment env cfg resolve)
@@ -416,18 +404,16 @@ theorem checkEnvAnon_atomic_represents_source {β : Type u} [DecidableEq β]
       observation.reads, rfl, rfl⟩
     simpa only [anon_id] using Nonempty.intro observation.path
   · cases AnonWorkItem.standalone.inj same
-    have represents := represented spec listed
+    obtain ⟨resolved, installed, valueReads, typeReads⟩ := represented spec listed
     obtain ⟨position, path⟩ := fragment.plan.locations spec listed
     obtain ⟨after, run⟩ := position.check_success serial
-    refine ⟨spec.ref, spec.entry, represents.1, represents.2.1, spec.input.constant,
-      ⟨(position.state env cfg).checker, after, run, ?_⟩, represents.2.2.2,
-      rfl, spec.body, rfl, represents.2.2.1⟩
+    refine ⟨spec.ref, spec.entry, resolved, installed, spec.input.constant,
+      ⟨(position.state env cfg).checker, after, run, ?_⟩, typeReads,
+      rfl, spec.body, rfl, valueReads⟩
     simpa only [anon_id] using path
 
-/-- No declaration in the resulting environment can inhabit a type whose
-axiom-model interpretation is empty. In particular this applies to `False`.
-The empty interpretation is preserved, rather than assumed for the completed
-environment. -/
+/-- No declaration can inhabit an axiom type interpreted as empty, such as
+`False`: model extension preserves the initial empty interpretation. -/
 theorem checkEnvAnon_atomic_no_false {β : Type u} [DecidableEq β]
     {env : Ixon.Env} {cfg : CheckCfg} {resolve : Address → Option (ConstRef β)}
     (fragment : AtomicEnvironmentFragment env cfg resolve)

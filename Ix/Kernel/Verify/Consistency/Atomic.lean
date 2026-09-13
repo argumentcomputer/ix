@@ -4,15 +4,14 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 -/
 
 import Ix.Kernel.Verify.Consistency.Infer
-import Ix.Theory.Model.Extension
 
 /-!
 # Atomic production inference
 
-The first declaration fragment admits closed sorts and monomorphic references.
-References use the type of an already admitted interface entry. The premises
-below describe concrete cache misses, lookup results, and finite interning
-support; none assumes a typing judgment or the soundness of a checker method.
+The declaration fragment admits closed sorts and monomorphic references.
+References use the type of an existing interface entry. Cache misses, lookup
+agreement, and finite interning support connect each production result to its
+model type.
 -/
 
 namespace Ix.Kernel.Consistency
@@ -20,15 +19,6 @@ namespace Ix.Kernel.Consistency
 open Theory Theory.Model
 
 universe u v
-
-private theorem runTcBind {α β : Type} (x : TcM .anon α) (k : α → TcM .anon β)
-    (state : TcState .anon) :
-    EStateM.bind x k state = match x state with
-      | .ok value after => k value after
-      | .error err after => .error err after := by
-  show EStateM.bind x k state = _
-  unfold EStateM.bind
-  cases x state <;> rfl
 
 /-- The two inference-cache partitions miss at the actual key computed by
 production. Both misses are required, so this applies in either policy mode. -/
@@ -51,9 +41,9 @@ theorem infer_uncached_success {term type : KExpr .anon}
   unfold RecM.infer RecM.inferWith at accepted
   simp only [ReaderT.run_bind, ReaderT.run_monadLift] at accepted
   change EStateM.bind (TcM.inferKey term) _ before = _ at accepted
-  rw [runTcBind, miss.keyRun] at accepted
+  rw [EStateM.bind, miss.keyRun] at accepted
   change EStateM.bind (get : TcM .anon (TcState .anon)) _ miss.keyed = _ at accepted
-  rw [runTcBind, show (get : TcM .anon (TcState .anon)) miss.keyed =
+  rw [EStateM.bind, show (get : TcM .anon (TcState .anon)) miss.keyed =
     .ok miss.keyed miss.keyed from rfl] at accepted
   simp only at accepted
   rw [miss.fullMiss] at accepted
@@ -63,9 +53,9 @@ theorem infer_uncached_success {term type : KExpr .anon}
       change EStateM.bind (RecM.inferUncached RecM.inferCall false term methods)
         _ miss.keyed = _ at accepted
       cases run : RecM.inferUncached RecM.inferCall false term methods miss.keyed with
-      | error err failed => rw [runTcBind, run] at accepted; contradiction
+      | error err failed => rw [EStateM.bind, run] at accepted; contradiction
       | ok ty state =>
-          rw [runTcBind, run] at accepted
+          rw [EStateM.bind, run] at accepted
           change EStateM.Result.ok ty { state with env := { state.env with
             inferCache := state.env.inferCache.insert miss.key ty } } = .ok type after at accepted
           cases accepted
@@ -74,16 +64,16 @@ theorem infer_uncached_success {term type : KExpr .anon}
       simp only [policy, if_true] at accepted
       simp only [ReaderT.run_bind] at accepted
       change EStateM.bind (get : TcM .anon (TcState .anon)) _ miss.keyed = _ at accepted
-      rw [runTcBind, show (get : TcM .anon (TcState .anon)) miss.keyed =
+      rw [EStateM.bind, show (get : TcM .anon (TcState .anon)) miss.keyed =
         .ok miss.keyed miss.keyed from rfl] at accepted
       simp only at accepted
       rw [miss.onlyMiss] at accepted
       change EStateM.bind (RecM.inferUncached RecM.inferCall true term methods)
         _ miss.keyed = _ at accepted
       cases run : RecM.inferUncached RecM.inferCall true term methods miss.keyed with
-      | error err failed => rw [runTcBind, run] at accepted; contradiction
+      | error err failed => rw [EStateM.bind, run] at accepted; contradiction
       | ok ty state =>
-          rw [runTcBind, run] at accepted
+          rw [EStateM.bind, run] at accepted
           change EStateM.Result.ok ty { state with env := { state.env with
             inferOnlyCache := state.env.inferOnlyCache.insert miss.key ty } } = .ok type after at accepted
           cases accepted
@@ -117,8 +107,7 @@ inductive AtomicInferenceSupport {β : Type u}
 
 namespace AtomicInferenceSupport
 
-/-- This fragment's typing rule is proved from the sort rule or an existing
-constant interface, independently of any production success assumption. -/
+/-- The model's sort and constant rules type each supported syntax form. -/
 theorem typing {β : Type u} {resolve : Address → Option (ConstRef β)}
     {entries : Model.Environment β} {term : KExpr .anon} {before : TcState .anon}
     {body type : AExpr β} (support : AtomicInferenceSupport resolve entries term before body type) :
@@ -163,9 +152,9 @@ theorem output {β : Type u} {resolve : Address → Option (ConstRef β)}
       simp only [ReaderT.run_bind, ReaderT.run_monadLift] at accepted
       change EStateM.bind (TcM.getConst id) _ before = _ at accepted
       cases got : TcM.getConst id before with
-      | error err failed => rw [runTcBind, got] at accepted; contradiction
+      | error err failed => rw [EStateM.bind, got] at accepted; contradiction
       | ok concrete loaded =>
-          rw [runTcBind, got] at accepted
+          rw [EStateM.bind, got] at accepted
           simp only at accepted
           split at accepted
           · contradiction
@@ -200,9 +189,7 @@ structure AtomicInference {β : Type u} (resolve : Address → Option (ConstRef 
   misses : UncachedInference before term
   support : AtomicInferenceSupport resolve entries term misses.keyed body type
 
-/-- A successful public inference in this fragment returns the semantic type
-of the exact source tree. The inference implementation supplies the output
-agreement; callers do not supply a typing or method-soundness premise. -/
+/-- Successful production inference returns the model type of the source tree. -/
 theorem AtomicInference.sound {β : Type u} {resolve : Address → Option (ConstRef β)}
     {entries : Model.Environment β} {before after : TcState .anon}
     {term inferred : KExpr .anon} {body type : AExpr β} {methods : Methods .anon}

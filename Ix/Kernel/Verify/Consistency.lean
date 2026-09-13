@@ -17,7 +17,7 @@ import Ix.Kernel.Verify.Consistency.Audit
 
 This library connects production kernel operations to `Ix.Theory`. Each
 transport keeps its representation, arithmetic, and dependency assumptions
-explicit. A production `checkEnvAnon` fragment now preserves models of its
+explicit. A production `checkEnvAnon` fragment preserves models of its
 axiom set for monomorphic aliases and closed sorts under the stated execution
 resources. General checker soundness remains outside this fragment.
 -/

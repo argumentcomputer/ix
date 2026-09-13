@@ -17,16 +17,16 @@ The construction includes the interface's Lean-level replacement scheme:
 Mathlib's `Classical.allZFSetDefinable` supplies images of arbitrary functions
 `ZFSet → ZFSet`. The audit traverses the theorem's checked types, bodies, and
 constructor fields and permits exactly `propext`, `Classical.choice`, and
-`Quot.sound`. Inaccessible cardinals remain an explicit
-hypothesis, rather than an added Lean axiom.
+`Quot.sound`. Inaccessible cardinals remain an explicit theorem hypothesis.
 
 The package imports the actual Ix interface by a path dependency on the
 repository root. Mathlib is confined to this package; ordinary Ix and
 `Ix.Theory` builds do not depend on it. This construction supplies the
 set-theoretic assumption used by the [consistency model](../../docs/theory.md).
-The connection from the production checker to the certified interface is a
-separate proof obligation. A converse from the interface to inaccessible
-cardinals is not proved here.
+The [production fragment](../../docs/kernel-verification.md#production-environment-fragment)
+uses this assumption to preserve models of source axioms. Full checker
+refinement and a converse from the interface to inaccessible cardinals are
+separate proof obligations.
 
 ## Build
 

@@ -6,26 +6,16 @@ proofs. Their named specification and reference implementation lemmas are local
 under `Ix.Theory.Named`. Building or checking them requires no external
 formalization repository.
 
-The named development retains the 104 source modules needed by the existing
-proof dependency graph, including the inductive fixtures consumed by Ix.
-Standalone applications, benchmarks, and unrelated tests are excluded. Its
-original source hashes and attribution are recorded in `Ix/Theory/Named/NOTICE`
-and `Tests/Theory/NamedManifest.lean`; the Apache license is preserved alongside
-the sources. The added axiom-audit helper is authored in Ix.
+The certified receipt interface and a fragment of production `checkEnvAnon`
+have relative consistency theorems. Full checker consistency remains open.
 
 ## Connection to the consistency model
 
-The name-indexed specification and the set model use the same
-`Ix.Theory.VLevel`. The set model and its foundational audit remain independent
-of the named development. Mathlib is confined to the separate
-[set-theory model package](../Models/SetTheory/README.md).
-
-That package's `IxSetTheoryModel.setTheoryOfCarneiro` constructs the exact
-`Ix.Theory.Model.SetTheory` interface on Mathlib's `ZFSet`. It takes an explicit
-`OmegaInaccessibles` hypothesis: a strictly increasing countable sequence of
-strongly inaccessible cardinals. The universe chain is `V_ (κ n).ord`.
-`carneiro_implies_ix` proves model existence under this hypothesis, with a full
-dependency audit restricted to Lean's three standard axioms.
+The named specification and the set model share `Ix.Theory.VLevel`. The
+[model foundation](theory.md) and its audit are independent of the named
+development. The separate [Mathlib package](../Models/SetTheory/README.md)
+constructs `Ix.Theory.Model.SetTheory` on `ZFSet` from a countable strictly
+increasing sequence of strongly inaccessible cardinals.
 
 `Ix.Kernel.Verify.Consistency` proves the following direct connections:
 
@@ -47,25 +37,22 @@ dependency audit restricted to Lean's three standard axioms.
   environment run to model extension. `checkEnvAnon_atomic_no_false` excludes
   a declaration at an axiom type interpreted as empty, including False.
 
-`ModelTyping.no_false` assumes semantic typing. The production fragment below
-constructs that typing from its supported inference and conversion paths.
-A complete checker consistency theorem
-still requires the remaining inference/conversion cases, cache invariants,
-address-to-store resolution, and declaration admission to establish that
-postcondition for `checkEnvAnon`. The existing named-calculus proofs are retained
-to support this refinement, rather than being treated as a set-model proof.
+`ModelTyping.no_false` assumes semantic typing; the production fragment below
+derives it for its supported paths. Full checker refinement still requires the
+remaining inference and conversion cases, cache invariants, address-to-store
+resolution, and declaration admission. The named-calculus proofs provide
+support for these obligations.
 
 ## Production environment fragment
 
 The axiom policy is relative: **every model of the source axioms extends to a
 model of the checked environment, preserving the axiom interpretations**.
-The axiom interface starts empty and contains exactly the listed source
-axioms. Its types must be closed and refer only to that interface. A concrete
-`Realizes` witness supplies their interpretation; checking an axiom's type
-does not manufacture an inhabitant. This model-existence hypothesis is not
-identified with syntactic consistency of an arbitrary axiom theory.
+The initial interface contains exactly the source axioms, with closed types
+that refer only to that interface. A `Realizes` witness supplies a model of
+these axioms. The hypothesis is model existence; a theorem connecting
+arbitrary syntactic consistency to model existence is outside this result.
 
-The initial fragment covers monomorphic standalone definitions, theorems,
+The fragment covers monomorphic standalone definitions, theorems,
 and opaque definitions whose values are either closed universe terms or
 references to preceding interface entries. Examples include:
 
@@ -79,9 +66,9 @@ def typeAlias : Type := Prop
 
 `AtomicEnvironmentFragment` records the precise execution boundary:
 
-- Every source key occurs in the exact `buildAnonWork` result, and every work
-  item is represented by an axiom or a definition. Standalone lookup, routing,
-  and reset witnesses identify the actual checked `KConst`.
+- Every source key occurs in the `buildAnonWork` result, and every work item
+  represents an axiom or a definition. Lookup, routing, and reset witnesses
+  identify the checked `KConst`.
 - Value inference misses both cache partitions. Constant lookup agrees with
   an already admitted monomorphic type; empty level substitution preserves
   that type. Sort inference retains the finite interning coherence and
@@ -89,44 +76,38 @@ def typeAlias : Type := Prop
 - Conversion takes the initial hash-equality path, with faithfulness of the
   compared expressions. General reduction and conversion caches are outside
   this fragment.
-- Definitions are added in a dependency order with fresh references. Their
-  runtime observations still use the states reached in the original serial
-  work order, including cache clearing. `AtomicDefinitionRun.no_self_alias`
+- Definitions are added in dependency order with fresh references. Their
+  observations use the states reached in the original serial work order,
+  including cache clearing. `AtomicDefinitionRun.no_self_alias`
   proves that a fresh definition cannot justify its own type by referring to
   itself.
 - `checkEnvAnon` returns `.ok results` **and every result row has no error**.
   The outer `.ok` alone does not mean that the declarations passed.
 
-These are operational and representation witnesses, not a checker-soundness
-callback or a supplied typing proof. A caller must establish them for a run;
-this change does not automatically derive them from arbitrary Ixon syntax.
-The proof follows the public checker through validation, type inference,
-the theorem guard, value inference, and conversion. Successful value
-inference constructs the body typing used to extend the preceding model.
-Lambdas, applications, polymorphic instantiation, inductives, coordinated
-blocks, and other conversion paths remain outside this slice.
+Callers must establish these operational and representation witnesses for
+the run. They supply no typing or checker-soundness premise. The proof
+extracts the validation, type-inference, theorem-guard, value-inference, and
+conversion steps from public success, then derives body typing to extend
+the preceding model. Automatic witness construction, lambdas, applications,
+polymorphic instantiation, inductives, coordinated blocks, and other conversion
+paths remain outside the fragment.
 
-`checkEnvAnon_atomic_represents_source` assigns every source address an
-interface whose type reads the exact declaration reached by production
-lookup. Definition interfaces also retain their checked bodies. This is a
-statement about the production ingress/lookup result; the independent
+`checkEnvAnon_atomic_represents_source` ties every source address to an
+interface with the type and body reached by production lookup. The independent
 serialized-Ixon reader refinement remains a separate boundary.
 
-The no-False corollary takes a model of the initial axiom interface in which
-the designated false type is empty. Model extension preserves that value,
-so no resulting declaration can inhabit it. It does not blacklist axiom
-names or merely exclude declarations literally written with type `False`.
+The no-False corollary assumes the designated false type is empty in the
+initial axiom model. Extension preserves that value, so no resulting
+declaration can inhabit it. No axiom-name restriction is needed.
 
 ## Trust checks
 
 The audits traverse checked declaration types and bodies, including inductive
 constructors. They compare exact axiom sets and record direct origins of
-`sorryAx`; they do not rely on cached imported axiom summaries. During the
-migration, full traversal of the original sources exposed two wrapper reports
-that listed 3 axioms but depended on 30. Their boundaries now include the
-existing implementation assumptions and unfinished metatheory. All 441 retained
-named-specification assertions use the original full dependency graphs as their
-migration baseline.
+`sorryAx`. Full traversal includes dependencies missed by cached imported
+axiom summaries, including implementation assumptions and unfinished
+metatheory. All 441 retained named-specification assertions use their original
+full dependency graphs as the migration baseline.
 
 The same traversal covers 2,034 kernel manifest roots. Thirteen entries omitted
 logical or native dependencies through constructor fields; their corrected
@@ -138,12 +119,11 @@ reachable declarations, axioms, and proof-hole origins are computed separately.
 axioms. Completed roots cannot depend on that namespace. Named-specification
 proof holes and implementation bridge axioms are tracked separately from
 Lean's logical axioms and generated native proofs. No direct consistency root
-permits a proof hole or a metatheory/implementation bridge axiom. Both the
-context hash and content-address hash now use kernel-checked proofs of their
-32-byte output bounds on both platform sizes. Their former generated native
-assumptions have been removed from the affected exact audits.
+permits a proof hole or a metatheory/implementation bridge axiom. The context
+hash and content-address hash use kernel-checked proofs of their 32-byte output
+bounds on both platform sizes.
 
-Run the complete local kernel-certification gate:
+Run the complete local certification gate:
 
 ```sh
 lake run check-kernel --with-model
@@ -170,7 +150,7 @@ reached through expression/universe construction, names, and the full
 production method table. They introduce no new native proofs. The model
 extension lemma and `ModelTyping.no_false` use only `propext`,
 `Classical.choice`, and `Quot.sound`, with set theory as a hypothesis.
-The new production roots additionally forbid the earlier abstract
+The production roots additionally forbid the abstract
 `CheckSuccessSound`/`SupportedCheckFragment` interfaces and the independent
 certificate validator in their dependency closures.
 
@@ -189,10 +169,8 @@ permits only the three standard Lean axioms in these roots and inventories
 the separate BLAKE3 and native execution boundaries. See
 [the command interface, theorem contracts and evidence](certified-checking.md).
 
-These host results do not cover the full production inference dispatcher or
-prove that an Aiur public verifier executes the host validator. The VM pilot
-remains in the frozen archive for a later change; its build target and execution
-tests are outside the host gate.
+Aiur execution of the host validator remains a separate proof obligation.
+The VM pilot is preserved in the frozen archive and excluded from the host gate.
 
 ## Review entry points
 
@@ -205,17 +183,16 @@ tests are outside the host gate.
 | Host commands, receipts, and frozen regression evidence | [Certified checking guide](certified-checking.md) |
 | Concrete set-theory instance | [Separate model package](../Models/SetTheory/README.md) |
 
-## Change scope
+## Provenance and scope
 
-The kernel, theory and certified host scaffolding is extracted from
-`jcb/monorepo` at `7b06b754` in a single change. Existing callers move from
-`Ix.Tc` to `Ix.Kernel`. Existing `Ix.Compile.Verify` proofs receive the
-necessary named-specification imports and exact hash-axiom audit updates.
-The new compiler development, circuit changes and certificate VM pilot
-are deferred. The external `lean4lean` dependency and its benchmark/test
-targets are removed; all verification dependencies are local to Ix.
+The kernel, theory, and certified host scaffolding comes from `jcb/monorepo`
+at `7b06b754`. The checker namespace is `Ix.Kernel` (formerly `Ix.Tc`), and
+verification dependencies are local to Ix. The external `lean4lean` dependency
+and its benchmark/test targets have been removed. The new compiler development,
+circuit changes, and certificate VM pilot are deferred.
 
-The subsequent production-fragment change adds direct inference, declaration,
-and serial-environment proofs on top of that extraction. It changes no
-production checker behavior and adds regression cases to the existing kernel
-unit gate.
+The named development retains 104 source modules, including the inductive
+fixtures used by the existing proofs. Original hashes and attribution are
+recorded in `Ix/Theory/Named/NOTICE` and `Tests/Theory/NamedManifest.lean`; the
+Apache license is preserved alongside the sources. The axiom-audit helper and
+direct production-fragment proofs are authored in Ix.

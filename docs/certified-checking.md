@@ -129,12 +129,10 @@ inventory records five BLAKE3 foreign operations and 130 recursion workers
 with safe source definitions; it permits no partial opaque worker source or
 executable replacement.
 
-This stronger traversal exposed a native-evaluation axiom that the historical
-imported axiom summaries missed. It came from the BLAKE3 helper's 32-byte
-output bound. `Address.blake3` now supplies a kernel-checked proof of that
-bound. The wrapper is definitionally equal to the former hash operation,
-and generated source/envelope corpora are unchanged.
-The affected kernel and source-compiler audits also remove this dependency.
+`Address.blake3` supplies a kernel-checked proof of its 32-byte output bound,
+replacing a native-evaluation axiom missed by the historical imported summaries.
+The wrapper is definitionally equal to the former hash operation. The frozen
+corpora check that source and envelope bytes are unchanged.
 
 | Actual command corpus | Fixtures | Accepted | Rejected |
 | --- | ---: | ---: | ---: |
@@ -153,8 +151,8 @@ non-VM field; only `pilotDeclined` and `pilotDeclines` are projected away
 from the three historical reports that mixed host and VM checks. The VM
 pilot, packet encoder and VM execution suite are archived for a later change.
 CLI JSON requests and aggregate records are compared as parsed values because
-the maintained Lean driver formats JSON differently. The archive, source mappings, licenses and
-historical reproduction limits are documented in
+the maintained Lean driver formats JSON differently. The archive, source
+mappings, licenses and historical reproduction limits are documented in
 [`Tests/Fixtures/Certified`](../Tests/Fixtures/Certified/README.md). The archive
 recovers the selected adapter sources and fixtures; it does not include the
 complete historical Ix base checkout.

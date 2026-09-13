@@ -46,7 +46,7 @@ private def productionRoots : Array Lean.Name := #[
   ``checkEnvAnon_atomic_no_false
 ]
 
-/-- The new production roots must not acquire a checker-soundness assumption
+/-- Production roots must not acquire a checker-soundness assumption
 or invoke the independent certificate validator to establish acceptance. -/
 private def forbiddenProduction : Array Lean.Name := #[
   `Ix.Kernel.CheckSuccessSound,

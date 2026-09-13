@@ -6,9 +6,8 @@ public import Tests.Ix.Kernel.IxonFixtures
 
 /-!
 Production regressions for the atomic consistency fragment. These execute
-the real lazy serial driver on content-addressed Ixon declarations. The
-formal results and their resource premises are checked separately by
-`IxKernelConsistency`; these tests do not substitute for those proofs.
+the lazy serial driver on content-addressed Ixon declarations. The fragment's
+theorems and resource premises are checked by `IxKernelConsistency`.
 -/
 
 namespace Tests.Kernel.Consistency

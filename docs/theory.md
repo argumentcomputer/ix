@@ -6,8 +6,8 @@ run the selected regression tests, provenance check, and exact foundation
 audit with `lake run check-theory`.
 
 `Ix.Theory.Certified.accepted_has_model` constructs a model for accepted
-declarations. `accepted_proof_sound` and `no_proof_of_False` give the corresponding semantic
-and consistency results. These theorems explicitly assume a type `V` equipped
+declarations. `accepted_proof_sound` and `no_proof_of_False` give the corresponding
+semantic and consistency results. These theorems assume a type `V` equipped
 with `Ix.Theory.Model.SetTheory V`: set operations and laws together with a
 countable tower of Grothendieck universes. The separate
 [`Models/SetTheory`](../Models/SetTheory/README.md) package constructs this
@@ -17,19 +17,12 @@ that large-cardinal hypothesis explicitly and passes an axiom guard for
 `propext`, `Classical.choice`, and `Quot.sound`. User-supplied logical axioms and
 open frontiers retain their stated model hypotheses.
 
-These are relative consistency results for the certified interface. The
-[kernel verification](kernel-verification.md) now shares its universe syntax
-and proves direct model results for universe comparison, structural expression
-reading, interning, and the production sort-inference branch. The certified
-host adapters connect authenticated serialized Ixon to model admission.
-A production fragment for monomorphic aliases and closed universe terms now
-proves that `checkEnvAnon` preserves a supplied model of its source axiom set,
-under explicit operational and representation witnesses. Its no-False
-corollary preserves the axiom model's empty interpretation of the false type;
-it does not assume that arbitrary source axioms are consistent. See the
-[fragment contract](kernel-verification.md#production-environment-fragment).
-A complete bridge from arbitrary `Ix.Kernel.checkEnvAnon` success or
-compiler/backend execution remains unfinished.
+The [certified host adapters](certified-checking.md) connect authenticated
+serialized Ixon to model admission. Separately, a production `checkEnvAnon`
+[fragment](kernel-verification.md#production-environment-fragment) for
+monomorphic aliases and closed universe terms extends every model of its
+source axioms under explicit execution witnesses. Full checker consistency
+and compiler/backend refinement remain open.
 
 `Ix.Theory.Named` retains the local name-indexed specification and proof
 support needed by the existing kernel and compiler verification. It shares
