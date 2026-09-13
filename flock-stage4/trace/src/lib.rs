@@ -20,6 +20,7 @@ mod root_tables;
 mod statement;
 mod structure_fold;
 mod structured_matrices;
+mod structured_matrix_span;
 mod wiring;
 
 pub use binary_linear_map::{
@@ -93,6 +94,10 @@ pub use structured_matrices::{
   F128StructuredMatricesCensusV0, F128StructuredMatricesError,
   F128StructuredMatricesLimitsV0, F128StructuredMatricesV0,
   F128StructuredMatrixNodeV0,
+};
+pub use structured_matrix_span::{
+  F128StructuredMatrixSpanLayerV0, F128StructuredMatrixSpanRowV0,
+  F128StructuredMatrixSpanV0,
 };
 pub use wiring::{
   F128_WIRING_PRIVATE_VALUES, F128CircuitStructureMatrixIdV1,

@@ -4,6 +4,9 @@
 #[path = "shared_matrix_order_tests.rs"]
 mod order_tests;
 
+#[path = "shared_matrix_span_tests.rs"]
+mod span_tests;
+
 use super::{capacity_tests::SMALL, closure_tests::decode, memory_summary};
 use flock_prover::{
   field::F128,

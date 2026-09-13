@@ -252,15 +252,15 @@ fn cofactors(table: &F128FixedTableV0, id: u32, coordinate: u32) -> [u32; 2] {
   }
 }
 
-fn trim(decoders: &mut [Vec<u64>], rank: usize) {
+pub(super) fn trim(decoders: &mut [Vec<u64>], rank: usize) {
   for decoder in decoders {
     decoder.truncate(rank.div_ceil(64));
   }
 }
 
-struct Budget {
-  limits: F128FixedTableBasisLimitsV0,
-  used: F128FixedTableBasisCensusV0,
+pub(super) struct Budget {
+  pub(super) limits: F128FixedTableBasisLimitsV0,
+  pub(super) used: F128FixedTableBasisCensusV0,
 }
 
 fn charge(
@@ -275,7 +275,15 @@ fn charge(
 }
 
 impl Budget {
-  fn state(&mut self) -> Result<(), Error> {
+  pub(super) fn coefficients(&mut self, count: u64) -> Result<(), Error> {
+    charge(
+      &mut self.used.coefficient_terms,
+      self.limits.coefficient_terms,
+      count,
+      Error::CoefficientTermLimit,
+    )
+  }
+  pub(super) fn state(&mut self) -> Result<(), Error> {
     charge(
       &mut self.used.state_slots,
       self.limits.state_slots,
@@ -283,7 +291,7 @@ impl Budget {
       Error::StateLimit,
     )
   }
-  fn work(&mut self, words: u64) -> Result<(), Error> {
+  pub(super) fn work(&mut self, words: u64) -> Result<(), Error> {
     charge(
       &mut self.used.word_operations,
       self.limits.word_operations,
@@ -291,7 +299,7 @@ impl Budget {
       Error::WorkLimit,
     )
   }
-  fn words(&mut self, words: usize) -> Result<Vec<u64>, Error> {
+  pub(super) fn words(&mut self, words: usize) -> Result<Vec<u64>, Error> {
     charge(
       &mut self.used.dense_words,
       self.limits.dense_words,
@@ -303,7 +311,7 @@ impl Budget {
     row.resize(words, 0);
     Ok(row)
   }
-  fn terms(
+  pub(super) fn terms(
     &mut self,
     words: impl Iterator<Item = u64>,
     rank: usize,
@@ -315,12 +323,7 @@ impl Budget {
         self.work(1)?;
         let bit = word * 64 + bits.trailing_zeros() as usize;
         debug_assert!(bit < rank);
-        charge(
-          &mut self.used.coefficient_terms,
-          self.limits.coefficient_terms,
-          1,
-          Error::CoefficientTermLimit,
-        )?;
+        self.coefficients(1)?;
         result.push(u32::try_from(bit).map_err(|_| Error::IndexOverflow)?);
         bits &= bits - 1;
       }

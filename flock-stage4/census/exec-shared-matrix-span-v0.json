@@ -1,0 +1,110 @@
+{
+  "schema": "ixby-stage4-shared-matrix-cofactor-span-exploration-v0",
+  "measurement_date": "2026-09-13",
+  "base_revision": "4fdbf4084516ce1a29f6753a20d797334d7fadbb",
+  "status": "bounded_exact_symbolic_component_experiment_not_adopted",
+  "source_hashes": [
+    {
+      "path": "flock-stage4/trace/src/structured_matrix_span.rs",
+      "sha256": "50882df1887a2cde21d4e09e55c615e712b52cd50478d3f418500aed4979e500"
+    },
+    {
+      "path": "flock-stage4/trace/src/structured_matrix_span_tests.rs",
+      "sha256": "f89be92f79c0df9479efc3773808052571939f2a3789b9f1776a744902ca2d98"
+    },
+    {
+      "path": "flock-stage4/trace/src/fixed_table_basis.rs",
+      "sha256": "cc989b5dd8db7f7be47c50953398c67a932eed4c9ac0d9ff9fd25fc70da98c6d"
+    },
+    {
+      "path": "flock-stage4/trace/src/lib.rs",
+      "sha256": "352bc5d5d7d4fc10ff6ca1accf8d440da17901838237fec2de771c4b671f412d"
+    },
+    {
+      "path": "flock-stage4/exec/src/shared_matrix_span_tests.rs",
+      "sha256": "56b0f5459c162d92e36f6621433b7ebc60c33e55793f9e0abf029d37a0800f26"
+    },
+    {
+      "path": "flock-stage4/exec/src/shared_matrix_tests.rs",
+      "sha256": "8a31bab9a51f6fa13254124fa6a5bfa8355d0d962e44b837bd1a406629989f3a"
+    }
+  ],
+  "source_program_digest": "942c6cff1fb8d6f32e9229118e017d5cd6e5d128b51dfb22a8d0faede57ce676",
+  "candidate_program_digest": "3f8531af494bfa53ada031bfb987b350b7da9d5ec367352d119df3f8da38e99c",
+  "scope": "All 64 original packed small-class matrices, with the same constrained low-pair functions and high coordinates. This setup-only compiler has no circuit gadget or production selector. It does not change the approved closure, transcript, proof parameters, or keys.",
+  "algorithm": [
+    "Compile an exact common high-coordinate cofactor forest. Leaves are vectors over actual low row/column pairs, never numeric block tags interpreted as field coefficients.",
+    "Retain sparse original source generators, using Gaussian residuals and exact decoder transforms. Stable setup indices break ties; private values are not inputs.",
+    "A dependent source decoder exceeding eight terms gets an explicitly evaluated original generator. The representation is therefore an overcomplete span, not a minimum-rank basis.",
+    "Evaluate every retained generator as low + coordinate * slope, retaining all ordered original outputs. Every compilation limit applies cumulatively to the full forest."
+  ],
+  "counts": {
+    "original_outputs": 64,
+    "low_pairs": 4096,
+    "leaf_width": 4096,
+    "layer_widths": [
+      50,
+      50,
+      50,
+      54,
+      60,
+      64,
+      74,
+      104,
+      141,
+      211,
+      291,
+      450,
+      638,
+      998,
+      1401,
+      2161,
+      2967,
+      4681,
+      6542,
+      8757,
+      11303,
+      11244
+    ],
+    "baseline_shannon_branches": 52740,
+    "nonzero_slopes": 51603,
+    "high_product_sites_removed": 1137,
+    "high_product_site_reduction_fraction": 0.02155858930602958,
+    "estimated_f128_xor_sites": 338892,
+    "state_slots": 64680,
+    "dense_words": 38885092,
+    "word_operations": 1399182540,
+    "coefficient_terms": 395343
+  },
+  "bounds": {
+    "virtual_address_gib": 16,
+    "rayon_threads": 4,
+    "timeout_seconds": 180,
+    "state_slots": 1000000,
+    "dense_words": 64000000,
+    "word_operations": 64000000000,
+    "coefficient_terms": 5000000
+  },
+  "checks": [
+    "All 64 native outputs match the independent Flock bilinear evaluator at three low/high input vector sets.",
+    "Five ordinary tests cover exhaustive small Boolean coefficients, duplicate cancellation, differing dimensions, deterministic reconstruction, dependent blocks and outputs, zero/max dimensions, exact/minus-one cumulative limits, and all program identity components.",
+    "The complete trace suite passed 48 tests. The original scalar cofactor-basis compiler and its identities remain unchanged.",
+    "All workspace targets pass clippy with warnings denied and formatting checks."
+  ],
+  "native_test": {
+    "passed": 1,
+    "failed": 0,
+    "compilation_and_native_seconds": 0.795,
+    "total_test_seconds": 1.24
+  },
+  "raw_log": {
+    "path": "flock-stage4/census/exec-shared-matrix-span-v0.log",
+    "sha256": "0e862c23d9f5fc1a71b80d11e08df4e98051b2f77e153afbd9735d98592cde6a",
+    "capture_normalization": "Trailing blank lines removed. The build waited on a concurrent Cargo lock; compile time is not a controlled benchmark."
+  },
+  "command": "ulimit -v 16777216 && RAYON_NUM_THREADS=4 timeout 180 cargo test --manifest-path flock-stage4/Cargo.toml --release --offline --locked -p ixby-stage4-exec packed_small_shared_matrix_module_span_diagnostic -- --ignored --nocapture --test-threads=1",
+  "interpretation": "Fewer than 2.2 percent of high product sites are removed, while the candidate introduces substantial XOR reconstruction. These symbolic operation counts do not establish PLONK savings. The candidate is retained as a reproducible unadopted experiment; reusable constrained operand preparation is the separate measured arithmetic optimization.",
+  "candidate_adopted": false,
+  "candidate_constraint_census_completed": false,
+  "whole_closed_proof_generated": false
+}

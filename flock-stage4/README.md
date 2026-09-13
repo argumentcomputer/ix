@@ -339,6 +339,13 @@ sifting candidate. The latter reduces high interpolation branches from 52,740
 to 47,697; the low products/blocks are unchanged. It is not adopted or emitted
 as a circuit, and the 9.56% branch saving is not a PLONK-row or whole-fit claim.
 
+The separate [shared-matrix cofactor-span experiment](census/exec-shared-matrix-span-v0.json)
+preserves every original matrix polynomial and passes all 64 native
+differentials. It removes fewer than 2.2% of high product sites while adding
+substantial XOR reconstruction. These are symbolic component counts, not
+PLONK savings or whole-circuit admission. The candidate has no circuit gadget
+or automatic selection and is not adopted by either closed composition.
+
 ## File-key storage without a duplicated C0
 
 `preprocess_fflonk_to_file` stores eight fixed coefficient columns and three
