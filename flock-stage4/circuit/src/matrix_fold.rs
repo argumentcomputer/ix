@@ -41,8 +41,9 @@ pub struct F128RootMatrixClaimVariablesV1 {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct F128MatrixAccumulatorCircuitOutputV1 {
   pub topology_digest: [u8; 32],
-  /// Conditional accumulator outputs. A terminal verifier must publish and
-  /// directly discharge these claims against the named registry matrices.
+  /// Conditional accumulator outputs. The enclosing relation must constrain
+  /// their exact table evaluations, or a diagnostic verifier must publish
+  /// and directly discharge them against the named registry matrices.
   pub root_claims: Vec<F128RootMatrixClaimVariablesV1>,
 }
 

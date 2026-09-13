@@ -1,8 +1,9 @@
 # Generic IxBy → Stage 4 replay
 
-Status: native replay and new public/private statement binding are implemented.
-This is progress toward M5, not completion of M5–M8. There is no approved
-full terminal topology/key, closed-root circuit, or complete FFLONK proof yet.
+Status: native replay, public/private statement binding, and a root-closed
+composition prototype are implemented. This is progress toward M5/M6, not
+completion of M5–M8. There is no approved full terminal topology/key,
+materialized complete closed-root relation, or complete FFLONK proof yet.
 The native Flock constraint-to-IxBy refinement obligation in M3 remains too.
 
 ## Entry and ownership
@@ -71,8 +72,10 @@ The generic adapter records and exports:
 8. The new generic Exec statement connections described above.
 
 The native accumulator outputs are discharged against the actual fixed tables
-as a differential. The circuit composition still exposes those roots publicly;
-the differential is not a substitute for closing them inside the final proof.
+as a differential. The diagnostic circuit composition exposes those roots
+publicly; the separate closed prototype emits their exact table evaluations.
+The native differential is not a substitute for those in-circuit constraints
+or for a completed full-relation proof.
 
 Wiring and Boolean PIOP topology are independently reconstructed by symbolic
 compilers rooted in `CompiledExec`. They never invoke a prover or verifier,
@@ -136,10 +139,10 @@ phase/topology digests agree. No Stage 4 key or FFLONK proof is generated.
 | Accumulator transcript compression rows / PoW predicates | 4,947 / 1,373 |
 | Terminal diagnostic root families | 46 matrix roots, 1 structure, 1 jagged |
 
-The 179 ordinary workspace tests pass; nine tests are ignored by default
+The 187 ordinary workspace tests pass; eleven tests are ignored by default
 (the retained large two-ring projection, native replay/census, and the four
 decision-diagram native/materialization/optimization tests, plus two
-structural BLAKE3 component tests).
+structural BLAKE3 component tests and two closed-composition/admission tests).
 The real three-execution replay regression passes under a 32 GiB
 address-space cap with four Rayon threads. The complete matrix-free census
 finished successfully in 1,161.51 seconds, including setup, under that cap.
@@ -176,7 +179,7 @@ component values produce identical binding matrices. Native bundle mutations,
 wrong commitment openings, truncation, trailing bytes, and both historical
 artifact domains are rejected.
 
-## Exact fixed-table prototype (M6, not root closure)
+## Exact fixed-table components (M6)
 
 `compile_exec_root_tables` borrows the approved setup and derives all 46 Boolean
 A/B matrices, the circuit-structure matrix, and the jagged matrix from it.
@@ -222,13 +225,13 @@ cofactor-XOR rewrites preserve exact values when they finish, but usually grow
 or reach the node limit. Only limited structure/small-table savings were found;
 the default compiler does not adopt the rewrites.
 
-These are reusable exact-evaluation components and cost evidence. The final
-relation must still connect every approved table to the corresponding
-constrained transcript point and claimed value, remove the root sidecar, and
-prove the complete result. The current root-conditional relation, Stage 3
-tables/profile, and backend keys are unchanged. Structural formulas and
-complete-verifier cost reductions are the next step; no oversized terminal
-materialization, SRS generation, or proving run has been started.
+These are reusable exact-evaluation components and cost evidence. The new
+closed composition below connects the approved tables to their corresponding
+constrained transcript points and claims; its complete result still needs to
+be proved. The diagnostic root-conditional relation, Stage 3 tables/profile,
+and backend keys are unchanged. Structural formulas and complete-verifier
+cost reductions remain necessary; no oversized terminal materialization, SRS
+generation, or proving run has been started.
 
 ### Structural BLAKE3 matrices
 
@@ -275,12 +278,90 @@ This is a substantial improvement over the decision-diagram product-cost
 reference, but not a measured full-closure census or an admitted terminal
 proving job. Further cost reduction and the original M5–M8 gates remain.
 
+## Root-closed composition and hard domain budget
+
+`compile_exec_root_closure(approvedReplay, limits)` compiles all 48 exact
+programs before any guest/proof exists. Two BLAKE3 matrix diagrams are replaced
+by the exhaustively coefficient-checked linear programs; all 44 other matrix
+diagrams and both rectangular families remain exact. The current compiler
+temporarily builds the complete diagram set first, so its global entry/node
+budgets include those temporary BLAKE3 diagrams. Linear construction and the
+additional exhaustive coefficient pass have separate explicit bounds.
+
+The immutable table set binds ordered matrix IDs, registry/circuit identities,
+program kinds/digests, and every row/column dimension. Its neutral constructor
+validates identity/geometry, not coefficient provenance; only the approved
+Exec compiler derives and validates these programs from the actual setup.
+The compiled closure owns the table set and borrows that same approved replay.
+Its `constrain` method rejects mismatched setup/topology/binding before any
+allocation and takes externally expected public Q explicitly, not from the
+replay witness. The current emitter still needs witness values; this object
+is not proof-free R1CS/key setup or an acceptance certificate.
+
+`constrain_exec_root_closed` and the existing root-conditional API share the
+same complete replay body. At each original family-binding site, the closed
+path evaluates every exact table at the fold's already constrained point wires
+and enforces equality with its claim wires. It allocates no new root witness
+or public root sidecar. The only public inputs are Q's two limbs. There is no
+unchecked/private binding mode or native-discharge callback. The old path's
+public allocation and constraint order are preserved by this refactor.
+
+Synthetic materialized tests exercise both program kinds and all three root
+families. All 128 bits of every claim are mutated and rejected; freshly forged
+claims reach R1CS satisfaction checking rather than failing a native value
+comparison. Matrix identity/order/count and family geometry failures emit no
+constraints. Three point assignments retain identical matrices.
+
+The native closure regression compiled the complete root set twice before
+creating any proof (15.258 seconds), then matched all 48 native folded roots
+for a return program and both branch outcomes (25.58 seconds total). Its
+composition digest is
+`64caf60bc1fe39846d95e195e3ecf598b75a1bcf22820e5ef72836399c868bdc`;
+the table-set digest is
+`f020d4867674049eb517f7e7be472614f2e34453adaacbb9834374c6783a3199`.
+Those are setup-program identities, NOT R1CS or terminal key digests.
+The same test checks setup-identity corruption before allocation, confirms
+that the first private transcript bit follows the two Q limbs, and refuses
+zero/tiny or above-supported row budgets. This is native differential and
+bounded-entry evidence, not a complete closed R1CS check.
+
+The matrix-free admission API counts actual deterministic PLONK lowering and
+stops after the first R1CS constraint whose rows, plus the two public and two
+blinding rows, exceed the requested cap. It refuses a cap above `2^30`, since
+the pinned prover requires a `4n` polynomial FFT over Fr. Observer errors are
+sticky across further emission, allocation, and both finish methods. A refused
+stream returns a distinct `RejectedBudget` prefix with no complete digest or
+domain; only a finished relation can return the complete census variant.
+Successful census still does not check a satisfying assignment, approve host
+resources/setup, or generate a proof. Use a bounded subprocess for RAM/time
+limits in addition to the internal geometry cap.
+
+The bounded full-emission test returned `RejectedBudget` in 1,245.361 seconds
+after setup/proof replay (1,260.47 seconds total test time). At refusal it had
+emitted 643,831,813 R1CS constraints, 1,073,741,821 PLONK constraint rows, and
+429,910,008 lowering auxiliary wires, in the `MatrixFold` phase. Adding the
+four public/blinding reservations requires 1,073,741,825 rows, beyond the
+`2^30` supported base domain. Even that prefix requires a `2^31` padded domain
+and `2^33` polynomial FFT; those are lower bounds implied by the prefix, not
+a completed full-relation capacity census. The first-over-limit stop does not
+imply that removing one row would make the complete relation fit.
+
+The last sampled test-process high-water RSS was 3,558,544 KiB and peak virtual
+size 4,163,960 KiB. These include approved native setup, not a terminal prover
+or whole process tree. The ordinary test suite overlapped the beginning of
+emission; timing is not a controlled benchmark comparison. No complete
+closed R1CS, full assignment, terminal SRS/key, or proof was generated. The
+[retained admission report](../flock-stage4/census/exec-root-closed-admission-v0.json)
+pins every changed Rust source hash, native regression, hard bounds, exact
+prefix and timing/memory scope. This establishes that the current encoding
+needs cost reduction before proving, not that M6's compact-proof gate passed.
+
 ## Remaining gates
 
 Implement proof-free R1CS/key compilation from the approved replay blueprints;
-extend phase-specific hostile message tests; close every unresolved table
-evaluation in the final relation;
-then actually prove and isolate-verify that complete relation with only an
+extend phase-specific hostile message tests; reduce and fully measure the
+closed prototype; then actually prove and isolate-verify that complete
+relation with only an
 approved terminal configuration, externally expected statement, and compact
 proof. Resource admission must use the new complete geometry including root
 closure. The 992-byte legacy proof-body codec remains only a transport fact.

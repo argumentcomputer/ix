@@ -19,6 +19,7 @@ mod multipoint;
 mod public_inputs;
 mod r1cs;
 mod relation;
+mod root_closure;
 mod statement;
 mod structure_fold;
 mod transcript;
@@ -41,8 +42,10 @@ pub use exec_binding::{
   ExecBindingCircuitOutputV0, constrain_exec_binding,
 };
 pub use exec_relation::{
+  ExecReplayCircuitWitnessV0, ExecRootClosedCircuitOutputV0,
   ExecRootConditionalError, ExecRootConditionalPublicV0,
-  ExecRootConditionalWitnessV0, constrain_exec_root_conditional,
+  ExecRootConditionalWitnessV0, constrain_exec_root_closed,
+  constrain_exec_root_conditional,
 };
 pub use f128::{
   F128_BITS, F128VariablesV1, alloc_f128_private,
@@ -94,6 +97,11 @@ pub use relation::{
   Stage4RelationCircuitOutputV1, Stage4RelationError,
   Stage4RelationPublicInputsV1, Stage4RelationWitnessV1, Stage4TraceWitnessV1,
   Stage4TranscriptWitnessV1, constrain_stage4_relation,
+};
+pub use root_closure::{
+  ExecRootClosureError, constrain_f128_jagged_root_table,
+  constrain_f128_matrix_root_tables, constrain_f128_structure_root_table,
+  validate_exec_root_tables,
 };
 pub use statement::{
   F128StatementCircuitError, F128StatementCircuitInputsV1,

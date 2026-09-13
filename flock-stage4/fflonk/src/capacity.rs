@@ -17,6 +17,9 @@ pub const BLS12_381_G1_EIP2537_BYTES: u64 = 128;
 /// The prover multiplies three degree-(n-1) wire polynomials
 /// and degree-(n+2) blinded Z, requiring a size-4n polynomial FFT.
 pub const FFLONK_POLYNOMIAL_FFT_DOMAIN_MULTIPLIER: u64 = 4;
+/// Largest base domain whose size-4n polynomial FFT fits BLS12-381 Fr.
+pub const FFLONK_MAX_BASE_DOMAIN: u64 =
+  (1_u64 << Fr::TWO_ADICITY) / FFLONK_POLYNOMIAL_FFT_DOMAIN_MULTIPLIER;
 
 /// Checked production-storage census for one Stage 4 FFLONK domain.
 ///

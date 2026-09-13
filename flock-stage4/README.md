@@ -22,8 +22,8 @@ Tests include strict scalar/curve/subgroup decoding, invalid SRS/key rejection,
 nonzero blinding admission, authenticated scratch corruption, and identical
 proof/key results across memory and file backends for fixed test randomness.
 Small proofs use development setup and randomness, not production security.
-The generic replay and fixed-table prototypes pass 179 ordinary tests
-(88 FFLONK, 27 trace, 50 circuit, 14 replay/setup); nine heavier native,
+The generic replay and root-closure prototypes pass 187 ordinary tests
+(88 FFLONK, 29 trace, 55 circuit, 15 replay/setup); eleven heavier native,
 materialization, and census/optimization tests remain opt-in.
 
 ## Generic Exec replay
@@ -43,8 +43,10 @@ The new circuit binding constrains `S = H4(P,B,I,O)` and public `Q = H5(P,B,O)`.
 The input commitment is private; the public claim remains an explicit
 application input from which the approved image/profile and canonical output
 determine Q. The final application verifier has not been implemented yet.
-The complete replay composition is deliberately named
-`constrain_exec_root_conditional`; its roots still require closure.
+The diagnostic replay composition is deliberately named
+`constrain_exec_root_conditional`; its roots still require external discharge.
+The separate `constrain_exec_root_closed` prototype emits exact table checks
+and publishes only Q. It has not produced a full closed-relation proof.
 
 Proof-free symbolic compilers reconstruct wiring, zerocheck, lincheck, merged
 PCS, multipoint/anchor assist, inner Ligerito, and all three accumulator folds,
@@ -80,9 +82,9 @@ terminal-prover or SRS job has been launched.
 approved registry, complete eight-plane circuit structure, and jagged layout.
 The neutral `constrain_f128_fixed_table` gadget evaluates their exact
 multilinear extensions at constrained point wires. It accepts no table-value
-hint. This is a standalone prototype: the root-conditional composition above
-has not been changed, and the final point/value/identity connections remain
-required before root closure can be claimed.
+hint. This component prototype preserves the diagnostic root-conditional path.
+The new closed composition below supplies the point/value/identity connections;
+emitting these checks is not a substitute for proving the complete relation.
 
 All 48 tables match the native evaluators at two non-Boolean points. One actual
 registry-table gadget was materialized and checked at two points with identical
@@ -108,6 +110,51 @@ but excluding the rest of the verifier and terminal claim binding.
 This remains an oversized prototype, not a closed-root proof. Its
 [separate report](census/exec-structural-blake3-root-v0.json) records the exact
 counts, original formula provenance, source/map hashes, bounds, and tests.
+
+## Root-closed composition and bounded admission
+
+`compile_exec_root_closure` derives an immutable, complete root program set
+from the approved replay setup alone: the two exhaustively checked BLAKE3
+linear maps, 44 other matrix diagrams, and structure/jagged diagrams. No guest,
+point, value, statement, or proof is an input. The shared replay composition
+binds each deferred root to its exact table evaluation using the already
+constrained transcript point and claim wires. There is no new root witness,
+unchecked acceptance bit, or native table-discharge callback in this path.
+Its public input is the caller's externally expected Q, exactly two limbs.
+These program identities are not terminal R1CS/verification-key identities.
+
+The real native test compiles the complete table set twice before creating
+any proof, then checks all 48 evaluations against the native fold roots of
+three executions. It also tests malformed setup identities and tiny row caps.
+Materialized synthetic root-binding tests reject every changed claim bit,
+missing/duplicated/reordered roots, and incorrect family geometry.
+
+`census_exec_root_closed_observed` uses the same closed entry point with a
+hard required-row cap, including the two public and two blinding rows. A cap
+above the current `2^30` base-domain limit is refused. An observer failure is
+sticky: later emission/allocation stops and neither builder finish method
+can return a completed prefix. The result distinguishes `RejectedBudget`
+prefix counts from `Complete` census data. Neither result is a satisfying-
+assignment check, full proof, or RAM/disk/SRS admission.
+
+```sh
+ulimit -v 33554432
+RAYON_NUM_THREADS=4 timeout 180 cargo test --release --locked \
+  --manifest-path flock-stage4/Cargo.toml -p ixby-stage4-exec \
+  native::tests::closure_tests::setup_owned_closure_matches_all_real_fold_roots \
+  -- --ignored --test-threads=1 --nocapture
+```
+
+The separately ignored `root_closed_supported_domain_admission_census` test
+attempted whole-relation emission with that hard supported-domain cutoff. It
+returned `RejectedBudget` after 1,245.361 seconds of emission: 643,831,813 R1CS
+constraints and 1,073,741,821 PLONK constraint rows. With four reserved rows,
+that prefix already exceeds the supported domain. The complete relation's
+count is unknown; this is not a full census or a nearly fitting proof. The
+[admission report](census/exec-root-closed-admission-v0.json) records source
+hashes, exact counts, commands, and measurement scope. Cost reduction,
+proof-free R1CS/key compilation, and a complete closed-relation FFLONK proof
+with isolated verification remain required.
 
 See [generic replay and remaining gates](../docs/IxbyStage4Replay.md).
 `EXEC-REPLAY-PROVENANCE.json` records the donor hashes before this port,

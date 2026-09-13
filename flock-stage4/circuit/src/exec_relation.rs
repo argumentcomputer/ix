@@ -1,8 +1,8 @@
-//! Complete generic Exec replay composition with diagnostic public roots.
+//! Complete generic Exec replay composition with two root-binding paths.
 //!
-//! This deliberately root-conditional API is NOT compact terminal acceptance.
-//! A census of it does not establish approved proof-free topology, and a proof
-//! of it would still require all matrix/structure/jagged root sidecars.
+//! The historical diagnostic path publishes conditional roots; the closed
+//! prototype constrains their exact table evaluations and publishes only Q.
+//! Neither emission nor census is a terminal proof or proof-free key compiler.
 
 use crate::*;
 use ark_bls12_381::Fr;
@@ -12,14 +12,14 @@ use ix_stage4_trace::{
   F128CircuitStructureAccumulatorTraceV1, F128InnerLigeritoTraceV1,
   F128JaggedAccumulatorTraceV1, F128MatrixAccumulatorTraceV1,
   F128MergedPcsFrontendTraceV1, F128MultipointTwistedAssistTraceV1,
-  F128WiringTraceV1,
+  F128RootTableSetV0, F128WiringTraceV1,
 };
 use std::{error::Error, fmt};
 
 /// Backend-neutral inputs to the complete relation. The fixed trace topology
 /// and statement constants belong to the circuit-specific verification key;
 /// callers must not choose a fresh key from an untrusted proof's topology.
-pub struct ExecRootConditionalWitnessV0<'a> {
+pub struct ExecReplayCircuitWitnessV0<'a> {
   pub statement_binding: &'a ExecBindingV0,
   pub commitments: ExecCommitmentsV0,
   pub transcript: Stage4TranscriptWitnessV1<'a>,
@@ -33,6 +33,25 @@ pub struct ExecRootConditionalWitnessV0<'a> {
   pub matrix_fold: &'a F128MatrixAccumulatorTraceV1,
   pub structure_fold: &'a F128CircuitStructureAccumulatorTraceV1,
   pub jagged_fold: &'a F128JaggedAccumulatorTraceV1,
+}
+
+/// Compatibility name for the diagnostic public-root entry point. The
+/// witness itself has no root sidecar and is shared by both binding paths.
+pub type ExecRootConditionalWitnessV0<'a> = ExecReplayCircuitWitnessV0<'a>;
+
+/// Diagnostic outputs of a composition which emitted all table-root checks.
+/// This is not a checked satisfying assignment, key, proof, or acceptance bit.
+pub struct ExecRootClosedCircuitOutputV0 {
+  replay: Stage4RelationCircuitOutputV1,
+  root_tables_digest: [u8; 32],
+}
+impl ExecRootClosedCircuitOutputV0 {
+  pub fn replay(&self) -> &Stage4RelationCircuitOutputV1 {
+    &self.replay
+  }
+  pub fn root_tables_digest(&self) -> [u8; 32] {
+    self.root_tables_digest
+  }
 }
 
 /// Exact public-input order: two statement limbs, each Boolean matrix root
@@ -126,6 +145,74 @@ struct RelationPublicVariables {
   jagged: F128JaggedRootClaimPublicVariablesV1,
 }
 
+// There is deliberately no unchecked/private-root variant. Every call to the
+// shared composition either binds the diagnostic public root or evaluates
+// its exact setup-owned table on the very same derived point/value wires.
+enum RootBindings<'a> {
+  Public {
+    matrices: &'a [F128RootMatrixClaimPublicVariablesV1],
+    structure: &'a F128CircuitStructureRootClaimPublicVariablesV1,
+    jagged: &'a F128JaggedRootClaimPublicVariablesV1,
+  },
+  Closed(&'a F128RootTableSetV0),
+}
+
+impl RootBindings<'_> {
+  fn matrices(
+    &self,
+    builder: &mut R1csBuilder,
+    roots: &[F128RootMatrixClaimVariablesV1],
+  ) -> Result<(), ExecRootConditionalError> {
+    match self {
+      Self::Public { matrices, .. } => phase(
+        "matrix root binding",
+        constrain_f128_matrix_root_public_inputs(builder, matrices, roots),
+      ),
+      Self::Closed(tables) => phase(
+        "matrix root closure",
+        constrain_f128_matrix_root_tables(builder, tables, roots),
+      )
+      .map(|_| ()),
+    }
+  }
+  fn structure(
+    &self,
+    builder: &mut R1csBuilder,
+    root: &F128CircuitStructureRootClaimVariablesV1,
+  ) -> Result<(), ExecRootConditionalError> {
+    match self {
+      Self::Public { structure, .. } => phase(
+        "structure root binding",
+        constrain_f128_circuit_structure_root_public_input(
+          builder, structure, root,
+        ),
+      ),
+      Self::Closed(tables) => phase(
+        "structure root closure",
+        constrain_f128_structure_root_table(builder, tables, root),
+      )
+      .map(|_| ()),
+    }
+  }
+  fn jagged(
+    &self,
+    builder: &mut R1csBuilder,
+    root: &F128JaggedRootClaimVariablesV1,
+  ) -> Result<(), ExecRootConditionalError> {
+    match self {
+      Self::Public { jagged, .. } => phase(
+        "jagged root binding",
+        constrain_f128_jagged_root_public_input(builder, jagged, root),
+      ),
+      Self::Closed(tables) => phase(
+        "jagged root closure",
+        constrain_f128_jagged_root_table(builder, tables, root),
+      )
+      .map(|_| ()),
+    }
+  }
+}
+
 fn allocate_public_inputs(
   builder: &mut R1csBuilder,
   public: &ExecRootConditionalPublicV0,
@@ -163,6 +250,61 @@ pub fn constrain_exec_root_conditional(
     structure: structure_public,
     jagged: jagged_public,
   } = allocate_public_inputs(builder, public)?;
+  constrain_exec_with_roots(
+    builder,
+    statement_public,
+    witness,
+    RootBindings::Public {
+      matrices: &matrix_public,
+      structure: &structure_public,
+      jagged: &jagged_public,
+    },
+  )
+}
+
+/// Emit the complete replay and all three exact root families with ONLY the
+/// two public Q limbs. The setup must supply approved coefficient-checked
+/// tables and topology; no sidecar, hinted value, or callback discharges a root.
+/// This prototype still needs proof-free R1CS/key compilation, resource
+/// admission and an actual complete proof before terminal deployment.
+pub fn constrain_exec_root_closed(
+  builder: &mut R1csBuilder,
+  public: Stage4PublicInputsV1,
+  tables: &F128RootTableSetV0,
+  witness: ExecReplayCircuitWitnessV0<'_>,
+) -> Result<ExecRootClosedCircuitOutputV0, ExecRootConditionalError> {
+  phase(
+    "root table setup",
+    validate_exec_root_tables(
+      tables,
+      witness.statement_binding,
+      witness.matrix_fold,
+      witness.structure_fold,
+      witness.jagged_fold,
+    ),
+  )?;
+  let statement = phase(
+    "statement public inputs",
+    alloc_stage4_public_inputs(builder, public),
+  )?;
+  let replay = constrain_exec_with_roots(
+    builder,
+    statement,
+    witness,
+    RootBindings::Closed(tables),
+  )?;
+  Ok(ExecRootClosedCircuitOutputV0 {
+    replay,
+    root_tables_digest: tables.digest(),
+  })
+}
+
+fn constrain_exec_with_roots(
+  builder: &mut R1csBuilder,
+  statement_public: Stage4PublicInputVariablesV1,
+  witness: ExecReplayCircuitWitnessV0<'_>,
+  roots: RootBindings<'_>,
+) -> Result<Stage4RelationCircuitOutputV1, ExecRootConditionalError> {
   let transcript = witness.transcript;
   let transcript = phase(
     "main transcript",
@@ -293,14 +435,7 @@ pub fn constrain_exec_root_conditional(
       },
     ),
   )?;
-  phase(
-    "matrix root binding",
-    constrain_f128_matrix_root_public_inputs(
-      builder,
-      &matrix_public,
-      &matrices.root_claims,
-    ),
-  )?;
+  roots.matrices(builder, &matrices.root_claims)?;
   let structure = phase(
     "structure fold",
     constrain_f128_circuit_structure_accumulator(
@@ -314,14 +449,7 @@ pub fn constrain_exec_root_conditional(
       },
     ),
   )?;
-  phase(
-    "structure root binding",
-    constrain_f128_circuit_structure_root_public_input(
-      builder,
-      &structure_public,
-      &structure.root_claim,
-    ),
-  )?;
+  roots.structure(builder, &structure.root_claim)?;
   let jagged = phase(
     "jagged fold",
     constrain_f128_jagged_accumulator(
@@ -335,14 +463,7 @@ pub fn constrain_exec_root_conditional(
       },
     ),
   )?;
-  phase(
-    "jagged root binding",
-    constrain_f128_jagged_root_public_input(
-      builder,
-      &jagged_public,
-      &jagged.root_claim,
-    ),
-  )?;
+  roots.jagged(builder, &jagged.root_claim)?;
   Ok(Stage4RelationCircuitOutputV1 {
     wiring,
     algebra,

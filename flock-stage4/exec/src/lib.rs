@@ -7,6 +7,8 @@
 mod blake3_table;
 mod blueprint;
 mod census;
+mod closure;
+mod closure_census;
 mod native;
 pub mod replay;
 mod root_tables;
@@ -18,6 +20,15 @@ pub use blake3_table::{
 pub use census::{
   ExecReplayCensusV0, ExecReplayProgressV0, census_exec_replay,
   census_exec_replay_observed,
+};
+pub use closure::{
+  CompiledExecRootClosure, ExecRootClosureCompilationLimitsV0,
+  compile_exec_root_closure,
+};
+pub use closure_census::{
+  ExecRootClosedCensusLimitsV0, ExecRootClosedCensusOutcomeV0,
+  ExecRootClosedCensusPrefixV0, ExecRootClosedCensusV0,
+  census_exec_root_closed_observed,
 };
 pub use native::{ExecReplayWitness, compile_exec_binding, replay_exec};
 pub use root_tables::{CompiledExecRootTables, compile_exec_root_tables};

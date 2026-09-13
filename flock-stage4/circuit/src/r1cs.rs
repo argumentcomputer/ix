@@ -341,6 +341,9 @@ pub struct R1csBuilder {
   public_variables: usize,
   private_variables: usize,
   storage: BuilderStorage,
+  // A refused stream is never a completed relation, even when emission ends
+  // without another fallible allocation to propagate the observer's error.
+  error: Option<R1csError>,
 }
 
 enum BuilderStorage {
@@ -351,7 +354,7 @@ enum BuilderStorage {
   },
   Projection {
     accumulator: Box<ProjectionAccumulator>,
-    observer: Option<Box<dyn FnMut(&Constraint)>>,
+    observer: Option<Box<dyn FnMut(&Constraint) -> Result<(), R1csError>>>,
   },
 }
 
@@ -367,6 +370,7 @@ impl R1csBuilder {
     Self {
       public_variables: 0,
       private_variables: 0,
+      error: None,
       storage: BuilderStorage::Materialized {
         public_values: Vec::new(),
         private_values: Vec::new(),
@@ -388,19 +392,36 @@ impl R1csBuilder {
   /// backend-specific census or write an external stream while the canonical
   /// projection continues to hash and count the same constraints.
   pub fn new_projection_observed(
-    observer: impl FnMut(&Constraint) + 'static,
+    mut observer: impl FnMut(&Constraint) + 'static,
+  ) -> Self {
+    Self::new_projection_observed_fallible(move |constraint| {
+      observer(constraint);
+      Ok(())
+    })
+  }
+
+  /// Like [`Self::new_projection_observed`], with fail-closed admission.
+  /// The first observer error stops subsequent emission and allocation; both
+  /// finish methods return that same error instead of exporting a partial
+  /// circuit or projection. The observer sees the refused constraint once,
+  /// so any externally retained counts describe a prefix, not a full census.
+  /// Existing infallible `enforce` calls defer error propagation to the next
+  /// allocation or finish. They cannot resume the failed builder.
+  pub fn new_projection_observed_fallible(
+    observer: impl FnMut(&Constraint) -> Result<(), R1csError> + 'static,
   ) -> Self {
     Self::new_projection_inner(Some(Box::new(observer)))
   }
 
   fn new_projection_inner(
-    observer: Option<Box<dyn FnMut(&Constraint)>>,
+    observer: Option<Box<dyn FnMut(&Constraint) -> Result<(), R1csError>>>,
   ) -> Self {
     let mut hasher = blake3::Hasher::new();
     hasher.update(PROJECTION_DIGEST_DOMAIN);
     Self {
       public_variables: 0,
       private_variables: 0,
+      error: None,
       storage: BuilderStorage::Projection {
         accumulator: Box::new(ProjectionAccumulator {
           constraints: 0,
@@ -414,6 +435,9 @@ impl R1csBuilder {
   }
 
   pub fn alloc_public(&mut self, value: Fr) -> Result<Variable, R1csError> {
+    if let Some(error) = &self.error {
+      return Err(error.clone());
+    }
     if self.private_variables != 0 {
       return Err(R1csError::PublicAfterPrivate);
     }
@@ -433,6 +457,9 @@ impl R1csBuilder {
   }
 
   pub fn alloc_private(&mut self, value: Fr) -> Result<Variable, R1csError> {
+    if let Some(error) = &self.error {
+      return Err(error.clone());
+    }
     let index = 1usize
       .checked_add(self.public_variables)
       .and_then(|value| value.checked_add(self.private_variables))
@@ -456,6 +483,9 @@ impl R1csBuilder {
     b: LinearCombination,
     c: LinearCombination,
   ) {
+    if self.error.is_some() {
+      return;
+    }
     let constraint = Constraint { phase, a, b, c };
     match &mut self.storage {
       BuilderStorage::Materialized { constraints, .. } => {
@@ -471,8 +501,10 @@ impl R1csBuilder {
         .expect("constraint term count fits u64");
         *accumulator.constraints_by_phase.entry(phase).or_default() += 1;
         hash_constraint(&mut accumulator.hasher, &constraint);
-        if let Some(observer) = observer {
-          observer(&constraint);
+        if let Some(observer) = observer
+          && let Err(error) = observer(&constraint)
+        {
+          self.error = Some(error);
         }
       },
     }
@@ -506,6 +538,9 @@ impl R1csBuilder {
   }
 
   pub fn finish(self) -> Result<(CanonicalR1csV1, Witness), R1csError> {
+    if let Some(error) = self.error {
+      return Err(error);
+    }
     let public_variables = u32::try_from(self.public_variables)
       .map_err(|_| R1csError::TooManyVariables)?;
     let private_variables = u32::try_from(self.private_variables)
@@ -531,6 +566,9 @@ impl R1csBuilder {
   }
 
   pub fn finish_projection(self) -> Result<R1csProjectionV1, R1csError> {
+    if let Some(error) = self.error {
+      return Err(error);
+    }
     let public_variables = u32::try_from(self.public_variables)
       .map_err(|_| R1csError::TooManyVariables)?;
     let private_variables = u32::try_from(self.private_variables)
@@ -572,6 +610,8 @@ pub enum R1csError {
   InternalShape,
   NonInvertibleBinaryFieldElement,
   WrongBuilderMode,
+  ResourceLimit { resource: &'static str, limit: u64, actual: u64 },
+  ObserverFailure(String),
   AssignmentLength { actual: usize, expected: usize },
   InvalidConstantWire,
   UnknownVariable(Variable),
@@ -592,6 +632,13 @@ impl std::fmt::Display for R1csError {
         write!(formatter, "cannot invert zero in GF(2^128)")
       },
       Self::WrongBuilderMode => write!(formatter, "wrong R1CS builder mode"),
+      Self::ResourceLimit { resource, limit, actual } => write!(
+        formatter,
+        "R1CS stream exceeded {resource} limit {limit} (observed {actual})",
+      ),
+      Self::ObserverFailure(message) => {
+        write!(formatter, "R1CS stream observer failed: {message}")
+      },
       Self::AssignmentLength { actual, expected } => write!(
         formatter,
         "R1CS assignment has {actual} values; expected {expected}",
@@ -688,5 +735,71 @@ mod tests {
       &[(Variable::ONE, -Fr::from(2_u64)), (variable, Fr::from(2_u64))],
     );
     assert_eq!(projection.census().constraints, 2);
+  }
+
+  #[test]
+  fn fallible_projection_matches_the_unbounded_stream() {
+    fn emit(builder: &mut R1csBuilder) {
+      let public = builder.alloc_public(Fr::ONE).unwrap();
+      let private = builder.alloc_private(Fr::ONE).unwrap();
+      builder.enforce_boolean(ConstraintPhase::Statement, public);
+      builder.enforce_boolean(ConstraintPhase::Transcript, private);
+    }
+    let mut bounded = R1csBuilder::new_projection_observed_fallible(|_| Ok(()));
+    let mut unbounded = R1csBuilder::new_projection_observed(|_| {});
+    let mut materialized = R1csBuilder::new();
+    for builder in [&mut bounded, &mut unbounded, &mut materialized] {
+      emit(builder);
+    }
+    let bounded = bounded.finish_projection().unwrap();
+    assert_eq!(bounded, unbounded.finish_projection().unwrap());
+    assert_eq!(bounded.census(), &materialized.finish().unwrap().0.census());
+  }
+
+  #[test]
+  fn refused_projection_is_sticky_and_cannot_finish_a_prefix() {
+    use std::{cell::Cell, rc::Rc};
+    // Refuse the first or second (final) constraint, then exercise either
+    // finish method, with and without a subsequent fallible allocation.
+    for refuse_at in [1, 2] {
+      for finish_projection in [false, true] {
+        for allocate_after in [false, true] {
+          let seen = Rc::new(Cell::new(0u64));
+          let observed = Rc::clone(&seen);
+          let expected = R1csError::ResourceLimit {
+            resource: "test constraints",
+            limit: refuse_at - 1,
+            actual: refuse_at,
+          };
+          let failure = expected.clone();
+          let mut builder =
+            R1csBuilder::new_projection_observed_fallible(move |_| {
+              observed.set(observed.get() + 1);
+              if observed.get() >= refuse_at {
+                Err(failure.clone())
+              } else {
+                Ok(())
+              }
+            });
+          let variable = builder.alloc_private(Fr::ONE).unwrap();
+          builder.enforce_boolean(ConstraintPhase::Statement, variable);
+          builder.enforce_boolean(ConstraintPhase::Transcript, variable);
+          // Even an infallible emission after the refusal must do no work.
+          builder.enforce_boolean(ConstraintPhase::MatrixFold, variable);
+          if allocate_after {
+            assert_eq!(builder.alloc_public(Fr::ONE), Err(expected.clone()));
+            assert_eq!(builder.alloc_private(Fr::ONE), Err(expected.clone()));
+          }
+          assert_eq!(seen.get(), refuse_at);
+          assert_eq!(builder.private_variables, 1);
+          let error = if finish_projection {
+            builder.finish_projection().unwrap_err()
+          } else {
+            builder.finish().unwrap_err()
+          };
+          assert_eq!(error, expected);
+        }
+      }
+    }
   }
 }

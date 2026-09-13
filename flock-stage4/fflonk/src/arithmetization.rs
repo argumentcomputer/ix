@@ -320,6 +320,15 @@ pub struct PlonkGateProjectionV1 {
   state: Rc<RefCell<ProjectionState>>,
 }
 
+/// Exact counts for an emitted PREFIX only. This has no domain or digest and
+/// cannot stand in for the completed census required by preprocessing.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PlonkGatePrefixV0 {
+  pub r1cs_constraints: u64,
+  pub constraint_rows: u64,
+  pub auxiliary_wires: u64,
+}
+
 impl PlonkGateProjectionV1 {
   #[must_use]
   pub fn new() -> Self {
@@ -349,6 +358,20 @@ impl PlonkGateProjectionV1 {
   pub fn observer(&self) -> impl FnMut(&Constraint) + 'static {
     let state = Rc::clone(&self.state);
     move |constraint| state.borrow_mut().observe(constraint)
+  }
+
+  /// Inspect in-progress counts without minting a completed census. Public,
+  /// padding, and blinding rows are not included in this constraint prefix.
+  pub fn prefix(&self) -> Result<PlonkGatePrefixV0, PlonkArithmetizationError> {
+    let state = self.state.borrow();
+    if state.overflowed {
+      return Err(PlonkArithmetizationError::CountOverflow);
+    }
+    Ok(PlonkGatePrefixV0 {
+      r1cs_constraints: state.constraints,
+      constraint_rows: state.rows,
+      auxiliary_wires: state.auxiliary_wires,
+    })
   }
 
   pub fn finish(
@@ -1531,6 +1554,10 @@ mod tests {
   #[test]
   fn streaming_projection_matches_materialized_lowering_exactly() {
     let plonk_projection = PlonkGateProjectionV1::new();
+    assert_eq!(
+      plonk_projection.prefix().unwrap(),
+      PlonkGatePrefixV0::default()
+    );
     let mut builder =
       R1csBuilder::new_projection_observed(plonk_projection.observer());
     build_fixture(&mut builder);
@@ -1546,6 +1573,19 @@ mod tests {
     let (r1cs, _) = materialized.finish().unwrap();
     let compiled = arithmetize_r1cs(&r1cs).unwrap();
     assert_eq!(&projected, compiled.census());
+    assert_eq!(
+      plonk_projection.prefix().unwrap(),
+      PlonkGatePrefixV0 {
+        r1cs_constraints: r1cs_projection.census().constraints,
+        constraint_rows: projected.constraint_rows,
+        auxiliary_wires: projected.auxiliary_wires,
+      }
+    );
+    plonk_projection.state.borrow_mut().overflowed = true;
+    assert_eq!(
+      plonk_projection.prefix(),
+      Err(PlonkArithmetizationError::CountOverflow)
+    );
   }
 
   #[test]

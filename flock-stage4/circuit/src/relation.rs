@@ -48,8 +48,9 @@ pub struct Stage4RelationWitnessV1<'a> {
 }
 
 /// Constrained phase outputs retained for native differential checks and
-/// backend diagnostics. Terminal acceptance still requires the proof and
-/// the independent static-table root checks.
+/// backend diagnostics. This type alone does not certify root closure: the
+/// enclosing composition must either constrain exact table evaluations or
+/// retain explicit diagnostic public roots for independent discharge.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Stage4RelationCircuitOutputV1 {
   pub wiring: F128WiringCircuitOutputV1,

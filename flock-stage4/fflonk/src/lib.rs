@@ -27,14 +27,15 @@ mod verifier_key;
 pub use arithmetization::{
   FFLONK_BLINDING_ROWS, FflonkCheckedWitnessV1, PLONK_GATE_RECORD_BYTES,
   PlonkArithmetizationError, PlonkArithmetizationV1, PlonkCellV1,
-  PlonkGateCensusV1, PlonkGateProjectionV1, PlonkGateRecordError, PlonkGateV1,
-  PlonkWireV1, PlonkWitnessV1, arithmetize_r1cs, arithmetize_r1cs_owned,
-  lower_plonk_witness,
+  PlonkGateCensusV1, PlonkGatePrefixV0, PlonkGateProjectionV1,
+  PlonkGateRecordError, PlonkGateV1, PlonkWireV1, PlonkWitnessV1,
+  arithmetize_r1cs, arithmetize_r1cs_owned, lower_plonk_witness,
 };
 pub use capacity::{
   BLS12_381_G1_COMPRESSED_BYTES, BLS12_381_G1_EIP2537_BYTES,
-  FFLONK_FIELD_STORAGE_BYTES, FFLONK_POLYNOMIAL_FFT_DOMAIN_MULTIPLIER,
-  FflonkCapacityError, FflonkCapacityPlanV1, plan_fflonk_capacity,
+  FFLONK_FIELD_STORAGE_BYTES, FFLONK_MAX_BASE_DOMAIN,
+  FFLONK_POLYNOMIAL_FFT_DOMAIN_MULTIPLIER, FflonkCapacityError,
+  FflonkCapacityPlanV1, plan_fflonk_capacity,
 };
 pub use eip2537::{
   EIP2537_G1_MSM_ADDRESS, EIP2537_G1_MSM_TERM_BYTES, EIP2537_PAIRING_ADDRESS,

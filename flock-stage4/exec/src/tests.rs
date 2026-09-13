@@ -10,6 +10,9 @@ use std::time::Instant;
 #[path = "blake3_table_tests.rs"]
 mod blake3_table_tests;
 
+#[path = "closure_tests.rs"]
+mod closure_tests;
+
 const CAPACITY: MachineCapacities = MachineCapacities {
   program: ProgramCapacities {
     bytes: 256,

@@ -13,6 +13,7 @@ mod ligerito;
 mod matrix_fold;
 mod merged_pcs;
 mod multipoint;
+mod root_tables;
 mod statement;
 mod structure_fold;
 mod wiring;
@@ -62,6 +63,9 @@ pub use multipoint::{
   F128_MULTIPOINT_SCALAR_GROUPS, F128FamilyHConstantsV1, F128JaggedMatrixIdV1,
   F128MultipointRoundV1, F128MultipointTraceError,
   F128MultipointTwistedAssistCensusV1, F128MultipointTwistedAssistTraceV1,
+};
+pub use root_tables::{
+  F128FixedMatrixProgramV0, F128RootTableSetError, F128RootTableSetV0,
 };
 pub use statement::{
   F128StatementBindingTraceError, F128StatementBindingTraceV1,

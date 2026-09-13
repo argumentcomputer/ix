@@ -149,7 +149,7 @@ pub fn census_exec_replay_observed(
   })
 }
 
-fn check_roots(
+pub(crate) fn check_roots(
   output: &Stage4RelationCircuitOutputV1,
   public: &ExecRootConditionalPublicV0,
 ) -> Result<()> {
