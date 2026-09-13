@@ -256,9 +256,58 @@ impl CompletionOrder {
   }
 }
 
+/// Memory outputs are their insertion indices, so they need no payload.
+enum QueryOutputs {
+  Stored(PackedStore),
+  Memory,
+}
+
+impl QueryOutputs {
+  fn at(&self, i: usize) -> QuerySlice<'_> {
+    match self {
+      Self::Stored(store) => store.at(i),
+      Self::Memory => QuerySlice::Value(G::from_usize(i)),
+    }
+  }
+
+  fn validate(&self, rows: usize, output: &[G]) {
+    match self {
+      Self::Stored(store) if rows != 0 => {
+        assert_eq!(output.len(), store.stride)
+      },
+      Self::Memory => assert_eq!(
+        output,
+        &[G::from_usize(rows)],
+        "memory output must equal its row index"
+      ),
+      _ => {},
+    }
+  }
+
+  fn push(&mut self, output: &[G]) {
+    if let Self::Stored(store) = self {
+      store.push(output);
+    }
+  }
+
+  fn retained_elems(&self, rows: usize) -> usize {
+    match self {
+      Self::Stored(store) => store.retained_elems(),
+      Self::Memory => rows,
+    }
+  }
+
+  fn retained_bytes(&self) -> usize {
+    match self {
+      Self::Stored(store) => store.retained_bytes(),
+      Self::Memory => 0,
+    }
+  }
+}
+
 /// Append-only query store with a hash index.
 ///
-/// Every circuit has a fixed key arity and output width. Keys and outputs
+/// Every circuit has a fixed key arity and output width. Keys and function outputs
 /// use segmented byte/u32/full-field columns selected from canonical values.
 /// Encoding preserves exact field equality; stored hashes accelerate table
 /// growth but never replace key comparison. Multiplicities retain full-field
@@ -268,13 +317,10 @@ impl CompletionOrder {
 /// the existing field traces, without retaining another full-width copy.
 ///
 /// Entry index == insertion order; memory circuits use it as the pointer
-/// value, mirroring the old `IndexMap::get_index_of` semantics.
+/// value. Memory outputs are reconstructed from this index without storage.
 pub struct QueryMap {
-  /// Output width; inferred on first insert (not statically available in
-  /// `FunctionLayout`).
-  out_stride_set: bool,
   keys: PackedStore,
-  outs: PackedStore,
+  outs: QueryOutputs,
   mults: SegStore,
   hashes: SegU64s,
   table: hashbrown::HashTable<u32>,
@@ -288,14 +334,19 @@ impl QueryMap {
 
   fn with_storage(key_stride: usize, compact: bool) -> Self {
     Self {
-      out_stride_set: false,
       keys: PackedStore::new(key_stride, compact),
-      outs: PackedStore::new(0, compact),
+      outs: QueryOutputs::Stored(PackedStore::new(0, compact)),
       mults: SegStore::new(1),
       hashes: SegU64s::new(),
       table: hashbrown::HashTable::new(),
       completion: None,
     }
+  }
+
+  pub(crate) fn new_memory(key_stride: usize) -> Self {
+    let mut map = Self::new(key_stride);
+    map.outs = QueryOutputs::Memory;
+    map
   }
 
   pub(crate) fn new_function(key_stride: usize, clock: Arc<AtomicU64>) -> Self {
@@ -321,7 +372,7 @@ impl QueryMap {
   /// Logical field elements (keys + outputs), before encoding; used by the
   /// `IX_AIUR_QUERY_STATS` RAM-attribution dump.
   pub fn retained_elems(&self) -> usize {
-    self.keys.retained_elems() + self.outs.retained_elems()
+    self.keys.retained_elems() + self.outs.retained_elems(self.len())
   }
 
   /// Encoded key/output payload, excluding hashes, multiplicities and index.
@@ -373,6 +424,7 @@ impl QueryMap {
   /// Lossless output view of entry `i`.
   #[inline]
   pub fn output_at(&self, i: usize) -> QuerySlice<'_> {
+    assert!(i < self.len(), "query index out of bounds");
     self.outs.at(i)
   }
 
@@ -385,7 +437,8 @@ impl QueryMap {
   /// Register a function query at `Ctrl::Return`: insert on first
   /// registration and bump on constrained promotion of a cached hint row.
   pub fn finish(&mut self, key: &[G], output: &[G], constrained: bool) {
-    if let Some(i) = self.get_index_of(key) {
+    let hash = hash_g_slice(key);
+    if let Some(i) = self.find_hashed(key, hash) {
       // The only ordinary way to execute an already cached function is
       // constrained promotion of an unconstrained hint entry.
       debug_assert!(self.outs.at(i).matches(output));
@@ -399,7 +452,7 @@ impl QueryMap {
         }
       }
     } else {
-      self.insert(key, output, G::from_bool(constrained));
+      self.insert_hashed(key, output, G::from_bool(constrained), hash);
     }
   }
 
@@ -407,16 +460,22 @@ impl QueryMap {
   /// only insert on a confirmed miss, and a same-key re-entrant call
   /// would loop forever before reaching its own insert.
   pub fn insert(&mut self, key: &[G], output: &[G], multiplicity: G) {
+    self.insert_hashed(key, output, multiplicity, hash_g_slice(key));
+  }
+
+  fn insert_hashed(
+    &mut self,
+    key: &[G],
+    output: &[G],
+    multiplicity: G,
+    hash: u64,
+  ) {
     assert_eq!(key.len(), self.keys.stride);
-    debug_assert!(self.get_index_of(key).is_none());
-    if self.out_stride_set {
-      assert_eq!(output.len(), self.outs.stride);
-    }
-    let hash = hash_g_slice(key);
+    debug_assert!(self.find_hashed(key, hash).is_none());
+    self.outs.validate(self.len(), output);
     let i = u32::try_from(self.mults.entries).expect("query map overflow");
     self.keys.push(key);
     self.outs.push(output);
-    self.out_stride_set = true;
     self.mults.push(&[multiplicity]);
     self.hashes.push(hash);
     if let Some(order) = &mut self.completion {
@@ -425,6 +484,22 @@ impl QueryMap {
     }
     let hashes = &self.hashes;
     self.table.insert_unique(hash, i, |&j| hashes.at(j as usize));
+  }
+
+  /// Find or append a memory row, reusing the canonical hash on a miss.
+  /// The output of a newly allocated row is its stable insertion index.
+  pub fn intern_memory(&mut self, key: &[G], constrained: bool) -> G {
+    let hash = hash_g_slice(key);
+    if let Some(i) = self.find_hashed(key, hash) {
+      if constrained {
+        self.bump_multiplicity(i);
+      }
+      self.outs.at(i).at(0)
+    } else {
+      let ptr = G::from_usize(self.len());
+      self.insert_hashed(key, &[ptr], G::from_bool(constrained), hash);
+      ptr
+    }
   }
 
   /// Entry at insertion index `i`: the key slice plus a mutable handle on

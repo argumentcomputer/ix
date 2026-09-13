@@ -218,13 +218,25 @@ avoids retaining a growing tree of unconstrained queries; the byte checks
 and constrained arithmetic are unchanged. [Byte-hint regressions](../Tests/Ix/IxVM/ByteHints.lean)
 cover boundary values, incorrect advice and native prove/verify cases.
 
-Query keys and cached outputs use segmented, per-column byte, u32 or
+Query keys and cached function outputs use segmented, per-column byte, u32 or
 full-field storage. Widths come from actual canonical field values. A wider
 value widens only the active segment; completed segments keep their original
 layout. Every lookup still hashes canonical values and compares the complete
 decoded key, so hash collisions and alternative field representations cannot
 alias distinct keys. Insertion indices, multiplicities and completion
-timestamps retain their existing meaning.
+timestamps retain their existing meaning. A memory row's sole output is
+its insertion index; that pointer is reconstructed instead of stored.
+Insertion checks the pointer and output width before mutating the record.
+Logical field counts still include the pointer; encoded payload estimates
+exclude its removed storage.
+
+Query completion and memory interning reuse a canonical key hash between
+lookup and insertion. Exact key comparison remains mandatory, including
+during collisions and table growth. Ordinary inserts encode field slices
+directly with checked, fixed-size byte/u32/field writes; the general decoded
+view is used when copying a segment during widening. Packed-key comparison
+reads canonical integers directly, and array/slice copies choose the decoder
+once per row while retaining their shape checks.
 
 The interpreter, generated executors and witness builders decode these
 values into their existing field representations. Cache hits decode directly
@@ -232,8 +244,9 @@ into stack arrays. The storage encoding adds no trace columns or constraints
 and does not change the AIR or verification key. The Rust query-view API does
 change, so regenerate all three executors and rebuild them together.
 [Storage regressions](../crates/aiur/src/querymap/tests.rs) compare full-width
-and packed rows, segment-boundary widening, hint promotion, function and
-memory traces, and stage-two lookup witnesses.
+and packed rows, segment-boundary widening, forced collisions through table
+growth, implicit pointer validation, hint promotion, function and memory
+traces, and stage-two lookup witnesses.
 
 Record memory estimates count the actual encoded key/output payload, plus
 hashes, multiplicities, table-index estimates and retained completion times.
@@ -291,4 +304,3 @@ lake test -- --ignored ixvm
 
 These repairs and regression tests address the defects above. They do not
 establish complete compiler preservation or cryptographic soundness.
-

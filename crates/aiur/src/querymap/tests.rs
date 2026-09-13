@@ -26,6 +26,10 @@ fn packed_queries_preserve_field_values_indices_and_multiplicities() {
       *map.get_mut(&key).unwrap().multiplicity += G::ONE;
       assert_eq!(map.get_index_of(&key), Some(i));
       assert_eq!(map.output_at(i).to_array::<2>(), output);
+      let mut decoded = [G::ZERO; 2];
+      map.output_at(i).copy_to_slice(&mut decoded);
+      assert_eq!(decoded, output);
+      assert_eq!(map.output_at(i).to_vec(), output);
       assert_eq!(map.get_index(i).unwrap().0.to_array::<3>(), key);
       assert_eq!(map.mult_at(i), G::from_u8(2));
     }
@@ -61,15 +65,19 @@ fn hash_collisions_still_require_exact_packed_key_equality() {
     [G::ONE, G::from_u64(MODULUS - 1)],
     [G::from_u8(2), G::from_u64(MODULUS - 1)],
   ];
+  // Use a forced collision through the insertion path as well as lookup.
+  // Growing the table must reuse the same stored hashes and exact equality.
   for key in keys {
-    map.insert(&key, &[], G::ONE);
+    map.insert_hashed(&key, &[], G::ONE, 7);
   }
-  // Force all buckets to share one hash. Production lookup uses this same
-  // equality predicate after computing the canonical key hash.
-  map.table = hashbrown::HashTable::new();
-  for i in 0..map.len() {
-    map.hashes.set(i, 7);
-    map.table.insert_unique(7, u32::try_from(i).unwrap(), |_| 7);
+  for i in 0..128 {
+    map.insert_hashed(&[G::from_usize(i + 3), G::ZERO], &[], G::ONE, 7);
+  }
+  for i in 0..128 {
+    assert_eq!(
+      map.find_hashed(&[G::from_usize(i + 3), G::ZERO], 7),
+      Some(i + keys.len())
+    );
   }
   for (i, key) in keys.iter().enumerate() {
     assert_eq!(map.find_hashed(key, 7), Some(i));
@@ -189,6 +197,94 @@ fn query_storage_million_rows() {
   assert_eq!(checksum, G::from_u64(127_493_856));
   eprintln!(
     "compact={compact} rows={} payload_bytes={} insert_seconds={:.6} lookup_seconds={:.6}",
+    map.len(),
+    map.retained_bytes(),
+    insert.as_secs_f64(),
+    start.elapsed().as_secs_f64()
+  );
+}
+
+#[test]
+fn implicit_memory_outputs_preserve_pointers_advice_and_canonical_keys() {
+  let mut memory = QueryMap::new_memory(3);
+  let mut explicit = QueryMap::with_storage(3, false);
+  let boundary = [255, 256, u64::from(u32::MAX) + 1, MODULUS - 1];
+  for i in 0..513 {
+    let key = [G::from_usize(i), G::from_u64(boundary[i % 4]), G::from_u8(7)];
+    for map in [&mut memory, &mut explicit] {
+      assert_eq!(map.intern_memory(&key, i % 2 == 0), G::from_usize(i));
+      let alias = [key[0], key[1], G::new(MODULUS + 7)];
+      assert_eq!(map.intern_memory(&alias, false), G::from_usize(i));
+      assert_eq!(map.intern_memory(&alias, true), G::from_usize(i));
+      assert_eq!(map.mult_at(i), G::from_usize(1 + usize::from(i % 2 == 0)));
+      assert_eq!(
+        map.get(&key).unwrap().output.to_array::<1>(),
+        [G::from_usize(i)]
+      );
+      assert_eq!(map.get_mut(&key).unwrap().output.at(0), G::from_usize(i));
+      assert_eq!(
+        map.get_index(i).unwrap().1.output.to_vec(),
+        vec![G::from_usize(i)]
+      );
+      assert_eq!(map.output_at(i), QuerySlice::Fields(&[G::from_usize(i)]));
+      let mut decoded = [G::ZERO];
+      map.output_at(i).copy_to_slice(&mut decoded);
+      assert_eq!(decoded, [G::from_usize(i)]);
+    }
+  }
+  for ((mk, mr), (ek, er)) in memory.iter().zip(explicit.iter()) {
+    assert_eq!(mk, ek);
+    assert_eq!(mr.output, er.output);
+    assert_eq!(mr.multiplicity, er.multiplicity);
+  }
+  assert_eq!(memory.len(), 513);
+  assert_eq!(memory.retained_elems(), explicit.retained_elems());
+  assert_eq!(memory.retained_elems(), 513 * 4);
+  assert_eq!(memory.retained_bytes(), memory.keys.retained_bytes());
+  assert!(memory.retained_bytes() < explicit.retained_bytes());
+
+  let bytes = memory.retained_bytes();
+  for output in [vec![], vec![G::ONE], vec![G::from_usize(513), G::ZERO]] {
+    assert!(
+      std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        memory.insert(&[G::from_usize(513), G::ZERO, G::ZERO], &output, G::ONE);
+      }))
+      .is_err()
+    );
+    assert_eq!(memory.len(), 513);
+    assert_eq!(memory.retained_bytes(), bytes);
+  }
+  assert!(
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+      memory.output_at(513);
+    }))
+    .is_err()
+  );
+}
+
+#[test]
+#[ignore = "standalone million-row implicit memory benchmark"]
+fn memory_storage_million_rows() {
+  let implicit = std::env::var("IX_QUERY_BENCH_IMPLICIT").as_deref() != Ok("0");
+  let mut map =
+    if implicit { QueryMap::new_memory(12) } else { QueryMap::new(12) };
+  let start = std::time::Instant::now();
+  for i in 0..1_000_000 {
+    let mut key = [G::from_usize(i % 256); 12];
+    key[0] = G::from_usize(i);
+    let _ = std::hint::black_box(map.intern_memory(&key, true));
+  }
+  let insert = start.elapsed();
+  let start = std::time::Instant::now();
+  let mut checksum = G::ZERO;
+  for i in (0..1_000_000).rev() {
+    let mut key = [G::from_usize(i % 256); 12];
+    key[0] = G::from_usize(i);
+    checksum += map.intern_memory(&key, false);
+  }
+  assert_eq!(checksum, G::from_u64(499_999_500_000));
+  eprintln!(
+    "implicit={implicit} rows={} payload_bytes={} insert_seconds={:.6} lookup_seconds={:.6}",
     map.len(),
     map.retained_bytes(),
     insert.as_secs_f64(),

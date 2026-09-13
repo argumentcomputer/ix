@@ -15,17 +15,29 @@ pub struct PackedRow<'a> {
 
 impl PackedRow<'_> {
   #[inline]
-  fn at(self, i: usize) -> G {
+  fn canonical_at(self, i: usize) -> u64 {
     let column = &self.layout.columns[i];
     let bytes =
       &self.bytes[column.offset..column.offset + column.width.bytes()];
     match column.width {
-      Width::Byte => G::from_u8(bytes[0]),
-      Width::U32 => G::from_u32(u32::from_le_bytes(bytes.try_into().unwrap())),
-      Width::Field => {
-        G::from_u64(u64::from_le_bytes(bytes.try_into().unwrap()))
-      },
+      Width::Byte => u64::from(bytes[0]),
+      Width::U32 => u64::from(u32::from_le_bytes(bytes.try_into().unwrap())),
+      Width::Field => u64::from_le_bytes(bytes.try_into().unwrap()),
     }
+  }
+  #[inline]
+  fn at(self, i: usize) -> G {
+    G::from_u64(self.canonical_at(i))
+  }
+
+  fn matches(self, other: &[G]) -> bool {
+    // Every packed column stores a canonical integer. Compare it directly
+    // with the canonical probe value, without decoding through QuerySlice.
+    self.layout.columns.len() == other.len()
+      && other
+        .iter()
+        .enumerate()
+        .all(|(i, value)| self.canonical_at(i) == value.as_canonical_u64())
   }
 }
 
@@ -34,6 +46,8 @@ impl PackedRow<'_> {
 #[derive(Clone, Copy, Debug)]
 pub enum QuerySlice<'a> {
   Fields(&'a [G]),
+  /// A memory row's pointer is reconstructed from its insertion index.
+  Value(G),
   Bytes(&'a [u8]),
   Packed(PackedRow<'a>),
 }
@@ -42,6 +56,7 @@ impl QuerySlice<'_> {
   pub fn len(self) -> usize {
     match self {
       Self::Fields(xs) => xs.len(),
+      Self::Value(_) => 1,
       Self::Bytes(xs) => xs.len(),
       Self::Packed(row) => row.layout.columns.len(),
     }
@@ -55,6 +70,10 @@ impl QuerySlice<'_> {
   pub fn at(self, i: usize) -> G {
     match self {
       Self::Fields(xs) => xs[i],
+      Self::Value(value) => {
+        assert_eq!(i, 0, "query index out of bounds");
+        value
+      },
       Self::Bytes(xs) => G::from_u8(xs[i]),
       Self::Packed(row) => row.at(i),
     }
@@ -75,10 +94,8 @@ impl QuerySlice<'_> {
             .zip(other)
             .all(|(&a, b)| u64::from(a) == b.as_canonical_u64())
       },
-      _ => {
-        self.len() == other.len()
-          && self.iter().zip(other).all(|(a, b)| a == *b)
-      },
+      Self::Packed(row) => row.matches(other),
+      Self::Value(value) => other.len() == 1 && other[0] == value,
     }
   }
 
@@ -87,9 +104,15 @@ impl QuerySlice<'_> {
     assert_eq!(self.len(), dst.len(), "query slice width mismatch");
     match self {
       Self::Fields(xs) => dst.copy_from_slice(xs),
-      _ => {
-        for (out, value) in dst.iter_mut().zip(self.iter()) {
-          *out = value;
+      Self::Value(value) => dst[0] = value,
+      Self::Bytes(xs) => {
+        for (out, &byte) in dst.iter_mut().zip(xs) {
+          *out = G::from_u8(byte);
+        }
+      },
+      Self::Packed(row) => {
+        for (i, out) in dst.iter_mut().enumerate() {
+          *out = row.at(i);
         }
       },
     }
@@ -100,14 +123,18 @@ impl QuerySlice<'_> {
     assert_eq!(self.len(), N, "query array width mismatch");
     match self {
       Self::Fields(xs) => xs.try_into().expect("width checked above"),
-      _ => std::array::from_fn(|i| self.at(i)),
+      Self::Value(value) => [value; N],
+      Self::Bytes(xs) => std::array::from_fn(|i| G::from_u8(xs[i])),
+      Self::Packed(row) => std::array::from_fn(|i| row.at(i)),
     }
   }
 
   pub fn to_vec(self) -> Vec<G> {
     match self {
       Self::Fields(xs) => xs.to_vec(),
-      _ => self.iter().collect(),
+      Self::Value(value) => vec![value],
+      Self::Bytes(xs) => xs.iter().map(|&byte| G::from_u8(byte)).collect(),
+      Self::Packed(row) => (0..self.len()).map(|i| row.at(i)).collect(),
     }
   }
 }
@@ -267,6 +294,40 @@ impl Segment {
     }
   }
 
+  /// Ordinary inserts already have field slices. Keep them out of the
+  /// generic decoded-row iterator used when copying a widened segment.
+  fn push_fields(&mut self, vals: &[G]) {
+    match self {
+      Self::Bytes(xs) => {
+        for value in vals {
+          let byte =
+            u8::try_from(value.as_canonical_u64()).expect("byte width checked");
+          xs.extend_from_slice(&[byte]);
+        }
+      },
+      Self::Fields(xs) => xs.extend_from_slice(vals),
+      Self::Mixed { data, layout } => {
+        assert_eq!(vals.len(), layout.columns.len());
+        for (column, value) in layout.columns.iter().zip(vals) {
+          let value = value.as_canonical_u64();
+          // Constant-size copies avoid a per-column dynamic memcpy. Check
+          // each narrowing at the write boundary, independently of the plan.
+          match column.width {
+            Width::Byte => {
+              let value = u8::try_from(value).expect("byte width checked");
+              data.extend_from_slice(&[value]);
+            },
+            Width::U32 => {
+              let value = u32::try_from(value).expect("u32 width checked");
+              data.extend_from_slice(&value.to_le_bytes());
+            },
+            Width::Field => data.extend_from_slice(&value.to_le_bytes()),
+          }
+        }
+      },
+    }
+  }
+
   fn push(&mut self, row: QuerySlice<'_>) {
     match self {
       Self::Bytes(xs) => match row {
@@ -354,7 +415,7 @@ impl PackedStore {
         }
         *self.segs.last_mut().unwrap() = next;
       }
-      self.segs.last_mut().unwrap().push(QuerySlice::Fields(vals));
+      self.segs.last_mut().unwrap().push_fields(vals);
     }
     self.entries += 1;
     self.payload += self.layout.bytes();

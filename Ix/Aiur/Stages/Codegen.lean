@@ -415,7 +415,7 @@ private def emitCall (out : Nat) (callee : FunIdx) (args : Array ValIdx)
     stmts := stmts.push (declVal (out + k) (.index (.var "__r_arr") (.lit (toString k))))
   return stmts
 
-/-- `Op::Store`: mirror execute.rs lines 306-326. Insert hit/miss into
+/-- `Op::Store`: mirror the interpreter. Intern the content in
     `record.memory_queries[size]`; output is the allocated/cached ptr. -/
 private def emitStore (out : Nat) (values : Array ValIdx) : Array RustStmt :=
   let size := values.size
@@ -423,13 +423,7 @@ private def emitStore (out : Nat) (values : Array ValIdx) : Array RustStmt :=
   let blockExpr : String :=
     s!"\{ let __values: [G; {size}] = {valsStr};" ++
     s!" let __mq = record.memory_queries.get_mut(&{size}).ok_or(ExecError::InvalidMemorySize({size}))?;" ++
-    s!" if let Some(__i) = __mq.get_index_of(&__values[..]) \{" ++
-    s!" if !unconstrained \{ __mq.bump_multiplicity(__i); }" ++
-    s!" __mq.output_at(__i).at(0)" ++
-    s!" } else \{" ++
-    s!" let __ptr = G::from_usize(__mq.len());" ++
-    s!" __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained));" ++
-    s!" __ptr } }"
+    s!" __mq.intern_memory(&__values[..], !unconstrained) }"
   #[.letStmt false s!"__v_{out}" (some "G") (.lit blockExpr)]
 
 /-- `Op::Load`: mirror execute.rs lines 328-345. Look up by pointer
@@ -1059,3 +1053,4 @@ def emit (tl : Toplevel) : String := Id.run do
 end Aiur.Codegen
 
 end
+

@@ -57,7 +57,7 @@ impl QueryRecord {
     let memory_queries = toplevel
       .memory_sizes
       .iter()
-      .map(|width| (*width, QueryMap::new(*width)))
+      .map(|width| (*width, QueryMap::new_memory(*width)))
       .collect();
     let bytes1_queries = Bytes1Queries::new();
     let bytes2_queries = Bytes2Queries::new();
@@ -399,20 +399,7 @@ impl Function {
             .memory_queries
             .get_mut(&size)
             .ok_or(ExecError::InvalidMemorySize(size))?;
-          if let Some(i) = memory_queries.get_index_of(&values) {
-            if !unconstrained {
-              memory_queries.bump_multiplicity(i);
-            }
-            map.extend(memory_queries.output_at(i).iter());
-          } else {
-            let ptr = G::from_usize(memory_queries.len());
-            memory_queries.insert(
-              &values,
-              &[ptr],
-              G::from_bool(!unconstrained),
-            );
-            map.push(ptr);
-          }
+          map.push(memory_queries.intern_memory(&values, !unconstrained));
         },
         ExecEntry::Op(Op::Load(size, ptr)) => {
           let memory_queries = record
@@ -1085,7 +1072,7 @@ fn biguint_to_klimbs_u64(n: &num_bigint::BigUint) -> Vec<u64> {
 /// Build a `List<U64>` chain in `memory[10]` from `limbs` (head-first order)
 /// and return the head pointer. Each entry is inserted with multiplicity 0
 /// (unconstrained); subsequent constrained `Load`s by the kernel will bump
-/// the multiplicity. Content-addressed via `QueryMap::get_mut`, so repeated
+/// the multiplicity. Content-addressed via `QueryMap::intern_memory`, so repeated
 /// identical sub-tails share storage.
 fn build_klimbs_u64(
   memory: &mut FxIndexMap<usize, QueryMap>,
@@ -1097,13 +1084,7 @@ fn build_klimbs_u64(
   // Find or insert the Nil ptr (tag = 1, padded payload all zero).
   let nil_key: Vec<G> =
     std::iter::once(G::ONE).chain((0..9).map(|_| G::ZERO)).collect();
-  let mut tail_ptr = if let Some(out) = queries.get_mut(&nil_key) {
-    out.output.at(0)
-  } else {
-    let ptr = G::from_usize(queries.len());
-    queries.insert(&nil_key, &[ptr], G::ZERO);
-    ptr
-  };
+  let mut tail_ptr = queries.intern_memory(&nil_key, false);
   // Walk limbs in REVERSE so each Cons points at the previously-built tail.
   for limb in limbs.iter().rev() {
     let bytes = limb.to_le_bytes();
@@ -1113,13 +1094,7 @@ fn build_klimbs_u64(
       key.push(G::from_u8(*b));
     }
     key.push(tail_ptr);
-    tail_ptr = if let Some(out) = queries.get_mut(&key) {
-      out.output.at(0)
-    } else {
-      let ptr = G::from_usize(queries.len());
-      queries.insert(&key, &[ptr], G::ZERO);
-      ptr
-    };
+    tail_ptr = queries.intern_memory(&key, false);
   }
   Ok(tail_ptr)
 }
