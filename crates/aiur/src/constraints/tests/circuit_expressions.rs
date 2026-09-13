@@ -72,6 +72,14 @@ fn circuit_expressions_snapshot() -> io::Result<()> {
     for (index, circuit) in top.circuits.iter().enumerate() {
       out.write_all(&[u8::from(top.circuit_is_branchless(index))])?;
       let (constraints, lookups) = top.build_constraints(index);
+      let inactive_row = vec![G::ZERO; constraints.width];
+      let inactive_values = local_values(&inactive_row);
+      assert!(
+        constraints
+          .zeros
+          .iter()
+          .all(|expr| eval_expr(expr, &inactive_values) == G::ZERO)
+      );
       write_u64(&mut out, constraints.width as u64)?;
       write_u64(&mut out, constraints.selectors.start as u64)?;
       write_u64(&mut out, constraints.selectors.len() as u64)?;
@@ -117,6 +125,8 @@ fn circuit_expressions_snapshot() -> io::Result<()> {
     file.write_all(&out)?;
     file.flush()?;
   }
-  eprintln!("circuit expressions: {reports} circuits, {checked} assignments");
+  eprintln!(
+    "circuit expressions: {reports} circuits, {checked} assignments, {reports} inactive zero rows"
+  );
   Ok(())
 }

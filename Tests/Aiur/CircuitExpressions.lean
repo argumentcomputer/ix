@@ -3,7 +3,7 @@ Copyright (c) 2026 Argument Computer Corporation.
 SPDX-License-Identifier: MIT OR Apache-2.0
 -/
 
-import Ix.Aiur.Proofs.CircuitAllocation
+import Ix.Aiur.Proofs.CircuitCompletion
 import Tests.Aiur.EmissionReader
 
 /-! Actual native function and circuit records drive both symbolic and valued
@@ -47,7 +47,11 @@ private def readCircuit (program : Bytecode.Toplevel) (circuit : Bytecode.Circui
   let lookups ← readList (← readCount 4096) do
     return ExprLookup.mk (← readExpr 256) (← readList (← readCount) (readExpr 256))
   unless lookups == emitted.lookups do throw s!"native circuit lookup trees differ: {label}"
-  let some compiled := compileCircuit ⟨0, emitted.width, 0, 0⟩ program circuit
+  let inactiveValues := zeroValues circuit.layout.width
+  let some inactive := emitted.eval inactiveValues
+    | throw s!"inactive circuit row has an undefined expression: {label}"
+  unless inactive.equations.all (· == 0) do throw s!"inactive circuit equation is nonzero: {label}"
+  let some compiled := compileCircuit (circuitWidths circuit) program circuit
     | throw s!"base compilation rejected native circuit expressions: {label}"
   let count ← readCount
   unless count == 4 do throw "incomplete native circuit assignments"
@@ -106,7 +110,7 @@ def run (path : System.FilePath) : IO Unit := do
   let bytes ← IO.FS.readBinFile path
   match readCorpus.run (bytes, 0) with
   | .error error => throw (IO.userError error)
-  | .ok _ => IO.println "circuit expressions: 96 native circuit bounds, 48 compiler function layouts and 384 assignments match"
+  | .ok _ => IO.println "circuit expressions: 96 native circuit bounds, 48 compiler function layouts, 384 assignments and 96 inactive zero rows match"
 
 end AiurTests.CircuitExpressions
 

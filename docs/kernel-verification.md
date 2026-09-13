@@ -410,11 +410,11 @@ sizes, constrained and advice calls, nested continuations, visibility and
 public-claim widths. All 54 parallel release Rust tests pass, including the
 supplied rank/output ambiguity regression; release Clippy denies warnings.
 
-The audit checks 687 roots by traversing checked types, bodies and inductive
-constructors. Eight roots use no axioms; 104 depend only on `propext`;
-198 use exactly `propext` and `Quot.sound`; the other 377 use exactly
+The audit checks 719 roots by traversing checked types, bodies and inductive
+constructors. Eight roots use no axioms; 110 depend only on `propext`;
+201 use exactly `propext` and `Quot.sound`; the other 400 use exactly
 `propext`, `Classical.choice` and `Quot.sound`. The combined closure
-has 17,051 logical declarations and 17,820 declarations after following runtime
+has 17,111 logical declarations and 17,880 declarations after following runtime
 workers and replacements. The frozen report records four native runtime entry points,
 three partial opaque sources and all 162 Ix recursion worker implementations.
 Bytecode comparison/hashing, tail-match restoration and source-value hashing
@@ -653,6 +653,30 @@ The strict 305-job build and full component gate pass with seventeen native
 comparison corpora. No native implementation changes. Deriving successful symbolic compilation,
 earlier compiler-pass reflection, runtime refinement and the certified
 semantic/cryptographic endpoint remain open.
+
+`GraphCompletion` proves that defined reads supply expression and lookup
+compilation, and that a satisfying assignment excludes rejection of nonzero
+constant constraints. The constant interpretation must be injective; Goldilocks
+satisfies that requirement. `InactiveRows` proves that zero selectors satisfy
+every successfully emitted block for arbitrary logical values and advice.
+It also proves that every successfully emitted circuit has a satisfying
+all-zero row. This is a construction witness for the circuit equations; it
+does not supply an active public call or an accepted proof.
+
+`CircuitCompletion` uses that row and the physical bounds to construct the
+base graph. `Backend.emittedCircuit_reflects` derives graph construction, a
+valued circuit row, graph-root satisfaction and every lookup value from
+successful symbolic emission and physical column values. It no longer assumes
+base-graph compilation succeeds. The canonical base-graph widths are derived
+from the circuit. Successful symbolic emission itself, refinement of native
+execution, proof acceptance and source/claim meaning remain open.
+The native builder and Lean both satisfy the zero-row check for all 96 circuit
+fixtures; all 384 transported assignments continue to match. The 719-root
+audit adds 32 roots and three definitions while preserving all 687 prior
+statements and axiom sets, 541 frozen definitions and 162 worker bodies.
+All 66 Rust release tests, release Clippy and formatting checks pass. There
+are no native production-code changes. The strict 311-job build and full
+component gate pass with all seventeen comparison corpora.
 
 The budget comparison covers
 21,964 Rust/Lean cases, including

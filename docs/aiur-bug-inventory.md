@@ -136,3 +136,10 @@ Its 687-root audit preserves every earlier statement, axiom set, frozen
 definition and recursion worker. All 96 native circuit bounds and 384 composed
 graph assignments match. No new bug or native behavior change was found;
 successful symbolic compilation and the remaining full-C8 obligations stay open.
+
+The circuit-completion checkpoint proves that successful symbolic emission
+produces a base graph at the physical circuit width. A satisfying inactive row
+rules out contradictory constant constraints. Native and Lean checks pass for
+96 such rows, and the 719-root audit preserves all prior statements and frozen
+definitions. This adds no observed bug class or native production change;
+symbolic-emission validity and the remaining full-C8 obligations stay open.

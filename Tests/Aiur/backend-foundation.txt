@@ -5671,6 +5671,271 @@ ROOT Aiur.BoundVerifier.Backend.compileCircuit_reflects
                       List.mapM (Aiur.NativeAIR.readLookup buffer) compiled.base.graph.lookups =
                         some (List.ofFn fun slot => result.lookup ↑slot)
 AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Compiler.compileExpr_defined
+∀ {W : Type u_1} {ops : Aiur.NativeAIR.EvalOps W} {values : Aiur.NativeAIR.Values W}
+  {widths : Aiur.NativeAIR.GraphWidths},
+  values.Fits widths →
+    ∀ (allowStage2 : Bool),
+      widths.stage2 = 0 ∨ allowStage2 = true →
+        ∀ (expr : Aiur.NativeAIR.Expr) (nodes : List Aiur.NativeAIR.Node) {value : W},
+          Aiur.NativeAIR.Expr.eval ops values expr = some value →
+            ∃ result, Aiur.NativeAIR.Compiler.compileExpr widths allowStage2 expr nodes = some result
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Compiler.compileExprs_defined
+∀ {W : Type u_1} {ops : Aiur.NativeAIR.EvalOps W} {values : Aiur.NativeAIR.Values W}
+  {widths : Aiur.NativeAIR.GraphWidths},
+  values.Fits widths →
+    ∀ (allowStage2 : Bool),
+      widths.stage2 = 0 ∨ allowStage2 = true →
+        ∀ (exprs : List Aiur.NativeAIR.Expr) (nodes : List Aiur.NativeAIR.Node) {results : List W},
+          Aiur.NativeAIR.Compiler.evalExprs ops values exprs = some results →
+            ∃ result, Aiur.NativeAIR.Compiler.compileExprs widths allowStage2 exprs nodes = some result
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Compiler.compileLookup_defined
+∀ {W : Type u_1} {ops : Aiur.NativeAIR.EvalOps W} {values : Aiur.NativeAIR.Values W}
+  {widths : Aiur.NativeAIR.GraphWidths},
+  values.Fits widths →
+    widths.stage2 = 0 →
+      ∀ (lookup : Aiur.NativeAIR.Compiler.ExprLookup) (nodes : List Aiur.NativeAIR.Node) {value : W × List W},
+        Aiur.NativeAIR.Compiler.ExprLookup.eval ops values lookup = some value →
+          ∃ result, Aiur.NativeAIR.Compiler.compileLookup widths lookup nodes = some result
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Compiler.compileLookups_defined
+∀ {W : Type u_1} {ops : Aiur.NativeAIR.EvalOps W} {values : Aiur.NativeAIR.Values W}
+  {widths : Aiur.NativeAIR.GraphWidths},
+  values.Fits widths →
+    widths.stage2 = 0 →
+      ∀ (lookups : List Aiur.NativeAIR.Compiler.ExprLookup) (nodes : List Aiur.NativeAIR.Node)
+        {valuesRead : List (W × List W)},
+        List.mapM (Aiur.NativeAIR.Compiler.ExprLookup.eval ops values) lookups = some valuesRead →
+          ∃ result, Aiur.NativeAIR.Compiler.compileLookups widths lookups nodes = some result
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Compiler.recordZero_defined
+∀ {W : Type u_1} {ops : Aiur.NativeAIR.EvalOps W} {values : Aiur.NativeAIR.Values W} {nodes : List Aiur.NativeAIR.Node}
+  {buffer : Array W},
+  Function.Injective ops.konst →
+    Aiur.NativeAIR.Compiler.Evaluation ops values nodes buffer →
+      ∀ {root : Nat},
+        buffer[root]? = some (ops.konst 0) → ∃ roots, Aiur.NativeAIR.Compiler.recordZero nodes root = some roots
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Compiler.compileZeros_defined
+∀ {W : Type u_1} {ops : Aiur.NativeAIR.EvalOps W},
+  Aiur.NativeAIR.GraphEvalLaws ops →
+    Function.Injective ops.konst →
+      ∀ {values : Aiur.NativeAIR.Values W} {widths : Aiur.NativeAIR.GraphWidths},
+        values.Fits widths →
+          widths.stage2 = 0 →
+            ∀ (exprs : List Aiur.NativeAIR.Expr) {nodes : List Aiur.NativeAIR.Node} {buffer : Array W},
+              Aiur.NativeAIR.Compiler.Evaluation ops values nodes buffer →
+                Aiur.NativeAIR.Compiler.ExprsVanish ops values exprs →
+                  ∃ result, Aiur.NativeAIR.Compiler.compileZeros widths exprs nodes = some result
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Compiler.compileBase_defined
+∀ {W : Type u_1} {ops : Aiur.NativeAIR.EvalOps W},
+  Aiur.NativeAIR.GraphEvalLaws ops →
+    Function.Injective ops.konst →
+      ∀ {values : Aiur.NativeAIR.Values W} {widths : Aiur.NativeAIR.GraphWidths},
+        values.Fits widths →
+          widths.stage2 = 0 →
+            ∀ (lookups : List Aiur.NativeAIR.Compiler.ExprLookup) (constraints : List Aiur.NativeAIR.Expr)
+              {valuesRead : List (W × List W)},
+              List.mapM (Aiur.NativeAIR.Compiler.ExprLookup.eval ops values) lookups = some valuesRead →
+                Aiur.NativeAIR.Compiler.ExprsVanish ops values constraints →
+                  ∃ result, Aiur.NativeAIR.Compiler.compileBase widths lookups constraints = some result
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.AIR.selectorSum_zero
+∀ (values : List Aiur.G), (∀ (value : Aiur.G), value ∈ values → value = 0) → Aiur.AIR.selectorSum values = 0
+AXIOMS [propext]
+ROOT Aiur.AIR.emitOp_inactive
+∀ {row : Nat → Aiur.G} {rank : Aiur.G} (op : Aiur.Bytecode.Op) {values : Array Aiur.AIR.RowValue}
+  {emission : Aiur.AIR.OpEmission},
+  Aiur.AIR.emitOp row 0 rank op values = some emission →
+    ∀ (equation : Aiur.G), equation ∈ emission.equations → equation = 0
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.AIR.emitOps_inactive
+∀ {row : Nat → Aiur.G} {rank : Aiur.G} (ops : List Aiur.Bytecode.Op) {values : Array Aiur.AIR.RowValue} {column : Nat}
+  {emission : Aiur.AIR.OpsEmission},
+  Aiur.AIR.emitOps row 0 rank ops values column = some emission →
+    ∀ (equation : Aiur.G), equation ∈ emission.equations → equation = 0
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.AIR.BlockEmission.Inactive.prefix
+∀ {emission : Aiur.AIR.BlockEmission},
+  emission.Inactive →
+    ∀ (equations : List Aiur.G),
+      (∀ (equation : Aiur.G), equation ∈ equations → equation = 0) →
+        (Aiur.AIR.BlockEmission.prefix equations emission).Inactive
+AXIOMS [propext]
+ROOT Aiur.AIR.BlockEmission.Inactive.afterOps
+∀ {emission : Aiur.AIR.BlockEmission},
+  emission.Inactive →
+    ∀ (incoming : Aiur.G) (lookup : Nat) (ops : Aiur.AIR.OpsEmission),
+      (∀ (equation : Aiur.G), equation ∈ ops.equations → equation = 0) →
+        (Aiur.AIR.BlockEmission.afterOps incoming lookup ops emission).Inactive
+AXIOMS [propext]
+ROOT Aiur.AIR.joinBlockEmissions_inactive
+∀ (values : Array Aiur.AIR.RowValue) (column lookup : Nat) (emissions : List Aiur.AIR.BlockEmission),
+  (∀ (emission : Aiur.AIR.BlockEmission), emission ∈ emissions → emission.Inactive) →
+    (Aiur.AIR.joinBlockEmissions values column lookup emissions).Inactive
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.AIR.BlockEmission.Inactive.continued
+∀ {branches continuation : Aiur.AIR.BlockEmission},
+  branches.Inactive →
+    continuation.Inactive →
+      ∀ (equations : List Aiur.G),
+        (∀ (equation : Aiur.G), equation ∈ equations → equation = 0) →
+          (branches.continued equations continuation).Inactive
+AXIOMS [propext]
+ROOT Aiur.Bytecode.branchSelectorFlows_entry_zero
+∀ (branches : Array (Aiur.G × Aiur.Bytecode.Block)) (fallback : Option Aiur.Bytecode.Block),
+  (∀ (pair : Aiur.G × Aiur.Bytecode.Block),
+      pair ∈ branches.toList → (Aiur.Bytecode.Block.selectorFlow (fun x => 0) pair.snd).entry = 0) →
+    (∀ (block : Aiur.Bytecode.Block),
+        fallback = some block → (Aiur.Bytecode.Block.selectorFlow (fun x => 0) block).entry = 0) →
+      (Aiur.AIR.SelectorFlow.join (Aiur.Bytecode.branchSelectorFlows (fun x => 0) branches fallback)).entry = 0
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.Bytecode.Ctrl.selectorFlow_entry_zero
+∀ (ctrl : Aiur.Bytecode.Ctrl), (Aiur.Bytecode.Ctrl.selectorFlow (fun x => 0) ctrl).entry = 0
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.Bytecode.Block.selectorFlow_entry_zero
+∀ (block : Aiur.Bytecode.Block), (Aiur.Bytecode.Block.selectorFlow (fun x => 0) block).entry = 0
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.Bytecode.branchRows_inactive
+∀ (row : Nat → Aiur.G) (context : Aiur.AIR.RowContext) (matched : Aiur.G) (values : Array Aiur.AIR.RowValue)
+  (column lookup : Nat) (branches : Array (Aiur.G × Aiur.Bytecode.Block)) (fallback : Option Aiur.Bytecode.Block)
+  {emission : Aiur.AIR.BlockEmission},
+  (∀ (pair : Aiur.G × Aiur.Bytecode.Block),
+      pair ∈ branches.toList →
+        ∀ (result : Aiur.AIR.BlockEmission),
+          Aiur.Bytecode.Block.emitRow row (fun x => 0) context 0 values column lookup pair.snd = some result →
+            result.Inactive) →
+    (∀ (block : Aiur.Bytecode.Block),
+        fallback = some block →
+          ∀ (result : Aiur.AIR.BlockEmission),
+            Aiur.Bytecode.Block.emitRow row (fun x => 0) context 0 values (column + branches.size) lookup block =
+                some result →
+              result.Inactive) →
+      Aiur.Bytecode.branchRows row (fun x => 0) context matched values column lookup branches fallback = some emission →
+        emission.Inactive
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.Bytecode.Ctrl.emitRow_inactive
+∀ (row : Nat → Aiur.G) (context : Aiur.AIR.RowContext) (ctrl : Aiur.Bytecode.Ctrl) (values : Array Aiur.AIR.RowValue)
+  (column lookup : Nat) {emission : Aiur.AIR.BlockEmission},
+  Aiur.Bytecode.Ctrl.emitRow row (fun x => 0) context 0 values column lookup ctrl = some emission → emission.Inactive
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.Bytecode.Block.emitRow_inactive
+∀ (row : Nat → Aiur.G) (context : Aiur.AIR.RowContext) (block : Aiur.Bytecode.Block) (values : Array Aiur.AIR.RowValue)
+  (column lookup : Nat) {emission : Aiur.AIR.BlockEmission},
+  Aiur.Bytecode.Block.emitRow row (fun x => 0) context 0 values column lookup block = some emission → emission.Inactive
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.AIR.MemberEmission.entry_zero
+∀ (member : Aiur.AIR.MemberEmission), Aiur.AIR.MemberEmission.entry (fun x => 0) member = 0
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.AIR.emitMember_zero
+∀ {rank : Aiur.G} {column lookup selectorBase : Nat} {program : Aiur.Bytecode.Toplevel}
+  {functionIndex : Aiur.Bytecode.FunIdx} {member : Aiur.AIR.MemberEmission},
+  Aiur.AIR.emitMember (fun x => 0) rank column lookup selectorBase program functionIndex = some member →
+    member.body.Inactive
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.AIR.emitMembers_zero
+∀ {rank : Aiur.G} (column lookup selectorBase : Nat) (program : Aiur.Bytecode.Toplevel)
+  (indices : List Aiur.Bytecode.FunIdx) {members : List Aiur.AIR.MemberEmission},
+  Aiur.AIR.emitMembers (fun x => 0) rank column lookup selectorBase program indices = some members →
+    ∀ (member : Aiur.AIR.MemberEmission), member ∈ members → member.body.Inactive
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.AIR.circuitEmission_zero
+∀ (circuit : Aiur.Bytecode.Circuit) (members : List Aiur.AIR.MemberEmission),
+  (∀ (member : Aiur.AIR.MemberEmission), member ∈ members → member.body.Inactive) →
+    ∀ (equation : Aiur.G), equation ∈ (Aiur.AIR.circuitEmission (fun x => 0) circuit members).equations → equation = 0
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.Bytecode.Circuit.emitRow_zero
+∀ (program : Aiur.Bytecode.Toplevel) (circuit : Aiur.Bytecode.Circuit) {emission : Aiur.AIR.CircuitEmission},
+  Aiur.Bytecode.Circuit.emitRow (fun x => 0) program circuit = some emission →
+    ∀ (equation : Aiur.G), equation ∈ emission.equations → equation = 0
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.CircuitEmitter.zeroValues_fits
+∀ (circuit : Aiur.Bytecode.Circuit),
+  (Aiur.NativeAIR.CircuitEmitter.zeroValues circuit.layout.width).Fits
+    (Aiur.NativeAIR.CircuitEmitter.circuitWidths circuit)
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.CircuitEmitter.zeroValues_read
+∀ (width index : Nat),
+  index < width →
+    ((Aiur.NativeAIR.CircuitEmitter.zeroValues width).columns Aiur.NativeAIR.Source.main
+          Aiur.NativeAIR.RowOffset.current)[index]? =
+      some 0
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.CircuitEmitter.emitCircuit_zero_eval
+∀ (program : Aiur.Bytecode.Toplevel) (circuit : Aiur.Bytecode.Circuit)
+  {emission : Aiur.NativeAIR.CircuitEmitter.Emission},
+  Aiur.Bytecode.FunctionsComputedLayout program.functions →
+    Aiur.Bytecode.MembersColumnBound program.functions circuit.members circuit.layout →
+      Aiur.Bytecode.Circuit.validateRowCounts program circuit = true →
+        Aiur.NativeAIR.CircuitEmitter.emitCircuit program circuit = some emission →
+          ∃ result,
+            Aiur.NativeAIR.CircuitEmitter.Emission.eval (Aiur.NativeAIR.CircuitEmitter.zeroValues circuit.layout.width)
+                  emission =
+                some result ∧
+              ∀ (equation : Aiur.G), equation ∈ result.equations → equation = 0
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.CircuitEmitter.emitCircuit_compiles
+∀ (program : Aiur.Bytecode.Toplevel) (circuit : Aiur.Bytecode.Circuit)
+  {emission : Aiur.NativeAIR.CircuitEmitter.Emission},
+  Aiur.Bytecode.FunctionsComputedLayout program.functions →
+    Aiur.Bytecode.MembersColumnBound program.functions circuit.members circuit.layout →
+      Aiur.Bytecode.Circuit.validateRowCounts program circuit = true →
+        Aiur.NativeAIR.CircuitEmitter.emitCircuit program circuit = some emission →
+          ∃ compiled,
+            Aiur.NativeAIR.CircuitEmitter.compileCircuit (Aiur.NativeAIR.CircuitEmitter.circuitWidths circuit) program
+                  circuit =
+                some compiled ∧
+              compiled.emission = emission
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.CircuitEmitter.compileCircuit_defined_iff
+∀ (program : Aiur.Bytecode.Toplevel) (circuit : Aiur.Bytecode.Circuit),
+  Aiur.Bytecode.FunctionsComputedLayout program.functions →
+    Aiur.Bytecode.MembersColumnBound program.functions circuit.members circuit.layout →
+      Aiur.Bytecode.Circuit.validateRowCounts program circuit = true →
+        ((Aiur.NativeAIR.CircuitEmitter.compileCircuit (Aiur.NativeAIR.CircuitEmitter.circuitWidths circuit) program
+                circuit).isSome =
+            true ↔
+          (Aiur.NativeAIR.CircuitEmitter.emitCircuit program circuit).isSome = true)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.BoundVerifier.Backend.emitCircuit_compiles
+∀ {selection : Aiur.BoundVerifier.Selection} (backend : Aiur.BoundVerifier.Backend selection)
+  {circuit : Aiur.Bytecode.Circuit},
+  circuit ∈ backend.compiled.bytecode.circuits →
+    ∀ {emission : Aiur.NativeAIR.CircuitEmitter.Emission},
+      Aiur.NativeAIR.CircuitEmitter.emitCircuit backend.compiled.bytecode circuit = some emission →
+        ∃ compiled,
+          Aiur.NativeAIR.CircuitEmitter.compileCircuit (Aiur.NativeAIR.CircuitEmitter.circuitWidths circuit)
+                backend.compiled.bytecode circuit =
+              some compiled ∧
+            compiled.emission = emission
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.BoundVerifier.Backend.emittedCircuit_reflects
+∀ {selection : Aiur.BoundVerifier.Selection} (backend : Aiur.BoundVerifier.Backend selection)
+  {circuit : Aiur.Bytecode.Circuit},
+  circuit ∈ backend.compiled.bytecode.circuits →
+    ∀ {values : Aiur.NativeAIR.Values Aiur.G},
+      values.Fits (Aiur.NativeAIR.CircuitEmitter.circuitWidths circuit) →
+        ∀ {emission : Aiur.NativeAIR.CircuitEmitter.Emission},
+          Aiur.NativeAIR.CircuitEmitter.emitCircuit backend.compiled.bytecode circuit = some emission →
+            ∃ compiled result buffer,
+              Aiur.NativeAIR.CircuitEmitter.compileCircuit (Aiur.NativeAIR.CircuitEmitter.circuitWidths circuit)
+                    backend.compiled.bytecode circuit =
+                  some compiled ∧
+                compiled.emission = emission ∧
+                  Aiur.Bytecode.Circuit.emitRow
+                        (fun index =>
+                          (values.columns Aiur.NativeAIR.Source.main Aiur.NativeAIR.RowOffset.current)[index]?.getD 0)
+                        backend.compiled.bytecode circuit =
+                      some result ∧
+                    compiled.base.graph.sweep Aiur.NativeAIR.goldilocksOps values = some buffer ∧
+                      (Aiur.NativeAIR.Compiler.Vanishes Aiur.NativeAIR.goldilocksOps buffer compiled.base.graph.zeros ↔
+                          ∀ (equation : Aiur.G), equation ∈ result.equations → equation = 0) ∧
+                        List.mapM (Aiur.NativeAIR.readLookup buffer) compiled.base.graph.lookups =
+                          some (List.ofFn fun slot => result.lookup ↑slot)
+AXIOMS [propext, Classical.choice, Quot.sound]
 PREMISE Aiur.AIR.activityConstraint
 Aiur.G → Aiur.G → Aiur.G
 DEFINITION
@@ -9804,6 +10069,26 @@ DEFINITION
 fun functions circuits =>
   ∀ (circuit : Aiur.Bytecode.Circuit),
     circuit ∈ circuits → Aiur.Bytecode.MembersColumnBound functions circuit.members circuit.layout
+PREMISE Aiur.AIR.BlockEmission.Inactive
+Aiur.AIR.BlockEmission → Prop
+DEFINITION
+fun emission =>
+  (∀ (equation : Aiur.G), equation ∈ emission.equations → equation = 0) ∧
+    ∀ (part : Aiur.G × Array Aiur.AIR.RowValue), part ∈ emission.yields → part.fst = 0
+PREMISE Aiur.NativeAIR.CircuitEmitter.circuitWidths
+Aiur.Bytecode.Circuit → Aiur.NativeAIR.GraphWidths
+DEFINITION
+fun circuit => { preprocessed := 0, main := circuit.layout.width, stage2 := 0, publics := 0 }
+PREMISE Aiur.NativeAIR.CircuitEmitter.zeroValues
+Nat → Aiur.NativeAIR.Values Aiur.G
+DEFINITION
+fun width =>
+  {
+    columns := fun source x =>
+      match source with
+      | Aiur.NativeAIR.Source.main => Array.replicate width 0
+      | x => #[],
+    publics := #[], isFirstRow := 0, isLastRow := 0, isTransition := 0 }
 RECURSION WORKER Aiur.buildArgs._unsafe_rec
 Aiur.LayoutMap →
   Std.HashMap Aiur.Local (Array Aiur.Bytecode.ValIdx) →
@@ -16783,7 +17068,7 @@ fun initId decls renames clauses branches body =>
     let clause : Aiur.MatchCompiler.Clause :=
       { pat := Aiur.MatchCompiler.SPattern.pointer var innerTyp, guards := guards, body := term }
     Aiur.MatchCompiler.dnfProd.aux._unsafe_rec✝ initId decls renames (clauses.push clause) rest body
-C8 component ROOTS 687; LOGICAL DECLARATIONS 17051; WITH RUNTIME 17820
+C8 component ROOTS 719; LOGICAL DECLARATIONS 17111; WITH RUNTIME 17880
 IX RUNTIME EXTERNS [Aiur.AiurSystem.build, Aiur.AiurSystem.verify, Aiur.AiurSystem.vkBytes, Aiur.Proof.ofBytesChecked]
 PARTIAL OPAQUE SOURCES [Aiur.instHashableTyp.hash, Aiur.instReprPattern.repr, Aiur.instReprTyp.repr]
 OTHER UNSAFE RUNTIME []
