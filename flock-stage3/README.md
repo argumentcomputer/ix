@@ -2,8 +2,9 @@
 
 This independent workspace starts the generic IxBy execution backend. Its
 current implementation contains reusable primitive gates, constrained bounded
-bank access, and labelled native gadget proof regressions, not a complete IxBy
-interpreter or compiled Stage 2 verifier.
+bank access, full fixed-capacity BLAKE3 and IxBy byte-commitment circuits, and
+labelled native gadget proof regressions, not a complete IxBy interpreter or
+compiled Stage 2 verifier.
 It is excluded from the root Cargo workspace and has no `aiur`, `multi-stark`,
 or `ix-terminal` dependency. Test-only Plonky3 field crates provide arithmetic
 differential oracles at the same revision used by the original tests.
@@ -38,7 +39,7 @@ cargo fmt --manifest-path flock-stage3/Cargo.toml --all -- --check
 cargo clippy --release --locked --manifest-path flock-stage3/Cargo.toml --workspace --all-targets -- -D warnings
 ```
 
-The current ordinary suite passed 36 tests. The two imported conformance proofs
+The current ordinary suite passed 53 tests. The two imported conformance proofs
 are opt-in and also passed locally on 2026-09-12, including their serialized
 round trips and malicious operand/path/root/proof mutations:
 
@@ -49,7 +50,7 @@ round trips and malicious operand/path/root/proof mutations:
 
 These byte counts exclude the conformance artifact's public operands and
 framing. They are neither generic Exec proof sizes nor terminal FFLONK sizes.
-Tests ran with eight Rayon workers, a 32 GiB virtual-address limit, and a
+Tests ran with four Rayon workers, a 32 GiB virtual-address limit, and a
 300-second timeout per test; this is a bounded regression, not peak-RSS or
 production capacity evidence.
 
@@ -97,4 +98,42 @@ prototype's full zero-fill cost must be included in future resource censuses.
 ```sh
 RAYON_NUM_THREADS=4 cargo test --release --locked --manifest-path flock-stage3/Cargo.toml \
   --workspace ixby::access::proof_tests:: -- --ignored --test-threads=1
+```
+
+## Generic byte authentication and statement binding
+
+`host/src/ixby/bounded_hash.rs` constrains full unkeyed BLAKE3 with a fixed
+physical block/tree schedule and private length. Canonical length/index
+checks, every unused message byte, chunk flags/counters, conditional record
+selection, odd tree propagation, and the final ROOT compression are part of
+the circuit. The count pass and compilation use identical emission.
+
+`ixby/commitment.rs` wires the exact existing profile/program/input/output
+commitments and final statement digest. Program/input/output contents and
+lengths are private wires; only capacities and fixed profile bytes determine
+setup. All five domains share the large compression and selection tables.
+Checked prefix-length addition rejects overflow, and the public layout is
+reconstructed from setup plus externally expected digest limbs.
+
+New opt-in proofs passed with one setup reused across changed private lengths:
+
+| Conformance relation | Flock bundle bytes | Evidence |
+| --- | ---: | --- |
+| Full bounded BLAKE3, 3,073-byte capacity | 167,915 | Five private lengths; locally valid but miswired compression rejected |
+| Complete IxBy byte-commitment chain | 146,043 | Changed private artifacts; fresh-process digest-only verification; wrong digest/profile/capacity rejected |
+
+The commitment verifier child has an empty inherited environment, runs outside
+the worktree, and receives only 32 expected digest bytes plus the proof on
+stdin. It reconstructs setup/public constants and does not evaluate gates or
+receive artifact bytes, native execution, or a prover public-vector dump.
+These are still **byte-authentication component proofs**, not Exec proofs.
+Empty or malformed artifacts can have valid byte commitments; canonical
+decoding, full code admission, machine transitions and their Lean refinement
+must still be constrained. See [the hash construction and trust boundary](../docs/IxbyFlockHash.md).
+
+```sh
+RAYON_NUM_THREADS=4 cargo test --release --locked --manifest-path flock-stage3/Cargo.toml \
+  --workspace ixby::hash_proof_tests:: -- --ignored --test-threads=1
+RAYON_NUM_THREADS=4 cargo test --release --locked --manifest-path flock-stage3/Cargo.toml \
+  --workspace ixby::commitment_proof_tests:: -- --ignored --test-threads=1
 ```

@@ -12,6 +12,7 @@ const WORD_BYTES: usize = 16;
 
 pub const CHUNK_START: u32 = 1 << 0;
 pub const CHUNK_END: u32 = 1 << 1;
+pub const PARENT: u32 = 1 << 2;
 pub const ROOT: u32 = 1 << 3;
 pub const IV: [u32; 8] = [
   0x6A09_E667,

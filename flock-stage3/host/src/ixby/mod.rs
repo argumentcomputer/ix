@@ -4,3 +4,17 @@
 //! execution oracle. The complete machine and its refinement remain in progress.
 
 pub mod access;
+mod bits;
+pub mod bounded_hash;
+pub mod commitment;
+pub mod hash_control;
+pub mod io;
+pub mod length;
+pub mod select;
+
+#[cfg(test)]
+mod commitment_proof_tests;
+#[cfg(test)]
+mod hash_proof_tests;
+#[cfg(test)]
+mod test_support;

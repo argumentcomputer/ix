@@ -116,6 +116,11 @@ private def nestedBytes : Bytes := bytesOf (encodeOutput {} objects (nested 4))
 private def statements : Except Codec.Error Commitment.Statement :=
   Commitment.ofArtifacts {} identityBytes inputBytes outputBytes
 
+private def digestWords (digest : Commitment.Digest) : List Nat :=
+  (List.range 4).map fun word =>
+    (List.range 8).foldl (fun n byte =>
+      n + digest.bytes[word * 8 + byte]!.toNat * 2 ^ (8 * byte)) 0
+
 private def checkMismatch (expected : Commitment.Statement) (domain : Commitment.Domain)
     (code := identityBytes) (input := inputBytes) (profile : Profile := {}) : Bool :=
   match Commitment.executeAndCheck profile code input 2 expected with
@@ -127,6 +132,16 @@ private def checks : IO (List Check) := do
     ("golden identity program", bytesOf (encodeProgram {} identity) == identityBytes),
     ("golden Word32 input", bytesOf (encodeInput {} identity #[w 0x12345678]) == inputBytes),
     ("golden Word32 output", bytesOf (encodeOutput {} identity (w 0x12345678)) == outputBytes),
+    -- Shared golden vector with flock-stage3/host/src/ixby/commitment.rs.
+    -- This is reference byte binding, not a certificate for native constraints.
+    ("golden complete identity commitment chain", match statements with
+      | .error _ => false
+      | .ok s => [s.profile, s.program, s.input, s.output, s.digest].map digestWords == [
+          [6966460787449768616, 2128275386604001288, 2459209300616560705, 13389247344911543908],
+          [14569967937961839496, 13001501475163155991, 8455333540139103506, 16233222503319093095],
+          [5547401797206108288, 10199118524644542921, 17387493906737207323, 17266618757657491293],
+          [5580381423085667084, 3527724868188812160, 3817058062606425944, 8195236551432502967],
+          [6407977636521055359, 3463446082552244464, 6667175477628965062, 16312016406872336668]]),
     ("profile fixed size", profileBytes.size == 68),
     ("profile round trip", match decodeProfile profileBytes with
       | .ok decoded => decoded.value == ({} : Profile) | _ => false),

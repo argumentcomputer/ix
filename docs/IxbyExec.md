@@ -86,12 +86,19 @@ Terminal setup consumes that compiled generic verifier artifact plus terminal
 protocol, implementation, and SRS identities. These are typed interfaces;
 the native compilers and their constraint soundness are still to be supplied.
 
-The native interpreter work now has a constrained bounded-bank access gate,
-including live-prefix padding, disabled access, and full-index range checks.
-Different reads have real Flock conformance proofs under the same setup.
-This is an access component only: canonical image/input authentication,
-instruction decoding, frame/control transitions, halting, output binding,
-and the complete constraint-to-`Codec.Evaluates` theorem remain unfinished.
+The native interpreter work now has constrained bounded-bank access, full
+fixed-capacity BLAKE3, and the exact four-component/final-digest byte-commitment
+chain. Different reads and private byte lengths have real Flock conformance
+proofs under fixed setups. The byte-binding component also verifies in fresh
+processes from only an externally expected digest and proof. The hash schedule,
+all length/padding/flag checks, and commitment dependencies are constrained;
+the verifier does not run a host hash/execution oracle on private artifacts.
+These are components only: canonical image/input decoding and whole-image
+admission, instruction/frame/control transitions, exact fuel/halting,
+execution-derived output serialization, and the complete constraint-to-
+`Codec.Evaluates` theorem remain unfinished. A matching hash of arbitrary
+bytes does not establish those missing properties. See the
+[native hash/commitment construction](IxbyFlockHash.md).
 
 Application policy must pin the exact source declaration closure/version,
 compiler configuration, ABI, semantic profile, image bytes, and execution-
