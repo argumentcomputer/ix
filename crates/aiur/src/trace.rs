@@ -26,7 +26,7 @@ use crate::{
   function_channel,
   gadgets::{bytes1::Bytes1, bytes2::Bytes2},
   memory::Memory,
-  querymap::QueryRef,
+  querymap::QueryMap,
   u8_add_channel, u8_and_channel, u8_bit_decomposition_channel,
   u8_less_than_channel, u8_mul_channel, u8_or_channel, u8_range_check_channel,
   u8_shift_left_channel, u8_shift_right_channel, u8_sub_channel,
@@ -128,15 +128,27 @@ struct TraceContext<'a> {
   query_record: &'a QueryRecord,
 }
 
-/// One row of a circuit trace: the member function it belongs to, the
-/// member's selector offset within the circuit, its function index, and the
-/// recorded query.
-struct RowMeta<'a> {
+/// Shared by all queried rows of one member of a circuit.
+struct MemberMeta<'a> {
   function: &'a Function,
+  function_id: usize,
   sel_offset: usize,
   function_index: G,
-  inputs: &'a [G],
-  result: QueryRef<'a>,
+  queries: &'a QueryMap,
+}
+
+/// Query slices and function metadata stay in their original storage. Only
+/// these two indices are repeated per active row (16 bytes on 64-bit hosts).
+struct RowMeta {
+  member: usize,
+  query: usize,
+}
+
+/// Metadata allocated by the function witness builder, excluding the lookup
+/// row writers shared by every circuit type. The RAM estimator can pass a
+/// conservative row count that includes zero-multiplicity advice.
+pub(crate) fn witness_metadata_bytes(members: usize, rows: usize) -> usize {
+  members * size_of::<MemberMeta<'_>>() + rows * size_of::<RowMeta>()
 }
 
 impl Toplevel {
@@ -151,26 +163,34 @@ impl Toplevel {
     let layout = &circuit.layout;
     let width = layout.width();
     // Concatenate the members' queried rows, in member order.
-    let mut rows_meta = Vec::new();
+    let mut members_meta = Vec::with_capacity(circuit.members.len());
     let mut sel_offset = 0;
     for &member in &circuit.members {
       let function = &self.functions[member];
-      let function_index = G::from_usize(member);
-      rows_meta.extend(
-        query_record.function_queries[member]
-          .iter()
-          .filter(|(_, res)| !res.multiplicity.is_zero())
-          .map(|(inputs, result)| RowMeta {
-            function,
-            sel_offset,
-            function_index,
-            inputs,
-            result,
-          }),
-      );
+      members_meta.push(MemberMeta {
+        function,
+        function_id: member,
+        sel_offset,
+        function_index: G::from_usize(member),
+        queries: &query_record.function_queries[member],
+      });
       sel_offset += function.layout.selectors;
     }
-    let height_no_padding = rows_meta.len();
+    // Count from the compact multiplicity column before allocating: no
+    // geometric Vec growth and no metadata for advice-only entries.
+    fn active_queries(queries: &QueryMap) -> impl Iterator<Item = usize> + '_ {
+      (0..queries.len()).filter(|&i| !queries.mult_at(i).is_zero())
+    }
+    let height_no_padding = members_meta
+      .iter()
+      .map(|member| active_queries(member.queries).count())
+      .sum();
+    let mut rows_meta = Vec::with_capacity(height_no_padding);
+    for (member, meta) in members_meta.iter().enumerate() {
+      rows_meta.extend(
+        active_queries(meta.queries).map(|query| RowMeta { member, query }),
+      );
+    }
     // An unqueried circuit yields an EMPTY trace (not a padded height-1 one):
     // the prover deactivates it, so it is neither committed nor opened.
     let height = if height_no_padding == 0 {
@@ -189,7 +209,10 @@ impl Toplevel {
       .zip(row_writers[..height_no_padding].par_iter_mut())
       .enumerate()
       .fold(RankRanges::default, |mut rank_ranges, (i, (row, lookups))| {
-        let meta = &rows_meta[i];
+        let row_meta = &rows_meta[i];
+        let meta = &members_meta[row_meta.member];
+        let (inputs, result) =
+          meta.queries.get_index(row_meta.query).expect("recorded query");
         let index = &mut ColumnIndex {
           auxiliary: 0,
           // we skip the first lookup, which is reserved for return
@@ -203,20 +226,19 @@ impl Toplevel {
           lookups,
           &mut rank_ranges,
         );
-        let function = usize::try_from(meta.function_index.as_canonical_u64())
-          .expect("function index fits usize");
+        let function = meta.function_id;
         let context = TraceContext {
           function,
           call_components: &self.call_components,
           function_index: meta.function_index,
-          inputs: meta.inputs,
-          multiplicity: meta.result.multiplicity,
+          inputs,
+          multiplicity: result.multiplicity,
           rank: if row_uses_rank(&self.call_components, function) {
-            meta.result.rank
+            result.rank
           } else {
             0
           },
-          output: meta.result.output,
+          output: result.output,
           query_record,
         };
         meta.function.populate_row(index, slice, context, io_buffer);

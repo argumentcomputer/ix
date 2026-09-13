@@ -25,7 +25,6 @@ Ops covered:
 - klimbs_shl / klimbs_shr (via mul/div by 2^n)
 - u64_add / u64_mul (radix-2^16 schoolbook) / u64_sub_with_borrow /
   u64_and / u64_or / u64_xor_kbits (element-wise byte ops)
-- divmod_256 (unconstrained witness generator for u32 byte decomposition)
 
 Aiur builtin gadgets used (compiler-provided): u8_add, u8_sub,
 u8_xor, u8_and, u8_or, u8_from_field_unsafe, u32_less_than,
@@ -257,17 +256,6 @@ def klimbs := ⟦
   fn klimbs_dec(a: KLimbs) -> KLimbs {
     let one = store(ListNode.Cons([1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], store(ListNode.Nil)));
     klimbs_sub(a, one)
-  }
-
-  -- Returns (remainder, quotient): remainder = x mod 256, quotient = x / 256.
-  -- Repeated subtraction. Only invoked from the `#split_u32`
-  -- unconstrained witness generator, so the O(x/256)
-  -- iteration cost is off-circuit (untraced).
-  fn divmod_256(x: G, q: G) -> (G, G) {
-    match u32_less_than(x, 256) {
-      1 => (x, q),
-      0 => divmod_256(x - 256, q + 1),
-    }
   }
 
   -- Radix-2^16 schoolbook multiplication: four digits per operand.

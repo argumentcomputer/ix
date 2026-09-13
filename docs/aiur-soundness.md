@@ -148,6 +148,34 @@ without scanning degrees. Larger caps require a linear metadata check. No
 AIR, trace width, FFT cost or proof encoding changes. Unsafe configurations
 are rejected; the recursive verifier already requires cap height zero.
 
+## Host memory and byte advice
+
+`split_u32` obtains its four low bytes from the native field-to-bytes hint.
+The production caller still range-checks every byte and reconstructs the
+original field element. Both the reconstruction and its maximum value are
+below the field modulus, so inputs at least `2^32` fail instead of truncating.
+Zero still normalizes to an empty limb list. Removing repeated subtraction
+avoids retaining a growing tree of unconstrained queries; the byte checks
+and constrained arithmetic are unchanged. [Byte-hint regressions](../Tests/Ix/IxVM/ByteHints.lean)
+cover boundary values, incorrect advice and native prove/verify cases.
+
+Function witness construction stores a member index and query index per
+active row, sharing function metadata across the member's rows. On a 64-bit
+host this reduces per-row metadata from 72 to 16 bytes. Counting active
+multiplicities before allocation also avoids geometric vector growth and
+metadata for advice-only entries. Row order, selector offsets, multiplicities
+and completion ranks are preserved, including advice promotion.
+
+The prover RAM model sums all member-function queries before splitting a
+grouped circuit's height. It uses the configured extension-field dimension
+for lookup messages and quotient storage, independent of accumulator grouping,
+and includes lookup row writers at padded heights plus function metadata.
+The [RAM and witness regressions](../crates/aiur/src/synthesis/tests/peak.rs)
+cover reordered groups, advice-only entries, shard sizing and extension storage.
+The historical RSS calibration remains an estimate requiring recalibration
+against the current prover; these corrections do not establish an absolute
+process-memory bound.
+
 ## Compatibility and validation
 
 The activity, call-order and branch-gating repairs change affected AIR
@@ -158,6 +186,8 @@ specialization also changes the IxVM AIR and key, and extends the internal
 Lean/Rust bytecode representation; rebuild both sides of the FFI together.
 Lookup retuning changes affected stage-2 layouts, quotient degrees and keys,
 so it also requires rebuilding systems and regenerating proofs.
+The removed byte-advice helper changes compiled function indices; regenerate
+the IxVM executor and rebuild its systems together with the Lean sources.
 
 The native regressions cover supplied false witnesses as well as honest
 execution, finite recursion, shared callees, advice promotion and grouped
@@ -170,7 +200,7 @@ Aiur proving corpus with specialized layouts. Run them with:
 cargo test --locked --release -p aiur --features parallel
 cargo clippy --locked --release -p aiur --all-targets --features parallel -- -D warnings
 lake exe ix codegen --check
-lake test -- aiur-cross aiur-cost aiur-prove aiur-components recursive-verifier ix-aggr
+lake test -- aiur-cross aiur-cost aiur-prove aiur-components ixvm-byte-hints recursive-verifier ix-aggr
 lake test -- --ignored ixvm
 ```
 
