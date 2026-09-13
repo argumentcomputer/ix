@@ -35,3 +35,23 @@ pub(crate) fn fixed_trace_heights(
   }
   degrees.next().is_none()
 }
+
+/// Every input matrix must be injected before the path reaches the cap.
+/// The native MMCS clamps a cap to the tallest matrix's tree depth; that
+/// still omits shorter matrices when the cap lies below their injection.
+/// Subtract the shared blowup first, avoiding machine addition overflow.
+pub(crate) fn trace_cap_coverage(
+  log_blowup: usize,
+  cap_height: usize,
+  log_degrees: &[u8],
+) -> bool {
+  // Every nonempty trace's LDE has at least 2^log_blowup rows. The default
+  // root cap therefore needs no extra traversal of the circuit degrees.
+  if cap_height <= log_blowup {
+    return true;
+  }
+  let maximum = log_degrees.iter().copied().max().unwrap_or(0);
+  let effective =
+    cap_height.saturating_sub(log_blowup).min(usize::from(maximum));
+  log_degrees.iter().all(|&degree| effective <= usize::from(degree))
+}

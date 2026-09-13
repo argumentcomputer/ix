@@ -2,7 +2,8 @@
 
 Aiur's verifier must reject a false result even when a prover supplies trace
 rows directly, without running the interpreter. The regressions in
-`crates/aiur/src/synthesis/tests/` exercise four failures at that boundary.
+`crates/aiur/src/synthesis/tests/` exercise four supplied-trace failures and
+a native Merkle commitment-binding defect.
 
 | Failure | Required invariant | Regression |
 | --- | --- | --- |
@@ -10,6 +11,7 @@ rows directly, without running the interpreter. The regressions in
 | Self-recursive and mutually recursive rows balanced their own calls without a finite execution. | Every constrained call strictly increases a range-checked rank. | [Self recursion](../crates/aiur/src/synthesis/tests/acceptance.rs), [call ordering](../crates/aiur/src/synthesis/tests/call_order.rs) |
 | An empty return at rank seven supplied a public claim with output seven because lookup messages are zero-padded. | Public claims and constrained calls agree with the function's input and output arities; yields agree with their continuation. | [Message shapes](../crates/aiur/src/synthesis/tests/lookup_shapes.rs) |
 | An inactive branch's store arguments changed a live call's lookup channel and supplied output seven for a program returning one. | Ungated arguments require a single function with terminal control and one selector. Constraint emission and lookup grouping use the same predicate. | [Empty branches](../crates/aiur/src/synthesis/tests/branchless.rs) |
+| A large native Merkle cap omitted a shorter matrix: changing its values preserved the commitment, and altered openings verified. | The cap retains the injection layer of every committed matrix. | [Merkle cap coverage](../crates/aiur/src/synthesis/tests/mmcs.rs) |
 
 ## Call ranks and witness generation
 
@@ -57,6 +59,25 @@ These additional guards make the counting and byte-range assumptions explicit;
 the fixed-table and global-count regressions do not claim another demonstrated
 false-result acceptance. See [metadata bounds](../crates/aiur/src/synthesis/tests/lookup_budget.rs)
 and [fixed tables](../crates/aiur/src/synthesis/tests/byte_shapes.rs).
+
+## Native Merkle cap coverage
+
+The native binary MMCS injects shorter matrices while walking from the
+tallest matrix's leaves toward the root. A cap can stop that walk before a
+shorter matrix is included. For an eight-row and a two-row matrix, cap
+heights two and above omit the shorter matrix; changing that matrix leaves
+the commitment unchanged and altered single and multiple openings verify.
+
+Aiur rejects this geometry before checking openings. With trace log-degrees
+`d`, LDE log-blowup `b`, and configured cap height `c`, it requires
+`min(c, b + max(d)) <= b + d_i` for every active matrix. The implementation
+avoids addition overflow and accounts for the native cap's height clamping.
+Fixed-table activity makes the preprocessed matrices part of this check too.
+
+Cap heights at most `b`, including the default root cap, satisfy the condition
+without scanning degrees. Larger caps require a linear metadata check. No
+AIR, trace width, FFT cost or proof encoding changes. Unsafe configurations
+are rejected; the recursive verifier already requires cap height zero.
 
 ## Compatibility and validation
 
