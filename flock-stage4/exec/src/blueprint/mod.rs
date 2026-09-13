@@ -4,7 +4,13 @@
 
 mod algebra;
 mod boolean;
+mod inner;
+mod pcs;
+mod tape;
+mod transcript;
 mod wiring;
 
 pub(crate) use boolean::compile_boolean;
+pub(crate) use pcs::compile_pcs;
+pub(crate) use transcript::compile_transcript;
 pub(crate) use wiring::compile_wiring;

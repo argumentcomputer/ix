@@ -3160,7 +3160,8 @@ fn export_multipoint_round<Ch: Challenger>(
   })
 }
 
-fn family_h_constants() -> F128FamilyHConstantsV1 {
+/// Approved GHASH field constants only; independent of all verifier messages.
+pub(crate) fn family_h_constants() -> F128FamilyHConstantsV1 {
   let inverse_moore = ring_switch::moore_inverse();
   let row = &inverse_moore[..128];
   let ratio = row[8] * row[7].inv();

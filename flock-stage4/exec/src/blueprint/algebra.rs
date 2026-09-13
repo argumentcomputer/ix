@@ -54,21 +54,28 @@ impl Algebra {
   }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct Addresses {
   pub(super) observed: u64,
   pub(super) challenges: u64,
 }
 
 impl Addresses {
-  pub(super) fn observe(&mut self) -> Symbol {
-    let result = Symbol(Reference::Input(Source::ObservedValue(self.observed)));
+  pub(super) fn observe_index(&mut self) -> u64 {
+    let result = self.observed;
     self.observed += 1;
     result
   }
-  pub(super) fn challenge(&mut self) -> Symbol {
-    let result = Symbol(Reference::Input(Source::Challenge(self.challenges)));
+  pub(super) fn challenge_index(&mut self) -> u64 {
+    let result = self.challenges;
     self.challenges += 1;
     result
+  }
+  pub(super) fn observe(&mut self) -> Symbol {
+    Symbol(Reference::Input(Source::ObservedValue(self.observe_index())))
+  }
+  pub(super) fn challenge(&mut self) -> Symbol {
+    Symbol(Reference::Input(Source::Challenge(self.challenge_index())))
   }
 }
 

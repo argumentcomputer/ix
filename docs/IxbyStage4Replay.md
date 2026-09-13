@@ -72,13 +72,25 @@ as a differential. The circuit composition still exposes those roots publicly;
 the differential is not a substitute for closing them inside the final proof.
 
 Wiring and Boolean PIOP topology are independently reconstructed by symbolic
-compilers which accept only `CompiledExec`. They never invoke a prover or
-verifier, construct a guest, or evaluate witness values. They produce exactly
-the arithmetic DAG, static constants, deferred claim identities, challenge/
+compilers rooted in `CompiledExec`. They never invoke a prover or verifier,
+construct a guest, or evaluate witness values. They produce exactly the
+arithmetic DAG, static constants, deferred claim identities, challenge/
 observation indices, gather mappings, and Boolean PCS wires required by the
-approved geometry. Native replay is compared structurally against them.
+approved geometry. The merged PCS, multipoint/anchor assist, and complete
+inner Ligerito topology are reconstructed too, including the fixed jagged
+heights and every private row/path slot. Native replay is compared structurally
+against them before it is returned to the caller.
 
-The other phase/topology compilers remain unfinished. Repeated equality of
+A separate symbolic tape compiler fixes the complete main operation tree,
+not just scalar counts: every label, slice width, PoW difficulty, nonce
+payload, fork seed, child closure and merge position. It preserves the
+distinction between absent grinding and an explicit zero-bit PoW, and between
+one-word vector and scalar squeezes. Query values are never sampled during
+setup and cannot alter the row/path allocation. All compilers run before the
+strict native proof decoder.
+
+The auxiliary fold and low-level hash-topology compilers remain unfinished.
+Repeated equality of
 exported topology across valid proofs is a regression, not permission to
 derive a key from an arbitrary proof. No such key-generation API is exposed.
 
@@ -107,13 +119,36 @@ phase/topology digests agree. No Stage 4 key or FFLONK proof is generated.
 | Accumulator transcript compression rows / PoW predicates | 4,947 / 1,373 |
 | Terminal diagnostic root families | 46 matrix roots, 1 structure, 1 jagged |
 
-The 156 ordinary workspace tests pass; three tests are ignored by default
+The 159 ordinary workspace tests pass; three tests are ignored by default
 (the retained large two-ring projection and the two new native replay/census
 tests). The real three-execution replay regression passes under a 32 GiB
-address-space cap with four Rayon threads. A full census has not yet completed
-in recorded evidence: the first 900-second run timed out. The instrumented
-rerun reports actual progress and peak process counters; neither a prefix
-count nor the historical Stage 2 census is this relation's full cost estimate.
+address-space cap with four Rayon threads. The complete matrix-free census
+finished successfully in 1,161.51 seconds, including setup, under that cap.
+The first 900-second timeout is superseded by this completed run. The retained
+[exact census](../flock-stage4/census/exec-scalar-root-conditional-v0.json)
+pins the relation revision, reproduction command, counts, projection digest,
+timing scope, and sampled process memory counters.
+
+| Complete root-conditional sizing | Result |
+| --- | ---: |
+| R1CS constraints / nonzero terms | 590,712,359 / 2,795,440,842 |
+| PLONK constraint rows | 989,490,840 |
+| PLONK base / polynomial-FFT domain | `2^30` / `2^32` |
+| Public scalar vector (including Q) | 1,327 scalars / 42,464 bytes |
+| Required SRS degree | 9,663,676,433 |
+| Compressed file-SRS bytes | 463,856,469,048 |
+| Modeled file-key/SRS/FFT resident payload minimum | 420,923,572,256 bytes |
+| Last sampled process high-water RSS | 3,548,100 KiB |
+
+PCS accounts for 350,773,578 R1CS constraints; all transcript chains for
+105,378,574; accumulator arithmetic for 106,032,537. These are full counts,
+not estimates extrapolated from a prefix. The matrix-free census does not
+store a complete witness or check its satisfaction, and the memory figure is
+not a terminal prover's RSS. The capacity payload excludes several buffers,
+R1CS/witness storage and runtime overhead. It is not evidence of fitting a
+particular host. Root closure is additional work/cost. No terminal SRS, key,
+materialization or proving job was started; this geometry requires cost
+reduction before an admitted complete proof.
 
 The binding tests materialize and check their R1CS, mutate both public limbs,
 fixed public words, S wires, and every bound prefix payload including count
@@ -124,8 +159,8 @@ artifact domains are rejected.
 
 ## Remaining gates
 
-Complete the proof-free transcript and remaining phase topology compilers;
-finish the complete generic constraint census and phase-specific hostile
+Complete the proof-free hash-lowering and auxiliary fold topology compilers;
+extend phase-specific hostile
 message tests; close every unresolved table evaluation in the final relation;
 then actually prove and isolate-verify that complete relation with only an
 approved terminal configuration, externally expected statement, and compact

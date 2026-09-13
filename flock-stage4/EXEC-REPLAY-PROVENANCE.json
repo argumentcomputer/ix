@@ -27,6 +27,7 @@
     "Exec-only strict decoding and native verification are owned by ixby-flock; no Stage 2 artifact or legacy fallback is admitted.",
     "Generic circuit binding constrains S = H4(P,B,I,O), public Q = H5(P,B,O), and the exact approved Flock statement prefix. It reconstructs the public vector from fixed words and computed S.",
     "Independent proof-free symbolic wiring and Boolean PIOP compilers reconstruct exact DAGs and PCS claim wires from CompiledExec; native replay must match them structurally.",
+    "Proof-free merged PCS, multipoint/anchor, inner Ligerito, and complete main transcript operation-tree compilers pin all fixed dimensions, addresses, labels, forks/merges, private slots, and PoW policies; no verifier/prover or witness value is used to construct them.",
     "Witness replay is not a proof-free setup compiler or terminal acceptance certificate. Those obligations are tracked separately."
   ]
 }

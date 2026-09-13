@@ -42,11 +42,12 @@ determine Q. The final application verifier has not been implemented yet.
 The complete replay composition is deliberately named
 `constrain_exec_root_conditional`; its roots still require closure.
 
-Proof-free symbolic compilers currently reconstruct the entire wiring,
-zerocheck, and lincheck DAGs and their Boolean PCS claim wires. Native replay
-must match their exact structures, not just operation counts. The remaining
-phase/transcript topology compilers are still required before any Stage 4 key
-can be approved. No terminal setup or full FFLONK proof is produced here.
+Proof-free symbolic compilers reconstruct wiring, zerocheck, lincheck, merged
+PCS, multipoint/anchor assist, and inner Ligerito, plus the complete main
+transcript operation tree. Native replay must match their exact structures,
+not just operation counts. Low-level hash topology and auxiliary fold setup
+are still required before any Stage 4 key can be approved. No terminal setup
+or full FFLONK proof is produced here.
 
 ```sh
 ulimit -v 33554432
@@ -60,8 +61,13 @@ The full matrix-free census is separately opt-in via
 `native::tests::complete_generic_exec_constraint_census`. It reports phase
 progress, process peak memory counters, canonical R1CS/PLONK counts, and
 capacity minima. A sizing report is not a satisfying-assignment check or a
-proof. Its first bounded run reached the 900-second time limit; the longer
-instrumented run is not yet recorded as a completed census.
+proof. The completed run took 1,161.51 seconds including setup and counted
+590,712,359 R1CS constraints and 989,490,840 PLONK rows. It still carries 42,464
+public scalar bytes, needs a `2^30` base domain, and models a 420.9 GB
+file-key/SRS/FFT resident payload minimum before several excluded costs.
+The [retained report](census/exec-scalar-root-conditional-v0.json) records exact
+counts and scope. Cost reduction and root closure are required; no expensive
+terminal-prover or SRS job has been launched.
 
 See [generic replay and remaining gates](../docs/IxbyStage4Replay.md).
 `EXEC-REPLAY-PROVENANCE.json` records the donor hashes before this port,

@@ -22,6 +22,7 @@ use ixby_flock::ixby::exec::CompiledExec;
 pub(crate) struct BooleanBlueprint {
   pub(crate) trace: F128AlgebraTraceV1,
   pub(crate) pcs_claims: Vec<F128MergedPcsBooleanClaimV1>,
+  pub(super) end: Addresses,
 }
 
 pub(crate) fn compile_boolean(
@@ -226,7 +227,7 @@ pub(crate) fn compile_boolean(
     usize::try_from(address.challenges)?,
     2 * union.num_boolean(),
   )?;
-  Ok(BooleanBlueprint { trace: a.trace, pcs_claims })
+  Ok(BooleanBlueprint { trace: a.trace, pcs_claims, end: address })
 }
 
 fn prefix_weight(a: &mut Algebra, point: &[Symbol], bits: usize) -> Symbol {

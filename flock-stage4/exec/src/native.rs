@@ -140,6 +140,13 @@ pub fn replay_exec<'a>(
   let binding = compile_exec_binding(setup)?;
   let approved_wiring = crate::blueprint::compile_wiring(setup)?;
   let approved_boolean = crate::blueprint::compile_boolean(setup)?;
+  let approved_pcs =
+    crate::blueprint::compile_pcs(setup, &approved_wiring, &approved_boolean)?;
+  let approved_main = crate::blueprint::compile_transcript(
+    setup,
+    &approved_boolean,
+    &approved_pcs,
+  )?;
   let expected =
     ExecStatementDigest(commitments.statement_digest(binding.profile_digest));
   let verified = setup.verify_for_replay(expected, proof_bytes)?;
@@ -219,8 +226,8 @@ pub fn replay_exec<'a>(
     &algebra,
   )?;
   ensure!(
-    frontend.boolean_claims == approved_boolean.pcs_claims,
-    "Exec Boolean PCS wires differ from proof-free blueprint"
+    frontend == approved_pcs.frontend,
+    "Exec merged PCS differs from proof-free blueprint"
   );
   let multipoint_assist = replay::export_multipoint_twisted_assist(
     &challenger,
@@ -232,6 +239,10 @@ pub fn replay_exec<'a>(
     &frontend,
     &deferred.jagged,
   )?;
+  ensure!(
+    *multipoint_assist.trace() == approved_pcs.multipoint,
+    "Exec multipoint assist differs from proof-free blueprint"
+  );
   let inner_ligerito = replay::export_inner_ligerito(
     &challenger,
     commitment,
@@ -239,6 +250,10 @@ pub fn replay_exec<'a>(
     &frontend,
   )?;
   let merged_pcs = Stage4FlockMergedPcsFrontendWitnessV1::new(frontend);
+  ensure!(
+    *inner_ligerito.trace() == approved_main.inner,
+    "Exec inner Ligerito differs from proof-free blueprint"
+  );
 
   // These diagnostic folds preserve all three unresolved root families.
   // Removing the native checks here cannot turn them into a compact proof.
@@ -345,6 +360,15 @@ pub fn replay_exec<'a>(
     &algebra.private_values,
   )?;
   check_prefix(&binding, &transcript, public)?;
+  ensure!(
+    transcript.operations() == approved_main.operations
+      && transcript.observed_values().len() as u64
+        == approved_main.observed_values
+      && transcript.challenges().len() as u64 == approved_main.challenges
+      && transcript.byte_payloads().iter().map(Vec::len).collect::<Vec<_>>()
+        == approved_main.payload_lengths,
+    "Exec main transcript differs from proof-free blueprint"
+  );
   replay::validate_components(
     public.len(),
     binding.circuit_digest,
