@@ -634,6 +634,7 @@ impl AiurSystem {
 mod tests {
   mod acceptance;
   mod advice;
+  mod blake3;
   mod branchless;
   mod byte_gadgets;
   mod byte_shapes;

@@ -4,12 +4,13 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 -/
 
 import Ix.Aiur.Proofs.Transcript
+import Ix.Aiur.Proofs.Blake3
 import Tests.Aiur.EmissionReader
 import Blake3.Rust
 
 /-! Comparison with the instrumented native verifier, including challenger
-calls in PCS verification. Blake3 FFI is used only by this executable test;
-the audited replay theorems quantify over an explicit 32-byte hash function.
+calls in PCS verification. Replay uses the checked concrete Blake3 hash;
+the test also compares it with the independent FFI implementation.
 -/
 
 open Aiur Aiur.NativeAIR AiurTests.EmissionReader
@@ -20,6 +21,8 @@ namespace AiurTests.Transcript
 private def nativeHash (bytes : List UInt8) : Fin 32 → UInt8 :=
   let digest := Blake3.Rust.hash bytes.toByteArray
   fun index => digest.val[index.val]'(by simpa only [digest.property] using index.isLt)
+
+private def pureHash : Hash32 := NativeAIR.Blake3.hash
 
 private def readBytes : Reader (List UInt8) := do
   return (← takeBytes (← readCount 10000000)).data.toList
@@ -43,15 +46,18 @@ private def runEvent (state : State) (event : Event) : Except String State := do
   match event with
   | .observe bytes => return observeBytes state bytes
   | .field expected =>
-    let some (actual, next) := sampleField nativeHash 16 state | throw "native transcript field exhausted"
+    unless sampleField pureHash 16 state == sampleField nativeHash 16 state do throw "pure/FFI field sampling differs"
+    let some (actual, next) := sampleField pureHash 16 state | throw "native transcript field exhausted"
     unless actual == expected do throw "native transcript field differs"
     return next
   | .bits bits expected =>
-    let some (actual, next) := sampleBits nativeHash bits state | throw "native transcript bit count invalid"
+    unless sampleBits pureHash bits state == sampleBits nativeHash bits state do throw "pure/FFI bit sampling differs"
+    let some (actual, next) := sampleBits pureHash bits state | throw "native transcript bit count invalid"
     unless actual == expected do throw "native transcript bits differ"
     return next
   | .byte expected =>
-    let (actual, next) := sampleByte nativeHash state
+    unless sampleByte pureHash state == sampleByte nativeHash state do throw "pure/FFI byte sampling differs"
+    let (actual, next) := sampleByte pureHash state
     unless actual == expected do throw "native transcript byte differs"
     return next
 
@@ -136,14 +142,14 @@ private def readWitnesses : Reader Unit := do
     let witness ← readField
     let accepted ← readBool
     let after ← readField
-    let some (actualBefore, state) := sampleField nativeHash 16 (initial seed) | throw "witness prelude exhausted"
+    let some (actualBefore, state) := sampleField pureHash 16 (initial seed) | throw "witness prelude exhausted"
     unless actualBefore == before do throw "witness prelude sample differs"
-    let some (actual, next) := checkWitness nativeHash bits witness state | throw "witness check undefined"
+    let some (actual, next) := checkWitness pureHash bits witness state | throw "witness check undefined"
     unless actual == accepted do throw "witness acceptance differs"
     if bits == 0 then
       zeroBits := zeroBits + 1
       unless next == state do throw "zero-bit witness changed pending output"
-    let some (actualAfter, _) := sampleField nativeHash 16 next | throw "witness continuation exhausted"
+    let some (actualAfter, _) := sampleField pureHash 16 next | throw "witness continuation exhausted"
     unless actualAfter == after do throw "witness continuation differs"
   unless zeroBits == 8 do throw "incomplete zero-bit witness coverage"
 
@@ -162,20 +168,22 @@ private def readVerifiers : Reader Unit := do
     unless accepted == (index % 10 == 0) do throw "native verifier acceptance inventory differs"
     let events ← readList (← readCount 100000) readEvent
     eventCount := eventCount + events.length
-    let some result := NativeAIR.Transcript.replay nativeHash 16 key proof claims | throw "transcript replay exhausted"
+    let some result := NativeAIR.Blake3.replay 16 key proof claims | throw "transcript replay exhausted"
+    unless NativeAIR.Transcript.replay nativeHash 16 key proof claims == some result do
+      throw "pure/FFI transcript replay differs"
     let pcs ← ofExcept (checkSchedule key proof claims result events)
     pcsCount := pcsCount + pcs.length
     unless !pcs.isEmpty do throw "native PCS continuation missing"
     let continued ← ofExcept (pcs.foldlM runEvent result.state)
     let all ← ofExcept (events.foldlM runEvent (initial (NativeAIR.Transcript.seed key.parameters)))
     unless continued == all do throw "PCS received a different challenger state"
-    unless NativeAIR.Transcript.replay nativeHash 32 key proof claims == some result do
+    unless NativeAIR.Blake3.replay 32 key proof claims == some result do
       throw "larger replay fuel changed native challenges/state"
-    unless (NativeAIR.Transcript.replay nativeHash 0 key proof claims).isNone do throw "zero replay fuel accepted"
+    unless (NativeAIR.Blake3.replay 0 key proof claims).isNone do throw "zero replay fuel accepted"
     let some rows := ProofShape.check key proof | throw "native transcript fixture has invalid shape"
     if accepted then
       acceptedCount := acceptedCount + 1
-      unless NativeAIR.Transcript.verifyArithmetic nativeHash 16 key proof claims rows == some result do
+      unless NativeAIR.Blake3.verifyArithmetic 16 key proof claims rows == some result do
         throw "native accepted proof fails transcript-derived arithmetic"
   unless acceptedCount == 4 do throw "incomplete accepted transcript proofs"
   unless eventCount > 1000 && pcsCount > 500 do throw "incomplete native transcript/PCS calls"
@@ -200,5 +208,5 @@ def main (args : List String) : IO Unit := do
     | .error error => throw (IO.userError error)
     | .ok _ =>
       IO.println "transcript: 1280 byte operations, 16 forced rejection cases and 48 witness checks match"
-      IO.println "transcript: 40 actual native verifier schedules and PCS continuations match; 4 accepted proofs satisfy derived arithmetic"
+      IO.println "transcript: pure Blake3 matches FFI and 40 native verifier schedules/PCS continuations; 4 accepted proofs satisfy derived arithmetic"
   | _ => throw (IO.userError "expected native transcript snapshot")

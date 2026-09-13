@@ -410,14 +410,14 @@ sizes, constrained and advice calls, nested continuations, visibility and
 public-claim widths. All 54 parallel release Rust tests pass, including the
 supplied rank/output ambiguity regression; release Clippy denies warnings.
 
-The audit checks 1,231 roots by traversing checked types, bodies and inductive
-constructors. Forty-four roots use no axioms; one uses only `Quot.sound`;
-217 depend only on `propext`; 329 use exactly `propext` and `Quot.sound`;
-the other 640 use exactly
+The audit checks 1,280 roots by traversing checked types, bodies and inductive
+constructors. Forty-five roots use no axioms; one uses only `Quot.sound`;
+217 depend only on `propext`; 362 use exactly `propext` and `Quot.sound`;
+the other 655 use exactly
 `propext`, `Classical.choice` and `Quot.sound`. The combined closure
-has 18,942 logical declarations and 19,726 declarations after following runtime
+has 19,329 logical declarations and 20,116 declarations after following runtime
 workers and replacements. The frozen report records four native runtime entry points,
-three partial opaque sources and all 176 Ix recursion worker implementations.
+three partial opaque sources and all 178 Ix recursion worker implementations.
 Bytecode comparison/hashing, tail-match restoration and source-value hashing
 use total definitions. Type hashing and type/pattern formatting remain partial.
 These remaining implementations and
@@ -1026,15 +1026,15 @@ including eight zero-bit checks with pending output. Rejection cases cross
 digest boundaries and test exhaustion and continuation, including the field
 modulus and maximum u64 word.
 
-The replay theorems quantify over an explicit 32-byte hash function. The
-comparison executable supplies Blake3 through test-only FFI; the proof audit
-does not acquire that implementation's opaque definitions or default-proof
-axioms. A checked concrete hash, PCS authentication, extraction and
-quantitative cryptographic guarantees remain necessary for full C8.
+The generic replay theorems quantify over an explicit 32-byte hash function.
+The concrete replay below supplies checked Blake3 code. The comparison
+executable also runs an independent test-only FFI hash; the proof audit does
+not acquire its opaque definitions or default-proof axioms. PCS authentication,
+extraction and quantitative cryptographic guarantees remain necessary for full C8.
 Native comparisons establish compatibility on the corpus. A universal
 refinement theorem for the Rust verifier remains open.
 
-This integration adds 69 roots, 32 definitions and two inspected structural
+The transcript integration adds 69 roots, 32 definitions and two inspected structural
 sampling workers. All 1,162 prior statements and axiom sets, 791 definitions
 and 174 worker bodies are unchanged. The test dependencies use the existing
 pinned Plonky3 revision and change no dependency versions. All 86 parallel
@@ -1043,6 +1043,51 @@ The strict 445-job build and complete component gate pass, including thirty
 fresh native corpora and the unchanged two accepted and seventeen rejected
 backend cases. Native production behavior, compiler output and serialized
 encodings are unchanged.
+
+`NativeAIR.Blake3` implements unkeyed 32-byte BLAKE3 using total Lean code.
+Fixed-size vectors check every compression index. Its word serialization
+round-trips in both directions, rotations agree with the bitvector operation,
+and the seven message schedules are proved permutations with the specified
+successive reordering. The compression state splits its full 64-bit counter
+into the low and high words without loss.
+
+`ChunkReads` characterizes every compression step and final output. Full
+final blocks retain the end flag rather than creating an extra empty block;
+only the empty input has an empty final block. Each chunk uses at most
+sixteen blocks. `TreeHash` independently specifies the canonical tree by
+full power-of-two left subtrees and nonempty right subtrees no larger than
+their siblings. The implementation satisfies that specification, and every
+such tree has the same output. The root counter is zero. Under the explicit
+native input bound of fewer than 2^64 bytes, every reached chunk counter is
+below 2^54 and its conversion to UInt64 is exact.
+
+`Blake3.replay` and `Blake3.verifyArithmetic` instantiate the transcript with
+this exact function. `CompiledBackend.blake3_transcript_row` connects their
+success to the selected row's source, accumulator and quotient identity.
+This supplies a checked algorithm for the hash parameter; cryptographic
+security and refinement of the Rust implementation remain separate obligations.
+
+Native comparisons cover 258 full inputs, including empty input, all short
+final-block byte lengths, chunk boundaries and trees through 128 chunks plus
+one byte. They also compare 58 canonical splits and both subtree chaining
+values, 42 chunk cases including counters above 32 bits, and 64 pairs of
+internal parent and PCS Merkle hashes. An internal BLAKE3 parent uses the
+PARENT compression flag; PCS instead hashes the concatenation of two digests
+as an ordinary 64-byte input. The corpus checks both operations against the
+pinned native implementation. All forty recorded verifier schedules and PCS
+continuations, byte streams and witness checks now run with the pure hash;
+the transcript tests also compare it with the independent FFI hash.
+
+This hash integration adds 49 roots, 35 definitions and constructors, and two
+inspected recursion workers with proved decreases in input length. All
+1,231 prior statements and axiom sets, 823 premise definitions and 176 worker
+bodies remain unchanged. All 87 parallel native release tests, Clippy with
+warnings denied, the strict 452-job build and the complete component gate
+with thirty-one fresh native corpora pass. The backend cases remain two
+accepted and seventeen rejected, with no unexpected outcomes.
+The native hash test dependency uses the already locked
+BLAKE3 1.8.5 version. Production native behavior and serialized formats do
+not change.
 
 The budget comparison covers
 21,964 Rust/Lean cases, including
@@ -1107,7 +1152,7 @@ bound. The remaining components are:
 
 | Component | Remaining obligation |
 | --- | --- |
-| Native verifier | Connect the enforced proof codec and shape checks, proved transcript replay and complete opened-row arithmetic to a checked concrete hash and PCS acceptance, then extract satisfying committed traces. |
+| Native verifier | Connect the enforced proof codec and shape checks, concrete Blake3 transcript and complete opened-row arithmetic to PCS acceptance, then extract satisfying committed traces. |
 | Cryptography | Prove the commitment, polynomial-testing, FRI and Fiat–Shamir guarantees with admissible parameters and explicit failure bounds. |
 | Randomized lookups | Derive the exact bounded weighted message balance used by execution extraction, excluding specified compression collisions and denominator failures. |
 | Fixed tables | Bind the preprocessed commitments and openings to the proved byte tables and their required dimensions. |

@@ -16,6 +16,8 @@ tracing = { workspace = true }
 tracing-texray = { workspace = true }
 
 [dev-dependencies]
+# Compare checked chunk and parent hashing with the pinned native implementation.
+blake3 = "=1.8.5"
 # Test the actual selector methods from the same Plonky3 revision as multi-stark.
 p3-commit = { git = "https://github.com/Plonky3/Plonky3", rev = "3152b14a89067c83775a8076cc262ffc48a1fd7c" }
 # Instrument the native verifier's actual challenger without changing the protocol.

@@ -9039,6 +9039,279 @@ ROOT Aiur.BoundVerifier.CompiledBackend.transcript_row
                         Aiur.NativeAIR.Domain.vanishing evaluation.domain result.challenges.zeta *
                           evaluation.quotientValue
 AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Blake3.leftLen_positive
+∀ (size : Nat), 0 < Aiur.NativeAIR.Blake3.leftLen size
+AXIOMS []
+ROOT Aiur.NativeAIR.Blake3.leftLen_lt
+∀ {size : Nat}, 1024 < size → Aiur.NativeAIR.Blake3.leftLen size < size
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Blake3.schedules_permute
+∀ (index : Fin 7), Aiur.NativeAIR.Blake3.schedules[index].toList.Perm (List.finRange 16)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Blake3.schedules_next
+∀ (index : Fin 6),
+  Aiur.NativeAIR.Blake3.schedules[↑index + 1] =
+    Vector.ofFn fun position => Aiur.NativeAIR.Blake3.schedules[↑index][Aiur.NativeAIR.Blake3.schedules[1][position]]
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Blake3.rotateRight_bits
+∀ (word count : UInt32),
+  0 < count.toNat →
+    count.toNat < 32 → (Aiur.NativeAIR.Blake3.rotateRight word count).toBitVec = word.toBitVec.rotateRight count.toNat
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Blake3.bytesWord_value
+∀ (bytes : Vector UInt8 4),
+  (Aiur.NativeAIR.Blake3.bytesWord bytes).toNat = Aiur.NativeAIR.Challenger.littleEndian bytes.toList
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Blake3.wordBytes_encoding
+∀ (word : UInt32), (Aiur.NativeAIR.Blake3.wordBytes word).toList = Aiur.NativeAIR.KeyCodec.encodeNat 4 word.toNat
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Blake3.bytesWord_wordBytes
+∀ (word : UInt32), Aiur.NativeAIR.Blake3.bytesWord (Aiur.NativeAIR.Blake3.wordBytes word) = word
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Blake3.bytesWord_pack
+∀ (a b c d : UInt8),
+  (Aiur.NativeAIR.Blake3.bytesWord #v[a, b, c, d]).toNat = a.toNat + 256 * (b.toNat + 256 * (c.toNat + 256 * d.toNat))
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Blake3.wordBytes_pack
+∀ (a b c d : UInt8), Aiur.NativeAIR.Blake3.wordBytes (Aiur.NativeAIR.Blake3.bytesWord #v[a, b, c, d]) = #v[a, b, c, d]
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Blake3.wordBytes_bytesWord
+∀ (bytes : Vector UInt8 4), Aiur.NativeAIR.Blake3.wordBytes (Aiur.NativeAIR.Blake3.bytesWord bytes) = bytes
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Blake3.bytesWord_injective
+∀ {first second : Vector UInt8 4},
+  Aiur.NativeAIR.Blake3.bytesWord first = Aiur.NativeAIR.Blake3.bytesWord second → first = second
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Blake3.blockWords_byte
+∀ (input : List UInt8) (word : Fin 16) (byte : Fin 4),
+  (Vector.ofFn fun byte => input.toArray[↑word * 4 + ↑byte]?.getD 0)[byte] = input[↑word * 4 + ↑byte]?.getD 0
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Blake3.blockWords_value
+∀ (input : List UInt8) (word : Fin 16),
+  (Aiur.NativeAIR.Blake3.blockWords input)[word].toNat =
+    Aiur.NativeAIR.Challenger.littleEndian (List.ofFn fun byte => input[↑word * 4 + ↑byte]?.getD 0)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Blake3.cvBytes_value
+∀ (cv : Aiur.NativeAIR.Blake3.CV) (index : Fin 32),
+  (Aiur.NativeAIR.Blake3.cvBytes cv)[index] = (cv[↑index / 4].toNat / 256 ^ (↑index % 4)).toUInt8
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Blake3.g_unchanged
+∀ (state : Aiur.NativeAIR.Blake3.Block) (a b c d index : Fin 16) (x y : UInt32),
+  a ≠ index → b ≠ index → c ≠ index → d ≠ index → (Aiur.NativeAIR.Blake3.g state a b c d x y)[index] = state[index]
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Blake3.g_values
+∀ (state : Aiur.NativeAIR.Blake3.Block) (a b c d : Fin 16) (x y : UInt32),
+  a ≠ b →
+    a ≠ c →
+      a ≠ d →
+        b ≠ c →
+          b ≠ d →
+            c ≠ d →
+              have words := Aiur.NativeAIR.Blake3.mix state[a] state[b] state[c] state[d] x y;
+              (Aiur.NativeAIR.Blake3.g state a b c d x y)[a] = words[0] ∧
+                (Aiur.NativeAIR.Blake3.g state a b c d x y)[b] = words[1] ∧
+                  (Aiur.NativeAIR.Blake3.g state a b c d x y)[c] = words[2] ∧
+                    (Aiur.NativeAIR.Blake3.g state a b c d x y)[d] = words[3]
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Blake3.initialWords_counter
+∀ (cv : Aiur.NativeAIR.Blake3.CV) (counter : UInt64) (blockLen flags : UInt32),
+  (Aiur.NativeAIR.Blake3.initialWords cv counter blockLen flags)[12].toNat +
+      2 ^ 32 * (Aiur.NativeAIR.Blake3.initialWords cv counter blockLen flags)[13].toNat =
+    counter.toNat
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Blake3.parentOutput_values
+∀ (left right : Aiur.NativeAIR.Blake3.CV),
+  (Aiur.NativeAIR.Blake3.parentOutput left right).cv = Aiur.NativeAIR.Blake3.iv ∧
+    (Aiur.NativeAIR.Blake3.parentOutput left right).block = left ++ right ∧
+      (Aiur.NativeAIR.Blake3.parentOutput left right).blockLen = 64 ∧
+        (Aiur.NativeAIR.Blake3.parentOutput left right).counter = 0 ∧
+          (Aiur.NativeAIR.Blake3.parentOutput left right).flags = 4
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Blake3.leftLen_bounds
+∀ {size : Nat}, 1024 < size → Aiur.NativeAIR.Blake3.leftLen size < size ∧ size ≤ 2 * Aiur.NativeAIR.Blake3.leftLen size
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Blake3.leftLen_chunks
+∀ {size : Nat}, 1024 < size → ∃ exponent, Aiur.NativeAIR.Blake3.leftLen size = 1024 * 2 ^ exponent
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Blake3.leftLen_chunk_multiple
+∀ {size : Nat}, 1024 < size → Aiur.NativeAIR.Blake3.leftLen size / 1024 * 1024 = Aiur.NativeAIR.Blake3.leftLen size
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Blake3.leftLen_unique
+∀ {left right exponent : Nat},
+  left = 1024 * 2 ^ exponent → 0 < right → right ≤ left → Aiur.NativeAIR.Blake3.leftLen (left + right) = left
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Blake3.chunkLoop_small
+∀ (counter : UInt64) (cv : Aiur.NativeAIR.Blake3.CV) (start : Bool) (input : List UInt8),
+  input.length ≤ 64 →
+    Aiur.NativeAIR.Blake3.chunkLoop counter cv start input =
+      { cv := cv, block := Aiur.NativeAIR.Blake3.blockWords input, blockLen := input.length.toUInt32,
+        counter := counter, flags := (if start = true then 1 else 0) ||| 2 }
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Blake3.chunkLoop_step
+∀ (counter : UInt64) (cv : Aiur.NativeAIR.Blake3.CV) (start : Bool) (input : List UInt8),
+  64 < input.length →
+    Aiur.NativeAIR.Blake3.chunkLoop counter cv start input =
+      Aiur.NativeAIR.Blake3.chunkLoop counter
+        (Aiur.NativeAIR.Blake3.compress cv (Aiur.NativeAIR.Blake3.blockWords (List.take 64 input)) counter 64
+          (if start = true then 1 else 0))
+        false (List.drop 64 input)
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Blake3.chunkLoop_counter
+∀ (counter : UInt64) (cv : Aiur.NativeAIR.Blake3.CV) (start : Bool) (input : List UInt8),
+  (Aiur.NativeAIR.Blake3.chunkLoop counter cv start input).counter = counter
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Blake3.chunkOutput_counter
+∀ (counter : UInt64) (input : List UInt8), (Aiur.NativeAIR.Blake3.chunkOutput counter input).counter = counter
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Blake3.chunkLoop_reads
+∀ (counter : UInt64) (cv : Aiur.NativeAIR.Blake3.CV) (start : Bool) (input : List UInt8),
+  Aiur.NativeAIR.Blake3.ChunkReads counter cv start input (Aiur.NativeAIR.Blake3.chunkLoop counter cv start input)
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Blake3.ChunkReads.complete
+∀ {counter : UInt64} {cv : Aiur.NativeAIR.Blake3.CV} {start : Bool} {input : List UInt8}
+  {output : Aiur.NativeAIR.Blake3.Output},
+  Aiur.NativeAIR.Blake3.ChunkReads counter cv start input output →
+    Aiur.NativeAIR.Blake3.chunkLoop counter cv start input = output
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Blake3.chunkLoop_iff
+∀ (counter : UInt64) (cv : Aiur.NativeAIR.Blake3.CV) (start : Bool) (input : List UInt8)
+  (output : Aiur.NativeAIR.Blake3.Output),
+  Aiur.NativeAIR.Blake3.chunkLoop counter cv start input = output ↔
+    Aiur.NativeAIR.Blake3.ChunkReads counter cv start input output
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Blake3.ChunkReads.framing
+∀ {counter : UInt64} {cv : Aiur.NativeAIR.Blake3.CV} {start : Bool} {input : List UInt8}
+  {output : Aiur.NativeAIR.Blake3.Output},
+  Aiur.NativeAIR.Blake3.ChunkReads counter cv start input output →
+    ∃ count,
+      have remaining := List.drop (64 * count) input;
+      remaining.length ≤ 64 ∧
+        (input ≠ [] → 0 < remaining.length) ∧
+          output.block = Aiur.NativeAIR.Blake3.blockWords remaining ∧
+            output.blockLen.toNat = remaining.length ∧
+              output.counter = counter ∧ output.flags = (if (start && count == 0) = true then 1 else 0) ||| 2
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Blake3.chunkOutput_framing
+∀ (counter : UInt64) (input : List UInt8),
+  input.length ≤ 1024 →
+    ∃ count,
+      count < 16 ∧
+        have remaining := List.drop (64 * count) input;
+        remaining.length ≤ 64 ∧
+          (input ≠ [] → 0 < remaining.length) ∧
+            (Aiur.NativeAIR.Blake3.chunkOutput counter input).block = Aiur.NativeAIR.Blake3.blockWords remaining ∧
+              (Aiur.NativeAIR.Blake3.chunkOutput counter input).blockLen.toNat = remaining.length ∧
+                (Aiur.NativeAIR.Blake3.chunkOutput counter input).counter = counter ∧
+                  (Aiur.NativeAIR.Blake3.chunkOutput counter input).flags = if count = 0 then 3 else 2
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Blake3.subtree_small
+∀ (counter : Nat) (input : List UInt8),
+  input.length ≤ 1024 →
+    Aiur.NativeAIR.Blake3.subtree counter input = Aiur.NativeAIR.Blake3.chunkOutput counter.toUInt64 input
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Blake3.subtree_step
+∀ (counter : Nat) (input : List UInt8),
+  1024 < input.length →
+    Aiur.NativeAIR.Blake3.subtree counter input =
+      Aiur.NativeAIR.Blake3.parentOutput
+        (Aiur.NativeAIR.Blake3.subtree counter
+            (List.take (Aiur.NativeAIR.Blake3.leftLen input.length) input)).chainingValue
+        (Aiur.NativeAIR.Blake3.subtree (counter + Aiur.NativeAIR.Blake3.leftLen input.length / 1024)
+            (List.drop (Aiur.NativeAIR.Blake3.leftLen input.length) input)).chainingValue
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Blake3.subtree_root_counter
+∀ (input : List UInt8), (Aiur.NativeAIR.Blake3.subtree 0 input).counter = 0
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Blake3.subtree_tree
+∀ (counter : Nat) (input : List UInt8),
+  Aiur.NativeAIR.Blake3.TreeHash counter input (Aiur.NativeAIR.Blake3.subtree counter input)
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Blake3.TreeHash.complete
+∀ {counter : Nat} {input : List UInt8} {output : Aiur.NativeAIR.Blake3.Output},
+  Aiur.NativeAIR.Blake3.TreeHash counter input output → Aiur.NativeAIR.Blake3.subtree counter input = output
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Blake3.subtree_iff
+∀ (counter : Nat) (input : List UInt8) (output : Aiur.NativeAIR.Blake3.Output),
+  Aiur.NativeAIR.Blake3.subtree counter input = output ↔ Aiur.NativeAIR.Blake3.TreeHash counter input output
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Blake3.TreeHash.unique
+∀ {counter : Nat} {input : List UInt8} {first second : Aiur.NativeAIR.Blake3.Output},
+  Aiur.NativeAIR.Blake3.TreeHash counter input first →
+    Aiur.NativeAIR.Blake3.TreeHash counter input second → first = second
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Blake3.native_counter
+∀ {counter : Nat} {input : List UInt8},
+  counter * 1024 + input.length < 2 ^ 64 → counter < 2 ^ 54 ∧ counter.toUInt64.toNat = counter
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Blake3.native_child_spans
+∀ {counter : Nat} {input : List UInt8},
+  counter * 1024 + input.length < 2 ^ 64 →
+    1024 < input.length →
+      counter * 1024 + (List.take (Aiur.NativeAIR.Blake3.leftLen input.length) input).length < 2 ^ 64 ∧
+        (counter + Aiur.NativeAIR.Blake3.leftLen input.length / 1024) * 1024 +
+            (List.drop (Aiur.NativeAIR.Blake3.leftLen input.length) input).length <
+          2 ^ 64
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Blake3.ChunkAt.native
+∀ {counter leaf : Nat} {input bytes : List UInt8},
+  Aiur.NativeAIR.Blake3.ChunkAt counter input leaf bytes →
+    counter * 1024 + input.length < 2 ^ 64 → bytes.length ≤ 1024 ∧ leaf < 2 ^ 54 ∧ leaf.toUInt64.toNat = leaf
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Blake3.digest_native_counters
+∀ {input bytes : List UInt8},
+  Aiur.NativeAIR.Blake3.NativeInput input →
+    ∀ {leaf : Nat},
+      Aiur.NativeAIR.Blake3.ChunkAt 0 input leaf bytes →
+        bytes.length ≤ 1024 ∧ leaf < 2 ^ 54 ∧ leaf.toUInt64.toNat = leaf
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Blake3.digest_tree
+∀ (input : List UInt8),
+  ∃ output,
+    Aiur.NativeAIR.Blake3.TreeHash 0 input output ∧
+      output.counter = 0 ∧ Aiur.NativeAIR.Blake3.digest input = output.rootHash
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Blake3.replay_iff
+∀ (fuel : Nat) (key : Aiur.NativeAIR.KeyCodec.Key) (proof : Aiur.NativeAIR.ProofCodec.Data)
+  (claims : List (List Aiur.G)) (result : Aiur.NativeAIR.Transcript.Replay),
+  Aiur.NativeAIR.Blake3.replay fuel key proof claims = some result ↔
+    Aiur.NativeAIR.Transcript.Replay.Reads Aiur.NativeAIR.Blake3.hash fuel key proof claims result
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Blake3.replay_unique
+∀ {fuel more : Nat} {key : Aiur.NativeAIR.KeyCodec.Key} {proof : Aiur.NativeAIR.ProofCodec.Data}
+  {claims : List (List Aiur.G)} {first second : Aiur.NativeAIR.Transcript.Replay},
+  Aiur.NativeAIR.Blake3.replay fuel key proof claims = some first →
+    Aiur.NativeAIR.Blake3.replay more key proof claims = some second → first = second
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Blake3.verifyArithmetic_iff
+∀ (fuel : Nat) (key : Aiur.NativeAIR.KeyCodec.Key) (proof : Aiur.NativeAIR.ProofCodec.Data)
+  (claims : List (List Aiur.G)) (rows : List Aiur.NativeAIR.ProofShape.Row) (result : Aiur.NativeAIR.Transcript.Replay),
+  Aiur.NativeAIR.Blake3.verifyArithmetic fuel key proof claims rows = some result ↔
+    Aiur.NativeAIR.Blake3.replay fuel key proof claims = some result ∧
+      Aiur.NativeAIR.VerifierArithmetic.verify result.challenges claims rows = some true
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Blake3.hash_bytes
+∀ (input : List UInt8),
+  List.ofFn (Aiur.NativeAIR.Blake3.hash input) = Vector.toList (Aiur.NativeAIR.Blake3.digest input)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.BoundVerifier.CompiledBackend.blake3_transcript_row
+∀ {selection : Aiur.BoundVerifier.Selection} (backend : Aiur.BoundVerifier.CompiledBackend selection)
+  {bytes : ByteArray} (checked : Aiur.BoundVerifier.CheckedProof backend.keyData bytes) {fuel : Nat}
+  {claims : List (List Aiur.G)} {result : Aiur.NativeAIR.Transcript.Replay},
+  Aiur.NativeAIR.Blake3.verifyArithmetic fuel backend.keyData checked.data claims checked.rows = some result →
+    ∀ {position : Nat} {row : Aiur.NativeAIR.ProofShape.Row},
+      checked.rows[position]? = some row →
+        Aiur.NativeAIR.Transcript.Replay.Reads Aiur.NativeAIR.Blake3.hash fuel backend.keyData checked.data claims
+            result ∧
+          Aiur.NativeAIR.ProofShape.Row.Sourced backend.keyData checked.data row.circuitIndex position row ∧
+            Aiur.NativeAIR.ProofShape.Row.Fits backend.keyData.parameters row ∧
+              ∃ initial before evaluation,
+                Aiur.NativeAIR.VerifierArithmetic.initialAccumulator result.challenges claims = some initial ∧
+                  (initial :: List.map (fun x => x.accumulator) checked.rows)[position]? = some before ∧
+                    Aiur.NativeAIR.VerifierArithmetic.evaluate result.challenges row before = some evaluation ∧
+                      Aiur.NativeAIR.Quotient.composition result.challenges.alpha evaluation.constraints =
+                        Aiur.NativeAIR.Domain.vanishing evaluation.domain result.challenges.zeta *
+                          evaluation.quotientValue
+AXIOMS [propext, Classical.choice, Quot.sound]
 PREMISE Aiur.AIR.activityConstraint
 Aiur.G → Aiur.G → Aiur.G
 DEFINITION
@@ -15328,6 +15601,199 @@ PREMISE Aiur.NativeAIR.Transcript.Replay.Reads.mk
                 (Aiur.NativeAIR.Challenger.observeCap afterAlpha proof.commitments.quotient) =
               some (result.challenges.zeta, result.state)) →
     Aiur.NativeAIR.Transcript.Replay.Reads hash fuel key proof claims result
+PREMISE Aiur.NativeAIR.Blake3.CV
+Type
+DEFINITION
+Vector UInt32 8
+PREMISE Aiur.NativeAIR.Blake3.Block
+Type
+DEFINITION
+Vector UInt32 16
+PREMISE Aiur.NativeAIR.Blake3.Digest
+Type
+DEFINITION
+Vector UInt8 32
+PREMISE Aiur.NativeAIR.Blake3.iv
+Aiur.NativeAIR.Blake3.CV
+DEFINITION
+#v[1779033703, 3144134277, 1013904242, 2773480762, 1359893119, 2600822924, 528734635, 1541459225]
+PREMISE Aiur.NativeAIR.Blake3.schedules
+Vector (Vector (Fin 16) 16) 7
+DEFINITION
+#v[#v[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], #v[2, 6, 3, 10, 7, 0, 4, 13, 1, 11, 12, 5, 9, 14, 15, 8],
+  #v[3, 4, 10, 12, 13, 2, 7, 14, 6, 5, 9, 0, 11, 15, 8, 1], #v[10, 7, 12, 9, 14, 3, 13, 15, 4, 0, 11, 2, 5, 8, 1, 6],
+  #v[12, 13, 9, 11, 15, 10, 14, 8, 7, 2, 5, 3, 0, 1, 6, 4], #v[9, 14, 11, 5, 8, 12, 15, 1, 13, 3, 0, 10, 2, 6, 4, 7],
+  #v[11, 15, 5, 0, 1, 9, 8, 6, 14, 10, 2, 12, 3, 4, 7, 13]]
+PREMISE Aiur.NativeAIR.Blake3.rotateRight
+UInt32 → UInt32 → UInt32
+DEFINITION
+fun word count => word >>> count ||| word <<< (32 - count)
+PREMISE Aiur.NativeAIR.Blake3.mix
+UInt32 → UInt32 → UInt32 → UInt32 → UInt32 → UInt32 → Vector UInt32 4
+DEFINITION
+fun a b c d x y =>
+  let a_1 := a + b + x;
+  let d_1 := Aiur.NativeAIR.Blake3.rotateRight (d ^^^ a_1) 16;
+  let c_1 := c + d_1;
+  let b_1 := Aiur.NativeAIR.Blake3.rotateRight (b ^^^ c_1) 12;
+  let a_2 := a_1 + b_1 + y;
+  let d_2 := Aiur.NativeAIR.Blake3.rotateRight (d_1 ^^^ a_2) 8;
+  let c_2 := c_1 + d_2;
+  let b_2 := Aiur.NativeAIR.Blake3.rotateRight (b_1 ^^^ c_2) 7;
+  #v[a_2, b_2, c_2, d_2]
+PREMISE Aiur.NativeAIR.Blake3.g
+Aiur.NativeAIR.Blake3.Block → Fin 16 → Fin 16 → Fin 16 → Fin 16 → UInt32 → UInt32 → Aiur.NativeAIR.Blake3.Block
+DEFINITION
+fun state a b c d x y =>
+  have words := Aiur.NativeAIR.Blake3.mix state[a] state[b] state[c] state[d] x y;
+  (((Vector.set state (↑a) words[0] ⋯).set (↑b) words[1] ⋯).set (↑c) words[2] ⋯).set (↑d) words[3] ⋯
+PREMISE Aiur.NativeAIR.Blake3.round
+Aiur.NativeAIR.Blake3.Block → Aiur.NativeAIR.Blake3.Block → Vector (Fin 16) 16 → Aiur.NativeAIR.Blake3.Block
+DEFINITION
+fun state message schedule =>
+  have state := Aiur.NativeAIR.Blake3.g state 0 4 8 12 message[schedule[0]] message[schedule[1]];
+  have state := Aiur.NativeAIR.Blake3.g state 1 5 9 13 message[schedule[2]] message[schedule[3]];
+  have state := Aiur.NativeAIR.Blake3.g state 2 6 10 14 message[schedule[4]] message[schedule[5]];
+  have state := Aiur.NativeAIR.Blake3.g state 3 7 11 15 message[schedule[6]] message[schedule[7]];
+  have state := Aiur.NativeAIR.Blake3.g state 0 5 10 15 message[schedule[8]] message[schedule[9]];
+  have state := Aiur.NativeAIR.Blake3.g state 1 6 11 12 message[schedule[10]] message[schedule[11]];
+  have state := Aiur.NativeAIR.Blake3.g state 2 7 8 13 message[schedule[12]] message[schedule[13]];
+  Aiur.NativeAIR.Blake3.g state 3 4 9 14 message[schedule[14]] message[schedule[15]]
+PREMISE Aiur.NativeAIR.Blake3.initialWords
+Aiur.NativeAIR.Blake3.CV → UInt64 → UInt32 → UInt32 → Aiur.NativeAIR.Blake3.Block
+DEFINITION
+fun cv counter blockLen flags =>
+  #v[cv[0], cv[1], cv[2], cv[3], cv[4], cv[5], cv[6], cv[7], Aiur.NativeAIR.Blake3.iv[0], Aiur.NativeAIR.Blake3.iv[1],
+    Aiur.NativeAIR.Blake3.iv[2], Aiur.NativeAIR.Blake3.iv[3], counter.toUInt32, (counter >>> 32).toUInt32, blockLen,
+    flags]
+PREMISE Aiur.NativeAIR.Blake3.compress
+Aiur.NativeAIR.Blake3.CV → Aiur.NativeAIR.Blake3.Block → UInt64 → UInt32 → UInt32 → Aiur.NativeAIR.Blake3.CV
+DEFINITION
+fun cv message counter blockLen flags =>
+  have state :=
+    Vector.foldl (fun state schedule => Aiur.NativeAIR.Blake3.round state message schedule)
+      (Aiur.NativeAIR.Blake3.initialWords cv counter blockLen flags) Aiur.NativeAIR.Blake3.schedules;
+  Vector.ofFn fun index => state[↑index] ^^^ state[↑index + 8]
+PREMISE Aiur.NativeAIR.Blake3.wordBytes
+UInt32 → Vector UInt8 4
+DEFINITION
+fun word => Vector.ofFn fun index => (word.toNat / 256 ^ ↑index).toUInt8
+PREMISE Aiur.NativeAIR.Blake3.bytesWord
+Vector UInt8 4 → UInt32
+DEFINITION
+fun bytes => UInt32.ofNat (Aiur.NativeAIR.Challenger.littleEndian bytes.toList)
+PREMISE Aiur.NativeAIR.Blake3.blockWords
+List UInt8 → Aiur.NativeAIR.Blake3.Block
+DEFINITION
+fun bytes =>
+  have input := bytes.toArray;
+  Vector.ofFn fun word => Aiur.NativeAIR.Blake3.bytesWord (Vector.ofFn fun byte => input[↑word * 4 + ↑byte]?.getD 0)
+PREMISE Aiur.NativeAIR.Blake3.cvBytes
+Aiur.NativeAIR.Blake3.CV → Aiur.NativeAIR.Blake3.Digest
+DEFINITION
+fun cv => Vector.ofFn fun index => (Aiur.NativeAIR.Blake3.wordBytes cv[↑index / 4])[↑index % 4]
+PREMISE Aiur.NativeAIR.Blake3.Output.mk
+Aiur.NativeAIR.Blake3.CV → Aiur.NativeAIR.Blake3.Block → UInt32 → UInt64 → UInt32 → Aiur.NativeAIR.Blake3.Output
+PREMISE Aiur.NativeAIR.Blake3.Output.chainingValue
+Aiur.NativeAIR.Blake3.Output → Aiur.NativeAIR.Blake3.CV
+DEFINITION
+fun output => Aiur.NativeAIR.Blake3.compress output.cv output.block output.counter output.blockLen output.flags
+PREMISE Aiur.NativeAIR.Blake3.Output.rootHash
+Aiur.NativeAIR.Blake3.Output → Aiur.NativeAIR.Blake3.Digest
+DEFINITION
+fun output =>
+  Aiur.NativeAIR.Blake3.cvBytes
+    (Aiur.NativeAIR.Blake3.compress output.cv output.block 0 output.blockLen (output.flags ||| 8))
+PREMISE Aiur.NativeAIR.Blake3.chunkLoop
+UInt64 → Aiur.NativeAIR.Blake3.CV → Bool → List UInt8 → Aiur.NativeAIR.Blake3.Output
+DEFINITION
+fun counter cv start input => Aiur.NativeAIR.Blake3.chunkLoop._unary counter ⟨cv, ⟨start, input⟩⟩
+PREMISE Aiur.NativeAIR.Blake3.chunkOutput
+UInt64 → List UInt8 → Aiur.NativeAIR.Blake3.Output
+DEFINITION
+fun counter input => Aiur.NativeAIR.Blake3.chunkLoop counter Aiur.NativeAIR.Blake3.iv true input
+PREMISE Aiur.NativeAIR.Blake3.parentOutput
+Aiur.NativeAIR.Blake3.CV → Aiur.NativeAIR.Blake3.CV → Aiur.NativeAIR.Blake3.Output
+DEFINITION
+fun left right => { cv := Aiur.NativeAIR.Blake3.iv, block := left ++ right, blockLen := 64, counter := 0, flags := 4 }
+PREMISE Aiur.NativeAIR.Blake3.leftLen
+Nat → Nat
+DEFINITION
+fun size => 2 ^ (size - 1).log2
+PREMISE Aiur.NativeAIR.Blake3.subtree
+Nat → List UInt8 → Aiur.NativeAIR.Blake3.Output
+DEFINITION
+fun counter input => Aiur.NativeAIR.Blake3.subtree._unary ⟨counter, input⟩
+PREMISE Aiur.NativeAIR.Blake3.digest
+List UInt8 → Aiur.NativeAIR.Blake3.Digest
+DEFINITION
+fun input => (Aiur.NativeAIR.Blake3.subtree 0 input).rootHash
+PREMISE Aiur.NativeAIR.Blake3.hash
+Aiur.NativeAIR.Challenger.Hash32
+DEFINITION
+fun input =>
+  have bytes := Aiur.NativeAIR.Blake3.digest input;
+  fun index => bytes[index]
+PREMISE Aiur.NativeAIR.Blake3.NativeInput
+List UInt8 → Prop
+DEFINITION
+fun input => input.length < 2 ^ 64
+PREMISE Aiur.NativeAIR.Blake3.replay
+Nat →
+  Aiur.NativeAIR.KeyCodec.Key →
+    Aiur.NativeAIR.ProofCodec.Data → List (List Aiur.G) → Option Aiur.NativeAIR.Transcript.Replay
+DEFINITION
+fun fuel key proof claims => Aiur.NativeAIR.Transcript.replay Aiur.NativeAIR.Blake3.hash fuel key proof claims
+PREMISE Aiur.NativeAIR.Blake3.verifyArithmetic
+Nat →
+  Aiur.NativeAIR.KeyCodec.Key →
+    Aiur.NativeAIR.ProofCodec.Data →
+      List (List Aiur.G) → List Aiur.NativeAIR.ProofShape.Row → Option Aiur.NativeAIR.Transcript.Replay
+DEFINITION
+fun fuel key proof claims rows =>
+  Aiur.NativeAIR.Transcript.verifyArithmetic Aiur.NativeAIR.Blake3.hash fuel key proof claims rows
+PREMISE Aiur.NativeAIR.Blake3.ChunkReads.last
+∀ {counter : UInt64} (cv : Aiur.NativeAIR.Blake3.CV) (start : Bool) (input : List UInt8),
+  input.length ≤ 64 →
+    Aiur.NativeAIR.Blake3.ChunkReads counter cv start input
+      { cv := cv, block := Aiur.NativeAIR.Blake3.blockWords input, blockLen := input.length.toUInt32,
+        counter := counter, flags := (if start = true then 1 else 0) ||| 2 }
+PREMISE Aiur.NativeAIR.Blake3.ChunkReads.step
+∀ {counter : UInt64} (cv : Aiur.NativeAIR.Blake3.CV) (start : Bool) (input : List UInt8)
+  (output : Aiur.NativeAIR.Blake3.Output),
+  64 < input.length →
+    Aiur.NativeAIR.Blake3.ChunkReads counter
+        (Aiur.NativeAIR.Blake3.compress cv (Aiur.NativeAIR.Blake3.blockWords (List.take 64 input)) counter 64
+          (if start = true then 1 else 0))
+        false (List.drop 64 input) output →
+      Aiur.NativeAIR.Blake3.ChunkReads counter cv start input output
+PREMISE Aiur.NativeAIR.Blake3.TreeHash.chunk
+∀ (counter : Nat) (input : List UInt8) (output : Aiur.NativeAIR.Blake3.Output),
+  input.length ≤ 1024 →
+    Aiur.NativeAIR.Blake3.ChunkReads counter.toUInt64 Aiur.NativeAIR.Blake3.iv true input output →
+      Aiur.NativeAIR.Blake3.TreeHash counter input output
+PREMISE Aiur.NativeAIR.Blake3.TreeHash.parent
+∀ (counter exponent : Nat) (left right : List UInt8) (leftOutput rightOutput : Aiur.NativeAIR.Blake3.Output),
+  left.length = 1024 * 2 ^ exponent →
+    0 < right.length →
+      right.length ≤ left.length →
+        Aiur.NativeAIR.Blake3.TreeHash counter left leftOutput →
+          Aiur.NativeAIR.Blake3.TreeHash (counter + left.length / 1024) right rightOutput →
+            Aiur.NativeAIR.Blake3.TreeHash counter (left ++ right)
+              (Aiur.NativeAIR.Blake3.parentOutput leftOutput.chainingValue rightOutput.chainingValue)
+PREMISE Aiur.NativeAIR.Blake3.ChunkAt.leaf
+∀ (counter : Nat) (input : List UInt8), input.length ≤ 1024 → Aiur.NativeAIR.Blake3.ChunkAt counter input counter input
+PREMISE Aiur.NativeAIR.Blake3.ChunkAt.left
+∀ {counter leaf : Nat} {input bytes : List UInt8},
+  1024 < input.length →
+    Aiur.NativeAIR.Blake3.ChunkAt counter (List.take (Aiur.NativeAIR.Blake3.leftLen input.length) input) leaf bytes →
+      Aiur.NativeAIR.Blake3.ChunkAt counter input leaf bytes
+PREMISE Aiur.NativeAIR.Blake3.ChunkAt.right
+∀ {counter leaf : Nat} {input bytes : List UInt8},
+  1024 < input.length →
+    Aiur.NativeAIR.Blake3.ChunkAt (counter + Aiur.NativeAIR.Blake3.leftLen input.length / 1024)
+        (List.drop (Aiur.NativeAIR.Blake3.leftLen input.length) input) leaf bytes →
+      Aiur.NativeAIR.Blake3.ChunkAt counter input leaf bytes
 RECURSION WORKER Aiur.buildArgs._unsafe_rec
 Aiur.LayoutMap →
   Std.HashMap Aiur.Local (Array Aiur.Bytecode.ValIdx) →
@@ -20083,6 +20549,28 @@ fun decls x x_1 x_2 =>
     | some (Aiur.Concrete.Declaration.dataType dt) =>
       Aiur.Concrete.DataType.sizeBound._unsafe_rec decls bound visited dt
     | x => throw (toString "Datatype not found: `" ++ toString g ++ toString "`")
+RECURSION WORKER Aiur.NativeAIR.Blake3.chunkLoop._unsafe_rec
+UInt64 → Aiur.NativeAIR.Blake3.CV → Bool → List UInt8 → Aiur.NativeAIR.Blake3.Output
+IMPLEMENTATION
+fun counter cv start input =>
+  if h : input.length ≤ 64 then
+    { cv := cv, block := Aiur.NativeAIR.Blake3.blockWords input, blockLen := input.length.toUInt32, counter := counter,
+      flags := (if start = true then 1 else 0) ||| 2 }
+  else
+    let next :=
+      Aiur.NativeAIR.Blake3.compress cv (Aiur.NativeAIR.Blake3.blockWords (List.take 64 input)) counter 64
+        (if start = true then 1 else 0);
+    Aiur.NativeAIR.Blake3.chunkLoop._unsafe_rec counter next false (List.drop 64 input)
+RECURSION WORKER Aiur.NativeAIR.Blake3.subtree._unsafe_rec
+Nat → List UInt8 → Aiur.NativeAIR.Blake3.Output
+IMPLEMENTATION
+fun counter input =>
+  if _h : input.length ≤ 1024 then Aiur.NativeAIR.Blake3.chunkOutput counter.toUInt64 input
+  else
+    let split := Aiur.NativeAIR.Blake3.leftLen input.length;
+    let left := Aiur.NativeAIR.Blake3.subtree._unsafe_rec counter (List.take split input);
+    let right := Aiur.NativeAIR.Blake3.subtree._unsafe_rec (counter + split / 1024) (List.drop split input);
+    Aiur.NativeAIR.Blake3.parentOutput left.chainingValue right.chainingValue
 RECURSION WORKER Aiur.NativeAIR.BlockEmitter.blockSelector._unsafe_rec
 Array Aiur.NativeAIR.Expr → Aiur.Bytecode.Block → Option Aiur.NativeAIR.Expr
 IMPLEMENTATION
@@ -22463,10 +22951,10 @@ fun value exponent x =>
       let half := Aiur.NativeAIR.ProofCodec.Extension.powBits._unsafe_rec value (exponent / 2) fuel;
       let square := half * half;
       if (exponent % 2 == 0) = true then square else square * value
-C8 component ROOTS 1231; LOGICAL DECLARATIONS 18942; WITH RUNTIME 19726
+C8 component ROOTS 1280; LOGICAL DECLARATIONS 19329; WITH RUNTIME 20116
 IX RUNTIME EXTERNS [Aiur.AiurSystem.build, Aiur.AiurSystem.verify, Aiur.AiurSystem.vkBytes, Aiur.Proof.ofBytesChecked]
 PARTIAL OPAQUE SOURCES [Aiur.instHashableTyp.hash, Aiur.instReprPattern.repr, Aiur.instReprTyp.repr]
 OTHER UNSAFE RUNTIME []
-RECURSION WORKERS 176
+RECURSION WORKERS 178
 Runtime diagnostics cover Ix modules, including private constants. Lean/Std runtime primitives remain an external execution boundary. Partial opaque implementations are inventoried, not proved to refine their logical defaults.
 The runtime inventory and theorem premises are frozen separately. These roots do not establish full compiler/AIR reflection or public certified claim semantics.

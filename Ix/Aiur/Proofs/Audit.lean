@@ -47,6 +47,7 @@ import Ix.Aiur.Proofs.LogUpAccumulator
 import Ix.Aiur.Proofs.DomainAccumulator
 import Ix.Aiur.Proofs.Quotient
 import Ix.Aiur.Proofs.VerifierAccumulator
+import Ix.Aiur.Proofs.Blake3
 import Ix.Aiur.Proofs.Transcript
 import Ix.Aiur.Proofs.Grouping
 import Ix.Aiur.Proofs.TailMatches
@@ -2573,6 +2574,149 @@ def transcriptPremises : Array Lean.Name := #[
   `Aiur.NativeAIR.Challenger.FieldSample.reject,
   `Aiur.NativeAIR.Transcript.Replay.Reads.mk]
 
+def blake3Roots : Array Lean.Name := #[
+  `Aiur.NativeAIR.Blake3.leftLen_positive,
+  `Aiur.NativeAIR.Blake3.leftLen_lt,
+  `Aiur.NativeAIR.Blake3.schedules_permute,
+  `Aiur.NativeAIR.Blake3.schedules_next,
+  `Aiur.NativeAIR.Blake3.rotateRight_bits,
+  `Aiur.NativeAIR.Blake3.bytesWord_value,
+  `Aiur.NativeAIR.Blake3.wordBytes_encoding,
+  `Aiur.NativeAIR.Blake3.bytesWord_wordBytes,
+  `Aiur.NativeAIR.Blake3.bytesWord_pack,
+  `Aiur.NativeAIR.Blake3.wordBytes_pack,
+  `Aiur.NativeAIR.Blake3.wordBytes_bytesWord,
+  `Aiur.NativeAIR.Blake3.bytesWord_injective,
+  `Aiur.NativeAIR.Blake3.blockWords_byte,
+  `Aiur.NativeAIR.Blake3.blockWords_value,
+  `Aiur.NativeAIR.Blake3.cvBytes_value,
+  `Aiur.NativeAIR.Blake3.g_unchanged,
+  `Aiur.NativeAIR.Blake3.g_values,
+  `Aiur.NativeAIR.Blake3.initialWords_counter,
+  `Aiur.NativeAIR.Blake3.parentOutput_values,
+  `Aiur.NativeAIR.Blake3.leftLen_bounds,
+  `Aiur.NativeAIR.Blake3.leftLen_chunks,
+  `Aiur.NativeAIR.Blake3.leftLen_chunk_multiple,
+  `Aiur.NativeAIR.Blake3.leftLen_unique,
+  `Aiur.NativeAIR.Blake3.chunkLoop_small,
+  `Aiur.NativeAIR.Blake3.chunkLoop_step,
+  `Aiur.NativeAIR.Blake3.chunkLoop_counter,
+  `Aiur.NativeAIR.Blake3.chunkOutput_counter,
+  `Aiur.NativeAIR.Blake3.chunkLoop_reads,
+  `Aiur.NativeAIR.Blake3.ChunkReads.complete,
+  `Aiur.NativeAIR.Blake3.chunkLoop_iff,
+  `Aiur.NativeAIR.Blake3.ChunkReads.framing,
+  `Aiur.NativeAIR.Blake3.chunkOutput_framing,
+  `Aiur.NativeAIR.Blake3.subtree_small,
+  `Aiur.NativeAIR.Blake3.subtree_step,
+  `Aiur.NativeAIR.Blake3.subtree_root_counter,
+  `Aiur.NativeAIR.Blake3.subtree_tree,
+  `Aiur.NativeAIR.Blake3.TreeHash.complete,
+  `Aiur.NativeAIR.Blake3.subtree_iff,
+  `Aiur.NativeAIR.Blake3.TreeHash.unique,
+  `Aiur.NativeAIR.Blake3.native_counter,
+  `Aiur.NativeAIR.Blake3.native_child_spans,
+  `Aiur.NativeAIR.Blake3.ChunkAt.native,
+  `Aiur.NativeAIR.Blake3.digest_native_counters,
+  `Aiur.NativeAIR.Blake3.digest_tree,
+  `Aiur.NativeAIR.Blake3.replay_iff,
+  `Aiur.NativeAIR.Blake3.replay_unique,
+  `Aiur.NativeAIR.Blake3.verifyArithmetic_iff,
+  `Aiur.NativeAIR.Blake3.hash_bytes,
+  `Aiur.BoundVerifier.CompiledBackend.blake3_transcript_row]
+
+def blake3AxiomFreeRoots : Array Lean.Name := #[
+  `Aiur.NativeAIR.Blake3.leftLen_positive]
+
+def blake3QuotRoots : Array Lean.Name := #[
+  `Aiur.NativeAIR.Blake3.leftLen_lt,
+  `Aiur.NativeAIR.Blake3.schedules_next,
+  `Aiur.NativeAIR.Blake3.rotateRight_bits,
+  `Aiur.NativeAIR.Blake3.bytesWord_value,
+  `Aiur.NativeAIR.Blake3.bytesWord_pack,
+  `Aiur.NativeAIR.Blake3.g_unchanged,
+  `Aiur.NativeAIR.Blake3.g_values,
+  `Aiur.NativeAIR.Blake3.initialWords_counter,
+  `Aiur.NativeAIR.Blake3.parentOutput_values,
+  `Aiur.NativeAIR.Blake3.leftLen_bounds,
+  `Aiur.NativeAIR.Blake3.leftLen_chunks,
+  `Aiur.NativeAIR.Blake3.leftLen_chunk_multiple,
+  `Aiur.NativeAIR.Blake3.leftLen_unique,
+  `Aiur.NativeAIR.Blake3.chunkLoop_small,
+  `Aiur.NativeAIR.Blake3.chunkLoop_step,
+  `Aiur.NativeAIR.Blake3.chunkLoop_counter,
+  `Aiur.NativeAIR.Blake3.chunkOutput_counter,
+  `Aiur.NativeAIR.Blake3.chunkLoop_reads,
+  `Aiur.NativeAIR.Blake3.ChunkReads.complete,
+  `Aiur.NativeAIR.Blake3.chunkLoop_iff,
+  `Aiur.NativeAIR.Blake3.ChunkReads.framing,
+  `Aiur.NativeAIR.Blake3.subtree_small,
+  `Aiur.NativeAIR.Blake3.subtree_step,
+  `Aiur.NativeAIR.Blake3.subtree_root_counter,
+  `Aiur.NativeAIR.Blake3.subtree_tree,
+  `Aiur.NativeAIR.Blake3.TreeHash.complete,
+  `Aiur.NativeAIR.Blake3.subtree_iff,
+  `Aiur.NativeAIR.Blake3.TreeHash.unique,
+  `Aiur.NativeAIR.Blake3.native_counter,
+  `Aiur.NativeAIR.Blake3.digest_tree,
+  `Aiur.NativeAIR.Blake3.replay_iff,
+  `Aiur.NativeAIR.Blake3.replay_unique,
+  `Aiur.NativeAIR.Blake3.verifyArithmetic_iff]
+
+def blake3ClassicalRoots : Array Lean.Name := #[
+  `Aiur.NativeAIR.Blake3.schedules_permute,
+  `Aiur.NativeAIR.Blake3.wordBytes_encoding,
+  `Aiur.NativeAIR.Blake3.bytesWord_wordBytes,
+  `Aiur.NativeAIR.Blake3.wordBytes_pack,
+  `Aiur.NativeAIR.Blake3.wordBytes_bytesWord,
+  `Aiur.NativeAIR.Blake3.bytesWord_injective,
+  `Aiur.NativeAIR.Blake3.blockWords_byte,
+  `Aiur.NativeAIR.Blake3.blockWords_value,
+  `Aiur.NativeAIR.Blake3.cvBytes_value,
+  `Aiur.NativeAIR.Blake3.chunkOutput_framing,
+  `Aiur.NativeAIR.Blake3.native_child_spans,
+  `Aiur.NativeAIR.Blake3.ChunkAt.native,
+  `Aiur.NativeAIR.Blake3.digest_native_counters,
+  `Aiur.NativeAIR.Blake3.hash_bytes,
+  `Aiur.BoundVerifier.CompiledBackend.blake3_transcript_row]
+
+def blake3Premises : Array Lean.Name := #[
+  `Aiur.NativeAIR.Blake3.CV,
+  `Aiur.NativeAIR.Blake3.Block,
+  `Aiur.NativeAIR.Blake3.Digest,
+  `Aiur.NativeAIR.Blake3.iv,
+  `Aiur.NativeAIR.Blake3.schedules,
+  `Aiur.NativeAIR.Blake3.rotateRight,
+  `Aiur.NativeAIR.Blake3.mix,
+  `Aiur.NativeAIR.Blake3.g,
+  `Aiur.NativeAIR.Blake3.round,
+  `Aiur.NativeAIR.Blake3.initialWords,
+  `Aiur.NativeAIR.Blake3.compress,
+  `Aiur.NativeAIR.Blake3.wordBytes,
+  `Aiur.NativeAIR.Blake3.bytesWord,
+  `Aiur.NativeAIR.Blake3.blockWords,
+  `Aiur.NativeAIR.Blake3.cvBytes,
+  `Aiur.NativeAIR.Blake3.Output.mk,
+  `Aiur.NativeAIR.Blake3.Output.chainingValue,
+  `Aiur.NativeAIR.Blake3.Output.rootHash,
+  `Aiur.NativeAIR.Blake3.chunkLoop,
+  `Aiur.NativeAIR.Blake3.chunkOutput,
+  `Aiur.NativeAIR.Blake3.parentOutput,
+  `Aiur.NativeAIR.Blake3.leftLen,
+  `Aiur.NativeAIR.Blake3.subtree,
+  `Aiur.NativeAIR.Blake3.digest,
+  `Aiur.NativeAIR.Blake3.hash,
+  `Aiur.NativeAIR.Blake3.NativeInput,
+  `Aiur.NativeAIR.Blake3.replay,
+  `Aiur.NativeAIR.Blake3.verifyArithmetic,
+  `Aiur.NativeAIR.Blake3.ChunkReads.last,
+  `Aiur.NativeAIR.Blake3.ChunkReads.step,
+  `Aiur.NativeAIR.Blake3.TreeHash.chunk,
+  `Aiur.NativeAIR.Blake3.TreeHash.parent,
+  `Aiur.NativeAIR.Blake3.ChunkAt.leaf,
+  `Aiur.NativeAIR.Blake3.ChunkAt.left,
+  `Aiur.NativeAIR.Blake3.ChunkAt.right]
+
 def roots : Array Lean.Name := #[
   `Aiur.G.ofNat_n, `Aiur.G.mul_one, `Aiur.G.mul_zero,
   `Aiur.AIR.inactive_multiplicity_zero,
@@ -2609,7 +2753,7 @@ def roots : Array Lean.Name := #[
     fieldRoots ++ localConstraintRoots ++ byteArithmeticRoots ++ byteLookupRoots ++
     lookupMessageRoots ++ lookupShapeRoots ++ globalLookupRoots ++ lookupBudgetRoots ++
     selectorControlRoots ++ operationRowRoots ++ blockRowRoots ++ querySlotRoots ++ circuitRowRoots ++
-    rowCountRoots ++ circuitTableRoots ++ branchlessRoots ++ circuitTraceRoots ++ circuitMembershipRoots ++ lookupLayoutRoots ++ memoryColumnRoots ++ byteColumnRoots ++ expressionGraphRoots ++ frontendExpressionRoots ++ graphCompilationRoots ++ operationExpressionRoots ++ blockCircuitRoots ++ allocationRoots ++ circuitAllocationRoots ++ circuitCompletionRoots ++ checkedCircuitRoots ++ keyCodecRoots ++ compiledKeyRoots ++ proofAcceptanceRoots ++ extensionRoots ++ logUpRoots ++ domainRoots ++ verifierArithmeticRoots ++ transcriptRoots
+    rowCountRoots ++ circuitTableRoots ++ branchlessRoots ++ circuitTraceRoots ++ circuitMembershipRoots ++ lookupLayoutRoots ++ memoryColumnRoots ++ byteColumnRoots ++ expressionGraphRoots ++ frontendExpressionRoots ++ graphCompilationRoots ++ operationExpressionRoots ++ blockCircuitRoots ++ allocationRoots ++ circuitAllocationRoots ++ circuitCompletionRoots ++ checkedCircuitRoots ++ keyCodecRoots ++ compiledKeyRoots ++ proofAcceptanceRoots ++ extensionRoots ++ logUpRoots ++ domainRoots ++ verifierArithmeticRoots ++ transcriptRoots ++ blake3Roots
 
 def premises : Array Lean.Name := #[
   `Aiur.AIR.activityConstraint,
@@ -2848,7 +2992,7 @@ def premises : Array Lean.Name := #[
   `Aiur.NativeAIR.evalRoots,
   `Aiur.NativeAIR.readLookup,
   `Aiur.NativeAIR.evalLookup,
-  `Aiur.NativeAIR.goldilocksOps] ++ frontendExpressionPremises ++ graphCompilationPremises ++ operationExpressionPremises ++ blockCircuitPremises ++ allocationPremises ++ circuitAllocationPremises ++ circuitCompletionPremises ++ checkedCircuitPremises ++ keyCodecPremises ++ compiledKeyPremises ++ proofAcceptancePremises ++ extensionPremises ++ logUpPremises ++ domainPremises ++ verifierArithmeticPremises ++ transcriptPremises
+  `Aiur.NativeAIR.goldilocksOps] ++ frontendExpressionPremises ++ graphCompilationPremises ++ operationExpressionPremises ++ blockCircuitPremises ++ allocationPremises ++ circuitAllocationPremises ++ circuitCompletionPremises ++ checkedCircuitPremises ++ keyCodecPremises ++ compiledKeyPremises ++ proofAcceptancePremises ++ extensionPremises ++ logUpPremises ++ domainPremises ++ verifierArithmeticPremises ++ transcriptPremises ++ blake3Premises
 
 private def constants (info : Lean.ConstantInfo) : Array Lean.Name :=
   info.type.getUsedConstants ++ match info with
@@ -2927,7 +3071,12 @@ run_cmd do
   let env ← getEnv
   for root in roots do
     let some info := env.checked.get.find? root | throwError "C8 component audit: missing root {root}"
-    let expected := if transcriptRoots.contains root then
+    let expected := if blake3Roots.contains root then
+        if blake3AxiomFreeRoots.contains root then #[]
+        else if blake3ClassicalRoots.contains root then #[``propext, ``Classical.choice, ``Quot.sound]
+        else if blake3QuotRoots.contains root then #[``propext, ``Quot.sound]
+        else #[``propext]
+      else if transcriptRoots.contains root then
         if transcriptAxiomFreeRoots.contains root then #[]
         else if transcriptClassicalRoots.contains root then #[``propext, ``Classical.choice, ``Quot.sound]
         else if transcriptQuotRoots.contains root then #[``propext, ``Quot.sound]
