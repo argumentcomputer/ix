@@ -656,6 +656,7 @@ mod tests {
   #[cfg(not(feature = "cuda"))]
   mod merkle;
   mod mmcs;
+  mod polynomial;
   mod proof_codec;
   mod proof_shapes;
   #[cfg(not(feature = "cuda"))]

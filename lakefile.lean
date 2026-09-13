@@ -387,6 +387,9 @@ lean_exe «aiur-extension-mmcs-tests» where
 lean_exe «aiur-fri-domain-tests» where
   root := `Tests.Aiur.FriDomain
 
+lean_exe «aiur-polynomial-tests» where
+  root := `Tests.Aiur.Polynomial
+
 section IxCompileVerify
 
 /- Formal verification of the Lean-to-Ixon compiler against the same
@@ -765,7 +768,8 @@ script "check-aiur" := do
     "aiur-circuit-expression-tests", "aiur-emission-check-tests", "aiur-key-codec-tests", "aiur-compiled-key-tests",
     "aiur-proof-codec-tests", "aiur-proof-shape-tests", "aiur-extension-tests", "aiur-logup-tests", "aiur-domain-tests",
     "aiur-verifier-arithmetic-tests", "aiur-transcript-tests", "aiur-blake3-tests", "aiur-merkle-cap-tests",
-    "aiur-merkle-tests", "aiur-pruned-merkle-tests", "aiur-extension-mmcs-tests", "aiur-fri-domain-tests"]
+    "aiur-merkle-tests", "aiur-pruned-merkle-tests", "aiur-extension-mmcs-tests", "aiur-fri-domain-tests",
+    "aiur-polynomial-tests"]
   let report ← IO.Process.output {
     cmd := "lake", args := #["env", "lean", "-DwarningAsError=true", "Ix/Aiur/Proofs/Audit.lean"] }
   unless report.exitCode == 0 do throw (IO.userError s!"{report.stdout}{report.stderr}")
@@ -839,6 +843,7 @@ script "check-aiur" := do
     let prunedMerkleSnapshot := directory / "native-pruned-merkle.bin"
     let extensionMmcsSnapshot := directory / "native-extension-mmcs.bin"
     let friDomainSnapshot := directory / "native-fri-domains.bin"
+    let polynomialSnapshot := directory / "native-polynomials.bin"
     let exporter ← IO.Process.spawn {
       cmd := "cargo"
       args := #["test", "--locked", "--release", "-p", "aiur",
@@ -878,7 +883,8 @@ script "check-aiur" := do
         ("IX_MERKLE_PATH_SNAPSHOT", some merklePathSnapshot.toString),
         ("IX_PRUNED_MERKLE_SNAPSHOT", some prunedMerkleSnapshot.toString),
         ("IX_EXTENSION_MMCS_SNAPSHOT", some extensionMmcsSnapshot.toString),
-        ("IX_FRI_DOMAIN_SNAPSHOT", some friDomainSnapshot.toString)]
+        ("IX_FRI_DOMAIN_SNAPSHOT", some friDomainSnapshot.toString),
+        ("IX_POLYNOMIAL_SNAPSHOT", some polynomialSnapshot.toString)]
       stdout := .inherit
       stderr := .inherit }
     unless (← exporter.wait) == 0 do
@@ -909,6 +915,7 @@ script "check-aiur" := do
     run ".lake/build/bin/aiur-pruned-merkle-tests" #[prunedMerkleSnapshot.toString]
     run ".lake/build/bin/aiur-extension-mmcs-tests" #[extensionMmcsSnapshot.toString]
     run ".lake/build/bin/aiur-fri-domain-tests" #[friDomainSnapshot.toString]
+    run ".lake/build/bin/aiur-polynomial-tests" #[polynomialSnapshot.toString]
     run ".lake/build/bin/aiur-block-row-tests" #[blockSnapshot.toString]
     run ".lake/build/bin/aiur-circuit-row-tests" #[circuitSnapshot.toString]
     run ".lake/build/bin/aiur-memory-row-tests" #[memorySnapshot.toString]

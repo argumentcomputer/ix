@@ -53,6 +53,7 @@ import Ix.Aiur.Proofs.Merkle
 import Ix.Aiur.Proofs.PrunedMerkle
 import Ix.Aiur.Proofs.ExtensionMmcs
 import Ix.Aiur.Proofs.FriDomain
+import Ix.Aiur.Proofs.Polynomial
 import Ix.Aiur.Proofs.Transcript
 import Ix.Aiur.Proofs.Grouping
 import Ix.Aiur.Proofs.TailMatches
@@ -3086,6 +3087,123 @@ def friDomainPremises : Array Lean.Name := #[
   `Aiur.NativeAIR.FriDomain.inputPoint,
   `Aiur.NativeAIR.FriDomain.foldNode]
 
+def polynomialRoots : Array Lean.Name := #[
+  `Aiur.NativeAIR.Polynomial.isZero_nil,
+  `Aiur.NativeAIR.Polynomial.isZero_iff_all,
+  `Aiur.NativeAIR.Polynomial.isZero_cons,
+  `Aiur.NativeAIR.Polynomial.isZero_append,
+  `Aiur.NativeAIR.Polynomial.monic_nonzero,
+  `Aiur.NativeAIR.Polynomial.sub_nil,
+  `Aiur.NativeAIR.Polynomial.horner_zero,
+  `Aiur.NativeAIR.Polynomial.add_length,
+  `Aiur.NativeAIR.Polynomial.sub_length,
+  `Aiur.NativeAIR.Polynomial.scale_length,
+  `Aiur.NativeAIR.Polynomial.sub_append,
+  `Aiur.NativeAIR.Polynomial.sub_append_left,
+  `Aiur.NativeAIR.Polynomial.horner_add,
+  `Aiur.NativeAIR.Polynomial.horner_neg,
+  `Aiur.NativeAIR.Polynomial.horner_sub,
+  `Aiur.NativeAIR.Polynomial.horner_scale,
+  `Aiur.NativeAIR.Polynomial.mulLinear_length,
+  `Aiur.NativeAIR.Polynomial.horner_mulLinear,
+  `Aiur.NativeAIR.Polynomial.fromRoots_length,
+  `Aiur.NativeAIR.Polynomial.horner_fromRoots,
+  `Aiur.NativeAIR.Polynomial.mulLinear_monic,
+  `Aiur.NativeAIR.Polynomial.fromRoots_monic,
+  `Aiur.NativeAIR.Polynomial.fromRoots_nonzero,
+  `Aiur.NativeAIR.Polynomial.fromRoots_vanishes,
+  `Aiur.NativeAIR.Polynomial.powerMinus_length,
+  `Aiur.NativeAIR.Polynomial.powerMinus_monic,
+  `Aiur.NativeAIR.Polynomial.horner_replicate_zero,
+  `Aiur.NativeAIR.Polynomial.horner_powerMinus,
+  `Aiur.NativeAIR.Polynomial.divide_length,
+  `Aiur.NativeAIR.Polynomial.divide_factor,
+  `Aiur.NativeAIR.Polynomial.zero_of_divide_zero,
+  `Aiur.NativeAIR.Polynomial.divide_nonzero,
+  `Aiur.NativeAIR.Polynomial.divide_root,
+  `Aiur.NativeAIR.Polynomial.roots_lt_length,
+  `Aiur.NativeAIR.Polynomial.roots_le_degree,
+  `Aiur.NativeAIR.Polynomial.zero_of_roots,
+  `Aiur.NativeAIR.Polynomial.zero_sub_of_samples,
+  `Aiur.NativeAIR.Polynomial.equal_of_samples,
+  `Aiur.NativeAIR.Polynomial.monic_zero_sub_of_samples,
+  `Aiur.NativeAIR.Polynomial.monic_equal_of_samples,
+  `Aiur.NativeAIR.Polynomial.root_product_identity,
+  `Aiur.NativeAIR.Polynomial.root_count_le,
+  `Aiur.NativeAIR.Polynomial.equal_count_le,
+  `Aiur.NativeAIR.Polynomial.base_roots_lt_length,
+  `Aiur.NativeAIR.Polynomial.extension_roots_lt_length,
+  `Aiur.NativeAIR.Polynomial.base_root_count_le,
+  `Aiur.NativeAIR.Polynomial.extension_root_count_le,
+  `Aiur.NativeAIR.Polynomial.foldingNodes_length,
+  `Aiur.NativeAIR.Polynomial.foldingNodes_nodup,
+  `Aiur.NativeAIR.Polynomial.foldingNodes_powers,
+  `Aiur.NativeAIR.Polynomial.folding_product_identity]
+
+def polynomialAxiomFreeRoots : Array Lean.Name := #[
+  `Aiur.NativeAIR.Polynomial.isZero_nil,
+  `Aiur.NativeAIR.Polynomial.sub_nil]
+
+def polynomialQuotRoots : Array Lean.Name := #[
+  `Aiur.NativeAIR.Polynomial.isZero_iff_all,
+  `Aiur.NativeAIR.Polynomial.isZero_cons,
+  `Aiur.NativeAIR.Polynomial.horner_zero,
+  `Aiur.NativeAIR.Polynomial.sub_append_left,
+  `Aiur.NativeAIR.Polynomial.mulLinear_length,
+  `Aiur.NativeAIR.Polynomial.fromRoots_length,
+  `Aiur.NativeAIR.Polynomial.mulLinear_monic,
+  `Aiur.NativeAIR.Polynomial.fromRoots_monic,
+  `Aiur.NativeAIR.Polynomial.fromRoots_nonzero,
+  `Aiur.NativeAIR.Polynomial.powerMinus_length,
+  `Aiur.NativeAIR.Polynomial.powerMinus_monic,
+  `Aiur.NativeAIR.Polynomial.horner_replicate_zero,
+  `Aiur.NativeAIR.Polynomial.divide_length,
+  `Aiur.NativeAIR.Polynomial.zero_of_divide_zero,
+  `Aiur.NativeAIR.Polynomial.divide_nonzero,
+  `Aiur.NativeAIR.Polynomial.foldingNodes_length]
+
+def polynomialClassicalRoots : Array Lean.Name := #[
+  `Aiur.NativeAIR.Polynomial.sub_append,
+  `Aiur.NativeAIR.Polynomial.horner_add,
+  `Aiur.NativeAIR.Polynomial.horner_neg,
+  `Aiur.NativeAIR.Polynomial.horner_sub,
+  `Aiur.NativeAIR.Polynomial.horner_scale,
+  `Aiur.NativeAIR.Polynomial.horner_mulLinear,
+  `Aiur.NativeAIR.Polynomial.horner_fromRoots,
+  `Aiur.NativeAIR.Polynomial.fromRoots_vanishes,
+  `Aiur.NativeAIR.Polynomial.horner_powerMinus,
+  `Aiur.NativeAIR.Polynomial.divide_factor,
+  `Aiur.NativeAIR.Polynomial.divide_root,
+  `Aiur.NativeAIR.Polynomial.roots_lt_length,
+  `Aiur.NativeAIR.Polynomial.roots_le_degree,
+  `Aiur.NativeAIR.Polynomial.zero_of_roots,
+  `Aiur.NativeAIR.Polynomial.zero_sub_of_samples,
+  `Aiur.NativeAIR.Polynomial.equal_of_samples,
+  `Aiur.NativeAIR.Polynomial.monic_zero_sub_of_samples,
+  `Aiur.NativeAIR.Polynomial.monic_equal_of_samples,
+  `Aiur.NativeAIR.Polynomial.root_product_identity,
+  `Aiur.NativeAIR.Polynomial.root_count_le,
+  `Aiur.NativeAIR.Polynomial.equal_count_le,
+  `Aiur.NativeAIR.Polynomial.base_roots_lt_length,
+  `Aiur.NativeAIR.Polynomial.extension_roots_lt_length,
+  `Aiur.NativeAIR.Polynomial.base_root_count_le,
+  `Aiur.NativeAIR.Polynomial.extension_root_count_le,
+  `Aiur.NativeAIR.Polynomial.foldingNodes_nodup,
+  `Aiur.NativeAIR.Polynomial.foldingNodes_powers,
+  `Aiur.NativeAIR.Polynomial.folding_product_identity]
+
+def polynomialPremises : Array Lean.Name := #[
+  `Aiur.NativeAIR.Polynomial.IsZero,
+  `Aiur.NativeAIR.Polynomial.Monic,
+  `Aiur.NativeAIR.Polynomial.add,
+  `Aiur.NativeAIR.Polynomial.sub,
+  `Aiur.NativeAIR.Polynomial.scale,
+  `Aiur.NativeAIR.Polynomial.mulLinear,
+  `Aiur.NativeAIR.Polynomial.fromRoots,
+  `Aiur.NativeAIR.Polynomial.powerMinus,
+  `Aiur.NativeAIR.Polynomial.divide,
+  `Aiur.NativeAIR.Polynomial.foldingNodes]
+
 def roots : Array Lean.Name := #[
   `Aiur.G.ofNat_n, `Aiur.G.mul_one, `Aiur.G.mul_zero,
   `Aiur.AIR.inactive_multiplicity_zero,
@@ -3122,7 +3240,7 @@ def roots : Array Lean.Name := #[
     fieldRoots ++ localConstraintRoots ++ byteArithmeticRoots ++ byteLookupRoots ++
     lookupMessageRoots ++ lookupShapeRoots ++ globalLookupRoots ++ lookupBudgetRoots ++
     selectorControlRoots ++ operationRowRoots ++ blockRowRoots ++ querySlotRoots ++ circuitRowRoots ++
-    rowCountRoots ++ circuitTableRoots ++ branchlessRoots ++ circuitTraceRoots ++ circuitMembershipRoots ++ lookupLayoutRoots ++ memoryColumnRoots ++ byteColumnRoots ++ expressionGraphRoots ++ frontendExpressionRoots ++ graphCompilationRoots ++ operationExpressionRoots ++ blockCircuitRoots ++ allocationRoots ++ circuitAllocationRoots ++ circuitCompletionRoots ++ checkedCircuitRoots ++ keyCodecRoots ++ compiledKeyRoots ++ proofAcceptanceRoots ++ extensionRoots ++ logUpRoots ++ domainRoots ++ verifierArithmeticRoots ++ transcriptRoots ++ blake3Roots ++ merkleCapRoots ++ merkleRoots ++ prunedMerkleRoots ++ extensionMmcsRoots ++ friDomainRoots
+    rowCountRoots ++ circuitTableRoots ++ branchlessRoots ++ circuitTraceRoots ++ circuitMembershipRoots ++ lookupLayoutRoots ++ memoryColumnRoots ++ byteColumnRoots ++ expressionGraphRoots ++ frontendExpressionRoots ++ graphCompilationRoots ++ operationExpressionRoots ++ blockCircuitRoots ++ allocationRoots ++ circuitAllocationRoots ++ circuitCompletionRoots ++ checkedCircuitRoots ++ keyCodecRoots ++ compiledKeyRoots ++ proofAcceptanceRoots ++ extensionRoots ++ logUpRoots ++ domainRoots ++ verifierArithmeticRoots ++ transcriptRoots ++ blake3Roots ++ merkleCapRoots ++ merkleRoots ++ prunedMerkleRoots ++ extensionMmcsRoots ++ friDomainRoots ++ polynomialRoots
 
 def premises : Array Lean.Name := #[
   `Aiur.AIR.activityConstraint,
@@ -3361,7 +3479,7 @@ def premises : Array Lean.Name := #[
   `Aiur.NativeAIR.evalRoots,
   `Aiur.NativeAIR.readLookup,
   `Aiur.NativeAIR.evalLookup,
-  `Aiur.NativeAIR.goldilocksOps] ++ frontendExpressionPremises ++ graphCompilationPremises ++ operationExpressionPremises ++ blockCircuitPremises ++ allocationPremises ++ circuitAllocationPremises ++ circuitCompletionPremises ++ checkedCircuitPremises ++ keyCodecPremises ++ compiledKeyPremises ++ proofAcceptancePremises ++ extensionPremises ++ logUpPremises ++ domainPremises ++ verifierArithmeticPremises ++ transcriptPremises ++ blake3Premises ++ merkleCapPremises ++ merklePremises ++ prunedMerklePremises ++ extensionMmcsPremises ++ friDomainPremises
+  `Aiur.NativeAIR.goldilocksOps] ++ frontendExpressionPremises ++ graphCompilationPremises ++ operationExpressionPremises ++ blockCircuitPremises ++ allocationPremises ++ circuitAllocationPremises ++ circuitCompletionPremises ++ checkedCircuitPremises ++ keyCodecPremises ++ compiledKeyPremises ++ proofAcceptancePremises ++ extensionPremises ++ logUpPremises ++ domainPremises ++ verifierArithmeticPremises ++ transcriptPremises ++ blake3Premises ++ merkleCapPremises ++ merklePremises ++ prunedMerklePremises ++ extensionMmcsPremises ++ friDomainPremises ++ polynomialPremises
 
 private def constants (info : Lean.ConstantInfo) : Array Lean.Name :=
   info.type.getUsedConstants ++ match info with
@@ -3440,7 +3558,12 @@ run_cmd do
   let env ← getEnv
   for root in roots do
     let some info := env.checked.get.find? root | throwError "C8 component audit: missing root {root}"
-    let expected := if friDomainRoots.contains root then
+    let expected := if polynomialRoots.contains root then
+        if polynomialAxiomFreeRoots.contains root then #[]
+        else if polynomialClassicalRoots.contains root then #[``propext, ``Classical.choice, ``Quot.sound]
+        else if polynomialQuotRoots.contains root then #[``propext, ``Quot.sound]
+        else #[``propext]
+      else if friDomainRoots.contains root then
         if friDomainClassicalRoots.contains root then #[``propext, ``Classical.choice, ``Quot.sound]
         else if friDomainQuotRoots.contains root then #[``propext, ``Quot.sound]
         else #[``propext]

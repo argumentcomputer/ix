@@ -29,6 +29,8 @@ p3-merkle-tree = { git = "https://github.com/Plonky3/Plonky3", rev = "3152b14a89
 # Exercise the actual FRI folding strategy and its index permutation.
 p3-fri = { git = "https://github.com/Plonky3/Plonky3", rev = "3152b14a89067c83775a8076cc262ffc48a1fd7c" }
 p3-util = { git = "https://github.com/Plonky3/Plonky3", rev = "3152b14a89067c83775a8076cc262ffc48a1fd7c" }
+# Compare coefficient arithmetic with the pinned upstream polynomial utilities.
+p3-stir = { git = "https://github.com/Plonky3/Plonky3", rev = "3152b14a89067c83775a8076cc262ffc48a1fd7c" }
 
 [features]
 default = []

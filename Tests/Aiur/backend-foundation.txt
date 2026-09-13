@@ -10483,6 +10483,324 @@ ROOT Aiur.NativeAIR.FriDomain.inputPoint_trace_disjoint
     ∀ (index : Nat) (row : Fin (Aiur.NativeAIR.Domain.size trace)),
       Aiur.NativeAIR.FriDomain.inputPoint query index ≠ Aiur.NativeAIR.Domain.point trace row
 AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Polynomial.isZero_nil
+∀ {R : Type} [inst : Grind.CommRing R], Aiur.NativeAIR.Polynomial.IsZero []
+AXIOMS []
+ROOT Aiur.NativeAIR.Polynomial.isZero_iff_all
+∀ {R : Type} [inst : Grind.CommRing R] [inst_1 : BEq R] [LawfulBEq R] (coefficients : List R),
+  Aiur.NativeAIR.Polynomial.IsZero coefficients ↔ (coefficients.all fun x => x == 0) = true
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Polynomial.isZero_cons
+∀ {R : Type} [inst : Grind.CommRing R] (coefficient : R) (rest : List R),
+  Aiur.NativeAIR.Polynomial.IsZero (coefficient :: rest) ↔ coefficient = 0 ∧ Aiur.NativeAIR.Polynomial.IsZero rest
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Polynomial.isZero_append
+∀ {R : Type} [inst : Grind.CommRing R] (left right : List R),
+  Aiur.NativeAIR.Polynomial.IsZero (left ++ right) ↔
+    Aiur.NativeAIR.Polynomial.IsZero left ∧ Aiur.NativeAIR.Polynomial.IsZero right
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.Polynomial.monic_nonzero
+∀ {R : Type} [inst : Grind.CommRing R] {coefficients : List R},
+  Aiur.NativeAIR.Polynomial.Monic coefficients → 1 ≠ 0 → ¬Aiur.NativeAIR.Polynomial.IsZero coefficients
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.Polynomial.sub_nil
+∀ {R : Type} [inst : Grind.CommRing R] (left : List R), Aiur.NativeAIR.Polynomial.sub left [] = left
+AXIOMS []
+ROOT Aiur.NativeAIR.Polynomial.horner_zero
+∀ {R : Type} [inst : Grind.CommRing R] (point : R) {coefficients : List R},
+  Aiur.NativeAIR.Polynomial.IsZero coefficients → Aiur.NativeAIR.Quotient.horner point coefficients = 0
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Polynomial.add_length
+∀ {R : Type} [inst : Grind.CommRing R] (left right : List R),
+  (Aiur.NativeAIR.Polynomial.add left right).length = max left.length right.length
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.Polynomial.sub_length
+∀ {R : Type} [inst : Grind.CommRing R] (left right : List R),
+  (Aiur.NativeAIR.Polynomial.sub left right).length = max left.length right.length
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.Polynomial.scale_length
+∀ {R : Type} [inst : Grind.CommRing R] (scalar : R) (coefficients : List R),
+  (Aiur.NativeAIR.Polynomial.scale scalar coefficients).length = coefficients.length
+AXIOMS [propext]
+ROOT Aiur.NativeAIR.Polynomial.sub_append
+∀ {R : Type} [inst : Grind.CommRing R] (left right firstTail secondTail : List R),
+  left.length = right.length →
+    Aiur.NativeAIR.Polynomial.sub (left ++ firstTail) (right ++ secondTail) =
+      Aiur.NativeAIR.Polynomial.sub left right ++ Aiur.NativeAIR.Polynomial.sub firstTail secondTail
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Polynomial.sub_append_left
+∀ {R : Type} [inst : Grind.CommRing R] (left right tail : List R),
+  right.length ≤ left.length →
+    Aiur.NativeAIR.Polynomial.sub (left ++ tail) right = Aiur.NativeAIR.Polynomial.sub left right ++ tail
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Polynomial.horner_add
+∀ {R : Type} [inst : Grind.CommRing R] (point : R) (left right : List R),
+  Aiur.NativeAIR.Quotient.horner point (Aiur.NativeAIR.Polynomial.add left right) =
+    Aiur.NativeAIR.Quotient.horner point left + Aiur.NativeAIR.Quotient.horner point right
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Polynomial.horner_neg
+∀ {R : Type} [inst : Grind.CommRing R] (point : R) (coefficients : List R),
+  Aiur.NativeAIR.Quotient.horner point (List.map (fun x => 0 - x) coefficients) =
+    0 - Aiur.NativeAIR.Quotient.horner point coefficients
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Polynomial.horner_sub
+∀ {R : Type} [inst : Grind.CommRing R] (point : R) (left right : List R),
+  Aiur.NativeAIR.Quotient.horner point (Aiur.NativeAIR.Polynomial.sub left right) =
+    Aiur.NativeAIR.Quotient.horner point left - Aiur.NativeAIR.Quotient.horner point right
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Polynomial.horner_scale
+∀ {R : Type} [inst : Grind.CommRing R] (point scalar : R) (coefficients : List R),
+  Aiur.NativeAIR.Quotient.horner point (Aiur.NativeAIR.Polynomial.scale scalar coefficients) =
+    scalar * Aiur.NativeAIR.Quotient.horner point coefficients
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Polynomial.mulLinear_length
+∀ {R : Type} [inst : Grind.CommRing R] (root : R) (coefficients : List R),
+  (Aiur.NativeAIR.Polynomial.mulLinear root coefficients).length = coefficients.length + 1
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Polynomial.horner_mulLinear
+∀ {R : Type} [inst : Grind.CommRing R] (point root : R) (coefficients : List R),
+  Aiur.NativeAIR.Quotient.horner point (Aiur.NativeAIR.Polynomial.mulLinear root coefficients) =
+    (point - root) * Aiur.NativeAIR.Quotient.horner point coefficients
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Polynomial.fromRoots_length
+∀ {R : Type} [inst : Grind.CommRing R] (roots : List R),
+  (Aiur.NativeAIR.Polynomial.fromRoots roots).length = roots.length + 1
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Polynomial.horner_fromRoots
+∀ {R : Type} [inst : Grind.CommRing R] (point : R) (roots : List R),
+  Aiur.NativeAIR.Quotient.horner point (Aiur.NativeAIR.Polynomial.fromRoots roots) =
+    Aiur.NativeAIR.LogUp.product (List.map (fun x => point - x) roots)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Polynomial.mulLinear_monic
+∀ {R : Type} [inst : Grind.CommRing R] (root : R) {coefficients : List R},
+  Aiur.NativeAIR.Polynomial.Monic coefficients →
+    Aiur.NativeAIR.Polynomial.Monic (Aiur.NativeAIR.Polynomial.mulLinear root coefficients)
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Polynomial.fromRoots_monic
+∀ {R : Type} [inst : Grind.CommRing R] (roots : List R),
+  Aiur.NativeAIR.Polynomial.Monic (Aiur.NativeAIR.Polynomial.fromRoots roots)
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Polynomial.fromRoots_nonzero
+∀ {R : Type} [inst : Grind.CommRing R] (roots : List R),
+  1 ≠ 0 → ¬Aiur.NativeAIR.Polynomial.IsZero (Aiur.NativeAIR.Polynomial.fromRoots roots)
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Polynomial.fromRoots_vanishes
+∀ {R : Type} [inst : Grind.CommRing R] (roots : List R) (point : R),
+  point ∈ roots → Aiur.NativeAIR.Quotient.horner point (Aiur.NativeAIR.Polynomial.fromRoots roots) = 0
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Polynomial.powerMinus_length
+∀ {R : Type} [inst : Grind.CommRing R] (degree : Nat) (constant : R),
+  (Aiur.NativeAIR.Polynomial.powerMinus degree constant).length = degree + 1
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Polynomial.powerMinus_monic
+∀ {R : Type} [inst : Grind.CommRing R] {degree : Nat},
+  0 < degree → ∀ (constant : R), Aiur.NativeAIR.Polynomial.Monic (Aiur.NativeAIR.Polynomial.powerMinus degree constant)
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Polynomial.horner_replicate_zero
+∀ {R : Type} [inst : Grind.CommRing R] (point : R) (count : Nat),
+  Aiur.NativeAIR.Quotient.horner point (List.replicate count 0) = 0
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Polynomial.horner_powerMinus
+∀ {R : Type} [inst : Grind.CommRing R] (point constant : R) (degree : Nat),
+  Aiur.NativeAIR.Quotient.horner point (Aiur.NativeAIR.Polynomial.powerMinus degree constant) =
+    point ^ degree - constant
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Polynomial.divide_length
+∀ {R : Type} [inst : Grind.CommRing R] (point : R) (coefficients : List R),
+  (Aiur.NativeAIR.Polynomial.divide point coefficients).length = coefficients.length - 1
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Polynomial.divide_factor
+∀ {R : Type} [inst : Grind.CommRing R] (point root : R) (coefficients : List R),
+  Aiur.NativeAIR.Quotient.horner point coefficients =
+    Aiur.NativeAIR.Quotient.horner root coefficients +
+      (point - root) * Aiur.NativeAIR.Quotient.horner point (Aiur.NativeAIR.Polynomial.divide root coefficients)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Polynomial.zero_of_divide_zero
+∀ {R : Type} [inst : Grind.CommRing R] (root : R) (coefficients : List R),
+  Aiur.NativeAIR.Quotient.horner root coefficients = 0 →
+    Aiur.NativeAIR.Polynomial.IsZero (Aiur.NativeAIR.Polynomial.divide root coefficients) →
+      Aiur.NativeAIR.Polynomial.IsZero coefficients
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Polynomial.divide_nonzero
+∀ {R : Type} [inst : Grind.CommRing R] (root : R) {coefficients : List R},
+  ¬Aiur.NativeAIR.Polynomial.IsZero coefficients →
+    Aiur.NativeAIR.Quotient.horner root coefficients = 0 →
+      ¬Aiur.NativeAIR.Polynomial.IsZero (Aiur.NativeAIR.Polynomial.divide root coefficients)
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Polynomial.divide_root
+∀ {R : Type} [inst : Grind.CommRing R],
+  (∀ (a b : R), a * b = 0 → a = 0 ∨ b = 0) →
+    ∀ (root point : R) (coefficients : List R),
+      Aiur.NativeAIR.Quotient.horner root coefficients = 0 →
+        Aiur.NativeAIR.Quotient.horner point coefficients = 0 →
+          point ≠ root → Aiur.NativeAIR.Quotient.horner point (Aiur.NativeAIR.Polynomial.divide root coefficients) = 0
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Polynomial.roots_lt_length
+∀ {R : Type} [inst : Grind.CommRing R],
+  (∀ (a b : R), a * b = 0 → a = 0 ∨ b = 0) →
+    ∀ (coefficients roots : List R),
+      ¬Aiur.NativeAIR.Polynomial.IsZero coefficients →
+        roots.Nodup →
+          (∀ (point : R), point ∈ roots → Aiur.NativeAIR.Quotient.horner point coefficients = 0) →
+            roots.length < coefficients.length
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Polynomial.roots_le_degree
+∀ {R : Type} [inst : Grind.CommRing R],
+  (∀ (a b : R), a * b = 0 → a = 0 ∨ b = 0) →
+    ∀ (coefficients roots : List R),
+      ¬Aiur.NativeAIR.Polynomial.IsZero coefficients →
+        roots.Nodup →
+          (∀ (point : R), point ∈ roots → Aiur.NativeAIR.Quotient.horner point coefficients = 0) →
+            roots.length ≤ coefficients.length - 1
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Polynomial.zero_of_roots
+∀ {R : Type} [inst : Grind.CommRing R],
+  (∀ (a b : R), a * b = 0 → a = 0 ∨ b = 0) →
+    ∀ (coefficients roots : List R),
+      roots.Nodup →
+        coefficients.length ≤ roots.length →
+          (∀ (point : R), point ∈ roots → Aiur.NativeAIR.Quotient.horner point coefficients = 0) →
+            Aiur.NativeAIR.Polynomial.IsZero coefficients
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Polynomial.zero_sub_of_samples
+∀ {R : Type} [inst : Grind.CommRing R],
+  (∀ (a b : R), a * b = 0 → a = 0 ∨ b = 0) →
+    ∀ (left right samples : List R),
+      samples.Nodup →
+        left.length ≤ samples.length →
+          right.length ≤ samples.length →
+            (∀ (point : R),
+                point ∈ samples →
+                  Aiur.NativeAIR.Quotient.horner point left = Aiur.NativeAIR.Quotient.horner point right) →
+              Aiur.NativeAIR.Polynomial.IsZero (Aiur.NativeAIR.Polynomial.sub left right)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Polynomial.equal_of_samples
+∀ {R : Type} [inst : Grind.CommRing R],
+  (∀ (a b : R), a * b = 0 → a = 0 ∨ b = 0) →
+    ∀ (left right samples : List R),
+      samples.Nodup →
+        left.length ≤ samples.length →
+          right.length ≤ samples.length →
+            (∀ (point : R),
+                point ∈ samples →
+                  Aiur.NativeAIR.Quotient.horner point left = Aiur.NativeAIR.Quotient.horner point right) →
+              ∀ (point : R), Aiur.NativeAIR.Quotient.horner point left = Aiur.NativeAIR.Quotient.horner point right
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Polynomial.monic_zero_sub_of_samples
+∀ {R : Type} [inst : Grind.CommRing R],
+  (∀ (a b : R), a * b = 0 → a = 0 ∨ b = 0) →
+    ∀ (left right samples : List R),
+      Aiur.NativeAIR.Polynomial.Monic left →
+        Aiur.NativeAIR.Polynomial.Monic right →
+          samples.Nodup →
+            left.length = right.length →
+              left.length ≤ samples.length + 1 →
+                (∀ (point : R),
+                    point ∈ samples →
+                      Aiur.NativeAIR.Quotient.horner point left = Aiur.NativeAIR.Quotient.horner point right) →
+                  Aiur.NativeAIR.Polynomial.IsZero (Aiur.NativeAIR.Polynomial.sub left right)
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Polynomial.monic_equal_of_samples
+∀ {R : Type} [inst : Grind.CommRing R],
+  (∀ (a b : R), a * b = 0 → a = 0 ∨ b = 0) →
+    ∀ (left right samples : List R),
+      Aiur.NativeAIR.Polynomial.Monic left →
+        Aiur.NativeAIR.Polynomial.Monic right →
+          samples.Nodup →
+            left.length = right.length →
+              left.length ≤ samples.length + 1 →
+                (∀ (point : R),
+                    point ∈ samples →
+                      Aiur.NativeAIR.Quotient.horner point left = Aiur.NativeAIR.Quotient.horner point right) →
+                  ∀ (point : R), Aiur.NativeAIR.Quotient.horner point left = Aiur.NativeAIR.Quotient.horner point right
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Polynomial.root_product_identity
+∀ {R : Type} [inst : Grind.CommRing R],
+  (∀ (a b : R), a * b = 0 → a = 0 ∨ b = 0) →
+    ∀ (roots : List R) (constant : R),
+      roots.Nodup →
+        0 < roots.length →
+          (∀ (root : R), root ∈ roots → root ^ roots.length = constant) →
+            ∀ (point : R),
+              Aiur.NativeAIR.LogUp.product (List.map (fun x => point - x) roots) = point ^ roots.length - constant
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Polynomial.root_count_le
+∀ {R : Type} [inst : Grind.CommRing R],
+  (∀ (a b : R), a * b = 0 → a = 0 ∨ b = 0) →
+    ∀ [inst_1 : BEq R] [LawfulBEq R] (coefficients samples : List R),
+      ¬Aiur.NativeAIR.Polynomial.IsZero coefficients →
+        samples.Nodup →
+          (List.filter (fun point => Aiur.NativeAIR.Quotient.horner point coefficients == 0) samples).length ≤
+            coefficients.length - 1
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Polynomial.equal_count_le
+∀ {R : Type} [inst : Grind.CommRing R],
+  (∀ (a b : R), a * b = 0 → a = 0 ∨ b = 0) →
+    ∀ [inst_1 : BEq R] [LawfulBEq R] (left right samples : List R),
+      ¬Aiur.NativeAIR.Polynomial.IsZero (Aiur.NativeAIR.Polynomial.sub left right) →
+        samples.Nodup →
+          (List.filter
+                (fun point => Aiur.NativeAIR.Quotient.horner point left == Aiur.NativeAIR.Quotient.horner point right)
+                samples).length ≤
+            max left.length right.length - 1
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Polynomial.base_roots_lt_length
+∀ (coefficients roots : List Aiur.G),
+  ¬Aiur.NativeAIR.Polynomial.IsZero coefficients →
+    roots.Nodup →
+      (∀ (point : Aiur.G), point ∈ roots → Aiur.NativeAIR.Quotient.horner point coefficients = 0) →
+        roots.length < coefficients.length
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Polynomial.extension_roots_lt_length
+∀ (coefficients roots : List Aiur.NativeAIR.ProofCodec.Extension),
+  ¬Aiur.NativeAIR.Polynomial.IsZero coefficients →
+    roots.Nodup →
+      (∀ (point : Aiur.NativeAIR.ProofCodec.Extension),
+          point ∈ roots → Aiur.NativeAIR.Quotient.horner point coefficients = 0) →
+        roots.length < coefficients.length
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Polynomial.base_root_count_le
+∀ (coefficients samples : List Aiur.G),
+  ¬Aiur.NativeAIR.Polynomial.IsZero coefficients →
+    samples.Nodup →
+      (List.filter (fun point => Aiur.NativeAIR.Quotient.horner point coefficients == 0) samples).length ≤
+        coefficients.length - 1
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Polynomial.extension_root_count_le
+∀ (coefficients samples : List Aiur.NativeAIR.ProofCodec.Extension),
+  ¬Aiur.NativeAIR.Polynomial.IsZero coefficients →
+    samples.Nodup →
+      (List.filter (fun point => Aiur.NativeAIR.Quotient.horner point coefficients == 0) samples).length ≤
+        coefficients.length - 1
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Polynomial.foldingNodes_length
+∀ (parent arity : Aiur.NativeAIR.Domain.Subgroup) (index : Nat),
+  (Aiur.NativeAIR.Polynomial.foldingNodes parent arity index).length = Aiur.NativeAIR.Domain.size arity
+AXIOMS [propext, Quot.sound]
+ROOT Aiur.NativeAIR.Polynomial.foldingNodes_nodup
+∀ (parent arity : Aiur.NativeAIR.Domain.Subgroup),
+  ↑arity ≤ ↑parent →
+    ∀ {index : Nat}, index < 2 ^ (↑parent - ↑arity) → (Aiur.NativeAIR.Polynomial.foldingNodes parent arity index).Nodup
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Polynomial.foldingNodes_powers
+∀ (parent child arity : Aiur.NativeAIR.Domain.Subgroup),
+  ↑parent = ↑child + ↑arity →
+    ∀ (index : Nat) (node : Aiur.G),
+      node ∈ Aiur.NativeAIR.Polynomial.foldingNodes parent arity index →
+        node ^ Aiur.NativeAIR.Domain.size arity = Aiur.NativeAIR.FriDomain.queryPoint child index
+AXIOMS [propext, Classical.choice, Quot.sound]
+ROOT Aiur.NativeAIR.Polynomial.folding_product_identity
+∀ (parent child arity : Aiur.NativeAIR.Domain.Subgroup),
+  ↑parent = ↑child + ↑arity →
+    ∀ {index : Nat},
+      index < 2 ^ (↑parent - ↑arity) →
+        ∀ (point : Aiur.NativeAIR.ProofCodec.Extension),
+          Aiur.NativeAIR.LogUp.product
+              (List.map (fun node => point - Aiur.NativeAIR.ProofCodec.Extension.ofBase node)
+                (Aiur.NativeAIR.Polynomial.foldingNodes parent arity index)) =
+            point ^ Aiur.NativeAIR.Domain.size arity -
+              Aiur.NativeAIR.ProofCodec.Extension.ofBase (Aiur.NativeAIR.FriDomain.queryPoint child index)
+AXIOMS [propext, Classical.choice, Quot.sound]
 PREMISE Aiur.AIR.activityConstraint
 Aiur.G → Aiur.G → Aiur.G
 DEFINITION
@@ -17449,6 +17767,50 @@ DEFINITION
 fun parent arity index slot =>
   (Aiur.NativeAIR.Domain.generator parent).pow (Aiur.NativeAIR.FriDomain.reverseBits (↑parent - ↑arity) index) *
     (Aiur.NativeAIR.Domain.generator arity).pow (Aiur.NativeAIR.FriDomain.reverseBits (↑arity) slot)
+PREMISE Aiur.NativeAIR.Polynomial.IsZero
+{R : Type u_1} → [OfNat R 0] → List R → Prop
+DEFINITION
+fun {R} [OfNat R 0] coefficients => ∀ (coefficient : R), coefficient ∈ coefficients → coefficient = 0
+PREMISE Aiur.NativeAIR.Polynomial.Monic
+{R : Type u_1} → [OfNat R 1] → List R → Prop
+DEFINITION
+fun {R} [OfNat R 1] coefficients => ∃ initial, coefficients = initial ++ [1]
+PREMISE Aiur.NativeAIR.Polynomial.add
+{R : Type u_1} → [Add R] → List R → List R → List R
+DEFINITION
+fun {R} [Add R] x x_1 => List.brecOn (motive := fun x => List R → List R) x Aiur.NativeAIR.Polynomial.add._f x_1
+PREMISE Aiur.NativeAIR.Polynomial.sub
+{R : Type u_1} → [OfNat R 0] → [Sub R] → List R → List R → List R
+DEFINITION
+fun {R} [OfNat R 0] [Sub R] x x_1 =>
+  List.brecOn (motive := fun x => List R → List R) x Aiur.NativeAIR.Polynomial.sub._f x_1
+PREMISE Aiur.NativeAIR.Polynomial.scale
+{R : Type u_1} → [Mul R] → R → List R → List R
+DEFINITION
+fun {R} [Mul R] scalar coefficients => List.map (fun x => scalar * x) coefficients
+PREMISE Aiur.NativeAIR.Polynomial.mulLinear
+{R : Type u_1} → [OfNat R 0] → [Sub R] → [Mul R] → R → List R → List R
+DEFINITION
+fun {R} [OfNat R 0] [Sub R] [Mul R] root coefficients =>
+  Aiur.NativeAIR.Polynomial.sub (0 :: coefficients) (Aiur.NativeAIR.Polynomial.scale root coefficients)
+PREMISE Aiur.NativeAIR.Polynomial.fromRoots
+{R : Type u_1} → [OfNat R 0] → [OfNat R 1] → [Sub R] → [Mul R] → List R → List R
+DEFINITION
+fun {R} [OfNat R 0] [OfNat R 1] [Sub R] [Mul R] roots => List.foldr Aiur.NativeAIR.Polynomial.mulLinear [1] roots
+PREMISE Aiur.NativeAIR.Polynomial.powerMinus
+{R : Type u_1} → [OfNat R 0] → [OfNat R 1] → [Sub R] → Nat → R → List R
+DEFINITION
+fun {R} [OfNat R 0] [OfNat R 1] [Sub R] degree constant =>
+  Aiur.NativeAIR.Polynomial.sub (List.replicate degree 0 ++ [1]) [constant]
+PREMISE Aiur.NativeAIR.Polynomial.divide
+{R : Type u_1} → [OfNat R 0] → [Add R] → [Mul R] → R → List R → List R
+DEFINITION
+fun {R} [OfNat R 0] [Add R] [Mul R] point x => List.brecOn x (Aiur.NativeAIR.Polynomial.divide._f point)
+PREMISE Aiur.NativeAIR.Polynomial.foldingNodes
+Aiur.NativeAIR.Domain.Subgroup → Aiur.NativeAIR.Domain.Subgroup → Nat → List Aiur.G
+DEFINITION
+fun parent arity index =>
+  List.map (Aiur.NativeAIR.FriDomain.foldNode parent arity index) (List.range (Aiur.NativeAIR.Domain.size arity))
 RECURSION WORKER Aiur.buildArgs._unsafe_rec
 Aiur.LayoutMap →
   Std.HashMap Aiur.Local (Array Aiur.Bytecode.ValIdx) →
@@ -22646,6 +23008,32 @@ fun selector rank x x_1 x_2 =>
     pure
         { values := rest.values, column := rest.column, equations := first.equations ++ rest.equations,
           queries := first.queries ++ rest.queries, calls := first.calls ++ rest.calls }
+RECURSION WORKER Aiur.NativeAIR.Polynomial.add._unsafe_rec
+{R : Type u_1} → [Add R] → List R → List R → List R
+IMPLEMENTATION
+fun {R} [Add R] x x_1 =>
+  match x, x_1 with
+  | [], right => right
+  | left, [] => left
+  | first :: left, second :: right => (first + second) :: Aiur.NativeAIR.Polynomial.add._unsafe_rec left right
+RECURSION WORKER Aiur.NativeAIR.Polynomial.divide._unsafe_rec
+{R : Type u_1} → [OfNat R 0] → [Add R] → [Mul R] → R → List R → List R
+IMPLEMENTATION
+fun {R} [OfNat R 0] [Add R] [Mul R] point x =>
+  match x with
+  | [] => []
+  | [head] => []
+  | head :: next :: rest =>
+    Aiur.NativeAIR.Quotient.horner point (next :: rest) ::
+      Aiur.NativeAIR.Polynomial.divide._unsafe_rec point (next :: rest)
+RECURSION WORKER Aiur.NativeAIR.Polynomial.sub._unsafe_rec
+{R : Type u_1} → [OfNat R 0] → [Sub R] → List R → List R → List R
+IMPLEMENTATION
+fun {R} [OfNat R 0] [Sub R] x x_1 =>
+  match x, x_1 with
+  | [], right => List.map (fun x => 0 - x) right
+  | left, [] => left
+  | first :: left, second :: right => (first - second) :: Aiur.NativeAIR.Polynomial.sub._unsafe_rec left right
 RECURSION WORKER Aiur.NativeAIR.PrunedMerkle.boundaryCount._unsafe_rec
 Nat → List Nat → Nat
 IMPLEMENTATION
@@ -24768,10 +25156,10 @@ fun value exponent x =>
       let half := Aiur.NativeAIR.ProofCodec.Extension.powBits._unsafe_rec value (exponent / 2) fuel;
       let square := half * half;
       if (exponent % 2 == 0) = true then square else square * value
-C8 component ROOTS 1425; LOGICAL DECLARATIONS 19885; WITH RUNTIME 20682
+C8 component ROOTS 1476; LOGICAL DECLARATIONS 20017; WITH RUNTIME 20816
 IX RUNTIME EXTERNS [Aiur.AiurSystem.build, Aiur.AiurSystem.verify, Aiur.AiurSystem.vkBytes, Aiur.Proof.ofBytesChecked]
 PARTIAL OPAQUE SOURCES [Aiur.instHashableTyp.hash, Aiur.instReprPattern.repr, Aiur.instReprTyp.repr]
 OTHER UNSAFE RUNTIME []
-RECURSION WORKERS 187
+RECURSION WORKERS 190
 Runtime diagnostics cover Ix modules, including private constants. Lean/Std runtime primitives remain an external execution boundary. Partial opaque implementations are inventoried, not proved to refine their logical defaults.
 The runtime inventory and theorem premises are frozen separately. These roots do not establish full compiler/AIR reflection or public certified claim semantics.

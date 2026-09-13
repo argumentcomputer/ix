@@ -410,14 +410,14 @@ sizes, constrained and advice calls, nested continuations, visibility and
 public-claim widths. All 54 parallel release Rust tests pass, including the
 supplied rank/output ambiguity regression; release Clippy denies warnings.
 
-The audit checks 1,425 roots by traversing checked types, bodies and inductive
-constructors. Fifty-five roots use no axioms; one uses only `Quot.sound`;
-239 depend only on `propext`; 436 use exactly `propext` and `Quot.sound`;
-the other 694 use exactly
+The audit checks 1,476 roots by traversing checked types, bodies and inductive
+constructors. Fifty-seven roots use no axioms; one uses only `Quot.sound`;
+244 depend only on `propext`; 452 use exactly `propext` and `Quot.sound`;
+the other 722 use exactly
 `propext`, `Classical.choice` and `Quot.sound`. The combined closure
-has 19,885 logical declarations and 20,682 declarations after following runtime
+has 20,017 logical declarations and 20,816 declarations after following runtime
 workers and replacements. The frozen report records four native runtime entry points,
-three partial opaque sources and all 187 Ix recursion worker implementations.
+three partial opaque sources and all 190 Ix recursion worker implementations.
 Bytecode comparison/hashing, tail-match restoration and source-value hashing
 use total definitions. Type hashing and type/pattern formatting remain partial.
 These remaining implementations and
@@ -1295,6 +1295,49 @@ All 95 parallel native release tests, Clippy with warnings denied, the
 487-job strict build and the full gate with thirty-six fresh native corpora
 pass. The backend still accepts two cases and rejects seventeen, with no
 unexpected outcomes.
+
+`NativeAIR.Polynomial` uses the verifier's existing ascending-coefficient
+Horner evaluator. It supplies coefficient addition, subtraction, scaling,
+linear factors, vanishing polynomials and synthetic division. `IsZero`
+identifies all-zero coefficient lists, including lists with trailing zeros.
+`Monic` records a final coefficient of one. Division proves the exact
+factor-and-remainder identity and lowers the coefficient length by one.
+
+A nonzero polynomial has fewer distinct roots than its coefficient length.
+The proof factors out one root and inducts on the remaining length; the
+no-zero-divisor condition is discharged for Goldilocks and its quadratic
+extension. Consequently, agreement at sufficiently many distinct points
+determines the polynomial, and the finite count of false agreements is
+bounded by the maximum coefficient length minus one. These are deterministic
+counting results; a protocol probability bound additionally needs the
+challenge distribution and the appropriate nonzero-polynomial event.
+
+Monic polynomial identity gives the exact FRI vanishing polynomial. For
+every admitted folding row and every extension-field point `x`, the product
+of differences from the row's nodes is `x^n - c`, where `n` is the arity and
+`c` is the reduced query point. This instantiates the nodes, distinctness and
+common-power hypotheses using the domain theorems above. Deriving the full
+interpolation formula and FRI proximity guarantee remains separate work.
+
+The native comparison calls the actual `HornerIter` used by the FRI final
+polynomial check. It also compares the pinned upstream STIR coefficient
+utilities: addition, linear division and vanishing-polynomial construction.
+STIR is an independent reference for these coefficient operations; FRI's
+interpolation helper is private and is exercised through `fold_row`.
+The corpus contains 768 arithmetic cases, 704 divisions and 72 root-set
+polynomials across both fields. It includes 160 zero-polynomial cases and
+28 repeated-root sets, as well as empty inputs, constants and trailing zeros.
+Every coefficient, remainder, evaluation and sampled root count agrees with
+Lean. The total model defines an empty quotient for empty input; the native
+division utility requires a nonempty polynomial.
+
+This component adds 51 roots, ten definitions and three inspected structural
+recursion workers. All 1,425 prior root statements and axiom sets, 924 premise
+definitions and 187 worker bodies remain unchanged.
+All 96 parallel native release tests, Clippy with warnings denied, the
+494-job strict build and the complete gate with thirty-seven fresh native
+corpora pass. The backend still accepts two cases and rejects seventeen,
+with no unexpected outcomes.
 
 The budget comparison covers
 21,964 Rust/Lean cases, including
