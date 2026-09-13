@@ -289,19 +289,21 @@ private theorem AtomicDefinitionPlan.locations {β : Type u} [DecidableEq β]
         exact ⟨position, ⟨run.path⟩⟩
       · exact ih candidate later
 
-/-- An axiom has no value or computational equations in the initial model. -/
+/-- An axiom retains its declared universe arity and has no value or
+computational equations in the initial model. -/
 structure AxiomSpec (β : Type u) where
   id : KId .anon
   ref : ConstRef β
   isUnsafe : Bool
+  universes : UInt64 := 0
   sourceType : KExpr .anon
   type : AExpr β
 
 def AxiomSpec.constant {β : Type u} (spec : AxiomSpec β) : KConst .anon :=
-  .axio () () spec.isUnsafe 0 spec.sourceType
+  .axio () () spec.isUnsafe spec.universes spec.sourceType
 
 def AxiomSpec.entry {β : Type u} (spec : AxiomSpec β) : ConstantEntry β :=
-  { universes := 0, type := spec.type, body := none }
+  { universes := spec.universes.toNat, type := spec.type, body := none }
 
 /-- Exactly the declared axiom interface, starting with no other entries. -/
 def axiomEnvironment {β : Type u} [DecidableEq β] : List (AxiomSpec β) → Model.Environment β

@@ -43,6 +43,10 @@ increasing sequence of strongly inaccessible cardinals.
   preserves both interpretation and hereditary validity, including beneath
   binders and through let substitution. The empty-argument shortcut is
   justified by the source type's universe scope.
+- `instantiateUnivParams_readAnnotated_scoped` also proves scope and reference
+  preservation for the actual returned type. Scope comes from the successful
+  substitution and scoped arguments; semantic level equivalence alone would
+  not exclude an out-of-range parameter in a simplified expression.
 - `inferUncached_const_sound` and `infer_const_sound` derive model typing for
   polymorphic constant references with arbitrary readable declaration types.
   Production success supplies the universe-arity check. The premises retain
@@ -66,14 +70,18 @@ support for these obligations.
 
 The axiom policy is relative: **every model of the source axioms extends to a
 model of the checked environment, preserving the axiom interpretations**.
-The initial interface contains exactly the source axioms, with closed types
-that refer only to that interface. A `Realizes` witness supplies a model of
+The initial interface contains exactly the source axioms, retaining their
+declared universe arities. Their types have no free term variables, use only
+their declared universe parameters, and refer only to that interface.
+A `Realizes` witness supplies a model of
 these axioms. The hypothesis is model existence; a theorem connecting
 arbitrary syntactic consistency to model existence is outside this result.
 
 The fragment covers monomorphic standalone definitions, theorems,
 and opaque definitions whose values are either closed universe terms or
-references to preceding interface entries. Examples include:
+references to preceding interface entries, including monomorphic
+specializations of polymorphic constants. Referenced types may contain
+dependent functions and other readable expression forms. Examples include:
 
 ```lean
 axiom P : Prop
@@ -81,6 +89,8 @@ axiom p : P
 def q : P := p
 theorem r : P := q
 def typeAlias : Type := Prop
+axiom ident.{u} : (α : Sort u) → α → α
+def propIdent : (α : Prop) → α → α := ident.{0}
 ```
 
 `AtomicEnvironmentFragment` records the precise execution boundary:
@@ -89,9 +99,13 @@ def typeAlias : Type := Prop
   represents an axiom or a definition. Lookup, routing, and reset witnesses
   identify the checked `KConst`.
 - Value inference misses both cache partitions. Constant lookup agrees with
-  an already admitted monomorphic type; empty level substitution preserves
-  that type. Sort inference retains the finite interning coherence and
-  address-faithfulness premises.
+  an already admitted type and universe count. A specialization supplies
+  closed universe arguments and finite interning/substitution resources at
+  the actual post-lookup state. The occurrence annotations on the declared
+  type agree with the substituted entry's annotations. These are structural
+  data checks; successful inference derives typing, scope, and references.
+  Ordinary aliases retain the simpler empty-substitution path. Sort inference
+  retains finite interning coherence and address-faithfulness premises.
 - Conversion takes the initial hash-equality path, with faithfulness of the
   compared expressions. General reduction and conversion caches are outside
   this fragment.
@@ -109,9 +123,10 @@ extracts the validation, type-inference, theorem-guard, value-inference, and
 conversion steps from public success, then derives body typing to extend
 the preceding model. Automatic witness construction, lambdas, applications,
 inductives, coordinated blocks, and other conversion paths remain outside the
-fragment. The polymorphic constant-inference theorem above is a separate proof
-increment; composing it into general declaration admission and environment
-model extension remains to be done.
+fragment. Polymorphic constant inference is composed into declaration
+admission and model extension for the monomorphic specializations described
+above. Definitions with their own universe parameters remain outside this
+environment fragment.
 
 `checkEnvAnon_atomic_represents_source` ties every source address to an
 interface with the type and body reached by production lookup. The independent
@@ -162,7 +177,7 @@ lake test --wfail -- tc-unit
 lake -d Models/SetTheory build --wfail
 ```
 
-The consistency target checks 51 exact theorem boundaries. The production
+The consistency target checks 66 exact theorem boundaries. The production
 environment roots retain four existing generated output-length proofs,
 reached through expression/universe construction, names, and the full
 production method table. They introduce no new native proofs. The model
@@ -178,6 +193,10 @@ Their model-side level congruence introduces no native proof dependency.
 Kernel unit regressions cover lazy loading, both inference policies, interning
 reuse, dependent function types, shared references, lets, `imax` simplification,
 argument order, and rejection of wrong arities and out-of-range parameters.
+Environment regressions additionally check Prop/Type specializations,
+transitive aliases, nested references, simplified declaration types, cache
+clearing, and admission failures for wrong arities, open parameters, and a
+mismatched declared specialization.
 
 ## Certified host adapters
 

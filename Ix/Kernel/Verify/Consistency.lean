@@ -20,9 +20,10 @@ import Ix.Kernel.Verify.Consistency.Audit
 This library connects production kernel operations to `Ix.Theory`. Each
 transport keeps its representation, arithmetic, and dependency assumptions
 explicit. A production `checkEnvAnon` fragment preserves models of its
-axiom set for monomorphic aliases and closed sorts under the stated execution
-resources. General checker soundness remains outside this fragment.
-Separately, polymorphic constant inference refines the model for arbitrary
-readable entry types, using the actual universe-instantiation walker and
-explicit lookup, scope, and finite-support resources.
+axiom set for monomorphic aliases, closed sorts, and monomorphic
+specializations of polymorphic constants under the stated execution resources.
+Constant inference supports arbitrary readable entry types, using the actual
+universe-instantiation walker and explicit lookup and finite-support resources.
+The returned type's scope and references justify declaration admission.
+General checker soundness remains outside this fragment.
 -/

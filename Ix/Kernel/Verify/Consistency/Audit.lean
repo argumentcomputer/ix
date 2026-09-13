@@ -35,12 +35,16 @@ private def productionNative : Array Lean.Name := #[
 private def atomicRoots : Array Lean.Name := #[
   ``infer_uncached_success, ``AtomicInferenceSupport.typing,
   ``AtomicInferenceSupport.reads, ``AtomicInferenceSupport.output,
-  ``AtomicInferenceSupport.scopeAndReferences, ``AtomicInference.sound
+  ``AtomicInferenceSupport.scopeAndReferences, ``AtomicInference.sound,
+  ``DefinitionBodySupport.sound
 ]
 
 private def instantiationRoots : Array Lean.Name := #[
-  ``instUnivSpec_readExpr?, ``instantiateUnivParams_readExpr?,
-  ``instantiateUnivParams_readAnnotated, ``inferUncached_const_sound, ``infer_const_sound
+  ``instUnivSpec_readExpr?, ``instUnivSpec_readExpr?_withScope,
+  ``instantiateUnivParams_readExpr?, ``instantiateUnivParams_readAnnotated,
+  ``instantiateUnivParams_readAnnotated_scoped,
+  ``inferUncached_const_refinement, ``infer_const_refinement,
+  ``inferUncached_const_sound, ``infer_const_sound
 ]
 
 private def productionRoots : Array Lean.Name := #[
@@ -84,13 +88,24 @@ def roots : Array RootAllowance := #[
   { root := ``sort_conversion, standardAxioms := standard },
   { root := ``inferUncached_sort_sound, standardAxioms := standard,
     nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``Theory.VExpr.LevelWF.liftN, standardAxioms := #[``propext, ``Quot.sound] },
+  { root := ``Theory.VExpr.LevelWF.inst, standardAxioms := #[``propext, ``Quot.sound] },
   { root := ``Theory.VExpr.LevelEquivalent.refl, standardAxioms := #[``propext, ``Quot.sound] },
   { root := ``Theory.VExpr.LevelEquivalent.liftN, standardAxioms := #[``propext] },
   { root := ``Theory.VExpr.LevelEquivalent.inst, standardAxioms := #[``propext] },
   { root := ``Theory.VExpr.instL_liftN, standardAxioms := #[``propext] },
   { root := ``Theory.VExpr.instL_inst, standardAxioms := #[``propext] },
   { root := ``Theory.VExpr.LevelWF.instL_nil, standardAxioms := #[``propext, ``Quot.sound] },
+  { root := ``Theory.Model.AExpr.eq_of_erase_annotations, standardAxioms := #[``propext] },
+  { root := ``Theory.Model.AExpr.Scope.instL, standardAxioms := #[``propext, ``Quot.sound] },
+  { root := ``Theory.Model.AExpr.references_instL, standardAxioms := #[``propext, ``Quot.sound] },
   { root := ``Theory.Model.AExpr.reannotate_levels, standardAxioms := #[``propext] },
+  { root := ``Theory.Model.AExpr.LevelEquivalent.annotations, standardAxioms := #[``propext] },
+  { root := ``Theory.Model.AExpr.LevelEquivalent.erase, standardAxioms := #[``propext] },
+  { root := ``Theory.Model.AExpr.LevelEquivalent.scope, standardAxioms := #[``propext] },
+  { root := ``Theory.Model.AExpr.LevelEquivalent.references, standardAxioms := #[``propext] },
+  { root := ``Theory.Model.AExpr.LevelEquivalent.of_erase_annotations,
+    standardAxioms := #[``propext] },
   { root := ``Theory.Model.AExpr.LevelEquivalent.interp, standardAxioms := standard },
   { root := ``Theory.Model.AExpr.LevelEquivalent.wellDenoted, standardAxioms := standard },
   { root := ``Theory.Model.AExpr.LevelEquivalent.typing, standardAxioms := standard }

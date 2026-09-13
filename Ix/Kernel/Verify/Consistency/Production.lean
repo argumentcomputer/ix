@@ -4,7 +4,7 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 -/
 
 import Ix.Kernel.Driver
-import Ix.Kernel.Verify.Consistency.Atomic
+import Ix.Kernel.Verify.Consistency.Constant
 
 /-!
 # Standalone production declaration checks
@@ -97,6 +97,68 @@ structure DefinitionInput where
 def DefinitionInput.constant (input : DefinitionInput) : KConst .anon :=
   .defn () () input.kind input.safety input.hints 0 input.type input.value () input.block
 
+/-- Closed sort/alias inference, or a specialization of an existing constant.
+The declared type supplies only raw syntax and occurrence annotations. Its
+typing, scope, and references are derived from successful production inference. -/
+inductive DefinitionBodySupport {β : Type u}
+    (resolve : Address → Option (ConstRef β)) (entries : Model.Environment β)
+    (before : TcState .anon) (declared : KExpr .anon) :
+    KExpr .anon → AExpr β → AExpr β → Type u
+  | atomic {term : KExpr .anon} {body type : AExpr β}
+      (inference : AtomicInference resolve entries before term body type) :
+      DefinitionBodySupport resolve entries before declared term body type
+  | specialization {id : KId .anon} {arguments : Array (KUniv .anon)}
+      {info : ExprInfo .anon} {ref : ConstRef β} {entry : ConstantEntry β} {type : AExpr β}
+      (misses : UncachedInference before (.const id arguments info))
+      (support : ConstantInferenceSupport resolve entries misses.keyed id arguments ref entry)
+      (closed : ∀ level ∈ arguments, (readLevel level).WF 0)
+      (reading : readExpr? resolve declared = some type.erase)
+      (conditions : (entry.type.instL (arguments.toList.map readLevel)).annotations =
+        type.annotations) :
+      DefinitionBodySupport resolve entries before declared (.const id arguments info)
+        (.const ref (arguments.toList.map readLevel)) type
+
+theorem DefinitionBodySupport.sound {β : Type u}
+    {resolve : Address → Option (ConstRef β)} {entries : Model.Environment β}
+    {before after : TcState .anon} {term declared inferred : KExpr .anon}
+    {body type : AExpr β} {methods : Methods .anon}
+    (fragment : DefinitionBodySupport resolve entries before declared term body type)
+    (wellFormed : entries.WF)
+    (accepted : RecM.infer term methods before = .ok inferred after)
+    (faithful : inferred.AddrFaithful declared) (hashPath : (inferred == declared) = true) :
+    readExpr? resolve term = some body.erase ∧
+      readExpr? resolve declared = some type.erase ∧
+      body.Scope 0 0 ∧ type.Scope 0 0 ∧
+      body.ReferencesIn entries ∧ type.ReferencesIn entries ∧
+      TypingClaim.{u,v} entries [] body type := by
+  have hashReads := beq_readExpr? (resolve := resolve) faithful hashPath
+  cases fragment with
+  | atomic inference =>
+      obtain ⟨valueReads, typeReads, typed⟩ := inference.sound accepted
+      obtain ⟨bodyScope, typeScope, bodyRefs, typeRefs⟩ :=
+        inference.support.scopeAndReferences wellFormed
+      exact ⟨valueReads, hashReads.symm.trans typeReads,
+        bodyScope, typeScope, bodyRefs, typeRefs, typed⟩
+  | specialization misses support closed reading conditions =>
+      obtain ⟨output, reads, same, arity, scope, references⟩ :=
+        infer_const_refinement misses support wellFormed accepted
+      have equal := AExpr.eq_of_erase_annotations
+        (Option.some.inj (reads.symm.trans (hashReads.trans reading)))
+        (same.annotations.symm.trans conditions)
+      refine ⟨?_, reading, ?_, equal ▸ scope 0 closed, ?_, ?_,
+        equal ▸ same.typing (TypingClaim.const support.found arity)⟩
+      · simp [readExpr?, support.resolved, AExpr.erase]
+      · intro level member
+        obtain ⟨value, valueMember, rfl⟩ := List.mem_map.mp member
+        exact closed value (by simpa using valueMember)
+      · intro ref member
+        simp only [AExpr.references, List.mem_singleton] at member
+        subst ref
+        simp only [support.found, Option.isSome_some]
+      · intro ref member
+        rw [← equal, references] at member
+        exact wellFormed.typeReferences _ _ support.found ref member
+
 /-- The execution prefix through value conversion. A successful member check
 also passes the subsequent safety checks. -/
 structure DefinitionBodyTrace (input : DefinitionInput) (methods : Methods .anon)
@@ -162,7 +224,7 @@ structure AtomicDefinitionRun {β : Type u} (resolve : Address → Option (Const
     (body type : AExpr β) where
   path : StandalonePrefix input.id before input.constant
   inference : ∀ trace : DefinitionBodyTrace input (methodsN before.recFuel.toNat) path.ready,
-    AtomicInference resolve entries trace.valueStart input.value body type
+    DefinitionBodySupport resolve entries trace.valueStart input.type input.value body type
   hashPath : ∀ trace : DefinitionBodyTrace input (methodsN before.recFuel.toNat) path.ready,
     (trace.inferredValue == input.type) = true
   faithful : ∀ trace : DefinitionBodyTrace input (methodsN before.recFuel.toNat) path.ready,
@@ -183,22 +245,19 @@ theorem AtomicDefinitionRun.sound {β : Type u}
       body.ReferencesIn entries ∧ type.ReferencesIn entries ∧
       TypingClaim.{u,v} entries [] body type := by
   obtain ⟨trace⟩ := definition_body_trace (fragment.path.member_success accepted)
-  obtain ⟨valueReads, typeReads, typed⟩ := (fragment.inference trace).sound trace.valueRun
-  have same := beq_readExpr? (resolve := resolve)
+  exact (fragment.inference trace).sound wellFormed trace.valueRun
     (fragment.faithful trace) (fragment.hashPath trace)
-  obtain ⟨bodyScope, typeScope, bodyRefs, typeRefs⟩ :=
-    (fragment.inference trace).support.scopeAndReferences wellFormed
-  exact ⟨valueReads, same.symm.trans typeReads, bodyScope, typeScope, bodyRefs, typeRefs, typed⟩
 
 /-- A fresh definition cannot justify its type through a self-reference:
-its atomic value must reference the preceding interface. -/
+its value, at any universe arguments, must reference the preceding interface. -/
 theorem AtomicDefinitionRun.no_self_alias {β : Type u}
     {resolve : Address → Option (ConstRef β)} {entries : Model.Environment β}
     {input : DefinitionInput} {before after : TcState .anon} {body type : AExpr β}
     (fragment : AtomicDefinitionRun resolve entries input before body type)
     (wellFormed : entries.WF) {ref : ConstRef β}
     (resolved : resolve input.id.addr = some ref) (fresh : entries ref = none)
-    {info : ExprInfo .anon} (self : input.value = .const input.id #[] info)
+    {arguments : Array (KUniv .anon)} {info : ExprInfo .anon}
+    (self : input.value = .const input.id arguments info)
     (accepted : TcM.checkConst input.id before = .ok () after) : False := by
   obtain ⟨reads, _, _, _, references, _, _⟩ :=
     AtomicDefinitionRun.sound.{u,0} fragment wellFormed accepted

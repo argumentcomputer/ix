@@ -4,6 +4,7 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 -/
 
 import Ix.Theory.Model.Judgment
+import Ix.Theory.Model.Support
 
 /-!
 # Replacing universe levels by equivalent levels
@@ -25,6 +26,22 @@ universe u v
 variable {β : Type u}
 
 namespace VExpr
+
+theorem LevelWF.liftN {e : VExpr β} {n : Nat} (scope : e.LevelWF n)
+    (count cutoff : Nat) : (e.liftN count cutoff).LevelWF n := by
+  induction e generalizing cutoff <;> simp_all [VExpr.liftN, VExpr.LevelWF]
+
+theorem LevelWF.inst {e a : VExpr β} {n : Nat}
+    (scope : e.LevelWF n) (argument : a.LevelWF n) (cutoff : Nat := 0) :
+    (e.inst a cutoff).LevelWF n := by
+  induction e generalizing cutoff with
+  | bvar i =>
+      by_cases hi : i < cutoff
+      · simp [VExpr.inst, instVar, hi, VExpr.LevelWF]
+      · by_cases he : i = cutoff
+        · simpa [VExpr.inst, instVar, hi, he] using argument.liftN cutoff 0
+        · simp [VExpr.inst, instVar, hi, he, VExpr.LevelWF]
+  | _ => simp_all [VExpr.inst, VExpr.LevelWF]
 
 /-- Structural equality except for semantically equivalent universe levels. -/
 inductive LevelEquivalent : VExpr β → VExpr β → Prop
@@ -125,6 +142,71 @@ end VExpr
 namespace Model
 namespace AExpr
 
+/-- The binder conditions at their exact expression occurrences. -/
+def annotations : AExpr β → AnnotationTree
+  | .bvar _ | .sort _ | .const _ _ | .natLit _ => .leaf
+  | .app f a => .app f.annotations a.annotations
+  | .lam p A b => .lam p.toRaw A.annotations b.annotations
+  | .forallE p A B => .forallE p.toRaw A.annotations B.annotations
+  | .proj _ _ e => .proj e.annotations
+
+/-- Raw syntax and occurrence annotations uniquely determine a reading. -/
+theorem eq_of_erase_annotations {left right : AExpr β}
+    (shape : left.erase = right.erase) (conditions : left.annotations = right.annotations) :
+    left = right := by
+  induction left generalizing right with
+  | app f a hf ha =>
+      cases right <;> simp [erase] at shape
+      next f' a' =>
+        simp only [annotations, AnnotationTree.app.injEq] at conditions
+        rw [hf shape.1 conditions.1, ha shape.2 conditions.2]
+  | lam p A b hA hb =>
+      cases right <;> simp [erase] at shape
+      next q A' b' =>
+        simp only [annotations, AnnotationTree.lam.injEq] at conditions
+        have equal := Certified.PropWhen.toRaw_injective conditions.1
+        subst q
+        rw [hA shape.1 conditions.2.1, hb shape.2 conditions.2.2]
+  | forallE p A b hA hb =>
+      cases right <;> simp [erase] at shape
+      next q A' b' =>
+        simp only [annotations, AnnotationTree.forallE.injEq] at conditions
+        have equal := Certified.PropWhen.toRaw_injective conditions.1
+        subst q
+        rw [hA shape.1 conditions.2.1, hb shape.2 conditions.2.2]
+  | proj r i e he =>
+      cases right <;> simp [erase] at shape
+      next r' i' e' =>
+        obtain ⟨rfl, rfl, equal⟩ := shape
+        exact congrArg (AExpr.proj r i) (he equal (AnnotationTree.proj.inj conditions))
+  | _ => cases right <;> simp_all [erase]
+
+theorem Scope.instL {e : AExpr β} {n depth target : Nat} {levels : List VLevel}
+    (scope : e.Scope n depth) (arguments : ∀ level ∈ levels, level.WF target) :
+    (e.instL levels).Scope target depth := by
+  have condition : ∀ p : Certified.PropWhen, p.WF n →
+      (Certified.instCondition levels p).WF target := by
+    intro p hp
+    apply hp.bind
+    intro i _
+    apply Certified.zeroCondition_wf
+    exact VLevel.WF.inst (l := .param i) arguments
+  induction e generalizing depth with
+  | bvar _ | natLit _ => exact scope
+  | sort _ => exact VLevel.WF.inst arguments
+  | const r ls =>
+      intro level member
+      obtain ⟨source, _, rfl⟩ := List.mem_map.mp member
+      exact VLevel.WF.inst arguments
+  | app _ _ hf ha => exact ⟨hf scope.1, ha scope.2⟩
+  | lam p _ _ hA hb | forallE p _ _ hA hb =>
+      exact ⟨condition p scope.1, hA scope.2.1, hb scope.2.2⟩
+  | proj _ _ _ he => exact he scope
+
+theorem references_instL (e : AExpr β) (levels : List VLevel) :
+    (e.instL levels).references = e.references := by
+  induction e <;> simp_all [instL, references]
+
 /-- Universe congruence with the same binder annotations at every occurrence. -/
 inductive LevelEquivalent : AExpr β → AExpr β → Prop
   | bvar (index) : LevelEquivalent (.bvar index) (.bvar index)
@@ -180,6 +262,47 @@ theorem reannotate_levels (e : AExpr β) {source : VExpr β}
   | natLit n => cases same; exact ⟨.natLit n, rfl, .natLit n⟩
 
 namespace LevelEquivalent
+
+theorem annotations {e e' : AExpr β} (same : LevelEquivalent e e') :
+    e.annotations = e'.annotations := by
+  induction same <;> simp_all [AExpr.annotations]
+
+theorem erase {e e' : AExpr β} (same : LevelEquivalent e e') :
+    VExpr.LevelEquivalent e.erase e'.erase := by
+  induction same with
+  | bvar i => exact .bvar i
+  | sort h => exact .sort h
+  | const r h => exact .const r h
+  | app _ _ hf ha => exact .app hf ha
+  | lam _ _ _ hA hb => exact .lam hA hb
+  | forallE _ _ _ hA hb => exact .forallE hA hb
+  | proj r i _ he => exact .proj r i he
+  | natLit n => exact .natLit n
+
+/-- Equivalent levels need not have the same scope: the actual target levels
+must separately be well scoped. Indices and binder annotations are preserved. -/
+theorem scope {e e' : AExpr β} {n depth : Nat} (same : LevelEquivalent e e')
+    (source : e.Scope n depth) (levels : e'.erase.LevelWF n) : e'.Scope n depth := by
+  induction same generalizing depth with
+  | bvar _ | natLit _ => exact source
+  | sort _ | const _ _ => exact levels
+  | app _ _ hf ha => exact ⟨hf source.1 levels.1, ha source.2 levels.2⟩
+  | lam _ _ _ hA hb | forallE _ _ _ hA hb =>
+      exact ⟨source.1, hA source.2.1 levels.1, hb source.2.2 levels.2⟩
+  | proj _ _ _ he => exact he source levels
+
+theorem references {e e' : AExpr β} (same : LevelEquivalent e e') :
+    e.references = e'.references := by
+  induction same <;> simp_all [AExpr.references]
+
+/-- A fixed declared reading agrees when its raw tree is congruent and its
+occurrence annotations match. These are syntactic premises, not typing. -/
+theorem of_erase_annotations {e e' : AExpr β}
+    (shape : VExpr.LevelEquivalent e.erase e'.erase)
+    (conditions : e.annotations = e'.annotations) : LevelEquivalent e e' := by
+  obtain ⟨output, erased, same⟩ := reannotate_levels e shape
+  have equal := eq_of_erase_annotations erased (same.annotations.symm.trans conditions)
+  exact equal ▸ same
 
 theorem interp {e e' : AExpr β} (same : LevelEquivalent e e')
     {V : Type v} [SetTheory V] (constants : Assignment β V)

@@ -93,6 +93,30 @@ private def polymorphicIdentity : Ixon.Env × Address :=
     ⟨.axio ⟨false, 1, .leanAll (.sort 0) (.leanAll (.var 0) (.var 1))⟩,
       #[], #[], #[.var 0]⟩
 
+/-- Specializations at Prop and Type, followed by ordinary aliases. The source
+axiom stays polymorphic while each admitted definition is monomorphic. -/
+private def specializationEnvironment : Ixon.Env := Id.run do
+  let (env, identity) := polymorphicIdentity
+  let type := Ixon.Expr.leanAll (.sort 0) (.leanAll (.var 0) (.var 1))
+  let (env, propIdentity) := storeConst env
+    ⟨.defn ⟨.defn, .safe, 0, type, .ref 0 #[0]⟩, #[], #[identity], #[.zero]⟩
+  let (env, typeIdentity) := storeConst env
+    ⟨.defn ⟨.opaq, .safe, 0, type, .ref 0 #[0]⟩, #[], #[identity], #[.succ .zero]⟩
+  let (env, _) := storeConst env
+    ⟨.defn ⟨.thm, .safe, 0, type, .ref 0 #[]⟩, #[], #[propIdentity], #[.zero]⟩
+  let (env, _) := storeConst env
+    ⟨.defn ⟨.defn, .safe, 0, type, .ref 0 #[]⟩,
+      #[], #[typeIdentity], #[.succ .zero]⟩
+  return env
+
+private def failedSpecialization (arguments : Array UInt64) (level : Ixon.Univ) :
+    Ixon.Env × Address :=
+  let (env, identity) := polymorphicIdentity
+  storeConst env
+    ⟨.defn ⟨.defn, .safe, 0,
+      .leanAll (.sort 0) (.leanAll (.var 0) (.var 1)), .ref 0 arguments⟩,
+      #[], #[identity], #[level]⟩
+
 private def levelOne : KUniv .anon := .mkSucc .mkZero
 private def levelTwo : KUniv .anon := .mkSucc levelOne
 
@@ -119,6 +143,26 @@ private def simplifyingUniverses : Ixon.Env × Address :=
   storeConst {}
     ⟨.axio ⟨false, 2, .sort 0⟩, #[], #[],
       #[.imax (.max (.var 0) (.var 1)) (.var 1)]⟩
+
+private def referenceSpecialization : Ixon.Env :=
+  let (env, function, carrier) := polymorphicReferences
+  (storeConst env
+    ⟨.defn ⟨.defn, .safe, 0,
+      .leanAll (.ref 0 #[0]) (.ref 0 #[0]), .ref 1 #[0]⟩,
+      #[], #[carrier, function], #[.succ .zero]⟩).1
+
+private def simplifiedSpecialization : Ixon.Env :=
+  let (env, source) := simplifyingUniverses
+  (storeConst env
+    ⟨.defn ⟨.defn, .safe, 0, .sort 0, .ref 0 #[1, 0]⟩,
+      #[], #[source], #[.zero, .succ (.succ .zero)]⟩).1
+
+private def wrongSpecializationType : Ixon.Env × Address :=
+  let (env, identity) := polymorphicIdentity
+  storeConst env
+    ⟨.defn ⟨.defn, .safe, 0,
+      .leanAll (.sort 0) (.leanAll (.var 0) (.var 1)), .ref 0 #[1]⟩,
+      #[], #[identity], #[.zero, .succ .zero]⟩
 
 private def inferStored (fixture : Ixon.Env × Address) (arguments : Array (KUniv .anon))
     (expected : KExpr .anon) (inferOnly := false) (warmIntern := false) : Bool :=
@@ -176,6 +220,24 @@ private def polymorphicCases : TestSeq :=
       | .ok (.sort (.param index _ _) _) _ => index == 0
       | _ => false : Bool)
 
-public def suite : List TestSeq := [cases, polymorphicCases]
+private def specializationCases : TestSeq :=
+  test "polymorphic environment: Prop and Type specializations and transitive aliases check"
+    (allSucceeded specializationEnvironment 5 { clearEvery := 0 })
+  ++ test "polymorphic environment: specializations check with fresh per-item caches"
+    (allSucceeded specializationEnvironment 5 { clearEvery := 1 })
+  ++ test "polymorphic environment: specialized types preserve nested interface references"
+    (allSucceeded referenceSpecialization 3)
+  ++ test "polymorphic environment: simplified imax type passes declaration conversion"
+    (allSucceeded simplifiedSpecialization 2)
+  ++ test "polymorphic environment: a different declared specialization fails conversion"
+    (let (env, target) := wrongSpecializationType; rowFailed env target)
+  ++ test "polymorphic environment: missing universe arguments fail declaration admission"
+    (let (env, target) := failedSpecialization #[] .zero; rowFailed env target)
+  ++ test "polymorphic environment: excess universe arguments fail declaration admission"
+    (let (env, target) := failedSpecialization #[0, 0] .zero; rowFailed env target)
+  ++ test "polymorphic environment: a monomorphic body cannot retain a universe parameter"
+    (let (env, target) := failedSpecialization #[0] (.var 0); rowFailed env target)
+
+public def suite : List TestSeq := [cases, polymorphicCases, specializationCases]
 
 end Tests.Kernel.Consistency

@@ -39,12 +39,11 @@ structure ConstantInferenceSupport {β : Type u}
       readExpr? resolve concrete.ty = some entry.type.erase ∧
       UniverseInstantiationSupport loaded concrete.ty arguments
 
-/-- A successful uncached production branch types its exact returned tree in
-every model of the preceding interface. The runtime guard establishes arity;
-the model environment's well-formedness supplies the declaration type's scope. -/
-theorem inferUncached_const_sound {β : Type u}
+/-- Refine the returned type, including its arity, scope, and references.
+The only scope premise concerns the preceding interface and actual arguments. -/
+theorem inferUncached_const_refinement {β : Type u}
     {resolve : Address → Option (ConstRef β)} {entries : Model.Environment β}
-    {context : Model.Context β} {id : KId .anon} {arguments : Array (KUniv .anon)}
+    {id : KId .anon} {arguments : Array (KUniv .anon)}
     {info : ExprInfo .anon} {ref : ConstRef β} {entry : ConstantEntry β}
     {inferRec : KExpr .anon → RecM .anon (KExpr .anon)} {inferOnly : Bool}
     {methods : Methods .anon} {before after : TcState .anon} {type : KExpr .anon}
@@ -52,7 +51,11 @@ theorem inferUncached_const_sound {β : Type u}
     (wellFormed : entries.WF)
     (accepted : RecM.inferUncached inferRec inferOnly (.const id arguments info)
       methods before = .ok type after) :
-    ModelTyping.{u,v} resolve entries context (.const id arguments info) type := by
+    ∃ output : AExpr β, readExpr? resolve type = some output.erase ∧
+      AExpr.LevelEquivalent (entry.type.instL (arguments.toList.map readLevel)) output ∧
+      (arguments.toList.map readLevel).length = entry.universes ∧
+      (∀ n, (∀ level ∈ arguments, (readLevel level).WF n) → output.Scope n 0) ∧
+      output.references = entry.type.references := by
   change (RecM.inferUncached inferRec inferOnly (.const id arguments info)).run
     methods before = .ok type after at accepted
   unfold RecM.inferUncached at accepted
@@ -68,17 +71,60 @@ theorem inferUncached_const_sound {β : Type u}
         change TcM.instantiateUnivParams concrete.ty arguments loaded = .ok type after at accepted
         have length : (arguments.toList.map readLevel).length = entry.universes := by
           simpa only [List.length_map, Array.length_toList] using arity.symm.trans count
-        have scope : entry.type.erase.LevelWF arguments.size := by
+        have scope : entry.type.Scope arguments.size 0 := by
           rw [← arity, count]
-          exact (wellFormed.typeScope ref entry support.found).erase.1
+          exact wellFormed.typeScope ref entry support.found
         obtain ⟨output, outputReads, same⟩ :=
-          instantiateUnivParams_readAnnotated resources scope reading accepted
-        refine ⟨.const ref (arguments.toList.map readLevel), output, ?_, outputReads,
-          same.typing (TypingClaim.const support.found length)⟩
-        simp [readExpr?, support.resolved, AExpr.erase]
+          instantiateUnivParams_readAnnotated resources scope.erase.1 reading accepted
+        refine ⟨output, outputReads, same, length, ?_,
+          same.references.symm.trans (AExpr.references_instL entry.type _)⟩
+        intro n argumentsWF
+        obtain ⟨closedOutput, scopedReads, scopedSame, scopedWF, _⟩ :=
+          instantiateUnivParams_readAnnotated_scoped resources scope argumentsWF reading accepted
+        have equal := AExpr.eq_of_erase_annotations
+          (Option.some.inj (scopedReads.symm.trans outputReads))
+          (scopedSame.annotations.symm.trans same.annotations)
+        exact equal ▸ scopedWF
       · simp only [bne_iff_ne] at accepted
         rw [if_pos arity] at accepted
         contradiction
+
+/-- A successful uncached production branch types its exact returned tree in
+every model of the preceding interface. The runtime guard establishes arity. -/
+theorem inferUncached_const_sound {β : Type u}
+    {resolve : Address → Option (ConstRef β)} {entries : Model.Environment β}
+    {context : Model.Context β} {id : KId .anon} {arguments : Array (KUniv .anon)}
+    {info : ExprInfo .anon} {ref : ConstRef β} {entry : ConstantEntry β}
+    {inferRec : KExpr .anon → RecM .anon (KExpr .anon)} {inferOnly : Bool}
+    {methods : Methods .anon} {before after : TcState .anon} {type : KExpr .anon}
+    (support : ConstantInferenceSupport resolve entries before id arguments ref entry)
+    (wellFormed : entries.WF)
+    (accepted : RecM.inferUncached inferRec inferOnly (.const id arguments info)
+      methods before = .ok type after) :
+    ModelTyping.{u,v} resolve entries context (.const id arguments info) type := by
+  obtain ⟨output, reads, same, length, _, _⟩ :=
+    inferUncached_const_refinement support wellFormed accepted
+  refine ⟨.const ref (arguments.toList.map readLevel), output, ?_, reads,
+    same.typing (TypingClaim.const support.found length)⟩
+  simp [readExpr?, support.resolved, AExpr.erase]
+
+/-- The same structural refinement through the ordinary inference entry point. -/
+theorem infer_const_refinement {β : Type u}
+    {resolve : Address → Option (ConstRef β)} {entries : Model.Environment β}
+    {id : KId .anon} {arguments : Array (KUniv .anon)}
+    {info : ExprInfo .anon} {ref : ConstRef β} {entry : ConstantEntry β}
+    {methods : Methods .anon} {before after : TcState .anon} {type : KExpr .anon}
+    (miss : UncachedInference before (.const id arguments info))
+    (support : ConstantInferenceSupport resolve entries miss.keyed id arguments ref entry)
+    (wellFormed : entries.WF)
+    (accepted : RecM.infer (.const id arguments info) methods before = .ok type after) :
+    ∃ output : AExpr β, readExpr? resolve type = some output.erase ∧
+      AExpr.LevelEquivalent (entry.type.instL (arguments.toList.map readLevel)) output ∧
+      (arguments.toList.map readLevel).length = entry.universes ∧
+      (∀ n, (∀ level ∈ arguments, (readLevel level).WF n) → output.Scope n 0) ∧
+      output.references = entry.type.references := by
+  obtain ⟨state, run⟩ := infer_uncached_success miss accepted
+  exact inferUncached_const_refinement support wellFormed run
 
 /-- The ordinary production inference entry point, including its actual key
 lookup and final cache write, refines polymorphic constant typing on misses. -/

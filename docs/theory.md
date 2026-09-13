@@ -20,8 +20,9 @@ open frontiers retain their stated model hypotheses.
 The [certified host adapters](certified-checking.md) connect authenticated
 serialized Ixon to model admission. Separately, a production `checkEnvAnon`
 [fragment](kernel-verification.md#production-environment-fragment) for
-monomorphic aliases and closed universe terms extends every model of its
-source axioms under explicit execution witnesses. Full checker consistency
+monomorphic aliases, closed universe terms, and monomorphic specializations
+of polymorphic constants extends every model of its source axioms under
+explicit execution witnesses. Full checker consistency
 and compiler/backend refinement remain open.
 
 `Ix.Theory.Named` retains the local name-indexed specification and proof
