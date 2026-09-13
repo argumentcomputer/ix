@@ -17,6 +17,7 @@ import Ix.Kernel.Verify.Consistency.InferenceCache
 import Ix.Kernel.Verify.Consistency.SortCache
 import Ix.Kernel.Verify.Consistency.ConstantCache
 import Ix.Kernel.Verify.Consistency.LazyCache
+import Ix.Kernel.Verify.Consistency.BlockCache
 import Ix.Kernel.Verify.Consistency.Context
 import Ix.Kernel.Verify.Consistency.BinderOpening
 import Ix.Kernel.Verify.Consistency.Application
@@ -62,12 +63,15 @@ domain validation and outer cache writes. Successful inference preserves entries
 outside that footprint, loaded declarations, and checking policy. This derives
 later constant witnesses and sort leaves without new cache-hit observations.
 Frames allow declaration growth while retaining every old declaration. Verified
-standalone lazy loading derives such a frame on success and failure, including
-partial conversion state and fault deduplication. Conversion has access only to
-intern tables; single-entry registration is fresh on an actual lookup miss.
+lazy loading derives such a frame on success and failure, including partial
+conversion state and fault deduplication. Standalone and block preparation have
+access only to intern tables; single-entry registration is fresh on an actual
+lookup miss. Block publication requires each converted entry to agree with any
+old declaration at its key. Fresh or partially loaded blocks meet this condition
+through pointwise lookup checks; uniqueness among fresh keys is unnecessary.
 Recursive constant leaves can use that loader and post-lookup walker resources,
 so later closed witnesses survive inference that loads another dependency.
-Initial agreement, finite execution resources, trace construction, mutual-block
-loading, and preservation for keys inside the footprint remain obligations.
+Initial agreement, block overlap checks, finite execution resources, trace
+construction, and preservation for keys inside the footprint remain obligations.
 General checker soundness remains outside this fragment.
 -/

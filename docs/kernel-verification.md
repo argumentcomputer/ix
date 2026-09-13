@@ -125,11 +125,20 @@ increasing sequence of strongly inaccessible cardinals.
   fields except the environment and fault history are retained. The proof
   includes absent sources, integrity/parse errors, partial conversion failures,
   the reserved-address guard, and fault deduplication.
+- `getConst_verified_cache` extends that result to mutual-block loading.
+  Block preparation accesses only intern tables, including conversion of
+  inductives, constructors, and recursor rules. Publication follows the actual
+  insertion fold and preserves old declarations when each converted entry
+  agrees with any old declaration at its key. Fresh entries and exact repeats
+  satisfy this condition; duplicate fresh keys need no uniqueness premise.
+  The proof includes parent lookup failures, block deduplication, partial
+  preparation failures, and lookup errors after successful publication.
   `InferenceCacheTrace.lazyConst` composes this result with universe substitution
-  at the actual post-lookup state. `CachedConstantInferenceSupport.afterLazyInference`
+  at the actual post-lookup state. `CachedConstantInferenceSupport.afterVerifiedInference`
   reuses an earlier witness after a constant call loads another dependency;
-  the recursive transport also covers loads inside application and binder trees.
-  Mutual-block publication and the other recursive paths remain open.
+  recursive transport also covers loads inside application and binder trees.
+  Block overlap agreement remains a data premise. The source admission and
+  other recursive paths still need proofs.
 - `checkEnvAnon_atomic_preserves_model` connects a supported production
   environment run to model extension. `checkEnvAnon_atomic_no_false` excludes
   a declaration at an axiom type interpreted as empty, including False.
@@ -201,17 +210,20 @@ def useF (x : T.{1}) : T.{1} := f.{1} x
   preserve their key's entries and each previously loaded declaration. Actual
   sort and already-loaded constant inference provide frames for other keys. These
   results reduce repeated witnesses; they do not yet derive initial agreement.
-  Verified standalone lookup supplies an extension frame on every outcome,
-  retaining partial intern progress on error. The installed callback must be
-  the actual verified loader, and successful materialization must be standalone.
+  Verified lookup supplies an extension frame on every outcome, retaining
+  partial intern progress on error. The installed callback must be the actual
+  verified loader. Standalone registration uses freshness from the lookup miss;
+  block publication requires pointwise agreement between its prepared entries
+  and any already loaded declarations at their keys. This admits partially
+  loaded blocks without assuming a cache frame or a final-state invariant.
   A separate `InferenceCacheTrace` derives a frame for an entire supported
   recursive call at any key outside its computed writes. It shares the existing
   application and binder execution traces and additionally follows lambda-domain
   inference. Constant misses use already-loaded declarations or verified
-  standalone loading, with finite universe-walker resources after lookup;
+  standalone/block loading, with finite universe-walker resources after lookup;
   applications use full mode and hash conversion. The new dependency's semantic
-  source agreement and intern coherence remain explicit resources. Mutual-block
-  loading, preservation at written keys, and automatic trace construction remain open.
+  source agreement, block overlap checks, and intern coherence remain explicit
+  resources. Preservation at written keys and automatic trace construction remain open.
   The operational trace can frame any selected cache hit, while semantic typing
   of composite hits remains outside `BinderInference`.
 - Binder definitions supply finite inference trees for both the value and its
@@ -307,7 +319,7 @@ lake test --wfail -- tc-unit
 lake -d Models/SetTheory build --wfail
 ```
 
-The consistency target checks 197 exact theorem boundaries. The production
+The consistency target checks 217 exact theorem boundaries. The production
 environment roots retain four existing generated output-length proofs,
 reached through expression/universe construction, names, and the full
 production method table. They introduce no new native proofs. The model
@@ -355,6 +367,13 @@ directly or inside a lambda/application, and reuse the original witness.
 They cover all four standalone conversion forms, both inference policies,
 missing and corrupt sources, definition and recursor failures with retained
 intern progress, and deduplicated retries.
+Block-loading regressions populate both cache partitions and retain them through
+fresh and partially loaded mutual blocks, recursive function bodies, and all
+four projection forms. They check cached sibling preservation, block-level
+deduplication, missing or corrupt parents, preparation failures after earlier
+members converted, and an unknown block-root lookup that retains completed
+publication. These exercise loading and cache preservation; they do not establish
+semantic admission of inductives or recursors.
 
 ## Certified host adapters
 
@@ -386,6 +405,7 @@ The VM pilot is preserved in the frozen archive and excluded from the host gate.
 | Cache invariants and sort cache typing | [`Consistency/InferenceCache.lean`](../Ix/Kernel/Verify/Consistency/InferenceCache.lean), [`SortCache.lean`](../Ix/Kernel/Verify/Consistency/SortCache.lean) |
 | Recursive cache preservation and witness reuse | [`Consistency/RecursiveCache.lean`](../Ix/Kernel/Verify/Consistency/RecursiveCache.lean) |
 | Verified standalone lazy loading and cache frames | [`Consistency/LazyCache.lean`](../Ix/Kernel/Verify/Consistency/LazyCache.lean) |
+| Mutual-block publication and verified lookup frames | [`Consistency/BlockCache.lean`](../Ix/Kernel/Verify/Consistency/BlockCache.lean) |
 | Dependent binders and function bodies | [`Consistency/BinderInference.lean`](../Ix/Kernel/Verify/Consistency/BinderInference.lean), [`Application.lean`](../Ix/Kernel/Verify/Consistency/Application.lean), [`BinderOpening.lean`](../Ix/Kernel/Verify/Consistency/BinderOpening.lean), [`Context.lean`](../Ix/Kernel/Verify/Consistency/Context.lean), [`Model/Checking.lean`](../Ix/Theory/Model/Checking.lean) |
 | Production environment fragment and relative axiom policy | [`Consistency/Environment.lean`](../Ix/Kernel/Verify/Consistency/Environment.lean), [`Production.lean`](../Ix/Kernel/Verify/Consistency/Production.lean) |
 | Foundation assumptions, theorem contracts, and provenance | [Consistency model guide](theory.md) |

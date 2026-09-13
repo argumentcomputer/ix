@@ -397,10 +397,14 @@ abbrev Entry := KId .anon × KConst .anon
 /-- Insert converted entries into the kernel env, enforcing the
     reserved-marker guard (Rust panics in `KEnv::insert`; ingress is the only
     untrusted-input path, so the check lives here). -/
-def guardReserved (entries : Array Entry) : IngressM Unit := do
+def checkReserved (entries : Array Entry) : Except IngressErr Unit := do
   for (id, _) in entries do
     if let some marker := reservedMarkerName id.addr then
       throw s!"attempted to insert constant at reserved kernel marker address {marker} ({id.addr})"
+
+/-- Reserved-address validation has no access to the kernel environment. -/
+def guardReserved (entries : Array Entry) : IngressM Unit :=
+  IngressM.liftExcept (checkReserved entries)
 
 /-- Standalone registration: each entry is its own single-member block. -/
 def insertStandaloneEntries (entries : Array Entry) : IngressM Unit := do
@@ -486,16 +490,16 @@ def ingressRecursorAnon (ixonEnv : Ixon.Env) (rec : Ixon.Recursor)
 
 /-- Convert an `Inductive` block member plus all of its constructors.
     `ctorAddrs` are the caller-computed CPrj addresses. -/
-def ingressAnonInductive (ixonEnv : Ixon.Env) (ind : Ixon.Inductive)
+def convertAnonInductive (ixonEnv : Ixon.Env) (ind : Ixon.Inductive)
     (selfId : KId .anon) (blockConstant : Ixon.Constant) (blockId : KId .anon)
     (memberIdx : UInt64) (ctorAddrs : Array Address)
-    (mutCtx : Array (KId .anon)) : IngressM (Array Entry) := do
+    (mutCtx : Array (KId .anon)) : InternIngressM (Array Entry) := do
   if ctorAddrs.size != ind.ctors.size then
     throw s!"ingressAnonInductive: ctorAddrs.size={ctorAddrs.size} but ind.ctors.size={ind.ctors.size}"
   let ctx : IngressCtx :=
     { sharing := blockConstant.sharing, refs := blockConstant.refs
       univs := blockConstant.univs, mutCtx }
-  let (ty, st) ← (ingressExpr ixonEnv ctx ind.typ).run {}
+  let (ty, st) ← (convertExpr ixonEnv ctx ind.typ).run {}
   let ctorIds : Array (KId .anon) := ctorAddrs.map (⟨·, ()⟩)
   let mut results : Array Entry := #[(selfId,
     .indc () () ind.lvls ind.params ind.indices ind.isUnsafe blockId
@@ -503,12 +507,20 @@ def ingressAnonInductive (ixonEnv : Ixon.Env) (ind : Ixon.Inductive)
   let mut st := st
   for h : cidx in [0:ind.ctors.size] do
     let ctor := ind.ctors[cidx]
-    let (ctorTy, st') ← (ingressExpr ixonEnv ctx ctor.typ).run st
+    let (ctorTy, st') ← (convertExpr ixonEnv ctx ctor.typ).run st
     st := st'
     results := results.push (ctorIds[cidx]!,
       .ctor () () ctor.isUnsafe ctor.lvls selfId ctor.cidx ctor.params
         ctor.fields ctorTy)
   return results
+
+/-- Environment-threading interface for an inductive and its constructors. -/
+def ingressAnonInductive (ixonEnv : Ixon.Env) (ind : Ixon.Inductive)
+    (selfId : KId .anon) (blockConstant : Ixon.Constant) (blockId : KId .anon)
+    (memberIdx : UInt64) (ctorAddrs : Array Address)
+    (mutCtx : Array (KId .anon)) : IngressM (Array Entry) :=
+  IngressM.runIntern
+    (convertAnonInductive ixonEnv ind selfId blockConstant blockId memberIdx ctorAddrs mutCtx)
 
 /-- Convert a standalone without publishing it or accessing checker caches.
     `Defn`/`Recr` get `mutCtx = #[selfId]` for `recur 0` self-references;
@@ -558,9 +570,9 @@ structure AnonBlockIngressTrace where
 /-- Convert an entire Muts block without publishing it.  Splitting conversion
 from insertion makes the atomic publication tail explicit to verification;
 the public wrapper below preserves the original all-or-error behavior. -/
-def prepareAnonBlock (ixonEnv : Ixon.Env)
+def convertAnonBlock (ixonEnv : Ixon.Env)
     (blockConstant : Ixon.Constant) (blockAddr : Address) :
-    IngressM AnonBlockIngressTrace := do
+    InternIngressM AnonBlockIngressTrace := do
   let .muts members := blockConstant.info
     | throw s!"ingressAnonBlock: {blockAddr} is not a Muts block"
   let blockId : KId .anon := ⟨blockAddr, ()⟩
@@ -576,7 +588,7 @@ def prepareAnonBlock (ixonEnv : Ixon.Env)
       out := out.push ⟨addr, ()⟩
     return out
   let verifyProj (kind : String) (projAddr : Address) (idx : UInt64)
-      (cidx : Option UInt64) : IngressM Unit := do
+      (cidx : Option UInt64) : InternIngressM Unit := do
     if !ixonEnv.consts.contains projAddr then
       let tail := match cidx with
         | none => s!"(block {blockAddr} idx {idx})"
@@ -593,17 +605,17 @@ def prepareAnonBlock (ixonEnv : Ixon.Env)
       let selfId : KId .anon := ⟨projAddr, ()⟩
       memberKids := memberKids.push selfId
       let hintsOverride := ixonEnv.anonHints[projAddr]?
-      let entries ← ingressDefnAnon ixonEnv d selfId blockConstant blockId
+      let converted ← convertDefnAnon ixonEnv d blockConstant blockId
         mutCtx hintsOverride
-      allEntries := allEntries ++ entries
+      allEntries := allEntries ++ #[(selfId, converted)]
     | .recr r =>
       let projAddr := recrProjAddr blockAddr idx
       verifyProj "RPrj" projAddr idx none
       let selfId : KId .anon := ⟨projAddr, ()⟩
       memberKids := memberKids.push selfId
-      let entries ← ingressRecursorAnon ixonEnv r selfId blockConstant
+      let converted ← convertRecursorAnon ixonEnv r blockConstant
         blockId mutCtx
-      allEntries := allEntries ++ entries
+      allEntries := allEntries ++ #[(selfId, converted)]
     | .indc ind =>
       let projAddr := indcProjAddr blockAddr idx
       verifyProj "IPrj" projAddr idx none
@@ -612,10 +624,16 @@ def prepareAnonBlock (ixonEnv : Ixon.Env)
       let ctorAddrs := anonCtorAddrs blockAddr idx ind
       for h : cidx in [0:ctorAddrs.size] do
         verifyProj "CPrj" ctorAddrs[cidx] idx (some cidx.toUInt64)
-      let entries ← ingressAnonInductive ixonEnv ind selfId blockConstant
+      let entries ← convertAnonInductive ixonEnv ind selfId blockConstant
         blockId idx ctorAddrs mutCtx
       allEntries := allEntries ++ entries
   return { memberKids, allEntries }
+
+/-- Block preparation changes only intern tables, on either outcome. -/
+def prepareAnonBlock (ixonEnv : Ixon.Env)
+    (blockConstant : Ixon.Constant) (blockAddr : Address) :
+    IngressM AnonBlockIngressTrace :=
+  IngressM.runIntern (convertAnonBlock ixonEnv blockConstant blockAddr)
 
 /-- Traced anon ingress for an entire Muts block: convert every member, then
 atomically publish the exact flat entry array returned in the trace. -/
@@ -631,6 +649,15 @@ def ingressAnonBlock (ixonEnv : Ixon.Env) (blockConstant : Ixon.Constant)
     (blockAddr : Address) : IngressM (Array (KId .anon)) := do
   return (← ingressAnonBlockWithTrace ixonEnv blockConstant blockAddr).memberKids
 
+/-- The owning block requested by shallow ingress, if the source is mutual. -/
+def ingressBlockAddr? (addr : Address) : Ixon.ConstantInfo → Option Address
+  | .dPrj p => some p.block
+  | .iPrj p => some p.block
+  | .rPrj p => some p.block
+  | .cPrj p => some p.block
+  | .muts _ => some addr
+  | _ => none
+
 /-- Anon shallow ingress for a single address — the lazy fault path. For a
     projection, fetches the parent block and ingresses the whole block (with
     block-level dedup via `kenv.blocks`); for a standalone, ingresses
@@ -639,14 +666,7 @@ def ingressAnonAddrShallow (ixonEnv : Ixon.Env) (addr : Address)
     (verify : Bool := true) : IngressM Bool := do
   let some constant ← IngressM.liftExcept (getConstVerified ixonEnv addr verify)
     | return false
-  let blockAddr? : Option Address := match constant.info with
-    | .dPrj p => some p.block
-    | .iPrj p => some p.block
-    | .rPrj p => some p.block
-    | .cPrj p => some p.block
-    | .muts _ => some addr
-    | _ => none
-  match blockAddr? with
+  match ingressBlockAddr? addr constant.info with
   | some blockAddr =>
     -- Block dedup: a prior fault on any projection of this block already
     -- populated every member.

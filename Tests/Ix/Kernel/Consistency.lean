@@ -950,9 +950,210 @@ private def lazyCacheCases : TestSeq :=
   ++ test "lazy cache: a failed recursor retains partial conversion and the inference-only witness"
     (cacheAcrossLazyFailure 3 true)
 
+/-- Populate both partitions so every block regression checks two live slots. -/
+private def warmBothCaches (term : KExpr .anon) : RecM .anon (KExpr .anon) := do
+  let policy := (← get).inferOnly
+  modify fun state => {state with inferOnly := true}
+  let _ ← RecM.inferCall term
+  modify fun state => {state with inferOnly := false}
+  let result ← RecM.inferCall term
+  modify fun state => {state with inferOnly := policy}
+  return result
+
+private def warmSlotsRetained (key : Address × Address) (before after : TcState .anon) : Bool :=
+  before.env.inferCache[key]?.isSome && before.env.inferOnlyCache[key]?.isSome &&
+  after.env.inferCache[key]?.map (·.addr) == before.env.inferCache[key]?.map (·.addr) &&
+  after.env.inferOnlyCache[key]?.map (·.addr) == before.env.inferOnlyCache[key]?.map (·.addr)
+
+private def cacheBlock (recursor : Bool) : Ixon.Constant :=
+  let type := Ixon.Expr.leanAll (.sort 0) (.leanAll (.var 0) (.var 1))
+  let value := Ixon.Expr.leanLam (.sort 0) (.leanLam (.var 0) (.var 0))
+  let first : Ixon.MutConst := .defn ⟨.defn, .safe, 0, .share 0, .recur 1 #[]⟩
+  let second : Ixon.MutConst := if recursor then
+    .recr ⟨false, false, 0, 0, 0, 0, 0, .share 0, #[⟨0, .share 1⟩, ⟨1, .share 1⟩]⟩
+    else .defn ⟨.defn, .safe, 0, .share 0, .share 1⟩
+  ⟨.muts #[first, second], #[type, value], #[], #[.succ .zero]⟩
+
+/-- A projection loads the whole block. A partial preload warms the first
+member without recording the block; publication must preserve that member too. -/
+private def cacheAcrossBlock (recursor preloaded : Bool) (shape : Nat) (inferOnly : Bool) : Bool :=
+  let (source, warmAddr) := polymorphicIdentity
+  let block := cacheBlock recursor
+  let (source, blockAddr) := storeMutsWithProjs source block
+  let first : KId .anon := ⟨defnProjAddr blockAddr 0, ()⟩
+  let second : KId .anon := ⟨if recursor then recrProjAddr blockAddr 1 else defnProjAddr blockAddr 1, ()⟩
+  let requested := if preloaded || recursor then second else first
+  let sibling := if preloaded || recursor then first else second
+  let warmId : KId .anon := ⟨warmAddr, ()⟩
+  let warm := KExpr.mkConst (m := .anon) warmId #[levelOne]
+  let cold := KExpr.mkConst (m := .anon) requested #[]
+  let sortType := KExpr.mkSort (m := .anon) levelOne
+  let body := KExpr.mkLam () () sortType (.mkLam () () (.mkVar 0 ())
+    (.mkApp (.mkApp cold (.mkVar 1 ())) (.mkVar 0 ())))
+  let term := if shape == 0 then cold else if shape == 1 then body else
+    KExpr.mkApp (.mkApp (.mkConst warmId #[levelTwo]) identityType) body
+  let action : RecM .anon Bool := do
+    let expected ← warmBothCaches warm
+    let key ← TcM.inferKey warm
+    if preloaded then
+      let state ← get
+      let .ok trace converted := prepareAnonBlock source block blockAddr state.env | return false
+      let some entry := trace.allEntries[0]? | return false
+      modify fun state => {state with env := converted.insert entry.1 entry.2}
+      let _ ← warmBothCaches (.mkConst first #[])
+    let firstKey ← TcM.inferKey (.mkConst first #[])
+    let before ← get
+    let result ← RecM.inferCall term
+    let loaded ← get
+    let reused ← RecM.inferCall warm
+    let replay ← RecM.inferCall term
+    let beforeDedup ← get
+    let _ ← liftM (TcM.lazyIngressAddr (m := .anon) sibling.addr)
+    let after ← get
+    let overlap := if preloaded then
+      warmSlotsRetained firstKey before loaded &&
+      match before.env.get? first, loaded.env.get? first with
+      | some (.defn (kind := k) (safety := s) (hints := h) (lvls := l) (ty := t) (val := v) (block := b) ..),
+        some (.defn (kind := k') (safety := s') (hints := h') (lvls := l') (ty := t') (val := v') (block := b') ..) =>
+          k == k' && s == s' && h == h' && l == l' && t.addr == t'.addr && v.addr == v'.addr && b == b'
+      | _, _ => false
+      else true
+    return result.addr == expected.addr && expected.addr == identityType.addr &&
+      reused.addr == expected.addr && replay.addr == result.addr && overlap &&
+      warmSlotsRetained key before loaded && (before.env.get? requested).isNone &&
+      !before.env.blocks.contains ⟨blockAddr, ()⟩ &&
+      (loaded.env.get? first).isSome && (loaded.env.get? second).isSome &&
+      loaded.env.consts.size == before.env.consts.size + (if preloaded then 1 else 2) &&
+      loaded.env.blocks[(⟨blockAddr, ()⟩ : KId .anon)]?.any (fun members => members == #[first, second]) &&
+      !beforeDedup.faultedAddrs.contains sibling.addr && after.faultedAddrs.contains sibling.addr &&
+      after.env.consts.size == beforeDedup.env.consts.size &&
+      after.env.intern.exprs.size == beforeDedup.env.intern.exprs.size &&
+      after.env.intern.univs.size == beforeDedup.env.intern.univs.size &&
+      after.env.inferCache.size == beforeDedup.env.inferCache.size &&
+      after.env.inferOnlyCache.size == beforeDedup.env.inferOnlyCache.size &&
+      after.env.nextFVarId == beforeDedup.env.nextFVarId && after.inferOnly == inferOnly
+  match TcM.runRec action { TcState.newLazyAnon source with inferOnly } with
+  | .ok passed _ => passed
+  | .error _ _ => false
+
+/-- Inductive and constructor projections exercise flattened publication.
+This tests loader framing, without claiming inductive admission soundness. -/
+private def cacheAcrossInductiveBlock (constructor : Bool) : Bool :=
+  let (source, blockAddr) := envInductive
+  let (source, warmAddr) := storeConst source
+    ⟨.axio ⟨false, 1, .leanAll (.sort 0) (.leanAll (.var 0) (.var 1))⟩, #[], #[], #[.var 0]⟩
+  let induct : KId .anon := ⟨indcProjAddr blockAddr 0, ()⟩
+  let ctor : KId .anon := ⟨ctorProjAddr blockAddr 0 0, ()⟩
+  let warm := KExpr.mkConst (m := .anon) ⟨warmAddr, ()⟩ #[levelOne]
+  let action : RecM .anon Bool := do
+    let expected ← warmBothCaches warm
+    let key ← TcM.inferKey warm
+    let before ← get
+    let result ← RecM.inferCall (.mkConst (if constructor then ctor else induct) #[])
+    let loaded ← get
+    let reused ← RecM.inferCall warm
+    return warmSlotsRetained key before loaded && reused.addr == expected.addr &&
+      result.addr == (if constructor then (KExpr.mkConst induct #[]).addr else sort1K.addr) &&
+      loaded.env.consts.size == before.env.consts.size + 2 &&
+      loaded.env.blocks[(⟨blockAddr, ()⟩ : KId .anon)]?.any (fun members => members == #[induct, ctor]) &&
+      match loaded.env.get? induct, loaded.env.get? ctor with
+      | some (.indc (ctors := ctors) ..), some (.ctor (induct := parent) ..) =>
+          ctors == #[ctor] && parent == induct
+      | _, _ => false
+  match TcM.runRec action (TcState.newLazyAnon source) with
+  | .ok passed _ => passed
+  | .error _ _ => false
+
+/-- A failure can retain partial conversion, or even a complete publication
+when the requested block root has no declaration entry. Retries deduplicate. -/
+private def cacheAcrossBlockFailure (kind : Nat) : Bool :=
+  let (source, warmAddr) := polymorphicIdentity
+  let level : Ixon.Univ := .succ (.succ (.succ (.succ (.succ .zero))))
+  let first : Ixon.MutConst := .defn ⟨.defn, .safe, 0, .sort 0, .sort 0⟩
+  let second : Ixon.MutConst := .defn ⟨.defn, .safe, 0, .sort 0,
+    if kind == 3 then .share 9 else .sort 0⟩
+  let (source, blockAddr) := storeMutsWithProjs source ⟨.muts #[first, second], #[], #[], #[level]⟩
+  let firstAddr := defnProjAddr blockAddr 0
+  let secondAddr := defnProjAddr blockAddr 1
+  let source := if kind == 0 then {source with consts := source.consts.erase blockAddr}
+    else if kind == 1 then
+      {source with consts := source.consts.insert blockAddr (.ofConstant (lazyCacheDependency 0))}
+    else if kind == 2 then {source with consts := source.consts.erase secondAddr} else source
+  let requested : KId .anon := ⟨if kind == 4 then blockAddr else firstAddr, ()⟩
+  let warm := KExpr.mkConst (m := .anon) ⟨warmAddr, ()⟩ #[levelOne]
+  let action : RecM .anon Bool := do
+    let expected ← warmBothCaches warm
+    let key ← TcM.inferKey warm
+    let before ← get
+    let rejected ← try
+      let _ ← liftM (TcM.getConst requested)
+      pure false
+    catch err =>
+      let fragment := if kind == 0 then "absent" else if kind == 1 then "fails integrity check"
+        else if kind == 2 then "not present in env" else if kind == 3 then "invalid Share index 9"
+        else "unknown constant"
+      pure (((toString err).splitOn fragment).length > 1)
+    let failed ← get
+    let retry ← try
+      let _ ← liftM (TcM.getConst requested)
+      pure false
+    catch err =>
+      match err with
+      | .unknownConst addr => pure (addr == requested.addr)
+      | _ => pure false
+    let reused ← RecM.inferCall warm
+    let after ← get
+    return rejected && retry && reused.addr == expected.addr && warmSlotsRetained key before failed &&
+      (failed.env.get? requested).isNone && failed.faultedAddrs.contains requested.addr &&
+      failed.env.consts.size == before.env.consts.size + (if kind == 4 then 2 else 0) &&
+      failed.env.blocks.size == before.env.blocks.size + (if kind == 4 then 1 else 0) &&
+      (if kind == 4 then (failed.env.get? ⟨firstAddr, ()⟩).isSome &&
+        (failed.env.get? ⟨secondAddr, ()⟩).isSome else true) &&
+      failed.env.inferCache.size == before.env.inferCache.size &&
+      failed.env.inferOnlyCache.size == before.env.inferOnlyCache.size &&
+      (if kind >= 2 then failed.env.intern.exprs.size > before.env.intern.exprs.size &&
+        failed.env.intern.univs.size > before.env.intern.univs.size
+       else failed.env.intern.exprs.size == before.env.intern.exprs.size &&
+        failed.env.intern.univs.size == before.env.intern.univs.size) &&
+      failed.env.nextFVarId == before.env.nextFVarId && failed.inferOnly == before.inferOnly &&
+      after.env.consts.size == failed.env.consts.size &&
+      after.env.intern.exprs.size == failed.env.intern.exprs.size &&
+      after.env.intern.univs.size == failed.env.intern.univs.size
+  match TcM.runRec action (TcState.newLazyAnon source) with
+  | .ok passed _ => passed
+  | .error _ _ => false
+
+private def blockCacheCases : TestSeq :=
+  test "block cache: a definition projection loads both members and preserves both warm slots"
+    (cacheAcrossBlock false false 0 false)
+  ++ test "block cache: partial publication retains a cached sibling in full mode"
+    (cacheAcrossBlock false true 0 false)
+  ++ test "block cache: partial publication retains a cached sibling in inference-only mode"
+    (cacheAcrossBlock false true 0 true)
+  ++ test "block cache: a lambda loads a mutual dependency and preserves both warm slots"
+    (cacheAcrossBlock false false 1 false)
+  ++ test "block cache: an application loads a mutual dependency inside its lambda argument"
+    (cacheAcrossBlock false false 2 false)
+  ++ test "block cache: a recursor projection loads the whole block and converts its rules"
+    (cacheAcrossBlock true false 0 false)
+  ++ test "block cache: an inductive projection publishes its constructors and retains warm slots"
+    (cacheAcrossInductiveBlock false)
+  ++ test "block cache: a constructor projection publishes its inductive and retains warm slots"
+    (cacheAcrossInductiveBlock true)
+  ++ test "block cache: a missing parent retains both warm slots"
+    (cacheAcrossBlockFailure 0)
+  ++ test "block cache: a corrupt parent retains both warm slots"
+    (cacheAcrossBlockFailure 1)
+  ++ test "block cache: a missing later projection retains partial conversion without publication"
+    (cacheAcrossBlockFailure 2)
+  ++ test "block cache: a failed later member retains partial conversion without publication"
+    (cacheAcrossBlockFailure 3)
+  ++ test "block cache: an unknown root retains a completed block publication and both warm slots"
+    (cacheAcrossBlockFailure 4)
+
 public def suite : List TestSeq :=
   [cases, polymorphicCases, specializationCases, binderCases, applicationCases,
     polymorphicApplicationCases, constantCacheCases, cacheInvariantCases, recursiveCacheCases,
-    lazyCacheCases]
+    lazyCacheCases, blockCacheCases]
 
 end Tests.Kernel.Consistency

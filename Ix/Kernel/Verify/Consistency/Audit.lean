@@ -74,13 +74,15 @@ private def cacheFrameRoots : Array Lean.Name := #[
   ``InferenceCacheAgreement.policy, ``withInferOnly_eq,
   ``PreservesInferenceCache.withInferOnly, ``getConst_loaded,
   ``IngressCacheExtension.refl, ``IngressCacheExtension.intern, ``IngressCacheExtension.trans,
+  ``EntriesCompatible.ofFresh, ``EntriesCompatible.ofLookups,
   ``ingress_runIntern_cache, ``LazyLookupFrame.refl, ``LazyLookupFrame.cache, ``LazyLookupFrame.policy
 ]
 
 private def cacheMapRoots : Array Lean.Name := #[
   ``InferenceCacheAgreement.write, ``PreservesInferenceCache.write_other,
   ``InferenceCacheAgreement.clearReductionCaches,
-  ``IngressCacheExtension.insert, ``insertStandaloneEntries_singleton
+  ``IngressCacheExtension.insert, ``insertStandaloneEntries_singleton,
+  ``insertMutsEntriesState_cache, ``guardReserved_state, ``insertMutsEntries_cache
 ]
 
 private def cacheKeyRoots : Array Lean.Name := #[
@@ -97,6 +99,8 @@ private def recursiveCacheRoots : Array Lean.Name := #[
   ``InferenceCacheTrace.fvarOfKey, ``InferenceCacheTrace.constOfKey, ``InferenceCacheTrace.lazyConstOfKey,
   ``InferenceCacheTrace.frame, ``InferenceCacheTrace.agreement,
   ``infer_lazyConst_cache_frame, ``CachedConstantInferenceSupport.afterLazyInference,
+  ``InferenceCacheTrace.verifiedConstOfKey,
+  ``infer_verifiedConst_cache_frame, ``CachedConstantInferenceSupport.afterVerifiedInference,
   ``InferenceCacheHit.afterInference, ``CachedConstantInferenceSupport.afterInference,
   ``CachedConstantInferenceSupport.sound_after_inference, ``BinderInference.sortAfterInference
 ]
@@ -104,7 +108,13 @@ private def recursiveCacheRoots : Array Lean.Name := #[
 private def lazyCacheRoots : Array Lean.Name := #[
   ``ingressAnonStandalone_cache, ``ingressAnonAddrShallow_cache, ``lazyIngressAddr_cache,
   ``tryGetConst_standalone_cache, ``getConst_standalone_cache,
-  ``CachedConstantInferenceSupport.afterGetConst, ``CachedConstantInferenceSupport.afterFailedGetConst
+  ``CachedConstantInferenceSupport.afterGetConst, ``CachedConstantInferenceSupport.afterFailedGetConst,
+  ``BlockEntriesCompatible.ofFresh, ``BlockEntriesCompatible.ofLookups,
+  ``prepareAnonBlock_cache, ``ingressAnonBlockWithTrace_cache, ``ingressAnonBlock_cache,
+  ``ingressAnonAddrShallow_verified_cache, ``StandaloneLazySupport.toVerified,
+  ``lazyIngressAddr_verified_cache, ``tryGetConst_verified_cache, ``getConst_verified_cache,
+  ``CachedConstantInferenceSupport.afterVerifiedGetConst,
+  ``CachedConstantInferenceSupport.afterFailedVerifiedGetConst
 ]
 
 private def productionRoots : Array Lean.Name := #[

@@ -85,7 +85,7 @@ theorem insertStandaloneEntries_singleton (id : KId .anon) (concrete : KConst .a
       | some marker => .error
           s!"attempted to insert constant at reserved kernel marker address {marker} ({id.addr})" before
       | none => .ok () ((before.insert id concrete).insertBlock id #[id]) := by
-  simp [insertStandaloneEntries, guardReserved]
+  simp [insertStandaloneEntries, guardReserved, checkReserved, IngressM.liftExcept]
   cases reservedMarkerName id.addr <;> rfl
 
 /-- Fresh standalone ingress preserves old declarations and both caches,
@@ -129,7 +129,7 @@ theorem ingressAnonAddrShallow_cache (source : Ixon.Env) (addr : Address)
     (fresh : before.get? ⟨addr, ()⟩ = none) :
     match ingressAnonAddrShallow source addr true before with
     | .ok _ after | .error _ after => IngressCacheExtension before after := by
-  unfold ingressAnonAddrShallow
+  unfold ingressAnonAddrShallow ingressBlockAddr?
   change (match (EStateM.bind (IngressM.liftExcept (getConstVerified source addr true))
     _ : IngressM Bool) before with
     | .ok _ after | .error _ after => IngressCacheExtension before after)

@@ -4,7 +4,7 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 -/
 
 import Ix.Kernel.Verify.Consistency.BinderInference
-import Ix.Kernel.Verify.Consistency.LazyCache
+import Ix.Kernel.Verify.Consistency.BlockCache
 
 /-!
 # Cache preservation through recursive inference
@@ -149,7 +149,7 @@ inductive InferenceCacheTrace : Nat → TcState .anon → KExpr .anon → Type
       InferenceCacheTrace fuel before (.const id arguments info)
   | lazyConst {fuel before id arguments info}
       (miss : UncachedInference before (.const id arguments info))
-      (loader : StandaloneLazySupport miss.keyed id.addr)
+      (loader : VerifiedLazySupport miss.keyed id.addr)
       (resources : ∀ concrete loaded, TcM.getConst id miss.keyed = .ok concrete loaded →
         UniverseInstantiationSupport loaded concrete.ty arguments) :
       InferenceCacheTrace fuel before (.const id arguments info)
@@ -214,11 +214,11 @@ def InferenceCacheTrace.constOfKey {fuel : Nat} {before keyed : TcState .anon}
 
 /-- Construct a constant leaf that may load its declaration. Cache selection
 comes from the actual maps; walker resources concern the returned lookup state. -/
-def InferenceCacheTrace.lazyConstOfKey {fuel : Nat} {before keyed : TcState .anon}
+def InferenceCacheTrace.verifiedConstOfKey {fuel : Nat} {before keyed : TcState .anon}
     {id : KId .anon} {arguments : Array (KUniv .anon)} {info : ExprInfo .anon}
     {key : Address × Address}
     (keyRun : TcM.inferKey (.const id arguments info) before = .ok key keyed)
-    (loader : StandaloneLazySupport keyed id.addr)
+    (loader : VerifiedLazySupport keyed id.addr)
     (resources : ∀ concrete loaded, TcM.getConst id keyed = .ok concrete loaded →
       UniverseInstantiationSupport loaded concrete.ty arguments) :
     InferenceCacheTrace fuel before (.const id arguments info) := by
@@ -226,6 +226,17 @@ def InferenceCacheTrace.lazyConstOfKey {fuel : Nat} {before keyed : TcState .ano
   · exact .hit hit
   · exact .lazyConst miss (by simpa only [stateEq] using loader)
       (by simpa only [stateEq] using resources)
+
+/-- Standalone loaders remain a special case of the verified leaf. -/
+def InferenceCacheTrace.lazyConstOfKey {fuel : Nat} {before keyed : TcState .anon}
+    {id : KId .anon} {arguments : Array (KUniv .anon)} {info : ExprInfo .anon}
+    {key : Address × Address}
+    (keyRun : TcM.inferKey (.const id arguments info) before = .ok key keyed)
+    (loader : StandaloneLazySupport keyed id.addr)
+    (resources : ∀ concrete loaded, TcM.getConst id keyed = .ok concrete loaded →
+      UniverseInstantiationSupport loaded concrete.ty arguments) :
+    InferenceCacheTrace fuel before (.const id arguments info) :=
+  .verifiedConstOfKey keyRun loader.toVerified resources
 
 /-- Every successful call in the finite tree preserves entries outside its
 computed write footprint and retains the loaded declarations and policy.
@@ -258,7 +269,7 @@ theorem InferenceCacheTrace.frame {fuel : Nat} {before after : TcState .anon}
       apply infer_miss_frame miss (Ne.symm outside) accepted
       intro middle run
       obtain ⟨concrete, foundState, got, _, instantiated⟩ := inferUncached_const_instantiation run
-      have lookup := getConst_standalone_cache loader
+      have lookup := getConst_verified_cache loader
       rw [got] at lookup
       have resource := resources concrete foundState got
       have post := TcM.instantiateUnivParams_wf resource.faithful
@@ -329,13 +340,13 @@ theorem InferenceCacheTrace.frame {fuel : Nat} {before after : TcState .anon}
       exact ⟨(domainFrame.trans (opening.trans bodyFrame)).trans (.of_eq rfl rfl rfl),
         bodyPolicy.trans ((openBinder_policy trace.openRun).trans domainPolicy)⟩
 
-/-- A standalone constant call needs no separately constructed operational
+/-- A verified constant call needs no separately constructed operational
 tree: the real key and cache selection build its hit or lazy-miss leaf. -/
-theorem infer_lazyConst_cache_frame {fuel : Nat} {before keyed after : TcState .anon}
+theorem infer_verifiedConst_cache_frame {fuel : Nat} {before keyed after : TcState .anon}
     {id : KId .anon} {arguments : Array (KUniv .anon)} {info : ExprInfo .anon}
     {key watched : Address × Address} {result : KExpr .anon}
     (keyRun : TcM.inferKey (.const id arguments info) before = .ok key keyed)
-    (different : key ≠ watched) (loader : StandaloneLazySupport keyed id.addr)
+    (different : key ≠ watched) (loader : VerifiedLazySupport keyed id.addr)
     (resources : ∀ concrete loaded, TcM.getConst id keyed = .ok concrete loaded →
       UniverseInstantiationSupport loaded concrete.ty arguments)
     (accepted : RecM.infer (.const id arguments info) (methodsN fuel) before = .ok result after) :
@@ -347,6 +358,18 @@ theorem infer_lazyConst_cache_frame {fuel : Nat} {before keyed after : TcState .
         (by simpa only [stateEq] using resources)
     apply tree.frame _ accepted
     simpa only [tree, InferenceCacheTrace.writes, List.mem_singleton, keyEq] using Ne.symm different
+
+/-- Compatibility wrapper for a standalone constant call. -/
+theorem infer_lazyConst_cache_frame {fuel : Nat} {before keyed after : TcState .anon}
+    {id : KId .anon} {arguments : Array (KUniv .anon)} {info : ExprInfo .anon}
+    {key watched : Address × Address} {result : KExpr .anon}
+    (keyRun : TcM.inferKey (.const id arguments info) before = .ok key keyed)
+    (different : key ≠ watched) (loader : StandaloneLazySupport keyed id.addr)
+    (resources : ∀ concrete loaded, TcM.getConst id keyed = .ok concrete loaded →
+      UniverseInstantiationSupport loaded concrete.ty arguments)
+    (accepted : RecM.infer (.const id arguments info) (methodsN fuel) before = .ok result after) :
+    InferenceCacheFrame watched before after ∧ after.inferOnly = before.inferOnly :=
+  infer_verifiedConst_cache_frame keyRun different loader.toVerified resources accepted
 
 /-- Concrete agreement at an unwritten key is retained by the entire tree. -/
 theorem InferenceCacheTrace.agreement {fuel : Nat} {before after : TcState .anon}
@@ -383,7 +406,27 @@ def CachedConstantInferenceSupport.afterInference {β : Type u}
   support.transport closed (tree.frame outside accepted).1 (tree.frame outside accepted).2
 
 /-- Reuse the complete earlier witness after inference may load another
-standalone. The new cache selection and declaration extension are derived. -/
+dependency, including a mutual block. Cache selection and declaration extension are derived. -/
+def CachedConstantInferenceSupport.afterVerifiedInference {β : Type u}
+    {resolve : Address → Option (ConstRef β)} {entries : Model.Environment β}
+    {fuel : Nat} {before keyed after : TcState .anon}
+    {id requested : KId .anon} {arguments requestedArguments : Array (KUniv .anon)}
+    {info requestedInfo : ExprInfo .anon} {key : Address × Address} {result : KExpr .anon}
+    {ref : ConstRef β} {entry : ConstantEntry β} {type : AExpr β}
+    (support : CachedConstantInferenceSupport resolve entries before id arguments info ref entry type)
+    (closed : (KExpr.const id arguments info).lbr = 0)
+    (keyRun : TcM.inferKey (.const requested requestedArguments requestedInfo) before = .ok key keyed)
+    (different : key ≠ ((KExpr.const id arguments info).addr, emptyCtxAddr))
+    (loader : VerifiedLazySupport keyed requested.addr)
+    (resources : ∀ concrete loaded, TcM.getConst requested keyed = .ok concrete loaded →
+      UniverseInstantiationSupport loaded concrete.ty requestedArguments)
+    (accepted : RecM.infer (.const requested requestedArguments requestedInfo)
+      (methodsN fuel) before = .ok result after) :
+    CachedConstantInferenceSupport resolve entries after id arguments info ref entry type :=
+  let frame := infer_verifiedConst_cache_frame keyRun different loader resources accepted
+  support.transport closed frame.1 frame.2
+
+/-- Standalone witness reuse is a special case of verified loading. -/
 def CachedConstantInferenceSupport.afterLazyInference {β : Type u}
     {resolve : Address → Option (ConstRef β)} {entries : Model.Environment β}
     {fuel : Nat} {before keyed after : TcState .anon}
@@ -400,8 +443,7 @@ def CachedConstantInferenceSupport.afterLazyInference {β : Type u}
     (accepted : RecM.infer (.const requested requestedArguments requestedInfo)
       (methodsN fuel) before = .ok result after) :
     CachedConstantInferenceSupport resolve entries after id arguments info ref entry type :=
-  let frame := infer_lazyConst_cache_frame keyRun different loader resources accepted
-  support.transport closed frame.1 frame.2
+  support.afterVerifiedInference closed keyRun different loader.toVerified resources accepted
 
 /-- A later constant's actual returned type inherits typing from its earlier
 witness after recursive inference; no semantic premise about caches is added. -/

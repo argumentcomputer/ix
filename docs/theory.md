@@ -37,12 +37,15 @@ agreement constructs sort leaves. A finite operational trace now carries
 preservation through recursive applications, dependent types, and full-mode
 lambdas for keys absent from the recorded writes. It derives later constant
 witnesses and sort leaves without repeated cache-hit observations. Frames allow
-new declarations while retaining old ones. The actual verified standalone loader
-preserves inference caches on success and failure, including partial intern
-progress and deduplicated faults. Recursive constant leaves use this result,
-so an earlier witness survives inference that loads another dependency.
-Initial agreement, post-lookup interning resources, trace construction,
-mutual-block loading, and preservation for keys that are written remain obligations.
+new declarations while retaining old ones. The actual verified loader preserves
+inference caches on success and failure, including partial intern progress and
+deduplicated faults. This covers standalone and mutual-block loading. Block
+publication requires every prepared entry to agree with any old declaration at
+its key, admitting fresh entries and exact repeats in a partially loaded block.
+Recursive constant leaves use this result, so an earlier witness survives
+inference that loads another dependency. Initial agreement, block overlap checks,
+post-lookup interning resources, trace construction, and preservation for keys
+that are written remain obligations.
 Full checker consistency
 and compiler/backend refinement remain open.
 
