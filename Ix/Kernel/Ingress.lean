@@ -50,7 +50,30 @@ abbrev AnonEnv := KEnv .anon
 /-- Ingress monad: state-threads the anon `KEnv` being populated. -/
 abbrev IngressM := EStateM IngressErr AnonEnv
 
+/-- Expression conversion can update intern tables, but cannot publish
+declarations or change checker caches. Partial progress is retained on error. -/
+abbrev InternIngressM := EStateM IngressErr (InternTable .anon)
+
+namespace InternIngressM
+
+@[inline] def internE (e : KExpr .anon) : InternIngressM (KExpr .anon) := fun it =>
+  let (e, it) := it.internExpr e
+  .ok e it
+
+@[inline] def internU (u : KUniv .anon) : InternIngressM (KUniv .anon) := fun it =>
+  let (u, it) := it.internUniv u
+  .ok u it
+
+end InternIngressM
+
 namespace IngressM
+
+/-- Run conversion with access only to the environment's intern tables.
+Both outcomes retain the caller's declarations and checker caches. -/
+@[inline] def runIntern (action : InternIngressM α) : IngressM α := fun env =>
+  match action env.intern with
+  | .ok value it => .ok value {env with intern := it}
+  | .error err it => .error err {env with intern := it}
 
 @[inline] def internE (e : KExpr .anon) : IngressM (KExpr .anon) := fun env =>
   let (e, it) := env.intern.internExpr e
@@ -135,6 +158,9 @@ structure ConvState where
 /-- Conversion monad: per-constant caches over the env-threading ingress. -/
 abbrev ConvM := StateT ConvState IngressM
 
+/-- Internal conversion state excludes the declaration and checker caches. -/
+abbrev InternConvM := StateT ConvState InternIngressM
+
 inductive UFrame where
   | process (u : Ixon.Univ)
   | succ
@@ -145,7 +171,7 @@ inductive UFrame where
 /-- Convert one universe tree (iterative). Uses the *simplifying*
     `mkMax`/`mkIMax` smart constructors — reduced-node addresses must match
     the Rust kernel node-for-node — and interns every node. -/
-def ingressUnivTree (root : Ixon.Univ) : IngressM (KUniv .anon) := do
+def convertUnivTree (root : Ixon.Univ) : InternIngressM (KUniv .anon) := do
   let mut stack : Array UFrame := #[.process root]
   let mut values : Array (KUniv .anon) := #[]
   while !stack.isEmpty do
@@ -155,7 +181,7 @@ def ingressUnivTree (root : Ixon.Univ) : IngressM (KUniv .anon) := do
     | .process u =>
       match u with
       | .zero =>
-        values := values.push (← IngressM.internU .mkZero)
+        values := values.push (← InternIngressM.internU .mkZero)
       | .succ inner =>
         stack := stack.push .succ |>.push (.process inner)
       | .max a b =>
@@ -163,22 +189,26 @@ def ingressUnivTree (root : Ixon.Univ) : IngressM (KUniv .anon) := do
       | .imax a b =>
         stack := stack.push .imax |>.push (.process b) |>.push (.process a)
       | .var idx =>
-        values := values.push (← IngressM.internU (.mkParam idx ()))
+        values := values.push (← InternIngressM.internU (.mkParam idx ()))
     | .succ =>
       let inner := values.back!
       values := values.pop
-      values := values.push (← IngressM.internU (.mkSucc inner))
+      values := values.push (← InternIngressM.internU (.mkSucc inner))
     | .max =>
       let b := values.back!; values := values.pop
       let a := values.back!; values := values.pop
-      values := values.push (← IngressM.internU (.mkMax a b))
+      values := values.push (← InternIngressM.internU (.mkMax a b))
     | .imax =>
       let b := values.back!; values := values.pop
       let a := values.back!; values := values.pop
-      values := values.push (← IngressM.internU (.mkIMax a b))
+      values := values.push (← InternIngressM.internU (.mkIMax a b))
   match values.back? with
   | some v => return v
   | none => throw "ingressUnivTree: empty result stack"
+
+/-- Environment-threading interface for universe-tree conversion. -/
+def ingressUnivTree (root : Ixon.Univ) : IngressM (KUniv .anon) :=
+  IngressM.runIntern (convertUnivTree root)
 
 /-- Ixon universe → kernel universe via the *simplifying* smart constructors
     (the same reduction ingress applies). Pure: no interning. -/
@@ -209,22 +239,22 @@ def reduceIxonUniv (u : Ixon.Univ) : Ixon.Univ :=
   kUnivToIxon (ixonUnivToK u)
 
 /-- Convert the universe at table index `idx`, cached per constant. -/
-def ingressUnivIdx (ctx : IngressCtx) (idx : UInt64) :
-    ConvM (KUniv .anon) := do
+def convertUnivIdx (ctx : IngressCtx) (idx : UInt64) :
+    InternConvM (KUniv .anon) := do
   if let some cached := (← get).univCache[idx]? then
     return cached
   let some u := ctx.univs[idx.toNat]?
     | throw s!"invalid universe index {idx} (len {ctx.univs.size})"
-  let ku ← liftM (ingressUnivTree u)
+  let ku ← liftM (convertUnivTree u)
   modify fun s => { s with univCache := s.univCache.insert idx ku }
   return ku
 
 /-- Convert an array of universe-table indices. -/
-def ingressUnivArgs (ctx : IngressCtx) (idxs : Array UInt64) :
-    ConvM (Array (KUniv .anon)) := do
+def convertUnivArgs (ctx : IngressCtx) (idxs : Array UInt64) :
+    InternConvM (Array (KUniv .anon)) := do
   let mut out : Array (KUniv .anon) := Array.mkEmpty idxs.size
   for i in idxs do
-    out := out.push (← ingressUnivIdx ctx i)
+    out := out.push (← convertUnivIdx ctx i)
   return out
 
 inductive EFrame where
@@ -244,8 +274,8 @@ inductive EFrame where
     refs[i]` names a blob, decoded from the env (the blob address is the hash
     payload; the value itself is never hashed); `share i` expands
     transparently against the sharing table (cached by index). -/
-def ingressExpr (ixonEnv : Ixon.Env) (ctx : IngressCtx) (root : Ixon.Expr) :
-    ConvM (KExpr .anon) := do
+def convertExpr (ixonEnv : Ixon.Env) (ctx : IngressCtx) (root : Ixon.Expr) :
+    InternConvM (KExpr .anon) := do
   let mut stack : Array EFrame := #[.process root]
   let mut values : Array (KExpr .anon) := #[]
   while !stack.isEmpty do
@@ -262,22 +292,22 @@ def ingressExpr (ixonEnv : Ixon.Env) (ctx : IngressCtx) (root : Ixon.Expr) :
             | throw s!"invalid Share index {idx}"
           stack := stack.push (.cacheShare idx) |>.push (.process expansion)
       | .var idx =>
-        values := values.push (← liftM (IngressM.internE (.mkVar idx ())))
+        values := values.push (← liftM (InternIngressM.internE (.mkVar idx ())))
       | .sort uidx =>
-        let u ← ingressUnivIdx ctx uidx
-        values := values.push (← liftM (IngressM.internE (.mkSort u)))
+        let u ← convertUnivIdx ctx uidx
+        values := values.push (← liftM (InternIngressM.internE (.mkSort u)))
       | .ref refIdx univIdxs =>
         let some addr := ctx.refs[refIdx.toNat]?
           | throw s!"invalid Ref index {refIdx}"
-        let univs ← ingressUnivArgs ctx univIdxs
+        let univs ← convertUnivArgs ctx univIdxs
         values := values.push
-          (← liftM (IngressM.internE (.mkConst ⟨addr, ()⟩ univs)))
+          (← liftM (InternIngressM.internE (.mkConst ⟨addr, ()⟩ univs)))
       | .recur recIdx univIdxs =>
         let some mid := ctx.mutCtx[recIdx.toNat]?
           | throw s!"invalid Rec index {recIdx}"
-        let univs ← ingressUnivArgs ctx univIdxs
+        let univs ← convertUnivArgs ctx univIdxs
         values := values.push
-          (← liftM (IngressM.internE (.mkConst mid univs)))
+          (← liftM (InternIngressM.internE (.mkConst mid univs)))
       | .nat blobIdx =>
         let some blobAddr := ctx.refs[blobIdx.toNat]?
           | throw s!"invalid Nat blob ref index {blobIdx}"
@@ -285,7 +315,7 @@ def ingressExpr (ixonEnv : Ixon.Env) (ctx : IngressCtx) (root : Ixon.Expr) :
           | throw s!"missing Nat blob {blobAddr}"
         let val := Nat.fromBytesLE bytes.data
         values := values.push
-          (← liftM (IngressM.internE (.mkNat val blobAddr)))
+          (← liftM (InternIngressM.internE (.mkNat val blobAddr)))
       | .str blobIdx =>
         let some blobAddr := ctx.refs[blobIdx.toNat]?
           | throw s!"invalid Str blob ref index {blobIdx}"
@@ -294,7 +324,7 @@ def ingressExpr (ixonEnv : Ixon.Env) (ctx : IngressCtx) (root : Ixon.Expr) :
         let some val := String.fromUTF8? bytes
           | throw s!"Str blob {blobAddr} is not valid UTF-8"
         values := values.push
-          (← liftM (IngressM.internE (.mkStr val blobAddr)))
+          (← liftM (InternIngressM.internE (.mkStr val blobAddr)))
       | .app f a =>
         stack := stack.push .appDone |>.push (.process a) |>.push (.process f)
       | .lam _ ty body =>
@@ -314,27 +344,27 @@ def ingressExpr (ixonEnv : Ixon.Env) (ctx : IngressCtx) (root : Ixon.Expr) :
     | .appDone =>
       let a := values.back!; values := values.pop
       let f := values.back!; values := values.pop
-      values := values.push (← liftM (IngressM.internE (.mkApp f a)))
+      values := values.push (← liftM (InternIngressM.internE (.mkApp f a)))
     | .lamDone =>
       let body := values.back!; values := values.pop
       let ty := values.back!; values := values.pop
       values := values.push
-        (← liftM (IngressM.internE (.mkLam () () ty body)))
+        (← liftM (InternIngressM.internE (.mkLam () () ty body)))
     | .allDone =>
       let body := values.back!; values := values.pop
       let ty := values.back!; values := values.pop
       values := values.push
-        (← liftM (IngressM.internE (.mkAll () () ty body)))
+        (← liftM (InternIngressM.internE (.mkAll () () ty body)))
     | .letDone nd =>
       let body := values.back!; values := values.pop
       let val := values.back!; values := values.pop
       let ty := values.back!; values := values.pop
       values := values.push
-        (← liftM (IngressM.internE (.mkLet () ty val body nd)))
+        (← liftM (InternIngressM.internE (.mkLet () ty val body nd)))
     | .prjDone id field =>
       let val := values.back!; values := values.pop
       values := values.push
-        (← liftM (IngressM.internE (.mkPrj id field val)))
+        (← liftM (InternIngressM.internE (.mkPrj id field val)))
     | .cacheShare idx =>
       let v := values.back!
       modify fun s => { s with exprCache := s.exprCache.insert idx v }
@@ -344,6 +374,20 @@ def ingressExpr (ixonEnv : Ixon.Env) (ctx : IngressCtx) (root : Ixon.Expr) :
       throw s!"ingressExpr: unbalanced value stack ({values.size} values)"
     return v
   | none => throw "ingressExpr: empty result stack"
+
+/-- Environment-threading interface for cached universe conversion. -/
+def ingressUnivIdx (ctx : IngressCtx) (idx : UInt64) : ConvM (KUniv .anon) :=
+  fun state => IngressM.runIntern (convertUnivIdx ctx idx state)
+
+/-- Environment-threading interface for universe-argument conversion. -/
+def ingressUnivArgs (ctx : IngressCtx) (idxs : Array UInt64) :
+    ConvM (Array (KUniv .anon)) :=
+  fun state => IngressM.runIntern (convertUnivArgs ctx idxs state)
+
+/-- Environment-threading interface for expression conversion. -/
+def ingressExpr (ixonEnv : Ixon.Env) (ctx : IngressCtx) (root : Ixon.Expr) :
+    ConvM (KExpr .anon) :=
+  fun state => IngressM.runIntern (convertExpr ixonEnv ctx root state)
 
 /-! ### Constant conversion (anon) -/
 
@@ -393,37 +437,52 @@ def insertMutsEntries (entries : Array Entry) : IngressM Unit := do
     callers pass `#[selfId]` (self-recursive standalones encode their
     self-reference as `recur 0`). Hints come from the env's `anonHints`
     channel with the Rust `Regular 0` fall-through. -/
+def convertDefnAnon (ixonEnv : Ixon.Env) (defn : Ixon.Definition)
+    (constant : Ixon.Constant) (block : KId .anon)
+    (mutCtx : Array (KId .anon)) (hintsOverride : Option Lean.ReducibilityHints) :
+    InternIngressM (KConst .anon) := do
+  let ctx : IngressCtx :=
+    { sharing := constant.sharing, refs := constant.refs
+      univs := constant.univs, mutCtx }
+  let (ty, st) ← (convertExpr ixonEnv ctx defn.typ).run {}
+  let (val, _) ← (convertExpr ixonEnv ctx defn.value).run st
+  let hints := hintsOverride.getD (.regular 0)
+  return .defn () () defn.kind defn.safety hints defn.lvls ty val () block
+
+/-- Convert one definition entry without publishing it. -/
 def ingressDefnAnon (ixonEnv : Ixon.Env) (defn : Ixon.Definition)
     (selfId : KId .anon) (constant : Ixon.Constant) (block : KId .anon)
     (mutCtx : Array (KId .anon)) (hintsOverride : Option Lean.ReducibilityHints) :
     IngressM (Array Entry) := do
-  let ctx : IngressCtx :=
-    { sharing := constant.sharing, refs := constant.refs
-      univs := constant.univs, mutCtx }
-  let (ty, st) ← (ingressExpr ixonEnv ctx defn.typ).run {}
-  let (val, _) ← (ingressExpr ixonEnv ctx defn.value).run st
-  let hints := hintsOverride.getD (.regular 0)
-  return #[(selfId,
-    .defn () () defn.kind defn.safety hints defn.lvls ty val () block)]
+  let converted ← IngressM.runIntern
+    (convertDefnAnon ixonEnv defn constant block mutCtx hintsOverride)
+  return #[(selfId, converted)]
 
 /-- Convert a `Recursor`. `memberIdx` stays 0 on the anon path (Rust parity:
     "filled in by caller for muts blocks" — the anon caller never does). -/
-def ingressRecursorAnon (ixonEnv : Ixon.Env) (rec : Ixon.Recursor)
-    (selfId : KId .anon) (constant : Ixon.Constant) (block : KId .anon)
-    (mutCtx : Array (KId .anon)) : IngressM (Array Entry) := do
+def convertRecursorAnon (ixonEnv : Ixon.Env) (rec : Ixon.Recursor)
+    (constant : Ixon.Constant) (block : KId .anon)
+    (mutCtx : Array (KId .anon)) : InternIngressM (KConst .anon) := do
   let ctx : IngressCtx :=
     { sharing := constant.sharing, refs := constant.refs
       univs := constant.univs, mutCtx }
-  let (ty, st) ← (ingressExpr ixonEnv ctx rec.typ).run {}
+  let (ty, st) ← (convertExpr ixonEnv ctx rec.typ).run {}
   let mut st := st
   let mut rules : Array (RecRule .anon) := Array.mkEmpty rec.rules.size
   for rule in rec.rules do
-    let (rhs, st') ← (ingressExpr ixonEnv ctx rule.rhs).run st
+    let (rhs, st') ← (convertExpr ixonEnv ctx rule.rhs).run st
     st := st'
     rules := rules.push { ctor := (), fields := rule.fields, rhs }
-  return #[(selfId,
-    .recr () () rec.k rec.isUnsafe rec.lvls rec.params rec.indices
-      rec.motives rec.minors block 0 ty rules ())]
+  return .recr () () rec.k rec.isUnsafe rec.lvls rec.params rec.indices
+    rec.motives rec.minors block 0 ty rules ()
+
+/-- Convert one recursor entry without publishing it. -/
+def ingressRecursorAnon (ixonEnv : Ixon.Env) (rec : Ixon.Recursor)
+    (selfId : KId .anon) (constant : Ixon.Constant) (block : KId .anon)
+    (mutCtx : Array (KId .anon)) : IngressM (Array Entry) := do
+  let converted ← IngressM.runIntern
+    (convertRecursorAnon ixonEnv rec constant block mutCtx)
+  return #[(selfId, converted)]
 
 /-- Convert an `Inductive` block member plus all of its constructors.
     `ctorAddrs` are the caller-computed CPrj addresses. -/
@@ -451,34 +510,40 @@ def ingressAnonInductive (ixonEnv : Ixon.Env) (ind : Ixon.Inductive)
         ctor.fields ctorTy)
   return results
 
-/-- Anon ingress for a single standalone (non-mutual) constant.
+/-- Convert a standalone without publishing it or accessing checker caches.
     `Defn`/`Recr` get `mutCtx = #[selfId]` for `recur 0` self-references;
     `Axio`/`Quot` cannot contain `recur`. Projections/`Muts` are not valid
     standalone entries. -/
-def ingressAnonStandalone (ixonEnv : Ixon.Env) (addr : Address)
-    (constant : Ixon.Constant) : IngressM (KId .anon) := do
+def convertAnonStandalone (ixonEnv : Ixon.Env) (addr : Address)
+    (constant : Ixon.Constant) : InternIngressM (KConst .anon) := do
   let selfId : KId .anon := ⟨addr, ()⟩
   let hintsOverride := ixonEnv.anonHints[addr]?
-  let entries ← match constant.info with
+  match constant.info with
     | .defn d =>
-      ingressDefnAnon ixonEnv d selfId constant selfId #[selfId] hintsOverride
+      convertDefnAnon ixonEnv d constant selfId #[selfId] hintsOverride
     | .recr r =>
-      ingressRecursorAnon ixonEnv r selfId constant selfId #[selfId]
+      convertRecursorAnon ixonEnv r constant selfId #[selfId]
     | .axio a => do
       let ctx : IngressCtx :=
         { sharing := constant.sharing, refs := constant.refs
           univs := constant.univs, mutCtx := #[] }
-      let (ty, _) ← (ingressExpr ixonEnv ctx a.typ).run {}
-      pure #[(selfId, .axio () () a.isUnsafe a.lvls ty)]
+      let (ty, _) ← (convertExpr ixonEnv ctx a.typ).run {}
+      pure (.axio () () a.isUnsafe a.lvls ty)
     | .quot q => do
       let ctx : IngressCtx :=
         { sharing := constant.sharing, refs := constant.refs
           univs := constant.univs, mutCtx := #[] }
-      let (ty, _) ← (ingressExpr ixonEnv ctx q.typ).run {}
-      pure #[(selfId, .quot () () q.kind q.lvls ty)]
+      let (ty, _) ← (convertExpr ixonEnv ctx q.typ).run {}
+      pure (.quot () () q.kind q.lvls ty)
     | _ =>
       throw s!"ingressAnonStandalone: {addr} is a projection or Muts block, not a standalone"
-  insertStandaloneEntries entries
+
+/-- Convert a standalone, then publish its single declaration and block. -/
+def ingressAnonStandalone (ixonEnv : Ixon.Env) (addr : Address)
+    (constant : Ixon.Constant) : IngressM (KId .anon) := do
+  let selfId : KId .anon := ⟨addr, ()⟩
+  let converted ← IngressM.runIntern (convertAnonStandalone ixonEnv addr constant)
+  insertStandaloneEntries #[(selfId, converted)]
   return selfId
 
 /-- Proof-visible result of converting and inserting an entire anonymous

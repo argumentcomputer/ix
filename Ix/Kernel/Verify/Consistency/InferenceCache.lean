@@ -94,15 +94,28 @@ structure InferenceCacheAgreement (before : TcState .anon)
   only : ∀ cached, before.env.inferOnlyCache[key]? = some cached → cached = type
 
 /-- Relevant data retained by an operation: the two entries at one key and
-the loaded declarations. Other keys and checker fields may change. -/
+every previously loaded declaration. New declarations may be loaded; other
+keys and checker fields may change. -/
 structure InferenceCacheFrame (key : Address × Address)
     (before after : TcState .anon) : Prop where
   full : after.env.inferCache[key]? = before.env.inferCache[key]?
   only : after.env.inferOnlyCache[key]? = before.env.inferOnlyCache[key]?
-  constants : after.env.consts = before.env.consts
+  constants : ∀ id concrete, before.env.get? id = some concrete →
+    after.env.get? id = some concrete
+
+/-- The existing exact-map transitions are also declaration extensions. -/
+theorem InferenceCacheFrame.of_eq {key : Address × Address}
+    {before after : TcState .anon}
+    (full : after.env.inferCache[key]? = before.env.inferCache[key]?)
+    (only : after.env.inferOnlyCache[key]? = before.env.inferOnlyCache[key]?)
+    (constants : after.env.consts = before.env.consts) :
+    InferenceCacheFrame key before after := by
+  refine ⟨full, only, ?_⟩
+  intro id concrete loaded
+  simpa only [KEnv.get?, constants] using loaded
 
 theorem InferenceCacheFrame.refl (key : Address × Address) (state : TcState .anon) :
-    InferenceCacheFrame key state state := ⟨rfl, rfl, rfl⟩
+    InferenceCacheFrame key state state := .of_eq rfl rfl rfl
 
 theorem InferenceCacheFrame.trans {key : Address × Address}
     {before middle after : TcState .anon}
@@ -110,7 +123,7 @@ theorem InferenceCacheFrame.trans {key : Address × Address}
     (second : InferenceCacheFrame key middle after) :
     InferenceCacheFrame key before after :=
   ⟨second.full.trans first.full, second.only.trans first.only,
-    second.constants.trans first.constants⟩
+    fun id concrete loaded => second.constants id concrete (first.constants id concrete loaded)⟩
 
 theorem InferenceCacheAgreement.frame {key : Address × Address} {type : KExpr .anon}
     {before after : TcState .anon} (agreement : InferenceCacheAgreement before key type)
@@ -199,7 +212,7 @@ theorem PreservesInferenceCache.bind {key : Address × Address}
       cases result : next value middle <;> rw [result] at final <;> exact initial.trans final
 
 theorem PreservesInferenceCache.runIntern (key : Address × Address) (action : InternM .anon α) :
-    PreservesInferenceCache key (TcM.runIntern action) := fun _ => ⟨rfl, rfl, rfl⟩
+    PreservesInferenceCache key (TcM.runIntern action) := fun _ => .of_eq rfl rfl rfl
 
 theorem PreservesInferenceCache.inferKey (key : Address × Address) (term : KExpr .anon) :
     PreservesInferenceCache key (TcM.inferKey term) := by
@@ -215,10 +228,10 @@ theorem PreservesInferenceCache.inferKey (key : Address × Address) (term : KExp
       .ok before before from rfl] at run
     by_cases fast : (term.lbr == 0 || before.ctx.isEmpty) = true
     · rw [if_pos fast] at run
-      cases run <;> exact ⟨rfl, rfl, rfl⟩
+      cases run <;> exact .of_eq rfl rfl rfl
     · rw [if_neg fast] at run
       cases cached : before.ctxAddrCache[(before.ctxId, term.lbr)]? <;>
-        rw [cached] at run <;> cases run <;> exact ⟨rfl, rfl, rfl⟩
+        rw [cached] at run <;> cases run <;> exact .of_eq rfl rfl rfl
 
 theorem PreservesInferenceCache.openBinder (key : Address × Address)
     (name : Mode.anon.F Name) (bi : Mode.anon.F Lean.BinderInfo) (type body : KExpr .anon) :
@@ -226,8 +239,8 @@ theorem PreservesInferenceCache.openBinder (key : Address × Address)
   intro before
   rw [openBinder_eq]
   by_cases room : before.env.nextFVarId.toNat + 1 < UInt64.size
-  · simp only [room, if_true]; exact ⟨rfl, rfl, rfl⟩
-  · simp only [room, if_false]; exact ⟨rfl, rfl, rfl⟩
+  · simp only [room, if_true]; exact .of_eq rfl rfl rfl
+  · simp only [room, if_false]; exact .of_eq rfl rfl rfl
 
 /-- An actual insertion at another key leaves this key's entries and loaded
 declarations unchanged, for either validation policy. -/
@@ -236,7 +249,8 @@ theorem PreservesInferenceCache.write_other {key other : Address × Address}
     PreservesInferenceCache key (RecM.cacheInferResult policy other type methods) := by
   intro before
   rw [cacheInferResult_eq]
-  cases policy <;> refine ⟨?_, ?_, rfl⟩ <;> simp [Std.HashMap.getElem?_insert, different]
+  cases policy <;> apply InferenceCacheFrame.of_eq <;>
+    simp [Std.HashMap.getElem?_insert, different]
 
 /-- Exact scope cleanup on either outcome, retaining the body's other state
 updates. Shared by inference inversion and cache-preservation proofs. -/
@@ -276,7 +290,7 @@ theorem PreservesInferenceCache.withLctxScope {key : Address × Address}
 /-- Changing only local declarations never changes closed cache data. -/
 theorem InferenceCacheFrame.localContext (key : Address × Address)
     (before : TcState .anon) (context : LocalContext .anon) :
-    InferenceCacheFrame key before {before with lctx := context} := ⟨rfl, rfl, rfl⟩
+    InferenceCacheFrame key before {before with lctx := context} := .of_eq rfl rfl rfl
 
 /-- Agreement itself is independent of the currently selected policy. -/
 theorem InferenceCacheAgreement.policy {before : TcState .anon}

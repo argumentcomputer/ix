@@ -67,16 +67,20 @@ private def instantiationRoots : Array Lean.Name := #[
 ]
 
 private def cacheFrameRoots : Array Lean.Name := #[
-  ``InferenceCacheFrame.refl, ``InferenceCacheFrame.trans, ``InferenceCacheAgreement.frame,
+  ``InferenceCacheFrame.of_eq, ``InferenceCacheFrame.refl, ``InferenceCacheFrame.trans,
+  ``InferenceCacheAgreement.frame,
   ``cacheInferResult_eq, ``PreservesInferenceCache.pure, ``PreservesInferenceCache.bind,
   ``PreservesInferenceCache.runIntern, ``InferenceCacheFrame.localContext,
   ``InferenceCacheAgreement.policy, ``withInferOnly_eq,
-  ``PreservesInferenceCache.withInferOnly, ``getConst_loaded
+  ``PreservesInferenceCache.withInferOnly, ``getConst_loaded,
+  ``IngressCacheExtension.refl, ``IngressCacheExtension.intern, ``IngressCacheExtension.trans,
+  ``ingress_runIntern_cache, ``LazyLookupFrame.refl, ``LazyLookupFrame.cache, ``LazyLookupFrame.policy
 ]
 
 private def cacheMapRoots : Array Lean.Name := #[
   ``InferenceCacheAgreement.write, ``PreservesInferenceCache.write_other,
-  ``InferenceCacheAgreement.clearReductionCaches
+  ``InferenceCacheAgreement.clearReductionCaches,
+  ``IngressCacheExtension.insert, ``insertStandaloneEntries_singleton
 ]
 
 private def cacheKeyRoots : Array Lean.Name := #[
@@ -90,10 +94,17 @@ private def recursiveCacheRoots : Array Lean.Name := #[
   ``ApplicationInferenceTrace.output_state, ``ForallInferenceTrace.output_state,
   ``LambdaInferenceTrace.output_state, ``isDefEq_hash_state, ``isDefEq_hash_frame,
   ``InferenceCacheTrace.writes, ``InferenceCacheTrace.sortOfKey,
-  ``InferenceCacheTrace.fvarOfKey, ``InferenceCacheTrace.constOfKey,
+  ``InferenceCacheTrace.fvarOfKey, ``InferenceCacheTrace.constOfKey, ``InferenceCacheTrace.lazyConstOfKey,
   ``InferenceCacheTrace.frame, ``InferenceCacheTrace.agreement,
+  ``infer_lazyConst_cache_frame, ``CachedConstantInferenceSupport.afterLazyInference,
   ``InferenceCacheHit.afterInference, ``CachedConstantInferenceSupport.afterInference,
   ``CachedConstantInferenceSupport.sound_after_inference, ``BinderInference.sortAfterInference
+]
+
+private def lazyCacheRoots : Array Lean.Name := #[
+  ``ingressAnonStandalone_cache, ``ingressAnonAddrShallow_cache, ``lazyIngressAddr_cache,
+  ``tryGetConst_standalone_cache, ``getConst_standalone_cache,
+  ``CachedConstantInferenceSupport.afterGetConst, ``CachedConstantInferenceSupport.afterFailedGetConst
 ]
 
 private def productionRoots : Array Lean.Name := #[
@@ -195,7 +206,7 @@ def roots : Array RootAllowance := #[
 }) ++ (binderWalkerRoots ++ cacheKeyRoots).map (fun root => {
   root, standardAxioms := standard, nativeAxioms := #[expressionNative],
   forbiddenDependencies := forbiddenProduction
-}) ++ (atomicRoots ++ instantiationRoots ++ recursiveCacheRoots).map (fun root => {
+}) ++ (atomicRoots ++ instantiationRoots ++ recursiveCacheRoots ++ lazyCacheRoots).map (fun root => {
   root, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative],
   forbiddenDependencies := forbiddenProduction
 }) ++ productionRoots.map (fun root => {

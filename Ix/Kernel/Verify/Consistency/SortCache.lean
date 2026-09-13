@@ -103,7 +103,7 @@ theorem infer_sort_cache_frame {before keyed after : TcState .anon}
     apply keyFrame.trans
     rw [keyEq] at written
     rw [written]
-    cases policy : before.inferOnly <;>
-      refine ⟨?_, ?_, rfl⟩ <;> simp [Std.HashMap.getElem?_insert, different]
+    cases policy : before.inferOnly <;> apply InferenceCacheFrame.of_eq <;>
+      simp [Std.HashMap.getElem?_insert, different]
 
 end Ix.Kernel.Consistency

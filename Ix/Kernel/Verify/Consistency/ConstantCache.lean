@@ -15,8 +15,9 @@ must equal pure universe substitution of its current loaded declaration.
 The admitted entry then supplies typing; no semantic cache invariant is an
 input. Structural frames transport these witnesses through operations that
 retain the watched entries and loaded declarations. Inference of an already
-loaded constant preserves concrete agreement at its key and frames other keys;
-lazy loading and general recursive inference need further preservation proofs.
+loaded constant preserves concrete agreement at its key and frames other keys.
+`LazyCache` and `RecursiveCache` extend preservation to standalone lazy loading
+and finite recursive inference trees.
 -/
 
 namespace Ix.Kernel.Consistency
@@ -53,7 +54,7 @@ theorem instantiateUnivParams_cache_frame {before after : TcState .anon}
     (fun _ h => Or.inr h) ⟨support.coherent, fun _ h => Or.inl h⟩
   rw [run] at post
   rw [post.2.2.1]
-  exact ⟨rfl, rfl, rfl⟩
+  exact .of_eq rfl rfl rfl
 
 /-- Inference of an already loaded constant frames all other cache keys,
 including on a miss that runs universe substitution and writes a result.
@@ -172,7 +173,7 @@ structure CachedConstantInferenceSupport {β : Type u}
   prediction : readInstantiatedType? resolve concrete.ty arguments = some type.erase
   conditions : (entry.type.instL (arguments.toList.map readLevel)).annotations = type.annotations
 
-/-- A preserved closed cache entry and unchanged loaded declarations carry
+/-- A preserved closed cache entry and retained loaded declarations carry
 the complete constant witness into a later checker state. Only checking
 policy matters for the eligibility of an inference-only hit. -/
 def CachedConstantInferenceSupport.transport {β : Type u}
@@ -190,7 +191,7 @@ def CachedConstantInferenceSupport.transport {β : Type u}
     change after.env.get? id = some support.concrete
     have loaded := support.loaded
     rw [(support.hit.key_closed closed).2] at loaded
-    simpa only [KEnv.get?, frame.constants] using loaded
+    exact frame.constants id support.concrete loaded
   resolved := support.resolved, found := support.found
   count := support.count, arity := support.arity, scope := support.scope
   reading := support.reading, levels := support.levels

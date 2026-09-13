@@ -4,6 +4,7 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 -/
 
 import Ix.Kernel.Verify.Consistency.BinderInference
+import Ix.Kernel.Verify.Consistency.LazyCache
 
 /-!
 # Cache preservation through recursive inference
@@ -84,7 +85,7 @@ theorem isDefEq_hash_frame {left right : KExpr .anon}
     (key : Address × Address) :
     InferenceCacheFrame key before after ∧ after.inferOnly = before.inferOnly := by
   rw [isDefEq_hash_state equal] at run
-  split at run <;> cases run <;> exact ⟨⟨rfl, rfl, rfl⟩, rfl⟩
+  split at run <;> cases run <;> exact ⟨(.of_eq rfl rfl rfl), rfl⟩
 
 private theorem openBinder_policy {name : Mode.anon.F Name}
     {bi : Mode.anon.F Lean.BinderInfo} {domain body opened : KExpr .anon}
@@ -130,7 +131,8 @@ private theorem infer_miss_frame {term result : KExpr .anon}
 
 /-- Operational support for the successful recursive fragment. Hits write
 nothing, including repeated uses of the watched entry. Misses record their
-actual key; constant misses require a loaded source and finite walker resources.
+actual key; constant misses use a loaded source or verified standalone lazy
+loading, with finite walker resources at the actual post-lookup state.
 The lambda domain call is included even though semantic checking can omit its
 typing subtree once the declared type's formation has been established. -/
 inductive InferenceCacheTrace : Nat → TcState .anon → KExpr .anon → Type
@@ -144,6 +146,12 @@ inductive InferenceCacheTrace : Nat → TcState .anon → KExpr .anon → Type
       (miss : UncachedInference before (.const id arguments info))
       (concrete : KConst .anon) (loaded : miss.keyed.env.get? id = some concrete)
       (resources : UniverseInstantiationSupport miss.keyed concrete.ty arguments) :
+      InferenceCacheTrace fuel before (.const id arguments info)
+  | lazyConst {fuel before id arguments info}
+      (miss : UncachedInference before (.const id arguments info))
+      (loader : StandaloneLazySupport miss.keyed id.addr)
+      (resources : ∀ concrete loaded, TcM.getConst id miss.keyed = .ok concrete loaded →
+        UniverseInstantiationSupport loaded concrete.ty arguments) :
       InferenceCacheTrace fuel before (.const id arguments info)
   | app {fuel before fn arg info} (full : before.inferOnly = false)
       (miss : UncachedInference before (.app fn arg info))
@@ -170,7 +178,7 @@ hits contribute no key; recursive calls and each outer insertion are included. -
 def InferenceCacheTrace.writes {fuel : Nat} {before : TcState .anon} {term : KExpr .anon} :
     InferenceCacheTrace fuel before term → List (Address × Address)
   | .hit _ => []
-  | .sort miss | .fvar miss | .const miss .. => [miss.key]
+  | .sort miss | .fvar miss | .const miss .. | .lazyConst miss .. => [miss.key]
   | .app _ miss _ _ first second | .forallE miss _ first second | .lam _ miss _ first second =>
       miss.key :: (first.writes ++ second.writes)
 
@@ -204,6 +212,21 @@ def InferenceCacheTrace.constOfKey {fuel : Nat} {before keyed : TcState .anon}
   · exact .const miss concrete (by simpa only [stateEq] using loaded)
       (by simpa only [stateEq] using resources)
 
+/-- Construct a constant leaf that may load its declaration. Cache selection
+comes from the actual maps; walker resources concern the returned lookup state. -/
+def InferenceCacheTrace.lazyConstOfKey {fuel : Nat} {before keyed : TcState .anon}
+    {id : KId .anon} {arguments : Array (KUniv .anon)} {info : ExprInfo .anon}
+    {key : Address × Address}
+    (keyRun : TcM.inferKey (.const id arguments info) before = .ok key keyed)
+    (loader : StandaloneLazySupport keyed id.addr)
+    (resources : ∀ concrete loaded, TcM.getConst id keyed = .ok concrete loaded →
+      UniverseInstantiationSupport loaded concrete.ty arguments) :
+    InferenceCacheTrace fuel before (.const id arguments info) := by
+  rcases observeInferenceCache keyRun with ⟨hit, _, _⟩ | ⟨miss, _, stateEq⟩
+  · exact .hit hit
+  · exact .lazyConst miss (by simpa only [stateEq] using loader)
+      (by simpa only [stateEq] using resources)
+
 /-- Every successful call in the finite tree preserves entries outside its
 computed write footprint and retains the loaded declarations and policy.
 The proof follows the recursive calls, then their real outer cache insertion. -/
@@ -229,7 +252,20 @@ theorem InferenceCacheTrace.frame {fuel : Nat} {before after : TcState .anon}
           (miss.keyed.env.intern.internExpr (KExpr.mkSort (KUniv.mkSucc level))).2}} =
         .ok result middle at run
       cases run
-      exact ⟨⟨rfl, rfl, rfl⟩, rfl⟩
+      exact ⟨(.of_eq rfl rfl rfl), rfl⟩
+  | lazyConst miss loader resources =>
+      simp only [writes, List.mem_singleton] at outside
+      apply infer_miss_frame miss (Ne.symm outside) accepted
+      intro middle run
+      obtain ⟨concrete, foundState, got, _, instantiated⟩ := inferUncached_const_instantiation run
+      have lookup := getConst_standalone_cache loader
+      rw [got] at lookup
+      have resource := resources concrete foundState got
+      have post := TcM.instantiateUnivParams_wf resource.faithful
+        (fun _ h => Or.inr h) ⟨resource.coherent, fun _ h => Or.inl h⟩
+      rw [instantiated] at post
+      rw [post.2.2.1]
+      exact ⟨(lookup.cache key).trans (.of_eq rfl rfl rfl), lookup.policy⟩
   | @fvar fuel before id name info miss =>
       simp only [writes, List.mem_singleton] at outside
       apply infer_miss_frame miss (Ne.symm outside) accepted
@@ -256,7 +292,7 @@ theorem InferenceCacheTrace.frame {fuel : Nat} {before after : TcState .anon}
         (fun _ h => Or.inr h) ⟨resources.coherent, fun _ h => Or.inl h⟩
       rw [instantiated] at post
       rw [post.2.2.1]
-      exact ⟨⟨rfl, rfl, rfl⟩, rfl⟩
+      exact ⟨(.of_eq rfl rfl rfl), rfl⟩
   | app full miss trace hashPath functionTree argumentTree functionIH argumentIH =>
       simp only [writes, List.mem_cons, List.mem_append, not_or] at outside
       apply infer_miss_frame miss (Ne.symm outside.1) accepted
@@ -267,7 +303,7 @@ theorem InferenceCacheTrace.frame {fuel : Nat} {before after : TcState .anon}
       obtain ⟨comparisonFrame, comparisonPolicy⟩ := isDefEq_hash_frame hashPath trace.compareRun key
       have state := (trace.output_state run).2
       rw [state]
-      exact ⟨(functionFrame.trans (argumentFrame.trans comparisonFrame)).trans ⟨rfl, rfl, rfl⟩,
+      exact ⟨(functionFrame.trans (argumentFrame.trans comparisonFrame)).trans (.of_eq rfl rfl rfl),
         comparisonPolicy.trans (argumentPolicy.trans functionPolicy)⟩
   | forallE miss trace domainTree bodyTree domainIH bodyIH =>
       simp only [writes, List.mem_cons, List.mem_append, not_or] at outside
@@ -278,7 +314,7 @@ theorem InferenceCacheTrace.frame {fuel : Nat} {before after : TcState .anon}
       have opening := openBinder_frame key trace.openRun
       have state := (trace.output_state run).2
       rw [state]
-      exact ⟨(domainFrame.trans (opening.trans bodyFrame)).trans ⟨rfl, rfl, rfl⟩,
+      exact ⟨(domainFrame.trans (opening.trans bodyFrame)).trans (.of_eq rfl rfl rfl),
         bodyPolicy.trans ((openBinder_policy trace.openRun).trans domainPolicy)⟩
   | lam full miss trace domainTree bodyTree domainIH bodyIH =>
       simp only [writes, List.mem_cons, List.mem_append, not_or] at outside
@@ -290,8 +326,27 @@ theorem InferenceCacheTrace.frame {fuel : Nat} {before after : TcState .anon}
       have opening := openBinder_frame key trace.openRun
       have state := (trace.output_state run).2
       rw [state]
-      exact ⟨(domainFrame.trans (opening.trans bodyFrame)).trans ⟨rfl, rfl, rfl⟩,
+      exact ⟨(domainFrame.trans (opening.trans bodyFrame)).trans (.of_eq rfl rfl rfl),
         bodyPolicy.trans ((openBinder_policy trace.openRun).trans domainPolicy)⟩
+
+/-- A standalone constant call needs no separately constructed operational
+tree: the real key and cache selection build its hit or lazy-miss leaf. -/
+theorem infer_lazyConst_cache_frame {fuel : Nat} {before keyed after : TcState .anon}
+    {id : KId .anon} {arguments : Array (KUniv .anon)} {info : ExprInfo .anon}
+    {key watched : Address × Address} {result : KExpr .anon}
+    (keyRun : TcM.inferKey (.const id arguments info) before = .ok key keyed)
+    (different : key ≠ watched) (loader : StandaloneLazySupport keyed id.addr)
+    (resources : ∀ concrete loaded, TcM.getConst id keyed = .ok concrete loaded →
+      UniverseInstantiationSupport loaded concrete.ty arguments)
+    (accepted : RecM.infer (.const id arguments info) (methodsN fuel) before = .ok result after) :
+    InferenceCacheFrame watched before after ∧ after.inferOnly = before.inferOnly := by
+  rcases observeInferenceCache keyRun with ⟨hit, _, _⟩ | ⟨miss, keyEq, stateEq⟩
+  · exact (InferenceCacheTrace.hit (fuel := fuel) hit).frame (by simp [InferenceCacheTrace.writes]) accepted
+  · let tree : InferenceCacheTrace fuel before (.const id arguments info) :=
+      .lazyConst miss (by simpa only [stateEq] using loader)
+        (by simpa only [stateEq] using resources)
+    apply tree.frame _ accepted
+    simpa only [tree, InferenceCacheTrace.writes, List.mem_singleton, keyEq] using Ne.symm different
 
 /-- Concrete agreement at an unwritten key is retained by the entire tree. -/
 theorem InferenceCacheTrace.agreement {fuel : Nat} {before after : TcState .anon}
@@ -326,6 +381,27 @@ def CachedConstantInferenceSupport.afterInference {β : Type u}
     (accepted : RecM.infer term (methodsN fuel) before = .ok result after) :
     CachedConstantInferenceSupport resolve entries after id arguments info ref entry type :=
   support.transport closed (tree.frame outside accepted).1 (tree.frame outside accepted).2
+
+/-- Reuse the complete earlier witness after inference may load another
+standalone. The new cache selection and declaration extension are derived. -/
+def CachedConstantInferenceSupport.afterLazyInference {β : Type u}
+    {resolve : Address → Option (ConstRef β)} {entries : Model.Environment β}
+    {fuel : Nat} {before keyed after : TcState .anon}
+    {id requested : KId .anon} {arguments requestedArguments : Array (KUniv .anon)}
+    {info requestedInfo : ExprInfo .anon} {key : Address × Address} {result : KExpr .anon}
+    {ref : ConstRef β} {entry : ConstantEntry β} {type : AExpr β}
+    (support : CachedConstantInferenceSupport resolve entries before id arguments info ref entry type)
+    (closed : (KExpr.const id arguments info).lbr = 0)
+    (keyRun : TcM.inferKey (.const requested requestedArguments requestedInfo) before = .ok key keyed)
+    (different : key ≠ ((KExpr.const id arguments info).addr, emptyCtxAddr))
+    (loader : StandaloneLazySupport keyed requested.addr)
+    (resources : ∀ concrete loaded, TcM.getConst requested keyed = .ok concrete loaded →
+      UniverseInstantiationSupport loaded concrete.ty requestedArguments)
+    (accepted : RecM.infer (.const requested requestedArguments requestedInfo)
+      (methodsN fuel) before = .ok result after) :
+    CachedConstantInferenceSupport resolve entries after id arguments info ref entry type :=
+  let frame := infer_lazyConst_cache_frame keyRun different loader resources accepted
+  support.transport closed frame.1 frame.2
 
 /-- A later constant's actual returned type inherits typing from its earlier
 witness after recursive inference; no semantic premise about caches is added. -/

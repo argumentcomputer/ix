@@ -808,8 +808,151 @@ private def recursiveCacheCases : TestSeq :=
   ++ test "recursive cache: nested polymorphic calls check with per-item clearing"
     (allSucceeded recursiveCacheEnvironment 3 { clearEvery := 1 })
 
+/-- Sharing and recursor-rule conversion exercise the restricted converter
+state. These fixtures test lookup and inference, not recursor or quotient admission. -/
+private def lazyCacheDependency (kind : Nat) : Ixon.Constant :=
+  let type := Ixon.Expr.leanAll (.sort 0) (.leanAll (.var 0) (.var 1))
+  let value := Ixon.Expr.leanLam (.sort 0) (.leanLam (.var 0) (.var 0))
+  let info := match kind with
+    | 0 => Ixon.ConstantInfo.axio ⟨false, 0, .share 0⟩
+    | 1 => .defn ⟨.defn, .safe, 0, .share 0, .share 1⟩
+    | 2 => .recr ⟨false, false, 0, 0, 0, 0, 0, .share 0,
+        #[⟨0, .share 1⟩, ⟨1, .share 1⟩]⟩
+    | _ => .quot ⟨.type, 0, .share 0⟩
+  ⟨info, #[type, value], #[], #[.succ .zero]⟩
+
+/-- Warm A, infer a cold B directly or inside a recursive body, and reuse A.
+The new declaration and block are retained while both old cache slots survive. -/
+private def cacheAcrossLazyDependency (kind shape : Nat) (inferOnly : Bool) : Bool :=
+  let (source, warmAddr) := polymorphicIdentity
+  let (source, coldAddr) := storeConst source (lazyCacheDependency kind)
+  let warmId : KId .anon := ⟨warmAddr, ()⟩
+  let coldId : KId .anon := ⟨coldAddr, ()⟩
+  let warm := KExpr.mkConst (m := .anon) warmId #[levelOne]
+  let cold := KExpr.mkConst (m := .anon) coldId #[]
+  let sortType := KExpr.mkSort (m := .anon) levelOne
+  let body := KExpr.mkLam () () sortType (.mkLam () () (.mkVar 0 ())
+    (.mkApp (.mkApp cold (.mkVar 1 ())) (.mkVar 0 ())))
+  let term := if shape == 0 then cold else if shape == 1 then body else
+    KExpr.mkApp (.mkApp (.mkConst warmId #[levelTwo]) identityType) body
+  let action : RecM .anon Bool := do
+    let expected ← RecM.inferCall warm
+    let key ← TcM.inferKey warm
+    RecM.withLctxScope do
+      let _ ← TcM.openBinder () () sortType (.mkVar 0 ())
+      let before ← get
+      let result ← RecM.inferCall term
+      let loaded ← get
+      let reused ← RecM.inferCall warm
+      let replay ← RecM.inferCall term
+      let _ ← liftM (TcM.lazyIngressAddr (m := .anon) coldAddr)
+      let after ← get
+      return expected.addr == identityType.addr && result.addr == expected.addr &&
+        reused.addr == expected.addr && replay.addr == result.addr && warmAddr != coldAddr &&
+        (before.env.get? coldId).isNone && (loaded.env.get? coldId).isSome &&
+        loaded.env.consts.size == before.env.consts.size + 1 &&
+        (loaded.env.get? warmId).map (·.ty.addr) == (before.env.get? warmId).map (·.ty.addr) &&
+        loaded.env.blocks[coldId]?.any (fun members => members.size == 1 &&
+          members[0]?.any (fun member => member.addr == coldAddr)) &&
+        loaded.env.inferCache[key]?.map (·.addr) == before.env.inferCache[key]?.map (·.addr) &&
+        loaded.env.inferOnlyCache[key]?.map (·.addr) == before.env.inferOnlyCache[key]?.map (·.addr) &&
+        loaded.faultedAddrs.contains coldAddr && loaded.faultedAddrs.contains warmAddr &&
+        loaded.lctx.size == before.lctx.size && loaded.inferOnly == inferOnly &&
+        loaded.env.nextFVarId >= before.env.nextFVarId &&
+        after.env.inferCache.size == loaded.env.inferCache.size &&
+        after.env.inferOnlyCache.size == loaded.env.inferOnlyCache.size &&
+        after.env.intern.exprs.size == loaded.env.intern.exprs.size &&
+        after.env.intern.univs.size == loaded.env.intern.univs.size &&
+        after.env.consts.size == loaded.env.consts.size && after.deqCalls == loaded.deqCalls
+  match TcM.runRec action { TcState.newLazyAnon source with inferOnly, stats := true } with
+  | .ok passed after => passed && after.lctx.size == 0 && after.inferOnly == inferOnly
+  | .error _ _ => false
+
+/-- Errors retain partial intern progress and the fault marker. Retrying a
+failed address is deduplicated and returns unknownConst without reconversion. -/
+private def cacheAcrossLazyFailure (kind : Nat) (inferOnly : Bool) : Bool :=
+  let (source, warmAddr) := polymorphicIdentity
+  let missing := Address.blake3 "consistency-lazy-cache-missing".toUTF8
+  let wrong := Address.blake3 "consistency-lazy-cache-wrong-hash".toUTF8
+  let level : Ixon.Univ := .succ (.succ (.succ (.succ (.succ .zero))))
+  let broken : Ixon.Constant := if kind == 2 then
+    ⟨.defn ⟨.defn, .safe, 0, .sort 0, .share 9⟩, #[], #[], #[level]⟩
+    else ⟨.recr ⟨false, false, 0, 0, 0, 0, 0, .sort 0,
+      #[⟨0, .sort 0⟩, ⟨1, .share 9⟩]⟩, #[], #[], #[level]⟩
+  let (source, coldAddr) := if kind == 0 then (source, missing)
+    else if kind == 1 then
+      ({source with consts := source.consts.insert wrong (.ofConstant (lazyCacheDependency 0))}, wrong)
+    else storeConst source broken
+  let warmId : KId .anon := ⟨warmAddr, ()⟩
+  let coldId : KId .anon := ⟨coldAddr, ()⟩
+  let warm := KExpr.mkConst (m := .anon) warmId #[levelOne]
+  let action : RecM .anon Bool := do
+    let expected ← RecM.inferCall warm
+    let key ← TcM.inferKey warm
+    RecM.withLctxScope do
+      let _ ← TcM.openBinder () () (.mkSort levelOne) (.mkVar 0 ())
+      let before ← get
+      let rejected ← try
+        let _ ← RecM.inferCall (.mkConst coldId #[])
+        pure false
+      catch err =>
+        let fragment := if kind == 0 then "unknown constant" else if kind == 1 then
+          "fails integrity check" else "invalid Share index 9"
+        pure (((toString err).splitOn fragment).length > 1)
+      let failed ← get
+      let deduplicated ← try
+        let _ ← liftM (TcM.getConst coldId)
+        pure false
+      catch err =>
+        match err with
+        | .unknownConst addr => pure (addr == coldAddr)
+        | _ => pure false
+      let reused ← RecM.inferCall warm
+      let after ← get
+      return rejected && deduplicated && reused.addr == expected.addr &&
+        (failed.env.get? coldId).isNone && failed.env.consts.size == before.env.consts.size &&
+        failed.env.blocks.size == before.env.blocks.size && failed.faultedAddrs.contains coldAddr &&
+        (failed.env.get? warmId).map (·.ty.addr) == (before.env.get? warmId).map (·.ty.addr) &&
+        failed.env.inferCache[key]?.map (·.addr) == before.env.inferCache[key]?.map (·.addr) &&
+        failed.env.inferOnlyCache[key]?.map (·.addr) == before.env.inferOnlyCache[key]?.map (·.addr) &&
+        failed.env.inferCache.size == before.env.inferCache.size &&
+        failed.env.inferOnlyCache.size == before.env.inferOnlyCache.size &&
+        (if kind >= 2 then failed.env.intern.exprs.size > before.env.intern.exprs.size &&
+          failed.env.intern.univs.size > before.env.intern.univs.size
+         else failed.env.intern.exprs.size == before.env.intern.exprs.size &&
+          failed.env.intern.univs.size == before.env.intern.univs.size) &&
+        failed.lctx.size == before.lctx.size && failed.env.nextFVarId == before.env.nextFVarId &&
+        failed.inferOnly == inferOnly && after.env.intern.exprs.size == failed.env.intern.exprs.size &&
+        after.env.intern.univs.size == failed.env.intern.univs.size
+  match TcM.runRec action { TcState.newLazyAnon source with inferOnly } with
+  | .ok passed after => passed && after.lctx.size == 0 && after.inferOnly == inferOnly
+  | .error _ _ => false
+
+private def lazyCacheCases : TestSeq :=
+  test "lazy cache: fresh axiom loading retains a warm full witness"
+    (cacheAcrossLazyDependency 0 0 false)
+  ++ test "lazy cache: fresh definition loading retains an inference-only witness"
+    (cacheAcrossLazyDependency 1 0 true)
+  ++ test "lazy cache: recursor rule conversion retains a warm witness"
+    (cacheAcrossLazyDependency 2 0 false)
+  ++ test "lazy cache: quotient conversion retains a warm witness"
+    (cacheAcrossLazyDependency 3 0 false)
+  ++ test "lazy cache: a lambda loads a cold dependency and retains a warm witness"
+    (cacheAcrossLazyDependency 1 1 false)
+  ++ test "lazy cache: an application loads a dependency inside its lambda argument"
+    (cacheAcrossLazyDependency 1 2 false)
+  ++ test "lazy cache: a missing source preserves warm entries and records the fault"
+    (cacheAcrossLazyFailure 0 false)
+  ++ test "lazy cache: an integrity failure preserves warm entries and records the fault"
+    (cacheAcrossLazyFailure 1 true)
+  ++ test "lazy cache: a failed definition retains partial conversion and the full witness"
+    (cacheAcrossLazyFailure 2 false)
+  ++ test "lazy cache: a failed recursor retains partial conversion and the inference-only witness"
+    (cacheAcrossLazyFailure 3 true)
+
 public def suite : List TestSeq :=
   [cases, polymorphicCases, specializationCases, binderCases, applicationCases,
-    polymorphicApplicationCases, constantCacheCases, cacheInvariantCases, recursiveCacheCases]
+    polymorphicApplicationCases, constantCacheCases, cacheInvariantCases, recursiveCacheCases,
+    lazyCacheCases]
 
 end Tests.Kernel.Consistency
