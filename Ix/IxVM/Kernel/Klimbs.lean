@@ -343,26 +343,96 @@ def klimbs := ⟦
     ([r0, r1], [c0, c1, c2])
   }
 
-  -- Mirror: BigUint::mul. Limb-wise schoolbook multiply.
+  -- Mirror: BigUint::mul. Schoolbook multiplication, streaming later product
+  -- rows into the accumulator instead of retaining separate product/shifted
+  -- lists. Tests/Ix/IxVM/FusedMul.lean retains the old composition and a
+  -- producer/consumer fusion proof parameterized by the arithmetic steps.
   fn klimbs_mul(a: KLimbs, b: KLimbs) -> KLimbs {
-    klimbs_mul_outer(a, b, store(ListNode.Nil), 0)
+    -- Keep this grouped wrapper narrow: it shares a circuit with read_byte
+    -- and expression helpers that execute much more often than multiplication.
+    klimbs_mul_first(a, b)
   }
 
-  fn klimbs_mul_outer(a: KLimbs, b: KLimbs, acc: KLimbs, shift: G) -> KLimbs {
+  fn klimbs_mul_first(a: KLimbs, b: KLimbs) -> KLimbs {
+    -- The first row has no accumulator and no shift. Use its already-linear
+    -- builder directly: avoid recording fused-row, shift-zero and add-empty
+    -- wrappers when there is no producer/consumer pair to fuse.
     match load(a) {
-      ListNode.Nil => acc,
-      ListNode.Cons(a_limb, rest) =>
-        let prod = klimbs_mul_single(a_limb, b, [0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]);
-        let shifted = klimbs_shl_limbs(prod, shift);
-        let new_acc = klimbs_add(acc, shifted);
-        klimbs_mul_outer(rest, b, new_acc, shift + 1),
+      ListNode.Nil => store(ListNode.Nil),
+      ListNode.Cons(limb, rest) =>
+        let first = klimbs_mul_single(limb, b, [0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]);
+        klimbs_mul_acc_outer(rest, b, first, 1),
     }
   }
 
-  -- Build the low limb onto the recursively computed tail. Repeated snoc
-  -- copied growing output prefixes; cons builds each result limb once and
-  -- removes the irrelevant output prefix from the memo key. The arithmetic
-  -- and the zero/trailing-limb representation are unchanged.
+  fn klimbs_mul_acc_outer(a: KLimbs, b: KLimbs, acc: KLimbs, shift: G) -> KLimbs {
+    match load(a) {
+      ListNode.Nil => acc,
+      ListNode.Cons(a_limb, rest) =>
+        let next = klimbs_mul_acc_shift(a_limb, b, acc, shift);
+        klimbs_mul_acc_outer(rest, b, next, shift + 1),
+    }
+  }
+
+  -- acc + (row << shift). Copy the unchanged low accumulator prefix but
+  -- retain the old checked add-zero operation, not an assumption that loaded
+  -- U64-typed fields have already been byte-range-checked. An empty product
+  -- still contributes shift zero limbs, exactly like klimbs_shl_limbs.
+  fn klimbs_mul_acc_shift(a: U64, b: KLimbs, acc: KLimbs, shift: G) -> KLimbs {
+    match shift {
+      0 => klimbs_mul_acc_row(a, b, acc, [0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], 0),
+      _ => match load(acc) {
+        ListNode.Nil => store(ListNode.Cons([0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8],
+          klimbs_mul_acc_shift(a, b, acc, shift - 1))),
+        ListNode.Cons(limb, rest) =>
+          let (sum, carry) = u64_add(limb, [0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]);
+          assert_eq!(carry, 0u8, "multiply-accumulate prefix overflow");
+          store(ListNode.Cons(sum, klimbs_mul_acc_shift(a, b, rest, shift - 1))),
+      },
+    }
+  }
+
+  -- EXACTLY add_carry(acc, mul_single(a, b, mul_carry), add_carry).
+  -- Keep the two original carries separate: no new arithmetic identity is
+  -- trusted and a carry from adding the accumulator never changes the product
+  -- recurrence. Only the intermediate product-list nodes disappear. Empty
+  -- tails retain the existing helpers' zero/trailing-limb behavior.
+  fn klimbs_mul_acc_row(a: U64, b: KLimbs, acc: KLimbs,
+      mul_carry: U64, add_carry: G) -> KLimbs {
+    match load(b) {
+      ListNode.Nil => klimbs_add_carry(acc, klimbs_mul_single(a, b, mul_carry), add_carry),
+      ListNode.Cons(b_limb, b_rest) => match load(acc) {
+        ListNode.Nil => klimbs_add_carry(acc, klimbs_mul_single(a, b, mul_carry), add_carry),
+        ListNode.Cons(acc_limb, acc_rest) =>
+          let (lo, hi) = u64_mul(a, b_limb);
+          let (digit, carry_out) = u64_add(lo, mul_carry);
+          -- Branch-local continuation avoids joining a full eight-byte carry
+          -- into the hot circuit. Match the already-validated row builder.
+          match to_field(carry_out) {
+            0 =>
+              let (sum, next) = match add_carry {
+                0 => u64_add(acc_limb, digit),
+                1 => u64_add_carry_one(acc_limb, digit),
+              };
+              store(ListNode.Cons(sum,
+                klimbs_mul_acc_row(a, b_rest, acc_rest, hi, to_field(next)))),
+            1 =>
+              let (high, overflow) = u64_succ_carry(hi);
+              assert_eq!(overflow, 0u8, "multiplication row carry overflow");
+              let (sum, next) = match add_carry {
+                0 => u64_add(acc_limb, digit),
+                1 => u64_add_carry_one(acc_limb, digit),
+              };
+              store(ListNode.Cons(sum,
+                klimbs_mul_acc_row(a, b_rest, acc_rest, high, to_field(next)))),
+          },
+      },
+    }
+  }
+
+  -- Build the little-endian result by consing each low limb onto the
+  -- recursively computed higher limbs. Keep zero limbs in the body and
+  -- omit only a zero final carry; normalization belongs to the callers.
   fn klimbs_mul_single(a_limb: U64, b: KLimbs, carry: U64) -> KLimbs {
     match load(b) {
       ListNode.Nil =>
@@ -375,14 +445,19 @@ def klimbs := ⟦
           (lo, hi) =>
             match u64_add(lo, carry) {
               (sum, carry_out) =>
-                -- u64_mul range-checks ALL eight high bytes. The carry is
-                -- a bit, and the old addition discarded overflow, so reuse
-                -- hi or take its modular successor.
-                match carry_out {
+                -- Keep the recursive call in each branch: joining an
+                -- eight-byte carry first adds nine avoidable circuit
+                -- columns. The branch-local form has the same memo rows.
+                match to_field(carry_out) {
                   0 => store(ListNode.Cons(sum,
                     klimbs_mul_single(a_limb, rest, hi))),
-                  _ => store(ListNode.Cons(sum,
-                    klimbs_mul_single(a_limb, rest, relaxed_u64_succ(hi)))),
+                  1 =>
+                    let (next, overflow) = u64_succ_carry(hi);
+                    -- For byte-canonical operands, hi <= 2^64 - 2.
+                    -- Keep that no-overflow obligation explicit.
+                    assert_eq!(overflow, 0u8, "multiplication row carry overflow");
+                    store(ListNode.Cons(sum,
+                      klimbs_mul_single(a_limb, rest, next))),
                 },
             },
         },

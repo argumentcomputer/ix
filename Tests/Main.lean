@@ -5,6 +5,7 @@ import Tests.Ix.IxonSyntax
 import Tests.Ix.IxVM
 import Tests.Ix.IxVM.ByteHints
 import Tests.Ix.IxVM.CarryAdd
+import Tests.Ix.IxVM.FusedMul
 import Tests.Ix.IxVM.Exploits
 import Tests.Ix.Claim
 import Tests.Ix.Merkle
@@ -165,6 +166,7 @@ seconds-scale (measured 2026-08-05: aiur-prove ~11s, the rest 2-4s
 each). -/
 def primaryRunners : List (String × IO UInt32) := [
   ("ixvm-carry-add", Tests.Ix.IxVM.CarryAdd.run),
+  ("ixvm-fused-mul", Tests.Ix.IxVM.FusedMul.run),
   ("ixvm-byte-hints", Tests.Ix.IxVM.ByteHints.run),
   ("aiur-components", AiurTests.CallOrder.suite),
   ("aiur-prove", do
@@ -288,8 +290,8 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
             let actual :=
               (Aiur.computeStats v2Env.compiled qc v2Env.shapes).totalFftCost.round.toUInt64.toNat
             pure (LSpec.test
-              s!"Shard pipeline FFT matches: expected 8_523_837_053, got {actual}"
-              (actual = 8_523_837_053))
+              s!"Shard pipeline FFT matches: expected 8_523_726_964, got {actual}"
+              (actual = 8_523_726_964))
       LSpec.lspecIO
         (.ofList [("ixvm",
           [componentSeq, fullSeq, aiurSeq, arenaSeq, exploitSeq, paritySeq, shardSeq])]) []),
@@ -414,3 +416,4 @@ def main (args : List String) : IO UInt32 := do
     return result
   else
     return 0
+

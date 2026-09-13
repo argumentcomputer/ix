@@ -168,6 +168,31 @@ exercise asymmetric/empty tails and invalid carry values, and prove and verify
 maximal overflow and both dispatch branches. The radix-2^16 multiplier is
 unchanged by this addition optimization.
 
+## Limb multiplication
+
+Schoolbook multiplication streams later product rows into the accumulator,
+removing the temporary product and shifted lists. Multiplication carry and
+addition carry remain separate. Empty tails retain the existing row builder
+and adder, so the result preserves exact list shape, including interior and
+trailing zero limbs. The first product row uses the linear row builder.
+
+The shifted accumulator prefix still passes through checked addition with
+zero. Loaded fields are not assumed to satisfy byte bounds merely because
+of their source type. When adding the incoming product carry overflows, a
+checked successor increments the high product limb and explicitly rejects
+another overflow. The radix-2^16 multiplier and byte lookup constraints are
+unchanged. The entry wrapper stays narrow because its circuit also contains
+frequently executed byte and expression helpers.
+
+The [fusion tests](../Tests/Ix/IxVM/FusedMul.lean) prove exact producer/consumer
+list equality for abstract arithmetic steps and compare the implementation
+with independent natural-number results, boundary cases and the previous
+composition. They also verify proofs and reject invalid addition carries.
+The list theorem does not prove the Aiur compiler or its arithmetic gadgets.
+Scaling tests include repeated operands, where memoization of the previous
+product rows can make fusion's wider circuits slightly more expensive even
+when it retains fewer queries.
+
 ## Host memory and byte advice
 
 `split_u32` obtains its four low bytes from the native field-to-bytes hint.
@@ -226,3 +251,4 @@ lake test -- --ignored ixvm
 
 These repairs and regression tests address the defects above. They do not
 establish complete compiler preservation or cryptographic soundness.
+
