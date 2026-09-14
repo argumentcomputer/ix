@@ -66,7 +66,19 @@ theorem readScopedExpr?_liftSpec
       obtain ⟨ref, resolved, reading⟩ := bind_success reading
       cases reading
       simp [KExpr.liftSpec, readScopedExpr?, resolved, VExpr.liftN]
-  | letE _ _ _ _ _ _ _ _ _ | str _ _ _ => contradiction
+  | str value _ _ =>
+      rw [readString?_liftN reading]
+      exact reading
+  | letE name domain value body nonDep info hA hv hb =>
+      obtain ⟨A, v, b, aReads, vReads, bReads, rfl⟩ := readScopedExpr?_let_parts reading
+      simp only [KExpr.size] at bound
+      have next := depth_succ (depth := depth) (by omega)
+      have bodyOut := hb (depth := depth + 1) (by rw [next]; omega)
+        (by simpa only [next] using bReads)
+      simp only [next] at bodyOut
+      simp [KExpr.liftSpec, hA (by omega) aReads, hv (by omega) vReads,
+        VExpr.liftN_inst_hi, show depth.toNat + shift.toNat + 1 =
+          depth.toNat + 1 + shift.toNat by omega, bodyOut]
   | app fn arg info hf ha =>
       rw [readScopedExpr?] at reading
       obtain ⟨f, fReads, reading⟩ := bind_success reading
@@ -141,7 +153,18 @@ theorem readScopedExpr?_substSpec
       obtain ⟨ref, resolved, bodyReads⟩ := bind_success bodyReads
       cases bodyReads
       simp [KExpr.substSpec, readScopedExpr?, resolved, VExpr.inst]
-  | letE _ _ _ _ _ _ _ _ _ | str _ _ _ => contradiction
+  | str value _ _ =>
+      rw [readString?_inst bodyReads]
+      exact bodyReads
+  | letE name domain value body nonDep info hA hv hb =>
+      obtain ⟨A, v, b, aReads, vReads, bReads, rfl⟩ := readScopedExpr?_let_parts bodyReads
+      simp only [KExpr.size] at bound
+      have next := depth_succ (depth := depth) (by omega)
+      have bodyOut := hb (depth := depth + 1) (by rw [next]; omega)
+        (by simpa only [next] using bReads)
+      simp only [next] at bodyOut
+      simp [KExpr.substSpec, hA (by omega) aReads, hv (by omega) vReads,
+        VExpr.inst0_inst_hi, bodyOut]
   | app fn value info hf ha =>
       rw [readScopedExpr?] at bodyReads
       obtain ⟨f, fReads, bodyReads⟩ := bind_success bodyReads

@@ -21,6 +21,10 @@ import Ix.Kernel.Verify.Consistency.BinderOpening
 import Ix.Kernel.Verify.Consistency.Application
 import Ix.Kernel.Verify.Consistency.BinderInference
 import Ix.Kernel.Verify.Consistency.RecursiveCache
+import Ix.Kernel.Verify.Consistency.CacheInvariant
+import Ix.Kernel.Verify.Consistency.CacheLifecycle
+import Ix.Kernel.Verify.Consistency.InternInvariant
+import Ix.Kernel.Verify.Consistency.StringExpansion
 import Ix.Kernel.Verify.Consistency.Production
 import Ix.Kernel.Verify.Consistency.Environment
 import Ix.Kernel.Verify.Consistency.Audit
@@ -62,5 +66,14 @@ outside that footprint, loaded declarations, and checking policy. This derives
 later constant witnesses and sort leaves without new cache-hit observations.
 Initial agreement, finite execution resources, trace construction, lazy loading,
 and preservation for keys inside the footprint remain explicit obligations.
-General checker soundness remains outside this fragment.
+
+The general reading now includes lets and strings. Binder opening, abstraction,
+term substitution and universe substitution cover their nested occurrences.
+String expansion follows the actual production intern sequence and preserves
+the reading and table coherence under one finite allocation-pool condition.
+The complete inference-cache invariant gives a fact for every entry in both
+partitions. Writes, hits, initialization, clearing, scope/policy cleanup and
+error isolation preserve these facts. Its parameterized entry meaning and
+uncached-body preservation contract remain to be instantiated by the general
+mutual semantic proof. General checker soundness remains outside this fragment.
 -/

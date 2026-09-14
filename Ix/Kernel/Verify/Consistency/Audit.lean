@@ -7,6 +7,8 @@ import Ix.Kernel.Verify.Consistency.Infer
 import Ix.Kernel.Verify.Consistency.Constant
 import Ix.Kernel.Verify.Consistency.Environment
 import Ix.Kernel.Verify.Consistency.RecursiveCache
+import Ix.Kernel.Verify.Consistency.CacheLifecycle
+import Ix.Kernel.Verify.Consistency.StringExpansion
 import Ix.Kernel.Verify.Audit.Basic
 
 /-! Exact full-dependency boundaries for the direct model-refinement roots.
@@ -86,6 +88,32 @@ private def cacheKeyRoots : Array Lean.Name := #[
   ``withLctxScope_eq, ``PreservesInferenceCache.withLctxScope
 ]
 
+private def cacheInvariantFrameRoots : Array Lean.Name := #[
+  ``InferenceCacheInvariant.frame, ``InferenceCacheInvariant.mono,
+  ``InferenceCacheInvariant.runIntern, ``InferenceCacheInvariant.restoreCheckCachesOnError,
+  ``InferenceCacheInvariant.isolateCheckErrors, ``PreservesInferenceInvariant.pure,
+  ``PreservesInferenceInvariant.bind, ``PreservesInferenceInvariant.runIntern,
+  ``PreservesInferenceInvariant.withInferOnly
+]
+
+private def cacheInvariantMapRoots : Array Lean.Name := #[
+  ``InferenceCacheInvariant.empty, ``InferenceCacheInvariant.write,
+  ``InferenceCacheInvariant.clearReductionCaches, ``InferenceCacheInvariant.reset,
+  ``InferenceCacheInvariant.finishAnonCheckItem
+]
+
+private def cacheInvariantKeyRoots : Array Lean.Name := #[
+  ``InferenceCacheInvariant.inferKey, ``InferenceCacheInvariant.selected,
+  ``InferenceCacheInvariant.openBinder, ``PreservesInferenceInvariant.withLctxScope,
+  ``inferKey_total
+]
+
+private def cacheInvariantDriverRoots : Array Lean.Name := #[
+  ``InferenceCacheInvariant.checkConst_error, ``InferenceCacheInvariant.runAnonCheckItem,
+  ``InferenceCacheInvariant.runAnonCheckList,
+  ``InferenceCacheInvariant.initialized_runAnonCheckList
+]
+
 private def recursiveCacheRoots : Array Lean.Name := #[
   ``ApplicationInferenceTrace.output_state, ``ForallInferenceTrace.output_state,
   ``LambdaInferenceTrace.output_state, ``isDefEq_hash_state, ``isDefEq_hash_frame,
@@ -105,11 +133,52 @@ private def productionRoots : Array Lean.Name := #[
   ``checkEnvAnon_atomic_no_false
 ]
 
+private def localIndexRoots : Array Lean.Name := #[
+  ``localIndex?_mem, ``localIndex?_getElem, ``localIndex?_fresh
+]
+
 private def scopedRoots : Array Lean.Name := #[
-  ``localIndex?_mem, ``localIndex?_getElem, ``localIndex?_fresh,
   ``readScopedExpr?_closed, ``readScopedExpr?_weaken_closed, ``readScopedExpr?_eraseMeta,
   ``beq_readScopedExpr?, ``internExpr_readScopedExpr?, ``readScopedExpr?_push,
   ``LocalContextReading.empty
+]
+
+private def stringListRoots : Array Lean.Name := #[
+  ``StringPrimitiveRefs.listExpr_liftN, ``StringPrimitiveRefs.listExpr_inst,
+  ``StringPrimitiveRefs.listExpr_instL, ``StringPrimitiveRefs.listExpr_closed
+]
+
+/-- `String.toList` carries standard-library choice and quotient dependencies.
+The full dependency audit includes this executable definition in reader types. -/
+private def stringRoots : Array Lean.Name := #[
+  ``StringPrimitiveRefs.expr_liftN, ``StringPrimitiveRefs.expr_inst,
+  ``StringPrimitiveRefs.expr_instL, ``StringPrimitiveRefs.expr_closed,
+  ``StringPrimitiveRefs.expr_levelWF, ``readString?_parts, ``readString?_liftN,
+  ``readString?_inst, ``readString?_instL, ``readString?_closed, ``readString?_levelWF,
+  ``StringPrimitiveRefs.resolve?_fields
+]
+
+private def internFrameRoots : Array Lean.Name := #[
+  ``ExpressionInternInvariant.mono, ``ExpressionInternInvariant.result_eq, ``intern_eq
+]
+
+private def internMapRoots : Array Lean.Name := #[
+  ``ExpressionInternInvariant.empty, ``ExpressionInternInvariant.internExpr,
+  ``ExpressionInternInvariant.internUniv, ``ExpressionInternInvariant.internExprList
+]
+
+private def stringExpansionRoots : Array Lean.Name := #[
+  ``StringExpansion.list_run, ``StringExpansion.candidates_length, ``StringExpansion.run,
+  ``StringExpansion.run_finite, ``StringExpansion.listResult_read
+]
+
+private def letSubstitutionRoots : Array Lean.Name := #[
+  ``Theory.VExpr.liftN_combine, ``Theory.VExpr.liftN_comm,
+  ``Theory.VExpr.liftN_instVar_lo, ``Theory.VExpr.liftN_inst_lo,
+  ``Theory.VExpr.liftN_instVar_hi, ``Theory.VExpr.liftN_inst_hi_at,
+  ``Theory.VExpr.liftN_inst_hi, ``Theory.VExpr.inst_liftN,
+  ``Theory.VExpr.inst_instVar_hi, ``Theory.VExpr.inst_inst_hi,
+  ``Theory.VExpr.inst0_inst_hi
 ]
 
 private def contextRoots : Array Lean.Name := #[
@@ -147,12 +216,22 @@ def roots : Array RootAllowance := #[
   { root := ``univGeq_sound, standardAxioms := standard },
   { root := ``readExpr?_mkSort, standardAxioms := standard,
     nativeAxioms := #[expressionNative] },
-  { root := ``readExpr?_eraseMeta, standardAxioms := #[``propext, ``Quot.sound] },
-  { root := ``readScopedExpr?_lam_parts },
-  { root := ``readScopedExpr?_app_parts },
-  { root := ``readScopedExpr?_all_parts },
-  { root := ``beq_readExpr?, standardAxioms := #[``propext, ``Quot.sound] },
-  { root := ``internExpr_readExpr?, standardAxioms := #[``propext, ``Quot.sound] },
+  { root := ``readExpr?_eraseMeta, standardAxioms := standard },
+  { root := ``readScopedExpr?_lam_parts, standardAxioms := standard },
+  { root := ``readScopedExpr?_app_parts, standardAxioms := standard },
+  { root := ``readScopedExpr?_all_parts, standardAxioms := standard },
+  { root := ``readScopedExpr?_let_parts, standardAxioms := standard },
+  { root := ``readScopedExpr?_mkLet, standardAxioms := standard,
+    nativeAxioms := #[expressionNative] },
+  { root := ``Theory.liftVar_lt },
+  { root := ``Theory.liftVar_le },
+  { root := ``Theory.VExpr.liftN_zero, standardAxioms := #[``propext] },
+  { root := ``beq_readExpr?, standardAxioms := standard },
+  { root := ``internExpr_readExpr?, standardAxioms := standard },
+  { root := ``StringPrimitiveRefs.listExpr_levelWF, standardAxioms := #[``propext, ``Quot.sound] },
+  { root := ``StringExpansion.listCandidates_length,
+    standardAxioms := #[``propext, ``Classical.choice], nativeAxioms := #[expressionNative],
+    forbiddenDependencies := forbiddenProduction },
   { root := ``ModelTyping.sort, standardAxioms := standard,
     nativeAxioms := #[expressionNative, levelNative] },
   { root := ``ModelTyping.of_beq, standardAxioms := standard },
@@ -188,18 +267,34 @@ def roots : Array RootAllowance := #[
   { root := ``Theory.Model.CheckingClaim.typing, standardAxioms := standard },
   { root := ``Theory.Model.CheckingClaim.typingSort, standardAxioms := standard },
   { root := ``Theory.Model.CheckingClaim.lam, standardAxioms := standard }
-] ++ (scopedRoots ++ cacheFrameRoots).map (fun root => {
+] ++ stringListRoots.map (fun root => {
+  root, standardAxioms := #[``propext], forbiddenDependencies := forbiddenProduction
+}) ++ (localIndexRoots ++ cacheFrameRoots ++ letSubstitutionRoots ++ cacheInvariantFrameRoots ++
+    internFrameRoots).map (fun root => {
   root, standardAxioms := #[``propext, ``Quot.sound], forbiddenDependencies := forbiddenProduction
-}) ++ (contextRoots ++ cacheMapRoots).map (fun root => {
+}) ++ (contextRoots ++ cacheMapRoots ++ cacheInvariantMapRoots ++ scopedRoots ++ stringRoots ++
+    internMapRoots).map (fun root => {
   root, standardAxioms := standard, forbiddenDependencies := forbiddenProduction
-}) ++ (binderWalkerRoots ++ cacheKeyRoots).map (fun root => {
+}) ++ (binderWalkerRoots ++ cacheKeyRoots ++ cacheInvariantKeyRoots ++ stringExpansionRoots).map (fun root => {
   root, standardAxioms := standard, nativeAxioms := #[expressionNative],
   forbiddenDependencies := forbiddenProduction
-}) ++ (atomicRoots ++ instantiationRoots ++ recursiveCacheRoots).map (fun root => {
+}) ++ (atomicRoots ++ instantiationRoots ++ recursiveCacheRoots ++
+    #[``InferenceCacheInvariant.infer]).map (fun root => {
   root, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative],
   forbiddenDependencies := forbiddenProduction
-}) ++ productionRoots.map (fun root => {
+}) ++ (productionRoots ++ cacheInvariantDriverRoots).map (fun root => {
   root, standardAxioms := standard, nativeAxioms := productionNative,
+  forbiddenDependencies := forbiddenProduction
+}) ++ #[``InferenceCacheInvariant.newLazyAnon,
+    ``InferenceCacheInvariant.initialAnonCheckLoopState].map (fun root => {
+  root, standardAxioms := standard,
+  nativeAxioms := #[expressionNative, levelNative,
+    nativeAxiom `Ix.Environment `Ix.Name.mkStr._native.native_decide.ax_1],
+  forbiddenDependencies := forbiddenProduction
+}) ++ #[``StringExpansion.result_read, ``StringExpansion.read_of_run].map (fun root => {
+  root, standardAxioms := standard,
+  nativeAxioms := #[expressionNative,
+    nativeAxiom `Ix.Environment `Ix.Name.mkStr._native.native_decide.ax_1],
   forbiddenDependencies := forbiddenProduction
 }) ++ #[{ root := ``extend_atomic_definition, standardAxioms := standard }]
 

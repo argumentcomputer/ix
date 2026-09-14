@@ -141,7 +141,7 @@ private theorem option_bind_success {α γ : Type _} {action : Option α}
 
 /-- Successful pure instantiation reads as model substitution, up to equivalent
 universe levels. All expression positions are covered; the reader's existing
-exclusions of free variables, strings, and unresolved references are retained. -/
+exclusions of free variables and unresolved references are retained. -/
 theorem instUnivSpec_readExpr?_withScope {resolve : Address → Option (ConstRef β)}
     {arguments : Array (KUniv .anon)} {term result : KExpr .anon} {source : VExpr β}
     (support : UniverseSubstitutionSupport arguments term)
@@ -155,7 +155,12 @@ theorem instUnivSpec_readExpr?_withScope {resolve : Address → Option (ConstRef
       cases run
       cases reading
       exact ⟨_, rfl, .bvar _, fun _ _ => trivial⟩
-  | fvar _ _ _ | str _ _ _ => contradiction
+  | fvar _ _ _ => contradiction
+  | str value _ _ =>
+      cases run
+      refine ⟨source, reading, ?_, fun n _ => readString?_levelWF reading n⟩
+      rw [readString?_instL reading]
+      exact VExpr.LevelEquivalent.refl source
   | nat value name info =>
       cases run
       cases reading

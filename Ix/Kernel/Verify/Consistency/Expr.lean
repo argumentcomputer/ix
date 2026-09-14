@@ -4,6 +4,7 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 -/
 
 import Ix.Kernel.Verify.Consistency.Level
+import Ix.Kernel.Verify.Consistency.StringReading
 import Ix.Kernel.Verify.Expr
 import Ix.Theory.Expr
 
@@ -13,8 +14,8 @@ import Ix.Theory.Expr
 References are resolved to explicit block/member/constructor coordinates.
 The reader uses the expression tree, not cached hashes or scope annotations.
 It preserves projections and natural literals, and expands a let by
-capture-avoiding substitution. Free variables, unresolved references, and
-string literals have no reading in this initial fragment.
+capture-avoiding substitution. String literals expand through the canonical
+character and list primitives. Free variables and unresolved references fail.
 
 The theorems below connect the production hash-equality fast path and intern
 table to this reading. Their finite-support collision hypotheses are retained;
@@ -51,7 +52,7 @@ def readExpr? (resolve : Address → Option (Theory.ConstRef β)) :
       let ref ← resolve id.addr
       return .proj ref index.toNat (← readExpr? resolve value)
   | .nat value _ _ => some (.natLit value)
-  | .str .. => none
+  | .str value _ _ => readString? resolve value
 
 /-- Hashing and display metadata do not change a smart-constructed sort. -/
 @[simp] theorem readExpr?_mkSort

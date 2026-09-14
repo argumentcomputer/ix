@@ -30,10 +30,19 @@ increasing sequence of strongly inaccessible cardinals.
   under the existing finite address-faithfulness and arithmetic bounds.
 - A structural reader maps kernel expressions to model syntax, resolves
   addresses to explicit store references, preserves projections and natural
-  literals, and substitutes let values. This closed reader excludes free
-  variables, unresolved addresses, and string literals. The binder reader
+  literals, substitutes let values, and expands strings through the canonical
+  character and list primitives. This closed reader excludes free
+  variables and unresolved addresses. The binder reader
   `readScopedExpr?` maps registered free variables to model context indices;
-  unknown locals, loose legacy variables, lets, and strings fail that reader.
+  unknown locals and loose legacy variables fail that reader. Its let and
+  string readings commute with binder opening, abstraction, term substitution
+  and universe substitution, including nested occurrences.
+- `StringExpansion.read_of_run` proves that production string expansion returns
+  the literal's model reading and preserves intern-table coherence. All
+  intermediate allocations are derived from the string: eight fixed nodes
+  and four per character. One collision condition covers this explicit list
+  and the initial table. The primitive table must be canonical and its
+  references resolvable; semantic admission of those primitives is separate.
 - Hash equality and intern-table reuse preserve that reading under their
   stated address/key collision assumptions. Metadata cannot change it.
 - `inferUncached_sort_sound` interprets an actual successful execution of the
@@ -121,6 +130,15 @@ increasing sequence of strongly inaccessible cardinals.
 - `checkEnvAnon_atomic_preserves_model` connects a supported production
   environment run to model extension. `checkEnvAnon_atomic_no_false` excludes
   a declaration at an axiom type interpreted as empty, including False.
+- `InferenceCacheInvariant` covers every entry in both production maps, with
+  separate full-checking and inference-only meanings. Hits obtain stored facts
+  directly; each insertion establishes its own fact and preserves all other
+  entries. Key computation, interning, local scopes, policy changes and reset
+  preserve the invariant. The actual lazy driver starts with empty caches;
+  failed declaration checks restore the incoming maps, and periodic clearing
+  preserves validity. The remaining successful-body preservation obligation is
+  explicit. These structural laws have a parameterized cache meaning; the
+  general mutual semantic proof must instantiate it and discharge that obligation.
 
 `ModelTyping.no_false` assumes semantic typing; the production fragment below
 derives it for its supported paths. Full checker refinement still requires the
@@ -363,6 +381,8 @@ The VM pilot is preserved in the frozen archive and excluded from the host gate.
 | Constant cache selection, writes, and typing | [`Consistency/ConstantCache.lean`](../Ix/Kernel/Verify/Consistency/ConstantCache.lean) |
 | Cache invariants and sort cache typing | [`Consistency/InferenceCache.lean`](../Ix/Kernel/Verify/Consistency/InferenceCache.lean), [`SortCache.lean`](../Ix/Kernel/Verify/Consistency/SortCache.lean) |
 | Recursive cache preservation and witness reuse | [`Consistency/RecursiveCache.lean`](../Ix/Kernel/Verify/Consistency/RecursiveCache.lean) |
+| Complete inference-cache maps and driver lifecycle | [`Consistency/CacheInvariant.lean`](../Ix/Kernel/Verify/Consistency/CacheInvariant.lean), [`CacheLifecycle.lean`](../Ix/Kernel/Verify/Consistency/CacheLifecycle.lean) |
+| Finite intern support and production string expansion | [`Consistency/InternInvariant.lean`](../Ix/Kernel/Verify/Consistency/InternInvariant.lean), [`StringExpansion.lean`](../Ix/Kernel/Verify/Consistency/StringExpansion.lean), [`StringReading.lean`](../Ix/Kernel/Verify/Consistency/StringReading.lean) |
 | Dependent binders and function bodies | [`Consistency/BinderInference.lean`](../Ix/Kernel/Verify/Consistency/BinderInference.lean), [`Application.lean`](../Ix/Kernel/Verify/Consistency/Application.lean), [`BinderOpening.lean`](../Ix/Kernel/Verify/Consistency/BinderOpening.lean), [`Context.lean`](../Ix/Kernel/Verify/Consistency/Context.lean), [`Model/Checking.lean`](../Ix/Theory/Model/Checking.lean) |
 | Production environment fragment and relative axiom policy | [`Consistency/Environment.lean`](../Ix/Kernel/Verify/Consistency/Environment.lean), [`Production.lean`](../Ix/Kernel/Verify/Consistency/Production.lean) |
 | Foundation assumptions, theorem contracts, and provenance | [Consistency model guide](theory.md) |
