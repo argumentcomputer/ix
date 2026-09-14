@@ -684,6 +684,7 @@ mod tests {
   mod lookup_shapes;
   mod mmcs;
   mod peak;
+  mod u32_compare;
 
   use super::*;
   use crate::{

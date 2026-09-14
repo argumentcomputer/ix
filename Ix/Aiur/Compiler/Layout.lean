@@ -219,7 +219,7 @@ def opLayout : Bytecode.Op → LayoutM Unit
   | .u8Mul .. => do pushDegrees #[1, 1]; bumpAuxiliaries 2; bumpLookups
   | .u8XorSplit7 .. | .u8XorSplit4 .. => do pushDegrees #[1, 1]; bumpAuxiliaries 2; bumpLookups
   | .u8LessThan .. => do pushDegree 1; bumpAuxiliaries; bumpLookups
-  | .u32LessThan .. => do pushDegree 1; bumpAuxiliaries 12; bumpLookups 6
+  | .u32LessThan .. => do pushDegree 1; bumpAuxiliaries 6; bumpLookups 6
   | .unconstrainedU32Add a b => do
     let degrees ← (a ++ b).mapM getDegree
     pushDegrees $ .replicate 4 1

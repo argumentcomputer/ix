@@ -348,6 +348,11 @@ impl Bytes2Queries {
     self.bump_multiplicity_for(i, j, Bytes2::RANGE_CHECK_COLUMN)
   }
 
+  /// Record a scalar u16 query on its distinct range channel.
+  pub fn bump_u16_range_check(&mut self, limb: u16) {
+    self.0[usize::from(limb)][Bytes2::U16_RANGE_CHECK_COLUMN] += G::ONE;
+  }
+
   pub(crate) fn add_rank_ranges(
     &mut self,
     ranges: crate::call_order::RankRanges,

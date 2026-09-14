@@ -329,6 +329,47 @@ directly. Rust BLAKE3 boundary digests, reader proofs, generated-code parity,
 recursive verification, aggregation and the complete IxVM suite pass.
 This is source/implementation validation, not a complete AIR extraction theorem.
 
+## Two u16 limbs for u32 comparison
+
+`U32LessThan` uses two scalar u16 limbs for each of `a`, `b` and the witness
+`c`, replacing twelve byte columns with six limb columns. Six range queries
+use the existing scalar channel; the fixed table and lookup counts do not
+grow. Recomposition bounds both inputs below `2^32`. Two boolean carries
+establish `a + c + 1 = b + carry * 2^32`, with `0 <= c < 2^32`, so the result
+`1 - carry` is exactly `a < b`, including equality and u32 endpoints. These
+integer sums are below the Goldilocks characteristic. Selector gates and
+the separate byte-pair channel are preserved.
+
+Execution records all six scalar multiplicities once. Witness construction
+writes the six corresponding messages, while rank ranges remain separately
+collected. Advice promotion records the queries only when the call becomes
+constrained. Native and generated execution retain checked u32 conversion.
+
+Auxiliary maxima shrink in 60 functions and main widths in 12 circuits.
+Function indices, component assignments, ranks, all function/memory counts,
+stage-two widths, quotient degrees and fixed table shapes are unchanged on
+all 84 fixtures. The 83-kernel sum falls 0.32% raw / 0.34% padded, and the
+shard falls 0.26% / 0.31%. Every fixture improves in both models. The combined
+raw kernel sum is 1.34% below original main and 40.95% below the initial repair.
+
+All 40 matched proofs verify and shrink 0.25–0.51%. The first matrix observes
+Vector proving 4.81% slower. A separate eight-pair Vector follow-up verifies
+all 16 proofs and measures 0.63% faster median proving with overlapping
+ranges, nearly equal process peaks and 0.37% fewer median whole-process
+instructions; every pair improves in instruction count. These windows do
+not establish a stable proving-speed gain;
+the change is retained for FFT and proof-size savings with all bounds intact.
+
+[The comparison regressions](../crates/aiur/src/synthesis/tests/u32_compare.rs)
+exhaust all 65,536 scalar values in all six lookup positions and both
+partitions. Boundary combinations cover grouped/singleton and ranked/acyclic
+layouts, decoded verification keys, wrong public results and input bounds.
+Directly supplied witnesses that satisfy every local polynomial but forge
+a limb range are rejected by lookup verification. Advice-promotion proofs
+check that exactly six scalar multiplicities are recorded. Full Lean,
+native, IxVM, recursive-verifier and generated-executor checks pass.
+The new AIR and messages require matching rebuilt systems, keys and proofs.
+
 ## Structural bounds
 
 System construction validates constrained-call arities, continuation yields,

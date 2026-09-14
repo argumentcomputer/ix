@@ -584,22 +584,12 @@ impl Function {
           let result = G::from_bool(a_u32 < b_u32);
           map.push(result);
           if !unconstrained {
-            let x_bytes = a_u32.to_le_bytes();
-            let z_bytes = b_u32.to_le_bytes();
             let c_u32 = b_u32.wrapping_sub(a_u32).wrapping_sub(1);
-            let y_bytes = c_u32.to_le_bytes();
-            // Bump range-check queries for byte pairs
-            for (i, j) in [
-              (x_bytes[0], x_bytes[1]),
-              (x_bytes[2], x_bytes[3]),
-              (y_bytes[0], y_bytes[1]),
-              (y_bytes[2], y_bytes[3]),
-              (z_bytes[0], z_bytes[1]),
-              (z_bytes[2], z_bytes[3]),
-            ] {
+            for word in [a_u32, c_u32, b_u32] {
               record
                 .bytes2_queries
-                .bump_range_check(&G::from_u8(i), &G::from_u8(j));
+                .bump_u16_range_check((word & 0xffff) as u16);
+              record.bytes2_queries.bump_u16_range_check((word >> 16) as u16);
             }
           }
         },
