@@ -94,6 +94,14 @@ theorem inst_appN (head : AExpr β) (arguments : List (AExpr β)) (value : AExpr
   | nil => rfl
   | cons argument arguments ih => simpa only [appN_cons, inst, List.map_cons] using ih (head.app argument)
 
+/-- A substituted application contributes its own arguments before the
+arguments already applied to the removed variable. -/
+theorem inst_variable_appN (head : AExpr β) (initialArguments arguments : List (AExpr β)) (cutoff : Nat) :
+    ((AExpr.bvar cutoff).appN arguments).inst (head.appN initialArguments) cutoff =
+      (head.liftN cutoff).appN (initialArguments.map (AExpr.liftN cutoff ·) ++
+        arguments.map (AExpr.inst · (head.appN initialArguments) cutoff)) := by
+  simp only [inst_appN, inst, instVar, Nat.lt_irrefl, if_false, if_true, liftN_appN, appN_append]
+
 /-- Substitution preserves a reduction justified by the original lambda
 prefix. Lambdas newly exposed beyond that prefix need their own origin. -/
 theorem inst_betaPrefix (count : Nat) (head : AExpr β) (arguments : List (AExpr β))
@@ -341,6 +349,21 @@ theorem ContextSubstitution.lift_typing {β : Type u} {entries : Environment β}
   simpa only [wellDenoted_liftN, interp_liftN] using
     typed V constants realizes levels _ (substitution.base_valid valid)
 
+/-- Every existing argument of a supplied value is lifted beneath the
+same retained dependent parameters as the value's function head. -/
+theorem ContextSubstitution.lift_spine {β : Type u} {entries : Environment β}
+    {base source target : Context β} {domain argument start result : AExpr β}
+    {arguments : List (AExpr β)} {cutoff : Nat}
+    (substitution : ContextSubstitution base domain argument source target cutoff)
+    (spine : ArgumentSpine.{u,v} entries base start arguments result) :
+    ArgumentSpine.{u,v} entries target (start.liftN cutoff)
+      (arguments.map (AExpr.liftN cutoff ·)) (result.liftN cutoff) := by
+  induction spine with
+  | nil => exact .nil _
+  | cons typed tail ih =>
+      exact .cons (substitution.lift_typing typed)
+        (by simpa only [AExpr.liftN_inst_zero] using ih)
+
 theorem ConversionClaim.appN {β : Type u} {entries : Environment β} {context : Context β}
     {left right : AExpr β} (same : ConversionClaim.{u,v} entries context left right)
     (arguments : List (AExpr β)) :
@@ -449,6 +472,37 @@ theorem betaPrefix {β : Type u} {entries : Environment β} {context : Context �
         (AExpr.betaPrefix count (.lam condition domain body) arguments) type := by
   obtain ⟨_, typed, leading, spine⟩ := source _ _ _ _ rfl
   exact (leading.truncate enough).beta_sound typed spine
+
+/-- Substituting a lambda application for a variable head joins its
+already checked arguments to the original application's checked arguments.
+The combined prefix may consume arguments from both checks. -/
+theorem substituteHead {β : Type u} {entries : Environment β}
+    {base source target : Context β} {type domain binder body result : AExpr β}
+    {condition : PropWhen} {initialArguments arguments : List (AExpr β)} {cutoff count : Nat}
+    (value : LambdaSpineTyping.{u,v} entries base
+      ((AExpr.lam condition binder body).appN initialArguments) domain)
+    (spine : ArgumentSpine.{u,v} entries source type arguments result)
+    (atIndex : source[cutoff]? = some type)
+    (substitution : ContextSubstitution base domain
+      ((AExpr.lam condition binder body).appN initialArguments) source target cutoff)
+    (enough : count ≤ body.lambdaDepth + 1) :
+    ConversionClaim.{u,v} entries target
+      (((AExpr.lam condition binder body).liftN cutoff).appN
+        (initialArguments.map (AExpr.liftN cutoff ·) ++
+          arguments.map (AExpr.inst · ((AExpr.lam condition binder body).appN initialArguments) cutoff)))
+      (AExpr.betaPrefix count ((AExpr.lam condition binder body).liftN cutoff)
+        (initialArguments.map (AExpr.liftN cutoff ·) ++
+          arguments.map (AExpr.inst · ((AExpr.lam condition binder body).appN initialArguments) cutoff))) ∧
+      TypingClaim.{u,v} entries target
+        (AExpr.betaPrefix count ((AExpr.lam condition binder body).liftN cutoff)
+          (initialArguments.map (AExpr.liftN cutoff ·) ++
+            arguments.map (AExpr.inst · ((AExpr.lam condition binder body).appN initialArguments) cutoff)))
+        (result.inst ((AExpr.lam condition binder body).appN initialArguments) cutoff) := by
+  obtain ⟨_, headTyped, leading, initial⟩ := value _ _ _ _ rfl
+  have remaining := spine.instAt (initial.typing headTyped) substitution
+  rw [substitution.instantiate_removed_type atIndex] at remaining
+  exact ((leading.liftN _ 0).truncate enough).beta_sound
+    (substitution.lift_typing headTyped) ((substitution.lift_spine initial).append remaining)
 
 end LambdaSpineTyping
 

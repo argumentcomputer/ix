@@ -392,6 +392,14 @@ def callReturned.{u} (A : Sort u) (a : A) : A := ((fun x : A => fun y : A => x) 
   `substituteReductionOriginAt` carries that reduction through later
   arguments. The mutual `SynthesisReductionOrigin.sound` proof supplies the
   same conversion and reduced-type formation consumed by `lamBeta`.
+  A supplied argument may already apply some of its lambda head's parameters.
+  `SynthesisCheckedOrigin.soundWithSpine` retains those checks as well as
+  the head's domains. `exposedApplicationOriginAt` joins them, in order, to
+  the original codomain's argument checks. For example, substituting
+  `(fun X : Sort u => fun Y : Sort u => X) A` for `F` in `F B` gives the
+  checked spine `[A, B]`. Its existing arguments are lifted beneath retained
+  parameters, and the codomain arguments receive the same substitution as
+  their dependent types. The selected prefix can consume both lists.
 - Applications use full mode, syntactic Pi exposure, an ordinary argument
   without an eager-reduction marker, and the hash-equality conversion path.
   Their witnesses retain the actual recursive calls, context preservation
@@ -504,7 +512,7 @@ lake test --wfail -- tc-unit
 lake -d Models/SetTheory build --wfail
 ```
 
-The consistency target checks 554 exact theorem boundaries. The production
+The consistency target checks 559 exact theorem boundaries. The production
 environment roots retain four existing generated output-length proofs,
 reached through expression/universe construction, names, and the full
 production method table. They introduce no new native proofs. The model
@@ -558,6 +566,10 @@ substitution exposes a lambda head. It proves the changed result's typing
 and equality in the same mutual recursion, including earlier and later
 dependent substitutions. These additions use the same two existing native
 output-length proofs; their model lemmas use only standard Lean axioms.
+The stronger checked-origin result also retains an argument's existing
+lambda-headed application spine. `LambdaSpineTyping.substituteHead` combines
+it with the original variable application's spine under the retained context,
+so a selected reduction can cross from one argument list into the other.
 Automatic origin construction for arbitrary generated types, repeated reduction, and other
 conversion paths remain open.
 Kernel unit regressions cover lazy loading, both inference policies, interning
@@ -604,6 +616,11 @@ identity example `f A x F y` also checks that earlier arguments specialize
 the later family's domain before its lambda creates the redex. Cases cover
 Prop, Type, universe parameters, captured carriers, cache clearing/reuse,
 scope cleanup, and rejected function types and dependent witnesses.
+Composition cases supply partial lambda applications. They check the exact
+combined argument order and two- or three-lambda reduction counts for both
+cheap-beta plans, including dependent initial arguments and caller locals.
+They cover Prop, Type, universe parameters, cache clearing/reuse, and failures
+for an ill-typed initial argument or a different selected carrier.
 These execution tests do not construct the general finite inference resources.
 Polymorphic-call regressions include Prop/Type instances in real function
 bodies, `max`/`imax` simplification inside Pi domains, closed nested references
@@ -674,7 +691,7 @@ Definition-cycle regressions use content-addressed standalone and mutual
 declarations, including a self-justifying theorem, a two-member cycle, type
 cycles, lets, shared syntax, and binders. They check repeated member failures,
 acyclic forward references, cache clearing, and the partial/unsafe policy.
-The unit suite contains 644 checks. The anonymous differential additionally
+The unit suite contains 655 checks. The anonymous differential additionally
 serializes eight cycle-policy fixtures and checks exact target sets, verdicts,
 failure counts, and cycle diagnostics in both implementations.
 

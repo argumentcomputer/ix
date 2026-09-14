@@ -99,7 +99,11 @@ codomains retain their actual argument checks and local types, extracted
 through nested function-type calls. Substituting a lambda for that head now
 uses the argument's own checked prefix to justify the newly exposed beta
 steps. Earlier parameter substitutions update the retained head type and
-argument checks; later arguments continue transporting the reduction. These
+argument checks; later arguments continue transporting the reduction.
+The supplied argument may itself be a lambda application: its existing
+argument checks are lifted beneath the retained parameters and joined to
+the original codomain's checks in application order. The actual selected
+prefix can consume arguments from both origins. These
 origins are proved sound in the inference recursion and consumed by the
 lambda case. Abstraction uses the reduced type and the reduction's final
 intern table. Automatic origin construction for arbitrary generated types

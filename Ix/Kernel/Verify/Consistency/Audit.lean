@@ -416,7 +416,12 @@ private def exposedOriginRoots : Array RootAllowance := #[
   { root := ``SynthesisScopedTypeCheck.sound, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
   { root := ``SynthesisScopedTypeCheck.forallBody, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
   { root := ``SynthesisScopedTypeCheck.variableSpine, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
-  { root := ``SynthesisTypeCheck.scoped, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] }
+  { root := ``SynthesisTypeCheck.scoped, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``Theory.Model.AExpr.inst_variable_appN, standardAxioms := #[``propext] },
+  { root := ``Theory.Model.ContextSubstitution.lift_spine, standardAxioms := standard },
+  { root := ``Theory.Model.LambdaSpineTyping.substituteHead, standardAxioms := standard },
+  { root := ``SynthesisCheckedOrigin.soundWithSpine, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``ApplicationInferenceTrace.exposedApplicationOriginAt, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] }
 ]
 
 def roots : Array RootAllowance := #[

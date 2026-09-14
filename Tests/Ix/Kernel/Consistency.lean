@@ -875,6 +875,83 @@ private def dependentExposedLambdaTypeResult (level : Ixon.Univ) : Bool :=
   | .ok passed after => passed && after.lctx.size == 0
   | .error _ _ => false
 
+/-- Supplying a partial lambda application joins its existing arguments
+to the variable-headed codomain's arguments. Dependent initial arguments
+and caller locals exercise both substitution cutoffs and argument order. -/
+private def composedLambdaType (level : Ixon.Univ) (universes : UInt64 := 0)
+    (shape wrong : Nat := 0) : Ixon.Env × Address := Id.run do
+  let levels := if universes == 0 then #[] else #[0]
+  let (env, carrier) := storeConst {}
+    ⟨.axio ⟨false, universes, .sort 0⟩, #[], #[], #[level]⟩
+  let (env, otherCarrier) := storeConst env
+    ⟨.axio ⟨false, universes, .sort 0⟩, #[], #[], #[level, .succ level]⟩
+  let (env, witness) := storeConst env
+    ⟨.axio ⟨false, universes, .ref 0 levels⟩, #[], #[carrier], #[level]⟩
+  let familyType := Ixon.Expr.leanAll (.sort 0) (.sort 0)
+  let (env, function) := storeConst env
+    ⟨.defn ⟨.defn, .safe, universes,
+      .leanAll familyType (.leanAll (.app (.var 0) (.ref 0 levels)) (.app (.var 1) (.ref 0 levels))),
+      .leanLam familyType (.leanLam (.app (.var 0) (.ref 0 levels)) (.var 0))⟩,
+      #[], #[otherCarrier], #[level]⟩
+  let head := Ixon.Expr.leanLam (.sort 0)
+    (if shape >= 2 then .leanLam (.var 0) (.leanLam (.sort 0) (.var 2))
+      else .leanLam (.sort 0) (if shape == 1 then .ref 0 levels else .var 1))
+  let familyAt : Ixon.Expr → Ixon.Expr → Ixon.Expr := fun type value =>
+    if shape >= 2 then .app (.app head type) value
+    else .app head (if shape == 1 then .ref 1 levels else type)
+  let family := familyAt (.ref 0 levels) (.ref 2 levels)
+  let domain := Ixon.Expr.app family (.ref 1 levels)
+  let supplied := if wrong == 1 then familyAt (.ref 0 levels) (.ref 0 levels)
+    else if wrong == 2 then
+      .app (.leanLam (.sort 0) (.leanLam (.sort 0) (.var 0))) (.ref 0 levels)
+    else family
+  let type := if shape == 3 then
+      Ixon.Expr.leanAll (.sort 0) (.leanAll (.var 0)
+        (.leanAll (.app (familyAt (.var 1) (.var 0)) (.ref 1 levels)) (.var 2)))
+    else .leanAll domain (.ref 0 levels)
+  let value := if shape == 3 then
+      Ixon.Expr.leanLam (.sort 0) (.leanLam (.var 0)
+        (.leanLam (.app (familyAt (.var 1) (.var 0)) (.ref 1 levels))
+          (.app (.app (.ref 3 levels) (familyAt (.var 2) (.var 1))) (.var 0))))
+    else .leanLam domain (.app (.app (.ref 3 levels) supplied) (.var 0))
+  return storeConst env
+    ⟨.defn ⟨.defn, .safe, universes, type, value⟩,
+      #[], #[carrier, otherCarrier, witness, function], #[level]⟩
+
+private def composedLambdaTypeResult (shape : Nat) (level : Ixon.Univ) : Bool :=
+  let (env, target) := composedLambdaType level 0 shape
+  let action : RecM .anon Bool := RecM.withLctxScope do
+    let concrete ← TcM.getConst (m := .anon) ⟨target, ()⟩
+    let .defn _ _ _ _ _ _ type value _ _ := concrete | return false
+    let .lam name bi domain body _ := value | return false
+    let .all _ _ _ expected _ := type | return false
+    let (fn, arguments) := body.collectSpine
+    let some supplied := arguments[0]? | return false
+    let .app .. := supplied | return false
+    let (suppliedHead, initialArguments) := supplied.collectSpine
+    let .all fnName fnBi fnDomain fnBody _ ← RecM.inferCall fn | return false
+    let suppliedType ← RecM.inferCall supplied
+    let (openedType, originalHead, _) ← TcM.openBinderWithFV fnName fnBi fnDomain fnBody
+    let .all _ _ _ originalCodomain _ := openedType | return false
+    let (call, _) ← TcM.openBinder name bi domain body
+    let generated ← RecM.inferCall call
+    let (generatedHead, generatedArguments) := generated.collectSpine
+    let consumed := (peelLamsN generatedArguments.size generatedHead).2
+    let reduced ← TcM.runIntern (cheapBetaReduce generated)
+    let before ← get
+    let inferred ← RecM.inferCall value
+    let repeated ← RecM.inferCall value
+    let after ← get
+    return originalCodomain.collectSpine.1 == originalHead && (cheapBetaPlan? originalCodomain).isNone &&
+      suppliedType == fnDomain && generatedHead == suppliedHead && generatedHead != supplied &&
+      generatedArguments == initialArguments ++ originalCodomain.collectSpine.2 &&
+      initialArguments.size == (if shape >= 2 then 2 else 1) && consumed == initialArguments.size + 1 &&
+      (cheapBetaPlan? generated).isSome && generated != reduced && reduced == expected &&
+      inferred == type && repeated == type && before.lctx.size == after.lctx.size
+  match TcM.runRec action (TcState.newLazyAnon env) with
+  | .ok passed after => passed && after.lctx.size == 0
+  | .error _ _ => false
+
 private def applicationCases : TestSeq :=
   test "application environment: Prop/Type identity calls and transitive theorem calls check"
     (allSucceeded applicationEnvironment 5 { clearEvery := 0 })
@@ -1041,6 +1118,36 @@ private def exposedLambdaCases : TestSeq :=
     (dependentExposedLambdaTypeResult .zero && dependentExposedLambdaTypeResult (.succ .zero))
   ++ test "exposed type lambda: a supplied family must use its specialized dependent domain"
     (let (env, target) := dependentExposedLambdaType .zero 0 true; rowFailed env target)
+  ++ test "composed type lambda: existing and outer arguments share a prefix in Prop and Type"
+    (allSucceeded (composedLambdaType .zero).1 5 &&
+      allSucceeded (composedLambdaType (.succ .zero)).1 5)
+  ++ test "composed type lambda: a closed body retains a captured carrier"
+    (allSucceeded (composedLambdaType .zero 0 1).1 5 &&
+      allSucceeded (composedLambdaType (.succ .zero) 0 1).1 5)
+  ++ test "composed type lambda: existing dependent arguments keep their checked order"
+    (allSucceeded (composedLambdaType .zero 0 2).1 5 &&
+      allSucceeded (composedLambdaType (.succ .zero) 0 2).1 5)
+  ++ test "composed type lambda: caller locals survive substitution beneath the remaining parameter"
+    (allSucceeded (composedLambdaType .zero 0 3).1 5 &&
+      allSucceeded (composedLambdaType (.succ .zero) 0 3).1 5)
+  ++ test "composed type lambda: both plans and dependent initial arguments preserve universe parameters"
+    (allSucceeded (composedLambdaType (.var 0) 1).1 5 &&
+      allSucceeded (composedLambdaType (.var 0) 1 1).1 5 &&
+      allSucceeded (composedLambdaType (.var 0) 1 2).1 5 &&
+      allSucceeded (composedLambdaType (.var 0) 1 3).1 5)
+  ++ test "composed type lambda: the shared spine survives fresh per-item caches"
+    (allSucceeded (composedLambdaType .zero).1 5 { clearEvery := 1 } &&
+      allSucceeded (composedLambdaType .zero 0 3).1 5 { clearEvery := 1 })
+  ++ test "composed type lambda: a variable plan consumes one argument from each origin"
+    (composedLambdaTypeResult 0 .zero && composedLambdaTypeResult 0 (.succ .zero))
+  ++ test "composed type lambda: the closed-body plan uses the combined argument list"
+    (composedLambdaTypeResult 1 .zero && composedLambdaTypeResult 1 (.succ .zero))
+  ++ test "composed type lambda: a three-step prefix preserves the dependent initial argument"
+    (composedLambdaTypeResult 2 .zero && composedLambdaTypeResult 2 (.succ .zero))
+  ++ test "composed type lambda: an initial argument must inhabit its specialized domain"
+    (let (env, target) := composedLambdaType .zero 0 2 1; rowFailed env target)
+  ++ test "composed type lambda: swapping the selected argument cannot change the declared carrier"
+    (let (env, target) := composedLambdaType .zero 0 0 2; rowFailed env target)
 
 /-- Call a polymorphic identity from a monomorphic function body. Universe
 indices select entries in the declaration's explicit level table. -/

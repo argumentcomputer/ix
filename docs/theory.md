@@ -73,9 +73,13 @@ and local head type through earlier parameter substitutions. When a lambda
 argument replaces that head, its own checked domains justify the newly
 exposed prefix. Nested codomain origins are extracted from the executed
 function-type tree. Later arguments transport the resulting reduction through
-the remaining dependent parameters. The lambda closes the reduced type using
-the actual final intern table. Each reduction is bounded by the checked
-prefix of its selected origin; further exposed prefixes need further origins.
+the remaining dependent parameters. A supplied lambda application also keeps
+its already checked arguments: they precede the original codomain's arguments
+in the combined spine, with both sets of dependent types preserved. The
+selected beta prefix can consume arguments from both origins. The lambda
+closes the reduced type using the actual final intern table. Each reduction
+is bounded by the checked prefix of its selected origin; further exposed
+prefixes need further origins.
 Automatic origin construction for arbitrary generated types, general
 reduction, and conversion remain open.
 Safe definition admission also rejects circular justification in both Lean and
