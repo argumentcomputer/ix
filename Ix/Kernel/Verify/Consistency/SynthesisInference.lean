@@ -197,7 +197,83 @@ theorem SynthesisInference.soundWithHereditary {β : Type u}
         (bodyTyped.instAt valueAtDomain .root).conv typeFormed converted, typeFormed,
         .convert (bodyHereditary.substituteAt (sameType ▸ valueHereditary) .root)
           reduction.rigid converted typeFormed⟩
+  | .forallSort miss trace opening domainCheck bodyCheck levelFaithful domainBound bodyBound
+      coherent faithful => by
+      obtain ⟨domainReads, bodyReads⟩ := readScopedExpr?_all_parts reading
+      have keyedAgreement := miss.localContext.symm ▸ agreement
+      obtain ⟨domainTyped, domainHereditary⟩ :=
+        domainCheck.soundWithHereditary formed keyedAgreement domainReads
+      obtain ⟨openedReads, openedAgreement, _⟩ :=
+        trace.opened_reading opening keyedAgreement domainReads bodyReads
+      obtain ⟨bodyTyped, bodyHereditary⟩ :=
+        bodyCheck.soundWithHereditary (formed.push domainTyped) openedAgreement openedReads
+      have typed := AExpr.LevelEquivalent.sort
+        (Theory.VLevel.equiv_def.mpr fun levels =>
+          (Theory.VLevel.equiv_def.mp (readLevel_mkIMax levelFaithful domainBound bodyBound)
+            levels).symm) |>.typing (TypingClaim.forallE domainTyped bodyTyped rfl)
+      let node := SynthesisInference.forallSort miss trace opening domainCheck bodyCheck
+        levelFaithful domainBound bodyBound coherent faithful
+      exact ⟨node.outputReading agreement reading accepted, typed, TypingClaim.sort _,
+        .forallE typed domainHereditary bodyHereditary rfl⟩
+  | .lamSort full miss trace opening domainCheck bodyTree reduction conditionAgrees
+      constructed bound coherent closingFaithful faithful => by
+      obtain ⟨domainReads, bodyReads⟩ := readScopedExpr?_lam_parts reading
+      have keyedAgreement := miss.localContext.symm ▸ agreement
+      obtain ⟨domainTyped, _⟩ := domainCheck.soundWithHereditary formed keyedAgreement domainReads
+      obtain ⟨openedReads, openedAgreement, _⟩ :=
+        trace.opened_reading opening keyedAgreement domainReads bodyReads
+      obtain ⟨_, bodyTyped, bodyFormed, bodyHereditary⟩ :=
+        bodyTree.soundWithHereditary (formed.push domainTyped) openedAgreement openedReads trace.bodyRun
+      obtain ⟨converted, reducedFormed⟩ := reduction.sound (formed.push domainTyped) bodyFormed
+      have typed := TypingClaim.lam domainTyped reducedFormed
+        (bodyTyped.conv reducedFormed converted) conditionAgrees
+      let node := SynthesisInference.lamSort full miss trace opening domainCheck bodyTree reduction
+        conditionAgrees constructed bound coherent closingFaithful faithful
+      exact ⟨node.outputReading agreement reading accepted, typed,
+        TypingClaim.forallE domainTyped reducedFormed conditionAgrees,
+        .lam typed (.convert bodyHereditary reduction.rigid converted reducedFormed)⟩
+  | .letSort full localState miss trace opening domainCheck valueTree bodyTree domainReading valueReading bodyReading
+      conditions hashPath comparisonFaithful substitution reduction => by
+      let node := SynthesisInference.letSort full localState miss trace opening domainCheck valueTree bodyTree
+        domainReading valueReading bodyReading conditions hashPath comparisonFaithful substitution reduction
+      have keyedValid := miss.keyedLocalState localState
+      have keyedAgreement := miss.localContext.symm ▸ agreement
+      have valueAgreement := keyedAgreement.congr (trace.domainContext keyedValid).symm
+      obtain ⟨domainTyped, _⟩ := domainCheck.soundWithHereditary formed keyedAgreement domainReading
+      obtain ⟨valueTypeReading, valueTyped, _, valueHereditary⟩ :=
+        valueTree.soundWithHereditary formed valueAgreement valueReading trace.valueRun
+      have sameType := AExpr.eq_of_erase_annotations
+        (Option.some.inj (valueTypeReading.symm.trans
+          ((beq_readScopedExpr? comparisonFaithful hashPath).trans domainReading))) conditions
+      obtain ⟨openedReading, openedAgreement, _⟩ :=
+        trace.opened_reading opening keyedValid keyedAgreement domainReading bodyReading
+      obtain ⟨_, bodyTyped, bodyFormed, bodyHereditary⟩ :=
+        bodyTree.soundWithHereditary (formed.push domainTyped) openedAgreement openedReading trace.bodyRun
+      have valueAtDomain := sameType ▸ valueTyped
+      obtain ⟨converted, typeFormed⟩ := reduction.sound formed (bodyFormed.instAt valueAtDomain .root)
+      exact ⟨node.outputReading agreement reading accepted,
+        (bodyTyped.instAt valueAtDomain .root).conv typeFormed converted, typeFormed,
+        .convert (bodyHereditary.substituteAt (sameType ▸ valueHereditary) .root)
+          reduction.rigid converted typeFormed⟩
 termination_by structural support
+
+/-- The actual inferred-type conversion establishes the sort used to form
+the next binder context; the checked source derivation survives that conversion. -/
+theorem SynthesisSortCheck.soundWithHereditary {β : Type u} {resolve : Address → Option (ConstRef β)}
+    {entries : Model.Environment β} {locals : List FVarId} {context : Model.Context β} {bounds : List VLevel}
+    {fuel : Nat} {before : TcState .anon} {source : KExpr .anon} {trace : SortInferenceTrace fuel before source}
+    {term : AExpr β} (check : SynthesisSortCheck resolve entries locals context bounds trace term)
+    (formed : ContextFormation.{u,v} entries context bounds)
+    (agreement : LocalContextReading resolve locals before.lctx context)
+    (reading : readScopedExpr? resolve locals source = some term.erase) :
+    TypingClaim.{u,v} entries context term (.sort (readLevel trace.level)) ∧
+      HereditaryTyping.{u,v} entries context term (.sort (readLevel trace.level)) :=
+  match check with
+  | .checked tree _ reduction => by
+      obtain ⟨_, typed, _, hereditary⟩ := tree.soundWithHereditary formed agreement reading trace.inferRun
+      obtain ⟨converted, typeFormed⟩ := reduction.sound formed
+      exact ⟨typed.conv typeFormed converted, .convert hereditary reduction.rigid converted typeFormed⟩
+termination_by structural check
 
 theorem LetTypeReduction.sound {β : Type u} {resolve : Address → Option (ConstRef β)}
     {entries : Model.Environment β} {context : Model.Context β} {bounds : List VLevel}
@@ -225,6 +301,9 @@ theorem SynthesisContext.sound {β : Type u} {resolve : Address → Option (Cons
       obtain ⟨_, domainTyped, _, _⟩ :=
         domainTree.soundWithHereditary priorFormation agreement reading accepted
       exact priorFormation.push domainTyped
+  | .pushSort prior check agreement reading => by
+      have priorFormation := prior.sound formed
+      exact priorFormation.push (check.soundWithHereditary priorFormation agreement reading).1
   | .extend prior extension => by
       intro index type bound found indexed
       exact extension.typing (prior.sound formed index type bound found indexed)
@@ -467,6 +546,18 @@ theorem SynthesisBetaTrace.sound {β : Type u} {resolve : Address → Option (Co
 termination_by structural support
 
 end
+
+/-- The sort used by binder inference is justified after the actual exposure
+of the returned type, without requiring that return to be a syntactic sort. -/
+theorem SynthesisSortCheck.sound {β : Type u} {resolve : Address → Option (ConstRef β)}
+    {entries : Model.Environment β} {locals : List FVarId} {context : Model.Context β} {bounds : List VLevel}
+    {fuel : Nat} {before : TcState .anon} {source : KExpr .anon} {trace : SortInferenceTrace fuel before source}
+    {term : AExpr β} (check : SynthesisSortCheck resolve entries locals context bounds trace term)
+    (formed : ContextFormation.{u,v} entries context bounds)
+    (agreement : LocalContextReading resolve locals before.lctx context)
+    (reading : readScopedExpr? resolve locals source = some term.erase) :
+    TypingClaim.{u,v} entries context term (.sort (readLevel trace.level)) :=
+  (check.soundWithHereditary formed agreement reading).1
 
 /-- The hereditary invariant supplies the existing application-spine
 contract, including after a let substitutes an entire checked derivation. -/

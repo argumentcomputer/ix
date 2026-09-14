@@ -51,6 +51,7 @@ import Ix.Kernel.Verify.Consistency.WhnfCacheFrame
 import Ix.Kernel.Verify.Consistency.BetaTyping
 import Ix.Kernel.Verify.Consistency.BetaInference
 import Ix.Kernel.Verify.Consistency.BetaWhnfInference
+import Ix.Kernel.Verify.Consistency.SortInference
 import Ix.Kernel.Verify.Consistency.CheapBeta
 import Ix.Kernel.Verify.Consistency.Validation
 import Ix.Kernel.Verify.Consistency.RecursiveCache
@@ -77,6 +78,13 @@ polymorphic references, applications, dependent functions, full-mode lambdas, an
 under the stated execution resources. Definitions may declare their own
 universe parameters; model entries retain the exact arity and interpretations
 at every instance.
+Recursive forall, lambda, and let rules also expose sorts through the supported
+public beta WHNF path or its outer-cache hit. Successful production calls
+determine their raw child traces. Retained checks justify conversion from the
+original inferred type to the exposed sort and supply the binder's level.
+Source derivations and typed cache histories retain the original child check;
+sort exposure leaves both inference-cache maps unchanged. General construction
+of the finite representation and reduction resources remains open.
 Safe definition admission now checks its reachable definition dependencies.
 The actual traversal has proved root coverage and an order with a decreasing
 natural-number rank. Finite collision freedom justifies complete reference

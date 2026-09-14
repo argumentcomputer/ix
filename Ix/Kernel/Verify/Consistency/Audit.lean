@@ -65,7 +65,7 @@ private def atomicRoots : Array Lean.Name := #[
   ``DefinitionBodyTrace.checkedType, ``DefinitionBodyTrace.synthesisTypeCheck,
   ``DefinitionBodyTrace.synthesisSupport, ``AxiomTypeTrace.synthesisTypeCheck,
   ``DefinitionCheckSupport.sound, ``DefinitionBodyTrace.betaDeclaredSupport,
-  ``AtomicDefinitionRun.ofHash
+  ``AtomicDefinitionRun.ofHash, ``SynthesisSortCheck.soundWithHereditary, ``SynthesisSortCheck.sound
 ]
 
 private def formationRoots : Array Lean.Name := #[
@@ -104,6 +104,29 @@ Its support and reader cannot assume the resulting hereditary invariant. -/
 private def recursiveLetShapeRoots : Array Lean.Name := #[
   ``SynthesisInference.letE, ``SynthesisCheckedOrigin.binderType,
   ``SynthesisInference.outputReading, ``SynthesisBetaTyping.forallE
+]
+
+/-- Executed sort exposure, its recursive source resources, and its cache
+history must be constructed before the semantic hereditary invariant. -/
+private def sortExposureRoots : Array Lean.Name := #[
+  ``BetaSortExposure.run, ``BetaSortExposure.coherent, ``BetaSortExposure.context,
+  ``BetaSortExposure.betaTrace, ``BetaSortExposure.checkedTrace, ``BetaSortExposure.inference_frame,
+  ``BetaSortExposure.policy, ``BetaSortExposure.inference_maps, ``SortInferenceTrace.direct,
+  ``SortInferenceTrace.success, ``SortInferenceTrace.inferenceFrame, ``SortInferenceTrace.frame,
+  ``SortInferenceTrace.exposure_state, ``SortInferenceTrace.exposure_frame, ``SortInferenceTrace.exposure_policy,
+  ``SortInferenceTrace.exposure_maps, ``ForallSortInferenceTrace.domainFrame, ``ForallSortInferenceTrace.opened_reading,
+  ``ForallSortInferenceTrace.success, ``ForallSortInferenceTrace.ofSuccess, ``ForallSortInferenceTrace.ofInference,
+  ``ForallSortInferenceTrace.output_state, ``LambdaSortInferenceTrace.domainFrame, ``LambdaSortInferenceTrace.opened_reading,
+  ``LambdaSortInferenceTrace.success, ``LambdaSortInferenceTrace.ofSuccess, ``LambdaSortInferenceTrace.ofInference,
+  ``LambdaSortInferenceTrace.output_state, ``LetSortInferenceTrace.domainFrame, ``LetSortInferenceTrace.valueFrame,
+  ``LetSortInferenceTrace.openingFrame, ``LetSortInferenceTrace.domainContext, ``LetSortInferenceTrace.openingContext,
+  ``LetSortInferenceTrace.opened_reading, ``LetSortInferenceTrace.restores, ``LetSortInferenceTrace.success,
+  ``LetSortInferenceTrace.ofSuccess, ``LetSortInferenceTrace.ofInference, ``LetSortInferenceTrace.output_state,
+  ``LetSortInferenceTrace.substituted_reading, ``SynthesisInference.forallSort, ``SynthesisInference.lamSort,
+  ``SynthesisInference.letSort, ``SynthesisContext.pushSort, ``SynthesisSortCheck.checked,
+  ``SynthesisSortCheck.direct, ``SynthesisSortCheck.ofRetainedType, ``SynthesisSortCheck.betaTyping,
+  ``SynthesisSortCheck.CacheData, ``SynthesisSortCheck.cacheExecution, ``InferenceCacheTrace.forallSort,
+  ``InferenceCacheTrace.lamSort, ``InferenceCacheTrace.letSort
 ]
 
 private def instantiationRoots : Array Lean.Name := #[
@@ -1259,7 +1282,7 @@ def roots : Array RootAllowance := #[
 }) ++ (betaRoots ++ typeOriginRoots ++ substitutedOriginRoots ++ exposedOriginRoots ++
     repeatedBetaRoots ++ betaTraceRoots ++ hereditaryBetaRoots ++ piExposureRoots ++ cacheTransportRoots).map (fun allowance => {
     allowance with forbiddenDependencies := allowance.forbiddenDependencies ++ forbiddenProduction })
-  ++ recursiveLetShapeRoots.map (fun root => {
+  ++ (recursiveLetShapeRoots ++ sortExposureRoots).map (fun root => {
     root, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative],
     forbiddenDependencies := forbiddenProduction ++ #[``HereditaryTyping] })
   ++ (localScopeFrameRoots ++ localStateFrameRoots ++ recursiveStateFrameRoots ++ ingressFrameRoots ++

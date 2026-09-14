@@ -195,7 +195,73 @@ def SynthesisInference.betaTyping {β : Type u} {resolve : Address → Option (C
             openedAgreement openedReading trace.bodyRun).substituteAt
               (sameType ▸ valueTree.betaTyping contextOrigin valueAgreement valueReading trace.valueRun) .root)
           (.rebase contextOrigin (reduction.trace substitutedType))
+  | .forallSort miss trace opening domainCheck bodyCheck levelFaithful domainBound bodyBound coherent faithful =>
+      fun contextOrigin agreement reading accepted => by
+        let node := SynthesisInference.forallSort miss trace opening domainCheck bodyCheck
+          levelFaithful domainBound bodyBound coherent faithful
+        obtain ⟨domainReading, bodyReading⟩ := readScopedExpr?_all_parts reading
+        have keyedAgreement := miss.localContext.symm ▸ agreement
+        obtain ⟨openedReading, openedAgreement, _⟩ :=
+          trace.opened_reading opening keyedAgreement domainReading bodyReading
+        exact .forallE (.source (.checked contextOrigin node agreement reading accepted))
+          (domainCheck.betaTyping contextOrigin keyedAgreement domainReading)
+          (bodyCheck.betaTyping (.pushSort contextOrigin domainCheck keyedAgreement domainReading)
+            openedAgreement openedReading) rfl
+  | .lamSort full miss trace opening domainCheck bodyTree reduction conditionAgrees
+      constructed bound coherent closingFaithful faithful => fun contextOrigin agreement reading accepted => by
+        let node := SynthesisInference.lamSort full miss trace opening domainCheck bodyTree reduction
+          conditionAgrees constructed bound coherent closingFaithful faithful
+        obtain ⟨domainReading, bodyReading⟩ := readScopedExpr?_lam_parts reading
+        have keyedAgreement := miss.localContext.symm ▸ agreement
+        obtain ⟨openedReading, openedAgreement, _⟩ :=
+          trace.opened_reading opening keyedAgreement domainReading bodyReading
+        have bodyContext := SynthesisContext.pushSort contextOrigin domainCheck keyedAgreement domainReading
+        have typeOrigin := SynthesisTypingOrigin.inferredType .current bodyTree
+          openedAgreement openedReading trace.bodyRun
+        exact .lam (.source (.checked contextOrigin node agreement reading accepted))
+          (.convert (bodyTree.betaTyping bodyContext openedAgreement openedReading trace.bodyRun)
+            (.rebase bodyContext (reduction.trace typeOrigin)))
+  | .letSort _ localState miss trace opening domainCheck valueTree bodyTree domainReading valueReading bodyReading
+      conditions hashPath comparisonFaithful _ reduction => fun contextOrigin agreement _ _ => by
+        have keyedValid := miss.keyedLocalState localState
+        have keyedAgreement := miss.localContext.symm ▸ agreement
+        have valueAgreement := keyedAgreement.congr (trace.domainContext keyedValid).symm
+        obtain ⟨openedReading, openedAgreement, _⟩ :=
+          trace.opened_reading opening keyedValid keyedAgreement domainReading bodyReading
+        have valueTypeReading := valueTree.outputReading valueAgreement valueReading trace.valueRun
+        have sameType := AExpr.eq_of_erase_annotations
+          (Option.some.inj (valueTypeReading.symm.trans
+            ((beq_readScopedExpr? comparisonFaithful hashPath).trans domainReading))) conditions
+        have bodyContext := SynthesisContext.pushSort .current domainCheck keyedAgreement domainReading
+        have bodyTypeOrigin := SynthesisTypingOrigin.inferredType bodyContext bodyTree
+          openedAgreement openedReading trace.bodyRun
+        have valueOrigin := SynthesisTypingOrigin.source
+          (SynthesisCheckedOrigin.checked .current valueTree valueAgreement valueReading trace.valueRun)
+        have substitutedType := SynthesisTypingOrigin.substituteAt bodyTypeOrigin (sameType ▸ valueOrigin)
+          ContextSubstitution.root
+        exact .convert
+          ((bodyTree.betaTyping (contextOrigin.pushSort domainCheck keyedAgreement domainReading)
+            openedAgreement openedReading trace.bodyRun).substituteAt
+              (sameType ▸ valueTree.betaTyping contextOrigin valueAgreement valueReading trace.valueRun) .root)
+          (.rebase contextOrigin (reduction.trace substitutedType))
 termination_by structural support
+
+/-- The exposed sort is justified by the original inferred-type conversion;
+the source derivation retains the checked term before and after that conversion. -/
+def SynthesisSortCheck.betaTyping {β : Type u} {resolve : Address → Option (ConstRef β)}
+    {incoming entries : Model.Environment β} {incomingContext context : Model.Context β}
+    {incomingBounds bounds : List VLevel} {locals : List FVarId} {fuel : Nat}
+    {before : TcState .anon} {source : KExpr .anon} {trace : SortInferenceTrace fuel before source}
+    {term : AExpr β} (check : SynthesisSortCheck resolve entries locals context bounds trace term) :
+    (contextOrigin : SynthesisContext resolve incoming incomingContext incomingBounds entries context bounds) →
+    LocalContextReading resolve locals before.lctx context →
+    readScopedExpr? resolve locals source = some term.erase →
+    SynthesisBetaTyping resolve incoming incomingContext incomingBounds entries context
+      term (.sort (readLevel trace.level)) :=
+  match check with
+  | .checked tree _ reduction => fun contextOrigin agreement reading =>
+      .convert (tree.betaTyping contextOrigin agreement reading trace.inferRun) (.rebase contextOrigin reduction)
+termination_by structural check
 
 def SynthesisRetainedCheck.betaTyping {β : Type u} {resolve : Address → Option (ConstRef β)}
     {incoming entries : Model.Environment β} {incomingContext context : Model.Context β}

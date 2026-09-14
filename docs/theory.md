@@ -121,6 +121,17 @@ semantic induction then derives an invariant closed under dependent substitution
 Source support and reconstruction do not assume that invariant, and the audit
 enforces this boundary. Automatic construction of the initial execution and
 finite representation resources remains open.
+Recursive forall, lambda, and let inference now also checks domains whose
+inferred type needs reduction to expose a sort; a forall's body uses the same
+resource. Successful production calls determine the child inference, exposure,
+opening, comparison, and body observations. The original child check and a
+retained check of its returned type justify conversion to the exposed sort,
+which supplies the binder context's universe level. The source derivation and
+typed cache history retain the original inference at its unreduced type.
+Exposure supports syntactic sorts, the existing public beta WHNF path, and
+that path's outer-cache hit. It changes neither inference-cache map. Finite
+reading, representation, and reduction resources still need general construction;
+other reduction and cache paths remain open.
 Structural local-state preservation now covers the complete recursive checker
 on both success and failure. The actual loader and initial state establish
 coherent lookup and a bound on allocated identifiers. Recursive calls retain

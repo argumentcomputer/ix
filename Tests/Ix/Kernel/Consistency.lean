@@ -3602,6 +3602,127 @@ private def recursiveLetFailureCleanup : Bool :=
       !after.env.inferCache.contains (invalid.addr, emptyCtxAddr)
   | _ => false
 
+private def sortExposureEnvironment (level : Ixon.Univ) (universes : UInt64 := 0) :
+    Ixon.Env × Array Address := Id.run do
+  -- References pass the parameter itself, even when the tested level is composite.
+  let arguments := if universes == 0 then #[] else #[2]
+  let levels := #[level, .succ level] ++ if universes == 0 then #[] else #[.var 0]
+  let betaSort := Ixon.Expr.app (.leanLam (.sort 1) (.var 0)) (.sort 0)
+  let (env, carrier) := storeConst {}
+    ⟨.axio ⟨false, universes, betaSort⟩, #[], #[], levels⟩
+  let (env, witness) := storeConst env
+    ⟨.axio ⟨false, universes, .ref 0 arguments⟩, #[], #[carrier], levels⟩
+  let (env, otherCarrier) := storeConst env
+    ⟨.axio ⟨false, universes, .sort 0⟩, #[], #[], levels⟩
+  let betaCarrier := Ixon.Expr.app (.leanLam (.sort 0) (.var 0)) (.ref 0 arguments)
+  let (env, betaWitness) := storeConst env
+    ⟨.axio ⟨false, universes, betaCarrier⟩, #[], #[otherCarrier], levels⟩
+  let domain := Ixon.Expr.ref 0 arguments
+  let identityType := Ixon.Expr.leanAll domain domain
+  let samples := [
+    (identityType, Ixon.Expr.leanLam domain (.var 0)),
+    (Ixon.Expr.sort 0, identityType),
+    (domain, Ixon.Expr.letE false domain (.ref 1 arguments) (.var 0)),
+    (identityType, Ixon.Expr.leanLam domain (.letE false domain (.var 0) (.var 0))),
+    (Ixon.Expr.leanAll domain (.ref 2 arguments), Ixon.Expr.leanLam domain (.ref 3 arguments))]
+  let mut env := env
+  let mut targets := #[]
+  for (type, value) in samples do
+    let (next, target) := storeConst env
+      ⟨.defn ⟨.defn, .safe, universes, type, value⟩,
+        #[], #[carrier, witness, otherCarrier, betaWitness], levels⟩
+    env := next
+    targets := targets.push target
+  return (env, targets)
+
+/-- The domain's full inference cache keeps its original beta type while
+sort exposure writes the normalized sort only to the three WHNF caches. -/
+private def sortExposureInferencePaths (typeLevel warm instrumented noAccel : Bool) : Bool :=
+  let level := if typeLevel then levelOne else KUniv.mkZero
+  let (env, targets) := sortExposureEnvironment (if typeLevel then .succ .zero else .zero)
+  (List.range 5).all fun shape =>
+    let action : RecM .anon Bool := do
+      let .defn _ _ _ _ _ _ expected value _ _ ← TcM.getConst (m := .anon) ⟨targets[shape]!, ()⟩ | return false
+      let domain := match value with
+        | .lam _ _ domain _ _ | .all _ _ domain _ _ | .letE _ domain _ _ _ _ => domain
+        | _ => value
+      let original ← RecM.inferCall domain
+      let .app .. := original | return false
+      let bodyType ← match shape, value with
+        | 4, .lam _ _ _ (.const id _ _) _ => pure (← TcM.getConst id).ty
+        | _, _ => pure original
+      modify fun state => { state with recFuel := 1, inNativeReduce := false, stats := instrumented, noAccel }
+      if warm then
+        let exposed ← RecM.ensureSortDirect original
+        if exposed != level then return false
+        let warmed := { (← get) with inNativeReduce := true }
+        match (RecM.ensureSortDirect original).run (methodsN 0) warmed with
+        | .error _ _ => return false
+        | .ok exposed reused =>
+            if exposed != level || reused.recFuel != 0 || !reused.inNativeReduce ||
+                !exactInferenceCaches [(domain, original)] [] reused then return false
+            set reused
+      let result ← RecM.inferCall value
+      let after ← get
+      let first := KExpr.mkFVar (m := .anon) ⟨0⟩ ()
+      let second := KExpr.mkFVar (m := .anon) ⟨1⟩ ()
+      let children := match shape, value with
+        | 0, _ => [(first, domain)]
+        | 1, _ => []
+        | 2, .letE _ _ witness _ _ _ => [(witness, domain), (first, domain)]
+        | 3, _ => [(first, domain), (second, domain),
+            (KExpr.mkLet () domain first (.mkVar 0 ()) false, domain)]
+        | 4, .lam _ _ _ body _ => [(body, bodyType)]
+        | _, _ => []
+      let sort := KExpr.mkSort (m := .anon) level
+      let key := (original.addr, emptyCtxAddr)
+      return result == expected && after.recFuel == 0 && after.lctx.size == 0 &&
+        after.env.nextFVarId == (if shape == 3 then 2 else 1) && after.inNativeReduce == warm &&
+        after.env.whnfCache[key]? == some sort && after.env.whnfNoDeltaCache[key]? == some sort &&
+        after.env.whnfCoreCache[key]? == some sort &&
+        exactInferenceCaches ((domain, original) :: (children ++ [(value, expected)])) [] after &&
+        compositeReplayAt value expected after
+    match TcM.runRec action (TcState.newLazyAnon env) with
+    | .ok passed _ => passed
+    | .error _ _ => false
+
+private def sortExposureFailures : Bool :=
+  let betaPi := Ixon.Expr.app (.leanLam (.sort 1) (.leanAll (.var 0) (.var 1))) (.sort 0)
+  let (env, carrierAddr) := storeConst {}
+    ⟨.axio ⟨false, 0, betaPi⟩, #[], #[], #[.zero, .succ .zero]⟩
+  (List.range 3).all fun shape =>
+    let carrier := KExpr.mkConst (m := .anon) ⟨carrierAddr, ()⟩ #[]
+    let prop := KExpr.mkSort (m := .anon) .mkZero
+    let source := if shape == 0 then KExpr.mkLam () () carrier (.mkVar 0 ())
+      else if shape == 1 then KExpr.mkLet () carrier prop (.mkVar 0 ()) false
+      else KExpr.mkAll () () prop carrier
+    match TcM.getConst (m := .anon) ⟨carrierAddr, ()⟩ (TcState.newLazyAnon env) with
+    | .error _ _ => false
+    | .ok concrete loaded =>
+        match TcM.infer source loaded with
+        | .error .typeExpected failed =>
+            let children := if shape == 2 then [(prop, KExpr.mkSort levelOne)] else []
+            failed.lctx.size == 0 && failed.env.nextFVarId == (if shape == 2 then 1 else 0) &&
+              failed.env.whnfCache[(concrete.ty.addr, emptyCtxAddr)]? == some (KExpr.mkAll () () prop prop) &&
+              exactInferenceCaches ((carrier, concrete.ty) :: children) [] failed
+        | _ => false
+
+private def sortExposureCases : TestSeq :=
+  test "sort exposure: dependent types, lambdas, and lets check in Prop and Type under both cache policies"
+    ([Ixon.Univ.zero, .succ .zero].all fun level =>
+      [0, 1].all fun clearEvery => allSucceeded (sortExposureEnvironment level).1 9 { clearEvery })
+  ++ test "sort exposure: binder validation and changed body beta retain declaration universe parameters"
+    ([Ixon.Univ.var 0, .max (.var 0) (.succ (.var 0))].all fun level =>
+      [0, 1].all fun clearEvery => allSucceeded (sortExposureEnvironment level 1).1 9 { clearEvery })
+  ++ test "sort exposure: cold binder checks preserve exact child caches and publish their returned types"
+    ([false, true].all fun typeLevel => [false, true].all fun instrumented =>
+      [false, true].all fun noAccel => sortExposureInferencePaths typeLevel false instrumented noAccel)
+  ++ test "sort exposure: warm binder checks and zero-method exposure need no remaining reduction fuel"
+    ([false, true].all fun typeLevel => [false, true].all fun instrumented =>
+      [false, true].all fun noAccel => sortExposureInferencePaths typeLevel true instrumented noAccel)
+  ++ test "sort exposure: a reduced Pi is rejected as a sort and failed binder scopes restore locals"
+    sortExposureFailures
+
 private def letCases : TestSeq :=
   test "let inference: dependent type substitution retains exact child caches, replay, and fresh rebuilding"
     letExactCacheHistory
@@ -3747,6 +3868,6 @@ public def suite : List TestSeq :=
     cheapApplicationCases, exposedLambdaCases, repeatedBetaCases, betaTraceCases, hereditaryBetaCases, piExposureCases,
     polymorphicApplicationCases, constantCacheCases, cacheInvariantCases, recursiveCacheCases,
     lazyCacheCases, blockCacheCases, ingressCoherenceCases, sourceOwnershipCases, recursiveStateCases,
-    sourceAgreementCases, sourceCacheCases, compositeCacheCases, letCases, polymorphicDefinitionCases]
+    sourceAgreementCases, sourceCacheCases, compositeCacheCases, letCases, sortExposureCases, polymorphicDefinitionCases]
 
 end Tests.Kernel.Consistency

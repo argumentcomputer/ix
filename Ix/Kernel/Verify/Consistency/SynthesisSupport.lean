@@ -7,6 +7,7 @@ import Ix.Kernel.Verify.Consistency.ContextTransport
 import Ix.Kernel.Verify.Consistency.CheapBetaReading
 import Ix.Kernel.Verify.Consistency.ApplicationWhnf
 import Ix.Kernel.Verify.Consistency.LetInference
+import Ix.Kernel.Verify.Consistency.SortInference
 import Ix.Theory.Model.UniverseBounds
 import Ix.Theory.Model.BetaSpine
 
@@ -211,6 +212,87 @@ inductive SynthesisInference {β : Type u}
       SynthesisInference resolve entries locals context bounds (fuel + 1) before
         (.letE name domain value body nonDep info) (b.inst val) resultType level
 
+  | forallSort {entries locals context bounds fuel before name bi domain body info A B}
+      (miss : UncachedInference before (.all name bi domain body info))
+      (trace : ForallSortInferenceTrace fuel miss.keyed name bi domain body)
+      (opening : BinderOpeningSupport trace.domainCheck.after body)
+      (domainCheck : SynthesisSortCheck resolve entries locals context bounds trace.domainCheck A)
+      (bodyCheck : SynthesisSortCheck resolve entries (trace.fresh :: locals) (context.push A)
+        (readLevel trace.domainCheck.level :: bounds) trace.bodyCheck B)
+      (levelFaithful : ∀ a b,
+        (KUniv.Sub a trace.domainCheck.level ∨ KUniv.Sub a trace.bodyCheck.level) →
+        (KUniv.Sub b trace.domainCheck.level ∨ KUniv.Sub b trace.bodyCheck.level) → a.AddrFaithful b)
+      (domainBound : trace.domainCheck.level.size < UInt64.size)
+      (bodyBound : trace.bodyCheck.level.size < UInt64.size)
+      (coherent : trace.bodyCheck.after.env.intern.WF)
+      (faithful : KExpr.KeyCollisionFree fun term => trace.bodyCheck.after.env.intern.ExprSupport term ∨
+        term = KExpr.mkSort (KUniv.mkIMax trace.domainCheck.level trace.bodyCheck.level)) :
+      SynthesisInference resolve entries locals context bounds (fuel + 1) before (.all name bi domain body info)
+        (.forallE (Certified.zeroCondition (readLevel trace.bodyCheck.level)) A B)
+        (.sort (readLevel (KUniv.mkIMax trace.domainCheck.level trace.bodyCheck.level)))
+        (.succ (readLevel (KUniv.mkIMax trace.domainCheck.level trace.bodyCheck.level)))
+
+  | lamSort {entries locals context bounds fuel before name bi domain body info A b B B' condition bodyLevel}
+      (full : before.inferOnly = false)
+      (miss : UncachedInference before (.lam name bi domain body info))
+      (trace : LambdaSortInferenceTrace fuel miss.keyed name bi domain body)
+      (opening : BinderOpeningSupport trace.domainCheck.after body)
+      (domainCheck : SynthesisSortCheck resolve entries locals context bounds trace.domainCheck A)
+      (bodyTree : SynthesisInference resolve entries (trace.fresh :: locals) (context.push A)
+        (readLevel trace.domainCheck.level :: bounds) fuel trace.openedState trace.opened b B bodyLevel)
+      (reduction : LetTypeReduction resolve entries (context.push A) (readLevel trace.domainCheck.level :: bounds)
+        trace.bodyType trace.bodyState.env.intern bodyLevel B B')
+      (conditionAgrees : condition = Certified.zeroCondition bodyLevel)
+      (constructed : trace.reduced.1.Constructed)
+      (bound : trace.reduced.1.size + 1 < UInt64.size)
+      (coherent : trace.bodyState.env.intern.WF)
+      (closingFaithful : KExpr.CollisionFree fun term => trace.reduced.2.ExprSupport term ∨
+        KExpr.AbstractReach ((∅ : Std.HashMap FVarId UInt64).insert trace.fresh 0)
+          1 trace.reduced.1 0 term)
+      (faithful : KExpr.KeyCollisionFree fun term => trace.abstracted.2.ExprSupport term ∨
+        term = KExpr.mkAll () () domain trace.abstracted.1) :
+      SynthesisInference resolve entries locals context bounds (fuel + 1) before (.lam name bi domain body info)
+        (.lam condition A b) (.forallE condition A B') (.imax (readLevel trace.domainCheck.level) bodyLevel)
+
+  | letSort {entries locals context bounds fuel before name domain value body nonDep info
+      A val b B resultType level valueLevel valueType}
+      (full : before.inferOnly = false)
+      (localState : LocalStateInvariant before)
+      (miss : UncachedInference before (.letE name domain value body nonDep info))
+      (trace : LetSortInferenceTrace fuel miss.keyed name domain value body)
+      (opening : BinderOpeningSupport trace.comparedState body)
+      (domainCheck : SynthesisSortCheck resolve entries locals context bounds trace.domainCheck A)
+      (valueTree : SynthesisInference resolve entries locals context bounds fuel trace.domainCheck.after value
+        val valueType valueLevel)
+      (bodyTree : SynthesisInference resolve entries (trace.fresh :: locals) (context.push A)
+        (readLevel trace.domainCheck.level :: bounds) fuel trace.openedState trace.opened b B level)
+      (domainReading : readScopedExpr? resolve locals domain = some A.erase)
+      (valueReading : readScopedExpr? resolve locals value = some val.erase)
+      (bodyReading : readScopedExpr? resolve locals body 1 = some b.erase)
+      (conditions : valueType.annotations = A.annotations)
+      (hashPath : (trace.valueType == domain) = true)
+      (comparisonFaithful : trace.valueType.AddrFaithful domain)
+      (substitution : trace.SubstitutionSupport)
+      (reduction : LetTypeReduction resolve entries context bounds trace.substituted.1 trace.substituted.2
+        level (B.inst val) resultType) :
+      SynthesisInference resolve entries locals context bounds (fuel + 1) before
+        (.letE name domain value body nonDep info) (b.inst val) resultType level
+
+/-- A sort check retains inference at its actual returned type and the
+executed exposure of that type. Its conversion comes from source checking
+origins, and supplies no semantic typing premise. -/
+inductive SynthesisSortCheck {β : Type u} (resolve : Address → Option (ConstRef β)) :
+    Model.Environment β → List FVarId → Model.Context β → List VLevel →
+      {fuel : Nat} → {before : TcState .anon} → {source : KExpr .anon} →
+        SortInferenceTrace fuel before source → AExpr β → Type u
+  | checked {entries locals context bounds fuel before source term type bound}
+      {trace : SortInferenceTrace fuel before source}
+      (tree : SynthesisInference resolve entries locals context bounds fuel before source term type bound)
+      (exposure : trace.Exposure resolve locals type)
+      (reduction : SynthesisBetaTrace resolve entries context bounds entries context
+        type (.sort (readLevel trace.level)) (.sort bound)) :
+      SynthesisSortCheck resolve entries locals context bounds trace term
+
 /-- A complete executed inference check transported to a later use site.
 The source tree remains available beneath interface and context changes;
 none of these constructors accepts semantic typing or conversion evidence. -/
@@ -258,6 +340,14 @@ inductive SynthesisContext {β : Type u} (resolve : Address → Option (ConstRef
       (reading : readScopedExpr? resolve locals source = some domain.erase)
       (accepted : RecM.infer source (methodsN fuel) before = .ok result after) :
       SynthesisContext resolve entries context bounds earlier (priorContext.push domain) (level :: priorBounds)
+  | pushSort {entries context bounds earlier priorContext priorBounds locals fuel before source
+      domain} {trace : SortInferenceTrace fuel before source}
+      (prior : SynthesisContext resolve entries context bounds earlier priorContext priorBounds)
+      (check : SynthesisSortCheck resolve earlier locals priorContext priorBounds trace domain)
+      (agreement : LocalContextReading resolve locals before.lctx priorContext)
+      (reading : readScopedExpr? resolve locals source = some domain.erase) :
+      SynthesisContext resolve entries context bounds earlier (priorContext.push domain)
+        (readLevel trace.level :: priorBounds)
   | extend {entries context bounds earlier later priorContext priorBounds}
       (prior : SynthesisContext resolve entries context bounds earlier priorContext priorBounds)
       (extension : InterfaceExtends earlier later) :
@@ -648,6 +738,34 @@ inductive LetTypeReduction {β : Type u} (resolve : Address → Option (ConstRef
         (AExpr.betaPrefix (cheapBetaCount source) (.lam condition domain body) arguments)
 
 end
+
+namespace SynthesisSortCheck
+
+variable {β : Type u} {resolve : Address → Option (ConstRef β)} {entries : Model.Environment β}
+  {locals : List FVarId} {context : Model.Context β} {bounds : List VLevel}
+  {fuel : Nat} {before : TcState .anon} {source : KExpr .anon}
+  {trace : SortInferenceTrace fuel before source} {term : AExpr β}
+
+def inferredType (check : SynthesisSortCheck resolve entries locals context bounds trace term) : AExpr β :=
+  match check with
+  | .checked (type := type) .. => type
+
+def exposure (check : SynthesisSortCheck resolve entries locals context bounds trace term) :
+    trace.Exposure resolve locals check.inferredType :=
+  match check with
+  | .checked _ exposure _ => exposure
+
+/-- Syntactic sort results use their original type-formation origin. -/
+def direct {level : KUniv .anon} {info : ExprInfo .anon} {after : TcState .anon} {bound : VLevel}
+    (tree : SynthesisInference resolve entries locals context bounds fuel before source
+      term (.sort (readLevel level)) bound)
+    (agreement : LocalContextReading resolve locals before.lctx context)
+    (reading : readScopedExpr? resolve locals source = some term.erase)
+    (accepted : RecM.infer source (methodsN fuel) before = .ok (.sort level info) after) :
+    SynthesisSortCheck resolve entries locals context bounds (SortInferenceTrace.direct accepted) term :=
+  .checked tree (.direct level info) (.refl (.inferredType .current tree agreement reading accepted))
+
+end SynthesisSortCheck
 
 theorem LetTypeReduction.reading {β : Type u} {resolve : Address → Option (ConstRef β)}
     {entries : Model.Environment β} {context : Model.Context β} {bounds : List VLevel}

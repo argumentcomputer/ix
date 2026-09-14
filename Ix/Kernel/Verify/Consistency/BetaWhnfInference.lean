@@ -76,6 +76,50 @@ def BetaPiExposure.betaTrace {β : Type u} {resolve : Address → Option (ConstR
   | .reduce plan => plan.betaTrace typing
   | .cached origin _ _ => origin.betaTrace typing
 
+/-- Sort exposure obtains its meaning from the same complete source
+derivation as public beta WHNF; a direct sort uses reflexivity. -/
+def BetaSortExposure.betaTrace {β : Type u} {resolve : Address → Option (ConstRef β)}
+    {incoming entries : Model.Environment β} {incomingContext context : Model.Context β}
+    {incomingBounds : List VLevel} {locals : List FVarId} {fuel : Nat} {before : TcState .anon}
+    {source : KExpr .anon} {term type : AExpr β} {level : KUniv .anon}
+    (exposure : BetaSortExposure resolve locals fuel before source term level)
+    (typing : SynthesisBetaTyping resolve incoming incomingContext incomingBounds entries context term type) :
+    SynthesisBetaTrace resolve incoming incomingContext incomingBounds entries context
+      term (.sort (readLevel level)) type :=
+  match exposure with
+  | .direct .. => .refl typing.origin
+  | .reduce plan => plan.betaTrace typing
+  | .cached origin _ => origin.betaTrace typing
+
+/-- Earlier type checks retain every beta origin, including after interface
+growth or insertion beneath binders. No check of the exposed sort is required. -/
+def BetaSortExposure.checkedTrace {β : Type u} {resolve : Address → Option (ConstRef β)}
+    {incoming entries : Model.Environment β} {incomingContext context : Model.Context β}
+    {incomingBounds : List VLevel} {locals : List FVarId} {fuel : Nat} {before : TcState .anon}
+    {source : KExpr .anon} {term : AExpr β} {level : KUniv .anon} {typeLevel typeBound : VLevel}
+    (exposure : BetaSortExposure resolve locals fuel before source term level)
+    (checked : SynthesisRetainedCheck resolve incoming incomingContext incomingBounds entries context
+      term (.sort typeLevel) typeBound) :
+    SynthesisBetaTrace resolve incoming incomingContext incomingBounds entries context
+      term (.sort (readLevel level)) (.sort typeLevel) :=
+  exposure.betaTrace checked.betaTyping
+
+/-- Construct the sort-check resource from actual term inference and an
+earlier check of its returned type. Its formation origin selects the bound
+used by the enclosing inference, independently of the earlier check's bound. -/
+def SynthesisSortCheck.ofRetainedType {β : Type u} {resolve : Address → Option (ConstRef β)}
+    {entries : Model.Environment β} {context : Model.Context β} {bounds : List VLevel} {locals : List FVarId}
+    {fuel : Nat} {before : TcState .anon} {source : KExpr .anon} {trace : SortInferenceTrace fuel before source}
+    {term type : AExpr β} {bound typeLevel typeBound : VLevel}
+    (tree : SynthesisInference resolve entries locals context bounds fuel before source term type bound)
+    (exposure : trace.Exposure resolve locals type)
+    (checked : SynthesisRetainedCheck resolve entries context bounds entries context type (.sort typeLevel) typeBound)
+    (agreement : LocalContextReading resolve locals before.lctx context)
+    (reading : readScopedExpr? resolve locals source = some term.erase) :
+    SynthesisSortCheck resolve entries locals context bounds trace term :=
+  .checked tree exposure
+    (.atType (.inferredType .current tree agreement reading trace.inferRun) (exposure.checkedTrace checked))
+
 /-- An actual earlier check of the function type supplies the conversion
 field of application inference. No check of the generated Pi is needed. -/
 def BetaPiExposure.checkedTrace {β : Type u} {resolve : Address → Option (ConstRef β)}

@@ -6,6 +6,7 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 import Ix.Kernel.Verify.Consistency.BinderInference
 import Ix.Kernel.Verify.Consistency.LetInference
 import Ix.Kernel.Verify.Consistency.WhnfCacheFrame
+import Ix.Kernel.Verify.Consistency.SortInference
 import Ix.Kernel.Verify.Consistency.SourceOwnershipCheck
 
 /-!
@@ -247,6 +248,33 @@ inductive InferenceCacheTrace : Nat → TcState .anon → KExpr .anon → Type (
       (valueTree : InferenceCacheTrace fuel trace.domainState value)
       (bodyTree : InferenceCacheTrace fuel trace.openedState trace.opened) :
       InferenceCacheTrace (fuel + 1) before (.letE name domain value body nonDep info)
+  | forallSort {β : Type u} {resolve : Address → Option (ConstRef β)}
+      {locals fuel before name bi domain body info domainType bodyType}
+      (miss : UncachedInference before (.all name bi domain body info))
+      (trace : ForallSortInferenceTrace fuel miss.keyed name bi domain body)
+      (domainExposure : trace.domainCheck.Exposure resolve locals domainType)
+      (bodyExposure : trace.bodyCheck.Exposure resolve (trace.fresh :: locals) bodyType)
+      (domainTree : InferenceCacheTrace fuel miss.keyed domain)
+      (bodyTree : InferenceCacheTrace fuel trace.openedState trace.opened) :
+      InferenceCacheTrace (fuel + 1) before (.all name bi domain body info)
+  | lamSort {β : Type u} {resolve : Address → Option (ConstRef β)}
+      {locals fuel before name bi domain body info domainType} (full : before.inferOnly = false)
+      (miss : UncachedInference before (.lam name bi domain body info))
+      (trace : LambdaSortInferenceTrace fuel miss.keyed name bi domain body)
+      (domainExposure : trace.domainCheck.Exposure resolve locals domainType)
+      (domainTree : InferenceCacheTrace fuel miss.keyed domain)
+      (bodyTree : InferenceCacheTrace fuel trace.openedState trace.opened) :
+      InferenceCacheTrace (fuel + 1) before (.lam name bi domain body info)
+  | letSort {β : Type u} {resolve : Address → Option (ConstRef β)}
+      {locals fuel before name domain value body nonDep info domainType} (full : before.inferOnly = false)
+      (miss : UncachedInference before (.letE name domain value body nonDep info))
+      (trace : LetSortInferenceTrace fuel miss.keyed name domain value body)
+      (domainExposure : trace.domainCheck.Exposure resolve locals domainType)
+      (hashPath : (trace.valueType.addr == domain.addr) = true)
+      (domainTree : InferenceCacheTrace fuel miss.keyed domain)
+      (valueTree : InferenceCacheTrace fuel trace.domainCheck.after value)
+      (bodyTree : InferenceCacheTrace fuel trace.openedState trace.opened) :
+      InferenceCacheTrace (fuel + 1) before (.letE name domain value body nonDep info)
 
 /-- The finite write footprint is computed from the operational tree. Cache
 hits contribute no key; recursive calls and each outer insertion are included. -/
@@ -255,9 +283,10 @@ def InferenceCacheTrace.writes {fuel : Nat} {before : TcState .anon} {term : KEx
   | .hit _ => []
   | .sort miss | .fvar miss | .const miss .. | .lazyConst miss .. => [miss.key]
   | .app _ miss _ _ first second | .appBeta _ miss _ _ _ first second |
-      .forallE miss _ first second | .lam _ miss _ first second | .lamBody _ miss _ first second =>
+      .forallE miss _ first second | .lam _ miss _ first second | .lamBody _ miss _ first second |
+      .forallSort miss _ _ _ first second | .lamSort _ miss _ _ first second =>
       miss.key :: (first.writes ++ second.writes)
-  | .letE _ miss _ _ first second third =>
+  | .letE _ miss _ _ first second third | .letSort _ miss _ _ _ first second third =>
       miss.key :: (first.writes ++ (second.writes ++ third.writes))
 
 /-- Leaf construction inspects the real cache policy; callers need not
@@ -492,6 +521,50 @@ theorem InferenceCacheTrace.frame {fuel : Nat} {before after : TcState .anon}
           (opening.trans bodyFrame)))).trans (.of_eq rfl rfl rfl),
         bodyPolicy.trans ((openLet_inference_state trace.openRun).2.2.2.trans
           (comparisonPolicy.trans (valuePolicy.trans domainPolicy)))⟩
+  | forallSort miss trace domainExposure bodyExposure domainTree bodyTree domainIH bodyIH =>
+      simp only [writes, List.mem_cons, List.mem_append, not_or] at outside
+      apply infer_miss_frame miss (Ne.symm outside.1) accepted
+      intro middle run
+      obtain ⟨domainFrame, domainPolicy⟩ := domainIH outside.2.1 trace.domainCheck.inferRun
+      obtain ⟨bodyFrame, bodyPolicy⟩ := bodyIH outside.2.2 trace.bodyCheck.inferRun
+      have domainExposed := trace.domainCheck.exposure_frame domainExposure key
+      have bodyExposed := trace.bodyCheck.exposure_frame bodyExposure key
+      have opening := openBinder_frame key trace.openRun
+      rw [(trace.output_state run).2]
+      exact ⟨(domainFrame.trans (domainExposed.trans (opening.trans (bodyFrame.trans bodyExposed)))).trans
+          (.of_eq rfl rfl rfl),
+        (trace.bodyCheck.exposure_policy bodyExposure).trans (bodyPolicy.trans
+          ((openBinder_policy trace.openRun).trans ((trace.domainCheck.exposure_policy domainExposure).trans domainPolicy)))⟩
+  | lamSort full miss trace domainExposure domainTree bodyTree domainIH bodyIH =>
+      simp only [writes, List.mem_cons, List.mem_append, not_or] at outside
+      apply infer_miss_frame miss (Ne.symm outside.1) accepted
+      intro middle run
+      rw [full] at run
+      obtain ⟨domainFrame, domainPolicy⟩ := domainIH outside.2.1 trace.domainCheck.inferRun
+      obtain ⟨bodyFrame, bodyPolicy⟩ := bodyIH outside.2.2 trace.bodyRun
+      have domainExposed := trace.domainCheck.exposure_frame domainExposure key
+      have opening := openBinder_frame key trace.openRun
+      rw [(trace.output_state run).2]
+      exact ⟨(domainFrame.trans (domainExposed.trans (opening.trans bodyFrame))).trans (.of_eq rfl rfl rfl),
+        bodyPolicy.trans ((openBinder_policy trace.openRun).trans
+          ((trace.domainCheck.exposure_policy domainExposure).trans domainPolicy))⟩
+  | letSort full miss trace domainExposure hashPath domainTree valueTree bodyTree domainIH valueIH bodyIH =>
+      simp only [writes, List.mem_cons, List.mem_append, not_or] at outside
+      apply infer_miss_frame miss (Ne.symm outside.1) accepted
+      intro middle run
+      rw [full] at run
+      obtain ⟨domainFrame, domainPolicy⟩ := domainIH outside.2.1 trace.domainCheck.inferRun
+      obtain ⟨valueFrame, valuePolicy⟩ := valueIH outside.2.2.1 trace.valueRun
+      obtain ⟨bodyFrame, bodyPolicy⟩ := bodyIH outside.2.2.2 trace.bodyRun
+      obtain ⟨comparisonFrame, comparisonPolicy⟩ := isDefEq_hash_frame hashPath trace.compareRun key
+      have domainExposed := trace.domainCheck.exposure_frame domainExposure key
+      have opening := openLet_frame key trace.openRun
+      rw [(trace.output_state run).2]
+      exact ⟨(domainFrame.trans (domainExposed.trans (valueFrame.trans (comparisonFrame.trans
+          (opening.trans bodyFrame))))).trans (.of_eq rfl rfl rfl),
+        bodyPolicy.trans ((openLet_inference_state trace.openRun).2.2.2.trans
+          (comparisonPolicy.trans (valuePolicy.trans
+            ((trace.domainCheck.exposure_policy domainExposure).trans domainPolicy))))⟩
 
 /-- A key already occupied in the full cache cannot be missed. Key
 memoization leaves the maps unchanged, and full entries precede both policies. -/
@@ -575,6 +648,42 @@ theorem InferenceCacheTrace.populated_outside {fuel : Nat} {before : TcState .an
       have inferred := (domainTree.frame first trace.domainRun).1.full.trans keyed
       have second := valueIH inferred
       have checked := (valueTree.frame second trace.valueRun).1.full.trans inferred
+      have compared := (isDefEq_hash_frame hashPath trace.compareRun key).1.full.trans checked
+      have next := (openLet_frame key trace.openRun).full.trans compared
+      exact by
+        simpa only [writes, List.mem_cons, List.mem_append, not_or] using
+          ⟨miss.ne_populated stored, first, second, bodyIH next⟩
+  | forallSort miss trace domainExposure bodyExposure domainTree bodyTree domainIH bodyIH =>
+      have keyed : miss.keyed.env.inferCache[key]? = some cached := by
+        rw [inferKey_environment miss.keyRun]
+        exact stored
+      have first := domainIH keyed
+      have inferred := (domainTree.frame first trace.domainCheck.inferRun).1.full.trans keyed
+      have exposed := (trace.domainCheck.exposure_frame domainExposure key).full.trans inferred
+      have next := (openBinder_frame key trace.openRun).full.trans exposed
+      exact by
+        simpa only [writes, List.mem_cons, List.mem_append, not_or] using
+          ⟨miss.ne_populated stored, first, bodyIH next⟩
+  | lamSort full miss trace domainExposure domainTree bodyTree domainIH bodyIH =>
+      have keyed : miss.keyed.env.inferCache[key]? = some cached := by
+        rw [inferKey_environment miss.keyRun]
+        exact stored
+      have first := domainIH keyed
+      have inferred := (domainTree.frame first trace.domainCheck.inferRun).1.full.trans keyed
+      have exposed := (trace.domainCheck.exposure_frame domainExposure key).full.trans inferred
+      have next := (openBinder_frame key trace.openRun).full.trans exposed
+      exact by
+        simpa only [writes, List.mem_cons, List.mem_append, not_or] using
+          ⟨miss.ne_populated stored, first, bodyIH next⟩
+  | letSort full miss trace domainExposure hashPath domainTree valueTree bodyTree domainIH valueIH bodyIH =>
+      have keyed : miss.keyed.env.inferCache[key]? = some cached := by
+        rw [inferKey_environment miss.keyRun]
+        exact stored
+      have first := domainIH keyed
+      have inferred := (domainTree.frame first trace.domainCheck.inferRun).1.full.trans keyed
+      have exposed := (trace.domainCheck.exposure_frame domainExposure key).full.trans inferred
+      have second := valueIH exposed
+      have checked := (valueTree.frame second trace.valueRun).1.full.trans exposed
       have compared := (isDefEq_hash_frame hashPath trace.compareRun key).1.full.trans checked
       have next := (openLet_frame key trace.openRun).full.trans compared
       exact by

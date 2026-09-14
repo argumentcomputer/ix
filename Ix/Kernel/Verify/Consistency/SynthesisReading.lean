@@ -104,6 +104,42 @@ theorem SynthesisInference.outputReading {β : Type u}
       rw [full] at uncached
       rw [(trace.output_state uncached).1]
       exact (reduction.reading substitutedCoherent substitutedReading).1
+  | .forallSort miss trace _ _ _ _ _ _ coherent faithful => by
+      obtain ⟨state, run⟩ := infer_uncached_success miss accepted
+      rw [(trace.output_state run).1]
+      change readScopedExpr? resolve locals (trace.bodyCheck.after.env.intern.internExpr _).1 = _
+      rw [internExpr_readScopedExpr? coherent faithful]
+      rfl
+  | .lamSort full miss trace opening _ bodyTree reduction _ constructed bound coherent closingFaithful faithful => by
+      obtain ⟨state, run⟩ := infer_uncached_success miss accepted
+      rw [full] at run
+      obtain ⟨domainReads, bodyReads⟩ := readScopedExpr?_lam_parts reading
+      have keyedAgreement := miss.localContext.symm ▸ agreement
+      obtain ⟨openedReads, openedAgreement, _⟩ :=
+        trace.opened_reading opening keyedAgreement domainReads bodyReads
+      have bodyTypeReads := bodyTree.outputReading openedAgreement openedReads trace.bodyRun
+      obtain ⟨reducedReads, reducedCoherent⟩ := reduction.reading coherent bodyTypeReads
+      obtain ⟨closedReads, closedCoherent⟩ := abstractFVars_readScopedExpr? constructed bound
+        reducedCoherent closingFaithful reducedReads
+      rw [(trace.output_state run).1]
+      change readScopedExpr? resolve locals (trace.abstracted.2.internExpr _).1 = _
+      rw [internExpr_readScopedExpr? (table := trace.abstracted.2) closedCoherent faithful]
+      simp [LambdaSortInferenceTrace.abstracted, LambdaSortInferenceTrace.reduced, domainReads,
+        AExpr.erase] at ⊢ closedReads
+      exact closedReads
+  | .letSort full localState miss trace opening _ _ bodyTree domainReading valueReading bodyReading
+      _ _ _ substitution reduction => by
+      have keyedValid := miss.keyedLocalState localState
+      have keyedAgreement := miss.localContext.symm ▸ agreement
+      obtain ⟨openedReading, openedAgreement, _⟩ :=
+        trace.opened_reading opening keyedValid keyedAgreement domainReading bodyReading
+      have bodyTypeReading := bodyTree.outputReading openedAgreement openedReading trace.bodyRun
+      obtain ⟨substitutedReading, substitutedCoherent⟩ :=
+        trace.substituted_reading substitution bodyTypeReading valueReading
+      obtain ⟨middle, uncached⟩ := infer_uncached_success miss accepted
+      rw [full] at uncached
+      rw [(trace.output_state uncached).1]
+      exact (reduction.reading substitutedCoherent substitutedReading).1
 termination_by structural support
 
 end Ix.Kernel.Consistency

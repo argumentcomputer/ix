@@ -121,6 +121,13 @@ def InferenceCacheTrace.events {fuel : Nat} {before after : TcState .anon}
   | .letE _ miss trace _ domainTree valueTree bodyTree =>
       domainTree.events trace.domainRun ++ valueTree.events trace.valueRun ++
         bodyTree.events trace.bodyRun ++ [.ofRun miss accepted]
+  | .forallSort miss trace _ _ domainTree bodyTree =>
+      domainTree.events trace.domainCheck.inferRun ++ bodyTree.events trace.bodyCheck.inferRun ++ [.ofRun miss accepted]
+  | .lamSort _ miss trace _ domainTree bodyTree =>
+      domainTree.events trace.domainCheck.inferRun ++ bodyTree.events trace.bodyRun ++ [.ofRun miss accepted]
+  | .letSort _ miss trace _ _ domainTree valueTree bodyTree =>
+      domainTree.events trace.domainCheck.inferRun ++ valueTree.events trace.valueRun ++
+        bodyTree.events trace.bodyRun ++ [.ofRun miss accepted]
 termination_by structural tree
 
 /-- Actual child publications, before the enclosing miss writes its result. -/
@@ -134,6 +141,10 @@ def InferenceCacheTrace.childEvents {fuel : Nat} {before : TcState .anon} {sourc
   | .lamBody _ _ trace first second => first.events trace.domainRun ++ second.events trace.bodyRun
   | .letE _ _ trace _ first second third =>
       first.events trace.domainRun ++ second.events trace.valueRun ++ third.events trace.bodyRun
+  | .forallSort _ trace _ _ first second => first.events trace.domainCheck.inferRun ++ second.events trace.bodyCheck.inferRun
+  | .lamSort _ _ trace _ first second => first.events trace.domainCheck.inferRun ++ second.events trace.bodyRun
+  | .letSort _ _ trace _ _ first second third =>
+      first.events trace.domainCheck.inferRun ++ second.events trace.valueRun ++ third.events trace.bodyRun
 
 private theorem openBinder_maps {name : Mode.anon.F Name} {bi : Mode.anon.F Lean.BinderInfo}
     {domain body opened : KExpr .anon} {fresh : FVarId} {before after : TcState .anon}
@@ -307,5 +318,47 @@ theorem InferenceCacheTrace.cache_maps {fuel : Nat} {before after : TcState .ano
           (comparisonFull.trans (valueFull.trans (congrArg _ domainFull))))),
         bodyOnly.trans (congrArg _ (opened.2.1.trans
           (comparisonOnly.trans (valueOnly.trans (congrArg _ domainOnly)))))⟩
+  | forallSort miss trace domainExposure bodyExposure domainTree bodyTree domainIH bodyIH =>
+      apply miss_maps miss accepted
+        (domainTree.events trace.domainCheck.inferRun ++ bodyTree.events trace.bodyCheck.inferRun)
+      intro middle run
+      obtain ⟨domainFull, domainOnly⟩ := domainIH trace.domainCheck.inferRun
+      obtain ⟨bodyFull, bodyOnly⟩ := bodyIH trace.bodyCheck.inferRun
+      obtain ⟨domainExposedFull, domainExposedOnly⟩ := trace.domainCheck.exposure_maps domainExposure
+      obtain ⟨bodyExposedFull, bodyExposedOnly⟩ := trace.bodyCheck.exposure_maps bodyExposure
+      obtain ⟨openedFull, openedOnly⟩ := openBinder_maps trace.openRun
+      rw [(trace.output_state run).2]
+      simp only [InferenceCacheEvent.applyFull_append, InferenceCacheEvent.applyOnly_append]
+      exact ⟨bodyExposedFull.trans (bodyFull.trans (congrArg _ (openedFull.trans (domainExposedFull.trans domainFull)))),
+        bodyExposedOnly.trans (bodyOnly.trans (congrArg _ (openedOnly.trans (domainExposedOnly.trans domainOnly))))⟩
+  | lamSort full miss trace domainExposure domainTree bodyTree domainIH bodyIH =>
+      apply miss_maps miss accepted (domainTree.events trace.domainCheck.inferRun ++ bodyTree.events trace.bodyRun)
+      intro middle run
+      rw [full] at run
+      obtain ⟨domainFull, domainOnly⟩ := domainIH trace.domainCheck.inferRun
+      obtain ⟨bodyFull, bodyOnly⟩ := bodyIH trace.bodyRun
+      obtain ⟨domainExposedFull, domainExposedOnly⟩ := trace.domainCheck.exposure_maps domainExposure
+      obtain ⟨openedFull, openedOnly⟩ := openBinder_maps trace.openRun
+      rw [(trace.output_state run).2]
+      simp only [InferenceCacheEvent.applyFull_append, InferenceCacheEvent.applyOnly_append]
+      exact ⟨bodyFull.trans (congrArg _ (openedFull.trans (domainExposedFull.trans domainFull))),
+        bodyOnly.trans (congrArg _ (openedOnly.trans (domainExposedOnly.trans domainOnly)))⟩
+  | letSort full miss trace domainExposure hashPath domainTree valueTree bodyTree domainIH valueIH bodyIH =>
+      apply miss_maps miss accepted (domainTree.events trace.domainCheck.inferRun ++ valueTree.events trace.valueRun ++
+        bodyTree.events trace.bodyRun)
+      intro middle run
+      rw [full] at run
+      obtain ⟨domainFull, domainOnly⟩ := domainIH trace.domainCheck.inferRun
+      obtain ⟨valueFull, valueOnly⟩ := valueIH trace.valueRun
+      obtain ⟨bodyFull, bodyOnly⟩ := bodyIH trace.bodyRun
+      obtain ⟨domainExposedFull, domainExposedOnly⟩ := trace.domainCheck.exposure_maps domainExposure
+      obtain ⟨comparisonFull, comparisonOnly⟩ := hash_maps hashPath trace.compareRun
+      have opened := openLet_inference_state trace.openRun
+      rw [(trace.output_state run).2]
+      simp only [InferenceCacheEvent.applyFull_append, InferenceCacheEvent.applyOnly_append]
+      exact ⟨bodyFull.trans (congrArg _ (opened.1.trans
+          (comparisonFull.trans (valueFull.trans (congrArg _ (domainExposedFull.trans domainFull)))))),
+        bodyOnly.trans (congrArg _ (opened.2.1.trans
+          (comparisonOnly.trans (valueOnly.trans (congrArg _ (domainExposedOnly.trans domainOnly))))))⟩
 
 end Ix.Kernel.Consistency

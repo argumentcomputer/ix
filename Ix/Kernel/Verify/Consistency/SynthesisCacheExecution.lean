@@ -92,9 +92,17 @@ def complete (data : SynthesisCacheSupplement resolve anchor entries fuel before
       | lamBody full miss trace domainTree bodyTree =>
           exact children.append (.singleton (.ofSource tree contextOrigin agreement reading miss accepted))
       | letE full miss trace hashPath domainTree valueTree bodyTree =>
+          exact children.append (.singleton (.ofSource tree contextOrigin agreement reading miss accepted))
+      | forallSort miss trace domainExposure bodyExposure domainTree bodyTree =>
+          exact children.append (.singleton (.ofSource tree contextOrigin agreement reading miss accepted))
+      | lamSort full miss trace domainExposure domainTree bodyTree =>
+          exact children.append (.singleton (.ofSource tree contextOrigin agreement reading miss accepted))
+      | letSort full miss trace domainExposure hashPath domainTree valueTree bodyTree =>
           exact children.append (.singleton (.ofSource tree contextOrigin agreement reading miss accepted)) }
 
 end SynthesisCacheSupplement
+
+mutual
 
 /-- Rich synthesis nodes already retain both actual children. Additional
 checking annotations are needed only at the older BinderInference wrappers;
@@ -113,7 +121,24 @@ def SynthesisInference.CacheData {β : Type u} {resolve : Address → Option (Co
     .lamBeta _ _ _ _ first second .. => first.CacheData anchor × second.CacheData anchor
   | .letE _ _ _ _ _ domain value body .. =>
       domain.CacheData anchor × value.CacheData anchor × body.CacheData anchor
+  | .forallSort _ _ _ domain body .. => domain.CacheData anchor × body.CacheData anchor
+  | .lamSort _ _ _ _ domain body .. => domain.CacheData anchor × body.CacheData anchor
+  | .letSort _ _ _ _ _ domain value body .. =>
+      domain.CacheData anchor × value.CacheData anchor × body.CacheData anchor
 termination_by structural tree
+
+def SynthesisSortCheck.CacheData {β : Type u} {resolve : Address → Option (ConstRef β)}
+    (anchor : Model.Environment β) {entries : Model.Environment β} {locals : List FVarId}
+    {context : Model.Context β} {bounds : List VLevel} {fuel : Nat} {before : TcState .anon}
+    {source : KExpr .anon} {trace : SortInferenceTrace fuel before source} {term : AExpr β}
+    (check : SynthesisSortCheck resolve entries locals context bounds trace term) : Type (u + 1) :=
+  match check with
+  | .checked tree .. => tree.CacheData anchor
+termination_by structural check
+
+end
+
+mutual
 
 /-- Extract every full publication's checking origin from the original
 synthesis recursion. Binder contexts come from its executed domain checks,
@@ -224,7 +249,73 @@ def SynthesisInference.cacheExecution {β : Type u} {resolve : Address → Optio
         ((domainRun.checks.append valueRun.checks).append bodyRun.checks)).complete
           (.letE full localState miss trace opening domainTree valueTree bodyTree domainReading valueReading bodyReading
             conditions hashPath comparisonFaithful substitution reduction) contextOrigin agreement reading accepted
+  | .forallSort miss trace opening domainCheck bodyCheck levelFaithful domainBound bodyBound coherent faithful =>
+      fun data contextOrigin agreement reading accepted => by
+      obtain ⟨domainReading, bodyReading⟩ := readScopedExpr?_all_parts reading
+      have keyedAgreement := miss.localContext.symm ▸ agreement
+      let domainRun := domainCheck.cacheExecution data.1 contextOrigin keyedAgreement domainReading
+      obtain ⟨openedReading, openedAgreement, _⟩ :=
+        trace.opened_reading opening keyedAgreement domainReading bodyReading
+      let bodyRun := bodyCheck.cacheExecution data.2
+        (.pushSort contextOrigin domainCheck keyedAgreement domainReading) openedAgreement openedReading
+      exact (SynthesisCacheSupplement.mk
+        (.forallSort miss trace domainCheck.exposure bodyCheck.exposure domainRun.trace bodyRun.trace)
+        (domainRun.checks.append bodyRun.checks)).complete
+          (.forallSort miss trace opening domainCheck bodyCheck levelFaithful domainBound bodyBound coherent faithful)
+          contextOrigin agreement reading accepted
+  | .lamSort full miss trace opening domainCheck bodyTree reduction conditionAgrees
+      constructed bound coherent closingFaithful faithful => fun data contextOrigin agreement reading accepted => by
+      obtain ⟨domainReading, bodyReading⟩ := readScopedExpr?_lam_parts reading
+      have keyedAgreement := miss.localContext.symm ▸ agreement
+      let domainRun := domainCheck.cacheExecution data.1 contextOrigin keyedAgreement domainReading
+      obtain ⟨openedReading, openedAgreement, _⟩ :=
+        trace.opened_reading opening keyedAgreement domainReading bodyReading
+      let bodyRun := bodyTree.cacheExecution data.2
+        (.pushSort contextOrigin domainCheck keyedAgreement domainReading)
+        openedAgreement openedReading trace.bodyRun
+      exact (SynthesisCacheSupplement.mk
+        (.lamSort full miss trace domainCheck.exposure domainRun.trace bodyRun.trace)
+        (domainRun.checks.append bodyRun.checks)).complete
+          (.lamSort full miss trace opening domainCheck bodyTree reduction conditionAgrees
+            constructed bound coherent closingFaithful faithful) contextOrigin agreement reading accepted
+  | .letSort full localState miss trace opening domainCheck valueTree bodyTree domainReading valueReading bodyReading
+      conditions hashPath comparisonFaithful substitution reduction =>
+      fun data contextOrigin agreement reading accepted => by
+      have keyedValid := miss.keyedLocalState localState
+      have keyedAgreement := miss.localContext.symm ▸ agreement
+      let domainRun := domainCheck.cacheExecution data.1 contextOrigin keyedAgreement domainReading
+      let valueRun := valueTree.cacheExecution data.2.1 contextOrigin
+        (keyedAgreement.congr (trace.domainContext keyedValid).symm) valueReading trace.valueRun
+      obtain ⟨openedReading, openedAgreement, _⟩ :=
+        trace.opened_reading opening keyedValid keyedAgreement domainReading bodyReading
+      let bodyRun := bodyTree.cacheExecution data.2.2
+        (.pushSort contextOrigin domainCheck keyedAgreement domainReading)
+        openedAgreement openedReading trace.bodyRun
+      exact (SynthesisCacheSupplement.mk
+        (.letSort full miss trace domainCheck.exposure hashPath domainRun.trace valueRun.trace bodyRun.trace)
+        ((domainRun.checks.append valueRun.checks).append bodyRun.checks)).complete
+          (.letSort full localState miss trace opening domainCheck valueTree bodyTree domainReading valueReading bodyReading
+            conditions hashPath comparisonFaithful substitution reduction) contextOrigin agreement reading accepted
 termination_by structural tree
+
+/-- Sort exposure adds no inference-cache writes. The producing inference
+event retains the original tree at its actual, possibly unreduced, result type. -/
+def SynthesisSortCheck.cacheExecution {β : Type u} {resolve : Address → Option (ConstRef β)}
+    {anchor entries : Model.Environment β} {locals : List FVarId} {context : Model.Context β}
+    {bounds : List VLevel} {fuel : Nat} {before : TcState .anon} {source : KExpr .anon}
+    {trace : SortInferenceTrace fuel before source} {term : AExpr β}
+    (check : SynthesisSortCheck resolve entries locals context bounds trace term) :
+    check.CacheData anchor →
+    SynthesisContext resolve anchor [] [] entries context bounds →
+    LocalContextReading resolve locals before.lctx context →
+    readScopedExpr? resolve locals source = some term.erase →
+    SynthesisCacheRun resolve anchor entries trace.inferRun :=
+  match check with
+  | .checked tree .. => fun data contextOrigin agreement reading =>
+      tree.cacheExecution data contextOrigin agreement reading trace.inferRun
+termination_by structural check
+
+end
 
 /-- A successful synthesis call extends the complete typed cache history.
 New event annotations are extracted from its original checking tree. -/

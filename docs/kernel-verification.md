@@ -112,6 +112,19 @@ increasing sequence of strongly inaccessible cardinals.
   `LetInferenceCheck.asSynthesis` connects that interface to the recursive case.
   Finite execution, collision, walker, and selected beta-origin resources
   remain explicit, and their general automatic construction remains open.
+- `SortInferenceTrace` records inference followed by the actual sort-exposure
+  call. Successful forall, lambda, and let branches supply these observations
+  through `ofInference`; both children of a forall may need reduction to expose
+  their sorts. `SynthesisSortCheck` retains each child's original inference
+  and converts its returned type using checked beta origins. The recursive
+  synthesis rules form binder contexts from the exposed level and preserve
+  later beta derivations and typed cache histories. Exposure supports direct
+  sorts, the existing public beta WHNF path, and its outer-cache hit. It
+  preserves both inference-cache maps, so a child publication retains its
+  original, possibly unreduced, type. Earlier retained type checks construct
+  the conversion resource without a semantic typing premise. Finite reader,
+  collision, reduction, and source-checking resources remain explicit;
+  arbitrary reduction and automatic construction of those resources remain open.
 - `MethodsLocalState.methodsN` proves structural local-state preservation for
   every production recursive table, including all inference, reduction, and
   conversion branches. The public inference, WHNF, conversion, and sort/forall
@@ -421,6 +434,11 @@ def callReturned.{u} (A : Sort u) (a : A) : A := ((fun x : A => fun y : A => x) 
   follows the selected plan through substitution and interning, and lambda
   abstraction uses that reduction's output table. No new check of the
   generated result is assumed.
+  The `forallSort`, `lamSort`, and `letSort` cases also admit domains whose
+  inferred types need supported public beta WHNF or a recorded cache hit to
+  expose their sort. Forall bodies use the same sort-check resource. Their
+  successful production calls determine all intermediate observations, while
+  representation resources and retained reduction origins remain explicit.
   Retained codomain checks now also cross dependent term substitution.
   `SynthesisTypeCheck.forallBody` extracts the actual codomain call from the
   earlier function-type tree. `SynthesisCheckedOrigin.applicationArgument`
@@ -583,7 +601,7 @@ lake test --wfail -- tc-unit
 lake -d Models/SetTheory build --wfail
 ```
 
-The consistency target checks 1,281 exact theorem boundaries. The production
+The consistency target checks 1,336 exact theorem boundaries. The production
 environment roots retain four existing generated output-length proofs,
 reached through expression/universe construction, names, and the full
 production method table. They introduce no new native proofs. The model
@@ -592,6 +610,9 @@ extension lemma and `ModelTyping.no_false` use only `propext`,
 The production roots additionally forbid the abstract
 `CheckSuccessSound`/`SupportedCheckFragment` interfaces and the independent
 certificate validator in their dependency closures.
+Sort-exposure traces, source resources, beta derivation producers, and cache
+history constructors additionally forbid the semantic hereditary invariant;
+the soundness induction derives that invariant after source reconstruction.
 
 The polymorphic inference, substitution, and binder inference roots retain only the two existing
 expression/universe output-length proofs, alongside the standard Lean axioms.
@@ -951,7 +972,12 @@ and cleanup after value-comparison and body-inference failures. They include
 lets in binder domains and bodies, function positions, nested values, composite
 declaration types, and failures inside nested scopes. They exercise production
 independently of the finite resources used by the proof.
-The unit suite contains 726 checks. The anonymous differential additionally
+Five sort-exposure regressions cover forall, lambda, and let checks in Prop,
+Type, and parameterized universes; persistent and cleared caches; exact child
+publications; warm exposure at zero method fuel; changed lambda-body beta;
+and rejection of a reduced function type with local-scope cleanup. They also
+exercise instrumentation and acceleration flags.
+The unit suite contains 731 checks. The anonymous differential additionally
 serializes eleven cycle-policy fixtures and checks exact target sets, verdicts,
 failure counts, and cycle diagnostics in both implementations.
 
@@ -997,6 +1023,7 @@ The VM pilot is preserved in the frozen archive and excluded from the host gate.
 | Dependent binders and function bodies | [`Consistency/BinderInference.lean`](../Ix/Kernel/Verify/Consistency/BinderInference.lean), [`Application.lean`](../Ix/Kernel/Verify/Consistency/Application.lean), [`BinderOpening.lean`](../Ix/Kernel/Verify/Consistency/BinderOpening.lean), [`Context.lean`](../Ix/Kernel/Verify/Consistency/Context.lean), [`Model/Checking.lean`](../Ix/Theory/Model/Checking.lean) |
 | Inferred type formation and direct lambda applications | [`Consistency/SynthesisInference.lean`](../Ix/Kernel/Verify/Consistency/SynthesisInference.lean), [`Formation.lean`](../Ix/Kernel/Verify/Consistency/Formation.lean), [`Model/UniverseBounds.lean`](../Ix/Theory/Model/UniverseBounds.lean) |
 | Recursive synthesis support and returned syntax readings | [`Consistency/SynthesisSupport.lean`](../Ix/Kernel/Verify/Consistency/SynthesisSupport.lean), [`SynthesisReading.lean`](../Ix/Kernel/Verify/Consistency/SynthesisReading.lean), [`SynthesisSource.lean`](../Ix/Kernel/Verify/Consistency/SynthesisSource.lean) |
+| Executed sort exposure and recursive binder checks | [`Consistency/SortInference.lean`](../Ix/Kernel/Verify/Consistency/SortInference.lean), [`BetaPublicWhnf.lean`](../Ix/Kernel/Verify/Consistency/BetaPublicWhnf.lean), [`BetaWhnfInference.lean`](../Ix/Kernel/Verify/Consistency/BetaWhnfInference.lean) |
 | Retained derivations, dependent substitution, and semantic induction | [`Consistency/SynthesisDerivation.lean`](../Ix/Kernel/Verify/Consistency/SynthesisDerivation.lean), [`SynthesisShapes.lean`](../Ix/Kernel/Verify/Consistency/SynthesisShapes.lean), [`SynthesisReduction.lean`](../Ix/Kernel/Verify/Consistency/SynthesisReduction.lean), [`SynthesisMeaning.lean`](../Ix/Kernel/Verify/Consistency/SynthesisMeaning.lean), [`BinderMeaning.lean`](../Ix/Kernel/Verify/Consistency/BinderMeaning.lean), [`BetaChecking.lean`](../Ix/Kernel/Verify/Consistency/BetaChecking.lean) |
 | Let inference and typed cache history | [`Consistency/LetInference.lean`](../Ix/Kernel/Verify/Consistency/LetInference.lean), [`LetSynthesis.lean`](../Ix/Kernel/Verify/Consistency/LetSynthesis.lean), [`LetCache.lean`](../Ix/Kernel/Verify/Consistency/LetCache.lean), [`SynthesisCacheExecution.lean`](../Ix/Kernel/Verify/Consistency/SynthesisCacheExecution.lean) |
 | Public beta WHNF, cache writes, and application Pi exposure | [`Consistency/BetaPublicWhnf.lean`](../Ix/Kernel/Verify/Consistency/BetaPublicWhnf.lean), [`ApplicationWhnf.lean`](../Ix/Kernel/Verify/Consistency/ApplicationWhnf.lean), [`BetaWhnfInference.lean`](../Ix/Kernel/Verify/Consistency/BetaWhnfInference.lean) |

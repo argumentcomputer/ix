@@ -449,4 +449,75 @@ theorem context (exposure : BetaPiExposure resolve locals fuel before source ter
 
 end BetaPiExposure
 
+/-- Sort exposure follows the syntactic branch, a public beta reduction,
+or an exact cached result of that reduction. The level is the one returned
+by the actual exposure call. -/
+inductive BetaSortExposure {β : Type u} (resolve : Address → Option (ConstRef β))
+    (locals : List FVarId) (fuel : Nat) (before : TcState .anon) :
+    KExpr .anon → AExpr β → KUniv .anon → Type u
+  | direct (level : KUniv .anon) (info : ExprInfo .anon) :
+      BetaSortExposure resolve locals fuel before (.sort level info) (.sort (readLevel level)) level
+  | reduce {source term level info}
+      (plan : BetaPublicWhnfPlan resolve locals fuel before source term
+        (.sort level info) (.sort (readLevel level))) :
+      BetaSortExposure resolve locals fuel before source term level
+  | cached {originFuel originBefore source term level info}
+      (origin : BetaPublicWhnfPlan resolve locals originFuel originBefore source term
+        (.sort level info) (.sort (readLevel level)))
+      (hit : (BetaPublicWhnf.outerKey source before).2.env.whnfCache[
+        (BetaPublicWhnf.outerKey source before).1]? = some (.sort level info)) :
+      BetaSortExposure resolve locals fuel before source term level
+
+namespace BetaSortExposure
+
+variable {β : Type u} {resolve : Address → Option (ConstRef β)} {locals : List FVarId}
+  {fuel : Nat} {before : TcState .anon} {source : KExpr .anon} {term : AExpr β} {level : KUniv .anon}
+
+def after (exposure : BetaSortExposure resolve locals fuel before source term level) : TcState .anon :=
+  match exposure with
+  | .direct .. => before
+  | .reduce plan => plan.after
+  | .cached .. => (BetaPublicWhnf.outerKey source before).2
+
+theorem run (exposure : BetaSortExposure resolve locals fuel before source term level) :
+    (RecM.ensureSortDirect source).run (methodsN (fuel + 1)) before = .ok level exposure.after := by
+  cases exposure with
+  | direct => rfl
+  | reduce plan =>
+      have first := plan.path.first plan.moving
+      have entry : RecM.ensureSortDirect source = RecM.ensureSortWhnf source := by
+        rw [first.sourceEq]; rfl
+      rw [entry, RecM.ensureSortWhnf, ReaderT.run_bind]
+      change EStateM.bind ((RecM.whnf source).run (methodsN (fuel + 1))) _ before = _
+      rw [EStateM.bind, plan.run]
+      rfl
+  | cached origin hit =>
+      have first := origin.path.first origin.moving
+      have entry : RecM.ensureSortDirect source = RecM.ensureSortWhnf source := by
+        rw [first.sourceEq]; rfl
+      rw [entry, RecM.ensureSortWhnf, ReaderT.run_bind]
+      change EStateM.bind ((RecM.whnf source).run (methodsN (fuel + 1))) _ before = _
+      rw [EStateM.bind, origin.cache_hit _ _ hit]
+      rfl
+
+theorem coherent (exposure : BetaSortExposure resolve locals fuel before source term level)
+    (reading : readScopedExpr? resolve locals source = some term.erase)
+    (initial : before.env.intern.WF) : exposure.after.env.intern.WF := by
+  cases exposure with
+  | direct => exact initial
+  | reduce plan => exact (plan.reading reading initial).2
+  | cached origin hit =>
+      simpa only [after, BetaPublicWhnf.outerKey, betaWhnfKey_environment,
+        (betaWhnfPrefix_fields before).1] using initial
+
+theorem context (exposure : BetaSortExposure resolve locals fuel before source term level) :
+    exposure.after.lctx = before.lctx := by
+  cases exposure with
+  | direct => rfl
+  | reduce plan => exact plan.context
+  | cached origin hit =>
+      simp only [after, BetaPublicWhnf.outerKey, betaWhnfKey_context, (betaWhnfPrefix_fields before).2.1]
+
+end BetaSortExposure
+
 end Ix.Kernel.Consistency

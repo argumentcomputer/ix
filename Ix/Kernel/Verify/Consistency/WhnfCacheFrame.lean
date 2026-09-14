@@ -101,4 +101,40 @@ theorem BetaPiExposure.inference_maps {β : Type u} {resolve : Address → Optio
         simp only [BetaPiExposure.after, BetaPublicWhnf.outerKey, betaWhnfKey_environment,
           (betaWhnfPrefix_fields before).1]
 
+namespace BetaSortExposure
+
+variable {β : Type u} {resolve : Address → Option (ConstRef β)} {locals : List FVarId}
+  {fuel : Nat} {before : TcState .anon} {source : KExpr .anon} {term : AExpr β} {level : KUniv .anon}
+
+theorem inference_frame (exposure : BetaSortExposure resolve locals fuel before source term level)
+    (key : Address × Address) : InferenceCacheFrame key before exposure.after := by
+  cases exposure with
+  | direct => exact .refl key _
+  | reduce plan => exact plan.inference_frame key
+  | cached origin hit =>
+      apply InferenceCacheFrame.of_eq <;>
+        simp only [after, BetaPublicWhnf.outerKey, betaWhnfKey_environment,
+          (betaWhnfPrefix_fields before).1]
+
+theorem policy (exposure : BetaSortExposure resolve locals fuel before source term level) :
+    exposure.after.inferOnly = before.inferOnly := by
+  cases exposure with
+  | direct => rfl
+  | reduce plan => exact plan.policy
+  | cached origin hit =>
+      simp only [after, BetaPublicWhnf.outerKey, betaWhnfKey_policy, betaWhnfPrefix_policy]
+
+theorem inference_maps (exposure : BetaSortExposure resolve locals fuel before source term level) :
+    exposure.after.env.inferCache = before.env.inferCache ∧
+      exposure.after.env.inferOnlyCache = before.env.inferOnlyCache := by
+  cases exposure with
+  | direct => exact ⟨rfl, rfl⟩
+  | reduce plan => exact plan.inference_maps
+  | cached origin hit =>
+      constructor <;>
+        simp only [after, BetaPublicWhnf.outerKey, betaWhnfKey_environment,
+          (betaWhnfPrefix_fields before).1]
+
+end BetaSortExposure
+
 end Ix.Kernel.Consistency
