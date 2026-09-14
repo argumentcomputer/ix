@@ -57,6 +57,8 @@ def BinderInference.betaTyping {β : Type u} {resolve : Address → Option (Cons
       exact .lam origin (bodyTree.betaTyping (.lambdaBody origin) openedAgreement openedReading)
 termination_by structural support
 
+mutual
+
 /-- Every currently supported source-inference branch supplies its own
 beta derivation. Lambda inference's changed body type becomes a forward
 conversion node, retaining the original body's complete checked structure. -/
@@ -74,6 +76,8 @@ def SynthesisInference.betaTyping {β : Type u} {resolve : Address → Option (C
   match support with
   | .cached tree priorAgreement priorReading priorRun _ _ _ => fun contextOrigin _ _ _ formed =>
       tree.betaTyping contextOrigin priorAgreement priorReading priorRun formed
+  | .cachedFrom check _ _ => fun contextOrigin _ _ _ formed =>
+      (check.betaTyping (contextOrigin.sound formed)).rebase contextOrigin
   | node@(.known inference _) => fun contextOrigin agreement reading accepted _ =>
       inference.betaTyping (.source (.checked contextOrigin node agreement reading accepted)) agreement reading
   | node@(.reuseType inference ..) => fun contextOrigin agreement reading accepted _ =>
@@ -146,6 +150,22 @@ def SynthesisInference.betaTyping {β : Type u} {resolve : Address → Option (C
         exact .lam (.source (.checked contextOrigin node agreement reading accepted))
           (.convert inner (.rebase contextOrigin (.origin reductionOrigin)))
 termination_by structural support
+
+def SynthesisRetainedCheck.betaTyping {β : Type u} {resolve : Address → Option (ConstRef β)}
+    {incoming entries : Model.Environment β} {incomingContext context : Model.Context β}
+    {incomingBounds : List VLevel} {term type : AExpr β} {level : VLevel}
+    (check : SynthesisRetainedCheck resolve incoming incomingContext incomingBounds entries context term type level) :
+    ContextFormation.{u,v} incoming incomingContext incomingBounds →
+      SynthesisBetaTyping resolve incoming incomingContext incomingBounds entries context term type :=
+  match check with
+  | .source contextOrigin tree agreement reading accepted => fun formed =>
+      tree.betaTyping contextOrigin agreement reading accepted formed
+  | .extend prior extension => fun formed => (prior.betaTyping formed).extend extension
+  | .weakenAt prior insertion => fun formed => (prior.betaTyping formed).weakenAt insertion
+  | .rebase origin prior => fun formed => (prior.betaTyping (origin.sound formed)).rebase origin
+termination_by structural check
+
+end
 
 theorem SynthesisInference.beta_steps_sound {β : Type u} {resolve : Address → Option (ConstRef β)}
     {entries : Model.Environment β} {context : Model.Context β} {bounds : List VLevel} {locals : List FVarId}

@@ -147,6 +147,52 @@ private def synthesisCacheRoots : Array Lean.Name := #[
   ``BetaPiExposure.inference_frame, ``BetaPiExposure.policy
 ]
 
+private def cacheTransportRoots : Array RootAllowance := #[
+  { root := ``liftedSpineView, standardAxioms := #[``propext] },
+  { root := ``liftedForallView },
+  { root := ``liftedLambdaView },
+  { root := ``liftedApplicationView },
+  { root := ``liftedVariableSpineView, standardAxioms := #[``propext] },
+  { root := ``liftN_sort_inv },
+  { root := ``InterfaceExtends.conversion, standardAxioms := standard },
+  { root := ``InterfaceExtends.argumentSpine, standardAxioms := standard },
+  { root := ``InterfaceExtends.lambdaSpine, standardAxioms := standard },
+  { root := ``ContextInsertion.argumentSpine, standardAxioms := standard },
+  { root := ``ContextInsertion.lambdaSpine, standardAxioms := standard }
+] ++ #[
+  ``SynthesisRetainedCheck.forallBody,
+  ``SynthesisRetainedCheck.variableSpineOrigin,
+  ``SynthesisRetainedCheck.lambdaBodyVariableSpine,
+  ``SynthesisRetainedCheck.lambdaPrefix,
+  ``SynthesisRetainedCheck.origin,
+  ``SynthesisRetainedCheck.typeOrigin,
+  ``SynthesisRetainedCheck.spineOrigin,
+  ``SynthesisRetainedCheck.soundWithSpine,
+  ``SynthesisRetainedCheck.betaNextOrigin,
+  ``SynthesisRetainedCheck.betaTyping,
+  ``SynthesisVariableSpineOrigin.weakenAt,
+  ``SynthesisVariableSpineOrigin.rebase,
+  ``SynthesisArgumentSpineOrigin.weakenAt,
+  ``SynthesisArgumentSpineOrigin.rebase,
+  ``SynthesisSpineOrigin.extend,
+  ``SynthesisSpineOrigin.weakenAt,
+  ``SynthesisSpineOrigin.rebase,
+  ``SynthesisReductionOrigin.weakenAt,
+  ``SynthesisBetaTyping.extend,
+  ``SynthesisBetaTyping.rebase,
+  ``CachedSynthesisCheck.ofFull,
+  ``CachedSynthesisCheck.ofClosedFull,
+  ``CachedSynthesisCheck.frame,
+  ``CachedSynthesisCheck.extend,
+  ``CachedSynthesisCheck.weaken,
+  ``CachedSynthesisCheck.afterOpenBinder,
+  ``CachedSynthesisCheck.afterInference,
+  ``CachedSynthesisCheck.hit,
+  ``CachedSynthesisCheck.support,
+  ``CachedSynthesisCheck.run,
+  ``CachedSynthesisCheck.sound
+].map (fun root => { root, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] })
+
 private def lazyCacheRoots : Array Lean.Name := #[
   ``ingressAnonStandalone_cache, ``ingressAnonAddrShallow_cache, ``lazyIngressAddr_cache,
   ``tryGetConst_standalone_cache, ``getConst_standalone_cache,
@@ -666,7 +712,7 @@ def roots : Array RootAllowance := #[
   root, standardAxioms := standard, nativeAxioms := productionNative,
   forbiddenDependencies := forbiddenProduction
 }) ++ (betaRoots ++ typeOriginRoots ++ substitutedOriginRoots ++ exposedOriginRoots ++
-    repeatedBetaRoots ++ betaTraceRoots ++ hereditaryBetaRoots ++ piExposureRoots).map (fun allowance => {
+    repeatedBetaRoots ++ betaTraceRoots ++ hereditaryBetaRoots ++ piExposureRoots ++ cacheTransportRoots).map (fun allowance => {
     allowance with forbiddenDependencies := forbiddenProduction })
   ++ #[{ root := ``extend_atomic_definition, standardAxioms := standard }]
 

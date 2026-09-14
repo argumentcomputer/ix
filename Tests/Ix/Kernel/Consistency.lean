@@ -3278,6 +3278,93 @@ private def compositeLocalCacheKeys : Bool :=
   | .ok passed after => passed && after.lctx.size == 0
   | .error _ _ => false
 
+/-- A cached dependent lambda and its Pi type capture two locals. New
+loaded declarations and two more dependent locals intervene before the
+lambda is applied and reduced; the same raw cache entries remain valid. -/
+private def compositeCapturedTransport (typeLevel : Bool) : Bool :=
+  let sortLevel := if typeLevel then levelOne else KUniv.mkZero
+  let sort := KExpr.mkSort (m := .anon) sortLevel
+  let action : RecM .anon Bool := RecM.withLctxScope do
+    let (carrier, _) ← TcM.openBinder () () sort (.mkVar 0 ())
+    let (family, _) ← TcM.openBinder () () (.mkAll () () carrier sort) (.mkVar 0 ())
+    let innerDomain := KExpr.mkApp family (.mkVar 0 ())
+    let source := KExpr.mkLam () () carrier (.mkLam () () innerDomain (.mkVar 0 ()))
+    let expected := KExpr.mkAll () () carrier
+      (.mkAll () () innerDomain (.mkApp family (.mkVar 1 ())))
+    let piType ← RecM.inferCall expected
+    let initial ← RecM.inferCall source
+    let before ← get
+    if initial != expected || !compositeReplayAt source expected before ||
+        !compositeReplayAt expected piType before then return false
+    let unrelated := KExpr.mkApp (.mkConst ⟨polymorphicIdentity.2, ()⟩ #[levelOne]) (.mkSort .mkZero)
+    let _ ← RecM.inferCall unrelated
+    if (← get).env.consts.size ≤ before.env.consts.size then return false
+    let used ← RecM.withLctxScope do
+      let (argument, _) ← TcM.openBinder () () carrier (.mkVar 0 ())
+      let argumentType := KExpr.mkApp family argument
+      let (witness, _) ← TcM.openBinder () () argumentType (.mkVar 0 ())
+      let replayed ← RecM.inferCall source
+      let checkedPi ← RecM.inferCall expected
+      if replayed != expected || checkedPi != piType ||
+          !compositeReplayAt source expected (← get) || !compositeReplayAt expected piType (← get) then
+        return false
+      let application := KExpr.mkApp (.mkApp source argument) witness
+      let inferred ← RecM.inferCall application
+      let reduced ← RecM.whnfCoreWithFlagsUncached application .DEF_EQ_CORE
+      let reducedType ← RecM.inferCall reduced
+      return inferred == argumentType && reduced == witness && reducedType == argumentType &&
+        compositeReplayAt source expected (← get) && compositeReplayAt expected piType (← get) &&
+        compositeReplayAt application argumentType (← get)
+    if !used || (← get).lctx.size != before.lctx.size then return false
+    modify fun state => { state with env := state.env.clearReductionCaches }
+    match (RecM.infer source).run (methodsN 0) (← get) with
+    | .error .maxRecFuel _ => pure ()
+    | _ => return false
+    let rebuiltPi ← RecM.inferCall expected
+    let rebuilt ← RecM.inferCall source
+    return rebuilt == expected && rebuiltPi == piType && compositeReplayAt source expected (← get) &&
+      compositeReplayAt expected piType (← get)
+  match TcM.runRec action (TcState.newLazyAnon polymorphicIdentity.1) with
+  | .ok passed after => passed && after.lctx.size == 0
+  | .error _ _ => false
+
+/-- The cached Pi retains its variable-headed codomain before declaration
+growth and local insertion. Supplying the previously checked lambda then
+creates the generated beta redex used by lambda inference. -/
+private def compositeCodomainTransport (shape : Nat) (level : Ixon.Univ) : Bool :=
+  let (env, target) := exposedLambdaType level 0 shape
+  let (env, extra) := storeConst env
+    ⟨.axio ⟨false, 0, .sort 0⟩, #[], #[], #[.succ (.succ level)]⟩
+  let action : RecM .anon Bool := RecM.withLctxScope do
+    let .defn _ _ _ _ _ _ expected value _ _ ← TcM.getConst (m := .anon) ⟨target, ()⟩ | return false
+    let .lam name bi domain body _ := value | return false
+    let .all _ _ _ codomain _ := expected | return false
+    let (fn, arguments) := body.collectSpine
+    let some supplied := arguments[0]? | return false
+    let functionType ← RecM.inferCall fn
+    let typeSort ← RecM.inferCall functionType
+    let suppliedType ← RecM.inferCall supplied
+    let before ← get
+    if !compositeReplayAt functionType typeSort before || !compositeReplayAt supplied suppliedType before then
+      return false
+    let _ ← RecM.inferCall (.mkConst ⟨extra, ()⟩ #[])
+    if (← get).env.consts.size ≤ before.env.consts.size then return false
+    let (call, _) ← TcM.openBinder name bi domain body
+    let (carrier, _) ← TcM.openBinder () () (.mkSort levelOne) (.mkVar 0 ())
+    let _ ← TcM.openBinder () () carrier (.mkVar 0 ())
+    let typeReplayed ← RecM.inferCall functionType
+    let lambdaReplayed ← RecM.inferCall supplied
+    if typeReplayed != typeSort || lambdaReplayed != suppliedType then return false
+    let generated ← RecM.inferCall call
+    let reduced ← TcM.runIntern (cheapBetaReduce generated)
+    let inferred ← RecM.inferCall value
+    return (cheapBetaPlan? generated).isSome && generated != reduced && reduced == codomain &&
+      inferred == expected && compositeReplayAt functionType typeSort (← get) &&
+      compositeReplayAt supplied suppliedType (← get) && compositeReplayAt value expected (← get)
+  match TcM.runRec action (TcState.newLazyAnon env) with
+  | .ok passed after => passed && after.lctx.size == 0
+  | .error _ _ => false
+
 private def compositeCacheCases : TestSeq :=
   test "composite cache: applications survive lazy inference, scopes, replay, and clearing"
     (compositeCacheHistory 0)
@@ -3299,6 +3386,11 @@ private def compositeCacheCases : TestSeq :=
     compositeCachedLambdaBeta
   ++ test "composite cache: fresh local IDs separate captured lambda keys and result types"
     compositeLocalCacheKeys
+  ++ test "composite cache: captured dependent lambdas survive model growth, nested locals, beta, and clearing"
+    (compositeCapturedTransport false && compositeCapturedTransport true)
+  ++ test "composite cache: transported Pi codomain and supplied-lambda checks justify later cheap beta"
+    ([0, 1, 2].all fun shape => compositeCodomainTransport shape .zero &&
+      compositeCodomainTransport shape (.succ .zero))
 
 /-- Definitions declare their own parameters. A two-parameter alias uses
 `max u v` to instantiate a one-parameter definition; a wrapper applies that

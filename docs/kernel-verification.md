@@ -294,9 +294,10 @@ def callReturned.{u} (A : Sort u) (a : A) : A := ((fun x : A => fun y : A => x) 
   identify the checked `KConst`.
 - Application, forall, and lambda nodes either execute a supported miss or
   reuse an earlier successful synthesis check. Reuse retains that check's
-  tree and raw execution under the same semantic interface and annotated
-  context. A full call supplies the exact cache entry, and a proved frame
-  derives the later hit and result reading without a new semantic premise.
+  tree and raw execution through interface growth and insertion of fresh
+  locals. A full call supplies the exact cache entry, and a proved frame
+  derives the later hit. Reader transport shifts captured variables in the
+  source and result without a new semantic cache premise.
   Cold nodes miss every eligible partition; full mode may have a populated
   inference-only partition. Sort nodes use a miss or a hit equal to the canonical successor
   sort; a maintained agreement can construct that leaf's cache observation.
@@ -522,7 +523,7 @@ lake test --wfail -- tc-unit
 lake -d Models/SetTheory build --wfail
 ```
 
-The consistency target checks 663 exact theorem boundaries. The production
+The consistency target checks 705 exact theorem boundaries. The production
 environment roots retain four existing generated output-length proofs,
 reached through expression/universe construction, names, and the full
 production method table. They introduce no new native proofs. The model
@@ -653,9 +654,23 @@ cheap-beta lambda bodies. Public beta WHNF and Pi exposure preserve inference
 entries through their computed WHNF-cache updates. `infer_full_replay_closed`
 proves immediate reuse with any method table and either current checking
 policy. These ten additional audited roots retain the existing axiom boundary.
-Reuse currently keeps the same semantic interface and annotated local context;
-general composite cache histories and their context/interface transport remain
-open. Clearing invalidates the stored entry and requires a new full check.
+`SynthesisInference.cachedFrom` also accepts the original check after interface
+growth and insertion of locals. `SynthesisRetainedCheck` transports its actual
+inference tree, readings, and execution. Structural inversion of lifted syntax
+recovers the original lambda head, domain, body, and arguments. Pi checks retain
+both domain and codomain checks; lambda bodies and variable-headed codomains
+retain their dependent argument checks. These origins are used by the same
+synthesis, successive-beta, hereditary-beta, declaration, and environment
+proofs. No semantic typing or conversion field is added to inference support.
+`CachedSynthesisCheck.ofFull` records the concrete full entry and derives its
+reading. Its empty anchor context comes from actual source and domain checks.
+`extend`, `afterOpenBinder`, and `afterInference` transport the resource through
+interface growth and proved operational frames, including captured locals.
+`support` constructs the new inference branch; `run` proves immediate replay
+under either policy and at any method-table fuel. General composite cache
+histories, agreement at arbitrary written keys, and initial inference-resource
+construction remain open. Clearing invalidates the stored entry and requires
+a new full check.
 Kernel unit regressions cover lazy loading, both inference policies, interning
 reuse, dependent function types, shared references, lets, `imax` simplification,
 argument order, and rejection of wrong arities and out-of-range parameters.
@@ -805,13 +820,15 @@ Definition-cycle regressions use content-addressed standalone and mutual
 declarations, including a self-justifying theorem, a two-member cycle, type
 cycles, lets, shared syntax, and binders. They check repeated member failures,
 acyclic forward references, cache clearing, and the partial/unsafe policy.
-Ten composite-cache regressions cover real application, Pi, and lambda checks,
+Twelve composite-cache regressions cover real application, Pi, and lambda checks,
 zero-fuel replay under both policies, inference-only exclusion from full mode,
 lazy loading, scope changes, clearing and repopulation, beta Pi exposure,
 changed cheap-beta body types, later reduction of cached lambdas, and distinct
-captured-local keys. These execute production; the proof resources are checked
-separately by the consistency target.
-The unit suite contains 707 checks. The anonymous differential additionally
+captured-local keys. They also combine declaration growth with nested dependent
+locals, application and beta reduction of cached lambdas, and reuse of Pi
+codomain checks before generated cheap beta. These execute production; the
+proof resources are checked separately by the consistency target.
+The unit suite contains 709 checks. The anonymous differential additionally
 serializes eight cycle-policy fixtures and checks exact target sets, verdicts,
 failure counts, and cycle diagnostics in both implementations.
 

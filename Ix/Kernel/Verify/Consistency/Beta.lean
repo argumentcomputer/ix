@@ -86,6 +86,11 @@ def SynthesisInference.betaResultOrigin {β : Type u} {resolve : Address → Opt
   | reuseType inference => exact False.elim inference.no_direct_beta
   | cached tree priorAgreement priorReading _ _ _ _ =>
       exact tree.betaResultOrigin contextOrigin priorAgreement priorReading
+  | cachedFrom check _ _ =>
+      have trace := (check.spineOrigin (.lam condition domain body) [argument] rfl).betaTrace
+        (count := 1) (by simp only [AExpr.lambdaDepth]; omega)
+      simpa only [AExpr.betaPrefix, AExpr.appN_cons, AExpr.appN_nil] using
+        SynthesisTypingOrigin.rebase contextOrigin (.reduced trace)
   | app full miss trace functionTree argumentTree conditions hashPath comparisonFaithful
       bodyConstructed argConstructed bodyBound argBound coherent faithful =>
       obtain ⟨rfl, rfl⟩ := lambda_inference_domain functionTree
@@ -112,6 +117,21 @@ def SynthesisInference.betaResultOrigin {β : Type u} {resolve : Address → Opt
 
 termination_by sizeOf support
 
+/-- Inserting a local preserves both ends of a retained reduction and
+all arguments in its checked prefix. -/
+def SynthesisReductionOrigin.weakenAt {β : Type u} {resolve : Address → Option (ConstRef β)}
+    {incoming entries : Model.Environment β} {incomingContext source target : Model.Context β}
+    {incomingBounds : List VLevel} {head : AExpr β} {arguments : List (AExpr β)}
+    {count cutoff : Nat} {level : VLevel}
+    (origin : SynthesisReductionOrigin resolve incoming incomingContext incomingBounds entries source
+      head arguments count level) (insertion : ContextInsertion source target cutoff) :
+    SynthesisReductionOrigin resolve incoming incomingContext incomingBounds entries target
+      (head.liftN 1 cutoff) (arguments.map (AExpr.liftN 1 · cutoff)) count level :=
+  .traced (by simpa only [AExpr.liftN_appN, AExpr.liftN_betaPrefix, AExpr.liftN] using
+    SynthesisBetaTrace.weakenAt (.origin origin) insertion)
+
+mutual
+
 /-- When the lambda body applies its parameter, its actual body checks
 supply the next reduction origin after beta exposes the supplied lambda.
 The source's result type comes from the preceding check even if the body
@@ -120,30 +140,32 @@ private def SynthesisInference.betaNextOriginAux {β : Type u} {resolve : Addres
     {incoming entries : Model.Environment β} {incomingContext context : Model.Context β}
     {incomingBounds bounds : List VLevel} {locals : List FVarId} {fuel count : Nat}
     {before : TcState .anon} {source : KExpr .anon} {level bound : VLevel}
-    {condition headCondition : Certified.PropWhen} {domain binder inner type : AExpr β}
+    {condition headCondition : Certified.PropWhen} {term domain binder inner type : AExpr β}
     {initialArguments arguments : List (AExpr β)}
-    (support : SynthesisInference resolve entries locals context bounds fuel before source
-      (.app (.lam condition domain ((AExpr.bvar 0).appN arguments))
-        ((AExpr.lam headCondition binder inner).appN initialArguments)) type bound)
+    (support : SynthesisInference resolve entries locals context bounds fuel before source term type bound)
     (contextOrigin : SynthesisContext resolve incoming incomingContext incomingBounds entries context bounds)
     (agreement : LocalContextReading resolve locals before.lctx context)
-    (reading : readScopedExpr? resolve locals source =
-      some (AExpr.app (.lam condition domain ((AExpr.bvar 0).appN arguments))
-        ((AExpr.lam headCondition binder inner).appN initialArguments)).erase)
+    (reading : readScopedExpr? resolve locals source = some term.erase)
     (enough : count ≤ inner.lambdaDepth + 1) (resultEquation : AExpr.sort level = type) :
+    term = .app (.lam condition domain ((AExpr.bvar 0).appN arguments))
+      ((AExpr.lam headCondition binder inner).appN initialArguments) →
     SynthesisReductionOrigin resolve incoming incomingContext incomingBounds entries context
       (.lam headCondition binder inner)
       (initialArguments ++ arguments.map (AExpr.inst · ((AExpr.lam headCondition binder inner).appN initialArguments)))
-      count level := by
-  have resultOrigin := support.betaResultOrigin contextOrigin agreement reading
-  rw [← resultEquation] at resultOrigin
-  cases support with
-  | known inference _ => exact False.elim inference.no_direct_beta
-  | reuseType inference => exact False.elim inference.no_direct_beta
-  | cached tree priorAgreement priorReading _ _ _ _ =>
-      exact tree.betaNextOriginAux contextOrigin priorAgreement priorReading enough resultEquation
-  | app full miss trace functionTree argumentTree conditions hashPath comparisonFaithful
-      bodyConstructed argConstructed bodyBound argBound coherent faithful =>
+      count level :=
+  match support with
+  | .known inference _ | .reuseType inference .. => fun same => by
+      cases same
+      exact False.elim inference.no_direct_beta
+  | .cached tree priorAgreement priorReading _ _ _ _ => fun same =>
+      tree.betaNextOriginAux contextOrigin priorAgreement priorReading enough resultEquation same
+  | .cachedFrom check _ _ => fun same =>
+      .traced (.rebase contextOrigin (.origin (check.betaNextOrigin enough resultEquation same)))
+  | node@(.app full miss trace functionTree argumentTree conditions hashPath comparisonFaithful
+      bodyConstructed argConstructed bodyBound argBound coherent faithful) => fun same => by
+      cases same
+      have resultOrigin := node.betaResultOrigin contextOrigin agreement reading
+      rw [← resultEquation] at resultOrigin
       obtain ⟨rfl, rfl⟩ := lambda_inference_domain functionTree
       obtain ⟨functionReads, argumentReads⟩ := readScopedExpr?_app_parts reading
       have keyedAgreement := miss.localContext.symm ▸ agreement
@@ -153,8 +175,11 @@ private def SynthesisInference.betaNextOriginAux {β : Type u} {resolve : Addres
           conditions hashPath comparisonFaithful) .root enough
         (by simpa only [AExpr.inst_variable_appN] using resultOrigin)
       simpa only [AExpr.liftN_zero, List.map_id'] using flattened
-  | appBeta full miss trace functionTree exposure exposureCoherent reduction argumentTree conditions hashPath
-      comparisonFaithful bodyConstructed argConstructed bodyBound argBound coherent faithful =>
+  | node@(.appBeta full miss trace functionTree exposure exposureCoherent reduction argumentTree conditions hashPath
+      comparisonFaithful bodyConstructed argConstructed bodyBound argBound coherent faithful) => fun shape => by
+      cases shape
+      have resultOrigin := node.betaResultOrigin contextOrigin agreement reading
+      rw [← resultEquation] at resultOrigin
       have same := reduction.rigid (by
         obtain ⟨_, rfl⟩ := functionTree.lambda_type
         intro fn arg same
@@ -170,7 +195,57 @@ private def SynthesisInference.betaNextOriginAux {β : Type u} {resolve : Addres
         (by simpa only [AExpr.inst_variable_appN] using resultOrigin)
       simpa only [AExpr.liftN_zero, List.map_id'] using flattened
 
-termination_by sizeOf support
+  | .fvar .. | .forallE .. | .lam .. | .lamBeta .. => fun same => by cases same
+termination_by structural support
+
+def SynthesisRetainedCheck.betaNextOrigin {β : Type u} {resolve : Address → Option (ConstRef β)}
+    {incoming entries : Model.Environment β} {incomingContext context : Model.Context β}
+    {incomingBounds : List VLevel} {term type : AExpr β} {level bound : VLevel} {count : Nat}
+    {condition headCondition : Certified.PropWhen} {domain binder inner : AExpr β}
+    {initialArguments arguments : List (AExpr β)}
+    (check : SynthesisRetainedCheck resolve incoming incomingContext incomingBounds entries context term type bound)
+    (enough : count ≤ inner.lambdaDepth + 1) (resultEquation : AExpr.sort level = type) :
+    term = .app (.lam condition domain ((AExpr.bvar 0).appN arguments))
+      ((AExpr.lam headCondition binder inner).appN initialArguments) →
+    SynthesisReductionOrigin resolve incoming incomingContext incomingBounds entries context
+      (.lam headCondition binder inner)
+      (initialArguments ++ arguments.map (AExpr.inst · ((AExpr.lam headCondition binder inner).appN initialArguments)))
+      count level :=
+  match check with
+  | .source contextOrigin tree agreement reading _ => fun same =>
+      tree.betaNextOriginAux contextOrigin agreement reading enough resultEquation same
+  | .extend prior extension => fun same =>
+      (prior.betaNextOrigin enough resultEquation same).map (.pure (.extend .refl extension))
+  | .rebase origin prior => fun same =>
+      .traced (.rebase origin (.origin (prior.betaNextOrigin enough resultEquation same)))
+  | .weakenAt (cutoff := cutoff) prior insertion => fun same => by
+      let application := liftedApplicationView same
+      let lambda := liftedLambdaView application.functionEq.symm
+      let body := liftedVariableSpineView lambda.bodyEq.symm
+      let argument := liftedSpineView application.argumentEq.symm
+      let head := liftedLambdaView argument.headEq.symm
+      have originalIndex : body.originalIndex = 0 := by
+        have shifted := body.indexEq
+        simp only [liftVar] at shifted
+        split at shifted <;> omega
+      have bodyEq : lambda.originalBody = (AExpr.bvar 0).appN body.originalArguments := by
+        simpa only [originalIndex] using body.sourceEq
+      have functionEq := lambda.sourceEq.trans
+        (congrArg (AExpr.lam condition lambda.originalDomain) bodyEq)
+      have argumentEq := argument.sourceEq.trans
+        (congrArg (AExpr.appN · argument.originalArguments) head.sourceEq)
+      have originalEnough : count ≤ head.originalBody.lambdaDepth + 1 := by
+        simpa only [head.bodyEq, AExpr.lambdaDepth_liftN] using enough
+      have originalResult := (liftN_sort_inv resultEquation.symm).symm
+      let child := prior.betaNextOrigin originalEnough originalResult
+        (application.sourceEq.trans (congr (congrArg AExpr.app functionEq) argumentEq))
+      have lifted := child.weakenAt insertion
+      simpa only [AExpr.liftN_appN, AExpr.liftN_betaPrefix, List.map_append, List.map_map,
+        Function.comp_def, AExpr.liftN_inst_zero, AExpr.liftN, head.domainEq, head.bodyEq,
+        argument.argumentsEq, body.argumentsEq] using lifted
+termination_by structural check
+
+end
 
 /-- Retain the next lambda origin through any number of actual inference
 cache hits, with the same source type and dependent argument checks. -/
@@ -193,7 +268,7 @@ def SynthesisInference.betaNextOrigin {β : Type u} {resolve : Address → Optio
       (.lam headCondition binder inner)
       (initialArguments ++ arguments.map (AExpr.inst · ((AExpr.lam headCondition binder inner).appN initialArguments)))
       count level :=
-  support.betaNextOriginAux contextOrigin agreement reading enough rfl
+  support.betaNextOriginAux contextOrigin agreement reading enough rfl rfl
 
 /-- A supported successful inference of a source beta redex derives both
 equality with the substitution result and typing of that result. No run
@@ -218,6 +293,10 @@ theorem SynthesisInference.beta_sound {β : Type u}
   | reuseType inference => exact False.elim inference.no_direct_beta
   | cached tree priorAgreement priorReading priorRun _ _ _ =>
       exact tree.beta_sound formed priorAgreement priorReading priorRun
+  | cachedFrom check _ _ =>
+      have spine := (check.soundWithSpine formed).2.2
+      simpa only [AExpr.betaPrefix, AExpr.appN_cons, AExpr.appN_nil] using
+        spine.betaPrefix (arguments := [argument]) (count := 1) (by omega)
   | app full miss trace functionTree argumentTree conditions hashPath comparisonFaithful
       bodyConstructed argConstructed bodyBound argBound coherent faithful =>
       obtain ⟨codomain, sameProduct⟩ := functionTree.lambda_type

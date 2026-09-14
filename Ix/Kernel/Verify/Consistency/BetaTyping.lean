@@ -124,6 +124,31 @@ def weakenAt {source target : Model.Context β} {cutoff : Nat} {term type : AExp
   | .convert prior trace => .convert (prior.weakenAt insertion) (.weakenAt trace insertion)
 termination_by structural typing
 
+def extend {later : Model.Environment β} {context : Model.Context β} {term type : AExpr β}
+    (typing : SynthesisBetaTyping resolve incoming incomingContext incomingBounds entries context term type)
+    (extension : InterfaceExtends entries later) :
+    SynthesisBetaTyping resolve incoming incomingContext incomingBounds later context term type :=
+  match typing with
+  | .atom origin shape => .atom (origin.extend extension) shape
+  | .bvar origin found => .bvar (origin.extend extension) found
+  | .lam origin inner => .lam (origin.extend extension) (inner.extend extension)
+  | .app function argument => .app (function.extend extension) (argument.extend extension)
+  | .convert prior trace => .convert (prior.extend extension) (.extend trace extension)
+termination_by structural typing
+
+def rebase {priorIncoming : Model.Environment β} {priorContext context : Model.Context β}
+    {priorBounds : List VLevel} {term type : AExpr β}
+    (typing : SynthesisBetaTyping resolve priorIncoming priorContext priorBounds entries context term type)
+    (origin : SynthesisContext resolve incoming incomingContext incomingBounds priorIncoming priorContext priorBounds) :
+    SynthesisBetaTyping resolve incoming incomingContext incomingBounds entries context term type :=
+  match typing with
+  | .atom checked shape => .atom (.rebase origin checked) shape
+  | .bvar checked found => .bvar (.rebase origin checked) found
+  | .lam checked inner => .lam (.rebase origin checked) (inner.rebase origin)
+  | .app function argument => .app (function.rebase origin) (argument.rebase origin)
+  | .convert prior trace => .convert (prior.rebase origin) (.rebase origin trace)
+termination_by structural typing
+
 end SynthesisBetaTyping
 
 /-- The internal substitution walker builds this data itself as it passes
