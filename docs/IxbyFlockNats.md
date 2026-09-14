@@ -143,5 +143,7 @@ lake build --wfail Ix.Ixby.Audit Tests.Ixby.Audit
 The Nat proof test is explicitly opt-in; it has not been added to the paid
 CI proof tier or given a larger runner budget. Its measured memory exceeds
 the older 32 GiB budget, so do not infer CI admission from local success.
-Compiler measurements, scalable code/byte/heap access, closure/PAP support,
-formal refinement and terminal sizing for this upgraded setup remain open.
+The separate [application factory](IxbyFlockApplications.md) composes this Nat
+representation with closures/PAPs and higher-order control; this original Nat
+factory keeps its first-order admission and existing keys. Compiler measurements,
+scalable code/byte/heap access, formal refinement and terminal sizing remain open.

@@ -9,7 +9,8 @@ use crate::{
       require, require_zero, select, subtract,
     },
     value::{
-      cell_with_byte_handles, cell_with_nat_handles, cell_with_object_handles,
+      cell_with_application_handles, cell_with_byte_handles,
+      cell_with_nat_handles, cell_with_object_handles,
     },
   },
   sizing::{CircuitEmitter, CountedGate},
@@ -35,6 +36,7 @@ pub struct ByteReadGate {
   capacity: ByteCapacity,
   entries: usize,
   object_entries: Option<usize>,
+  applications: bool,
   nat_capacity: Option<crate::ixby::nat_value::NatCapacity>,
   plan: Arc<OnceLock<BooleanR1csPlan>>,
 }
@@ -66,6 +68,7 @@ impl ByteReadGate {
       capacity,
       entries,
       object_entries: None,
+      applications: false,
       nat_capacity: None,
       plan: Arc::new(OnceLock::new()),
     })
@@ -78,6 +81,12 @@ impl ByteReadGate {
   }
   pub fn capacity(&self) -> ByteCapacity {
     self.capacity
+  }
+  pub(crate) fn with_applications(mut self) -> Self {
+    assert!(self.object_entries.is_some());
+    self.applications = true;
+    self.plan = Arc::new(OnceLock::new());
+    self
   }
   pub(crate) fn with_nat_capacity(
     mut self,
@@ -199,6 +208,7 @@ fn build(gate: &ByteReadGate) -> BooleanR1csPlan {
   let width = 128 * gate.capacity.record_words();
   let reserved = 128 * (gate.input_count() + gate.output_count());
   let columns = reserved
+    + if gate.applications { 8192 } else { 0 }
     + if gate.nat_capacity.is_some() {
       4096 + 256 * gate.capacity.bytes()
     } else {
@@ -222,6 +232,18 @@ fn build(gate: &ByteReadGate) -> BooleanR1csPlan {
   let enabled = any(&mut b, one, &(0..128).collect::<Vec<_>>());
   let mut nat = zero;
   let bytes = match gate.object_entries {
+    Some(objects) if gate.applications => {
+      let flags = cell_with_application_handles(
+        &mut b,
+        one,
+        &mut violations,
+        enabled,
+        &(0..256).collect::<Vec<_>>(),
+        (gate.entries, objects, gate.nat_capacity.is_some()),
+      );
+      nat = flags[7];
+      b.xor(&[flags[5], nat], one)
+    },
     objects if gate.nat_capacity.is_some() => {
       let flags = cell_with_nat_handles(
         &mut b,

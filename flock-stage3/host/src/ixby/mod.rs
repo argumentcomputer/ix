@@ -22,6 +22,7 @@ pub mod primitive;
 pub mod select;
 pub mod value;
 
+pub(crate) mod application;
 #[cfg(test)]
 mod commitment_proof_tests;
 #[cfg(test)]

@@ -3,8 +3,10 @@
 Status: execution statements, public-claim binding, setup interfaces, and
 conditional composition are implemented. The optional Stage 2 specialization
 now composes the independent source refinement. Direct native Flock proofs of
-the small scalar/control, byte-capable, immutable-constructor and exact-Nat interpreters are implemented;
-native refinement, the larger crypto guest profile, complete terminal relation
+the small scalar/control, byte-capable, immutable-constructor and exact-Nat
+interpreters are implemented. An explicit application setup now also supports
+closures/PAPs and higher-order control. Native refinement, the larger crypto
+guest profile, complete terminal relation
 and Compilatrix certificate remain unfinished.
 
 ## Statements and public claims
@@ -104,7 +106,7 @@ not run a host hash/execution oracle on private artifacts.
 The Lean decoded-control rules now refine reference steps and finite byte
 execution with explicit instruction, operand, callee and codec premises.
 The native constraint-to-`Codec.Evaluates` theorem remains unfinished, as do
-PAPs, scalable guest capacities and the complete terminal relation.
+scalable guest capacities and the complete terminal relation.
 Native acceptance and matching regression outputs do not establish formal
 refinement. See the [direct scalar execution construction](IxbyFlockScalar.md),
 [native hash/commitment construction](IxbyFlockHash.md) and
@@ -132,6 +134,13 @@ arithmetic/case-row rejections pass. Word32 remains a separate wrapping type;
 the older v0 factories and setup identities are preserved. Its 192-bit proof
 fixture used about 39.69 GiB maximum RSS, so it is not yet admitted to the
 existing CI proof budget or evidence of full-guest capacity.
+
+The explicit [application setup](IxbyFlockApplications.md) adds closures/PAPs,
+let/tail application, under/exact/over-application and mixed caller/apply-rest
+continuations. It retains canonical constructor/byte I/O and optionally exact
+Nats. All 27 reference fixtures agree on outputs and exact fuel under one
+bounded setup; existing factories and keys do not gain application admission.
+Its higher-order logical trace and native refinement remain separate obligations.
 
 Application policy must pin the exact source declaration closure/version,
 compiler configuration, ABI, semantic profile, image bytes, and execution-

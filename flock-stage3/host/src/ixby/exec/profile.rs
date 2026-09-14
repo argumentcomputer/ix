@@ -256,6 +256,8 @@ pub(super) const TRANSCRIPT_DOMAIN: &[u8] = b"ix:ixby:scalar-exec:v0";
 pub(super) const BYTE_TRANSCRIPT_DOMAIN: &[u8] = b"ix:ixby:byte-exec:v0";
 pub(super) const OBJECT_TRANSCRIPT_DOMAIN: &[u8] = b"ix:ixby:object-exec:v0";
 pub(super) const NAT_TRANSCRIPT_DOMAIN: &[u8] = b"ix:ixby:nat-exec:v1";
+pub(super) const APPLICATION_TRANSCRIPT_DOMAIN: &[u8] =
+  b"ix:ixby:application-exec:v0";
 const UPSTREAM: &[u8] = b"b310f35f35f68095537150a1c8c0a43caca9a29e";
 const IMPLEMENTATION: &[u8] = b"IxBy/Flock/fixed-scalar-machine/v0";
 const PACKED_IMPLEMENTATION: &[u8] =
@@ -277,6 +279,35 @@ pub struct ExecIdentities {
 }
 
 impl ExecIdentities {
+  pub(super) fn with_applications(mut self) -> Self {
+    self.protocol = *blake3::hash(
+      &[
+        b"IxBy/Flock/application-protocol/v0\0".as_slice(),
+        &self.protocol,
+        APPLICATION_TRANSCRIPT_DOMAIN,
+      ]
+      .concat(),
+    )
+    .as_bytes();
+    self.implementation = *blake3::hash(
+      &[
+        b"IxBy/Flock/immutable-PAP-apply-rest/v0\0".as_slice(),
+        &self.implementation,
+      ]
+      .concat(),
+    )
+    .as_bytes();
+    self.capacity = *blake3::hash(
+      &[
+        b"IxBy/Flock/application-capacity/v0\0".as_slice(),
+        &self.capacity,
+        &[1],
+      ]
+      .concat(),
+    )
+    .as_bytes();
+    self
+  }
   pub(super) fn with_nats(mut self, capacity: NatCapacity) -> Self {
     self.protocol = *blake3::hash(
       &[

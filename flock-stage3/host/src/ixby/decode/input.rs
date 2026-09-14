@@ -177,7 +177,8 @@ impl InputDecodeGate {
       c.bytes,
       output,
       self.output_count(),
-      3 + slots * (9 + bytes.capacity.data_words()),
+      3 + slots
+        * (9 + usize::from(layout.applications) + bytes.capacity.data_words()),
       4096 + slots * (8192 + 256 * (bytes.capacity.bytes() + 1)),
     );
     let declarations: Vec<Vec<_>> = (1 + c.data_words()..self.input_count())
@@ -248,7 +249,7 @@ impl InputDecodeGate {
 impl CountedGate for InputDecodeGate {
   fn input_count(&self) -> usize {
     1 + self.capacity.data_words()
-      + self.object_layout.map_or(0, ObjectLayout::declaration_words)
+      + self.object_layout.map_or(0, ObjectLayout::value_table_words)
   }
   fn output_count(&self) -> usize {
     self.decoded_words() + 1
@@ -301,7 +302,7 @@ impl InputDecodeSlot {
     let capacity = gate.capacity;
     let words = gate.decoded_words();
     let declarations =
-      gate.object_layout.map_or(0, ObjectLayout::declaration_words);
+      gate.object_layout.map_or(0, ObjectLayout::value_table_words);
     Self {
       slot: b.slot(gate),
       zero: b.fixed_public_input(F128::ZERO),

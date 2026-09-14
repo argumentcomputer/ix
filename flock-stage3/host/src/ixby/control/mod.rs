@@ -13,7 +13,10 @@
 //! (kind, target, alternative, callee); header 1 is (entry, arity, arg count, 0).
 //! Kinds 1..5 are bind/call/return/tail-call/branch. Non-eval states require an
 //! all-zero action. The only halting transition is ret with an empty stack.
+//! This describes the original matrix. The explicit application setup adds
+//! Apply states and mixed resume/apply-rest records in application_synthesis.
 
+mod application_synthesis;
 #[cfg(test)]
 mod proof_tests;
 mod synthesis;
@@ -57,6 +60,9 @@ impl ControlCapacities {
   }
   pub fn action_words(self) -> usize {
     4 + 2 * self.arguments
+  }
+  pub(crate) fn application_action_words(self) -> usize {
+    self.action_words() + 1 + 2 * self.arguments
   }
   fn value_word(self) -> usize {
     1 + self.frame_words()
@@ -220,23 +226,54 @@ fn fill_args(
 pub struct ControlStepGate {
   nu: usize,
   capacity: ControlCapacities,
+  applications: bool,
   plan: Arc<OnceLock<BooleanR1csPlan>>,
 }
 
 #[derive(Clone, Debug)]
 pub struct ControlStepRow(Vec<F128>);
 
+#[cfg(test)]
+impl ControlStepRow {
+  pub(crate) fn inputs(&self) -> &[F128] {
+    &self.0
+  }
+}
+
 impl ControlStepGate {
   pub fn new(nu: usize, capacity: ControlCapacities) -> Result<Self> {
     ensure!((3..=20).contains(&nu), "control row-domain admission");
     capacity.validate()?;
-    Ok(Self { nu, capacity, plan: Arc::new(OnceLock::new()) })
+    Ok(Self {
+      nu,
+      capacity,
+      applications: false,
+      plan: Arc::new(OnceLock::new()),
+    })
   }
   pub fn capacity(&self) -> ControlCapacities {
     self.capacity
   }
-  fn plan(&self) -> &BooleanR1csPlan {
-    self.plan.get_or_init(|| synthesis::build(self.capacity))
+  pub(crate) fn plan(&self) -> &BooleanR1csPlan {
+    self.plan.get_or_init(|| {
+      if self.applications {
+        application_synthesis::build(self.capacity)
+      } else {
+        synthesis::build(self.capacity)
+      }
+    })
+  }
+  pub(crate) fn with_applications(mut self) -> Self {
+    self.applications = true;
+    self.plan = Arc::new(OnceLock::new());
+    self
+  }
+  pub(crate) fn action_words(&self) -> usize {
+    if self.applications {
+      self.capacity.application_action_words()
+    } else {
+      self.capacity.action_words()
+    }
   }
   pub fn r1cs(&self) -> BlockR1cs {
     self.plan().block_r1cs(self.nu)
@@ -248,6 +285,7 @@ impl ControlStepGate {
   ) -> Result<Vec<F128>> {
     let mut input = state.words(self.capacity)?;
     input.extend(action.words(self.capacity)?);
+    input.resize(self.input_count(), F128::ZERO);
     Ok(input)
   }
   pub fn generate_witness_into(
@@ -268,7 +306,7 @@ fn fill_free(row: &ControlStepRow, bits: &mut [bool]) {
 
 impl CountedGate for ControlStepGate {
   fn input_count(&self) -> usize {
-    self.capacity.state_words() + self.capacity.action_words()
+    self.capacity.state_words() + self.action_words()
   }
   fn output_count(&self) -> usize {
     self.capacity.state_words() + 1
@@ -299,7 +337,15 @@ impl GateType for ControlStepGate {
     outputs: &mut Vec<F128>,
   ) -> Self::Row {
     assert_eq!(inputs.len(), self.input_count());
-    outputs.extend(evaluate(self.capacity, inputs));
+    outputs.extend(if self.applications {
+      crate::ixby::bits::evaluate_words(
+        self.plan(),
+        inputs,
+        self.output_count(),
+      )
+    } else {
+      evaluate(self.capacity, inputs)
+    });
     ControlStepRow(inputs.to_vec())
   }
   fn witness(&self, _: &[Self::Row], _: usize) -> SlotWitness {
@@ -312,15 +358,18 @@ pub struct ControlStepSlot {
   slot: SlotId,
   zero: Wire,
   capacity: ControlCapacities,
+  action_words: usize,
 }
 
 impl ControlStepSlot {
   pub fn declare(b: &mut impl CircuitEmitter, gate: ControlStepGate) -> Self {
     let capacity = gate.capacity;
+    let action_words = gate.action_words();
     Self {
       slot: b.slot(gate),
       zero: b.fixed_public_input(F128::ZERO),
       capacity,
+      action_words,
     }
   }
   pub fn slot(&self) -> SlotId {
@@ -333,7 +382,7 @@ impl ControlStepSlot {
     action: &[Wire],
   ) -> Vec<Wire> {
     assert_eq!(state.len(), self.capacity.state_words());
-    assert_eq!(action.len(), self.capacity.action_words());
+    assert_eq!(action.len(), self.action_words);
     let mut input = state.to_vec();
     input.extend_from_slice(action);
     let output = b.gate(self.slot, &input);

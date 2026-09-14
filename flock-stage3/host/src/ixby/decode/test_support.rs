@@ -17,6 +17,7 @@ pub(crate) enum Value {
   Bytes(Vec<u8>),
   Nat(Vec<u8>),
   Ctor(CtorId, Vec<Value>),
+  Pap(u32, Vec<Value>),
   Erased,
 }
 
@@ -42,7 +43,7 @@ impl Value {
       Self::Field(x) => (FIELD_TAG, x, 0),
       Self::Ext(x, y) => (EXT_TAG, x, y),
       Self::Erased => (ERASED_TAG, 0, 0),
-      Self::Bytes(_) | Self::Nat(_) | Self::Ctor(..) => {
+      Self::Bytes(_) | Self::Nat(_) | Self::Ctor(..) | Self::Pap(..) => {
         panic!("immutable handles require the decoder's allocation context")
       },
     };
@@ -65,7 +66,9 @@ impl Value {
         bytes.extend(y.to_le_bytes());
       },
       Self::Erased => panic!("erased is a value/operand, not a scalar"),
-      Self::Ctor(..) => panic!("constructor is not a scalar literal"),
+      Self::Ctor(..) | Self::Pap(..) => {
+        panic!("aggregate is not a scalar literal")
+      },
       Self::Bytes(ref data) => {
         bytes.push(4);
         bytes.extend((data.len() as u32).to_le_bytes());
@@ -87,6 +90,14 @@ impl Value {
         bytes.extend((fields.len() as u32).to_le_bytes());
         for field in fields {
           field.encode(bytes);
+        }
+      },
+      Self::Pap(function, captured) => {
+        bytes.push(2);
+        bytes.extend(function.to_le_bytes());
+        bytes.extend((captured.len() as u32).to_le_bytes());
+        for value in captured {
+          value.encode(bytes);
         }
       },
       _ => {
@@ -140,6 +151,9 @@ pub(crate) enum Instruction {
   Project(Operand, u32, u32),
   CaseCtor(Operand, Vec<(u32, u32)>),
   CaseNat(Operand, u32, u32),
+  Closure(u32, Vec<Operand>, u32),
+  Apply(Operand, Vec<Operand>, u32),
+  TailApply(Operand, Vec<Operand>),
 }
 
 fn vector(bytes: &mut Vec<u8>, operands: &[Operand]) {
@@ -214,6 +228,23 @@ impl Instruction {
         bytes.extend(zero.to_le_bytes());
         bytes.extend(successor.to_le_bytes());
       },
+      Self::Closure(function, captured, target) => {
+        bytes.extend([0, 4]);
+        bytes.extend(function.to_le_bytes());
+        vector(bytes, captured);
+        bytes.extend(target.to_le_bytes());
+      },
+      Self::Apply(function, args, target) => {
+        bytes.extend([0, 7]);
+        function.encode(bytes);
+        vector(bytes, args);
+        bytes.extend(target.to_le_bytes());
+      },
+      Self::TailApply(function, args) => {
+        bytes.push(4);
+        function.encode(bytes);
+        vector(bytes, args);
+      },
     }
   }
   fn words(
@@ -248,6 +279,9 @@ impl Instruction {
       Self::CaseCtor(operand, _) => (9, 0, 0, 0, 0, vec![operand.clone()]),
       Self::CaseNat(operand, zero, successor) => {
         (10, *zero, *successor, 0, 0, vec![operand.clone()])
+      },
+      Self::Closure(..) | Self::Apply(..) | Self::TailApply(..) => {
+        panic!("application tables include a separate function operand slot")
       },
     };
     let mut result = vec![

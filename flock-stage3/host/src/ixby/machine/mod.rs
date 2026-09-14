@@ -3,6 +3,7 @@
 //! input at this boundary.
 
 mod action;
+mod applications;
 mod bytes;
 mod initial;
 mod nats;
@@ -67,6 +68,7 @@ pub struct ScalarMachineSlots {
   pub(crate) bytes: Option<bytes::ByteMachineSlots>,
   pub(crate) objects: Option<objects::ObjectMachineSlots>,
   pub(crate) nats: Option<nats::NatMachineSlots>,
+  pub(crate) applications: Option<applications::ApplicationMachineSlots>,
   capacity: MachineCapacities,
 }
 
@@ -156,6 +158,31 @@ impl ScalarMachineSlots {
   pub fn object_capacity(&self) -> Option<ObjectCapacity> {
     self.objects.as_ref().map(|objects| objects.layout.capacity)
   }
+  pub fn declare_with_applications(
+    b: &mut impl CircuitEmitter,
+    nu: usize,
+    c: MachineCapacities,
+    registry: PrimitiveSet,
+    values: (ByteCapacity, ObjectCapacity, Option<NatCapacity>),
+    common_hash: &BoundedBlake3,
+  ) -> Result<Self> {
+    ensure!(
+      c.control.arguments == c.program.operands,
+      "application argument/operand capacities must agree"
+    );
+    let mut layout = ObjectLayout::new(c, values.1)?;
+    layout.applications = true;
+    layout.nat_capacity = values.2;
+    Self::declare_inner(
+      b,
+      nu,
+      c,
+      registry,
+      Some((values.0, common_hash)),
+      Some(layout),
+      values.2,
+    )
+  }
 
   fn declare_inner(
     b: &mut impl CircuitEmitter,
@@ -174,7 +201,11 @@ impl ScalarMachineSlots {
     let mut program_gate =
       ProgramDecodeGate::new(nu, c.program, c.control, registry)?;
     let mut input_gate = InputDecodeGate::new(nu, c.input)?;
-    let mut fetch_gate = ProgramFetchGate::new(nu, c.program.layout())?;
+    let applications = object_values.is_some_and(|o| o.applications);
+    let mut fetch_gate = ProgramFetchGate::new(
+      nu,
+      c.program.layout().with_applications(applications),
+    )?;
     let mut operand_gate =
       OperandResolveGate::new(nu, c.control.locals, c.program.operands)?;
     let primitive_gate = PrimitivePrepareGate::new(
@@ -186,9 +217,9 @@ impl ScalarMachineSlots {
         registry
       },
     )?;
-    let action_gate =
+    let mut action_gate =
       ActionAssembleGate::new(nu, c.control, c.program.operands)?;
-    let control_gate = ControlStepGate::new(nu, c.control)?;
+    let mut control_gate = ControlStepGate::new(nu, c.control)?;
     let mut initial_gate = InitialStateGate::new(
       nu,
       c.control,
@@ -198,9 +229,10 @@ impl ScalarMachineSlots {
     )?;
     let mut output_gate = OutputEncodeGate::new(nu, c.control, c.output_bytes)?;
     if let Some((capacity, _)) = byte_values {
-      let (program_records, mut entries) =
+      let (mut program_records, mut entries) =
         bytes::ByteMachineSlots::allocations(c)?;
       if let Some(objects) = object_values {
+        program_records = objects.program_byte_slots();
         entries = objects.byte_entries();
       }
       // Admit the entire bank before any decoder table is materialized.
@@ -229,6 +261,12 @@ impl ScalarMachineSlots {
         operand_gate = operand_gate.with_nat_handles()?;
         initial_gate = initial_gate.with_nat_handles()?;
         output_gate = output_gate.with_nat_values(nats)?;
+      }
+      if applications {
+        operand_gate = operand_gate.with_applications()?;
+        initial_gate = initial_gate.with_applications()?;
+        action_gate = action_gate.with_applications();
+        control_gate = control_gate.with_applications();
       }
     }
     let mut machine = Self {
@@ -267,6 +305,16 @@ impl ScalarMachineSlots {
         objects::ObjectMachineSlots::declare(b, nu, layout, c.control)
       }),
       nats: None,
+      applications: if applications {
+        Some(applications::ApplicationMachineSlots::declare(
+          b,
+          nu,
+          object_values.unwrap(),
+          c.control,
+        ))
+      } else {
+        None
+      },
       capacity: c,
     };
     if let Some(capacity) = nat_values {
@@ -294,16 +342,19 @@ impl ScalarMachineSlots {
     assert_eq!(code.len(), 1 + c.program.data_words());
     assert_eq!(input.len(), 1 + c.input.data_words());
     let program = self.program_slot.decode(b, code[0], &code[1..]);
-    let program_words = c.program.layout().words();
+    let program_words = self.program_gate.layout().words();
     let object_data = self.program_gate.object_data_word();
     let values = match &self.objects {
       None => self.input_slot.decode(b, input[0], &input[1..]),
-      Some(objects) => self.input_slot.decode_with_objects(
-        b,
-        input[0],
-        &input[1..],
-        &program[object_data..object_data + objects.layout.declaration_words()],
-      ),
+      Some(objects) => {
+        let mut table = program
+          [object_data..object_data + objects.layout.declaration_words()]
+          .to_vec();
+        if self.applications.is_some() {
+          table.extend_from_slice(&program[..1 + c.program.functions]);
+        }
+        self.input_slot.decode_with_objects(b, input[0], &input[1..], &table)
+      },
     };
     let value_words = c.input.value_words();
     let value_bytes_end = value_words
@@ -330,12 +381,14 @@ impl ScalarMachineSlots {
     );
     for step in 0..c.steps {
       let fetched = self.fetch_slot.fetch(b, state[0], state[1], program);
-      let block_words = c.program.layout().block_words();
+      let block_words = self.program_gate.layout().block_words();
       let args = self.operand_slot.resolve(
         b,
         &state[1..1 + c.control.frame_words()],
         &fetched[..block_words],
       );
+      let application_function = args[2 * c.program.operands..].to_vec();
+      let args = args[..2 * c.program.operands].to_vec();
       let headers = [fetched[0], fetched[1]];
       let nat = self.nats.as_ref().map(|nats| {
         let bytes = self.bytes.as_ref().unwrap();
@@ -394,6 +447,26 @@ impl ScalarMachineSlots {
           },
         ),
       };
+      let (headers, callee, primitive, args) = match &self.applications {
+        None => (headers, callee, primitive, args),
+        Some(applications) => {
+          let mut args = args;
+          args.extend_from_slice(&application_function);
+          applications.step(
+            b,
+            applications::ApplicationStep {
+              state: &state,
+              headers,
+              callee,
+              primitive,
+              args: &args,
+              functions: &program[..1 + c.program.functions],
+              arena: arena.as_mut().unwrap(),
+              allocation: applications.gate.layout.input_slots() + step,
+            },
+          )
+        },
+      };
       let action =
         self.action_slot.assemble(b, &headers, callee, &primitive, &args);
       state = self.control_slot.step(b, &state, &action);
@@ -402,6 +475,9 @@ impl ScalarMachineSlots {
     if let Some(objects) = &self.objects {
       let mut records =
         object_program[..objects.layout.declaration_words()].to_vec();
+      if self.applications.is_some() {
+        records.extend_from_slice(&program[..1 + c.program.functions]);
+      }
       records.extend_from_slice(arena.as_ref().unwrap());
       records.extend_from_slice(bank.as_ref().unwrap());
       self.output_slot.encode_with_bytes(b, &state, &records)

@@ -70,15 +70,30 @@ impl Encoder {
 
   fn value(&mut self, value: &[usize], enabled: usize, depth: usize) {
     let flags = self.s.cell(enabled, value);
-    let [boolean, word, field, extension, erased, bytes, ctor, nat] = flags;
+    let [boolean, word, field, extension, erased, bytes, ctor, nat, pap] =
+      flags;
     let stored = if self.s.layout.nat_capacity.is_some() {
       self.s.sum(&[bytes, nat])
     } else {
       bytes
     };
     let masked = self.s.mask(ctor, value);
-    let record = self.s.record(&masked, ctor, self.arena, self.declarations);
+    let mut record =
+      self.s.record(&masked, ctor, self.arena, self.declarations);
     let decl = self.s.declaration(&record[..32], ctor, self.declarations);
+    if self.s.layout.applications {
+      let masked = self.s.mask(pap, value);
+      let (pap_record, _) = self.s.pap_record(
+        &masked,
+        pap,
+        self.arena,
+        self.declarations + 128 * self.s.layout.declaration_words(),
+      );
+      record =
+        self.s.choose(&[(self.s.one, &record), (self.s.one, &pap_record)]);
+    }
+    let aggregate =
+      if self.s.layout.applications { self.s.sum(&[ctor, pap]) } else { ctor };
     let buffer = self.buffer(value, stored);
     if let Some(capacity) = self.s.layout.nat_capacity {
       crate::ixby::nat_value::canonical_magnitude(
@@ -101,6 +116,9 @@ impl Encoder {
     let mut prefix = vec![self.s.zero; 8 * prefix_bytes];
     prefix[0] = self.s.sum(&[ctor, erased]);
     prefix[1] = erased;
+    if self.s.layout.applications {
+      prefix[1] = self.s.sum(&[erased, pap]);
+    }
     prefix[8] = self.s.sum(&[word, extension]);
     if self.s.layout.nat_capacity.is_some() {
       prefix[8] = self.s.sum(&[prefix[8], nat]);
@@ -119,12 +137,18 @@ impl Encoder {
       prefix[328 + bit] = self.s.and(ctor, record[32 + bit]);
       let source = self.s.and(stored, buffer[bit]);
       prefix[16 + bit] = self.s.sum(&[prefix[16 + bit], source]);
+      if self.s.layout.applications {
+        let function = self.s.and(pap, record[bit]);
+        let captured = self.s.and(pap, record[32 + bit]);
+        prefix[8 + bit] = self.s.sum(&[prefix[8 + bit], function]);
+        prefix[40 + bit] = self.s.sum(&[prefix[40 + bit], captured]);
+      }
     }
     for bit in 0..128 * self.bytes.data_words() {
       let source = self.s.and(stored, buffer[128 + bit]);
       prefix[48 + bit] = self.s.sum(&[prefix[48 + bit], source]);
     }
-    let sizes: Vec<_> = [
+    let mut sizes: Vec<_> = [
       (boolean, 3),
       (word, 6),
       (field, 10),
@@ -134,6 +158,9 @@ impl Encoder {
     ]
     .map(|(flag, length)| (flag, self.s.constant(32, length)))
     .into();
+    if self.s.layout.applications {
+      sizes.push((pap, self.s.constant(32, 9)));
+    }
     let mut sources: Vec<_> =
       sizes.iter().map(|(flag, bits)| (*flag, bits.as_slice())).collect();
     let six = self.s.constant(32, 6);
@@ -145,7 +172,7 @@ impl Encoder {
     let length = self.s.choose(&sources);
     self.append(&prefix, &length);
     if depth == 1 {
-      self.s.require_zero(ctor, &record[32..64]);
+      self.s.require_zero(aggregate, &record[32..64]);
     } else {
       let live = self.s.prefix(&record[32..64], self.s.layout.fields);
       for (field, flag) in live.into_iter().enumerate() {
@@ -166,7 +193,7 @@ pub(crate) fn build(
   bytes: ByteCapacity,
 ) -> BooleanR1csPlan {
   let input_words = control.state_words()
-    + layout.declaration_words()
+    + layout.value_table_words()
     + layout.entries() * layout.record_words()
     + layout.byte_entries() * bytes.record_words();
   let data_words = capacity.div_ceil(16);
@@ -191,7 +218,7 @@ pub(crate) fn build(
     &(value_base + 256..128 * control.state_words()).collect::<Vec<_>>(),
   );
   let declarations = 128 * control.state_words();
-  let arena = declarations + 128 * layout.declaration_words();
+  let arena = declarations + 128 * layout.value_table_words();
   let byte_arena = arena + 128 * layout.entries() * layout.record_words();
   let mut output = vec![s.zero; 128 * data_words];
   for (byte, value) in b"IXBO\0\0\0\0".iter().enumerate() {

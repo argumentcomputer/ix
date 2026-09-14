@@ -6,11 +6,14 @@ use crate::{
       any, bounded_prefix, constant_bits, equal, equal_constant, not, require,
       require_zero, select, subtract,
     },
-    value::{cell_with_nat_handles, cell_with_object_handles},
+    value::{
+      cell_with_application_handles, cell_with_nat_handles,
+      cell_with_object_handles,
+    },
   },
 };
 
-pub(super) struct Synthesis {
+pub(crate) struct Synthesis {
   pub b: BooleanR1csBuilder,
   pub one: usize,
   pub zero: usize,
@@ -19,7 +22,7 @@ pub(super) struct Synthesis {
 }
 
 impl Synthesis {
-  pub(super) fn new(
+  pub(crate) fn new(
     inputs: usize,
     outputs: usize,
     extra: usize,
@@ -37,7 +40,7 @@ impl Synthesis {
     let zero = b.xor(&[one, one], one);
     Self { b, one, zero, violations: Vec::new(), layout }
   }
-  pub(super) fn constant(&self, width: usize, value: u64) -> Vec<usize> {
+  pub(crate) fn constant(&self, width: usize, value: u64) -> Vec<usize> {
     (0..width)
       .map(|bit| {
         if bit < 64 && value & (1u64 << bit) != 0 {
@@ -48,34 +51,34 @@ impl Synthesis {
       })
       .collect()
   }
-  pub(super) fn and(&mut self, a: usize, b: usize) -> usize {
+  pub(crate) fn and(&mut self, a: usize, b: usize) -> usize {
     self.b.and(a, b)
   }
-  pub(super) fn not(&mut self, bit: usize) -> usize {
+  pub(crate) fn not(&mut self, bit: usize) -> usize {
     not(&mut self.b, self.one, bit)
   }
-  pub(super) fn sum(&mut self, bits: &[usize]) -> usize {
+  pub(crate) fn sum(&mut self, bits: &[usize]) -> usize {
     if bits.is_empty() { self.zero } else { self.b.xor(bits, self.one) }
   }
-  pub(super) fn eq_const(&mut self, bits: &[usize], value: u64) -> usize {
+  pub(crate) fn eq_const(&mut self, bits: &[usize], value: u64) -> usize {
     equal_constant(&mut self.b, self.one, bits, value)
   }
-  pub(super) fn equal(&mut self, a: &[usize], b: &[usize]) -> usize {
+  pub(crate) fn equal(&mut self, a: &[usize], b: &[usize]) -> usize {
     equal(&mut self.b, self.one, a, b)
   }
-  pub(super) fn require(&mut self, enabled: usize, good: usize) {
+  pub(crate) fn require(&mut self, enabled: usize, good: usize) {
     require(&mut self.b, self.one, &mut self.violations, enabled, good);
   }
-  pub(super) fn require_zero(&mut self, enabled: usize, bits: &[usize]) {
+  pub(crate) fn require_zero(&mut self, enabled: usize, bits: &[usize]) {
     require_zero(&mut self.b, self.one, &mut self.violations, enabled, bits);
   }
-  pub(super) fn less(&mut self, a: &[usize], b: &[usize]) -> usize {
+  pub(crate) fn less(&mut self, a: &[usize], b: &[usize]) -> usize {
     subtract(&mut self.b, self.one, self.zero, a, b).1
   }
-  pub(super) fn mask(&mut self, enabled: usize, bits: &[usize]) -> Vec<usize> {
+  pub(crate) fn mask(&mut self, enabled: usize, bits: &[usize]) -> Vec<usize> {
     bits.iter().map(|bit| self.and(enabled, *bit)).collect()
   }
-  pub(super) fn choose(&mut self, sources: &[(usize, &[usize])]) -> Vec<usize> {
+  pub(crate) fn choose(&mut self, sources: &[(usize, &[usize])]) -> Vec<usize> {
     (0..sources[0].1.len())
       .map(|bit| {
         let products: Vec<_> = sources
@@ -86,12 +89,26 @@ impl Synthesis {
       })
       .collect()
   }
-  pub(super) fn prefix(&mut self, length: &[usize], max: usize) -> Vec<usize> {
+  pub(crate) fn prefix(&mut self, length: &[usize], max: usize) -> Vec<usize> {
     bounded_prefix(&mut self.b, self.one, &mut self.violations, length, max)
   }
-  pub(super) fn cell(&mut self, enabled: usize, value: &[usize]) -> [usize; 8] {
+  pub(crate) fn cell(&mut self, enabled: usize, value: &[usize]) -> [usize; 9] {
+    if self.layout.applications {
+      return cell_with_application_handles(
+        &mut self.b,
+        self.one,
+        &mut self.violations,
+        enabled,
+        value,
+        (
+          self.layout.byte_entries(),
+          self.layout.entries(),
+          self.layout.nat_capacity.is_some(),
+        ),
+      );
+    }
     if self.layout.nat_capacity.is_some() {
-      return cell_with_nat_handles(
+      let f = cell_with_nat_handles(
         &mut self.b,
         self.one,
         &mut self.violations,
@@ -100,6 +117,7 @@ impl Synthesis {
         self.layout.byte_entries(),
         Some(self.layout.entries()),
       );
+      return [f[0], f[1], f[2], f[3], f[4], f[5], f[6], f[7], self.zero];
     }
     let f = cell_with_object_handles(
       &mut self.b,
@@ -110,16 +128,67 @@ impl Synthesis {
       self.layout.byte_entries(),
       self.layout.entries(),
     );
-    [f[0], f[1], f[2], f[3], f[4], f[5], f[6], self.zero]
+    [f[0], f[1], f[2], f[3], f[4], f[5], f[6], self.zero, self.zero]
   }
-  pub(super) fn select(
+  pub(crate) fn function(
+    &mut self,
+    index: &[usize],
+    enabled: usize,
+    base: usize,
+  ) -> Vec<usize> {
+    let count: Vec<_> = (base + 32..base + 64).collect();
+    let fits = self.less(index, &count);
+    self.require(enabled, fits);
+    let sources: Vec<_> = (0..self.layout.functions)
+      .map(|function| {
+        let equal = self.eq_const(index, function as u64);
+        (self.and(enabled, equal), base + 128 * (1 + function))
+      })
+      .collect();
+    let header = self.select(&sources, 128);
+    self.require_zero(self.one, &header[96..]);
+    self.bounded_constant(&header[..32], self.layout.fields, enabled);
+    let entry = self.less(&header[32..64], &header[64..96]);
+    self.require(enabled, entry);
+    header
+  }
+  pub(crate) fn pap_record(
+    &mut self,
+    value: &[usize],
+    enabled: usize,
+    arena: usize,
+    functions: usize,
+  ) -> (Vec<usize>, Vec<usize>) {
+    let flags = self.cell(enabled, value);
+    self.require(enabled, flags[8]);
+    let width = 128 * self.layout.record_words();
+    let sources: Vec<_> = (0..self.layout.entries())
+      .map(|index| {
+        let equal = self.eq_const(&value[128..160], index as u64);
+        (self.and(enabled, equal), arena + width * index)
+      })
+      .collect();
+    let record = self.select(&sources, width);
+    self.require(enabled, record[64]);
+    self.require(enabled, record[65]);
+    self.require_zero(self.one, &record[66..128]);
+    let function = self.function(&record[..32], enabled, functions);
+    let unsaturated = self.less(&record[32..64], &function[..32]);
+    self.require(enabled, unsaturated);
+    let live = self.prefix(&record[32..64], self.layout.fields);
+    for (index, flag) in live.into_iter().enumerate() {
+      self.cell(flag, &record[128 + 256 * index..384 + 256 * index]);
+    }
+    (record, function)
+  }
+  pub(crate) fn select(
     &mut self,
     sources: &[(usize, usize)],
     width: usize,
   ) -> Vec<usize> {
     select(&mut self.b, self.one, self.zero, sources, width)
   }
-  pub(super) fn declaration(
+  pub(crate) fn declaration(
     &mut self,
     index: &[usize],
     enabled: usize,
@@ -137,7 +206,7 @@ impl Synthesis {
     self.require(enabled, decl[416]);
     decl
   }
-  pub(super) fn record(
+  pub(crate) fn record(
     &mut self,
     value: &[usize],
     enabled: usize,
@@ -165,17 +234,17 @@ impl Synthesis {
     }
     record
   }
-  pub(super) fn write(&mut self, start: usize, bits: &[usize]) {
+  pub(crate) fn write(&mut self, start: usize, bits: &[usize]) {
     for (bit, source) in bits.iter().enumerate() {
       self.b.write_xor(start + bit, &[*source], self.one);
     }
   }
-  pub(super) fn finish(mut self, residual: usize) -> BooleanR1csPlan {
+  pub(crate) fn finish(mut self, residual: usize) -> BooleanR1csPlan {
     let violation = any(&mut self.b, self.one, &self.violations);
     self.b.write_xor(residual, &[violation], self.one);
     self.b.finish()
   }
-  pub(super) fn bounded_constant(
+  pub(crate) fn bounded_constant(
     &mut self,
     bits: &[usize],
     maximum: usize,

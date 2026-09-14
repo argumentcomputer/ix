@@ -306,8 +306,10 @@ they reject `cryptoNatV1`. The explicit [native Nat setup](IxbyFlockNats.md)
 constrains v1 arithmetic, Nat cases and canonical I/O under new approved keys.
 [Nat handoff](IxbyNat.md) describes the compiler API and the 64 additional
 reference/codec checks.
-General application and a formal circuit-to-reference refinement remain backend
-obligations. Aiur's byte/remaining-primitive and Nat constraints are also
+The explicit [native application setup](IxbyFlockApplications.md) additionally
+constrains the existing closure/PAP and let/tail-application encodings, including
+mixed apply-rest/caller continuations. A formal circuit-to-reference refinement
+remains a backend obligation. Aiur's byte/remaining-primitive and Nat constraints are also
 incomplete. Source lowering and the source-value
 ABI proof remain the later Compilatrix companion work.
 

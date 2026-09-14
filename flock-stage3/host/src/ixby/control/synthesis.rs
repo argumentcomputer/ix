@@ -5,11 +5,11 @@ use crate::ixby::{
   value::BOOL_TAG,
 };
 
-fn bits(start: usize, count: usize) -> Vec<usize> {
+pub(super) fn bits(start: usize, count: usize) -> Vec<usize> {
   (start..start + count).collect()
 }
 
-fn parity(
+pub(super) fn parity(
   b: &mut BooleanR1csBuilder,
   one: usize,
   zero: usize,
@@ -18,7 +18,7 @@ fn parity(
   if terms.is_empty() { zero } else { b.xor(terms, one) }
 }
 
-fn matches(
+pub(super) fn matches(
   b: &mut BooleanR1csBuilder,
   one: usize,
   word: &[usize],
@@ -29,7 +29,7 @@ fn matches(
     .collect()
 }
 
-fn unused(
+pub(super) fn unused(
   b: &mut BooleanR1csBuilder,
   one: usize,
   used: usize,
@@ -41,7 +41,7 @@ fn unused(
   violations.push(b.and(disabled, nonzero));
 }
 
-fn prefix(
+pub(super) fn prefix(
   b: &mut BooleanR1csBuilder,
   one: usize,
   length: &[usize],
@@ -59,7 +59,7 @@ fn prefix(
   equal
 }
 
-fn write_sum(
+pub(super) fn write_sum(
   b: &mut BooleanR1csBuilder,
   one: usize,
   output: usize,

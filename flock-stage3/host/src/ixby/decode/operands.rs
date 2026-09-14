@@ -14,8 +14,8 @@ use crate::{
       subtract,
     },
     value::{
-      cell_with_byte_handles, cell_with_nat_handles, cell_with_object_handles,
-      scalar_cell,
+      cell_with_application_handles, cell_with_byte_handles,
+      cell_with_nat_handles, cell_with_object_handles, scalar_cell,
     },
   },
   sizing::{CircuitEmitter, CountedGate},
@@ -38,6 +38,7 @@ pub struct OperandResolveGate {
   byte_entries: Option<usize>,
   object_entries: Option<usize>,
   nat_values: bool,
+  applications: bool,
   plan: Arc<OnceLock<BooleanR1csPlan>>,
 }
 
@@ -56,6 +57,7 @@ impl OperandResolveGate {
       byte_entries: None,
       object_entries: None,
       nat_values: false,
+      applications: false,
       plan: Arc::new(OnceLock::new()),
     })
   }
@@ -86,8 +88,20 @@ impl OperandResolveGate {
     self.plan = Arc::new(OnceLock::new());
     Ok(self)
   }
+  pub(crate) fn with_applications(mut self) -> Result<Self> {
+    ensure!(
+      self.object_entries.is_some(),
+      "applications require an object arena"
+    );
+    self.applications = true;
+    self.plan = Arc::new(OnceLock::new());
+    Ok(self)
+  }
   fn block_words(&self) -> usize {
-    2 + 3 * self.operands
+    2 + 3 * self.operand_slots()
+  }
+  fn operand_slots(&self) -> usize {
+    self.operands + usize::from(self.applications)
   }
   fn plan(&self) -> &BooleanR1csPlan {
     self.plan.get_or_init(|| build(self))
@@ -116,7 +130,7 @@ impl CountedGate for OperandResolveGate {
     self.frame_words() + self.block_words()
   }
   fn output_count(&self) -> usize {
-    2 * self.operands + 1
+    2 * self.operand_slots() + 1
   }
   fn table_at(&self, nu: usize) -> TableType {
     let mut gate = self.clone();
@@ -165,7 +179,7 @@ impl OperandResolveSlot {
     b: &mut impl CircuitEmitter,
     gate: OperandResolveGate,
   ) -> Self {
-    let (locals, operands) = (gate.locals, gate.operands);
+    let (locals, operands) = (gate.locals, gate.operand_slots());
     Self {
       slot: b.slot(gate),
       zero: b.fixed_public_input(F128::ZERO),
@@ -195,6 +209,11 @@ impl OperandResolveSlot {
 fn build(gate: &OperandResolveGate) -> BooleanR1csPlan {
   let reserved = 128 * (gate.input_count() + gate.output_count());
   let columns = reserved
+    + if gate.applications {
+      8192 * (gate.locals + gate.operand_slots() + 4)
+    } else {
+      0
+    }
     + if gate.nat_values {
       2048 * (gate.locals + gate.operands + 4)
     } else {
@@ -221,6 +240,16 @@ fn build(gate: &OperandResolveGate) -> BooleanR1csPlan {
     let base = 128 * (1 + 2 * index);
     let value: Vec<_> = (base..base + 256).collect();
     match (gate.byte_entries, gate.object_entries) {
+      (Some(bytes), Some(objects)) if gate.applications => {
+        cell_with_application_handles(
+          &mut b,
+          one,
+          &mut violations,
+          *flag,
+          &value,
+          (bytes, objects, gate.nat_values),
+        );
+      },
       (Some(entries), objects) if gate.nat_values => {
         cell_with_nat_handles(
           &mut b,
@@ -260,8 +289,14 @@ fn build(gate: &OperandResolveGate) -> BooleanR1csPlan {
   }
   let block = 128 * gate.frame_words();
   let count: Vec<_> = (block + 192..block + 224).collect();
-  let used =
+  let mut used =
     bounded_prefix(&mut b, one, &mut violations, &count, gate.operands);
+  if gate.applications {
+    let kind: Vec<_> = (block + 32..block + 64).collect();
+    let apply = equal_constant(&mut b, one, &kind, 12);
+    let tail = equal_constant(&mut b, one, &kind, 13);
+    used.push(b.xor(&[apply, tail], one));
+  }
   for (index, enabled) in used.iter().enumerate() {
     let base = block + 128 * (2 + 3 * index);
     let header: Vec<_> = (base..base + 128).collect();
@@ -277,6 +312,16 @@ fn build(gate: &OperandResolveGate) -> BooleanR1csPlan {
     let constant = b.and(*enabled, constant);
     require_zero(&mut b, one, &mut violations, constant, &header[32..64]);
     match (gate.byte_entries, gate.object_entries) {
+      (Some(bytes), Some(objects)) if gate.applications => {
+        cell_with_application_handles(
+          &mut b,
+          one,
+          &mut violations,
+          constant,
+          &value,
+          (bytes, objects, gate.nat_values),
+        );
+      },
       (Some(entries), objects) if gate.nat_values => {
         cell_with_nat_handles(
           &mut b,
@@ -334,7 +379,7 @@ fn build(gate: &OperandResolveGate) -> BooleanR1csPlan {
   }
   let violation = any(&mut b, one, &violations);
   b.write_xor(
-    128 * (gate.input_count() + 2 * gate.operands),
+    128 * (gate.input_count() + 2 * gate.operand_slots()),
     &[violation],
     one,
   );

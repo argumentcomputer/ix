@@ -12,8 +12,10 @@ interpreters are separate from those production relations. The explicit
 [full-crypto setup](IxbyFlockBytes.md) now implements all 35 reference crypto
 primitives. An explicit [constructor setup](IxbyFlockObjects.md) additionally
 proves bounded immutable objects. The separate [Nat setup](IxbyFlockNats.md)
-adds exact bounded arithmetic and Nat cases under revision 1. PAPs, a compiled
-Stage 2 guest proof and a complete terminal SNARK remain unfinished.
+adds exact bounded arithmetic and Nat cases under revision 1. The explicit
+[application setup](IxbyFlockApplications.md) adds immutable PAPs and bounded
+higher-order control. Native refinement, a compiled Stage 2 guest proof and a
+complete terminal SNARK remain unfinished.
 This document describes the current architecture and semantic boundaries;
 the [design roadmap](../plans/ixby-plan.md) records longer-term integration work.
 
@@ -54,6 +56,10 @@ the [design roadmap](../plans/ixby-plan.md) records longer-term integration work
   with typed immutable magnitudes, all seven Nat primitives, exact Nat cases,
   canonical I/O and real proofs, composed with first-order control and optional
   constructors. Word32 keeps its existing semantics and v0 keys are unchanged.
+- [Native application execution](IxbyFlockApplications.md): immutable closures
+  and PAPs, let/tail application, under/exact/over-application and mixed
+  resume/apply-rest continuations, with canonical tree I/O and exact fuel.
+  Constructors, bytes and optional exact Nats compose under explicit new keys.
 - [Aiur.lean](../Ix/Ixby/Aiur.lean): the host adapter for
   [scalar](IxbyAiur.md), [control](IxbyControl.md), and
   [object](IxbyObjects.md) interpreters. It is a separate import from the pure
@@ -224,9 +230,10 @@ Local frames, fields, captures, and the continuation stack use arrays in the
 reference implementation. Locals are absolute, append-only slots: binding does
 not renumber existing locals. There is no linked-list variable-name search,
 guest reference counting, mutable heap, pointer comparison, or output-word stream.
-Constructor/PAP values are finite logical trees. The experimental object
-backend now uses immutable field lists with checked ranks for constructors;
-PAP storage and the complete constrained-representation proof remain open.
+Constructor/PAP values are finite logical trees. The Aiur object backend uses
+immutable field lists with checked ranks for constructors. The explicit native
+Flock application setup supports both constructors and PAPs in a fixed immutable
+arena. The complete constrained-representation proof remains open.
 
 Calls are not recursively evaluated by an unmetered host evaluator. `Control`
 explicitly alternates between block evaluation, application, and returning.

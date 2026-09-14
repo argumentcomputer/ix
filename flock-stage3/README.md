@@ -3,14 +3,16 @@
 This independent workspace starts the generic IxBy execution backend. Its
 current implementation connects canonical byte admission, a fixed-capacity
 scalar/control and byte-capable interpreters, all 35 existing crypto-v0
-primitives, bounded immutable constructors, explicit revision-1 exact Nats,
+primitives, bounded immutable constructors/PAPs, higher-order application,
+explicit revision-1 exact Nats,
 BLAKE3/Exec commitments, and direct Flock proofs, alongside labelled native
-gadget regressions. The native constraint-to-reference refinement, PAPs,
+gadget regressions. The native constraint-to-reference refinement,
 scalable guest execution, and compiled Stage 2 verifier remain unfinished.
 See [the scalar execution boundary](../docs/IxbyFlockScalar.md)
 and the explicit [byte](../docs/IxbyFlockBytes.md) and
 [constructor](../docs/IxbyFlockObjects.md) setup upgrades, plus the
-[exact-Nat setup and proof results](../docs/IxbyFlockNats.md).
+[exact-Nat setup and proof results](../docs/IxbyFlockNats.md) and explicit
+[application setup](../docs/IxbyFlockApplications.md).
 It is excluded from the root Cargo workspace and has no `aiur`, `multi-stark`,
 or `ix-terminal` dependency. Test-only Plonky3 field crates provide arithmetic
 differential oracles at the same revision used by the original tests. Test-only
@@ -46,8 +48,8 @@ cargo fmt --manifest-path flock-stage3/Cargo.toml --all -- --check
 cargo clippy --release --locked --manifest-path flock-stage3/Cargo.toml --workspace --all-targets -- -D warnings
 ```
 
-The ordinary suite passes 140 tests, including byte, word, constructor and
-Nat regressions; 17 proof/benchmark tests are opt-in. The two imported
+All 149 ordinary tests pass, including byte, word, constructor, Nat
+and application regressions; 18 proof/benchmark tests are opt-in. The two imported
 conformance proofs are opt-in and also passed locally on 2026-09-12, including their serialized
 round trips and malicious operand/path/root/proof mutations:
 

@@ -4,7 +4,9 @@ The explicit native object setup implements bounded constructor inputs,
 construction, projection, `caseCtor`, and canonical tree output, composed with
 all 35 crypto-v0 primitives and first-order CEK control. Twenty-one execution
 proofs verify under one setup. This is not yet native constraint-to-reference
-refinement, closure/PAP support, a compiled Stage 2 guest, or a terminal SNARK.
+refinement, a compiled Stage 2 guest, or a terminal SNARK. Closure/PAP support is
+an explicit separate [application setup](IxbyFlockApplications.md), not a
+change to this constructor-only factory.
 This v0 factory still rejects [Nat revision 1](IxbyNat.md). The separate
 [Nat factory](IxbyFlockNats.md) composes exact Nats with these constructors
 under an explicit implementation/key upgrade; it does not change this setup.

@@ -25,6 +25,8 @@ pub const BYTES_TAG: u64 = 6;
 pub const CTOR_TAG: u64 = 7;
 /// Revision-1 exact Nat magnitude in the authenticated immutable arena.
 pub const NAT_TAG: u64 = 8;
+/// Immutable function/capture handle in the explicitly approved PAP setup.
+pub const PAP_TAG: u64 = 9;
 
 pub fn bool_words(value: bool) -> ValueWords {
   [F128::new(BOOL_TAG, 0), F128::new(u64::from(value), 0)]
@@ -179,4 +181,50 @@ pub(super) fn cell_with_nat_handles(
   let fits = subtract(b, one, zero, &bits[128..160], &limit).1;
   require(b, one, violations, nat, fits);
   [flags[0], flags[1], flags[2], flags[3], flags[4], flags[5], flags[6], nat]
+}
+
+/// Explicit application setup: PAP handles share the immutable object arena,
+/// but have a distinct tag and checked record kind at each selected read.
+pub(super) fn cell_with_application_handles(
+  b: &mut BooleanR1csBuilder,
+  one: usize,
+  violations: &mut Vec<usize>,
+  enabled: usize,
+  bits: &[usize],
+  values: (usize, usize, bool),
+) -> [usize; 9] {
+  use super::bits::{constant_bits, subtract};
+  let (bytes, objects, nats) = values;
+  let zero = b.xor(&[one, one], one);
+  let is_pap = equal_constant(b, one, &bits[..64], PAP_TAG);
+  let pap = b.and(enabled, is_pap);
+  let other = b.xor(&[enabled, pap], one);
+  let masked: Vec<_> = bits.iter().map(|bit| b.and(other, *bit)).collect();
+  let flags = if nats {
+    cell_with_nat_handles(
+      b,
+      one,
+      violations,
+      other,
+      &masked,
+      bytes,
+      Some(objects),
+    )
+  } else {
+    let f = cell_with_object_handles(
+      b, one, violations, other, &masked, bytes, objects,
+    );
+    [f[0], f[1], f[2], f[3], f[4], f[5], f[6], zero]
+  };
+  let disabled = not(b, one, enabled);
+  require_zero(b, one, violations, disabled, bits);
+  require_zero(b, one, violations, pap, &bits[64..128]);
+  require_zero(b, one, violations, pap, &bits[160..]);
+  let maximum = constant_bits(one, zero, objects as u32);
+  let fits = subtract(b, one, zero, &bits[128..160], &maximum).1;
+  require(b, one, violations, pap, fits);
+  [
+    flags[0], flags[1], flags[2], flags[3], flags[4], flags[5], flags[6],
+    flags[7], pap,
+  ]
 }

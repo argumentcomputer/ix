@@ -228,6 +228,7 @@ def primaryRunners : List (String × IO UInt32) := [
   ("ixby-flock-words", Tests.Ixby.Flock.Words.suite),
   ("ixby-flock-objects", Tests.Ixby.Flock.Objects.suite),
   ("ixby-flock-nats", Tests.Ixby.Flock.Nats.suite),
+  ("ixby-flock-applications", Tests.Ixby.Flock.Applications.suite),
   ("ixby-aiur", Tests.Ixby.Aiur.Scalar.suite (withProofs := false)),
   ("ixby-control", Tests.Ixby.Aiur.Control.suite (withProofs := false)),
   ("ixby-objects", Tests.Ixby.Aiur.Objects.suite (withProofs := false)),

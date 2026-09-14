@@ -165,6 +165,9 @@ fn build(gate: &ObjectDispatchGate) -> BooleanR1csPlan {
     // recursively by their own decoder, so no cycle can enter the arena.
     let earlier = s.less(&value[128..160], &(0..32).collect::<Vec<_>>());
     s.require(types[6], earlier);
+    if layout.applications {
+      s.require(types[8], earlier);
+    }
     allocation[128 + 256 * index..384 + 256 * index].copy_from_slice(&value);
   }
   let in_range = s.less(&headers[128..160], &record[32..64]);

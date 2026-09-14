@@ -130,7 +130,7 @@ impl CountedGate for OutputEncodeGate {
   fn input_count(&self) -> usize {
     if let Some((layout, bytes)) = self.object_values {
       return self.control.state_words()
-        + layout.declaration_words()
+        + layout.value_table_words()
         + layout.entries() * layout.record_words()
         + layout.byte_entries() * bytes.record_words();
     }

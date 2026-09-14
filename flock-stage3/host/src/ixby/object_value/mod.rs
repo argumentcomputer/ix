@@ -5,7 +5,7 @@
 use super::machine::MachineCapacities;
 use anyhow::{Result, ensure};
 
-mod bits;
+pub(crate) mod bits;
 mod dispatch;
 mod output;
 #[cfg(test)]
@@ -46,6 +46,7 @@ impl ObjectCapacity {
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct ObjectLayout {
+  pub applications: bool,
   pub nat_capacity: Option<crate::ixby::nat_value::NatCapacity>,
   pub capacity: ObjectCapacity,
   pub fields: usize,
@@ -62,6 +63,7 @@ impl ObjectLayout {
   ) -> Result<Self> {
     ensure!((1..=4).contains(&c.program.operands), "object field capacity");
     let layout = Self {
+      applications: false,
       nat_capacity: None,
       capacity,
       fields: c.program.operands,
@@ -95,6 +97,15 @@ impl ObjectLayout {
   pub(crate) fn declaration_words(self) -> usize {
     1 + 4 * self.capacity.constructors()
   }
+  /// Application-capable codecs also authenticate the function headers used
+  /// to validate every PAP, including unused input/output tree nodes.
+  pub(crate) fn value_table_words(self) -> usize {
+    self.declaration_words()
+      + if self.applications { 1 + self.functions } else { 0 }
+  }
+  pub(crate) fn operand_slots(self) -> usize {
+    self.fields + usize::from(self.applications)
+  }
   pub(crate) fn case_words(self) -> usize {
     1 + self.capacity.constructors()
   }
@@ -106,7 +117,7 @@ impl ObjectLayout {
       + (function * self.blocks + block) * self.case_words()
   }
   pub(crate) fn program_byte_slots(self) -> usize {
-    self.functions * self.blocks * self.fields
+    self.functions * self.blocks * self.operand_slots()
   }
   pub(crate) fn byte_entries(self) -> usize {
     self.program_byte_slots() + self.input_slots() + self.steps

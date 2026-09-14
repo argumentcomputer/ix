@@ -1,9 +1,15 @@
-//! Experimental proof-free compiler and proof API for first-order scalar
-//! and byte/constructor/exact-Nat machines. Only approved setup determines topology.
+//! Experimental proof-free compiler and proof API for scalar and
+//! byte/constructor/exact-Nat/application machines. Only approved setup determines topology.
 //! The real Flock relation connects canonical bytes to execution and all four
 //! commitments. Its native constraint-to-`Codec.Evaluates` refinement remains
 //! a separate, unfinished formal obligation; this is not a Stage 4 proof.
 
+#[cfg(test)]
+mod application_fixtures;
+#[cfg(test)]
+mod application_proof_tests;
+#[cfg(test)]
+mod application_tests;
 #[cfg(test)]
 mod backend_tests;
 #[cfg(test)]
@@ -97,6 +103,9 @@ impl CompiledExec {
   pub fn nat_capacity(&self) -> Option<NatCapacity> {
     self.machine.nat_capacity()
   }
+  pub fn applications(&self) -> bool {
+    self.machine.applications.is_some()
+  }
   pub fn public_template(&self) -> &PublicLayout {
     &self.public
   }
@@ -115,7 +124,9 @@ impl CompiledExec {
       .collect()
   }
   pub fn transcript_domain(&self) -> Vec<u8> {
-    let mut domain = if self.nat_capacity().is_some() {
+    let mut domain = if self.applications() {
+      profile::APPLICATION_TRANSCRIPT_DOMAIN.to_vec()
+    } else if self.nat_capacity().is_some() {
       profile::NAT_TRANSCRIPT_DOMAIN.to_vec()
     } else if self.object_capacity().is_some() {
       profile::OBJECT_TRANSCRIPT_DOMAIN.to_vec()
@@ -159,7 +170,7 @@ pub fn compile_exec_profile_with_backend(
     primitives == primitives.scalar_subset(),
     "expanded primitive registry requires byte-profile compilation"
   );
-  compile(profile, capacity, primitives, backend, None, None, None)
+  compile(profile, capacity, primitives, backend, (None, None, None, false))
 }
 
 /// Byte-capable first-order executor with an explicitly approved per-array
@@ -172,7 +183,13 @@ pub fn compile_exec_byte_profile(
   backend: Blake3Backend,
 ) -> Result<CompiledExec> {
   profile.admit_bytes(capacity, bytes)?;
-  compile(profile, capacity, primitives, backend, Some(bytes), None, None)
+  compile(
+    profile,
+    capacity,
+    primitives,
+    backend,
+    (Some(bytes), None, None, false),
+  )
 }
 
 /// Explicit bounded constructor setup. All 35 crypto primitives and the
@@ -192,9 +209,7 @@ pub fn compile_exec_object_profile(
     capacity,
     primitives,
     backend,
-    Some(bytes),
-    Some(objects),
-    None,
+    (Some(bytes), Some(objects), None, false),
   )
 }
 
@@ -214,35 +229,57 @@ pub fn compile_exec_nat_profile(
     capacity,
     primitives,
     backend,
-    Some(values.0),
-    values.1,
-    Some(values.2),
+    (Some(values.0), values.1, Some(values.2), false),
   )
 }
+
+/// Explicit higher-order implementation upgrade with immutable closures/PAPs,
+/// let/tail application and bounded apply-rest continuations. Semantic v0/v1
+/// codec bytes are unchanged; the approving verifier selects this setup class.
+pub fn compile_exec_application_profile(
+  profile: SemanticProfile,
+  capacity: MachineCapacities,
+  values: (ByteCapacity, ObjectCapacity, Option<NatCapacity>),
+  primitives: PrimitiveSet,
+  backend: Blake3Backend,
+) -> Result<CompiledExec> {
+  ensure!(
+    capacity.control.arguments == capacity.program.operands,
+    "application argument/operand capacities must agree"
+  );
+  match values.2 {
+    None => profile.admit_objects(capacity, values.0, values.1)?,
+    Some(nats) => {
+      profile.admit_nat(capacity, values.0, Some(values.1), nats)?
+    },
+  }
+  compile(
+    profile,
+    capacity,
+    primitives,
+    backend,
+    (Some(values.0), Some(values.1), values.2, true),
+  )
+}
+
+type NativeValues =
+  (Option<ByteCapacity>, Option<ObjectCapacity>, Option<NatCapacity>, bool);
 
 fn compile(
   profile: SemanticProfile,
   capacity: MachineCapacities,
   primitives: PrimitiveSet,
   backend: Blake3Backend,
-  bytes: Option<ByteCapacity>,
-  objects: Option<ObjectCapacity>,
-  nats: Option<NatCapacity>,
+  values: NativeValues,
 ) -> Result<CompiledExec> {
+  let (bytes, objects, nats, applications) = values;
   ensure!(
     nats.is_some() || primitives == primitives.crypto_subset(),
     "Nat primitives require revision-1 setup"
   );
   let mut count = CountingEmitter::new();
-  let (_, _, counted_input, counted_public) = emit_values(
-    &mut count,
-    8,
-    profile,
-    capacity,
-    primitives,
-    backend,
-    (bytes, objects, nats),
-  )?;
+  let (_, _, counted_input, counted_public) =
+    emit_values(&mut count, 8, profile, capacity, primitives, backend, values)?;
   let nu = count.required_nu(8)?;
   ensure!(nu <= 20, "scalar row domain admission");
   let (registry, counts) = count.registry(nu);
@@ -258,7 +295,7 @@ fn compile(
     capacity,
     primitives,
     backend,
-    (bytes, objects, nats),
+    values,
   )?;
   let shape = builder
     .finish()
@@ -297,6 +334,9 @@ fn compile(
   identities.registry = shape.registry.digest();
   if let Some(nats) = nats {
     identities = identities.with_nats(nats);
+  }
+  if applications {
+    identities = identities.with_applications();
   }
   identities.circuit = shape.circuit.digest();
   identities.public_template = public.digest();
@@ -339,10 +379,10 @@ fn emit_values(
   c: MachineCapacities,
   primitives: PrimitiveSet,
   backend: Blake3Backend,
-  values: (Option<ByteCapacity>, Option<ObjectCapacity>, Option<NatCapacity>),
+  values: NativeValues,
 ) -> Result<(ScalarMachineSlots, ByteCommitmentSlots, InputLayout, PublicLayout)>
 {
-  let (bytes, objects, nats) = values;
+  let (bytes, objects, nats, applications) = values;
   let mut b = LayoutEmitter::new(builder);
   // Preserve the scalar declaration order and therefore its existing keys.
   let scalar = if bytes.is_none() {
@@ -362,6 +402,16 @@ fn emit_values(
     backend,
   )?;
   let machine = match (bytes, objects) {
+    (Some(bytes), Some(objects)) if applications => {
+      ScalarMachineSlots::declare_with_applications(
+        &mut b,
+        nu,
+        c,
+        primitives,
+        (bytes, objects, nats),
+        &commitments.hashes()[0],
+      )?
+    },
     (Some(bytes), objects) if nats.is_some() => {
       ScalarMachineSlots::declare_with_nats(
         &mut b,

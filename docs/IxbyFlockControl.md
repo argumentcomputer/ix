@@ -6,6 +6,9 @@ proofs described here are not Exec proofs. The newer
 [scalar Exec network](IxbyFlockScalar.md) now connects this gate to canonical
 bytes and constrained instruction/operand/primitive resolution and has direct
 Flock proofs. The packing/table-to-decoded-rule proof remains unfinished.
+This guide describes the original first-order tables; the separate
+[application setup](IxbyFlockApplications.md) adds apply states and mixed
+resume/apply-rest continuations without changing the original matrices.
 
 ## Representation and capacity
 

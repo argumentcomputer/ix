@@ -9,8 +9,8 @@ use crate::{
     },
     control::{ControlCapacities, ControlStepGate},
     value::{
-      cell_with_byte_handles, cell_with_nat_handles, cell_with_object_handles,
-      scalar_cell,
+      cell_with_application_handles, cell_with_byte_handles,
+      cell_with_nat_handles, cell_with_object_handles, scalar_cell,
     },
   },
   sizing::{CircuitEmitter, CountedGate},
@@ -35,6 +35,7 @@ pub struct InitialStateGate {
   byte_entries: Option<usize>,
   object_entries: Option<usize>,
   nat_values: bool,
+  applications: bool,
   pub(super) plan: Arc<OnceLock<BooleanR1csPlan>>,
 }
 #[derive(Clone, Debug)]
@@ -59,6 +60,7 @@ impl InitialStateGate {
       byte_entries: None,
       object_entries: None,
       nat_values: false,
+      applications: false,
       plan: Arc::new(OnceLock::new()),
     })
   }
@@ -86,6 +88,15 @@ impl InitialStateGate {
       "Nat initial values require a magnitude arena"
     );
     self.nat_values = true;
+    self.plan = Arc::new(OnceLock::new());
+    Ok(self)
+  }
+  pub(crate) fn with_applications(mut self) -> Result<Self> {
+    ensure!(
+      self.object_entries.is_some(),
+      "applications require an object arena"
+    );
+    self.applications = true;
     self.plan = Arc::new(OnceLock::new());
     Ok(self)
   }
@@ -184,6 +195,7 @@ impl InitialStateSlot {
 fn build(gate: &InitialStateGate) -> BooleanR1csPlan {
   let reserved = 128 * (gate.input_count() + gate.output_count());
   let columns = reserved
+    + if gate.applications { 8192 * (gate.inputs + 4) } else { 0 }
     + if gate.nat_values { 2048 * (gate.inputs + 4) } else { 0 }
     + 4096
     + 1024 * (gate.functions + gate.inputs)
@@ -228,6 +240,16 @@ fn build(gate: &InitialStateGate) -> BooleanR1csPlan {
     let base = input_base + 128 * (1 + 2 * index);
     let value: Vec<_> = (base..base + 256).collect();
     match (gate.byte_entries, gate.object_entries) {
+      (Some(bytes), Some(objects)) if gate.applications => {
+        cell_with_application_handles(
+          &mut b,
+          one,
+          &mut violations,
+          *enabled,
+          &value,
+          (bytes, objects, gate.nat_values),
+        );
+      },
       (Some(entries), objects) if gate.nat_values => {
         cell_with_nat_handles(
           &mut b,

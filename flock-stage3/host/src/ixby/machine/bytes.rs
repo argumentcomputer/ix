@@ -66,6 +66,9 @@ impl ByteMachineSlots {
     let mut read_gate = ByteReadGate::new(nu, capacity, entries)?;
     if let Some(layout) = objects {
       read_gate = read_gate.with_object_handles(layout.entries());
+      if layout.applications {
+        read_gate = read_gate.with_applications();
+      }
     }
     if let Some(capacity) = nats {
       read_gate = read_gate.with_nat_capacity(capacity)?;

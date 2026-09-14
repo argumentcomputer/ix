@@ -175,12 +175,30 @@ fn build(layout: ProgramLayout, objects: bool, nats: bool) -> BooleanR1csPlan {
   let active = equal_constant(&mut b, one, &kind, 0);
   let returning = equal_constant(&mut b, one, &kind, 1);
   let halted = equal_constant(&mut b, one, &kind, 2);
-  let valid_kind = b.xor(&[active, returning, halted], one);
+  let applying = if layout.applications() {
+    equal_constant(&mut b, one, &kind, 3)
+  } else {
+    zero
+  };
+  let valid_kind = if layout.applications() {
+    b.xor(&[active, returning, halted, applying], one)
+  } else {
+    b.xor(&[active, returning, halted], one)
+  };
   let mut violations: Vec<_> = (96..128).chain(224..256).collect();
   require(&mut b, one, &mut violations, one, valid_kind);
-  let inactive = not(&mut b, one, active);
+  let frame_live = if layout.applications() {
+    b.xor(&[active, applying], one)
+  } else {
+    active
+  };
+  let inactive = not(&mut b, one, frame_live);
   let frame_nonzero = any(&mut b, one, &(128..256).collect::<Vec<_>>());
   violations.push(b.and(inactive, frame_nonzero));
+  if layout.applications() {
+    let position = any(&mut b, one, &(128..192).collect::<Vec<_>>());
+    violations.push(b.and(applying, position));
+  }
   let function: Vec<_> = (128..160).collect();
   let block: Vec<_> = (160..192).collect();
   let locals: Vec<_> = (192..224).collect();
@@ -215,6 +233,12 @@ fn build(layout: ProgramLayout, objects: bool, nats: bool) -> BooleanR1csPlan {
     .collect();
   if nats {
     valid_opcodes.push(equal_constant(&mut b, one, &record[32..64], 10));
+  }
+  if layout.applications() {
+    valid_opcodes.extend(
+      (11..=13)
+        .map(|opcode| equal_constant(&mut b, one, &record[32..64], opcode)),
+    );
   }
   let valid = b.xor(&valid_opcodes, one);
   require(&mut b, one, &mut violations, active, valid);

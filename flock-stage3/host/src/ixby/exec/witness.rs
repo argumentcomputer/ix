@@ -8,6 +8,7 @@ use crate::{
   goldilocks::{self, CanonicalGoldilocksQuadGate, GoldilocksAddPairGate},
   hash::Blake3Gate,
   ixby::{
+    application::PapDispatchGate,
     byte_value::{BytePrimitiveGate, ByteReadGate},
     control::ControlStepGate,
     decode::{
@@ -65,6 +66,9 @@ pub(super) fn tables(
   }
   if let Some(nats) = &m.nats {
     tables.push((nats.slot, nats.gate.r1cs()));
+  }
+  if let Some(applications) = &m.applications {
+    tables.push((applications.slot, applications.gate.r1cs()));
   }
   if let Some(bytes) = &m.bytes {
     tables.extend([
@@ -163,6 +167,9 @@ pub(super) fn drivers<'a>(
   }
   if let Some(nats) = &m.nats {
     gate!(nats.slot, NatDispatchGate, &nats.gate);
+  }
+  if let Some(applications) = &m.applications {
+    gate!(applications.slot, PapDispatchGate, &applications.gate);
   }
   let a = &m.primitive_slots.arithmetic;
   native!(

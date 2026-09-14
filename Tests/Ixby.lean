@@ -10,6 +10,7 @@ public import Tests.Ixby.Flock.Bytes
 public import Tests.Ixby.Flock.Words
 public import Tests.Ixby.Flock.Objects
 public import Tests.Ixby.Flock.Nats
+public import Tests.Ixby.Flock.Applications
 public import Tests.Ixby.Aiur.Scalar
 public import Tests.Ixby.Aiur.Control
 public import Tests.Ixby.Aiur.Objects
