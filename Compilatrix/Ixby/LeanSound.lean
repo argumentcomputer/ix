@@ -4,6 +4,7 @@ import Compilatrix.Ixby.Runtime.NumberConversion
 import Compilatrix.Ixby.Runtime.NatArithmetic
 import Compilatrix.Ixby.Runtime.FieldArithmetic
 import Compilatrix.Ixby.Runtime.NatLoops
+import Compilatrix.Ixby.Runtime.Words
 
 /-! Typed-frontend proof boundaries: exact number decoding and checked
 execution of all emitted field helpers, complete number conversions, and Nat
@@ -299,5 +300,68 @@ def Image.certifyNatLoops (image : Image) : Except String image.NatLoopCertified
       candidates
       names
       certificate := ← NatLoops.certify image.program candidates.links }
+
+
+structure Image.WordCandidates (image : Image) where
+  links : Words.Links
+  layouts : image.HasNumberLayout links.conversions.layout
+
+def Image.wordCandidates (image : Image) : Except String image.WordCandidates := do
+  let conversions ← image.conversionCandidates
+  let function (name : Name) : Except String Nat :=
+    match image.state.functionNames[name]? with
+    | some id => .ok id
+    | none => .error s!"missing word runtime name {name}"
+  let links : Words.Links := {
+    conversions := conversions.links
+    u8OfNat := ← function `UInt8.ofNat
+    u8ToNat := ← function `UInt8.toNat
+    u8ToU32 := ← function `UInt8.toUInt32
+    u8Equal := ← function `UInt8.decEq
+    u8Add := ← function `UInt8.add
+    u8ShiftLeft := ← function `UInt8.shiftLeft
+    u8ShiftRight := ← function `UInt8.shiftRight
+    u32OfNat := ← function `UInt32.ofNat
+    u32OfNatLT := ← function `UInt32.ofNatLT
+    u32ToU8 := ← function `UInt32.toUInt8
+    u32ToNat := ← function `UInt32.toNat
+    u32Add := ← function `UInt32.add
+    u32Sub := ← function `UInt32.sub
+    u32Mul := ← function `UInt32.mul
+    u32And := ← function `UInt32.land
+    u32Or := ← function `UInt32.lor
+    u32Xor := ← function `UInt32.xor
+    u32ShiftLeft := ← function `UInt32.shiftLeft
+    u32ShiftRight := ← function `UInt32.shiftRight
+    u32Equal := ← function `UInt32.decEq
+    u32Less := ← function `UInt32.decLt
+    usizeOfNat := ← function `USize.ofNat
+    usizeToNat := ← function `USize.toNat
+    usizeAdd := ← function `USize.add
+    usizeSub := ← function `USize.sub
+    usizeEqual := ← function `USize.decEq
+    usizeLess := ← function `USize.decLt }
+  return { links, layouts := conversions.layouts }
+
+structure Image.WordCertified (image : Image) where
+  candidates : image.WordCandidates
+  names : image.wordCandidates = .ok candidates
+  certificate : Words.Certificate image.program candidates.links
+
+def Image.WordCertified.links {image : Image} (certified : image.WordCertified) :
+    Words.Links := certified.candidates.links
+
+theorem Image.WordCertified.layouts {image : Image} (certified : image.WordCertified) :
+    image.HasNumberLayout certified.links.conversions.layout := certified.candidates.layouts
+
+/-- Check all twenty-seven word helpers together with the complete conversion
+dependencies, number layouts, and source name bindings. -/
+def Image.certifyWords (image : Image) : Except String image.WordCertified := do
+  match names : image.wordCandidates with
+  | .error message => throw message
+  | .ok candidates => return {
+      candidates
+      names
+      certificate := ← Words.certify image.program candidates.links }
 
 end Compilatrix.Ixby.LeanFrontend

@@ -483,3 +483,295 @@ Ixon prefix retains the repository's existing, explicitly ledgered hash boundary
 
 /-- info: 'Compilatrix.Ixby.Runtime.NatLoops.Certificate.pow_evaluates' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.Ixby.Runtime.NatLoops.Certificate.pow_evaluates
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.Certificate.u8Add_returns' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.Certificate.u8Add_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.Certificate.u32Add_returns' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.Certificate.u32Add_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.Certificate.u32Mul_returns' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.Certificate.u32Mul_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.Certificate.usizeAdd_returns' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.Certificate.usizeAdd_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.Certificate.u32Sub_returns' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.Certificate.u32Sub_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.Certificate.usizeSub_returns' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.Certificate.usizeSub_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.Certificate.u32And_returns' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.Certificate.u32And_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.Certificate.u32Or_returns' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.Certificate.u32Or_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.Certificate.u32Xor_returns' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.Certificate.u32Xor_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.Certificate.u8ShiftLeft_returns' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.Certificate.u8ShiftLeft_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.Certificate.u8ShiftRight_returns' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.Certificate.u8ShiftRight_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.Certificate.u32ShiftLeft_returns' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.Certificate.u32ShiftLeft_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.Certificate.u32ShiftRight_returns' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.Certificate.u32ShiftRight_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.Conversion.Certificate.call_lowWord' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Conversion.Certificate.call_lowWord
+
+/-- info: 'Compilatrix.Ixby.Runtime.Conversion.Certificate.read_parts' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Conversion.Certificate.read_parts
+
+/-- info: 'Compilatrix.Ixby.Runtime.Conversion.Certificate.read_lowWords' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Conversion.Certificate.read_lowWords
+
+/-- info: 'Compilatrix.Ixby.Runtime.Conversion.Certificate.read_binary_parts' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Conversion.Certificate.read_binary_parts
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.Certificate.u8Equal_returns' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.Certificate.u8Equal_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.Certificate.u32Equal_returns' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.Certificate.u32Equal_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.Certificate.u32Less_returns' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.Certificate.u32Less_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.Certificate.usizeEqual_returns' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.Certificate.usizeEqual_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.Certificate.usizeLess_returns' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.Certificate.usizeLess_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.Certificate.u8ToNat_returns' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.Certificate.u8ToNat_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.Certificate.u8ToU32_returns' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.Certificate.u8ToU32_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.Certificate.u32ToNat_returns' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.Certificate.u32ToNat_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.Certificate.usizeToNat_returns' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.Certificate.usizeToNat_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.Certificate.u8OfNat_returns' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.Certificate.u8OfNat_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.Certificate.u32OfNat_returns' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.Certificate.u32OfNat_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.Certificate.usizeOfNat_returns' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.Certificate.usizeOfNat_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.Certificate.u32ToU8_returns' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.Certificate.u32ToU8_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.Certificate.u32OfNatLT_returns' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.Certificate.u32OfNatLT_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.lowWord_mod' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.lowWord_mod
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.lowWord_mask8' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.lowWord_mask8
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.lowWord_subtract' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.lowWord_subtract
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.subtract_nat' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.subtract_nat
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.masked_count' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.masked_count
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.masked_count_lt' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.masked_count_lt
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.modular_returns' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.modular_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.subtract_returns' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.subtract_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.u8_lowWord' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.u8_lowWord
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.u8_shiftLeft_nat' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.u8_shiftLeft_nat
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.u8_shiftRight_nat' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.u8_shiftRight_nat
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.u32_shiftLeft_nat' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.u32_shiftLeft_nat
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.u32_shiftRight_nat' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.u32_shiftRight_nat
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.identity_returns' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.identity_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.compare_returns' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.compare_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.logical_returns' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.logical_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.shift_returns' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.shift_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.truncate_returns' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.truncate_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.Certificate.u8ToNat_evaluates' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.Certificate.u8ToNat_evaluates
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.Certificate.u8ToU32_evaluates' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.Certificate.u8ToU32_evaluates
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.Certificate.u32ToNat_evaluates' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.Certificate.u32ToNat_evaluates
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.Certificate.usizeToNat_evaluates' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.Certificate.usizeToNat_evaluates
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.Certificate.u8OfNat_evaluates' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.Certificate.u8OfNat_evaluates
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.Certificate.u32OfNat_evaluates' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.Certificate.u32OfNat_evaluates
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.Certificate.usizeOfNat_evaluates' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.Certificate.usizeOfNat_evaluates
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.Certificate.u32ToU8_evaluates' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.Certificate.u32ToU8_evaluates
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.Certificate.u32OfNatLT_evaluates' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.Certificate.u32OfNatLT_evaluates
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.Certificate.u8Equal_evaluates' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.Certificate.u8Equal_evaluates
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.Certificate.u32Equal_evaluates' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.Certificate.u32Equal_evaluates
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.Certificate.u32Less_evaluates' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.Certificate.u32Less_evaluates
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.Certificate.usizeEqual_evaluates' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.Certificate.usizeEqual_evaluates
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.Certificate.usizeLess_evaluates' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.Certificate.usizeLess_evaluates
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.Certificate.u8Add_evaluates' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.Certificate.u8Add_evaluates
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.Certificate.u32Add_evaluates' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.Certificate.u32Add_evaluates
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.Certificate.u32Mul_evaluates' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.Certificate.u32Mul_evaluates
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.Certificate.usizeAdd_evaluates' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.Certificate.usizeAdd_evaluates
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.Certificate.u32Sub_evaluates' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.Certificate.u32Sub_evaluates
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.Certificate.usizeSub_evaluates' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.Certificate.usizeSub_evaluates
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.Certificate.u32And_evaluates' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.Certificate.u32And_evaluates
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.Certificate.u32Or_evaluates' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.Certificate.u32Or_evaluates
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.Certificate.u32Xor_evaluates' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.Certificate.u32Xor_evaluates
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.Certificate.u8ShiftLeft_evaluates' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.Certificate.u8ShiftLeft_evaluates
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.Certificate.u8ShiftRight_evaluates' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.Certificate.u8ShiftRight_evaluates
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.Certificate.u32ShiftLeft_evaluates' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.Certificate.u32ShiftLeft_evaluates
+
+/-- info: 'Compilatrix.Ixby.Runtime.Words.Certificate.u32ShiftRight_evaluates' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.Certificate.u32ShiftRight_evaluates

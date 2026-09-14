@@ -64,6 +64,7 @@ private def buildImage (directory : System.FilePath) : IO Image := do
   discard <| checked image.certifyNatArithmetic
   discard <| checked image.certifyFields
   discard <| checked image.certifyNatLoops
+  discard <| checked image.certifyWords
   return image
 
 def main (args : List String) : IO UInt32 := cli "stage2-ixby" do

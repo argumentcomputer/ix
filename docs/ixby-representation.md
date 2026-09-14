@@ -1,9 +1,10 @@
 # Typed Ixby runtime representation proofs
 
 The runtime proofs for the [typed Lean frontend](ixby-lean.md) establish exact
-numeric representation laws and certify all fourteen generated field helpers
-and eleven number conversion helpers, plus eight Nat arithmetic/comparison
-helpers and six Nat loop/wrapper functions against the unchanged Ixby evaluator.
+numeric representation laws and certify all 52 generated number helpers and
+all 14 field helpers against the unchanged Ixby evaluator. These include
+eleven number conversions, eight Nat arithmetic/comparison helpers, six Nat
+loop/wrapper functions, and 27 UInt8/UInt32/USize helpers.
 The conversion and arithmetic proofs include complete loops and calls into existing caller
 continuations. The complete LCNF transformation and Stage2 verifier remain
 outside this certificate boundary.
@@ -327,12 +328,82 @@ structurally admitted. Nineteen additional axiom guards cover the arithmetic
 bounds, multiplication calls, all six return contracts, and all six
 whole-program corollaries.
 
+## Complete UInt8, UInt32, and USize helpers
+
+`Image.certifyWords` checks all 27 word helpers with the eleven conversion
+dependencies, constructor declarations, distinct layout tags, and source name
+bindings. The [templates](../Compilatrix/Ixby/Runtime/WordCode.lean) and
+[certificate](../Compilatrix/Ixby/Runtime/WordCertificate.lean) retain exact
+propositional code equality using the image's actual function indices.
+Together, the certificates cover all 52 functions emitted by `buildNumbers`
+and all 14 emitted by `buildFields`.
+
+The [conversion contracts](../Compilatrix/Ixby/Runtime/WordConversions.lean)
+cover all five truncations and four identity conversions. Truncation returns
+a canonical cached number with the source width's modular value. Identity
+conversions preserve the original value and representation. `UInt32.ofNatLT`
+requires its source bound and accepts any value in its erased proof slot;
+whole-program admission still validates that supplied value.
+
+The [arithmetic contracts](../Compilatrix/Ixby/Runtime/WordArithmetic.lean)
+cover byte addition, UInt32 addition/subtraction/multiplication, and USize
+addition/subtraction. Their [execution paths](../Compilatrix/Ixby/Runtime/WordModular.lean)
+perform all four operand observations, construct the intermediate cache,
+observe that result again, and truncate it. The
+[cache laws](../Compilatrix/Ixby/Runtime/WordLaws.lean) establish consistency
+before either result observation, including underflow subtraction. Bounds
+on unreduced sums and products follow from the source operand widths.
+
+The [comparison contracts](../Compilatrix/Ixby/Runtime/WordComparisons.lean)
+return exact source Booleans for three equalities and two strict orders.
+The [logical and shift contracts](../Compilatrix/Ixby/Runtime/WordBits.lean)
+cover UInt32 AND/OR/XOR and both UInt8/UInt32 shifts. The
+[shift laws](../Compilatrix/Ixby/Runtime/WordShiftLaws.lean) prove that the
+count masks implement source reduction modulo 8 or 32 and satisfy the
+reference primitive's strict count range. Byte shifts also mask the result
+back to eight bits.
+
+All numeric operations other than the identities return the exact cached
+source result. The [call proofs](../Compilatrix/Ixby/Runtime/WordCall.lean)
+execute ordinary observer calls and checked restoration of saved callers.
+Every local contract preserves arbitrary caller continuations, and all 27
+[whole-program corollaries](../Compilatrix/Ixby/Runtime/Words.lean) retain
+program admission, input validation, and the source representation premises.
+
+| Helpers | Local slots | Nat bits | Spare continuations | Byte capacity |
+| --- | ---: | ---: | ---: | ---: |
+| Four identity conversions | 1 | 0 | 0 | 0 |
+| UInt8/UInt32 truncations, including `ofNatLT` | 11 | 64 | 3 | 8 |
+| `USize.ofNat` | 11 | 65 | 3 | 8 |
+| Five comparisons | 10 | 64 | 3 | 8 |
+| UInt8/UInt32 arithmetic | 14 | 64 | 3 | 8 |
+| USize addition/subtraction | 14 | 65 | 3 | 8 |
+| Seven logical/shift helpers | 11 | 33 | 2 | 8 |
+
+These are sufficient bounds across all admitted number layouts. Arbitrary
+Nat inputs to `ofNat` must also fit the selected scalar limit. Source word
+operands already bound the other numeric intermediates. USize conversion,
+addition, and subtraction explicitly assume `System.Platform.numBits = 64`,
+matching the compiler's fixed width. Their 65-bit capacity is necessary even
+for some small results: truncating zero reads the literal `2^64`, and a
+wrapped sum can exceed the final source range. The logical/shift bound allows
+the word-to-Nat loop's final weight to reach `2^32`.
+
+Every regression image and Stage2 export obtains the word certificate. The
+word suite has 45,769 admitted executions, including every byte input, all
+byte-shift residues and wrapped counts, all number layouts, word/field
+boundaries, and Nat conversions above 256 bits. It checks exact results and
+cache consistency. Another 136 caller cases retain every input, proof slot,
+sentinel, and result; 45 local resource cases check successful capacities and
+exact failures. All 92 code/dependency/name/layout mutations are rejected,
+including 88 that pass structural admission. Seventy-six additional axiom
+guards cover these source, execution, arithmetic, and caller contracts.
+
 ## Remaining simulation work
 
-The next extension can use these contracts to prove that the remaining
-`UInt8`, `UInt32`, and `USize` helpers preserve the source representation relations.
-Further composition must cover arrays and byte representations, the complete
-Stage2 adapter, and general LCNF control flow.
+The next extension can compose these contracts through arrays and byte
+representations. Further work must cover the complete Stage2 adapter and
+general LCNF control flow.
 Typed erasure, specialization, original Ixon source authentication, and
 source/image reflection remain open. This slice introduces no new axiom or
 native interface and does not produce an `IxonCompilation`.
@@ -349,7 +420,8 @@ nix flake check --no-update-lock-file
 
 The axiom fence includes 22 representation/scalar guards, 20 conversion and
 continuation guards, 21 Nat arithmetic/comparison/call guards, 17 field/call
-guards, and 19 Nat loop/arithmetic-bound/call guards. They pin the contracts to
+guards, 19 Nat loop/arithmetic-bound/call guards, and 76 word/source/call
+guards: 175 runtime guards in total. They pin the contracts to
 subsets of `propext`, `Classical.choice`, and
 `Quot.sound`. The integration gate retains
 the 4,585 differential executions, binary corpus, exact fresh Stage2 artifact

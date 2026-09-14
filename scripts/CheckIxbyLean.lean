@@ -19,6 +19,7 @@ private def compileImage (env : Environment) (name : Name) (wire := false) : IO 
   discard <| checked image.certifyNatArithmetic
   discard <| checked image.certifyFields
   discard <| checked image.certifyNatLoops
+  discard <| checked image.certifyWords
   return image
 
 private def certificateMutations (image : Image) : IO Unit := do
@@ -905,6 +906,287 @@ private def natLoopExecutions (image : Image) : IO Unit := do
   localRun power links.powLoop #[field 3, .scalar (.nat 5), raw 7] (.ok (raw (7 * 3 ^ 5)))
   IO.println s!"check-ixby-lean Nat loop contracts: {← count.get} admitted executions; {← callerCount.get} caller cases; {← localCount.get} resource cases"
 
+private def wordMutations (image : Image) : IO Unit := do
+  let certified ← checked image.certifyWords
+  let links := certified.links
+  let conversions := links.conversions
+  let instruction (id block : Nat) (changed : Ix.Ixby.Instr) : Image :=
+    { image with program := { image.program with functions := image.program.functions.modify id fun fn =>
+      { fn with blocks := fn.blocks.modify block fun old => { old with instruction := changed } } } }
+  let function (id : Nat) (change : Ix.Ixby.Function → Ix.Ixby.Function) : Image :=
+    { image with program := { image.program with functions := image.program.functions.modify id change } }
+  let rejected ← IO.mkRef 0
+  let admittedCount ← IO.mkRef 0
+  let reject (changed : Image) (label : String) (admitted := true) : IO Unit := do
+    if admitted then
+      discard <| checked (Ix.Ixby.validateProgram changed.state.limits changed.program |>.mapError reprStr)
+      admittedCount.modify (· + 1)
+    match changed.certifyWords with
+    | .error _ => rejected.modify (· + 1)
+    | .ok _ => throw (IO.userError s!"word certificate accepted {label}")
+  let helpers : Array (Nat × Name) := #[(links.u8OfNat, `UInt8.ofNat), (links.u8ToNat, `UInt8.toNat), (links.u8ToU32, `UInt8.toUInt32), (links.u8Equal, `UInt8.decEq), (links.u8Add, `UInt8.add), (links.u8ShiftLeft, `UInt8.shiftLeft), (links.u8ShiftRight, `UInt8.shiftRight), (links.u32OfNat, `UInt32.ofNat), (links.u32OfNatLT, `UInt32.ofNatLT), (links.u32ToU8, `UInt32.toUInt8), (links.u32ToNat, `UInt32.toNat), (links.u32Add, `UInt32.add), (links.u32Sub, `UInt32.sub), (links.u32Mul, `UInt32.mul), (links.u32And, `UInt32.land), (links.u32Or, `UInt32.lor), (links.u32Xor, `UInt32.xor), (links.u32ShiftLeft, `UInt32.shiftLeft), (links.u32ShiftRight, `UInt32.shiftRight), (links.u32Equal, `UInt32.decEq), (links.u32Less, `UInt32.decLt), (links.usizeOfNat, `USize.ofNat), (links.usizeToNat, `USize.toNat), (links.usizeAdd, `USize.add), (links.usizeSub, `USize.sub), (links.usizeEqual, `USize.decEq), (links.usizeLess, `USize.decLt)]
+  for (id, name) in helpers do
+    let fn := image.program.functions[id]!
+    reject (instruction id (fn.blocks.size - 1) (.ret .erased)) s!"changed return of {name}"
+    let other := if id == links.u32Sub then links.u8ToNat else links.u32Sub
+    let functionNames := image.state.functionNames.insert name other
+    reject { image with state := { image.state with functionNames } } s!"wrong name binding for {name}"
+  for id in #[conversions.toWord, conversions.fromWordLoop, conversions.fromWord, conversions.fromRaw,
+      conversions.lowWord, conversions.natural, conversions.fieldNatural, conversions.asField,
+      conversions.fieldFromNatural, conversions.nibbleWord, conversions.nibbleNat] do
+    let fn := image.program.functions[id]!
+    reject (instruction id (fn.blocks.size - 1) (.ret .erased)) s!"changed conversion dependency {id}"
+  reject (instruction links.u8OfNat 2 (.letOp (.primitive .natDiv [.local 1, .literal (.nat 256)]) 3))
+    "division instead of truncation"
+  reject (instruction links.u8OfNat 3 (.letOp (.primitive .word32And [.local 2, .literal (.word32 254)]) 4))
+    "incorrect byte cache mask"
+  reject (instruction links.u32OfNat 2 (.letOp (.primitive .natMod [.local 1, .literal (.nat (2 ^ 16))]) 3))
+    "incorrect UInt32 modulus"
+  reject (instruction links.usizeOfNat 2 (.letOp (.primitive .natMod [.local 1, .literal (.nat (2 ^ 32))]) 3))
+    "32-bit USize truncation"
+  reject (instruction links.u32OfNatLT 0 (.letOp (.call conversions.natural [.local 1]) 1))
+    "observed erased proof slot"
+  reject (instruction links.u8Add 2 (.letOp (.call conversions.natural [.local 0]) 3))
+    "observed left operand twice"
+  reject (instruction links.u32Add 4 (.letOp (.primitive .natSub [.local 2, .local 4]) 5))
+    "subtraction instead of addition"
+  reject (instruction links.u32Mul 5 (.letOp (.primitive .word32Add [.local 3, .local 5]) 6))
+    "stale product cache"
+  reject (instruction links.usizeAdd 6 (.letOp (.construct conversions.cachedCtor [.local 7, .local 6]) 7))
+    "swapped intermediate number components"
+  reject (instruction links.u32Add 7 (.letOp (.call conversions.natural [.local 0]) 8))
+    "truncated the original input"
+  reject (instruction links.u8Add 8 (.letOp (.call conversions.lowWord [.local 0]) 9))
+    "retained the original cache"
+  reject (instruction links.u32Sub 4 (.letOp (.primitive .natAdd [.local 2, .literal (.nat (2 ^ 16))]) 5))
+    "incorrect subtraction wrap"
+  reject (instruction links.usizeSub 5 (.letOp (.primitive .natSub [.local 4, .local 6]) 6))
+    "reversed Nat subtraction"
+  reject (instruction links.u32Sub 6 (.letOp (.primitive .word32Sub [.local 5, .local 3]) 7))
+    "reversed cache subtraction"
+  reject (instruction links.u32And 2 (.letOp (.primitive .word32Or [.local 2, .local 3]) 3))
+    "wrong logical primitive"
+  reject (instruction links.u32Xor 3 (.tailCall conversions.fromRaw [.local 4])) "wrong logical result adapter"
+  reject (instruction links.u8ShiftLeft 2 (.letOp (.primitive .word32And [.local 3, .literal (.word32 31)]) 3))
+    "byte shift used the UInt32 count mask"
+  reject (instruction links.u32ShiftRight 2 (.letOp (.primitive .word32And [.local 3, .literal (.word32 32)]) 3))
+    "shift retained the out-of-range count bit"
+  reject (instruction links.u32ShiftLeft 3 (.letOp (.primitive .word32Shr [.local 2, .local 4]) 4))
+    "wrong shift direction"
+  reject (instruction links.u8ShiftRight 4 (.letOp (.primitive .word32And [.local 5, .literal (.word32 254)]) 5))
+    "byte shift corrupted its output mask"
+  reject (instruction links.u32Equal 2 (.letOp (.primitive .natLt [.local 2, .local 3]) 3)) "wrong comparison"
+  reject (function links.usizeSub fun fn => { fn with blocks := fn.blocks.push ⟨0, .ret .erased⟩ })
+    "extra unreachable word block"
+  reject (function links.u8ToNat fun fn => { fn with entry := 1 }) "changed identity entry" false
+  reject (function links.u32OfNatLT fun fn => { fn with arity := 1 }) "omitted proof-slot arity" false
+  let constructors := image.program.constructors.modify conversions.cachedCtor fun ctor => { ctor with fields := 1 }
+  reject { image with program := { image.program with constructors } } "wrong cached layout" false
+  let constructorNames := image.state.constructorNames.insert `Ixby.Runtime.RawNumber conversions.fieldCtor
+  reject { image with state := { image.state with constructorNames } } "wrong raw constructor binding"
+  let constructors := image.program.constructors.modify conversions.rawCtor fun ctor => { ctor with id := conversions.layout.cached }
+  reject { image with program := { image.program with constructors } } "duplicate number tags" false
+  IO.println s!"check-ixby-lean words: 27 generated functions; {← rejected.get} rejected mutations ({← admittedCount.get} structurally admitted)"
+
+private def wordExecutions (image : Image) : IO Unit := do
+  need (System.Platform.numBits == 64) "word source contracts require the compiler's 64-bit USize platform"
+  let certified ← checked image.certifyWords
+  let links := certified.links
+  let layout := links.conversions.layout
+  let cached (n : Nat) : Ix.Ixby.Value :=
+    .ctor layout.cached #[.scalar (.nat n), .scalar (.word32 n.toUInt32)]
+  let raw (n : Nat) : Ix.Ixby.Value := .ctor layout.raw #[.scalar (.nat n)]
+  let field (n : Nat) : Ix.Ixby.Value :=
+    .ctor layout.field #[.scalar (.field (Ix.Ixby.Goldilocks.reduce n))]
+  let cases (n : Nat) : Array (Nat × Ix.Ixby.Value) :=
+    #[(n, cached n), (n, raw n), (n % Ix.Ixby.goldilocksModulus, field n)]
+  let execute (program : Ix.Ixby.Program) (args : Array Ix.Ixby.Value) : IO Ix.Ixby.Value := do
+    discard <| checked (Compilatrix.Ixby.Runtime.Words.certify program links)
+    checked (Ix.Ixby.execute image.state.limits program args 200000 |>.mapError reprStr)
+  let count ← IO.mkRef 0
+  let registered ← IO.mkRef ({} : Std.HashMap Nat Nat)
+  let callerCases ← IO.mkRef (#[] : Array (Nat × Array Ix.Ixby.Value × Ix.Ixby.Value))
+  let runCase (id : Nat) (args : Array Ix.Ixby.Value) (expected : Ix.Ixby.Value) : IO Unit := do
+    let actual ← execute { image.program with entry := id } args
+    need (actual == expected) s!"word helper {id}: {reprStr args}: expected {reprStr expected}, got {reprStr actual}"
+    if let .ctor _ _ := expected then discard <| checked (image.decodeNumber actual)
+    let old := (← registered.get)[id]?.getD 0
+    if old < 3 then
+      registered.modify (·.insert id (old + 1))
+      callerCases.modify (·.push (id, args, expected))
+    count.modify (· + 1)
+  let numbers := #[0, 1, 2, 127, 128, 255, 256, 257, 65535, 65536, 2 ^ 31 - 1, 2 ^ 31,
+    2 ^ 32 - 1, 2 ^ 32, 2 ^ 32 + 1, Ix.Ixby.goldilocksModulus - 1, Ix.Ixby.goldilocksModulus,
+    Ix.Ixby.goldilocksModulus + 1, 2 ^ 64 - 1, 2 ^ 64, 2 ^ 80 + 17, 2 ^ 256 + 255]
+  for n in numbers do
+    for (n, value) in cases n do
+      runCase links.u8OfNat #[value] (cached n.toUInt8.toNat)
+      runCase links.u32OfNat #[value] (cached n.toUInt32.toNat)
+      runCase links.usizeOfNat #[value] (cached n.toUSize.toNat)
+  for n in #[0, 1, 255, 256, 2 ^ 16, 2 ^ 31, 2 ^ 32 - 1] do
+    for (n, value) in cases n do
+      for proofValue in #[Ix.Ixby.Value.erased, .scalar (.word32 0xC0FFEE), raw 123] do
+        runCase links.u32OfNatLT #[value, proofValue] (cached n)
+  let u8Binary : Array (Nat × (UInt8 → UInt8 → Ix.Ixby.Value)) := #[
+    (links.u8Add, fun a b => cached (a + b).toNat),
+    (links.u8Equal, fun a b => .scalar (.bool (a == b))),
+    (links.u8ShiftLeft, fun a b => cached (a <<< b).toNat),
+    (links.u8ShiftRight, fun a b => cached (a >>> b).toNat)]
+  for n in Array.range 256 do
+    for (_, value) in cases n do
+      runCase links.u8ToNat #[value] value
+      runCase links.u8ToU32 #[value] value
+    for amount in #[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 31, 32, 255] do
+      for (id, source) in u8Binary do
+        runCase id #[cached n, cached amount] (source n.toUInt8 amount.toUInt8)
+  for a in #[0, 1, 2, 7, 8, 127, 128, 255] do
+    for b in #[0, 1, 7, 8, 31, 32, 128, 255] do
+      for (a, left) in cases a do
+        for (b, right) in cases b do
+          for (id, source) in u8Binary do
+            runCase id #[left, right] (source a.toUInt8 b.toUInt8)
+  let u32Binary : Array (Nat × (UInt32 → UInt32 → Ix.Ixby.Value)) := #[
+    (links.u32Add, fun a b => cached (a + b).toNat),
+    (links.u32Sub, fun a b => cached (a - b).toNat),
+    (links.u32Mul, fun a b => cached (a * b).toNat),
+    (links.u32And, fun a b => cached (a &&& b).toNat),
+    (links.u32Or, fun a b => cached (a ||| b).toNat),
+    (links.u32Xor, fun a b => cached (a ^^^ b).toNat),
+    (links.u32ShiftLeft, fun a b => cached (a <<< b).toNat),
+    (links.u32ShiftRight, fun a b => cached (a >>> b).toNat),
+    (links.u32Equal, fun a b => .scalar (.bool (a == b))),
+    (links.u32Less, fun a b => .scalar (.bool (a < b)))]
+  let wordNumbers := #[0, 1, 2, 7, 8, 31, 32, 33, 127, 128, 255, 256, 65535, 65536, 2 ^ 31, 2 ^ 32 - 1]
+  for a in wordNumbers do
+    for (a, value) in cases a do
+      runCase links.u32ToNat #[value] value
+      runCase links.u32ToU8 #[value] (cached a.toUInt32.toUInt8.toNat)
+    for b in wordNumbers do
+      for (a, left) in cases a do
+        for (b, right) in cases b do
+          for (id, source) in u32Binary do
+            runCase id #[left, right] (source a.toUInt32 b.toUInt32)
+  let usizeBinary : Array (Nat × (USize → USize → Ix.Ixby.Value)) := #[
+    (links.usizeAdd, fun a b => cached (a + b).toNat),
+    (links.usizeSub, fun a b => cached (a - b).toNat),
+    (links.usizeEqual, fun a b => .scalar (.bool (a == b))),
+    (links.usizeLess, fun a b => .scalar (.bool (a < b)))]
+  let sizeNumbers := #[0, 1, 2, 255, 2 ^ 32 - 1, 2 ^ 32, 2 ^ 32 + 1, Ix.Ixby.goldilocksModulus - 1,
+    Ix.Ixby.goldilocksModulus, Ix.Ixby.goldilocksModulus + 1, 2 ^ 63, 2 ^ 64 - 1]
+  for a in sizeNumbers do
+    for (_, value) in cases a do runCase links.usizeToNat #[value] value
+    for b in sizeNumbers do
+      for (a, left) in cases a do
+        for (b, right) in cases b do
+          for (id, source) in usizeBinary do
+            runCase id #[left, right] (source a.toUSize b.toUSize)
+  need ((← registered.get).size == 27) "word execution suite missed a generated helper"
+  let large := 2 ^ 256 + 255
+  for (id, expected) in #[(links.u8OfNat, large.toUInt8.toNat),
+      (links.u32OfNat, large.toUInt32.toNat), (links.usizeOfNat, large.toUSize.toNat)] do
+    callerCases.modify (·.push (id, #[raw large], cached expected))
+  callerCases.modify (·.push (links.u32OfNatLT, #[raw (2 ^ 32 - 1), .erased], cached (2 ^ 32 - 1)))
+  callerCases.modify (·.push (links.u32ToU8, #[raw (2 ^ 32 - 1)], cached 255))
+  for (id, value) in #[(links.u8ToNat, raw 255), (links.u8ToU32, field 255),
+      (links.u32ToNat, raw (2 ^ 32 - 1)), (links.usizeToNat, raw (2 ^ 64 - 1))] do
+    callerCases.modify (·.push (id, #[value], value))
+  for (id, source) in u8Binary do
+    callerCases.modify (·.push (id, #[raw 255, field 255], source 255 255))
+  for (a, b) in #[(2 ^ 32 - 1, 255), (0, 1), (2 ^ 32 - 1, 32)] do
+    for (id, source) in u32Binary do
+      callerCases.modify (·.push (id, #[raw a, field b], source a.toUInt32 b.toUInt32))
+  for (a, b) in #[(2 ^ 64 - 1, 1), (0, 2 ^ 64 - 1), (Ix.Ixby.goldilocksModulus - 1, 3)] do
+    for (id, source) in usizeBinary do
+      callerCases.modify (·.push (id, #[raw a, raw b], source a.toUSize b.toUSize))
+  let callerCount ← IO.mkRef 0
+  for (id, args, expected) in ← callerCases.get do
+    let allArgs := args.push (.scalar (.word32 0xC0FFEE))
+    let mut blocks : Array Ix.Ixby.Block := #[⟨allArgs.size,
+      .letOp (.call id ((List.range args.size).map Ix.Ixby.Operand.local)) 1⟩]
+    let mut result := allArgs.size
+    let mut locals := allArgs.size + 1
+    let mut expected := expected
+    for i in (List.range allArgs.size).reverse do
+      blocks := blocks.push ⟨locals, .letOp (.construct links.conversions.cachedCtor
+        [.local i, .local result]) (blocks.size + 1)⟩
+      result := locals
+      locals := locals + 1
+      expected := .ctor layout.cached #[allArgs[i]!, expected]
+    blocks := blocks.push ⟨locals, .ret (.local result)⟩
+    let caller : Ix.Ixby.Function := { arity := allArgs.size, blocks }
+    let actual ← execute { image.program with
+      entry := image.program.functions.size
+      functions := image.program.functions.push caller } allArgs
+    need (actual == expected) s!"word caller {id} lost an input, proof slot, sentinel, or result"
+    callerCount.modify (· + 1)
+  let localCount ← IO.mkRef 0
+  let localRun (limits : Ix.Ixby.Limits) (id : Nat) (args : Array Ix.Ixby.Value)
+      (expected : Except Ix.Ixby.Error Ix.Ixby.Value) : IO Unit := do
+    let actual := Ix.Ixby.run limits image.program 200000
+      (Compilatrix.Ixby.Runtime.ScalarFunction.start id args)
+    let same := match actual, expected with
+      | .ok actual, .ok expected => actual == expected
+      | .error actual, .error expected => actual == expected
+      | _, _ => false
+    need same s!"word resource contract {id}: expected {reprStr expected}, got {reprStr actual}"
+    localCount.modify (· + 1)
+  let identityOnly : Ix.Ixby.Limits := {
+    image.state.limits with locals := 1, continuations := 0, natBits := 0, byteArrayBytes := 0 }
+  for id in #[links.u8ToNat, links.u8ToU32, links.u32ToNat, links.usizeToNat] do
+    localRun identityOnly id #[cached 255] (.ok (cached 255))
+    localRun { identityOnly with locals := 0 } id #[cached 255] (.error (.limit .locals))
+  let observed : Ix.Ixby.Limits := {
+    image.state.limits with locals := 11, continuations := 3, natBits := 64, byteArrayBytes := 8 }
+  let maxField := Ix.Ixby.goldilocksModulus - 1
+  localRun observed links.usizeEqual #[field maxField, raw maxField] (.ok (.scalar (.bool true)))
+  localRun { observed with locals := 9 } links.usizeEqual #[field maxField, raw maxField]
+    (.error (.limit .locals))
+  localRun { observed with continuations := 2 } links.usizeEqual #[field maxField, raw maxField]
+    (.error (.limit .continuations))
+  localRun { observed with byteArrayBytes := 7 } links.usizeEqual #[field maxField, raw maxField]
+    (.error (.limit .byteArrayBytes))
+  localRun { observed with natBits := 63 } links.usizeEqual #[field maxField, raw maxField]
+    (.error (.limit .natBits))
+  localRun observed links.u8OfNat #[field maxField] (.ok (cached maxField.toUInt8.toNat))
+  localRun { observed with locals := 10 } links.u8OfNat #[raw 65535] (.error (.limit .locals))
+  localRun { observed with natBits := 32 } links.u32OfNat #[cached 0] (.error (.limit .natBits))
+  localRun { observed with natBits := 33 } links.u32OfNat #[cached 0] (.ok (cached 0))
+  localRun observed links.usizeOfNat #[cached 0] (.error (.limit .natBits))
+  localRun { observed with natBits := 65 } links.usizeOfNat #[cached 0] (.ok (cached 0))
+  localRun { observed with natBits := 257 } links.u32OfNat #[raw (2 ^ 256 + 255)] (.ok (cached 255))
+  localRun { observed with natBits := 256 } links.u32OfNat #[raw (2 ^ 256 + 255)] (.error (.limit .natBits))
+  let modular := { observed with locals := 14 }
+  localRun modular links.u8Add #[raw 255, field 1] (.ok (cached 0))
+  localRun { modular with locals := 13 } links.u8Add #[cached 255, cached 1] (.error (.limit .locals))
+  localRun { modular with locals := 13 } links.u32Add #[cached (2 ^ 32 - 1), cached 1] (.ok (cached 0))
+  localRun { modular with locals := 12 } links.u32Add #[cached (2 ^ 32 - 1), cached 1] (.error (.limit .locals))
+  localRun modular links.u32Mul #[cached (2 ^ 32 - 1), cached (2 ^ 32 - 1)] (.ok (cached 1))
+  localRun { modular with natBits := 63 } links.u32Mul #[cached (2 ^ 32 - 1), cached (2 ^ 32 - 1)]
+    (.error (.limit .natBits))
+  localRun modular links.u32Sub #[cached 0, field 1] (.ok (cached (2 ^ 32 - 1)))
+  localRun { modular with locals := 13 } links.u32Sub #[cached 0, cached 1] (.error (.limit .locals))
+  localRun modular links.usizeAdd #[cached (2 ^ 64 - 1), cached 1] (.error (.limit .natBits))
+  localRun { modular with natBits := 65 } links.usizeAdd #[cached (2 ^ 64 - 1), cached 1] (.ok (cached 0))
+  localRun modular links.usizeSub #[cached 0, cached 1] (.error (.limit .natBits))
+  localRun { modular with natBits := 65 } links.usizeSub #[cached 0, cached 1] (.ok (cached (2 ^ 64 - 1)))
+  localRun { modular with natBits := 65 } links.usizeSub #[field maxField, raw maxField] (.ok (cached 0))
+  let logical := { observed with continuations := 2, natBits := 33 }
+  localRun logical links.u32And #[raw (2 ^ 32 - 1), field (2 ^ 32 - 1)] (.ok (cached (2 ^ 32 - 1)))
+  localRun { logical with locals := 10 } links.u32And #[raw (2 ^ 32 - 1), cached (2 ^ 32 - 1)]
+    (.error (.limit .locals))
+  localRun { logical with continuations := 1 } links.u32Or #[cached (2 ^ 32 - 1), cached 0]
+    (.error (.limit .continuations))
+  localRun { logical with byteArrayBytes := 7 } links.u32Xor #[field 1, cached 1]
+    (.error (.limit .byteArrayBytes))
+  localRun { logical with natBits := 32 } links.u32Or #[cached (2 ^ 32 - 1), cached 0]
+    (.error (.limit .natBits))
+  localRun logical links.u32ShiftLeft #[field 1, raw 31] (.ok (cached (2 ^ 31)))
+  localRun logical links.u32ShiftLeft #[field 1, raw 32] (.ok (cached 1))
+  localRun logical links.u32ShiftRight #[raw (2 ^ 32 - 1), field 255] (.ok (cached 1))
+  localRun logical links.u8ShiftLeft #[raw 255, field 8] (.ok (cached 255))
+  localRun logical links.u8ShiftLeft #[raw 255, field 7] (.ok (cached 128))
+  localRun logical links.u8ShiftRight #[field 255, raw 255] (.ok (cached 1))
+  IO.println s!"check-ixby-lean word contracts: {← count.get} admitted executions; {← callerCount.get} caller cases; {← localCount.get} resource cases"
 private def compileRejects (env : Environment) (name : Name) (limits : Ix.Ixby.Limits)
     (message : String) : IO Unit := do
   let (result, _) ← (compile name limits).toIO
@@ -944,6 +1226,8 @@ def main : IO UInt32 := cli "check-ixby-lean" do
   fieldExecutions runtimeImage
   natLoopMutations runtimeImage
   natLoopExecutions runtimeImage
+  wordMutations runtimeImage
+  wordExecutions runtimeImage
   compileRejects env `Nat.add { byteArrayBytes := 2 ^ 32 }
     "typed Ixby packed byte capacity must fit Word32 indices"
   compileRejects env `Float.add {} "unsupported typed runtime extern Float.add"

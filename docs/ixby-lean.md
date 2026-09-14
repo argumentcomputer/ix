@@ -15,7 +15,9 @@ Packed byte capacity must be below 2³², matching the target byte-index ABI.
 The frontend remains experimental. The [runtime proofs](ixby-representation.md)
 establish exact numeric/byte laws and certify all fourteen emitted field helpers,
 eleven number conversion helpers, eight Nat arithmetic/comparison helpers,
-and six Nat shift/logarithm/power functions, including complete loops and caller continuations.
+six Nat shift/logarithm/power functions, and 27 UInt8/UInt32/USize helpers,
+including complete loops and caller continuations. This covers all 52 emitted
+number helpers and all 14 field helpers.
 The complete frontend has no source-refinement certificate. It does
 not produce an `IxonCompilation` or
 authenticate the original anonymous Ixon source address. Constructor identities
@@ -30,7 +32,9 @@ zero behavior. An optional low Word32 cache supports byte indexing and word
 operations. Division and remainder produce uncached values; ordinary arithmetic
 propagates them without unnecessary word conversion. Conversions consume four
 bits at a time through comparisons with literals and ordinary instructions.
-The USize lowering uses 64-bit source semantics.
+The USize lowering uses 64-bit source semantics. The USize conversion and
+arithmetic proofs state that platform assumption explicitly and allow 65-bit
+intermediates before modular reduction.
 
 Goldilocks operations use native field addition, subtraction, multiplication,
 inversion and equality. A field-backed number retains an exact Nat view for
@@ -140,6 +144,17 @@ unscaled power to fit. The tests add 6,016 admitted executions, 51 caller cases,
 45 resource cases, and 44 rejected mutations, of which 40 remain structurally
 admitted. Nineteen axiom guards cover the loop contracts and supporting bounds.
 Every compared image and Stage2 export obtains these certificates.
+
+All 27 UInt8/UInt32/USize helpers also have exact code certificates and source
+contracts, completing the number runtime. They cover identity conversions,
+truncation and the erased `ofNatLT` proof slot, modular arithmetic, equality
+and order, logical operations, and source count reduction for shifts.
+Every image and Stage2 export obtains `Image.certifyWords`. The word suite
+has 45,769 admitted executions, 136 caller cases, 45 resource cases, and 92
+rejected mutations, including 88 structurally admitted programs. Seventy-six
+additional axiom guards retain only the ordinary logical basis. Source USize
+conversion/addition/subtraction require a 64-bit platform and 65 Nat bits;
+all whole-program contracts retain ordinary admission and input validation.
 
 The binary suite checks 81 decoded executions covering every scalar, primitive,
 operation, and instruction. It also checks structured constructor/PAP input and
