@@ -60,6 +60,7 @@ private def buildImage (directory : System.FilePath) : IO Image := do
   let image ← checked result
   discard <| checked image.certifyNumberLayout
   discard <| checked image.certifyScalars
+  discard <| checked image.certifyConversions
   return image
 
 def main (args : List String) : IO UInt32 := cli "stage2-ixby" do

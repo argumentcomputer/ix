@@ -1,8 +1,9 @@
 import Compilatrix.Ixby.Lean
 import Compilatrix.Ixby.Runtime.ScalarCertificate
+import Compilatrix.Ixby.Runtime.NumberConversion
 
-/-! The first typed-frontend proof boundary: exact number decoding and checked
-execution of seven native extension helpers from the actual compiled image.
+/-! Typed-frontend proof boundaries: exact number decoding and checked
+execution of native extension helpers and complete number conversions.
 This does not certify Lean proof erasure or the general LCNF lowering. -/
 
 namespace Compilatrix.Ixby.LeanFrontend
@@ -114,5 +115,59 @@ def Image.certifyScalars (image : Image) : Except String image.ScalarCertified :
   match names : image.scalarLinks with
   | .error message => throw message
   | .ok links => return { links, names, certificate := ← Runtime.certifyScalars image.program links }
+
+structure Image.ConversionCandidates (image : Image) where
+  links : Conversion.Links
+  layouts : image.HasNumberLayout links.layout
+
+/-- Source names locate all call and constructor indices. The layout witness
+is retained for the image's own decoder; the certificate subsequently checks
+every complete function and constructor declaration in the actual program. -/
+def Image.conversionCandidates (image : Image) : Except String image.ConversionCandidates := do
+  let layout ← image.certifyNumberLayout
+  let function (name : Name) : Except String Nat :=
+    match image.state.functionNames[name]? with
+    | some id => .ok id
+    | none => .error s!"missing conversion runtime name {name}"
+  let constructor (name : Name) : Except String Nat :=
+    match image.state.constructorNames[name]? with
+    | some id => .ok id
+    | none => .error s!"missing conversion constructor name {name}"
+  let links : Conversion.Links := {
+    toWord := ← function `Ixby.Runtime.toWord
+    fromWordLoop := ← function `Ixby.Runtime.fromWordLoop
+    fromWord := ← function `Ixby.Runtime.fromWord
+    fromRaw := ← function `Ixby.Runtime.fromRaw
+    lowWord := ← function `Ixby.Runtime.lowWord
+    natural := ← function `Ixby.Runtime.natural
+    fieldNatural := ← function `Ixby.Runtime.fieldNatural
+    asField := ← function `Ixby.Runtime.asField
+    fieldFromNatural := ← function `Ixby.Runtime.fieldFromNatural
+    nibbleWord := ← function `Ixby.Runtime.nibbleWord
+    nibbleNat := ← function `Ixby.Runtime.nibbleNat
+    cachedCtor := ← constructor `Ixby.Runtime.Number
+    rawCtor := ← constructor `Ixby.Runtime.RawNumber
+    fieldCtor := ← constructor `Ixby.Runtime.FieldNumber
+    layout := layout.layout }
+  return { links, layouts := layout.layouts }
+
+structure Image.ConversionCertified (image : Image) where
+  candidates : image.ConversionCandidates
+  names : image.conversionCandidates = .ok candidates
+  certificate : Conversion.Certificate image.program candidates.links
+
+def Image.ConversionCertified.links {image : Image} (certified : image.ConversionCertified) :
+    Conversion.Links := certified.candidates.links
+
+theorem Image.ConversionCertified.layouts {image : Image} (certified : image.ConversionCertified) :
+    image.HasNumberLayout certified.links.layout := certified.candidates.layouts
+
+def Image.certifyConversions (image : Image) : Except String image.ConversionCertified := do
+  match names : image.conversionCandidates with
+  | .error message => throw message
+  | .ok candidates => return {
+      candidates
+      names
+      certificate := ← Conversion.certify image.program candidates.links }
 
 end Compilatrix.Ixby.LeanFrontend

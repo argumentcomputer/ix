@@ -128,3 +128,91 @@ Ixon prefix retains the repository's existing, explicitly ledgered hash boundary
 
 /-- info: 'Compilatrix.Ixby.Runtime.ScalarCertificate.extFst_evaluates' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.Ixby.Runtime.ScalarCertificate.extFst_evaluates
+
+/-! Complete numeric conversion paths preserve the actual caller continuation. -/
+
+/-- info: 'Compilatrix.Ixby.Runtime.Execution.Reaches.halts' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Execution.Reaches.halts
+
+/-- info: 'Compilatrix.Ixby.Runtime.Execution.Reaches.evaluates' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Execution.Reaches.evaluates
+
+/-- info: 'Compilatrix.Ixby.Runtime.Execution.resume' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Execution.resume
+
+/-- info: 'Compilatrix.Ixby.Runtime.Conversion.nibbleWord_returns' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Conversion.nibbleWord_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.Conversion.nibbleNat_returns' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Conversion.nibbleNat_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.Conversion.toWord_returns' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Conversion.toWord_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.Conversion.fromWordLoop_returns' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Conversion.fromWordLoop_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.Conversion.Certificate.fromRaw_returns' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Conversion.Certificate.fromRaw_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.Conversion.Certificate.fromWord_returns' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Conversion.Certificate.fromWord_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.Conversion.Certificate.fieldNatural_returns' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Conversion.Certificate.fieldNatural_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.Conversion.Certificate.fieldFromNatural_returns' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Conversion.Certificate.fieldFromNatural_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.Conversion.Certificate.natural_returns' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Conversion.Certificate.natural_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.Conversion.Certificate.asField_returns' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Conversion.Certificate.asField_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.Conversion.Certificate.lowWord_returns' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Conversion.Certificate.lowWord_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.Conversion.Certificate.fromWord_represents' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Conversion.Certificate.fromWord_represents
+
+/-- info: 'Compilatrix.Ixby.Runtime.Conversion.Certificate.natural_evaluates' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Conversion.Certificate.natural_evaluates
+
+/-- info: 'Compilatrix.Ixby.Runtime.Conversion.Certificate.asField_evaluates' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Conversion.Certificate.asField_evaluates
+
+/-- info: 'Compilatrix.Ixby.Runtime.Conversion.Certificate.lowWord_evaluates' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Conversion.Certificate.lowWord_evaluates
+
+/-- info: 'Compilatrix.Ixby.Runtime.Conversion.Certificate.fromWord_evaluates' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Conversion.Certificate.fromWord_evaluates
+
+/-- info: 'Compilatrix.Ixby.Runtime.Conversion.Certificate.toWord_evaluates' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Conversion.Certificate.toWord_evaluates

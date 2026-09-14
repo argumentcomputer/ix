@@ -1,9 +1,11 @@
 # Typed Ixby runtime representation proofs
 
-The first proof slice for the [typed Lean frontend](ixby-lean.md) establishes
-exact numeric representation laws and certifies seven generated extension
-helpers against the unchanged Ixby evaluator. It does not yet certify the
-complete LCNF transformation or the Stage2 verifier.
+The runtime proofs for the [typed Lean frontend](ixby-lean.md) establish exact
+numeric representation laws and certify seven generated extension helpers and
+eleven number conversion helpers against the unchanged Ixby evaluator. The
+conversion proofs include complete loops and calls into existing caller
+continuations. The complete LCNF transformation and Stage2 verifier remain
+outside this certificate boundary.
 
 ## Exact values and conversions
 
@@ -72,7 +74,8 @@ The underlying [function contracts](../Compilatrix/Ixby/Runtime/ScalarFunction.l
 also derive whole-program `Evaluates` after ordinary program/input validation
 and entry selection. Public multiplication, inverse, and first-projection
 corollaries instantiate the primitive semantics with the source operations.
-General caller-continuation composition remains a later boundary.
+These extension contracts currently expose the empty-continuation form. The
+conversion contracts below additionally preserve arbitrary caller continuations.
 
 Both the typed comparison suite and Stage2 binary compilation obtain the
 layout witness and scalar certificates. The certificate checker rejects
@@ -81,16 +84,77 @@ extra blocks, constructor field counts, and name bindings. Five of these
 mutations still pass whole-program structural admission, so the tests also
 exercise semantic changes that the ordinary validator permits.
 
+## Complete number conversion executions
+
+`Image.certifyConversions` checks eleven generated functions, all three number
+constructor declarations, distinct constructor tags, and the function and
+constructor name bindings used to locate them. Its result retains both the
+actual program certificate and the layout evidence needed by `Image.decodeNumber`.
+The [code templates](../Compilatrix/Ixby/Runtime/ConversionCode.lean) contain
+complete bodies with image-supplied function and constructor indices. Changed
+code, linkage, arity, entry blocks, and extra unreachable blocks are rejected.
+
+The [execution relation](../Compilatrix/Ixby/Runtime/Execution.lean) is a finite
+path through the actual reference `step` function. A helper reaches its return
+control with the caller's continuation intact. Ordinary calls push and restore
+the saved frame, including its locals; tail calls retain the continuation.
+The transfer and capacity checks remain part of execution. These paths compose
+with reference `run`, and with `Evaluates` after reference program/input
+admission. The proofs use concrete primitive semantics throughout.
+
+Both [digit converters](../Compilatrix/Ixby/Runtime/Nibble.lean) are proved for
+all sixteen possible digits. The [Nat-to-word loop](../Compilatrix/Ixby/Runtime/ToWord.lean)
+terminates and returns `accumulator + n.toUInt32 * weight`, including its zero
+Nat and zero weight exits. Its proof executes the nested digit call and the
+recursive tail call. It covers arbitrary Nat inputs that fit the explicit
+scalar limit, including inputs larger than a word or field.
+
+The [word-to-Nat loop](../Compilatrix/Ixby/Runtime/FromWord.lean) terminates and
+returns the exact `accumulator + word.toNat * weight`. Its invariant bounds
+both the result and the final weight. With the usual initial weight of one,
+the helper computes an unused final weight of `2^32`; this requires **33 Nat
+bits**, although its result fits in 32. Tests confirm that the same nonzero
+eight-digit input fails at 32 bits and succeeds at 33.
+
+The [field adapters](../Compilatrix/Ixby/Runtime/FieldConversion.lean) execute
+both word conversions and the native reconstruction operations. `fieldNatural`
+returns the field's exact canonical Nat. `fieldFromNatural` returns
+`Goldilocks.reduce n`. The [number dispatch proofs](../Compilatrix/Ixby/Runtime/NumberConversion.lean)
+then cover all three values in the `Number` relation:
+
+| Helper | Result | Local slots | Nat bits | Spare continuations | Byte capacity |
+| --- | --- | ---: | ---: | ---: | ---: |
+| `toWord n 1 0` | `n.toUInt32` | 11 | 5 + input fits | 1 | 0 |
+| `fromWordLoop w 1 0` | Exact `w.toNat` | 10 | 33 | 1 | 0 |
+| `fromWord w` | Consistent cached number | 10 | 33 | 2 | 0 |
+| `fromRaw n` | Raw number containing `n` | 2 | No primitive Nat operation | 0 | 0 |
+| `fieldNatural f` | Exact `f.val` | 10 | 64 | 2 | 8 |
+| `fieldFromNatural n` | `Goldilocks.reduce n` | 11 | 64 + input fits | 2 | 0 |
+| `natural value` | Exact represented Nat | 10 | 64 | 2 | 8 |
+| `asField value` | Reduced represented Nat | 11 | 64 + represented Nat fits | 2 | 0 |
+| `lowWord value` | Low word of represented Nat | 11 | 5 + represented Nat fits | 1 | 8 |
+
+These are sufficient local-contract bounds. Whole-program admission also
+checks every literal in the image and validates the input. The numeric
+representation relation is an additional premise; structural input validation
+alone does not establish cache consistency. Public `natural`, `asField`,
+`lowWord`, `fromWord`, and `toWord` corollaries derive whole-program `Evaluates`
+with explicit admission and input-validation premises. The `fromWord`
+representation theorem establishes the cache invariant for its returned box.
+
+The comparison suite obtains all eleven certificates on every compiled image.
+It rejects 21 conversion mutations, including 17 that still pass structural
+admission. Another 224 admitted helper executions cover all number layouts,
+the field modulus boundaries, and large Nats; eleven local resource cases test
+successful thresholds and exact capacity errors. Stage2 compilation obtains
+the same certificates before export. Its binary and manifest are unchanged.
+
 ## Remaining simulation work
 
-The next extension must connect the conversion-loop invariants to complete
-machine executions of `toWord`, `fromWordLoop`, `natural`, and `asField`,
-including their calls, branches, intermediate scalar capacities, and return
-continuations. The arithmetic reconstruction suffix is proved; the loops
-that supply its words are not yet machine-certified.
-
-Further composition must cover base-field helper calls, arrays and byte
-representations, the complete Stage2 adapter, and general LCNF control flow.
+The next extension can use these conversion contracts to prove complete Nat
+arithmetic and base-field helpers preserve the source representation relations.
+Further composition must cover arrays and byte representations, the complete
+Stage2 adapter, and general LCNF control flow.
 Typed erasure, specialization, original Ixon source authentication, and
 source/image reflection remain open. This slice introduces no new axiom or
 native interface and does not produce an `IxonCompilation`.
@@ -105,7 +169,8 @@ cmp fixtures/ixby-stage2/stage2.ixby /tmp/stage2.ixby
 nix flake check --no-update-lock-file
 ```
 
-The axiom fence pins the representation and execution contracts to subsets of
-`propext`, `Classical.choice`, and `Quot.sound`. The integration gate retains
+The axiom fence includes 22 representation/scalar guards and 20 conversion and
+continuation guards. They pin the contracts to subsets of `propext`,
+`Classical.choice`, and `Quot.sound`. The integration gate retains
 the 4,585 differential executions, binary corpus, exact fresh Stage2 artifact
 comparisons, and all eight serialized verifier cases.

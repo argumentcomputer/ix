@@ -15,6 +15,7 @@ private def compileImage (env : Environment) (name : Name) (wire := false) : IO 
   let image ← checked result
   discard <| checked image.certifyNumberLayout
   discard <| checked image.certifyScalars
+  discard <| checked image.certifyConversions
   return image
 
 private def certificateMutations (image : Image) : IO Unit := do
@@ -49,6 +50,133 @@ private def certificateMutations (image : Image) : IO Unit := do
     "changed name binding" true
   IO.println "check-ixby-lean certificates: 7 generated functions; 8 rejected mutations"
 
+private def conversionMutations (image : Image) : IO Unit := do
+  let certified ← checked image.certifyConversions
+  let links := certified.links
+  let instruction (id block : Nat) (changed : Ix.Ixby.Instr) : Image :=
+    { image with program := { image.program with functions := image.program.functions.modify id fun fn =>
+      { fn with blocks := fn.blocks.modify block fun old => { old with instruction := changed } } } }
+  let function (id : Nat) (change : Ix.Ixby.Function → Ix.Ixby.Function) : Image :=
+    { image with program := { image.program with functions := image.program.functions.modify id change } }
+  let reject (changed : Image) (label : String) (admitted := true) : IO Unit := do
+    if admitted then
+      discard <| checked (Ix.Ixby.validateProgram changed.state.limits changed.program |>.mapError reprStr)
+    match changed.certifyConversions with
+    | .error _ => pure ()
+    | .ok _ => throw (IO.userError s!"conversion certificate accepted {label}")
+  reject (instruction links.toWord 6
+    (.letOp (.primitive .natMod [.local 0, .literal (.nat 15)]) 7)) "wrong radix"
+  reject (instruction links.toWord 11
+    (.letOp (.primitive .word32Shl [.local 1, .literal (.word32 3)]) 12)) "wrong word weight"
+  reject (instruction links.toWord 12 (.tailCall links.toWord [.local 9, .local 8, .local 10]))
+    "swapped recursive arguments"
+  reject (instruction links.fromWordLoop 3
+    (.letOp (.primitive .word32And [.local 0, .literal (.word32 7)]) 4)) "wrong digit mask"
+  reject (instruction links.fromWordLoop 9
+    (.tailCall links.toWord [.local 8, .local 9, .local 7])) "wrong recursive callee"
+  reject (instruction links.fromWord 1
+    (.letOp (.construct links.cachedCtor [.local 0, .local 1]) 2)) "swapped cache fields"
+  reject (instruction links.fromRaw 0
+    (.letOp (.construct links.fieldCtor [.local 0]) 1)) "wrong number representation"
+  reject (instruction links.lowWord 1 (.ret (.local 1))) "returned Nat as low word"
+  reject (instruction links.natural 1 (.ret (.local 2))) "returned cache as exact Nat"
+  reject (instruction links.fieldNatural 1
+    (.letOp (.primitive .bytesSlice [.local 1, .literal (.word32 4), .literal (.word32 4)]) 2))
+    "read high field word twice"
+  reject (instruction links.asField 1 (.tailCall links.natural [.local 1])) "wrong field adapter"
+  reject (instruction links.fieldFromNatural 0
+    (.letOp (.primitive .natMod [.local 0, .literal (.nat (Ix.Ixby.goldilocksModulus - 1))]) 1))
+    "wrong field modulus"
+  reject (instruction links.nibbleWord 45 (.ret (.literal (.word32 14)))) "wrong digit leaf"
+  reject (instruction links.nibbleNat 0
+    (.letOp (.primitive .word32Lt [.local 0, .literal (.word32 7)]) 1)) "wrong digit pivot"
+  reject (function links.nibbleWord fun fn => { fn with entry := 1 }) "changed entry" false
+  reject (function links.fromWordLoop fun fn => { fn with arity := 2 }) "changed arity" false
+  reject (function links.toWord fun fn =>
+    { fn with blocks := fn.blocks.push { locals := 0, instruction := .ret .erased } }) "extra block"
+  let constructors := image.program.constructors.modify links.cachedCtor fun ctor => { ctor with fields := 1 }
+  reject { image with program := { image.program with constructors } } "wrong cache layout" false
+  let constructors := image.program.constructors.modify links.fieldCtor fun ctor =>
+    { ctor with id := links.layout.raw }
+  reject { image with program := { image.program with constructors } } "duplicate number tags" false
+  let functionNames := image.state.functionNames.insert `Ixby.Runtime.fromWordLoop links.toWord
+  reject { image with state := { image.state with functionNames } } "wrong function name binding"
+  let constructorNames := image.state.constructorNames.insert `Ixby.Runtime.RawNumber links.fieldCtor
+  reject { image with state := { image.state with constructorNames } } "wrong constructor name binding"
+  IO.println "check-ixby-lean conversions: 11 generated functions; 21 rejected mutations (17 structurally admitted)"
+
+private def conversionExecutions (image : Image) : IO Unit := do
+  let certified ← checked image.certifyConversions
+  let links := certified.links
+  let count ← IO.mkRef 0
+  let execute (id : Nat) (args : Array Ix.Ixby.Value) (expected : Ix.Ixby.Value) : IO Unit := do
+    let program := { image.program with entry := id }
+    discard <| checked (Compilatrix.Ixby.Runtime.Conversion.certify program links)
+    let actual ← checked (Ix.Ixby.execute image.state.limits program args 20000 |>.mapError reprStr)
+    need (actual == expected) s!"conversion helper {id}: expected {reprStr expected}, got {reprStr actual}"
+    count.modify (· + 1)
+  let numbers := #[0, 1, 15, 16, 17, 2 ^ 28 - 1, 2 ^ 28, 2 ^ 32 - 1, 2 ^ 32, 2 ^ 32 + 1,
+    Ix.Ixby.goldilocksModulus - 1, Ix.Ixby.goldilocksModulus, Ix.Ixby.goldilocksModulus + 1,
+    2 ^ 64, 2 ^ 80 + 17, 2 ^ 256 + 255]
+  for n in numbers do
+    let word := n.toUInt32
+    let cached : Ix.Ixby.Value := .ctor links.layout.cached #[.scalar (.nat n), .scalar (.word32 word)]
+    let raw : Ix.Ixby.Value := .ctor links.layout.raw #[.scalar (.nat n)]
+    execute links.toWord #[.scalar (.nat n), .scalar (.word32 1), .scalar (.word32 0)] (.scalar (.word32 word))
+    execute links.fromWordLoop #[.scalar (.word32 word), .scalar (.nat 1), .scalar (.nat 0)]
+      (.scalar (.nat word.toNat))
+    execute links.fromWord #[.scalar (.word32 word)]
+      (.ctor links.layout.cached #[.scalar (.nat word.toNat), .scalar (.word32 word)])
+    execute links.fromRaw #[.scalar (.nat n)] raw
+    execute links.fieldFromNatural #[.scalar (.nat n)] (.scalar (.field (Ix.Ixby.Goldilocks.reduce n)))
+    for value in #[cached, raw] do
+      execute links.natural #[value] (.scalar (.nat n))
+      execute links.lowWord #[value] (.scalar (.word32 word))
+      execute links.asField #[value] (.scalar (.field (Ix.Ixby.Goldilocks.reduce n)))
+    let field := Ix.Ixby.Goldilocks.reduce n
+    let value : Ix.Ixby.Value := .ctor links.layout.field #[.scalar (.field field)]
+    execute links.natural #[value] (.scalar (.nat field.val))
+    execute links.lowWord #[value] (.scalar (.word32 field.val.toUInt32))
+    execute links.asField #[value] (.scalar (.field field))
+  -- These are the local contracts' capacity thresholds. Whole-image admission
+  -- above remains separate: unrelated functions can contain larger literals.
+  let localCount ← IO.mkRef 0
+  let localRun (limits : Ix.Ixby.Limits) (id : Nat) (args : Array Ix.Ixby.Value)
+      (expected : Except Ix.Ixby.Error Ix.Ixby.Value) : IO Unit := do
+    let actual := Ix.Ixby.run limits image.program 20000
+      (Compilatrix.Ixby.Runtime.ScalarFunction.start id args)
+    let same := match actual, expected with
+      | .ok actual, .ok expected => actual == expected
+      | .error actual, .error expected => actual == expected
+      | _, _ => false
+    need same s!"conversion resource contract {id}: expected {reprStr expected}, got {reprStr actual}"
+    localCount.modify (· + 1)
+  let small : Ix.Ixby.Limits := {
+    image.state.limits with locals := 10, continuations := 2, natBits := 33, byteArrayBytes := 8 }
+  let maxWord : UInt32 := 4294967295
+  localRun small links.fromWord #[.scalar (.word32 maxWord)]
+    (.ok (.ctor links.layout.cached #[.scalar (.nat maxWord.toNat), .scalar (.word32 maxWord)]))
+  localRun { small with natBits := 32 } links.fromWord #[.scalar (.word32 maxWord)] (.error (.limit .natBits))
+  localRun { small with locals := 9 } links.fromWord #[.scalar (.word32 maxWord)] (.error (.limit .locals))
+  localRun { small with continuations := 1 } links.fromWord #[.scalar (.word32 maxWord)]
+    (.error (.limit .continuations))
+  let toWordLimits := { small with locals := 11, continuations := 1, natBits := 128 }
+  let args : Array Ix.Ixby.Value := #[.scalar (.nat (2 ^ 80 + 17)), .scalar (.word32 1), .scalar (.word32 0)]
+  localRun toWordLimits links.toWord args (.ok (.scalar (.word32 17)))
+  localRun { toWordLimits with locals := 10 } links.toWord args (.error (.limit .locals))
+  localRun { toWordLimits with continuations := 0 } links.toWord args (.error (.limit .continuations))
+  let field := Ix.Ixby.Goldilocks.reduce (Ix.Ixby.goldilocksModulus - 1)
+  localRun { small with natBits := 64 } links.fieldNatural #[.scalar (.field field)]
+    (.ok (.scalar (.nat field.val)))
+  localRun { small with natBits := 64, byteArrayBytes := 7 } links.fieldNatural #[.scalar (.field field)]
+    (.error (.limit .byteArrayBytes))
+  let fieldLimits := { small with locals := 11, natBits := 64, byteArrayBytes := 0 }
+  localRun fieldLimits links.fieldFromNatural #[.scalar (.nat 1)]
+    (.ok (.scalar (.field (Ix.Ixby.Goldilocks.reduce 1))))
+  localRun { fieldLimits with natBits := 63 } links.fieldFromNatural #[.scalar (.nat 1)]
+    (.error (.limit .natBits))
+  IO.println s!"check-ixby-lean conversion contracts: {← count.get} admitted executions; {← localCount.get} resource cases"
+
 private def compileRejects (env : Environment) (name : Name) (limits : Ix.Ixby.Limits)
     (message : String) : IO Unit := do
   let (result, _) ← (compile name limits).toIO
@@ -78,7 +206,10 @@ private def numberList (image : Image) (values : List Nat) : Except String Ix.Ix
 def main : IO UInt32 := cli "check-ixby-lean" do
   initSearchPath (← findSysroot)
   let env ← importModules #[{ module := `Compilatrix.Ixby.Runtime.Examples }] {}
-  certificateMutations (← compileImage env ``extensionArithmetic)
+  let runtimeImage ← compileImage env ``extensionArithmetic
+  certificateMutations runtimeImage
+  conversionMutations runtimeImage
+  conversionExecutions runtimeImage
   compileRejects env `Nat.add { byteArrayBytes := 2 ^ 32 }
     "typed Ixby packed byte capacity must fit Word32 indices"
   compileRejects env `Float.add {} "unsupported typed runtime extern Float.add"

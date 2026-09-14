@@ -12,9 +12,10 @@ Lean's typed proof erasure and specialization. Every emitted block passes the
 reference whole-program validator. Unknown runtime externs are rejected.
 Packed byte capacity must be below 2³², matching the target byte-index ABI.
 
-The frontend remains experimental. The first [representation proof slice](ixby-representation.md)
-establishes exact numeric/byte laws and certifies seven emitted extension
-helpers. The complete frontend has no source-refinement certificate. It does
+The frontend remains experimental. The [runtime proofs](ixby-representation.md)
+establish exact numeric/byte laws and certify seven emitted extension helpers
+and eleven number conversion helpers, including complete loops and caller
+continuations. The complete frontend has no source-refinement certificate. It does
 not produce an `IxonCompilation` or
 authenticate the original anonymous Ixon source address. Constructor identities
 are local layout identifiers. These source certification obligations are
@@ -97,8 +98,11 @@ outputs, malformed field encodings, read offsets, writer limits, and a
 10,000-iteration tail call under an eight-continuation limit. Two compiler
 rejections cover unsupported Float externs and invalid byte-index capacities.
 Every compared image also obtains number-layout evidence and certificates for
-the seven native extension helpers. Eight altered-code/layout/name cases must
-fail certificate construction; five remain structurally valid programs.
+seven native extension helpers and eleven number conversion helpers. Eight
+scalar mutations and 21 conversion mutations must fail certificate construction;
+five and 17 respectively remain structurally valid programs. The conversion
+contracts also have 224 admitted executions and eleven local resource cases,
+including the 33-bit final-weight requirement of word-to-Nat conversion.
 Stage2 binary compilation performs the same certificate checks before export.
 
 The binary suite checks 81 decoded executions covering every scalar, primitive,

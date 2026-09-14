@@ -171,8 +171,9 @@ fixed data, and adapter. The reusable symbolic checker does not yet cover this
 guest's runtime input inspection. A structural simulation or compositional
 checker would need to cover branches, parsing, recursive calls, and the exact
 bytes/erased observation for every admitted input.
-The first [runtime representation proof slice](ixby-representation.md) supplies
-exact number/byte laws and certificates for seven generated extension helpers.
+The [runtime representation proofs](ixby-representation.md) supply exact
+number/byte laws and certificates for seven generated extension helpers and
+eleven complete number conversion helpers, including their caller continuations.
 It does not yet compose through this complete source or the Stage2 adapter.
 
 Proving executor support, resource measurement, execution soundness, and
