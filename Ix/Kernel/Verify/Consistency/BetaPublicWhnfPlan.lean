@@ -6,7 +6,7 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 import Ix.Kernel.Verify.Consistency.BetaWhnfPlan
 import Ix.Kernel.Verify.Whnf.Driver.CacheExecution
 
-/-! Raw beta paths through the public WHNF drivers and their exact cold-cache
+/-! Raw beta/let paths through the public WHNF drivers and their exact cold-cache
 state updates. Cached execution composes these primitives in BetaCacheExecution. -/
 
 namespace Ix.Kernel.Consistency
@@ -209,14 +209,15 @@ theorem BetaWhnfTerminal.full_uncached {source result : KExpr .anon}
     (RecM.whnfWithNatSuccModeUncached source mode).run methods before = .ok result after :=
   bounded_done _ (terminal.full_step mode {} reduced) (by decide)
 
-def BetaWhnfTrace.first {β : Type u} {resolve : Address → Option (ConstRef β)} {locals : List FVarId}
+theorem BetaWhnfTrace.first {β : Type u} {resolve : Address → Option (ConstRef β)} {locals : List FVarId}
     {fuel steps : Nat} {flags : WhnfFlags} {before after : TcState .anon}
     {source result : KExpr .anon} {term target : AExpr β}
     (trace : BetaWhnfTrace resolve locals fuel flags steps before source term after result target) :
-    0 < steps → BetaStepPlan resolve locals before source term :=
+    0 < steps → StructuralWhnfEntry source :=
   match trace with
   | .done _ => fun impossible => False.elim (Nat.not_lt_zero _ impossible)
-  | .next plan _ => fun _ => plan
+  | .next plan _ => fun _ => plan.entry
+  | .zeta plan _ => fun _ => plan.entry
 
 theorem BetaStepPlan.not_transient {β : Type u} {resolve : Address → Option (ConstRef β)} {locals : List FVarId}
     {before : TcState .anon} {source : KExpr .anon} {term : AExpr β}
@@ -285,7 +286,7 @@ end BetaPublicWhnf
 
 /-- A public beta reduction through the three cache-miss layers. The key
 states, instrumentation, fuel charge, and final cache insertions are computed;
-the only reduction resource is the raw beta path. -/
+the only reduction resource is the raw beta/let path. -/
 structure BetaPublicWhnfPlan {β : Type u} (resolve : Address → Option (ConstRef β))
     (locals : List FVarId) (fuel : Nat) (before : TcState .anon)
     (source : KExpr .anon) (term : AExpr β) (result : KExpr .anon) (target : AExpr β) where
@@ -316,8 +317,8 @@ def after (plan : BetaPublicWhnfPlan resolve locals fuel before source term resu
 theorem run (plan : BetaPublicWhnfPlan resolve locals fuel before source term result target) :
     (RecM.whnf source).run (methodsN (fuel + 1)) before = .ok result plan.after := by
   let first := plan.path.first plan.moving
-  have coreEntry : RecM.whnfCoreWithFlags source .FULL = RecM.whnfCoreWithFlagsNonLeaf source .FULL := by
-    rw [first.sourceEq]; rfl
+  have coreEntry : RecM.whnfCoreWithFlags source .FULL = RecM.whnfCoreWithFlagsNonLeaf source .FULL :=
+    first.core .FULL
   have coreRun : (RecM.whnfCoreWithFlags source .FULL).run (methodsN (fuel + 1))
       (BetaPublicWhnf.noDeltaKey source before).2 =
         .ok result (BetaPublicWhnf.coreAfter source result before plan.reduced) := by
@@ -329,8 +330,7 @@ theorem run (plan : BetaPublicWhnfPlan resolve locals fuel before source term re
     exact (congrArg TcState.inNativeReduce frame).trans
       ((BetaPublicWhnf.coreKey_fields source before).2.2.trans plan.native)
   have noDeltaEntry : RecM.whnfNoDeltaImpl source .FULL .collapse =
-      RecM.whnfNoDeltaImplNonLeaf source .FULL .collapse := by
-    rw [first.sourceEq]; rfl
+      RecM.whnfNoDeltaImplNonLeaf source .FULL .collapse := first.noDelta .FULL .collapse
   have noDeltaRun : (RecM.whnfNoDeltaImpl source .FULL .collapse).run (methodsN (fuel + 1))
       (betaWhnfCharge (BetaPublicWhnf.outerKey source before).2) =
         .ok result (BetaPublicWhnf.noDeltaAfter source result before plan.reduced) := by
@@ -338,8 +338,7 @@ theorem run (plan : BetaPublicWhnfPlan resolve locals fuel before source term re
     exact RecM.whnfNoDeltaImplNonLeaf_fullMiss rfl (betaWhnfKey_run source _)
       (first.not_transient _ _) plan.noDeltaMiss
       (plan.terminal.noDelta_uncached .FULL .collapse coreRun) reducedNative
-  have fullEntry : RecM.whnf source = RecM.whnfWithNatSuccModeNonLeaf source .collapse := by
-    rw [first.sourceEq]; rfl
+  have fullEntry : RecM.whnf source = RecM.whnfWithNatSuccModeNonLeaf source .collapse := first.full .collapse
   rw [fullEntry]
   exact RecM.whnfWithNatSuccModeNonLeaf_miss (betaWhnfPrefix_run source before _)
     (betaWhnfKey_run source _) (first.not_transient _ _) plan.outerMiss
@@ -364,8 +363,7 @@ theorem cache_hit (plan : BetaPublicWhnfPlan resolve locals fuel before source t
       (BetaPublicWhnf.outerKey source current).1]? = some result) :
     (RecM.whnf source).run methods current = .ok result (BetaPublicWhnf.outerKey source current).2 := by
   let first := plan.path.first plan.moving
-  have entry : RecM.whnf source = RecM.whnfWithNatSuccModeNonLeaf source .collapse := by
-    rw [first.sourceEq]; rfl
+  have entry : RecM.whnf source = RecM.whnfWithNatSuccModeNonLeaf source .collapse := first.full .collapse
   rw [entry]
   exact RecM.whnfWithNatSuccModeNonLeaf_hit (betaWhnfPrefix_run source current _)
     (betaWhnfKey_run source _) (first.not_transient _ _) hit

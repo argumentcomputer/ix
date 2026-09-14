@@ -45,6 +45,8 @@ import Ix.Kernel.Verify.Consistency.CheapBetaReading
 import Ix.Kernel.Verify.Consistency.BetaSpine
 import Ix.Kernel.Verify.Consistency.BetaTrace
 import Ix.Kernel.Verify.Consistency.BetaWhnf
+import Ix.Kernel.Verify.Consistency.StructuralWhnfEntry
+import Ix.Kernel.Verify.Consistency.LetWhnfPlan
 import Ix.Kernel.Verify.Consistency.BetaWhnfPlan
 import Ix.Kernel.Verify.Consistency.BetaPublicWhnf
 import Ix.Kernel.Verify.Consistency.WhnfCacheFrame
@@ -168,6 +170,10 @@ context keys. Successful beta calls now reconstruct their raw paths from
 the original source reading and finite arithmetic and hash resources. The
 actual run supplies the intermediate steps, iteration bound, cache choices,
 fuel charge, and final state. Cached entries retain their producing executions.
+Explicit-let substitution now composes with these beta steps in the same
+trace and cache executions. It preserves the scoped reading and the original
+annotated term, so later beta steps retain their existing typing derivation.
+This also covers let-based Pi/sort exposure and declaration conversion.
 Only an outer miss charges shared fuel. Pi exposure uses the
 same complete cache-layer execution. Application inference
 uses that exposure between argument checks and derives the type conversion

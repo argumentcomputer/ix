@@ -775,6 +775,42 @@ private def betaSourceExecutionRoots : Array Lean.Name := #[
   ``RecM.ensureForallWhnf_success
 ]
 
+private def letWhnfSyntaxRoots : Array Lean.Name := #[
+  ``StructuralWhnfEntry,
+  ``LetStepSource.selected,
+  ``LetStepSource.parts,
+  ``LetStepSource.selected_entry,
+  ``BetaStepSource.selected_entry,
+  ``BetaWhnfSource.selected,
+  ``BetaWhnfSource.selected_entry
+]
+
+private def letWhnfExprRoots : Array Lean.Name := #[
+  ``StructuralWhnfEntry.not_transient,
+  ``LetStepPlan,
+  ``LetStepPlan.output,
+  ``LetStepPlan.result,
+  ``LetStepPlan.after,
+  ``LetStepPlan.entry,
+  ``LetStepPlan.reading,
+  ``LetStepSource.output,
+  ``LetStepSource.after,
+  ``LetStepSource.Resources,
+  ``LetStepSource.construct,
+  ``LetStepSource.construct_result,
+  ``LetStepSource.construct_after,
+  ``BetaStepPlan.entry
+]
+
+private def letWhnfExecutionRoots : Array Lean.Name := #[
+  ``StructuralWhnfEntry.core,
+  ``StructuralWhnfEntry.noDelta,
+  ``StructuralWhnfEntry.full,
+  ``StructuralWhnfEntry.sort,
+  ``StructuralWhnfEntry.forallE,
+  ``LetStepPlan.run
+]
+
 private def localScopeFrameRoots : Array Lean.Name := #[
   ``LocalContext.Equiv.refl, ``LocalContext.Equiv.symm, ``LocalContext.Equiv.trans,
   ``LocalContext.Equiv.size, ``LocalContext.Equiv.find?, ``LocalContext.Equiv.wf,
@@ -1384,13 +1420,13 @@ def roots : Array RootAllowance := #[
 }) ++ (betaRoots ++ typeOriginRoots ++ substitutedOriginRoots ++ exposedOriginRoots ++
     repeatedBetaRoots ++ betaTraceRoots ++ hereditaryBetaRoots ++ piExposureRoots ++ cacheTransportRoots).map (fun allowance => {
     allowance with forbiddenDependencies := allowance.forbiddenDependencies ++ forbiddenProduction })
-  ++ #[``BetaStepSource.selected, ``BetaStepSource.selected_app].map (fun root => {
+  ++ (#[``BetaStepSource.selected, ``BetaStepSource.selected_app] ++ letWhnfSyntaxRoots).map (fun root => {
     root, standardAxioms := #[``propext],
     forbiddenDependencies := forbiddenProduction ++ #[``HereditaryTyping] })
   ++ (mixedCacheFrameRoots ++ #[``betaWhnfCharge_success]).map (fun root => {
     root, standardAxioms := #[``propext, ``Quot.sound],
     forbiddenDependencies := forbiddenProduction ++ #[``HereditaryTyping] })
-  ++ (mixedCacheKeyRoots ++ betaSourceExprRoots).map (fun root => {
+  ++ (mixedCacheKeyRoots ++ betaSourceExprRoots ++ letWhnfExprRoots).map (fun root => {
     root, standardAxioms := standard, nativeAxioms := #[expressionNative],
     forbiddenDependencies := forbiddenProduction ++ #[``HereditaryTyping] })
   ++ #[``SynthesisInference.beta_core_execution_sound, ``SynthesisInference.beta_noDelta_execution_sound,
@@ -1399,7 +1435,8 @@ def roots : Array RootAllowance := #[
       ``SynthesisInference.beta_noDelta_of_success, ``SynthesisInference.beta_public_of_success].map (fun root => {
     root, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative],
     forbiddenDependencies := forbiddenProduction })
-  ++ (recursiveLetShapeRoots ++ sortExposureRoots ++ mixedCacheExecutionRoots ++ betaSourceExecutionRoots).map (fun root => {
+  ++ (recursiveLetShapeRoots ++ sortExposureRoots ++ mixedCacheExecutionRoots ++ betaSourceExecutionRoots ++
+      letWhnfExecutionRoots).map (fun root => {
     root, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative],
     forbiddenDependencies := forbiddenProduction ++ #[``HereditaryTyping] })
   ++ (localScopeFrameRoots ++ localStateFrameRoots ++ recursiveStateFrameRoots ++ ingressFrameRoots ++

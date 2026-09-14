@@ -29,6 +29,14 @@ theorem selected_app {source : KExpr .anon} (chosen : selected source = true) :
   | app fn arg info => exact ⟨fn, arg, info, rfl⟩
   | _ => cases chosen
 
+theorem selected_entry {source : KExpr .anon} (chosen : selected source = true) : StructuralWhnfEntry source := by
+  obtain ⟨fn, arg, info, rfl⟩ := selected_app chosen
+  simp only [selected] at chosen
+  generalize headEq : (KExpr.app fn arg info).collectSpine.1 = head at chosen
+  cases head with
+  | lam name bi domain body lambdaInfo => exact .beta (Prod.ext headEq rfl)
+  | _ => cases chosen
+
 theorem selected_not_transient {source : KExpr .anon} (chosen : selected source = true)
     (methods : Methods .anon) (before : TcState .anon) :
     (RecM.isTransientNatLiteralWork source).run methods before = .ok false before := by

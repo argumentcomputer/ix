@@ -107,6 +107,13 @@ branches and fuel charge; populated entries retain earlier producing executions.
 The original inference supplies the reconstructed path's semantic origins,
 so the returned term preserves its original type. Successful sort and Pi
 exposure also reconstructs the witnesses used by the original inference.
+Explicit lets now compose with beta in these same traces. Single substitution
+preserves the scoped reading and annotated term, so every later beta step
+keeps the derivation obtained from the original check. The actual loop counts
+each let and beta iteration before its final unchanged step. Cache execution,
+Pi/sort exposure, and declaration conversion all include these mixed paths.
+Stored local let values and reduction of non-lambda application heads remain
+outside this construction.
 Constructing initial inference resources for arbitrary accepted programs,
 general WHNF cache origins, the remaining reducers, and general conversion
 remain open.

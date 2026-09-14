@@ -6,8 +6,8 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 import Ix.Kernel.Verify.Consistency.BetaTrace
 import Ix.Kernel.Verify.Consistency.BetaWhnfPlan
 
-/-! Finite beta traces for the actual structural-WHNF loop. Every next
-state is computed by production's simultaneous substitution and suffix
+/-! Finite beta/let traces for the actual structural-WHNF loop. Every next
+state is computed by production's single or simultaneous substitution and suffix
 interning, and the loop consumes the same fuel as `runBounded`. -/
 
 namespace Ix.Kernel.Consistency
@@ -63,7 +63,7 @@ theorem reading
 
 end SynthesisBetaStep
 
-/-- A complete finite beta path through structural WHNF. The final
+/-- A complete finite beta path, including explicit lets, through structural WHNF. The final
 iteration returns its input; every preceding iteration has a computed
 substitution result and intern table, with no postulated intermediate check. -/
 inductive SynthesisBetaWhnfTrace {β : Type u} (resolve : Address → Option (ConstRef β))
@@ -80,6 +80,12 @@ inductive SynthesisBetaWhnfTrace {β : Type u} (resolve : Address → Option (Co
       (step : SynthesisBetaStep resolve incoming incomingContext incomingBounds entries context locals before source term type)
       (rest : SynthesisBetaWhnfTrace resolve incoming incomingContext incomingBounds entries context locals reductionFuel flags
         steps step.after step.result step.modelResult after result target) :
+      SynthesisBetaWhnfTrace resolve incoming incomingContext incomingBounds entries context locals reductionFuel flags
+        (steps + 1) before source term after result target
+  | zeta {steps before after source result term target}
+      (step : LetStepPlan before source)
+      (rest : SynthesisBetaWhnfTrace resolve incoming incomingContext incomingBounds entries context locals reductionFuel flags
+        steps step.after step.result term after result target) :
       SynthesisBetaWhnfTrace resolve incoming incomingContext incomingBounds entries context locals reductionFuel flags
         (steps + 1) before source term after result target
 
@@ -101,6 +107,7 @@ def toBetaTrace {steps : Nat} {before after : TcState .anon}
   | .next step rest =>
       let first := SynthesisBetaTrace.atType origin step.meaning
       first.trans (rest.toBetaTrace (.reduced first))
+  | .zeta _ rest => rest.toBetaTrace origin
 termination_by structural trace
 
 theorem run
@@ -127,6 +134,15 @@ theorem run
           unfold EStateM.bind
           rw [step.run reductionFuel flags]
           exact ih (by omega)
+  | zeta step rest ih =>
+      cases loopFuel with
+      | zero => omega
+      | succ loopFuel =>
+          rw [RecM.runBounded, ReaderT.run_bind]
+          change EStateM.bind ((RecM.whnfCoreWithFlagsStep _ flags).run _) _ _ = _
+          unfold EStateM.bind
+          rw [step.run (methodsN (reductionFuel + 1)) flags]
+          exact ih (by omega)
 
 theorem reading
     (trace : SynthesisBetaWhnfTrace resolve incoming incomingContext incomingBounds entries context locals reductionFuel flags
@@ -138,6 +154,9 @@ theorem reading
   | done => exact ⟨sourceReading, coherent⟩
   | next step rest ih =>
       obtain ⟨reading, preserved⟩ := step.reading coherent
+      exact ih reading preserved
+  | zeta step rest ih =>
+      obtain ⟨reading, preserved⟩ := step.reading sourceReading coherent
       exact ih reading preserved
 
 /-- The production loop returns the final beta result with the original

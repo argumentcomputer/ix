@@ -49,6 +49,9 @@ def BetaWhnfTrace.annotate {β : Type u} {resolve : Address → Option (ConstRef
           _ _ _ type := { toBetaStepPlan := plan, meaning := first.2 }
       let remaining := rest.annotate first.1
       ⟨.next step remaining.1, remaining.2⟩
+  | .zeta plan rest =>
+      let remaining := rest.annotate typing
+      ⟨.zeta plan remaining.1, remaining.2⟩
 termination_by structural trace
 
 /-- Annotating the raw public path derives its semantic trace from the

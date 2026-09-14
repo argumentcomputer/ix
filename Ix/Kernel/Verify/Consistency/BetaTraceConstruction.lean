@@ -7,7 +7,7 @@ import Ix.Kernel.Verify.Consistency.BetaStepConstruction
 import Ix.Kernel.Verify.Consistency.BetaCacheExecution
 import Ix.Kernel.Verify.Whnf.Driver.Success
 
-/-! Recover finite beta traces from actual successful WHNF runs. Branch
+/-! Recover finite beta/let traces from actual successful WHNF runs. Branch
 coverage and finite representation data concern only computed raw syntax;
 the execution supplies termination and the returned expression and state. -/
 
@@ -24,8 +24,16 @@ theorem BetaWhnfTerminal.core_step {source : KExpr .anon} (terminal : BetaWhnfTe
 
 namespace BetaWhnfSource
 
-/-- At each computed beta step, retain only finite walker and hash bounds.
-A non-beta branch must be one of the supported terminal constructors. The
+def selected (source : KExpr .anon) : Bool :=
+  BetaStepSource.selected source || LetStepSource.selected source
+
+theorem selected_entry {source : KExpr .anon} (chosen : selected source = true) : StructuralWhnfEntry source := by
+  by_cases beta : BetaStepSource.selected source = true
+  · exact BetaStepSource.selected_entry beta
+  · exact LetStepSource.selected_entry (by simpa [selected, beta] using chosen)
+
+/-- At each computed beta or let step, retain only finite walker and hash bounds.
+Any other branch must be one of the supported terminal constructors. The
 zero-fuel case requires no successful result; success is supplied separately
 by the actual production run. -/
 def Resources : Nat → TcState .anon → KExpr .anon → Prop
@@ -34,6 +42,9 @@ def Resources : Nat → TcState .anon → KExpr .anon → Prop
       if BetaStepSource.selected source then
         BetaStepSource.Resources source before ∧
           Resources fuel (BetaStepSource.after source before) (BetaStepSource.output source before).1
+      else if LetStepSource.selected source then
+        LetStepSource.Resources source before ∧
+          Resources fuel (LetStepSource.after source before) (LetStepSource.output source before).1
       else BetaWhnfTerminal source
 
 theorem Resources.first {fuel : Nat} {before : TcState .anon} {source : KExpr .anon}
@@ -56,7 +67,7 @@ structure Witness {β : Type u} (resolve : Address → Option (ConstRef β)) (lo
   trace : BetaWhnfTrace resolve locals reductionFuel flags steps before source term after result target
   enough : steps < loopFuel
   terminal : BetaWhnfTerminal result
-  moving : BetaStepSource.selected source = true → 0 < steps
+  moving : selected source = true → 0 < steps
 
 /-- Successful execution determines the complete raw trace. No intermediate
 readings, model expressions, step equations, or iteration count are inputs. -/
@@ -86,15 +97,29 @@ def construct {β : Type u} {resolve : Address → Option (ConstRef β)} {locals
         let rest := ih nextResources nextReading nextCoherent accepted
         exact ⟨rest.steps + 1, rest.target, .next first.1 rest.trace,
           Nat.add_lt_add_right rest.enough 1, rest.terminal, fun _ => Nat.zero_lt_succ _⟩
-      · have terminal : BetaWhnfTerminal source := by
-          simpa [Resources, chosen] using resources
-        have finished := terminal.core_step (methodsN (reductionFuel + 1)) before flags
-        rw [RecM.runBounded, ReaderT.run_bind] at accepted
-        change EStateM.bind ((RecM.whnfCoreWithFlagsStep source flags).run _) _ before = _ at accepted
-        rw [EStateM.bind, finished] at accepted
-        obtain ⟨rfl, rfl⟩ := EStateM.Result.ok.inj accepted
-        exact ⟨0, term, .done finished, Nat.zero_lt_succ _, terminal,
-          fun impossible => False.elim (chosen impossible)⟩
+      · by_cases zeta : LetStepSource.selected source = true
+        · have data : LetStepSource.Resources source before ∧
+              Resources loopFuel (LetStepSource.after source before) (LetStepSource.output source before).1 := by
+            simpa [Resources, chosen, zeta] using resources
+          let first := LetStepSource.construct zeta data.1
+          have nextResources : Resources loopFuel first.1.after first.1.result := by
+            simpa only [first, LetStepSource.construct_after, LetStepSource.construct_result] using data.2
+          obtain ⟨nextReading, nextCoherent⟩ := first.1.reading reading coherent
+          rw [RecM.runBounded, ReaderT.run_bind] at accepted
+          change EStateM.bind ((RecM.whnfCoreWithFlagsStep source flags).run _) _ before = _ at accepted
+          rw [EStateM.bind, first.1.run (methodsN (reductionFuel + 1)) flags] at accepted
+          let rest := ih nextResources nextReading nextCoherent accepted
+          exact ⟨rest.steps + 1, rest.target, .zeta first.1 rest.trace,
+            Nat.add_lt_add_right rest.enough 1, rest.terminal, fun _ => Nat.zero_lt_succ _⟩
+        · have terminal : BetaWhnfTerminal source := by
+            simpa [Resources, chosen, zeta] using resources
+          have finished := terminal.core_step (methodsN (reductionFuel + 1)) before flags
+          rw [RecM.runBounded, ReaderT.run_bind] at accepted
+          change EStateM.bind ((RecM.whnfCoreWithFlagsStep source flags).run _) _ before = _ at accepted
+          rw [EStateM.bind, finished] at accepted
+          obtain ⟨rfl, rfl⟩ := EStateM.Result.ok.inj accepted
+          exact ⟨0, term, .done finished, Nat.zero_lt_succ _, terminal,
+            fun impossible => by simp [selected, chosen, zeta] at impossible⟩
 
 end BetaWhnfSource
 
@@ -103,7 +128,7 @@ then source reconstruction supplies the full reduction and cache witness. -/
 theorem BetaCoreExecution.exists_of_miss_success {β : Type u} {resolve : Address → Option (ConstRef β)}
     {locals : List FVarId} {fuel : Nat} {before after : TcState .anon}
     {source result : KExpr .anon} {term : AExpr β}
-    (chosen : BetaStepSource.selected source = true)
+    (chosen : BetaWhnfSource.selected source = true)
     (resources : BetaWhnfSource.Resources maxWhnfCoreFuel.toNat (betaWhnfKey source before).2 source)
     (reading : readScopedExpr? resolve locals source = some term.erase)
     (coherent : before.env.intern.WF)
@@ -111,12 +136,11 @@ theorem BetaCoreExecution.exists_of_miss_success {β : Type u} {resolve : Addres
     (accepted : (RecM.whnfCore source).run (methodsN (fuel + 1)) before = .ok result after) :
     ∃ target, ∃ execution : BetaCoreExecution resolve locals fuel before source term result target,
       execution.after = after := by
-  let first := BetaStepSource.construct chosen reading (resources.first (by decide) chosen)
-  have entry : RecM.whnfCore source = RecM.whnfCoreWithFlagsNonLeaf source .FULL := by
-    rw [first.1.sourceEq]; rfl
+  let first := BetaWhnfSource.selected_entry chosen
+  have entry : RecM.whnfCore source = RecM.whnfCoreWithFlagsNonLeaf source .FULL := first.core .FULL
   rw [entry] at accepted
   obtain ⟨reduced, rawRun, afterEq⟩ := RecM.whnfCoreWithFlagsNonLeaf_fullMiss_success rfl
-    (betaWhnfKey_run source before) (first.1.not_transient _ _) miss accepted
+    (betaWhnfKey_run source before) (first.not_transient _ _) miss accepted
   have initial : (betaWhnfKey source before).2.env.intern.WF := by
     simpa only [betaWhnfKey_environment] using coherent
   let reconstructed := BetaWhnfSource.construct resources reading initial rawRun

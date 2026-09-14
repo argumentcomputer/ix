@@ -5,7 +5,7 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 
 import Ix.Kernel.Verify.Consistency.BetaCacheKeys
 
-/-! Executed beta reduction and retained origins at all three WHNF cache layers. -/
+/-! Executed beta/let reduction and retained origins at all three WHNF cache layers. -/
 
 namespace Ix.Kernel.Consistency
 
@@ -96,7 +96,7 @@ theorem writeFull_key (source result : KExpr .anon) (key : Address × Address) (
 
 end BetaCacheExecution
 
-/-- Structural beta execution either runs its raw path or retains the
+/-- Structural beta/let execution either runs its raw path or retains the
 execution that produced the exact cached result. Cache presence supplies no
 semantic typing assumption. -/
 inductive BetaCoreExecution {β : Type u} (resolve : Address → Option (ConstRef β))
@@ -127,13 +127,13 @@ def after (execution : BetaCoreExecution resolve locals fuel before source term 
         whnfCoreCache := reduced.env.whnfCoreCache.insert (betaWhnfKey source before).1 result}}
   | .cached .. => (betaWhnfKey source before).2
 
-/-- A retained first step gives the source's lambda spine at every later
-cache use. It does not require repeating reduction in the later state. -/
-def first {fuel : Nat} {before : TcState .anon}
+/-- A retained first step identifies the source's nonleaf branch at every
+later cache use. It does not require repeating reduction in the later state. -/
+theorem first {fuel : Nat} {before : TcState .anon}
     (execution : BetaCoreExecution resolve locals fuel before source term result target) :
-    Σ state, BetaStepPlan resolve locals state source term :=
+    StructuralWhnfEntry source :=
   match execution with
-  | .reduce path moving .. => ⟨_, path.first moving⟩
+  | .reduce path moving .. => path.first moving
   | .cached origin .. => origin.first
 
 theorem terminal {fuel : Nat} {before : TcState .anon}
@@ -145,8 +145,7 @@ theorem terminal {fuel : Nat} {before : TcState .anon}
 
 theorem run (execution : BetaCoreExecution resolve locals fuel before source term result target) :
     (RecM.whnfCore source).run (methodsN (fuel + 1)) before = .ok result execution.after := by
-  have entry : RecM.whnfCore source = RecM.whnfCoreWithFlagsNonLeaf source .FULL := by
-    rw [execution.first.2.sourceEq]; rfl
+  have entry : RecM.whnfCore source = RecM.whnfCoreWithFlagsNonLeaf source .FULL := execution.first.core .FULL
   rw [entry]
   cases execution with
   | reduce path moving enough miss terminal =>
@@ -154,7 +153,7 @@ theorem run (execution : BetaCoreExecution resolve locals fuel before source ter
         ((path.first moving).not_transient _ _) miss (path.run enough)
   | cached origin coherent hit =>
       exact RecM.whnfCoreWithFlagsNonLeaf_fullHit rfl (betaWhnfKey_run source _)
-        (origin.first.2.not_transient _ _) hit
+        (origin.first.not_transient _ _) hit
 
 theorem reading (execution : BetaCoreExecution resolve locals fuel before source term result target)
     (sourceReading : readScopedExpr? resolve locals source = some term.erase)
@@ -210,11 +209,10 @@ theorem replay_run (execution : BetaCoreExecution resolve locals fuel before sou
     (methods : Methods .anon) :
     (RecM.whnfCore source).run methods execution.after =
       .ok result (betaWhnfKey source execution.after).2 := by
-  have entry : RecM.whnfCore source = RecM.whnfCoreWithFlagsNonLeaf source .FULL := by
-    rw [execution.first.2.sourceEq]; rfl
+  have entry : RecM.whnfCore source = RecM.whnfCoreWithFlagsNonLeaf source .FULL := execution.first.core .FULL
   rw [entry]
   exact RecM.whnfCoreWithFlagsNonLeaf_fullHit rfl (betaWhnfKey_run source _)
-    (execution.first.2.not_transient _ _) (by
+    (execution.first.not_transient _ _) (by
       rw [betaWhnfKey_environment, execution.stable_key]
       exact execution.published)
 
@@ -244,9 +242,9 @@ def after (execution : BetaNoDeltaExecution resolve locals fuel before source te
   | .reduce core _ => BetaCacheExecution.writeNoDelta (betaWhnfKey source before).1 result core.after
   | .cached .. => (betaWhnfKey source before).2
 
-def first {fuel : Nat} {before : TcState .anon}
+theorem first {fuel : Nat} {before : TcState .anon}
     (execution : BetaNoDeltaExecution resolve locals fuel before source term result target) :
-    Σ state, BetaStepPlan resolve locals state source term :=
+    StructuralWhnfEntry source :=
   match execution with
   | .reduce core _ => core.first
   | .cached origin .. => origin.first
@@ -260,16 +258,15 @@ theorem terminal {fuel : Nat} {before : TcState .anon}
 
 theorem run (execution : BetaNoDeltaExecution resolve locals fuel before source term result target) :
     (RecM.whnfNoDelta source).run (methodsN (fuel + 1)) before = .ok result execution.after := by
-  have entry : RecM.whnfNoDelta source = RecM.whnfNoDeltaImplNonLeaf source .FULL .collapse := by
-    rw [execution.first.2.sourceEq]; rfl
+  have entry : RecM.whnfNoDelta source = RecM.whnfNoDeltaImplNonLeaf source .FULL .collapse := execution.first.noDelta .FULL .collapse
   rw [entry]
   cases execution with
   | reduce core miss =>
       exact RecM.whnfNoDeltaImplNonLeaf_fullMiss_conditional rfl (betaWhnfKey_run source _)
-        (core.first.2.not_transient _ _) miss (core.terminal.noDelta_uncached .FULL .collapse core.run)
+        (core.first.not_transient _ _) miss (core.terminal.noDelta_uncached .FULL .collapse core.run)
   | cached origin coherent hit =>
       exact RecM.whnfNoDeltaImplNonLeaf_fullHit rfl (betaWhnfKey_run source _)
-        (origin.first.2.not_transient _ _) hit
+        (origin.first.not_transient _ _) hit
 
 theorem reading (execution : BetaNoDeltaExecution resolve locals fuel before source term result target)
     (sourceReading : readScopedExpr? resolve locals source = some term.erase)
@@ -321,11 +318,10 @@ theorem replay_run (execution : BetaNoDeltaExecution resolve locals fuel before 
     (inactive : before.inNativeReduce = false) (methods : Methods .anon) :
     (RecM.whnfNoDelta source).run methods execution.after =
       .ok result (betaWhnfKey source execution.after).2 := by
-  have entry : RecM.whnfNoDelta source = RecM.whnfNoDeltaImplNonLeaf source .FULL .collapse := by
-    rw [execution.first.2.sourceEq]; rfl
+  have entry : RecM.whnfNoDelta source = RecM.whnfNoDeltaImplNonLeaf source .FULL .collapse := execution.first.noDelta .FULL .collapse
   rw [entry]
   exact RecM.whnfNoDeltaImplNonLeaf_fullHit rfl (betaWhnfKey_run source _)
-    (execution.first.2.not_transient _ _) (by
+    (execution.first.not_transient _ _) (by
       rw [betaWhnfKey_environment, execution.stable_key]
       exact execution.published inactive)
 
@@ -360,9 +356,9 @@ def after (execution : BetaPublicExecution resolve locals fuel before source ter
   | .reduce inner .. => BetaCacheExecution.writeFull (BetaPublicWhnf.outerKey source before).1 result inner.after
   | .cached .. => (BetaPublicWhnf.outerKey source before).2
 
-def first {fuel : Nat} {before : TcState .anon}
+theorem first {fuel : Nat} {before : TcState .anon}
     (execution : BetaPublicExecution resolve locals fuel before source term result target) :
-    Σ state, BetaStepPlan resolve locals state source term :=
+    StructuralWhnfEntry source :=
   match execution with
   | .reduce inner .. => inner.first
   | .cached origin .. => origin.first
@@ -376,20 +372,19 @@ theorem terminal {fuel : Nat} {before : TcState .anon}
 
 theorem run (execution : BetaPublicExecution resolve locals fuel before source term result target) :
     (RecM.whnf source).run (methodsN (fuel + 1)) before = .ok result execution.after := by
-  have entry : RecM.whnf source = RecM.whnfWithNatSuccModeNonLeaf source .collapse := by
-    rw [execution.first.2.sourceEq]; rfl
+  have entry : RecM.whnf source = RecM.whnfWithNatSuccModeNonLeaf source .collapse := execution.first.full .collapse
   rw [entry]
   cases execution with
   | reduce inner miss fuelAvailable =>
       exact RecM.whnfWithNatSuccModeNonLeaf_miss_conditional (betaWhnfPrefix_run source before _)
-        (betaWhnfKey_run source _) (inner.first.2.not_transient _ _) miss
+        (betaWhnfKey_run source _) (inner.first.not_transient _ _) miss
         (betaWhnfCharge_run _ _ (by
           simpa only [BetaPublicWhnf.outerKey, betaWhnfKey_fuel,
             (betaWhnfPrefix_fields before).2.2.2] using fuelAvailable))
         (inner.terminal.full_uncached .collapse inner.run)
   | cached origin coherent hit =>
       exact RecM.whnfWithNatSuccModeNonLeaf_hit (betaWhnfPrefix_run source before _)
-        (betaWhnfKey_run source _) (origin.first.2.not_transient _ _) hit
+        (betaWhnfKey_run source _) (origin.first.not_transient _ _) hit
 
 theorem reading (execution : BetaPublicExecution resolve locals fuel before source term result target)
     (sourceReading : readScopedExpr? resolve locals source = some term.erase)
@@ -455,11 +450,10 @@ theorem replay_run (execution : BetaPublicExecution resolve locals fuel before s
     (inactive : before.inNativeReduce = false) (methods : Methods .anon) :
     (RecM.whnf source).run methods execution.after =
       .ok result (BetaPublicWhnf.outerKey source execution.after).2 := by
-  have entry : RecM.whnf source = RecM.whnfWithNatSuccModeNonLeaf source .collapse := by
-    rw [execution.first.2.sourceEq]; rfl
+  have entry : RecM.whnf source = RecM.whnfWithNatSuccModeNonLeaf source .collapse := execution.first.full .collapse
   rw [entry]
   exact RecM.whnfWithNatSuccModeNonLeaf_hit (betaWhnfPrefix_run source _ _)
-    (betaWhnfKey_run source _) (execution.first.2.not_transient _ _) (by
+    (betaWhnfKey_run source _) (execution.first.not_transient _ _) (by
       rw [BetaPublicWhnf.outerKey, betaWhnfKey_environment, (betaWhnfPrefix_fields _).1,
         betaWhnfKey_prefix, execution.stable_key]
       exact execution.published inactive)

@@ -5,7 +5,7 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 
 import Ix.Kernel.Verify.Consistency.BetaCacheExecution
 
-/-! Pi and sort exposure follow public beta WHNF, including retained
+/-! Pi and sort exposure follow public beta/let WHNF, including retained
 reduction origins at each cache layer. -/
 
 namespace Ix.Kernel.Consistency
@@ -55,23 +55,20 @@ theorem run (exposure : BetaPiExposure resolve locals fuel before source term co
   cases exposure with
   | reduce plan =>
       have first := plan.path.first plan.moving
-      have entry : RecM.ensureForallDirect source = RecM.ensureForallWhnf source := by
-        rw [first.sourceEq]; rfl
+      have entry : RecM.ensureForallDirect source = RecM.ensureForallWhnf source := first.forallE
       rw [entry, RecM.ensureForallWhnf, ReaderT.run_bind]
       change EStateM.bind ((RecM.whnf source).run (methodsN (fuel + 1))) _ before = _
       rw [EStateM.bind, plan.run]
       rfl
   | cached origin _ hit =>
       have first := origin.path.first origin.moving
-      have entry : RecM.ensureForallDirect source = RecM.ensureForallWhnf source := by
-        rw [first.sourceEq]; rfl
+      have entry : RecM.ensureForallDirect source = RecM.ensureForallWhnf source := first.forallE
       rw [entry, RecM.ensureForallWhnf, ReaderT.run_bind]
       change EStateM.bind ((RecM.whnf source).run (methodsN (fuel + 1))) _ before = _
       rw [EStateM.bind, origin.cache_hit _ _ hit]
       rfl
   | execute execution =>
-      have entry : RecM.ensureForallDirect source = RecM.ensureForallWhnf source := by
-        rw [execution.first.2.sourceEq]; rfl
+      have entry : RecM.ensureForallDirect source = RecM.ensureForallWhnf source := execution.first.forallE
       rw [entry, RecM.ensureForallWhnf, ReaderT.run_bind]
       change EStateM.bind ((RecM.whnf source).run (methodsN (fuel + 1))) _ before = _
       rw [EStateM.bind, execution.run]
@@ -150,23 +147,20 @@ theorem run (exposure : BetaSortExposure resolve locals fuel before source term 
   | direct => rfl
   | reduce plan =>
       have first := plan.path.first plan.moving
-      have entry : RecM.ensureSortDirect source = RecM.ensureSortWhnf source := by
-        rw [first.sourceEq]; rfl
+      have entry : RecM.ensureSortDirect source = RecM.ensureSortWhnf source := first.sort
       rw [entry, RecM.ensureSortWhnf, ReaderT.run_bind]
       change EStateM.bind ((RecM.whnf source).run (methodsN (fuel + 1))) _ before = _
       rw [EStateM.bind, plan.run]
       rfl
   | cached origin hit =>
       have first := origin.path.first origin.moving
-      have entry : RecM.ensureSortDirect source = RecM.ensureSortWhnf source := by
-        rw [first.sourceEq]; rfl
+      have entry : RecM.ensureSortDirect source = RecM.ensureSortWhnf source := first.sort
       rw [entry, RecM.ensureSortWhnf, ReaderT.run_bind]
       change EStateM.bind ((RecM.whnf source).run (methodsN (fuel + 1))) _ before = _
       rw [EStateM.bind, origin.cache_hit _ _ hit]
       rfl
   | execute execution =>
-      have entry : RecM.ensureSortDirect source = RecM.ensureSortWhnf source := by
-        rw [execution.first.2.sourceEq]; rfl
+      have entry : RecM.ensureSortDirect source = RecM.ensureSortWhnf source := execution.first.sort
       rw [entry, RecM.ensureSortWhnf, ReaderT.run_bind]
       change EStateM.bind ((RecM.whnf source).run (methodsN (fuel + 1))) _ before = _
       rw [EStateM.bind, execution.run]

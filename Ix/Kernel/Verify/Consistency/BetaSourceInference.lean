@@ -6,7 +6,7 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 import Ix.Kernel.Verify.Consistency.BetaCacheConstruction
 import Ix.Kernel.Verify.Consistency.BetaWhnfInference
 
-/-! Successful production beta calls preserve the type established by the
+/-! Successful production beta/let calls preserve the type established by the
 original inference. Their operational traces, iteration counts, intermediate
 readings, and annotations are constructed from source resources. -/
 
@@ -47,7 +47,7 @@ theorem SynthesisInference.beta_core_of_success {β : Type u} {resolve : Address
     (reading : readScopedExpr? resolve locals source = some term.erase)
     (inferredRun : RecM.infer source (methodsN fuel) inferenceBefore = .ok inferred inferenceAfter)
     {reductionFuel : Nat} {before after : TcState .anon} {result : KExpr .anon}
-    (chosen : BetaStepSource.selected source = true)
+    (chosen : BetaWhnfSource.selected source = true)
     (resources : BetaWhnfSource.CoreResources resolve locals before source term)
     (coherent : before.env.intern.WF)
     (accepted : (RecM.whnfCore source).run (methodsN (reductionFuel + 1)) before = .ok result after) :
@@ -69,7 +69,7 @@ theorem SynthesisInference.beta_noDelta_of_success {β : Type u} {resolve : Addr
     (reading : readScopedExpr? resolve locals source = some term.erase)
     (inferredRun : RecM.infer source (methodsN fuel) inferenceBefore = .ok inferred inferenceAfter)
     {reductionFuel : Nat} {before after : TcState .anon} {result : KExpr .anon}
-    (chosen : BetaStepSource.selected source = true)
+    (chosen : BetaWhnfSource.selected source = true)
     (resources : BetaWhnfSource.NoDeltaResources resolve locals before source term)
     (coherent : before.env.intern.WF)
     (accepted : (RecM.whnfNoDelta source).run (methodsN (reductionFuel + 1)) before = .ok result after) :
@@ -91,7 +91,7 @@ theorem SynthesisInference.beta_public_of_success {β : Type u} {resolve : Addre
     (reading : readScopedExpr? resolve locals source = some term.erase)
     (inferredRun : RecM.infer source (methodsN fuel) inferenceBefore = .ok inferred inferenceAfter)
     {reductionFuel : Nat} {before after : TcState .anon} {result : KExpr .anon}
-    (chosen : BetaStepSource.selected source = true)
+    (chosen : BetaWhnfSource.selected source = true)
     (resources : BetaWhnfSource.PublicResources resolve locals before source term)
     (coherent : before.env.intern.WF)
     (accepted : (RecM.whnf source).run (methodsN (reductionFuel + 1)) before = .ok result after) :

@@ -92,7 +92,7 @@ result and exact state, including an entry supplied by an earlier run. -/
 theorem BetaCoreExecution.exists_of_success {β : Type u} {resolve : Address → Option (ConstRef β)}
     {locals : List FVarId} {fuel : Nat} {before after : TcState .anon}
     {source result : KExpr .anon} {term : AExpr β}
-    (chosen : BetaStepSource.selected source = true)
+    (chosen : BetaWhnfSource.selected source = true)
     (resources : BetaWhnfSource.CoreResources resolve locals before source term)
     (reading : readScopedExpr? resolve locals source = some term.erase)
     (coherent : before.env.intern.WF)
@@ -111,7 +111,7 @@ theorem BetaCoreExecution.exists_of_success {β : Type u} {resolve : Address →
 theorem BetaNoDeltaExecution.exists_of_success {β : Type u} {resolve : Address → Option (ConstRef β)}
     {locals : List FVarId} {fuel : Nat} {before after : TcState .anon}
     {source result : KExpr .anon} {term : AExpr β}
-    (chosen : BetaStepSource.selected source = true)
+    (chosen : BetaWhnfSource.selected source = true)
     (resources : BetaWhnfSource.NoDeltaResources resolve locals before source term)
     (reading : readScopedExpr? resolve locals source = some term.erase)
     (coherent : before.env.intern.WF)
@@ -120,13 +120,12 @@ theorem BetaNoDeltaExecution.exists_of_success {β : Type u} {resolve : Address 
       execution.after = after := by
   cases observed : (betaWhnfKey source before).2.env.whnfNoDeltaCache[(betaWhnfKey source before).1]? with
   | none =>
-      have entry : RecM.whnfNoDelta source = RecM.whnfNoDeltaImplNonLeaf source .FULL .collapse := by
-        obtain ⟨_, _, _, rfl⟩ := BetaStepSource.selected_app chosen
-        rfl
+      have entry : RecM.whnfNoDelta source = RecM.whnfNoDeltaImplNonLeaf source .FULL .collapse :=
+        (BetaWhnfSource.selected_entry chosen).noDelta .FULL .collapse
       have direct := accepted
       rw [entry] at direct
       obtain ⟨coreResult, coreAfter, coreRun⟩ := RecM.whnfNoDeltaImplNonLeaf_fullMiss_core_success rfl
-        (betaWhnfKey_run source before) (BetaStepSource.selected_not_transient chosen _ _) observed direct
+        (betaWhnfKey_run source before) ((BetaWhnfSource.selected_entry chosen).not_transient _ _) observed direct
       have initial : (betaWhnfKey source before).2.env.intern.WF := by
         simpa only [betaWhnfKey_environment] using coherent
       obtain ⟨target, core, _⟩ := BetaCoreExecution.exists_of_success chosen
@@ -145,7 +144,7 @@ theorem BetaNoDeltaExecution.exists_of_success {β : Type u} {resolve : Address 
 theorem BetaPublicExecution.exists_of_success {β : Type u} {resolve : Address → Option (ConstRef β)}
     {locals : List FVarId} {fuel : Nat} {before after : TcState .anon}
     {source result : KExpr .anon} {term : AExpr β}
-    (chosen : BetaStepSource.selected source = true)
+    (chosen : BetaWhnfSource.selected source = true)
     (resources : BetaWhnfSource.PublicResources resolve locals before source term)
     (reading : readScopedExpr? resolve locals source = some term.erase)
     (coherent : before.env.intern.WF)
@@ -155,14 +154,13 @@ theorem BetaPublicExecution.exists_of_success {β : Type u} {resolve : Address �
   cases observed : (BetaPublicWhnf.outerKey source before).2.env.whnfCache[
       (BetaPublicWhnf.outerKey source before).1]? with
   | none =>
-      have entry : RecM.whnf source = RecM.whnfWithNatSuccModeNonLeaf source .collapse := by
-        obtain ⟨_, _, _, rfl⟩ := BetaStepSource.selected_app chosen
-        rfl
+      have entry : RecM.whnf source = RecM.whnfWithNatSuccModeNonLeaf source .collapse :=
+        (BetaWhnfSource.selected_entry chosen).full .collapse
       have direct := accepted
       rw [entry] at direct
       obtain ⟨charged, noDeltaResult, noDeltaAfter, charge, noDeltaRun⟩ :=
         RecM.whnfWithNatSuccModeNonLeaf_miss_noDelta_success (betaWhnfPrefix_run source before _)
-          (betaWhnfKey_run source _) (BetaStepSource.selected_not_transient chosen _ _) observed direct
+          (betaWhnfKey_run source _) ((BetaWhnfSource.selected_entry chosen).not_transient _ _) observed direct
       obtain ⟨fuelAvailable, rfl⟩ := betaWhnfCharge_success charge
       have initial : (betaWhnfCharge (BetaPublicWhnf.outerKey source before).2).env.intern.WF := by
         simpa only [BetaPublicWhnf.outerKey, betaWhnfCharge_fields, betaWhnfKey_environment,

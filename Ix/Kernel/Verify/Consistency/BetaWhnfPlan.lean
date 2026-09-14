@@ -4,8 +4,9 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 -/
 
 import Ix.Kernel.Verify.Consistency.SpineReading
+import Ix.Kernel.Verify.Consistency.LetWhnfPlan
 
-/-! Raw beta paths compute production results and states independently of
+/-! Raw beta and explicit-let paths compute production results and states independently of
 the source-inference and semantic-origin derivations. -/
 
 namespace Ix.Kernel.Consistency
@@ -69,6 +70,10 @@ def after (step : BetaStepPlan resolve locals before source term) :
 def modelResult (step : BetaStepPlan resolve locals before source term) :
     AExpr β := AExpr.betaPrefix step.consumed.size (.lam step.condition step.domain step.inner) step.arguments
 
+theorem entry (step : BetaStepPlan resolve locals before source term) : StructuralWhnfEntry source := by
+  rw [step.sourceEq]
+  exact .beta step.spine
+
 theorem run (step : BetaStepPlan resolve locals before source term)
     (reductionFuel : Nat) (flags : WhnfFlags) :
     (RecM.whnfCoreWithFlagsStep source flags).run (methodsN (reductionFuel + 1)) before =
@@ -110,7 +115,7 @@ theorem counts (plan : BetaStepPlan resolve locals before source term) :
 end BetaStepPlan
 
 /-- A finite production path without semantic step origins. All intermediate
-expressions and states are computed by its raw beta plans. -/
+expressions and states are computed by its raw beta and let plans. -/
 inductive BetaWhnfTrace {β : Type u} (resolve : Address → Option (ConstRef β))
     (locals : List FVarId) (reductionFuel : Nat) (flags : WhnfFlags) :
     Nat → TcState .anon → KExpr .anon → AExpr β → TcState .anon → KExpr .anon → AExpr β → Type u
@@ -122,6 +127,11 @@ inductive BetaWhnfTrace {β : Type u} (resolve : Address → Option (ConstRef β
       (plan : BetaStepPlan resolve locals before source term)
       (rest : BetaWhnfTrace resolve locals reductionFuel flags
         steps plan.after plan.result plan.modelResult after result target) :
+      BetaWhnfTrace resolve locals reductionFuel flags (steps + 1) before source term after result target
+  | zeta {steps before after source result term target}
+      (plan : LetStepPlan before source)
+      (rest : BetaWhnfTrace resolve locals reductionFuel flags
+        steps plan.after plan.result term after result target) :
       BetaWhnfTrace resolve locals reductionFuel flags (steps + 1) before source term after result target
 
 namespace BetaWhnfTrace
@@ -154,6 +164,15 @@ theorem run
           unfold EStateM.bind
           rw [step.run reductionFuel flags]
           exact ih (by omega)
+  | zeta step rest ih =>
+      cases loopFuel with
+      | zero => omega
+      | succ loopFuel =>
+          rw [RecM.runBounded, ReaderT.run_bind]
+          change EStateM.bind ((RecM.whnfCoreWithFlagsStep _ flags).run _) _ _ = _
+          unfold EStateM.bind
+          rw [step.run (methodsN (reductionFuel + 1)) flags]
+          exact ih (by omega)
 
 theorem reading
     (trace : BetaWhnfTrace resolve locals reductionFuel flags steps before source term after result target)
@@ -165,8 +184,11 @@ theorem reading
   | next step rest ih =>
       obtain ⟨reading, preserved⟩ := step.reading coherent
       exact ih reading preserved
+  | zeta step rest ih =>
+      obtain ⟨reading, preserved⟩ := step.reading sourceReading coherent
+      exact ih reading preserved
 
-/-- A beta path changes only the intern table. All cache partitions,
+/-- A beta/let path changes only the intern table. All cache partitions,
 locals, checking policies, and instrumentation fields retain their values. -/
 theorem frame
     (trace : BetaWhnfTrace resolve locals reductionFuel flags steps before source term after result target) :
@@ -174,6 +196,9 @@ theorem frame
   induction trace with
   | done => exact ⟨_, rfl⟩
   | next step rest ih =>
+      obtain ⟨table, same⟩ := ih
+      exact ⟨table, same⟩
+  | zeta step rest ih =>
       obtain ⟨table, same⟩ := ih
       exact ⟨table, same⟩
 
