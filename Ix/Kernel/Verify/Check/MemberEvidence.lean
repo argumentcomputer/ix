@@ -208,6 +208,12 @@ theorem checkConstMember_defn_sound
       contradiction
   | ok validationValue afterValidation =>
       simp only [runTcBind, hvalidation] at hrun
+      have hcycle : ¬(safety == .safe &&
+          (exprMentionsAddr type id.addr || exprMentionsAddr value id.addr)) := by
+        intro rejected
+        simp only [rejected, if_true] at hrun
+        contradiction
+      simp only [hcycle, Bool.false_eq_true, if_false, ReaderT.run_bind, runTcBind] at hrun
       have hIValidation : WhnfStateInv .noAccel
           (kernelCacheSemantics model.keys trProj) trProj world support
           model.keys.uvars [] afterValidation := by

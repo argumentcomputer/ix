@@ -197,6 +197,9 @@ structure DefinitionBodyTrace (input : DefinitionInput) (methods : Methods .anon
   conversionEnd : TcState .anon
   validationRun : (RecM.validateConstWellScoped input.constant).run methods before =
     .ok () validated
+  dependencyGuard : (input.safety == .safe &&
+    (exprMentionsAddr input.type input.id.addr ||
+      exprMentionsAddr input.value input.id.addr)) = false
   typeRun : (RecM.infer input.type).run methods validated = .ok inferredType typeState
   sortRun : (RecM.ensureSortDirect inferredType).run methods typeState = .ok level valueStart
   theoremGuard : (input.kind == .thm && !univEq level .mkZero) = false
@@ -215,6 +218,15 @@ theorem definition_body_trace {input : DefinitionInput} {methods : Methods .anon
   change EStateM.bind ((RecM.validateConstWellScoped input.constant).run methods)
     _ before = _ at accepted
   obtain ⟨⟨⟩, validated, validationRun, accepted⟩ := bind_success accepted
+  have dependencyGuard : (input.safety == .safe &&
+      (exprMentionsAddr input.type input.id.addr ||
+        exprMentionsAddr input.value input.id.addr)) = false := by
+    cases guard : (input.safety == .safe &&
+      (exprMentionsAddr input.type input.id.addr ||
+        exprMentionsAddr input.value input.id.addr)) with
+    | false => rfl
+    | true => simp only [guard, if_true] at accepted; contradiction
+  simp only [dependencyGuard, Bool.false_eq_true, if_false, ReaderT.run_bind] at accepted
   change EStateM.bind ((RecM.infer input.type).run methods) _ validated = _ at accepted
   obtain ⟨inferredType, typeState, typeRun, accepted⟩ := bind_success accepted
   change EStateM.bind ((RecM.ensureSortDirect inferredType).run methods)
@@ -237,7 +249,7 @@ theorem definition_body_trace {input : DefinitionInput} {methods : Methods .anon
         exact ⟨{
           validated, inferredType, typeState, level, valueStart,
           inferredValue, conversionStart, conversionEnd,
-          validationRun, typeRun, sortRun,
+          validationRun, dependencyGuard, typeRun, sortRun,
           theoremGuard := Bool.eq_false_iff.mpr guard, valueRun, conversionRun }⟩
 
 /-- Operational support for the selected production definition fragment.

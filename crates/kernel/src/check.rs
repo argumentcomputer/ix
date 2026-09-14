@@ -16,7 +16,7 @@ use super::id::KId;
 use super::level::{KUniv, UnivData, univ_eq};
 use super::mode::{CheckDupLevelParams, KernelMode};
 use super::primitive::Primitives;
-use super::tc::TypeChecker;
+use super::tc::{TypeChecker, expr_mentions_addr};
 
 /// Emit `[decl diff]` when a `Defn`'s value fails the `is_def_eq(val_ty,
 /// ty)` check. The error itself (`DeclTypeMismatch`) carries no payload,
@@ -330,6 +330,14 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       },
 
       KConst::Defn { ty, val, safety, kind, .. } => {
+        if *safety == DefinitionSafety::Safe
+          && (expr_mentions_addr(ty, &id.addr)
+            || expr_mentions_addr(val, &id.addr))
+        {
+          return Err(TcError::Other(
+            "circular safe definition dependency".into(),
+          ));
+        }
         let t_infer_ty_start = overall.map(|_| Instant::now());
         let t = self.infer(ty)?;
         let lvl = self.ensure_sort(&t)?;
@@ -579,6 +587,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     let body_start = overall.map(|_| Instant::now());
     let result = match kind {
       CheckBlockKind::Defn => {
+        self.check_definition_block_acyclic(&members)?;
         let mut peak = 0;
         for member in &members {
           self.check_const_member_fresh(member)?;
@@ -974,6 +983,52 @@ impl<M: KernelMode> TypeChecker<'_, M> {
           "check_eq_type: Eq.refl not found or not a constructor".into(),
         ));
       },
+    }
+    Ok(())
+  }
+
+  // -----------------------------------------------------------------------
+  // Definition dependency ordering
+  // -----------------------------------------------------------------------
+
+  /// Remove safe block members whose type and value no longer mention any
+  /// pending safe member. A remaining cycle cannot justify its own types.
+  /// External dependencies belong to the environment/claim admission order;
+  /// inductive and recursor recursion has separate structural validators.
+  fn check_definition_block_acyclic(
+    &self,
+    members: &[KId<M>],
+  ) -> Result<(), TcError<M>> {
+    let reject =
+      || TcError::Other("circular safe definition dependency in block".into());
+    let mut pending = Vec::new();
+    for member in members {
+      let Some(KConst::Defn { ty, val, safety, .. }) = self.env.get(member)
+      else {
+        return Err(reject());
+      };
+      if safety == DefinitionSafety::Safe {
+        pending.push((member, ty, val));
+      }
+    }
+    while !pending.is_empty() {
+      let ready: Vec<bool> = pending
+        .iter()
+        .map(|(_, ty, val)| {
+          pending.iter().all(|(dependency, _, _)| {
+            !expr_mentions_addr(ty, &dependency.addr)
+              && !expr_mentions_addr(val, &dependency.addr)
+          })
+        })
+        .collect();
+      if !ready.iter().any(|ready| *ready) {
+        return Err(reject());
+      }
+      pending = pending
+        .into_iter()
+        .zip(ready)
+        .filter_map(|(definition, ready)| (!ready).then_some(definition))
+        .collect();
     }
     Ok(())
   }
@@ -1801,6 +1856,101 @@ mod tests {
         block,
       },
     );
+  }
+
+  #[test]
+  fn reject_circular_safe_standalone_definitions() {
+    use ixon::constant::{Constant, ConstantInfo, Definition};
+    use ixon::expr::Expr;
+    use ixon::univ::Univ;
+
+    for kind in [DefKind::Definition, DefKind::Theorem, DefKind::Opaque] {
+      let declaration = Constant::with_tables(
+        ConstantInfo::Defn(Definition {
+          kind,
+          safety: DefinitionSafety::Safe,
+          lvls: 0,
+          typ: Expr::all(Expr::sort(0), Expr::var(0)),
+          value: Expr::rec(0, vec![]),
+        }),
+        vec![],
+        vec![],
+        vec![Univ::zero()],
+      );
+      let (addr, _) = declaration.commit();
+      let source = ixon::env::Env::new();
+      source.store_const(addr.clone(), declaration);
+      let mut env = KEnv::<Anon>::new();
+      assert!(
+        crate::ingress::ingress_anon_addr_shallow(&mut env, &source, &addr,)
+          .unwrap()
+      );
+      let err = TypeChecker::new(&mut env)
+        .check_const(&KId::new(addr, ()))
+        .expect_err("a declaration must not justify its type by citing itself");
+      assert!(err.to_string().contains("circular safe definition"), "{err}");
+    }
+  }
+
+  #[test]
+  fn reject_circular_safe_definition_block() {
+    let mut env = KEnv::<Anon>::new();
+    let block = mk_id("circular_block");
+    let f = mk_id("circular_f");
+    let g = mk_id("circular_g");
+    let good = mk_id("independent_member");
+    insert_id_def(&mut env, good.clone(), block.clone());
+    for (id, peer) in [(&f, &g), (&g, &f)] {
+      env.insert(
+        id.clone(),
+        KConst::Defn {
+          name: (),
+          level_params: (),
+          kind: DefKind::Theorem,
+          safety: DefinitionSafety::Safe,
+          hints: ReducibilityHints::Regular(0),
+          lvls: 0,
+          ty: AE::all((), (), sort0(), AE::var(0, ())),
+          val: AE::cnst(peer.clone(), Box::new([])),
+          lean_all: (),
+          block: block.clone(),
+        },
+      );
+    }
+    env.insert_block(block, vec![good.clone(), f.clone(), g.clone()]);
+    let mut tc = TypeChecker::new(&mut env);
+    let first = tc.check_const(&good).unwrap_err().to_string();
+    assert!(first.contains("circular safe definition"), "{first}");
+    assert_eq!(tc.check_const(&f).unwrap_err().to_string(), first);
+    assert_eq!(tc.check_const(&g).unwrap_err().to_string(), first);
+  }
+
+  #[test]
+  fn accept_acyclic_safe_definition_block() {
+    let mut env = KEnv::<Anon>::new();
+    let block = mk_id("acyclic_block");
+    let f = mk_id("acyclic_f");
+    let g = mk_id("acyclic_g");
+    insert_id_def(&mut env, g.clone(), block.clone());
+    env.insert(
+      f.clone(),
+      KConst::Defn {
+        name: (),
+        level_params: (),
+        kind: DefKind::Definition,
+        safety: DefinitionSafety::Safe,
+        hints: ReducibilityHints::Regular(0),
+        lvls: 0,
+        ty: AE::all((), (), sort0(), sort0()),
+        val: AE::cnst(g.clone(), Box::new([])),
+        lean_all: (),
+        block: block.clone(),
+      },
+    );
+    env.insert_block(block, vec![f.clone(), g.clone()]);
+    let mut tc = TypeChecker::new(&mut env);
+    tc.check_const(&f).unwrap();
+    tc.check_const(&g).unwrap();
   }
 
   #[test]

@@ -25,6 +25,7 @@ import Ix.Kernel.Verify.Consistency.CacheInvariant
 import Ix.Kernel.Verify.Consistency.CacheLifecycle
 import Ix.Kernel.Verify.Consistency.InternInvariant
 import Ix.Kernel.Verify.Consistency.StringExpansion
+import Ix.Kernel.Verify.Consistency.DefinitionOrder
 import Ix.Kernel.Verify.Consistency.Production
 import Ix.Kernel.Verify.Consistency.Environment
 import Ix.Kernel.Verify.Consistency.Audit
@@ -76,4 +77,10 @@ partitions. Writes, hits, initialization, clearing, scope/policy cleanup and
 error isolation preserve these facts. Its parameterized entry meaning and
 uncached-body preservation contract remain to be instantiated by the general
 mutual semantic proof. General checker soundness remains outside this fragment.
+
+The safe-definition guard excludes self-reference for both modes and arbitrary
+universe arities. Successful definition-block execution computes an order of
+all loaded safe members and implies a well-founded internal dependency relation.
+External dependency admission and the meaning of cached block successes remain
+obligations of the general environment proof.
 -/

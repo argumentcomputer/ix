@@ -2,6 +2,7 @@ import Ix.Kernel.Verify.Check.BlockTransaction
 import Ix.Kernel.Verify.Check.BlockClassification
 import Ix.Kernel.Verify.Check.ScopedStandaloneDriver
 import Ix.Kernel.Verify.Check.StandaloneDriver
+import Ix.Kernel.Verify.Consistency.DefinitionOrder
 
 /-!
 # Singleton definition blocks
@@ -28,9 +29,14 @@ theorem checkClassifiedBlock_singleton_definition_success
     (hrun : (checkClassifiedBlock .defn block #[id]).run methods before =
       .ok () after) :
     (checkConstMemberFresh id).run methods before = .ok () after := by
+  have hguard := Consistency.DefinitionOrder.block_guard hrun
   unfold checkClassifiedBlock at hrun
   have hneq : ((.defn : CheckBlockKind) != .defn) = false := by rfl
   rw [hneq] at hrun
+  simp only [Bool.false_eq_true, if_false, ReaderT.run_bind] at hrun
+  change ((if (!before.env.definitionBlockAcyclic #[id]) = true then _ else _) :
+    RecM .anon Unit).run methods before = .ok () after at hrun
+  simp only [hguard, Bool.not_true, Bool.false_eq_true, if_false] at hrun
   simp at hrun
   change EStateM.bind ((checkConstMemberFresh id).run methods) _ before =
     .ok () after at hrun

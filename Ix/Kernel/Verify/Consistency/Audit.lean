@@ -9,6 +9,7 @@ import Ix.Kernel.Verify.Consistency.Environment
 import Ix.Kernel.Verify.Consistency.RecursiveCache
 import Ix.Kernel.Verify.Consistency.CacheLifecycle
 import Ix.Kernel.Verify.Consistency.StringExpansion
+import Ix.Kernel.Verify.Consistency.DefinitionOrder
 import Ix.Kernel.Verify.Audit.Basic
 
 /-! Exact full-dependency boundaries for the direct model-refinement roots.
@@ -126,6 +127,9 @@ private def recursiveCacheRoots : Array Lean.Name := #[
 
 private def productionRoots : Array Lean.Name := #[
   ``StandalonePrefix.member_success, ``definition_body_trace,
+  ``DefinitionOrder.member_no_self, ``DefinitionOrder.block_guard,
+  ``DefinitionOrder.block_rank, ``DefinitionOrder.block_wellFounded,
+  ``DefinitionOrder.block_no_cycle,
   ``AtomicDefinitionRun.sound, ``AtomicDefinitionRun.no_self_alias,
   ``WorkPosition.check_success, ``AtomicDefinitionPlan.extends,
   ``AtomicDefinitionPlan.sound, ``AtomicDefinitionPlan.represents,
@@ -270,10 +274,12 @@ def roots : Array RootAllowance := #[
 ] ++ stringListRoots.map (fun root => {
   root, standardAxioms := #[``propext], forbiddenDependencies := forbiddenProduction
 }) ++ (localIndexRoots ++ cacheFrameRoots ++ letSubstitutionRoots ++ cacheInvariantFrameRoots ++
-    internFrameRoots).map (fun root => {
+    internFrameRoots ++ #[``DefinitionOrder.ready_independent,
+      ``DefinitionOrder.order?_sound, ``DefinitionOrder.member_of_read]).map (fun root => {
   root, standardAxioms := #[``propext, ``Quot.sound], forbiddenDependencies := forbiddenProduction
 }) ++ (contextRoots ++ cacheMapRoots ++ cacheInvariantMapRoots ++ scopedRoots ++ stringRoots ++
-    internMapRoots).map (fun root => {
+    internMapRoots ++ #[``DefinitionOrder.order?_rank,
+      ``DefinitionOrder.acyclic_rank]).map (fun root => {
   root, standardAxioms := standard, forbiddenDependencies := forbiddenProduction
 }) ++ (binderWalkerRoots ++ cacheKeyRoots ++ cacheInvariantKeyRoots ++ stringExpansionRoots).map (fun root => {
   root, standardAxioms := standard, nativeAxioms := #[expressionNative],

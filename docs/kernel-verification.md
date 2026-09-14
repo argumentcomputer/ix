@@ -139,6 +139,17 @@ increasing sequence of strongly inaccessible cardinals.
   preserves validity. The remaining successful-body preservation obligation is
   explicit. These structural laws have a parameterized cache meaning; the
   general mutual semantic proof must instantiate it and discharge that obligation.
+- Safe definitions cannot cite themselves in their types or values. Definition
+  blocks compute a dependency order for their safe members before checking any
+  member. `DefinitionOrder.block_wellFounded` and `block_no_cycle` derive the
+  absence of every internal safe-definition cycle from actual block success.
+  The order includes every safe declaration loaded at a member key; callers
+  supply no order or rank certificate. Acyclic references between block members
+  remain supported. This closes the host acceptance of hash-verified circular
+  definitions, theorems, and opaque definitions. The guest already rejects safe
+  `recur` references at ingress, including acyclic peer references; that policy
+  difference remains explicit. External dependency ordering, cache provenance,
+  and general model preservation remain separate obligations.
 
 `ModelTyping.no_false` assumes semantic typing; the production fragment below
 derives it for its supported paths. Full checker refinement still requires the
@@ -385,6 +396,7 @@ The VM pilot is preserved in the frozen archive and excluded from the host gate.
 | Finite intern support and production string expansion | [`Consistency/InternInvariant.lean`](../Ix/Kernel/Verify/Consistency/InternInvariant.lean), [`StringExpansion.lean`](../Ix/Kernel/Verify/Consistency/StringExpansion.lean), [`StringReading.lean`](../Ix/Kernel/Verify/Consistency/StringReading.lean) |
 | Dependent binders and function bodies | [`Consistency/BinderInference.lean`](../Ix/Kernel/Verify/Consistency/BinderInference.lean), [`Application.lean`](../Ix/Kernel/Verify/Consistency/Application.lean), [`BinderOpening.lean`](../Ix/Kernel/Verify/Consistency/BinderOpening.lean), [`Context.lean`](../Ix/Kernel/Verify/Consistency/Context.lean), [`Model/Checking.lean`](../Ix/Theory/Model/Checking.lean) |
 | Production environment fragment and relative axiom policy | [`Consistency/Environment.lean`](../Ix/Kernel/Verify/Consistency/Environment.lean), [`Production.lean`](../Ix/Kernel/Verify/Consistency/Production.lean) |
+| Safe definition self-reference and block dependency order | [`DefinitionOrder.lean`](../Ix/Kernel/DefinitionOrder.lean), [`Consistency/DefinitionOrder.lean`](../Ix/Kernel/Verify/Consistency/DefinitionOrder.lean) |
 | Foundation assumptions, theorem contracts, and provenance | [Consistency model guide](theory.md) |
 | Host commands, receipts, and frozen regression evidence | [Certified checking guide](certified-checking.md) |
 | Concrete set-theory instance | [Separate model package](../Models/SetTheory/README.md) |

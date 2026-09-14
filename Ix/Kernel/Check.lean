@@ -1,6 +1,7 @@
 module
 
 public import Ix.Kernel.Inductive
+public import Ix.Kernel.DefinitionOrder
 
 /-!
 Mirror: crates/kernel/src/check.rs
@@ -14,7 +15,9 @@ Constant checking dispatch:
   validation (closed at top level, univ params in range, const arities,
   known prj heads), then kind dispatch — axioms/quots infer+sort;
   definitions additionally def-eq the value type (theorems must be Prop) and
-  run the safety lattice; inductives/ctors/recursors run inference plus the
+  run the safety lattice. Safe definitions reject self-reference, and safe
+  members of definition blocks must admit a dependency order before any
+  member is checked. Inductives/ctors/recursors run inference plus the
   inductive machinery.
 
 The inductive and recursor member/block validators live in
@@ -419,6 +422,9 @@ def checkConstMember (id : KId m) (c : KConst m) : RecM m Unit := do
     let t ← infer ty
     let _ ← ensureSortDirect t
   | .defn (ty := ty) (val := val) (safety := safety) (kind := kind) .. =>
+    if safety == .safe &&
+        (exprMentionsAddr ty id.addr || exprMentionsAddr val id.addr) then
+      throw (.other "circular safe definition dependency")
     let t ← infer ty
     let lvl ← ensureSortDirect t
     -- Theorems must have types in Prop (Sort 0).
@@ -462,6 +468,8 @@ def checkClassifiedBlock (kind : CheckBlockKind) (block : KId m)
       validateConstWellScoped c
   match kind with
   | .defn =>
+    if !(← get).env.definitionBlockAcyclic members then
+      throw (.other "circular safe definition dependency in block")
     let mut peak : UInt32 := 0
     for member in members do
       checkConstMemberFresh member

@@ -347,6 +347,54 @@ def quotTests : TestSeq :=
 
 /-! ### Block coordination -/
 
+/-- Closed, axiom-free proposition. A circular body must not establish it. -/
+def circularProposition : Ixon.Expr := .leanAll (.sort 0) (.var 0)
+
+def circularFailure (row : CheckResult) : Bool :=
+  row.err?.any fun error => (error.splitOn "circular safe definition").length > 1
+
+def circularDefinitionTests : TestSeq :=
+  ([Ix.DefKind.defn, .thm, .opaq].foldl (init := .done) fun tests kind =>
+    tests ++ test s!"safe {repr kind} cannot justify its own declared type"
+      ((let declaration : Ixon.Constant :=
+          ⟨.defn ⟨kind, .safe, 0, circularProposition, .recur 0 #[]⟩,
+            #[], #[], #[.zero]⟩
+        let (source, target) := storeConst {} declaration
+        match checkEnvAnon source { verifyHashes := true } with
+        | .ok rows => rows.size == 1 && rows[0]!.addr == target
+            && circularFailure rows[0]!
+        | .error _ => false : Bool)))
+  ++ test "safe mutual definitions cannot justify each other"
+    ((let f : Ixon.MutConst :=
+        .defn ⟨.thm, .safe, 0, circularProposition, .recur 1 #[]⟩
+      let g : Ixon.MutConst :=
+        .defn ⟨.thm, .safe, 0, circularProposition, .recur 0 #[]⟩
+      let (source, _) := storeMutsWithProjs {}
+        ⟨.muts #[f, g], #[], #[], #[.zero]⟩
+      match checkEnvAnon source { verifyHashes := true } with
+      | .ok rows => rows.size == 2 && rows.all circularFailure
+      | .error _ => false : Bool))
+  ++ test "safe mutual cycle is rejected alongside an independent member"
+    ((let good : Ixon.MutConst :=
+        .defn ⟨.defn, .safe, 0, .leanAll (.sort 0) (.sort 0),
+          .leanLam (.sort 0) (.var 0)⟩
+      let f : Ixon.MutConst :=
+        .defn ⟨.thm, .safe, 0, circularProposition, .recur 2 #[]⟩
+      let g : Ixon.MutConst :=
+        .defn ⟨.thm, .safe, 0, circularProposition, .recur 1 #[]⟩
+      let (source, _) := storeMutsWithProjs {}
+        ⟨.muts #[good, f, g], #[], #[], #[.zero]⟩
+      match checkEnvAnon source { verifyHashes := true } with
+      | .ok rows => rows.size == 3 && rows.all circularFailure
+      | .error _ => false : Bool))
+  ++ test "partial and unsafe recursion remains outside safe admission"
+    (([Ix.DefinitionSafety.part, .unsaf].all fun safety =>
+      let declaration : Ixon.Constant :=
+        ⟨.defn ⟨.defn, safety, 0, circularProposition, .recur 0 #[]⟩,
+          #[], #[], #[.zero]⟩
+      let (source, target) := storeConst {} declaration
+      passes source target : Bool))
+
 def blockTests : TestSeq :=
   test "defn block failure replays for every member"
     ((let (ixon, aAddr) := envA
@@ -1019,7 +1067,7 @@ def parallelTests : TestSeq :=
 
 public def suite : List TestSeq :=
   [acceptRejectTests, wellScopedTests, totalizationTests, safetyTests,
-   quotTests, blockTests,
+   quotTests, circularDefinitionTests, blockTests,
    lazyTests, cacheIsolationTests, primVerifyTests, inductiveTests,
    recursorTests, parallelTests]
 
