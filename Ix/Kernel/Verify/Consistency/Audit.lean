@@ -8,6 +8,7 @@ import Ix.Kernel.Verify.Consistency.Constant
 import Ix.Kernel.Verify.Consistency.Environment
 import Ix.Kernel.Verify.Consistency.RecursiveCache
 import Ix.Kernel.Verify.Consistency.RecursiveState
+import Ix.Kernel.Verify.Consistency.SourceAgreement
 import Ix.Kernel.Verify.Audit.Basic
 
 /-! Exact full-dependency boundaries for the direct model-refinement roots.
@@ -157,6 +158,27 @@ private def recursiveStateRoots : Array Lean.Name := #[
   ``BinderInference.sortAfterOwnedInference
 ]
 
+private def conversionUniverseRoots : Array Lean.Name := #[
+  ``conversionRecipe_univStep, ``conversionRecipe_univLoop, ``conversionRecipe_univTree,
+  ``conversionRecipe_univIdx, ``conversionRecipe_univArgs
+]
+
+private def sourceAgreementRoots : Array Lean.Name := #[
+  ``conversionRecipe_exprStep, ``conversionRecipe_exprLoop, ``conversionRecipe_expr,
+  ``conversionRecipe_defn, ``conversionRecipe_recursor, ``conversionRecipe_standalone,
+  ``convertAnonStandalone_prediction, ``predictStandalone?_verified, ``predictStandalone?_some,
+  ``StandaloneSourceAgreement.empty, ``StandaloneSourceAgreement.ofMap,
+  ``SourceOwnership.projection_unpredicted, ``ingressAnonBlock_sourceAgreement,
+  ``ingressAnonStandalone_sourceAgreement, ``ingressAnonAddrShallow_sourceAgreement,
+  ``SourceStateInvariant.ofMaps, ``SourceStateInvariant.afterInferKey,
+  ``lazyIngressAddr_sourceAgreement, ``tryGetConst_sourceAgreement, ``getConst_sourceAgreement,
+  ``SourceStateInvariant.getConst, ``StandaloneModelBinding.getConst,
+  ``ScopedConstantInferenceSupport.ofSource, ``ConstantInferenceSupport.ofSource,
+  ``infer_const_source_sound, ``SourceStateInvariant.openBinder,
+  ``OwnedInferenceTrace.SourceData, ``OwnedInferenceTrace.preservesSource,
+  ``OwnedInferenceTrace.frameSource
+]
+
 private def productionRoots : Array Lean.Name := #[
   ``StandalonePrefix.member_success, ``definition_body_trace,
   ``AtomicDefinitionRun.sound, ``AtomicDefinitionRun.no_self_alias,
@@ -197,6 +219,15 @@ private def forbiddenProduction : Array Lean.Name := #[
 ]
 
 def roots : Array RootAllowance := #[
+  { root := ``ConversionRecipe.run_predict, standardAxioms := standard,
+    forbiddenDependencies := forbiddenProduction },
+  { root := ``Ix.Kernel.ConversionRecipe.run_bind, standardAxioms := #[``propext, ``Quot.sound],
+    forbiddenDependencies := forbiddenProduction },
+  { root := ``getConst_result_loaded, standardAxioms := #[``propext, ``Quot.sound],
+    forbiddenDependencies := forbiddenProduction },
+  { root := ``SourceStateInvariant.ofCheckedSource, standardAxioms := standard,
+    nativeAxioms := #[expressionNative, levelNative, nameNative],
+    forbiddenDependencies := forbiddenProduction },
   { root := ``convertUnivTree_coherent, standardAxioms := standard,
     nativeAxioms := #[levelNative], forbiddenDependencies := forbiddenProduction },
   { root := ``newLazyAnon_intern_coherent, standardAxioms := standard,
@@ -264,7 +295,10 @@ def roots : Array RootAllowance := #[
   { root := ``Theory.Model.CheckingClaim.typing, standardAxioms := standard },
   { root := ``Theory.Model.CheckingClaim.typingSort, standardAxioms := standard },
   { root := ``Theory.Model.CheckingClaim.lam, standardAxioms := standard }
-] ++ (scopedRoots ++ cacheFrameRoots).map (fun root => {
+] ++ conversionUniverseRoots.map (fun root => {
+  root, standardAxioms := standard, nativeAxioms := #[levelNative],
+  forbiddenDependencies := forbiddenProduction
+}) ++ (scopedRoots ++ cacheFrameRoots).map (fun root => {
   root, standardAxioms := #[``propext, ``Quot.sound], forbiddenDependencies := forbiddenProduction
 }) ++ (contextRoots ++ cacheMapRoots ++ sourceOwnershipRoots).map (fun root => {
   root, standardAxioms := standard, forbiddenDependencies := forbiddenProduction
@@ -272,7 +306,7 @@ def roots : Array RootAllowance := #[
   root, standardAxioms := standard, nativeAxioms := #[expressionNative],
   forbiddenDependencies := forbiddenProduction
 }) ++ (atomicRoots ++ instantiationRoots ++ recursiveCacheRoots ++ lazyCacheRoots ++
-    ownedLoaderRoots ++ recursiveStateRoots).map (fun root => {
+    ownedLoaderRoots ++ recursiveStateRoots ++ sourceAgreementRoots).map (fun root => {
   root, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative],
   forbiddenDependencies := forbiddenProduction
 }) ++ productionRoots.map (fun root => {

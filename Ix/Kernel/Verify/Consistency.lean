@@ -27,6 +27,8 @@ import Ix.Kernel.Verify.Consistency.Application
 import Ix.Kernel.Verify.Consistency.BinderInference
 import Ix.Kernel.Verify.Consistency.RecursiveCache
 import Ix.Kernel.Verify.Consistency.RecursiveState
+import Ix.Kernel.Verify.Consistency.ConversionRecipe
+import Ix.Kernel.Verify.Consistency.SourceAgreement
 import Ix.Kernel.Verify.Consistency.Production
 import Ix.Kernel.Verify.Consistency.Environment
 import Ix.Kernel.Verify.Consistency.Audit
@@ -94,7 +96,16 @@ Its nodes contain finite walker data, while one initial state invariant supplies
 every recursive boundary and post-lookup table. The resulting cache frame
 transports earlier constant witnesses, supplies later sort coherence, and
 returns the state resource for a subsequent constant that loads another block.
-Initial agreement, general state/source agreement, finite execution resources,
-trace construction, and preservation inside the footprint remain obligations.
+Source-only conversion recipes predict complete standalone declarations and
+the finite intern candidates used to construct them. Under collision freedom
+on the initial table and those candidates, actual conversion follows the
+prediction on success and failure. Standalone source agreement starts empty,
+survives verified lookup on both outcomes, and is preserved by supported
+recursive inference. Source ownership protects its keys during block loads.
+A static model binding reads the predicted type; actual constant lookup then
+derives its type reading, arity, and coherence without post-load reading premises.
+Model admission, mutual-member interpretations, initial semantic cache agreement,
+finite execution resources, trace construction, and preservation inside the
+footprint remain obligations.
 General checker soundness remains outside this fragment.
 -/

@@ -3,6 +3,7 @@ module
 public import LSpec
 public import Ix.Kernel
 public import Ix.Kernel.SourceOwnership
+public import Ix.Kernel.SourceConversion
 public import Tests.Ix.Kernel.IxonFixtures
 
 /-!
@@ -1520,9 +1521,253 @@ private def recursiveStateCases : TestSeq :=
   ++ test "recursive state: nested application and later cache replay retain both invariants"
     (stateAcrossRecursiveLoads 2 false true true)
 
+/-- Compare every anonymous field, including recursive syntax and annotations.
+The production expression/level BEq instances compare addresses only. -/
+private def sameSourceLevel : KUniv .anon → KUniv .anon → Bool
+  | .zero a, .zero b => a == b
+  | .succ a ah, .succ b bh => ah == bh && sameSourceLevel a b
+  | .max a b ah, .max c d bh | .imax a b ah, .imax c d bh =>
+      ah == bh && sameSourceLevel a c && sameSourceLevel b d
+  | .param a _ ah, .param b _ bh => a == b && ah == bh
+  | _, _ => false
+
+private def sameSourceExpr (left right : KExpr .anon) : Bool :=
+  left.addr == right.addr && left.lbr == right.lbr && left.count0 == right.count0 &&
+  left.hasFVars == right.hasFVars && match left, right with
+  | .var a _ _, .var b _ _ => a == b
+  | .fvar a _ _, .fvar b _ _ => a == b
+  | .sort a _, .sort b _ => sameSourceLevel a b
+  | .const a us _, .const b vs _ => a.addr == b.addr && us.size == vs.size &&
+      (us.zip vs).all (fun (u, v) => sameSourceLevel u v)
+  | .app a b _, .app c d _ | .lam _ _ a b _, .lam _ _ c d _ |
+      .all _ _ a b _, .all _ _ c d _ => sameSourceExpr a c && sameSourceExpr b d
+  | .letE _ a b c nd _, .letE _ d e f md _ => nd == md &&
+      sameSourceExpr a d && sameSourceExpr b e && sameSourceExpr c f
+  | .prj a i v _, .prj b j w _ => a.addr == b.addr && i == j && sameSourceExpr v w
+  | .nat a ah _, .nat b bh _ => a == b && ah == bh
+  | .str a ah _, .str b bh _ => a == b && ah == bh
+  | _, _ => false
+
+private def sameStandalone : KConst .anon → KConst .anon → Bool
+  | .axio _ _ isUnsafe n ty, .axio _ _ isUnsafe' n' ty' =>
+      isUnsafe == isUnsafe' && n == n' && sameSourceExpr ty ty'
+  | .quot _ _ kind n ty, .quot _ _ kind' n' ty' =>
+      kind == kind' && n == n' && sameSourceExpr ty ty'
+  | .defn _ _ kind safety hints n ty val _ block,
+      .defn _ _ kind' safety' hints' n' ty' val' _ block' =>
+      kind == kind' && safety == safety' && hints == hints' && n == n' &&
+      sameSourceExpr ty ty' && sameSourceExpr val val' && block.addr == block'.addr
+  | .recr _ _ k isUnsafe n p i m s block idx ty rules _,
+      .recr _ _ k' isUnsafe' n' p' i' m' s' block' idx' ty' rules' _ =>
+      k == k' && isUnsafe == isUnsafe' && n == n' && p == p' && i == i' && m == m' &&
+      s == s' && block.addr == block'.addr && idx == idx' && sameSourceExpr ty ty' &&
+      rules.size == rules'.size && (rules.zip rules').all (fun (a, b) =>
+        a.fields == b.fields && sameSourceExpr a.rhs b.rhs)
+  | _, _ => false
+
+private def sourceCatalogMatches (source : Ixon.Env) (env : AnonEnv) : Bool :=
+  env.consts.toList.all fun (id, concrete) => match predictStandalone? source id.addr with
+    | .ok (some expected) => sameStandalone concrete expected
+    | _ => true
+
+/-- Check independent expected fields, actual cold and warm conversion, and
+publication by the verified lazy loader. -/
+private def predictionMatches (source : Ixon.Env) (addr : Address) (expected : KConst .anon) : Bool :=
+  match getConstVerified source addr true, predictStandalone? source addr with
+  | .ok (some constant), .ok (some predicted) =>
+      match convertAnonStandalone source addr constant .empty with
+      | .ok cold table =>
+          match convertAnonStandalone source addr constant table,
+              TcM.getConst (m := .anon) ⟨addr, ()⟩ (TcState.newLazyAnon source) with
+          | .ok warm after, .ok loaded state =>
+              sameStandalone predicted expected && sameStandalone cold expected &&
+              sameStandalone warm expected && sameStandalone loaded expected &&
+              sourceCatalogMatches source state.env && internKeysCoherent after &&
+              after.exprs.size == table.exprs.size && after.univs.size == table.univs.size
+          | _, _ => false
+      | .error _ _ => false
+  | _, _ => false
+
+private def predictionShared (kind : Nat) : Bool :=
+  let (source, addr) := storeConst {} (lazyCacheDependency kind)
+  let value := KExpr.mkLam (m := .anon) () () (.mkSort levelOne)
+    (.mkLam () () (.mkVar 0 ()) (.mkVar 0 ()))
+  let expected := match kind with
+    | 0 => KConst.axio () () false 0 identityType
+    | 1 => .defn () () .defn .safe (.regular 0) 0 identityType value () ⟨addr, ()⟩
+    | 2 => .recr () () false false 0 0 0 0 0 ⟨addr, ()⟩ 0 identityType
+        #[⟨(), 0, value⟩, ⟨(), 1, value⟩] ()
+    | _ => .quot () () .type 0 identityType
+  predictionMatches source addr expected
+
+/-- All expression forms, both let flags, literal blobs, self/reference level
+arguments, normalization, and anonymous reducibility hints in one declaration. -/
+private def predictionRichDefinition : Bool :=
+  let (source, carrier) := envA
+  let (source, natBlob) := source.storeBlob ⟨(42 : Nat).toBytesLE⟩
+  let (source, strBlob) := source.storeBlob "héllo".toUTF8
+  let shared := Ixon.Expr.leanAll (.sort 0) (.var 0)
+  let typ := Ixon.Expr.leanAll (.sort 1)
+    (.letE true (.share 0) (.recur 0 #[1, 0])
+      (.prj 0 2 (.app (.ref 0 #[0, 0]) (.var 0))))
+  let value := Ixon.Expr.letE false (.sort 1) (.nat 1)
+    (.leanLam (.sort 0) (.app (.str 2) (.share 0)))
+  let level : Ixon.Univ := .imax (.max (.var 0) (.var 1)) (.var 1)
+  let constant : Ixon.Constant := ⟨.defn ⟨.opaq, .unsaf, 2, typ, value⟩,
+    #[shared], #[carrier, natBlob, strBlob], #[level, .imax (.succ .zero) .zero]⟩
+  let (source, addr) := storeConst source constant
+  let source := {source with anonHints := source.anonHints.insert addr (.regular 37)}
+  let u := KUniv.mkIMax (.mkMax (.mkParam 0 ()) (.mkParam 1 ())) (.mkParam 1 ())
+  let sort := KExpr.mkSort (m := .anon) u
+  let prop := KExpr.mkSort (m := .anon) .mkZero
+  let shared := KExpr.mkAll () () sort (.mkVar 0 ())
+  let typ := KExpr.mkAll () () prop
+    (.mkLet () shared (.mkConst ⟨addr, ()⟩ #[.mkZero, u])
+      (.mkPrj ⟨carrier, ()⟩ 2 (.mkApp (.mkConst ⟨carrier, ()⟩ #[u, u]) (.mkVar 0 ()))) true)
+  let value := KExpr.mkLet () prop (.mkNat 42 natBlob)
+    (.mkLam () () sort (.mkApp (.mkStr "héllo" strBlob) shared)) false
+  predictionMatches source addr (.defn () () .opaq .unsaf (.regular 37) 2 typ value () ⟨addr, ()⟩)
+
+private def predictionRecursorFields : Bool :=
+  let (source, addr) := storeConst {}
+    ⟨.recr ⟨true, true, 2, 3, 4, 5, 6, .sort 0,
+      #[⟨7, .recur 0 #[0]⟩, ⟨8, .sort 0⟩]⟩, #[], #[], #[.var 1]⟩
+  let u := KUniv.mkParam (m := .anon) 1 ()
+  let ty := KExpr.mkSort u
+  predictionMatches source addr (.recr () () true true 2 3 4 5 6 ⟨addr, ()⟩ 0 ty
+    #[⟨(), 7, .mkConst ⟨addr, ()⟩ #[u]⟩, ⟨(), 8, ty⟩] ())
+
+/-- The prediction remains independent of a poisoned intern entry. This
+intentionally violates finite collision freedom while keeping the same hash. -/
+private def predictionCollisionBoundary (levelCollision : Bool) : Bool :=
+  let (source, addr) := envA
+  match getConstVerified source addr true, predictStandalone? source addr with
+  | .ok (some constant), .ok (some predicted) =>
+      let forged := KExpr.sort levelOne {predicted.ty.info with lbr := 9, count0 := 8}
+      let levels := (∅ : Std.HashMap Address (KUniv .anon)).insert
+        levelOne.addr (.param 9 () levelOne.addr)
+      let expressions := (∅ : Std.HashMap Address (KExpr .anon)).insert predicted.ty.addr forged
+      let table : InternTable .anon := if levelCollision then
+          {InternTable.empty with univs := levels}
+        else {InternTable.empty with exprs := expressions}
+      match convertAnonStandalone source addr constant table with
+      | .ok actual _ => actual.ty.addr == predicted.ty.addr && !sameStandalone actual predicted &&
+          sameSourceExpr predicted.ty (.mkSort levelOne)
+      | .error _ _ => false
+  | _, _ => false
+
+private def predictionFailure (kind : Nat) : Bool :=
+  let broken : Ixon.Expr := match kind with
+    | 0 => .share 9
+    | 1 => .sort 9
+    | 2 => .ref 9 #[]
+    | 3 => .recur 9 #[]
+    | _ => .share 0
+  let constant : Ixon.Constant :=
+    ⟨.defn ⟨.defn, .safe, 0, .sort 0, broken⟩, #[.share 0], #[], #[.succ .zero]⟩
+  let (source, addr) := storeConst {} constant
+  match predictStandalone? source addr, convertAnonStandalone source addr constant .empty with
+  | .error predicted, .error actual table => predicted == actual && !table.exprs.isEmpty &&
+      !table.univs.isEmpty && internKeysCoherent table &&
+      !(ConversionRecipe.standalone source addr constant).exprs.isEmpty
+  | _, _ => false
+
+private def predictionCatalogSelection : Bool :=
+  let (source, block) := storeMutsWithProjs {} (cacheBlock false)
+  let missing := Address.blake3 "source-prediction-missing".toUTF8
+  let bad := Address.blake3 "source-prediction-corrupt".toUTF8
+  let source := {source with consts := source.consts.insert bad (.ofConstant axiomA)}
+  match predictStandalone? source block, predictStandalone? source (defnProjAddr block 0),
+      predictStandalone? source missing, predictStandalone? source bad with
+  | .ok none, .ok none, .ok none, .error _ => true
+  | _, _, _, _ => false
+
+/-- A recursive call loads a standalone; a mixed block load and another
+standalone follow. The source catalog is checked at each actual boundary. -/
+private def sourceAcrossRecursiveLoads (shape : Nat) (inferOnly surroundingScope : Bool) : Bool :=
+  let (source, warmAddr) := polymorphicIdentity
+  let constant := if shape == 0 then axiomA else lazyCacheDependency 1
+  let (source, coldAddr) := storeConst source constant
+  let (source, block) := storeMutsWithProjs source (cacheBlock true)
+  let (source, nextAddr) := storeConst source (lazyCacheDependency 3)
+  let warm := KExpr.mkConst (m := .anon) ⟨warmAddr, ()⟩ #[levelOne]
+  let cold := KExpr.mkConst (m := .anon) ⟨coldAddr, ()⟩ #[]
+  let sort := KExpr.mkSort (m := .anon) levelOne
+  let body := KExpr.mkLam () () sort (.mkLam () () (.mkVar 0 ())
+    (.mkApp (.mkApp cold (.mkVar 1 ())) (.mkVar 0 ())))
+  let term := if shape == 0 then KExpr.mkAll () () cold cold else if shape == 1 then body
+    else KExpr.mkApp (.mkApp (.mkConst ⟨warmAddr, ()⟩ #[levelTwo]) identityType) body
+  let action : RecM .anon Bool := do
+    let expected ← warmBothCaches warm
+    let key ← TcM.inferKey warm
+    let initial ← get
+    let keeps (state : TcState .anon) := sourceCatalogMatches source state.env &&
+      internKeysCoherent state.env.intern && warmSlotsRetained key initial state
+    RecM.withLctxScope do
+      if surroundingScope then
+        let _ ← TcM.openBinder () () sort (.mkVar 0 ())
+        pure ()
+      let active ← get
+      let result ← RecM.inferCall term
+      let recursive ← get
+      let _ ← liftM (TcM.getConst (m := .anon) ⟨recrProjAddr block 1, ()⟩)
+      let mixed ← get
+      let next ← RecM.inferCall (.mkConst ⟨nextAddr, ()⟩ #[])
+      let successor ← get
+      let replay ← RecM.inferCall term
+      let reused ← RecM.inferCall warm
+      let final ← get
+      return sourceOwnershipCheck source && keeps initial && keeps active && keeps recursive &&
+        keeps mixed && keeps successor && keeps final &&
+        sameSourceExpr result (if shape == 0 then sort else identityType) &&
+        sameSourceExpr next identityType && sameSourceExpr replay result && sameSourceExpr reused expected &&
+        (active.env.get? ⟨coldAddr, ()⟩).isNone && (recursive.env.get? ⟨coldAddr, ()⟩).isSome &&
+        (mixed.env.get? ⟨nextAddr, ()⟩).isNone && (successor.env.get? ⟨nextAddr, ()⟩).isSome &&
+        mixed.env.blocks.contains ⟨block, ()⟩ && recursive.lctx.size == active.lctx.size &&
+        successor.lctx.size == active.lctx.size && final.env.nextFVarId == successor.env.nextFVarId &&
+        final.env.intern.exprs.size == successor.env.intern.exprs.size &&
+        final.env.intern.univs.size == successor.env.intern.univs.size
+  match TcM.runRec action {TcState.newLazyAnon source with inferOnly, stats := true} with
+  | .ok passed after => passed && sourceCatalogMatches source after.env && after.lctx.size == 0
+  | .error _ _ => false
+
+private def sourceAgreementCases : TestSeq :=
+  test "source prediction: shared axiom matches cold/warm conversion and lazy publication" (predictionShared 0)
+  ++ test "source prediction: shared definition body matches complete expected fields" (predictionShared 1)
+  ++ test "source prediction: recursor rules preserve sharing and distinct field counts" (predictionShared 2)
+  ++ test "source prediction: quotient fields match actual lazy loading" (predictionShared 3)
+  ++ test "source prediction: every expression form, normalized universes, blobs, and hints agree"
+    predictionRichDefinition
+  ++ test "source prediction: recursor flags, counts, block identity, and self references agree"
+    predictionRecursorFields
+  ++ test "source prediction: equal hashes do not hide different expression annotations"
+    (predictionCollisionBoundary false)
+  ++ test "source prediction: equal hashes do not hide different universe trees"
+    (predictionCollisionBoundary true)
+  ++ test "source prediction: missing share retains the same error and partial intern state" (predictionFailure 0)
+  ++ test "source prediction: missing universe retains the same error and partial intern state" (predictionFailure 1)
+  ++ test "source prediction: missing reference retains the same error and partial intern state" (predictionFailure 2)
+  ++ test "source prediction: missing recursive member retains the same error and partial state" (predictionFailure 3)
+  ++ test "source prediction: cyclic sharing returns the same bounded error" (predictionFailure 4)
+  ++ test "source prediction: blocks, projections, missing addresses, and corrupt source remain distinct"
+    predictionCatalogSelection
+  ++ test "source agreement: forall inference retains readings through mixed and later standalone loads"
+    (sourceAcrossRecursiveLoads 0 false false)
+  ++ test "source agreement: inference-only forall retains readings under an outer scope"
+    (sourceAcrossRecursiveLoads 0 true true)
+  ++ test "source agreement: lambda opening and closing retain readings for subsequent loading"
+    (sourceAcrossRecursiveLoads 1 false false)
+  ++ test "source agreement: lambda inference retains readings under an outer scope"
+    (sourceAcrossRecursiveLoads 1 false true)
+  ++ test "source agreement: application retains readings for subsequent mixed and standalone loading"
+    (sourceAcrossRecursiveLoads 2 false false)
+  ++ test "source agreement: application replay and surrounding scope retain the catalog"
+    (sourceAcrossRecursiveLoads 2 false true)
+
 public def suite : List TestSeq :=
   [cases, polymorphicCases, specializationCases, binderCases, applicationCases,
     polymorphicApplicationCases, constantCacheCases, cacheInvariantCases, recursiveCacheCases,
-    lazyCacheCases, blockCacheCases, ingressCoherenceCases, sourceOwnershipCases, recursiveStateCases]
+    lazyCacheCases, blockCacheCases, ingressCoherenceCases, sourceOwnershipCases, recursiveStateCases,
+    sourceAgreementCases]
 
 end Tests.Kernel.Consistency

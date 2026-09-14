@@ -181,6 +181,27 @@ increasing sequence of strongly inaccessible cardinals.
   another constant call that loads a new block. Recursive traces and finite
   walker data remain explicit. The result covers successful inference in the
   supported fragment; the general checker-state proof remains open.
+- `ConversionRecipe.run_predict` connects source-only prediction to actual
+  intern operations on success and failure. The recipe preserves source
+  resolution, sharing caches, universe normalization, every expression form,
+  and all four standalone declaration converters. Its finite candidate lists
+  supply collision domains together with the initial intern table; no global
+  hash-injectivity assumption is required. Correspondence proofs equate each
+  recipe with the bounded production converter. `predictStandalone?` verifies
+  the source and selects standalone declarations, retaining conversion errors.
+  It is an optional prediction interface and changes no production loading.
+- `SourceStateInvariant` adds standalone source agreement to ownership and
+  intern coherence. It starts empty after the finite source check and survives
+  actual lookup on both outcomes. Block loads preserve the catalog because
+  ownership separates their emitted keys. `OwnedInferenceTrace.preservesSource`
+  carries the combined invariant through supported recursive calls, with finite
+  conversion data at constant misses. `StandaloneModelBinding` reads a predicted
+  declaration's type in an already admitted model entry. Its actual lookup
+  derives the type reading, arity, and post-load coherence;
+  `ScopedConstantInferenceSupport.ofSource` and `infer_const_source_sound` use
+  these derived facts. Static source/model bindings, finite collision and level
+  data, and operational traces remain explicit. This catalog does not interpret
+  mutual members or prove declaration admission.
 - `checkEnvAnon_atomic_preserves_model` connects a supported production
   environment run to model extension. `checkEnvAnon_atomic_no_false` excludes
   a declaration at an axiom type interpreted as empty, including False.
@@ -240,7 +261,10 @@ def useF (x : T.{1}) : T.{1} := f.{1} x
   A hit checks the loaded declaration, universe arity, finite level resources,
   and equality of the cached value with pure substitution of its type.
   Its arity agreement is explicit because no runtime arity guard executes.
-  A miss's lookup agrees with an already admitted type and universe count. A specialization supplies
+  A miss's lookup agrees with an already admitted type and universe count.
+  For a standalone, a static `StandaloneModelBinding` and the maintained source
+  invariant derive this lookup agreement from the source prediction.
+  A specialization supplies
   closed universe arguments and finite interning/substitution resources at
   the actual post-lookup state. The occurrence annotations on the declared
   type agree with the substituted entry's annotations. These are structural
@@ -263,8 +287,9 @@ def useF (x : T.{1}) : T.{1} := f.{1} x
   application and binder execution traces and additionally follows lambda-domain
   inference. Constant misses use already-loaded declarations or verified
   standalone/block loading, with finite universe-walker resources after lookup;
-  applications use full mode and hash conversion. The new dependency's semantic
-  source agreement and finite collision/level resources remain explicit.
+  applications use full mode and hash conversion. The general interface keeps
+  dependency agreement explicit; the standalone source interface derives its
+  mutable lookup facts from a static binding and finite conversion data.
   `OwnedLazySupport` derives block compatibility from a source ownership check
   and an invariant established at initialization and retained by lookup and
   supported successful recursive calls. Arbitrary partially loaded states can
@@ -273,6 +298,8 @@ def useF (x : T.{1}) : T.{1} := f.{1} x
   and coherence after applications, foralls, and full-mode lambdas, using one
   initial state resource and finite data for their actual walkers. It also
   reconstructs the cache-frame trace without per-leaf invariant premises.
+  `SourceStateInvariant` additionally retains agreement with source-only
+  standalone predictions through these calls and subsequent block loads.
   Initial coherence holds for `TcState.newLazyAnon`. Preservation by every
   checker operation, preservation at written keys, and automatic trace
   construction remain open.
@@ -293,7 +320,8 @@ def useF (x : T.{1}) : T.{1} := f.{1} x
   Their witnesses retain the actual recursive calls, context preservation
   during function inference, and finite substitution resources. Function
   spines start with locals or admitted constants. Polymorphic constants supply
-  lazy-lookup agreement on misses or loaded-declaration agreement on hits, a
+  lazy-lookup agreement on misses (derived from source for bound standalones)
+  or loaded-declaration agreement on hits, a
   closed scoped reading of the selected entry's type, and finite
   universe-substitution resources. Their result type is fixed
   by a pure `readInstantiatedType?` check with the substituted occurrence
@@ -371,7 +399,7 @@ lake test --wfail -- tc-unit
 lake -d Models/SetTheory build --wfail
 ```
 
-The consistency target checks 278 exact theorem boundaries. The production
+The consistency target checks 316 exact theorem boundaries. The production
 environment roots retain four existing generated output-length proofs,
 reached through expression/universe construction, names, and the full
 production method table. They introduce no new native proofs. The model
@@ -441,6 +469,15 @@ forall, and lambda inference that loads one block, followed by a constant call
 that loads another. They retain both warm partitions, outer local scopes, and
 the actual statistics updates; replaying the recursive cache hit changes
 neither intern tables nor fresh-local allocation.
+Source-prediction regressions compare complete anonymous declarations through
+cold conversion, warm conversion, and actual lazy publication. They cover
+expression annotations, universe trees and normalization, every expression
+form, literal blobs, reducibility hints, recursor fields and rules, invalid
+indices, cyclic sharing, and catalog selection. Deliberately conflicting intern
+entries with equal hashes demonstrate why finite collision freedom is needed.
+Recursive source-agreement cases retain the catalog through applications and
+binders, a mixed block load, another standalone load, and cache replay under
+an outer scope. The unit suite contains 548 checks.
 
 ## Certified host adapters
 
@@ -472,6 +509,8 @@ The VM pilot is preserved in the frozen archive and excluded from the host gate.
 | Cache invariants and sort cache typing | [`Consistency/InferenceCache.lean`](../Ix/Kernel/Verify/Consistency/InferenceCache.lean), [`SortCache.lean`](../Ix/Kernel/Verify/Consistency/SortCache.lean) |
 | Recursive cache preservation and witness reuse | [`Consistency/RecursiveCache.lean`](../Ix/Kernel/Verify/Consistency/RecursiveCache.lean) |
 | Ownership and intern coherence through recursive inference | [`Consistency/RecursiveState.lean`](../Ix/Kernel/Verify/Consistency/RecursiveState.lean) |
+| Exact source conversion and finite candidate inventories | [`SourceConversion.lean`](../Ix/Kernel/SourceConversion.lean), [`Consistency/ConversionRecipe.lean`](../Ix/Kernel/Verify/Consistency/ConversionRecipe.lean) |
+| Standalone source/model agreement through lookup and inference | [`Consistency/SourceAgreement.lean`](../Ix/Kernel/Verify/Consistency/SourceAgreement.lean) |
 | Verified standalone lazy loading and cache frames | [`Consistency/LazyCache.lean`](../Ix/Kernel/Verify/Consistency/LazyCache.lean) |
 | Mutual-block publication and verified lookup frames | [`Consistency/BlockCache.lean`](../Ix/Kernel/Verify/Consistency/BlockCache.lean) |
 | Intern coherence through conversion and lazy loading | [`Consistency/IngressCoherence.lean`](../Ix/Kernel/Verify/Consistency/IngressCoherence.lean) |

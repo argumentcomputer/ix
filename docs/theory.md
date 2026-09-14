@@ -63,8 +63,19 @@ table; finite collision, construction, and size data remain explicit for the
 actual substitution, opening, and closing walkers. The result preserves earlier
 cache witnesses outside its computed writes and supplies the state resource
 for a later constant call, including another block load.
-Initial cache agreement, general source/state invariants, finite collision/level
-resources, trace construction, and preservation at written keys remain obligations.
+Source-only conversion now predicts complete standalone declarations, with
+finite inventories of the proposed intern nodes. Correspondence with actual
+conversion is proved under collision freedom on the initial table and these
+candidates, including errors. Agreement of loaded standalones with this source
+catalog starts empty and survives lookup on both outcomes and successful
+supported recursive inference. Source ownership protects these entries from
+block publication. A static binding reads a predicted declaration's type in
+an admitted model entry; actual constant lookup derives its type reading,
+arity, and coherence. Thus this path needs no new post-load reading witness.
+The static bindings still select already admitted entries. General declaration
+admission, mutual-member interpretations, initial semantic cache agreement,
+finite collision/level resources, trace construction, and preservation at
+written keys remain obligations.
 Full checker consistency
 and compiler/backend refinement remain open.
 
