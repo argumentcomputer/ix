@@ -28,6 +28,7 @@ def SynthesisTypingOrigin.applySpine {β : Type u} {resolve : Address → Option
   | .snoc prior checked => by
       simpa only [AExpr.appN_append, AExpr.appN_cons, AExpr.appN_nil] using
         (origin.applySpine prior).application checked
+  | .convert prior trace => .convert (origin.applySpine prior) trace
 termination_by structural spine
 
 /-- A function reduction carries its original dependent argument checks
@@ -45,6 +46,7 @@ def SynthesisBetaTrace.applySpine {β : Type u} {resolve : Address → Option (C
   | .snoc prior checked => by
       simpa only [AExpr.appN_append, AExpr.appN_cons, AExpr.appN_nil] using
         (trace.applySpine prior).application checked
+  | .convert prior typeTrace => .convertType (trace.applySpine prior) typeTrace
 termination_by structural spine
 
 /-- One beta step may use a lambda produced by an earlier trace. Its
@@ -162,6 +164,17 @@ def SynthesisInference.spineOrigin {β : Type u} {resolve : Address → Option (
       simpa only [← parts.1] using prior.argumentsOrigin.snoc
         (.source (.applicationArgument contextOrigin trace functionTree argumentTree keyedAgreement
           functionReading argumentReading conditions hashPath comparisonFaithful))
+  | .appBeta _ miss trace functionTree exposure exposureCoherent reduction argumentTree conditions hashPath
+      comparisonFaithful _ _ _ _ _ _ => by
+      obtain ⟨functionReading, argumentReading⟩ := readScopedExpr?_app_parts reading
+      have keyedAgreement := miss.localContext.symm ▸ agreement
+      have parts := app_spine_parts empty same
+      have prior := functionTree.spineOrigin contextOrigin keyedAgreement functionReading trace.functionRun
+        head arguments.dropLast parts.2
+      refine ⟨prior.headType, prior.headOrigin, prior.leading, ?_⟩
+      simpa only [← parts.1] using (prior.argumentsOrigin.convert (.rebase contextOrigin reduction)).snoc
+        (.source (.applicationBetaArgument contextOrigin trace functionTree exposure exposureCoherent argumentTree
+          keyedAgreement functionReading argumentReading conditions hashPath comparisonFaithful))
   | .fvar .. | .forallE .. | .lam .. | .lamBeta .. => by
       exact False.elim (empty (nonapp_spine_empty (by intro fn arg same; cases same) same))
 termination_by structural support
@@ -191,46 +204,6 @@ def SynthesisInference.betaSpineTrace {β : Type u} {resolve : Address → Optio
     SynthesisBetaTrace resolve incoming incomingContext incomingBounds entries context
       (head.appN arguments) (AExpr.betaPrefix count head arguments) type :=
   (support.spineOrigin contextOrigin agreement reading accepted head arguments rfl).betaTrace enough
-
-private theorem betaPrefix_eq_of_not_app {β : Type u} {head : AExpr β}
-    {arguments : List (AExpr β)} {count : Nat}
-    (notApp : ∀ fn arg, head.appN arguments ≠ .app fn arg) :
-    AExpr.betaPrefix count head arguments = head.appN arguments := by
-  cases arguments with
-  | nil => cases count <;> cases head <;> rfl
-  | cons argument arguments =>
-      exact False.elim (notApp _ _ (appN_last (by simp)))
-
-/-- These traces reduce applications and their subapplications. They do
-not change a source whose outer constructor is a lambda, product, or atom.
-In particular, a forward beta conversion cannot change a lambda's product type. -/
-theorem SynthesisBetaTrace.rigid {β : Type u} {resolve : Address → Option (ConstRef β)}
-    {incoming entries : Model.Environment β} {incomingContext context : Model.Context β}
-    {incomingBounds : List VLevel} {source result type : AExpr β}
-    (trace : SynthesisBetaTrace resolve incoming incomingContext incomingBounds entries context source result type) :
-    (∀ fn arg, source ≠ .app fn arg) → result = source :=
-  match trace with
-  | .refl _ => fun _ => rfl
-  | .prefix .. | .origin .. => fun notApp => betaPrefix_eq_of_not_app notApp
-  | .trans prior next => fun notApp => by
-      have middle := prior.rigid notApp
-      exact (next.rigid (by simpa only [middle] using notApp)).trans middle
-  | .atType _ trace => trace.rigid
-  | .application .. | .argument .. => fun notApp => False.elim (notApp _ _ rfl)
-  | .substituteAt trace _ _ => fun notApp => by
-      have same := trace.rigid (by
-        intro fn arg equal
-        cases equal
-        exact notApp _ _ rfl)
-      rw [same]
-  | .weakenAt trace _ => fun notApp => by
-      have same := trace.rigid (by
-        intro fn arg equal
-        cases equal
-        exact notApp _ _ rfl)
-      rw [same]
-  | .rebase _ trace => trace.rigid
-termination_by structural trace
 
 namespace BetaSyntax
 

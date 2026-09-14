@@ -264,8 +264,23 @@ theorem LambdaPeel.betaPrefix {β : Type u} {head body : AExpr β}
           simpa only [List.length_cons, List.cons_append, AExpr.betaPrefix, AExpr.instRev,
             Nat.zero_add] using result
 
-/-- Types of arguments along the original application's dependent Pi
-spine. Production inference will derive this helper from its actual calls. -/
+/-- A head reduction leaves every non-application source unchanged. This
+retains a lambda's exact Pi domain across function-type exposure. -/
+def AExpr.HeadRigid {β : Type u} (source target : AExpr β) : Prop :=
+  (∀ fn arg, source ≠ .app fn arg) → target = source
+
+theorem AExpr.HeadRigid.map {β γ : Type u} {source target : AExpr β}
+    (rigid : source.HeadRigid target) (f : AExpr β → AExpr γ)
+    (application : ∀ fn arg, f (.app fn arg) = .app (f fn) (f arg)) :
+    (f source).HeadRigid (f target) := by
+  intro notApp
+  apply congrArg f
+  apply rigid
+  intro fn arg same
+  exact notApp _ _ (by rw [same, application])
+
+/-- Types of arguments along an application's dependent Pi spine. A
+forward type conversion may expose the next Pi between argument checks. -/
 inductive ArgumentSpine {β : Type u} (entries : Environment β) (context : Context β) :
     AExpr β → List (AExpr β) → AExpr β → Prop
   | nil (type : AExpr β) : ArgumentSpine entries context type [] type
@@ -274,6 +289,12 @@ inductive ArgumentSpine {β : Type u} (entries : Environment β) (context : Cont
       (typed : TypingClaim.{u,v} entries context argument domain)
       (tail : ArgumentSpine entries context (codomain.inst argument) arguments result) :
       ArgumentSpine entries context (.forallE condition domain codomain) (argument :: arguments) result
+  | convert {source target result : AExpr β} {arguments : List (AExpr β)} {level : VLevel}
+      (rigid : source.HeadRigid target)
+      (converted : ConversionClaim.{u,v} entries context source target)
+      (formed : TypingClaim.{u,v} entries context target (.sort level))
+      (tail : ArgumentSpine entries context target arguments result) :
+      ArgumentSpine entries context source arguments result
 
 theorem ArgumentSpine.append {β : Type u} {entries : Environment β} {context : Context β}
     {start middle finish : AExpr β} {left right : List (AExpr β)}
@@ -283,6 +304,7 @@ theorem ArgumentSpine.append {β : Type u} {entries : Environment β} {context :
   induction first with
   | nil => exact second
   | cons typed tail ih => exact .cons typed (ih second)
+  | convert rigid converted formed tail ih => exact .convert rigid converted formed (ih second)
 
 theorem ArgumentSpine.typing {β : Type u} {entries : Environment β} {context : Context β}
     {head type result : AExpr β} {arguments : List (AExpr β)}
@@ -292,6 +314,7 @@ theorem ArgumentSpine.typing {β : Type u} {entries : Environment β} {context :
   induction spine generalizing head with
   | nil => exact typed
   | cons argumentTyped tail ih => exact ih (typed.app argumentTyped)
+  | convert _ converted formed tail ih => exact ih (typed.conv formed converted)
 
 /-- Substitution updates the type at every step of a dependent argument
 spine, including the type expected by the next application. -/
@@ -308,6 +331,9 @@ theorem ArgumentSpine.instAt {β : Type u} {entries : Environment β}
   | cons typed tail ih =>
       exact .cons (typed.instAt value substitution)
         (by simpa only [AExpr.inst_inst_zero] using ih)
+  | convert rigid converted formed tail ih =>
+      exact .convert (rigid.map (AExpr.inst · argument cutoff) (by intros; rfl))
+        (converted.instAt value substitution) (formed.instAt value substitution) ih
 
 theorem ContextSubstitution.removed_type {β : Type u} {base source target : Context β}
     {domain argument : AExpr β} {cutoff : Nat}
@@ -378,6 +404,15 @@ theorem ContextSubstitution.lift_typing {β : Type u} {entries : Environment β}
   simpa only [wellDenoted_liftN, interp_liftN] using
     typed V constants realizes levels _ (substitution.base_valid valid)
 
+theorem ContextSubstitution.lift_conversion {β : Type u} {entries : Environment β}
+    {base source target : Context β} {domain argument left right : AExpr β} {cutoff : Nat}
+    (substitution : ContextSubstitution base domain argument source target cutoff)
+    (converted : ConversionClaim.{u,v} entries base left right) :
+    ConversionClaim.{u,v} entries target (left.liftN cutoff) (right.liftN cutoff) := by
+  intro V _ constants realizes levels env valid
+  simpa only [interp_liftN] using
+    converted V constants realizes levels _ (substitution.base_valid valid)
+
 /-- Every existing argument of a supplied value is lifted beneath the
 same retained dependent parameters as the value's function head. -/
 theorem ContextSubstitution.lift_spine {β : Type u} {entries : Environment β}
@@ -392,6 +427,9 @@ theorem ContextSubstitution.lift_spine {β : Type u} {entries : Environment β}
   | cons typed tail ih =>
       exact .cons (substitution.lift_typing typed)
         (by simpa only [AExpr.liftN_inst_zero] using ih)
+  | convert rigid converted formed tail ih =>
+      exact .convert (rigid.map (AExpr.liftN cutoff ·) (by intros; rfl))
+        (substitution.lift_conversion converted) (substitution.lift_typing formed) ih
 
 theorem ConversionClaim.appN {β : Type u} {entries : Environment β} {context : Context β}
     {left right : AExpr β} (same : ConversionClaim.{u,v} entries context left right)
@@ -411,18 +449,28 @@ theorem LambdaPrefix.beta_sound {β : Type u} {entries : Environment β} {contex
     ConversionClaim.{u,v} entries context (head.appN arguments)
       (AExpr.betaPrefix count head arguments) ∧
       TypingClaim.{u,v} entries context (AExpr.betaPrefix count head arguments) result := by
-  induction count generalizing head type arguments with
-  | zero => exact ⟨.refl _, spine.typing typed⟩
-  | succ count ih =>
-      cases leading with
-      | lam inner =>
-          cases spine with
-          | nil => exact ⟨.refl _, typed⟩
-          | cons argumentTyped tail =>
-              obtain ⟨conversion, resultTyped⟩ := ih (inner.inst _ 0)
-                (TypingClaim.betaResult typed argumentTyped) tail
-              exact ⟨((ConversionClaim.beta typed argumentTyped).appN _).trans conversion,
-                resultTyped⟩
+  induction spine generalizing head count with
+  | nil =>
+      have same : AExpr.betaPrefix count head [] = head := by cases count <;> cases head <;> rfl
+      rw [same]
+      exact ⟨.refl _, typed⟩
+  | cons argumentTyped tail ih =>
+      cases count with
+      | zero => exact ⟨.refl _, tail.typing (typed.app argumentTyped)⟩
+      | succ count =>
+          cases leading with
+          | lam inner =>
+              obtain ⟨conversion, resultTyped⟩ := ih (inner.inst _ 0) (TypingClaim.betaResult typed argumentTyped)
+              exact ⟨((ConversionClaim.beta typed argumentTyped).appN _).trans conversion, resultTyped⟩
+  | @convert source target result arguments level rigid converted formed tail ih =>
+      cases count with
+      | zero => exact ⟨.refl _, tail.typing (typed.conv formed converted)⟩
+      | succ count =>
+          have same : target = source := by
+            cases leading
+            exact rigid (by intro fn arg same; cases same)
+          subst target
+          exact ih leading typed
 
 /-- Source inference retains the typing of every original lambda-headed
 spine. This internal result carries the domains needed by later reduction;
@@ -489,6 +537,18 @@ theorem app {β : Type u} {entries : Environment β} {context : Context β}
       refine ⟨headType, headTyped, leading, ?_⟩
       rw [← same.2]
       exact spine.append (.cons argument (.nil _))
+
+theorem convert {β : Type u} {entries : Environment β} {context : Context β}
+    {term source target : AExpr β} {level : VLevel}
+    (spine : LambdaSpineTyping.{u,v} entries context term source)
+    (rigid : source.HeadRigid target)
+    (converted : ConversionClaim.{u,v} entries context source target)
+    (formed : TypingClaim.{u,v} entries context target (.sort level)) :
+    LambdaSpineTyping.{u,v} entries context term target := by
+  intro condition domain body arguments same
+  obtain ⟨headType, typed, leading, argumentsTyped⟩ := spine _ _ _ _ same
+  refine ⟨headType, typed, leading, ?_⟩
+  simpa only [List.append_nil] using argumentsTyped.append (.convert rigid converted formed (.nil _))
 
 theorem betaPrefix {β : Type u} {entries : Environment β} {context : Context β}
     {condition : PropWhen} {domain body type : AExpr β} {arguments : List (AExpr β)} {count : Nat}

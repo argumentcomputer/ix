@@ -96,6 +96,25 @@ def SynthesisInference.betaTyping {β : Type u} {resolve : Address → Option (C
               (readScopedExpr?_all_parts functionTypeReads).1))) conditions
         exact .app (functionTree.betaTyping contextOrigin keyedAgreement functionReading trace.functionRun formed)
           (sameType ▸ argumentTree.betaTyping contextOrigin argumentAgreement argumentReading trace.argumentRun formed)
+  | .appBeta _ miss trace functionTree exposure exposureCoherent reduction argumentTree conditions hashPath
+      comparisonFaithful _ _ _ _ _ _ =>
+      fun contextOrigin agreement reading _ formed => by
+        obtain ⟨functionReading, argumentReading⟩ := readScopedExpr?_app_parts reading
+        have keyedAgreement := miss.localContext.symm ▸ agreement
+        have argumentAgreement := (trace.exposure_context exposure).symm ▸ keyedAgreement
+        have contextFormation := contextOrigin.sound formed
+        have functionTypeReads :=
+          (functionTree.soundWithSpine contextFormation keyedAgreement functionReading trace.functionRun).1
+        have argumentTypeReads :=
+          (argumentTree.soundWithSpine contextFormation argumentAgreement argumentReading trace.argumentRun).1
+        have sameType := AExpr.eq_of_erase_annotations
+          (Option.some.inj (argumentTypeReads.symm.trans
+            ((beq_readScopedExpr? comparisonFaithful hashPath).trans
+              (exposure.reading functionTypeReads exposureCoherent).1))) conditions
+        exact .app
+          (.convert (functionTree.betaTyping contextOrigin keyedAgreement functionReading trace.functionRun formed)
+            (.rebase contextOrigin reduction))
+          (sameType ▸ argumentTree.betaTyping contextOrigin argumentAgreement argumentReading trace.argumentRun formed)
   | .lam full miss trace opening absent domainTree bodyTree conditionAgrees constructed bound coherent
       closingFaithful faithful =>
       fun contextOrigin agreement reading accepted formed => by

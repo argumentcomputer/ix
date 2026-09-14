@@ -1290,6 +1290,157 @@ private def hereditaryBetaCases : TestSeq :=
     ([0, 1].all fun shape => let (env, target) := hereditaryBetaDeclaration .zero 0 4 shape 2
       rowFailed env target)
 
+/-- The axiom's type exposes a Pi by beta reduction. In the dependent
+variant its first application returns another beta redex, so the next
+argument check must expose a second Pi. -/
+private def piExposureDeclaration (level : Ixon.Univ) (universes : UInt64 := 0)
+    (dependent : Bool := false) (wrong : Nat := 0) : Ixon.Env × Address := Id.run do
+  let levels := if universes == 0 then #[] else #[0]
+  let (env, carrier) := storeConst {}
+    ⟨.axio ⟨false, universes, .sort 0⟩, #[], #[], #[level]⟩
+  let (env, otherCarrier) := storeConst env
+    ⟨.axio ⟨false, universes, .sort 0⟩, #[], #[], #[level, .succ level]⟩
+  let (env, witness) := storeConst env
+    ⟨.axio ⟨false, universes, .ref 0 levels⟩, #[], #[carrier], #[level]⟩
+  let family := Ixon.Expr.leanLam (.sort 0) (.leanAll (.var 0) (.var 1))
+  let type := if dependent then
+      Ixon.Expr.app (.leanLam (.sort 0) (.leanAll (.sort 0) (.app family (.var 0)))) (.ref 0 levels)
+    else .app family (.ref 0 levels)
+  let (env, function) := storeConst env
+    ⟨.axio ⟨false, universes, type⟩, #[], #[carrier], #[level]⟩
+  let fn := if dependent then Ixon.Expr.app (.ref 3 levels) (.ref (if wrong == 1 then 1 else 0) levels)
+    else .ref 3 levels
+  return storeConst env
+    ⟨.defn ⟨.defn, .safe, universes, .ref 0 levels, .app fn (.ref (if wrong == 2 then 0 else 2) levels)⟩,
+      #[], #[carrier, otherCarrier, witness, function], #[level]⟩
+
+private def localPiExposure (level : Ixon.Univ) (universes : UInt64 := 0)
+    (wrong : Bool := false) : Ixon.Env × Address :=
+  let family := Ixon.Expr.leanLam (.sort 0) (.leanAll (.var 0) (.var 1))
+  let type := Ixon.Expr.leanAll (.sort 0)
+    (.leanAll (.var 0) (.leanAll (.app family (.var 1)) (.var 2)))
+  let value := Ixon.Expr.leanLam (.sort 0)
+    (.leanLam (.var 0) (.leanLam (.app family (.var 1)) (.app (.var 0) (.var (if wrong then 2 else 1)))))
+  storeConst {} ⟨.defn ⟨.defn, .safe, universes, type, value⟩, #[], #[], #[level]⟩
+
+/-- Inspect the actual public cache writes and exact shared-fuel charge.
+A second call uses the populated outer cache with zero fuel and no recursive
+methods, even while native reduction is active. -/
+private def observePiExposure (source domain body : KExpr .anon) (instrumented noAccel : Bool) : RecM .anon Bool := do
+  let .app .. := source | return false
+  modify fun state => { state with
+    env := { state.env with whnfCache := {}, whnfNoDeltaCache := {}, whnfCoreCache := {} }
+    ctxAddrCache := {}, recFuel := 1, stats := instrumented, stepTrace := instrumented,
+    whnfCalls := 17, whnfMisses := 11, noAccel, inNativeReduce := false }
+  let before ← get
+  let (foundDomain, foundBody) ← RecM.ensureForallDirect source
+  let after ← get
+  let key ← TcM.whnfKey source
+  let expected := KExpr.mkAll () () domain body
+  let warm := { after with inNativeReduce := true }
+  match (RecM.ensureForallDirect source).run (methodsN 0) warm with
+  | .error _ _ => return false
+  | .ok (warmDomain, warmBody) reused =>
+      return foundDomain == domain && foundBody == body && warmDomain == domain && warmBody == body &&
+        after.env.whnfCache[key]? == some expected && after.env.whnfNoDeltaCache[key]? == some expected &&
+        after.env.whnfCoreCache[key]? == some expected && after.recFuel == 0 && reused.recFuel == 0 &&
+        after.whnfCalls == (if instrumented then 18 else 17) &&
+        after.whnfMisses == (if instrumented then 12 else 11) &&
+        reused.whnfCalls == (if instrumented then 19 else 17) && reused.whnfMisses == after.whnfMisses &&
+        after.lctx.size == before.lctx.size && after.ctxId == before.ctxId &&
+        after.env.nextFVarId == before.env.nextFVarId && reused.inNativeReduce &&
+        after.ctxAddrCache.size == (if source.lbr == 0 || before.ctx.isEmpty then 0 else 1) &&
+        reused.ctxAddrCache.size == after.ctxAddrCache.size &&
+        reused.env.intern.exprs.size == after.env.intern.exprs.size
+
+private def piExposureInferenceResult (typeLevel dependent instrumented noAccel : Bool) : Bool :=
+  let (env, target) := piExposureDeclaration (if typeLevel then .succ .zero else .zero) 0 dependent
+  let action : RecM .anon Bool := do
+    let .defn _ _ _ _ _ _ expected value _ _ ← TcM.getConst (m := .anon) ⟨target, ()⟩ | return false
+    let (head, arguments) := value.collectSpine
+    if dependent then
+      let firstType ← RecM.inferCall head
+      let sort := KExpr.mkSort (if typeLevel then levelOne else .mkZero)
+      let family := KExpr.mkLam () () sort (.mkAll () () (.mkVar 0 ()) (.mkVar 1 ()))
+      let before ← get
+      let exposed ← observePiExposure firstType sort (.mkApp family (.mkVar 0 ())) instrumented noAccel
+      set before
+      if !exposed || arguments.size != 2 then return false
+    let .app fn arg _ := value | return false
+    let functionType ← RecM.inferCall fn
+    let argumentType ← RecM.inferCall arg
+    let before ← get
+    let exposed ← observePiExposure functionType expected expected instrumented noAccel
+    set before
+    let result ← RecM.inferCall value
+    return exposed && argumentType == expected && result == expected
+  match TcM.runRec action (TcState.newLazyAnon env) with
+  | .ok passed after => passed && after.lctx.size == 0
+  | .error _ _ => false
+
+private def localPiExposureResult (typeLevel : Bool) : Bool :=
+  let (env, target) := localPiExposure (if typeLevel then .succ .zero else .zero)
+  let action : RecM .anon Bool := RecM.withLctxScope do
+    let .defn _ _ _ _ _ _ _ value _ _ ← TcM.getConst (m := .anon) ⟨target, ()⟩ | return false
+    let mut opened := value
+    for _ in List.range 3 do
+      let .lam name bi domain body _ := opened | return false
+      opened := (← TcM.openBinder name bi domain body).1
+    let .app fn arg _ := opened | return false
+    let functionType ← RecM.inferCall fn
+    let expected ← RecM.inferCall arg
+    let before ← get
+    let exposed ← observePiExposure functionType expected expected true true
+    set before
+    let result ← RecM.inferCall opened
+    return exposed && result == expected && before.lctx.size == 3
+  match TcM.runRec action (TcState.newLazyAnon env) with
+  | .ok passed after => passed && after.lctx.size == 0
+  | .error _ _ => false
+
+private def legacyPiExposureKey : Bool :=
+  let sort := KExpr.mkSort levelOne
+  let source := KExpr.mkApp (.mkLam () () sort (.mkAll () () (.mkVar 0 ()) (.mkVar 1 ()))) (.mkVar 0 ())
+  let action : RecM .anon Bool := do
+    TcM.pushLocal sort
+    TcM.pushLocal sort
+    observePiExposure source (.mkVar 0 ()) (.mkVar 1 ()) true false
+  match TcM.runRec action (TcState.newLazyAnon {}) with
+  | .ok passed after => passed && after.ctx.size == 2
+  | .error _ _ => false
+
+private def piExposureCases : TestSeq :=
+  test "Pi exposure: beta function types check in Prop and Type"
+    (allSucceeded (piExposureDeclaration .zero).1 5 &&
+      allSucceeded (piExposureDeclaration (.succ .zero)).1 5)
+  ++ test "Pi exposure: successive arguments each expose their dependent function type"
+    (allSucceeded (piExposureDeclaration .zero 0 true).1 5 &&
+      allSucceeded (piExposureDeclaration (.succ .zero) 0 true).1 5)
+  ++ test "Pi exposure: function and argument types retain universe parameters"
+    (allSucceeded (piExposureDeclaration (.var 0) 1).1 5 &&
+      allSucceeded (piExposureDeclaration (.var 0) 1 true).1 5)
+  ++ test "Pi exposure: declarations check with fresh per-item caches"
+    ([false, true].all fun dependent =>
+      allSucceeded (piExposureDeclaration (.succ .zero) 0 dependent).1 5 { clearEvery := 1 })
+  ++ test "Pi exposure: all three public caches contain the Pi and warm hits need no fuel"
+    ([false, true].all fun typeLevel => [false, true].all fun dependent =>
+      [false, true].all fun instrumented => [false, true].all fun noAccel =>
+        piExposureInferenceResult typeLevel dependent instrumented noAccel)
+  ++ test "Pi exposure: dependent local function types check beneath three binders"
+    (allSucceeded (localPiExposure .zero).1 1 && allSucceeded (localPiExposure (.succ .zero)).1 1 &&
+      allSucceeded (localPiExposure (.var 0) 1).1 1 { clearEvery := 1 })
+  ++ test "Pi exposure: public reduction preserves opened locals and scope cleanup"
+    (localPiExposureResult false && localPiExposureResult true)
+  ++ test "Pi exposure: legacy context keys memoize the reachable suffix"
+    legacyPiExposureKey
+  ++ test "Pi exposure: choosing another carrier rejects the dependent witness"
+    (let (env, target) := piExposureDeclaration .zero 0 true 1; rowFailed env target)
+  ++ test "Pi exposure: a carrier cannot replace the checked witness"
+    ([false, true].all fun dependent =>
+      let (env, target) := piExposureDeclaration .zero 0 dependent 2; rowFailed env target)
+  ++ test "Pi exposure: a local carrier cannot inhabit its own function domain"
+    (let (env, target) := localPiExposure .zero 0 true; rowFailed env target)
+
 private def applicationCases : TestSeq :=
   test "application environment: Prop/Type identity calls and transitive theorem calls check"
     (allSucceeded applicationEnvironment 5 { clearEvery := 0 })
@@ -3079,7 +3230,7 @@ private def polymorphicDefinitionCases : TestSeq :=
 
 public def suite : List TestSeq :=
   [cases, polymorphicCases, specializationCases, binderCases, applicationCases, multiBetaCases, cheapLambdaCases,
-    cheapApplicationCases, exposedLambdaCases, repeatedBetaCases, betaTraceCases, hereditaryBetaCases,
+    cheapApplicationCases, exposedLambdaCases, repeatedBetaCases, betaTraceCases, hereditaryBetaCases, piExposureCases,
     polymorphicApplicationCases, constantCacheCases, cacheInvariantCases, recursiveCacheCases,
     lazyCacheCases, blockCacheCases, ingressCoherenceCases, sourceOwnershipCases, recursiveStateCases,
     sourceAgreementCases, sourceCacheCases, polymorphicDefinitionCases]

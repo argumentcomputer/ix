@@ -400,8 +400,9 @@ def callReturned.{u} (A : Sort u) (a : A) : A := ((fun x : A => fun y : A => x) 
   checked spine `[A, B]`. Its existing arguments are lifted beneath retained
   parameters, and the codomain arguments receive the same substitution as
   their dependent types. The selected prefix can consume both lists.
-- Applications use full mode, syntactic Pi exposure, an ordinary argument
-  without an eager-reduction marker, and the hash-equality conversion path.
+- Applications use full mode, syntactic or supported beta Pi exposure, an
+  ordinary argument without an eager-reduction marker, and hash comparison
+  with the exposed domain.
   Their witnesses retain the actual recursive calls, context preservation
   during function inference, and finite substitution resources. Function
   spines can start with locals or admitted constants, or use the synthesis
@@ -412,9 +413,13 @@ def callReturned.{u} (A : Sort u) (a : A) : A := ((fun x : A => fun y : A => x) 
   universe-substitution resources. Their result type is fixed
   by a pure `readInstantiatedType?` check with the substituted occurrence
   annotations, including when levels simplify. Monomorphic references retain
-  their simpler empty-substitution rule. Reduction to expose a Pi, eager
-  arguments, and automatic checking origins for arbitrary generated types
-  require further refinement.
+  their simpler empty-substitution rule. `appBeta` follows the actual public
+  WHNF exposure, including its computed state changes, and derives the
+  conversion from a retained actual check of the function type. The argument
+  check starts in the post-exposure state; dependent argument spines retain
+  conversions between successive applications. Other Pi-exposure reductions
+  and cache paths, eager arguments, and automatic checking origins for
+  arbitrary generated types require further refinement.
 - `DefinitionCheckSupport` permits the existing initial hash-equality path,
   with faithfulness of the compared expressions, or a beta-reducible declared
   type. For the beta case, the declaration's own type-inference tree and run
@@ -512,7 +517,7 @@ lake test --wfail -- tc-unit
 lake -d Models/SetTheory build --wfail
 ```
 
-The consistency target checks 615 exact theorem boundaries. The production
+The consistency target checks 653 exact theorem boundaries. The production
 environment roots retain four existing generated output-length proofs,
 reached through expression/universe construction, names, and the full
 production method table. They introduce no new native proofs. The model
@@ -616,6 +621,22 @@ proofs. This closes automatic semantic origins for finite head-beta paths of
 the supported source-inference fragment. Initial inference trees, operational
 paths, and representation resources remain explicit; deriving them for all
 accepted programs and covering the remaining WHNF/conversion paths remain open.
+`BetaPublicWhnfPlan` connects a raw beta path to public WHNF when its result
+is a sort, Pi, or lambda. It computes the context-key states, optional counters,
+shared-fuel charge, and insertions into the structural, no-delta, and outer
+caches. The reducer tails are proved to stop on these constructors without
+additional callback or lookup premises. `BetaPiExposure` derives the actual
+`ensureForallDirect` call and the returned domain/codomain readings. It either
+executes a cold public path or reuses that path's exact result from the outer
+cache. Cold paths require three cache misses and an inactive native-reduction
+guard; warm outer-cache hits need no fuel. `checkedTrace` constructs the
+conversion from a retained actual type check. `SynthesisInference.appBeta`
+uses that conversion in the original inference recursion, preserving dependent
+codomain substitution, checked lambda domains, and all later beta origins.
+The existing synthesis admission and environment roots include this case.
+These 38 additional audited boundaries introduce no axioms or native proofs.
+Mixed cache states, general WHNF cache agreement, other reducers, and general
+inference-resource construction remain open.
 Kernel unit regressions cover lazy loading, both inference policies, interning
 reuse, dependent function types, shared references, lets, `imax` simplification,
 argument order, and rejection of wrong arities and out-of-range parameters.
@@ -687,6 +708,14 @@ a returned lambda that still contains the supplied function. Further chains
 retain a lambda body's changed cheap-beta type. Prop, Type, declaration
 parameters, cleared caches, both WHNF policies, exact consumed-argument
 counts, and rejected dependent substitutions are checked.
+Pi-exposure cases check beta function types in Prop, Type, and at universe
+parameters, including a second exposure between dependent arguments and local
+functions beneath three opened binders. They inspect all three public cache
+writes, optional counters, the exact shared-fuel charge, and reuse with zero
+fuel and no recursive methods. Both acceleration policies preserve these
+results. Additional operational coverage checks context-key memoization for
+legacy loose variables. Negative cases reject mismatched carriers and invalid
+dependent witnesses. The scoped semantic reader still excludes loose variables.
 These execution tests do not construct the general finite inference resources.
 Polymorphic-call regressions include Prop/Type instances in real function
 bodies, `max`/`imax` simplification inside Pi domains, closed nested references
@@ -757,7 +786,7 @@ Definition-cycle regressions use content-addressed standalone and mutual
 declarations, including a self-justifying theorem, a two-member cycle, type
 cycles, lets, shared syntax, and binders. They check repeated member failures,
 acyclic forward references, cache clearing, and the partial/unsafe policy.
-The unit suite contains 686 checks. The anonymous differential additionally
+The unit suite contains 697 checks. The anonymous differential additionally
 serializes eight cycle-policy fixtures and checks exact target sets, verdicts,
 failure counts, and cycle diagnostics in both implementations.
 
@@ -800,6 +829,7 @@ The VM pilot is preserved in the frozen archive and excluded from the host gate.
 | Source ownership, block registration, and finite preflight | [`Consistency/BlockOwnership.lean`](../Ix/Kernel/Verify/Consistency/BlockOwnership.lean), [`Consistency/SourceOwnershipCheck.lean`](../Ix/Kernel/Verify/Consistency/SourceOwnershipCheck.lean), [`SourceOwnership.lean`](../Ix/Kernel/SourceOwnership.lean) |
 | Dependent binders and function bodies | [`Consistency/BinderInference.lean`](../Ix/Kernel/Verify/Consistency/BinderInference.lean), [`Application.lean`](../Ix/Kernel/Verify/Consistency/Application.lean), [`BinderOpening.lean`](../Ix/Kernel/Verify/Consistency/BinderOpening.lean), [`Context.lean`](../Ix/Kernel/Verify/Consistency/Context.lean), [`Model/Checking.lean`](../Ix/Theory/Model/Checking.lean) |
 | Inferred type formation and direct lambda applications | [`Consistency/SynthesisInference.lean`](../Ix/Kernel/Verify/Consistency/SynthesisInference.lean), [`Formation.lean`](../Ix/Kernel/Verify/Consistency/Formation.lean), [`Model/UniverseBounds.lean`](../Ix/Theory/Model/UniverseBounds.lean) |
+| Public beta WHNF, cache writes, and application Pi exposure | [`Consistency/BetaPublicWhnf.lean`](../Ix/Kernel/Verify/Consistency/BetaPublicWhnf.lean), [`ApplicationWhnf.lean`](../Ix/Kernel/Verify/Consistency/ApplicationWhnf.lean), [`BetaWhnfInference.lean`](../Ix/Kernel/Verify/Consistency/BetaWhnfInference.lean) |
 | Retained type checks and changed cheap beta in lambda inference | [`Consistency/SynthesisInference.lean`](../Ix/Kernel/Verify/Consistency/SynthesisInference.lean), [`CheapBetaReading.lean`](../Ix/Kernel/Verify/Consistency/CheapBetaReading.lean), [`Formation.lean`](../Ix/Kernel/Verify/Consistency/Formation.lean) |
 | Source beta reduction and declaration conversion | [`Consistency/BetaSpine.lean`](../Ix/Kernel/Verify/Consistency/BetaSpine.lean), [`Simultaneous.lean`](../Ix/Kernel/Verify/Consistency/Simultaneous.lean), [`SpineReading.lean`](../Ix/Kernel/Verify/Consistency/SpineReading.lean), [`CheapBeta.lean`](../Ix/Kernel/Verify/Consistency/CheapBeta.lean), [`Model/BetaSpine.lean`](../Ix/Theory/Model/BetaSpine.lean) |
 | Production environment fragment and relative axiom policy | [`Consistency/Environment.lean`](../Ix/Kernel/Verify/Consistency/Environment.lean), [`Production.lean`](../Ix/Kernel/Verify/Consistency/Production.lean) |

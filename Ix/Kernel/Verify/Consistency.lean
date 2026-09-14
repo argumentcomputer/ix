@@ -24,6 +24,7 @@ import Ix.Kernel.Verify.Consistency.SourceOwnershipCheck
 import Ix.Kernel.Verify.Consistency.Context
 import Ix.Kernel.Verify.Consistency.BinderOpening
 import Ix.Kernel.Verify.Consistency.Application
+import Ix.Kernel.Verify.Consistency.ApplicationWhnf
 import Ix.Kernel.Verify.Consistency.BinderInference
 import Ix.Kernel.Verify.Consistency.Formation
 import Ix.Kernel.Verify.Consistency.ContextInsertion
@@ -36,6 +37,8 @@ import Ix.Kernel.Verify.Consistency.CheapBetaReading
 import Ix.Kernel.Verify.Consistency.BetaSpine
 import Ix.Kernel.Verify.Consistency.BetaTrace
 import Ix.Kernel.Verify.Consistency.BetaWhnf
+import Ix.Kernel.Verify.Consistency.BetaWhnfPlan
+import Ix.Kernel.Verify.Consistency.BetaPublicWhnf
 import Ix.Kernel.Verify.Consistency.BetaTyping
 import Ix.Kernel.Verify.Consistency.BetaInference
 import Ix.Kernel.Verify.Consistency.BetaWhnfInference
@@ -133,16 +136,25 @@ lambda body's inferred type. Every finite head-beta path of the currently
 supported inference fragment therefore derives all its semantic step origins
 from the original check. The operational path contains only raw execution,
 reading, and finite representation resources, and its automatic annotation
-also supplies declaration admission. Constructing the initial inference and
-operational resources for all accepted programs, and covering the remaining
-WHNF/conversion paths, remain open.
+also supplies declaration admission. Public WHNF now computes the key states,
+instrumentation, shared-fuel charge, and all three cache insertions for these
+beta paths ending at a sort, Pi, or lambda. Pi exposure can execute such a
+path or reuse its exact cached result without fuel. Application inference
+uses that exposure between argument checks and derives the type conversion
+from a retained actual check of the function type. Dependent codomain
+substitution and all later beta origins preserve those argument checks.
+The original synthesis admission theorem includes this application case.
+Constructing initial inference and operational resources for all accepted
+programs, other WHNF branches, mixed cache states, and general conversion
+remain open.
 Local cache hits agree with the actual declaration type. Constant
 hits agree with pure universe substitution of a loaded, admitted declaration;
 sort hits return the canonical successor sort. Application, forall, and lambda
 nodes retain misses in every eligible cache partition. Full mode leaves the
 inference-only partition unconstrained at a miss.
-Applications use syntactic Pi exposure, full argument checking, hash conversion,
-and arguments without eager-reduction markers. Constant- and local-headed spines
+Applications use syntactic or supported beta Pi exposure, full argument checking,
+hash comparison of the argument with the exposed domain, and arguments without
+eager-reduction markers. Constant- and local-headed spines
 can derive type validity from the admitted model or local context; their
 arguments may be lambdas. The synthesis rules also allow lambdas and their
 application results in function position, with derived formation bounds.

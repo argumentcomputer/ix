@@ -489,6 +489,47 @@ private def hereditaryBetaRoots : Array RootAllowance := #[
   { root := ``DefinitionBodyTrace.betaDeclaredWhnfPathSupport, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] }
 ]
 
+private def piExposureRoots : Array RootAllowance := #[
+  { root := ``Theory.Model.AExpr.HeadRigid.map },
+  { root := ``Theory.Model.ContextSubstitution.lift_conversion, standardAxioms := standard },
+  { root := ``Theory.Model.LambdaSpineTyping.convert, standardAxioms := standard },
+  { root := ``BetaWhnfTrace.run, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``BetaWhnfTrace.reading, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``BetaWhnfTrace.frame, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``BetaWhnfTrace.first, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``BetaStepPlan.not_transient, standardAxioms := standard, nativeAxioms := #[expressionNative] },
+  { root := ``betaWhnfKey_run, standardAxioms := standard, nativeAxioms := #[expressionNative] },
+  { root := ``betaWhnfKey_environment, standardAxioms := standard, nativeAxioms := #[expressionNative] },
+  { root := ``betaWhnfKey_context, standardAxioms := standard, nativeAxioms := #[expressionNative] },
+  { root := ``betaWhnfKey_native, standardAxioms := standard, nativeAxioms := #[expressionNative] },
+  { root := ``betaWhnfKey_fuel, standardAxioms := standard, nativeAxioms := #[expressionNative] },
+  { root := ``betaWhnfPrefix_run, standardAxioms := standard },
+  { root := ``betaWhnfPrefix_fields, standardAxioms := #[``propext, ``Quot.sound] },
+  { root := ``betaWhnfCharge_run, standardAxioms := #[``propext, ``Quot.sound] },
+  { root := ``betaWhnfCharge_fields, standardAxioms := #[``propext, ``Quot.sound] },
+  { root := ``BetaWhnfTerminal.noDelta_tail, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``BetaWhnfTerminal.full_step, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``BetaWhnfTerminal.noDelta_uncached, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``BetaWhnfTerminal.full_uncached, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``BetaPublicWhnf.coreKey_fields, standardAxioms := standard, nativeAxioms := #[expressionNative] },
+  { root := ``BetaPublicWhnfPlan.run, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``BetaPublicWhnfPlan.reading, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``BetaPublicWhnfPlan.context, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``BetaPublicWhnfPlan.cache_hit, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``BetaPiExposure.run, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``BetaPiExposure.reading, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``BetaPiExposure.context, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``ApplicationWhnfInferenceTrace.output_state, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``ApplicationWhnfInferenceTrace.output, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``ApplicationWhnfInferenceTrace.exposure_state, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``ApplicationWhnfInferenceTrace.exposure_context, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``ApplicationWhnfInferenceTrace.ofBeta, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``BetaPublicWhnfPlan.betaTrace, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``BetaPiExposure.betaTrace, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``BetaPiExposure.checkedTrace, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``SynthesisInference.beta_public_whnf_sound, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] }
+]
+
 def roots : Array RootAllowance := #[
   { root := ``InterfaceExtends.refl, forbiddenDependencies := forbiddenProduction },
   { root := ``InterfaceExtends.trans, forbiddenDependencies := forbiddenProduction },
@@ -617,7 +658,7 @@ def roots : Array RootAllowance := #[
   root, standardAxioms := standard, nativeAxioms := productionNative,
   forbiddenDependencies := forbiddenProduction
 }) ++ (betaRoots ++ typeOriginRoots ++ substitutedOriginRoots ++ exposedOriginRoots ++
-    repeatedBetaRoots ++ betaTraceRoots ++ hereditaryBetaRoots).map (fun allowance => {
+    repeatedBetaRoots ++ betaTraceRoots ++ hereditaryBetaRoots ++ piExposureRoots).map (fun allowance => {
     allowance with forbiddenDependencies := forbiddenProduction })
   ++ #[{ root := ``extend_atomic_definition, standardAxioms := standard }]
 

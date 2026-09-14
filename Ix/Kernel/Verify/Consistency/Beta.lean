@@ -94,6 +94,20 @@ def SynthesisInference.betaResultOrigin {β : Type u} {resolve : Address → Opt
         (.source (.checked contextOrigin functionTree keyedAgreement functionReads trace.functionRun))).substituteAt
         (.source (.applicationArgument contextOrigin trace functionTree argumentTree keyedAgreement
           functionReads argumentReads conditions hashPath comparisonFaithful)) .root
+  | appBeta full miss trace functionTree exposure exposureCoherent reduction argumentTree conditions hashPath
+      comparisonFaithful bodyConstructed argConstructed bodyBound argBound coherent faithful =>
+      have same := reduction.rigid (by
+        obtain ⟨_, rfl⟩ := functionTree.lambda_type
+        intro fn arg same
+        cases same)
+      cases same
+      obtain ⟨rfl, rfl⟩ := lambda_inference_domain functionTree
+      obtain ⟨functionReads, argumentReads⟩ := readScopedExpr?_app_parts reading
+      have keyedAgreement := miss.localContext.symm ▸ agreement
+      exact (SynthesisTypingOrigin.lambdaBody
+        (.source (.checked contextOrigin functionTree keyedAgreement functionReads trace.functionRun))).substituteAt
+        (.source (.applicationBetaArgument contextOrigin trace functionTree exposure exposureCoherent argumentTree
+          keyedAgreement functionReads argumentReads conditions hashPath comparisonFaithful)) .root
 
 /-- When the lambda body applies its parameter, its actual body checks
 supply the next reduction origin after beta exposes the supplied lambda.
@@ -132,6 +146,22 @@ def SynthesisInference.betaNextOrigin {β : Type u} {resolve : Address → Optio
       have flattened := SynthesisReductionOrigin.substitutedResult bodySpine.spine bodySpine.atIndex
         (.applicationArgument contextOrigin trace functionTree argumentTree keyedAgreement functionReads argumentReads
           conditions hashPath comparisonFaithful) .root enough
+        (by simpa only [AExpr.inst_variable_appN] using resultOrigin)
+      simpa only [AExpr.liftN_zero, List.map_id'] using flattened
+  | appBeta full miss trace functionTree exposure exposureCoherent reduction argumentTree conditions hashPath
+      comparisonFaithful bodyConstructed argConstructed bodyBound argBound coherent faithful =>
+      have same := reduction.rigid (by
+        obtain ⟨_, rfl⟩ := functionTree.lambda_type
+        intro fn arg same
+        cases same)
+      cases same
+      obtain ⟨rfl, rfl⟩ := lambda_inference_domain functionTree
+      obtain ⟨functionReads, argumentReads⟩ := readScopedExpr?_app_parts reading
+      have keyedAgreement := miss.localContext.symm ▸ agreement
+      obtain ⟨_, bodySpine⟩ := functionTree.lambdaBodyVariableSpine contextOrigin keyedAgreement functionReads
+      have flattened := SynthesisReductionOrigin.substitutedResult bodySpine.spine bodySpine.atIndex
+        (.applicationBetaArgument contextOrigin trace functionTree exposure exposureCoherent argumentTree
+          keyedAgreement functionReads argumentReads conditions hashPath comparisonFaithful) .root enough
         (by simpa only [AExpr.inst_variable_appN] using resultOrigin)
       simpa only [AExpr.liftN_zero, List.map_id'] using flattened
 
@@ -173,6 +203,22 @@ theorem SynthesisInference.beta_sound {β : Type u}
       have sameType := AExpr.eq_of_erase_annotations
         (Option.some.inj (argumentTypeReads.symm.trans (sameReading.trans domainReads))) conditions
       have typedArgument := sameType ▸ argumentTyped
+      exact ⟨ConversionClaim.beta functionTyped typedArgument,
+        TypingClaim.betaResult functionTyped typedArgument⟩
+  | appBeta full miss trace functionTree exposure exposureCoherent reduction argumentTree conditions hashPath
+      comparisonFaithful bodyConstructed argConstructed bodyBound argBound coherent faithful =>
+      have same := reduction.rigid (by
+        obtain ⟨_, rfl⟩ := functionTree.lambda_type
+        intro fn arg same
+        cases same)
+      cases same
+      obtain ⟨rfl, rfl⟩ := lambda_inference_domain functionTree
+      obtain ⟨fnReads, argReads⟩ := readScopedExpr?_app_parts reading
+      have keyedAgreement := miss.localContext.symm ▸ agreement
+      obtain ⟨_, functionTyped, _⟩ := functionTree.sound formed keyedAgreement fnReads trace.functionRun
+      have checked := SynthesisCheckedOrigin.applicationBetaArgument .current trace functionTree exposure
+        exposureCoherent argumentTree keyedAgreement fnReads argReads conditions hashPath comparisonFaithful
+      have typedArgument := (checked.soundWithSpine formed).1
       exact ⟨ConversionClaim.beta functionTyped typedArgument,
         TypingClaim.betaResult functionTyped typedArgument⟩
 
