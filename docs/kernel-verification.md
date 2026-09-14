@@ -156,14 +156,29 @@ increasing sequence of strongly inaccessible cardinals.
   and failure. The let trace recovers `LocalContextValues` after validation;
   the inference cache shell preserves caller contexts whenever its uncached
   body does. `LocalStateInvariant` derives freshness from the live identifier
-  bound, and `infer_framesLocalState` preserves it for all constructors and
+  bound, and `infer_framesLocalState_of_whnf` preserves it for all constructors and
   both policies, including hits, writes and failure states. Recursive
-  inference, reduction, conversion and projection remain contracts of the
-  mutual execution proof. The installed production lazy loader must establish
-  its counter-preservation contract. `TcM.InternOnly.instantiateUnivParams`
+  inference, reduction and conversion remain contracts of the mutual execution
+  proof. Projection inference's parameter/field loops, Prop checks and lookups
+  derive their state effects from the same recursive inference and reduction
+  contracts. `TcM.InternOnly.instantiateUnivParams`
   proves the actual universe walker's exact intern-table-only effect without
   collision assumptions; the named inference-policy proof shares this result.
   These structural frames do not establish computed-type or cache semantics.
+- `IngressM.FramesState.ingressAnonAddrShallow` proves that the actual anonymous
+  loader changes only declarations, block membership and intern tables on
+  either outcome. Conversion, lazy lookup and block publication preserve every
+  checker-owned field, including the fresh-variable counter and all caches.
+  `LocalStateInvariant.newLazyAnon` consequently establishes the structural
+  invariant for the concrete driver without assuming its loader's effect.
+  Lean's expression and universe converters now use finite range loops whose
+  work counts come from the source syntax. An active sharing set rejects
+  cycles; the Rust converter checks the reachable sharing graph before its
+  traversal. Forward references and unused cyclic entries remain accepted.
+  Regressions cover cycles, partial-failure state, repeated/forward sharing,
+  deep inputs and universe simplification. The state proof does not establish
+  conversion's semantic reading or prove that the computed bound suffices for
+  every acyclic input; those remain distinct refinement obligations.
 - `InferenceCacheInvariant` covers every entry in both production maps, with
   separate full-checking and inference-only meanings. Hits obtain stored facts
   directly; each insertion establishes its own fact and preserves all other

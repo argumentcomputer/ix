@@ -23,6 +23,8 @@ import Ix.Kernel.Verify.Consistency.LocalSubstitution
 import Ix.Kernel.Verify.Consistency.LetInference
 import Ix.Kernel.Verify.Consistency.LocalScope
 import Ix.Kernel.Verify.Consistency.InferenceLocalState
+import Ix.Kernel.Verify.Consistency.ProjectionLocalState
+import Ix.Kernel.Verify.Consistency.IngressLocalState
 import Ix.Kernel.Verify.Consistency.Application
 import Ix.Kernel.Verify.Consistency.BinderInference
 import Ix.Kernel.Verify.Consistency.RecursiveCache
@@ -105,10 +107,15 @@ context present after validation; the inference cache shell preserves caller
 contexts whenever the uncached branch does. A maintained structural invariant
 derives fresh opening from the counter bound. Every uncached constructor,
 both cache partitions and the final write preserve it on success and failure,
-under the recursive inference, reduction, conversion and projection contracts.
+under the recursive inference, reduction and conversion contracts. Projection
+inference's parameter and dependent-field loops, Prop checks and lookups
+preserve the same state from those recursive inference and reduction contracts.
 Universe instantiation unconditionally changes only the intern table.
-The installed production loader must still establish counter preservation;
-the general mutual proof must supply the recursive and semantic contracts.
+The actual anonymous loader preserves all checker-owned environment fields,
+including the counter and caches, through conversion, declaration publication
+and errors. The lazy driver's initial state establishes the structural local
+invariant without a loader-effect assumption. The general mutual proof must
+still supply the recursive and semantic contracts.
 
 The safe-definition guard excludes self-reference for both modes and arbitrary
 universe arities. Successful definition-block execution computes an order of

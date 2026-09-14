@@ -15,6 +15,8 @@ import Ix.Kernel.Verify.Consistency.LocalSubstitution
 import Ix.Kernel.Verify.Consistency.LetInference
 import Ix.Kernel.Verify.Consistency.LocalScope
 import Ix.Kernel.Verify.Consistency.InferenceLocalState
+import Ix.Kernel.Verify.Consistency.ProjectionLocalState
+import Ix.Kernel.Verify.Consistency.IngressLocalState
 import Ix.Kernel.Verify.Audit.Basic
 
 /-! Exact full-dependency boundaries for the direct model-refinement roots.
@@ -297,7 +299,71 @@ private def localStateOperationalRoots : Array Lean.Name := #[
   ``FramesLocalState.ensureForallDirect,
   ``inferUncached_framesLocalState,
   ``FramesLocalState.inferWith,
-  ``infer_framesLocalState
+  ``infer_framesLocalState,
+  ``FramesLocalState.peelProjForall, ``FramesLocalState.instantiateProjParamStep,
+  ``FramesLocalState.instantiateProjParams, ``FramesLocalState.inductiveAppBinderStep,
+  ``FramesLocalState.inductiveAppBinders, ``FramesLocalState.inductiveAppResultIsProp,
+  ``FramesLocalState.inductiveAppIsProp, ``FramesLocalState.inferProjFieldStep,
+  ``FramesLocalState.inferProjFieldsLoopStep, ``FramesLocalState.inferProjFields,
+  ``FramesLocalState.inferProj, ``infer_framesLocalState_of_whnf
+]
+
+private def ingressFrameRoots : Array Lean.Name := #[
+  ``KEnv.IngressFrame.refl,
+  ``KEnv.IngressFrame.trans,
+  ``KEnv.IngressFrame.counter,
+  ``KEnv.IngressFrame.insert,
+  ``KEnv.IngressFrame.insertBlock,
+  ``KEnv.IngressFrame.foldl,
+  ``KEnv.IngressFrame.insertEntriesState,
+  ``KEnv.IngressFrame.insertMutsEntriesState,
+  ``IngressM.FramesState.pure,
+  ``IngressM.FramesState.throw,
+  ``IngressM.FramesState.get,
+  ``IngressM.FramesState.modifyGet,
+  ``IngressM.FramesState.liftExcept,
+  ``IngressM.FramesState.bind,
+  ``IngressM.FramesState.internE,
+  ``IngressM.FramesState.internU,
+  ``IngressM.FramesState.forInList,
+  ``IngressM.FramesState.forInArray,
+  ``IngressM.FramesState.forInList',
+  ``ConvM.FramesState.pure,
+  ``ConvM.FramesState.throw,
+  ``ConvM.FramesState.get,
+  ``ConvM.FramesState.modify,
+  ``ConvM.FramesState.bind,
+  ``ConvM.FramesState.lift,
+  ``ConvM.FramesState.forInList,
+  ``ConvM.FramesState.forInArray
+]
+
+private def ingressMapRoots : Array Lean.Name := #[
+  ``IngressM.FramesState.forInRange,
+  ``IngressM.FramesState.forInRange',
+  ``IngressM.FramesState.guardReserved,
+  ``IngressM.FramesState.insertStandaloneEntries,
+  ``IngressM.FramesState.insertMutsEntries,
+  ``ConvM.FramesState.forInRange
+]
+
+private def ingressLevelRoots : Array Lean.Name := #[
+  ``IngressM.FramesState.ingressUnivTree,
+  ``ConvM.FramesState.ingressUnivIdx,
+  ``ConvM.FramesState.ingressUnivArgs
+]
+
+private def ingressOperationalRoots : Array Lean.Name := #[
+  ``IngressM.FramesState.ingressDefnAnon,
+  ``IngressM.FramesState.ingressRecursorAnon,
+  ``IngressM.FramesState.ingressAnonInductive,
+  ``IngressM.FramesState.ingressAnonStandalone,
+  ``IngressM.FramesState.prepareAnonBlock,
+  ``IngressM.FramesState.ingressAnonBlockWithTrace,
+  ``IngressM.FramesState.ingressAnonBlock,
+  ``IngressM.FramesState.ingressAnonAddrShallow,
+  ``ConvM.FramesState.ingressExpr,
+  ``LoaderCounterMonotone.ingressAnonAddrShallow
 ]
 
 /-- Production roots must not acquire a checker-soundness assumption
@@ -380,26 +446,29 @@ def roots : Array RootAllowance := #[
 ] ++ (stringListRoots ++ #[``LocalValues.pushLet_extends,
     ``LocalValues.pushBinder_lifts, ``LocalValues.Below.pushLet]).map (fun root => {
   root, standardAxioms := #[``propext], forbiddenDependencies := forbiddenProduction
-}) ++ (localIndexRoots ++ localScopeFrameRoots ++ localStateFrameRoots ++ cacheFrameRoots ++ letSubstitutionRoots ++ cacheInvariantFrameRoots ++
+}) ++ (localIndexRoots ++ localScopeFrameRoots ++ localStateFrameRoots ++ ingressFrameRoots ++ cacheFrameRoots ++ letSubstitutionRoots ++ cacheInvariantFrameRoots ++
     internFrameRoots ++ #[``DefinitionOrder.ready_independent,
       ``DefinitionOrder.order?_sound, ``DefinitionOrder.member_of_read,
       ``LocalValues.Below.pushBinder]).map (fun root => {
   root, standardAxioms := #[``propext, ``Quot.sound], forbiddenDependencies := forbiddenProduction
-}) ++ (contextRoots ++ localValueRoots ++ localStateMapRoots ++ cacheMapRoots ++ cacheInvariantMapRoots ++ scopedRoots ++ stringRoots ++
+}) ++ (contextRoots ++ localValueRoots ++ localStateMapRoots ++ ingressMapRoots ++ cacheMapRoots ++ cacheInvariantMapRoots ++ scopedRoots ++ stringRoots ++
     internMapRoots ++ #[``DefinitionOrder.order?_rank,
       ``DefinitionOrder.acyclic_rank]).map (fun root => {
   root, standardAxioms := standard, forbiddenDependencies := forbiddenProduction
 }) ++ (binderWalkerRoots ++ localStateWalkerRoots ++ cacheKeyRoots ++ cacheInvariantKeyRoots ++ stringExpansionRoots).map (fun root => {
   root, standardAxioms := standard, nativeAxioms := #[expressionNative],
   forbiddenDependencies := forbiddenProduction
-}) ++ (atomicRoots ++ localStateOperationalRoots ++ instantiationRoots ++ recursiveCacheRoots ++
+}) ++ ingressLevelRoots.map (fun root => {
+  root, standardAxioms := standard, nativeAxioms := #[levelNative],
+  forbiddenDependencies := forbiddenProduction
+}) ++ (atomicRoots ++ localStateOperationalRoots ++ ingressOperationalRoots ++ instantiationRoots ++ recursiveCacheRoots ++
     #[``InferenceCacheInvariant.infer]).map (fun root => {
   root, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative],
   forbiddenDependencies := forbiddenProduction
 }) ++ (productionRoots ++ cacheInvariantDriverRoots).map (fun root => {
   root, standardAxioms := standard, nativeAxioms := productionNative,
   forbiddenDependencies := forbiddenProduction
-}) ++ #[``InferenceCacheInvariant.newLazyAnon,
+}) ++ #[``LocalStateInvariant.newLazyAnon, ``InferenceCacheInvariant.newLazyAnon,
     ``InferenceCacheInvariant.initialAnonCheckLoopState].map (fun root => {
   root, standardAxioms := standard,
   nativeAxioms := #[expressionNative, levelNative,

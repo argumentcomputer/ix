@@ -2,6 +2,7 @@ module
 
 public import Ix.Kernel.Monad
 public import Ix.Ixon
+public import Ix.Kernel.IngressBudget
 
 /-!
 Mirror: crates/kernel/src/ingress.rs (the Ixon → kernel, anonymous-mode half)
@@ -11,7 +12,7 @@ Anon ingress uses only `Ixon.Constant` data — never `ConstantMeta`,
 deterministically from `(block, idx, [cidx])` via `serConstant` commitment,
 which agrees with the addresses the compiler stores in `env.consts`.
 
-Expression conversion is an explicit stack machine (Init-scale terms overflow
+Expression conversion is a bounded explicit stack machine (Init-scale terms overflow
 default runtime stacks under structural recursion; Rust runs the recursive
 meta-mode converter on 2 GB stacks — the anon machine here is iterative).
 `share` nodes expand transparently against the constant's sharing table, with
@@ -19,6 +20,8 @@ a share-index-keyed conversion cache (Lean has no stable pointers; a
 deserialized subterm is only re-entered via `share`, so this captures exactly
 the hits Rust's pointer-keyed cache sees). Universe conversion caches by
 universe-table index for the same reason. Every constructed node is interned.
+Total range loops use source-derived work bounds. Active sharing expansions
+reject cycles before revisiting an unfinished entry.
 
 Integrity: `getConstVerified` checks `blake3(rawBytes) == addr` at
 materialization. Rust's `Env::get` does this on its main path; the
@@ -148,7 +151,8 @@ inductive UFrame where
 def ingressUnivTree (root : Ixon.Univ) : IngressM (KUniv .anon) := do
   let mut stack : Array UFrame := #[.process root]
   let mut values : Array (KUniv .anon) := #[]
-  while !stack.isEmpty do
+  for _ in [0:ingressUnivWork [root]] do
+    if stack.isEmpty then break
     let frame := stack.back!
     stack := stack.pop
     match frame with
@@ -176,6 +180,8 @@ def ingressUnivTree (root : Ixon.Univ) : IngressM (KUniv .anon) := do
       let b := values.back!; values := values.pop
       let a := values.back!; values := values.pop
       values := values.push (← IngressM.internU (.mkIMax a b))
+  if !stack.isEmpty then
+    throw "ingressUnivTree: conversion work budget exhausted"
   match values.back? with
   | some v => return v
   | none => throw "ingressUnivTree: empty result stack"
@@ -248,7 +254,9 @@ def ingressExpr (ixonEnv : Ixon.Env) (ctx : IngressCtx) (root : Ixon.Expr) :
     ConvM (KExpr .anon) := do
   let mut stack : Array EFrame := #[.process root]
   let mut values : Array (KExpr .anon) := #[]
-  while !stack.isEmpty do
+  let mut active : Std.HashSet UInt64 := {}
+  for _ in [0:ingressExprWorkBudget root ctx.sharing] do
+    if stack.isEmpty then break
     let frame := stack.back!
     stack := stack.pop
     match frame with
@@ -260,6 +268,9 @@ def ingressExpr (ixonEnv : Ixon.Env) (ctx : IngressCtx) (root : Ixon.Expr) :
         else
           let some expansion := ctx.sharing[idx.toNat]?
             | throw s!"invalid Share index {idx}"
+          if active.contains idx then
+            throw s!"cyclic Share index {idx}"
+          active := active.insert idx
           stack := stack.push (.cacheShare idx) |>.push (.process expansion)
       | .var idx =>
         values := values.push (← liftM (IngressM.internE (.mkVar idx ())))
@@ -338,6 +349,9 @@ def ingressExpr (ixonEnv : Ixon.Env) (ctx : IngressCtx) (root : Ixon.Expr) :
     | .cacheShare idx =>
       let v := values.back!
       modify fun s => { s with exprCache := s.exprCache.insert idx v }
+      active := active.erase idx
+  if !stack.isEmpty then
+    throw "ingressExpr: conversion work budget exhausted"
   match values.back? with
   | some v =>
     if values.size != 1 then
