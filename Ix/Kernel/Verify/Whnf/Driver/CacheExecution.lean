@@ -244,4 +244,118 @@ theorem whnfWithNatSuccModeNonLeaf_miss
   rfl
 
 
+/-- The native-reduction guard controls publication, including when the
+underlying result came from a lower cache. -/
+theorem whnfNoDeltaImplNonLeaf_fullMiss_conditional
+    {methods : Methods .anon} {s s₁ s₂ s₃ : TcState .anon}
+    {source result : KExpr .anon} {flags : WhnfFlags}
+    {key : Address × Address}
+    (hfull : flags.isFull = true)
+    (hkey : TcM.whnfKey source s = .ok key s₁)
+    (htransient : (isTransientNatLiteralWork source).run methods s₁ =
+      .ok false s₂)
+    (hmiss : s₂.env.whnfNoDeltaCache[key]? = none)
+    (hrun : (whnfNoDeltaImplUncached source flags .collapse).run methods s₂ =
+      .ok result s₃) :
+    (whnfNoDeltaImplNonLeaf source flags .collapse).run methods s =
+      .ok result (if s₃.inNativeReduce then s₃ else
+        {s₃ with env := {s₃.env with
+          whnfNoDeltaCache := s₃.env.whnfNoDeltaCache.insert key result}}) := by
+  unfold whnfNoDeltaImplNonLeaf
+  rw [ReaderT.run_bind]
+  change EStateM.bind (TcM.whnfKey source) _ s = _
+  unfold EStateM.bind
+  rw [hkey]
+  simp only
+  rw [ReaderT.run_bind]
+  change EStateM.bind ((isTransientNatLiteralWork source).run methods) _ s₁ = _
+  unfold EStateM.bind
+  rw [htransient]
+  simp [natSuccMode_collapse_beq, hfull]
+  change EStateM.bind (get : TcM .anon (TcState .anon)) _ s₂ = _
+  unfold EStateM.bind
+  rw [show (get : TcM .anon (TcState .anon)) s₂ = .ok s₂ s₂ from rfl]
+  simp only [hmiss]
+  rw [ReaderT.run_bind]
+  change EStateM.bind
+    ((whnfNoDeltaImplUncached source flags .collapse).run methods) _ s₂ = _
+  unfold EStateM.bind
+  rw [hrun]
+  simp only
+  rw [ReaderT.run_bind]
+  change EStateM.bind (get : TcM .anon (TcState .anon)) _ s₃ = _
+  unfold EStateM.bind
+  rw [show (get : TcM .anon (TcState .anon)) s₃ = .ok s₃ s₃ from rfl]
+  simp only
+  by_cases native : s₃.inNativeReduce = false
+  · rw [if_pos native, if_neg (by simp only [native, Bool.false_eq_true, not_false_eq_true])]
+    rfl
+  · have active : s₃.inNativeReduce = true := by cases value : s₃.inNativeReduce <;> simp_all
+    rw [if_neg native, if_pos active]
+    rfl
+
+/-- Full WHNF charges a miss even when a lower cache supplies the result;
+its final native guard controls only publication. -/
+theorem whnfWithNatSuccModeNonLeaf_miss_conditional
+    {methods : Methods .anon} {s s₁ s₂ s₃ s₄ s₅ : TcState .anon}
+    {source result : KExpr .anon} {key : Address × Address}
+    (hprefix : (whnfWithNatSuccModePrefix source).run methods s =
+      .ok () s₁)
+    (hkey : TcM.whnfKey source s₁ = .ok key s₂)
+    (htransient : (isTransientNatLiteralWork source).run methods s₂ =
+      .ok false s₃)
+    (hmiss : s₃.env.whnfCache[key]? = none)
+    (hcharge : (whnfWithNatSuccModeMissCharge : RecM .anon Unit).run
+      methods s₃ = .ok () s₄)
+    (hrun : (whnfWithNatSuccModeUncached source .collapse).run methods s₄ =
+      .ok result s₅) :
+    (whnfWithNatSuccModeNonLeaf source .collapse).run methods s =
+      .ok result (if s₅.inNativeReduce then s₅ else
+        {s₅ with env := {s₅.env with
+          whnfCache := s₅.env.whnfCache.insert key result}}) := by
+  unfold whnfWithNatSuccModeNonLeaf
+  rw [ReaderT.run_bind]
+  change EStateM.bind
+    ((whnfWithNatSuccModePrefix source).run methods) _ s = _
+  unfold EStateM.bind
+  rw [hprefix]
+  simp only
+  rw [ReaderT.run_bind]
+  change EStateM.bind (TcM.whnfKey source) _ s₁ = _
+  unfold EStateM.bind
+  rw [hkey]
+  simp only
+  rw [ReaderT.run_bind]
+  change EStateM.bind ((isTransientNatLiteralWork source).run methods) _ s₂ = _
+  unfold EStateM.bind
+  rw [htransient]
+  simp [natSuccMode_collapse_beq]
+  change EStateM.bind (get : TcM .anon (TcState .anon)) _ s₃ = _
+  unfold EStateM.bind
+  rw [show (get : TcM .anon (TcState .anon)) s₃ = .ok s₃ s₃ from rfl]
+  simp only [hmiss]
+  rw [ReaderT.run_bind]
+  change EStateM.bind
+    ((whnfWithNatSuccModeMissCharge : RecM .anon Unit).run methods) _ s₃ = _
+  unfold EStateM.bind
+  rw [hcharge]
+  simp only
+  rw [ReaderT.run_bind]
+  change EStateM.bind
+    ((whnfWithNatSuccModeUncached source .collapse).run methods) _ s₄ = _
+  unfold EStateM.bind
+  rw [hrun]
+  simp only
+  rw [ReaderT.run_bind]
+  change EStateM.bind (get : TcM .anon (TcState .anon)) _ s₅ = _
+  unfold EStateM.bind
+  rw [show (get : TcM .anon (TcState .anon)) s₅ = .ok s₅ s₅ from rfl]
+  simp only
+  by_cases native : s₅.inNativeReduce = false
+  · rw [if_pos native, if_neg (by simp only [native, Bool.false_eq_true, not_false_eq_true])]
+    rfl
+  · have active : s₅.inNativeReduce = true := by cases value : s₅.inNativeReduce <;> simp_all
+    rw [if_neg native, if_pos active]
+    rfl
+
 end Ix.Kernel.RecM

@@ -60,6 +60,9 @@ theorem BetaPiExposure.inference_frame {β : Type u} {resolve : Address → Opti
     (key : Address × Address) : InferenceCacheFrame key before exposure.after := by
   cases exposure with
   | reduce plan => exact plan.inference_frame key
+  | execute execution =>
+      exact .of_eq (congrArg (·[key]?) execution.frame.full)
+        (congrArg (·[key]?) execution.frame.only) execution.frame.constants
   | cached origin coherent hit =>
       apply InferenceCacheFrame.of_eq <;>
         simp only [BetaPiExposure.after, BetaPublicWhnf.outerKey, betaWhnfKey_environment,
@@ -72,6 +75,7 @@ theorem BetaPiExposure.policy {β : Type u} {resolve : Address → Option (Const
     exposure.after.inferOnly = before.inferOnly := by
   cases exposure with
   | reduce plan => exact plan.policy
+  | execute execution => exact execution.frame.policy
   | cached origin coherent hit =>
       simp only [BetaPiExposure.after, BetaPublicWhnf.outerKey, betaWhnfKey_policy, betaWhnfPrefix_policy]
 
@@ -96,6 +100,7 @@ theorem BetaPiExposure.inference_maps {β : Type u} {resolve : Address → Optio
       exposure.after.env.inferOnlyCache = before.env.inferOnlyCache := by
   cases exposure with
   | reduce plan => exact plan.inference_maps
+  | execute execution => exact ⟨execution.frame.full, execution.frame.only⟩
   | cached origin coherent hit =>
       constructor <;>
         simp only [BetaPiExposure.after, BetaPublicWhnf.outerKey, betaWhnfKey_environment,
@@ -111,6 +116,9 @@ theorem inference_frame (exposure : BetaSortExposure resolve locals fuel before 
   cases exposure with
   | direct => exact .refl key _
   | reduce plan => exact plan.inference_frame key
+  | execute execution =>
+      exact .of_eq (congrArg (·[key]?) execution.frame.full)
+        (congrArg (·[key]?) execution.frame.only) execution.frame.constants
   | cached origin hit =>
       apply InferenceCacheFrame.of_eq <;>
         simp only [after, BetaPublicWhnf.outerKey, betaWhnfKey_environment,
@@ -121,6 +129,7 @@ theorem policy (exposure : BetaSortExposure resolve locals fuel before source te
   cases exposure with
   | direct => rfl
   | reduce plan => exact plan.policy
+  | execute execution => exact execution.frame.policy
   | cached origin hit =>
       simp only [after, BetaPublicWhnf.outerKey, betaWhnfKey_policy, betaWhnfPrefix_policy]
 
@@ -130,6 +139,7 @@ theorem inference_maps (exposure : BetaSortExposure resolve locals fuel before s
   cases exposure with
   | direct => exact ⟨rfl, rfl⟩
   | reduce plan => exact plan.inference_maps
+  | execute execution => exact ⟨execution.frame.full, execution.frame.only⟩
   | cached origin hit =>
       constructor <;>
         simp only [after, BetaPublicWhnf.outerKey, betaWhnfKey_environment,

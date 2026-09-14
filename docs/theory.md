@@ -128,8 +128,12 @@ opening, comparison, and body observations. The original child check and a
 retained check of its returned type justify conversion to the exposed sort,
 which supplies the binder context's universe level. The source derivation and
 typed cache history retain the original inference at its unreduced type.
-Exposure supports syntactic sorts, the existing public beta WHNF path, and
-that path's outer-cache hit. It changes neither inference-cache map. Finite
+Exposure supports syntactic sorts and public beta WHNF with hits at any of
+its three cache layers. Each cached result retains its actual producing
+execution, whose meaning follows from the original source check. Native
+reduction suppresses upper-layer writes; only an outer miss charges fuel.
+Publication and key stability derive later replay without recursive methods.
+These paths change neither inference-cache map. Finite
 reading, representation, and reduction resources still need general construction;
 other reduction and cache paths remain open.
 Structural local-state preservation now covers the complete recursive checker

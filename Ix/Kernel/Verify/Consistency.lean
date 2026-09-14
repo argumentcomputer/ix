@@ -79,7 +79,7 @@ under the stated execution resources. Definitions may declare their own
 universe parameters; model entries retain the exact arity and interpretations
 at every instance.
 Recursive forall, lambda, and let rules also expose sorts through the supported
-public beta WHNF path or its outer-cache hit. Successful production calls
+public beta WHNF path, including hits at any of its three cache layers. Successful production calls
 determine their raw child traces. Retained checks justify conversion from the
 original inferred type to the exposed sort and supply the binder's level.
 Source derivations and typed cache histories retain the original child check;
@@ -157,15 +157,19 @@ supported inference fragment therefore derives all its semantic step origins
 from the original check. The operational path contains only raw execution,
 reading, and finite representation resources, and its automatic annotation
 also supplies declaration admission. Public WHNF now computes the key states,
-instrumentation, shared-fuel charge, and all three cache insertions for these
-beta paths ending at a sort, Pi, or lambda. Pi exposure can execute such a
-path or reuse its exact cached result without fuel. Application inference
+instrumentation, shared-fuel charge, and guarded cache insertions for these
+beta paths ending at a sort, Pi, or lambda. Each of the three cache layers
+may retain a prior executed result. Native reduction suppresses new writes
+at the no-delta and outer layers; the structural layer still publishes.
+Replay derives the next hit from that publication and preserves memoized
+context keys. Only an outer miss charges shared fuel. Pi exposure uses the
+same complete cache-layer execution. Application inference
 uses that exposure between argument checks and derives the type conversion
 from a retained actual check of the function type. Dependent codomain
 substitution and all later beta origins preserve those argument checks.
 The original synthesis admission theorem includes this application case.
 Constructing initial inference and operational resources for all accepted
-programs, other WHNF branches, mixed cache states, and general conversion
+programs, other WHNF branches, general semantic cache agreement, and conversion
 remain open.
 Full-mode let checks retain their original domain, value, and opened-body
 synthesis checks. The scoped reader and actual opening, abstraction, and

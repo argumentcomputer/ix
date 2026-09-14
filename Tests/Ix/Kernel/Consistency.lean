@@ -3637,7 +3637,8 @@ private def sortExposureEnvironment (level : Ixon.Univ) (universes : UInt64 := 0
 
 /-- The domain's full inference cache keeps its original beta type while
 sort exposure writes the normalized sort only to the three WHNF caches. -/
-private def sortExposureInferencePaths (typeLevel warm instrumented noAccel : Bool) : Bool :=
+private def sortExposureInferencePaths (typeLevel warm instrumented noAccel : Bool)
+    (lowerWarm : Nat := 0) : Bool :=
   let level := if typeLevel then levelOne else KUniv.mkZero
   let (env, targets) := sortExposureEnvironment (if typeLevel then .succ .zero else .zero)
   (List.range 5).all fun shape =>
@@ -3652,6 +3653,11 @@ private def sortExposureInferencePaths (typeLevel warm instrumented noAccel : Bo
         | 4, .lam _ _ _ (.const id _ _) _ => pure (← TcM.getConst id).ty
         | _, _ => pure original
       modify fun state => { state with recFuel := 1, inNativeReduce := false, stats := instrumented, noAccel }
+      if lowerWarm != 0 then
+        let normalized ← if lowerWarm == 1 then RecM.whnfCore original else RecM.whnfNoDelta original
+        if normalized != KExpr.mkSort level then return false
+        if lowerWarm == 2 then
+          modify fun state => { state with env := { state.env with whnfCoreCache := {} } }
       if warm then
         let exposed ← RecM.ensureSortDirect original
         if exposed != level then return false
@@ -3679,12 +3685,119 @@ private def sortExposureInferencePaths (typeLevel warm instrumented noAccel : Bo
       return result == expected && after.recFuel == 0 && after.lctx.size == 0 &&
         after.env.nextFVarId == (if shape == 3 then 2 else 1) && after.inNativeReduce == warm &&
         after.env.whnfCache[key]? == some sort && after.env.whnfNoDeltaCache[key]? == some sort &&
-        after.env.whnfCoreCache[key]? == some sort &&
+        after.env.whnfCoreCache[key]? == (if lowerWarm == 2 then none else some sort) &&
         exactInferenceCaches ((domain, original) :: (children ++ [(value, expected)])) [] after &&
         compositeReplayAt value expected after
     match TcM.runRec action (TcState.newLazyAnon env) with
     | .ok passed _ => passed
     | .error _ _ => false
+
+private inductive WhnfWarmLayer
+  | cold | core | noDelta | full
+  deriving BEq
+
+/-- Warm entries come from the actual layer that produces them. Keep
+unrelated entries in every map and discard lower entries when isolating an
+upper hit. The trial starts with fresh key memoization. -/
+private def mixedWhnfCaches (shape : Nat) (layer : WhnfWarmLayer)
+    (legacy native instrumented noAccel inferOnly : Bool) : Bool :=
+  let prop := KExpr.mkSort (m := .anon) .mkZero
+  let sort := KExpr.mkSort (m := .anon) levelOne
+  let argument := if legacy then KExpr.mkVar 0 () else prop
+  let body := if shape == 0 then prop else if shape == 1 then
+      KExpr.mkAll () () (.mkVar 0 ()) (.mkVar 1 ())
+    else KExpr.mkLam () () (.mkVar 0 ()) (.mkVar 1 ())
+  let expected := if shape == 0 then prop else if shape == 1 then
+      KExpr.mkAll () () argument (if legacy then .mkVar 1 () else prop)
+    else KExpr.mkLam () () argument (if legacy then .mkVar 1 () else prop)
+  let source := KExpr.mkApp (.mkLam () () sort body) argument
+  let sameMap (actual predicted : Std.HashMap (Address × Address) (KExpr .anon)) :=
+    actual.size == predicted.size && predicted.toList.all fun (key, result) => actual[key]? == some result
+  let action : RecM .anon Bool := do
+    if legacy then
+      TcM.pushLocal sort
+      TcM.pushLocal sort
+    let seed : Std.HashMap (Address × Address) (KExpr .anon) :=
+      (∅ : Std.HashMap (Address × Address) (KExpr .anon)).insert (prop.addr, emptyCtxAddr) prop
+    modify fun state => { state with env := { state.env with
+      whnfCache := seed, whnfNoDeltaCache := seed, whnfCoreCache := seed,
+      whnfNoDeltaCheapCache := seed, whnfCoreCheapCache := seed,
+      inferCache := state.env.inferCache.insert (prop.addr, emptyCtxAddr) sort,
+      inferOnlyCache := state.env.inferOnlyCache.insert (sort.addr, emptyCtxAddr) (.mkSort levelTwo) } }
+    match layer with
+    | .cold => pure ()
+    | .core => if (← RecM.whnfCore source) != expected then return false
+    | .noDelta =>
+        if (← RecM.whnfNoDelta source) != expected then return false
+        modify fun state => { state with env := { state.env with whnfCoreCache := seed } }
+    | .full =>
+        if (← RecM.whnf source) != expected then return false
+        modify fun state => { state with env := { state.env with whnfCoreCache := seed, whnfNoDeltaCache := seed } }
+    modify fun state => { state with
+      ctxAddrCache := {},
+      recFuel := if layer == .full then 0 else 1, inNativeReduce := native,
+      stats := instrumented, stepTrace := instrumented, whnfCalls := 17, whnfMisses := 11, noAccel, inferOnly }
+    let before ← get
+    let methods := if layer == .full then methodsN 0 else methodsN 2
+    match (RecM.whnf source).run methods before with
+    | .error _ _ => return false
+    | .ok result after =>
+        let .ok key keyed := TcM.whnfKey source after | return false
+        let core := if layer == .cold || layer == .core then before.env.whnfCoreCache.insert key expected
+          else before.env.whnfCoreCache
+        let noDelta := if native || layer == .full then before.env.whnfNoDeltaCache
+          else before.env.whnfNoDeltaCache.insert key expected
+        let full := if native || layer == .full then before.env.whnfCache
+          else before.env.whnfCache.insert key expected
+        let replayRun := match layer with
+          | .cold | .core => (RecM.whnfCore source).run (methodsN 0) after
+          | .noDelta => (RecM.whnfNoDelta source).run (methodsN 0) after
+          | .full => (RecM.whnf source).run (methodsN 0) after
+        let .ok replay replayed := replayRun | return false
+        return result == expected && replay == expected && after.recFuel == 0 && replayed.recFuel == 0 &&
+          after.whnfCalls == (if instrumented then 18 else 17) &&
+          after.whnfMisses == (if instrumented && layer != .full then 12 else 11) &&
+          sameMap after.env.whnfCoreCache core && sameMap after.env.whnfNoDeltaCache noDelta &&
+          sameMap after.env.whnfCache full && sameMap after.env.whnfCoreCheapCache before.env.whnfCoreCheapCache &&
+          sameMap after.env.whnfNoDeltaCheapCache before.env.whnfNoDeltaCheapCache &&
+          sameMap after.env.inferCache before.env.inferCache && sameMap after.env.inferOnlyCache before.env.inferOnlyCache &&
+          after.lctx.size == before.lctx.size && after.ctx.size == before.ctx.size && after.ctxId == before.ctxId &&
+          after.env.nextFVarId == before.env.nextFVarId && after.inNativeReduce == native && after.inferOnly == inferOnly &&
+          after.ctxAddrCache.size == (if legacy then 1 else 0) && keyed.ctxAddrCache.size == after.ctxAddrCache.size &&
+          sameMap replayed.env.whnfCoreCache core && sameMap replayed.env.whnfNoDeltaCache noDelta &&
+          sameMap replayed.env.whnfCache full && replayed.env.intern.exprs.size == after.env.intern.exprs.size
+  match TcM.runRec action (TcState.newLazyAnon {}) with
+  | .ok passed _ => passed
+  | .error _ _ => false
+
+private def mixedWhnfFuelFailure (layer : WhnfWarmLayer) : Bool :=
+  let prop := KExpr.mkSort (m := .anon) .mkZero
+  let source := KExpr.mkApp (.mkLam () () (.mkSort levelOne) (.mkVar 0 ())) prop
+  let action : RecM .anon Bool := do
+    match layer with
+    | .core => discard <| RecM.whnfCore source
+    | .noDelta => discard <| RecM.whnfNoDelta source
+    | _ => pure ()
+    modify fun state => { state with recFuel := 0, stats := true, whnfCalls := 17, whnfMisses := 11 }
+    let before ← get
+    match (RecM.whnf source).run (methodsN 2) before with
+    | .error .maxRecFuel after =>
+        return after.recFuel == 0 && after.whnfCalls == 18 && after.whnfMisses == 12 &&
+          after.env.whnfCache.size == 0 && after.env.whnfCoreCache.size == before.env.whnfCoreCache.size &&
+          after.env.whnfNoDeltaCache.size == before.env.whnfNoDeltaCache.size
+    | _ => return false
+  match TcM.runRec action (TcState.newLazyAnon {}) with
+  | .ok passed _ => passed
+  | .error _ _ => false
+
+private def mixedWhnfCases : TestSeq :=
+  [WhnfWarmLayer.cold, .core, .noDelta, .full].foldl (fun suite layer => suite ++
+    test s!"mixed WHNF: layer {reprStr (match layer with | .cold => 0 | .core => 1 | .noDelta => 2 | .full => 3)} preserves exact maps, fuel, and keys"
+      ((List.range 3).all fun shape => [false, true].all fun legacy => [false, true].all fun native =>
+        [false, true].all fun instrumented => [false, true].all fun noAccel => [false, true].all fun inferOnly =>
+          mixedWhnfCaches shape layer legacy native instrumented noAccel inferOnly))
+    (test "mixed WHNF: lower cache hits do not bypass the public miss fuel check"
+      ([WhnfWarmLayer.cold, .core, .noDelta].all mixedWhnfFuelFailure))
 
 private def sortExposureFailures : Bool :=
   let betaPi := Ixon.Expr.app (.leanLam (.sort 1) (.leanAll (.var 0) (.var 1))) (.sort 0)
@@ -3720,6 +3833,12 @@ private def sortExposureCases : TestSeq :=
   ++ test "sort exposure: warm binder checks and zero-method exposure need no remaining reduction fuel"
     ([false, true].all fun typeLevel => [false, true].all fun instrumented =>
       [false, true].all fun noAccel => sortExposureInferencePaths typeLevel true instrumented noAccel)
+  ++ test "sort exposure: a core hit retains original child types through binder, lambda, and let inference"
+    ([false, true].all fun typeLevel => [false, true].all fun instrumented =>
+      [false, true].all fun noAccel => sortExposureInferencePaths typeLevel false instrumented noAccel 1)
+  ++ test "sort exposure: an isolated no-delta hit publishes the outer result and preserves exited-scope histories"
+    ([false, true].all fun typeLevel => [false, true].all fun instrumented =>
+      [false, true].all fun noAccel => sortExposureInferencePaths typeLevel false instrumented noAccel 2)
   ++ test "sort exposure: a reduced Pi is rejected as a sort and failed binder scopes restore locals"
     sortExposureFailures
 
@@ -3868,6 +3987,7 @@ public def suite : List TestSeq :=
     cheapApplicationCases, exposedLambdaCases, repeatedBetaCases, betaTraceCases, hereditaryBetaCases, piExposureCases,
     polymorphicApplicationCases, constantCacheCases, cacheInvariantCases, recursiveCacheCases,
     lazyCacheCases, blockCacheCases, ingressCoherenceCases, sourceOwnershipCases, recursiveStateCases,
-    sourceAgreementCases, sourceCacheCases, compositeCacheCases, letCases, sortExposureCases, polymorphicDefinitionCases]
+    sourceAgreementCases, sourceCacheCases, compositeCacheCases, letCases, sortExposureCases, mixedWhnfCases,
+    polymorphicDefinitionCases]
 
 end Tests.Kernel.Consistency

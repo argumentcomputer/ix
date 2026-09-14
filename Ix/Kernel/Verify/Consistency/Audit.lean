@@ -673,6 +673,69 @@ private def piExposureRoots : Array RootAllowance := #[
   { root := ``SynthesisInference.beta_public_whnf_sound, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] }
 ]
 
+/-- Cache producers and replay must precede semantic hereditary typing.
+The operational layer records raw executions and derives published hits. -/
+private def mixedCacheFrameRoots : Array Lean.Name := #[
+  ``BetaCacheFrame.refl,
+  ``BetaCacheFrame.trans,
+  ``BetaCacheFrame.instrument,
+  ``BetaCacheFrame.charge,
+  ``BetaCacheExecution.writeNoDelta_frame,
+  ``BetaCacheExecution.writeFull_frame,
+  ``BetaCacheExecution.writeNoDelta_intern,
+  ``BetaCacheExecution.writeFull_intern
+]
+
+private def mixedCacheKeyRoots : Array Lean.Name := #[
+  ``betaWhnfKey_congr,
+  ``betaWhnfKey_replay,
+  ``betaWhnfKey_prefix,
+  ``betaWhnfKey_charge,
+  ``BetaCacheFrame.key,
+  ``BetaCacheExecution.writeNoDelta_key,
+  ``BetaCacheExecution.writeFull_key
+]
+
+private def mixedCacheExecutionRoots : Array Lean.Name := #[
+  ``BetaCoreExecution.after,
+  ``BetaCoreExecution.first,
+  ``BetaCoreExecution.terminal,
+  ``BetaCoreExecution.run,
+  ``BetaCoreExecution.reading,
+  ``BetaCoreExecution.frame,
+  ``BetaCoreExecution.stable_key,
+  ``BetaCoreExecution.published,
+  ``BetaCoreExecution.replay,
+  ``BetaCoreExecution.replay_run,
+  ``BetaCoreExecution.betaTrace,
+  ``BetaNoDeltaExecution.after,
+  ``BetaNoDeltaExecution.first,
+  ``BetaNoDeltaExecution.terminal,
+  ``BetaNoDeltaExecution.run,
+  ``BetaNoDeltaExecution.reading,
+  ``BetaNoDeltaExecution.frame,
+  ``BetaNoDeltaExecution.stable_key,
+  ``BetaNoDeltaExecution.published,
+  ``BetaNoDeltaExecution.replay,
+  ``BetaNoDeltaExecution.replay_run,
+  ``BetaNoDeltaExecution.betaTrace,
+  ``BetaPublicExecution.after,
+  ``BetaPublicExecution.first,
+  ``BetaPublicExecution.terminal,
+  ``BetaPublicExecution.run,
+  ``BetaPublicExecution.reading,
+  ``BetaPublicExecution.frame,
+  ``BetaPublicExecution.stable_key,
+  ``BetaPublicExecution.published,
+  ``BetaPublicExecution.replay,
+  ``BetaPublicExecution.replay_run,
+  ``BetaPublicExecution.betaTrace,
+  ``BetaPublicWhnfPlan.execution,
+  ``BetaPublicWhnfPlan.execution_after,
+  ``RecM.whnfNoDeltaImplNonLeaf_fullMiss_conditional,
+  ``RecM.whnfWithNatSuccModeNonLeaf_miss_conditional
+]
+
 private def localScopeFrameRoots : Array Lean.Name := #[
   ``LocalContext.Equiv.refl, ``LocalContext.Equiv.symm, ``LocalContext.Equiv.trans,
   ``LocalContext.Equiv.size, ``LocalContext.Equiv.find?, ``LocalContext.Equiv.wf,
@@ -1282,7 +1345,17 @@ def roots : Array RootAllowance := #[
 }) ++ (betaRoots ++ typeOriginRoots ++ substitutedOriginRoots ++ exposedOriginRoots ++
     repeatedBetaRoots ++ betaTraceRoots ++ hereditaryBetaRoots ++ piExposureRoots ++ cacheTransportRoots).map (fun allowance => {
     allowance with forbiddenDependencies := allowance.forbiddenDependencies ++ forbiddenProduction })
-  ++ (recursiveLetShapeRoots ++ sortExposureRoots).map (fun root => {
+  ++ mixedCacheFrameRoots.map (fun root => {
+    root, standardAxioms := #[``propext, ``Quot.sound],
+    forbiddenDependencies := forbiddenProduction ++ #[``HereditaryTyping] })
+  ++ mixedCacheKeyRoots.map (fun root => {
+    root, standardAxioms := standard, nativeAxioms := #[expressionNative],
+    forbiddenDependencies := forbiddenProduction ++ #[``HereditaryTyping] })
+  ++ #[``SynthesisInference.beta_core_execution_sound, ``SynthesisInference.beta_noDelta_execution_sound,
+      ``SynthesisInference.beta_public_execution_sound].map (fun root => {
+    root, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative],
+    forbiddenDependencies := forbiddenProduction })
+  ++ (recursiveLetShapeRoots ++ sortExposureRoots ++ mixedCacheExecutionRoots).map (fun root => {
     root, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative],
     forbiddenDependencies := forbiddenProduction ++ #[``HereditaryTyping] })
   ++ (localScopeFrameRoots ++ localStateFrameRoots ++ recursiveStateFrameRoots ++ ingressFrameRoots ++

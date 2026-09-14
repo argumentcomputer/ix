@@ -119,7 +119,7 @@ increasing sequence of strongly inaccessible cardinals.
   and converts its returned type using checked beta origins. The recursive
   synthesis rules form binder contexts from the exposed level and preserve
   later beta derivations and typed cache histories. Exposure supports direct
-  sorts, the existing public beta WHNF path, and its outer-cache hit. It
+  sorts and the public beta WHNF path with hits at any of its three cache layers. It
   preserves both inference-cache maps, so a child publication retains its
   original, possibly unreduced, type. Earlier retained type checks construct
   the conversion resource without a semantic typing premise. Finite reader,
@@ -601,7 +601,7 @@ lake test --wfail -- tc-unit
 lake -d Models/SetTheory build --wfail
 ```
 
-The consistency target checks 1,336 exact theorem boundaries. The production
+The consistency target checks 1,391 exact theorem boundaries. The production
 environment roots retain four existing generated output-length proofs,
 reached through expression/universe construction, names, and the full
 production method table. They introduce no new native proofs. The model
@@ -610,8 +610,9 @@ extension lemma and `ModelTyping.no_false` use only `propext`,
 The production roots additionally forbid the abstract
 `CheckSuccessSound`/`SupportedCheckFragment` interfaces and the independent
 certificate validator in their dependency closures.
-Sort-exposure traces, source resources, beta derivation producers, and cache
-history constructors additionally forbid the semantic hereditary invariant;
+Sort-exposure traces, source resources, beta derivation producers, cache-layer
+executions, replay, and inference-cache history constructors additionally forbid
+the semantic hereditary invariant;
 the soundness induction derives that invariant after source reconstruction.
 
 The polymorphic inference, substitution, and binder inference roots retain only the two existing
@@ -720,22 +721,30 @@ no field for this invariant. The audit explicitly forbids it in the recursive
 let constructor, returned-reading proof, function-type derivation constructor,
 and source derivation producer. The 31 additional boundaries preserve every
 previous exact axiom profile and introduce no axioms or native proofs.
-`BetaPublicWhnfPlan` connects a raw beta path to public WHNF when its result
-is a sort, Pi, or lambda. It computes the context-key states, optional counters,
-shared-fuel charge, and insertions into the structural, no-delta, and outer
-caches. The reducer tails are proved to stop on these constructors without
-additional callback or lookup premises. `BetaPiExposure` derives the actual
-`ensureForallDirect` call and the returned domain/codomain readings. It either
-executes a cold public path or reuses that path's exact result from the outer
-cache. Cold paths require three cache misses and an inactive native-reduction
-guard; warm outer-cache hits need no fuel. `checkedTrace` constructs the
+`BetaCoreExecution`, `BetaNoDeltaExecution`, and `BetaPublicExecution` connect
+raw beta paths ending at a sort, Pi, or lambda to the three actual WHNF layers.
+Each layer either executes its reducer or retains the execution that produced
+its exact cached result. This covers partially populated caches and either
+native-reduction guard value. A core miss always publishes; the two upper
+layers suppress new writes during native reduction. Only a public outer miss
+charges shared fuel, including when a lower cache supplies its result. The
+computed state retains key memoization, counters, and every cache update while
+preserving both inference maps, constants, local context, and mode flags.
+Publication and key-stability proofs derive later hits directly from earlier
+executions, including loose-variable context digests. Those hits run without
+recursive methods or fuel. The scoped semantic reader still excludes loose
+variables. The earlier three-miss `BetaPublicWhnfPlan` embeds into this execution.
+The reducer tails stop on the supported terminal constructors without extra
+callback or lookup premises. Pi and sort exposure use these executions in the
+original inference recursion. `checkedTrace` constructs the
 conversion from a retained actual type check. `SynthesisInference.appBeta`
 uses that conversion in the original inference recursion, preserving dependent
 codomain substitution, checked lambda domains, and all later beta origins.
 The existing synthesis admission and environment roots include this case.
-These 38 additional audited boundaries introduce no axioms or native proofs.
-Mixed cache states, general WHNF cache agreement, other reducers, and general
-inference-resource construction remain open.
+These boundaries introduce no axioms or native proofs. Cached beta traces
+derive their meaning from the original source check, with no semantic typing
+field in the cache execution. General WHNF cache agreement, other reducers,
+and automatic inference-resource construction remain open.
 `SynthesisInference.cached` retains the original tree behind an inference
 cache hit. Its soundness and beta derivations reuse the actual lambda-body,
 dependent codomain, and argument checks. `reuseFull` derives the cached result
@@ -876,6 +885,13 @@ results. Additional operational coverage checks context-key memoization for
 legacy loose variables. Negative cases reject mismatched carriers and invalid
 dependent witnesses. The scoped semantic reader still excludes loose variables.
 These execution tests do not construct the general finite inference resources.
+Mixed-cache regressions warm each layer through its actual producer and check
+sort, Pi, and lambda results across native guards, instrumentation, acceleration
+policies, inference modes, and loose-variable contexts. Whole-map comparisons
+check preserved unrelated entries, exact writes, fuel charges, and zero-method
+replay. Lower hits cannot bypass an exhausted public miss budget. Binder, lambda,
+and let inference also run with isolated core or no-delta hits while retaining
+original child types and cache histories from exited scopes.
 Polymorphic-call regressions include Prop/Type instances in real function
 bodies, `max`/`imax` simplification inside Pi domains, closed nested references
 under active locals, separate cache keys for different universe instances,
@@ -977,7 +993,7 @@ Type, and parameterized universes; persistent and cleared caches; exact child
 publications; warm exposure at zero method fuel; changed lambda-body beta;
 and rejection of a reduced function type with local-scope cleanup. They also
 exercise instrumentation and acceleration flags.
-The unit suite contains 731 checks. The anonymous differential additionally
+The unit suite contains 738 checks. The anonymous differential additionally
 serializes eleven cycle-policy fixtures and checks exact target sets, verdicts,
 failure counts, and cycle diagnostics in both implementations.
 
@@ -1026,7 +1042,7 @@ The VM pilot is preserved in the frozen archive and excluded from the host gate.
 | Executed sort exposure and recursive binder checks | [`Consistency/SortInference.lean`](../Ix/Kernel/Verify/Consistency/SortInference.lean), [`BetaPublicWhnf.lean`](../Ix/Kernel/Verify/Consistency/BetaPublicWhnf.lean), [`BetaWhnfInference.lean`](../Ix/Kernel/Verify/Consistency/BetaWhnfInference.lean) |
 | Retained derivations, dependent substitution, and semantic induction | [`Consistency/SynthesisDerivation.lean`](../Ix/Kernel/Verify/Consistency/SynthesisDerivation.lean), [`SynthesisShapes.lean`](../Ix/Kernel/Verify/Consistency/SynthesisShapes.lean), [`SynthesisReduction.lean`](../Ix/Kernel/Verify/Consistency/SynthesisReduction.lean), [`SynthesisMeaning.lean`](../Ix/Kernel/Verify/Consistency/SynthesisMeaning.lean), [`BinderMeaning.lean`](../Ix/Kernel/Verify/Consistency/BinderMeaning.lean), [`BetaChecking.lean`](../Ix/Kernel/Verify/Consistency/BetaChecking.lean) |
 | Let inference and typed cache history | [`Consistency/LetInference.lean`](../Ix/Kernel/Verify/Consistency/LetInference.lean), [`LetSynthesis.lean`](../Ix/Kernel/Verify/Consistency/LetSynthesis.lean), [`LetCache.lean`](../Ix/Kernel/Verify/Consistency/LetCache.lean), [`SynthesisCacheExecution.lean`](../Ix/Kernel/Verify/Consistency/SynthesisCacheExecution.lean) |
-| Public beta WHNF, cache writes, and application Pi exposure | [`Consistency/BetaPublicWhnf.lean`](../Ix/Kernel/Verify/Consistency/BetaPublicWhnf.lean), [`ApplicationWhnf.lean`](../Ix/Kernel/Verify/Consistency/ApplicationWhnf.lean), [`BetaWhnfInference.lean`](../Ix/Kernel/Verify/Consistency/BetaWhnfInference.lean) |
+| Public beta WHNF, cache writes and replay, and Pi/sort exposure | [`BetaCacheExecution.lean`](../Ix/Kernel/Verify/Consistency/BetaCacheExecution.lean), [`BetaCacheKeys.lean`](../Ix/Kernel/Verify/Consistency/BetaCacheKeys.lean), [`BetaPublicWhnf.lean`](../Ix/Kernel/Verify/Consistency/BetaPublicWhnf.lean), [`BetaWhnfInference.lean`](../Ix/Kernel/Verify/Consistency/BetaWhnfInference.lean) |
 | Retained type checks and changed cheap beta in lambda inference | [`Consistency/SynthesisInference.lean`](../Ix/Kernel/Verify/Consistency/SynthesisInference.lean), [`CheapBetaReading.lean`](../Ix/Kernel/Verify/Consistency/CheapBetaReading.lean), [`Formation.lean`](../Ix/Kernel/Verify/Consistency/Formation.lean) |
 | Source beta reduction and declaration conversion | [`Consistency/BetaSpine.lean`](../Ix/Kernel/Verify/Consistency/BetaSpine.lean), [`Simultaneous.lean`](../Ix/Kernel/Verify/Consistency/Simultaneous.lean), [`SpineReading.lean`](../Ix/Kernel/Verify/Consistency/SpineReading.lean), [`CheapBeta.lean`](../Ix/Kernel/Verify/Consistency/CheapBeta.lean), [`Model/BetaSpine.lean`](../Ix/Theory/Model/BetaSpine.lean) |
 | Production environment fragment and relative axiom policy | [`Consistency/Environment.lean`](../Ix/Kernel/Verify/Consistency/Environment.lean), [`Production.lean`](../Ix/Kernel/Verify/Consistency/Production.lean) |
