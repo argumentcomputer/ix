@@ -6,7 +6,7 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 import Ix.Kernel.Driver
 import Ix.Kernel.Verify.Consistency.Constant
 import Ix.Kernel.Verify.Consistency.SynthesisInference
-import Ix.Kernel.Verify.Consistency.Beta
+import Ix.Kernel.Verify.Consistency.BetaSpine
 import Ix.Kernel.Verify.Consistency.Validation
 
 /-!
@@ -438,6 +438,22 @@ inductive DefinitionCheckSupport {β : Type u}
       (references : body.ReferencesIn entries ∧
         (AExpr.app (.lam condition domain inner) argument).ReferencesIn entries) :
       DefinitionCheckSupport resolve entries trace body (.app (.lam condition domain inner) argument)
+  | betaDeclaredSpine {value domain inner body : AExpr β} {condition : Certified.PropWhen}
+      {consumed trailing : List (AExpr β)} {level typeBound valueBound : VLevel}
+      (typeInference : SynthesisInference resolve entries [] [] [] fuel trace.validated input.type
+        ((AExpr.lam condition domain inner).appN (consumed ++ trailing)) (.sort level) typeBound)
+      (valueInference : SynthesisInference resolve entries [] [] [] fuel trace.valueStart input.value
+        value ((body.instRev consumed).appN trailing) valueBound)
+      (peeling : LambdaPeel (.lam condition domain inner) consumed.length body)
+      (valueReading : readScopedExpr? resolve [] input.value = some value.erase)
+      (typeReading : readScopedExpr? resolve [] input.type =
+        some ((AExpr.lam condition domain inner).appN (consumed ++ trailing)).erase)
+      (scope : value.Scope input.universes.toNat 0 ∧
+        ((AExpr.lam condition domain inner).appN (consumed ++ trailing)).Scope input.universes.toNat 0)
+      (references : value.ReferencesIn entries ∧
+        ((AExpr.lam condition domain inner).appN (consumed ++ trailing)).ReferencesIn entries) :
+      DefinitionCheckSupport resolve entries trace value
+        ((AExpr.lam condition domain inner).appN (consumed ++ trailing))
 
 theorem DefinitionCheckSupport.sound {β : Type u}
     {resolve : Address → Option (ConstRef β)} {entries : Model.Environment β}
@@ -457,6 +473,14 @@ theorem DefinitionCheckSupport.sound {β : Type u}
       obtain ⟨_, typeTyped, _⟩ := typeInference.closed_sound typeReading trace.typeRun
       obtain ⟨conversion, _⟩ := typeInference.beta_sound (.empty entries) (.empty _ _)
         typeReading trace.typeRun
+      obtain ⟨_, valueTyped, _⟩ := valueInference.closed_sound valueReading trace.valueRun
+      exact ⟨readScopedExpr?_closed valueReading, readScopedExpr?_closed typeReading,
+        scope.1, scope.2, references.1, references.2,
+        valueTyped.conv typeTyped conversion.symm⟩
+  | betaDeclaredSpine typeInference valueInference peeling valueReading typeReading scope references =>
+      obtain ⟨_, typeTyped, _⟩ := typeInference.closed_sound typeReading trace.typeRun
+      obtain ⟨conversion, _⟩ := typeInference.beta_peel_sound (.empty entries) (.empty _ _)
+        typeReading trace.typeRun peeling
       obtain ⟨_, valueTyped, _⟩ := valueInference.closed_sound valueReading trace.valueRun
       exact ⟨readScopedExpr?_closed valueReading, readScopedExpr?_closed typeReading,
         scope.1, scope.2, references.1, references.2,
@@ -486,6 +510,37 @@ def DefinitionBodyTrace.betaDeclaredSupport {β : Type u} {input : DefinitionInp
       (AExpr.app (.lam condition domain inner) argument).ReferencesIn entries) :
     DefinitionCheckSupport resolve entries trace body (.app (.lam condition domain inner) argument) :=
   .betaDeclared typeInference valueInference valueReading typeReading
+    (trace.scopes typeCoverage valueCoverage collision valueReading typeReading
+      valueConditions typeConditions) references
+
+/-- Admit a declaration whose checked type reduces through a lambda
+prefix and an untouched argument suffix. Validation supplies both source
+scopes; no inference of an intermediate beta result is required. -/
+def DefinitionBodyTrace.betaDeclaredSpineSupport {β : Type u} {input : DefinitionInput}
+    {fuel : Nat} {before : TcState .anon}
+    (trace : DefinitionBodyTrace input (methodsN fuel) before)
+    {resolve : Address → Option (ConstRef β)} {entries : Model.Environment β}
+    {value domain inner body : AExpr β} {condition : Certified.PropWhen}
+    {consumed trailing : List (AExpr β)} {level typeBound valueBound : VLevel}
+    {support : RunSupport} (typeCoverage : input.type.ValidationCoverage support)
+    (valueCoverage : input.value.ValidationCoverage support)
+    (collision : support.CollisionFree)
+    (typeInference : SynthesisInference resolve entries [] [] [] fuel trace.validated input.type
+      ((AExpr.lam condition domain inner).appN (consumed ++ trailing)) (.sort level) typeBound)
+    (valueInference : SynthesisInference resolve entries [] [] [] fuel trace.valueStart input.value
+      value ((body.instRev consumed).appN trailing) valueBound)
+    (peeling : LambdaPeel (.lam condition domain inner) consumed.length body)
+    (valueReading : readScopedExpr? resolve [] input.value = some value.erase)
+    (typeReading : readScopedExpr? resolve [] input.type =
+      some ((AExpr.lam condition domain inner).appN (consumed ++ trailing)).erase)
+    (valueConditions : ConditionsScoped input.universes.toNat value)
+    (typeConditions : ConditionsScoped input.universes.toNat
+      ((AExpr.lam condition domain inner).appN (consumed ++ trailing)))
+    (references : value.ReferencesIn entries ∧
+      ((AExpr.lam condition domain inner).appN (consumed ++ trailing)).ReferencesIn entries) :
+    DefinitionCheckSupport resolve entries trace value
+      ((AExpr.lam condition domain inner).appN (consumed ++ trailing)) :=
+  .betaDeclaredSpine typeInference valueInference peeling valueReading typeReading
     (trace.scopes typeCoverage valueCoverage collision valueReading typeReading
       valueConditions typeConditions) references
 

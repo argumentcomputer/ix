@@ -45,14 +45,20 @@ declaration success supplies the corresponding definition traces.
 For a source beta redex, the inference tree retains the lambda's checked
 domain and supplies the argument's membership in it. This derives equality
 and typing for the substituted result; denotational typing alone cannot
-recover that domain after proof values have been identified. A direct
-one-argument structural-WHNF step reads this result through the actual
-simultaneous-substitution walker and preserves intern coherence. Substitution
-also preserves the model's typing, checking, and equality judgments.
-Declaration admission now includes a beta-reducible declared type: the
-declaration's own executed type check justifies conversion from its reduced
-form to the original type. The environment model and no-False theorems include
-this case. General reduction and conversion remain open.
+recover that domain after proof values have been identified. This extends to
+the full original lambda prefix, with dependent arguments and any remaining
+application suffix. The actual multi-argument structural-WHNF step reads the
+result through simultaneous substitution and interned suffix rebuilding,
+preserving intern coherence. The walk's bounds concern the original body and
+argument trees. Substitution also preserves the model's typing, checking,
+and equality judgments. Selected cheap-beta plans preserve the same meaning
+when an actual source check is available.
+Declaration admission includes declared types reduced through a lambda
+prefix and a remaining suffix: the declaration's own executed type check
+justifies conversion from that result to the original type. The environment
+model and no-False theorems include this case. Checking origins still need to
+be tracked through changed cheap beta in lambda inference; general reduction
+and conversion remain open.
 Safe definition admission also rejects circular justification in both Lean and
 Rust, including `theorem loop : P := loop` with only `P : Prop` assumed. The
 production dependency walk returns an order with a proved decreasing rank;

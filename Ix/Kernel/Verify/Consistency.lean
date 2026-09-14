@@ -29,6 +29,10 @@ import Ix.Kernel.Verify.Consistency.Formation
 import Ix.Kernel.Verify.Consistency.SynthesisInference
 import Ix.Kernel.Verify.Consistency.BetaSubstitution
 import Ix.Kernel.Verify.Consistency.Beta
+import Ix.Kernel.Verify.Consistency.Simultaneous
+import Ix.Kernel.Verify.Consistency.SpineReading
+import Ix.Kernel.Verify.Consistency.BetaSpine
+import Ix.Kernel.Verify.Consistency.CheapBeta
 import Ix.Kernel.Verify.Consistency.Validation
 import Ix.Kernel.Verify.Consistency.RecursiveCache
 import Ix.Kernel.Verify.Consistency.RecursiveState
@@ -72,12 +76,16 @@ type checks. An inhabited product supplies a uniform codomain bound at an
 application, preserving the exact Prop condition. Direct lambda applications
 therefore synthesize full typing without an extra codomain inference call.
 Earlier type checks remain reusable after interface growth and universe
-instantiation. Source beta redexes retain their checked lambda domains;
-substitution and the actual one-argument WHNF step preserve typing and
-denotation under finite walker resources. Definition admission can reuse its
-executed declared-type inference to justify a beta conversion to the value's
-inferred type. This path is included in environment model preservation.
-General reduction of generated types remains a separate obligation.
+instantiation. Source beta spines retain every original checked lambda
+domain. Simultaneous substitution and the actual multi-argument WHNF step
+preserve typing and denotation under finite walker resources, including the
+remaining application suffix. The substitution bounds concern the original
+body and arguments. Selected cheap-beta plans have the same typed meaning
+when an actual source check is available. Definition admission can reuse its
+executed declared-type inference to justify a beta-prefix conversion to the
+value's inferred type. These paths are included in environment model
+preservation. Tracking the checking origins of generated types through
+changed cheap beta in lambda inference and general reduction remains open.
 Local cache hits agree with the actual declaration type. Constant
 hits agree with pure universe substitution of a loaded, admitted declaration;
 sort hits return the canonical successor sort. Application, forall, and lambda

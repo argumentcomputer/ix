@@ -29,9 +29,7 @@ private theorem getElemBang_singleton_append_succ_bw
     (#[a] ++ xs)[j + 1]! = xs[j]! := by
   rw [getElem!_pos (#[a] ++ xs) (j + 1) (by simp; omega),
     getElem!_pos xs j hj]
-  simpa using
-    (Array.getElem_append_right (xs := #[a]) (ys := xs) (i := j + 1)
-      (by simp))
+  simp
 
 private theorem simulSubstSpec_mkApp_bw (f a : KExpr .anon) (md)
     (xs : Array (KExpr .anon)) (d : UInt64) :

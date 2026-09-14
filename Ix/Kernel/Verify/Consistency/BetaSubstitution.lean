@@ -12,7 +12,7 @@ namespace Ix.Kernel
 
 /-- The two pure walker specifications coincide for one replacement,
 including index shifting above the removed binder. -/
-theorem KExpr.simulSubstSpec_singleton {body argument : KExpr .anon} {depth : UInt64}
+theorem KExpr.simulSubstSpec_singleton_eq {body argument : KExpr .anon} {depth : UInt64}
     (bound : depth.toNat + body.size + 1 < UInt64.size) :
     KExpr.simulSubstSpec body #[argument] depth = KExpr.substSpec body argument depth := by
   induction body generalizing depth with
@@ -94,7 +94,7 @@ theorem simulSubst_singleton_readScopedExpr? {β : Type u}
       exact argumentBound)
     (by simpa using bodyBound) (fun _ h => Or.inr h) coherent (fun _ h => Or.inl h)
   refine ⟨?_, preserved⟩
-  rw [result, KExpr.simulSubstSpec_singleton (by simpa using bodyBound)]
+  rw [result, KExpr.simulSubstSpec_singleton_eq (by simpa using bodyBound)]
   exact readScopedExpr?_substSpec (depth := 0) (by simpa using bodyBound)
     argumentBound bodyReads argumentReads
 

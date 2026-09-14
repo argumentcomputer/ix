@@ -524,6 +524,90 @@ private def betaUnderBinder : Bool :=
   | .ok passed after => passed && after.lctx.size == 0
   | .error _ _ => false
 
+/-- Observe one production step, including the exact consumed prefix. The
+partial cases retain binders; the function case exposes a new lambda only
+after substitution and therefore leaves its argument for a later step. -/
+private def multiBetaLocalResult (shape : Nat) : Bool :=
+  let action : RecM .anon Bool := RecM.withLctxScope do
+    let (carrier, _) ← TcM.openBinder (m := .anon) () () (.mkSort .mkZero) (.mkVar 0 ())
+    let (first, _) ← TcM.openBinder (m := .anon) () () carrier (.mkVar 0 ())
+    let (second, _) ← TcM.openBinder (m := .anon) () () carrier (.mkVar 0 ())
+    let three := KExpr.mkLam () () (.mkSort .mkZero)
+      (.mkLam () () (.mkVar 0 ()) (.mkLam () () (.mkVar 1 ()) (.mkVar 1 ())))
+    let identity := KExpr.mkLam () () carrier (.mkVar 0 ())
+    let head := if shape == 3 then
+        KExpr.mkLam () () (.mkAll () () carrier carrier) (.mkVar 0 ())
+      else if shape == 4 then
+        KExpr.mkLam () () (.mkSort .mkZero) (.mkLam () () (.mkVar 0 ()) second)
+      else three
+    let arguments := if shape == 1 || shape == 4 then #[carrier, first]
+      else if shape == 2 then #[carrier]
+      else if shape == 3 then #[identity, first]
+      else if shape == 5 then #[carrier, carrier, second]
+      else #[carrier, first, second]
+    let term := KExpr.mkAppN head arguments
+    if shape == 5 then
+      try
+        let _ ← RecM.inferCall term
+        return false
+      catch _ => return true
+    let _ ← RecM.inferCall term
+    let expected := if shape == 1 then KExpr.mkLam () () carrier first
+      else if shape == 2 then KExpr.mkLam () () carrier (.mkLam () () carrier (.mkVar 1 ()))
+      else if shape == 3 then KExpr.mkApp identity first
+      else if shape == 4 then second
+      else first
+    let (rawHead, rawArguments) := term.collectSpine
+    let (_, consumed) := RecM.consumeBetaLams rawHead rawArguments
+    let beforeStep ← get
+    let .next result ← RecM.whnfCoreWithFlagsStep term .FULL | return false
+    let cheap ← TcM.runIntern (cheapBetaReduce term)
+    let afterStep ← get
+    return consumed == (if shape == 3 then #[identity] else arguments) &&
+      result == expected && result != term && first != second &&
+      afterStep.env.nextFVarId == beforeStep.env.nextFVarId && afterStep.lctx.size == beforeStep.lctx.size &&
+      cheap == (if shape == 1 || shape == 2 then term else expected)
+  match TcM.runRec action (TcState.ofEnvAnon {}) with
+  | .ok passed after => passed && after.lctx.size == 0
+  | .error _ _ => false
+
+/-- Distinct carrier addresses make selecting the wrong argument observable.
+The second carrier retains an unused universe-table entry to distinguish its
+content-addressed declaration from the first carrier's identical type. -/
+private def multiBetaDeclaredType (level : Ixon.Univ) (universes : UInt64 := 0)
+    (dependent wrongValue : Bool := false) : Ixon.Env × Address := Id.run do
+  let (env, carrier) := storeConst {}
+    ⟨.axio ⟨false, universes, .sort 0⟩, #[], #[], #[level]⟩
+  let (env, otherCarrier) := storeConst env
+    ⟨.axio ⟨false, universes, .sort 0⟩, #[], #[], #[level, .succ level]⟩
+  let arguments := if universes == 0 then #[] else #[0]
+  let (env, witness) := storeConst env
+    ⟨.axio ⟨false, universes, .ref 0 arguments⟩, #[], #[carrier], #[level]⟩
+  let (env, otherWitness) := storeConst env
+    ⟨.axio ⟨false, universes, .ref 0 arguments⟩, #[], #[otherCarrier], #[level]⟩
+  let head := Ixon.Expr.leanLam (.sort 0)
+    (.leanLam (if dependent then .var 0 else .sort 0) (.var 1))
+  return storeConst env
+    ⟨.defn ⟨.defn, .safe, universes,
+      .app (.app head (.ref 0 arguments)) (.ref (if dependent then 2 else 1) arguments),
+      .ref (if wrongValue then 3 else 2) arguments⟩,
+      #[], #[carrier, otherCarrier, witness, otherWitness], #[level]⟩
+
+/-- The declared type reduces to `F A` after consuming just its first
+argument. The untouched suffix is essential to matching the witness's type. -/
+private def multiBetaDeclaredSuffix (level : Ixon.Univ) : Ixon.Env := Id.run do
+  let (env, carrier) := storeConst {}
+    ⟨.axio ⟨false, 0, .sort 0⟩, #[], #[], #[level]⟩
+  let functionType := Ixon.Expr.leanAll (.sort 0) (.sort 0)
+  let (env, family) := storeConst env
+    ⟨.axio ⟨false, 0, functionType⟩, #[], #[], #[level]⟩
+  let (env, witness) := storeConst env
+    ⟨.axio ⟨false, 0, .app (.ref 0 #[]) (.ref 1 #[])⟩, #[], #[family, carrier], #[]⟩
+  return (storeConst env
+    ⟨.defn ⟨.defn, .safe, 0,
+      .app (.app (.leanLam functionType (.var 0)) (.ref 0 #[])) (.ref 1 #[]),
+      .ref 2 #[]⟩, #[], #[family, carrier, witness], #[level]⟩).1
+
 private def applicationCases : TestSeq :=
   test "application environment: Prop/Type identity calls and transitive theorem calls check"
     (allSucceeded applicationEnvironment 5 { clearEvery := 0 })
@@ -579,6 +663,29 @@ private def applicationCases : TestSeq :=
     betaUnderBinder
   ++ test "beta conversion: reducing a declared proposition cannot make it its own proof"
     (let (env, target) := betaDeclaredType .zero 0 true; rowFailed env target)
+
+private def multiBetaCases : TestSeq :=
+  test "multi beta: three dependent arguments retain outer-to-inner order" (multiBetaLocalResult 0)
+  ++ test "multi beta: two consumed binders leave a capture-free lambda" (multiBetaLocalResult 1)
+  ++ test "multi beta: one consumed binder substitutes through two remaining domains" (multiBetaLocalResult 2)
+  ++ test "multi beta: a newly exposed lambda retains the unconsumed argument suffix" (multiBetaLocalResult 3)
+  ++ test "cheap beta: a closed body selects the original outer local" (multiBetaLocalResult 4)
+  ++ test "multi beta: the dependent argument must inhabit the selected carrier" (multiBetaLocalResult 5)
+  ++ test "multi beta admission: distinct carrier arguments reduce in Prop and Type"
+    (allSucceeded (multiBetaDeclaredType .zero).1 5 &&
+      allSucceeded (multiBetaDeclaredType (.succ .zero)).1 5)
+  ++ test "multi beta admission: declared universe parameters survive simultaneous substitution"
+    (allSucceeded (multiBetaDeclaredType (.var 0) 1).1 5)
+  ++ test "multi beta admission: the second lambda domain depends on the first argument"
+    (allSucceeded (multiBetaDeclaredType .zero 0 true).1 5 &&
+      allSucceeded (multiBetaDeclaredType (.succ .zero) 0 true).1 5)
+  ++ test "multi beta admission: conversion succeeds with fresh per-item caches"
+    (allSucceeded (multiBetaDeclaredType .zero).1 5 { clearEvery := 1 })
+  ++ test "multi beta admission: rebuilding the suffix retains the family application"
+    (allSucceeded (multiBetaDeclaredSuffix .zero) 4 &&
+      allSucceeded (multiBetaDeclaredSuffix (.succ .zero)) 4)
+  ++ test "multi beta admission: selecting a witness of the other carrier is rejected"
+    (let (env, target) := multiBetaDeclaredType .zero 0 false true; rowFailed env target)
 
 /-- Call a polymorphic identity from a monomorphic function body. Universe
 indices select entries in the declaration's explicit level table. -/
@@ -2171,7 +2278,7 @@ private def polymorphicDefinitionCases : TestSeq :=
       | _ => false : Bool)
 
 public def suite : List TestSeq :=
-  [cases, polymorphicCases, specializationCases, binderCases, applicationCases,
+  [cases, polymorphicCases, specializationCases, binderCases, applicationCases, multiBetaCases,
     polymorphicApplicationCases, constantCacheCases, cacheInvariantCases, recursiveCacheCases,
     lazyCacheCases, blockCacheCases, ingressCoherenceCases, sourceOwnershipCases, recursiveStateCases,
     sourceAgreementCases, sourceCacheCases, polymorphicDefinitionCases]

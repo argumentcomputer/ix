@@ -476,7 +476,7 @@ lake test --wfail -- tc-unit
 lake -d Models/SetTheory build --wfail
 ```
 
-The consistency target checks 413 exact theorem boundaries. The production
+The consistency target checks 470 exact theorem boundaries. The production
 environment roots retain four existing generated output-length proofs,
 reached through expression/universe construction, names, and the full
 production method table. They introduce no new native proofs. The model
@@ -492,14 +492,23 @@ Their model-side level congruence introduces no native proof dependency.
 Semantic checking against a formed type and the new product-fibre universe
 bound also use only standard Lean axioms. The substitution rules for model
 typing, checking, and equality introduce no additional assumptions.
-`SynthesisInference.beta_sound` derives source beta equality and result typing
-from the actual lambda and argument inference. Its domain-shape proof retains
-information lost when proof values are identified. `beta_step` connects this
-to the one-argument production WHNF step, with finite construction, size, and
-collision resources for its actual simultaneous-substitution walker. It
-derives the lambda-head callback from the real recursive method table and
-returns intern coherence. Arbitrary generated redexes and multi-step reduction
-still require further proofs.
+`SynthesisInference.beta_peel_sound` derives beta-prefix equality and result
+typing from actual lambda and dependent argument inference. Its domain-shape
+proof retains information lost when proof values are identified. The original
+lambda prefix is instantiated simultaneously, and the remaining arguments
+retain their order. `beta_many_step` connects this to the production WHNF
+step, with finite construction, size, and collision resources for the actual
+walker and interned suffix. It derives the lambda-head callback from the real
+recursive method table and returns intern coherence. Bounds concern the
+original body and argument trees rather than generated substitution trees.
+`cheapBeta_plan_sound` also connects selected closed-body and variable plans
+to this meaning when an actual source check is available.
+`DefinitionCheckSupport.betaDeclaredSpine` uses the declaration's own type
+check to justify conversion through such a prefix and suffix, and therefore
+reaches the environment model-extension and no-False roots. The checking
+origins of generated types still need to be tracked through changed cheap
+beta in lambda inference. Arbitrary generated redexes, repeated reduction,
+and the other conversion paths remain open.
 Kernel unit regressions cover lazy loading, both inference policies, interning
 reuse, dependent function types, shared references, lets, `imax` simplification,
 argument order, and rejection of wrong arities and out-of-range parameters.
@@ -519,6 +528,13 @@ Beta regressions cover declared-type conversion in Prop, Type, and at a
 universe parameter; substitution through returned function types; unequal
 initial hashes and repeated conversion; fresh caches; capture avoidance
 beneath returned lambdas; and rejection of a proposition used as its own proof.
+Multi-argument cases check dependent domains, distinct carrier arguments,
+partial lambda prefixes, capture avoidance through remaining binders, and
+suffix rebuilding after substitution exposes a new lambda. They exercise
+both cheap-beta fast paths and check that reduction preserves the local
+context and fresh-variable counter. Declaration cases cover universe
+parameters, cache clearing, a remaining family application, and rejection of
+a witness belonging to the other carrier.
 Polymorphic-call regressions include Prop/Type instances in real function
 bodies, `max`/`imax` simplification inside Pi domains, closed nested references
 under active locals, separate cache keys for different universe instances,
@@ -588,7 +604,7 @@ Definition-cycle regressions use content-addressed standalone and mutual
 declarations, including a self-justifying theorem, a two-member cycle, type
 cycles, lets, shared syntax, and binders. They check repeated member failures,
 acyclic forward references, cache clearing, and the partial/unsafe policy.
-The unit suite contains 596 checks. The anonymous differential additionally
+The unit suite contains 608 checks. The anonymous differential additionally
 serializes eight cycle-policy fixtures and checks exact target sets, verdicts,
 failure counts, and cycle diagnostics in both implementations.
 
@@ -631,7 +647,7 @@ The VM pilot is preserved in the frozen archive and excluded from the host gate.
 | Source ownership, block registration, and finite preflight | [`Consistency/BlockOwnership.lean`](../Ix/Kernel/Verify/Consistency/BlockOwnership.lean), [`Consistency/SourceOwnershipCheck.lean`](../Ix/Kernel/Verify/Consistency/SourceOwnershipCheck.lean), [`SourceOwnership.lean`](../Ix/Kernel/SourceOwnership.lean) |
 | Dependent binders and function bodies | [`Consistency/BinderInference.lean`](../Ix/Kernel/Verify/Consistency/BinderInference.lean), [`Application.lean`](../Ix/Kernel/Verify/Consistency/Application.lean), [`BinderOpening.lean`](../Ix/Kernel/Verify/Consistency/BinderOpening.lean), [`Context.lean`](../Ix/Kernel/Verify/Consistency/Context.lean), [`Model/Checking.lean`](../Ix/Theory/Model/Checking.lean) |
 | Inferred type formation and direct lambda applications | [`Consistency/SynthesisInference.lean`](../Ix/Kernel/Verify/Consistency/SynthesisInference.lean), [`Formation.lean`](../Ix/Kernel/Verify/Consistency/Formation.lean), [`Model/UniverseBounds.lean`](../Ix/Theory/Model/UniverseBounds.lean) |
-| Source beta reduction and declaration conversion | [`Consistency/Beta.lean`](../Ix/Kernel/Verify/Consistency/Beta.lean), [`BetaSubstitution.lean`](../Ix/Kernel/Verify/Consistency/BetaSubstitution.lean), [`Model/Substitution.lean`](../Ix/Theory/Model/Substitution.lean) |
+| Source beta reduction and declaration conversion | [`Consistency/BetaSpine.lean`](../Ix/Kernel/Verify/Consistency/BetaSpine.lean), [`Simultaneous.lean`](../Ix/Kernel/Verify/Consistency/Simultaneous.lean), [`SpineReading.lean`](../Ix/Kernel/Verify/Consistency/SpineReading.lean), [`CheapBeta.lean`](../Ix/Kernel/Verify/Consistency/CheapBeta.lean), [`Model/BetaSpine.lean`](../Ix/Theory/Model/BetaSpine.lean) |
 | Production environment fragment and relative axiom policy | [`Consistency/Environment.lean`](../Ix/Kernel/Verify/Consistency/Environment.lean), [`Production.lean`](../Ix/Kernel/Verify/Consistency/Production.lean) |
 | Foundation assumptions, theorem contracts, and provenance | [Consistency model guide](theory.md) |
 | Host commands, receipts, and frozen regression evidence | [Certified checking guide](certified-checking.md) |
@@ -646,5 +662,6 @@ fixtures used by the existing proofs. Source hashes and attribution are in
 Apache license is preserved alongside the sources. The axiom-audit helper
 and direct production-fragment proofs are authored in Ix.
 `Model/LevelCongruence.lean`, `Model/Checking.lean`, `Model/UniverseBounds.lean`,
-and `Model/Substitution.lean` are Ix-authored mathematical additions, listed
-separately from the imported files in the theory provenance manifest.
+`Model/Substitution.lean`, `Model/BetaSubstitution.lean`, and
+`Model/BetaSpine.lean` are Ix-authored mathematical additions, listed separately
+from the imported files in the theory provenance manifest.

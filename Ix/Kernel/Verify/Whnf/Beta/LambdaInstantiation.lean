@@ -1,4 +1,5 @@
 import Ix.Kernel.Verify.Whnf.Beta.SimultaneousSubstitution
+import Ix.Kernel.Verify.Whnf.Beta.PeelTrace
 
 /-!
 # Walker-tight lambda instantiation

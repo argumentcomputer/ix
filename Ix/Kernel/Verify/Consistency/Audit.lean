@@ -11,6 +11,7 @@ import Ix.Kernel.Verify.Consistency.RecursiveState
 import Ix.Kernel.Verify.Consistency.SourceAgreement
 import Ix.Kernel.Verify.Consistency.SourceCache
 import Ix.Kernel.Verify.Consistency.Dependencies
+import Ix.Kernel.Verify.Consistency.CheapBeta
 import Ix.Kernel.Verify.Audit.Basic
 
 /-! Exact full-dependency boundaries for the direct model-refinement roots.
@@ -251,7 +252,7 @@ private def binderWalkerRoots : Array Lean.Name := #[
   ``openBinder_eq, ``openBinder_sound,
   ``abstractFVars_singleton_spec, ``abstractFVars_readScopedExpr?,
   ``readScopedExpr?_liftSpec, ``readScopedExpr?_substSpec, ``subst_readScopedExpr?,
-  ``KExpr.simulSubstSpec_singleton, ``simulSubst_singleton_readScopedExpr?,
+  ``KExpr.simulSubstSpec_singleton_eq, ``simulSubst_singleton_readScopedExpr?,
   ``ApplicationSubstitutionData.coherent, ``LambdaClosingData.coherent
 ]
 
@@ -262,6 +263,67 @@ private def forbiddenProduction : Array Lean.Name := #[
   `Ix.Kernel.SupportedCheckFragment,
   `Ix.Theory.Certified.checkProofCertified,
   `Ix.Certified.acceptsSerializedStore
+]
+
+/-- Typed lambda-prefix reduction and its concrete walker/plan boundaries. -/
+private def betaRoots : Array RootAllowance := #[
+  { root := ``Theory.Model.AExpr.appN_nil },
+  { root := ``Theory.Model.AExpr.appN_cons },
+  { root := ``Theory.Model.LambdaPrefix.inst },
+  { root := ``Theory.Model.LambdaPrefix.truncate, standardAxioms := #[``propext, ``Quot.sound] },
+  { root := ``Theory.Model.LambdaPeel.length_bound, standardAxioms := #[``propext] },
+  { root := ``Theory.Model.LambdaPeel.inst },
+  { root := ``Theory.Model.LambdaPeel.snoc, standardAxioms := #[``propext] },
+  { root := ``Theory.Model.LambdaPeel.betaPrefix, standardAxioms := #[``propext] },
+  { root := ``Theory.Model.ArgumentSpine.append, standardAxioms := standard },
+  { root := ``Theory.Model.ArgumentSpine.typing, standardAxioms := standard },
+  { root := ``Theory.Model.ConversionClaim.appN, standardAxioms := standard },
+  { root := ``Theory.Model.LambdaPrefix.beta_sound, standardAxioms := standard },
+  { root := ``Theory.Model.AExpr.inst_liftN_top, standardAxioms := #[``propext, ``Quot.sound] },
+  { root := ``Theory.Model.AExpr.instRevAt_zero },
+  { root := ``Theory.Model.AExpr.erase_instRevAt, standardAxioms := #[``propext] },
+  { root := ``Theory.Model.AExpr.instRevAt_sort },
+  { root := ``Theory.Model.AExpr.instRevAt_const },
+  { root := ``Theory.Model.AExpr.instRevAt_natLit },
+  { root := ``Theory.Model.AExpr.instRevAt_app, standardAxioms := #[``propext] },
+  { root := ``Theory.Model.AExpr.instRevAt_lam, standardAxioms := #[``propext, ``Quot.sound] },
+  { root := ``Theory.Model.AExpr.instRevAt_forallE, standardAxioms := #[``propext, ``Quot.sound] },
+  { root := ``Theory.Model.AExpr.instRevAt_proj, standardAxioms := #[``propext] },
+  { root := ``Theory.Model.AExpr.instRevAt_liftN, standardAxioms := #[``propext, ``Quot.sound] },
+  { root := ``Theory.Model.AExpr.instRevAt_bvar_below, standardAxioms := #[``propext, ``Quot.sound] },
+  { root := ``Theory.Model.AExpr.instRevAt_bvar_above, standardAxioms := #[``propext, ``Quot.sound] },
+  { root := ``Theory.Model.AExpr.instRevAt_bvar_selected, standardAxioms := #[``propext, ``Quot.sound] },
+  { root := ``BinderInference.lambdaPrefix, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``SynthesisInference.lambdaPrefix, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``SynthesisHead.appN_head },
+  { root := ``SynthesisInference.lambda_spine, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``SynthesisInference.beta_spine_sound, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``SynthesisInference.beta_peel_sound, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``SynthesisInference.beta_many_step, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``readScopedExpr?_simulSubstSpec, standardAxioms := standard, nativeAxioms := #[expressionNative] },
+  { root := ``simulSubst_readScopedExpr?, standardAxioms := standard, nativeAxioms := #[expressionNative] },
+  { root := ``argumentsReading_get, standardAxioms := #[``propext] },
+  { root := ``argumentsReading_reverse_get, standardAxioms := standard, nativeAxioms := #[expressionNative] },
+  { root := ``readScopedExpr?_appN, standardAxioms := standard, nativeAxioms := #[expressionNative] },
+  { root := ``readScopedExpr?_collectSpine, standardAxioms := standard, nativeAxioms := #[expressionNative] },
+  { root := ``betaPeel_readScopedExpr?, standardAxioms := #[``propext] },
+  { root := ``internAppChain_readScopedExpr?, standardAxioms := standard, nativeAxioms := #[expressionNative] },
+  { root := ``finishAppResult_readScopedExpr?, standardAxioms := standard, nativeAxioms := #[expressionNative] },
+  { root := ``DefinitionBodyTrace.betaDeclaredSpineSupport, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``RecM.appSpineView_go, standardAxioms := #[``propext, ``Quot.sound] },
+  { root := ``RecM.appSpineView_collectSpine, standardAxioms := #[``propext, ``Quot.sound] },
+  { root := ``RecM.finishAppResult_eq_foldlM, standardAxioms := standard, nativeAxioms := #[expressionNative] },
+  { root := ``RecM.finishAppResult_eq_internAppChain, standardAxioms := standard, nativeAxioms := #[expressionNative] },
+  { root := ``RecM.whnfCoreWithFlagsStep_betaMany, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``RecM.BetaPeel.fuel, standardAxioms := standard, nativeAxioms := #[expressionNative] },
+  { root := ``RecM.BetaPeel.of_consume, standardAxioms := standard, nativeAxioms := #[expressionNative] },
+  { root := ``RecM.BetaPeel.remaining_eq_drop, standardAxioms := standard, nativeAxioms := #[expressionNative] },
+  { root := ``RecM.BetaPeel.consumed_append_remaining, standardAxioms := standard, nativeAxioms := #[expressionNative] },
+  { root := ``RecM.BetaPeel.prepend },
+  { root := ``RecM.BetaPeel.of_peelLamsN, standardAxioms := #[``propext, ``Quot.sound] },
+  { root := ``WalkerRequest.Bounds.cheapBeta_simul, standardAxioms := standard, nativeAxioms := #[expressionNative] },
+  { root := ``cheapBetaPlan?_simul, standardAxioms := standard, nativeAxioms := #[expressionNative] },
+  { root := ``SynthesisInference.cheapBeta_plan_sound, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] }
 ]
 
 def roots : Array RootAllowance := #[
@@ -391,7 +453,8 @@ def roots : Array RootAllowance := #[
 }) ++ productionRoots.map (fun root => {
   root, standardAxioms := standard, nativeAxioms := productionNative,
   forbiddenDependencies := forbiddenProduction
-}) ++ #[{ root := ``extend_atomic_definition, standardAxioms := standard }]
+}) ++ betaRoots.map (fun allowance => { allowance with forbiddenDependencies := forbiddenProduction })
+  ++ #[{ root := ``extend_atomic_definition, standardAxioms := standard }]
 
 run_cmd Kernel.Verify.Audit.check roots
 

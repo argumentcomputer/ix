@@ -1,4 +1,4 @@
-import Ix.Kernel.Verify.Whnf.Beta.PeelTrace
+import Ix.Kernel.Verify.Support
 
 /-!
 # Singleton simultaneous substitution

@@ -1,4 +1,4 @@
-import Ix.Kernel.Verify.Whnf.Structural.StepAssembly
+import Ix.Kernel.Whnf
 
 /-!
 # Certified lambda peeling for general beta
@@ -37,10 +37,10 @@ theorem fuel
   intro fuel
   induction fuel generalizing current consumed with
   | zero =>
-      simpa only [consumeBetaLamsFuel_zero] using
+      simpa only [consumeBetaLamsFuel] using
         And.intro hpeel (And.intro hprefix hsize)
   | succ fuel ih =>
-      rw [consumeBetaLamsFuel_succ]
+      unfold consumeBetaLamsFuel
       by_cases hdone : consumed.size >= args.size
       · simp only [hdone, if_true]
         exact ⟨hpeel, hprefix, hsize⟩
@@ -81,7 +81,7 @@ theorem of_consume
     (consumed := Array.mkEmpty args.size) (.nil start) (by simp) (by simp)
       args.size
   dsimp only at h
-  rw [consumeBetaLams_equation] at hconsume
+  rw [consumeBetaLams] at hconsume
   rw [hconsume] at h
   exact h
 
@@ -96,7 +96,7 @@ theorem remaining_eq_drop
   rw [Array.toList_extract]
   simp only [List.extract_eq_take_drop]
   have hargsLength : args.toList.length = args.size := by
-    simpa using congrArg Array.size (Array.toArray_toList (xs := args))
+    simp
   have hdropLength :
       (args.toList.drop consumed.size).length =
         args.size - consumed.size := by

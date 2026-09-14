@@ -1,4 +1,5 @@
 import Ix.Kernel.Verify.Whnf.Beta.LambdaPeeling
+import Ix.Kernel.Verify.Whnf.Structural.StepAssembly
 
 /-!
 # Typed splitting at the multi-beta consumption boundary
