@@ -51,6 +51,8 @@ import Ix.Kernel.Verify.Consistency.WhnfCacheFrame
 import Ix.Kernel.Verify.Consistency.BetaTyping
 import Ix.Kernel.Verify.Consistency.BetaInference
 import Ix.Kernel.Verify.Consistency.BetaWhnfInference
+import Ix.Kernel.Verify.Consistency.BetaSourceInference
+import Ix.Kernel.Verify.Consistency.BetaExposureConstruction
 import Ix.Kernel.Verify.Consistency.SortInference
 import Ix.Kernel.Verify.Consistency.CheapBeta
 import Ix.Kernel.Verify.Consistency.Validation
@@ -162,7 +164,11 @@ beta paths ending at a sort, Pi, or lambda. Each of the three cache layers
 may retain a prior executed result. Native reduction suppresses new writes
 at the no-delta and outer layers; the structural layer still publishes.
 Replay derives the next hit from that publication and preserves memoized
-context keys. Only an outer miss charges shared fuel. Pi exposure uses the
+context keys. Successful beta calls now reconstruct their raw paths from
+the original source reading and finite arithmetic and hash resources. The
+actual run supplies the intermediate steps, iteration bound, cache choices,
+fuel charge, and final state. Cached entries retain their producing executions.
+Only an outer miss charges shared fuel. Pi exposure uses the
 same complete cache-layer execution. Application inference
 uses that exposure between argument checks and derives the type conversion
 from a retained actual check of the function type. Dependent codomain

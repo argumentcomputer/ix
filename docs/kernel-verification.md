@@ -601,7 +601,7 @@ lake test --wfail -- tc-unit
 lake -d Models/SetTheory build --wfail
 ```
 
-The consistency target checks 1,391 exact theorem boundaries. The production
+The consistency target checks 1,427 exact theorem boundaries. The production
 environment roots retain four existing generated output-length proofs,
 reached through expression/universe construction, names, and the full
 production method table. They introduce no new native proofs. The model
@@ -707,9 +707,10 @@ and intern coherence. `DefinitionBodyTrace.betaDeclaredStepsSupport` and
 `betaDeclaredWhnfPathSupport` carry these automatic origins into declaration
 admission. The 28 additional audited boundaries introduce no axioms or native
 proofs. This closes automatic semantic origins for finite head-beta paths of
-the supported source-inference fragment. Initial inference trees, operational
-paths, and representation resources remain explicit; deriving them for all
-accepted programs and covering the remaining WHNF/conversion paths remain open.
+the supported source-inference fragment. Initial inference trees and
+representation resources remain explicit. The source construction below
+recovers operational beta paths from successful calls; arbitrary accepted
+programs and the remaining WHNF/conversion paths remain open.
 Recursive lets use the same derivation: substituting the value into the body
 retains every checked child, including a function type exposed by substitution.
 `SynthesisInference.outputReading` derives returned syntax readings without a
@@ -745,6 +746,25 @@ These boundaries introduce no axioms or native proofs. Cached beta traces
 derive their meaning from the original source check, with no semantic typing
 field in the cache execution. General WHNF cache agreement, other reducers,
 and automatic inference-resource construction remain open.
+`BetaStepSource.construct` derives every raw and annotated spine component,
+lambda prefix, and consumed argument from the source reading. Its inputs
+contain only arithmetic bounds and collision freedom on the computed finite
+substitution and suffix candidates. `BetaWhnfSource.construct` reconstructs
+the complete path and iteration count from an actual successful bounded run;
+intermediate expressions, readings, states, and a separate termination
+witness are no longer supplied. The raw branch resource restricts the path to
+head beta followed by a sort, Pi, or lambda.
+The three cache-layer `exists_of_success` theorems observe their actual cache
+lookups and recover the successful lower calls, including the public fuel
+charge. Populated entries still require retained producing executions.
+`SynthesisInference.beta_public_of_success` and its lower-layer counterparts
+derive conversion, typing at the original inferred type, the returned reading,
+and final intern coherence from these constructed traces. Successful Pi and
+sort exposure similarly constructs the original exposure witnesses and their
+returned annotations. The 36 additional audited boundaries introduce no
+axiom or native proof; all 32 raw construction roots forbid the semantic
+hereditary invariant. General source-resource and WHNF-cache construction
+remain open.
 `SynthesisInference.cached` retains the original tree behind an inference
 cache hit. Its soundness and beta derivations reuse the actual lambda-body,
 dependent codomain, and argument checks. `reuseFull` derives the cached result

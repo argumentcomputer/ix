@@ -15,6 +15,8 @@ import Ix.Kernel.Verify.Consistency.CheapBeta
 import Ix.Kernel.Verify.Consistency.SynthesisCache
 import Ix.Kernel.Verify.Consistency.SynthesisCacheExecution
 import Ix.Kernel.Verify.Consistency.LetCache
+import Ix.Kernel.Verify.Consistency.BetaSourceInference
+import Ix.Kernel.Verify.Consistency.BetaExposureConstruction
 import Ix.Kernel.Verify.Audit.Basic
 
 /-! Exact full-dependency boundaries for the direct model-refinement roots.
@@ -736,6 +738,43 @@ private def mixedCacheExecutionRoots : Array Lean.Name := #[
   ``RecM.whnfWithNatSuccModeNonLeaf_miss_conditional
 ]
 
+/-- Source reconstruction and success inversion must not depend on the
+semantic invariant that the original inference soundness theorem derives. -/
+private def betaSourceExprRoots : Array Lean.Name := #[
+  ``BetaStepSource.selected_not_transient,
+  ``BetaStepSource.peeled,
+  ``BetaStepSource.substituted,
+  ``BetaStepSource.output,
+  ``BetaStepSource.after,
+  ``BetaStepSource.Resources,
+  ``BetaStepSource.construct,
+  ``BetaStepSource.construct_result,
+  ``BetaStepSource.construct_after,
+  ``BetaWhnfSource.Resources,
+  ``BetaWhnfSource.Resources.first
+]
+
+private def betaSourceExecutionRoots : Array Lean.Name := #[
+  ``BetaStepSource.construct_run,
+  ``BetaWhnfTerminal.core_step,
+  ``BetaWhnfSource.Witness,
+  ``BetaWhnfSource.construct,
+  ``BetaCoreExecution.exists_of_miss_success,
+  ``BetaWhnfSource.CoreResources,
+  ``BetaWhnfSource.NoDeltaResources,
+  ``BetaWhnfSource.PublicResources,
+  ``BetaCoreExecution.exists_of_success,
+  ``BetaNoDeltaExecution.exists_of_success,
+  ``BetaPublicExecution.exists_of_success,
+  ``BetaSortExposure.exists_of_success,
+  ``BetaPiExposure.exists_of_success,
+  ``RecM.whnfCoreWithFlagsNonLeaf_fullMiss_success,
+  ``RecM.whnfNoDeltaImplNonLeaf_fullMiss_core_success,
+  ``RecM.whnfWithNatSuccModeNonLeaf_miss_noDelta_success,
+  ``RecM.ensureSortWhnf_success,
+  ``RecM.ensureForallWhnf_success
+]
+
 private def localScopeFrameRoots : Array Lean.Name := #[
   ``LocalContext.Equiv.refl, ``LocalContext.Equiv.symm, ``LocalContext.Equiv.trans,
   ``LocalContext.Equiv.size, ``LocalContext.Equiv.find?, ``LocalContext.Equiv.wf,
@@ -1345,17 +1384,22 @@ def roots : Array RootAllowance := #[
 }) ++ (betaRoots ++ typeOriginRoots ++ substitutedOriginRoots ++ exposedOriginRoots ++
     repeatedBetaRoots ++ betaTraceRoots ++ hereditaryBetaRoots ++ piExposureRoots ++ cacheTransportRoots).map (fun allowance => {
     allowance with forbiddenDependencies := allowance.forbiddenDependencies ++ forbiddenProduction })
-  ++ mixedCacheFrameRoots.map (fun root => {
+  ++ #[``BetaStepSource.selected, ``BetaStepSource.selected_app].map (fun root => {
+    root, standardAxioms := #[``propext],
+    forbiddenDependencies := forbiddenProduction ++ #[``HereditaryTyping] })
+  ++ (mixedCacheFrameRoots ++ #[``betaWhnfCharge_success]).map (fun root => {
     root, standardAxioms := #[``propext, ``Quot.sound],
     forbiddenDependencies := forbiddenProduction ++ #[``HereditaryTyping] })
-  ++ mixedCacheKeyRoots.map (fun root => {
+  ++ (mixedCacheKeyRoots ++ betaSourceExprRoots).map (fun root => {
     root, standardAxioms := standard, nativeAxioms := #[expressionNative],
     forbiddenDependencies := forbiddenProduction ++ #[``HereditaryTyping] })
   ++ #[``SynthesisInference.beta_core_execution_sound, ``SynthesisInference.beta_noDelta_execution_sound,
-      ``SynthesisInference.beta_public_execution_sound].map (fun root => {
+      ``SynthesisInference.beta_public_execution_sound,
+      ``SynthesisInference.beta_whnf_of_success, ``SynthesisInference.beta_core_of_success,
+      ``SynthesisInference.beta_noDelta_of_success, ``SynthesisInference.beta_public_of_success].map (fun root => {
     root, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative],
     forbiddenDependencies := forbiddenProduction })
-  ++ (recursiveLetShapeRoots ++ sortExposureRoots ++ mixedCacheExecutionRoots).map (fun root => {
+  ++ (recursiveLetShapeRoots ++ sortExposureRoots ++ mixedCacheExecutionRoots ++ betaSourceExecutionRoots).map (fun root => {
     root, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative],
     forbiddenDependencies := forbiddenProduction ++ #[``HereditaryTyping] })
   ++ (localScopeFrameRoots ++ localStateFrameRoots ++ recursiveStateFrameRoots ++ ingressFrameRoots ++

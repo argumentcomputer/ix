@@ -99,11 +99,17 @@ function type. Dependent substitution rebuilds
 these derivations, including under retained binders. Each generated result
 therefore supplies the exact lambda domains and argument origins for every
 later head-beta step. This also handles a lambda whose body's inferred type
-changes by cheap beta. A finite operational WHNF path needs only raw execution,
-reading, and representation resources; its semantic origins and declaration
-conversion follow automatically from the original inference. Constructing
-the initial inference and operational resources for arbitrary accepted
-programs, the remaining reduction branches, and general conversion remain open.
+changes by cheap beta. Successful beta WHNF now reconstructs the complete
+operational path from the source reading and finite arithmetic and hashing
+resources. Its intermediate readings, step count, and exact final state are
+outputs of the construction. The actual three-layer call determines its cache
+branches and fuel charge; populated entries retain earlier producing executions.
+The original inference supplies the reconstructed path's semantic origins,
+so the returned term preserves its original type. Successful sort and Pi
+exposure also reconstructs the witnesses used by the original inference.
+Constructing initial inference resources for arbitrary accepted programs,
+general WHNF cache origins, the remaining reducers, and general conversion
+remain open.
 Full-mode let inference now uses its original declared-type, value, and opened
 body checks. The scoped reader interprets a let by value substitution, and the
 actual opening, abstraction, and substitution walkers preserve that reading
