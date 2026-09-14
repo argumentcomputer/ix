@@ -464,7 +464,15 @@ def callReturned.{u} (A : Sort u) (a : A) : A := ((fun x : A => fun y : A => x) 
   projection heads. It rejects cycles and exhaustion of its shared one-million
   step bound. Axioms, inductives, constructors, and recursors are leaves with
   separate admission rules; partial and unsafe definitions retain their safety
-  policy. Acyclic mutual definitions remain supported.
+  policy. Acyclic mutual definitions remain supported. The guard acts on stored
+  global references: Lean elaborates safe source recursion into recursor
+  applications, including well-founded recursion through `WellFounded.fix`.
+  Recursive calls supplied as local arguments do not cite the definition's own
+  global address. Structural, well-founded, and mutual source recursion are
+  covered by exported examples checked successfully by both host kernels.
+  Negative examples also reject an axiom-free declaration of `∀ P : Prop, P`
+  whose entire value is its own relative reference, and cycles across separate
+  blocks in a deliberately constructed internal environment.
 - `DefinitionDependencies.order_sound` derives a concrete dependency order from
   the production walk. Every entry is fresh and its collected dependencies
   precede it; `Ordered.wellFounded` derives a decreasing natural-number rank.
@@ -475,6 +483,14 @@ def callReturned.{u} (A : Sort u) (a : A) : A := ((fun x : A => fun y : A => x) 
   safe validation, and `.referencesIn` connects that order to the references of
   the model's reading. Admission of every entry in that order still needs the
   broader body-typing and model-extension proofs.
+- A cached block verdict needs the original completed check and preserved
+  declarations. `checkCoordinatedBlock` replays a cached success before checking
+  the body; low-level `KEnv.insert` does not invalidate that verdict. An internal
+  probe that replaces an already checked declaration can therefore replay
+  success for the replacement, which fails when checked with an empty verdict
+  cache. This probe bypasses fresh source ingress. The full theorem must derive
+  verdict validity from the initial state, immutable loading, completed checks,
+  and failure isolation; arbitrary internal states cannot supply that premise.
 - `checkEnvAnon` returns `.ok results` **and every result row has no error**.
   The outer `.ok` alone does not mean that the declarations passed.
 
@@ -867,6 +883,13 @@ Definition-cycle regressions use content-addressed standalone and mutual
 declarations, including a self-justifying theorem, a two-member cycle, type
 cycles, lets, shared syntax, and binders. They check repeated member failures,
 acyclic forward references, cache clearing, and the partial/unsafe policy.
+Three axiom-free cases reject self-justifying definitions, theorems, and opaque
+declarations of `∀ P : Prop, P`; a separate internal-state case checks that
+dependency traversal crosses block boundaries. Positive source-recursion
+regressions export complete structural, well-founded, and mutual dependency
+closures with partial output disabled. Both hosts must successfully check every
+target, including each requested fixture. Matching rejections or omitted exports
+cannot pass. These also run separately as `tc-safe-recursion`.
 Twelve composite-cache regressions cover real application, Pi, and lambda checks,
 zero-fuel replay under both policies, inference-only exclusion from full mode,
 lazy loading, scope changes, clearing and repopulation, beta Pi exposure,
@@ -885,8 +908,8 @@ both policies, clearing and rebuilding, cheap beta in the generated type,
 theorem admission with both cache-clearing settings, nested capture avoidance,
 and cleanup after value-comparison and body-inference failures. They exercise
 production independently of the finite resources used by the proof.
-The unit suite contains 716 checks. The anonymous differential additionally
-serializes eight cycle-policy fixtures and checks exact target sets, verdicts,
+The unit suite contains 723 checks. The anonymous differential additionally
+serializes eleven cycle-policy fixtures and checks exact target sets, verdicts,
 failure counts, and cycle diagnostics in both implementations.
 
 ## Certified host adapters

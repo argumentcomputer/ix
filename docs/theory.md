@@ -120,7 +120,13 @@ production dependency walk returns an order with a proved decreasing rank;
 finite collision freedom ensures its memoized collector includes every syntax
 reference. Successful validation exposes that order to the model-reference
 proof. Constructing interpretations for all coordinated declarations remains
-part of the full checker refinement.
+part of the full checker refinement. Safe source recursion is elaborated into
+recursor applications and remains supported; the rejected cycles refer directly
+to global declaration addresses. A cached block verdict additionally needs
+provenance from a completed check of the same declarations. Replacing a checked
+declaration in internal state while retaining its cached verdict bypasses a new
+body check, so the general proof must establish immutable loading and cache
+validity from the actual fresh-state execution.
 Constant cache hits derive the same typing from concrete agreement with pure
 universe substitution of a loaded declaration; sort hits use the canonical
 successor sort. Sort and already-loaded constant inference preserve agreement

@@ -4,7 +4,8 @@ public import Tests.Ix.Kernel.IxonFixtures
 
 /-!
 Definition-cycle regressions through the real content-addressed source loader
-and public checker. The only axiom in each negative logical example is `P : Prop`.
+and public checker. The logical examples either have no axioms or assume only
+`P : Prop`. A separate internal-state test checks cycles across block boundaries.
 -/
 
 namespace Tests.Kernel.DefinitionDependencies
@@ -13,6 +14,13 @@ open LSpec Ix.Kernel Tests.Kernel.Fixtures
 
 private def propSource : Ixon.Env × Address :=
   storeConst {} ⟨.axio ⟨false, 0, .sort 0⟩, #[], #[], #[.zero]⟩
+
+/-- A hash-verified declaration of every proposition, with no source axioms.
+The relative self-reference is encoded without any assumed hash collision. -/
+private def axiomFreeCycleSource (kind : Ix.DefKind) : Ixon.Env × Address :=
+  storeConst {}
+    ⟨.defn ⟨kind, .safe, 0, .leanAll (.sort 0) (.var 0), .recur 0 #[]⟩,
+      #[], #[], #[.zero]⟩
 
 private def cycleSource (kind : Ix.DefKind) (asBlock : Bool)
     (value : Ixon.Expr := .recur 0 #[]) (safety : Ix.DefinitionSafety := .safe)
@@ -93,9 +101,30 @@ private def nonlogicalPasses (safety : Ix.DefinitionSafety) : Bool :=
   | .ok rows => rows.size == 2 && rows.all (·.err?.isNone)
   | .error _ => false
 
+/-- These deliberately constructed internal keys are not content hashes.
+The dependency traversal must follow edges across coordinated blocks too. -/
+private def rejectsSeparatedBlocks : Bool :=
+  let first : KId .anon := ⟨Address.blake3 "separated-cycle-first".toUTF8, ()⟩
+  let second : KId .anon := ⟨Address.blake3 "separated-cycle-second".toUTF8, ()⟩
+  let type := KExpr.mkAll () () (.mkSort .mkZero) (.mkVar 0 ())
+  let declaration (block target : KId .anon) : KConst .anon :=
+    .defn () () .defn .safe (.regular 0) 0 type (.mkConst target #[]) () block
+  let env := ({} : AnonEnv)
+    |>.insert first (declaration first second)
+    |>.insert second (declaration second first)
+    |>.insertBlock first #[first]
+    |>.insertBlock second #[second]
+  [first, second].all fun requested =>
+    match TcM.checkConst requested (.ofEnvAnon env) with
+    | .error (.other message) _ => ("cyclic definition dependency").isPrefixOf message
+    | _ => false
+
 /-- Serialized-source regressions shared with the Rust differential suite.
 The last two fields are the exact target count and expected failure count. -/
 public def parityFixtures : Array (String × Ixon.Env × Nat × Nat) := #[
+  ("axiom-free-theorem-cycle", (axiomFreeCycleSource .thm).1, 1, 1),
+  ("axiom-free-definition-cycle", (axiomFreeCycleSource .defn).1, 1, 1),
+  ("axiom-free-opaque-cycle", (axiomFreeCycleSource .opaq).1, 1, 1),
   ("standalone-cycle", (cycleSource .thm false).1, 2, 1),
   ("one-member-cycle", (cycleSource .thm true).1, 2, 1),
   ("mutual-cycle", mutualCycle.1, 3, 2),
@@ -107,7 +136,12 @@ public def parityFixtures : Array (String × Ixon.Env × Nat × Nat) := #[
 ]
 
 public def suite : List TestSeq := [
-  test "definition dependencies: a standalone theorem cannot justify itself"
+  ([Ix.DefKind.defn, .thm, .opaq].foldl (init := .done) fun tests kind =>
+    tests ++ test s!"definition dependencies: an axiom-free {repr kind} cannot prove every proposition by self-reference"
+      (rejectsCycle (axiomFreeCycleSource kind)))
+  ++ test "definition dependencies: a cycle across separate internal blocks is rejected"
+    rejectsSeparatedBlocks
+  ++ test "definition dependencies: a standalone theorem cannot justify itself"
     (rejectsCycle (cycleSource .thm false))
   ++ test "definition dependencies: a one-member mutual theorem cannot justify itself"
     (rejectsCycle (cycleSource .thm true))

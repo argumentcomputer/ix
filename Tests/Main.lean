@@ -43,6 +43,7 @@ import Tests.Ix.Kernel.CheckTests
 import Tests.Ix.Kernel.Consistency
 import Tests.Ix.Kernel.DefinitionDependencies
 import Tests.Ix.Kernel.AnonDiff
+import Tests.Ix.Kernel.SafeRecursion
 import Tests.Ix.Kernel.InitScale
 import Tests.Ix.Kernel.TutorialTc
 import Tests.Ix.Kernel.CheckerRoundtrip
@@ -112,7 +113,9 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
     ++ Tests.Kernel.InferDefEq.suite ++ Tests.Kernel.CheckTests.suite
     ++ Tests.Kernel.Consistency.suite
     ++ Tests.Kernel.DefinitionDependencies.suite
+    ++ Tests.Kernel.SafeRecursion.suite
     ++ Tests.Kernel.Roundtrip.unitTests ++ Tests.Kernel.IngressMeta.unitTests),
+  ("tc-safe-recursion", Tests.Kernel.SafeRecursion.suite),
 ]
 
 /-- Ignored test suites - expensive, run only when explicitly requested. These require significant RAM -/
