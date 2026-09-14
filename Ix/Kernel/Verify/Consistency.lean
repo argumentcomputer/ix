@@ -18,6 +18,7 @@ import Ix.Kernel.Verify.Consistency.SortCache
 import Ix.Kernel.Verify.Consistency.ConstantCache
 import Ix.Kernel.Verify.Consistency.Context
 import Ix.Kernel.Verify.Consistency.BinderOpening
+import Ix.Kernel.Verify.Consistency.LocalOpening
 import Ix.Kernel.Verify.Consistency.Application
 import Ix.Kernel.Verify.Consistency.BinderInference
 import Ix.Kernel.Verify.Consistency.RecursiveCache
@@ -77,6 +78,15 @@ partitions. Writes, hits, initialization, clearing, scope/policy cleanup and
 error isolation preserve these facts. Its parameterized entry meaning and
 uncached-body preservation contract remain to be instantiated by the general
 mutual semantic proof. General checker soundness remains outside this fragment.
+
+Value-aware local readings additionally record a let's stored value in the
+same model context. Successful production opening preserves these readings,
+local lookup completeness, the allocation-counter bound and intern coherence;
+let-bound free-variable reduction preserves the model value. Regular binders
+lift the earlier readings into the extended model context. The scoped reader
+is recovered by mapping every local to its variable index. The let value's
+typing, general reduction and inference, legacy local frames and the semantic
+cache invariant remain obligations of the mutual execution proof.
 
 The safe-definition guard excludes self-reference for both modes and arbitrary
 universe arities. Successful definition-block execution computes an order of

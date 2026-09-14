@@ -10,6 +10,7 @@ import Ix.Kernel.Verify.Consistency.RecursiveCache
 import Ix.Kernel.Verify.Consistency.CacheLifecycle
 import Ix.Kernel.Verify.Consistency.StringExpansion
 import Ix.Kernel.Verify.Consistency.DefinitionOrder
+import Ix.Kernel.Verify.Consistency.LocalOpening
 import Ix.Kernel.Verify.Audit.Basic
 
 /-! Exact full-dependency boundaries for the direct model-refinement roots.
@@ -41,6 +42,7 @@ private def atomicRoots : Array Lean.Name := #[
   ``AtomicInferenceSupport.reads, ``AtomicInferenceSupport.output,
   ``AtomicInferenceSupport.scopeAndReferences, ``AtomicInference.sound,
   ``inferUncached_fvar_sound, ``infer_fvar_sound,
+  ``inferUncached_fvar_local_sound, ``whnfCoreWithFlagsStep_fvar_local_sound,
   ``FVarInferenceSupport.output, ``FVarInferenceSupport.sound,
   ``InferenceCacheHit.run, ``infer_sort_cached_sound,
   ``infer_sort_cache_agreement, ``infer_sort_cache_frame, ``BinderInference.sortOfAgreement,
@@ -195,7 +197,19 @@ private def binderWalkerRoots : Array Lean.Name := #[
   ``readScopedExpr?_instantiateRevSpec, ``readScopedExpr?_abstractFVarsSpec,
   ``openBinder_eq, ``openBinder_sound,
   ``abstractFVars_singleton_spec, ``abstractFVars_readScopedExpr?,
-  ``readScopedExpr?_liftSpec, ``readScopedExpr?_substSpec, ``subst_readScopedExpr?
+  ``readScopedExpr?_liftSpec, ``readScopedExpr?_substSpec, ``subst_readScopedExpr?,
+  ``LocalContextValues.empty, ``openLet_eq,
+  ``LocalContextValues.openLet, ``LocalContextValues.openBinder,
+  ``readLocalExpr?_instantiateLetSpec, ``readLocalExpr?_instantiateBinderSpec,
+  ``openLet_local_sound, ``openBinder_local_sound
+]
+
+private def localValueRoots : Array Lean.Name := #[
+  ``Theory.Model.Context.Valid.pop, ``Theory.Model.TypingClaim.weaken,
+  ``readLocalExpr?_scoped, ``readLocalExpr?_eraseMeta, ``internExpr_readLocalExpr?,
+  ``readLocalExpr?_extend, ``readLocalExpr?_lift, ``localContext_find?_push_ne_eq,
+  ``LocalContextValues.index_none, ``LocalContextValues.pushLet,
+  ``LocalContextValues.pushBinder, ``LocalModelTyping.closed
 ]
 
 /-- Production roots must not acquire a checker-soundness assumption
@@ -208,6 +222,10 @@ private def forbiddenProduction : Array Lean.Name := #[
 ]
 
 def roots : Array RootAllowance := #[
+  { root := ``LocalValues.Below.empty, standardAxioms := #[],
+    forbiddenDependencies := forbiddenProduction },
+  { root := ``LocalValues.Below.absent, standardAxioms := #[],
+    forbiddenDependencies := forbiddenProduction },
   { root := ``readLevel_eq, standardAxioms := #[``propext] },
   { root := ``readLevel_eval, standardAxioms := #[``propext] },
   { root := ``readLevel_wf, standardAxioms := #[``propext] },
@@ -271,13 +289,15 @@ def roots : Array RootAllowance := #[
   { root := ``Theory.Model.CheckingClaim.typing, standardAxioms := standard },
   { root := ``Theory.Model.CheckingClaim.typingSort, standardAxioms := standard },
   { root := ``Theory.Model.CheckingClaim.lam, standardAxioms := standard }
-] ++ stringListRoots.map (fun root => {
+] ++ (stringListRoots ++ #[``LocalValues.pushLet_extends,
+    ``LocalValues.pushBinder_lifts, ``LocalValues.Below.pushLet]).map (fun root => {
   root, standardAxioms := #[``propext], forbiddenDependencies := forbiddenProduction
 }) ++ (localIndexRoots ++ cacheFrameRoots ++ letSubstitutionRoots ++ cacheInvariantFrameRoots ++
     internFrameRoots ++ #[``DefinitionOrder.ready_independent,
-      ``DefinitionOrder.order?_sound, ``DefinitionOrder.member_of_read]).map (fun root => {
+      ``DefinitionOrder.order?_sound, ``DefinitionOrder.member_of_read,
+      ``LocalValues.Below.pushBinder]).map (fun root => {
   root, standardAxioms := #[``propext, ``Quot.sound], forbiddenDependencies := forbiddenProduction
-}) ++ (contextRoots ++ cacheMapRoots ++ cacheInvariantMapRoots ++ scopedRoots ++ stringRoots ++
+}) ++ (contextRoots ++ localValueRoots ++ cacheMapRoots ++ cacheInvariantMapRoots ++ scopedRoots ++ stringRoots ++
     internMapRoots ++ #[``DefinitionOrder.order?_rank,
       ``DefinitionOrder.acyclic_rank]).map (fun root => {
   root, standardAxioms := standard, forbiddenDependencies := forbiddenProduction

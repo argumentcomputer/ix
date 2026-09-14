@@ -130,6 +130,16 @@ increasing sequence of strongly inaccessible cardinals.
 - `checkEnvAnon_atomic_preserves_model` connects a supported production
   environment run to model extension. `checkEnvAnon_atomic_no_false` excludes
   a declaration at an axiom type interpreted as empty, including False.
+- `LocalContextValues` includes the stored values of let-bound free variables.
+  Its reader recovers the existing scoped reader when all locals are ordinary
+  variables. Actual binder and let opening preserve the reading, complete
+  local lookup, the bound on allocated identifiers, and intern-table coherence.
+  A let leaves the model context unchanged; a regular binder lifts older
+  readings into the extended context. The production free-variable inference
+  branch is typed by this invariant, and its zeta-reduction step preserves the
+  model value. General inference must still supply the let value's typing;
+  closing the returned type, general reduction, legacy local frames, and
+  semantic cache preservation remain separate obligations.
 - `InferenceCacheInvariant` covers every entry in both production maps, with
   separate full-checking and inference-only meanings. Hits obtain stored facts
   directly; each insertion establishes its own fact and preserves all other
@@ -395,6 +405,7 @@ The VM pilot is preserved in the frozen archive and excluded from the host gate.
 | Complete inference-cache maps and driver lifecycle | [`Consistency/CacheInvariant.lean`](../Ix/Kernel/Verify/Consistency/CacheInvariant.lean), [`CacheLifecycle.lean`](../Ix/Kernel/Verify/Consistency/CacheLifecycle.lean) |
 | Finite intern support and production string expansion | [`Consistency/InternInvariant.lean`](../Ix/Kernel/Verify/Consistency/InternInvariant.lean), [`StringExpansion.lean`](../Ix/Kernel/Verify/Consistency/StringExpansion.lean), [`StringReading.lean`](../Ix/Kernel/Verify/Consistency/StringReading.lean) |
 | Dependent binders and function bodies | [`Consistency/BinderInference.lean`](../Ix/Kernel/Verify/Consistency/BinderInference.lean), [`Application.lean`](../Ix/Kernel/Verify/Consistency/Application.lean), [`BinderOpening.lean`](../Ix/Kernel/Verify/Consistency/BinderOpening.lean), [`Context.lean`](../Ix/Kernel/Verify/Consistency/Context.lean), [`Model/Checking.lean`](../Ix/Theory/Model/Checking.lean) |
+| Let-bound values, local allocation and shared context coherence | [`Consistency/LocalValues.lean`](../Ix/Kernel/Verify/Consistency/LocalValues.lean), [`LocalOpening.lean`](../Ix/Kernel/Verify/Consistency/LocalOpening.lean), [`Verify/LocalContext.lean`](../Ix/Kernel/Verify/LocalContext.lean), [`Model/ContextTransport.lean`](../Ix/Theory/Model/ContextTransport.lean) |
 | Production environment fragment and relative axiom policy | [`Consistency/Environment.lean`](../Ix/Kernel/Verify/Consistency/Environment.lean), [`Production.lean`](../Ix/Kernel/Verify/Consistency/Production.lean) |
 | Safe definition self-reference and block dependency order | [`DefinitionOrder.lean`](../Ix/Kernel/DefinitionOrder.lean), [`Consistency/DefinitionOrder.lean`](../Ix/Kernel/Verify/Consistency/DefinitionOrder.lean) |
 | Foundation assumptions, theorem contracts, and provenance | [Consistency model guide](theory.md) |

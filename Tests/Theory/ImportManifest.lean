@@ -18,6 +18,7 @@ def conLecheRevision : String := "86cd20a65660d757cedc81561a44579099b565d0"
 /-- New mathematical modules authored in Ix, with no imported source hash. -/
 def authored : Array String := #[
   "Ix/Theory/ExprSubstitution.lean",
+  "Ix/Theory/Model/ContextTransport.lean",
   "Ix/Theory/Model/Checking.lean", "Ix/Theory/Model/LevelCongruence.lean"
 ]
 
