@@ -42,6 +42,17 @@ or semantic typing premise is required. Earlier executed type checks remain
 usable after interface growth and universe instantiation.
 Successful environment rows supply the axiom type-inference traces; public
 declaration success supplies the corresponding definition traces.
+For a source beta redex, the inference tree retains the lambda's checked
+domain and supplies the argument's membership in it. This derives equality
+and typing for the substituted result; denotational typing alone cannot
+recover that domain after proof values have been identified. A direct
+one-argument structural-WHNF step reads this result through the actual
+simultaneous-substitution walker and preserves intern coherence. Substitution
+also preserves the model's typing, checking, and equality judgments.
+Declaration admission now includes a beta-reducible declared type: the
+declaration's own executed type check justifies conversion from its reduced
+form to the original type. The environment model and no-False theorems include
+this case. General reduction and conversion remain open.
 Safe definition admission also rejects circular justification in both Lean and
 Rust, including `theorem loop : P := loop` with only `P : Prop` assumed. The
 production dependency walk returns an order with a proved decreasing rank;

@@ -53,9 +53,14 @@ private def atomicRoots : Array Lean.Name := #[
   ``CheckedType.sound, ``TypeFormation.sound,
   ``SynthesisInference.sound, ``SynthesisInference.closed_sound, ``SynthesisInference.ofSort,
   ``SynthesisTypeCheck.sound, ``SynthesisInference.ofTypeCheck,
+  ``BinderInference.lambda_type, ``SynthesisInference.lambda_type,
+  ``SynthesisInference.beta_sound, ``SynthesisInference.beta_step,
+  ``RecM.whnfCoreWithFlagsStep_betaOne,
   ``DefinitionBodySupport.sound, ``DefinitionBodyTrace.scopes, ``DefinitionBodyTrace.binderSupport,
   ``DefinitionBodyTrace.checkedType, ``DefinitionBodyTrace.synthesisTypeCheck,
-  ``DefinitionBodyTrace.synthesisSupport, ``AxiomTypeTrace.synthesisTypeCheck
+  ``DefinitionBodyTrace.synthesisSupport, ``AxiomTypeTrace.synthesisTypeCheck,
+  ``DefinitionCheckSupport.sound, ``DefinitionBodyTrace.betaDeclaredSupport,
+  ``AtomicDefinitionRun.ofHash
 ]
 
 private def formationRoots : Array Lean.Name := #[
@@ -65,7 +70,10 @@ private def formationRoots : Array Lean.Name := #[
   ``Theory.Model.TypingClaim.applicationType, ``Theory.Model.AExpr.LevelEquivalent.termTyping,
   ``InterfaceExtends.realizes, ``InterfaceExtends.typing,
   ``context_valid_tail, ``typing_weaken, ``typing_instL_closed,
-  ``ContextFormation.empty, ``ContextFormation.push
+  ``ContextFormation.empty, ``ContextFormation.push,
+  ``Theory.Model.wellDenoted_of_inst, ``Theory.Model.wellDenoted_inst_iff,
+  ``Theory.Model.TypingClaim.inst, ``Theory.Model.CheckingClaim.inst,
+  ``Theory.Model.ConversionClaim.inst
 ]
 
 private def instantiationRoots : Array Lean.Name := #[
@@ -243,6 +251,7 @@ private def binderWalkerRoots : Array Lean.Name := #[
   ``openBinder_eq, ``openBinder_sound,
   ``abstractFVars_singleton_spec, ``abstractFVars_readScopedExpr?,
   ``readScopedExpr?_liftSpec, ``readScopedExpr?_substSpec, ``subst_readScopedExpr?,
+  ``KExpr.simulSubstSpec_singleton, ``simulSubst_singleton_readScopedExpr?,
   ``ApplicationSubstitutionData.coherent, ``LambdaClosingData.coherent
 ]
 

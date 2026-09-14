@@ -466,6 +466,64 @@ private def lambdaApplicationLocalResult : Bool :=
   | .ok passed after => passed && after.lctx.size == 0 && after.env.nextFVarId == 3
   | .error _ _ => false
 
+/-- The value's inferred type is `A`, but its declared type is
+`(fun X : Sort u => X) A`. The final declaration comparison must reduce. -/
+private def betaDeclaredType (level : Ixon.Univ) (universes : UInt64 := 0)
+    (wrongValue : Bool := false) : Ixon.Env × Address := Id.run do
+  let (env, carrier) := storeConst {}
+    ⟨.axio ⟨false, universes, .sort 0⟩, #[], #[], #[level]⟩
+  let (env, witness) := storeConst env
+    ⟨.axio ⟨false, universes, .ref 0 (if universes == 0 then #[] else #[0])⟩,
+      #[], #[carrier], #[level]⟩
+  let arguments := if universes == 0 then #[] else #[0]
+  return storeConst env
+    ⟨.defn ⟨.defn, .safe, universes,
+      .app (.leanLam (.sort 0) (.var 0)) (.ref 0 arguments),
+      .ref (if wrongValue then 0 else 1) arguments⟩,
+      #[], #[carrier, witness], #[level]⟩
+
+/-- Substitution through the returned Pi changes both occurrences of the
+family parameter. The value is an identity function at the concrete type. -/
+private def betaDeclaredFunction (level : Ixon.Univ) : Ixon.Env := Id.run do
+  let (env, carrier) := storeConst {}
+    ⟨.axio ⟨false, 0, .sort 0⟩, #[], #[], #[level]⟩
+  return (storeConst env
+    ⟨.defn ⟨.defn, .safe, 0,
+      .app (.leanLam (.sort 0) (.leanAll (.var 0) (.var 1))) (.ref 0 #[]),
+      .leanLam (.ref 0 #[]) (.var 0)⟩,
+      #[], #[carrier], #[level]⟩).1
+
+/-- Observe the unequal initial type hashes and successful repeated
+conversion, in addition to the public environment-check regressions. -/
+private def betaDeclaredComparison : Bool :=
+  let (env, target) := betaDeclaredType .zero
+  let action : RecM .anon Bool := do
+    let concrete ← TcM.getConst (m := .anon) ⟨target, ()⟩
+    let .defn _ _ _ _ _ _ type value _ _ := concrete | return false
+    let inferred ← RecM.inferCall value
+    let reduced ← RecM.whnfCoreFlagsRec type .DEF_EQ_CORE
+    let first ← RecM.isDefEqCall inferred type
+    let second ← RecM.isDefEqCall inferred type
+    return inferred != type && reduced == inferred && first && second
+  match TcM.runRec action (TcState.newLazyAnon env) with
+  | .ok passed _ => passed
+  | .error _ _ => false
+
+/-- A beta result can retain a lambda and outer registered locals. This
+checks capture avoidance in the simultaneous walker used by WHNF. -/
+private def betaUnderBinder : Bool :=
+  let action : RecM .anon Bool := RecM.withLctxScope do
+    let (carrier, _) ← TcM.openBinder (m := .anon) () () (.mkSort .mkZero) (.mkVar 0 ())
+    let (value, _) ← TcM.openBinder (m := .anon) () () carrier (.mkVar 0 ())
+    let body := KExpr.mkLam () () carrier (.mkVar 1 ())
+    let term := KExpr.mkApp (.mkLam () () carrier body) value
+    let _ ← RecM.inferCall term
+    let result ← RecM.whnfCoreFlagsRec term .FULL
+    return result == KExpr.mkLam () () carrier value
+  match TcM.runRec action (TcState.ofEnvAnon {}) with
+  | .ok passed after => passed && after.lctx.size == 0
+  | .error _ _ => false
+
 private def applicationCases : TestSeq :=
   test "application environment: Prop/Type identity calls and transitive theorem calls check"
     (allSucceeded applicationEnvironment 5 { clearEvery := 0 })
@@ -505,6 +563,22 @@ private def applicationCases : TestSeq :=
     (let (env, target) := sortLambdaCall 0; rowFailed env target)
   ++ test "synthesis environment: a lambda domain must pass its executed sort check"
     (let (env, target) := failedBinder (.app (.leanLam (.var 0) (.var 0)) (.var 0)); rowFailed env target)
+  ++ test "beta conversion: declared types reduce in Prop and Type"
+    (allSucceeded (betaDeclaredType .zero).1 3 &&
+      allSucceeded (betaDeclaredType (.succ .zero)).1 3)
+  ++ test "beta conversion: declared types reduce at every universe instance"
+    (allSucceeded (betaDeclaredType (.var 0) 1).1 3)
+  ++ test "beta conversion: declarations check with fresh per-item caches"
+    (allSucceeded (betaDeclaredType .zero).1 3 { clearEvery := 1 })
+  ++ test "beta conversion: substitution enters a returned dependent function type"
+    (allSucceeded (betaDeclaredFunction .zero) 2 &&
+      allSucceeded (betaDeclaredFunction (.succ .zero)) 2)
+  ++ test "beta conversion: unequal initial hashes convert and reuse the result"
+    betaDeclaredComparison
+  ++ test "beta reduction: returned lambdas preserve outer locals without capture"
+    betaUnderBinder
+  ++ test "beta conversion: reducing a declared proposition cannot make it its own proof"
+    (let (env, target) := betaDeclaredType .zero 0 true; rowFailed env target)
 
 /-- Call a polymorphic identity from a monomorphic function body. Universe
 indices select entries in the declaration's explicit level table. -/

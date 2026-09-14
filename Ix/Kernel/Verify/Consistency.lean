@@ -27,6 +27,8 @@ import Ix.Kernel.Verify.Consistency.Application
 import Ix.Kernel.Verify.Consistency.BinderInference
 import Ix.Kernel.Verify.Consistency.Formation
 import Ix.Kernel.Verify.Consistency.SynthesisInference
+import Ix.Kernel.Verify.Consistency.BetaSubstitution
+import Ix.Kernel.Verify.Consistency.Beta
 import Ix.Kernel.Verify.Consistency.Validation
 import Ix.Kernel.Verify.Consistency.RecursiveCache
 import Ix.Kernel.Verify.Consistency.RecursiveState
@@ -70,7 +72,13 @@ type checks. An inhabited product supplies a uniform codomain bound at an
 application, preserving the exact Prop condition. Direct lambda applications
 therefore synthesize full typing without an extra codomain inference call.
 Earlier type checks remain reusable after interface growth and universe
-instantiation. Local cache hits agree with the actual declaration type. Constant
+instantiation. Source beta redexes retain their checked lambda domains;
+substitution and the actual one-argument WHNF step preserve typing and
+denotation under finite walker resources. Definition admission can reuse its
+executed declared-type inference to justify a beta conversion to the value's
+inferred type. This path is included in environment model preservation.
+General reduction of generated types remains a separate obligation.
+Local cache hits agree with the actual declaration type. Constant
 hits agree with pure universe substitution of a loaded, admitted declaration;
 sort hits return the canonical successor sort. Application, forall, and lambda
 nodes retain misses in every eligible cache partition. Full mode leaves the

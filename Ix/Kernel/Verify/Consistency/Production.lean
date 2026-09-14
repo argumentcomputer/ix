@@ -6,6 +6,7 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 import Ix.Kernel.Driver
 import Ix.Kernel.Verify.Consistency.Constant
 import Ix.Kernel.Verify.Consistency.SynthesisInference
+import Ix.Kernel.Verify.Consistency.Beta
 import Ix.Kernel.Verify.Consistency.Validation
 
 /-!
@@ -13,9 +14,10 @@ import Ix.Kernel.Verify.Consistency.Validation
 
 These theorems invert the public checker, including its error isolation,
 initial lazy lookup, block routing, per-constant reset, validation, type
-inference, theorem guard, value inference, and conversion. The supported
-conversion path is the initial address-equality branch. Finite address
-faithfulness connects that comparison to the exact model syntax.
+inference, theorem guard, value inference, and conversion. Supported
+comparisons use address equality or beta reduction of the declared type,
+justified by that declaration's actual type check. Finite address
+faithfulness connects hash comparisons to model syntax.
 
 Operational equations and interface agreement suffice to derive body typing.
 -/
@@ -408,20 +410,108 @@ def DefinitionBodyTrace.synthesisSupport {β : Type u} {input : DefinitionInput}
       valueConditions typeConditions)
     references
 
+/-- The actual declaration trace determines the type and value checks used
+to justify conversion. A beta case reuses the declared type's executed
+inference; it does not request another check of a generated type. -/
+inductive DefinitionCheckSupport {β : Type u}
+    (resolve : Address → Option (ConstRef β)) (entries : Model.Environment β)
+    {input : DefinitionInput} {fuel : Nat} {before : TcState .anon}
+    (trace : DefinitionBodyTrace input (methodsN fuel) before) :
+    AExpr β → AExpr β → Type u
+  | hash {body type : AExpr β}
+      (inference : DefinitionBodySupport resolve entries (methodsN fuel)
+        trace.valueStart input.type input.universes.toNat input.value body type)
+      (faithful : trace.inferredValue.AddrFaithful input.type)
+      (hashPath : (trace.inferredValue == input.type) = true) :
+      DefinitionCheckSupport resolve entries trace body type
+  | betaDeclared {body domain inner argument : AExpr β} {condition : Certified.PropWhen}
+      {level typeBound valueBound : VLevel}
+      (typeInference : SynthesisInference resolve entries [] [] [] fuel trace.validated input.type
+        (.app (.lam condition domain inner) argument) (.sort level) typeBound)
+      (valueInference : SynthesisInference resolve entries [] [] [] fuel trace.valueStart input.value
+        body (inner.inst argument) valueBound)
+      (valueReading : readScopedExpr? resolve [] input.value = some body.erase)
+      (typeReading : readScopedExpr? resolve [] input.type =
+        some (AExpr.app (.lam condition domain inner) argument).erase)
+      (scope : body.Scope input.universes.toNat 0 ∧
+        (AExpr.app (.lam condition domain inner) argument).Scope input.universes.toNat 0)
+      (references : body.ReferencesIn entries ∧
+        (AExpr.app (.lam condition domain inner) argument).ReferencesIn entries) :
+      DefinitionCheckSupport resolve entries trace body (.app (.lam condition domain inner) argument)
+
+theorem DefinitionCheckSupport.sound {β : Type u}
+    {resolve : Address → Option (ConstRef β)} {entries : Model.Environment β}
+    {input : DefinitionInput} {fuel : Nat} {before : TcState .anon}
+    {trace : DefinitionBodyTrace input (methodsN fuel) before} {body type : AExpr β}
+    (support : DefinitionCheckSupport resolve entries trace body type)
+    (wellFormed : entries.WF) :
+    readExpr? resolve input.value = some body.erase ∧
+      readExpr? resolve input.type = some type.erase ∧
+      body.Scope input.universes.toNat 0 ∧ type.Scope input.universes.toNat 0 ∧
+      body.ReferencesIn entries ∧ type.ReferencesIn entries ∧
+      TypingClaim.{u,v} entries [] body type := by
+  cases support with
+  | hash inference faithful hashPath =>
+      exact inference.sound wellFormed trace.valueRun faithful hashPath
+  | betaDeclared typeInference valueInference valueReading typeReading scope references =>
+      obtain ⟨_, typeTyped, _⟩ := typeInference.closed_sound typeReading trace.typeRun
+      obtain ⟨conversion, _⟩ := typeInference.beta_sound (.empty entries) (.empty _ _)
+        typeReading trace.typeRun
+      obtain ⟨_, valueTyped, _⟩ := valueInference.closed_sound valueReading trace.valueRun
+      exact ⟨readScopedExpr?_closed valueReading, readScopedExpr?_closed typeReading,
+        scope.1, scope.2, references.1, references.2,
+        valueTyped.conv typeTyped conversion.symm⟩
+
+/-- Production validation supplies scope for the beta-converted declaration
+and its value. Both inference trees refer to the checks in this exact trace. -/
+def DefinitionBodyTrace.betaDeclaredSupport {β : Type u} {input : DefinitionInput}
+    {fuel : Nat} {before : TcState .anon}
+    (trace : DefinitionBodyTrace input (methodsN fuel) before)
+    {resolve : Address → Option (ConstRef β)} {entries : Model.Environment β}
+    {body domain inner argument : AExpr β} {condition : Certified.PropWhen}
+    {level typeBound valueBound : VLevel}
+    {support : RunSupport} (typeCoverage : input.type.ValidationCoverage support)
+    (valueCoverage : input.value.ValidationCoverage support)
+    (collision : support.CollisionFree)
+    (typeInference : SynthesisInference resolve entries [] [] [] fuel trace.validated input.type
+      (.app (.lam condition domain inner) argument) (.sort level) typeBound)
+    (valueInference : SynthesisInference resolve entries [] [] [] fuel trace.valueStart input.value
+      body (inner.inst argument) valueBound)
+    (valueReading : readScopedExpr? resolve [] input.value = some body.erase)
+    (typeReading : readScopedExpr? resolve [] input.type =
+      some (AExpr.app (.lam condition domain inner) argument).erase)
+    (valueConditions : ConditionsScoped input.universes.toNat body)
+    (typeConditions : ConditionsScoped input.universes.toNat (.app (.lam condition domain inner) argument))
+    (references : body.ReferencesIn entries ∧
+      (AExpr.app (.lam condition domain inner) argument).ReferencesIn entries) :
+    DefinitionCheckSupport resolve entries trace body (.app (.lam condition domain inner) argument) :=
+  .betaDeclared typeInference valueInference valueReading typeReading
+    (trace.scopes typeCoverage valueCoverage collision valueReading typeReading
+      valueConditions typeConditions) references
+
 /-- Operational support for the selected production definition fragment.
-Resources are required only at the states exposed by successful body traces.
-The conversion guard records the actual initial hash-equality path. -/
+Resources are required only at the states exposed by successful body traces. -/
 structure AtomicDefinitionRun {β : Type u} (resolve : Address → Option (ConstRef β))
     (entries : Model.Environment β) (input : DefinitionInput) (before : TcState .anon)
     (body type : AExpr β) where
   path : StandalonePrefix input.id before input.constant
-  inference : ∀ trace : DefinitionBodyTrace input (methodsN before.recFuel.toNat) path.ready,
-    DefinitionBodySupport resolve entries (methodsN before.recFuel.toNat)
-      trace.valueStart input.type input.universes.toNat input.value body type
-  hashPath : ∀ trace : DefinitionBodyTrace input (methodsN before.recFuel.toNat) path.ready,
-    (trace.inferredValue == input.type) = true
-  faithful : ∀ trace : DefinitionBodyTrace input (methodsN before.recFuel.toNat) path.ready,
-    trace.inferredValue.AddrFaithful input.type
+  support : ∀ trace : DefinitionBodyTrace input (methodsN before.recFuel.toNat) path.ready,
+    DefinitionCheckSupport resolve entries trace body type
+
+/-- The original hash-comparison interface embeds in the extended
+declaration boundary with the same execution resources. -/
+def AtomicDefinitionRun.ofHash {β : Type u} {resolve : Address → Option (ConstRef β)}
+    {entries : Model.Environment β} {input : DefinitionInput} {before : TcState .anon}
+    {body type : AExpr β} (path : StandalonePrefix input.id before input.constant)
+    (inference : ∀ trace : DefinitionBodyTrace input (methodsN before.recFuel.toNat) path.ready,
+      DefinitionBodySupport resolve entries (methodsN before.recFuel.toNat)
+        trace.valueStart input.type input.universes.toNat input.value body type)
+    (hashPath : ∀ trace : DefinitionBodyTrace input (methodsN before.recFuel.toNat) path.ready,
+      (trace.inferredValue == input.type) = true)
+    (faithful : ∀ trace : DefinitionBodyTrace input (methodsN before.recFuel.toNat) path.ready,
+      trace.inferredValue.AddrFaithful input.type) :
+    AtomicDefinitionRun resolve entries input before body type :=
+  ⟨path, fun trace => .hash (inference trace) (faithful trace) (hashPath trace)⟩
 
 /-- Successful production checking yields a model typing judgment for the
 actual value and declared type, with syntactic closure and dependency support
@@ -438,8 +528,7 @@ theorem AtomicDefinitionRun.sound {β : Type u}
       body.ReferencesIn entries ∧ type.ReferencesIn entries ∧
       TypingClaim.{u,v} entries [] body type := by
   obtain ⟨trace⟩ := definition_body_trace (fragment.path.member_success accepted)
-  exact (fragment.inference trace).sound wellFormed trace.valueRun
-    (fragment.faithful trace) (fragment.hashPath trace)
+  exact (fragment.support trace).sound wellFormed
 
 /-- A fresh definition cannot justify its type through a self-reference:
 its value, at any universe arguments, must reference the preceding interface. -/
