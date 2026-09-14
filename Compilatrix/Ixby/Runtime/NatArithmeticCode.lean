@@ -1,6 +1,6 @@
 import Compilatrix.Ixby.Runtime.ConversionCode
 
-/-! Complete templates for the emitted Nat add, subtract, and multiply
+/-! Complete templates for the emitted Nat arithmetic and comparison
 helpers. Indices are supplied by the actual image and checked propositionally.
 These specifications do not change the builder or the reference evaluator. -/
 
@@ -52,5 +52,51 @@ def subtract (natural : FunctionId) (cached raw field : Constructor) : Function 
     ⟨12, .ret (.local 11)⟩,
     ⟨10, .ret (.local 9)⟩,
     ⟨10, .ret (.local 9)⟩] }
+
+def quotientRemainder (natural fromRaw : FunctionId) (operation : Primitive) : Function := {
+  arity := 2, blocks := #[
+    ⟨2, .letOp (.call natural [.local 0]) 1⟩,
+    ⟨3, .letOp (.call natural [.local 1]) 2⟩,
+    ⟨4, .letOp (.primitive operation [.local 2, .local 3]) 3⟩,
+    ⟨5, .tailCall fromRaw [.local 4]⟩] }
+
+def less (natural : FunctionId) : Function := {
+  arity := 2, blocks := #[
+    ⟨2, .letOp (.call natural [.local 0]) 1⟩,
+    ⟨3, .letOp (.call natural [.local 1]) 2⟩,
+    ⟨4, .letOp (.primitive .natLt [.local 2, .local 3]) 3⟩,
+    ⟨5, .ret (.local 4)⟩] }
+
+def lessEqual (natural : FunctionId) : Function := {
+  arity := 2, blocks := #[
+    ⟨2, .letOp (.call natural [.local 0]) 1⟩,
+    ⟨3, .letOp (.call natural [.local 1]) 2⟩,
+    ⟨4, .letOp (.primitive .natLt [.local 3, .local 2]) 3⟩,
+    ⟨5, .branch (.local 4) 4 5⟩,
+    ⟨5, .ret (.literal (.bool false))⟩,
+    ⟨5, .ret (.literal (.bool true))⟩] }
+
+def equal (natural : FunctionId) (cached raw field : Constructor) : Function := {
+  arity := 2, blocks := #[
+    ⟨2, .caseCtor (.local 0) [⟨cached, 1⟩, ⟨raw, 2⟩, ⟨field, 3⟩]⟩,
+    ⟨4, .letOp (.call natural [.local 0]) 4⟩,
+    ⟨3, .letOp (.call natural [.local 0]) 7⟩,
+    ⟨3, .caseCtor (.local 1) [⟨cached, 10⟩, ⟨raw, 11⟩, ⟨field, 12⟩]⟩,
+    ⟨5, .letOp (.call natural [.local 1]) 5⟩,
+    ⟨6, .letOp (.primitive .natEq [.local 4, .local 5]) 6⟩,
+    ⟨7, .ret (.local 6)⟩,
+    ⟨4, .letOp (.call natural [.local 1]) 8⟩,
+    ⟨5, .letOp (.primitive .natEq [.local 3, .local 4]) 9⟩,
+    ⟨6, .ret (.local 5)⟩,
+    ⟨5, .letOp (.call natural [.local 0]) 13⟩,
+    ⟨4, .letOp (.call natural [.local 0]) 16⟩,
+    ⟨4, .letOp (.primitive .fieldEq [.local 2, .local 3]) 19⟩,
+    ⟨6, .letOp (.call natural [.local 1]) 14⟩,
+    ⟨7, .letOp (.primitive .natEq [.local 5, .local 6]) 15⟩,
+    ⟨8, .ret (.local 7)⟩,
+    ⟨5, .letOp (.call natural [.local 1]) 17⟩,
+    ⟨6, .letOp (.primitive .natEq [.local 4, .local 5]) 18⟩,
+    ⟨7, .ret (.local 6)⟩,
+    ⟨5, .ret (.local 4)⟩] }
 
 end Compilatrix.Ixby.Runtime.NatArithmetic

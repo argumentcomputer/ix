@@ -5,7 +5,7 @@ import Compilatrix.Ixby.Runtime.NatArithmetic
 
 /-! Typed-frontend proof boundaries: exact number decoding and checked
 execution of native extension helpers, complete number conversions, and Nat
-addition, subtraction, and multiplication.
+arithmetic and comparisons.
 This does not certify Lean proof erasure or the general LCNF lowering. -/
 
 namespace Compilatrix.Ixby.LeanFrontend
@@ -186,7 +186,12 @@ def Image.natArithmeticCandidates (image : Image) : Except String image.NatArith
     conversions := conversions.links
     add := ← function `Nat.add
     sub := ← function `Nat.sub
-    mul := ← function `Nat.mul }
+    mul := ← function `Nat.mul
+    div := ← function `Nat.div
+    mod := ← function `Nat.mod
+    equal := ← function `Nat.decEq
+    less := ← function `Nat.decLt
+    lessEqual := ← function `Nat.decLe }
   return { links, layouts := conversions.layouts }
 
 structure Image.NatArithmeticCertified (image : Image) where
@@ -200,7 +205,7 @@ def Image.NatArithmeticCertified.links {image : Image} (certified : image.NatAri
 theorem Image.NatArithmeticCertified.layouts {image : Image} (certified : image.NatArithmeticCertified) :
     image.HasNumberLayout certified.links.conversions.layout := certified.candidates.layouts
 
-/-- Check all three arithmetic bodies together with their conversion callees,
+/-- Check all eight arithmetic/comparison bodies together with their conversion callees,
 constructor declarations, distinct tags, and image name bindings. -/
 def Image.certifyNatArithmetic (image : Image) : Except String image.NatArithmeticCertified := do
   match names : image.natArithmeticCandidates with

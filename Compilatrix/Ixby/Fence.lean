@@ -261,3 +261,65 @@ Ixon prefix retains the repository's existing, explicitly ledgered hash boundary
  Classical.choice,
  Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.Ixby.Runtime.NatArithmetic.Certificate.mul_evaluates
+
+/-! Complete Nat division, remainder, and comparison paths. -/
+
+/-- info: 'Compilatrix.Ixby.Runtime.NatArithmetic.quotientRemainder_returns' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.NatArithmetic.quotientRemainder_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.NatArithmetic.Certificate.div_returns' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.NatArithmetic.Certificate.div_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.NatArithmetic.Certificate.mod_returns' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.NatArithmetic.Certificate.mod_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.NatArithmetic.Certificate.lt_returns' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.NatArithmetic.Certificate.lt_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.NatArithmetic.Certificate.le_returns' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.NatArithmetic.Certificate.le_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.NatArithmetic.Certificate.eq_field_returns' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.NatArithmetic.Certificate.eq_field_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.NatArithmetic.Certificate.eq_returns' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.NatArithmetic.Certificate.eq_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.NatArithmetic.Certificate.div_evaluates' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.NatArithmetic.Certificate.div_evaluates
+
+/-- info: 'Compilatrix.Ixby.Runtime.NatArithmetic.Certificate.mod_evaluates' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.NatArithmetic.Certificate.mod_evaluates
+
+/-- info: 'Compilatrix.Ixby.Runtime.NatArithmetic.Certificate.eq_evaluates' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.NatArithmetic.Certificate.eq_evaluates
+
+/-- info: 'Compilatrix.Ixby.Runtime.NatArithmetic.Certificate.lt_evaluates' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.NatArithmetic.Certificate.lt_evaluates
+
+/-- info: 'Compilatrix.Ixby.Runtime.NatArithmetic.Certificate.le_evaluates' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.NatArithmetic.Certificate.le_evaluates

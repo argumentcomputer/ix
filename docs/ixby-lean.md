@@ -14,8 +14,8 @@ Packed byte capacity must be below 2³², matching the target byte-index ABI.
 
 The frontend remains experimental. The [runtime proofs](ixby-representation.md)
 establish exact numeric/byte laws and certify seven emitted extension helpers,
-eleven number conversion helpers, and Nat addition, subtraction, and
-multiplication, including complete loops and caller continuations.
+eleven number conversion helpers, and eight Nat arithmetic/comparison helpers,
+including complete loops and caller continuations.
 The complete frontend has no source-refinement certificate. It does
 not produce an `IxonCompilation` or
 authenticate the original anonymous Ixon source address. Constructor identities
@@ -104,13 +104,15 @@ scalar mutations and 21 conversion mutations must fail certificate construction;
 five and 17 respectively remain structurally valid programs. The conversion
 contracts also have 224 admitted executions and eleven local resource cases,
 including the 33-bit final-weight requirement of word-to-Nat conversion.
-The three Nat arithmetic certificates additionally cover every input
-representation pair, exact results, consistent caches, and both subtraction
-branches. Their tests include 4,563 admitted executions, nine caller cases,
-15 local resource cases, and 22 rejected mutations, of which 19 remain
-structurally admitted. Nine additional axiom guards keep the arithmetic and
-call contracts on the ordinary logical basis. Representation and capacity
-premises remain explicit; these certificates do not certify general LCNF lowering.
+The eight Nat arithmetic/comparison certificates cover addition, subtraction,
+multiplication, division, remainder, equality, and both order comparisons for
+every input representation pair. Their contracts include exact results,
+consistent caches, both subtraction branches, zero divisors, and the direct
+native-field equality path. Their tests include 12,168 admitted executions,
+32 caller cases, 35 local resource cases, and 48 rejected mutations, of which
+43 remain structurally admitted. Twenty-one axiom guards keep the arithmetic,
+comparison, and call contracts on the ordinary logical basis. Representation
+and capacity premises remain explicit; these certificates do not certify general LCNF lowering.
 Stage2 binary compilation performs the same certificate checks before export.
 
 The binary suite checks 81 decoded executions covering every scalar, primitive,

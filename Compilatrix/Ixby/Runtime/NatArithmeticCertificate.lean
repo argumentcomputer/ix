@@ -10,6 +10,11 @@ structure Links where
   add : FunctionId
   sub : FunctionId
   mul : FunctionId
+  div : FunctionId
+  mod : FunctionId
+  equal : FunctionId
+  less : FunctionId
+  lessEqual : FunctionId
 
 /-- Complete arithmetic code, including the already certified conversion
 callees and number layouts. A changed dependency invalidates this certificate. -/
@@ -21,6 +26,12 @@ structure Certificate (program : Program) (links : Links) : Type where
     links.conversions.cachedCtor links.conversions.rawCtor links.conversions.fieldCtor)
   mul : Checked program links.mul (binary links.conversions.natural
     links.conversions.cachedCtor links.conversions.rawCtor links.conversions.fieldCtor .natMul .word32Mul)
+  div : Checked program links.div (quotientRemainder links.conversions.natural links.conversions.fromRaw .natDiv)
+  mod : Checked program links.mod (quotientRemainder links.conversions.natural links.conversions.fromRaw .natMod)
+  equal : Checked program links.equal (NatArithmetic.equal links.conversions.natural
+    links.conversions.cachedCtor links.conversions.rawCtor links.conversions.fieldCtor)
+  less : Checked program links.less (NatArithmetic.less links.conversions.natural)
+  lessEqual : Checked program links.lessEqual (NatArithmetic.lessEqual links.conversions.natural)
 
 def certify (program : Program) (links : Links) : Except String (Certificate program links) := do
   let conversions ← Conversion.certify program links.conversions
@@ -30,6 +41,12 @@ def certify (program : Program) (links : Links) : Except String (Certificate pro
     links.conversions.cachedCtor links.conversions.rawCtor links.conversions.fieldCtor)
   let mul ← check program links.mul (binary links.conversions.natural
     links.conversions.cachedCtor links.conversions.rawCtor links.conversions.fieldCtor .natMul .word32Mul)
-  return { conversions, add, sub, mul }
+  let div ← check program links.div (quotientRemainder links.conversions.natural links.conversions.fromRaw .natDiv)
+  let mod ← check program links.mod (quotientRemainder links.conversions.natural links.conversions.fromRaw .natMod)
+  let equal ← check program links.equal (NatArithmetic.equal links.conversions.natural
+    links.conversions.cachedCtor links.conversions.rawCtor links.conversions.fieldCtor)
+  let less ← check program links.less (NatArithmetic.less links.conversions.natural)
+  let lessEqual ← check program links.lessEqual (NatArithmetic.lessEqual links.conversions.natural)
+  return { conversions, add, sub, mul, div, mod, equal, less, lessEqual }
 
 end Compilatrix.Ixby.Runtime.NatArithmetic

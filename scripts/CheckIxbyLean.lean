@@ -235,7 +235,56 @@ private def natArithmeticMutations (image : Image) : IO Unit := do
   reject { image with program := { image.program with constructors } } "changed constructor layout" false
   let constructorNames := image.state.constructorNames.insert `Ixby.Runtime.RawNumber conversions.fieldCtor
   reject { image with state := { image.state with constructorNames } } "wrong constructor name binding"
-  IO.println s!"check-ixby-lean Nat arithmetic: 3 generated functions; {← rejected.get} rejected mutations ({← admittedCount.get} structurally admitted)"
+  reject (instruction links.div 2 (.letOp (.primitive .natMod [.local 2, .local 3]) 3))
+    "remainder instead of quotient"
+  reject (instruction links.div 2 (.letOp (.primitive .natDiv [.local 3, .local 2]) 3))
+    "reversed division operands"
+  reject (instruction links.div 1 (.letOp (.call conversions.natural [.local 0]) 2))
+    "division observed dividend twice"
+  reject (instruction links.div 3 (.tailCall conversions.fromWord [.local 4]))
+    "division used word constructor"
+  reject (instruction links.div 3 (.tailCall conversions.fromRaw [.local 2]))
+    "division returned dividend"
+  reject (instruction links.mod 2 (.letOp (.primitive .natDiv [.local 2, .local 3]) 3))
+    "quotient instead of remainder"
+  reject (instruction links.mod 2 (.letOp (.primitive .natMod [.local 2, .literal (.nat 1)]) 3))
+    "remainder ignored divisor"
+  reject (instruction links.mod 3 (.tailCall conversions.fromWord [.local 4]))
+    "remainder used word constructor"
+  reject (instruction links.equal 5 (.letOp (.primitive .natLt [.local 4, .local 5]) 6))
+    "cached equality used less-than"
+  reject (instruction links.equal 8 (.letOp (.primitive .natLt [.local 3, .local 4]) 9))
+    "raw equality used less-than"
+  reject (instruction links.equal 14 (.letOp (.primitive .natLt [.local 5, .local 6]) 15))
+    "field/cached equality used less-than"
+  reject (instruction links.equal 17 (.letOp (.primitive .natLt [.local 4, .local 5]) 18))
+    "field/raw equality used less-than"
+  reject (instruction links.equal 12 (.letOp (.primitive .fieldEq [.local 2, .local 2]) 19))
+    "native field equality compared left operand to itself"
+  reject (instruction links.equal 0 (.caseCtor (.local 1)
+    [⟨conversions.cachedCtor, 1⟩, ⟨conversions.rawCtor, 2⟩, ⟨conversions.fieldCtor, 3⟩]))
+    "equality dispatched on wrong operand"
+  reject (instruction links.equal 1 (.letOp (.call conversions.asField [.local 0]) 4))
+    "equality reduced an exact Nat"
+  reject (instruction links.less 2 (.letOp (.primitive .natLt [.local 3, .local 2]) 3))
+    "reversed less-than operands"
+  reject (instruction links.less 3 (.ret (.local 0))) "less-than returned input"
+  reject (instruction links.lessEqual 2 (.letOp (.primitive .natLt [.local 2, .local 3]) 3))
+    "reversed less-or-equal operands"
+  reject (instruction links.lessEqual 3 (.branch (.local 4) 5 4)) "swapped less-or-equal branches"
+  reject (instruction links.lessEqual 4 (.ret (.literal (.bool true)))) "wrong less-or-equal false leaf"
+  reject (function links.equal fun fn =>
+    { fn with blocks := fn.blocks.push { locals := 0, instruction := .ret .erased } })
+    "extra equality block"
+  let functionNames := image.state.functionNames.insert `Nat.div links.mod
+  reject { image with state := { image.state with functionNames } } "wrong division name binding"
+  let functionNames := image.state.functionNames.insert `Nat.decEq links.less
+  reject { image with state := { image.state with functionNames } } "wrong equality name binding"
+  reject (instruction conversions.fromRaw 0
+    (.letOp (.construct conversions.fieldCtor [.local 0]) 1)) "changed division boxing dependency"
+  reject (function links.equal fun fn => { fn with entry := 12 }) "changed equality entry" false
+  reject (function links.less fun fn => { fn with arity := 1 }) "changed less-than arity" false
+  IO.println s!"check-ixby-lean Nat arithmetic: 8 generated functions; {← rejected.get} rejected mutations ({← admittedCount.get} structurally admitted)"
 
 private def natArithmeticExecutions (image : Image) : IO Unit := do
   let certified ← checked image.certifyNatArithmetic
@@ -248,8 +297,21 @@ private def natArithmeticExecutions (image : Image) : IO Unit := do
     .ctor layout.field #[.scalar (.field (Ix.Ixby.Goldilocks.reduce n))]
   let cases (n : Nat) : Array (Nat × Ix.Ixby.Value) :=
     #[(n, cached n), (n, raw n), (n % Ix.Ixby.goldilocksModulus, field n)]
-  let operations : Array (Nat × (Nat → Nat → Nat)) :=
-    #[(links.add, Nat.add), (links.sub, Nat.sub), (links.mul, Nat.mul)]
+  let operations : Array (Nat × (Nat → Nat → Ix.Ixby.Value)) := #[
+    (links.add, fun a b => .scalar (.nat (a + b))),
+    (links.sub, fun a b => .scalar (.nat (a - b))),
+    (links.mul, fun a b => .scalar (.nat (a * b))),
+    (links.div, fun a b => .scalar (.nat (a / b))),
+    (links.mod, fun a b => .scalar (.nat (a % b))),
+    (links.equal, fun a b => .scalar (.bool (a == b))),
+    (links.less, fun a b => .scalar (.bool (decide (a < b)))),
+    (links.lessEqual, fun a b => .scalar (.bool (decide (a ≤ b))))]
+  let observe (value : Ix.Ixby.Value) : IO Ix.Ixby.Value := do
+    match value with
+    | .scalar (.bool _) => return value
+    | _ =>
+      -- The image decoder independently checks any returned word cache.
+      return .scalar (.nat (← checked (image.decodeNumber value)))
   let count ← IO.mkRef 0
   let execute (program : Ix.Ixby.Program) (args : Array Ix.Ixby.Value) : IO Ix.Ixby.Value := do
     discard <| checked (Compilatrix.Ixby.Runtime.NatArithmetic.certify program links)
@@ -263,13 +325,17 @@ private def natArithmeticExecutions (image : Image) : IO Unit := do
         for (b, right) in cases b do
           for (id, operation) in operations do
             let actual ← execute { image.program with entry := id } #[left, right]
-            -- The image decoder independently checks any returned word cache.
-            let n ← checked (image.decodeNumber actual)
-            need (n == operation a b) s!"Nat arithmetic helper {id}: {a}, {b}: got {n}"
+            let observed ← observe actual
+            let expected := operation a b
+            need (observed == expected)
+              s!"Nat arithmetic helper {id}: {a}, {b}: expected {reprStr expected}, got {reprStr actual}"
+            if id == links.div || id == links.mod then
+              need (actual == .ctor layout.raw #[expected]) "division or remainder used the wrong representation"
             count.modify (· + 1)
   let callerCount ← IO.mkRef 0
   for (left, right) in #[(field (Ix.Ixby.goldilocksModulus - 1), raw (Ix.Ixby.goldilocksModulus + 1)),
-      (cached (2 ^ 80 + 17), cached (2 ^ 32 + 1)), (raw 1, field 1)] do
+      (cached (2 ^ 80 + 17), cached (2 ^ 32 + 1)), (raw 1, field 1),
+      (field (Ix.Ixby.goldilocksModulus - 1), field 0)] do
     let a ← checked (image.decodeNumber left)
     let b ← checked (image.decodeNumber right)
     for (id, operation) in operations do
@@ -287,8 +353,7 @@ private def natArithmeticExecutions (image : Image) : IO Unit := do
       match actual with
       | .ctor _ #[savedLeft, .ctor _ #[savedRight, result]] =>
         need (savedLeft == left && savedRight == right) "Nat arithmetic caller lost a saved operand"
-        let n ← checked (image.decodeNumber result)
-        need (n == operation a b) "Nat arithmetic caller received the wrong result"
+        need ((← observe result) == operation a b) "Nat arithmetic caller received the wrong result"
       | _ => throw (IO.userError "Nat arithmetic caller returned an unexpected tree")
       callerCount.modify (· + 1)
   let localCount ← IO.mkRef 0
@@ -320,6 +385,36 @@ private def natArithmeticExecutions (image : Image) : IO Unit := do
   localRun { small with continuations := 2 } links.add #[maxField, cached 1] (.error (.limit .continuations))
   localRun { small with byteArrayBytes := 7 } links.add #[cached 1, maxField] (.error (.limit .byteArrayBytes))
   localRun { small with natBits := 63 } links.add #[maxField, cached 0] (.error (.limit .natBits))
+  let observationLimits := { small with locals := 10 }
+  localRun observationLimits links.div #[maxField, raw 2] (.ok (raw ((Ix.Ixby.goldilocksModulus - 1) / 2)))
+  localRun { observationLimits with locals := 9 } links.div #[maxField, raw 2] (.error (.limit .locals))
+  localRun { observationLimits with continuations := 2 } links.div #[maxField, raw 2]
+    (.error (.limit .continuations))
+  localRun observationLimits links.div #[maxField, field 0] (.ok (raw 0))
+  localRun observationLimits links.div #[cached 0, raw (2 ^ 64)] (.error (.limit .natBits))
+  localRun observationLimits links.mod #[maxField, raw 7] (.ok (raw ((Ix.Ixby.goldilocksModulus - 1) % 7)))
+  localRun observationLimits links.mod #[maxField, field 0] (.ok (raw (Ix.Ixby.goldilocksModulus - 1)))
+  localRun { observationLimits with byteArrayBytes := 7 } links.mod #[cached 5, maxField]
+    (.error (.limit .byteArrayBytes))
+  localRun observationLimits links.less #[maxField, raw Ix.Ixby.goldilocksModulus] (.ok (.scalar (.bool true)))
+  localRun { observationLimits with locals := 9 } links.less #[maxField, raw Ix.Ixby.goldilocksModulus]
+    (.error (.limit .locals))
+  localRun observationLimits links.lessEqual #[maxField, raw (Ix.Ixby.goldilocksModulus - 1)]
+    (.ok (.scalar (.bool true)))
+  localRun { observationLimits with continuations := 2 } links.lessEqual
+    #[maxField, raw (Ix.Ixby.goldilocksModulus - 1)] (.error (.limit .continuations))
+  localRun observationLimits links.equal #[raw Ix.Ixby.goldilocksModulus, field 0] (.ok (.scalar (.bool false)))
+  localRun { observationLimits with byteArrayBytes := 7 } links.equal #[raw Ix.Ixby.goldilocksModulus, maxField]
+    (.error (.limit .byteArrayBytes))
+  -- Native field equality returns directly without Nat conversion or a call.
+  let nativeEquality := { small with locals := 5, natBits := 0, byteArrayBytes := 0, continuations := 0 }
+  localRun nativeEquality links.equal #[maxField, maxField] (.ok (.scalar (.bool true)))
+  localRun nativeEquality links.equal #[maxField, field 0] (.ok (.scalar (.bool false)))
+  localRun { nativeEquality with locals := 4 } links.equal #[maxField, maxField] (.error (.limit .locals))
+  localRun { small with locals := 7 } links.equal #[cached 1, cached 1] (.ok (.scalar (.bool true)))
+  localRun { small with locals := 6 } links.equal #[cached 1, cached 1] (.error (.limit .locals))
+  localRun { observationLimits with continuations := 2 } links.equal #[raw Ix.Ixby.goldilocksModulus, maxField]
+    (.error (.limit .continuations))
   IO.println s!"check-ixby-lean Nat arithmetic contracts: {← count.get} admitted executions; {← callerCount.get} caller cases; {← localCount.get} resource cases"
 
 private def compileRejects (env : Environment) (name : Name) (limits : Ix.Ixby.Limits)
