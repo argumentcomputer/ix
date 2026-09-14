@@ -137,8 +137,9 @@ increasing sequence of strongly inaccessible cardinals.
   at the actual post-lookup state. `CachedConstantInferenceSupport.afterVerifiedInference`
   reuses an earlier witness after a constant call loads another dependency;
   recursive transport also covers loads inside application and binder trees.
-  Block overlap agreement remains a data premise. The source admission and
-  other recursive paths still need proofs.
+  This general interface retains overlap agreement as a data premise, including
+  for externally partially loaded states. Source admission and other recursive
+  paths still need proofs.
 - `getConst_coherent` derives intern-table key coherence through the actual
   loader on success and error. Universe and expression conversion now use
   finite step bounds computed from source syntax; their counting passes and
@@ -151,8 +152,23 @@ increasing sequence of strongly inaccessible cardinals.
   carries it through key computation, loading, substitution, and the final
   cache write. `CachedConstantInferenceSupport.afterCoherentInference` reuses
   the earlier witness with coherence required only before the call. Finite
-  collision and level resources, source agreement, and block overlap checks
-  remain explicit.
+  collision and level resources and source agreement remain explicit.
+- `getConst_owned` derives overlap compatibility from a reusable block
+  invariant. `sourceOwnershipCheck` compares finite key inventories from
+  verified source headers; `SourceOwnership.ofCheck` proves that acceptance
+  separates different block owners and standalone/projection keys. Repeated
+  keys within one block are allowed. Actual conversion emits only those
+  projection keys, including constructors, and publication records their owner.
+  The invariant that loaded projections have recorded blocks starts empty;
+  an unrecorded block's entries are therefore fresh. It survives lookup on
+  success and error, including errors after publication.
+  `OwnedLazySupport.afterConstInference` retains it through key computation,
+  substitution, and cache writes. `CachedConstantInferenceSupport.afterOwnedInference`
+  reuses an earlier witness without per-block overlap comparisons. The source
+  check is an optional proof preflight; it does not change loader admission.
+  Corrupt headers are excluded because verified loading rejects them. Semantic
+  source agreement, finite substitution resources, and preservation through
+  other checker paths remain obligations.
 - `checkEnvAnon_atomic_preserves_model` connects a supported production
   environment run to model extension. `checkEnvAnon_atomic_no_false` excludes
   a declaration at an axiom type interpreted as empty, including False.
@@ -236,9 +252,12 @@ def useF (x : T.{1}) : T.{1} := f.{1} x
   inference. Constant misses use already-loaded declarations or verified
   standalone/block loading, with finite universe-walker resources after lookup;
   applications use full mode and hash conversion. The new dependency's semantic
-  source agreement, block overlap checks, and finite collision/level resources
-  remain explicit. Intern coherence follows through actual loading from the
-  pre-load invariant; successful constant inference also returns coherence for
+  source agreement and finite collision/level resources remain explicit.
+  `OwnedLazySupport` derives block compatibility from a source ownership check
+  and an invariant established at initialization and retained by lookup and
+  successful constant calls. Arbitrary partially loaded states can use the
+  general pointwise overlap condition. Intern coherence follows through actual
+  loading from the pre-load invariant; successful constant inference also returns coherence for
   the next operation. Initial coherence holds for `TcState.newLazyAnon`. Extending
   its preservation to every checker operation, preservation at written keys,
   and automatic trace construction remain open.
@@ -337,7 +356,7 @@ lake test --wfail -- tc-unit
 lake -d Models/SetTheory build --wfail
 ```
 
-The consistency target checks 235 exact theorem boundaries. The production
+The consistency target checks 258 exact theorem boundaries. The production
 environment roots retain four existing generated output-length proofs,
 reached through expression/universe construction, names, and the full
 production method table. They introduce no new native proofs. The model
@@ -397,6 +416,11 @@ binder trees; forward and backward sharing chains; repeated sharing; and
 unexpanded cyclic entries. Cyclic standalone and block loads must return a
 bounded diagnostic, preserve both warm cache partitions and coherent partial
 intern state, and deduplicate retries without publishing declarations.
+Source ownership regressions cover conflicting block owners, standalone/projection
+overlap, duplicate keys within one block, exact mixed-member and constructor
+inventories, corrupt source exclusion, and detection of partial external loads.
+Mixed loading sequences preserve the block invariant and both warm cache slots
+in full and inference-only modes, including errors before and after publication.
 
 ## Certified host adapters
 
@@ -430,6 +454,7 @@ The VM pilot is preserved in the frozen archive and excluded from the host gate.
 | Verified standalone lazy loading and cache frames | [`Consistency/LazyCache.lean`](../Ix/Kernel/Verify/Consistency/LazyCache.lean) |
 | Mutual-block publication and verified lookup frames | [`Consistency/BlockCache.lean`](../Ix/Kernel/Verify/Consistency/BlockCache.lean) |
 | Intern coherence through conversion and lazy loading | [`Consistency/IngressCoherence.lean`](../Ix/Kernel/Verify/Consistency/IngressCoherence.lean) |
+| Source ownership, block registration, and finite preflight | [`Consistency/BlockOwnership.lean`](../Ix/Kernel/Verify/Consistency/BlockOwnership.lean), [`Consistency/SourceOwnershipCheck.lean`](../Ix/Kernel/Verify/Consistency/SourceOwnershipCheck.lean), [`SourceOwnership.lean`](../Ix/Kernel/SourceOwnership.lean) |
 | Dependent binders and function bodies | [`Consistency/BinderInference.lean`](../Ix/Kernel/Verify/Consistency/BinderInference.lean), [`Application.lean`](../Ix/Kernel/Verify/Consistency/Application.lean), [`BinderOpening.lean`](../Ix/Kernel/Verify/Consistency/BinderOpening.lean), [`Context.lean`](../Ix/Kernel/Verify/Consistency/Context.lean), [`Model/Checking.lean`](../Ix/Theory/Model/Checking.lean) |
 | Production environment fragment and relative axiom policy | [`Consistency/Environment.lean`](../Ix/Kernel/Verify/Consistency/Environment.lean), [`Production.lean`](../Ix/Kernel/Verify/Consistency/Production.lean) |
 | Foundation assumptions, theorem contracts, and provenance | [Consistency model guide](theory.md) |

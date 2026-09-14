@@ -4,7 +4,7 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 -/
 
 import Ix.Kernel.Verify.Consistency.BinderInference
-import Ix.Kernel.Verify.Consistency.IngressCoherence
+import Ix.Kernel.Verify.Consistency.SourceOwnershipCheck
 
 /-!
 # Cache preservation through recursive inference
@@ -56,6 +56,27 @@ theorem inferKey_environment {term : KExpr .anon} {before after : TcState .anon}
   · rw [if_neg fast] at run
     cases cached : before.ctxAddrCache[(before.ctxId, term.lbr)]? <;>
       rw [cached] at run <;> cases run <;> rfl
+
+/-- Key memoization preserves the reusable source ownership resource. -/
+def OwnedLazySupport.afterInferKey {term : KExpr .anon} {before after : TcState .anon}
+    {key : Address × Address} (support : OwnedLazySupport before)
+    (run : TcM.inferKey term before = .ok key after) : OwnedLazySupport after := by
+  refine ⟨support.source, support.ownership, ?_, ?_⟩
+  · unfold TcM.inferKey at run
+    change EStateM.bind (TcM.ctxAddrForLbr term.lbr) _ before = _ at run
+    unfold TcM.ctxAddrForLbr at run
+    change EStateM.bind (fun state => EStateM.bind (get : TcM .anon (TcState .anon))
+      _ state) _ before = _ at run
+    simp only [EStateM.bind, show (get : TcM .anon (TcState .anon)) before =
+      .ok before before from rfl] at run
+    by_cases fast : (term.lbr == 0 || before.ctx.isEmpty) = true
+    · rw [if_pos fast] at run
+      cases run; exact support.installed
+    · rw [if_neg fast] at run
+      cases cached : before.ctxAddrCache[(before.ctxId, term.lbr)]? <;>
+        rw [cached] at run <;> cases run <;> exact support.installed
+  · rw [inferKey_environment run]
+    exact support.blocks
 
 /-- Hash conversion executes only tracing and its optional statistics update.
 The exact state includes that counter update; it is not assumed unchanged. -/
@@ -272,6 +293,20 @@ def InferenceCacheTrace.coherentConstOfKey {fuel : Nat} {before keyed : TcState 
     .afterVerifiedGetConst loader (by rwa [inferKey_environment keyRun]) run
       (resources concrete loaded run).1 (resources concrete loaded run).2
 
+/-- Constant leaf construction uses one source resource for every address,
+deriving both overlap compatibility and post-load intern coherence. -/
+def InferenceCacheTrace.ownedConstOfKey {fuel : Nat} {before keyed : TcState .anon}
+    {id : KId .anon} {arguments : Array (KUniv .anon)} {info : ExprInfo .anon}
+    {key : Address × Address}
+    (keyRun : TcM.inferKey (.const id arguments info) before = .ok key keyed)
+    (loader : OwnedLazySupport before) (coherent : before.env.intern.WF)
+    (resources : ∀ concrete loaded, TcM.getConst id keyed = .ok concrete loaded →
+      (KExpr.CollisionFree fun candidate => loaded.env.intern.ExprSupport candidate ∨
+        KExpr.InstUnivReach arguments concrete.ty candidate) ∧
+      UniverseSubstitutionSupport arguments concrete.ty) :
+    InferenceCacheTrace fuel before (.const id arguments info) :=
+  .coherentConstOfKey keyRun ((loader.afterInferKey keyRun).toVerified id.addr) coherent resources
+
 /-- Every successful call in the finite tree preserves entries outside its
 computed write footprint and retains the loaded declarations and policy.
 The proof follows the recursive calls, then their real outer cache insertion. -/
@@ -455,6 +490,42 @@ theorem infer_coherentConst_cache_frame {fuel : Nat} {before keyed after : TcSta
   ⟨frame.1, frame.2, infer_verifiedConst_coherent keyRun loader coherent
     (fun concrete loaded run => (resources concrete loaded run).1) accepted⟩
 
+/-- Source ownership survives the whole successful constant call, including
+key computation, substitution, and cache publication. It can be reused by the
+next call without checking the block-overlap condition again. -/
+def OwnedLazySupport.afterConstInference {fuel : Nat} {before keyed after : TcState .anon}
+    {id : KId .anon} {arguments : Array (KUniv .anon)} {info : ExprInfo .anon}
+    {key : Address × Address} {result : KExpr .anon}
+    (support : OwnedLazySupport before)
+    (keyRun : TcM.inferKey (.const id arguments info) before = .ok key keyed)
+    (coherent : before.env.intern.WF)
+    (faithful : ∀ concrete loaded, TcM.getConst id keyed = .ok concrete loaded →
+      KExpr.CollisionFree fun candidate => loaded.env.intern.ExprSupport candidate ∨
+        KExpr.InstUnivReach arguments concrete.ty candidate)
+    (accepted : RecM.infer (.const id arguments info) (methodsN fuel) before = .ok result after) :
+    OwnedLazySupport after := by
+  have kept : after.lazyFault = some (fun addr => ingressAnonAddrShallow support.source addr true) ∧
+      LoadedBlockInvariant support.source after.env := by
+    rcases observeInferenceCache keyRun with ⟨hit, _, _⟩ | ⟨miss, _, stateEq⟩
+    · rw [hit.run] at accepted
+      cases accepted
+      let keyedSupport := support.afterInferKey hit.keyRun
+      exact ⟨keyedSupport.installed, keyedSupport.blocks⟩
+    · obtain ⟨middle, run, written⟩ := infer_uncached_success_state miss accepted
+      rw [stateEq] at run
+      obtain ⟨concrete, loaded, got, _, instantiated⟩ := inferUncached_const_instantiation run
+      let keyedSupport := support.afterInferKey keyRun
+      let loadedSupport := keyedSupport.afterGetConst got
+      have lookup := getConst_coherent (id := id) keyedSupport.source true keyedSupport.installed
+        (by rwa [inferKey_environment keyRun])
+      rw [got] at lookup
+      have post := TcM.instantiateUnivParams_wf (faithful concrete loaded got)
+        (fun _ h => Or.inr h) ⟨lookup, fun _ h => Or.inl h⟩
+      rw [instantiated] at post
+      rw [written, post.2.2.1]
+      cases before.inferOnly <;> exact ⟨loadedSupport.installed, loadedSupport.blocks⟩
+  exact ⟨support.source, support.ownership, kept.1, kept.2⟩
+
 /-- Concrete agreement at an unwritten key is retained by the entire tree. -/
 theorem InferenceCacheTrace.agreement {fuel : Nat} {before after : TcState .anon}
     {term result expected : KExpr .anon} (tree : InferenceCacheTrace fuel before term)
@@ -551,6 +622,29 @@ def CachedConstantInferenceSupport.afterCoherentInference {β : Type u}
     CachedConstantInferenceSupport resolve entries after id arguments info ref entry type :=
   let frame := infer_coherentConst_cache_frame keyRun different loader coherent resources accepted
   support.transport closed frame.1 frame.2.1
+
+/-- An earlier closed cache witness survives constant inference using only
+the reusable source ownership invariant and finite substitution resources. -/
+def CachedConstantInferenceSupport.afterOwnedInference {β : Type u}
+    {resolve : Address → Option (ConstRef β)} {entries : Model.Environment β}
+    {fuel : Nat} {before keyed after : TcState .anon}
+    {id requested : KId .anon} {arguments requestedArguments : Array (KUniv .anon)}
+    {info requestedInfo : ExprInfo .anon} {key : Address × Address} {result : KExpr .anon}
+    {ref : ConstRef β} {entry : ConstantEntry β} {type : AExpr β}
+    (support : CachedConstantInferenceSupport resolve entries before id arguments info ref entry type)
+    (closed : (KExpr.const id arguments info).lbr = 0)
+    (keyRun : TcM.inferKey (.const requested requestedArguments requestedInfo) before = .ok key keyed)
+    (different : key ≠ ((KExpr.const id arguments info).addr, emptyCtxAddr))
+    (loader : OwnedLazySupport before) (coherent : before.env.intern.WF)
+    (resources : ∀ concrete loaded, TcM.getConst requested keyed = .ok concrete loaded →
+      (KExpr.CollisionFree fun candidate => loaded.env.intern.ExprSupport candidate ∨
+        KExpr.InstUnivReach requestedArguments concrete.ty candidate) ∧
+      UniverseSubstitutionSupport requestedArguments concrete.ty)
+    (accepted : RecM.infer (.const requested requestedArguments requestedInfo)
+      (methodsN fuel) before = .ok result after) :
+    CachedConstantInferenceSupport resolve entries after id arguments info ref entry type :=
+  support.afterCoherentInference closed keyRun different
+    ((loader.afterInferKey keyRun).toVerified requested.addr) coherent resources accepted
 
 /-- A later constant's actual returned type inherits typing from its earlier
 witness after recursive inference; no semantic premise about caches is added. -/

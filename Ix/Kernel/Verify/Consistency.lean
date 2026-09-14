@@ -19,6 +19,8 @@ import Ix.Kernel.Verify.Consistency.ConstantCache
 import Ix.Kernel.Verify.Consistency.LazyCache
 import Ix.Kernel.Verify.Consistency.BlockCache
 import Ix.Kernel.Verify.Consistency.IngressCoherence
+import Ix.Kernel.Verify.Consistency.BlockOwnership
+import Ix.Kernel.Verify.Consistency.SourceOwnershipCheck
 import Ix.Kernel.Verify.Consistency.Context
 import Ix.Kernel.Verify.Consistency.BinderOpening
 import Ix.Kernel.Verify.Consistency.Application
@@ -78,7 +80,14 @@ is proved through every conversion form and the actual loader on both outcomes.
 Constant inference derives post-lookup coherence from its initial state and
 returns coherence after substitution and cache publication, so the next call
 can reuse it. Finite collision and level resources remain explicit.
-Initial agreement, block overlap checks, finite execution resources, trace
-construction, and preservation for keys inside the footprint remain obligations.
+For a fixed source, a finite header check establishes disjoint block ownership.
+Actual conversion emits only the enumerated projection keys, and atomic
+publication records their owner. The invariant that loaded projections have a
+recorded block starts empty and survives lookup on both outcomes and successful
+constant inference. It derives fresh entries for unrecorded blocks, so these
+calls need no per-block overlap premise. Externally partially populated states
+can still use the general compatibility resource.
+Initial agreement, general state/source agreement, finite execution resources,
+trace construction, and preservation inside the footprint remain obligations.
 General checker soundness remains outside this fragment.
 -/

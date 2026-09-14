@@ -48,8 +48,16 @@ is now derived through every production conversion form and the actual loader,
 including errors. Conversion uses bounds computed from source syntax and
 rejects exhausted cyclic sharing with coherent partial state. Constant inference
 carries pre-call coherence through lookup, substitution, and cache publication.
-Initial cache agreement, block overlap checks, finite collision/level resources,
-trace construction, and preservation for keys that are written remain obligations.
+For a fixed source, a finite check establishes disjoint ownership of projection
+keys and separates them from standalones. Conversion follows this source key
+inventory, and publication records each owning block. The invariant that loaded
+projections have recorded blocks starts empty and survives actual lookup on
+both outcomes and successful constant inference. Unrecorded blocks then have
+fresh entries, discharging per-block overlap checks for this path. General
+partially loaded states retain the pointwise compatibility interface. The source
+check supplies address ownership, without establishing semantic admission.
+Initial cache agreement, general source/state invariants, finite collision/level
+resources, trace construction, and preservation at written keys remain obligations.
 Full checker consistency
 and compiler/backend refinement remain open.
 

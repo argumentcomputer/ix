@@ -127,6 +127,22 @@ private def lazyCacheRoots : Array Lean.Name := #[
   ``UniverseInstantiationSupport.afterVerifiedGetConst
 ]
 
+private def sourceOwnershipRoots : Array Lean.Name := #[
+  ``SourceOwnership.ofOwner, ``LoadedBlockInvariant.empty,
+  ``LoadedBlockInvariant.ofMaps, ``LoadedBlockInvariant.intern,
+  ``sourceOwnershipRows_mem, ``SourceOwnership.ofCheck
+]
+
+private def ownedLoaderRoots : Array Lean.Name := #[
+  ``convertAnonBlock_projection_keys, ``LoadedBlockInvariant.compatible,
+  ``LoadedBlockInvariant.materialization, ``ingressAnonBlock_blocks,
+  ``ingressAnonAddrShallow_blocks, ``OwnedLazySupport.toVerified,
+  ``lazyIngressAddr_blocks, ``tryGetConst_blocks, ``getConst_owned,
+  ``OwnedLazySupport.afterGetConst, ``OwnedLazySupport.afterFailedGetConst,
+  ``OwnedLazySupport.afterInferKey, ``InferenceCacheTrace.ownedConstOfKey,
+  ``OwnedLazySupport.afterConstInference, ``CachedConstantInferenceSupport.afterOwnedInference
+]
+
 private def productionRoots : Array Lean.Name := #[
   ``StandalonePrefix.member_success, ``definition_body_trace,
   ``AtomicDefinitionRun.sound, ``AtomicDefinitionRun.no_self_alias,
@@ -169,6 +185,12 @@ def roots : Array RootAllowance := #[
   { root := ``convertUnivTree_coherent, standardAxioms := standard,
     nativeAxioms := #[levelNative], forbiddenDependencies := forbiddenProduction },
   { root := ``newLazyAnon_intern_coherent, standardAxioms := standard,
+    nativeAxioms := #[expressionNative, levelNative, nameNative],
+    forbiddenDependencies := forbiddenProduction },
+  { root := ``OwnedLazySupport.newLazyAnon, standardAxioms := standard,
+    nativeAxioms := #[expressionNative, levelNative, nameNative],
+    forbiddenDependencies := forbiddenProduction },
+  { root := ``OwnedLazySupport.ofCheckedSource, standardAxioms := standard,
     nativeAxioms := #[expressionNative, levelNative, nameNative],
     forbiddenDependencies := forbiddenProduction },
   { root := ``readLevel_eq, standardAxioms := #[``propext] },
@@ -226,12 +248,12 @@ def roots : Array RootAllowance := #[
   { root := ``Theory.Model.CheckingClaim.lam, standardAxioms := standard }
 ] ++ (scopedRoots ++ cacheFrameRoots).map (fun root => {
   root, standardAxioms := #[``propext, ``Quot.sound], forbiddenDependencies := forbiddenProduction
-}) ++ (contextRoots ++ cacheMapRoots).map (fun root => {
+}) ++ (contextRoots ++ cacheMapRoots ++ sourceOwnershipRoots).map (fun root => {
   root, standardAxioms := standard, forbiddenDependencies := forbiddenProduction
 }) ++ (binderWalkerRoots ++ cacheKeyRoots).map (fun root => {
   root, standardAxioms := standard, nativeAxioms := #[expressionNative],
   forbiddenDependencies := forbiddenProduction
-}) ++ (atomicRoots ++ instantiationRoots ++ recursiveCacheRoots ++ lazyCacheRoots).map (fun root => {
+}) ++ (atomicRoots ++ instantiationRoots ++ recursiveCacheRoots ++ lazyCacheRoots ++ ownedLoaderRoots).map (fun root => {
   root, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative],
   forbiddenDependencies := forbiddenProduction
 }) ++ productionRoots.map (fun root => {

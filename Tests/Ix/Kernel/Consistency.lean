@@ -2,6 +2,7 @@ module
 
 public import LSpec
 public import Ix.Kernel
+public import Ix.Kernel.SourceOwnership
 public import Tests.Ix.Kernel.IxonFixtures
 
 /-!
@@ -1298,9 +1299,148 @@ private def ingressCoherenceCases : TestSeq :=
   ++ test "ingress coherence: cyclic block sharing retains warm witnesses without publication"
     (coherenceAfterCyclicLoad true)
 
+private def ownedRows (kind : Nat) : Bool :=
+  let first := Address.blake3 "ownership-first".toUTF8
+  let second := Address.blake3 "ownership-second".toUTF8
+  let key : KId .anon := ⟨Address.blake3 "ownership-key".toUTF8, ()⟩
+  let rows : List OwnershipRow := match kind with
+    | 0 => []
+    | 1 => [⟨first, #[key], false⟩, ⟨second, #[key], false⟩]
+    | 2 => [⟨key.addr, #[], true⟩, ⟨first, #[key], false⟩]
+    | 3 => [⟨first, #[key, key], false⟩, ⟨first, #[key], false⟩]
+    | _ => [⟨first, #[], true⟩, ⟨second, #[], true⟩]
+  ownershipRowsCheck rows == (kind == 0 || kind >= 3)
+
+private def ownershipInventory : Bool :=
+  let ind : Ixon.Inductive :=
+    ⟨false, 0, 0, 0, .sort 0,
+      #[⟨false, 0, 0, 0, 0, .sort 0⟩, ⟨false, 0, 1, 0, 0, .sort 0⟩]⟩
+  let constant : Ixon.Constant :=
+    ⟨.muts #[.defn ⟨.defn, .safe, 0, .sort 0, .sort 0⟩,
+      .recr ⟨false, false, 0, 0, 0, 0, 0, .sort 0, #[]⟩, .indc ind], #[], #[], #[.succ .zero]⟩
+  let (source, block) := storeMutsWithProjs {} constant
+  let expected : Array (KId .anon) := #[⟨defnProjAddr block 0, ()⟩, ⟨recrProjAddr block 1, ()⟩,
+    ⟨indcProjAddr block 2, ()⟩, ⟨ctorProjAddr block 2 0, ()⟩, ⟨ctorProjAddr block 2 1, ()⟩]
+  sourceOwnershipCheck source && blockProjectionIds block constant == expected &&
+    match convertAnonBlock source constant block .empty with
+    | .ok trace _ => trace.allEntries.map (·.1) == expected
+    | .error _ _ => false
+
+private def loadedBlocksMatchOwnership (rows : List OwnershipRow) (env : AnonEnv) : Bool :=
+  rows.all fun row => row.projections.all fun id =>
+    (env.get? id).isNone || env.blocks.contains ⟨row.addr, ()⟩
+
+/-- Partial external insertion lies outside the invariant even if its value
+would agree with a later publication; the general overlap theorem still covers it. -/
+private def ownershipDetectsPartialPreload : Bool :=
+  let constant := cacheBlock false
+  let (source, block) := storeMutsWithProjs {} constant
+  let rows := sourceOwnershipRows source
+  match prepareAnonBlock source constant block {} with
+  | .error _ _ => false
+  | .ok trace converted =>
+      match trace.allEntries[0]? with
+      | none => false
+      | some entry =>
+          sourceOwnershipCheck source && loadedBlocksMatchOwnership rows converted &&
+          !loadedBlocksMatchOwnership rows (converted.insert entry.1 entry.2) &&
+          loadedBlocksMatchOwnership rows (insertMutsEntriesState converted trace.allEntries)
+
+private def ownershipCorruptSource : Bool :=
+  let constant := cacheBlock false
+  let (source, block) := storeMutsWithProjs {} constant
+  let source := {source with consts := source.consts.insert block (.ofConstant (cacheBlock true))}
+  sourceOwnershipCheck source &&
+    !(sourceOwnershipRows source).any (fun row => row.addr == block) &&
+    match TcM.getConst (m := .anon) ⟨defnProjAddr block 0, ()⟩ (TcState.newLazyAnon source) with
+    | .ok _ _ => false
+    | .error err after =>
+        ((toString err).splitOn "fails integrity check").length > 1 &&
+        after.env.consts.isEmpty && after.env.blocks.isEmpty
+
+/-- One fixed source mixes standalone, definition, recursor, and inductive
+loads, plus failures before and after publication. Check the invariant and both
+warm cache slots after every call, in both inference modes. -/
+private def ownershipAcrossLoads (inferOnly rootFirst : Bool) : Bool :=
+  let (source, indBlock) := envInductive
+  let (source, warmAddr) := storeConst source
+    ⟨.axio ⟨false, 1, .leanAll (.sort 0) (.leanAll (.var 0) (.var 1))⟩, #[], #[], #[.var 0]⟩
+  let (source, defBlock) := storeMutsWithProjs source (cacheBlock false)
+  let (source, recBlock) := storeMutsWithProjs source (cacheBlock true)
+  let broken : Ixon.Constant := ⟨.muts
+    #[.defn ⟨.defn, .safe, 0, .sort 0, .sort 0⟩,
+      .defn ⟨.defn, .safe, 0, .sort 0, .share 77⟩], #[], #[], #[.succ (.succ (.succ .zero))]⟩
+  let (source, brokenBlock) := storeMutsWithProjs source broken
+  let rows := sourceOwnershipRows source
+  let warm := KExpr.mkConst (m := .anon) ⟨warmAddr, ()⟩ #[levelOne]
+  let first : KId .anon := ⟨defnProjAddr defBlock 0, ()⟩
+  let second : KId .anon := ⟨recrProjAddr recBlock 1, ()⟩
+  let ctor : KId .anon := ⟨ctorProjAddr indBlock 0 0, ()⟩
+  let brokenId : KId .anon := ⟨defnProjAddr brokenBlock 0, ()⟩
+  let action : RecM .anon Bool := do
+    let expected ← warmBothCaches warm
+    let key ← TcM.inferKey warm
+    let initial ← get
+    let keeps (state : TcState .anon) := loadedBlocksMatchOwnership rows state.env &&
+      warmSlotsRetained key initial state
+    let rootRejected ← if rootFirst then
+      try
+        let _ ← liftM (TcM.getConst (m := .anon) ⟨defBlock, ()⟩)
+        pure false
+      catch err =>
+        match err with
+        | .unknownConst addr => pure (addr == defBlock)
+        | _ => pure false
+      else pure true
+    let rootState ← get
+    let firstType ← RecM.inferCall (.mkConst first #[])
+    let firstState ← get
+    let secondType ← RecM.inferCall (.mkConst second #[])
+    let secondState ← get
+    let failed ← try
+      let _ ← liftM (TcM.getConst brokenId)
+      pure false
+    catch err => pure (((toString err).splitOn "invalid Share index 77").length > 1)
+    let failedState ← get
+    let _ ← RecM.inferCall (.mkConst ctor #[])
+    let final ← get
+    let reused ← RecM.inferCall warm
+    return sourceOwnershipCheck source && keeps initial && rootRejected && keeps rootState &&
+      firstType.addr == expected.addr && secondType.addr == expected.addr &&
+      keeps firstState && keeps secondState && failed && keeps failedState && keeps final &&
+      reused.addr == expected.addr &&
+      !failedState.env.blocks.contains ⟨brokenBlock, ()⟩ &&
+      (failedState.env.get? brokenId).isNone &&
+      final.env.blocks.contains ⟨defBlock, ()⟩ && final.env.blocks.contains ⟨recBlock, ()⟩ &&
+      final.env.blocks.contains ⟨indBlock, ()⟩ && final.inferOnly == inferOnly
+  match TcM.runRec action {TcState.newLazyAnon source with inferOnly} with
+  | .ok passed _ => passed
+  | .error _ _ => false
+
+private def sourceOwnershipCases : TestSeq :=
+  test "source ownership: empty inventory is accepted" (ownedRows 0)
+  ++ test "source ownership: different blocks cannot own the same projection" (ownedRows 1)
+  ++ test "source ownership: standalone/projection overlap is rejected" (ownedRows 2)
+  ++ test "source ownership: repeated keys within one block are accepted" (ownedRows 3)
+  ++ test "source ownership: independent standalones are accepted" (ownedRows 4)
+  ++ test "source ownership: mixed block inventory matches all converted member and constructor keys"
+    ownershipInventory
+  ++ test "source ownership: partial external insertion is detected until its block is recorded"
+    ownershipDetectsPartialPreload
+  ++ test "source ownership: corrupt headers are excluded and actual loading rejects them"
+    ownershipCorruptSource
+  ++ test "source ownership: full inference retains the invariant across mixed loads and failures"
+    (ownershipAcrossLoads false false)
+  ++ test "source ownership: inference-only calls retain the invariant across mixed loads and failures"
+    (ownershipAcrossLoads true false)
+  ++ test "source ownership: publication before a full-mode root error retains the invariant"
+    (ownershipAcrossLoads false true)
+  ++ test "source ownership: publication before an inference-only root error retains the invariant"
+    (ownershipAcrossLoads true true)
+
 public def suite : List TestSeq :=
   [cases, polymorphicCases, specializationCases, binderCases, applicationCases,
     polymorphicApplicationCases, constantCacheCases, cacheInvariantCases, recursiveCacheCases,
-    lazyCacheCases, blockCacheCases, ingressCoherenceCases]
+    lazyCacheCases, blockCacheCases, ingressCoherenceCases, sourceOwnershipCases]
 
 end Tests.Kernel.Consistency
