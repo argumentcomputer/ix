@@ -4,6 +4,7 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 -/
 
 import Ix.Kernel.Verify.Consistency.BetaTraceConstruction
+import Ix.Kernel.Verify.Consistency.BetaCacheReannotation
 
 /-! Construct the three cache-layer witnesses from actual successful calls.
 Inputs describe finite raw resources and the origins of stored entries; the
@@ -17,38 +18,96 @@ universe u
 
 namespace BetaWhnfSource
 
-/-- A structural hit has an actual producing execution. A miss needs only
-the finite resources along the source's computed beta orbit. -/
+/-- A structural hit has an actual producing execution whose annotations
+need not match the current check. A miss needs the finite raw orbit resources. -/
 structure CoreResources {β : Type u} (resolve : Address → Option (ConstRef β))
-    (locals : List FVarId) (fuel : Nat) (before : TcState .anon) (source : KExpr .anon) (term : AExpr β) : Prop where
+    (locals : List FVarId) (fuel : Nat) (before : TcState .anon) (source : KExpr .anon) : Prop where
   origins : ∀ cached,
     (betaWhnfKey source before).2.env.whnfCoreCache[(betaWhnfKey source before).1]? = some cached →
-      ∃ originFuel originBefore target,
-        ∃ _ : BetaCoreExecution resolve locals originFuel originBefore source term cached target,
+      ∃ originResolve : Address → Option (ConstRef β), ∃ originLocals originFuel originBefore originTerm target,
+        ∃ _ : BetaCoreExecution originResolve originLocals originFuel originBefore source originTerm cached target,
           originBefore.env.intern.WF
   cold : (betaWhnfKey source before).2.env.whnfCoreCache[(betaWhnfKey source before).1]? = none →
-    Resources (fuel + 1) .FULL maxWhnfCoreFuel.toNat (betaWhnfKey source before).2 source
+    Resources resolve locals (fuel + 1) .FULL maxWhnfCoreFuel.toNat (betaWhnfKey source before).2 source
 
 structure NoDeltaResources {β : Type u} (resolve : Address → Option (ConstRef β))
-    (locals : List FVarId) (fuel : Nat) (before : TcState .anon) (source : KExpr .anon) (term : AExpr β) : Prop where
+    (locals : List FVarId) (fuel : Nat) (before : TcState .anon) (source : KExpr .anon) : Prop where
   origins : ∀ cached,
     (betaWhnfKey source before).2.env.whnfNoDeltaCache[(betaWhnfKey source before).1]? = some cached →
-      ∃ originFuel originBefore target,
-        ∃ _ : BetaNoDeltaExecution resolve locals originFuel originBefore source term cached target,
+      ∃ originResolve : Address → Option (ConstRef β), ∃ originLocals originFuel originBefore originTerm target,
+        ∃ _ : BetaNoDeltaExecution originResolve originLocals originFuel originBefore source originTerm cached target,
           originBefore.env.intern.WF
   cold : (betaWhnfKey source before).2.env.whnfNoDeltaCache[(betaWhnfKey source before).1]? = none →
-    CoreResources resolve locals fuel (betaWhnfKey source before).2 source term
+    CoreResources resolve locals fuel (betaWhnfKey source before).2 source
 
 structure PublicResources {β : Type u} (resolve : Address → Option (ConstRef β))
-    (locals : List FVarId) (fuel : Nat) (before : TcState .anon) (source : KExpr .anon) (term : AExpr β) : Prop where
+    (locals : List FVarId) (fuel : Nat) (before : TcState .anon) (source : KExpr .anon) : Prop where
   origins : ∀ cached,
     (BetaPublicWhnf.outerKey source before).2.env.whnfCache[(BetaPublicWhnf.outerKey source before).1]? = some cached →
-      ∃ originFuel originBefore target,
-        ∃ _ : BetaPublicExecution resolve locals originFuel originBefore source term cached target,
+      ∃ originResolve : Address → Option (ConstRef β), ∃ originLocals originFuel originBefore originTerm target,
+        ∃ _ : BetaPublicExecution originResolve originLocals originFuel originBefore source originTerm cached target,
           originBefore.env.intern.WF
   cold : (BetaPublicWhnf.outerKey source before).2.env.whnfCache[
       (BetaPublicWhnf.outerKey source before).1]? = none →
-    NoDeltaResources resolve locals fuel (betaWhnfCharge (BetaPublicWhnf.outerKey source before).2) source term
+    NoDeltaResources resolve locals fuel (betaWhnfCharge (BetaPublicWhnf.outerKey source before).2) source
+
+theorem CoreResources.ofExecution {β : Type u} {resolve : Address → Option (ConstRef β)}
+    {locals : List FVarId} {fuel : Nat} {before : TcState .anon}
+    {source result : KExpr .anon} {term target : AExpr β}
+    (execution : BetaCoreExecution resolve locals fuel before source term result target)
+    (coherent : before.env.intern.WF) (nextFuel : Nat) :
+    CoreResources resolve locals nextFuel execution.after source := by
+  have hit : (betaWhnfKey source execution.after).2.env.whnfCoreCache[
+      (betaWhnfKey source execution.after).1]? = some result := by
+    rw [betaWhnfKey_environment, execution.stable_key]
+    exact execution.published
+  constructor
+  · intro cached found
+    rw [hit] at found
+    cases Option.some.inj found
+    exact ⟨resolve, locals, fuel, before, term, target, execution, coherent⟩
+  · intro miss
+    rw [hit] at miss
+    cases miss
+
+theorem NoDeltaResources.ofExecution {β : Type u} {resolve : Address → Option (ConstRef β)}
+    {locals : List FVarId} {fuel : Nat} {before : TcState .anon}
+    {source result : KExpr .anon} {term target : AExpr β}
+    (execution : BetaNoDeltaExecution resolve locals fuel before source term result target)
+    (coherent : before.env.intern.WF) (inactive : before.inNativeReduce = false) (nextFuel : Nat) :
+    NoDeltaResources resolve locals nextFuel execution.after source := by
+  have hit : (betaWhnfKey source execution.after).2.env.whnfNoDeltaCache[
+      (betaWhnfKey source execution.after).1]? = some result := by
+    rw [betaWhnfKey_environment, execution.stable_key]
+    exact execution.published inactive
+  constructor
+  · intro cached found
+    rw [hit] at found
+    cases Option.some.inj found
+    exact ⟨resolve, locals, fuel, before, term, target, execution, coherent⟩
+  · intro miss
+    rw [hit] at miss
+    cases miss
+
+theorem PublicResources.ofExecution {β : Type u} {resolve : Address → Option (ConstRef β)}
+    {locals : List FVarId} {fuel : Nat} {before : TcState .anon}
+    {source result : KExpr .anon} {term target : AExpr β}
+    (execution : BetaPublicExecution resolve locals fuel before source term result target)
+    (coherent : before.env.intern.WF) (inactive : before.inNativeReduce = false) (nextFuel : Nat) :
+    PublicResources resolve locals nextFuel execution.after source := by
+  have hit : (BetaPublicWhnf.outerKey source execution.after).2.env.whnfCache[
+      (BetaPublicWhnf.outerKey source execution.after).1]? = some result := by
+    rw [BetaPublicWhnf.outerKey, betaWhnfKey_environment, (betaWhnfPrefix_fields _).1,
+      betaWhnfKey_prefix, execution.stable_key]
+    exact execution.published inactive
+  constructor
+  · intro cached found
+    rw [hit] at found
+    cases Option.some.inj found
+    exact ⟨resolve, locals, fuel, before, term, target, execution, coherent⟩
+  · intro miss
+    rw [hit] at miss
+    cases miss
 
 end BetaWhnfSource
 
@@ -93,7 +152,7 @@ theorem BetaCoreExecution.exists_of_success {β : Type u} {resolve : Address →
     {locals : List FVarId} {fuel : Nat} {before after : TcState .anon}
     {source result : KExpr .anon} {term : AExpr β}
     (chosen : BetaWhnfSource.selected source = true)
-    (resources : BetaWhnfSource.CoreResources resolve locals fuel before source term)
+    (resources : BetaWhnfSource.CoreResources resolve locals fuel before source)
     (reading : readScopedExpr? resolve locals source = some term.erase)
     (coherent : before.env.intern.WF)
     (accepted : (RecM.whnfCore source).run (methodsN (fuel + 1)) before = .ok result after) :
@@ -102,17 +161,18 @@ theorem BetaCoreExecution.exists_of_success {β : Type u} {resolve : Address →
   cases observed : (betaWhnfKey source before).2.env.whnfCoreCache[(betaWhnfKey source before).1]? with
   | none => exact exists_of_miss_success chosen (resources.cold observed) reading coherent observed accepted
   | some cached =>
-      obtain ⟨originFuel, originBefore, target, origin, initial⟩ := resources.origins cached observed
-      let execution : BetaCoreExecution resolve locals fuel before source term cached target :=
-        .cached origin initial observed
+      obtain ⟨originResolve, originLocals, originFuel, originBefore, originTerm, target, origin, initial⟩ := resources.origins cached observed
+      let rebuilt := origin.reannotate reading initial
+      let execution : BetaCoreExecution resolve locals fuel before source term cached rebuilt.1 :=
+        .cached rebuilt.2.1 initial observed
       obtain ⟨rfl, finalEq⟩ := EStateM.Result.ok.inj (execution.run.symm.trans accepted)
-      exact ⟨target, execution, finalEq⟩
+      exact ⟨rebuilt.1, execution, finalEq⟩
 
 theorem BetaNoDeltaExecution.exists_of_success {β : Type u} {resolve : Address → Option (ConstRef β)}
     {locals : List FVarId} {fuel : Nat} {before after : TcState .anon}
     {source result : KExpr .anon} {term : AExpr β}
     (chosen : BetaWhnfSource.selected source = true)
-    (resources : BetaWhnfSource.NoDeltaResources resolve locals fuel before source term)
+    (resources : BetaWhnfSource.NoDeltaResources resolve locals fuel before source)
     (reading : readScopedExpr? resolve locals source = some term.erase)
     (coherent : before.env.intern.WF)
     (accepted : (RecM.whnfNoDelta source).run (methodsN (fuel + 1)) before = .ok result after) :
@@ -135,17 +195,18 @@ theorem BetaNoDeltaExecution.exists_of_success {β : Type u} {resolve : Address 
       obtain ⟨rfl, finalEq⟩ := EStateM.Result.ok.inj (execution.run.symm.trans accepted)
       exact ⟨target, execution, finalEq⟩
   | some cached =>
-      obtain ⟨originFuel, originBefore, target, origin, initial⟩ := resources.origins cached observed
-      let execution : BetaNoDeltaExecution resolve locals fuel before source term cached target :=
-        .cached origin initial observed
+      obtain ⟨originResolve, originLocals, originFuel, originBefore, originTerm, target, origin, initial⟩ := resources.origins cached observed
+      let rebuilt := origin.reannotate reading initial
+      let execution : BetaNoDeltaExecution resolve locals fuel before source term cached rebuilt.1 :=
+        .cached rebuilt.2.1 initial observed
       obtain ⟨rfl, finalEq⟩ := EStateM.Result.ok.inj (execution.run.symm.trans accepted)
-      exact ⟨target, execution, finalEq⟩
+      exact ⟨rebuilt.1, execution, finalEq⟩
 
 theorem BetaPublicExecution.exists_of_success {β : Type u} {resolve : Address → Option (ConstRef β)}
     {locals : List FVarId} {fuel : Nat} {before after : TcState .anon}
     {source result : KExpr .anon} {term : AExpr β}
     (chosen : BetaWhnfSource.selected source = true)
-    (resources : BetaWhnfSource.PublicResources resolve locals fuel before source term)
+    (resources : BetaWhnfSource.PublicResources resolve locals fuel before source)
     (reading : readScopedExpr? resolve locals source = some term.erase)
     (coherent : before.env.intern.WF)
     (accepted : (RecM.whnf source).run (methodsN (fuel + 1)) before = .ok result after) :
@@ -173,10 +234,11 @@ theorem BetaPublicExecution.exists_of_success {β : Type u} {resolve : Address �
       obtain ⟨rfl, finalEq⟩ := EStateM.Result.ok.inj (execution.run.symm.trans accepted)
       exact ⟨target, execution, finalEq⟩
   | some cached =>
-      obtain ⟨originFuel, originBefore, target, origin, initial⟩ := resources.origins cached observed
-      let execution : BetaPublicExecution resolve locals fuel before source term cached target :=
-        .cached origin initial observed
+      obtain ⟨originResolve, originLocals, originFuel, originBefore, originTerm, target, origin, initial⟩ := resources.origins cached observed
+      let rebuilt := origin.reannotate reading initial
+      let execution : BetaPublicExecution resolve locals fuel before source term cached rebuilt.1 :=
+        .cached rebuilt.2.1 initial observed
       obtain ⟨rfl, finalEq⟩ := EStateM.Result.ok.inj (execution.run.symm.trans accepted)
-      exact ⟨target, execution, finalEq⟩
+      exact ⟨rebuilt.1, execution, finalEq⟩
 
 end Ix.Kernel.Consistency

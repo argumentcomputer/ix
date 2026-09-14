@@ -120,8 +120,8 @@ inductive BetaHeadReduction {β : Type u} (resolve : Address → Option (ConstRe
       (miss : BetaCoreCache.lookup flags (betaWhnfKey source before).1 (betaWhnfKey source before).2 = none) :
       BetaHeadReduction resolve locals fuel flags before source term
         (BetaCoreCache.write flags (betaWhnfKey source before).1 result reduced) result target
-  | cached {fuel flags before source result term target originFuel originBefore originAfter}
-      (origin : BetaHeadReduction resolve locals originFuel flags originBefore source term originAfter result target)
+  | cached {fuel flags before source result term target originFuel originFlags originBefore originAfter}
+      (origin : BetaHeadReduction resolve locals originFuel originFlags originBefore source term originAfter result target)
       (coherent : originBefore.env.intern.WF)
       (hit : BetaCoreCache.lookup flags (betaWhnfKey source before).1 (betaWhnfKey source before).2 = some result) :
       BetaHeadReduction resolve locals fuel flags before source term (betaWhnfKey source before).2 result target

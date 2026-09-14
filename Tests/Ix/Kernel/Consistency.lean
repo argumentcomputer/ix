@@ -3858,7 +3858,7 @@ private def letWhnfLoopResult (typeLevel : Bool) (flags : WhnfFlags) (shape : Na
 /-- Recursive head calls may contain their own beta steps and cache writes.
 Their method depth is separate from the enclosing two-iteration loop. -/
 private def headWhnfLoopResult (depth : Nat) (typeLevel : Bool) (flags : WhnfFlags)
-    (shape : Nat) (warm native : Bool) : Bool :=
+    (shape : Nat) (warm native : Bool) (innerWarm otherPartition : Bool := false) : Bool :=
   let carrier := KExpr.mkSort (m := .anon) (if typeLevel then levelOne else .mkZero)
   let carrierType := KExpr.mkSort (m := .anon) (if typeLevel then levelTwo else levelOne)
   let body := if shape == 0 then KExpr.mkVar 0 () else if shape == 1 then
@@ -3890,17 +3890,21 @@ private def headWhnfLoopResult (depth : Nat) (typeLevel : Bool) (flags : WhnfFla
       env := { state.env with
         whnfCache := seed, whnfNoDeltaCache := seed, whnfCoreCache := seed,
         whnfNoDeltaCheapCache := seed, whnfCoreCheapCache := seed } }
+    if depth == 2 && innerWarm then
+      let innerFlags := if otherPartition then
+        (if flags.isFull then WhnfFlags.DEF_EQ_CORE else .FULL) else flags
+      if (← RecM.whnfCoreWithFlags inner innerFlags) != identity then return false
     if warm then
       if (← RecM.whnfCoreWithFlags head flags) != function then return false
     let before ← get
-    let budget := if warm then 1 else depth + 1
+    let budget := if warm then 1 else if depth == 2 && innerWarm && !otherPartition then 2 else depth + 1
     let headKey := (head.addr, emptyCtxAddr)
     let parentKey := (source.addr, emptyCtxAddr)
     let writes := if depth == 2 then (seed.insert (inner.addr, emptyCtxAddr) identity).insert headKey function
       else seed.insert headKey function
     let maps (after : TcState .anon) (selected : Std.HashMap (Address × Address) (KExpr .anon)) :=
-      sameMap after.env.whnfCoreCache (if flags.isFull then selected else seed) &&
-      sameMap after.env.whnfCoreCheapCache (if flags.isFull then seed else selected) &&
+      sameMap after.env.whnfCoreCache (if flags.isFull then selected else before.env.whnfCoreCache) &&
+      sameMap after.env.whnfCoreCheapCache (if flags.isFull then before.env.whnfCoreCheapCache else selected) &&
       sameMap after.env.whnfNoDeltaCache seed && sameMap after.env.whnfNoDeltaCheapCache seed &&
       sameMap after.env.whnfCache seed && sameMap after.env.inferCache before.env.inferCache &&
       sameMap after.env.inferOnlyCache before.env.inferOnlyCache
@@ -4044,6 +4048,14 @@ private def headWhnfCases : TestSeq :=
             headWhnfLoopResult depth typeLevel flags shape warm native)) .done)
     (test "application head WHNF: distinct legacy radii retain all keys through head memoization"
       ([false, true].all headWhnfLegacyKeys))
+  ++ test "application head WHNF: an isolated inner hit reduces method depth and supplies later parent hits"
+    ([false, true].all fun typeLevel => [WhnfFlags.FULL, .DEF_EQ_CORE].all fun flags =>
+      (List.range 3).all fun shape => [false, true].all fun warm => [false, true].all fun native =>
+        headWhnfLoopResult 2 typeLevel flags shape warm native true)
+  ++ test "application head WHNF: an inner hit in the other partition preserves the cold method bound"
+    ([false, true].all fun typeLevel => [WhnfFlags.FULL, .DEF_EQ_CORE].all fun flags =>
+      (List.range 3).all fun shape => [false, true].all fun native =>
+        headWhnfLoopResult 2 typeLevel flags shape false native true true)
   ++ test "application head sort exposure: nested callbacks retain all binder child types across cache layers"
     ([false, true].all fun typeLevel => [false, true].all fun instrumented => [false, true].all fun noAccel =>
       [0, 1, 2].all fun lowerWarm => sortExposureInferencePaths typeLevel false instrumented noAccel lowerWarm false true)

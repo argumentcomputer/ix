@@ -889,6 +889,45 @@ private def headWhnfExecutionRoots : Array Lean.Name := #[
   ``SynthesisBetaWhnfTrace.toRawTrace
 ]
 
+/-- Replay reconstructs annotations from the current source reading. Neither
+the raw producer nor its reconstruction may assume semantic typing. -/
+private def betaReannotationExprRoots : Array Lean.Name := #[
+  ``BetaPrefixPlan.sourceResources,
+  ``BetaPrefixPlan.sourceOutput,
+  ``BetaStepPlan.selected,
+  ``BetaStepPlan.sourceResources,
+  ``BetaStepPlan.sourceOutput,
+  ``BetaStepPlan.sourceAfter,
+  ``BetaHeadStepPlan.sourceSpine,
+  ``BetaHeadStepPlan.sourceResources,
+  ``BetaHeadStepPlan.sourceOutput,
+  ``BetaHeadStepPlan.sourceAfter,
+  ``BetaHeadStepSource.constructOfEntry
+]
+
+private def betaReannotationExecutionRoots : Array Lean.Name := #[
+  ``BetaWhnfTrace.reannotate,
+  ``BetaHeadReduction.reannotate,
+  ``BetaHeadCacheOrigin,
+  ``BetaHeadReduction.origin,
+  ``BetaHeadReduction.published,
+  ``BetaHeadReduction.replay,
+  ``BetaHeadReduction.replay_run,
+  ``BetaHeadCacheOrigin.replay,
+  ``BetaWhnfSource.HeadOrigins,
+  ``BetaWhnfSource.HeadOrigins.absent,
+  ``BetaWhnfSource.HeadOrigins.ofCall,
+  ``BetaWhnfSource.HeadOrigins.replay,
+  ``BetaCoreExecution.reannotate,
+  ``BetaNoDeltaExecution.reannotate,
+  ``BetaPublicExecution.reannotate,
+  ``BetaHeadReduction.exists_of_success,
+  ``BetaWhnfSource.HeadOrigins.of_success,
+  ``BetaWhnfSource.CoreResources.ofExecution,
+  ``BetaWhnfSource.NoDeltaResources.ofExecution,
+  ``BetaWhnfSource.PublicResources.ofExecution
+]
+
 private def localScopeFrameRoots : Array Lean.Name := #[
   ``LocalContext.Equiv.refl, ``LocalContext.Equiv.symm, ``LocalContext.Equiv.trans,
   ``LocalContext.Equiv.size, ``LocalContext.Equiv.find?, ``LocalContext.Equiv.wf,
@@ -1504,7 +1543,8 @@ def roots : Array RootAllowance := #[
   ++ (mixedCacheFrameRoots ++ headWhnfFrameRoots ++ #[``betaWhnfCharge_success]).map (fun root => {
     root, standardAxioms := #[``propext, ``Quot.sound],
     forbiddenDependencies := forbiddenProduction ++ #[``HereditaryTyping] })
-  ++ (mixedCacheKeyRoots ++ betaSourceExprRoots ++ letWhnfExprRoots ++ headWhnfExprRoots).map (fun root => {
+  ++ (mixedCacheKeyRoots ++ betaSourceExprRoots ++ letWhnfExprRoots ++ headWhnfExprRoots ++
+      betaReannotationExprRoots).map (fun root => {
     root, standardAxioms := standard, nativeAxioms := #[expressionNative],
     forbiddenDependencies := forbiddenProduction ++ #[``HereditaryTyping] })
   ++ #[``SynthesisInference.beta_core_execution_sound, ``SynthesisInference.beta_noDelta_execution_sound,
@@ -1514,7 +1554,7 @@ def roots : Array RootAllowance := #[
     root, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative],
     forbiddenDependencies := forbiddenProduction })
   ++ (recursiveLetShapeRoots ++ sortExposureRoots ++ mixedCacheExecutionRoots ++ betaSourceExecutionRoots ++
-      letWhnfExecutionRoots ++ headWhnfExecutionRoots).map (fun root => {
+      letWhnfExecutionRoots ++ headWhnfExecutionRoots ++ betaReannotationExecutionRoots).map (fun root => {
     root, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative],
     forbiddenDependencies := forbiddenProduction ++ #[``HereditaryTyping] })
   ++ (localScopeFrameRoots ++ localStateFrameRoots ++ recursiveStateFrameRoots ++ ingressFrameRoots ++

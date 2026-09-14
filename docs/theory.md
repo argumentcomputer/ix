@@ -116,10 +116,14 @@ Application heads can now reduce recursively before the enclosing beta step.
 The same trace retains each callback's actual cache writes or earlier producing
 execution, and its method depth is separate from the outer loop bound.
 The original derivation supplies the head conversion and preserves the checks
-of every argument. Source reconstruction covers cold explicit-let heads that
-return lambdas, including nested head calls. Stored local let values and other
-head reducers remain outside that construction; automatic reconstruction of
-cached head calls still requires further work.
+of every argument. Source reconstruction covers explicit-let heads that return
+lambdas, including nested fresh and cached head calls. Retained producers are
+reannotated from the current source reading, even with different resolvers,
+local lists, and annotation types. This preserves the exact raw result,
+intermediate states, method depth, and iteration count. All three WHNF cache
+layers support this reconstruction, and actual publication derives resources
+for later replay. Stored local let values and other head reducers remain
+outside that construction.
 Constructing initial inference resources for arbitrary accepted programs,
 general WHNF cache origins, the remaining reducers, and general conversion
 remain open.

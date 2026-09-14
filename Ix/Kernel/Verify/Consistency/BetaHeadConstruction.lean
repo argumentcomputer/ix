@@ -48,9 +48,11 @@ structure Witness {β : Type u} (resolve : Address → Option (ConstRef β)) (lo
   result : plan.result = (BetaPrefixSource.output head source.collectSpine.2 before).1
   after : plan.after = BetaPrefixSource.after head source.collectSpine.2 before
 
-def construct {β : Type u} {resolve : Address → Option (ConstRef β)} {locals : List FVarId}
+def constructOfEntry {β : Type u} {resolve : Address → Option (ConstRef β)} {locals : List FVarId}
     {before : TcState .anon} {source head : KExpr .anon} {term target : AExpr β}
-    (chosen : selected source = true) (reading : readScopedExpr? resolve locals source = some term.erase)
+    (application : ∃ fn arg info, source = .app fn arg info)
+    (entry : StructuralWhnfEntry source.collectSpine.1)
+    (reading : readScopedExpr? resolve locals source = some term.erase)
     (returned : BetaPrefixSource.selected head = true)
     (headReads : readScopedExpr? resolve locals head = some target.erase)
     (resources : BetaPrefixSource.Resources head source.collectSpine.2 before) :
@@ -67,9 +69,19 @@ def construct {β : Type u} {resolve : Address → Option (ConstRef β)} {locals
         headTerm := (AppSpineSource.parts (.app fn arg info) term).1,
         modelSource := by rw [built.modelArgs]; exact parsed.1,
         spine := Prod.ext rfl built.rawArgs.symm,
-        headEntry := LetStepSource.selected_entry chosen, sourceHeadReads := parsed.2.1
+        headEntry := entry, sourceHeadReads := parsed.2.1
       }, rfl, rfl, built.raw, built.model, built.result, built.after⟩
-  | _ => cases chosen
+  | _ => exfalso; obtain ⟨_, _, _, impossible⟩ := application; cases impossible
+
+def construct {β : Type u} {resolve : Address → Option (ConstRef β)} {locals : List FVarId}
+    {before : TcState .anon} {source head : KExpr .anon} {term target : AExpr β}
+    (chosen : selected source = true) (reading : readScopedExpr? resolve locals source = some term.erase)
+    (returned : BetaPrefixSource.selected head = true)
+    (headReads : readScopedExpr? resolve locals head = some target.erase)
+    (resources : BetaPrefixSource.Resources head source.collectSpine.2 before) :
+    Witness resolve locals before source term head target :=
+  constructOfEntry (selected_app chosen) (LetStepSource.selected_entry (selected_head chosen))
+    reading returned headReads resources
 
 /-- Successful application evaluation includes a successful head callback.
 This also rules out method depth zero without an extra resource premise. -/

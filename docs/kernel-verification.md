@@ -601,7 +601,7 @@ lake test --wfail -- tc-unit
 lake -d Models/SetTheory build --wfail
 ```
 
-The consistency target checks 1,518 exact theorem boundaries. The production
+The consistency target checks 1,549 exact theorem boundaries. The production
 environment roots retain four existing generated output-length proofs,
 reached through expression/universe construction, names, and the full
 production method table. They introduce no new native proofs. The model
@@ -790,14 +790,31 @@ and type conversion. Each callback uses the predecessor method table; its loop
 budget is independent of the enclosing step count.
 The generalized cache frame preserves every query's key as recursive calls
 memoize different legacy context radii, including previously cached digests.
-`BetaWhnfSource.construct` reconstructs cold explicit-let heads that return
-lambdas, including nested head calls, using finite raw resources and successful
-execution. The existing inference, Pi/sort exposure, and declaration conversion
-theorems consume those traces. Retained cached heads are supported by the raw
-trace and its automatic semantic annotation; constructing them automatically
-from source resources remains open. Stored local let values and other head
-reducers also remain outside this construction. All 64 added boundaries forbid
-the semantic hereditary invariant and introduce no axiom or native proof.
+`BetaWhnfSource.construct` reconstructs explicit-let heads that return lambdas,
+including nested fresh and cached head calls, using finite raw resources and
+successful execution. The existing inference, Pi/sort exposure, and declaration
+conversion theorems consume those traces. Stored local let values and other
+head reducers remain outside this construction. All 64 application-head
+boundaries forbid the semantic hereditary invariant and introduce no axiom or
+native proof.
+`BetaWhnfTrace.reannotate` and `BetaHeadReduction.reannotate` reconstruct every
+annotation from the current source reading, preserving the exact raw source,
+result, intermediate states, method depth, and iteration count. The earlier
+producer may use a different resolver, local list, and annotation type.
+`BetaHeadCacheOrigin` retains that producer and its initial intern coherence;
+the actual lookup determines the returned expression and current partition.
+Successful calls construct head origins through `HeadOrigins.of_success`, and
+publication derives zero-method replay. The source constructor uses these
+origins at hits and reconstructs the bounded path at misses, including mixed
+nested calls. Classical choice selects only a retained producing execution;
+the current annotations are then constructed from the current reading.
+Reannotation also preserves complete executions at all three WHNF cache layers.
+Their source resources no longer contain the current annotated term or require
+matching producer annotations, resolver, or locals. The three `ofExecution`
+constructors derive replay resources from actual publication. These 31 further
+audited boundaries forbid the semantic hereditary invariant and add no axiom
+or native proof. General construction and preservation of source resources and
+cache origins through arbitrary checker histories remain open.
 `SynthesisInference.cached` retains the original tree behind an inference
 cache hit. Its soundness and beta derivations reuse the actual lambda-body,
 dependent codomain, and argument checks. `reuseFull` derives the cached result
@@ -1050,11 +1067,13 @@ Ten let-WHNF regressions cover alternating let/beta steps, dependent results,
 exact loop exhaustion, all cache layers and native guards, zero-method
 replay, original inference-cache types during sort exposure, declaration
 universe parameters, and rejection with local-scope cleanup.
-Eleven application-head regressions cover nested callbacks, cold and warmed
+Thirteen application-head regressions cover nested callbacks, cold and warmed
 full/cheap caches, native reduction, separate method and loop exhaustion,
 partial cache writes on failure, distinct legacy key radii, binder inference,
 parameterized declaration admission, and rejection of a Pi where a sort is required.
-The unit suite contains 759 checks. The anonymous differential additionally
+An isolated inner hit reduces the required method depth and supplies later
+parent hits; an entry in the other cache partition preserves the cold bound.
+The unit suite contains 761 checks. The anonymous differential additionally
 serializes eleven cycle-policy fixtures and checks exact target sets, verdicts,
 failure counts, and cycle diagnostics in both implementations.
 
@@ -1104,6 +1123,7 @@ The VM pilot is preserved in the frozen archive and excluded from the host gate.
 | Retained derivations, dependent substitution, and semantic induction | [`Consistency/SynthesisDerivation.lean`](../Ix/Kernel/Verify/Consistency/SynthesisDerivation.lean), [`SynthesisShapes.lean`](../Ix/Kernel/Verify/Consistency/SynthesisShapes.lean), [`SynthesisReduction.lean`](../Ix/Kernel/Verify/Consistency/SynthesisReduction.lean), [`SynthesisMeaning.lean`](../Ix/Kernel/Verify/Consistency/SynthesisMeaning.lean), [`BinderMeaning.lean`](../Ix/Kernel/Verify/Consistency/BinderMeaning.lean), [`BetaChecking.lean`](../Ix/Kernel/Verify/Consistency/BetaChecking.lean) |
 | Let inference and typed cache history | [`Consistency/LetInference.lean`](../Ix/Kernel/Verify/Consistency/LetInference.lean), [`LetSynthesis.lean`](../Ix/Kernel/Verify/Consistency/LetSynthesis.lean), [`LetCache.lean`](../Ix/Kernel/Verify/Consistency/LetCache.lean), [`SynthesisCacheExecution.lean`](../Ix/Kernel/Verify/Consistency/SynthesisCacheExecution.lean) |
 | Public beta WHNF, cache writes and replay, and Pi/sort exposure | [`BetaCacheExecution.lean`](../Ix/Kernel/Verify/Consistency/BetaCacheExecution.lean), [`BetaCacheKeys.lean`](../Ix/Kernel/Verify/Consistency/BetaCacheKeys.lean), [`BetaPublicWhnf.lean`](../Ix/Kernel/Verify/Consistency/BetaPublicWhnf.lean), [`BetaWhnfInference.lean`](../Ix/Kernel/Verify/Consistency/BetaWhnfInference.lean) |
+| Fresh annotations and retained WHNF producer reconstruction | [`BetaReannotation.lean`](../Ix/Kernel/Verify/Consistency/BetaReannotation.lean), [`BetaHeadOrigin.lean`](../Ix/Kernel/Verify/Consistency/BetaHeadOrigin.lean), [`BetaCacheReannotation.lean`](../Ix/Kernel/Verify/Consistency/BetaCacheReannotation.lean), [`BetaTraceConstruction.lean`](../Ix/Kernel/Verify/Consistency/BetaTraceConstruction.lean) |
 | Retained type checks and changed cheap beta in lambda inference | [`Consistency/SynthesisInference.lean`](../Ix/Kernel/Verify/Consistency/SynthesisInference.lean), [`CheapBetaReading.lean`](../Ix/Kernel/Verify/Consistency/CheapBetaReading.lean), [`Formation.lean`](../Ix/Kernel/Verify/Consistency/Formation.lean) |
 | Source beta reduction and declaration conversion | [`Consistency/BetaSpine.lean`](../Ix/Kernel/Verify/Consistency/BetaSpine.lean), [`Simultaneous.lean`](../Ix/Kernel/Verify/Consistency/Simultaneous.lean), [`SpineReading.lean`](../Ix/Kernel/Verify/Consistency/SpineReading.lean), [`CheapBeta.lean`](../Ix/Kernel/Verify/Consistency/CheapBeta.lean), [`Model/BetaSpine.lean`](../Ix/Theory/Model/BetaSpine.lean) |
 | Production environment fragment and relative axiom policy | [`Consistency/Environment.lean`](../Ix/Kernel/Verify/Consistency/Environment.lean), [`Production.lean`](../Ix/Kernel/Verify/Consistency/Production.lean) |

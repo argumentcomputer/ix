@@ -38,7 +38,7 @@ theorem BetaSortExposure.exists_of_success {β : Type u} {resolve : Address → 
     {locals : List FVarId} {fuel : Nat} {before after : TcState .anon}
     {source : KExpr .anon} {term : AExpr β} {level : KUniv .anon}
     (chosen : BetaWhnfSource.selected source = true)
-    (resources : BetaWhnfSource.PublicResources resolve locals fuel before source term)
+    (resources : BetaWhnfSource.PublicResources resolve locals fuel before source)
     (reading : readScopedExpr? resolve locals source = some term.erase)
     (coherent : before.env.intern.WF)
     (accepted : (RecM.ensureSortDirect source).run (methodsN (fuel + 1)) before = .ok level after) :
@@ -56,7 +56,7 @@ theorem BetaPiExposure.exists_of_success {β : Type u} {resolve : Address → Op
     {locals : List FVarId} {fuel : Nat} {before after : TcState .anon}
     {source rawDomain rawBody : KExpr .anon} {term : AExpr β}
     (chosen : BetaWhnfSource.selected source = true)
-    (resources : BetaWhnfSource.PublicResources resolve locals fuel before source term)
+    (resources : BetaWhnfSource.PublicResources resolve locals fuel before source)
     (reading : readScopedExpr? resolve locals source = some term.erase)
     (coherent : before.env.intern.WF)
     (accepted : (RecM.ensureForallDirect source).run (methodsN (fuel + 1)) before = .ok (rawDomain, rawBody) after) :

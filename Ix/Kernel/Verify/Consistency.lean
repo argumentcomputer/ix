@@ -50,6 +50,9 @@ import Ix.Kernel.Verify.Consistency.LetWhnfPlan
 import Ix.Kernel.Verify.Consistency.BetaWhnfPlan
 import Ix.Kernel.Verify.Consistency.BetaHeadStepPlan
 import Ix.Kernel.Verify.Consistency.BetaHeadConstruction
+import Ix.Kernel.Verify.Consistency.BetaReannotation
+import Ix.Kernel.Verify.Consistency.BetaHeadOrigin
+import Ix.Kernel.Verify.Consistency.BetaCacheReannotation
 import Ix.Kernel.Verify.Consistency.SynthesisAppCongruence
 import Ix.Kernel.Verify.Consistency.BetaPublicWhnf
 import Ix.Kernel.Verify.Consistency.WhnfCacheFrame
@@ -179,10 +182,14 @@ annotated term, so later beta steps retain their existing typing derivation.
 This also covers let-based Pi/sort exposure and declaration conversion.
 Recursive application heads now use the same trace, with separate method
 depth and loop bounds and actual full/cheap cache writes or retained hits.
-Source reconstruction includes cold explicit-let heads returning lambdas,
-including nested head calls. The original typing derivation supplies the
-head conversion while preserving every checked argument. Key frames preserve
-all queries when a recursive call memoizes a different legacy context radius.
+Source reconstruction includes explicit-let heads returning lambdas, including
+nested fresh and cached head calls. Retained producers are reannotated from
+the current reading, even across different resolvers and local contexts,
+while preserving the actual result, state, fuel, and iteration count. The
+same reconstruction applies at all three cache layers, and publication
+derives resources for later replay. The original typing derivation supplies
+the head conversion while preserving every checked argument. Key frames
+preserve all queries when a recursive call memoizes a different legacy context radius.
 Only an outer miss charges shared fuel. Pi exposure uses the
 same complete cache-layer execution. Application inference
 uses that exposure between argument checks and derives the type conversion
