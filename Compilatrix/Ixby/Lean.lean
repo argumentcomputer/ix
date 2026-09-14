@@ -1,4 +1,5 @@
 import Compilatrix.Ixby.Runtime.Array
+import Compilatrix.Ixby.Runtime.Field
 
 /-! Experimental lowering of Lean's pure monomorphic LCNF to the Ixby
 reference machine. Lean performs typed proof erasure and specialization.
@@ -76,7 +77,12 @@ private def letValue (locals : Locals) : LCNF.LetValue .pure → CodeM Operand
     | .uint16 n => number n.toNat
     | .uint32 n => number n.toNat
     | .uint64 n | .usize n => number n.toNat
-  | .proj _ field value _ => do project (← lookup locals value) field
+  | .proj name field value _ => do
+    let value ← lookup locals value
+    if let some getters := (← getThe BuildState).projections[name]? then
+      let some getter := getters[field]? | throwThe String s!"unsupported scalar projection {name}.{field}"
+      call getter [value]
+    else project value field
   | .fvar value args => do
     let value ← lookup locals value
     if args.isEmpty then return value
@@ -164,6 +170,17 @@ mutual
         else
           let some (.inductInfo info) := (← getEnv).find? cases.typeName |
             throwThe String s!"typed Ixby unknown case type {cases.typeName}"
+          if let some getters := (← getThe BuildState).projections[cases.typeName]? then
+            let [ctor] := info.ctors | throwThe String "scalar layout requires one constructor"
+            let some (params, body) := findAlt cases.alts ctor |
+              throwThe String s!"typed Ixby missing scalar branch {ctor}"
+            unless params.isEmpty || params.size == getters.size do
+              throwThe String s!"typed Ixby scalar case field count {ctor}"
+            let mut captured := locals
+            for i in [:params.size] do
+              captured := captured.push (params[i]!.fvarId, ← call getters[i]! [value])
+            code fuel captured joins body
+            return
           let mut alternatives := #[]
           for name in info.ctors do
             let some (.ctorInfo ctor) := (← getEnv).find? name |
@@ -203,6 +220,7 @@ def compile (entry : Name) (limits : Limits := {}) (depth : Nat := 10000)
   let build : BuildM Program := do
     buildNumbers
     buildArrays
+    buildFields
     setup
     discard <| ensureFunction entry
     let mut next := 0
@@ -227,6 +245,10 @@ def Image.bytes (image : Image) (bytes : Array UInt8) : Except String Value := d
   return .ctor (← image.ctorId `Ixby.Runtime.Bytes) #[.scalar (.bytes bytes), ← image.number bytes.size]
 
 def Image.decodeNumber (image : Image) (value : Value) : Except String Nat := do
+  if let .ctor id #[.scalar (.field f)] := value then
+    unless id == (← image.ctorId `Ixby.Runtime.FieldNumber) do
+      throw "typed Ixby field number layout failed"
+    return f.val
   if let .ctor id #[.scalar (.nat n)] := value then
     unless id == (← image.ctorId `Ixby.Runtime.RawNumber) do
       throw "typed Ixby raw number layout failed"

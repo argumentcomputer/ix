@@ -19,10 +19,22 @@ def inspectElf (readelf : String) (path : FilePath) (exportName : String := "com
   ] s!"{path}: readelf"
   return elf
 
+/-- Keep decoded instruction rows, excluding filenames, symbol headings and
+relocation annotations. Random temporary paths can contain register names. -/
+def instructionText (dump : String) : String :=
+  String.intercalate "\n" ((dump.splitOn "\n").filter fun line =>
+    let parts := words line
+    let first := parts.headD ""
+    let address := (first.dropEnd 1).toString
+    first.endsWith ":" && !address.isEmpty && isHex address.length address &&
+      isHex 2 (parts.drop 1 |>.headD ""))
+
 def disassemble (objdump : String) (path : FilePath) (exportName : String := "compilatrix_main") : IO String := do
   let result := (← run objdump #["-dr", "-M", "intel", path.toString]).toLower
-  need (!result.contains "(bad)") s!"{path}: decoder emitted (bad)\n{result}"
-  requireAll result ["file format elf64-x86-64", s!"<{exportName}>:", "ret"] s!"{path}: objdump"
+  requireAll result ["file format elf64-x86-64", s!"<{exportName}>:"] s!"{path}: objdump"
+  let instructions := instructionText result
+  need (!instructions.contains "(bad)") s!"{path}: decoder emitted (bad)\n{instructions}"
+  requireAll instructions ["ret"] s!"{path}: objdump"
   return result
 
 def provenance (root : String) : IO ByteArray := do

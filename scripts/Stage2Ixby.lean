@@ -1,6 +1,7 @@
 import Compilatrix.Ixby.Lean
 import Compilatrix.Ixby.Runtime.Wire
-import Compilatrix.Ixby.Runtime.Execute
+import Compilatrix.Ixby.Runtime.Field
+import Compilatrix.Ixby.Binary
 import Compilatrix.Ixby.Runtime.Report
 import Compilatrix.Tools.Check
 import Compilatrix.Ixon.Hash
@@ -58,56 +59,36 @@ private def buildImage (directory : System.FilePath) : IO Image := do
     { env }
   checked result
 
-private def execute (image : Image) (input : Array Ix.Ixby.Value) : IO (Ix.Ixby.Value × Nat) := do
-  let mut state ← checked <| (Ix.Ixby.initialState limits image.program input).mapError reprStr
-  let mut steps := 0
-  for chunk in [:16000] do
-    let (result, count) ← checked <| (runChunk limits image.program 1000000 state 0).mapError reprStr
-    steps := steps + count
-    match result with
-    | .inl value => return (value, steps)
-    | .inr next => state := next
-    if chunk % 10 == 0 then
-      let location := match state.control with
-        | .eval frame => toString image.state.functions[frame.function]!.name
-        | .ret _ => "return"
-        | .apply _ _ => "apply"
-      IO.println s!"stage2-ixby steps={steps}; {location}"
-      if chunk % 100 == 0 then
-        let callers := state.continuation.toList.filterMap fun continuation =>
-          match continuation with
-          | .resume frame =>
-            let name := toString image.state.functions[frame.function]!.name
-            if name.startsWith "MultiStark.Verify." then some name else none
-          | _ => none
-        IO.println s!"stage2-ixby callers: {String.intercalate " > " (callers.take 8)}"
-        if let some frame := state.continuation.toList.reverse.findSome? (fun continuation =>
-            match continuation with
-            | .resume frame =>
-              if image.state.functions[frame.function]!.name == `MultiStark.Verify.Fri.reduceQueries then
-                some frame else none
-            | _ => none) then
-          if let .ok query := image.decodeNumber (frame.locals[4]?.getD .erased) then
-            if let .ok remaining := image.decodeNumber (frame.locals[5]?.getD .erased) then
-              IO.println s!"stage2-ixby FRI query {query + 1}/{query + remaining}"
-      (← IO.getStdout).flush
-  throw (IO.userError "Stage2 Ixby step limit")
-
 def main (args : List String) : IO UInt32 := cli "stage2-ixby" do
-  let (directory, name, report) ← match args with
+  let (directory, name, path) ← match args with
     | [directory, name] => pure (directory, name, none)
-    | [directory, "compile", report] => pure (directory, "compile", some report)
-    | _ => throw (IO.userError "usage: stage2-ixby <fixture-directory> <compile [inventory.json]|case>")
+    | [directory, name, path] => pure (directory, name, some path)
+    | _ => throw (IO.userError "usage: stage2-ixby <fixture-directory> <compile|case> [program.ixby]")
   let directory : System.FilePath := directory
-  let image ← buildImage directory
-  let blocks := image.program.functions.foldl (fun n f => n + f.blocks.size) 0
-  IO.println s!"stage2-ixby compiled: {image.program.functions.size} functions; {blocks} blocks; {image.program.constructors.size} constructors; reference only; source refinement uncertified"
-  (← IO.getStdout).flush
+  let programPath : System.FilePath := path.getD (directory / "stage2.ixby").toString
   if name == "compile" then
-    if let some path := report then IO.FS.writeFile path (image.report.pretty ++ "\n")
+    let image ← buildImage directory
+    let artifact : Compilatrix.Ixby.Binary.Artifact := {
+      limits := image.state.limits, maxSteps := 16000000000, program := image.program }
+    let encoded ← checked (Compilatrix.Ixby.Binary.encode artifact |>.mapError reprStr)
+    let decoded ← checked (Compilatrix.Ixby.Binary.decode encoded |>.mapError reprStr)
+    need (decoded.value == artifact) "serialized Stage2 image changed during decoding"
+    if let some parent := programPath.parent then IO.FS.createDirAll parent
+    IO.FS.writeBinFile programPath ⟨encoded⟩
+    let metadata := Json.mkObj [
+      ("format", toJson "compilatrix-ixby-binary/1"),
+      ("bytes", toJson encoded.size), ("sha256", toJson (← sha256 programPath)),
+      ("max_steps", toJson artifact.maxSteps)]
+    let fields ← checked image.report.getObj?
+    let report := Json.mkObj (("artifact", metadata) :: fields.toList)
+    IO.FS.writeFile (programPath.toString ++ ".json") (report.pretty ++ "\n")
+    IO.println s!"stage2-ixby compiled: {image.program.functions.size} functions; {encoded.size} binary bytes; {programPath}"
     return
   need (["valid", "claim-mismatch", "empty-proof", "truncated-proof", "trailing-public",
     "trailing-proof", "wrong-claim-kind", "malformed-proof"].contains name) "unknown Stage2 case"
+  let image ← checked (Compilatrix.Ixby.Binary.decode (← IO.FS.readBinFile programPath).data |>.mapError reprStr)
+  IO.println s!"stage2-ixby loaded: {programPath}; {image.value.program.functions.size} functions"
+  (← IO.getStdout).flush
   let publicClaim ← IO.FS.readBinFile (directory / "smoke-public.claim")
   let expectedClaim ← checked (unhex "e571cbf135649af05f7cce8ba201a48e46556de51483f690cc6ec500a65530059c00")
   need (publicClaim == expectedClaim) "Stage2 claim differs"
@@ -129,7 +110,22 @@ def main (args : List String) : IO UInt32 := cli "stage2-ixby" do
       | "trailing-proof" => proof.data.push 0
       | "malformed-proof" => #[0xff, 0xff]
       | _ => proof.data
-    let (output, steps) ← execute image #[.scalar (.bytes claim), .scalar (.bytes proof)]
+    let input ← checked (Compilatrix.Ixby.Binary.encodeInput image.value
+      #[.scalar (.bytes claim), .scalar (.bytes proof)] |>.mapError reprStr)
+    let inputPath := temporary / "input.ixbi"
+    let outputPath := temporary / "output.ixbo"
+    let statsPath := temporary / "execution.json"
+    IO.FS.writeBinFile inputPath ⟨input⟩
+    let executable := ((← IO.appPath).parent.getD ".") / "ixby-exec"
+    let child ← IO.Process.spawn {
+      cmd := executable.toString
+      args := #[programPath.toString, inputPath.toString, outputPath.toString, statsPath.toString]
+      stdout := .inherit, stderr := .inherit }
+    need ((← child.wait) == 0) "binary executor failed"
+    let output ← checked (Compilatrix.Ixby.Binary.decodeOutput image.value
+      (← IO.FS.readBinFile outputPath).data |>.mapError reprStr)
     let expected : Ix.Ixby.Value := if name == "valid" then .scalar (.bytes publicClaim.data) else .erased
-    need (output == expected) s!"Stage2 Ixby result differs in {name}: {reprStr output}"
-    IO.println s!"stage2-ixby ok: {name}; {steps} reference steps; source refinement uncertified"
+    need (output.value == expected) s!"Stage2 Ixby result differs in {name}: {reprStr output.value}"
+    let stats ← readJson statsPath
+    let steps ← nat (← field stats "reference_transitions")
+    IO.println s!"stage2-ixby ok: {name}; {steps} reference transitions; executed serialized binary"

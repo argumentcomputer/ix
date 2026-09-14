@@ -58,6 +58,30 @@ def wireCanonical (actual expected : Array UInt8) : Nat :=
   | .ok _ => 1
   | .error _ => 0
 
+def wireFieldRead (values : Array UInt8) (offset : Nat) : Nat :=
+  match MultiStark.Verify.Codec.Wire.readField.run
+      { bytes := values, offset, vectorLimit := 17, items := 29 } with
+  | .error .truncated => 0
+  | .error .field => 1
+  | .error _ => 2
+  | .ok (field, state) =>
+    3 + field.val * 2 ^ 128 + state.offset * 2 ^ 64 + state.vectorLimit * 2 ^ 32 +
+      state.items + byteSum state.bytes * 2 ^ 192
+
+private def writeFieldResult (value : Ix.Ixby.Goldilocks) (initial : Array UInt8)
+    (limit : Nat) : Array UInt8 :=
+  match MultiStark.Verify.Codec.Wire.writeField value
+      { bytes := initial, limit, vectorLimit := 17, items := 29 } with
+  | .error .byteLimit => #[0]
+  | .error _ => #[1]
+  | .ok (_, state) => #[2, state.vectorLimit.toUInt8, state.items.toUInt8] ++ state.bytes
+
+def wireFieldWrite (n : Nat) (initial : Array UInt8) (limit : Nat) : Array UInt8 :=
+  writeFieldResult (Ix.Ixby.Goldilocks.reduce n) initial limit
+
+def wireFieldWriteRaw (n : Nat) (initial : Array UInt8) (limit : Nat) : Array UInt8 :=
+  writeFieldResult ⟨n % Ix.Ixby.goldilocksModulus, Nat.mod_lt _ (by decide)⟩ initial limit
+
 def replicate (n : Nat) : Nat :=
   (Array.replicate n 7).foldl (· + ·) 0
 
@@ -68,6 +92,35 @@ def cacheNatural (n : Nat) : Nat := (n / 1).toUInt32.toNat
 def deferredArithmetic (a b : Nat) : Nat :=
   let n := (a + a / (b + 1) + a % (b + 1)) * a - b
   n + n.toUInt32.toNat
+
+def fieldArithmetic (a b : Nat) : Nat :=
+  let x := Ix.Ixby.Goldilocks.reduce a
+  let y := Ix.Ixby.Goldilocks.reduce b
+  ((x.add y).mul (x.sub y).inverse).neg.val
+
+def fieldMixed (a b : Nat) : Nat :=
+  let n := (Ix.Ixby.Goldilocks.reduce a).val
+  deferredArithmetic n b + n.toUInt8.toNat + n.log2 + (n >>> 17)
+
+def fieldPower (a b : Nat) : Nat := (Ix.Ixby.Goldilocks.reduce a).pow b |>.val
+
+def fieldCompare (a b : Nat) : Nat :=
+  let x := Ix.Ixby.Goldilocks.reduce a
+  let y := Ix.Ixby.Goldilocks.reduce b
+  (if x == y then 1 else 0) + (if x.val == b then 2 else 0) + (if a == y.val then 4 else 0)
+
+def extensionArithmetic (a b c d : Nat) : Nat :=
+  let x : Ix.Ixby.ExtGoldilocks := ⟨Ix.Ixby.Goldilocks.reduce a, Ix.Ixby.Goldilocks.reduce b⟩
+  let y : Ix.Ixby.ExtGoldilocks := ⟨Ix.Ixby.Goldilocks.reduce c, Ix.Ixby.Goldilocks.reduce d⟩
+  let z := (x.mul y).add (x.sub y).inverse
+  z.c0.val + 2 ^ 64 * z.c1.val + if x == y then 1 else 0
+
+def extensionStorage (a b : Nat) : Nat :=
+  let x : Ix.Ixby.ExtGoldilocks := ⟨Ix.Ixby.Goldilocks.reduce a, Ix.Ixby.Goldilocks.reduce b⟩
+  let values := #[x, x.inverse, x.add x]
+  let z := values.foldl (fun acc y => acc.mul y) x
+  match z with
+  | ⟨c0, c1⟩ => c0.val + c1.val
 
 @[noinline] def tailSum : Nat → Nat → Nat
   | 0, acc => acc

@@ -1,4 +1,5 @@
 import Compilatrix.Tools.TrustLedger
+import Compilatrix.Tools.X86Check
 
 /-! Regression tests for the trust gate's failure paths. Mutations are confined
 to fresh temporary copies; the source tree and reviewed ledger are never edited. -/
@@ -88,6 +89,19 @@ private def lexerTests : IO Unit := do
   rejects "unauditable roots" "unsupported Lake roots" do
     let _ ← lakeRoots (← checked (scan "lean_lib Main where\n  roots := computedRoots\n"))
 
+private def disassemblyTests : IO Unit := do
+  let body := "   0:\t48 89 f8\tmov    rax,rdi\n   3:\tc3\tret"
+  let dump := "/tmp/r12-rsp-push (bad)/object.o: file format elf64-x86-64\n" ++
+    "0000000000000000 <rbx_pop>:\n" ++ body ++ "\n\t4: R_X86_64_PC32 r15\n"
+  let actual := Compilatrix.Tools.X86Check.instructionText dump
+  need (actual == body) "objdump filenames or symbols leaked into instruction checks"
+  for register in ["rbx", "rbp", "rsp", "r12", "r13", "r14", "r15"] do
+    let instruction := s!"   0:\t49 89 fc\tmov    {register},rdi\n"
+    need ((Compilatrix.Tools.X86Check.instructionText instruction).contains register)
+      "actual register use escaped the instruction check"
+  need ((Compilatrix.Tools.X86Check.instructionText "   a:\t0f\t(bad)\n").contains "(bad)")
+    "invalid instruction escaped the instruction check"
+
 private def regressionTests (source blakeSource : FilePath) : IO Unit := IO.FS.withTempDir fun temporary => do
   let root := temporary / "project"
   let blake := temporary / "Blake3"
@@ -164,5 +178,6 @@ def main (args : List String) : IO UInt32 := cli "Lean check regressions failed"
   let root ← IO.FS.realPath (option args "--root" ".")
   let blake ← IO.FS.realPath (option args "--blake3" (root / ".lake/packages/Blake3").toString)
   lexerTests
+  disassemblyTests
   regressionTests root blake
   IO.println "Lean check regressions ok: source lexing, complete root/native inventories, integrity, Cargo, and CI rejection paths"

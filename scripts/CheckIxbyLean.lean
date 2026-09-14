@@ -1,6 +1,7 @@
 import Compilatrix.Ixby.Lean
 import Compilatrix.Ixby.Runtime.Examples
 import Compilatrix.Ixby.Runtime.Wire
+import Compilatrix.Ixby.Runtime.Field
 import Compilatrix.Tools.Check
 
 open Lean Compilatrix.Tools.Check Compilatrix.Ixby.LeanFrontend
@@ -47,6 +48,27 @@ def main : IO UInt32 := cli "check-ixby-lean" do
   compileRejects env `Float.add {} "unsupported typed runtime extern Float.add"
   let numbers := #[0, 1, 2, 7, 31, 255, 256, 65535, 2 ^ 32 - 1, 2 ^ 32, 2 ^ 64 - 1, 2 ^ 80 + 17]
   let mut count := 0
+  let fieldNumbers := numbers ++ #[Ix.Ixby.goldilocksModulus - 1, Ix.Ixby.goldilocksModulus,
+    Ix.Ixby.goldilocksModulus + 1]
+  for (name, source) in #[(``fieldArithmetic, fieldArithmetic), (``fieldMixed, fieldMixed),
+      (``extensionStorage, extensionStorage), (``fieldCompare, fieldCompare)] do
+    let image ← compileImage env name
+    for a in fieldNumbers do
+      for b in fieldNumbers do
+        runNumber image #[← checked (image.number a), ← checked (image.number b)] (source a b)
+        count := count + 1
+  let image ← compileImage env ``fieldPower
+  for a in fieldNumbers do
+    for b in #[0, 1, 2, 31, 65] do
+      runNumber image #[← checked (image.number a), ← checked (image.number b)] (fieldPower a b)
+      count := count + 1
+  let image ← compileImage env ``extensionArithmetic
+  for a in fieldNumbers do
+    for b in fieldNumbers do
+      for (c, d) in #[(a, b), (0, 0), (b, a)] do
+        runNumber image #[← checked (image.number a), ← checked (image.number b),
+          ← checked (image.number c), ← checked (image.number d)] (extensionArithmetic a b c d)
+        count := count + 1
   for name in #[``cacheNatural, `UInt32.xor] do
     let image ← compileImage env name
     for digit in [:16] do
@@ -149,6 +171,22 @@ def main : IO UInt32 := cli "check-ixby-lean" do
     for right in #[left, left.push 0, changed, left.pop] do
       runNumber image #[← checked (image.bytes left), ← checked (image.bytes right)] (wireCanonical left right)
       count := count + 1
+  let image ← compileImage env ``wireFieldRead true
+  for n in fieldNumbers do
+    for width in #[0, 1, 7, 8, 9, 16] do
+      let data := MultiStark.Verify.Codec.Wire.littleEndian width n
+      for offset in #[0, 1, data.size, data.size + 1] do
+        runNumber image #[← checked (image.bytes data), ← checked (image.number offset)]
+          (wireFieldRead data offset)
+        count := count + 1
+  for (name, source) in #[(``wireFieldWrite, wireFieldWrite), (``wireFieldWriteRaw, wireFieldWriteRaw)] do
+    let image ← compileImage env name true
+    for n in fieldNumbers do
+      for initial in #[#[], #[255], #[0, 128, 255]] do
+        for limit in #[0, 7, 8, 9, 10, 11, 12] do
+          runBytes image #[← checked (image.number n), ← checked (image.bytes initial),
+            ← checked (image.number limit)] (source n initial limit)
+          count := count + 1
   let image ← compileImage env ``tailSum
   -- A small continuation limit detects accidental calls in tail position.
   let image := { image with state := { image.state with limits := { image.state.limits with continuations := 8 } } }

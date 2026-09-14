@@ -226,7 +226,7 @@ private def inspectObject (directory : FilePath) (pipeline : Json) (role readelf
   need (elf.contains "There are no relocations in this file.") "runtime object has external relocations"
   need (containsBytes content (← byteField object "provenance")) "runtime object lost exact provenance"
   inspectText readelf path (← byteField object "text")
-  let disassembly ← disassemble objdump path (← strField object "symbol")
+  let disassembly := instructionText (← disassemble objdump path (← strField object "symbol"))
   for forbidden in ["call ", "push ", "pop ", "rsp", "rbx", "rbp", "r12", "r13", "r14", "r15"] do
     need (!disassembly.contains forbidden) s!"runtime leaf uses forbidden instruction or register: {forbidden}"
 

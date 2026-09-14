@@ -110,32 +110,32 @@ runtime inventory contains 672 entries (including those two boundaries) and
 That inventory describes Lean IR, not an emitted Ixby image or an accepted
 Ixby primitive mapping.
 
-The separate [experimental typed frontend](ixby-lean.md) now constructs an
-in-memory Ixby reference image from the retained Lean source, with explicit
-runtime representations and the fixed two-byte-array adapter. Actual reference
-execution accepts the retained valid proof with the exact raw claim and rejects
-all seven invalid cases. These tests do not resolve the checked anonymous Ixon
-pipeline's usage or erasure failures. The current cryptographic codec rejects
-Nat, so that image cannot yet be exported with its canonical profile.
-Source/image reflection remains open.
+The separate [typed frontend](ixby-lean.md) now exports the complete
+[Stage2 binary](../fixtures/ixby-stage2/stage2.ixby) from the retained Lean source
+and fixed adapter. The [full runtime format](ixby-binary.md) includes Nat,
+Word32, bytes, native base/extension fields, BLAKE3, and all runtime control
+instructions. A standalone process loads the artifact and runs the unchanged
+reference evaluator. The valid proof returns the exact claim; seven invalid
+cases return erased. The checked anonymous Ixon pipeline's usage and erasure
+obligations remain separate from this working compilation path.
 
-| Requested artifact or evidence | Current result |
+| Artifact or evidence | Current result |
 | --- | --- |
 | Fixed source, keys, entrypoints, limits and complete Ixon closure | Retained and pinned |
 | Complete catalog admission under explicit Stage2 compiler budgets | Passed |
-| Native execution of the unchanged source verifier | Valid proof accepted with exact claim; seven invalid cases rejected |
-| Experimental typed Lean image | Validated; valid proof returns exact claim; seven invalid cases return erased; not source certified |
-| Canonical Ixby guest image and serialized profile | Unavailable with the current profile, which excludes Nat |
-| Measured Flock capacities | Not established by reference execution limits |
-| Source-to-image reflection | Unavailable for this guest |
-| Current Flock executor compatibility | Not established |
+| Native execution of the unchanged source verifier | Exact claim acceptance; seven rejections |
+| Complete executable Ixby binary | Retained; 1,002,355 bytes; reproducible fresh compilation |
+| Serialized execution and input/output transport | Standalone loader; exact claim acceptance; seven rejections |
+| Native field, extension, word, byte and BLAKE3 lowering | Emitted and tested against the source |
+| Source-to-image reflection | Still open for this frontend |
+| Proving executor integration | Separate downstream work |
 
-The [actual reference inventory](../fixtures/ixby-stage2/reference-inventory.json)
-contains 675 functions, 6,677 blocks, and 146 constructor layouts. It includes
-Nat arithmetic, Word32 operations, byte primitives, BLAKE3, constructor and
-closure operations, calls, and branches. Goldilocks base/extension arithmetic
-currently compiles through exact Nat operations. The inventory is not a
-canonical program encoding or an execution capacity measurement.
+The [binary inventory](../fixtures/ixby-stage2/reference-inventory.json)
+contains 681 functions, 6,763 blocks, and 146 constructor layouts, with entry
+680. It records the artifact SHA-256, complete function and constructor
+inventories, primitive and instruction counts, explicit execution limits,
+and static frame maxima. An independent decoder reconstructs its structural
+fields from the binary.
 
 ## Required input and output ABI
 
@@ -157,60 +157,24 @@ agreement cannot replace that theorem. The upstream conditional Stage2
 composition still requires source/image reflection and actual executor
 soundness.
 
-## Route to an executable, certified guest
+## Compilation and downstream proof work
 
-Complete catalog admission now passes for this exact guest. It does not
-establish guest compilation or execution. The milestones have these observable
-completion conditions:
+The typed compiler's executable deliverable is complete: the original fixed
+configuration, full runtime operations, binary encoding, standalone loading,
+and fixture executions are covered by the [compilation gate](ixby-lean.md).
+The [format and handoff](ixby-binary.md) give the proving agent the artifact,
+ABI, opcode table, capacities, and reproduction commands.
 
-1. **Scale exact canonical-address checking — passed.** Structural hash tables
-   now retain first-occurrence order, cache subtree sizes and hashes, count
-   occurrences once, and index sharing rewrites. Lean proofs equate the complete
-   optimized checker with the original recognizer, including resource
-   rejection and collision tie-breaks. All 10,757 original constants pass under
-   the measured Stage2 compiler budgets. The native regression gate checks
-   original upstream vectors, exact resource boundaries, malformed sharing, and
-   the complete retained source catalog.
-2. **Obtain checked erasure for the complete runtime closure.** Run usage and
-   source-certificate checks after ingress and record their actual failures.
-   The current whole-program certificate path has a 512-candidate default and
-   charges repeated dependency rounds; catalog acceptance does not remove those
-   limits. Where necessary, extend dependency-ordered bounded certification and
-   exact composition to this source. Any removal of proof-only runtime code must
-   follow checked erasure of the original source, preserving the source bindings.
-3. **Compile the required representations and primitive operations.** The
-   reference target already defines bytes, Word32, Goldilocks/extension fields,
-   and BLAKE3. The checked Ixon pipeline emits boxed functional code; the
-   experimental typed frontend adds tested runtime mappings without source
-   certificates. Add source-bound representation and
-   primitive correspondence proofs, including fixed key bytes and bounded
-   indices. Preserve the unchanged verifier definition and fixed configuration.
-   Establish the two-byte-array input ABI and the exact raw bytes/erased output
-   ABI above. Completion means a real canonical image/profile, successful
-   reference execution of a valid proof, and rejection of malformed or
-   claim-mismatched proofs.
-4. **Prove reflection through runtime control flow.** Use a structural simulation
-   or compositional checking argument covering branches, byte inspection, and
-   bounded recursion for every admitted input. Extend the source connection all
-   the way to `MultiStark.Verify.claimBytesWrapper`: the existing reusable
-   theorem starts at IxIR0, and forward erasure alone does not establish the
-   reverse source reflection needed by Stage2. Completion means the upstream
-   `ByteExecutionRefinement SourceEvaluation` obligation for this exact source,
-   image, profile, and ABI, without requiring a separate source run per input.
-5. **Admit and prove execution in Flock.** Extract operations and measure execution
-   resources from the actual image. Compare its control, value representations,
-   primitives, and capacities with the selected executor implementation; extend
-   the executor or add proved compiler transformations where they differ.
-   Source decoder limits and successful reference runs cannot supply physical
-   capacity evidence or `ExecSoundness`. Bind the admitted profile, image, ABI,
-   and execution statement, then produce and verify an execution proof. Terminal
-   composition additionally retains its own compression-soundness obligations.
+Formal source certification remains open. It must connect Lean's typed proof
+erasure and each representation and primitive mapping to the exact source,
+fixed data, and adapter. The reusable symbolic checker does not yet cover this
+guest's runtime input inspection. A structural simulation or compositional
+checker would need to cover branches, parsing, recursive calls, and the exact
+bytes/erased observation for every admitted input.
 
-The remaining milestones are open. Checked erasure must resolve its concrete
-source failures before selecting
-target capacities. Primitive and control-flow proofs can be developed on small
-runtime-input examples while that source work proceeds, with the unchanged
-full verifier retained as the integration target.
+Proving executor support, resource measurement, execution soundness, and
+Stage2/Stage3 composition belong to the downstream proving effort. They do not
+restrict this compiler's full functional binary format or prevent export.
 
 ## Reproduction
 
@@ -224,8 +188,8 @@ lake exe source-ixby-stage2 --freeze fixtures/ixby-stage2 /tmp/Stage2Guest.lean
 lake exe source-ixby-stage2 fixtures/ixby-stage2 /tmp/stage2-report
 lake exe source-ixby-stage2 --admit fixtures/ixby-stage2 /tmp/stage2-admission
 lake exe stage2-source-run fixtures/ixby-stage2 valid
-lake exe stage2-ixby fixtures/ixby-stage2 compile /tmp/stage2-inventory.json
-lake exe stage2-ixby fixtures/ixby-stage2 valid
+lake exe stage2-ixby fixtures/ixby-stage2 compile /tmp/stage2.ixby
+lake exe stage2-ixby fixtures/ixby-stage2 valid /tmp/stage2.ixby
 nix build .#checks.x86_64-linux.ixby-lean
 ```
 
@@ -255,7 +219,7 @@ is a valid runtime input for this guest, not the Init claim. The original
 Ixon proof-envelope digest, checked extraction layout, raw proof digest, and
 compressed file digest are retained separately. The source gate tests the
 source. The separate typed frontend now also executes the compiled image;
-its [eight measured results](ixby-lean.md#tests-and-stage2-adapter) establish
+its [eight binary execution cases](ixby-lean.md#reproduction-and-tests) establish
 agreement on these fixtures, without universal source/image reflection.
 
 To regenerate the source exports, use the recorded exporter and Lean 4.33.1

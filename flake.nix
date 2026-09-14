@@ -162,6 +162,7 @@
             ./fixtures/source-borrow-runtime
             (pkgs.lib.fileset.fileFilter (f: f.hasExt "lean") ./Compilatrix)
             (pkgs.lib.fileset.fileFilter (f: f.hasExt "lean") ./scripts)
+            ./scripts/inspect_ixby.py
           ];
         };
         # The trust-ledger check reads build metadata, CI pins, and every
@@ -241,6 +242,7 @@
             ./docs/trusted-externs.json
             ./docs/x86-reference-model.json
             (pkgs.lib.fileset.fileFilter (f: f.hasExt "lean") ./scripts)
+            ./scripts/inspect_ixby.py
             ./.github/workflows
           ];
         };
@@ -563,16 +565,31 @@
           inherit lakeDeps;
           lakeArtifacts = compilatrixLib;
           src = leanSrc;
-          buildInputs = leanBuildInputs ++ [pkgs.coreutils pkgs.gzip pkgs.diffutils];
+          buildInputs = leanBuildInputs ++ [pkgs.coreutils pkgs.gzip pkgs.diffutils pkgs.python3];
           name = "check-ixby-lean";
           installArtifacts = false;
           postBuild = ''
             lake env ./.lake/build/bin/check-ixby-lean
-            lake build stage2-ixby
-            lake env ./.lake/build/bin/stage2-ixby ${auditSrc}/fixtures/ixby-stage2 compile inventory.json
-            diff -u ${auditSrc}/fixtures/ixby-stage2/reference-inventory.json inventory.json
-            for case in wrong-claim-kind trailing-public empty-proof malformed-proof valid; do
-              lake env ./.lake/build/bin/stage2-ixby ${auditSrc}/fixtures/ixby-stage2 "$case"
+            lake build stage2-ixby ixby-exec check-ixby-binary
+            ./.lake/build/bin/check-ixby-binary binary-cases
+            for image in binary-cases/*.ixby; do
+              python3 scripts/inspect_ixby.py "$image" > /dev/null
+            done
+            cp ./.lake/build/bin/ixby-exec binary-cases/ixby-exec
+            (
+              cd binary-cases
+              env -u LEAN_PATH ./ixby-exec identity.ixby identity.ixbi actual.ixbo
+              cmp identity.ixbo actual.ixbo
+            )
+            lake env ./.lake/build/bin/stage2-ixby ${auditSrc}/fixtures/ixby-stage2 compile stage2.ixby
+            lake env ./.lake/build/bin/stage2-ixby ${auditSrc}/fixtures/ixby-stage2 compile replay.ixby
+            cmp stage2.ixby replay.ixby
+            cmp stage2.ixby.json replay.ixby.json
+            cmp ${auditSrc}/fixtures/ixby-stage2/stage2.ixby stage2.ixby
+            diff -u ${auditSrc}/fixtures/ixby-stage2/reference-inventory.json stage2.ixby.json
+            python3 scripts/inspect_ixby.py stage2.ixby --expected stage2.ixby.json
+            for case in wrong-claim-kind trailing-public empty-proof malformed-proof truncated-proof trailing-proof claim-mismatch valid; do
+              env -u LEAN_PATH ./.lake/build/bin/stage2-ixby ${auditSrc}/fixtures/ixby-stage2 "$case" stage2.ixby
             done
           '';
         };

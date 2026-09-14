@@ -1,8 +1,9 @@
 # Ixon → Ixby
 
 The [experimental typed Lean frontend](ixby-lean.md) is a separate entry point
-for retained monomorphic LCNF. Its reference execution tests do not extend the
-certificates of the checked Ixon pipeline described here.
+for retained monomorphic LCNF. It emits a [complete functional binary](ixby-binary.md)
+with native field and extension operations and a standalone runtime loader. Its
+execution tests do not extend the checked Ixon certificates described here.
 
 Compilatrix has a backend for the pure functional Ixby reference machine from
 [`jcb/ixby` at `4fdbf4084516ce1a29f6753a20d797334d7fadbb`](https://github.com/argumentcomputer/ix/tree/4fdbf4084516ce1a29f6753a20d797334d7fadbb/Ix/Ixby).
@@ -193,6 +194,7 @@ certificate gate. They are recorded rejections, not claimed Ixby executions.
 The [fixed Stage2 verifier fixture](ixby-stage2-fixture.md) retains the grouped
 benchmark keys and complete original source closures. Full catalog admission
 passes under explicit compiler budgets; checked usage and typed erasure remain
-open. The separate [typed Lean frontend](ixby-lean.md) compiles a reference image
+open. The separate [typed Lean frontend](ixby-lean.md) exports a complete binary
 that accepts the valid proof with exact claim bytes and rejects seven invalid
-cases. Canonical Nat/profile support and source/image certification remain open.
+cases in a standalone runtime process. Source/image certification remains open;
+proving executor integration is separate from this compiler artifact.

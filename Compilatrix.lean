@@ -182,4 +182,6 @@ import Compilatrix.Ixby.SymbolicExamples
 import Compilatrix.Ixby.SymbolicReport
 import Compilatrix.Ixby.Fence
 import Compilatrix.Ixby.Lean
+import Compilatrix.Ixby.Binary
 import Compilatrix.Ixby.Runtime.Execute
+import Compilatrix.Ixby.Runtime.Run

@@ -1,8 +1,8 @@
 import Compilatrix.Ixby.Lean
 
-/-! A static inventory of the actual in-memory reference image. This report is
-not a canonical image encoding, source certificate, or execution capacity
-measurement. Counts include every emitted block, including runtime helpers. -/
+/-! A static inventory of the compiled image. The binary compiler attaches
+the artifact's byte count and digest to this report. Counts include every
+emitted block, including runtime helpers. -/
 
 namespace Compilatrix.Ixby.LeanFrontend
 
@@ -41,11 +41,9 @@ def Image.report (image : Image) : Json := Id.run do
     | _ => none
   let constructors := image.state.constructorNames.toList.mergeSort (fun a b => a.2 ≤ b.2)
   return Json.mkObj [
-    ("format", toJson "compilatrix-lean-ixby-reference-inventory/1"),
+    ("format", toJson "compilatrix-lean-ixby-inventory/2"),
     ("source_entry", toJson (toString image.sourceEntry)),
     ("source_certified", .bool false),
-    ("canonical_image", .null),
-    ("canonical_profile", .null),
     ("entry", toJson image.program.entry),
     ("functions", toJson image.program.functions.size),
     ("blocks", toJson blocks.size),

@@ -4,6 +4,9 @@
 # Rust
 **/target
 
+# Python inspection tools
+__pycache__/
+
 # Nix
 result*
 .direnv/

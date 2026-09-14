@@ -1,110 +1,127 @@
-# Experimental typed Lean frontend
+# Typed Lean to full-runtime Ixby
 
-`Compilatrix.Ixby.LeanFrontend.compile` lowers retained pure monomorphic LCNF
-declarations to an ordinary `Ix.Ixby.Program`. Lean's compiler performs typed
-proof erasure and specialization before this entry point. The resulting image
-passes the unchanged reference machine's whole-program validator. Unknown
-runtime externs are rejected.
+The typed frontend emits a complete, executable [Ixby binary](ixby-binary.md).
+The retained [Stage2 artifact](../fixtures/ixby-stage2/stage2.ixby) contains both
+fixed keys and the complete verifier code: 1,002,355 bytes, 681 functions,
+6,763 blocks, 146 constructor layouts, and entry function 680. A separate
+`ixby-exec` process loads the binary and runs the unchanged Ixby evaluator.
+Execution needs no compiler environment or retained Lean source declarations.
+
+`Compilatrix.Ixby.LeanFrontend.compile` lowers pure monomorphic LCNF after
+Lean's typed proof erasure and specialization. Every emitted block passes the
+reference whole-program validator. Unknown runtime externs are rejected.
 Packed byte capacity must be below 2³², matching the target byte-index ABI.
 
-This frontend has no source-refinement certificate. It is separate from the
-checked anonymous Ixon pipeline and cannot produce an `IxonCompilation`.
-Compiling the retained Lean source does not establish correspondence with the
-original anonymous Ixon source address. Constructor identities are local
-layout identifiers, not authenticated source declaration digests.
+The frontend remains experimental: it has differential execution tests, not a
+source-refinement certificate. It does not produce an `IxonCompilation` or
+authenticate the original anonymous Ixon source address. Constructor identities
+are local layout identifiers. These source certification obligations are
+separate from binary export and execution.
 
 ## Runtime representations
 
-Naturals retain their exact mathematical value. An optional low Word32 cache
-supports byte indexing and word operations; it does not replace Nat arithmetic.
-Division and remainder produce uncached values, which arithmetic propagates
-without converting them. Byte and word operations compute the cache when needed.
-Tests include values beyond 64 bits, truncated Nat subtraction,
-division and remainder by zero, and UInt8/UInt32 wraparound and shift counts.
-Conversion between representations consumes four bits at a time through
-comparisons with literals, using only ordinary reference instructions.
+Naturals retain their exact mathematical values. Arithmetic uses native Nat
+primitives with truncated subtraction and the reference division/remainder by
+zero behavior. An optional low Word32 cache supports byte indexing and word
+operations. Division and remainder produce uncached values; ordinary arithmetic
+propagates them without unnecessary word conversion. Conversions consume four
+bits at a time through comparisons with literals and ordinary instructions.
 The USize lowering uses 64-bit source semantics.
 
+Goldilocks operations use native field addition, subtraction, multiplication,
+inversion and equality. A field-backed number retains an exact Nat view for
+Lean's transparent `Fin.val` representation. Mixed field/Nat comparisons compare
+exact naturals; they never reduce an arbitrary comparison operand modulo the
+field. Extension values use native extension scalars, including construction,
+projections, arithmetic, inversion, equality, and storage in arrays.
+
 Ordinary immutable arrays use binary trees. Byte inputs use packed scalar
-bytes, and concatenations use balanced trees of byte blocks. Polymorphic
-updates first widen packed storage to ordinary values, so mapping bytes to
-larger naturals, constructors, or closures preserves their representations.
-Calls, partial applications, lifted joins, constructors, case analysis, and
-tail calls use the corresponding reference instructions.
+bytes; concatenations use balanced trees of byte blocks. Polymorphic updates
+widen packed storage to ordinary values. Calls, partial applications,
+oversaturation, lifted joins, constructors, case analysis, and tail calls use
+the corresponding reference instructions. BLAKE3 uses the reference primitive.
 
-The optional Stage2 wire lowering emits reference instructions for the pinned
-little-endian helpers, single-byte writer, and specialized canonical byte
-comparison. The original writer still checks its byte limit. General array
-comparison callbacks are not replaced. BLAKE3 lowers to the reference BLAKE3
-primitive. No host invocation of the Stage2 source verifier supplies an Ixby
-execution result.
-Goldilocks arithmetic currently uses the exact Nat primitives in the emitted
-image.
+The optional Stage2 wire lowering covers the pinned little-endian helpers,
+single-byte and field writers, field reader, and specialized byte comparison.
+Field I/O uses `bytesToField` and `fieldToBytes`. A two-word canonicality check
+preserves the source `.field` error for encodings at or above the modulus.
+The original `readBytes` and `writeBytes` functions retain truncation, byte
+limits, and state updates. General array comparison callbacks compile from
+source. No host invocation of the Stage2 verifier supplies an execution result.
 
-The current cryptographic profile and canonical codec reject Nat values and
-Nat instructions. Consequently this image currently runs under the reference
-limits and cannot be exported with that profile. The Nat/profile extension is
-an upstream task. This is distinct from the source-refinement obligation.
-The current image needs canonical support for `Scalar.nat` and the seven
-primitives `natAdd`, `natSub`, `natMul`, `natDiv`, `natMod`, `natEq`, and `natLt`.
-Their arithmetic must retain the reference semantics, including truncated
-subtraction, division by zero, and the explicit Nat bit capacity.
+## Binary artifact and ABI
 
-## Tests and Stage2 adapter
+The [full binary format](ixby-binary.md) encodes all seven scalar kinds, all
+45 primitives, every operation and instruction, constructor identities,
+functions, blocks, entry point, execution capacities, and maximum steps.
+Minimal unsigned LEB128 encodes naturals, indices, counts, and the step budget;
+there is no implicit Word32 bound on Nat or the number of transitions.
+The smaller upstream cryptographic codec remains a separate format. Its
+admission rules do not restrict this compiler artifact.
+
+The Stage2 adapter embeds the original 925,789 key bytes, entrypoints 755/243,
+and fixed source configuration. Its arguments are two raw scalar byte arrays:
+the public claim and private native proof. Success returns the exact raw claim
+bytes; rejection returns erased. The compile report identifies every function,
+constructor layout, instruction and primitive, the binary SHA-256, and static
+frame maxima. The binary itself contains everything needed for execution.
+
+## Reproduction and tests
 
 ```sh
+lake build stage2-ixby ixby-exec check-ixby-lean check-ixby-binary
 lake exe check-ixby-lean
-lake exe stage2-ixby fixtures/ixby-stage2 compile /tmp/stage2-inventory.json
-lake exe stage2-ixby fixtures/ixby-stage2 valid
+lake exe check-ixby-binary
+lake exe stage2-ixby fixtures/ixby-stage2 compile /tmp/stage2.ixby
+python3 scripts/inspect_ixby.py /tmp/stage2.ixby --expected /tmp/stage2.ixby.json
+lake exe stage2-ixby fixtures/ixby-stage2 valid /tmp/stage2.ixby
 nix build .#checks.x86_64-linux.ixby-lean
 ```
 
-Run these executables through Lake so they can load the retained compiler
-declarations. Direct binary invocation requires the equivalent `LEAN_PATH`.
+Compilation and the typed comparison suite use Lake's environment to load LCNF.
+The case runner loads the supplied binary; omitting its final path loads the
+retained `fixtures/ixby-stage2/stage2.ixby`. It never recompiles in case mode.
+The standalone command is:
 
-The focused suite compares 1,945 actual reference executions with independently
-executed Lean source results. It covers arithmetic, proof-bearing Fin values,
-closures, arrays, byte-block balancing and mutation, wire limits, exact byte
-outputs, canonical comparison, and a 10,000-iteration tail call under an
-eight-continuation limit.
+```sh
+.lake/build/bin/ixby-exec program.ixby input.ixbi output.ixbo execution.json
+```
 
-`stage2-ixby` compiles the unchanged retained `claimBytesWrapper` and an explicit
-adapter containing both original fixed keys, entrypoints 755/243, and the
-original source configuration. Only two raw scalar byte arrays enter the
-image: the public claim and private proof. The adapter returns raw claim bytes
-on `some` and erased on `none`. The host checks fixture identities and
-decompresses the retained test proof before execution.
+The focused suite compares 4,585 reference executions with independently
+executed Lean source results. It covers large naturals beyond 64 bits, field
+boundaries and zero inverses, mixed representations, extension projections and
+arrays, closures, persistent arrays, byte ropes and mutation, exact wire
+outputs, malformed field encodings, read offsets, writer limits, and a
+10,000-iteration tail call under an eight-continuation limit. Two compiler
+rejections cover unsupported Float externs and invalid byte-index capacities.
 
-The runner accepts `valid`, `claim-mismatch`, `empty-proof`, `truncated-proof`,
-`trailing-public`, `trailing-proof`, `wrong-claim-kind`, and `malformed-proof`.
-Each case executes the compiled program and compares its actual result with
-the expected raw bytes or erased value. A step-limit failure is a failed test.
-All eight cases passed on the compiled reference image:
+The binary suite checks 81 decoded executions covering every scalar, primitive,
+operation, and instruction. It also checks structured constructor/PAP input and
+output, all proper-prefix truncations of representative artifacts, malformed
+tags, versions, UTF-8, booleans, fields, nonminimal integers, and loader limits.
+The independent Python decoder reads the exported test corpus and the full
+Stage2 artifact and checks reference structural admission.
+
+The integration gate compares two fresh binaries and manifests byte for byte
+with each other and the retained artifacts. It runs the standalone executor
+outside the compiler directory with `LEAN_PATH` unset, then executes all eight
+Stage2 cases from serialized binaries:
 
 | Case | Actual result | Reference transitions |
 | --- | --- | ---: |
-| Valid proof | Exact 34-byte claim | 5,774,758,723 |
-| Changed claim root | Erased | 2,076,855,592 |
-| Empty proof | Erased | 122,254,401 |
-| Truncated proof | Erased | 673,177,152 |
-| Trailing public byte | Erased | 247 |
-| Trailing proof byte | Erased | 673,197,277 |
-| Wrong claim kind | Erased | 390 |
-| Malformed proof | Erased | 122,254,420 |
+| Valid proof | Exact 34-byte claim | 4,527,451,540 |
+| Changed claim root | Erased | 1,673,425,178 |
+| Empty proof | Erased | 147,664,894 |
+| Truncated proof | Erased | 462,935,257 |
+| Trailing public byte | Erased | 253 |
+| Trailing proof byte | Erased | 462,956,800 |
+| Wrong claim kind | Erased | 420 |
+| Malformed proof | Erased | 147,664,913 |
 
-The [retained inventory](../fixtures/ixby-stage2/reference-inventory.json)
-contains 675 functions, 6,677 blocks, 146 constructor layouts, and entry 674.
-Independent fresh compilations reproduced it byte for byte. The Nix gate
-compares that inventory, runs the focused suite, and replays the valid proof
-plus the empty, malformed, trailing-public, and wrong-kind cases.
-
-The optional compile report records all emitted functions, constructor layouts,
-instructions, primitives, and static frame maxima. It is an inventory of the
-in-memory image, not a substitute for the pending canonical program encoding.
-
-Long runs pause between batches of one million reference transitions.
-`Runtime.runChunk_run` proves that a chunk followed by the remaining reference
-execution equals the upstream evaluator with their combined fuel. This proves
-the runner's chunking equation, not the compiler's source correspondence.
-Runtime limits are explicit reference capacities; they are not measured Flock
-resource requirements or evidence of executor soundness.
+Step-limit exhaustion fails the test. The artifact allows 16 billion reference
+transitions. The runner executes chunks of one million transitions;
+`Runtime.runChunk_run` proves composition with the remaining upstream
+execution. This equation concerns the runner, not compiler source refinement.
+Reference execution capacities are explicit runtime bounds. The proving agent
+can use the artifact, exact format, and inventory to develop its executor
+independently of this compiler's export path.

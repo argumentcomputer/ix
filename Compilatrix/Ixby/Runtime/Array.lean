@@ -85,7 +85,7 @@ def buildArrays : BuildM Unit := do
           let index ← lowWord (.local 2)
           tailCall `Ixby.Runtime.fromWord [← primitive .bytesGet [fields[0]!, index]])
         (fun fields => do
-          tailCall `Ixby.Runtime.treeGet [fields[2]!, fields[1]!, ← project (.local 2) 0])
+          tailCall `Ixby.Runtime.treeGet [fields[2]!, fields[1]!, ← natural (.local 2)])
         (fun _ => tailCall `Ixby.Runtime.byteGet [.local 1, .local 2]))
       trap
   for name in #[`Array.getInternalBorrowed, `Array.uget, `Array.ugetBorrowed] do
@@ -104,7 +104,7 @@ def buildArrays : BuildM Unit := do
         let copied ← call `Ixby.Runtime.copyArray [.local 1]
         tailCall `Array.push [.erased, copied, .local 2])
       (fun fields => do
-        let index ← project size 0
+        let index ← natural size
         let write (root capacity : Operand) : CodeM Unit := do
           let updated ← call `Ixby.Runtime.treeSet [root, capacity, index, .local 2]
           ret (← array next capacity updated)
@@ -125,7 +125,7 @@ def buildArrays : BuildM Unit := do
           tailCall `Array.set! [.erased, copied, .local 2, .local 3])
         (fun fields => do
           let root ← call `Ixby.Runtime.treeSet [fields[2]!, fields[1]!,
-            ← project (.local 2) 0, .local 3]
+            ← natural (.local 2), .local 3]
           ret (← array size fields[1]! root))
         (fun _ => do
           let copied ← call `Ixby.Runtime.copyArray [.local 1]
@@ -225,7 +225,7 @@ def buildArrays : BuildM Unit := do
     tailCall `Ixby.Runtime.toList [.local 1, ← call `Array.size [.erased, .local 1],
       ← make `List.nil []]
   define `Ixby.Runtime.replicate 3 do
-    let n ← project (.local 0) 0
+    let n ← natural (.local 0)
     branch (← primitive .natLt [.local 1, n])
       (do let capacity ← primitive .natAdd [.local 1, .local 1]
           let tree ← node (.local 2) (.local 2)
@@ -251,7 +251,7 @@ def buildArrays : BuildM Unit := do
               (tailCall `Ixby.Runtime.treeBytes [left, half, .local 2])
   define `Ixby.Runtime.toBytes 1 do
     onArray (.local 0) (fun fields => ret fields[0]!)
-      (fun fields => do tailCall `Ixby.Runtime.treeBytes [fields[2]!, fields[1]!, ← project fields[0]! 0])
+      (fun fields => do tailCall `Ixby.Runtime.treeBytes [fields[2]!, fields[1]!, ← natural fields[0]!])
       (fun _ => tailCall `Ixby.Runtime.byteFlatten [.local 0])
   for name in #[`String.toUTF8, `ByteArray.data] do define name 1 (ret (.local 0))
   define `Ix.Ixby.Blake3.hash 1 do

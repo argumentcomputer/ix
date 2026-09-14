@@ -17,6 +17,17 @@ theorem wire_littleEndian_definition (width n : Nat) :
 theorem wire_fromLittleEndian_definition (bytes : Array UInt8) :
     MultiStark.Verify.Codec.Wire.fromLittleEndian bytes = natOfBytesLE bytes := rfl
 
+/-- Canonical field admission can use the two native words without constructing
+an intermediate Nat. The maximum high word admits only a zero low word. -/
+theorem wire_field_canonical_words (low high : UInt32) :
+    low.toNat + 2 ^ 32 * high.toNat < goldilocksModulus ↔
+      high.toNat < 2 ^ 32 - 1 ∨ low.toNat = 0 := by
+  have := low.toNat_lt
+  have := high.toNat_lt
+  change low.toNat + 4294967296 * high.toNat < 18446744069414584321 ↔
+    high.toNat < 4294967295 ∨ low.toNat = 0
+  omega
+
 private def sourceFunction (name : Name) : BuildM Unit := do
   if (← get).functionNames.contains name then return
   let some decl ← LCNF.getMonoDecl? name | throwThe String s!"missing wire dependency {name}"
@@ -28,11 +39,14 @@ private def pack (data size : Operand) : CodeM Operand :=
 
 def buildWire : BuildM Unit := do
   sourceFunction `MultiStark.Verify.Codec.Wire.writeBytes
+  sourceFunction `MultiStark.Verify.Codec.Wire.readBytes
   for (name, arity) in #[
       (`Ixby.Runtime.wireLittleLoop, 3), (`Ixby.Runtime.wireFromLoop, 3),
       (`MultiStark.Verify.Codec.Wire.littleEndian, 2),
       (`MultiStark.Verify.Codec.Wire.fromLittleEndian, 1),
       (`MultiStark.Verify.Codec.Wire.writeByte, 2),
+      (`MultiStark.Verify.Codec.Wire.readField, 1),
+      (`MultiStark.Verify.Codec.Wire.writeField, 2),
       (`Array.instDecidableEqImpl._at_.MultiStark.Verify.Codec.Wire.canonicalize.spec_0, 2)] do
     discard <| reserveFunction name arity
   let define (name : Name) (arity : Nat) (body : CodeM Unit) : BuildM Unit :=
@@ -86,6 +100,25 @@ def buildWire : BuildM Unit := do
     let encoded ← primitive .word32ToBytes [← lowWord (.local 0)]
     let byte ← pack (← primitive .bytesSlice [encoded, word 0, word 1]) (← number 1)
     tailCall `MultiStark.Verify.Codec.Wire.writeBytes [byte, .local 1]
+  define `MultiStark.Verify.Codec.Wire.readField 1 do
+    let result ← call `MultiStark.Verify.Codec.Wire.readBytes [← number 8, .local 0]
+    caseCtor result #[
+      (`Except.error, 1, fun _ => ret result),
+      (`Except.ok, 1, fun fields => do
+        let pair ← pure fields[0]!
+        let data ← call `Ixby.Runtime.toBytes [← project pair 0]
+        let high ← primitive .bytesToWord32 [← primitive .bytesSlice [data, word 4, word 4]]
+        let accept : CodeM Unit := do
+          let field ← make `Ixby.Runtime.FieldNumber [← primitive .bytesToField [data]]
+          let pair ← make `Prod.mk [field, ← project pair 1]
+          ret (← make `Except.ok [pair])
+        branch (← primitive .word32Lt [high, word (2 ^ 32 - 1)]) accept do
+          let low ← primitive .bytesToWord32 [← primitive .bytesSlice [data, word 0, word 4]]
+          branch (← primitive .word32Eq [low, word 0]) accept do
+            ret (← make `Except.error [← make `MultiStark.Verify.DecodeError.field []]))]
+  define `MultiStark.Verify.Codec.Wire.writeField 2 do
+    let data ← primitive .fieldToBytes [← call `Ixby.Runtime.asField [.local 0]]
+    tailCall `MultiStark.Verify.Codec.Wire.writeBytes [← pack data (← number 8), .local 1]
   define `Array.instDecidableEqImpl._at_.MultiStark.Verify.Codec.Wire.canonicalize.spec_0 2 do
     let left ← call `Ixby.Runtime.toBytes [.local 0]
     let right ← call `Ixby.Runtime.toBytes [.local 1]

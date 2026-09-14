@@ -21,6 +21,7 @@ structure BuildState where
   functionNames : Std.HashMap Name Nat := {}
   constructors : Array CtorDecl := #[]
   constructorNames : Std.HashMap Name Nat := {}
+  projections : Std.HashMap Name (Array Name) := {}
   pending : Array Name := #[]
   remaining : Nat := 1000000
 
@@ -166,8 +167,10 @@ def number (value : Nat) : CodeM Operand :=
 
 def lowWord (value : Operand) : CodeM Operand := call `Ixby.Runtime.lowWord [value]
 
+def natural (value : Operand) : CodeM Operand := call `Ixby.Runtime.natural [value]
+
 def numberParts (value : Operand) : CodeM (Operand × Operand) := do
-  return (← project value 0, ← lowWord value)
+  return (← natural value, ← lowWord value)
 
 def packedBytes (bytes : Array UInt8) : CodeM Operand := do
   make `Ixby.Runtime.Bytes [.literal (.bytes bytes), ← number bytes.size]
