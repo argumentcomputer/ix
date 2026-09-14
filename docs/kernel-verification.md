@@ -169,6 +169,18 @@ increasing sequence of strongly inaccessible cardinals.
   Corrupt headers are excluded because verified loading rejects them. Semantic
   source agreement, finite substitution resources, and preservation through
   other checker paths remain obligations.
+- `OwnedInferenceTrace.preserves` carries ownership and intern coherence through
+  a whole supported recursive call. `InferenceStateInvariant.ofCheckedSource`
+  initializes both from the finite source check and the empty production state.
+  Application substitution, binder opening, and lambda abstraction take finite
+  collision, construction, and size data; their initial coherence is derived
+  from the preceding recursive calls. Constant leaves derive their loader and
+  post-lookup coherence from the same invariant. The trace recovers the existing
+  cache frame outside its computed writes, transports earlier constant witnesses,
+  supplies coherence for later sort leaves, and returns the state resource for
+  another constant call that loads a new block. Recursive traces and finite
+  walker data remain explicit. The result covers successful inference in the
+  supported fragment; the general checker-state proof remains open.
 - `checkEnvAnon_atomic_preserves_model` connects a supported production
   environment run to model extension. `checkEnvAnon_atomic_no_false` excludes
   a declaration at an axiom type interpreted as empty, including False.
@@ -255,12 +267,15 @@ def useF (x : T.{1}) : T.{1} := f.{1} x
   source agreement and finite collision/level resources remain explicit.
   `OwnedLazySupport` derives block compatibility from a source ownership check
   and an invariant established at initialization and retained by lookup and
-  successful constant calls. Arbitrary partially loaded states can use the
-  general pointwise overlap condition. Intern coherence follows through actual
-  loading from the pre-load invariant; successful constant inference also returns coherence for
-  the next operation. Initial coherence holds for `TcState.newLazyAnon`. Extending
-  its preservation to every checker operation, preservation at written keys,
-  and automatic trace construction remain open.
+  supported successful recursive calls. Arbitrary partially loaded states can
+  use the general pointwise overlap condition. Intern coherence follows through actual
+  loading from the pre-load invariant. `OwnedInferenceTrace` returns ownership
+  and coherence after applications, foralls, and full-mode lambdas, using one
+  initial state resource and finite data for their actual walkers. It also
+  reconstructs the cache-frame trace without per-leaf invariant premises.
+  Initial coherence holds for `TcState.newLazyAnon`. Preservation by every
+  checker operation, preservation at written keys, and automatic trace
+  construction remain open.
   The operational trace can frame any selected cache hit, while semantic typing
   of composite hits remains outside `BinderInference`.
 - Binder definitions supply finite inference trees for both the value and its
@@ -356,7 +371,7 @@ lake test --wfail -- tc-unit
 lake -d Models/SetTheory build --wfail
 ```
 
-The consistency target checks 258 exact theorem boundaries. The production
+The consistency target checks 278 exact theorem boundaries. The production
 environment roots retain four existing generated output-length proofs,
 reached through expression/universe construction, names, and the full
 production method table. They introduce no new native proofs. The model
@@ -421,6 +436,11 @@ overlap, duplicate keys within one block, exact mixed-member and constructor
 inventories, corrupt source exclusion, and detection of partial external loads.
 Mixed loading sequences preserve the block invariant and both warm cache slots
 in full and inference-only modes, including errors before and after publication.
+Recursive-state regressions check ownership and intern keys after application,
+forall, and lambda inference that loads one block, followed by a constant call
+that loads another. They retain both warm partitions, outer local scopes, and
+the actual statistics updates; replaying the recursive cache hit changes
+neither intern tables nor fresh-local allocation.
 
 ## Certified host adapters
 
@@ -451,6 +471,7 @@ The VM pilot is preserved in the frozen archive and excluded from the host gate.
 | Constant cache selection, writes, and typing | [`Consistency/ConstantCache.lean`](../Ix/Kernel/Verify/Consistency/ConstantCache.lean) |
 | Cache invariants and sort cache typing | [`Consistency/InferenceCache.lean`](../Ix/Kernel/Verify/Consistency/InferenceCache.lean), [`SortCache.lean`](../Ix/Kernel/Verify/Consistency/SortCache.lean) |
 | Recursive cache preservation and witness reuse | [`Consistency/RecursiveCache.lean`](../Ix/Kernel/Verify/Consistency/RecursiveCache.lean) |
+| Ownership and intern coherence through recursive inference | [`Consistency/RecursiveState.lean`](../Ix/Kernel/Verify/Consistency/RecursiveState.lean) |
 | Verified standalone lazy loading and cache frames | [`Consistency/LazyCache.lean`](../Ix/Kernel/Verify/Consistency/LazyCache.lean) |
 | Mutual-block publication and verified lookup frames | [`Consistency/BlockCache.lean`](../Ix/Kernel/Verify/Consistency/BlockCache.lean) |
 | Intern coherence through conversion and lazy loading | [`Consistency/IngressCoherence.lean`](../Ix/Kernel/Verify/Consistency/IngressCoherence.lean) |

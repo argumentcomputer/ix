@@ -56,6 +56,13 @@ both outcomes and successful constant inference. Unrecorded blocks then have
 fresh entries, discharging per-block overlap checks for this path. General
 partially loaded states retain the pointwise compatibility interface. The source
 check supplies address ownership, without establishing semantic admission.
+`OwnedInferenceTrace` carries this ownership invariant and intern coherence
+through successful applications, dependent functions, and full-mode lambdas.
+One initial state resource supplies every recursive boundary and post-lookup
+table; finite collision, construction, and size data remain explicit for the
+actual substitution, opening, and closing walkers. The result preserves earlier
+cache witnesses outside its computed writes and supplies the state resource
+for a later constant call, including another block load.
 Initial cache agreement, general source/state invariants, finite collision/level
 resources, trace construction, and preservation at written keys remain obligations.
 Full checker consistency

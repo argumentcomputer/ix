@@ -7,6 +7,7 @@ import Ix.Kernel.Verify.Consistency.Infer
 import Ix.Kernel.Verify.Consistency.Constant
 import Ix.Kernel.Verify.Consistency.Environment
 import Ix.Kernel.Verify.Consistency.RecursiveCache
+import Ix.Kernel.Verify.Consistency.RecursiveState
 import Ix.Kernel.Verify.Audit.Basic
 
 /-! Exact full-dependency boundaries for the direct model-refinement roots.
@@ -143,6 +144,19 @@ private def ownedLoaderRoots : Array Lean.Name := #[
   ``OwnedLazySupport.afterConstInference, ``CachedConstantInferenceSupport.afterOwnedInference
 ]
 
+private def recursiveStateRoots : Array Lean.Name := #[
+  ``InferenceStateInvariant.owned, ``InferenceStateInvariant.ofOwned,
+  ``InferenceStateInvariant.ofMaps, ``InferenceStateInvariant.afterInferKey,
+  ``InferenceStateInvariant.getConst, ``InferenceStateInvariant.openBinder,
+  ``OwnedInferenceTrace.writes, ``OwnedInferenceTrace.preserves,
+  ``OwnedInferenceTrace.toCacheTrace, ``OwnedInferenceTrace.toCacheTrace_writes,
+  ``OwnedInferenceTrace.frame, ``OwnedInferenceTrace.sortOfKey,
+  ``OwnedInferenceTrace.fvarOfKey, ``OwnedInferenceTrace.constOfKey,
+  ``InferenceStateInvariant.afterConstInference,
+  ``CachedConstantInferenceSupport.afterOwnedRecursiveInference,
+  ``BinderInference.sortAfterOwnedInference
+]
+
 private def productionRoots : Array Lean.Name := #[
   ``StandalonePrefix.member_success, ``definition_body_trace,
   ``AtomicDefinitionRun.sound, ``AtomicDefinitionRun.no_self_alias,
@@ -169,7 +183,8 @@ private def binderWalkerRoots : Array Lean.Name := #[
   ``readScopedExpr?_instantiateRevSpec, ``readScopedExpr?_abstractFVarsSpec,
   ``openBinder_eq, ``openBinder_sound,
   ``abstractFVars_singleton_spec, ``abstractFVars_readScopedExpr?,
-  ``readScopedExpr?_liftSpec, ``readScopedExpr?_substSpec, ``subst_readScopedExpr?
+  ``readScopedExpr?_liftSpec, ``readScopedExpr?_substSpec, ``subst_readScopedExpr?,
+  ``ApplicationSubstitutionData.coherent, ``LambdaClosingData.coherent
 ]
 
 /-- Production roots must not acquire a checker-soundness assumption
@@ -191,6 +206,9 @@ def roots : Array RootAllowance := #[
     nativeAxioms := #[expressionNative, levelNative, nameNative],
     forbiddenDependencies := forbiddenProduction },
   { root := ``OwnedLazySupport.ofCheckedSource, standardAxioms := standard,
+    nativeAxioms := #[expressionNative, levelNative, nameNative],
+    forbiddenDependencies := forbiddenProduction },
+  { root := ``InferenceStateInvariant.ofCheckedSource, standardAxioms := standard,
     nativeAxioms := #[expressionNative, levelNative, nameNative],
     forbiddenDependencies := forbiddenProduction },
   { root := ``readLevel_eq, standardAxioms := #[``propext] },
@@ -253,7 +271,8 @@ def roots : Array RootAllowance := #[
 }) ++ (binderWalkerRoots ++ cacheKeyRoots).map (fun root => {
   root, standardAxioms := standard, nativeAxioms := #[expressionNative],
   forbiddenDependencies := forbiddenProduction
-}) ++ (atomicRoots ++ instantiationRoots ++ recursiveCacheRoots ++ lazyCacheRoots ++ ownedLoaderRoots).map (fun root => {
+}) ++ (atomicRoots ++ instantiationRoots ++ recursiveCacheRoots ++ lazyCacheRoots ++
+    ownedLoaderRoots ++ recursiveStateRoots).map (fun root => {
   root, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative],
   forbiddenDependencies := forbiddenProduction
 }) ++ productionRoots.map (fun root => {

@@ -1438,9 +1438,91 @@ private def sourceOwnershipCases : TestSeq :=
   ++ test "source ownership: publication before an inference-only root error retains the invariant"
     (ownershipAcrossLoads true true)
 
+/-- A recursive call loads one block, then a constant call loads a different
+block. Check ownership, intern keys, scope cleanup, and both warm cache slots
+at each boundary, including a final hit on the whole recursive expression. -/
+private def stateAcrossRecursiveLoads (shape : Nat) (inferOnly stats surroundingScope : Bool) : Bool :=
+  let (source, indBlock) := envInductive
+  let (source, warmAddr) := storeConst source
+    ⟨.axio ⟨false, 1, .leanAll (.sort 0) (.leanAll (.var 0) (.var 1))⟩, #[], #[], #[.var 0]⟩
+  let (source, defBlock) := storeMutsWithProjs source (cacheBlock false)
+  let (source, nextBlock) := storeMutsWithProjs source (cacheBlock true)
+  let rows := sourceOwnershipRows source
+  let warm := KExpr.mkConst (m := .anon) ⟨warmAddr, ()⟩ #[levelOne]
+  let first : KId .anon := ⟨if shape == 0 then indcProjAddr indBlock 0 else defnProjAddr defBlock 0, ()⟩
+  let next : KId .anon := ⟨recrProjAddr nextBlock 1, ()⟩
+  let cold := KExpr.mkConst first #[]
+  let sortType := KExpr.mkSort (m := .anon) levelOne
+  let body := KExpr.mkLam () () sortType (.mkLam () () (.mkVar 0 ())
+    (.mkApp (.mkApp cold (.mkVar 1 ())) (.mkVar 0 ())))
+  let term := if shape == 0 then KExpr.mkAll () () cold cold
+    else if shape == 1 then body
+    else KExpr.mkApp (.mkApp (.mkConst ⟨warmAddr, ()⟩ #[levelTwo]) identityType) body
+  let expected := if shape == 0 then sortType else identityType
+  let action : RecM .anon Bool := do
+    let warmType ← warmBothCaches warm
+    let key ← TcM.inferKey warm
+    let initial ← get
+    let keeps (state : TcState .anon) := loadedBlocksMatchOwnership rows state.env &&
+      internKeysCoherent state.env.intern && warmSlotsRetained key initial state
+    RecM.withLctxScope do
+      if surroundingScope then
+        let _ ← TcM.openBinder () () sortType (.mkVar 0 ())
+        pure ()
+      let active ← get
+      let rootKey ← TcM.inferKey term
+      let result ← RecM.inferCall term
+      let recursive ← get
+      let nextType ← RecM.inferCall (.mkConst next #[])
+      let successor ← get
+      let reused ← RecM.inferCall warm
+      let replay ← RecM.inferCall term
+      let final ← get
+      let cache := if inferOnly then successor.env.inferOnlyCache else successor.env.inferCache
+      return sourceOwnershipCheck source && keeps initial && keeps active && keeps recursive &&
+        keeps successor && keeps final && result.addr == expected.addr && result.lbr == 0 &&
+        nextType.addr == identityType.addr && reused.addr == warmType.addr &&
+        warmType.addr == identityType.addr && replay.addr == result.addr && rootKey != key &&
+        cache[rootKey]?.any (fun cached => cached.addr == result.addr) &&
+        (active.env.get? first).isNone && (recursive.env.get? first).isSome &&
+        (recursive.env.get? next).isNone && (successor.env.get? next).isSome &&
+        recursive.env.blocks.contains ⟨if shape == 0 then indBlock else defBlock, ()⟩ &&
+        !recursive.env.blocks.contains ⟨nextBlock, ()⟩ &&
+        successor.env.blocks.contains ⟨nextBlock, ()⟩ &&
+        recursive.env.consts.size == active.env.consts.size + 2 &&
+        successor.env.consts.size == recursive.env.consts.size + 2 &&
+        recursive.env.intern.exprs.size > active.env.intern.exprs.size &&
+        recursive.lctx.size == active.lctx.size && successor.lctx.size == active.lctx.size &&
+        recursive.inferOnly == inferOnly && successor.inferOnly == inferOnly &&
+        recursive.env.nextFVarId > active.env.nextFVarId &&
+        (if stats && shape != 0 then recursive.deqCalls > active.deqCalls
+         else recursive.deqCalls == active.deqCalls) &&
+        final.deqCalls == successor.deqCalls && final.env.nextFVarId == successor.env.nextFVarId &&
+        final.env.consts.size == successor.env.consts.size &&
+        final.env.intern.exprs.size == successor.env.intern.exprs.size &&
+        final.env.intern.univs.size == successor.env.intern.univs.size
+  match TcM.runRec action {TcState.newLazyAnon source with inferOnly, stats} with
+  | .ok passed after => passed && after.lctx.size == 0 && after.inferOnly == inferOnly &&
+      loadedBlocksMatchOwnership rows after.env && internKeysCoherent after.env.intern
+  | .error _ _ => false
+
+private def recursiveStateCases : TestSeq :=
+  test "recursive state: forall inference and a later constant retain ownership, coherence, and warm slots"
+    (stateAcrossRecursiveLoads 0 false false false)
+  ++ test "recursive state: inference-only forall and later loading retain an outer scope"
+    (stateAcrossRecursiveLoads 0 true true true)
+  ++ test "recursive state: lambda opening and closing retain resources for the next block"
+    (stateAcrossRecursiveLoads 1 false false false)
+  ++ test "recursive state: lambda conversion statistics and scope cleanup retain both invariants"
+    (stateAcrossRecursiveLoads 1 false true true)
+  ++ test "recursive state: application with a lazy lambda argument permits subsequent block loading"
+    (stateAcrossRecursiveLoads 2 false false false)
+  ++ test "recursive state: nested application and later cache replay retain both invariants"
+    (stateAcrossRecursiveLoads 2 false true true)
+
 public def suite : List TestSeq :=
   [cases, polymorphicCases, specializationCases, binderCases, applicationCases,
     polymorphicApplicationCases, constantCacheCases, cacheInvariantCases, recursiveCacheCases,
-    lazyCacheCases, blockCacheCases, ingressCoherenceCases, sourceOwnershipCases]
+    lazyCacheCases, blockCacheCases, ingressCoherenceCases, sourceOwnershipCases, recursiveStateCases]
 
 end Tests.Kernel.Consistency

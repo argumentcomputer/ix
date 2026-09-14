@@ -26,6 +26,7 @@ import Ix.Kernel.Verify.Consistency.BinderOpening
 import Ix.Kernel.Verify.Consistency.Application
 import Ix.Kernel.Verify.Consistency.BinderInference
 import Ix.Kernel.Verify.Consistency.RecursiveCache
+import Ix.Kernel.Verify.Consistency.RecursiveState
 import Ix.Kernel.Verify.Consistency.Production
 import Ix.Kernel.Verify.Consistency.Environment
 import Ix.Kernel.Verify.Consistency.Audit
@@ -87,6 +88,12 @@ recorded block starts empty and survives lookup on both outcomes and successful
 constant inference. It derives fresh entries for unrecorded blocks, so these
 calls need no per-block overlap premise. Externally partially populated states
 can still use the general compatibility resource.
+An `OwnedInferenceTrace` now carries these ownership and coherence invariants
+through recursive applications, dependent functions, and full-mode lambdas.
+Its nodes contain finite walker data, while one initial state invariant supplies
+every recursive boundary and post-lookup table. The resulting cache frame
+transports earlier constant witnesses, supplies later sort coherence, and
+returns the state resource for a subsequent constant that loads another block.
 Initial agreement, general state/source agreement, finite execution resources,
 trace construction, and preservation inside the footprint remain obligations.
 General checker soundness remains outside this fragment.
