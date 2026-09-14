@@ -91,7 +91,12 @@ preserves checked lambda domains during the same inference recursion, reads
 the selected prefix from the actual generated type, and transports the
 original check through interface growth, local weakening, and universe
 instantiation. Earlier local contexts are reconstructed from their executed
-domain checks. Abstraction uses the reduced type and the reduction's final
+domain checks. Codomain origins are extracted from earlier function-type
+trees, and actual function/argument calls justify term substitution through
+them. The context relation updates later dependent parameters at any cutoff;
+the original beta prefix is preserved by the same substitution. These
+transports are proved sound in the inference recursion and consumed by the
+lambda case. Abstraction uses the reduced type and the reduction's final
 intern table. Automatic origin construction for arbitrary generated types
 and general reduction remains open.
 Local cache hits agree with the actual declaration type. Constant

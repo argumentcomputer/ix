@@ -80,6 +80,40 @@ theorem instL_betaPrefix (count : Nat) (head : AExpr β) (arguments : List (AExp
         simp only [betaPrefix, instL, List.map_nil, List.map_cons, appN_nil, instL_appN,
           ih, instL_inst]
 
+theorem lambdaDepth_le_inst (term argument : AExpr β) (cutoff : Nat) :
+    term.lambdaDepth ≤ (term.inst argument cutoff).lambdaDepth := by
+  induction term generalizing cutoff with
+  | lam condition domain body ihDomain ihBody =>
+      exact Nat.add_le_add_right (ihBody (cutoff + 1)) 1
+  | _ => exact Nat.zero_le _
+
+theorem inst_appN (head : AExpr β) (arguments : List (AExpr β)) (value : AExpr β) (cutoff : Nat) :
+    (head.appN arguments).inst value cutoff =
+      (head.inst value cutoff).appN (arguments.map (inst · value cutoff)) := by
+  induction arguments generalizing head with
+  | nil => rfl
+  | cons argument arguments ih => simpa only [appN_cons, inst, List.map_cons] using ih (head.app argument)
+
+/-- Substitution preserves a reduction justified by the original lambda
+prefix. Lambdas newly exposed beyond that prefix need their own origin. -/
+theorem inst_betaPrefix (count : Nat) (head : AExpr β) (arguments : List (AExpr β))
+    (value : AExpr β) (cutoff : Nat) (enough : count ≤ head.lambdaDepth) :
+    (betaPrefix count head arguments).inst value cutoff =
+      betaPrefix count (head.inst value cutoff) (arguments.map (inst · value cutoff)) := by
+  induction count generalizing head arguments with
+  | zero => exact inst_appN _ _ _ _
+  | succ count ih =>
+      cases head with
+      | lam condition domain body =>
+          cases arguments with
+          | nil => rfl
+          | cons argument arguments =>
+              have remaining : count ≤ (body.inst argument).lambdaDepth :=
+                Nat.le_trans (by simpa only [lambdaDepth, Nat.add_le_add_iff_right] using enough)
+                  (lambdaDepth_le_inst body argument 0)
+              simp only [betaPrefix, inst, List.map_cons, ih _ _ remaining, inst_inst_zero]
+      | _ => simp [lambdaDepth] at enough
+
 end AExpr
 
 /-- Each leading lambda agrees with the corresponding inferred Pi.

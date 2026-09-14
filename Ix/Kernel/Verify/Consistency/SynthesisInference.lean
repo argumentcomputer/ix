@@ -140,7 +140,7 @@ inductive SynthesisInference {β : Type u}
         some ((AExpr.lam originCondition originDomain originBody).appN originArguments).erase)
       (typeRun : RecM.infer typeSource (methodsN typeFuel) typeBefore = .ok typeResult typeAfter)
       (originPrefix : cheapBetaCount trace.bodyType ≤ originBody.lambdaDepth + 1)
-      (transport : TypeReductionTransport earlier typeContext
+      (transport : SynthesisTypeTransport resolve entries context bounds earlier typeContext
         ((AExpr.lam originCondition originDomain originBody).appN originArguments)
         (AExpr.betaPrefix (cheapBetaCount trace.bodyType) (.lam originCondition originDomain originBody)
           originArguments) originLevel entries (context.push A)
@@ -185,8 +185,298 @@ inductive SynthesisContext {β : Type u} (resolve : Address → Option (ConstRef
       (prior : SynthesisContext resolve entries context bounds earlier priorContext priorBounds)
       (extension : InterfaceExtends earlier later) :
       SynthesisContext resolve entries context bounds later priorContext priorBounds
+  | compose {entries context bounds middle middleContext middleBounds earlier priorContext priorBounds}
+      (prior : SynthesisContext resolve entries context bounds middle middleContext middleBounds)
+      (next : SynthesisContext resolve middle middleContext middleBounds earlier priorContext priorBounds) :
+      SynthesisContext resolve entries context bounds earlier priorContext priorBounds
+
+/-- A checking origin may also cross a dependent term substitution. The
+substituted argument retains its actual inference call, whose typing is
+derived in the same recursion as the enclosing lambda. -/
+inductive SynthesisTypeTransport {β : Type u} (resolve : Address → Option (ConstRef β)) :
+    Model.Environment β → Model.Context β → List VLevel →
+      Model.Environment β → Model.Context β → AExpr β → AExpr β → VLevel →
+        Model.Environment β → Model.Context β → AExpr β → AExpr β → VLevel → Type u
+  | pure {incoming incomingContext incomingBounds origin originContext source reduced level
+      entries context current result bound}
+      (transport : TypeReductionTransport origin originContext source reduced level
+        entries context current result bound) :
+      SynthesisTypeTransport resolve incoming incomingContext incomingBounds
+        origin originContext source reduced level entries context current result bound
+  | map {incoming incomingContext incomingBounds origin originContext source reduced level
+      middle middleContext current result bound entries context current' result' bound'}
+      (prior : SynthesisTypeTransport resolve incoming incomingContext incomingBounds
+        origin originContext source reduced level middle middleContext current result bound)
+      (transport : TypeReductionTransport middle middleContext current result bound
+        entries context current' result' bound') :
+      SynthesisTypeTransport resolve incoming incomingContext incomingBounds
+        origin originContext source reduced level entries context current' result' bound'
+  | substituteAt {incoming incomingContext incomingBounds origin originContext source reduced level
+      entries base sourceContext targetContext current result bound domain argument cutoff}
+      (prior : SynthesisTypeTransport resolve incoming incomingContext incomingBounds
+        origin originContext source reduced level entries sourceContext current result bound)
+      (argumentOrigin : SynthesisTypingOrigin resolve incoming incomingContext incomingBounds
+        entries base argument domain)
+      (substitution : ContextSubstitution base domain argument sourceContext targetContext cutoff) :
+      SynthesisTypeTransport resolve incoming incomingContext incomingBounds
+        origin originContext source reduced level entries targetContext
+        (current.inst argument cutoff) (result.inst argument cutoff) bound
+
+/-- Internal typing origins for generated expressions. Leaves are actual
+source inference calls. Subsequent context and substitution steps retain
+those calls, including when an argument must cross still-open parameters
+of an earlier declaration's type. No semantic typing field is accepted. -/
+inductive SynthesisTypingOrigin {β : Type u} (resolve : Address → Option (ConstRef β)) :
+    Model.Environment β → Model.Context β → List VLevel →
+      Model.Environment β → Model.Context β → AExpr β → AExpr β → Type u
+  | checked {incoming incomingContext incomingBounds entries context bounds locals fuel before after source result
+      term type level}
+      (contextOrigin : SynthesisContext resolve incoming incomingContext incomingBounds entries context bounds)
+      (tree : SynthesisInference resolve entries locals context bounds fuel before source term type level)
+      (agreement : LocalContextReading resolve locals before.lctx context)
+      (reading : readScopedExpr? resolve locals source = some term.erase)
+      (accepted : RecM.infer source (methodsN fuel) before = .ok result after) :
+      SynthesisTypingOrigin resolve incoming incomingContext incomingBounds entries context term type
+  | applicationArgument {incoming incomingContext incomingBounds entries context bounds locals fuel before fn arg
+      f a domain argumentType body condition functionLevel argumentLevel}
+      (contextOrigin : SynthesisContext resolve incoming incomingContext incomingBounds entries context bounds)
+      (trace : ApplicationInferenceTrace fuel before fn arg)
+      (functionTree : SynthesisInference resolve entries locals context bounds fuel before fn
+        f (.forallE condition domain body) functionLevel)
+      (argumentTree : SynthesisInference resolve entries locals context bounds fuel trace.functionState arg
+        a argumentType argumentLevel)
+      (agreement : LocalContextReading resolve locals before.lctx context)
+      (functionReading : readScopedExpr? resolve locals fn = some f.erase)
+      (argumentReading : readScopedExpr? resolve locals arg = some a.erase)
+      (conditions : argumentType.annotations = domain.annotations)
+      (hashPath : (trace.argumentType == trace.domain) = true)
+      (comparisonFaithful : trace.argumentType.AddrFaithful trace.domain) :
+      SynthesisTypingOrigin resolve incoming incomingContext incomingBounds entries context a domain
+  | weaken {incoming incomingContext incomingBounds entries context term type}
+      (prior : SynthesisTypingOrigin resolve incoming incomingContext incomingBounds entries context term type)
+      (domain : AExpr β) :
+      SynthesisTypingOrigin resolve incoming incomingContext incomingBounds entries (context.push domain)
+        (term.liftN 1) (type.liftN 1)
+  | instantiate {incoming incomingContext incomingBounds entries context term type}
+      (prior : SynthesisTypingOrigin resolve incoming incomingContext incomingBounds entries context term type)
+      (arguments : List VLevel) :
+      SynthesisTypingOrigin resolve incoming incomingContext incomingBounds
+        entries (context.map (AExpr.instL arguments)) (term.instL arguments) (type.instL arguments)
+  | appendContext {incoming incomingContext incomingBounds entries context term type}
+      (prior : SynthesisTypingOrigin resolve incoming incomingContext incomingBounds entries context term type)
+      (outer : Model.Context β) :
+      SynthesisTypingOrigin resolve incoming incomingContext incomingBounds entries (context ++ outer) term type
+  | extend {incoming incomingContext incomingBounds earlier entries context term type}
+      (prior : SynthesisTypingOrigin resolve incoming incomingContext incomingBounds earlier context term type)
+      (extension : InterfaceExtends earlier entries) :
+      SynthesisTypingOrigin resolve incoming incomingContext incomingBounds entries context term type
+  | termEquivalent {incoming incomingContext incomingBounds entries context term term' type}
+      (prior : SynthesisTypingOrigin resolve incoming incomingContext incomingBounds entries context term type)
+      (same : AExpr.LevelEquivalent term term') :
+      SynthesisTypingOrigin resolve incoming incomingContext incomingBounds entries context term' type
+  | typeEquivalent {incoming incomingContext incomingBounds entries context term type type'}
+      (prior : SynthesisTypingOrigin resolve incoming incomingContext incomingBounds entries context term type)
+      (same : AExpr.LevelEquivalent type type') :
+      SynthesisTypingOrigin resolve incoming incomingContext incomingBounds entries context term type'
+  | substituteAt {incoming incomingContext incomingBounds entries base sourceContext targetContext
+      domain term type argument cutoff}
+      (body : SynthesisTypingOrigin resolve incoming incomingContext incomingBounds
+        entries sourceContext term type)
+      (value : SynthesisTypingOrigin resolve incoming incomingContext incomingBounds entries base argument domain)
+      (substitution : ContextSubstitution base domain argument sourceContext targetContext cutoff) :
+      SynthesisTypingOrigin resolve incoming incomingContext incomingBounds entries targetContext
+        (term.inst argument cutoff) (type.inst argument cutoff)
 
 end
+
+/-- The checked argument transports an already justified original beta
+prefix to its substituted application result. The two resulting expressions
+are computed by the proved substitution laws. -/
+def SynthesisTypeTransport.substitutePrefixAt {β : Type u} {resolve : Address → Option (ConstRef β)}
+    {incoming origin entries : Model.Environment β}
+    {incomingContext originContext base sourceContext targetContext : Model.Context β}
+    {incomingBounds : List VLevel} {source reduced head domain argument : AExpr β}
+    {arguments : List (AExpr β)} {level bound : VLevel} {count cutoff : Nat}
+    (prior : SynthesisTypeTransport resolve incoming incomingContext incomingBounds
+      origin originContext source reduced level entries sourceContext
+      (head.appN arguments) (AExpr.betaPrefix count head arguments) bound)
+    (enough : count ≤ head.lambdaDepth)
+    (argumentOrigin : SynthesisTypingOrigin resolve incoming incomingContext incomingBounds
+      entries base argument domain)
+    (substitution : ContextSubstitution base domain argument sourceContext targetContext cutoff) :
+    SynthesisTypeTransport resolve incoming incomingContext incomingBounds
+      origin originContext source reduced level entries targetContext
+      ((head.inst argument cutoff).appN (arguments.map (AExpr.inst · argument cutoff)))
+      (AExpr.betaPrefix count (head.inst argument cutoff)
+        (arguments.map (AExpr.inst · argument cutoff))) bound := by
+  simpa only [AExpr.inst_appN, AExpr.inst_betaPrefix count head arguments argument cutoff enough] using
+    prior.substituteAt argumentOrigin substitution
+
+/-- Follow an actual argument call through the remaining dependent
+parameters of a previously checked function type. The context relation
+computes their updated domains at the same substitution cutoff. -/
+def ApplicationInferenceTrace.substituteTypeOriginAt {β : Type u} {resolve : Address → Option (ConstRef β)}
+    {incoming origin entries : Model.Environment β}
+    {incomingContext originContext context sourceContext targetContext : Model.Context β}
+    {incomingBounds bounds : List VLevel} {source reduced head domain argumentType argument f body : AExpr β}
+    {condition : Certified.PropWhen} {arguments : List (AExpr β)}
+    {level bound functionBound argumentBound : VLevel} {count cutoff fuel : Nat}
+    {locals : List FVarId} {before : TcState .anon} {fn rawArgument : KExpr .anon}
+    (trace : ApplicationInferenceTrace fuel before fn rawArgument)
+    (prior : SynthesisTypeTransport resolve incoming incomingContext incomingBounds
+      origin originContext source reduced level entries sourceContext
+      (head.appN arguments) (AExpr.betaPrefix count head arguments) bound)
+    (enough : count ≤ head.lambdaDepth)
+    (argumentContext : SynthesisContext resolve incoming incomingContext incomingBounds entries context bounds)
+    (functionTree : SynthesisInference resolve entries locals context bounds fuel before fn
+      f (.forallE condition domain body) functionBound)
+    (argumentTree : SynthesisInference resolve entries locals context bounds fuel trace.functionState rawArgument
+      argument argumentType argumentBound)
+    (agreement : LocalContextReading resolve locals before.lctx context)
+    (functionReading : readScopedExpr? resolve locals fn = some f.erase)
+    (argumentReading : readScopedExpr? resolve locals rawArgument = some argument.erase)
+    (conditions : argumentType.annotations = domain.annotations)
+    (hashPath : (trace.argumentType == trace.domain) = true)
+    (comparisonFaithful : trace.argumentType.AddrFaithful trace.domain)
+    (substitution : ContextSubstitution context domain argument sourceContext targetContext cutoff) :
+    SynthesisTypeTransport resolve incoming incomingContext incomingBounds
+      origin originContext source reduced level entries targetContext
+      ((head.inst argument cutoff).appN (arguments.map (AExpr.inst · argument cutoff)))
+      (AExpr.betaPrefix count (head.inst argument cutoff)
+        (arguments.map (AExpr.inst · argument cutoff))) bound :=
+  prior.substitutePrefixAt enough
+    (.applicationArgument argumentContext trace functionTree argumentTree agreement functionReading argumentReading
+      conditions hashPath comparisonFaithful) substitution
+
+/-- Reuse a codomain check from an earlier closed function type at the
+actual application site. The old function parameter keeps index zero while
+the caller's locals are added outside it, then the actual argument call
+supplies the substitution. -/
+def ApplicationInferenceTrace.substituteTypeOrigin {β : Type u} {resolve : Address → Option (ConstRef β)}
+    {incoming origin entries : Model.Environment β} {incomingContext originContext context : Model.Context β}
+    {incomingBounds bounds : List VLevel} {source reduced head domain argumentType argument f body : AExpr β}
+    {condition : Certified.PropWhen} {arguments : List (AExpr β)}
+    {level bound functionBound argumentBound : VLevel} {count fuel : Nat}
+    {locals : List FVarId} {before : TcState .anon} {fn rawArgument : KExpr .anon}
+    (trace : ApplicationInferenceTrace fuel before fn rawArgument)
+    (prior : TypeReductionTransport origin originContext source reduced level
+      entries (Context.push domain [])
+      (head.appN arguments) (AExpr.betaPrefix count head arguments) bound)
+    (enough : count ≤ head.lambdaDepth)
+    (argumentContext : SynthesisContext resolve incoming incomingContext incomingBounds entries context bounds)
+    (functionTree : SynthesisInference resolve entries locals context bounds fuel before fn
+      f (.forallE condition domain body) functionBound)
+    (argumentTree : SynthesisInference resolve entries locals context bounds fuel trace.functionState rawArgument
+      argument argumentType argumentBound)
+    (agreement : LocalContextReading resolve locals before.lctx context)
+    (functionReading : readScopedExpr? resolve locals fn = some f.erase)
+    (argumentReading : readScopedExpr? resolve locals rawArgument = some argument.erase)
+    (conditions : argumentType.annotations = domain.annotations)
+    (hashPath : (trace.argumentType == trace.domain) = true)
+    (comparisonFaithful : trace.argumentType.AddrFaithful trace.domain) :
+    SynthesisTypeTransport resolve incoming incomingContext incomingBounds
+      origin originContext source reduced level entries context
+      ((head.inst argument).appN (arguments.map (AExpr.inst · argument)))
+      (AExpr.betaPrefix count (head.inst argument) (arguments.map (AExpr.inst · argument))) bound := by
+  have imported : TypeReductionTransport origin originContext source reduced level
+      entries (context.push domain) (head.appN arguments) (AExpr.betaPrefix count head arguments) bound := by
+    simpa only [Context.push, List.map_nil, List.cons_append, List.nil_append] using
+      prior.appendContext (context.map (AExpr.liftN 1 ·))
+  exact trace.substituteTypeOriginAt (.pure imported) enough argumentContext functionTree argumentTree
+    agreement functionReading argumentReading conditions hashPath comparisonFaithful .root
+
+/-- The actual codomain call retained inside a function-type check. Its
+local context is reconstructed from that same call's domain check. -/
+structure SynthesisForallBodyCheck {β : Type u} (resolve : Address → Option (ConstRef β))
+    (entries : Model.Environment β) (context : Model.Context β) (bounds : List VLevel)
+    (condition : Certified.PropWhen) (domain body : AExpr β) where
+  domainLevel : VLevel
+  bodyLevel : VLevel
+  bound : VLevel
+  locals : List FVarId
+  fuel : Nat
+  before : TcState .anon
+  after : TcState .anon
+  source : KExpr .anon
+  result : KExpr .anon
+  contextOrigin : SynthesisContext resolve entries context bounds entries
+    (context.push domain) (domainLevel :: bounds)
+  tree : SynthesisInference resolve entries locals (context.push domain) (domainLevel :: bounds)
+    fuel before source body (.sort bodyLevel) bound
+  agreement : LocalContextReading resolve locals before.lctx (context.push domain)
+  reading : readScopedExpr? resolve locals source = some body.erase
+  run : RecM.infer source (methodsN fuel) before = .ok result after
+  conditionAgrees : condition = Certified.zeroCondition bodyLevel
+
+private def ForallInferenceTrace.bodyCheck {β : Type u} {resolve : Address → Option (ConstRef β)}
+    {entries : Model.Environment β} {locals : List FVarId} {context : Model.Context β} {bounds : List VLevel}
+    {fuel : Nat} {before : TcState .anon} {name : Mode.anon.F Name} {bi : Mode.anon.F Lean.BinderInfo}
+    {domain body : KExpr .anon} {A B : AExpr β} {domainBound bodyBound : VLevel}
+    (trace : ForallInferenceTrace fuel before name bi domain body)
+    (opening : BinderOpeningSupport trace.domainState body)
+    (absent : (⟨trace.domainState.env.nextFVarId⟩ : FVarId) ∉ locals)
+    (domainTree : SynthesisInference resolve entries locals context bounds fuel before domain
+      A (.sort (readLevel trace.domainLevel)) domainBound)
+    (bodyTree : SynthesisInference resolve entries (trace.fresh :: locals) (context.push A)
+      (readLevel trace.domainLevel :: bounds) fuel trace.openedState trace.opened
+      B (.sort (readLevel trace.bodyLevel)) bodyBound)
+    (agreement : LocalContextReading resolve locals before.lctx context)
+    (domainReading : readScopedExpr? resolve locals domain = some A.erase)
+    (bodyReading : readScopedExpr? resolve locals body 1 = some B.erase) :
+    SynthesisForallBodyCheck resolve entries context bounds
+      (Certified.zeroCondition (readLevel trace.bodyLevel)) A B := by
+  have opened := openBinder_sound opening (trace.contextPreserved.symm ▸ agreement)
+    absent domainReading bodyReading trace.openRun
+  exact {
+    domainLevel := readLevel trace.domainLevel
+    bodyLevel := readLevel trace.bodyLevel
+    bound := bodyBound
+    locals := trace.fresh :: locals
+    fuel := fuel
+    before := trace.openedState
+    after := trace.bodyState
+    source := trace.opened
+    result := .sort trace.bodyLevel trace.bodyInfo
+    contextOrigin := .push .current domainTree agreement domainReading trace.domainRun
+    tree := bodyTree
+    agreement := opened.2.2.1
+    reading := opened.2.1
+    run := trace.bodyRun
+    conditionAgrees := rfl }
+
+def BinderInference.forallBodyCheck {β : Type u} {resolve : Address → Option (ConstRef β)}
+    {entries : Model.Environment β} {locals : List FVarId} {context : Model.Context β}
+    {bounds : List VLevel} {fuel : Nat} {before : TcState .anon} {source : KExpr .anon}
+    {condition : Certified.PropWhen} {domain body type : AExpr β}
+    (support : BinderInference resolve entries locals context fuel before source
+      (.forallE condition domain body) type)
+    (agreement : LocalContextReading resolve locals before.lctx context)
+    (reading : readScopedExpr? resolve locals source = some (AExpr.forallE condition domain body).erase) :
+    SynthesisForallBodyCheck resolve entries context bounds condition domain body := by
+  cases support with
+  | forallE miss trace opening absent domainTree bodyTree =>
+      obtain ⟨domainReads, bodyReads⟩ := readScopedExpr?_all_parts reading
+      exact trace.bodyCheck opening absent (.known domainTree (.sort _)) (.known bodyTree (.sort _))
+        (miss.localContext.symm ▸ agreement) domainReads bodyReads
+
+/-- Recover the recorded codomain check by inspecting the production
+inference tree. This does not assume a new call on an inferred codomain. -/
+def SynthesisInference.forallBodyCheck {β : Type u} {resolve : Address → Option (ConstRef β)}
+    {entries : Model.Environment β} {locals : List FVarId} {context : Model.Context β}
+    {bounds : List VLevel} {fuel : Nat} {before : TcState .anon} {source : KExpr .anon}
+    {condition : Certified.PropWhen} {domain body type : AExpr β} {level : VLevel}
+    (support : SynthesisInference resolve entries locals context bounds fuel before source
+      (.forallE condition domain body) type level)
+    (agreement : LocalContextReading resolve locals before.lctx context)
+    (reading : readScopedExpr? resolve locals source = some (AExpr.forallE condition domain body).erase) :
+    SynthesisForallBodyCheck resolve entries context bounds condition domain body := by
+  cases support with
+  | known inference => exact inference.forallBodyCheck agreement reading
+  | reuseType inference => exact inference.forallBodyCheck agreement reading
+  | forallE miss trace opening absent domainTree bodyTree =>
+      obtain ⟨domainReads, bodyReads⟩ := readScopedExpr?_all_parts reading
+      exact trace.bodyCheck opening absent domainTree bodyTree
+        (miss.localContext.symm ▸ agreement) domainReads bodyReads
 
 private theorem list_reverse_induction {α : Type u} {motive : List α → Prop}
     (nil : motive [])
@@ -384,7 +674,7 @@ theorem SynthesisInference.soundWithSpine {β : Type u}
       obtain ⟨_, _, _, originSpine⟩ := typeTree.soundWithSpine
         (typeContextSupport.sound formed) typeAgreement typeReading typeRun
       obtain ⟨originConversion, originReducedTyped⟩ := originSpine.betaPrefix originPrefix
-      obtain ⟨conversion, reducedTyped⟩ := transport.sound originConversion originReducedTyped
+      obtain ⟨conversion, reducedTyped⟩ := transport.sound formed originConversion originReducedTyped
       obtain ⟨_, reducedReads, reducedCoherent⟩ := reduction.reading bodyTypeReads
       obtain ⟨closedReads, closedCoherent⟩ := abstractFVars_readScopedExpr? constructed bound
         reducedCoherent closingFaithful reducedReads
@@ -419,6 +709,59 @@ theorem SynthesisContext.sound {β : Type u} {resolve : Address → Option (Cons
   | .extend prior extension => by
       intro index type bound found indexed
       exact extension.typing (prior.sound formed index type bound found indexed)
+  | .compose prior next => next.sound (prior.sound formed)
+termination_by structural support
+
+theorem SynthesisTypeTransport.sound {β : Type u} {resolve : Address → Option (ConstRef β)}
+    {incoming origin entries : Model.Environment β} {incomingContext originContext context : Model.Context β}
+    {incomingBounds : List VLevel} {source reduced current result : AExpr β} {level bound : VLevel}
+    (support : SynthesisTypeTransport resolve incoming incomingContext incomingBounds
+      origin originContext source reduced level entries context current result bound)
+    (formed : ContextFormation.{u,v} incoming incomingContext incomingBounds)
+    (converted : ConversionClaim.{u,v} origin originContext source reduced)
+    (typed : TypingClaim.{u,v} origin originContext reduced (.sort level)) :
+    ConversionClaim.{u,v} entries context current result ∧
+      TypingClaim.{u,v} entries context result (.sort bound) :=
+  match support with
+  | .pure transport => transport.sound converted typed
+  | .map prior transport => by
+      obtain ⟨conversion, resultTyped⟩ := prior.sound formed converted typed
+      exact transport.sound conversion resultTyped
+  | .substituteAt prior argumentOrigin substitution => by
+      obtain ⟨conversion, resultTyped⟩ := prior.sound formed converted typed
+      have argumentAtDomain := argumentOrigin.sound formed
+      exact ⟨conversion.instAt argumentAtDomain substitution, resultTyped.instAt argumentAtDomain substitution⟩
+termination_by structural support
+
+theorem SynthesisTypingOrigin.sound {β : Type u} {resolve : Address → Option (ConstRef β)}
+    {incoming entries : Model.Environment β} {incomingContext context : Model.Context β}
+    {incomingBounds : List VLevel} {term type : AExpr β}
+    (support : SynthesisTypingOrigin resolve incoming incomingContext incomingBounds entries context term type)
+    (formed : ContextFormation.{u,v} incoming incomingContext incomingBounds) :
+    TypingClaim.{u,v} entries context term type :=
+  match support with
+  | .checked contextOrigin tree agreement reading accepted =>
+      (tree.soundWithSpine (contextOrigin.sound formed) agreement reading accepted).2.1
+  | .applicationArgument contextOrigin trace functionTree argumentTree agreement functionReading argumentReading
+      conditions hashPath comparisonFaithful => by
+      have contextFormation := contextOrigin.sound formed
+      have functionTypeReads :=
+        (functionTree.soundWithSpine contextFormation agreement functionReading trace.functionRun).1
+      have domainReads := (readScopedExpr?_all_parts functionTypeReads).1
+      obtain ⟨argumentTypeReads, argumentTyped, _, _⟩ :=
+        argumentTree.soundWithSpine contextFormation (trace.contextPreserved.symm ▸ agreement)
+          argumentReading trace.argumentRun
+      have sameType := AExpr.eq_of_erase_annotations
+        (Option.some.inj (argumentTypeReads.symm.trans
+          ((beq_readScopedExpr? comparisonFaithful hashPath).trans domainReads))) conditions
+      exact sameType ▸ argumentTyped
+  | .weaken prior domain => typing_weaken (prior.sound formed)
+  | .instantiate prior arguments => typing_instL_context (prior.sound formed) arguments
+  | .appendContext prior outer => typing_append_context (prior.sound formed) outer
+  | .extend prior extension => extension.typing (prior.sound formed)
+  | .termEquivalent prior same => same.termTyping (prior.sound formed)
+  | .typeEquivalent prior same => same.typing (prior.sound formed)
+  | .substituteAt body value substitution => (body.sound formed).instAt (value.sound formed) substitution
 termination_by structural support
 
 end
@@ -483,6 +826,12 @@ theorem SynthesisTypeCheck.sound {β : Type u} {resolve : Address → Option (Co
     (check : SynthesisTypeCheck resolve entries type level) :
     TypingClaim.{u,v} entries [] type (.sort level) :=
   (check.inference.closed_sound check.reading check.run).2.1
+
+def SynthesisTypeCheck.forallBody {β : Type u} {resolve : Address → Option (ConstRef β)}
+    {entries : Model.Environment β} {condition : Certified.PropWhen} {domain body : AExpr β} {level : VLevel}
+    (check : SynthesisTypeCheck resolve entries (.forallE condition domain body) level) :
+    SynthesisForallBodyCheck resolve entries [] [] condition domain body :=
+  check.inference.forallBodyCheck (.empty _ _) check.reading
 
 /-- An instantiated constant can recover formation from an earlier actual
 declaration type check, with exact interface preservation and structural

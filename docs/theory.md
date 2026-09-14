@@ -51,7 +51,8 @@ application suffix. The actual multi-argument structural-WHNF step reads the
 result through simultaneous substitution and interned suffix rebuilding,
 preserving intern coherence. The walk's bounds concern the original body and
 argument trees. Substitution also preserves the model's typing, checking,
-and equality judgments. Selected cheap-beta plans preserve the same meaning
+and equality judgments beneath any retained dependent parameters, updating
+each later domain. Selected cheap-beta plans preserve the same meaning
 when an actual source check is available.
 Declaration admission includes declared types reduced through a lambda
 prefix and a remaining suffix: the declaration's own executed type check
@@ -62,9 +63,15 @@ actual checking origin. The inference proof preserves checked lambda domains;
 the raw reader derives the selected prefix and reduced expression. A syntactic
 transport moves the original check through interface extension, local
 weakening, and universe instantiation, and earlier local contexts come from
-their executed domain checks. The lambda closes the reduced type using the
-actual final intern table. Automatic origin construction for arbitrary
-generated types, general reduction, and conversion remain open.
+their executed domain checks. It now also carries codomain checks through
+term substitution: the earlier function-type tree supplies the actual
+codomain call, while the executed function and argument checks and hash
+comparison establish membership in the substituted parameter's domain.
+The mutual inference proof preserves this origin beneath remaining dependent
+parameters. The lambda closes the reduced type using the actual final intern
+table. Reduction remains bounded by the original checked lambda prefix.
+Automatic origin construction for arbitrary generated types, general
+reduction, and conversion remain open.
 Safe definition admission also rejects circular justification in both Lean and
 Rust, including `theorem loop : P := loop` with only `P : Prop` assumed. The
 production dependency walk returns an order with a proved decreasing rank;

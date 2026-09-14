@@ -78,6 +78,102 @@ theorem liftN_inst_zero (term argument : AExpr β) (count cutoff : Nat) :
       (term.liftN count (cutoff + 1)).inst (argument.liftN count cutoff) := by
   simpa only [Nat.add_zero] using liftN_inst term argument count cutoff 0
 
+theorem liftN_liftN_merge (term : AExpr β) (first second lower upper : Nat)
+    (ordered : lower ≤ upper) (inside : upper ≤ first + lower) :
+    (term.liftN first lower).liftN second upper = term.liftN (first + second) lower := by
+  induction term generalizing lower upper with
+  | bvar index =>
+      by_cases below : index < lower
+      · simp [liftN, liftVar, below, show index < upper by omega]
+      · simp [liftN, liftVar, below, show ¬ first + index < upper by omega,
+          Nat.add_assoc, Nat.add_left_comm]
+  | lam condition domain body ihDomain ihBody | forallE condition domain body ihDomain ihBody =>
+      simp only [liftN, ihDomain lower upper ordered inside,
+        ihBody (lower + 1) (upper + 1) (by omega) (by omega)]
+  | _ => simp_all [liftN]
+
+/-- A substitution after an inserted block uses the correspondingly
+shifted index. The substituted argument is lifted only once. -/
+theorem inst_liftN (term argument : AExpr β) (count lower upper : Nat)
+    (ordered : lower ≤ upper) :
+    (term.liftN count lower).inst argument (count + upper) =
+      (term.inst argument upper).liftN count lower := by
+  induction term generalizing lower upper with
+  | bvar index =>
+      by_cases below : index < lower
+      · simp [liftN, liftVar, inst, instVar, below,
+          show index < upper by omega, show index < count + upper by omega]
+      · by_cases before : index < upper
+        · simp [liftN, liftVar, inst, instVar, below, before]
+        · by_cases equal : index = upper
+          · subst index
+            simp only [liftN, liftVar, if_neg below, inst, instVar, Nat.lt_irrefl, if_false, if_true]
+            simpa only [Nat.zero_add, Nat.add_comm] using
+              (liftN_liftN_merge argument upper count 0 lower (Nat.zero_le _) ordered).symm
+          · simp [liftN, liftVar, inst, instVar, below, before, equal,
+              show ¬ index - 1 < lower by omega]
+            omega
+  | lam condition domain body ihDomain ihBody | forallE condition domain body ihDomain ihBody =>
+      simp only [liftN, inst, ihDomain lower upper ordered,
+        show count + upper + 1 = count + (upper + 1) by omega,
+        ihBody (lower + 1) (upper + 1) (by omega)]
+  | _ => simp_all [liftN, inst]
+
+/-- Removing any variable in an inserted block leaves a block with one
+fewer variable; the term contains no occurrence to replace there. -/
+theorem inst_liftN_within (term argument : AExpr β) (count cutoff removed : Nat)
+    (lower : cutoff ≤ removed) (upper : removed ≤ count + cutoff) :
+    (term.liftN (count + 1) cutoff).inst argument removed = term.liftN count cutoff := by
+  induction term generalizing cutoff removed with
+  | bvar index =>
+      by_cases below : index < cutoff
+      · simp [liftN, liftVar, inst, instVar, below, show index < removed by omega]
+      · simp [liftN, liftVar, inst, instVar, below,
+          show ¬ count + 1 + index < removed by omega,
+          show count + 1 + index ≠ removed by omega]
+  | lam condition domain body ihDomain ihBody | forallE condition domain body ihDomain ihBody =>
+      simp only [liftN, inst, ihDomain cutoff removed lower upper,
+        ihBody (cutoff + 1) (removed + 1) (by omega) (by omega)]
+  | _ => simp_all [liftN, inst]
+
+/-- Compose substitutions in dependency order. The earlier argument is
+itself substituted, and the later index skips the removed binder. -/
+theorem inst_inst (term first second : AExpr β) (cutoff depth : Nat) :
+    (term.inst first depth).inst second (cutoff + depth) =
+      (term.inst second (cutoff + depth + 1)).inst (first.inst second cutoff) depth := by
+  induction term generalizing depth with
+  | bvar index =>
+      by_cases below : index < depth
+      · simp [inst, instVar, below, show index < cutoff + depth by omega,
+          show index < cutoff + depth + 1 by omega]
+      · by_cases equal : index = depth
+        · subst index
+          simp only [inst, instVar, Nat.lt_irrefl, if_false, if_true,
+            if_pos (show depth < cutoff + depth + 1 by omega)]
+          simpa only [Nat.add_comm] using inst_liftN first second depth 0 cutoff (Nat.zero_le _)
+        · by_cases before : index < cutoff + depth + 1
+          · simp [inst, instVar, below, equal, before,
+              show index - 1 < cutoff + depth by omega]
+          · by_cases selected : index = cutoff + depth + 1
+            · subst index
+              simp only [inst, instVar, Nat.lt_irrefl, if_false, if_true, if_neg below,
+                if_neg equal, Nat.add_sub_cancel]
+              have skipped := inst_liftN_within second (first.inst second cutoff) (cutoff + depth) 0 depth
+                (Nat.zero_le _) (by omega)
+              simpa only [Nat.add_zero] using skipped.symm
+            · simp [inst, instVar, below, equal, before, selected,
+                show ¬ index - 1 < cutoff + depth by omega,
+                show index - 1 ≠ cutoff + depth by omega,
+                show ¬ index - 1 < depth by omega, show index - 1 ≠ depth by omega]
+  | lam condition domain body ihDomain ihBody | forallE condition domain body ihDomain ihBody =>
+      simp only [inst, ihDomain, ihBody, Nat.add_assoc]
+  | _ => simp_all [inst]
+
+theorem inst_inst_zero (term first second : AExpr β) (cutoff : Nat) :
+    (term.inst first).inst second cutoff =
+      (term.inst second (cutoff + 1)).inst (first.inst second cutoff) := by
+  simpa only [Nat.add_zero] using inst_inst term first second cutoff 0
+
 theorem inst_liftN_top (term argument : AExpr β) (count cutoff : Nat) :
     (term.liftN (count + 1) cutoff).inst argument (count + cutoff) = term.liftN count cutoff := by
   induction term generalizing cutoff with

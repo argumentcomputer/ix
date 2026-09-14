@@ -682,6 +682,70 @@ private def cheapLambdaConstantResult : Bool :=
   | .ok passed after => passed && after.lctx.size == 0
   | .error _ _ => false
 
+/-- Application substitutes into an earlier checked codomain containing a
+beta redex. With two parameters, the second domain is `B x` and the final
+carrier is `C x y`, so both substitutions affect the generated type. -/
+private def cheapApplicationType (level : Ixon.Univ) (universes : UInt64 := 0)
+    (dependent wrongArgument : Bool := false) : Ixon.Env × Address := Id.run do
+  let (env, carrier) := storeConst {}
+    ⟨.axio ⟨false, universes, .sort 0⟩, #[], #[], #[level]⟩
+  let arguments := if universes == 0 then #[] else #[0]
+  let (env, family) := storeConst env
+    ⟨.axio ⟨false, universes, .leanAll (.ref 0 arguments) (.sort 0)⟩,
+      #[], #[carrier], #[level]⟩
+  let secondDomain := Ixon.Expr.app (.ref 1 arguments) (.var 0)
+  let (env, dependentFamily) := storeConst env
+    ⟨.axio ⟨false, universes, .leanAll (.ref 0 arguments) (.leanAll secondDomain (.sort 0))⟩,
+      #[], #[carrier, family], #[level]⟩
+  let result := if dependent then
+      Ixon.Expr.app (.app (.ref 2 arguments) (.var 1)) (.var 0)
+    else .app (.ref 1 arguments) (.var 0)
+  let redex := Ixon.Expr.app (.leanLam (.sort 0) (.var 0)) result
+  let functionType := Ixon.Expr.leanAll (.ref 0 arguments)
+    (if dependent then .leanAll secondDomain redex else redex)
+  let (env, function) := storeConst env
+    ⟨.axio ⟨false, universes, functionType⟩, #[], #[carrier, family, dependentFamily], #[level]⟩
+  let call := if dependent then
+      Ixon.Expr.app (.app (.ref 3 arguments) (.var 1)) (.var (if wrongArgument then 1 else 0))
+    else .app (.ref 3 arguments) (if wrongArgument then .ref 0 arguments else .var 0)
+  return storeConst env
+    ⟨.defn ⟨.defn, .safe, universes,
+      .leanAll (.ref 0 arguments) (if dependent then .leanAll secondDomain result else result),
+      .leanLam (.ref 0 arguments) (if dependent then .leanLam secondDomain call else call)⟩,
+      #[], #[carrier, family, dependentFamily, function], #[level]⟩
+
+private def cheapApplicationTypeResult (dependent : Bool) (level : Ixon.Univ := .zero) : Bool :=
+  let (env, target) := cheapApplicationType level 0 dependent
+  let action : RecM .anon Bool := RecM.withLctxScope do
+    let concrete ← TcM.getConst (m := .anon) ⟨target, ()⟩
+    let .defn _ _ _ _ _ _ type value _ _ := concrete | return false
+    let .lam name bi domain body _ := value | return false
+    let .all _ _ _ codomain _ := type | return false
+    let (opened, first, _) ← TcM.openBinderWithFV name bi domain body
+    let expected ← TcM.runIntern (instantiateRev codomain #[first])
+    let (call, expected) ← if dependent then do
+        let .lam name bi domain body _ := opened | return false
+        let .all _ _ expectedDomain codomain _ := expected | return false
+        if domain != expectedDomain then return false
+        let (call, second, _) ← TcM.openBinderWithFV name bi domain body
+        let .app firstCall _ _ := call | return false
+        let .all _ _ partialDomain _ _ ← RecM.inferCall firstCall | return false
+        if partialDomain != domain then return false
+        let expected ← TcM.runIntern (instantiateRev codomain #[second])
+        pure (call, expected)
+      else pure (opened, expected)
+    let original ← RecM.inferCall call
+    let reduced ← TcM.runIntern (cheapBetaReduce original)
+    let before ← get
+    let inferred ← RecM.inferCall value
+    let repeated ← RecM.inferCall value
+    let after ← get
+    return (cheapBetaPlan? original).isSome && original != reduced && reduced == expected &&
+      inferred == type && repeated == type && after.lctx.size == before.lctx.size
+  match TcM.runRec action (TcState.newLazyAnon env) with
+  | .ok passed after => passed && after.lctx.size == 0
+  | .error _ _ => false
+
 private def applicationCases : TestSeq :=
   test "application environment: Prop/Type identity calls and transitive theorem calls check"
     (allSucceeded applicationEnvironment 5 { clearEvery := 0 })
@@ -788,6 +852,28 @@ private def cheapLambdaCases : TestSeq :=
     cheapLambdaConstantResult
   ++ test "lambda cheap beta admission: returning a carrier in place of its witness is rejected"
     (let (env, target) := cheapLambdaConstant .zero 0 true true; rowFailed env target)
+
+private def cheapApplicationCases : TestSeq :=
+  test "application type beta: substituted codomains check in Prop and Type"
+    (allSucceeded (cheapApplicationType .zero).1 5 &&
+      allSucceeded (cheapApplicationType (.succ .zero)).1 5)
+  ++ test "application type beta: an earlier codomain check retains universe parameters"
+    (allSucceeded (cheapApplicationType (.var 0) 1).1 5)
+  ++ test "application type beta: the second parameter depends on the first argument"
+    (allSucceeded (cheapApplicationType .zero 0 true).1 5 &&
+      allSucceeded (cheapApplicationType (.succ .zero) 0 true).1 5)
+  ++ test "application type beta: dependent parameters retain universe parameters"
+    (allSucceeded (cheapApplicationType (.var 0) 1 true).1 5)
+  ++ test "application type beta: dependent substitutions survive per-item cache clearing"
+    (allSucceeded (cheapApplicationType .zero 0 true).1 5 { clearEvery := 1 })
+  ++ test "application type beta: a single argument changes the generated body type before abstraction"
+    (cheapApplicationTypeResult false && cheapApplicationTypeResult false (.succ .zero))
+  ++ test "application type beta: two arguments update the later domain and the exact reduced result"
+    (cheapApplicationTypeResult true && cheapApplicationTypeResult true (.succ .zero))
+  ++ test "application type beta: passing the carrier as its own witness is rejected"
+    (let (env, target) := cheapApplicationType .zero 0 false true; rowFailed env target)
+  ++ test "application type beta: the first argument cannot replace the dependent second argument"
+    (let (env, target) := cheapApplicationType .zero 0 true true; rowFailed env target)
 
 /-- Call a polymorphic identity from a monomorphic function body. Universe
 indices select entries in the declaration's explicit level table. -/
@@ -2381,6 +2467,7 @@ private def polymorphicDefinitionCases : TestSeq :=
 
 public def suite : List TestSeq :=
   [cases, polymorphicCases, specializationCases, binderCases, applicationCases, multiBetaCases, cheapLambdaCases,
+    cheapApplicationCases,
     polymorphicApplicationCases, constantCacheCases, cacheInvariantCases, recursiveCacheCases,
     lazyCacheCases, blockCacheCases, ingressCoherenceCases, sourceOwnershipCases, recursiveStateCases,
     sourceAgreementCases, sourceCacheCases, polymorphicDefinitionCases]

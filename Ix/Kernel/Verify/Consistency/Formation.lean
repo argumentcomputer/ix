@@ -59,12 +59,7 @@ theorem InterfaceExtends.typing {earlier later : Model.Environment β}
 theorem context_valid_tail {V : Type v} [SetTheory V]
     {constants : Assignment β V} {levels : List Nat} {context : Model.Context β}
     {domain : AExpr β} {env : Nat → V} (valid : (context.push domain).Valid constants levels env) :
-    context.Valid constants levels (Valuation.skip 1 0 env) := by
-  intro index type found
-  have after := valid (index + 1) (type.liftN 1) (by
-    simp only [Context.push, List.getElem?_cons_succ, List.getElem?_map, found, Option.map_some])
-  simpa only [wellDenoted_liftN, interp_liftN, Valuation.skip, Nat.not_lt_zero, ↓reduceIte,
-    Nat.add_comm 1 index] using after
+    context.Valid constants levels (Valuation.skip 1 0 env) := valid.tail
 
 theorem typing_weaken {entries : Model.Environment β} {context : Model.Context β}
     {term type domain : AExpr β} (typed : TypingClaim.{u,v} entries context term type) :
@@ -83,6 +78,43 @@ theorem typing_instL_closed {entries : Model.Environment β} {context : Model.Co
   have result := typed V constants realizes (arguments.map (VLevel.eval levels)) env
     (Context.valid_nil constants _ env)
   simpa only [wellDenoted_instL, interp_instL] using result
+
+theorem context_valid_instL {V : Type v} [SetTheory V]
+    {constants : Assignment β V} {levels : List Nat} {context : Model.Context β}
+    {arguments : List VLevel} {env : Nat → V}
+    (valid : Context.Valid constants levels (context.map (AExpr.instL arguments)) env) :
+    context.Valid constants (arguments.map (VLevel.eval levels)) env := by
+  intro index type found
+  have atIndex := valid index (type.instL arguments) (by
+    simp only [List.getElem?_map, found, Option.map_some])
+  simpa only [wellDenoted_instL, interp_instL] using atIndex
+
+theorem typing_instL_context {entries : Model.Environment β} {context : Model.Context β}
+    {term type : AExpr β} (typed : TypingClaim.{u,v} entries context term type)
+    (arguments : List VLevel) :
+    TypingClaim.{u,v} entries (context.map (AExpr.instL arguments))
+      (term.instL arguments) (type.instL arguments) := by
+  intro V _ constants realizes levels env valid
+  simpa only [wellDenoted_instL, interp_instL] using
+    typed V constants realizes (arguments.map (VLevel.eval levels)) env (context_valid_instL valid)
+
+theorem context_valid_prefix {V : Type v} [SetTheory V]
+    {constants : Assignment β V} {levels : List Nat} {context outer : Model.Context β}
+    {env : Nat → V} (valid : (context ++ outer).Valid constants levels env) :
+    context.Valid constants levels env := by
+  intro index type found
+  exact valid index type (by rw [List.getElem?_append_left (List.getElem?_eq_some_iff.mp found).1]; exact found)
+
+theorem typing_append_context {entries : Model.Environment β} {context : Model.Context β}
+    {term type : AExpr β} (typed : TypingClaim.{u,v} entries context term type)
+    (outer : Model.Context β) : TypingClaim.{u,v} entries (context ++ outer) term type := by
+  intro V _ constants realizes levels env valid
+  exact typed V constants realizes levels env (context_valid_prefix valid)
+
+theorem context_push_instL (context : Model.Context β) (domain : AExpr β) (arguments : List VLevel) :
+    (context.push domain).map (AExpr.instL arguments) =
+      Context.push (domain.instL arguments) (context.map (AExpr.instL arguments)) := by
+  simp only [Context.push, List.map_cons, AExpr.instL_liftN, List.map_map, Function.comp_def]
 
 /-- Retain the syntax of both a checked type and its reduction while moving
 that original check to its use site. Every step is an explicit interface or
@@ -107,6 +139,17 @@ inductive TypeReductionTransport :
         entries [] current result bound) (arguments : List VLevel) :
       TypeReductionTransport origin originContext source reduced level entries context
         (current.instL arguments) (result.instL arguments) (bound.inst arguments)
+  | instantiateContext {origin originContext source reduced level entries context current result bound}
+      (prior : TypeReductionTransport origin originContext source reduced level
+        entries context current result bound) (arguments : List VLevel) :
+      TypeReductionTransport origin originContext source reduced level
+        entries (context.map (AExpr.instL arguments))
+        (current.instL arguments) (result.instL arguments) (bound.inst arguments)
+  | appendContext {origin originContext source reduced level entries context current result bound}
+      (prior : TypeReductionTransport origin originContext source reduced level
+        entries context current result bound) (outer : Model.Context β) :
+      TypeReductionTransport origin originContext source reduced level entries (context ++ outer)
+        current result bound
   | equivalent {origin originContext source reduced level entries context current result bound current' result'}
       (prior : TypeReductionTransport origin originContext source reduced level
         entries context current result bound)
@@ -167,6 +210,15 @@ theorem TypeReductionTransport.sound
       simpa only [interp_instL] using
         ih.1 V constants realizes (arguments.map (VLevel.eval levels)) env
           (Context.valid_nil constants _ env)
+  | instantiateContext prior arguments ih =>
+      refine ⟨?_, typing_instL_context ih.2 arguments⟩
+      intro V _ constants realizes levels env valid
+      simpa only [interp_instL] using
+        ih.1 V constants realizes (arguments.map (VLevel.eval levels)) env (context_valid_instL valid)
+  | appendContext prior outer ih =>
+      refine ⟨?_, typing_append_context ih.2 outer⟩
+      intro V _ constants realizes levels env valid
+      exact ih.1 V constants realizes levels env (context_valid_prefix valid)
   | equivalent prior sameSource sameResult ih =>
       refine ⟨?_, sameResult.termTyping ih.2⟩
       intro V _ constants realizes levels env valid

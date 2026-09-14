@@ -372,6 +372,16 @@ def callReturned.{u} (A : Sort u) (a : A) : A := ((fun x : A => fun y : A => x) 
   follows the selected plan through substitution and interning, and lambda
   abstraction uses that reduction's output table. No new check of the
   generated result is assumed.
+  Retained codomain checks now also cross dependent term substitution.
+  `SynthesisTypeCheck.forallBody` extracts the actual codomain call from the
+  earlier function-type tree. `SynthesisTypingOrigin.applicationArgument`
+  retains the executed function and argument checks and their hash comparison;
+  the mutual soundness proof derives the argument's membership in that domain.
+  `ApplicationInferenceTrace.substituteTypeOriginAt` then transports the
+  original beta prefix beneath any remaining dependent parameters, updating
+  their domains with the same substitution. This transport is consumed by
+  `lamBeta`. No separate inference of the substituted type or semantic
+  argument-typing premise is required.
 - Applications use full mode, syntactic Pi exposure, an ordinary argument
   without an eager-reduction marker, and the hash-equality conversion path.
   Their witnesses retain the actual recursive calls, context preservation
@@ -484,7 +494,7 @@ lake test --wfail -- tc-unit
 lake -d Models/SetTheory build --wfail
 ```
 
-The consistency target checks 497 exact theorem boundaries. The production
+The consistency target checks 525 exact theorem boundaries. The production
 environment roots retain four existing generated output-length proofs,
 reached through expression/universe construction, names, and the full
 production method table. They introduce no new native proofs. The model
@@ -500,6 +510,11 @@ Their model-side level congruence introduces no native proof dependency.
 Semantic checking against a formed type and the new product-fibre universe
 bound also use only standard Lean axioms. The substitution rules for model
 typing, checking, and equality introduce no additional assumptions.
+Their general `instAt` forms use `ContextSubstitution` to remove an outer
+parameter and update every retained dependent domain. The beta-prefix
+commutation theorem covers any cutoff while bounding reduction by the
+original lambda prefix; lambdas newly exposed by substitution need their own
+checking origins.
 `SynthesisInference.beta_peel_sound` derives beta-prefix equality and result
 typing from actual lambda and dependent argument inference. Its domain-shape
 proof retains information lost when proof values are identified. The original
@@ -521,10 +536,13 @@ current context, to justify the changed cheap-beta result. The actual source
 reading determines the raw head and arguments; `CheapBetaSupport.reading`
 connects the selected prefix to the reduced syntax and final intern table.
 `SynthesisContext.sound` derives earlier contexts from their domain checks,
-so the origin can precede additional binders. The public inference and
-environment results include this case. Automatic origin construction for
-arbitrary generated types, repeated reduction, and other conversion paths
-remain open.
+so the origin can precede additional binders. `SynthesisTypeTransport.sound`
+and `SynthesisTypingOrigin.sound` are proved in that same recursion and carry
+these checks through argument substitution, including later dependent
+domains and the original context's universe instantiation. The public
+inference and environment results include this case. Automatic origin
+construction for arbitrary generated types, repeated reduction, and other
+conversion paths remain open.
 Kernel unit regressions cover lazy loading, both inference policies, interning
 reuse, dependent function types, shared references, lets, `imax` simplification,
 argument order, and rejection of wrong arities and out-of-range parameters.
@@ -556,6 +574,13 @@ types, local checking origins beneath further binders, dependent prefixes,
 both application positions, and reused declaration types in Prop, Type, and
 at universe parameters. They also check cache clearing, scope cleanup, and
 rejection of a carrier returned in place of its witness.
+Application-type beta regressions check an earlier function's substituted
+codomain in Prop, Type, and at universe parameters. Two-argument cases use
+`(x : A) → (y : B x) → ((fun T : Sort u => T) (C x y))`: they observe the
+updated second domain, different original and reduced result hashes, and the
+exact final lambda type. They cover cache clearing, reuse, scope cleanup, and
+rejection of a carrier or first argument used in the wrong dependent domain.
+These execution tests do not construct the general finite inference resources.
 Polymorphic-call regressions include Prop/Type instances in real function
 bodies, `max`/`imax` simplification inside Pi domains, closed nested references
 under active locals, separate cache keys for different universe instances,
@@ -625,7 +650,7 @@ Definition-cycle regressions use content-addressed standalone and mutual
 declarations, including a self-justifying theorem, a two-member cycle, type
 cycles, lets, shared syntax, and binders. They check repeated member failures,
 acyclic forward references, cache clearing, and the partial/unsafe policy.
-The unit suite contains 620 checks. The anonymous differential additionally
+The unit suite contains 629 checks. The anonymous differential additionally
 serializes eight cycle-policy fixtures and checks exact target sets, verdicts,
 failure counts, and cycle diagnostics in both implementations.
 

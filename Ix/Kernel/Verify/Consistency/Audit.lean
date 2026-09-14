@@ -356,6 +356,37 @@ private def typeOriginRoots : Array RootAllowance := #[
   { root := ``Theory.Model.LambdaSpineTyping.betaPrefix, standardAxioms := standard }
 ]
 
+private def substitutedOriginRoots : Array RootAllowance := #[
+  { root := ``Theory.Model.AExpr.liftN_liftN_merge, standardAxioms := #[``propext, ``Quot.sound] },
+  { root := ``Theory.Model.AExpr.inst_liftN, standardAxioms := #[``propext, ``Quot.sound] },
+  { root := ``Theory.Model.AExpr.inst_liftN_within, standardAxioms := #[``propext, ``Quot.sound] },
+  { root := ``Theory.Model.AExpr.inst_inst, standardAxioms := #[``propext, ``Quot.sound] },
+  { root := ``Theory.Model.AExpr.inst_inst_zero, standardAxioms := #[``propext, ``Quot.sound] },
+  { root := ``Theory.Model.AExpr.lambdaDepth_le_inst, standardAxioms := #[``propext] },
+  { root := ``Theory.Model.AExpr.inst_appN },
+  { root := ``Theory.Model.AExpr.inst_betaPrefix, standardAxioms := #[``propext, ``Quot.sound] },
+  { root := ``Theory.Model.Context.Valid.tail, standardAxioms := standard },
+  { root := ``Theory.Model.Context.Valid.head, standardAxioms := standard },
+  { root := ``Theory.Model.ContextSubstitution.base_valid, standardAxioms := standard },
+  { root := ``Theory.Model.ContextSubstitution.source_valid, standardAxioms := standard },
+  { root := ``Theory.Model.TypingClaim.instAt, standardAxioms := standard },
+  { root := ``Theory.Model.CheckingClaim.instAt, standardAxioms := standard },
+  { root := ``Theory.Model.ConversionClaim.instAt, standardAxioms := standard },
+  { root := ``context_valid_instL, standardAxioms := standard },
+  { root := ``typing_instL_context, standardAxioms := standard },
+  { root := ``context_valid_prefix, standardAxioms := standard },
+  { root := ``typing_append_context, standardAxioms := standard },
+  { root := ``context_push_instL, standardAxioms := #[``propext, ``Quot.sound] },
+  { root := ``SynthesisTypeTransport.sound, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``SynthesisTypingOrigin.sound, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``SynthesisTypeTransport.substitutePrefixAt, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``ApplicationInferenceTrace.substituteTypeOriginAt, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``ApplicationInferenceTrace.substituteTypeOrigin, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``BinderInference.forallBodyCheck, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``SynthesisInference.forallBodyCheck, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``SynthesisTypeCheck.forallBody, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] }
+]
+
 def roots : Array RootAllowance := #[
   { root := ``InterfaceExtends.refl, forbiddenDependencies := forbiddenProduction },
   { root := ``InterfaceExtends.trans, forbiddenDependencies := forbiddenProduction },
@@ -483,7 +514,7 @@ def roots : Array RootAllowance := #[
 }) ++ productionRoots.map (fun root => {
   root, standardAxioms := standard, nativeAxioms := productionNative,
   forbiddenDependencies := forbiddenProduction
-}) ++ (betaRoots ++ typeOriginRoots).map (fun allowance => {
+}) ++ (betaRoots ++ typeOriginRoots ++ substitutedOriginRoots).map (fun allowance => {
     allowance with forbiddenDependencies := forbiddenProduction })
   ++ #[{ root := ``extend_atomic_definition, standardAxioms := standard }]
 
