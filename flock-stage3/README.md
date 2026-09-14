@@ -12,11 +12,22 @@ See [the scalar execution boundary](../docs/IxbyFlockScalar.md)
 and the explicit [byte](../docs/IxbyFlockBytes.md) and
 [constructor](../docs/IxbyFlockObjects.md) setup upgrades, plus the
 [exact-Nat setup and proof results](../docs/IxbyFlockNats.md) and explicit
-[application setup](../docs/IxbyFlockApplications.md).
+[application setup](../docs/IxbyFlockApplications.md). The separate
+[functional binary intake](../docs/IxbyFunctionalIntake.md),
+[wide-fuel component](../docs/IxbyFlockWideFuel.md),
+[constrained functional codecs](../docs/IxbyFunctionalCodec.md),
+[record/reference components](../docs/IxbyFunctionalRecords.md),
+[complete grammar-control component](../docs/IxbyFunctionalGrammar.md),
+[scalar payload checks](../docs/IxbyFunctionalScalars.md),
+[authenticated original-byte reads](../docs/IxbyFunctionalSource.md) and
+[state-selected whole-grammar dispatch](../docs/IxbyFunctionalDispatch.md) start the
+[full-guest scaling path](../docs/IxbyStage3ScalePlan.md); they do not yet
+admit the compiler's IXBF artifact to the native Exec prover.
 It is excluded from the root Cargo workspace and has no `aiur`, `multi-stark`,
 or `ix-terminal` dependency. Test-only Plonky3 field crates provide arithmetic
-differential oracles at the same revision used by the original tests. Test-only
-`num-bigint` supplies independent multiword Nat arithmetic differentials.
+differential oracles at the same revision used by the original tests.
+`num-bigint` preserves unbounded functional-binary metadata during host intake
+and also supplies independent multiword Nat arithmetic test differentials.
 
 Flock is pinned to `b310f35f35f68095537150a1c8c0a43caca9a29e`; no experimental
 m37 patch/profile is enabled. `IMPORT-PROVENANCE.json` records the donor HEAD
@@ -48,8 +59,11 @@ cargo fmt --manifest-path flock-stage3/Cargo.toml --all -- --check
 cargo clippy --release --locked --manifest-path flock-stage3/Cargo.toml --workspace --all-targets -- -D warnings
 ```
 
-All 149 ordinary tests pass, including byte, word, constructor, Nat
-and application regressions; 18 proof/benchmark tests are opt-in. The two imported
+All 223 ordinary tests pass, including byte, word, constructor, Nat,
+application, complete-functional intake, wide-fuel, constrained-codec and
+complete-grammar/scalar-payload, source-authentication and generic-dispatch regressions;
+38 proof/benchmark/external-fixture
+tests are opt-in. The two imported
 conformance proofs are opt-in and also passed locally on 2026-09-12, including their serialized
 round trips and malicious operand/path/root/proof mutations:
 

@@ -14,6 +14,8 @@ pub mod decode;
 pub mod exec;
 pub mod hash_control;
 pub mod io;
+pub mod ixbf;
+pub mod ixbf_decode;
 pub mod length;
 pub mod machine;
 pub mod nat_value;
@@ -21,6 +23,7 @@ pub mod object_value;
 pub mod primitive;
 pub mod select;
 pub mod value;
+pub mod wide_fuel;
 
 pub(crate) mod application;
 #[cfg(test)]
