@@ -295,7 +295,7 @@ theorem OwnedInferenceTrace.preserves {source : Ixon.Env} {fuel : Nat}
 loader and post-lookup coherence from the single initial state invariant. -/
 def OwnedInferenceTrace.toCacheTrace {source : Ixon.Env} {fuel : Nat}
     {before : TcState .anon} {term : KExpr .anon} (tree : OwnedInferenceTrace fuel before term)
-    (valid : InferenceStateInvariant source before) : InferenceCacheTrace fuel before term :=
+    (valid : InferenceStateInvariant source before) : InferenceCacheTrace.{0} fuel before term :=
   match tree with
   | .hit cached => .hit cached
   | .sort miss => .sort miss

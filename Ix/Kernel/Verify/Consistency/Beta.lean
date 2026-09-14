@@ -41,10 +41,9 @@ theorem SynthesisInference.lambda_type {β : Type u}
     (support : SynthesisInference resolve entries locals context bounds fuel before source
       (.lam condition domain body) type level) :
     ∃ codomain, type = .forallE condition domain codomain := by
-  cases support with
-  | known inference => exact inference.lambda_type
-  | reuseType inference => exact inference.lambda_type
-  | lam | lamBeta => exact ⟨_, rfl⟩
+  have leading := support.lambdaPrefix
+  cases leading with
+  | lam => exact ⟨_, rfl⟩
 
 private theorem BinderInference.no_direct_beta {β : Type u}
     {resolve : Address → Option (ConstRef β)} {entries : Model.Environment β}
@@ -85,6 +84,8 @@ def SynthesisInference.betaResultOrigin {β : Type u} {resolve : Address → Opt
   cases support with
   | known inference _ => exact False.elim inference.no_direct_beta
   | reuseType inference => exact False.elim inference.no_direct_beta
+  | cached tree priorAgreement priorReading _ _ _ _ =>
+      exact tree.betaResultOrigin contextOrigin priorAgreement priorReading
   | app full miss trace functionTree argumentTree conditions hashPath comparisonFaithful
       bodyConstructed argConstructed bodyBound argBound coherent faithful =>
       obtain ⟨rfl, rfl⟩ := lambda_inference_domain functionTree
@@ -109,34 +110,38 @@ def SynthesisInference.betaResultOrigin {β : Type u} {resolve : Address → Opt
         (.source (.applicationBetaArgument contextOrigin trace functionTree exposure exposureCoherent argumentTree
           keyedAgreement functionReads argumentReads conditions hashPath comparisonFaithful)) .root
 
+termination_by sizeOf support
+
 /-- When the lambda body applies its parameter, its actual body checks
 supply the next reduction origin after beta exposes the supplied lambda.
 The source's result type comes from the preceding check even if the body
 was originally inferred at a type requiring cheap-beta conversion. -/
-def SynthesisInference.betaNextOrigin {β : Type u} {resolve : Address → Option (ConstRef β)}
+private def SynthesisInference.betaNextOriginAux {β : Type u} {resolve : Address → Option (ConstRef β)}
     {incoming entries : Model.Environment β} {incomingContext context : Model.Context β}
     {incomingBounds bounds : List VLevel} {locals : List FVarId} {fuel count : Nat}
     {before : TcState .anon} {source : KExpr .anon} {level bound : VLevel}
-    {condition headCondition : Certified.PropWhen} {domain binder inner : AExpr β}
+    {condition headCondition : Certified.PropWhen} {domain binder inner type : AExpr β}
     {initialArguments arguments : List (AExpr β)}
     (support : SynthesisInference resolve entries locals context bounds fuel before source
       (.app (.lam condition domain ((AExpr.bvar 0).appN arguments))
-        ((AExpr.lam headCondition binder inner).appN initialArguments)) (.sort level) bound)
+        ((AExpr.lam headCondition binder inner).appN initialArguments)) type bound)
     (contextOrigin : SynthesisContext resolve incoming incomingContext incomingBounds entries context bounds)
     (agreement : LocalContextReading resolve locals before.lctx context)
     (reading : readScopedExpr? resolve locals source =
       some (AExpr.app (.lam condition domain ((AExpr.bvar 0).appN arguments))
         ((AExpr.lam headCondition binder inner).appN initialArguments)).erase)
-    (enough : count ≤ inner.lambdaDepth + 1) :
+    (enough : count ≤ inner.lambdaDepth + 1) (resultEquation : AExpr.sort level = type) :
     SynthesisReductionOrigin resolve incoming incomingContext incomingBounds entries context
       (.lam headCondition binder inner)
       (initialArguments ++ arguments.map (AExpr.inst · ((AExpr.lam headCondition binder inner).appN initialArguments)))
       count level := by
   have resultOrigin := support.betaResultOrigin contextOrigin agreement reading
-  generalize resultEquation : AExpr.sort level = resultType at support
+  rw [← resultEquation] at resultOrigin
   cases support with
   | known inference _ => exact False.elim inference.no_direct_beta
   | reuseType inference => exact False.elim inference.no_direct_beta
+  | cached tree priorAgreement priorReading _ _ _ _ =>
+      exact tree.betaNextOriginAux contextOrigin priorAgreement priorReading enough resultEquation
   | app full miss trace functionTree argumentTree conditions hashPath comparisonFaithful
       bodyConstructed argConstructed bodyBound argBound coherent faithful =>
       obtain ⟨rfl, rfl⟩ := lambda_inference_domain functionTree
@@ -165,6 +170,31 @@ def SynthesisInference.betaNextOrigin {β : Type u} {resolve : Address → Optio
         (by simpa only [AExpr.inst_variable_appN] using resultOrigin)
       simpa only [AExpr.liftN_zero, List.map_id'] using flattened
 
+termination_by sizeOf support
+
+/-- Retain the next lambda origin through any number of actual inference
+cache hits, with the same source type and dependent argument checks. -/
+def SynthesisInference.betaNextOrigin {β : Type u} {resolve : Address → Option (ConstRef β)}
+    {incoming entries : Model.Environment β} {incomingContext context : Model.Context β}
+    {incomingBounds bounds : List VLevel} {locals : List FVarId} {fuel count : Nat}
+    {before : TcState .anon} {source : KExpr .anon} {level bound : VLevel}
+    {condition headCondition : Certified.PropWhen} {domain binder inner : AExpr β}
+    {initialArguments arguments : List (AExpr β)}
+    (support : SynthesisInference resolve entries locals context bounds fuel before source
+      (.app (.lam condition domain ((AExpr.bvar 0).appN arguments))
+        ((AExpr.lam headCondition binder inner).appN initialArguments)) (.sort level) bound)
+    (contextOrigin : SynthesisContext resolve incoming incomingContext incomingBounds entries context bounds)
+    (agreement : LocalContextReading resolve locals before.lctx context)
+    (reading : readScopedExpr? resolve locals source =
+      some (AExpr.app (.lam condition domain ((AExpr.bvar 0).appN arguments))
+        ((AExpr.lam headCondition binder inner).appN initialArguments)).erase)
+    (enough : count ≤ inner.lambdaDepth + 1) :
+    SynthesisReductionOrigin resolve incoming incomingContext incomingBounds entries context
+      (.lam headCondition binder inner)
+      (initialArguments ++ arguments.map (AExpr.inst · ((AExpr.lam headCondition binder inner).appN initialArguments)))
+      count level :=
+  support.betaNextOriginAux contextOrigin agreement reading enough rfl
+
 /-- A supported successful inference of a source beta redex derives both
 equality with the substitution result and typing of that result. No run
 of inference on the generated substitution is required. -/
@@ -186,6 +216,8 @@ theorem SynthesisInference.beta_sound {β : Type u}
   cases support with
   | known inference => exact False.elim inference.no_direct_beta
   | reuseType inference => exact False.elim inference.no_direct_beta
+  | cached tree priorAgreement priorReading priorRun _ _ _ =>
+      exact tree.beta_sound formed priorAgreement priorReading priorRun
   | app full miss trace functionTree argumentTree conditions hashPath comparisonFaithful
       bodyConstructed argConstructed bodyBound argBound coherent faithful =>
       obtain ⟨codomain, sameProduct⟩ := functionTree.lambda_type
@@ -221,6 +253,8 @@ theorem SynthesisInference.beta_sound {β : Type u}
       have typedArgument := (checked.soundWithSpine formed).1
       exact ⟨ConversionClaim.beta functionTyped typedArgument,
         TypingClaim.betaResult functionTyped typedArgument⟩
+
+termination_by sizeOf support
 
 /-- Two successive beta prefixes can use different lambda origins. The
 second comes from an actual supplied argument, rather than a fresh check

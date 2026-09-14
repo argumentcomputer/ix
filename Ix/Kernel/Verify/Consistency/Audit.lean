@@ -12,6 +12,7 @@ import Ix.Kernel.Verify.Consistency.SourceAgreement
 import Ix.Kernel.Verify.Consistency.SourceCache
 import Ix.Kernel.Verify.Consistency.Dependencies
 import Ix.Kernel.Verify.Consistency.CheapBeta
+import Ix.Kernel.Verify.Consistency.SynthesisCache
 import Ix.Kernel.Verify.Audit.Basic
 
 /-! Exact full-dependency boundaries for the direct model-refinement roots.
@@ -137,6 +138,13 @@ private def recursiveCacheRoots : Array Lean.Name := #[
   ``infer_coherentConst_cache_frame, ``CachedConstantInferenceSupport.afterCoherentInference,
   ``InferenceCacheHit.afterInference, ``CachedConstantInferenceSupport.afterInference,
   ``CachedConstantInferenceSupport.sound_after_inference, ``BinderInference.sortAfterInference
+]
+
+private def synthesisCacheRoots : Array Lean.Name := #[
+  ``infer_full_success_cache, ``InferenceCacheHit.fromFullRun, ``infer_full_replay_closed,
+  ``SynthesisInference.reuseFull, ``SynthesisInference.reuseFullClosed, ``SynthesisInference.reuseFullAcross,
+  ``BetaPublicWhnfPlan.inference_frame, ``BetaPublicWhnfPlan.policy,
+  ``BetaPiExposure.inference_frame, ``BetaPiExposure.policy
 ]
 
 private def lazyCacheRoots : Array Lean.Name := #[
@@ -650,7 +658,7 @@ def roots : Array RootAllowance := #[
 }) ++ (binderWalkerRoots ++ cacheKeyRoots).map (fun root => {
   root, standardAxioms := standard, nativeAxioms := #[expressionNative],
   forbiddenDependencies := forbiddenProduction
-}) ++ (atomicRoots ++ instantiationRoots ++ recursiveCacheRoots ++ lazyCacheRoots ++
+}) ++ (atomicRoots ++ instantiationRoots ++ recursiveCacheRoots ++ synthesisCacheRoots ++ lazyCacheRoots ++
     ownedLoaderRoots ++ recursiveStateRoots ++ sourceAgreementRoots ++ sourceCacheRoots).map (fun root => {
   root, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative],
   forbiddenDependencies := forbiddenProduction

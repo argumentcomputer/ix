@@ -292,9 +292,13 @@ def callReturned.{u} (A : Sort u) (a : A) : A := ((fun x : A => fun y : A => x) 
 - Every source key occurs in the `buildAnonWork` result, and every work item
   represents an axiom or a definition. Lookup, routing, and reset witnesses
   identify the checked `KConst`.
-- Application, forall, and lambda nodes in the inference witnesses miss every
-  eligible cache partition. Full mode may have a populated inference-only
-  partition. Sort nodes use a miss or a hit equal to the canonical successor
+- Application, forall, and lambda nodes either execute a supported miss or
+  reuse an earlier successful synthesis check. Reuse retains that check's
+  tree and raw execution under the same semantic interface and annotated
+  context. A full call supplies the exact cache entry, and a proved frame
+  derives the later hit and result reading without a new semantic premise.
+  Cold nodes miss every eligible partition; full mode may have a populated
+  inference-only partition. Sort nodes use a miss or a hit equal to the canonical successor
   sort; a maintained agreement can construct that leaf's cache observation.
   Local-variable hits must match the current production declaration type.
   Constant nodes use either the existing miss rule or a selected cache hit.
@@ -346,8 +350,9 @@ def callReturned.{u} (A : Sort u) (a : A) : A := ((fun x : A => fun y : A => x) 
   checker operation and automatic trace construction remain open.
   Catalog constant and sort entries are preserved even when written by these
   recursive calls. General semantic cache invariants remain open.
-  The operational trace can frame any selected cache hit, while semantic typing
-  of composite hits remains outside `BinderInference`.
+  The operational trace can frame any selected cache hit. `SynthesisInference`
+  also retains and reuses actual checks of composite terms; `BinderInference`
+  keeps its existing constant, local, and sort hit rules.
 - Binder definitions supply finite inference trees for both the value and its
   separately checked declared type, exact source readings, closed annotated
   syntax, and references to the preceding interface. Recursive calls use the actual
@@ -517,7 +522,7 @@ lake test --wfail -- tc-unit
 lake -d Models/SetTheory build --wfail
 ```
 
-The consistency target checks 653 exact theorem boundaries. The production
+The consistency target checks 663 exact theorem boundaries. The production
 environment roots retain four existing generated output-length proofs,
 reached through expression/universe construction, names, and the full
 production method table. They introduce no new native proofs. The model
@@ -637,6 +642,20 @@ The existing synthesis admission and environment roots include this case.
 These 38 additional audited boundaries introduce no axioms or native proofs.
 Mixed cache states, general WHNF cache agreement, other reducers, and general
 inference-resource construction remain open.
+`SynthesisInference.cached` retains the original tree behind an inference
+cache hit. Its soundness and beta derivations reuse the actual lambda-body,
+dependent codomain, and argument checks. `reuseFull` derives the cached result
+from a successful full call and a cache frame; `reuseFullClosed` computes the
+key for sources without loose variables, including registered free variables.
+`reuseFullAcross` derives the frame from an intervening recursive trace and
+its write footprint. Such traces now include beta Pi exposure and changed
+cheap-beta lambda bodies. Public beta WHNF and Pi exposure preserve inference
+entries through their computed WHNF-cache updates. `infer_full_replay_closed`
+proves immediate reuse with any method table and either current checking
+policy. These ten additional audited roots retain the existing axiom boundary.
+Reuse currently keeps the same semantic interface and annotated local context;
+general composite cache histories and their context/interface transport remain
+open. Clearing invalidates the stored entry and requires a new full check.
 Kernel unit regressions cover lazy loading, both inference policies, interning
 reuse, dependent function types, shared references, lets, `imax` simplification,
 argument order, and rejection of wrong arities and out-of-range parameters.
@@ -786,7 +805,13 @@ Definition-cycle regressions use content-addressed standalone and mutual
 declarations, including a self-justifying theorem, a two-member cycle, type
 cycles, lets, shared syntax, and binders. They check repeated member failures,
 acyclic forward references, cache clearing, and the partial/unsafe policy.
-The unit suite contains 697 checks. The anonymous differential additionally
+Ten composite-cache regressions cover real application, Pi, and lambda checks,
+zero-fuel replay under both policies, inference-only exclusion from full mode,
+lazy loading, scope changes, clearing and repopulation, beta Pi exposure,
+changed cheap-beta body types, later reduction of cached lambdas, and distinct
+captured-local keys. These execute production; the proof resources are checked
+separately by the consistency target.
+The unit suite contains 707 checks. The anonymous differential additionally
 serializes eight cycle-policy fixtures and checks exact target sets, verdicts,
 failure counts, and cycle diagnostics in both implementations.
 

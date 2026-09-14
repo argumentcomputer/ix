@@ -334,4 +334,38 @@ theorem PreservesInferenceCache.withInferOnly {key : Address × Address} {action
   cases run : action {before with inferOnly := true} <;> rw [run] at frame <;>
     exact ⟨frame.full, frame.only, frame.constants⟩
 
+/-- A successful full inference leaves its exact result in the full cache,
+whether the call reused an entry or executed the uncached branch. -/
+theorem infer_full_success_cache {source result : KExpr .anon} {methods : Methods .anon}
+    {before keyed after : TcState .anon} {key : Address × Address}
+    (full : before.inferOnly = false)
+    (keyRun : TcM.inferKey source before = .ok key keyed)
+    (accepted : RecM.infer source methods before = .ok result after) :
+    after.env.inferCache[key]? = some result := by
+  rcases observeInferenceCache keyRun with ⟨hit, keyEq, _⟩ | ⟨miss, keyEq, _⟩
+  · rw [hit.run] at accepted
+    cases accepted
+    rcases hit.selected with found | ⟨_, only, _⟩
+    · simpa only [keyEq] using found
+    · rw [full] at only
+      cases only
+  · obtain ⟨middle, _, written⟩ := infer_uncached_success_state miss accepted
+    rw [written, full]
+    simp only [Bool.false_eq_true, if_false, keyEq, Std.HashMap.getElem?_insert_self]
+
+/-- Actual full inference and a proved frame construct the later cache hit.
+The later policy is unrestricted because the full cache has priority. -/
+def InferenceCacheHit.fromFullRun {source result : KExpr .anon} {methods : Methods .anon}
+    {before keyed after current currentKeyed : TcState .anon} {key : Address × Address}
+    (full : before.inferOnly = false)
+    (keyRun : TcM.inferKey source before = .ok key keyed)
+    (accepted : RecM.infer source methods before = .ok result after)
+    (frame : InferenceCacheFrame key after current)
+    (currentKeyRun : TcM.inferKey source current = .ok key currentKeyed) :
+    InferenceCacheHit current source := by
+  have keyFrame := PreservesInferenceCache.inferKey key source current
+  rw [currentKeyRun] at keyFrame
+  exact ⟨key, currentKeyed, result, currentKeyRun,
+    .inl (keyFrame.full.trans (frame.full.trans (infer_full_success_cache full keyRun accepted)))⟩
+
 end Ix.Kernel.Consistency

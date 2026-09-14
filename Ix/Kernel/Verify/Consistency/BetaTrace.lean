@@ -147,6 +147,8 @@ def SynthesisInference.spineOrigin {β : Type u} {resolve : Address → Option (
     subst head
     exact ⟨type, .source (.checked contextOrigin support agreement reading accepted), support.lambdaPrefix, .nil _⟩
   else match support with
+  | .cached tree priorAgreement priorReading priorRun _ _ _ =>
+      tree.spineOrigin contextOrigin priorAgreement priorReading priorRun head arguments same
   | .known inference formation =>
       inference.spineOrigin (.checked contextOrigin (.known inference formation) agreement reading accepted)
         agreement reading head arguments same

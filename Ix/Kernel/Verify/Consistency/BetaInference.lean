@@ -72,6 +72,8 @@ def SynthesisInference.betaTyping {β : Type u} {resolve : Address → Option (C
     ContextFormation.{u,v} incoming incomingContext incomingBounds →
     SynthesisBetaTyping resolve incoming incomingContext incomingBounds entries context term type :=
   match support with
+  | .cached tree priorAgreement priorReading priorRun _ _ _ => fun contextOrigin _ _ _ formed =>
+      tree.betaTyping contextOrigin priorAgreement priorReading priorRun formed
   | node@(.known inference _) => fun contextOrigin agreement reading accepted _ =>
       inference.betaTyping (.source (.checked contextOrigin node agreement reading accepted)) agreement reading
   | node@(.reuseType inference ..) => fun contextOrigin agreement reading accepted _ =>

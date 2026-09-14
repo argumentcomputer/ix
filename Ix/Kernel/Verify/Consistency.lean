@@ -29,6 +29,7 @@ import Ix.Kernel.Verify.Consistency.BinderInference
 import Ix.Kernel.Verify.Consistency.Formation
 import Ix.Kernel.Verify.Consistency.ContextInsertion
 import Ix.Kernel.Verify.Consistency.SynthesisInference
+import Ix.Kernel.Verify.Consistency.SynthesisCache
 import Ix.Kernel.Verify.Consistency.BetaSubstitution
 import Ix.Kernel.Verify.Consistency.Beta
 import Ix.Kernel.Verify.Consistency.Simultaneous
@@ -39,6 +40,7 @@ import Ix.Kernel.Verify.Consistency.BetaTrace
 import Ix.Kernel.Verify.Consistency.BetaWhnf
 import Ix.Kernel.Verify.Consistency.BetaWhnfPlan
 import Ix.Kernel.Verify.Consistency.BetaPublicWhnf
+import Ix.Kernel.Verify.Consistency.WhnfCacheFrame
 import Ix.Kernel.Verify.Consistency.BetaTyping
 import Ix.Kernel.Verify.Consistency.BetaInference
 import Ix.Kernel.Verify.Consistency.BetaWhnfInference
@@ -149,9 +151,15 @@ programs, other WHNF branches, mixed cache states, and general conversion
 remain open.
 Local cache hits agree with the actual declaration type. Constant
 hits agree with pure universe substitution of a loaded, admitted declaration;
-sort hits return the canonical successor sort. Application, forall, and lambda
-nodes retain misses in every eligible cache partition. Full mode leaves the
-inference-only partition unconstrained at a miss.
+sort hits return the canonical successor sort. Applications, foralls, and
+lambdas can reuse an earlier successful synthesis check. The cache node
+retains its original inference tree, local reading, and execution, so lambda
+domains and dependent codomain checks remain available to later beta proofs.
+Successful full inference establishes the exact stored result; cache frames
+derive its later selection under either checking policy, even with zero fuel.
+These helpers keep the same semantic interface and annotated local context.
+Cold composite nodes still require misses in every eligible partition; full
+mode leaves the inference-only partition unconstrained at a miss.
 Applications use syntactic or supported beta Pi exposure, full argument checking,
 hash comparison of the argument with the exposed domain, and arguments without
 eager-reduction markers. Constant- and local-headed spines
@@ -170,6 +178,12 @@ by recursive applications, dependent functions, and full-mode lambdas, including
 domain validation and outer cache writes. Successful inference preserves entries
 outside that footprint, loaded declarations, and checking policy. This derives
 later constant witnesses and sort leaves without new cache-hit observations.
+The trace also covers beta Pi exposure and changed cheap-beta lambda bodies.
+Public beta WHNF and Pi exposure preserve inference entries at every key;
+their computed writes affect the WHNF caches. These frames also preserve the
+earlier full composite checks. General semantic cache histories, context and
+interface transport of composite entries, and automatic trace construction
+remain open.
 Frames allow declaration growth while retaining every old declaration. Verified
 lazy loading derives such a frame on success and failure, including partial
 conversion state and fault deduplication. Standalone and block preparation have

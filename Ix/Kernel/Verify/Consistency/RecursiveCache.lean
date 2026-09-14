@@ -4,6 +4,7 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 -/
 
 import Ix.Kernel.Verify.Consistency.BinderInference
+import Ix.Kernel.Verify.Consistency.WhnfCacheFrame
 import Ix.Kernel.Verify.Consistency.SourceOwnershipCheck
 
 /-!
@@ -174,7 +175,7 @@ actual key; constant misses use a loaded source or verified standalone lazy
 loading, with finite walker resources at the actual post-lookup state.
 The lambda domain call is included even though semantic checking can omit its
 typing subtree once the declared type's formation has been established. -/
-inductive InferenceCacheTrace : Nat → TcState .anon → KExpr .anon → Type
+inductive InferenceCacheTrace : Nat → TcState .anon → KExpr .anon → Type (u + 1)
   | hit {fuel before term} (hit : InferenceCacheHit before term) :
       InferenceCacheTrace fuel before term
   | sort {fuel before level info} (miss : UncachedInference before (.sort level info)) :
@@ -199,6 +200,17 @@ inductive InferenceCacheTrace : Nat → TcState .anon → KExpr .anon → Type
       (functionTree : InferenceCacheTrace fuel miss.keyed fn)
       (argumentTree : InferenceCacheTrace fuel trace.functionState arg) :
       InferenceCacheTrace (fuel + 1) before (.app fn arg info)
+  | appBeta {β : Type u} {resolve : Address → Option (ConstRef β)}
+      {locals fuel before fn arg info term condition domain body}
+      (full : before.inferOnly = false)
+      (miss : UncachedInference before (.app fn arg info))
+      (trace : ApplicationWhnfInferenceTrace fuel miss.keyed fn arg)
+      (exposure : BetaPiExposure resolve locals fuel trace.functionState trace.functionType
+        term condition domain body trace.domain trace.codomain)
+      (hashPath : (trace.argumentType.addr == trace.domain.addr) = true)
+      (functionTree : InferenceCacheTrace fuel miss.keyed fn)
+      (argumentTree : InferenceCacheTrace fuel trace.exposedState arg) :
+      InferenceCacheTrace (fuel + 1) before (.app fn arg info)
   | forallE {fuel before name bi domain body info}
       (miss : UncachedInference before (.all name bi domain body info))
       (trace : ForallInferenceTrace fuel miss.keyed name bi domain body)
@@ -211,6 +223,12 @@ inductive InferenceCacheTrace : Nat → TcState .anon → KExpr .anon → Type
       (domainTree : InferenceCacheTrace fuel miss.keyed domain)
       (bodyTree : InferenceCacheTrace fuel trace.openedState trace.opened) :
       InferenceCacheTrace (fuel + 1) before (.lam name bi domain body info)
+  | lamBody {fuel before name bi domain body info} (full : before.inferOnly = false)
+      (miss : UncachedInference before (.lam name bi domain body info))
+      (trace : LambdaBodyTrace fuel miss.keyed name bi domain body)
+      (domainTree : InferenceCacheTrace fuel miss.keyed domain)
+      (bodyTree : InferenceCacheTrace fuel trace.openedState trace.opened) :
+      InferenceCacheTrace (fuel + 1) before (.lam name bi domain body info)
 
 /-- The finite write footprint is computed from the operational tree. Cache
 hits contribute no key; recursive calls and each outer insertion are included. -/
@@ -218,7 +236,8 @@ def InferenceCacheTrace.writes {fuel : Nat} {before : TcState .anon} {term : KEx
     InferenceCacheTrace fuel before term → List (Address × Address)
   | .hit _ => []
   | .sort miss | .fvar miss | .const miss .. | .lazyConst miss .. => [miss.key]
-  | .app _ miss _ _ first second | .forallE miss _ first second | .lam _ miss _ first second =>
+  | .app _ miss _ _ first second | .appBeta _ miss _ _ _ first second |
+      .forallE miss _ first second | .lam _ miss _ first second | .lamBody _ miss _ first second =>
       miss.key :: (first.writes ++ second.writes)
 
 /-- Leaf construction inspects the real cache policy; callers need not
@@ -396,7 +415,37 @@ theorem InferenceCacheTrace.frame {fuel : Nat} {before after : TcState .anon}
       rw [state]
       exact ⟨(domainFrame.trans (opening.trans bodyFrame)).trans (.of_eq rfl rfl rfl),
         bodyPolicy.trans ((openBinder_policy trace.openRun).trans domainPolicy)⟩
+  | appBeta full miss trace exposure hashPath functionTree argumentTree functionIH argumentIH =>
+      simp only [writes, List.mem_cons, List.mem_append, not_or] at outside
+      apply infer_miss_frame miss (Ne.symm outside.1) accepted
+      intro middle run
+      rw [full] at run
+      obtain ⟨functionFrame, functionPolicy⟩ := functionIH outside.2.1 trace.functionRun
+      obtain ⟨argumentFrame, argumentPolicy⟩ := argumentIH outside.2.2 trace.argumentRun
+      have exposureFrame : InferenceCacheFrame key trace.functionState trace.exposedState := by
+        rw [trace.exposure_state exposure]
+        exact exposure.inference_frame key
+      have exposurePolicy : trace.exposedState.inferOnly = trace.functionState.inferOnly := by
+        rw [trace.exposure_state exposure]
+        exact exposure.policy
+      obtain ⟨comparisonFrame, comparisonPolicy⟩ := isDefEq_hash_frame hashPath trace.compareRun key
+      rw [(trace.output_state run).2]
+      exact ⟨(functionFrame.trans (exposureFrame.trans (argumentFrame.trans comparisonFrame))).trans
+          (.of_eq rfl rfl rfl),
+        comparisonPolicy.trans (argumentPolicy.trans (exposurePolicy.trans functionPolicy))⟩
   | lam full miss trace domainTree bodyTree domainIH bodyIH =>
+      simp only [writes, List.mem_cons, List.mem_append, not_or] at outside
+      apply infer_miss_frame miss (Ne.symm outside.1) accepted
+      intro middle run
+      rw [full] at run
+      obtain ⟨domainFrame, domainPolicy⟩ := domainIH outside.2.1 trace.domainRun
+      obtain ⟨bodyFrame, bodyPolicy⟩ := bodyIH outside.2.2 trace.bodyRun
+      have opening := openBinder_frame key trace.openRun
+      have state := (trace.output_state run).2
+      rw [state]
+      exact ⟨(domainFrame.trans (opening.trans bodyFrame)).trans (.of_eq rfl rfl rfl),
+        bodyPolicy.trans ((openBinder_policy trace.openRun).trans domainPolicy)⟩
+  | lamBody full miss trace domainTree bodyTree domainIH bodyIH =>
       simp only [writes, List.mem_cons, List.mem_append, not_or] at outside
       apply infer_miss_frame miss (Ne.symm outside.1) accepted
       intro middle run
@@ -421,8 +470,8 @@ theorem infer_verifiedConst_cache_frame {fuel : Nat} {before keyed after : TcSta
     (accepted : RecM.infer (.const id arguments info) (methodsN fuel) before = .ok result after) :
     InferenceCacheFrame watched before after ∧ after.inferOnly = before.inferOnly := by
   rcases observeInferenceCache keyRun with ⟨hit, _, _⟩ | ⟨miss, keyEq, stateEq⟩
-  · exact (InferenceCacheTrace.hit (fuel := fuel) hit).frame (by simp [InferenceCacheTrace.writes]) accepted
-  · let tree : InferenceCacheTrace fuel before (.const id arguments info) :=
+  · exact (InferenceCacheTrace.hit.{0} (fuel := fuel) hit).frame (by simp [InferenceCacheTrace.writes]) accepted
+  · let tree : InferenceCacheTrace.{0} fuel before (.const id arguments info) :=
       .lazyConst miss (by simpa only [stateEq] using loader)
         (by simpa only [stateEq] using resources)
     apply tree.frame _ accepted

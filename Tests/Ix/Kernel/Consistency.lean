@@ -3139,6 +3139,167 @@ private def sourceCacheCases : TestSeq :=
   ++ test "source cache: a forged same-key application violates source result agreement"
     sourceCacheForeignWrite
 
+/-- Replay a full result with no recursive methods or shared fuel. A
+different inference-only entry makes full-result priority observable. -/
+private def compositeReplayAt (source expected : KExpr .anon) (state : TcState .anon) : Bool :=
+  let key := (source.addr, emptyCtxAddr)
+  let sentinel := KExpr.mkSort (m := .anon) (.mkSucc levelTwo)
+  source.lbr == 0 && expected != sentinel && state.env.inferCache[key]? == some expected &&
+    [false, true].all fun inferOnly =>
+      let before := { state with recFuel := 0, inferOnly, env := { state.env with
+        inferOnlyCache := state.env.inferOnlyCache.insert key sentinel } }
+      match (RecM.infer source).run (methodsN 0) before with
+      | .error _ _ => false
+      | .ok result after => result == expected && after.recFuel == 0 &&
+          after.env.inferCache[key]? == some expected && after.env.inferOnlyCache[key]? == some sentinel &&
+          after.env.intern.exprs.size == before.env.intern.exprs.size &&
+          after.env.nextFVarId == before.env.nextFVarId && after.lctx.size == before.lctx.size &&
+          after.ctxId == before.ctxId && after.deqCalls == before.deqCalls
+
+private def compositeCacheSource (shape : Nat) : KExpr .anon × KExpr .anon :=
+  let sort := KExpr.mkSort (m := .anon) levelOne
+  let type := KExpr.mkAll () () sort sort
+  let lambda := KExpr.mkLam () () sort (.mkVar 0 ())
+  if shape == 0 then (.mkApp lambda (.mkSort .mkZero), sort)
+  else if shape == 1 then (type, .mkSort levelTwo)
+  else (lambda, type)
+
+/-- Actual composite checks remain cached through a recursive call that
+loads a polymorphic dependency, two scopes, and repeated hits. Clearing
+invalidates the hit, and another full check establishes it again. -/
+private def compositeCacheHistory (shape : Nat) : Bool :=
+  let (source, expected) := compositeCacheSource shape
+  let action : RecM .anon Bool := do
+    let initial ← RecM.inferCall source
+    if initial != expected || !compositeReplayAt source expected (← get) then return false
+    let unrelated := KExpr.mkApp (.mkConst ⟨polymorphicIdentity.2, ()⟩ #[levelOne]) (.mkSort .mkZero)
+    let _ ← RecM.inferCall unrelated
+    if !compositeReplayAt source expected (← get) then return false
+    for _ in [0, 1] do
+      let passed ← RecM.withLctxScope do
+        let _ ← TcM.openBinder () () (.mkSort levelOne) (.mkVar 0 ())
+        let result ← RecM.inferCall source
+        return result == expected && compositeReplayAt source expected (← get)
+      if !passed then return false
+    modify fun state => { state with env := state.env.clearReductionCaches }
+    let cleared ← get
+    if cleared.env.inferCache[(source.addr, emptyCtxAddr)]?.isSome then return false
+    match (RecM.infer source).run (methodsN 0) cleared with
+    | .error .maxRecFuel _ => pure ()
+    | _ => return false
+    let result ← RecM.inferCall source
+    return result == expected && compositeReplayAt source expected (← get)
+  match TcM.runRec action (TcState.newLazyAnon polymorphicIdentity.1) with
+  | .ok passed after => passed && after.lctx.size == 0
+  | .error _ _ => false
+
+/-- A real inference-only check cannot justify a full-mode cache hit. The
+subsequent validating call must execute before zero-fuel replay is possible. -/
+private def compositeOnlyCache (shape : Nat) : Bool :=
+  let (source, expected) := compositeCacheSource shape
+  let action : RecM .anon Bool := do
+    let only ← RecM.inferOnlyCall source
+    let before ← get
+    let key := (source.addr, emptyCtxAddr)
+    if only != expected || before.env.inferCache[key]?.isSome ||
+        before.env.inferOnlyCache[key]? != some expected then return false
+    match (RecM.infer source).run (methodsN 0) before with
+    | .error .maxRecFuel _ => pure ()
+    | _ => return false
+    let full ← RecM.inferCall source
+    return full == expected && compositeReplayAt source expected (← get)
+  match TcM.runRec action (TcState.newLazyAnon {}) with
+  | .ok passed _ => passed
+  | .error _ _ => false
+
+/-- The watched lambda survives application inference with beta Pi
+exposure or lambda inference whose body type changes under cheap beta.
+The application case also repeats cold and warm public Pi exposure. -/
+private def compositeAcrossBetaInference (changedLambda typeLevel : Bool) : Bool :=
+  let level := if typeLevel then Ixon.Univ.succ .zero else .zero
+  let (env, target) := if changedLambda then cheapLambdaConstant level 0 true
+    else piExposureDeclaration level
+  let (watched, watchedType) := compositeCacheSource 2
+  let action : RecM .anon Bool := do
+    let initial ← RecM.inferCall watched
+    if initial != watchedType then return false
+    let .defn _ _ _ _ _ _ expected value _ _ ← TcM.getConst (m := .anon) ⟨target, ()⟩ | return false
+    let result ← RecM.inferCall value
+    if result != expected || !compositeReplayAt watched watchedType (← get) ||
+        !compositeReplayAt value expected (← get) then return false
+    if changedLambda then
+      let .lam _ _ _ body _ := value | return false
+      let original ← RecM.inferCall body
+      let reduced ← TcM.runIntern (cheapBetaReduce original)
+      return original != reduced && compositeReplayAt value expected (← get)
+    else
+      let .app fn _ _ := value | return false
+      let functionType ← RecM.inferCall fn
+      let exposed ← observePiExposure functionType expected expected true false
+      if !exposed || !compositeReplayAt value expected (← get) then return false
+      let (domain, body) ← RecM.ensureForallDirect functionType
+      return domain == expected && body == expected && compositeReplayAt value expected (← get)
+  match TcM.runRec action (TcState.newLazyAnon env) with
+  | .ok passed after => passed && after.lctx.size == 0
+  | .error _ _ => false
+
+/-- A cached lambda is subsequently used as a checked function and reduced.
+Its original full check must still supply the lambda's domain and body. -/
+private def compositeCachedLambdaBeta : Bool :=
+  let (lambda, type) := compositeCacheSource 2
+  let argument := KExpr.mkSort (m := .anon) .mkZero
+  let application := KExpr.mkApp lambda argument
+  let action : RecM .anon Bool := do
+    let result ← RecM.inferCall lambda
+    if result != type || !compositeReplayAt lambda type (← get) then return false
+    let applicationType ← RecM.inferCall application
+    let reduced ← RecM.whnfCoreWithFlagsUncached application .DEF_EQ_CORE
+    let reducedType ← RecM.inferCall reduced
+    return reduced == argument && applicationType == reducedType &&
+      compositeReplayAt lambda type (← get) && compositeReplayAt application applicationType (← get)
+  match TcM.runRec action (TcState.newLazyAnon {}) with
+  | .ok passed _ => passed
+  | .error _ _ => false
+
+/-- Identical binder syntax opened in different scopes receives different
+free-variable IDs, expression addresses, and cached dependent types. -/
+private def compositeLocalCacheKeys : Bool :=
+  let action : RecM .anon Bool := do
+    let checkScope : RecM .anon (Bool × Address × Address) := RecM.withLctxScope do
+      let (carrier, _) ← TcM.openBinder () () (.mkSort levelOne) (.mkVar 0 ())
+      let source := KExpr.mkLam () () carrier (.mkVar 0 ())
+      let expected := KExpr.mkAll () () carrier carrier
+      let result ← RecM.inferCall source
+      return (result == expected && compositeReplayAt source expected (← get), source.addr, expected.addr)
+    let first ← checkScope
+    let second ← checkScope
+    return first.1 && second.1 && first.2.1 != second.2.1 && first.2.2 != second.2.2
+  match TcM.runRec action (TcState.newLazyAnon {}) with
+  | .ok passed after => passed && after.lctx.size == 0
+  | .error _ _ => false
+
+private def compositeCacheCases : TestSeq :=
+  test "composite cache: applications survive lazy inference, scopes, replay, and clearing"
+    (compositeCacheHistory 0)
+  ++ test "composite cache: Pi checks survive lazy inference, scopes, replay, and clearing"
+    (compositeCacheHistory 1)
+  ++ test "composite cache: lambda checks survive lazy inference, scopes, replay, and clearing"
+    (compositeCacheHistory 2)
+  ++ test "composite cache: inference-only applications cannot supply full-mode hits"
+    (compositeOnlyCache 0)
+  ++ test "composite cache: inference-only Pi checks cannot supply full-mode hits"
+    (compositeOnlyCache 1)
+  ++ test "composite cache: inference-only lambdas cannot supply full-mode hits"
+    (compositeOnlyCache 2)
+  ++ test "composite cache: beta application and cold/warm Pi exposure preserve full results"
+    (compositeAcrossBetaInference false false && compositeAcrossBetaInference false true)
+  ++ test "composite cache: changed cheap-beta lambda inference preserves full results"
+    (compositeAcrossBetaInference true false && compositeAcrossBetaInference true true)
+  ++ test "composite cache: a reused lambda remains usable in later checked beta reduction"
+    compositeCachedLambdaBeta
+  ++ test "composite cache: fresh local IDs separate captured lambda keys and result types"
+    compositeLocalCacheKeys
+
 /-- Definitions declare their own parameters. A two-parameter alias uses
 `max u v` to instantiate a one-parameter definition; a wrapper applies that
 alias beneath binders. Subsequent declarations specialize them at Prop and
@@ -3233,6 +3394,6 @@ public def suite : List TestSeq :=
     cheapApplicationCases, exposedLambdaCases, repeatedBetaCases, betaTraceCases, hereditaryBetaCases, piExposureCases,
     polymorphicApplicationCases, constantCacheCases, cacheInvariantCases, recursiveCacheCases,
     lazyCacheCases, blockCacheCases, ingressCoherenceCases, sourceOwnershipCases, recursiveStateCases,
-    sourceAgreementCases, sourceCacheCases, polymorphicDefinitionCases]
+    sourceAgreementCases, sourceCacheCases, compositeCacheCases, polymorphicDefinitionCases]
 
 end Tests.Kernel.Consistency

@@ -120,7 +120,17 @@ agreement constructs sort leaves. A finite operational trace now carries
 preservation through recursive applications, dependent types, and full-mode
 lambdas for keys absent from the recorded writes. It derives later constant
 witnesses and sort leaves without repeated cache-hit observations. Frames allow
-new declarations while retaining old ones. The actual verified loader preserves
+reuse of composite synthesis checks as well: a successful full call supplies
+the exact cached result, and a later hit retains its original inference tree.
+The same tree supplies the lambda domains, dependent codomain checks, and
+body checks required by subsequent beta reductions. Reuse keeps the same
+semantic interface and annotated context. Full-cache priority permits either
+later checking policy and requires no recursion fuel. Cache frames derive
+reuse across supported recursive inference, including beta Pi exposure and
+changed cheap-beta lambda bodies; public beta WHNF preserves all inference
+entries. General composite cache histories and context/interface transport
+remain open. Frames allow new declarations while retaining old ones.
+The actual verified loader preserves
 inference caches on success and failure, including partial intern progress and
 deduplicated faults. This covers standalone and mutual-block loading. Block
 publication requires every prepared entry to agree with any old declaration at

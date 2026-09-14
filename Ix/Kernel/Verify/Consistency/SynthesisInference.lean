@@ -40,6 +40,16 @@ inductive SynthesisInference {β : Type u}
       (inference : BinderInference resolve entries locals context fuel before source term type)
       (formation : TypeFormation resolve entries context type level) :
       SynthesisInference resolve entries locals context bounds fuel before source term type level
+  | cached {entries locals context bounds fuel before source term type level
+      priorLocals priorFuel priorBefore priorAfter priorResult}
+      (tree : SynthesisInference resolve entries priorLocals context bounds priorFuel priorBefore source term type level)
+      (priorAgreement : LocalContextReading resolve priorLocals priorBefore.lctx context)
+      (priorReading : readScopedExpr? resolve priorLocals source = some term.erase)
+      (priorRun : RecM.infer source (methodsN priorFuel) priorBefore = .ok priorResult priorAfter)
+      (hit : InferenceCacheHit before source)
+      (cacheMatch : hit.cached = priorResult)
+      (resultReading : readScopedExpr? resolve locals priorResult = some type.erase) :
+      SynthesisInference resolve entries locals context bounds fuel before source term type level
   | reuseType {earlier entries locals context bounds fuel before source term type
       typeFuel typeBefore typeAfter typeSource typeResult declaredType level typeBound arguments}
       (inference : BinderInference resolve entries locals context fuel before source term type)
@@ -1030,10 +1040,13 @@ def SynthesisInference.forallBodyCheck {β : Type u} {resolve : Address → Opti
   cases support with
   | known inference => exact inference.forallBodyCheck agreement reading
   | reuseType inference => exact inference.forallBodyCheck agreement reading
+  | cached tree priorAgreement priorReading _ _ _ _ =>
+      exact tree.forallBodyCheck priorAgreement priorReading
   | forallE miss trace opening absent domainTree bodyTree =>
       obtain ⟨domainReads, bodyReads⟩ := readScopedExpr?_all_parts reading
       exact trace.bodyCheck opening absent domainTree bodyTree
         (miss.localContext.symm ▸ agreement) domainReads bodyReads
+termination_by sizeOf support
 
 private theorem list_reverse_induction {α : Type u} {motive : List α → Prop}
     (nil : motive [])
@@ -1117,6 +1130,8 @@ def SynthesisInference.variableSpineOrigin {β : Type u} {resolve : Address → 
   match support with
   | .known inference _ | .reuseType inference .. | .fvar inference .. =>
       inference.variableSpineOrigin agreement reading index arguments headEquals
+  | .cached tree priorAgreement priorReading _ _ _ _ =>
+      tree.variableSpineOrigin contextOrigin priorAgreement priorReading index arguments headEquals
   | .app _ miss trace functionTree argumentTree conditions hashPath comparisonFaithful _ _ _ _ _ _ => by
       obtain ⟨functionReading, argumentReading⟩ := readScopedExpr?_app_parts reading
       have keyedAgreement := miss.localContext.symm ▸ agreement
@@ -1195,6 +1210,8 @@ def SynthesisInference.lambdaBodyVariableSpine {β : Type u} {resolve : Address 
       exact inference.lambdaBodyVariableSpine agreement reading
   | reuseType inference =>
       exact inference.lambdaBodyVariableSpine agreement reading
+  | cached tree priorAgreement priorReading _ _ _ _ =>
+      exact tree.lambdaBodyVariableSpine contextOrigin priorAgreement priorReading
   | lam full miss trace opening absent domainTree bodyTree conditionAgrees constructed bound coherent
       closingFaithful faithful =>
       obtain ⟨domainReads, bodyReads⟩ := readScopedExpr?_lam_parts reading
@@ -1216,6 +1233,8 @@ def SynthesisInference.lambdaBodyVariableSpine {β : Type u} {resolve : Address 
         (contextOrigin.push domainTree keyedAgreement domainReads trace.domainRun)
         openedAgreement openedReads index arguments rfl⟩
 
+termination_by sizeOf support
+
 theorem BinderInference.lambdaPrefix {β : Type u}
     {resolve : Address → Option (ConstRef β)} {entries : Model.Environment β}
     {locals : List FVarId} {context : Model.Context β} {fuel : Nat}
@@ -1234,6 +1253,7 @@ theorem SynthesisInference.lambdaPrefix {β : Type u}
     LambdaPrefix term type term.lambdaDepth :=
   match support with
   | .known inference _ => inference.lambdaPrefix
+  | .cached tree .. => tree.lambdaPrefix
   | .reuseType inference _ _ _ _ _ => inference.lambdaPrefix
   | .lam _ _ _ _ _ _ bodyTree _ _ _ _ _ _ => .lam bodyTree.lambdaPrefix
   | .lamBeta _ _ _ _ _ _ bodyTree _ _ _ _ _ _ _ => by
@@ -1305,6 +1325,12 @@ theorem SynthesisInference.soundWithSpine {β : Type u}
       obtain ⟨reads, checked⟩ := inference.sound agreement reading accepted
       have typed := checked.typing formation.sound
       exact ⟨reads, typed, formation.sound, inference.lambdaSpineTyping typed⟩
+  | .cached tree priorAgreement priorReading priorRun hit cacheMatch resultReading => by
+      obtain ⟨_, typed, formation, spine⟩ :=
+        tree.soundWithSpine formed priorAgreement priorReading priorRun
+      rw [hit.run] at accepted
+      cases accepted
+      exact ⟨cacheMatch.symm ▸ resultReading, typed, formation, spine⟩
   | .reuseType inference typeTree extension typeReading typeRun same => by
       obtain ⟨reads, checked⟩ := inference.sound agreement reading accepted
       obtain ⟨_, typeTyped, _, _⟩ :=
