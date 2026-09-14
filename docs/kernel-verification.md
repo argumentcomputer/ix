@@ -156,12 +156,16 @@ increasing sequence of strongly inaccessible cardinals.
   and failure. The let trace recovers `LocalContextValues` after validation;
   the inference cache shell preserves caller contexts whenever its uncached
   body does. `LocalStateInvariant` derives freshness from the live identifier
-  bound, and `infer_framesLocalState_of_whnf` preserves it for all constructors and
-  both policies, including hits, writes and failure states. Recursive
-  inference, reduction and conversion remain contracts of the mutual execution
-  proof. Projection inference's parameter/field loops, Prop checks and lookups
-  derive their state effects from the same recursive inference and reduction
-  contracts. `TcM.InternOnly.instantiateUnivParams`
+  bound. `MethodsLocalState.methodsN` now closes all six structural contracts
+  by induction on the actual production table depth. Its full reduction and
+  conversion layers cover direct helpers, finite workers, legacy depth
+  restoration, speculation, binder/let scopes, caches and cleanup. Inference
+  includes every constructor, projection parameter/field loops and both cache
+  policies. Public `TcM.infer`, `TcM.isDefEq`, full/structural/no-delta WHNF and
+  sort/forall exposure use the proved table selected by current fuel. They
+  preserve the caller's local declarations, monotone fresh-variable bound and
+  installed loader on success and failure, with no recursive-frame premise.
+  `TcM.InternOnly.instantiateUnivParams`
   proves the actual universe walker's exact intern-table-only effect without
   collision assumptions; the named inference-policy proof shares this result.
   These structural frames do not establish computed-type or cache semantics.

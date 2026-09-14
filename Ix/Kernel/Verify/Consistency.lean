@@ -25,6 +25,7 @@ import Ix.Kernel.Verify.Consistency.LocalScope
 import Ix.Kernel.Verify.Consistency.InferenceLocalState
 import Ix.Kernel.Verify.Consistency.ProjectionLocalState
 import Ix.Kernel.Verify.Consistency.IngressLocalState
+import Ix.Kernel.Verify.Consistency.RecursiveLocalState
 import Ix.Kernel.Verify.Consistency.Application
 import Ix.Kernel.Verify.Consistency.BinderInference
 import Ix.Kernel.Verify.Consistency.RecursiveCache
@@ -106,16 +107,25 @@ requiring equal hash-map representations. Let traces recover the modeled
 context present after validation; the inference cache shell preserves caller
 contexts whenever the uncached branch does. A maintained structural invariant
 derives fresh opening from the counter bound. Every uncached constructor,
-both cache partitions and the final write preserve it on success and failure,
-under the recursive inference, reduction and conversion contracts. Projection
+both cache partitions and the final write preserve it on success and failure.
+Projection
 inference's parameter and dependent-field loops, Prop checks and lookups
 preserve the same state from those recursive inference and reduction contracts.
+The full reduction and conversion layers now discharge their direct helpers,
+including finite workers, legacy depth restoration, binder/let scopes,
+speculation, cache updates and cleanup. Induction on the actual `methodsN`
+depth closes all six structural contracts without recursive-method premises.
+Public inference, conversion, WHNF and sort/forall exposure select the proved
+table from current fuel and preserve the caller's local declarations, monotone
+fresh-variable bound and installed loader on either outcome.
 Universe instantiation unconditionally changes only the intern table.
 The actual anonymous loader preserves all checker-owned environment fields,
 including the counter and caches, through conversion, declaration publication
 and errors. The lazy driver's initial state establishes the structural local
-invariant without a loader-effect assumption. The general mutual proof must
-still supply the recursive and semantic contracts.
+invariant without a loader-effect assumption. The general mutual semantic proof
+must still establish the meaning of inference, reduction, conversion, cache
+entries and loaded declarations; structural state preservation alone does not
+establish those facts.
 
 The safe-definition guard excludes self-reference for both modes and arbitrary
 universe arities. Successful definition-block execution computes an order of
