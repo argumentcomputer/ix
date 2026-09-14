@@ -13,7 +13,9 @@ import Ix.Kernel.Verify.Consistency.SourceOwnershipCheck
 Finite operational trees follow the actual smaller method table, recording
 the keys written by successful misses. An entry outside those writes and its
 loaded declaration survive the entire inference, so a closed cached witness
-can be reused afterward. No semantic typing or per-call cache frame is an input.
+can be reused afterward. Every initially populated full key is proved to be
+outside those writes by cache priority. No semantic typing or per-call cache
+frame is an input.
 -/
 
 namespace Ix.Kernel.Consistency
@@ -457,6 +459,91 @@ theorem InferenceCacheTrace.frame {fuel : Nat} {before after : TcState .anon}
       rw [state]
       exact ⟨(domainFrame.trans (opening.trans bodyFrame)).trans (.of_eq rfl rfl rfl),
         bodyPolicy.trans ((openBinder_policy trace.openRun).trans domainPolicy)⟩
+
+/-- A key already occupied in the full cache cannot be missed. Key
+memoization leaves the maps unchanged, and full entries precede both policies. -/
+private theorem UncachedInference.ne_populated {before : TcState .anon} {source result : KExpr .anon}
+    {key : Address × Address} (miss : UncachedInference before source)
+    (stored : before.env.inferCache[key]? = some result) : key ≠ miss.key := by
+  intro same
+  have keyed : miss.keyed.env.inferCache[key]? = some result := by
+    rw [inferKey_environment miss.keyRun]
+    exact stored
+  rw [same, miss.fullMiss] at keyed
+  cases keyed
+
+/-- The write footprint excludes every full entry present at call entry.
+This is derived from selection and the actual child calls, with no collision
+or disjoint-write premise. Full entries are eligible under either policy. -/
+theorem InferenceCacheTrace.populated_outside {fuel : Nat} {before : TcState .anon}
+    {term cached : KExpr .anon} {key : Address × Address}
+    (tree : InferenceCacheTrace.{u} fuel before term)
+    (stored : before.env.inferCache[key]? = some cached) : key ∉ tree.writes := by
+  induction tree with
+  | hit => simp [writes]
+  | sort miss | fvar miss | const miss concrete loaded resources | lazyConst miss loader resources =>
+      simpa only [writes, List.mem_singleton] using miss.ne_populated stored
+  | app full miss trace hashPath functionTree argumentTree functionIH argumentIH =>
+      have keyed : miss.keyed.env.inferCache[key]? = some cached := by
+        rw [inferKey_environment miss.keyRun]
+        exact stored
+      have first := functionIH keyed
+      have next := (functionTree.frame first trace.functionRun).1.full.trans keyed
+      exact by
+        simpa only [writes, List.mem_cons, List.mem_append, not_or] using
+          ⟨miss.ne_populated stored, first, argumentIH next⟩
+  | appBeta full miss trace exposure hashPath functionTree argumentTree functionIH argumentIH =>
+      have keyed : miss.keyed.env.inferCache[key]? = some cached := by
+        rw [inferKey_environment miss.keyRun]
+        exact stored
+      have first := functionIH keyed
+      have inferred := (functionTree.frame first trace.functionRun).1.full.trans keyed
+      have next : trace.exposedState.env.inferCache[key]? = some cached := by
+        rw [trace.exposure_state exposure]
+        exact (exposure.inference_frame key).full.trans inferred
+      exact by
+        simpa only [writes, List.mem_cons, List.mem_append, not_or] using
+          ⟨miss.ne_populated stored, first, argumentIH next⟩
+  | forallE miss trace domainTree bodyTree domainIH bodyIH =>
+      have keyed : miss.keyed.env.inferCache[key]? = some cached := by
+        rw [inferKey_environment miss.keyRun]
+        exact stored
+      have first := domainIH keyed
+      have inferred := (domainTree.frame first trace.domainRun).1.full.trans keyed
+      have next := (openBinder_frame key trace.openRun).full.trans inferred
+      exact by
+        simpa only [writes, List.mem_cons, List.mem_append, not_or] using
+          ⟨miss.ne_populated stored, first, bodyIH next⟩
+  | lam full miss trace domainTree bodyTree domainIH bodyIH =>
+      have keyed : miss.keyed.env.inferCache[key]? = some cached := by
+        rw [inferKey_environment miss.keyRun]
+        exact stored
+      have first := domainIH keyed
+      have inferred := (domainTree.frame first trace.domainRun).1.full.trans keyed
+      have next := (openBinder_frame key trace.openRun).full.trans inferred
+      exact by
+        simpa only [writes, List.mem_cons, List.mem_append, not_or] using
+          ⟨miss.ne_populated stored, first, bodyIH next⟩
+  | lamBody full miss trace domainTree bodyTree domainIH bodyIH =>
+      have keyed : miss.keyed.env.inferCache[key]? = some cached := by
+        rw [inferKey_environment miss.keyRun]
+        exact stored
+      have first := domainIH keyed
+      have inferred := (domainTree.frame first trace.domainRun).1.full.trans keyed
+      have next := (openBinder_frame key trace.openRun).full.trans inferred
+      exact by
+        simpa only [writes, List.mem_cons, List.mem_append, not_or] using
+          ⟨miss.ne_populated stored, first, bodyIH next⟩
+
+/-- A successful recursive call preserves both partitions at each initially
+populated full key, together with every previously loaded declaration. -/
+theorem InferenceCacheTrace.populated_frame {fuel : Nat} {before after : TcState .anon}
+    {term result cached : KExpr .anon} {key : Address × Address}
+    (tree : InferenceCacheTrace.{u} fuel before term)
+    (stored : before.env.inferCache[key]? = some cached)
+    (accepted : RecM.infer term (methodsN fuel) before = .ok result after) :
+    InferenceCacheFrame key before after ∧ after.inferOnly = before.inferOnly :=
+  tree.frame (tree.populated_outside stored) accepted
 
 /-- A verified constant call needs no separately constructed operational
 tree: the real key and cache selection build its hit or lazy-miss leaf. -/

@@ -75,4 +75,30 @@ theorem BetaPiExposure.policy {β : Type u} {resolve : Address → Option (Const
   | cached origin coherent hit =>
       simp only [BetaPiExposure.after, BetaPublicWhnf.outerKey, betaWhnfKey_policy, betaWhnfPrefix_policy]
 
+/-- Public beta WHNF preserves the complete inference maps. This gives an
+exact update trace for its surrounding inference, including keys written there. -/
+theorem BetaPublicWhnfPlan.inference_maps {β : Type u} {resolve : Address → Option (ConstRef β)}
+    {locals : List FVarId} {fuel : Nat} {before : TcState .anon}
+    {source result : KExpr .anon} {term target : AExpr β}
+    (plan : BetaPublicWhnfPlan resolve locals fuel before source term result target) :
+    plan.after.env.inferCache = before.env.inferCache ∧
+      plan.after.env.inferOnlyCache = before.env.inferOnlyCache := by
+  obtain ⟨table, reduced⟩ := plan.path.frame
+  constructor <;>
+    simp only [BetaPublicWhnfPlan.after, BetaPublicWhnf.after, BetaPublicWhnf.noDeltaAfter,
+      BetaPublicWhnf.coreAfter, reduced, (BetaPublicWhnf.coreKey_fields source before).1]
+
+theorem BetaPiExposure.inference_maps {β : Type u} {resolve : Address → Option (ConstRef β)}
+    {locals : List FVarId} {fuel : Nat} {before : TcState .anon}
+    {source rawDomain rawBody : KExpr .anon} {term domain body : AExpr β} {condition : Certified.PropWhen}
+    (exposure : BetaPiExposure resolve locals fuel before source term condition domain body rawDomain rawBody) :
+    exposure.after.env.inferCache = before.env.inferCache ∧
+      exposure.after.env.inferOnlyCache = before.env.inferOnlyCache := by
+  cases exposure with
+  | reduce plan => exact plan.inference_maps
+  | cached origin coherent hit =>
+      constructor <;>
+        simp only [BetaPiExposure.after, BetaPublicWhnf.outerKey, betaWhnfKey_environment,
+          (betaWhnfPrefix_fields before).1]
+
 end Ix.Kernel.Consistency

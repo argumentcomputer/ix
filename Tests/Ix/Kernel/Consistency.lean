@@ -3365,6 +3365,90 @@ private def compositeCodomainTransport (shape : Nat) (level : Ixon.Univ) : Bool 
   | .ok passed after => passed && after.lctx.size == 0
   | .error _ _ => false
 
+/-- Compare both entire maps, including temporary-local and composite keys. -/
+private def exactInferenceCaches (full only : List (KExpr .anon × KExpr .anon)) (state : TcState .anon) : Bool :=
+  let expected (entries : List (KExpr .anon × KExpr .anon)) := entries.foldl
+    (fun (cache : Std.HashMap (Address × Address) (KExpr .anon)) (source, result) =>
+      cache.insert (source.addr, emptyCtxAddr) result) ∅
+  let sameMap (actual predicted : Std.HashMap (Address × Address) (KExpr .anon)) :=
+    actual.size == predicted.size && predicted.toList.all fun (key, result) => actual[key]? == some result
+  sameMap state.env.inferCache (expected full) && sameMap state.env.inferOnlyCache (expected only)
+
+/-- Whole-map expectations follow actual child calls and parent publications.
+Entries from exited local scopes remain recorded; loading and partial failure
+preserve both maps, and clearing begins a new set of publications. -/
+private def compositeExactCacheHistory (initialOnly : Bool) : Bool :=
+  let (source, warm) := polymorphicIdentity
+  let (source, bad) := storeConst source
+    ⟨.defn ⟨.defn, .safe, 0, .sort 0, .share 9⟩, #[], #[],
+      #[.succ (.succ (.succ (.succ (.succ .zero))))]⟩
+  let prop := KExpr.mkSort (m := .anon) .mkZero
+  let sort := KExpr.mkSort (m := .anon) levelOne
+  let sortTwo := KExpr.mkSort (m := .anon) levelTwo
+  let pi := KExpr.mkAll () () sort sort
+  let lambda := KExpr.mkLam () () sort (.mkVar 0 ())
+  let application := KExpr.mkApp lambda prop
+  let first := [(sort, sortTwo), (pi, sortTwo)]
+  let only := if initialOnly then first else []
+  let action : RecM .anon Bool := do
+    if !exactInferenceCaches [] [] (← get) then return false
+    let inferredPi ← if initialOnly then RecM.inferOnlyCall pi else RecM.inferCall pi
+    if inferredPi != sortTwo || !exactInferenceCaches (if initialOnly then [] else first) only (← get) then
+      return false
+    let lambdaLocal := KExpr.mkFVar ⟨(← get).env.nextFVarId⟩ ()
+    let inferredLambda ← RecM.inferCall lambda
+    let checked := (if initialOnly then [] else first) ++ [(sort, sortTwo), (lambdaLocal, sort), (lambda, pi)]
+    if inferredLambda != pi || !exactInferenceCaches checked only (← get) then return false
+    let inferredApplication ← RecM.inferCall application
+    let applied := checked ++ [(prop, sort), (application, sort)]
+    if inferredApplication != sort || !exactInferenceCaches applied only (← get) then return false
+    let fullPi ← RecM.inferCall pi
+    let completed := applied ++ [(pi, sortTwo)]
+    let onlyReplay ← RecM.inferOnlyCall application
+    if fullPi != sortTwo || onlyReplay != sort || !exactInferenceCaches completed only (← get) then return false
+    let (scopedLocal, scopePassed) ← RecM.withLctxScope do
+      let (scopedLocal, _) ← TcM.openBinder () () sort (.mkVar 0 ())
+      let localType ← RecM.inferCall scopedLocal
+      return (scopedLocal, localType == sort && exactInferenceCaches (completed ++ [(scopedLocal, sort)]) only (← get))
+    let retained := completed ++ [(scopedLocal, sort)]
+    if !scopePassed || (← get).lctx.size != 0 || !exactInferenceCaches retained only (← get) then return false
+    let _ ← TcM.getConst (m := .anon) ⟨warm, ()⟩
+    if !exactInferenceCaches retained only (← get) then return false
+    let rejected ← try
+      let _ ← TcM.getConst (m := .anon) ⟨bad, ()⟩
+      pure false
+    catch _ => pure true
+    if !rejected || !(← get).faultedAddrs.contains bad || !exactInferenceCaches retained only (← get) then return false
+    modify fun state => {state with env := state.env.clearReductionCaches}
+    if !exactInferenceCaches [] [] (← get) then return false
+    let nextLocal := KExpr.mkFVar ⟨(← get).env.nextFVarId⟩ ()
+    let rebuilt ← RecM.inferCall application
+    return rebuilt == sort && nextLocal != lambdaLocal && exactInferenceCaches
+      [(sort, sortTwo), (nextLocal, sort), (lambda, pi), (prop, sort), (application, sort)] [] (← get)
+  match TcM.runRec action {TcState.newLazyAnon source with stats := true} with
+  | .ok passed after => passed && after.lctx.size == 0
+  | .error _ _ => false
+
+/-- The occupied-key frame needs no collision assumption: even a forged
+different source hits the old full entry before executing recursive writes.
+Semantic reuse separately requires the history's finite collision data. -/
+private def compositeOccupiedForeignKey : Bool :=
+  let (source, addr) := polymorphicIdentity
+  let constant := KExpr.mkConst (m := .anon) ⟨addr, ()⟩ #[levelOne]
+  let prop := KExpr.mkSort (m := .anon) .mkZero
+  let forged := KExpr.app constant prop {(KExpr.mkApp constant prop).info with addr := constant.addr}
+  match TcM.infer constant (TcState.newLazyAnon source) with
+  | .error _ _ => false
+  | .ok result state =>
+      let before := {state with recFuel := 0, env := {state.env with
+        inferOnlyCache := state.env.inferOnlyCache.insert (constant.addr, emptyCtxAddr) prop}}
+      [false, true].all fun inferOnly =>
+        match (RecM.infer forged).run (methodsN 0) {before with inferOnly} with
+        | .error _ _ => false
+        | .ok replay after => replay == result && result == identityType &&
+            exactInferenceCaches [(constant, identityType)] [(constant, prop)] after &&
+            after.env.nextFVarId == before.env.nextFVarId && after.recFuel == 0
+
 private def compositeCacheCases : TestSeq :=
   test "composite cache: applications survive lazy inference, scopes, replay, and clearing"
     (compositeCacheHistory 0)
@@ -3391,6 +3475,10 @@ private def compositeCacheCases : TestSeq :=
   ++ test "composite cache: transported Pi codomain and supplied-lambda checks justify later cheap beta"
     ([0, 1, 2].all fun shape => compositeCodomainTransport shape .zero &&
       compositeCodomainTransport shape (.succ .zero))
+  ++ test "cache history: both complete maps retain every child and parent publication across scopes, loading, and clearing"
+    (compositeExactCacheHistory false && compositeExactCacheHistory true)
+  ++ test "cache history: occupied full keys hit before recursive writes even for different syntax"
+    compositeOccupiedForeignKey
 
 /-- Definitions declare their own parameters. A two-parameter alias uses
 `max u v` to instantiate a one-parameter definition; a wrapper applies that

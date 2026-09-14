@@ -13,6 +13,7 @@ import Ix.Kernel.Verify.Consistency.SourceCache
 import Ix.Kernel.Verify.Consistency.Dependencies
 import Ix.Kernel.Verify.Consistency.CheapBeta
 import Ix.Kernel.Verify.Consistency.SynthesisCache
+import Ix.Kernel.Verify.Consistency.SynthesisCacheExecution
 import Ix.Kernel.Verify.Audit.Basic
 
 /-! Exact full-dependency boundaries for the direct model-refinement roots.
@@ -147,6 +148,34 @@ private def synthesisCacheRoots : Array Lean.Name := #[
   ``BetaPiExposure.inference_frame, ``BetaPiExposure.policy
 ]
 
+private def cacheHistoryRoots : Array Lean.Name := #[
+  ``InferenceCacheTrace.populated_outside, ``InferenceCacheTrace.populated_frame,
+  ``BetaPublicWhnfPlan.inference_maps, ``BetaPiExposure.inference_maps,
+  ``InferenceCacheEvent.ofRun, ``InferenceCacheEvent.fullStep, ``InferenceCacheEvent.onlyStep,
+  ``InferenceCacheEvent.applyFull, ``InferenceCacheEvent.applyOnly,
+  ``InferenceCacheEvent.applyFull_nil, ``InferenceCacheEvent.applyOnly_nil,
+  ``InferenceCacheEvent.applyFull_append, ``InferenceCacheEvent.applyOnly_append,
+  ``InferenceCacheEvent.applyFull_origin, ``InferenceCacheEvent.applyOnly_origin,
+  ``InferenceCacheTrace.events, ``InferenceCacheTrace.childEvents, ``InferenceCacheTrace.cache_maps,
+  ``InferenceCacheHistory.ofMaps, ``InferenceCacheHistory.afterInference,
+  ``InferenceCacheHistory.policy, ``InferenceCacheHistory.truncate, ``InferenceCacheHistory.afterInferKey,
+  ``InferenceCacheHistory.openBinder, ``InferenceCacheHistory.getConst, ``InferenceCacheHistory.clear,
+  ``InferenceCacheHistory.full_origin, ``InferenceCacheHistory.only_origin,
+  ``InferenceCacheHistory.KeyData, ``InferenceCacheHistory.KeyData.same, ``InferenceCacheHistory.selected_origin,
+  ``SynthesisEventCheck.ofSource, ``SynthesisEventCheck.extend, ``SynthesisEventCheck.retained,
+  ``SynthesisEventCheck.result_reading, ``SynthesisEventCheck.cached,
+  ``SynthesisEventChecks, ``SynthesisEventChecks.nil, ``SynthesisEventChecks.append,
+  ``SynthesisEventChecks.singleton, ``SynthesisEventChecks.extend,
+  ``SynthesisCacheHistory.ofMaps, ``SynthesisCacheHistory.extend, ``SynthesisCacheHistory.afterInference,
+  ``SynthesisCacheHistory.policy, ``SynthesisCacheHistory.truncate, ``SynthesisCacheHistory.openBinder,
+  ``SynthesisCacheHistory.getConst, ``SynthesisCacheHistory.clear,
+  ``SynthesisCacheHistory.select, ``SynthesisCacheHistory.observe,
+  ``SynthesisCacheSupplement.ofLeaf, ``SynthesisCacheSupplement.sortOfKey,
+  ``SynthesisCacheSupplement.fvarOfKey, ``SynthesisCacheSupplement.verifiedConstOfKey,
+  ``SynthesisCacheSupplement.complete, ``SynthesisInference.CacheData,
+  ``SynthesisInference.cacheExecution, ``SynthesisCacheHistory.afterSynthesis
+]
+
 private def cacheTransportRoots : Array RootAllowance := #[
   { root := ``liftedSpineView, standardAxioms := #[``propext] },
   { root := ``liftedForallView },
@@ -275,7 +304,8 @@ private def sourceCacheRoots : Array Lean.Name := #[
 
 private def sourceCacheInitialRoots : Array Lean.Name := #[
   ``SourceCacheAgreement.empty, ``SourceCacheInvariant.ofCheckedSource,
-  ``SourceCacheHistory.invariant, ``infer_const_history_sound
+  ``SourceCacheHistory.invariant, ``infer_const_history_sound,
+  ``InferenceCacheHistory.initial, ``SynthesisCacheHistory.initial
 ]
 
 private def productionRoots : Array Lean.Name := #[
@@ -704,7 +734,7 @@ def roots : Array RootAllowance := #[
 }) ++ (binderWalkerRoots ++ cacheKeyRoots).map (fun root => {
   root, standardAxioms := standard, nativeAxioms := #[expressionNative],
   forbiddenDependencies := forbiddenProduction
-}) ++ (atomicRoots ++ instantiationRoots ++ recursiveCacheRoots ++ synthesisCacheRoots ++ lazyCacheRoots ++
+}) ++ (atomicRoots ++ instantiationRoots ++ recursiveCacheRoots ++ synthesisCacheRoots ++ cacheHistoryRoots ++ lazyCacheRoots ++
     ownedLoaderRoots ++ recursiveStateRoots ++ sourceAgreementRoots ++ sourceCacheRoots).map (fun root => {
   root, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative],
   forbiddenDependencies := forbiddenProduction

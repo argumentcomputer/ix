@@ -31,6 +31,8 @@ import Ix.Kernel.Verify.Consistency.ContextInsertion
 import Ix.Kernel.Verify.Consistency.ContextTransport
 import Ix.Kernel.Verify.Consistency.SynthesisInference
 import Ix.Kernel.Verify.Consistency.SynthesisCache
+import Ix.Kernel.Verify.Consistency.SynthesisCacheHistory
+import Ix.Kernel.Verify.Consistency.SynthesisCacheExecution
 import Ix.Kernel.Verify.Consistency.BetaSubstitution
 import Ix.Kernel.Verify.Consistency.Beta
 import Ix.Kernel.Verify.Consistency.Simultaneous
@@ -48,6 +50,8 @@ import Ix.Kernel.Verify.Consistency.BetaWhnfInference
 import Ix.Kernel.Verify.Consistency.CheapBeta
 import Ix.Kernel.Verify.Consistency.Validation
 import Ix.Kernel.Verify.Consistency.RecursiveCache
+import Ix.Kernel.Verify.Consistency.CacheExecution
+import Ix.Kernel.Verify.Consistency.CacheHistory
 import Ix.Kernel.Verify.Consistency.RecursiveState
 import Ix.Kernel.Verify.Consistency.ConversionRecipe
 import Ix.Kernel.Verify.Consistency.SourceAgreement
@@ -187,8 +191,17 @@ later constant witnesses and sort leaves without new cache-hit observations.
 The trace also covers beta Pi exposure and changed cheap-beta lambda bodies.
 Public beta WHNF and Pi exposure preserve inference entries at every key;
 their computed writes affect the WHNF caches. These frames also preserve the
-earlier full composite checks. General semantic cache histories, agreement
-at arbitrary written keys, and automatic trace construction remain open.
+earlier full composite checks. Every initially populated full key is outside
+the writes by cache priority. An execution-ordered event fold reconstructs
+both complete inference maps, including new entries. Histories start empty and
+preserve the actual producing calls through inference, policy/scope changes,
+verified loading on either outcome, and clearing. The original rich synthesis
+trees supply their full-publication checks; older checking-only wrappers need
+annotations for omitted child calls. Under finite query/history collision data,
+selection recovers the original source and materializes its retained check in
+its original context, including interface transport. Arbitrary execution and
+resource construction, later context compatibility after scope exit, and
+the other inference and conversion/cache paths remain open.
 Frames allow declaration growth while retaining every old declaration. Verified
 lazy loading derives such a frame on success and failure, including partial
 conversion state and fault deduplication. Standalone and block preparation have

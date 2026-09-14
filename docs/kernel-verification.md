@@ -330,7 +330,9 @@ def callReturned.{u} (A : Sort u) (a : A) : A := ((fun x : A => fun y : A => x) 
   and any already loaded declarations at their keys. This admits partially
   loaded blocks without assuming a cache frame or a final-state invariant.
   A separate `InferenceCacheTrace` derives a frame for an entire supported
-  recursive call at any key outside its computed writes. It shares the existing
+  recursive call at any key outside its computed writes. Full-cache priority
+  proves that every initially populated full key satisfies this exclusion.
+  It shares the existing
   application and binder execution traces and additionally follows lambda-domain
   inference. Constant misses use already-loaded declarations or verified
   standalone/block loading, with finite universe-walker resources after lookup;
@@ -523,7 +525,7 @@ lake test --wfail -- tc-unit
 lake -d Models/SetTheory build --wfail
 ```
 
-The consistency target checks 705 exact theorem boundaries. The production
+The consistency target checks 766 exact theorem boundaries. The production
 environment roots retain four existing generated output-length proofs,
 reached through expression/universe construction, names, and the full
 production method table. They introduce no new native proofs. The model
@@ -649,7 +651,7 @@ dependent codomain, and argument checks. `reuseFull` derives the cached result
 from a successful full call and a cache frame; `reuseFullClosed` computes the
 key for sources without loose variables, including registered free variables.
 `reuseFullAcross` derives the frame from an intervening recursive trace and
-its write footprint. Such traces now include beta Pi exposure and changed
+the earlier full entry, without a write-exclusion premise. Such traces include beta Pi exposure and changed
 cheap-beta lambda bodies. Public beta WHNF and Pi exposure preserve inference
 entries through their computed WHNF-cache updates. `infer_full_replay_closed`
 proves immediate reuse with any method table and either current checking
@@ -667,10 +669,31 @@ reading. Its empty anchor context comes from actual source and domain checks.
 `extend`, `afterOpenBinder`, and `afterInference` transport the resource through
 interface growth and proved operational frames, including captured locals.
 `support` constructs the new inference branch; `run` proves immediate replay
-under either policy and at any method-table fuel. General composite cache
-histories, agreement at arbitrary written keys, and initial inference-resource
-construction remain open. Clearing invalidates the stored entry and requires
-a new full check.
+under either policy and at any method-table fuel. Clearing invalidates the
+stored entry and requires a new full check.
+`InferenceCacheTrace.events` records every actual miss and its successful call,
+in child-before-parent publication order. `cache_maps` reconstructs both complete
+physical maps by folding these events. `InferenceCacheHistory` starts with empty
+caches and preserves the reconstruction through supported inference, policy
+changes, binder scopes, verified loading on both outcomes, and clearing. Every
+present value consequently has an actual producing call, including at newly
+written keys. This operational result needs no catalog or collision premise.
+`SynthesisInference.cacheExecution` extracts full-publication annotations from
+the original application, Pi, lambda, beta-exposure, and changed-beta trees.
+Child readings and contexts follow their actual calls and domain checks.
+Primitive leaves need only operational resources; older `BinderInference`
+wrappers additionally supply checking annotations for child calls they omitted.
+`SynthesisCacheHistory` retains these trees through interface growth and scope
+changes. Selection uses collision freedom over the query and recorded inputs
+to recover the same source, then builds `CachedSynthesisCheck` with its derived
+result reading and all retained beta origins. This covers all full-cache keys
+in the supported history, without a separate cached-typing or earlier-run
+premise at selection. The selected check retains its original local context;
+using entries from exited scopes in arbitrary later contexts still needs a
+proved context relation. General execution/resource construction, missing
+checking-only child annotations, other inference branches, and general WHNF
+and conversion cache histories remain open. These 61 new audited roots retain
+the existing production axioms and introduce no new axiom or native proof.
 Kernel unit regressions cover lazy loading, both inference policies, interning
 reuse, dependent function types, shared references, lets, `imax` simplification,
 argument order, and rejection of wrong arities and out-of-range parameters.
@@ -828,7 +851,12 @@ captured-local keys. They also combine declaration growth with nested dependent
 locals, application and beta reduction of cached lambdas, and reuse of Pi
 codomain checks before generated cheap beta. These execute production; the
 proof resources are checked separately by the consistency target.
-The unit suite contains 709 checks. The anonymous differential additionally
+Two further cache-history regressions compare both entire maps, including child,
+parent, and exited-local entries, through policy changes, successful and failed
+loading, clearing, and repopulation. A forged different input at an occupied
+full key confirms that priority preserves the maps even without collision
+freedom; semantic source recovery separately requires finite collision data.
+The unit suite contains 711 checks. The anonymous differential additionally
 serializes eight cycle-policy fixtures and checks exact target sets, verdicts,
 failure counts, and cycle diagnostics in both implementations.
 

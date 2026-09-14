@@ -84,10 +84,11 @@ def SynthesisInference.reuseFullAcross {β : Type u} {resolve : Address → Opti
     (full : before.inferOnly = false) (closed : source.lbr = 0)
     (accepted : RecM.infer source (methodsN fuel) before = .ok result after)
     (intervening : InferenceCacheTrace.{w} otherFuel after other)
-    (outside : (source.addr, emptyCtxAddr) ∉ intervening.writes)
     (otherRun : RecM.infer other (methodsN otherFuel) after = .ok otherResult current) :
     SynthesisInference resolve entries locals context bounds nextFuel current source term type level :=
-  tree.reuseFullClosed formed agreement reading full closed accepted (intervening.frame outside otherRun).1
+  tree.reuseFullClosed formed agreement reading full closed accepted
+    (intervening.populated_frame
+      (infer_full_success_cache full (inferKey_closed closed before) accepted) otherRun).1
 
 /-- The concrete full-cache entry and its actual checking provenance.
 An empty anchor context lets the retained tree cross later interfaces and
@@ -175,15 +176,14 @@ def afterOpenBinder (cached : CachedSynthesisCheck resolve anchor entries locals
   rw [accepted] at preserved
   exact (cached.frame preserved).weaken absent domain
 
-/-- Recursive inference derives its own write footprint and frame, including
-lazy loading, beta Pi exposure, and changed cheap-beta lambda bodies. -/
+/-- A populated full entry survives recursive inference, including calls at
+its own key. Cache priority derives the required write exclusion. -/
 def afterInference (cached : CachedSynthesisCheck resolve anchor entries locals context state source term type level)
     {fuel : Nat} {other result : KExpr .anon} {after : TcState .anon}
     (trace : InferenceCacheTrace.{w} fuel state other)
-    (outside : (source.addr, emptyCtxAddr) ∉ trace.writes)
     (accepted : RecM.infer other (methodsN fuel) state = .ok result after) :
     CachedSynthesisCheck resolve anchor entries locals context after source term type level :=
-  cached.frame (trace.frame outside accepted).1
+  cached.frame (trace.populated_frame cached.stored accepted).1
 
 /-- Selection follows from the retained full entry under either policy.
 No new observation or agreement premise is supplied at reuse. -/

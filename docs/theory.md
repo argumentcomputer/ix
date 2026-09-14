@@ -132,9 +132,19 @@ reuse across supported recursive inference, including beta Pi exposure and
 changed cheap-beta lambda bodies; public beta WHNF preserves all inference
 entries. A concrete retained cache resource derives its result reading from
 full inference and constructs the transported hit in the original synthesis
-recursion. General composite histories, agreement at arbitrary written keys,
-and initial resource construction remain open. Frames allow new declarations
-while retaining old ones.
+recursion. Initially populated full keys survive supported recursive calls by
+cache priority, without a write-exclusion premise. An exact event fold now
+reconstructs both complete inference maps from actual child and parent calls.
+Histories begin empty and retain the producing call at every present key through
+inference, policy changes, scopes, verified loading on both outcomes, and clearing.
+The original rich synthesis tree supplies all full-publication checks; the older
+checking-only wrappers need supplementary annotations for omitted child calls.
+Finite collision data over the query and historical inputs recovers the original
+source. Selection then derives its cached result reading and complete retained
+check, including the original local context and later interface transport.
+Arbitrary execution construction, compatibility with later contexts after scope
+exit, and the other inference and conversion/cache paths remain open. Frames
+allow new declarations while retaining old ones.
 The actual verified loader preserves
 inference caches on success and failure, including partial intern progress and
 deduplicated faults. This covers standalone and mutual-block loading. Block
