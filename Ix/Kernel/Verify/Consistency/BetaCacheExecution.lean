@@ -73,6 +73,12 @@ inductive BetaCoreExecution {β : Type u} (resolve : Address → Option (ConstRe
       (coherent : originBefore.env.intern.WF)
       (hit : (betaWhnfKey source before).2.env.whnfCoreCache[(betaWhnfKey source before).1]? = some result) :
       BetaCoreExecution resolve locals fuel before source term result target
+  | cachedHead {fuel before source term result target originFuel originFlags originBefore originAfter}
+      (origin : BetaHeadReduction resolve locals originFuel originFlags originBefore source term originAfter result target)
+      (coherent : originBefore.env.intern.WF)
+      (terminal : BetaWhnfTerminal result)
+      (hit : (betaWhnfKey source before).2.env.whnfCoreCache[(betaWhnfKey source before).1]? = some result) :
+      BetaCoreExecution resolve locals fuel before source term result target
 
 namespace BetaCoreExecution
 
@@ -84,7 +90,7 @@ def after (execution : BetaCoreExecution resolve locals fuel before source term 
   | .reduce (reduced := reduced) _ _ _ _ _ =>
       {reduced with env := {reduced.env with
         whnfCoreCache := reduced.env.whnfCoreCache.insert (betaWhnfKey source before).1 result}}
-  | .cached .. => (betaWhnfKey source before).2
+  | .cached .. | .cachedHead .. => (betaWhnfKey source before).2
 
 /-- A retained first step identifies the source's nonleaf branch at every
 later cache use. It does not require repeating reduction in the later state. -/
@@ -94,6 +100,7 @@ theorem first {fuel : Nat} {before : TcState .anon}
   match execution with
   | .reduce path moving .. => path.first moving
   | .cached origin .. => origin.first
+  | .cachedHead origin .. => origin.entry
 
 theorem terminal {fuel : Nat} {before : TcState .anon}
     (execution : BetaCoreExecution resolve locals fuel before source term result target) :
@@ -101,6 +108,7 @@ theorem terminal {fuel : Nat} {before : TcState .anon}
   match execution with
   | .reduce _ _ _ _ terminal => terminal
   | .cached origin .. => origin.terminal
+  | .cachedHead _ _ terminal _ => terminal
 
 theorem run (execution : BetaCoreExecution resolve locals fuel before source term result target) :
     (RecM.whnfCore source).run (methodsN (fuel + 1)) before = .ok result execution.after := by
@@ -113,6 +121,9 @@ theorem run (execution : BetaCoreExecution resolve locals fuel before source ter
   | cached origin coherent hit =>
       exact RecM.whnfCoreWithFlagsNonLeaf_fullHit rfl (betaWhnfKey_run source _)
         (origin.first.not_transient _ _) hit
+  | cachedHead origin coherent terminal hit =>
+      exact RecM.whnfCoreWithFlagsNonLeaf_fullHit rfl (betaWhnfKey_run source _)
+        (origin.entry.not_transient _ _) hit
 
 theorem reading (execution : BetaCoreExecution resolve locals fuel before source term result target)
     (sourceReading : readScopedExpr? resolve locals source = some term.erase)
@@ -124,13 +135,16 @@ theorem reading (execution : BetaCoreExecution resolve locals fuel before source
   | cached origin initial hit ih =>
       refine ⟨(ih sourceReading initial).1, ?_⟩
       simpa only [after, betaWhnfKey_environment] using coherent
+  | cachedHead origin initial terminal hit =>
+      refine ⟨(origin.reading sourceReading initial).1, ?_⟩
+      simpa only [after, betaWhnfKey_environment] using coherent
 
 theorem frame (execution : BetaCoreExecution resolve locals fuel before source term result target) :
     BetaCacheFrame before execution.after := by
   cases execution with
   | reduce path moving enough miss terminal =>
       exact (BetaCacheFrame.key source before).trans (path.frame.trans (.core _ _ _))
-  | cached => exact .key source before
+  | cached | cachedHead => exact .key source before
 
 theorem stable_key (execution : BetaCoreExecution resolve locals fuel before source term result target) :
     (betaWhnfKey source execution.after).1 = (betaWhnfKey source before).1 := execution.frame.keys source
@@ -142,6 +156,7 @@ theorem published (execution : BetaCoreExecution resolve locals fuel before sour
   cases execution with
   | reduce => simp only [after, Std.HashMap.getElem?_insert_self]
   | cached origin coherent hit => exact hit
+  | cachedHead origin coherent terminal hit => exact hit
 
 /-- The producing execution supplies the later hit, including a newly
 memoized context suffix. No cache-equality observation is supplied. -/

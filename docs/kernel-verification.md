@@ -601,7 +601,7 @@ lake test --wfail -- tc-unit
 lake -d Models/SetTheory build --wfail
 ```
 
-The consistency target checks 1,549 exact theorem boundaries. The production
+The consistency target checks 1,623 exact theorem boundaries. The production
 environment roots retain four existing generated output-length proofs,
 reached through expression/universe construction, names, and the full
 production method table. They introduce no new native proofs. The model
@@ -815,6 +815,33 @@ constructors derive replay resources from actual publication. These 31 further
 audited boundaries forbid the semantic hereditary invariant and add no axiom
 or native proof. General construction and preservation of source resources and
 cache origins through arbitrary checker histories remain open.
+`BetaCacheHistory` now derives the provenance of every selected WHNF entry
+from empty initial maps and actual supported publications. `BetaCacheEvent`
+retains each producing call, its original annotations and intern coherence,
+the physical partition and key, and the returned expression. Folding the
+events reconstructs all five complete maps. Recursive head publications
+precede their enclosing calls; hits add no events, and native reduction
+suppresses only the same upper writes as production. The cheap no-delta map
+is preserved by this fragment. Repeated writes and unrelated keys are included.
+Interning, key memoization, instrumentation, fuel charges, binder/let opening,
+and scope cleanup preserve the history. Entries from exited scopes retain
+their original producers. `boundedCacheHistory` also follows an actual outer
+loop failure and retains completed head calls and other preceding writes;
+its supported head callbacks still require successful traces. Clearing the
+production reduction caches starts a new empty history.
+The history's finite `KeyData` identifies the queried expression among the
+recorded inputs. Selection then supplies head origins and the origin fields
+of all three public cache-resource layers. `BetaCoreExecution.cachedHead`
+permits a public structural hit to reuse a recursive head producer, including
+one that ran with zero method depth. `exists_of_history` reconstructs actual
+successful calls and returns their final histories. Pi/sort exposure retains
+the same history, and `SynthesisInference.beta_public_of_history` derives
+conversion, typing, result reading, and the updated history from the original
+inference. These 74 boundaries introduce no axiom or native proof; the 73 raw
+boundaries forbid the semantic hereditary invariant. General history
+construction through arbitrary inference, loading, other reducers, and
+failures inside head callbacks remains open, as does automatic construction
+of the finite resources needed on misses.
 `SynthesisInference.cached` retains the original tree behind an inference
 cache hit. Its soundness and beta derivations reuse the actual lambda-body,
 dependent codomain, and argument checks. `reuseFull` derives the cached result
@@ -1073,7 +1100,11 @@ partial cache writes on failure, distinct legacy key radii, binder inference,
 parameterized declaration admission, and rejection of a Pi where a sort is required.
 An isolated inner hit reduces the required method depth and supplies later
 parent hits; an entry in the other cache partition preserves the cold bound.
-The unit suite contains 761 checks. The anonymous differential additionally
+Two WHNF-history regressions compare all five maps across independent calls,
+native guards, successful and failing scopes, partial loop failure, zero-method
+replay, clearing, and rebuilding. A forged query at an occupied key demonstrates
+why semantic selection needs finite collision data.
+The unit suite contains 763 checks. The anonymous differential additionally
 serializes eleven cycle-policy fixtures and checks exact target sets, verdicts,
 failure counts, and cycle diagnostics in both implementations.
 
@@ -1124,6 +1155,7 @@ The VM pilot is preserved in the frozen archive and excluded from the host gate.
 | Let inference and typed cache history | [`Consistency/LetInference.lean`](../Ix/Kernel/Verify/Consistency/LetInference.lean), [`LetSynthesis.lean`](../Ix/Kernel/Verify/Consistency/LetSynthesis.lean), [`LetCache.lean`](../Ix/Kernel/Verify/Consistency/LetCache.lean), [`SynthesisCacheExecution.lean`](../Ix/Kernel/Verify/Consistency/SynthesisCacheExecution.lean) |
 | Public beta WHNF, cache writes and replay, and Pi/sort exposure | [`BetaCacheExecution.lean`](../Ix/Kernel/Verify/Consistency/BetaCacheExecution.lean), [`BetaCacheKeys.lean`](../Ix/Kernel/Verify/Consistency/BetaCacheKeys.lean), [`BetaPublicWhnf.lean`](../Ix/Kernel/Verify/Consistency/BetaPublicWhnf.lean), [`BetaWhnfInference.lean`](../Ix/Kernel/Verify/Consistency/BetaWhnfInference.lean) |
 | Fresh annotations and retained WHNF producer reconstruction | [`BetaReannotation.lean`](../Ix/Kernel/Verify/Consistency/BetaReannotation.lean), [`BetaHeadOrigin.lean`](../Ix/Kernel/Verify/Consistency/BetaHeadOrigin.lean), [`BetaCacheReannotation.lean`](../Ix/Kernel/Verify/Consistency/BetaCacheReannotation.lean), [`BetaTraceConstruction.lean`](../Ix/Kernel/Verify/Consistency/BetaTraceConstruction.lean) |
+| Complete WHNF maps and source-derived cache origins | [`BetaCacheEvent.lean`](../Ix/Kernel/Verify/Consistency/BetaCacheEvent.lean), [`BetaCachePublications.lean`](../Ix/Kernel/Verify/Consistency/BetaCachePublications.lean), [`BetaCacheHistory.lean`](../Ix/Kernel/Verify/Consistency/BetaCacheHistory.lean), [`BetaHistorySource.lean`](../Ix/Kernel/Verify/Consistency/BetaHistorySource.lean), [`BetaHistoryInference.lean`](../Ix/Kernel/Verify/Consistency/BetaHistoryInference.lean) |
 | Retained type checks and changed cheap beta in lambda inference | [`Consistency/SynthesisInference.lean`](../Ix/Kernel/Verify/Consistency/SynthesisInference.lean), [`CheapBetaReading.lean`](../Ix/Kernel/Verify/Consistency/CheapBetaReading.lean), [`Formation.lean`](../Ix/Kernel/Verify/Consistency/Formation.lean) |
 | Source beta reduction and declaration conversion | [`Consistency/BetaSpine.lean`](../Ix/Kernel/Verify/Consistency/BetaSpine.lean), [`Simultaneous.lean`](../Ix/Kernel/Verify/Consistency/Simultaneous.lean), [`SpineReading.lean`](../Ix/Kernel/Verify/Consistency/SpineReading.lean), [`CheapBeta.lean`](../Ix/Kernel/Verify/Consistency/CheapBeta.lean), [`Model/BetaSpine.lean`](../Ix/Theory/Model/BetaSpine.lean) |
 | Production environment fragment and relative axiom policy | [`Consistency/Environment.lean`](../Ix/Kernel/Verify/Consistency/Environment.lean), [`Production.lean`](../Ix/Kernel/Verify/Consistency/Production.lean) |

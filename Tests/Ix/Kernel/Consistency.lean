@@ -3968,6 +3968,130 @@ private def headWhnfLegacyKeys (retained : Bool) : Bool :=
   | .ok passed _ => passed
   | .error _ _ => false
 
+/-- Compare every WHNF partition, including keys from exited local scopes. -/
+private def exactWhnfCaches (full noDelta noDeltaCheap core coreCheap : List (KExpr .anon × KExpr .anon))
+    (state : TcState .anon) : Bool :=
+  let expected (entries : List (KExpr .anon × KExpr .anon)) := entries.foldl
+    (fun (cache : Std.HashMap (Address × Address) (KExpr .anon)) (source, result) =>
+      cache.insert (source.addr, emptyCtxAddr) result) ∅
+  let sameMap (actual predicted : Std.HashMap (Address × Address) (KExpr .anon)) :=
+    actual.size == predicted.size && predicted.toList.all fun (key, result) => actual[key]? == some result
+  sameMap state.env.whnfCache (expected full) && sameMap state.env.whnfNoDeltaCache (expected noDelta) &&
+    sameMap state.env.whnfNoDeltaCheapCache (expected noDeltaCheap) &&
+    sameMap state.env.whnfCoreCache (expected core) && sameMap state.env.whnfCoreCheapCache (expected coreCheap)
+
+/-- A history mixes real publications and hits across all supported layers.
+Partial loop failure and a failing local scope retain their completed writes;
+clearing discards them, and a new call rebuilds the required entries. -/
+private def whnfExactCacheHistory (typeLevel nativeFirst inferOnly noAccel : Bool) : Bool :=
+  let carrier := KExpr.mkSort (m := .anon) (if typeLevel then levelOne else .mkZero)
+  let carrierType := KExpr.mkSort (m := .anon) (if typeLevel then levelTwo else levelOne)
+  let identity := KExpr.mkLam () () carrierType (.mkVar 0 ())
+  let identityType := KExpr.mkAll () () carrierType carrierType
+  let head := KExpr.mkLet () identityType identity (.mkVar 0 ()) false
+  let parent := KExpr.mkApp head carrier
+  let other := KExpr.mkApp (.mkLam () () carrierType (.mkAll () () (.mkVar 0 ()) (.mkVar 1 ()))) carrier
+  let otherResult := KExpr.mkAll () () carrier carrier
+  let builder := KExpr.mkLam () () carrierType (.mkLam () () (.mkVar 0 ()) (.mkVar 0 ()))
+  let builderType := KExpr.mkAll () () carrierType (.mkAll () () (.mkVar 0 ()) (.mkVar 1 ()))
+  let builderHead := KExpr.mkLet () builderType builder (.mkVar 0 ()) false
+  let maps (full noDelta core cheap : List (KExpr .anon × KExpr .anon)) (state : TcState .anon) :=
+    exactWhnfCaches full noDelta [] core cheap state && exactInferenceCaches [] [] state
+  let action : RecM .anon Bool := do
+    modify fun state => {state with recFuel := 0, stats := true, inNativeReduce := nativeFirst, inferOnly, noAccel}
+    if !maps [] [] [] [] (← get) then return false
+    let .ok warmed afterHead := (RecM.whnfCore head).run (methodsN 0) (← get) | return false
+    set afterHead
+    let first := [(head, identity)]
+    if warmed != identity || !maps [] [] first [] (← get) then return false
+    let .error .maxRecDepth exhausted :=
+      (RecM.runBounded (fun term => RecM.whnfCoreWithFlagsStep term .DEF_EQ_CORE) 1 parent).run
+        (methodsN 1) (← get) | return false
+    set exhausted
+    if !maps [] [] first first (← get) then return false
+    modify fun state => {state with recFuel := 1}
+    let .ok reduced afterParent := (RecM.whnf parent).run (methodsN 1) (← get) | return false
+    set afterParent
+    let published := [(parent, carrier)]
+    let upper := if nativeFirst then [] else published
+    let core := first ++ published
+    if reduced != carrier || (← get).recFuel != 0 || !maps upper upper core first (← get) then return false
+    let .ok different afterOther := (RecM.whnfCoreWithFlags other .DEF_EQ_CORE).run (methodsN 1) (← get) | return false
+    set afterOther
+    let cheap := first ++ [(other, otherResult)]
+    if different != otherResult || !maps upper upper core cheap (← get) then return false
+    let runScope (expectedLocal : KExpr .anon) (failAfter : Bool) : RecM .anon Bool := do
+      let scopeAction : RecM .anon Bool := RecM.withLctxScope do
+        let (openedCarrier, _) ← TcM.openBinder () () carrierType (.mkVar 0 ())
+        if openedCarrier != expectedLocal then return false
+        let source := KExpr.mkApp builderHead openedCarrier
+        let expected := KExpr.mkLam () () openedCarrier (.mkVar 0 ())
+        modify fun state => {state with recFuel := 1, inNativeReduce := false, inferOnly := !state.inferOnly}
+        let .ok value after := (RecM.whnf source).run (methodsN 1) (← get) | return false
+        set after
+        if !sameSourceExpr value expected then return false
+        if failAfter then throw (.other "WHNF history scope failure")
+        return true
+      if failAfter then
+        try
+          discard scopeAction
+          return false
+        catch error =>
+          return match error with
+            | .other message => message == "WHNF history scope failure"
+            | _ => false
+      else scopeAction
+    let firstLocal := KExpr.mkFVar ⟨(← get).env.nextFVarId⟩ ()
+    if !(← runScope firstLocal false) then return false
+    let firstScoped := (KExpr.mkApp builderHead firstLocal, KExpr.mkLam () () firstLocal (.mkVar 0 ()))
+    let scopedCore := core ++ [(builderHead, builder), firstScoped]
+    let scopedUpper := upper ++ [firstScoped]
+    if (← get).lctx.size != 0 || !maps scopedUpper scopedUpper scopedCore cheap (← get) then return false
+    let secondLocal := KExpr.mkFVar ⟨(← get).env.nextFVarId⟩ ()
+    if secondLocal == firstLocal || !(← runScope secondLocal true) then return false
+    let secondScoped := (KExpr.mkApp builderHead secondLocal, KExpr.mkLam () () secondLocal (.mkVar 0 ()))
+    let finalCore := scopedCore ++ [secondScoped]
+    let finalUpper := scopedUpper ++ [secondScoped]
+    if (← get).lctx.size != 0 || !maps finalUpper finalUpper finalCore cheap (← get) then return false
+    modify fun state => {state with recFuel := if nativeFirst then 1 else 0}
+    let .ok replay afterReplay := (RecM.whnf parent).run (methodsN 0) (← get) | return false
+    set afterReplay
+    let replayedUpper := finalUpper ++ published
+    if replay != carrier || (← get).recFuel != 0 || !maps replayedUpper replayedUpper finalCore cheap (← get) then return false
+    let nextLocal := (← get).env.nextFVarId
+    modify fun state => {state with recFuel := 1, env := state.env.clearReductionCaches}
+    let cleared ← get
+    if !maps [] [] [] [] cleared then return false
+    match (RecM.whnf parent).run (methodsN 0) cleared with
+    | .error .maxRecFuel failed => if !maps [] [] [] [] failed then return false
+    | _ => return false
+    let .ok rebuilt afterRebuild := (RecM.whnf parent).run (methodsN 1) cleared | return false
+    let .ok lastReplay final := (RecM.whnf parent).run (methodsN 0) afterRebuild | return false
+    return rebuilt == carrier && lastReplay == carrier && maps published published core [] final &&
+      final.recFuel == 0 && final.lctx.size == 0 && final.env.nextFVarId == nextLocal && final.inferOnly == inferOnly
+  match TcM.runRec action (TcState.newLazyAnon {}) with
+  | .ok passed _ => passed
+  | .error _ _ => false
+
+/-- Lookup alone cannot identify the query's source: forged metadata can
+hit a real prior publication. Clearing exposes the different computation. -/
+private def whnfForeignHistoryKey (native : Bool) : Bool := Id.run do
+  let prop := KExpr.mkSort (m := .anon) .mkZero
+  let sort := KExpr.mkSort (m := .anon) levelOne
+  let source := KExpr.mkApp (.mkLam () () sort (.mkVar 0 ())) prop
+  let alien := KExpr.mkApp (.mkLam () () sort (.mkAll () () (.mkVar 0 ()) (.mkVar 1 ()))) prop
+  let forged := match alien with
+    | .app function argument info => KExpr.app function argument {info with addr := source.addr}
+    | _ => alien
+  let expected := KExpr.mkAll () () prop prop
+  let before := {TcState.newLazyAnon {} with recFuel := 1}
+  let .ok result stored := (RecM.whnf source).run (methodsN 1) before | return false
+  let .ok replay after := (RecM.whnf forged).run (methodsN 0) {stored with recFuel := 0, inNativeReduce := native} | return false
+  let .ok fresh _ := (RecM.whnf forged).run (methodsN 1)
+    {after with recFuel := 1, inNativeReduce := false, env := after.env.clearReductionCaches} | return false
+  return result == prop && replay == prop && !sameSourceExpr source forged && fresh == expected &&
+    exactWhnfCaches [(source, prop)] [(source, prop)] [] [(source, prop)] [] after && after.recFuel == 0
+
 private def letWhnfCases : TestSeq :=
   [WhnfWarmLayer.cold, .core, .noDelta, .full].foldl (fun suite layer => suite ++
     test s!"let WHNF: layer {reprStr (match layer with | .cold => 0 | .core => 1 | .noDelta => 2 | .full => 3)} preserves exact maps across let-beta-let reduction"
@@ -4056,6 +4180,12 @@ private def headWhnfCases : TestSeq :=
     ([false, true].all fun typeLevel => [WhnfFlags.FULL, .DEF_EQ_CORE].all fun flags =>
       (List.range 3).all fun shape => [false, true].all fun native =>
         headWhnfLoopResult 2 typeLevel flags shape false native true true)
+  ++ test "WHNF cache history: complete maps survive scopes, partial failures, intervening calls, and clearing"
+    ([false, true].all fun typeLevel => [false, true].all fun native =>
+      [false, true].all fun inferOnly => [false, true].all fun noAccel =>
+        whnfExactCacheHistory typeLevel native inferOnly noAccel)
+  ++ test "WHNF cache history: forged source metadata demonstrates the finite collision boundary"
+    ([false, true].all whnfForeignHistoryKey)
   ++ test "application head sort exposure: nested callbacks retain all binder child types across cache layers"
     ([false, true].all fun typeLevel => [false, true].all fun instrumented => [false, true].all fun noAccel =>
       [0, 1, 2].all fun lowerWarm => sortExposureInferencePaths typeLevel false instrumented noAccel lowerWarm false true)

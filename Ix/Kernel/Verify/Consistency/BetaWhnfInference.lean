@@ -118,6 +118,7 @@ def BetaCoreExecution.betaTrace {β : Type u} {resolve : Address → Option (Con
   match execution with
   | .reduce path .. => (path.annotate typing).1.toBetaTrace typing.origin
   | .cached origin .. => origin.betaTrace typing
+  | .cachedHead origin .. => (origin.annotate typing).2
 
 /-- The cached result retains the executed beta origin; the source's current
 checking derivation supplies its meaning in the current model context. -/

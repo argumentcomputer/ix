@@ -17,6 +17,7 @@ import Ix.Kernel.Verify.Consistency.SynthesisCacheExecution
 import Ix.Kernel.Verify.Consistency.LetCache
 import Ix.Kernel.Verify.Consistency.BetaSourceInference
 import Ix.Kernel.Verify.Consistency.BetaExposureConstruction
+import Ix.Kernel.Verify.Consistency.BetaHistoryInference
 import Ix.Kernel.Verify.Audit.Basic
 
 /-! Exact full-dependency boundaries for the direct model-refinement roots.
@@ -928,6 +929,46 @@ private def betaReannotationExecutionRoots : Array Lean.Name := #[
   ``BetaWhnfSource.PublicResources.ofExecution
 ]
 
+/-- Complete WHNF histories retain raw producing calls. Current typing is
+derived only after finite source-key selection and fresh annotation. -/
+private def whnfHistoryFrameRoots : Array Lean.Name := #[
+  ``WhnfCachePartition.cache, ``WhnfCachePartition.intern,
+  ``WhnfCachePartition.instrument, ``WhnfCachePartition.charge,
+  ``WhnfCachePartition.writeCore, ``WhnfCachePartition.writeNoDelta,
+  ``WhnfCachePartition.writeFull, ``WhnfCachePartition.lookupCore
+]
+
+private def whnfHistoryExprRoots : Array Lean.Name := #[
+  ``betaWhnfKey_address, ``WhnfCachePartition.key
+]
+
+private def whnfHistoryExecutionRoots : Array Lean.Name := #[
+  ``BetaCoreExecution.cachedHead, ``BetaCoreExecution.headReduction,
+  ``BetaCacheEventOrigin, ``BetaCacheEventOrigin.address, ``BetaCacheEvent,
+  ``BetaCacheEvent.head, ``BetaCacheEvent.noDelta, ``BetaCacheEvent.full,
+  ``BetaCacheEvent.step, ``BetaCacheEvent.apply, ``BetaCacheEvent.apply_nil,
+  ``BetaCacheEvent.apply_append, ``BetaCacheEvent.apply_origin,
+  ``BetaWhnfTrace.cacheEvents, ``BetaHeadReduction.cacheEvents,
+  ``BetaWhnfTrace.cache_maps, ``BetaHeadReduction.cache_maps,
+  ``BetaCoreExecution.cacheEvents, ``BetaCoreExecution.cache_maps,
+  ``BetaNoDeltaExecution.cacheEvents, ``BetaNoDeltaExecution.cache_maps,
+  ``BetaPublicExecution.cacheEvents, ``BetaPublicExecution.cache_maps,
+  ``BetaCacheHistory, ``BetaCacheHistory.ofMaps, ``BetaCacheHistory.append,
+  ``BetaCacheHistory.intern, ``BetaCacheHistory.key, ``BetaCacheHistory.instrument,
+  ``BetaCacheHistory.charge, ``BetaCacheHistory.policy, ``BetaCacheHistory.truncate,
+  ``BetaCacheHistory.openBinder, ``BetaCacheHistory.openLet, ``BetaCacheHistory.withLctxScope,
+  ``BetaCacheHistory.clear, ``BetaCacheHistory.afterTrace, ``BetaCacheHistory.afterHead,
+  ``BetaCacheHistory.afterCore, ``BetaCacheHistory.afterNoDelta, ``BetaCacheHistory.afterPublic,
+  ``BetaCacheHistory.origin, ``BetaCacheHistory.KeyData, ``BetaCacheHistory.KeyData.same,
+  ``BetaCacheHistory.selected_origin, ``BetaCacheHistory.selected,
+  ``BetaWhnfTrace.boundedCacheHistory, ``BetaCacheEventOrigin.terminal,
+  ``BetaCacheEventOrigin.headOrigin, ``BetaCacheEventOrigin.noDeltaOrigin, ``BetaCacheEventOrigin.fullOrigin,
+  ``BetaCacheHistory.headOrigins, ``BetaCacheHistory.coreResources,
+  ``BetaCacheHistory.noDeltaResources, ``BetaCacheHistory.publicResources,
+  ``BetaCoreExecution.exists_of_history, ``BetaNoDeltaExecution.exists_of_history,
+  ``BetaPublicExecution.exists_of_history, ``BetaPiExposure.cacheHistory, ``BetaSortExposure.cacheHistory
+]
+
 private def localScopeFrameRoots : Array Lean.Name := #[
   ``LocalContext.Equiv.refl, ``LocalContext.Equiv.symm, ``LocalContext.Equiv.trans,
   ``LocalContext.Equiv.size, ``LocalContext.Equiv.find?, ``LocalContext.Equiv.wf,
@@ -1540,21 +1581,24 @@ def roots : Array RootAllowance := #[
   ++ (#[``BetaStepSource.selected, ``BetaStepSource.selected_app] ++ letWhnfSyntaxRoots ++ headWhnfSyntaxRoots).map (fun root => {
     root, standardAxioms := #[``propext],
     forbiddenDependencies := forbiddenProduction ++ #[``HereditaryTyping] })
-  ++ (mixedCacheFrameRoots ++ headWhnfFrameRoots ++ #[``betaWhnfCharge_success]).map (fun root => {
+  ++ #[``WhnfCachePartition, ``WhnfCachePartition.ofFlags].map (fun root => {
+    root, forbiddenDependencies := forbiddenProduction ++ #[``HereditaryTyping] })
+  ++ (mixedCacheFrameRoots ++ headWhnfFrameRoots ++ whnfHistoryFrameRoots ++ #[``betaWhnfCharge_success]).map (fun root => {
     root, standardAxioms := #[``propext, ``Quot.sound],
     forbiddenDependencies := forbiddenProduction ++ #[``HereditaryTyping] })
   ++ (mixedCacheKeyRoots ++ betaSourceExprRoots ++ letWhnfExprRoots ++ headWhnfExprRoots ++
-      betaReannotationExprRoots).map (fun root => {
+      betaReannotationExprRoots ++ whnfHistoryExprRoots).map (fun root => {
     root, standardAxioms := standard, nativeAxioms := #[expressionNative],
     forbiddenDependencies := forbiddenProduction ++ #[``HereditaryTyping] })
   ++ #[``SynthesisInference.beta_core_execution_sound, ``SynthesisInference.beta_noDelta_execution_sound,
       ``SynthesisInference.beta_public_execution_sound,
       ``SynthesisInference.beta_whnf_of_success, ``SynthesisInference.beta_core_of_success,
-      ``SynthesisInference.beta_noDelta_of_success, ``SynthesisInference.beta_public_of_success].map (fun root => {
+      ``SynthesisInference.beta_noDelta_of_success, ``SynthesisInference.beta_public_of_success,
+      ``SynthesisInference.beta_public_of_history].map (fun root => {
     root, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative],
     forbiddenDependencies := forbiddenProduction })
   ++ (recursiveLetShapeRoots ++ sortExposureRoots ++ mixedCacheExecutionRoots ++ betaSourceExecutionRoots ++
-      letWhnfExecutionRoots ++ headWhnfExecutionRoots ++ betaReannotationExecutionRoots).map (fun root => {
+      letWhnfExecutionRoots ++ headWhnfExecutionRoots ++ betaReannotationExecutionRoots ++ whnfHistoryExecutionRoots).map (fun root => {
     root, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative],
     forbiddenDependencies := forbiddenProduction ++ #[``HereditaryTyping] })
   ++ (localScopeFrameRoots ++ localStateFrameRoots ++ recursiveStateFrameRoots ++ ingressFrameRoots ++
@@ -1575,6 +1619,9 @@ def roots : Array RootAllowance := #[
     root, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative],
     forbiddenDependencies := forbiddenProduction })
   ++ #[
+    { root := ``BetaCacheHistory.initial, standardAxioms := standard,
+      nativeAxioms := #[expressionNative, levelNative, nameNative],
+      forbiddenDependencies := forbiddenProduction ++ #[``HereditaryTyping] },
     { root := ``BetaCoreCache.published, standardAxioms := standard,
       forbiddenDependencies := forbiddenProduction ++ #[``HereditaryTyping] },
     { root := ``LocalStateInvariant.newLazyAnon, standardAxioms := standard,

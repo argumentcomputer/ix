@@ -32,6 +32,9 @@ def BetaCoreExecution.reannotate {γ : Type v} {originResolve : Address → Opti
   | .cached origin initial hit =>
       let rebuilt := BetaCoreExecution.reannotate origin reading initial
       ⟨rebuilt.1, ⟨.cached rebuilt.2.1 initial hit, rfl⟩⟩
+  | .cachedHead origin initial terminal hit =>
+      let rebuilt := origin.reannotate reading initial
+      ⟨rebuilt.1, ⟨.cachedHead rebuilt.2 initial terminal hit, rfl⟩⟩
 termination_by structural execution
 
 def BetaNoDeltaExecution.reannotate {γ : Type v} {originResolve : Address → Option (ConstRef γ)}

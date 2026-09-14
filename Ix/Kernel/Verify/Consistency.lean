@@ -53,6 +53,11 @@ import Ix.Kernel.Verify.Consistency.BetaHeadConstruction
 import Ix.Kernel.Verify.Consistency.BetaReannotation
 import Ix.Kernel.Verify.Consistency.BetaHeadOrigin
 import Ix.Kernel.Verify.Consistency.BetaCacheReannotation
+import Ix.Kernel.Verify.Consistency.BetaCacheEvent
+import Ix.Kernel.Verify.Consistency.BetaCachePublications
+import Ix.Kernel.Verify.Consistency.BetaCacheHistory
+import Ix.Kernel.Verify.Consistency.BetaHistorySource
+import Ix.Kernel.Verify.Consistency.BetaHistoryInference
 import Ix.Kernel.Verify.Consistency.SynthesisAppCongruence
 import Ix.Kernel.Verify.Consistency.BetaPublicWhnf
 import Ix.Kernel.Verify.Consistency.WhnfCacheFrame
@@ -190,6 +195,16 @@ same reconstruction applies at all three cache layers, and publication
 derives resources for later replay. The original typing derivation supplies
 the head conversion while preserving every checked argument. Key frames
 preserve all queries when a recursive call memoizes a different legacy context radius.
+Complete WHNF histories now retain every actual publication and reconstruct
+all five maps, including recursive head writes. Hits preserve the history;
+native guards suppress the same upper writes as production. Binder/let
+opening and scope cleanup retain entries from exited scopes. Loop exhaustion
+keeps the completed prefix's publications, and clearing begins an empty
+history. Finite collision data identifies the queried source among the
+recorded inputs. The resulting provenance supplies all three cache layers'
+origin resources, including public replay of zero-depth head producers.
+Successful source reconstruction, Pi/sort exposure, and semantic public
+reduction preserve the updated history for later calls.
 Only an outer miss charges shared fuel. Pi exposure uses the
 same complete cache-layer execution. Application inference
 uses that exposure between argument checks and derives the type conversion

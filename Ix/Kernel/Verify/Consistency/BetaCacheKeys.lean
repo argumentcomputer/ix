@@ -54,6 +54,14 @@ theorem betaWhnfKey_replay (source : KExpr .anon) (before : TcState .anon) :
   · cases memo : before.ctxAddrCache[(before.ctxId, source.lbr)]? <;>
       simp [betaWhnfKey, fast, memo]
 
+theorem betaWhnfKey_address (source : KExpr .anon) (before : TcState .anon) :
+    (betaWhnfKey source before).1.1 = source.addr := by
+  unfold betaWhnfKey
+  split
+  · rfl
+  · dsimp only
+    split <;> rfl
+
 /-- Memoizing a head's context suffix preserves every surrounding WHNF key,
 including a different loose-variable radius. Existing entries may be arbitrary. -/
 theorem betaWhnfKey_key (source query : KExpr .anon) (before : TcState .anon) :
