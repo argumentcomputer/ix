@@ -2,8 +2,9 @@
 
 The runtime proofs for the [typed Lean frontend](ixby-lean.md) establish exact
 numeric representation laws and certify seven generated extension helpers and
-eleven number conversion helpers against the unchanged Ixby evaluator. The
-conversion proofs include complete loops and calls into existing caller
+eleven number conversion helpers, plus Nat addition, subtraction, and
+multiplication against the unchanged Ixby evaluator. The conversion and
+arithmetic proofs include complete loops and calls into existing caller
 continuations. The complete LCNF transformation and Stage2 verifier remain
 outside this certificate boundary.
 
@@ -149,10 +150,61 @@ the field modulus boundaries, and large Nats; eleven local resource cases test
 successful thresholds and exact capacity errors. Stage2 compilation obtains
 the same certificates before export. Its binary and manifest are unchanged.
 
+## Complete Nat addition, subtraction, and multiplication
+
+`Image.certifyNatArithmetic` checks the complete bodies of `Nat.add`, `Nat.sub`,
+and `Nat.mul` together with all eleven conversion dependencies, number layouts,
+and function/constructor name bindings. Its [certificate](../Compilatrix/Ixby/Runtime/NatArithmeticCertificate.lean)
+retains propositional equality with the actual program's code. The
+[templates](../Compilatrix/Ixby/Runtime/NatArithmeticCode.lean) use image-supplied
+indices and leave the builder and emitted binary unchanged.
+
+The [call contracts](../Compilatrix/Ixby/Runtime/NaturalCall.lean) execute each
+ordinary call to `natural`, the complete conversion, and the restoration of
+the saved caller frame. The [binary proof](../Compilatrix/Ixby/Runtime/NatBinary.lean)
+then covers all nine input representation pairs. Both operands contribute
+their exact Nat observations: a field box contributes its canonical Nat,
+without reducing the other operand. For example, a field box containing
+`p - 1` plus a raw Nat containing `p + 1` returns the exact Nat `2 * p`.
+
+The [subtraction proof](../Compilatrix/Ixby/Runtime/NatSub.lean) executes both
+branches. Underflow returns a consistent cached zero for every input layout.
+Otherwise, the emitted helper repeats both conversion calls before subtraction.
+For all three operations, two cached inputs retain a correct low-word cache;
+the other non-underflow paths return a raw Nat. Word subtraction is used only
+after the comparison establishes `b ≤ a`.
+
+The public [arithmetic contracts](../Compilatrix/Ixby/Runtime/NatArithmetic.lean)
+return a value in `Number layout (a + b)`, `Number layout (a - b)`, or
+`Number layout (a * b)`. Local paths preserve arbitrary caller continuations.
+All three whole-program `Evaluates` corollaries require ordinary program and
+input validation, entry selection, and the input representation relations.
+
+| Helpers | Local slots | Nat bits | Spare continuations | Byte capacity | Additional scalar bounds |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `Nat.add`, `Nat.mul` | 11 | 64 | 3 | 8 | Both inputs and the exact result fit |
+| `Nat.sub` | 14 | 64 | 3 | 8 | Both inputs fit; the result is bounded by the left input |
+
+These are sufficient bounds across all representations. The 64-bit requirement
+supports exact field decoding; larger Nats and results are allowed whenever
+they fit the selected scalar limit. Structural input validation alone still
+does not establish the cache invariant required by `Number`.
+
+Every compared image and Stage2 export obtains the arithmetic certificate.
+The suite rejects 22 arithmetic/dependency/layout mutations, including 19
+structurally admitted programs. Another 4,563 admitted executions compare all
+nine representation pairs against source Nat arithmetic at word and field
+boundaries and on Nats above 256 bits. Nine caller cases check both saved inputs
+and the returned result. Fifteen local resource cases cover local slots,
+continuations, field bytes, and result capacity, including 64-bit failures
+that succeed at 65 bits. These local resource checks are separate from
+whole-image admission, which also validates unrelated literals and functions.
+
 ## Remaining simulation work
 
-The next extension can use these conversion contracts to prove complete Nat
-arithmetic and base-field helpers preserve the source representation relations.
+The next extension can use these contracts to prove Nat division, remainder,
+comparisons, the remaining number/word operations, and base-field helpers
+preserve the source representation relations.
 Further composition must cover arrays and byte representations, the complete
 Stage2 adapter, and general LCNF control flow.
 Typed erasure, specialization, original Ixon source authentication, and
@@ -169,8 +221,8 @@ cmp fixtures/ixby-stage2/stage2.ixby /tmp/stage2.ixby
 nix flake check --no-update-lock-file
 ```
 
-The axiom fence includes 22 representation/scalar guards and 20 conversion and
-continuation guards. They pin the contracts to subsets of `propext`,
+The axiom fence includes 22 representation/scalar guards, 20 conversion and
+continuation guards, and nine Nat arithmetic/call guards. They pin the contracts to subsets of `propext`,
 `Classical.choice`, and `Quot.sound`. The integration gate retains
 the 4,585 differential executions, binary corpus, exact fresh Stage2 artifact
 comparisons, and all eight serialized verifier cases.

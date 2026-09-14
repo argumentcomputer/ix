@@ -16,6 +16,7 @@ private def compileImage (env : Environment) (name : Name) (wire := false) : IO 
   discard <| checked image.certifyNumberLayout
   discard <| checked image.certifyScalars
   discard <| checked image.certifyConversions
+  discard <| checked image.certifyNatArithmetic
   return image
 
 private def certificateMutations (image : Image) : IO Unit := do
@@ -177,6 +178,150 @@ private def conversionExecutions (image : Image) : IO Unit := do
     (.error (.limit .natBits))
   IO.println s!"check-ixby-lean conversion contracts: {← count.get} admitted executions; {← localCount.get} resource cases"
 
+private def natArithmeticMutations (image : Image) : IO Unit := do
+  let certified ← checked image.certifyNatArithmetic
+  let links := certified.links
+  let conversions := links.conversions
+  let instruction (id block : Nat) (changed : Ix.Ixby.Instr) : Image :=
+    { image with program := { image.program with functions := image.program.functions.modify id fun fn =>
+      { fn with blocks := fn.blocks.modify block fun old => { old with instruction := changed } } } }
+  let function (id : Nat) (change : Ix.Ixby.Function → Ix.Ixby.Function) : Image :=
+    { image with program := { image.program with functions := image.program.functions.modify id change } }
+  let rejected ← IO.mkRef 0
+  let admittedCount ← IO.mkRef 0
+  let reject (changed : Image) (label : String) (admitted := true) : IO Unit := do
+    if admitted then
+      discard <| checked (Ix.Ixby.validateProgram changed.state.limits changed.program |>.mapError reprStr)
+      admittedCount.modify (· + 1)
+    match changed.certifyNatArithmetic with
+    | .error _ => rejected.modify (· + 1)
+    | .ok _ => throw (IO.userError s!"Nat arithmetic certificate accepted {label}")
+  reject (instruction links.add 0 (.letOp (.call conversions.lowWord [.local 0]) 1))
+    "observed low word as exact Nat"
+  reject (instruction links.add 1 (.letOp (.call conversions.natural [.local 0]) 2))
+    "observed left operand twice"
+  reject (instruction links.add 2 (.letOp (.primitive .natSub [.local 2, .local 3]) 3))
+    "subtracted instead of added"
+  reject (instruction links.add 7 (.letOp (.primitive .word32Sub [.local 6, .local 8]) 10))
+    "inconsistent addition cache"
+  reject (instruction links.add 10 (.letOp (.construct conversions.cachedCtor [.local 9, .local 4]) 11))
+    "swapped result cache fields"
+  reject (instruction links.add 11 (.ret (.local 0))) "returned input instead of sum"
+  reject (instruction links.mul 2 (.letOp (.primitive .natAdd [.local 2, .local 3]) 3))
+    "added instead of multiplied"
+  reject (instruction links.mul 7 (.letOp (.primitive .word32Add [.local 6, .local 8]) 10))
+    "inconsistent multiplication cache"
+  reject (instruction links.mul 5 (.letOp (.construct conversions.fieldCtor [.local 4]) 14))
+    "boxed exact Nat as native field"
+  reject (instruction links.sub 2 (.letOp (.primitive .natLt [.local 3, .local 2]) 3))
+    "reversed underflow comparison"
+  reject (instruction links.sub 3 (.branch (.local 4) 5 4)) "swapped underflow branches"
+  reject (instruction links.sub 4 (.letOp (.construct conversions.cachedCtor
+    [.literal (.nat 0), .literal (.word32 1)]) 6)) "inconsistent underflow zero cache"
+  reject (instruction links.sub 7 (.letOp (.call conversions.natural [.local 0]) 8))
+    "repeated wrong subtraction operand"
+  reject (instruction links.sub 8 (.letOp (.primitive .natAdd [.local 5, .local 6]) 9))
+    "wrong non-underflow Nat primitive"
+  reject (instruction links.sub 13 (.letOp (.primitive .word32Add [.local 9, .local 11]) 16))
+    "wrong non-underflow cache primitive"
+  reject (function links.mul fun fn =>
+    { fn with blocks := fn.blocks.push { locals := 0, instruction := .ret .erased } }) "extra block"
+  reject (function links.sub fun fn => { fn with arity := 1 }) "changed arity" false
+  reject (function links.add fun fn => { fn with entry := 1 }) "changed entry" false
+  let functionNames := image.state.functionNames.insert `Nat.add links.mul
+  reject { image with state := { image.state with functionNames } } "wrong arithmetic name binding"
+  reject (instruction conversions.natural 1 (.ret (.local 2))) "changed conversion dependency"
+  let constructors := image.program.constructors.modify conversions.cachedCtor fun ctor => { ctor with fields := 1 }
+  reject { image with program := { image.program with constructors } } "changed constructor layout" false
+  let constructorNames := image.state.constructorNames.insert `Ixby.Runtime.RawNumber conversions.fieldCtor
+  reject { image with state := { image.state with constructorNames } } "wrong constructor name binding"
+  IO.println s!"check-ixby-lean Nat arithmetic: 3 generated functions; {← rejected.get} rejected mutations ({← admittedCount.get} structurally admitted)"
+
+private def natArithmeticExecutions (image : Image) : IO Unit := do
+  let certified ← checked image.certifyNatArithmetic
+  let links := certified.links
+  let layout := links.conversions.layout
+  let cached (n : Nat) : Ix.Ixby.Value :=
+    .ctor layout.cached #[.scalar (.nat n), .scalar (.word32 n.toUInt32)]
+  let raw (n : Nat) : Ix.Ixby.Value := .ctor layout.raw #[.scalar (.nat n)]
+  let field (n : Nat) : Ix.Ixby.Value :=
+    .ctor layout.field #[.scalar (.field (Ix.Ixby.Goldilocks.reduce n))]
+  let cases (n : Nat) : Array (Nat × Ix.Ixby.Value) :=
+    #[(n, cached n), (n, raw n), (n % Ix.Ixby.goldilocksModulus, field n)]
+  let operations : Array (Nat × (Nat → Nat → Nat)) :=
+    #[(links.add, Nat.add), (links.sub, Nat.sub), (links.mul, Nat.mul)]
+  let count ← IO.mkRef 0
+  let execute (program : Ix.Ixby.Program) (args : Array Ix.Ixby.Value) : IO Ix.Ixby.Value := do
+    discard <| checked (Compilatrix.Ixby.Runtime.NatArithmetic.certify program links)
+    checked (Ix.Ixby.execute image.state.limits program args 20000 |>.mapError reprStr)
+  let numbers := #[0, 1, 2, 2 ^ 32 - 1, 2 ^ 32, 2 ^ 32 + 1,
+    Ix.Ixby.goldilocksModulus - 1, Ix.Ixby.goldilocksModulus, Ix.Ixby.goldilocksModulus + 1,
+    2 ^ 64 - 1, 2 ^ 64, 2 ^ 80 + 17, 2 ^ 256 + 255]
+  for a in numbers do
+    for b in numbers do
+      for (a, left) in cases a do
+        for (b, right) in cases b do
+          for (id, operation) in operations do
+            let actual ← execute { image.program with entry := id } #[left, right]
+            -- The image decoder independently checks any returned word cache.
+            let n ← checked (image.decodeNumber actual)
+            need (n == operation a b) s!"Nat arithmetic helper {id}: {a}, {b}: got {n}"
+            count.modify (· + 1)
+  let callerCount ← IO.mkRef 0
+  for (left, right) in #[(field (Ix.Ixby.goldilocksModulus - 1), raw (Ix.Ixby.goldilocksModulus + 1)),
+      (cached (2 ^ 80 + 17), cached (2 ^ 32 + 1)), (raw 1, field 1)] do
+    let a ← checked (image.decodeNumber left)
+    let b ← checked (image.decodeNumber right)
+    for (id, operation) in operations do
+      -- A real caller retains both original operands around the helper call.
+      -- Its final tree exposes the saved locals as well as the helper result.
+      let caller : Ix.Ixby.Function := { arity := 2, blocks := #[
+        ⟨2, .letOp (.call id [.local 0, .local 1]) 1⟩,
+        ⟨3, .letOp (.construct links.conversions.cachedCtor [.local 1, .local 2]) 2⟩,
+        ⟨4, .letOp (.construct links.conversions.cachedCtor [.local 0, .local 3]) 3⟩,
+        ⟨5, .ret (.local 4)⟩] }
+      let program := { image.program with
+        entry := image.program.functions.size
+        functions := image.program.functions.push caller }
+      let actual ← execute program #[left, right]
+      match actual with
+      | .ctor _ #[savedLeft, .ctor _ #[savedRight, result]] =>
+        need (savedLeft == left && savedRight == right) "Nat arithmetic caller lost a saved operand"
+        let n ← checked (image.decodeNumber result)
+        need (n == operation a b) "Nat arithmetic caller received the wrong result"
+      | _ => throw (IO.userError "Nat arithmetic caller returned an unexpected tree")
+      callerCount.modify (· + 1)
+  let localCount ← IO.mkRef 0
+  let localRun (limits : Ix.Ixby.Limits) (id : Nat) (args : Array Ix.Ixby.Value)
+      (expected : Except Ix.Ixby.Error Ix.Ixby.Value) : IO Unit := do
+    let actual := Ix.Ixby.run limits image.program 20000
+      (Compilatrix.Ixby.Runtime.ScalarFunction.start id args)
+    let same := match actual, expected with
+      | .ok actual, .ok expected => actual == expected
+      | .error actual, .error expected => actual == expected
+      | _, _ => false
+    need same s!"Nat arithmetic resource contract {id}: expected {reprStr expected}, got {reprStr actual}"
+    localCount.modify (· + 1)
+  let small : Ix.Ixby.Limits := {
+    image.state.limits with locals := 14, continuations := 3, natBits := 64, byteArrayBytes := 8 }
+  localRun { small with locals := 11 } links.add #[cached (2 ^ 32 - 1), cached 2] (.ok (cached (2 ^ 32 + 1)))
+  localRun { small with locals := 10 } links.add #[cached (2 ^ 32 - 1), cached 2] (.error (.limit .locals))
+  localRun { small with locals := 11 } links.mul #[cached (2 ^ 32 - 1), cached 2] (.ok (cached (2 ^ 33 - 2)))
+  localRun { small with locals := 10 } links.mul #[cached (2 ^ 32 - 1), cached 2] (.error (.limit .locals))
+  localRun small links.sub #[cached (2 ^ 32), cached 1] (.ok (cached (2 ^ 32 - 1)))
+  localRun { small with locals := 13 } links.sub #[cached (2 ^ 32), cached 1] (.error (.limit .locals))
+  localRun small links.sub #[raw 1, cached (2 ^ 32)] (.ok (cached 0))
+  localRun small links.add #[cached (2 ^ 64 - 1), cached 1] (.error (.limit .natBits))
+  localRun { small with natBits := 65 } links.add #[cached (2 ^ 64 - 1), cached 1] (.ok (cached (2 ^ 64)))
+  localRun small links.mul #[cached (2 ^ 32), cached (2 ^ 32)] (.error (.limit .natBits))
+  localRun { small with natBits := 65 } links.mul #[cached (2 ^ 32), cached (2 ^ 32)] (.ok (cached (2 ^ 64)))
+  let maxField := field (Ix.Ixby.goldilocksModulus - 1)
+  localRun small links.add #[maxField, cached 1] (.ok (raw Ix.Ixby.goldilocksModulus))
+  localRun { small with continuations := 2 } links.add #[maxField, cached 1] (.error (.limit .continuations))
+  localRun { small with byteArrayBytes := 7 } links.add #[cached 1, maxField] (.error (.limit .byteArrayBytes))
+  localRun { small with natBits := 63 } links.add #[maxField, cached 0] (.error (.limit .natBits))
+  IO.println s!"check-ixby-lean Nat arithmetic contracts: {← count.get} admitted executions; {← callerCount.get} caller cases; {← localCount.get} resource cases"
+
 private def compileRejects (env : Environment) (name : Name) (limits : Ix.Ixby.Limits)
     (message : String) : IO Unit := do
   let (result, _) ← (compile name limits).toIO
@@ -210,6 +355,8 @@ def main : IO UInt32 := cli "check-ixby-lean" do
   certificateMutations runtimeImage
   conversionMutations runtimeImage
   conversionExecutions runtimeImage
+  natArithmeticMutations runtimeImage
+  natArithmeticExecutions runtimeImage
   compileRejects env `Nat.add { byteArrayBytes := 2 ^ 32 }
     "typed Ixby packed byte capacity must fit Word32 indices"
   compileRejects env `Float.add {} "unsupported typed runtime extern Float.add"

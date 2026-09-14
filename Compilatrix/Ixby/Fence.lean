@@ -216,3 +216,48 @@ Ixon prefix retains the repository's existing, explicitly ledgered hash boundary
  Classical.choice,
  Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Conversion.Certificate.toWord_evaluates
+
+/-! Complete Nat add/sub/mul paths, including conversions and caller restoration. -/
+
+/-- info: 'Compilatrix.Ixby.Runtime.Conversion.Certificate.call_natural' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Conversion.Certificate.call_natural
+
+/-- info: 'Compilatrix.Ixby.Runtime.Conversion.Certificate.read_naturals' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Conversion.Certificate.read_naturals
+
+/-- info: 'Compilatrix.Ixby.Runtime.NatArithmetic.binary_returns' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.NatArithmetic.binary_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.NatArithmetic.Certificate.add_returns' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.NatArithmetic.Certificate.add_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.NatArithmetic.Certificate.sub_returns' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.NatArithmetic.Certificate.sub_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.NatArithmetic.Certificate.mul_returns' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.NatArithmetic.Certificate.mul_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.NatArithmetic.Certificate.add_evaluates' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.NatArithmetic.Certificate.add_evaluates
+
+/-- info: 'Compilatrix.Ixby.Runtime.NatArithmetic.Certificate.sub_evaluates' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.NatArithmetic.Certificate.sub_evaluates
+
+/-- info: 'Compilatrix.Ixby.Runtime.NatArithmetic.Certificate.mul_evaluates' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.NatArithmetic.Certificate.mul_evaluates

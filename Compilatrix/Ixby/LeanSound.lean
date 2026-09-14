@@ -1,9 +1,11 @@
 import Compilatrix.Ixby.Lean
 import Compilatrix.Ixby.Runtime.ScalarCertificate
 import Compilatrix.Ixby.Runtime.NumberConversion
+import Compilatrix.Ixby.Runtime.NatArithmetic
 
 /-! Typed-frontend proof boundaries: exact number decoding and checked
-execution of native extension helpers and complete number conversions.
+execution of native extension helpers, complete number conversions, and Nat
+addition, subtraction, and multiplication.
 This does not certify Lean proof erasure or the general LCNF lowering. -/
 
 namespace Compilatrix.Ixby.LeanFrontend
@@ -169,5 +171,43 @@ def Image.certifyConversions (image : Image) : Except String image.ConversionCer
       candidates
       names
       certificate := ← Conversion.certify image.program candidates.links }
+
+structure Image.NatArithmeticCandidates (image : Image) where
+  links : NatArithmetic.Links
+  layouts : image.HasNumberLayout links.conversions.layout
+
+def Image.natArithmeticCandidates (image : Image) : Except String image.NatArithmeticCandidates := do
+  let conversions ← image.conversionCandidates
+  let function (name : Name) : Except String Nat :=
+    match image.state.functionNames[name]? with
+    | some id => .ok id
+    | none => .error s!"missing Nat arithmetic runtime name {name}"
+  let links : NatArithmetic.Links := {
+    conversions := conversions.links
+    add := ← function `Nat.add
+    sub := ← function `Nat.sub
+    mul := ← function `Nat.mul }
+  return { links, layouts := conversions.layouts }
+
+structure Image.NatArithmeticCertified (image : Image) where
+  candidates : image.NatArithmeticCandidates
+  names : image.natArithmeticCandidates = .ok candidates
+  certificate : NatArithmetic.Certificate image.program candidates.links
+
+def Image.NatArithmeticCertified.links {image : Image} (certified : image.NatArithmeticCertified) :
+    NatArithmetic.Links := certified.candidates.links
+
+theorem Image.NatArithmeticCertified.layouts {image : Image} (certified : image.NatArithmeticCertified) :
+    image.HasNumberLayout certified.links.conversions.layout := certified.candidates.layouts
+
+/-- Check all three arithmetic bodies together with their conversion callees,
+constructor declarations, distinct tags, and image name bindings. -/
+def Image.certifyNatArithmetic (image : Image) : Except String image.NatArithmeticCertified := do
+  match names : image.natArithmeticCandidates with
+  | .error message => throw message
+  | .ok candidates => return {
+      candidates
+      names
+      certificate := ← NatArithmetic.certify image.program candidates.links }
 
 end Compilatrix.Ixby.LeanFrontend
