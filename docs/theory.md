@@ -72,10 +72,17 @@ supported recursive inference. Source ownership protects these entries from
 block publication. A static binding reads a predicted declaration's type in
 an admitted model entry; actual constant lookup derives its type reading,
 arity, and coherence. Thus this path needs no new post-load reading witness.
+For a finite catalog of closed sorts and standalone constant instances,
+execution histories now establish both inference partitions' agreement and
+loaded-declaration coverage from empty caches. Recursive calls preserve these
+entries even at written keys; finite collision domains separate other input
+forms. Lookup errors, policy changes, binder scopes, and cache clearing retain
+the invariant. Actual selection then constructs the constant and sort inference
+interfaces, and constant typing follows from the source binding and history.
 The static bindings still select already admitted entries. General declaration
-admission, mutual-member interpretations, initial semantic cache agreement,
-finite collision/level resources, trace construction, and preservation at
-written keys remain obligations.
+admission, mutual-member interpretations, semantic cache invariants beyond this
+catalog, finite collision/level resources, and automatic trace construction
+remain obligations.
 Full checker consistency
 and compiler/backend refinement remain open.
 

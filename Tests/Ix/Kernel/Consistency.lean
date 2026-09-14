@@ -1764,10 +1764,153 @@ private def sourceAgreementCases : TestSeq :=
   ++ test "source agreement: application replay and surrounding scope retain the catalog"
     (sourceAcrossRecursiveLoads 2 false true)
 
+/-- Check the two concrete maps against a finite source catalog. A cached
+constant must also retain the complete declaration that produced its type. -/
+private def sourceCacheMatches (source : Ixon.Env)
+    (catalog : Array (KExpr .anon × KExpr .anon)) (state : TcState .anon) : Bool :=
+  catalog.all fun (term, expected) =>
+    let loaded := match term with
+      | .sort .. => true
+      | .const id _ _ => match predictStandalone? source id.addr, state.env.get? id with
+          | .ok (some predicted), some actual => sameStandalone actual predicted
+          | _, _ => false
+      | _ => false
+    let valid := fun cached => match cached with
+      | none => true
+      | some actual => sameSourceExpr actual expected && loaded
+    let key := (term.addr, emptyCtxAddr)
+    valid state.env.inferCache[key]? && valid state.env.inferOnlyCache[key]?
+
+/-- Start with empty caches, write both policies at the same constant key,
+infer recursively, load a block, retain partial failure state, load another
+standalone, replay hits, then clear and repopulate the caches. -/
+private def sourceCacheHistory (shape : Nat) (outerScope finalOnly : Bool) : Bool :=
+  let (source, warmAddr) := polymorphicIdentity
+  let (source, coldAddr) := storeConst source (if shape == 0 then axiomA else lazyCacheDependency 1)
+  let (source, block) := storeMutsWithProjs source (cacheBlock true)
+  let (source, nextAddr) := storeConst source (lazyCacheDependency 3)
+  let (source, badAddr) := storeConst source
+    ⟨.defn ⟨.defn, .safe, 0, .sort 0, .share 9⟩, #[], #[],
+      #[.succ (.succ (.succ (.succ (.succ .zero))))]⟩
+  let warm := KExpr.mkConst (m := .anon) ⟨warmAddr, ()⟩ #[levelOne]
+  let warmTwo := KExpr.mkConst (m := .anon) ⟨warmAddr, ()⟩ #[levelTwo]
+  let twoType := KExpr.mkAll (m := .anon) () () (.mkSort levelTwo)
+    (.mkAll () () (.mkVar 0 ()) (.mkVar 1 ()))
+  let cold := KExpr.mkConst (m := .anon) ⟨coldAddr, ()⟩ #[]
+  let next := KExpr.mkConst (m := .anon) ⟨nextAddr, ()⟩ #[]
+  let prop := KExpr.mkSort (m := .anon) .mkZero
+  let sort := KExpr.mkSort (m := .anon) levelOne
+  let sortTwo := KExpr.mkSort (m := .anon) levelTwo
+  let coldType := if shape == 0 then sort else identityType
+  let catalog := #[(warm, identityType), (warmTwo, twoType), (cold, coldType),
+    (next, identityType), (prop, sort), (sort, sortTwo), (sortTwo, .mkSort (.mkSucc levelTwo))]
+  let body := KExpr.mkLam () () sort (.mkLam () () (.mkVar 0 ())
+    (.mkApp (.mkApp cold (.mkVar 1 ())) (.mkVar 0 ())))
+  let term := if shape == 0 then KExpr.mkAll () () cold cold else if shape == 1 then body
+    else KExpr.mkApp (.mkApp warmTwo identityType) body
+  let action : RecM .anon Bool := do
+    let initial ← get
+    modify fun state => {state with inferOnly := true}
+    let onlyType ← RecM.inferCall warm
+    let only ← get
+    modify fun state => {state with inferOnly := false}
+    let fullType ← RecM.inferCall warm
+    let full ← get
+    RecM.withLctxScope do
+      if outerScope then
+        let _ ← TcM.openBinder () () sort (.mkVar 0 ())
+        pure ()
+      modify fun state => {state with inferOnly := shape == 0 && finalOnly}
+      let active ← get
+      let result ← RecM.inferCall term
+      let recursive ← get
+      let _ ← liftM (TcM.getConst (m := .anon) ⟨recrProjAddr block 1, ()⟩)
+      let mixed ← get
+      let rejected ← try
+        let _ ← liftM (TcM.getConst (m := .anon) ⟨badAddr, ()⟩)
+        pure false
+      catch error => pure (((toString error).splitOn "invalid Share index 9").length > 1)
+      let failed ← get
+      let nextType ← RecM.inferCall next
+      let distinctType ← RecM.inferCall warmTwo
+      let successor ← get
+      let replay ← RecM.inferCall term
+      modify fun state => {state with inferOnly := true}
+      let reused ← RecM.inferCall warm
+      let final ← get
+      modify fun state => {state with env := state.env.clearReductionCaches, inferOnly := finalOnly}
+      let cleared ← get
+      let rebuilt ← RecM.inferCall warm
+      let after ← get
+      let key := (warm.addr, emptyCtxAddr)
+      return sourceOwnershipCheck source && initial.env.inferCache.isEmpty &&
+        initial.env.inferOnlyCache.isEmpty &&
+        #[initial, only, full, active, recursive, mixed, failed, successor, final, cleared, after].all
+          (fun state => sourceCacheMatches source catalog state && sourceCatalogMatches source state.env &&
+            internKeysCoherent state.env.intern) &&
+        only.env.inferCache[key]?.isNone && only.env.inferOnlyCache[key]?.isSome &&
+        full.env.inferCache[key]?.isSome && full.env.inferOnlyCache[key]?.isSome &&
+        sameSourceExpr onlyType identityType && sameSourceExpr fullType identityType &&
+        sameSourceExpr result (if shape == 0 then sort else identityType) &&
+        sameSourceExpr nextType identityType && sameSourceExpr distinctType twoType &&
+        sameSourceExpr replay result && sameSourceExpr reused identityType && sameSourceExpr rebuilt identityType &&
+        (active.env.get? ⟨coldAddr, ()⟩).isNone && (recursive.env.get? ⟨coldAddr, ()⟩).isSome &&
+        rejected && failed.faultedAddrs.contains badAddr &&
+        failed.env.intern.exprs.size > mixed.env.intern.exprs.size &&
+        failed.env.consts.size == mixed.env.consts.size && mixed.env.blocks.contains ⟨block, ()⟩ &&
+        successor.lctx.size == active.lctx.size && final.env.nextFVarId == successor.env.nextFVarId &&
+        cleared.env.inferCache.isEmpty && cleared.env.inferOnlyCache.isEmpty &&
+        cleared.env.consts.size == final.env.consts.size &&
+        (if finalOnly then after.env.inferCache[key]?.isNone && after.env.inferOnlyCache[key]?.isSome
+         else after.env.inferCache[key]?.isSome && after.env.inferOnlyCache[key]?.isNone)
+  match TcM.runRec action {TcState.newLazyAnon source with stats := true} with
+  | .ok passed after => passed && after.lctx.size == 0
+  | .error _ _ => false
+
+private def sourceCacheMissingDeclaration : Bool :=
+  let (source, addr) := polymorphicIdentity
+  let term := KExpr.mkConst (m := .anon) ⟨addr, ()⟩ #[levelOne]
+  let before := TcState.newLazyAnon source
+  let forged := {before with env := {before.env with
+    inferCache := before.env.inferCache.insert (term.addr, emptyCtxAddr) identityType}}
+  sourceCacheMatches source #[(term, identityType)] before &&
+    !sourceCacheMatches source #[(term, identityType)] forged
+
+/-- A different input forged at the same key can overwrite a valid result.
+The finite key domain rules out exactly this case in the preservation proof. -/
+private def sourceCacheForeignWrite : Bool :=
+  let (source, addr) := polymorphicIdentity
+  let term := KExpr.mkConst (m := .anon) ⟨addr, ()⟩ #[levelOne]
+  let prop := KExpr.mkSort (m := .anon) .mkZero
+  let forged := KExpr.app term prop {(KExpr.mkApp term prop).info with addr := term.addr}
+  match TcM.infer forged (TcState.newLazyAnon source) with
+  | .ok result after => sameSourceExpr result (.mkAll () () prop prop) &&
+      after.env.inferCache[(term.addr, emptyCtxAddr)]?.isSome &&
+      !sourceCacheMatches source #[(term, identityType)] after
+  | .error _ _ => false
+
+private def sourceCacheCases : TestSeq :=
+  test "source cache: empty/full/only caches survive forall, loading, failures, and clearing"
+    (sourceCacheHistory 0 false false)
+  ++ test "source cache: inference-only forall and repopulation retain an outer scope"
+    (sourceCacheHistory 0 true true)
+  ++ test "source cache: lambda leaves establish agreement at written catalog keys"
+    (sourceCacheHistory 1 false false)
+  ++ test "source cache: lambda history retains both policies and loaded dependencies"
+    (sourceCacheHistory 1 true true)
+  ++ test "source cache: application history preserves distinct universe instances"
+    (sourceCacheHistory 2 false false)
+  ++ test "source cache: application history survives scopes, replay, and clearing"
+    (sourceCacheHistory 2 true true)
+  ++ test "source cache: a correct cached type with a missing declaration violates coverage"
+    sourceCacheMissingDeclaration
+  ++ test "source cache: a forged same-key application violates source result agreement"
+    sourceCacheForeignWrite
+
 public def suite : List TestSeq :=
   [cases, polymorphicCases, specializationCases, binderCases, applicationCases,
     polymorphicApplicationCases, constantCacheCases, cacheInvariantCases, recursiveCacheCases,
     lazyCacheCases, blockCacheCases, ingressCoherenceCases, sourceOwnershipCases, recursiveStateCases,
-    sourceAgreementCases]
+    sourceAgreementCases, sourceCacheCases]
 
 end Tests.Kernel.Consistency

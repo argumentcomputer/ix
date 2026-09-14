@@ -29,6 +29,7 @@ import Ix.Kernel.Verify.Consistency.RecursiveCache
 import Ix.Kernel.Verify.Consistency.RecursiveState
 import Ix.Kernel.Verify.Consistency.ConversionRecipe
 import Ix.Kernel.Verify.Consistency.SourceAgreement
+import Ix.Kernel.Verify.Consistency.SourceCache
 import Ix.Kernel.Verify.Consistency.Production
 import Ix.Kernel.Verify.Consistency.Environment
 import Ix.Kernel.Verify.Consistency.Audit
@@ -104,8 +105,16 @@ survives verified lookup on both outcomes, and is preserved by supported
 recursive inference. Source ownership protects its keys during block loads.
 A static model binding reads the predicted type; actual constant lookup then
 derives its type reading, arity, and coherence without post-load reading premises.
-Model admission, mutual-member interpretations, initial semantic cache agreement,
-finite execution resources, trace construction, and preservation inside the
-footprint remain obligations.
+A finite catalog of closed sorts and source constant instances now establishes
+both cache partitions' agreement and loaded-declaration coverage from the empty
+state. Actual recursive inference preserves every catalog entry, including
+writes at those keys. Finite input collision domains prevent other syntax
+forms from writing them. Execution histories also include lookup errors,
+policy changes, binder scopes, and cache clearing. Constant and sort leaves
+derive their hit/miss interfaces from this invariant, and constant typing
+follows from the source binding and history without fresh cache witnesses.
+Model admission, mutual-member interpretations, general semantic cache
+invariants, finite execution resources, and automatic trace construction remain
+obligations.
 General checker soundness remains outside this fragment.
 -/

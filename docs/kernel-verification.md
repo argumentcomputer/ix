@@ -202,6 +202,21 @@ increasing sequence of strongly inaccessible cardinals.
   these derived facts. Static source/model bindings, finite collision and level
   data, and operational traces remain explicit. This catalog does not interpret
   mutual members or prove declaration admission.
+- `SourceCacheHistory.invariant` establishes cache agreement from the actual
+  empty lazy state for a finite catalog of closed sorts and standalone constant
+  instances. Each populated slot has its predicted type and retains the source
+  declaration that produced it. `OwnedInferenceTrace.preservesCache` follows
+  recursive writes at every catalog key, using finite input collision domains
+  to exclude writes by other syntax forms. Both cache partitions remain valid
+  across policy changes, binder scopes, block loading, lookup errors, and cache
+  clearing. `BinderInference.constFromSourceCache` and `sortFromSourceCache`
+  observe the real selection and derive the existing hit/miss interfaces.
+  `infer_const_history_sound` derives model typing after such a history without
+  initial cache agreement, a separate cache-hit type witness, or a new lookup
+  reading. The catalog, static source/model bindings, finite collision/level
+  data, and recursive execution traces remain explicit. General composite and
+  local cache typing, other checker operations, and declaration admission are
+  still outside this result.
 - `checkEnvAnon_atomic_preserves_model` connects a supported production
   environment run to model extension. `checkEnvAnon_atomic_no_false` excludes
   a declaration at an axiom type interpreted as empty, including False.
@@ -275,7 +290,9 @@ def useF (x : T.{1}) : T.{1} := f.{1} x
   Closed constant witnesses can be transported through composed frames that
   preserve their key's entries and each previously loaded declaration. Actual
   sort and already-loaded constant inference provide frames for other keys. These
-  results reduce repeated witnesses; they do not yet derive initial agreement.
+  frame results reduce repeated witnesses. The source-cache history additionally
+  establishes agreement and loaded-declaration coverage for a finite catalog
+  from empty caches, then preserves it at the catalog's written keys.
   Verified lookup supplies an extension frame on every outcome, retaining
   partial intern progress on error. The installed callback must be the actual
   verified loader. Standalone registration uses freshness from the lookup miss;
@@ -301,8 +318,9 @@ def useF (x : T.{1}) : T.{1} := f.{1} x
   `SourceStateInvariant` additionally retains agreement with source-only
   standalone predictions through these calls and subsequent block loads.
   Initial coherence holds for `TcState.newLazyAnon`. Preservation by every
-  checker operation, preservation at written keys, and automatic trace
-  construction remain open.
+  checker operation and automatic trace construction remain open.
+  Catalog constant and sort entries are preserved even when written by these
+  recursive calls. General semantic cache invariants remain open.
   The operational trace can frame any selected cache hit, while semantic typing
   of composite hits remains outside `BinderInference`.
 - Binder definitions supply finite inference trees for both the value and its
@@ -399,7 +417,7 @@ lake test --wfail -- tc-unit
 lake -d Models/SetTheory build --wfail
 ```
 
-The consistency target checks 316 exact theorem boundaries. The production
+The consistency target checks 349 exact theorem boundaries. The production
 environment roots retain four existing generated output-length proofs,
 reached through expression/universe construction, names, and the full
 production method table. They introduce no new native proofs. The model
@@ -477,7 +495,13 @@ indices, cyclic sharing, and catalog selection. Deliberately conflicting intern
 entries with equal hashes demonstrate why finite collision freedom is needed.
 Recursive source-agreement cases retain the catalog through applications and
 binders, a mixed block load, another standalone load, and cache replay under
-an outer scope. The unit suite contains 548 checks.
+an outer scope.
+Source-cache histories start empty, populate both policies at the same key,
+and check complete results and declaration coverage through recursive calls,
+mixed block loads, partial lookup failures, distinct universe instances, scopes,
+replay, clearing, and repopulation. Negative cases detect a correct cached type
+with no loaded declaration and a forged application writing a constant's key.
+The unit suite contains 556 checks.
 
 ## Certified host adapters
 
@@ -511,6 +535,7 @@ The VM pilot is preserved in the frozen archive and excluded from the host gate.
 | Ownership and intern coherence through recursive inference | [`Consistency/RecursiveState.lean`](../Ix/Kernel/Verify/Consistency/RecursiveState.lean) |
 | Exact source conversion and finite candidate inventories | [`SourceConversion.lean`](../Ix/Kernel/SourceConversion.lean), [`Consistency/ConversionRecipe.lean`](../Ix/Kernel/Verify/Consistency/ConversionRecipe.lean) |
 | Standalone source/model agreement through lookup and inference | [`Consistency/SourceAgreement.lean`](../Ix/Kernel/Verify/Consistency/SourceAgreement.lean) |
+| Source cache agreement from empty-state execution histories | [`Consistency/SourceCache.lean`](../Ix/Kernel/Verify/Consistency/SourceCache.lean) |
 | Verified standalone lazy loading and cache frames | [`Consistency/LazyCache.lean`](../Ix/Kernel/Verify/Consistency/LazyCache.lean) |
 | Mutual-block publication and verified lookup frames | [`Consistency/BlockCache.lean`](../Ix/Kernel/Verify/Consistency/BlockCache.lean) |
 | Intern coherence through conversion and lazy loading | [`Consistency/IngressCoherence.lean`](../Ix/Kernel/Verify/Consistency/IngressCoherence.lean) |

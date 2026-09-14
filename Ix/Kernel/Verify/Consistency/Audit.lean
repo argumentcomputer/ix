@@ -9,6 +9,7 @@ import Ix.Kernel.Verify.Consistency.Environment
 import Ix.Kernel.Verify.Consistency.RecursiveCache
 import Ix.Kernel.Verify.Consistency.RecursiveState
 import Ix.Kernel.Verify.Consistency.SourceAgreement
+import Ix.Kernel.Verify.Consistency.SourceCache
 import Ix.Kernel.Verify.Audit.Basic
 
 /-! Exact full-dependency boundaries for the direct model-refinement roots.
@@ -91,7 +92,7 @@ private def cacheMapRoots : Array Lean.Name := #[
 ]
 
 private def cacheKeyRoots : Array Lean.Name := #[
-  ``inferKey_closed, ``inferKey_policy, ``inferKey_environment,
+  ``inferKey_closed, ``inferKey_policy, ``inferKey_environment, ``inferKey_address,
   ``InferenceCacheHit.key_closed, ``observeInferenceCache,
   ``InferenceCacheAgreement.selected, ``InferenceCacheHit.transport,
   ``PreservesInferenceCache.inferKey, ``PreservesInferenceCache.openBinder,
@@ -177,6 +178,25 @@ private def sourceAgreementRoots : Array Lean.Name := #[
   ``infer_const_source_sound, ``SourceStateInvariant.openBinder,
   ``OwnedInferenceTrace.SourceData, ``OwnedInferenceTrace.preservesSource,
   ``OwnedInferenceTrace.frameSource
+]
+
+private def sourceCacheRoots : Array Lean.Name := #[
+  ``SourceCacheRequest.term, ``SourceCacheRequest.result, ``SourceCacheRequest.key,
+  ``SourceCacheRequest.closed, ``SourceCacheRequest.Loaded, ``SourceCacheRequest.Loaded.frame,
+  ``SourceCacheRequest.Loaded.ofMap, ``SourceCacheEntry.frame, ``SourceCacheAgreement,
+  ``SourceCacheAgreement.ofMaps, ``SourceCacheAgreement.afterInferKey,
+  ``SourceCacheAgreement.openBinder, ``SourceCacheAgreement.getConst, ``SourceCacheAgreement.write,
+  ``SourceCacheKeyData, ``SourceCacheKeyData.same, ``OwnedInferenceTrace.CacheData,
+  ``OwnedInferenceTrace.preservesCache, ``OwnedInferenceTrace.preservesSourceCache,
+  ``SourceCacheInvariant.getConst, ``SourceCacheInvariant.policy, ``SourceCacheInvariant.truncate,
+  ``SourceCacheInvariant.openBinder, ``SourceCacheInvariant.clearReductionCaches,
+  ``StandaloneModelBinding.cacheRequest, ``CachedConstantInferenceSupport.ofSourceCache,
+  ``BinderInference.constFromSourceCache, ``BinderInference.sortFromSourceCache
+]
+
+private def sourceCacheInitialRoots : Array Lean.Name := #[
+  ``SourceCacheAgreement.empty, ``SourceCacheInvariant.ofCheckedSource,
+  ``SourceCacheHistory.invariant, ``infer_const_history_sound
 ]
 
 private def productionRoots : Array Lean.Name := #[
@@ -295,7 +315,10 @@ def roots : Array RootAllowance := #[
   { root := ``Theory.Model.CheckingClaim.typing, standardAxioms := standard },
   { root := ``Theory.Model.CheckingClaim.typingSort, standardAxioms := standard },
   { root := ``Theory.Model.CheckingClaim.lam, standardAxioms := standard }
-] ++ conversionUniverseRoots.map (fun root => {
+] ++ sourceCacheInitialRoots.map (fun root => {
+  root, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative, nameNative],
+  forbiddenDependencies := forbiddenProduction
+}) ++ conversionUniverseRoots.map (fun root => {
   root, standardAxioms := standard, nativeAxioms := #[levelNative],
   forbiddenDependencies := forbiddenProduction
 }) ++ (scopedRoots ++ cacheFrameRoots).map (fun root => {
@@ -306,7 +329,7 @@ def roots : Array RootAllowance := #[
   root, standardAxioms := standard, nativeAxioms := #[expressionNative],
   forbiddenDependencies := forbiddenProduction
 }) ++ (atomicRoots ++ instantiationRoots ++ recursiveCacheRoots ++ lazyCacheRoots ++
-    ownedLoaderRoots ++ recursiveStateRoots ++ sourceAgreementRoots).map (fun root => {
+    ownedLoaderRoots ++ recursiveStateRoots ++ sourceAgreementRoots ++ sourceCacheRoots).map (fun root => {
   root, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative],
   forbiddenDependencies := forbiddenProduction
 }) ++ productionRoots.map (fun root => {
