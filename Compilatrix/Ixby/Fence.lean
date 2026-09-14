@@ -323,3 +323,86 @@ Ixon prefix retains the repository's existing, explicitly ledgered hash boundary
  Classical.choice,
  Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.Ixby.Runtime.NatArithmetic.Certificate.le_evaluates
+
+/-! Complete base-field and extension-packing paths, including conversion calls. -/
+
+/-- info: 'Compilatrix.Ixby.Runtime.Conversion.Certificate.call_asField' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Conversion.Certificate.call_asField
+
+/-- info: 'Compilatrix.Ixby.Runtime.Conversion.Certificate.read_fields' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Conversion.Certificate.read_fields
+
+/-- info: 'Compilatrix.Ixby.Runtime.FieldArithmetic.binary_returns' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.FieldArithmetic.binary_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.FieldArithmetic.Certificate.reduce_returns' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.FieldArithmetic.Certificate.reduce_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.FieldArithmetic.Certificate.add_returns' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.FieldArithmetic.Certificate.add_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.FieldArithmetic.Certificate.sub_returns' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.FieldArithmetic.Certificate.sub_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.FieldArithmetic.Certificate.mul_returns' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.FieldArithmetic.Certificate.mul_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.FieldArithmetic.Certificate.neg_returns' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.FieldArithmetic.Certificate.neg_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.FieldArithmetic.Certificate.inverse_returns' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.FieldArithmetic.Certificate.inverse_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.FieldArithmetic.Certificate.pack_returns' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.FieldArithmetic.Certificate.pack_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.FieldArithmetic.Certificate.reduce_evaluates' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.FieldArithmetic.Certificate.reduce_evaluates
+
+/-- info: 'Compilatrix.Ixby.Runtime.FieldArithmetic.Certificate.add_evaluates' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.FieldArithmetic.Certificate.add_evaluates
+
+/-- info: 'Compilatrix.Ixby.Runtime.FieldArithmetic.Certificate.sub_evaluates' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.FieldArithmetic.Certificate.sub_evaluates
+
+/-- info: 'Compilatrix.Ixby.Runtime.FieldArithmetic.Certificate.mul_evaluates' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.FieldArithmetic.Certificate.mul_evaluates
+
+/-- info: 'Compilatrix.Ixby.Runtime.FieldArithmetic.Certificate.neg_evaluates' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.FieldArithmetic.Certificate.neg_evaluates
+
+/-- info: 'Compilatrix.Ixby.Runtime.FieldArithmetic.Certificate.inverse_evaluates' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.FieldArithmetic.Certificate.inverse_evaluates
+
+/-- info: 'Compilatrix.Ixby.Runtime.FieldArithmetic.Certificate.pack_evaluates' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.FieldArithmetic.Certificate.pack_evaluates

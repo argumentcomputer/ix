@@ -1,8 +1,8 @@
 # Typed Ixby runtime representation proofs
 
 The runtime proofs for the [typed Lean frontend](ixby-lean.md) establish exact
-numeric representation laws and certify seven generated extension helpers and
-eleven number conversion helpers, plus eight Nat arithmetic and comparison
+numeric representation laws and certify all fourteen generated field helpers
+and eleven number conversion helpers, plus eight Nat arithmetic and comparison
 helpers against the unchanged Ixby evaluator. The conversion and
 arithmetic proofs include complete loops and calls into existing caller
 continuations. The complete LCNF transformation and Stage2 verifier remain
@@ -223,10 +223,54 @@ and scalar capacity, including the direct native-field equality path and
 separate from whole-image admission, which also validates unrelated literals
 and functions.
 
+## Complete base-field helpers and extension packing
+
+`Image.certifyFields` checks the six `Goldilocks` wrappers (`reduce`, `add`,
+`sub`, `mul`, `neg`, and `inverse`) and `ExtGoldilocks.mk`. Together with the
+seven extension-helper certificates above, this covers every function emitted
+by `buildFields`. The [code templates](../Compilatrix/Ixby/Runtime/FieldArithmeticCode.lean)
+use the image's actual conversion and constructor indices. The
+[certificate](../Compilatrix/Ixby/Runtime/FieldArithmeticCertificate.lean) checks
+complete bodies and retains all eleven conversion dependencies and number
+layouts. Both regression images and Stage2 export require these certificates.
+
+The [field-call contracts](../Compilatrix/Ixby/Runtime/FieldCall.lean) execute
+each ordinary call to `asField`, its complete conversion path, and checked
+caller restoration. The [field execution proofs](../Compilatrix/Ixby/Runtime/FieldArithmetic.lean)
+then compose the actual native primitive and return instructions. They cover
+all three input layouts, all nine binary representation pairs, and arbitrary
+caller continuations.
+
+All six base-field helpers return the exact canonical field box. Arithmetic
+uses the source operations on `Goldilocks.reduce a` and `Goldilocks.reduce b`;
+negation and inversion use the reduced input. The inverse contract includes
+zero and multiples of the field modulus. Extension construction returns the
+exact native extension scalar with the reduced first and second coefficients
+in source order. Each helper also has a whole-program `Evaluates` corollary
+with ordinary program/input admission, entry selection, and the input
+representation relation.
+
+The uniform local bounds are 11 slots, 64 Nat bits, and three spare
+continuations. Each input Nat observation must fit the selected scalar limit.
+No byte buffer or separate result-capacity premise is needed: field results
+are canonical, and the conversions construct fields directly from words.
+Structural admission alone still does not establish the `Number` cache
+invariant.
+
+The field suite has 6,201 admitted helper executions, 25 caller-preservation
+cases, eight packing/projection compositions, and 24 local resource cases.
+It covers zero inverse, modular boundaries, all layouts, and Nats above 256
+bits, checking exact result boxes and coefficient order. The resource cases
+test the uniform bounds and smaller native-field paths, including zero Nat
+and byte capacity with one spare continuation. All 29 code, dependency,
+constructor, and name-binding mutations are rejected; 24 remain structurally
+admitted. Seventeen axiom guards cover the field paths, conversion calls, and
+whole-program corollaries.
+
 ## Remaining simulation work
 
 The next extension can use these contracts to prove the remaining number/word
-operations and base-field helpers preserve the source representation relations.
+operations preserve the source representation relations.
 Further composition must cover arrays and byte representations, the complete
 Stage2 adapter, and general LCNF control flow.
 Typed erasure, specialization, original Ixon source authentication, and
@@ -244,7 +288,8 @@ nix flake check --no-update-lock-file
 ```
 
 The axiom fence includes 22 representation/scalar guards, 20 conversion and
-continuation guards, and 21 Nat arithmetic/comparison/call guards. They pin the
-contracts to subsets of `propext`, `Classical.choice`, and `Quot.sound`. The integration gate retains
+continuation guards, 21 Nat arithmetic/comparison/call guards, and 17 field/call
+guards. They pin the contracts to subsets of `propext`, `Classical.choice`, and
+`Quot.sound`. The integration gate retains
 the 4,585 differential executions, binary corpus, exact fresh Stage2 artifact
 comparisons, and all eight serialized verifier cases.

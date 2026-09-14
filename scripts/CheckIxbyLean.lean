@@ -17,6 +17,7 @@ private def compileImage (env : Environment) (name : Name) (wire := false) : IO 
   discard <| checked image.certifyScalars
   discard <| checked image.certifyConversions
   discard <| checked image.certifyNatArithmetic
+  discard <| checked image.certifyFields
   return image
 
 private def certificateMutations (image : Image) : IO Unit := do
@@ -417,6 +418,214 @@ private def natArithmeticExecutions (image : Image) : IO Unit := do
     (.error (.limit .continuations))
   IO.println s!"check-ixby-lean Nat arithmetic contracts: {← count.get} admitted executions; {← callerCount.get} caller cases; {← localCount.get} resource cases"
 
+private def fieldMutations (image : Image) : IO Unit := do
+  let certified ← checked image.certifyFields
+  let links := certified.links
+  let conversions := links.conversions
+  let instruction (id block : Nat) (changed : Ix.Ixby.Instr) : Image :=
+    { image with program := { image.program with functions := image.program.functions.modify id fun fn =>
+      { fn with blocks := fn.blocks.modify block fun old => { old with instruction := changed } } } }
+  let function (id : Nat) (change : Ix.Ixby.Function → Ix.Ixby.Function) : Image :=
+    { image with program := { image.program with functions := image.program.functions.modify id change } }
+  let rejected ← IO.mkRef 0
+  let admittedCount ← IO.mkRef 0
+  let reject (changed : Image) (label : String) (admitted := true) : IO Unit := do
+    if admitted then
+      discard <| checked (Ix.Ixby.validateProgram changed.state.limits changed.program |>.mapError reprStr)
+      admittedCount.modify (· + 1)
+    match changed.certifyFields with
+    | .error _ => rejected.modify (· + 1)
+    | .ok _ => throw (IO.userError s!"field certificate accepted {label}")
+  reject (instruction links.reduce 0 (.letOp (.call conversions.natural [.local 0]) 1))
+    "reduction used exact Nat observer"
+  reject (instruction links.reduce 1 (.letOp (.construct conversions.rawCtor [.local 1]) 2))
+    "reduction used raw box"
+  reject (instruction links.reduce 2 (.ret (.local 0))) "reduction returned input"
+  reject (instruction links.add 0 (.letOp (.call conversions.lowWord [.local 0]) 1))
+    "field addition observed low word"
+  reject (instruction links.add 1 (.letOp (.call conversions.asField [.local 0]) 2))
+    "field addition observed left input twice"
+  reject (instruction links.add 2 (.letOp (.primitive .fieldSub [.local 2, .local 3]) 3))
+    "field addition used subtraction"
+  reject (instruction links.sub 2 (.letOp (.primitive .fieldSub [.local 3, .local 2]) 3))
+    "field subtraction reversed operands"
+  reject (instruction links.mul 2 (.letOp (.primitive .fieldAdd [.local 2, .local 3]) 3))
+    "field multiplication used addition"
+  reject (instruction links.mul 3 (.letOp (.construct conversions.rawCtor [.local 4]) 4))
+    "field multiplication used raw box"
+  reject (instruction links.neg 1
+    (.letOp (.primitive .fieldSub [.local 1, .literal (.field 0)]) 2)) "negation reversed operands"
+  reject (instruction links.neg 1
+    (.letOp (.primitive .fieldSub [.literal (.field 1), .local 1]) 2)) "negation used wrong zero"
+  reject (instruction links.inverse 1
+    (.letOp (.primitive .fieldAdd [.local 1, .literal (.field 1)]) 2)) "inverse incremented input"
+  reject (instruction links.inverse 2 (.letOp (.construct conversions.fieldCtor [.local 1]) 3))
+    "inverse boxed input instead of result"
+  reject (instruction links.pack 2 (.letOp (.primitive .fieldAdd [.local 2, .local 3]) 3))
+    "extension packing used base-field addition"
+  reject (instruction links.pack 2 (.letOp (.primitive .extPack [.local 3, .local 2]) 3))
+    "extension packing reversed coefficients"
+  reject (instruction links.pack 0 (.letOp (.call conversions.natural [.local 0]) 1))
+    "extension packing used exact Nat observer"
+  reject (instruction links.pack 1 (.letOp (.call conversions.asField [.local 0]) 2))
+    "extension packing observed first coefficient twice"
+  reject (instruction links.pack 3 (.ret (.local 2))) "extension packing returned a base field"
+  reject (function links.neg fun fn =>
+    { fn with blocks := fn.blocks.push { locals := 0, instruction := .ret .erased } })
+    "extra negation block"
+  reject (function links.reduce fun fn => { fn with entry := 1 }) "changed reduction entry" false
+  reject (function links.mul fun fn => { fn with arity := 1 }) "changed multiplication arity" false
+  reject (function links.pack fun fn => { fn with arity := 3 }) "changed packing arity" false
+  let functionNames := image.state.functionNames.insert `Ix.Ixby.Goldilocks.add links.sub
+  reject { image with state := { image.state with functionNames } } "wrong base-field name binding"
+  let functionNames := image.state.functionNames.insert `Ix.Ixby.ExtGoldilocks.mk links.add
+  reject { image with state := { image.state with functionNames } } "wrong extension packing name binding"
+  reject (instruction conversions.asField 1 (.ret (.local 1))) "conversion returned unreduced Nat"
+  reject (instruction conversions.fieldFromNatural 0
+    (.letOp (.primitive .natMod [.local 0, .literal (.nat (Ix.Ixby.goldilocksModulus - 1))]) 1))
+    "conversion used wrong field modulus"
+  let constructors := image.program.constructors.modify conversions.fieldCtor fun ctor => { ctor with fields := 2 }
+  reject { image with program := { image.program with constructors } } "wrong field box layout" false
+  let constructorNames := image.state.constructorNames.insert `Ixby.Runtime.FieldNumber conversions.rawCtor
+  reject { image with state := { image.state with constructorNames } } "wrong field constructor name binding"
+  let constructors := image.program.constructors.modify conversions.fieldCtor fun ctor => { ctor with id := conversions.layout.raw }
+  reject { image with program := { image.program with constructors } } "duplicate number tags" false
+  IO.println s!"check-ixby-lean fields: 7 generated functions; {← rejected.get} rejected mutations ({← admittedCount.get} structurally admitted)"
+
+private def fieldExecutions (image : Image) : IO Unit := do
+  let certified ← checked image.certifyFields
+  let scalars ← checked image.certifyScalars
+  let links := certified.links
+  let layout := links.conversions.layout
+  let cached (n : Nat) : Ix.Ixby.Value :=
+    .ctor layout.cached #[.scalar (.nat n), .scalar (.word32 n.toUInt32)]
+  let raw (n : Nat) : Ix.Ixby.Value := .ctor layout.raw #[.scalar (.nat n)]
+  let boxed (field : Ix.Ixby.Goldilocks) : Ix.Ixby.Value := .ctor layout.field #[.scalar (.field field)]
+  let field (n : Nat) : Ix.Ixby.Value := boxed (Ix.Ixby.Goldilocks.reduce n)
+  let cases (n : Nat) : Array (Nat × Ix.Ixby.Value) :=
+    #[(n, cached n), (n, raw n), (n % Ix.Ixby.goldilocksModulus, field n)]
+  let unary : Array (Nat × (Nat → Ix.Ixby.Value)) := #[
+    (links.reduce, field),
+    (links.neg, fun n => boxed (Ix.Ixby.Goldilocks.reduce n).neg),
+    (links.inverse, fun n => boxed (Ix.Ixby.Goldilocks.reduce n).inverse)]
+  let binary : Array (Nat × (Nat → Nat → Ix.Ixby.Value)) := #[
+    (links.add, fun a b => boxed ((Ix.Ixby.Goldilocks.reduce a).add (Ix.Ixby.Goldilocks.reduce b))),
+    (links.sub, fun a b => boxed ((Ix.Ixby.Goldilocks.reduce a).sub (Ix.Ixby.Goldilocks.reduce b))),
+    (links.mul, fun a b => boxed ((Ix.Ixby.Goldilocks.reduce a).mul (Ix.Ixby.Goldilocks.reduce b))),
+    (links.pack, fun a b => .scalar (.extField ⟨Ix.Ixby.Goldilocks.reduce a, Ix.Ixby.Goldilocks.reduce b⟩))]
+  let count ← IO.mkRef 0
+  let execute (program : Ix.Ixby.Program) (args : Array Ix.Ixby.Value) : IO Ix.Ixby.Value := do
+    discard <| checked (Compilatrix.Ixby.Runtime.FieldArithmetic.certify program links)
+    discard <| checked (Compilatrix.Ixby.Runtime.certifyScalars program scalars.links)
+    checked (Ix.Ixby.execute image.state.limits program args 20000 |>.mapError reprStr)
+  let numbers := #[0, 1, 2, 2 ^ 32 - 1, 2 ^ 32, 2 ^ 32 + 1,
+    Ix.Ixby.goldilocksModulus - 1, Ix.Ixby.goldilocksModulus, Ix.Ixby.goldilocksModulus + 1,
+    2 ^ 64 - 1, 2 ^ 64, 2 ^ 80 + 17, 2 ^ 256 + 255]
+  for n in numbers do
+    for (n, value) in cases n do
+      for (id, operation) in unary do
+        let actual ← execute { image.program with entry := id } #[value]
+        let expected := operation n
+        need (actual == expected) s!"unary field helper {id}: {n}: expected {reprStr expected}, got {reprStr actual}"
+        count.modify (· + 1)
+  for a in numbers do
+    for b in numbers do
+      for (a, left) in cases a do
+        for (b, right) in cases b do
+          for (id, operation) in binary do
+            let actual ← execute { image.program with entry := id } #[left, right]
+            let expected := operation a b
+            need (actual == expected)
+              s!"binary field helper {id}: {a}, {b}: expected {reprStr expected}, got {reprStr actual}"
+            count.modify (· + 1)
+  let callerCount ← IO.mkRef 0
+  let withCaller (caller : Ix.Ixby.Function) (args : Array Ix.Ixby.Value) : IO Ix.Ixby.Value :=
+    execute { image.program with
+      entry := image.program.functions.size
+      functions := image.program.functions.push caller } args
+  for value in #[cached (2 ^ 80 + 17), raw (Ix.Ixby.goldilocksModulus + 1), field (Ix.Ixby.goldilocksModulus - 1)] do
+    let n ← checked (image.decodeNumber value)
+    for (id, operation) in unary do
+      -- The diagnostic result exposes the original caller local and result.
+      let caller : Ix.Ixby.Function := { arity := 1, blocks := #[
+        ⟨1, .letOp (.call id [.local 0]) 1⟩,
+        ⟨2, .letOp (.construct links.conversions.cachedCtor [.local 0, .local 1]) 2⟩,
+        ⟨3, .ret (.local 2)⟩] }
+      let actual ← withCaller caller #[value]
+      need (actual == .ctor layout.cached #[value, operation n]) "unary field caller lost input or result"
+      callerCount.modify (· + 1)
+  let projectionCount ← IO.mkRef 0
+  for (left, right) in #[(field (Ix.Ixby.goldilocksModulus - 1), raw (Ix.Ixby.goldilocksModulus + 1)),
+      (cached (2 ^ 80 + 17), cached (2 ^ 32 + 1)), (raw 1, field 2),
+      (field (Ix.Ixby.goldilocksModulus - 1), field 0)] do
+    let a ← checked (image.decodeNumber left)
+    let b ← checked (image.decodeNumber right)
+    for (id, operation) in binary do
+      let caller : Ix.Ixby.Function := { arity := 2, blocks := #[
+        ⟨2, .letOp (.call id [.local 0, .local 1]) 1⟩,
+        ⟨3, .letOp (.construct links.conversions.cachedCtor [.local 1, .local 2]) 2⟩,
+        ⟨4, .letOp (.construct links.conversions.cachedCtor [.local 0, .local 3]) 3⟩,
+        ⟨5, .ret (.local 4)⟩] }
+      let actual ← withCaller caller #[left, right]
+      need (actual == .ctor layout.cached #[left, .ctor layout.cached #[right, operation a b]])
+        "binary field caller lost input or result"
+      callerCount.modify (· + 1)
+    for (projection, expected) in #[(scalars.links.first, field a), (scalars.links.second, field b)] do
+      let caller : Ix.Ixby.Function := { arity := 2, blocks := #[
+        ⟨2, .letOp (.call links.pack [.local 0, .local 1]) 1⟩,
+        ⟨3, .letOp (.call projection [.local 2]) 2⟩,
+        ⟨4, .ret (.local 3)⟩] }
+      need ((← withCaller caller #[left, right]) == expected) "packed extension projection changed coefficient order"
+      projectionCount.modify (· + 1)
+  -- Local capacity checks are separate from whole-image admission.
+  let localCount ← IO.mkRef 0
+  let localRun (limits : Ix.Ixby.Limits) (id : Nat) (args : Array Ix.Ixby.Value)
+      (expected : Except Ix.Ixby.Error Ix.Ixby.Value) : IO Unit := do
+    let actual := Ix.Ixby.run limits image.program 20000
+      (Compilatrix.Ixby.Runtime.ScalarFunction.start id args)
+    let same := match actual, expected with
+      | .ok actual, .ok expected => actual == expected
+      | .error actual, .error expected => actual == expected
+      | _, _ => false
+    need same s!"field resource contract {id}: expected {reprStr expected}, got {reprStr actual}"
+    localCount.modify (· + 1)
+  let small : Ix.Ixby.Limits := {
+    image.state.limits with locals := 11, continuations := 3, natBits := 64, byteArrayBytes := 0 }
+  localRun small links.reduce #[raw 1] (.ok (field 1))
+  localRun { small with locals := 10 } links.reduce #[raw 1] (.error (.limit .locals))
+  localRun { small with continuations := 2 } links.reduce #[raw 1] (.error (.limit .continuations))
+  localRun { small with natBits := 63 } links.reduce #[cached 0] (.error (.limit .natBits))
+  localRun small links.reduce #[raw (2 ^ 64)] (.error (.limit .natBits))
+  localRun { small with natBits := 65 } links.reduce #[raw (2 ^ 64)] (.ok (field (2 ^ 64)))
+  localRun small links.add #[raw (Ix.Ixby.goldilocksModulus - 1), cached 1] (.ok (field 0))
+  localRun small links.sub #[cached 0, raw 1] (.ok (field (Ix.Ixby.goldilocksModulus - 1)))
+  localRun small links.mul #[cached (Ix.Ixby.goldilocksModulus - 1), raw (Ix.Ixby.goldilocksModulus - 1)]
+    (.ok (field 1))
+  localRun small links.inverse #[cached 0] (.ok (field 0))
+  localRun small links.inverse #[raw Ix.Ixby.goldilocksModulus] (.ok (field 0))
+  localRun small links.pack #[raw (Ix.Ixby.goldilocksModulus + 1), cached (Ix.Ixby.goldilocksModulus + 2)]
+    (.ok (.scalar (.extField ⟨1, 2⟩)))
+  localRun { small with continuations := 2 } links.pack
+    #[raw (Ix.Ixby.goldilocksModulus + 1), cached (Ix.Ixby.goldilocksModulus + 2)]
+    (.error (.limit .continuations))
+  -- Native field inputs use the direct observer branch without Nat conversion.
+  let native := { small with natBits := 0, continuations := 1 }
+  let maxField := field (Ix.Ixby.goldilocksModulus - 1)
+  localRun { native with locals := 3 } links.reduce #[maxField] (.ok maxField)
+  localRun { native with locals := 3, continuations := 0 } links.reduce #[maxField]
+    (.error (.limit .continuations))
+  localRun { native with locals := 6 } links.add #[maxField, field 1] (.ok (field 0))
+  localRun { native with locals := 5 } links.add #[maxField, field 1] (.error (.limit .locals))
+  localRun { native with locals := 4 } links.neg #[maxField] (.ok (field 1))
+  localRun { native with locals := 3 } links.neg #[maxField] (.error (.limit .locals))
+  localRun { native with locals := 4 } links.inverse #[maxField] (.ok maxField)
+  localRun { native with locals := 4 } links.inverse #[field 0] (.ok (field 0))
+  localRun { native with locals := 5 } links.pack #[maxField, field 1]
+    (.ok (.scalar (.extField ⟨Ix.Ixby.Goldilocks.reduce (Ix.Ixby.goldilocksModulus - 1), 1⟩)))
+  localRun { native with locals := 4 } links.pack #[maxField, field 1] (.error (.limit .locals))
+  localRun native links.add #[cached 1, maxField] (.error (.limit .natBits))
+  IO.println s!"check-ixby-lean field contracts: {← count.get} admitted executions; {← callerCount.get} caller cases; {← projectionCount.get} packing/projection cases; {← localCount.get} resource cases"
+
 private def compileRejects (env : Environment) (name : Name) (limits : Ix.Ixby.Limits)
     (message : String) : IO Unit := do
   let (result, _) ← (compile name limits).toIO
@@ -452,6 +661,8 @@ def main : IO UInt32 := cli "check-ixby-lean" do
   conversionExecutions runtimeImage
   natArithmeticMutations runtimeImage
   natArithmeticExecutions runtimeImage
+  fieldMutations runtimeImage
+  fieldExecutions runtimeImage
   compileRejects env `Nat.add { byteArrayBytes := 2 ^ 32 }
     "typed Ixby packed byte capacity must fit Word32 indices"
   compileRejects env `Float.add {} "unsupported typed runtime extern Float.add"

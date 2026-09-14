@@ -2,9 +2,10 @@ import Compilatrix.Ixby.Lean
 import Compilatrix.Ixby.Runtime.ScalarCertificate
 import Compilatrix.Ixby.Runtime.NumberConversion
 import Compilatrix.Ixby.Runtime.NatArithmetic
+import Compilatrix.Ixby.Runtime.FieldArithmetic
 
 /-! Typed-frontend proof boundaries: exact number decoding and checked
-execution of native extension helpers, complete number conversions, and Nat
+execution of all emitted field helpers, complete number conversions, and Nat
 arithmetic and comparisons.
 This does not certify Lean proof erasure or the general LCNF lowering. -/
 
@@ -214,5 +215,47 @@ def Image.certifyNatArithmetic (image : Image) : Except String image.NatArithmet
       candidates
       names
       certificate := ← NatArithmetic.certify image.program candidates.links }
+
+structure Image.FieldCandidates (image : Image) where
+  links : FieldArithmetic.Links
+  layouts : image.HasNumberLayout links.conversions.layout
+
+def Image.fieldCandidates (image : Image) : Except String image.FieldCandidates := do
+  let conversions ← image.conversionCandidates
+  let function (name : Name) : Except String Nat :=
+    match image.state.functionNames[name]? with
+    | some id => .ok id
+    | none => .error s!"missing field runtime name {name}"
+  let links : FieldArithmetic.Links := {
+    conversions := conversions.links
+    reduce := ← function `Ix.Ixby.Goldilocks.reduce
+    add := ← function `Ix.Ixby.Goldilocks.add
+    sub := ← function `Ix.Ixby.Goldilocks.sub
+    mul := ← function `Ix.Ixby.Goldilocks.mul
+    neg := ← function `Ix.Ixby.Goldilocks.neg
+    inverse := ← function `Ix.Ixby.Goldilocks.inverse
+    pack := ← function `Ix.Ixby.ExtGoldilocks.mk }
+  return { links, layouts := conversions.layouts }
+
+structure Image.FieldCertified (image : Image) where
+  candidates : image.FieldCandidates
+  names : image.fieldCandidates = .ok candidates
+  certificate : FieldArithmetic.Certificate image.program candidates.links
+
+def Image.FieldCertified.links {image : Image} (certified : image.FieldCertified) :
+    FieldArithmetic.Links := certified.candidates.links
+
+theorem Image.FieldCertified.layouts {image : Image} (certified : image.FieldCertified) :
+    image.HasNumberLayout certified.links.conversions.layout := certified.candidates.layouts
+
+/-- Check the six base-field wrappers and extension packing together with all
+conversion dependencies, number layouts, and image name bindings. -/
+def Image.certifyFields (image : Image) : Except String image.FieldCertified := do
+  match names : image.fieldCandidates with
+  | .error message => throw message
+  | .ok candidates => return {
+      candidates
+      names
+      certificate := ← FieldArithmetic.certify image.program candidates.links }
 
 end Compilatrix.Ixby.LeanFrontend

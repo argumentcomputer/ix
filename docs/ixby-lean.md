@@ -13,7 +13,7 @@ reference whole-program validator. Unknown runtime externs are rejected.
 Packed byte capacity must be below 2³², matching the target byte-index ABI.
 
 The frontend remains experimental. The [runtime proofs](ixby-representation.md)
-establish exact numeric/byte laws and certify seven emitted extension helpers,
+establish exact numeric/byte laws and certify all fourteen emitted field helpers,
 eleven number conversion helpers, and eight Nat arithmetic/comparison helpers,
 including complete loops and caller continuations.
 The complete frontend has no source-refinement certificate. It does
@@ -114,6 +114,19 @@ native-field equality path. Their tests include 12,168 admitted executions,
 comparison, and call contracts on the ordinary logical basis. Representation
 and capacity premises remain explicit; these certificates do not certify general LCNF lowering.
 Stage2 binary compilation performs the same certificate checks before export.
+
+The remaining seven field certificates cover `Goldilocks.reduce`, addition,
+subtraction, multiplication, negation, inversion, and `ExtGoldilocks.mk`.
+They execute both `asField` conversions where required, the native operation,
+exact result boxing or extension packing, and caller restoration. Their
+uniform local bounds are 11 slots, 64 Nat bits, and three spare continuations;
+no byte capacity or separate result bound is required. Whole-program contracts
+retain ordinary program/input admission and input representation premises.
+The field suite adds 6,201 admitted executions, 25 caller cases, eight
+packing/projection cases, 24 resource cases, and 29 rejected mutations, of
+which 24 remain structurally admitted. Seventeen additional axiom guards keep
+these contracts on the ordinary logical basis. Every image and Stage2 export
+obtains both field certificate families.
 
 The binary suite checks 81 decoded executions covering every scalar, primitive,
 operation, and instruction. It also checks structured constructor/PAP input and

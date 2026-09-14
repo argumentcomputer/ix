@@ -172,9 +172,10 @@ guest's runtime input inspection. A structural simulation or compositional
 checker would need to cover branches, parsing, recursive calls, and the exact
 bytes/erased observation for every admitted input.
 The [runtime representation proofs](ixby-representation.md) supply exact
-number/byte laws and certificates for seven generated extension helpers,
+number/byte laws and certificates for all fourteen generated field helpers,
 eleven complete number conversion helpers, and eight Nat arithmetic/comparison
-helpers, including division by zero, mixed equality, and caller continuations.
+helpers, including division by zero, mixed equality, modular field operations,
+zero inverse, extension packing, and caller continuations.
 These proofs do not yet compose through this complete source or the Stage2 adapter.
 
 Proving executor support, resource measurement, execution soundness, and
