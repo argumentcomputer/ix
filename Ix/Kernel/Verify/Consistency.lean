@@ -26,6 +26,7 @@ import Ix.Kernel.Verify.Consistency.BinderOpening
 import Ix.Kernel.Verify.Consistency.Application
 import Ix.Kernel.Verify.Consistency.BinderInference
 import Ix.Kernel.Verify.Consistency.Formation
+import Ix.Kernel.Verify.Consistency.ContextInsertion
 import Ix.Kernel.Verify.Consistency.SynthesisInference
 import Ix.Kernel.Verify.Consistency.BetaSubstitution
 import Ix.Kernel.Verify.Consistency.Beta
@@ -35,6 +36,9 @@ import Ix.Kernel.Verify.Consistency.CheapBetaReading
 import Ix.Kernel.Verify.Consistency.BetaSpine
 import Ix.Kernel.Verify.Consistency.BetaTrace
 import Ix.Kernel.Verify.Consistency.BetaWhnf
+import Ix.Kernel.Verify.Consistency.BetaTyping
+import Ix.Kernel.Verify.Consistency.BetaInference
+import Ix.Kernel.Verify.Consistency.BetaWhnfInference
 import Ix.Kernel.Verify.Consistency.CheapBeta
 import Ix.Kernel.Verify.Consistency.Validation
 import Ix.Kernel.Verify.Consistency.RecursiveCache
@@ -114,15 +118,24 @@ type. Its first beta result supplies typing at the current type; substituting
 the supplied lambda supplies the next checked prefix. Two successive
 prefixes therefore compose without inference of the intermediate term.
 Retained origins justify the actual multi-argument WHNF step, and declaration
-admission includes this two-prefix conversion. Automatic origin construction
-for arbitrary generated types remains open. Finite beta traces now compose
+admission includes this two-prefix conversion. Finite beta traces compose
 any number of retained prefixes. An earlier result can supply a later lambda
 or argument origin, and type transport preserves the original source type.
 Application suffixes and dependent substitutions retain their checks.
 The corresponding structural-WHNF trace computes each raw result and intern
 table, then proves the actual uncached loop under its fuel bound. The same
-traces justify definition conversion. Automatic construction of these finite
-resources and the remaining WHNF/conversion paths remain open.
+traces justify definition conversion. Source inference now constructs a full
+beta typing derivation retaining every lambda body and application child.
+Dependent substitution rebuilds that derivation beneath retained binders,
+so each generated result supplies the exact lambda domains for the next step.
+Forward beta conversion preserves these domains when cheap beta changes a
+lambda body's inferred type. Every finite head-beta path of the currently
+supported inference fragment therefore derives all its semantic step origins
+from the original check. The operational path contains only raw execution,
+reading, and finite representation resources, and its automatic annotation
+also supplies declaration admission. Constructing the initial inference and
+operational resources for all accepted programs, and covering the remaining
+WHNF/conversion paths, remain open.
 Local cache hits agree with the actual declaration type. Constant
 hits agree with pure universe substitution of a loaded, admitted declaration;
 sort hits return the canonical successor sort. Application, forall, and lambda

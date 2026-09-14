@@ -192,4 +192,93 @@ def SynthesisInference.betaSpineTrace {β : Type u} {resolve : Address → Optio
       (head.appN arguments) (AExpr.betaPrefix count head arguments) type :=
   (support.spineOrigin contextOrigin agreement reading accepted head arguments rfl).betaTrace enough
 
+private theorem betaPrefix_eq_of_not_app {β : Type u} {head : AExpr β}
+    {arguments : List (AExpr β)} {count : Nat}
+    (notApp : ∀ fn arg, head.appN arguments ≠ .app fn arg) :
+    AExpr.betaPrefix count head arguments = head.appN arguments := by
+  cases arguments with
+  | nil => cases count <;> cases head <;> rfl
+  | cons argument arguments =>
+      exact False.elim (notApp _ _ (appN_last (by simp)))
+
+/-- These traces reduce applications and their subapplications. They do
+not change a source whose outer constructor is a lambda, product, or atom.
+In particular, a forward beta conversion cannot change a lambda's product type. -/
+theorem SynthesisBetaTrace.rigid {β : Type u} {resolve : Address → Option (ConstRef β)}
+    {incoming entries : Model.Environment β} {incomingContext context : Model.Context β}
+    {incomingBounds : List VLevel} {source result type : AExpr β}
+    (trace : SynthesisBetaTrace resolve incoming incomingContext incomingBounds entries context source result type) :
+    (∀ fn arg, source ≠ .app fn arg) → result = source :=
+  match trace with
+  | .refl _ => fun _ => rfl
+  | .prefix .. | .origin .. => fun notApp => betaPrefix_eq_of_not_app notApp
+  | .trans prior next => fun notApp => by
+      have middle := prior.rigid notApp
+      exact (next.rigid (by simpa only [middle] using notApp)).trans middle
+  | .atType _ trace => trace.rigid
+  | .application .. | .argument .. => fun notApp => False.elim (notApp _ _ rfl)
+  | .substituteAt trace _ _ => fun notApp => by
+      have same := trace.rigid (by
+        intro fn arg equal
+        cases equal
+        exact notApp _ _ rfl)
+      rw [same]
+  | .weakenAt trace _ => fun notApp => by
+      have same := trace.rigid (by
+        intro fn arg equal
+        cases equal
+        exact notApp _ _ rfl)
+      rw [same]
+  | .rebase _ trace => trace.rigid
+termination_by structural trace
+
+namespace BetaSyntax
+
+/-- One leftmost beta contraction, retaining the application suffix.
+A term without a beta redex at its head is unchanged. -/
+def step : AExpr β → AExpr β
+  | .app (.lam _ _ body) argument => body.inst argument
+  | .app fn arg => .app (step fn) arg
+  | term => term
+
+def steps : Nat → AExpr β → AExpr β
+  | 0, term => term
+  | count + 1, term => steps count (step term)
+
+private theorem step_appN {β : Type u} (head : AExpr β) (arguments : List (AExpr β))
+    (notLam : ∀ condition domain body, head ≠ .lam condition domain body) :
+    step (head.appN arguments) = (step head).appN arguments := by
+  induction arguments generalizing head with
+  | nil => rfl
+  | cons argument arguments ih =>
+      rw [AExpr.appN_cons, ih (head.app argument) (by intro condition domain body same; cases same)]
+      cases head <;> simp_all [step, AExpr.appN_cons]
+
+theorem step_beta_appN {β : Type u} (condition : Certified.PropWhen)
+    (domain body argument : AExpr β) (arguments : List (AExpr β)) :
+    step ((AExpr.lam condition domain body).appN (argument :: arguments)) =
+      (body.inst argument).appN arguments := by
+  rw [AExpr.appN_cons, step_appN _ _ (by intro condition domain body same; cases same)]
+  rfl
+
+theorem steps_betaPrefix {β : Type u} (count : Nat) (head : AExpr β) (arguments : List (AExpr β))
+    (leading : count ≤ head.lambdaDepth) (supplied : count ≤ arguments.length) :
+    steps count (head.appN arguments) = AExpr.betaPrefix count head arguments := by
+  induction count generalizing head arguments with
+  | zero => rfl
+  | succ count ih =>
+      cases head with
+      | lam condition domain body =>
+          cases arguments with
+          | nil => simp at supplied
+          | cons argument arguments =>
+              simp only [steps, step_beta_appN, AExpr.betaPrefix]
+              apply ih
+              · exact Nat.le_trans (by simpa only [AExpr.lambdaDepth, Nat.add_le_add_iff_right] using leading)
+                  (AExpr.lambdaDepth_le_inst body argument 0)
+              · simpa only [List.length_cons, Nat.add_le_add_iff_right] using supplied
+      | _ => simp [AExpr.lambdaDepth] at leading
+
+end BetaSyntax
+
 end Ix.Kernel.Consistency

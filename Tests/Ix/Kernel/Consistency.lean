@@ -957,7 +957,7 @@ the supplied lambda's separate prefix; the next step consumes that prefix.
 Shape 4 also changes the outer body's inferred type from a beta sort to
 the sort itself. Shape 6 retains an application suffix after the second step. -/
 private def repeatedBetaDeclaredType (level : Ixon.Univ) (universes : UInt64 := 0)
-    (shape wrong : Nat := 0) : Ixon.Env × Address := Id.run do
+    (shape wrong : Nat := 0) (wrappers : Nat := 0) : Ixon.Env × Address := Id.run do
   let levels := if universes == 0 then #[] else #[0]
   let betaSort := Ixon.Expr.app (.leanLam (.sort 1) (.var 0)) (.sort 0)
   let carrierSort := if shape == 4 then betaSort else .sort 0
@@ -975,7 +975,7 @@ private def repeatedBetaDeclaredType (level : Ixon.Univ) (universes : UInt64 := 
   let domain := if shape == 4 then Ixon.Expr.leanAll betaSort betaSort
     else if shape == 5 then .leanAll (.sort 0) (.leanAll (.var 0) (.sort 0))
     else familyType
-  let supplied := if wrong == 1 then Ixon.Expr.leanLam (.sort 1) (.var 0)
+  let mut supplied := if wrong == 1 then Ixon.Expr.leanLam (.sort 1) (.var 0)
     else if shape == 1 then .leanLam (.sort 0) (.ref 0 levels)
     else if shape == 2 then .app (.leanLam (.sort 0) (.leanLam (.sort 0) (.var 1))) (.ref 0 levels)
     else if shape == 3 then
@@ -985,6 +985,8 @@ private def repeatedBetaDeclaredType (level : Ixon.Univ) (universes : UInt64 := 
     else if shape == 5 then .leanLam (.sort 0) (.leanLam (.var 0) (.var 1))
     else if shape == 6 then .app (.leanLam familyType (.var 0)) (.ref 3 levels)
     else .leanLam (.sort 0) (.var 0)
+  for _ in List.range wrappers do
+    supplied := .app (.leanLam domain (.var 0)) supplied
   let body := if shape == 5 then
       Ixon.Expr.app (.app (.var 0) (.ref 0 levels)) (.ref (if wrong == 3 then 0 else 2) levels)
     else .app (.var 0) (.ref (if shape == 1 || shape == 2 || shape == 3 || wrong == 2 then 1 else 0) levels)
@@ -1021,8 +1023,8 @@ private def repeatedBetaDeclaredResult (shape : Nat) (level : Ixon.Univ) : Bool 
   | .ok passed _ => passed
   | .error _ _ => false
 
-private def repeatedBetaChangedBodyType (level : Ixon.Univ) : Bool :=
-  let (env, target) := repeatedBetaDeclaredType level 0 4
+private def repeatedBetaChangedBodyType (level : Ixon.Univ) (wrappers : Nat := 0) : Bool :=
+  let (env, target) := repeatedBetaDeclaredType level 0 4 0 wrappers
   let action : RecM .anon Bool := RecM.withLctxScope do
     let concrete ← TcM.getConst (m := .anon) ⟨target, ()⟩
     let .defn _ _ _ _ _ _ (.app outer _ _) _ _ _ := concrete | return false
@@ -1162,6 +1164,131 @@ private def betaTraceCases : TestSeq :=
     (let (env, target) := betaTraceDeclaredType .zero 0 3 false 1; rowFailed env target)
   ++ test "beta trace: a retained dependent argument must still inhabit its selected carrier"
     (let (env, target) := betaTraceDeclaredType .zero 0 3 true 2; rowFailed env target)
+
+/-- Substitute a supplied function under two retained dependent binders,
+then expose an arbitrary chain of returned functions. Shape 0 reduces the
+declared type to a carrier, shape 1 reduces the value to its witness, and
+shape 2 returns a lambda whose body still contains the supplied function. -/
+private def hereditaryBetaDeclaration (level : Ixon.Univ) (universes : UInt64 := 0)
+    (wrappers shape wrong : Nat := 0) : Ixon.Env × Address := Id.run do
+  let levels := if universes == 0 then #[] else #[0]
+  let (env, carrier) := storeConst {}
+    ⟨.axio ⟨false, universes, .sort 0⟩, #[], #[], #[level]⟩
+  let (env, otherCarrier) := storeConst env
+    ⟨.axio ⟨false, universes, .sort 0⟩, #[], #[], #[level, .succ level]⟩
+  let (env, witness) := storeConst env
+    ⟨.axio ⟨false, universes, .ref 0 levels⟩, #[], #[carrier], #[level]⟩
+  let family := Ixon.Expr.leanAll (.sort 0)
+    (.leanAll (.var 0) (if shape == 0 then .sort 0 else .var 1))
+  let mut supplied := Ixon.Expr.leanLam (.sort 0)
+    (.leanLam (.var 0) (if shape == 0 then .var 1 else .var 0))
+  for _ in List.range wrappers do
+    supplied := .app (.leanLam family (.var 0)) supplied
+  let outer := Ixon.Expr.leanLam family
+    (.leanLam (.sort 0) (.leanLam (.var 0) (.app (.app (.var 2) (.var 1)) (.var 0))))
+  let mut source := Ixon.Expr.app outer supplied
+  if shape != 2 then
+    source := .app (.app source (.ref (if wrong == 1 then 1 else 0) levels))
+      (.ref (if wrong == 2 then 0 else 2) levels)
+  let type := if shape == 0 then source else if shape == 1 then .ref 0 levels else family
+  let value := if shape == 0 then .ref 2 levels else source
+  return storeConst env
+    ⟨.defn ⟨.defn, .safe, universes, type, value⟩,
+      #[], #[carrier, otherCarrier, witness], #[level]⟩
+
+private def observeBetaPath (source expected : KExpr .anon) (counts : List Nat)
+    (flags : WhnfFlags) : RecM .anon Bool := do
+  let originalType ← RecM.inferCall source
+  let before ← get
+  let mut current := source
+  for count in counts do
+    let (head, arguments) := current.collectSpine
+    if (RecM.consumeBetaLams head arguments).2.size != count then return false
+    let .next next ← RecM.whnfCoreWithFlagsStep current flags | return false
+    if next == current then return false
+    current := next
+  let .done terminal ← RecM.whnfCoreWithFlagsStep current flags | return false
+  let stepped ← get
+  set before
+  let normalized ← RecM.whnfCoreWithFlagsUncached source flags
+  let after ← get
+  let terminalType ← RecM.inferCall terminal
+  let sameType ← RecM.isDefEqCall originalType terminalType
+  return terminal == expected && normalized == expected && sameType &&
+    after.env.intern.exprs.size == stepped.env.intern.exprs.size &&
+    after.lctx.size == before.lctx.size && after.env.nextFVarId == before.env.nextFVarId
+
+private def hereditaryBetaResult (level : Ixon.Univ) (wrappers shape : Nat)
+    (flags : WhnfFlags) : Bool :=
+  let (env, target) := hereditaryBetaDeclaration level 0 wrappers shape
+  let action : RecM .anon Bool := do
+    let .defn _ _ _ _ _ _ type value _ _ ← TcM.getConst (m := .anon) ⟨target, ()⟩ | return false
+    let source := if shape == 0 then type else value
+    let (_, arguments) := source.collectSpine
+    if shape == 2 then
+      let .app _ supplied _ := source | return false
+      let originalType ← RecM.inferCall source
+      let before ← get
+      let .next result ← RecM.whnfCoreWithFlagsStep source flags | return false
+      let .lam _ _ _ (.lam _ _ _ (.app (.app captured _ _) _ _) _) _ := result | return false
+      let .done terminal ← RecM.whnfCoreWithFlagsStep result flags | return false
+      set before
+      let normalized ← RecM.whnfCoreWithFlagsUncached source flags
+      let resultType ← RecM.inferCall result
+      return captured == supplied && terminal == result && normalized == result &&
+        originalType == type && resultType == type
+    else
+      let some witness := arguments[2]? | return false
+      let expected ← if shape == 0 then RecM.inferCall value else pure witness
+      observeBetaPath source expected (3 :: List.replicate wrappers 1 ++ [2]) flags
+  match TcM.runRec action (TcState.newLazyAnon env) with
+  | .ok passed after => passed && after.lctx.size == 0
+  | .error _ _ => false
+
+private def changedBodyBetaPath (level : Ixon.Univ) (wrappers : Nat) : Bool :=
+  let (env, target) := repeatedBetaDeclaredType level 0 4 0 wrappers
+  let action : RecM .anon Bool := do
+    let .defn _ _ _ _ _ _ type value _ _ ← TcM.getConst (m := .anon) ⟨target, ()⟩ | return false
+    let expected ← RecM.inferCall value
+    observeBetaPath type expected (1 :: List.replicate wrappers 1 ++ [2]) .DEF_EQ_CORE
+  match TcM.runRec action (TcState.newLazyAnon env) with
+  | .ok passed after => passed && after.lctx.size == 0
+  | .error _ _ => false
+
+private def hereditaryBetaCases : TestSeq :=
+  test "hereditary beta: supplied functions cross two dependent binders in Prop and Type"
+    ([0, 1, 2].all fun shape => [0, 4, 11].all fun wrappers =>
+      allSucceeded (hereditaryBetaDeclaration .zero 0 wrappers shape).1 4 &&
+      allSucceeded (hereditaryBetaDeclaration (.succ .zero) 0 wrappers shape).1 4)
+  ++ test "hereditary beta: retained dependent binders preserve declaration universe parameters"
+    ([0, 1, 2].all fun shape => allSucceeded (hereditaryBetaDeclaration (.var 0) 1 4 shape).1 4)
+  ++ test "hereditary beta: all three substitution shapes check with fresh per-item caches"
+    ([0, 1, 2].all fun shape =>
+      allSucceeded (hereditaryBetaDeclaration .zero 0 4 shape).1 4 { clearEvery := 1 })
+  ++ test "hereditary beta: both WHNF policies consume three binders and each later returned function"
+    ([0, 4, 11].all fun wrappers => [WhnfFlags.FULL, .DEF_EQ_CORE].all fun flags =>
+      hereditaryBetaResult .zero wrappers 0 flags && hereditaryBetaResult (.succ .zero) wrappers 0 flags)
+  ++ test "hereditary beta: a term reduction preserves the original carrier type and returns its witness"
+    ([0, 4].all fun wrappers => [WhnfFlags.FULL, .DEF_EQ_CORE].all fun flags =>
+      hereditaryBetaResult .zero wrappers 1 flags && hereditaryBetaResult (.succ .zero) wrappers 1 flags)
+  ++ test "hereditary beta: WHNF stops at a returned lambda retaining the supplied function in its body"
+    ([0, 4].all fun wrappers => [WhnfFlags.FULL, .DEF_EQ_CORE].all fun flags =>
+      hereditaryBetaResult .zero wrappers 2 flags && hereditaryBetaResult (.succ .zero) wrappers 2 flags)
+  ++ test "hereditary beta: repeated returned functions preserve the lambda's changed body type"
+    ([1, 4, 11].all fun wrappers =>
+      allSucceeded (repeatedBetaDeclaredType .zero 0 4 0 wrappers).1 5 &&
+      allSucceeded (repeatedBetaDeclaredType (.succ .zero) 0 4 0 wrappers).1 5 &&
+      repeatedBetaChangedBodyType .zero wrappers && changedBodyBetaPath .zero wrappers &&
+      changedBodyBetaPath (.succ .zero) wrappers)
+  ++ test "hereditary beta: changed body types retain universe parameters and fresh-cache checks"
+    (allSucceeded (repeatedBetaDeclaredType (.var 0) 1 4 0 4).1 5 &&
+      allSucceeded (repeatedBetaDeclaredType .zero 0 4 0 4).1 5 { clearEvery := 1 })
+  ++ test "hereditary beta: substituting a different carrier rejects the retained dependent witness"
+    ([0, 1].all fun shape => let (env, target) := hereditaryBetaDeclaration .zero 0 4 shape 1
+      rowFailed env target)
+  ++ test "hereditary beta: a carrier cannot inhabit its own retained witness domain"
+    ([0, 1].all fun shape => let (env, target) := hereditaryBetaDeclaration .zero 0 4 shape 2
+      rowFailed env target)
 
 private def applicationCases : TestSeq :=
   test "application environment: Prop/Type identity calls and transitive theorem calls check"
@@ -2952,7 +3079,7 @@ private def polymorphicDefinitionCases : TestSeq :=
 
 public def suite : List TestSeq :=
   [cases, polymorphicCases, specializationCases, binderCases, applicationCases, multiBetaCases, cheapLambdaCases,
-    cheapApplicationCases, exposedLambdaCases, repeatedBetaCases, betaTraceCases,
+    cheapApplicationCases, exposedLambdaCases, repeatedBetaCases, betaTraceCases, hereditaryBetaCases,
     polymorphicApplicationCases, constantCacheCases, cacheInvariantCases, recursiveCacheCases,
     lazyCacheCases, blockCacheCases, ingressCoherenceCases, sourceOwnershipCases, recursiveStateCases,
     sourceAgreementCases, sourceCacheCases, polymorphicDefinitionCases]

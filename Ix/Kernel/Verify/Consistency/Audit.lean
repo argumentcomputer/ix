@@ -458,6 +458,37 @@ private def betaTraceRoots : Array RootAllowance := #[
   { root := ``DefinitionBodyTrace.betaDeclaredWhnfSupport, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] }
 ]
 
+private def hereditaryBetaRoots : Array RootAllowance := #[
+  { root := ``ContextInsertion.lookup, standardAxioms := #[``propext, ``Quot.sound] },
+  { root := ``ContextInsertion.source_valid, standardAxioms := standard },
+  { root := ``ContextInsertion.typing, standardAxioms := standard },
+  { root := ``ContextInsertion.conversion, standardAxioms := standard },
+  { root := ``SynthesisBetaTrace.rigid, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``BetaSyntax.steps_betaPrefix, standardAxioms := #[``propext, ``Quot.sound] },
+  { root := ``SynthesisBetaTyping.origin, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``SynthesisBetaTyping.lambdaView, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``SynthesisBetaTyping.weakenAt, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``SynthesisBetaTyping.substituteAt, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``SynthesisBetaTyping.lambdaPrefix, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``SynthesisBetaTyping.betaStep, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``SynthesisBetaTyping.betaSteps, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``SynthesisBetaTyping.betaPrefix, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``BetaSubstitutionContext.relation },
+  { root := ``BetaSubstitutionContext.liftValue, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``BinderInference.betaTyping, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``SynthesisInference.betaTyping, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``SynthesisInference.beta_steps_sound, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``BetaStepPlan.run, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``BetaStepPlan.sourceReading, standardAxioms := standard, nativeAxioms := #[expressionNative] },
+  { root := ``BetaStepPlan.reading, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``BetaStepPlan.counts, standardAxioms := standard, nativeAxioms := #[expressionNative] },
+  { root := ``BetaStepPlan.betaTyping, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``BetaWhnfTrace.annotate, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``SynthesisInference.beta_whnf_sound, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``DefinitionBodyTrace.betaDeclaredStepsSupport, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``DefinitionBodyTrace.betaDeclaredWhnfPathSupport, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] }
+]
+
 def roots : Array RootAllowance := #[
   { root := ``InterfaceExtends.refl, forbiddenDependencies := forbiddenProduction },
   { root := ``InterfaceExtends.trans, forbiddenDependencies := forbiddenProduction },
@@ -586,7 +617,7 @@ def roots : Array RootAllowance := #[
   root, standardAxioms := standard, nativeAxioms := productionNative,
   forbiddenDependencies := forbiddenProduction
 }) ++ (betaRoots ++ typeOriginRoots ++ substitutedOriginRoots ++ exposedOriginRoots ++
-    repeatedBetaRoots ++ betaTraceRoots).map (fun allowance => {
+    repeatedBetaRoots ++ betaTraceRoots ++ hereditaryBetaRoots).map (fun allowance => {
     allowance with forbiddenDependencies := forbiddenProduction })
   ++ #[{ root := ``extend_atomic_definition, standardAxioms := standard }]
 

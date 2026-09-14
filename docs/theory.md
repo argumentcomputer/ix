@@ -92,9 +92,17 @@ suffixes, and dependent substitutions. The result retains the original type
 even when adjacent steps carry different types. A structural-WHNF trace
 computes each raw substitution result and intern table and proves the actual
 uncached loop under its bound, including the final unchanged iteration.
-Declaration admission uses the same traces. Automatic origin and trace
-construction for arbitrary generated types, the remaining reduction branches,
-and general conversion remain open.
+Declaration admission uses the same traces. The currently supported source
+inference trees now construct complete beta typing derivations, retaining
+lambda bodies and both application children. Dependent substitution rebuilds
+these derivations, including under retained binders. Each generated result
+therefore supplies the exact lambda domains and argument origins for every
+later head-beta step. This also handles a lambda whose body's inferred type
+changes by cheap beta. A finite operational WHNF path needs only raw execution,
+reading, and representation resources; its semantic origins and declaration
+conversion follow automatically from the original inference. Constructing
+the initial inference and operational resources for arbitrary accepted
+programs, the remaining reduction branches, and general conversion remain open.
 Safe definition admission also rejects circular justification in both Lean and
 Rust, including `theorem loop : P := loop` with only `P : Prop` assumed. The
 production dependency walk returns an order with a proved decreasing rank;

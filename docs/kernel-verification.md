@@ -512,7 +512,7 @@ lake test --wfail -- tc-unit
 lake -d Models/SetTheory build --wfail
 ```
 
-The consistency target checks 587 exact theorem boundaries. The production
+The consistency target checks 615 exact theorem boundaries. The production
 environment roots retain four existing generated output-length proofs,
 reached through expression/universe construction, names, and the full
 production method table. They introduce no new native proofs. The model
@@ -595,9 +595,27 @@ table using production substitution and suffix interning. Reading and intern
 coherence follow from the initial table and finite walker resources. The fuel
 bound includes the final unchanged `.done` iteration. The same trace supplies
 `DefinitionBodyTrace.betaDeclaredWhnfSupport` for declaration admission.
-All seventeen new boundaries retain the same two existing native output-length
-proofs. Automatic origins for arbitrary generated types, automatic finite
-trace construction, and the remaining WHNF/conversion paths remain open.
+These boundaries retain the same two existing native output-length proofs.
+`SynthesisInference.betaTyping` now derives the complete head-beta typing
+structure from every currently supported source-inference constructor.
+`SynthesisBetaTyping` keeps each lambda body and both application children.
+Its substitution operation rebuilds this structure beneath dependent binders,
+using a proved context insertion to lift the supplied argument. Forward beta
+type conversions preserve a lambda's exact Pi domain, including when cheap
+beta changes its body's inferred type. `betaStep` computes both the next
+typing derivation and conversion, so `betaSteps` handles any finite number
+of contractions without additional intermediate checks or semantic origins.
+`BetaStepPlan` contains only raw execution, reading, and finite representation
+resources. `BetaWhnfTrace.annotate` derives every step's meaning from the
+original typing derivation, and `SynthesisInference.beta_whnf_sound` proves
+the actual uncached result's conversion, typing at the original type, reading,
+and intern coherence. `DefinitionBodyTrace.betaDeclaredStepsSupport` and
+`betaDeclaredWhnfPathSupport` carry these automatic origins into declaration
+admission. The 28 additional audited boundaries introduce no axioms or native
+proofs. This closes automatic semantic origins for finite head-beta paths of
+the supported source-inference fragment. Initial inference trees, operational
+paths, and representation resources remain explicit; deriving them for all
+accepted programs and covering the remaining WHNF/conversion paths remain open.
 Kernel unit regressions cover lazy loading, both inference policies, interning
 reuse, dependent function types, shared references, lets, `imax` simplification,
 argument order, and rejection of wrong arities and out-of-range parameters.
@@ -662,6 +680,13 @@ bounded driver and uncached entry point. A budget equal to the number of
 reductions exhausts before `.done`; one additional iteration returns the exact
 inferred value type. Negative cases reject a different carrier and an invalid
 dependent argument after several returned-function prefixes.
+Hereditary-beta cases substitute a supplied function beneath two dependent
+binders before consuming both retained arguments. They cover up to twelve
+later prefixes, reductions of types and ordinary terms, and WHNF stopping at
+a returned lambda that still contains the supplied function. Further chains
+retain a lambda body's changed cheap-beta type. Prop, Type, declaration
+parameters, cleared caches, both WHNF policies, exact consumed-argument
+counts, and rejected dependent substitutions are checked.
 These execution tests do not construct the general finite inference resources.
 Polymorphic-call regressions include Prop/Type instances in real function
 bodies, `max`/`imax` simplification inside Pi domains, closed nested references
@@ -732,7 +757,7 @@ Definition-cycle regressions use content-addressed standalone and mutual
 declarations, including a self-justifying theorem, a two-member cycle, type
 cycles, lets, shared syntax, and binders. They check repeated member failures,
 acyclic forward references, cache clearing, and the partial/unsafe policy.
-The unit suite contains 676 checks. The anonymous differential additionally
+The unit suite contains 686 checks. The anonymous differential additionally
 serializes eight cycle-policy fixtures and checks exact target sets, verdicts,
 failure counts, and cycle diagnostics in both implementations.
 

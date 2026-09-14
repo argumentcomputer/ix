@@ -16,11 +16,9 @@ open Theory Theory.Model
 universe u v
 
 /-- Resources for one actual beta iteration. The raw output and next
-state are computed below; no result reading or semantic equality is a field. -/
-structure SynthesisBetaStep {β : Type u} (resolve : Address → Option (ConstRef β))
-    (incoming : Model.Environment β) (incomingContext : Model.Context β) (incomingBounds : List VLevel)
-    (entries : Model.Environment β) (context : Model.Context β) (locals : List FVarId)
-    (before : TcState .anon) (source : KExpr .anon) (term type : AExpr β) where
+state are computed below; no typing, reduction origin, or result reading is a field. -/
+structure BetaStepPlan {β : Type u} (resolve : Address → Option (ConstRef β)) (locals : List FVarId)
+    (before : TcState .anon) (source : KExpr .anon) (term : AExpr β) where
   rawFunction : KExpr .anon
   rawArgument : KExpr .anon
   appInfo : ExprInfo .anon
@@ -38,8 +36,6 @@ structure SynthesisBetaStep {β : Type u} (resolve : Address → Option (ConstRe
   inner : AExpr β
   arguments : List (AExpr β)
   modelSource : term = (AExpr.lam condition domain inner).appN arguments
-  meaning : SynthesisBetaTrace resolve incoming incomingContext incomingBounds entries context term
-    (AExpr.betaPrefix consumed.size (.lam condition domain inner) arguments) type
   spine : (KExpr.app rawFunction rawArgument appInfo).collectSpine =
     (.lam name bi rawDomain rawInner lambdaInfo, rawArguments)
   headReads : readScopedExpr? resolve locals (.lam name bi rawDomain rawInner lambdaInfo) =
@@ -55,28 +51,26 @@ structure SynthesisBetaStep {β : Type u} (resolve : Address → Option (ConstRe
       term ∈ cheapBetaChainList (simulSubst rawBody consumed.reverse 0 before.env.intern).1
         (rawArguments.extract consumed.size rawArguments.size).toList
 
-namespace SynthesisBetaStep
+namespace BetaStepPlan
 
 variable {β : Type u} {resolve : Address → Option (ConstRef β)}
-  {incoming entries : Model.Environment β} {incomingContext context : Model.Context β}
-  {incomingBounds : List VLevel} {locals : List FVarId} {before : TcState .anon}
-  {source : KExpr .anon} {term type : AExpr β}
+  {locals : List FVarId} {before : TcState .anon} {source : KExpr .anon} {term : AExpr β}
 
-def output (step : SynthesisBetaStep resolve incoming incomingContext incomingBounds entries context locals before source term type) :
+def output (step : BetaStepPlan resolve locals before source term) :
     KExpr .anon × InternTable .anon :=
   let walk := simulSubst step.rawBody step.consumed.reverse 0 before.env.intern
   internAppChain walk.1 (step.rawArguments.extract step.consumed.size step.rawArguments.size).toList walk.2
 
-def result (step : SynthesisBetaStep resolve incoming incomingContext incomingBounds entries context locals before source term type) :
+def result (step : BetaStepPlan resolve locals before source term) :
     KExpr .anon := step.output.1
 
-def after (step : SynthesisBetaStep resolve incoming incomingContext incomingBounds entries context locals before source term type) :
+def after (step : BetaStepPlan resolve locals before source term) :
     TcState .anon := { before with env := { before.env with intern := step.output.2 } }
 
-def modelResult (step : SynthesisBetaStep resolve incoming incomingContext incomingBounds entries context locals before source term type) :
+def modelResult (step : BetaStepPlan resolve locals before source term) :
     AExpr β := AExpr.betaPrefix step.consumed.size (.lam step.condition step.domain step.inner) step.arguments
 
-theorem run (step : SynthesisBetaStep resolve incoming incomingContext incomingBounds entries context locals before source term type)
+theorem run (step : BetaStepPlan resolve locals before source term)
     (reductionFuel : Nat) (flags : WhnfFlags) :
     (RecM.whnfCoreWithFlagsStep source flags).run (methodsN (reductionFuel + 1)) before =
       .ok (.next step.result) step.after := by
@@ -86,13 +80,13 @@ theorem run (step : SynthesisBetaStep resolve incoming incomingContext incomingB
   rfl
 
 theorem sourceReading
-    (step : SynthesisBetaStep resolve incoming incomingContext incomingBounds entries context locals before source term type) :
+    (step : BetaStepPlan resolve locals before source term) :
     readScopedExpr? resolve locals source = some term.erase := by
   simp only [step.sourceEq, step.modelSource]
   exact readScopedExpr?_collectSpine step.spine step.headReads step.argumentReads
 
 theorem reading
-    (step : SynthesisBetaStep resolve incoming incomingContext incomingBounds entries context locals before source term type)
+    (step : BetaStepPlan resolve locals before source term)
     (coherent : before.env.intern.WF) :
     readScopedExpr? resolve locals step.result = some step.modelResult.erase ∧ step.after.env.intern.WF := by
   obtain ⟨result, after, run, reading, _, preserved⟩ := beta_many_step_readScopedExpr?
@@ -103,6 +97,63 @@ theorem reading
   rw [actual] at run
   cases run
   exact ⟨reading, preserved⟩
+
+theorem counts (plan : BetaStepPlan resolve locals before source term) :
+    plan.consumed.size ≤ plan.inner.lambdaDepth + 1 ∧ plan.consumed.size ≤ plan.arguments.length := by
+  obtain ⟨peeled, _, rawBound⟩ := RecM.BetaPeel.of_consume plan.peeling
+  obtain ⟨_, modelPeel, _⟩ := betaPeel_readScopedExpr? peeled plan.headReads
+  have sizeAgrees : plan.rawArguments.size = plan.arguments.length := by
+    have lengths := congrArg List.length plan.argumentReads
+    simpa using lengths
+  exact ⟨by simpa only [Array.length_toList, AExpr.lambdaDepth] using modelPeel.length_bound,
+    sizeAgrees ▸ rawBound⟩
+
+end BetaStepPlan
+
+/-- A raw beta plan together with its derived source-checking evidence. -/
+structure SynthesisBetaStep {β : Type u} (resolve : Address → Option (ConstRef β))
+    (incoming : Model.Environment β) (incomingContext : Model.Context β) (incomingBounds : List VLevel)
+    (entries : Model.Environment β) (context : Model.Context β) (locals : List FVarId)
+    (before : TcState .anon) (source : KExpr .anon) (term type : AExpr β)
+    extends BetaStepPlan resolve locals before source term where
+  meaning : SynthesisBetaTrace resolve incoming incomingContext incomingBounds entries context term
+    (AExpr.betaPrefix consumed.size (.lam condition domain inner) arguments) type
+
+namespace SynthesisBetaStep
+
+variable {β : Type u} {resolve : Address → Option (ConstRef β)}
+  {incoming entries : Model.Environment β} {incomingContext context : Model.Context β}
+  {incomingBounds : List VLevel} {locals : List FVarId} {before : TcState .anon}
+  {source : KExpr .anon} {term type : AExpr β}
+
+def output (step : SynthesisBetaStep resolve incoming incomingContext incomingBounds entries context locals before source term type) :=
+  step.toBetaStepPlan.output
+
+def result (step : SynthesisBetaStep resolve incoming incomingContext incomingBounds entries context locals before source term type) :=
+  step.toBetaStepPlan.result
+
+def after (step : SynthesisBetaStep resolve incoming incomingContext incomingBounds entries context locals before source term type) :=
+  step.toBetaStepPlan.after
+
+def modelResult (step : SynthesisBetaStep resolve incoming incomingContext incomingBounds entries context locals before source term type) :=
+  step.toBetaStepPlan.modelResult
+
+theorem run (step : SynthesisBetaStep resolve incoming incomingContext incomingBounds entries context locals before source term type)
+    (reductionFuel : Nat) (flags : WhnfFlags) :
+    (RecM.whnfCoreWithFlagsStep source flags).run (methodsN (reductionFuel + 1)) before =
+      .ok (.next step.result) step.after :=
+  step.toBetaStepPlan.run reductionFuel flags
+
+theorem sourceReading
+    (step : SynthesisBetaStep resolve incoming incomingContext incomingBounds entries context locals before source term type) :
+    readScopedExpr? resolve locals source = some term.erase :=
+  step.toBetaStepPlan.sourceReading
+
+theorem reading
+    (step : SynthesisBetaStep resolve incoming incomingContext incomingBounds entries context locals before source term type)
+    (coherent : before.env.intern.WF) :
+    readScopedExpr? resolve locals step.result = some step.modelResult.erase ∧ step.after.env.intern.WF :=
+  step.toBetaStepPlan.reading coherent
 
 end SynthesisBetaStep
 

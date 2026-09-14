@@ -3,7 +3,7 @@ Copyright (c) 2026 Argument Computer Corporation.
 SPDX-License-Identifier: MIT OR Apache-2.0
 -/
 
-import Ix.Kernel.Verify.Consistency.Formation
+import Ix.Kernel.Verify.Consistency.ContextInsertion
 import Ix.Kernel.Verify.Consistency.CheapBetaReading
 import Ix.Theory.Model.UniverseBounds
 import Ix.Theory.Model.BetaSpine
@@ -246,6 +246,11 @@ inductive SynthesisTypingOrigin {β : Type u} (resolve : Address → Option (Con
       (domain : AExpr β) :
       SynthesisTypingOrigin resolve incoming incomingContext incomingBounds entries (context.push domain)
         (term.liftN 1) (type.liftN 1)
+  | weakenAt {incoming incomingContext incomingBounds entries source target cutoff term type}
+      (prior : SynthesisTypingOrigin resolve incoming incomingContext incomingBounds entries source term type)
+      (insertion : ContextInsertion source target cutoff) :
+      SynthesisTypingOrigin resolve incoming incomingContext incomingBounds entries target
+        (term.liftN 1 cutoff) (type.liftN 1 cutoff)
   | instantiate {incoming incomingContext incomingBounds entries context term type}
       (prior : SynthesisTypingOrigin resolve incoming incomingContext incomingBounds entries context term type)
       (arguments : List VLevel) :
@@ -472,6 +477,15 @@ inductive SynthesisBetaTrace {β : Type u} (resolve : Address → Option (ConstR
       (substitution : ContextSubstitution base domain argument sourceContext targetContext cutoff) :
       SynthesisBetaTrace resolve incoming incomingContext incomingBounds entries targetContext
         (source.inst argument cutoff) (result.inst argument cutoff) (type.inst argument cutoff)
+  | weakenAt {incoming incomingContext incomingBounds entries sourceContext targetContext cutoff source result type}
+      (trace : SynthesisBetaTrace resolve incoming incomingContext incomingBounds entries sourceContext source result type)
+      (insertion : ContextInsertion sourceContext targetContext cutoff) :
+      SynthesisBetaTrace resolve incoming incomingContext incomingBounds entries targetContext
+        (source.liftN 1 cutoff) (result.liftN 1 cutoff) (type.liftN 1 cutoff)
+  | rebase {incoming incomingContext incomingBounds middle middleContext middleBounds entries context source result type}
+      (origin : SynthesisContext resolve incoming incomingContext incomingBounds middle middleContext middleBounds)
+      (trace : SynthesisBetaTrace resolve middle middleContext middleBounds entries context source result type) :
+      SynthesisBetaTrace resolve incoming incomingContext incomingBounds entries context source result type
 
 end
 
@@ -1322,6 +1336,7 @@ theorem SynthesisTypingOrigin.sound {β : Type u} {resolve : Address → Option 
       obtain ⟨converted, typeTyped⟩ := trace.sound formed
       exact (value.sound formed).conv typeTyped converted
   | .weaken prior domain => typing_weaken (prior.sound formed)
+  | .weakenAt prior insertion => insertion.typing (prior.sound formed)
   | .instantiate prior arguments => typing_instL_context (prior.sound formed) arguments
   | .appendContext prior outer => typing_append_context (prior.sound formed) outer
   | .extend prior extension => extension.typing (prior.sound formed)
@@ -1452,6 +1467,10 @@ theorem SynthesisBetaTrace.sound {β : Type u} {resolve : Address → Option (Co
       obtain ⟨converted, resultTyped⟩ := trace.sound formed
       have valueTyped := value.sound formed
       exact ⟨converted.instAt valueTyped substitution, resultTyped.instAt valueTyped substitution⟩
+  | .weakenAt trace insertion => by
+      obtain ⟨converted, resultTyped⟩ := trace.sound formed
+      exact ⟨insertion.conversion converted, insertion.typing resultTyped⟩
+  | .rebase origin trace => trace.sound (origin.sound formed)
 termination_by structural support
 
 end
