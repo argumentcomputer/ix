@@ -512,7 +512,7 @@ lake test --wfail -- tc-unit
 lake -d Models/SetTheory build --wfail
 ```
 
-The consistency target checks 570 exact theorem boundaries. The production
+The consistency target checks 587 exact theorem boundaries. The production
 environment roots retain four existing generated output-length proofs,
 reached through expression/universe construction, names, and the full
 production method table. They introduce no new native proofs. The model
@@ -583,8 +583,21 @@ existing declaration and environment admission boundary. Neither connector
 requires inference of the intermediate term. The model's lambda-body and
 term-conversion lemmas use only standard Lean axioms, and these production
 roots retain the same two existing native output-length proofs.
-Automatic origins for arbitrary generated types, further repeated reduction,
-and other conversion paths remain open.
+`SynthesisBetaTrace` now composes any number of retained prefixes. A result
+supplies a later function or argument origin, and composition preserves the
+original type even when adjacent steps retain different types. Traces also
+transport through application suffixes and dependent substitutions. Actual
+source inference extracts the head and every argument check of its spine;
+no intermediate inference call or semantic typing field is added.
+`SynthesisBetaWhnfTrace.uncached_sound` connects finite paths to the real
+structural-WHNF loop. Every beta step computes its raw result and next intern
+table using production substitution and suffix interning. Reading and intern
+coherence follow from the initial table and finite walker resources. The fuel
+bound includes the final unchanged `.done` iteration. The same trace supplies
+`DefinitionBodyTrace.betaDeclaredWhnfSupport` for declaration admission.
+All seventeen new boundaries retain the same two existing native output-length
+proofs. Automatic origins for arbitrary generated types, automatic finite
+trace construction, and the remaining WHNF/conversion paths remain open.
 Kernel unit regressions cover lazy loading, both inference policies, interning
 reuse, dependent function types, shared references, lets, `imax` simplification,
 argument order, and rejection of wrong arities and out-of-range parameters.
@@ -642,6 +655,13 @@ and cache clearing. One case changes the first lambda body's inferred type
 from a beta redex to a sort, then consumes the supplied lambda's two-argument
 prefix. Negative cases reject a wrong function domain, a different selected
 carrier, and invalid dependent arguments from either origin.
+Finite-trace cases cover three and twelve successive prefixes, retained
+dependent final arguments, declaration universe parameters, and cleared
+caches. Both WHNF policies compare individual production steps with the
+bounded driver and uncached entry point. A budget equal to the number of
+reductions exhausts before `.done`; one additional iteration returns the exact
+inferred value type. Negative cases reject a different carrier and an invalid
+dependent argument after several returned-function prefixes.
 These execution tests do not construct the general finite inference resources.
 Polymorphic-call regressions include Prop/Type instances in real function
 bodies, `max`/`imax` simplification inside Pi domains, closed nested references
@@ -712,7 +732,7 @@ Definition-cycle regressions use content-addressed standalone and mutual
 declarations, including a self-justifying theorem, a two-member cycle, type
 cycles, lets, shared syntax, and binders. They check repeated member failures,
 acyclic forward references, cache clearing, and the partial/unsafe policy.
-The unit suite contains 668 checks. The anonymous differential additionally
+The unit suite contains 676 checks. The anonymous differential additionally
 serializes eight cycle-policy fixtures and checks exact target sets, verdicts,
 failure counts, and cycle diagnostics in both implementations.
 

@@ -91,7 +91,7 @@ def SynthesisInference.betaResultOrigin {β : Type u} {resolve : Address → Opt
       obtain ⟨functionReads, argumentReads⟩ := readScopedExpr?_app_parts reading
       have keyedAgreement := miss.localContext.symm ▸ agreement
       exact (SynthesisTypingOrigin.lambdaBody
-        (.checked contextOrigin functionTree keyedAgreement functionReads trace.functionRun)).substituteAt
+        (.source (.checked contextOrigin functionTree keyedAgreement functionReads trace.functionRun))).substituteAt
         (.source (.applicationArgument contextOrigin trace functionTree argumentTree keyedAgreement
           functionReads argumentReads conditions hashPath comparisonFaithful)) .root
 

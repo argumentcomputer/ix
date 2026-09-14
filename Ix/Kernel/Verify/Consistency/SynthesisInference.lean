@@ -207,19 +207,40 @@ inductive SynthesisTypeTransport {β : Type u} (resolve : Address → Option (Co
         (current.inst argument cutoff) (result.inst argument cutoff) bound
 
 /-- Internal typing origins for generated expressions. Leaves are actual
-source inference calls. Subsequent context and substitution steps retain
-those calls, including when an argument must cross still-open parameters
-of an earlier declaration's type. No semantic typing field is accepted. -/
+source inference calls. Application, conversion, finite beta traces, and
+context substitutions retain those calls, including when an argument crosses
+still-open parameters of an earlier type. No semantic typing field is accepted. -/
 inductive SynthesisTypingOrigin {β : Type u} (resolve : Address → Option (ConstRef β)) :
     Model.Environment β → Model.Context β → List VLevel →
       Model.Environment β → Model.Context β → AExpr β → AExpr β → Type u
   | source {incoming incomingContext incomingBounds entries context term type}
       (check : SynthesisCheckedOrigin resolve incoming incomingContext incomingBounds entries context term type) :
       SynthesisTypingOrigin resolve incoming incomingContext incomingBounds entries context term type
+  | inferredType {incoming incomingContext incomingBounds entries context bounds locals fuel before after source result
+      term type level}
+      (contextOrigin : SynthesisContext resolve incoming incomingContext incomingBounds entries context bounds)
+      (tree : SynthesisInference resolve entries locals context bounds fuel before source term type level)
+      (agreement : LocalContextReading resolve locals before.lctx context)
+      (reading : readScopedExpr? resolve locals source = some term.erase)
+      (accepted : RecM.infer source (methodsN fuel) before = .ok result after) :
+      SynthesisTypingOrigin resolve incoming incomingContext incomingBounds entries context type (.sort level)
   | lambdaBody {incoming incomingContext incomingBounds entries context condition domain body codomain}
-      (check : SynthesisCheckedOrigin resolve incoming incomingContext incomingBounds entries context
+      (check : SynthesisTypingOrigin resolve incoming incomingContext incomingBounds entries context
         (.lam condition domain body) (.forallE condition domain codomain)) :
       SynthesisTypingOrigin resolve incoming incomingContext incomingBounds entries (context.push domain) body codomain
+  | application {incoming incomingContext incomingBounds entries context function argument condition domain body}
+      (functionOrigin : SynthesisTypingOrigin resolve incoming incomingContext incomingBounds entries context
+        function (.forallE condition domain body))
+      (argumentOrigin : SynthesisTypingOrigin resolve incoming incomingContext incomingBounds entries context argument domain) :
+      SynthesisTypingOrigin resolve incoming incomingContext incomingBounds entries context
+        (.app function argument) (body.inst argument)
+  | reduced {incoming incomingContext incomingBounds entries context source result type}
+      (trace : SynthesisBetaTrace resolve incoming incomingContext incomingBounds entries context source result type) :
+      SynthesisTypingOrigin resolve incoming incomingContext incomingBounds entries context result type
+  | convert {incoming incomingContext incomingBounds entries context term sourceType resultType level}
+      (value : SynthesisTypingOrigin resolve incoming incomingContext incomingBounds entries context term sourceType)
+      (trace : SynthesisBetaTrace resolve incoming incomingContext incomingBounds entries context sourceType resultType (.sort level)) :
+      SynthesisTypingOrigin resolve incoming incomingContext incomingBounds entries context term resultType
   | weaken {incoming incomingContext incomingBounds entries context term type}
       (prior : SynthesisTypingOrigin resolve incoming incomingContext incomingBounds entries context term type)
       (domain : AExpr β) :
@@ -265,6 +286,13 @@ inductive SynthesisCheckedOrigin {β : Type u} (resolve : Address → Option (Co
       term type level}
       (contextOrigin : SynthesisContext resolve incoming incomingContext incomingBounds entries context bounds)
       (tree : SynthesisInference resolve entries locals context bounds fuel before source term type level)
+      (agreement : LocalContextReading resolve locals before.lctx context)
+      (reading : readScopedExpr? resolve locals source = some term.erase)
+      (accepted : RecM.infer source (methodsN fuel) before = .ok result after) :
+      SynthesisCheckedOrigin resolve incoming incomingContext incomingBounds entries context term type
+  | binderHead {incoming incomingContext incomingBounds entries context locals fuel before after source result term type}
+      (tree : BinderInference resolve entries locals context fuel before source term type)
+      (head : SynthesisHead term)
       (agreement : LocalContextReading resolve locals before.lctx context)
       (reading : readScopedExpr? resolve locals source = some term.erase)
       (accepted : RecM.infer source (methodsN fuel) before = .ok result after) :
@@ -319,6 +347,10 @@ variable head. Both cases retain the checks of all applied arguments. -/
 inductive SynthesisReductionOrigin {β : Type u} (resolve : Address → Option (ConstRef β)) :
     Model.Environment β → Model.Context β → List VLevel →
       Model.Environment β → Model.Context β → AExpr β → List (AExpr β) → Nat → VLevel → Type u
+  | traced {incoming incomingContext incomingBounds entries context head arguments count level}
+      (trace : SynthesisBetaTrace resolve incoming incomingContext incomingBounds entries context
+        (head.appN arguments) (AExpr.betaPrefix count head arguments) (.sort level)) :
+      SynthesisReductionOrigin resolve incoming incomingContext incomingBounds entries context head arguments count level
   | checked {incoming incomingContext incomingBounds entries context head arguments count level
       earlier typeLocals typeContext typeBounds typeFuel typeBefore typeAfter typeSource typeResult
       originCondition originDomain originBody originArguments originLevel originBound}
@@ -389,6 +421,57 @@ inductive SynthesisReductionOrigin {β : Type u} (resolve : Address → Option (
         (current.appN currentArguments) (AExpr.betaPrefix count current currentArguments) level) :
       SynthesisReductionOrigin resolve incoming incomingContext incomingBounds
         entries context current currentArguments count level
+
+/-- Finite beta traces retain the actual checks behind each lambda and
+argument. Results can supply later typing origins, so composition never
+requires an inference call on an intermediate expression. Types at adjacent
+steps may differ; the trace preserves the type retained by its first step. -/
+inductive SynthesisBetaTrace {β : Type u} (resolve : Address → Option (ConstRef β)) :
+    Model.Environment β → Model.Context β → List VLevel →
+      Model.Environment β → Model.Context β → AExpr β → AExpr β → AExpr β → Type u
+  | refl {incoming incomingContext incomingBounds entries context term type}
+      (origin : SynthesisTypingOrigin resolve incoming incomingContext incomingBounds entries context term type) :
+      SynthesisBetaTrace resolve incoming incomingContext incomingBounds entries context term term type
+  | prefix {incoming incomingContext incomingBounds entries context head headType arguments count type}
+      (headOrigin : SynthesisTypingOrigin resolve incoming incomingContext incomingBounds entries context head headType)
+      (leading : LambdaPrefix head headType count)
+      (argumentsOrigin : SynthesisArgumentSpineOrigin resolve incoming incomingContext incomingBounds
+        entries context headType arguments type) :
+      SynthesisBetaTrace resolve incoming incomingContext incomingBounds entries context
+        (head.appN arguments) (AExpr.betaPrefix count head arguments) type
+  | origin {incoming incomingContext incomingBounds entries context head arguments count level}
+      (retained : SynthesisReductionOrigin resolve incoming incomingContext incomingBounds
+        entries context head arguments count level) :
+      SynthesisBetaTrace resolve incoming incomingContext incomingBounds entries context
+        (head.appN arguments) (AExpr.betaPrefix count head arguments) (.sort level)
+  | trans {incoming incomingContext incomingBounds entries context source middle result type otherType}
+      (prior : SynthesisBetaTrace resolve incoming incomingContext incomingBounds entries context source middle type)
+      (next : SynthesisBetaTrace resolve incoming incomingContext incomingBounds entries context middle result otherType) :
+      SynthesisBetaTrace resolve incoming incomingContext incomingBounds entries context source result type
+  | atType {incoming incomingContext incomingBounds entries context source result type otherType}
+      (sourceOrigin : SynthesisTypingOrigin resolve incoming incomingContext incomingBounds entries context source type)
+      (trace : SynthesisBetaTrace resolve incoming incomingContext incomingBounds entries context source result otherType) :
+      SynthesisBetaTrace resolve incoming incomingContext incomingBounds entries context source result type
+  | application {incoming incomingContext incomingBounds entries context source result argument condition domain body}
+      (functionTrace : SynthesisBetaTrace resolve incoming incomingContext incomingBounds entries context
+        source result (.forallE condition domain body))
+      (argumentOrigin : SynthesisTypingOrigin resolve incoming incomingContext incomingBounds entries context argument domain) :
+      SynthesisBetaTrace resolve incoming incomingContext incomingBounds entries context
+        (.app source argument) (.app result argument) (body.inst argument)
+  | argument {incoming incomingContext incomingBounds entries context function source result condition domain body otherType}
+      (functionOrigin : SynthesisTypingOrigin resolve incoming incomingContext incomingBounds entries context
+        function (.forallE condition domain body))
+      (argumentOrigin : SynthesisTypingOrigin resolve incoming incomingContext incomingBounds entries context source domain)
+      (argumentTrace : SynthesisBetaTrace resolve incoming incomingContext incomingBounds entries context source result otherType) :
+      SynthesisBetaTrace resolve incoming incomingContext incomingBounds entries context
+        (.app function source) (.app function result) (body.inst source)
+  | substituteAt {incoming incomingContext incomingBounds entries base sourceContext targetContext
+      domain source result type argument cutoff}
+      (trace : SynthesisBetaTrace resolve incoming incomingContext incomingBounds entries sourceContext source result type)
+      (value : SynthesisTypingOrigin resolve incoming incomingContext incomingBounds entries base argument domain)
+      (substitution : ContextSubstitution base domain argument sourceContext targetContext cutoff) :
+      SynthesisBetaTrace resolve incoming incomingContext incomingBounds entries targetContext
+        (source.inst argument cutoff) (result.inst argument cutoff) (type.inst argument cutoff)
 
 end
 
@@ -1230,7 +1313,14 @@ theorem SynthesisTypingOrigin.sound {β : Type u} {resolve : Address → Option 
     TypingClaim.{u,v} entries context term type :=
   match support with
   | .source check => (check.soundWithSpine formed).1
-  | .lambdaBody check => (check.soundWithSpine formed).1.lambdaBody
+  | .inferredType contextOrigin tree agreement reading accepted =>
+      (tree.soundWithSpine (contextOrigin.sound formed) agreement reading accepted).2.2.1
+  | .lambdaBody check => (check.sound formed).lambdaBody
+  | .application functionOrigin argumentOrigin => (functionOrigin.sound formed).app (argumentOrigin.sound formed)
+  | .reduced trace => (trace.sound formed).2
+  | .convert value trace => by
+      obtain ⟨converted, typeTyped⟩ := trace.sound formed
+      exact (value.sound formed).conv typeTyped converted
   | .weaken prior domain => typing_weaken (prior.sound formed)
   | .instantiate prior arguments => typing_instL_context (prior.sound formed) arguments
   | .appendContext prior outer => typing_append_context (prior.sound formed) outer
@@ -1251,6 +1341,9 @@ theorem SynthesisCheckedOrigin.soundWithSpine {β : Type u} {resolve : Address �
   | .checked contextOrigin tree agreement reading accepted => by
       obtain ⟨_, typed, _, spine⟩ := tree.soundWithSpine (contextOrigin.sound formed) agreement reading accepted
       exact ⟨typed, tree.lambdaPrefix, spine⟩
+  | .binderHead tree head agreement reading accepted => by
+      have typed := (tree.synthesis head agreement reading accepted).2
+      exact ⟨typed, tree.lambdaPrefix, tree.lambdaSpineTyping typed⟩
   | .applicationArgument contextOrigin trace functionTree argumentTree agreement functionReading argumentReading
       conditions hashPath comparisonFaithful => by
       have contextFormation := contextOrigin.sound formed
@@ -1305,6 +1398,7 @@ theorem SynthesisReductionOrigin.sound {β : Type u} {resolve : Address → Opti
     ConversionClaim.{u,v} entries context (head.appN arguments) (AExpr.betaPrefix count head arguments) ∧
       TypingClaim.{u,v} entries context (AExpr.betaPrefix count head arguments) (.sort level) :=
   match support with
+  | .traced trace => trace.sound formed
   | .checked typeContextSupport typeTree typeAgreement typeReading typeRun originPrefix transport => by
       obtain ⟨_, _, _, originSpine⟩ := typeTree.soundWithSpine
         (typeContextSupport.sound formed) typeAgreement typeReading typeRun
@@ -1324,6 +1418,40 @@ theorem SynthesisReductionOrigin.sound {β : Type u} {resolve : Address → Opti
   | .map prior transport => by
       obtain ⟨converted, typed⟩ := prior.sound formed
       exact transport.sound formed converted typed
+termination_by structural support
+
+theorem SynthesisBetaTrace.sound {β : Type u} {resolve : Address → Option (ConstRef β)}
+    {incoming entries : Model.Environment β} {incomingContext context : Model.Context β}
+    {incomingBounds : List VLevel} {source result type : AExpr β}
+    (support : SynthesisBetaTrace resolve incoming incomingContext incomingBounds entries context source result type)
+    (formed : ContextFormation.{u,v} incoming incomingContext incomingBounds) :
+    ConversionClaim.{u,v} entries context source result ∧ TypingClaim.{u,v} entries context result type :=
+  match support with
+  | .refl origin => ⟨.refl _, origin.sound formed⟩
+  | .prefix headOrigin leading argumentsOrigin =>
+      leading.beta_sound (headOrigin.sound formed) (argumentsOrigin.sound formed)
+  | .origin retained => retained.sound formed
+  | .trans prior next => by
+      obtain ⟨first, middleTyped⟩ := prior.sound formed
+      obtain ⟨second, resultTyped⟩ := next.sound formed
+      exact ⟨first.trans second, middleTyped.termConv resultTyped second⟩
+  | .atType sourceOrigin trace => by
+      obtain ⟨converted, resultTyped⟩ := trace.sound formed
+      exact ⟨converted, (sourceOrigin.sound formed).termConv resultTyped converted⟩
+  | .application functionTrace argumentOrigin => by
+      obtain ⟨converted, functionTyped⟩ := functionTrace.sound formed
+      exact ⟨converted.app (.refl _), functionTyped.app (argumentOrigin.sound formed)⟩
+  | .argument functionOrigin argumentOrigin argumentTrace => by
+      obtain ⟨converted, resultTyped⟩ := argumentTrace.sound formed
+      have functionTyped := functionOrigin.sound formed
+      have argumentTyped := argumentOrigin.sound formed
+      refine ⟨(ConversionClaim.refl _).app converted, ?_⟩
+      exact (functionTyped.app argumentTyped).termConv
+        (functionTyped.app (argumentTyped.termConv resultTyped converted)) ((ConversionClaim.refl _).app converted)
+  | .substituteAt trace value substitution => by
+      obtain ⟨converted, resultTyped⟩ := trace.sound formed
+      have valueTyped := value.sound formed
+      exact ⟨converted.instAt valueTyped substitution, resultTyped.instAt valueTyped substitution⟩
 termination_by structural support
 
 end

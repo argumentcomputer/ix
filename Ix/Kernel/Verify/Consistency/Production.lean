@@ -6,7 +6,7 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 import Ix.Kernel.Driver
 import Ix.Kernel.Verify.Consistency.Constant
 import Ix.Kernel.Verify.Consistency.SynthesisInference
-import Ix.Kernel.Verify.Consistency.BetaSpine
+import Ix.Kernel.Verify.Consistency.BetaWhnf
 import Ix.Kernel.Verify.Consistency.Validation
 
 /-!
@@ -477,6 +477,17 @@ inductive DefinitionCheckSupport {β : Type u}
       DefinitionCheckSupport resolve entries trace value
         (.app (.lam condition domain ((AExpr.bvar 0).appN arguments))
           ((AExpr.lam headCondition binder inner).appN initialArguments))
+  | betaDeclaredTrace {value type reduced : AExpr β} {level typeBound valueBound : VLevel}
+      (typeInference : SynthesisInference resolve entries [] [] [] fuel trace.validated input.type
+        type (.sort level) typeBound)
+      (valueInference : SynthesisInference resolve entries [] [] [] fuel trace.valueStart input.value
+        value reduced valueBound)
+      (reduction : SynthesisBetaTrace resolve entries [] [] entries [] type reduced (.sort level))
+      (valueReading : readScopedExpr? resolve [] input.value = some value.erase)
+      (typeReading : readScopedExpr? resolve [] input.type = some type.erase)
+      (scope : value.Scope input.universes.toNat 0 ∧ type.Scope input.universes.toNat 0)
+      (references : value.ReferencesIn entries ∧ type.ReferencesIn entries) :
+      DefinitionCheckSupport resolve entries trace value type
 
 theorem DefinitionCheckSupport.sound {β : Type u}
     {resolve : Address → Option (ConstRef β)} {entries : Model.Environment β}
@@ -512,6 +523,13 @@ theorem DefinitionCheckSupport.sound {β : Type u}
       obtain ⟨_, typeTyped, _⟩ := typeInference.closed_sound typeReading trace.typeRun
       obtain ⟨conversion, _⟩ := typeInference.beta_twice_sound (.empty entries) (.empty _ _)
         typeReading trace.typeRun enough
+      obtain ⟨_, valueTyped, _⟩ := valueInference.closed_sound valueReading trace.valueRun
+      exact ⟨readScopedExpr?_closed valueReading, readScopedExpr?_closed typeReading,
+        scope.1, scope.2, references.1, references.2,
+        valueTyped.conv typeTyped conversion.symm⟩
+  | betaDeclaredTrace typeInference valueInference reduction valueReading typeReading scope references =>
+      obtain ⟨_, typeTyped, _⟩ := typeInference.closed_sound typeReading trace.typeRun
+      obtain ⟨conversion, _⟩ := reduction.sound (.empty entries)
       obtain ⟨_, valueTyped, _⟩ := valueInference.closed_sound valueReading trace.valueRun
       exact ⟨readScopedExpr?_closed valueReading, readScopedExpr?_closed typeReading,
         scope.1, scope.2, references.1, references.2,
@@ -612,6 +630,60 @@ def DefinitionBodyTrace.betaDeclaredTwiceSupport {β : Type u} {input : Definiti
   .betaDeclaredTwice typeInference valueInference enough valueReading typeReading
     (trace.scopes typeCoverage valueCoverage collision valueReading typeReading
       valueConditions typeConditions) references
+
+/-- A finite beta trace can connect the declaration's own type and value
+checks through any number of successive prefixes. Source validation still
+provides both scopes; each reduction retains its original checking calls. -/
+def DefinitionBodyTrace.betaDeclaredTraceSupport {β : Type u} {input : DefinitionInput}
+    {fuel : Nat} {before : TcState .anon}
+    (trace : DefinitionBodyTrace input (methodsN fuel) before)
+    {resolve : Address → Option (ConstRef β)} {entries : Model.Environment β}
+    {value type reduced : AExpr β} {level typeBound valueBound : VLevel}
+    {support : RunSupport} (typeCoverage : input.type.ValidationCoverage support)
+    (valueCoverage : input.value.ValidationCoverage support)
+    (collision : support.CollisionFree)
+    (typeInference : SynthesisInference resolve entries [] [] [] fuel trace.validated input.type
+      type (.sort level) typeBound)
+    (valueInference : SynthesisInference resolve entries [] [] [] fuel trace.valueStart input.value
+      value reduced valueBound)
+    (reduction : SynthesisBetaTrace resolve entries [] [] entries [] type reduced (.sort level))
+    (valueReading : readScopedExpr? resolve [] input.value = some value.erase)
+    (typeReading : readScopedExpr? resolve [] input.type = some type.erase)
+    (valueConditions : ConditionsScoped input.universes.toNat value)
+    (typeConditions : ConditionsScoped input.universes.toNat type)
+    (references : value.ReferencesIn entries ∧ type.ReferencesIn entries) :
+    DefinitionCheckSupport resolve entries trace value type :=
+  .betaDeclaredTrace typeInference valueInference reduction valueReading typeReading
+    (trace.scopes typeCoverage valueCoverage collision valueReading typeReading
+      valueConditions typeConditions) references
+
+/-- A beta WHNF path supplies the declaration's conversion proof. Its
+source typing comes from the declaration's actual type-inference call. -/
+def DefinitionBodyTrace.betaDeclaredWhnfSupport {β : Type u} {input : DefinitionInput}
+    {fuel : Nat} {before : TcState .anon}
+    (trace : DefinitionBodyTrace input (methodsN fuel) before)
+    {resolve : Address → Option (ConstRef β)} {entries : Model.Environment β}
+    {value type reduced : AExpr β} {level typeBound valueBound : VLevel}
+    {support : RunSupport} (typeCoverage : input.type.ValidationCoverage support)
+    (valueCoverage : input.value.ValidationCoverage support)
+    (collision : support.CollisionFree)
+    (typeInference : SynthesisInference resolve entries [] [] [] fuel trace.validated input.type
+      type (.sort level) typeBound)
+    (valueInference : SynthesisInference resolve entries [] [] [] fuel trace.valueStart input.value
+      value reduced valueBound)
+    {reductionFuel steps : Nat} {flags : WhnfFlags} {after : TcState .anon} {result : KExpr .anon}
+    (reduction : SynthesisBetaWhnfTrace resolve entries [] [] entries [] [] reductionFuel flags
+      steps trace.conversionStart input.type type after result reduced)
+    (valueReading : readScopedExpr? resolve [] input.value = some value.erase)
+    (typeReading : readScopedExpr? resolve [] input.type = some type.erase)
+    (valueConditions : ConditionsScoped input.universes.toNat value)
+    (typeConditions : ConditionsScoped input.universes.toNat type)
+    (references : value.ReferencesIn entries ∧ type.ReferencesIn entries) :
+    DefinitionCheckSupport resolve entries trace value type :=
+  trace.betaDeclaredTraceSupport typeCoverage valueCoverage collision typeInference valueInference
+    (reduction.toBetaTrace (.source (.checked .current typeInference
+      (LocalContextReading.empty _ _) typeReading trace.typeRun)))
+    valueReading typeReading valueConditions typeConditions references
 
 /-- Operational support for the selected production definition fragment.
 Resources are required only at the states exposed by successful body traces. -/

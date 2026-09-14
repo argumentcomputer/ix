@@ -438,6 +438,26 @@ private def repeatedBetaRoots : Array RootAllowance := #[
   { root := ``DefinitionBodyTrace.betaDeclaredTwiceSupport, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] }
 ]
 
+private def betaTraceRoots : Array RootAllowance := #[
+  { root := ``SynthesisTypingOrigin.applySpine, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``SynthesisBetaTrace.applySpine, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``SynthesisBetaTrace.beta, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``BinderInference.spineOrigin, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``SynthesisInference.spineOrigin, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``SynthesisSpineOrigin.betaTrace, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``SynthesisInference.betaSpineTrace, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``SynthesisBetaTrace.sound, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``SynthesisBetaStep.run, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``SynthesisBetaStep.sourceReading, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``SynthesisBetaStep.reading, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``SynthesisBetaWhnfTrace.toBetaTrace, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``SynthesisBetaWhnfTrace.run, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``SynthesisBetaWhnfTrace.reading, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``SynthesisBetaWhnfTrace.uncached_sound, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``DefinitionBodyTrace.betaDeclaredTraceSupport, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``DefinitionBodyTrace.betaDeclaredWhnfSupport, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] }
+]
+
 def roots : Array RootAllowance := #[
   { root := ``InterfaceExtends.refl, forbiddenDependencies := forbiddenProduction },
   { root := ``InterfaceExtends.trans, forbiddenDependencies := forbiddenProduction },
@@ -565,7 +585,8 @@ def roots : Array RootAllowance := #[
 }) ++ productionRoots.map (fun root => {
   root, standardAxioms := standard, nativeAxioms := productionNative,
   forbiddenDependencies := forbiddenProduction
-}) ++ (betaRoots ++ typeOriginRoots ++ substitutedOriginRoots ++ exposedOriginRoots ++ repeatedBetaRoots).map (fun allowance => {
+}) ++ (betaRoots ++ typeOriginRoots ++ substitutedOriginRoots ++ exposedOriginRoots ++
+    repeatedBetaRoots ++ betaTraceRoots).map (fun allowance => {
     allowance with forbiddenDependencies := forbiddenProduction })
   ++ #[{ root := ``extend_atomic_definition, standardAxioms := standard }]
 

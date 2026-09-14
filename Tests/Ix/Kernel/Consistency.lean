@@ -1074,6 +1074,95 @@ private def repeatedBetaCases : TestSeq :=
      let (otherEnv, second) := repeatedBetaDeclaredType .zero 0 5 3
      rowFailed env first && rowFailed otherEnv second)
 
+/-- Every wrapper returns its function argument. The application suffix
+survives each newly exposed prefix; the final prefix may consume a dependent
+carrier/witness pair. The declared type always normalizes to the carrier. -/
+private def betaTraceDeclaredType (level : Ixon.Univ) (universes : UInt64 := 0)
+    (wrappers : Nat := 2) (dependent : Bool := false) (wrong : Nat := 0) : Ixon.Env × Address := Id.run do
+  let levels := if universes == 0 then #[] else #[0]
+  let (env, carrier) := storeConst {}
+    ⟨.axio ⟨false, universes, .sort 0⟩, #[], #[], #[level]⟩
+  let (env, otherCarrier) := storeConst env
+    ⟨.axio ⟨false, universes, .sort 0⟩, #[], #[], #[level, .succ level]⟩
+  let (env, witness) := storeConst env
+    ⟨.axio ⟨false, universes, .ref 0 levels⟩, #[], #[carrier], #[level]⟩
+  let family := Ixon.Expr.leanAll (.sort 0)
+    (if dependent then .leanAll (.var 0) (.sort 0) else .sort 0)
+  let mut function := Ixon.Expr.leanLam (.sort 0)
+    (if dependent then .leanLam (.var 0) (.var 1) else .var 0)
+  for _ in List.range wrappers do
+    function := .app (.leanLam family (.var 0)) function
+  let mut type := Ixon.Expr.app function (.ref (if wrong == 1 then 1 else 0) levels)
+  if dependent then type := .app type (.ref (if wrong == 2 then 0 else 2) levels)
+  return storeConst env
+    ⟨.defn ⟨.defn, .safe, universes, type, .ref 2 levels⟩,
+      #[], #[carrier, otherCarrier, witness], #[level]⟩
+
+/-- Compare individual production steps, the explicitly bounded driver,
+and the uncached WHNF entry point from the same loaded state. An exact
+reduction-count budget must exhaust before the final `.done` iteration. -/
+private def betaTraceLoopResult (level : Ixon.Univ) (wrappers : Nat)
+    (dependent : Bool) (flags : WhnfFlags) : Bool :=
+  let (env, target) := betaTraceDeclaredType level 0 wrappers dependent
+  let action : RecM .anon Bool := do
+    let .defn _ _ _ _ _ _ type value _ _ ← TcM.getConst (m := .anon) ⟨target, ()⟩ | return false
+    let expected ← RecM.inferCall value
+    let .sort .. ← RecM.inferCall type | return false
+    let before ← get
+    let mut current := type
+    for index in List.range (wrappers + 1) do
+      let (head, arguments) := current.collectSpine
+      let consumed := (RecM.consumeBetaLams head arguments).2.size
+      if consumed != (if index == wrappers && dependent then 2 else 1) then return false
+      let .next next ← RecM.whnfCoreWithFlagsStep current flags | return false
+      if next == current then return false
+      current := next
+    let .done terminal ← RecM.whnfCoreWithFlagsStep current flags | return false
+    let stepped ← get
+    if terminal != expected then return false
+    set before
+    let exhausted ← try
+      let _ ← RecM.runBounded (fun term => RecM.whnfCoreWithFlagsStep term flags) (wrappers + 1) type
+      pure false
+    catch error => pure (match error with | .maxRecDepth => true | _ => false)
+    let exhaustedState ← get
+    set before
+    let bounded ← RecM.runBounded (fun term => RecM.whnfCoreWithFlagsStep term flags) (wrappers + 2) type
+    set before
+    let normalized ← RecM.whnfCoreWithFlagsUncached type flags
+    let after ← get
+    return exhausted && bounded == expected && normalized == expected &&
+      after.env.intern.exprs.size == stepped.env.intern.exprs.size &&
+      exhaustedState.env.intern.exprs.size == stepped.env.intern.exprs.size &&
+      after.lctx.size == before.lctx.size && after.env.nextFVarId == before.env.nextFVarId
+  match TcM.runRec action (TcState.newLazyAnon env) with
+  | .ok passed after => passed && after.lctx.size == 0
+  | .error _ _ => false
+
+private def betaTraceCases : TestSeq :=
+  test "beta trace: three prefixes preserve a returned function and its suffix in Prop and Type"
+    (allSucceeded (betaTraceDeclaredType .zero).1 4 &&
+      allSucceeded (betaTraceDeclaredType (.succ .zero)).1 4)
+  ++ test "beta trace: twelve prefixes preserve dependent final arguments in Prop and Type"
+    (allSucceeded (betaTraceDeclaredType .zero 0 11 true).1 4 &&
+      allSucceeded (betaTraceDeclaredType (.succ .zero) 0 11 true).1 4)
+  ++ test "beta trace: successive returned functions retain declaration universe parameters"
+    (allSucceeded (betaTraceDeclaredType (.var 0) 1 4).1 4 &&
+      allSucceeded (betaTraceDeclaredType (.var 0) 1 4 true).1 4)
+  ++ test "beta trace: longer declarations check with fresh per-item caches"
+    (allSucceeded (betaTraceDeclaredType .zero 0 4).1 4 { clearEvery := 1 } &&
+      allSucceeded (betaTraceDeclaredType (.succ .zero) 0 4 true).1 4 { clearEvery := 1 })
+  ++ test "beta trace: both WHNF policies agree with individual steps and the exact loop bound"
+    ([0, 2, 5].all fun wrappers => [WhnfFlags.FULL, .DEF_EQ_CORE].all fun flags =>
+      betaTraceLoopResult .zero wrappers false flags && betaTraceLoopResult (.succ .zero) wrappers false flags)
+  ++ test "beta trace: the final dependent prefix consumes two arguments before the done iteration"
+    ([0, 2, 5].all fun wrappers => [WhnfFlags.FULL, .DEF_EQ_CORE].all fun flags =>
+      betaTraceLoopResult .zero wrappers true flags && betaTraceLoopResult (.succ .zero) wrappers true flags)
+  ++ test "beta trace: a different carrier after four prefixes cannot type the original witness"
+    (let (env, target) := betaTraceDeclaredType .zero 0 3 false 1; rowFailed env target)
+  ++ test "beta trace: a retained dependent argument must still inhabit its selected carrier"
+    (let (env, target) := betaTraceDeclaredType .zero 0 3 true 2; rowFailed env target)
+
 private def applicationCases : TestSeq :=
   test "application environment: Prop/Type identity calls and transitive theorem calls check"
     (allSucceeded applicationEnvironment 5 { clearEvery := 0 })
@@ -2863,7 +2952,7 @@ private def polymorphicDefinitionCases : TestSeq :=
 
 public def suite : List TestSeq :=
   [cases, polymorphicCases, specializationCases, binderCases, applicationCases, multiBetaCases, cheapLambdaCases,
-    cheapApplicationCases, exposedLambdaCases, repeatedBetaCases,
+    cheapApplicationCases, exposedLambdaCases, repeatedBetaCases, betaTraceCases,
     polymorphicApplicationCases, constantCacheCases, cacheInvariantCases, recursiveCacheCases,
     lazyCacheCases, blockCacheCases, ingressCoherenceCases, sourceOwnershipCases, recursiveStateCases,
     sourceAgreementCases, sourceCacheCases, polymorphicDefinitionCases]

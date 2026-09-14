@@ -33,6 +33,8 @@ import Ix.Kernel.Verify.Consistency.Simultaneous
 import Ix.Kernel.Verify.Consistency.SpineReading
 import Ix.Kernel.Verify.Consistency.CheapBetaReading
 import Ix.Kernel.Verify.Consistency.BetaSpine
+import Ix.Kernel.Verify.Consistency.BetaTrace
+import Ix.Kernel.Verify.Consistency.BetaWhnf
 import Ix.Kernel.Verify.Consistency.CheapBeta
 import Ix.Kernel.Verify.Consistency.Validation
 import Ix.Kernel.Verify.Consistency.RecursiveCache
@@ -113,7 +115,14 @@ the supplied lambda supplies the next checked prefix. Two successive
 prefixes therefore compose without inference of the intermediate term.
 Retained origins justify the actual multi-argument WHNF step, and declaration
 admission includes this two-prefix conversion. Automatic origin construction
-for arbitrary generated types and general reduction remain open.
+for arbitrary generated types remains open. Finite beta traces now compose
+any number of retained prefixes. An earlier result can supply a later lambda
+or argument origin, and type transport preserves the original source type.
+Application suffixes and dependent substitutions retain their checks.
+The corresponding structural-WHNF trace computes each raw result and intern
+table, then proves the actual uncached loop under its fuel bound. The same
+traces justify definition conversion. Automatic construction of these finite
+resources and the remaining WHNF/conversion paths remain open.
 Local cache hits agree with the actual declaration type. Constant
 hits agree with pure universe substitution of a loaded, admitted declaration;
 sort hits return the canonical successor sort. Application, forall, and lambda

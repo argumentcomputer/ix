@@ -86,9 +86,15 @@ inferred type. The first reduction retains typing at that current type;
 the supplied lambda contributes the second prefix's domains and any initial
 arguments. This supports the actual WHNF step on the intermediate term and
 declaration admission through both reductions, without another inference
-call on the intermediate term. Further exposed prefixes need further origins.
-Automatic origin construction for arbitrary generated types, general
-reduction, and conversion remain open.
+call on the intermediate term. Finite beta traces now compose any number of
+retained prefixes, including generated functions and arguments, application
+suffixes, and dependent substitutions. The result retains the original type
+even when adjacent steps carry different types. A structural-WHNF trace
+computes each raw substitution result and intern table and proves the actual
+uncached loop under its bound, including the final unchanged iteration.
+Declaration admission uses the same traces. Automatic origin and trace
+construction for arbitrary generated types, the remaining reduction branches,
+and general conversion remain open.
 Safe definition admission also rejects circular justification in both Lean and
 Rust, including `theorem loop : P := loop` with only `P : Prop` assumed. The
 production dependency walk returns an order with a proved decreasing rank;
