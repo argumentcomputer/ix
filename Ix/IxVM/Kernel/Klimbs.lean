@@ -25,7 +25,6 @@ Ops covered:
 - klimbs_shl / klimbs_shr (via mul/div by 2^n)
 - u64_add / u64_mul (radix-2^16 schoolbook) / u64_sub_with_borrow /
   u64_and / u64_or / u64_xor_kbits (element-wise byte ops)
-- divmod_256 (unconstrained witness generator for u32 byte decomposition)
 
 Aiur builtin gadgets used (compiler-provided): u8_add, u8_sub,
 u8_xor, u8_and, u8_or, u8_from_field_unsafe, u32_less_than,
@@ -36,13 +35,65 @@ unconstrained_g_to_bytes.
 set_option maxRecDepth 16384 in
 def klimbs := ⟦
 
+  -- Checked successor with carry-out. Unlike adding a whole zero-padded
+  -- U64 one, this needs eight byte-add lookups instead of fifteen and its
+  -- memo key holds just one limb. Every input/output byte is still checked
+  -- by u8_add, including bytes above the point where carry stops.
+  fn u64_succ_carry(a: U64) -> (U64, U8) {
+    let [a0, a1, a2, a3, a4, a5, a6, a7] = a;
+    let (s0, c1) = u8_add(a0, 1u8);
+    let (s1, c2) = u8_add(a1, c1);
+    let (s2, c3) = u8_add(a2, c2);
+    let (s3, c4) = u8_add(a3, c3);
+    let (s4, c5) = u8_add(a4, c4);
+    let (s5, c6) = u8_add(a5, c5);
+    let (s6, c7) = u8_add(a6, c6);
+    let (s7, c8) = u8_add(a7, c7);
+    ([s0, s1, s2, s3, s4, s5, s6, s7], c8)
+  }
+
+  -- Fused a + b + 1. Keep the carry-zero case on u64_add; specializing the
+  -- carry-one case avoids a second full-width memo row and a second ripple
+  -- over the limb. Sixteen checked byte adds versus thirty for two u64_adds.
+  -- At each column the two overflow bits are mutually exclusive: if a+b
+  -- overflowed, its low byte is <= 254, so adding a carry bit cannot overflow.
+  fn u64_add_carry_one(a: U64, b: U64) -> (U64, U8) {
+    let [a0, a1, a2, a3, a4, a5, a6, a7] = a;
+    let [b0, b1, b2, b3, b4, b5, b6, b7] = b;
+    let (t0, o0) = u8_add(a0, b0);
+    let (s0, c0a) = u8_add(t0, 1u8);
+    let c1 = u8_from_field_unsafe(to_field(o0) + to_field(c0a));
+    let (t1, o1) = u8_add(a1, b1);
+    let (s1, c1a) = u8_add(t1, c1);
+    let c2 = u8_from_field_unsafe(to_field(o1) + to_field(c1a));
+    let (t2, o2) = u8_add(a2, b2);
+    let (s2, c2a) = u8_add(t2, c2);
+    let c3 = u8_from_field_unsafe(to_field(o2) + to_field(c2a));
+    let (t3, o3) = u8_add(a3, b3);
+    let (s3, c3a) = u8_add(t3, c3);
+    let c4 = u8_from_field_unsafe(to_field(o3) + to_field(c3a));
+    let (t4, o4) = u8_add(a4, b4);
+    let (s4, c4a) = u8_add(t4, c4);
+    let c5 = u8_from_field_unsafe(to_field(o4) + to_field(c4a));
+    let (t5, o5) = u8_add(a5, b5);
+    let (s5, c5a) = u8_add(t5, c5);
+    let c6 = u8_from_field_unsafe(to_field(o5) + to_field(c5a));
+    let (t6, o6) = u8_add(a6, b6);
+    let (s6, c6a) = u8_add(t6, c6);
+    let c7 = u8_from_field_unsafe(to_field(o6) + to_field(c6a));
+    let (t7, o7) = u8_add(a7, b7);
+    let (s7, c7a) = u8_add(t7, c7);
+    let c8 = u8_from_field_unsafe(to_field(o7) + to_field(c7a));
+    ([s0, s1, s2, s3, s4, s5, s6, s7], c8)
+  }
+
   -- Mirror: BigUint::succ. Increment a KLimbs by 1; ripple carry.
   fn klimbs_succ(n: KLimbs) -> KLimbs {
     match load(n) {
       ListNode.Nil =>
         store(ListNode.Cons([1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], store(ListNode.Nil))),
       ListNode.Cons(limb, rest) =>
-        let pair = u64_add(limb, [1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]);
+        let pair = u64_succ_carry(limb);
         match pair {
           (sum, carry) =>
             match carry {
@@ -62,28 +113,23 @@ def klimbs := ⟦
       ListNode.Nil =>
         match carry {
           0 => b,
-          _ => klimbs_succ(b),
+          1 => klimbs_succ(b),
         },
       ListNode.Cons(la, ra) =>
         match load(b) {
           ListNode.Nil =>
             match carry {
               0 => a,
-              _ => klimbs_succ(a),
+              1 => klimbs_succ(a),
             },
           ListNode.Cons(lb, rb) =>
-            let pair1 = u64_add(la, lb);
-            match pair1 {
-              (sum1, carry1) =>
-                let pair2 = u64_add(sum1, [u8_from_field_unsafe(carry), 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]);
-                match pair2 {
-                  (sum2, carry2) =>
-                    -- carry1, carry2 mutually exclusive: carry1=1 ⇒ sum1 ≤
-                    -- 2^64-2 ⇒ sum1 + carry_in ≤ 2^64-1 ⇒ carry2=0.
-                    let total_carry = to_field(carry1) + to_field(carry2);
-                    store(ListNode.Cons(sum2, klimbs_add_carry(ra, rb, total_carry))),
-                },
-            },
+            -- Dispatch before the helper call so zero carry leaves no
+            -- add-zero row. The carry is a BIT, not an arbitrary byte.
+            let (sum, next) = match carry {
+              0 => u64_add(la, lb),
+              1 => u64_add_carry_one(la, lb),
+            };
+            store(ListNode.Cons(sum, klimbs_add_carry(ra, rb, to_field(next)))),
         },
     }
   }
@@ -259,17 +305,6 @@ def klimbs := ⟦
     klimbs_sub(a, one)
   }
 
-  -- Returns (remainder, quotient): remainder = x mod 256, quotient = x / 256.
-  -- Repeated subtraction. Only invoked from the `#split_u32`
-  -- unconstrained witness generator, so the O(x/256)
-  -- iteration cost is off-circuit (untraced).
-  fn divmod_256(x: G, q: G) -> (G, G) {
-    match u32_less_than(x, 256) {
-      1 => (x, q),
-      0 => divmod_256(x - 256, q + 1),
-    }
-  }
-
   -- Radix-2^16 schoolbook multiplication: four digits per operand.
   -- Even with arbitrary checked carry advice, each column is < 2^35:
   -- at most four 16-bit products plus a 24-bit carry. Its reconstruction
@@ -308,26 +343,96 @@ def klimbs := ⟦
     ([r0, r1], [c0, c1, c2])
   }
 
-  -- Mirror: BigUint::mul. Limb-wise schoolbook multiply.
+  -- Mirror: BigUint::mul. Schoolbook multiplication, streaming later product
+  -- rows into the accumulator instead of retaining separate product/shifted
+  -- lists. Tests/Ix/IxVM/FusedMul.lean retains the old composition and a
+  -- producer/consumer fusion proof parameterized by the arithmetic steps.
   fn klimbs_mul(a: KLimbs, b: KLimbs) -> KLimbs {
-    klimbs_mul_outer(a, b, store(ListNode.Nil), 0)
+    -- Keep this grouped wrapper narrow: it shares a circuit with read_byte
+    -- and expression helpers that execute much more often than multiplication.
+    klimbs_mul_first(a, b)
   }
 
-  fn klimbs_mul_outer(a: KLimbs, b: KLimbs, acc: KLimbs, shift: G) -> KLimbs {
+  fn klimbs_mul_first(a: KLimbs, b: KLimbs) -> KLimbs {
+    -- The first row has no accumulator and no shift. Use its already-linear
+    -- builder directly: avoid recording fused-row, shift-zero and add-empty
+    -- wrappers when there is no producer/consumer pair to fuse.
     match load(a) {
-      ListNode.Nil => acc,
-      ListNode.Cons(a_limb, rest) =>
-        let prod = klimbs_mul_single(a_limb, b, [0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]);
-        let shifted = klimbs_shl_limbs(prod, shift);
-        let new_acc = klimbs_add(acc, shifted);
-        klimbs_mul_outer(rest, b, new_acc, shift + 1),
+      ListNode.Nil => store(ListNode.Nil),
+      ListNode.Cons(limb, rest) =>
+        let first = klimbs_mul_single(limb, b, [0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]);
+        klimbs_mul_acc_outer(rest, b, first, 1),
     }
   }
 
-  -- Build the low limb onto the recursively computed tail. Repeated snoc
-  -- copied growing output prefixes; cons builds each result limb once and
-  -- removes the irrelevant output prefix from the memo key. The arithmetic
-  -- and the zero/trailing-limb representation are unchanged.
+  fn klimbs_mul_acc_outer(a: KLimbs, b: KLimbs, acc: KLimbs, shift: G) -> KLimbs {
+    match load(a) {
+      ListNode.Nil => acc,
+      ListNode.Cons(a_limb, rest) =>
+        let next = klimbs_mul_acc_shift(a_limb, b, acc, shift);
+        klimbs_mul_acc_outer(rest, b, next, shift + 1),
+    }
+  }
+
+  -- acc + (row << shift). Copy the unchanged low accumulator prefix but
+  -- retain the old checked add-zero operation, not an assumption that loaded
+  -- U64-typed fields have already been byte-range-checked. An empty product
+  -- still contributes shift zero limbs, exactly like klimbs_shl_limbs.
+  fn klimbs_mul_acc_shift(a: U64, b: KLimbs, acc: KLimbs, shift: G) -> KLimbs {
+    match shift {
+      0 => klimbs_mul_acc_row(a, b, acc, [0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], 0),
+      _ => match load(acc) {
+        ListNode.Nil => store(ListNode.Cons([0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8],
+          klimbs_mul_acc_shift(a, b, acc, shift - 1))),
+        ListNode.Cons(limb, rest) =>
+          let (sum, carry) = u64_add(limb, [0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]);
+          assert_eq!(carry, 0u8, "multiply-accumulate prefix overflow");
+          store(ListNode.Cons(sum, klimbs_mul_acc_shift(a, b, rest, shift - 1))),
+      },
+    }
+  }
+
+  -- EXACTLY add_carry(acc, mul_single(a, b, mul_carry), add_carry).
+  -- Keep the two original carries separate: no new arithmetic identity is
+  -- trusted and a carry from adding the accumulator never changes the product
+  -- recurrence. Only the intermediate product-list nodes disappear. Empty
+  -- tails retain the existing helpers' zero/trailing-limb behavior.
+  fn klimbs_mul_acc_row(a: U64, b: KLimbs, acc: KLimbs,
+      mul_carry: U64, add_carry: G) -> KLimbs {
+    match load(b) {
+      ListNode.Nil => klimbs_add_carry(acc, klimbs_mul_single(a, b, mul_carry), add_carry),
+      ListNode.Cons(b_limb, b_rest) => match load(acc) {
+        ListNode.Nil => klimbs_add_carry(acc, klimbs_mul_single(a, b, mul_carry), add_carry),
+        ListNode.Cons(acc_limb, acc_rest) =>
+          let (lo, hi) = u64_mul(a, b_limb);
+          let (digit, carry_out) = u64_add(lo, mul_carry);
+          -- Branch-local continuation avoids joining a full eight-byte carry
+          -- into the hot circuit. Match the already-validated row builder.
+          match to_field(carry_out) {
+            0 =>
+              let (sum, next) = match add_carry {
+                0 => u64_add(acc_limb, digit),
+                1 => u64_add_carry_one(acc_limb, digit),
+              };
+              store(ListNode.Cons(sum,
+                klimbs_mul_acc_row(a, b_rest, acc_rest, hi, to_field(next)))),
+            1 =>
+              let (high, overflow) = u64_succ_carry(hi);
+              assert_eq!(overflow, 0u8, "multiplication row carry overflow");
+              let (sum, next) = match add_carry {
+                0 => u64_add(acc_limb, digit),
+                1 => u64_add_carry_one(acc_limb, digit),
+              };
+              store(ListNode.Cons(sum,
+                klimbs_mul_acc_row(a, b_rest, acc_rest, high, to_field(next)))),
+          },
+      },
+    }
+  }
+
+  -- Build the little-endian result by consing each low limb onto the
+  -- recursively computed higher limbs. Keep zero limbs in the body and
+  -- omit only a zero final carry; normalization belongs to the callers.
   fn klimbs_mul_single(a_limb: U64, b: KLimbs, carry: U64) -> KLimbs {
     match load(b) {
       ListNode.Nil =>
@@ -340,14 +445,19 @@ def klimbs := ⟦
           (lo, hi) =>
             match u64_add(lo, carry) {
               (sum, carry_out) =>
-                -- u64_mul range-checks ALL eight high bytes. The carry is
-                -- a bit, and the old addition discarded overflow, so reuse
-                -- hi or take its modular successor.
-                match carry_out {
+                -- Keep the recursive call in each branch: joining an
+                -- eight-byte carry first adds nine avoidable circuit
+                -- columns. The branch-local form has the same memo rows.
+                match to_field(carry_out) {
                   0 => store(ListNode.Cons(sum,
                     klimbs_mul_single(a_limb, rest, hi))),
-                  _ => store(ListNode.Cons(sum,
-                    klimbs_mul_single(a_limb, rest, relaxed_u64_succ(hi)))),
+                  1 =>
+                    let (next, overflow) = u64_succ_carry(hi);
+                    -- For byte-canonical operands, hi <= 2^64 - 2.
+                    -- Keep that no-overflow obligation explicit.
+                    assert_eq!(overflow, 0u8, "multiplication row carry overflow");
+                    store(ListNode.Cons(sum,
+                      klimbs_mul_single(a_limb, rest, next))),
                 },
             },
         },

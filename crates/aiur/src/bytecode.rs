@@ -10,6 +10,16 @@ pub struct Toplevel {
   /// `CompiledToplevel.groupFunctions` regroups); every constrained
   /// function appears in exactly one circuit.
   pub circuits: Vec<Circuit>,
+  /// Empty uses general dynamic ranks. Otherwise one checked component
+  /// assignment per function selects which rank constraints are necessary.
+  /// Unranked self-edges require a checked unit counter in the actual bytecode.
+  pub call_components: Vec<CallComponent>,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct CallComponent {
+  pub order: usize,
+  pub ranked: bool,
 }
 
 /// A circuit of the proving system, backing one or more functions. Ungrouped

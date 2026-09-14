@@ -1062,22 +1062,12 @@ def natPrim := ⟦
     }
   }
 
-  -- G (< 2^32) → single-limb KLimbs via prover-provided 4-byte split.
-  -- Pinned by u8 range checks + reconstruction assert. `x >= 2^32`
-  -- rejected (assert fails), not silently truncated.
+  -- Constant-time advice, called only as `#split_u32`. The checking caller
+  -- range-checks the four bytes and reconstructs x, rejecting x >= 2^32.
+  -- Recursive subtraction would retain many unconstrained execution rows.
   fn split_u32(x: G) -> (G, G, G, G) {
-    match divmod_256(x, 0) {
-      (b0, q1) =>
-        match divmod_256(q1, 0) {
-          (b1, q2) =>
-            match divmod_256(q2, 0) {
-              (b2, q3) =>
-                match divmod_256(q3, 0) {
-                  (b3, _) => (b0, b1, b2, b3),
-                },
-            },
-        },
-    }
+    let [b0, b1, b2, b3, _, _, _, _] = unconstrained_g_to_bytes(x);
+    (b0, b1, b2, b3)
   }
 
   -- Convert G value (< 2^32) into single-limb KLimbs. The 4-byte

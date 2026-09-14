@@ -206,7 +206,8 @@ def ixVMFull : Except Aiur.Global Aiur.Source.Toplevel := do
   let vm ← vm.merge canonicalCheck
   let vm ← vm.merge check
   let vm ← vm.merge claim
-  vm.merge entrypoints
+  let vm ← vm.merge entrypoints
+  pure { vm with componentRanks := true, counterRanks := true }
 
 /-- Pruned production toplevel: `verify_claim` and nothing else.
 

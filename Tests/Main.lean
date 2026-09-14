@@ -3,6 +3,12 @@ import Tests.Ix.Ixon
 import Tests.Ix.IxonCorpus
 import Tests.Ix.IxonSyntax
 import Tests.Ix.IxVM
+import Tests.Ix.IxVM.ByteHints
+import Tests.Ix.IxVM.Blake3Reader
+import Tests.Ix.IxVM.Blake3Rounds
+import Tests.Ix.IxVM.CarryAdd
+import Tests.Ix.IxVM.FusedMul
+import Tests.Ix.IxVM.SubstProjection
 import Tests.Ix.IxVM.Exploits
 import Tests.Ix.Claim
 import Tests.Ix.Merkle
@@ -162,6 +168,13 @@ execute at module initialization for unrelated invocations. All are
 seconds-scale (measured 2026-08-05: aiur-prove ~11s, the rest 2-4s
 each). -/
 def primaryRunners : List (String × IO UInt32) := [
+  ("ixvm-carry-add", Tests.Ix.IxVM.CarryAdd.run),
+  ("ixvm-fused-mul", Tests.Ix.IxVM.FusedMul.run),
+  ("ixvm-subst-projection", Tests.Ix.IxVM.SubstProjection.run),
+  ("ixvm-byte-hints", Tests.Ix.IxVM.ByteHints.run),
+  ("ixvm-blake3-reader", Tests.Ix.IxVM.Blake3Reader.run),
+  ("ixvm-blake3-rounds", Tests.Ix.IxVM.Blake3Rounds.run),
+  ("aiur-components", AiurTests.CallOrder.suite),
   ("aiur-prove", do
     IO.println "aiur-prove"
     match AiurTestEnv.build (pure toplevel) with
@@ -208,6 +221,7 @@ def primaryRunners : List (String × IO UInt32) := [
 
 /-- Ignored test runners - expensive, deferred IO actions run only when explicitly requested -/
 def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
+  ("ixvm-byte-hint-timings", Tests.Ix.IxVM.ByteHints.timings),
   ("ixvm", do
     let kernelChecks ← kernelChecks env
     -- the kernel CheckEnv smokes .
@@ -229,6 +243,11 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
     | .error e, _ | _, .error e =>
       IO.eprintln s!"IxVM env build failed: {e}"; return 1
     | .ok v2Env, .ok v2FullEnv =>
+      let componentSeq :=
+        LSpec.test "production IxVM has a checked component certificate"
+          v2Env.compiled.bytecode.validCallComponents ++
+        LSpec.test "full IxVM has a checked component certificate"
+          v2FullEnv.compiled.bytecode.validCallComponents
       -- Kernel-arena fixtures: the repo's NEGATIVE corpus (every
       -- `bad_*` must be rejected by an in-kernel assert_eq!). Runs
       -- through the kernel's subject-only `verify_const` debug
@@ -272,15 +291,16 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
           | .ok (_, _, qc) =>
             -- Exact pin, same convention as `kernelCheckEntries`
             -- (`.round.toUInt64.toNat`): any cost shift must be an
-            -- explicit, reviewed bump.
+            -- explicit, reviewed bump. Includes component-local call ranks
+            -- with checked unit counters and cost-based lookup grouping.
             let actual :=
               (Aiur.computeStats v2Env.compiled qc v2Env.shapes).totalFftCost.round.toUInt64.toNat
             pure (LSpec.test
-              s!"Shard pipeline FFT matches: expected 6_972_965_120, got {actual}"
-              (actual = 6_972_965_120))
+              s!"Shard pipeline FFT matches: expected 6_054_354_863, got {actual}"
+              (actual = 6_054_354_863))
       LSpec.lspecIO
         (.ofList [("ixvm",
-          [fullSeq, aiurSeq, arenaSeq, exploitSeq, paritySeq, shardSeq])]) []),
+          [componentSeq, fullSeq, aiurSeq, arenaSeq, exploitSeq, paritySeq, shardSeq])]) []),
   ("validate-aux", runCompileValidateAux env),
   -- Cross-compiler differential over the same fixture corpus: pure-Lean
   -- Ix.CompileM per-block vs Rust, root-cause classified (see
@@ -402,3 +422,7 @@ def main (args : List String) : IO UInt32 := do
     return result
   else
     return 0
+
+
+
+

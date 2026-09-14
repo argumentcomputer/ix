@@ -389,12 +389,10 @@ private def emitCall (out : Nat) (callee : FunIdx) (args : Array ValIdx)
     if opUn then ""
     else
       s!" if !unconstrained \{ record.function_queries[{callee}].bump_multiplicity(__i); }"
-  -- Skip `try_into().unwrap()` on the cache hit: we statically know
-  -- the cached output has exactly `OUT_{callee}` elements (only we
-  -- ever insert into this slot via the matching aiur_fn_{callee}
-  -- `Ctrl::Return`). An unchecked array copy is sound.
+  -- Decode the cached output directly into a stack array. The row width
+  -- is checked and each packed column widens losslessly on insertion.
   let retExpr : String :=
-    s!" let __ret: [G; OUT_{callee}] = unsafe \{ *(record.function_queries[{callee}].output_at(__i).as_ptr() as *const [G; OUT_{callee}]) }; __ret"
+    s!" record.function_queries[{callee}].output_at(__i).to_array::<OUT_{callee}>()"
   -- A zero-multiplicity entry was computed only as an unconstrained
   -- hint; a constrained caller replays the body (constrained: `__cu` is
   -- false on that path) so promotion recurses through the whole
@@ -417,7 +415,7 @@ private def emitCall (out : Nat) (callee : FunIdx) (args : Array ValIdx)
     stmts := stmts.push (declVal (out + k) (.index (.var "__r_arr") (.lit (toString k))))
   return stmts
 
-/-- `Op::Store`: mirror execute.rs lines 306-326. Insert hit/miss into
+/-- `Op::Store`: mirror the interpreter. Intern the content in
     `record.memory_queries[size]`; output is the allocated/cached ptr. -/
 private def emitStore (out : Nat) (values : Array ValIdx) : Array RustStmt :=
   let size := values.size
@@ -425,13 +423,7 @@ private def emitStore (out : Nat) (values : Array ValIdx) : Array RustStmt :=
   let blockExpr : String :=
     s!"\{ let __values: [G; {size}] = {valsStr};" ++
     s!" let __mq = record.memory_queries.get_mut(&{size}).ok_or(ExecError::InvalidMemorySize({size}))?;" ++
-    s!" if let Some(__i) = __mq.get_index_of(&__values[..]) \{" ++
-    s!" if !unconstrained \{ __mq.bump_multiplicity(__i); }" ++
-    s!" __mq.output_at(__i)[0]" ++
-    s!" } else \{" ++
-    s!" let __ptr = G::from_usize(__mq.len());" ++
-    s!" __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained));" ++
-    s!" __ptr } }"
+    s!" __mq.intern_memory(&__values[..], !unconstrained) }"
   #[.letStmt false s!"__v_{out}" (some "G") (.lit blockExpr)]
 
 /-- `Op::Load`: mirror execute.rs lines 328-345. Look up by pointer
@@ -444,7 +436,7 @@ private def emitLoad (out : Nat) (size : Nat) (ptr : ValIdx) : Array RustStmt :=
     s!" if __ptr_usize >= __mq.len() \{ return Err(ExecError::UnboundPointer \{ ptr: __ptr_u64, size: {size} }); }" ++
     s!" if !unconstrained \{ __mq.bump_multiplicity(__ptr_usize); }" ++
     s!" let (__args, _) = __mq.get_index(__ptr_usize).expect(\"bounds checked above\");" ++
-    s!" let __arr: [G; {size}] = __args[..{size}].try_into().unwrap(); __arr }"
+    s!" __args.to_array::<{size}>() }"
   let mut stmts : Array RustStmt := #[
     .letStmt false "__loaded" (some s!"[G; {size}]") (.lit blockExpr)
   ]
@@ -611,9 +603,8 @@ private def emitU8Sub (out : Nat) (i j : ValIdx) : Array RustStmt :=
     declVal (out + 1) (.field (.var "__b2_sub") "1")
   ]
 
-/-- `Op::U32LessThan`: mirror execute.rs lines 477-505. Pure
-    compare + 6-byte-pair range-check via
-    `bytes2_queries.bump_range_check` (constrained mode only). -/
+/-- `Op::U32LessThan`: mirror the checked comparison in `execute.rs`,
+    recording six scalar u16 range queries in constrained mode. -/
 private def emitU32LessThan (out : Nat) (x y : ValIdx) : Array RustStmt :=
   let blockExpr : String :=
     s!"\{ let __a_val = __v_{x}.as_canonical_u64();" ++
@@ -622,17 +613,11 @@ private def emitU32LessThan (out : Nat) (x y : ValIdx) : Array RustStmt :=
     s!" let __b_u32 = u32::try_from(__b_val).ok().ok_or(ExecError::U32OutOfRange(__b_val))?;" ++
     s!" let __result = G::from_bool(__a_u32 < __b_u32);" ++
     s!" if !unconstrained \{" ++
-    s!" let __x_bytes = __a_u32.to_le_bytes();" ++
-    s!" let __z_bytes = __b_u32.to_le_bytes();" ++
     s!" let __c_u32 = __b_u32.wrapping_sub(__a_u32).wrapping_sub(1);" ++
-    s!" let __y_bytes = __c_u32.to_le_bytes();" ++
-    s!" record.bytes2_queries.bump_range_check(&G::from_u8(__x_bytes[0]), &G::from_u8(__x_bytes[1]));" ++
-    s!" record.bytes2_queries.bump_range_check(&G::from_u8(__x_bytes[2]), &G::from_u8(__x_bytes[3]));" ++
-    s!" record.bytes2_queries.bump_range_check(&G::from_u8(__y_bytes[0]), &G::from_u8(__y_bytes[1]));" ++
-    s!" record.bytes2_queries.bump_range_check(&G::from_u8(__y_bytes[2]), &G::from_u8(__y_bytes[3]));" ++
-    s!" record.bytes2_queries.bump_range_check(&G::from_u8(__z_bytes[0]), &G::from_u8(__z_bytes[1]));" ++
-    s!" record.bytes2_queries.bump_range_check(&G::from_u8(__z_bytes[2]), &G::from_u8(__z_bytes[3]));" ++
-    s!" } __result }"
+    s!" for __word in [__a_u32, __c_u32, __b_u32] \{" ++
+    s!" record.bytes2_queries.bump_u16_range_check((__word & 0xffff) as u16);" ++
+    s!" record.bytes2_queries.bump_u16_range_check((__word >> 16) as u16);" ++
+    s!" } } __result }"
   #[.letStmt false s!"__v_{out}" (some "G") (.lit blockExpr)]
 
 private def u32PackExpr (xs : Array ValIdx) : String :=
@@ -1061,3 +1046,4 @@ def emit (tl : Toplevel) : String := Id.run do
 end Aiur.Codegen
 
 end
+

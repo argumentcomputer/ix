@@ -1,10 +1,12 @@
 use multi_stark::p3_field::{Field, PrimeCharacteristicRing, PrimeField64};
 use rustc_hash::FxHashMap;
 use std::collections::hash_map::Entry;
+use std::sync::{Arc, atomic::AtomicU64};
 
 use crate::{
   FxIndexMap, G,
   bytecode::{Block, Ctrl, FunIdx, Function, Op, Toplevel},
+  call_order::row_uses_rank,
   gadgets::{
     AiurGadget,
     bytes1::{Bytes1, Bytes1Op, Bytes1Queries},
@@ -37,15 +39,25 @@ pub struct QueryRecord {
 
 impl QueryRecord {
   pub fn new(toplevel: &Toplevel) -> Self {
+    let clock = Arc::new(AtomicU64::new(0));
     let function_queries = toplevel
       .functions
       .iter()
-      .map(|f| QueryMap::new(f.layout.input_size))
+      .enumerate()
+      .map(|(i, f)| {
+        if row_uses_rank(&toplevel.call_components, i) {
+          QueryMap::new_function(f.layout.input_size, Arc::clone(&clock))
+        } else {
+          // Acyclic rows return rank zero. Their completion times cannot
+          // affect the relative order of calls inside a ranked component.
+          QueryMap::new(f.layout.input_size)
+        }
+      })
       .collect();
     let memory_queries = toplevel
       .memory_sizes
       .iter()
-      .map(|width| (*width, QueryMap::new(*width)))
+      .map(|width| (*width, QueryMap::new_memory(*width)))
       .collect();
     let bytes1_queries = Bytes1Queries::new();
     let bytes2_queries = Bytes2Queries::new();
@@ -216,6 +228,24 @@ fn dump_query_stats(record: &QueryRecord, tag: &str) {
     "[aiur-stats {tag}] function_queries: {total_entries} entries, \
      {total_elems} G-elems; top maps:"
   );
+  let completion_entries: usize =
+    record.function_queries.iter().map(QueryMap::completion_entries).sum();
+  eprintln!(
+    "[aiur-stats {tag}] completion order: {completion_entries} entries, \
+     {} bytes; estimated record: {} bytes",
+    completion_entries * size_of::<u64>(),
+    record_retained_bytes(record)
+  );
+  let function_payload: usize =
+    record.function_queries.iter().map(QueryMap::retained_bytes).sum();
+  let memory_payload: usize =
+    record.memory_queries.values().map(QueryMap::retained_bytes).sum();
+  let memory_elems: usize =
+    record.memory_queries.values().map(QueryMap::retained_elems).sum();
+  eprintln!(
+    "[aiur-stats {tag}] query payload: functions {function_payload} bytes, memory {memory_payload} bytes; full-field equivalent {} bytes",
+    (total_elems + memory_elems) * size_of::<G>()
+  );
   for (i, n, e) in rows.iter().take(30) {
     eprintln!("  fn{i:<4} entries={n:<12} g_elems={e}");
   }
@@ -369,20 +399,7 @@ impl Function {
             .memory_queries
             .get_mut(&size)
             .ok_or(ExecError::InvalidMemorySize(size))?;
-          if let Some(i) = memory_queries.get_index_of(&values) {
-            if !unconstrained {
-              memory_queries.bump_multiplicity(i);
-            }
-            map.extend_from_slice(memory_queries.output_at(i));
-          } else {
-            let ptr = G::from_usize(memory_queries.len());
-            memory_queries.insert(
-              &values,
-              &[ptr],
-              G::from_bool(!unconstrained),
-            );
-            map.push(ptr);
-          }
+          map.push(memory_queries.intern_memory(&values, !unconstrained));
         },
         ExecEntry::Op(Op::Load(size, ptr)) => {
           let memory_queries = record
@@ -405,7 +422,7 @@ impl Function {
           }
           let (args, _) =
             memory_queries.get_index(ptr_usize).expect("bounds checked above");
-          map.extend_from_slice(args);
+          map.extend(args.iter());
         },
         ExecEntry::Op(Op::AssertEq(xs, ys, msg)) => {
           if xs.len() != ys.len() {
@@ -567,22 +584,12 @@ impl Function {
           let result = G::from_bool(a_u32 < b_u32);
           map.push(result);
           if !unconstrained {
-            let x_bytes = a_u32.to_le_bytes();
-            let z_bytes = b_u32.to_le_bytes();
             let c_u32 = b_u32.wrapping_sub(a_u32).wrapping_sub(1);
-            let y_bytes = c_u32.to_le_bytes();
-            // Bump range-check queries for byte pairs
-            for (i, j) in [
-              (x_bytes[0], x_bytes[1]),
-              (x_bytes[2], x_bytes[3]),
-              (y_bytes[0], y_bytes[1]),
-              (y_bytes[2], y_bytes[3]),
-              (z_bytes[0], z_bytes[1]),
-              (z_bytes[2], z_bytes[3]),
-            ] {
+            for word in [a_u32, c_u32, b_u32] {
               record
                 .bytes2_queries
-                .bump_range_check(&G::from_u8(i), &G::from_u8(j));
+                .bump_u16_range_check((word & 0xffff) as u16);
+              record.bytes2_queries.bump_u16_range_check((word >> 16) as u16);
             }
           }
         },
@@ -962,7 +969,8 @@ fn find_klimbs_u64(
   let mut tail_ptr = queries
     .get(&nil_key)
     .ok_or_else(|| "List<U64> Nil node not recorded".to_string())?
-    .output[0];
+    .output
+    .at(0);
   for limb in limbs.iter().rev() {
     let mut key: Vec<G> = Vec::with_capacity(10);
     key.push(G::ZERO); // Cons tag (first variant of ListNode‹U64›)
@@ -975,7 +983,8 @@ fn find_klimbs_u64(
       .ok_or_else(|| {
         format!("List<U64> Cons node for limb {limb} not recorded")
       })?
-      .output[0];
+      .output
+      .at(0);
   }
   Ok(tail_ptr)
 }
@@ -1000,7 +1009,7 @@ fn read_klimbs_u64(
     let (key, _) = queries.get_index(ptr_idx).ok_or_else(|| {
       format!("unbound ptr {ptr_u64} in memory[10] (walking List<U64>)")
     })?;
-    let tag = key[0].as_canonical_u64();
+    let tag = key.at(0).as_canonical_u64();
     // `enum ListNode { Cons, Nil }` in Ix/IxVM/Core.lean — Cons is the
     // first variant (tag 0), Nil the second (tag 1).
     if tag == 1 {
@@ -1012,15 +1021,15 @@ fn read_klimbs_u64(
       ));
     }
     let mut limb_bytes = [0u8; 8];
-    for k in 0..8 {
-      let b = key[1 + k].as_canonical_u64();
+    for (k, byte) in limb_bytes.iter_mut().enumerate() {
+      let b = key.at(1 + k).as_canonical_u64();
       if b >= 256 {
         return Err(format!("limb byte {b} out of u8 range"));
       }
-      limb_bytes[k] = u8::try_from(b).expect("range-checked above");
+      *byte = u8::try_from(b).expect("range-checked above");
     }
     limbs.push(u64::from_le_bytes(limb_bytes));
-    ptr = key[9];
+    ptr = key.at(9);
   }
 }
 
@@ -1053,7 +1062,7 @@ fn biguint_to_klimbs_u64(n: &num_bigint::BigUint) -> Vec<u64> {
 /// Build a `List<U64>` chain in `memory[10]` from `limbs` (head-first order)
 /// and return the head pointer. Each entry is inserted with multiplicity 0
 /// (unconstrained); subsequent constrained `Load`s by the kernel will bump
-/// the multiplicity. Content-addressed via `QueryMap::get_mut`, so repeated
+/// the multiplicity. Content-addressed via `QueryMap::intern_memory`, so repeated
 /// identical sub-tails share storage.
 fn build_klimbs_u64(
   memory: &mut FxIndexMap<usize, QueryMap>,
@@ -1065,13 +1074,7 @@ fn build_klimbs_u64(
   // Find or insert the Nil ptr (tag = 1, padded payload all zero).
   let nil_key: Vec<G> =
     std::iter::once(G::ONE).chain((0..9).map(|_| G::ZERO)).collect();
-  let mut tail_ptr = if let Some(out) = queries.get_mut(&nil_key) {
-    out.output[0]
-  } else {
-    let ptr = G::from_usize(queries.len());
-    queries.insert(&nil_key, &[ptr], G::ZERO);
-    ptr
-  };
+  let mut tail_ptr = queries.intern_memory(&nil_key, false);
   // Walk limbs in REVERSE so each Cons points at the previously-built tail.
   for limb in limbs.iter().rev() {
     let bytes = limb.to_le_bytes();
@@ -1081,32 +1084,29 @@ fn build_klimbs_u64(
       key.push(G::from_u8(*b));
     }
     key.push(tail_ptr);
-    tail_ptr = if let Some(out) = queries.get_mut(&key) {
-      out.output[0]
-    } else {
-      let ptr = G::from_usize(queries.len());
-      queries.insert(&key, &[ptr], G::ZERO);
-      ptr
-    };
+    tail_ptr = queries.intern_memory(&key, false);
   }
   Ok(tail_ptr)
 }
 
-/// Approximate retained bytes of a record's query maps: field elements
-/// (keys + outputs) at 8 bytes plus ~21 bytes of per-entry index
-/// overhead (hash-table slot, stored hash, multiplicity). Feeds the
+/// Approximate retained bytes of a record's query maps: encoded key/output
+/// payload plus ~21 bytes of per-entry index
+/// overhead (hash-table slot, stored hash, multiplicity), and 8 bytes per
+/// ranked function entry for completion order. Feeds the
 /// witness phase of the prover RAM model
 /// ([`crate::synthesis::AiurSystem::peak_prove_bytes`]).
 pub fn record_retained_bytes(record: &QueryRecord) -> usize {
-  let mut elems = 0usize;
+  let mut payload = 0usize;
   let mut entries = 0usize;
+  let mut completion_entries = 0usize;
   for m in &record.function_queries {
-    elems += m.retained_elems();
+    payload += m.retained_bytes();
     entries += m.len();
+    completion_entries += m.completion_entries();
   }
   for (_, m) in &record.memory_queries {
-    elems += m.retained_elems();
+    payload += m.retained_bytes();
     entries += m.len();
   }
-  elems * 8 + entries * 21
+  payload + entries * 21 + completion_entries * size_of::<u64>()
 }

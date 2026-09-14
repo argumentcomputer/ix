@@ -15,6 +15,12 @@ rustc-hash = { workspace = true }
 tracing = { workspace = true }
 tracing-texray = { workspace = true }
 
+[dev-dependencies]
+# Exercise the native MMCS at the same Plonky3 revision as multi-stark.
+p3-blake3 = { git = "https://github.com/Plonky3/Plonky3", rev = "3152b14a89067c83775a8076cc262ffc48a1fd7c" }
+p3-commit = { git = "https://github.com/Plonky3/Plonky3", rev = "3152b14a89067c83775a8076cc262ffc48a1fd7c" }
+p3-symmetric = { git = "https://github.com/Plonky3/Plonky3", rev = "3152b14a89067c83775a8076cc262ffc48a1fd7c" }
+
 [features]
 default = []
 parallel = ["multi-stark/parallel"]

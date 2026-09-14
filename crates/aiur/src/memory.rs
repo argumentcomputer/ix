@@ -11,17 +11,17 @@ use rayon::{
   slice::ParallelSliceMut,
 };
 
-use crate::{G, execute::QueryRecord, memory_channel};
+use crate::{G, execute::QueryRecord, memory_channel, querymap::QuerySlice};
 
 pub struct Memory {
   pub(crate) width: usize,
 }
 
 impl Memory {
-  pub(super) fn lookup_args(size: G, ptr: G, values: &[G]) -> Vec<G> {
+  pub(super) fn lookup_args(size: G, ptr: G, values: QuerySlice<'_>) -> Vec<G> {
     let mut args = Vec::with_capacity(3 + values.len());
     args.extend([memory_channel(), size, ptr]);
-    args.extend(values);
+    args.extend(values.iter());
     args
   }
 
@@ -46,7 +46,7 @@ impl Memory {
     }
     let width = Self::width(size);
     // pull = negated multiplicity.
-    let lookups = vec![Lookup { multiplicity: -multiplicity, args }];
+    let lookups = vec![Lookup { multiplicity: -multiplicity.clone(), args }];
 
     // Transition constraints (formerly the `Air::eval` body): the selector is
     // boolean; a real next row implies a real current row; and the pointer
@@ -59,6 +59,8 @@ impl Memory {
     let is_real_transition = is_real_next * Expr::IsTransition;
     let constraints = vec![
       is_real.clone() * (is_real.clone() - one()),
+      // Padding cannot supply a memory lookup with nonzero multiplicity.
+      multiplicity * (one() - is_real.clone()),
       is_real_transition.clone() * (is_real - one()),
       is_real_transition * (ptr + one() - ptr_next),
     ];
@@ -99,9 +101,13 @@ impl Memory {
         row[0] = result.multiplicity;
         row[1] = G::ONE;
         row[2] = G::from_usize(i);
-        row[3..].copy_from_slice(values);
+        values.copy_to_slice(&mut row[3..]);
 
-        let args = Self::lookup_args(G::from_usize(size), row[2], &row[3..]);
+        let args = Self::lookup_args(
+          G::from_usize(size),
+          row[2],
+          QuerySlice::Fields(&row[3..]),
+        );
         row_lookups.pull(0, row[0], &args);
       });
     drop(row_writers);

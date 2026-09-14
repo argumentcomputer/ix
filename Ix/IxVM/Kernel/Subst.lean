@@ -405,15 +405,22 @@ def subst := ⟦
         store(KExprNode.Forall(
           expr_lower(ty, shift, cutoff),
           expr_lower(body, shift, cutoff + 1))),
-      KExprNode.Let(ty, val, body) =>
-        store(KExprNode.Let(
-          expr_lower(ty, shift, cutoff),
-          expr_lower(val, shift, cutoff),
-          expr_lower(body, shift, cutoff + 1))),
+      KExprNode.Let(ty, val, body) => expr_lower_let(ty, val, body, shift, cutoff),
       KExprNode.Lit(lit) => store(KExprNode.Lit(lit)),
       KExprNode.Proj(tidx, fidx, e1) =>
         store(KExprNode.Proj(tidx, fidx, expr_lower(e1, shift, cutoff))),
     }
+  }
+
+  -- Keep the three recursive calls in their own row so the other walk
+  -- branches do not pay for the widest arm. The lowering precondition
+  -- and the cutoff increment under the body are preserved.
+  fn expr_lower_let(ty: KExpr, val: KExpr, body: KExpr, shift: G, cutoff: G)
+      -> KExpr {
+    store(KExprNode.Let(
+      expr_lower(ty, shift, cutoff),
+      expr_lower(val, shift, cutoff),
+      expr_lower(body, shift, cutoff + 1)))
   }
 
   -- ============================================================================

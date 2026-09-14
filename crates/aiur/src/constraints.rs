@@ -6,17 +6,21 @@ use std::{array, ops::Range, sync::LazyLock};
 
 use crate::{
   FxIndexMap, G,
-  bytecode::{Block, Ctrl, Op, Toplevel, ValIdx},
+  bytecode::{Block, CallComponent, Ctrl, Op, Toplevel, ValIdx},
+  call_order::{
+    CallRank, RANK_LIMB_BITS, RANK_LIMBS, RANK_LOOKUPS, call_rank,
+    row_uses_rank,
+  },
   function_channel,
   gadgets::{
     AiurGadget,
     bytes1::{Bytes1, Bytes1Op},
     bytes2::{Bytes2, Bytes2Op},
   },
-  memory_channel, u8_add_channel, u8_and_channel, u8_bit_decomposition_channel,
-  u8_less_than_channel, u8_mul_channel, u8_or_channel, u8_range_check_channel,
-  u8_shift_left_channel, u8_shift_right_channel, u8_sub_channel,
-  u8_xor_channel, u8_xor_split4_channel, u8_xor_split7_channel,
+  memory_channel, u8_add_channel, u8_bit_decomposition_channel, u8_mul_channel,
+  u8_range_check_channel, u8_shift_left_channel, u8_shift_right_channel,
+  u8_sub_channel, u8_xor_channel, u8_xor_split4_channel, u8_xor_split7_channel,
+  u16_range_check_channel,
 };
 
 type Expr = multi_stark::expr::Expr<G>;
@@ -37,6 +41,8 @@ fn konst(value: G) -> Expr {
 /// `256⁻¹` in the Goldilocks field. The field inversion is expensive, so it is
 /// computed once and reused by the byte carry-chain constraints.
 static INV_256: LazyLock<G> = LazyLock::new(|| G::from_u64(256).inverse());
+/// `65536⁻¹` for the two-limb u32 comparison carry chain.
+static INV_65536: LazyLock<G> = LazyLock::new(|| G::from_u64(65536).inverse());
 /// Constant expression for `(2^32)⁻¹`, built once from its Goldilocks
 /// value and cloned into every virtual u32 carry.
 static INV_2_POW_32_EXPR: LazyLock<Expr> =
@@ -64,12 +70,16 @@ pub struct Constraints {
   pub width: usize,
 }
 
-struct ConstraintState {
+struct ConstraintState<'a> {
+  function: usize,
+  call_components: &'a [CallComponent],
   /// Index of the circuit member currently being walked.
   function_index: G,
-  /// Exactly one selector: the circuit backs a single function with a
-  /// single leaf block (no matches), so every lookup slot is written by
-  /// exactly one branch.
+  /// Packed 48-bit row rank, or zero for an acyclic member. Ranked members
+  /// share their limb columns with each other and with acyclic operations.
+  rank: Expr,
+  /// One function with terminal control and one selector: operation slots
+  /// have one writer. Selector count alone does not exclude empty branches.
   branchless: bool,
   /// Input size of the current member (inputs live in columns
   /// `0..input_size` for every member; the circuit reserves the max).
@@ -93,7 +103,7 @@ struct SharedState {
   map_len: usize,
 }
 
-impl ConstraintState {
+impl ConstraintState<'_> {
   fn selector_index(&self, sel: usize) -> usize {
     sel + self.sel_base
   }
@@ -122,6 +132,16 @@ impl ConstraintState {
     var(self.column - 1)
   }
 
+  fn range_u16(&mut self, sel: &Expr, limb: Expr) {
+    let args = vec![
+      self.gate(sel, konst(u16_range_check_channel())),
+      self.gate(sel, limb),
+    ];
+    let lookup = self.next_lookup();
+    combine_lookup_args(lookup, args);
+    lookup.multiplicity = lookup.multiplicity.clone() + sel.clone();
+  }
+
   fn save(&mut self) -> SharedState {
     SharedState {
       column: self.column,
@@ -138,6 +158,20 @@ impl ConstraintState {
 }
 
 impl Toplevel {
+  /// Ungated lookup arguments are safe only with one writer per slot.
+  /// A branch with no return/yield still writes lookups, so counting the
+  /// terminal selectors alone does not establish that condition.
+  pub(crate) fn circuit_is_branchless(&self, circuit_index: usize) -> bool {
+    let circuit = &self.circuits[circuit_index];
+    let [member] = circuit.members.as_slice() else {
+      return false;
+    };
+    circuit.layout.selectors == 1
+      && self.functions.get(*member).is_some_and(|function| {
+        matches!(function.body.ctrl, Ctrl::Return(..) | Ctrl::Yield(..))
+      })
+  }
+
   /// Build the constraints of one circuit. The circuit's members are walked
   /// like branches of a single function: each walk restarts the auxiliary
   /// column / lookup-slot counters (so members share those, like match arms
@@ -157,8 +191,11 @@ impl Toplevel {
       width: layout.width(),
     };
     let mut state = ConstraintState {
+      function: 0,
+      call_components: &self.call_components,
       function_index: G::ZERO,
-      branchless: layout.selectors == 1,
+      rank: konst(G::ZERO),
+      branchless: self.circuit_is_branchless(circuit_index),
       input_size: 0,
       sel_base: 0,
       column: 0,
@@ -171,20 +208,34 @@ impl Toplevel {
     // The shared multiplicity column: first auxiliary, right after the
     // selectors. The return lookup occupies the first lookup slot.
     let multiplicity = var(layout.input_size + layout.selectors);
-    state.lookups[0].multiplicity = -multiplicity;
+    state.lookups[0].multiplicity = -multiplicity.clone();
     let aux_start = layout.input_size + layout.selectors + 1;
+    let rank_limbs: [Expr; RANK_LIMBS] = array::from_fn(|i| var(aux_start + i));
+    let packed_rank =
+      rank_limbs.iter().enumerate().fold(konst(G::ZERO), |acc, (i, limb)| {
+        acc + limb.clone() * konst(G::from_u64(1 << (RANK_LIMB_BITS * i)))
+      });
     let mut sel_base = layout.input_size;
     let mut circuit_sel = Expr::from(G::ZERO);
+    let mut ranked_sel = Expr::from(G::ZERO);
+    let mut has_ranked_member = false;
     for &member in &circuit.members {
       let function = &self.functions[member];
+      let ranked = row_uses_rank(&self.call_components, member);
+      state.function = member;
       state.function_index = G::from_usize(member);
+      state.rank = if ranked { packed_rank.clone() } else { konst(G::ZERO) };
       state.input_size = function.layout.input_size;
       state.sel_base = sel_base;
-      state.column = aux_start;
-      state.lookup = 1;
+      state.column = aux_start + if ranked { RANK_LIMBS } else { 0 };
+      state.lookup = 1 + if ranked { RANK_LOOKUPS } else { 0 };
       state.map.clear();
       (0..function.layout.input_size).for_each(|i| state.map.push((var(i), 1)));
       let body_sel = function.body.get_block_selector(&state);
+      if ranked {
+        ranked_sel = ranked_sel + body_sel.clone();
+        has_ranked_member = true;
+      }
       circuit_sel = circuit_sel + body_sel.clone();
       function.body.collect_constraints(body_sel, &mut state);
       debug_assert!(state.yield_info.is_empty());
@@ -205,8 +256,21 @@ impl Toplevel {
       state
         .constraints
         .zeros
-        .push(circuit_sel.clone() * (Expr::from(G::ONE) - circuit_sel));
+        .push(circuit_sel.clone() * (Expr::from(G::ONE) - circuit_sel.clone()));
     }
+    // Check rank limbs only for an active ranked member. Acyclic members
+    // reuse these columns and lookup slots for their ordinary operations.
+    if has_ranked_member {
+      state.lookup = 1;
+      for limb in rank_limbs {
+        state.range_u16(&ranked_sel, limb);
+      }
+    }
+    // Only an active member can supply a return lookup. In particular,
+    // branchless return arguments are ungated, so an inactive row with a
+    // nonzero multiplicity could otherwise supply an arbitrary result.
+    // Keep the lookup multiplicity linear and constrain its activity here.
+    state.constraints.zeros.push(multiplicity * (konst(G::ONE) - circuit_sel));
     (state.constraints, state.lookups)
   }
 }
@@ -216,7 +280,7 @@ fn empty_lookup() -> Lookup<Expr> {
 }
 
 impl Block {
-  fn collect_constraints(&self, sel: Expr, state: &mut ConstraintState) {
+  fn collect_constraints(&self, sel: Expr, state: &mut ConstraintState<'_>) {
     // Boolean constraint for this block's selector
     let block_sel = self.get_block_selector(state);
     state
@@ -233,7 +297,7 @@ impl Block {
   /// selectors — crucially excluding the MatchContinue's continuation,
   /// whose return selector fires alongside a yield selector and must not
   /// be double-counted.
-  fn get_block_selector(&self, state: &ConstraintState) -> Expr {
+  fn get_block_selector(&self, state: &ConstraintState<'_>) -> Expr {
     match &self.ctrl {
       Ctrl::Return(sel, _) | Ctrl::Yield(sel, _) => {
         var(state.selector_index(*sel))
@@ -259,7 +323,7 @@ fn collect_branch_constraints(
   var_idx: ValIdx,
   cases: &FxIndexMap<G, Block>,
   def: &Option<Box<Block>>,
-  state: &mut ConstraintState,
+  state: &mut ConstraintState<'_>,
 ) -> (usize, usize) {
   let (matched, _) = state.map[var_idx].clone();
   let init = state.save();
@@ -295,7 +359,7 @@ fn collect_branch_constraints(
 
 impl Ctrl {
   #[allow(clippy::needless_pass_by_value)]
-  fn collect_constraints(&self, sel: Expr, state: &mut ConstraintState) {
+  fn collect_constraints(&self, sel: Expr, state: &mut ConstraintState<'_>) {
     match self {
       Ctrl::Return(_, values) => {
         // channel and function index
@@ -312,6 +376,9 @@ impl Ctrl {
         args.extend(
           values.iter().map(|arg| state.gate(&sel, state.map[*arg].0.clone())),
         );
+        // The public root rank is zero. Lookup compression zero-pads short
+        // messages, preserving the public claim's existing byte encoding.
+        args.push(state.gate(&sel, state.rank.clone()));
         let lookup = &mut state.lookups[0];
         combine_lookup_args(lookup, args);
         // multiplicity is already set
@@ -382,7 +449,7 @@ impl Ctrl {
 }
 
 impl Op {
-  fn collect_constraints(&self, sel: &Expr, state: &mut ConstraintState) {
+  fn collect_constraints(&self, sel: &Expr, state: &mut ConstraintState<'_>) {
     match self {
       Op::Const(f) => state.map.push(((*f).into(), 0)),
       Op::Add(a, b) => {
@@ -462,9 +529,40 @@ impl Op {
           lookup_args
             .extend(output.into_iter().map(|col| state.gate(sel, col)));
 
+          let mut gap_limbs = None;
+          let callee_rank = match call_rank(
+            state.call_components,
+            state.function,
+            *function_index,
+          ) {
+            CallRank::Zero => konst(G::ZERO),
+            // The provider binds and range-checks this field. Static
+            // component order makes a dynamic gap unnecessary here.
+            CallRank::Bound => state.next_auxiliary(),
+            CallRank::Ordered => {
+              let limbs: [Expr; RANK_LIMBS] =
+                array::from_fn(|_| state.next_auxiliary());
+              let gap = limbs.iter().enumerate().fold(
+                konst(G::ZERO),
+                |acc, (i, limb)| {
+                  acc
+                    + limb.clone()
+                      * konst(G::from_u64(1 << (RANK_LIMB_BITS * i)))
+                },
+              );
+              gap_limbs = Some(limbs);
+              state.rank.clone() + konst(G::ONE) + gap
+            },
+          };
+          lookup_args.push(state.gate(sel, callee_rank));
           let lookup = state.next_lookup();
           combine_lookup_args(lookup, lookup_args);
           lookup.multiplicity = lookup.multiplicity.clone() + sel.clone();
+          if let Some(limbs) = gap_limbs {
+            for limb in limbs {
+              state.range_u16(sel, limb);
+            }
+          }
         }
       },
       Op::Store(values) => {
@@ -644,30 +742,39 @@ impl Op {
         state.map.push((z, 1));
         state.map.push((borrow, x_deg.max(y_deg).max(1)));
       },
-      Op::U8And(i, j) => bytes2_constraints(
-        *i,
-        *j,
-        &Bytes2Op::And,
-        u8_and_channel(),
-        sel.clone(),
-        state,
-      ),
-      Op::U8Or(i, j) => bytes2_constraints(
-        *i,
-        *j,
-        &Bytes2Op::Or,
-        u8_or_channel(),
-        sel.clone(),
-        state,
-      ),
-      Op::U8LessThan(i, j) => bytes2_constraints(
-        *i,
-        *j,
-        &Bytes2Op::LessThan,
-        u8_less_than_channel(),
-        sel.clone(),
-        state,
-      ),
+      Op::U8And(i, j) | Op::U8Or(i, j) | Op::U8LessThan(i, j) => {
+        let x = state.map[*i].0.clone();
+        let y = state.map[*j].0.clone();
+        let output = state.next_auxiliary();
+        // The table binds x and y to bytes. Each affine result uniquely
+        // determines the original output over Goldilocks (2 and 256 are
+        // nonzero), without a new column or polynomial constraint.
+        let (channel, result) = match self {
+          Op::U8And(..) => (
+            u8_xor_channel(),
+            x.clone() + y.clone() - konst(G::TWO) * output.clone(),
+          ),
+          Op::U8Or(..) => (
+            u8_xor_channel(),
+            konst(G::TWO) * output.clone() - x.clone() - y.clone(),
+          ),
+          Op::U8LessThan(..) => (
+            u8_sub_channel(),
+            x.clone() - y.clone() + konst(G::from_u16(256)) * output.clone(),
+          ),
+          _ => unreachable!(),
+        };
+        let args = vec![
+          state.gate(sel, konst(channel)),
+          state.gate(sel, x),
+          state.gate(sel, y),
+          state.gate(sel, result),
+        ];
+        let lookup = state.next_lookup();
+        combine_lookup_args(lookup, args);
+        lookup.multiplicity = lookup.multiplicity.clone() + sel.clone();
+        state.map.push((output, 1));
+      },
       Op::U8XorSplit7(i, j) => bytes2_constraints(
         *i,
         *j,
@@ -699,78 +806,35 @@ impl Op {
         lookup.multiplicity = lookup.multiplicity.clone() + sel.clone();
       },
       Op::U32LessThan(x_idx, y_idx) => {
-        // u32 less-than via addition carry chain.
-        //
-        // Goal: constrain output = 1 if a < b, 0 otherwise, where a and b are
-        // u32 values (< 2^32) represented as Goldilocks field elements.
-        //
-        // Approach: find witness c (non-deterministic) such that
-        //     a + c + 1 = b + carry · 2^32
-        // The +1 ensures strict less-than (not ≤). Then a < b ⟺ carry = 0.
-        //
-        // Decompose a, c, b into 4 little-endian bytes each (x_k, y_k, z_k).
-        // The carry chain is computed as polynomial expressions:
-        //     c_k = (x_k + y_k + prev - z_k) / 256
-        // where prev = 1 for k=0, prev = c_{k-1} for k>0.
-        // Each c_k is constrained to be boolean (assert_bool).
-        //
-        // All 12 bytes are range-checked via 6 Bytes2 range-check lookups
-        // (2 bytes per lookup).
-        //
-        // Resources: 12 auxiliaries, 6 lookups, 6 polynomial constraints
-        // (2 decomposition + 4 assert_bool).
+        // Bound a, b and the witness c to u32 values with two u16 limbs each.
+        // The boolean carry chain establishes the integer relation
+        //     a + c + 1 = b + carry * 2^32.
+        // Since 0 <= c < 2^32, a < b iff the final carry is zero. The +1
+        // makes equality return false. All sums are far below Goldilocks p.
+        // Six scalar range lookups use the existing u16 table channel.
         let a = state.map[*x_idx].0.clone();
         let b = state.map[*y_idx].0.clone();
-
-        // Byte decomposition auxiliaries
-        let x_bytes: [Expr; 4] = array::from_fn(|_| state.next_auxiliary());
-        let y_bytes: [Expr; 4] = array::from_fn(|_| state.next_auxiliary());
-        let z_bytes: [Expr; 4] = array::from_fn(|_| state.next_auxiliary());
-
-        // Decomposition constraints: a = Σ x_k * 256^k, b = Σ z_k * 256^k
-        let base =
-          |k: usize| G::from_u64(256u64.pow(u32::try_from(k).unwrap()));
-        let recompose = |bytes: &[Expr; 4]| {
-          bytes.iter().enumerate().fold(konst(G::ZERO), |acc, (k, b)| {
-            acc + b.clone() * konst(base(k))
-          })
+        let x: [Expr; 2] = array::from_fn(|_| state.next_auxiliary());
+        let y: [Expr; 2] = array::from_fn(|_| state.next_auxiliary());
+        let z: [Expr; 2] = array::from_fn(|_| state.next_auxiliary());
+        let recompose = |limbs: &[Expr; 2]| {
+          limbs[0].clone() + limbs[1].clone() * konst(G::from_u32(65536))
         };
-        state.constraints.zeros.push(sel.clone() * (a - recompose(&x_bytes)));
-        state.constraints.zeros.push(sel.clone() * (b - recompose(&z_bytes)));
+        state.constraints.zeros.push(sel.clone() * (a - recompose(&x)));
+        state.constraints.zeros.push(sel.clone() * (b - recompose(&z)));
 
-        // Carry chain: a + c + 1 = b + carry * 2^32
-        let mut carry = konst(G::ONE); // initial carry = 1 for strict less-than
-        for k in 0..4 {
-          let sum = x_bytes[k].clone() + y_bytes[k].clone() + carry;
-          carry = (sum - z_bytes[k].clone()) * konst(*INV_256);
+        let mut carry = konst(G::ONE);
+        for k in 0..2 {
+          carry = (x[k].clone() + y[k].clone() + carry - z[k].clone())
+            * konst(*INV_65536);
           state.constraints.zeros.push(
-            sel.clone() * (carry.clone() * (carry.clone() - konst(G::ONE))),
+            sel.clone() * carry.clone() * (carry.clone() - konst(G::ONE)),
           );
         }
-
-        // Range-check byte pairs via Bytes2 lookups
-        let rc_channel = u8_range_check_channel();
-        for pair in [
-          (&x_bytes[0], &x_bytes[1]),
-          (&x_bytes[2], &x_bytes[3]),
-          (&y_bytes[0], &y_bytes[1]),
-          (&y_bytes[2], &y_bytes[3]),
-          (&z_bytes[0], &z_bytes[1]),
-          (&z_bytes[2], &z_bytes[3]),
-        ] {
-          let lookup_args = vec![
-            state.gate(sel, konst(rc_channel)),
-            state.gate(sel, pair.0.clone()),
-            state.gate(sel, pair.1.clone()),
-          ];
-          let lookup = state.next_lookup();
-          combine_lookup_args(lookup, lookup_args);
-          lookup.multiplicity = lookup.multiplicity.clone() + sel.clone();
+        for limb in x.into_iter().chain(y).chain(z) {
+          state.range_u16(sel, limb);
         }
-
-        // Output: 1 - carry
-        let output = konst(G::ONE) - carry;
-        state.map.push((output, 1));
+        state.map.push((konst(G::ONE) - carry, 1));
       },
       Op::IOSetInfo(..) | Op::IOWrite(..) | Op::Debug(..) => (),
       Op::UnconstrainedBigUintDivMod(_, _) => {
@@ -808,7 +872,7 @@ fn bytes1_constraints(
   op: &Bytes1Op,
   channel: G,
   sel: Expr,
-  state: &mut ConstraintState,
+  state: &mut ConstraintState<'_>,
 ) {
   let size = Bytes1.output_size(op);
 
@@ -837,7 +901,7 @@ fn bytes2_constraints(
   op: &Bytes2Op,
   channel: G,
   sel: Expr,
-  state: &mut ConstraintState,
+  state: &mut ConstraintState<'_>,
 ) {
   let size = Bytes2.output_size(op);
 
