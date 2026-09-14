@@ -124,6 +124,35 @@ theorem inst_betaPrefix (count : Nat) (head : AExpr β) (arguments : List (AExpr
 
 end AExpr
 
+/-- The body's type follows from a typed lambda whose product retains
+the same syntactic domain. The new context supplies its fresh argument. -/
+theorem TypingClaim.lambdaBody {β : Type u} {entries : Environment β} {context : Context β}
+    {condition : PropWhen} {domain body codomain : AExpr β}
+    (typed : TypingClaim.{u,v} entries context (.lam condition domain body)
+      (.forallE condition domain codomain)) :
+    TypingClaim.{u,v} entries (context.push domain) body codomain := by
+  have lifted : TypingClaim.{u,v} entries (context.push domain)
+      ((AExpr.lam condition domain body).liftN 1) ((AExpr.forallE condition domain codomain).liftN 1) := by
+    intro V _ constants realizes levels env valid
+    simpa only [wellDenoted_liftN, interp_liftN] using
+      typed V constants realizes levels _ valid.tail
+  have localTyped : TypingClaim.{u,v} entries (context.push domain) (.bvar 0) (domain.liftN 1) :=
+    TypingClaim.bvar (by rfl)
+  simpa only [AExpr.liftN, AExpr.inst_liftN_self] using lifted.betaResult localTyped
+
+/-- A reduction with a valid result preserves every type already known
+for its source, even when the reduction's argument spine has another result type. -/
+theorem TypingClaim.termConv {β : Type u} {entries : Environment β} {context : Context β}
+    {source result type otherType : AExpr β}
+    (typed : TypingClaim.{u,v} entries context source type)
+    (resultTyped : TypingClaim.{u,v} entries context result otherType)
+    (converted : ConversionClaim.{u,v} entries context source result) :
+    TypingClaim.{u,v} entries context result type := by
+  intro V _ constants realizes levels env valid
+  obtain ⟨_, typeValid, member⟩ := typed V constants realizes levels env valid
+  exact ⟨(resultTyped V constants realizes levels env valid).1, typeValid,
+    converted V constants realizes levels env valid ▸ member⟩
+
 /-- Each leading lambda agrees with the corresponding inferred Pi.
 The count limits this claim to the original syntactic prefix. -/
 inductive LambdaPrefix {β : Type u} : AExpr β → AExpr β → Nat → Prop

@@ -82,6 +82,73 @@ theorem SynthesisInference.beta_peel_sound {β : Type u}
   have result := (leading.truncate peeling.length_bound).beta_sound typed spine
   rwa [peeling.betaPrefix trailing] at result
 
+/-- The actual beta step reads as a model beta prefix. This representation
+fact depends on the executed peel, substitution and suffix reconstruction;
+it applies equally to source expressions and generated intermediate terms. -/
+theorem beta_many_step_readScopedExpr? {β : Type u}
+    {resolve : Address → Option (ConstRef β)} {locals : List FVarId}
+    {rawFunction rawArgument : KExpr .anon} {appInfo : ExprInfo .anon}
+    {name : Mode.anon.F Name} {bi : Mode.anon.F Lean.BinderInfo}
+    {rawDomain rawInner rawBody : KExpr .anon} {lambdaInfo : ExprInfo .anon}
+    {rawArguments consumed : Array (KExpr .anon)}
+    {condition : Certified.PropWhen} {domain inner : AExpr β} {arguments : List (AExpr β)}
+    (spine : (KExpr.app rawFunction rawArgument appInfo).collectSpine =
+      (.lam name bi rawDomain rawInner lambdaInfo, rawArguments))
+    (headReads : readScopedExpr? resolve locals (.lam name bi rawDomain rawInner lambdaInfo) =
+      some (AExpr.lam condition domain inner).erase)
+    (argumentReads : rawArguments.toList.map (readScopedExpr? resolve locals ·) =
+      arguments.map (some ·.erase))
+    (peeling : RecM.consumeBetaLams (.lam name bi rawDomain rawInner lambdaInfo) rawArguments =
+      (rawBody, consumed))
+    (nonempty : (!consumed.isEmpty) = true)
+    (before : TcState .anon) (reductionFuel : Nat) (flags : WhnfFlags)
+    (walkerBounds : SimulSubstBounds rawBody consumed.reverse 0)
+    (coherent : before.env.intern.WF)
+    (walkerFaithful : KExpr.CollisionFree fun term => before.env.intern.ExprSupport term ∨
+      KExpr.SimulSubstReach consumed.reverse rawBody 0 term)
+    (suffixFaithful : KExpr.CollisionFree fun term =>
+      (simulSubst rawBody consumed.reverse 0 before.env.intern).2.ExprSupport term ∨
+        term ∈ cheapBetaChainList (simulSubst rawBody consumed.reverse 0 before.env.intern).1
+          (rawArguments.extract consumed.size rawArguments.size).toList) :
+    ∃ (result : KExpr .anon) (after : TcState .anon),
+      (RecM.whnfCoreWithFlagsStep (.app rawFunction rawArgument appInfo) flags).run
+        (methodsN (reductionFuel + 1)) before = .ok (.next result) after ∧
+      readScopedExpr? resolve locals result =
+        some (AExpr.betaPrefix consumed.size (.lam condition domain inner) arguments).erase ∧
+      consumed.size ≤ inner.lambdaDepth + 1 ∧ after.env.intern.WF := by
+  obtain ⟨rawPeel, consumedPrefix, consumedBound⟩ := RecM.BetaPeel.of_consume peeling
+  obtain ⟨body, modelPeel, bodyReads⟩ := betaPeel_readScopedExpr? rawPeel headReads
+  have sizeAgrees : rawArguments.size = arguments.length := by
+    have lengths := congrArg List.length argumentReads
+    simpa using lengths
+  have consumedSize : (arguments.take consumed.size).length = consumed.size := by
+    simp only [List.length_take]
+    omega
+  have consumedReads : consumed.toList.map (readScopedExpr? resolve locals ·) =
+      (arguments.take consumed.size).map (some ·.erase) := by
+    rw [consumedPrefix, List.map_take, argumentReads, List.map_take]
+  have suffixReads : (rawArguments.extract consumed.size rawArguments.size).toList.map
+      (readScopedExpr? resolve locals ·) = (arguments.drop consumed.size).map (some ·.erase) := by
+    rw [RecM.BetaPeel.remaining_eq_drop peeling, List.map_drop, argumentReads, List.map_drop]
+  obtain ⟨walkReads, walkCoherent⟩ := simulSubst_readScopedExpr?
+    (by simpa only [Array.size_reverse] using consumedSize.symm)
+    walkerBounds.1 walkerBounds.2.1 (by simpa using walkerBounds.2.2.2.1)
+    walkerBounds.2.2.1 coherent walkerFaithful
+    (by simpa only [Nat.zero_add, Array.length_toList, consumedSize] using bodyReads)
+    (argumentsReading_reverse_get consumedReads consumedSize.symm)
+  have peelingMeaning := LambdaPeel.betaPrefix (arguments := arguments.take consumed.size)
+    (by simpa only [consumedSize, Array.length_toList] using modelPeel) (arguments.drop consumed.size)
+  simp only [consumedSize, List.take_append_drop] at peelingMeaning
+  let walk := simulSubst rawBody consumed.reverse 0 before.env.intern
+  let middle := { before with env := { before.env with intern := walk.2 } }
+  obtain ⟨result, after, finish, resultReads, preserved⟩ :=
+    finishAppResult_readScopedExpr? (before := middle) walkCoherent suffixFaithful walkReads suffixReads
+      (methodsN (reductionFuel + 1))
+  refine ⟨result, after, ?_, ?_, ?_, preserved⟩
+  · exact RecM.whnfCoreWithFlagsStep_betaMany spine rfl peeling nonempty rfl finish
+  · simpa only [peelingMeaning] using resultReads
+  · simpa only [Array.length_toList, AExpr.lambdaDepth] using modelPeel.length_bound
+
 /-- The production multi-argument beta step preserves typing and model
 meaning. Its peeled body and consumed argument order come from the actual
 loop, and its suffix is rebuilt by the actual interned application chain. -/
@@ -129,39 +196,73 @@ theorem SynthesisInference.beta_many_step {β : Type u}
       TypingClaim.{u,v} entries context
         ((body.instRev (arguments.take consumed.size)).appN (arguments.drop consumed.size)) type ∧
       after.env.intern.WF := by
+  obtain ⟨result, after, run, resultReads, enough, preserved⟩ := beta_many_step_readScopedExpr?
+    spine headReads argumentReads peeling nonempty before reductionFuel flags
+    walkerBounds coherent walkerFaithful suffixFaithful
   have reading := readScopedExpr?_collectSpine spine headReads argumentReads
-  obtain ⟨rawPeel, consumedPrefix, consumedBound⟩ := RecM.BetaPeel.of_consume peeling
-  obtain ⟨body, modelPeel, bodyReads⟩ := betaPeel_readScopedExpr? rawPeel headReads
+  obtain ⟨_, _, typed, leading, argumentsTyped⟩ := support.lambda_spine formed agreement reading accepted
+  have conversion := (leading.truncate enough).beta_sound typed argumentsTyped
+  obtain ⟨rawPeel, _, consumedBound⟩ := RecM.BetaPeel.of_consume peeling
+  obtain ⟨body, modelPeel, _⟩ := betaPeel_readScopedExpr? rawPeel headReads
   have sizeAgrees : rawArguments.size = arguments.length := by
     have lengths := congrArg List.length argumentReads
     simpa using lengths
   have consumedSize : (arguments.take consumed.size).length = consumed.size := by
     simp only [List.length_take]
     omega
-  have consumedReads : consumed.toList.map (readScopedExpr? resolve locals ·) =
-      (arguments.take consumed.size).map (some ·.erase) := by
-    rw [consumedPrefix, List.map_take, argumentReads, List.map_take]
-  have suffixReads : (rawArguments.extract consumed.size rawArguments.size).toList.map
-      (readScopedExpr? resolve locals ·) = (arguments.drop consumed.size).map (some ·.erase) := by
-    rw [RecM.BetaPeel.remaining_eq_drop peeling, List.map_drop, argumentReads, List.map_drop]
-  obtain ⟨walkReads, walkCoherent⟩ := simulSubst_readScopedExpr?
-    (by simpa only [Array.size_reverse] using consumedSize.symm)
-    walkerBounds.1 walkerBounds.2.1 (by simpa using walkerBounds.2.2.2.1)
-    walkerBounds.2.2.1 coherent walkerFaithful
-    (by simpa only [Nat.zero_add, Array.length_toList, consumedSize] using bodyReads)
-    (argumentsReading_reverse_get consumedReads consumedSize.symm)
-  have conversion := SynthesisInference.beta_peel_sound (consumed := arguments.take consumed.size)
-    (trailing := arguments.drop consumed.size)
-    (by simpa only [List.take_append_drop] using support) formed agreement
-    (by simpa only [List.take_append_drop] using reading) accepted
-    (by simpa only [consumedSize, Array.length_toList] using modelPeel)
-  let walk := simulSubst rawBody consumed.reverse 0 before.env.intern
-  let middle := { before with env := { before.env with intern := walk.2 } }
-  obtain ⟨result, after, finish, resultReads, preserved⟩ :=
-    finishAppResult_readScopedExpr? (before := middle) walkCoherent suffixFaithful walkReads suffixReads
-      (methodsN (reductionFuel + 1))
-  refine ⟨body, result, after, ?_, resultReads, ?_, conversion.2, preserved⟩
-  · exact RecM.whnfCoreWithFlagsStep_betaMany spine rfl peeling nonempty rfl finish
-  · simpa only [List.take_append_drop] using conversion.1
+  have peelingMeaning := LambdaPeel.betaPrefix (arguments := arguments.take consumed.size)
+    (by simpa only [consumedSize, Array.length_toList] using modelPeel) (arguments.drop consumed.size)
+  simp only [consumedSize, List.take_append_drop] at peelingMeaning
+  rw [peelingMeaning] at resultReads conversion
+  exact ⟨body, result, after, run, resultReads, conversion.1, conversion.2, preserved⟩
+
+/-- A retained origin justifies the actual beta step on an intermediate
+type. All inference calls belong to the origin; no new check of the
+intermediate source or the generated result is required. -/
+theorem SynthesisReductionOrigin.beta_many_step {β : Type u}
+    {resolve : Address → Option (ConstRef β)} {locals : List FVarId}
+    {incoming entries : Model.Environment β} {incomingContext context : Model.Context β}
+    {incomingBounds : List VLevel} {level : VLevel}
+    {rawFunction rawArgument : KExpr .anon} {appInfo : ExprInfo .anon}
+    {name : Mode.anon.F Name} {bi : Mode.anon.F Lean.BinderInfo}
+    {rawDomain rawInner rawBody : KExpr .anon} {lambdaInfo : ExprInfo .anon}
+    {rawArguments consumed : Array (KExpr .anon)}
+    {condition : Certified.PropWhen} {domain inner : AExpr β} {arguments : List (AExpr β)}
+    (support : SynthesisReductionOrigin resolve incoming incomingContext incomingBounds
+      entries context (.lam condition domain inner) arguments consumed.size level)
+    (formed : ContextFormation.{u,v} incoming incomingContext incomingBounds)
+    (spine : (KExpr.app rawFunction rawArgument appInfo).collectSpine =
+      (.lam name bi rawDomain rawInner lambdaInfo, rawArguments))
+    (headReads : readScopedExpr? resolve locals (.lam name bi rawDomain rawInner lambdaInfo) =
+      some (AExpr.lam condition domain inner).erase)
+    (argumentReads : rawArguments.toList.map (readScopedExpr? resolve locals ·) =
+      arguments.map (some ·.erase))
+    (peeling : RecM.consumeBetaLams (.lam name bi rawDomain rawInner lambdaInfo) rawArguments =
+      (rawBody, consumed))
+    (nonempty : (!consumed.isEmpty) = true)
+    (before : TcState .anon) (reductionFuel : Nat) (flags : WhnfFlags)
+    (walkerBounds : SimulSubstBounds rawBody consumed.reverse 0)
+    (coherent : before.env.intern.WF)
+    (walkerFaithful : KExpr.CollisionFree fun term => before.env.intern.ExprSupport term ∨
+      KExpr.SimulSubstReach consumed.reverse rawBody 0 term)
+    (suffixFaithful : KExpr.CollisionFree fun term =>
+      (simulSubst rawBody consumed.reverse 0 before.env.intern).2.ExprSupport term ∨
+        term ∈ cheapBetaChainList (simulSubst rawBody consumed.reverse 0 before.env.intern).1
+          (rawArguments.extract consumed.size rawArguments.size).toList) :
+    ∃ (result : KExpr .anon) (after : TcState .anon),
+      (RecM.whnfCoreWithFlagsStep (.app rawFunction rawArgument appInfo) flags).run
+        (methodsN (reductionFuel + 1)) before = .ok (.next result) after ∧
+      readScopedExpr? resolve locals result =
+        some (AExpr.betaPrefix consumed.size (.lam condition domain inner) arguments).erase ∧
+      ConversionClaim.{u,v} entries context ((AExpr.lam condition domain inner).appN arguments)
+        (AExpr.betaPrefix consumed.size (.lam condition domain inner) arguments) ∧
+      TypingClaim.{u,v} entries context
+        (AExpr.betaPrefix consumed.size (.lam condition domain inner) arguments) (.sort level) ∧
+      after.env.intern.WF := by
+  obtain ⟨result, after, run, reading, _, preserved⟩ := beta_many_step_readScopedExpr?
+    spine headReads argumentReads peeling nonempty before reductionFuel flags
+    walkerBounds coherent walkerFaithful suffixFaithful
+  obtain ⟨conversion, typed⟩ := support.sound formed
+  exact ⟨result, after, run, reading, conversion, typed, preserved⟩
 
 end Ix.Kernel.Consistency

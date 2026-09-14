@@ -16,6 +16,22 @@ universe u
     term.liftN 0 cutoff = term := by
   induction term generalizing cutoff <;> simp_all [liftN, liftVar]
 
+/-- Opening a lifted binder with the corresponding fresh local leaves
+the body's existing de Bruijn indices unchanged. -/
+theorem inst_liftN_self (term : AExpr β) (cutoff : Nat := 0) :
+    (term.liftN 1 (cutoff + 1)).inst (.bvar 0) cutoff = term := by
+  induction term generalizing cutoff with
+  | bvar index =>
+      by_cases below : index < cutoff
+      · simp [liftN, liftVar, inst, instVar, below, show index < cutoff + 1 by omega]
+      · by_cases equal : index = cutoff
+        · subst index
+          simp [liftN, liftVar, inst, instVar, show cutoff < cutoff + 1 by omega]
+        · simp [liftN, liftVar, inst, instVar,
+            show ¬ index < cutoff + 1 by omega, show ¬ 1 + index < cutoff by omega,
+            show 1 + index ≠ cutoff by omega, show 1 + index - 1 = index by omega]
+  | _ => simp_all [liftN, inst, Nat.add_assoc]
+
 theorem instL_liftN (term : AExpr β) (levels : List VLevel) (count cutoff : Nat) :
     (term.liftN count cutoff).instL levels = (term.instL levels).liftN count cutoff := by
   induction term generalizing cutoff <;> simp_all [liftN, instL]

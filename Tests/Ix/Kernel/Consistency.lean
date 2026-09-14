@@ -952,6 +952,128 @@ private def composedLambdaTypeResult (shape : Nat) (level : Ixon.Univ) : Bool :=
   | .ok passed after => passed && after.lctx.size == 0
   | .error _ _ => false
 
+/-- The outer lambda applies its parameter. Its first beta step exposes
+the supplied lambda's separate prefix; the next step consumes that prefix.
+Shape 4 also changes the outer body's inferred type from a beta sort to
+the sort itself. Shape 6 retains an application suffix after the second step. -/
+private def repeatedBetaDeclaredType (level : Ixon.Univ) (universes : UInt64 := 0)
+    (shape wrong : Nat := 0) : Ixon.Env × Address := Id.run do
+  let levels := if universes == 0 then #[] else #[0]
+  let betaSort := Ixon.Expr.app (.leanLam (.sort 1) (.var 0)) (.sort 0)
+  let carrierSort := if shape == 4 then betaSort else .sort 0
+  let (env, carrier) := storeConst {}
+    ⟨.axio ⟨false, universes, carrierSort⟩, #[], #[], #[level, .succ level]⟩
+  let (env, otherCarrier) := storeConst env
+    ⟨.axio ⟨false, universes, carrierSort⟩, #[], #[], #[level, .succ level, .succ (.succ level)]⟩
+  let familyType := Ixon.Expr.leanAll (.sort 0) (.sort 0)
+  let (env, family) := storeConst env
+    ⟨.axio ⟨false, universes, familyType⟩, #[], #[], #[level]⟩
+  let (env, witness) := storeConst env
+    ⟨.axio ⟨false, universes,
+      if shape == 6 then .app (.ref 0 levels) (.ref 1 levels) else .ref 0 levels⟩,
+      #[], if shape == 6 then #[family, carrier] else #[carrier], #[level]⟩
+  let domain := if shape == 4 then Ixon.Expr.leanAll betaSort betaSort
+    else if shape == 5 then .leanAll (.sort 0) (.leanAll (.var 0) (.sort 0))
+    else familyType
+  let supplied := if wrong == 1 then Ixon.Expr.leanLam (.sort 1) (.var 0)
+    else if shape == 1 then .leanLam (.sort 0) (.ref 0 levels)
+    else if shape == 2 then .app (.leanLam (.sort 0) (.leanLam (.sort 0) (.var 1))) (.ref 0 levels)
+    else if shape == 3 then
+      .app (.app (.leanLam (.sort 0) (.leanLam (.var 0) (.leanLam (.sort 0) (.var 2))))
+        (.ref 0 levels)) (.ref (if wrong == 3 then 0 else 2) levels)
+    else if shape == 4 then .app (.leanLam (.sort 1) (.leanLam (.var 0) (.var 0))) betaSort
+    else if shape == 5 then .leanLam (.sort 0) (.leanLam (.var 0) (.var 1))
+    else if shape == 6 then .app (.leanLam familyType (.var 0)) (.ref 3 levels)
+    else .leanLam (.sort 0) (.var 0)
+  let body := if shape == 5 then
+      Ixon.Expr.app (.app (.var 0) (.ref 0 levels)) (.ref (if wrong == 3 then 0 else 2) levels)
+    else .app (.var 0) (.ref (if shape == 1 || shape == 2 || shape == 3 || wrong == 2 then 1 else 0) levels)
+  return storeConst env
+    ⟨.defn ⟨.defn, .safe, universes, .app (.leanLam domain body) supplied, .ref 2 levels⟩,
+      #[], #[carrier, otherCarrier, witness, family], #[level, .succ level]⟩
+
+/-- Observe the two actual WHNF steps and the change of lambda head.
+The second result must be exactly the value's already inferred type. -/
+private def repeatedBetaDeclaredResult (shape : Nat) (level : Ixon.Univ) : Bool :=
+  let (env, target) := repeatedBetaDeclaredType level 0 shape
+  let action : RecM .anon Bool := do
+    let concrete ← TcM.getConst (m := .anon) ⟨target, ()⟩
+    let .defn _ _ _ _ _ _ type value _ _ := concrete | return false
+    let .app outer supplied _ := type | return false
+    let .lam _ _ _ body _ := outer | return false
+    let expected ← RecM.inferCall value
+    let .sort .. ← RecM.inferCall type | return false
+    let (suppliedHead, initialArguments) := supplied.collectSpine
+    let firstConsumed := (RecM.consumeBetaLams type.collectSpine.1 type.collectSpine.2).2
+    let before ← get
+    let .next middle ← RecM.whnfCoreWithFlagsStep type .DEF_EQ_CORE | return false
+    let (middleHead, middleArguments) := middle.collectSpine
+    let secondConsumed := (RecM.consumeBetaLams middleHead middleArguments).2
+    let .next result ← RecM.whnfCoreWithFlagsStep middle .DEF_EQ_CORE | return false
+    let after ← get
+    let converted ← RecM.isDefEqCall expected type
+    return firstConsumed == #[supplied] && middleHead == suppliedHead && middleHead != outer &&
+      middleArguments == initialArguments ++ body.collectSpine.2 &&
+      secondConsumed.size == (if shape == 3 then 3 else if shape >= 2 && shape <= 5 then 2 else 1) &&
+      result == expected && type != middle && middle != result && converted &&
+      after.lctx.size == before.lctx.size && after.env.nextFVarId == before.env.nextFVarId
+  match TcM.runRec action (TcState.newLazyAnon env) with
+  | .ok passed _ => passed
+  | .error _ _ => false
+
+private def repeatedBetaChangedBodyType (level : Ixon.Univ) : Bool :=
+  let (env, target) := repeatedBetaDeclaredType level 0 4
+  let action : RecM .anon Bool := RecM.withLctxScope do
+    let concrete ← TcM.getConst (m := .anon) ⟨target, ()⟩
+    let .defn _ _ _ _ _ _ (.app outer _ _) _ _ _ := concrete | return false
+    let .lam name bi domain body _ := outer | return false
+    let .all _ _ _ codomain _ ← RecM.inferCall outer | return false
+    let (opened, _) ← TcM.openBinder name bi domain body
+    let bodyType ← RecM.inferCall opened
+    let reduced ← TcM.runIntern (cheapBetaReduce bodyType)
+    return bodyType != codomain && (cheapBetaPlan? bodyType).isSome && reduced == codomain &&
+      match codomain with | .sort .. => true | _ => false
+  match TcM.runRec action (TcState.newLazyAnon env) with
+  | .ok passed after => passed && after.lctx.size == 0
+  | .error _ _ => false
+
+private def repeatedBetaCases : TestSeq :=
+  test "successive beta: a supplied identity provides the second lambda origin in Prop and Type"
+    (allSucceeded (repeatedBetaDeclaredType .zero).1 5 &&
+      allSucceeded (repeatedBetaDeclaredType (.succ .zero)).1 5)
+  ++ test "successive beta: a captured carrier survives a distinct body argument"
+    (allSucceeded (repeatedBetaDeclaredType .zero 0 1).1 5 &&
+      allSucceeded (repeatedBetaDeclaredType (.succ .zero) 0 1).1 5)
+  ++ test "successive beta: a partial lambda joins its initial and body arguments"
+    (allSucceeded (repeatedBetaDeclaredType .zero 0 2).1 5 &&
+      allSucceeded (repeatedBetaDeclaredType (.succ .zero) 0 2).1 5)
+  ++ test "successive beta: dependent initial and body arguments keep their order"
+    (allSucceeded (repeatedBetaDeclaredType .zero 0 3).1 5 &&
+      allSucceeded (repeatedBetaDeclaredType (.succ .zero) 0 5).1 5)
+  ++ test "successive beta: changed body typing retains the original argument checks"
+    (allSucceeded (repeatedBetaDeclaredType .zero 0 4).1 5 &&
+      allSucceeded (repeatedBetaDeclaredType (.succ .zero) 0 4).1 5)
+  ++ test "successive beta: the second prefix leaves the remaining family application"
+    (allSucceeded (repeatedBetaDeclaredType .zero 0 6).1 5 &&
+      allSucceeded (repeatedBetaDeclaredType (.succ .zero) 0 6).1 5)
+  ++ test "successive beta: both origins and the changed body type retain universe parameters"
+    ((List.range 7).all fun shape => allSucceeded (repeatedBetaDeclaredType (.var 0) 1 shape).1 5)
+  ++ test "successive beta: the same declarations check with fresh per-item caches"
+    ((List.range 7).all fun shape => allSucceeded (repeatedBetaDeclaredType .zero 0 shape).1 5 { clearEvery := 1 })
+  ++ test "successive beta: both WHNF steps return the exact expected type in Prop and Type"
+    ((List.range 7).all fun shape => repeatedBetaDeclaredResult shape .zero &&
+      repeatedBetaDeclaredResult shape (.succ .zero))
+  ++ test "successive beta: cheap beta changes the original body's type hash"
+    (repeatedBetaChangedBodyType .zero && repeatedBetaChangedBodyType (.succ .zero))
+  ++ test "successive beta: a supplied lambda with a different domain is rejected"
+    (let (env, target) := repeatedBetaDeclaredType .zero 0 0 1; rowFailed env target)
+  ++ test "successive beta: selecting the other carrier cannot type the original witness"
+    (let (env, target) := repeatedBetaDeclaredType .zero 0 0 2; rowFailed env target)
+  ++ test "successive beta: initial and body arguments must inhabit their dependent domains"
+    (let (env, first) := repeatedBetaDeclaredType .zero 0 3 3
+     let (otherEnv, second) := repeatedBetaDeclaredType .zero 0 5 3
+     rowFailed env first && rowFailed otherEnv second)
+
 private def applicationCases : TestSeq :=
   test "application environment: Prop/Type identity calls and transitive theorem calls check"
     (allSucceeded applicationEnvironment 5 { clearEvery := 0 })
@@ -2741,7 +2863,7 @@ private def polymorphicDefinitionCases : TestSeq :=
 
 public def suite : List TestSeq :=
   [cases, polymorphicCases, specializationCases, binderCases, applicationCases, multiBetaCases, cheapLambdaCases,
-    cheapApplicationCases, exposedLambdaCases,
+    cheapApplicationCases, exposedLambdaCases, repeatedBetaCases,
     polymorphicApplicationCases, constantCacheCases, cacheInvariantCases, recursiveCacheCases,
     lazyCacheCases, blockCacheCases, ingressCoherenceCases, sourceOwnershipCases, recursiveStateCases,
     sourceAgreementCases, sourceCacheCases, polymorphicDefinitionCases]

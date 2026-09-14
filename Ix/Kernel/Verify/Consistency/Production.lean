@@ -454,6 +454,29 @@ inductive DefinitionCheckSupport {β : Type u}
         ((AExpr.lam condition domain inner).appN (consumed ++ trailing)).ReferencesIn entries) :
       DefinitionCheckSupport resolve entries trace value
         ((AExpr.lam condition domain inner).appN (consumed ++ trailing))
+  | betaDeclaredTwice {value domain binder inner : AExpr β} {condition headCondition : Certified.PropWhen}
+      {initialArguments arguments : List (AExpr β)} {count : Nat} {level typeBound valueBound : VLevel}
+      (typeInference : SynthesisInference resolve entries [] [] [] fuel trace.validated input.type
+        (.app (.lam condition domain ((AExpr.bvar 0).appN arguments))
+          ((AExpr.lam headCondition binder inner).appN initialArguments)) (.sort level) typeBound)
+      (valueInference : SynthesisInference resolve entries [] [] [] fuel trace.valueStart input.value
+        value (AExpr.betaPrefix count (.lam headCondition binder inner)
+          (initialArguments ++ arguments.map (AExpr.inst · ((AExpr.lam headCondition binder inner).appN initialArguments))))
+        valueBound)
+      (enough : count ≤ inner.lambdaDepth + 1)
+      (valueReading : readScopedExpr? resolve [] input.value = some value.erase)
+      (typeReading : readScopedExpr? resolve [] input.type =
+        some (AExpr.app (.lam condition domain ((AExpr.bvar 0).appN arguments))
+          ((AExpr.lam headCondition binder inner).appN initialArguments)).erase)
+      (scope : value.Scope input.universes.toNat 0 ∧
+        (AExpr.app (.lam condition domain ((AExpr.bvar 0).appN arguments))
+          ((AExpr.lam headCondition binder inner).appN initialArguments)).Scope input.universes.toNat 0)
+      (references : value.ReferencesIn entries ∧
+        (AExpr.app (.lam condition domain ((AExpr.bvar 0).appN arguments))
+          ((AExpr.lam headCondition binder inner).appN initialArguments)).ReferencesIn entries) :
+      DefinitionCheckSupport resolve entries trace value
+        (.app (.lam condition domain ((AExpr.bvar 0).appN arguments))
+          ((AExpr.lam headCondition binder inner).appN initialArguments))
 
 theorem DefinitionCheckSupport.sound {β : Type u}
     {resolve : Address → Option (ConstRef β)} {entries : Model.Environment β}
@@ -481,6 +504,14 @@ theorem DefinitionCheckSupport.sound {β : Type u}
       obtain ⟨_, typeTyped, _⟩ := typeInference.closed_sound typeReading trace.typeRun
       obtain ⟨conversion, _⟩ := typeInference.beta_peel_sound (.empty entries) (.empty _ _)
         typeReading trace.typeRun peeling
+      obtain ⟨_, valueTyped, _⟩ := valueInference.closed_sound valueReading trace.valueRun
+      exact ⟨readScopedExpr?_closed valueReading, readScopedExpr?_closed typeReading,
+        scope.1, scope.2, references.1, references.2,
+        valueTyped.conv typeTyped conversion.symm⟩
+  | betaDeclaredTwice typeInference valueInference enough valueReading typeReading scope references =>
+      obtain ⟨_, typeTyped, _⟩ := typeInference.closed_sound typeReading trace.typeRun
+      obtain ⟨conversion, _⟩ := typeInference.beta_twice_sound (.empty entries) (.empty _ _)
+        typeReading trace.typeRun enough
       obtain ⟨_, valueTyped, _⟩ := valueInference.closed_sound valueReading trace.valueRun
       exact ⟨readScopedExpr?_closed valueReading, readScopedExpr?_closed typeReading,
         scope.1, scope.2, references.1, references.2,
@@ -541,6 +572,44 @@ def DefinitionBodyTrace.betaDeclaredSpineSupport {β : Type u} {input : Definiti
     DefinitionCheckSupport resolve entries trace value
       ((AExpr.lam condition domain inner).appN (consumed ++ trailing)) :=
   .betaDeclaredSpine typeInference valueInference peeling valueReading typeReading
+    (trace.scopes typeCoverage valueCoverage collision valueReading typeReading
+      valueConditions typeConditions) references
+
+/-- The declared type can reduce through its outer lambda and then a
+prefix of the supplied lambda. The exact declaration checks retain both
+origins, including arguments already applied to the supplied lambda. -/
+def DefinitionBodyTrace.betaDeclaredTwiceSupport {β : Type u} {input : DefinitionInput}
+    {fuel : Nat} {before : TcState .anon}
+    (trace : DefinitionBodyTrace input (methodsN fuel) before)
+    {resolve : Address → Option (ConstRef β)} {entries : Model.Environment β}
+    {value domain binder inner : AExpr β} {condition headCondition : Certified.PropWhen}
+    {initialArguments arguments : List (AExpr β)} {count : Nat} {level typeBound valueBound : VLevel}
+    {support : RunSupport} (typeCoverage : input.type.ValidationCoverage support)
+    (valueCoverage : input.value.ValidationCoverage support)
+    (collision : support.CollisionFree)
+    (typeInference : SynthesisInference resolve entries [] [] [] fuel trace.validated input.type
+      (.app (.lam condition domain ((AExpr.bvar 0).appN arguments))
+        ((AExpr.lam headCondition binder inner).appN initialArguments)) (.sort level) typeBound)
+    (valueInference : SynthesisInference resolve entries [] [] [] fuel trace.valueStart input.value
+      value (AExpr.betaPrefix count (.lam headCondition binder inner)
+        (initialArguments ++ arguments.map (AExpr.inst · ((AExpr.lam headCondition binder inner).appN initialArguments))))
+      valueBound)
+    (enough : count ≤ inner.lambdaDepth + 1)
+    (valueReading : readScopedExpr? resolve [] input.value = some value.erase)
+    (typeReading : readScopedExpr? resolve [] input.type =
+      some (AExpr.app (.lam condition domain ((AExpr.bvar 0).appN arguments))
+        ((AExpr.lam headCondition binder inner).appN initialArguments)).erase)
+    (valueConditions : ConditionsScoped input.universes.toNat value)
+    (typeConditions : ConditionsScoped input.universes.toNat
+      (.app (.lam condition domain ((AExpr.bvar 0).appN arguments))
+        ((AExpr.lam headCondition binder inner).appN initialArguments)))
+    (references : value.ReferencesIn entries ∧
+      (AExpr.app (.lam condition domain ((AExpr.bvar 0).appN arguments))
+        ((AExpr.lam headCondition binder inner).appN initialArguments)).ReferencesIn entries) :
+    DefinitionCheckSupport resolve entries trace value
+      (.app (.lam condition domain ((AExpr.bvar 0).appN arguments))
+        ((AExpr.lam headCondition binder inner).appN initialArguments)) :=
+  .betaDeclaredTwice typeInference valueInference enough valueReading typeReading
     (trace.scopes typeCoverage valueCoverage collision valueReading typeReading
       valueConditions typeConditions) references
 

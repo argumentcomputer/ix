@@ -106,8 +106,14 @@ the original codomain's checks in application order. The actual selected
 prefix can consume arguments from both origins. These
 origins are proved sound in the inference recursion and consumed by the
 lambda case. Abstraction uses the reduced type and the reduction's final
-intern table. Automatic origin construction for arbitrary generated types
-and general reduction remains open.
+intern table. A lambda body that applies its parameter also retains its
+actual argument checks, even when cheap beta changes the body's inferred
+type. Its first beta result supplies typing at the current type; substituting
+the supplied lambda supplies the next checked prefix. Two successive
+prefixes therefore compose without inference of the intermediate term.
+Retained origins justify the actual multi-argument WHNF step, and declaration
+admission includes this two-prefix conversion. Automatic origin construction
+for arbitrary generated types and general reduction remain open.
 Local cache hits agree with the actual declaration type. Constant
 hits agree with pure universe substitution of a loaded, admitted declaration;
 sort hits return the canonical successor sort. Application, forall, and lambda

@@ -424,6 +424,20 @@ private def exposedOriginRoots : Array RootAllowance := #[
   { root := ``ApplicationInferenceTrace.exposedApplicationOriginAt, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] }
 ]
 
+private def repeatedBetaRoots : Array RootAllowance := #[
+  { root := ``Theory.Model.AExpr.inst_liftN_self, standardAxioms := #[``propext, ``Quot.sound] },
+  { root := ``Theory.Model.TypingClaim.lambdaBody, standardAxioms := standard },
+  { root := ``Theory.Model.TypingClaim.termConv, standardAxioms := standard },
+  { root := ``BinderInference.lambdaBodyVariableSpine, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``SynthesisInference.lambdaBodyVariableSpine, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``SynthesisInference.betaResultOrigin, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``SynthesisInference.betaNextOrigin, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``SynthesisInference.beta_twice_sound, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``beta_many_step_readScopedExpr?, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``SynthesisReductionOrigin.beta_many_step, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``DefinitionBodyTrace.betaDeclaredTwiceSupport, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] }
+]
+
 def roots : Array RootAllowance := #[
   { root := ``InterfaceExtends.refl, forbiddenDependencies := forbiddenProduction },
   { root := ``InterfaceExtends.trans, forbiddenDependencies := forbiddenProduction },
@@ -551,7 +565,7 @@ def roots : Array RootAllowance := #[
 }) ++ productionRoots.map (fun root => {
   root, standardAxioms := standard, nativeAxioms := productionNative,
   forbiddenDependencies := forbiddenProduction
-}) ++ (betaRoots ++ typeOriginRoots ++ substitutedOriginRoots ++ exposedOriginRoots).map (fun allowance => {
+}) ++ (betaRoots ++ typeOriginRoots ++ substitutedOriginRoots ++ exposedOriginRoots ++ repeatedBetaRoots).map (fun allowance => {
     allowance with forbiddenDependencies := forbiddenProduction })
   ++ #[{ root := ``extend_atomic_definition, standardAxioms := standard }]
 

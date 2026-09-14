@@ -512,7 +512,7 @@ lake test --wfail -- tc-unit
 lake -d Models/SetTheory build --wfail
 ```
 
-The consistency target checks 559 exact theorem boundaries. The production
+The consistency target checks 570 exact theorem boundaries. The production
 environment roots retain four existing generated output-length proofs,
 reached through expression/universe construction, names, and the full
 production method table. They introduce no new native proofs. The model
@@ -570,8 +570,21 @@ The stronger checked-origin result also retains an argument's existing
 lambda-headed application spine. `LambdaSpineTyping.substituteHead` combines
 it with the original variable application's spine under the retained context,
 so a selected reduction can cross from one argument list into the other.
-Automatic origin construction for arbitrary generated types, repeated reduction, and other
-conversion paths remain open.
+`lambdaBodyVariableSpine` additionally extracts the actual argument checks
+of a lambda body that applies its parameter. Their original result type can
+differ from the lambda's codomain after cheap beta. `betaResultOrigin`
+retains typing of the first substitution result at the current codomain;
+`betaNextOrigin` combines it with the supplied lambda's checked prefix.
+`beta_twice_sound` consequently composes two successive prefixes with
+different lambda origins. `SynthesisReductionOrigin.beta_many_step` connects
+the retained origin to the actual WHNF step on the intermediate type.
+`DefinitionCheckSupport.betaDeclaredTwice` uses this conversion at the
+existing declaration and environment admission boundary. Neither connector
+requires inference of the intermediate term. The model's lambda-body and
+term-conversion lemmas use only standard Lean axioms, and these production
+roots retain the same two existing native output-length proofs.
+Automatic origins for arbitrary generated types, further repeated reduction,
+and other conversion paths remain open.
 Kernel unit regressions cover lazy loading, both inference policies, interning
 reuse, dependent function types, shared references, lets, `imax` simplification,
 argument order, and rejection of wrong arities and out-of-range parameters.
@@ -621,6 +634,14 @@ combined argument order and two- or three-lambda reduction counts for both
 cheap-beta plans, including dependent initial arguments and caller locals.
 They cover Prop, Type, universe parameters, cache clearing/reuse, and failures
 for an ill-typed initial argument or a different selected carrier.
+Successive-beta cases observe two actual WHNF steps with distinct lambda
+heads and require the second result to equal the value's inferred type.
+They include captured carriers, partial applications, dependent initial and
+body arguments, a remaining family-application suffix, universe parameters,
+and cache clearing. One case changes the first lambda body's inferred type
+from a beta redex to a sort, then consumes the supplied lambda's two-argument
+prefix. Negative cases reject a wrong function domain, a different selected
+carrier, and invalid dependent arguments from either origin.
 These execution tests do not construct the general finite inference resources.
 Polymorphic-call regressions include Prop/Type instances in real function
 bodies, `max`/`imax` simplification inside Pi domains, closed nested references
@@ -691,7 +712,7 @@ Definition-cycle regressions use content-addressed standalone and mutual
 declarations, including a self-justifying theorem, a two-member cycle, type
 cycles, lets, shared syntax, and binders. They check repeated member failures,
 acyclic forward references, cache clearing, and the partial/unsafe policy.
-The unit suite contains 655 checks. The anonymous differential additionally
+The unit suite contains 668 checks. The anonymous differential additionally
 serializes eight cycle-policy fixtures and checks exact target sets, verdicts,
 failure counts, and cycle diagnostics in both implementations.
 
