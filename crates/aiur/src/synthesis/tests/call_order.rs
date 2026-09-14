@@ -682,3 +682,289 @@ fn shared_callee_keeps_one_consistent_rank() {
   );
   system.verify(&claim, &proof).expect("shared callee must verify");
 }
+
+fn counter_promotion_toplevel(grouped: bool) -> Toplevel {
+  let mut top = component_promotion_toplevel(false);
+  top.call_components[1].ranked = false;
+  top.functions[0].layout.auxiliaries = 4;
+  top.functions[1].layout.auxiliaries = 3;
+  top.functions[1].layout.lookups = 2;
+  for circuit in &mut top.circuits {
+    circuit.layout = top.functions[circuit.members[0]].layout;
+  }
+  if grouped {
+    top.circuits = vec![Circuit {
+      members: vec![0, 1, 2],
+      layout: FunctionLayout {
+        input_size: 1,
+        selectors: 4,
+        auxiliaries: 4,
+        lookups: 3,
+      },
+    }];
+  }
+  top
+}
+
+#[test]
+fn unit_counters_preserve_promotion_sharing_and_grouped_proofs() {
+  for grouped in [false, true] {
+    let (cp, fp) = test_parameters();
+    let system = AiurSystem::build(counter_promotion_toplevel(grouped), cp, fp);
+    for n in [0, 4] {
+      let input = vec![G::from_u8(n)];
+      let (record, output) = system
+        .toplevel
+        .execute(0, input.clone(), &mut empty_io_buffer())
+        .unwrap();
+      assert_eq!(output, vec![G::from_u64(2_000)]);
+      for map in &record.function_queries {
+        assert_eq!(map.completion_entries(), 0);
+        for (_, row) in map.iter() {
+          assert_eq!(row.rank, 0);
+        }
+      }
+      assert_eq!(record.function_queries[1].len(), usize::from(n) + 1);
+      assert_eq!(
+        record.function_queries[1].get(&input).unwrap().multiplicity,
+        G::TWO
+      );
+      let (claim, proof) = system.prove(0, &input, &mut empty_io_buffer());
+      assert_eq!(claim, vec![function_channel(), G::ZERO, input[0], output[0]]);
+      system.verify(&claim, &proof).expect("counter proof must verify");
+    }
+  }
+}
+
+fn unit_cycle_toplevel(
+  output_counter: bool,
+  step: G,
+  grouped: bool,
+) -> Toplevel {
+  let ops = if output_counter {
+    vec![Op::Call(0, vec![0], 1, false), Op::Const(step), Op::Add(1, 2)]
+  } else {
+    vec![Op::Const(step), Op::Add(0, 1), Op::Call(0, vec![2], 1, false)]
+  };
+  let layout =
+    FunctionLayout { input_size: 1, selectors: 1, auxiliaries: 2, lookups: 2 };
+  let mut top = with_singleton_circuits(
+    vec![Function {
+      body: Block { ops, ctrl: Ctrl::Return(0, vec![3]) },
+      layout,
+      entry: true,
+      constrained: true,
+    }],
+    vec![],
+  );
+  top.call_components = vec![CallComponent { order: 0, ranked: false }];
+  if grouped {
+    top.functions.push(Function {
+      body: Block { ops: vec![], ctrl: Ctrl::Return(0, vec![0]) },
+      layout: FunctionLayout { auxiliaries: 1, lookups: 1, ..layout },
+      entry: false,
+      constrained: true,
+    });
+    top.call_components.push(CallComponent { order: 1, ranked: false });
+    top.circuits[0] = Circuit {
+      members: vec![0, 1],
+      layout: FunctionLayout { selectors: 2, ..layout },
+    };
+  }
+  top
+}
+
+#[test]
+fn unit_counter_cycles_fail_the_closing_lookup_across_field_wrap() {
+  for output_counter in [false, true] {
+    for step in [G::ONE, -G::ONE] {
+      for grouped in [false, true] {
+        let (cp, fp) = test_parameters();
+        let system = AiurSystem::build(
+          unit_cycle_toplevel(output_counter, step, grouped),
+          cp,
+          fp,
+        );
+        let start = if output_counter { G::ZERO } else { -step };
+        let claim = vec![
+          function_channel(),
+          G::ZERO,
+          if output_counter { G::from_u8(7) } else { start },
+          if output_counter { start } else { G::from_u8(7) },
+        ];
+        let circuit = &system.toplevel.circuits[0];
+        let aux = circuit.layout.input_size + circuit.layout.selectors;
+        let (constraints, _) = system.toplevel.build_constraints(0);
+        let traces = system
+          .circuit_shapes()
+          .iter()
+          .enumerate()
+          .map(|(i, shape)| {
+            let height = if i == 0 { 4 } else { shape.preprocessed_height };
+            let mut rows = vec![G::ZERO; height * shape.main_width];
+            if i == 0 {
+              for j in 0..3 {
+                let row =
+                  &mut rows[j * shape.main_width..(j + 1) * shape.main_width];
+                let counter = start
+                  + G::from_usize(j)
+                    * if output_counter { -step } else { step };
+                row[0] = if output_counter { claim[2] } else { counter };
+                row[1] = G::ONE;
+                row[aux] = if j == 0 { G::TWO } else { G::ONE };
+                row[aux + 1] =
+                  if output_counter { counter - step } else { claim[3] };
+                assert!(
+                  constraints
+                    .zeros
+                    .iter()
+                    .all(|expr| eval_expr(expr, &row_values(row)) == G::ZERO)
+                );
+              }
+            }
+            RowMajorMatrix::new(rows, shape.main_width)
+          })
+          .collect::<Vec<_>>();
+        let closing =
+          start + G::from_u8(3) * if output_counter { -step } else { step };
+        let missing = vec![
+          function_channel(),
+          G::ZERO,
+          if output_counter { claim[2] } else { closing },
+          if output_counter { closing } else { claim[3] },
+        ];
+        assert_eq!(
+          lookup_balance(
+            &system.toplevel,
+            &traces,
+            &RankRanges::default(),
+            &claim
+          ),
+          [(normalized(claim.clone()), -G::ONE), (normalized(missing), G::ONE)]
+            .into_iter()
+            .collect()
+        );
+        let witness = SystemWitness::from_stage_1(traces, &system.system);
+        let proof = system.system.prove(&system.key, &claim, witness);
+        assert!(
+          system.verify(&claim, &proof).is_err(),
+          "counter cycle accepted (output={output_counter}, grouped={grouped}, step={step:?})"
+        );
+      }
+    }
+  }
+}
+
+#[test]
+#[should_panic(expected = "call violates the static component order")]
+fn construction_rechecks_forged_unit_counter_arithmetic() {
+  let mut top = unit_cycle_toplevel(false, G::ONE, false);
+  top.functions[0].body.ops[0] = Op::Const(G::ZERO);
+  let (cp, fp) = test_parameters();
+  let _ = AiurSystem::build(top, cp, fp);
+}
+
+fn output_length_toplevel(n: usize, grouped: bool) -> Toplevel {
+  // The next pointer comes from memory, so only the constrained output + 1
+  // equation can certify recursion. The nil pointer is a real stored row.
+  let mut ops =
+    vec![Op::Const(G::ZERO), Op::Store(vec![0, 0]), Op::Const(G::ONE)];
+  let mut pointer = 1;
+  for _ in 0..n {
+    ops.push(Op::Store(vec![2, pointer]));
+    pointer = ops.len() - 1;
+  }
+  let result = ops.len();
+  ops.push(Op::Call(1, vec![pointer], 1, false));
+  let root = Function {
+    body: Block { ops, ctrl: Ctrl::Return(0, vec![result]) },
+    layout: FunctionLayout {
+      input_size: 0,
+      selectors: 1,
+      auxiliaries: n + 3,
+      lookups: n + 3,
+    },
+    entry: true,
+    constrained: true,
+  };
+  let length = Function {
+    body: Block {
+      ops: vec![Op::Load(2, 0)],
+      ctrl: Ctrl::Match(
+        1,
+        [(
+          G::ZERO,
+          Block {
+            ops: vec![Op::Const(G::ZERO)],
+            ctrl: Ctrl::Return(0, vec![3]),
+          },
+        )]
+        .into_iter()
+        .collect(),
+        Some(Box::new(Block {
+          ops: vec![
+            Op::Call(1, vec![2], 1, false),
+            Op::Const(G::ONE),
+            Op::Add(3, 4),
+          ],
+          ctrl: Ctrl::Return(1, vec![5]),
+        })),
+      ),
+    },
+    layout: FunctionLayout {
+      input_size: 1,
+      selectors: 2,
+      auxiliaries: 5,
+      lookups: 3,
+    },
+    entry: false,
+    constrained: true,
+  };
+  let mut top = with_singleton_circuits(vec![root, length], vec![2]);
+  top.call_components = vec![
+    CallComponent { order: 0, ranked: false },
+    CallComponent { order: 1, ranked: false },
+  ];
+  if grouped {
+    // Entry inputs must have their declared public arity; keep the zero-input
+    // root separate and test grouping the recursive function with a leaf.
+    top.functions.push(Function {
+      body: Block { ops: vec![], ctrl: Ctrl::Return(0, vec![0]) },
+      layout: FunctionLayout {
+        input_size: 1,
+        selectors: 1,
+        auxiliaries: 1,
+        lookups: 1,
+      },
+      entry: false,
+      constrained: true,
+    });
+    top.call_components.push(CallComponent { order: 2, ranked: false });
+    top.circuits[1] = Circuit {
+      members: vec![1, 2],
+      layout: FunctionLayout { selectors: 3, ..top.functions[1].layout },
+    };
+  }
+  top
+}
+
+#[test]
+fn output_counters_verify_for_memory_lists_without_input_progress_equations() {
+  for grouped in [false, true] {
+    for n in [0, 1, 3] {
+      let (cp, fp) = test_parameters();
+      let system =
+        AiurSystem::build(output_length_toplevel(n, grouped), cp, fp);
+      let (record, output) =
+        system.toplevel.execute(0, vec![], &mut empty_io_buffer()).unwrap();
+      assert_eq!(output, vec![G::from_usize(n)]);
+      assert_eq!(record.function_queries[1].len(), n + 1);
+      assert_eq!(record.function_queries[1].completion_entries(), 0);
+      let (claim, proof) = system.prove(0, &[], &mut empty_io_buffer());
+      assert_eq!(claim, vec![function_channel(), G::ZERO, output[0]]);
+      system
+        .verify(&claim, &proof)
+        .expect("output-counter list proof must verify");
+    }
+  }
+}

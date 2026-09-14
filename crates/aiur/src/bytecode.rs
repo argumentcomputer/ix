@@ -12,6 +12,7 @@ pub struct Toplevel {
   pub circuits: Vec<Circuit>,
   /// Empty uses general dynamic ranks. Otherwise one checked component
   /// assignment per function selects which rank constraints are necessary.
+  /// Unranked self-edges require a checked unit counter in the actual bytecode.
   pub call_components: Vec<CallComponent>,
 }
 

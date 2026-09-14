@@ -12,6 +12,7 @@ mod row_counts;
 pub mod synthesis;
 pub mod trace;
 mod trace_heights;
+mod unit_counter;
 pub mod vk_codec;
 
 use indexmap::IndexMap;

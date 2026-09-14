@@ -136,6 +136,76 @@ theorem G.mul_comm (a b : G) : a * b = b * a := by
   show G.ofNat (a.val.toNat * b.val.toNat) = G.ofNat (b.val.toNat * a.val.toNat)
   congr 1; exact Nat.mul_comm _ _
 
+/-- Canonical natural-number semantics for counter certificates. -/
+theorem G.ofNat_n (n : Nat) : (G.ofNat n).n = n % gSize.toNat := by
+  have hp : 0 < gSize.toNat := by decide
+  have hp64 : gSize.toNat < 2 ^ 64 := by decide
+  have hn : n % gSize.toNat < gSize.toNat := Nat.mod_lt n hp
+  have hn64 : n % gSize.toNat < 2 ^ 64 := by omega
+  have hval : ((n % gSize.toNat).toUInt64).toNat = n % gSize.toNat := by
+    simp [Nat.mod_eq_of_lt hn64]
+  have hlt : (n % gSize.toNat).toUInt64 < gSize := by
+    simpa only [UInt64.lt_iff_toNat_lt, hval] using hn
+  simp only [G.ofNat, dif_pos hlt, G.n, hval]
+
+theorem G.add_one_n (a : G) : (a + 1).n = (a.n + 1) % gSize.toNat := by
+  change (G.ofNat (a.n + (1 : G).n)).n = _
+  rw [G.ofNat_n]
+  rfl
+
+theorem G.sub_one_add_one (a : G) : (a - 1) + 1 = a := by
+  apply Subtype.ext
+  apply UInt64.toNat.inj
+  change ((a - 1) + 1).n = a.n
+  rw [G.add_one_n]
+  have subval : (a - 1).n = (a.n + gSize.toNat - 1) % gSize.toNat := by
+    change (G.ofNat (a.n + gSize.toNat - (1 : G).n)).n = _
+    rw [G.ofNat_n]
+    rfl
+  rw [subval]
+  have ha : a.n < gSize.toNat := by
+    simpa only [G.n, UInt64.lt_iff_toNat_lt] using a.property
+  have hp : 0 < gSize.toNat := by decide
+  by_cases hz : a.n = 0
+  · rw [hz]
+    have hpred : gSize.toNat - 1 < gSize.toNat := by omega
+    simp only [Nat.zero_add, Nat.mod_eq_of_lt hpred]
+    have heq : gSize.toNat - 1 + 1 = gSize.toNat := by omega
+    rw [heq, Nat.mod_self]
+  · have hge : gSize.toNat ≤ a.n + gSize.toNat - 1 := by omega
+    have heq : a.n + gSize.toNat - 1 - gSize.toNat = a.n - 1 := by omega
+    have hpred : a.n - 1 < gSize.toNat := by omega
+    rw [Nat.mod_eq_sub_mod hge, heq, Nat.mod_eq_of_lt hpred]
+    have hsucc : a.n - 1 + 1 = a.n := by omega
+    rw [hsucc, Nat.mod_eq_of_lt ha]
+
+theorem G.add_n (a b : G) : (a + b).n = (a.n + b.n) % gSize.toNat := by
+  change (G.ofNat (a.n + b.n)).n = _
+  exact G.ofNat_n _
+
+theorem G.sub_n (a b : G) : (a - b).n = (a.n + gSize.toNat - b.n) % gSize.toNat := by
+  change (G.ofNat (a.n + gSize.toNat - b.n)).n = _
+  exact G.ofNat_n _
+
+set_option maxHeartbeats 20000 in
+set_option maxRecDepth 3000 in
+theorem G.add_neg_one_eq_sub (a : G) : a + ((0 : G) - 1) = a - 1 := by
+  apply Subtype.ext
+  apply UInt64.toNat.inj
+  change (a + ((0 : G) - 1)).n = (a - 1).n
+  rw [G.add_n, G.sub_n, G.sub_n]
+  have hzero : (0 : G).n = 0 := rfl
+  have hone : (1 : G).n = 1 := rfl
+  rw [hzero, hone, Nat.zero_add]
+  have hp : 0 < gSize.toNat := by decide
+  have hmod : (gSize.toNat - 1) % gSize.toNat = gSize.toNat - 1 :=
+    Nat.mod_eq_of_lt (by omega)
+  calc
+    _ = (a.n + (gSize.toNat - 1)) % gSize.toNat :=
+      congrArg (fun n => (a.n + n) % gSize.toNat) hmod
+    _ = _ := congrArg (fun n => n % gSize.toNat) (by omega)
+
+
 end Aiur
 
 end

@@ -152,7 +152,7 @@ def Source.Toplevel.compile (t : Source.Toplevel) : Except String CompiledToplev
   let bytecode : Bytecode.Toplevel := { bytecodeDedup with
     functions := bytecodeDedup.functions.mapIdx fun i f =>
       { f with constrained := needs[i]! } }
-  let bytecode := if t.componentRanks then bytecode.withCallComponents else bytecode
+  let bytecode := if t.componentRanks then bytecode.withCallComponents t.counterRanks else bytecode
   let nameMap := preNameMap.fold (init := (∅ : Std.HashMap Global Bytecode.FunIdx))
     fun acc name idx => acc.insert name (remap idx)
   -- Singleton circuits are labeled with (one of) the function's source names.

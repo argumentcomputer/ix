@@ -150,8 +150,9 @@ inductive CallRank where
   | ordered
   deriving Inhabited, Repr, BEq
 
-/-- A checked static component order. Equal-component calls require both
-endpoints to retain dynamic ranks; all other calls increase `order`. -/
+/-- A checked static component order. Equal-component calls retain dynamic
+ranks or are self-edges whose bytecode certifies a unit counter. All other
+calls increase `order`. -/
 structure CallComponent where
   order : Nat
   ranked : Bool

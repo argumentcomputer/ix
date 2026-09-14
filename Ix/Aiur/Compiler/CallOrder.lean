@@ -1,5 +1,6 @@
 module
 public import Ix.Aiur.Compiler.Layout
+public import Ix.Aiur.Compiler.UnitCounter
 
 public section
 @[expose] section
@@ -56,7 +57,8 @@ end
 namespace Bytecode
 
 /-- Every cross-component edge advances the static order. An internal edge
-must retain the existing dynamic rank relation at both endpoints. -/
+must retain the existing dynamic rank relation at both endpoints. Counter
+self-edges are checked separately against their bytecode. -/
 def CallComponent.permits (parent child : CallComponent) : Bool :=
   parent.order < child.order ||
     (parent.order == child.order && parent.ranked && child.ranked)
@@ -105,7 +107,8 @@ def Toplevel.validCallComponents (t : Toplevel) : Bool :=
   (t.functions.mapIdx fun i f => !f.constrained ||
     f.body.collectConstrainedCallees.all (fun j =>
       match t.callComponents[i]?, t.callComponents[j]? with
-      | some parent, some child => parent.permits child
+      | some parent, some child => parent.permits child ||
+        (i == j && !parent.ranked && (UnitCounter.find? i f).isSome)
       | _, _ => false)).all id
 
 def callOrderFinishDfs (graph : Array (Array Nat)) :
@@ -157,14 +160,22 @@ def Toplevel.findCallComponents (t : Toplevel) : Array CallComponent := Id.run d
 /-- Native and compiler layout selection agree on these three cases. -/
 def Toplevel.callRanksFor (t : Toplevel) (parent : Nat) : Array CallRank :=
   t.callComponents.map fun child =>
-    if t.callComponents[parent]!.order == child.order then .ordered
-    else if child.ranked then .bound else .zero
+    if !child.ranked then .zero
+    else if t.callComponents[parent]!.order == child.order then .ordered
+    else .bound
 
 /-- Recompute every function and continuation layout after selecting ranks.
 Run before constructing the circuit partition. The instruction stream,
 value indices and function indices are preserved. -/
-def Toplevel.withCallComponents (t : Toplevel) : Toplevel :=
-  let callComponents := t.findCallComponents
+def Toplevel.withCallComponents (t : Toplevel) (useCounters : Bool := false) : Toplevel :=
+  let components := t.findCallComponents
+  let callComponents := if useCounters then components.mapIdx fun i component =>
+    if component.ranked &&
+        (components.filter (·.order == component.order)).size == 1 &&
+        (UnitCounter.find? i t.functions[i]!).isSome then
+      { component with ranked := false }
+    else component
+    else components
   let candidate := { t with callComponents }
   if !candidate.validCallComponents then t else
     let functions := t.functions.mapIdx fun i function =>

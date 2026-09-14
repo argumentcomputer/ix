@@ -93,7 +93,23 @@ def suite : IO UInt32 := do
   let r3 ← LSpec.lspecEachIO groupedTestCases fun tc => pure (grouped.runTestCase tc)
   let r4 ← LSpec.lspecIO
     (.ofList [("aiur-component-groups", [groupingStructureChecks grouped.compiled])]) []
-  return if r1 == 0 && r2 == 0 && r3 == 0 && r4 == 0 then 0 else 1
+  let .ok counters := AiurTestEnv.build (pure { source with counterRanks := true }) testGroups
+    | IO.eprintln "Aiur counter setup failed"; return 1
+  let idx := counters.compiled.getFuncIdx `grouped_sum_range |>.get!
+  let bytecode := counters.compiled.bytecode
+  let r5 ← LSpec.lspecIO (.ofList [("aiur-unit-counters", [
+    test "generic source literals leave counter specialization disabled" (!toplevel.counterRanks) ++
+    test "counter specialization carries a checked certificate" bytecode.validCallComponents ++
+    test "a compiled recursive input counter omits its row rank"
+      (!bytecode.callComponents[idx]!.ranked) ++
+    test "a certified self-call omits its ordered gap"
+      ((bytecode.callRanksFor idx)[idx]! == .zero) ++
+    test "certified recursion narrows its grouped circuit"
+      (bytecode.functions[idx]!.layout.auxiliaries < grouped.compiled.bytecode.functions[idx]!.layout.auxiliaries)
+    ])]) []
+  let r6 ← LSpec.lspecEachIO aiurTestCases fun tc => pure (counters.runTestCase tc)
+  let r7 ← LSpec.lspecEachIO groupedTestCases fun tc => pure (counters.runTestCase tc)
+  return if [r1, r2, r3, r4, r5, r6, r7].all (· == 0) then 0 else 1
 
 end AiurTests.CallOrder
 

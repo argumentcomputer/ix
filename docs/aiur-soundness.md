@@ -8,7 +8,7 @@ a native Merkle commitment-binding defect.
 | Failure | Required invariant | Regression |
 | --- | --- | --- |
 | An inactive function row supplied a public proof of `3 * 5 = 16`. | Function and memory rows satisfy `multiplicity * (1 - selector) = 0`. | [Inactive rows](../crates/aiur/src/synthesis/tests/acceptance.rs) |
-| Self-recursive and mutually recursive rows balanced their own calls without a finite execution. | Calls advance a checked static component order, or strictly increase a range-checked rank within one component. | [Self recursion](../crates/aiur/src/synthesis/tests/acceptance.rs), [call ordering](../crates/aiur/src/synthesis/tests/call_order.rs) |
+| Self-recursive and mutually recursive rows balanced their own calls without a finite execution. | Calls advance a checked component order, increase a bounded rank, or satisfy a checked unit-counter relation that excludes short self-recursive cycles. | [Self recursion](../crates/aiur/src/synthesis/tests/acceptance.rs), [call ordering](../crates/aiur/src/synthesis/tests/call_order.rs) |
 | An empty return at rank seven supplied a public claim with output seven because lookup messages are zero-padded. | Public claims and constrained calls agree with the function's input and output arities; yields agree with their continuation. | [Message shapes](../crates/aiur/src/synthesis/tests/lookup_shapes.rs) |
 | An inactive branch's store arguments changed a live call's lookup channel and supplied output seven for a program returning one. | Ungated arguments require a single function with terminal control and one selector. Branching circuits retain argument gates. | [Empty branches](../crates/aiur/src/synthesis/tests/branchless.rs) |
 | A large native Merkle cap omitted a shorter matrix: changing its values preserved the commitment, and altered openings verified. | The cap retains the injection layer of every committed matrix. | [Merkle cap coverage](../crates/aiur/src/synthesis/tests/mmcs.rs) |
@@ -36,8 +36,8 @@ counts before constructing the binary byte-table trace.
 IxVM enables a compiler pass that computes strongly connected components of
 its constrained call graph after lowering and deduplication. An independent
 checker validates every constrained bytecode edge: it must advance the static
-component order, or stay within a component whose endpoints both retain
-dynamic ranks. It also checks the assignment's size and order bounds. The
+component order, stay within a component whose endpoints both retain
+dynamic ranks, or be a self-edge certified by the unit-counter checker below. It also checks the assignment's size and order bounds. The
 native system constructor repeats these checks over branches, defaults and
 shared continuations before constructing the AIR and verification key.
 The certificate is part of the fixed program, not advice from the prover.
@@ -46,15 +46,15 @@ The resulting layouts use these rank witnesses:
 
 | Location | Additional columns | Additional byte-pair lookups |
 | --- | ---: | ---: |
-| Acyclic function row | 0; return rank is zero | 0 |
-| Recursive function row | 6 rank bytes | 3 |
-| Call to an acyclic function | 0; requested rank is zero | 0 |
-| Call across components to a recursive function | 1 callee-rank field | 0 |
-| Call within a recursive component | 6 gap bytes | 3 |
+| Acyclic or certified counter row | 0; return rank is zero | 0 |
+| Other recursive function row | 6 rank bytes | 3 |
+| Call to a function without ranks | 0; requested rank is zero | 0 |
+| Call across components to a ranked function | 1 callee-rank field | 0 |
+| Call within a ranked recursive component | 6 gap bytes | 3 |
 
-A boundary call must still bind its recursive callee's rank through the return
-lookup. Replacing it with a constant would break that binding. Within a recursive
-component, the bounded rank and gap retain the original strict ordering.
+A boundary call must still bind its ranked callee's rank through the return
+lookup. Replacing it with a constant would break that binding. Within a ranked
+recursive component, the bounded rank and gap retain the original strict ordering.
 The Lean theorem `CallComponent.wellFounded_calls` in
 [the compiler pass](../Ix/Aiur/Compiler/CallOrder.lean) proves that the bounded
 static order and bounded dynamic ranks together give a well-founded call
@@ -67,23 +67,63 @@ rank columns and lookup slots, so rank-range queries are gated only by ranked
 members. General Aiur programs retain the dynamic layout unless explicitly
 enabled through `Source.Toplevel.componentRanks`.
 
-For the current production IxVM, this removes row ranks from 365 of 753
-constrained functions and gap checks at 2,428 of 3,357 call sites. Of its
-181 function circuits, 139 become narrower and 138 use fewer lookup slots.
-Existing function groups are retained. These counts are not weighted by
-execution frequency. The optimization reduces modeled FFT work on all 83
-kernel fixtures: median 6.65%, with 9.73% for `Nat.add_comm`, 15.09% for
-`Vector.append`, and 9.81% for the shard pipeline, relative to the repaired
-dynamic-rank layout. These are model estimates, not wall-clock timings.
-
-Certified acyclic function maps omit completion timestamps and counter updates:
+Function maps without ranks omit completion timestamps and counter updates:
 their return rank is always zero. This saves eight retained bytes per query
 without changing the relative completion order inside recursive components.
 The RAM estimate counts only stored timestamps. Generic Aiur systems without
 a component certificate retain timestamps for every function; recursive
-components still refresh timestamps after advice promotion. Regenerating the
+ranked components still refresh timestamps after advice promotion. Regenerating the
 IxVM, aggregation and recursive-verifier execution sources produces identical
 files because instructions and function indices are preserved.
+
+## Checked existing counters
+
+IxVM also enables `Source.Toplevel.counterRanks`. The compiler may omit ranks
+from a singleton recursive component when its actual lowered bytecode has one
+of two relations on a fixed input or output column:
+
+- Every constrained self-call shifts the chosen input by exactly one field
+  unit, in the same direction on every branch.
+- Every path with recursion contains at most one constrained self-call and
+  returns the chosen output of that call shifted by exactly one field unit,
+  with a common direction on all paths.
+
+The [Lean checker](../Ix/Aiur/Compiler/UnitCounter.lean) follows constants,
+addition and subtraction by constants, and multiplication by one or between
+two constants. Other outputs are unknown. Loads, advice, source types and
+function names supply no arithmetic assumptions. It checks every explicit
+branch and default. Shared continuations and analysis beyond 256 nested blocks
+retain their ranks. Mutual recursion still requires ranks. The
+[native constructor](../crates/aiur/src/unit_counter.rs) independently checks
+the relation from the bytecode before constructing constraints; an invalid
+unranked self-edge is rejected.
+
+Every provider cycle stays within one static component. An unranked recursive
+cycle therefore consists entirely of rows of one certified function, using
+the same column and direction. A simple cycle of length `m` would imply
+`m = 0` modulo the field characteristic. The existing verifier bound on all
+lookup slots of all active trace rows gives `0 < m < p`, excluding that cycle.
+The Lean cycle lemmas prove this modular argument for the actual Goldilocks
+addition and subtraction operations, including wraparound. They assume the
+per-edge relation; they do not establish a complete checker-to-AIR extraction
+theorem. That interface is covered by independent bytecode checks and supplied
+witness regressions.
+
+The pass removes ranks from 68 of the 389 previously ranked constrained
+functions in the measured production program. All 83 kernel fixtures retain
+their execution outputs and query counts, while their summed unpadded FFT
+model falls 2.34%; `Vector.append` falls 2.41% and the separate shard fixture
+3.47%, before further function regrouping. No instruction or function index
+changes. Unsupported recursive components retain the existing rank layout.
+
+[Counter regressions](../crates/aiur/src/synthesis/tests/call_order.rs) verify
+input counters with sharing and advice promotion, and output counters over
+memory lists. They also supply cycles whose local polynomial constraints all
+hold and show that the closing lookup fails in both directions, across field
+wrap, and with singleton or grouped circuits. The
+[checker tests](../crates/aiur/src/unit_counter_tests.rs) cover malformed
+indices, zero or mixed steps, unconstrained progress, nonlinear expressions,
+multiple recursive outputs, mutual cycles and the analysis-depth limit.
 
 ## Lookup grouping
 
@@ -279,7 +319,9 @@ regenerate stored proofs against the repaired systems. Public claim encoding
 is preserved: its omitted rank is zero under lookup padding. Component
 specialization also changes the IxVM AIR and key, and extends the internal
 Lean/Rust bytecode representation; rebuild both sides of the FFI together.
-Lookup retuning changes affected stage-2 layouts, quotient degrees and keys,
+Counter specialization changes rank columns, call lookups and verification
+keys while preserving the existing bytecode representation. Lookup retuning
+changes affected stage-2 layouts, quotient degrees and keys,
 so it also requires rebuilding systems and regenerating proofs.
 The byte-advice, carry and multiplication changes alter IxVM
 function indices; regenerate its executor and matching systems from the
@@ -292,7 +334,7 @@ execution, finite recursion, shared callees, advice promotion and grouped
 circuits. Component tests also reject forged assignments and displaced
 boundary ranks, check the component producer against an independent
 reachability oracle on all 512 three-vertex graphs, and run the existing
-Aiur proving corpus with specialized layouts. Run them with:
+Aiur proving corpus with component and counter layouts. Run them with:
 
 ```sh
 cargo test --locked --release -p aiur --features parallel

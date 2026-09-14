@@ -36,21 +36,22 @@ pub(crate) fn call_rank(
   parent: usize,
   child: usize,
 ) -> CallRank {
-  if components.is_empty()
-    || components[parent].order == components[child].order
-  {
+  if components.is_empty() {
     CallRank::Ordered
-  } else if components[child].ranked {
-    CallRank::Bound
-  } else {
+  } else if !components[child].ranked {
     CallRank::Zero
+  } else if components[parent].order == components[child].order {
+    CallRank::Ordered
+  } else {
+    CallRank::Bound
   }
 }
 
 impl Toplevel {
   /// Check the certificate from the actual constrained bytecode edges,
   /// including branches, defaults and shared continuations. Every cycle
-  /// must stay within one component, where both endpoints retain ranks.
+  /// must stay within one component. Internal edges retain ranks or are
+  /// self-edges with an independently checked unit-counter certificate.
   pub fn validate_call_components(&self) -> Result<(), &'static str> {
     if self.call_components.is_empty() {
       return Ok(());
@@ -71,14 +72,23 @@ impl Toplevel {
       }
       let parent = self.call_components[index];
       let mut blocks = vec![&function.body];
+      let mut counter_valid = None;
       while let Some(block) = blocks.pop() {
         for op in &block.ops {
           if let Op::Call(child, _, _, false) = op {
-            let Some(child) = self.call_components.get(*child) else {
+            let child_index = *child;
+            let Some(child) = self.call_components.get(child_index) else {
               return Err("call component refers to a missing function");
             };
+            let counter_edge = index == child_index
+              && !parent.ranked
+              && !child.ranked
+              && *counter_valid.get_or_insert_with(|| {
+                crate::unit_counter::has_unit_counter(index, function)
+              });
             if !(parent.order < child.order
-              || (parent.order == child.order && parent.ranked && child.ranked))
+              || (parent.order == child.order && parent.ranked && child.ranked)
+              || counter_edge)
             {
               return Err("call violates the static component order");
             }
