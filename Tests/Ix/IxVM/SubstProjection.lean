@@ -341,7 +341,16 @@ def run : IO UInt32 := do
     { e := .lam (.var 1) (.app (.var 0) (.app (.var 2) (.var 12))),
       ss := [.var 1, .sort 7, .sort 8], depth := 1 },
     { e := .letE (.var 0) (.var 0) (.proj (.app (.var 1) (.var 8))),
-      ss := [.all (.sort 1) (.var 2), .sort 2] }]
+      ss := [.all (.sort 1) (.var 2), .sort 2] },
+    -- No variable in the removed interval: the reference takes expr_lower
+    -- on the entire Let. Check all three children and the body cutoff.
+    { e := .letE (.var 4) (.var 6) (.app (.var 0) (.var 7)),
+      ss := [.sort 1, .sort 2] },
+    -- Nested Let binders retain local variables while lowering the free
+    -- ones, with an already nonzero surrounding depth.
+    { e := .letE (.sort 0) (.var 8)
+        (.letE (.var 0) (.var 8) (.app (.var 1) (.var 9))),
+      ss := [.sort 1, .sort 2, .sort 3], depth := 1 }]
   for (c, i) in proofCases.zipIdx do
     let tc := { testCase [c] 2 s!"substitution binding proof {i}" with withProof := true }
     let r ← lspecEachIO [tc] fun tc => pure (env.runTestCase tc)

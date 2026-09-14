@@ -370,6 +370,38 @@ check that exactly six scalar multiplicities are recorded. Full Lean,
 native, IxVM, recursive-verifier and generated-executor checks pass.
 The new AIR and messages require matching rebuilt systems, keys and proofs.
 
+## Separate Let rows in expression lowering
+
+`expr_lower_walk` calls a five-input helper for the three recursive children
+of a `Let`. The same recursive operations and final store remain, with the
+cutoff incremented only under the body. The lowering precondition is
+unchanged. The helper stays in the ranked recursive component; both compiler
+and native component checks validate the resulting call graph.
+
+The common walk narrows from 34 main / 18 stage-two columns to 30 / 14 at
+quotient degree four. A new 23 / 18-column helper uses quotient degree two.
+Across 83 kernels it adds 2,212 rows while 544,630 existing walk rows narrow.
+All existing function/memory query counts are preserved. There are now 187
+function circuits and 322 ranked functions among 759 constrained functions.
+Kernel FFT work falls 0.38% raw / 0.39% padded: 80 fixtures improve, three
+are unchanged and none regress. The shard falls 0.20% in both models.
+
+All 40 matched proofs verify. Proving medians range from −3.94% to +1.03%,
+with overlapping ranges; no stable speed gain is established. Vector's
+proof grows 0.23%, while four smaller proof sizes shrink 0.016–0.119%.
+Process peak changes stay within 0.21%. A separate 16-run Vector execution
+follow-up has effectively unchanged instruction counts and a 1.78% higher
+execution median with overlapping ranges. The change is retained for its
+FFT saving with these measured tradeoffs.
+
+[Substitution regressions](../Tests/Ix/IxVM/SubstProjection.lean) now include
+two proofs that lower whole and nested Lets against an independent Nat-indexed
+binding model, including nonzero surrounding depth and retained local
+variables. All 10,866 primary, 845 IxVM and both 98-test native suites pass,
+including the supplied-trace, recursive-verifier and component regressions.
+The additional function shifts internal indices and changes the key;
+all three executors and matching systems, keys and proofs must be rebuilt.
+
 ## Structural bounds
 
 System construction validates constrained-call arities, continuation yields,
