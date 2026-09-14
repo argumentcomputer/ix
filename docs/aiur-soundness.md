@@ -224,8 +224,9 @@ lookup-consumer arguments allow its row ranks and gap lookups to be omitted.
 The per-byte circuit has three inputs, 15 main columns and eight stage-two
 columns, versus seven inputs, 29 main and 20 stage-two columns in the old
 loop; quotient degree stays two. The outer loop carries chunk/digest/tree
-state once per block and retains ranks with compression. It passes the old
-last-byte index to full-block compression and the consumed-byte count to
+state once per block; the block driver and its recursive block helper retain
+ranks. It passes the old last-byte index to full-block compression and the
+consumed-byte count to
 partial finalization. Padding and chunk/root flags are preserved. Hashing
 and deserialization continue to use the same materialized byte stream.
 
@@ -285,6 +286,48 @@ They also prove ordinary u32 byte packing with and without ranks. Existing
 cycle, mixed-group, byte-operation, recursive-verifier and full IxVM suites
 pass. The code keeps the bytecode schema and generated instruction sources;
 the new layouts and keys require matching rebuilt systems and proofs.
+
+## Unrolled BLAKE3 compression
+
+`blake3_compress` inlines seven fixed rounds and the final digest fold into
+one acyclic row. It accepts 128 state bytes without a stage counter. The
+shared round helper performs the same eight mixes and message permutation;
+each permutation reads a saved old message. The final permutation only
+rewires words that the digest does not consume.
+
+The compiled function has no constrained callees. Component validation
+therefore checks its acyclic position without a unit-counter argument.
+The bounded reader keeps its checked counter, and the recursive block
+driver/helper keep their ranks. Byte arithmetic, range checks, lookup
+messages, activity/selector gates and arity/cap/consumer bounds are preserved.
+The existing branchless rule applies to this one terminal, single-selector
+function; its predicate and degree limits are unchanged.
+
+The compression shape changes from 533 main / 194 stage-two columns to
+2,738 / 690, at the same quotient degree four. Its unique rows fall exactly
+eightfold on all 84 measured fixtures; all other function/memory counts
+and shapes are unchanged. Across 83 kernels the FFT sum falls 9.99% raw /
+10.38% padded, with every fixture improving. The shard falls 15.79% / 17.14%.
+The resulting kernel raw sum is 1.03% below the fixed original-main baseline.
+
+The tradeoff is larger proofs and slower verification. In an 80-proof,
+four-layout comparison, full unrolling gives Vector a 5.25% lower proving
+median and 4.36% lower process peak RSS, while proofs grow 19.93–34.40% across
+the five claims and verification medians rise 16.07–21.54%. The host was busy;
+small timing differences are uncertain. An earlier separate 30-proof run
+also observes Vector improvements (5.00% proving, 3.53% process RSS).
+Small process peaks are nearly unchanged and sampled peaks are mixed.
+Two-round rows save 3.38% raw / 3.50% padded FFT work with 4.15–7.23% larger
+proofs; four-round rows save 5.51% / 5.69% with 12.40–21.27% larger proofs.
+Full unrolling is selected for its FFT and large-workload proving gains.
+
+[The compression regressions](../Tests/Ix/IxVM/Blake3Rounds.lean) compare
+thirteen word states against independent wrapping-UInt32 arithmetic and
+source/native execution with counter specialization enabled and disabled.
+Eight new proofs verify, and the compiled-callee check establishes acyclicity
+directly. Rust BLAKE3 boundary digests, reader proofs, generated-code parity,
+recursive verification, aggregation and the complete IxVM suite pass.
+This is source/implementation validation, not a complete AIR extraction theorem.
 
 ## Structural bounds
 
@@ -464,6 +507,9 @@ while keeping the existing bytecode operations and function layouts.
 Three-u16 rank encoding changes function/table layouts, lookup arguments and
 keys while preserving the bytecode schema and generated instructions; rebuild
 the Lean/Rust systems together and regenerate proofs for their new keys.
+Unrolled compression preserves public hashes, claims, function indices and the
+instruction schema, but changes its private input arity, layout and keys.
+Use the three regenerated executors and rebuild matching systems and proofs.
 The byte-advice, carry, multiplication and BLAKE3 reader changes alter
 function indices. The reader also changes function layouts; regenerate all
 three executors and rebuild matching systems, keys and proofs from the

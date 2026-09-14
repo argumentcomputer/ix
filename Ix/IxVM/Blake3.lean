@@ -337,8 +337,8 @@ def blake3 := ⟦
     [a, b, c, d]
   }
 
-  fn blake3_compress_inner_j(state: [[U8; 4]; 32]) -> [[U8; 4]; 32] {
-    -- Round 0
+  fn blake3_compress_round(state: [[U8; 4]; 32]) -> [[U8; 4]; 32] {
+    -- Mix 0
     let [a, b, c, d] = @blake3_g_function(
       state[0], state[4], state[8], state[12], state[16], state[17]
     );
@@ -347,7 +347,7 @@ def blake3 := ⟦
     let state = set(state, 8, c);
     let state = set(state, 12, d);
 
-    -- Round 1
+    -- Mix 1
     let [a, b, c, d] = @blake3_g_function(
       state[1], state[5], state[9], state[13], state[18], state[19]
     );
@@ -356,7 +356,7 @@ def blake3 := ⟦
     let state = set(state, 9, c);
     let state = set(state, 13, d);
 
-    -- Round 2
+    -- Mix 2
     let [a, b, c, d] = @blake3_g_function(
       state[2], state[6], state[10], state[14], state[20], state[21]
     );
@@ -365,7 +365,7 @@ def blake3 := ⟦
     let state = set(state, 10, c);
     let state = set(state, 14, d);
 
-    -- Round 3
+    -- Mix 3
     let [a, b, c, d] = @blake3_g_function(
       state[3], state[7], state[11], state[15], state[22], state[23]
     );
@@ -374,7 +374,7 @@ def blake3 := ⟦
     let state = set(state, 11, c);
     let state = set(state, 15, d);
 
-    -- Round 4
+    -- Mix 4
     let [a, b, c, d] = @blake3_g_function(
       state[0], state[5], state[10], state[15], state[24], state[25]
     );
@@ -383,7 +383,7 @@ def blake3 := ⟦
     let state = set(state, 10, c);
     let state = set(state, 15, d);
 
-    -- Round 5
+    -- Mix 5
     let [a, b, c, d] = @blake3_g_function(
       state[1], state[6], state[11], state[12], state[26], state[27]
     );
@@ -392,7 +392,7 @@ def blake3 := ⟦
     let state = set(state, 11, c);
     let state = set(state, 12, d);
 
-    -- Round 6
+    -- Mix 6
     let [a, b, c, d] = @blake3_g_function(
       state[2], state[7], state[8], state[13], state[28], state[29]
     );
@@ -401,7 +401,7 @@ def blake3 := ⟦
     let state = set(state, 8, c);
     let state = set(state, 13, d);
 
-    -- Round 7
+    -- Mix 7
     let [a, b, c, d] = @blake3_g_function(
       state[3], state[4], state[9], state[14], state[30], state[31]
     );
@@ -410,6 +410,25 @@ def blake3 := ⟦
     let state = set(state, 9, c);
     let state = set(state, 14, d);
 
+    -- The message schedule is a permutation of existing wires. Save its
+    -- source before the writes so each position reads the same old message.
+    let message = state;
+    let state = set(state, 16, message[18]);
+    let state = set(state, 17, message[22]);
+    let state = set(state, 18, message[19]);
+    let state = set(state, 19, message[26]);
+    let state = set(state, 20, message[23]);
+    let state = set(state, 21, message[16]);
+    let state = set(state, 22, message[20]);
+    let state = set(state, 23, message[29]);
+    let state = set(state, 24, message[17]);
+    let state = set(state, 25, message[27]);
+    let state = set(state, 26, message[28]);
+    let state = set(state, 27, message[21]);
+    let state = set(state, 28, message[25]);
+    let state = set(state, 29, message[30]);
+    let state = set(state, 30, message[31]);
+    let state = set(state, 31, message[24]);
     state
   }
 
@@ -444,49 +463,30 @@ def blake3 := ⟦
         block_words[12],   block_words[13],   block_words[14],   block_words[15]
     ];
 
-    blake3_compress(0, state)
+    blake3_compress(state)
   }
 
-  -- One row per stage: stages 0..6 run one round each and recurse with
-  -- `stage + 1`; stage 7 folds the working halves into the digest.
-  fn blake3_compress(
-    stage: G,
-    state: [[U8; 4]; 32]
-  ) -> [[U8; 4]; 8] {
-    match stage {
-      7 =>
-        let output0 = @u32_xor(state[0], state[8]);
-        let output1 = @u32_xor(state[1], state[9]);
-        let output2 = @u32_xor(state[2], state[10]);
-        let output3 = @u32_xor(state[3], state[11]);
-        let output4 = @u32_xor(state[4], state[12]);
-        let output5 = @u32_xor(state[5], state[13]);
-        let output6 = @u32_xor(state[6], state[14]);
-        let output7 = @u32_xor(state[7], state[15]);
-        [output0, output1, output2, output3, output4, output5, output6, output7],
-      _ =>
-        let new_state = @blake3_compress_inner_j(state);
-        -- Apply the message schedule permutation for the next round. The final
-        -- round also executes this permutation, but only state[0..15] is consumed
-        -- afterward, so that last permutation is unobservable.
-        let new_state = set(new_state, 16, state[18]);
-        let new_state = set(new_state, 17, state[22]);
-        let new_state = set(new_state, 18, state[19]);
-        let new_state = set(new_state, 19, state[26]);
-        let new_state = set(new_state, 20, state[23]);
-        let new_state = set(new_state, 21, state[16]);
-        let new_state = set(new_state, 22, state[20]);
-        let new_state = set(new_state, 23, state[29]);
-        let new_state = set(new_state, 24, state[17]);
-        let new_state = set(new_state, 25, state[27]);
-        let new_state = set(new_state, 26, state[28]);
-        let new_state = set(new_state, 27, state[21]);
-        let new_state = set(new_state, 28, state[25]);
-        let new_state = set(new_state, 29, state[30]);
-        let new_state = set(new_state, 30, state[31]);
-        let new_state = set(new_state, 31, state[24]);
-        blake3_compress(stage + 1, new_state),
-    }
+  -- Seven fixed rounds are inlined into one acyclic compression row.
+  -- Component validation checks the call graph; there is no loop counter.
+  -- The final message permutation is unobservable because only the working
+  -- halves below enter the digest.
+  fn blake3_compress(state: [[U8; 4]; 32]) -> [[U8; 4]; 8] {
+    let state = @blake3_compress_round(state);
+    let state = @blake3_compress_round(state);
+    let state = @blake3_compress_round(state);
+    let state = @blake3_compress_round(state);
+    let state = @blake3_compress_round(state);
+    let state = @blake3_compress_round(state);
+    let state = @blake3_compress_round(state);
+    let output0 = @u32_xor(state[0], state[8]);
+    let output1 = @u32_xor(state[1], state[9]);
+    let output2 = @u32_xor(state[2], state[10]);
+    let output3 = @u32_xor(state[3], state[11]);
+    let output4 = @u32_xor(state[4], state[12]);
+    let output5 = @u32_xor(state[5], state[13]);
+    let output6 = @u32_xor(state[6], state[14]);
+    let output7 = @u32_xor(state[7], state[15]);
+    [output0, output1, output2, output3, output4, output5, output6, output7]
   }
 ⟧
 

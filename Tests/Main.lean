@@ -5,6 +5,7 @@ import Tests.Ix.IxonSyntax
 import Tests.Ix.IxVM
 import Tests.Ix.IxVM.ByteHints
 import Tests.Ix.IxVM.Blake3Reader
+import Tests.Ix.IxVM.Blake3Rounds
 import Tests.Ix.IxVM.CarryAdd
 import Tests.Ix.IxVM.FusedMul
 import Tests.Ix.IxVM.SubstProjection
@@ -172,6 +173,7 @@ def primaryRunners : List (String × IO UInt32) := [
   ("ixvm-subst-projection", Tests.Ix.IxVM.SubstProjection.run),
   ("ixvm-byte-hints", Tests.Ix.IxVM.ByteHints.run),
   ("ixvm-blake3-reader", Tests.Ix.IxVM.Blake3Reader.run),
+  ("ixvm-blake3-rounds", Tests.Ix.IxVM.Blake3Rounds.run),
   ("aiur-components", AiurTests.CallOrder.suite),
   ("aiur-prove", do
     IO.println "aiur-prove"
@@ -294,8 +296,8 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
             let actual :=
               (Aiur.computeStats v2Env.compiled qc v2Env.shapes).totalFftCost.round.toUInt64.toNat
             pure (LSpec.test
-              s!"Shard pipeline FFT matches: expected 7_222_546_870, got {actual}"
-              (actual = 7_222_546_870))
+              s!"Shard pipeline FFT matches: expected 6_082_019_144, got {actual}"
+              (actual = 6_082_019_144))
       LSpec.lspecIO
         (.ofList [("ixvm",
           [componentSeq, fullSeq, aiurSeq, arenaSeq, exploitSeq, paritySeq, shardSeq])]) []),
