@@ -13,6 +13,8 @@ import Ix.Kernel.Verify.Consistency.DefinitionOrder
 import Ix.Kernel.Verify.Consistency.LocalOpening
 import Ix.Kernel.Verify.Consistency.LocalSubstitution
 import Ix.Kernel.Verify.Consistency.LetInference
+import Ix.Kernel.Verify.Consistency.LocalScope
+import Ix.Kernel.Verify.Consistency.InferenceLocalState
 import Ix.Kernel.Verify.Audit.Basic
 
 /-! Exact full-dependency boundaries for the direct model-refinement roots.
@@ -51,6 +53,7 @@ private def atomicRoots : Array Lean.Name := #[
   ``ForallInferenceTrace.output, ``LambdaInferenceTrace.output, ``BinderInference.sound,
   ``inferUncached_monomorphic_const_scoped, ``ApplicationInferenceTrace.output,
   ``LetInferenceTrace.of_success, ``LetInferenceTrace.beforeBeta_typing,
+  ``LetInferenceTrace.restores, ``infer_localContext,
   ``BinderInference.soundWithSynthesis, ``BinderInference.synthesis,
   ``DefinitionBodySupport.sound
 ]
@@ -207,7 +210,12 @@ private def binderWalkerRoots : Array Lean.Name := #[
   ``openLet_local_sound, ``openBinder_local_sound,
   ``readLocalExpr?_liftSpec, ``readLocalExpr?_substSpec, ``subst_readLocalExpr?,
   ``readLocalExpr?_abstractFVarsSpec, ``abstractFVars_readLocalExpr?,
-  ``KExpr.abstractFVarsSpec_size, ``closeLetType_readLocalExpr?
+  ``KExpr.abstractFVarsSpec_size, ``closeLetType_readLocalExpr?,
+  ``LocalContext.Equiv.truncate, ``LocalContext.truncate_push,
+  ``LocalContext.truncate_push_le, ``LocalContext.Extension.restore,
+  ``withLctxScope_restores, ``withLctxScope_error_restores,
+  ``openLet_extends, ``openBinder_extends,
+  ``PreservesLocalExtension.inferKey, ``PreservesLocalExtension.withLctxScope
 ]
 
 private def localValueRoots : Array Lean.Name := #[
@@ -217,7 +225,79 @@ private def localValueRoots : Array Lean.Name := #[
   ``LocalContextValues.index_none, ``LocalContextValues.pushLet,
   ``LocalContextValues.pushBinder, ``LocalModelTyping.closed,
   ``readLocalExpr?_readable, ``readLocalExpr?_instantiateLocal,
-  ``readLocalExpr?_letResidual
+  ``readLocalExpr?_letResidual, ``LocalContext.Equiv.push, ``LocalContextValues.congr
+]
+
+private def localScopeFrameRoots : Array Lean.Name := #[
+  ``LocalContext.Equiv.refl, ``LocalContext.Equiv.symm, ``LocalContext.Equiv.trans,
+  ``LocalContext.Equiv.size, ``LocalContext.Equiv.find?, ``LocalContext.Equiv.wf,
+  ``LocalContext.Extension.trans, ``LocalContext.Extension.size_le,
+  ``PreservesLocalExtension.pure, ``PreservesLocalExtension.throw,
+  ``PreservesLocalExtension.bind, ``PreservesLocalExtension.runIntern,
+  ``PreservesLocalExtension.withInferOnly
+]
+
+private def localStateFrameRoots : Array Lean.Name := #[
+  ``TcM.InternOnly.pure,
+  ``TcM.InternOnly.throw,
+  ``TcM.InternOnly.bind,
+  ``TcM.InternOnly.runIntern,
+  ``TcM.InternOnly.ofExcept,
+  ``TcM.InternOnly.map,
+  ``LocalContext.IdsBelow.mono,
+  ``LocalContext.IdsBelow.equiv,
+  ``LocalContext.IdsBelow.fresh,
+  ``LocalStateFrame.refl,
+  ``LocalStateFrame.trans,
+  ``LocalStateFrame.invariant,
+  ``LocalStateExtension.refl,
+  ``LocalStateExtension.trans,
+  ``LocalStateExtension.of_frame,
+  ``FramesLocalState.preserves,
+  ``FramesLocalState.pure,
+  ``FramesLocalState.throw,
+  ``FramesLocalState.runIntern,
+  ``FramesLocalState.of_internOnly,
+  ``FramesLocalState.bind,
+  ``PreservesLocalState.bind,
+  ``FramesLocalState.get,
+  ``FramesLocalState.modify,
+  ``FramesLocalState.intern,
+  ``FramesLocalState.withInferOnly,
+  ``FramesLocalState.cacheInferResult,
+  ``FramesLocalState.isEagerReduce,
+  ``FramesLocalState.prims,
+  ``FramesLocalState.lazyIngressAddr,
+  ``FramesLocalState.tryGetConst,
+  ``FramesLocalState.getConst
+]
+
+private def localStateMapRoots : Array Lean.Name := #[
+  ``LocalContext.IdsBelow.empty,
+  ``LocalContext.IdsBelow.push,
+  ``LocalStateInvariant.ofValues
+]
+
+private def localStateWalkerRoots : Array Lean.Name := #[
+  ``LocalStateExtension.restore,
+  ``PreservesLocalState.withLctxScope,
+  ``PreservesLocalState.openLet,
+  ``PreservesLocalState.openBinder,
+  ``FramesLocalState.ctxAddrForLbr,
+  ``FramesLocalState.inferKey,
+  ``FramesLocalState.lookupVar
+]
+
+private def localStateOperationalRoots : Array Lean.Name := #[
+  ``TcM.InternOnly.instantiateUnivParams,
+  ``FramesLocalState.instantiateUnivParams,
+  ``FramesLocalState.ensureSortWhnf,
+  ``FramesLocalState.ensureSortDirect,
+  ``FramesLocalState.ensureForallWhnf,
+  ``FramesLocalState.ensureForallDirect,
+  ``inferUncached_framesLocalState,
+  ``FramesLocalState.inferWith,
+  ``infer_framesLocalState
 ]
 
 /-- Production roots must not acquire a checker-soundness assumption
@@ -300,19 +380,19 @@ def roots : Array RootAllowance := #[
 ] ++ (stringListRoots ++ #[``LocalValues.pushLet_extends,
     ``LocalValues.pushBinder_lifts, ``LocalValues.Below.pushLet]).map (fun root => {
   root, standardAxioms := #[``propext], forbiddenDependencies := forbiddenProduction
-}) ++ (localIndexRoots ++ cacheFrameRoots ++ letSubstitutionRoots ++ cacheInvariantFrameRoots ++
+}) ++ (localIndexRoots ++ localScopeFrameRoots ++ localStateFrameRoots ++ cacheFrameRoots ++ letSubstitutionRoots ++ cacheInvariantFrameRoots ++
     internFrameRoots ++ #[``DefinitionOrder.ready_independent,
       ``DefinitionOrder.order?_sound, ``DefinitionOrder.member_of_read,
       ``LocalValues.Below.pushBinder]).map (fun root => {
   root, standardAxioms := #[``propext, ``Quot.sound], forbiddenDependencies := forbiddenProduction
-}) ++ (contextRoots ++ localValueRoots ++ cacheMapRoots ++ cacheInvariantMapRoots ++ scopedRoots ++ stringRoots ++
+}) ++ (contextRoots ++ localValueRoots ++ localStateMapRoots ++ cacheMapRoots ++ cacheInvariantMapRoots ++ scopedRoots ++ stringRoots ++
     internMapRoots ++ #[``DefinitionOrder.order?_rank,
       ``DefinitionOrder.acyclic_rank]).map (fun root => {
   root, standardAxioms := standard, forbiddenDependencies := forbiddenProduction
-}) ++ (binderWalkerRoots ++ cacheKeyRoots ++ cacheInvariantKeyRoots ++ stringExpansionRoots).map (fun root => {
+}) ++ (binderWalkerRoots ++ localStateWalkerRoots ++ cacheKeyRoots ++ cacheInvariantKeyRoots ++ stringExpansionRoots).map (fun root => {
   root, standardAxioms := standard, nativeAxioms := #[expressionNative],
   forbiddenDependencies := forbiddenProduction
-}) ++ (atomicRoots ++ instantiationRoots ++ recursiveCacheRoots ++
+}) ++ (atomicRoots ++ localStateOperationalRoots ++ instantiationRoots ++ recursiveCacheRoots ++
     #[``InferenceCacheInvariant.infer]).map (fun root => {
   root, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative],
   forbiddenDependencies := forbiddenProduction

@@ -21,6 +21,8 @@ import Ix.Kernel.Verify.Consistency.BinderOpening
 import Ix.Kernel.Verify.Consistency.LocalOpening
 import Ix.Kernel.Verify.Consistency.LocalSubstitution
 import Ix.Kernel.Verify.Consistency.LetInference
+import Ix.Kernel.Verify.Consistency.LocalScope
+import Ix.Kernel.Verify.Consistency.InferenceLocalState
 import Ix.Kernel.Verify.Consistency.Application
 import Ix.Kernel.Verify.Consistency.BinderInference
 import Ix.Kernel.Verify.Consistency.RecursiveCache
@@ -96,6 +98,17 @@ Successful let inference yields its full operational trace in both policies,
 including computed sort exposure and conversion. This trace transports the
 recursive body's typing to the original let and its substituted type before
 the final cheap-beta pass.
+Fresh local extensions compose through nested scopes. Cleanup restores the
+ordered declarations and every lookup on both success and failure, without
+requiring equal hash-map representations. Let traces recover the modeled
+context present after validation; the inference cache shell preserves caller
+contexts whenever the uncached branch does. A maintained structural invariant
+derives fresh opening from the counter bound. Every uncached constructor,
+both cache partitions and the final write preserve it on success and failure,
+under the recursive inference, reduction, conversion and projection contracts.
+Universe instantiation unconditionally changes only the intern table.
+The installed production loader must still establish counter preservation;
+the general mutual proof must supply the recursive and semantic contracts.
 
 The safe-definition guard excludes self-reference for both modes and arbitrary
 universe arities. Successful definition-block execution computes an order of

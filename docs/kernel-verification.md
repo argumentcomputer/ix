@@ -150,6 +150,20 @@ increasing sequence of strongly inaccessible cardinals.
   final scope cleanup. It requires no precomputed execution tree. Under the
   local-state and finite walker invariants, the trace transports the recursive
   body's typing to the original let and its substituted type before cheap beta.
+- Local scope restoration preserves the ordered declarations and every index
+  lookup without requiring equal hash-map representations. Fresh extensions
+  compose, and actual scope cleanup restores the caller's context on success
+  and failure. The let trace recovers `LocalContextValues` after validation;
+  the inference cache shell preserves caller contexts whenever its uncached
+  body does. `LocalStateInvariant` derives freshness from the live identifier
+  bound, and `infer_framesLocalState` preserves it for all constructors and
+  both policies, including hits, writes and failure states. Recursive
+  inference, reduction, conversion and projection remain contracts of the
+  mutual execution proof. The installed production lazy loader must establish
+  its counter-preservation contract. `TcM.InternOnly.instantiateUnivParams`
+  proves the actual universe walker's exact intern-table-only effect without
+  collision assumptions; the named inference-policy proof shares this result.
+  These structural frames do not establish computed-type or cache semantics.
 - `InferenceCacheInvariant` covers every entry in both production maps, with
   separate full-checking and inference-only meanings. Hits obtain stored facts
   directly; each insertion establishes its own fact and preserves all other
@@ -417,6 +431,7 @@ The VM pilot is preserved in the frozen archive and excluded from the host gate.
 | Dependent binders and function bodies | [`Consistency/BinderInference.lean`](../Ix/Kernel/Verify/Consistency/BinderInference.lean), [`Application.lean`](../Ix/Kernel/Verify/Consistency/Application.lean), [`BinderOpening.lean`](../Ix/Kernel/Verify/Consistency/BinderOpening.lean), [`Context.lean`](../Ix/Kernel/Verify/Consistency/Context.lean), [`Model/Checking.lean`](../Ix/Theory/Model/Checking.lean) |
 | Let-bound values, local allocation and shared context coherence | [`Consistency/LocalValues.lean`](../Ix/Kernel/Verify/Consistency/LocalValues.lean), [`LocalOpening.lean`](../Ix/Kernel/Verify/Consistency/LocalOpening.lean), [`Verify/LocalContext.lean`](../Ix/Kernel/Verify/LocalContext.lean), [`Model/ContextTransport.lean`](../Ix/Theory/Model/ContextTransport.lean) |
 | Local substitution, let-inference traces and closing inferred types | [`Consistency/LocalSubstitution.lean`](../Ix/Kernel/Verify/Consistency/LocalSubstitution.lean), [`LetInference.lean`](../Ix/Kernel/Verify/Consistency/LetInference.lean) |
+| Observable local-context restoration and inference frames | [`Verify/LocalScope.lean`](../Ix/Kernel/Verify/LocalScope.lean), [`Consistency/LocalScope.lean`](../Ix/Kernel/Verify/Consistency/LocalScope.lean) |
 | Production environment fragment and relative axiom policy | [`Consistency/Environment.lean`](../Ix/Kernel/Verify/Consistency/Environment.lean), [`Production.lean`](../Ix/Kernel/Verify/Consistency/Production.lean) |
 | Safe definition self-reference and block dependency order | [`DefinitionOrder.lean`](../Ix/Kernel/DefinitionOrder.lean), [`Consistency/DefinitionOrder.lean`](../Ix/Kernel/Verify/Consistency/DefinitionOrder.lean) |
 | Foundation assumptions, theorem contracts, and provenance | [Consistency model guide](theory.md) |
