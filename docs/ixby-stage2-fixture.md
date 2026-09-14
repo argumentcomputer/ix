@@ -181,6 +181,12 @@ zero inverse, extension
 packing, complete Nat loops with intermediate bounds, modular word arithmetic,
 masked shifts, and caller continuations. USize conversion/arithmetic source
 contracts explicitly assume a 64-bit platform and 65-bit Nat intermediates.
+Fifteen tree-backed array helpers now compose these contracts through sparse
+tree lookup/update, empty/size/USize observations, public lookup aliases,
+push with capacity growth, `set!`, and `uset`. Their source element relation,
+tree capacity, caller stack, and ordinary program/input admission remain
+explicit. Every Stage2 export obtains the array certificate. Packed bytes,
+ropes, and the remaining collection helpers are still separate obligations.
 These proofs do not yet compose through this complete source or the Stage2 adapter.
 
 Proving executor support, resource measurement, execution soundness, and

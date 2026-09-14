@@ -82,4 +82,4 @@ status.
 
 - [Ixby backend](ixby-backend.md): checked Ixon compilation, functional bytecode, canonical profile export, and per-input execution certificates.
 - [Experimental typed Lean frontend](ixby-lean.md): retained LCNF lowering, runtime representations, and Stage2 reference execution without a source certificate.
-- [Typed runtime representation proofs](ixby-representation.md): exact numeric/byte laws, number decoding, all 52 emitted number helpers and all 14 field helpers, complete conversion/arithmetic loops, modular word operations, and caller continuations.
+- [Typed runtime representation proofs](ixby-representation.md): exact numeric/byte laws, number decoding, all 52 emitted number helpers and all 14 field helpers, complete conversion/arithmetic loops, modular word operations, fifteen tree-backed array helpers, and caller continuations.

@@ -20,6 +20,7 @@ private def compileImage (env : Environment) (name : Name) (wire := false) : IO 
   discard <| checked image.certifyFields
   discard <| checked image.certifyNatLoops
   discard <| checked image.certifyWords
+  discard <| checked image.certifyArrayTrees
   return image
 
 private def certificateMutations (image : Image) : IO Unit := do
@@ -1187,6 +1188,458 @@ private def wordExecutions (image : Image) : IO Unit := do
   localRun logical links.u8ShiftLeft #[raw 255, field 7] (.ok (cached 128))
   localRun logical links.u8ShiftRight #[field 255, raw 255] (.ok (cached 1))
   IO.println s!"check-ixby-lean word contracts: {← count.get} admitted executions; {← callerCount.get} caller cases; {← localCount.get} resource cases"
+private def arrayTreeEncode (layout : Compilatrix.Ixby.Runtime.ArrayTrees.Layout)
+    (height offset : Nat) (slots : Array (Option Ix.Ixby.Value)) : Ix.Ixby.Value :=
+  if (slots.extract offset (offset + 2 ^ height)).all Option.isNone then
+    .ctor layout.empty #[]
+  else match height with
+    | 0 => match slots[offset]?.getD none with
+      | some value => .ctor layout.leaf #[value]
+      | none => .ctor layout.empty #[]
+    | height + 1 => .ctor layout.node #[arrayTreeEncode layout height offset slots,
+        arrayTreeEncode layout height (offset + 2 ^ height) slots]
+
+private def arrayTreeEntries (layout : Compilatrix.Ixby.Runtime.ArrayTrees.Layout)
+    (height offset : Nat) (tree : Ix.Ixby.Value) : Except String (Array (Nat × Ix.Ixby.Value)) := do
+  if tree == .ctor layout.empty #[] then return #[]
+  match height, tree with
+  | 0, .ctor tag #[value] =>
+    unless tag == layout.leaf do throw "array tree leaf tag"
+    return #[(offset, value)]
+  | height + 1, .ctor tag #[left, right] =>
+    unless tag == layout.node do throw "array tree node tag"
+    return (← arrayTreeEntries layout height offset left) ++
+      (← arrayTreeEntries layout height (offset + 2 ^ height) right)
+  | _, _ => throw "array tree height or field invariant"
+
+private def arrayTreeDecode (image : Image) (layout : Compilatrix.Ixby.Runtime.ArrayTrees.Layout)
+    (value : Ix.Ixby.Value) : Except String (Nat × Ix.Ixby.Value × Array (Nat × Ix.Ixby.Value)) := do
+  let .ctor tag #[sizeValue, .scalar (.nat capacity), tree] := value | throw "array layout"
+  unless tag == layout.array do throw "array tag"
+  let size ← image.decodeNumber sizeValue
+  unless size ≤ capacity && capacity != 0 && 2 ^ capacity.log2 == capacity do throw "array size/capacity invariant"
+  return (size, sizeValue, ← arrayTreeEntries layout capacity.log2 0 tree)
+
+private def arrayTreeSparse (layout : Compilatrix.Ixby.Runtime.ArrayTrees.Layout)
+    (height index : Nat) (value : Ix.Ixby.Value) : Ix.Ixby.Value :=
+  match height with
+  | 0 => .ctor layout.leaf #[value]
+  | height + 1 =>
+    let empty : Ix.Ixby.Value := .ctor layout.empty #[]
+    if index < 2 ^ height then
+      .ctor layout.node #[arrayTreeSparse layout height index value, empty]
+    else .ctor layout.node #[empty, arrayTreeSparse layout height (index - 2 ^ height) value]
+
+private def arrayTreeMutations (image : Image) : IO Unit := do
+  let certified ← checked image.certifyArrayTrees
+  let links := certified.links
+  let arithmetic := links.arithmetic
+  let conversions := arithmetic.conversions
+  let instruction (id block : Nat) (changed : Ix.Ixby.Instr) : Image :=
+    { image with program := { image.program with functions := image.program.functions.modify id fun fn =>
+      { fn with blocks := fn.blocks.modify block fun old => { old with instruction := changed } } } }
+  let function (id : Nat) (change : Ix.Ixby.Function → Ix.Ixby.Function) : Image :=
+    { image with program := { image.program with functions := image.program.functions.modify id change } }
+  let rejected ← IO.mkRef 0
+  let admittedCount ← IO.mkRef 0
+  let reject (changed : Image) (label : String) (admitted := true) : IO Unit := do
+    if admitted then
+      discard <| checked (Ix.Ixby.validateProgram changed.state.limits changed.program |>.mapError reprStr)
+      admittedCount.modify (· + 1)
+    match changed.certifyArrayTrees with
+    | .error _ => rejected.modify (· + 1)
+    | .ok _ => throw (IO.userError s!"array certificate accepted {label}")
+  let helpers : Array (Nat × Name) := #[(links.treeGet, `Ixby.Runtime.treeGet),
+    (links.treeSet, `Ixby.Runtime.treeSet), (links.size, `Array.size), (links.usize, `Array.usize),
+    (links.empty, `Array.emptyWithCapacity), (links.mkEmpty, `Array.mkEmpty),
+    (links.get, `Array.getInternal), (links.getBorrowed, `Array.getInternalBorrowed),
+    (links.uget, `Array.uget), (links.ugetBorrowed, `Array.ugetBorrowed),
+    (links.getBang, `Array.get!Internal), (links.getBangBorrowed, `Array.get!InternalBorrowed),
+    (links.push, `Array.push), (links.set, `Array.set!), (links.uset, `Array.uset)]
+  for (id, name) in helpers do
+    let fn := image.program.functions[id]!
+    reject (instruction id (fn.blocks.size - 1) (.ret .erased)) s!"changed return of {name}"
+    let functionNames := image.state.functionNames.insert name (if id == links.treeGet then links.size else links.treeGet)
+    reject { image with state := { image.state with functionNames } } s!"wrong binding of {name}"
+  for id in #[conversions.toWord, conversions.fromWordLoop, conversions.fromWord, conversions.fromRaw,
+      conversions.lowWord, conversions.natural, conversions.fieldNatural, conversions.asField,
+      conversions.fieldFromNatural, conversions.nibbleWord, conversions.nibbleNat,
+      arithmetic.add, arithmetic.sub, arithmetic.mul, arithmetic.div, arithmetic.mod,
+      arithmetic.equal, arithmetic.less, arithmetic.lessEqual, links.usizeOfNat] do
+    let fn := image.program.functions[id]!
+    reject (instruction id (fn.blocks.size - 1) (.ret .erased)) s!"changed numeric dependency {id}"
+  for (id, name) in #[(links.emptyCtor, `Ixby.Runtime.Empty), (links.leafCtor, `Ixby.Runtime.Leaf),
+      (links.nodeCtor, `Ixby.Runtime.Node), (links.arrayCtor, `Ixby.Runtime.Array),
+      (links.bytesCtor, `Ixby.Runtime.Bytes), (links.ropeCtor, `Ixby.Runtime.Rope)] do
+    let constructors := image.program.constructors.modify id fun ctor => { ctor with fields := ctor.fields + 1 }
+    reject { image with program := { image.program with constructors } } s!"wrong fields of {name}" false
+    let constructorNames := image.state.constructorNames.insert name
+      (if id == links.arrayCtor then links.bytesCtor else links.arrayCtor)
+    reject { image with state := { image.state with constructorNames } } s!"wrong layout name of {name}"
+  for (id, tag) in #[(links.nodeCtor, links.layout.empty), (links.arrayCtor, links.layout.bytes),
+      (links.ropeCtor, links.layout.bytes), (links.ropeCtor, links.layout.array)] do
+    let constructors := image.program.constructors.modify id fun ctor => { ctor with id := tag }
+    reject { image with program := { image.program with constructors } } "colliding dispatch tags" false
+  reject (instruction links.treeGet 0 (.letOp (.primitive .natEq [.local 1, .literal (.nat 0)]) 1)) "wrong leaf capacity"
+  reject (instruction links.treeGet 3 (.letOp (.primitive .natDiv [.local 1, .literal (.nat 3)]) 5)) "wrong tree split"
+  reject (instruction links.treeGet 6 (.branch (.local 5) 8 7)) "reversed lookup branch"
+  reject (instruction links.treeGet 8 (.letOp (.project (.local 0) 0) 10)) "wrong right child"
+  reject (instruction links.treeGet 10 (.letOp (.primitive .natSub [.local 4, .local 2]) 11)) "reversed lookup index"
+  reject (instruction links.treeGet 9 (.tailCall links.treeGet [.local 6, .local 4, .local 1])) "wrong recursive lookup index"
+  reject (instruction links.treeSet 2 (.letOp (.construct links.leafCtor [.local 0]) 4)) "stored old tree instead of item"
+  reject (instruction links.treeSet 3 (.letOp (.primitive .natDiv [.local 1, .literal (.nat 4)]) 5)) "wrong update split"
+  reject (instruction links.treeSet 9 (.branch (.local 7) 11 10)) "reversed sparse update branch"
+  reject (instruction links.treeSet 11 (.letOp (.primitive .natSub [.local 5, .local 2]) 14)) "reversed sparse update index"
+  reject (instruction links.treeSet 12 (.letOp (.construct links.nodeCtor [.local 6, .local 8]) 13)) "swapped sparse update children"
+  reject (instruction links.treeSet 20 (.letOp (.construct links.nodeCtor [.local 9, .local 6]) 21)) "lost untouched right subtree"
+  reject (instruction links.treeSet 23 (.letOp (.construct links.nodeCtor [.local 10, .local 6]) 24)) "swapped updated right subtree"
+  reject (instruction links.size 2 (.ret (.local 3))) "returned capacity as size"
+  reject (instruction links.usize 1 (.tailCall conversions.fromRaw [.local 2])) "wrong USize adapter"
+  reject (instruction links.empty 2 (.letOp (.construct links.arrayCtor [.local 2, .literal (.nat 0), .local 3]) 3)) "zero array capacity"
+  reject (instruction links.mkEmpty 0 (.letOp (.construct conversions.cachedCtor [.literal (.nat 0), .literal (.word32 1)]) 1)) "inconsistent empty size cache"
+  reject (instruction links.get 1 (.letOp (.call arithmetic.less [.local 4, .local 2]) 2)) "reversed array bounds"
+  reject (instruction links.get 2 (.branch (.local 5) 4 3)) "reversed checked lookup"
+  reject (instruction links.get 6 (.letOp (.call conversions.natural [.local 3]) 10)) "observed lookup proof slot"
+  reject (instruction links.getBorrowed 0 (.tailCall links.get [.erased, .local 1, .local 0, .erased])) "wrong borrowed index"
+  reject (instruction links.getBang 4 (.ret (.local 0))) "wrong default value"
+  reject (instruction links.getBangBorrowed 3 (.tailCall links.get [.erased, .local 2, .local 1, .erased])) "default used as index"
+  reject (instruction links.push 2 (.letOp (.call arithmetic.sub [.local 3, .local 4]) 3)) "decremented push size"
+  reject (instruction links.push 11 (.letOp (.primitive .natMul [.local 7, .local 7]) 14)) "squared growth capacity"
+  reject (instruction links.push 15 (.letOp (.construct links.nodeCtor [.local 12, .local 8]) 16)) "reversed growth children"
+  reject (instruction links.push 16 (.letOp (.call links.treeSet [.local 8, .local 11, .local 9, .local 2]) 17)) "wrote old root at larger capacity"
+  reject (instruction links.push 17 (.letOp (.construct links.arrayCtor [.local 3, .local 11, .local 14]) 18)) "retained old push size"
+  reject (instruction links.set 4 (.ret (.local 3))) "returned item for out-of-bounds set"
+  reject (instruction links.set 10 (.letOp (.construct links.arrayCtor [.local 4, .local 7, .local 8]) 11)) "discarded updated root"
+  reject (instruction links.uset 1 (.letOp (.call arithmetic.less [.local 4, .local 5]) 2)) "used update proof as index"
+  reject (function links.treeSet fun fn => { fn with blocks := fn.blocks.push ⟨0, .ret .erased⟩ }) "extra unreachable tree block"
+  reject (function links.treeGet fun fn => { fn with entry := 1000 }) "missing tree entry" false
+  reject (function links.uset fun fn => { fn with arity := 4 }) "omitted update proof slot" false
+  let functionNames := image.state.functionNames.insert `Ixby.Runtime.treeSet (image.program.functions.size + 1)
+  reject { image with state := { image.state with functionNames } } "missing tree function candidate"
+  -- The certificate's scope is the tree branches. Byte callback bodies remain
+  -- separate obligations, while their names/indices are pinned by exact code.
+  let bytesChanged := instruction links.byteGet 0 (.ret .erased)
+  discard <| checked bytesChanged.certifyArrayTrees
+  IO.println s!"check-ixby-lean arrays: 15 generated functions; {← rejected.get} rejected mutations ({← admittedCount.get} structurally admitted)"
+
+private def arrayTreeExecutions (image : Image) : IO Unit := do
+  need (System.Platform.numBits == 64) "array usize source oracle requires the compiler's 64-bit platform"
+  let certified ← checked image.certifyArrayTrees
+  let links := certified.links
+  let layout := links.layout
+  let numbers := links.arithmetic.conversions.layout
+  let cached (n : Nat) : Ix.Ixby.Value := .ctor numbers.cached #[.scalar (.nat n), .scalar (.word32 n.toUInt32)]
+  let raw (n : Nat) : Ix.Ixby.Value := .ctor numbers.raw #[.scalar (.nat n)]
+  let field (n : Nat) : Ix.Ixby.Value := .ctor numbers.field #[.scalar (.field (Ix.Ixby.Goldilocks.reduce n))]
+  let cases (n : Nat) : Array (Nat × Ix.Ixby.Value) :=
+    #[(n, cached n), (n, raw n), (n % Ix.Ixby.goldilocksModulus, field n)]
+  let array (height : Nat) (size tree : Ix.Ixby.Value) : Ix.Ixby.Value :=
+    .ctor layout.array #[size, .scalar (.nat (2 ^ height)), tree]
+  let entries (source : Array Ix.Ixby.Value) : Array (Nat × Ix.Ixby.Value) :=
+    (Array.range source.size).map fun i => (i, source[i]!)
+  let pool : Array Ix.Ixby.Value := #[.erased, .scalar (.word32 0xC0FFEE), .scalar (.bool true),
+    raw (2 ^ 256 + 17), cached (2 ^ 32 + 7), field (Ix.Ixby.goldilocksModulus - 1),
+    .ctor layout.node #[.scalar (.str "array element"), .scalar (.bytes #[0, 255, 19])],
+    .pap links.arithmetic.add #[cached 3]]
+  let typeValue := pool[7]!
+  let proofValue := pool[6]!
+  let fallback := pool[1]!
+  let count ← IO.mkRef 0
+  let negativeCount ← IO.mkRef 0
+  let registered ← IO.mkRef ({} : Std.HashMap Nat Nat)
+  let callerCases ← IO.mkRef (#[] : Array (Nat × Array Ix.Ixby.Value × Ix.Ixby.Value))
+  let execute (program : Ix.Ixby.Program) (args : Array Ix.Ixby.Value) : IO Ix.Ixby.Value := do
+    discard <| checked (Compilatrix.Ixby.Runtime.ArrayTrees.certify program links)
+    checked (Ix.Ixby.execute image.state.limits program args 200000 |>.mapError reprStr)
+  let runCase (id : Nat) (args : Array Ix.Ixby.Value) (checkResult : Ix.Ixby.Value → IO Unit) : IO Ix.Ixby.Value := do
+    let actual ← execute { image.program with entry := id } args
+    checkResult actual
+    let old := (← registered.get)[id]?.getD 0
+    if old < 3 then
+      registered.modify (·.insert id (old + 1))
+      callerCases.modify (·.push (id, args, actual))
+    count.modify (· + 1)
+    return actual
+  let exactValue (expected actual : Ix.Ixby.Value) : IO Unit :=
+    need (actual == expected) s!"array exact result: expected {reprStr expected}, got {reprStr actual}"
+  let treeResult (height : Nat) (expected : Array (Nat × Ix.Ixby.Value)) (actual : Ix.Ixby.Value) : IO Unit := do
+    let got ← checked (arrayTreeEntries layout height 0 actual)
+    need (got == expected) s!"tree slots at height {height}: expected {reprStr expected}, got {reprStr got}"
+  let arrayResult (source : Array Ix.Ixby.Value) (actual : Ix.Ixby.Value) : IO Unit := do
+    let (size, _, got) ← checked (arrayTreeDecode image layout actual)
+    need (size == source.size && got == entries source)
+      s!"source array mismatch: expected {reprStr source}, got length {size} with {reprStr got}"
+  let rejectCase (id : Nat) (args : Array Ix.Ixby.Value) (expected : Ix.Ixby.Error) : IO Unit := do
+    let program := { image.program with entry := id }
+    discard <| checked (Compilatrix.Ixby.Runtime.ArrayTrees.certify program links)
+    discard <| checked (Ix.Ixby.validateProgram image.state.limits program |>.mapError reprStr)
+    discard <| checked (Ix.Ixby.validateInputValues image.state.limits program image.state.limits.inputNodes args.toList |>.mapError reprStr)
+    match Ix.Ixby.execute image.state.limits program args 200000 with
+    | .error actual => need (actual == expected) s!"array rejection {id}: {reprStr actual}"
+    | .ok actual => throw (IO.userError s!"array rejection {id} returned {reprStr actual}")
+    negativeCount.modify (· + 1)
+  let empty := .ctor layout.empty #[]
+  for requested in #[0, 1, 2, 31, 32, 2 ^ 32, 2 ^ 64, 2 ^ 256 + 1] do
+    for (_, capValue) in cases requested do
+      for id in #[links.empty, links.mkEmpty] do
+        discard <| runCase id #[typeValue, capValue] (exactValue (array 0 (cached 0) empty))
+  for capValue in #[Ix.Ixby.Value.erased, proofValue, typeValue] do
+    for id in #[links.empty, links.mkEmpty] do
+      discard <| runCase id #[typeValue, capValue] (exactValue (array 0 (cached 0) empty))
+  for height in Array.range 6 do
+    let capacity := 2 ^ height
+    for n in Array.range (capacity + 1) do
+      let source := (Array.range n).map fun i => pool[(i + n) % pool.size]!
+      let slots := (Array.range capacity).map fun i => source[i]?
+      let tree := arrayTreeEncode layout height 0 slots
+      for index in Array.range n do
+        discard <| runCase links.treeGet #[tree, .scalar (.nat capacity), .scalar (.nat index)]
+          (exactValue source[index]!)
+      for index in Array.range capacity do
+        let replacement := pool[(index + n + 3) % pool.size]!
+        let changed := slots.set! index (some replacement)
+        let expected := (Array.range capacity).filterMap fun i => changed[i]!.map fun value => (i, value)
+        discard <| runCase links.treeSet #[tree, .scalar (.nat capacity), .scalar (.nat index), replacement]
+          (treeResult height expected)
+      for (_, sizeValue) in cases n do
+        let input := array height sizeValue tree
+        discard <| runCase links.size #[typeValue, input] (exactValue sizeValue)
+        discard <| runCase links.usize #[typeValue, input] (exactValue (cached source.usize.toNat))
+        for replacement in pool do
+          let output ← runCase links.push #[typeValue, input, replacement] (arrayResult (source.push replacement))
+          let (_, nextSize, _) ← checked (arrayTreeDecode image layout output)
+          need (nextSize == (if sizeValue == cached n then cached (n + 1) else raw (n + 1)))
+            "push size representation or cache changed"
+        for index in Array.range n do
+          for (_, indexValue) in cases index do
+            for id in #[links.get, links.getBorrowed, links.uget, links.ugetBorrowed] do
+              discard <| runCase id #[typeValue, input, indexValue, proofValue] (exactValue source[index]!)
+            for id in #[links.getBang, links.getBangBorrowed] do
+              discard <| runCase id #[typeValue, fallback, input, indexValue] (exactValue (source.getD index fallback))
+            let replacement := pool[(index + n + 5) % pool.size]!
+            discard <| runCase links.set #[typeValue, input, indexValue, replacement]
+              (arrayResult (source.set! index replacement))
+            discard <| runCase links.uset #[typeValue, input, indexValue, replacement, proofValue]
+              (arrayResult (source.set! index replacement))
+        for index in #[n, n + 1, capacity + 1, 2 ^ 32, 2 ^ 64 + 17, 2 ^ 256 + 3] do
+          for (observedIndex, indexValue) in cases index do
+            -- Canonical field representations expose their own exact Nat.
+            if observedIndex ≥ n then
+              for id in #[links.get, links.getBorrowed, links.uget, links.ugetBorrowed] do
+                rejectCase id #[typeValue, input, indexValue, proofValue] .notConstructor
+              rejectCase links.uset #[typeValue, input, indexValue, pool[2]!, proofValue] .notConstructor
+              for id in #[links.getBang, links.getBangBorrowed] do
+                discard <| runCase id #[typeValue, fallback, input, indexValue] (exactValue fallback)
+              discard <| runCase links.set #[typeValue, input, indexValue, pool[2]!] (exactValue input)
+  -- Noncanonical unused subtrees and dead slots are preserved by updates.
+  let materialized := .ctor layout.node #[.ctor layout.empty #[], .ctor layout.empty #[]]
+  let noncanonical := .ctor layout.node #[materialized, materialized]
+  let kept ← runCase links.treeSet #[noncanonical, .scalar (.nat 4), .scalar (.nat 0), pool[7]!]
+    (treeResult 2 #[(0, pool[7]!)])
+  need (kept == .ctor layout.node #[.ctor layout.node #[.ctor layout.leaf #[pool[7]!], empty], materialized])
+    "tree write discarded an untouched materialized empty subtree"
+  let deadSlots : Array (Option Ix.Ixby.Value) := #[some pool[0]!, none, none, none, none, some pool[7]!, none, none]
+  let deadTree := arrayTreeEncode layout 3 0 deadSlots
+  let deadArray := array 3 (field 1) deadTree
+  let deadPushed ← runCase links.push #[typeValue, deadArray, pool[6]!] fun actual => do
+    let (size, _, got) ← checked (arrayTreeDecode image layout actual)
+    need (size == 2 && got == #[(0, pool[0]!), (1, pool[6]!), (5, pool[7]!)]) "push corrupted dead slots"
+  callerCases.modify (·.push (links.push, #[typeValue, deadArray, pool[6]!], deadPushed))
+  -- Deep sparse trees exercise capacities and indices far above machine words
+  -- without allocating an array with that many unused slots.
+  for height in #[7, 8, 16, 31, 32, 63, 64, 80, 128, 256] do
+    let capacity := 2 ^ height
+    for index in #[0, 1, capacity / 2 - 1, capacity / 2, capacity - 1] do
+      let value := pool[(height + index) % pool.size]!
+      let written ← runCase links.treeSet #[empty, .scalar (.nat capacity), .scalar (.nat index), value]
+        (treeResult height #[(index, value)])
+      discard <| runCase links.treeGet #[written, .scalar (.nat capacity), .scalar (.nat index)] (exactValue value)
+      callerCases.modify (·.push (links.treeSet, #[empty, .scalar (.nat capacity), .scalar (.nat index), value], written))
+    let firstTree := arrayTreeSparse layout height 0 pool[7]!
+    let source := #[pool[7]!]
+    for (_, sizeValue) in cases 1 do
+      let input := array height sizeValue firstTree
+      discard <| runCase links.push #[typeValue, input, pool[6]!] (arrayResult (source.push pool[6]!))
+      for (_, indexValue) in cases 0 do
+        discard <| runCase links.get #[typeValue, input, indexValue, proofValue] (exactValue pool[7]!)
+        let output ← runCase links.set #[typeValue, input, indexValue, pool[5]!]
+          (arrayResult (source.set! 0 pool[5]!))
+        callerCases.modify (·.push (links.set, #[typeValue, input, indexValue, pool[5]!], output))
+  -- Feed actual returned arrays into later operations through several growth
+  -- boundaries, maintaining an independent ordinary Array oracle.
+  let mut source : Array Ix.Ixby.Value := #[]
+  let mut current ← runCase links.mkEmpty #[typeValue, raw 1000] (arrayResult source)
+  for i in Array.range 257 do
+    let item := pool[i % pool.size]!
+    source := source.push item
+    current ← runCase links.push #[typeValue, current, item] (arrayResult source)
+    let index := (i * 17 + 3) % source.size
+    let replacement := pool[(i + 3) % pool.size]!
+    source := source.set! index replacement
+    current ← runCase links.set #[typeValue, current, field index, replacement] (arrayResult source)
+    discard <| runCase links.getBorrowed #[typeValue, current, raw index, proofValue] (exactValue source[index]!)
+  need ((← registered.get).size == 15) "array execution suite missed a generated helper"
+  -- Explicit nonzero callers cover every public entry in addition to the
+  -- first three cases, so empty arrays cannot hide frame-restoration defects.
+  let sampleSource := pool.extract 0 4
+  let sampleTree := arrayTreeEncode layout 2 0 (sampleSource.map some)
+  let sample := array 2 (field 4) sampleTree
+  let retain (id : Nat) (args : Array Ix.Ixby.Value) (checkResult : Ix.Ixby.Value → IO Unit) : IO Unit := do
+    let output ← runCase id args checkResult
+    callerCases.modify (·.push (id, args, output))
+  retain links.treeGet #[sampleTree, .scalar (.nat 4), .scalar (.nat 3)] (exactValue sampleSource[3]!)
+  retain links.treeSet #[sampleTree, .scalar (.nat 4), .scalar (.nat 3), pool[7]!]
+    (treeResult 2 (entries (sampleSource.set! 3 pool[7]!)))
+  retain links.size #[typeValue, sample] (exactValue (field 4))
+  retain links.usize #[typeValue, sample] (exactValue (cached 4))
+  for id in #[links.empty, links.mkEmpty] do retain id #[typeValue, raw (2 ^ 256 + 1)] (arrayResult #[])
+  for id in #[links.get, links.getBorrowed, links.uget, links.ugetBorrowed] do
+    retain id #[typeValue, sample, field 3, proofValue] (exactValue sampleSource[3]!)
+  for id in #[links.getBang, links.getBangBorrowed] do
+    retain id #[typeValue, fallback, sample, raw 3] (exactValue sampleSource[3]!)
+    retain id #[typeValue, fallback, sample, raw (2 ^ 256)] (exactValue fallback)
+  retain links.push #[typeValue, sample, pool[7]!] (arrayResult (sampleSource.push pool[7]!))
+  retain links.set #[typeValue, sample, field 3, pool[7]!] (arrayResult (sampleSource.set! 3 pool[7]!))
+  retain links.uset #[typeValue, sample, raw 3, pool[7]!, proofValue] (arrayResult (sampleSource.set! 3 pool[7]!))
+  let callerCount ← IO.mkRef 0
+  for (id, args, expected) in ← callerCases.get do
+    let allArgs := args.push (.scalar (.word32 0xDEADBEEF))
+    let mut blocks : Array Ix.Ixby.Block := #[⟨allArgs.size,
+      .letOp (.call id ((List.range args.size).map Ix.Ixby.Operand.local)) 1⟩]
+    let mut result := allArgs.size
+    let mut locals := allArgs.size + 1
+    let mut expected := expected
+    for i in (List.range allArgs.size).reverse do
+      blocks := blocks.push ⟨locals, .letOp (.construct links.nodeCtor
+        [.local i, .local result]) (blocks.size + 1)⟩
+      result := locals
+      locals := locals + 1
+      expected := .ctor layout.node #[allArgs[i]!, expected]
+    blocks := blocks.push ⟨locals, .ret (.local result)⟩
+    let caller : Ix.Ixby.Function := { arity := allArgs.size, blocks }
+    let actual ← execute { image.program with
+      entry := image.program.functions.size
+      functions := image.program.functions.push caller } allArgs
+    need (actual == expected) s!"array caller {id} lost an argument, proof slot, sentinel, subtree, or result"
+    callerCount.modify (· + 1)
+  IO.println s!"check-ixby-lean array contracts: {← count.get} admitted executions; {← negativeCount.get} admitted bounds rejections; {← callerCount.get} caller cases"
+
+private def arrayTreeResources (image : Image) : IO Unit := do
+  let certified ← checked image.certifyArrayTrees
+  let links := certified.links
+  let layout := links.layout
+  let numbers := links.arithmetic.conversions.layout
+  let cached (n : Nat) : Ix.Ixby.Value := .ctor numbers.cached #[.scalar (.nat n), .scalar (.word32 n.toUInt32)]
+  let raw (n : Nat) : Ix.Ixby.Value := .ctor numbers.raw #[.scalar (.nat n)]
+  let field (n : Nat) : Ix.Ixby.Value := .ctor numbers.field #[.scalar (.field (Ix.Ixby.Goldilocks.reduce n))]
+  let array (height : Nat) (size tree : Ix.Ixby.Value) : Ix.Ixby.Value :=
+    .ctor layout.array #[size, .scalar (.nat (2 ^ height)), tree]
+  let empty : Ix.Ixby.Value := .ctor layout.empty #[]
+  let leaf : Ix.Ixby.Value := .ctor layout.leaf #[.scalar (.word32 99)]
+  let values := (Array.range 8).map fun i => Ix.Ixby.Value.scalar (.word32 i.toUInt32)
+  let fullTree := arrayTreeEncode layout 3 0 (values.map some)
+  let full := array 3 (cached 8) fullTree
+  let spareTree := arrayTreeEncode layout 3 0 ((values.extract 0 7).map some)
+  let spare := array 3 (cached 7) spareTree
+  let item : Ix.Ixby.Value := .pap links.arithmetic.add #[cached 17]
+  let count ← IO.mkRef 0
+  let localRun (limits : Ix.Ixby.Limits) (id : Nat) (args : Array Ix.Ixby.Value)
+      (expected : Except Ix.Ixby.Error Ix.Ixby.Value) : IO Unit := do
+    let actual := Ix.Ixby.run limits image.program 200000
+      (Compilatrix.Ixby.Runtime.ScalarFunction.start id args)
+    let same := match actual, expected with
+      | .ok actual, .ok expected => actual == expected
+      | .error actual, .error expected => actual == expected
+      | _, _ => false
+    need same s!"array resource contract {id}: expected {reprStr expected}, got {reprStr actual}"
+    count.modify (· + 1)
+  let localChecked (limits : Ix.Ixby.Limits) (id : Nat) (args : Array Ix.Ixby.Value)
+      (source : Array Ix.Ixby.Value) : IO Unit := do
+    let actual ← checked (Ix.Ixby.run limits image.program 200000
+      (Compilatrix.Ixby.Runtime.ScalarFunction.start id args) |>.mapError reprStr)
+    let (size, _, got) ← checked (arrayTreeDecode image layout actual)
+    let expected := (Array.range source.size).map fun i => (i, source[i]!)
+    need (size == source.size && got == expected) "array resource source result"
+    count.modify (· + 1)
+  let tiny : Ix.Ixby.Limits := { image.state.limits with
+    locals := 5, continuations := 0, natBits := 0, byteArrayBytes := 0 }
+  for id in #[links.empty, links.mkEmpty] do
+    localRun tiny id #[.erased, item] (.ok (array 0 (cached 0) empty))
+    localRun { tiny with locals := 4 } id #[.erased, item] (.error (.limit .locals))
+  localRun tiny links.size #[.erased, array 80 (raw 1) empty] (.ok (raw 1))
+  localRun { tiny with locals := 4 } links.size #[.erased, full] (.error (.limit .locals))
+  let readTree : Ix.Ixby.Limits := { tiny with locals := 8, natBits := 4 }
+  localRun readTree links.treeGet #[fullTree, .scalar (.nat 8), .scalar (.nat 7)] (.ok values[7]!)
+  localRun { readTree with locals := 7 } links.treeGet #[fullTree, .scalar (.nat 8), .scalar (.nat 7)]
+    (.error (.limit .locals))
+  localRun { readTree with natBits := 3 } links.treeGet #[fullTree, .scalar (.nat 8), .scalar (.nat 7)]
+    (.error (.limit .natBits))
+  localRun { readTree with locals := 5, natBits := 1 } links.treeGet #[leaf, .scalar (.nat 1), .scalar (.nat 0)]
+    (.ok (.scalar (.word32 99)))
+  localRun { readTree with natBits := 0 } links.treeGet #[leaf, .scalar (.nat 1), .scalar (.nat 0)]
+    (.error (.limit .natBits))
+  let writeTree : Ix.Ixby.Limits := { readTree with locals := 12, continuations := 3 }
+  let updated := arrayTreeEncode layout 3 0 ((values.set! 7 item).map some)
+  localRun writeTree links.treeSet #[fullTree, .scalar (.nat 8), .scalar (.nat 7), item] (.ok updated)
+  localRun { writeTree with locals := 11 } links.treeSet #[fullTree, .scalar (.nat 8), .scalar (.nat 7), item]
+    (.error (.limit .locals))
+  localRun { writeTree with continuations := 2 } links.treeSet #[fullTree, .scalar (.nat 8), .scalar (.nat 7), item]
+    (.error (.limit .continuations))
+  localRun { writeTree with locals := 11 } links.treeSet #[empty, .scalar (.nat 8), .scalar (.nat 7), item]
+    (.ok (arrayTreeSparse layout 3 7 item))
+  localRun { tiny with locals := 6, natBits := 1 } links.treeSet #[empty, .scalar (.nat 1), .scalar (.nat 0), item]
+    (.ok (.ctor layout.leaf #[item]))
+  let observed : Ix.Ixby.Limits := { image.state.limits with
+    locals := 10, continuations := 4, natBits := 64, byteArrayBytes := 8 }
+  let fieldArray := array 3 (field 8) fullTree
+  for id in #[links.get, links.getBorrowed, links.uget, links.ugetBorrowed] do
+    localRun observed id #[.erased, fieldArray, field 7, item] (.ok values[7]!)
+  localRun { observed with locals := 9 } links.get #[.erased, fieldArray, field 7, item] (.error (.limit .locals))
+  localRun { observed with continuations := 3 } links.get #[.erased, fieldArray, field 7, item] (.error (.limit .continuations))
+  localRun { observed with byteArrayBytes := 7 } links.get #[.erased, fieldArray, field 7, item] (.error (.limit .byteArrayBytes))
+  localRun observed links.get #[.erased, fieldArray, raw 8, item] (.error .notConstructor)
+  localRun observed links.uset #[.erased, fieldArray, raw 8, item, .erased] (.error .notConstructor)
+  localRun observed links.getBang #[.erased, item, fieldArray, raw 8] (.ok item)
+  localRun observed links.set #[.erased, fieldArray, raw 8, item] (.ok fieldArray)
+
+  let usize := { observed with locals := 11, continuations := 3, natBits := 65 }
+  localRun usize links.usize #[.erased, fieldArray] (.ok (cached 8))
+  localRun { usize with natBits := 64 } links.usize #[.erased, fieldArray] (.error (.limit .natBits))
+  localRun { usize with continuations := 2 } links.usize #[.erased, fieldArray] (.error (.limit .continuations))
+  localRun { usize with byteArrayBytes := 7 } links.usize #[.erased, fieldArray] (.error (.limit .byteArrayBytes))
+  -- Exact tree capacity, rather than the small selected index/result, controls
+  -- these primitive Nat failures.
+  for height in #[32, 63, 64, 256] do
+    let tree := arrayTreeSparse layout height 0 item
+    let capacity := 2 ^ height
+    let enough := { readTree with natBits := height + 1 }
+    localRun enough links.treeGet #[tree, .scalar (.nat capacity), .scalar (.nat 0)] (.ok item)
+    localRun { enough with natBits := height } links.treeGet #[tree, .scalar (.nat capacity), .scalar (.nat 0)]
+      (.error (.limit .natBits))
+  let writeArray := { observed with locals := 12 }
+  localChecked writeArray links.set #[.erased, fieldArray, field 7, item] (values.set! 7 item)
+  localRun { writeArray with locals := 11 } links.set #[.erased, fieldArray, field 7, item] (.error (.limit .locals))
+  localRun { writeArray with continuations := 3 } links.set #[.erased, fieldArray, field 7, item] (.error (.limit .continuations))
+  localChecked writeArray links.uset #[.erased, fieldArray, raw 7, item, .erased] (values.set! 7 item)
+  let pushSpare := { image.state.limits with locals := 13, continuations := 4, natBits := 4, byteArrayBytes := 0 }
+  localChecked pushSpare links.push #[.erased, spare, item] ((values.extract 0 7).push item)
+  localRun { pushSpare with locals := 12 } links.push #[.erased, spare, item] (.error (.limit .locals))
+  localRun { pushSpare with continuations := 3 } links.push #[.erased, spare, item] (.error (.limit .continuations))
+  localRun { pushSpare with natBits := 3 } links.push #[.erased, spare, item] (.error (.limit .natBits))
+  let pushFull := { pushSpare with locals := 16, continuations := 5, natBits := 5 }
+  localChecked pushFull links.push #[.erased, full, item] (values.push item)
+  localRun { pushFull with locals := 15 } links.push #[.erased, full, item] (.error (.limit .locals))
+  localRun { pushFull with continuations := 4 } links.push #[.erased, full, item] (.error (.limit .continuations))
+  localRun { pushFull with natBits := 4 } links.push #[.erased, full, item] (.error (.limit .natBits))
+  let smallFull := array 0 (cached 1) leaf
+  localChecked { pushFull with continuations := 2, natBits := 2 } links.push #[.erased, smallFull, item]
+    #[.scalar (.word32 99), item]
+  -- Input validation establishes structural validity, independently of the
+  -- live-prefix invariant required by the source contracts.
+  let missingLeaf := array 0 (cached 1) empty
+  localRun observed links.get #[.erased, missingLeaf, cached 0, .erased] (.error (.invalidProjection 0))
+  IO.println s!"check-ixby-lean array resources: {← count.get} exact capacity cases"
+
 private def compileRejects (env : Environment) (name : Name) (limits : Ix.Ixby.Limits)
     (message : String) : IO Unit := do
   let (result, _) ← (compile name limits).toIO
@@ -1228,6 +1681,9 @@ def main : IO UInt32 := cli "check-ixby-lean" do
   natLoopExecutions runtimeImage
   wordMutations runtimeImage
   wordExecutions runtimeImage
+  arrayTreeMutations runtimeImage
+  arrayTreeExecutions runtimeImage
+  arrayTreeResources runtimeImage
   compileRejects env `Nat.add { byteArrayBytes := 2 ^ 32 }
     "typed Ixby packed byte capacity must fit Word32 indices"
   compileRejects env `Float.add {} "unsupported typed runtime extern Float.add"

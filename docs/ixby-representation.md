@@ -399,11 +399,73 @@ exact failures. All 92 code/dependency/name/layout mutations are rejected,
 including 88 that pass structural admission. Seventy-six additional axiom
 guards cover these source, execution, arithmetic, and caller contracts.
 
+## Tree-backed array contracts
+
+[ArrayTrees](../Compilatrix/Ixby/Runtime/ArrayTrees.lean) certifies fifteen
+emitted helpers: `treeGet`, `treeSet`, `Array.size`, `Array.usize`,
+`Array.emptyWithCapacity`, `Array.mkEmpty`, the four checked lookup entries,
+the two default-returning lookup entries, `Array.push`, `Array.set!`, and
+`Array.uset`. Their complete bodies are checked against
+[exact code templates](../Compilatrix/Ixby/Runtime/ArrayTreeCode.lean), with
+all Nat arithmetic/conversion dependencies and `USize.ofNat`. The certificate
+also checks six constructor declarations and the four tag distinctions used
+by dispatch. `Image.certifyArrayTrees` retains the actual image's source-name
+bindings and number/array layout witnesses; every regression image and Stage2
+export obtains it.
+
+The [representation](../Compilatrix/Ixby/Runtime/ArrayTreeRepresentation.lean)
+indexes sparse trees by height `h`, with capacity exactly `2^h`. Empty subtrees
+may occur at any height. A live prefix relates each source array element to
+its stored value through an arbitrary element relation, so constructors,
+closures, erased values, and mixed numeric layouts are supported. Unused
+slots may contain values or materialized empty subtrees. Lookup returns the
+represented element; a write changes only the selected slot. Push preserves
+the live prefix and doubles a full tree's capacity. Out-of-bounds `set!`
+returns the original physical array, and default-returning lookup preserves
+the supplied fallback. `uset` and `uget` source observations use the exact
+`USize.toNat` index. Borrowed entry points share the safe source observation.
+
+These sufficient local bounds include all number layouts; `h` is the input
+tree height. Continuations are spare slots beyond the saved caller stack.
+
+| Helpers/path | Locals | Nat bits | Continuations | Byte capacity |
+| --- | ---: | ---: | ---: | ---: |
+| Empty and size | 5 | 0 | 0 | 0 |
+| `treeGet` | 8 | 2 | 0 | 0 |
+| `treeSet` | 12 | 2 | `h` | 0 |
+| `Array.usize` | 11 | 65 | 3 | 8 |
+| Checked/default lookup | 10 | 64 | 4 | 8 |
+| `set!` / `uset` | 12 | 64 | `max 4 (h + 1)` | 8 |
+| Push with spare capacity | 13 | 64 | `max 4 (h + 1)` | 8 |
+| Push with growth | 16 | 64 | `max 4 (h + 2)` | 8 |
+
+The observed tree capacity must also fit the Nat limit; growth needs `2^(h+1)`
+to fit. The uniform source push corollary uses that larger bound on both
+branches. Arbitrary out-of-bounds indices must fit when observed. `Array.usize`
+retains the explicit 64-bit platform premise. Local construction/observation
+paths do not replace whole-program admission: all fifteen `Evaluates`
+corollaries require the unchanged reference program and input validators.
+Structural input validation alone does not establish the live-prefix relation.
+
+The suite adds 67,953 admitted executions, 18,630 admitted bounds rejections,
+203 caller cases, and 53 exact resource cases. It covers every live index of
+every prefix at capacities 1 through 32, all size/index number-layout pairs,
+257 successive pushes and updates, nonnumeric elements, preserved dead slots,
+and sparse capacities/indices through `2^256`. All 101 mutations are rejected,
+including 89 structurally admitted candidates. Fifty-three new axiom guards
+cover representation laws, machine paths, source contracts, and image binding.
+
+The public array execution contracts in this slice require tree-backed inputs.
+Packed-byte and rope branch targets are located for exact body matching;
+their implementations are separate proof obligations. A regression explicitly
+checks that changing a byte callback body leaves the tree certificate valid.
+
 ## Remaining simulation work
 
-The next extension can compose these contracts through arrays and byte
-representations. Further work must cover the complete Stage2 adapter and
-general LCNF control flow.
+The next extension covers packed bytes and ropes, including lookup, balancing,
+append, flattening, and conversion to trees. The remaining collection helpers
+and all-representation array contracts also remain open. Further work must
+cover the complete Stage2 adapter and general LCNF control flow.
 Typed erasure, specialization, original Ixon source authentication, and
 source/image reflection remain open. This slice introduces no new axiom or
 native interface and does not produce an `IxonCompilation`.
@@ -420,8 +482,9 @@ nix flake check --no-update-lock-file
 
 The axiom fence includes 22 representation/scalar guards, 20 conversion and
 continuation guards, 21 Nat arithmetic/comparison/call guards, 17 field/call
-guards, 19 Nat loop/arithmetic-bound/call guards, and 76 word/source/call
-guards: 175 runtime guards in total. They pin the contracts to
+guards, 19 Nat loop/arithmetic-bound/call guards, 76 word/source/call guards,
+and 53 array representation/source/call guards: 228 runtime guards in total.
+They pin the contracts to
 subsets of `propext`, `Classical.choice`, and
 `Quot.sound`. The integration gate retains
 the 4,585 differential executions, binary corpus, exact fresh Stage2 artifact

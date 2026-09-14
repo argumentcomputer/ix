@@ -775,3 +775,234 @@ Ixon prefix retains the repository's existing, explicitly ledgered hash boundary
  Classical.choice,
  Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Words.Certificate.u32ShiftRight_evaluates
+
+/-! Tree-backed array representation, caller paths, and source contracts. -/
+
+/-- info: 'Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.size_returns' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.size_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.empty_returns' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.empty_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.call_size' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.call_size
+
+/-- info: 'Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.usize_returns' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.usize_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.ArrayTrees.call_returns' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.ArrayTrees.call_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.ArrayTrees.evaluates_of_returns' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.ArrayTrees.evaluates_of_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.treeGet_returns' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.treeGet_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.check_index' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.check_index
+
+/-- info: 'Compilatrix.Ixby.Runtime.ArrayTrees.Prefix.set' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.ArrayTrees.Prefix.set
+
+/-- info: 'Compilatrix.Ixby.Runtime.ArrayTrees.Prefix.grow' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.ArrayTrees.Prefix.grow
+
+/-- info: 'Compilatrix.Ixby.Runtime.ArrayTrees.Prefix.push' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.ArrayTrees.Prefix.push
+
+/-- info: 'Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.get_returns' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.get_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.getAlias_returns' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.getAlias_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.getBang_of_lt_returns' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.getBang_of_lt_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.getBang_of_ge_returns' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.getBang_of_ge_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.push_prepare' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.push_prepare
+
+/-- info: 'Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.push_with_space_returns' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.push_with_space_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.push_full_returns' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.push_full_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.ArrayTrees.pow_half' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.ArrayTrees.pow_half
+
+/-- info: 'Compilatrix.Ixby.Runtime.ArrayTrees.pow_positive' does not depend on any axioms -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.ArrayTrees.pow_positive
+
+/-- info: 'Compilatrix.Ixby.Runtime.ArrayTrees.get_children' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.ArrayTrees.get_children
+
+/-- info: 'Compilatrix.Ixby.Runtime.ArrayTrees.Tree.get_set' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.ArrayTrees.Tree.get_set
+
+/-- info: 'Compilatrix.Ixby.Runtime.ArrayTrees.empty_prefix' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.ArrayTrees.empty_prefix
+
+/-- info: 'Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.treeSet_returns' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.treeSet_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.size_source' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.size_source
+
+/-- info: 'Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.usize_source' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.usize_source
+
+/-- info: 'Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.empty_source' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.empty_source
+
+/-- info: 'Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.get_source' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.get_source
+
+/-- info: 'Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.getAlias_source' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.getAlias_source
+
+/-- info: 'Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.getBang_source' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.getBang_source
+
+/-- info: 'Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.set_source' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.set_source
+
+/-- info: 'Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.uset_source' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.uset_source
+
+/-- info: 'Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.push_source' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.push_source
+
+/-- info: 'Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.set_of_lt_returns' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.set_of_lt_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.set_of_ge_returns' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.set_of_ge_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.uset_returns' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.uset_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.treeGet_evaluates' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.treeGet_evaluates
+
+/-- info: 'Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.treeSet_evaluates' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.treeSet_evaluates
+
+/-- info: 'Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.empty_evaluates' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.empty_evaluates
+
+/-- info: 'Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.mkEmpty_evaluates' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.mkEmpty_evaluates
+
+/-- info: 'Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.size_evaluates' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.size_evaluates
+
+/-- info: 'Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.usize_evaluates' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.usize_evaluates
+
+/-- info: 'Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.get_evaluates' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.get_evaluates
+
+/-- info: 'Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.getBorrowed_evaluates' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.getBorrowed_evaluates
+
+/-- info: 'Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.uget_evaluates' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.uget_evaluates
+
+/-- info: 'Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.ugetBorrowed_evaluates' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.ugetBorrowed_evaluates
+
+/-- info: 'Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.getBang_evaluates' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.getBang_evaluates
+
+/-- info: 'Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.getBangBorrowed_evaluates' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.getBangBorrowed_evaluates
+
+/-- info: 'Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.set_evaluates' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.set_evaluates
+
+/-- info: 'Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.uset_evaluates' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.uset_evaluates
+
+/-- info: 'Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.push_evaluates' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.ArrayTrees.Certificate.push_evaluates
+
+/-- info: 'Compilatrix.Ixby.LeanFrontend.Image.ArrayTreeCertified.numbers' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.LeanFrontend.Image.ArrayTreeCertified.numbers
+
+/-- info: 'Compilatrix.Ixby.LeanFrontend.Image.ArrayTreeCertified.layouts' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.LeanFrontend.Image.ArrayTreeCertified.layouts

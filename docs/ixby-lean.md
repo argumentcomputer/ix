@@ -156,6 +156,17 @@ additional axiom guards retain only the ordinary logical basis. Source USize
 conversion/addition/subtraction require a 64-bit platform and 65 Nat bits;
 all whole-program contracts retain ordinary admission and input validation.
 
+The tree-backed array core adds fifteen checked helpers: internal tree lookup
+and update, empty/size/USize observations, checked and default lookup aliases,
+push, `set!`, and `uset`. Source contracts relate the live prefix through an
+arbitrary element relation and preserve unused slots and caller frames.
+Every image and Stage2 export obtains `Image.certifyArrayTrees`. The suite
+adds 67,953 admitted executions, 18,630 bounds rejections, 203 caller cases,
+53 resource cases, and 101 rejected mutations (89 structurally admitted).
+Fifty-three new axiom guards retain the ordinary logical basis. Packed bytes,
+ropes, their conversions, and the remaining collection helpers still need
+composition proofs; these array execution contracts require tree-backed inputs.
+
 The binary suite checks 81 decoded executions covering every scalar, primitive,
 operation, and instruction. It also checks structured constructor/PAP input and
 output, all proper-prefix truncations of representative artifacts, malformed

@@ -5,6 +5,7 @@ import Compilatrix.Ixby.Runtime.NatArithmetic
 import Compilatrix.Ixby.Runtime.FieldArithmetic
 import Compilatrix.Ixby.Runtime.NatLoops
 import Compilatrix.Ixby.Runtime.Words
+import Compilatrix.Ixby.Runtime.ArrayTrees
 
 /-! Typed-frontend proof boundaries: exact number decoding and checked
 execution of all emitted field helpers, complete number conversions, and Nat
@@ -363,5 +364,111 @@ def Image.certifyWords (image : Image) : Except String image.WordCertified := do
       candidates
       names
       certificate := ← Words.certify image.program candidates.links }
+
+def Image.HasArrayTreeLayout (image : Image) (layout : ArrayTrees.Layout) : Prop :=
+  image.ctorId `Ixby.Runtime.Empty = .ok layout.empty ∧
+  image.ctorId `Ixby.Runtime.Leaf = .ok layout.leaf ∧
+  image.ctorId `Ixby.Runtime.Node = .ok layout.node ∧
+  image.ctorId `Ixby.Runtime.Array = .ok layout.array ∧
+  image.ctorId `Ixby.Runtime.Bytes = .ok layout.bytes ∧
+  image.ctorId `Ixby.Runtime.Rope = .ok layout.rope
+
+structure Image.ArrayTreeLayoutWitness (image : Image) where
+  layout : ArrayTrees.Layout
+  layouts : image.HasArrayTreeLayout layout
+
+def Image.certifyArrayTreeLayout (image : Image) : Except String image.ArrayTreeLayoutWitness := do
+  match empty : image.ctorId `Ixby.Runtime.Empty with
+  | .error message => throw message
+  | .ok emptyId =>
+    match leaf : image.ctorId `Ixby.Runtime.Leaf with
+    | .error message => throw message
+    | .ok leafId =>
+      match node : image.ctorId `Ixby.Runtime.Node with
+      | .error message => throw message
+      | .ok nodeId =>
+        match array : image.ctorId `Ixby.Runtime.Array with
+        | .error message => throw message
+        | .ok arrayId =>
+          match bytes : image.ctorId `Ixby.Runtime.Bytes with
+          | .error message => throw message
+          | .ok bytesId =>
+            match rope : image.ctorId `Ixby.Runtime.Rope with
+            | .error message => throw message
+            | .ok ropeId =>
+              return {
+                layout := ⟨emptyId, leafId, nodeId, arrayId, bytesId, ropeId⟩
+                layouts := ⟨empty, leaf, node, array, bytes, rope⟩ }
+
+structure Image.ArrayTreeCandidates (image : Image) where
+  links : ArrayTrees.Links
+  numbers : image.HasNumberLayout links.arithmetic.conversions.layout
+  layouts : image.HasArrayTreeLayout links.layout
+
+def Image.arrayTreeCandidates (image : Image) : Except String image.ArrayTreeCandidates := do
+  let arithmetic ← image.natArithmeticCandidates
+  let layout ← image.certifyArrayTreeLayout
+  let function (name : Name) : Except String Nat :=
+    match image.state.functionNames[name]? with
+    | some id => .ok id
+    | none => .error s!"missing array runtime name {name}"
+  let constructor (name : Name) : Except String Nat :=
+    match image.state.constructorNames[name]? with
+    | some id => .ok id
+    | none => .error s!"missing array constructor name {name}"
+  let links : ArrayTrees.Links := {
+    arithmetic := arithmetic.links
+    layout := layout.layout
+    emptyCtor := ← constructor `Ixby.Runtime.Empty
+    leafCtor := ← constructor `Ixby.Runtime.Leaf
+    nodeCtor := ← constructor `Ixby.Runtime.Node
+    arrayCtor := ← constructor `Ixby.Runtime.Array
+    bytesCtor := ← constructor `Ixby.Runtime.Bytes
+    ropeCtor := ← constructor `Ixby.Runtime.Rope
+    treeGet := ← function `Ixby.Runtime.treeGet
+    treeSet := ← function `Ixby.Runtime.treeSet
+    size := ← function `Array.size
+    usize := ← function `Array.usize
+    empty := ← function `Array.emptyWithCapacity
+    mkEmpty := ← function `Array.mkEmpty
+    get := ← function `Array.getInternal
+    getBorrowed := ← function `Array.getInternalBorrowed
+    uget := ← function `Array.uget
+    ugetBorrowed := ← function `Array.ugetBorrowed
+    getBang := ← function `Array.get!Internal
+    getBangBorrowed := ← function `Array.get!InternalBorrowed
+    push := ← function `Array.push
+    set := ← function `Array.set!
+    uset := ← function `Array.uset
+    usizeOfNat := ← function `USize.ofNat
+    copyArray := ← function `Ixby.Runtime.copyArray
+    byteGet := ← function `Ixby.Runtime.byteGet
+  }
+  return { links := links, numbers := arithmetic.layouts, layouts := layout.layouts }
+
+structure Image.ArrayTreeCertified (image : Image) where
+  candidates : image.ArrayTreeCandidates
+  names : image.arrayTreeCandidates = .ok candidates
+  certificate : ArrayTrees.Certificate image.program candidates.links
+
+def Image.ArrayTreeCertified.links {image : Image} (certified : image.ArrayTreeCertified) :
+    ArrayTrees.Links := certified.candidates.links
+
+theorem Image.ArrayTreeCertified.numbers {image : Image} (certified : image.ArrayTreeCertified) :
+    image.HasNumberLayout certified.links.arithmetic.conversions.layout := certified.candidates.numbers
+
+theorem Image.ArrayTreeCertified.layouts {image : Image} (certified : image.ArrayTreeCertified) :
+    image.HasArrayTreeLayout certified.links.layout := certified.candidates.layouts
+
+/-- Bind all fifteen tree-slice helper bodies and their numeric dependencies
+to this image. Byte callbacks are located for exact code matching; their
+executions are outside the tree-backed contracts. -/
+def Image.certifyArrayTrees (image : Image) : Except String image.ArrayTreeCertified := do
+  match names : image.arrayTreeCandidates with
+  | .error message => throw message
+  | .ok candidates => return {
+      candidates
+      names
+      certificate := ← ArrayTrees.certify image.program candidates.links }
 
 end Compilatrix.Ixby.LeanFrontend
