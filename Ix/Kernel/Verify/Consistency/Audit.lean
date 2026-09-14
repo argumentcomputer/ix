@@ -49,7 +49,7 @@ private def atomicRoots : Array Lean.Name := #[
   ``ForallInferenceTrace.output, ``LambdaInferenceTrace.output, ``BinderInference.sound,
   ``inferUncached_monomorphic_const_scoped, ``ApplicationInferenceTrace.output,
   ``BinderInference.soundWithSynthesis, ``BinderInference.synthesis,
-  ``DefinitionBodySupport.sound
+  ``DefinitionBodySupport.sound, ``DefinitionBodyTrace.scopes, ``DefinitionBodyTrace.binderSupport
 ]
 
 private def instantiationRoots : Array Lean.Name := #[
@@ -212,7 +212,7 @@ private def scopedRoots : Array Lean.Name := #[
   ``localIndex?_mem, ``localIndex?_getElem, ``localIndex?_fresh,
   ``readScopedExpr?_closed, ``readScopedExpr?_weaken_closed, ``readScopedExpr?_eraseMeta,
   ``beq_readScopedExpr?, ``internExpr_readScopedExpr?, ``readScopedExpr?_push,
-  ``LocalContextReading.empty
+  ``LocalContextReading.empty, ``readScopedExpr?_scope, ``readScopedExpr?_annotated_scope
 ]
 
 private def contextRoots : Array Lean.Name := #[
@@ -314,7 +314,11 @@ def roots : Array RootAllowance := #[
   { root := ``Theory.Model.TypingClaim.appChecking, standardAxioms := standard },
   { root := ``Theory.Model.CheckingClaim.typing, standardAxioms := standard },
   { root := ``Theory.Model.CheckingClaim.typingSort, standardAxioms := standard },
-  { root := ``Theory.Model.CheckingClaim.lam, standardAxioms := standard }
+  { root := ``Theory.Model.CheckingClaim.lam, standardAxioms := standard },
+  { root := ``ConditionsScoped, standardAxioms := #[``propext],
+    forbiddenDependencies := forbiddenProduction },
+  { root := ``ConditionsScoped.scope, standardAxioms := #[``propext],
+    forbiddenDependencies := forbiddenProduction }
 ] ++ sourceCacheInitialRoots.map (fun root => {
   root, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative, nameNative],
   forbiddenDependencies := forbiddenProduction

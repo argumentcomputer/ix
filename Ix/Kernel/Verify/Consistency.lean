@@ -25,6 +25,7 @@ import Ix.Kernel.Verify.Consistency.Context
 import Ix.Kernel.Verify.Consistency.BinderOpening
 import Ix.Kernel.Verify.Consistency.Application
 import Ix.Kernel.Verify.Consistency.BinderInference
+import Ix.Kernel.Verify.Consistency.Validation
 import Ix.Kernel.Verify.Consistency.RecursiveCache
 import Ix.Kernel.Verify.Consistency.RecursiveState
 import Ix.Kernel.Verify.Consistency.ConversionRecipe
@@ -40,15 +41,19 @@ import Ix.Kernel.Verify.Consistency.Audit
 This library connects production kernel operations to `Ix.Theory`. Each
 transport keeps its representation, arithmetic, and dependency assumptions
 explicit. A production `checkEnvAnon` fragment preserves models of its
-axiom set for monomorphic aliases, closed sorts, monomorphic specializations of
-polymorphic constants, and closed function bodies built from sorts, locals,
+axiom set for aliases, universe terms, instances of earlier constants, and
+closed function bodies built from sorts, locals,
 polymorphic references, applications, dependent functions, and full-mode lambdas
-under the stated execution resources.
+under the stated execution resources. Definitions may declare their own
+universe parameters; model entries retain the exact arity and interpretations
+at every instance.
 Constant inference supports arbitrary readable entry types, using the actual
 universe-instantiation walker and explicit lookup and finite-support resources.
 The returned type's scope and references justify declaration admission.
-The binder case also requires explicit syntactic scope and references to the
-preceding interface. Its separate declared-type inference turns semantic checking
+The binder case retains references to the preceding interface. Actual production
+validation and the closed scoped reading derive source scope from finite
+validation coverage and collision freedom. Auxiliary condition bounds remain
+a separate syntax check. The declared-type inference from that same execution turns semantic checking
 into typing. Local cache hits agree with the actual declaration type. Constant
 hits agree with pure universe substitution of a loaded, admitted declaration;
 sort hits return the canonical successor sort. Application, forall, and lambda

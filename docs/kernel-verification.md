@@ -68,6 +68,14 @@ increasing sequence of strongly inaccessible cardinals.
   opening to the model's dependent context. Singleton abstraction closes the
   resulting function type, and the simplifying `imax` constructor preserves
   its universe interpretation.
+- `DefinitionBodyTrace.scopes` derives source scope from the type and value
+  validation executed by the same production member check. It combines finite
+  validation coverage and collision freedom with the closed scoped reading;
+  `ConditionsScoped` checks only the auxiliary binder annotations.
+  `DefinitionBodyTrace.binderSupport` uses the actual type and value inference
+  calls to construct admission support, including a definition's own universe
+  parameters. No semantic typing or whole-expression model scope is assumed
+  by this constructor.
 - `BinderInference.synthesis` derives full typing for application spines
   headed by a local or an admitted constant. The function's type
   supplies hereditary validity of its domain, so arguments may be checked
@@ -238,10 +246,10 @@ A `Realizes` witness supplies a model of
 these axioms. The hypothesis is model existence; a theorem connecting
 arbitrary syntactic consistency to model existence is outside this result.
 
-The fragment covers monomorphic standalone definitions, theorems,
-and opaque definitions whose values are closed universe terms, references to
-preceding interface entries, monomorphic specializations of polymorphic
-constants, or closed function bodies in the binder fragment. Referenced types may contain
+The fragment covers standalone definitions, theorems,
+and opaque definitions, including their own universe parameters, whose values
+are universe terms, references to preceding interface entries, instances of
+polymorphic constants, or closed function bodies in the binder fragment. Referenced types may contain
 dependent functions and other readable expression forms. Examples include:
 
 ```lean
@@ -260,6 +268,9 @@ def chooseLeft (P Q : Prop) (p : P) (q : Q) : P := p
 axiom T.{u} : Sort u
 axiom f.{u} : T.{u} → T.{u}
 def useF (x : T.{1}) : T.{1} := f.{1} x
+def idSort.{u} (A : Sort u) (a : A) : A := a
+def aliasSort.{u,v} : (A : Sort (max u v)) → A → A := idSort.{max u v}
+def useSort.{u} (A : Sort u) (a : A) : A := idSort.{u} A a
 ```
 
 `AtomicEnvironmentFragment` records the precise execution boundary:
@@ -363,10 +374,11 @@ extracts the validation, type-inference, theorem-guard, value-inference, and
 conversion steps from public success, then derives body typing to extend
 the preceding model. General automatic witness construction, broader application and
 lambda paths, lets, inductives, coordinated blocks, and other
-conversion paths remain outside the fragment. Polymorphic constant inference is composed into declaration
-admission and model extension for the monomorphic specializations described
-above. Definitions with their own universe parameters remain outside this
-environment fragment.
+conversion paths remain outside the fragment. The declaration's exact universe
+arity is carried from production lookup into its model entry. Model extension
+interprets the checked body at every universe instance, retaining old
+interpretations at every instance as well. Specializations may use the new
+definition's own parameters, including expressions such as `max u v`.
 
 `checkEnvAnon_atomic_represents_source` ties every source address to an
 interface with the type and body reached by production lookup. The independent
@@ -417,7 +429,7 @@ lake test --wfail -- tc-unit
 lake -d Models/SetTheory build --wfail
 ```
 
-The consistency target checks 349 exact theorem boundaries. The production
+The consistency target checks 355 exact theorem boundaries. The production
 environment roots retain four existing generated output-length proofs,
 reached through expression/universe construction, names, and the full
 production method table. They introduce no new native proofs. The model
@@ -501,7 +513,13 @@ and check complete results and declaration coverage through recursive calls,
 mixed block loads, partial lookup failures, distinct universe instances, scopes,
 replay, clearing, and repopulation. Negative cases detect a correct cached type
 with no loaded declaration and a forged application writing a constant's key.
-The unit suite contains 556 checks.
+Polymorphic admission regressions check parameterized definitions and opaque
+values, aliases with changed universe arguments, applications under binders,
+later Prop/Type instances, exact loaded arities, and unused parameters. They
+reject undeclared parameters, out-of-range value parameters, different
+in-range parameters in place of the declared type, non-Prop theorem types,
+and missing arguments for unused parameters.
+The unit suite contains 564 checks.
 
 ## Certified host adapters
 

@@ -10,7 +10,7 @@ import Ix.Theory.Model.Extension
 # Relative consistency of a production environment fragment
 
 The initial interface contains exactly the supplied axiom declarations.
-Successful calls from the serial `checkEnvAnon` run add fresh monomorphic
+Successful calls from the serial `checkEnvAnon` run add fresh universe-polymorphic
 definitions in dependency order. Each addition extends every model of the
 previous interface and preserves its existing interpretations.
 -/
@@ -92,21 +92,21 @@ theorem WorkPosition.check_success {env : Ixon.Env} {cfg : CheckCfg}
         (list_keeps_result cfg position.trailing _ appears)
       simp [failed] at contradiction
 
-/-- A monomorphic definition entry, with its body and no additional laws or facts. -/
-def definitionEntry {β : Type u} (body type : AExpr β) : ConstantEntry β :=
-  { universes := 0, type, body := some body }
+/-- A definition entry with its exact universe arity and body, and no additional laws or facts. -/
+def definitionEntry {β : Type u} (universes : Nat) (body type : AExpr β) : ConstantEntry β :=
+  { universes, type, body := some body }
 
 /-- Interpret a fresh definition's body to extend the preceding model.
 Body typing supplies hereditary validity of the declared type. -/
 theorem extend_atomic_definition {β : Type u} [DecidableEq β]
-    {entries : Model.Environment β} {ref : ConstRef β} {body type : AExpr β}
+    {entries : Model.Environment β} {ref : ConstRef β} {body type : AExpr β} {universes : Nat}
     (wellFormed : entries.WF) (fresh : entries ref = none)
-    (bodyScope : body.Scope 0 0)
+    (bodyScope : body.Scope universes 0)
     (bodyRefs : body.ReferencesIn entries) (typeRefs : type.ReferencesIn entries)
     (typed : TypingClaim.{u,v} entries [] body type)
     {V : Type v} [SetTheory V] (constants : Assignment β V) (realizes : Realizes constants entries) :
     ∃ next : Assignment β V,
-      Realizes next (entries.insert ref (definitionEntry body type)) ∧
+      Realizes next (entries.insert ref (definitionEntry universes body type)) ∧
         Assignment.AgreesOn entries constants next := by
   let next := constants.insert ref (fun levels => interp constants levels (fun _ => empty) body)
   have agrees : Assignment.AgreesOn entries constants next :=
@@ -147,13 +147,13 @@ structure DefinitionSpec (β : Type u) where
   type : AExpr β
 
 def DefinitionSpec.entry {β : Type u} (spec : DefinitionSpec β) : ConstantEntry β :=
-  definitionEntry spec.body spec.type
+  definitionEntry spec.input.universes.toNat spec.body spec.type
 
 private theorem insert_definition_wf {β : Type u} [DecidableEq β]
-    {entries : Model.Environment β} {ref : ConstRef β} {body type : AExpr β}
-    (wellFormed : entries.WF) (bodyScope : body.Scope 0 0) (typeScope : type.Scope 0 0)
+    {entries : Model.Environment β} {ref : ConstRef β} {body type : AExpr β} {universes : Nat}
+    (wellFormed : entries.WF) (bodyScope : body.Scope universes 0) (typeScope : type.Scope universes 0)
     (bodyRefs : body.ReferencesIn entries) (typeRefs : type.ReferencesIn entries) :
-    (entries.insert ref (definitionEntry body type)).WF := by
+    (entries.insert ref (definitionEntry universes body type)).WF := by
   apply wellFormed.insert typeScope
   · intro candidate present
     change some body = some candidate at present

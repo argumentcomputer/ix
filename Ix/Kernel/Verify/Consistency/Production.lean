@@ -6,6 +6,7 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 import Ix.Kernel.Driver
 import Ix.Kernel.Verify.Consistency.Constant
 import Ix.Kernel.Verify.Consistency.BinderInference
+import Ix.Kernel.Verify.Consistency.Validation
 
 /-!
 # Standalone production declaration checks
@@ -84,43 +85,73 @@ theorem StandalonePrefix.member_success {id : KId .anon}
       rw [EStateM.bind, path.memberGet] at run
       exact run
 
-/-- Monomorphic definition data. Its complete concrete declaration is the
+/-- Definition data, including its declared universe arity. Its complete concrete declaration is the
 one returned by the production lookup, including kind, safety, and block. -/
 structure DefinitionInput where
   id : KId .anon
   kind : Ix.DefKind
   safety : Ix.DefinitionSafety
   hints : Lean.ReducibilityHints
+  universes : UInt64 := 0
   type : KExpr .anon
   value : KExpr .anon
   block : KId .anon
 
 def DefinitionInput.constant (input : DefinitionInput) : KConst .anon :=
-  .defn () () input.kind input.safety input.hints 0 input.type input.value () input.block
+  .defn () () input.kind input.safety input.hints input.universes
+    input.type input.value () input.block
+
+private theorem levelScope_mono {level : VLevel} {before after : Nat}
+    (scopeOK : level.WF before) (bound : before ≤ after) : level.WF after := by
+  induction level with
+  | zero => trivial
+  | succ level ih => exact ih scopeOK
+  | max left right ihLeft ihRight | imax left right ihLeft ihRight =>
+      exact ⟨ihLeft scopeOK.1, ihRight scopeOK.2⟩
+  | param index => exact Nat.lt_of_lt_of_le scopeOK bound
+
+private theorem expressionScope_mono {β : Type u} {term : AExpr β}
+    {before after depth : Nat} (scopeOK : term.Scope before depth)
+    (bound : before ≤ after) : term.Scope after depth := by
+  have condition {p : Certified.PropWhen} (valid : p.WF before) : p.WF after := by
+    cases p with
+    | never => trivial
+    | allZero indices sorted =>
+        exact fun index member => Nat.lt_of_lt_of_le (valid index member) bound
+  induction term generalizing depth with
+  | bvar => exact scopeOK
+  | sort => exact levelScope_mono scopeOK bound
+  | const => exact fun level member => levelScope_mono (scopeOK level member) bound
+  | app fn arg ihFn ihArg => exact ⟨ihFn scopeOK.1, ihArg scopeOK.2⟩
+  | lam p domain body ihDomain ihBody | forallE p domain body ihDomain ihBody =>
+      exact ⟨condition scopeOK.1, ihDomain scopeOK.2.1, ihBody scopeOK.2.2⟩
+  | proj ref field major ih => exact ih scopeOK
+  | natLit => trivial
 
 /-- Closed sort/alias inference, a specialization of an existing constant,
 or a finite binder inference tree with a separately checked declared type.
 Specializations supply raw syntax and occurrence annotations; successful
-inference derives their typing, scope, and references. Binder definitions
+inference derives their typing, scope, and references. Universe arguments and
+binder conditions may use the declaration's own parameters. Binder definitions
 also supply syntactic scope and references to the preceding interface. Every
 case derives body typing without a semantic typing premise. -/
 inductive DefinitionBodySupport {β : Type u}
     (resolve : Address → Option (ConstRef β)) (entries : Model.Environment β)
     (methods : Methods .anon)
-    (before : TcState .anon) (declared : KExpr .anon) :
+    (before : TcState .anon) (declared : KExpr .anon) (universes : Nat) :
     KExpr .anon → AExpr β → AExpr β → Type u
   | atomic {term : KExpr .anon} {body type : AExpr β}
       (inference : AtomicInference resolve entries before term body type) :
-      DefinitionBodySupport resolve entries methods before declared term body type
+      DefinitionBodySupport resolve entries methods before declared universes term body type
   | specialization {id : KId .anon} {arguments : Array (KUniv .anon)}
       {info : ExprInfo .anon} {ref : ConstRef β} {entry : ConstantEntry β} {type : AExpr β}
       (misses : UncachedInference before (.const id arguments info))
       (support : ConstantInferenceSupport resolve entries misses.keyed id arguments ref entry)
-      (closed : ∀ level ∈ arguments, (readLevel level).WF 0)
+      (scopeOK : ∀ level ∈ arguments, (readLevel level).WF universes)
       (reading : readExpr? resolve declared = some type.erase)
       (conditions : (entry.type.instL (arguments.toList.map readLevel)).annotations =
         type.annotations) :
-      DefinitionBodySupport resolve entries methods before declared (.const id arguments info)
+      DefinitionBodySupport resolve entries methods before declared universes (.const id arguments info)
         (.const ref (arguments.toList.map readLevel)) type
   | binder {fuel : Nat} {term inferredType : KExpr .anon}
       {body type : AExpr β} {level : VLevel} {typeBefore typeAfter : TcState .anon}
@@ -130,21 +161,21 @@ inductive DefinitionBodySupport {β : Type u}
       (typeRun : RecM.infer declared methods typeBefore = .ok inferredType typeAfter)
       (valueReading : readScopedExpr? resolve [] term = some body.erase)
       (typeReading : readScopedExpr? resolve [] declared = some type.erase)
-      (scope : body.Scope 0 0 ∧ type.Scope 0 0)
+      (scope : body.Scope universes 0 ∧ type.Scope universes 0)
       (references : body.ReferencesIn entries ∧ type.ReferencesIn entries) :
-      DefinitionBodySupport resolve entries methods before declared term body type
+      DefinitionBodySupport resolve entries methods before declared universes term body type
 
 theorem DefinitionBodySupport.sound {β : Type u}
     {resolve : Address → Option (ConstRef β)} {entries : Model.Environment β}
     {before after : TcState .anon} {term declared inferred : KExpr .anon}
-    {body type : AExpr β} {methods : Methods .anon}
-    (fragment : DefinitionBodySupport resolve entries methods before declared term body type)
+    {body type : AExpr β} {methods : Methods .anon} {universes : Nat}
+    (fragment : DefinitionBodySupport resolve entries methods before declared universes term body type)
     (wellFormed : entries.WF)
     (accepted : RecM.infer term methods before = .ok inferred after)
     (faithful : inferred.AddrFaithful declared) (hashPath : (inferred == declared) = true) :
     readExpr? resolve term = some body.erase ∧
       readExpr? resolve declared = some type.erase ∧
-      body.Scope 0 0 ∧ type.Scope 0 0 ∧
+      body.Scope universes 0 ∧ type.Scope universes 0 ∧
       body.ReferencesIn entries ∧ type.ReferencesIn entries ∧
       TypingClaim.{u,v} entries [] body type := by
   have hashReads := beq_readExpr? (resolve := resolve) faithful hashPath
@@ -154,19 +185,20 @@ theorem DefinitionBodySupport.sound {β : Type u}
       obtain ⟨bodyScope, typeScope, bodyRefs, typeRefs⟩ :=
         inference.support.scopeAndReferences wellFormed
       exact ⟨valueReads, hashReads.symm.trans typeReads,
-        bodyScope, typeScope, bodyRefs, typeRefs, typed⟩
-  | specialization misses support closed reading conditions =>
+        expressionScope_mono bodyScope (Nat.zero_le universes),
+        expressionScope_mono typeScope (Nat.zero_le universes), bodyRefs, typeRefs, typed⟩
+  | specialization misses support scopeOK reading conditions =>
       obtain ⟨output, reads, same, arity, scope, references⟩ :=
         infer_const_refinement misses support wellFormed accepted
       have equal := AExpr.eq_of_erase_annotations
         (Option.some.inj (reads.symm.trans (hashReads.trans reading)))
         (same.annotations.symm.trans conditions)
-      refine ⟨?_, reading, ?_, equal ▸ scope 0 closed, ?_, ?_,
+      refine ⟨?_, reading, ?_, equal ▸ scope universes scopeOK, ?_, ?_,
         equal ▸ same.typing (TypingClaim.const support.found arity)⟩
       · simp [readExpr?, support.resolved, AExpr.erase]
       · intro level member
         obtain ⟨value, valueMember, rfl⟩ := List.mem_map.mp member
-        exact closed value (by simpa using valueMember)
+        exact scopeOK value (by simpa using valueMember)
       · intro ref member
         simp only [AExpr.references, List.mem_singleton] at member
         subst ref
@@ -240,6 +272,60 @@ theorem definition_body_trace {input : DefinitionInput} {methods : Methods .anon
           validationRun, typeRun, sortRun,
           theoremGuard := Bool.eq_false_iff.mpr guard, valueRun, conversionRun }⟩
 
+/-- Recover source universe and term scope from the validation that this
+production member check actually executed. Only bounds on the extra model
+binder conditions remain a separate syntactic check. -/
+theorem DefinitionBodyTrace.scopes {β : Type u} {input : DefinitionInput}
+    {methods : Methods .anon} {before : TcState .anon}
+    (trace : DefinitionBodyTrace input methods before)
+    {resolve : Address → Option (ConstRef β)} {body type : AExpr β}
+    {support : RunSupport} (typeCoverage : input.type.ValidationCoverage support)
+    (valueCoverage : input.value.ValidationCoverage support)
+    (collision : support.CollisionFree)
+    (valueReading : readScopedExpr? resolve [] input.value = some body.erase)
+    (typeReading : readScopedExpr? resolve [] input.type = some type.erase)
+    (valueConditions : ConditionsScoped input.universes.toNat body)
+    (typeConditions : ConditionsScoped input.universes.toNat type) :
+    body.Scope input.universes.toNat 0 ∧ type.Scope input.universes.toNat 0 := by
+  have validated := trace.validationRun
+  unfold RecM.validateConstWellScoped at validated
+  change EStateM.bind
+    ((RecM.validateExprWellScoped input.type 0 input.universes.toNat).run methods)
+    _ before = _ at validated
+  obtain ⟨⟨⟩, intermediate, typeRun, valueRun⟩ := bind_success validated
+  change (RecM.validateExprWellScoped input.value 0 input.universes.toNat).run methods
+    intermediate = .ok () trace.validated at valueRun
+  obtain ⟨_, _, _, typeScope⟩ := RecM.validateExprWellScoped_sound typeCoverage collision typeRun
+  obtain ⟨_, _, _, valueScope⟩ := RecM.validateExprWellScoped_sound valueCoverage collision valueRun
+  exact ⟨readScopedExpr?_annotated_scope valueReading valueScope valueConditions,
+    readScopedExpr?_annotated_scope typeReading typeScope typeConditions⟩
+
+/-- Build binder admission from the exact type and value inference calls of
+a member trace. Production validation derives their source scope, including
+the definition's own universe parameters. No whole-expression model scope
+or semantic typing witness is supplied by this constructor. -/
+def DefinitionBodyTrace.binderSupport {β : Type u} {input : DefinitionInput}
+    {fuel : Nat} {before : TcState .anon}
+    (trace : DefinitionBodyTrace input (methodsN fuel) before)
+    {resolve : Address → Option (ConstRef β)} {entries : Model.Environment β}
+    {body type : AExpr β} {level : VLevel}
+    {support : RunSupport} (typeCoverage : input.type.ValidationCoverage support)
+    (valueCoverage : input.value.ValidationCoverage support)
+    (collision : support.CollisionFree)
+    (valueInference : BinderInference resolve entries [] [] fuel trace.valueStart input.value body type)
+    (typeInference : BinderInference resolve entries [] [] fuel trace.validated input.type type (.sort level))
+    (valueReading : readScopedExpr? resolve [] input.value = some body.erase)
+    (typeReading : readScopedExpr? resolve [] input.type = some type.erase)
+    (valueConditions : ConditionsScoped input.universes.toNat body)
+    (typeConditions : ConditionsScoped input.universes.toNat type)
+    (references : body.ReferencesIn entries ∧ type.ReferencesIn entries) :
+    DefinitionBodySupport resolve entries (methodsN fuel) trace.valueStart input.type
+      input.universes.toNat input.value body type :=
+  .binder rfl valueInference typeInference trace.typeRun valueReading typeReading
+    (trace.scopes typeCoverage valueCoverage collision valueReading typeReading
+      valueConditions typeConditions)
+    references
+
 /-- Operational support for the selected production definition fragment.
 Resources are required only at the states exposed by successful body traces.
 The conversion guard records the actual initial hash-equality path. -/
@@ -249,7 +335,7 @@ structure AtomicDefinitionRun {β : Type u} (resolve : Address → Option (Const
   path : StandalonePrefix input.id before input.constant
   inference : ∀ trace : DefinitionBodyTrace input (methodsN before.recFuel.toNat) path.ready,
     DefinitionBodySupport resolve entries (methodsN before.recFuel.toNat)
-      trace.valueStart input.type input.value body type
+      trace.valueStart input.type input.universes.toNat input.value body type
   hashPath : ∀ trace : DefinitionBodyTrace input (methodsN before.recFuel.toNat) path.ready,
     (trace.inferredValue == input.type) = true
   faithful : ∀ trace : DefinitionBodyTrace input (methodsN before.recFuel.toNat) path.ready,
@@ -266,7 +352,7 @@ theorem AtomicDefinitionRun.sound {β : Type u}
     (accepted : TcM.checkConst input.id before = .ok () after) :
     readExpr? resolve input.value = some body.erase ∧
       readExpr? resolve input.type = some type.erase ∧
-      body.Scope 0 0 ∧ type.Scope 0 0 ∧
+      body.Scope input.universes.toNat 0 ∧ type.Scope input.universes.toNat 0 ∧
       body.ReferencesIn entries ∧ type.ReferencesIn entries ∧
       TypingClaim.{u,v} entries [] body type := by
   obtain ⟨trace⟩ := definition_body_trace (fragment.path.member_success accepted)

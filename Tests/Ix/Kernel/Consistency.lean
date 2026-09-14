@@ -1907,10 +1907,99 @@ private def sourceCacheCases : TestSeq :=
   ++ test "source cache: a forged same-key application violates source result agreement"
     sourceCacheForeignWrite
 
+/-- Definitions declare their own parameters. A two-parameter alias uses
+`max u v` to instantiate a one-parameter definition; a wrapper applies that
+alias beneath binders. Subsequent declarations specialize them at Prop and
+Type, and an unused parameter still contributes to the declaration's arity. -/
+private def polymorphicDefinitionEnvironment : Ixon.Env × Array (Address × UInt64) := Id.run do
+  let type (index : UInt64) := Ixon.Expr.leanAll (.sort index)
+    (.leanAll (.var 0) (.var 1))
+  let value (index : UInt64) := Ixon.Expr.leanLam (.sort index)
+    (.leanLam (.var 0) (.var 0))
+  let (env, identity) := storeConst {}
+    ⟨.defn ⟨.defn, .safe, 1, type 0, value 0⟩, #[], #[], #[.var 0]⟩
+  let (env, opaqueIdentity) := storeConst env
+    ⟨.defn ⟨.opaq, .safe, 1, type 0, value 0⟩, #[], #[], #[.var 0]⟩
+  let universes := #[Ixon.Univ.var 0, .var 1, .max (.var 0) (.var 1)]
+  let (env, alias) := storeConst env
+    ⟨.defn ⟨.defn, .safe, 2, type 2, .ref 0 #[2]⟩, #[], #[identity], universes⟩
+  let (env, wrapper) := storeConst env
+    ⟨.defn ⟨.defn, .safe, 2, type 2,
+      .leanLam (.sort 2) (.leanLam (.var 0)
+        (.app (.app (.ref 0 #[0, 1]) (.var 1)) (.var 0)))⟩,
+      #[], #[alias], universes⟩
+  let (env, propInstance) := storeConst env
+    ⟨.defn ⟨.thm, .safe, 0, type 0, .ref 0 #[0]⟩, #[], #[identity], #[.zero]⟩
+  let (env, typeInstance) := storeConst env
+    ⟨.defn ⟨.opaq, .safe, 0, type 1, .ref 0 #[0, 1]⟩,
+      #[], #[alias], #[.zero, .succ .zero]⟩
+  let (env, unused) := storeConst env
+    ⟨.defn ⟨.thm, .safe, 2, type 0, .ref 0 #[]⟩, #[], #[propInstance], #[.zero]⟩
+  let (env, sortFamily) := storeConst env
+    ⟨.defn ⟨.defn, .safe, 2, .sort 1, .sort 0⟩, #[], #[],
+      #[.imax (.var 0) (.var 1), .succ (.imax (.var 0) (.var 1))]⟩
+  return (env, #[(identity, 1), (opaqueIdentity, 1), (alias, 2), (wrapper, 2),
+    (propInstance, 0), (typeInstance, 0), (unused, 2), (sortFamily, 2)])
+
+private def admittedUniverseInstances : Bool :=
+  let (source, catalog) := polymorphicDefinitionEnvironment
+  let action : TcM .anon Bool := do
+    for (addr, arity) in catalog do
+      let declaration ← TcM.getConst ⟨addr, ()⟩
+      match declaration with
+      | .defn (lvls := count) .. => if count != arity then return false
+      | _ => return false
+    let requests := #[(catalog[0]!.1, #[.mkZero], KUniv.mkZero (m := .anon)),
+      (catalog[0]!.1, #[levelOne], levelOne),
+      (catalog[2]!.1, #[.mkZero, levelTwo], levelTwo),
+      (catalog[2]!.1, #[levelTwo, .mkZero], levelTwo),
+      (catalog[3]!.1, #[.mkZero, .mkZero], .mkZero),
+      (catalog[3]!.1, #[levelOne, levelTwo], levelTwo),
+      (catalog[6]!.1, #[levelOne, levelTwo], .mkZero)]
+    for (addr, arguments, level) in requests do
+      let expected := KExpr.mkAll () () (.mkSort level)
+        (.mkAll () () (.mkVar 0 ()) (.mkVar 1 ()))
+      let result ← TcM.infer (.mkConst ⟨addr, ()⟩ arguments)
+      if !sameSourceExpr result expected then return false
+    return true
+  allSucceeded source catalog.size &&
+    match action (TcState.newLazyAnon source) with
+    | .ok result _ => result
+    | .error _ _ => false
+
+private def badPolymorphicDefinition (arity : UInt64) (bodyLevel : Ixon.Univ)
+    (kind : Ix.DefKind := .defn) : Ixon.Env × Address :=
+  storeConst {}
+    ⟨.defn ⟨kind, .safe, arity,
+      .leanAll (.sort 0) (.leanAll (.var 0) (.var 1)),
+      .leanLam (.sort 1) (.leanLam (.var 0) (.var 0))⟩,
+      #[], #[], #[.var 0, bodyLevel]⟩
+
+private def polymorphicDefinitionCases : TestSeq :=
+  test "polymorphic admission: definitions, opaque values, reparameterized aliases, and wrappers check"
+    (allSucceeded polymorphicDefinitionEnvironment.1 8 { clearEvery := 0 })
+  ++ test "polymorphic admission: declaration parameters survive clearing at every item"
+    (allSucceeded polymorphicDefinitionEnvironment.1 8 { clearEvery := 1 })
+  ++ test "polymorphic admission: declared arities and distinct universe instances are retained"
+    admittedUniverseInstances
+  ++ test "polymorphic admission: an undeclared type parameter is rejected"
+    (let (source, target) := badPolymorphicDefinition 0 (.var 0); rowFailed source target)
+  ++ test "polymorphic admission: an out-of-range parameter in the value is rejected"
+    (let (source, target) := badPolymorphicDefinition 1 (.var 1); rowFailed source target)
+  ++ test "polymorphic admission: a different in-range parameter cannot justify the declared type"
+    (let (source, target) := badPolymorphicDefinition 2 (.var 1); rowFailed source target)
+  ++ test "polymorphic admission: a theorem cannot have an arbitrary sort-valued codomain"
+    (let (source, target) := badPolymorphicDefinition 1 (.var 0) .thm; rowFailed source target)
+  ++ test "polymorphic admission: an unused declared parameter still requires an argument"
+    (let (source, catalog) := polymorphicDefinitionEnvironment
+      match TcM.infer (.mkConst ⟨catalog[6]!.1, ()⟩ #[.mkZero]) (TcState.newLazyAnon source) with
+      | .error (.univParamMismatch expected actual) _ => expected == 2 && actual == 1
+      | _ => false : Bool)
+
 public def suite : List TestSeq :=
   [cases, polymorphicCases, specializationCases, binderCases, applicationCases,
     polymorphicApplicationCases, constantCacheCases, cacheInvariantCases, recursiveCacheCases,
     lazyCacheCases, blockCacheCases, ingressCoherenceCases, sourceOwnershipCases, recursiveStateCases,
-    sourceAgreementCases, sourceCacheCases]
+    sourceAgreementCases, sourceCacheCases, polymorphicDefinitionCases]
 
 end Tests.Kernel.Consistency

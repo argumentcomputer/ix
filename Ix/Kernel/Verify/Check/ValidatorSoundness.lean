@@ -340,7 +340,7 @@ theorem validateUnivParamsSeen_go_sound :
           hfrontier.insertAndExpand hdomain hcollision hlevelDomain
         cases level with
         | zero addr =>
-            simp only [pure_bind] at hrun
+            simp only at hrun
             have hlocal' := hlocal.insert hdomain hcollision hlevelDomain
               (by trivial)
             exact UnivValidationPost.ofExpanded rfl <|
@@ -350,7 +350,7 @@ theorem validateUnivParamsSeen_go_sound :
                 (by simpa [KUniv.validationChildren, KUniv.addr] using hexpandedFrontier)
                 methods state finalSeen after hrun
         | succ child addr =>
-            simp only [pure_bind] at hrun
+            simp only at hrun
             have hlocal' := hlocal.insert hdomain hcollision hlevelDomain
               (by trivial)
             exact UnivValidationPost.ofExpanded rfl <|
@@ -361,7 +361,7 @@ theorem validateUnivParamsSeen_go_sound :
                 (by simpa [KUniv.validationChildren, KUniv.addr] using hexpandedFrontier)
                 methods state finalSeen after hrun
         | max left right addr =>
-            simp only [pure_bind] at hrun
+            simp only at hrun
             have hlocal' := hlocal.insert hdomain hcollision hlevelDomain
               (by trivial)
             exact UnivValidationPost.ofExpanded rfl <|
@@ -372,7 +372,7 @@ theorem validateUnivParamsSeen_go_sound :
                 (by simpa [KUniv.validationChildren, KUniv.addr] using hexpandedFrontier)
                 methods state finalSeen after hrun
         | imax left right addr =>
-            simp only [pure_bind] at hrun
+            simp only at hrun
             have hlocal' := hlocal.insert hdomain hcollision hlevelDomain
               (by trivial)
             exact UnivValidationPost.ofExpanded rfl <|
@@ -383,7 +383,7 @@ theorem validateUnivParamsSeen_go_sound :
                 (by simpa [KUniv.validationChildren, KUniv.addr] using hexpandedFrontier)
                 methods state finalSeen after hrun
         | param idx name addr =>
-            simp only [pure_bind] at hrun
+            simp only at hrun
             split at hrun
             · contradiction
             · rename_i hinRange
@@ -995,7 +995,7 @@ theorem validateExprWellScoped_go_sound :
             ExprValidationPost.ofExpanded rfl hunivMono hpost⟩
         cases expr with
         | var idx name info =>
-            simp only [pure_bind] at hrun
+            simp only at hrun
             split at hrun
             · contradiction
             · rename_i hinRange
@@ -1009,7 +1009,7 @@ theorem validateExprWellScoped_go_sound :
                   KExpr.validationChildrenAt, KExpr.treeSize]
               · simpa [KExpr.validationChildrenAt] using hrun
         | fvar id name info =>
-            simp only [pure_bind] at hrun
+            simp only at hrun
             apply finishFresh (afterUnivs := seenUnivs)
               (nextState := state) (by trivial)
               (AddressSetLE.refl seenUnivs)
@@ -1018,7 +1018,7 @@ theorem validateExprWellScoped_go_sound :
                 KExpr.validationChildrenAt, KExpr.treeSize]
             · simpa [KExpr.validationChildrenAt] using hrun
         | sort level info =>
-            simp only [pure_bind] at hrun
+            simp only at hrun
             rw [ReaderT.run_bind, runTcBind] at hrun
             cases hvalidate :
                 (validateUnivParamsSeen level bound seenUnivs).run
@@ -1045,7 +1045,7 @@ theorem validateExprWellScoped_go_sound :
                     KExpr.validationChildrenAt, KExpr.treeSize]
                 · simpa [KExpr.validationChildrenAt] using hrun
         | const id levels info =>
-            simp only [pure_bind] at hrun
+            simp only at hrun
             rw [ReaderT.run_bind, ReaderT.run_monadLift, runTcBind] at hrun
             cases hget :
                 (monadLift (TcM.getConst id) : TcM .anon (KConst .anon))
@@ -1089,7 +1089,7 @@ theorem validateExprWellScoped_go_sound :
                           KExpr.validationChildrenAt, KExpr.treeSize]
                       · simpa [KExpr.validationChildrenAt] using hrun
         | app fn arg info =>
-            simp only [pure_bind] at hrun
+            simp only at hrun
             apply finishFresh (afterUnivs := seenUnivs)
               (nextState := state) (by trivial)
               (AddressSetLE.refl seenUnivs)
@@ -1099,7 +1099,7 @@ theorem validateExprWellScoped_go_sound :
               omega
             · simpa [KExpr.validationChildrenAt] using hrun
         | lam name bi type body info =>
-            simp only [pure_bind] at hrun
+            simp only at hrun
             apply finishFresh (afterUnivs := seenUnivs)
               (nextState := state) (by trivial)
               (AddressSetLE.refl seenUnivs)
@@ -1109,7 +1109,7 @@ theorem validateExprWellScoped_go_sound :
               omega
             · simpa [KExpr.validationChildrenAt] using hrun
         | all name bi type body info =>
-            simp only [pure_bind] at hrun
+            simp only at hrun
             apply finishFresh (afterUnivs := seenUnivs)
               (nextState := state) (by trivial)
               (AddressSetLE.refl seenUnivs)
@@ -1119,7 +1119,7 @@ theorem validateExprWellScoped_go_sound :
               omega
             · simpa [KExpr.validationChildrenAt] using hrun
         | letE name type value body nonDep info =>
-            simp only [pure_bind] at hrun
+            simp only at hrun
             apply finishFresh (afterUnivs := seenUnivs)
               (nextState := state) (by trivial)
               (AddressSetLE.refl seenUnivs)
@@ -1129,7 +1129,7 @@ theorem validateExprWellScoped_go_sound :
               omega
             · simpa [KExpr.validationChildrenAt] using hrun
         | prj id field value info =>
-            simp only [pure_bind] at hrun
+            simp only at hrun
             rw [ReaderT.run_bind, ReaderT.run_monadLift, runTcBind] at hrun
             cases hhas :
                 (monadLift (TcM.hasConst id) : TcM .anon Bool) state with
@@ -1148,7 +1148,7 @@ theorem validateExprWellScoped_go_sound :
                       KExpr.validationChildrenAt, KExpr.treeSize]
                   · simpa [KExpr.validationChildrenAt] using hrun
         | nat value blob info =>
-            simp only [pure_bind] at hrun
+            simp only at hrun
             apply finishFresh (afterUnivs := seenUnivs)
               (nextState := state) (by trivial)
               (AddressSetLE.refl seenUnivs)
@@ -1157,7 +1157,7 @@ theorem validateExprWellScoped_go_sound :
                 KExpr.validationChildrenAt, KExpr.treeSize]
             · simpa [KExpr.validationChildrenAt] using hrun
         | str value blob info =>
-            simp only [pure_bind] at hrun
+            simp only at hrun
             apply finishFresh (afterUnivs := seenUnivs)
               (nextState := state) (by trivial)
               (AddressSetLE.refl seenUnivs)

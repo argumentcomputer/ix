@@ -20,11 +20,15 @@ open frontiers retain their stated model hypotheses.
 The [certified host adapters](certified-checking.md) connect authenticated
 serialized Ixon to model admission. Separately, a production `checkEnvAnon`
 [fragment](kernel-verification.md#production-environment-fragment) for
-monomorphic aliases, closed universe terms, monomorphic specializations of
-polymorphic constants, and a fragment of closed dependent function bodies
+aliases, universe terms, instances of earlier constants, and a fragment of
+closed dependent function bodies, including definitions with their own universe parameters,
 extends every model of its source axioms under explicit execution witnesses.
 Binder inference uses the declared type's separate formation check to turn
-`Model.CheckingClaim` into semantic typing. Application spines headed by locals
+`Model.CheckingClaim` into semantic typing. The actual production validation
+supplies source universe bounds; the scoped reading supplies term closure,
+with bounds on auxiliary binder conditions checked separately. Model entries
+retain the exact declared universe count and denote the checked body at every
+universe instance. Application spines headed by locals
 or admitted polymorphic constants derive their type's validity from the context
 or dependency model, then check arguments and substitute the dependent result.
 Constant cache hits derive the same typing from concrete agreement with pure
