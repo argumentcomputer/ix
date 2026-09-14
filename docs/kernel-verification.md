@@ -109,6 +109,21 @@ increasing sequence of strongly inaccessible cardinals.
   still belong to the existing `SynthesisInference` fragment; composing lets
   arbitrarily into that recursive datatype remains open. Finite execution,
   collision, walker, and selected beta-origin resources remain explicit.
+- `MethodsLocalState.methodsN` proves structural local-state preservation for
+  every production recursive table, including all inference, reduction, and
+  conversion branches. The public inference, WHNF, conversion, and sort/forall
+  exposure entries preserve coherent local lookup, the allocation-counter
+  bound, and the installed loader on both success and partial failure. Scope
+  cleanup restores the declaration array and every index lookup; it need not
+  restore the hash map's physical representation. The actual lazy loader
+  preserves the counter, so `TcState.newLazyAnon` establishes this invariant
+  without a callback-effect premise. `LocalContextReading.congr` transports
+  the model context through scope restoration, and the invariant proves that
+  the next allocated id is absent from its registered locals. Let inference
+  now derives its domain/value/comparison frames, freshness, and final scope
+  restoration from the actual calls. Its trace no longer assumes local-context
+  equalities. This structural result does not establish semantic inference,
+  reduction, or cache validity for the unsupported branches.
 - `instantiateUnivParams_readScopedAnnotated` brings the actual substituted
   declaration type into any active local context, preserving its closed term
   scope and occurrence annotations. `infer_const_scoped_annotated` uses this
@@ -555,7 +570,7 @@ lake test --wfail -- tc-unit
 lake -d Models/SetTheory build --wfail
 ```
 
-The consistency target checks 799 exact theorem boundaries. The production
+The consistency target checks 1,230 exact theorem boundaries. The production
 environment roots retain four existing generated output-length proofs,
 reached through expression/universe construction, names, and the full
 production method table. They introduce no new native proofs. The model
@@ -942,6 +957,8 @@ The VM pilot is preserved in the frozen archive and excluded from the host gate.
 | Cache invariants and sort cache typing | [`Consistency/InferenceCache.lean`](../Ix/Kernel/Verify/Consistency/InferenceCache.lean), [`SortCache.lean`](../Ix/Kernel/Verify/Consistency/SortCache.lean) |
 | Recursive cache preservation and witness reuse | [`Consistency/RecursiveCache.lean`](../Ix/Kernel/Verify/Consistency/RecursiveCache.lean) |
 | Ownership and intern coherence through recursive inference | [`Consistency/RecursiveState.lean`](../Ix/Kernel/Verify/Consistency/RecursiveState.lean) |
+| Local-state preservation through the complete recursive checker | [`Consistency/RecursiveLocalState.lean`](../Ix/Kernel/Verify/Consistency/RecursiveLocalState.lean), [`LocalStateReading.lean`](../Ix/Kernel/Verify/Consistency/LocalStateReading.lean) |
+| Concrete loader effects and initial local invariant | [`IngressState.lean`](../Ix/Kernel/Verify/IngressState.lean), [`Consistency/IngressLocalState.lean`](../Ix/Kernel/Verify/Consistency/IngressLocalState.lean) |
 | Exact source conversion and finite candidate inventories | [`SourceConversion.lean`](../Ix/Kernel/SourceConversion.lean), [`Consistency/ConversionRecipe.lean`](../Ix/Kernel/Verify/Consistency/ConversionRecipe.lean) |
 | Standalone source/model agreement through lookup and inference | [`Consistency/SourceAgreement.lean`](../Ix/Kernel/Verify/Consistency/SourceAgreement.lean) |
 | Source cache agreement from empty-state execution histories | [`Consistency/SourceCache.lean`](../Ix/Kernel/Verify/Consistency/SourceCache.lean) |

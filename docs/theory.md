@@ -114,6 +114,15 @@ choice determines the returned type. Declaration admission includes these let
 bodies using the same validation and inference calls. The three child checks
 remain in the existing recursive synthesis fragment; arbitrary recursive let
 composition and automatic construction of its finite resources remain open.
+Structural local-state preservation now covers the complete recursive checker
+on both success and failure. The actual loader and initial state establish
+coherent lookup and a bound on allocated identifiers. Recursive calls retain
+that bound, and scope cleanup restores all incoming declarations and lookups.
+The model reader transports through this observable restoration. Let inference
+therefore derives its fresh identifier and intermediate contexts from execution,
+using one initial invariant instead of separate freshness and context premises.
+This closes the structural local-state component; general semantic state,
+reduction, conversion, and cache preservation remain separate obligations.
 Safe definition admission also rejects circular justification in both Lean and
 Rust, including `theorem loop : P := loop` with only `P : Prop` assumed. The
 production dependency walk returns an order with a proved decreasing rank;

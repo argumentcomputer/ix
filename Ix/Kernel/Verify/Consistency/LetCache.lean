@@ -43,9 +43,9 @@ def cacheTrace
   let domainRun := check.domainTree.cacheExecution data.domain contextOrigin keyedAgreement
     check.domainReading check.execution.domainRun
   let valueRun := check.valueTree.cacheExecution data.value contextOrigin
-    (check.execution.domainContext.symm ▸ keyedAgreement) check.valueReading check.execution.valueRun
-  have opened := openLet_sound check.opening (check.execution.openingContext.symm ▸ keyedAgreement)
-    check.absent check.domainReading check.bodyReading check.execution.openRun
+    (keyedAgreement.congr (check.execution.domainContext check.keyedValid).symm) check.valueReading check.execution.valueRun
+  have opened := openLet_sound check.opening (keyedAgreement.congr (check.execution.openingContext check.keyedValid).symm)
+    (check.absent agreement) check.domainReading check.bodyReading check.execution.openRun
   let bodyRun := check.bodyTree.cacheExecution data.body
     (.push contextOrigin check.domainTree keyedAgreement check.domainReading check.execution.domainRun)
     opened.2.2.1 opened.2.1 check.execution.bodyRun

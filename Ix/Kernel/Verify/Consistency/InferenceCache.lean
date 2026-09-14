@@ -30,6 +30,21 @@ theorem inferKey_closed {term : KExpr .anon} (closed : term.lbr = 0)
   rw [closed]
   rfl
 
+/-- Computing the production inference key always succeeds, including
+context-address cache misses. -/
+theorem inferKey_total (term : KExpr .anon) (before : TcState .anon) :
+    ∃ key after, TcM.inferKey term before = .ok key after := by
+  unfold TcM.inferKey TcM.ctxAddrForLbr
+  change ∃ key after, EStateM.bind (fun state =>
+    EStateM.bind (get : TcM .anon (TcState .anon)) _ state) _ before = .ok key after
+  simp only [EStateM.bind, show (get : TcM .anon (TcState .anon)) before =
+    .ok before before from rfl]
+  by_cases fast : (term.lbr == 0 || before.ctx.isEmpty) = true
+  · rw [if_pos fast]
+    exact ⟨_, _, rfl⟩
+  · rw [if_neg fast]
+    cases cached : before.ctxAddrCache[(before.ctxId, term.lbr)]? <;> exact ⟨_, _, rfl⟩
+
 /-- The exact cache entry eligible at production's computed inference key.
 An inference-only result cannot override a full result or serve full mode. -/
 structure InferenceCacheHit (before : TcState .anon) (term : KExpr .anon) where

@@ -67,10 +67,10 @@ structure LetInferenceCheck {β : Type u} (resolve : Address → Option (ConstRe
     (name : Mode.anon.F Name) (domain value body : KExpr .anon) (nonDep : Bool) (info : ExprInfo .anon)
     (A v b B resultType : AExpr β) (level : VLevel) where
   full : before.inferOnly = false
+  localState : LocalStateInvariant before
   miss : UncachedInference before (.letE name domain value body nonDep info)
   execution : LetInferenceTrace fuel miss.keyed name domain value body
   opening : BinderOpeningSupport execution.comparedState body
-  absent : (⟨execution.comparedState.env.nextFVarId⟩ : FVarId) ∉ locals
   domainBound : VLevel
   valueLevel : VLevel
   valueType : AExpr β
@@ -97,6 +97,23 @@ variable {β : Type u} {resolve : Address → Option (ConstRef β)}
   {fuel : Nat} {before : TcState .anon} {name : Mode.anon.F Name} {domain value body : KExpr .anon}
   {nonDep : Bool} {info : ExprInfo .anon} {A val b B resultType : AExpr β} {level : VLevel}
 
+/-- The initial invariant survives production's key computation. -/
+theorem keyedValid
+    (check : LetInferenceCheck resolve entries locals context bounds fuel before name domain value body nonDep info
+      A val b B resultType level) : LocalStateInvariant check.miss.keyed :=
+  ((FramesLocalState.inferKey _).ok check.localState check.miss.keyRun).invariant check.localState
+
+/-- All recursive checks preserve the counter bound; the selected let id
+therefore cannot name an existing model local. -/
+theorem absent
+    (check : LetInferenceCheck resolve entries locals context bounds fuel before name domain value body nonDep info
+      A val b B resultType level)
+    (agreement : LocalContextReading resolve locals before.lctx context) :
+    (⟨check.execution.comparedState.env.nextFVarId⟩ : FVarId) ∉ locals := by
+  have frame := check.execution.openingFrame check.keyedValid
+  exact (frame.invariant check.keyedValid).freshReading
+    ((check.miss.localContext.symm ▸ agreement).congr frame.context.symm)
+
 theorem source_reading
     (check : LetInferenceCheck resolve entries locals context bounds fuel before name domain value body nonDep info
       A val b B resultType level) :
@@ -108,7 +125,7 @@ private theorem value_type
       A val b B resultType level)
     (formed : ContextFormation.{u,v} entries context bounds)
     (agreement : LocalContextReading resolve locals before.lctx context) : check.valueType = A := by
-  have valueAgreement := check.execution.domainContext.symm ▸ (check.miss.localContext.symm ▸ agreement)
+  have valueAgreement := (check.miss.localContext.symm ▸ agreement).congr (check.execution.domainContext check.keyedValid).symm
   have returned := (check.valueTree.soundWithSpine formed valueAgreement check.valueReading
     check.execution.valueRun).1
   exact AExpr.eq_of_erase_annotations
@@ -125,9 +142,9 @@ def substituted_type_origin
     (agreement : LocalContextReading resolve locals before.lctx context) :
     SynthesisTypingOrigin resolve entries context bounds entries context (B.inst val) (.sort level) := by
   have keyedAgreement := check.miss.localContext.symm ▸ agreement
-  have valueAgreement := check.execution.domainContext.symm ▸ keyedAgreement
-  have opened := openLet_sound check.opening (check.execution.openingContext.symm ▸ keyedAgreement)
-    check.absent check.domainReading check.bodyReading check.execution.openRun
+  have valueAgreement := keyedAgreement.congr (check.execution.domainContext check.keyedValid).symm
+  have opened := openLet_sound check.opening (keyedAgreement.congr (check.execution.openingContext check.keyedValid).symm)
+    (check.absent agreement) check.domainReading check.bodyReading check.execution.openRun
   have bodyOrigin := SynthesisTypingOrigin.inferredType
     (SynthesisContext.push .current check.domainTree keyedAgreement check.domainReading check.execution.domainRun)
     check.bodyTree opened.2.2.1 opened.2.1 check.execution.bodyRun
@@ -145,9 +162,9 @@ def betaTyping
     (agreement : LocalContextReading resolve locals before.lctx context) :
     SynthesisBetaTyping resolve entries context bounds entries context (b.inst val) resultType := by
   have keyedAgreement := check.miss.localContext.symm ▸ agreement
-  have valueAgreement := check.execution.domainContext.symm ▸ keyedAgreement
-  have opened := openLet_sound check.opening (check.execution.openingContext.symm ▸ keyedAgreement)
-    check.absent check.domainReading check.bodyReading check.execution.openRun
+  have valueAgreement := keyedAgreement.congr (check.execution.domainContext check.keyedValid).symm
+  have opened := openLet_sound check.opening (keyedAgreement.congr (check.execution.openingContext check.keyedValid).symm)
+    (check.absent agreement) check.domainReading check.bodyReading check.execution.openRun
   have inner := check.bodyTree.betaTyping
     (SynthesisContext.push .current check.domainTree keyedAgreement check.domainReading check.execution.domainRun)
     opened.2.2.1 opened.2.1 check.execution.bodyRun formed
@@ -171,8 +188,8 @@ theorem sound {result : KExpr .anon} {after : TcState .anon}
   have keyedAgreement := check.miss.localContext.symm ▸ agreement
   obtain ⟨_, domainTyped, _, _⟩ := check.domainTree.soundWithSpine formed keyedAgreement
     check.domainReading check.execution.domainRun
-  have opened := openLet_sound check.opening (check.execution.openingContext.symm ▸ keyedAgreement)
-    check.absent check.domainReading check.bodyReading check.execution.openRun
+  have opened := openLet_sound check.opening (keyedAgreement.congr (check.execution.openingContext check.keyedValid).symm)
+    (check.absent agreement) check.domainReading check.bodyReading check.execution.openRun
   obtain ⟨bodyTypeReading, _, _, _⟩ := check.bodyTree.soundWithSpine (formed.push domainTyped)
     opened.2.2.1 opened.2.1 check.execution.bodyRun
   obtain ⟨substitutedReading, substitutedCoherent⟩ :=

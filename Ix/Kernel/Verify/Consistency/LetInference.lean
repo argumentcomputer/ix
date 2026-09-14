@@ -6,6 +6,7 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 import Ix.Kernel.Verify.Consistency.LetOpening
 import Ix.Kernel.Verify.Consistency.InferenceCache
 import Ix.Kernel.Verify.Consistency.CheapBetaReading
+import Ix.Kernel.Verify.Consistency.LocalStateReading
 
 /-! The full production let branch checks the declared type and value,
 opens a let local, and infers the body. Its result is obtained by abstraction,
@@ -17,8 +18,8 @@ open Theory Theory.Model
 
 universe u
 
-/-- Actual recursive calls and their states. Context equalities concern
-representation only; no child typing or returned-type reading is assumed. -/
+/-- Actual recursive calls and their states. Scope restoration is derived
+from these runs; no child typing or returned-type reading is assumed. -/
 structure LetInferenceTrace (fuel : Nat) (before : TcState .anon)
     (name : Mode.anon.F Name) (domain value body : KExpr .anon) where
   domainLevel : KUniv .anon
@@ -38,13 +39,33 @@ structure LetInferenceTrace (fuel : Nat) (before : TcState .anon)
   compareRun : RecM.isDefEq valueType domain (methodsN fuel) valueState = .ok true comparedState
   openRun : TcM.openLet name domain value body comparedState = .ok (opened, fresh) openedState
   bodyRun : RecM.infer opened (methodsN fuel) openedState = .ok bodyType bodyState
-  domainContext : domainState.lctx = before.lctx
-  openingContext : comparedState.lctx = before.lctx
 
 namespace LetInferenceTrace
 
 variable {fuel : Nat} {before : TcState .anon} {name : Mode.anon.F Name}
   {domain value body : KExpr .anon}
+
+theorem domainFrame (trace : LetInferenceTrace fuel before name domain value body)
+    (valid : LocalStateInvariant before) : LocalStateFrame before trace.domainState :=
+  (infer_methodsN_framesLocalState fuel domain).ok valid trace.domainRun
+
+theorem valueFrame (trace : LetInferenceTrace fuel before name domain value body)
+    (valid : LocalStateInvariant before) : LocalStateFrame before trace.valueState :=
+  (trace.domainFrame valid).trans ((infer_methodsN_framesLocalState fuel value).ok
+    ((trace.domainFrame valid).invariant valid) trace.valueRun)
+
+theorem openingFrame (trace : LetInferenceTrace fuel before name domain value body)
+    (valid : LocalStateInvariant before) : LocalStateFrame before trace.comparedState :=
+  (trace.valueFrame valid).trans ((isDefEq_methodsN_framesLocalState fuel trace.valueType domain).ok
+    ((trace.valueFrame valid).invariant valid) trace.compareRun)
+
+theorem domainContext (trace : LetInferenceTrace fuel before name domain value body)
+    (valid : LocalStateInvariant before) : trace.domainState.lctx.Equiv before.lctx :=
+  (trace.domainFrame valid).context
+
+theorem openingContext (trace : LetInferenceTrace fuel before name domain value body)
+    (valid : LocalStateInvariant before) : trace.comparedState.lctx.Equiv before.lctx :=
+  (trace.openingFrame valid).context
 
 def abstracted (trace : LetInferenceTrace fuel before name domain value body) :=
   abstractFVars trace.bodyType #[trace.fresh] trace.bodyState.env.intern
@@ -59,6 +80,18 @@ def after (trace : LetInferenceTrace fuel before name domain value body) : TcSta
   {trace.bodyState with
     env := {trace.bodyState.env with intern := trace.reduced.2}
     lctx := trace.bodyState.lctx.truncate trace.comparedState.lctx.size}
+
+/-- The whole let scope restores the incoming declarations while retaining
+the fresh counter and the body computation's final intern table. -/
+theorem restores (trace : LetInferenceTrace fuel before name domain value body)
+    (valid : LocalStateInvariant before) : LocalStateFrame before trace.after := by
+  have compared := trace.openingFrame valid
+  have opened := PreservesLocalState.openLet name domain value body trace.comparedState
+    (compared.invariant valid)
+  rw [trace.openRun] at opened
+  have bodyFrame := (infer_methodsN_framesLocalState fuel trace.opened).ok opened.valid trace.bodyRun
+  have restored := (opened.trans (.of_frame opened.valid bodyFrame)).restore
+  exact compared.trans ⟨restored.counter, restored.context, restored.loader⟩
 
 private theorem withLctxScope_success {action : RecM .anon α}
     {methods : Methods .anon} {before finished : TcState .anon} {result : α}
