@@ -72,9 +72,9 @@ their return rank is always zero. This saves eight retained bytes per query
 without changing the relative completion order inside recursive components.
 The RAM estimate counts only stored timestamps. Generic Aiur systems without
 a component certificate retain timestamps for every function; recursive
-ranked components still refresh timestamps after advice promotion. Regenerating the
-IxVM, aggregation and recursive-verifier execution sources produces identical
-files because instructions and function indices are preserved.
+ranked components still refresh timestamps after advice promotion. Timestamp
+omission alone preserves instructions and function indices and requires no
+generated-source changes.
 
 ## Checked existing counters
 
@@ -109,9 +109,9 @@ per-edge relation; they do not establish a complete checker-to-AIR extraction
 theorem. That interface is covered by independent bytecode checks and supplied
 witness regressions.
 
-The pass removes ranks from 68 of the 389 previously ranked constrained
-functions in the measured production program. All 83 kernel fixtures retain
-their execution outputs and query counts, while their summed unpadded FFT
+At `ec8432ee`, the pass removes ranks from 68 of the 389 previously ranked
+constrained functions in the measured production program. All 83 kernel
+fixtures retain their execution outputs and query counts, while their summed unpadded FFT
 model falls 2.34%; `Vector.append` falls 2.41% and the separate shard fixture
 3.47%. The original function partition is retained. No instruction or function
 index changes. Unsupported recursive components retain the existing rank layout.
@@ -127,8 +127,8 @@ multiple recursive outputs, mutual cycles and the analysis-depth limit.
 
 ## Function regrouping measurements
 
-The existing partition retains 185 function circuits. Candidate splits and
-transfers were evaluated from actual native shapes on all 83 kernel fixtures,
+At `ec8432ee`, the partition retains 185 function circuits. Candidate splits
+and transfers were evaluated from actual native shapes on all 83 kernel fixtures,
 the shard pipeline and seven additional full-closure checks. They were not
 retained after proof-size and proving-time comparisons. Twelve extra circuits
 saved about 0.44% raw FFT work but grew all four measured proofs about 5–6%.
@@ -209,6 +209,40 @@ the median individual raw reduction is 10.91%. All 24 matched full-closure
 proofs verify. Proof sizes fall 0.067–0.140%; observed median proving times
 fall 0.38–2.91% with overlapping ranges, and process RSS changes are small and
 mixed. These timings do not establish a general speed or memory improvement.
+
+## Bounded BLAKE3 byte reader
+
+`blake3_read_block` separates byte traversal from block compression. Every
+caller supplies an empty reverse accumulator and index zero. The reader
+returns the remaining stream, accumulator and length after 64 bytes or end
+of input. Its only recursive edge increments the index by one, which both
+counter checkers verify in the bytecode. The existing field-cycle and
+lookup-consumer arguments allow its row ranks and gap lookups to be omitted.
+
+The per-byte circuit has three inputs, 15 main columns and eight stage-two
+columns, versus seven inputs, 29 main and 20 stage-two columns in the old
+loop; quotient degree stays two. The outer loop carries chunk/digest/tree
+state once per block and retains ranks with compression. It passes the old
+last-byte index to full-block compression and the consumed-byte count to
+partial finalization. Padding and chunk/root flags are preserved. Hashing
+and deserialization continue to use the same materialized byte stream.
+
+Production adds one singleton reader circuit (185 → 186), with 758 constrained
+functions and 321 still ranked. All existing function query counts remain
+unchanged except the block driver; memory trace heights are unchanged.
+Across all 83 measured kernels, summed FFT work falls 4.80% raw / 4.66% padded;
+the shard falls 7.24% / 9.29%. All measured fixtures improve in both models.
+
+[The reader regressions](../Tests/Ix/IxVM/Blake3Reader.lean) compare block/chunk
+boundaries against Rust BLAKE3, including padded bytes, exact remainders and
+wrong content digests. Twelve proofs and 184 assertions pass with ordinary
+reader ranks and checked counters; the existing hash and full IxVM suites
+also pass. All 24 matched full-closure benchmark proofs verify. Vector's
+median proving time falls 4.86% and process peak RSS 3.18%; large multiplication
+proves 3.12% faster. Nat and wide multiplication have 1.78–2.29% median proving
+regressions with overlapping ranges. Proof sizes grow 0.042–0.233%, and the
+three smaller workloads use 0.58–0.70% more median process peak RSS. These
+measurements do not establish a universal proving-speed or memory improvement.
 
 ## Structural bounds
 
@@ -385,8 +419,9 @@ changes affected stage-2 layouts, quotient degrees and keys,
 so it also requires rebuilding systems and regenerating proofs. Byte-table
 consolidation changes the caller lookup expressions, fixed table and keys,
 while keeping the existing bytecode operations and function layouts.
-The byte-advice, carry and multiplication changes alter IxVM
-function indices; regenerate its executor and matching systems from the
+The byte-advice, carry, multiplication and BLAKE3 reader changes alter
+function indices. The reader also changes function layouts; regenerate all
+three executors and rebuild matching systems, keys and proofs from the
 updated Lean sources. Packed query views also change the internal Rust API
 used by all three executors: regenerate and rebuild all three, even though
 packing alone leaves the AIR and keys unchanged.
@@ -402,7 +437,7 @@ Aiur proving corpus with component and counter layouts. Run them with:
 cargo test --locked --release -p aiur --features parallel
 cargo clippy --locked --release -p aiur --all-targets --features parallel -- -D warnings
 lake exe ix codegen --check
-lake test -- ixvm-subst-projection ixvm-fused-mul ixvm-carry-add aiur-cross aiur-cost aiur-prove aiur-components ixvm-byte-hints recursive-verifier ix-aggr
+lake test -- ixvm-blake3-reader aiur-hashes ixvm-subst-projection ixvm-fused-mul ixvm-carry-add aiur-cross aiur-cost aiur-prove aiur-components ixvm-byte-hints recursive-verifier ix-aggr
 lake test -- --ignored ixvm
 ```
 

@@ -57,7 +57,7 @@ def blake3 := ⟦
 
   fn blake3(input: ByteStream) -> [[U8; 4]; 8] {
     let IV = [[103u8, 230u8, 9u8, 106u8], [133u8, 174u8, 103u8, 187u8], [114u8, 243u8, 110u8, 60u8], [58u8, 245u8, 79u8, 165u8], [127u8, 82u8, 14u8, 81u8], [140u8, 104u8, 5u8, 155u8], [171u8, 217u8, 131u8, 31u8], [25u8, 205u8, 224u8, 91u8]];
-    blake3_compress_layer(blake3_compress_chunks(input, store(ListNode.Nil), 0, 0, store([0u8; 8]), store(IV), store(LayerNode.Nil)))
+    blake3_compress_layer(blake3_compress_chunks(input, 0, store([0u8; 8]), store(IV), store(LayerNode.Nil)))
   }
 
   -- Hash `bytes` and assert the digest equals `expected`. Used by every
@@ -135,29 +135,39 @@ def blake3 := ⟦
     }
   }
 
-  -- Hot chunk loop. The 64-byte block buffer is NOT threaded here as a
-  -- `[[U8; 4]; 16]` value — that cost 64 columns of `inputSize` plus a +64-aux
-  -- `assign_block_value` call on every row. Instead bytes accumulate into a
-  -- reverse-ordered linked list (`byte_acc`); each hot row is a single `store`.
-  fn blake3_compress_chunks(
+  -- Read at most one block from the shared byte stream. Only the input,
+  -- reverse accumulator and byte index enter the per-byte recursion; chunk
+  -- state stays in the outer loop. Every self-call increments the same
+  -- input by one, which the compiler and native counter checkers verify.
+  fn blake3_read_block(
     input: ByteStream,
     byte_acc: ByteStream,
-    block_index: G,
+    block_index: G
+  ) -> (ByteStream, ByteStream, G) {
+    match block_index {
+      64 => (input, byte_acc, block_index),
+      _ => match load(input) {
+        ListNode.Nil => (input, byte_acc, block_index),
+        ListNode.Cons(head, input) =>
+          blake3_read_block(input, store(ListNode.Cons(head, byte_acc)), block_index + 1),
+      },
+    }
+  }
+
+  -- One call per block keeps the chunk counter, chaining digest and tree
+  -- layer out of the narrow reader. Compression sees the same last-byte
+  -- index as before; finalization sees the number of consumed chunk bytes.
+  fn blake3_compress_chunks(
+    input: ByteStream,
     chunk_index: G,
     chunk_count: &U64,
     block_digest: &[[U8; 4]; 8],
     layer: Layer
   ) -> Layer {
-    match load(input) {
-      -- Input exhausted: hand off to the cold finalize circuit.
-      ListNode.Nil =>
-        blake3_finish(byte_acc, block_index, chunk_index, chunk_count, block_digest, layer),
-      ListNode.Cons(head, input) =>
-        let byte_acc = store(ListNode.Cons(head, byte_acc));
-        match block_index {
-          63 => blake3_compress_block(input, byte_acc, chunk_index, chunk_count, block_digest, layer),
-          _ => blake3_compress_chunks(input, byte_acc, block_index + 1, chunk_index + 1, chunk_count, block_digest, layer),
-        },
+    let (input, byte_acc, block_length) = blake3_read_block(input, store(ListNode.Nil), 0);
+    match block_length {
+      64 => blake3_compress_block(input, byte_acc, chunk_index + 63, chunk_count, block_digest, layer),
+      _ => blake3_finish(byte_acc, block_length, chunk_index + block_length, chunk_count, block_digest, layer),
     }
   }
 
@@ -297,14 +307,14 @@ def blake3 := ⟦
         let flags = ROOT * list_is_empty(input) * u64_is_zero(load(chunk_count)) + CHUNK_END;
         let IV = [[103u8, 230u8, 9u8, 106u8], [133u8, 174u8, 103u8, 187u8], [114u8, 243u8, 110u8, 60u8], [58u8, 245u8, 79u8, 165u8], [127u8, 82u8, 14u8, 81u8], [140u8, 104u8, 5u8, 155u8], [171u8, 217u8, 131u8, 31u8], [25u8, 205u8, 224u8, 91u8]];
         let layer = store(LayerNode.Push(layer, @blake3_compress_init(load(block_digest), block, load(chunk_count), 64, flags)));
-        blake3_compress_chunks(input, store(ListNode.Nil), 0, 0, store(relaxed_u64_succ(load(chunk_count))), store(IV), layer),
+        blake3_compress_chunks(input, 0, store(relaxed_u64_succ(load(chunk_count))), store(IV), layer),
       _ =>
         let chunk_end_flag = list_is_empty(input) * CHUNK_END;
         let root_flag = list_is_empty(input) * u64_is_zero(load(chunk_count)) * ROOT;
         let chunk_start_flag = eq_zero(chunk_index - 63) * CHUNK_START;
         let flags = chunk_end_flag + root_flag + chunk_start_flag;
         let block_digest = @blake3_compress_init(load(block_digest), block, load(chunk_count), 64, flags);
-        blake3_compress_chunks(input, store(ListNode.Nil), 0, chunk_index + 1, chunk_count, store(block_digest), layer),
+        blake3_compress_chunks(input, chunk_index + 1, chunk_count, store(block_digest), layer),
     }
   }
 
