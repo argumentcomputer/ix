@@ -111,6 +111,8 @@ def SynthesisInference.CacheData {β : Type u} {resolve : Address → Option (Co
       first.CacheData anchor × second.CacheData anchor
   | .forallE _ _ _ first second .. | .lam _ _ _ _ first second .. |
     .lamBeta _ _ _ _ first second .. => first.CacheData anchor × second.CacheData anchor
+  | .letE _ _ _ _ _ domain value body .. =>
+      domain.CacheData anchor × value.CacheData anchor × body.CacheData anchor
 termination_by structural tree
 
 /-- Extract every full publication's checking origin from the original
@@ -204,6 +206,24 @@ def SynthesisInference.cacheExecution {β : Type u} {resolve : Address → Optio
         (domainRun.checks.append bodyRun.checks)).complete
           (.lamBeta full miss trace opening domainTree bodyTree origin reduction conditionAgrees
             constructed bound closingFaithful faithful) contextOrigin agreement reading accepted
+  | .letE full localState miss trace opening domainTree valueTree bodyTree domainReading valueReading bodyReading
+      conditions hashPath comparisonFaithful substitution reduction =>
+      fun data contextOrigin agreement reading accepted => by
+      have keyedValid := miss.keyedLocalState localState
+      have keyedAgreement := miss.localContext.symm ▸ agreement
+      let domainRun := domainTree.cacheExecution data.1 contextOrigin keyedAgreement domainReading trace.domainRun
+      let valueRun := valueTree.cacheExecution data.2.1 contextOrigin
+        (keyedAgreement.congr (trace.domainContext keyedValid).symm) valueReading trace.valueRun
+      obtain ⟨openedReading, openedAgreement, _⟩ :=
+        trace.opened_reading opening keyedValid keyedAgreement domainReading bodyReading
+      let bodyRun := bodyTree.cacheExecution data.2.2
+        (.push contextOrigin domainTree keyedAgreement domainReading trace.domainRun)
+        openedAgreement openedReading trace.bodyRun
+      exact (SynthesisCacheSupplement.mk
+        (.letE full miss trace hashPath domainRun.trace valueRun.trace bodyRun.trace)
+        ((domainRun.checks.append valueRun.checks).append bodyRun.checks)).complete
+          (.letE full localState miss trace opening domainTree valueTree bodyTree domainReading valueReading bodyReading
+            conditions hashPath comparisonFaithful substitution reduction) contextOrigin agreement reading accepted
 termination_by structural tree
 
 /-- A successful synthesis call extends the complete typed cache history.

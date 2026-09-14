@@ -73,7 +73,7 @@ transport keeps its representation, arithmetic, and dependency assumptions
 explicit. A production `checkEnvAnon` fragment preserves models of its
 axiom set for aliases, universe terms, instances of earlier constants, and
 closed function bodies built from sorts, locals,
-polymorphic references, applications, dependent functions, and full-mode lambdas
+polymorphic references, applications, dependent functions, full-mode lambdas, and lets
 under the stated execution resources. Definitions may declare their own
 universe parameters; model entries retain the exact arity and interpretations
 at every instance.
@@ -139,7 +139,8 @@ Application suffixes and dependent substitutions retain their checks.
 The corresponding structural-WHNF trace computes each raw result and intern
 table, then proves the actual uncached loop under its fuel bound. The same
 traces justify definition conversion. Source inference now constructs a full
-beta typing derivation retaining every lambda body and application child.
+beta typing derivation retaining every lambda body, application child, and
+checked function-type domain and codomain.
 Dependent substitution rebuilds that derivation beneath retained binders,
 so each generated result supplies the exact lambda domains for the next step.
 Forward beta conversion preserves these domains when cheap beta changes a
@@ -165,20 +166,26 @@ comparison identifies the declared domain; substitution preserves the complete
 body checking derivation and inferred-type origin, including beta redexes
 exposed by the value. The selected cheap-beta operation supplies the returned
 type. Declaration admission consumes the same check and validation calls.
-The three children remain in the existing SynthesisInference fragment;
-arbitrary recursive let composition and automatic resource construction
-remain open.
+The original SynthesisInference datatype now includes this recursive let case,
+so lets compose in its children and surrounding binders, applications, and
+cache hits. Complete derivations retain function-type children after dependent
+substitution exposes their constructor. Returned syntax readings are derived
+before the synthesis semantic induction, without a context-formation premise.
+The induction proves its own hereditary semantic invariant; source support and
+reconstruction do not assume it, and the audit enforces that boundary.
+Automatic construction of the initial execution and representation resources
+remains open.
 Local cache hits agree with the actual declaration type. Constant
 hits agree with pure universe substitution of a loaded, admitted declaration;
-sort hits return the canonical successor sort. Applications, foralls, and
-lambdas can reuse an earlier successful synthesis check. The cache node
+sort hits return the canonical successor sort. Applications, foralls, lambdas,
+and lets can reuse an earlier successful synthesis check. The cache node
 retains its original inference tree, local reading, and execution, so lambda
 domains and dependent codomain checks remain available to later beta proofs.
 Successful full inference establishes the exact stored result; cache frames
 derive its later selection under either checking policy, even with zero fuel.
 The retained checks also cross interface growth and insertion of locals.
-Structural inversion of lifted syntax recovers the original lambda head,
-domain, body, and arguments, preserving Pi codomain checks and hereditary
+Complete derivations recover the lambda head, domain, body, and arguments
+after lifting and substitution, preserving Pi codomain checks and hereditary
 beta origins. A concrete full-cache resource derives its readings and
 selection from the earlier call and remains usable in the original synthesis
 recursion after actual binder opening and supported recursive inference.
@@ -218,8 +225,9 @@ resource construction, later context compatibility after scope exit, and
 the other inference and conversion/cache paths remain open.
 The operational cache trace includes full lets and their three child calls.
 The original let check and child cache data derive the full event fold and raw
-history, preserving initially populated full keys. Retaining let roots in the
-typed synthesis history still needs their recursive inference integration.
+history, preserving initially populated full keys. The typed synthesis history
+also retains let roots and descendants through their original recursive checks,
+so later full-cache selection recovers those checks and their beta origins.
 Frames allow declaration growth while retaining every old declaration. Verified
 lazy loading derives such a frame on success and failure, including partial
 conversion state and fault deduplication. Standalone and block preparation have

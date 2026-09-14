@@ -89,11 +89,10 @@ def BetaPiExposure.checkedTrace {β : Type u} {resolve : Address → Option (Con
     (contextOrigin : SynthesisContext resolve incoming incomingContext incomingBounds entries context bounds)
     (agreement : LocalContextReading resolve typeLocals typeBefore.lctx context)
     (reading : readScopedExpr? resolve typeLocals typeSource = some term.erase)
-    (accepted : RecM.infer typeSource (methodsN typeFuel) typeBefore = .ok typeResult typeAfter)
-    (formed : ContextFormation.{u,v} incoming incomingContext incomingBounds) :
+    (accepted : RecM.infer typeSource (methodsN typeFuel) typeBefore = .ok typeResult typeAfter) :
     SynthesisBetaTrace resolve incoming incomingContext incomingBounds entries context
       term (.forallE condition domain body) (.sort level) :=
-  exposure.betaTrace (typeTree.betaTyping contextOrigin agreement reading accepted formed)
+  exposure.betaTrace (typeTree.betaTyping contextOrigin agreement reading accepted)
 
 /-- The original inference supplies every later lambda and argument origin.
 Only the operational WHNF path and finite representation resources remain as
@@ -115,7 +114,7 @@ theorem SynthesisInference.beta_whnf_sound {β : Type u} {resolve : Address → 
       readScopedExpr? resolve locals result = some target.erase ∧
       ConversionClaim.{u,v} entries context term target ∧ TypingClaim.{u,v} entries context target type ∧
       after.env.intern.WF := by
-  let typing := support.betaTyping .current agreement reading accepted formed
+  let typing := support.betaTyping .current agreement reading accepted
   exact (path.annotate typing).1.uncached_sound typing.origin formed reading coherent enough
 
 /-- The public WHNF call includes instrumentation, fuel, and all three
@@ -138,7 +137,7 @@ theorem SynthesisInference.beta_public_whnf_sound {β : Type u} {resolve : Addre
       plan.after.env.intern.WF := by
   obtain ⟨resultReading, preserved⟩ := plan.reading reading coherent
   obtain ⟨converted, typed⟩ :=
-    (plan.betaTrace (support.betaTyping .current agreement reading accepted formed)).sound formed
+    (plan.betaTrace (support.betaTyping .current agreement reading accepted)).sound formed
   exact ⟨plan.run, resultReading, converted, typed, preserved⟩
 
 end Ix.Kernel.Consistency

@@ -1,0 +1,385 @@
+/-
+Copyright (c) 2026 Argument Computer Corporation.
+SPDX-License-Identifier: MIT OR Apache-2.0
+-/
+
+import Ix.Kernel.Verify.Consistency.SynthesisSupport
+
+/-! Complete syntactic derivations retained by source inference.
+Dependent substitution keeps binder children and application arguments. -/
+
+namespace Ix.Kernel.Consistency
+
+open Theory Theory.Model
+
+universe u v
+
+/-- Constructors that remain outside head beta reduction after substitution. -/
+inductive BetaAtom {β : Type u} : AExpr β → Prop
+  | sort (level : VLevel) : BetaAtom (.sort level)
+  | const (ref : ConstRef β) (levels : List VLevel) : BetaAtom (.const ref levels)
+  | proj (ref : ConstRef β) (field : Nat) (major : AExpr β) : BetaAtom (.proj ref field major)
+  | natLit (value : Nat) : BetaAtom (.natLit value)
+
+theorem BetaAtom.liftN {β : Type u} {term : AExpr β} (atom : BetaAtom term) (count cutoff : Nat) :
+    BetaAtom (term.liftN count cutoff) := by
+  cases atom <;> constructor
+
+theorem BetaAtom.inst {β : Type u} {term : AExpr β} (atom : BetaAtom term) (argument : AExpr β) (cutoff : Nat) :
+    BetaAtom (term.inst argument cutoff) := by
+  cases atom <;> constructor
+
+theorem BetaAtom.not_lam {β : Type u} {term : AExpr β} (atom : BetaAtom term)
+    (condition : Certified.PropWhen) (domain body : AExpr β) : term ≠ .lam condition domain body := by
+  cases atom <;> intro same <;> cases same
+
+/-- A typing derivation whose leaves retain actual checks. Function-type
+domains and codomains, lambda bodies, and both application children remain
+available after substitution. Forward beta conversion changes the retained
+type without discarding this structure. -/
+inductive SynthesisBetaTyping {β : Type u} (resolve : Address → Option (ConstRef β))
+    (incoming : Model.Environment β) (incomingContext : Model.Context β) (incomingBounds : List VLevel)
+    (entries : Model.Environment β) : Model.Context β → AExpr β → AExpr β → Type u
+  | atom {context term type}
+      (origin : SynthesisTypingOrigin resolve incoming incomingContext incomingBounds entries context term type)
+      (shape : BetaAtom term) : SynthesisBetaTyping resolve incoming incomingContext incomingBounds entries context term type
+  | bvar {context index type}
+      (origin : SynthesisTypingOrigin resolve incoming incomingContext incomingBounds entries context (.bvar index) type)
+      (atIndex : context[index]? = some type) :
+      SynthesisBetaTyping resolve incoming incomingContext incomingBounds entries context (.bvar index) type
+  | forallE {context condition domain body type domainLevel bodyLevel}
+      (origin : SynthesisTypingOrigin resolve incoming incomingContext incomingBounds entries context
+        (.forallE condition domain body) type)
+      (domainCheck : SynthesisBetaTyping resolve incoming incomingContext incomingBounds entries context
+        domain (.sort domainLevel))
+      (bodyCheck : SynthesisBetaTyping resolve incoming incomingContext incomingBounds entries (context.push domain)
+        body (.sort bodyLevel))
+      (conditionAgrees : condition = Certified.zeroCondition bodyLevel) :
+      SynthesisBetaTyping resolve incoming incomingContext incomingBounds entries context
+        (.forallE condition domain body) type
+  | lam {context condition domain body codomain}
+      (origin : SynthesisTypingOrigin resolve incoming incomingContext incomingBounds entries context
+        (.lam condition domain body) (.forallE condition domain codomain))
+      (inner : SynthesisBetaTyping resolve incoming incomingContext incomingBounds entries (context.push domain) body codomain) :
+      SynthesisBetaTyping resolve incoming incomingContext incomingBounds entries context
+        (.lam condition domain body) (.forallE condition domain codomain)
+  | app {context fn arg condition domain body}
+      (function : SynthesisBetaTyping resolve incoming incomingContext incomingBounds entries context fn
+        (.forallE condition domain body))
+      (argument : SynthesisBetaTyping resolve incoming incomingContext incomingBounds entries context arg domain) :
+      SynthesisBetaTyping resolve incoming incomingContext incomingBounds entries context (.app fn arg) (body.inst arg)
+  | convert {context term sourceType resultType level}
+      (prior : SynthesisBetaTyping resolve incoming incomingContext incomingBounds entries context term sourceType)
+      (trace : SynthesisBetaTrace resolve incoming incomingContext incomingBounds entries context
+        sourceType resultType (.sort level)) :
+      SynthesisBetaTyping resolve incoming incomingContext incomingBounds entries context term resultType
+
+namespace SynthesisBetaTyping
+
+variable {β : Type u} {resolve : Address → Option (ConstRef β)}
+  {incoming entries : Model.Environment β} {incomingContext : Model.Context β} {incomingBounds : List VLevel}
+
+def origin {context : Model.Context β} {term type : AExpr β}
+    (typing : SynthesisBetaTyping resolve incoming incomingContext incomingBounds entries context term type) :
+    SynthesisTypingOrigin resolve incoming incomingContext incomingBounds entries context term type :=
+  match typing with
+  | .atom origin _ | .bvar origin _ | .forallE origin _ _ _ | .lam origin _ => origin
+  | .app function argument => .application function.origin argument.origin
+  | .convert prior trace => .convert prior.origin trace
+termination_by structural typing
+
+structure LambdaView (context : Model.Context β) (condition : Certified.PropWhen) (domain body type : AExpr β) where
+  codomain : AExpr β
+  typeEq : type = .forallE condition domain codomain
+  inner : SynthesisBetaTyping resolve incoming incomingContext incomingBounds entries (context.push domain) body codomain
+
+def lambdaView {context : Model.Context β} {term type : AExpr β}
+    (typing : SynthesisBetaTyping resolve incoming incomingContext incomingBounds entries context term type) :
+    {condition : Certified.PropWhen} → {domain body : AExpr β} → term = .lam condition domain body →
+    LambdaView (resolve := resolve) (incoming := incoming) (incomingContext := incomingContext)
+      (incomingBounds := incomingBounds) (entries := entries) context condition domain body type :=
+  match typing with
+  | .atom _ shape => fun same => False.elim (shape.not_lam _ _ _ same)
+  | .bvar .. | .forallE .. | .app .. => fun same => by cases same
+  | .lam _ inner => fun same => by cases same; exact ⟨_, rfl, inner⟩
+  | .convert prior trace => fun same =>
+      let view := prior.lambdaView same
+      ⟨view.codomain, (trace.rigid (by simp only [view.typeEq]; intro fn arg same; cases same)).trans view.typeEq,
+        view.inner⟩
+termination_by structural typing
+
+def weakenAt {source target : Model.Context β} {cutoff : Nat} {term type : AExpr β}
+    (typing : SynthesisBetaTyping resolve incoming incomingContext incomingBounds entries source term type)
+    (insertion : ContextInsertion source target cutoff) :
+    SynthesisBetaTyping resolve incoming incomingContext incomingBounds entries target
+      (term.liftN 1 cutoff) (type.liftN 1 cutoff) :=
+  match typing with
+  | .atom origin shape => .atom (.weakenAt origin insertion) (shape.liftN 1 cutoff)
+  | .bvar (index := index) origin found => by
+      have lifted := SynthesisTypingOrigin.weakenAt origin insertion
+      have selected := insertion.lookup found
+      by_cases below : index < cutoff
+      · simp only [AExpr.liftN, liftVar, below, if_true] at lifted selected ⊢
+        exact .bvar lifted selected
+      · simp only [AExpr.liftN, liftVar, below, if_false, Nat.add_comm 1] at lifted selected ⊢
+        exact .bvar lifted selected
+  | .forallE origin domainCheck bodyCheck agrees =>
+      .forallE (.weakenAt origin insertion) (domainCheck.weakenAt insertion)
+        (bodyCheck.weakenAt (insertion.push _)) agrees
+  | .lam origin inner => .lam (.weakenAt origin insertion) (inner.weakenAt (insertion.push _))
+  | .app function argument => by
+      simpa only [AExpr.liftN, AExpr.liftN_inst_zero] using
+        SynthesisBetaTyping.app (function.weakenAt insertion) (argument.weakenAt insertion)
+  | .convert prior trace => .convert (prior.weakenAt insertion) (.weakenAt trace insertion)
+termination_by structural typing
+
+def extend {later : Model.Environment β} {context : Model.Context β} {term type : AExpr β}
+    (typing : SynthesisBetaTyping resolve incoming incomingContext incomingBounds entries context term type)
+    (extension : InterfaceExtends entries later) :
+    SynthesisBetaTyping resolve incoming incomingContext incomingBounds later context term type :=
+  match typing with
+  | .atom origin shape => .atom (origin.extend extension) shape
+  | .bvar origin found => .bvar (origin.extend extension) found
+  | .forallE origin domainCheck bodyCheck agrees =>
+      .forallE (origin.extend extension) (domainCheck.extend extension) (bodyCheck.extend extension) agrees
+  | .lam origin inner => .lam (origin.extend extension) (inner.extend extension)
+  | .app function argument => .app (function.extend extension) (argument.extend extension)
+  | .convert prior trace => .convert (prior.extend extension) (.extend trace extension)
+termination_by structural typing
+
+def rebase {priorIncoming : Model.Environment β} {priorContext context : Model.Context β}
+    {priorBounds : List VLevel} {term type : AExpr β}
+    (typing : SynthesisBetaTyping resolve priorIncoming priorContext priorBounds entries context term type)
+    (origin : SynthesisContext resolve incoming incomingContext incomingBounds priorIncoming priorContext priorBounds) :
+    SynthesisBetaTyping resolve incoming incomingContext incomingBounds entries context term type :=
+  match typing with
+  | .atom checked shape => .atom (.rebase origin checked) shape
+  | .bvar checked found => .bvar (.rebase origin checked) found
+  | .forallE checked domainCheck bodyCheck agrees =>
+      .forallE (.rebase origin checked) (domainCheck.rebase origin) (bodyCheck.rebase origin) agrees
+  | .lam checked inner => .lam (.rebase origin checked) (inner.rebase origin)
+  | .app function argument => .app (function.rebase origin) (argument.rebase origin)
+  | .convert prior trace => .convert (prior.rebase origin) (.rebase origin trace)
+termination_by structural typing
+
+end SynthesisBetaTyping
+
+/-- The internal substitution walker builds this data itself as it passes
+binders. Erasure gives the existing model context-substitution relation. -/
+inductive BetaSubstitutionContext {β : Type u} (base : Model.Context β) (domain argument : AExpr β) :
+    Model.Context β → Model.Context β → Nat → Type u
+  | root : BetaSubstitutionContext base domain argument (base.push domain) base 0
+  | push {source target cutoff} (prior : BetaSubstitutionContext base domain argument source target cutoff)
+      (binder : AExpr β) :
+      BetaSubstitutionContext base domain argument (source.push binder)
+        (target.push (binder.inst argument cutoff)) (cutoff + 1)
+
+theorem BetaSubstitutionContext.relation {β : Type u} {base source target : Model.Context β}
+    {domain argument : AExpr β} {cutoff : Nat}
+    (substitution : BetaSubstitutionContext base domain argument source target cutoff) :
+    ContextSubstitution base domain argument source target cutoff :=
+  match substitution with
+  | .root => .root
+  | .push prior binder => .push prior.relation binder
+
+def BetaSubstitutionContext.liftValue {β : Type u} {resolve : Address → Option (ConstRef β)}
+    {incoming entries : Model.Environment β} {incomingContext : Model.Context β} {incomingBounds : List VLevel}
+    {base source target : Model.Context β} {domain argument term type : AExpr β} {cutoff : Nat}
+    (substitution : BetaSubstitutionContext base domain argument source target cutoff)
+    (value : SynthesisBetaTyping resolve incoming incomingContext incomingBounds entries base term type) :
+    SynthesisBetaTyping resolve incoming incomingContext incomingBounds entries target
+      (term.liftN cutoff) (type.liftN cutoff) :=
+  match substitution with
+  | .root => by simpa only [AExpr.liftN_zero] using value
+  | .push (target := target) (cutoff := cutoff) prior binder => by
+      have lifted := (prior.liftValue value).weakenAt (ContextInsertion.root target (binder.inst argument cutoff))
+      simpa only [AExpr.liftN_liftN_merge term cutoff 1 0 0 (Nat.le_refl _) (Nat.zero_le _),
+        AExpr.liftN_liftN_merge type cutoff 1 0 0 (Nat.le_refl _) (Nat.zero_le _)] using lifted
+termination_by structural substitution
+
+def SynthesisBetaTyping.substituteAt {β : Type u} {resolve : Address → Option (ConstRef β)}
+    {incoming entries : Model.Environment β} {incomingContext : Model.Context β} {incomingBounds : List VLevel}
+    {base source target : Model.Context β} {domain argument term type : AExpr β} {cutoff : Nat}
+    (typing : SynthesisBetaTyping resolve incoming incomingContext incomingBounds entries source term type)
+    (value : SynthesisBetaTyping resolve incoming incomingContext incomingBounds entries base argument domain)
+    (substitution : BetaSubstitutionContext base domain argument source target cutoff) :
+    SynthesisBetaTyping resolve incoming incomingContext incomingBounds entries target
+      (term.inst argument cutoff) (type.inst argument cutoff) :=
+  match typing with
+  | .atom origin shape => .atom (.substituteAt origin value.origin substitution.relation) (shape.inst argument cutoff)
+  | .bvar (index := index) origin found => by
+      by_cases equal : index = cutoff
+      · subst index
+        have sameType := substitution.relation.instantiate_removed_type found
+        simpa only [AExpr.inst, AExpr.instVar, Nat.lt_irrefl, if_false, if_true, sameType] using
+          substitution.liftValue value
+      · have retained := substitution.relation.lookup_other found equal
+        have typed := SynthesisTypingOrigin.substituteAt origin value.origin substitution.relation
+        by_cases below : index < cutoff
+        · simp only [AExpr.inst, AExpr.instVar, below, if_true] at typed retained ⊢
+          exact .bvar typed retained
+        · simp only [AExpr.inst, AExpr.instVar, below, equal, if_false] at typed retained ⊢
+          exact .bvar typed retained
+  | .forallE origin domainCheck bodyCheck agrees =>
+      .forallE (.substituteAt origin value.origin substitution.relation)
+        (domainCheck.substituteAt value substitution)
+        (bodyCheck.substituteAt value (substitution.push _)) agrees
+  | .lam origin inner =>
+      .lam (.substituteAt origin value.origin substitution.relation)
+        (inner.substituteAt value (substitution.push _))
+  | .app function applied => by
+      simpa only [AExpr.inst, AExpr.inst_inst_zero] using
+        SynthesisBetaTyping.app (function.substituteAt value substitution) (applied.substituteAt value substitution)
+  | .convert prior trace =>
+      .convert (prior.substituteAt value substitution) (.substituteAt trace value.origin substitution.relation)
+termination_by structural typing
+
+theorem SynthesisBetaTyping.lambdaPrefix {β : Type u} {resolve : Address → Option (ConstRef β)}
+    {incoming entries : Model.Environment β} {incomingContext context : Model.Context β}
+    {incomingBounds : List VLevel} {term type : AExpr β}
+    (typing : SynthesisBetaTyping resolve incoming incomingContext incomingBounds entries context term type) :
+    LambdaPrefix term type term.lambdaDepth :=
+  match typing with
+  | .atom _ shape => by cases shape <;> exact .zero _ _
+  | .bvar .. | .forallE .. | .app .. => .zero _ _
+  | .lam _ inner => .lam inner.lambdaPrefix
+  | .convert (term := term) prior trace => by
+      have leading := prior.lambdaPrefix
+      cases term with
+      | lam condition domain body =>
+          have view := prior.lambdaView rfl
+          have fixed := trace.rigid (by simp only [view.typeEq]; intro fn arg same; cases same)
+          simpa only [fixed] using leading
+      | _ => exact .zero _ _
+termination_by structural typing
+
+namespace SynthesisBetaTyping
+
+variable {β : Type u} {resolve : Address → Option (ConstRef β)}
+  {incoming entries : Model.Environment β} {incomingContext : Model.Context β} {incomingBounds : List VLevel}
+
+/-- Both children keep their original checking derivations, including all
+substitutions that exposed the function type. -/
+structure ForallView (context : Model.Context β) (condition : Certified.PropWhen) (domain body : AExpr β) where
+  domainLevel : VLevel
+  bodyLevel : VLevel
+  domainCheck : SynthesisBetaTyping resolve incoming incomingContext incomingBounds entries context
+    domain (.sort domainLevel)
+  bodyCheck : SynthesisBetaTyping resolve incoming incomingContext incomingBounds entries (context.push domain)
+    body (.sort bodyLevel)
+  conditionAgrees : condition = Certified.zeroCondition bodyLevel
+
+def forallView {context : Model.Context β} {term type : AExpr β}
+    (typing : SynthesisBetaTyping resolve incoming incomingContext incomingBounds entries context term type) :
+    {condition : Certified.PropWhen} → {domain body : AExpr β} → term = .forallE condition domain body →
+    ForallView (resolve := resolve) (incoming := incoming) (incomingContext := incomingContext)
+      (incomingBounds := incomingBounds) (entries := entries) context condition domain body :=
+  match typing with
+  | .atom _ shape => fun same => False.elim (by cases shape <;> cases same)
+  | .bvar .. | .lam .. | .app .. => fun same => by cases same
+  | .forallE _ domainCheck bodyCheck agrees => fun same => by
+      cases same
+      exact ⟨_, _, domainCheck, bodyCheck, agrees⟩
+  | .convert prior _ => fun same => prior.forallView same
+termination_by structural typing
+
+private theorem appN_last {β : Type u} {head : AExpr β} {arguments : List (AExpr β)}
+    (nonempty : arguments ≠ []) :
+    head.appN arguments = (head.appN arguments.dropLast).app (arguments.getLast nonempty) := by
+  calc
+    head.appN arguments = head.appN (arguments.dropLast ++ [arguments.getLast nonempty]) :=
+      congrArg (AExpr.appN head) (List.dropLast_concat_getLast nonempty).symm
+    _ = _ := by simp only [AExpr.appN_append, AExpr.appN_cons, AExpr.appN_nil]
+
+private theorem nonapp_spine_empty {β : Type u} {term head : AExpr β} {arguments : List (AExpr β)}
+    (notApp : ∀ fn arg, term ≠ .app fn arg) (same : term = head.appN arguments) : arguments = [] := by
+  by_contra nonempty
+  exact notApp _ _ (same.trans (appN_last nonempty))
+
+private theorem app_spine_parts {β : Type u} {fn arg head : AExpr β} {arguments : List (AExpr β)}
+    (nonempty : arguments ≠ []) (same : fn.app arg = head.appN arguments) :
+    arguments = arguments.dropLast ++ [arg] ∧ fn = head.appN arguments.dropLast := by
+  have parts := AExpr.app.inj (same.trans (appN_last nonempty))
+  exact ⟨by rw [parts.2]; exact (List.dropLast_concat_getLast nonempty).symm, parts.1⟩
+
+/-- Recover every argument check, including those introduced by replacing
+a variable with a complete application. No new inference calls are needed. -/
+def spineOrigin {context : Model.Context β} {term type : AExpr β}
+    (typing : SynthesisBetaTyping resolve incoming incomingContext incomingBounds entries context term type)
+    (head : AExpr β) (arguments : List (AExpr β)) (same : term = head.appN arguments) :
+    SynthesisSpineOrigin resolve incoming incomingContext incomingBounds entries context head arguments type :=
+  if empty : arguments = [] then by
+    subst arguments
+    simp only [AExpr.appN_nil] at same
+    subst term
+    exact ⟨type, typing.origin, typing.lambdaPrefix, .nil _⟩
+  else match typing with
+  | .app function argument => by
+      have parts := app_spine_parts empty same
+      have prior := function.spineOrigin head arguments.dropLast parts.2
+      refine ⟨prior.headType, prior.headOrigin, prior.leading, ?_⟩
+      simpa only [← parts.1] using prior.argumentsOrigin.snoc argument.origin
+  | .convert prior trace =>
+      let child := prior.spineOrigin head arguments same
+      ⟨child.headType, child.headOrigin, child.leading, child.argumentsOrigin.convert trace⟩
+  | .atom _ shape => by
+      exact False.elim (empty (nonapp_spine_empty
+        (by cases shape <;> intro fn arg same <;> cases same) same))
+  | .bvar .. | .forallE .. | .lam .. => by
+      exact False.elim (empty (nonapp_spine_empty (by intro fn arg same; cases same) same))
+termination_by structural typing
+
+/-- The head lookup and dependent argument checks survive substitutions,
+including replacement of the old head by a different variable spine. -/
+def variableSpineOrigin {context : Model.Context β} {term type : AExpr β}
+    (typing : SynthesisBetaTyping resolve incoming incomingContext incomingBounds entries context term type)
+    (index : Nat) (arguments : List (AExpr β)) (same : term = (AExpr.bvar index).appN arguments) :
+    SynthesisVariableSpineOrigin resolve incoming incomingContext incomingBounds entries context index arguments type :=
+  match typing with
+  | .bvar _ found => by
+      have empty := nonapp_spine_empty (by intro fn arg same; cases same) same
+      subst arguments
+      simp only [AExpr.appN_nil] at same
+      cases same
+      exact ⟨_, found, .nil _⟩
+  | .app function argument => by
+      have nonempty : arguments ≠ [] := by intro empty; subst arguments; cases same
+      have parts := app_spine_parts nonempty same
+      have prior := function.variableSpineOrigin index arguments.dropLast parts.2
+      refine ⟨prior.headType, prior.atIndex, ?_⟩
+      simpa only [← parts.1] using prior.spine.snoc argument.origin
+  | .convert prior trace =>
+      let child := prior.variableSpineOrigin index arguments same
+      ⟨child.headType, child.atIndex, child.spine.convert trace⟩
+  | .atom _ shape => by
+      have empty := nonapp_spine_empty (by cases shape <;> intro fn arg same <;> cases same) same
+      subst arguments
+      exact False.elim (by cases shape <;> cases same)
+  | .forallE .. | .lam .. => by
+      have empty := nonapp_spine_empty (by intro fn arg same; cases same) same
+      subst arguments
+      cases same
+termination_by structural typing
+
+def lambdaBodyVariableSpine {context : Model.Context β} {term type domain : AExpr β}
+    {condition : Certified.PropWhen} {index : Nat} {arguments : List (AExpr β)}
+    (typing : SynthesisBetaTyping resolve incoming incomingContext incomingBounds entries context term type)
+    (same : term = .lam condition domain ((AExpr.bvar index).appN arguments)) :
+    Σ resultType, SynthesisVariableSpineOrigin resolve incoming incomingContext incomingBounds
+      entries (context.push domain) index arguments resultType :=
+  let view := typing.lambdaView same
+  ⟨view.codomain, view.inner.variableSpineOrigin index arguments rfl⟩
+
+def ForallView.variableSpine {context : Model.Context β} {condition : Certified.PropWhen} {domain : AExpr β}
+    {index : Nat} {arguments : List (AExpr β)}
+    (view : ForallView (resolve := resolve) (incoming := incoming) (incomingContext := incomingContext)
+      (incomingBounds := incomingBounds) (entries := entries) context condition domain
+      ((AExpr.bvar index).appN arguments)) :
+    SynthesisVariableSpineOrigin resolve incoming incomingContext incomingBounds entries (context.push domain)
+      index arguments (.sort view.bodyLevel) :=
+  view.bodyCheck.variableSpineOrigin index arguments rfl
+
+end SynthesisBetaTyping
+
+
+end Ix.Kernel.Consistency

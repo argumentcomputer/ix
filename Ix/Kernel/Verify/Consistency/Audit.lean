@@ -54,6 +54,7 @@ private def atomicRoots : Array Lean.Name := #[
   ``ForallInferenceTrace.output, ``LambdaInferenceTrace.output, ``BinderInference.sound,
   ``inferUncached_monomorphic_const_scoped, ``ApplicationInferenceTrace.output,
   ``BinderInference.soundWithSynthesis, ``BinderInference.synthesis,
+  ``BinderInference.hereditary, ``SynthesisInference.soundWithHereditary,
   ``CheckedType.sound, ``TypeFormation.sound,
   ``SynthesisInference.sound, ``SynthesisInference.closed_sound, ``SynthesisInference.ofSort,
   ``SynthesisTypeCheck.sound, ``SynthesisInference.ofTypeCheck,
@@ -77,7 +78,11 @@ private def formationRoots : Array Lean.Name := #[
   ``ContextFormation.empty, ``ContextFormation.push,
   ``Theory.Model.wellDenoted_of_inst, ``Theory.Model.wellDenoted_inst_iff,
   ``Theory.Model.TypingClaim.inst, ``Theory.Model.CheckingClaim.inst,
-  ``Theory.Model.ConversionClaim.inst
+  ``Theory.Model.ConversionClaim.inst,
+  ``HereditaryTyping, ``HereditaryTyping.typing, ``HereditaryTyping.lambdaType,
+  ``HereditaryTyping.lambdaPrefix, ``HereditaryTyping.lambdaSpine,
+  ``HereditaryTyping.weakenAt, ``HereditaryTyping.extend, ``HereditaryTyping.liftValue,
+  ``HereditaryTyping.substituteAt
 ]
 
 private def letRoots : Array Lean.Name := #[
@@ -88,7 +93,17 @@ private def letRoots : Array Lean.Name := #[
   ``LetInferenceCheck.betaTyping, ``LetInferenceCheck.sound, ``LetInferenceCheck.closed_sound,
   ``LetInferenceCheck.beta_steps_sound, ``DefinitionBodyTrace.letSupport,
   ``InferenceCacheHistory.openLet, ``LetInferenceCheck.CacheData, ``LetInferenceCheck.cacheTrace,
-  ``LetInferenceCheck.cache_maps, ``LetInferenceCheck.cacheHistory
+  ``LetInferenceCheck.cache_maps, ``LetInferenceCheck.cacheHistory,
+  ``LetTypeReduction.rigid, ``LetTypeReduction.sound, ``LetInferenceTrace.opened_reading,
+  ``LetInferenceCheck.asSynthesis, ``LetInferenceCheck.CacheData.asSynthesis,
+  ``LetInferenceCheck.cacheExecution, ``LetInferenceCheck.synthesisCacheHistory
+]
+
+/-- Structural source reconstruction precedes the semantic induction.
+Its support and reader cannot assume the resulting hereditary invariant. -/
+private def recursiveLetShapeRoots : Array Lean.Name := #[
+  ``SynthesisInference.letE, ``SynthesisCheckedOrigin.binderType,
+  ``SynthesisInference.outputReading, ``SynthesisBetaTyping.forallE
 ]
 
 private def instantiationRoots : Array Lean.Name := #[
@@ -209,6 +224,7 @@ private def cacheTransportRoots : Array RootAllowance := #[
   ``SynthesisRetainedCheck.typeOrigin,
   ``SynthesisRetainedCheck.spineOrigin,
   ``SynthesisRetainedCheck.soundWithSpine,
+  ``SynthesisRetainedCheck.soundWithHereditary,
   ``SynthesisRetainedCheck.betaNextOrigin,
   ``SynthesisRetainedCheck.betaTyping,
   ``SynthesisVariableSpineOrigin.weakenAt,
@@ -563,6 +579,13 @@ private def hereditaryBetaRoots : Array RootAllowance := #[
   { root := ``BetaSyntax.steps_betaPrefix, standardAxioms := #[``propext, ``Quot.sound] },
   { root := ``SynthesisBetaTyping.origin, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
   { root := ``SynthesisBetaTyping.lambdaView, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``SynthesisBetaTyping.ForallView, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``SynthesisBetaTyping.forallView, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``SynthesisBetaTyping.ForallView.sound, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``SynthesisBetaTyping.ForallView.variableSpine, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``SynthesisBetaTyping.spineOrigin, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``SynthesisBetaTyping.variableSpineOrigin, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``SynthesisBetaTyping.lambdaBodyVariableSpine, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
   { root := ``SynthesisBetaTyping.weakenAt, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
   { root := ``SynthesisBetaTyping.substituteAt, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
   { root := ``SynthesisBetaTyping.lambdaPrefix, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
@@ -572,7 +595,8 @@ private def hereditaryBetaRoots : Array RootAllowance := #[
   { root := ``BetaSubstitutionContext.relation },
   { root := ``BetaSubstitutionContext.liftValue, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
   { root := ``BinderInference.betaTyping, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
-  { root := ``SynthesisInference.betaTyping, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``SynthesisInference.betaTyping, standardAxioms := standard,
+    nativeAxioms := #[expressionNative, levelNative], forbiddenDependencies := #[``HereditaryTyping] },
   { root := ``SynthesisInference.beta_steps_sound, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
   { root := ``BetaStepPlan.run, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
   { root := ``BetaStepPlan.sourceReading, standardAxioms := standard, nativeAxioms := #[expressionNative] },
@@ -1169,6 +1193,8 @@ def roots : Array RootAllowance := #[
     nativeAxioms := #[expressionNative], forbiddenDependencies := forbiddenProduction },
   { root := ``openLet_sound, standardAxioms := standard,
     nativeAxioms := #[expressionNative], forbiddenDependencies := forbiddenProduction },
+  { root := ``UncachedInference.keyedLocalState, standardAxioms := standard,
+    nativeAxioms := #[expressionNative], forbiddenDependencies := forbiddenProduction },
   { root := ``beq_readExpr?, standardAxioms := #[``propext, ``Quot.sound] },
   { root := ``internExpr_readExpr?, standardAxioms := #[``propext, ``Quot.sound] },
   { root := ``ModelTyping.sort, standardAxioms := standard,
@@ -1232,7 +1258,10 @@ def roots : Array RootAllowance := #[
   forbiddenDependencies := forbiddenProduction
 }) ++ (betaRoots ++ typeOriginRoots ++ substitutedOriginRoots ++ exposedOriginRoots ++
     repeatedBetaRoots ++ betaTraceRoots ++ hereditaryBetaRoots ++ piExposureRoots ++ cacheTransportRoots).map (fun allowance => {
-    allowance with forbiddenDependencies := forbiddenProduction })
+    allowance with forbiddenDependencies := allowance.forbiddenDependencies ++ forbiddenProduction })
+  ++ recursiveLetShapeRoots.map (fun root => {
+    root, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative],
+    forbiddenDependencies := forbiddenProduction ++ #[``HereditaryTyping] })
   ++ (localScopeFrameRoots ++ localStateFrameRoots ++ recursiveStateFrameRoots ++ ingressFrameRoots ++
       #[``LocalContextReading.congr, ``FramesLocalState.ok, ``FramesLocalState.error,
         ``IngressM.FramesState.runIntern, ``LocalStateInvariant.freshReading]).map (fun root => {

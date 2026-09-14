@@ -18,6 +18,11 @@ open Theory Theory.Model
 
 universe u
 
+theorem UncachedInference.keyedLocalState {before : TcState .anon} {source : KExpr .anon}
+    (miss : UncachedInference before source) (valid : LocalStateInvariant before) :
+    LocalStateInvariant miss.keyed :=
+  ((FramesLocalState.inferKey _).ok valid miss.keyRun).invariant valid
+
 /-- Actual recursive calls and their states. Scope restoration is derived
 from these runs; no child typing or returned-type reading is assumed. -/
 structure LetInferenceTrace (fuel : Nat) (before : TcState .anon)
@@ -66,6 +71,23 @@ theorem domainContext (trace : LetInferenceTrace fuel before name domain value b
 theorem openingContext (trace : LetInferenceTrace fuel before name domain value body)
     (valid : LocalStateInvariant before) : trace.comparedState.lctx.Equiv before.lctx :=
   (trace.openingFrame valid).context
+
+/-- All consumers use the same executed opening and its derived freshness. -/
+theorem opened_reading {β : Type u} {resolve : Address → Option (ConstRef β)}
+    {locals : List FVarId} {context : Model.Context β} {A : AExpr β} {b : VExpr β}
+    (trace : LetInferenceTrace fuel before name domain value body)
+    (opening : BinderOpeningSupport trace.comparedState body)
+    (valid : LocalStateInvariant before)
+    (agreement : LocalContextReading resolve locals before.lctx context)
+    (domainReading : readScopedExpr? resolve locals domain = some A.erase)
+    (bodyReading : readScopedExpr? resolve locals body 1 = some b) :
+    readScopedExpr? resolve (trace.fresh :: locals) trace.opened = some b ∧
+      LocalContextReading resolve (trace.fresh :: locals) trace.openedState.lctx (context.push A) ∧
+      trace.openedState.env.intern.WF := by
+  have frame := trace.openingFrame valid
+  have openingAgreement := agreement.congr frame.context.symm
+  exact (openLet_sound opening openingAgreement
+    ((frame.invariant valid).freshReading openingAgreement) domainReading bodyReading trace.openRun).2
 
 def abstracted (trace : LetInferenceTrace fuel before name domain value body) :=
   abstractFVars trace.bodyType #[trace.fresh] trace.bodyState.env.intern

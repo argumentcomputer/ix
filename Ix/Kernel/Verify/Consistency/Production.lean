@@ -750,8 +750,8 @@ def DefinitionBodyTrace.betaDeclaredStepsSupport {β : Type u} {input : Definiti
     (references : value.ReferencesIn entries ∧ type.ReferencesIn entries) :
     DefinitionCheckSupport resolve entries trace value type :=
   trace.betaDeclaredTraceSupport typeCoverage valueCoverage collision typeInference valueInference
-    ((SynthesisInference.betaTyping.{u,u} typeInference .current (.empty _ _) typeReading
-      trace.typeRun (.empty entries)).betaSteps count).2
+    ((SynthesisInference.betaTyping.{u} typeInference .current (.empty _ _) typeReading
+      trace.typeRun).betaSteps count).2
     valueReading typeReading valueConditions typeConditions references
 
 /-- An operational WHNF path needs no semantic origins for its intermediate
@@ -778,8 +778,8 @@ def DefinitionBodyTrace.betaDeclaredWhnfPathSupport {β : Type u} {input : Defin
     (references : value.ReferencesIn entries ∧ type.ReferencesIn entries) :
     DefinitionCheckSupport resolve entries trace value type :=
   trace.betaDeclaredWhnfSupport typeCoverage valueCoverage collision typeInference valueInference
-    (reduction.annotate (SynthesisInference.betaTyping.{u,u} typeInference .current (.empty _ _)
-      typeReading trace.typeRun (.empty entries))).1
+    (reduction.annotate (SynthesisInference.betaTyping.{u} typeInference .current (.empty _ _)
+      typeReading trace.typeRun)).1
     valueReading typeReading valueConditions typeConditions references
 
 /-- Operational support for the selected production definition fragment.

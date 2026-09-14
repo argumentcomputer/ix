@@ -97,18 +97,21 @@ increasing sequence of strongly inaccessible cardinals.
   `AxiomObservation.synthesisTypeCheck` extracts an axiom's type check from
   successful `checkEnvAnon` rows; `StandalonePrefix.definitionTypeCheck` extracts
   a definition's check from public declaration success.
-- `LetInferenceCheck.sound` connects the full production let branch to its
+- `SynthesisInference.letE` connects the full production let branch to its
   original declared-type, value, and opened-body synthesis checks. The actual
   value-type hash comparison establishes domain agreement. Fresh let opening,
   type abstraction, value substitution, and the selected cheap-beta operation
   give the returned type and its formation bound. Substituting the original
   checking derivations retains lambda domains and argument checks for later
-  beta steps, including lambdas exposed by the substituted value.
+  beta steps, including lambdas and function types exposed by the substituted
+  value. The original recursive datatype now composes lets in binder domains
+  and bodies, function and argument positions, and other lets. Function-type
+  derivations retain both checked children through dependent substitution.
   `DefinitionBodyTrace.letSupport` uses the same declaration's validation and
-  inference calls to include let bodies in model extension. The three children
-  still belong to the existing `SynthesisInference` fragment; composing lets
-  arbitrarily into that recursive datatype remains open. Finite execution,
-  collision, walker, and selected beta-origin resources remain explicit.
+  inference calls to include let bodies in model extension;
+  `LetInferenceCheck.asSynthesis` connects that interface to the recursive case.
+  Finite execution, collision, walker, and selected beta-origin resources
+  remain explicit, and their general automatic construction remains open.
 - `MethodsLocalState.methodsN` proves structural local-state preservation for
   every production recursive table, including all inference, reduction, and
   conversion branches. The public inference, WHNF, conversion, and sort/forall
@@ -524,7 +527,7 @@ the run. They supply no typing or checker-soundness premise. The proof
 extracts the validation, type-inference, theorem-guard, value-inference, and
 conversion steps from public success, then derives body typing to extend
 the preceding model. General automatic witness construction, broader application and
-lambda paths, arbitrary recursive let inference, inductives, coordinated blocks, and other
+lambda paths, inductives, coordinated blocks, and other
 conversion paths remain outside the fragment. The declaration's exact universe
 arity is carried from production lookup into its model entry. Model extension
 interprets the checked body at every universe instance, retaining old
@@ -580,7 +583,7 @@ lake test --wfail -- tc-unit
 lake -d Models/SetTheory build --wfail
 ```
 
-The consistency target checks 1,250 exact theorem boundaries. The production
+The consistency target checks 1,281 exact theorem boundaries. The production
 environment roots retain four existing generated output-length proofs,
 reached through expression/universe construction, names, and the full
 production method table. They introduce no new native proofs. The model
@@ -666,7 +669,8 @@ bound includes the final unchanged `.done` iteration. The same trace supplies
 These boundaries retain the same two existing native output-length proofs.
 `SynthesisInference.betaTyping` now derives the complete head-beta typing
 structure from every currently supported source-inference constructor.
-`SynthesisBetaTyping` keeps each lambda body and both application children.
+`SynthesisBetaTyping` keeps each lambda body, both application children, and
+both checked children of a function type.
 Its substitution operation rebuilds this structure beneath dependent binders,
 using a proved context insertion to lift the supplied argument. Forward beta
 type conversions preserve a lambda's exact Pi domain, including when cheap
@@ -684,6 +688,17 @@ proofs. This closes automatic semantic origins for finite head-beta paths of
 the supported source-inference fragment. Initial inference trees, operational
 paths, and representation resources remain explicit; deriving them for all
 accepted programs and covering the remaining WHNF/conversion paths remain open.
+Recursive lets use the same derivation: substituting the value into the body
+retains every checked child, including a function type exposed by substitution.
+`SynthesisInference.outputReading` derives returned syntax readings without a
+context-formation premise, so the source derivation can identify compared types
+before the semantic induction. `soundWithHereditary` derives an internal
+semantic invariant closed under dependent substitution and then recovers the
+existing typing, formation, and lambda-spine contracts. Source support contains
+no field for this invariant. The audit explicitly forbids it in the recursive
+let constructor, returned-reading proof, function-type derivation constructor,
+and source derivation producer. The 31 additional boundaries preserve every
+previous exact axiom profile and introduce no axioms or native proofs.
 `BetaPublicWhnfPlan` connects a raw beta path to public WHNF when its result
 is a sort, Pi, or lambda. It computes the context-key states, optional counters,
 shared-fuel charge, and insertions into the structural, no-delta, and outer
@@ -713,8 +728,8 @@ proves immediate reuse with any method table and either current checking
 policy. These ten additional audited roots retain the existing axiom boundary.
 `SynthesisInference.cachedFrom` also accepts the original check after interface
 growth and insertion of locals. `SynthesisRetainedCheck` transports its actual
-inference tree, readings, and execution. Structural inversion of lifted syntax
-recovers the original lambda head, domain, body, and arguments. Pi checks retain
+inference tree, readings, and execution. Complete derivations recover the
+lambda head, domain, body, and arguments after lifting and substitution. Pi checks retain
 both domain and codomain checks; lambda bodies and variable-headed codomains
 retain their dependent argument checks. These origins are used by the same
 synthesis, successive-beta, hereditary-beta, declaration, and environment
@@ -734,7 +749,7 @@ changes, binder scopes, verified loading on both outcomes, and clearing. Every
 present value consequently has an actual producing call, including at newly
 written keys. This operational result needs no catalog or collision premise.
 `SynthesisInference.cacheExecution` extracts full-publication annotations from
-the original application, Pi, lambda, beta-exposure, and changed-beta trees.
+the original application, Pi, lambda, let, beta-exposure, and changed-beta trees.
 Child readings and contexts follow their actual calls and domain checks.
 Primitive leaves need only operational resources; older `BinderInference`
 wrappers additionally supply checking annotations for child calls they omitted.
@@ -754,10 +769,11 @@ value, and opened-body events followed by the parent publication. The same
 `LetInferenceCheck` and its three children's cache data derive this trace,
 the exact fold for both maps, and a history containing every child and parent
 write. Opening and scope cleanup retain those maps. Initially occupied full
-keys remain protected by cache priority without a collision premise. The
-typed `SynthesisCacheHistory` still needs the let case integrated into its
-recursive inference origins before it can retain a let root. The 33 additional
-let and representation audit boundaries preserve the existing axiom policy.
+keys remain protected by cache priority without a collision premise.
+`SynthesisInference.cacheExecution` now retains the let root and all three
+children in the typed `SynthesisCacheHistory` as well. Later full-cache
+selection reconstructs the same recursive let check and its beta origins,
+including when surrounding inference nodes contain lets.
 
 Kernel unit regressions cover lazy loading, both inference policies, interning
 reuse, dependent function types, shared references, lets, `imax` simplification,
@@ -928,12 +944,14 @@ parent, and exited-local entries, through policy changes, successful and failed
 loading, clearing, and repopulation. A forged different input at an occupied
 full key confirms that priority preserves the maps even without collision
 freedom; semantic source recovery separately requires finite collision data.
-Five let regressions check exact child/parent cache maps, zero-fuel replay under
+Eight let regressions check exact child/parent cache maps, zero-fuel replay under
 both policies, clearing and rebuilding, cheap beta in the generated type,
 theorem admission with both cache-clearing settings, nested capture avoidance,
-and cleanup after value-comparison and body-inference failures. They exercise
-production independently of the finite resources used by the proof.
-The unit suite contains 723 checks. The anonymous differential additionally
+and cleanup after value-comparison and body-inference failures. They include
+lets in binder domains and bodies, function positions, nested values, composite
+declaration types, and failures inside nested scopes. They exercise production
+independently of the finite resources used by the proof.
+The unit suite contains 726 checks. The anonymous differential additionally
 serializes eleven cycle-policy fixtures and checks exact target sets, verdicts,
 failure counts, and cycle diagnostics in both implementations.
 
@@ -978,6 +996,9 @@ The VM pilot is preserved in the frozen archive and excluded from the host gate.
 | Source ownership, block registration, and finite preflight | [`Consistency/BlockOwnership.lean`](../Ix/Kernel/Verify/Consistency/BlockOwnership.lean), [`Consistency/SourceOwnershipCheck.lean`](../Ix/Kernel/Verify/Consistency/SourceOwnershipCheck.lean), [`SourceOwnership.lean`](../Ix/Kernel/SourceOwnership.lean) |
 | Dependent binders and function bodies | [`Consistency/BinderInference.lean`](../Ix/Kernel/Verify/Consistency/BinderInference.lean), [`Application.lean`](../Ix/Kernel/Verify/Consistency/Application.lean), [`BinderOpening.lean`](../Ix/Kernel/Verify/Consistency/BinderOpening.lean), [`Context.lean`](../Ix/Kernel/Verify/Consistency/Context.lean), [`Model/Checking.lean`](../Ix/Theory/Model/Checking.lean) |
 | Inferred type formation and direct lambda applications | [`Consistency/SynthesisInference.lean`](../Ix/Kernel/Verify/Consistency/SynthesisInference.lean), [`Formation.lean`](../Ix/Kernel/Verify/Consistency/Formation.lean), [`Model/UniverseBounds.lean`](../Ix/Theory/Model/UniverseBounds.lean) |
+| Recursive synthesis support and returned syntax readings | [`Consistency/SynthesisSupport.lean`](../Ix/Kernel/Verify/Consistency/SynthesisSupport.lean), [`SynthesisReading.lean`](../Ix/Kernel/Verify/Consistency/SynthesisReading.lean), [`SynthesisSource.lean`](../Ix/Kernel/Verify/Consistency/SynthesisSource.lean) |
+| Retained derivations, dependent substitution, and semantic induction | [`Consistency/SynthesisDerivation.lean`](../Ix/Kernel/Verify/Consistency/SynthesisDerivation.lean), [`SynthesisShapes.lean`](../Ix/Kernel/Verify/Consistency/SynthesisShapes.lean), [`SynthesisReduction.lean`](../Ix/Kernel/Verify/Consistency/SynthesisReduction.lean), [`SynthesisMeaning.lean`](../Ix/Kernel/Verify/Consistency/SynthesisMeaning.lean), [`BinderMeaning.lean`](../Ix/Kernel/Verify/Consistency/BinderMeaning.lean), [`BetaChecking.lean`](../Ix/Kernel/Verify/Consistency/BetaChecking.lean) |
+| Let inference and typed cache history | [`Consistency/LetInference.lean`](../Ix/Kernel/Verify/Consistency/LetInference.lean), [`LetSynthesis.lean`](../Ix/Kernel/Verify/Consistency/LetSynthesis.lean), [`LetCache.lean`](../Ix/Kernel/Verify/Consistency/LetCache.lean), [`SynthesisCacheExecution.lean`](../Ix/Kernel/Verify/Consistency/SynthesisCacheExecution.lean) |
 | Public beta WHNF, cache writes, and application Pi exposure | [`Consistency/BetaPublicWhnf.lean`](../Ix/Kernel/Verify/Consistency/BetaPublicWhnf.lean), [`ApplicationWhnf.lean`](../Ix/Kernel/Verify/Consistency/ApplicationWhnf.lean), [`BetaWhnfInference.lean`](../Ix/Kernel/Verify/Consistency/BetaWhnfInference.lean) |
 | Retained type checks and changed cheap beta in lambda inference | [`Consistency/SynthesisInference.lean`](../Ix/Kernel/Verify/Consistency/SynthesisInference.lean), [`CheapBetaReading.lean`](../Ix/Kernel/Verify/Consistency/CheapBetaReading.lean), [`Formation.lean`](../Ix/Kernel/Verify/Consistency/Formation.lean) |
 | Source beta reduction and declaration conversion | [`Consistency/BetaSpine.lean`](../Ix/Kernel/Verify/Consistency/BetaSpine.lean), [`Simultaneous.lean`](../Ix/Kernel/Verify/Consistency/Simultaneous.lean), [`SpineReading.lean`](../Ix/Kernel/Verify/Consistency/SpineReading.lean), [`CheapBeta.lean`](../Ix/Kernel/Verify/Consistency/CheapBeta.lean), [`Model/BetaSpine.lean`](../Ix/Theory/Model/BetaSpine.lean) |

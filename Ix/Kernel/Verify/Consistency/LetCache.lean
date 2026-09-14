@@ -30,6 +30,23 @@ structure CacheData
   value : check.valueTree.CacheData anchor
   body : check.bodyTree.CacheData anchor
 
+def CacheData.asSynthesis
+    {check : LetInferenceCheck resolve entries locals context bounds fuel before name domain value body nonDep info
+      A val b B resultType level} (data : check.CacheData anchor) : check.asSynthesis.CacheData anchor :=
+  ⟨data.domain, data.value, data.body⟩
+
+/-- The let's own publication now retains its original recursive checking
+tree, in addition to the three children's typed publications. -/
+def cacheExecution {result : KExpr .anon} {after : TcState .anon}
+    (check : LetInferenceCheck resolve entries locals context bounds fuel before name domain value body nonDep info
+      A val b B resultType level)
+    (data : check.CacheData anchor)
+    (contextOrigin : SynthesisContext resolve anchor [] [] entries context bounds)
+    (agreement : LocalContextReading resolve locals before.lctx context)
+    (accepted : RecM.infer (.letE name domain value body nonDep info) (methodsN (fuel + 1)) before =
+      .ok result after) : SynthesisCacheRun resolve anchor entries accepted :=
+  check.asSynthesis.cacheExecution data.asSynthesis contextOrigin agreement check.source_reading accepted
+
 /-- Original synthesis trees supply all three operational children. The
 root miss and comparison are taken directly from the checked let execution. -/
 def cacheTrace
@@ -77,6 +94,19 @@ def cacheHistory {result : KExpr .anon} {after : TcState .anon}
     (accepted : RecM.infer (.letE name domain value body nonDep info) (methodsN (fuel + 1)) before =
       .ok result after) : InferenceCacheHistory after :=
   history.afterInference (check.cacheTrace data contextOrigin agreement) accepted
+
+/-- Typed history includes the root let and can reconstruct its retained
+check at a later full-cache hit. -/
+def synthesisCacheHistory {result : KExpr .anon} {after : TcState .anon}
+    (check : LetInferenceCheck resolve entries locals context bounds fuel before name domain value body nonDep info
+      A val b B resultType level)
+    (data : check.CacheData anchor)
+    (contextOrigin : SynthesisContext resolve anchor [] [] entries context bounds)
+    (agreement : LocalContextReading resolve locals before.lctx context)
+    (history : SynthesisCacheHistory resolve anchor entries before)
+    (accepted : RecM.infer (.letE name domain value body nonDep info) (methodsN (fuel + 1)) before =
+      .ok result after) : SynthesisCacheHistory resolve anchor entries after :=
+  history.afterSynthesis check.asSynthesis data.asSynthesis contextOrigin agreement check.source_reading accepted
 
 end LetInferenceCheck
 

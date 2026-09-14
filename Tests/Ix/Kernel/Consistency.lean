@@ -3557,6 +3557,51 @@ private def letFailureCleanup : Bool :=
     | _ => false
   rejectsValue && cleansBody
 
+private def recursiveLetPositions : Bool :=
+  let prop := KExpr.mkSort (m := .anon) .mkZero
+  let sort := KExpr.mkSort (m := .anon) levelOne
+  let sortTwo := KExpr.mkSort (m := .anon) levelTwo
+  let alias := KExpr.mkLet () sort prop (.mkVar 0 ()) false
+  let functionType := KExpr.mkAll () () sort sort
+  let functionValue := KExpr.mkLam () () sort (.mkVar 0 ())
+  let function := KExpr.mkLet () functionType functionValue (.mkVar 0 ()) false
+  let samples := [
+    (KExpr.mkLam () () alias (.mkVar 0 ()), KExpr.mkAll () () alias alias),
+    (KExpr.mkLam () () prop (.mkLet () prop (.mkVar 0 ()) (.mkVar 0 ()) false),
+      KExpr.mkAll () () prop prop),
+    (KExpr.mkAll () () sort (.mkLet () sort (.mkVar 0 ()) (.mkVar 0 ()) false), sortTwo),
+    (KExpr.mkApp function prop, sort),
+    (KExpr.mkLet () sort alias (.mkLam () () (.mkVar 0 ()) (.mkVar 0 ())) false,
+      KExpr.mkAll () () alias alias)]
+  samples.all fun (source, expected) =>
+    match TcM.infer source (TcState.newLazyAnon {}) with
+    | .ok result after => result == expected && after.lctx.size == 0 &&
+        after.env.inferCache[(source.addr, emptyCtxAddr)]? == some expected &&
+        compositeReplayAt source expected after
+    | .error _ _ => false
+
+private def recursiveLetEnvironment : Ixon.Env := Id.run do
+  let alias := Ixon.Expr.letE false (.sort 1) (.sort 0) (.var 0)
+  let firstType := Ixon.Expr.leanAll alias alias
+  let firstValue := Ixon.Expr.leanLam alias (.var 0)
+  let (env, _) := storeConst {}
+    ⟨.defn ⟨.defn, .safe, 0, firstType, firstValue⟩, #[], #[], #[.zero, .succ .zero]⟩
+  let secondType := Ixon.Expr.leanAll (.sort 0) (.sort 0)
+  let secondValue := Ixon.Expr.leanLam (.sort 0) (.letE false (.sort 0) (.var 0) (.var 0))
+  let (env, _) := storeConst env
+    ⟨.defn ⟨.defn, .safe, 0, secondType, secondValue⟩, #[], #[], #[.zero]⟩
+  return env
+
+private def recursiveLetFailureCleanup : Bool :=
+  let prop := KExpr.mkSort (m := .anon) .mkZero
+  let invalid := KExpr.mkLet () prop prop (.mkVar 0 ()) false
+  let source := KExpr.mkLam () () prop invalid
+  match TcM.infer source (TcState.newLazyAnon {}) with
+  | .error .declTypeMismatch after => after.lctx.size == 0 && after.env.nextFVarId == 1 &&
+      !after.env.inferCache.contains (source.addr, emptyCtxAddr) &&
+      !after.env.inferCache.contains (invalid.addr, emptyCtxAddr)
+  | _ => false
+
 private def letCases : TestSeq :=
   test "let inference: dependent type substitution retains exact child caches, replay, and fresh rebuilding"
     letExactCacheHistory
@@ -3569,6 +3614,13 @@ private def letCases : TestSeq :=
     letNestedCapture
   ++ test "let inference: bad values are checked and failed bodies restore scope without publishing the parent"
     letFailureCleanup
+  ++ test "recursive let inference: binder domains, binder bodies, function positions, and nested values compose"
+    recursiveLetPositions
+  ++ test "recursive let admission: composite declared types and bodies survive persistent and cleared caches"
+    (allSucceeded recursiveLetEnvironment 2 { clearEvery := 0 } &&
+      allSucceeded recursiveLetEnvironment 2 { clearEvery := 1 })
+  ++ test "recursive let inference: an invalid inner value unwinds both scopes without parent publication"
+    recursiveLetFailureCleanup
 
 private def compositeCacheCases : TestSeq :=
   test "composite cache: applications survive lazy inference, scopes, replay, and clearing"

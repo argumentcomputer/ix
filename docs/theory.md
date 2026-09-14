@@ -94,7 +94,8 @@ computes each raw substitution result and intern table and proves the actual
 uncached loop under its bound, including the final unchanged iteration.
 Declaration admission uses the same traces. The currently supported source
 inference trees now construct complete beta typing derivations, retaining
-lambda bodies and both application children. Dependent substitution rebuilds
+lambda bodies, both application children, and both checked children of a
+function type. Dependent substitution rebuilds
 these derivations, including under retained binders. Each generated result
 therefore supplies the exact lambda domains and argument origins for every
 later head-beta step. This also handles a lambda whose body's inferred type
@@ -110,10 +111,16 @@ beneath locals and binders. The successful value-type hash comparison supplies
 the domain agreement needed to substitute both the body's typing derivation
 and its inferred-type origin. This retains all subsequent beta origins, including
 a lambda introduced by replacing the let variable. The actual final cheap-beta
-choice determines the returned type. Declaration admission includes these let
-bodies using the same validation and inference calls. The three child checks
-remain in the existing recursive synthesis fragment; arbitrary recursive let
-composition and automatic construction of its finite resources remain open.
+choice determines the returned type. The original recursive synthesis datatype
+now includes this let case, so its children and surrounding binders, applications,
+and cache hits can contain further lets. Declaration admission uses the same
+recursive checks and validation calls. Complete retained derivations recover
+function-type domains and codomains after substitution exposes their constructor.
+Returned syntax readings follow without a context-formation premise; the
+semantic induction then derives an invariant closed under dependent substitution.
+Source support and reconstruction do not assume that invariant, and the audit
+enforces this boundary. Automatic construction of the initial execution and
+finite representation resources remains open.
 Structural local-state preservation now covers the complete recursive checker
 on both success and failure. The actual loader and initial state establish
 coherent lookup and a bound on allocated identifiers. Recursive calls retain
@@ -176,9 +183,10 @@ source. Selection then derives its cached result reading and complete retained
 check, including the original local context and later interface transport.
 The raw execution history also covers full-mode lets, with all three child
 calls before the parent publication. Their original let check and child cache
-data derive both entire maps and the history. Retaining a let root in the typed
-synthesis history still requires its integration into the recursive checking
-datatype.
+data derive both entire maps and the history. The typed synthesis history now
+retains the let root and its descendants through the same recursive checking
+datatype. Later full-cache selection reconstructs these checks with their
+complete beta origins, including lets inside other inference nodes.
 Arbitrary execution construction, compatibility with later contexts after scope
 exit, and the other inference and conversion/cache paths remain open. Frames
 allow new declarations while retaining old ones.
