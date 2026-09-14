@@ -32,6 +32,7 @@ import Ix.Kernel.Verify.Consistency.ConversionRecipe
 import Ix.Kernel.Verify.Consistency.SourceAgreement
 import Ix.Kernel.Verify.Consistency.SourceCache
 import Ix.Kernel.Verify.Consistency.Production
+import Ix.Kernel.Verify.Consistency.Dependencies
 import Ix.Kernel.Verify.Consistency.Environment
 import Ix.Kernel.Verify.Consistency.Audit
 
@@ -47,6 +48,13 @@ polymorphic references, applications, dependent functions, and full-mode lambdas
 under the stated execution resources. Definitions may declare their own
 universe parameters; model entries retain the exact arity and interpretations
 at every instance.
+Safe definition admission now checks its reachable definition dependencies.
+The actual traversal has proved root coverage and an order with a decreasing
+natural-number rank. Finite collision freedom justifies complete reference
+collection through syntax sharing, binders, and lets. Successful validation
+exposes this order to the model-reference proof. Both production checkers
+reject circular safe definitions; general body typing and model construction
+for the ordered declarations remain separate obligations.
 Constant inference supports arbitrary readable entry types, using the actual
 universe-instantiation walker and explicit lookup and finite-support resources.
 The returned type's scope and references justify declaration admission.

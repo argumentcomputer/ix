@@ -41,6 +41,7 @@ import Tests.Ix.Kernel.WhnfTests
 import Tests.Ix.Kernel.InferDefEq
 import Tests.Ix.Kernel.CheckTests
 import Tests.Ix.Kernel.Consistency
+import Tests.Ix.Kernel.DefinitionDependencies
 import Tests.Ix.Kernel.AnonDiff
 import Tests.Ix.Kernel.InitScale
 import Tests.Ix.Kernel.TutorialTc
@@ -110,6 +111,7 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
     ++ Tests.Kernel.Fixtures.suite ++ Tests.Kernel.WhnfTests.suite
     ++ Tests.Kernel.InferDefEq.suite ++ Tests.Kernel.CheckTests.suite
     ++ Tests.Kernel.Consistency.suite
+    ++ Tests.Kernel.DefinitionDependencies.suite
     ++ Tests.Kernel.Roundtrip.unitTests ++ Tests.Kernel.IngressMeta.unitTests),
 ]
 

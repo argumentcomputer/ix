@@ -87,6 +87,7 @@ theorem validateConstWellScoped_sound
       | ok _ nextState =>
           rw [htype] at hrun
           simp only at hrun
+          rw [ReaderT.run_bind, runTcBind] at hrun
           cases hvalue :
               (validateExprWellScoped value 0 levels.toNat).run methods
                 nextState with

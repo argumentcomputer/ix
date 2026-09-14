@@ -292,9 +292,11 @@ theorem DefinitionBodyTrace.scopes {β : Type u} {input : DefinitionInput}
   change EStateM.bind
     ((RecM.validateExprWellScoped input.type 0 input.universes.toNat).run methods)
     _ before = _ at validated
-  obtain ⟨⟨⟩, intermediate, typeRun, valueRun⟩ := bind_success validated
-  change (RecM.validateExprWellScoped input.value 0 input.universes.toNat).run methods
-    intermediate = .ok () trace.validated at valueRun
+  obtain ⟨⟨⟩, intermediate, typeRun, rest⟩ := bind_success validated
+  change EStateM.bind
+    ((RecM.validateExprWellScoped input.value 0 input.universes.toNat).run methods)
+    _ intermediate = _ at rest
+  obtain ⟨⟨⟩, _, valueRun, _⟩ := bind_success rest
   obtain ⟨_, _, _, typeScope⟩ := RecM.validateExprWellScoped_sound typeCoverage collision typeRun
   obtain ⟨_, _, _, valueScope⟩ := RecM.validateExprWellScoped_sound valueCoverage collision valueRun
   exact ⟨readScopedExpr?_annotated_scope valueReading valueScope valueConditions,

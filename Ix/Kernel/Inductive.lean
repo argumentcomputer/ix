@@ -2,6 +2,7 @@ module
 
 public import Ix.Kernel.Knot
 public import Ix.Kernel.CanonicalCheck
+public import Ix.Kernel.DefinitionDependencies
 
 /-!
 Mirror: crates/kernel/src/inductive.rs
@@ -347,6 +348,7 @@ def validateConstWellScoped (c : KConst m) : RecM m Unit := do
   match c with
   | .defn (val := val) .. =>
     validateExprWellScoped val 0 lvlBound
+    checkDefinitionDependencies c
   | .recr (rules := rules) .. =>
     for rule in rules do
       validateExprWellScoped rule.rhs 0 lvlBound

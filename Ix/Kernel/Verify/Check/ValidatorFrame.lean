@@ -284,6 +284,59 @@ theorem validateExprWellScoped_frame
   exact validateExprWellScoped_go_frame bound [(root, rootDepth)] {} {}
     methods I hfault state
 
+/-- Dependency traversal preserves every invariant supported by lazy lookup,
+including on cycle detection, missing references, and other errors. -/
+theorem definitionDependencyStep_frame
+    (walk : DefinitionDependencyState .anon) (methods : Methods .anon)
+    {I : TcState .anon → Prop} (hfault : TcM.LazyFaultPreserves I)
+    (state : TcState .anon) :
+    TcM.WF I state ((definitionDependencyStep walk).run methods)
+      (fun _ _ => True) := by
+  unfold definitionDependencyStep
+  split
+  · exact TcM.WF.pure fun _ => trivial
+  · split
+    · exact TcM.WF.pure fun _ => trivial
+    · split
+      · exact TcM.WF.throw fun _ => trivial
+      · simp only [ReaderT.run_bind]
+        apply TcM.WF.bind (TcM.getConst_frame hfault _ state)
+        intro _ _ _
+        exact TcM.WF.pure fun _ => trivial
+  · split
+    · exact TcM.WF.throw fun _ => trivial
+    · exact TcM.WF.pure fun _ => trivial
+
+theorem definitionDependencyOrder_loop_frame
+    (methods : Methods .anon) {I : TcState .anon → Prop}
+    (hfault : TcM.LazyFaultPreserves I) :
+    ∀ fuel (walk : DefinitionDependencyState .anon) (state : TcState .anon),
+    TcM.WF I state ((runBounded definitionDependencyStep fuel walk).run methods)
+      (fun _ _ => True)
+  | 0, _, _ => TcM.WF.throw fun _ => trivial
+  | fuel + 1, walk, state => by
+      rw [runBounded, ReaderT.run_bind]
+      apply TcM.WF.bind (definitionDependencyStep_frame walk methods hfault state)
+      intro result after _
+      cases result with
+      | next walk => exact definitionDependencyOrder_loop_frame methods hfault fuel walk after
+      | done _ => exact TcM.WF.pure fun _ => trivial
+
+theorem checkDefinitionDependencies_frame
+    (declaration : KConst .anon) (methods : Methods .anon)
+    {I : TcState .anon → Prop} (hfault : TcM.LazyFaultPreserves I)
+    (state : TcState .anon) :
+    TcM.WF I state ((checkDefinitionDependencies declaration).run methods)
+      (fun _ _ => True) := by
+  unfold checkDefinitionDependencies
+  split
+  · rw [ReaderT.run_bind]
+    apply TcM.WF.bind
+      (definitionDependencyOrder_loop_frame methods hfault _ _ state)
+    intro _ _ _
+    exact TcM.WF.pure fun _ => trivial
+  · exact TcM.WF.pure fun _ => trivial
+
 /-- Standalone declaration validation preserves the checker invariant on
 both outcomes.  The resource witness restricts this theorem to the axiom and
 definition shapes owned by declaration-checking. -/
@@ -309,8 +362,10 @@ theorem validateConstWellScoped_frame
       apply TcM.WF.bind
         (validateExprWellScoped_frame type 0 levels.toNat methods hfault state)
       intro _ afterType _
-      exact validateExprWellScoped_frame value 0 levels.toNat methods hfault
-        afterType
+      apply TcM.WF.bind
+        (validateExprWellScoped_frame value 0 levels.toNat methods hfault afterType)
+      intro _ afterValue _
+      exact checkDefinitionDependencies_frame _ methods hfault afterValue
 
 end RecM
 

@@ -6,6 +6,7 @@ public import Ix.CompileM
 public import Ix.KernelCheck
 public import Ix.Meta
 public import Ix.Common
+public import Tests.Ix.Kernel.DefinitionDependencies
 
 /-!
 Anon verdict differential (`tc-anon-diff`, ignored suite).
@@ -122,7 +123,46 @@ def diffSuite : TestSeq := Id.run do
       return (diff?.isNone, compared, skipped, msg)) .done
   return ts
 
-public def suite : List TestSeq := [diffSuite]
+/-- Both checkers process the exact serialized counterexample, with integrity
+verification enabled. Matching error counts alone cannot pass: target sets,
+per-target verdicts, and the cycle diagnostics must also agree. -/
+def dependencyFixtureParity (source : Ixon.Env) (expected failures : Nat) :
+    IO (Bool × Option String) := do
+  let bytes ← match Ixon.serEnv source with
+    | .ok bytes => pure bytes
+    | .error error => return (false, some error)
+  let directory ← IO.FS.createTempDir
+  try
+    let path := directory / "definition-dependencies.ixe"
+    IO.FS.writeBinFile path bytes
+    let rust ← Ix.KernelCheck.rsCheckAnonFFI path.toString true ""
+    let lean ← match checkIxeBytesAnon bytes with
+      | .ok results => pure results
+      | .error error => return (false, some error)
+    let cycle := fun message => ("cyclic definition dependency").isPrefixOf message
+    let correct := rust.size == expected && lean.size == expected &&
+      (lean.filter (·.err?.isSome)).size == failures &&
+      lean.all fun row =>
+        (row.err?.all cycle) && rust.any fun (address, error) =>
+          address == toString row.addr && error.isSome == row.err?.isSome &&
+            error.all (fun
+              | .kernelException message => cycle message
+              | .compileError _ => false)
+    let rustMessages := rust.map fun (address, error) =>
+      (address, error.map Ix.KernelCheck.CheckError.message)
+    return (correct, if correct then none else some s!"expected {expected} targets/{failures} cycle failures; Lean {repr lean}; Rust {repr rustMessages}")
+  finally
+    IO.FS.removeDirAll directory
+
+def dependencyDiffSuite : TestSeq := Id.run do
+  let mut tests : TestSeq := .done
+  for (label, source, targets, failures) in DefinitionDependencies.parityFixtures do
+    tests := tests ++ .individualIO s!"anon verdict parity: {label}" none (do
+      let (passed, message) ← dependencyFixtureParity source targets failures
+      return (passed, targets, failures, message)) .done
+  return tests
+
+public def suite : List TestSeq := [diffSuite, dependencyDiffSuite]
 
 end
 

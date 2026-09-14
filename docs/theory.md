@@ -31,6 +31,13 @@ retain the exact declared universe count and denote the checked body at every
 universe instance. Application spines headed by locals
 or admitted polymorphic constants derive their type's validity from the context
 or dependency model, then check arguments and substitute the dependent result.
+Safe definition admission also rejects circular justification in both Lean and
+Rust, including `theorem loop : P := loop` with only `P : Prop` assumed. The
+production dependency walk returns an order with a proved decreasing rank;
+finite collision freedom ensures its memoized collector includes every syntax
+reference. Successful validation exposes that order to the model-reference
+proof. Constructing interpretations for all coordinated declarations remains
+part of the full checker refinement.
 Constant cache hits derive the same typing from concrete agreement with pure
 universe substitution of a loaded declaration; sort hits use the canonical
 successor sort. Sort and already-loaded constant inference preserve agreement

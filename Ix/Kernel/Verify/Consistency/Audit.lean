@@ -10,6 +10,7 @@ import Ix.Kernel.Verify.Consistency.RecursiveCache
 import Ix.Kernel.Verify.Consistency.RecursiveState
 import Ix.Kernel.Verify.Consistency.SourceAgreement
 import Ix.Kernel.Verify.Consistency.SourceCache
+import Ix.Kernel.Verify.Consistency.Dependencies
 import Ix.Kernel.Verify.Audit.Basic
 
 /-! Exact full-dependency boundaries for the direct model-refinement roots.
@@ -239,6 +240,30 @@ private def forbiddenProduction : Array Lean.Name := #[
 ]
 
 def roots : Array RootAllowance := #[
+  { root := ``DefinitionDependencies.Ordered.closed, standardAxioms := #[``propext, ``Quot.sound],
+    forbiddenDependencies := forbiddenProduction },
+  { root := ``DefinitionDependencies.Ordered.ranked, standardAxioms := standard,
+    forbiddenDependencies := forbiddenProduction },
+  { root := ``DefinitionDependencies.Ordered.wellFounded, standardAxioms := standard,
+    forbiddenDependencies := forbiddenProduction },
+  { root := ``DefinitionDependencies.WalkInvariant.initial, standardAxioms := standard,
+    forbiddenDependencies := forbiddenProduction },
+  { root := ``DefinitionDependencies.step_certificate, standardAxioms := standard,
+    forbiddenDependencies := forbiddenProduction },
+  { root := ``DefinitionDependencies.loop_certificate, standardAxioms := standard,
+    forbiddenDependencies := forbiddenProduction },
+  { root := ``DefinitionDependencies.order_certificate, standardAxioms := standard,
+    forbiddenDependencies := forbiddenProduction },
+  { root := ``DefinitionDependencies.order_sound, standardAxioms := standard,
+    forbiddenDependencies := forbiddenProduction },
+  { root := ``DefinitionReferences.definitionRefs_complete, standardAxioms := standard,
+    forbiddenDependencies := forbiddenProduction },
+  { root := ``readScopedExpr?_referencesIn, standardAxioms := standard,
+    forbiddenDependencies := forbiddenProduction },
+  { root := ``DefinitionBodyTrace.dependencyOrder, standardAxioms := standard,
+    nativeAxioms := #[expressionNative, levelNative], forbiddenDependencies := forbiddenProduction },
+  { root := ``DefinitionBodyTrace.referencesIn, standardAxioms := standard,
+    nativeAxioms := #[expressionNative, levelNative], forbiddenDependencies := forbiddenProduction },
   { root := ``ConversionRecipe.run_predict, standardAxioms := standard,
     forbiddenDependencies := forbiddenProduction },
   { root := ``Ix.Kernel.ConversionRecipe.run_bind, standardAxioms := #[``propext, ``Quot.sound],

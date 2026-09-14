@@ -365,6 +365,25 @@ def useSort.{u} (A : Sort u) (a : A) : A := idSort.{u} A a
   including cache clearing. `AtomicDefinitionRun.no_self_alias`
   proves that a fresh definition cannot justify its own type by referring to
   itself.
+- Safe definition admission now checks the reachable definition graph in both
+  Lean and Rust. Without this guard, the content-addressed source loader and
+  checker accepted `theorem loop : P := loop` with only `P : Prop` as an axiom,
+  including through a one-member mutual block. The new traversal follows type
+  and value references under applications, binders, and lets, and includes
+  projection heads. It rejects cycles and exhaustion of its shared one-million
+  step bound. Axioms, inductives, constructors, and recursors are leaves with
+  separate admission rules; partial and unsafe definitions retain their safety
+  policy. Acyclic mutual definitions remain supported.
+- `DefinitionDependencies.order_sound` derives a concrete dependency order from
+  the production walk. Every entry is fresh and its collected dependencies
+  precede it; `Ordered.wellFounded` derives a decreasing natural-number rank.
+  The certificate covers the requested roots and can retain a lookup agreement
+  relation. `DefinitionReferences.definitionRefs_complete` proves that memoization
+  cannot omit a syntax reference, under finite-run collision freedom.
+  `DefinitionBodyTrace.dependencyOrder` extracts the actual walk from successful
+  safe validation, and `.referencesIn` connects that order to the references of
+  the model's reading. Admission of every entry in that order still needs the
+  broader body-typing and model-extension proofs.
 - `checkEnvAnon` returns `.ok results` **and every result row has no error**.
   The outer `.ok` alone does not mean that the declarations passed.
 
@@ -396,7 +415,7 @@ constructors. They compare exact axiom sets and record direct origins of
 metatheory. The named-specification audit checks 441 assertions against exact
 dependency manifests.
 
-The same traversal covers 2,034 kernel manifest roots. Direct dependency
+The same traversal covers 2,037 kernel manifest roots. Direct dependency
 lookups are cached within a fixed environment, while each root's reachable
 declarations, axioms, and proof-hole origins are computed separately.
 
@@ -429,7 +448,7 @@ lake test --wfail -- tc-unit
 lake -d Models/SetTheory build --wfail
 ```
 
-The consistency target checks 355 exact theorem boundaries. The production
+The consistency target checks 367 exact theorem boundaries. The production
 environment roots retain four existing generated output-length proofs,
 reached through expression/universe construction, names, and the full
 production method table. They introduce no new native proofs. The model
@@ -519,7 +538,13 @@ later Prop/Type instances, exact loaded arities, and unused parameters. They
 reject undeclared parameters, out-of-range value parameters, different
 in-range parameters in place of the declared type, non-Prop theorem types,
 and missing arguments for unused parameters.
-The unit suite contains 564 checks.
+Definition-cycle regressions use content-addressed standalone and mutual
+declarations, including a self-justifying theorem, a two-member cycle, type
+cycles, lets, shared syntax, and binders. They check repeated member failures,
+acyclic forward references, cache clearing, and the partial/unsafe policy.
+The unit suite contains 578 checks. The anonymous differential additionally
+serializes eight cycle-policy fixtures and checks exact target sets, verdicts,
+failure counts, and cycle diagnostics in both implementations.
 
 ## Certified host adapters
 
