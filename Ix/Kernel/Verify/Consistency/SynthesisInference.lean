@@ -118,9 +118,7 @@ inductive SynthesisInference {β : Type u}
       SynthesisInference resolve entries locals context bounds (fuel + 1) before (.lam name bi domain body info)
         (.lam condition A b) (.forallE condition A B) (.imax (readLevel trace.domainLevel) bodyLevel)
   | lamBeta {entries locals context bounds fuel before name bi domain body info A b condition
-      domainBoundLevel bodyLevel headCondition headDomain headBody arguments
-      earlier typeLocals typeContext typeBounds typeFuel typeBefore typeAfter typeSource typeResult
-      originCondition originDomain originBody originArguments originLevel originBound reducedLevel}
+      domainBoundLevel bodyLevel headCondition headDomain headBody arguments reducedLevel}
       (full : before.inferOnly = false)
       (miss : UncachedInference before (.lam name bi domain body info))
       (trace : LambdaBodyTrace fuel miss.keyed name bi domain body)
@@ -131,22 +129,8 @@ inductive SynthesisInference {β : Type u}
       (bodyTree : SynthesisInference resolve entries (trace.fresh :: locals) (context.push A)
         (readLevel trace.domainLevel :: bounds) fuel trace.openedState trace.opened b
         ((AExpr.lam headCondition headDomain headBody).appN arguments) bodyLevel)
-      (typeContextSupport : SynthesisContext resolve entries context bounds earlier typeContext typeBounds)
-      (typeTree : SynthesisInference resolve earlier typeLocals typeContext typeBounds typeFuel typeBefore
-        typeSource ((AExpr.lam originCondition originDomain originBody).appN originArguments)
-        (.sort originLevel) originBound)
-      (typeAgreement : LocalContextReading resolve typeLocals typeBefore.lctx typeContext)
-      (typeReading : readScopedExpr? resolve typeLocals typeSource =
-        some ((AExpr.lam originCondition originDomain originBody).appN originArguments).erase)
-      (typeRun : RecM.infer typeSource (methodsN typeFuel) typeBefore = .ok typeResult typeAfter)
-      (originPrefix : cheapBetaCount trace.bodyType ≤ originBody.lambdaDepth + 1)
-      (transport : SynthesisTypeTransport resolve entries context bounds earlier typeContext
-        ((AExpr.lam originCondition originDomain originBody).appN originArguments)
-        (AExpr.betaPrefix (cheapBetaCount trace.bodyType) (.lam originCondition originDomain originBody)
-          originArguments) originLevel entries (context.push A)
-        ((AExpr.lam headCondition headDomain headBody).appN arguments)
-        (AExpr.betaPrefix (cheapBetaCount trace.bodyType) (.lam headCondition headDomain headBody) arguments)
-        reducedLevel)
+      (origin : SynthesisReductionOrigin resolve entries context bounds entries (context.push A)
+        (.lam headCondition headDomain headBody) arguments (cheapBetaCount trace.bodyType) reducedLevel)
       (reduction : CheapBetaSupport trace.bodyType trace.bodyState.env.intern)
       (conditionAgrees : condition = Certified.zeroCondition reducedLevel)
       (constructed : trace.reduced.1.Constructed)
@@ -229,29 +213,9 @@ of an earlier declaration's type. No semantic typing field is accepted. -/
 inductive SynthesisTypingOrigin {β : Type u} (resolve : Address → Option (ConstRef β)) :
     Model.Environment β → Model.Context β → List VLevel →
       Model.Environment β → Model.Context β → AExpr β → AExpr β → Type u
-  | checked {incoming incomingContext incomingBounds entries context bounds locals fuel before after source result
-      term type level}
-      (contextOrigin : SynthesisContext resolve incoming incomingContext incomingBounds entries context bounds)
-      (tree : SynthesisInference resolve entries locals context bounds fuel before source term type level)
-      (agreement : LocalContextReading resolve locals before.lctx context)
-      (reading : readScopedExpr? resolve locals source = some term.erase)
-      (accepted : RecM.infer source (methodsN fuel) before = .ok result after) :
+  | source {incoming incomingContext incomingBounds entries context term type}
+      (check : SynthesisCheckedOrigin resolve incoming incomingContext incomingBounds entries context term type) :
       SynthesisTypingOrigin resolve incoming incomingContext incomingBounds entries context term type
-  | applicationArgument {incoming incomingContext incomingBounds entries context bounds locals fuel before fn arg
-      f a domain argumentType body condition functionLevel argumentLevel}
-      (contextOrigin : SynthesisContext resolve incoming incomingContext incomingBounds entries context bounds)
-      (trace : ApplicationInferenceTrace fuel before fn arg)
-      (functionTree : SynthesisInference resolve entries locals context bounds fuel before fn
-        f (.forallE condition domain body) functionLevel)
-      (argumentTree : SynthesisInference resolve entries locals context bounds fuel trace.functionState arg
-        a argumentType argumentLevel)
-      (agreement : LocalContextReading resolve locals before.lctx context)
-      (functionReading : readScopedExpr? resolve locals fn = some f.erase)
-      (argumentReading : readScopedExpr? resolve locals arg = some a.erase)
-      (conditions : argumentType.annotations = domain.annotations)
-      (hashPath : (trace.argumentType == trace.domain) = true)
-      (comparisonFaithful : trace.argumentType.AddrFaithful trace.domain) :
-      SynthesisTypingOrigin resolve incoming incomingContext incomingBounds entries context a domain
   | weaken {incoming incomingContext incomingBounds entries context term type}
       (prior : SynthesisTypingOrigin resolve incoming incomingContext incomingBounds entries context term type)
       (domain : AExpr β) :
@@ -287,7 +251,243 @@ inductive SynthesisTypingOrigin {β : Type u} (resolve : Address → Option (Con
       SynthesisTypingOrigin resolve incoming incomingContext incomingBounds entries targetContext
         (term.inst argument cutoff) (type.inst argument cutoff)
 
+/-- Actual inference calls retain the syntactic lambda domains of their
+source term. Application arguments additionally retain the comparison with
+the function's domain, before any later transport of this checking origin. -/
+inductive SynthesisCheckedOrigin {β : Type u} (resolve : Address → Option (ConstRef β)) :
+    Model.Environment β → Model.Context β → List VLevel →
+      Model.Environment β → Model.Context β → AExpr β → AExpr β → Type u
+  | checked {incoming incomingContext incomingBounds entries context bounds locals fuel before after source result
+      term type level}
+      (contextOrigin : SynthesisContext resolve incoming incomingContext incomingBounds entries context bounds)
+      (tree : SynthesisInference resolve entries locals context bounds fuel before source term type level)
+      (agreement : LocalContextReading resolve locals before.lctx context)
+      (reading : readScopedExpr? resolve locals source = some term.erase)
+      (accepted : RecM.infer source (methodsN fuel) before = .ok result after) :
+      SynthesisCheckedOrigin resolve incoming incomingContext incomingBounds entries context term type
+  | applicationArgument {incoming incomingContext incomingBounds entries context bounds locals fuel before fn arg
+      f a domain argumentType body condition functionLevel argumentLevel}
+      (contextOrigin : SynthesisContext resolve incoming incomingContext incomingBounds entries context bounds)
+      (trace : ApplicationInferenceTrace fuel before fn arg)
+      (functionTree : SynthesisInference resolve entries locals context bounds fuel before fn
+        f (.forallE condition domain body) functionLevel)
+      (argumentTree : SynthesisInference resolve entries locals context bounds fuel trace.functionState arg
+        a argumentType argumentLevel)
+      (agreement : LocalContextReading resolve locals before.lctx context)
+      (functionReading : readScopedExpr? resolve locals fn = some f.erase)
+      (argumentReading : readScopedExpr? resolve locals arg = some a.erase)
+      (conditions : argumentType.annotations = domain.annotations)
+      (hashPath : (trace.argumentType == trace.domain) = true)
+      (comparisonFaithful : trace.argumentType.AddrFaithful trace.domain) :
+      SynthesisCheckedOrigin resolve incoming incomingContext incomingBounds entries context a domain
+  | binderArgument {incoming incomingContext incomingBounds entries context locals fuel before fn arg
+      f a domain argumentType body condition}
+      (trace : ApplicationInferenceTrace fuel before fn arg)
+      (functionTree : BinderInference resolve entries locals context fuel before fn
+        f (.forallE condition domain body))
+      (head : SynthesisHead f)
+      (argumentTree : BinderInference resolve entries locals context fuel trace.functionState arg a argumentType)
+      (agreement : LocalContextReading resolve locals before.lctx context)
+      (functionReading : readScopedExpr? resolve locals fn = some f.erase)
+      (argumentReading : readScopedExpr? resolve locals arg = some a.erase)
+      (conditions : argumentType.annotations = domain.annotations)
+      (hashPath : (trace.argumentType == trace.domain) = true)
+      (comparisonFaithful : trace.argumentType.AddrFaithful trace.domain) :
+      SynthesisCheckedOrigin resolve incoming incomingContext incomingBounds entries context a domain
+
+/-- The argument checks along an actual application spine, retained in
+application order so later substitutions can update each dependent type. -/
+inductive SynthesisArgumentSpineOrigin {β : Type u} (resolve : Address → Option (ConstRef β)) :
+    Model.Environment β → Model.Context β → List VLevel →
+      Model.Environment β → Model.Context β → AExpr β → List (AExpr β) → AExpr β → Type u
+  | nil {incoming incomingContext incomingBounds entries context} (type : AExpr β) :
+      SynthesisArgumentSpineOrigin resolve incoming incomingContext incomingBounds entries context type [] type
+  | snoc {incoming incomingContext incomingBounds entries context start arguments condition domain body argument}
+      (prior : SynthesisArgumentSpineOrigin resolve incoming incomingContext incomingBounds entries context
+        start arguments (.forallE condition domain body))
+      (checked : SynthesisTypingOrigin resolve incoming incomingContext incomingBounds entries context argument domain) :
+      SynthesisArgumentSpineOrigin resolve incoming incomingContext incomingBounds entries context
+        start (arguments ++ [argument]) (body.inst argument)
+
+/-- A beta reduction can come from an earlier checked lambda prefix, or
+from an actual lambda argument substituted for the head of a checked
+variable application. Both cases retain the checks of all applied arguments. -/
+inductive SynthesisReductionOrigin {β : Type u} (resolve : Address → Option (ConstRef β)) :
+    Model.Environment β → Model.Context β → List VLevel →
+      Model.Environment β → Model.Context β → AExpr β → List (AExpr β) → Nat → VLevel → Type u
+  | checked {incoming incomingContext incomingBounds entries context head arguments count level
+      earlier typeLocals typeContext typeBounds typeFuel typeBefore typeAfter typeSource typeResult
+      originCondition originDomain originBody originArguments originLevel originBound}
+      (typeContextSupport : SynthesisContext resolve incoming incomingContext incomingBounds
+        earlier typeContext typeBounds)
+      (typeTree : SynthesisInference resolve earlier typeLocals typeContext typeBounds typeFuel typeBefore
+        typeSource ((AExpr.lam originCondition originDomain originBody).appN originArguments)
+        (.sort originLevel) originBound)
+      (typeAgreement : LocalContextReading resolve typeLocals typeBefore.lctx typeContext)
+      (typeReading : readScopedExpr? resolve typeLocals typeSource =
+        some ((AExpr.lam originCondition originDomain originBody).appN originArguments).erase)
+      (typeRun : RecM.infer typeSource (methodsN typeFuel) typeBefore = .ok typeResult typeAfter)
+      (originPrefix : count ≤ originBody.lambdaDepth + 1)
+      (transport : SynthesisTypeTransport resolve incoming incomingContext incomingBounds earlier typeContext
+        ((AExpr.lam originCondition originDomain originBody).appN originArguments)
+        (AExpr.betaPrefix count (.lam originCondition originDomain originBody) originArguments) originLevel
+        entries context (head.appN arguments) (AExpr.betaPrefix count head arguments) level) :
+      SynthesisReductionOrigin resolve incoming incomingContext incomingBounds entries context head arguments count level
+  | substitutedVariable {incoming incomingContext incomingBounds entries base source target
+      type domain argument arguments cutoff count level}
+      (spine : SynthesisArgumentSpineOrigin resolve incoming incomingContext incomingBounds
+        entries source type arguments (.sort level))
+      (atIndex : source[cutoff]? = some type)
+      (checked : SynthesisCheckedOrigin resolve incoming incomingContext incomingBounds entries base argument domain)
+      (substitution : ContextSubstitution base domain argument source target cutoff)
+      (enough : count ≤ argument.lambdaDepth) :
+      SynthesisReductionOrigin resolve incoming incomingContext incomingBounds entries target
+        (argument.liftN cutoff) (arguments.map (AExpr.inst · argument cutoff)) count level
+  | map {incoming incomingContext incomingBounds earlier priorContext head arguments count bound
+      entries context current currentArguments level}
+      (prior : SynthesisReductionOrigin resolve incoming incomingContext incomingBounds
+        earlier priorContext head arguments count bound)
+      (transport : SynthesisTypeTransport resolve incoming incomingContext incomingBounds earlier priorContext
+        (head.appN arguments) (AExpr.betaPrefix count head arguments) bound entries context
+        (current.appN currentArguments) (AExpr.betaPrefix count current currentArguments) level) :
+      SynthesisReductionOrigin resolve incoming incomingContext incomingBounds
+        entries context current currentArguments count level
+
 end
+
+/-- Earlier argument checks can cross another local binder without any
+new inference of their lifted expressions. -/
+def SynthesisArgumentSpineOrigin.weaken {β : Type u} {resolve : Address → Option (ConstRef β)}
+    {incoming entries : Model.Environment β} {incomingContext context : Model.Context β}
+    {incomingBounds : List VLevel} {start result : AExpr β} {arguments : List (AExpr β)}
+    (support : SynthesisArgumentSpineOrigin resolve incoming incomingContext incomingBounds
+      entries context start arguments result) (domain : AExpr β) :
+    SynthesisArgumentSpineOrigin resolve incoming incomingContext incomingBounds entries (context.push domain)
+      (start.liftN 1) (arguments.map (AExpr.liftN 1 ·)) (result.liftN 1) :=
+  match support with
+  | .nil _ => .nil _
+  | .snoc prior checked => by
+      simpa only [List.map_append, List.map_cons, List.map_nil, AExpr.liftN_inst_zero] using
+        (prior.weaken domain).snoc (checked.weaken domain)
+termination_by structural support
+
+def SynthesisArgumentSpineOrigin.instantiate {β : Type u} {resolve : Address → Option (ConstRef β)}
+    {incoming entries : Model.Environment β} {incomingContext context : Model.Context β}
+    {incomingBounds : List VLevel} {start result : AExpr β} {arguments : List (AExpr β)}
+    (support : SynthesisArgumentSpineOrigin resolve incoming incomingContext incomingBounds
+      entries context start arguments result) (levels : List VLevel) :
+    SynthesisArgumentSpineOrigin resolve incoming incomingContext incomingBounds
+      entries (context.map (AExpr.instL levels)) (start.instL levels)
+      (arguments.map (AExpr.instL levels)) (result.instL levels) :=
+  match support with
+  | .nil _ => .nil _
+  | .snoc prior checked => by
+      simpa only [List.map_append, List.map_cons, List.map_nil, AExpr.instL_inst] using
+        (prior.instantiate levels).snoc (checked.instantiate levels)
+termination_by structural support
+
+def SynthesisArgumentSpineOrigin.appendContext {β : Type u} {resolve : Address → Option (ConstRef β)}
+    {incoming entries : Model.Environment β} {incomingContext context : Model.Context β}
+    {incomingBounds : List VLevel} {start result : AExpr β} {arguments : List (AExpr β)}
+    (support : SynthesisArgumentSpineOrigin resolve incoming incomingContext incomingBounds
+      entries context start arguments result) (outer : Model.Context β) :
+    SynthesisArgumentSpineOrigin resolve incoming incomingContext incomingBounds
+      entries (context ++ outer) start arguments result :=
+  match support with
+  | .nil _ => .nil _
+  | .snoc prior checked => (prior.appendContext outer).snoc (checked.appendContext outer)
+termination_by structural support
+
+def SynthesisArgumentSpineOrigin.extend {β : Type u} {resolve : Address → Option (ConstRef β)}
+    {incoming earlier entries : Model.Environment β} {incomingContext context : Model.Context β}
+    {incomingBounds : List VLevel} {start result : AExpr β} {arguments : List (AExpr β)}
+    (support : SynthesisArgumentSpineOrigin resolve incoming incomingContext incomingBounds
+      earlier context start arguments result) (extension : InterfaceExtends earlier entries) :
+    SynthesisArgumentSpineOrigin resolve incoming incomingContext incomingBounds entries context start arguments result :=
+  match support with
+  | .nil _ => .nil _
+  | .snoc prior checked => (prior.extend extension).snoc (checked.extend extension)
+termination_by structural support
+
+def SynthesisArgumentSpineOrigin.substituteAt {β : Type u} {resolve : Address → Option (ConstRef β)}
+    {incoming entries : Model.Environment β} {incomingContext base source target : Model.Context β}
+    {incomingBounds : List VLevel} {start result domain argument : AExpr β}
+    {arguments : List (AExpr β)} {cutoff : Nat}
+    (support : SynthesisArgumentSpineOrigin resolve incoming incomingContext incomingBounds
+      entries source start arguments result)
+    (value : SynthesisTypingOrigin resolve incoming incomingContext incomingBounds entries base argument domain)
+    (substitution : ContextSubstitution base domain argument source target cutoff) :
+    SynthesisArgumentSpineOrigin resolve incoming incomingContext incomingBounds entries target
+      (start.inst argument cutoff) (arguments.map (AExpr.inst · argument cutoff)) (result.inst argument cutoff) :=
+  match support with
+  | .nil _ => .nil _
+  | .snoc prior checked => by
+      simpa only [List.map_append, List.map_cons, List.map_nil, AExpr.inst_inst_zero] using
+        (prior.substituteAt value substitution).snoc (checked.substituteAt value substitution)
+termination_by structural support
+
+/-- The head of a checked variable application uses the exact local type;
+its argument checks remain available after leaving the original scope. -/
+structure SynthesisVariableSpineOrigin {β : Type u} (resolve : Address → Option (ConstRef β))
+    (incoming : Model.Environment β) (incomingContext : Model.Context β) (incomingBounds : List VLevel)
+    (entries : Model.Environment β) (context : Model.Context β) (index : Nat)
+    (arguments : List (AExpr β)) (type : AExpr β) where
+  headType : AExpr β
+  atIndex : context[index]? = some headType
+  spine : SynthesisArgumentSpineOrigin resolve incoming incomingContext incomingBounds
+    entries context headType arguments type
+
+def SynthesisVariableSpineOrigin.appendContext {β : Type u} {resolve : Address → Option (ConstRef β)}
+    {incoming entries : Model.Environment β} {incomingContext context : Model.Context β}
+    {incomingBounds : List VLevel} {type : AExpr β} {arguments : List (AExpr β)} {index : Nat}
+    (support : SynthesisVariableSpineOrigin resolve incoming incomingContext incomingBounds
+      entries context index arguments type) (outer : Model.Context β) :
+    SynthesisVariableSpineOrigin resolve incoming incomingContext incomingBounds
+      entries (context ++ outer) index arguments type :=
+  { headType := support.headType
+    atIndex := by
+      rw [List.getElem?_append_left (List.getElem?_eq_some_iff.mp support.atIndex).1]
+      exact support.atIndex
+    spine := support.spine.appendContext outer }
+
+def SynthesisVariableSpineOrigin.instantiate {β : Type u} {resolve : Address → Option (ConstRef β)}
+    {incoming entries : Model.Environment β} {incomingContext context : Model.Context β}
+    {incomingBounds : List VLevel} {type : AExpr β} {arguments : List (AExpr β)} {index : Nat}
+    (support : SynthesisVariableSpineOrigin resolve incoming incomingContext incomingBounds
+      entries context index arguments type) (levels : List VLevel) :
+    SynthesisVariableSpineOrigin resolve incoming incomingContext incomingBounds
+      entries (context.map (AExpr.instL levels)) index (arguments.map (AExpr.instL levels)) (type.instL levels) :=
+  { headType := support.headType.instL levels
+    atIndex := by simp only [List.getElem?_map, support.atIndex, Option.map_some]
+    spine := support.spine.instantiate levels }
+
+def SynthesisVariableSpineOrigin.extend {β : Type u} {resolve : Address → Option (ConstRef β)}
+    {incoming earlier entries : Model.Environment β} {incomingContext context : Model.Context β}
+    {incomingBounds : List VLevel} {type : AExpr β} {arguments : List (AExpr β)} {index : Nat}
+    (support : SynthesisVariableSpineOrigin resolve incoming incomingContext incomingBounds
+      earlier context index arguments type) (extension : InterfaceExtends earlier entries) :
+    SynthesisVariableSpineOrigin resolve incoming incomingContext incomingBounds entries context index arguments type :=
+  { headType := support.headType
+    atIndex := support.atIndex
+    spine := support.spine.extend extension }
+
+/-- Applying an earlier parameter preserves a later variable-headed
+codomain and updates every retained argument check in its dependent context. -/
+def SynthesisVariableSpineOrigin.substituteAt {β : Type u} {resolve : Address → Option (ConstRef β)}
+    {incoming entries : Model.Environment β} {incomingContext base source target : Model.Context β}
+    {incomingBounds : List VLevel} {type domain argument : AExpr β}
+    {arguments : List (AExpr β)} {index cutoff : Nat}
+    (support : SynthesisVariableSpineOrigin resolve incoming incomingContext incomingBounds
+      entries source index arguments type)
+    (value : SynthesisTypingOrigin resolve incoming incomingContext incomingBounds entries base argument domain)
+    (substitution : ContextSubstitution base domain argument source target cutoff)
+    (distinct : index ≠ cutoff) :
+    SynthesisVariableSpineOrigin resolve incoming incomingContext incomingBounds entries target
+      (if index < cutoff then index else index - 1)
+      (arguments.map (AExpr.inst · argument cutoff)) (type.inst argument cutoff) :=
+  { headType := support.headType.inst argument cutoff
+    atIndex := substitution.lookup_other support.atIndex distinct
+    spine := support.spine.substituteAt value substitution }
 
 /-- The checked argument transports an already justified original beta
 prefix to its substituted application result. The two resulting expressions
@@ -345,8 +545,8 @@ def ApplicationInferenceTrace.substituteTypeOriginAt {β : Type u} {resolve : Ad
       (AExpr.betaPrefix count (head.inst argument cutoff)
         (arguments.map (AExpr.inst · argument cutoff))) bound :=
   prior.substitutePrefixAt enough
-    (.applicationArgument argumentContext trace functionTree argumentTree agreement functionReading argumentReading
-      conditions hashPath comparisonFaithful) substitution
+    (.source (.applicationArgument argumentContext trace functionTree argumentTree agreement
+      functionReading argumentReading conditions hashPath comparisonFaithful)) substitution
 
 /-- Reuse a codomain check from an earlier closed function type at the
 actual application site. The old function parameter keeps index zero while
@@ -384,6 +584,68 @@ def ApplicationInferenceTrace.substituteTypeOrigin {β : Type u} {resolve : Addr
       prior.appendContext (context.map (AExpr.liftN 1 ·))
   exact trace.substituteTypeOriginAt (.pure imported) enough argumentContext functionTree argumentTree
     agreement functionReading argumentReading conditions hashPath comparisonFaithful .root
+
+/-- Substituting an actual lambda argument for a checked variable head
+exposes its own checked prefix, even though the original type had no leading
+lambda. Remaining dependent parameters are handled at the same cutoff. -/
+def ApplicationInferenceTrace.exposedTypeOriginAt {β : Type u} {resolve : Address → Option (ConstRef β)}
+    {incoming entries : Model.Environment β}
+    {incomingContext context sourceContext targetContext : Model.Context β}
+    {incomingBounds bounds : List VLevel} {domain argumentType argument f body : AExpr β}
+    {condition : Certified.PropWhen} {arguments : List (AExpr β)}
+    {level functionBound argumentBound : VLevel} {count cutoff fuel : Nat}
+    {locals : List FVarId} {before : TcState .anon} {fn rawArgument : KExpr .anon}
+    (trace : ApplicationInferenceTrace fuel before fn rawArgument)
+    (origin : SynthesisVariableSpineOrigin resolve incoming incomingContext incomingBounds
+      entries sourceContext cutoff arguments (.sort level))
+    (enough : count ≤ argument.lambdaDepth)
+    (argumentContext : SynthesisContext resolve incoming incomingContext incomingBounds entries context bounds)
+    (functionTree : SynthesisInference resolve entries locals context bounds fuel before fn
+      f (.forallE condition domain body) functionBound)
+    (argumentTree : SynthesisInference resolve entries locals context bounds fuel trace.functionState rawArgument
+      argument argumentType argumentBound)
+    (agreement : LocalContextReading resolve locals before.lctx context)
+    (functionReading : readScopedExpr? resolve locals fn = some f.erase)
+    (argumentReading : readScopedExpr? resolve locals rawArgument = some argument.erase)
+    (conditions : argumentType.annotations = domain.annotations)
+    (hashPath : (trace.argumentType == trace.domain) = true)
+    (comparisonFaithful : trace.argumentType.AddrFaithful trace.domain)
+    (substitution : ContextSubstitution context domain argument sourceContext targetContext cutoff) :
+    SynthesisReductionOrigin resolve incoming incomingContext incomingBounds entries targetContext
+      (argument.liftN cutoff) (arguments.map (AExpr.inst · argument cutoff)) count level :=
+  .substitutedVariable origin.spine origin.atIndex
+    (.applicationArgument argumentContext trace functionTree argumentTree agreement functionReading argumentReading
+      conditions hashPath comparisonFaithful) substitution enough
+
+/-- Later actual arguments continue transporting an exposed prefix and
+its reduction, including through dependent domains still left open. -/
+def ApplicationInferenceTrace.substituteReductionOriginAt {β : Type u}
+    {resolve : Address → Option (ConstRef β)} {incoming entries : Model.Environment β}
+    {incomingContext context sourceContext targetContext : Model.Context β}
+    {incomingBounds bounds : List VLevel} {head domain argumentType argument f body : AExpr β}
+    {condition : Certified.PropWhen} {arguments : List (AExpr β)}
+    {level functionBound argumentBound : VLevel} {count cutoff fuel : Nat}
+    {locals : List FVarId} {before : TcState .anon} {fn rawArgument : KExpr .anon}
+    (trace : ApplicationInferenceTrace fuel before fn rawArgument)
+    (origin : SynthesisReductionOrigin resolve incoming incomingContext incomingBounds
+      entries sourceContext head arguments count level)
+    (enough : count ≤ head.lambdaDepth)
+    (argumentContext : SynthesisContext resolve incoming incomingContext incomingBounds entries context bounds)
+    (functionTree : SynthesisInference resolve entries locals context bounds fuel before fn
+      f (.forallE condition domain body) functionBound)
+    (argumentTree : SynthesisInference resolve entries locals context bounds fuel trace.functionState rawArgument
+      argument argumentType argumentBound)
+    (agreement : LocalContextReading resolve locals before.lctx context)
+    (functionReading : readScopedExpr? resolve locals fn = some f.erase)
+    (argumentReading : readScopedExpr? resolve locals rawArgument = some argument.erase)
+    (conditions : argumentType.annotations = domain.annotations)
+    (hashPath : (trace.argumentType == trace.domain) = true)
+    (comparisonFaithful : trace.argumentType.AddrFaithful trace.domain)
+    (substitution : ContextSubstitution context domain argument sourceContext targetContext cutoff) :
+    SynthesisReductionOrigin resolve incoming incomingContext incomingBounds entries targetContext
+      (head.inst argument cutoff) (arguments.map (AExpr.inst · argument cutoff)) count level :=
+  origin.map (trace.substituteTypeOriginAt (.pure .refl) enough argumentContext functionTree argumentTree
+    agreement functionReading argumentReading conditions hashPath comparisonFaithful substitution)
 
 /-- The actual codomain call retained inside a function-type check. Its
 local context is reconstructed from that same call's domain check. -/
@@ -490,6 +752,102 @@ private theorem list_reverse_induction {α : Type u} {motive : List α → Prop}
         simpa only [List.reverse_cons] using append_singleton items.reverse item ih
   simpa using reversed values.reverse
 
+private theorem not_variable_spine {β : Type u} {term : AExpr β}
+    (notApp : ∀ fn arg, term ≠ .app fn arg) (notVar : ∀ index, term ≠ .bvar index)
+    (index : Nat) (arguments : List (AExpr β)) : term ≠ (AExpr.bvar index).appN arguments := by
+  intro same
+  induction arguments using list_reverse_induction with
+  | nil => exact notVar index same
+  | append_singleton arguments argument ih =>
+      exact notApp _ _ (by simpa only [AExpr.appN_append, AExpr.appN_cons, AExpr.appN_nil] using same)
+
+private theorem bvar_variable_spine {β : Type u} {left right : Nat} {arguments : List (AExpr β)}
+    (same : AExpr.bvar left = (AExpr.bvar right).appN arguments) : arguments = [] ∧ left = right := by
+  induction arguments using list_reverse_induction with
+  | nil => exact ⟨rfl, AExpr.bvar.inj same⟩
+  | append_singleton arguments argument ih =>
+      simp only [AExpr.appN_append, AExpr.appN_cons, AExpr.appN_nil] at same
+      cases same
+
+private theorem app_variable_spine {β : Type u} {fn arg : AExpr β} {index : Nat}
+    {arguments : List (AExpr β)} (same : fn.app arg = (AExpr.bvar index).appN arguments) :
+    arguments = arguments.dropLast ++ [arg] ∧ fn = (AExpr.bvar index).appN arguments.dropLast := by
+  induction arguments using list_reverse_induction with
+  | nil => cases same
+  | append_singleton arguments argument ih =>
+      simp only [AExpr.appN_append, AExpr.appN_cons, AExpr.appN_nil, AExpr.app.injEq] at same
+      simp only [List.dropLast_concat]
+      exact ⟨by rw [same.2], same.1⟩
+
+/-- Extract the actual argument calls from a checked variable application.
+No type check on the generated substitutions is added. -/
+def BinderInference.variableSpineOrigin {β : Type u} {resolve : Address → Option (ConstRef β)}
+    {incoming entries : Model.Environment β} {incomingContext context : Model.Context β}
+    {incomingBounds : List VLevel} {locals : List FVarId} {fuel : Nat}
+    {before : TcState .anon} {source : KExpr .anon} {term type : AExpr β}
+    (support : BinderInference resolve entries locals context fuel before source term type)
+    (agreement : LocalContextReading resolve locals before.lctx context)
+    (reading : readScopedExpr? resolve locals source = some term.erase)
+    (index : Nat) (arguments : List (AExpr β)) (headEquals : term = (AExpr.bvar index).appN arguments) :
+    SynthesisVariableSpineOrigin resolve incoming incomingContext incomingBounds entries context index arguments type :=
+  match support with
+  | .fvar _ _ atIndex => by
+      obtain ⟨rfl, rfl⟩ := bvar_variable_spine headEquals
+      exact ⟨_, atIndex, .nil _⟩
+  | .app _ miss trace functionTree head argumentTree conditions hashPath comparisonFaithful
+      _ _ _ _ _ _ => by
+      obtain ⟨functionReading, argumentReading⟩ := readScopedExpr?_app_parts reading
+      have keyedAgreement := miss.localContext.symm ▸ agreement
+      have parts := app_variable_spine headEquals
+      have prior := functionTree.variableSpineOrigin (incoming := incoming) (incomingContext := incomingContext)
+        (incomingBounds := incomingBounds) keyedAgreement functionReading index arguments.dropLast parts.2
+      have spine := prior.spine.snoc (.source (.binderArgument trace functionTree head argumentTree
+        keyedAgreement functionReading argumentReading conditions hashPath comparisonFaithful))
+      exact ⟨prior.headType, prior.atIndex, by simpa only [← parts.1] using spine⟩
+  | .sort .. | .cachedSort .. | .const .. | .polymorphic .. | .cachedConst .. | .forallE .. | .lam .. => by
+      exact False.elim (not_variable_spine (by intro fn arg same; cases same)
+        (by intro index same; cases same) index arguments headEquals)
+termination_by structural support
+
+def SynthesisInference.variableSpineOrigin {β : Type u} {resolve : Address → Option (ConstRef β)}
+    {incoming entries : Model.Environment β} {incomingContext context : Model.Context β}
+    {incomingBounds bounds : List VLevel} {locals : List FVarId} {fuel : Nat}
+    {before : TcState .anon} {source : KExpr .anon} {term type : AExpr β} {level : VLevel}
+    (support : SynthesisInference resolve entries locals context bounds fuel before source term type level)
+    (contextOrigin : SynthesisContext resolve incoming incomingContext incomingBounds entries context bounds)
+    (agreement : LocalContextReading resolve locals before.lctx context)
+    (reading : readScopedExpr? resolve locals source = some term.erase)
+    (index : Nat) (arguments : List (AExpr β)) (headEquals : term = (AExpr.bvar index).appN arguments) :
+    SynthesisVariableSpineOrigin resolve incoming incomingContext incomingBounds entries context index arguments type :=
+  match support with
+  | .known inference _ | .reuseType inference .. | .fvar inference .. =>
+      inference.variableSpineOrigin agreement reading index arguments headEquals
+  | .app _ miss trace functionTree argumentTree conditions hashPath comparisonFaithful _ _ _ _ _ _ => by
+      obtain ⟨functionReading, argumentReading⟩ := readScopedExpr?_app_parts reading
+      have keyedAgreement := miss.localContext.symm ▸ agreement
+      have parts := app_variable_spine headEquals
+      have prior := functionTree.variableSpineOrigin contextOrigin keyedAgreement functionReading
+        index arguments.dropLast parts.2
+      have spine := prior.spine.snoc (.source (.applicationArgument contextOrigin trace functionTree argumentTree
+        keyedAgreement functionReading argumentReading conditions hashPath comparisonFaithful))
+      exact ⟨prior.headType, prior.atIndex, by simpa only [← parts.1] using spine⟩
+  | .forallE .. | .lam .. | .lamBeta .. => by
+      exact False.elim (not_variable_spine (by intro fn arg same; cases same)
+        (by intro index same; cases same) index arguments headEquals)
+termination_by structural support
+
+def SynthesisForallBodyCheck.variableSpine {β : Type u} {resolve : Address → Option (ConstRef β)}
+    {incoming entries : Model.Environment β} {incomingContext context : Model.Context β}
+    {incomingBounds bounds : List VLevel} {condition : Certified.PropWhen} {domain : AExpr β}
+    {index : Nat} {arguments : List (AExpr β)}
+    (check : SynthesisForallBodyCheck resolve entries context bounds condition domain
+      ((AExpr.bvar index).appN arguments))
+    (parentOrigin : SynthesisContext resolve incoming incomingContext incomingBounds entries context bounds) :
+    SynthesisVariableSpineOrigin resolve incoming incomingContext incomingBounds entries
+      (context.push domain) index arguments (.sort check.bodyLevel) :=
+  check.tree.variableSpineOrigin (parentOrigin.compose check.contextOrigin) check.agreement check.reading
+    index arguments rfl
+
 theorem BinderInference.lambdaPrefix {β : Type u}
     {resolve : Address → Option (ConstRef β)} {entries : Model.Environment β}
     {locals : List FVarId} {context : Model.Context β} {fuel : Nat}
@@ -510,7 +868,7 @@ theorem SynthesisInference.lambdaPrefix {β : Type u}
   | .known inference _ => inference.lambdaPrefix
   | .reuseType inference _ _ _ _ _ => inference.lambdaPrefix
   | .lam _ _ _ _ _ _ bodyTree _ _ _ _ _ _ => .lam bodyTree.lambdaPrefix
-  | .lamBeta _ _ _ _ _ _ bodyTree _ _ _ _ _ _ _ _ _ _ _ _ _ => by
+  | .lamBeta _ _ _ _ _ _ bodyTree _ _ _ _ _ _ _ => by
       have depth := bodyTree.lambdaPrefix.lambdaDepth_zero
         (AExpr.appN_ne_forallE (by intro condition domain body same; cases same) _)
       simpa only [AExpr.lambdaDepth, depth] using LambdaPrefix.lam (LambdaPrefix.zero _ _)
@@ -657,8 +1015,7 @@ theorem SynthesisInference.soundWithSpine {β : Type u}
       rw [trace.output run,
         internExpr_readScopedExpr? (table := trace.abstracted.2) closedCoherent faithful]
       simp [LambdaInferenceTrace.abstracted, domainReads, closedReads, AExpr.erase]
-  | .lamBeta full miss trace opening absent domainTree bodyTree typeContextSupport typeTree
-      typeAgreement typeReading typeRun originPrefix transport reduction conditionAgrees
+  | .lamBeta full miss trace opening absent domainTree bodyTree origin reduction conditionAgrees
       constructed bound closingFaithful faithful => by
       obtain ⟨state, run⟩ := infer_uncached_success miss accepted
       rw [full] at run
@@ -671,10 +1028,7 @@ theorem SynthesisInference.soundWithSpine {β : Type u}
         openBinder_sound opening domainAgreement absent domainReads bodyReads trace.openRun
       obtain ⟨bodyTypeReads, bodyTyped, _, _⟩ :=
         bodyTree.soundWithSpine (formed.push domainTyped) openedAgreement openedReads trace.bodyRun
-      obtain ⟨_, _, _, originSpine⟩ := typeTree.soundWithSpine
-        (typeContextSupport.sound formed) typeAgreement typeReading typeRun
-      obtain ⟨originConversion, originReducedTyped⟩ := originSpine.betaPrefix originPrefix
-      obtain ⟨conversion, reducedTyped⟩ := transport.sound formed originConversion originReducedTyped
+      obtain ⟨conversion, reducedTyped⟩ := origin.sound formed
       obtain ⟨_, reducedReads, reducedCoherent⟩ := reduction.reading bodyTypeReads
       obtain ⟨closedReads, closedCoherent⟩ := abstractFVars_readScopedExpr? constructed bound
         reducedCoherent closingFaithful reducedReads
@@ -740,8 +1094,25 @@ theorem SynthesisTypingOrigin.sound {β : Type u} {resolve : Address → Option 
     (formed : ContextFormation.{u,v} incoming incomingContext incomingBounds) :
     TypingClaim.{u,v} entries context term type :=
   match support with
+  | .source check => (check.sound formed).1
+  | .weaken prior domain => typing_weaken (prior.sound formed)
+  | .instantiate prior arguments => typing_instL_context (prior.sound formed) arguments
+  | .appendContext prior outer => typing_append_context (prior.sound formed) outer
+  | .extend prior extension => extension.typing (prior.sound formed)
+  | .termEquivalent prior same => same.termTyping (prior.sound formed)
+  | .typeEquivalent prior same => same.typing (prior.sound formed)
+  | .substituteAt body value substitution => (body.sound formed).instAt (value.sound formed) substitution
+termination_by structural support
+
+theorem SynthesisCheckedOrigin.sound {β : Type u} {resolve : Address → Option (ConstRef β)}
+    {incoming entries : Model.Environment β} {incomingContext context : Model.Context β}
+    {incomingBounds : List VLevel} {term type : AExpr β}
+    (support : SynthesisCheckedOrigin resolve incoming incomingContext incomingBounds entries context term type)
+    (formed : ContextFormation.{u,v} incoming incomingContext incomingBounds) :
+    TypingClaim.{u,v} entries context term type ∧ LambdaPrefix term type term.lambdaDepth :=
+  match support with
   | .checked contextOrigin tree agreement reading accepted =>
-      (tree.soundWithSpine (contextOrigin.sound formed) agreement reading accepted).2.1
+      ⟨(tree.soundWithSpine (contextOrigin.sound formed) agreement reading accepted).2.1, tree.lambdaPrefix⟩
   | .applicationArgument contextOrigin trace functionTree argumentTree agreement functionReading argumentReading
       conditions hashPath comparisonFaithful => by
       have contextFormation := contextOrigin.sound formed
@@ -754,14 +1125,59 @@ theorem SynthesisTypingOrigin.sound {β : Type u} {resolve : Address → Option 
       have sameType := AExpr.eq_of_erase_annotations
         (Option.some.inj (argumentTypeReads.symm.trans
           ((beq_readScopedExpr? comparisonFaithful hashPath).trans domainReads))) conditions
-      exact sameType ▸ argumentTyped
-  | .weaken prior domain => typing_weaken (prior.sound formed)
-  | .instantiate prior arguments => typing_instL_context (prior.sound formed) arguments
-  | .appendContext prior outer => typing_append_context (prior.sound formed) outer
-  | .extend prior extension => extension.typing (prior.sound formed)
-  | .termEquivalent prior same => same.termTyping (prior.sound formed)
-  | .typeEquivalent prior same => same.typing (prior.sound formed)
-  | .substituteAt body value substitution => (body.sound formed).instAt (value.sound formed) substitution
+      exact ⟨sameType ▸ argumentTyped, sameType ▸ argumentTree.lambdaPrefix⟩
+  | .binderArgument trace functionTree head argumentTree agreement functionReading argumentReading
+      conditions hashPath comparisonFaithful => by
+      obtain ⟨functionTypeReads, functionTyped⟩ :=
+        functionTree.synthesis head agreement functionReading trace.functionRun
+      have domainReads := (readScopedExpr?_all_parts functionTypeReads).1
+      obtain ⟨argumentTypeReads, argumentChecked⟩ :=
+        argumentTree.sound (trace.contextPreserved.symm ▸ agreement) argumentReading trace.argumentRun
+      have sameType := AExpr.eq_of_erase_annotations
+        (Option.some.inj (argumentTypeReads.symm.trans
+          ((beq_readScopedExpr? comparisonFaithful hashPath).trans domainReads))) conditions
+      have checked := sameType ▸ argumentChecked
+      refine ⟨?_, sameType ▸ argumentTree.lambdaPrefix⟩
+      intro V _ constants realizes levels env valid
+      have domainValid := (functionTyped V constants realizes levels env valid).2.1.1
+      have checkedAt := checked V constants realizes levels env valid domainValid
+      exact ⟨checkedAt.1, domainValid, checkedAt.2⟩
+termination_by structural support
+
+theorem SynthesisArgumentSpineOrigin.sound {β : Type u} {resolve : Address → Option (ConstRef β)}
+    {incoming entries : Model.Environment β} {incomingContext context : Model.Context β}
+    {incomingBounds : List VLevel} {start result : AExpr β} {arguments : List (AExpr β)}
+    (support : SynthesisArgumentSpineOrigin resolve incoming incomingContext incomingBounds
+      entries context start arguments result)
+    (formed : ContextFormation.{u,v} incoming incomingContext incomingBounds) :
+    ArgumentSpine.{u,v} entries context start arguments result :=
+  match support with
+  | .nil _ => .nil _
+  | .snoc prior checked => (prior.sound formed).append (.cons (checked.sound formed) (.nil _))
+termination_by structural support
+
+theorem SynthesisReductionOrigin.sound {β : Type u} {resolve : Address → Option (ConstRef β)}
+    {incoming entries : Model.Environment β} {incomingContext context : Model.Context β}
+    {incomingBounds : List VLevel} {head : AExpr β} {arguments : List (AExpr β)} {count : Nat} {level : VLevel}
+    (support : SynthesisReductionOrigin resolve incoming incomingContext incomingBounds
+      entries context head arguments count level)
+    (formed : ContextFormation.{u,v} incoming incomingContext incomingBounds) :
+    ConversionClaim.{u,v} entries context (head.appN arguments) (AExpr.betaPrefix count head arguments) ∧
+      TypingClaim.{u,v} entries context (AExpr.betaPrefix count head arguments) (.sort level) :=
+  match support with
+  | .checked typeContextSupport typeTree typeAgreement typeReading typeRun originPrefix transport => by
+      obtain ⟨_, _, _, originSpine⟩ := typeTree.soundWithSpine
+        (typeContextSupport.sound formed) typeAgreement typeReading typeRun
+      obtain ⟨originConversion, originReducedTyped⟩ := originSpine.betaPrefix originPrefix
+      exact transport.sound formed originConversion originReducedTyped
+  | .substitutedVariable spine atIndex checked substitution enough => by
+      obtain ⟨typed, leading⟩ := checked.sound formed
+      have instantiated := (spine.sound formed).instAt typed substitution
+      rw [substitution.instantiate_removed_type atIndex] at instantiated
+      exact ((leading.liftN _ 0).truncate enough).beta_sound (substitution.lift_typing typed) instantiated
+  | .map prior transport => by
+      obtain ⟨converted, typed⟩ := prior.sound formed
+      exact transport.sound formed converted typed
 termination_by structural support
 
 end
@@ -807,6 +1223,69 @@ def SynthesisInference.ofSort {β : Type u}
     SynthesisInference resolve entries locals context bounds fuel before source term (.sort level) (.succ level) :=
   .known inference (.sort level)
 
+/-- An executed type check with its original local scope. Walking a
+dependent function type keeps the actual domain checks that established
+each nested context. -/
+structure SynthesisScopedTypeCheck {β : Type u} (resolve : Address → Option (ConstRef β))
+    (incoming : Model.Environment β) (incomingContext : Model.Context β) (incomingBounds : List VLevel)
+    (entries : Model.Environment β) (type : AExpr β) where
+  context : Model.Context β
+  bounds : List VLevel
+  level : VLevel
+  bound : VLevel
+  locals : List FVarId
+  fuel : Nat
+  before : TcState .anon
+  after : TcState .anon
+  source : KExpr .anon
+  result : KExpr .anon
+  contextOrigin : SynthesisContext resolve incoming incomingContext incomingBounds entries context bounds
+  tree : SynthesisInference resolve entries locals context bounds fuel before source type (.sort level) bound
+  agreement : LocalContextReading resolve locals before.lctx context
+  reading : readScopedExpr? resolve locals source = some type.erase
+  run : RecM.infer source (methodsN fuel) before = .ok result after
+
+theorem SynthesisScopedTypeCheck.sound {β : Type u} {resolve : Address → Option (ConstRef β)}
+    {incoming entries : Model.Environment β} {incomingContext : Model.Context β}
+    {incomingBounds : List VLevel} {type : AExpr β}
+    (check : SynthesisScopedTypeCheck resolve incoming incomingContext incomingBounds entries type)
+    (formed : ContextFormation.{u,v} incoming incomingContext incomingBounds) :
+    TypingClaim.{u,v} entries check.context type (.sort check.level) :=
+  (check.tree.sound (check.contextOrigin.sound formed) check.agreement check.reading check.run).2.1
+
+def SynthesisScopedTypeCheck.forallBody {β : Type u} {resolve : Address → Option (ConstRef β)}
+    {incoming entries : Model.Environment β} {incomingContext : Model.Context β}
+    {incomingBounds : List VLevel} {condition : Certified.PropWhen} {domain body : AExpr β}
+    (check : SynthesisScopedTypeCheck resolve incoming incomingContext incomingBounds
+      entries (.forallE condition domain body)) :
+    SynthesisScopedTypeCheck resolve incoming incomingContext incomingBounds entries body := by
+  let child := check.tree.forallBodyCheck check.agreement check.reading
+  exact {
+    context := Context.push domain check.context
+    bounds := child.domainLevel :: check.bounds
+    level := child.bodyLevel
+    bound := child.bound
+    locals := child.locals
+    fuel := child.fuel
+    before := child.before
+    after := child.after
+    source := child.source
+    result := child.result
+    contextOrigin := check.contextOrigin.compose child.contextOrigin
+    tree := child.tree
+    agreement := child.agreement
+    reading := child.reading
+    run := child.run }
+
+def SynthesisScopedTypeCheck.variableSpine {β : Type u} {resolve : Address → Option (ConstRef β)}
+    {incoming entries : Model.Environment β} {incomingContext : Model.Context β}
+    {incomingBounds : List VLevel} {index : Nat} {arguments : List (AExpr β)}
+    (check : SynthesisScopedTypeCheck resolve incoming incomingContext incomingBounds
+      entries ((AExpr.bvar index).appN arguments)) :
+    SynthesisVariableSpineOrigin resolve incoming incomingContext incomingBounds entries
+      check.context index arguments (.sort check.level) :=
+  check.tree.variableSpineOrigin check.contextOrigin check.agreement check.reading index arguments rfl
+
 /-- Package an executed closed type check so later declarations can retain
 its origin. The check itself may contain direct lambda applications. -/
 structure SynthesisTypeCheck {β : Type u} (resolve : Address → Option (ConstRef β))
@@ -826,6 +1305,27 @@ theorem SynthesisTypeCheck.sound {β : Type u} {resolve : Address → Option (Co
     (check : SynthesisTypeCheck resolve entries type level) :
     TypingClaim.{u,v} entries [] type (.sort level) :=
   (check.inference.closed_sound check.reading check.run).2.1
+
+def SynthesisTypeCheck.scoped {β : Type u} {resolve : Address → Option (ConstRef β)}
+    {incoming entries : Model.Environment β} {incomingContext : Model.Context β}
+    {incomingBounds : List VLevel} {type : AExpr β} {level : VLevel}
+    (check : SynthesisTypeCheck resolve entries type level) :
+    SynthesisScopedTypeCheck resolve incoming incomingContext incomingBounds entries type :=
+  { context := []
+    bounds := []
+    level := level
+    bound := check.bound
+    locals := []
+    fuel := check.fuel
+    before := check.before
+    after := check.after
+    source := check.source
+    result := check.result
+    contextOrigin := .empty entries
+    tree := check.inference
+    agreement := .empty _ _
+    reading := check.reading
+    run := check.run }
 
 def SynthesisTypeCheck.forallBody {β : Type u} {resolve : Address → Option (ConstRef β)}
     {entries : Model.Environment β} {condition : Certified.PropWhen} {domain body : AExpr β} {level : VLevel}

@@ -12,6 +12,10 @@ namespace Ix.Theory.Model.AExpr
 
 universe u
 
+@[simp] theorem liftN_zero (term : AExpr β) (cutoff : Nat := 0) :
+    term.liftN 0 cutoff = term := by
+  induction term generalizing cutoff <;> simp_all [liftN, liftVar]
+
 theorem instL_liftN (term : AExpr β) (levels : List VLevel) (count cutoff : Nat) :
     (term.liftN count cutoff).instL levels = (term.instL levels).liftN count cutoff := by
   induction term generalizing cutoff <;> simp_all [liftN, instL]

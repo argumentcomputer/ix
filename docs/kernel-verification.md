@@ -364,9 +364,9 @@ def callReturned.{u} (A : Sort u) (a : A) : A := ((fun x : A => fun y : A => x) 
   checks retain their source, states, successful run, and inference tree;
   interface extension preserves their entries exactly. These are execution
   resources, not semantic formation assumptions. The type checks can themselves
-  contain direct lambda applications. The `lamBeta` rule retains an actual
-  type-check tree when cheap beta changes the body's inferred type. Its source
-  and reduced syntax move together through interface extension, weakening,
+  contain direct lambda applications. The `lamBeta` rule retains a reduction
+  origin from actual checks when cheap beta changes the body's inferred type.
+  Its source and reduced syntax move together through interface extension, weakening,
   universe instantiation, and structural level congruence. Earlier local
   contexts are reconstructed from actual binder-domain checks. The reader
   follows the selected plan through substitution and interning, and lambda
@@ -374,7 +374,7 @@ def callReturned.{u} (A : Sort u) (a : A) : A := ((fun x : A => fun y : A => x) 
   generated result is assumed.
   Retained codomain checks now also cross dependent term substitution.
   `SynthesisTypeCheck.forallBody` extracts the actual codomain call from the
-  earlier function-type tree. `SynthesisTypingOrigin.applicationArgument`
+  earlier function-type tree. `SynthesisCheckedOrigin.applicationArgument`
   retains the executed function and argument checks and their hash comparison;
   the mutual soundness proof derives the argument's membership in that domain.
   `ApplicationInferenceTrace.substituteTypeOriginAt` then transports the
@@ -382,6 +382,16 @@ def callReturned.{u} (A : Sort u) (a : A) : A := ((fun x : A => fun y : A => x) 
   their domains with the same substitution. This transport is consumed by
   `lamBeta`. No separate inference of the substituted type or semantic
   argument-typing premise is required.
+  Variable-headed codomains also retain their actual argument checks.
+  `SynthesisScopedTypeCheck.forallBody` follows nested codomain calls and
+  their executed domain checks; `variableSpine` extracts the local head's
+  exact type and the argument calls in order. Earlier parameter substitutions
+  preserve that head's lookup and update its dependent type and arguments.
+  `ApplicationInferenceTrace.exposedTypeOriginAt` then uses the substituted
+  argument's own checked lambda domains to justify a newly exposed prefix.
+  `substituteReductionOriginAt` carries that reduction through later
+  arguments. The mutual `SynthesisReductionOrigin.sound` proof supplies the
+  same conversion and reduced-type formation consumed by `lamBeta`.
 - Applications use full mode, syntactic Pi exposure, an ordinary argument
   without an eager-reduction marker, and the hash-equality conversion path.
   Their witnesses retain the actual recursive calls, context preservation
@@ -494,7 +504,7 @@ lake test --wfail -- tc-unit
 lake -d Models/SetTheory build --wfail
 ```
 
-The consistency target checks 525 exact theorem boundaries. The production
+The consistency target checks 554 exact theorem boundaries. The production
 environment roots retain four existing generated output-length proofs,
 reached through expression/universe construction, names, and the full
 production method table. They introduce no new native proofs. The model
@@ -513,8 +523,8 @@ typing, checking, and equality introduce no additional assumptions.
 Their general `instAt` forms use `ContextSubstitution` to remove an outer
 parameter and update every retained dependent domain. The beta-prefix
 commutation theorem covers any cutoff while bounding reduction by the
-original lambda prefix; lambdas newly exposed by substitution need their own
-checking origins.
+original lambda prefix. For a checked variable-headed application, a
+substituted lambda's actual argument check supplies a new prefix origin.
 `SynthesisInference.beta_peel_sound` derives beta-prefix equality and result
 typing from actual lambda and dependent argument inference. Its domain-shape
 proof retains information lost when proof values are identified. The original
@@ -531,8 +541,8 @@ check to justify conversion through such a prefix and suffix, and therefore
 reaches the environment model-extension and no-False roots.
 `SynthesisInference.soundWithSpine` retains checked lambda domains in the
 same recursion that proves typing and type formation. Its `lamBeta` case
-uses an original executed type check, transported to the generated type's
-current context, to justify the changed cheap-beta result. The actual source
+uses retained executed checks, transported to the generated type's current
+context, to justify the changed cheap-beta result. The actual source
 reading determines the raw head and arguments; `CheapBetaSupport.reading`
 connects the selected prefix to the reduced syntax and final intern table.
 `SynthesisContext.sound` derives earlier contexts from their domain checks,
@@ -540,8 +550,15 @@ so the origin can precede additional binders. `SynthesisTypeTransport.sound`
 and `SynthesisTypingOrigin.sound` are proved in that same recursion and carry
 these checks through argument substitution, including later dependent
 domains and the original context's universe instantiation. The public
-inference and environment results include this case. Automatic origin
-construction for arbitrary generated types, repeated reduction, and other
+inference and environment results include this case. `SynthesisCheckedOrigin`
+additionally retains each actual argument's syntactic lambda domains, while
+`SynthesisArgumentSpineOrigin` keeps the checks of the original variable
+application's arguments. `SynthesisReductionOrigin.sound` combines them when
+substitution exposes a lambda head. It proves the changed result's typing
+and equality in the same mutual recursion, including earlier and later
+dependent substitutions. These additions use the same two existing native
+output-length proofs; their model lemmas use only standard Lean axioms.
+Automatic origin construction for arbitrary generated types, repeated reduction, and other
 conversion paths remain open.
 Kernel unit regressions cover lazy loading, both inference policies, interning
 reuse, dependent function types, shared references, lets, `imax` simplification,
@@ -580,6 +597,13 @@ codomain in Prop, Type, and at universe parameters. Two-argument cases use
 updated second domain, different original and reduced result hashes, and the
 exact final lambda type. They cover cache clearing, reuse, scope cleanup, and
 rejection of a carrier or first argument used in the wrong dependent domain.
+Exposed-lambda regressions start with checked variable-headed codomains
+`F A`, `F A B`, and `F x`. They observe the new head, argument order, beta
+count, and exact reduced result after supplying a lambda. The dependent
+identity example `f A x F y` also checks that earlier arguments specialize
+the later family's domain before its lambda creates the redex. Cases cover
+Prop, Type, universe parameters, captured carriers, cache clearing/reuse,
+scope cleanup, and rejected function types and dependent witnesses.
 These execution tests do not construct the general finite inference resources.
 Polymorphic-call regressions include Prop/Type instances in real function
 bodies, `max`/`imax` simplification inside Pi domains, closed nested references
@@ -650,7 +674,7 @@ Definition-cycle regressions use content-addressed standalone and mutual
 declarations, including a self-justifying theorem, a two-member cycle, type
 cycles, lets, shared syntax, and binders. They check repeated member failures,
 acyclic forward references, cache clearing, and the partial/unsafe policy.
-The unit suite contains 629 checks. The anonymous differential additionally
+The unit suite contains 644 checks. The anonymous differential additionally
 serializes eight cycle-policy fixtures and checks exact target sets, verdicts,
 failure counts, and cycle diagnostics in both implementations.
 

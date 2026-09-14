@@ -68,8 +68,14 @@ term substitution: the earlier function-type tree supplies the actual
 codomain call, while the executed function and argument checks and hash
 comparison establish membership in the substituted parameter's domain.
 The mutual inference proof preserves this origin beneath remaining dependent
-parameters. The lambda closes the reduced type using the actual final intern
-table. Reduction remains bounded by the original checked lambda prefix.
+parameters. A variable-headed codomain now retains its actual argument checks
+and local head type through earlier parameter substitutions. When a lambda
+argument replaces that head, its own checked domains justify the newly
+exposed prefix. Nested codomain origins are extracted from the executed
+function-type tree. Later arguments transport the resulting reduction through
+the remaining dependent parameters. The lambda closes the reduced type using
+the actual final intern table. Each reduction is bounded by the checked
+prefix of its selected origin; further exposed prefixes need further origins.
 Automatic origin construction for arbitrary generated types, general
 reduction, and conversion remain open.
 Safe definition admission also rejects circular justification in both Lean and

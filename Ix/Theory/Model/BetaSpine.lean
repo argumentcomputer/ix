@@ -133,6 +133,20 @@ theorem LambdaPrefix.inst {β : Type u} {term type : AExpr β} {count : Nat}
   | zero => exact .zero _ _
   | lam inner ih => exact .lam (ih (cutoff + 1))
 
+theorem LambdaPrefix.liftN {β : Type u} {term type : AExpr β} {count : Nat}
+    (leading : LambdaPrefix term type count) (inserted cutoff : Nat) :
+    LambdaPrefix (term.liftN inserted cutoff) (type.liftN inserted cutoff) count := by
+  induction leading generalizing cutoff with
+  | zero => exact .zero _ _
+  | lam inner ih => exact .lam (ih (cutoff + 1))
+
+theorem LambdaPrefix.instL {β : Type u} {term type : AExpr β} {count : Nat}
+    (leading : LambdaPrefix term type count) (arguments : List VLevel) :
+    LambdaPrefix (term.instL arguments) (type.instL arguments) count := by
+  induction leading with
+  | zero => exact .zero _ _
+  | lam inner ih => exact .lam ih
+
 theorem LambdaPrefix.truncate {β : Type u} {term type : AExpr β} {total count : Nat}
     (leading : LambdaPrefix term type total) (enough : count ≤ total) :
     LambdaPrefix term type count := by
@@ -241,6 +255,91 @@ theorem ArgumentSpine.typing {β : Type u} {entries : Environment β} {context :
   induction spine generalizing head with
   | nil => exact typed
   | cons argumentTyped tail ih => exact ih (typed.app argumentTyped)
+
+/-- Substitution updates the type at every step of a dependent argument
+spine, including the type expected by the next application. -/
+theorem ArgumentSpine.instAt {β : Type u} {entries : Environment β}
+    {base source target : Context β} {type result argument domain : AExpr β}
+    {arguments : List (AExpr β)} {cutoff : Nat}
+    (spine : ArgumentSpine.{u,v} entries source type arguments result)
+    (value : TypingClaim.{u,v} entries base argument domain)
+    (substitution : ContextSubstitution base domain argument source target cutoff) :
+    ArgumentSpine.{u,v} entries target (type.inst argument cutoff)
+      (arguments.map (AExpr.inst · argument cutoff)) (result.inst argument cutoff) := by
+  induction spine with
+  | nil => exact .nil _
+  | cons typed tail ih =>
+      exact .cons (typed.instAt value substitution)
+        (by simpa only [AExpr.inst_inst_zero] using ih)
+
+theorem ContextSubstitution.removed_type {β : Type u} {base source target : Context β}
+    {domain argument : AExpr β} {cutoff : Nat}
+    (substitution : ContextSubstitution base domain argument source target cutoff) :
+    source[cutoff]? = some (domain.liftN (cutoff + 1)) := by
+  induction substitution with
+  | root => rfl
+  | @push source target cutoff prior binder ih =>
+      simp only [Context.push, List.getElem?_cons_succ, List.getElem?_map, ih, Option.map_some,
+        AExpr.liftN_liftN_merge domain (cutoff + 1) 1 0 0 (Nat.le_refl _) (Nat.zero_le _)]
+
+theorem ContextSubstitution.instantiate_removed_type {β : Type u} {base source target : Context β}
+    {domain argument type : AExpr β} {cutoff : Nat}
+    (substitution : ContextSubstitution base domain argument source target cutoff)
+    (atIndex : source[cutoff]? = some type) :
+    type.inst argument cutoff = domain.liftN cutoff := by
+  have same := Option.some.inj (atIndex.symm.trans substitution.removed_type)
+  rw [same]
+  exact AExpr.inst_liftN_within domain argument cutoff 0 cutoff (Nat.zero_le _) (by omega)
+
+/-- Every retained local keeps its substituted type. Indices beyond the
+removed parameter decrease by one; later parameters keep their indices. -/
+theorem ContextSubstitution.lookup_other {β : Type u} {base source target : Context β}
+    {domain argument type : AExpr β} {cutoff index : Nat}
+    (substitution : ContextSubstitution base domain argument source target cutoff)
+    (atIndex : source[index]? = some type) (distinct : index ≠ cutoff) :
+    target[if index < cutoff then index else index - 1]? = some (type.inst argument cutoff) := by
+  induction substitution generalizing index type with
+  | root =>
+      cases index with
+      | zero => exact False.elim (distinct rfl)
+      | succ index =>
+          simp only [Context.push, List.getElem?_cons_succ, List.getElem?_map] at atIndex
+          obtain ⟨type, sourceLookup, rfl⟩ := Option.map_eq_some_iff.mp atIndex
+          simpa only [Nat.not_lt_zero, ↓reduceIte, Nat.add_sub_cancel,
+            AExpr.inst_liftN_within type argument 0 0 0 (Nat.le_refl _) (by omega),
+            AExpr.liftN_zero] using sourceLookup
+  | @push source target cutoff prior binder ih =>
+      cases index with
+      | zero =>
+          simp only [Context.push, List.getElem?_cons_zero, Option.some.injEq] at atIndex
+          subst type
+          simpa only [Nat.zero_lt_succ, ↓reduceIte, Context.push, List.getElem?_cons_zero,
+            Nat.add_comm 1 cutoff] using
+            congrArg some (AExpr.inst_liftN binder argument 1 0 cutoff (Nat.zero_le _)).symm
+      | succ index =>
+          simp only [Context.push, List.getElem?_cons_succ, List.getElem?_map] at atIndex
+          obtain ⟨type, sourceLookup, rfl⟩ := Option.map_eq_some_iff.mp atIndex
+          have retained := ih sourceLookup (show index ≠ cutoff by omega)
+          have nextIndex : (if index + 1 < cutoff + 1 then index + 1 else index + 1 - 1) =
+              (if index < cutoff then index else index - 1) + 1 := by
+            split <;> split <;> omega
+          rw [nextIndex]
+          simp only [Context.push, List.getElem?_cons_succ, List.getElem?_map, retained,
+            Option.map_some]
+          exact congrArg some (by
+            simpa only [Nat.add_comm 1 cutoff] using
+              (AExpr.inst_liftN type argument 1 0 cutoff (Nat.zero_le _)).symm)
+
+/-- Values from the base context can be used beneath the retained prefix.
+Their types are lifted by the same number of dependent binders. -/
+theorem ContextSubstitution.lift_typing {β : Type u} {entries : Environment β}
+    {base source target : Context β} {domain argument term type : AExpr β} {cutoff : Nat}
+    (substitution : ContextSubstitution base domain argument source target cutoff)
+    (typed : TypingClaim.{u,v} entries base term type) :
+    TypingClaim.{u,v} entries target (term.liftN cutoff) (type.liftN cutoff) := by
+  intro V _ constants realizes levels env valid
+  simpa only [wellDenoted_liftN, interp_liftN] using
+    typed V constants realizes levels _ (substitution.base_valid valid)
 
 theorem ConversionClaim.appN {β : Type u} {entries : Environment β} {context : Context β}
     {left right : AExpr β} (same : ConversionClaim.{u,v} entries context left right)

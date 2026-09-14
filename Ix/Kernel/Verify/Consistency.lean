@@ -94,8 +94,13 @@ instantiation. Earlier local contexts are reconstructed from their executed
 domain checks. Codomain origins are extracted from earlier function-type
 trees, and actual function/argument calls justify term substitution through
 them. The context relation updates later dependent parameters at any cutoff;
-the original beta prefix is preserved by the same substitution. These
-transports are proved sound in the inference recursion and consumed by the
+the original beta prefix is preserved by the same substitution. Variable-headed
+codomains retain their actual argument checks and local types, extracted
+through nested function-type calls. Substituting a lambda for that head now
+uses the argument's own checked prefix to justify the newly exposed beta
+steps. Earlier parameter substitutions update the retained head type and
+argument checks; later arguments continue transporting the reduction. These
+origins are proved sound in the inference recursion and consumed by the
 lambda case. Abstraction uses the reduced type and the reduction's final
 intern table. Automatic origin construction for arbitrary generated types
 and general reduction remains open.

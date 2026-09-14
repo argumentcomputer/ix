@@ -746,6 +746,135 @@ private def cheapApplicationTypeResult (dependent : Bool) (level : Ixon.Univ := 
   | .ok passed after => passed && after.lctx.size == 0
   | .error _ _ => false
 
+/-- The checked function type has a variable-headed codomain `F A` or
+`F A B`. Substituting a lambda for `F` creates the beta prefix. The function
+itself is the dependent identity, so its source axioms only declare carriers. -/
+private def exposedLambdaType (level : Ixon.Univ) (universes : UInt64 := 0)
+    (shape wrong : Nat := 0) : Ixon.Env × Address := Id.run do
+  let (env, carrier) := storeConst {}
+    ⟨.axio ⟨false, universes, .sort 0⟩, #[], #[], #[level]⟩
+  let (env, otherCarrier) := storeConst env
+    ⟨.axio ⟨false, universes, .sort 0⟩, #[], #[], #[level, .succ level]⟩
+  let arguments := if universes == 0 then #[] else #[0]
+  let familyType := Ixon.Expr.leanAll (.sort 0)
+    (if shape == 2 then .leanAll (.sort 0) (.sort 0) else .sort 0)
+  let applied : Ixon.Expr → Ixon.Expr := fun head =>
+    if shape == 2 then .app (.app head (.ref 0 arguments)) (.ref 1 arguments)
+    else .app head (.ref (if shape == 1 then 1 else 0) arguments)
+  let (env, function) := storeConst env
+    ⟨.defn ⟨.defn, .safe, universes,
+      .leanAll familyType (.leanAll (applied (.var 0)) (applied (.var 1))),
+      .leanLam familyType (.leanLam (applied (.var 0)) (.var 0))⟩,
+      #[], #[carrier, otherCarrier], #[level]⟩
+  let family := Ixon.Expr.leanLam (.sort 0)
+    (if shape == 2 then .leanLam (.sort 0) (.var 1)
+      else if shape == 1 then .ref 0 arguments else .var 0)
+  let supplied := if wrong == 1 then Ixon.Expr.leanLam (.sort 0) (.sort 0) else family
+  return storeConst env
+    ⟨.defn ⟨.defn, .safe, universes,
+      .leanAll (applied family) (.ref 0 arguments),
+      .leanLam (applied family)
+        (.app (.app (.ref 2 arguments) supplied) (if wrong == 2 then .ref 0 arguments else .var 0))⟩,
+      #[], #[carrier, otherCarrier, function], #[level]⟩
+
+private def exposedLambdaTypeResult (shape : Nat) (level : Ixon.Univ := .zero) : Bool :=
+  let (env, target) := exposedLambdaType level 0 shape
+  let action : RecM .anon Bool := RecM.withLctxScope do
+    let concrete ← TcM.getConst (m := .anon) ⟨target, ()⟩
+    let .defn _ _ _ _ _ _ type value _ _ := concrete | return false
+    let .lam name bi domain body _ := value | return false
+    let .all _ _ _ expected _ := type | return false
+    let (fn, arguments) := body.collectSpine
+    let some supplied := arguments[0]? | return false
+    let .all fnName fnBi fnDomain fnBody _ ← RecM.inferCall fn | return false
+    let suppliedType ← RecM.inferCall supplied
+    let (openedType, originalHead, _) ← TcM.openBinderWithFV fnName fnBi fnDomain fnBody
+    let .all _ _ _ originalCodomain _ := openedType | return false
+    let (call, _) ← TcM.openBinder name bi domain body
+    let generated ← RecM.inferCall call
+    let (generatedHead, generatedArguments) := generated.collectSpine
+    let reduced ← TcM.runIntern (cheapBetaReduce generated)
+    let before ← get
+    let inferred ← RecM.inferCall value
+    let repeated ← RecM.inferCall value
+    let after ← get
+    return originalCodomain.collectSpine.1 == originalHead && (cheapBetaPlan? originalCodomain).isNone &&
+      suppliedType == fnDomain && generatedHead == supplied && (cheapBetaPlan? generated).isSome &&
+      (peelLamsN generatedArguments.size generatedHead).2 == (if shape == 2 then 2 else 1) &&
+      generated != reduced && reduced == expected && inferred == type && repeated == type &&
+      before.lctx.size == after.lctx.size
+  match TcM.runRec action (TcState.newLazyAnon env) with
+  | .ok passed after => passed && after.lctx.size == 0
+  | .error _ _ => false
+
+/-- The function parameter depends on two earlier arguments. Its original
+codomain is `F x`; the supplied constant family creates a new beta step only
+after substituting the carrier and its witness. -/
+private def dependentExposedLambdaType (level : Ixon.Univ) (universes : UInt64 := 0)
+    (wrong : Bool := false) : Ixon.Env × Address := Id.run do
+  let arguments := if universes == 0 then #[] else #[0]
+  let (env, carrier) := storeConst {}
+    ⟨.axio ⟨false, universes, .sort 0⟩, #[], #[], #[level]⟩
+  let (env, witness) := storeConst env
+    ⟨.axio ⟨false, universes, .ref 0 arguments⟩, #[], #[carrier], #[level]⟩
+  let familyType := Ixon.Expr.leanAll (.var 1) (.sort 0)
+  let (env, function) := storeConst env
+    ⟨.defn ⟨.defn, .safe, universes,
+      .leanAll (.sort 0) (.leanAll (.var 0)
+        (.leanAll familyType (.leanAll (.app (.var 0) (.var 1)) (.app (.var 1) (.var 2))))),
+      .leanLam (.sort 0) (.leanLam (.var 0)
+        (.leanLam familyType (.leanLam (.app (.var 0) (.var 1)) (.var 0))))⟩,
+      #[], #[], #[level]⟩
+  let family := Ixon.Expr.leanLam (.ref 0 arguments) (.ref 0 arguments)
+  let supplied := if wrong then Ixon.Expr.leanLam (.sort 0) (.ref 0 arguments) else family
+  let domain := Ixon.Expr.app family (.ref 1 arguments)
+  return storeConst env
+    ⟨.defn ⟨.defn, .safe, universes, .leanAll domain (.ref 0 arguments),
+      .leanLam domain (.app (.app (.app (.app (.ref 2 arguments)
+        (.ref 0 arguments)) (.ref 1 arguments)) supplied) (.var 0))⟩,
+      #[], #[carrier, witness, function], #[level]⟩
+
+private def dependentExposedLambdaTypeResult (level : Ixon.Univ) : Bool :=
+  let (env, target) := dependentExposedLambdaType level
+  let action : RecM .anon Bool := RecM.withLctxScope do
+    let concrete ← TcM.getConst (m := .anon) ⟨target, ()⟩
+    let .defn _ _ _ _ _ _ type value _ _ := concrete | return false
+    let .lam name bi domain body _ := value | return false
+    let .all _ _ _ expected _ := type | return false
+    let (fn, arguments) := body.collectSpine
+    let some carrier := arguments[0]? | return false
+    let some witness := arguments[1]? | return false
+    let some family := arguments[2]? | return false
+    let .all aName aBi aDomain aBody _ ← RecM.inferCall fn | return false
+    let (afterA, originalA, _) ← TcM.openBinderWithFV aName aBi aDomain aBody
+    let .all xName xBi xDomain xBody _ := afterA | return false
+    let (afterX, originalX, _) ← TcM.openBinderWithFV xName xBi xDomain xBody
+    let .all fName fBi fDomain fBody _ := afterX | return false
+    let .all _ _ originalDomain _ _ := fDomain | return false
+    let (afterF, originalF, _) ← TcM.openBinderWithFV fName fBi fDomain fBody
+    let .all _ _ _ originalCodomain _ := afterF | return false
+    let appliedPrefix := KExpr.mkAppN fn #[carrier, witness]
+    let .all _ _ specializedDomain _ _ ← RecM.inferCall appliedPrefix | return false
+    let .all _ _ specializedCarrier _ _ := specializedDomain | return false
+    let familyType ← RecM.inferCall family
+    let (call, _) ← TcM.openBinder name bi domain body
+    let generated ← RecM.inferCall call
+    let (generatedHead, generatedArguments) := generated.collectSpine
+    let reduced ← TcM.runIntern (cheapBetaReduce generated)
+    let before ← get
+    let inferred ← RecM.inferCall value
+    let repeated ← RecM.inferCall value
+    let after ← get
+    return originalDomain == originalA && xDomain == originalA &&
+      originalCodomain.collectSpine == (originalF, #[originalX]) &&
+      (cheapBetaPlan? originalCodomain).isNone && specializedCarrier == carrier &&
+      specializedDomain == familyType && generatedHead == family && generatedArguments == #[witness] &&
+      (cheapBetaPlan? generated).isSome && generated != reduced && reduced == expected &&
+      inferred == type && repeated == type && before.lctx.size == after.lctx.size
+  match TcM.runRec action (TcState.newLazyAnon env) with
+  | .ok passed after => passed && after.lctx.size == 0
+  | .error _ _ => false
+
 private def applicationCases : TestSeq :=
   test "application environment: Prop/Type identity calls and transitive theorem calls check"
     (allSucceeded applicationEnvironment 5 { clearEvery := 0 })
@@ -874,6 +1003,44 @@ private def cheapApplicationCases : TestSeq :=
     (let (env, target) := cheapApplicationType .zero 0 false true; rowFailed env target)
   ++ test "application type beta: the first argument cannot replace the dependent second argument"
     (let (env, target) := cheapApplicationType .zero 0 true true; rowFailed env target)
+
+private def exposedLambdaCases : TestSeq :=
+  test "exposed type lambda: a function parameter becomes a lambda in Prop and Type"
+    (allSucceeded (exposedLambdaType .zero).1 4 && allSucceeded (exposedLambdaType (.succ .zero)).1 4)
+  ++ test "exposed type lambda: the substituted lambda retains a different captured carrier"
+    (allSucceeded (exposedLambdaType .zero 0 1).1 4 &&
+      allSucceeded (exposedLambdaType (.succ .zero) 0 1).1 4)
+  ++ test "exposed type lambda: the argument contributes two checked leading lambdas"
+    (allSucceeded (exposedLambdaType .zero 0 2).1 4 &&
+      allSucceeded (exposedLambdaType (.succ .zero) 0 2).1 4)
+  ++ test "exposed type lambda: the new prefixes retain universe parameters"
+    (allSucceeded (exposedLambdaType (.var 0) 1).1 4 &&
+      allSucceeded (exposedLambdaType (.var 0) 1 1).1 4 &&
+      allSucceeded (exposedLambdaType (.var 0) 1 2).1 4)
+  ++ test "exposed type lambda: later dependent arguments work with fresh per-item caches"
+    (allSucceeded (exposedLambdaType .zero).1 4 { clearEvery := 1 } &&
+      allSucceeded (exposedLambdaType .zero 0 2).1 4 { clearEvery := 1 })
+  ++ test "exposed type lambda: a variable-headed original type gains one beta step"
+    (exposedLambdaTypeResult 0 && exposedLambdaTypeResult 0 (.succ .zero))
+  ++ test "exposed type lambda: the closed-body plan preserves the captured carrier"
+    (exposedLambdaTypeResult 1 && exposedLambdaTypeResult 1 (.succ .zero))
+  ++ test "exposed type lambda: the variable plan consumes the new two-lambda prefix in order"
+    (exposedLambdaTypeResult 2 && exposedLambdaTypeResult 2 (.succ .zero))
+  ++ test "exposed type lambda: a lambda with the wrong function type is rejected"
+    (let (env, target) := exposedLambdaType .zero 0 0 1; rowFailed env target)
+  ++ test "exposed type lambda: a carrier cannot replace the later dependent witness"
+    (let (env, target) := exposedLambdaType .zero 0 2 2; rowFailed env target)
+  ++ test "exposed type lambda: earlier arguments specialize the function parameter in Prop and Type"
+    (allSucceeded (dependentExposedLambdaType .zero).1 4 &&
+      allSucceeded (dependentExposedLambdaType (.succ .zero)).1 4)
+  ++ test "exposed type lambda: earlier dependent substitutions preserve universe parameters"
+    (allSucceeded (dependentExposedLambdaType (.var 0) 1).1 4)
+  ++ test "exposed type lambda: earlier dependent substitutions survive fresh per-item caches"
+    (allSucceeded (dependentExposedLambdaType .zero).1 4 { clearEvery := 1 })
+  ++ test "exposed type lambda: the earlier carrier and witness reach the new beta step exactly"
+    (dependentExposedLambdaTypeResult .zero && dependentExposedLambdaTypeResult (.succ .zero))
+  ++ test "exposed type lambda: a supplied family must use its specialized dependent domain"
+    (let (env, target) := dependentExposedLambdaType .zero 0 true; rowFailed env target)
 
 /-- Call a polymorphic identity from a monomorphic function body. Universe
 indices select entries in the declaration's explicit level table. -/
@@ -2467,7 +2634,7 @@ private def polymorphicDefinitionCases : TestSeq :=
 
 public def suite : List TestSeq :=
   [cases, polymorphicCases, specializationCases, binderCases, applicationCases, multiBetaCases, cheapLambdaCases,
-    cheapApplicationCases,
+    cheapApplicationCases, exposedLambdaCases,
     polymorphicApplicationCases, constantCacheCases, cacheInvariantCases, recursiveCacheCases,
     lazyCacheCases, blockCacheCases, ingressCoherenceCases, sourceOwnershipCases, recursiveStateCases,
     sourceAgreementCases, sourceCacheCases, polymorphicDefinitionCases]
