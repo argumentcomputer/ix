@@ -14,8 +14,8 @@ Packed byte capacity must be below 2³², matching the target byte-index ABI.
 
 The frontend remains experimental. The [runtime proofs](ixby-representation.md)
 establish exact numeric/byte laws and certify all fourteen emitted field helpers,
-eleven number conversion helpers, and eight Nat arithmetic/comparison helpers,
-including complete loops and caller continuations.
+eleven number conversion helpers, eight Nat arithmetic/comparison helpers,
+and six Nat shift/logarithm/power functions, including complete loops and caller continuations.
 The complete frontend has no source-refinement certificate. It does
 not produce an `IxonCompilation` or
 authenticate the original anonymous Ixon source address. Constructor identities
@@ -127,6 +127,19 @@ packing/projection cases, 24 resource cases, and 29 rejected mutations, of
 which 24 remain structurally admitted. Seventeen additional axiom guards keep
 these contracts on the ordinary logical basis. Every image and Stage2 export
 obtains both field certificate families.
+
+Six further certificates cover `Nat.shiftRight`, `Nat.log2`, `Nat.pow`, and
+their loop helpers. Their finite execution proofs preserve arbitrary callers,
+exact Nat results, and consistent caches. The shift and logarithm loops need
+no additional continuation; the public wrappers need three spare frames.
+Power needs four spare frames for its nested multiplication/conversion calls.
+The public power contract derives every intermediate-product bound from the
+input and final-result bounds, including zero cases and the skipped final
+square. The internal loop with an arbitrary accumulator also requires the
+unscaled power to fit. The tests add 6,016 admitted executions, 51 caller cases,
+45 resource cases, and 44 rejected mutations, of which 40 remain structurally
+admitted. Nineteen axiom guards cover the loop contracts and supporting bounds.
+Every compared image and Stage2 export obtains these certificates.
 
 The binary suite checks 81 decoded executions covering every scalar, primitive,
 operation, and instruction. It also checks structured constructor/PAP input and

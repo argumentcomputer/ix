@@ -2,9 +2,9 @@
 
 The runtime proofs for the [typed Lean frontend](ixby-lean.md) establish exact
 numeric representation laws and certify all fourteen generated field helpers
-and eleven number conversion helpers, plus eight Nat arithmetic and comparison
-helpers against the unchanged Ixby evaluator. The conversion and
-arithmetic proofs include complete loops and calls into existing caller
+and eleven number conversion helpers, plus eight Nat arithmetic/comparison
+helpers and six Nat loop/wrapper functions against the unchanged Ixby evaluator.
+The conversion and arithmetic proofs include complete loops and calls into existing caller
 continuations. The complete LCNF transformation and Stage2 verifier remain
 outside this certificate boundary.
 
@@ -267,10 +267,70 @@ constructor, and name-binding mutations are rejected; 24 remain structurally
 admitted. Seventeen axiom guards cover the field paths, conversion calls, and
 whole-program corollaries.
 
+## Complete Nat shift, logarithm, and power loops
+
+[NatLoopCode.lean](../Compilatrix/Ixby/Runtime/NatLoopCode.lean) specifies the
+exact emitted bodies for `Nat.shiftRight`, `Nat.log2`, `Nat.pow`, and their
+three loop helpers. The [certificate](../Compilatrix/Ixby/Runtime/NatLoopCertificate.lean)
+checks those complete bodies together with the existing arithmetic certificate,
+conversion dependencies, and number layouts. `Image.certifyNatLoops` retains
+the actual image's name bindings and decoding layout; every compared image
+and Stage2 export obtains it.
+
+The [shift and logarithm proofs](../Compilatrix/Ixby/Runtime/NatShiftLog.lean)
+establish finite paths through all branches. `shiftRightLoop n shift` returns
+a number representing `n >>> shift`, including its early cached-zero return.
+`log2Loop n accumulator` returns the exact raw box for
+`accumulator + n.log2`; both zero and one contribute zero. Their tail calls
+preserve the complete existing continuation without adding a frame.
+
+The [power laws](../Compilatrix/Ixby/Runtime/NatPowLaws.lean) prove the even/odd
+halving identities and bounds for every square and accumulator product.
+[NatMulCall.lean](../Compilatrix/Ixby/Runtime/NatMulCall.lean) composes actual
+calls to the certified multiplication helper with checked caller restoration.
+The [power execution proof](../Compilatrix/Ixby/Runtime/NatPow.lean) then shows
+that `powLoop base exponent accumulator` terminates with a number representing
+`accumulator * base ^ exponent`. A zero exponent returns the original
+accumulator, and the loop skips the unused final square. `Nat.pow` starts with
+cached one, so the public result is exactly `base ^ exponent`, including
+`0 ^ 0 = 1`. Every retained cache is consistent.
+
+| Helpers | Local slots | Nat bits | Spare continuations | Byte capacity | Additional scalar bounds |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `shiftRightLoop n shift` | 6 | 2 | 0 | 0 | Both inputs fit |
+| `log2Loop n accumulator` | 5 | 2 | 0 | 0 | `n` and `accumulator + n.log2` fit |
+| `Nat.shiftRight`, `Nat.log2` | 10 | 64 | 3 | 8 | Input Nat observations fit |
+| `powLoop base exponent accumulator` | 11 | 64 | 4 | 8 | Inputs, `base ^ exponent`, and `accumulator * base ^ exponent` fit |
+| `Nat.pow` | 11 | 64 | 4 | 8 | Both input Nat observations and the final power fit |
+
+These are sufficient local bounds, independent of the iteration count.
+Shift results and logarithm increments are bounded by the supplied valid
+inputs/results. For the internal power loop, a valid accumulated result alone
+does not bound intermediate squares: a zero accumulator can conceal a large
+base power. Its extra unscaled-power bound handles this case. At the public
+entry, the accumulator is one, so the single final-result premise covers all
+intermediate products. All three public helpers accept every number layout.
+The [six whole-program corollaries](../Compilatrix/Ixby/Runtime/NatLoops.lean)
+add ordinary program/input admission and preserve the explicit representation
+and scalar-validity premises.
+
+The suite adds 6,016 admitted executions across all layouts and representation
+pairs, exact result layouts and caches, word/field boundaries, Nats above 256
+bits, and shift counts/exponents above 64 bits. The huge-exponent power cases
+use bases zero and one with their exact source laws. Fifty-one actual caller
+cases check every saved input, an untouched sentinel, and the result.
+Forty-five local resource cases cover the stated bounds, smaller early-return
+paths, byte/continuation failures, 64/65-bit result boundaries, skipped final
+squares, and the internal zero-accumulator overflow case. All 44 code,
+dependency, layout, and name-binding mutations are rejected; 40 remain
+structurally admitted. Nineteen additional axiom guards cover the arithmetic
+bounds, multiplication calls, all six return contracts, and all six
+whole-program corollaries.
+
 ## Remaining simulation work
 
-The next extension can use these contracts to prove the remaining number/word
-operations preserve the source representation relations.
+The next extension can use these contracts to prove that the remaining
+`UInt8`, `UInt32`, and `USize` helpers preserve the source representation relations.
 Further composition must cover arrays and byte representations, the complete
 Stage2 adapter, and general LCNF control flow.
 Typed erasure, specialization, original Ixon source authentication, and
@@ -288,8 +348,9 @@ nix flake check --no-update-lock-file
 ```
 
 The axiom fence includes 22 representation/scalar guards, 20 conversion and
-continuation guards, 21 Nat arithmetic/comparison/call guards, and 17 field/call
-guards. They pin the contracts to subsets of `propext`, `Classical.choice`, and
+continuation guards, 21 Nat arithmetic/comparison/call guards, 17 field/call
+guards, and 19 Nat loop/arithmetic-bound/call guards. They pin the contracts to
+subsets of `propext`, `Classical.choice`, and
 `Quot.sound`. The integration gate retains
 the 4,585 differential executions, binary corpus, exact fresh Stage2 artifact
 comparisons, and all eight serialized verifier cases.

@@ -173,9 +173,10 @@ checker would need to cover branches, parsing, recursive calls, and the exact
 bytes/erased observation for every admitted input.
 The [runtime representation proofs](ixby-representation.md) supply exact
 number/byte laws and certificates for all fourteen generated field helpers,
-eleven complete number conversion helpers, and eight Nat arithmetic/comparison
-helpers, including division by zero, mixed equality, modular field operations,
-zero inverse, extension packing, and caller continuations.
+eleven complete number conversion helpers, eight Nat arithmetic/comparison
+helpers, and six Nat shift/logarithm/power functions. These include division by
+zero, mixed equality, modular field operations, zero inverse, extension
+packing, complete Nat loops with intermediate bounds, and caller continuations.
 These proofs do not yet compose through this complete source or the Stage2 adapter.
 
 Proving executor support, resource measurement, execution soundness, and

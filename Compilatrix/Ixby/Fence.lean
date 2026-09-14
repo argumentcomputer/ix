@@ -406,3 +406,80 @@ Ixon prefix retains the repository's existing, explicitly ledgered hash boundary
  Classical.choice,
  Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.Ixby.Runtime.FieldArithmetic.Certificate.pack_evaluates
+
+/-! Complete Nat shift, logarithm, and power loops with caller preservation. -/
+
+/-- info: 'Compilatrix.Ixby.Runtime.NatArithmetic.Certificate.call_mul' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.NatArithmetic.Certificate.call_mul
+
+/-- info: 'Compilatrix.Ixby.Runtime.NatLoops.pow_halving' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.NatLoops.pow_halving
+
+/-- info: 'Compilatrix.Ixby.Runtime.NatLoops.pow_even' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.NatLoops.pow_even
+
+/-- info: 'Compilatrix.Ixby.Runtime.NatLoops.pow_odd' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.NatLoops.pow_odd
+
+/-- info: 'Compilatrix.Ixby.Runtime.NatLoops.pow_half_le' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.NatLoops.pow_half_le
+
+/-- info: 'Compilatrix.Ixby.Runtime.NatLoops.pow_square_le' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.NatLoops.pow_square_le
+
+/-- info: 'Compilatrix.Ixby.Runtime.NatLoops.pow_accumulator_le' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.NatLoops.pow_accumulator_le
+
+/-- info: 'Compilatrix.Ixby.Runtime.NatLoops.Certificate.shiftRightLoop_returns' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.NatLoops.Certificate.shiftRightLoop_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.NatLoops.Certificate.log2Loop_returns' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.NatLoops.Certificate.log2Loop_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.NatLoops.Certificate.powLoop_returns' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.NatLoops.Certificate.powLoop_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.NatLoops.Certificate.shiftRight_returns' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.NatLoops.Certificate.shiftRight_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.NatLoops.Certificate.log2_returns' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.NatLoops.Certificate.log2_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.NatLoops.Certificate.pow_returns' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.NatLoops.Certificate.pow_returns
+
+/-- info: 'Compilatrix.Ixby.Runtime.NatLoops.Certificate.shiftRightLoop_evaluates' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.NatLoops.Certificate.shiftRightLoop_evaluates
+
+/-- info: 'Compilatrix.Ixby.Runtime.NatLoops.Certificate.log2Loop_evaluates' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.NatLoops.Certificate.log2Loop_evaluates
+
+/-- info: 'Compilatrix.Ixby.Runtime.NatLoops.Certificate.powLoop_evaluates' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.NatLoops.Certificate.powLoop_evaluates
+
+/-- info: 'Compilatrix.Ixby.Runtime.NatLoops.Certificate.shiftRight_evaluates' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.NatLoops.Certificate.shiftRight_evaluates
+
+/-- info: 'Compilatrix.Ixby.Runtime.NatLoops.Certificate.log2_evaluates' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.NatLoops.Certificate.log2_evaluates
+
+/-- info: 'Compilatrix.Ixby.Runtime.NatLoops.Certificate.pow_evaluates' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.NatLoops.Certificate.pow_evaluates

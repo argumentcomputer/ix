@@ -18,6 +18,7 @@ private def compileImage (env : Environment) (name : Name) (wire := false) : IO 
   discard <| checked image.certifyConversions
   discard <| checked image.certifyNatArithmetic
   discard <| checked image.certifyFields
+  discard <| checked image.certifyNatLoops
   return image
 
 private def certificateMutations (image : Image) : IO Unit := do
@@ -626,6 +627,284 @@ private def fieldExecutions (image : Image) : IO Unit := do
   localRun native links.add #[cached 1, maxField] (.error (.limit .natBits))
   IO.println s!"check-ixby-lean field contracts: {← count.get} admitted executions; {← callerCount.get} caller cases; {← projectionCount.get} packing/projection cases; {← localCount.get} resource cases"
 
+private def natLoopMutations (image : Image) : IO Unit := do
+  let certified ← checked image.certifyNatLoops
+  let links := certified.links
+  let arithmetic := links.arithmetic
+  let conversions := arithmetic.conversions
+  let instruction (id block : Nat) (changed : Ix.Ixby.Instr) : Image :=
+    { image with program := { image.program with functions := image.program.functions.modify id fun fn =>
+      { fn with blocks := fn.blocks.modify block fun old => { old with instruction := changed } } } }
+  let function (id : Nat) (change : Ix.Ixby.Function → Ix.Ixby.Function) : Image :=
+    { image with program := { image.program with functions := image.program.functions.modify id change } }
+  let rejected ← IO.mkRef 0
+  let admittedCount ← IO.mkRef 0
+  let reject (changed : Image) (label : String) (admitted := true) : IO Unit := do
+    if admitted then
+      discard <| checked (Ix.Ixby.validateProgram changed.state.limits changed.program |>.mapError reprStr)
+      admittedCount.modify (· + 1)
+    match changed.certifyNatLoops with
+    | .error _ => rejected.modify (· + 1)
+    | .ok _ => throw (IO.userError s!"Nat loop certificate accepted {label}")
+  reject (instruction links.shiftRightLoop 0
+    (.letOp (.primitive .natEq [.local 0, .literal (.nat 0)]) 1)) "shift tested the value as the count"
+  reject (instruction links.shiftRightLoop 1 (.branch (.local 2) 3 2)) "shift reversed termination branches"
+  reject (instruction links.shiftRightLoop 2 (.tailCall conversions.natural [.local 0])) "shift omitted boxing"
+  reject (instruction links.shiftRightLoop 5 (.letOp (.construct conversions.cachedCtor
+    [.literal (.nat 0), .literal (.word32 1)]) 7)) "shift returned an inconsistent zero cache"
+  reject (instruction links.shiftRightLoop 6
+    (.letOp (.primitive .natDiv [.local 0, .literal (.nat 3)]) 8)) "shift divided by three"
+  reject (instruction links.shiftRightLoop 8
+    (.letOp (.primitive .natSub [.local 1, .literal (.nat 2)]) 9)) "shift skipped a bit"
+  reject (instruction links.shiftRightLoop 9 (.tailCall links.shiftRightLoop [.local 5, .local 4]))
+    "shift swapped recursive arguments"
+  reject (instruction links.shiftRightLoop 9 (.tailCall links.log2Loop [.local 4, .local 5]))
+    "shift used the logarithm loop"
+  reject (instruction links.shiftRight 0 (.letOp (.call conversions.lowWord [.local 0]) 1))
+    "shift observed the low word"
+  reject (instruction links.shiftRight 1 (.letOp (.call conversions.natural [.local 0]) 2))
+    "shift observed its value twice"
+  reject (instruction links.shiftRight 2 (.tailCall links.shiftRightLoop [.local 3, .local 2]))
+    "shift wrapper swapped value and count"
+  reject (instruction links.log2Loop 0
+    (.letOp (.primitive .natLt [.local 0, .literal (.nat 1)]) 1)) "logarithm used the wrong stopping threshold"
+  reject (instruction links.log2Loop 2 (.tailCall conversions.fromRaw [.local 0])) "logarithm returned its input"
+  reject (instruction links.log2Loop 3
+    (.letOp (.primitive .natDiv [.local 0, .literal (.nat 3)]) 4)) "logarithm divided by three"
+  reject (instruction links.log2Loop 4
+    (.letOp (.primitive .natAdd [.local 1, .literal (.nat 2)]) 5)) "logarithm incremented twice"
+  reject (instruction links.log2Loop 5 (.tailCall links.log2Loop [.local 4, .local 3]))
+    "logarithm swapped recursive arguments"
+  reject (instruction links.log2 1 (.tailCall links.log2Loop [.local 1, .literal (.nat 1)]))
+    "logarithm started its accumulator at one"
+  reject (instruction links.powLoop 2 (.ret (.local 0))) "zero exponent returned the base"
+  reject (instruction links.powLoop 3
+    (.letOp (.primitive .natDiv [.local 1, .literal (.nat 3)]) 4)) "power divided the exponent by three"
+  reject (instruction links.powLoop 4
+    (.letOp (.primitive .natMod [.local 1, .literal (.nat 3)]) 5)) "power used radix three"
+  reject (instruction links.powLoop 5
+    (.letOp (.primitive .natEq [.local 5, .literal (.nat 0)]) 6)) "power tested even instead of odd"
+  reject (instruction links.powLoop 7 (.letOp (.call arithmetic.add [.local 2, .local 0]) 9))
+    "power added its accumulator"
+  reject (instruction links.powLoop 7 (.letOp (.call arithmetic.mul [.local 2, .local 2]) 9))
+    "power multiplied the accumulator by itself"
+  reject (instruction links.powLoop 9
+    (.letOp (.primitive .natEq [.local 4, .literal (.nat 1)]) 10)) "power stopped one iteration early"
+  reject (instruction links.powLoop 12 (.letOp (.call arithmetic.mul [.local 0, .local 2]) 13))
+    "odd power branch did not square the base"
+  reject (instruction links.powLoop 13 (.tailCall links.powLoop [.local 9, .local 1, .local 7]))
+    "power retained the old exponent"
+  reject (instruction links.powLoop 13 (.tailCall links.powLoop [.local 9, .local 4, .local 2]))
+    "power discarded the new accumulator"
+  reject (instruction links.powLoop 16 (.letOp (.call arithmetic.add [.local 0, .local 0]) 17))
+    "even power branch doubled the base"
+  reject (instruction links.powLoop 17 (.tailCall links.powLoop [.local 0, .local 4, .local 2]))
+    "even power branch discarded the square"
+  reject (instruction links.pow 0 (.letOp (.call conversions.natural [.local 0]) 1))
+    "power observed the base as its exponent"
+  reject (instruction links.pow 1 (.letOp (.construct conversions.cachedCtor
+    [.literal (.nat 0), .literal (.word32 0)]) 2)) "power initialized the accumulator to zero"
+  reject (instruction links.pow 1 (.letOp (.construct conversions.cachedCtor
+    [.literal (.nat 1), .literal (.word32 0)]) 2)) "power initialized an inconsistent cache"
+  reject (instruction arithmetic.mul 2 (.letOp (.primitive .natAdd [.local 2, .local 3]) 3))
+    "multiplication dependency added"
+  reject (instruction arithmetic.mul 7 (.letOp (.primitive .word32Add [.local 6, .local 8]) 10))
+    "multiplication dependency corrupted its cache"
+  reject (instruction conversions.natural 1 (.ret (.local 2))) "observer dependency returned a cache"
+  reject (instruction conversions.fromRaw 0 (.letOp (.construct conversions.fieldCtor [.local 0]) 1))
+    "boxing dependency used the field layout"
+  reject (function links.powLoop fun fn =>
+    { fn with blocks := fn.blocks.push { locals := 0, instruction := .ret .erased } }) "extra loop block"
+  reject (function links.log2 fun fn => { fn with entry := 1 }) "changed logarithm entry" false
+  reject (function links.powLoop fun fn => { fn with arity := 2 }) "changed power loop arity" false
+  let functionNames := image.state.functionNames.insert `Nat.pow links.shiftRight
+  reject { image with state := { image.state with functionNames } } "wrong public power name binding"
+  let functionNames := image.state.functionNames.insert `Ixby.Runtime.shiftRightLoop links.log2Loop
+  reject { image with state := { image.state with functionNames } } "wrong recursive name binding"
+  let constructors := image.program.constructors.modify conversions.cachedCtor fun ctor => { ctor with fields := 1 }
+  reject { image with program := { image.program with constructors } } "wrong cached layout" false
+  let constructorNames := image.state.constructorNames.insert `Ixby.Runtime.RawNumber conversions.fieldCtor
+  reject { image with state := { image.state with constructorNames } } "wrong raw constructor binding"
+  let constructors := image.program.constructors.modify conversions.rawCtor fun ctor => { ctor with id := conversions.layout.cached }
+  reject { image with program := { image.program with constructors } } "duplicate number tags" false
+  IO.println s!"check-ixby-lean Nat loops: 6 generated functions; {← rejected.get} rejected mutations ({← admittedCount.get} structurally admitted)"
+
+private def natLoopExecutions (image : Image) : IO Unit := do
+  let certified ← checked image.certifyNatLoops
+  let links := certified.links
+  let layout := links.arithmetic.conversions.layout
+  let cached (n : Nat) : Ix.Ixby.Value :=
+    .ctor layout.cached #[.scalar (.nat n), .scalar (.word32 n.toUInt32)]
+  let raw (n : Nat) : Ix.Ixby.Value := .ctor layout.raw #[.scalar (.nat n)]
+  let field (n : Nat) : Ix.Ixby.Value :=
+    .ctor layout.field #[.scalar (.field (Ix.Ixby.Goldilocks.reduce n))]
+  let cases (n : Nat) : Array (Nat × Ix.Ixby.Value) :=
+    #[(n, cached n), (n, raw n), (n % Ix.Ixby.goldilocksModulus, field n)]
+  let isCached : Ix.Ixby.Value → Bool
+    | .ctor tag _ => tag == layout.cached
+    | _ => false
+  let shiftResult (n shift : Nat) :=
+    if shift > 0 && n >>> (shift - 1) == 0 then cached 0 else raw (n >>> shift)
+  -- Lean's native Nat.pow oracle rejects enormous exponents even for zero and
+  -- one. Use the exact source laws for these constant-size mathematical results.
+  let sourcePower (base exponent : Nat) :=
+    if exponent == 0 then 1 else if base == 0 then 0 else if base == 1 then 1 else base ^ exponent
+  let powerResult (base exponent accumulator : Nat) (baseValue accumulatorValue : Ix.Ixby.Value) :=
+    if exponent == 0 then accumulatorValue
+    else if isCached baseValue && isCached accumulatorValue then cached (accumulator * sourcePower base exponent)
+    else raw (accumulator * sourcePower base exponent)
+  let execute (program : Ix.Ixby.Program) (args : Array Ix.Ixby.Value) : IO Ix.Ixby.Value := do
+    discard <| checked (Compilatrix.Ixby.Runtime.NatLoops.certify program links)
+    checked (Ix.Ixby.execute image.state.limits program args 200000 |>.mapError reprStr)
+  let count ← IO.mkRef 0
+  let runCase (id : Nat) (args : Array Ix.Ixby.Value) (expected : Ix.Ixby.Value) : IO Unit := do
+    let actual ← execute { image.program with entry := id } args
+    need (actual == expected) s!"Nat loop helper {id}: {reprStr args}: expected {reprStr expected}, got {reprStr actual}"
+    -- Independently reject a stale word cache in any numeric result.
+    discard <| checked (image.decodeNumber actual)
+    count.modify (· + 1)
+  let numbers := #[0, 1, 2, 2 ^ 32 - 1, 2 ^ 32, 2 ^ 32 + 1,
+    Ix.Ixby.goldilocksModulus - 1, Ix.Ixby.goldilocksModulus, Ix.Ixby.goldilocksModulus + 1,
+    2 ^ 64 - 1, 2 ^ 64, 2 ^ 80 + 17, 2 ^ 256 + 255]
+  let shifts := #[0, 1, 2, 3, 7, 8, 15, 16, 31, 32, 33, 63, 64, 65, 127, 255, 256, 257,
+    2 ^ 32, 2 ^ 64, 2 ^ 80 + 17]
+  for n in numbers do
+    for (n, value) in cases n do
+      runCase links.log2 #[value] (raw n.log2)
+      for shift in shifts do
+        for (shift, amount) in cases shift do
+          runCase links.shiftRight #[value, amount] (shiftResult n shift)
+    for shift in shifts do
+      runCase links.shiftRightLoop #[.scalar (.nat n), .scalar (.nat shift)] (shiftResult n shift)
+    for accumulator in #[0, 1, 2 ^ 32, 2 ^ 80] do
+      runCase links.log2Loop #[.scalar (.nat n), .scalar (.nat accumulator)] (raw (accumulator + n.log2))
+  let powers (bases exponents : Array Nat) : IO Unit := do
+    for base in bases do
+      for exponent in exponents do
+        for (base, value) in cases base do
+          for (exponent, amount) in cases exponent do
+            runCase links.pow #[value, amount] (powerResult base exponent 1 value (cached 1))
+  powers numbers #[0, 1, 2, 3, 7, 8, 15]
+  powers #[0, 1, 2, 3, 5, 7, 11] #[16, 31, 32, 33, 63, 64, 65, 127]
+  powers #[0, 1] #[2 ^ 32 - 1, 2 ^ 32, 2 ^ 64 - 1, 2 ^ 80 + 17]
+  for base in #[0, 1, 2, 2 ^ 32 + 1, Ix.Ixby.goldilocksModulus + 1] do
+    for exponent in #[0, 1, 2, 3, 4, 5, 7, 8, 15, 16] do
+      for accumulator in #[0, 1, 3, 2 ^ 80 + 17] do
+        for (base, value) in cases base do
+          for (accumulator, acc) in cases accumulator do
+            runCase links.powLoop #[value, .scalar (.nat exponent), acc]
+              (powerResult base exponent accumulator value acc)
+  let callerCount ← IO.mkRef 0
+  let callerCase (id : Nat) (args : Array Ix.Ixby.Value) (expected : Ix.Ixby.Value) : IO Unit := do
+    let allArgs := args.push (.scalar (.word32 0xC0FFEE))
+    let mut blocks : Array Ix.Ixby.Block := #[⟨allArgs.size,
+      .letOp (.call id ((List.range args.size).map Ix.Ixby.Operand.local)) 1⟩]
+    let mut result := allArgs.size
+    let mut locals := allArgs.size + 1
+    let mut expected := expected
+    for i in (List.range allArgs.size).reverse do
+      blocks := blocks.push ⟨locals, .letOp (.construct links.arithmetic.conversions.cachedCtor
+        [.local i, .local result]) (blocks.size + 1)⟩
+      result := locals
+      locals := locals + 1
+      expected := .ctor layout.cached #[allArgs[i]!, expected]
+    blocks := blocks.push ⟨locals, .ret (.local result)⟩
+    let caller : Ix.Ixby.Function := { arity := allArgs.size, blocks }
+    let actual ← execute { image.program with
+      entry := image.program.functions.size
+      functions := image.program.functions.push caller } allArgs
+    need (actual == expected) s!"Nat loop caller {id} lost an input, sentinel, or result"
+    callerCount.modify (· + 1)
+  for n in #[0, 1, 2 ^ 80 + 17] do
+    for (n, value) in cases n do
+      callerCase links.log2 #[value] (raw n.log2)
+      callerCase links.shiftRight #[value, field 33] (shiftResult n 33)
+      callerCase links.pow #[value, raw 3] (powerResult n 3 1 value (cached 1))
+      callerCase links.powLoop #[value, .scalar (.nat 4), field 3] (powerResult n 4 3 value (field 3))
+      callerCase links.powLoop #[value, .scalar (.nat 0), field 3] (field 3)
+    callerCase links.shiftRightLoop #[.scalar (.nat n), .scalar (.nat 33)] (shiftResult n 33)
+    callerCase links.log2Loop #[.scalar (.nat n), .scalar (.nat 7)] (raw (7 + n.log2))
+  -- These local checks do not assume whole-image admission at smaller limits.
+  let localCount ← IO.mkRef 0
+  let localRun (limits : Ix.Ixby.Limits) (id : Nat) (args : Array Ix.Ixby.Value)
+      (expected : Except Ix.Ixby.Error Ix.Ixby.Value) : IO Unit := do
+    let actual := Ix.Ixby.run limits image.program 200000
+      (Compilatrix.Ixby.Runtime.ScalarFunction.start id args)
+    let same := match actual, expected with
+      | .ok actual, .ok expected => actual == expected
+      | .error actual, .error expected => actual == expected
+      | _, _ => false
+    need same s!"Nat loop resource contract {id}: expected {reprStr expected}, got {reprStr actual}"
+    localCount.modify (· + 1)
+  let shiftOnly : Ix.Ixby.Limits := {
+    image.state.limits with locals := 6, continuations := 0, natBits := 2, byteArrayBytes := 0 }
+  localRun shiftOnly links.shiftRightLoop #[.scalar (.nat 3), .scalar (.nat 1)] (.ok (raw 1))
+  localRun { shiftOnly with locals := 5 } links.shiftRightLoop #[.scalar (.nat 3), .scalar (.nat 1)]
+    (.error (.limit .locals))
+  localRun { shiftOnly with natBits := 1 } links.shiftRightLoop #[.scalar (.nat 3), .scalar (.nat 1)]
+    (.error (.limit .natBits))
+  localRun shiftOnly links.shiftRightLoop #[.scalar (.nat 1), .scalar (.nat 1)] (.ok (raw 0))
+  localRun shiftOnly links.shiftRightLoop #[.scalar (.nat 1), .scalar (.nat 2)] (.ok (cached 0))
+  localRun { shiftOnly with locals := 3 } links.shiftRightLoop #[.scalar (.nat 3), .scalar (.nat 0)] (.ok (raw 3))
+  localRun { shiftOnly with locals := 5 } links.shiftRightLoop #[.scalar (.nat 0), .scalar (.nat 3)] (.ok (cached 0))
+  localRun { shiftOnly with locals := 4 } links.shiftRightLoop #[.scalar (.nat 0), .scalar (.nat 3)]
+    (.error (.limit .locals))
+  localRun { shiftOnly with natBits := 64 } links.shiftRightLoop
+    #[.scalar (.nat 0), .scalar (.nat (2 ^ 64 - 1))] (.ok (cached 0))
+  let logOnly := { shiftOnly with locals := 5, natBits := 64 }
+  localRun logOnly links.log2Loop #[.scalar (.nat 0), .scalar (.nat 7)] (.ok (raw 7))
+  localRun logOnly links.log2Loop #[.scalar (.nat 1), .scalar (.nat 7)] (.ok (raw 7))
+  localRun logOnly links.log2Loop #[.scalar (.nat 3), .scalar (.nat (2 ^ 64 - 2))] (.ok (raw (2 ^ 64 - 1)))
+  localRun logOnly links.log2Loop #[.scalar (.nat 2), .scalar (.nat (2 ^ 64 - 1))] (.error (.limit .natBits))
+  localRun { logOnly with natBits := 65 } links.log2Loop
+    #[.scalar (.nat 2), .scalar (.nat (2 ^ 64 - 1))] (.ok (raw (2 ^ 64)))
+  localRun { logOnly with locals := 4 } links.log2Loop #[.scalar (.nat 4), .scalar (.nat 0)]
+    (.error (.limit .locals))
+  localRun { logOnly with natBits := 1 } links.log2Loop #[.scalar (.nat 0), .scalar (.nat 0)]
+    (.error (.limit .natBits))
+  let observed : Ix.Ixby.Limits := {
+    image.state.limits with locals := 10, continuations := 3, natBits := 64, byteArrayBytes := 8 }
+  let maxField := Ix.Ixby.goldilocksModulus - 1
+  localRun observed links.log2 #[field maxField] (.ok (raw maxField.log2))
+  localRun { observed with locals := 9 } links.log2 #[field maxField] (.error (.limit .locals))
+  localRun { observed with continuations := 2 } links.log2 #[field maxField] (.error (.limit .continuations))
+  localRun { observed with byteArrayBytes := 7 } links.log2 #[field maxField] (.error (.limit .byteArrayBytes))
+  localRun { observed with natBits := 63 } links.log2 #[field maxField] (.error (.limit .natBits))
+  localRun observed links.shiftRight #[field maxField, field 1] (.ok (raw (maxField >>> 1)))
+  localRun { observed with continuations := 2 } links.shiftRight #[field maxField, field 1]
+    (.error (.limit .continuations))
+  localRun { observed with locals := 6, continuations := 1, byteArrayBytes := 0 }
+    links.shiftRight #[cached 8, raw 3] (.ok (raw 1))
+  localRun { observed with locals := 5, continuations := 1, byteArrayBytes := 0 }
+    links.shiftRight #[cached 8, raw 3] (.error (.limit .locals))
+  localRun { observed with continuations := 0 } links.shiftRight #[cached 8, raw 3]
+    (.error (.limit .continuations))
+  let power := { observed with locals := 11, continuations := 4 }
+  localRun power links.pow #[cached 0, cached 0] (.ok (cached 1))
+  localRun power links.pow #[field maxField, cached 0] (.ok (cached 1))
+  localRun power links.pow #[cached (2 ^ 64 - 1), cached 1] (.ok (cached (2 ^ 64 - 1)))
+  localRun power links.pow #[field maxField, cached 1] (.ok (raw maxField))
+  localRun { power with continuations := 3 } links.pow #[field maxField, cached 1]
+    (.error (.limit .continuations))
+  localRun { power with byteArrayBytes := 7 } links.pow #[field maxField, cached 1]
+    (.error (.limit .byteArrayBytes))
+  localRun { power with locals := 10 } links.pow #[cached 2, cached 3] (.error (.limit .locals))
+  localRun power links.pow #[cached 2, raw 63] (.ok (cached (2 ^ 63)))
+  localRun power links.pow #[cached 2, raw 64] (.error (.limit .natBits))
+  localRun { power with natBits := 65 } links.pow #[cached 2, raw 64] (.ok (cached (2 ^ 64)))
+  localRun power links.pow #[cached (2 ^ 32), cached 2] (.error (.limit .natBits))
+  localRun { power with natBits := 65 } links.pow #[cached (2 ^ 32), cached 2] (.ok (cached (2 ^ 64)))
+  localRun power links.pow #[raw 0, cached (2 ^ 64 - 1)] (.ok (raw 0))
+  localRun power links.pow #[cached 1, field maxField] (.ok (cached 1))
+  -- A zero accumulated result alone does not bound the internal base square.
+  localRun power links.powLoop #[cached (2 ^ 32), .scalar (.nat 2), cached 0] (.error (.limit .natBits))
+  localRun { power with natBits := 65 } links.powLoop
+    #[cached (2 ^ 32), .scalar (.nat 2), cached 0] (.ok (cached 0))
+  localRun power links.powLoop #[cached (2 ^ 64 - 1), .scalar (.nat 1), cached 0] (.ok (cached 0))
+  localRun power links.powLoop #[raw 0, .scalar (.nat 0), field maxField] (.ok (field maxField))
+  localRun power links.powLoop #[field 3, .scalar (.nat 5), raw 7] (.ok (raw (7 * 3 ^ 5)))
+  IO.println s!"check-ixby-lean Nat loop contracts: {← count.get} admitted executions; {← callerCount.get} caller cases; {← localCount.get} resource cases"
+
 private def compileRejects (env : Environment) (name : Name) (limits : Ix.Ixby.Limits)
     (message : String) : IO Unit := do
   let (result, _) ← (compile name limits).toIO
@@ -663,6 +942,8 @@ def main : IO UInt32 := cli "check-ixby-lean" do
   natArithmeticExecutions runtimeImage
   fieldMutations runtimeImage
   fieldExecutions runtimeImage
+  natLoopMutations runtimeImage
+  natLoopExecutions runtimeImage
   compileRejects env `Nat.add { byteArrayBytes := 2 ^ 32 }
     "typed Ixby packed byte capacity must fit Word32 indices"
   compileRejects env `Float.add {} "unsupported typed runtime extern Float.add"

@@ -3,10 +3,11 @@ import Compilatrix.Ixby.Runtime.ScalarCertificate
 import Compilatrix.Ixby.Runtime.NumberConversion
 import Compilatrix.Ixby.Runtime.NatArithmetic
 import Compilatrix.Ixby.Runtime.FieldArithmetic
+import Compilatrix.Ixby.Runtime.NatLoops
 
 /-! Typed-frontend proof boundaries: exact number decoding and checked
 execution of all emitted field helpers, complete number conversions, and Nat
-arithmetic and comparisons.
+arithmetic, comparisons, and recursive shift, logarithm, and power helpers.
 This does not certify Lean proof erasure or the general LCNF lowering. -/
 
 namespace Compilatrix.Ixby.LeanFrontend
@@ -257,5 +258,46 @@ def Image.certifyFields (image : Image) : Except String image.FieldCertified := 
       candidates
       names
       certificate := ← FieldArithmetic.certify image.program candidates.links }
+
+structure Image.NatLoopCandidates (image : Image) where
+  links : NatLoops.Links
+  layouts : image.HasNumberLayout links.arithmetic.conversions.layout
+
+def Image.natLoopCandidates (image : Image) : Except String image.NatLoopCandidates := do
+  let arithmetic ← image.natArithmeticCandidates
+  let function (name : Name) : Except String Nat :=
+    match image.state.functionNames[name]? with
+    | some id => .ok id
+    | none => .error s!"missing Nat loop runtime name {name}"
+  let links : NatLoops.Links := {
+    arithmetic := arithmetic.links
+    shiftRightLoop := ← function `Ixby.Runtime.shiftRightLoop
+    log2Loop := ← function `Ixby.Runtime.log2Loop
+    powLoop := ← function `Ixby.Runtime.powLoop
+    shiftRight := ← function `Nat.shiftRight
+    log2 := ← function `Nat.log2
+    pow := ← function `Nat.pow }
+  return { links, layouts := arithmetic.layouts }
+
+structure Image.NatLoopCertified (image : Image) where
+  candidates : image.NatLoopCandidates
+  names : image.natLoopCandidates = .ok candidates
+  certificate : NatLoops.Certificate image.program candidates.links
+
+def Image.NatLoopCertified.links {image : Image} (certified : image.NatLoopCertified) :
+    NatLoops.Links := certified.candidates.links
+
+theorem Image.NatLoopCertified.layouts {image : Image} (certified : image.NatLoopCertified) :
+    image.HasNumberLayout certified.links.arithmetic.conversions.layout := certified.candidates.layouts
+
+/-- Check all six loop/wrapper bodies together with multiplication and its
+conversion dependencies, number layouts, and image name bindings. -/
+def Image.certifyNatLoops (image : Image) : Except String image.NatLoopCertified := do
+  match names : image.natLoopCandidates with
+  | .error message => throw message
+  | .ok candidates => return {
+      candidates
+      names
+      certificate := ← NatLoops.certify image.program candidates.links }
 
 end Compilatrix.Ixby.LeanFrontend
