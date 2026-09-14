@@ -4,6 +4,7 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 -/
 
 import Ix.Kernel.Verify.Consistency.BinderInference
+import Ix.Theory.Model.BetaSpine
 
 /-!
 Type formation comes from actual inference of a type, including the type
@@ -82,6 +83,95 @@ theorem typing_instL_closed {entries : Model.Environment β} {context : Model.Co
   have result := typed V constants realizes (arguments.map (VLevel.eval levels)) env
     (Context.valid_nil constants _ env)
   simpa only [wellDenoted_instL, interp_instL] using result
+
+/-- Retain the syntax of both a checked type and its reduction while moving
+that original check to its use site. Every step is an explicit interface or
+syntax operation; no semantic equality is stored in this transport. -/
+inductive TypeReductionTransport :
+    Model.Environment β → Model.Context β → AExpr β → AExpr β → VLevel →
+      Model.Environment β → Model.Context β → AExpr β → AExpr β → VLevel → Type u where
+  | refl {entries context source reduced level} :
+      TypeReductionTransport entries context source reduced level entries context source reduced level
+  | extend {origin originContext source reduced level earlier later context current result bound}
+      (prior : TypeReductionTransport origin originContext source reduced level
+        earlier context current result bound)
+      (extension : InterfaceExtends earlier later) :
+      TypeReductionTransport origin originContext source reduced level later context current result bound
+  | weaken {origin originContext source reduced level entries context current result bound}
+      (prior : TypeReductionTransport origin originContext source reduced level
+        entries context current result bound) (domain : AExpr β) :
+      TypeReductionTransport origin originContext source reduced level entries (context.push domain)
+        (current.liftN 1) (result.liftN 1) bound
+  | instantiate {origin originContext source reduced level entries context current result bound}
+      (prior : TypeReductionTransport origin originContext source reduced level
+        entries [] current result bound) (arguments : List VLevel) :
+      TypeReductionTransport origin originContext source reduced level entries context
+        (current.instL arguments) (result.instL arguments) (bound.inst arguments)
+  | equivalent {origin originContext source reduced level entries context current result bound current' result'}
+      (prior : TypeReductionTransport origin originContext source reduced level
+        entries context current result bound)
+      (sameSource : AExpr.LevelEquivalent current current')
+      (sameResult : AExpr.LevelEquivalent result result') :
+      TypeReductionTransport origin originContext source reduced level entries context current' result' bound
+
+/-- An origin and its beta result cross a local binder together; the result
+is derived by substitution algebra rather than supplied independently. -/
+def TypeReductionTransport.weakenPrefix
+    {origin entries : Model.Environment β} {originContext context : Model.Context β}
+    {source reduced head : AExpr β} {arguments : List (AExpr β)} {level bound : VLevel} {count : Nat}
+    (prior : TypeReductionTransport origin originContext source reduced level
+      entries context (head.appN arguments) (AExpr.betaPrefix count head arguments) bound)
+    (domain : AExpr β) :
+    TypeReductionTransport origin originContext source reduced level entries (context.push domain)
+      ((head.liftN 1).appN (arguments.map (AExpr.liftN 1 ·)))
+      (AExpr.betaPrefix count (head.liftN 1) (arguments.map (AExpr.liftN 1 ·))) bound := by
+  simpa only [AExpr.liftN_appN, AExpr.liftN_betaPrefix] using prior.weaken domain
+
+/-- Universe instantiation preserves the complete selected beta prefix,
+including all annotations, dependent substitutions, and trailing arguments. -/
+def TypeReductionTransport.instantiatePrefix
+    {origin entries : Model.Environment β} {originContext context : Model.Context β}
+    {source reduced head : AExpr β} {arguments : List (AExpr β)} {level bound : VLevel} {count : Nat}
+    (prior : TypeReductionTransport origin originContext source reduced level
+      entries [] (head.appN arguments) (AExpr.betaPrefix count head arguments) bound)
+    (levels : List VLevel) :
+    TypeReductionTransport origin originContext source reduced level entries context
+      ((head.instL levels).appN (arguments.map (AExpr.instL levels)))
+      (AExpr.betaPrefix count (head.instL levels) (arguments.map (AExpr.instL levels)))
+      (bound.inst levels) := by
+  simpa only [AExpr.instL_appN, AExpr.instL_betaPrefix] using prior.instantiate levels
+
+theorem TypeReductionTransport.sound
+    {origin entries : Model.Environment β} {originContext context : Model.Context β}
+    {source reduced current result : AExpr β} {level bound : VLevel}
+    (transport : TypeReductionTransport origin originContext source reduced level
+      entries context current result bound)
+    (converted : ConversionClaim.{u,v} origin originContext source reduced)
+    (typed : TypingClaim.{u,v} origin originContext reduced (.sort level)) :
+    ConversionClaim.{u,v} entries context current result ∧
+      TypingClaim.{u,v} entries context result (.sort bound) := by
+  induction transport with
+  | refl => exact ⟨converted, typed⟩
+  | extend prior extension ih =>
+      refine ⟨?_, extension.typing ih.2⟩
+      intro V _ constants realizes levels env valid
+      exact ih.1 V constants (extension.realizes realizes) levels env valid
+  | weaken prior domain ih =>
+      refine ⟨?_, typing_weaken ih.2⟩
+      intro V _ constants realizes levels env valid
+      simpa only [interp_liftN] using
+        ih.1 V constants realizes levels _ (context_valid_tail valid)
+  | instantiate prior arguments ih =>
+      refine ⟨?_, typing_instL_closed ih.2 arguments⟩
+      intro V _ constants realizes levels env valid
+      simpa only [interp_instL] using
+        ih.1 V constants realizes (arguments.map (VLevel.eval levels)) env
+          (Context.valid_nil constants _ env)
+  | equivalent prior sameSource sameResult ih =>
+      refine ⟨?_, sameResult.termTyping ih.2⟩
+      intro V _ constants realizes levels env valid
+      exact (sameSource.interp constants levels env).symm.trans
+        ((ih.1 V constants realizes levels env valid).trans (sameResult.interp constants levels env))
 
 /-- Evidence of an executed type-inference call. The witness stores raw
 syntax, states, and a finite inference tree; it contains no semantic typing

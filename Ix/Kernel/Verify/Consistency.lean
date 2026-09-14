@@ -31,6 +31,7 @@ import Ix.Kernel.Verify.Consistency.BetaSubstitution
 import Ix.Kernel.Verify.Consistency.Beta
 import Ix.Kernel.Verify.Consistency.Simultaneous
 import Ix.Kernel.Verify.Consistency.SpineReading
+import Ix.Kernel.Verify.Consistency.CheapBetaReading
 import Ix.Kernel.Verify.Consistency.BetaSpine
 import Ix.Kernel.Verify.Consistency.CheapBeta
 import Ix.Kernel.Verify.Consistency.Validation
@@ -84,8 +85,15 @@ body and arguments. Selected cheap-beta plans have the same typed meaning
 when an actual source check is available. Definition admission can reuse its
 executed declared-type inference to justify a beta-prefix conversion to the
 value's inferred type. These paths are included in environment model
-preservation. Tracking the checking origins of generated types through
-changed cheap beta in lambda inference and general reduction remains open.
+preservation. Recursive lambda inference also handles changed cheap beta
+when the returned body type retains its actual checking origin. The proof
+preserves checked lambda domains during the same inference recursion, reads
+the selected prefix from the actual generated type, and transports the
+original check through interface growth, local weakening, and universe
+instantiation. Earlier local contexts are reconstructed from their executed
+domain checks. Abstraction uses the reduced type and the reduction's final
+intern table. Automatic origin construction for arbitrary generated types
+and general reduction remains open.
 Local cache hits agree with the actual declaration type. Constant
 hits agree with pure universe substitution of a loaded, admitted declaration;
 sort hits return the canonical successor sort. Application, forall, and lambda

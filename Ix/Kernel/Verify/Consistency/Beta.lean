@@ -44,7 +44,7 @@ theorem SynthesisInference.lambda_type {β : Type u}
   cases support with
   | known inference => exact inference.lambda_type
   | reuseType inference => exact inference.lambda_type
-  | lam => exact ⟨_, rfl⟩
+  | lam | lamBeta => exact ⟨_, rfl⟩
 
 private theorem BinderInference.no_direct_beta {β : Type u}
     {resolve : Address → Option (ConstRef β)} {entries : Model.Environment β}

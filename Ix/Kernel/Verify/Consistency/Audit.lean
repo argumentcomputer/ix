@@ -326,6 +326,36 @@ private def betaRoots : Array RootAllowance := #[
   { root := ``SynthesisInference.cheapBeta_plan_sound, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] }
 ]
 
+private def typeOriginRoots : Array RootAllowance := #[
+  { root := ``LambdaBodyTrace.output_state, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``LambdaBodyTrace.output, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``readScopedExpr?_lambda_spine, standardAxioms := #[``propext, ``Quot.sound] },
+  { root := ``CheapBetaSupport.reading, standardAxioms := standard, nativeAxioms := #[expressionNative] },
+  { root := ``TypeReductionTransport.weakenPrefix, standardAxioms := #[``propext, ``Quot.sound] },
+  { root := ``TypeReductionTransport.instantiatePrefix, standardAxioms := #[``propext, ``Quot.sound] },
+  { root := ``TypeReductionTransport.sound, standardAxioms := standard },
+  { root := ``BinderInference.lambdaSpineTyping, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``SynthesisInference.soundWithSpine, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``SynthesisContext.sound, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative] },
+  { root := ``Theory.Model.AExpr.instL_liftN, standardAxioms := #[``propext, ``Quot.sound] },
+  { root := ``Theory.Model.AExpr.instL_inst, standardAxioms := #[``propext, ``Quot.sound] },
+  { root := ``Theory.Model.AExpr.liftN_liftN_comm, standardAxioms := #[``propext, ``Quot.sound] },
+  { root := ``Theory.Model.AExpr.liftN_inst, standardAxioms := #[``propext, ``Quot.sound] },
+  { root := ``Theory.Model.AExpr.liftN_inst_zero, standardAxioms := #[``propext, ``Quot.sound] },
+  { root := ``Theory.Model.AExpr.lambdaDepth_liftN, standardAxioms := #[``propext] },
+  { root := ``Theory.Model.AExpr.lambdaDepth_instL, standardAxioms := #[``propext, ``Quot.sound] },
+  { root := ``Theory.Model.AExpr.liftN_appN },
+  { root := ``Theory.Model.AExpr.instL_appN, standardAxioms := #[``propext, ``Quot.sound] },
+  { root := ``Theory.Model.AExpr.liftN_betaPrefix, standardAxioms := #[``propext, ``Quot.sound] },
+  { root := ``Theory.Model.AExpr.instL_betaPrefix, standardAxioms := #[``propext, ``Quot.sound] },
+  { root := ``Theory.Model.AExpr.appN_ne_forallE },
+  { root := ``Theory.Model.LambdaPrefix.lambdaDepth_zero, standardAxioms := #[``propext] },
+  { root := ``Theory.Model.LambdaSpineTyping.non_application, standardAxioms := standard },
+  { root := ``Theory.Model.LambdaSpineTyping.lam, standardAxioms := standard },
+  { root := ``Theory.Model.LambdaSpineTyping.app, standardAxioms := standard },
+  { root := ``Theory.Model.LambdaSpineTyping.betaPrefix, standardAxioms := standard }
+]
+
 def roots : Array RootAllowance := #[
   { root := ``InterfaceExtends.refl, forbiddenDependencies := forbiddenProduction },
   { root := ``InterfaceExtends.trans, forbiddenDependencies := forbiddenProduction },
@@ -453,7 +483,8 @@ def roots : Array RootAllowance := #[
 }) ++ productionRoots.map (fun root => {
   root, standardAxioms := standard, nativeAxioms := productionNative,
   forbiddenDependencies := forbiddenProduction
-}) ++ betaRoots.map (fun allowance => { allowance with forbiddenDependencies := forbiddenProduction })
+}) ++ (betaRoots ++ typeOriginRoots).map (fun allowance => {
+    allowance with forbiddenDependencies := forbiddenProduction })
   ++ #[{ root := ``extend_atomic_definition, standardAxioms := standard }]
 
 run_cmd Kernel.Verify.Audit.check roots

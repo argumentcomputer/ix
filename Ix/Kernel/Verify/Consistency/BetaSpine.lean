@@ -16,64 +16,6 @@ open Theory Theory.Model
 
 universe u v
 
-private theorem list_reverse_induction {α : Type u} {motive : List α → Prop}
-    (nil : motive [])
-    (append_singleton : ∀ tail last, motive tail → motive (tail ++ [last]))
-    (values : List α) : motive values := by
-  have reversed : ∀ items : List α, motive items.reverse := by
-    intro items
-    induction items with
-    | nil => exact nil
-    | cons item items ih =>
-        simpa only [List.reverse_cons] using append_singleton items.reverse item ih
-  simpa using reversed values.reverse
-
-theorem BinderInference.lambdaPrefix {β : Type u}
-    {resolve : Address → Option (ConstRef β)} {entries : Model.Environment β}
-    {locals : List FVarId} {context : Model.Context β} {fuel : Nat}
-    {before : TcState .anon} {source : KExpr .anon} {term type : AExpr β}
-    (support : BinderInference resolve entries locals context fuel before source term type) :
-    LambdaPrefix term type term.lambdaDepth := by
-  induction support with
-  | lam _ _ _ _ _ _ _ _ _ _ _ ih => exact .lam ih
-  | _ => exact .zero _ _
-
-theorem SynthesisInference.lambdaPrefix {β : Type u}
-    {resolve : Address → Option (ConstRef β)} {entries : Model.Environment β}
-    {locals : List FVarId} {context : Model.Context β} {bounds : List VLevel} {fuel : Nat}
-    {before : TcState .anon} {source : KExpr .anon} {term type : AExpr β} {level : VLevel}
-    (support : SynthesisInference resolve entries locals context bounds fuel before source term type level) :
-    LambdaPrefix term type term.lambdaDepth := by
-  induction support with
-  | known inference => exact inference.lambdaPrefix
-  | reuseType inference => exact inference.lambdaPrefix
-  | lam _ _ _ _ _ _ _ _ _ _ _ _ _ _ ihBody => exact .lam ihBody
-  | _ => exact .zero _ _
-
-theorem SynthesisHead.appN_head {β : Type u} {head : AExpr β} {arguments : List (AExpr β)}
-    (support : SynthesisHead (head.appN arguments)) : SynthesisHead head := by
-  induction arguments generalizing head with
-  | nil => exact support
-  | cons argument arguments ih =>
-      have applied := ih support
-      cases applied with
-      | app head => exact head
-
-private theorem BinderInference.no_lambda_spine {β : Type u}
-    {resolve : Address → Option (ConstRef β)} {entries : Model.Environment β}
-    {locals : List FVarId} {context : Model.Context β} {fuel : Nat}
-    {before : TcState .anon} {source : KExpr .anon}
-    {condition : Certified.PropWhen} {domain body type : AExpr β} {arguments : List (AExpr β)}
-    (support : BinderInference resolve entries locals context fuel before source
-      ((AExpr.lam condition domain body).appN arguments) type)
-    (nonempty : arguments ≠ []) : False := by
-  induction arguments using list_reverse_induction with
-  | nil => exact nonempty rfl
-  | append_singleton arguments argument ih =>
-      simp only [AExpr.appN_append, AExpr.appN_cons, AExpr.appN_nil] at support
-      cases support with
-      | app _ _ _ _ head => cases head.appN_head
-
 /-- Actual application inference supplies each dependent argument type,
 while the head's inference supplies all original leading lambda domains. -/
 theorem SynthesisInference.lambda_spine {β : Type u}
@@ -92,46 +34,8 @@ theorem SynthesisInference.lambda_spine {β : Type u}
       ∃ headType, TypingClaim.{u,v} entries context (.lam condition domain body) headType ∧
         LambdaPrefix (.lam condition domain body) headType (body.lambdaDepth + 1) ∧
         ArgumentSpine.{u,v} entries context headType arguments type := by
-  induction arguments using list_reverse_induction generalizing fuel before after source result type level with
-  | nil =>
-      obtain ⟨reads, typed, _⟩ := support.sound formed agreement reading accepted
-      exact ⟨reads, _, typed, support.lambdaPrefix, .nil _⟩
-  | append_singleton arguments argument ih =>
-      simp only [AExpr.appN_append, AExpr.appN_cons, AExpr.appN_nil] at support reading
-      cases support with
-      | known inference =>
-          apply False.elim
-          apply BinderInference.no_lambda_spine (arguments := arguments ++ [argument])
-            (condition := condition) (domain := domain) (body := body)
-          · simpa only [AExpr.appN_append, AExpr.appN_cons, AExpr.appN_nil] using inference
-          · simp
-      | reuseType inference =>
-          apply False.elim
-          apply BinderInference.no_lambda_spine (arguments := arguments ++ [argument])
-            (condition := condition) (domain := domain) (body := body)
-          · simpa only [AExpr.appN_append, AExpr.appN_cons, AExpr.appN_nil] using inference
-          · simp
-      | app full miss trace functionTree argumentTree conditions hashPath comparisonFaithful
-          bodyConstructed argConstructed bodyBound argBound coherent faithful =>
-          obtain ⟨state, run⟩ := infer_uncached_success miss accepted
-          rw [full] at run
-          obtain ⟨fnReads, argReads⟩ := readScopedExpr?_app_parts reading
-          have keyedAgreement := miss.localContext.symm ▸ agreement
-          obtain ⟨functionTypeReads, headType, headTyped, leading, spine⟩ :=
-            ih functionTree keyedAgreement fnReads trace.functionRun
-          obtain ⟨domainReads, codomainReads⟩ := readScopedExpr?_all_parts functionTypeReads
-          have argumentAgreement := trace.contextPreserved.symm ▸ keyedAgreement
-          obtain ⟨argumentTypeReads, argumentTyped, _⟩ :=
-            argumentTree.sound formed argumentAgreement argReads trace.argumentRun
-          have sameReading := beq_readScopedExpr? (resolve := resolve) (locals := locals)
-            (depth := 0) comparisonFaithful hashPath
-          have sameType := AExpr.eq_of_erase_annotations
-            (Option.some.inj (argumentTypeReads.symm.trans (sameReading.trans domainReads))) conditions
-          refine ⟨?_, headType, headTyped, leading,
-            spine.append (.cons (sameType ▸ argumentTyped) (.nil _))⟩
-          rw [trace.output run, AExpr.erase_inst]
-          exact (subst_readScopedExpr? bodyConstructed argConstructed bodyBound argBound
-            coherent faithful codomainReads argReads).1
+  obtain ⟨reads, _, _, spines⟩ := support.soundWithSpine formed agreement reading accepted
+  exact ⟨reads, spines _ _ _ _ rfl⟩
 
 /-- The complete original lambda prefix may be consumed without another
 inference call on any intermediate beta result. -/

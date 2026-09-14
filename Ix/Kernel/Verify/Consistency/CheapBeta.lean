@@ -4,7 +4,7 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 -/
 
 import Ix.Kernel.Verify.Consistency.BetaSpine
-import Ix.Kernel.Verify.Infer.CheapBetaPlan
+import Ix.Kernel.Verify.Consistency.CheapBetaReading
 
 /-! The selected cheap-beta plan has the same typed prefix meaning as
 general beta, including its variable-selection and closed-body cases. -/
@@ -48,11 +48,15 @@ theorem SynthesisInference.cheapBeta_plan_sound {β : Type u}
       TypingClaim.{u,v} entries context
         ((body.instRev (arguments.take count)).appN (arguments.drop count)) type ∧
       (cheapBetaReduce source table).2.WF := by
-  obtain ⟨head, rawBody, args, count, plannedSpine, peeling, countBound, base, trailing⟩ :=
+  obtain ⟨head, rawBody, args, count, plannedSpine, peeling, countBound, _, _⟩ :=
     cheapBetaPlan?_simul selected walkerBounds
   obtain ⟨sameHead, sameArgs⟩ := Prod.mk.inj (spine.symm.trans plannedSpine)
   subst head args
   have reading := readScopedExpr?_collectSpine spine headReads argumentReads
+  have resources : CheapBetaSupport source table := ⟨plan, selected, walkerBounds, coherent, faithful⟩
+  obtain ⟨enough, resultReads, preserved⟩ := resources.reading reading
+  obtain ⟨_, _, _, sourceSpine⟩ := support.soundWithSpine formed agreement reading accepted
+  obtain ⟨conversion, reducedTyped⟩ := sourceSpine.betaPrefix enough
   have rawPeel := RecM.BetaPeel.of_peelLamsN
     (.lam name bi rawDomain rawInner lambdaInfo) rawArguments.toList
   rw [Array.length_toList, peeling] at rawPeel
@@ -66,48 +70,13 @@ theorem SynthesisInference.cheapBeta_plan_sound {β : Type u}
   have rawCountLength : (rawArguments.toList.take count).length = count := by
     simp only [List.length_take, Array.length_toList]
     omega
-  have prefixSize : (rawArguments.extract 0 count).size = count := by
-    simp only [Array.size_extract]
-    omega
-  have prefixReads : (rawArguments.extract 0 count).toList.map (readScopedExpr? resolve locals ·) =
-      (arguments.take count).map (some ·.erase) := by
-    simp only [Array.toList_extract, List.extract_eq_take_drop, List.drop_zero, Nat.sub_zero,
-      List.map_take, argumentReads]
-  have suffixReads : plan.trailing.map (readScopedExpr? resolve locals ·) =
-      (arguments.drop count).map (some ·.erase) := by
-    rw [trailing]
-    simp only [Array.toList_extract, List.extract_eq_take_drop, List.map_take, List.map_drop,
-      argumentReads, sizeAgrees]
-    rw [← List.map_drop, ← List.map_take]
-    congr 1
-    have length : (arguments.drop count).length = arguments.length - count := List.length_drop
-    rw [← length, List.take_length]
-  have simulBounds := walkerBounds.2 spine peeling
-  have baseReads : readScopedExpr? resolve locals plan.base =
-      some (body.instRev (arguments.take count)).erase := by
-    rw [base]
-    have readSimul := readScopedExpr?_simulSubstSpec (depth := 0)
-      (by simp only [Array.size_reverse, prefixSize, countLength])
-      simulBounds.2.2.2.1 simulBounds.2.2.1
-      (by simpa only [UInt64.toNat_zero, Nat.zero_add, countLength, rawCountLength] using bodyReads)
-      (argumentsReading_reverse_get prefixReads (prefixSize.trans countLength.symm))
-    simpa only [UInt64.toNat_zero, Nat.zero_add, AExpr.instRevAt_zero] using readSimul
-  have chainFaithful : KExpr.CollisionFree fun term => table.ExprSupport term ∨
-      term ∈ cheapBetaChainList plan.base plan.trailing := by
-    apply faithful.mono
-    intro term member
-    rcases member with resident | candidate
-    · exact Or.inl resident
-    · exact Or.inr (by simpa [KExpr.CheapBetaReach, selected] using Or.inr candidate)
-  obtain ⟨resultReads, preserved⟩ := internAppChain_readScopedExpr? coherent chainFaithful baseReads suffixReads
-  have conversion := SynthesisInference.beta_peel_sound (consumed := arguments.take count)
-    (trailing := arguments.drop count)
-    (by simpa only [List.take_append_drop] using support) formed agreement
-    (by simpa only [List.take_append_drop] using reading) accepted
-    (by simpa only [countLength, rawCountLength] using modelPeel)
-  refine ⟨body, count, ?_, ?_, conversion.2, ?_⟩
-  · simpa only [cheapBetaReduce, selected] using resultReads
-  · simpa only [List.take_append_drop] using conversion.1
-  · simpa only [cheapBetaReduce, selected] using preserved
+  have counted : cheapBetaCount source = count := by
+    simp only [cheapBetaCount, spine, peeling]
+  have prefixEq := (show LambdaPeel (.lam condition domain inner) (arguments.take count).length body by
+    simpa only [countLength, rawCountLength] using modelPeel).betaPrefix (arguments.drop count)
+  simp only [List.take_append_drop, countLength] at prefixEq
+  exact ⟨body, count, by simpa only [counted, prefixEq] using resultReads,
+    by simpa only [counted, prefixEq] using conversion,
+    by simpa only [counted, prefixEq] using reducedTyped, preserved⟩
 
 end Ix.Kernel.Consistency

@@ -96,6 +96,98 @@ theorem readScopedExpr?_collectSpine {β : Type u}
   rw [readScopedExpr?_appSpineView, ← view.1, ← view.2]
   exact readScopedExpr?_appN headReads argumentReads
 
+private theorem readScopedExpr?_app_inv {β : Type u}
+    {resolve : Address → Option (ConstRef β)} {locals : List FVarId}
+    {source : KExpr .anon} {fn arg : VExpr β}
+    (reading : readScopedExpr? resolve locals source = some (.app fn arg)) :
+    ∃ rawFn rawArg info, source = .app rawFn rawArg info ∧
+      readScopedExpr? resolve locals rawFn = some fn ∧
+      readScopedExpr? resolve locals rawArg = some arg := by
+  cases source with
+  | app rawFn rawArg info => exact ⟨rawFn, rawArg, info, rfl, readScopedExpr?_app_parts reading⟩
+  | var index name info => simp [readScopedExpr?] at reading
+  | fvar id name info =>
+      obtain ⟨_, _, same⟩ := Option.map_eq_some_iff.mp reading
+      cases same
+  | const id levels info =>
+      obtain ⟨_, _, same⟩ := bind_success reading
+      cases same
+  | lam name bi domain body info | all name bi domain body info =>
+      obtain ⟨_, _, reading⟩ := bind_success reading
+      obtain ⟨_, _, same⟩ := bind_success reading
+      cases same
+  | prj id index value info =>
+      obtain ⟨_, _, reading⟩ := bind_success reading
+      obtain ⟨_, _, same⟩ := bind_success reading
+      cases same
+  | _ => simp [readScopedExpr?] at reading
+
+private theorem readScopedExpr?_lam_inv {β : Type u}
+    {resolve : Address → Option (ConstRef β)} {locals : List FVarId}
+    {source : KExpr .anon} {domain body : VExpr β}
+    (reading : readScopedExpr? resolve locals source = some (.lam domain body)) :
+    ∃ name bi rawDomain rawBody info, source = .lam name bi rawDomain rawBody info := by
+  cases source with
+  | lam name bi rawDomain rawBody info => exact ⟨name, bi, rawDomain, rawBody, info, rfl⟩
+  | var index name info => simp [readScopedExpr?] at reading
+  | fvar id name info =>
+      obtain ⟨_, _, same⟩ := Option.map_eq_some_iff.mp reading
+      cases same
+  | const id levels info =>
+      obtain ⟨_, _, same⟩ := bind_success reading
+      cases same
+  | app fn arg info | all _ _ fn arg info =>
+      obtain ⟨_, _, reading⟩ := bind_success reading
+      obtain ⟨_, _, same⟩ := bind_success reading
+      cases same
+  | prj id index value info =>
+      obtain ⟨_, _, reading⟩ := bind_success reading
+      obtain ⟨_, _, same⟩ := bind_success reading
+      cases same
+  | _ => simp [readScopedExpr?] at reading
+
+private theorem list_reverse_induction {α : Type u} {motive : List α → Prop}
+    (nil : motive [])
+    (append_singleton : ∀ tail last, motive tail → motive (tail ++ [last]))
+    (values : List α) : motive values := by
+  have reversed : ∀ items : List α, motive items.reverse := by
+    intro items
+    induction items with
+    | nil => exact nil
+    | cons item items ih =>
+        simpa only [List.reverse_cons] using append_singleton items.reverse item ih
+  simpa using reversed values.reverse
+
+/-- The reading of the whole generated type determines the actual raw
+head and argument readings. No additional inference of its components is
+needed when the kernel collects that type's lambda-headed spine. -/
+theorem readScopedExpr?_lambda_spine {β : Type u}
+    {resolve : Address → Option (ConstRef β)} {locals : List FVarId}
+    {source : KExpr .anon} {condition : Certified.PropWhen} {domain body : AExpr β}
+    {arguments : List (AExpr β)}
+    (reading : readScopedExpr? resolve locals source =
+      some ((AExpr.lam condition domain body).appN arguments).erase) :
+    readScopedExpr? resolve locals source.collectSpine.1 =
+        some (AExpr.lam condition domain body).erase ∧
+      source.collectSpine.2.toList.map (readScopedExpr? resolve locals ·) =
+        arguments.map (some ·.erase) := by
+  have view : readScopedExpr? resolve locals (RecM.appSpineView source).1 =
+        some (AExpr.lam condition domain body).erase ∧
+      (RecM.appSpineView source).2.map (readScopedExpr? resolve locals ·) =
+        arguments.map (some ·.erase) := by
+    induction arguments using list_reverse_induction generalizing source with
+    | nil =>
+        obtain ⟨_, _, _, _, _, rfl⟩ := readScopedExpr?_lam_inv reading
+        exact ⟨reading, rfl⟩
+    | append_singleton arguments argument ih =>
+        simp only [AExpr.appN_append, AExpr.appN_cons, AExpr.appN_nil, AExpr.erase] at reading
+        obtain ⟨fn, arg, info, rfl, fnReads, argReads⟩ := readScopedExpr?_app_inv reading
+        obtain ⟨headReads, argumentReads⟩ := ih fnReads
+        exact ⟨headReads, by simp only [RecM.appSpineView, List.map_append,
+          List.map_cons, List.map_nil, argumentReads, argReads]⟩
+  simpa only [(RecM.appSpineView_collectSpine source).1,
+    (RecM.appSpineView_collectSpine source).2] using view
+
 theorem betaPeel_readScopedExpr? {β : Type u}
     {resolve : Address → Option (ConstRef β)} {locals : List FVarId}
     {start result : KExpr .anon} {consumed : List (KExpr .anon)}

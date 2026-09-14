@@ -56,9 +56,15 @@ when an actual source check is available.
 Declaration admission includes declared types reduced through a lambda
 prefix and a remaining suffix: the declaration's own executed type check
 justifies conversion from that result to the original type. The environment
-model and no-False theorems include this case. Checking origins still need to
-be tracked through changed cheap beta in lambda inference; general reduction
-and conversion remain open.
+model and no-False theorems include this case. Recursive lambda inference
+also supports changed cheap beta when the generated body type retains its
+actual checking origin. The inference proof preserves checked lambda domains;
+the raw reader derives the selected prefix and reduced expression. A syntactic
+transport moves the original check through interface extension, local
+weakening, and universe instantiation, and earlier local contexts come from
+their executed domain checks. The lambda closes the reduced type using the
+actual final intern table. Automatic origin construction for arbitrary
+generated types, general reduction, and conversion remain open.
 Safe definition admission also rejects circular justification in both Lean and
 Rust, including `theorem loop : P := loop` with only `P : Prop` assumed. The
 production dependency walk returns an order with a proved decreasing rank;

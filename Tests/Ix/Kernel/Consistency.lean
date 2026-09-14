@@ -608,6 +608,80 @@ private def multiBetaDeclaredSuffix (level : Ixon.Univ) : Ixon.Env := Id.run do
       .app (.app (.leanLam functionType (.var 0)) (.ref 0 #[])) (.ref 1 #[]),
       .ref 2 #[]⟩, #[], #[family, carrier, witness], #[level]⟩).1
 
+/-- The lambda body returns a local whose declared type is a beta redex.
+Observe the changed synthesized codomain, including reuse beneath another
+binder and inside both recursive application positions. -/
+private def cheapLambdaLocalResult (shape : Nat) (level : KUniv .anon := .mkZero) : Bool :=
+  let sort := KExpr.mkSort (m := .anon) level
+  let action : RecM .anon Bool := RecM.withLctxScope do
+    let (carrier, _) ← TcM.openBinder () () sort (.mkVar 0 ())
+    let (witness, _) ← TcM.openBinder () () carrier (.mkVar 0 ())
+    let head := if shape == 1 then
+        KExpr.mkLam () () sort (.mkLam () () (.mkVar 0 ()) (.mkVar 1 ()))
+      else KExpr.mkLam () () sort (if shape == 2 then carrier else .mkVar 0 ())
+    let sourceType := KExpr.mkAppN head (if shape == 1 then #[carrier, witness] else #[carrier])
+    let sourceSort ← RecM.inferCall sourceType
+    let lambda := KExpr.mkLam () () sourceType (.mkVar 0 ())
+    let expectedLambda := KExpr.mkAll () () sourceType carrier
+    let term ← if shape == 3 then
+        pure (KExpr.mkLam () () carrier lambda)
+      else if shape == 4 then do
+        let (argument, _) ← TcM.openBinder () () sourceType (.mkVar 0 ())
+        pure (KExpr.mkApp lambda argument)
+      else if shape == 5 then do
+        let consumerType := KExpr.mkAll () () expectedLambda carrier
+        let _ ← RecM.inferCall consumerType
+        let (consumer, _) ← TcM.openBinder () () consumerType (.mkVar 0 ())
+        pure (KExpr.mkApp consumer lambda)
+      else pure lambda
+    let expected := if shape == 3 then KExpr.mkAll () () carrier expectedLambda
+      else if shape == 4 || shape == 5 then carrier else expectedLambda
+    let before ← get
+    let inferred ← RecM.inferCall term
+    let repeated ← RecM.inferCall term
+    let after ← get
+    let reduced ← TcM.runIntern (cheapBetaReduce sourceType)
+    return sourceSort == sort && (cheapBetaPlan? sourceType).isSome && sourceType != reduced &&
+      reduced == carrier && inferred == expected && repeated == expected && after.lctx.size == before.lctx.size
+  match TcM.runRec action (TcState.ofEnvAnon {}) with
+  | .ok passed after => passed && after.lctx.size == 0
+  | .error _ _ => false
+
+/-- An earlier declaration retains a beta-redex type. Returning its value
+from a new lambda reduces that type during inference, before abstraction. -/
+private def cheapLambdaConstant (level : Ixon.Univ) (universes : UInt64 := 0)
+    (multiple wrongValue : Bool := false) : Ixon.Env × Address := Id.run do
+  let (env, carrier) := storeConst {}
+    ⟨.axio ⟨false, universes, .sort 0⟩, #[], #[], #[level]⟩
+  let arguments := if universes == 0 then #[] else #[0]
+  let (env, witness) := storeConst env
+    ⟨.axio ⟨false, universes, .ref 0 arguments⟩, #[], #[carrier], #[level]⟩
+  let type := if multiple then
+      Ixon.Expr.app (.app (.leanLam (.sort 0) (.leanLam (.var 0) (.var 1))) (.ref 0 arguments))
+        (.ref 1 arguments)
+    else .app (.leanLam (.sort 0) (.var 0)) (.ref 0 arguments)
+  let (env, value) := storeConst env
+    ⟨.axio ⟨false, universes, type⟩, #[], #[carrier, witness], #[level]⟩
+  return storeConst env
+    ⟨.defn ⟨.defn, .safe, universes,
+      .leanAll (.ref 0 arguments) (.ref 0 arguments),
+      .leanLam (.ref 0 arguments) (.ref (if wrongValue then 0 else 1) arguments)⟩,
+      #[], #[carrier, value], #[level]⟩
+
+private def cheapLambdaConstantResult : Bool :=
+  let (env, target) := cheapLambdaConstant .zero 0 true
+  let action : RecM .anon Bool := do
+    let concrete ← TcM.getConst (m := .anon) ⟨target, ()⟩
+    let .defn _ _ _ _ _ _ type value _ _ := concrete | return false
+    let .lam _ _ domain body _ := value | return false
+    let original ← RecM.inferCall body
+    let inferred ← RecM.inferCall value
+    let reduced ← TcM.runIntern (cheapBetaReduce original)
+    return (cheapBetaPlan? original).isSome && original != reduced && reduced == domain && inferred == type
+  match TcM.runRec action (TcState.newLazyAnon env) with
+  | .ok passed after => passed && after.lctx.size == 0
+  | .error _ _ => false
+
 private def applicationCases : TestSeq :=
   test "application environment: Prop/Type identity calls and transitive theorem calls check"
     (allSucceeded applicationEnvironment 5 { clearEvery := 0 })
@@ -686,6 +760,34 @@ private def multiBetaCases : TestSeq :=
       allSucceeded (multiBetaDeclaredSuffix (.succ .zero)) 4)
   ++ test "multi beta admission: selecting a witness of the other carrier is rejected"
     (let (env, target) := multiBetaDeclaredType .zero 0 false true; rowFailed env target)
+
+private def cheapLambdaCases : TestSeq :=
+  test "lambda cheap beta: a checked local type reduces in Prop and Type"
+    (cheapLambdaLocalResult 0 && cheapLambdaLocalResult 0 (.mkSucc .mkZero))
+  ++ test "lambda cheap beta: a dependent two-lambda type reduces before abstraction"
+    (cheapLambdaLocalResult 1)
+  ++ test "lambda cheap beta: a closed body retains the earlier local"
+    (cheapLambdaLocalResult 2)
+  ++ test "lambda cheap beta: a retained local type crosses another binder"
+    (cheapLambdaLocalResult 3)
+  ++ test "lambda cheap beta: the changed lambda type is used in function position"
+    (cheapLambdaLocalResult 4)
+  ++ test "lambda cheap beta: the changed lambda type is used in argument position"
+    (cheapLambdaLocalResult 5)
+  ++ test "lambda cheap beta admission: earlier declaration types reduce in Prop and Type"
+    (allSucceeded (cheapLambdaConstant .zero).1 4 &&
+      allSucceeded (cheapLambdaConstant (.succ .zero)).1 4)
+  ++ test "lambda cheap beta admission: retained declaration checks support universe parameters"
+    (allSucceeded (cheapLambdaConstant (.var 0) 1).1 4)
+  ++ test "lambda cheap beta admission: earlier checks retain dependent argument domains"
+    (allSucceeded (cheapLambdaConstant .zero 0 true).1 4 &&
+      allSucceeded (cheapLambdaConstant (.var 0) 1 true).1 4)
+  ++ test "lambda cheap beta admission: reduction survives per-item cache clearing"
+    (allSucceeded (cheapLambdaConstant .zero 0 true).1 4 { clearEvery := 1 })
+  ++ test "lambda cheap beta inference: the original and reduced body types have different hashes"
+    cheapLambdaConstantResult
+  ++ test "lambda cheap beta admission: returning a carrier in place of its witness is rejected"
+    (let (env, target) := cheapLambdaConstant .zero 0 true true; rowFailed env target)
 
 /-- Call a polymorphic identity from a monomorphic function body. Universe
 indices select entries in the declaration's explicit level table. -/
@@ -2278,7 +2380,7 @@ private def polymorphicDefinitionCases : TestSeq :=
       | _ => false : Bool)
 
 public def suite : List TestSeq :=
-  [cases, polymorphicCases, specializationCases, binderCases, applicationCases, multiBetaCases,
+  [cases, polymorphicCases, specializationCases, binderCases, applicationCases, multiBetaCases, cheapLambdaCases,
     polymorphicApplicationCases, constantCacheCases, cacheInvariantCases, recursiveCacheCases,
     lazyCacheCases, blockCacheCases, ingressCoherenceCases, sourceOwnershipCases, recursiveStateCases,
     sourceAgreementCases, sourceCacheCases, polymorphicDefinitionCases]

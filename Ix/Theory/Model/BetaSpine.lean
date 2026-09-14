@@ -36,6 +36,50 @@ def betaPrefix : Nat → AExpr β → List (AExpr β) → AExpr β
       betaPrefix count (body.inst argument) arguments
   | _ + 1, head, arguments => head.appN arguments
 
+@[simp] theorem lambdaDepth_liftN (term : AExpr β) (count cutoff : Nat) :
+    (term.liftN count cutoff).lambdaDepth = term.lambdaDepth := by
+  induction term generalizing cutoff <;> simp_all [liftN, lambdaDepth]
+
+@[simp] theorem lambdaDepth_instL (term : AExpr β) (levels : List VLevel) :
+    (term.instL levels).lambdaDepth = term.lambdaDepth := by
+  induction term <;> simp_all [instL, lambdaDepth]
+
+theorem liftN_appN (head : AExpr β) (arguments : List (AExpr β)) (count cutoff : Nat) :
+    (head.appN arguments).liftN count cutoff =
+      (head.liftN count cutoff).appN (arguments.map (liftN count · cutoff)) := by
+  induction arguments generalizing head with
+  | nil => rfl
+  | cons argument arguments ih => simpa only [appN_cons, liftN, List.map_cons] using ih (head.app argument)
+
+theorem instL_appN (head : AExpr β) (arguments : List (AExpr β)) (levels : List VLevel) :
+    (head.appN arguments).instL levels =
+      (head.instL levels).appN (arguments.map (instL levels)) := by
+  induction arguments generalizing head with
+  | nil => rfl
+  | cons argument arguments ih => simpa only [appN_cons, instL, List.map_cons] using ih (head.app argument)
+
+theorem liftN_betaPrefix (count : Nat) (head : AExpr β) (arguments : List (AExpr β))
+    (inserted cutoff : Nat) :
+    (betaPrefix count head arguments).liftN inserted cutoff =
+      betaPrefix count (head.liftN inserted cutoff) (arguments.map (liftN inserted · cutoff)) := by
+  induction count generalizing head arguments with
+  | zero => exact liftN_appN _ _ _ _
+  | succ count ih =>
+      cases head <;> cases arguments <;>
+        simp only [betaPrefix, liftN, List.map_nil, List.map_cons, appN_nil, liftN_appN,
+          ih, liftN_inst_zero]
+
+theorem instL_betaPrefix (count : Nat) (head : AExpr β) (arguments : List (AExpr β))
+    (levels : List VLevel) :
+    (betaPrefix count head arguments).instL levels =
+      betaPrefix count (head.instL levels) (arguments.map (instL levels)) := by
+  induction count generalizing head arguments with
+  | zero => exact instL_appN _ _ _
+  | succ count ih =>
+      cases head <;> cases arguments <;>
+        simp only [betaPrefix, instL, List.map_nil, List.map_cons, appN_nil, instL_appN,
+          ih, instL_inst]
+
 end AExpr
 
 /-- Each leading lambda agrees with the corresponding inferred Pi.
@@ -67,6 +111,25 @@ theorem LambdaPrefix.truncate {β : Type u} {term type : AExpr β} {total count 
       cases count with
       | zero => exact .zero _ _
       | succ count => exact .lam (ih (by omega))
+
+theorem AExpr.appN_ne_forallE {β : Type u} {head : AExpr β}
+    (notPi : ∀ condition domain body, head ≠ .forallE condition domain body)
+    (arguments : List (AExpr β)) :
+    ∀ condition domain body, head.appN arguments ≠ .forallE condition domain body := by
+  induction arguments generalizing head with
+  | nil => exact notPi
+  | cons argument arguments ih =>
+      exact ih (by intro condition domain body same; cases same)
+
+theorem LambdaPrefix.lambdaDepth_zero {β : Type u} {term type : AExpr β}
+    (leading : LambdaPrefix term type term.lambdaDepth)
+    (notPi : ∀ condition domain body, type ≠ .forallE condition domain body) :
+    term.lambdaDepth = 0 := by
+  cases term with
+  | lam condition domain body =>
+      cases leading with
+      | lam => exact False.elim (notPi _ _ _ rfl)
+  | _ => rfl
 
 /-- The original body exposed by removing a syntactic lambda prefix. -/
 inductive LambdaPeel {β : Type u} : AExpr β → Nat → AExpr β → Prop
@@ -175,5 +238,85 @@ theorem LambdaPrefix.beta_sound {β : Type u} {entries : Environment β} {contex
                 (TypingClaim.betaResult typed argumentTyped) tail
               exact ⟨((ConversionClaim.beta typed argumentTyped).appN _).trans conversion,
                 resultTyped⟩
+
+/-- Source inference retains the typing of every original lambda-headed
+spine. This internal result carries the domains needed by later reduction;
+ordinary semantic typing alone cannot recover them in the proof regime. -/
+def LambdaSpineTyping {β : Type u} (entries : Environment β) (context : Context β)
+    (term type : AExpr β) : Prop :=
+  ∀ (condition : PropWhen) (domain body : AExpr β) (arguments : List (AExpr β)),
+    term = (AExpr.lam condition domain body).appN arguments →
+      ∃ headType, TypingClaim.{u,v} entries context (.lam condition domain body) headType ∧
+        LambdaPrefix (.lam condition domain body) headType (body.lambdaDepth + 1) ∧
+        ArgumentSpine.{u,v} entries context headType arguments type
+
+private theorem list_reverse_induction {α : Type u} {motive : List α → Prop}
+    (nil : motive [])
+    (append_singleton : ∀ tail last, motive tail → motive (tail ++ [last]))
+    (values : List α) : motive values := by
+  have reversed : ∀ items : List α, motive items.reverse := by
+    intro items
+    induction items with
+    | nil => exact nil
+    | cons item items ih =>
+        simpa only [List.reverse_cons] using append_singleton items.reverse item ih
+  simpa using reversed values.reverse
+
+namespace LambdaSpineTyping
+
+theorem non_application {β : Type u} {entries : Environment β} {context : Context β}
+    {term type : AExpr β}
+    (notApp : ∀ fn arg, term ≠ .app fn arg)
+    (notLam : ∀ condition domain body, term ≠ .lam condition domain body) :
+    LambdaSpineTyping.{u,v} entries context term type := by
+  intro condition domain body arguments same
+  induction arguments using list_reverse_induction with
+  | nil => exact False.elim (notLam _ _ _ same)
+  | append_singleton arguments argument ih =>
+      exact False.elim (notApp _ _
+        (by simpa only [AExpr.appN_append, AExpr.appN_cons, AExpr.appN_nil] using same))
+
+theorem lam {β : Type u} {entries : Environment β} {context : Context β}
+    {condition : PropWhen} {domain body type : AExpr β}
+    (typed : TypingClaim.{u,v} entries context (.lam condition domain body) type)
+    (leading : LambdaPrefix (.lam condition domain body) type (body.lambdaDepth + 1)) :
+    LambdaSpineTyping.{u,v} entries context (.lam condition domain body) type := by
+  intro otherCondition otherDomain otherBody arguments same
+  induction arguments using list_reverse_induction with
+  | nil =>
+      cases same
+      exact ⟨type, typed, leading, .nil _⟩
+  | append_singleton arguments argument ih =>
+      simp only [AExpr.appN_append, AExpr.appN_cons, AExpr.appN_nil] at same
+      cases same
+
+theorem app {β : Type u} {entries : Environment β} {context : Context β}
+    {fn arg domain body : AExpr β} {condition : PropWhen}
+    (function : LambdaSpineTyping.{u,v} entries context fn (.forallE condition domain body))
+    (argument : TypingClaim.{u,v} entries context arg domain) :
+    LambdaSpineTyping.{u,v} entries context (.app fn arg) (body.inst arg) := by
+  intro headCondition headDomain headBody arguments same
+  induction arguments using list_reverse_induction with
+  | nil => cases same
+  | append_singleton arguments last ih =>
+      simp only [AExpr.appN_append, AExpr.appN_cons, AExpr.appN_nil, AExpr.app.injEq] at same
+      obtain ⟨headType, headTyped, leading, spine⟩ := function _ _ _ arguments same.1
+      refine ⟨headType, headTyped, leading, ?_⟩
+      rw [← same.2]
+      exact spine.append (.cons argument (.nil _))
+
+theorem betaPrefix {β : Type u} {entries : Environment β} {context : Context β}
+    {condition : PropWhen} {domain body type : AExpr β} {arguments : List (AExpr β)} {count : Nat}
+    (source : LambdaSpineTyping.{u,v} entries context
+      ((AExpr.lam condition domain body).appN arguments) type)
+    (enough : count ≤ body.lambdaDepth + 1) :
+    ConversionClaim.{u,v} entries context ((AExpr.lam condition domain body).appN arguments)
+      (AExpr.betaPrefix count (.lam condition domain body) arguments) ∧
+      TypingClaim.{u,v} entries context
+        (AExpr.betaPrefix count (.lam condition domain body) arguments) type := by
+  obtain ⟨_, typed, leading, spine⟩ := source _ _ _ _ rfl
+  exact (leading.truncate enough).beta_sound typed spine
+
+end LambdaSpineTyping
 
 end Ix.Theory.Model

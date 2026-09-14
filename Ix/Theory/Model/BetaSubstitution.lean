@@ -12,6 +12,72 @@ namespace Ix.Theory.Model.AExpr
 
 universe u
 
+theorem instL_liftN (term : AExpr β) (levels : List VLevel) (count cutoff : Nat) :
+    (term.liftN count cutoff).instL levels = (term.instL levels).liftN count cutoff := by
+  induction term generalizing cutoff <;> simp_all [liftN, instL]
+
+theorem instL_inst (term argument : AExpr β) (levels : List VLevel) (cutoff : Nat := 0) :
+    (term.inst argument cutoff).instL levels =
+      (term.instL levels).inst (argument.instL levels) cutoff := by
+  induction term generalizing cutoff with
+  | bvar index =>
+      by_cases below : index < cutoff
+      · simp [inst, instL, instVar, below]
+      · by_cases equal : index = cutoff <;>
+          simp [inst, instL, instVar, below, equal, instL_liftN]
+  | _ => simp_all [inst, instL]
+
+/-- Insert disjoint groups of variables in either order, adjusting the
+later cutoff by the variables inserted before it. -/
+theorem liftN_liftN_comm (term : AExpr β) (count first second cutoff : Nat)
+    (ordered : cutoff ≤ first) :
+    (term.liftN count first).liftN second cutoff =
+      (term.liftN second cutoff).liftN count (second + first) := by
+  induction term generalizing first cutoff with
+  | bvar index =>
+      by_cases below : index < cutoff
+      · simp [liftN, liftVar, below, show index < first by omega,
+          show index < second + first by omega]
+      · by_cases before : index < first
+        · simp [liftN, liftVar, below, before]
+        · simp [liftN, liftVar, below, before, show ¬ count + index < cutoff by omega,
+            Nat.add_left_comm]
+  | lam condition domain body ihDomain ihBody | forallE condition domain body ihDomain ihBody =>
+      simp only [liftN, ihDomain first cutoff ordered,
+        ihBody (first + 1) (cutoff + 1) (by omega), Nat.add_assoc]
+  | _ => simp_all [liftN]
+
+/-- Weakening commutes with substitution at an earlier variable. -/
+theorem liftN_inst (term argument : AExpr β) (count cutoff depth : Nat) :
+    (term.inst argument depth).liftN count (cutoff + depth) =
+      (term.liftN count (cutoff + depth + 1)).inst (argument.liftN count cutoff) depth := by
+  induction term generalizing depth with
+  | bvar index =>
+      by_cases below : index < depth
+      · simp [inst, instVar, liftN, liftVar, below,
+          show index < cutoff + depth by omega, show index < cutoff + depth + 1 by omega]
+      · by_cases equal : index = depth
+        · subst index
+          simp only [inst, instVar, Nat.lt_irrefl, if_false, if_true, liftN,
+            liftVar, if_pos (show depth < cutoff + depth + 1 by omega)]
+          simpa only [Nat.add_zero, Nat.add_comm] using
+            (liftN_liftN_comm argument count cutoff depth 0 (Nat.zero_le _)).symm
+        · by_cases before : index < cutoff + depth + 1
+          · simp [inst, instVar, liftN, liftVar, below, equal, before,
+              show index - 1 < cutoff + depth by omega]
+          · simp [inst, instVar, liftN, liftVar, below, equal, before,
+              show ¬ index - 1 < cutoff + depth by omega,
+              show ¬ count + index < depth by omega, show count + index ≠ depth by omega]
+            omega
+  | lam condition domain body ihDomain ihBody | forallE condition domain body ihDomain ihBody =>
+      simp only [inst, liftN, ihDomain, ihBody, Nat.add_assoc]
+  | _ => simp_all [inst, liftN]
+
+theorem liftN_inst_zero (term argument : AExpr β) (count cutoff : Nat) :
+    (term.inst argument).liftN count cutoff =
+      (term.liftN count (cutoff + 1)).inst (argument.liftN count cutoff) := by
+  simpa only [Nat.add_zero] using liftN_inst term argument count cutoff 0
+
 theorem inst_liftN_top (term argument : AExpr β) (count cutoff : Nat) :
     (term.liftN (count + 1) cutoff).inst argument (count + cutoff) = term.liftN count cutoff := by
   induction term generalizing cutoff with

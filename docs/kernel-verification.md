@@ -364,7 +364,14 @@ def callReturned.{u} (A : Sort u) (a : A) : A := ((fun x : A => fun y : A => x) 
   checks retain their source, states, successful run, and inference tree;
   interface extension preserves their entries exactly. These are execution
   resources, not semantic formation assumptions. The type checks can themselves
-  contain direct lambda applications.
+  contain direct lambda applications. The `lamBeta` rule retains an actual
+  type-check tree when cheap beta changes the body's inferred type. Its source
+  and reduced syntax move together through interface extension, weakening,
+  universe instantiation, and structural level congruence. Earlier local
+  contexts are reconstructed from actual binder-domain checks. The reader
+  follows the selected plan through substitution and interning, and lambda
+  abstraction uses that reduction's output table. No new check of the
+  generated result is assumed.
 - Applications use full mode, syntactic Pi exposure, an ordinary argument
   without an eager-reduction marker, and the hash-equality conversion path.
   Their witnesses retain the actual recursive calls, context preservation
@@ -378,7 +385,8 @@ def callReturned.{u} (A : Sort u) (a : A) : A := ((fun x : A => fun y : A => x) 
   by a pure `readInstantiatedType?` check with the substituted occurrence
   annotations, including when levels simplify. Monomorphic references retain
   their simpler empty-substitution rule. Reduction to expose a Pi, eager
-  arguments, and changed cheap-beta paths require further refinement.
+  arguments, and automatic checking origins for arbitrary generated types
+  require further refinement.
 - `DefinitionCheckSupport` permits the existing initial hash-equality path,
   with faithfulness of the compared expressions, or a beta-reducible declared
   type. For the beta case, the declaration's own type-inference tree and run
@@ -476,7 +484,7 @@ lake test --wfail -- tc-unit
 lake -d Models/SetTheory build --wfail
 ```
 
-The consistency target checks 470 exact theorem boundaries. The production
+The consistency target checks 497 exact theorem boundaries. The production
 environment roots retain four existing generated output-length proofs,
 reached through expression/universe construction, names, and the full
 production method table. They introduce no new native proofs. The model
@@ -505,10 +513,18 @@ original body and argument trees rather than generated substitution trees.
 to this meaning when an actual source check is available.
 `DefinitionCheckSupport.betaDeclaredSpine` uses the declaration's own type
 check to justify conversion through such a prefix and suffix, and therefore
-reaches the environment model-extension and no-False roots. The checking
-origins of generated types still need to be tracked through changed cheap
-beta in lambda inference. Arbitrary generated redexes, repeated reduction,
-and the other conversion paths remain open.
+reaches the environment model-extension and no-False roots.
+`SynthesisInference.soundWithSpine` retains checked lambda domains in the
+same recursion that proves typing and type formation. Its `lamBeta` case
+uses an original executed type check, transported to the generated type's
+current context, to justify the changed cheap-beta result. The actual source
+reading determines the raw head and arguments; `CheapBetaSupport.reading`
+connects the selected prefix to the reduced syntax and final intern table.
+`SynthesisContext.sound` derives earlier contexts from their domain checks,
+so the origin can precede additional binders. The public inference and
+environment results include this case. Automatic origin construction for
+arbitrary generated types, repeated reduction, and other conversion paths
+remain open.
 Kernel unit regressions cover lazy loading, both inference policies, interning
 reuse, dependent function types, shared references, lets, `imax` simplification,
 argument order, and rejection of wrong arities and out-of-range parameters.
@@ -535,6 +551,11 @@ both cheap-beta fast paths and check that reduction preserves the local
 context and fresh-variable counter. Declaration cases cover universe
 parameters, cache clearing, a remaining family application, and rejection of
 a witness belonging to the other carrier.
+Lambda cheap-beta regressions observe different original and reduced body
+types, local checking origins beneath further binders, dependent prefixes,
+both application positions, and reused declaration types in Prop, Type, and
+at universe parameters. They also check cache clearing, scope cleanup, and
+rejection of a carrier returned in place of its witness.
 Polymorphic-call regressions include Prop/Type instances in real function
 bodies, `max`/`imax` simplification inside Pi domains, closed nested references
 under active locals, separate cache keys for different universe instances,
@@ -604,7 +625,7 @@ Definition-cycle regressions use content-addressed standalone and mutual
 declarations, including a self-justifying theorem, a two-member cycle, type
 cycles, lets, shared syntax, and binders. They check repeated member failures,
 acyclic forward references, cache clearing, and the partial/unsafe policy.
-The unit suite contains 608 checks. The anonymous differential additionally
+The unit suite contains 620 checks. The anonymous differential additionally
 serializes eight cycle-policy fixtures and checks exact target sets, verdicts,
 failure counts, and cycle diagnostics in both implementations.
 
@@ -647,6 +668,7 @@ The VM pilot is preserved in the frozen archive and excluded from the host gate.
 | Source ownership, block registration, and finite preflight | [`Consistency/BlockOwnership.lean`](../Ix/Kernel/Verify/Consistency/BlockOwnership.lean), [`Consistency/SourceOwnershipCheck.lean`](../Ix/Kernel/Verify/Consistency/SourceOwnershipCheck.lean), [`SourceOwnership.lean`](../Ix/Kernel/SourceOwnership.lean) |
 | Dependent binders and function bodies | [`Consistency/BinderInference.lean`](../Ix/Kernel/Verify/Consistency/BinderInference.lean), [`Application.lean`](../Ix/Kernel/Verify/Consistency/Application.lean), [`BinderOpening.lean`](../Ix/Kernel/Verify/Consistency/BinderOpening.lean), [`Context.lean`](../Ix/Kernel/Verify/Consistency/Context.lean), [`Model/Checking.lean`](../Ix/Theory/Model/Checking.lean) |
 | Inferred type formation and direct lambda applications | [`Consistency/SynthesisInference.lean`](../Ix/Kernel/Verify/Consistency/SynthesisInference.lean), [`Formation.lean`](../Ix/Kernel/Verify/Consistency/Formation.lean), [`Model/UniverseBounds.lean`](../Ix/Theory/Model/UniverseBounds.lean) |
+| Retained type checks and changed cheap beta in lambda inference | [`Consistency/SynthesisInference.lean`](../Ix/Kernel/Verify/Consistency/SynthesisInference.lean), [`CheapBetaReading.lean`](../Ix/Kernel/Verify/Consistency/CheapBetaReading.lean), [`Formation.lean`](../Ix/Kernel/Verify/Consistency/Formation.lean) |
 | Source beta reduction and declaration conversion | [`Consistency/BetaSpine.lean`](../Ix/Kernel/Verify/Consistency/BetaSpine.lean), [`Simultaneous.lean`](../Ix/Kernel/Verify/Consistency/Simultaneous.lean), [`SpineReading.lean`](../Ix/Kernel/Verify/Consistency/SpineReading.lean), [`CheapBeta.lean`](../Ix/Kernel/Verify/Consistency/CheapBeta.lean), [`Model/BetaSpine.lean`](../Ix/Theory/Model/BetaSpine.lean) |
 | Production environment fragment and relative axiom policy | [`Consistency/Environment.lean`](../Ix/Kernel/Verify/Consistency/Environment.lean), [`Production.lean`](../Ix/Kernel/Verify/Consistency/Production.lean) |
 | Foundation assumptions, theorem contracts, and provenance | [Consistency model guide](theory.md) |
