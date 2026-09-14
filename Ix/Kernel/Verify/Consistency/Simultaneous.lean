@@ -94,7 +94,23 @@ theorem readScopedExpr?_simulSubstSpec {β : Type u}
       obtain ⟨ref, resolved, bodyReads⟩ := bind_success bodyReads
       cases source <;> cases bodyReads
       simp [KExpr.simulSubstSpec, readScopedExpr?, resolved, AExpr.erase]
-  | letE _ _ _ _ _ _ _ _ _ | str _ _ _ => contradiction
+  | str _ _ _ => contradiction
+  | letE name domain value body nonDep info ihDomain ihValue ihBody =>
+      obtain ⟨A, v, b, domainReads, valueReads, innerReads, erased⟩ := readScopedExpr?_let_parts bodyReads
+      obtain ⟨domainSource, rfl⟩ := AExpr.erase_surjective A
+      obtain ⟨valueSource, rfl⟩ := AExpr.erase_surjective v
+      obtain ⟨bodySource, rfl⟩ := AExpr.erase_surjective b
+      simp only [KExpr.size] at bound
+      have next : (depth + 1).toNat = depth.toNat + 1 := by
+        rw [UInt64.toNat_add, show (1 : UInt64).toNat = 1 from rfl,
+          Nat.mod_eq_of_lt (show depth.toNat + 1 < UInt64.size by omega)]
+      have innerOut := ihBody (depth := depth + 1) (by rw [next]; omega)
+        (by simpa only [next, Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using innerReads) argumentReads
+      simp only [next] at innerOut
+      simp only [AExpr.erase_instRevAt, erased, VExpr.instRevAt_inst_zero]
+      simp [KExpr.simulSubstSpec, AExpr.erase_instRevAt,
+        ihDomain (depth := depth) (by omega) domainReads argumentReads,
+        ihValue (depth := depth) (by omega) valueReads argumentReads, innerOut]
   | app fn arg info ihFn ihArg =>
       rw [readScopedExpr?] at bodyReads
       obtain ⟨f, fnReads, bodyReads⟩ := bind_success bodyReads

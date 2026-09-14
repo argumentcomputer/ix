@@ -7,6 +7,7 @@ import Ix.Kernel.Driver
 import Ix.Kernel.Verify.Consistency.Constant
 import Ix.Kernel.Verify.Consistency.SynthesisInference
 import Ix.Kernel.Verify.Consistency.BetaWhnfInference
+import Ix.Kernel.Verify.Consistency.LetSynthesis
 import Ix.Kernel.Verify.Consistency.Validation
 
 /-!
@@ -175,6 +176,16 @@ inductive DefinitionBodySupport {β : Type u}
       (scope : body.Scope universes 0 ∧ type.Scope universes 0)
       (references : body.ReferencesIn entries ∧ type.ReferencesIn entries) :
       DefinitionBodySupport resolve entries methods before declared universes term body type
+  | letE {fuel : Nat} {name : Mode.anon.F Name} {domain value body : KExpr .anon}
+      {nonDep : Bool} {info : ExprInfo .anon} {A val b B type : AExpr β} {level : VLevel}
+      (tied : methods = methodsN (fuel + 1))
+      (check : LetInferenceCheck resolve entries [] [] [] fuel before name domain value body nonDep info
+        A val b B type level)
+      (typeReading : readScopedExpr? resolve [] declared = some type.erase)
+      (scope : (b.inst val).Scope universes 0 ∧ type.Scope universes 0)
+      (references : (b.inst val).ReferencesIn entries ∧ type.ReferencesIn entries) :
+      DefinitionBodySupport resolve entries methods before declared universes
+        (.letE name domain value body nonDep info) (b.inst val) type
 
 theorem DefinitionBodySupport.sound {β : Type u}
     {resolve : Address → Option (ConstRef β)} {entries : Model.Environment β}
@@ -229,6 +240,11 @@ theorem DefinitionBodySupport.sound {β : Type u}
       subst methods
       obtain ⟨_, valueTyped, _⟩ := valueInference.closed_sound valueReading accepted
       exact ⟨readScopedExpr?_closed valueReading, readScopedExpr?_closed typeReading,
+        scope.1, scope.2, references.1, references.2, valueTyped⟩
+  | letE tied check typeReading scope references =>
+      subst methods
+      obtain ⟨_, valueTyped, _⟩ := check.closed_sound accepted
+      exact ⟨readScopedExpr?_closed check.source_reading, readScopedExpr?_closed typeReading,
         scope.1, scope.2, references.1, references.2, valueTyped⟩
 
 /-- The execution prefix through value conversion. A successful member check
@@ -409,6 +425,33 @@ def DefinitionBodyTrace.synthesisSupport {β : Type u} {input : DefinitionInput}
     (trace.scopes typeCoverage valueCoverage collision valueReading typeReading
       valueConditions typeConditions)
     references
+
+/-- Let admission uses its three executed child checks. Production
+validation establishes the scope of the substituted reading of the value. -/
+def DefinitionBodyTrace.letSupport {β : Type u} {input : DefinitionInput}
+    {fuel : Nat} {before : TcState .anon}
+    (trace : DefinitionBodyTrace input (methodsN (fuel + 1)) before)
+    {resolve : Address → Option (ConstRef β)} {entries : Model.Environment β}
+    {name : Mode.anon.F Name} {domain value body : KExpr .anon} {nonDep : Bool} {info : ExprInfo .anon}
+    {A val b B type : AExpr β} {level : VLevel}
+    {support : RunSupport} (typeCoverage : input.type.ValidationCoverage support)
+    (valueCoverage : input.value.ValidationCoverage support) (collision : support.CollisionFree)
+    (source : input.value = .letE name domain value body nonDep info)
+    (check : LetInferenceCheck resolve entries [] [] [] fuel trace.valueStart name domain value body nonDep info
+      A val b B type level)
+    (typeReading : readScopedExpr? resolve [] input.type = some type.erase)
+    (valueConditions : ConditionsScoped input.universes.toNat (b.inst val))
+    (typeConditions : ConditionsScoped input.universes.toNat type)
+    (references : (b.inst val).ReferencesIn entries ∧ type.ReferencesIn entries) :
+    DefinitionBodySupport resolve entries (methodsN (fuel + 1)) trace.valueStart input.type
+      input.universes.toNat input.value (b.inst val) type := by
+  have valueReading : readScopedExpr? resolve [] input.value = some (b.inst val).erase := by
+    rw [source]
+    exact check.source_reading
+  have sourceScope := trace.scopes typeCoverage valueCoverage collision valueReading typeReading
+    valueConditions typeConditions
+  rw [source]
+  exact .letE rfl check typeReading sourceScope references
 
 /-- The actual declaration trace determines the type and value checks used
 to justify conversion. A beta case reuses the declared type's executed

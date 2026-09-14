@@ -61,6 +61,12 @@ def openBinder {before after : TcState .anon} {name : Mode.anon.F Name} {bi : Mo
        · cases accepted; exact history.only
        · contradiction⟩
 
+def openLet {before after : TcState .anon} {name : Mode.anon.F Name}
+    {domain value body opened : KExpr .anon} {fresh : FVarId} (history : InferenceCacheHistory before)
+    (accepted : TcM.openLet name domain value body before = .ok (opened, fresh) after) :
+    InferenceCacheHistory after :=
+  history.ofMaps (openLet_inference_state accepted).1 (openLet_inference_state accepted).2.1
+
 /-- Standalone or block loading retains the history on both outcomes. -/
 def getConst {before : TcState .anon} {id : KId .anon} (history : InferenceCacheHistory before)
     (loader : VerifiedLazySupport before id.addr) :

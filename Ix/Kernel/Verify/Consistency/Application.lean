@@ -66,7 +66,17 @@ theorem readScopedExpr?_liftSpec
       obtain ⟨ref, resolved, reading⟩ := bind_success reading
       cases reading
       simp [KExpr.liftSpec, readScopedExpr?, resolved, VExpr.liftN]
-  | letE _ _ _ _ _ _ _ _ _ | str _ _ _ => contradiction
+  | str _ _ _ => contradiction
+  | letE name domain value body nonDep info ihDomain ihValue ihBody =>
+      obtain ⟨A, v, b, domainReads, valueReads, bodyReads, rfl⟩ := readScopedExpr?_let_parts reading
+      simp only [KExpr.size] at bound
+      have next := depth_succ (depth := depth) (by omega)
+      have bodyOut := ihBody (depth := depth + 1) (by rw [next]; omega)
+        (by simpa only [next] using bodyReads)
+      simp only [next] at bodyOut
+      simp [KExpr.liftSpec, ihDomain (by omega) domainReads, ihValue (by omega) valueReads,
+        show depth.toNat + shift.toNat + 1 = depth.toNat + 1 + shift.toNat by omega,
+        bodyOut, VExpr.liftN_inst_zero]
   | app fn arg info hf ha =>
       rw [readScopedExpr?] at reading
       obtain ⟨f, fReads, reading⟩ := bind_success reading
@@ -141,7 +151,16 @@ theorem readScopedExpr?_substSpec
       obtain ⟨ref, resolved, bodyReads⟩ := bind_success bodyReads
       cases bodyReads
       simp [KExpr.substSpec, readScopedExpr?, resolved, VExpr.inst]
-  | letE _ _ _ _ _ _ _ _ _ | str _ _ _ => contradiction
+  | str _ _ _ => contradiction
+  | letE name domain value body nonDep info ihDomain ihValue ihBody =>
+      obtain ⟨A, v, b, domainReads, valueReads, innerReads, rfl⟩ := readScopedExpr?_let_parts bodyReads
+      simp only [KExpr.size] at bound
+      have next := depth_succ (depth := depth) (by omega)
+      have bodyOut := ihBody (depth := depth + 1) (by rw [next]; omega)
+        (by simpa only [next] using innerReads)
+      simp only [next] at bodyOut
+      simp [KExpr.substSpec, ihDomain (by omega) domainReads, ihValue (by omega) valueReads,
+        bodyOut, VExpr.inst_inst_zero]
   | app fn value info hf ha =>
       rw [readScopedExpr?] at bodyReads
       obtain ⟨f, fReads, bodyReads⟩ := bind_success bodyReads

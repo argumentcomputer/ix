@@ -44,6 +44,27 @@ def erase : AExpr β → VExpr β
   | .proj r i e => .proj r i e.erase
   | .natLit v => .natLit v
 
+/-- Every raw expression has a structural annotation. This says nothing
+about the validity of the chosen binder conditions. -/
+theorem erase_surjective : Function.Surjective (erase : AExpr β → VExpr β) := by
+  intro term
+  induction term with
+  | bvar index => exact ⟨.bvar index, rfl⟩
+  | sort level => exact ⟨.sort level, rfl⟩
+  | const ref levels => exact ⟨.const ref levels, rfl⟩
+  | natLit value => exact ⟨.natLit value, rfl⟩
+  | app fn arg ihFn ihArg =>
+      obtain ⟨f, rfl⟩ := ihFn
+      obtain ⟨a, rfl⟩ := ihArg
+      exact ⟨.app f a, rfl⟩
+  | lam domain body ihDomain ihBody | forallE domain body ihDomain ihBody =>
+      obtain ⟨A, rfl⟩ := ihDomain
+      obtain ⟨b, rfl⟩ := ihBody
+      first | exact ⟨.lam .always A b, rfl⟩ | exact ⟨.forallE .always A b, rfl⟩
+  | proj ref field major ih =>
+      obtain ⟨value, rfl⟩ := ih
+      exact ⟨.proj ref field value, rfl⟩
+
 theorem eq_const_of_erase_eq {e : AExpr β} {r : ConstRef β} {ls : List VLevel}
     (h : e.erase = .const r ls) : e = .const r ls := by
   cases e <;> simp_all [erase]

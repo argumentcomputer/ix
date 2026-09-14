@@ -90,6 +90,8 @@ def complete (data : SynthesisCacheSupplement resolve anchor entries fuel before
       | lam full miss trace domainTree bodyTree =>
           exact children.append (.singleton (.ofSource tree contextOrigin agreement reading miss accepted))
       | lamBody full miss trace domainTree bodyTree =>
+          exact children.append (.singleton (.ofSource tree contextOrigin agreement reading miss accepted))
+      | letE full miss trace hashPath domainTree valueTree bodyTree =>
           exact children.append (.singleton (.ofSource tree contextOrigin agreement reading miss accepted)) }
 
 end SynthesisCacheSupplement

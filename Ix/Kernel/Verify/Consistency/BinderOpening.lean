@@ -71,7 +71,16 @@ theorem readScopedExpr?_instantiateRevSpec
       simp [KExpr.instantiateRevSpec, readScopedExpr?, localIndex?_fresh absent found,
         Nat.add_assoc, Nat.add_comm 1]
   | sort _ _ | const _ _ _ | nat _ _ _ => exact reading
-  | letE _ _ _ _ _ _ _ _ _ | str _ _ _ => contradiction
+  | str _ _ _ => contradiction
+  | letE name domain value body nonDep info ihDomain ihValue ihBody =>
+      obtain ⟨A, v, b, domainReads, valueReads, bodyReads, rfl⟩ := readScopedExpr?_let_parts reading
+      simp only [KExpr.size] at bound
+      have next := depth_succ (depth := depth) (by omega)
+      have bodyOut := ihBody (depth := depth + 1) (by rw [next]; omega)
+        (by simpa only [next] using bodyReads)
+      simp only [next] at bodyOut
+      simp [KExpr.instantiateRevSpec, ihDomain (by omega) domainReads,
+        ihValue (by omega) valueReads, bodyOut]
   | app fn arg info hf ha =>
       rw [readScopedExpr?] at reading
       obtain ⟨f, fReads, reading⟩ := bind_success reading
@@ -151,7 +160,16 @@ theorem readScopedExpr?_abstractFVarsSpec
           readScopedExpr?, found,
           Nat.add_assoc, Nat.add_comm 1]
   | sort _ _ | const _ _ _ | nat _ _ _ => exact reading
-  | letE _ _ _ _ _ _ _ _ _ | str _ _ _ => contradiction
+  | str _ _ _ => contradiction
+  | letE name domain value body nonDep info ihDomain ihValue ihBody =>
+      obtain ⟨A, v, b, domainReads, valueReads, bodyReads, rfl⟩ := readScopedExpr?_let_parts reading
+      simp only [KExpr.size] at bound
+      have next := depth_succ (depth := depth) (by omega)
+      have bodyOut := ihBody (depth := depth + 1) (by rw [next]; omega)
+        (by simpa only [next] using bodyReads)
+      simp only [next] at bodyOut
+      simp [KExpr.abstractFVarsSpec, ihDomain (by omega) domainReads,
+        ihValue (by omega) valueReads, bodyOut]
   | app fn arg info hf ha =>
       rw [readScopedExpr?] at reading
       obtain ⟨f, fReads, reading⟩ := bind_success reading

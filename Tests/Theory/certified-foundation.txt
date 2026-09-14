@@ -10666,4 +10666,4 @@ compiler recursion worker Ix.Theory.Model.SetTheory.Tower.PropS._unsafe_rec
     Model.SetTheory.Mem A Model.SetTheory.univZero ∧
       ∀ (a : V), Model.SetTheory.Mem a A → Model.SetTheory.Tower.PropS._unsafe_rec (B a)
 Certified project runtime audit OK: 101 compiler recursion workers inventoried; no other unsafe/partial declarations, extern, implemented_by, computed_field, or csimp replacements in the mathematical import graph
-Certified foundation audit OK: 6568 declarations; 145 named roots; explicit SetTheory hypothesis; baseline axioms only
+Certified foundation audit OK: 6569 declarations; 145 named roots; explicit SetTheory hypothesis; baseline axioms only

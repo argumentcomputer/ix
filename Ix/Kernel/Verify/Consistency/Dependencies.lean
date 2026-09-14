@@ -27,6 +27,25 @@ private theorem allReferences_erase (available : ConstRef β → Prop) (source :
     AllReferences available source.erase ↔ ∀ ref ∈ source.references, available ref := by
   induction source <;> simp_all [AllReferences, AExpr.erase, AExpr.references, or_imp, forall_and]
 
+private theorem allReferences_liftN {available : ConstRef β → Prop}
+    {source : VExpr β} (references : AllReferences available source) (count cutoff : Nat) :
+    AllReferences available (source.liftN count cutoff) := by
+  induction source generalizing cutoff <;> simp_all [VExpr.liftN, AllReferences]
+
+private theorem allReferences_inst {available : ConstRef β → Prop}
+    {body value : VExpr β} (bodyReferences : AllReferences available body)
+    (valueReferences : AllReferences available value) (cutoff : Nat) :
+    AllReferences available (body.inst value cutoff) := by
+  induction body generalizing cutoff with
+  | bvar index =>
+      simp only [VExpr.inst, VExpr.instVar]
+      split
+      · trivial
+      · split
+        · exact allReferences_liftN valueReferences cutoff 0
+        · trivial
+  | _ => simp_all [VExpr.inst, AllReferences]
+
 private theorem option_bind_success {α γ : Type _} {action : Option α}
     {next : α → Option γ} {result : γ} (run : action.bind next = some result) :
     ∃ intermediate, action = some intermediate ∧ next intermediate = some result := by
@@ -51,7 +70,14 @@ private theorem readScopedExpr?_allReferences {available : ConstRef β → Prop}
       cases equality
       trivial
   | sort _ _ | nat _ _ _ => cases reading; trivial
-  | letE _ _ _ _ _ _ _ _ _ | str _ _ _ => contradiction
+  | str _ _ _ => contradiction
+  | letE name domain value body nonDep info _ ihValue ihBody =>
+      obtain ⟨A, v, b, _, valueReads, bodyReads, rfl⟩ := readScopedExpr?_let_parts reading
+      exact allReferences_inst
+        (ihBody bodyReads (fun id reference => references id
+          (.child (by simp [DefinitionReferences.Children]) reference)))
+        (ihValue valueReads (fun id reference => references id
+          (.child (by simp [DefinitionReferences.Children]) reference))) 0
   | const id levels info =>
       rw [readScopedExpr?] at reading
       obtain ⟨ref, resolved, reading⟩ := option_bind_success reading

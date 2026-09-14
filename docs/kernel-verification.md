@@ -32,8 +32,10 @@ increasing sequence of strongly inaccessible cardinals.
   addresses to explicit store references, preserves projections and natural
   literals, and substitutes let values. This closed reader excludes free
   variables, unresolved addresses, and string literals. The binder reader
-  `readScopedExpr?` maps registered free variables to model context indices;
-  unknown locals, loose legacy variables, lets, and strings fail that reader.
+  `readScopedExpr?` maps registered free variables to model context indices
+  and substitutes let values beneath active locals and binders. Unknown locals,
+  loose legacy variables, and strings fail that reader. Opening, abstraction,
+  term/universe substitution, scope, and reference proofs include nested lets.
 - Hash equality and intern-table reuse preserve that reading under their
   stated address/key collision assumptions. Metadata cannot change it.
 - `inferUncached_sort_sound` interprets an actual successful execution of the
@@ -95,6 +97,18 @@ increasing sequence of strongly inaccessible cardinals.
   `AxiomObservation.synthesisTypeCheck` extracts an axiom's type check from
   successful `checkEnvAnon` rows; `StandalonePrefix.definitionTypeCheck` extracts
   a definition's check from public declaration success.
+- `LetInferenceCheck.sound` connects the full production let branch to its
+  original declared-type, value, and opened-body synthesis checks. The actual
+  value-type hash comparison establishes domain agreement. Fresh let opening,
+  type abstraction, value substitution, and the selected cheap-beta operation
+  give the returned type and its formation bound. Substituting the original
+  checking derivations retains lambda domains and argument checks for later
+  beta steps, including lambdas exposed by the substituted value.
+  `DefinitionBodyTrace.letSupport` uses the same declaration's validation and
+  inference calls to include let bodies in model extension. The three children
+  still belong to the existing `SynthesisInference` fragment; composing lets
+  arbitrarily into that recursive datatype remains open. Finite execution,
+  collision, walker, and selected beta-origin resources remain explicit.
 - `instantiateUnivParams_readScopedAnnotated` brings the actual substituted
   declaration type into any active local context, preserving its closed term
   scope and occurrence annotations. `infer_const_scoped_annotated` uses this
@@ -469,7 +483,7 @@ the run. They supply no typing or checker-soundness premise. The proof
 extracts the validation, type-inference, theorem-guard, value-inference, and
 conversion steps from public success, then derives body typing to extend
 the preceding model. General automatic witness construction, broader application and
-lambda paths, lets, inductives, coordinated blocks, and other
+lambda paths, arbitrary recursive let inference, inductives, coordinated blocks, and other
 conversion paths remain outside the fragment. The declaration's exact universe
 arity is carried from production lookup into its model entry. Model extension
 interprets the checked body at every universe instance, retaining old
@@ -525,7 +539,7 @@ lake test --wfail -- tc-unit
 lake -d Models/SetTheory build --wfail
 ```
 
-The consistency target checks 766 exact theorem boundaries. The production
+The consistency target checks 799 exact theorem boundaries. The production
 environment roots retain four existing generated output-length proofs,
 reached through expression/universe construction, names, and the full
 production method table. They introduce no new native proofs. The model
@@ -694,6 +708,16 @@ proved context relation. General execution/resource construction, missing
 checking-only child annotations, other inference branches, and general WHNF
 and conversion cache histories remain open. These 61 new audited roots retain
 the existing production axioms and introduce no new axiom or native proof.
+Full-mode lets now extend the operational history with their declared-type,
+value, and opened-body events followed by the parent publication. The same
+`LetInferenceCheck` and its three children's cache data derive this trace,
+the exact fold for both maps, and a history containing every child and parent
+write. Opening and scope cleanup retain those maps. Initially occupied full
+keys remain protected by cache priority without a collision premise. The
+typed `SynthesisCacheHistory` still needs the let case integrated into its
+recursive inference origins before it can retain a let root. The 33 additional
+let and representation audit boundaries preserve the existing axiom policy.
+
 Kernel unit regressions cover lazy loading, both inference policies, interning
 reuse, dependent function types, shared references, lets, `imax` simplification,
 argument order, and rejection of wrong arities and out-of-range parameters.
@@ -856,7 +880,12 @@ parent, and exited-local entries, through policy changes, successful and failed
 loading, clearing, and repopulation. A forged different input at an occupied
 full key confirms that priority preserves the maps even without collision
 freedom; semantic source recovery separately requires finite collision data.
-The unit suite contains 711 checks. The anonymous differential additionally
+Five let regressions check exact child/parent cache maps, zero-fuel replay under
+both policies, clearing and rebuilding, cheap beta in the generated type,
+theorem admission with both cache-clearing settings, nested capture avoidance,
+and cleanup after value-comparison and body-inference failures. They exercise
+production independently of the finite resources used by the proof.
+The unit suite contains 716 checks. The anonymous differential additionally
 serializes eight cycle-policy fixtures and checks exact target sets, verdicts,
 failure counts, and cycle diagnostics in both implementations.
 

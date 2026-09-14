@@ -51,7 +51,17 @@ theorem instUnivSpec_scoped_eq {resolve : Address → Option (ConstRef β)}
       split at reading
       next bound => simp [bound, readExpr?]
       · contradiction
-  | fvar _ _ _ | letE _ _ _ _ _ _ _ _ _ | str _ _ _ => contradiction
+  | fvar _ _ _ | str _ _ _ => contradiction
+  | letE name domain value body nonDep info ihDomain ihValue ihBody =>
+      obtain ⟨A, v, b, domainReads, valueReads, bodyReads, _⟩ := readScopedExpr?_let_parts reading
+      rw [KExpr.instUnivSpec] at run
+      obtain ⟨domain', domainRun, run⟩ := except_bind_success run
+      obtain ⟨value', valueRun, run⟩ := except_bind_success run
+      obtain ⟨body', bodyRun, run⟩ := except_bind_success run
+      cases run
+      simp only [readScopedExpr?_mkLet]
+      rw [ihDomain domainReads domainRun, ihValue valueReads valueRun, ihBody bodyReads bodyRun]
+      rfl
   | nat _ _ _ => cases run; rfl
   | sort _ _ | const _ _ _ =>
       rw [KExpr.instUnivSpec] at run

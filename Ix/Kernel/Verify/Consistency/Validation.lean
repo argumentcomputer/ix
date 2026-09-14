@@ -53,7 +53,14 @@ theorem readScopedExpr?_scope {resolve : Address → Option (ConstRef β)}
       split at reading
       next bound => cases reading; exact ⟨trivial, bound⟩
       next => contradiction
-  | fvar _ _ _ | letE _ _ _ _ _ _ _ _ _ | str _ _ _ => contradiction
+  | fvar _ _ _ | str _ _ _ => contradiction
+  | letE name domain value body nonDep info _ ihValue ihBody =>
+      obtain ⟨A, v, b, _, valueReads, bodyReads, rfl⟩ := readScopedExpr?_let_parts reading
+      have valueScope := ihValue valueReads validSyntax.2.1
+      have bodyScope := ihBody bodyReads validSyntax.2.2
+      exact ⟨bodyScope.1.inst valueScope.1 0, by
+        simpa only [Nat.add_zero] using
+          VExpr.ClosedN.inst (cutoff := 0) (by simpa using bodyScope.2) valueScope.2⟩
   | sort level info =>
       cases reading
       exact ⟨readLevel_eq level ▸ validSyntax.toVLevel_wf, trivial⟩

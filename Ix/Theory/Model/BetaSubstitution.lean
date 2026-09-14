@@ -337,3 +337,72 @@ theorem instRevAt_bvar_selected (arguments : List (AExpr β)) (index cutoff : Na
   | cons argument arguments ih => simp only [instRevAt, inst, ih]
 
 end Ix.Theory.Model.AExpr
+
+namespace Ix.Theory.VExpr
+
+open Model
+
+/-- Inserting variables preserves closure in the correspondingly larger
+context, including beneath syntactic binders. -/
+theorem ClosedN.liftN {term : VExpr β} {depth : Nat} (closed : term.ClosedN depth)
+    (count cutoff : Nat) : (term.liftN count cutoff).ClosedN (count + depth) := by
+  induction term generalizing depth cutoff with
+  | bvar index =>
+      simp only [VExpr.liftN, liftVar, ClosedN]
+      split <;> simp only [ClosedN] at closed ⊢ <;> omega
+  | lam domain body ihDomain ihBody | forallE domain body ihDomain ihBody =>
+      exact ⟨ihDomain closed.1 cutoff, by
+        simpa only [Nat.add_assoc] using ihBody closed.2 (cutoff + 1)⟩
+  | _ => simp_all [VExpr.liftN, ClosedN]
+
+/-- Substitution removes one binder while retaining the binders below the
+substitution cutoff. The argument belongs to the outer context. -/
+theorem ClosedN.inst {term argument : VExpr β} {depth cutoff : Nat}
+    (bodyClosed : term.ClosedN (depth + cutoff + 1))
+    (argumentClosed : argument.ClosedN depth) :
+    (term.inst argument cutoff).ClosedN (depth + cutoff) := by
+  induction term generalizing cutoff with
+  | bvar index =>
+      simp only [VExpr.inst, instVar]
+      split
+      next below => exact Nat.lt_of_lt_of_le below (by omega)
+      next =>
+        split
+        · simpa only [Nat.add_comm] using argumentClosed.liftN cutoff 0
+        · simp only [ClosedN] at bodyClosed ⊢; omega
+  | lam domain body ihDomain ihBody | forallE domain body ihDomain ihBody =>
+      exact ⟨ihDomain bodyClosed.1, by
+        simpa only [Nat.add_assoc] using ihBody (cutoff := cutoff + 1)
+          (by simpa only [Nat.add_assoc] using bodyClosed.2)⟩
+  | _ => simp_all [VExpr.inst, ClosedN]
+
+/-- The raw substitution laws follow from structural erasure, independently
+of whether any binder annotation is semantically valid. -/
+theorem liftN_inst_zero (term argument : VExpr β) (count cutoff : Nat) :
+    (term.inst argument).liftN count cutoff =
+      (term.liftN count (cutoff + 1)).inst (argument.liftN count cutoff) := by
+  obtain ⟨body, rfl⟩ := AExpr.erase_surjective term
+  obtain ⟨value, rfl⟩ := AExpr.erase_surjective argument
+  simpa only [AExpr.erase_liftN, AExpr.erase_inst] using
+    congrArg AExpr.erase (AExpr.liftN_inst_zero body value count cutoff)
+
+theorem inst_inst_zero (term first second : VExpr β) (cutoff : Nat) :
+    (term.inst first).inst second cutoff =
+      (term.inst second (cutoff + 1)).inst (first.inst second cutoff) := by
+  obtain ⟨body, rfl⟩ := AExpr.erase_surjective term
+  obtain ⟨value, rfl⟩ := AExpr.erase_surjective first
+  obtain ⟨argument, rfl⟩ := AExpr.erase_surjective second
+  simpa only [AExpr.erase_inst] using
+    congrArg AExpr.erase (AExpr.inst_inst_zero body value argument cutoff)
+
+theorem instRevAt_inst_zero (term value : VExpr β) (arguments : List (VExpr β))
+    (cutoff : Nat) :
+    (term.inst value).instRevAt arguments cutoff =
+      (term.instRevAt arguments (cutoff + 1)).inst (value.instRevAt arguments cutoff) := by
+  induction arguments generalizing term value with
+  | nil => rfl
+  | cons argument arguments ih =>
+      simp only [instRevAt, inst_inst_zero, ih,
+        show cutoff + arguments.length + 1 = cutoff + 1 + arguments.length by omega]
+
+end Ix.Theory.VExpr

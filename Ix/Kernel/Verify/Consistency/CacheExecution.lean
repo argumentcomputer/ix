@@ -118,6 +118,9 @@ def InferenceCacheTrace.events {fuel : Nat} {before after : TcState .anon}
       domainTree.events trace.domainRun ++ bodyTree.events trace.bodyRun ++ [.ofRun miss accepted]
   | .lamBody _ miss trace domainTree bodyTree =>
       domainTree.events trace.domainRun ++ bodyTree.events trace.bodyRun ++ [.ofRun miss accepted]
+  | .letE _ miss trace _ domainTree valueTree bodyTree =>
+      domainTree.events trace.domainRun ++ valueTree.events trace.valueRun ++
+        bodyTree.events trace.bodyRun ++ [.ofRun miss accepted]
 termination_by structural tree
 
 /-- Actual child publications, before the enclosing miss writes its result. -/
@@ -129,6 +132,8 @@ def InferenceCacheTrace.childEvents {fuel : Nat} {before : TcState .anon} {sourc
   | .forallE _ trace first second => first.events trace.domainRun ++ second.events trace.bodyRun
   | .lam _ _ trace first second => first.events trace.domainRun ++ second.events trace.bodyRun
   | .lamBody _ _ trace first second => first.events trace.domainRun ++ second.events trace.bodyRun
+  | .letE _ _ trace _ first second third =>
+      first.events trace.domainRun ++ second.events trace.valueRun ++ third.events trace.bodyRun
 
 private theorem openBinder_maps {name : Mode.anon.F Name} {bi : Mode.anon.F Lean.BinderInfo}
     {domain body opened : KExpr .anon} {fresh : FVarId} {before after : TcState .anon}
@@ -286,5 +291,21 @@ theorem InferenceCacheTrace.cache_maps {fuel : Nat} {before after : TcState .ano
       simp only [InferenceCacheEvent.applyFull_append, InferenceCacheEvent.applyOnly_append]
       exact ⟨bodyFull.trans (congrArg _ (openedFull.trans domainFull)),
         bodyOnly.trans (congrArg _ (openedOnly.trans domainOnly))⟩
+  | letE full miss trace hashPath domainTree valueTree bodyTree domainIH valueIH bodyIH =>
+      apply miss_maps miss accepted (domainTree.events trace.domainRun ++ valueTree.events trace.valueRun ++
+        bodyTree.events trace.bodyRun)
+      intro middle run
+      rw [full] at run
+      obtain ⟨domainFull, domainOnly⟩ := domainIH trace.domainRun
+      obtain ⟨valueFull, valueOnly⟩ := valueIH trace.valueRun
+      obtain ⟨bodyFull, bodyOnly⟩ := bodyIH trace.bodyRun
+      obtain ⟨comparisonFull, comparisonOnly⟩ := hash_maps hashPath trace.compareRun
+      have opened := openLet_inference_state trace.openRun
+      rw [(trace.output_state run).2]
+      simp only [InferenceCacheEvent.applyFull_append, InferenceCacheEvent.applyOnly_append]
+      exact ⟨bodyFull.trans (congrArg _ (opened.1.trans
+          (comparisonFull.trans (valueFull.trans (congrArg _ domainFull))))),
+        bodyOnly.trans (congrArg _ (opened.2.1.trans
+          (comparisonOnly.trans (valueOnly.trans (congrArg _ domainOnly)))))⟩
 
 end Ix.Kernel.Consistency

@@ -3449,6 +3449,127 @@ private def compositeOccupiedForeignKey : Bool :=
             exactInferenceCaches [(constant, identityType)] [(constant, prop)] after &&
             after.env.nextFVarId == before.env.nextFVarId && after.recFuel == 0
 
+/-- Let inference publishes its domain, value, opened body and parent in
+the full map. Temporary-local entries survive cleanup, while replay at zero
+fuel allocates no local and clearing forces fresh child publications. -/
+private def letExactCacheHistory : Bool :=
+  let prop := KExpr.mkSort (m := .anon) .mkZero
+  let sort := KExpr.mkSort (m := .anon) levelOne
+  let sortTwo := KExpr.mkSort (m := .anon) levelTwo
+  let body := KExpr.mkLam () () (.mkVar 0 ()) (.mkVar 0 ())
+  let source := KExpr.mkLet () sort prop body false
+  let expected := KExpr.mkAll () () prop prop
+  let action : RecM .anon Bool := do
+    let checkFresh : RecM .anon Bool := do
+      let start ← get
+      let letLocal := KExpr.mkFVar ⟨start.env.nextFVarId⟩ ()
+      let lambdaLocal := KExpr.mkFVar ⟨start.env.nextFVarId + 1⟩ ()
+      let openedBody := KExpr.mkLam () () letLocal (.mkVar 0 ())
+      let bodyType := KExpr.mkAll () () letLocal letLocal
+      let result ← RecM.inferCall source
+      let finished ← get
+      return result == expected && finished.lctx.size == start.lctx.size &&
+        finished.env.nextFVarId == start.env.nextFVarId + 2 && finished.deqCalls > start.deqCalls &&
+        exactInferenceCaches [(sort, sortTwo), (prop, sort), (letLocal, sort), (lambdaLocal, letLocal),
+          (openedBody, bodyType), (source, expected)] [] finished
+    if !(← checkFresh) then return false
+    let checked ← get
+    for policy in [false, true] do
+      match (RecM.infer source).run (methodsN 0) {checked with inferOnly := policy} with
+      | .ok result replayed =>
+          if result != expected || replayed.env.nextFVarId != checked.env.nextFVarId ||
+              replayed.env.inferCache.size != checked.env.inferCache.size ||
+              replayed.env.inferOnlyCache.size != 0 then return false
+      | .error _ _ => return false
+    modify fun state => {state with env := state.env.clearReductionCaches}
+    return ← checkFresh
+  match TcM.runRec action {TcState.newLazyAnon {} with stats := true} with
+  | .ok passed after => passed && after.lctx.size == 0
+  | .error _ _ => false
+
+/-- The inferred body type is a let-local application. Closing and value
+substitution expose a lambda; cheap beta returns the declared proposition. -/
+private def letGeneratedBetaEnvironment : Ixon.Env × Address := Id.run do
+  let domain := Ixon.Expr.leanAll (.sort 0) (.sort 0)
+  let identity := Ixon.Expr.leanLam (.sort 0) (.var 0)
+  let (env, proposition) := storeConst {}
+    ⟨.axio ⟨false, 0, .sort 0⟩, #[], #[], #[.zero]⟩
+  let (env, witness) := storeConst env
+    ⟨.axio ⟨false, 0, .leanAll domain (.app (.var 0) (.ref 0 #[]))⟩,
+      #[], #[proposition], #[.zero]⟩
+  return storeConst env
+    ⟨.defn ⟨.thm, .safe, 0, .ref 0 #[],
+      .letE false domain identity (.app (.ref 1 #[]) (.var 0))⟩,
+      #[], #[proposition, witness], #[.zero]⟩
+
+private def letGeneratedTypeBeta : Bool :=
+  let (source, target) := letGeneratedBetaEnvironment
+  let action : RecM .anon Bool := do
+    let .defn _ _ _ _ _ _ expected term _ _ ← TcM.getConst (m := .anon) ⟨target, ()⟩ | return false
+    let .letE name domain value body _ _ := term | return false
+    let .sort .. ← RecM.inferCall domain | return false
+    let valueType ← RecM.inferCall value
+    if valueType != domain then return false
+    let changed ← RecM.withLctxScope do
+      let (opened, fresh) ← TcM.openLet name domain value body
+      let bodyType ← RecM.inferCall opened
+      let closed ← TcM.runIntern (abstractFVars bodyType #[fresh])
+      let substituted ← TcM.runIntern (subst closed value 0)
+      let reduced ← TcM.runIntern (cheapBetaReduce substituted)
+      return bodyType.hasFVars && bodyType != expected && substituted != expected &&
+        (cheapBetaPlan? substituted).isSome && reduced == expected && !reduced.hasFVars
+    if !changed || (← get).lctx.size != 0 then return false
+    let result ← RecM.inferCall term
+    return result == expected && compositeReplayAt term expected (← get)
+  match TcM.runRec action (TcState.newLazyAnon source) with
+  | .ok passed after => passed && after.lctx.size == 0
+  | .error _ _ => false
+
+private def letNestedCapture : Bool :=
+  let sort := KExpr.mkSort (m := .anon) levelOne
+  let action : RecM .anon Bool := RecM.withLctxScope do
+    let (carrier, _) ← TcM.openBinder () () sort (.mkVar 0 ())
+    let inner := KExpr.mkLet () sort (.mkVar 0 ())
+      (.mkLam () () (.mkVar 0 ()) (.mkVar 0 ())) false
+    let term := KExpr.mkLet () sort carrier inner false
+    let result ← RecM.inferCall term
+    let expected := KExpr.mkAll () () carrier carrier
+    return result == expected && result.hasFVars && (← get).lctx.size == 1 &&
+      compositeReplayAt term expected (← get)
+  match TcM.runRec action (TcState.newLazyAnon {}) with
+  | .ok passed after => passed && after.lctx.size == 0
+  | .error _ _ => false
+
+private def letFailureCleanup : Bool :=
+  let prop := KExpr.mkSort (m := .anon) .mkZero
+  let sort := KExpr.mkSort (m := .anon) levelOne
+  let sortTwo := KExpr.mkSort (m := .anon) levelTwo
+  let sortThree := KExpr.mkSort (m := .anon) (.mkSucc levelTwo)
+  let badValue := KExpr.mkLet () prop prop (.mkVar 0 ()) false
+  let badBody := KExpr.mkLet () sort prop (.mkFVar ⟨99⟩ ()) false
+  let rejectsValue := match TcM.infer badValue (TcState.newLazyAnon {}) with
+    | .error .declTypeMismatch after => after.lctx.size == 0 && after.env.nextFVarId == 0 &&
+        exactInferenceCaches [(prop, sort)] [(sort, sortTwo), (sortTwo, sortThree)] after
+    | _ => false
+  let cleansBody := match TcM.infer badBody (TcState.newLazyAnon {}) with
+    | .error _ after => after.lctx.size == 0 && after.env.nextFVarId == 1 &&
+        exactInferenceCaches [(sort, sortTwo), (prop, sort)] [] after
+    | _ => false
+  rejectsValue && cleansBody
+
+private def letCases : TestSeq :=
+  test "let inference: dependent type substitution retains exact child caches, replay, and fresh rebuilding"
+    letExactCacheHistory
+  ++ test "let inference: substitution exposes the generated type's selected cheap-beta redex"
+    letGeneratedTypeBeta
+  ++ test "let inference: generated beta types reach theorem admission with persistent and cleared caches"
+    (allSucceeded letGeneratedBetaEnvironment.1 3 { clearEvery := 0 } &&
+      allSucceeded letGeneratedBetaEnvironment.1 3 { clearEvery := 1 })
+  ++ test "let inference: nested lets preserve an older captured dependent local through both closures"
+    letNestedCapture
+  ++ test "let inference: bad values are checked and failed bodies restore scope without publishing the parent"
+    letFailureCleanup
+
 private def compositeCacheCases : TestSeq :=
   test "composite cache: applications survive lazy inference, scopes, replay, and clearing"
     (compositeCacheHistory 0)
@@ -3574,6 +3695,6 @@ public def suite : List TestSeq :=
     cheapApplicationCases, exposedLambdaCases, repeatedBetaCases, betaTraceCases, hereditaryBetaCases, piExposureCases,
     polymorphicApplicationCases, constantCacheCases, cacheInvariantCases, recursiveCacheCases,
     lazyCacheCases, blockCacheCases, ingressCoherenceCases, sourceOwnershipCases, recursiveStateCases,
-    sourceAgreementCases, sourceCacheCases, compositeCacheCases, polymorphicDefinitionCases]
+    sourceAgreementCases, sourceCacheCases, compositeCacheCases, letCases, polymorphicDefinitionCases]
 
 end Tests.Kernel.Consistency

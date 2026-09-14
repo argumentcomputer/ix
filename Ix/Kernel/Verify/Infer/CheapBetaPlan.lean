@@ -77,6 +77,22 @@ private theorem toNat_toUInt64_cheapBeta (n : Nat) :
   unfold Nat.toUInt64
   rfl
 
+/-- Selection witnesses a syntactic lambda head. Reading a let by
+substitution may expose a model lambda without selecting a kernel plan. -/
+theorem cheapBetaPlan?_head_lambda {source : KExpr .anon} {plan : CheapBetaPlan .anon}
+    (selected : cheapBetaPlan? source = some plan) :
+    ∃ name bi domain body info,
+      source.collectSpine.1 = .lam name bi domain body info := by
+  cases source with
+  | app fn arg info =>
+      simp only [cheapBetaPlan?] at selected
+      generalize spine : (KExpr.app fn arg info).collectSpine = collected at selected ⊢
+      obtain ⟨head, arguments⟩ := collected
+      cases head with
+      | lam name bi domain body info => exact ⟨name, bi, domain, body, info, rfl⟩
+      | _ => contradiction
+  | _ => contradiction
+
 /-- A successful cheap-beta plan is exactly the simultaneous substitution
 of the consumed lambda prefix followed by the untouched application suffix.
 This is the arithmetic seam behind the selected-variable fast path: the

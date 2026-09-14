@@ -14,6 +14,7 @@ import Ix.Kernel.Verify.Consistency.Dependencies
 import Ix.Kernel.Verify.Consistency.CheapBeta
 import Ix.Kernel.Verify.Consistency.SynthesisCache
 import Ix.Kernel.Verify.Consistency.SynthesisCacheExecution
+import Ix.Kernel.Verify.Consistency.LetCache
 import Ix.Kernel.Verify.Audit.Basic
 
 /-! Exact full-dependency boundaries for the direct model-refinement roots.
@@ -77,6 +78,17 @@ private def formationRoots : Array Lean.Name := #[
   ``Theory.Model.wellDenoted_of_inst, ``Theory.Model.wellDenoted_inst_iff,
   ``Theory.Model.TypingClaim.inst, ``Theory.Model.CheckingClaim.inst,
   ``Theory.Model.ConversionClaim.inst
+]
+
+private def letRoots : Array Lean.Name := #[
+  ``LetInferenceTrace.abstracted, ``LetInferenceTrace.substituted, ``LetInferenceTrace.reduced,
+  ``LetInferenceTrace.after, ``LetInferenceTrace.output_state, ``LetInferenceTrace.SubstitutionSupport,
+  ``LetInferenceTrace.substituted_reading, ``LetTypeReduction.reading, ``LetTypeReduction.trace,
+  ``LetInferenceCheck.source_reading, ``LetInferenceCheck.substituted_type_origin,
+  ``LetInferenceCheck.betaTyping, ``LetInferenceCheck.sound, ``LetInferenceCheck.closed_sound,
+  ``LetInferenceCheck.beta_steps_sound, ``DefinitionBodyTrace.letSupport,
+  ``InferenceCacheHistory.openLet, ``LetInferenceCheck.CacheData, ``LetInferenceCheck.cacheTrace,
+  ``LetInferenceCheck.cache_maps, ``LetInferenceCheck.cacheHistory
 ]
 
 private def instantiationRoots : Array Lean.Name := #[
@@ -680,6 +692,28 @@ def roots : Array RootAllowance := #[
   { root := ``readScopedExpr?_lam_parts },
   { root := ``readScopedExpr?_app_parts },
   { root := ``readScopedExpr?_all_parts },
+  { root := ``readScopedExpr?_let_parts, forbiddenDependencies := forbiddenProduction },
+  { root := ``Theory.Model.AExpr.erase_surjective, forbiddenDependencies := forbiddenProduction },
+  { root := ``Theory.VExpr.ClosedN.liftN, standardAxioms := #[``propext, ``Quot.sound],
+    forbiddenDependencies := forbiddenProduction },
+  { root := ``Theory.VExpr.ClosedN.inst, standardAxioms := #[``propext, ``Quot.sound],
+    forbiddenDependencies := forbiddenProduction },
+  { root := ``Theory.VExpr.liftN_inst_zero, standardAxioms := #[``propext, ``Quot.sound],
+    forbiddenDependencies := forbiddenProduction },
+  { root := ``Theory.VExpr.inst_inst_zero, standardAxioms := #[``propext, ``Quot.sound],
+    forbiddenDependencies := forbiddenProduction },
+  { root := ``Theory.VExpr.instRevAt_inst_zero, standardAxioms := #[``propext, ``Quot.sound],
+    forbiddenDependencies := forbiddenProduction },
+  { root := ``readScopedExpr?_mkLet, standardAxioms := #[``propext, ``Classical.choice],
+    nativeAxioms := #[expressionNative], forbiddenDependencies := forbiddenProduction },
+  { root := ``cheapBetaPlan?_head_lambda, standardAxioms := standard,
+    nativeAxioms := #[expressionNative], forbiddenDependencies := forbiddenProduction },
+  { root := ``openLet_eq, standardAxioms := standard,
+    nativeAxioms := #[expressionNative], forbiddenDependencies := forbiddenProduction },
+  { root := ``openLet_inference_state, standardAxioms := standard,
+    nativeAxioms := #[expressionNative], forbiddenDependencies := forbiddenProduction },
+  { root := ``openLet_sound, standardAxioms := standard,
+    nativeAxioms := #[expressionNative], forbiddenDependencies := forbiddenProduction },
   { root := ``beq_readExpr?, standardAxioms := #[``propext, ``Quot.sound] },
   { root := ``internExpr_readExpr?, standardAxioms := #[``propext, ``Quot.sound] },
   { root := ``ModelTyping.sort, standardAxioms := standard,
@@ -734,7 +768,7 @@ def roots : Array RootAllowance := #[
 }) ++ (binderWalkerRoots ++ cacheKeyRoots).map (fun root => {
   root, standardAxioms := standard, nativeAxioms := #[expressionNative],
   forbiddenDependencies := forbiddenProduction
-}) ++ (atomicRoots ++ instantiationRoots ++ recursiveCacheRoots ++ synthesisCacheRoots ++ cacheHistoryRoots ++ lazyCacheRoots ++
+}) ++ (atomicRoots ++ letRoots ++ instantiationRoots ++ recursiveCacheRoots ++ synthesisCacheRoots ++ cacheHistoryRoots ++ lazyCacheRoots ++
     ownedLoaderRoots ++ recursiveStateRoots ++ sourceAgreementRoots ++ sourceCacheRoots).map (fun root => {
   root, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative],
   forbiddenDependencies := forbiddenProduction

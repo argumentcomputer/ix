@@ -103,6 +103,17 @@ reading, and representation resources; its semantic origins and declaration
 conversion follow automatically from the original inference. Constructing
 the initial inference and operational resources for arbitrary accepted
 programs, the remaining reduction branches, and general conversion remain open.
+Full-mode let inference now uses its original declared-type, value, and opened
+body checks. The scoped reader interprets a let by value substitution, and the
+actual opening, abstraction, and substitution walkers preserve that reading
+beneath locals and binders. The successful value-type hash comparison supplies
+the domain agreement needed to substitute both the body's typing derivation
+and its inferred-type origin. This retains all subsequent beta origins, including
+a lambda introduced by replacing the let variable. The actual final cheap-beta
+choice determines the returned type. Declaration admission includes these let
+bodies using the same validation and inference calls. The three child checks
+remain in the existing recursive synthesis fragment; arbitrary recursive let
+composition and automatic construction of its finite resources remain open.
 Safe definition admission also rejects circular justification in both Lean and
 Rust, including `theorem loop : P := loop` with only `P : Prop` assumed. The
 production dependency walk returns an order with a proved decreasing rank;
@@ -142,6 +153,11 @@ checking-only wrappers need supplementary annotations for omitted child calls.
 Finite collision data over the query and historical inputs recovers the original
 source. Selection then derives its cached result reading and complete retained
 check, including the original local context and later interface transport.
+The raw execution history also covers full-mode lets, with all three child
+calls before the parent publication. Their original let check and child cache
+data derive both entire maps and the history. Retaining a let root in the typed
+synthesis history still requires its integration into the recursive checking
+datatype.
 Arbitrary execution construction, compatibility with later contexts after scope
 exit, and the other inference and conversion/cache paths remain open. Frames
 allow new declarations while retaining old ones.

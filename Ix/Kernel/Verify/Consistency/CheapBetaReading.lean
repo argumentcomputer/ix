@@ -39,7 +39,8 @@ theorem CheapBetaSupport.reading {β : Type u}
       readScopedExpr? resolve locals (cheapBetaReduce source table).1 =
         some (AExpr.betaPrefix (cheapBetaCount source) (.lam condition domain inner) arguments).erase ∧
       (cheapBetaReduce source table).2.WF := by
-  obtain ⟨headReads, argumentReads⟩ := readScopedExpr?_lambda_spine reading
+  obtain ⟨headReads, argumentReads⟩ :=
+    readScopedExpr?_lambda_spine (cheapBetaPlan?_head_lambda support.selected) reading
   obtain ⟨head, rawBody, args, count, spine, peeling, countBound, base, trailing⟩ :=
     cheapBetaPlan?_simul support.selected support.bounds
   have counted : cheapBetaCount source = count := by

@@ -5,6 +5,7 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 
 import Ix.Kernel.Verify.Consistency.Expr
 import Ix.Theory.Model.LevelCongruence
+import Ix.Theory.Model.BetaSubstitution
 
 /-!
 # Reading opened binders
@@ -12,8 +13,8 @@ import Ix.Theory.Model.LevelCongruence
 The production binder paths use free variables for their active locals.
 `readScopedExpr?` maps those identifiers to model de Bruijn indices, keeping
 syntactically bound variables distinct from active locals. Unknown free
-variables and loose legacy variables fail. This binder fragment also excludes
-lets and strings; the original closed reader remains available independently.
+variables and loose legacy variables fail. Lets read by substituting their
+value into their body, as in the closed reader. Strings remain unsupported.
 
 The local identifier list is newest first, matching `Model.Context.push`.
 No local declaration's type or semantic validity is assumed by this reader.
@@ -81,11 +82,16 @@ def readScopedExpr? (resolve : Address → Option (ConstRef β)) (locals : List 
   | .all _ _ domain body _, depth => do
       return .forallE (← readScopedExpr? resolve locals domain depth)
         (← readScopedExpr? resolve locals body (depth + 1))
+  | .letE _ domain value body _ _, depth => do
+      let _ ← readScopedExpr? resolve locals domain depth
+      let value ← readScopedExpr? resolve locals value depth
+      let body ← readScopedExpr? resolve locals body (depth + 1)
+      return body.inst value
   | .prj id index value _, depth => do
       return .proj (← resolve id.addr) index.toNat
         (← readScopedExpr? resolve locals value depth)
   | .nat value _ _, _ => some (.natLit value)
-  | .letE .., _ | .str .., _ => none
+  | .str .., _ => none
 
 @[simp] theorem readScopedExpr?_mkVar (resolve : Address → Option (ConstRef β))
     (locals : List FVarId) (index : UInt64) (name : m.F Name) (depth : Nat) :
@@ -127,12 +133,38 @@ def readScopedExpr? (resolve : Address → Option (ConstRef β)) (locals : List 
       return .proj (← resolve id.addr) index.toNat
         (← readScopedExpr? resolve locals value depth) := rfl
 
+@[simp] theorem readScopedExpr?_mkLet (resolve : Address → Option (ConstRef β))
+    (locals : List FVarId) (name : m.F Name) (domain value body : KExpr m)
+    (nonDep : Bool) (depth : Nat) :
+    readScopedExpr? resolve locals (KExpr.mkLet name domain value body nonDep) depth = do
+      let _ ← readScopedExpr? resolve locals domain depth
+      let value ← readScopedExpr? resolve locals value depth
+      let body ← readScopedExpr? resolve locals body (depth + 1)
+      return body.inst value := rfl
+
 private theorem option_bind_success {α γ : Type _} {action : Option α}
     {next : α → Option γ} {result : γ} (run : action.bind next = some result) :
     ∃ intermediate, action = some intermediate ∧ next intermediate = some result := by
   cases action with
   | none => contradiction
   | some value => exact ⟨value, rfl, run⟩
+
+/-- Let erasure is substitution, so successful reading retains separate
+readings of the declared type, value, and body rather than a constructor view. -/
+theorem readScopedExpr?_let_parts {resolve : Address → Option (ConstRef β)}
+    {locals : List FVarId} {name : m.F Name} {domain value body : KExpr m}
+    {nonDep : Bool} {info : ExprInfo m} {source : VExpr β} {depth : Nat}
+    (reading : readScopedExpr? resolve locals (.letE name domain value body nonDep info)
+      depth = some source) :
+    ∃ A v b, readScopedExpr? resolve locals domain depth = some A ∧
+      readScopedExpr? resolve locals value depth = some v ∧
+      readScopedExpr? resolve locals body (depth + 1) = some b ∧ source = b.inst v := by
+  rw [readScopedExpr?] at reading
+  obtain ⟨A, domainReads, reading⟩ := option_bind_success reading
+  obtain ⟨v, valueReads, reading⟩ := option_bind_success reading
+  obtain ⟨b, bodyReads, reading⟩ := option_bind_success reading
+  cases reading
+  exact ⟨A, v, b, domainReads, valueReads, bodyReads, rfl⟩
 
 theorem readScopedExpr?_lam_parts {resolve : Address → Option (ConstRef β)}
     {locals : List FVarId} {name : m.F Name} {bi : m.F Lean.BinderInfo}
@@ -180,7 +212,10 @@ theorem readScopedExpr?_weaken_closed {resolve : Address → Option (ConstRef β
     readScopedExpr? resolve locals term depth = some source := by
   induction term generalizing source depth with
   | var _ _ _ | sort _ _ | const _ _ _ | nat _ _ _ => exact reading
-  | fvar _ _ _ | letE _ _ _ _ _ _ _ _ _ | str _ _ _ => contradiction
+  | fvar _ _ _ | str _ _ _ => contradiction
+  | letE name domain value body nonDep info ihDomain ihValue ihBody =>
+      obtain ⟨A, v, b, domainReads, valueReads, bodyReads, rfl⟩ := readScopedExpr?_let_parts reading
+      simp [readScopedExpr?, ihDomain domainReads, ihValue valueReads, ihBody bodyReads]
   | app fn arg info hf ha | lam _ _ fn arg info hf ha | all _ _ fn arg info hf ha =>
       rw [readScopedExpr?] at reading
       obtain ⟨f, fReads, reading⟩ := option_bind_success reading
@@ -205,7 +240,10 @@ theorem readScopedExpr?_closed {resolve : Address → Option (ConstRef β)}
       split at reading
       · exact reading
       · contradiction
-  | fvar _ _ _ | letE _ _ _ _ _ _ _ _ _ | str _ _ _ => contradiction
+  | fvar _ _ _ | str _ _ _ => contradiction
+  | letE name domain value body nonDep info ihDomain ihValue ihBody =>
+      obtain ⟨A, v, b, domainReads, valueReads, bodyReads, rfl⟩ := readScopedExpr?_let_parts reading
+      simp [readExpr?, ihDomain domainReads, ihValue valueReads, ihBody bodyReads]
   | sort _ _ | const _ _ _ | nat _ _ _ => exact reading
   | app fn arg info hf ha | lam _ _ fn arg info hf ha | all _ _ fn arg info hf ha =>
       rw [readScopedExpr?] at reading
@@ -268,7 +306,11 @@ theorem readScopedExpr?_push {resolve : Address → Option (ConstRef β)}
       cases reading
       simp [readScopedExpr?, localIndex?_fresh absent found, VExpr.liftN, liftVar,
         Nat.not_lt.mpr (Nat.le_add_right depth index), Nat.add_assoc, Nat.add_comm 1]
-  | letE _ _ _ _ _ _ _ _ _ | str _ _ _ => contradiction
+  | str _ _ _ => contradiction
+  | letE name domain value body nonDep info ihDomain ihValue ihBody =>
+      obtain ⟨A, v, b, domainReads, valueReads, bodyReads, rfl⟩ := readScopedExpr?_let_parts reading
+      simp [readScopedExpr?, ihDomain domainReads, ihValue valueReads, ihBody bodyReads,
+        VExpr.liftN_inst_zero]
   | sort level info => cases reading; rfl
   | nat value name info => cases reading; rfl
   | const id levels info =>

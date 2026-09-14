@@ -99,6 +99,8 @@ theorem readScopedExpr?_collectSpine {β : Type u}
 private theorem readScopedExpr?_app_inv {β : Type u}
     {resolve : Address → Option (ConstRef β)} {locals : List FVarId}
     {source : KExpr .anon} {fn arg : VExpr β}
+    (headLambda : ∃ name bi domain body info,
+      (RecM.appSpineView source).1 = .lam name bi domain body info)
     (reading : readScopedExpr? resolve locals source = some (.app fn arg)) :
     ∃ rawFn rawArg info, source = .app rawFn rawArg info ∧
       readScopedExpr? resolve locals rawFn = some fn ∧
@@ -120,11 +122,16 @@ private theorem readScopedExpr?_app_inv {β : Type u}
       obtain ⟨_, _, reading⟩ := bind_success reading
       obtain ⟨_, _, same⟩ := bind_success reading
       cases same
+  | letE =>
+      obtain ⟨_, _, _, _, _, same⟩ := headLambda
+      cases same
   | _ => simp [readScopedExpr?] at reading
 
 private theorem readScopedExpr?_lam_inv {β : Type u}
     {resolve : Address → Option (ConstRef β)} {locals : List FVarId}
     {source : KExpr .anon} {domain body : VExpr β}
+    (headLambda : ∃ name bi domain body info,
+      (RecM.appSpineView source).1 = .lam name bi domain body info)
     (reading : readScopedExpr? resolve locals source = some (.lam domain body)) :
     ∃ name bi rawDomain rawBody info, source = .lam name bi rawDomain rawBody info := by
   cases source with
@@ -144,6 +151,9 @@ private theorem readScopedExpr?_lam_inv {β : Type u}
       obtain ⟨_, _, reading⟩ := bind_success reading
       obtain ⟨_, _, same⟩ := bind_success reading
       cases same
+  | letE =>
+      obtain ⟨_, _, _, _, _, same⟩ := headLambda
+      cases same
   | _ => simp [readScopedExpr?] at reading
 
 private theorem list_reverse_induction {α : Type u} {motive : List α → Prop}
@@ -158,31 +168,37 @@ private theorem list_reverse_induction {α : Type u} {motive : List α → Prop}
         simpa only [List.reverse_cons] using append_singleton items.reverse item ih
   simpa using reversed values.reverse
 
-/-- The reading of the whole generated type determines the actual raw
-head and argument readings. No additional inference of its components is
-needed when the kernel collects that type's lambda-headed spine. -/
+/-- When the production spine has a syntactic lambda head, its whole
+reading determines the head and argument readings. A lambda hidden inside
+a let does not establish this premise; the production planner supplies it. -/
 theorem readScopedExpr?_lambda_spine {β : Type u}
     {resolve : Address → Option (ConstRef β)} {locals : List FVarId}
     {source : KExpr .anon} {condition : Certified.PropWhen} {domain body : AExpr β}
     {arguments : List (AExpr β)}
+    (rawHeadLambda : ∃ name bi rawDomain rawBody info,
+      source.collectSpine.1 = .lam name bi rawDomain rawBody info)
     (reading : readScopedExpr? resolve locals source =
       some ((AExpr.lam condition domain body).appN arguments).erase) :
     readScopedExpr? resolve locals source.collectSpine.1 =
         some (AExpr.lam condition domain body).erase ∧
       source.collectSpine.2.toList.map (readScopedExpr? resolve locals ·) =
         arguments.map (some ·.erase) := by
+  have headLambda : ∃ name bi rawDomain rawBody info,
+      (RecM.appSpineView source).1 = .lam name bi rawDomain rawBody info := by
+    simpa only [(RecM.appSpineView_collectSpine source).1] using rawHeadLambda
+  clear rawHeadLambda
   have view : readScopedExpr? resolve locals (RecM.appSpineView source).1 =
         some (AExpr.lam condition domain body).erase ∧
       (RecM.appSpineView source).2.map (readScopedExpr? resolve locals ·) =
         arguments.map (some ·.erase) := by
     induction arguments using list_reverse_induction generalizing source with
     | nil =>
-        obtain ⟨_, _, _, _, _, rfl⟩ := readScopedExpr?_lam_inv reading
+        obtain ⟨_, _, _, _, _, rfl⟩ := readScopedExpr?_lam_inv headLambda reading
         exact ⟨reading, rfl⟩
     | append_singleton arguments argument ih =>
         simp only [AExpr.appN_append, AExpr.appN_cons, AExpr.appN_nil, AExpr.erase] at reading
-        obtain ⟨fn, arg, info, rfl, fnReads, argReads⟩ := readScopedExpr?_app_inv reading
-        obtain ⟨headReads, argumentReads⟩ := ih fnReads
+        obtain ⟨fn, arg, info, rfl, fnReads, argReads⟩ := readScopedExpr?_app_inv headLambda reading
+        obtain ⟨headReads, argumentReads⟩ := ih fnReads headLambda
         exact ⟨headReads, by simp only [RecM.appSpineView, List.map_append,
           List.map_cons, List.map_nil, argumentReads, argReads]⟩
   simpa only [(RecM.appSpineView_collectSpine source).1,

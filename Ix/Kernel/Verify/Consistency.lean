@@ -23,6 +23,10 @@ import Ix.Kernel.Verify.Consistency.BlockOwnership
 import Ix.Kernel.Verify.Consistency.SourceOwnershipCheck
 import Ix.Kernel.Verify.Consistency.Context
 import Ix.Kernel.Verify.Consistency.BinderOpening
+import Ix.Kernel.Verify.Consistency.LetOpening
+import Ix.Kernel.Verify.Consistency.LetInference
+import Ix.Kernel.Verify.Consistency.LetSynthesis
+import Ix.Kernel.Verify.Consistency.LetCache
 import Ix.Kernel.Verify.Consistency.Application
 import Ix.Kernel.Verify.Consistency.ApplicationWhnf
 import Ix.Kernel.Verify.Consistency.BinderInference
@@ -154,6 +158,16 @@ The original synthesis admission theorem includes this application case.
 Constructing initial inference and operational resources for all accepted
 programs, other WHNF branches, mixed cache states, and general conversion
 remain open.
+Full-mode let checks retain their original domain, value, and opened-body
+synthesis checks. The scoped reader and actual opening, abstraction, and
+substitution walkers interpret nested lets beneath locals and binders. Value
+comparison identifies the declared domain; substitution preserves the complete
+body checking derivation and inferred-type origin, including beta redexes
+exposed by the value. The selected cheap-beta operation supplies the returned
+type. Declaration admission consumes the same check and validation calls.
+The three children remain in the existing SynthesisInference fragment;
+arbitrary recursive let composition and automatic resource construction
+remain open.
 Local cache hits agree with the actual declaration type. Constant
 hits agree with pure universe substitution of a loaded, admitted declaration;
 sort hits return the canonical successor sort. Applications, foralls, and
@@ -202,6 +216,10 @@ selection recovers the original source and materializes its retained check in
 its original context, including interface transport. Arbitrary execution and
 resource construction, later context compatibility after scope exit, and
 the other inference and conversion/cache paths remain open.
+The operational cache trace includes full lets and their three child calls.
+The original let check and child cache data derive the full event fold and raw
+history, preserving initially populated full keys. Retaining let roots in the
+typed synthesis history still needs their recursive inference integration.
 Frames allow declaration growth while retaining every old declaration. Verified
 lazy loading derives such a frame on success and failure, including partial
 conversion state and fault deduplication. Standalone and block preparation have

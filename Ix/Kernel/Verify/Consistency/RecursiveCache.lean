@@ -4,6 +4,7 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 -/
 
 import Ix.Kernel.Verify.Consistency.BinderInference
+import Ix.Kernel.Verify.Consistency.LetInference
 import Ix.Kernel.Verify.Consistency.WhnfCacheFrame
 import Ix.Kernel.Verify.Consistency.SourceOwnershipCheck
 
@@ -148,6 +149,13 @@ private theorem openBinder_frame {name : Mode.anon.F Name}
   rw [run] at frame
   exact frame
 
+private theorem openLet_frame {name : Mode.anon.F Name} {domain value body opened : KExpr .anon}
+    {fresh : FVarId} {before after : TcState .anon} (key : Address × Address)
+    (run : TcM.openLet name domain value body before = .ok (opened, fresh) after) :
+    InferenceCacheFrame key before after := by
+  have state := openLet_inference_state run
+  exact .of_eq (congrArg (·[key]?) state.1) (congrArg (·[key]?) state.2.1) state.2.2.1
+
 private theorem infer_miss_frame {term result : KExpr .anon}
     {methods : Methods .anon} {before after : TcState .anon} {key : Address × Address}
     (miss : UncachedInference before term) (different : miss.key ≠ key)
@@ -231,6 +239,14 @@ inductive InferenceCacheTrace : Nat → TcState .anon → KExpr .anon → Type (
       (domainTree : InferenceCacheTrace fuel miss.keyed domain)
       (bodyTree : InferenceCacheTrace fuel trace.openedState trace.opened) :
       InferenceCacheTrace (fuel + 1) before (.lam name bi domain body info)
+  | letE {fuel before name domain value body nonDep info} (full : before.inferOnly = false)
+      (miss : UncachedInference before (.letE name domain value body nonDep info))
+      (trace : LetInferenceTrace fuel miss.keyed name domain value body)
+      (hashPath : (trace.valueType.addr == domain.addr) = true)
+      (domainTree : InferenceCacheTrace fuel miss.keyed domain)
+      (valueTree : InferenceCacheTrace fuel trace.domainState value)
+      (bodyTree : InferenceCacheTrace fuel trace.openedState trace.opened) :
+      InferenceCacheTrace (fuel + 1) before (.letE name domain value body nonDep info)
 
 /-- The finite write footprint is computed from the operational tree. Cache
 hits contribute no key; recursive calls and each outer insertion are included. -/
@@ -241,6 +257,8 @@ def InferenceCacheTrace.writes {fuel : Nat} {before : TcState .anon} {term : KEx
   | .app _ miss _ _ first second | .appBeta _ miss _ _ _ first second |
       .forallE miss _ first second | .lam _ miss _ first second | .lamBody _ miss _ first second =>
       miss.key :: (first.writes ++ second.writes)
+  | .letE _ miss _ _ first second third =>
+      miss.key :: (first.writes ++ (second.writes ++ third.writes))
 
 /-- Leaf construction inspects the real cache policy; callers need not
 provide a separate hit/miss observation for a sort. -/
@@ -459,6 +477,21 @@ theorem InferenceCacheTrace.frame {fuel : Nat} {before after : TcState .anon}
       rw [state]
       exact ⟨(domainFrame.trans (opening.trans bodyFrame)).trans (.of_eq rfl rfl rfl),
         bodyPolicy.trans ((openBinder_policy trace.openRun).trans domainPolicy)⟩
+  | letE full miss trace hashPath domainTree valueTree bodyTree domainIH valueIH bodyIH =>
+      simp only [writes, List.mem_cons, List.mem_append, not_or] at outside
+      apply infer_miss_frame miss (Ne.symm outside.1) accepted
+      intro middle run
+      rw [full] at run
+      obtain ⟨domainFrame, domainPolicy⟩ := domainIH outside.2.1 trace.domainRun
+      obtain ⟨valueFrame, valuePolicy⟩ := valueIH outside.2.2.1 trace.valueRun
+      obtain ⟨bodyFrame, bodyPolicy⟩ := bodyIH outside.2.2.2 trace.bodyRun
+      obtain ⟨comparisonFrame, comparisonPolicy⟩ := isDefEq_hash_frame hashPath trace.compareRun key
+      have opening := openLet_frame key trace.openRun
+      rw [(trace.output_state run).2]
+      exact ⟨(domainFrame.trans (valueFrame.trans (comparisonFrame.trans
+          (opening.trans bodyFrame)))).trans (.of_eq rfl rfl rfl),
+        bodyPolicy.trans ((openLet_inference_state trace.openRun).2.2.2.trans
+          (comparisonPolicy.trans (valuePolicy.trans domainPolicy)))⟩
 
 /-- A key already occupied in the full cache cannot be missed. Key
 memoization leaves the maps unchanged, and full entries precede both policies. -/
@@ -534,6 +567,19 @@ theorem InferenceCacheTrace.populated_outside {fuel : Nat} {before : TcState .an
       exact by
         simpa only [writes, List.mem_cons, List.mem_append, not_or] using
           ⟨miss.ne_populated stored, first, bodyIH next⟩
+  | letE full miss trace hashPath domainTree valueTree bodyTree domainIH valueIH bodyIH =>
+      have keyed : miss.keyed.env.inferCache[key]? = some cached := by
+        rw [inferKey_environment miss.keyRun]
+        exact stored
+      have first := domainIH keyed
+      have inferred := (domainTree.frame first trace.domainRun).1.full.trans keyed
+      have second := valueIH inferred
+      have checked := (valueTree.frame second trace.valueRun).1.full.trans inferred
+      have compared := (isDefEq_hash_frame hashPath trace.compareRun key).1.full.trans checked
+      have next := (openLet_frame key trace.openRun).full.trans compared
+      exact by
+        simpa only [writes, List.mem_cons, List.mem_append, not_or] using
+          ⟨miss.ne_populated stored, first, second, bodyIH next⟩
 
 /-- A successful recursive call preserves both partitions at each initially
 populated full key, together with every previously loaded declaration. -/
