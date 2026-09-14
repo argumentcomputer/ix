@@ -676,23 +676,26 @@
       "id": "ixby-lean-lcnf-experimental",
       "status": "active",
       "owner": "Compilatr.ix maintainers",
-      "scope": "Experimental retained pure Lean LCNF lowering, complete functional Ixby binary IO, and standalone Stage2 execution",
+      "scope": "Experimental retained pure Lean LCNF lowering, exact runtime representation laws and checked extension helper execution, complete functional Ixby binary IO, and standalone Stage2 execution",
       "assumption": "Practical source agreement depends on Lean 4.33.0 typed erasure and monomorphic specialization, the LCNF frontend, exact Nat/native field/extension representations, and source-specific wire mappings. These passes have no source-refinement certificate and do not authenticate the original anonymous Ixon source root.",
-      "proof_effect": "No new axiom or native interface is introduced. The API returns a validated reference Program, not an IxonCompilation. The complete IXBF/IXFI/IXFO format supports every reference scalar, primitive, operation, instruction and value without proving-profile admission. Accepted decodes carry an exact re-encoding equation; primitiveOpcode_decodes proves completeness of the 45-entry opcode table. Wire definition equations and the canonical field word-bound lemma identify local source facts. runChunk_run equates resumable execution with the unchanged reference evaluator. These facts do not prove source/image reflection.",
+      "proof_effect": "No new axiom or native interface is introduced. The API returns a validated reference Program, not an IxonCompilation. The complete IXBF/IXFI/IXFO format supports every reference scalar, primitive, operation, instruction and value without proving-profile admission. Accepted decodes carry an exact re-encoding equation; primitiveOpcode_decodes proves completeness of the 45-entry opcode table. Wire definition equations and the canonical field word-bound lemma identify local source facts. runChunk_run equates resumable execution with the unchanged reference evaluator. These facts do not prove source/image reflection. The first runtime proof slice establishes exact Nat/cache/field representations, universal little-endian truncation and slicing, field word reconstruction, primitive semantics and exact Image.number/decodeNumber behavior. Image.certifyScalars retains propositional code/layout equality for seven actual generated extension helpers and supplies universal reference execution contracts; multiplication, inversion and projection have whole-program Evaluates corollaries after ordinary admission and input validation. Twenty-two additional axiom fences retain subsets of propext, Classical.choice and Quot.sound. Conversion-loop execution, general continuation composition and the Stage2 adapter simulation remain open.",
       "trust_basis": [
         "The exact vendored Ixby evaluator and retained Stage2 source modules are shared with the independently pinned reference gates.",
         "Constructor identities are local layouts without source-address authentication. Unknown runtime externs fail compilation. Tail calls and partial applications use the existing reference instructions.",
         "Naturals retain exact values with an optional low Word32 cache or native field representation and an exact Nat view. Native base/extension arithmetic, inverses, equality and extension projections use reference primitives. Mixed Nat/field comparison preserves exact Nat equality. Arrays use immutable trees or packed byte blocks; polymorphic updates widen packed storage. The optional wire lowering retains original read/write byte admission and state updates, checks canonical field encodings, and uses native field IO.",
         "The Stage2 adapter embeds both original keys, entrypoints 755/243, and the fixed source configuration. It accepts only two raw byte-array arguments and maps Option.some to raw claim bytes and Option.none to erased. Host fixture preparation never supplies a verifier result.",
         "The artifact contains the complete program, constructor identities, entry point, explicit execution limits and a Nat maximum-step budget. Minimal unsigned LEB128 preserves large naturals and indices; strict tags, UTF-8, field encodings, loader limits and whole-program/input validation reject malformed transport. The standalone executor imports no LCNF frontend or Stage2 source implementation. The upstream reference and its smaller cryptographic codec remain unchanged.",
-        "Reference capacities and successful example executions are not Flock resource measurements, universal source correspondence, or executor soundness."
+        "Reference capacities and successful example executions are not Flock resource measurements, universal source correspondence, or executor soundness.",
+        "Scalar certificates compare complete arities, entry blocks, instruction arrays and constructor declarations using decidable equality, not body hashes or trusted name metadata. Both typed regression images and Stage2 export obtain these certificates. The number-layout witness binds the actual image decoding API; it does not certify the conversion-loop code."
       ],
       "tests": [
         "check-ixby-lean: 4585 differential reference executions covering large Nat arithmetic, native field/extension operations and zero inverses, mixed representations, field projections and arrays, word operations, proof-bearing values, closures, persistent arrays, byte concatenation and polymorphic mutation, exact wire outputs, canonical field boundaries, read offsets, writer limits, and bounded-continuation tail calls. Two compiler rejections cover unsupported Float externs and byte capacities outside Word32 indexing.",
         "check-ixby-binary: 81 decoded executions cover all seven scalar kinds, all 45 primitives, every operation/instruction family, structured constructor/PAP input and output, large naturals and indices, maximum steps above 2^70, all proper-prefix truncations of representative files, malformed encodings and loader boundaries.",
         "ixby-lean Nix gate: two fresh complete Stage2 binaries and manifests equal each other and the retained artifact; the independent Python reader validates all 81 exported binary fixtures and reconstructs Stage2 inventory fields; a copied standalone executor outside the compiler directory with LEAN_PATH unset reproduces exact structured output bytes; all eight Stage2 cases execute serialized binaries and compare exact claim bytes or erased. Step-limit exhaustion fails the test.",
         "Compilatrix/Ixby/Runtime/Execute.lean: kernel-checked runChunk_run equation for any state, chunk size, and remaining fuel.",
-        "Compilatrix/Ixby/Runtime/Wire.lean: kernel-checked canonical Goldilocks admission condition on the high and low Word32 values."
+        "Compilatrix/Ixby/Runtime/Wire.lean: kernel-checked canonical Goldilocks admission condition on the high and low Word32 values.",
+        "check-ixby-lean obtains the seven generated-function certificates and rejects eight mutations of arithmetic, return operands, projection choice, arity, entry, extra blocks, constructor field count and name binding; five mutated candidates still pass whole-program structural validation. The unchanged 4585 differential executions and all complete binary checks remain in the integration gate.",
+        "Compilatrix/Ixby/Fence.lean adds 22 runtime representation, numeric decoding, native scalar execution and whole-program admission-composition fences, with no new logical or native axiom."
       ],
       "retirement": {
         "milestone": "Certified typed source lowering",
@@ -974,8 +977,8 @@
       "vendor/stage2/upstream.json": "3e23c2774a01523fffb655c966ef70a5c47324104a635a7b9aae75bab435b974",
       "vendor/stage2/Ix/MultiStark/Verify.lean": "cd1c8fbac3e923d1e8081755335688c35601e0add283c451b53e0264464306db",
       "Compilatrix/Ixby/Lean.lean": "0bb9fa1d9894d7d7be1bb2bb1787effbd32830b62a7651edde94951509e4c071",
-      "scripts/CheckIxbyLean.lean": "1a537ed5981218f706e4b4ef5dbb5e53514254f859ba8096cd623aee19f306a7",
-      "scripts/Stage2Ixby.lean": "2c94b2879a7d4d911b4793fcd568159a566f3d8c46d852499f999efa8fb730e7",
+      "scripts/CheckIxbyLean.lean": "99878e6ffa89c5b75ed34a10c48ca88368f92337506eda2f1d40fc19ae122064",
+      "scripts/Stage2Ixby.lean": "09578cfcb07bb459e006075bb5d71fbcea96a6b5f124bde2fcb70a5c10331019",
       "fixtures/ixby-stage2/reference-inventory.json": "b380ecfb3beb861c91a6ca0da2919fd30559a366e3e99a1e8815ffba48161361",
       "Compilatrix/Ixby/Runtime/Array.lean": "acb1f6ef259bcd0e41b3cf038a1f344e81f05d83cae0559fc3ccfd75bbcab6cc",
       "Compilatrix/Ixby/Runtime/Builder.lean": "2018f9f1a617e175ff33813bb732cf99a8530c6b5848a14edd667b59563025aa",
@@ -994,7 +997,13 @@
       "scripts/CheckIxbyBinary.lean": "1d7e0524b4134349c20a09dd213148e53a49e552345762d2de685676aee00262",
       "scripts/IxbyExec.lean": "0bdcb454bd82e88336e8c891047dbf3891b21b38b7c70371ed3c9a261300e0b9",
       "scripts/inspect_ixby.py": "b0b8218d131d0e97ad37806b2dbf65d5f226eb766f2875620102fa4d6cb9899f",
-      "fixtures/ixby-stage2/stage2.ixby": "33d4515f4d45991a8d26f0db0377634989bbde7add145c225f16992312d3e903"
+      "fixtures/ixby-stage2/stage2.ixby": "33d4515f4d45991a8d26f0db0377634989bbde7add145c225f16992312d3e903",
+      "Compilatrix/Ixby/Fence.lean": "bc1d599578a328205614fac23194c1d700accfd2b6f0aaa2091a7d6edd5696a8",
+      "Compilatrix/Ixby/LeanSound.lean": "712be45e74f0d8a91d0b8c5866dc67859f1896722f47b04ffe8210ab7b858bf2",
+      "Compilatrix/Ixby/Runtime/Representation.lean": "5bda668becc24e9ece5f1736d3acae51552e27c85eef88a9e751e636963da84c",
+      "Compilatrix/Ixby/Runtime/ScalarLaws.lean": "67ec39bbfb5f0add2a3155d109943f6102d09ece991db7b73b3a52bb8d052a1f",
+      "Compilatrix/Ixby/Runtime/ScalarFunction.lean": "33138f9fef352e8d01c9267e42204277e9d39c1b68b349afbe9a5701b5cd8bae",
+      "Compilatrix/Ixby/Runtime/ScalarCertificate.lean": "49bff78f5fe7c581b9ee592f6c7d53294ee128eb83e91c3713b2b462d55004e6"
     },
     "flake_nodes": {
       "blake3": "b97a24f8754819755ef78d8016c0391c65c943c5",

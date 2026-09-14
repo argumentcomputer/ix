@@ -1,4 +1,4 @@
-import Compilatrix.Ixby.Lean
+import Compilatrix.Ixby.LeanSound
 import Compilatrix.Ixby.Runtime.Examples
 import Compilatrix.Ixby.Runtime.Wire
 import Compilatrix.Ixby.Runtime.Field
@@ -12,7 +12,42 @@ private def compileImage (env : Environment) (name : Name) (wire := false) : IO 
     (setup := if wire then Compilatrix.Ixby.Runtime.buildWire else pure ())).toIO
     { fileName := "typed Ixby regression", fileMap := default, maxRecDepth := 16384, maxHeartbeats := 0 }
     { env }
-  checked result
+  let image ← checked result
+  discard <| checked image.certifyNumberLayout
+  discard <| checked image.certifyScalars
+  return image
+
+private def certificateMutations (image : Image) : IO Unit := do
+  let certified ← checked image.certifyScalars
+  let links := certified.links
+  let changeFunction (id : Nat) (change : Ix.Ixby.Function → Ix.Ixby.Function) : Image :=
+    { image with program := { image.program with functions := image.program.functions.modify id change } }
+  let reject (changed : Image) (label : String) (admitted := false) : IO Unit := do
+    if admitted then
+      discard <| checked (Ix.Ixby.validateProgram changed.state.limits changed.program |>.mapError reprStr)
+    match changed.certifyScalars with
+    | .error _ => pure ()
+    | .ok _ => throw (IO.userError s!"scalar certificate accepted {label}")
+  reject (changeFunction links.mul fun fn => { fn with blocks := fn.blocks.modify 0 fun block =>
+    { block with instruction := .letOp (.primitive .extAdd [.local 0, .local 1]) 1 } })
+    "changed arithmetic primitive" true
+  reject (changeFunction links.mul fun fn => { fn with blocks := fn.blocks.modify 1 fun block =>
+    { block with instruction := .ret (.local 0) } }) "changed return operand" true
+  reject (changeFunction links.first fun fn => { fn with blocks := fn.blocks.modify 0 fun block =>
+    { block with instruction := .letOp (.primitive .extSnd [.local 0]) 1 } })
+    "swapped field projection" true
+  reject (changeFunction links.add fun fn => { fn with entry := 1 }) "changed entry"
+  reject (changeFunction links.add fun fn => { fn with arity := 3 }) "changed arity"
+  reject (changeFunction links.add fun fn =>
+    { fn with blocks := fn.blocks.push { locals := 0, instruction := .ret .erased } })
+    "extra unreachable block" true
+  let constructors := image.program.constructors.modify links.fieldBox fun ctor => { ctor with fields := 2 }
+  reject { image with program := { image.program with constructors } }
+    "changed constructor layout"
+  let functionNames := image.state.functionNames.insert `Ix.Ixby.ExtGoldilocks.add links.sub
+  reject { image with state := { image.state with functionNames } }
+    "changed name binding" true
+  IO.println "check-ixby-lean certificates: 7 generated functions; 8 rejected mutations"
 
 private def compileRejects (env : Environment) (name : Name) (limits : Ix.Ixby.Limits)
     (message : String) : IO Unit := do
@@ -43,6 +78,7 @@ private def numberList (image : Image) (values : List Nat) : Except String Ix.Ix
 def main : IO UInt32 := cli "check-ixby-lean" do
   initSearchPath (← findSysroot)
   let env ← importModules #[{ module := `Compilatrix.Ixby.Runtime.Examples }] {}
+  certificateMutations (← compileImage env ``extensionArithmetic)
   compileRejects env `Nat.add { byteArrayBytes := 2 ^ 32 }
     "typed Ixby packed byte capacity must fit Word32 indices"
   compileRejects env `Float.add {} "unsupported typed runtime extern Float.add"

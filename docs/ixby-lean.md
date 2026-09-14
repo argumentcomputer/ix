@@ -12,8 +12,10 @@ Lean's typed proof erasure and specialization. Every emitted block passes the
 reference whole-program validator. Unknown runtime externs are rejected.
 Packed byte capacity must be below 2³², matching the target byte-index ABI.
 
-The frontend remains experimental: it has differential execution tests, not a
-source-refinement certificate. It does not produce an `IxonCompilation` or
+The frontend remains experimental. The first [representation proof slice](ixby-representation.md)
+establishes exact numeric/byte laws and certifies seven emitted extension
+helpers. The complete frontend has no source-refinement certificate. It does
+not produce an `IxonCompilation` or
 authenticate the original anonymous Ixon source address. Constructor identities
 are local layout identifiers. These source certification obligations are
 separate from binary export and execution.
@@ -94,6 +96,10 @@ arrays, closures, persistent arrays, byte ropes and mutation, exact wire
 outputs, malformed field encodings, read offsets, writer limits, and a
 10,000-iteration tail call under an eight-continuation limit. Two compiler
 rejections cover unsupported Float externs and invalid byte-index capacities.
+Every compared image also obtains number-layout evidence and certificates for
+the seven native extension helpers. Eight altered-code/layout/name cases must
+fail certificate construction; five remain structurally valid programs.
+Stage2 binary compilation performs the same certificate checks before export.
 
 The binary suite checks 81 decoded executions covering every scalar, primitive,
 operation, and instruction. It also checks structured constructor/PAP input and

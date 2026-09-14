@@ -1,6 +1,7 @@
 import Compilatrix.Ixby.SourceSound
 import Compilatrix.Ixby.WireSound
 import Compilatrix.Ixby.SymbolicWire
+import Compilatrix.Ixby.LeanSound
 
 /-! Keep the new target proofs on the ordinary logical basis; the checked
 Ixon prefix retains the repository's existing, explicitly ledgered hash boundary. -/
@@ -43,3 +44,87 @@ Ixon prefix retains the repository's existing, explicitly ledgered hash boundary
  Quot.sound,
  Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
 #guard_msgs in #print axioms Compilatrix.Pipeline.ValidatedErasure.sourcePreservation
+
+/-! The typed runtime representation slice adds no native reflection or hash axiom. -/
+
+/-- info: 'Compilatrix.Ixby.Runtime.Representation.natOfBytesLE_bytesLE' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Representation.natOfBytesLE_bytesLE
+
+/-- info: 'Compilatrix.Ixby.Runtime.Representation.bytesLE_extract' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Representation.bytesLE_extract
+
+/-- info: 'Compilatrix.Ixby.Runtime.Representation.field_natural_words' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Representation.field_natural_words
+
+/-- info: 'Compilatrix.Ixby.Runtime.Representation.field_from_natural_words' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Representation.field_from_natural_words
+
+/-- info: 'Compilatrix.Ixby.Runtime.Representation.cached_sub' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Representation.cached_sub
+
+/-- info: 'Compilatrix.Ixby.Runtime.Representation.toWord_nibble' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Representation.toWord_nibble
+
+/-- info: 'Compilatrix.Ixby.Runtime.Representation.fromWord_nibble' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Representation.fromWord_nibble
+
+/-- info: 'Compilatrix.Ixby.Runtime.Representation.claimResult_injective' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Representation.claimResult_injective
+
+/-- info: 'Compilatrix.Ixby.Runtime.Representation.eval_field_from_natural_words' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Representation.eval_field_from_natural_words
+
+/-- info: 'Compilatrix.Ixby.Runtime.Representation.eval_field_bytes_roundtrip' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Representation.eval_field_bytes_roundtrip
+
+/-- info: 'Compilatrix.Ixby.Runtime.Representation.eval_bytesToField_noncanonical' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Representation.eval_bytesToField_noncanonical
+
+/-- info: 'Compilatrix.Ixby.Runtime.ScalarFunction.Checked.binary_evaluates' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.ScalarFunction.Checked.binary_evaluates
+
+/-- info: 'Compilatrix.Ixby.Runtime.ScalarFunction.Checked.project_evaluates' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.ScalarFunction.Checked.project_evaluates
+
+/-- info: 'Compilatrix.Ixby.Runtime.ScalarCertificate.extMul' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.ScalarCertificate.extMul
+
+/-- info: 'Compilatrix.Ixby.Runtime.ScalarCertificate.extInverse' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.ScalarCertificate.extInverse
+
+/-- info: 'Compilatrix.Ixby.Runtime.ScalarCertificate.extFst' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.ScalarCertificate.extFst
+
+/-- info: 'Compilatrix.Ixby.LeanFrontend.Image.decodeNumber_represents' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.LeanFrontend.Image.decodeNumber_represents
+
+/-- info: 'Compilatrix.Ixby.LeanFrontend.Image.number_decode_roundtrip' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.LeanFrontend.Image.number_decode_roundtrip
+
+/-- info: 'Compilatrix.Ixby.LeanFrontend.Image.decodeNumber_rejects_bad_cache' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.LeanFrontend.Image.decodeNumber_rejects_bad_cache
+
+/-- info: 'Compilatrix.Ixby.Runtime.ScalarCertificate.extMul_evaluates' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.ScalarCertificate.extMul_evaluates
+
+/-- info: 'Compilatrix.Ixby.Runtime.ScalarCertificate.extInverse_evaluates' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.ScalarCertificate.extInverse_evaluates
+
+/-- info: 'Compilatrix.Ixby.Runtime.ScalarCertificate.extFst_evaluates' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.ScalarCertificate.extFst_evaluates

@@ -1,4 +1,4 @@
-import Compilatrix.Ixby.Lean
+import Compilatrix.Ixby.LeanSound
 import Compilatrix.Ixby.Runtime.Wire
 import Compilatrix.Ixby.Runtime.Field
 import Compilatrix.Ixby.Binary
@@ -57,7 +57,10 @@ private def buildImage (directory : System.FilePath) : IO Image := do
   let (result, _) ← job.toIO
     { fileName := "Stage2 typed Ixby compilation", fileMap := default, maxRecDepth := 32768, maxHeartbeats := 0 }
     { env }
-  checked result
+  let image ← checked result
+  discard <| checked image.certifyNumberLayout
+  discard <| checked image.certifyScalars
+  return image
 
 def main (args : List String) : IO UInt32 := cli "stage2-ixby" do
   let (directory, name, path) ← match args with
