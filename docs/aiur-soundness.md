@@ -113,8 +113,8 @@ The pass removes ranks from 68 of the 389 previously ranked constrained
 functions in the measured production program. All 83 kernel fixtures retain
 their execution outputs and query counts, while their summed unpadded FFT
 model falls 2.34%; `Vector.append` falls 2.41% and the separate shard fixture
-3.47%, before further function regrouping. No instruction or function index
-changes. Unsupported recursive components retain the existing rank layout.
+3.47%. The original function partition is retained. No instruction or function
+index changes. Unsupported recursive components retain the existing rank layout.
 
 [Counter regressions](../crates/aiur/src/synthesis/tests/call_order.rs) verify
 input counters with sharing and advice promotion, and output counters over
@@ -124,6 +124,25 @@ wrap, and with singleton or grouped circuits. The
 [checker tests](../crates/aiur/src/unit_counter_tests.rs) cover malformed
 indices, zero or mixed steps, unconstrained progress, nonlinear expressions,
 multiple recursive outputs, mutual cycles and the analysis-depth limit.
+
+## Function regrouping measurements
+
+The existing partition retains 185 function circuits. Candidate splits and
+transfers were evaluated from actual native shapes on all 83 kernel fixtures,
+the shard pipeline and seven additional full-closure checks. They were not
+retained after proof-size and proving-time comparisons. Twelve extra circuits
+saved about 0.44% raw FFT work but grew all four measured proofs about 5–6%.
+A two-transfer alternative kept the circuit count fixed and saved only 0.08%
+padded work; its four median proving times were 2–9% higher than counters alone,
+with overlapping ranges. That small model benefit did not justify changing
+the partition.
+
+The retained counter optimization was measured separately in a 36-proof,
+three-variant comparison. Across four fixed full-closure claims, its median
+process RSS falls 1.7–3.1% and proof sizes fall 1.6–1.7%. Proving-time changes
+are mixed, with overlapping sample ranges; these measurements do not establish
+a general proving-speed improvement. Every before/counter/experimental proof
+verifies. The rejected partition leaves all production grouping data unchanged.
 
 ## Lookup grouping
 
