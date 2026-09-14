@@ -7,17 +7,18 @@ public import Ix.Aiur.Protocol
 Source-form reference evaluator — proof-bearing semantics on `Source.Term`.
 
 Design:
-- **No cache.** The cache is a debug-interpreter optimization (`Ix/Aiur/Interpret.lean`)
-  and a Rust trace-multiplicity device, not part of the semantic model.
+- **Uncached calls.** Runtime and interpreter cache hits can change the I/O of
+  repeated effectful calls. Relating this model to those engines requires a
+  separate refinement argument with explicit conditions on the program.
 - **No stack trace.** Errors are tagged; debugging is the debug interpreter's job.
 - **Fuel-indexed, call-only accounting.** `fuel : Nat` decrements only at `applyGlobal`.
   Intra-body recursion is structural.
 - **Errors return, never panic.** `ioSetInfo` on existing key, `ioRead` OOB, pattern
   failure, type mismatch, etc. all produce `Except.error`.
 
-This source-level evaluator does not yet distinguish pointer widths — source
-pointers are a single global store. The width-bucketed `Concrete.Eval`
-evaluator fixes that divergence with Rust.
+Memory uses width buckets computed by flattening source values. Relating
+these widths to the concrete evaluator's type layouts remains a compiler
+reflection obligation.
 -/
 
 public section
@@ -619,7 +620,11 @@ def interp (decls : Decls) (fuel : Nat) (bindings : Bindings)
   -- `toField` / `u8FromFieldUnsafe` are erased coercions: value unchanged.
   | .toField t | .u8FromFieldUnsafe t => interp decls fuel bindings t st
   | .u8Lit n => .ok (.field (G.ofNat n), st)
-  | .debug _ _ ret => interp decls fuel bindings ret st
+  | .debug _ none ret => interp decls fuel bindings ret st
+  | .debug _ (some value) ret =>
+      match interp decls fuel bindings value st with
+      | .error error => .error error
+      | .ok (_, st') => interp decls fuel bindings ret st'
   | .ioGetInfo channel key =>
       match interp decls fuel bindings channel st with
       | .error e => .error e

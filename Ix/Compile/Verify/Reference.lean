@@ -1,6 +1,8 @@
 import Ix.Compile.Verify.Catalog
 import Ix.Environment
-import Lean4Lean.Std.Basic
+import Ix.Theory.Named.Std.Basic
+
+open Ix.Theory (VLevel)
 
 /-!
 # Total ordinary-fragment compiler specification
@@ -35,7 +37,7 @@ def compileUnivRef (paramIndex : Ix.Name → Option UInt64) :
 /-- Independent Theory reading of a named Ix universe under the same
 positional parameter assignment. -/
 def sourceUnivValue (paramIndex : Ix.Name → Option UInt64) :
-    Ix.Level → Option Lean4Lean.VLevel
+    Ix.Level → Option Ix.Theory.VLevel
   | .zero _ => some .zero
   | .succ level _ => return .succ (← sourceUnivValue paramIndex level)
   | .max left right _ =>
@@ -161,8 +163,8 @@ private theorem array_mapM_size_of_eq_some {f : α → Option β}
   have hmapped := congrArg (Option.map Array.toList) h
   change Array.toList <$> xs.mapM f = Option.map Array.toList (some ys) at hmapped
   rw [Array.toList_mapM] at hmapped
-  have hlength := Lean4Lean.List.Forall₂.length_eq
-    (Lean4Lean.List.mapM_eq_some.mp hmapped)
+  have hlength := Ix.Theory.Named.List.Forall₂.length_eq
+    (Ix.Theory.Named.List.mapM_eq_some.mp hmapped)
   simpa using hlength.symm
 
 /-- Reference compilation preserves the three root-spine lengths used by the

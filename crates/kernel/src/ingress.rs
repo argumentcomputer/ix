@@ -649,6 +649,77 @@ fn univ_args_decor_at<M: KernelMode>(
 // Expression ingress (iterative)
 // ============================================================================
 
+/// Reject cycles in the reachable sharing graph before the converter's
+/// transparent Share and application-spine loops can revisit an expansion.
+/// Completed expression pointers avoid rewalking ordinary in-memory DAGs.
+fn validate_acyclic_sharing(
+  root: &Arc<IxonExpr>,
+  sharing: &[Arc<IxonExpr>],
+) -> Result<(), String> {
+  if sharing.is_empty() {
+    return Ok(());
+  }
+  enum Frame<'a> {
+    Enter(&'a Arc<IxonExpr>),
+    FinishExpr(usize),
+    FinishShare(u64),
+  }
+  let mut stack = vec![Frame::Enter(root)];
+  let mut complete = FxHashSet::default();
+  let mut active = FxHashSet::default();
+  while let Some(frame) = stack.pop() {
+    match frame {
+      Frame::FinishExpr(key) => {
+        complete.insert(key);
+      },
+      Frame::FinishShare(index) => {
+        active.remove(&index);
+      },
+      Frame::Enter(expr) => {
+        let key = Arc::as_ptr(expr) as usize;
+        if complete.contains(&key) {
+          continue;
+        }
+        stack.push(Frame::FinishExpr(key));
+        match expr.as_ref() {
+          IxonExpr::Share(index) => {
+            let expansion = sharing
+              .get(
+                usize::try_from(*index)
+                  .map_err(|_e| format!("Share index {index} exceeds usize"))?,
+              )
+              .ok_or_else(|| format!("invalid Share index {index}"))?;
+            if !active.insert(*index) {
+              return Err(format!("cyclic Share index {index}"));
+            }
+            stack.push(Frame::FinishShare(*index));
+            stack.push(Frame::Enter(expansion));
+          },
+          IxonExpr::App(left, right)
+          | IxonExpr::Lam(_, left, right)
+          | IxonExpr::All(_, _, left, right) => {
+            stack.push(Frame::Enter(right));
+            stack.push(Frame::Enter(left));
+          },
+          IxonExpr::Let(_, ty, value, body) => {
+            stack.push(Frame::Enter(body));
+            stack.push(Frame::Enter(value));
+            stack.push(Frame::Enter(ty));
+          },
+          IxonExpr::Prj(_, _, value) => stack.push(Frame::Enter(value)),
+          IxonExpr::Sort(_)
+          | IxonExpr::Var(_)
+          | IxonExpr::Ref(_, _)
+          | IxonExpr::Rec(_, _)
+          | IxonExpr::Nat(_)
+          | IxonExpr::Str(_) => {},
+        }
+      },
+    }
+  }
+  Ok(())
+}
+
 enum ExprFrame<M: KernelMode> {
   Process {
     expr: Arc<IxonExpr>,
@@ -725,6 +796,7 @@ fn ingress_expr<M: KernelMode>(
   stats: &mut ConvertStats,
 ) -> Result<KExpr<M>, String> {
   bump_convert_stat!(stats, expr_roots);
+  validate_acyclic_sharing(root_expr, ctx.sharing)?;
   let mut stack: Vec<ExprFrame<M>> =
     vec![ExprFrame::Process { expr: root_expr.clone(), arena_idx: root_arena }];
   let mut values: Vec<KExpr<M>> = Vec::new();
@@ -4860,6 +4932,96 @@ mod tests {
   use crate::level::UnivData;
   use ix_common::env::{self, BinderInfo};
   use ixon::metadata::CallSiteEntry;
+
+  fn ingress_shared_anon(
+    root: &Arc<IxonExpr>,
+    sharing: &[Arc<IxonExpr>],
+  ) -> Result<KExpr<Anon>, String> {
+    let names = FxHashMap::default();
+    let ctx = Ctx::<Anon> {
+      sharing,
+      refs: &[],
+      univs: &[],
+      mut_ctx: vec![],
+      arena: &DEFAULT_ARENA,
+      names: &names,
+      lvls: vec![],
+      univ_patches: FxHashMap::default(),
+      meta_univs: &[],
+      synth_counter: Cell::new(0),
+    };
+    ingress_expr(
+      root,
+      0,
+      &ctx,
+      &mut InternTable::new(),
+      &IxonEnv::new(),
+      &mut ExprCache::default(),
+      &mut UnivCache::default(),
+      &mut ConvertStats::default(),
+    )
+  }
+
+  #[test]
+  fn ingress_sharing_rejects_self_cycle() {
+    let share = IxonExpr::share(0);
+    assert_eq!(
+      ingress_shared_anon(&share, std::slice::from_ref(&share)).unwrap_err(),
+      "cyclic Share index 0"
+    );
+  }
+
+  #[test]
+  fn ingress_sharing_rejects_mutual_cycle() {
+    assert_eq!(
+      ingress_shared_anon(
+        &IxonExpr::share(0),
+        &[IxonExpr::share(1), IxonExpr::share(0)]
+      )
+      .unwrap_err(),
+      "cyclic Share index 0"
+    );
+  }
+
+  #[test]
+  fn ingress_sharing_rejects_cycle_below_application() {
+    let expansion = IxonExpr::app(IxonExpr::var(0), IxonExpr::share(0));
+    assert_eq!(
+      ingress_shared_anon(&IxonExpr::share(0), &[expansion]).unwrap_err(),
+      "cyclic Share index 0"
+    );
+  }
+
+  #[test]
+  fn ingress_sharing_accepts_forward_and_repeated_references() {
+    let root = IxonExpr::app(IxonExpr::share(0), IxonExpr::share(0));
+    let result =
+      ingress_shared_anon(&root, &[IxonExpr::share(1), IxonExpr::var(0)])
+        .unwrap();
+    assert_eq!(
+      result,
+      KExpr::<Anon>::app(KExpr::var(0, ()), KExpr::var(0, ()))
+    );
+  }
+
+  #[test]
+  fn ingress_sharing_ignores_unreachable_cycles_and_memoizes_dags() {
+    let mut root = IxonExpr::var(0);
+    for _ in 0..28 {
+      root = IxonExpr::app(root.clone(), root);
+    }
+    let result = ingress_shared_anon(&root, &[IxonExpr::share(0)]).unwrap();
+    assert_eq!(result.lbr(), 1);
+  }
+
+  #[test]
+  fn ingress_sharing_rejects_out_of_range_reference() {
+    assert_eq!(
+      ingress_shared_anon(&IxonExpr::share(2), &[IxonExpr::var(0)])
+        .unwrap_err(),
+      "invalid Share index 2"
+    );
+  }
 
   fn mk_name(s: &str) -> Name {
     let mut n = Name::anon();

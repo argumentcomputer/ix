@@ -26,12 +26,33 @@ inductive Value : Type where
   | array   : Array Value → Value
   | ctor    : Global → Array Value → Value
   | fn      : Global → Value
-  /-- `width, index` — width is the flat size of the stored element's type. In the
-  Source-form evaluator only `index` is meaningful; in the Concrete-form
-  evaluator `width` selects the per-width memory bucket to match Rust's
+  /-- `width, index` — width selects the memory bucket and index selects an
+  entry within that bucket in both reference evaluators, matching Rust's
   `memory_queries`. -/
   | pointer : (width : Nat) → (index : Nat) → Value
-  deriving Repr, Hashable, Inhabited
+  deriving Repr, Inhabited
+
+/-- Total structural hashing for reference-evaluator memory keys. Tags,
+array seed and traversal order retain the original native derivation. -/
+def Value.hash : Value → UInt64
+  | .unit => 0
+  | .field g => mixHash 1 (Hashable.hash g)
+  | .tuple values => mixHash 2 (values.attach.foldl
+      (fun acc value => mixHash acc (Value.hash value.val)) 7)
+  | .array values => mixHash 3 (values.attach.foldl
+      (fun acc value => mixHash acc (Value.hash value.val)) 7)
+  | .ctor global values => mixHash (mixHash 4 (Hashable.hash global)) (values.attach.foldl
+      (fun acc value => mixHash acc (Value.hash value.val)) 7)
+  | .fn global => mixHash 5 (Hashable.hash global)
+  | .pointer width index => mixHash (mixHash 6 (Hashable.hash width)) (Hashable.hash index)
+termination_by value => sizeOf value
+decreasing_by
+  all_goals
+    have bound := Array.sizeOf_lt_of_mem value.property
+    simp_all
+    omega
+
+instance : Hashable Value := ⟨Value.hash⟩
 
 deriving instance DecidableEq for Global
 

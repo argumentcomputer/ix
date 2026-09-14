@@ -10,7 +10,7 @@ require LSpec from git
 /- Blake3 precompiles its libraries, so Lake loads their shared objects -- which
 bundle the C and Rust FFI objects -- into any process elaborating a module that
 imports them. That is what supplies the BLAKE3 backend to Lean's native evaluator
-for the `native_decide` proofs in `IxTcVerify`, so this pin must stay at or after
+for the `native_decide` proofs in `IxKernelVerify`, so this pin must stay at or after
 the revision that turned precompilation on. Before it, Blake3 exposed a
 `blake3_rs_shared` cdylib that `ix_native_decide_dynlib` had to fetch and link;
 that target no longer exists. -/
@@ -22,20 +22,6 @@ require Cli from git
 
 require batteries from git
   "https://github.com/leanprover-community/batteries" @ "v4.33.0"
-
-/- Reference Lean4-in-Lean4 theory and checker. `IxTcVerify` imports its
-Theory/Verify specification surface, while `bench-lean4lean` and the ignored
-`lean4lean` test runner exercise the implementation. The default `ix` target
-still does not build this dependency. Pin `argumentcomputer/lean4ix` exactly --
-the Argument development line, a standalone repository rather than a GitHub
-fork of digama0/lean4lean: this revision carries the upstream v4.32/v4.33
-kernel hardening — including the `checkNoMVarNoFVar` check on an opaque's
-value (leanprover/lean4#14498), which the replay path in
-`Benchmarks/Lean4Lean.lean` reaches — on top of that line's certified
-inductive-environment and projection development, and tracks Lean v4.33.1 as
-this package does. -/
-require lean4lean from git
-  "https://github.com/argumentcomputer/lean4ix" @ "a4188d7c2979378d85c6bb41fdd96c3a48a71371"
 
 /-! ## FFI
 
@@ -194,18 +180,6 @@ lean_exe «bench-aggregate-policy» where
   -- symbols are then resolved from ix_ffi and not pulled twice.
   moreLinkObjs := #[ix_rs]
 
-/- The lean4lean replay machinery as an importable lib: the
-`bench-lean4lean` exe root and the ignored `lean4lean` test runner both
-import `Benchmarks.Lean4Lean`, and modules under `Benchmarks/` belong to
-no other lib target, so without this Lake cannot schedule the module from
-the Tests import graph. -/
-lean_lib Lean4LeanBench where
-  globs := #[.one `Benchmarks.Lean4Lean]
-
-lean_exe «bench-lean4lean» where
-  root := `Benchmarks.Lean4LeanMain
-  supportInterpreter := true
-
 lean_exe «bench-compile-init» where
   root := `Benchmarks.CompileInit
 
@@ -228,9 +202,13 @@ lean_exe truthmines where
 
 end Benchmarks
 
-section IxTcVerify
+lean_lib IxTheoryNamed where
+  roots := #[]
+  globs := #[.submodules `Ix.Theory.Named]
 
-/-- Loadable FFI for Lean's native evaluator while `IxTcVerify` is elaborated.
+section IxKernelVerify
+
+/-- Loadable FFI for Lean's native evaluator while `IxKernelVerify` is elaborated.
 
 `native_decide` runs compiled Lean before any executable is linked, so for each
 opaque `@[extern]` it reaches, both symbol layers must be loadable up front:
@@ -255,31 +233,179 @@ target ix_native_decide_dynlib pkg : Dynlib := do
     (pkg.buildDir / nameToSharedLib "ix_native_decide")
     (boxedObjs.push ixCdylib) #[]
 
-/- Formal verification of `Ix.Tc` against the lean4lean `Theory` spec.
+/- Formal verification of `Ix.Kernel` against the internal named specification.
 Non-default: `lake build ix` never
 touches it, and `build-all` (the lint driver) skips it by name because its
-pinned Lean4Lean dependencies still emit named `sorry` warnings — `lake lint
+internal named-specification proofs still emit named `sorry` warnings — `lake lint
 -- --wfail` would otherwise fail even though the Ix verification source has
 no local `sorry` tokens. Required CI builds it separately without `--wfail`,
 audits the exact local sorry frontier, and checks exact per-root transitive
 axiom plus direct-`sorryAx`-origin manifests. Dev loop:
-`lake build IxTcVerify`; focused trust audit:
-`lake build Ix.Tc.Verify.Audit.Completed Ix.Tc.Verify.Audit.Conditional
-Ix.Tc.Verify.Audit.Statements`. -/
-lean_lib IxTcVerify where
-  globs := #[.submodules `Ix.Tc.Verify]
+`lake build IxKernelVerify`; focused trust audit:
+`lake build Ix.Kernel.Verify.Audit.Completed Ix.Kernel.Verify.Audit.Conditional
+Ix.Kernel.Verify.Audit.Statements`. -/
+lean_lib IxKernelVerify where
+  globs := #[.submodules `Ix.Kernel.Verify]
   -- `supportInterpreter` is a `lean_exe` option and takes effect only when
   -- that executable is linked, after its modules have been elaborated.
   -- These native-decide proofs need the boxed FFI symbols while the library
   -- modules are being elaborated, so they must be supplied as a dynlib.
   dynlibs := #[ix_native_decide_dynlib]
 
-end IxTcVerify
+end IxKernelVerify
+
+/- Direct production refinement, including the atomic environment fragment,
+with its own exact axiom audit. Whole-checker soundness remains separate. -/
+lean_lib IxKernelConsistency where
+  roots := #[`Ix.Kernel.Verify.Consistency]
+  globs := #[.andSubmodules `Ix.Kernel.Verify.Consistency]
+
+/- Compiler and verifier-binding components with an independent exact audit. -/
+lean_lib IxAiurVerify where
+  roots := #[`Ix.Aiur.Proofs]
+  globs := #[.andSubmodules `Ix.Aiur.Proofs]
+
+lean_exe «aiur-backend-tests» where
+  root := `Tests.Aiur.Backend
+
+lean_exe «aiur-bytecode-tests» where
+  root := `Tests.Aiur.BytecodeCompare
+  supportInterpreter := true
+
+lean_exe «aiur-dedup-tests» where
+  root := `Tests.Aiur.Dedup
+  supportInterpreter := true
+
+lean_exe «aiur-tail-match-tests» where
+  root := `Tests.Aiur.TailMatches
+  supportInterpreter := true
+
+lean_exe «aiur-source-value-tests» where
+  root := `Tests.Aiur.SourceValues
+  supportInterpreter := true
+
+lean_exe «aiur-hoisting-tests» where
+  root := `Tests.Aiur.Hoisting
+  supportInterpreter := true
+
+lean_exe «aiur-air-tests» where
+  root := `Tests.Aiur.AIRSemantics
+
+lean_exe «aiur-byte-gadget-tests» where
+  root := `Tests.Aiur.ByteGadgets
+
+lean_exe «aiur-lookup-shape-tests» where
+  root := `Tests.Aiur.LookupShapes
+
+lean_exe «aiur-lookup-budget-tests» where
+  root := `Tests.Aiur.LookupBudget
+
+lean_exe «aiur-selector-control-tests» where
+  root := `Tests.Aiur.SelectorControl
+
+lean_exe «aiur-operation-row-tests» where
+  root := `Tests.Aiur.OperationRows
+
+lean_exe «aiur-block-row-tests» where
+  root := `Tests.Aiur.BlockRows
+
+lean_exe «aiur-circuit-row-tests» where
+  root := `Tests.Aiur.CircuitRows
+
+lean_exe «aiur-memory-row-tests» where
+  root := `Tests.Aiur.MemoryRows
+
+lean_exe «aiur-trace-height-tests» where
+  root := `Tests.Aiur.TraceHeights
+
+lean_exe «aiur-expression-graph-tests» where
+  root := `Tests.Aiur.ExpressionGraph
+
+lean_exe «aiur-constant-degree-tests» where
+  root := `Tests.Aiur.ConstantDegree
+
+lean_exe «aiur-frontend-expression-tests» where
+  root := `Tests.Aiur.FrontendExpressions
+
+lean_exe «aiur-graph-compilation-tests» where
+  root := `Tests.Aiur.GraphCompilation
+
+lean_exe «aiur-operation-expression-tests» where
+  root := `Tests.Aiur.OperationExpressions
+
+lean_exe «aiur-block-expression-tests» where
+  root := `Tests.Aiur.BlockExpressions
+
+lean_exe «aiur-circuit-expression-tests» where
+  root := `Tests.Aiur.CircuitExpressions
+
+lean_exe «aiur-emission-check-tests» where
+  root := `Tests.Aiur.EmissionChecks
+
+lean_exe «aiur-key-codec-tests» where
+  root := `Tests.Aiur.KeyCodec
+
+lean_exe «aiur-compiled-key-tests» where
+  root := `Tests.Aiur.CompiledKey
+
+lean_exe «aiur-production-key-tests» where
+  root := `Tests.Aiur.ProductionKey
+
+lean_exe «aiur-proof-codec-tests» where
+  root := `Tests.Aiur.ProofCodec
+
+lean_exe «aiur-proof-shape-tests» where
+  root := `Tests.Aiur.ProofShape
+
+lean_exe «aiur-extension-tests» where
+  root := `Tests.Aiur.Extension
+
+lean_exe «aiur-logup-tests» where
+  root := `Tests.Aiur.LogUp
+
+lean_exe «aiur-domain-tests» where
+  root := `Tests.Aiur.Domain
+
+lean_exe «aiur-verifier-arithmetic-tests» where
+  root := `Tests.Aiur.VerifierArithmetic
+
+lean_exe «aiur-transcript-tests» where
+  root := `Tests.Aiur.Transcript
+
+lean_exe «aiur-blake3-tests» where
+  root := `Tests.Aiur.Blake3
+
+lean_exe «aiur-merkle-cap-tests» where
+  root := `Tests.Aiur.MerkleCap
+
+lean_exe «aiur-merkle-tests» where
+  root := `Tests.Aiur.Merkle
+
+lean_exe «aiur-pruned-merkle-tests» where
+  root := `Tests.Aiur.PrunedMerkle
+
+lean_exe «aiur-extension-mmcs-tests» where
+  root := `Tests.Aiur.ExtensionMmcs
+
+lean_exe «aiur-fri-domain-tests» where
+  root := `Tests.Aiur.FriDomain
+
+lean_exe «aiur-polynomial-tests» where
+  root := `Tests.Aiur.Polynomial
+
+lean_exe «aiur-interpolation-tests» where
+  root := `Tests.Aiur.Interpolation
+
+lean_exe «aiur-folding-tests» where
+  root := `Tests.Aiur.Folding
+
+lean_exe «aiur-fri-query-tests» where
+  root := `Tests.Aiur.FriQuery
 
 section IxCompileVerify
 
 /- Formal verification of the Lean-to-Ixon compiler against the same
-Lean4Lean Theory endpoint as `IxTcVerify`.  Kept as a separate non-default
+internal named-specification endpoint as `IxKernelVerify`. Kept as a separate non-default
 library so compiler proofs cannot accidentally inherit checker acceptance
 theorems as their specification. -/
 lean_lib IxCompileVerify where
@@ -344,10 +470,11 @@ script "build-all" (args) := do
   let pkg ← getRootPackage
   let libNames := pkg.configTargets LeanLib.configKind |>.map (·.name.toString)
   let exeNames := pkg.configTargets LeanExe.configKind |>.map (·.name.toString)
-  -- IxTcVerify is the WIP proofs lib: sorry-bearing by design while the
-  -- verification frontier is open, so it must not run under `--wfail`.
-  -- Required CI builds it separately and audits the exact frontier.
-  let allNames := (libNames ++ exeNames |>.toList).filter (· != "IxTcVerify")
+  -- The named specification and its implementation proofs retain an audited
+  -- frontier. CI builds them separately without `--wfail`. The set model,
+  -- direct consistency roots, and certified adapters are checked strictly.
+  let allNames := (libNames ++ exeNames |>.toList).filter fun name =>
+    name != "IxKernelVerify" && name != "IxCompileVerify" && name != "IxTheoryNamed"
   for name in allNames do
     IO.println s!"Building: {name}"
     let child ← IO.Process.spawn {
@@ -358,3 +485,329 @@ script "build-all" (args) := do
   return 0
 
 end Scripts
+
+section Theory
+
+lean_lib IxTheory where
+  roots := #[`Ix.Theory]
+  -- Keep the set-model foundation independent of named checker proof support.
+  globs := #[.one `Ix.Theory, .one `Ix.Theory.Certified,
+    .one `Ix.Theory.Const, .one `Ix.Theory.Expr, .one `Ix.Theory.Quot,
+    .one `Ix.Theory.Ref, .one `Ix.Theory.Rename, .one `Ix.Theory.Store,
+    .one `Ix.Theory.VLevel, .submodules `Ix.Theory.Certificate,
+    .submodules `Ix.Theory.Certified, .submodules `Ix.Theory.Inductive,
+    .submodules `Ix.Theory.Model, .submodules `Ix.Theory.Std]
+
+lean_lib IxTheoryCertified where
+  roots := #[`Ix.Theory.Certified]
+
+lean_lib IxTheoryTests where
+  roots := #[`Tests.Theory]
+
+lean_exe «theory-provenance» where
+  root := `Tests.Theory.Provenance
+
+end Theory
+
+section Certified
+
+lean_lib IxCertified where
+  roots := #[`Ix.Certified]
+  moreLinkObjs := #[ix_rs]
+
+lean_lib IxCertifiedAudit where
+  roots := #[`Ix.Certified.AuditAll]
+
+lean_exe «certified-cli-tests» where
+  root := `Tests.Certified.CLI
+  supportInterpreter := true
+
+lean_exe «certified-input-tests» where
+  root := `Tests.Certified.Inputs
+  supportInterpreter := true
+  moreLinkObjs := #[ix_rs]
+
+lean_exe «certified-adapter-tests» where
+  root := `Tests.Certified.Check
+  supportInterpreter := true
+
+lean_exe «certified-check» where
+  root := `Ix.Certified.Main
+  supportInterpreter := true
+  moreLinkObjs := #[ix_rs]
+
+lean_exe «certified-claim-check» where
+  root := `Ix.Certified.ClaimMain
+  supportInterpreter := true
+  moreLinkObjs := #[ix_rs]
+
+lean_exe «certified-feature-tests» where
+  root := `Tests.Certified.Features
+  supportInterpreter := true
+  moreLinkObjs := #[ix_rs]
+
+lean_exe «certified-ordinary-tests» where
+  root := `Tests.Certified.Ordinary
+  supportInterpreter := true
+  moreLinkObjs := #[ix_rs]
+
+lean_exe «certified-source-tests» where
+  root := `Tests.Certified.SourceMain
+  supportInterpreter := true
+  moreLinkObjs := #[ix_rs]
+
+lean_exe «certified-fidelity-tests» where
+  root := `Tests.Certified.FidelityMain
+  supportInterpreter := true
+  moreLinkObjs := #[ix_rs]
+
+lean_exe «certified-claim-tests» where
+  root := `Tests.Certified.ClaimsMain
+  supportInterpreter := true
+  moreLinkObjs := #[ix_rs]
+
+lean_exe «certified-modeled-tests» where
+  root := `Tests.Certified.ModeledMain
+  supportInterpreter := true
+  moreLinkObjs := #[ix_rs]
+
+end Certified
+
+namespace KernelChecks
+
+private def run (command : String) (args : Array String := #[]) : IO Unit := do
+  let child ← IO.Process.spawn { cmd := command, args, stdout := .inherit, stderr := .inherit }
+  let code ← child.wait
+  unless code == 0 do throw (IO.userError s!"{command} failed ({code})")
+
+private def checkReport (module expectedPath : String) : IO Unit := do
+  let report ← IO.Process.output {
+    cmd := "lake", args := #["env", "lean", "-DwarningAsError=true", module] }
+  unless report.exitCode == 0 do throw (IO.userError s!"{report.stdout}{report.stderr}")
+  unless report.stdout == (← IO.FS.readFile expectedPath) do
+    IO.FS.withTempFile fun handle path => do
+      handle.putStr report.stdout
+      handle.flush
+      let child ← IO.Process.spawn {
+        cmd := "diff", args := #["-u", expectedPath, path.toString]
+        stdout := .inherit, stderr := .inherit }
+      let _ ← child.wait
+      throw (IO.userError s!"foundation report differs from {expectedPath}")
+
+end KernelChecks
+
+open KernelChecks
+
+/-- Check the set model, its provenance, and its exact foundation report. -/
+script "check-theory" := do
+  run "lake" #["build", "--wfail", "IxTheory", "IxTheoryTests", "theory-provenance"]
+  run ".lake/build/bin/theory-provenance"
+  checkReport "Tests/Theory/Audit/Certified.lean" "Tests/Theory/certified-foundation.txt"
+  IO.println "Theory checks passed: exact root types, axioms, dependencies, and runtime inventory."
+  return 0
+
+/-- Check host certification against exact audits and frozen source/claim evidence. -/
+script "check-certified" := do
+  run "lake" #["build", "--wfail", "IxCertified", "IxCertifiedAudit",
+    "certified-check", "certified-claim-check", "certified-feature-tests",
+    "certified-ordinary-tests", "certified-source-tests", "certified-fidelity-tests",
+    "certified-claim-tests", "certified-modeled-tests", "certified-cli-tests", "certified-input-tests",
+    "certified-adapter-tests"]
+  checkReport "Ix/Certified/AuditAll.lean" "Tests/Certified/foundation.txt"
+  run ".lake/build/bin/certified-adapter-tests"
+  return 0
+
+/-- Run the kernel implementation, consistency, foundation, and host checks. -/
+script "check-kernel" (args) := do
+  unless args.isEmpty || args == ["--with-model"] do
+    IO.eprintln "usage: lake run check-kernel [--with-model]"
+    return 2
+  run "lake" #["build", "IxKernelVerify", "IxCompileVerify"]
+  run "lake" #["build", "--wfail", "IxKernelConsistency"]
+  run "lake" #["run", "check-theory"]
+  run "lake" #["run", "check-certified"]
+  run "lake" #["test", "--wfail", "--", "tc-unit"]
+  if args == ["--with-model"] then
+    run "lake" #["-d", "Models/SetTheory", "build", "--wfail"]
+  IO.println "Kernel certification checks passed."
+  return 0
+
+/-- Audit Aiur components and exercise their actual native verifier binding. -/
+script "check-aiur" := do
+  run "lake" #["build", "--wfail", "IxAiurVerify", "aiur-backend-tests",
+    "aiur-bytecode-tests", "aiur-dedup-tests", "aiur-tail-match-tests", "aiur-source-value-tests",
+    "aiur-hoisting-tests", "aiur-air-tests", "aiur-byte-gadget-tests", "aiur-lookup-shape-tests",
+    "aiur-lookup-budget-tests", "aiur-selector-control-tests", "aiur-operation-row-tests",
+    "aiur-block-row-tests", "aiur-circuit-row-tests", "aiur-memory-row-tests", "aiur-trace-height-tests",
+    "aiur-expression-graph-tests", "aiur-constant-degree-tests", "aiur-frontend-expression-tests",
+    "aiur-graph-compilation-tests", "aiur-operation-expression-tests", "aiur-block-expression-tests",
+    "aiur-circuit-expression-tests", "aiur-emission-check-tests", "aiur-key-codec-tests", "aiur-compiled-key-tests",
+    "aiur-production-key-tests",
+    "aiur-proof-codec-tests", "aiur-proof-shape-tests", "aiur-extension-tests", "aiur-logup-tests", "aiur-domain-tests",
+    "aiur-verifier-arithmetic-tests", "aiur-transcript-tests", "aiur-blake3-tests", "aiur-merkle-cap-tests",
+    "aiur-merkle-tests", "aiur-pruned-merkle-tests", "aiur-extension-mmcs-tests", "aiur-fri-domain-tests",
+    "aiur-polynomial-tests", "aiur-interpolation-tests", "aiur-folding-tests", "aiur-fri-query-tests"]
+  let report ← IO.Process.output {
+    cmd := "lake", args := #["env", "lean", "-DwarningAsError=true", "Ix/Aiur/Proofs/Audit.lean"] }
+  unless report.exitCode == 0 do throw (IO.userError s!"{report.stdout}{report.stderr}")
+  let expectedPath := "Tests/Aiur/backend-foundation.txt"
+  let expected ← IO.FS.readFile expectedPath
+  unless report.stdout == expected do
+    IO.FS.withTempFile fun handle path => do
+      handle.putStr report.stdout
+      handle.flush
+      let child ← IO.Process.spawn {
+        cmd := "diff", args := #["-u", expectedPath, path.toString]
+        stdout := .inherit, stderr := .inherit }
+      let _ ← child.wait
+      throw (IO.userError "Aiur component report differs from the reviewed manifest")
+  let snapshots : Array (String × Array String × String) := #[
+    ("aiur-bytecode-tests", #[], "Tests/Aiur/bytecode-compatibility.txt"),
+    ("aiur-dedup-tests", #["--snapshot"], "Tests/Aiur/dedup-compatibility.txt"),
+    ("aiur-tail-match-tests", #[], "Tests/Aiur/tail-match-compatibility.txt"),
+    ("aiur-source-value-tests", #[], "Tests/Aiur/source-value-compatibility.txt")]
+  for (program, args, comparisonPath) in snapshots do
+    let comparison ← IO.Process.output { cmd := s!".lake/build/bin/{program}", args }
+    unless comparison.exitCode == 0 && comparison.stderr.isEmpty do
+      throw (IO.userError s!"{comparison.stdout}{comparison.stderr}")
+    unless comparison.stdout == (← IO.FS.readFile comparisonPath) do
+      IO.FS.withTempFile fun handle path => do
+        handle.putStr comparison.stdout
+        handle.flush
+        let child ← IO.Process.spawn {
+          cmd := "diff", args := #["-u", comparisonPath, path.toString]
+          stdout := .inherit, stderr := .inherit }
+        let _ ← child.wait
+        throw (IO.userError s!"{program} differs from its original native snapshot")
+  run ".lake/build/bin/aiur-dedup-tests"
+  run ".lake/build/bin/aiur-hoisting-tests"
+  run ".lake/build/bin/aiur-air-tests"
+  run ".lake/build/bin/aiur-constant-degree-tests"
+  run ".lake/build/bin/aiur-production-key-tests"
+  IO.FS.withTempDir fun directory => do
+    let snapshot := directory / "native-byte-gadgets.bin"
+    let shapeSnapshot := directory / "native-lookup-shapes.bin"
+    let budgetSnapshot := directory / "native-lookup-budget.bin"
+    let selectorSnapshot := directory / "native-selector-control.bin"
+    let operationSnapshot := directory / "native-operation-rows.bin"
+    let blockSnapshot := directory / "native-block-rows.bin"
+    let circuitSnapshot := directory / "native-circuit-rows.bin"
+    let memorySnapshot := directory / "native-memory-rows.bin"
+    let traceHeightSnapshot := directory / "native-trace-heights.bin"
+    let graphShapeSnapshot := directory / "native-graph-shapes.bin"
+    let expressionGraphSnapshot := directory / "native-expression-graphs.bin"
+    let constantDegreeSnapshot := directory / "native-constant-degree-rows.bin"
+    let frontendSnapshot := directory / "native-frontend-expressions.bin"
+    let compilationSnapshot := directory / "native-graph-compilation.bin"
+    let operationExpressionSnapshot := directory / "native-operation-expressions.bin"
+    let blockExpressionSnapshot := directory / "native-block-expressions.bin"
+    let circuitExpressionSnapshot := directory / "native-circuit-expressions.bin"
+    let emissionCheckSnapshot := directory / "native-emission-checks.bin"
+    let keyCodecSnapshot := directory / "native-key-codec.bin"
+    let compiledKeySnapshot := directory / "native-compiled-keys.bin"
+    let proofCodecSnapshot := directory / "native-proof-codec.bin"
+    let proofShapeSnapshot := directory / "native-proof-shapes.bin"
+    let extensionSnapshot := directory / "native-extension-arithmetic.bin"
+    let extensionGraphSnapshot := directory / "native-extension-graphs.bin"
+    let logupSnapshot := directory / "native-logup.bin"
+    let logupStageSnapshot := directory / "native-logup-stages.bin"
+    let domainSnapshot := directory / "native-domains.bin"
+    let quotientSnapshot := directory / "native-quotients.bin"
+    let verifierArithmeticSnapshot := directory / "native-verifier-arithmetic.bin"
+    let transcriptSnapshot := directory / "native-transcript.bin"
+    let blake3Snapshot := directory / "native-blake3.bin"
+    let merkleCapSnapshot := directory / "native-merkle-cap.bin"
+    let merklePathSnapshot := directory / "native-merkle-path.bin"
+    let prunedMerkleSnapshot := directory / "native-pruned-merkle.bin"
+    let extensionMmcsSnapshot := directory / "native-extension-mmcs.bin"
+    let friDomainSnapshot := directory / "native-fri-domains.bin"
+    let polynomialSnapshot := directory / "native-polynomials.bin"
+    let interpolationSnapshot := directory / "native-interpolation.bin"
+    let foldingSnapshot := directory / "native-folding.bin"
+    let friQuerySnapshot := directory / "native-fri-query.bin"
+    let exporter ← IO.Process.spawn {
+      cmd := "cargo"
+      args := #["test", "--locked", "--release", "-p", "aiur",
+        "_snapshot"]
+      env := #[("IX_BYTE_GADGET_SNAPSHOT", some snapshot.toString),
+        ("IX_LOOKUP_SHAPE_SNAPSHOT", some shapeSnapshot.toString),
+        ("IX_LOOKUP_BUDGET_SNAPSHOT", some budgetSnapshot.toString),
+        ("IX_SELECTOR_CONTROL_SNAPSHOT", some selectorSnapshot.toString),
+        ("IX_OPERATION_ROW_SNAPSHOT", some operationSnapshot.toString),
+        ("IX_BLOCK_ROW_SNAPSHOT", some blockSnapshot.toString),
+        ("IX_CIRCUIT_ROW_SNAPSHOT", some circuitSnapshot.toString),
+        ("IX_MEMORY_ROW_SNAPSHOT", some memorySnapshot.toString),
+        ("IX_FIXED_TRACE_HEIGHT_SNAPSHOT", some traceHeightSnapshot.toString),
+        ("IX_GRAPH_SHAPE_SNAPSHOT", some graphShapeSnapshot.toString),
+        ("IX_EXPRESSION_GRAPH_SNAPSHOT", some expressionGraphSnapshot.toString),
+        ("IX_CONSTANT_DEGREE_ROW_SNAPSHOT", some constantDegreeSnapshot.toString),
+        ("IX_FRONTEND_EXPRESSION_SNAPSHOT", some frontendSnapshot.toString),
+        ("IX_GRAPH_COMPILATION_SNAPSHOT", some compilationSnapshot.toString),
+        ("IX_OPERATION_EXPRESSION_SNAPSHOT", some operationExpressionSnapshot.toString),
+        ("IX_BLOCK_EXPRESSION_SNAPSHOT", some blockExpressionSnapshot.toString),
+        ("IX_CIRCUIT_EXPRESSION_SNAPSHOT", some circuitExpressionSnapshot.toString),
+        ("IX_EMISSION_CHECK_SNAPSHOT", some emissionCheckSnapshot.toString),
+        ("IX_KEY_CODEC_SNAPSHOT", some keyCodecSnapshot.toString),
+        ("IX_COMPILED_KEY_SNAPSHOT", some compiledKeySnapshot.toString),
+        ("IX_PROOF_CODEC_SNAPSHOT", some proofCodecSnapshot.toString),
+        ("IX_PROOF_SHAPE_SNAPSHOT", some proofShapeSnapshot.toString),
+        ("IX_EXTENSION_ARITHMETIC_SNAPSHOT", some extensionSnapshot.toString),
+        ("IX_EXTENSION_GRAPH_SNAPSHOT", some extensionGraphSnapshot.toString),
+        ("IX_LOGUP_SNAPSHOT", some logupSnapshot.toString),
+        ("IX_LOGUP_STAGE_SNAPSHOT", some logupStageSnapshot.toString),
+        ("IX_DOMAIN_SNAPSHOT", some domainSnapshot.toString),
+        ("IX_QUOTIENT_SNAPSHOT", some quotientSnapshot.toString),
+        ("IX_VERIFIER_ARITHMETIC_SNAPSHOT", some verifierArithmeticSnapshot.toString),
+        ("IX_TRANSCRIPT_SNAPSHOT", some transcriptSnapshot.toString),
+        ("IX_BLAKE3_SNAPSHOT", some blake3Snapshot.toString),
+        ("IX_MERKLE_CAP_SNAPSHOT", some merkleCapSnapshot.toString),
+        ("IX_MERKLE_PATH_SNAPSHOT", some merklePathSnapshot.toString),
+        ("IX_PRUNED_MERKLE_SNAPSHOT", some prunedMerkleSnapshot.toString),
+        ("IX_EXTENSION_MMCS_SNAPSHOT", some extensionMmcsSnapshot.toString),
+        ("IX_FRI_DOMAIN_SNAPSHOT", some friDomainSnapshot.toString),
+        ("IX_POLYNOMIAL_SNAPSHOT", some polynomialSnapshot.toString),
+        ("IX_INTERPOLATION_SNAPSHOT", some interpolationSnapshot.toString),
+        ("IX_FOLDING_SNAPSHOT", some foldingSnapshot.toString),
+        ("IX_FRI_QUERY_SNAPSHOT", some friQuerySnapshot.toString)]
+      stdout := .inherit
+      stderr := .inherit }
+    unless (← exporter.wait) == 0 do
+      throw (IO.userError "native Aiur component snapshot export failed")
+    run ".lake/build/bin/aiur-byte-gadget-tests" #[snapshot.toString]
+    run ".lake/build/bin/aiur-lookup-shape-tests" #[shapeSnapshot.toString]
+    run ".lake/build/bin/aiur-lookup-budget-tests" #[budgetSnapshot.toString]
+    run ".lake/build/bin/aiur-selector-control-tests" #[selectorSnapshot.toString]
+    run ".lake/build/bin/aiur-operation-row-tests" #[operationSnapshot.toString, constantDegreeSnapshot.toString]
+    run ".lake/build/bin/aiur-frontend-expression-tests" #[frontendSnapshot.toString]
+    run ".lake/build/bin/aiur-graph-compilation-tests" #[compilationSnapshot.toString]
+    run ".lake/build/bin/aiur-operation-expression-tests" #[operationExpressionSnapshot.toString]
+    run ".lake/build/bin/aiur-block-expression-tests" #[blockExpressionSnapshot.toString]
+    run ".lake/build/bin/aiur-circuit-expression-tests" #[circuitExpressionSnapshot.toString]
+    run ".lake/build/bin/aiur-emission-check-tests" #[emissionCheckSnapshot.toString]
+    run ".lake/build/bin/aiur-key-codec-tests" #[keyCodecSnapshot.toString]
+    run ".lake/build/bin/aiur-compiled-key-tests" #[compiledKeySnapshot.toString]
+    run ".lake/build/bin/aiur-proof-codec-tests" #[proofCodecSnapshot.toString]
+    run ".lake/build/bin/aiur-proof-shape-tests" #[proofShapeSnapshot.toString]
+    run ".lake/build/bin/aiur-extension-tests" #[extensionSnapshot.toString, extensionGraphSnapshot.toString]
+    run ".lake/build/bin/aiur-logup-tests" #[logupSnapshot.toString, logupStageSnapshot.toString]
+    run ".lake/build/bin/aiur-domain-tests" #[domainSnapshot.toString, quotientSnapshot.toString]
+    run ".lake/build/bin/aiur-verifier-arithmetic-tests" #[verifierArithmeticSnapshot.toString]
+    run ".lake/build/bin/aiur-transcript-tests" #[transcriptSnapshot.toString]
+    run ".lake/build/bin/aiur-blake3-tests" #[blake3Snapshot.toString]
+    run ".lake/build/bin/aiur-merkle-cap-tests" #[merkleCapSnapshot.toString]
+    run ".lake/build/bin/aiur-merkle-tests" #[merklePathSnapshot.toString]
+    run ".lake/build/bin/aiur-pruned-merkle-tests" #[prunedMerkleSnapshot.toString]
+    run ".lake/build/bin/aiur-extension-mmcs-tests" #[extensionMmcsSnapshot.toString]
+    run ".lake/build/bin/aiur-fri-domain-tests" #[friDomainSnapshot.toString]
+    run ".lake/build/bin/aiur-polynomial-tests" #[polynomialSnapshot.toString]
+    run ".lake/build/bin/aiur-interpolation-tests" #[interpolationSnapshot.toString]
+    run ".lake/build/bin/aiur-folding-tests" #[foldingSnapshot.toString]
+    run ".lake/build/bin/aiur-fri-query-tests" #[friQuerySnapshot.toString]
+    run ".lake/build/bin/aiur-block-row-tests" #[blockSnapshot.toString]
+    run ".lake/build/bin/aiur-circuit-row-tests" #[circuitSnapshot.toString]
+    run ".lake/build/bin/aiur-memory-row-tests" #[memorySnapshot.toString]
+    run ".lake/build/bin/aiur-trace-height-tests" #[traceHeightSnapshot.toString]
+    run ".lake/build/bin/aiur-expression-graph-tests" #[graphShapeSnapshot.toString, expressionGraphSnapshot.toString]
+  run ".lake/build/bin/aiur-backend-tests"
+  IO.println "Aiur component checks passed: exact proof/runtime boundaries, compiler compatibility and native binding."
+  return 0

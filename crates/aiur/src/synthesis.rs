@@ -1,12 +1,14 @@
 use multi_stark::{
+  config::StarkGenericConfig,
   expr::Expr,
-  lookup::Lookup,
-  p3_field::PrimeCharacteristicRing,
+  lookup::{Lookup, LookupRowMut},
+  p3_field::{BasedVectorSpace, PrimeCharacteristicRing},
   p3_matrix::dense::RowMajorMatrix,
   prover::Proof,
   system::{CircuitInputs, ProverKey, System, SystemWitness},
   types::{
-    CommitmentParameters, FriParameters, GoldilocksBlake3Config, PcsError,
+    CommitmentParameters, ExtVal, FriParameters, GoldilocksBlake3Config,
+    PcsError,
   },
   verifier::VerificationError,
 };
@@ -20,7 +22,10 @@ use crate::{
   execute::{ExecError, IOBuffer, QueryRecord},
   function_channel,
   gadgets::{AiurGadget, bytes1::Bytes1, bytes2::Bytes2},
+  lookup_budget::lookup_query_bound,
+  lookup_shapes::{ClaimShape, valid_claim_shape},
   memory::Memory,
+  trace_heights::{fixed_trace_heights, trace_cap_coverage},
 };
 
 /// The concrete STARK configuration Aiur instantiates multi-stark with.
@@ -43,7 +48,7 @@ pub struct PeakProveBytes {
 // Across the 168 completed Mathlib shard proofs at multi-stark 2892243e,
 // measured RSS / analytic peak had median 1.0678 and maximum under-prediction
 // 1.0714. A 7.5% envelope covers the full sample with a small margin. The
-// workspace now pins a8aab731; retain this historical guard, but re-calibrate
+// workspace now pins 9a906122; retain this historical guard, but re-calibrate
 // before treating it as a full-scale safety bound for the new prover.
 const PROVER_RSS_CALIBRATION_NUMERATOR: usize = 43;
 const PROVER_RSS_CALIBRATION_DENOMINATOR: usize = 40;
@@ -74,6 +79,7 @@ pub enum GatedProve {
 
 pub struct AiurSystem {
   toplevel: Toplevel,
+  claim_shapes: Vec<Option<ClaimShape>>,
   // perhaps remove the key from the system in verifier only mode?
   key: ProverKey<AiurConfig>,
   /// The parameters the system's config was built from, kept for the
@@ -107,19 +113,26 @@ pub struct CircuitShape {
   pub preprocessed_height: usize,
 }
 
-/// Raw row count of a circuit under `record`, ceil-divided into `parts`
-/// even shares — `parts = 1` is the record's exact heights. The byte
-/// gadgets keep their fixed heights: they are the same size in every
+/// Conservative row count of a circuit under `record`, ceil-divided into
+/// `parts` even shares. Sum member-function rows before dividing; circuit
+/// indices are not function indices. Unlike witness generation, this count
+/// includes zero-multiplicity hint rows. The byte gadgets keep their fixed
+/// heights: they are the same size in every
 /// shard and are most of the peak model's floor, which dividing cannot
 /// shrink.
-fn raw_of(
-  record: &QueryRecord,
+fn raw_of<'a>(
+  toplevel: &'a Toplevel,
+  record: &'a QueryRecord,
   parts: usize,
-) -> impl Fn(usize, &CircuitType) -> usize + '_ {
+) -> impl Fn(usize, &CircuitType) -> usize + 'a {
   move |_, ct| match ct {
-    CircuitType::Function { idx } => {
-      record.function_queries[*idx].len().div_ceil(parts)
-    },
+    CircuitType::Function { idx } => toplevel.circuits[*idx]
+      .members
+      .iter()
+      .fold(0usize, |rows, &member| {
+        rows.saturating_add(record.function_queries[member].len())
+      })
+      .div_ceil(parts),
     CircuitType::Memory { width } => {
       record.memory_queries.get(width).map_or(0, |m| m.len().div_ceil(parts))
     },
@@ -134,6 +147,11 @@ impl AiurSystem {
     commitment_parameters: CommitmentParameters,
     fri_parameters: FriParameters,
   ) -> Self {
+    let claim_shapes =
+      toplevel.checked_claim_shapes().expect("invalid Aiur lookup shapes");
+    toplevel.validate_call_components().expect("invalid Aiur call components");
+    toplevel.validate_row_counts().expect("invalid Aiur control counts");
+    toplevel.validate_emission().expect("invalid Aiur emission inputs");
     let mut circuit_inputs: Vec<CircuitInputs<G>> = Vec::new();
     let mut slot_widths: Vec<Vec<usize>> = Vec::new();
 
@@ -160,11 +178,11 @@ impl AiurSystem {
       // A branchless circuit's lookup arguments are sent raw (degree 1;
       // see `ConstraintState::gate`), so two lookups fit in one chained
       // accumulator step at degree 3 — within the degree the selector-gated
-      // constraints already pay for. Branching circuits keep k = 1: their
-      // superposed arguments are degree 2, and grouping would push the
-      // logUp constraints past the quotient budget.
+      // constraints already pay for. This is the conservative baseline;
+      // after compilation, retune against actual message degrees and the
+      // configured quotient budget, including the FFT cost of raising it.
       let group_size =
-        if toplevel.circuits[i].layout.selectors == 1 && lookups.len() >= 2 {
+        if toplevel.circuit_is_branchless(i) && lookups.len() >= 2 {
           2
         } else {
           1
@@ -202,11 +220,20 @@ impl AiurSystem {
     );
 
     let config = AiurConfig::new(commitment_parameters, fri_parameters);
-    let (system, key) = System::new(config, circuit_inputs);
+    let (mut system, key) = System::new(config, circuit_inputs);
+    let blowup = system.config.max_quotient_degree();
+    for circuit in &mut system.circuits {
+      crate::lookup_groups::retune(
+        circuit,
+        blowup,
+        <ExtVal as BasedVectorSpace<G>>::DIMENSION,
+      );
+    }
     AiurSystem {
       system,
       key,
       toplevel,
+      claim_shapes,
       commitment_parameters,
       fri_parameters,
       slot_widths,
@@ -257,7 +284,7 @@ impl AiurSystem {
   /// Predicted peak prover resident bytes for a record, from circuit
   /// shapes alone — the analytic counterpart of an empirical GiB-per-fft
   /// line. The terms mirror the allocation schedule originally calibrated at
-  /// multi-stark rev `2892243e`. The workspace now pins `a8aab731`, so the
+  /// multi-stark rev `2892243e`. The workspace now pins `9a906122`, so the
   /// model remains useful for relative shard sizing but needs a measured
   /// full-scale re-calibration before its absolute bound is relied upon:
   ///
@@ -280,7 +307,7 @@ impl AiurSystem {
   /// which per-fft models blur.
   pub fn peak_prove_bytes(&self, record: &QueryRecord) -> PeakProveBytes {
     self.peak_prove_bytes_by(
-      raw_of(record, 1),
+      raw_of(&self.toplevel, record, 1),
       crate::execute::record_retained_bytes(record),
     )
   }
@@ -317,11 +344,21 @@ impl AiurSystem {
       }
       let n = raw.next_power_of_two();
       let c = &self.system.circuits[i];
-      let d = c.stage_2_width / (1 + c.num_lookups); // extension degree
+      // Grouped accumulator width does not determine the extension degree.
+      let d = <ExtVal as BasedVectorSpace<G>>::DIMENSION;
       let args: usize = self.slot_widths[i].iter().sum();
       let q = c.quotient_degree();
-      witness +=
-        S * n * c.main_width + S * n * (c.num_lookups + args) + 40 * raw;
+      let metadata = match ct {
+        CircuitType::Function { idx } => crate::trace::witness_metadata_bytes(
+          self.toplevel.circuits[*idx].members.len(),
+          raw,
+        ),
+        _ => 0,
+      };
+      witness += S * n * c.main_width
+        + S * n * (c.num_lookups + args)
+        + size_of::<LookupRowMut<'_, G>>() * n
+        + metadata;
       s1_lde += S * b * n * c.main_width;
       lookup_w += S * n * (c.num_lookups + args);
       msgs += 2 * S * d * n * c.num_lookups;
@@ -371,7 +408,10 @@ impl AiurSystem {
     // count; stop rather than search forever.
     while parts < (1 << 20) {
       let peak = self
-        .peak_prove_bytes_by(raw_of(record, parts), record_bytes / parts)
+        .peak_prove_bytes_by(
+          raw_of(&self.toplevel, record, parts),
+          record_bytes / parts,
+        )
         .peak;
       if peak <= max_bytes {
         break;
@@ -404,11 +444,14 @@ impl AiurSystem {
     fun_idx: FunIdx,
     input: &[G],
     io_buffer: &IOBuffer,
-    query_record: QueryRecord,
+    mut query_record: QueryRecord,
     output: &[G],
   ) -> (Vec<G>, AiurProof) {
     let _g = tracing::info_span!("aiur/witness").entered();
-    let circuit_types = self.circuit_types();
+    let mut circuit_types = self.circuit_types();
+    // Function traces supply call-order range queries. Bytes2 consumes the
+    // merged counts after the other circuits finish their parallel work.
+    assert!(matches!(circuit_types.pop(), Some(CircuitType::Bytes2)));
     let witness_data = circuit_types
       .into_par_iter()
       .enumerate()
@@ -422,19 +465,33 @@ impl AiurSystem {
             &slot_arg_widths,
           ),
           CircuitType::Memory { width } => {
-            Memory::witness_data(width, &query_record, &slot_arg_widths)
+            let (trace, lookups) =
+              Memory::witness_data(width, &query_record, &slot_arg_widths);
+            (trace, lookups, crate::call_order::RankRanges::default())
           },
           CircuitType::Bytes1 => {
-            Bytes1.witness_data(&query_record, &slot_arg_widths)
+            let (trace, lookups) =
+              Bytes1.witness_data(&query_record, &slot_arg_widths);
+            (trace, lookups, crate::call_order::RankRanges::default())
           },
           CircuitType::Bytes2 => {
-            Bytes2.witness_data(&query_record, &slot_arg_widths)
+            unreachable!("Bytes2 is built after rank queries")
           },
         }
       })
       .collect::<Vec<_>>();
+    let mut traces = Vec::with_capacity(witness_data.len() + 1);
+    let mut lookups = Vec::with_capacity(witness_data.len() + 1);
+    for (trace, lookup, ranges) in witness_data {
+      traces.push(trace);
+      lookups.push(lookup);
+      query_record.bytes2_queries.add_rank_ranges(ranges);
+    }
+    let (trace, lookup) =
+      Bytes2.witness_data(&query_record, &self.slot_arg_widths(traces.len()));
+    traces.push(trace);
+    lookups.push(lookup);
     drop(query_record); // Early drop to free memory.
-    let (traces, lookups) = witness_data.into_iter().unzip();
     let witness = SystemWitness { traces, lookups };
     drop(_g);
 
@@ -574,6 +631,32 @@ impl AiurSystem {
     claim: &[G],
     proof: &AiurProof,
   ) -> Result<(), VerificationError<PcsError>> {
+    if !valid_claim_shape(&self.claim_shapes, claim) {
+      return Err(VerificationError::InvalidClaim);
+    }
+    if !fixed_trace_heights(
+      self.system.circuits.iter().map(|circuit| circuit.preprocessed_height),
+      &proof.active,
+      &proof.log_degrees,
+    ) {
+      return Err(VerificationError::InvalidProofShape);
+    }
+    if !trace_cap_coverage(
+      self.commitment_parameters.log_blowup,
+      self.commitment_parameters.cap_height,
+      &proof.log_degrees,
+    ) {
+      return Err(VerificationError::InvalidProofShape);
+    }
+    if lookup_query_bound(
+      self.slot_widths.iter().map(Vec::len),
+      &proof.active,
+      &proof.log_degrees,
+    )
+    .is_none()
+    {
+      return Err(VerificationError::InvalidProofShape);
+    }
     self.system.verify(claim, proof)
   }
 
@@ -591,6 +674,34 @@ impl AiurSystem {
 
 #[cfg(test)]
 mod tests {
+  mod acceptance;
+  mod advice;
+  mod blake3;
+  mod branchless;
+  mod byte_gadgets;
+  mod byte_shapes;
+  mod call_order;
+  mod constant_degree;
+  mod extension_mmcs;
+  mod folding;
+  mod fri_domain;
+  mod fri_query;
+  mod host_timings;
+  mod interpolation;
+  mod lookup_budget;
+  mod lookup_groups;
+  mod lookup_shapes;
+  mod memory;
+  mod merkle;
+  mod mmcs;
+  mod peak;
+  mod polynomial;
+  mod proof_codec;
+  mod proof_shapes;
+  mod pruned_merkle;
+  mod scalar;
+  mod transcript;
+
   use super::*;
   use crate::{
     bytecode::{Block, Ctrl, Function, FunctionLayout, Op, Toplevel},
@@ -636,12 +747,12 @@ mod tests {
   /// Layout — matched against how `constraints.rs`/`trace.rs` walk the block:
   /// - `input_size = 2`: the two inputs `a`, `b`.
   /// - `selectors = 1`: the single `Return` (selector index 0).
-  /// - `auxiliaries = 2`: the multiplicity column (allocated first for every
-  ///   function) plus one auxiliary for the `Mul` — `a` and `b` each have
+  /// - `auxiliaries = 8`: multiplicity, six rank bytes and one auxiliary
+  ///   for the `Mul` — `a` and `b` each have
   ///   degree 1, so `a*b` has degree 2 and `constraints.rs` spills it into a
   ///   fresh auxiliary column pinned by `sel * (col - a*b)`.
-  /// - `lookups = 1`: the function-provide (return) lookup in slot 0, which
-  ///   pulls the claim `[function_channel, fun_idx, a, b, a*b]`.
+  /// - `lookups = 4`: the function return in slot 0, followed by three rank
+  ///   range lookups. Rank zero preserves the public multiplication claim.
   ///
   /// Test-side singleton partition (production circuits come pre-built from
   /// the Lean compiler).
@@ -658,7 +769,7 @@ mod tests {
         layout: f.layout,
       })
       .collect();
-    Toplevel { functions, memory_sizes, circuits }
+    Toplevel { functions, memory_sizes, circuits, call_components: vec![] }
   }
 
   fn mul_toplevel() -> Toplevel {
@@ -669,8 +780,8 @@ mod tests {
       layout: FunctionLayout {
         input_size: 2,
         selectors: 1,
-        auxiliaries: 2,
-        lookups: 1,
+        auxiliaries: 8,
+        lookups: 4,
       },
       entry: true,
       constrained: true,
@@ -688,8 +799,8 @@ mod tests {
       layout: FunctionLayout {
         input_size: 2,
         selectors: 1,
-        auxiliaries: 5,
-        lookups: 3,
+        auxiliaries: 11,
+        lookups: 6,
       },
       entry: true,
       constrained: true,
@@ -733,7 +844,7 @@ mod tests {
   /// - `f` (idx 0, entry): `f(a, b) = g(a) * b`, but routing `b` through
   ///   memory so the memory path is live:
   ///   - `Call(1, [a], 1, false)` → `g(a)` at value idx 2, allocating one
-  ///     output auxiliary + one function-channel lookup slot.
+  ///     output auxiliary, six gap auxiliaries and four lookup slots.
   ///   - `Store([b])` → pointer at value idx 3, allocating one pointer
   ///     auxiliary + one memory-channel lookup slot (multiplicity pushed).
   ///   - `Load(1, 3)` → the loaded `b` at value idx 4, allocating one value
@@ -746,15 +857,15 @@ mod tests {
   ///   the block:
   ///   - `input_size = 2` (`a`, `b`).
   ///   - `selectors = 1` (the single `Return`).
-  ///   - `auxiliaries = 5`: multiplicity(1) + call output(1) + store ptr(1) +
-  ///     load value(1) + mul spill(1).
-  ///   - `lookups = 4`: return(slot 0) + call(1) + store(1) + load(1).
+  ///   - `auxiliaries = 17`: multiplicity(1), rank bytes(6), call output(1),
+  ///     call gap(6), store pointer(1), load value(1), multiplication(1).
+  ///   - `lookups = 10`: return(1), rank ranges(3), call/order(4), memory(2).
   ///
   /// - `g` (idx 1): `g(x) = x + 1`:
   ///   - `Const(1)` at value idx 1, `Add(0, 1)` at value idx 2,
   ///     `Return(0, [2])`. `Const`/`Add` allocate no auxiliaries.
-  ///   - Layout: `input_size = 1`, `selectors = 1`, `auxiliaries = 1`
-  ///     (multiplicity only), `lookups = 1` (return only).
+  ///   - Layout: `input_size = 1`, `selectors = 1`, `auxiliaries = 7`
+  ///     (multiplicity and rank), `lookups = 4` (return and rank ranges).
   ///
   /// `memory_sizes = [1]`: a memory of size-1 values, which materializes one
   /// `Memory` circuit. The single `Store` inserts the entry (memory
@@ -777,8 +888,8 @@ mod tests {
       layout: FunctionLayout {
         input_size: 2,
         selectors: 1,
-        auxiliaries: 5,
-        lookups: 4,
+        auxiliaries: 17,
+        lookups: 10,
       },
       entry: true,
       constrained: true,
@@ -793,8 +904,8 @@ mod tests {
       layout: FunctionLayout {
         input_size: 1,
         selectors: 1,
-        auxiliaries: 1,
-        lookups: 1,
+        auxiliaries: 7,
+        lookups: 4,
       },
       entry: false,
       constrained: true,
@@ -857,8 +968,8 @@ mod tests {
       layout: FunctionLayout {
         input_size: 1,
         selectors: 1,
-        auxiliaries: 3,
-        lookups: 2,
+        auxiliaries: 15,
+        lookups: 8,
       },
       entry: true,
       constrained: true,
@@ -872,8 +983,8 @@ mod tests {
       layout: FunctionLayout {
         input_size: 1,
         selectors: 1,
-        auxiliaries: 2,
-        lookups: 2,
+        auxiliaries: 14,
+        lookups: 8,
       },
       entry: false,
       constrained: true,
@@ -887,8 +998,8 @@ mod tests {
       layout: FunctionLayout {
         input_size: 1,
         selectors: 1,
-        auxiliaries: 1,
-        lookups: 1,
+        auxiliaries: 7,
+        lookups: 4,
       },
       entry: false,
       constrained: true,
@@ -968,8 +1079,8 @@ mod tests {
 
     // Function circuits: main width = inputs + selectors + auxiliaries, no
     // preprocessed matrix.
-    assert_eq!(shapes[0].main_width, 2 + 1 + 5);
-    assert_eq!(shapes[1].main_width, 1 + 1 + 1);
+    assert_eq!(shapes[0].main_width, 2 + 1 + 17);
+    assert_eq!(shapes[1].main_width, 1 + 1 + 7);
     // Memory of size 1: multiplicity + selector + pointer + 1 value.
     assert_eq!(shapes[2].main_width, 3 + 1);
     for shape in &shapes[..3] {

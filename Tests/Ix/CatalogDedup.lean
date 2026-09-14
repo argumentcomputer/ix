@@ -1,6 +1,6 @@
 /-
   Cross-process anonymous dedup gate (`--ignored catalog-dedup`) — the
-  re-homed C2/C5 invariant from the retired union-loader suites.
+  content-identity invariant from the retired union-loader suites.
 
   The RelocFixture collision pair (packages A and B, both declaring
   `Collision.Tree` with DIFFERENT definitions, sharing the toolchain
@@ -13,8 +13,7 @@
     in anon space (names play no part in catalog identity).
   - Shared content dedups: the union is strictly smaller than the sum
     of the pieces — the shared base's constants got IDENTICAL
-    addresses in both processes (the old C5 audit's invariant, now
-    structural: content addressing is name-independent).
+    addresses in both processes: content addressing is name-independent.
   - Genuine difference survives: the union is strictly larger than
     either piece — the two `Collision.Tree`s are distinct content at
     distinct addresses, coexisting without any namespace work.

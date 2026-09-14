@@ -1,0 +1,281 @@
+# Aiur verifier soundness repairs
+
+Aiur's verifier must reject a false result even when a prover supplies trace
+rows directly, without running the interpreter. The regressions in
+`crates/aiur/src/synthesis/tests/` exercise four supplied-trace failures and
+a native Merkle commitment-binding defect.
+
+| Failure | Required invariant | Regression |
+| --- | --- | --- |
+| An inactive function row supplied a public proof of `3 * 5 = 16`. | Function and memory rows satisfy `multiplicity * (1 - selector) = 0`. | [Inactive rows](../crates/aiur/src/synthesis/tests/acceptance.rs) |
+| Self-recursive and mutually recursive rows balanced their own calls without a finite execution. | Calls advance a checked static component order, or strictly increase a range-checked rank within one component. | [Self recursion](../crates/aiur/src/synthesis/tests/acceptance.rs), [call ordering](../crates/aiur/src/synthesis/tests/call_order.rs) |
+| An empty return at rank seven supplied a public claim with output seven because lookup messages are zero-padded. | Public claims and constrained calls agree with the function's input and output arities; yields agree with their continuation. | [Message shapes](../crates/aiur/src/synthesis/tests/lookup_shapes.rs) |
+| An inactive branch's store arguments changed a live call's lookup channel and supplied output seven for a program returning one. | Ungated arguments require a single function with terminal control and one selector. Branching circuits retain argument gates. | [Empty branches](../crates/aiur/src/synthesis/tests/branchless.rs) |
+| A large native Merkle cap omitted a shorter matrix: changing its values preserved the commitment, and altered openings verified. | The cap retains the injection layer of every committed matrix. | [Merkle cap coverage](../crates/aiur/src/synthesis/tests/mmcs.rs) |
+
+## Call ranks and witness generation
+
+The general Aiur layout gives each function row six little-endian rank bytes. A constrained call adds
+six bytes for `callee_rank - caller_rank - 1` and requests the derived rank
+`caller_rank + 1 + gap` in its lookup. The callee's return binds this rank
+without a separate callee-rank column or equality constraint. Three byte-pair
+lookups range-check each six-byte value. Ranks and gaps are below `2^48`, so
+the derived rank is below `2^49`, below the Goldilocks characteristic. The
+call lookup therefore cannot wrap around the field to permit a cycle.
+
+Function query maps share a completion counter. Reversing completion order
+assigns the root rank zero and gives each constrained callee a larger rank.
+Promoting an earlier advice query refreshes its completion time after its
+children are promoted. Shared callees retain a consistent rank. Witness
+workers accumulate their byte-range queries locally; the prover merges those
+counts before constructing the binary byte-table trace.
+
+## Checked IxVM component ordering
+
+IxVM enables a compiler pass that computes strongly connected components of
+its constrained call graph after lowering and deduplication. An independent
+checker validates every constrained bytecode edge: it must advance the static
+component order, or stay within a component whose endpoints both retain
+dynamic ranks. It also checks the assignment's size and order bounds. The
+native system constructor repeats these checks over branches, defaults and
+shared continuations before constructing the AIR and verification key.
+The certificate is part of the fixed program, not advice from the prover.
+
+The resulting layouts use these rank witnesses:
+
+| Location | Additional columns | Additional byte-pair lookups |
+| --- | ---: | ---: |
+| Acyclic function row | 0; return rank is zero | 0 |
+| Recursive function row | 6 rank bytes | 3 |
+| Call to an acyclic function | 0; requested rank is zero | 0 |
+| Call across components to a recursive function | 1 callee-rank field | 0 |
+| Call within a recursive component | 6 gap bytes | 3 |
+
+A boundary call must still bind its recursive callee's rank through the return
+lookup. Setting it to zero would break shared callees. Within a recursive
+component, the bounded rank and gap retain the original strict ordering.
+The Lean theorem `CallComponent.wellFounded_calls` in
+[the compiler pass](../Ix/Aiur/Compiler/CallOrder.lean) proves that the bounded
+static order and bounded dynamic ranks together give a well-founded call
+relation. Its premises still rely on activity, exact lookup balance and the
+byte-range constraints; it is not a complete AIR extraction theorem.
+
+The compiler recomputes function and shared-continuation layouts before
+grouping. In a mixed circuit, acyclic operations reuse recursive members'
+rank columns and lookup slots, so rank-range queries are gated only by ranked
+members. General Aiur programs retain the dynamic layout unless explicitly
+enabled through `Source.Toplevel.componentRanks`.
+
+For the current production IxVM, this removes row ranks from 365 of 753
+constrained functions and gap checks at 2,428 of 3,357 call sites. Of its
+181 function circuits, 139 become narrower and 138 use fewer lookup slots.
+Existing function groups are retained. These counts are not weighted by
+execution frequency. The optimization reduces modeled FFT work on all 83
+kernel fixtures: median 6.65%, with 9.73% for `Nat.add_comm`, 15.09% for
+`Vector.append`, and 9.81% for the shard pipeline, relative to the repaired
+dynamic-rank layout. These are model estimates, not wall-clock timings.
+
+Query records still retain their completion timestamps, including for acyclic
+functions; this pass reduces AIR and witness work rather than record storage.
+The remaining recursive components keep explicit ranks. Regenerating the
+IxVM, aggregation and recursive-verifier execution sources produces identical
+files because instructions and function indices are preserved.
+
+## Lookup grouping
+
+After compiling the constraints, synthesis chooses lookup groups using their
+actual polynomial degrees and the configured PCS quotient-degree limit. A
+larger group commits fewer stage-2 accumulator columns but can require more
+quotient chunks. The deterministic selector accepts a change only if its FFT
+cost is no larger than the previous layout at every integer row height,
+including height one. Integer comparisons cover the small-height cases and
+the slope of the cost for larger heights. This guarantee concerns the FFT
+model; higher quotient degrees can increase constraint-evaluation work.
+
+Grouping retains every lookup message, multiplicity, selector gate and rank
+check. The consumer bound counts logical lookup slots, independently of the
+number of accumulator groups. Derived circuit metadata is updated before
+transcript construction and key serialization. The key codec and recursive
+verifier already support the selected group sizes and quotient degrees.
+Native tests cover the degree limit, key round-trips and altered claims;
+recursive-verifier tests exercise quotient degrees two and four together.
+
+Relative to the component-rank layout, modeled FFT work falls on all 83 kernel
+fixtures by a median 4.44%: `Nat.add_comm` improves 6.22%, `Vector.append`
+9.11%, and the shard pipeline 9.40%. Fixed byte-table rows and main columns
+stay unchanged. For the small unary byte table, the same selector chooses
+more accumulators at a lower quotient degree because that costs less FFT work.
+
+## Structural bounds
+
+System construction validates constrained-call arities, continuation yields,
+canonical function-index and memory-width domains, circuit membership and
+control counts. A circuit must reserve at least as many selectors as its
+return/yield leaves, including yields consumed by a continuation.
+Each constrained function's return arity is summarized once and reused at
+every call site. Public-entry shapes are retained with the immutable program
+so verifying a claim's shape takes constant time. Summaries include early
+returns from nested continuations and reject inconsistent return arities.
+
+Before checking proof openings, the public verifier validates the claim's
+channel, entry visibility and arity. It also requires fixed byte tables to be
+active at their exact preprocessed heights, and bounds the total number of
+lookup consumers below the field characteristic. The bound includes the
+public claim and every slot of each active trace row. Malformed metadata,
+integer overflow and a bound reaching the characteristic are rejected.
+
+These additional guards make the counting and byte-range assumptions explicit;
+the fixed-table and global-count regressions do not claim another demonstrated
+false-result acceptance. See [metadata bounds](../crates/aiur/src/synthesis/tests/lookup_budget.rs)
+and [fixed tables](../crates/aiur/src/synthesis/tests/byte_shapes.rs).
+
+## Constraint construction checks
+
+Before constructing a circuit, synthesis checks every constrained function's
+logical operands, selector indices, word widths, and continuation merge
+scopes. Sibling branches retain their incoming scope; a continuation sees
+only the values yielded to it. Virtual carry outputs count as logical values
+even when they allocate no column. These checks also apply to functions whose
+component certificate removes all dynamic rank columns. Advice and I/O
+operands unused by the constraint builder remain outside this scope check.
+
+Expression folding can produce a constant while conservative degree tracking
+still assigns a positive degree, for example after multiplying an input by
+zero. `EqZero` uses its constant shortcut only when the tracked degree is
+also zero. Otherwise it retains the witness columns and constraints selected
+by the compiler, so construction and execution agree on the allocation.
+
+## Native Merkle cap coverage
+
+The native binary MMCS injects shorter matrices while walking from the
+tallest matrix's leaves toward the root. A cap can stop that walk before a
+shorter matrix is included. For an eight-row and a two-row matrix, cap
+heights two and above omit the shorter matrix; changing that matrix leaves
+the commitment unchanged and altered single and multiple openings verify.
+
+Aiur rejects this geometry before checking openings. With trace log-degrees
+`d`, LDE log-blowup `b`, and configured cap height `c`, it requires
+`min(c, b + max(d)) <= b + d_i` for every active matrix. The implementation
+avoids addition overflow and accounts for the native cap's height clamping.
+Fixed-table activity makes the preprocessed matrices part of this check too.
+
+Cap heights at most `b`, including the default root cap, satisfy the condition
+without scanning degrees. Larger caps require a linear metadata check. No
+AIR, trace width, FFT cost or proof encoding changes. Unsafe configurations
+are rejected; the recursive verifier already requires cap height zero.
+
+## Host memory and byte advice
+
+`split_u32` obtains its four low bytes from the native field-to-bytes hint.
+The production caller still range-checks every byte and reconstructs the
+original field element. Both the reconstruction and its maximum value are
+below the field modulus, so inputs at least `2^32` fail instead of truncating.
+Zero still normalizes to an empty limb list. Removing repeated subtraction
+avoids retaining a growing tree of unconstrained queries; the byte checks
+and constrained arithmetic are unchanged. [Byte-hint regressions](../Tests/Ix/IxVM/ByteHints.lean)
+cover boundary values, incorrect advice and native prove/verify cases.
+
+Function witness construction stores a member index and query index per
+active row, sharing function metadata across the member's rows. On a 64-bit
+host this reduces per-row metadata from 72 to 16 bytes. Counting active
+multiplicities before allocation also avoids geometric vector growth and
+metadata for advice-only entries. Row order, selector offsets, multiplicities
+and completion ranks are preserved, including advice promotion.
+
+The prover RAM model sums all member-function queries before splitting a
+grouped circuit's height. It uses the configured extension-field dimension
+for lookup messages and quotient storage, independent of accumulator grouping,
+and includes lookup row writers at padded heights plus function metadata.
+The [RAM and witness regressions](../crates/aiur/src/synthesis/tests/peak.rs)
+cover reordered groups, advice-only entries, shard sizing and extension storage.
+The historical RSS calibration remains an estimate requiring recalibration
+against the current prover; these corrections do not establish an absolute
+process-memory bound.
+
+## Compatibility and validation
+
+The activity, call-order and branch-gating repairs change affected AIR
+expressions and verification keys. Rebuild proving systems and keys, and
+regenerate stored proofs against the repaired systems. Public claim encoding
+is preserved: its omitted rank is zero under lookup padding. Component
+specialization also changes the IxVM AIR and key, and extends the internal
+Lean/Rust bytecode representation; rebuild both sides of the FFI together.
+Lookup retuning changes affected stage-2 layouts, quotient degrees and keys,
+so it also requires rebuilding systems and regenerating proofs.
+The removed byte-advice helper changes compiled function indices; regenerate
+the IxVM executor and rebuild its systems together with the Lean sources.
+
+The native regressions cover supplied false witnesses as well as honest
+execution, finite recursion, shared callees, advice promotion and grouped
+circuits. Component tests also reject forged assignments and displaced
+boundary ranks, check the component producer against an independent
+reachability oracle on all 512 three-vertex graphs, and run the existing
+Aiur proving corpus with specialized layouts. Run them with:
+
+```sh
+cargo test --locked --release -p aiur --features parallel
+cargo clippy --locked --release -p aiur --all-targets --features parallel -- -D warnings
+lake exe ix codegen --check
+lake test -- aiur-cross aiur-cost aiur-prove aiur-components ixvm-byte-hints recursive-verifier ix-aggr
+lake test -- --ignored ixvm
+```
+
+These repairs and regression tests address the defects above. They do not
+establish complete compiler preservation or cryptographic soundness.
+
+## Checked proof components
+
+`IxAiurVerify` contains the migrated Aiur row, expression, key, verifier
+arithmetic and FRI query components. `lake run check-aiur` checks their exact
+theorem types, premise definitions, transitive axioms and project runtime
+implementations against `Tests/Aiur/backend-foundation.txt`. The audit also
+rejects a dependency on the independent `Ix.Compiler` library. Native/Lean
+corpora check the executable models against the pinned backend; this is
+regression evidence, separate from a universal native refinement theorem.
+
+Generic call emission now uses the six gap columns and derived child rank
+described above. The call-order equation is proved identically zero; it is
+not an extra native constraint. The shared row and expression proofs also
+cover zero and boundary ranks. The component layout pass preserves input
+arity and complete evaluator results, including shared continuations.
+
+[`CompiledBackend.checked_graph_trace_execution`](../Ix/Aiur/Proofs/NativeTraceMetadata.lean)
+extracts finite execution and functional memory from the selected key's
+physical base graphs. It handles fallback layouts, recursive components,
+acyclic members and mixed circuits. The key check validates component edges,
+physical column reads, logical slot ranges and fallback member extents.
+Graph reflection then supplies row emission, satisfaction and these bounds;
+the execution theorem has no separate honest-row or generic-layout premise.
+
+The theorem takes satisfying base graphs and exact padded balance of their
+physical messages. Matching the extracted trace bitmap and degrees to the
+decoded proof supplies the lookup budget already enforced by the wrapper;
+physical graph counts are proved equal to the logical trace counts. Function slot
+zero is a provider even when its negative field multiplicity equals one.
+Memory and canonical byte preprocessing contribute to the same global pool.
+The byte-table commitment, active trace metadata and graph satisfaction must
+still be authenticated by the PCS theorem; randomized LogUp soundness must
+still establish exact balance. The physical trace theorem itself assumes
+neither source execution nor a sound guest checker.
+
+Compiled-key comparison includes production lookup retuning with the key's
+blowup parameter. Its total selector retains the machine-size and overflow
+guards and the baseline FFT cost comparison. Retuning preserves the authored
+graph, main width and preprocessed dimensions; the compared key includes the
+resulting group and degree. The key corpus exercises three blowup settings
+and 24 systems, including 12 component layouts: 360 function, memory and byte
+circuits with 1,440 arbitrary assignments. It includes empty circuits and
+rejects 336 validly encoded altered keys and 48 invalid component certificates.
+
+The source compatibility checks also cover strict effect order and explicit
+returns. Array update evaluates its new value before the array expression,
+consistently with the interpreter. Inlining leaves a normal call around a
+callee with an explicit return, preserving its return boundary. These repairs
+do not supply the still-missing general backward compiler theorem.
+
+These component theorems are conditional building blocks for IxVM consistency.
+Public verifier acceptance still needs authenticated satisfying traces and
+exact bounded lookup balance, compiler and guest reflection, general kernel
+model preservation, and the quantitative cryptographic composition. The
+runtime inventory names the native verifier interface; it does not establish
+its soundness.

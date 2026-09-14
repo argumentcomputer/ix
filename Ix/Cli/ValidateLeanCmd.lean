@@ -1,6 +1,6 @@
 /-
   `ix validate-lean <file.lean>`: run the pure-Lean Ix pipeline validation
-  against the Lean environment for any file — the `Ix.Tc` counterpart to
+  against the Lean environment for any file — the `Ix.Kernel` counterpart to
   `ix validate` (which drives the Rust implementation's 8-phase pipeline).
 
   Phases (all pure-Lean):
@@ -44,7 +44,7 @@ public import Ix.DecompileM
 public import Ix.DecompileDriver
 public import Ix.DecompileRoundtrip
 public import Ix.Meta
-public import Ix.Tc
+public import Ix.Kernel
 public import Ix.Cli.ValidateCmd
 
 public section
@@ -54,7 +54,7 @@ open Ix.EnvScope
 
 namespace Ix.Cli.ValidateLeanCmd
 
-open Ix.Tc
+open Ix.Kernel
 
 /-- Phase outcome for the final report. -/
 inductive PhaseResult where

@@ -12,7 +12,13 @@ use rayon::{
 
 use crate::{
   FxIndexMap, G,
-  bytecode::{Block, Ctrl, Function, FunctionLayout, Op, Toplevel},
+  bytecode::{
+    Block, CallComponent, Ctrl, Function, FunctionLayout, Op, Toplevel,
+  },
+  call_order::{
+    CallRank, RANK_BOUND, RANK_BYTES, RankRanges, call_rank, merge_ranges,
+    row_uses_rank,
+  },
   execute::{
     IOBuffer, IOKeyInfo, QueryRecord, find_unconstrained_big_uint_div_mod,
     g_inverse_value,
@@ -20,7 +26,7 @@ use crate::{
   function_channel,
   gadgets::{bytes1::Bytes1, bytes2::Bytes2},
   memory::Memory,
-  querymap::QueryRef,
+  querymap::QueryMap,
   u8_add_channel, u8_and_channel, u8_bit_decomposition_channel,
   u8_less_than_channel, u8_mul_channel, u8_or_channel, u8_range_check_channel,
   u8_shift_left_channel, u8_shift_right_channel, u8_sub_channel,
@@ -37,6 +43,7 @@ struct ColumnMutSlice<'a, 'b> {
   selectors: &'a mut [G],
   auxiliaries: &'a mut [G],
   lookups: &'a mut LookupRowMut<'b, G>,
+  rank_ranges: &'a mut RankRanges,
 }
 
 type Degree = u8;
@@ -66,6 +73,7 @@ impl<'a, 'b> ColumnMutSlice<'a, 'b> {
     sel_offset: usize,
     slice: &'a mut [G],
     lookups: &'a mut LookupRowMut<'b, G>,
+    rank_ranges: &'a mut RankRanges,
   ) -> Self {
     let (inputs, slice) = slice.split_at_mut(circuit_layout.input_size);
     let (selectors, auxiliaries) = slice.split_at_mut(circuit_layout.selectors);
@@ -73,7 +81,7 @@ impl<'a, 'b> ColumnMutSlice<'a, 'b> {
     let inputs = &mut inputs[..function.layout.input_size];
     let selectors =
       &mut selectors[sel_offset..sel_offset + function.layout.selectors];
-    Self { inputs, selectors, auxiliaries, lookups }
+    Self { inputs, selectors, auxiliaries, lookups, rank_ranges }
   }
 
   fn push_auxiliary(&mut self, index: &mut ColumnIndex, t: G) {
@@ -90,60 +98,99 @@ impl<'a, 'b> ColumnMutSlice<'a, 'b> {
     self.lookups.push(index.lookup, multiplicity, args);
     index.lookup += 1;
   }
+
+  fn push_rank_bytes(&mut self, index: &mut ColumnIndex, rank: u64) {
+    assert!(rank < RANK_BOUND, "call-order rank exceeds 48 bits");
+    let bytes = rank.to_le_bytes();
+    for &byte in &bytes[..RANK_BYTES] {
+      self.push_auxiliary(index, G::from_u8(byte));
+    }
+    for pair in bytes[..RANK_BYTES].as_chunks::<2>().0 {
+      self.push_lookup(
+        index,
+        G::ONE,
+        &[u8_range_check_channel(), G::from_u8(pair[0]), G::from_u8(pair[1])],
+      );
+      *self.rank_ranges.entry([pair[0], pair[1]]).or_insert(G::ZERO) += G::ONE;
+    }
+  }
 }
 
 #[derive(Clone, Copy)]
 struct TraceContext<'a> {
+  function: usize,
+  call_components: &'a [CallComponent],
   function_index: G,
   multiplicity: G,
+  rank: u64,
   inputs: &'a [G],
   output: &'a [G],
   query_record: &'a QueryRecord,
 }
 
-/// One row of a circuit trace: the member function it belongs to, the
-/// member's selector offset within the circuit, its function index, and the
-/// recorded query.
-struct RowMeta<'a> {
+/// Shared by all queried rows of one member of a circuit.
+struct MemberMeta<'a> {
   function: &'a Function,
+  function_id: usize,
   sel_offset: usize,
   function_index: G,
-  inputs: &'a [G],
-  result: QueryRef<'a>,
+  queries: &'a QueryMap,
+}
+
+/// Query slices and function metadata stay in their original storage. Only
+/// these two indices are repeated per active row (16 bytes on 64-bit hosts).
+struct RowMeta {
+  member: usize,
+  query: usize,
+}
+
+/// Metadata allocated by the function witness builder, excluding the lookup
+/// row writers shared by every circuit type. The RAM estimator can pass a
+/// conservative row count that includes zero-multiplicity advice.
+pub(crate) fn witness_metadata_bytes(members: usize, rows: usize) -> usize {
+  members * size_of::<MemberMeta<'_>>() + rows * size_of::<RowMeta>()
 }
 
 impl Toplevel {
-  pub fn witness_data(
+  pub(crate) fn witness_data(
     &self,
     circuit_index: usize,
     query_record: &QueryRecord,
     io_buffer: &IOBuffer,
     slot_arg_widths: &[usize],
-  ) -> (RowMajorMatrix<G>, LookupValues<G>) {
+  ) -> (RowMajorMatrix<G>, LookupValues<G>, RankRanges) {
     let circuit = &self.circuits[circuit_index];
     let layout = &circuit.layout;
     let width = layout.width();
     // Concatenate the members' queried rows, in member order.
-    let mut rows_meta = Vec::new();
+    let mut members_meta = Vec::with_capacity(circuit.members.len());
     let mut sel_offset = 0;
     for &member in &circuit.members {
       let function = &self.functions[member];
-      let function_index = G::from_usize(member);
-      rows_meta.extend(
-        query_record.function_queries[member]
-          .iter()
-          .filter(|(_, res)| !res.multiplicity.is_zero())
-          .map(|(inputs, result)| RowMeta {
-            function,
-            sel_offset,
-            function_index,
-            inputs,
-            result,
-          }),
-      );
+      members_meta.push(MemberMeta {
+        function,
+        function_id: member,
+        sel_offset,
+        function_index: G::from_usize(member),
+        queries: &query_record.function_queries[member],
+      });
       sel_offset += function.layout.selectors;
     }
-    let height_no_padding = rows_meta.len();
+    // Count from the compact multiplicity column before allocating: no
+    // geometric Vec growth and no metadata for advice-only entries.
+    fn active_queries(queries: &QueryMap) -> impl Iterator<Item = usize> + '_ {
+      (0..queries.len()).filter(|&i| !queries.mult_at(i).is_zero())
+    }
+    let height_no_padding = members_meta
+      .iter()
+      .map(|member| active_queries(member.queries).count())
+      .sum();
+    let mut rows_meta = Vec::with_capacity(height_no_padding);
+    for (member, meta) in members_meta.iter().enumerate() {
+      rows_meta.extend(
+        active_queries(meta.queries).map(|query| RowMeta { member, query }),
+      );
+    }
     // An unqueried circuit yields an EMPTY trace (not a padded height-1 one):
     // the prover deactivates it, so it is neither committed nor opened.
     let height = if height_no_padding == 0 {
@@ -157,12 +204,15 @@ impl Toplevel {
     // rows need no writes at all.
     let mut builder = LookupValues::builder(height, slot_arg_widths);
     let mut row_writers = builder.rows_mut();
-    rows_no_padding
+    let rank_ranges = rows_no_padding
       .par_chunks_mut(width)
       .zip(row_writers[..height_no_padding].par_iter_mut())
       .enumerate()
-      .for_each(|(i, (row, lookups))| {
-        let meta = &rows_meta[i];
+      .fold(RankRanges::default, |mut rank_ranges, (i, (row, lookups))| {
+        let row_meta = &rows_meta[i];
+        let meta = &members_meta[row_meta.member];
+        let (inputs, result) =
+          meta.queries.get_index(row_meta.query).expect("recorded query");
         let index = &mut ColumnIndex {
           auxiliary: 0,
           // we skip the first lookup, which is reserved for return
@@ -174,19 +224,30 @@ impl Toplevel {
           meta.sel_offset,
           row,
           lookups,
+          &mut rank_ranges,
         );
+        let function = meta.function_id;
         let context = TraceContext {
+          function,
+          call_components: &self.call_components,
           function_index: meta.function_index,
-          inputs: meta.inputs,
-          multiplicity: meta.result.multiplicity,
-          output: meta.result.output,
+          inputs,
+          multiplicity: result.multiplicity,
+          rank: if row_uses_rank(&self.call_components, function) {
+            result.rank
+          } else {
+            0
+          },
+          output: result.output,
           query_record,
         };
         meta.function.populate_row(index, slice, context, io_buffer);
-      });
+        rank_ranges
+      })
+      .reduce(RankRanges::default, merge_ranges);
     drop(row_writers);
     let trace = RowMajorMatrix::new(rows, width);
-    (trace, builder.finish())
+    (trace, builder.finish(), rank_ranges)
   }
 }
 
@@ -217,6 +278,9 @@ impl Function {
       .for_each(|(i, arg)| slice.inputs[i] = *arg);
     // Push the multiplicity
     slice.push_auxiliary(index, context.multiplicity);
+    if row_uses_rank(context.call_components, context.function) {
+      slice.push_rank_bytes(index, context.rank);
+    }
     let _ = self.body.populate_row(map, index, slice, context, io_buffer);
   }
 }
@@ -279,6 +343,7 @@ impl Ctrl {
           context.function_index,
           context.inputs,
           context.output,
+          context.rank,
         );
         // The first lookup slot is reserved for the function return, which
         // pulls the query claim with the query's multiplicity.
@@ -387,12 +452,29 @@ impl Op {
           slice.push_auxiliary(index, *f);
         }
         if !op_unconstrained {
+          let kind = call_rank(
+            context.call_components,
+            context.function,
+            *function_index,
+          );
+          let rank = if kind == CallRank::Zero { 0 } else { result.rank };
           let args = function_lookup_args(
             G::from_usize(*function_index),
             &inputs,
             result.output,
+            rank,
           );
           slice.push_lookup(index, G::ONE, &args);
+          match kind {
+            CallRank::Zero => {},
+            CallRank::Bound => slice.push_auxiliary(index, G::from_u64(rank)),
+            CallRank::Ordered => {
+              let gap = rank
+                .checked_sub(context.rank + 1)
+                .expect("constrained call does not increase rank");
+              slice.push_rank_bytes(index, gap);
+            },
+          }
         }
       },
       Op::Store(values) => {
@@ -696,9 +778,11 @@ fn function_lookup_args(
   function_index: G,
   inputs: &[G],
   output: &[G],
+  rank: u64,
 ) -> Vec<G> {
   let mut args = vec![function_channel(), function_index];
   args.extend(inputs);
   args.extend(output);
+  args.push(G::from_u64(rank));
   args
 }

@@ -1,11 +1,19 @@
 pub mod bytecode;
+mod call_order;
 pub mod constraints;
+mod emission_checks;
 pub mod execute;
 pub mod gadgets;
+mod graph_shape;
+mod lookup_budget;
+mod lookup_groups;
+mod lookup_shapes;
 pub mod memory;
 pub mod querymap;
+mod row_counts;
 pub mod synthesis;
 pub mod trace;
+mod trace_heights;
 pub mod vk_codec;
 
 use indexmap::IndexMap;

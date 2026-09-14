@@ -3,6 +3,7 @@ public import Ix.Aiur.Compiler.Lower
 public import Ix.Aiur.Compiler.Dedup
 public import Ix.Aiur.Compiler.Concretize
 public import Ix.Aiur.Compiler.Simple
+public import Ix.Aiur.Compiler.CallOrder
 
 /-!
 Aiur compiler pipeline: type-check, simplify, concretize, lower, deduplicate.
@@ -108,55 +109,6 @@ def CompiledToplevel.groupFunctions (ct : CompiledToplevel)
     else
       throw "groupFunctions: partition already grouped; group from a freshly compiled toplevel"
   pure { ct with bytecode := { t with circuits } }
-
-/-- Termination helper for the `Block`/`Ctrl` traversal below. -/
-private theorem Bytecode.Block.sizeOf_ctrl_lt'' (b : Bytecode.Block) :
-    sizeOf b.ctrl < sizeOf b := by
-  rcases b with ⟨ops, ctrl⟩
-  show sizeOf ctrl < 1 + sizeOf ops + sizeOf ctrl
-  omega
-
-mutual
-/-- Collect all callee `FunIdx` values from constrained `Op.call` nodes in a
-block tree. Unconstrained calls are skipped because cascading into unconstrained
-mode removes the need for the callee's own circuit. -/
-def Bytecode.Ctrl.collectConstrainedCallees (c : Bytecode.Ctrl) :
-    Array Bytecode.FunIdx := match c with
-  | .match _ cases default? =>
-    let branchCallees := cases.attach.foldl (init := #[]) fun acc ⟨(_, block), _⟩ =>
-      acc ++ block.collectConstrainedCallees
-    match default? with
-    | some block => branchCallees ++ block.collectConstrainedCallees
-    | none => branchCallees
-  | .matchContinue _ cases default? _ _ _ continuation =>
-    let branchCallees := cases.attach.foldl (init := #[]) fun acc ⟨(_, block), _⟩ =>
-      acc ++ block.collectConstrainedCallees
-    let withDefault := match default? with
-      | some block => branchCallees ++ block.collectConstrainedCallees
-      | none => branchCallees
-    withDefault ++ continuation.collectConstrainedCallees
-  | .return _ _ | .yield _ _ => #[]
-termination_by (sizeOf c, 0)
-decreasing_by
-  all_goals first
-    | decreasing_tactic
-    | (have := Array.sizeOf_lt_of_mem ‹_ ∈ _›; grind)
-    | grind
-
-def Bytecode.Block.collectConstrainedCallees (b : Bytecode.Block) :
-    Array Bytecode.FunIdx :=
-  let opCallees := b.ops.foldl (init := #[]) fun acc op =>
-    match op with
-    | .call idx _ _ false => acc.push idx
-    | _ => acc
-  opCallees ++ b.ctrl.collectConstrainedCallees
-termination_by (sizeOf b, 1)
-decreasing_by
-  all_goals first
-    | decreasing_tactic
-    | (apply Prod.Lex.left; exact Bytecode.Block.sizeOf_ctrl_lt'' _)
-end
-
 /-- The default circuit partition: one singleton circuit per constrained
 function, in function-index order, named by `nameOf`. -/
 def Bytecode.Toplevel.singletonCircuits (t : Bytecode.Toplevel)
@@ -189,17 +141,17 @@ def Bytecode.Toplevel.needsCircuit (t : Bytecode.Toplevel) : Array Bool := Id.ru
         stack := stack.push callee
   needs
 
-/-- Full compilation pipeline. -/
-def Source.Toplevel.compile (t : Source.Toplevel) : Except String CompiledToplevel := do
-  let t ← t.inlineCalls
-  let typedDecls ← t.checkAndSimplify.mapError toString
-  let concDecls ← typedDecls.concretize.mapError toString
-  let (bytecodeRaw, preNameMap) ← concDecls.toBytecode
+/-- The exact artifact produced by the total final compilation passes.
+Keeping this operation separate lets the compilation success theorem bind
+the returned bytecode and function map to the successful stage outputs. -/
+def finishCompilation (t : Source.Toplevel) (bytecodeRaw : Bytecode.Toplevel)
+    (preNameMap : Std.HashMap Global Bytecode.FunIdx) : CompiledToplevel := Id.run do
   let (bytecodeDedup, remap) := bytecodeRaw.deduplicate
   let needs := bytecodeDedup.needsCircuit
   let bytecode : Bytecode.Toplevel := { bytecodeDedup with
     functions := bytecodeDedup.functions.mapIdx fun i f =>
       { f with constrained := needs[i]! } }
+  let bytecode := if t.componentRanks then bytecode.withCallComponents else bytecode
   let nameMap := preNameMap.fold (init := (∅ : Std.HashMap Global Bytecode.FunIdx))
     fun acc name idx => acc.insert name (remap idx)
   -- Singleton circuits are labeled with (one of) the function's source names.
@@ -208,6 +160,14 @@ def Source.Toplevel.compile (t : Source.Toplevel) : Except String CompiledToplev
   let bytecode := { bytecode with
     circuits := bytecode.singletonCircuits fun i => reverseMap[i]?.getD s!"<fn {i}>" }
   pure (CompiledToplevel.mk t bytecode nameMap)
+
+/-- Full compilation pipeline. -/
+def Source.Toplevel.compile (t : Source.Toplevel) : Except String CompiledToplevel := do
+  let t ← t.inlineCalls
+  let typedDecls ← t.checkAndSimplify.mapError toString
+  let concDecls ← typedDecls.concretize.mapError toString
+  let (bytecodeRaw, preNameMap) ← concDecls.toBytecode
+  return finishCompilation t bytecodeRaw preNameMap
 
 /-- Name of the environment variable that switches function grouping OFF
 process-wide: when it is set to anything but `0` or the empty string,

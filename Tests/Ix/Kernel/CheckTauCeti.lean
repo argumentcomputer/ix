@@ -52,7 +52,6 @@ def focusConsts : Array Lean.Name := #[
   -- (`chebyshevMeasureT_eq_withDensity`, proved by measure ext), so
   -- every whnf of the stuck cast retries K-like reduction, whose
   -- `measureT ≟ withDensity …` def-eq must exhaust unfoldings and fail.
-  -- Optimization work items: plans/kernel-rec-fuel.md.
   `TauCeti.chebyshevWeightL2Isometry_apply,
   `TauCeti.chebyshevWeightL2Isometry_symm_apply,
 

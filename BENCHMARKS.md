@@ -2,7 +2,7 @@
 
 Head-to-head timings for every stage of the Ix pipeline across three
 environments, comparing the pure-Lean implementation (`Ix.CompileM` /
-`Ix.DecompileM` / `Ix.Tc`) against the Rust implementation
+`Ix.DecompileM` / `Ix.Kernel`) against the Rust implementation
 (`crates/compile` / `crates/kernel`).
 
 ## Methodology
@@ -119,7 +119,7 @@ Rust: `ix decompile` (the decompile pass over a `.ixe`). Lean:
 flags → Pass 2 aux regeneration/recovery) *plus* the hash comparison
 against the canonicalized source (comparison overhead ~5 s at 205k
 constants). Lean decompilation is dominated by Pass 2's kernel bridge
-(regeneration re-infers through `Ix.Tc`); Pass 2 runs on the
+(regeneration re-infers through `Ix.Kernel`); Pass 2 runs on the
 wave-parallel driver (`decompileEnvPass2Parallel`, 16 workers — the
 count is memory-bound, not core-bound; `IX_DECOMPILE_WORKERS`
 overrides). The sequential figures from before the parallel driver are
@@ -147,7 +147,7 @@ full verdict parity.
 worker config keeps warm caches; both a 32-worker meta run and a
 32-worker anon run without cache clearing were OOM-killed while
 swap-thrashing). The anon row uses the scale configuration from the
-`Ix.Tc` Mathlib-tier validation: 16 workers, `--clear-every 50`
+`Ix.Kernel` Mathlib-tier validation: 16 workers, `--clear-every 50`
 (whole-worker-state renewal every 50 items; RSS plateaus ~42 GB) —
 **640,658/640,658 passed, zero failures, full verdict parity**. Anon
 mode dedups alpha-identical constants, hence the smaller count.

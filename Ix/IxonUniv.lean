@@ -12,7 +12,7 @@ Mirror: crates/ixon/src/canon_univ.rs
 deterministic canonical representative of a stored level's Géran
 semantic-equality class, kernel-free and next to the wire type so
 `Ix.CompileM`, the Tc egress, and probes can all use it. The Géran
-machinery is the transliteration of `Ix/Tc/Level.lean:227-472` onto
+machinery is the transliteration of `Ix/Kernel/Level.lean:227-472` onto
 `Ixon.Univ` (positional `var` indices; no metadata); the three kernel
 `NormLevel` implementations stay untouched and serve as the P4 oracle.
 
@@ -20,10 +20,10 @@ The frozen kernel `mk*` rule set (M1–M8 / I1–I6) is kept with its
 kernel-rebuild role: `reduceUniv` is the stage-1 decoration-presence
 test and the P6 oracle, and P3 (canonical forms are `mk*` fixpoints) is
 what makes kernel ingress the identity on canonical content.
-(`Ix.Tc.reduceIxonUniv` computes the same closure by rounding through
+(`Ix.Kernel.reduceIxonUniv` computes the same closure by rounding through
 the actual kernel constructors; `tc-unit` pins their agreement.)
 
-Property set (tested in `Tests/Ix/Tc/Unit.lean` and the Rust twin;
+Property set (tested in `Tests/Ix/Kernel/Unit.lean` and the Rust twin;
 Verify-layer proofs are the D7 follow-up): P1 idempotence; P2
 roundtrip-fixpoint (`normalize (linearize L) = L`, exact on non-empty
 entries — `subsumption` can leave EMPTY entries which `linearize`
@@ -42,7 +42,7 @@ namespace Ixon
 namespace Univ
 
 /-- Constructor count — termination measure for the normalization
-    family (mirrors `Ix.Tc.KUniv.size`). -/
+    family (mirrors `Ix.Kernel.KUniv.size`). -/
 def size : Univ → Nat
   | .zero => 1
   | .succ u => u.size + 1
@@ -81,7 +81,7 @@ end Univ
 
 /-- `mkMax` of the frozen kernel rule set (M1–M8), on `Ixon.Univ`:
     numerals → the larger (ties → `a`); `max a a = a`; zero sides;
-    absorption; same-base offsets; raw. Mirrors `Ix.Tc.KUniv.mkMax` /
+    absorption; same-base offsets; raw. Mirrors `Ix.Kernel.KUniv.mkMax` /
     Rust `canon_univ::n_max`. -/
 def nMax (a b : Univ) : Univ :=
   if a.isExplicit && b.isExplicit then
@@ -126,7 +126,7 @@ def nIMax (a b : Univ) : Univ :=
     A non-fixpoint entry reaches the kernel changed (the stage-1
     decoration-presence test); P6 pins that this rebuild refines into
     the Géran classes. `tc-unit` pins agreement with
-    `Ix.Tc.reduceIxonUniv` (the same closure via the kernel's own
+    `Ix.Kernel.reduceIxonUniv` (the same closure via the kernel's own
     constructors). -/
 def reduceUniv : Univ → Univ
   | .zero => .zero
@@ -157,7 +157,7 @@ abbrev CNorm := RBTree.RBMap CPath CNode compare
 instance : Inhabited CNorm := ⟨.empty⟩
 
 /-- Insert `(idx, k)` into the sorted var list, max-merging offsets.
-    `k` must be the current succ-accumulator (`Ix/Tc/Level.lean:249-252`
+    `k` must be the current succ-accumulator (`Ix/Kernel/Level.lean:249-252`
     — dropping it is the classic port bug). -/
 def CNode.addVar (n : CNode) (idx k : UInt64) : CNode :=
   match n.vars.findIdx? (fun v => idx ≤ v.1) with
@@ -187,13 +187,13 @@ def orderedInsert (a : UInt64) : CPath → Option CPath
     else (x :: ·) <$> orderedInsert a xs
 
 /-!
-Termination mirrors `Ix/Tc/Level.lean:289-296`: the measure is
+Termination mirrors `Ix/Kernel/Level.lean:289-296`: the measure is
 `3·Σ Univ.size + {0,1,2}` ordering the equal-size hops between the
 mutual members.
 -/
 mutual
 
-/-- Flatten a level into canonical form (`Ix.Tc.Level.normalizeAux` on
+/-- Flatten a level into canonical form (`Ix.Kernel.Level.normalizeAux` on
     `Ixon.Univ`). `path` is the imax-conditioning chain, `k` the
     accumulated succ offset. -/
 def normalizeAux (l : Univ) (path : CPath) (k : UInt64) (acc : CNorm) :
@@ -276,7 +276,7 @@ def isSubset : CPath → CPath → Bool
     else false
 
 /-- Keep only the `xs` entries not dominated by a `ys` entry
-    (merge-walk over sorted var lists — `Ix.Tc.Level.subsumeVars`). -/
+    (merge-walk over sorted var lists — `Ix.Kernel.Level.subsumeVars`). -/
 def subsumeVars (xs ys : Array (UInt64 × UInt64)) :
     Array (UInt64 × UInt64) :=
   go 0 0 #[]
@@ -302,7 +302,7 @@ where
   decreasing_by all_goals omega
 
 /-- Drop contributions dominated by entries at sub-paths
-    (`Ix.Tc.Level.subsumption` — the in-loop `n1` mutations are
+    (`Ix.Kernel.Level.subsumption` — the in-loop `n1` mutations are
     order-sensitive). -/
 def subsumption (acc : CNorm) : CNorm := Id.run do
   let snapshot := acc.toList
