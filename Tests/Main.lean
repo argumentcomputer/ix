@@ -48,6 +48,7 @@ import Tests.Ix.Kernel.TutorialTc
 import Tests.Ix.Kernel.CheckerRoundtrip
 import Tests.Ix.Kernel.IngressMetaTests
 import Tests.Ix.Kernel.IngressState
+import Tests.Ix.Kernel.SafeRecursion
 import Tests.Ix.Kernel.Pins
 import Tests.Ix.Kernel.AccelDiff
 import Tests.Ix.CanonM
@@ -108,12 +109,13 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("primitive-address-parity", Tests.Ix.Kernel.BuildPrimitives.paritySuite
     ++ Tests.Ix.Kernel.BuildPrimOrigs.paritySuite),
   ("decompile-unit", Tests.Decompile.unitSuite),
+  ("tc-safe-recursion", Tests.Kernel.SafeRecursion.suite),
   ("tc-unit", Tests.Kernel.Unit.suite ++ Tests.Kernel.Substrate.suite
     ++ Tests.Kernel.Fixtures.suite ++ Tests.Kernel.WhnfTests.suite
     ++ Tests.Kernel.InferDefEq.suite ++ Tests.Kernel.CheckTests.suite
     ++ Tests.Kernel.Consistency.suite
     ++ Tests.Kernel.Roundtrip.unitTests ++ Tests.Kernel.IngressMeta.unitTests
-    ++ Tests.Kernel.IngressState.suite),
+    ++ Tests.Kernel.IngressState.suite ++ Tests.Kernel.SafeRecursion.suite),
 ]
 
 /-- Ignored test suites - expensive, run only when explicitly requested. These require significant RAM -/

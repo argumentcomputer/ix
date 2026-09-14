@@ -192,7 +192,12 @@ increasing sequence of strongly inaccessible cardinals.
   preserves validity. The remaining successful-body preservation obligation is
   explicit. These structural laws have a parameterized cache meaning; the
   general mutual semantic proof must instantiate it and discharge that obligation.
-- Safe definitions cannot cite themselves in their types or values. Definition
+- Stored safe definitions cannot cite their own global addresses in their
+  types or values. This is a kernel-level dependency check: Lean's elaborator
+  translates termination-checked source recursion into recursor applications
+  (including well-founded recursion through `WellFounded.fix`), which remain
+  supported. Recursive calls supplied as local arguments do not create a
+  self-reference to the definition's address. Definition
   blocks compute a dependency order for their safe members before checking any
   member. `DefinitionOrder.block_wellFounded` and `block_no_cycle` derive the
   absence of every internal safe-definition cycle from actual block success.
