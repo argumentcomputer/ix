@@ -137,9 +137,19 @@ increasing sequence of strongly inaccessible cardinals.
   A let leaves the model context unchanged; a regular binder lifts older
   readings into the extended context. The production free-variable inference
   branch is typed by this invariant, and its zeta-reduction step preserves the
-  model value. General inference must still supply the let value's typing;
-  closing the returned type, general reduction, legacy local frames, and
-  semantic cache preservation remain separate obligations.
+  model value. The memoized abstraction-and-substitution sequence closes a
+  let body's inferred type with exactly its original model reading and
+  preserves intern-table coherence. The residual abstraction is derived from
+  that reading, including nested lets and other local values. General
+  inference must still supply the let value's typing; cheap beta, general
+  reduction, legacy local frames, and semantic cache preservation remain
+  separate obligations.
+- `LetInferenceTrace.of_success` extracts the complete production let trace
+  in either validation mode, including computed sort exposure, conversion,
+  opening, recursive body inference, the deterministic closing sequence, and
+  final scope cleanup. It requires no precomputed execution tree. Under the
+  local-state and finite walker invariants, the trace transports the recursive
+  body's typing to the original let and its substituted type before cheap beta.
 - `InferenceCacheInvariant` covers every entry in both production maps, with
   separate full-checking and inference-only meanings. Hits obtain stored facts
   directly; each insertion establishes its own fact and preserves all other
@@ -406,6 +416,7 @@ The VM pilot is preserved in the frozen archive and excluded from the host gate.
 | Finite intern support and production string expansion | [`Consistency/InternInvariant.lean`](../Ix/Kernel/Verify/Consistency/InternInvariant.lean), [`StringExpansion.lean`](../Ix/Kernel/Verify/Consistency/StringExpansion.lean), [`StringReading.lean`](../Ix/Kernel/Verify/Consistency/StringReading.lean) |
 | Dependent binders and function bodies | [`Consistency/BinderInference.lean`](../Ix/Kernel/Verify/Consistency/BinderInference.lean), [`Application.lean`](../Ix/Kernel/Verify/Consistency/Application.lean), [`BinderOpening.lean`](../Ix/Kernel/Verify/Consistency/BinderOpening.lean), [`Context.lean`](../Ix/Kernel/Verify/Consistency/Context.lean), [`Model/Checking.lean`](../Ix/Theory/Model/Checking.lean) |
 | Let-bound values, local allocation and shared context coherence | [`Consistency/LocalValues.lean`](../Ix/Kernel/Verify/Consistency/LocalValues.lean), [`LocalOpening.lean`](../Ix/Kernel/Verify/Consistency/LocalOpening.lean), [`Verify/LocalContext.lean`](../Ix/Kernel/Verify/LocalContext.lean), [`Model/ContextTransport.lean`](../Ix/Theory/Model/ContextTransport.lean) |
+| Local substitution, let-inference traces and closing inferred types | [`Consistency/LocalSubstitution.lean`](../Ix/Kernel/Verify/Consistency/LocalSubstitution.lean), [`LetInference.lean`](../Ix/Kernel/Verify/Consistency/LetInference.lean) |
 | Production environment fragment and relative axiom policy | [`Consistency/Environment.lean`](../Ix/Kernel/Verify/Consistency/Environment.lean), [`Production.lean`](../Ix/Kernel/Verify/Consistency/Production.lean) |
 | Safe definition self-reference and block dependency order | [`DefinitionOrder.lean`](../Ix/Kernel/DefinitionOrder.lean), [`Consistency/DefinitionOrder.lean`](../Ix/Kernel/Verify/Consistency/DefinitionOrder.lean) |
 | Foundation assumptions, theorem contracts, and provenance | [Consistency model guide](theory.md) |

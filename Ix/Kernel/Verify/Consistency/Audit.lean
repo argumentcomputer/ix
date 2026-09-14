@@ -11,6 +11,8 @@ import Ix.Kernel.Verify.Consistency.CacheLifecycle
 import Ix.Kernel.Verify.Consistency.StringExpansion
 import Ix.Kernel.Verify.Consistency.DefinitionOrder
 import Ix.Kernel.Verify.Consistency.LocalOpening
+import Ix.Kernel.Verify.Consistency.LocalSubstitution
+import Ix.Kernel.Verify.Consistency.LetInference
 import Ix.Kernel.Verify.Audit.Basic
 
 /-! Exact full-dependency boundaries for the direct model-refinement roots.
@@ -48,6 +50,7 @@ private def atomicRoots : Array Lean.Name := #[
   ``infer_sort_cache_agreement, ``infer_sort_cache_frame, ``BinderInference.sortOfAgreement,
   ``ForallInferenceTrace.output, ``LambdaInferenceTrace.output, ``BinderInference.sound,
   ``inferUncached_monomorphic_const_scoped, ``ApplicationInferenceTrace.output,
+  ``LetInferenceTrace.of_success, ``LetInferenceTrace.beforeBeta_typing,
   ``BinderInference.soundWithSynthesis, ``BinderInference.synthesis,
   ``DefinitionBodySupport.sound
 ]
@@ -201,7 +204,10 @@ private def binderWalkerRoots : Array Lean.Name := #[
   ``LocalContextValues.empty, ``openLet_eq,
   ``LocalContextValues.openLet, ``LocalContextValues.openBinder,
   ``readLocalExpr?_instantiateLetSpec, ``readLocalExpr?_instantiateBinderSpec,
-  ``openLet_local_sound, ``openBinder_local_sound
+  ``openLet_local_sound, ``openBinder_local_sound,
+  ``readLocalExpr?_liftSpec, ``readLocalExpr?_substSpec, ``subst_readLocalExpr?,
+  ``readLocalExpr?_abstractFVarsSpec, ``abstractFVars_readLocalExpr?,
+  ``KExpr.abstractFVarsSpec_size, ``closeLetType_readLocalExpr?
 ]
 
 private def localValueRoots : Array Lean.Name := #[
@@ -209,7 +215,9 @@ private def localValueRoots : Array Lean.Name := #[
   ``readLocalExpr?_scoped, ``readLocalExpr?_eraseMeta, ``internExpr_readLocalExpr?,
   ``readLocalExpr?_extend, ``readLocalExpr?_lift, ``localContext_find?_push_ne_eq,
   ``LocalContextValues.index_none, ``LocalContextValues.pushLet,
-  ``LocalContextValues.pushBinder, ``LocalModelTyping.closed
+  ``LocalContextValues.pushBinder, ``LocalModelTyping.closed,
+  ``readLocalExpr?_readable, ``readLocalExpr?_instantiateLocal,
+  ``readLocalExpr?_letResidual
 ]
 
 /-- Production roots must not acquire a checker-soundness assumption

@@ -19,6 +19,8 @@ import Ix.Kernel.Verify.Consistency.ConstantCache
 import Ix.Kernel.Verify.Consistency.Context
 import Ix.Kernel.Verify.Consistency.BinderOpening
 import Ix.Kernel.Verify.Consistency.LocalOpening
+import Ix.Kernel.Verify.Consistency.LocalSubstitution
+import Ix.Kernel.Verify.Consistency.LetInference
 import Ix.Kernel.Verify.Consistency.Application
 import Ix.Kernel.Verify.Consistency.BinderInference
 import Ix.Kernel.Verify.Consistency.RecursiveCache
@@ -84,9 +86,16 @@ same model context. Successful production opening preserves these readings,
 local lookup completeness, the allocation-counter bound and intern coherence;
 let-bound free-variable reduction preserves the model value. Regular binders
 lift the earlier readings into the extended model context. The scoped reader
-is recovered by mapping every local to its variable index. The let value's
-typing, general reduction and inference, legacy local frames and the semantic
-cache invariant remain obligations of the mutual execution proof.
+is recovered by mapping every local to its variable index. Actual abstraction
+followed by substitution closes a let body's inferred type with the same
+reading and preserves intern coherence; its residual abstraction is derived
+from the body reading. The let value's typing, cheap beta and general
+reduction and inference, legacy local frames and the semantic cache invariant
+remain obligations of the mutual execution proof.
+Successful let inference yields its full operational trace in both policies,
+including computed sort exposure and conversion. This trace transports the
+recursive body's typing to the original let and its substituted type before
+the final cheap-beta pass.
 
 The safe-definition guard excludes self-reference for both modes and arbitrary
 universe arities. Successful definition-block execution computes an order of
