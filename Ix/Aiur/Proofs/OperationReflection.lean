@@ -13,6 +13,8 @@ derive all output values, metadata, equations, raw queries and call records.
 
 namespace Aiur.NativeAIR.OpEmitter
 
+variable {callRanks : Array Bytecode.CallRank}
+
 theorem fromScalar_eval (values : Values G) (emission : ScalarEmission) :
     (fromScalar emission).eval values = emission.eval values := by
   have singleton : evalRows values #[emission.output] = do
@@ -45,13 +47,13 @@ theorem Normal.read {rows : Array RowExpr} (normal : Normal rows)
 
 theorem emitOp_byte1 (selector rank : Expr) (first : Nat) (kind : AIR.Byte1Kind)
     (index : Nat) (rows : Array RowExpr) :
-    emitOp selector rank first (kind.op index) rows = do
+    emitOp selector rank first (kind.op index) rows callRanks = do
       return emitByte1 first kind (← rows[index]?) := by
   cases kind <;> rfl
 
 theorem emitOp_byte2 (selector rank : Expr) (first : Nat) (kind : AIR.Byte2Kind)
     (left right : Nat) (rows : Array RowExpr) :
-    emitOp selector rank first (kind.op left right) rows = do
+    emitOp selector rank first (kind.op left right) rows callRanks = do
       return emitByte2 first kind (← rows[left]?) (← rows[right]?) := by
   cases kind <;> rfl
 
@@ -59,10 +61,10 @@ theorem emitByte1_dispatch (values : Values G) (row : Nat → G) (selector rank 
     (s r : G) (first : Nat) (kind : AIR.Byte1Kind) (index : Nat)
     {rows : Array RowExpr} {inputs : Array AIR.RowValue} {emission : Emission}
     (inputEval : evalRows values rows = some inputs)
-    (emitted : emitOp selector rank first (kind.op index) rows = some emission)
+    (emitted : emitOp selector rank first (kind.op index) rows callRanks = some emission)
     (reads : ∀ index < emission.used,
       (values.columns .main .current)[first + index]? = some (row index)) :
-    ∃ result, AIR.emitOp row s r (kind.op index) inputs = some result ∧
+    ∃ result, AIR.emitOp row s r (kind.op index) inputs callRanks = some result ∧
       emission.eval values = some result := by
   rw [emitOp_byte1] at emitted
   simp only [bind, Option.bind] at emitted
@@ -79,10 +81,10 @@ theorem emitByte2_dispatch (values : Values G) (row : Nat → G) (selector rank 
     (s r : G) (first : Nat) (kind : AIR.Byte2Kind) (left right : Nat)
     {rows : Array RowExpr} {inputs : Array AIR.RowValue} {emission : Emission}
     (inputEval : evalRows values rows = some inputs) (normal : Normal rows)
-    (emitted : emitOp selector rank first (kind.op left right) rows = some emission)
+    (emitted : emitOp selector rank first (kind.op left right) rows callRanks = some emission)
     (reads : ∀ index < emission.used,
       (values.columns .main .current)[first + index]? = some (row index)) :
-    ∃ result, AIR.emitOp row s r (kind.op left right) inputs = some result ∧
+    ∃ result, AIR.emitOp row s r (kind.op left right) inputs callRanks = some result ∧
       emission.eval values = some result := by
   rw [emitOp_byte2] at emitted
   simp only [bind, Option.bind] at emitted
@@ -117,10 +119,10 @@ theorem emitOp_reflects (values : Values G) (row : Nat → G)
     {rows : Array RowExpr} {inputs : Array AIR.RowValue} {emission : Emission}
     (selectorEval : evalExpr values selector = some s) (rankEval : evalExpr values rank = some r)
     (inputEval : evalRows values rows = some inputs) (normal : Normal rows)
-    (emitted : emitOp selector rank first op rows = some emission)
+    (emitted : emitOp selector rank first op rows callRanks = some emission)
     (reads : ∀ index < emission.used,
       (values.columns .main .current)[first + index]? = some (row index)) :
-    ∃ result, AIR.emitOp row s r op inputs = some result ∧ emission.eval values = some result := by
+    ∃ result, AIR.emitOp row s r op inputs callRanks = some result ∧ emission.eval values = some result := by
   cases op with
   | const value =>
     cases emitted
@@ -173,7 +175,7 @@ theorem emitOp_reflects (values : Values G) (row : Nat → G)
     obtain ⟨x, readX, refX⟩ := evalRows_read inputEval readA
     obtain ⟨y, readY, refY⟩ := evalRows_read inputEval readB
     have reflected := NativeAIR.emitMul_reflects values row selectorEval refX refY reads
-    have indexed : AIR.emitOp row s r (.mul a b) inputs = AIR.emitOp row s 0 (.mul 0 1) #[x, y] := by
+    have indexed : AIR.emitOp row s r (.mul a b) inputs callRanks = AIR.emitOp row s 0 (.mul 0 1) #[x, y] := by
       simp only [AIR.emitOp, readX, readY, show #[x, y][0]? = some x from rfl,
         show #[x, y][1]? = some y from rfl, bind, Option.bind_some]
     rw [indexed]
@@ -191,7 +193,7 @@ theorem emitOp_reflects (values : Values G) (row : Nat → G)
     cases emitted
     obtain ⟨value, readValue, refValue⟩ := evalRows_read inputEval read
     have reflected := NativeAIR.emitEqZero_reflects values row selectorEval refValue reads
-    have indexed : AIR.emitOp row s r (.eqZero index) inputs = AIR.emitOp row s 0 (.eqZero 0) #[value] := by
+    have indexed : AIR.emitOp row s r (.eqZero index) inputs callRanks = AIR.emitOp row s 0 (.eqZero 0) #[value] := by
       simp only [AIR.emitOp, readValue, show #[value][0]? = some value from rfl, bind, Option.bind_some]
     rw [indexed]
     have total : ∃ result, AIR.emitOp row s 0 (.eqZero 0) #[value] = some result := by
@@ -211,7 +213,8 @@ theorem emitOp_reflects (values : Values G) (row : Nat → G)
       rename_i arguments selected
       cases emitted
       obtain ⟨args, argsRead, argsEval⟩ := select_reflects inputEval selected
-      refine ⟨_, ?_, emitCall_reflects values row first function size selectorEval rankEval argsEval reads⟩
+      refine ⟨_, ?_, emitCall_reflects values row first function size
+        (mode := callRanks[function]?.getD .ordered) selectorEval rankEval argsEval reads⟩
       simp only [AIR.emitOp, Bool.false_eq_true, if_false, select_values argsRead,
         bind, Option.bind_some, pure]
   | store indices =>
@@ -343,7 +346,7 @@ theorem emitOp_reflects (values : Values G) (row : Nat → G)
 
 theorem emitByte1_dispatch_normal (selector rank : Expr) (first : Nat)
     (kind : AIR.Byte1Kind) (index : Nat) {rows : Array RowExpr} {emission : Emission}
-    (emitted : emitOp selector rank first (kind.op index) rows = some emission) :
+    (emitted : emitOp selector rank first (kind.op index) rows callRanks = some emission) :
     Normal emission.outputs := by
   rw [emitOp_byte1] at emitted
   simp only [bind, Option.bind] at emitted
@@ -355,7 +358,7 @@ theorem emitByte1_dispatch_normal (selector rank : Expr) (first : Nat)
 theorem emitByte2_dispatch_normal (selector rank : Expr) (first : Nat)
     (kind : AIR.Byte2Kind) (a b : Nat) {rows : Array RowExpr} {emission : Emission}
     (normal : Normal rows)
-    (emitted : emitOp selector rank first (kind.op a b) rows = some emission) :
+    (emitted : emitOp selector rank first (kind.op a b) rows callRanks = some emission) :
     Normal emission.outputs := by
   rw [emitOp_byte2] at emitted
   simp only [bind, Option.bind] at emitted
@@ -371,7 +374,7 @@ theorem emitByte2_dispatch_normal (selector rank : Expr) (first : Nat)
 
 theorem emitOp_normal {selector rank : Expr} {first : Nat} {op : Bytecode.Op}
     {rows : Array RowExpr} {emission : Emission} (normal : Normal rows)
-    (emitted : emitOp selector rank first op rows = some emission) :
+    (emitted : emitOp selector rank first op rows callRanks = some emission) :
     Normal emission.outputs := by
   cases op with
   | const value =>

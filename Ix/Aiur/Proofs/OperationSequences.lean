@@ -13,6 +13,8 @@ symbolic emission and defined reads of exactly the consumed column interval.
 
 namespace Aiur.NativeAIR.OpEmitter
 
+variable {callRanks : Array Bytecode.CallRank}
+
 theorem evalRows_append {values : Values G} {left right : Array RowExpr}
     {a b : Array AIR.RowValue} (leftEval : evalRows values left = some a)
     (rightEval : evalRows values right = some b) :
@@ -110,11 +112,13 @@ theorem OpsEmission.eval_components {values : Values G} {emission : OpsEmission}
   cases evaluated
   exact ⟨outputsEval, rfl, equationsEval, queriesEval, callsEval⟩
 
-def emitOps (selector rank : Expr) : List Bytecode.Op → Array RowExpr → Nat → Option OpsEmission
-  | [], rows, column => some { values := rows, column }
-  | op :: ops, rows, column => do
-    let first ← emitOp selector rank column op rows
-    let rest ← emitOps selector rank ops (rows ++ first.outputs) (column + first.used)
+def emitOps (selector rank : Expr) (ops : List Bytecode.Op) (rows : Array RowExpr)
+    (column : Nat) (callRanks : Array Bytecode.CallRank := #[]) : Option OpsEmission :=
+  match ops with
+  | [] => some { values := rows, column }
+  | op :: ops => do
+    let first ← emitOp selector rank column op rows callRanks
+    let rest ← emitOps selector rank ops (rows ++ first.outputs) (column + first.used) callRanks
     return { rest with
       equations := first.equations ++ rest.equations
       queries := first.queries ++ rest.queries
@@ -122,7 +126,7 @@ def emitOps (selector rank : Expr) : List Bytecode.Op → Array RowExpr → Nat 
 
 theorem emitOps_column {selector rank : Expr} {ops : List Bytecode.Op} {rows : Array RowExpr}
     {column : Nat} {emission : OpsEmission}
-    (emitted : emitOps selector rank ops rows column = some emission) : column ≤ emission.column := by
+    (emitted : emitOps selector rank ops rows column callRanks = some emission) : column ≤ emission.column := by
   induction ops generalizing rows column emission with
   | nil =>
     cases emitted
@@ -140,7 +144,7 @@ theorem emitOps_column {selector rank : Expr} {ops : List Bytecode.Op} {rows : A
 
 theorem emitOps_normal {selector rank : Expr} {ops : List Bytecode.Op} {rows : Array RowExpr}
     {column : Nat} {emission : OpsEmission} (normal : Normal rows)
-    (emitted : emitOps selector rank ops rows column = some emission) : Normal emission.values := by
+    (emitted : emitOps selector rank ops rows column callRanks = some emission) : Normal emission.values := by
   induction ops generalizing rows column emission with
   | nil =>
     cases emitted
@@ -162,10 +166,10 @@ theorem emitOps_reflects (values : Values G) (row : Nat → G)
     {inputs : Array AIR.RowValue} {column : Nat} {emission : OpsEmission}
     (selectorEval : evalExpr values selector = some s) (rankEval : evalExpr values rank = some r)
     (inputEval : evalRows values rows = some inputs) (normal : Normal rows)
-    (emitted : emitOps selector rank ops rows column = some emission)
+    (emitted : emitOps selector rank ops rows column callRanks = some emission)
     (reads : ∀ index, column ≤ index → index < emission.column →
       (values.columns .main .current)[index]? = some (row index)) :
-    ∃ result, AIR.emitOps row s r ops inputs column = some result ∧ emission.eval values = some result := by
+    ∃ result, AIR.emitOps row s r ops inputs column callRanks = some result ∧ emission.eval values = some result := by
   induction ops generalizing rows inputs column emission with
   | nil =>
     cases emitted

@@ -16,10 +16,11 @@ open OpEmitter LookupEmitter BlockEmitter Compiler
 
 theorem emitMember_reflects {values : Values G} (row : Nat → G) {rank : Expr} {r : G}
     {column lookup selectorBase : Nat} {program : Bytecode.Toplevel} {functionIndex : Nat} {member : Member}
+    {callRanks : Array Bytecode.CallRank}
     (rankEval : evalExpr values rank = some r)
-    (emitted : emitMember rank column lookup selectorBase program functionIndex = some member)
+    (emitted : emitMember rank column lookup selectorBase program functionIndex callRanks = some member)
     (reads : ∀ index < member.readBound, (values.columns .main .current)[index]? = some (row index)) :
-    ∃ result, AIR.emitMember row r column lookup selectorBase program functionIndex = some result ∧
+    ∃ result, AIR.emitMember row r column lookup selectorBase program functionIndex callRanks = some result ∧
       member.eval values = some result ∧ evalExpr values member.entry = some (result.entry row) := by
   simp only [emitMember, bind, Option.bind] at emitted
   split at emitted

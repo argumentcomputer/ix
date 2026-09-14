@@ -31,10 +31,11 @@ def MemberEmission.entry (row : Nat → G) (member : MemberEmission) : G :=
   (member.function.body.selectorFlow (member.selector row)).entry
 
 def emitMember (row : Nat → G) (rank : G) (column lookup selectorBase : Nat)
-    (program : Toplevel) (functionIndex : FunIdx) : Option MemberEmission := do
+    (program : Toplevel) (functionIndex : FunIdx)
+    (callRanks : Array CallRank := #[]) : Option MemberEmission := do
   let function ← program.functions[functionIndex]?
   let body ← function.emitRow row (fun index => row (selectorBase + index)) functionIndex rank
-    (rowAdvice row 0 function.layout.inputSize) column lookup
+    (rowAdvice row 0 function.layout.inputSize) column lookup callRanks
   return ⟨functionIndex, function, selectorBase, body⟩
 
 def emitMembers (row : Nat → G) (rank : G) (column lookup selectorBase : Nat)

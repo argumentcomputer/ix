@@ -21,7 +21,7 @@ private def readEvaluatedMap (size : Nat) : Reader (Array AIR.RowValue) := do
 private def readReport (index : Nat) : Reader Nat := do
   let label := s!"block {index}"
   let branchless ← readBool
-  let context : Context := ⟨← readNat, ← readNat, ← readExpr 256⟩
+  let context : Context := ⟨← readNat, ← readNat, ← readExpr 256, #[]⟩
   let selectors := (← readList (← readCount) (readExpr 256)).toArray
   let column ← readNat
   let lookup ← readNat

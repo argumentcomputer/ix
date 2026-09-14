@@ -16,15 +16,15 @@ open OpEmitter Aiur.Bytecode Concrete.Bytecode
 theorem branchRows_layout {selectors : Array Expr} {context : Context} {matched : RowExpr}
     {rows : Array RowExpr} {column lookup : Nat} {branches : Array (G × Block)}
     {fallback : Option Block} {emission : Emission} (index : Nat) (initial : LayoutMState) (base : Nat)
-    (generic : initial.callRanks = #[])
+    (generic : initial.callRanks = context.callRanks)
     (aligned : rowDegrees rows = initial.degrees) (cursor : column = base + initial.functionLayout.auxiliaries)
     (emitted : branchRows selectors context matched rows column lookup branches fallback = some emission)
     (caseSound : ∀ pair ∈ branches.toList, ∀ entry result state,
-      state.callRanks = #[] → rowDegrees rows = state.degrees → column = base + state.functionLayout.auxiliaries →
+      state.callRanks = context.callRanks → rowDegrees rows = state.degrees → column = base + state.functionLayout.auxiliaries →
       emitBlock selectors context entry rows column lookup pair.2 = some result →
       result.column = base + ((blockLayout pair.2).run state).2.functionLayout.auxiliaries)
     (defaultSound : ∀ block, fallback = some block → ∀ entry result state,
-      state.callRanks = #[] → rowDegrees rows = state.degrees → column + branches.size = base + state.functionLayout.auxiliaries →
+      state.callRanks = context.callRanks → rowDegrees rows = state.degrees → column + branches.size = base + state.functionLayout.auxiliaries →
       emitBlock selectors context entry rows (column + branches.size) lookup block = some result →
       result.column = base + ((blockLayout block).run state).2.functionLayout.auxiliaries) :
     ((ctrlLayout (.match index branches fallback)).run initial).2.degrees = rowDegrees emission.values ∧
@@ -39,7 +39,7 @@ theorem branchRows_layout {selectors : Array Expr} {context : Context} {matched 
   rename_i defaults defaultsEmitted
   cases emitted
   have caseEffects : List.Forall₂ (fun pair result => ∀ state : LayoutMState,
-      state.callRanks = #[] → state.degrees = initial.degrees → state.functionLayout.auxiliaries = initial.functionLayout.auxiliaries →
+      state.callRanks = context.callRanks → state.degrees = initial.degrees → state.functionLayout.auxiliaries = initial.functionLayout.auxiliaries →
       result.column = base + ((blockLayout pair.2).run state).2.functionLayout.auxiliaries)
       branches.toList cases := by
     apply AIR.mapM_forall₂ casesEmitted
@@ -57,7 +57,7 @@ theorem branchRows_layout {selectors : Array Expr} {context : Context} {matched 
     exact caseSound pair member entry body state stateGeneric (aligned.trans degrees.symm)
       (by rw [auxiliaries]; exact cursor) bodyEmitted
   have defaultEffects : List.Forall₂ (fun block result => ∀ state : LayoutMState,
-      state.callRanks = #[] → state.degrees = initial.degrees →
+      state.callRanks = context.callRanks → state.degrees = initial.degrees →
       state.functionLayout.auxiliaries = initial.functionLayout.auxiliaries + branches.size →
       result.column = base + ((blockLayout block).run state).2.functionLayout.auxiliaries)
       fallback.toList defaults := by
@@ -101,7 +101,7 @@ mutual
 theorem emitCtrl_layout {selectors : Array Expr} {context : Context} {incoming : Expr}
     {rows : Array RowExpr} {column lookup : Nat} (ctrl : Ctrl) {emission : Emission}
     (initial : LayoutMState) (base : Nat) (valid : DegreeValid rows)
-    (generic : initial.callRanks = #[])
+    (generic : initial.callRanks = context.callRanks)
     (aligned : rowDegrees rows = initial.degrees) (cursor : column = base + initial.functionLayout.auxiliaries)
     (emitted : emitCtrl selectors context incoming rows column lookup ctrl = some emission) :
     ((ctrlLayout ctrl).run initial).2.degrees = rowDegrees emission.values ∧
@@ -178,7 +178,7 @@ decreasing_by
 theorem emitBlock_layout {selectors : Array Expr} {context : Context} {incoming : Expr}
     {rows : Array RowExpr} {column lookup : Nat} (block : Block) {emission : Emission}
     (initial : LayoutMState) (base : Nat) (valid : DegreeValid rows)
-    (generic : initial.callRanks = #[])
+    (generic : initial.callRanks = context.callRanks)
     (aligned : rowDegrees rows = initial.degrees) (cursor : column = base + initial.functionLayout.auxiliaries)
     (emitted : emitBlock selectors context incoming rows column lookup block = some emission) :
     ((blockLayout block).run initial).2.degrees = rowDegrees emission.values ∧

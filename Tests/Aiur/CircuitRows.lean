@@ -70,7 +70,7 @@ private def fixtureFunction (seed index : Nat) : Except String Function := do
   let body := if seed % 4 == 0 && index == 0 then
       { ops := #[], ctrl := .match 0 #[(0, { ops := #[.store #[]], ctrl := .match 0 #[] none }), (1, body)] none }
     else body
-  let some measured := body.emitRow (fun _ => 0) (fun _ => 0) ⟨37, inputSize, 0⟩
+  let some measured := body.emitRow (fun _ => 0) (fun _ => 0) ⟨37, inputSize, 0, #[]⟩
       (body.selectorFlow (fun _ => 0)).entry (rowAdvice (fun _ => 0) 0 inputSize)
       (inputSize + selectors + 7) 4
     | throw "fixture layout emission failed"

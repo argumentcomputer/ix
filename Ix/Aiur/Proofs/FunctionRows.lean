@@ -42,8 +42,9 @@ namespace Aiur.Bytecode
 open Aiur.AIR
 
 def Function.emitRow (row : Nat → G) (selector : SelIdx → G) (functionIndex : FunIdx) (rank : G)
-    (values : Array RowValue) (column lookup : Nat) (function : Function) : Option BlockEmission :=
-  function.body.emitRow row selector ⟨functionIndex, function.layout.inputSize, rank⟩
+    (values : Array RowValue) (column lookup : Nat) (function : Function)
+    (callRanks : Array CallRank := #[]) : Option BlockEmission :=
+  function.body.emitRow row selector ⟨functionIndex, function.layout.inputSize, rank, callRanks⟩
     (function.body.selectorFlow selector).entry values column lookup
 
 theorem Function.emitRow_run {tables : LookupTables} {width : Nat} {queries : List (List G)}
@@ -55,14 +56,14 @@ theorem Function.emitRow_run {tables : LookupTables} {width : Nat} {queries : Li
     (function : Function) (present : program.functions[functionIndex]? = some function)
     (arity : values.size = function.layout.inputSize)
     (shape : function.body.lookupShapes program none = true) (bounds : function.body.rowBounds selector)
-    {emission : BlockEmission}
-    (emitted : function.emitRow row selector functionIndex rank values column lookup = some emission)
+    {emission : BlockEmission} {callRanks : Array CallRank}
+    (emitted : function.emitRow row selector functionIndex rank values column lookup callRanks = some emission)
     (active : (function.body.selectorFlow selector).entry = 1)
     (satisfied : ∀ equation ∈ emission.equations, equation = 0) (queried : emission.QueriesIn queries) :
     ∃ request calls, (1, request) ∈ emission.returns ∧
       request.function = functionIndex ∧ request.inputs = rowValues values ∧ request.rank = rank ∧
       AIR.RunFunction program (memoryFacts tables.memory) request (calls.map Prod.fst) ∧
-      emission.CallsAt calls ∧ CallsEmitted rank 1 emission.equations queries calls := by
+      emission.CallsAt calls ∧ CallsEmitted rank 1 emission.equations queries calls callRanks := by
   have bodyEmitted := emitted
   rw [Function.emitRow] at bodyEmitted
   have initial : RowInputs function.layout.inputSize (rowValues values) values := by
@@ -132,8 +133,8 @@ theorem Function.emitRow_message (row : Nat → G) (selector : SelIdx → G)
     (functionIndex : FunIdx) (rank : G) (values : Array RowValue) (column lookup : Nat)
     (function : Function) (program : Toplevel)
     (shape : function.body.lookupShapes program none = true)
-    {emission : BlockEmission}
-    (emitted : function.emitRow row selector functionIndex rank values column lookup = some emission)
+    {emission : BlockEmission} {callRanks : Array CallRank}
+    (emitted : function.emitRow row selector functionIndex rank values column lookup callRanks = some emission)
     (active : (function.body.selectorFlow selector).entry = 1)
     (satisfied : ∀ equation ∈ emission.equations, equation = 0)
     (bounded : emission.returns.length < gSize.toNat)

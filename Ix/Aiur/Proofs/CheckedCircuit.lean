@@ -21,7 +21,7 @@ theorem emitMember_defined (rank : Expr) (column lookup selectorBase : Nat)
     simpa only [advice, selectorExprs, Array.size_ofFn] using checked.2
   obtain ⟨entry, selected⟩ := blockSelector_defined (selectorExprs selectorBase function.layout.selectors) function.body bodyChecks
   obtain ⟨body, emitted, _⟩ := emitBlock_defined (selectorExprs selectorBase function.layout.selectors)
-    ⟨index, function.layout.inputSize, rank⟩ entry (advice 0 function.layout.inputSize) column lookup function.body
+    ⟨index, function.layout.inputSize, rank, #[]⟩ entry (advice 0 function.layout.inputSize) column lookup function.body
     (advice_degreeValid _ _) (by simp only [advice, Array.size_ofFn, Nat.le_refl]) bodyChecks
   refine ⟨⟨index, function, selectorBase, entry, body⟩, ?_⟩
   simp only [emitMember, present, selected, emitted, bind, Option.bind_some, pure]

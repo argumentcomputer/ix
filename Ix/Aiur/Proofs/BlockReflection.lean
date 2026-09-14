@@ -17,7 +17,7 @@ open OpEmitter LookupEmitter
 def selectorAt (selectors : Array G) (index : Nat) : G := selectors[index]?.getD 0
 
 def Context.valued (context : Context) (rank : G) : AIR.RowContext :=
-  ⟨context.function, context.inputSize, rank⟩
+  ⟨context.function, context.inputSize, rank, context.callRanks⟩
 
 def BlockReflects (values : Values G) (row : Nat → G) (selectors : Array Expr) (selected : Nat → G)
     (context : Context) (rank : G) (block : Bytecode.Block) : Prop :=
@@ -402,7 +402,8 @@ theorem block_reflects (values : Values G) (row : Nat → G)
     simp only [List.mapM_cons, List.mapM_nil, guard, bind, Option.bind_some, pure, goldilocks_mul, goldilocks_sub]
     rfl
   refine ⟨_, ?_, Emission.prefix_eval (Emission.afterOps_eval lookup incomingEval opEval resultEval) guarded⟩
-  simp only [Bytecode.Block.emitRow, show (context.valued rank).rank = rank from rfl, opEmitted,
+  simp only [Bytecode.Block.emitRow, show (context.valued rank).rank = rank from rfl,
+    show (context.valued rank).callRanks = context.callRanks from rfl, opEmitted,
     bind, Option.bind_some, ← columnEq, queryCount, resultEmitted, pure]
 termination_by sizeOf block
 decreasing_by exact block_smaller block

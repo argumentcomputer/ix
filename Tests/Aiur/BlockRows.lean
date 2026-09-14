@@ -85,7 +85,7 @@ private def expected : Except String (ByteArray × Nat) := do
           let row := row seed pattern count
           let selector := fun index => row (2 + index)
           let values := #[RowValue.variable (row 0), RowValue.variable (row 1)]
-          let some emission := block.emitRow row selector ⟨37, 2, 257⟩
+          let some emission := block.emitRow row selector ⟨37, 2, 257, #[]⟩
               (block.selectorFlow selector).entry values (2 + count) 1
             | throw s!"emission failed at depth {depth}, seed {seed}, pattern {pattern}"
           out := appendNat out emission.column

@@ -13,6 +13,8 @@ preserved from the initial advice map. -/
 namespace Aiur.NativeAIR.OpEmitter
 open Aiur.Bytecode
 
+variable {callRanks : Array CallRank}
+
 def rowDegrees (rows : Array RowExpr) : Array Nat := rows.map RowExpr.degree
 
 theorem rowDegrees_empty : rowDegrees #[] = #[] := Array.map_empty
@@ -86,7 +88,7 @@ theorem emitWordSum_allocation (first : Nat) (sum : RowExpr) :
 
 theorem emitByte1_dispatch_allocation (selector rank : Expr) (first : Nat) (kind : AIR.Byte1Kind)
     (index : Nat) {rows : Array RowExpr} {emission : Emission}
-    (emitted : emitOp selector rank first (kind.op index) rows = some emission) :
+    (emitted : emitOp selector rank first (kind.op index) rows callRanks = some emission) :
     emission.allocation = (kind.op index).allocation (rowDegrees rows) := by
   rw [emitOp_byte1] at emitted
   simp only [bind, Option.bind] at emitted
@@ -98,7 +100,7 @@ theorem emitByte1_dispatch_allocation (selector rank : Expr) (first : Nat) (kind
 
 theorem emitByte2_dispatch_allocation (selector rank : Expr) (first : Nat) (kind : AIR.Byte2Kind)
     (a b : Nat) {rows : Array RowExpr} {emission : Emission}
-    (emitted : emitOp selector rank first (kind.op a b) rows = some emission) :
+    (emitted : emitOp selector rank first (kind.op a b) rows callRanks = some emission) :
     emission.allocation = (kind.op a b).allocation (rowDegrees rows) := by
   rw [emitOp_byte2] at emitted
   simp only [bind, Option.bind] at emitted
@@ -116,10 +118,11 @@ theorem emitByte2_dispatch_allocation (selector rank : Expr) (first : Nat) (kind
     AIR.Byte2Kind.op, AIR.Byte2Kind.outputSize, Op.allocation, OpAllocation.advice,
     byteCarry, degreeA, degreeB] <;> rfl
 
-theorem emitOp_allocation {selector rank : Expr} {first : Nat} {op : Op}
+theorem emitOp_allocationFor {selector rank : Expr} {first : Nat} {op : Op}
     {rows : Array RowExpr} {emission : Emission} (valid : DegreeValid rows)
-    (emitted : emitOp selector rank first op rows = some emission) :
-    emission.allocation = op.allocation (rowDegrees rows) := by
+    (emitted : emitOp selector rank first op rows callRanks = some emission) :
+    emission.allocation = op.allocationFor callRanks (rowDegrees rows) := by
+  unfold Op.allocationFor
   cases op with
   | const value =>
     cases emitted
@@ -155,14 +158,14 @@ theorem emitOp_allocation {selector rank : Expr} {first : Nat} {op : Op}
     cases unconstrained with
     | true =>
       cases emitted
-      simp only [emitAdvice_allocation, Op.allocation, if_true, Nat.add_zero, OpAllocation.advice]
+      simp only [emitAdvice_allocation, if_true, Nat.add_zero, OpAllocation.advice]
     | false =>
       simp only [emitOp, Bool.false_eq_true, if_false, bind, Option.bind] at emitted
       split at emitted
       · cases emitted
       cases emitted
-      simp only [Emission.allocation, emitCall, advice_degrees, Op.allocation,
-        Bool.false_eq_true, if_false]
+      simp only [Emission.allocation, emitCall, advice_degrees, Bool.false_eq_true, if_false]
+      cases callRanks[function]?.getD .ordered <;> rfl
   | store indices | load size index =>
     simp only [emitOp, bind, Option.bind] at emitted
     split at emitted
@@ -249,19 +252,26 @@ theorem emitOp_allocation {selector rank : Expr} {first : Nat} {op : Op}
     cases emitted
     simp only [Emission.allocation, fromScalar, rowDegrees_singleton, Op.allocation, readWord_degree read]
 
+theorem emitOp_allocation {selector rank : Expr} {first : Nat} {op : Op}
+    {rows : Array RowExpr} {emission : Emission} (valid : DegreeValid rows)
+    (emitted : emitOp selector rank first op rows = some emission) :
+    emission.allocation = op.allocation (rowDegrees rows) := by
+  simpa only [Op.allocationFor_empty] using emitOp_allocationFor valid emitted
+
 theorem emitOp_layout {selector rank : Expr} {first : Nat} {op : Op}
     {rows : Array RowExpr} {emission : Emission} (initial : Concrete.Bytecode.LayoutMState)
-    (generic : initial.callRanks = #[])
+    (generic : initial.callRanks = callRanks)
     (valid : DegreeValid rows) (aligned : rowDegrees rows = initial.degrees)
-    (emitted : emitOp selector rank first op rows = some emission) :
+    (emitted : emitOp selector rank first op rows callRanks = some emission) :
     ((Concrete.Bytecode.opLayout op).run initial).2.degrees = rowDegrees (rows ++ emission.outputs) ∧
     ((Concrete.Bytecode.opLayout op).run initial).2.functionLayout.auxiliaries =
       initial.functionLayout.auxiliaries + emission.used := by
-  have allocated := emitOp_allocation valid emitted
+  have allocated := emitOp_allocationFor valid emitted
   rw [aligned] at allocated
   have degrees := congrArg OpAllocation.degrees allocated
   have auxiliaries := congrArg OpAllocation.auxiliaries allocated
-  obtain ⟨layoutDegrees, layoutAux⟩ := Concrete.Bytecode.opLayout_genericAllocation op initial generic
+  obtain ⟨layoutDegrees, layoutAux⟩ := Concrete.Bytecode.opLayout_allocation op initial
+  rw [generic] at layoutDegrees layoutAux
   simp only [Emission.allocation] at degrees auxiliaries
   rw [← degrees] at layoutDegrees
   rw [← auxiliaries] at layoutAux
@@ -269,10 +279,10 @@ theorem emitOp_layout {selector rank : Expr} {first : Nat} {op : Op}
 
 theorem emitOps_fold_layout {selector rank : Expr} {ops : List Op} {rows : Array RowExpr}
     {column : Nat} {emission : OpsEmission} (initial : Concrete.Bytecode.LayoutMState) (base : Nat)
-    (generic : initial.callRanks = #[])
+    (generic : initial.callRanks = callRanks)
     (valid : DegreeValid rows) (aligned : rowDegrees rows = initial.degrees)
     (cursor : column = base + initial.functionLayout.auxiliaries)
-    (emitted : emitOps selector rank ops rows column = some emission) :
+    (emitted : emitOps selector rank ops rows column callRanks = some emission) :
     ((ops.foldlM (fun _ op => Concrete.Bytecode.opLayout op) ()).run initial).2.degrees =
       rowDegrees emission.values ∧
     emission.column = base +
@@ -301,10 +311,10 @@ theorem emitOps_fold_layout {selector rank : Expr} {ops : List Op} {rows : Array
 
 theorem emitOps_layout {selector rank : Expr} {ops : Array Op} {rows : Array RowExpr}
     {column : Nat} {emission : OpsEmission} (initial : Concrete.Bytecode.LayoutMState) (base : Nat)
-    (generic : initial.callRanks = #[])
+    (generic : initial.callRanks = callRanks)
     (valid : DegreeValid rows) (aligned : rowDegrees rows = initial.degrees)
     (cursor : column = base + initial.functionLayout.auxiliaries)
-    (emitted : emitOps selector rank ops.toList rows column = some emission) :
+    (emitted : emitOps selector rank ops.toList rows column callRanks = some emission) :
     ((ops.forM Concrete.Bytecode.opLayout).run initial).2.degrees = rowDegrees emission.values ∧
     emission.column = base + ((ops.forM Concrete.Bytecode.opLayout).run initial).2.functionLayout.auxiliaries := by
   unfold Array.forM

@@ -160,7 +160,8 @@ theorem emitBlock_defined (selectors : Array Expr) (context : Context) (incoming
     ∃ emission, emitBlock selectors context incoming rows column lookup block = some emission ∧ emission.YieldShape size := by
   obtain ⟨next, checkedOps, checkedCtrl⟩ := Block.emissionChecks_parts checked
   obtain ⟨entry, selected⟩ := blockSelector_defined selectors block checked
-  obtain ⟨operations, operationsEmitted, valuesSize⟩ := emitOps_defined incoming context.rank block.ops.toList rows column valid checkedOps
+  obtain ⟨operations, operationsEmitted, valuesSize⟩ := emitOps_defined (callRanks := context.callRanks)
+    incoming context.rank block.ops.toList rows column valid checkedOps
   obtain ⟨control, controlEmitted, shape⟩ := emitCtrl_defined selectors context incoming operations.values operations.column
     (lookup + operations.queries.length) block.ctrl (emitOps_degreeValid valid operationsEmitted)
     (by have mono := checkEmissionOps_le checkedOps; omega) (valuesSize ▸ checkedCtrl)

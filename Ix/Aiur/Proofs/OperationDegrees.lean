@@ -162,7 +162,7 @@ theorem emitU32LessThan_degreeValid (selector : Expr) (first : Nat) (left right 
 
 theorem emitByte1_dispatch_degreeValid (selector rank : Expr) (first : Nat) (kind : AIR.Byte1Kind) (index : Nat)
     {rows : Array RowExpr} {emission : Emission}
-    (emitted : emitOp selector rank first (kind.op index) rows = some emission) : DegreeValid emission.outputs := by
+    (emitted : emitOp selector rank first (kind.op index) rows callRanks = some emission) : DegreeValid emission.outputs := by
   rw [emitOp_byte1] at emitted
   simp only [bind, Option.bind] at emitted
   split at emitted
@@ -172,7 +172,7 @@ theorem emitByte1_dispatch_degreeValid (selector rank : Expr) (first : Nat) (kin
 
 theorem emitByte2_dispatch_degreeValid (selector rank : Expr) (first : Nat) (kind : AIR.Byte2Kind) (a b : Nat)
     {rows : Array RowExpr} {emission : Emission}
-    (emitted : emitOp selector rank first (kind.op a b) rows = some emission) : DegreeValid emission.outputs := by
+    (emitted : emitOp selector rank first (kind.op a b) rows callRanks = some emission) : DegreeValid emission.outputs := by
   rw [emitOp_byte2] at emitted
   simp only [bind, Option.bind] at emitted
   split at emitted
@@ -185,7 +185,7 @@ theorem emitByte2_dispatch_degreeValid (selector rank : Expr) (first : Nat) (kin
 
 theorem emitOp_degreeValid {selector rank : Expr} {first : Nat} {op : Bytecode.Op}
     {rows : Array RowExpr} {emission : Emission} (valid : DegreeValid rows)
-    (emitted : emitOp selector rank first op rows = some emission) :
+    (emitted : emitOp selector rank first op rows callRanks = some emission) :
     DegreeValid emission.outputs := by
   cases op with
   | const value =>
@@ -308,7 +308,7 @@ theorem emitOp_degreeValid {selector rank : Expr} {first : Nat} {op : Bytecode.O
 
 theorem emitOps_degreeValid {selector rank : Expr} {ops : List Bytecode.Op} {rows : Array RowExpr}
     {column : Nat} {emission : OpsEmission} (valid : DegreeValid rows)
-    (emitted : emitOps selector rank ops rows column = some emission) : DegreeValid emission.values := by
+    (emitted : emitOps selector rank ops rows column callRanks = some emission) : DegreeValid emission.values := by
   induction ops generalizing rows column emission with
   | nil =>
     cases emitted

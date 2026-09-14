@@ -62,6 +62,7 @@ structure Context where
   function : Nat
   inputSize : Nat
   rank : Expr
+  callRanks : Array Bytecode.CallRank := #[]
 
 structure ReturnExpr where
   selector : Expr
@@ -539,7 +540,7 @@ decreasing_by
 def emitBlock (selectors : Array Expr) (context : Context) (incoming : Expr)
     (rows : Array RowExpr) (column lookup : Nat) (block : Bytecode.Block) : Option Emission := do
   let entry ← blockSelector selectors block
-  let operations ← OpEmitter.emitOps incoming context.rank block.ops.toList rows column
+  let operations ← OpEmitter.emitOps incoming context.rank block.ops.toList rows column context.callRanks
   let control ← emitCtrl selectors context incoming operations.values operations.column
     (lookup + operations.queries.length) block.ctrl
   return (control.afterOps incoming lookup operations).prefix

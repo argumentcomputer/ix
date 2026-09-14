@@ -13,7 +13,7 @@ Native extraction and the explicit layout/shape conditions remain separate. -/
 namespace Aiur.AIR
 open Bytecode
 
-private theorem forall₂_weaken {α β : Type} {left : List α} {right : List β}
+theorem forall₂_weaken {α β : Type} {left : List α} {right : List β}
     {first second : α → β → Prop} (related : List.Forall₂ first left right)
     (weaken : ∀ a b, first a b → second a b) : List.Forall₂ second left right := by
   induction related with

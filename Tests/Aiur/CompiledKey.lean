@@ -53,10 +53,10 @@ private def readCircuit (program : Bytecode.Toplevel) (index : Nat) (artifact : 
       throw s!"native key graph lookup values differ: {label}"
     if index < program.circuits.size then
       let source := program.circuits[index]!
-      let some symbolic := compileCircuit artifact.widths program source
+      let some symbolic := compileNativeCircuit artifact.widths program source
         | throw s!"compilation at native widths rejected: {label}"
       unless symbolic.base.graph == artifact.graph do throw s!"widened graph differs: {label}"
-      let some emission := source.emitRow (fun column => (values.columns .main .current)[column]?.getD 0) program
+      let some emission := source.emitNativeRow (fun column => (values.columns .main .current)[column]?.getD 0) program
         | throw s!"native key function row rejected: {label}"
       unless emission.equations == equations &&
           List.ofFn (fun slot : Fin emission.lookupCount => emission.lookup slot.val) == lookups do
@@ -111,20 +111,40 @@ private def alterations (program : Bytecode.Toplevel) (key : KeyCodec.Key) : Rea
   rejectAltered program key { key with preprocessedIndices := key.preprocessedIndices.set 0 (some 0) } "preprocessed index"
   return changedCircuits.length + 4
 
+private def rejectComponents (program : Bytecode.Toplevel) (key : KeyCodec.Key) : Reader Nat := do
+  if program.callComponents.isEmpty then return 0
+  let components := program.callComponents
+  let invalid := [
+    components.pop,
+    components.set! 0 ⟨program.functions.size, false⟩,
+    components.set! 1 ⟨1, false⟩,
+    components.set! 0 ⟨3, false⟩]
+  for components in invalid do
+    let altered := { program with callComponents := components }
+    if altered.validCallComponents then throw "component rejection fixture is valid"
+    if CompiledKey.check altered key then throw "invalid component certificate accepted"
+  return invalid.length
+
 private def readCorpus : Reader (Nat × Nat × Nat) := do
-  let header := "Aiur compiled keys v2\n".toUTF8
+  let header := "Aiur compiled keys v3\n".toUTF8
   unless (← takeBytes header.size) == header do throw "compiled-key snapshot version differs"
-  unless (← readCount) == 12 do throw "incomplete native key systems"
+  unless (← readCount) == 24 do throw "incomplete native key systems"
   let mut circuitCount := 0
   let mut assignments := 0
   let mut rejections := 0
-  for seed in [:12] do
+  for seed in [:24] do
     let functions := (← readList (← readCount) do
       return Bytecode.Function.mk (← readBlock 64) (← readLayout) (← readBool) (← readBool)).toArray
     let circuits := (← readList (← readCount) do
       return Bytecode.Circuit.mk "native" (← readIndices) (← readLayout)).toArray
     let memorySizes ← readIndices
-    let program : Bytecode.Toplevel := ⟨functions, memorySizes, circuits, #[]⟩
+    let components := (← readList (← readCount) do
+      return Bytecode.CallComponent.mk (← readNat) (← readBool)).toArray
+    let program : Bytecode.Toplevel := ⟨functions, memorySizes, circuits, components⟩
+    unless components.size == (if seed < 12 then 0 else 4) do
+      throw "incomplete native component policies"
+    unless components.isEmpty || program.validCallComponents do
+      throw "invalid native component fixture"
     let bytes ← takeBytes (← readCount 1048576)
     let some key := KeyCodec.decodeCanonical bytes | throw s!"native key rejected: system {seed}"
     unless key.parameters.logBlowup == 1 + seed % 3 do throw "incomplete native lookup-group budgets"
@@ -135,6 +155,7 @@ private def readCorpus : Reader (Nat × Nat × Nat) := do
       assignments := assignments + (← readCircuit program index artifact)
       circuitCount := circuitCount + 1
     rejections := rejections + (← alterations program key)
+    rejections := rejections + (← rejectComponents program key)
   let (bytes, cursor) ← get
   unless cursor == bytes.size do throw "compiled-key snapshot has trailing bytes"
   return (circuitCount, assignments, rejections)
@@ -143,9 +164,9 @@ def run (path : System.FilePath) : IO Unit := do
   match readCorpus.run (← IO.FS.readBinFile path, 0) with
   | .error error => throw (IO.userError error)
   | .ok ((circuits, assignments, rejections), _) =>
-    unless circuits == 180 && assignments == 720 && rejections == 168 do
+    unless circuits == 360 && assignments == 1440 && rejections == 384 do
       throw (IO.userError "incomplete native key coverage")
-    IO.println s!"compiled keys: 12 native systems, {circuits} circuits, {assignments} assignments match; {rejections} valid altered keys rejected"
+    IO.println s!"compiled keys: 24 native systems (12 component layouts), {circuits} circuits, {assignments} assignments match; 336 valid altered keys and 48 invalid component certificates rejected"
 
 end AiurTests.CompiledKeys
 

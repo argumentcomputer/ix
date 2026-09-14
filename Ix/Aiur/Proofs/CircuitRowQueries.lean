@@ -52,7 +52,8 @@ theorem forall₂_self_map {α β : Type} (items : List α) (map : α → β) (r
     exact .cons (related item List.mem_cons_self) (ih (fun item member => related item (List.mem_cons_of_mem _ member)))
 
 theorem MemberEmission.FromProgram.querySlots {row : Nat → G} {rank : G} {column lookup : Nat}
-    {program : Toplevel} {member : MemberEmission} (source : member.FromProgram row rank column lookup program)
+    {program : Toplevel} {member : MemberEmission} {callRanks : Array CallRank}
+    (source : member.FromProgram row rank column lookup program callRanks)
     (bounds : member.function.body.rowBounds (member.selector row))
     (satisfied : ∀ equation ∈ member.body.equations, equation = 0) :
     QuerySlots (member.entry row) lookup member.body.lookup member.body.queries := by

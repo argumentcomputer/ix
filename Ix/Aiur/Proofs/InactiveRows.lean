@@ -12,6 +12,8 @@ symbolic circuit constraints contain no contradictory constant equation. -/
 namespace Aiur.AIR
 open Bytecode
 
+variable {callRanks : Array CallRank}
+
 theorem selectorSum_zero (values : List G) (zero : ∀ value ∈ values, value = 0) :
     selectorSum values = 0 := by
   induction values with
@@ -21,16 +23,16 @@ theorem selectorSum_zero (values : List G) (zero : ∀ value ∈ values, value =
       ih (fun value member => zero value (List.mem_cons_of_mem _ member)), G.zero_add]
 
 theorem emitOp_inactive {row : Nat → G} {rank : G} (op : Op) {values : Array RowValue}
-    {emission : OpEmission} (emitted : emitOp row 0 rank op values = some emission) :
+    {emission : OpEmission} (emitted : emitOp row 0 rank op values callRanks = some emission) :
     ∀ equation ∈ emission.equations, equation = 0 := by
   cases op <;> simp only [emitOp, emitAdvice, emitByte1, emitByte2, emitU32LessThan,
     emitU32Add, bind, Option.bind] at emitted
   all_goals repeat' first | split at emitted | (dsimp only at emitted; split at emitted)
   all_goals cases emitted
-  all_goals simp [G.mul_comm (0 : G), G.mul_zero]
+  all_goals simp [emitCallRow, G.mul_comm (0 : G), G.mul_zero]
 
 theorem emitOps_inactive {row : Nat → G} {rank : G} (ops : List Op) {values : Array RowValue}
-    {column : Nat} {emission : OpsEmission} (emitted : emitOps row 0 rank ops values column = some emission) :
+    {column : Nat} {emission : OpsEmission} (emitted : emitOps row 0 rank ops values column callRanks = some emission) :
     ∀ equation ∈ emission.equations, equation = 0 := by
   induction ops generalizing values column emission with
   | nil => cases emitted; simp

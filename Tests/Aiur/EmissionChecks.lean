@@ -62,7 +62,7 @@ private def readCorpus : Reader (Nat × Nat × Nat) := do
       if valid && available ≤ 32 then
         let selectorTable := CircuitEmitter.selectorExprs available selectors
         let some entry := blockSelector selectorTable block | throw "checked block selector is absent"
-        let some emitted := emitBlock selectorTable ⟨0, available, .konst 0⟩ entry
+        let some emitted := emitBlock selectorTable ⟨0, available, .konst 0, #[]⟩ entry
             (advice 0 available) (available + selectors) 0 block
           | throw "checked block failed to emit"
         unless emitted.yields.all (fun part => yieldSize == some part.values.size) do

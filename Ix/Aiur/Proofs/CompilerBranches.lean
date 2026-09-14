@@ -12,6 +12,8 @@ physical allocation, including the inverse columns of a default branch. -/
 namespace Aiur.Concrete.Bytecode
 open Aiur.Bytecode
 
+variable {callRanks : Array CallRank}
+
 def allocationBranchStep (shared : SharedData) (degrees : Array Nat) (acc : SharedData)
     (block : Block) : LayoutM SharedData := do
   setSharedData shared
@@ -43,8 +45,8 @@ theorem allocationBranchFold_callRanks {α : Type} (items : List α) (blockOf : 
 
 theorem allocationBranchStep_column (shared : SharedData) (degrees : Array Nat) (acc : SharedData)
     (block : Block) (initial : LayoutMState) (base column : Nat) (aligned : initial.degrees = degrees)
-    (generic : initial.callRanks = #[])
-    (effect : ∀ state : LayoutMState, state.callRanks = #[] → state.degrees = degrees →
+    (generic : initial.callRanks = callRanks)
+    (effect : ∀ state : LayoutMState, state.callRanks = callRanks → state.degrees = degrees →
       state.functionLayout.auxiliaries = shared.auxiliaries →
       column = base + ((blockLayout block).run state).2.functionLayout.auxiliaries) :
     base + ((allocationBranchStep shared degrees acc block).run initial).1.auxiliaries =
@@ -57,11 +59,11 @@ theorem allocationBranchStep_column (shared : SharedData) (degrees : Array Nat) 
 theorem allocationBranchFold {α β : Type} {items : List α} {emissions : List β}
     (blockOf : α → Block) (measure : β → Nat) (shared : SharedData) (degrees : Array Nat) (base : Nat)
     (related : List.Forall₂ (fun item emission => ∀ state : LayoutMState,
-      state.callRanks = #[] → state.degrees = degrees → state.functionLayout.auxiliaries = shared.auxiliaries →
+      state.callRanks = callRanks → state.degrees = degrees → state.functionLayout.auxiliaries = shared.auxiliaries →
       measure emission = base + ((blockLayout (blockOf item)).run state).2.functionLayout.auxiliaries)
       items emissions)
     (acc : SharedData) (initial : LayoutMState) (aligned : initial.degrees = degrees)
-    (generic : initial.callRanks = #[]) :
+    (generic : initial.callRanks = callRanks) :
     ((items.foldlM (fun acc item => allocationBranchStep shared degrees acc (blockOf item)) acc).run initial).2.degrees =
       degrees ∧
     base + ((items.foldlM (fun acc item => allocationBranchStep shared degrees acc (blockOf item)) acc).run initial).1.auxiliaries =
@@ -87,13 +89,13 @@ theorem allocationBranchLoop (branches : Array (G × Block)) (shared : SharedDat
 theorem matchLayout_allocation {β : Type} (index : ValIdx) (branches : Array (G × Block))
     (fallback : Option Block) (initial : LayoutMState) (base : Nat) (measure : β → Nat)
     {cases defaults : List β}
-    (generic : initial.callRanks = #[])
+    (generic : initial.callRanks = callRanks)
     (caseEffects : List.Forall₂ (fun pair emission => ∀ state : LayoutMState,
-      state.callRanks = #[] → state.degrees = initial.degrees → state.functionLayout.auxiliaries = initial.functionLayout.auxiliaries →
+      state.callRanks = callRanks → state.degrees = initial.degrees → state.functionLayout.auxiliaries = initial.functionLayout.auxiliaries →
       measure emission = base + ((blockLayout pair.2).run state).2.functionLayout.auxiliaries)
       branches.toList cases)
     (defaultEffects : List.Forall₂ (fun block emission => ∀ state : LayoutMState,
-      state.callRanks = #[] → state.degrees = initial.degrees →
+      state.callRanks = callRanks → state.degrees = initial.degrees →
       state.functionLayout.auxiliaries = initial.functionLayout.auxiliaries + branches.size →
       measure emission = base + ((blockLayout block).run state).2.functionLayout.auxiliaries)
       fallback.toList defaults) :
@@ -111,7 +113,7 @@ theorem matchLayout_allocation {β : Type} (index : ValIdx) (branches : Array (G
     dsimp only [loop]
     rw [allocationBranchLoop]
     exact allocationBranchFold Prod.snd measure shared initial.degrees base caseEffects shared initial rfl generic
-  have loopRanks : (loop.run initial).2.callRanks = #[] := by
+  have loopRanks : (loop.run initial).2.callRanks = callRanks := by
     dsimp only [loop]
     rw [allocationBranchLoop]
     exact (allocationBranchFold_callRanks branches.toList Prod.snd shared initial.degrees shared initial).trans generic

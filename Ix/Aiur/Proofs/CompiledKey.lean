@@ -38,11 +38,11 @@ theorem circuit_success {logBlowup mainWidth preprocessedWidth preprocessedHeigh
 
 theorem functionCircuit_success {logBlowup : Nat} {program : Bytecode.Toplevel} {source : Bytecode.Circuit}
     {result : KeyCodec.Circuit} (built : functionCircuit logBlowup program source = some result) :
-    ∃ compiled, compileCircuit (circuitWidths source) program source = some compiled ∧
+    ∃ compiled, compileNativeCircuit (circuitWidths source) program source = some compiled ∧
       result.graph = compiled.base.graph ∧ result.mainWidth = source.layout.width ∧
       result.preprocessedWidth = 0 ∧ result.preprocessedHeight = 0 ∧
       result.valid = true := by
-  cases compiled : compileCircuit (circuitWidths source) program source with
+  cases compiled : compileNativeCircuit (circuitWidths source) program source with
   | none => simp only [functionCircuit, compiled, bind, Option.bind_none, reduceCtorEq] at built
   | some output =>
     simp only [functionCircuit, compiled, bind, Option.bind_some] at built
@@ -159,6 +159,25 @@ theorem circuits_bytes {logBlowup : Nat} {program : Bytecode.Toplevel} {result :
   · rw [equal, List.getElem?_append_right (by omega), length]
     simp only [Nat.add_sub_cancel_left, List.getElem?_cons_succ, List.getElem?_cons_zero]
 
+theorem functionCircuit_reflects {logBlowup : Nat} {program : Bytecode.Toplevel} {source : Bytecode.Circuit}
+    {artifact : KeyCodec.Circuit} (built : functionCircuit logBlowup program source = some artifact)
+    {values : Values G} (fits : values.Fits artifact.widths) :
+    ∃ result buffer,
+      source.emitNativeRow (fun index => (values.columns .main .current)[index]?.getD 0) program = some result ∧
+      artifact.graph.sweep goldilocksOps values = some buffer ∧
+      (Vanishes goldilocksOps buffer artifact.graph.zeros ↔ ∀ equation ∈ result.equations, equation = 0) ∧
+      artifact.graph.lookups.mapM (readLookup buffer) =
+        some (List.ofFn fun slot : Fin result.lookupCount => result.lookup slot.val) ∧
+      0 < result.lookupCount ∧
+      (∀ part ∈ result.queries, 0 < part.slot ∧ part.slot < result.lookupCount) ∧
+      (program.callComponents.isEmpty = true → 4 ≤ result.lookupCount ∧
+        ∀ member ∈ result.members, member.body.lookup ≤ result.lookupCount) := by
+  obtain ⟨compiled, compiledEq, graph, mainWidth, _, _, _⟩ := functionCircuit_success built
+  have physical : artifact.widths.main = source.layout.width := mainWidth
+  have wide := compileNativeCircuit_widen (circuitWidths_le (Nat.le_of_eq physical.symm)) compiledEq
+  obtain ⟨result, buffer, emitted, swept, satisfied, lookups, slots⟩ := compileNativeCircuit_reflects fits wide
+  exact ⟨result, buffer, emitted, graph ▸ swept, graph ▸ satisfied, graph ▸ lookups, slots⟩
+
 theorem memoryCircuit_reflects {logBlowup width : Nat} {artifact : KeyCodec.Circuit}
     (built : memoryCircuit logBlowup width = some artifact) {values : Values G} (fits : values.Fits artifact.widths) :
     ∃ buffer, artifact.graph.sweep goldilocksOps values = some buffer ∧
@@ -246,24 +265,31 @@ theorem CompiledBackend.circuit_count {selection : Selection} (backend : Compile
   CompiledKey.circuits_length backend.circuits_bound
 
 theorem CompiledBackend.function_graph_reflects {selection : Selection} (backend : CompiledBackend selection)
-    (generic : selection.source.componentRanks = false)
     {index : Nat} {source : Bytecode.Circuit} {artifact : KeyCodec.Circuit}
     (present : backend.compiled.bytecode.circuits[index]? = some source)
     (selected : backend.keyData.circuits[index]? = some artifact)
     {values : Values G} (fits : values.Fits artifact.widths) :
     ∃ result buffer,
-      source.emitRow (fun index => (values.columns .main .current)[index]?.getD 0) backend.compiled.bytecode = some result ∧
+      source.emitNativeRow (fun index => (values.columns .main .current)[index]?.getD 0) backend.compiled.bytecode = some result ∧
       artifact.graph.sweep goldilocksOps values = some buffer ∧
       (Vanishes goldilocksOps buffer artifact.graph.zeros ↔ ∀ equation ∈ result.equations, equation = 0) ∧
       artifact.graph.lookups.mapM (readLookup buffer) =
-        some (List.ofFn fun slot : Fin result.lookupCount => result.lookup slot.val) := by
+        some (List.ofFn fun slot : Fin result.lookupCount => result.lookup slot.val) ∧
+      0 < result.lookupCount ∧
+      (∀ part ∈ result.queries, 0 < part.slot ∧ part.slot < result.lookupCount) ∧
+      (backend.compiled.bytecode.callComponents.isEmpty = true → 4 ≤ result.lookupCount ∧
+        ∀ member ∈ result.members, member.body.lookup ≤ result.lookupCount) :=
+  CompiledKey.functionCircuit_reflects (CompiledKey.circuits_function backend.circuits_bound present selected) fits
+
+theorem CompiledBackend.function_components_checked {selection : Selection} (backend : CompiledBackend selection)
+    {index : Nat} {source : Bytecode.Circuit} {artifact : KeyCodec.Circuit}
+    (present : backend.compiled.bytecode.circuits[index]? = some source)
+    (selected : backend.keyData.circuits[index]? = some artifact) :
+    backend.compiled.bytecode.callComponents.isEmpty = true ∨
+      backend.compiled.bytecode.validCallComponents = true := by
   have bound := CompiledKey.circuits_function backend.circuits_bound present selected
-  obtain ⟨compiled, built, graph, mainWidth, _, _, _⟩ := CompiledKey.functionCircuit_success bound
-  have physical : artifact.widths.main = source.layout.width := mainWidth
-  have wide := compileCircuit_widen (circuitWidths_le (Nat.le_of_eq physical.symm)) _ _ built
-  obtain ⟨result, buffer, emitted, swept, satisfied, lookups⟩ := backend.toBackend.compileCircuit_reflects
-    generic fits (Array.mem_of_getElem? present) physical wide
-  exact ⟨result, buffer, emitted, graph ▸ swept, graph ▸ satisfied, graph ▸ lookups⟩
+  obtain ⟨_, built, _⟩ := CompiledKey.functionCircuit_success bound
+  exact compileNativeCircuit_components built
 
 theorem CompiledBackend.memory_graph_reflects {selection : Selection} (backend : CompiledBackend selection)
     {index width : Nat} {artifact : KeyCodec.Circuit}

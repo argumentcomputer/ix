@@ -28,6 +28,21 @@ private theorem mapM_of_members {α β γ : Type} (items : List α) (index : α 
       ih (fun item member => present item (List.mem_cons_of_mem _ member))]
     rfl
 
+theorem Circuit.validateRowCounts_members (program : Toplevel) (circuit : Circuit)
+    (members : List MemberEmission)
+    (indices : members.map MemberEmission.functionIndex = circuit.members.toList)
+    (source : ∀ member ∈ members, program.functions[member.functionIndex]? = some member.function)
+    (validated : circuit.validateRowCounts program = true) :
+    circuit.members.size < gSize.toNat ∧
+      (∀ part ∈ members, part.function.body.controlCounts.nodes < gSize.toNat) ∧
+      (members.map (fun part => part.function.body.controlCounts.leaves)).sum ≤ circuit.layout.selectors := by
+  have present := mapM_of_members members (·.functionIndex) (·.function)
+    (fun index => program.functions[index]?) source
+  rw [indices] at present
+  rw [Circuit.validateRowCounts, present] at validated
+  simpa only [Bool.and_eq_true, decide_eq_true_eq, List.all_map, List.all_eq_true,
+    List.map_map, Function.comp_def] using validated
+
 theorem Circuit.validateRowCounts_spec (row : Nat → G) (program : Toplevel) (circuit : Circuit)
     {emission : CircuitEmission} (emitted : circuit.emitRow row program = some emission)
     (validated : circuit.validateRowCounts program = true) :
@@ -35,14 +50,10 @@ theorem Circuit.validateRowCounts_spec (row : Nat → G) (program : Toplevel) (c
       (∀ part ∈ emission.members, part.function.body.controlCounts.nodes < gSize.toNat) ∧
       (emission.members.map (fun part => part.function.body.controlCounts.leaves)).sum ≤ circuit.layout.selectors := by
   obtain ⟨_, indices, source⟩ := circuit.emitRow_spec row program emitted
-  have present := mapM_of_members emission.members (·.functionIndex) (·.function)
-    (fun index => program.functions[index]?) (fun part member => (source part member).present)
-  rw [indices] at present
-  rw [Circuit.validateRowCounts, present] at validated
-  simpa only [Bool.and_eq_true, decide_eq_true_eq, List.all_map, List.all_eq_true,
-    List.map_map, Function.comp_def] using validated
+  exact circuit.validateRowCounts_members program emission.members indices
+    (fun part member => (source part member).present) validated
 
-private theorem flatMap_length_le_sum {α β : Type} (items : List α) (parts : α → List β)
+theorem flatMap_length_le_sum {α β : Type} (items : List α) (parts : α → List β)
     (bound : α → Nat) (bounded : ∀ item ∈ items, (parts item).length ≤ bound item) :
     (items.flatMap parts).length ≤ (items.map bound).sum := by
   induction items with

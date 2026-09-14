@@ -59,10 +59,17 @@ theorem Op.allocation_outputSize (op : Op) (degrees : Array Nat) :
     | simp only [Array.size_replicate]
     | (split <;> rfl)
 
+theorem Op.allocationFor_outputSize (op : Op) (callRanks : Array CallRank) (degrees : Array Nat) :
+    (op.allocationFor callRanks degrees).degrees.size = op.outputSize := by
+  cases op <;> simp only [Op.allocationFor, Op.allocation_outputSize]
+  simp only [Op.outputSize, Array.size_replicate]
+
 end Aiur.Bytecode
 
 namespace Aiur.NativeAIR.OpEmitter
 open Bytecode
+
+variable {callRanks : Array CallRank}
 
 theorem list_mapM_defined {read : α → Option β} (inputs : List α)
     (defined : ∀ input ∈ inputs, ∃ output, read input = some output) :
@@ -95,7 +102,7 @@ theorem readWord_defined {rows : Array RowExpr} {indices : Array Nat}
     bind, Option.bind_some, pure]; rfl⟩
 
 theorem emitOp_defined (selector rank : Expr) (first : Nat) (op : Op) (rows : Array RowExpr)
-    (checked : op.emissionInputs rows.size = true) : ∃ emission, emitOp selector rank first op rows = some emission := by
+    (checked : op.emissionInputs rows.size = true) : ∃ emission, emitOp selector rank first op rows callRanks = some emission := by
   cases op with
   | const | ioGetInfo | ioRead | ioSetInfo | ioWrite | debug | unconstrainedBigUintDivMod
   | unconstrainedGToBytes | unconstrainedGInverse => exact ⟨_, rfl⟩
@@ -146,19 +153,19 @@ theorem emitOp_defined (selector rank : Expr) (first : Nat) (op : Op) (rows : Ar
 
 theorem emitOp_outputSize {selector rank : Expr} {first : Nat} {op : Op}
     {rows : Array RowExpr} {emission : Emission} (valid : DegreeValid rows)
-    (emitted : emitOp selector rank first op rows = some emission) :
+    (emitted : emitOp selector rank first op rows callRanks = some emission) :
     emission.outputs.size = op.outputSize := by
-  have allocated := congrArg (fun allocation => allocation.degrees.size) (emitOp_allocation valid emitted)
-  simpa only [Emission.allocation, rowDegrees, Array.size_map, Op.allocation_outputSize] using allocated
+  have allocated := congrArg (fun allocation => allocation.degrees.size) (emitOp_allocationFor valid emitted)
+  simpa only [Emission.allocation, rowDegrees, Array.size_map, Op.allocationFor_outputSize] using allocated
 
 theorem emitOps_defined (selector rank : Expr) (ops : List Op) (rows : Array RowExpr) (column : Nat)
     {next : Nat} (valid : DegreeValid rows) (checked : checkEmissionOps ops rows.size = some next) :
-    ∃ emission, emitOps selector rank ops rows column = some emission ∧ emission.values.size = next := by
+    ∃ emission, emitOps selector rank ops rows column callRanks = some emission ∧ emission.values.size = next := by
   induction ops generalizing rows column with
   | nil => cases checked; exact ⟨_, rfl, rfl⟩
   | cons op ops ih =>
     obtain ⟨inputs, after, added, rest⟩ := checkEmissionOps_cons checked
-    obtain ⟨first, firstEmitted⟩ := emitOp_defined selector rank column op rows inputs
+    obtain ⟨first, firstEmitted⟩ := emitOp_defined (callRanks := callRanks) selector rank column op rows inputs
     have size := emitOp_outputSize valid firstEmitted
     have nextSize : (rows ++ first.outputs).size = after := by
       simp only [Array.size_append, size, (addScope_eq added).1]

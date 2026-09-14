@@ -23,6 +23,7 @@ structure RowContext where
   function : FunIdx
   inputSize : Nat
   rank : G
+  callRanks : Array CallRank := #[]
 
 structure QueryPart where
   slot : Nat
@@ -146,7 +147,7 @@ decreasing_by
 def Block.emitRow (row : Nat → G) (selector : SelIdx → G) (context : RowContext)
     (incoming : G) (values : Array RowValue) (column lookup : Nat)
     (block : Block) : Option BlockEmission := do
-  let operations ← emitOps row incoming context.rank block.ops.toList values column
+  let operations ← emitOps row incoming context.rank block.ops.toList values column context.callRanks
   let control ← block.ctrl.emitRow row selector context incoming operations.values
     operations.column (lookup + operations.queries.length)
   return (control.afterOps incoming lookup operations).prefix

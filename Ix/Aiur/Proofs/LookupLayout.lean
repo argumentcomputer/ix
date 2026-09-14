@@ -17,8 +17,13 @@ compiler and certified semantic/cryptographic endpoint remain obligations.
 
 namespace Aiur.Bytecode
 
-def Op.lookupUsage : Op → Nat
-  | .call _ _ _ unconstrained => if unconstrained then 0 else 4
+def Op.lookupUsage (op : Op) (callRanks : Array CallRank := #[]) : Nat :=
+  match op with
+  | .call function _ _ unconstrained =>
+    if unconstrained then 0 else
+      match callRanks[function]?.getD .ordered with
+      | .zero | .bound => 1
+      | .ordered => 4
   | .store _ | .load _ _ | .u8BitDecomposition _ | .u8ShiftLeft _ | .u8ShiftRight _
   | .u8Xor .. | .u8And .. | .u8Or .. | .u8Add .. | .u8Sub .. | .u8Mul ..
   | .u8XorSplit7 .. | .u8XorSplit4 .. | .u8LessThan .. | .u8RangeCheck .. => 1
@@ -32,46 +37,48 @@ private theorem lookup_block_smaller (block : Block) : sizeOf block.ctrl < sizeO
 
 mutual
 
-def Ctrl.lookupUsage : Ctrl → Nat
+def Ctrl.lookupUsage (ctrl : Ctrl) (callRanks : Array CallRank := #[]) : Nat :=
+  match ctrl with
   | .return .. | .yield .. => 0
   | .match _ branches fallback => (
-      (branches.attach.toList.map fun ⟨pair, _⟩ => pair.2.lookupUsage) ++
-      (match fallback with | none => [] | some block => [block.lookupUsage])).foldl Nat.max 0
+      (branches.attach.toList.map fun ⟨pair, _⟩ => pair.2.lookupUsage callRanks) ++
+      (match fallback with | none => [] | some block => [block.lookupUsage callRanks])).foldl Nat.max 0
   | .matchContinue _ branches fallback _ _ _ continuation => (
-      (branches.attach.toList.map fun ⟨pair, _⟩ => pair.2.lookupUsage) ++
-      (match fallback with | none => [] | some block => [block.lookupUsage])).foldl Nat.max 0 +
-        continuation.lookupUsage
-termination_by ctrl => sizeOf ctrl
+      (branches.attach.toList.map fun ⟨pair, _⟩ => pair.2.lookupUsage callRanks) ++
+      (match fallback with | none => [] | some block => [block.lookupUsage callRanks])).foldl Nat.max 0 +
+        continuation.lookupUsage callRanks
+termination_by sizeOf ctrl
 decreasing_by
   all_goals first
     | decreasing_tactic
     | (have := Array.sizeOf_lt_of_mem ‹_ ∈ _›; grind)
 
-def Block.lookupUsage (block : Block) : Nat :=
-  (block.ops.toList.map Op.lookupUsage).sum + block.ctrl.lookupUsage
+def Block.lookupUsage (block : Block) (callRanks : Array CallRank := #[]) : Nat :=
+  (block.ops.toList.map (fun op => op.lookupUsage callRanks)).sum + block.ctrl.lookupUsage callRanks
 termination_by sizeOf block
 decreasing_by exact lookup_block_smaller block
 
 end
 
-def branchLookupUsage (branches : Array (G × Block)) (fallback : Option Block) : Nat :=
-  (branches.toList.map (fun pair => pair.2.lookupUsage) ++
-    fallback.toList.map (fun block => block.lookupUsage)).foldl Nat.max 0
+def branchLookupUsage (branches : Array (G × Block)) (fallback : Option Block)
+    (callRanks : Array CallRank := #[]) : Nat :=
+  (branches.toList.map (fun pair => pair.2.lookupUsage callRanks) ++
+    fallback.toList.map (fun block => block.lookupUsage callRanks)).foldl Nat.max 0
 
-theorem Ctrl.lookupUsage_match (index : ValIdx) (branches : Array (G × Block)) (fallback : Option Block) :
-    (Ctrl.match index branches fallback).lookupUsage = branchLookupUsage branches fallback := by
+theorem Ctrl.lookupUsage_match (index : ValIdx) (branches : Array (G × Block)) (fallback : Option Block) {callRanks : Array CallRank} :
+    (Ctrl.match index branches fallback).lookupUsage callRanks = branchLookupUsage branches fallback callRanks := by
   rw [Ctrl.lookupUsage.eq_def]
   simp only [branchLookupUsage, Array.toList_attach]
-  rw [List.attachWith_map_val (f := fun pair : G × Block => pair.2.lookupUsage)]
+  rw [List.attachWith_map_val (f := fun pair : G × Block => pair.2.lookupUsage callRanks)]
   cases fallback <;> rfl
 
 theorem Ctrl.lookupUsage_matchContinue (index : ValIdx) (branches : Array (G × Block))
-    (fallback : Option Block) (outputs aux lookups : Nat) (continuation : Block) :
-    (Ctrl.matchContinue index branches fallback outputs aux lookups continuation).lookupUsage =
-      branchLookupUsage branches fallback + continuation.lookupUsage := by
+    (fallback : Option Block) (outputs aux lookups : Nat) (continuation : Block) {callRanks : Array CallRank} :
+    (Ctrl.matchContinue index branches fallback outputs aux lookups continuation).lookupUsage callRanks =
+      branchLookupUsage branches fallback callRanks + continuation.lookupUsage callRanks := by
   rw [Ctrl.lookupUsage.eq_def]
   simp only [branchLookupUsage, Array.toList_attach]
-  rw [List.attachWith_map_val (f := fun pair : G × Block => pair.2.lookupUsage)]
+  rw [List.attachWith_map_val (f := fun pair : G × Block => pair.2.lookupUsage callRanks)]
   cases fallback <;> rfl
 
 end Aiur.Bytecode
@@ -123,7 +130,7 @@ theorem opLayout_lookupUsage (op : Op) (initial : LayoutMState)
 private theorem ops_fold_lookupUsage (ops : List Op) (initial : LayoutMState)
     (generic : initial.callRanks = #[]) :
     ((ops.foldlM (fun _ op => opLayout op) ()).run initial).2.functionLayout.lookups =
-      initial.functionLayout.lookups + (ops.map Op.lookupUsage).sum := by
+      initial.functionLayout.lookups + (ops.map (fun op => op.lookupUsage)).sum := by
   induction ops generalizing initial with
   | nil => rfl
   | cons op ops ih =>
@@ -135,7 +142,7 @@ private theorem ops_fold_lookupUsage (ops : List Op) (initial : LayoutMState)
 theorem opsLayout_lookupUsage (ops : Array Op) (initial : LayoutMState)
     (generic : initial.callRanks = #[]) :
     ((ops.forM opLayout).run initial).2.functionLayout.lookups =
-      initial.functionLayout.lookups + (ops.toList.map Op.lookupUsage).sum := by
+      initial.functionLayout.lookups + (ops.toList.map (fun op => op.lookupUsage)).sum := by
   unfold Array.forM
   rw [← Array.foldlM_toList]
   exact ops_fold_lookupUsage ops.toList initial generic
@@ -271,10 +278,12 @@ end Aiur.Bytecode
 namespace Aiur.AIR
 open Bytecode
 
+variable {callRanks : Array CallRank}
+
 theorem emitOp_lookupUsage {row : Nat → G} {selector rank : G} {op : Op}
     {values : Array RowValue} {emission : OpEmission}
-    (emitted : emitOp row selector rank op values = some emission) :
-    emission.queries.length = op.lookupUsage := by
+    (emitted : emitOp row selector rank op values callRanks = some emission) :
+    emission.queries.length = op.lookupUsage callRanks := by
   cases op <;> simp only [emitOp, emitByte1, emitByte2, emitU32LessThan, emitU32Add,
     emitAdvice, bind, Option.bind, Option.map, pure] at emitted
   all_goals
@@ -282,12 +291,13 @@ theorem emitOp_lookupUsage {row : Nat → G} {selector rank : G} {op : Op}
       | split at emitted
       | (dsimp only at emitted; split at emitted)
   all_goals cases emitted
-  all_goals simp_all [Op.lookupUsage, rankByteQueries, range4Queries]
+  all_goals simp_all [Op.lookupUsage, emitCallRow, callRangeQueries, rankByteQueries, range4Queries]
+  all_goals split <;> simp_all
 
 theorem emitOps_lookupUsage {row : Nat → G} {selector rank : G} {ops : List Op}
     {values : Array RowValue} {column : Nat} {emission : OpsEmission}
-    (emitted : emitOps row selector rank ops values column = some emission) :
-    emission.queries.length = (ops.map Op.lookupUsage).sum := by
+    (emitted : emitOps row selector rank ops values column callRanks = some emission) :
+    emission.queries.length = (ops.map (fun op => op.lookupUsage callRanks)).sum := by
   induction ops generalizing values column emission with
   | nil =>
     have equal := Option.some.inj emitted
@@ -312,11 +322,11 @@ end Aiur.AIR
 namespace Aiur.Bytecode
 open Aiur.AIR
 
-private theorem lookup_fold_related {blocks : List Block} {emissions : List BlockEmission} {lookup : Nat}
-    (related : List.Forall₂ (fun block emission => emission.lookup = lookup + block.lookupUsage) blocks emissions)
+private theorem lookup_fold_related {callRanks : Array CallRank} {blocks : List Block} {emissions : List BlockEmission} {lookup : Nat}
+    (related : List.Forall₂ (fun block emission => emission.lookup = lookup + block.lookupUsage callRanks) blocks emissions)
     (acc : Nat) :
     emissions.foldl (fun value emission => max value emission.lookup) (lookup + acc) =
-      lookup + (blocks.map Block.lookupUsage).foldl Nat.max acc := by
+      lookup + (blocks.map (fun block => block.lookupUsage callRanks)).foldl Nat.max acc := by
   induction related generalizing acc with
   | nil => rfl
   | cons first rest ih =>
@@ -329,12 +339,12 @@ theorem branchRows_lookupUsage (row : Nat → G) (selector : SelIdx → G) (cont
     (emitted : branchRows row selector context matched values column lookup branches fallback = some emission)
     (caseSound : ∀ pair ∈ branches.toList, ∀ emission,
       pair.2.emitRow row selector context (pair.2.selectorFlow selector).entry values column lookup = some emission →
-      emission.lookup = lookup + pair.2.lookupUsage)
+      emission.lookup = lookup + pair.2.lookupUsage context.callRanks)
     (defaultSound : ∀ block, fallback = some block → ∀ emission,
       block.emitRow row selector context (block.selectorFlow selector).entry values
         (column + branches.size) lookup = some emission →
-      emission.lookup = lookup + block.lookupUsage) :
-    emission.lookup = lookup + branchLookupUsage branches fallback := by
+      emission.lookup = lookup + block.lookupUsage context.callRanks) :
+    emission.lookup = lookup + branchLookupUsage branches fallback context.callRanks := by
   simp only [branchRows, bind, Option.bind] at emitted
   split at emitted
   · cases emitted
@@ -345,7 +355,7 @@ theorem branchRows_lookupUsage (row : Nat → G) (selector : SelIdx → G) (cont
     · rename_i default defaultEmitted
       have equal := Option.some.inj emitted
       subst emission
-      have casesRelated : List.Forall₂ (fun block emission => emission.lookup = lookup + block.lookupUsage)
+      have casesRelated : List.Forall₂ (fun block emission => emission.lookup = lookup + block.lookupUsage context.callRanks)
           (branches.toList.map Prod.snd) cases := by
         apply forall₂_map_left
         apply mapM_forall₂ casesEmitted
@@ -357,7 +367,7 @@ theorem branchRows_lookupUsage (row : Nat → G) (selector : SelIdx → G) (cont
           have equal := Option.some.inj emitted
           subst emission
           exact caseSound pair member body bodyEmitted
-      have defaultRelated : List.Forall₂ (fun block emission => emission.lookup = lookup + block.lookupUsage)
+      have defaultRelated : List.Forall₂ (fun block emission => emission.lookup = lookup + block.lookupUsage context.callRanks)
           fallback.toList default := by
         cases fallbackEq : fallback with
         | none =>
@@ -392,7 +402,7 @@ theorem Ctrl.emitRow_lookupUsage (row : Nat → G) (selector : SelIdx → G) (co
     (incoming : G) (values : Array RowValue) (column lookup : Nat) (ctrl : Ctrl)
     {emission : BlockEmission}
     (emitted : ctrl.emitRow row selector context incoming values column lookup = some emission) :
-    emission.lookup = lookup + ctrl.lookupUsage := by
+    emission.lookup = lookup + ctrl.lookupUsage context.callRanks := by
   cases ctrlEq : ctrl with
   | «return» index indices =>
     rw [ctrlEq] at emitted
@@ -475,7 +485,7 @@ theorem Block.emitRow_lookupUsage (row : Nat → G) (selector : SelIdx → G) (c
     (incoming : G) (values : Array RowValue) (column lookup : Nat) (block : Block)
     {emission : BlockEmission}
     (emitted : block.emitRow row selector context incoming values column lookup = some emission) :
-    emission.lookup = lookup + block.lookupUsage := by
+    emission.lookup = lookup + block.lookupUsage context.callRanks := by
   rw [Block.emitRow] at emitted
   simp only [bind, Option.bind] at emitted
   split at emitted

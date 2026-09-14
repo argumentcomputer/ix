@@ -67,9 +67,9 @@ open Aiur.AIR
 
 theorem Function.emitRow_terminal_writers (row : Nat → G) (selector : SelIdx → G)
     (function : Function) (functionIndex : FunIdx) (rank : G)
-    (inputs : Array RowValue) (column lookup : Nat) {emission : BlockEmission}
+    (inputs : Array RowValue) (column lookup : Nat) {emission : BlockEmission} {callRanks : Array CallRank}
     (terminal : function.hasTerminalControl = true)
-    (emitted : function.emitRow row selector functionIndex rank inputs column lookup = some emission) :
+    (emitted : function.emitRow row selector functionIndex rank inputs column lookup callRanks = some emission) :
     QueryWriters lookup emission.lookup emission.queries := by
   rw [Function.emitRow, Block.emitRow] at emitted
   simp only [bind, Option.bind] at emitted

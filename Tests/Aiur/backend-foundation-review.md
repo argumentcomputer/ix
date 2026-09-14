@@ -50,3 +50,55 @@ compatibility snapshots, and a retuned-key corpus covering 12 systems,
 180 circuits, 720 assignments and 168 rejected validly encoded alterations.
 The full `check-aiur` gate additionally compares the current report byte for
 byte with the frozen manifest.
+
+## Native component and physical-trace execution
+
+The next reviewed boundary extends destination checkpoint
+`11be019508abe48573cdb11063c3db8b40f1c607`. It adds 167 roots and 72 premise
+definitions: 1,741 roots and 1,060 premises in total. The previous boundary
+retains every root, premise and worker. Fifty existing root statements and
+20 premise sections change; six worker implementations change and seven
+workers are added, for 204 workers. Existing root axiom sets are unchanged.
+The new roots use only the standard Lean axioms: one is axiom-free, ten use
+`propext`, 35 also use `Quot.sound`, and 121 also use `Classical.choice`.
+
+| Boundary | Reviewed meaning |
+| --- | --- |
+| Shared operation, block and member emission | An explicit call-rank table selects zero, boundary or ordered layout. Execution, call inventories, inactive rows, input preservation, auxiliary allocation and lookup cursors carry that same table. The empty-table default retains the fallback semantics. |
+| `CallRankChecks`, component edge collection and finite execution | Every call still has its complete function message. Only same-component calls require gap ranges and the derived order equation. The actual constrained calls are included in the checked bytecode edge inventory. A boundary call's rank is bound by its active callee provider; an acyclic provider returns rank zero. |
+| Component circuit members, queries and returns | Each member starts at its native column and slot offsets. Rank-range messages are gated by ranked members. Boolean selectors and checked branch/return counts imply query exclusivity, return selection and the terminal single-writer condition, including mixed circuits and empty circuits. |
+| `compileNativeCircuit`, `CompiledKey.functionCircuit`, `CompiledKey.check` | The compared key chooses its emission policy from the actual component table. The global check rejects malformed nonempty component tables even when there are no function circuits. Constructors check physical read bounds, positive slot counts, raw query slot ranges and fallback member extents. Lookup retuning remains part of exact key equality. |
+| `CompiledBackend.function_graph_reflects` | The former generic-layout premise is removed. The conclusion uses the selected native emitter and derives positive slot counts and bounds. Array widths and the successful checked constructor supply all physical reads; no graph-equality premise is added. |
+| Component rows and the global pool | Provisional physical providers are interpreted before local execution is established. A single padded balance and a consumer count below the characteristic supply active callees and byte ranges. Local validity of the provisional table and separate function/byte balance are not premises of the physical endpoint. |
+| `GraphSatisfied`, `graphLookupData`, `graph_trace_execution` | Function and memory matrices follow the actual key order and active-height metadata. Finite physical main rows supply valued witnesses. Every graph lookup is preserved in row/slot order; slot zero remains a provider regardless of its field multiplicity. Canonical byte columns and memory graph lookups supply the other providers. The endpoint proves the selected finite execution and functional memory. |
+| Key trace metadata and `checked_graph_trace_execution` | Physical graph slot counts equal the execution trace's logical counts, including fallback/component layouts and all auxiliary tables. Fixed heights also agree. Matching the extracted trace bitmap and degrees to `CheckedProof` therefore supplies the exact budget already enforced during proof decoding, independently of lookup grouping. |
+
+The new workers traverse component members, canonical function/memory traces,
+their graph-satisfaction predicates and graph lookup extraction. The six
+changed workers forward the selected mode table through the existing valued,
+symbolic and lookup-usage traversals. Each has a checked safe source. The
+four native externs, three partial Hashable/Repr sources and empty additional
+unsafe/replacement inventories are unchanged; `Ix.Compiler` remains excluded.
+
+The theorem's remaining inputs are physical base-graph satisfaction, canonical
+fixed preprocessing, trace activation/height metadata, a checked logical-slot
+budget, message widths and exact padded balance. PCS must authenticate those
+traces and preprocessing; randomized lookup soundness must derive balance.
+Compiler-to-source reflection and guest/kernel soundness are separate later
+contracts. This endpoint is not an acceptance-to-no-False theorem.
+
+The native key corpus now covers 24 systems, 360 circuits and 1,440 arbitrary
+assignments. It rejects 336 validly encoded altered keys and 48 invalid
+component certificates. A separate production-image check reconstructs the
+pruned, grouped `verify_claim` image: 793 functions, 181 function circuits and
+201 total key circuits. All native graphs, dimensions, lookup groups and
+degrees match the checked key. Its 915,765-byte key uses explicit test
+protocol parameters and is not a pinned production security release.
+
+The full `check-aiur` gate passes: 605 strict build jobs, exact audit-manifest
+comparison, four unchanged compiler snapshots, all 40 native/model corpora,
+the production-image key check and backend acceptance/rejection tests.
+Parallel release Rust tests pass (112 enabled tests), as do Clippy and
+formatting. The selected integration suites, all three code-generation
+comparisons and the complete 83-fixture IxVM corpus also pass. The generated
+images and shard FFT cost of 8,523,899,042 are unchanged.

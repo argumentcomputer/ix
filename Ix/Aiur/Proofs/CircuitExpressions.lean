@@ -64,11 +64,12 @@ theorem Member.eval_components {values : Values G} {member : Member} {result : A
   exact ⟨rfl, rfl, rfl, bodyEval⟩
 
 def emitMember (rank : Expr) (column lookup selectorBase : Nat)
-    (program : Bytecode.Toplevel) (functionIndex : Nat) : Option Member := do
+    (program : Bytecode.Toplevel) (functionIndex : Nat)
+    (callRanks : Array Bytecode.CallRank := #[]) : Option Member := do
   let function ← program.functions[functionIndex]?
   let selectors := selectorExprs selectorBase function.layout.selectors
   let entry ← blockSelector selectors function.body
-  let body ← emitBlock selectors ⟨functionIndex, function.layout.inputSize, rank⟩ entry
+  let body ← emitBlock selectors ⟨functionIndex, function.layout.inputSize, rank, callRanks⟩ entry
     (advice 0 function.layout.inputSize) column lookup function.body
   return ⟨functionIndex, function, selectorBase, entry, body⟩
 

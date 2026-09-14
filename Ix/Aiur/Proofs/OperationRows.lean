@@ -125,13 +125,46 @@ def emitU32Add (row : Nat → G) (left right : Array ValIdx)
   return { outputs := bytes.push ⟨(sum.value - packed.value) * 0xfffffffe00000002,
       max sum.degree packed.degree, false⟩, used := 4 }
 
+def callAuxiliaries : CallRank → Nat
+  | .zero => 0
+  | .bound => 1
+  | .ordered => 6
+
+def callGap (mode : CallRank) (row : Nat → G) (size : Nat) : Fin 6 → G :=
+  match mode with
+  | .ordered => fun index => row (size + index.val)
+  | .zero | .bound => fun _ => 0
+
+def calleeRank (mode : CallRank) (row : Nat → G) (rank : G) (size : Nat) : G :=
+  match mode with
+  | .zero => 0
+  | .bound => row size
+  | .ordered => rank + 1 + packRank (callGap mode row size)
+
+def callRangeQueries (mode : CallRank) (gap : Fin 6 → G) : List (List G) :=
+  match mode with
+  | .ordered => (rankByteQueries gap).map rangeMessage
+  | .zero | .bound => []
+
+/-- Boundary calls bind the selected callee rank in the complete function
+message. Only an ordered call allocates and queries a six-byte gap. -/
+def emitCallRow (row : Nat → G) (rank : G) (function : FunIdx) (inputs : Array G)
+    (size : Nat) (mode : CallRank) : OpEmission :=
+  let outputs := rowAdvice row 0 size
+  let gap := callGap mode row size
+  let request : Bytecode.AIR.Call :=
+    ⟨function, inputs, rowValues outputs, calleeRank mode row rank size⟩
+  { outputs, used := size + callAuxiliaries mode
+    queries := functionMessage request :: callRangeQueries mode gap
+    calls := [(request, gap)] }
+
 /-- Valued model of one native operation. Invalid reads and malformed word
 widths return `none`. Constant `eq_zero` inputs with positive tracked degree
 use the ordinary two-column emission, preserving the compiled layout.
 Store operands are checked in the incoming logical scope; identifying that
 scope with the Rust emitter's post-pointer reads requires index validity. -/
 def emitOp (row : Nat → G) (selector rank : G) (op : Op)
-    (values : Array RowValue) : Option OpEmission :=
+    (values : Array RowValue) (callRanks : Array CallRank := #[]) : Option OpEmission :=
   match op with
   | .const value => some { outputs := #[RowValue.konst value] }
   | .add a b => do return { outputs := #[(← values[a]?).add (← values[b]?)] }
@@ -156,14 +189,7 @@ def emitOp (row : Nat → G) (selector rank : G) (op : Op)
     if unconstrained then some (emitAdvice row size)
     else do
       let inputs ← Bytecode.AIR.readValues (rowValues values) indices
-      let outputs := rowAdvice row 0 size
-      let gap : Fin 6 → G := fun index => row (size + index.val)
-      let request : Bytecode.AIR.Call :=
-        ⟨function, inputs, rowValues outputs, rank + 1 + packRank gap⟩
-      return {
-        outputs, used := size + 6
-        queries := functionMessage request :: (rankByteQueries gap).map rangeMessage,
-        calls := [(request, gap)] }
+      return emitCallRow row rank function inputs size (callRanks[function]?.getD .ordered)
   | .store indices => do
     let contents ← Bytecode.AIR.readValues (rowValues values) indices
     return {
@@ -384,7 +410,8 @@ theorem emitOp_step {tables : LookupTables} {width : Nat} {queries : List (List 
     (canonical : ∀ size ∈ tables.memoryWidths, size < gSize.toNat)
     {program : Toplevel} {op : Op} (shape : op.lookupShape program = true)
     {row : Nat → G} {selector rank : G} {values : Array RowValue} {emission : OpEmission}
-    (emitted : emitOp row selector rank op values = some emission)
+    {callRanks : Array CallRank}
+    (emitted : emitOp row selector rank op values callRanks = some emission)
     (active : selector = 1) (satisfied : ∀ equation ∈ emission.equations, equation = 0)
     (queried : emission.queries ⊆ queries) :
     Bytecode.AIR.Step (memoryFacts tables.memory) op (rowValues values)
@@ -480,7 +507,7 @@ theorem emitOp_step {tables : LookupTables} {width : Nat} {queries : List (List 
         subst emission
         exact Bytecode.AIR.Step.call
           (request := ⟨function, inputs, rowValues (rowAdvice row 0 size),
-            rank + 1 + packRank (fun index => row (size + index.val))⟩)
+            calleeRank (callRanks[function]?.getD .ordered) row rank size⟩)
           read (rowValues_advice_size row 0 size)
   | store indices =>
     have widthBound : indices.size < gSize.toNat := by
@@ -607,12 +634,14 @@ structure OpsEmission where
 
 /-- Native operation order, including the logical map extension and exact
 advance of the auxiliary-column cursor after each operation. -/
-def emitOps (row : Nat → G) (selector rank : G) :
-    List Op → Array RowValue → Nat → Option OpsEmission
-  | [], values, column => some { values, column }
-  | op :: ops, values, column => do
-    let first ← emitOp (fun i => row (column + i)) selector rank op values
-    let rest ← emitOps row selector rank ops (values ++ first.outputs) (column + first.used)
+def emitOps (row : Nat → G) (selector rank : G) (ops : List Op)
+    (values : Array RowValue) (column : Nat) (callRanks : Array CallRank := #[]) :
+    Option OpsEmission :=
+  match ops with
+  | [] => some { values, column }
+  | op :: ops => do
+    let first ← emitOp (fun i => row (column + i)) selector rank op values callRanks
+    let rest ← emitOps row selector rank ops (values ++ first.outputs) (column + first.used) callRanks
     return { rest with
       equations := first.equations ++ rest.equations
       queries := first.queries ++ rest.queries
@@ -628,7 +657,8 @@ theorem emitOps_run {tables : LookupTables} {width : Nat} {queries : List (List 
     (canonical : ∀ size ∈ tables.memoryWidths, size < gSize.toNat)
     {program : Toplevel} {ops : List Op} (shapes : ∀ op ∈ ops, op.lookupShape program = true)
     {row : Nat → G} {selector rank : G} {values : Array RowValue} {column : Nat}
-    {emission : OpsEmission} (emitted : emitOps row selector rank ops values column = some emission)
+    {emission : OpsEmission} {callRanks : Array CallRank}
+    (emitted : emitOps row selector rank ops values column callRanks = some emission)
     (active : selector = 1) (satisfied : ∀ equation ∈ emission.equations, equation = 0)
     (queried : emission.queries ⊆ queries) :
     Bytecode.AIR.RunOps (memoryFacts tables.memory) ops (rowValues values)

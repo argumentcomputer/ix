@@ -348,6 +348,9 @@ lean_exe «aiur-key-codec-tests» where
 lean_exe «aiur-compiled-key-tests» where
   root := `Tests.Aiur.CompiledKey
 
+lean_exe «aiur-production-key-tests» where
+  root := `Tests.Aiur.ProductionKey
+
 lean_exe «aiur-proof-codec-tests» where
   root := `Tests.Aiur.ProofCodec
 
@@ -639,6 +642,7 @@ script "check-aiur" := do
     "aiur-expression-graph-tests", "aiur-constant-degree-tests", "aiur-frontend-expression-tests",
     "aiur-graph-compilation-tests", "aiur-operation-expression-tests", "aiur-block-expression-tests",
     "aiur-circuit-expression-tests", "aiur-emission-check-tests", "aiur-key-codec-tests", "aiur-compiled-key-tests",
+    "aiur-production-key-tests",
     "aiur-proof-codec-tests", "aiur-proof-shape-tests", "aiur-extension-tests", "aiur-logup-tests", "aiur-domain-tests",
     "aiur-verifier-arithmetic-tests", "aiur-transcript-tests", "aiur-blake3-tests", "aiur-merkle-cap-tests",
     "aiur-merkle-tests", "aiur-pruned-merkle-tests", "aiur-extension-mmcs-tests", "aiur-fri-domain-tests",
@@ -679,6 +683,7 @@ script "check-aiur" := do
   run ".lake/build/bin/aiur-hoisting-tests"
   run ".lake/build/bin/aiur-air-tests"
   run ".lake/build/bin/aiur-constant-degree-tests"
+  run ".lake/build/bin/aiur-production-key-tests"
   IO.FS.withTempDir fun directory => do
     let snapshot := directory / "native-byte-gadgets.bin"
     let shapeSnapshot := directory / "native-lookup-shapes.bin"
@@ -806,4 +811,3 @@ script "check-aiur" := do
   run ".lake/build/bin/aiur-backend-tests"
   IO.println "Aiur component checks passed: exact proof/runtime boundaries, compiler compatibility and native binding."
   return 0
-

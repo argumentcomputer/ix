@@ -41,6 +41,7 @@ import Ix.Aiur.Proofs.CircuitCompletion
 import Ix.Aiur.Proofs.CheckedCircuit
 import Ix.Aiur.Proofs.KeyArtifact
 import Ix.Aiur.Proofs.CompiledKey
+import Ix.Aiur.Proofs.NativeExecutionAudit
 import Ix.Aiur.Proofs.ShapedVerifier
 import Ix.Aiur.Proofs.ExtensionField
 import Ix.Aiur.Proofs.LogUpAccumulator
@@ -3364,10 +3365,10 @@ def friQueryPremises : Array Lean.Name := #[
   `Aiur.NativeAIR.FriQuery.run,
   `Aiur.NativeAIR.FriQuery.check]
 
-/-! The migration retains generic dynamic-rank extraction and makes that
-layout premise explicit. Component relayout preserves evaluator behavior;
-physical extraction for every component rank mode is a separate obligation.
-Lookup retuning preserves authored fields and is included in key equality. -/
+/-! Generic defaults remain available. The native execution roots derive
+the selected rank policy from the checked component table. Relayout preserves
+evaluator behavior; lookup retuning preserves authored fields and participates
+in the enforced key comparison. -/
 def optimizedLayoutRoots : Array Lean.Name := #[
   `Aiur.AIR.callOrderConstraint_derived,
   `Aiur.AIR.EquationAvailable.mono,
@@ -3439,7 +3440,7 @@ def optimizedLayoutPremises : Array Lean.Name := #[
   `Aiur.NativeAIR.LookupGroups.retune,
   `Aiur.NativeAIR.LookupGroups.AuthoredFields]
 
-def roots : Array Lean.Name := optimizedLayoutRoots ++ #[
+def roots : Array Lean.Name := nativeExecutionRoots ++ optimizedLayoutRoots ++ #[
   `Aiur.G.ofNat_n, `Aiur.G.mul_one, `Aiur.G.mul_zero,
   `Aiur.AIR.inactive_multiplicity_zero,
   `Aiur.AIR.nonzero_multiplicity_active, `Aiur.AIR.active_satisfies,
@@ -3477,7 +3478,7 @@ def roots : Array Lean.Name := optimizedLayoutRoots ++ #[
     selectorControlRoots ++ operationRowRoots ++ blockRowRoots ++ querySlotRoots ++ circuitRowRoots ++
     rowCountRoots ++ circuitTableRoots ++ branchlessRoots ++ circuitTraceRoots ++ circuitMembershipRoots ++ lookupLayoutRoots ++ memoryColumnRoots ++ byteColumnRoots ++ expressionGraphRoots ++ frontendExpressionRoots ++ graphCompilationRoots ++ operationExpressionRoots ++ blockCircuitRoots ++ allocationRoots ++ circuitAllocationRoots ++ circuitCompletionRoots ++ checkedCircuitRoots ++ keyCodecRoots ++ compiledKeyRoots ++ proofAcceptanceRoots ++ extensionRoots ++ logUpRoots ++ domainRoots ++ verifierArithmeticRoots ++ transcriptRoots ++ blake3Roots ++ merkleCapRoots ++ merkleRoots ++ prunedMerkleRoots ++ extensionMmcsRoots ++ friDomainRoots ++ polynomialRoots ++ interpolationRoots ++ foldingRoots ++ friQueryRoots
 
-def premises : Array Lean.Name := optimizedLayoutPremises ++ #[
+def premises : Array Lean.Name := nativeExecutionPremises ++ optimizedLayoutPremises ++ #[
   `Aiur.AIR.activityConstraint,
   `Aiur.Bytecode.Eval.SameCode.mk,
   `Aiur.finishCompilation,
@@ -3799,7 +3800,12 @@ run_cmd do
     throwError "Aiur consistency components depend on the excluded compiler library"
   for root in roots do
     let some info := env.checked.get.find? root | throwError "C8 component audit: missing root {root}"
-    let expected := if optimizedLayoutRoots.contains root then
+    let expected := if nativeExecutionRoots.contains root then
+        if nativeExecutionAxiomFreeRoots.contains root then #[]
+        else if nativeExecutionPropextRoots.contains root then #[``propext]
+        else if nativeExecutionQuotRoots.contains root then #[``propext, ``Quot.sound]
+        else #[``propext, ``Classical.choice, ``Quot.sound]
+      else if optimizedLayoutRoots.contains root then
         if root == `Aiur.NativeAIR.LookupGroups.withGroup_authored then #[]
         else if optimizedLayoutPropextRoots.contains root then #[``propext]
         else if optimizedLayoutQuotRoots.contains root then #[``propext, ``Quot.sound]
@@ -4030,4 +4036,4 @@ run_cmd do
   logInfo m!"C8 component ROOTS {roots.size}; LOGICAL DECLARATIONS {logical.size}; WITH RUNTIME {reachable.length}"
   logInfo m!"IX RUNTIME EXTERNS {externs}\nPARTIAL OPAQUE SOURCES {partials}\nOTHER UNSAFE RUNTIME {runtime}\nRECURSION WORKERS {workers.size}"
   logInfo "Runtime diagnostics cover Ix modules, including private constants. Lean/Std runtime primitives remain an external execution boundary. Partial opaque implementations are inventoried, not proved to refine their logical defaults."
-  logInfo "The runtime inventory and theorem premises are frozen separately. These roots do not establish full compiler/AIR reflection or public certified claim semantics."
+  logInfo "The runtime inventory and theorem premises are frozen separately. These roots do not establish compiler-to-source semantic reflection, authenticated proof traces or public certified claim semantics."

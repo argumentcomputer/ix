@@ -16,16 +16,16 @@ namespace Aiur.AIR
 open Bytecode
 
 structure MemberEmission.FromProgram (row : Nat → G) (rank : G) (column lookup : Nat)
-    (program : Toplevel) (member : MemberEmission) : Prop where
+    (program : Toplevel) (member : MemberEmission) (callRanks : Array CallRank := #[]) : Prop where
   present : program.functions[member.functionIndex]? = some member.function
   emitted : member.function.emitRow row (member.selector row) member.functionIndex rank
-    (rowAdvice row 0 member.function.layout.inputSize) column lookup = some member.body
+    (rowAdvice row 0 member.function.layout.inputSize) column lookup callRanks = some member.body
 
 theorem emitMember_spec (row : Nat → G) (rank : G) (column lookup selectorBase : Nat)
-    (program : Toplevel) (functionIndex : FunIdx) {member : MemberEmission}
-    (emitted : emitMember row rank column lookup selectorBase program functionIndex = some member) :
+    (program : Toplevel) (functionIndex : FunIdx) {member : MemberEmission} {callRanks : Array CallRank}
+    (emitted : emitMember row rank column lookup selectorBase program functionIndex callRanks = some member) :
     member.functionIndex = functionIndex ∧ member.selectorBase = selectorBase ∧
-      member.FromProgram row rank column lookup program := by
+      member.FromProgram row rank column lookup program callRanks := by
   simp only [emitMember, bind, Option.bind] at emitted
   split at emitted
   · cases emitted
@@ -69,7 +69,8 @@ theorem emitMembers_spec (row : Nat → G) (rank : G) (column lookup selectorBas
         · exact remaining item tail
 
 theorem MemberEmission.FromProgram.selector_satisfied {row : Nat → G} {rank : G} {column lookup : Nat}
-    {program : Toplevel} {member : MemberEmission} (source : member.FromProgram row rank column lookup program)
+    {program : Toplevel} {member : MemberEmission} {callRanks : Array CallRank}
+    (source : member.FromProgram row rank column lookup program callRanks)
     (satisfied : ∀ equation ∈ member.body.equations, equation = 0) :
     (member.function.body.selectorFlow (member.selector row)).Satisfied := by
   have emitted := source.emitted
@@ -100,9 +101,8 @@ theorem circuitEmission_member_boolean {row : Nat → G} {rank : G} {column look
   exact member.function.body.selectorFlow_boolean (member.selector row)
     ((source member present).selector_satisfied (circuitEmission_member_satisfied satisfied present))
 
-theorem circuitEmission_boolean {row : Nat → G} {rank : G} {column lookup : Nat}
-    {program : Toplevel} {circuit : Circuit} {members : List MemberEmission}
-    (source : ∀ member ∈ members, member.FromProgram row rank column lookup program)
+theorem circuitEmission_boolean_of_members {row : Nat → G} {circuit : Circuit} {members : List MemberEmission}
+    (individual : ∀ member ∈ members, booleanConstraint (member.entry row) = 0)
     (count : members.length = circuit.members.size)
     (satisfied : ∀ equation ∈ (circuitEmission row circuit members).equations, equation = 0) :
     booleanConstraint (circuitEmission row circuit members).selector = 0 := by
@@ -124,12 +124,20 @@ theorem circuitEmission_boolean {row : Nat → G} {rank : G} {column lookup : Na
     | cons member rest =>
       have empty : rest = [] := List.length_eq_zero_iff.mp (by simp only [List.length_cons] at bounded; omega)
       subst rest
-      have boolean := circuitEmission_member_boolean source satisfied member List.mem_cons_self
+      have boolean := individual member List.mem_cons_self
       change booleanConstraint (selectorSum [member.entry row]) = 0
       rw [selectorSum_cons]
       change booleanConstraint (member.entry row + 0) = 0
       rw [G.add_zero]
       exact boolean
+
+theorem circuitEmission_boolean {row : Nat → G} {rank : G} {column lookup : Nat}
+    {program : Toplevel} {circuit : Circuit} {members : List MemberEmission}
+    (source : ∀ member ∈ members, member.FromProgram row rank column lookup program)
+    (count : members.length = circuit.members.size)
+    (satisfied : ∀ equation ∈ (circuitEmission row circuit members).equations, equation = 0) :
+    booleanConstraint (circuitEmission row circuit members).selector = 0 :=
+  circuitEmission_boolean_of_members (circuitEmission_member_boolean source satisfied) count satisfied
 
 end Aiur.AIR
 

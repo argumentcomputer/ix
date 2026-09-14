@@ -16,7 +16,8 @@ namespace Aiur.AIR
 open Bytecode
 
 theorem MemberEmission.FromProgram.return_gates {row : Nat → G} {rank : G} {column lookup : Nat}
-    {program : Toplevel} {member : MemberEmission} (source : member.FromProgram row rank column lookup program)
+    {program : Toplevel} {member : MemberEmission} {callRanks : Array CallRank}
+    (source : member.FromProgram row rank column lookup program callRanks)
     (satisfied : ∀ equation ∈ member.body.equations, equation = 0) :
     member.body.returns.map Prod.fst = (member.function.body.selectorFlow (member.selector row)).returns := by
   have emitted := source.emitted
@@ -26,7 +27,8 @@ theorem MemberEmission.FromProgram.return_gates {row : Nat → G} {rank : G} {co
     (source.selector_satisfied satisfied) rfl)
 
 theorem MemberEmission.FromProgram.return_boolean {row : Nat → G} {rank : G} {column lookup : Nat}
-    {program : Toplevel} {member : MemberEmission} (source : member.FromProgram row rank column lookup program)
+    {program : Toplevel} {member : MemberEmission} {callRanks : Array CallRank}
+    (source : member.FromProgram row rank column lookup program callRanks)
     (satisfied : ∀ equation ∈ member.body.equations, equation = 0) :
     ∀ part ∈ member.body.returns, booleanConstraint part.1 = 0 := by
   intro part present
@@ -36,7 +38,8 @@ theorem MemberEmission.FromProgram.return_boolean {row : Nat → G} {rank : G} {
   exact List.mem_map.mpr ⟨part, present, rfl⟩
 
 theorem MemberEmission.FromProgram.return_count {row : Nat → G} {rank : G} {column lookup : Nat}
-    {program : Toplevel} {member : MemberEmission} (source : member.FromProgram row rank column lookup program)
+    {program : Toplevel} {member : MemberEmission} {callRanks : Array CallRank}
+    (source : member.FromProgram row rank column lookup program callRanks)
     (shape : member.function.body.lookupShapes program none = true)
     (bounded : (member.function.body.selectorFlow (member.selector row)).returns.length < gSize.toNat)
     (satisfied : ∀ equation ∈ member.body.equations, equation = 0) :

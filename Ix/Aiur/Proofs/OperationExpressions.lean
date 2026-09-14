@@ -816,59 +816,83 @@ theorem rangeSix_eval {values : Values G} (bytes : Fin 6 → Expr) (results : Fi
     rangePair_eval (evaluated 4) (evaluated 5), bind, Option.bind_some, pure]
   rfl
 
+def callGapExpr (mode : Bytecode.CallRank) (first size : Nat) : Fin 6 → Expr :=
+  match mode with
+  | .ordered => fun index => (mainCurrent (first + size + index.val)).expr
+  | .zero | .bound => fun _ => .konst 0
+
+def calleeRankExpr (mode : Bytecode.CallRank) (rank : Expr) (first size : Nat) : Expr :=
+  match mode with
+  | .zero => .konst 0
+  | .bound => (mainCurrent (first + size)).expr
+  | .ordered => (rank.frontAdd (.konst 1)).frontAdd (packSix (callGapExpr mode first size))
+
+def callRangeExprs (mode : Bytecode.CallRank) (gap : Fin 6 → Expr) : List (List Expr) :=
+  match mode with
+  | .ordered => rangeSix gap
+  | .zero | .bound => []
+
 def emitCall (_selector rank : Expr) (first function : Nat) (inputs : Array RowExpr)
-    (size : Nat) : Emission :=
+    (size : Nat) (mode : Bytecode.CallRank := .ordered) : Emission :=
   let outputs := advice first size
-  let gap : Fin 6 → Expr := fun index => (mainCurrent (first + size + index.val)).expr
-  let child := (rank.frontAdd (.konst 1)).frontAdd (packSix gap)
-  { outputs, used := size + 6,
+  let gap := callGapExpr mode first size
+  let child := calleeRankExpr mode rank first size
+  { outputs, used := size + AIR.callAuxiliaries mode,
     queries := ([.konst 0, .konst (G.ofNat function)] ++
-      (rowExprs inputs).toList ++ (rowExprs outputs).toList ++ [child]) :: rangeSix gap,
+      (rowExprs inputs).toList ++ (rowExprs outputs).toList ++ [child]) :: callRangeExprs mode gap,
     calls := [⟨function, rowExprs inputs, rowExprs outputs, child, gap⟩] }
 
 theorem emitCall_reflects (values : Values G) (row : Nat → G) (first function size : Nat)
     {selector rank : Expr} {s r : G} {inputs : Array RowExpr} {arguments : Array AIR.RowValue}
+    {mode : Bytecode.CallRank}
     (_selectorEval : evalExpr values selector = some s) (rankEval : evalExpr values rank = some r)
     (inputEval : evalRows values inputs = some arguments)
-    (reads : ∀ index < size + 6,
+    (reads : ∀ index < size + AIR.callAuxiliaries mode,
       (values.columns .main .current)[first + index]? = some (row index)) :
-    (emitCall selector rank first function inputs size).eval values =
-      some { outputs := AIR.rowAdvice row 0 size, used := size + 6,
-             queries := AIR.functionMessage
-               ⟨function, AIR.rowValues arguments, AIR.rowValues (AIR.rowAdvice row 0 size),
-                 r + 1 + AIR.packRank (fun index => row (size + index.val))⟩ ::
-               (AIR.rankByteQueries (fun index => row (size + index.val))).map AIR.rangeMessage,
-             calls := [(⟨function, AIR.rowValues arguments, AIR.rowValues (AIR.rowAdvice row 0 size),
-                 r + 1 + AIR.packRank (fun index => row (size + index.val))⟩,
-               fun index => row (size + index.val))] } := by
+    (emitCall selector rank first function inputs size mode).eval values =
+      some (AIR.emitCallRow row r function (AIR.rowValues arguments) size mode) := by
   have outputs := advice_eval values row first size (fun index bound => reads index (by omega))
   have gap (index : Fin 6) :
-      evalExpr values (mainCurrent (first + size + index.val)).expr =
-        some (row (size + index.val)) := by
-    change (values.columns .main .current)[first + size + index.val]? = _
-    simpa only [Nat.add_assoc] using reads (size + index.val) (by omega)
-  have child := Expr.frontAdd_eval goldilocksLaws values
-    (Expr.frontAdd_eval goldilocksLaws values rankEval
-      (show evalExpr values (.konst 1) = some 1 from rfl))
-    (packSix_eval values _ _ gap)
+      evalExpr values (callGapExpr mode first size index) =
+        some (AIR.callGap mode row size index) := by
+    cases mode with
+    | zero | bound => rfl
+    | ordered =>
+      change (values.columns .main .current)[first + size + index.val]? = _
+      simpa only [Nat.add_assoc, AIR.callGap] using reads (size + index.val) (by
+        simp only [AIR.callAuxiliaries]; omega)
+  have child : evalExpr values (calleeRankExpr mode rank first size) =
+      some (AIR.calleeRank mode row r size) := by
+    cases mode with
+    | zero => rfl
+    | bound => exact reads size (by simp only [AIR.callAuxiliaries]; omega)
+    | ordered =>
+      exact Expr.frontAdd_eval goldilocksLaws values
+        (Expr.frontAdd_eval goldilocksLaws values rankEval
+          (show evalExpr values (.konst 1) = some 1 from rfl))
+        (packSix_eval values _ _ gap)
+  have ranges : (callRangeExprs mode (callGapExpr mode first size)).mapM
+      (List.mapM (evalExpr values)) =
+        some (AIR.callRangeQueries mode (AIR.callGap mode row size)) := by
+    cases mode with
+    | zero | bound => rfl
+    | ordered => exact rangeSix_eval _ _ gap
   have args := congrArg (Functor.map Array.toList) (evalRows_values inputEval)
   have outs := congrArg (Functor.map Array.toList) (evalRows_values outputs)
   rw [Array.toList_mapM] at args outs
   simp only [Functor.map, Option.map_some] at args outs
   apply Emission.eval_of outputs rfl rfl ?_ ?_
-  · simp only [emitCall, List.mapM_cons, List.mapM_append, List.mapM_nil,
+  · simp only [emitCall, AIR.emitCallRow, List.mapM_cons, List.mapM_append, List.mapM_nil,
       show evalExpr values (.konst 0) = some 0 from rfl,
       show evalExpr values (.konst (G.ofNat function)) = some (G.ofNat function) from rfl,
-      args, outs, child, rangeSix_eval _ _ gap, bind, Option.bind_some, pure]
+      args, outs, child, ranges, bind, Option.bind_some, pure]
     rfl
   · have call := CallExpr.eval_of
       (call := ⟨function, rowExprs inputs, rowExprs (advice first size),
-        (rank.frontAdd (.konst 1)).frontAdd (packSix
-          (fun index => (mainCurrent (first + size + index.val)).expr)),
-        fun index => (mainCurrent (first + size + index.val)).expr⟩)
+        calleeRankExpr mode rank first size, callGapExpr mode first size⟩)
       (evalRows_values inputEval) (evalRows_values outputs) child gap
-    simp only [emitCall, List.mapM_cons, List.mapM_nil, call, bind, Option.bind_some, pure]
-    rfl
+    simp only [emitCall, AIR.emitCallRow, List.mapM_cons, List.mapM_nil,
+      call, bind, Option.bind_some, pure]
 
 def emitStore (first : Nat) (contents : Array RowExpr) : Emission :=
   { outputs := advice first 1, used := 1,
@@ -1053,7 +1077,7 @@ Operand reads here are checked in the incoming logical scope. The native store
 reads after pushing its pointer, so that correspondence also uses the checked
 program's incoming-scope index validity. -/
 def emitOp (selector rank : Expr) (first : Nat) (op : Bytecode.Op)
-    (rows : Array RowExpr) : Option Emission :=
+    (rows : Array RowExpr) (callRanks : Array Bytecode.CallRank := #[]) : Option Emission :=
   match op with
   | .const value => some (fromScalar ⟨.konst value, 0, []⟩)
   | .add a b => do return fromScalar ⟨(← rows[a]?).add (← rows[b]?), 0, []⟩
@@ -1062,7 +1086,9 @@ def emitOp (selector rank : Expr) (first : Nat) (op : Bytecode.Op)
   | .eqZero a => do return fromScalar (NativeAIR.emitEqZero selector first (← rows[a]?))
   | .call function indices size unconstrained =>
     if unconstrained then some (emitAdvice first size)
-    else do return emitCall selector rank first function (← select rows indices) size
+    else do
+      return emitCall selector rank first function (← select rows indices) size
+        (callRanks[function]?.getD .ordered)
   | .store indices => do return emitStore first (← select rows indices)
   | .load size index => do return emitLoad first size (← rows[index]?)
   | .assertEq xs ys _ =>

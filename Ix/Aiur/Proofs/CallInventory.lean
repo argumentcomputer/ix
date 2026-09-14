@@ -29,18 +29,54 @@ theorem EquationAvailable.satisfied {equations : List G} {value : G}
     (zero : ∀ value ∈ equations, value = 0) : value = 0 :=
   equation.elim id (zero value)
 
-/-- Every recorded call has its function query, all gap range queries and
-an established selector-gated order relation. -/
+/-- Every call has its complete function query. Ordered calls additionally
+have gap range queries and a selector-gated order relation. -/
+def CallRankChecks (callRanks : Array CallRank) (rank selector : G) (equations : List G)
+    (hasQuery : List G → Prop) (edge : Bytecode.AIR.Call × (Fin 6 → G)) : Prop :=
+  match callRanks[edge.1.function]?.getD .ordered with
+  | .ordered => (∀ ⦃message⦄, message ∈ (rankByteQueries edge.2).map rangeMessage → hasQuery message) ∧
+      EquationAvailable equations (selector * callOrderConstraint rank edge.1.rank (packRank edge.2))
+  | .zero | .bound => True
+
+theorem CallRankChecks.mono {callRanks : Array CallRank} {rank selector : G}
+    {firstEquations lastEquations : List G} {firstQuery lastQuery : List G → Prop}
+    {edge : Bytecode.AIR.Call × (Fin 6 → G)}
+    (checked : CallRankChecks callRanks rank selector firstEquations firstQuery edge)
+    (equations : firstEquations ⊆ lastEquations)
+    (queries : ∀ message, firstQuery message → lastQuery message) :
+    CallRankChecks callRanks rank selector lastEquations lastQuery edge := by
+  unfold CallRankChecks at *
+  cases mode : callRanks[edge.1.function]?.getD .ordered <;> simp only [mode] at checked ⊢
+  exact ⟨fun {message} member => queries message (checked.1 member), checked.2.mono equations⟩
+
+theorem CallRankChecks.ordered {callRanks : Array CallRank} {rank selector : G}
+    {equations : List G} {hasQuery : List G → Prop} {edge : Bytecode.AIR.Call × (Fin 6 → G)}
+    (checked : CallRankChecks callRanks rank selector equations hasQuery edge)
+    (mode : callRanks[edge.1.function]?.getD .ordered = .ordered) :
+    (∀ ⦃message⦄, message ∈ (rankByteQueries edge.2).map rangeMessage → hasQuery message) ∧
+      EquationAvailable equations (selector * callOrderConstraint rank edge.1.rank (packRank edge.2)) := by
+  simpa only [CallRankChecks, mode] using checked
+
 def CallsEmitted (rank selector : G) (equations : List G) (queries : List (List G))
-    (calls : List (Bytecode.AIR.Call × (Fin 6 → G))) : Prop :=
+    (calls : List (Bytecode.AIR.Call × (Fin 6 → G)))
+    (callRanks : Array CallRank := #[]) : Prop :=
   ∀ edge ∈ calls, functionMessage edge.1 ∈ queries ∧
-    (rankByteQueries edge.2).map rangeMessage ⊆ queries ∧
-    EquationAvailable equations (selector * callOrderConstraint rank edge.1.rank (packRank edge.2))
+    CallRankChecks callRanks rank selector equations (· ∈ queries) edge
+
+theorem emitCallRow_calls (row : Nat → G) (rank selector : G) (function : FunIdx)
+    (inputs : Array G) (size : Nat) (callRanks : Array CallRank) :
+    let emission := emitCallRow row rank function inputs size (callRanks[function]?.getD .ordered)
+    CallsEmitted rank selector emission.equations emission.queries emission.calls callRanks := by
+  cases mode : callRanks[function]?.getD .ordered <;>
+    simp only [emitCallRow, CallsEmitted, List.mem_singleton, forall_eq, List.mem_cons_self,
+      true_and, CallRankChecks, mode, calleeRank, callGap, callRangeQueries]
+  exact ⟨fun _ member => List.mem_cons_of_mem _ member,
+    Or.inl (by rw [callOrderConstraint_derived, G.mul_zero])⟩
 
 theorem emitOp_calls {row : Nat → G} {selector rank : G} {op : Op}
-    {values : Array RowValue} {emission : OpEmission}
-    (emitted : emitOp row selector rank op values = some emission) :
-    CallsEmitted rank selector emission.equations emission.queries emission.calls := by
+    {values : Array RowValue} {emission : OpEmission} {callRanks : Array CallRank}
+    (emitted : emitOp row selector rank op values callRanks = some emission) :
+    CallsEmitted rank selector emission.equations emission.queries emission.calls callRanks := by
   cases op <;> simp only [emitOp, emitByte1, emitByte2, emitU32LessThan, emitU32Add,
     emitAdvice, bind, Option.bind, Option.map, pure] at emitted
   all_goals
@@ -48,30 +84,29 @@ theorem emitOp_calls {row : Nat → G} {selector rank : G} {op : Op}
       | split at emitted
       | (dsimp only at emitted; split at emitted)
   all_goals cases emitted
-  all_goals simp [CallsEmitted, EquationAvailable, callOrderConstraint_derived, G.mul_zero]
+  all_goals first | exact emitCallRow_calls _ _ _ _ _ _ _ | simp [CallsEmitted]
 
 theorem CallsEmitted.append {rank selector : G} {firstEquations restEquations : List G}
     {firstQueries restQueries : List (List G)}
     {firstCalls restCalls : List (Bytecode.AIR.Call × (Fin 6 → G))}
-    (first : CallsEmitted rank selector firstEquations firstQueries firstCalls)
-    (rest : CallsEmitted rank selector restEquations restQueries restCalls) :
+    {callRanks : Array CallRank}
+    (first : CallsEmitted rank selector firstEquations firstQueries firstCalls callRanks)
+    (rest : CallsEmitted rank selector restEquations restQueries restCalls callRanks) :
     CallsEmitted rank selector (firstEquations ++ restEquations)
-      (firstQueries ++ restQueries) (firstCalls ++ restCalls) := by
+      (firstQueries ++ restQueries) (firstCalls ++ restCalls) callRanks := by
   intro edge member
   rcases List.mem_append.mp member with left | right
-  · obtain ⟨query, bytes, equation⟩ := first edge left
-    exact ⟨List.mem_append_left _ query,
-      fun _ member => List.mem_append_left _ (bytes member),
-      equation.mono (fun _ member => List.mem_append_left _ member)⟩
-  · obtain ⟨query, bytes, equation⟩ := rest edge right
-    exact ⟨List.mem_append_right _ query,
-      fun _ member => List.mem_append_right _ (bytes member),
-      equation.mono (fun _ member => List.mem_append_right _ member)⟩
+  · obtain ⟨query, ordered⟩ := first edge left
+    exact ⟨List.mem_append_left _ query, ordered.mono
+      (fun _ member => List.mem_append_left _ member) (fun _ member => List.mem_append_left _ member)⟩
+  · obtain ⟨query, ordered⟩ := rest edge right
+    exact ⟨List.mem_append_right _ query, ordered.mono
+      (fun _ member => List.mem_append_right _ member) (fun _ member => List.mem_append_right _ member)⟩
 
 theorem emitOps_calls {row : Nat → G} {selector rank : G} {ops : List Op}
-    {values : Array RowValue} {column : Nat} {emission : OpsEmission}
-    (emitted : emitOps row selector rank ops values column = some emission) :
-    CallsEmitted rank selector emission.equations emission.queries emission.calls := by
+    {values : Array RowValue} {column : Nat} {emission : OpsEmission} {callRanks : Array CallRank}
+    (emitted : emitOps row selector rank ops values column callRanks = some emission) :
+    CallsEmitted rank selector emission.equations emission.queries emission.calls callRanks := by
   induction ops generalizing values column emission with
   | nil =>
     simp only [emitOps, Option.some.injEq] at emitted

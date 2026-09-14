@@ -235,20 +235,37 @@ regression evidence, separate from a universal native refinement theorem.
 
 Generic call emission now uses the six gap columns and derived child rank
 described above. The call-order equation is proved identically zero; it is
-not an extra native constraint. The corresponding allocation and extraction
-results state their generic-layout premise explicitly. The component layout
-pass is proved to preserve input arity and complete evaluator results,
-including shared continuations, while its allocation model covers zero,
-boundary and ordered call ranks. Extracting execution from physical rows in
-all component modes remains the next proof obligation.
+not an extra native constraint. The shared row and expression proofs also
+cover zero and boundary ranks. The component layout pass preserves input
+arity and complete evaluator results, including shared continuations.
+
+[`CompiledBackend.checked_graph_trace_execution`](../Ix/Aiur/Proofs/NativeTraceMetadata.lean)
+extracts finite execution and functional memory from the selected key's
+physical base graphs. It handles fallback layouts, recursive components,
+acyclic members and mixed circuits. The key check validates component edges,
+physical column reads, logical slot ranges and fallback member extents.
+Graph reflection then supplies row emission, satisfaction and these bounds;
+the execution theorem has no separate honest-row or generic-layout premise.
+
+The theorem takes satisfying base graphs and exact padded balance of their
+physical messages. Matching the extracted trace bitmap and degrees to the
+decoded proof supplies the lookup budget already enforced by the wrapper;
+physical graph counts are proved equal to the logical trace counts. Function slot
+zero is a provider even when its negative field multiplicity equals one.
+Memory and canonical byte preprocessing contribute to the same global pool.
+The byte-table commitment, active trace metadata and graph satisfaction must
+still be authenticated by the PCS theorem; randomized LogUp soundness must
+still establish exact balance. The physical trace theorem itself assumes
+neither source execution nor a sound guest checker.
 
 Compiled-key comparison includes production lookup retuning with the key's
 blowup parameter. Its total selector retains the machine-size and overflow
 guards and the baseline FFT cost comparison. Retuning preserves the authored
 graph, main width and preprocessed dimensions; the compared key includes the
-resulting group and degree. The key corpus exercises three blowup settings,
-function and memory circuits, both byte tables, empty circuits and validly
-encoded altered keys.
+resulting group and degree. The key corpus exercises three blowup settings
+and 24 systems, including 12 component layouts: 360 function, memory and byte
+circuits with 1,440 arbitrary assignments. It includes empty circuits and
+rejects 336 validly encoded altered keys and 48 invalid component certificates.
 
 The source compatibility checks also cover strict effect order and explicit
 returns. Array update evaluates its new value before the array expression,

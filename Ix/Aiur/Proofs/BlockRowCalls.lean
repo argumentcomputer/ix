@@ -18,12 +18,11 @@ open Bytecode
 def BlockEmission.HasQuery (emission : BlockEmission) (selector : G) (message : List G) : Prop :=
   ∃ part ∈ emission.queries, part.selector = selector ∧ part.message = message
 
-def BlockEmission.TracksCalls (rank : G) (emission : BlockEmission) : Prop :=
+def BlockEmission.TracksCalls (rank : G) (emission : BlockEmission)
+    (callRanks : Array CallRank := #[]) : Prop :=
   ∀ part ∈ emission.calls,
     emission.HasQuery part.1 (functionMessage part.2.1) ∧
-    (∀ message ∈ (rankByteQueries part.2.2).map rangeMessage, emission.HasQuery part.1 message) ∧
-    EquationAvailable emission.equations
-      (part.1 * callOrderConstraint rank part.2.1.rank (packRank part.2.2))
+    CallRankChecks callRanks rank part.1 emission.equations (emission.HasQuery part.1) part.2
 
 theorem BlockEmission.HasQuery.mono {first last : BlockEmission}
     (included : first.queries ⊆ last.queries) {selector : G} {message : List G}
@@ -38,67 +37,72 @@ theorem BlockEmission.HasQuery.active {emission : BlockEmission} {queries : List
   rw [← equal]
   exact queried part member gate
 
+variable {callRanks : Array CallRank}
+
 theorem BlockEmission.TracksCalls.prefix {rank : G} {emission : BlockEmission}
-    (tracked : emission.TracksCalls rank) (equations : List G) :
-    (emission.prefix equations).TracksCalls rank := by
+    (tracked : emission.TracksCalls rank callRanks) (equations : List G) :
+    (emission.prefix equations).TracksCalls rank callRanks := by
   intro part member
-  obtain ⟨query, bytes, equation⟩ := tracked part member
-  exact ⟨query, bytes, equation.mono (fun _ member => List.mem_append_right _ member)⟩
+  obtain ⟨query, checked⟩ := tracked part member
+  exact ⟨query, checked.mono (fun _ member => List.mem_append_right _ member) (fun _ query => query)⟩
 
 theorem BlockEmission.TracksCalls.afterOps {rank incoming : G} {lookup : Nat}
     {operations : OpsEmission} {control : BlockEmission}
-    (opsTracked : CallsEmitted rank incoming operations.equations operations.queries operations.calls)
-    (ctrlTracked : control.TracksCalls rank) :
-    (control.afterOps incoming lookup operations).TracksCalls rank := by
+    (opsTracked : CallsEmitted rank incoming operations.equations operations.queries operations.calls callRanks)
+    (ctrlTracked : control.TracksCalls rank callRanks) :
+    (control.afterOps incoming lookup operations).TracksCalls rank callRanks := by
   intro part member
   rcases List.mem_append.mp member with first | last
   · obtain ⟨edge, edgeMember, equal⟩ := List.mem_map.mp first
     subst part
-    obtain ⟨query, bytes, equation⟩ := opsTracked edge edgeMember
+    obtain ⟨query, checked⟩ := opsTracked edge edgeMember
     have memberQuery : ∀ message ∈ operations.queries,
         (control.afterOps incoming lookup operations).HasQuery incoming message := by
       intro message member
       obtain ⟨query, queryMember, gate, equal⟩ := queryParts_member lookup incoming member
       exact ⟨query, List.mem_append_left _ queryMember, gate, equal⟩
-    exact ⟨memberQuery _ query, fun message member => memberQuery message (bytes member),
-      equation.mono (fun _ member => List.mem_append_left _ member)⟩
-  · obtain ⟨query, bytes, equation⟩ := ctrlTracked part last
-    exact ⟨query.mono (fun _ member => List.mem_append_right _ member),
-      fun message member => (bytes message member).mono (fun _ member => List.mem_append_right _ member),
-      equation.mono (fun _ member => List.mem_append_right _ member)⟩
+    exact ⟨memberQuery _ query, checked.mono
+      (fun _ member => List.mem_append_left _ member) memberQuery⟩
+  · obtain ⟨query, checked⟩ := ctrlTracked part last
+    exact ⟨query.mono (fun _ member => List.mem_append_right _ member), checked.mono
+      (fun _ member => List.mem_append_right _ member)
+      (fun _ query => query.mono (fun _ member => List.mem_append_right _ member))⟩
 
 theorem BlockEmission.TracksCalls.join (rank : G) (values : Array RowValue) (column lookup : Nat)
-    (emissions : List BlockEmission) (tracked : ∀ emission ∈ emissions, emission.TracksCalls rank) :
-    (joinBlockEmissions values column lookup emissions).TracksCalls rank := by
+    (emissions : List BlockEmission)
+    (tracked : ∀ emission ∈ emissions, emission.TracksCalls rank callRanks) :
+    (joinBlockEmissions values column lookup emissions).TracksCalls rank callRanks := by
   intro part member
   obtain ⟨emission, emissionMember, partMember⟩ := List.mem_flatMap.mp member
-  obtain ⟨query, bytes, equation⟩ := tracked emission emissionMember part partMember
+  obtain ⟨query, checked⟩ := tracked emission emissionMember part partMember
   have included := EmissionIncluded.join values column lookup emissionMember
-  exact ⟨query.mono included.queries, fun message member => (bytes message member).mono included.queries,
-    equation.mono included.equations⟩
+  exact ⟨query.mono included.queries, checked.mono included.equations
+    (fun _ query => query.mono included.queries)⟩
 
 theorem BlockEmission.TracksCalls.continued {rank : G} {branches continuation : BlockEmission}
-    (first : branches.TracksCalls rank) (last : continuation.TracksCalls rank) (equations : List G) :
-    (branches.continued equations continuation).TracksCalls rank := by
+    (first : branches.TracksCalls rank callRanks) (last : continuation.TracksCalls rank callRanks)
+    (equations : List G) :
+    (branches.continued equations continuation).TracksCalls rank callRanks := by
   intro part member
   rcases List.mem_append.mp member with left | right
-  · obtain ⟨query, bytes, equation⟩ := first part left
-    exact ⟨query.mono (fun _ member => List.mem_append_left _ member),
-      fun message member => (bytes message member).mono (fun _ member => List.mem_append_left _ member),
-      equation.mono (fun _ member => List.mem_append_left _ (List.mem_append_left _ member))⟩
-  · obtain ⟨query, bytes, equation⟩ := last part right
-    exact ⟨query.mono (fun _ member => List.mem_append_right _ member),
-      fun message member => (bytes message member).mono (fun _ member => List.mem_append_right _ member),
-      equation.mono (fun _ member => List.mem_append_right _ member)⟩
+  · obtain ⟨query, checked⟩ := first part left
+    exact ⟨query.mono (fun _ member => List.mem_append_left _ member), checked.mono
+      (fun _ member => List.mem_append_left _ (List.mem_append_left _ member))
+      (fun _ query => query.mono (fun _ member => List.mem_append_left _ member))⟩
+  · obtain ⟨query, checked⟩ := last part right
+    exact ⟨query.mono (fun _ member => List.mem_append_right _ member), checked.mono
+      (fun _ member => List.mem_append_right _ member)
+      (fun _ query => query.mono (fun _ member => List.mem_append_right _ member))⟩
 
 theorem BlockEmission.TracksCalls.active {rank : G} {emission : BlockEmission}
-    (tracked : emission.TracksCalls rank)
+    (tracked : emission.TracksCalls rank callRanks)
     {queries : List (List G)} (queried : emission.QueriesIn queries)
     {calls : List (Bytecode.AIR.Call × (Fin 6 → G))} (called : emission.CallsAt calls) :
-    CallsEmitted rank 1 emission.equations queries calls := by
+    CallsEmitted rank 1 emission.equations queries calls callRanks := by
   intro edge member
-  obtain ⟨query, bytes, equation⟩ := tracked (1, edge) (called edge member)
-  exact ⟨query.active queried, fun _ member => (bytes _ member).active queried, equation⟩
+  obtain ⟨query, checked⟩ := tracked (1, edge) (called edge member)
+  exact ⟨query.active queried, checked.mono (fun _ member => member)
+    (fun _ query => query.active queried)⟩
 
 theorem forall₂_right_property {α β : Type} {source : List α} {emissions : List β} {property : β → Prop}
     (related : List.Forall₂ (fun _ emission => property emission) source emissions) :
@@ -122,11 +126,11 @@ theorem branchRows_tracks_calls (row : Nat → G) (selector : SelIdx → G) (con
     (emitted : branchRows row selector context matched values column lookup branches fallback = some emission)
     (caseSound : ∀ pair ∈ branches.toList, ∀ emission,
       pair.2.emitRow row selector context (pair.2.selectorFlow selector).entry values column lookup = some emission →
-      emission.TracksCalls context.rank)
+      emission.TracksCalls context.rank context.callRanks)
     (defaultSound : ∀ block, fallback = some block → ∀ emission,
       block.emitRow row selector context (block.selectorFlow selector).entry values
-        (column + branches.size) lookup = some emission → emission.TracksCalls context.rank) :
-    emission.TracksCalls context.rank := by
+        (column + branches.size) lookup = some emission → emission.TracksCalls context.rank context.callRanks) :
+    emission.TracksCalls context.rank context.callRanks := by
   simp only [branchRows, bind, Option.bind] at emitted
   split at emitted
   · cases emitted
@@ -137,7 +141,7 @@ theorem branchRows_tracks_calls (row : Nat → G) (selector : SelIdx → G) (con
     · rename_i default defaultEmitted
       have equal := Option.some.inj emitted
       subst emission
-      have casesTracked : ∀ emission ∈ cases, emission.TracksCalls context.rank := by
+      have casesTracked : ∀ emission ∈ cases, emission.TracksCalls context.rank context.callRanks := by
         apply forall₂_right_property
         apply mapM_forall₂ casesEmitted
         intro pair member result resultEmitted
@@ -148,7 +152,7 @@ theorem branchRows_tracks_calls (row : Nat → G) (selector : SelIdx → G) (con
           have equal := Option.some.inj resultEmitted
           subst result
           exact (caseSound pair member body bodyEmitted).prefix _
-      have defaultTracked : ∀ emission ∈ default, emission.TracksCalls context.rank := by
+      have defaultTracked : ∀ emission ∈ default, emission.TracksCalls context.rank context.callRanks := by
         cases fallback with
         | none =>
           simp only [defaultRow, Option.some.injEq] at defaultEmitted
@@ -182,7 +186,7 @@ theorem Ctrl.emitRow_tracks_calls (row : Nat → G) (selector : SelIdx → G) (c
     (incoming : G) (values : Array RowValue) (column lookup : Nat) (ctrl : Ctrl)
     {emission : BlockEmission}
     (emitted : ctrl.emitRow row selector context incoming values column lookup = some emission) :
-    emission.TracksCalls context.rank := by
+    emission.TracksCalls context.rank context.callRanks := by
   cases ctrl with
   | «return» index indices =>
     rw [Ctrl.emitRow.eq_def] at emitted
@@ -251,7 +255,7 @@ theorem Block.emitRow_tracks_calls (row : Nat → G) (selector : SelIdx → G) (
     (incoming : G) (values : Array RowValue) (column lookup : Nat) (block : Block)
     {emission : BlockEmission}
     (emitted : block.emitRow row selector context incoming values column lookup = some emission) :
-    emission.TracksCalls context.rank := by
+    emission.TracksCalls context.rank context.callRanks := by
   rw [Block.emitRow] at emitted
   simp only [bind, Option.bind] at emitted
   split at emitted

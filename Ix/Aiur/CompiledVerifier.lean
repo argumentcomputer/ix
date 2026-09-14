@@ -30,13 +30,20 @@ theorem CompiledBackend.circuits_bound {selection : Selection} (backend : Compil
       some backend.keyData.circuits := by
   have checked := backend.graphsChecked
   simp only [NativeAIR.CompiledKey.check, Bool.and_eq_true, beq_iff_eq] at checked
-  exact checked.1
+  exact checked.2.1
 
 theorem CompiledBackend.preprocessed_indices {selection : Selection} (backend : CompiledBackend selection) :
     backend.keyData.preprocessedIndices = NativeAIR.CompiledKey.preprocessedIndices backend.compiled.bytecode := by
   have checked := backend.graphsChecked
   simp only [NativeAIR.CompiledKey.check, Bool.and_eq_true, beq_iff_eq] at checked
-  exact checked.2
+  exact checked.2.2
+
+theorem CompiledBackend.components_checked {selection : Selection} (backend : CompiledBackend selection) :
+    backend.compiled.bytecode.callComponents.isEmpty = true ∨
+      backend.compiled.bytecode.validCallComponents = true := by
+  have checked := backend.graphsChecked
+  simp only [NativeAIR.CompiledKey.check, Bool.and_eq_true, Bool.or_eq_true] at checked
+  exact checked.1
 
 theorem verifyCompiled_success {selection : Selection} {backend : CompiledBackend selection}
     {input : Array G} {bytes : ByteArray} (accepted : verifyCompiled backend input bytes = .ok ()) :

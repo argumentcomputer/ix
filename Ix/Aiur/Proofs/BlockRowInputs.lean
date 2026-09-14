@@ -86,8 +86,8 @@ theorem RowInputs.full (values : Array RowValue) : RowInputs values.size (rowVal
   simpa only [RowInputs, rowValues, Array.size_map] using read
 
 theorem emitOps_inputs {row : Nat → G} {selector rank : G} {ops : List Op}
-    {values : Array RowValue} {column : Nat} {emission : OpsEmission}
-    (emitted : emitOps row selector rank ops values column = some emission)
+    {values : Array RowValue} {column : Nat} {emission : OpsEmission} {callRanks : Array CallRank}
+    (emitted : emitOps row selector rank ops values column callRanks = some emission)
     {size : Nat} {inputs : Array G} (preserved : RowInputs size inputs values) :
     RowInputs size inputs emission.values := by
   induction ops generalizing values column emission with

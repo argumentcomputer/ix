@@ -3,7 +3,7 @@ Copyright (c) 2026 Argument Computer Corporation.
 SPDX-License-Identifier: MIT OR Apache-2.0
 -/
 
-import Ix.Aiur.Proofs.CompiledCircuitRows
+import Ix.Aiur.Proofs.NativeCompiledRows
 import Ix.Aiur.Proofs.CircuitCompletion
 import Ix.Aiur.Proofs.ByteColumns
 import Ix.Aiur.LookupGroups
@@ -60,7 +60,7 @@ def circuit (logBlowup mainWidth preprocessedWidth preprocessedHeight groupSize 
   if result.valid then some result else none
 
 def functionCircuit (logBlowup : Nat) (program : Bytecode.Toplevel) (source : Bytecode.Circuit) : Option KeyCodec.Circuit := do
-  let compiled ← compileCircuit (circuitWidths source) program source
+  let compiled ← compileNativeCircuit (circuitWidths source) program source
   let groupSize := if compiled.emission.branchless && 2 ≤ compiled.emission.lookups.length then 2 else 1
   circuit logBlowup source.layout.width 0 0 groupSize compiled.base
 
@@ -87,7 +87,8 @@ def preprocessedIndices (program : Bytecode.Toplevel) : List (Option Nat) :=
   List.replicate (program.circuits.size + program.memorySizes.size) none ++ [some 0, some 1]
 
 def check (program : Bytecode.Toplevel) (key : KeyCodec.Key) : Bool :=
-  circuits key.parameters.logBlowup program == some key.circuits &&
-    key.preprocessedIndices == preprocessedIndices program
+  (program.callComponents.isEmpty || program.validCallComponents) &&
+    (circuits key.parameters.logBlowup program == some key.circuits &&
+      key.preprocessedIndices == preprocessedIndices program)
 
 end Aiur.NativeAIR.CompiledKey
