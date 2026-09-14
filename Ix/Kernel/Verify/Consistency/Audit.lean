@@ -1067,7 +1067,18 @@ private def modelLocalStateRoots : Array Lean.Name := #[
   ``LetInferenceTrace.valueFrame, ``LetInferenceTrace.openingFrame,
   ``LetInferenceTrace.domainContext, ``LetInferenceTrace.openingContext,
   ``LetInferenceTrace.restores, ``LetInferenceCheck.keyedValid,
-  ``LetInferenceCheck.absent
+  ``LetInferenceCheck.absent,
+  ``ApplicationInferenceTrace.functionFrame, ``ApplicationInferenceTrace.contextPreserved,
+  ``ApplicationInferenceTrace.argumentFrame, ``ApplicationInferenceTrace.comparedFrame,
+  ``ApplicationWhnfInferenceTrace.functionFrame, ``ApplicationWhnfInferenceTrace.contextPreserved,
+  ``ApplicationWhnfInferenceTrace.exposedFrame, ``ApplicationWhnfInferenceTrace.argumentFrame,
+  ``ApplicationWhnfInferenceTrace.comparedFrame,
+  ``ForallInferenceTrace.domainFrame, ``ForallInferenceTrace.domainValid,
+  ``ForallInferenceTrace.contextPreserved, ``ForallInferenceTrace.absent,
+  ``LambdaBodyTrace.domainFrame, ``LambdaBodyTrace.domainValid,
+  ``LambdaBodyTrace.contextPreserved, ``LambdaBodyTrace.absent,
+  ``LambdaInferenceTrace.domainValid, ``LambdaInferenceTrace.contextPreserved,
+  ``LambdaInferenceTrace.absent
 ]
 
 def roots : Array RootAllowance := #[

@@ -31,7 +31,7 @@ def BinderInference.betaTyping {β : Type u} {resolve : Address → Option (Cons
       fun _ agreement reading => by
         obtain ⟨functionReading, argumentReading⟩ := readScopedExpr?_app_parts reading
         have keyedAgreement := miss.localContext.symm ▸ agreement
-        have argumentAgreement := trace.contextPreserved.symm ▸ keyedAgreement
+        have argumentAgreement := keyedAgreement.congr trace.contextPreserved.symm
         have functionTypeReads :=
           (BinderInference.synthesis.{u,u} functionTree head keyedAgreement functionReading trace.functionRun).1
         have argumentTypeReads :=
@@ -49,11 +49,11 @@ def BinderInference.betaTyping {β : Type u} {resolve : Address → Option (Cons
             functionReading argumentReading conditions hashPath comparisonFaithful)
         exact .app (functionTree.betaTyping functionOrigin keyedAgreement functionReading)
           (sameType ▸ argumentTree.betaTyping (sameType.symm ▸ argumentOrigin) argumentAgreement argumentReading)
-  | .lam _ miss trace opening absent bodyTree _ _ _ _ _ => fun origin agreement reading => by
+  | .lam _ miss trace opening bodyTree _ _ _ _ _ => fun origin agreement reading => by
       obtain ⟨domainReading, bodyReading⟩ := readScopedExpr?_lam_parts reading
-      have domainAgreement := trace.contextPreserved.symm ▸ (miss.localContext.symm ▸ agreement)
+      have domainAgreement := (miss.localContext.symm ▸ agreement).congr trace.contextPreserved.symm
       obtain ⟨_, openedReading, openedAgreement, _⟩ :=
-        openBinder_sound opening domainAgreement absent domainReading bodyReading trace.openRun
+        openBinder_sound opening domainAgreement (trace.domainValid.freshReading domainAgreement) domainReading bodyReading trace.openRun
       exact .lam origin (bodyTree.betaTyping (.lambdaBody origin) openedAgreement openedReading)
 termination_by structural support
 
@@ -90,7 +90,7 @@ def SynthesisInference.betaTyping {β : Type u} {resolve : Address → Option (C
       fun contextOrigin agreement reading _ formed => by
         obtain ⟨functionReading, argumentReading⟩ := readScopedExpr?_app_parts reading
         have keyedAgreement := miss.localContext.symm ▸ agreement
-        have argumentAgreement := trace.contextPreserved.symm ▸ keyedAgreement
+        have argumentAgreement := keyedAgreement.congr trace.contextPreserved.symm
         have contextFormation := contextOrigin.sound formed
         have functionTypeReads :=
           (functionTree.soundWithSpine contextFormation keyedAgreement functionReading trace.functionRun).1
@@ -107,7 +107,7 @@ def SynthesisInference.betaTyping {β : Type u} {resolve : Address → Option (C
       fun contextOrigin agreement reading _ formed => by
         obtain ⟨functionReading, argumentReading⟩ := readScopedExpr?_app_parts reading
         have keyedAgreement := miss.localContext.symm ▸ agreement
-        have argumentAgreement := (trace.exposure_context exposure).symm ▸ keyedAgreement
+        have argumentAgreement := keyedAgreement.congr trace.exposure_context.symm
         have contextFormation := contextOrigin.sound formed
         have functionTypeReads :=
           (functionTree.soundWithSpine contextFormation keyedAgreement functionReading trace.functionRun).1
@@ -121,29 +121,29 @@ def SynthesisInference.betaTyping {β : Type u} {resolve : Address → Option (C
           (.convert (functionTree.betaTyping contextOrigin keyedAgreement functionReading trace.functionRun formed)
             (.rebase contextOrigin reduction))
           (sameType ▸ argumentTree.betaTyping contextOrigin argumentAgreement argumentReading trace.argumentRun formed)
-  | .lam full miss trace opening absent domainTree bodyTree conditionAgrees constructed bound coherent
+  | .lam full miss trace opening domainTree bodyTree conditionAgrees constructed bound coherent
       closingFaithful faithful =>
       fun contextOrigin agreement reading accepted formed => by
-        let node := SynthesisInference.lam full miss trace opening absent domainTree bodyTree conditionAgrees
+        let node := SynthesisInference.lam full miss trace opening domainTree bodyTree conditionAgrees
           constructed bound coherent closingFaithful faithful
         obtain ⟨domainReading, bodyReading⟩ := readScopedExpr?_lam_parts reading
         have keyedAgreement := miss.localContext.symm ▸ agreement
-        have domainAgreement := trace.contextPreserved.symm ▸ keyedAgreement
+        have domainAgreement := keyedAgreement.congr trace.contextPreserved.symm
         obtain ⟨_, openedReading, openedAgreement, _⟩ :=
-          openBinder_sound opening domainAgreement absent domainReading bodyReading trace.openRun
+          openBinder_sound opening domainAgreement (trace.domainValid.freshReading domainAgreement) domainReading bodyReading trace.openRun
         exact .lam (.source (.checked contextOrigin node agreement reading accepted))
           (bodyTree.betaTyping (contextOrigin.push domainTree keyedAgreement domainReading trace.domainRun)
             openedAgreement openedReading trace.bodyRun formed)
-  | .lamBeta full miss trace opening absent domainTree bodyTree reductionOrigin reduction conditionAgrees
+  | .lamBeta full miss trace opening domainTree bodyTree reductionOrigin reduction conditionAgrees
       constructed bound closingFaithful faithful =>
       fun contextOrigin agreement reading accepted formed => by
-        let node := SynthesisInference.lamBeta full miss trace opening absent domainTree bodyTree reductionOrigin reduction
+        let node := SynthesisInference.lamBeta full miss trace opening domainTree bodyTree reductionOrigin reduction
           conditionAgrees constructed bound closingFaithful faithful
         obtain ⟨domainReading, bodyReading⟩ := readScopedExpr?_lam_parts reading
         have keyedAgreement := miss.localContext.symm ▸ agreement
-        have domainAgreement := trace.contextPreserved.symm ▸ keyedAgreement
+        have domainAgreement := keyedAgreement.congr trace.contextPreserved.symm
         obtain ⟨_, openedReading, openedAgreement, _⟩ :=
-          openBinder_sound opening domainAgreement absent domainReading bodyReading trace.openRun
+          openBinder_sound opening domainAgreement (trace.domainValid.freshReading domainAgreement) domainReading bodyReading trace.openRun
         have inner := bodyTree.betaTyping
           (contextOrigin.push domainTree keyedAgreement domainReading trace.domainRun)
           openedAgreement openedReading trace.bodyRun formed

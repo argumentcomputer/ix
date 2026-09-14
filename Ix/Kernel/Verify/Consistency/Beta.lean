@@ -306,7 +306,7 @@ theorem SynthesisInference.beta_sound {β : Type u}
       obtain ⟨functionTypeReads, functionTyped, _⟩ :=
         functionTree.sound formed keyedAgreement fnReads trace.functionRun
       obtain ⟨domainReads, _⟩ := readScopedExpr?_all_parts functionTypeReads
-      have argumentAgreement := trace.contextPreserved.symm ▸ keyedAgreement
+      have argumentAgreement := keyedAgreement.congr trace.contextPreserved.symm
       obtain ⟨argumentTypeReads, argumentTyped, _⟩ :=
         argumentTree.sound formed argumentAgreement argReads trace.argumentRun
       have sameReading := beq_readScopedExpr? (resolve := resolve) (locals := locals)

@@ -5,6 +5,7 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 
 import Ix.Kernel.Verify.Consistency.BinderOpening
 import Ix.Kernel.Knot
+import Ix.Kernel.Verify.Consistency.LocalStateReading
 
 /-!
 # Production application and dependent substitution
@@ -214,6 +215,7 @@ compares the inferred argument type with the domain. Eager markers are outside
 this trace; the comparison and substitution states are the actual ones. -/
 structure ApplicationInferenceTrace (fuel : Nat) (before : TcState .anon)
     (fn arg : KExpr .anon) where
+  localState : LocalStateInvariant before
   name : Mode.anon.F Name
   bi : Mode.anon.F Lean.BinderInfo
   domain : KExpr .anon
@@ -229,7 +231,28 @@ structure ApplicationInferenceTrace (fuel : Nat) (before : TcState .anon)
   ordinary : TcM.isEagerReduce arg argumentState = .ok false argumentState
   compareRun : RecM.isDefEq argumentType domain (methodsN fuel) argumentState =
     .ok true comparedState
-  contextPreserved : functionState.lctx = before.lctx
+
+/-- Scope restoration follows from the actual function-inference call. -/
+theorem ApplicationInferenceTrace.functionFrame {fuel : Nat} {before : TcState .anon}
+    {fn arg : KExpr .anon} (trace : ApplicationInferenceTrace fuel before fn arg) :
+    LocalStateFrame before trace.functionState :=
+  (infer_methodsN_framesLocalState fuel fn).ok trace.localState trace.functionRun
+
+theorem ApplicationInferenceTrace.contextPreserved {fuel : Nat} {before : TcState .anon}
+    {fn arg : KExpr .anon} (trace : ApplicationInferenceTrace fuel before fn arg) :
+    trace.functionState.lctx.Equiv before.lctx := trace.functionFrame.context
+
+theorem ApplicationInferenceTrace.argumentFrame {fuel : Nat} {before : TcState .anon}
+    {fn arg : KExpr .anon} (trace : ApplicationInferenceTrace fuel before fn arg) :
+    LocalStateFrame before trace.argumentState :=
+  trace.functionFrame.trans ((infer_methodsN_framesLocalState fuel arg).ok
+    (trace.functionFrame.invariant trace.localState) trace.argumentRun)
+
+theorem ApplicationInferenceTrace.comparedFrame {fuel : Nat} {before : TcState .anon}
+    {fn arg : KExpr .anon} (trace : ApplicationInferenceTrace fuel before fn arg) :
+    LocalStateFrame before trace.comparedState :=
+  trace.argumentFrame.trans ((isDefEq_methodsN_framesLocalState fuel trace.argumentType trace.domain).ok
+    (trace.argumentFrame.invariant trace.localState) trace.compareRun)
 
 /-- Inverting the successful production branch reaches its exact interned
 codomain substitution after the real argument check. -/

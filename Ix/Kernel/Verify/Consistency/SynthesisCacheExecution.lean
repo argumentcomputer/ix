@@ -109,8 +109,8 @@ def SynthesisInference.CacheData {β : Type u} {resolve : Address → Option (Co
   | .cached .. | .cachedFrom .. => PUnit
   | .app _ _ _ first second .. | .appBeta _ _ _ first _ _ _ second .. =>
       first.CacheData anchor × second.CacheData anchor
-  | .forallE _ _ _ _ first second .. | .lam _ _ _ _ _ first second .. |
-    .lamBeta _ _ _ _ _ first second .. => first.CacheData anchor × second.CacheData anchor
+  | .forallE _ _ _ first second .. | .lam _ _ _ _ first second .. |
+    .lamBeta _ _ _ _ first second .. => first.CacheData anchor × second.CacheData anchor
 termination_by structural tree
 
 /-- Extract every full publication's checking origin from the original
@@ -144,7 +144,7 @@ def SynthesisInference.cacheExecution {β : Type u} {resolve : Address → Optio
       have keyedAgreement := miss.localContext.symm ▸ agreement
       let functionRun := functionTree.cacheExecution data.1 contextOrigin keyedAgreement functionReads trace.functionRun
       let argumentRun := argumentTree.cacheExecution data.2 contextOrigin
-        (trace.contextPreserved.symm ▸ keyedAgreement) argumentReads trace.argumentRun
+        (keyedAgreement.congr trace.contextPreserved.symm) argumentReads trace.argumentRun
       exact (SynthesisCacheSupplement.mk (.app full miss trace hashPath functionRun.trace argumentRun.trace)
         (functionRun.checks.append argumentRun.checks)).complete
           (.app full miss trace functionTree argumentTree conditions hashPath comparisonFaithful
@@ -157,52 +157,52 @@ def SynthesisInference.cacheExecution {β : Type u} {resolve : Address → Optio
       have keyedAgreement := miss.localContext.symm ▸ agreement
       let functionRun := functionTree.cacheExecution data.1 contextOrigin keyedAgreement functionReads trace.functionRun
       let argumentRun := argumentTree.cacheExecution data.2 contextOrigin
-        ((trace.exposure_context exposure).symm ▸ keyedAgreement) argumentReads trace.argumentRun
+        (keyedAgreement.congr trace.exposure_context.symm) argumentReads trace.argumentRun
       exact (SynthesisCacheSupplement.mk (.appBeta full miss trace exposure hashPath functionRun.trace argumentRun.trace)
         (functionRun.checks.append argumentRun.checks)).complete
           (.appBeta full miss trace functionTree exposure exposureCoherent reduction argumentTree conditions hashPath
             comparisonFaithful bodyConstructed argConstructed bodyBound argBound coherent faithful)
           contextOrigin agreement reading accepted
-  | .forallE miss trace opening absent domainTree bodyTree levelFaithful domainBound bodyBound coherent faithful =>
+  | .forallE miss trace opening domainTree bodyTree levelFaithful domainBound bodyBound coherent faithful =>
       fun data contextOrigin agreement reading accepted => by
       obtain ⟨domainReads, bodyReads⟩ := readScopedExpr?_all_parts reading
       have keyedAgreement := miss.localContext.symm ▸ agreement
       let domainRun := domainTree.cacheExecution data.1 contextOrigin keyedAgreement domainReads trace.domainRun
       obtain ⟨_, openedReads, openedAgreement, _⟩ := openBinder_sound opening
-        (trace.contextPreserved.symm ▸ keyedAgreement) absent domainReads bodyReads trace.openRun
+        (keyedAgreement.congr trace.contextPreserved.symm) (trace.absent keyedAgreement) domainReads bodyReads trace.openRun
       let bodyRun := bodyTree.cacheExecution data.2
         (.push contextOrigin domainTree keyedAgreement domainReads trace.domainRun) openedAgreement openedReads trace.bodyRun
       exact (SynthesisCacheSupplement.mk (.forallE miss trace domainRun.trace bodyRun.trace)
         (domainRun.checks.append bodyRun.checks)).complete
-          (.forallE miss trace opening absent domainTree bodyTree levelFaithful domainBound bodyBound coherent faithful)
+          (.forallE miss trace opening domainTree bodyTree levelFaithful domainBound bodyBound coherent faithful)
           contextOrigin agreement reading accepted
-  | .lam full miss trace opening absent domainTree bodyTree conditionAgrees constructed bound coherent
+  | .lam full miss trace opening domainTree bodyTree conditionAgrees constructed bound coherent
       closingFaithful faithful =>
       fun data contextOrigin agreement reading accepted => by
       obtain ⟨domainReads, bodyReads⟩ := readScopedExpr?_lam_parts reading
       have keyedAgreement := miss.localContext.symm ▸ agreement
       let domainRun := domainTree.cacheExecution data.1 contextOrigin keyedAgreement domainReads trace.domainRun
       obtain ⟨_, openedReads, openedAgreement, _⟩ := openBinder_sound opening
-        (trace.contextPreserved.symm ▸ keyedAgreement) absent domainReads bodyReads trace.openRun
+        (keyedAgreement.congr trace.contextPreserved.symm) (trace.absent keyedAgreement) domainReads bodyReads trace.openRun
       let bodyRun := bodyTree.cacheExecution data.2
         (.push contextOrigin domainTree keyedAgreement domainReads trace.domainRun) openedAgreement openedReads trace.bodyRun
       exact (SynthesisCacheSupplement.mk (.lam full miss trace domainRun.trace bodyRun.trace)
         (domainRun.checks.append bodyRun.checks)).complete
-          (.lam full miss trace opening absent domainTree bodyTree conditionAgrees constructed bound coherent
+          (.lam full miss trace opening domainTree bodyTree conditionAgrees constructed bound coherent
             closingFaithful faithful) contextOrigin agreement reading accepted
-  | .lamBeta full miss trace opening absent domainTree bodyTree origin reduction conditionAgrees
+  | .lamBeta full miss trace opening domainTree bodyTree origin reduction conditionAgrees
       constructed bound closingFaithful faithful =>
       fun data contextOrigin agreement reading accepted => by
       obtain ⟨domainReads, bodyReads⟩ := readScopedExpr?_lam_parts reading
       have keyedAgreement := miss.localContext.symm ▸ agreement
       let domainRun := domainTree.cacheExecution data.1 contextOrigin keyedAgreement domainReads trace.domainRun
       obtain ⟨_, openedReads, openedAgreement, _⟩ := openBinder_sound opening
-        (trace.contextPreserved.symm ▸ keyedAgreement) absent domainReads bodyReads trace.openRun
+        (keyedAgreement.congr trace.contextPreserved.symm) (trace.absent keyedAgreement) domainReads bodyReads trace.openRun
       let bodyRun := bodyTree.cacheExecution data.2
         (.push contextOrigin domainTree keyedAgreement domainReads trace.domainRun) openedAgreement openedReads trace.bodyRun
       exact (SynthesisCacheSupplement.mk (.lamBody full miss trace domainRun.trace bodyRun.trace)
         (domainRun.checks.append bodyRun.checks)).complete
-          (.lamBeta full miss trace opening absent domainTree bodyTree origin reduction conditionAgrees
+          (.lamBeta full miss trace opening domainTree bodyTree origin reduction conditionAgrees
             constructed bound closingFaithful faithful) contextOrigin agreement reading accepted
 termination_by structural tree
 

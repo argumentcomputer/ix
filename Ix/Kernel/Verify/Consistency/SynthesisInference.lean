@@ -120,7 +120,6 @@ inductive SynthesisInference {β : Type u}
       (miss : UncachedInference before (.all name bi domain body info))
       (trace : ForallInferenceTrace fuel miss.keyed name bi domain body)
       (opening : BinderOpeningSupport trace.domainState body)
-      (absent : (⟨trace.domainState.env.nextFVarId⟩ : FVarId) ∉ locals)
       (domainTree : SynthesisInference resolve entries locals context bounds fuel miss.keyed domain
         A (.sort (readLevel trace.domainLevel)) domainBoundLevel)
       (bodyTree : SynthesisInference resolve entries (trace.fresh :: locals) (context.push A)
@@ -143,7 +142,6 @@ inductive SynthesisInference {β : Type u}
       (miss : UncachedInference before (.lam name bi domain body info))
       (trace : LambdaInferenceTrace fuel miss.keyed name bi domain body)
       (opening : BinderOpeningSupport trace.domainState body)
-      (absent : (⟨trace.domainState.env.nextFVarId⟩ : FVarId) ∉ locals)
       (domainTree : SynthesisInference resolve entries locals context bounds fuel miss.keyed domain
         A (.sort (readLevel trace.domainLevel)) domainBoundLevel)
       (bodyTree : SynthesisInference resolve entries (trace.fresh :: locals) (context.push A)
@@ -165,7 +163,6 @@ inductive SynthesisInference {β : Type u}
       (miss : UncachedInference before (.lam name bi domain body info))
       (trace : LambdaBodyTrace fuel miss.keyed name bi domain body)
       (opening : BinderOpeningSupport trace.domainState body)
-      (absent : (⟨trace.domainState.env.nextFVarId⟩ : FVarId) ∉ locals)
       (domainTree : SynthesisInference resolve entries locals context bounds fuel miss.keyed domain
         A (.sort (readLevel trace.domainLevel)) domainBoundLevel)
       (bodyTree : SynthesisInference resolve entries (trace.fresh :: locals) (context.push A)
@@ -1044,7 +1041,6 @@ private def ForallInferenceTrace.bodyCheck {β : Type u} {resolve : Address → 
     {domain body : KExpr .anon} {A B : AExpr β} {domainBound bodyBound : VLevel}
     (trace : ForallInferenceTrace fuel before name bi domain body)
     (opening : BinderOpeningSupport trace.domainState body)
-    (absent : (⟨trace.domainState.env.nextFVarId⟩ : FVarId) ∉ locals)
     (domainTree : SynthesisInference resolve entries locals context bounds fuel before domain
       A (.sort (readLevel trace.domainLevel)) domainBound)
     (bodyTree : SynthesisInference resolve entries (trace.fresh :: locals) (context.push A)
@@ -1055,8 +1051,8 @@ private def ForallInferenceTrace.bodyCheck {β : Type u} {resolve : Address → 
     (bodyReading : readScopedExpr? resolve locals body 1 = some B.erase) :
     SynthesisForallBodyCheck resolve entries context bounds
       (Certified.zeroCondition (readLevel trace.bodyLevel)) A B := by
-  have opened := openBinder_sound opening (trace.contextPreserved.symm ▸ agreement)
-    absent domainReading bodyReading trace.openRun
+  have opened := openBinder_sound opening (agreement.congr trace.contextPreserved.symm)
+    (trace.absent agreement) domainReading bodyReading trace.openRun
   exact {
     domainLevel := readLevel trace.domainLevel
     bodyLevel := readLevel trace.bodyLevel
@@ -1077,9 +1073,9 @@ def BinderInference.forallBodyCheck {β : Type u} {resolve : Address → Option 
     (reading : readScopedExpr? resolve locals source = some (AExpr.forallE condition domain body).erase) :
     SynthesisForallBodyCheck resolve entries context bounds condition domain body := by
   cases support with
-  | forallE miss trace opening absent domainTree bodyTree =>
+  | forallE miss trace opening domainTree bodyTree =>
       obtain ⟨domainReads, bodyReads⟩ := readScopedExpr?_all_parts reading
-      exact trace.bodyCheck opening absent (.known domainTree (.sort _)) (.known bodyTree (.sort _))
+      exact trace.bodyCheck opening (.known domainTree (.sort _)) (.known bodyTree (.sort _))
         (miss.localContext.symm ▸ agreement) domainReads bodyReads
 
 mutual
@@ -1101,10 +1097,10 @@ private def SynthesisInference.forallBodyCheckAux {β : Type u} {resolve : Addre
   | .cached tree priorAgreement priorReading _ _ _ _ => fun same =>
       tree.forallBodyCheckAux priorAgreement priorReading same
   | .cachedFrom check _ _ => fun same => check.forallBody same
-  | .forallE miss trace opening absent domainTree bodyTree .. => fun same => by
+  | .forallE miss trace opening domainTree bodyTree .. => fun same => by
       cases same
       obtain ⟨domainReads, bodyReads⟩ := readScopedExpr?_all_parts reading
-      exact trace.bodyCheck opening absent domainTree bodyTree
+      exact trace.bodyCheck opening domainTree bodyTree
         (miss.localContext.symm ▸ agreement) domainReads bodyReads
   | .fvar .. | .app .. | .appBeta .. | .lam .. | .lamBeta .. => fun same => by cases same
 termination_by structural support
@@ -1329,11 +1325,11 @@ def BinderInference.lambdaBodyVariableSpine {β : Type u} {resolve : Address →
     Σ resultType, SynthesisVariableSpineOrigin resolve incoming incomingContext incomingBounds
       entries (context.push domain) index arguments resultType := by
   cases support with
-  | lam full miss trace opening absent bodyTree constructed bound coherent closingFaithful faithful =>
+  | lam full miss trace opening bodyTree constructed bound coherent closingFaithful faithful =>
       obtain ⟨domainReads, bodyReads⟩ := readScopedExpr?_lam_parts reading
-      have domainAgreement := trace.contextPreserved.symm ▸ (miss.localContext.symm ▸ agreement)
+      have domainAgreement := (miss.localContext.symm ▸ agreement).congr trace.contextPreserved.symm
       obtain ⟨_, openedReads, openedAgreement, _⟩ :=
-        openBinder_sound opening domainAgreement absent domainReads bodyReads trace.openRun
+        openBinder_sound opening domainAgreement (trace.domainValid.freshReading domainAgreement) domainReads bodyReads trace.openRun
       exact ⟨_, bodyTree.variableSpineOrigin openedAgreement openedReads index arguments rfl⟩
 
 mutual
@@ -1362,25 +1358,25 @@ private def SynthesisInference.lambdaBodyVariableSpineAux {β : Type u} {resolve
   | .cachedFrom check _ _ => fun same =>
       let child := check.lambdaBodyVariableSpine same
       ⟨child.1, child.2.rebase contextOrigin⟩
-  | .lam full miss trace opening absent domainTree bodyTree conditionAgrees constructed bound coherent
+  | .lam full miss trace opening domainTree bodyTree conditionAgrees constructed bound coherent
       closingFaithful faithful => fun same => by
       cases same
       obtain ⟨domainReads, bodyReads⟩ := readScopedExpr?_lam_parts reading
       have keyedAgreement := miss.localContext.symm ▸ agreement
-      have domainAgreement := trace.contextPreserved.symm ▸ keyedAgreement
+      have domainAgreement := keyedAgreement.congr trace.contextPreserved.symm
       obtain ⟨_, openedReads, openedAgreement, _⟩ :=
-        openBinder_sound opening domainAgreement absent domainReads bodyReads trace.openRun
+        openBinder_sound opening domainAgreement (trace.domainValid.freshReading domainAgreement) domainReads bodyReads trace.openRun
       exact ⟨_, bodyTree.variableSpineOrigin
         (contextOrigin.push domainTree keyedAgreement domainReads trace.domainRun)
         openedAgreement openedReads index arguments rfl⟩
-  | .lamBeta full miss trace opening absent domainTree bodyTree origin reduction conditionAgrees
+  | .lamBeta full miss trace opening domainTree bodyTree origin reduction conditionAgrees
       constructed bound closingFaithful faithful => fun same => by
       cases same
       obtain ⟨domainReads, bodyReads⟩ := readScopedExpr?_lam_parts reading
       have keyedAgreement := miss.localContext.symm ▸ agreement
-      have domainAgreement := trace.contextPreserved.symm ▸ keyedAgreement
+      have domainAgreement := keyedAgreement.congr trace.contextPreserved.symm
       obtain ⟨_, openedReads, openedAgreement, _⟩ :=
-        openBinder_sound opening domainAgreement absent domainReads bodyReads trace.openRun
+        openBinder_sound opening domainAgreement (trace.domainValid.freshReading domainAgreement) domainReads bodyReads trace.openRun
       exact ⟨_, bodyTree.variableSpineOrigin
         (contextOrigin.push domainTree keyedAgreement domainReads trace.domainRun)
         openedAgreement openedReads index arguments rfl⟩
@@ -1439,7 +1435,7 @@ theorem BinderInference.lambdaPrefix {β : Type u}
     (support : BinderInference resolve entries locals context fuel before source term type) :
     LambdaPrefix term type term.lambdaDepth := by
   induction support with
-  | lam _ _ _ _ _ _ _ _ _ _ _ ih => exact .lam ih
+  | lam _ _ _ _ _ _ _ _ _ _ ih => exact .lam ih
   | _ => exact .zero _ _
 
 mutual
@@ -1455,8 +1451,8 @@ theorem SynthesisInference.lambdaPrefix {β : Type u}
   | .cached tree .. => tree.lambdaPrefix
   | .cachedFrom check _ _ => check.lambdaPrefix
   | .reuseType inference _ _ _ _ _ => inference.lambdaPrefix
-  | .lam _ _ _ _ _ _ bodyTree _ _ _ _ _ _ => .lam bodyTree.lambdaPrefix
-  | .lamBeta _ _ _ _ _ _ bodyTree _ _ _ _ _ _ _ => by
+  | .lam _ _ _ _ _ bodyTree _ _ _ _ _ _ => .lam bodyTree.lambdaPrefix
+  | .lamBeta _ _ _ _ _ bodyTree _ _ _ _ _ _ _ => by
       have depth := bodyTree.lambdaPrefix.lambdaDepth_zero
         (AExpr.appN_ne_forallE (by intro condition domain body same; cases same) _)
       simpa only [AExpr.lambdaDepth, depth] using LambdaPrefix.lam (LambdaPrefix.zero _ _)
@@ -1774,7 +1770,7 @@ theorem SynthesisInference.soundWithSpine {β : Type u}
       obtain ⟨functionTypeReads, functionTyped, functionFormed, functionSpine⟩ :=
         functionTree.soundWithSpine formed keyedAgreement fnReads trace.functionRun
       obtain ⟨domainReads, codomainReads⟩ := readScopedExpr?_all_parts functionTypeReads
-      have argumentAgreement := trace.contextPreserved.symm ▸ keyedAgreement
+      have argumentAgreement := keyedAgreement.congr trace.contextPreserved.symm
       obtain ⟨argumentTypeReads, argumentTyped, _, _⟩ :=
         argumentTree.soundWithSpine formed argumentAgreement argReads trace.argumentRun
       have sameReading := beq_readScopedExpr? (resolve := resolve) (locals := locals)
@@ -1797,7 +1793,7 @@ theorem SynthesisInference.soundWithSpine {β : Type u}
       obtain ⟨functionTypeReads, functionTyped, _, functionSpine⟩ :=
         functionTree.soundWithSpine formed keyedAgreement fnReads trace.functionRun
       obtain ⟨domainReads, codomainReads, _⟩ := exposure.reading functionTypeReads exposureCoherent
-      have argumentAgreement := (trace.exposure_context exposure).symm ▸ keyedAgreement
+      have argumentAgreement := keyedAgreement.congr trace.exposure_context.symm
       obtain ⟨argumentTypeReads, argumentTyped, _, _⟩ :=
         argumentTree.soundWithSpine formed argumentAgreement argReads trace.argumentRun
       have sameType := AExpr.eq_of_erase_annotations
@@ -1812,16 +1808,16 @@ theorem SynthesisInference.soundWithSpine {β : Type u}
       rw [trace.output run, AExpr.erase_inst]
       exact (subst_readScopedExpr? bodyConstructed argConstructed bodyBound argBound
         coherent faithful codomainReads argReads).1
-  | .forallE miss trace opening absent domainTree bodyTree levelFaithful domainBound bodyBound
+  | .forallE miss trace opening domainTree bodyTree levelFaithful domainBound bodyBound
       coherent faithful => by
       obtain ⟨state, run⟩ := infer_uncached_success miss accepted
       obtain ⟨domainReads, bodyReads⟩ := readScopedExpr?_all_parts reading
       have keyedAgreement := miss.localContext.symm ▸ agreement
       obtain ⟨_, domainTyped, _, _⟩ :=
         domainTree.soundWithSpine formed keyedAgreement domainReads trace.domainRun
-      have domainAgreement := trace.contextPreserved.symm ▸ keyedAgreement
+      have domainAgreement := keyedAgreement.congr trace.contextPreserved.symm
       obtain ⟨_, openedReads, openedAgreement, _⟩ :=
-        openBinder_sound opening domainAgreement absent domainReads bodyReads trace.openRun
+        openBinder_sound opening domainAgreement (trace.domainValid.freshReading domainAgreement) domainReads bodyReads trace.openRun
       obtain ⟨_, bodyTyped, _, _⟩ :=
         bodyTree.soundWithSpine (formed.push domainTyped) openedAgreement openedReads trace.bodyRun
       refine ⟨?_, ?_, TypingClaim.sort _,
@@ -1833,7 +1829,7 @@ theorem SynthesisInference.soundWithSpine {β : Type u}
           (Theory.VLevel.equiv_def.mpr fun levels =>
             (Theory.VLevel.equiv_def.mp (readLevel_mkIMax levelFaithful domainBound bodyBound)
               levels).symm) |>.typing (TypingClaim.forallE domainTyped bodyTyped rfl)
-  | .lam full miss trace opening absent domainTree bodyTree conditionAgrees constructed bound coherent
+  | .lam full miss trace opening domainTree bodyTree conditionAgrees constructed bound coherent
       closingFaithful faithful => by
       obtain ⟨state, run⟩ := infer_uncached_success miss accepted
       rw [full] at run
@@ -1841,9 +1837,9 @@ theorem SynthesisInference.soundWithSpine {β : Type u}
       have keyedAgreement := miss.localContext.symm ▸ agreement
       obtain ⟨_, domainTyped, _, _⟩ :=
         domainTree.soundWithSpine formed keyedAgreement domainReads trace.domainRun
-      have domainAgreement := trace.contextPreserved.symm ▸ keyedAgreement
+      have domainAgreement := keyedAgreement.congr trace.contextPreserved.symm
       obtain ⟨_, openedReads, openedAgreement, _⟩ :=
-        openBinder_sound opening domainAgreement absent domainReads bodyReads trace.openRun
+        openBinder_sound opening domainAgreement (trace.domainValid.freshReading domainAgreement) domainReads bodyReads trace.openRun
       obtain ⟨bodyTypeReads, bodyTyped, bodyFormed, _⟩ :=
         bodyTree.soundWithSpine (formed.push domainTyped) openedAgreement openedReads trace.bodyRun
       obtain ⟨closedReads, closedCoherent⟩ := abstractFVars_readScopedExpr? constructed bound coherent
@@ -1854,7 +1850,7 @@ theorem SynthesisInference.soundWithSpine {β : Type u}
       rw [trace.output run,
         internExpr_readScopedExpr? (table := trace.abstracted.2) closedCoherent faithful]
       simp [LambdaInferenceTrace.abstracted, domainReads, closedReads, AExpr.erase]
-  | .lamBeta full miss trace opening absent domainTree bodyTree origin reduction conditionAgrees
+  | .lamBeta full miss trace opening domainTree bodyTree origin reduction conditionAgrees
       constructed bound closingFaithful faithful => by
       obtain ⟨state, run⟩ := infer_uncached_success miss accepted
       rw [full] at run
@@ -1862,9 +1858,9 @@ theorem SynthesisInference.soundWithSpine {β : Type u}
       have keyedAgreement := miss.localContext.symm ▸ agreement
       obtain ⟨_, domainTyped, _, _⟩ :=
         domainTree.soundWithSpine formed keyedAgreement domainReads trace.domainRun
-      have domainAgreement := trace.contextPreserved.symm ▸ keyedAgreement
+      have domainAgreement := keyedAgreement.congr trace.contextPreserved.symm
       obtain ⟨_, openedReads, openedAgreement, _⟩ :=
-        openBinder_sound opening domainAgreement absent domainReads bodyReads trace.openRun
+        openBinder_sound opening domainAgreement (trace.domainValid.freshReading domainAgreement) domainReads bodyReads trace.openRun
       obtain ⟨bodyTypeReads, bodyTyped, _, _⟩ :=
         bodyTree.soundWithSpine (formed.push domainTyped) openedAgreement openedReads trace.bodyRun
       obtain ⟨conversion, reducedTyped⟩ := origin.sound formed
@@ -1993,7 +1989,7 @@ theorem SynthesisCheckedOrigin.soundWithSpine {β : Type u} {resolve : Address �
         (functionTree.soundWithSpine contextFormation agreement functionReading trace.functionRun).1
       have domainReads := (readScopedExpr?_all_parts functionTypeReads).1
       obtain ⟨argumentTypeReads, argumentTyped, _, argumentSpine⟩ :=
-        argumentTree.soundWithSpine contextFormation (trace.contextPreserved.symm ▸ agreement)
+        argumentTree.soundWithSpine contextFormation (agreement.congr trace.contextPreserved.symm)
           argumentReading trace.argumentRun
       have sameType := AExpr.eq_of_erase_annotations
         (Option.some.inj (argumentTypeReads.symm.trans
@@ -2006,7 +2002,7 @@ theorem SynthesisCheckedOrigin.soundWithSpine {β : Type u} {resolve : Address �
         (functionTree.soundWithSpine contextFormation agreement functionReading trace.functionRun).1
       have domainReads := (exposure.reading functionTypeReads exposureCoherent).1
       obtain ⟨argumentTypeReads, argumentTyped, _, argumentSpine⟩ :=
-        argumentTree.soundWithSpine contextFormation ((trace.exposure_context exposure).symm ▸ agreement)
+        argumentTree.soundWithSpine contextFormation (agreement.congr trace.exposure_context.symm)
           argumentReading trace.argumentRun
       have sameType := AExpr.eq_of_erase_annotations
         (Option.some.inj (argumentTypeReads.symm.trans
@@ -2018,7 +2014,7 @@ theorem SynthesisCheckedOrigin.soundWithSpine {β : Type u} {resolve : Address �
         functionTree.synthesis head agreement functionReading trace.functionRun
       have domainReads := (readScopedExpr?_all_parts functionTypeReads).1
       obtain ⟨argumentTypeReads, argumentChecked⟩ :=
-        argumentTree.sound (trace.contextPreserved.symm ▸ agreement) argumentReading trace.argumentRun
+        argumentTree.sound (agreement.congr trace.contextPreserved.symm) argumentReading trace.argumentRun
       have sameType := AExpr.eq_of_erase_annotations
         (Option.some.inj (argumentTypeReads.symm.trans
           ((beq_readScopedExpr? comparisonFaithful hashPath).trans domainReads))) conditions

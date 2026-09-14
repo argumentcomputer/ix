@@ -121,6 +121,12 @@ that bound, and scope cleanup restores all incoming declarations and lookups.
 The model reader transports through this observable restoration. Let inference
 therefore derives its fresh identifier and intermediate contexts from execution,
 using one initial invariant instead of separate freshness and context premises.
+The same derived context transport now serves forall, lambda, and application
+inference, including the Pi-exposure call before an argument check. Their
+traces retain the initial structural invariant; binder and synthesis nodes
+derive freshness instead of storing a separate proof. Retained beta origins
+and inference-cache histories use that same transport. General construction
+of these traces from accepted execution remains open.
 This closes the structural local-state component; general semantic state,
 reduction, conversion, and cache preservation remain separate obligations.
 Safe definition admission also rejects circular justification in both Lean and

@@ -12,8 +12,9 @@ import Ix.Theory.Model.Checking
 # Production dependent function inference
 
 Finite inference trees follow the production method table's decreasing fuel.
-Their premises record cache observations, actual execution prefixes, local-context
-frames, finite interning support, and index bounds. Semantic checking is
+Their premises record cache observations, actual execution prefixes, initial
+structural local state, finite interning support, and index bounds. Scope frames
+and freshness follow from the actual recursive calls. Semantic checking is
 derived from these trees. A declaration's separate type inference supplies
 the expected type's hereditary validity before checking becomes typing.
 -/
@@ -78,6 +79,7 @@ Both sort exposures take the production syntactic fast path. -/
 structure ForallInferenceTrace (fuel : Nat) (before : TcState .anon)
     (name : Mode.anon.F Name) (bi : Mode.anon.F Lean.BinderInfo)
     (domain body : KExpr .anon) where
+  localState : LocalStateInvariant before
   domainLevel : KUniv .anon
   domainInfo : ExprInfo .anon
   domainState : TcState .anon
@@ -92,7 +94,30 @@ structure ForallInferenceTrace (fuel : Nat) (before : TcState .anon)
   openRun : TcM.openBinder name bi domain body domainState = .ok (opened, fresh) openedState
   bodyRun : RecM.infer opened (methodsN fuel) openedState =
     .ok (.sort bodyLevel bodyInfo) bodyState
-  contextPreserved : domainState.lctx = before.lctx
+
+theorem ForallInferenceTrace.domainFrame {fuel : Nat} {before : TcState .anon}
+    {name : Mode.anon.F Name} {bi : Mode.anon.F Lean.BinderInfo} {domain body : KExpr .anon}
+    (trace : ForallInferenceTrace fuel before name bi domain body) :
+    LocalStateFrame before trace.domainState :=
+  (infer_methodsN_framesLocalState fuel domain).ok trace.localState trace.domainRun
+
+theorem ForallInferenceTrace.domainValid {fuel : Nat} {before : TcState .anon}
+    {name : Mode.anon.F Name} {bi : Mode.anon.F Lean.BinderInfo} {domain body : KExpr .anon}
+    (trace : ForallInferenceTrace fuel before name bi domain body) :
+    LocalStateInvariant trace.domainState := trace.domainFrame.invariant trace.localState
+
+theorem ForallInferenceTrace.contextPreserved {fuel : Nat} {before : TcState .anon}
+    {name : Mode.anon.F Name} {bi : Mode.anon.F Lean.BinderInfo} {domain body : KExpr .anon}
+    (trace : ForallInferenceTrace fuel before name bi domain body) :
+    trace.domainState.lctx.Equiv before.lctx := trace.domainFrame.context
+
+theorem ForallInferenceTrace.absent {β : Type u} {resolve : Address → Option (ConstRef β)}
+    {locals : List FVarId} {context : Model.Context β} {fuel : Nat} {before : TcState .anon}
+    {name : Mode.anon.F Name} {bi : Mode.anon.F Lean.BinderInfo} {domain body : KExpr .anon}
+    (trace : ForallInferenceTrace fuel before name bi domain body)
+    (agreement : LocalContextReading resolve locals before.lctx context) :
+    (⟨trace.domainState.env.nextFVarId⟩ : FVarId) ∉ locals :=
+  trace.domainValid.freshReading (agreement.congr trace.contextPreserved.symm)
 
 /-- Inversion reaches the actual final interning operation after both recursive
 calls, sort exposures, and binder opening. -/
@@ -142,6 +167,7 @@ theorem ForallInferenceTrace.output {fuel : Nat} {before after : TcState .anon}
 structure LambdaBodyTrace (fuel : Nat) (before : TcState .anon)
     (name : Mode.anon.F Name) (bi : Mode.anon.F Lean.BinderInfo)
     (domain body : KExpr .anon) where
+  localState : LocalStateInvariant before
   domainLevel : KUniv .anon
   domainInfo : ExprInfo .anon
   domainState : TcState .anon
@@ -154,13 +180,54 @@ structure LambdaBodyTrace (fuel : Nat) (before : TcState .anon)
     .ok (.sort domainLevel domainInfo) domainState
   openRun : TcM.openBinder name bi domain body domainState = .ok (opened, fresh) openedState
   bodyRun : RecM.infer opened (methodsN fuel) openedState = .ok bodyType bodyState
-  contextPreserved : domainState.lctx = before.lctx
+
+theorem LambdaBodyTrace.domainFrame {fuel : Nat} {before : TcState .anon}
+    {name : Mode.anon.F Name} {bi : Mode.anon.F Lean.BinderInfo} {domain body : KExpr .anon}
+    (trace : LambdaBodyTrace fuel before name bi domain body) :
+    LocalStateFrame before trace.domainState :=
+  (infer_methodsN_framesLocalState fuel domain).ok trace.localState trace.domainRun
+
+theorem LambdaBodyTrace.domainValid {fuel : Nat} {before : TcState .anon}
+    {name : Mode.anon.F Name} {bi : Mode.anon.F Lean.BinderInfo} {domain body : KExpr .anon}
+    (trace : LambdaBodyTrace fuel before name bi domain body) :
+    LocalStateInvariant trace.domainState := trace.domainFrame.invariant trace.localState
+
+theorem LambdaBodyTrace.contextPreserved {fuel : Nat} {before : TcState .anon}
+    {name : Mode.anon.F Name} {bi : Mode.anon.F Lean.BinderInfo} {domain body : KExpr .anon}
+    (trace : LambdaBodyTrace fuel before name bi domain body) :
+    trace.domainState.lctx.Equiv before.lctx := trace.domainFrame.context
+
+theorem LambdaBodyTrace.absent {β : Type u} {resolve : Address → Option (ConstRef β)}
+    {locals : List FVarId} {context : Model.Context β} {fuel : Nat} {before : TcState .anon}
+    {name : Mode.anon.F Name} {bi : Mode.anon.F Lean.BinderInfo} {domain body : KExpr .anon}
+    (trace : LambdaBodyTrace fuel before name bi domain body)
+    (agreement : LocalContextReading resolve locals before.lctx context) :
+    (⟨trace.domainState.env.nextFVarId⟩ : FVarId) ∉ locals :=
+  trace.domainValid.freshReading (agreement.congr trace.contextPreserved.symm)
 
 /-- The original no-op specialization of the general lambda-body trace. -/
 structure LambdaInferenceTrace (fuel : Nat) (before : TcState .anon)
     (name : Mode.anon.F Name) (bi : Mode.anon.F Lean.BinderInfo)
     (domain body : KExpr .anon) extends LambdaBodyTrace fuel before name bi domain body where
   betaUnchanged : cheapBetaPlan? bodyType = none
+
+theorem LambdaInferenceTrace.domainValid {fuel : Nat} {before : TcState .anon}
+    {name : Mode.anon.F Name} {bi : Mode.anon.F Lean.BinderInfo} {domain body : KExpr .anon}
+    (trace : LambdaInferenceTrace fuel before name bi domain body) :
+    LocalStateInvariant trace.domainState := trace.toLambdaBodyTrace.domainValid
+
+theorem LambdaInferenceTrace.contextPreserved {fuel : Nat} {before : TcState .anon}
+    {name : Mode.anon.F Name} {bi : Mode.anon.F Lean.BinderInfo} {domain body : KExpr .anon}
+    (trace : LambdaInferenceTrace fuel before name bi domain body) :
+    trace.domainState.lctx.Equiv before.lctx := trace.toLambdaBodyTrace.contextPreserved
+
+theorem LambdaInferenceTrace.absent {β : Type u} {resolve : Address → Option (ConstRef β)}
+    {locals : List FVarId} {context : Model.Context β} {fuel : Nat} {before : TcState .anon}
+    {name : Mode.anon.F Name} {bi : Mode.anon.F Lean.BinderInfo} {domain body : KExpr .anon}
+    (trace : LambdaInferenceTrace fuel before name bi domain body)
+    (agreement : LocalContextReading resolve locals before.lctx context) :
+    (⟨trace.domainState.env.nextFVarId⟩ : FVarId) ∉ locals :=
+  trace.toLambdaBodyTrace.absent agreement
 
 def LambdaBodyTrace.reduced {fuel : Nat} {before : TcState .anon}
     {name : Mode.anon.F Name} {bi : Mode.anon.F Lean.BinderInfo}
@@ -332,7 +399,6 @@ inductive BinderInference {β : Type u}
       (miss : UncachedInference before (.all name bi domain body info))
       (trace : ForallInferenceTrace fuel miss.keyed name bi domain body)
       (opening : BinderOpeningSupport trace.domainState body)
-      (absent : (⟨trace.domainState.env.nextFVarId⟩ : FVarId) ∉ locals)
       (domainTree : BinderInference resolve entries locals context fuel miss.keyed domain
         A (.sort (readLevel trace.domainLevel)))
       (bodyTree : BinderInference resolve entries (trace.fresh :: locals) (context.push A)
@@ -353,7 +419,6 @@ inductive BinderInference {β : Type u}
       (miss : UncachedInference before (.lam name bi domain body info))
       (trace : LambdaInferenceTrace fuel miss.keyed name bi domain body)
       (opening : BinderOpeningSupport trace.domainState body)
-      (absent : (⟨trace.domainState.env.nextFVarId⟩ : FVarId) ∉ locals)
       (bodyTree : BinderInference resolve entries (trace.fresh :: locals) (context.push A)
         fuel trace.openedState trace.opened b B)
       (constructed : trace.bodyType.Constructed)
@@ -440,7 +505,7 @@ theorem BinderInference.soundWithSynthesis {β : Type u}
       have keyedAgreement := miss.localContext.symm ▸ agreement
       obtain ⟨functionTypeReads, _, functionTyped⟩ := ihFunction keyedAgreement fnReads trace.functionRun
       obtain ⟨domainReads, codomainReads⟩ := readScopedExpr?_all_parts functionTypeReads
-      have argumentAgreement := trace.contextPreserved.symm ▸ keyedAgreement
+      have argumentAgreement := keyedAgreement.congr trace.contextPreserved.symm
       obtain ⟨argumentTypeReads, argumentChecked, _⟩ := ihArgument argumentAgreement argReads trace.argumentRun
       have sameReading := beq_readScopedExpr? (resolve := resolve) (locals := locals)
         (depth := 0) comparisonFaithful hashPath
@@ -452,15 +517,15 @@ theorem BinderInference.soundWithSynthesis {β : Type u}
       rw [trace.output run, AExpr.erase_inst]
       exact (subst_readScopedExpr? bodyConstructed argConstructed bodyBound argBound
         coherent faithful codomainReads argReads).1
-  | forallE miss trace opening absent domainTree bodyTree levelFaithful domainBound bodyBound
+  | forallE miss trace opening domainTree bodyTree levelFaithful domainBound bodyBound
       coherent faithful ihDomain ihBody =>
       obtain ⟨state, run⟩ := infer_uncached_success miss accepted
       obtain ⟨domainReads, bodyReads⟩ := readScopedExpr?_all_parts reading
       have keyedAgreement := miss.localContext.symm ▸ agreement
       obtain ⟨_, domainChecked, _⟩ := ihDomain keyedAgreement domainReads trace.domainRun
-      have domainAgreement := trace.contextPreserved.symm ▸ keyedAgreement
+      have domainAgreement := keyedAgreement.congr trace.contextPreserved.symm
       obtain ⟨_, openedReads, openedAgreement, _⟩ :=
-        openBinder_sound opening domainAgreement absent domainReads bodyReads trace.openRun
+        openBinder_sound opening domainAgreement (trace.domainValid.freshReading domainAgreement) domainReads bodyReads trace.openRun
       obtain ⟨_, bodyChecked, _⟩ := ihBody openedAgreement openedReads trace.bodyRun
       refine ⟨?_, ?_, fun head => by cases head⟩
       · rw [trace.output run, internExpr_readScopedExpr? coherent faithful]
@@ -470,15 +535,15 @@ theorem BinderInference.soundWithSynthesis {β : Type u}
           (Theory.VLevel.equiv_def.mpr fun levels =>
             (Theory.VLevel.equiv_def.mp (readLevel_mkIMax levelFaithful domainBound bodyBound)
               levels).symm) |>.typing formed).checking
-  | lam full miss trace opening absent bodyTree constructed bound coherent closingFaithful
+  | lam full miss trace opening bodyTree constructed bound coherent closingFaithful
       faithful ihBody =>
       obtain ⟨state, run⟩ := infer_uncached_success miss accepted
       rw [full] at run
       obtain ⟨domainReads, bodyReads⟩ := readScopedExpr?_lam_parts reading
       have keyedAgreement := miss.localContext.symm ▸ agreement
-      have domainAgreement := trace.contextPreserved.symm ▸ keyedAgreement
+      have domainAgreement := keyedAgreement.congr trace.contextPreserved.symm
       obtain ⟨_, openedReads, openedAgreement, _⟩ :=
-        openBinder_sound opening domainAgreement absent domainReads bodyReads trace.openRun
+        openBinder_sound opening domainAgreement (trace.domainValid.freshReading domainAgreement) domainReads bodyReads trace.openRun
       obtain ⟨bodyTypeReads, bodyChecked, _⟩ := ihBody openedAgreement openedReads trace.bodyRun
       obtain ⟨closedReads, closedCoherent⟩ := abstractFVars_readScopedExpr? constructed bound coherent
         closingFaithful bodyTypeReads

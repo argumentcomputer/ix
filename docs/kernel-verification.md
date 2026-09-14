@@ -122,7 +122,15 @@ increasing sequence of strongly inaccessible cardinals.
   the next allocated id is absent from its registered locals. Let inference
   now derives its domain/value/comparison frames, freshness, and final scope
   restoration from the actual calls. Its trace no longer assumes local-context
-  equalities. This structural result does not establish semantic inference,
+  equalities. Forall, lambda, and application traces likewise carry the initial
+  structural invariant and derive context restoration from their recorded
+  calls. Binder and synthesis constructors no longer supply a separate
+  freshness proof. Application Pi exposure derives its context frame for the
+  actual reduction call, independently of the supported beta path. Retained
+  codomain and lambda-body checks, beta derivations, and cache histories all
+  use these derived facts. Constructing the complete traces and their initial
+  state resources from arbitrary accepted programs remains open.
+  This structural result does not establish semantic inference,
   reduction, or cache validity for the unsupported branches.
 - `instantiateUnivParams_readScopedAnnotated` brings the actual substituted
   declaration type into any active local context, preserving its closed term
@@ -388,8 +396,9 @@ def callReturned.{u} (A : Sort u) (a : A) : A := ((fun x : A => fun y : A => x) 
 - Binder definitions supply finite inference trees for both the value and its
   separately checked declared type, exact source readings, closed annotated
   syntax, and references to the preceding interface. Recursive calls use the actual
-  smaller method table. Binder-opening and abstraction resources cover fresh
-  ids, context preservation during domain inference, intern-table coherence,
+  smaller method table. The initial structural local invariant supplies fresh
+  ids and context preservation through the actual domain call. Binder-opening
+  and abstraction resources retain intern-table coherence,
   finite collision freedom, and bounds preventing index overflow. Sort
   exposures are syntactic; lambdas use full mode and the unchanged cheap-beta
   path. `CheckingClaim` derives body validity and membership once declared-type
@@ -440,8 +449,9 @@ def callReturned.{u} (A : Sort u) (a : A) : A := ((fun x : A => fun y : A => x) 
 - Applications use full mode, syntactic or supported beta Pi exposure, an
   ordinary argument without an eager-reduction marker, and hash comparison
   with the exposed domain.
-  Their witnesses retain the actual recursive calls, context preservation
-  during function inference, and finite substitution resources. Function
+  Their witnesses retain the actual recursive calls, the initial structural
+  local invariant, and finite substitution resources. The function and exposure
+  calls derive the contexts used by argument inference. Function
   spines can start with locals or admitted constants, or use the synthesis
   rules for direct lambdas and returned functions. Polymorphic constants supply
   lazy-lookup agreement on misses (derived from source for bound standalones)
@@ -570,7 +580,7 @@ lake test --wfail -- tc-unit
 lake -d Models/SetTheory build --wfail
 ```
 
-The consistency target checks 1,230 exact theorem boundaries. The production
+The consistency target checks 1,250 exact theorem boundaries. The production
 environment roots retain four existing generated output-length proofs,
 reached through expression/universe construction, names, and the full
 production method table. They introduce no new native proofs. The model

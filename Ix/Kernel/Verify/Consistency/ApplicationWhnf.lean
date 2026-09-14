@@ -16,6 +16,7 @@ universe u v
 
 structure ApplicationWhnfInferenceTrace (fuel : Nat) (before : TcState .anon)
     (fn arg : KExpr .anon) where
+  localState : LocalStateInvariant before
   functionType : KExpr .anon
   domain : KExpr .anon
   codomain : KExpr .anon
@@ -30,7 +31,35 @@ structure ApplicationWhnfInferenceTrace (fuel : Nat) (before : TcState .anon)
   argumentRun : RecM.infer arg (methodsN fuel) exposedState = .ok argumentType argumentState
   ordinary : TcM.isEagerReduce arg argumentState = .ok false argumentState
   compareRun : RecM.isDefEq argumentType domain (methodsN fuel) argumentState = .ok true comparedState
-  contextPreserved : functionState.lctx = before.lctx
+
+theorem ApplicationWhnfInferenceTrace.functionFrame {fuel : Nat} {before : TcState .anon}
+    {fn arg : KExpr .anon} (trace : ApplicationWhnfInferenceTrace fuel before fn arg) :
+    LocalStateFrame before trace.functionState :=
+  (infer_methodsN_framesLocalState fuel fn).ok trace.localState trace.functionRun
+
+theorem ApplicationWhnfInferenceTrace.contextPreserved {fuel : Nat} {before : TcState .anon}
+    {fn arg : KExpr .anon} (trace : ApplicationWhnfInferenceTrace fuel before fn arg) :
+    trace.functionState.lctx.Equiv before.lctx := trace.functionFrame.context
+
+/-- The actual exposure call preserves local state for every reduction path. -/
+theorem ApplicationWhnfInferenceTrace.exposedFrame {fuel : Nat} {before : TcState .anon}
+    {fn arg : KExpr .anon} (trace : ApplicationWhnfInferenceTrace fuel before fn arg) :
+    LocalStateFrame before trace.exposedState :=
+  trace.functionFrame.trans
+    ((FramesLocalState.ensureForallDirect (FramesLocalState.whnf (MethodsLocalState.methodsN (fuel + 1)))
+      trace.functionType).ok (trace.functionFrame.invariant trace.localState) trace.exposureRun)
+
+theorem ApplicationWhnfInferenceTrace.argumentFrame {fuel : Nat} {before : TcState .anon}
+    {fn arg : KExpr .anon} (trace : ApplicationWhnfInferenceTrace fuel before fn arg) :
+    LocalStateFrame before trace.argumentState :=
+  trace.exposedFrame.trans ((infer_methodsN_framesLocalState fuel arg).ok
+    (trace.exposedFrame.invariant trace.localState) trace.argumentRun)
+
+theorem ApplicationWhnfInferenceTrace.comparedFrame {fuel : Nat} {before : TcState .anon}
+    {fn arg : KExpr .anon} (trace : ApplicationWhnfInferenceTrace fuel before fn arg) :
+    LocalStateFrame before trace.comparedState :=
+  trace.argumentFrame.trans ((isDefEq_methodsN_framesLocalState fuel trace.argumentType trace.domain).ok
+    (trace.argumentFrame.invariant trace.localState) trace.compareRun)
 
 theorem ApplicationWhnfInferenceTrace.output_state {fuel : Nat} {before after : TcState .anon}
     {fn arg result : KExpr .anon} {info : ExprInfo .anon}
@@ -77,14 +106,9 @@ theorem ApplicationWhnfInferenceTrace.exposure_state {β : Type u}
   rw [exposure.run] at accepted
   exact (EStateM.Result.ok.inj accepted).2.symm
 
-theorem ApplicationWhnfInferenceTrace.exposure_context {β : Type u}
-    {resolve : Address → Option (ConstRef β)} {locals : List FVarId} {fuel : Nat}
-    {before : TcState .anon} {fn arg : KExpr .anon} {term domain body : AExpr β} {condition : Certified.PropWhen}
-    (trace : ApplicationWhnfInferenceTrace fuel before fn arg)
-    (exposure : BetaPiExposure resolve locals fuel trace.functionState trace.functionType term
-      condition domain body trace.domain trace.codomain) : trace.exposedState.lctx = before.lctx := by
-  rw [trace.exposure_state exposure, exposure.context]
-  exact trace.contextPreserved
+theorem ApplicationWhnfInferenceTrace.exposure_context {fuel : Nat} {before : TcState .anon}
+    {fn arg : KExpr .anon} (trace : ApplicationWhnfInferenceTrace fuel before fn arg) :
+    trace.exposedState.lctx.Equiv before.lctx := trace.exposedFrame.context
 
 /-- Build the Pi-exposure part from its public beta path. The argument
 check begins in the computed post-exposure state. -/
@@ -98,10 +122,10 @@ def ApplicationWhnfInferenceTrace.ofBeta {β : Type u}
     (argumentRun : RecM.infer arg (methodsN fuel) exposure.after = .ok argumentType argumentState)
     (ordinary : TcM.isEagerReduce arg argumentState = .ok false argumentState)
     (compareRun : RecM.isDefEq argumentType domain (methodsN fuel) argumentState = .ok true comparedState)
-    (contextPreserved : functionState.lctx = before.lctx) :
+    (localState : LocalStateInvariant before) :
     ApplicationWhnfInferenceTrace fuel before fn arg :=
   { functionType, domain, codomain, functionState, exposedState := exposure.after,
     argumentType, argumentState, comparedState, functionRun, exposureRun := exposure.run,
-    argumentRun, ordinary, compareRun, contextPreserved }
+    argumentRun, ordinary, compareRun, localState }
 
 end Ix.Kernel.Consistency
