@@ -169,6 +169,47 @@ fixtures by a median 4.44%: `Nat.add_comm` improves 6.22%, `Vector.append`
 stay unchanged. For the small unary byte table, the same selector chooses
 more accumulators at a lower quotient degree because that costs less FFT work.
 
+## Consolidated byte lookups
+
+Byte AND and OR share the XOR table; byte comparison shares the subtraction
+low-byte table. The caller keeps one output auxiliary and one lookup slot.
+For input bytes `a`, `b` and the claimed output `z`, the requested table result
+is:
+
+- AND: `a + b - 2*z`, on the XOR channel.
+- OR: `2*z - a - b`, on the XOR channel.
+- Less-than: `a - b + 256*z`, on the subtraction channel.
+
+The table binds both inputs to bytes and fixes their XOR or modular difference.
+Each affine equation therefore determines the original operation's result
+uniquely in Goldilocks: its output coefficient is nonzero (`2` or `256`). This
+also forces the comparison result to zero or one without another constraint.
+Selectors continue to gate each request. Native and generated execution merge
+AND/OR multiplicities into XOR and comparison multiplicities into subtraction.
+
+The binary table retains all 65,536 input pairs. Its main width falls from ten
+to seven, stage-two width from ten to eight, and preprocessed width from fourteen
+to eleven, with quotient degree two. Surviving channel identifiers are unchanged;
+the three removed identifiers remain reserved. Fixed-table activity/height
+validation and the lookup-consumer bound remain enforced.
+
+[The native regressions](../crates/aiur/src/synthesis/tests/byte_consolidation.rs)
+check every byte pair against the compiled lookup expressions in singleton and
+grouped circuits, wrong field outputs, inactive selectors, and both execution
+paths' accumulated table multiplicities. Supplied proofs with forged outputs
+or non-byte inputs satisfy the local constraints and fail lookup verification.
+Honest proofs exercise mixed original/shared channels and verifying-key codec
+roundtrips. The table and caller AIR expressions change, so systems, keys and
+stored proofs must be rebuilt together.
+
+The measured production program preserves every function/memory shape and all
+execution counts across the 83 kernels and the shard. Each proof saves 26,214,400 FFT units. The
+83-kernel sum falls 2.06% with raw heights and 1.47% after power-of-two padding;
+the median individual raw reduction is 10.91%. All 24 matched full-closure
+proofs verify. Proof sizes fall 0.067–0.140%; observed median proving times
+fall 0.38–2.91% with overlapping ranges, and process RSS changes are small and
+mixed. These timings do not establish a general speed or memory improvement.
+
 ## Structural bounds
 
 System construction validates constrained-call arities, continuation yields,
@@ -341,7 +382,9 @@ Lean/Rust bytecode representation; rebuild both sides of the FFI together.
 Counter specialization changes rank columns, call lookups and verification
 keys while preserving the existing bytecode representation. Lookup retuning
 changes affected stage-2 layouts, quotient degrees and keys,
-so it also requires rebuilding systems and regenerating proofs.
+so it also requires rebuilding systems and regenerating proofs. Byte-table
+consolidation changes the caller lookup expressions, fixed table and keys,
+while keeping the existing bytecode operations and function layouts.
 The byte-advice, carry and multiplication changes alter IxVM
 function indices; regenerate its executor and matching systems from the
 updated Lean sources. Packed query views also change the internal Rust API

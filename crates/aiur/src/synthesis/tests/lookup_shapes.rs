@@ -34,8 +34,9 @@ fn public_output_cannot_be_supplied_by_a_displaced_rank() {
         rows[..3].copy_from_slice(&[G::ONE, G::ONE, G::from_u8(7)]);
       } else if index == 2 {
         // All three rank pairs are supplied by the fixed byte table.
-        rows[6] = G::from_u8(2);
-        rows[(7 * 256) * shape.main_width + 6] = G::ONE;
+        rows[Bytes2::RANGE_CHECK_COLUMN] = G::from_u8(2);
+        rows[(7 * 256) * shape.main_width + Bytes2::RANGE_CHECK_COLUMN] =
+          G::ONE;
       }
       RowMajorMatrix::new(rows, shape.main_width)
     })

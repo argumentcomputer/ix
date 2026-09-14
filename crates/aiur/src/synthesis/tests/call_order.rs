@@ -416,7 +416,7 @@ fn mutual_cycles_reject_at_the_closing_lookup_in_both_partitions() {
         // Bytes2 is the last circuit (there are no memories).
         for ([a, b], count) in &ranges {
           rows[(256 * usize::from(*a) + usize::from(*b)) * shape.main_width
-            + 6] = *count;
+            + Bytes2::RANGE_CHECK_COLUMN] = *count;
         }
       }
       traces.push(RowMajorMatrix::new(rows, shape.main_width));
@@ -510,7 +510,7 @@ fn out_of_range_gaps_cannot_hide_a_cycle_in_field_arithmetic() {
         } else if i == 4 {
           // Five valid zero-byte pairs per function, plus one impossible
           // (-1, 0) pair. Supply every valid pair and no fabricated table row.
-          rows[6] = G::from_u8(15);
+          rows[Bytes2::RANGE_CHECK_COLUMN] = G::from_u8(15);
         }
         RowMajorMatrix::new(rows, shape.main_width)
       })
@@ -570,8 +570,9 @@ fn out_of_range_function_rank_is_rejected_by_the_byte_table() {
             &row_values(&rows[..shape.main_width])
           ) == G::ZERO));
         } else if i == 3 {
-          rows[6] = G::from_u8(5);
-          rows[(256 * 255 + 255) * shape.main_width + 6] = G::from_u8(3);
+          rows[Bytes2::RANGE_CHECK_COLUMN] = G::from_u8(5);
+          rows[(256 * 255 + 255) * shape.main_width
+            + Bytes2::RANGE_CHECK_COLUMN] = G::from_u8(3);
         }
         RowMajorMatrix::new(rows, shape.main_width)
       })

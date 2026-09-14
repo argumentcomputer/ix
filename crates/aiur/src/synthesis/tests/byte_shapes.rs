@@ -79,7 +79,7 @@ fn public_verify_checks_fixed_byte_activity_before_openings() {
         rows[..4].fill(G::ONE);
         rows[10] = G::ONE;
       } else if index == 2 {
-        rows[6] = G::from_u8(3);
+        rows[Bytes2::RANGE_CHECK_COLUMN] = G::from_u8(3);
       }
       RowMajorMatrix::new(rows, shape.main_width)
     })

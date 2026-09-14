@@ -109,7 +109,7 @@ fn empty_branch_cannot_redirect_a_call_to_memory() {
         rows[..4].copy_from_slice(&[G::ONE, G::ONE, forged + forged, G::ONE]);
       } else if index == 5 {
         // The caller's root rank and all three call-gap pairs are zero.
-        rows[6] = G::from_u8(6);
+        rows[Bytes2::RANGE_CHECK_COLUMN] = G::from_u8(6);
       }
       RowMajorMatrix::new(rows, shape.main_width)
     })

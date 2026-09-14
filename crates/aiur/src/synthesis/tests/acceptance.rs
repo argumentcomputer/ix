@@ -205,7 +205,7 @@ fn recursive_cycle_cannot_supply_claim() {
       } else if i == system.toplevel.circuits.len() + 1 {
         // Six zero-byte pairs: three for the row rank and three for the
         // call gap. Balance these lookups so rejection tests call order.
-        rows[6] = G::from_u8(6);
+        rows[Bytes2::RANGE_CHECK_COLUMN] = G::from_u8(6);
       }
       RowMajorMatrix::new(rows, shape.main_width)
     })
