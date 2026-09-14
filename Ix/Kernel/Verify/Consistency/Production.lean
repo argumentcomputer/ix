@@ -5,7 +5,7 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 
 import Ix.Kernel.Driver
 import Ix.Kernel.Verify.Consistency.Constant
-import Ix.Kernel.Verify.Consistency.BinderInference
+import Ix.Kernel.Verify.Consistency.SynthesisInference
 import Ix.Kernel.Verify.Consistency.Validation
 
 /-!
@@ -129,7 +129,8 @@ private theorem expressionScope_mono {β : Type u} {term : AExpr β}
   | natLit => trivial
 
 /-- Closed sort/alias inference, a specialization of an existing constant,
-or a finite binder inference tree with a separately checked declared type.
+a finite binder inference tree with a separately checked declared type, or
+inference that derives formation of its own returned type.
 Specializations supply raw syntax and occurrence annotations; successful
 inference derives their typing, scope, and references. Universe arguments and
 binder conditions may use the declaration's own parameters. Binder definitions
@@ -159,6 +160,14 @@ inductive DefinitionBodySupport {β : Type u}
       (valueInference : BinderInference resolve entries [] [] fuel before term body type)
       (typeInference : BinderInference resolve entries [] [] fuel typeBefore declared type (.sort level))
       (typeRun : RecM.infer declared methods typeBefore = .ok inferredType typeAfter)
+      (valueReading : readScopedExpr? resolve [] term = some body.erase)
+      (typeReading : readScopedExpr? resolve [] declared = some type.erase)
+      (scope : body.Scope universes 0 ∧ type.Scope universes 0)
+      (references : body.ReferencesIn entries ∧ type.ReferencesIn entries) :
+      DefinitionBodySupport resolve entries methods before declared universes term body type
+  | synthesis {fuel : Nat} {term : KExpr .anon} {body type : AExpr β} {level : VLevel}
+      (tied : methods = methodsN fuel)
+      (valueInference : SynthesisInference resolve entries [] [] [] fuel before term body type level)
       (valueReading : readScopedExpr? resolve [] term = some body.erase)
       (typeReading : readScopedExpr? resolve [] declared = some type.erase)
       (scope : body.Scope universes 0 ∧ type.Scope universes 0)
@@ -214,6 +223,11 @@ theorem DefinitionBodySupport.sound {β : Type u}
         valueReading accepted
       exact ⟨readScopedExpr?_closed valueReading, readScopedExpr?_closed typeReading,
         scope.1, scope.2, references.1, references.2, valueChecked.typing typeChecked.typingSort⟩
+  | synthesis tied valueInference valueReading typeReading scope references =>
+      subst methods
+      obtain ⟨_, valueTyped, _⟩ := valueInference.closed_sound valueReading accepted
+      exact ⟨readScopedExpr?_closed valueReading, readScopedExpr?_closed typeReading,
+        scope.1, scope.2, references.1, references.2, valueTyped⟩
 
 /-- The execution prefix through value conversion. A successful member check
 also passes the subsequent safety checks. -/
@@ -324,6 +338,72 @@ def DefinitionBodyTrace.binderSupport {β : Type u} {input : DefinitionInput}
     DefinitionBodySupport resolve entries (methodsN fuel) trace.valueStart input.type
       input.universes.toNat input.value body type :=
   .binder rfl valueInference typeInference trace.typeRun valueReading typeReading
+    (trace.scopes typeCoverage valueCoverage collision valueReading typeReading
+      valueConditions typeConditions)
+    references
+
+/-- Reuse the exact type inference performed by this declaration admission.
+No extra inference on a generated codomain is postulated. -/
+def DefinitionBodyTrace.checkedType {β : Type u} {resolve : Address → Option (ConstRef β)}
+    {entries : Model.Environment β} {input : DefinitionInput} {fuel : Nat}
+    {before : TcState .anon} (trace : DefinitionBodyTrace input (methodsN fuel) before)
+    {type : AExpr β} {level : VLevel}
+    (inference : BinderInference resolve entries [] [] fuel trace.validated input.type type (.sort level))
+    (reading : readScopedExpr? resolve [] input.type = some type.erase) :
+    CheckedType resolve entries [] type level :=
+  { locals := [], fuel, before := trace.validated, after := trace.typeState,
+    source := input.type, result := trace.inferredType, inference,
+    agreement := .empty _ _, reading, run := trace.typeRun }
+
+/-- Retain a type check that uses the synthesis rules, including direct
+lambda applications, for subsequent universe-instantiated constant calls. -/
+def DefinitionBodyTrace.synthesisTypeCheck {β : Type u} {resolve : Address → Option (ConstRef β)}
+    {entries : Model.Environment β} {input : DefinitionInput} {fuel : Nat}
+    {before : TcState .anon} (trace : DefinitionBodyTrace input (methodsN fuel) before)
+    {type : AExpr β} {level bound : VLevel}
+    (inference : SynthesisInference resolve entries [] [] [] fuel trace.validated input.type
+      type (.sort level) bound)
+    (reading : readScopedExpr? resolve [] input.type = some type.erase) :
+    SynthesisTypeCheck resolve entries type level :=
+  { fuel, before := trace.validated, after := trace.typeState, source := input.type,
+    result := trace.inferredType, bound, inference, reading, run := trace.typeRun }
+
+/-- Public declaration-check success supplies the stored type-inference
+execution. Only its finite inference tree and source reading remain inputs. -/
+theorem StandalonePrefix.definitionTypeCheck {β : Type u}
+    {resolve : Address → Option (ConstRef β)} {entries : Model.Environment β}
+    {input : DefinitionInput} {before after : TcState .anon}
+    (path : StandalonePrefix input.id before input.constant) {type : AExpr β} {level bound : VLevel}
+    (inference : ∀ trace : DefinitionBodyTrace input (methodsN before.recFuel.toNat) path.ready,
+      Nonempty (SynthesisInference resolve entries [] [] [] before.recFuel.toNat trace.validated
+        input.type type (.sort level) bound))
+    (reading : readScopedExpr? resolve [] input.type = some type.erase)
+    (accepted : TcM.checkConst input.id before = .ok () after) :
+    Nonempty (SynthesisTypeCheck resolve entries type level) := by
+  obtain ⟨trace⟩ := definition_body_trace (path.member_success accepted)
+  obtain ⟨tree⟩ := inference trace
+  exact ⟨trace.synthesisTypeCheck tree reading⟩
+
+/-- Synthesis supplies the body's full typing and the generated type's
+formation. Source validation still supplies the scope of the actual declared
+type and value; reference coverage is composed at the admission boundary. -/
+def DefinitionBodyTrace.synthesisSupport {β : Type u} {input : DefinitionInput}
+    {fuel : Nat} {before : TcState .anon}
+    (trace : DefinitionBodyTrace input (methodsN fuel) before)
+    {resolve : Address → Option (ConstRef β)} {entries : Model.Environment β}
+    {body type : AExpr β} {level : VLevel}
+    {support : RunSupport} (typeCoverage : input.type.ValidationCoverage support)
+    (valueCoverage : input.value.ValidationCoverage support)
+    (collision : support.CollisionFree)
+    (valueInference : SynthesisInference resolve entries [] [] [] fuel trace.valueStart input.value body type level)
+    (valueReading : readScopedExpr? resolve [] input.value = some body.erase)
+    (typeReading : readScopedExpr? resolve [] input.type = some type.erase)
+    (valueConditions : ConditionsScoped input.universes.toNat body)
+    (typeConditions : ConditionsScoped input.universes.toNat type)
+    (references : body.ReferencesIn entries ∧ type.ReferencesIn entries) :
+    DefinitionBodySupport resolve entries (methodsN fuel) trace.valueStart input.type
+      input.universes.toNat input.value body type :=
+  .synthesis rfl valueInference valueReading typeReading
     (trace.scopes typeCoverage valueCoverage collision valueReading typeReading
       valueConditions typeConditions)
     references

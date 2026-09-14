@@ -305,6 +305,57 @@ def AxiomSpec.constant {β : Type u} (spec : AxiomSpec β) : KConst .anon :=
 def AxiomSpec.entry {β : Type u} (spec : AxiomSpec β) : ConstantEntry β :=
   { universes := spec.universes.toNat, type := spec.type, body := none }
 
+/-- The axiom's type check is an actual prefix of member validation, just
+as a definition's type check is. Its eventual interpretation remains the
+user-supplied axiom-model premise. -/
+structure AxiomTypeTrace {β : Type u} (spec : AxiomSpec β) (methods : Methods .anon)
+    (before : TcState .anon) where
+  validated : TcState .anon
+  inferred : KExpr .anon
+  typeState : TcState .anon
+  level : KUniv .anon
+  afterSort : TcState .anon
+  validationRun : (RecM.validateConstWellScoped spec.constant).run methods before = .ok () validated
+  typeRun : (RecM.infer spec.sourceType).run methods validated = .ok inferred typeState
+  sortRun : (RecM.ensureSortDirect inferred).run methods typeState = .ok level afterSort
+
+private theorem axiom_bind_success {α γ : Type} {action : TcM .anon α} {next : α → TcM .anon γ}
+    {before after : TcState .anon} {result : γ}
+    (accepted : EStateM.bind action next before = .ok result after) :
+    ∃ value state, action before = .ok value state ∧ next value state = .ok result after := by
+  cases run : action before with
+  | error err failed => rw [EStateM.bind, run] at accepted; contradiction
+  | ok value state =>
+      rw [EStateM.bind, run] at accepted
+      exact ⟨value, state, rfl, accepted⟩
+
+theorem axiom_type_trace {β : Type u} {spec : AxiomSpec β} {methods : Methods .anon}
+    {before after : TcState .anon}
+    (accepted : (RecM.checkConstMember spec.id spec.constant).run methods before = .ok () after) :
+    Nonempty (AxiomTypeTrace spec methods before) := by
+  unfold RecM.checkConstMember at accepted
+  simp only [AxiomSpec.constant, Mode.F.hasDups, Bool.false_eq_true, if_false,
+    ReaderT.run_bind] at accepted
+  change EStateM.bind ((RecM.validateConstWellScoped spec.constant).run methods) _ before = _ at accepted
+  obtain ⟨⟨⟩, validated, validationRun, accepted⟩ := axiom_bind_success accepted
+  change EStateM.bind ((RecM.infer spec.sourceType).run methods) _ validated = _ at accepted
+  obtain ⟨inferred, typeState, typeRun, accepted⟩ := axiom_bind_success accepted
+  change EStateM.bind ((RecM.ensureSortDirect inferred).run methods) _ typeState = _ at accepted
+  obtain ⟨level, afterSort, sortRun, _⟩ := axiom_bind_success accepted
+  exact ⟨⟨validated, inferred, typeState, level, afterSort, validationRun, typeRun, sortRun⟩⟩
+
+/-- Store formation from the exact inference call made while admitting this
+axiom. The source reading and finite inference tree establish its meaning. -/
+def AxiomTypeTrace.synthesisTypeCheck {β : Type u} {resolve : Address → Option (ConstRef β)}
+    {entries : Model.Environment β} {spec : AxiomSpec β} {fuel : Nat} {before : TcState .anon}
+    (trace : AxiomTypeTrace spec (methodsN fuel) before) {level bound : VLevel}
+    (inference : SynthesisInference resolve entries [] [] [] fuel trace.validated spec.sourceType
+      spec.type (.sort level) bound)
+    (reading : readScopedExpr? resolve [] spec.sourceType = some spec.type.erase) :
+    SynthesisTypeCheck resolve entries spec.type level :=
+  { fuel, before := trace.validated, after := trace.typeState, source := spec.sourceType,
+    result := trace.inferred, bound, inference, reading, run := trace.typeRun }
+
 /-- Exactly the declared axiom interface, starting with no other entries. -/
 def axiomEnvironment {β : Type u} [DecidableEq β] : List (AxiomSpec β) → Model.Environment β
   | [] => fun _ => none
@@ -321,6 +372,35 @@ structure AxiomObservation {β : Type u} (env : Ixon.Env) (cfg : CheckCfg)
   resolved : resolve spec.id.addr = some spec.ref
   installed : entries spec.ref = some spec.entry
   reads : readExpr? resolve spec.sourceType = some spec.type.erase
+
+/-- Successful rows from this environment run supply the axiom's executed
+type check. The caller supplies only its finite inference support and scoped
+source reading, not another successful inference call or a semantic judgment. -/
+theorem AxiomObservation.synthesisTypeCheck {β : Type u}
+    {env : Ixon.Env} {cfg : CheckCfg} {work : Array AnonWorkItem}
+    {resolve : Address → Option (ConstRef β)} {entries : Model.Environment β} {spec : AxiomSpec β}
+    (observation : AxiomObservation env cfg work resolve entries spec) {level bound : VLevel}
+    (inference : ∀ trace : AxiomTypeTrace spec
+        (methodsN (observation.position.state env cfg).checker.recFuel.toNat) observation.path.ready,
+      Nonempty (SynthesisInference resolve entries [] [] []
+        (observation.position.state env cfg).checker.recFuel.toNat trace.validated spec.sourceType
+        spec.type (.sort level) bound))
+    (reading : readScopedExpr? resolve [] spec.sourceType = some spec.type.erase)
+    (enumerated : buildAnonWork env = .ok work)
+    {results : Array CheckResult} (accepted : checkEnvAnon env cfg = .ok results)
+    (succeeded : ∀ result ∈ results, result.err? = none) :
+    Nonempty (SynthesisTypeCheck resolve entries spec.type level) := by
+  have serial : ∀ result ∈ (runAnonCheckList cfg work.toList
+      (initialAnonCheckLoopState env cfg)).results, result.err? = none := by
+    unfold checkEnvAnon at accepted
+    rw [enumerated] at accepted
+    cases accepted
+    exact succeeded
+  obtain ⟨after, run⟩ := observation.position.check_success serial
+  have member := observation.path.member_success (by simpa only [anon_id] using run)
+  obtain ⟨trace⟩ := axiom_type_trace member
+  obtain ⟨tree⟩ := inference trace
+  exact ⟨trace.synthesisTypeCheck tree reading⟩
 
 /-- Complete support for the selected production environment fragment.
 Every source key is checked, every work item is represented, and the axiom

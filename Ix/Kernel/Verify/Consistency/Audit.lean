@@ -50,7 +50,22 @@ private def atomicRoots : Array Lean.Name := #[
   ``ForallInferenceTrace.output, ``LambdaInferenceTrace.output, ``BinderInference.sound,
   ``inferUncached_monomorphic_const_scoped, ``ApplicationInferenceTrace.output,
   ``BinderInference.soundWithSynthesis, ``BinderInference.synthesis,
-  ``DefinitionBodySupport.sound, ``DefinitionBodyTrace.scopes, ``DefinitionBodyTrace.binderSupport
+  ``CheckedType.sound, ``TypeFormation.sound,
+  ``SynthesisInference.sound, ``SynthesisInference.closed_sound, ``SynthesisInference.ofSort,
+  ``SynthesisTypeCheck.sound, ``SynthesisInference.ofTypeCheck,
+  ``DefinitionBodySupport.sound, ``DefinitionBodyTrace.scopes, ``DefinitionBodyTrace.binderSupport,
+  ``DefinitionBodyTrace.checkedType, ``DefinitionBodyTrace.synthesisTypeCheck,
+  ``DefinitionBodyTrace.synthesisSupport, ``AxiomTypeTrace.synthesisTypeCheck
+]
+
+private def formationRoots : Array Lean.Name := #[
+  ``Theory.Model.piSet_fibre_subset, ``Theory.Model.IsTGUniverse.piSet_fibre_mem,
+  ``Theory.Model.zeroCondition_conditionLevel, ``Theory.Model.zeroCondition_applicationLevel,
+  ``Theory.Model.applicationLevel_zero, ``Theory.Model.applicationLevel_ge,
+  ``Theory.Model.TypingClaim.applicationType, ``Theory.Model.AExpr.LevelEquivalent.termTyping,
+  ``InterfaceExtends.realizes, ``InterfaceExtends.typing,
+  ``context_valid_tail, ``typing_weaken, ``typing_instL_closed,
+  ``ContextFormation.empty, ``ContextFormation.push
 ]
 
 private def instantiationRoots : Array Lean.Name := #[
@@ -201,6 +216,7 @@ private def sourceCacheInitialRoots : Array Lean.Name := #[
 ]
 
 private def productionRoots : Array Lean.Name := #[
+  ``axiom_type_trace, ``AxiomObservation.synthesisTypeCheck, ``StandalonePrefix.definitionTypeCheck,
   ``StandalonePrefix.member_success, ``definition_body_trace,
   ``AtomicDefinitionRun.sound, ``AtomicDefinitionRun.no_self_alias,
   ``WorkPosition.check_success, ``AtomicDefinitionPlan.extends,
@@ -240,6 +256,8 @@ private def forbiddenProduction : Array Lean.Name := #[
 ]
 
 def roots : Array RootAllowance := #[
+  { root := ``InterfaceExtends.refl, forbiddenDependencies := forbiddenProduction },
+  { root := ``InterfaceExtends.trans, forbiddenDependencies := forbiddenProduction },
   { root := ``DefinitionDependencies.Ordered.closed, standardAxioms := #[``propext, ``Quot.sound],
     forbiddenDependencies := forbiddenProduction },
   { root := ``DefinitionDependencies.Ordered.ranked, standardAxioms := standard,
@@ -352,7 +370,7 @@ def roots : Array RootAllowance := #[
   forbiddenDependencies := forbiddenProduction
 }) ++ (scopedRoots ++ cacheFrameRoots).map (fun root => {
   root, standardAxioms := #[``propext, ``Quot.sound], forbiddenDependencies := forbiddenProduction
-}) ++ (contextRoots ++ cacheMapRoots ++ sourceOwnershipRoots).map (fun root => {
+}) ++ (contextRoots ++ cacheMapRoots ++ sourceOwnershipRoots ++ formationRoots).map (fun root => {
   root, standardAxioms := standard, forbiddenDependencies := forbiddenProduction
 }) ++ (binderWalkerRoots ++ cacheKeyRoots).map (fun root => {
   root, standardAxioms := standard, nativeAxioms := #[expressionNative],

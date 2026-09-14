@@ -25,6 +25,8 @@ import Ix.Kernel.Verify.Consistency.Context
 import Ix.Kernel.Verify.Consistency.BinderOpening
 import Ix.Kernel.Verify.Consistency.Application
 import Ix.Kernel.Verify.Consistency.BinderInference
+import Ix.Kernel.Verify.Consistency.Formation
+import Ix.Kernel.Verify.Consistency.SynthesisInference
 import Ix.Kernel.Verify.Consistency.Validation
 import Ix.Kernel.Verify.Consistency.RecursiveCache
 import Ix.Kernel.Verify.Consistency.RecursiveState
@@ -61,15 +63,23 @@ The returned type's scope and references justify declaration admission.
 The binder case retains references to the preceding interface. Actual production
 validation and the closed scoped reading derive source scope from finite
 validation coverage and collision freedom. Auxiliary condition bounds remain
-a separate syntax check. The declared-type inference from that same execution turns semantic checking
-into typing. Local cache hits agree with the actual declaration type. Constant
+a separate syntax check. Declared-type inference from that same execution can
+turn semantic checking into typing. Synthesis inference also derives formation
+of its generated result type from actual binder-domain and earlier declaration
+type checks. An inhabited product supplies a uniform codomain bound at an
+application, preserving the exact Prop condition. Direct lambda applications
+therefore synthesize full typing without an extra codomain inference call.
+Earlier type checks remain reusable after interface growth and universe
+instantiation. Local cache hits agree with the actual declaration type. Constant
 hits agree with pure universe substitution of a loaded, admitted declaration;
 sort hits return the canonical successor sort. Application, forall, and lambda
 nodes retain misses in every eligible cache partition. Full mode leaves the
 inference-only partition unconstrained at a miss.
 Applications use syntactic Pi exposure, full argument checking, hash conversion,
 and arguments without eager-reduction markers. Constant- and local-headed spines
-derive type validity from the admitted model or local context; their arguments may be lambdas.
+can derive type validity from the admitted model or local context; their
+arguments may be lambdas. The synthesis rules also allow lambdas and their
+application results in function position, with derived formation bounds.
 Polymorphic nodes use closed source readings, finite substitution resources,
 and a pure prediction of the returned syntax with matching occurrence annotations.
 Constant hits additionally check arity because they skip the runtime guard.

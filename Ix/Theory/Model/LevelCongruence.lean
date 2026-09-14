@@ -341,6 +341,16 @@ theorem typing {entries : Environment β} {context : Context β} {e A B : AExpr 
   exact ⟨termValid, (same.wellDenoted constants levels env).mp typeValid,
     same.interp constants levels env ▸ member⟩
 
+/-- Equivalent universe expressions also preserve typing of the term being
+interpreted, including when that term is itself an inferred type. -/
+theorem termTyping {entries : Environment β} {context : Context β} {e e' A : AExpr β}
+    (same : LevelEquivalent e e') (typed : TypingClaim.{u,v} entries context e A) :
+    TypingClaim.{u,v} entries context e' A := by
+  intro V _ constants realizes levels env valid
+  obtain ⟨termValid, typeValid, member⟩ := typed V constants realizes levels env valid
+  exact ⟨(same.wellDenoted constants levels env).mp termValid, typeValid,
+    same.interp constants levels env ▸ member⟩
+
 end LevelEquivalent
 end AExpr
 end Model

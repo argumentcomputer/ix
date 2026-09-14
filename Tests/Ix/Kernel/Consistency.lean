@@ -388,6 +388,84 @@ private def applicationLocalResult : Bool :=
   | .ok passed after => passed && after.lctx.size == 0 && after.env.nextFVarId == 2
   | .error _ _ => false
 
+/-- Put a direct lambda application beneath `A` and `a : A`, in the proof,
+data, and universe-polymorphic regimes. -/
+private def storeLambdaCall (env : Ixon.Env) (body : Ixon.Expr)
+    (level : Ixon.Univ) (universes : UInt64 := 0) : Ixon.Env × Address :=
+  storeConst env
+    ⟨.defn ⟨.defn, .safe, universes,
+      .leanAll (.sort 0) (.leanAll (.var 0) (.var 1)),
+      .leanLam (.sort 0) (.leanLam (.var 0) body)⟩,
+      #[], #[], #[level]⟩
+
+private def directLambdaEnvironment : Ixon.Env := Id.run do
+  let body := Ixon.Expr.app (.leanLam (.var 1) (.var 0)) (.var 0)
+  let (env, _) := storeLambdaCall {} body .zero
+  let (env, _) := storeLambdaCall env body (.succ .zero)
+  return (storeLambdaCall env body (.var 0) 1).1
+
+/-- The first lambda application returns another function, which is applied
+again. Both application nodes need synthesis independently of their head. -/
+private def returnedLambdaEnvironment : Ixon.Env := Id.run do
+  let fn := Ixon.Expr.leanLam (.var 1) (.leanLam (.var 2) (.var 1))
+  let body := Ixon.Expr.app (.app fn (.var 0)) (.var 0)
+  let (env, _) := storeLambdaCall {} body .zero
+  return (storeLambdaCall env body (.succ .zero)).1
+
+/-- `((fun f : A → A => f a) (fun x : A => x))`. The lambda body's
+application derives a bound that the enclosing lambda can reuse. -/
+private def higherOrderLambdaEnvironment : Ixon.Env := Id.run do
+  let functionType := Ixon.Expr.leanAll (.var 1) (.var 2)
+  let fn := Ixon.Expr.leanLam functionType (.app (.var 0) (.var 1))
+  let body := Ixon.Expr.app fn (.leanLam (.var 1) (.var 0))
+  let (env, _) := storeLambdaCall {} body .zero
+  return (storeLambdaCall env body (.succ .zero)).1
+
+/-- `(fun y : A => f y) x`, with the dependent family in Prop or Type.
+The generated codomain stays dependent through opening and abstraction. -/
+private def dependentLambdaEnvironment : Ixon.Env := Id.run do
+  let familyType := Ixon.Expr.leanAll (.var 0) (.sort 1)
+  let functionType := Ixon.Expr.leanAll (.var 1) (.app (.var 1) (.var 0))
+  let type := Ixon.Expr.leanAll (.sort 0) (.leanAll familyType
+    (.leanAll functionType (.leanAll (.var 2) (.app (.var 2) (.var 0)))))
+  let body := Ixon.Expr.app (.leanLam (.var 3) (.app (.var 2) (.var 0))) (.var 0)
+  let value := Ixon.Expr.leanLam (.sort 0) (.leanLam familyType
+    (.leanLam functionType (.leanLam (.var 2) body)))
+  let (env, _) := storeConst {}
+    ⟨.defn ⟨.defn, .safe, 0, type, value⟩, #[], #[], #[.succ .zero, .zero]⟩
+  return (storeConst env
+    ⟨.defn ⟨.defn, .safe, 0, type, value⟩, #[], #[], #[.succ .zero, .succ .zero]⟩).1
+
+private def sortLambdaCall (declared : UInt64) : Ixon.Env × Address :=
+  storeConst {}
+    ⟨.defn ⟨.defn, .safe, 0, .sort declared,
+      .app (.leanLam (.sort 1) (.var 0)) (.sort 0)⟩,
+      #[], #[], #[.zero, .succ .zero]⟩
+
+/-- The earlier axiom's own type check contains a direct lambda application.
+The alias reuses that exact declared type, taking hash conversion. -/
+private def appliedDeclarationType : Ixon.Env := Id.run do
+  let type := Ixon.Expr.app (.leanLam (.sort 1) (.var 0)) (.sort 0)
+  let (env, proposition) := storeConst {}
+    ⟨.axio ⟨false, 0, type⟩, #[], #[], #[.zero, .succ .zero]⟩
+  return (storeConst env
+    ⟨.defn ⟨.defn, .safe, 0, type, .ref 0 #[]⟩,
+      #[], #[proposition], #[.zero, .succ .zero]⟩).1
+
+private def lambdaApplicationLocalResult : Bool :=
+  let propType := KExpr.mkSort (m := .anon) .mkZero
+  let action : RecM .anon Bool := RecM.withLctxScope do
+    let (proposition, _) ← TcM.openBinder () () propType (.mkVar 0 ())
+    let (witness, _) ← TcM.openBinder () () proposition (.mkVar 0 ())
+    let term := KExpr.mkApp (.mkLam () () proposition (.mkVar 0 ())) witness
+    let first ← RecM.inferCall term
+    let second ← RecM.inferCall term
+    let state ← get
+    return first.addr == proposition.addr && second.addr == proposition.addr && state.lctx.size == 2
+  match TcM.runRec action (TcState.ofEnvAnon {}) with
+  | .ok passed after => passed && after.lctx.size == 0 && after.env.nextFVarId == 3
+  | .error _ _ => false
+
 private def applicationCases : TestSeq :=
   test "application environment: Prop/Type identity calls and transitive theorem calls check"
     (allSucceeded applicationEnvironment 5 { clearEvery := 0 })
@@ -405,6 +483,28 @@ private def applicationCases : TestSeq :=
     (let (env, target) := failedApplication; rowFailed env target)
   ++ test "application environment: applying a proof with no function type fails"
     (let (env, target) := failedBinder (.app (.var 0) (.var 0)); rowFailed env target)
+  ++ test "synthesis environment: direct lambda calls check in Prop, Type, and at a universe parameter"
+    (allSucceeded directLambdaEnvironment 3 { clearEvery := 0 })
+  ++ test "synthesis environment: direct lambda calls check with fresh per-item caches"
+    (allSucceeded directLambdaEnvironment 3 { clearEvery := 1 })
+  ++ test "synthesis environment: a direct lambda call returns a function that can be applied again"
+    (allSucceeded returnedLambdaEnvironment 2)
+  ++ test "synthesis environment: function and argument lambdas retain application bounds"
+    (allSucceeded higherOrderLambdaEnvironment 2)
+  ++ test "synthesis environment: dependent lambda bodies synthesize in Prop and Type"
+    (allSucceeded dependentLambdaEnvironment 2)
+  ++ test "synthesis environment: a direct lambda call returns the expected universe term"
+    (allSucceeded (sortLambdaCall 1).1 1)
+  ++ test "synthesis environment: an earlier declared type can itself contain a direct lambda call"
+    (allSucceeded appliedDeclarationType 2)
+  ++ test "synthesis inference: a direct lambda result survives cache reuse and scope cleanup"
+    lambdaApplicationLocalResult
+  ++ test "synthesis environment: a proposition cannot be used as its own witness argument"
+    (let (env, target) := failedBinder (.app (.leanLam (.var 1) (.var 0)) (.var 1)); rowFailed env target)
+  ++ test "synthesis environment: a direct lambda cannot return Sort 0 at type Sort 0"
+    (let (env, target) := sortLambdaCall 0; rowFailed env target)
+  ++ test "synthesis environment: a lambda domain must pass its executed sort check"
+    (let (env, target) := failedBinder (.app (.leanLam (.var 0) (.var 0)) (.var 0)); rowFailed env target)
 
 /-- Call a polymorphic identity from a monomorphic function body. Universe
 indices select entries in the declaration's explicit level table. -/

@@ -83,6 +83,18 @@ increasing sequence of strongly inaccessible cardinals.
   with that domain, with matching occurrence annotations.
   `subst_readScopedExpr?` connects the actual memoized and interned codomain
   substitution to model substitution, including active locals and nested binders.
+- `SynthesisInference.closed_sound` derives full typing and a universe bound
+  for the generated type, including direct lambda applications and applications
+  returning functions. Binder bounds come from actual domain inference;
+  `SynthesisTypeCheck` retains earlier executed declaration type checks across
+  interface growth and universe instantiation. An inhabited dependent product
+  bounds every fibre, so application preserves formation without another
+  codomain inference call. The bound preserves the exact Prop condition while
+  permitting a larger positive universe. `DefinitionBodyTrace.synthesisSupport`
+  connects this result to ordinary declaration admission.
+  `AxiomObservation.synthesisTypeCheck` extracts an axiom's type check from
+  successful `checkEnvAnon` rows; `StandalonePrefix.definitionTypeCheck` extracts
+  a definition's check from public declaration success.
 - `instantiateUnivParams_readScopedAnnotated` brings the actual substituted
   declaration type into any active local context, preserving its closed term
   scope and occurrence annotations. `infer_const_scoped_annotated` uses this
@@ -271,6 +283,8 @@ def useF (x : T.{1}) : T.{1} := f.{1} x
 def idSort.{u} (A : Sort u) (a : A) : A := a
 def aliasSort.{u,v} : (A : Sort (max u v)) → A → A := idSort.{max u v}
 def useSort.{u} (A : Sort u) (a : A) : A := idSort.{u} A a
+def callLambda.{u} (A : Sort u) (a : A) : A := (fun x : A => x) a
+def callReturned.{u} (A : Sort u) (a : A) : A := ((fun x : A => fun y : A => x) a) a
 ```
 
 `AtomicEnvironmentFragment` records the precise execution boundary:
@@ -344,19 +358,27 @@ def useSort.{u} (A : Sort u) (a : A) : A := idSort.{u} A a
   path. `CheckingClaim` derives body validity and membership once declared-type
   inference establishes hereditary validity. No codomain-typing premise is
   added to the production proof.
+  Alternatively, `SynthesisInference` derives formation of the generated type
+  together with body typing. It follows the actual domain check at each lambda
+  and keeps a universe bound for each local declaration. Reused closed type
+  checks retain their source, states, successful run, and inference tree;
+  interface extension preserves their entries exactly. These are execution
+  resources, not semantic formation assumptions. The type checks can themselves
+  contain direct lambda applications.
 - Applications use full mode, syntactic Pi exposure, an ordinary argument
   without an eager-reduction marker, and the hash-equality conversion path.
   Their witnesses retain the actual recursive calls, context preservation
   during function inference, and finite substitution resources. Function
-  spines start with locals or admitted constants. Polymorphic constants supply
+  spines can start with locals or admitted constants, or use the synthesis
+  rules for direct lambdas and returned functions. Polymorphic constants supply
   lazy-lookup agreement on misses (derived from source for bound standalones)
   or loaded-declaration agreement on hits, a
   closed scoped reading of the selected entry's type, and finite
   universe-substitution resources. Their result type is fixed
   by a pure `readInstantiatedType?` check with the substituted occurrence
   annotations, including when levels simplify. Monomorphic references retain
-  their simpler empty-substitution rule. Applying a lambda directly and
-  reduction to expose a Pi require further refinement.
+  their simpler empty-substitution rule. Reduction to expose a Pi, eager
+  arguments, and changed cheap-beta paths require further refinement.
 - Conversion takes the initial hash-equality path, with faithfulness of the
   compared expressions. General reduction and conversion caches are outside
   this fragment.
@@ -448,7 +470,7 @@ lake test --wfail -- tc-unit
 lake -d Models/SetTheory build --wfail
 ```
 
-The consistency target checks 367 exact theorem boundaries. The production
+The consistency target checks 398 exact theorem boundaries. The production
 environment roots retain four existing generated output-length proofs,
 reached through expression/universe construction, names, and the full
 production method table. They introduce no new native proofs. The model
@@ -461,7 +483,8 @@ certificate validator in their dependency closures.
 The polymorphic inference, substitution, and binder inference roots retain only the two existing
 expression/universe output-length proofs, alongside the standard Lean axioms.
 Their model-side level congruence introduces no native proof dependency.
-Semantic checking against a formed type also uses only standard Lean axioms.
+Semantic checking against a formed type and the new product-fibre universe
+bound also use only standard Lean axioms.
 Kernel unit regressions cover lazy loading, both inference policies, interning
 reuse, dependent function types, shared references, lets, `imax` simplification,
 argument order, and rejection of wrong arities and out-of-range parameters.
@@ -473,6 +496,10 @@ Function-body regressions cover calls to earlier Prop/Type identities,
 transitive theorem calls, local functions with distinct domains and codomains,
 dependent result families, lambda arguments, exact local results through cache
 reuse and scope cleanup, and rejected argument/function types.
+Direct lambda regressions cover Prop, Type, universe parameters, returned
+functions, higher-order arguments, dependent proof/data families, and earlier
+declaration types containing lambda calls. Negative cases reject invalid
+domains, wrong arguments, and a universe term claimed at its own sort.
 Polymorphic-call regressions include Prop/Type instances in real function
 bodies, `max`/`imax` simplification inside Pi domains, closed nested references
 under active locals, separate cache keys for different universe instances,
@@ -542,7 +569,7 @@ Definition-cycle regressions use content-addressed standalone and mutual
 declarations, including a self-justifying theorem, a two-member cycle, type
 cycles, lets, shared syntax, and binders. They check repeated member failures,
 acyclic forward references, cache clearing, and the partial/unsafe policy.
-The unit suite contains 578 checks. The anonymous differential additionally
+The unit suite contains 589 checks. The anonymous differential additionally
 serializes eight cycle-policy fixtures and checks exact target sets, verdicts,
 failure counts, and cycle diagnostics in both implementations.
 
@@ -584,6 +611,7 @@ The VM pilot is preserved in the frozen archive and excluded from the host gate.
 | Intern coherence through conversion and lazy loading | [`Consistency/IngressCoherence.lean`](../Ix/Kernel/Verify/Consistency/IngressCoherence.lean) |
 | Source ownership, block registration, and finite preflight | [`Consistency/BlockOwnership.lean`](../Ix/Kernel/Verify/Consistency/BlockOwnership.lean), [`Consistency/SourceOwnershipCheck.lean`](../Ix/Kernel/Verify/Consistency/SourceOwnershipCheck.lean), [`SourceOwnership.lean`](../Ix/Kernel/SourceOwnership.lean) |
 | Dependent binders and function bodies | [`Consistency/BinderInference.lean`](../Ix/Kernel/Verify/Consistency/BinderInference.lean), [`Application.lean`](../Ix/Kernel/Verify/Consistency/Application.lean), [`BinderOpening.lean`](../Ix/Kernel/Verify/Consistency/BinderOpening.lean), [`Context.lean`](../Ix/Kernel/Verify/Consistency/Context.lean), [`Model/Checking.lean`](../Ix/Theory/Model/Checking.lean) |
+| Inferred type formation and direct lambda applications | [`Consistency/SynthesisInference.lean`](../Ix/Kernel/Verify/Consistency/SynthesisInference.lean), [`Formation.lean`](../Ix/Kernel/Verify/Consistency/Formation.lean), [`Model/UniverseBounds.lean`](../Ix/Theory/Model/UniverseBounds.lean) |
 | Production environment fragment and relative axiom policy | [`Consistency/Environment.lean`](../Ix/Kernel/Verify/Consistency/Environment.lean), [`Production.lean`](../Ix/Kernel/Verify/Consistency/Production.lean) |
 | Foundation assumptions, theorem contracts, and provenance | [Consistency model guide](theory.md) |
 | Host commands, receipts, and frozen regression evidence | [Certified checking guide](certified-checking.md) |

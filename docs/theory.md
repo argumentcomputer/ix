@@ -31,6 +31,17 @@ retain the exact declared universe count and denote the checked body at every
 universe instance. Application spines headed by locals
 or admitted polymorphic constants derive their type's validity from the context
 or dependency model, then check arguments and substitute the dependent result.
+The synthesis rules additionally derive a uniform universe bound for every
+generated type, allowing direct lambda applications and returned functions.
+Bounds come from actual binder-domain and earlier declaration type checks.
+For application, an inhabited dependent product bounds every fibre in a
+Grothendieck universe; the proof regime retains the exact bound zero. The
+resulting positive bounds can be larger than an independently inferred sort,
+while preserving every binder's Prop condition. No additional codomain check
+or semantic typing premise is required. Earlier executed type checks remain
+usable after interface growth and universe instantiation.
+Successful environment rows supply the axiom type-inference traces; public
+declaration success supplies the corresponding definition traces.
 Safe definition admission also rejects circular justification in both Lean and
 Rust, including `theorem loop : P := loop` with only `P : Prop` assumed. The
 production dependency walk returns an order with a proved decreasing rank;
