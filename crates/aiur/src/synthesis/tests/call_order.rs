@@ -3,8 +3,9 @@
 
 use super::*;
 use crate::bytecode::{CallComponent, Circuit};
-use crate::call_order::{RANK_BOUND, RANK_BYTES, RankRanges};
+use crate::call_order::{RANK_BOUND, RANK_LIMBS, RankRanges};
 use multi_stark::eval::{VarValues, eval_expr};
+use multi_stark::p3_field::{Field, PrimeField64};
 
 fn cycle_toplevel(grouped: bool) -> Toplevel {
   // Public f calls g; g and h call each other without a base case.
@@ -19,7 +20,7 @@ fn cycle_toplevel(grouped: bool) -> Toplevel {
       layout: FunctionLayout {
         input_size: 1,
         selectors: 1,
-        auxiliaries: 14,
+        auxiliaries: 8,
         lookups: 8,
       },
       entry: i == 0,
@@ -34,7 +35,7 @@ fn cycle_toplevel(grouped: bool) -> Toplevel {
       layout: FunctionLayout {
         input_size: 1,
         selectors: 2,
-        auxiliaries: 14,
+        auxiliaries: 8,
         lookups: 8,
       },
     });
@@ -117,8 +118,8 @@ fn system_construction_rejects_a_forged_component_certificate() {
 }
 
 /// f promotes and shares g(n); g recurses to zero, then calls acyclic h.
-/// Values above 255 also detect accidental range checks on acyclic members
-/// when their operation columns overlap a recursive member's rank bytes.
+/// Values above 65,535 also detect accidental range checks on acyclic members
+/// when their operation columns overlap a recursive member's rank limbs.
 fn component_promotion_toplevel(grouped: bool) -> Toplevel {
   let root = Function {
     body: Block {
@@ -166,7 +167,7 @@ fn component_promotion_toplevel(grouped: bool) -> Toplevel {
     layout: FunctionLayout {
       input_size: 1,
       selectors: 2,
-      auxiliaries: 15,
+      auxiliaries: 9,
       lookups: 8,
     },
     entry: false,
@@ -174,7 +175,7 @@ fn component_promotion_toplevel(grouped: bool) -> Toplevel {
   };
   let leaf = Function {
     body: Block {
-      ops: vec![Op::Const(G::from_u64(1_000)), Op::Add(0, 1)],
+      ops: vec![Op::Const(G::from_u64(1_000_000)), Op::Add(0, 1)],
       ctrl: Ctrl::Return(0, vec![2]),
     },
     layout: FunctionLayout {
@@ -198,7 +199,7 @@ fn component_promotion_toplevel(grouped: bool) -> Toplevel {
       layout: FunctionLayout {
         input_size: 1,
         selectors: 4,
-        auxiliaries: 15,
+        auxiliaries: 9,
         lookups: 8,
       },
     }];
@@ -211,7 +212,7 @@ fn acyclic_maps_omit_timestamps_without_changing_promoted_call_order() {
   let top = component_promotion_toplevel(false);
   let (record, output) =
     top.execute(0, vec![G::from_u8(4)], &mut empty_io_buffer()).unwrap();
-  assert_eq!(output, vec![G::from_u64(2_000)]);
+  assert_eq!(output, vec![G::from_u64(2_000_000)]);
   for i in [0, 2] {
     let map = &record.function_queries[i];
     assert_eq!(map.len(), 1);
@@ -246,7 +247,12 @@ fn component_boundaries_preserve_promotion_sharing_and_mixed_groups() {
         system.prove(0, &[G::from_u8(n)], &mut empty_io_buffer());
       assert_eq!(
         claim,
-        vec![function_channel(), G::ZERO, G::from_u8(n), G::from_u64(2_000)]
+        vec![
+          function_channel(),
+          G::ZERO,
+          G::from_u8(n),
+          G::from_u64(2_000_000)
+        ]
       );
       system
         .verify(&claim, &proof)
@@ -301,14 +307,15 @@ fn component_boundary_cannot_displace_a_recursive_provider_rank() {
   );
 }
 
-fn fill_bytes(row: &mut [G], value: u64, ranges: &mut RankRanges) {
+fn fill_limbs(row: &mut [G], value: u64, ranges: &mut RankRanges) {
   assert!(value < RANK_BOUND);
-  let bytes = value.to_le_bytes();
-  for (field, byte) in row.iter_mut().zip(&bytes[..RANK_BYTES]) {
-    *field = G::from_u8(*byte);
-  }
-  for pair in bytes[..RANK_BYTES].as_chunks::<2>().0 {
-    *ranges.entry([pair[0], pair[1]]).or_insert(G::ZERO) += G::ONE;
+  assert_eq!(row.len(), RANK_LIMBS);
+  for (field, pair) in
+    row.iter_mut().zip(value.to_le_bytes().as_chunks::<2>().0)
+  {
+    let limb = u16::from_le_bytes(*pair);
+    *field = G::from_u16(limb);
+    *ranges.entry(limb).or_insert(G::ZERO) += G::ONE;
   }
 }
 
@@ -352,12 +359,11 @@ fn lookup_balance(
       }
     }
   }
-  for ([a, b], count) in ranges {
+  for (limb, count) in ranges {
     *balance
       .entry(normalized(vec![
-        crate::u8_range_check_channel(),
-        G::from_u8(*a),
-        G::from_u8(*b),
+        crate::u16_range_check_channel(),
+        G::from_u16(*limb),
       ]))
       .or_insert(G::ZERO) -= *count;
   }
@@ -401,10 +407,10 @@ fn mutual_cycles_reject_at_the_closing_lookup_in_both_partitions() {
             row[aux + 1] = output;
             row[aux + 2] = G::ONE;
           } else {
-            fill_bytes(&mut row[aux + 1..aux + 7], member as u64, &mut ranges);
-            row[aux + 7] = output;
+            fill_limbs(&mut row[aux + 1..aux + 4], member as u64, &mut ranges);
+            row[aux + 4] = output;
             let gap = if member == 2 { RANK_BOUND - 2 } else { 0 };
-            fill_bytes(&mut row[aux + 8..aux + 14], gap, &mut ranges);
+            fill_limbs(&mut row[aux + 5..aux + 8], gap, &mut ranges);
           }
           violated += constraints
             .zeros
@@ -414,16 +420,16 @@ fn mutual_cycles_reject_at_the_closing_lookup_in_both_partitions() {
         }
       } else if i == system.toplevel.circuits.len() + 1 {
         // Bytes2 is the last circuit (there are no memories).
-        for ([a, b], count) in &ranges {
-          rows[(256 * usize::from(*a) + usize::from(*b)) * shape.main_width
-            + Bytes2::RANGE_CHECK_COLUMN] = *count;
+        for (limb, count) in &ranges {
+          rows[usize::from(*limb) * shape.main_width
+            + Bytes2::U16_RANGE_CHECK_COLUMN] = *count;
         }
       }
       traces.push(RowMajorMatrix::new(rows, shape.main_width));
     }
     assert_eq!(violated, 0, "all local polynomial constraints hold");
     // Only the closing h -> g lookup fails: its derived rank exceeds the
-    // bounded rank on g's return. All byte-range lookups balance exactly.
+    // bounded rank on g's return. All u16-range lookups balance exactly.
     let message =
       |rank| vec![function_channel(), G::ONE, input, output, G::from_u64(rank)];
     assert_eq!(
@@ -457,8 +463,8 @@ fn call_lookup_checks_strict_unsigned_order() {
     let mut ranges = RankRanges::default();
     row[1] = G::ONE;
     row[2] = G::ONE;
-    fill_bytes(&mut row[3..9], parent, &mut ranges);
-    fill_bytes(&mut row[10..16], gap, &mut ranges);
+    fill_limbs(&mut row[3..6], parent, &mut ranges);
+    fill_limbs(&mut row[7..10], gap, &mut ranges);
     assert!(
       constraints
         .zeros
@@ -480,47 +486,50 @@ fn out_of_range_gaps_cannot_hide_a_cycle_in_field_arithmetic() {
   let (cp, fp) = test_parameters();
   let system = AiurSystem::build(cycle_toplevel(false), cp, fp);
   let claim = vec![function_channel(), G::ZERO, G::from_u8(3), G::from_u8(7)];
-  let traces =
-    system
+  for limb in 0..3 {
+    // Isolate each range check: this forged limb packs to gap -1, so all
+    // function messages balance around the cycle by field arithmetic.
+    let forged = -G::from_u64(1 << (16 * limb)).inverse();
+    assert!(forged.as_canonical_u64() >= 65_536);
+    let traces = system
       .circuit_shapes()
       .iter()
       .enumerate()
       .map(|(i, shape)| {
-        let mut rows = vec![
-          G::ZERO;
-          if i < 3 {
-            4 * shape.main_width
-          } else {
-            shape.preprocessed_height * shape.main_width
-          }
-        ];
+        let height = if i < 3 { 4 } else { shape.preprocessed_height };
+        let mut rows = vec![G::ZERO; height * shape.main_width];
         if i < 3 {
           rows[0] = claim[2];
           rows[1] = G::ONE;
           rows[2] = G::from_u8(if i == 1 { 2 } else { 1 });
-          rows[9] = claim[3];
-          // All ranks are zero. A forged "byte" -1 makes caller + 1 + gap
-          // request rank zero, but cannot pass the byte table.
-          rows[10] = -G::ONE;
+          rows[6] = claim[3];
+          rows[7 + limb] = forged;
           let (constraints, _) = system.toplevel.build_constraints(i);
           assert!(constraints.zeros.iter().all(|expr| eval_expr(
             expr,
             &row_values(&rows[..shape.main_width])
           ) == G::ZERO));
         } else if i == 4 {
-          // Five valid zero-byte pairs per function, plus one impossible
-          // (-1, 0) pair. Supply every valid pair and no fabricated table row.
-          rows[Bytes2::RANGE_CHECK_COLUMN] = G::from_u8(15);
+          // Five valid zero limbs per function and one invalid limb.
+          rows[Bytes2::U16_RANGE_CHECK_COLUMN] = G::from_u8(15);
         }
         RowMajorMatrix::new(rows, shape.main_width)
       })
-      .collect();
-  let witness = SystemWitness::from_stage_1(traces, &system.system);
-  let proof = system.system.prove(&system.key, &claim, witness);
-  assert!(
-    system.verify(&claim, &proof).is_err(),
-    "unbounded gap allowed cyclic justification"
-  );
+      .collect::<Vec<_>>();
+    let ranges = [(0, G::from_u8(15))].into_iter().collect();
+    assert_eq!(
+      lookup_balance(&system.toplevel, &traces, &ranges, &claim),
+      [(vec![crate::u16_range_check_channel(), forged], G::from_u8(3))]
+        .into_iter()
+        .collect()
+    );
+    let witness = SystemWitness::from_stage_1(traces, &system.system);
+    let proof = system.system.prove(&system.key, &claim, witness);
+    assert!(
+      system.verify(&claim, &proof).is_err(),
+      "unbounded gap limb {limb} allowed cyclic justification"
+    );
+  }
 }
 
 #[test]
@@ -532,37 +541,36 @@ fn out_of_range_function_rank_is_rejected_by_the_byte_table() {
     ops: vec![Op::Const(G::from_u8(7))],
     ctrl: Ctrl::Return(0, vec![1]),
   };
-  top.functions[1].layout.auxiliaries = 7;
+  top.functions[1].layout.auxiliaries = 4;
   top.functions[1].layout.lookups = 4;
   top.circuits[1].layout = top.functions[1].layout;
   let (cp, fp) = test_parameters();
   let system = AiurSystem::build(top, cp, fp);
   let claim = vec![function_channel(), G::ZERO, G::from_u8(3), G::from_u8(7)];
-  let traces =
-    system
+  for limb in 0..3 {
+    // 65,536 in each limb gives rank 2^16, 2^32 or 2^48. The call can
+    // request all three using an honest bounded gap. Only the provider's
+    // limb range check distinguishes these noncanonical representations.
+    let requested_rank = 1_u64 << (16 * (limb + 1));
+    let mut ranges = RankRanges::default();
+    let traces = system
       .circuit_shapes()
       .iter()
       .enumerate()
       .map(|(i, shape)| {
-        let mut rows = vec![
-          G::ZERO;
-          if i < 2 {
-            4 * shape.main_width
-          } else {
-            shape.preprocessed_height * shape.main_width
-          }
-        ];
+        let height = if i < 2 { 4 } else { shape.preprocessed_height };
+        let mut rows = vec![G::ZERO; height * shape.main_width];
         if i < 2 {
           rows[0] = claim[2];
           rows[1] = G::ONE;
           rows[2] = G::ONE;
           if i == 0 {
-            rows[9] = claim[3];
-            rows[10..16].fill(G::from_u8(255));
+            rows[6] = claim[3];
+            fill_limbs(&mut rows[3..6], 0, &mut ranges);
+            fill_limbs(&mut rows[7..10], requested_rank - 1, &mut ranges);
           } else {
-            // 256 in the high byte packs to 2^48. The call lookup matches
-            // this rank, but the function's rank range check must fail.
-            rows[8] = G::from_u64(256);
+            rows[3 + limb] = G::from_u32(65_536);
+            *ranges.entry(0).or_insert(G::ZERO) += G::TWO;
           }
           let (constraints, _) = system.toplevel.build_constraints(i);
           assert!(constraints.zeros.iter().all(|expr| eval_expr(
@@ -570,19 +578,27 @@ fn out_of_range_function_rank_is_rejected_by_the_byte_table() {
             &row_values(&rows[..shape.main_width])
           ) == G::ZERO));
         } else if i == 3 {
-          rows[Bytes2::RANGE_CHECK_COLUMN] = G::from_u8(5);
-          rows[(256 * 255 + 255) * shape.main_width
-            + Bytes2::RANGE_CHECK_COLUMN] = G::from_u8(3);
+          for (&value, &count) in &ranges {
+            rows[usize::from(value) * shape.main_width
+              + Bytes2::U16_RANGE_CHECK_COLUMN] = count;
+          }
         }
         RowMajorMatrix::new(rows, shape.main_width)
       })
-      .collect();
-  let witness = SystemWitness::from_stage_1(traces, &system.system);
-  let proof = system.system.prove(&system.key, &claim, witness);
-  assert!(
-    system.verify(&claim, &proof).is_err(),
-    "unbounded function rank accepted"
-  );
+      .collect::<Vec<_>>();
+    assert_eq!(
+      lookup_balance(&system.toplevel, &traces, &ranges, &claim),
+      [(vec![crate::u16_range_check_channel(), G::from_u32(65_536)], G::ONE)]
+        .into_iter()
+        .collect()
+    );
+    let witness = SystemWitness::from_stage_1(traces, &system.system);
+    let proof = system.system.prove(&system.key, &claim, witness);
+    assert!(
+      system.verify(&claim, &proof).is_err(),
+      "unbounded function rank limb {limb} accepted"
+    );
+  }
 }
 
 #[test]
@@ -607,7 +623,7 @@ fn finite_recursive_calls_verify() {
     layout: FunctionLayout {
       input_size: 1,
       selectors: 2,
-      auxiliaries: 15,
+      auxiliaries: 9,
       lookups: 8,
     },
     entry: true,
@@ -641,7 +657,7 @@ fn shared_callee_keeps_one_consistent_rank() {
     layout: FunctionLayout {
       input_size: 1,
       selectors: 1,
-      auxiliaries: 21,
+      auxiliaries: 12,
       lookups: 12,
     },
     entry: true,
@@ -655,7 +671,7 @@ fn shared_callee_keeps_one_consistent_rank() {
     layout: FunctionLayout {
       input_size: 1,
       selectors: 1,
-      auxiliaries: 7,
+      auxiliaries: 4,
       lookups: 4,
     },
     entry: false,
@@ -718,7 +734,7 @@ fn unit_counters_preserve_promotion_sharing_and_grouped_proofs() {
         .toplevel
         .execute(0, input.clone(), &mut empty_io_buffer())
         .unwrap();
-      assert_eq!(output, vec![G::from_u64(2_000)]);
+      assert_eq!(output, vec![G::from_u64(2_000_000)]);
       for map in &record.function_queries {
         assert_eq!(map.completion_entries(), 0);
         for (_, row) in map.iter() {
@@ -966,6 +982,249 @@ fn output_counters_verify_for_memory_lists_without_input_progress_equations() {
       system
         .verify(&claim, &proof)
         .expect("output-counter list proof must verify");
+    }
+  }
+}
+
+#[test]
+fn all_u16_limbs_match_each_compiled_rank_and_gap_lookup() {
+  let top = cycle_toplevel(false);
+  let (constraints, requests) = top.build_constraints(0);
+  let table = Bytes2.preprocessed().unwrap();
+  let providers = Bytes2.lookups();
+  assert_eq!(constraints.width, 10);
+  assert_eq!(providers.len(), 8);
+  assert_eq!(table.width, 11);
+  let table_row = [G::ZERO; 8];
+  let mut row = vec![G::ZERO; constraints.width];
+  row[1] = G::ONE;
+  row[2] = G::ONE;
+  let mut seen = vec![false; 65_536];
+  for value in 0..=u16::MAX {
+    let field = G::from_u16(value);
+    row[3..6].fill(field);
+    row[7..10].fill(field);
+    let preprocessed =
+      &table.values[usize::from(value) * table.width..][..table.width];
+    let mut table_values = row_values(&table_row);
+    table_values.preprocessed = [preprocessed, preprocessed];
+    let scalar_message: Vec<_> = providers[Bytes2::U16_RANGE_CHECK_COLUMN]
+      .args
+      .iter()
+      .map(|e| eval_expr(e, &table_values))
+      .collect();
+    assert_eq!(scalar_message, [crate::u16_range_check_channel(), field]);
+    let scalar = usize::try_from(scalar_message[1].as_canonical_u64()).unwrap();
+    assert!(!seen[scalar]);
+    seen[scalar] = true;
+    let byte_message: Vec<_> = providers[Bytes2::RANGE_CHECK_COLUMN]
+      .args
+      .iter()
+      .map(|e| eval_expr(e, &table_values))
+      .collect();
+    assert_eq!(
+      byte_message,
+      [
+        crate::u8_range_check_channel(),
+        G::from_u16(value >> 8),
+        G::from_u16(value & 255)
+      ]
+    );
+    assert_ne!(normalized(byte_message), normalized(scalar_message.clone()));
+    for slot in [1, 2, 3, 5, 6, 7] {
+      let request: Vec<_> = requests[slot]
+        .args
+        .iter()
+        .map(|e| eval_expr(e, &row_values(&row)))
+        .collect();
+      assert_eq!(request, scalar_message);
+      assert_eq!(
+        eval_expr(&requests[slot].multiplicity, &row_values(&row)),
+        G::ONE
+      );
+    }
+  }
+  assert!(seen.into_iter().all(|present| present));
+}
+
+#[test]
+fn supplied_large_ranks_verify_in_both_partitions_and_decoded_keys() {
+  for grouped in [false, true] {
+    let mut top = cycle_toplevel(false);
+    top.functions.truncate(2);
+    top.circuits.truncate(2);
+    top.functions[1].body = Block {
+      ops: vec![Op::Const(G::from_u8(7))],
+      ctrl: Ctrl::Return(0, vec![1]),
+    };
+    top.functions[1].layout.auxiliaries = 4;
+    top.functions[1].layout.lookups = 4;
+    top.circuits[1].layout = top.functions[1].layout;
+    if grouped {
+      top.circuits = vec![Circuit {
+        members: vec![0, 1],
+        layout: FunctionLayout { selectors: 2, ..top.functions[0].layout },
+      }];
+    }
+    let (cp, fp) = test_parameters();
+    let system = AiurSystem::build(top, cp, fp);
+    let encoded = crate::vk_codec::aiur_system_to_bytes(&system).unwrap();
+    let (decoded, _, _) = crate::vk_codec::from_bytes(&encoded).unwrap();
+    let claim = vec![function_channel(), G::ZERO, G::from_u8(3), G::from_u8(7)];
+    for child in [1, 65_535, 65_536, (1 << 32) - 1, 1 << 32, RANK_BOUND - 1] {
+      let mut ranges = RankRanges::default();
+      let mut traces = Vec::new();
+      for (index, shape) in system.circuit_shapes().iter().enumerate() {
+        let is_function = index < system.toplevel.circuits.len();
+        let height = if is_function { 4 } else { shape.preprocessed_height };
+        let mut rows = vec![G::ZERO; height * shape.main_width];
+        if is_function {
+          let circuit = &system.toplevel.circuits[index];
+          let (constraints, _) = system.toplevel.build_constraints(index);
+          for (offset, &member) in circuit.members.iter().enumerate() {
+            let row =
+              &mut rows[offset * shape.main_width..][..shape.main_width];
+            row[0] = claim[2];
+            row[1 + offset] = G::ONE;
+            let aux = 1 + circuit.layout.selectors;
+            row[aux] = G::ONE;
+            fill_limbs(
+              &mut row[aux + 1..aux + 4],
+              if member == 0 { 0 } else { child },
+              &mut ranges,
+            );
+            if member == 0 {
+              row[aux + 4] = claim[3];
+              fill_limbs(&mut row[aux + 5..aux + 8], child - 1, &mut ranges);
+            }
+            assert!(
+              constraints
+                .zeros
+                .iter()
+                .all(|e| eval_expr(e, &row_values(row)) == G::ZERO)
+            );
+          }
+        } else if index == system.toplevel.circuits.len() + 1 {
+          for (&limb, &count) in &ranges {
+            rows[usize::from(limb) * shape.main_width
+              + Bytes2::U16_RANGE_CHECK_COLUMN] = count;
+          }
+        }
+        traces.push(RowMajorMatrix::new(rows, shape.main_width));
+      }
+      assert!(
+        lookup_balance(&system.toplevel, &traces, &ranges, &claim).is_empty()
+      );
+      let witness = SystemWitness::from_stage_1(traces, &system.system);
+      let proof = system.system.prove(&system.key, &claim, witness);
+      system.verify(&claim, &proof).unwrap();
+      decoded.verify(&claim, &proof).unwrap();
+    }
+  }
+}
+
+#[test]
+fn scalar_range_providers_cannot_supply_non_byte_pairs() {
+  let function = Function {
+    body: Block {
+      ops: vec![Op::U8RangeCheck(0, 1)],
+      ctrl: Ctrl::Return(0, vec![0, 1]),
+    },
+    layout: FunctionLayout {
+      input_size: 2,
+      selectors: 1,
+      auxiliaries: 1,
+      lookups: 2,
+    },
+    entry: true,
+    constrained: true,
+  };
+  let mut top = with_singleton_circuits(vec![function], vec![]);
+  top.call_components = vec![CallComponent { order: 0, ranked: false }];
+  let (cp, fp) = test_parameters();
+  let system = AiurSystem::build(top, cp, fp);
+  // With a shared channel, lookup padding would identify (channel, x, 0)
+  // and (channel, x), allowing a scalar u16 to masquerade as a byte pair.
+  for value in [256_u16, 65_535] {
+    let x = G::from_u16(value);
+    let claim = vec![function_channel(), G::ZERO, x, G::ZERO, x, G::ZERO];
+    let traces = system
+      .circuit_shapes()
+      .iter()
+      .enumerate()
+      .map(|(i, shape)| {
+        let height = if i == 0 { 4 } else { shape.preprocessed_height };
+        let mut rows = vec![G::ZERO; height * shape.main_width];
+        if i == 0 {
+          rows[..4].copy_from_slice(&[x, G::ZERO, G::ONE, G::ONE]);
+          let (constraints, _) = system.toplevel.build_constraints(0);
+          assert!(
+            constraints
+              .zeros
+              .iter()
+              .all(|e| eval_expr(e, &row_values(&rows[..shape.main_width]))
+                == G::ZERO)
+          );
+        } else if i == 2 {
+          rows[usize::from(value) * shape.main_width
+            + Bytes2::U16_RANGE_CHECK_COLUMN] = G::ONE;
+        }
+        RowMajorMatrix::new(rows, shape.main_width)
+      })
+      .collect::<Vec<_>>();
+    let ranges = [(value, G::ONE)].into_iter().collect();
+    assert_eq!(
+      lookup_balance(&system.toplevel, &traces, &ranges, &claim),
+      [
+        (vec![crate::u8_range_check_channel(), x], G::ONE),
+        (vec![crate::u16_range_check_channel(), x], -G::ONE)
+      ]
+      .into_iter()
+      .collect()
+    );
+    let witness = SystemWitness::from_stage_1(traces, &system.system);
+    let proof = system.system.prove(&system.key, &claim, witness);
+    assert!(
+      system.verify(&claim, &proof).is_err(),
+      "u16 provider supplied byte {value}"
+    );
+  }
+}
+
+#[test]
+fn packed_u32_words_keep_byte_weights_with_u16_ranks() {
+  for ranked in [false, true] {
+    let function = Function {
+      body: Block {
+        ops: vec![
+          Op::U8RangeCheck(0, 1),
+          Op::U8RangeCheck(2, 3),
+          Op::U32ToField(vec![0, 1, 2, 3]),
+        ],
+        ctrl: Ctrl::Return(0, vec![4]),
+      },
+      layout: FunctionLayout {
+        input_size: 4,
+        selectors: 1,
+        auxiliaries: if ranked { 4 } else { 1 },
+        lookups: if ranked { 6 } else { 3 },
+      },
+      entry: true,
+      constrained: true,
+    };
+    let mut top = with_singleton_circuits(vec![function], vec![]);
+    if !ranked {
+      top.call_components = vec![CallComponent { order: 0, ranked: false }];
+    }
+    let (cp, fp) = test_parameters();
+    let system = AiurSystem::build(top, cp, fp);
+    for word in [0_u32, 1, 256, 65_536, 16_777_216, u32::MAX] {
+      let input = word.to_le_bytes().map(G::from_u8);
+      let (mut claim, proof) = system.prove(0, &input, &mut empty_io_buffer());
+      assert_eq!(claim.last(), Some(&G::from_u32(word)));
+      system.verify(&claim, &proof).unwrap();
+      *claim.last_mut().unwrap() += G::ONE;
+      assert!(system.verify(&claim, &proof).is_err());
     }
   }
 }

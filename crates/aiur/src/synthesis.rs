@@ -730,7 +730,7 @@ mod tests {
   /// Layout — matched against how `constraints.rs`/`trace.rs` walk the block:
   /// - `input_size = 2`: the two inputs `a`, `b`.
   /// - `selectors = 1`: the single `Return` (selector index 0).
-  /// - `auxiliaries = 8`: multiplicity, six rank bytes and one auxiliary
+  /// - `auxiliaries = 5`: multiplicity, three u16 rank limbs and one auxiliary
   ///   for the `Mul` — `a` and `b` each have
   ///   degree 1, so `a*b` has degree 2 and `constraints.rs` spills it into a
   ///   fresh auxiliary column pinned by `sel * (col - a*b)`.
@@ -763,7 +763,7 @@ mod tests {
       layout: FunctionLayout {
         input_size: 2,
         selectors: 1,
-        auxiliaries: 8,
+        auxiliaries: 5,
         lookups: 4,
       },
       entry: true,
@@ -782,7 +782,7 @@ mod tests {
       layout: FunctionLayout {
         input_size: 2,
         selectors: 1,
-        auxiliaries: 11,
+        auxiliaries: 8,
         lookups: 6,
       },
       entry: true,
@@ -827,7 +827,7 @@ mod tests {
   /// - `f` (idx 0, entry): `f(a, b) = g(a) * b`, but routing `b` through
   ///   memory so the memory path is live:
   ///   - `Call(1, [a], 1, false)` → `g(a)` at value idx 2, allocating one
-  ///     output auxiliary, six gap auxiliaries and four lookup slots.
+  ///     output auxiliary, three gap auxiliaries and four lookup slots.
   ///   - `Store([b])` → pointer at value idx 3, allocating one pointer
   ///     auxiliary + one memory-channel lookup slot (multiplicity pushed).
   ///   - `Load(1, 3)` → the loaded `b` at value idx 4, allocating one value
@@ -840,14 +840,14 @@ mod tests {
   ///   the block:
   ///   - `input_size = 2` (`a`, `b`).
   ///   - `selectors = 1` (the single `Return`).
-  ///   - `auxiliaries = 17`: multiplicity(1), rank bytes(6), call output(1),
-  ///     call gap(6), store pointer(1), load value(1), multiplication(1).
+  ///   - `auxiliaries = 11`: multiplicity(1), rank limbs(3), call output(1),
+  ///     call gap(3), store pointer(1), load value(1), multiplication(1).
   ///   - `lookups = 10`: return(1), rank ranges(3), call/order(4), memory(2).
   ///
   /// - `g` (idx 1): `g(x) = x + 1`:
   ///   - `Const(1)` at value idx 1, `Add(0, 1)` at value idx 2,
   ///     `Return(0, [2])`. `Const`/`Add` allocate no auxiliaries.
-  ///   - Layout: `input_size = 1`, `selectors = 1`, `auxiliaries = 7`
+  ///   - Layout: `input_size = 1`, `selectors = 1`, `auxiliaries = 4`
   ///     (multiplicity and rank), `lookups = 4` (return and rank ranges).
   ///
   /// `memory_sizes = [1]`: a memory of size-1 values, which materializes one
@@ -871,7 +871,7 @@ mod tests {
       layout: FunctionLayout {
         input_size: 2,
         selectors: 1,
-        auxiliaries: 17,
+        auxiliaries: 11,
         lookups: 10,
       },
       entry: true,
@@ -887,7 +887,7 @@ mod tests {
       layout: FunctionLayout {
         input_size: 1,
         selectors: 1,
-        auxiliaries: 7,
+        auxiliaries: 4,
         lookups: 4,
       },
       entry: false,
@@ -951,7 +951,7 @@ mod tests {
       layout: FunctionLayout {
         input_size: 1,
         selectors: 1,
-        auxiliaries: 15,
+        auxiliaries: 9,
         lookups: 8,
       },
       entry: true,
@@ -966,7 +966,7 @@ mod tests {
       layout: FunctionLayout {
         input_size: 1,
         selectors: 1,
-        auxiliaries: 14,
+        auxiliaries: 8,
         lookups: 8,
       },
       entry: false,
@@ -981,7 +981,7 @@ mod tests {
       layout: FunctionLayout {
         input_size: 1,
         selectors: 1,
-        auxiliaries: 7,
+        auxiliaries: 4,
         lookups: 4,
       },
       entry: false,
@@ -1062,8 +1062,8 @@ mod tests {
 
     // Function circuits: main width = inputs + selectors + auxiliaries, no
     // preprocessed matrix.
-    assert_eq!(shapes[0].main_width, 2 + 1 + 17);
-    assert_eq!(shapes[1].main_width, 1 + 1 + 7);
+    assert_eq!(shapes[0].main_width, 2 + 1 + 11);
+    assert_eq!(shapes[1].main_width, 1 + 1 + 4);
     // Memory of size 1: multiplicity + selector + pointer + 1 value.
     assert_eq!(shapes[2].main_width, 3 + 1);
     for shape in &shapes[..3] {

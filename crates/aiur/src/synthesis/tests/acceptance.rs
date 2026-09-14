@@ -26,7 +26,7 @@ fn grouped_promotion_toplevel() -> Toplevel {
     layout: FunctionLayout {
       input_size: 1,
       selectors: 2,
-      auxiliaries: 14,
+      auxiliaries: 8,
       lookups: 8,
     },
   });
@@ -150,10 +150,10 @@ fn inactive_return_cannot_supply_claim() {
       let height = if i == 0 { 4 } else { shape.preprocessed_height };
       let mut rows = vec![G::ZERO; height * shape.main_width];
       if i == 0 {
-        // Inputs, inactive selector, return multiplicity, six rank bytes,
+        // Inputs, inactive selector, return multiplicity, three u16 rank limbs,
         // then unconstrained product advice.
         rows[..4].copy_from_slice(&[a, b, G::ZERO, G::ONE]);
-        rows[10] = wrong_result;
+        rows[7] = wrong_result;
       }
       RowMajorMatrix::new(rows, shape.main_width)
     })
@@ -178,7 +178,7 @@ fn recursive_cycle_cannot_supply_claim() {
     layout: FunctionLayout {
       input_size: 1,
       selectors: 1,
-      auxiliaries: 14,
+      auxiliaries: 8,
       lookups: 8,
     },
     entry: true,
@@ -201,11 +201,11 @@ fn recursive_cycle_cannot_supply_claim() {
         // One active row provides twice: once to its own recursive call,
         // and once to the public claim. No evaluator is used.
         rows[..3].copy_from_slice(&[input, G::ONE, G::from_u8(2)]);
-        rows[9] = output;
+        rows[6] = output;
       } else if i == system.toplevel.circuits.len() + 1 {
-        // Six zero-byte pairs: three for the row rank and three for the
+        // Six zero u16 limbs: three for the row rank and three for the
         // call gap. Balance these lookups so rejection tests call order.
-        rows[Bytes2::RANGE_CHECK_COLUMN] = G::from_u8(6);
+        rows[Bytes2::U16_RANGE_CHECK_COLUMN] = G::from_u8(6);
       }
       RowMajorMatrix::new(rows, shape.main_width)
     })

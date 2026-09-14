@@ -147,7 +147,7 @@ mod tests {
 
   fn continued_program(selectors: usize) -> Toplevel {
     let layout =
-      FunctionLayout { input_size: 1, selectors, auxiliaries: 7, lookups: 4 };
+      FunctionLayout { input_size: 1, selectors, auxiliaries: 4, lookups: 4 };
     Toplevel {
       functions: vec![Function {
         body: continued_body(),

@@ -64,9 +64,9 @@ fn message(lookup: &Lookup<Expr<G>>, row: &[G], preprocessed: &[G]) -> Vec<G> {
 fn every_byte_pair_matches_the_consolidated_compiled_lookup() {
   let table = Bytes2.preprocessed().unwrap();
   let pulls = Bytes2.lookups();
-  let table_row = [G::ZERO; 7];
+  let table_row = [G::ZERO; 8];
   assert_eq!(table.width, 11);
-  assert_eq!(pulls.len(), 7);
+  assert_eq!(pulls.len(), 8);
 
   for grouped in [false, true] {
     let top = byte_toplevel(grouped);
@@ -159,7 +159,7 @@ fn interpreter_and_generated_helpers_share_table_multiplicities() {
   for row in a.values.chunks_exact(a.width) {
     assert_eq!(
       row,
-      [G::TWO, G::ZERO, G::ONE, G::ZERO, G::ZERO, G::ZERO, G::ZERO]
+      [G::TWO, G::ZERO, G::ONE, G::ZERO, G::ZERO, G::ZERO, G::ZERO, G::ZERO]
     );
   }
 }
@@ -179,7 +179,7 @@ fn consolidated_byte_proofs_verify_in_both_partitions_and_key_codec() {
         shape.preprocessed_width,
         shape.preprocessed_height
       ),
-      (7, 8, 2, 11, 65_536)
+      (8, 8, 2, 11, 65_536)
     );
     let bytes = crate::vk_codec::aiur_system_to_bytes(&system).unwrap();
     let (decoded, _, _) = crate::vk_codec::from_bytes(&bytes).unwrap();
@@ -312,7 +312,16 @@ fn original_and_consolidated_operations_share_multiplicities_in_one_proof() {
       [(usize::from(a) * 256 + usize::from(b)) * table.width..][..table.width];
     assert_eq!(
       row,
-      [G::from_u8(3), G::ZERO, G::TWO, G::ZERO, G::ZERO, G::ZERO, G::ZERO]
+      [
+        G::from_u8(3),
+        G::ZERO,
+        G::TWO,
+        G::ZERO,
+        G::ZERO,
+        G::ZERO,
+        G::ZERO,
+        G::ZERO
+      ]
     );
     let (claim, proof) =
       system.prove_from_execution(0, &input, &io, record, &output);

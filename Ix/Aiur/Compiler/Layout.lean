@@ -107,19 +107,19 @@ structure LayoutMState where
   functionLayout : Aiur.Bytecode.FunctionLayout
   memSizes : MemSizes
   degrees : Array Nat
-  /-- Empty retains the general six-byte gap at every constrained call. -/
+  /-- Empty retains the general three-limb u16 gap at every constrained call. -/
   callRanks : Array Aiur.Bytecode.CallRank := #[]
 
 @[inline] def LayoutMState.new (inputSize : Nat) : LayoutMState :=
-  -- Multiplicity plus six rank bytes, with three byte-pair range lookups.
-  ⟨{ inputSize, selectors := 0, auxiliaries := 7, lookups := 3 }, .empty, Array.replicate inputSize 1, #[]⟩
+  -- Multiplicity plus three u16 rank limbs, with three scalar range lookups.
+  ⟨{ inputSize, selectors := 0, auxiliaries := 4, lookups := 3 }, .empty, Array.replicate inputSize 1, #[]⟩
 
 def LayoutMState.withCallRanks (inputSize : Nat) (ranked : Bool)
     (callRanks : Array Aiur.Bytecode.CallRank) : LayoutMState :=
   { functionLayout := {
       inputSize := inputSize
       selectors := 0
-      auxiliaries := if ranked then 7 else 1
+      auxiliaries := if ranked then 4 else 1
       lookups := if ranked then 3 else 0 }
     memSizes := .empty
     degrees := Array.replicate inputSize 1
@@ -193,7 +193,7 @@ def opLayout : Bytecode.Op → LayoutM Unit
       match (← get).callRanks[function]?.getD .ordered with
       | .zero => pure ()
       | .bound => bumpAuxiliaries
-      | .ordered => bumpAuxiliaries 6; bumpLookups 3
+      | .ordered => bumpAuxiliaries 3; bumpLookups 3
   | .store values => do
     pushDegree 1; bumpAuxiliaries; bumpLookups; addMemSize values.size
   | .load size _ => do

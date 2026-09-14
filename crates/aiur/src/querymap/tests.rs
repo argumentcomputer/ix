@@ -318,7 +318,7 @@ fn packed_and_full_records_have_identical_function_memory_and_lookup_witnesses()
   };
   use multi_stark::lookup::LookupValues;
   let layout =
-    FunctionLayout { input_size: 3, selectors: 1, auxiliaries: 7, lookups: 4 };
+    FunctionLayout { input_size: 3, selectors: 1, auxiliaries: 4, lookups: 4 };
   let top = Toplevel {
     functions: vec![Function {
       body: Block { ops: vec![], ctrl: Ctrl::Return(0, vec![0, 1, 2]) },

@@ -16,8 +16,8 @@ use crate::{
     Block, CallComponent, Ctrl, Function, FunctionLayout, Op, Toplevel,
   },
   call_order::{
-    CallRank, RANK_BOUND, RANK_BYTES, RankRanges, call_rank, merge_ranges,
-    row_uses_rank,
+    CallRank, RANK_BOUND, RANK_LIMB_BITS, RANK_LIMBS, RankRanges, call_rank,
+    merge_ranges, row_uses_rank,
   },
   execute::{
     IOBuffer, IOKeyInfo, QueryRecord, find_unconstrained_big_uint_div_mod,
@@ -30,6 +30,7 @@ use crate::{
   u8_add_channel, u8_bit_decomposition_channel, u8_mul_channel,
   u8_range_check_channel, u8_shift_left_channel, u8_shift_right_channel,
   u8_sub_channel, u8_xor_channel, u8_xor_split4_channel, u8_xor_split7_channel,
+  u16_range_check_channel,
 };
 
 struct ColumnIndex {
@@ -98,19 +99,17 @@ impl<'a, 'b> ColumnMutSlice<'a, 'b> {
     index.lookup += 1;
   }
 
-  fn push_rank_bytes(&mut self, index: &mut ColumnIndex, rank: u64) {
+  fn push_rank_limbs(&mut self, index: &mut ColumnIndex, rank: u64) {
     assert!(rank < RANK_BOUND, "call-order rank exceeds 48 bits");
-    let bytes = rank.to_le_bytes();
-    for &byte in &bytes[..RANK_BYTES] {
-      self.push_auxiliary(index, G::from_u8(byte));
-    }
-    for pair in bytes[..RANK_BYTES].as_chunks::<2>().0 {
+    for i in 0..RANK_LIMBS {
+      let limb = ((rank >> (RANK_LIMB_BITS * i)) & 0xffff) as u16;
+      self.push_auxiliary(index, G::from_u16(limb));
       self.push_lookup(
         index,
         G::ONE,
-        &[u8_range_check_channel(), G::from_u8(pair[0]), G::from_u8(pair[1])],
+        &[u16_range_check_channel(), G::from_u16(limb)],
       );
-      *self.rank_ranges.entry([pair[0], pair[1]]).or_insert(G::ZERO) += G::ONE;
+      *self.rank_ranges.entry(limb).or_insert(G::ZERO) += G::ONE;
     }
   }
 }
@@ -276,7 +275,7 @@ impl Function {
     // Push the multiplicity
     slice.push_auxiliary(index, context.multiplicity);
     if row_uses_rank(context.call_components, context.function) {
-      slice.push_rank_bytes(index, context.rank);
+      slice.push_rank_limbs(index, context.rank);
     }
     let _ = self.body.populate_row(map, index, slice, context, io_buffer);
   }
@@ -469,7 +468,7 @@ impl Op {
               let gap = rank
                 .checked_sub(context.rank + 1)
                 .expect("constrained call does not increase rank");
-              slice.push_rank_bytes(index, gap);
+              slice.push_rank_limbs(index, gap);
             },
           }
         }

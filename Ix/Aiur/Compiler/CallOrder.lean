@@ -69,7 +69,7 @@ Cross-component calls need no comparison between their endpoint ranks.
 
 This is the order argument used by the specialization, independent of how
 the candidate components are produced. Relating AIR lookups to these row
-premises still requires activity, exact lookup balance, and byte bounds. -/
+premises still requires activity, exact lookup balance, and rank-limb bounds. -/
 theorem CallComponent.wellFounded_calls {α : Type} (component : α → CallComponent)
     (rank : α → Nat) (componentCount rankBound : Nat)
     (hc : ∀ row, (component row).order < componentCount)

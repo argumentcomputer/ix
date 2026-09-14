@@ -13,7 +13,7 @@ def graphToplevel (graph : Array (Array Bool)) : Bytecode.Toplevel where
     body := {
       ops := (edges.mapIdx fun i edge => if edge then #[.call i #[] 0 false] else #[]).flatten
       ctrl := .return 0 #[] }
-    layout := ⟨0, 1, 7, 4⟩
+    layout := ⟨0, 1, 4, 4⟩
     entry := true
     constrained := true }
   memorySizes := #[]

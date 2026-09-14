@@ -77,9 +77,9 @@ fn public_verify_checks_fixed_byte_activity_before_openings() {
       let mut rows = vec![G::ZERO; height * shape.main_width];
       if index == 0 {
         rows[..4].fill(G::ONE);
-        rows[10] = G::ONE;
+        rows[7] = G::ONE;
       } else if index == 2 {
-        rows[Bytes2::RANGE_CHECK_COLUMN] = G::from_u8(3);
+        rows[Bytes2::U16_RANGE_CHECK_COLUMN] = G::from_u8(3);
       }
       RowMajorMatrix::new(rows, shape.main_width)
     })

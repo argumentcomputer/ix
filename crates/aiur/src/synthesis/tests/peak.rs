@@ -6,7 +6,7 @@ use crate::bytecode::Circuit;
 
 fn grouped_system() -> AiurSystem {
   let layout =
-    FunctionLayout { input_size: 1, selectors: 1, auxiliaries: 7, lookups: 4 };
+    FunctionLayout { input_size: 1, selectors: 1, auxiliaries: 4, lookups: 4 };
   let functions = (0..3)
     .map(|_| Function {
       body: Block { ops: vec![], ctrl: Ctrl::Return(0, vec![0]) },
@@ -135,10 +135,12 @@ fn grouped_witness_skips_advice_without_shifting_members_or_ranks() {
     );
     assert_eq!(values[3], G::ONE);
     assert_eq!(
-      &values[4..10],
+      &values[4..7],
       &result.rank.to_le_bytes()[..6]
+        .as_chunks::<2>()
+        .0
         .iter()
-        .map(|&b| G::from_u8(b))
+        .map(|&b| G::from_u16(u16::from_le_bytes(b)))
         .collect::<Vec<_>>()
     );
   }

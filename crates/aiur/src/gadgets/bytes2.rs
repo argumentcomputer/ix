@@ -8,7 +8,7 @@ use multi_stark::{
 use crate::{
   G, execute::QueryRecord, gadgets::AiurGadget, u8_add_channel, u8_mul_channel,
   u8_range_check_channel, u8_sub_channel, u8_xor_channel,
-  u8_xor_split4_channel, u8_xor_split7_channel,
+  u8_xor_split4_channel, u8_xor_split7_channel, u16_range_check_channel,
 };
 
 /// Number of columns in the trace with multiplicities for
@@ -19,7 +19,8 @@ use crate::{
 /// - mul
 /// - xor_split7
 /// - xor_split4
-const TRACE_WIDTH: usize = 7;
+/// - scalar u16 range_check
+const TRACE_WIDTH: usize = 8;
 
 /// Number of columns in the preprocessed trace:
 /// - first raw byte value
@@ -169,6 +170,7 @@ impl AiurGadget for Bytes2 {
     let mul_channel = Expr::constant(u8_mul_channel());
     let xor_split7_channel = Expr::constant(u8_xor_split7_channel());
     let xor_split4_channel = Expr::constant(u8_xor_split4_channel());
+    let u16_range_channel = Expr::constant(u16_range_check_channel());
 
     // Multiplicity columns
     let xor_multiplicity = Expr::main(0);
@@ -178,6 +180,7 @@ impl AiurGadget for Bytes2 {
     let mul_multiplicity = Expr::main(4);
     let xor_split7_multiplicity = Expr::main(5);
     let xor_split4_multiplicity = Expr::main(6);
+    let u16_range_multiplicity = Expr::main(7);
 
     // Preprocessed columns
     let i = Expr::preprocessed(0);
@@ -230,7 +233,20 @@ impl AiurGadget for Bytes2 {
     };
     let pull_xor_split4 = Lookup {
       multiplicity: -xor_split4_multiplicity,
-      args: vec![xor_split4_channel, i, j, xor_split4_hi, xor_split4_lo],
+      args: vec![
+        xor_split4_channel,
+        i.clone(),
+        j.clone(),
+        xor_split4_hi,
+        xor_split4_lo,
+      ],
+    };
+
+    // The preprocessed row enumerates exactly one integer in 0..2^16.
+    // Keep this separate from the two independent byte-range arguments.
+    let pull_u16_range = Lookup {
+      multiplicity: -u16_range_multiplicity,
+      args: vec![u16_range_channel, i * Expr::constant(G::from_u16(256)) + j],
     };
 
     vec![
@@ -241,6 +257,7 @@ impl AiurGadget for Bytes2 {
       pull_mul,
       pull_xor_split7,
       pull_xor_split4,
+      pull_u16_range,
     ]
   }
 
@@ -260,7 +277,8 @@ impl AiurGadget for Bytes2 {
       .zip(&record.bytes2_queries.0)
       .zip(row_writers.iter_mut())
     {
-      let [xor, add, sub, range_check, mul, xor_split7, xor_split4] = *counts;
+      let [xor, add, sub, range_check, mul, xor_split7, xor_split4, u16_range] =
+        *counts;
       let i = G::from_usize(row_idx / 256);
       let j = G::from_usize(row_idx % 256);
       row.copy_from_slice(counts);
@@ -282,6 +300,11 @@ impl AiurGadget for Bytes2 {
       row_lookups.pull(5, xor_split7, &[u8_xor_split7_channel(), i, j, hi, lo]);
       let (hi, lo) = Self::xor_split4(&i, &j);
       row_lookups.pull(6, xor_split4, &[u8_xor_split4_channel(), i, j, hi, lo]);
+      row_lookups.pull(
+        Self::U16_RANGE_CHECK_COLUMN,
+        u16_range,
+        &[u16_range_check_channel(), G::from_usize(row_idx)],
+      );
     }
     drop(row_writers);
     (RowMajorMatrix::new(rows, TRACE_WIDTH), builder.finish())
@@ -329,9 +352,8 @@ impl Bytes2Queries {
     &mut self,
     ranges: crate::call_order::RankRanges,
   ) {
-    for ([i, j], count) in ranges {
-      self.0[256 * usize::from(i) + usize::from(j)]
-        [Bytes2::RANGE_CHECK_COLUMN] += count;
+    for (limb, count) in ranges {
+      self.0[usize::from(limb)][Bytes2::U16_RANGE_CHECK_COLUMN] += count;
     }
   }
 
@@ -358,6 +380,8 @@ impl Bytes2Queries {
 impl Bytes2 {
   /// Shared row and lookup-slot index of the byte-pair range channel.
   pub(crate) const RANGE_CHECK_COLUMN: usize = 3;
+  /// Shared row and lookup-slot index of the scalar u16 range channel.
+  pub(crate) const U16_RANGE_CHECK_COLUMN: usize = 7;
 
   #[inline]
   pub fn xor(i: &G, j: &G) -> G {

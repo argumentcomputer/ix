@@ -40,7 +40,7 @@ fn wide_recursive_toplevel() -> Toplevel {
     layout: FunctionLayout {
       input_size: 1,
       selectors: 2,
-      auxiliaries: 31,
+      auxiliaries: 25,
       lookups: 24,
     },
     entry: true,

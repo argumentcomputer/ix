@@ -7,7 +7,10 @@ use std::{array, ops::Range, sync::LazyLock};
 use crate::{
   FxIndexMap, G,
   bytecode::{Block, CallComponent, Ctrl, Op, Toplevel, ValIdx},
-  call_order::{CallRank, RANK_BYTES, RANK_LOOKUPS, call_rank, row_uses_rank},
+  call_order::{
+    CallRank, RANK_LIMB_BITS, RANK_LIMBS, RANK_LOOKUPS, call_rank,
+    row_uses_rank,
+  },
   function_channel,
   gadgets::{
     AiurGadget,
@@ -17,6 +20,7 @@ use crate::{
   memory_channel, u8_add_channel, u8_bit_decomposition_channel, u8_mul_channel,
   u8_range_check_channel, u8_shift_left_channel, u8_shift_right_channel,
   u8_sub_channel, u8_xor_channel, u8_xor_split4_channel, u8_xor_split7_channel,
+  u16_range_check_channel,
 };
 
 type Expr = multi_stark::expr::Expr<G>;
@@ -70,7 +74,7 @@ struct ConstraintState<'a> {
   /// Index of the circuit member currently being walked.
   function_index: G,
   /// Packed 48-bit row rank, or zero for an acyclic member. Ranked members
-  /// share their byte columns with each other and with acyclic operations.
+  /// share their limb columns with each other and with acyclic operations.
   rank: Expr,
   /// One function with terminal control and one selector: operation slots
   /// have one writer. Selector count alone does not exclude empty branches.
@@ -126,11 +130,10 @@ impl ConstraintState<'_> {
     var(self.column - 1)
   }
 
-  fn range_pair(&mut self, sel: &Expr, a: Expr, b: Expr) {
+  fn range_u16(&mut self, sel: &Expr, limb: Expr) {
     let args = vec![
-      self.gate(sel, konst(u8_range_check_channel())),
-      self.gate(sel, a),
-      self.gate(sel, b),
+      self.gate(sel, konst(u16_range_check_channel())),
+      self.gate(sel, limb),
     ];
     let lookup = self.next_lookup();
     combine_lookup_args(lookup, args);
@@ -205,10 +208,10 @@ impl Toplevel {
     let multiplicity = var(layout.input_size + layout.selectors);
     state.lookups[0].multiplicity = -multiplicity.clone();
     let aux_start = layout.input_size + layout.selectors + 1;
-    let rank_bytes: [Expr; RANK_BYTES] = array::from_fn(|i| var(aux_start + i));
+    let rank_limbs: [Expr; RANK_LIMBS] = array::from_fn(|i| var(aux_start + i));
     let packed_rank =
-      rank_bytes.iter().enumerate().fold(konst(G::ZERO), |acc, (i, byte)| {
-        acc + byte.clone() * konst(G::from_u64(1 << (8 * i)))
+      rank_limbs.iter().enumerate().fold(konst(G::ZERO), |acc, (i, limb)| {
+        acc + limb.clone() * konst(G::from_u64(1 << (RANK_LIMB_BITS * i)))
       });
     let mut sel_base = layout.input_size;
     let mut circuit_sel = Expr::from(G::ZERO);
@@ -222,7 +225,7 @@ impl Toplevel {
       state.rank = if ranked { packed_rank.clone() } else { konst(G::ZERO) };
       state.input_size = function.layout.input_size;
       state.sel_base = sel_base;
-      state.column = aux_start + if ranked { RANK_BYTES } else { 0 };
+      state.column = aux_start + if ranked { RANK_LIMBS } else { 0 };
       state.lookup = 1 + if ranked { RANK_LOOKUPS } else { 0 };
       state.map.clear();
       (0..function.layout.input_size).for_each(|i| state.map.push((var(i), 1)));
@@ -253,12 +256,12 @@ impl Toplevel {
         .zeros
         .push(circuit_sel.clone() * (Expr::from(G::ONE) - circuit_sel.clone()));
     }
-    // Check rank bytes only for an active ranked member. Acyclic members
+    // Check rank limbs only for an active ranked member. Acyclic members
     // reuse these columns and lookup slots for their ordinary operations.
     if has_ranked_member {
       state.lookup = 1;
-      for pair in rank_bytes.as_chunks::<2>().0 {
-        state.range_pair(&ranked_sel, pair[0].clone(), pair[1].clone());
+      for limb in rank_limbs {
+        state.range_u16(&ranked_sel, limb);
       }
     }
     // Only an active member can supply a return lookup. In particular,
@@ -524,7 +527,7 @@ impl Op {
           lookup_args
             .extend(output.into_iter().map(|col| state.gate(sel, col)));
 
-          let mut gap_bytes = None;
+          let mut gap_limbs = None;
           let callee_rank = match call_rank(
             state.call_components,
             state.function,
@@ -535,15 +538,17 @@ impl Op {
             // component order makes a dynamic gap unnecessary here.
             CallRank::Bound => state.next_auxiliary(),
             CallRank::Ordered => {
-              let bytes: [Expr; RANK_BYTES] =
+              let limbs: [Expr; RANK_LIMBS] =
                 array::from_fn(|_| state.next_auxiliary());
-              let gap = bytes.iter().enumerate().fold(
+              let gap = limbs.iter().enumerate().fold(
                 konst(G::ZERO),
-                |acc, (i, byte)| {
-                  acc + byte.clone() * konst(G::from_u64(1 << (8 * i)))
+                |acc, (i, limb)| {
+                  acc
+                    + limb.clone()
+                      * konst(G::from_u64(1 << (RANK_LIMB_BITS * i)))
                 },
               );
-              gap_bytes = Some(bytes);
+              gap_limbs = Some(limbs);
               state.rank.clone() + konst(G::ONE) + gap
             },
           };
@@ -551,9 +556,9 @@ impl Op {
           let lookup = state.next_lookup();
           combine_lookup_args(lookup, lookup_args);
           lookup.multiplicity = lookup.multiplicity.clone() + sel.clone();
-          if let Some(bytes) = gap_bytes {
-            for pair in bytes.as_chunks::<2>().0 {
-              state.range_pair(sel, pair[0].clone(), pair[1].clone());
+          if let Some(limbs) = gap_limbs {
+            for limb in limbs {
+              state.range_u16(sel, limb);
             }
           }
         }

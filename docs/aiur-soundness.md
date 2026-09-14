@@ -15,11 +15,12 @@ a native Merkle commitment-binding defect.
 
 ## Call ranks and witness generation
 
-The general Aiur layout gives each function row six little-endian rank bytes. A constrained call adds
-six bytes for `callee_rank - caller_rank - 1` and requests the derived rank
-`caller_rank + 1 + gap` in its lookup. The callee's return binds this rank
-without a separate callee-rank column or equality constraint. Three byte-pair
-lookups range-check each six-byte value. Ranks and gaps are below `2^48`, so
+The general Aiur layout gives each function row three little-endian u16
+rank limbs. A constrained call adds three limbs for
+`callee_rank - caller_rank - 1` and requests `caller_rank + 1 + gap` in its
+lookup. The callee's return binds this rank without a separate callee-rank
+column or equality constraint. Three scalar u16 lookups range-check each
+48-bit value. Ranks and gaps are below `2^48`, so
 the derived rank is below `2^49`, below the Goldilocks characteristic. The
 call lookup therefore cannot wrap around the field to permit a cycle.
 
@@ -28,8 +29,8 @@ order assigns a ranked root rank zero and gives each constrained callee in
 the same component a larger rank.
 Promoting an earlier advice query refreshes its completion time after its
 children are promoted. Shared callees retain a consistent rank. Witness
-workers accumulate their byte-range queries locally; the prover merges those
-counts before constructing the binary byte-table trace.
+workers accumulate their scalar u16 range queries locally; the prover merges
+those counts before constructing the binary byte-table trace.
 
 ## Checked IxVM component ordering
 
@@ -44,13 +45,13 @@ The certificate is part of the fixed program, not advice from the prover.
 
 The resulting layouts use these rank witnesses:
 
-| Location | Additional columns | Additional byte-pair lookups |
+| Location | Additional columns | Additional scalar u16 lookups |
 | --- | ---: | ---: |
 | Acyclic or certified counter row | 0; return rank is zero | 0 |
-| Other recursive function row | 6 rank bytes | 3 |
+| Other recursive function row | 3 u16 rank limbs | 3 |
 | Call to a function without ranks | 0; requested rank is zero | 0 |
 | Call across components to a ranked function | 1 callee-rank field | 0 |
-| Call within a ranked recursive component | 6 gap bytes | 3 |
+| Call within a ranked recursive component | 3 u16 gap limbs | 3 |
 
 A boundary call must still bind its ranked callee's rank through the return
 lookup. Replacing it with a constant would break that binding. Within a ranked
@@ -59,7 +60,7 @@ The Lean theorem `CallComponent.wellFounded_calls` in
 [the compiler pass](../Ix/Aiur/Compiler/CallOrder.lean) proves that the bounded
 static order and bounded dynamic ranks together give a well-founded call
 relation. Its premises still rely on activity, exact lookup balance and the
-byte-range constraints; it is not a complete AIR extraction theorem.
+rank-limb range constraints; it is not a complete AIR extraction theorem.
 
 The compiler recomputes function and shared-continuation layouts before
 grouping. In a mixed circuit, acyclic operations reuse recursive members'
@@ -187,11 +188,12 @@ also forces the comparison result to zero or one without another constraint.
 Selectors continue to gate each request. Native and generated execution merge
 AND/OR multiplicities into XOR and comparison multiplicities into subtraction.
 
-The binary table retains all 65,536 input pairs. Its main width falls from ten
-to seven, stage-two width from ten to eight, and preprocessed width from fourteen
-to eleven, with quotient degree two. Surviving channel identifiers are unchanged;
+The binary table retains all 65,536 input pairs. At the consolidation step,
+its main width falls from ten to seven, stage-two width from ten to eight,
+and preprocessed width from fourteen to eleven, with quotient degree two. Surviving channel identifiers are unchanged;
 the three removed identifiers remain reserved. Fixed-table activity/height
-validation and the lookup-consumer bound remain enforced.
+validation and the lookup-consumer bound remain enforced. The u16 rank
+encoding below subsequently adds one main column, making the current width eight.
 
 [The native regressions](../crates/aiur/src/synthesis/tests/byte_consolidation.rs)
 check every byte pair against the compiled lookup expressions in singleton and
@@ -243,6 +245,46 @@ proves 3.12% faster. Nat and wide multiplication have 1.78–2.29% median provin
 regressions with overlapping ranges. Proof sizes grow 0.042–0.233%, and the
 three smaller workloads use 0.58–0.70% more median process peak RSS. These
 measurements do not establish a universal proving-speed or memory improvement.
+
+## Three u16 rank limbs
+
+The 48-bit rank and gap encoding uses three scalar limbs instead of six
+bytes. The packing equation is `lo + 2^16*mid + 2^32*hi`; every limb is
+range-checked below `2^16`. This preserves the existing no-wrap and strict
+call-order argument. Static component and unit-counter checks, selector
+gates, public rank zero, and advice-promotion ordering are preserved.
+
+The existing binary byte table supplies scalar `256*i + j` on a distinct
+channel (15), with one additional multiplicity column. The original
+byte-pair channel (11) still bounds both `i` and `j` separately. Distinct
+channels are necessary: lookup zero padding must not identify a request
+for two bytes `(256, 0)` with the valid scalar u16 value `256`.
+Preprocessed columns and fixed table heights are unchanged.
+
+All 321 ranked functions and 131 of 186 function circuits narrow; function
+indices and all measured execution counts are preserved. Stage-two widths
+and quotient degrees are unchanged. `Bytes2` uses eight main and eight
+stage-two columns, at quotient degree two. Its extra main column costs
+5,242,880 FFT units per proof at blowup four. This fixed penalty makes
+41 of 83 raw costs regress by up to 5.06%, while 42 improve. The aggregate
+falls 6.48% raw / 6.82% padded, and original-main aggregate raw overhead
+falls from 17.57% to 9.96%. Padded costs improve for 49 fixtures and regress
+for 34. The shard improves 5.07% raw / 4.56% padded.
+
+All 30 matched proofs verify. Vector proves 4.90% faster with 10.07% lower
+process peak RSS; proof sizes shrink 5.28–7.11% on all five claims. Smaller
+timings are mixed: Nat is 1.04% slower, `nat_mul_big` 5.38% slower, and wide
+multiplication nearly flat. Small process peaks are nearly unchanged;
+sampled prove-window peaks vary more. These are workload-specific results.
+
+[The rank regressions](../crates/aiur/src/synthesis/tests/call_order.rs)
+exhaust all 65,536 scalar values against every rank/gap position, reject
+forged values in each limb and cross-channel byte-pair substitutions, and
+verify supplied ranks through `2^48-1` in both partitions and decoded keys.
+They also prove ordinary u32 byte packing with and without ranks. Existing
+cycle, mixed-group, byte-operation, recursive-verifier and full IxVM suites
+pass. The code keeps the bytecode schema and generated instruction sources;
+the new layouts and keys require matching rebuilt systems and proofs.
 
 ## Structural bounds
 
@@ -419,6 +461,9 @@ changes affected stage-2 layouts, quotient degrees and keys,
 so it also requires rebuilding systems and regenerating proofs. Byte-table
 consolidation changes the caller lookup expressions, fixed table and keys,
 while keeping the existing bytecode operations and function layouts.
+Three-u16 rank encoding changes function/table layouts, lookup arguments and
+keys while preserving the bytecode schema and generated instructions; rebuild
+the Lean/Rust systems together and regenerate proofs for their new keys.
 The byte-advice, carry, multiplication and BLAKE3 reader changes alter
 function indices. The reader also changes function layouts; regenerate all
 three executors and rebuild matching systems, keys and proofs from the

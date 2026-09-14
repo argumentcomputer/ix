@@ -99,3 +99,9 @@ pub fn u8_xor_split7_channel() -> G {
 pub fn u8_xor_split4_channel() -> G {
   G::from_u8(14)
 }
+
+/// Scalar u16 range checks have a distinct channel from byte pairs.
+#[inline]
+pub fn u16_range_check_channel() -> G {
+  G::from_u8(15)
+}

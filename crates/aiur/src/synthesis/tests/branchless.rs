@@ -26,7 +26,7 @@ fn empty_branch_toplevel() -> Toplevel {
     layout: FunctionLayout {
       input_size: 1,
       selectors: 1,
-      auxiliaries: 14,
+      auxiliaries: 8,
       lookups: 8,
     },
     entry: true,
@@ -40,7 +40,7 @@ fn empty_branch_toplevel() -> Toplevel {
     layout: FunctionLayout {
       input_size: 0,
       selectors: 1,
-      auxiliaries: 7,
+      auxiliaries: 4,
       lookups: 4,
     },
     entry: false,
@@ -78,7 +78,7 @@ fn empty_branch_cannot_redirect_a_call_to_memory() {
   row[0] = G::ONE;
   row[1] = G::ONE;
   row[2] = G::ONE;
-  row[9] = forged;
+  row[6] = forged;
   let values = VarValues {
     preprocessed: [&[], &[]],
     main: [&row, &row],
@@ -108,8 +108,8 @@ fn empty_branch_cannot_redirect_a_call_to_memory() {
         // Supply the redirected memory lookup, with no callee row.
         rows[..4].copy_from_slice(&[G::ONE, G::ONE, forged + forged, G::ONE]);
       } else if index == 5 {
-        // The caller's root rank and all three call-gap pairs are zero.
-        rows[Bytes2::RANGE_CHECK_COLUMN] = G::from_u8(6);
+        // The caller's root rank and all three call-gap limbs are zero.
+        rows[Bytes2::U16_RANGE_CHECK_COLUMN] = G::from_u8(6);
       }
       RowMajorMatrix::new(rows, shape.main_width)
     })

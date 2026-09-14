@@ -12,7 +12,7 @@ fn public_output_cannot_be_supplied_by_a_displaced_rank() {
     layout: FunctionLayout {
       input_size: 0,
       selectors: 1,
-      auxiliaries: 7,
+      auxiliaries: 4,
       lookups: 4,
     },
     entry: true,
@@ -33,10 +33,9 @@ fn public_output_cannot_be_supplied_by_a_displaced_rank() {
         // Active empty return, multiplicity one, rank seven.
         rows[..3].copy_from_slice(&[G::ONE, G::ONE, G::from_u8(7)]);
       } else if index == 2 {
-        // All three rank pairs are supplied by the fixed byte table.
-        rows[Bytes2::RANGE_CHECK_COLUMN] = G::from_u8(2);
-        rows[(7 * 256) * shape.main_width + Bytes2::RANGE_CHECK_COLUMN] =
-          G::ONE;
+        // All three rank limbs are supplied by the fixed byte table.
+        rows[Bytes2::U16_RANGE_CHECK_COLUMN] = G::from_u8(2);
+        rows[7 * shape.main_width + Bytes2::U16_RANGE_CHECK_COLUMN] = G::ONE;
       }
       RowMajorMatrix::new(rows, shape.main_width)
     })
