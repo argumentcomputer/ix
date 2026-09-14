@@ -4,6 +4,7 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 -/
 
 import Ix.Kernel.Verify.Consistency.BetaWhnfPlan
+import Ix.Kernel.Verify.Consistency.BetaPrefixSource
 
 /-! Construct beta-step witnesses from the source expression. The caller
 supplies only its reading and finite arithmetic and interning resources. -/
@@ -119,38 +120,6 @@ private theorem modelSpine_lambda {β : Type u} {resolve : Address → Option (C
             simp [readScopedExpr?, hd, hb, AExpr.erase] at reading
   | _ => obtain ⟨_, _, _, _, _, impossible⟩ := headLambda; cases impossible
 
-private theorem consumed_size (fuel : Nat) (current : KExpr .anon)
-    (arguments consumed : Array (KExpr .anon)) :
-    consumed.size ≤ (RecM.consumeBetaLamsFuel fuel current arguments consumed).2.size := by
-  induction fuel generalizing current consumed with
-  | zero => exact Nat.le_refl _
-  | succ fuel ih =>
-      unfold RecM.consumeBetaLamsFuel
-      split
-      · exact Nat.le_refl _
-      · cases current with
-        | lam => exact Nat.le_trans (by simp) (ih _ _)
-        | _ => exact Nat.le_refl _
-
-private theorem consumed_nonempty {name bi rawDomain rawBody info} {arguments : Array (KExpr .anon)}
-    (nonempty : 0 < arguments.size) :
-    (!(RecM.consumeBetaLams (.lam name bi rawDomain rawBody info) arguments).2.isEmpty) = true := by
-  have size : arguments.size = (arguments.size - 1) + 1 := by omega
-  have positive : 0 < (RecM.consumeBetaLams (.lam name bi rawDomain rawBody info) arguments).2.size := by
-    unfold RecM.consumeBetaLams
-    rw [size, RecM.consumeBetaLamsFuel]
-    simp only [Array.mkEmpty, Array.size_empty, show ¬ 0 ≥ arguments.size from by omega, if_false]
-    have bound := consumed_size (arguments.size - 1) rawBody arguments
-      ((Array.mkEmpty arguments.size).push arguments[0]!)
-    exact Nat.lt_of_lt_of_le Nat.zero_lt_one (by
-      simpa only [Array.size_push, Array.mkEmpty, Array.size_empty, Nat.zero_add] using bound)
-  have notEmpty : (RecM.consumeBetaLams (.lam name bi rawDomain rawBody info) arguments).2.isEmpty = false := by
-    apply Bool.eq_false_iff.mpr
-    intro empty
-    have zero := Array.isEmpty_iff_size_eq_zero.mp empty
-    omega
-  simp only [notEmpty, Bool.not_false]
-
 /-- The source reading determines all annotated spine components. Actual
 collection and peeling determine every raw component and consumed argument. -/
 def construct {β : Type u} {resolve : Address → Option (ConstRef β)} {locals : List FVarId}
@@ -190,7 +159,7 @@ def construct {β : Type u} {resolve : Address → Option (ConstRef β)} {locals
                 condition, domain, inner, arguments := (modelSpine term).2, modelSource,
                 spine := Prod.ext rawHead rfl, headReads := rawHead ▸ reads.1, argumentReads := reads.2,
                 peeling := by simp only [peeled, rawHead],
-                nonempty := by simpa only [peeled, rawHead] using consumed_nonempty nonempty,
+                nonempty := by simpa only [peeled, rawHead] using BetaPrefixSource.consumed_nonempty nonempty,
                 walkerBounds := resources.bounds, walkerFaithful := resources.substitutionFaithful,
                 suffixFaithful := resources.suffixFaithful
               }, ?_⟩

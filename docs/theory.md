@@ -112,8 +112,14 @@ preserves the scoped reading and annotated term, so every later beta step
 keeps the derivation obtained from the original check. The actual loop counts
 each let and beta iteration before its final unchanged step. Cache execution,
 Pi/sort exposure, and declaration conversion all include these mixed paths.
-Stored local let values and reduction of non-lambda application heads remain
-outside this construction.
+Application heads can now reduce recursively before the enclosing beta step.
+The same trace retains each callback's actual cache writes or earlier producing
+execution, and its method depth is separate from the outer loop bound.
+The original derivation supplies the head conversion and preserves the checks
+of every argument. Source reconstruction covers cold explicit-let heads that
+return lambdas, including nested head calls. Stored local let values and other
+head reducers remain outside that construction; automatic reconstruction of
+cached head calls still requires further work.
 Constructing initial inference resources for arbitrary accepted programs,
 general WHNF cache origins, the remaining reducers, and general conversion
 remain open.

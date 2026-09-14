@@ -3,7 +3,7 @@ Copyright (c) 2026 Argument Computer Corporation.
 SPDX-License-Identifier: MIT OR Apache-2.0
 -/
 
-import Ix.Kernel.Verify.Consistency.BetaCacheKeys
+import Ix.Kernel.Verify.Consistency.BetaPublicWhnfPlan
 
 /-! Executed beta/let reduction and retained origins at all three WHNF cache layers. -/
 
@@ -12,47 +12,6 @@ namespace Ix.Kernel.Consistency
 open Theory Theory.Model
 
 universe u
-
-/-- State shared by surrounding inference is unchanged by these beta paths.
-The three reduction caches, intern table, key memoization, and WHNF counters
-are tracked by the computed result state instead. -/
-structure BetaCacheFrame (before after : TcState .anon) : Prop where
-  constants : after.env.consts = before.env.consts
-  full : after.env.inferCache = before.env.inferCache
-  only : after.env.inferOnlyCache = before.env.inferOnlyCache
-  context : after.lctx = before.lctx
-  policy : after.inferOnly = before.inferOnly
-  native : after.inNativeReduce = before.inNativeReduce
-
-namespace BetaCacheFrame
-
-theorem refl (before : TcState .anon) : BetaCacheFrame before before :=
-  ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
-
-theorem trans {before middle after : TcState .anon}
-    (first : BetaCacheFrame before middle) (second : BetaCacheFrame middle after) :
-    BetaCacheFrame before after :=
-  ⟨second.constants.trans first.constants, second.full.trans first.full,
-    second.only.trans first.only, second.context.trans first.context,
-    second.policy.trans first.policy, second.native.trans first.native⟩
-
-theorem key (source : KExpr .anon) (before : TcState .anon) :
-    BetaCacheFrame before (betaWhnfKey source before).2 := by
-  unfold betaWhnfKey
-  split
-  · exact .refl _
-  · dsimp only
-    split <;> exact ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
-
-theorem instrument (before : TcState .anon) : BetaCacheFrame before (betaWhnfPrefix before) := by
-  unfold betaWhnfPrefix
-  split <;> exact ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
-
-theorem charge (before : TcState .anon) : BetaCacheFrame before (betaWhnfCharge before) := by
-  unfold betaWhnfCharge
-  split <;> exact ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
-
-end BetaCacheFrame
 
 namespace BetaCacheExecution
 
@@ -67,12 +26,12 @@ def writeFull (key : Address × Address) (result : KExpr .anon) (before : TcStat
 theorem writeNoDelta_frame (key : Address × Address) (result : KExpr .anon) (before : TcState .anon) :
     BetaCacheFrame before (writeNoDelta key result before) := by
   unfold writeNoDelta
-  split <;> exact ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
+  split <;> exact ⟨rfl, rfl, rfl, rfl, rfl, rfl, fun source => betaWhnfKey_congr source rfl rfl rfl rfl⟩
 
 theorem writeFull_frame (key : Address × Address) (result : KExpr .anon) (before : TcState .anon) :
     BetaCacheFrame before (writeFull key result before) := by
   unfold writeFull
-  split <;> exact ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
+  split <;> exact ⟨rfl, rfl, rfl, rfl, rfl, rfl, fun source => betaWhnfKey_congr source rfl rfl rfl rfl⟩
 
 theorem writeNoDelta_intern (key : Address × Address) (result : KExpr .anon) (before : TcState .anon) :
     (writeNoDelta key result before).env.intern = before.env.intern := by
@@ -102,7 +61,7 @@ semantic typing assumption. -/
 inductive BetaCoreExecution {β : Type u} (resolve : Address → Option (ConstRef β))
     (locals : List FVarId) : Nat → TcState .anon → KExpr .anon → AExpr β → KExpr .anon → AExpr β → Type u
   | reduce {fuel before source term result target reduced steps}
-      (path : BetaWhnfTrace resolve locals fuel .FULL steps
+      (path : BetaWhnfTrace resolve locals (fuel + 1) .FULL steps
         (betaWhnfKey source before).2 source term reduced result target)
       (moving : 0 < steps)
       (enough : steps < maxWhnfCoreFuel.toNat)
@@ -170,22 +129,11 @@ theorem frame (execution : BetaCoreExecution resolve locals fuel before source t
     BetaCacheFrame before execution.after := by
   cases execution with
   | reduce path moving enough miss terminal =>
-      obtain ⟨table, reduced⟩ := path.frame
-      have keyed := BetaCacheFrame.key source before
-      simp only [after, reduced]
-      exact ⟨keyed.constants, keyed.full, keyed.only, keyed.context, keyed.policy, keyed.native⟩
+      exact (BetaCacheFrame.key source before).trans (path.frame.trans (.core _ _ _))
   | cached => exact .key source before
 
 theorem stable_key (execution : BetaCoreExecution resolve locals fuel before source term result target) :
-    (betaWhnfKey source execution.after).1 = (betaWhnfKey source before).1 := by
-  cases execution with
-  | reduce path moving enough miss terminal =>
-      obtain ⟨table, reduced⟩ := path.frame
-      simp only [after, reduced]
-      apply Eq.trans (b := (betaWhnfKey source (betaWhnfKey source before).2).1)
-      · exact betaWhnfKey_congr source rfl rfl rfl rfl
-      · exact congrArg Prod.fst (betaWhnfKey_replay source before)
-  | cached => exact congrArg Prod.fst (betaWhnfKey_replay source before)
+    (betaWhnfKey source execution.after).1 = (betaWhnfKey source before).1 := execution.frame.keys source
 
 /-- Structural WHNF publishes on a miss even while native reduction is
 active; a hit retains the same entry. -/

@@ -3602,12 +3602,17 @@ private def recursiveLetFailureCleanup : Bool :=
       !after.env.inferCache.contains (invalid.addr, emptyCtxAddr)
   | _ => false
 
-private def sortExposureEnvironment (level : Ixon.Univ) (universes : UInt64 := 0) (withZeta : Bool := false) :
+private def sortExposureEnvironment (level : Ixon.Univ) (universes : UInt64 := 0) (withZeta : Bool := false)
+    (withHead : Bool := false) :
     Ixon.Env × Array Address := Id.run do
   -- References pass the parameter itself, even when the tested level is composite.
   let arguments := if universes == 0 then #[] else #[2]
   let levels := #[level, .succ level] ++ if universes == 0 then #[] else #[.var 0]
-  let betaSort := Ixon.Expr.app (.leanLam (.sort 1) (.var 0)) (.sort 0)
+  let function := Ixon.Expr.leanLam (.sort 1) (.var 0)
+  let functionType := Ixon.Expr.leanAll (.sort 1) (.sort 1)
+  let head := if withHead then Ixon.Expr.letE false functionType
+    (.app (.leanLam functionType (.var 0)) function) (.var 0) else function
+  let betaSort := Ixon.Expr.app head (.sort 0)
   let betaSort := if withZeta then Ixon.Expr.letE false (.sort 1) betaSort (.var 0) else betaSort
   let (env, carrier) := storeConst {}
     ⟨.axio ⟨false, universes, betaSort⟩, #[], #[], levels⟩
@@ -3639,9 +3644,9 @@ private def sortExposureEnvironment (level : Ixon.Univ) (universes : UInt64 := 0
 /-- The domain's full inference cache keeps its original beta type while
 sort exposure writes the normalized sort only to the three WHNF caches. -/
 private def sortExposureInferencePaths (typeLevel warm instrumented noAccel : Bool)
-    (lowerWarm : Nat := 0) (withZeta : Bool := false) : Bool :=
+    (lowerWarm : Nat := 0) (withZeta : Bool := false) (withHead : Bool := false) : Bool :=
   let level := if typeLevel then levelOne else KUniv.mkZero
-  let (env, targets) := sortExposureEnvironment (if typeLevel then .succ .zero else .zero) 0 withZeta
+  let (env, targets) := sortExposureEnvironment (if typeLevel then .succ .zero else .zero) 0 withZeta withHead
   (List.range 5).all fun shape =>
     let action : RecM .anon Bool := do
       let .defn _ _ _ _ _ _ expected value _ _ ← TcM.getConst (m := .anon) ⟨targets[shape]!, ()⟩ | return false
@@ -3850,6 +3855,115 @@ private def letWhnfLoopResult (typeLevel : Bool) (flags : WhnfFlags) (shape : Na
   | .ok passed _ => passed
   | .error _ _ => false
 
+/-- Recursive head calls may contain their own beta steps and cache writes.
+Their method depth is separate from the enclosing two-iteration loop. -/
+private def headWhnfLoopResult (depth : Nat) (typeLevel : Bool) (flags : WhnfFlags)
+    (shape : Nat) (warm native : Bool) : Bool :=
+  let carrier := KExpr.mkSort (m := .anon) (if typeLevel then levelOne else .mkZero)
+  let carrierType := KExpr.mkSort (m := .anon) (if typeLevel then levelTwo else levelOne)
+  let body := if shape == 0 then KExpr.mkVar 0 () else if shape == 1 then
+      KExpr.mkAll () () (.mkVar 0 ()) (.mkVar 1 ())
+    else KExpr.mkLam () () (.mkVar 0 ()) (.mkVar 0 ())
+  let expected := if shape == 0 then carrier else if shape == 1 then
+      KExpr.mkAll () () carrier carrier
+    else KExpr.mkLam () () carrier (.mkVar 0 ())
+  let function := KExpr.mkLam () () carrierType body
+  let sameMap (actual predicted : Std.HashMap (Address × Address) (KExpr .anon)) :=
+    actual.size == predicted.size && predicted.toList.all fun (key, result) => actual[key]? == some result
+  let action : RecM .anon Bool := do
+    let functionType ← RecM.inferCall function
+    let identity := KExpr.mkLam () () functionType (.mkVar 0 ())
+    let identityType := KExpr.mkAll () () functionType functionType
+    let inner := KExpr.mkLet () identityType
+      (.mkApp (.mkLam () () identityType (.mkVar 0 ())) identity) (.mkVar 0 ()) false
+    let value := if depth == 0 then function else if depth == 1 then
+      KExpr.mkApp identity function else KExpr.mkApp inner function
+    let head := KExpr.mkLet () functionType value (.mkVar 0 ()) false
+    let source := KExpr.mkApp head carrier
+    let inferred ← RecM.inferCall source
+    let expectedType ← RecM.inferCall expected
+    if !(← RecM.isDefEq inferred expectedType) then return false
+    let seed : Std.HashMap (Address × Address) (KExpr .anon) :=
+      (∅ : Std.HashMap (Address × Address) (KExpr .anon)).insert (carrierType.addr, emptyCtxAddr) carrierType
+    modify fun state => { state with
+      recFuel := 0, inNativeReduce := native, ctxAddrCache := {},
+      env := { state.env with
+        whnfCache := seed, whnfNoDeltaCache := seed, whnfCoreCache := seed,
+        whnfNoDeltaCheapCache := seed, whnfCoreCheapCache := seed } }
+    if warm then
+      if (← RecM.whnfCoreWithFlags head flags) != function then return false
+    let before ← get
+    let budget := if warm then 1 else depth + 1
+    let headKey := (head.addr, emptyCtxAddr)
+    let parentKey := (source.addr, emptyCtxAddr)
+    let writes := if depth == 2 then (seed.insert (inner.addr, emptyCtxAddr) identity).insert headKey function
+      else seed.insert headKey function
+    let maps (after : TcState .anon) (selected : Std.HashMap (Address × Address) (KExpr .anon)) :=
+      sameMap after.env.whnfCoreCache (if flags.isFull then selected else seed) &&
+      sameMap after.env.whnfCoreCheapCache (if flags.isFull then seed else selected) &&
+      sameMap after.env.whnfNoDeltaCache seed && sameMap after.env.whnfNoDeltaCheapCache seed &&
+      sameMap after.env.whnfCache seed && sameMap after.env.inferCache before.env.inferCache &&
+      sameMap after.env.inferOnlyCache before.env.inferOnlyCache
+    match (RecM.runBounded (fun term => RecM.whnfCoreWithFlagsStep term flags) 2 source).run
+        (methodsN (budget - 1)) before with
+    | .error .maxRecFuel _ => pure ()
+    | _ => return false
+    let .error .maxRecDepth exhausted :=
+      (RecM.runBounded (fun term => RecM.whnfCoreWithFlagsStep term flags) 1 source).run
+        (methodsN budget) before | return false
+    if !maps exhausted writes then return false
+    let .ok rawResult reduced := (RecM.runBounded (fun term => RecM.whnfCoreWithFlagsStep term flags) 2 source).run
+      (methodsN budget) before | return false
+    if !sameSourceExpr rawResult expected || !maps reduced writes ||
+        reduced.env.intern.exprs.size != exhausted.env.intern.exprs.size then return false
+    match (RecM.whnfCoreWithFlags source flags).run (methodsN budget) before with
+    | .error _ _ => return false
+    | .ok result after =>
+        let published := writes.insert parentKey result
+        let .ok replay reused := (RecM.whnfCoreWithFlags source flags).run (methodsN 0) after | return false
+        return sameSourceExpr result expected && replay == result && maps after published && maps reused published &&
+          after.recFuel == 0 && reused.recFuel == 0 && after.inNativeReduce == native &&
+          after.lctx.size == before.lctx.size && after.env.nextFVarId == before.env.nextFVarId &&
+          after.ctxAddrCache.size == 0 && after.env.intern.exprs.size == reduced.env.intern.exprs.size &&
+          reused.env.intern.exprs.size == after.env.intern.exprs.size
+  match TcM.runRec action (TcState.newLazyAnon {}) with
+  | .ok passed _ => passed
+  | .error _ _ => false
+
+/-- The parent, its head, and a third query use different legacy radii.
+Memoizing the head must preserve even a preexisting parent digest. -/
+private def headWhnfLegacyKeys (retained : Bool) : Bool :=
+  let sort := KExpr.mkSort (m := .anon) levelOne
+  let function := KExpr.mkLam () () sort (.mkLam () () sort (.mkVar 2 ()))
+  let functionType := KExpr.mkAll () () sort (.mkAll () () sort sort)
+  let head := KExpr.mkLet () functionType function (.mkVar 0 ()) false
+  let source := KExpr.mkApp head (.mkVar 2 ())
+  let query := KExpr.mkVar (m := .anon) 1 ()
+  let expected := KExpr.mkLam () () sort (.mkVar 1 ())
+  let action : RecM .anon Bool := do
+    for _ in [0, 1, 2] do TcM.pushLocal sort
+    modify fun state => { state with recFuel := 0, ctxAddrCache :=
+      if retained then (∅ : Std.HashMap (Address × UInt64) Address).insert (state.ctxId, source.lbr) sort.addr else {} }
+    let before ← get
+    let .ok parentKey _ := TcM.whnfKey source before | return false
+    let .ok headKey _ := TcM.whnfKey head before | return false
+    let .ok queryKey _ := TcM.whnfKey query before | return false
+    let .ok result after := (RecM.whnfCore source).run (methodsN 1) before | return false
+    let .ok parentAgain _ := TcM.whnfKey source after | return false
+    let .ok headAgain _ := TcM.whnfKey head after | return false
+    let .ok queryAgain _ := TcM.whnfKey query after | return false
+    let .ok replay reused := (RecM.whnfCore source).run (methodsN 0) after | return false
+    return source.lbr == 3 && head.lbr == 1 && query.lbr == 2 && sameSourceExpr result expected && replay == result &&
+      parentAgain == parentKey && headAgain == headKey && queryAgain == queryKey &&
+      after.ctxAddrCache.size == 2 && reused.ctxAddrCache.size == 2 &&
+      after.env.whnfCoreCache.size == 2 && after.env.whnfCoreCache[headKey]? == some function &&
+      after.env.whnfCoreCache[parentKey]? == some result && after.ctxId == before.ctxId &&
+      after.ctx.size == before.ctx.size && after.recFuel == 0 &&
+      (!retained || parentKey.2 == sort.addr)
+  match TcM.runRec action (TcState.newLazyAnon {}) with
+  | .ok passed _ => passed
+  | .error _ _ => false
+
 private def letWhnfCases : TestSeq :=
   [WhnfWarmLayer.cold, .core, .noDelta, .full].foldl (fun suite layer => suite ++
     test s!"let WHNF: layer {reprStr (match layer with | .cold => 0 | .core => 1 | .noDelta => 2 | .full => 3)} preserves exact maps across let-beta-let reduction"
@@ -3873,8 +3987,10 @@ private def letWhnfCases : TestSeq :=
       allSucceeded (sortExposureEnvironment (.succ .zero) 0 true).1 9 { clearEvery } &&
       allSucceeded (sortExposureEnvironment (.var 0) 1 true).1 9 { clearEvery })
 
-private def sortExposureFailures (withZeta : Bool := false) : Bool :=
-  let betaPi := Ixon.Expr.app (.leanLam (.sort 1) (.leanAll (.var 0) (.var 1))) (.sort 0)
+private def sortExposureFailures (withZeta : Bool := false) (withHead : Bool := false) : Bool :=
+  let function := Ixon.Expr.leanLam (.sort 1) (.leanAll (.var 0) (.var 1))
+  let head := if withHead then Ixon.Expr.letE false (.leanAll (.sort 1) (.sort 1)) function (.var 0) else function
+  let betaPi := Ixon.Expr.app head (.sort 0)
   let betaPi := if withZeta then Ixon.Expr.letE false (.sort 1) betaPi (.var 0) else betaPi
   let (env, carrierAddr) := storeConst {}
     ⟨.axio ⟨false, 0, betaPi⟩, #[], #[], #[.zero, .succ .zero]⟩
@@ -3918,6 +4034,29 @@ private def sortExposureCases : TestSeq :=
     sortExposureFailures
   ++ test "let sort exposure: a let returning a Pi is rejected and failed binder scopes restore locals"
     (sortExposureFailures true)
+
+private def headWhnfCases : TestSeq :=
+  (List.range 3).foldl (fun suite depth => suite ++
+    [false, true].foldl (fun suite warm => suite ++
+      test s!"application head WHNF: depth {depth}, warm {warm}, preserves nested writes and both fuel bounds"
+        ([false, true].all fun typeLevel => [WhnfFlags.FULL, .DEF_EQ_CORE].all fun flags =>
+          (List.range 3).all fun shape => [false, true].all fun native =>
+            headWhnfLoopResult depth typeLevel flags shape warm native)) .done)
+    (test "application head WHNF: distinct legacy radii retain all keys through head memoization"
+      ([false, true].all headWhnfLegacyKeys))
+  ++ test "application head sort exposure: nested callbacks retain all binder child types across cache layers"
+    ([false, true].all fun typeLevel => [false, true].all fun instrumented => [false, true].all fun noAccel =>
+      [0, 1, 2].all fun lowerWarm => sortExposureInferencePaths typeLevel false instrumented noAccel lowerWarm false true)
+  ++ test "application head sort exposure: outer hits replay without recursive methods or fuel"
+    ([false, true].all fun typeLevel => [false, true].all fun instrumented => [false, true].all fun noAccel =>
+      sortExposureInferencePaths typeLevel true instrumented noAccel 0 false true)
+  ++ test "application head sort exposure: nested heads and lets reach parameterized declaration admission"
+    ([0, 1].all fun clearEvery => [false, true].all fun withZeta =>
+      allSucceeded (sortExposureEnvironment .zero 0 withZeta true).1 9 { clearEvery } &&
+      allSucceeded (sortExposureEnvironment (.succ .zero) 0 withZeta true).1 9 { clearEvery } &&
+      allSucceeded (sortExposureEnvironment (.var 0) 1 withZeta true).1 9 { clearEvery })
+  ++ test "application head sort exposure: a returned Pi is rejected and failed scopes restore locals"
+    (sortExposureFailures false true)
 
 private def letCases : TestSeq :=
   test "let inference: dependent type substitution retains exact child caches, replay, and fresh rebuilding"
@@ -4065,6 +4204,7 @@ public def suite : List TestSeq :=
     polymorphicApplicationCases, constantCacheCases, cacheInvariantCases, recursiveCacheCases,
     lazyCacheCases, blockCacheCases, ingressCoherenceCases, sourceOwnershipCases, recursiveStateCases,
     sourceAgreementCases, sourceCacheCases, compositeCacheCases, letCases, sortExposureCases, mixedWhnfCases, letWhnfCases,
+    headWhnfCases,
     polymorphicDefinitionCases]
 
 end Tests.Kernel.Consistency

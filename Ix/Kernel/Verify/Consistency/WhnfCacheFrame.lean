@@ -38,19 +38,22 @@ theorem BetaPublicWhnfPlan.inference_frame {β : Type u} {resolve : Address → 
     {source result : KExpr .anon} {term target : AExpr β}
     (plan : BetaPublicWhnfPlan resolve locals fuel before source term result target)
     (key : Address × Address) : InferenceCacheFrame key before plan.after := by
-  obtain ⟨table, reduced⟩ := plan.path.frame
-  apply InferenceCacheFrame.of_eq <;>
-    simp only [BetaPublicWhnfPlan.after, BetaPublicWhnf.after, BetaPublicWhnf.noDeltaAfter,
-      BetaPublicWhnf.coreAfter, reduced, (BetaPublicWhnf.coreKey_fields source before).1]
+  apply InferenceCacheFrame.of_eq
+  · change plan.reduced.env.inferCache[key]? = before.env.inferCache[key]?
+    rw [plan.path.frame.full, (BetaPublicWhnf.coreKey_fields source before).1]
+  · change plan.reduced.env.inferOnlyCache[key]? = before.env.inferOnlyCache[key]?
+    rw [plan.path.frame.only, (BetaPublicWhnf.coreKey_fields source before).1]
+  · change plan.reduced.env.consts = before.env.consts
+    rw [plan.path.frame.constants, (BetaPublicWhnf.coreKey_fields source before).1]
 
 theorem BetaPublicWhnfPlan.policy {β : Type u} {resolve : Address → Option (ConstRef β)}
     {locals : List FVarId} {fuel : Nat} {before : TcState .anon}
     {source result : KExpr .anon} {term target : AExpr β}
     (plan : BetaPublicWhnfPlan resolve locals fuel before source term result target) :
     plan.after.inferOnly = before.inferOnly := by
-  obtain ⟨table, reduced⟩ := plan.path.frame
-  simp only [BetaPublicWhnfPlan.after, BetaPublicWhnf.after, BetaPublicWhnf.noDeltaAfter,
-    BetaPublicWhnf.coreAfter, reduced, BetaPublicWhnf.coreKey, BetaPublicWhnf.noDeltaKey,
+  change plan.reduced.inferOnly = before.inferOnly
+  rw [plan.path.frame.policy]
+  simp only [BetaPublicWhnf.coreKey, BetaPublicWhnf.noDeltaKey,
     BetaPublicWhnf.outerKey, betaWhnfKey_policy, betaWhnfPrefix_policy, betaWhnfCharge_policy]
 
 theorem BetaPiExposure.inference_frame {β : Type u} {resolve : Address → Option (ConstRef β)}
@@ -87,10 +90,11 @@ theorem BetaPublicWhnfPlan.inference_maps {β : Type u} {resolve : Address → O
     (plan : BetaPublicWhnfPlan resolve locals fuel before source term result target) :
     plan.after.env.inferCache = before.env.inferCache ∧
       plan.after.env.inferOnlyCache = before.env.inferOnlyCache := by
-  obtain ⟨table, reduced⟩ := plan.path.frame
-  constructor <;>
-    simp only [BetaPublicWhnfPlan.after, BetaPublicWhnf.after, BetaPublicWhnf.noDeltaAfter,
-      BetaPublicWhnf.coreAfter, reduced, (BetaPublicWhnf.coreKey_fields source before).1]
+  constructor
+  · change plan.reduced.env.inferCache = before.env.inferCache
+    rw [plan.path.frame.full, (BetaPublicWhnf.coreKey_fields source before).1]
+  · change plan.reduced.env.inferOnlyCache = before.env.inferOnlyCache
+    rw [plan.path.frame.only, (BetaPublicWhnf.coreKey_fields source before).1]
 
 theorem BetaPiExposure.inference_maps {β : Type u} {resolve : Address → Option (ConstRef β)}
     {locals : List FVarId} {fuel : Nat} {before : TcState .anon}

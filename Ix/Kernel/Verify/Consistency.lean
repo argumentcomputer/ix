@@ -48,6 +48,9 @@ import Ix.Kernel.Verify.Consistency.BetaWhnf
 import Ix.Kernel.Verify.Consistency.StructuralWhnfEntry
 import Ix.Kernel.Verify.Consistency.LetWhnfPlan
 import Ix.Kernel.Verify.Consistency.BetaWhnfPlan
+import Ix.Kernel.Verify.Consistency.BetaHeadStepPlan
+import Ix.Kernel.Verify.Consistency.BetaHeadConstruction
+import Ix.Kernel.Verify.Consistency.SynthesisAppCongruence
 import Ix.Kernel.Verify.Consistency.BetaPublicWhnf
 import Ix.Kernel.Verify.Consistency.WhnfCacheFrame
 import Ix.Kernel.Verify.Consistency.BetaTyping
@@ -174,6 +177,12 @@ Explicit-let substitution now composes with these beta steps in the same
 trace and cache executions. It preserves the scoped reading and the original
 annotated term, so later beta steps retain their existing typing derivation.
 This also covers let-based Pi/sort exposure and declaration conversion.
+Recursive application heads now use the same trace, with separate method
+depth and loop bounds and actual full/cheap cache writes or retained hits.
+Source reconstruction includes cold explicit-let heads returning lambdas,
+including nested head calls. The original typing derivation supplies the
+head conversion while preserving every checked argument. Key frames preserve
+all queries when a recursive call memoizes a different legacy context radius.
 Only an outer miss charges shared fuel. Pi exposure uses the
 same complete cache-layer execution. Application inference
 uses that exposure between argument checks and derives the type conversion

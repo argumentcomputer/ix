@@ -601,7 +601,7 @@ lake test --wfail -- tc-unit
 lake -d Models/SetTheory build --wfail
 ```
 
-The consistency target checks 1,454 exact theorem boundaries. The production
+The consistency target checks 1,518 exact theorem boundaries. The production
 environment roots retain four existing generated output-length proofs,
 reached through expression/universe construction, names, and the full
 production method table. They introduce no new native proofs. The model
@@ -753,7 +753,8 @@ substitution and suffix candidates. `BetaWhnfSource.construct` reconstructs
 the complete path and iteration count from an actual successful bounded run;
 intermediate expressions, readings, states, and a separate termination
 witness are no longer supplied. The raw branch resource restricts the path to
-head beta and explicit lets followed by a sort, Pi, or lambda.
+head beta, explicit lets, and the recursive application heads described below,
+followed by a sort, Pi, or lambda.
 The three cache-layer `exists_of_success` theorems observe their actual cache
 lookups and recover the successful lower calls, including the public fuel
 charge. Populated entries still require retained producing executions.
@@ -771,15 +772,32 @@ reader already substitutes the let value into its body. The annotated term
 and its complete original typing derivation therefore pass unchanged to the
 next beta step. Lets may precede, follow, or alternate with beta prefixes;
 both count toward the actual loop bound, including the final `.done`
-iteration. Each step changes only the intern table.
+iteration. These direct substitutions change only the intern table.
 `StructuralWhnfEntry` derives the nonleaf and non-transient facts for both
 source forms. The existing three cache executions, publication/replay proofs,
 Pi/sort exposures, declaration conversion, and success-based constructors now
 include these mixed paths. All 27 added raw boundaries forbid the semantic
 hereditary invariant; the existing roots retain their exact axiom profiles.
-No new axiom or native proof is introduced. Reducing stored local let values and
-reducing a non-lambda application head still require further invariants and
-proofs; this extension covers explicit-let structural steps.
+No new axiom or native proof is introduced.
+`BetaHeadReduction` extends the original trace with recursive application-head
+calls. A callback either executes its own bounded path or reuses a retained
+producing execution. Its full or cheap core cache publishes even during native
+reduction. `BetaPrefixPlan` computes the beta continuation in the returned state,
+and `AppSpineSource` preserves the raw argument boundary even when reading a let
+head exposes another application. `SynthesisBetaTyping.mapHead` derives the head
+conversion from the original derivation while retaining every argument check
+and type conversion. Each callback uses the predecessor method table; its loop
+budget is independent of the enclosing step count.
+The generalized cache frame preserves every query's key as recursive calls
+memoize different legacy context radii, including previously cached digests.
+`BetaWhnfSource.construct` reconstructs cold explicit-let heads that return
+lambdas, including nested head calls, using finite raw resources and successful
+execution. The existing inference, Pi/sort exposure, and declaration conversion
+theorems consume those traces. Retained cached heads are supported by the raw
+trace and its automatic semantic annotation; constructing them automatically
+from source resources remains open. Stored local let values and other head
+reducers also remain outside this construction. All 64 added boundaries forbid
+the semantic hereditary invariant and introduce no axiom or native proof.
 `SynthesisInference.cached` retains the original tree behind an inference
 cache hit. Its soundness and beta derivations reuse the actual lambda-body,
 dependent codomain, and argument checks. `reuseFull` derives the cached result
@@ -1032,7 +1050,11 @@ Ten let-WHNF regressions cover alternating let/beta steps, dependent results,
 exact loop exhaustion, all cache layers and native guards, zero-method
 replay, original inference-cache types during sort exposure, declaration
 universe parameters, and rejection with local-scope cleanup.
-The unit suite contains 748 checks. The anonymous differential additionally
+Eleven application-head regressions cover nested callbacks, cold and warmed
+full/cheap caches, native reduction, separate method and loop exhaustion,
+partial cache writes on failure, distinct legacy key radii, binder inference,
+parameterized declaration admission, and rejection of a Pi where a sort is required.
+The unit suite contains 759 checks. The anonymous differential additionally
 serializes eleven cycle-policy fixtures and checks exact target sets, verdicts,
 failure counts, and cycle diagnostics in both implementations.
 

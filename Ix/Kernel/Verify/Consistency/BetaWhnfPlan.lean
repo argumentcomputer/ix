@@ -3,8 +3,10 @@ Copyright (c) 2026 Argument Computer Corporation.
 SPDX-License-Identifier: MIT OR Apache-2.0
 -/
 
-import Ix.Kernel.Verify.Consistency.SpineReading
+import Ix.Kernel.Verify.Consistency.BetaPrefixPlan
 import Ix.Kernel.Verify.Consistency.LetWhnfPlan
+import Ix.Kernel.Verify.Consistency.BetaCoreCache
+import Ix.Kernel.Verify.Consistency.BetaHeadStepPlan
 
 /-! Raw beta and explicit-let paths compute production results and states independently of
 the source-inference and semantic-origin derivations. -/
@@ -15,41 +17,17 @@ open Theory Theory.Model
 
 universe u v
 
-/-- Resources for one actual beta iteration. The raw output and next
-state are computed below; no typing, reduction origin, or result reading is a field. -/
+/-- A lambda already at the source spine uses the shared prefix operation. -/
 structure BetaStepPlan {β : Type u} (resolve : Address → Option (ConstRef β)) (locals : List FVarId)
-    (before : TcState .anon) (source : KExpr .anon) (term : AExpr β) where
+    (before : TcState .anon) (source : KExpr .anon) (term : AExpr β)
+    extends BetaPrefixPlan resolve locals before where
   rawFunction : KExpr .anon
   rawArgument : KExpr .anon
   appInfo : ExprInfo .anon
   sourceEq : source = .app rawFunction rawArgument appInfo
-  name : Mode.anon.F Name
-  bi : Mode.anon.F Lean.BinderInfo
-  rawDomain : KExpr .anon
-  rawInner : KExpr .anon
-  lambdaInfo : ExprInfo .anon
-  rawArguments : Array (KExpr .anon)
-  rawBody : KExpr .anon
-  consumed : Array (KExpr .anon)
-  condition : Certified.PropWhen
-  domain : AExpr β
-  inner : AExpr β
-  arguments : List (AExpr β)
   modelSource : term = (AExpr.lam condition domain inner).appN arguments
   spine : (KExpr.app rawFunction rawArgument appInfo).collectSpine =
     (.lam name bi rawDomain rawInner lambdaInfo, rawArguments)
-  headReads : readScopedExpr? resolve locals (.lam name bi rawDomain rawInner lambdaInfo) =
-    some (AExpr.lam condition domain inner).erase
-  argumentReads : rawArguments.toList.map (readScopedExpr? resolve locals ·) = arguments.map (some ·.erase)
-  peeling : RecM.consumeBetaLams (.lam name bi rawDomain rawInner lambdaInfo) rawArguments = (rawBody, consumed)
-  nonempty : (!consumed.isEmpty) = true
-  walkerBounds : SimulSubstBounds rawBody consumed.reverse 0
-  walkerFaithful : KExpr.CollisionFree fun term => before.env.intern.ExprSupport term ∨
-    KExpr.SimulSubstReach consumed.reverse rawBody 0 term
-  suffixFaithful : KExpr.CollisionFree fun term =>
-    (simulSubst rawBody consumed.reverse 0 before.env.intern).2.ExprSupport term ∨
-      term ∈ cheapBetaChainList (simulSubst rawBody consumed.reverse 0 before.env.intern).1
-        (rawArguments.extract consumed.size rawArguments.size).toList
 
 namespace BetaStepPlan
 
@@ -92,116 +70,202 @@ theorem sourceReading
 theorem reading
     (step : BetaStepPlan resolve locals before source term)
     (coherent : before.env.intern.WF) :
-    readScopedExpr? resolve locals step.result = some step.modelResult.erase ∧ step.after.env.intern.WF := by
-  obtain ⟨result, after, run, reading, _, preserved⟩ := beta_many_step_readScopedExpr?
-    step.spine step.headReads step.argumentReads step.peeling step.nonempty before 0 .FULL
-    step.walkerBounds coherent step.walkerFaithful step.suffixFaithful
-  have actual := step.run 0 .FULL
-  simp only [step.sourceEq] at actual
-  rw [actual] at run
-  cases run
-  exact ⟨reading, preserved⟩
+    readScopedExpr? resolve locals step.result = some step.modelResult.erase ∧ step.after.env.intern.WF :=
+  step.toBetaPrefixPlan.reading coherent
 
 theorem counts (plan : BetaStepPlan resolve locals before source term) :
-    plan.consumed.size ≤ plan.inner.lambdaDepth + 1 ∧ plan.consumed.size ≤ plan.arguments.length := by
-  obtain ⟨peeled, _, rawBound⟩ := RecM.BetaPeel.of_consume plan.peeling
-  obtain ⟨_, modelPeel, _⟩ := betaPeel_readScopedExpr? peeled plan.headReads
-  have sizeAgrees : plan.rawArguments.size = plan.arguments.length := by
-    have lengths := congrArg List.length plan.argumentReads
-    simpa using lengths
-  exact ⟨by simpa only [Array.length_toList, AExpr.lambdaDepth] using modelPeel.length_bound,
-    sizeAgrees ▸ rawBound⟩
+    plan.consumed.size ≤ plan.inner.lambdaDepth + 1 ∧ plan.consumed.size ≤ plan.arguments.length :=
+  plan.toBetaPrefixPlan.counts
 
 end BetaStepPlan
 
-/-- A finite production path without semantic step origins. All intermediate
-expressions and states are computed by its raw beta and let plans. -/
-inductive BetaWhnfTrace {β : Type u} (resolve : Address → Option (ConstRef β))
-    (locals : List FVarId) (reductionFuel : Nat) (flags : WhnfFlags) :
-    Nat → TcState .anon → KExpr .anon → AExpr β → TcState .anon → KExpr .anon → AExpr β → Type u
-  | done {before source term}
-      (finished : (RecM.whnfCoreWithFlagsStep source flags).run (methodsN (reductionFuel + 1)) before =
-        .ok (.done source) before) :
-      BetaWhnfTrace resolve locals reductionFuel flags 0 before source term before source term
-  | next {steps before after source result term target}
-      (plan : BetaStepPlan resolve locals before source term)
-      (rest : BetaWhnfTrace resolve locals reductionFuel flags
-        steps plan.after plan.result plan.modelResult after result target) :
-      BetaWhnfTrace resolve locals reductionFuel flags (steps + 1) before source term after result target
-  | zeta {steps before after source result term target}
-      (plan : LetStepPlan before source)
-      (rest : BetaWhnfTrace resolve locals reductionFuel flags
-        steps plan.after plan.result term after result target) :
-      BetaWhnfTrace resolve locals reductionFuel flags (steps + 1) before source term after result target
+mutual
 
-namespace BetaWhnfTrace
+/-- A finite structural-WHNF path. Its fuel is the actual method-table depth;
+recursive head calls run at the predecessor depth and retain their cache effects. -/
+inductive BetaWhnfTrace {β : Type u} (resolve : Address → Option (ConstRef β))
+    (locals : List FVarId) :
+    Nat → WhnfFlags → Nat → TcState .anon → KExpr .anon → AExpr β → TcState .anon → KExpr .anon → AExpr β → Type u
+  | done {fuel flags before source term}
+      (finished : (RecM.whnfCoreWithFlagsStep source flags).run (methodsN fuel) before =
+        .ok (.done source) before) :
+      BetaWhnfTrace resolve locals fuel flags 0 before source term before source term
+  | next {fuel flags steps before after source result term target}
+      (plan : BetaStepPlan resolve locals before source term)
+      (rest : BetaWhnfTrace resolve locals (fuel + 1) flags
+        steps plan.after plan.result plan.modelResult after result target) :
+      BetaWhnfTrace resolve locals (fuel + 1) flags (steps + 1) before source term after result target
+  | zeta {fuel flags steps before after source result term target}
+      (plan : LetStepPlan before source)
+      (rest : BetaWhnfTrace resolve locals fuel flags
+        steps plan.after plan.result term after result target) :
+      BetaWhnfTrace resolve locals fuel flags (steps + 1) before source term after result target
+  | head {fuel flags steps before middle after source result term target}
+      (plan : BetaHeadStepPlan resolve locals middle source term)
+      (call : BetaHeadReduction resolve locals fuel flags
+        before plan.rawHead plan.headTerm middle plan.rawLambda plan.modelLambda)
+      (rest : BetaWhnfTrace resolve locals (fuel + 1) flags
+        steps plan.after plan.result plan.modelResult after result target) :
+      BetaWhnfTrace resolve locals (fuel + 1) flags (steps + 1) before source term after result target
+
+/-- A recursive structural head call, including its full/cheap cache lookup.
+A retained hit carries the producing call, so its meaning can be reconstructed. -/
+inductive BetaHeadReduction {β : Type u} (resolve : Address → Option (ConstRef β)) (locals : List FVarId) :
+    Nat → WhnfFlags → TcState .anon → KExpr .anon → AExpr β → TcState .anon → KExpr .anon → AExpr β → Type u
+  | reduce {fuel flags steps before reduced source result term target}
+      (path : BetaWhnfTrace resolve locals fuel flags steps
+        (betaWhnfKey source before).2 source term reduced result target)
+      (moving : 0 < steps)
+      (enough : steps < maxWhnfCoreFuel.toNat)
+      (miss : BetaCoreCache.lookup flags (betaWhnfKey source before).1 (betaWhnfKey source before).2 = none) :
+      BetaHeadReduction resolve locals fuel flags before source term
+        (BetaCoreCache.write flags (betaWhnfKey source before).1 result reduced) result target
+  | cached {fuel flags before source result term target originFuel originBefore originAfter}
+      (origin : BetaHeadReduction resolve locals originFuel flags originBefore source term originAfter result target)
+      (coherent : originBefore.env.intern.WF)
+      (hit : BetaCoreCache.lookup flags (betaWhnfKey source before).1 (betaWhnfKey source before).2 = some result) :
+      BetaHeadReduction resolve locals fuel flags before source term (betaWhnfKey source before).2 result target
+
+end
 
 variable {β : Type u} {resolve : Address → Option (ConstRef β)} {locals : List FVarId}
-  {reductionFuel steps : Nat} {flags : WhnfFlags} {before after : TcState .anon}
-  {source result : KExpr .anon} {term target : AExpr β}
 
-theorem run
+theorem BetaWhnfTrace.first {reductionFuel steps : Nat} {flags : WhnfFlags}
+    {before after : TcState .anon} {source result : KExpr .anon} {term target : AExpr β}
+    (trace : BetaWhnfTrace resolve locals reductionFuel flags steps before source term after result target) :
+    0 < steps → StructuralWhnfEntry source :=
+  match trace with
+  | .done _ => fun impossible => False.elim (Nat.not_lt_zero _ impossible)
+  | .next plan _ => fun _ => plan.entry
+  | .zeta plan _ => fun _ => plan.entry
+  | .head plan _ _ => fun _ => plan.entry
+
+theorem BetaHeadReduction.entry {reductionFuel : Nat} {flags : WhnfFlags}
+    {before after : TcState .anon} {source result : KExpr .anon} {term target : AExpr β}
+    (call : BetaHeadReduction resolve locals reductionFuel flags before source term after result target) :
+    StructuralWhnfEntry source :=
+  match call with
+  | .reduce path moving .. => path.first moving
+  | .cached origin .. => origin.entry
+
+mutual
+
+theorem BetaWhnfTrace.run {reductionFuel steps : Nat} {flags : WhnfFlags}
+    {before after : TcState .anon} {source result : KExpr .anon} {term target : AExpr β}
     (trace : BetaWhnfTrace resolve locals reductionFuel flags steps before source term after result target)
     {loopFuel : Nat} (enough : steps < loopFuel) :
     (RecM.runBounded (fun current => RecM.whnfCoreWithFlagsStep current flags) loopFuel source).run
-      (methodsN (reductionFuel + 1)) before = .ok result after := by
-  induction trace generalizing loopFuel with
-  | done finished =>
+      (methodsN reductionFuel) before = .ok result after :=
+  match trace with
+  | .done finished => by
       cases loopFuel with
       | zero => omega
       | succ loopFuel =>
           rw [RecM.runBounded, ReaderT.run_bind]
           change EStateM.bind ((RecM.whnfCoreWithFlagsStep _ flags).run _) _ _ = _
-          unfold EStateM.bind
-          rw [finished]
+          rw [EStateM.bind, finished]
           rfl
-  | next step rest ih =>
+  | .next step rest => by
       cases loopFuel with
       | zero => omega
       | succ loopFuel =>
           rw [RecM.runBounded, ReaderT.run_bind]
           change EStateM.bind ((RecM.whnfCoreWithFlagsStep _ flags).run _) _ _ = _
-          unfold EStateM.bind
-          rw [step.run reductionFuel flags]
-          exact ih (by omega)
-  | zeta step rest ih =>
+          rw [EStateM.bind, step.run _ flags]
+          exact BetaWhnfTrace.run rest (by omega)
+  | .zeta step rest => by
       cases loopFuel with
       | zero => omega
       | succ loopFuel =>
           rw [RecM.runBounded, ReaderT.run_bind]
           change EStateM.bind ((RecM.whnfCoreWithFlagsStep _ flags).run _) _ _ = _
-          unfold EStateM.bind
-          rw [step.run (methodsN (reductionFuel + 1)) flags]
-          exact ih (by omega)
+          rw [EStateM.bind, step.run (methodsN reductionFuel) flags]
+          exact BetaWhnfTrace.run rest (by omega)
+  | .head plan call rest => by
+      cases loopFuel with
+      | zero => omega
+      | succ loopFuel =>
+          rw [RecM.runBounded, ReaderT.run_bind]
+          change EStateM.bind ((RecM.whnfCoreWithFlagsStep _ flags).run _) _ _ = _
+          rw [EStateM.bind, plan.run (BetaHeadReduction.run call)]
+          exact BetaWhnfTrace.run rest (by omega)
+termination_by structural trace
 
-theorem reading
+theorem BetaHeadReduction.run {reductionFuel : Nat} {flags : WhnfFlags}
+    {before after : TcState .anon} {source result : KExpr .anon} {term target : AExpr β}
+    (call : BetaHeadReduction resolve locals reductionFuel flags before source term after result target) :
+    (RecM.whnfCoreWithFlags source flags).run (methodsN reductionFuel) before = .ok result after :=
+  match call with
+  | .reduce path moving enough miss => by
+      exact BetaCoreCache.miss flags (path.first moving) miss (BetaWhnfTrace.run path enough)
+  | .cached origin coherent hit => by exact BetaCoreCache.hit flags origin.entry hit
+termination_by structural call
+
+end
+
+mutual
+
+theorem BetaWhnfTrace.reading {reductionFuel steps : Nat} {flags : WhnfFlags}
+    {before after : TcState .anon} {source result : KExpr .anon} {term target : AExpr β}
     (trace : BetaWhnfTrace resolve locals reductionFuel flags steps before source term after result target)
     (sourceReading : readScopedExpr? resolve locals source = some term.erase)
     (coherent : before.env.intern.WF) :
-    readScopedExpr? resolve locals result = some target.erase ∧ after.env.intern.WF := by
-  induction trace with
-  | done => exact ⟨sourceReading, coherent⟩
-  | next step rest ih =>
+    readScopedExpr? resolve locals result = some target.erase ∧ after.env.intern.WF :=
+  match trace with
+  | .done _ => by exact ⟨sourceReading, coherent⟩
+  | .next step rest => by
       obtain ⟨reading, preserved⟩ := step.reading coherent
-      exact ih reading preserved
-  | zeta step rest ih =>
+      exact BetaWhnfTrace.reading rest reading preserved
+  | .zeta step rest => by
       obtain ⟨reading, preserved⟩ := step.reading sourceReading coherent
-      exact ih reading preserved
+      exact BetaWhnfTrace.reading rest reading preserved
+  | .head plan call rest => by
+      obtain ⟨_, headCoherent⟩ := BetaHeadReduction.reading call plan.sourceHeadReads coherent
+      obtain ⟨reading, preserved⟩ := plan.reading headCoherent
+      exact BetaWhnfTrace.reading rest reading preserved
+termination_by structural trace
 
-/-- A beta/let path changes only the intern table. All cache partitions,
-locals, checking policies, and instrumentation fields retain their values. -/
-theorem frame
+theorem BetaHeadReduction.reading {reductionFuel : Nat} {flags : WhnfFlags}
+    {before after : TcState .anon} {source result : KExpr .anon} {term target : AExpr β}
+    (call : BetaHeadReduction resolve locals reductionFuel flags before source term after result target)
+    (sourceReading : readScopedExpr? resolve locals source = some term.erase)
+    (coherent : before.env.intern.WF) :
+    readScopedExpr? resolve locals result = some target.erase ∧ after.env.intern.WF :=
+  match call with
+  | .reduce path moving enough miss => by
+      obtain ⟨reads, preserved⟩ := BetaWhnfTrace.reading path sourceReading ((betaWhnfKey_environment _ _).symm ▸ coherent)
+      exact ⟨reads, (BetaCoreCache.intern _ _ _ _).symm ▸ preserved⟩
+  | .cached origin initial hit => by
+      exact ⟨(BetaHeadReduction.reading origin sourceReading initial).1, (betaWhnfKey_environment _ _).symm ▸ coherent⟩
+termination_by structural call
+
+end
+
+mutual
+
+/-- Recursive structural reduction preserves inference state and every
+surrounding cache key while retaining the actual head-call cache writes. -/
+theorem BetaWhnfTrace.frame {reductionFuel steps : Nat} {flags : WhnfFlags}
+    {before after : TcState .anon} {source result : KExpr .anon} {term target : AExpr β}
     (trace : BetaWhnfTrace resolve locals reductionFuel flags steps before source term after result target) :
-    ∃ table, after = { before with env := { before.env with intern := table } } := by
-  induction trace with
-  | done => exact ⟨_, rfl⟩
-  | next step rest ih =>
-      obtain ⟨table, same⟩ := ih
-      exact ⟨table, same⟩
-  | zeta step rest ih =>
-      obtain ⟨table, same⟩ := ih
-      exact ⟨table, same⟩
+    BetaCacheFrame before after :=
+  match trace with
+  | .done _ => by exact .refl _
+  | .next step rest => by exact (BetaCacheFrame.intern _ _).trans (BetaWhnfTrace.frame rest)
+  | .zeta step rest => by exact (BetaCacheFrame.intern _ _).trans (BetaWhnfTrace.frame rest)
+  | .head plan call rest => by exact (BetaHeadReduction.frame call).trans ((BetaCacheFrame.intern _ _).trans (BetaWhnfTrace.frame rest))
+termination_by structural trace
 
-end BetaWhnfTrace
+theorem BetaHeadReduction.frame {reductionFuel : Nat} {flags : WhnfFlags}
+    {before after : TcState .anon} {source result : KExpr .anon} {term target : AExpr β}
+    (call : BetaHeadReduction resolve locals reductionFuel flags before source term after result target) :
+    BetaCacheFrame before after :=
+  match call with
+  | .reduce path moving enough miss => by
+      exact (BetaCacheFrame.key _ _).trans ((BetaWhnfTrace.frame path).trans (BetaCoreCache.frame _ _ _ _))
+  | .cached .. => by exact .key _ _
+termination_by structural call
+
+end
 
 end Ix.Kernel.Consistency

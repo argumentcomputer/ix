@@ -26,7 +26,7 @@ theorem SynthesisInference.beta_whnf_of_success {β : Type u} {resolve : Address
     (reading : readScopedExpr? resolve locals source = some term.erase)
     (inferredRun : RecM.infer source (methodsN fuel) inferenceBefore = .ok inferred inferenceAfter)
     {reductionFuel : Nat} {flags : WhnfFlags} {before after : TcState .anon} {result : KExpr .anon}
-    (resources : BetaWhnfSource.Resources maxWhnfCoreFuel.toNat before source)
+    (resources : BetaWhnfSource.Resources (reductionFuel + 1) flags maxWhnfCoreFuel.toNat before source)
     (coherent : before.env.intern.WF)
     (accepted : (RecM.whnfCoreWithFlagsUncached source flags).run (methodsN (reductionFuel + 1)) before =
       .ok result after) :
@@ -48,7 +48,7 @@ theorem SynthesisInference.beta_core_of_success {β : Type u} {resolve : Address
     (inferredRun : RecM.infer source (methodsN fuel) inferenceBefore = .ok inferred inferenceAfter)
     {reductionFuel : Nat} {before after : TcState .anon} {result : KExpr .anon}
     (chosen : BetaWhnfSource.selected source = true)
-    (resources : BetaWhnfSource.CoreResources resolve locals before source term)
+    (resources : BetaWhnfSource.CoreResources resolve locals reductionFuel before source term)
     (coherent : before.env.intern.WF)
     (accepted : (RecM.whnfCore source).run (methodsN (reductionFuel + 1)) before = .ok result after) :
     ∃ target, BetaWhnfTerminal result ∧ readScopedExpr? resolve locals result = some target.erase ∧
@@ -70,7 +70,7 @@ theorem SynthesisInference.beta_noDelta_of_success {β : Type u} {resolve : Addr
     (inferredRun : RecM.infer source (methodsN fuel) inferenceBefore = .ok inferred inferenceAfter)
     {reductionFuel : Nat} {before after : TcState .anon} {result : KExpr .anon}
     (chosen : BetaWhnfSource.selected source = true)
-    (resources : BetaWhnfSource.NoDeltaResources resolve locals before source term)
+    (resources : BetaWhnfSource.NoDeltaResources resolve locals reductionFuel before source term)
     (coherent : before.env.intern.WF)
     (accepted : (RecM.whnfNoDelta source).run (methodsN (reductionFuel + 1)) before = .ok result after) :
     ∃ target, BetaWhnfTerminal result ∧ readScopedExpr? resolve locals result = some target.erase ∧
@@ -92,7 +92,7 @@ theorem SynthesisInference.beta_public_of_success {β : Type u} {resolve : Addre
     (inferredRun : RecM.infer source (methodsN fuel) inferenceBefore = .ok inferred inferenceAfter)
     {reductionFuel : Nat} {before after : TcState .anon} {result : KExpr .anon}
     (chosen : BetaWhnfSource.selected source = true)
-    (resources : BetaWhnfSource.PublicResources resolve locals before source term)
+    (resources : BetaWhnfSource.PublicResources resolve locals reductionFuel before source term)
     (coherent : before.env.intern.WF)
     (accepted : (RecM.whnf source).run (methodsN (reductionFuel + 1)) before = .ok result after) :
     ∃ target, BetaWhnfTerminal result ∧ readScopedExpr? resolve locals result = some target.erase ∧

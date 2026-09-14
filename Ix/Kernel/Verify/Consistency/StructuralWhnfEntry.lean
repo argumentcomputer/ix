@@ -18,6 +18,9 @@ inductive StructuralWhnfEntry : KExpr .anon → Prop
   | letE (name : Mode.anon.F Name) (domain value body : KExpr .anon)
       (nonDep : Bool) (info : ExprInfo .anon) :
       StructuralWhnfEntry (.letE name domain value body nonDep info)
+  | application {fn arg head : KExpr .anon} {info : ExprInfo .anon} {arguments}
+      (spine : (KExpr.app fn arg info).collectSpine = (head, arguments))
+      (entry : StructuralWhnfEntry head) : StructuralWhnfEntry (.app fn arg info)
 
 namespace StructuralWhnfEntry
 
@@ -50,6 +53,9 @@ theorem not_transient (entry : StructuralWhnfEntry source) (methods : Methods .a
       simp only [RecM.isTransientNatLiteralWork, RecM.isNatLiteralRecursorApp, spine, pure_bind]
       rfl
   | letE => rfl
+  | application spine headEntry =>
+      simp only [RecM.isTransientNatLiteralWork, RecM.isNatLiteralRecursorApp, spine]
+      cases headEntry <;> rfl
 
 end StructuralWhnfEntry
 

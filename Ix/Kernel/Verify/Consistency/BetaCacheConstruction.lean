@@ -20,27 +20,27 @@ namespace BetaWhnfSource
 /-- A structural hit has an actual producing execution. A miss needs only
 the finite resources along the source's computed beta orbit. -/
 structure CoreResources {β : Type u} (resolve : Address → Option (ConstRef β))
-    (locals : List FVarId) (before : TcState .anon) (source : KExpr .anon) (term : AExpr β) : Prop where
+    (locals : List FVarId) (fuel : Nat) (before : TcState .anon) (source : KExpr .anon) (term : AExpr β) : Prop where
   origins : ∀ cached,
     (betaWhnfKey source before).2.env.whnfCoreCache[(betaWhnfKey source before).1]? = some cached →
       ∃ originFuel originBefore target,
         ∃ _ : BetaCoreExecution resolve locals originFuel originBefore source term cached target,
           originBefore.env.intern.WF
   cold : (betaWhnfKey source before).2.env.whnfCoreCache[(betaWhnfKey source before).1]? = none →
-    Resources maxWhnfCoreFuel.toNat (betaWhnfKey source before).2 source
+    Resources (fuel + 1) .FULL maxWhnfCoreFuel.toNat (betaWhnfKey source before).2 source
 
 structure NoDeltaResources {β : Type u} (resolve : Address → Option (ConstRef β))
-    (locals : List FVarId) (before : TcState .anon) (source : KExpr .anon) (term : AExpr β) : Prop where
+    (locals : List FVarId) (fuel : Nat) (before : TcState .anon) (source : KExpr .anon) (term : AExpr β) : Prop where
   origins : ∀ cached,
     (betaWhnfKey source before).2.env.whnfNoDeltaCache[(betaWhnfKey source before).1]? = some cached →
       ∃ originFuel originBefore target,
         ∃ _ : BetaNoDeltaExecution resolve locals originFuel originBefore source term cached target,
           originBefore.env.intern.WF
   cold : (betaWhnfKey source before).2.env.whnfNoDeltaCache[(betaWhnfKey source before).1]? = none →
-    CoreResources resolve locals (betaWhnfKey source before).2 source term
+    CoreResources resolve locals fuel (betaWhnfKey source before).2 source term
 
 structure PublicResources {β : Type u} (resolve : Address → Option (ConstRef β))
-    (locals : List FVarId) (before : TcState .anon) (source : KExpr .anon) (term : AExpr β) : Prop where
+    (locals : List FVarId) (fuel : Nat) (before : TcState .anon) (source : KExpr .anon) (term : AExpr β) : Prop where
   origins : ∀ cached,
     (BetaPublicWhnf.outerKey source before).2.env.whnfCache[(BetaPublicWhnf.outerKey source before).1]? = some cached →
       ∃ originFuel originBefore target,
@@ -48,7 +48,7 @@ structure PublicResources {β : Type u} (resolve : Address → Option (ConstRef 
           originBefore.env.intern.WF
   cold : (BetaPublicWhnf.outerKey source before).2.env.whnfCache[
       (BetaPublicWhnf.outerKey source before).1]? = none →
-    NoDeltaResources resolve locals (betaWhnfCharge (BetaPublicWhnf.outerKey source before).2) source term
+    NoDeltaResources resolve locals fuel (betaWhnfCharge (BetaPublicWhnf.outerKey source before).2) source term
 
 end BetaWhnfSource
 
@@ -93,7 +93,7 @@ theorem BetaCoreExecution.exists_of_success {β : Type u} {resolve : Address →
     {locals : List FVarId} {fuel : Nat} {before after : TcState .anon}
     {source result : KExpr .anon} {term : AExpr β}
     (chosen : BetaWhnfSource.selected source = true)
-    (resources : BetaWhnfSource.CoreResources resolve locals before source term)
+    (resources : BetaWhnfSource.CoreResources resolve locals fuel before source term)
     (reading : readScopedExpr? resolve locals source = some term.erase)
     (coherent : before.env.intern.WF)
     (accepted : (RecM.whnfCore source).run (methodsN (fuel + 1)) before = .ok result after) :
@@ -112,7 +112,7 @@ theorem BetaNoDeltaExecution.exists_of_success {β : Type u} {resolve : Address 
     {locals : List FVarId} {fuel : Nat} {before after : TcState .anon}
     {source result : KExpr .anon} {term : AExpr β}
     (chosen : BetaWhnfSource.selected source = true)
-    (resources : BetaWhnfSource.NoDeltaResources resolve locals before source term)
+    (resources : BetaWhnfSource.NoDeltaResources resolve locals fuel before source term)
     (reading : readScopedExpr? resolve locals source = some term.erase)
     (coherent : before.env.intern.WF)
     (accepted : (RecM.whnfNoDelta source).run (methodsN (fuel + 1)) before = .ok result after) :
@@ -145,7 +145,7 @@ theorem BetaPublicExecution.exists_of_success {β : Type u} {resolve : Address �
     {locals : List FVarId} {fuel : Nat} {before after : TcState .anon}
     {source result : KExpr .anon} {term : AExpr β}
     (chosen : BetaWhnfSource.selected source = true)
-    (resources : BetaWhnfSource.PublicResources resolve locals before source term)
+    (resources : BetaWhnfSource.PublicResources resolve locals fuel before source term)
     (reading : readScopedExpr? resolve locals source = some term.erase)
     (coherent : before.env.intern.WF)
     (accepted : (RecM.whnf source).run (methodsN (fuel + 1)) before = .ok result after) :

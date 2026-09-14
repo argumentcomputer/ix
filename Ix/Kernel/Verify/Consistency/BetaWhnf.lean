@@ -63,30 +63,37 @@ theorem reading
 
 end SynthesisBetaStep
 
-/-- A complete finite beta path, including explicit lets, through structural WHNF. The final
-iteration returns its input; every preceding iteration has a computed
-substitution result and intern table, with no postulated intermediate check. -/
+/-- A finite structural path annotated from the original source check.
+Recursive head calls retain their real cache execution and derived conversion. -/
 inductive SynthesisBetaWhnfTrace {β : Type u} (resolve : Address → Option (ConstRef β))
     (incoming : Model.Environment β) (incomingContext : Model.Context β) (incomingBounds : List VLevel)
-    (entries : Model.Environment β) (context : Model.Context β) (locals : List FVarId)
-    (reductionFuel : Nat) (flags : WhnfFlags) :
-    Nat → TcState .anon → KExpr .anon → AExpr β → TcState .anon → KExpr .anon → AExpr β → Type u
-  | done {before source term}
-      (finished : (RecM.whnfCoreWithFlagsStep source flags).run (methodsN (reductionFuel + 1)) before =
+    (entries : Model.Environment β) (context : Model.Context β) (locals : List FVarId) :
+    Nat → WhnfFlags → Nat → TcState .anon → KExpr .anon → AExpr β → TcState .anon → KExpr .anon → AExpr β → Type u
+  | done {fuel flags before source term}
+      (finished : (RecM.whnfCoreWithFlagsStep source flags).run (methodsN fuel) before =
         .ok (.done source) before) :
-      SynthesisBetaWhnfTrace resolve incoming incomingContext incomingBounds entries context locals reductionFuel flags
+      SynthesisBetaWhnfTrace resolve incoming incomingContext incomingBounds entries context locals fuel flags
         0 before source term before source term
-  | next {steps before after source result term target type}
+  | next {fuel flags steps before after source result term target type}
       (step : SynthesisBetaStep resolve incoming incomingContext incomingBounds entries context locals before source term type)
-      (rest : SynthesisBetaWhnfTrace resolve incoming incomingContext incomingBounds entries context locals reductionFuel flags
+      (rest : SynthesisBetaWhnfTrace resolve incoming incomingContext incomingBounds entries context locals (fuel + 1) flags
         steps step.after step.result step.modelResult after result target) :
-      SynthesisBetaWhnfTrace resolve incoming incomingContext incomingBounds entries context locals reductionFuel flags
+      SynthesisBetaWhnfTrace resolve incoming incomingContext incomingBounds entries context locals (fuel + 1) flags
         (steps + 1) before source term after result target
-  | zeta {steps before after source result term target}
+  | zeta {fuel flags steps before after source result term target}
       (step : LetStepPlan before source)
-      (rest : SynthesisBetaWhnfTrace resolve incoming incomingContext incomingBounds entries context locals reductionFuel flags
+      (rest : SynthesisBetaWhnfTrace resolve incoming incomingContext incomingBounds entries context locals fuel flags
         steps step.after step.result term after result target) :
-      SynthesisBetaWhnfTrace resolve incoming incomingContext incomingBounds entries context locals reductionFuel flags
+      SynthesisBetaWhnfTrace resolve incoming incomingContext incomingBounds entries context locals fuel flags
+        (steps + 1) before source term after result target
+  | head {fuel flags steps before middle after source result term target type}
+      (plan : BetaHeadStepPlan resolve locals middle source term)
+      (call : BetaHeadReduction resolve locals fuel flags
+        before plan.rawHead plan.headTerm middle plan.rawLambda plan.modelLambda)
+      (meaning : SynthesisBetaTrace resolve incoming incomingContext incomingBounds entries context term plan.modelResult type)
+      (rest : SynthesisBetaWhnfTrace resolve incoming incomingContext incomingBounds entries context locals (fuel + 1) flags
+        steps plan.after plan.result plan.modelResult after result target) :
+      SynthesisBetaWhnfTrace resolve incoming incomingContext incomingBounds entries context locals (fuel + 1) flags
         (steps + 1) before source term after result target
 
 namespace SynthesisBetaWhnfTrace
@@ -96,7 +103,7 @@ variable {β : Type u} {resolve : Address → Option (ConstRef β)}
   {incomingBounds : List VLevel} {locals : List FVarId} {reductionFuel steps : Nat} {flags : WhnfFlags}
   {before after : TcState .anon} {source result : KExpr .anon} {term target : AExpr β}
 
-def toBetaTrace {steps : Nat} {before after : TcState .anon}
+def toBetaTrace {reductionFuel steps : Nat} {flags : WhnfFlags} {before after : TcState .anon}
     {source result : KExpr .anon} {term target : AExpr β}
     (trace : SynthesisBetaWhnfTrace resolve incoming incomingContext incomingBounds entries context locals reductionFuel flags
       steps before source term after result target) {type : AExpr β}
@@ -108,56 +115,36 @@ def toBetaTrace {steps : Nat} {before after : TcState .anon}
       let first := SynthesisBetaTrace.atType origin step.meaning
       first.trans (rest.toBetaTrace (.reduced first))
   | .zeta _ rest => rest.toBetaTrace origin
+  | .head _ _ meaning rest =>
+      let first := SynthesisBetaTrace.atType origin meaning
+      first.trans (rest.toBetaTrace (.reduced first))
+termination_by structural trace
+
+def toRawTrace {reductionFuel steps : Nat} {flags : WhnfFlags} {before after : TcState .anon}
+    {source result : KExpr .anon} {term target : AExpr β}
+    (trace : SynthesisBetaWhnfTrace resolve incoming incomingContext incomingBounds entries context locals reductionFuel flags
+      steps before source term after result target) :
+    BetaWhnfTrace resolve locals reductionFuel flags steps before source term after result target :=
+  match trace with
+  | .done finished => .done finished
+  | .next step rest => .next step.toBetaStepPlan rest.toRawTrace
+  | .zeta plan rest => .zeta plan rest.toRawTrace
+  | .head plan call _ rest => .head plan call rest.toRawTrace
 termination_by structural trace
 
 theorem run
     (trace : SynthesisBetaWhnfTrace resolve incoming incomingContext incomingBounds entries context locals reductionFuel flags
       steps before source term after result target) {loopFuel : Nat} (enough : steps < loopFuel) :
     (RecM.runBounded (fun current => RecM.whnfCoreWithFlagsStep current flags) loopFuel source).run
-      (methodsN (reductionFuel + 1)) before = .ok result after := by
-  induction trace generalizing loopFuel with
-  | done finished =>
-      cases loopFuel with
-      | zero => omega
-      | succ loopFuel =>
-          rw [RecM.runBounded, ReaderT.run_bind]
-          change EStateM.bind ((RecM.whnfCoreWithFlagsStep _ flags).run _) _ _ = _
-          unfold EStateM.bind
-          rw [finished]
-          rfl
-  | next step rest ih =>
-      cases loopFuel with
-      | zero => omega
-      | succ loopFuel =>
-          rw [RecM.runBounded, ReaderT.run_bind]
-          change EStateM.bind ((RecM.whnfCoreWithFlagsStep _ flags).run _) _ _ = _
-          unfold EStateM.bind
-          rw [step.run reductionFuel flags]
-          exact ih (by omega)
-  | zeta step rest ih =>
-      cases loopFuel with
-      | zero => omega
-      | succ loopFuel =>
-          rw [RecM.runBounded, ReaderT.run_bind]
-          change EStateM.bind ((RecM.whnfCoreWithFlagsStep _ flags).run _) _ _ = _
-          unfold EStateM.bind
-          rw [step.run (methodsN (reductionFuel + 1)) flags]
-          exact ih (by omega)
+      (methodsN reductionFuel) before = .ok result after := trace.toRawTrace.run enough
 
 theorem reading
     (trace : SynthesisBetaWhnfTrace resolve incoming incomingContext incomingBounds entries context locals reductionFuel flags
       steps before source term after result target)
     (sourceReading : readScopedExpr? resolve locals source = some term.erase)
     (coherent : before.env.intern.WF) :
-    readScopedExpr? resolve locals result = some target.erase ∧ after.env.intern.WF := by
-  induction trace with
-  | done => exact ⟨sourceReading, coherent⟩
-  | next step rest ih =>
-      obtain ⟨reading, preserved⟩ := step.reading coherent
-      exact ih reading preserved
-  | zeta step rest ih =>
-      obtain ⟨reading, preserved⟩ := step.reading sourceReading coherent
-      exact ih reading preserved
+    readScopedExpr? resolve locals result = some target.erase ∧ after.env.intern.WF :=
+  trace.toRawTrace.reading sourceReading coherent
 
 /-- The production loop returns the final beta result with the original
 source's type and a coherent intern table. The finite path uses the real
@@ -169,7 +156,7 @@ theorem uncached_sound
     (formed : ContextFormation.{u,v} incoming incomingContext incomingBounds)
     (sourceReading : readScopedExpr? resolve locals source = some term.erase)
     (coherent : before.env.intern.WF) (enough : steps < maxWhnfCoreFuel.toNat) :
-    (RecM.whnfCoreWithFlagsUncached source flags).run (methodsN (reductionFuel + 1)) before = .ok result after ∧
+    (RecM.whnfCoreWithFlagsUncached source flags).run (methodsN reductionFuel) before = .ok result after ∧
       readScopedExpr? resolve locals result = some target.erase ∧
       ConversionClaim.{u,v} entries context term target ∧ TypingClaim.{u,v} entries context target type ∧
       after.env.intern.WF := by

@@ -5,6 +5,7 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 
 import Ix.Kernel.Verify.Consistency.BetaInference
 import Ix.Kernel.Verify.Consistency.BetaWhnf
+import Ix.Kernel.Verify.Consistency.SynthesisAppCongruence
 
 /-! Derive every semantic beta-step origin from the original inference.
 The supplied WHNF path contains only actual operational and representation
@@ -32,6 +33,17 @@ def BetaStepPlan.betaTyping {β : Type u} {resolve : Address → Option (ConstRe
       _ = plan.modelResult := BetaSyntax.steps_betaPrefix _ _ _ plan.counts.1 plan.counts.2
   exact same ▸ typing.betaSteps plan.consumed.size
 
+def BetaPrefixPlan.betaTyping {β : Type u} {resolve : Address → Option (ConstRef β)}
+    {incoming entries : Model.Environment β} {incomingContext context : Model.Context β}
+    {incomingBounds : List VLevel} {locals : List FVarId} {before : TcState .anon} {type : AExpr β}
+    (plan : BetaPrefixPlan resolve locals before)
+    (typing : SynthesisBetaTyping resolve incoming incomingContext incomingBounds entries context plan.modelInput type) :
+    SynthesisBetaTyping resolve incoming incomingContext incomingBounds entries context plan.modelResult type ×
+      SynthesisBetaTrace resolve incoming incomingContext incomingBounds entries context plan.modelInput plan.modelResult type :=
+  typing.betaPrefix plan.consumed.size plan.counts.1 plan.counts.2
+
+mutual
+
 def BetaWhnfTrace.annotate {β : Type u} {resolve : Address → Option (ConstRef β)}
     {incoming entries : Model.Environment β} {incomingContext context : Model.Context β}
     {incomingBounds : List VLevel} {locals : List FVarId} {reductionFuel steps : Nat} {flags : WhnfFlags}
@@ -52,7 +64,36 @@ def BetaWhnfTrace.annotate {β : Type u} {resolve : Address → Option (ConstRef
   | .zeta plan rest =>
       let remaining := rest.annotate typing
       ⟨.zeta plan remaining.1, remaining.2⟩
+  | .head plan call rest => by
+      have starting : SynthesisBetaTyping resolve incoming incomingContext incomingBounds entries context
+          (plan.headTerm.appN plan.arguments) type := plan.modelSource ▸ typing
+      let first := starting.mapHead plan.arguments (target := plan.modelLambda)
+        (fun checked => BetaHeadReduction.annotate call checked)
+      let contracted := plan.toBetaPrefixPlan.betaTyping first.1
+      have meaning : SynthesisBetaTrace resolve incoming incomingContext incomingBounds entries context
+          term plan.modelResult type := by
+        exact Eq.mp (congrArg (fun source => SynthesisBetaTrace resolve incoming incomingContext incomingBounds
+          entries context source plan.modelResult type) plan.modelSource.symm) (first.2.trans contracted.2)
+      let remaining := BetaWhnfTrace.annotate rest contracted.1
+      exact ⟨.head plan call meaning remaining.1, remaining.2⟩
 termination_by structural trace
+
+def BetaHeadReduction.annotate {β : Type u} {resolve : Address → Option (ConstRef β)}
+    {incoming entries : Model.Environment β} {incomingContext context : Model.Context β}
+    {incomingBounds : List VLevel} {locals : List FVarId} {fuel : Nat} {flags : WhnfFlags}
+    {before after : TcState .anon} {source result : KExpr .anon} {term target type : AExpr β}
+    (call : BetaHeadReduction resolve locals fuel flags before source term after result target)
+    (typing : SynthesisBetaTyping resolve incoming incomingContext incomingBounds entries context term type) :
+    SynthesisBetaTyping resolve incoming incomingContext incomingBounds entries context target type ×
+      SynthesisBetaTrace resolve incoming incomingContext incomingBounds entries context term target type :=
+  match call with
+  | .reduce path .. =>
+      let annotated := BetaWhnfTrace.annotate path typing
+      ⟨annotated.2, annotated.1.toBetaTrace typing.origin⟩
+  | .cached origin .. => BetaHeadReduction.annotate origin typing
+termination_by structural call
+
+end
 
 /-- Annotating the raw public path derives its semantic trace from the
 retained checking derivation, including every later beta step. -/
@@ -196,7 +237,7 @@ theorem SynthesisInference.beta_whnf_sound {β : Type u} {resolve : Address → 
     (accepted : RecM.infer source (methodsN fuel) inferenceBefore = .ok inferred inferenceAfter)
     {reductionFuel steps : Nat} {flags : WhnfFlags} {before after : TcState .anon}
     {result : KExpr .anon} {target : AExpr β}
-    (path : BetaWhnfTrace resolve locals reductionFuel flags steps before source term after result target)
+    (path : BetaWhnfTrace resolve locals (reductionFuel + 1) flags steps before source term after result target)
     (coherent : before.env.intern.WF) (enough : steps < maxWhnfCoreFuel.toNat) :
     (RecM.whnfCoreWithFlagsUncached source flags).run (methodsN (reductionFuel + 1)) before = .ok result after ∧
       readScopedExpr? resolve locals result = some target.erase ∧

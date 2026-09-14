@@ -4,6 +4,7 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 -/
 
 import Ix.Kernel.Verify.Consistency.BetaStepConstruction
+import Ix.Kernel.Verify.Consistency.BetaHeadConstruction
 import Ix.Kernel.Verify.Consistency.BetaCacheExecution
 import Ix.Kernel.Verify.Whnf.Driver.Success
 
@@ -25,37 +26,56 @@ theorem BetaWhnfTerminal.core_step {source : KExpr .anon} (terminal : BetaWhnfTe
 namespace BetaWhnfSource
 
 def selected (source : KExpr .anon) : Bool :=
-  BetaStepSource.selected source || LetStepSource.selected source
+  BetaStepSource.selected source || LetStepSource.selected source || BetaHeadStepSource.selected source
 
 theorem selected_entry {source : KExpr .anon} (chosen : selected source = true) : StructuralWhnfEntry source := by
   by_cases beta : BetaStepSource.selected source = true
   · exact BetaStepSource.selected_entry beta
-  · exact LetStepSource.selected_entry (by simpa [selected, beta] using chosen)
+  · by_cases zeta : LetStepSource.selected source = true
+    · exact LetStepSource.selected_entry zeta
+    · exact BetaHeadStepSource.selected_entry (by simpa [selected, beta, zeta] using chosen)
 
-/-- At each computed beta or let step, retain only finite walker and hash bounds.
-Any other branch must be one of the supported terminal constructors. The
-zero-fuel case requires no successful result; success is supplied separately
-by the actual production run. -/
-def Resources : Nat → TcState .anon → KExpr .anon → Prop
-  | 0, _, _ => True
-  | fuel + 1, before, source =>
+/-- Raw resources follow actual method depth and loop fuel. A recursive head
+miss gets its own bounded orbit; only successful callbacks require a lambda
+and finite resources for its beta continuation. No annotations or intermediate
+execution equations are supplied. -/
+def Resources (reductionFuel : Nat) (flags : WhnfFlags) (loopFuel : Nat)
+    (before : TcState .anon) (source : KExpr .anon) : Prop :=
+  match loopFuel with
+  | 0 => True
+  | loopFuel + 1 =>
       if BetaStepSource.selected source then
         BetaStepSource.Resources source before ∧
-          Resources fuel (BetaStepSource.after source before) (BetaStepSource.output source before).1
+          Resources reductionFuel flags loopFuel (BetaStepSource.after source before) (BetaStepSource.output source before).1
       else if LetStepSource.selected source then
         LetStepSource.Resources source before ∧
-          Resources fuel (LetStepSource.after source before) (LetStepSource.output source before).1
+          Resources reductionFuel flags loopFuel (LetStepSource.after source before) (LetStepSource.output source before).1
+      else if BetaHeadStepSource.selected source then
+        match reductionFuel with
+        | 0 => True
+        | fuel + 1 =>
+            BetaCoreCache.lookup flags (betaWhnfKey source.collectSpine.1 before).1
+                (betaWhnfKey source.collectSpine.1 before).2 = none ∧
+            Resources fuel flags maxWhnfCoreFuel.toNat (betaWhnfKey source.collectSpine.1 before).2 source.collectSpine.1 ∧
+            ∀ head middle,
+              (RecM.whnfCoreWithFlags source.collectSpine.1 flags).run (methodsN fuel) before = .ok head middle →
+                BetaPrefixSource.selected head = true ∧
+                BetaPrefixSource.Resources head source.collectSpine.2 middle ∧
+                Resources (fuel + 1) flags loopFuel (BetaPrefixSource.after head source.collectSpine.2 middle)
+                  (BetaPrefixSource.output head source.collectSpine.2 middle).1
       else BetaWhnfTerminal source
+termination_by (reductionFuel, loopFuel)
 
-theorem Resources.first {fuel : Nat} {before : TcState .anon} {source : KExpr .anon}
-    (resources : Resources fuel before source) (positive : 0 < fuel)
+theorem Resources.first {reductionFuel fuel : Nat} {flags : WhnfFlags} {before : TcState .anon} {source : KExpr .anon}
+    (resources : Resources reductionFuel flags fuel before source) (positive : 0 < fuel)
     (chosen : BetaStepSource.selected source = true) : BetaStepSource.Resources source before := by
   cases fuel with
   | zero => omega
   | succ fuel =>
+      rw [Resources.eq_def] at resources
       exact (show BetaStepSource.Resources source before ∧
-        Resources fuel (BetaStepSource.after source before) (BetaStepSource.output source before).1 from by
-          simpa only [Resources, chosen, if_true] using resources).1
+        Resources reductionFuel flags fuel (BetaStepSource.after source before) (BetaStepSource.output source before).1 from by
+          simpa only [chosen, if_true] using resources).1
 
 /-- The annotation and iteration count are outputs of reconstruction.
 The trace's endpoints are the actual result and state of the bounded run. -/
@@ -69,57 +89,133 @@ structure Witness {β : Type u} (resolve : Address → Option (ConstRef β)) (lo
   terminal : BetaWhnfTerminal result
   moving : selected source = true → 0 < steps
 
-/-- Successful execution determines the complete raw trace. No intermediate
-readings, model expressions, step equations, or iteration count are inputs. -/
+/-- Successful execution determines both nested head calls and the outer
+path. Each recursive callback uses the predecessor method table. -/
 def construct {β : Type u} {resolve : Address → Option (ConstRef β)} {locals : List FVarId}
     {reductionFuel loopFuel : Nat} {flags : WhnfFlags} {before after : TcState .anon}
     {source result : KExpr .anon} {term : AExpr β}
-    (resources : Resources loopFuel before source)
+    (resources : Resources reductionFuel flags loopFuel before source)
     (reading : readScopedExpr? resolve locals source = some term.erase)
     (coherent : before.env.intern.WF)
     (accepted : (RecM.runBounded (fun current => RecM.whnfCoreWithFlagsStep current flags)
-      loopFuel source).run (methodsN (reductionFuel + 1)) before = .ok result after) :
+      loopFuel source).run (methodsN reductionFuel) before = .ok result after) :
     Witness resolve locals reductionFuel loopFuel flags before source term result after := by
-  induction loopFuel generalizing before source term with
+  cases loopFuel with
   | zero => cases accepted
-  | succ loopFuel ih =>
+  | succ loopFuel =>
+      rw [Resources.eq_def] at resources
       by_cases chosen : BetaStepSource.selected source = true
-      · have data : BetaStepSource.Resources source before ∧
-            Resources loopFuel (BetaStepSource.after source before) (BetaStepSource.output source before).1 := by
-          simpa only [Resources, chosen, if_true] using resources
-        let first := BetaStepSource.construct chosen reading data.1
-        have nextResources : Resources loopFuel first.1.after first.1.result := by
-          simpa only [first, BetaStepSource.construct_after, BetaStepSource.construct_result] using data.2
-        obtain ⟨nextReading, nextCoherent⟩ := first.1.reading coherent
-        rw [RecM.runBounded, ReaderT.run_bind] at accepted
-        change EStateM.bind ((RecM.whnfCoreWithFlagsStep source flags).run _) _ before = _ at accepted
-        rw [EStateM.bind, first.1.run reductionFuel flags] at accepted
-        let rest := ih nextResources nextReading nextCoherent accepted
-        exact ⟨rest.steps + 1, rest.target, .next first.1 rest.trace,
-          Nat.add_lt_add_right rest.enough 1, rest.terminal, fun _ => Nat.zero_lt_succ _⟩
+      · cases reductionFuel with
+        | zero =>
+            exfalso
+            obtain ⟨fn, arg, info, rfl⟩ := BetaStepSource.selected_app chosen
+            obtain ⟨_, _, impossible⟩ := BetaHeadStepSource.head_of_success accepted
+            cases impossible
+        | succ fuel =>
+            have data : BetaStepSource.Resources source before ∧
+                Resources (fuel + 1) flags loopFuel (BetaStepSource.after source before) (BetaStepSource.output source before).1 := by
+              simpa only [chosen, if_true] using resources
+            let first := BetaStepSource.construct chosen reading data.1
+            have nextResources : Resources (fuel + 1) flags loopFuel first.1.after first.1.result := by
+              simpa only [first, BetaStepSource.construct_after, BetaStepSource.construct_result] using data.2
+            obtain ⟨nextReading, nextCoherent⟩ := first.1.reading coherent
+            rw [RecM.runBounded, ReaderT.run_bind] at accepted
+            change EStateM.bind ((RecM.whnfCoreWithFlagsStep source flags).run _) _ before = _ at accepted
+            rw [EStateM.bind, first.1.run fuel flags] at accepted
+            let rest := construct nextResources nextReading nextCoherent accepted
+            exact ⟨rest.steps + 1, rest.target, .next first.1 rest.trace,
+              Nat.add_lt_add_right rest.enough 1, rest.terminal, fun _ => Nat.zero_lt_succ _⟩
       · by_cases zeta : LetStepSource.selected source = true
         · have data : LetStepSource.Resources source before ∧
-              Resources loopFuel (LetStepSource.after source before) (LetStepSource.output source before).1 := by
-            simpa [Resources, chosen, zeta] using resources
+              Resources reductionFuel flags loopFuel (LetStepSource.after source before) (LetStepSource.output source before).1 := by
+            simpa [chosen, zeta] using resources
           let first := LetStepSource.construct zeta data.1
-          have nextResources : Resources loopFuel first.1.after first.1.result := by
+          have nextResources : Resources reductionFuel flags loopFuel first.1.after first.1.result := by
             simpa only [first, LetStepSource.construct_after, LetStepSource.construct_result] using data.2
           obtain ⟨nextReading, nextCoherent⟩ := first.1.reading reading coherent
           rw [RecM.runBounded, ReaderT.run_bind] at accepted
           change EStateM.bind ((RecM.whnfCoreWithFlagsStep source flags).run _) _ before = _ at accepted
-          rw [EStateM.bind, first.1.run (methodsN (reductionFuel + 1)) flags] at accepted
-          let rest := ih nextResources nextReading nextCoherent accepted
+          rw [EStateM.bind, first.1.run (methodsN reductionFuel) flags] at accepted
+          let rest := construct nextResources nextReading nextCoherent accepted
           exact ⟨rest.steps + 1, rest.target, .zeta first.1 rest.trace,
             Nat.add_lt_add_right rest.enough 1, rest.terminal, fun _ => Nat.zero_lt_succ _⟩
-        · have terminal : BetaWhnfTerminal source := by
-            simpa [Resources, chosen, zeta] using resources
-          have finished := terminal.core_step (methodsN (reductionFuel + 1)) before flags
-          rw [RecM.runBounded, ReaderT.run_bind] at accepted
-          change EStateM.bind ((RecM.whnfCoreWithFlagsStep source flags).run _) _ before = _ at accepted
-          rw [EStateM.bind, finished] at accepted
-          obtain ⟨rfl, rfl⟩ := EStateM.Result.ok.inj accepted
-          exact ⟨0, term, .done finished, Nat.zero_lt_succ _, terminal,
-            fun impossible => by simp [selected, chosen, zeta] at impossible⟩
+        · by_cases headed : BetaHeadStepSource.selected source = true
+          · cases reductionFuel with
+            | zero =>
+                exfalso
+                obtain ⟨fn, arg, info, rfl⟩ := BetaHeadStepSource.selected_app headed
+                obtain ⟨_, _, impossible⟩ := BetaHeadStepSource.head_of_success accepted
+                cases impossible
+            | succ fuel =>
+                have data :
+                    BetaCoreCache.lookup flags (betaWhnfKey source.collectSpine.1 before).1
+                      (betaWhnfKey source.collectSpine.1 before).2 = none ∧
+                    Resources fuel flags maxWhnfCoreFuel.toNat (betaWhnfKey source.collectSpine.1 before).2 source.collectSpine.1 ∧
+                    ∀ head middle,
+                      (RecM.whnfCoreWithFlags source.collectSpine.1 flags).run (methodsN fuel) before = .ok head middle →
+                        BetaPrefixSource.selected head = true ∧
+                        BetaPrefixSource.Resources head source.collectSpine.2 middle ∧
+                        Resources (fuel + 1) flags loopFuel (BetaPrefixSource.after head source.collectSpine.2 middle)
+                          (BetaPrefixSource.output head source.collectSpine.2 middle).1 := by
+                  simpa [chosen, zeta, headed] using resources
+                have headChosen := BetaHeadStepSource.selected_head headed
+                have headEntry := LetStepSource.selected_entry headChosen
+                have parsed := AppSpineSource.reading reading
+                have headCoherent : (betaWhnfKey source.collectSpine.1 before).2.env.intern.WF :=
+                  (betaWhnfKey_environment _ _).symm ▸ coherent
+                cases called : (RecM.whnfCoreWithFlags source.collectSpine.1 flags).run (methodsN fuel) before with
+                | error error failed =>
+                    exfalso
+                    obtain ⟨fn, arg, info, rfl⟩ := BetaHeadStepSource.selected_app headed
+                    obtain ⟨_, _, success⟩ := BetaHeadStepSource.head_of_success accepted
+                    change (RecM.whnfCoreWithFlags (KExpr.app fn arg info).collectSpine.1 flags).run
+                      (methodsN fuel) before = _ at success
+                    rw [called] at success
+                    cases success
+                | ok head middle =>
+                    have tailData := data.2.2 head middle called
+                    cases rawRun : (RecM.whnfCoreWithFlagsUncached source.collectSpine.1 flags).run
+                        (methodsN fuel) (betaWhnfKey source.collectSpine.1 before).2 with
+                    | error error failed =>
+                        exfalso
+                        obtain ⟨_, success, _⟩ := BetaCoreCache.miss_success flags headEntry data.1 called
+                        rw [rawRun] at success
+                        cases success
+                    | ok returned rawAfter =>
+                        let headPath := construct data.2.1 parsed.2.1 headCoherent rawRun
+                        have moving : selected source.collectSpine.1 = true := by
+                          simp [selected, headChosen]
+                        let call := BetaHeadReduction.reduce headPath.trace (headPath.moving moving) headPath.enough data.1
+                        have same := call.run
+                        rw [called] at same
+                        obtain ⟨rfl, rfl⟩ := EStateM.Result.ok.inj same
+                        have headReading := (call.reading parsed.2.1 coherent).1
+                        let built := BetaHeadStepSource.construct headed reading tailData.1 headReading tailData.2.1
+                        have aligned : BetaHeadReduction resolve locals fuel flags before built.plan.rawHead built.plan.headTerm
+                            (BetaCoreCache.write flags (betaWhnfKey source.collectSpine.1 before).1 head rawAfter)
+                            built.plan.rawLambda built.plan.modelLambda := by
+                          rw [built.sourceHead, built.sourceTerm, built.resultHead, built.resultTerm]
+                          exact call
+                        have nextResources : Resources (fuel + 1) flags loopFuel built.plan.after built.plan.result := by
+                          simpa only [built.after, built.result] using tailData.2.2
+                        obtain ⟨nextReading, nextCoherent⟩ := built.plan.reading (call.reading parsed.2.1 coherent).2
+                        rw [RecM.runBounded, ReaderT.run_bind] at accepted
+                        change EStateM.bind ((RecM.whnfCoreWithFlagsStep source flags).run _) _ before = _ at accepted
+                        rw [EStateM.bind, built.plan.run aligned.run] at accepted
+                        let rest := construct nextResources nextReading nextCoherent accepted
+                        exact ⟨rest.steps + 1, rest.target, .head built.plan aligned rest.trace,
+                          Nat.add_lt_add_right rest.enough 1, rest.terminal, fun _ => Nat.zero_lt_succ _⟩
+          · have terminal : BetaWhnfTerminal source := by
+              simpa [chosen, zeta, headed] using resources
+            have finished := terminal.core_step (methodsN reductionFuel) before flags
+            rw [RecM.runBounded, ReaderT.run_bind] at accepted
+            change EStateM.bind ((RecM.whnfCoreWithFlagsStep source flags).run _) _ before = _ at accepted
+            rw [EStateM.bind, finished] at accepted
+            obtain ⟨rfl, rfl⟩ := EStateM.Result.ok.inj accepted
+            exact ⟨0, term, .done finished, Nat.zero_lt_succ _, terminal,
+              fun impossible => by simp [selected, chosen, zeta, headed] at impossible⟩
+termination_by (reductionFuel, loopFuel)
+decreasing_by all_goals simp_wf; omega
 
 end BetaWhnfSource
 
@@ -129,7 +225,7 @@ theorem BetaCoreExecution.exists_of_miss_success {β : Type u} {resolve : Addres
     {locals : List FVarId} {fuel : Nat} {before after : TcState .anon}
     {source result : KExpr .anon} {term : AExpr β}
     (chosen : BetaWhnfSource.selected source = true)
-    (resources : BetaWhnfSource.Resources maxWhnfCoreFuel.toNat (betaWhnfKey source before).2 source)
+    (resources : BetaWhnfSource.Resources (fuel + 1) .FULL maxWhnfCoreFuel.toNat (betaWhnfKey source before).2 source)
     (reading : readScopedExpr? resolve locals source = some term.erase)
     (coherent : before.env.intern.WF)
     (miss : (betaWhnfKey source before).2.env.whnfCoreCache[(betaWhnfKey source before).1]? = none)
