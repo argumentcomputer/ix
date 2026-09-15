@@ -46,7 +46,8 @@ private theorem insert_retains_original {before current : AnonEnv}
     (frame : IngressCacheExtension before current) (entry : Entry)
     (compatible : ∀ old, before.get? entry.1 = some old → entry.2 = old) :
     IngressCacheExtension before (current.insert entry.1 entry.2) := by
-  refine ⟨frame.full, frame.only, ?_, frame.freshIds⟩
+  refine ⟨frame.full, frame.only, ?_, frame.freshIds, frame.whnfFull, frame.whnfNoDelta,
+    frame.whnfNoDeltaCheap, frame.whnfCore, frame.whnfCoreCheap⟩
   intro id concrete loaded
   by_cases same : entry.1 = id
   · rw [← same] at loaded ⊢
@@ -74,7 +75,7 @@ theorem insertMutsEntriesState_cache {before : AnonEnv} {entries : Array Entry}
   apply foldl_insert_retains_original before entries.toList
   · intro entry member old loaded
     exact compatible entry (by simpa using member) old loaded
-  · split <;> exact ⟨rfl, rfl, fun _ _ found => found, rfl⟩
+  · split <;> exact ⟨rfl, rfl, fun _ _ found => found, rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 /-- Reserved-address validation retains the exact environment on both outcomes. -/
 theorem guardReserved_state (entries : Array Entry) (before : AnonEnv) :

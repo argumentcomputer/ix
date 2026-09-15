@@ -4,6 +4,7 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 -/
 
 import Ix.Kernel.Verify.Consistency.SynthesisCacheHistory
+import Ix.Kernel.Verify.Consistency.SynthesisCoherence
 
 /-! The original synthesis recursion supplies the annotations of actual cache
 publications. Supplementary data concerns only operational resources and child
@@ -21,6 +22,8 @@ structure SynthesisCacheRun {β : Type u} (resolve : Address → Option (ConstRe
     (accepted : RecM.infer source (methodsN fuel) before = .ok result after) where
   trace : InferenceCacheTrace.{u} fuel before source
   checks : SynthesisEventChecks resolve anchor entries (trace.events accepted)
+  whnf : before.env.intern.WF → trace.WhnfData β
+  coherent : before.env.intern.WF → after.env.intern.WF
 
 /-- The older checking-only interface can omit executed domain checks and
 loader resources. This supplement records its actual operational tree and
@@ -30,14 +33,16 @@ structure SynthesisCacheSupplement {β : Type u} (resolve : Address → Option (
     (anchor entries : Model.Environment β) (fuel : Nat) (state : TcState .anon) (source : KExpr .anon) where
   trace : InferenceCacheTrace.{u} fuel state source
   children : SynthesisEventChecks resolve anchor entries trace.childEvents
+  whnf : state.env.intern.WF → trace.WhnfData β
 
 namespace SynthesisCacheSupplement
 
 variable {β : Type u} {resolve : Address → Option (ConstRef β)}
   {anchor entries : Model.Environment β} {fuel : Nat} {before : TcState .anon} {source : KExpr .anon}
 
-def ofLeaf (trace : InferenceCacheTrace.{u} fuel before source) (leaf : trace.childEvents = []) :
-    SynthesisCacheSupplement resolve anchor entries fuel before source := ⟨trace, leaf.symm ▸ .nil⟩
+def ofLeaf (trace : InferenceCacheTrace.{u} fuel before source) (leaf : trace.childEvents = [])
+    (whnf : before.env.intern.WF → trace.WhnfData β) :
+    SynthesisCacheSupplement resolve anchor entries fuel before source := ⟨trace, leaf.symm ▸ .nil, whnf⟩
 
 /-- Primitive cache observations require no supplementary checking trees. -/
 def sortOfKey {keyed : TcState .anon} {level : KUniv .anon} {info : ExprInfo .anon}
@@ -45,14 +50,20 @@ def sortOfKey {keyed : TcState .anon} {level : KUniv .anon} {info : ExprInfo .an
     SynthesisCacheSupplement resolve anchor entries fuel before (.sort level info) :=
   ofLeaf (.sortOfKey run) (by
     unfold InferenceCacheTrace.sortOfKey
-    rcases observeInferenceCache run with ⟨hit, _, _⟩ | ⟨miss, _, _⟩ <;> rfl)
+    rcases observeInferenceCache run with ⟨hit, _, _⟩ | ⟨miss, _, _⟩ <;> rfl) (by
+    intro _
+    unfold InferenceCacheTrace.sortOfKey
+    rcases observeInferenceCache run with ⟨hit, _, _⟩ | ⟨miss, _, _⟩ <;> exact PUnit.unit)
 
 def fvarOfKey {keyed : TcState .anon} {id : FVarId} {name : Mode.anon.F Name} {info : ExprInfo .anon}
     {key : Address × Address} (run : TcM.inferKey (.fvar id name info) before = .ok key keyed) :
     SynthesisCacheSupplement resolve anchor entries fuel before (.fvar id name info) :=
   ofLeaf (.fvarOfKey run) (by
     unfold InferenceCacheTrace.fvarOfKey
-    rcases observeInferenceCache run with ⟨hit, _, _⟩ | ⟨miss, _, _⟩ <;> rfl)
+    rcases observeInferenceCache run with ⟨hit, _, _⟩ | ⟨miss, _, _⟩ <;> rfl) (by
+    intro _
+    unfold InferenceCacheTrace.fvarOfKey
+    rcases observeInferenceCache run with ⟨hit, _, _⟩ | ⟨miss, _, _⟩ <;> exact PUnit.unit)
 
 def verifiedConstOfKey {keyed : TcState .anon} {id : KId .anon} {arguments : Array (KUniv .anon)}
     {info : ExprInfo .anon} {key : Address × Address}
@@ -63,7 +74,10 @@ def verifiedConstOfKey {keyed : TcState .anon} {id : KId .anon} {arguments : Arr
     SynthesisCacheSupplement resolve anchor entries fuel before (.const id arguments info) :=
   ofLeaf (.verifiedConstOfKey run loader resources) (by
     unfold InferenceCacheTrace.verifiedConstOfKey
-    rcases observeInferenceCache run with ⟨hit, _, _⟩ | ⟨miss, _, _⟩ <;> rfl)
+    rcases observeInferenceCache run with ⟨hit, _, _⟩ | ⟨miss, _, _⟩ <;> rfl) (by
+    intro _
+    unfold InferenceCacheTrace.verifiedConstOfKey
+    rcases observeInferenceCache run with ⟨hit, _, _⟩ | ⟨miss, _, _⟩ <;> exact PUnit.unit)
 
 def complete (data : SynthesisCacheSupplement resolve anchor entries fuel before source)
     {locals : List FVarId} {context : Model.Context β} {bounds : List VLevel}
@@ -75,8 +89,10 @@ def complete (data : SynthesisCacheSupplement resolve anchor entries fuel before
     (accepted : RecM.infer source (methodsN fuel) before = .ok result after) :
     SynthesisCacheRun resolve anchor entries accepted :=
   { trace := data.trace
+    whnf := data.whnf
+    coherent := fun initial => tree.outputCoherent data.trace initial agreement reading accepted
     checks := by
-      rcases data with ⟨trace, children⟩
+      rcases data with ⟨trace, children, whnf⟩
       cases trace with
       | hit => exact .nil
       | sort miss | fvar miss | const miss concrete loaded resources | lazyConst miss loader resources =>
@@ -163,7 +179,11 @@ def SynthesisInference.cacheExecution {β : Type u} {resolve : Address → Optio
           contextOrigin agreement reading accepted
   | .fvar inference atIndex boundAtIndex => fun data contextOrigin agreement reading accepted =>
       data.complete (.fvar inference atIndex boundAtIndex) contextOrigin agreement reading accepted
-  | .cached _ _ _ _ hit _ _ | .cachedFrom _ hit _ => fun _ _ _ _ _ => ⟨.hit hit, .nil⟩
+  | .cached _ _ _ _ hit _ _ | .cachedFrom _ hit _ => fun _ _ _ _ accepted =>
+      ⟨.hit hit, .nil, fun _ => PUnit.unit, fun initial => by
+        rw [hit.run] at accepted
+        cases accepted
+        simpa only [inferKey_environment hit.keyRun] using initial⟩
   | .app full miss trace functionTree argumentTree conditions hashPath comparisonFaithful
       bodyConstructed argConstructed bodyBound argBound coherent faithful =>
       fun data contextOrigin agreement reading accepted => by
@@ -173,7 +193,9 @@ def SynthesisInference.cacheExecution {β : Type u} {resolve : Address → Optio
       let argumentRun := argumentTree.cacheExecution data.2 contextOrigin
         (keyedAgreement.congr trace.contextPreserved.symm) argumentReads trace.argumentRun
       exact (SynthesisCacheSupplement.mk (.app full miss trace hashPath functionRun.trace argumentRun.trace)
-        (functionRun.checks.append argumentRun.checks)).complete
+        (functionRun.checks.append argumentRun.checks) (fun initial =>
+          let keyed := miss.keyedCoherent initial
+          (functionRun.whnf keyed, argumentRun.whnf (functionRun.coherent keyed)))).complete
           (.app full miss trace functionTree argumentTree conditions hashPath comparisonFaithful
             bodyConstructed argConstructed bodyBound argBound coherent faithful)
           contextOrigin agreement reading accepted
@@ -185,8 +207,15 @@ def SynthesisInference.cacheExecution {β : Type u} {resolve : Address → Optio
       let functionRun := functionTree.cacheExecution data.1 contextOrigin keyedAgreement functionReads trace.functionRun
       let argumentRun := argumentTree.cacheExecution data.2 contextOrigin
         (keyedAgreement.congr trace.exposure_context.symm) argumentReads trace.argumentRun
+      have functionReading := functionTree.outputReading keyedAgreement functionReads trace.functionRun
       exact (SynthesisCacheSupplement.mk (.appBeta full miss trace exposure hashPath functionRun.trace argumentRun.trace)
-        (functionRun.checks.append argumentRun.checks)).complete
+        (functionRun.checks.append argumentRun.checks) (fun initial =>
+          let keyed := miss.keyedCoherent initial
+          let functionCoherent := functionRun.coherent keyed
+          (functionRun.whnf keyed, ⟨_, _, _, functionReading, functionCoherent⟩,
+            argumentRun.whnf (by
+              rw [trace.exposure_state exposure]
+              exact (exposure.reading functionReading functionCoherent).2.2)))).complete
           (.appBeta full miss trace functionTree exposure exposureCoherent reduction argumentTree conditions hashPath
             comparisonFaithful bodyConstructed argConstructed bodyBound argBound coherent faithful)
           contextOrigin agreement reading accepted
@@ -195,12 +224,13 @@ def SynthesisInference.cacheExecution {β : Type u} {resolve : Address → Optio
       obtain ⟨domainReads, bodyReads⟩ := readScopedExpr?_all_parts reading
       have keyedAgreement := miss.localContext.symm ▸ agreement
       let domainRun := domainTree.cacheExecution data.1 contextOrigin keyedAgreement domainReads trace.domainRun
-      obtain ⟨_, openedReads, openedAgreement, _⟩ := openBinder_sound opening
+      obtain ⟨_, openedReads, openedAgreement, openedCoherent⟩ := openBinder_sound opening
         (keyedAgreement.congr trace.contextPreserved.symm) (trace.absent keyedAgreement) domainReads bodyReads trace.openRun
       let bodyRun := bodyTree.cacheExecution data.2
         (.push contextOrigin domainTree keyedAgreement domainReads trace.domainRun) openedAgreement openedReads trace.bodyRun
       exact (SynthesisCacheSupplement.mk (.forallE miss trace domainRun.trace bodyRun.trace)
-        (domainRun.checks.append bodyRun.checks)).complete
+        (domainRun.checks.append bodyRun.checks) (fun initial =>
+          (domainRun.whnf (miss.keyedCoherent initial), bodyRun.whnf openedCoherent))).complete
           (.forallE miss trace opening domainTree bodyTree levelFaithful domainBound bodyBound coherent faithful)
           contextOrigin agreement reading accepted
   | .lam full miss trace opening domainTree bodyTree conditionAgrees constructed bound coherent
@@ -209,12 +239,13 @@ def SynthesisInference.cacheExecution {β : Type u} {resolve : Address → Optio
       obtain ⟨domainReads, bodyReads⟩ := readScopedExpr?_lam_parts reading
       have keyedAgreement := miss.localContext.symm ▸ agreement
       let domainRun := domainTree.cacheExecution data.1 contextOrigin keyedAgreement domainReads trace.domainRun
-      obtain ⟨_, openedReads, openedAgreement, _⟩ := openBinder_sound opening
+      obtain ⟨_, openedReads, openedAgreement, openedCoherent⟩ := openBinder_sound opening
         (keyedAgreement.congr trace.contextPreserved.symm) (trace.absent keyedAgreement) domainReads bodyReads trace.openRun
       let bodyRun := bodyTree.cacheExecution data.2
         (.push contextOrigin domainTree keyedAgreement domainReads trace.domainRun) openedAgreement openedReads trace.bodyRun
       exact (SynthesisCacheSupplement.mk (.lam full miss trace domainRun.trace bodyRun.trace)
-        (domainRun.checks.append bodyRun.checks)).complete
+        (domainRun.checks.append bodyRun.checks) (fun initial =>
+          (domainRun.whnf (miss.keyedCoherent initial), bodyRun.whnf openedCoherent))).complete
           (.lam full miss trace opening domainTree bodyTree conditionAgrees constructed bound coherent
             closingFaithful faithful) contextOrigin agreement reading accepted
   | .lamBeta full miss trace opening domainTree bodyTree origin reduction conditionAgrees
@@ -223,12 +254,13 @@ def SynthesisInference.cacheExecution {β : Type u} {resolve : Address → Optio
       obtain ⟨domainReads, bodyReads⟩ := readScopedExpr?_lam_parts reading
       have keyedAgreement := miss.localContext.symm ▸ agreement
       let domainRun := domainTree.cacheExecution data.1 contextOrigin keyedAgreement domainReads trace.domainRun
-      obtain ⟨_, openedReads, openedAgreement, _⟩ := openBinder_sound opening
+      obtain ⟨_, openedReads, openedAgreement, openedCoherent⟩ := openBinder_sound opening
         (keyedAgreement.congr trace.contextPreserved.symm) (trace.absent keyedAgreement) domainReads bodyReads trace.openRun
       let bodyRun := bodyTree.cacheExecution data.2
         (.push contextOrigin domainTree keyedAgreement domainReads trace.domainRun) openedAgreement openedReads trace.bodyRun
       exact (SynthesisCacheSupplement.mk (.lamBody full miss trace domainRun.trace bodyRun.trace)
-        (domainRun.checks.append bodyRun.checks)).complete
+        (domainRun.checks.append bodyRun.checks) (fun initial =>
+          (domainRun.whnf (miss.keyedCoherent initial), bodyRun.whnf openedCoherent))).complete
           (.lamBeta full miss trace opening domainTree bodyTree origin reduction conditionAgrees
             constructed bound closingFaithful faithful) contextOrigin agreement reading accepted
   | .letE full localState miss trace opening domainTree valueTree bodyTree domainReading valueReading bodyReading
@@ -239,14 +271,16 @@ def SynthesisInference.cacheExecution {β : Type u} {resolve : Address → Optio
       let domainRun := domainTree.cacheExecution data.1 contextOrigin keyedAgreement domainReading trace.domainRun
       let valueRun := valueTree.cacheExecution data.2.1 contextOrigin
         (keyedAgreement.congr (trace.domainContext keyedValid).symm) valueReading trace.valueRun
-      obtain ⟨openedReading, openedAgreement, _⟩ :=
+      obtain ⟨openedReading, openedAgreement, openedCoherent⟩ :=
         trace.opened_reading opening keyedValid keyedAgreement domainReading bodyReading
       let bodyRun := bodyTree.cacheExecution data.2.2
         (.push contextOrigin domainTree keyedAgreement domainReading trace.domainRun)
         openedAgreement openedReading trace.bodyRun
       exact (SynthesisCacheSupplement.mk
         (.letE full miss trace hashPath domainRun.trace valueRun.trace bodyRun.trace)
-        ((domainRun.checks.append valueRun.checks).append bodyRun.checks)).complete
+        ((domainRun.checks.append valueRun.checks).append bodyRun.checks) (fun initial =>
+          let keyed := miss.keyedCoherent initial
+          (domainRun.whnf keyed, valueRun.whnf (domainRun.coherent keyed), bodyRun.whnf openedCoherent))).complete
           (.letE full localState miss trace opening domainTree valueTree bodyTree domainReading valueReading bodyReading
             conditions hashPath comparisonFaithful substitution reduction) contextOrigin agreement reading accepted
   | .forallSort miss trace opening domainCheck bodyCheck levelFaithful domainBound bodyBound coherent faithful =>
@@ -254,13 +288,17 @@ def SynthesisInference.cacheExecution {β : Type u} {resolve : Address → Optio
       obtain ⟨domainReading, bodyReading⟩ := readScopedExpr?_all_parts reading
       have keyedAgreement := miss.localContext.symm ▸ agreement
       let domainRun := domainCheck.cacheExecution data.1 contextOrigin keyedAgreement domainReading
-      obtain ⟨openedReading, openedAgreement, _⟩ :=
+      obtain ⟨openedReading, openedAgreement, openedCoherent⟩ :=
         trace.opened_reading opening keyedAgreement domainReading bodyReading
       let bodyRun := bodyCheck.cacheExecution data.2
         (.pushSort contextOrigin domainCheck keyedAgreement domainReading) openedAgreement openedReading
       exact (SynthesisCacheSupplement.mk
         (.forallSort miss trace domainCheck.exposure bodyCheck.exposure domainRun.trace bodyRun.trace)
-        (domainRun.checks.append bodyRun.checks)).complete
+        (domainRun.checks.append bodyRun.checks) (fun initial =>
+          let keyed := miss.keyedCoherent initial
+          (domainRun.whnf keyed, domainCheck.historyReading keyedAgreement domainReading (domainRun.coherent keyed),
+            bodyRun.whnf openedCoherent,
+            bodyCheck.historyReading openedAgreement openedReading (bodyRun.coherent openedCoherent)))).complete
           (.forallSort miss trace opening domainCheck bodyCheck levelFaithful domainBound bodyBound coherent faithful)
           contextOrigin agreement reading accepted
   | .lamSort full miss trace opening domainCheck bodyTree reduction conditionAgrees
@@ -268,14 +306,17 @@ def SynthesisInference.cacheExecution {β : Type u} {resolve : Address → Optio
       obtain ⟨domainReading, bodyReading⟩ := readScopedExpr?_lam_parts reading
       have keyedAgreement := miss.localContext.symm ▸ agreement
       let domainRun := domainCheck.cacheExecution data.1 contextOrigin keyedAgreement domainReading
-      obtain ⟨openedReading, openedAgreement, _⟩ :=
+      obtain ⟨openedReading, openedAgreement, openedCoherent⟩ :=
         trace.opened_reading opening keyedAgreement domainReading bodyReading
       let bodyRun := bodyTree.cacheExecution data.2
         (.pushSort contextOrigin domainCheck keyedAgreement domainReading)
         openedAgreement openedReading trace.bodyRun
       exact (SynthesisCacheSupplement.mk
         (.lamSort full miss trace domainCheck.exposure domainRun.trace bodyRun.trace)
-        (domainRun.checks.append bodyRun.checks)).complete
+        (domainRun.checks.append bodyRun.checks) (fun initial =>
+          let keyed := miss.keyedCoherent initial
+          (domainRun.whnf keyed, domainCheck.historyReading keyedAgreement domainReading (domainRun.coherent keyed),
+            bodyRun.whnf openedCoherent))).complete
           (.lamSort full miss trace opening domainCheck bodyTree reduction conditionAgrees
             constructed bound coherent closingFaithful faithful) contextOrigin agreement reading accepted
   | .letSort full localState miss trace opening domainCheck valueTree bodyTree domainReading valueReading bodyReading
@@ -286,14 +327,18 @@ def SynthesisInference.cacheExecution {β : Type u} {resolve : Address → Optio
       let domainRun := domainCheck.cacheExecution data.1 contextOrigin keyedAgreement domainReading
       let valueRun := valueTree.cacheExecution data.2.1 contextOrigin
         (keyedAgreement.congr (trace.domainContext keyedValid).symm) valueReading trace.valueRun
-      obtain ⟨openedReading, openedAgreement, _⟩ :=
+      obtain ⟨openedReading, openedAgreement, openedCoherent⟩ :=
         trace.opened_reading opening keyedValid keyedAgreement domainReading bodyReading
       let bodyRun := bodyTree.cacheExecution data.2.2
         (.pushSort contextOrigin domainCheck keyedAgreement domainReading)
         openedAgreement openedReading trace.bodyRun
       exact (SynthesisCacheSupplement.mk
         (.letSort full miss trace domainCheck.exposure hashPath domainRun.trace valueRun.trace bodyRun.trace)
-        ((domainRun.checks.append valueRun.checks).append bodyRun.checks)).complete
+        ((domainRun.checks.append valueRun.checks).append bodyRun.checks) (fun initial =>
+          let keyed := miss.keyedCoherent initial
+          (domainRun.whnf keyed, domainCheck.historyReading keyedAgreement domainReading (domainRun.coherent keyed),
+            valueRun.whnf (domainCheck.afterCoherent keyedAgreement domainReading (domainRun.coherent keyed)),
+            bodyRun.whnf openedCoherent))).complete
           (.letSort full localState miss trace opening domainCheck valueTree bodyTree domainReading valueReading bodyReading
             conditions hashPath comparisonFaithful substitution reduction) contextOrigin agreement reading accepted
 termination_by structural tree

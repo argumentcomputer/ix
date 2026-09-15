@@ -7,10 +7,10 @@ import Ix.Kernel.Verify.Consistency.ConstantCache
 import Ix.Kernel.Ingress
 
 /-!
-# Inference caches across verified standalone lazy loading
+# Reduction caches across verified standalone lazy loading
 
 Conversion accesses only intern tables. Registration inserts one fresh
-declaration, so existing declarations and inference caches survive both
+declaration, so existing declarations and all reduction caches survive both
 successful loading and errors with partial conversion progress.
 -/
 
@@ -42,26 +42,34 @@ structure IngressCacheExtension (before after : AnonEnv) : Prop where
   only : after.inferOnlyCache = before.inferOnlyCache
   constants : ∀ id concrete, before.get? id = some concrete → after.get? id = some concrete
   freshIds : after.nextFVarId = before.nextFVarId
+  whnfFull : after.whnfCache = before.whnfCache
+  whnfNoDelta : after.whnfNoDeltaCache = before.whnfNoDeltaCache
+  whnfNoDeltaCheap : after.whnfNoDeltaCheapCache = before.whnfNoDeltaCheapCache
+  whnfCore : after.whnfCoreCache = before.whnfCoreCache
+  whnfCoreCheap : after.whnfCoreCheapCache = before.whnfCoreCheapCache
 
 theorem IngressCacheExtension.refl (env : AnonEnv) : IngressCacheExtension env env :=
-  ⟨rfl, rfl, fun _ _ found => found, rfl⟩
+  ⟨rfl, rfl, fun _ _ found => found, rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 theorem IngressCacheExtension.intern (env : AnonEnv) (it : InternTable .anon) :
     IngressCacheExtension env {env with intern := it} :=
-  ⟨rfl, rfl, fun _ _ found => found, rfl⟩
+  ⟨rfl, rfl, fun _ _ found => found, rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 theorem IngressCacheExtension.trans {before middle after : AnonEnv}
     (first : IngressCacheExtension before middle) (second : IngressCacheExtension middle after) :
     IngressCacheExtension before after :=
   ⟨second.full.trans first.full, second.only.trans first.only,
     fun id concrete found => second.constants id concrete (first.constants id concrete found),
-    second.freshIds.trans first.freshIds⟩
+    second.freshIds.trans first.freshIds,
+    second.whnfFull.trans first.whnfFull, second.whnfNoDelta.trans first.whnfNoDelta,
+    second.whnfNoDeltaCheap.trans first.whnfNoDeltaCheap, second.whnfCore.trans first.whnfCore,
+    second.whnfCoreCheap.trans first.whnfCoreCheap⟩
 
 /-- A fresh single-entry registration retains every old declaration. -/
 theorem IngressCacheExtension.insert {env : AnonEnv} {id : KId .anon}
     (fresh : env.get? id = none) (concrete : KConst .anon) :
     IngressCacheExtension env ((env.insert id concrete).insertBlock id #[id]) := by
-  refine ⟨rfl, rfl, ?_, rfl⟩
+  refine ⟨rfl, rfl, ?_, rfl, rfl, rfl, rfl, rfl, rfl⟩
   intro old value loaded
   have different : id ≠ old := by
     intro equal
@@ -88,7 +96,7 @@ theorem insertStandaloneEntries_singleton (id : KId .anon) (concrete : KConst .a
   simp [insertStandaloneEntries, guardReserved, checkReserved, IngressM.liftExcept]
   cases reservedMarkerName id.addr <;> rfl
 
-/-- Fresh standalone ingress preserves old declarations and both caches,
+/-- Fresh standalone ingress preserves old declarations and all seven caches,
 including conversion errors and rejection by the reserved-address guard. -/
 theorem ingressAnonStandalone_cache (source : Ixon.Env) (addr : Address)
     (constant : Ixon.Constant) (before : AnonEnv)

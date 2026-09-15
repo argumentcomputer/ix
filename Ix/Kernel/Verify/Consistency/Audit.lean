@@ -969,6 +969,26 @@ private def whnfHistoryExecutionRoots : Array Lean.Name := #[
   ``BetaPublicExecution.exists_of_history, ``BetaPiExposure.cacheHistory, ``BetaSortExposure.cacheHistory
 ]
 
+/-- Complete WHNF histories and intern coherence survive the supported
+inference recursion. Exposure inputs derive their readings from the executed
+source checks; no semantic typing invariant is assumed. -/
+private def inferenceHistoryFrameRoots : Array Lean.Name := #[
+  ``LazyLookupFrame.whnf_maps, ``BetaHistoryReading
+]
+
+private def inferenceHistoryExprRoots : Array Lean.Name := #[
+  ``UncachedInference.keyedCoherent
+]
+
+private def inferenceHistoryExecutionRoots : Array Lean.Name := #[
+  ``BetaCacheHistory.afterInferKey, ``BetaCacheHistory.getConst, ``BetaCacheHistory.hashConversion,
+  ``BetaCacheHistory.afterMiss, ``BetaHistoryReading.afterPublic, ``BetaHistoryReading.afterPi,
+  ``BetaHistoryReading.afterSort, ``InferenceCacheTrace.WhnfData, ``InferenceCacheTrace.whnfHistory,
+  ``infer_miss_coherent, ``InferenceCacheTrace.const_coherent, ``InferenceCacheTrace.fvar_coherent,
+  ``BinderInference.outputCoherent, ``SynthesisInference.outputCoherent,
+  ``SynthesisSortCheck.historyReading, ``SynthesisSortCheck.afterCoherent
+]
+
 private def localScopeFrameRoots : Array Lean.Name := #[
   ``LocalContext.Equiv.refl, ``LocalContext.Equiv.symm, ``LocalContext.Equiv.trans,
   ``LocalContext.Equiv.size, ``LocalContext.Equiv.find?, ``LocalContext.Equiv.wf,
@@ -1583,11 +1603,12 @@ def roots : Array RootAllowance := #[
     forbiddenDependencies := forbiddenProduction ++ #[``HereditaryTyping] })
   ++ #[``WhnfCachePartition, ``WhnfCachePartition.ofFlags].map (fun root => {
     root, forbiddenDependencies := forbiddenProduction ++ #[``HereditaryTyping] })
-  ++ (mixedCacheFrameRoots ++ headWhnfFrameRoots ++ whnfHistoryFrameRoots ++ #[``betaWhnfCharge_success]).map (fun root => {
+  ++ (mixedCacheFrameRoots ++ headWhnfFrameRoots ++ whnfHistoryFrameRoots ++ inferenceHistoryFrameRoots ++
+      #[``betaWhnfCharge_success]).map (fun root => {
     root, standardAxioms := #[``propext, ``Quot.sound],
     forbiddenDependencies := forbiddenProduction ++ #[``HereditaryTyping] })
   ++ (mixedCacheKeyRoots ++ betaSourceExprRoots ++ letWhnfExprRoots ++ headWhnfExprRoots ++
-      betaReannotationExprRoots ++ whnfHistoryExprRoots).map (fun root => {
+      betaReannotationExprRoots ++ whnfHistoryExprRoots ++ inferenceHistoryExprRoots).map (fun root => {
     root, standardAxioms := standard, nativeAxioms := #[expressionNative],
     forbiddenDependencies := forbiddenProduction ++ #[``HereditaryTyping] })
   ++ #[``SynthesisInference.beta_core_execution_sound, ``SynthesisInference.beta_noDelta_execution_sound,
@@ -1598,7 +1619,8 @@ def roots : Array RootAllowance := #[
     root, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative],
     forbiddenDependencies := forbiddenProduction })
   ++ (recursiveLetShapeRoots ++ sortExposureRoots ++ mixedCacheExecutionRoots ++ betaSourceExecutionRoots ++
-      letWhnfExecutionRoots ++ headWhnfExecutionRoots ++ betaReannotationExecutionRoots ++ whnfHistoryExecutionRoots).map (fun root => {
+      letWhnfExecutionRoots ++ headWhnfExecutionRoots ++ betaReannotationExecutionRoots ++ whnfHistoryExecutionRoots ++
+      inferenceHistoryExecutionRoots).map (fun root => {
     root, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative],
     forbiddenDependencies := forbiddenProduction ++ #[``HereditaryTyping] })
   ++ (localScopeFrameRoots ++ localStateFrameRoots ++ recursiveStateFrameRoots ++ ingressFrameRoots ++

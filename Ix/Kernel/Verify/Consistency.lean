@@ -58,6 +58,9 @@ import Ix.Kernel.Verify.Consistency.BetaCachePublications
 import Ix.Kernel.Verify.Consistency.BetaCacheHistory
 import Ix.Kernel.Verify.Consistency.BetaHistorySource
 import Ix.Kernel.Verify.Consistency.BetaHistoryInference
+import Ix.Kernel.Verify.Consistency.BetaHistoryState
+import Ix.Kernel.Verify.Consistency.InferenceWhnfHistory
+import Ix.Kernel.Verify.Consistency.SynthesisCoherence
 import Ix.Kernel.Verify.Consistency.SynthesisAppCongruence
 import Ix.Kernel.Verify.Consistency.BetaPublicWhnf
 import Ix.Kernel.Verify.Consistency.WhnfCacheFrame
@@ -204,7 +207,10 @@ history. Finite collision data identifies the queried source among the
 recorded inputs. The resulting provenance supplies all three cache layers'
 origin resources, including public replay of zero-depth head producers.
 Successful source reconstruction, Pi/sort exposure, and semantic public
-reduction preserve the updated history for later calls.
+reduction preserve the updated history for later calls. Verified standalone
+and block loading preserve all five WHNF maps, every supported inference
+node carries the complete WHNF history through its actual intermediate
+states, and each returned state retains intern-table coherence.
 Only an outer miss charges shared fuel. Pi exposure uses the
 same complete cache-layer execution. Application inference
 uses that exposure between argument checks and derives the type conversion

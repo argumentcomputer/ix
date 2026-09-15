@@ -132,8 +132,10 @@ among the recorded inputs, and the current reading reconstructs its producer's
 annotations. This supplies the origin resources of public WHNF, including hits
 produced by zero-depth head calls. The original source derivation then proves
 conversion and typing while returning the history for subsequent calls.
-Clearing starts a new empty history. Arbitrary inference and loader histories,
-other reducers, and failures within head callbacks still require further work.
+Clearing starts a new empty history. Verified loading and every supported
+inference node now preserve these histories, and each returned state retains
+intern coherence. Other reducers and failures within head callbacks still
+require further work.
 Constructing initial inference resources for arbitrary accepted programs,
 general WHNF cache origins, the remaining reducers, and general conversion
 remain open.
