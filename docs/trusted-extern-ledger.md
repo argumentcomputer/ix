@@ -270,6 +270,22 @@ Ixon/DSL source preservation. Its 33 exact axiom assertions use only the
 ordinary logical basis, and its source-inventory and regression gates are
 required. The ledger records this scope as `aiur-logical-trace-v0`.
 
+The [Aiur bytecode wire boundary](aiur-wire.md) adds complete canonical
+`aiur-bytecode/1` preimages, bounded readers, round-trip/canonicality and
+representable-domain injectivity proofs, and addressed ingress. Its 33 new
+exact axiom assertions keep pure codec and component facts on ordinary logic;
+five addressed wrappers inherit the same native BLAKE3 exception already
+used by other content-addressed IRs. Root-based artifact recovery requires
+an explicit pairwise collision premise. No new native interface is added.
+
+Component ingress retains the exact pinned checker result after bounding
+declared allocations and an analysis work score. It does not establish the
+checker-to-AIR theorem or validate arbitrary bytecode/circuit semantics.
+Four handwritten golden fixtures, 308 runtime assertions, and fresh-process
+replay/corruption tests guard the wire contract. The production IxVM export,
+constraint dump, descriptor/key binding, and source preservation remain
+separate obligations under `aiur-bytecode-wire-v1`.
+
 ## Canonical IxIR₂ snapshot boundary
 
 The [version-1 snapshot codec](ixir2-wire.md) adds complete ordered program and

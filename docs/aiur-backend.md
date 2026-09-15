@@ -1,11 +1,13 @@
-# Aiur backend foundation
+# Aiur backend foundation and wire boundary
 
 The initial Aiur implementation provides a pinned pure target vocabulary and
 a checked logical-trace interface. It proves that active, balanced lookup
 demands have providers and that a static row certificate yields finite rooted
-derivations. This is the foundation for the Ixon/DSL → AiurV2 backend;
-source lowering, a bytecode codec, and extraction from the keyed AIR remain
-subsequent work.
+derivations. The [canonical bytecode boundary](aiur-wire.md) now preserves
+the complete pinned toplevel, checks its content root, and invokes the
+upstream component checker behind resource guards. This is the foundation
+for the Ixon/DSL → AiurV2 backend; witness-heap bytecode evaluation, source
+lowering, and extraction from the keyed AIR remain subsequent work.
 
 ## Reference and module boundaries
 
@@ -20,6 +22,11 @@ The `AiurReference` Lake library imports no native Aiur FFI. The upstream
 bytecode evaluator currently imports its IO types from an FFI module, so it
 is deferred until that pure interface is split. No evaluator shim or native
 stub is substituted under an upstream module name.
+
+The wire API uses the existing BLAKE3 interface for content roots. Its pure
+codec proofs use ordinary logic; addressed wrappers retain the existing
+native BLAKE3 axiom exception. The exact grammar, component-check scope,
+fixtures, and ix exporter contract are in [aiur-wire.md](aiur-wire.md).
 
 [`Compilatrix.Aiur`](../Compilatrix/Aiur.lean) exposes the new production API.
 Tests, source-inventory checking, and axiom fences have separate module roots.
@@ -127,7 +134,7 @@ establish trace acyclicity on their own.
 
 ```sh
 lake build AiurReference Compilatrix.Aiur CompilatrixTests.Aiur.Proofs \
-  CompilatrixTests.Fences.Aiur tests-aiur check-aiur
+  CompilatrixTests.Fences.Aiur CompilatrixTests.Fences.AiurWire tests-aiur check-aiur
 lake exe tests-aiur
 lake exe check-aiur --root .
 nix build .#checks.x86_64-linux.aiur
@@ -150,7 +157,10 @@ aggregate. They use only the ordinary logical basis (`propext`,
 The existing required proof/runtime inventory remains required. The `aiur`
 Nix check runs both executables through the shared CI artifact build.
 
-The next milestone is the canonical bytecode/fixture handoff and the
-witness-heap evaluator, followed by extraction from the keyed AIR and
-source/DSL lowering. No IxVM performance or production proof-acceptance
-claim is made by this foundation.
+The wire extension adds 308 runtime assertions, four complete frozen
+preimages, seven fresh-process corruption rejections, and 33 further exact
+axiom assertions. Component checking is still separate from proving its
+AIR interpretation. The production IxVM exporter/constraint dump and
+witness-heap evaluator remain next, followed by extraction from the keyed
+AIR and source/DSL lowering. No IxVM performance or production
+proof-acceptance claim is made by this foundation.

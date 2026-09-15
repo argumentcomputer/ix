@@ -67,6 +67,7 @@ performance reports preserve evidence from their recorded revisions.
 | [Captured scalar exports](source-native-captured-scalar.md) | Checked closed initialization, one static Word capture, unary runtime application, complete reclamation, and source-to-ELF proof |
 | [Trust ledger](trusted-extern-ledger.md) | Native interfaces, seed/build trust, specification boundaries, and change control |
 | [Aiur backend foundation](aiur-backend.md) | Pinned target vocabulary, checked logical traces, witness memory, mixed counter/rank derivations, and remaining AIR/source boundaries |
+| [Aiur bytecode wire format](aiur-wire.md) | Complete canonical bytecode, bounded addressed ingress, component-check evidence, frozen fixtures, and the ix exporter contract |
 
 The [machine-readable trust ledger](trusted-externs.json) and
 [reference-model pin](x86-reference-model.json) support the corresponding prose

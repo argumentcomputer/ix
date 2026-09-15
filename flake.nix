@@ -119,6 +119,7 @@
             ./vendor/ixby
             ./vendor/aiur
             ./vendor/stage2
+            ./fixtures/aiur-bytecode
             ./fixtures/ixby
             ./fixtures/ixby-symbolic
             ./fixtures/ixby-stage2
@@ -172,6 +173,7 @@
             ./fixtures/x86/native_harness.c
             (pkgs.lib.fileset.fileFilter (f: f.hasExt "lean") ./Compilatrix)
             ./docs/trusted-externs.json
+            ./docs/aiur-wire.md
             ./docs/x86-reference-model.json
             (pkgs.lib.fileset.fileFilter (f: f.hasExt "lean") ./scripts)
             ./scripts/inspect_ixby.py

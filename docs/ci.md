@@ -77,7 +77,11 @@ The four runtime suites have independent entry points:
 
 The Aiur target has a separate required `aiur` gate, running `tests-aiur`
 and `check-aiur --root .`. Its [contract](aiur-backend.md) records the
-logical-trace, witness-memory, cycle, and pinned-source checks.
+logical-trace, witness-memory, cycle, and pinned-source checks. The
+[wire gate](aiur-wire.md) additionally runs the complete bytecode codec
+regressions and fresh-process encoding/replay of four frozen fixtures,
+including malformed-byte/root/component rejection. Its pure and addressed
+proof cones are in the required fence aggregate.
 
 `lake exe tests` remains the aggregate entry point. The required Nix `tests`
 gate runs the individual entry points and their aggregate. New cases belong

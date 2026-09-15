@@ -1,5 +1,7 @@
 import Ix.Aiur.Stages.Bytecode
 import Compilatrix.Aiur.Certificate
+import Compilatrix.Aiur.Wire
 
-/-! Pinned Aiur target definitions and the first logical-trace certification
-boundary. Source/DSL lowering and AIR extraction are subsequent stages. -/
+/-! Pinned Aiur target definitions, logical-trace certification, and canonical
+addressed bytecode ingress. Source/DSL lowering and AIR extraction remain
+subsequent stages. -/

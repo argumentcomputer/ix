@@ -1,0 +1,46 @@
+{
+  "format": "aiur-bytecode/1",
+  "revision": "a8c4d2d21eaf45ee9160bdd103dfbcefe31f7f03",
+  "fixtures": [
+    {
+      "name": "empty",
+      "root": "b51cc53311aaa5f1886cb2478cc1b323fb12a0968dd09f291de4396d19b2fd1e",
+      "bytes": 61,
+      "functions": 0,
+      "memory_buckets": 0,
+      "circuits": 0,
+      "call_components": 0,
+      "component_mode": "ranked-fallback"
+    },
+    {
+      "name": "unit-counter",
+      "root": "9f3d24e0e80b7bb3a788b657cc16608a652ba30da0d0fb3abb0ab58a16658307",
+      "bytes": 134,
+      "functions": 1,
+      "memory_buckets": 3,
+      "circuits": 1,
+      "call_components": 1,
+      "component_mode": "checked-static"
+    },
+    {
+      "name": "ranked-mutual",
+      "root": "2a277e37182a0f52f0ca5f33e6820c5fc8a30e51e026665c914d54ff56b18fcf",
+      "bytes": 99,
+      "functions": 2,
+      "memory_buckets": 0,
+      "circuits": 0,
+      "call_components": 2,
+      "component_mode": "checked-static"
+    },
+    {
+      "name": "wire-corpus",
+      "root": "d4facdbaa7017f7a348179f59d0b6f653797472fc30aa3ca2e27780a580024c4",
+      "bytes": 306,
+      "functions": 2,
+      "memory_buckets": 5,
+      "circuits": 2,
+      "call_components": 2,
+      "component_mode": "checked-static"
+    }
+  ]
+}

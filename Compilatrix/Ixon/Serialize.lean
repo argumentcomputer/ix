@@ -391,6 +391,12 @@ theorem u64OfLEBytes_encoded (x : UInt64) :
     u64OfLEList_u64LEList_of_lt (u64ByteCount x).toNat x
       (u64ByteCount_toNat_bound x)
 
+/-- The fixed-width eight-byte spelling also decodes without truncation. -/
+theorem u64OfLEBytes_eight (x : UInt64) :
+    u64OfLEBytes (u64LEBytes x 8) = x := by
+  simpa [u64OfLEBytes, u64LEBytes] using
+    u64OfLEList_u64LEList_of_lt 8 x x.toNat_lt
+
 def putBytes (x : ByteArray) : PutM Unit :=
   modify fun s => s.append x
 
