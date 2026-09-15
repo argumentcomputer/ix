@@ -323,7 +323,7 @@ def verifyShardComposition (ixePath manifestPath : String) (shardK? : Option Nat
     let verdict ← IO.lazyPure fun _ =>
       ixvmSystem.aggregateStage2 backend.system envHandle manifestPath proofHexes
         verifyIdx backend.aggrIdx 0 0 Ix.Cli.AggregateCmd.defaultStructuralAbove 0
-        true false recursionParameters.cacheFriBytes false false false 0 false 1 true
+        true false recursionParameters.cacheFriBytes false false false 0 false 1 true 0
     match verdict with
     | .error e => IO.eprintln s!"[verify] FAIL: {e}"; return 1
     | .ok _ => pure ()

@@ -212,6 +212,7 @@ opaque rsShardEnvStaticFFI :
     @& String →                          -- balance percent
     @& String →                          -- layout: "mincut" or "ordered"
     @& String →                          -- .ixes output path ("" = skip)
+    @& String →                          -- executions ahead of each prover (trace-shard seed)
     IO Unit
 
 /-- FFI: dump the static block-level reference graph of a `.ixe` as text:

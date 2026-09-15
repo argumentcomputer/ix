@@ -101,3 +101,6 @@ pub fn u8_xor_split4_channel() -> G {
 pub fn memseg_channel() -> G {
   G::from_u8(15)
 }
+
+#[cfg(feature = "cuda")]
+pub mod gpu_trace;

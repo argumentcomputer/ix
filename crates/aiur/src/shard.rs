@@ -332,6 +332,43 @@ impl AiurSystem {
     index: &RowIndex,
     shard: usize,
   ) -> SystemWitness<G> {
+    let witness =
+      self.prepare_shard_witness(record, io_buffer, plan, index, shard, false);
+    SystemWitness {
+      traces: witness
+        .traces
+        .into_iter()
+        .map(|source| source.materialize())
+        .collect(),
+      lookups: witness.lookups,
+    }
+  }
+
+  /// Prepares host traces and compact accelerator sources without allocating on the GPU.
+  pub fn prepared_shard_witness(
+    &self,
+    record: &QueryRecord,
+    io_buffer: &IOBuffer,
+    plan: &ShardPlan,
+    index: &RowIndex,
+    shard: usize,
+  ) -> multi_stark::witness::PreparedWitness<G> {
+    #[cfg(feature = "cuda")]
+    let generated = crate::gpu_trace::enabled();
+    #[cfg(not(feature = "cuda"))]
+    let generated = false;
+    self.prepare_shard_witness(record, io_buffer, plan, index, shard, generated)
+  }
+
+  fn prepare_shard_witness(
+    &self,
+    record: &QueryRecord,
+    io_buffer: &IOBuffer,
+    plan: &ShardPlan,
+    index: &RowIndex,
+    shard: usize,
+    _generated: bool,
+  ) -> multi_stark::witness::PreparedWitness<G> {
     let circuit_types = self.circuit_types();
     let ranges = &plan.shards[shard].rows;
     assert_eq!(ranges.len(), circuit_types.len(), "plan/system circuit count");
@@ -343,7 +380,24 @@ impl AiurSystem {
       .map(|(circuit_idx, circuit_type)| {
         let slot_arg_widths = self.slot_arg_widths(circuit_idx);
         let range = ranges[circuit_idx].clone();
-        match circuit_type {
+        #[cfg(feature = "cuda")]
+        if _generated {
+          if let CircuitType::Function { idx } = circuit_type {
+            let (start, end) = index.queries(circuit_idx, &range);
+            if let Some(prepared) = crate::gpu_trace::prepare(
+              self.toplevel(),
+              idx,
+              record,
+              &slot_arg_widths,
+              start,
+              end,
+              range.len(),
+            ) {
+              return prepared;
+            }
+          }
+        }
+        let (trace, lookups) = match circuit_type {
           CircuitType::Function { idx } => {
             let (start, end) = index.queries(circuit_idx, &range);
             self.toplevel().witness_data_range(
@@ -370,11 +424,12 @@ impl AiurSystem {
             let source = if range.is_empty() { &zero_record } else { record };
             Bytes2.witness_data(source, &slot_arg_widths)
           },
-        }
+        };
+        (multi_stark::witness::TraceSource::Host(trace), lookups)
       })
       .collect::<Vec<_>>();
     let (traces, lookups) = witness_data.into_iter().unzip();
-    SystemWitness { traces, lookups }
+    multi_stark::witness::PreparedWitness { traces, lookups }
   }
 
   /// Checks the batch-level policy that makes a [`BatchProof`] the proof of

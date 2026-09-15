@@ -31,7 +31,7 @@ pub struct Function {
   pub constrained: bool,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct FunctionLayout {
   pub input_size: usize,
   pub selectors: usize,
@@ -45,11 +45,13 @@ impl FunctionLayout {
   }
 }
 
+#[derive(PartialEq, Eq)]
 pub struct Block {
   pub ops: Vec<Op>,
   pub ctrl: Ctrl,
 }
 
+#[derive(PartialEq, Eq)]
 pub enum Op {
   Const(G),
   Add(ValIdx, ValIdx),
@@ -104,6 +106,7 @@ pub enum Op {
   U32ToField(Vec<ValIdx>),
 }
 
+#[derive(PartialEq, Eq)]
 pub enum Ctrl {
   Match(ValIdx, FxIndexMap<G, Block>, Option<Box<Block>>),
   Return(SelIdx, Vec<ValIdx>),

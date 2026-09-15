@@ -51,8 +51,8 @@ use ixvm_codegen::{
   env_handle::EnvHandle,
 };
 use lean_ffi::object::{
-  LeanBorrowed, LeanByteArray, LeanExcept, LeanExternal, LeanNat, LeanOwned,
-  LeanString,
+  LeanArray, LeanBorrowed, LeanByteArray, LeanExcept, LeanExternal, LeanNat,
+  LeanOwned, LeanString,
 };
 use multi_stark::{
   p3_field::{PrimeCharacteristicRing, PrimeField64},
@@ -62,6 +62,8 @@ use rayon::prelude::*;
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use super::lean_unbox_nat_as_usize;
+
+pub mod lanes;
 use crate::lean::LeanAiurAggregateExpected;
 
 const CACHE_VERSION: u64 = 2;
@@ -80,7 +82,7 @@ const DIRECT_RAM_BYTES: usize = 390 * GIB;
 const MIXED_RAM_BYTES: usize = 340 * GIB;
 const FLAT_RAM_PER_SUBJECT: usize = 1024 * 1024;
 
-fn format_gib(bytes: usize) -> String {
+pub(crate) fn format_gib(bytes: usize) -> String {
   let tenths = bytes.saturating_mul(10) / GIB;
   format!("{}.{:01}", tenths / 10, tenths % 10)
 }
@@ -355,7 +357,7 @@ struct PreparedRun {
 }
 
 #[derive(Clone, Copy, Debug)]
-enum PlanOp {
+pub(crate) enum PlanOp {
   Leaf(usize),
   Join(usize, usize),
 }
@@ -394,7 +396,9 @@ struct Slot {
 struct ProveContext<'a> {
   specs: &'a [SlotSpec],
   prepared: &'a [PreparedShard],
-  proofs: Option<&'a [Arc<IxonProof>]>,
+  /// One entry per manifest shard; `None` for shards outside the run's
+  /// selection (a subtree run) or when a replay needs no input proofs.
+  proofs: Option<&'a [Option<Arc<IxonProof>>]>,
   owner_by_address: &'a FxHashMap<Address, usize>,
   ixvm_system: &'a AiurSystem,
   aggr_system: &'a AiurSystem,
@@ -449,6 +453,10 @@ struct RunConfig<'a> {
   /// shard by claim digest and verified in parallel, exactly one per shard
   /// — and report that composed verdict instead of proving.
   verify_only: bool,
+  /// Prove only the plan subtree rooted at this slot, from the proofs of
+  /// the leaves under it, and report that slot's proof; the root-only steps
+  /// (root validation, wrapping) are skipped. `None` proves the whole plan.
+  subtree: Option<usize>,
 }
 
 fn projection_block(addr: &Address, constant: &Constant) -> Address {
@@ -1008,8 +1016,22 @@ pub(crate) fn write_store(
   let parent = path.parent().ok_or("store path has no parent")?;
   fs::create_dir_all(parent)
     .map_err(|error| format!("create {}: {error}", parent.display()))?;
-  fs::write(&path, bytes)
-    .map_err(|error| format!("write {}: {error}", path.display()))?;
+  // Published by rename so a reader never sees a partial object, and
+  // several writers of one object (other threads, other processes) each
+  // rename their own complete copy into place.
+  static WRITES: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+  let temporary = parent.join(format!(
+    "{}.tmp.{}.{}",
+    address.hex(),
+    std::process::id(),
+    WRITES.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+  ));
+  fs::write(&temporary, bytes)
+    .map_err(|error| format!("write {}: {error}", temporary.display()))?;
+  fs::rename(&temporary, &path).map_err(|error| {
+    format!("publish {} -> {}: {error}", temporary.display(), path.display())
+  })?;
   Ok(address)
 }
 
@@ -1022,17 +1044,25 @@ fn decode_wrapper(bytes: &[u8]) -> Result<IxonProof, String> {
   Ok(proof)
 }
 
+/// Loads the shard proofs a run needs: exactly one for every shard whose
+/// `required` flag is set (every shard of a full run; the leaves under
+/// the selected subtree otherwise), each bound to its shard by claim
+/// digest. Shards outside the selection stay `None`.
 fn load_input_proofs(
   proof_hexes: &str,
   store_dir: &Path,
   prepared: &[PreparedShard],
-) -> Result<Vec<Arc<IxonProof>>, String> {
+  required: &[bool],
+) -> Result<Vec<Option<Arc<IxonProof>>>, String> {
+  if required.len() != prepared.len() {
+    return Err("shard requirement mask does not match the manifest".into());
+  }
+  let expected = required.iter().filter(|flag| **flag).count();
   let values: Vec<&str> =
     proof_hexes.lines().filter(|line| !line.is_empty()).collect();
-  if values.len() != prepared.len() {
+  if values.len() < expected {
     return Err(format!(
-      "aggregate requires exactly {} shard proofs; got {}",
-      prepared.len(),
+      "aggregate requires {expected} shard proofs; got {}",
       values.len()
     ));
   }
@@ -1065,6 +1095,11 @@ fn load_input_proofs(
     let shard = by_digest.get(&digest).copied().ok_or_else(|| {
       format!("proof {} matches no manifest shard", address.hex())
     })?;
+    if !required[shard] {
+      // A lane proving several subtrees passes all its claim proofs to
+      // each; one outside this selection is ignored, not rejected.
+      continue;
+    }
     if wrapper.claim != prepared[shard].statement.claim {
       return Err(format!(
         "proof {} hit a claim-digest collision for shard {}",
@@ -1080,15 +1115,15 @@ fn load_input_proofs(
     }
     proofs[shard] = Some(Arc::new(wrapper));
   }
-  proofs
-    .into_iter()
-    .enumerate()
-    .map(|(index, proof)| {
-      proof.ok_or_else(|| {
-        format!("no proof supplied for shard {}", prepared[index].original_id)
-      })
-    })
-    .collect()
+  if let Some(missing) = (0..prepared.len())
+    .find(|shard| required[*shard] && proofs[*shard].is_none())
+  {
+    return Err(format!(
+      "no proof supplied for shard {}",
+      prepared[missing].original_id
+    ));
+  }
+  Ok(proofs)
 }
 
 fn cache_address(cache_dir: &Path, key: &Address) -> Option<Address> {
@@ -1176,16 +1211,22 @@ fn persist_wrapper(
   write_store(store_dir, &wrapper_bytes(statement, proof)?)
 }
 
+/// Persists a slot's proof and publishes its cache entry. `Ok(None)` when
+/// the run writes nothing or has no cache; a failure is an error, since a
+/// run's success promises that its proofs are where a later run (a resume,
+/// or the final run after subtree lanes) will look for them.
 fn persist_cached(
   ctx: ProveContext<'_>,
   slot_index: usize,
   spec: &SlotSpec,
   proof: &AiurProof,
-) -> Option<Address> {
+) -> Result<Option<Address>, String> {
   if !ctx.write_outputs {
-    return None;
+    return Ok(None);
   }
-  let cache_dir = ctx.cache_dir?;
+  let Some(cache_dir) = ctx.cache_dir else {
+    return Ok(None);
+  };
   match (|| -> Result<Address, String> {
     let address = persist_wrapper(ctx.store_dir, &spec.statement, proof)?;
     fs::create_dir_all(cache_dir).map_err(|error| {
@@ -1215,13 +1256,10 @@ fn persist_cached(
         "[aggregate] slot {slot_index}: cached proof {}",
         address.hex()
       );
-      Some(address)
+      Ok(Some(address))
     },
     Err(error) => {
-      eprintln!(
-        "[aggregate] slot {slot_index}: warning: could not persist cache entry: {error}"
-      );
-      None
+      Err(format!("slot {slot_index}: could not persist its proof: {error}"))
     },
   }
 }
@@ -1351,7 +1389,7 @@ fn prepare_aggregate(
   left: &Slot,
   right: Option<&Slot>,
   slot_index: usize,
-) -> Result<Staged, String> {
+) -> Result<Staged, PrepareFailure> {
   let replaying = ctx.reprove_slot == Some(slot_index);
   if !replaying {
     if let Some((proof, address)) = load_cached(ctx, slot_index, spec) {
@@ -1514,7 +1552,7 @@ fn finish_aggregate(
   if outer_claim != spec.outer_claim {
     return Err("aggregate prover returned an unexpected outer claim".into());
   }
-  let address = persist_cached(ctx, slot_index, spec, &proof);
+  let address = persist_cached(ctx, slot_index, spec, &proof)?;
   if let Some(line) = replay {
     eprintln!("{line}");
     eprintln!(
@@ -1549,7 +1587,7 @@ fn prepare_aggr_io(
   io: &mut IOBuffer,
   public_input: &[G],
   label: &str,
-) -> Result<PreparedProve, String> {
+) -> Result<PreparedProve, PrepareFailure> {
   match ctx.aggr_system.prepare_ixvm_within_budget(
     ctx.aggr_idx,
     public_input,
@@ -1560,12 +1598,54 @@ fn prepare_aggr_io(
     None,
   ) {
     Ok(prepared) => Ok(prepared),
-    Err(GatedProve::Split { peak, .. }) => Err(format!(
-      "{OVER_SLOT_BUDGET}{label}: no trace-shard count fits the {} B budget \
+    Err(GatedProve::Split { peak, .. }) => Err(
+      format!(
+        "{OVER_SLOT_BUDGET}{label}: no trace-shard count fits the {} B budget \
        (whole-execution peak {peak} B) — raise --max-ram",
-      ctx.wrap_budget.unwrap_or(0)
-    )),
-    Err(_) => Err(format!("{label}: aggregate prove did not produce a proof")),
+        ctx.wrap_budget.unwrap_or(0)
+      )
+      .into(),
+    ),
+    Err(GatedProve::Failed(
+      aiur::execute::ExecError::RecordBudgetExceeded { bytes, cap },
+    )) => Err(PrepareFailure::OverRecordCap { bytes, cap }),
+    Err(GatedProve::Failed(error)) => {
+      Err(format!("{label}: execution failed: {error}").into())
+    },
+    Err(_) => {
+      Err(format!("{label}: aggregate prove did not produce a proof").into())
+    },
+  }
+}
+
+/// Why a node's preparation failed: its execution reached the record cap
+/// it ran under (the thread-local cap of `aiur::execute`), which a
+/// scheduler can answer by rerunning it alone, or anything else.
+pub(crate) enum PrepareFailure {
+  OverRecordCap { bytes: usize, cap: usize },
+  Other(String),
+}
+
+impl From<String> for PrepareFailure {
+  fn from(message: String) -> Self {
+    Self::Other(message)
+  }
+}
+
+impl From<&str> for PrepareFailure {
+  fn from(message: &str) -> Self {
+    Self::Other(message.to_string())
+  }
+}
+
+impl From<PrepareFailure> for String {
+  fn from(failure: PrepareFailure) -> Self {
+    match failure {
+      PrepareFailure::OverRecordCap { bytes, cap } => {
+        format!("record reached {bytes} B, over the {cap} B record cap")
+      },
+      PrepareFailure::Other(message) => message,
+    }
   }
 }
 
@@ -1900,7 +1980,7 @@ fn prove_range_tree(
     format_gib(peak),
     started.elapsed().as_secs_f64()
   );
-  let address = persist_cached(ctx, slot_index, spec, &proof);
+  let address = persist_cached(ctx, slot_index, spec, &proof)?;
   Ok((proof, address))
 }
 
@@ -1958,8 +2038,11 @@ fn verify_leaf(
 ) -> Result<Slot, String> {
   let spec = ctx.specs.get(slot_index).ok_or("missing aggregate slot spec")?;
   let prepared = &ctx.prepared[shard];
-  let wrapper =
-    ctx.proofs.and_then(|proofs| proofs.get(shard)).ok_or_else(|| {
+  let wrapper = ctx
+    .proofs
+    .and_then(|proofs| proofs.get(shard))
+    .and_then(|proof| proof.as_ref())
+    .ok_or_else(|| {
       format!("shard {} proof was not loaded for replay", prepared.original_id)
     })?;
   let proof = AiurProof::from_bytes(&wrapper.proof).map_err(|error| {
@@ -2003,7 +2086,7 @@ fn prepare_slot(
   ctx: ProveContext<'_>,
   slot_index: usize,
   children: &[Arc<Slot>],
-) -> Result<StagedSlot, String> {
+) -> Result<StagedSlot, PrepareFailure> {
   let spec = ctx.specs.get(slot_index).ok_or("missing aggregate slot spec")?;
   match spec.op {
     PlanOp::Leaf(shard) => {
@@ -2208,11 +2291,16 @@ fn run_scheduler(
   jobs: usize,
   ahead: usize,
   budget: usize,
-) -> Result<Vec<Arc<Slot>>, String> {
+  active: &[bool],
+) -> Result<Vec<Option<Arc<Slot>>>, String> {
   if budget == 0 {
     return Err("aggregate scheduler RAM budget must be positive".into());
   }
   let count = ctx.specs.len();
+  if active.len() != count {
+    return Err("aggregate scheduler selection does not match the plan".into());
+  }
+  let target = active.iter().filter(|flag| **flag).count();
   let max_jobs = if jobs == 0 { count.max(1) } else { jobs.max(1) };
   let fused = ahead == 0;
   let max_ahead = if fused { max_jobs } else { ahead };
@@ -2236,11 +2324,53 @@ fn run_scheduler(
     }
   }
   let (sender, receiver) = mpsc::channel::<SchedulerEvent>();
-  thread::scope(|scope| -> Result<Vec<Arc<Slot>>, String> {
+  thread::scope(|scope| -> Result<Vec<Option<Arc<Slot>>>, String> {
     let mut slots: Vec<Option<Arc<Slot>>> = vec![None; count];
     let mut completed = vec![false; count];
     let mut admitted = vec![false; count];
+    let mut retired = vec![false; count];
     let mut completed_count = 0usize;
+    // Cache check from the root down: a cached proof retires its whole
+    // subtree, so a resumed run, or the final run over lanes' subtree
+    // roots, loads and verifies only the highest cached proofs and never
+    // visits what is under them. Specs are in post-order, so walking them
+    // backwards meets every parent before its children.
+    if ctx.cache_dir.is_some() && ctx.reprove_slot.is_none() {
+      for index in (0..count).rev() {
+        let spec = &ctx.specs[index];
+        if !active[index] || completed[index] || spec.kind != ChildKind::Aggr {
+          continue;
+        }
+        let Some((proof, address)) = load_cached(ctx, index, spec) else {
+          continue;
+        };
+        slots[index] = Some(Arc::new(Slot {
+          kind: ChildKind::Aggr,
+          statement: spec.statement.clone(),
+          outer_claim: spec.outer_claim.clone(),
+          proof,
+          proof_address: Some(address),
+          claims_bytes: serialize_claims(&[&spec.outer_claim]),
+        }));
+        let mut stack = vec![index];
+        while let Some(slot) = stack.pop() {
+          if completed[slot] {
+            continue;
+          }
+          completed[slot] = true;
+          admitted[slot] = true;
+          retired[slot] = slot != index;
+          completed_count += 1;
+          if let PlanOp::Join(left, right) = ctx.specs[slot].op {
+            stack.push(left);
+            stack.push(right);
+          }
+        }
+        eprintln!(
+          "[aggregate] slot {index}: cached; its subtree is not visited"
+        );
+      }
+    }
     let mut verifying = 0usize;
     let mut preparing = 0usize;
     let mut proving = 0usize;
@@ -2249,7 +2379,7 @@ fn run_scheduler(
       std::collections::VecDeque::new();
     let mut failures: Vec<(usize, String)> = Vec::new();
 
-    while completed_count < count {
+    while completed_count < target {
       if failures.is_empty() {
         // Prover lane first: prepared slots, in the order prepared.
         while proving < max_jobs {
@@ -2275,7 +2405,8 @@ fn run_scheduler(
         // leaves have their own allowance.
         let mut ready: Vec<usize> = (0..count)
           .filter(|&index| {
-            !admitted[index]
+            active[index]
+              && !admitted[index]
               && dependencies_complete(&ctx.specs[index], &completed)
           })
           .collect();
@@ -2434,13 +2565,14 @@ fn run_scheduler(
         error
       });
     }
-    slots
-      .into_iter()
-      .enumerate()
-      .map(|(index, slot)| {
-        slot.ok_or_else(|| format!("scheduler completed without slot {index}"))
-      })
-      .collect()
+    // Every selected slot has a result, except those retired under a
+    // cached ancestor, which have none of their own.
+    if let Some(index) = (0..count)
+      .find(|&index| active[index] && !retired[index] && slots[index].is_none())
+    {
+      return Err(format!("scheduler completed without slot {index}"));
+    }
+    Ok(slots)
   })
 }
 
@@ -2532,9 +2664,75 @@ fn run(config: RunConfig<'_>) -> Result<String, String> {
     .reprove_slot
     .map(|target| plan_replay(&specs, target))
     .transpose()?;
+  // The slots this run proves: the whole plan, or one subtree of it.
+  let active: Vec<bool> = match config.subtree {
+    None => vec![true; specs.len()],
+    Some(target) => {
+      if config.reprove_slot.is_some() {
+        return Err("--subtree cannot be combined with --reprove-slot".into());
+      }
+      if config.verify_only {
+        return Err("--subtree has no meaning for a composed verdict".into());
+      }
+      if config.wrap_root {
+        return Err(
+          "--wrap-root applies to the root; --subtree proves a subtree".into(),
+        );
+      }
+      if !config.plan_only && !config.use_cache {
+        return Err(
+          "--subtree publishes its root through the aggregate cache; it cannot run with --no-cache"
+            .into(),
+        );
+      }
+      let spec = specs.get(target).ok_or_else(|| {
+        format!(
+          "--subtree {target} is out of range; the plan has slots 0..{}",
+          specs.len().saturating_sub(1)
+        )
+      })?;
+      if spec.kind == ChildKind::Ixvm {
+        return Err(format!(
+          "--subtree {target} selects a raw IxVM leaf, not a Stage 2 proof"
+        ));
+      }
+      let mut active = vec![false; specs.len()];
+      let mut stack = vec![target];
+      while let Some(index) = stack.pop() {
+        if active[index] {
+          continue;
+        }
+        active[index] = true;
+        if let PlanOp::Join(left, right) = specs[index].op {
+          stack.push(left);
+          stack.push(right);
+        }
+      }
+      active
+    },
+  };
+  // The manifest shards whose proofs this run takes as input.
+  let mut required = vec![false; prepared.shards.len()];
+  for (index, spec) in specs.iter().enumerate() {
+    if let PlanOp::Leaf(shard) = spec.op {
+      required[shard] = active[index];
+    }
+  }
   let specs_at = Instant::now();
   if !config.verify_only {
     print_plan(&specs, &prepared.shards, config.structural_above);
+  }
+  if let (true, Some(target)) = (config.plan_only, config.subtree) {
+    // The lane's `ix prove --shards` argument, on stdout as one line.
+    let mut ids: Vec<u32> = required
+      .iter()
+      .enumerate()
+      .filter(|(_, flag)| **flag)
+      .map(|(shard, _)| prepared.shards[shard].original_id)
+      .collect();
+    ids.sort_unstable();
+    let ids: Vec<String> = ids.iter().map(u32::to_string).collect();
+    println!("subtree {target} shards: {}", ids.join(","));
   }
   if config.plan_only {
     eprintln!(
@@ -2572,7 +2770,12 @@ fn run(config: RunConfig<'_>) -> Result<String, String> {
   let needs_input_proofs =
     replay_plan.as_ref().is_none_or(|plan| plan.needs_input_proofs);
   let proofs = if needs_input_proofs {
-    Some(load_input_proofs(config.proof_hexes, &store_dir, &prepared.shards)?)
+    Some(load_input_proofs(
+      config.proof_hexes,
+      &store_dir,
+      &prepared.shards,
+      &required,
+    )?)
   } else {
     let supplied =
       config.proof_hexes.lines().filter(|line| !line.is_empty()).count();
@@ -2585,29 +2788,30 @@ fn run(config: RunConfig<'_>) -> Result<String, String> {
   if config.verify_only {
     let shards = prepared.shards.len();
     let proofs = proofs.as_deref().unwrap_or(&[]);
-    if proofs.len() != shards {
+    let bound = proofs.iter().flatten().count();
+    if bound != shards {
       return Err(format!(
-        "bound {} shard proofs but the manifest has {shards} shards",
-        proofs.len()
+        "bound {bound} shard proofs but the manifest has {shards} shards"
       ));
     }
     let failures: Vec<String> = proofs
       .par_iter()
       .enumerate()
       .filter_map(|(shard, wrapper)| {
+        let wrapper = wrapper.as_ref()?;
         let statement = &prepared.shards[shard].statement;
         let inner = inner_claim(config.verify_idx, &statement.claim_bytes);
         let proof = match AiurProof::from_bytes(&wrapper.proof) {
           Ok(proof) => proof,
           Err(error) => {
-            return Some(format!("shard {shard}: proof does not decode: {error}"));
+            return Some(format!(
+              "shard {shard}: proof does not decode: {error}"
+            ));
           },
         };
-        config
-          .ixvm_system
-          .verify(&inner, &proof)
-          .err()
-          .map(|error| format!("shard {shard}: proof fails verification: {error:?}"))
+        config.ixvm_system.verify(&inner, &proof).err().map(|error| {
+          format!("shard {shard}: proof fails verification: {error:?}")
+        })
       })
       .collect();
     if !failures.is_empty() {
@@ -2668,13 +2872,46 @@ fn run(config: RunConfig<'_>) -> Result<String, String> {
     "[aggregate] scheduler: jobs={jobs_label}, RAM budget {} GiB; wrap/self 195.0 GiB, direct 390.0 GiB, mixed 340.0 GiB, flat +1 MiB/subject",
     format_gib(config.ram_budget_bytes)
   );
-  let slots = run_scheduler(
+  let mut slots = run_scheduler(
     context,
     config.jobs,
     config.exec_ahead,
     config.ram_budget_bytes,
+    &active,
   )?;
-  let root = slots.last().ok_or("aggregate plan produced no root slot")?;
+  if let Some(target) = config.subtree {
+    // A lane's success means its subtree root is proven, verified and
+    // published where the final run will look for it.
+    let slot = slots
+      .get_mut(target)
+      .and_then(Option::take)
+      .ok_or_else(|| format!("scheduler produced no slot {target}"))?;
+    config.aggr_system.verify(&slot.outer_claim, &slot.proof).map_err(
+      |error| {
+        format!("subtree {target} root proof failed verification: {error:?}")
+      },
+    )?;
+    let (address, disposition) = match slot.proof_address.as_ref() {
+      Some(address) => (address.clone(), ""),
+      None if config.write_outputs => {
+        return Err(format!(
+          "subtree {target} root was proven but not published to the aggregate cache"
+        ));
+      },
+      None => {
+        (wrapper_address(&slot.statement, &slot.proof)?, " (not persisted)")
+      },
+    };
+    eprintln!(
+      "[aggregate] subtree {target} root: {}{disposition}",
+      address.hex()
+    );
+    return Ok(address.hex());
+  }
+  let root = slots
+    .last()
+    .and_then(Option::as_ref)
+    .ok_or("aggregate plan produced no root slot")?;
   if root.kind != ChildKind::Aggr {
     return Err("aggregate plan produced a raw IxVM root".into());
   }
@@ -2719,7 +2956,7 @@ fn run(config: RunConfig<'_>) -> Result<String, String> {
   Ok(address.hex())
 }
 
-fn panic_text(payload: &Box<dyn std::any::Any + Send>) -> &str {
+pub(crate) fn panic_text(payload: &Box<dyn std::any::Any + Send>) -> &str {
   payload
     .downcast_ref::<&str>()
     .copied()
@@ -2764,6 +3001,164 @@ extern "C" fn rs_aiur_aggregate_expected(
   }
 }
 
+/// Leaves under every slot of a post-order plan.
+fn leaves_under(ops: &[PlanOp]) -> Vec<usize> {
+  let mut leaves = vec![0usize; ops.len()];
+  for (index, op) in ops.iter().enumerate() {
+    leaves[index] = match *op {
+      PlanOp::Leaf(_) => 1,
+      PlanOp::Join(left, right) => leaves[left] + leaves[right],
+    };
+  }
+  leaves
+}
+
+/// Splits frontier node `at` into its children when it is a join. A child
+/// that is a raw leaf becomes a one-leaf subtree: its claim proof is its
+/// published proof, and the join above it verifies that raw leaf beside
+/// its cached sibling. Returns whether it split.
+fn split_frontier(
+  ops: &[PlanOp],
+  frontier: &mut Vec<usize>,
+  at: usize,
+) -> bool {
+  let PlanOp::Join(left, right) = ops[frontier[at]] else {
+    return false;
+  };
+  frontier.swap_remove(at);
+  frontier.push(left);
+  frontier.push(right);
+  true
+}
+
+/// The plan cut into subtrees for dynamic scheduling: the tree is split from
+/// the root while any frontier node holds more leaves than
+/// `ceil(leaves / subtrees)`. Returns the frontier (the subtrees, post-order;
+/// a subtree may be a single raw leaf) and every join above it (post-order,
+/// so each appears after its children). A subtree of several leaves is
+/// proven as one `--subtree` task once its leaves' claims exist; a
+/// one-leaf subtree is published by its claim proof alone; an upper join
+/// once both children are published; whichever device is free takes the
+/// next ready task, so no packing is decided ahead of time.
+pub(crate) fn subtree_plan(
+  ops: &[PlanOp],
+  max_leaves: usize,
+) -> (Vec<usize>, Vec<usize>) {
+  let Some(root) = ops.len().checked_sub(1) else {
+    return (Vec::new(), Vec::new());
+  };
+  let leaves = leaves_under(ops);
+  let target = max_leaves.max(1);
+  let mut frontier = vec![root];
+  while let Some(at) = (0..frontier.len())
+    .filter(|&at| leaves[frontier[at]] > target)
+    .max_by_key(|&at| leaves[frontier[at]])
+  {
+    if !split_frontier(ops, &mut frontier, at) {
+      break;
+    }
+  }
+  frontier.sort_unstable();
+  // Everything above the frontier: the ancestors of frontier nodes.
+  let mut above = vec![false; ops.len()];
+  let mut in_frontier = vec![false; ops.len()];
+  for &slot in &frontier {
+    in_frontier[slot] = true;
+  }
+  for index in 0..ops.len() {
+    if let PlanOp::Join(left, right) = ops[index]
+      && (in_frontier[left]
+        || in_frontier[right]
+        || above[left]
+        || above[right])
+    {
+      above[index] = true;
+    }
+  }
+  let upper: Vec<usize> = (0..ops.len()).filter(|&i| above[i]).collect();
+  (frontier, upper)
+}
+
+/// `AiurSystem.aggregateSubtreePlan`: the plan cut into `subtrees` for
+/// `ix prove --lanes`. Rows in post-order: `[0, slot, ids…]` for a subtree
+/// (its root slot, then the manifest ids of the shards under it, sorted;
+/// one id when the subtree is a raw leaf) and `[1, slot, left, right]` for
+/// each join above the frontier, the root last. A tree too small to cut
+/// into `subtrees` simply yields fewer.
+#[unsafe(no_mangle)]
+extern "C" fn rs_aiur_aggregate_subtree_plan(
+  env_handle: LeanExternal<EnvHandle, LeanBorrowed<'_>>,
+  manifest_path: LeanString<LeanBorrowed<'_>>,
+  structural_above: LeanNat<LeanBorrowed<'_>>,
+  subtree_size: LeanNat<LeanBorrowed<'_>>,
+) -> LeanExcept<LeanOwned> {
+  let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+    let subtree_size = lean_unbox_nat_as_usize(subtree_size.inner());
+    if subtree_size == 0 {
+      return Err("the subtree size must be at least one leaf".to_string());
+    }
+    let manifest_bytes =
+      fs::read(Path::new(manifest_path.as_str())).map_err(|error| {
+        format!("read manifest {}: {error}", manifest_path.as_str())
+      })?;
+    let manifest = ShardManifest::from_bytes(&manifest_bytes)
+      .map_err(|error| format!("manifest parse failed: {error}"))?;
+    let prepared = prepare_run(&env_handle.get().env, &manifest)?;
+    let specs = build_statement_specs(
+      &prepared,
+      lean_unbox_nat_as_usize(structural_above.inner()),
+    )?;
+    let ops: Vec<PlanOp> = specs.iter().map(|spec| spec.op).collect();
+    let (frontier, upper) = subtree_plan(&ops, subtree_size);
+    let mut rows: Vec<Vec<usize>> =
+      Vec::with_capacity(frontier.len() + upper.len());
+    for &slot in &frontier {
+      let mut ids = Vec::new();
+      let mut stack = vec![slot];
+      while let Some(index) = stack.pop() {
+        match ops[index] {
+          PlanOp::Leaf(shard) => {
+            ids.push(prepared.shards[shard].original_id as usize);
+          },
+          PlanOp::Join(left, right) => {
+            stack.push(left);
+            stack.push(right);
+          },
+        }
+      }
+      ids.sort_unstable();
+      let mut row = vec![0, slot];
+      row.extend(ids);
+      rows.push(row);
+    }
+    for &slot in &upper {
+      let PlanOp::Join(left, right) = ops[slot] else {
+        unreachable!("upper nodes are joins")
+      };
+      rows.push(vec![1, slot, left, right]);
+    }
+    Ok(rows)
+  }));
+  match result {
+    Ok(Ok(rows)) => {
+      let outer = LeanArray::alloc(rows.len());
+      for (at, row) in rows.iter().enumerate() {
+        let inner = LeanArray::alloc(row.len());
+        for (index, value) in row.iter().enumerate() {
+          inner.set(index, LeanOwned::box_usize(*value));
+        }
+        outer.set(at, inner);
+      }
+      LeanExcept::ok(outer)
+    },
+    Ok(Err(error)) => LeanExcept::error_string(&error),
+    Err(payload) => LeanExcept::error_string(&format!(
+      "native subtree planning panicked: {}",
+      panic_text(&payload)
+    )),
+  }
+}
+
 /// Production FFI called once after Lean has compiled the IxVM and ixAggr
 /// systems. Proof addresses are newline-separated to keep the ABI flat.
 #[unsafe(no_mangle)]
@@ -2789,10 +3184,12 @@ extern "C" fn rs_aiur_stage2_aggregate(
   wrap_root: bool,
   exec_ahead: LeanNat<LeanBorrowed<'_>>,
   verify_only: bool,
+  subtree_code: LeanNat<LeanBorrowed<'_>>,
 ) -> LeanExcept<LeanOwned> {
   let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
     let reprove_slot =
       lean_unbox_nat_as_usize(reprove_slot_code.inner()).checked_sub(1);
+    let subtree = lean_unbox_nat_as_usize(subtree_code.inner()).checked_sub(1);
     run(RunConfig {
       ixvm_system: ixvm_system.get(),
       aggr_system: aggr_system.get(),
@@ -2815,6 +3212,7 @@ extern "C" fn rs_aiur_stage2_aggregate(
       wrap_root,
       exec_ahead: lean_unbox_nat_as_usize(exec_ahead.inner()),
       verify_only,
+      subtree,
     })
   }));
   match result {
@@ -2881,6 +3279,98 @@ mod tests {
       let path = joined.merkle_proof(leaf, owner).expect("member path");
       assert!(ixon::merkle::verify_merkle_proof(&joined.root, leaf, &path));
     }
+  }
+
+  /// A post-order plan from a nested leaf-count shape: `(a, b)` joins the
+  /// plans of `a` and `b`; a number is that many balanced leaves.
+  fn plan_of(shape: &str) -> Vec<PlanOp> {
+    fn go(chars: &[u8], at: &mut usize, out: &mut Vec<PlanOp>) -> usize {
+      if chars[*at] == b'(' {
+        *at += 1;
+        let left = go(chars, at, out);
+        assert_eq!(chars[*at], b',');
+        *at += 1;
+        let right = go(chars, at, out);
+        assert_eq!(chars[*at], b')');
+        *at += 1;
+        out.push(PlanOp::Join(left, right));
+      } else {
+        let start = *at;
+        while *at < chars.len() && chars[*at].is_ascii_digit() {
+          *at += 1;
+        }
+        let count: usize =
+          std::str::from_utf8(&chars[start..*at]).unwrap().parse().unwrap();
+        let ids: Vec<u32> = (0..count as u32).collect();
+        fn balanced(ids: &[u32], out: &mut Vec<PlanOp>) -> usize {
+          if ids.len() == 1 {
+            out.push(PlanOp::Leaf(ids[0] as usize));
+          } else {
+            let (l, r) = ids.split_at(ids.len() / 2);
+            let left = balanced(l, out);
+            let right = balanced(r, out);
+            out.push(PlanOp::Join(left, right));
+          }
+          out.len() - 1
+        }
+        balanced(&ids, out);
+      }
+      out.len() - 1
+    }
+    let mut out = Vec::new();
+    go(shape.as_bytes(), &mut 0, &mut out);
+    out
+  }
+
+  #[test]
+  fn subtree_plan_cuts_to_the_target_and_lists_the_joins_above() {
+    let sizes = |ops: &[PlanOp], slots: &[usize]| -> Vec<usize> {
+      let leaves = leaves_under(ops);
+      slots.iter().map(|&s| leaves[s]).collect()
+    };
+    // Balanced: a size of eight keeps the root whole; a size of two cuts
+    // to the depth-2 nodes, with the two depth-1 joins and the root above.
+    let ops = plan_of("8");
+    let (frontier, upper) = subtree_plan(&ops, 8);
+    assert_eq!(frontier, vec![ops.len() - 1]);
+    assert!(upper.is_empty());
+    let (frontier, upper) = subtree_plan(&ops, 2);
+    assert_eq!(sizes(&ops, &frontier), vec![2, 2, 2, 2]);
+    assert_eq!(upper.len(), 3);
+    assert_eq!(*upper.last().unwrap(), ops.len() - 1);
+    // Mathlib's 128-way shape at the top: root = (70, 58), 70 = (38, 32),
+    // 58 = (32, 26). A size of eight leaves nothing larger than that.
+    let ops = plan_of("((38,32),(32,26))");
+    let (frontier, upper) = subtree_plan(&ops, 8);
+    let leaves = sizes(&ops, &frontier);
+    assert_eq!(leaves.iter().sum::<usize>(), 128);
+    assert!(leaves.iter().all(|&n| n <= 8 && n >= 2));
+    // Post-order: every upper join comes after its children.
+    let position = |slot: usize| upper.iter().position(|&s| s == slot);
+    for &slot in &upper {
+      let PlanOp::Join(left, right) = ops[slot] else { panic!("join") };
+      for child in [left, right] {
+        if let Some(at) = position(child) {
+          assert!(at < position(slot).unwrap());
+        } else {
+          assert!(frontier.contains(&child));
+        }
+      }
+    }
+    // A lone leaf beside a subtree: the tree (1 + 32) + 16 has 49 leaves;
+    // a size of four means the 33-leaf node must be cut even though one of
+    // its children is a raw leaf, which then stands as a one-leaf subtree.
+    let ops = plan_of("((1,32),16)");
+    let (frontier, _) = subtree_plan(&ops, 4);
+    let leaves = sizes(&ops, &frontier);
+    assert_eq!(leaves.iter().sum::<usize>(), 1 + 32 + 16);
+    assert!(leaves.iter().all(|&n| n <= 4));
+    assert_eq!(leaves.iter().filter(|&&n| n == 1).count(), 1);
+    // A two-leaf tree at size one: two one-leaf subtrees under the root join.
+    let ops = plan_of("2");
+    let (frontier, upper) = subtree_plan(&ops, 1);
+    assert_eq!(sizes(&ops, &frontier), vec![1, 1]);
+    assert_eq!(upper, vec![ops.len() - 1]);
   }
 
   #[test]

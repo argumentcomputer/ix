@@ -2429,6 +2429,7 @@ pub extern "C" fn rs_shard_env_static(
   balance_pct: LeanString<LeanBorrowed<'_>>,
   layout: LeanString<LeanBorrowed<'_>>,
   out_path: LeanString<LeanBorrowed<'_>>,
+  exec_ahead: LeanString<LeanBorrowed<'_>>,
 ) -> LeanIOResult<LeanOwned> {
   let path = env_path.to_string();
   let layout = layout.to_string();
@@ -2437,6 +2438,7 @@ pub extern "C" fn rs_shard_env_static(
       "rs_shard_env_static: unknown layout `{layout}` (mincut or ordered)"
     ));
   }
+  let exec_ahead = exec_ahead.to_string().parse::<usize>().unwrap_or(0);
   let requested_shards = num_shards.to_string().parse::<usize>().unwrap_or(0);
   let ram_gib = ram_gib.to_string().parse::<u64>().unwrap_or(0);
   if requested_shards == 0 && ram_gib == 0 {
@@ -2469,11 +2471,30 @@ pub extern "C" fn rs_shard_env_static(
   );
   let num_shards = if requested_shards > 0 {
     requested_shards
+  } else if cfg!(feature = "cuda") {
+    // The trace-shard prover: seed against one execution's record share,
+    // computed as `ix prove --lanes` computes it.
+    let cells = crate::aiur::protocol::trace_shard_max_cells();
+    let budget = usize::try_from(ram_gib << 30).unwrap_or(usize::MAX);
+    let share =
+      crate::aiur::protocol::record_share(budget, cells, exec_ahead + 2);
+    let tenths =
+      u32::try_from(share.saturating_mul(10) >> 30).unwrap_or(u32::MAX);
+    let share_gib = f64::from(tenths) / 10.0;
+    let score = ix_kernel::shard::static_env_score(&profile);
+    let n = ix_kernel::shard::gpu_seed_shards(&profile, share_gib);
+    eprintln!(
+      "[shard] trace-shard seed (cuda build): score={score:.3e}; round({} x (score/{:.3e}) x ({} GiB / {share_gib:.1} GiB record share: {ram_gib} GiB per worker, {cells} cells, {exec_ahead} executions ahead)) -> {n} shard(s) (heuristic; the record cap names any shard over its share)",
+      ix_kernel::shard::GPU_SEED_REFERENCE_SHARDS,
+      ix_kernel::shard::GPU_SEED_REFERENCE_SCORE,
+      ix_kernel::shard::GPU_SEED_REFERENCE_MAX_RECORD_GIB,
+    );
+    n
   } else {
     let score = ix_kernel::shard::static_env_score(&profile);
     let n = ix_kernel::shard::static_seed_shards(&profile, ram_gib);
     eprintln!(
-      "[shard] static seed: score={score:.3e}; round({} x (score/{:.3e})^{:.2} x ({}/{ram_gib})^{:.2}) -> {n} shard(s) (heuristic; gated execution corrects every boundary)",
+      "[shard] static seed (cpu prover model): score={score:.3e}; round({} x (score/{:.3e})^{:.2} x ({}/{ram_gib})^{:.2}) -> {n} shard(s) (heuristic; gated execution corrects every boundary)",
       ix_kernel::shard::STATIC_SEED_REFERENCE_SHARDS,
       ix_kernel::shard::STATIC_SEED_REFERENCE_SCORE,
       ix_kernel::shard::STATIC_SEED_SCORE_EXPONENT,
@@ -2485,7 +2506,11 @@ pub extern "C" fn rs_shard_env_static(
   let report = if layout == "ordered" {
     let (depends, primitives) = static_block_dependencies(&env, &profile);
     ix_kernel::shard::shard_static_ordered(
-      &profile, &depends, &primitives, num_shards, out_opt,
+      &profile,
+      &depends,
+      &primitives,
+      num_shards,
+      out_opt,
     )
   } else {
     ix_kernel::shard::shard_static(&profile, num_shards, balance, out_opt)

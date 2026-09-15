@@ -437,7 +437,7 @@ private def emitStore (out : Nat) (values : Array ValIdx) : Array RustStmt :=
     s!" if !unconstrained \{ __mq.bump_multiplicity(__i); }" ++
     s!" __mq.output_at(__i)[0]" ++
     s!" } else \{" ++
-    s!" if __mq.len() >= aiur::execute::POINTER_LIMIT \{ return Err(ExecError::MemoryTableFull({size})); }" ++
+    s!" aiur::execute::check_store(&record.budget, __mq, {size})?;" ++
     s!" let __ptr = G::from_usize(record.pointer_base + __mq.len());" ++
     s!" __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained));" ++
     s!" __ptr } }"
@@ -954,6 +954,9 @@ def emitFunction (funIdx : FunIdx) (f : Function) : Array RustItem := Id.run do
     s!"  unconstrained: bool,\n" ++
     s!") -> Result<[G; OUT_{funIdx}], ExecError> {lbrace}\n" ++
     s!"  stacker::maybe_grow(64 * 1024, 4 * 1024 * 1024, || {lbrace}\n" ++
+    -- Function queries grow at calls, so the record's byte cap is checked
+    -- on entry as well as at every memory store.
+    s!"    aiur::execute::check_record_cap(&record.budget)?;\n" ++
     bodyText ++
     s!"  {rbrace})\n" ++
     s!"{rbrace}\n\n"

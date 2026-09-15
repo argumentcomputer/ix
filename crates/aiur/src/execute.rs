@@ -31,6 +31,9 @@ fn u32_sum(values: &[u64]) -> ([G; 4], G) {
 pub struct QueryRecord {
   pub function_queries: Vec<QueryMap>,
   pub memory_queries: FxIndexMap<usize, QueryMap>,
+  /// The cap on this record's retained bytes, if any, and the bookkeeping
+  /// [`check_store`] keeps to enforce it as the record grows.
+  pub budget: RecordBudget,
   pub bytes1_queries: Bytes1Queries,
   pub bytes2_queries: Bytes2Queries,
   /// The pointer of every memory table's first entry: entry `i` of a table
@@ -144,6 +147,7 @@ impl QueryRecord {
     Self {
       function_queries,
       memory_queries,
+      budget: RecordBudget::for_this_thread(),
       bytes1_queries,
       bytes2_queries,
       pointer_base,
@@ -151,6 +155,77 @@ impl QueryRecord {
       deferred: FxHashMap::default(),
     }
   }
+}
+
+thread_local! {
+  static RECORD_BYTE_CAP: std::cell::Cell<Option<usize>> =
+    const { std::cell::Cell::new(None) };
+  /// Retained bytes of the record being built on this thread, counted at
+  /// every query-map insertion ([`note_retained`]), so every path that
+  /// grows a record is covered and the total is exact at every check.
+  static RECORD_BYTES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// Caps the retained bytes of every record created on this thread from
+/// now on (`None`: no cap). A driver running several executions ahead of
+/// a prover gives each an equal share of the host budget this way, so an
+/// execution that would outgrow its share stops with
+/// [`ExecError::RecordBudgetExceeded`] instead of exhausting the box.
+pub fn set_record_byte_cap(cap: Option<usize>) {
+  RECORD_BYTE_CAP.with(|cell| cell.set(cap));
+}
+
+/// Counts a query-map entry of `elems` field elements toward the record
+/// being built on this thread, as [`record_retained_bytes`] measures it.
+#[inline]
+pub fn note_retained(elems: usize) {
+  RECORD_BYTES.with(|cell| cell.set(cell.get() + elems * 8 + 21));
+}
+
+/// A record's byte cap, fixed when the record is created.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct RecordBudget {
+  pub cap: Option<usize>,
+}
+
+impl RecordBudget {
+  /// The cap set for this thread, and a fresh count for the new record.
+  fn for_this_thread() -> Self {
+    RECORD_BYTES.with(|cell| cell.set(0));
+    Self { cap: RECORD_BYTE_CAP.with(std::cell::Cell::get) }
+  }
+}
+
+/// Whether the record being built on this thread is within `budget`'s cap;
+/// the generated kernel and the interpreter ask at every function entry,
+/// and [`check_store`] at every memory store, so a record cannot grow
+/// past its cap by more than one entry between checks.
+#[inline]
+pub fn check_record_cap(budget: &RecordBudget) -> Result<(), ExecError> {
+  let Some(cap) = budget.cap else {
+    return Ok(());
+  };
+  let bytes = RECORD_BYTES.with(std::cell::Cell::get);
+  if bytes > cap {
+    return Err(ExecError::RecordBudgetExceeded { bytes, cap });
+  }
+  Ok(())
+}
+
+/// Every memory store's admission check, in the interpreter and in the
+/// generated kernel alike: the width's table must be under
+/// [`POINTER_LIMIT`], and the record must be within its byte cap. Both
+/// failures are clean [`ExecError`]s the execution returns.
+#[inline]
+pub fn check_store(
+  budget: &RecordBudget,
+  table: &QueryMap,
+  size: usize,
+) -> Result<(), ExecError> {
+  if table.len() >= POINTER_LIMIT {
+    return Err(ExecError::MemoryTableFull(size));
+  }
+  check_record_cap(budget)
 }
 
 pub struct IOKeyInfo {
@@ -216,6 +291,13 @@ pub enum ExecError {
   InvalidMemorySize(usize),
   /// A width's table reached [`POINTER_LIMIT`] entries.
   MemoryTableFull(usize),
+  /// The record's retained bytes passed the cap set for this execution
+  /// ([`set_record_byte_cap`]); the execution stops cleanly instead of
+  /// growing past what its host budget allows.
+  RecordBudgetExceeded {
+    bytes: usize,
+    cap: usize,
+  },
   UnboundPointer {
     ptr: u64,
     size: usize,
@@ -261,6 +343,10 @@ impl std::fmt::Display for ExecError {
       Self::MemoryTableFull(s) => write!(
         f,
         "width-{s} memory table reached the pointer limit of {POINTER_LIMIT} entries"
+      ),
+      Self::RecordBudgetExceeded { bytes, cap } => write!(
+        f,
+        "record reached {bytes} B of retained queries, over its cap of {cap} B"
       ),
       Self::UnboundPointer { ptr, size } => {
         write!(f, "unbound pointer {ptr} for memory size {size}")
@@ -497,6 +583,7 @@ impl Function {
             });
             fun_idx = *callee_idx;
             unconstrained = callee_unconstrained;
+            check_record_cap(&record.budget)?;
             push_block_exec_entries!(&toplevel.functions[fun_idx].body);
           }
         },
@@ -514,9 +601,7 @@ impl Function {
             }
             map.extend_from_slice(memory_queries.output_at(i));
           } else {
-            if memory_queries.len() >= POINTER_LIMIT {
-              return Err(ExecError::MemoryTableFull(size));
-            }
+            check_store(&record.budget, memory_queries, size)?;
             let ptr = G::from_usize(pointer_base + memory_queries.len());
             memory_queries.insert(
               &values,
@@ -772,10 +857,12 @@ impl Function {
           // `tag(1) + U64(8) + ptr(1) = 10` G values.
           let a_ptr = map[*a_idx];
           let b_ptr = map[*b_idx];
-          let a_limbs = read_klimbs_u64(&record.memory_queries, record.pointer_base, a_ptr)
-            .map_err(ExecError::UnconstrainedBigUintDivModFailed)?;
-          let b_limbs = read_klimbs_u64(&record.memory_queries, record.pointer_base, b_ptr)
-            .map_err(ExecError::UnconstrainedBigUintDivModFailed)?;
+          let a_limbs =
+            read_klimbs_u64(&record.memory_queries, record.pointer_base, a_ptr)
+              .map_err(ExecError::UnconstrainedBigUintDivModFailed)?;
+          let b_limbs =
+            read_klimbs_u64(&record.memory_queries, record.pointer_base, b_ptr)
+              .map_err(ExecError::UnconstrainedBigUintDivModFailed)?;
           let a_big = klimbs_u64_to_biguint(&a_limbs);
           let b_big = klimbs_u64_to_biguint(&b_limbs);
           let (q_big, r_big) = if b_big == num_bigint::BigUint::ZERO {
@@ -785,10 +872,18 @@ impl Function {
           };
           let q_limbs = biguint_to_klimbs_u64(&q_big);
           let r_limbs = biguint_to_klimbs_u64(&r_big);
-          let q_ptr = build_klimbs_u64(&mut record.memory_queries, record.pointer_base, &q_limbs)
-            .map_err(ExecError::UnconstrainedBigUintDivModFailed)?;
-          let r_ptr = build_klimbs_u64(&mut record.memory_queries, record.pointer_base, &r_limbs)
-            .map_err(ExecError::UnconstrainedBigUintDivModFailed)?;
+          let q_ptr = build_klimbs_u64(
+            &mut record.memory_queries,
+            record.pointer_base,
+            &q_limbs,
+          )
+          .map_err(ExecError::UnconstrainedBigUintDivModFailed)?;
+          let r_ptr = build_klimbs_u64(
+            &mut record.memory_queries,
+            record.pointer_base,
+            &r_limbs,
+          )
+          .map_err(ExecError::UnconstrainedBigUintDivModFailed)?;
           map.push(q_ptr);
           map.push(r_ptr);
         },
@@ -1045,10 +1140,12 @@ pub fn unconstrained_big_uint_div_mod_helper(
   b_ptr: G,
   record: &mut QueryRecord,
 ) -> Result<(G, G), ExecError> {
-  let a_limbs = read_klimbs_u64(&record.memory_queries, record.pointer_base, a_ptr)
-    .map_err(ExecError::UnconstrainedBigUintDivModFailed)?;
-  let b_limbs = read_klimbs_u64(&record.memory_queries, record.pointer_base, b_ptr)
-    .map_err(ExecError::UnconstrainedBigUintDivModFailed)?;
+  let a_limbs =
+    read_klimbs_u64(&record.memory_queries, record.pointer_base, a_ptr)
+      .map_err(ExecError::UnconstrainedBigUintDivModFailed)?;
+  let b_limbs =
+    read_klimbs_u64(&record.memory_queries, record.pointer_base, b_ptr)
+      .map_err(ExecError::UnconstrainedBigUintDivModFailed)?;
   let a_big = klimbs_u64_to_biguint(&a_limbs);
   let b_big = klimbs_u64_to_biguint(&b_limbs);
   let (q_big, r_big) = if b_big == num_bigint::BigUint::ZERO {
@@ -1058,10 +1155,12 @@ pub fn unconstrained_big_uint_div_mod_helper(
   };
   let q_limbs = biguint_to_klimbs_u64(&q_big);
   let r_limbs = biguint_to_klimbs_u64(&r_big);
-  let q_ptr = build_klimbs_u64(&mut record.memory_queries, record.pointer_base, &q_limbs)
-    .map_err(ExecError::UnconstrainedBigUintDivModFailed)?;
-  let r_ptr = build_klimbs_u64(&mut record.memory_queries, record.pointer_base, &r_limbs)
-    .map_err(ExecError::UnconstrainedBigUintDivModFailed)?;
+  let q_ptr =
+    build_klimbs_u64(&mut record.memory_queries, record.pointer_base, &q_limbs)
+      .map_err(ExecError::UnconstrainedBigUintDivModFailed)?;
+  let r_ptr =
+    build_klimbs_u64(&mut record.memory_queries, record.pointer_base, &r_limbs)
+      .map_err(ExecError::UnconstrainedBigUintDivModFailed)?;
   Ok((q_ptr, r_ptr))
 }
 
@@ -1140,7 +1239,9 @@ fn read_klimbs_u64(
     let ptr_idx = usize::try_from(ptr_u64)
       .map_err(|_e| format!("ptr {ptr_u64} too large for usize"))?
       .checked_sub(pointer_base)
-      .ok_or_else(|| format!("ptr {ptr_u64} below the record's pointer base"))?;
+      .ok_or_else(|| {
+        format!("ptr {ptr_u64} below the record's pointer base")
+      })?;
     let (key, _) = queries.get_index(ptr_idx).ok_or_else(|| {
       format!("unbound ptr {ptr_u64} in memory[10] (walking List<U64>)")
     })?;

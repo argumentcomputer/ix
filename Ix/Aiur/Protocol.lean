@@ -224,15 +224,44 @@ is changed. Returns the root or replayed proof address. With `verifyOnly`, the
 run stops after the proof import — every shard claim reconstructed natively,
 every supplied proof bound to its shard by claim digest and verified in
 parallel, exactly one per shard — returning the empty string (the composed
-verdict of `ix verify --ixes`). -/
+verdict of `ix verify --ixes`). `subtreeCode` is zero for a full run and
+`slot + 1` to prove only the plan subtree rooted at that slot from the
+proofs of the leaves under it, returning that slot's proof address; the
+root-only steps (root validation, wrapping) are skipped, and the run fails
+unless that proof was persisted and cached. -/
 @[extern "rs_aiur_stage2_aggregate"]
 opaque aggregateStage2 (ixvmSystem aggrSystem : @& AiurSystem)
   (envHandle : @& EnvHandle) (manifestPath proofHexes : @& String)
   (verifyIdx aggrIdx jobs ramBudgetBytes structuralAbove reproveSlotCode : @& Nat)
   (directJoins planOnly : Bool) (cacheFriBytes : @& ByteArray)
   (useCache writeOutputs traceShards : Bool) (rangeWidth : @& Nat)
-  (wrapRoot : Bool) (execAhead : @& Nat) (verifyOnly : Bool) :
+  (wrapRoot : Bool) (execAhead : @& Nat) (verifyOnly : Bool)
+  (subtreeCode : @& Nat) :
     Except String String
+
+/-- The Stage 2 plan cut for `ix prove --lanes`: the tree is split from the
+root while any frontier node holds more than `subtreeSize` leaves (a lone
+leaf may then stand as a subtree of its own). Rows in post-order:
+`#[0, slot, ids…]` for a subtree (its root slot, as `ix aggregate --subtree`
+numbers slots, then the manifest ids of the shards under it, sorted) and
+`#[1, slot, left, right]` for each join above the frontier, the root
+last. -/
+@[extern "rs_aiur_aggregate_subtree_plan"]
+opaque aggregateSubtreePlan (envHandle : @& EnvHandle) (manifestPath : @& String)
+  (structuralAbove subtreeSize : @& Nat) : Except String (Array (Array Nat))
+
+/-- `ix prove --lanes`: the whole multi-device run in this process, one
+resident prover per GPU built from these two systems (`AiurSystem.on_device`
+in Rust; nothing is copied across the FFI), every claim and join scheduled
+over them as their inputs become ready, the root wrapped, and every claim
+proof verified natively at the end. `maxRamBytes` is one worker's host
+budget (0 detects); `execJobs` the claim executions ahead of each prover.
+Returns the verified root address; progress is printed on stderr. -/
+@[extern "rs_aiur_prove_lanes"]
+opaque proveLanes (ixvmSystem aggrSystem : @& AiurSystem)
+  (envHandle : @& EnvHandle) (manifestPath : @& String)
+  (verifyIdx aggrIdx lanes maxRamBytes execJobs structuralAbove : @& Nat)
+  (cacheFriBytes : @& ByteArray) : Except String String
 
 /-- Reconstruct and audit the manifest-relative aggregate root entirely in
 Rust, using the same ownership, frontier, pruning, and statement-fold code as

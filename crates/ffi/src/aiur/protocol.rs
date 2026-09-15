@@ -764,9 +764,37 @@ extern "C" fn rs_aiur_detected_ram_budget()
 /// [`ix_kernel::shard::RAM_USABLE_FRAC`] of `MemAvailable`, reserving
 /// the rest for the OS. `None` (no gate) when meminfo is unreadable —
 /// disabling the check beats guessing at it.
+/// The trace-shard cell budget the prover plans to, from
+/// `AIUR_TRACE_SHARD_MAX_CELLS`; 0 when unset.
+pub(crate) fn trace_shard_max_cells() -> usize {
+  std::env::var("AIUR_TRACE_SHARD_MAX_CELLS")
+    .ok()
+    .and_then(|v| v.parse::<usize>().ok())
+    .unwrap_or(0)
+}
+
+/// What records may occupy within one prover's host budget: the budget
+/// less the prover's own working set (two shard witnesses at the cell
+/// budget, one being proven and one prepared ahead, plus the upload
+/// staging).
+pub(crate) fn record_budget(max_ram_bytes: usize, cells: usize) -> usize {
+  max_ram_bytes.saturating_sub(2 * 8 * cells + (256 << 20))
+}
+
+/// One execution's equal share of [`record_budget`] when `in_flight`
+/// executions and prepared items hold records at once: the hard cap each
+/// execution runs under.
+pub(crate) fn record_share(
+  max_ram_bytes: usize,
+  cells: usize,
+  in_flight: usize,
+) -> usize {
+  record_budget(max_ram_bytes, cells) / in_flight.max(1)
+}
+
 #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
 #[allow(clippy::cast_sign_loss)] // MemAvailable and the fraction are positive
-fn detected_ram_budget() -> Option<usize> {
+pub(crate) fn detected_ram_budget() -> Option<usize> {
   available_ram_bytes()
     .map(|b| (b as f64 * ix_kernel::shard::RAM_USABLE_FRAC) as usize)
 }
@@ -1137,6 +1165,9 @@ extern "C" fn rs_aiur_system_shard_prove_with_env(
       ),
       GatedProve::Split { peak, parts } => (LeanOption::none(), peak, parts),
       GatedProve::Measured { peak } => (LeanOption::none(), peak, 1),
+      GatedProve::Failed(error) => {
+        return LeanExcept::error_string(&format!("execution failed: {error}"));
+      },
     };
     drop(io_buffer);
 
@@ -1238,6 +1269,13 @@ extern "C" fn rs_aiur_system_shard_prove_ahead_with_env(
 /// ready to prove.
 type Prepared = (ixon::Claim, Vec<u8>, aiur::synthesis::PreparedProve);
 
+/// Why a shard did not prepare: its record outgrew the byte cap it ran
+/// under (answered by a rerun with a larger cap), or anything else.
+enum PrepareFailure {
+  OverRecordBudget { bytes: usize, cap: usize },
+  Other(String),
+}
+
 /// Proves `owners`' shard claims in order with executions running ahead:
 /// shard `k + 1..` execute on threads (`exec_jobs` at once) while shard
 /// `k` proves, and each proof is persisted as soon as it exists. Peak host
@@ -1266,15 +1304,34 @@ fn prove_shards_ahead(
   eprintln!(
     "[prove-ahead] {count} shards, {jobs} executing at a time ahead of the prover"
   );
+  // The record budget is the host budget less the prover's own working
+  // set (two shard witnesses at the cell budget, one proving and one
+  // prepared ahead, plus upload staging). Every execution ahead gets an
+  // equal share of it as a hard cap on its record, enforced as the record
+  // grows; one that reaches its share stops cleanly and reruns alone with
+  // the whole record budget once nothing else executes. Nothing about a
+  // record's size is predicted or remembered.
+  let cells = trace_shard_max_cells();
+  let record_budget = budget.map(|b| record_budget(b, cells));
+  let share = budget.map(|b| record_share(b, cells, jobs + 1));
+  if let (Some(record_budget), Some(share)) = (record_budget, share) {
+    eprintln!(
+      "[prove-ahead] record budget {} GiB: {} GiB per execution with {jobs} ahead; an execution over its share reruns alone",
+      super::aggregate::format_gib(record_budget),
+      super::aggregate::format_gib(share)
+    );
+  }
   let run_started = std::time::Instant::now();
-  let prepare = |k: usize| -> Result<Prepared, String> {
+  let prepare = |k: usize| -> Result<Prepared, PrepareFailure> {
     let label = labels[k];
     let started = std::time::Instant::now();
     let (claim, input, mut io) =
       ixvm_codegen::aiur_ixvm_witness::build_shard_check_env_witness(
         env, &owners[k],
       )
-      .map_err(|e| format!("shard {label}: witness build: {e}"))?;
+      .map_err(|e| {
+        PrepareFailure::Other(format!("shard {label}: witness build: {e}"))
+      })?;
     let prepared = system.prepare_ixvm_within_budget(
       fun_idx,
       &input,
@@ -1291,15 +1348,25 @@ fn prove_shards_ahead(
     let prepared = match prepared {
       Ok(prepared) => prepared,
       Err(GatedProve::Split { peak, .. }) => {
-        return Err(format!(
+        return Err(PrepareFailure::Other(format!(
           "shard {label}: no trace-shard count fits the budget (whole-execution peak {} B) — raise --max-ram",
           peak
-        ));
+        )));
+      },
+      Err(GatedProve::Failed(
+        aiur::execute::ExecError::RecordBudgetExceeded { bytes, cap },
+      )) => {
+        return Err(PrepareFailure::OverRecordBudget { bytes, cap });
+      },
+      Err(GatedProve::Failed(error)) => {
+        return Err(PrepareFailure::Other(format!(
+          "shard {label}: execution failed: {error}"
+        )));
       },
       Err(_) => {
-        return Err(format!(
+        return Err(PrepareFailure::Other(format!(
           "shard {label}: execution did not prepare a proof"
-        ));
+        )));
       },
     };
     let mut claim_bytes = Vec::new();
@@ -1315,42 +1382,88 @@ fn prove_shards_ahead(
   };
   // Executors report on a channel and the prover takes whichever record
   // is ready, so a slow shard never holds the GPU while others wait.
-  let (done_tx, done_rx) =
-    std::sync::mpsc::channel::<(usize, Result<Prepared, String>)>();
+  let (done_tx, done_rx) = std::sync::mpsc::channel::<(
+    usize,
+    bool,
+    Result<Prepared, PrepareFailure>,
+  )>();
   let mut proven: Vec<Option<(Vec<u8>, Address, usize)>> =
     (0..count).map(|_| None).collect();
   std::thread::scope(|scope| -> Result<(), String> {
     let mut next = 0usize;
     let mut in_flight = 0usize;
+    let mut done = 0usize;
+    // Shards that outgrew their share, to rerun alone once the lane is
+    // empty; while one is pending, nothing new starts ahead, so the lane
+    // drains for it.
+    let mut alone: std::collections::VecDeque<usize> =
+      std::collections::VecDeque::new();
+    let mut alone_running = false;
     let prepare = &prepare;
     let done_tx = &done_tx;
-    let spawn = |k: usize| {
+    let spawn = |k: usize, cap: Option<usize>, is_alone: bool| {
       let done_tx = done_tx.clone();
       scope.spawn(move || {
-        let result =
-          std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| prepare(k)))
-            .unwrap_or_else(|_| {
-              Err(format!("shard {}: execution panicked", labels[k]))
-            });
-        let _ = done_tx.send((k, result));
+        aiur::execute::set_record_byte_cap(cap);
+        let result = prepare(k);
+        let _ = done_tx.send((k, is_alone, result));
       });
     };
-    while next < count && in_flight < jobs {
-      spawn(next);
-      next += 1;
-      in_flight += 1;
+    // Admission: an alone rerun waits for an empty lane and runs by
+    // itself; otherwise up to `jobs` executions run ahead at their share.
+    // Run before each proof as well as at the start, so a slot freed by a
+    // record the prover takes is refilled while that record proves.
+    macro_rules! admit {
+      () => {
+        if !alone_running {
+          if in_flight == 0 && !alone.is_empty() {
+            let k = alone.pop_front().expect("nonempty");
+            eprintln!(
+              "[prove-ahead] shard {}: executing alone with the whole record budget",
+              labels[k]
+            );
+            spawn(k, record_budget, true);
+            in_flight += 1;
+            alone_running = true;
+          } else if alone.is_empty() {
+            while next < count && in_flight < jobs {
+              spawn(next, share, false);
+              next += 1;
+              in_flight += 1;
+            }
+          }
+        }
+      };
     }
-    for _ in 0..count {
-      let (k, prepared) =
+    admit!();
+    while done < count {
+      let (k, was_alone, prepared) =
         done_rx.recv().map_err(|e| format!("execution channel closed: {e}"))?;
       in_flight -= 1;
-      // The next execution starts before this proof does.
-      while next < count && in_flight < jobs {
-        spawn(next);
-        next += 1;
-        in_flight += 1;
+      if was_alone {
+        alone_running = false;
       }
-      let (claim, claim_bytes, prepared) = prepared?;
+      let (claim, claim_bytes, prepared) = match prepared {
+        Ok(prepared) => prepared,
+        Err(PrepareFailure::OverRecordBudget { bytes, cap }) if !was_alone => {
+          eprintln!(
+            "[prove-ahead] shard {}: record reached {bytes} B, over its {cap} B share; queued to rerun alone",
+            labels[k]
+          );
+          alone.push_back(k);
+          admit!();
+          continue;
+        },
+        Err(PrepareFailure::OverRecordBudget { bytes, cap }) => {
+          return Err(format!(
+            "shard {}: record reached {bytes} B, over the whole record budget of {cap} B even alone; cut this shard finer or raise --max-ram",
+            labels[k]
+          ));
+        },
+        Err(PrepareFailure::Other(error)) => return Err(error),
+      };
+      // The next execution starts before this proof does.
+      admit!();
       let label = labels[k];
       let started = std::time::Instant::now();
       let (_, proof, peak) = system.prove_prepared(prepared);
@@ -1364,7 +1477,8 @@ fn prove_shards_ahead(
       let address = super::aggregate::write_store(store_dir, &wrapper_bytes)?;
       let digest = Address::hash(&claim_bytes);
       if let Some(dir) = index_dir {
-        let temporary = dir.join(format!("{}.tmp", digest.hex()));
+        let temporary =
+          dir.join(format!("{}.tmp.{}", digest.hex(), std::process::id()));
         std::fs::write(&temporary, format!("{}\n", address.hex()))
           .and_then(|()| std::fs::rename(&temporary, dir.join(digest.hex())))
           .map_err(|e| format!("shard {label}: shard-proof index: {e}"))?;
@@ -1378,6 +1492,7 @@ fn prove_shards_ahead(
       println!("claim {}", digest.hex());
       println!("{}", address.hex());
       proven[k] = Some((claim_bytes, address, peak));
+      done += 1;
     }
     Ok(())
   })?;
@@ -1762,9 +1877,7 @@ fn prove_env_distributed(
     0 => detected_ram_budget(),
     given => Some(given),
   }
-  .map_or(usize::MAX, |budget| {
-    budget.saturating_sub(2 * 8 * max_cells + (256 << 20))
-  });
+  .map_or(usize::MAX, |budget| record_budget(budget, max_cells));
   let measured: Vec<usize> = if measured.len() == workers {
     measured.to_vec()
   } else {

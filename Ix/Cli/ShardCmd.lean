@@ -136,6 +136,7 @@ def runShardCmd (p : Cli.Parsed) : IO UInt32 := do
   let shardsFlag : Option Nat := (p.flag? "shards").map (·.as! Nat)
   let maxCycles  : Option Nat := (p.flag? "max-cycles").map (·.as! Nat)
   let maxRam     : Option Nat := (p.flag? "max-ram").map (·.as! Nat)
+  let execJobs   : Nat := ((p.flag? "exec-jobs").map (·.as! Nat)).getD 3
   -- Provers the prove-time estimate assumes (wall clock = max(seq/P, slowest
   -- shard)). Sharded proving is sequential today, so the default is 1.
   let parallelism : Nat :=
@@ -165,14 +166,14 @@ def runShardCmd (p : Cli.Parsed) : IO UInt32 := do
       IO.println s!"Sharding {envPath} into {n} shards \
         (static strategy, {layout} layout, balance ±{balancePct}%)"
       rsShardEnvStaticFFI envPath (toString n) "0" (toString balancePct) layout
-        outPath
+        outPath (toString execJobs)
     | none, some gib =>
       if gib == 0 then
         p.printError "error: --max-ram must be positive"; return 1
       IO.println s!"Sharding {envPath} for a {gib} GiB prover budget \
         (static block-shape seed, {layout} layout, balance ±{balancePct}%)"
       rsShardEnvStaticFFI envPath "0" (toString gib) (toString balancePct) layout
-        outPath
+        outPath (toString execJobs)
     | none, none =>
       p.printError "error: the static strategy (no --profile) requires \
         --shards N or --max-ram G"
@@ -208,7 +209,8 @@ def shardCmd : Cli.Cmd := `[Cli|
     profile      : String; "Path to a `.ixprof` from `ix profile`. When given, use the profiled strategy (cap budgeting / balanced min-cut over measured costs); when absent, the static strategy partitions the `.ixe` directly."
     shards       : Nat;    "Fixed number of shards N (static strategy; overrides --max-ram sizing and the profiled default budget sizing)"
     "max-cycles" : Nat;    "Per-shard guest-cycle budget (profiled strategy only)"
-    "max-ram"    : Nat;    "Per-shard prover-RAM budget, GiB. Static strategy: seed the shard count from the `.ixe` block-shape score (serialized block size + a superlinear large-body term), with fitted scale and budget exponents anchored at Mathlib; the execution gate measures and corrects every boundary. Profiled strategy: budget from measured op counters (default: detected system RAM)."
+    "max-ram"    : Nat;    "Per-shard prover-RAM budget, GiB. Static strategy: seed the shard count from the `.ixe` block-shape score (serialized block size + a superlinear large-body term). A CUDA build seeds for the trace-shard prover, against one execution's share of the record budget (this budget less the prover's working set at AIUR_TRACE_SHARD_MAX_CELLS, over --exec-jobs + 2), anchored at the Mathlib cut proven on four GPUs; a CPU build seeds with the CPU prover's fitted scale and budget exponents anchored at Mathlib. The record cap or the execution gate corrects every boundary. Profiled strategy: budget from measured op counters (default: detected system RAM)."
+    "exec-jobs"  : Nat;    "CUDA build, static strategy with --max-ram: the claim executions ahead of each prover the run will use (`ix prove --lanes --exec-jobs`), which sets the record share the seed fits (default 3, the calibration's)."
     balance      : Nat;    "Per-bisection balance tolerance, percent (default 5)"
     ordered;               "Static strategy: lay the shards out as contiguous ranges of a dependency order instead of a min-cut, shard 0 at the top, so each shard's reference closure lies in its own shard and later ones. The layout `ix prove --distributed` wants, where each shard is one worker's chunk: the records then commit one at a time in chunk order."
     parallelism  : Nat;    "Provers assumed for the prove-time estimate (profiled strategy only; default 1 = sequential)"

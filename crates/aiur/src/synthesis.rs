@@ -98,6 +98,10 @@ pub enum GatedProve {
   Split { peak: usize, parts: usize },
   /// `exec_only` with a fitting peak: measured, nothing left to do.
   Measured { peak: usize },
+  /// The execution itself failed; no record exists. Includes
+  /// [`ExecError::RecordBudgetExceeded`], which a driver may answer by
+  /// rerunning the execution with a larger cap.
+  Failed(ExecError),
 }
 
 /// An execution gated and planned within a budget, ready to prove
@@ -115,7 +119,9 @@ pub struct PreparedProve {
 }
 
 pub struct AiurSystem {
-  toplevel: Toplevel,
+  /// Shared with the systems [`Self::on_device`] derives for other GPUs,
+  /// so the bytecode crosses the FFI once and is never copied.
+  toplevel: std::sync::Arc<Toplevel>,
   // perhaps remove the key from the system in verifier only mode?
   key: ProverKey<AiurConfig>,
   /// The parameters the system's config was built from, kept for the
@@ -213,6 +219,33 @@ impl AiurSystem {
     commitment_parameters: CommitmentParameters,
     fri_parameters: FriParameters,
   ) -> Self {
+    Self::build_on_device(
+      std::sync::Arc::new(toplevel),
+      commitment_parameters,
+      fri_parameters,
+      None,
+    )
+  }
+
+  /// The same system with its prover on CUDA device `device_id`, sharing
+  /// this one's bytecode; only the device-bound parts (the configuration,
+  /// the prover key, the circuit system) are rebuilt. What lets one
+  /// process hold a prover per GPU.
+  pub fn on_device(&self, device_id: i32) -> Self {
+    Self::build_on_device(
+      std::sync::Arc::clone(&self.toplevel),
+      self.commitment_parameters,
+      self.fri_parameters,
+      Some(device_id),
+    )
+  }
+
+  fn build_on_device(
+    toplevel: std::sync::Arc<Toplevel>,
+    commitment_parameters: CommitmentParameters,
+    fri_parameters: FriParameters,
+    device_id: Option<i32>,
+  ) -> Self {
     let mut circuit_inputs: Vec<CircuitInputs<G>> = Vec::new();
     let mut slot_widths: Vec<Vec<usize>> = Vec::new();
 
@@ -280,7 +313,8 @@ impl AiurSystem {
       2,
     );
 
-    let config = AiurConfig::new(commitment_parameters, fri_parameters);
+    let config =
+      AiurConfig::with_device(commitment_parameters, fri_parameters, device_id);
     let (system, key) = System::new(config, circuit_inputs);
     AiurSystem {
       system,
@@ -598,7 +632,7 @@ impl AiurSystem {
             };
             locate.push((*r, s));
             let _g = tracing::info_span!("aiur/witness").entered();
-            let witness = self.shard_witness(
+            let witness = self.prepared_shard_witness(
               supplied.record(),
               supplied.io(),
               plan,
@@ -643,7 +677,9 @@ impl AiurSystem {
         current = Some((r, supplied, 0));
       }
     });
-    let barrier = self.system.batch_round_one(round_one, Retention::Regenerate);
+    let barrier = self
+      .system
+      .batch_round_one(round_one, trace_retention(Retention::Regenerate));
     if let Some(error) = failure {
       return Err(error);
     }
@@ -670,7 +706,7 @@ impl AiurSystem {
         }
         let supplied = &loaded.as_ref().expect("loaded above").1;
         let _g = tracing::info_span!("aiur/witness").entered();
-        self.shard_witness(
+        self.prepared_shard_witness(
           supplied.record(),
           supplied.io(),
           &plans[r],
@@ -737,11 +773,7 @@ impl AiurSystem {
     // A shape-only lookup witness (trace-only lookups) has no payload for
     // the backend's retained-stage-1 path to read, so every shard is
     // rebuilt for round two, where the lookups are evaluated on the device.
-    let retention = if crate::trace::trace_only_lookups() {
-      Retention::Regenerate
-    } else {
-      retention
-    };
+    let retention = trace_retention(retention);
     // Construct the claim.
     let mut claim = vec![function_channel(), G::from_usize(fun_idx)];
     claim.extend(input);
@@ -754,7 +786,7 @@ impl AiurSystem {
     let index = self.row_index(&query_record, plan);
     let build = |shard: usize| {
       let _g = tracing::info_span!("aiur/witness").entered();
-      self.shard_witness(&query_record, io_buffer, plan, &index, shard)
+      self.prepared_shard_witness(&query_record, io_buffer, plan, &index, shard)
     };
     let proof = match retention {
       Retention::Retain => {
@@ -769,13 +801,9 @@ impl AiurSystem {
           |shard| witnesses[shard].take().expect("each shard is built once"),
         )
       },
-      Retention::Regenerate => self.system.prove_batch_with(
-        &self.key,
-        &claims,
-        messages,
-        Retention::Regenerate,
-        build,
-      ),
+      Retention::Regenerate | Retention::MerkleTrees { .. } => self
+        .system
+        .prove_batch_with(&self.key, &claims, messages, retention, build),
     };
     (claim, proof)
   }
@@ -927,7 +955,7 @@ impl AiurSystem {
     let _g = tracing::info_span!("aiur/execute_ixvm").entered();
     let (query_record, output) =
       executor(&self.toplevel, fun_idx, input.to_vec(), io_buffer)
-        .expect("IxVM-native Aiur execution failed during prove_ixvm");
+        .map_err(GatedProve::Failed)?;
     drop(_g);
     let io = std::mem::replace(
       io_buffer,
@@ -971,12 +999,10 @@ impl AiurSystem {
         };
         match planned {
           Ok((plan, shard_peak)) => {
-            let retention = if crate::trace::trace_only_lookups() {
-              Retention::Regenerate
-            } else {
-              retention
-                .unwrap_or_else(|| self.retention_for(&plan, record_bytes, max))
-            };
+            let retention =
+              trace_retention(retention.unwrap_or_else(|| {
+                self.retention_for(&plan, record_bytes, max)
+              }));
             eprintln!(
               "[trace-shards] {} shards for a {} B budget: record {} B, \
                whole-execution peak {} B, heaviest shard peak {} B, {}",
@@ -988,6 +1014,8 @@ impl AiurSystem {
               match retention {
                 Retention::Retain => "retaining every shard's stage 1",
                 Retention::Regenerate => "regenerating each shard for round 2",
+                Retention::MerkleTrees { .. } =>
+                  "retaining bounded Merkle trees; regenerating traces and LDEs",
               }
             );
             // Per-circuit committed widths, so a plan's padded cells and
@@ -1137,6 +1165,148 @@ mod tests {
     assert_eq!(calibrate_prover_rss(40), 43);
     assert_eq!(calibrate_prover_rss(1_000), 1_075);
     assert_eq!(calibrate_prover_rss(usize::MAX), usize::MAX);
+  }
+
+  #[cfg(feature = "cuda")]
+  #[test]
+  fn gpu_blake3_batch_tree_checkpoint_roundtrip() {
+    use multi_stark::config::StarkGenericConfig;
+    use multi_stark::p3_matrix::Matrix;
+    use multi_stark::witness::{PreparedWitness, TraceSource};
+    let (cp, fp) = test_parameters();
+    let system = AiurSystem::build(crate::gpu_trace::tests::toplevel(), cp, fp);
+    let mut io = empty_io_buffer();
+    let mut input = vec![G::ZERO];
+    input.extend((0..128).map(|i| G::from_usize((i * 37 + 19) % 256)));
+    let (record, output) =
+      system.toplevel().execute(0, input.clone(), &mut io).unwrap();
+    let mut plan = system.plan_shards(&record, None);
+    assert_eq!(plan.num_shards(), 1);
+    assert_eq!(plan.shards[0].rows[0], 0..8);
+    plan.shards[0].rows[0] = 0..4;
+    plan.shards.push(ShardRows { rows: vec![4..8, 0..0, 0..0] });
+    let index = system.row_index(&record, &plan);
+    let mut claim = vec![function_channel(), G::ZERO];
+    claim.extend(input);
+    claim.extend(output);
+    let claims = vec![vec![claim.clone()], vec![]];
+    let build = |shard: usize, generated: bool| {
+      let mut witness: PreparedWitness<G> =
+        system.shard_witness(&record, &io, &plan, &index, shard).into();
+      if generated {
+        let range = &plan.shards[shard].rows[0];
+        let (source, lookups) = crate::gpu_trace::prepare(
+          system.toplevel(),
+          0,
+          &record,
+          &system.slot_arg_widths(0),
+          (0, range.start),
+          (0, range.end),
+          range.len(),
+        )
+        .unwrap();
+        witness.traces[0] = source;
+        witness.lookups[0] = lookups;
+      }
+      witness
+    };
+    let witness = build(0, true);
+    let TraceSource::Generated(source) = &witness.traces[0] else {
+      panic!("missing GPU source")
+    };
+    let weak_source = std::sync::Arc::downgrade(source);
+    let stage1 = system.system.prove_stage_1(witness);
+    let checkpoint = system
+      .system
+      .config
+      .checkpoint_main(stage1.stage_1_trace_data, 32 << 20)
+      .unwrap();
+    assert!(
+      weak_source.upgrade().is_none(),
+      "tree checkpoint retained a generated source or LDE"
+    );
+    assert!(checkpoint.bytes() < 32 << 20);
+    drop(checkpoint);
+
+    let reference = system.system.prove_batch_with(
+      &system.key,
+      &claims,
+      vec![],
+      Retention::Regenerate,
+      |shard| build(shard, false),
+    );
+    system.verify(&claim, &reference).unwrap();
+    for (retention, evict) in [
+      (Retention::Regenerate, false),
+      (Retention::MerkleTrees { max_bytes: 32 << 20 }, false),
+      (Retention::MerkleTrees { max_bytes: 12 << 20 }, false),
+      (Retention::MerkleTrees { max_bytes: 32 << 20 }, true),
+      (Retention::MerkleTrees { max_bytes: 0 }, false),
+    ] {
+      let mut barrier = system.system.batch_round_one(
+        claims
+          .iter()
+          .enumerate()
+          .map(|(shard, c)| (c.clone(), build(shard, true))),
+        retention,
+      );
+      match retention {
+        Retention::MerkleTrees { max_bytes } if max_bytes > 0 => {
+          assert!(
+            barrier.tree_cache_bytes() > 0
+              && barrier.tree_cache_bytes() <= max_bytes
+          );
+        },
+        _ => assert_eq!(barrier.tree_cache_bytes(), 0),
+      }
+      if evict {
+        barrier.trim_tree_cache(0);
+        assert_eq!(barrier.tree_cache_bytes(), 0);
+      }
+      let proof =
+        system.system.batch_round_two(&system.key, barrier, vec![], |shard| {
+          build(shard, true)
+        });
+      system.verify(&claim, &proof).unwrap();
+      assert_eq!(
+        proof.to_bytes().unwrap(),
+        reference.to_bytes().unwrap(),
+        "GPU/retention changed proof bytes"
+      );
+    }
+    let corrupt = || {
+      let mut witness = build(0, true);
+      let source = witness.traces.remove(0);
+      let mut trace = source.materialize();
+      let row = (0..trace.height())
+        .find(|&r| trace.values[r * 533] != G::from_u8(7))
+        .unwrap();
+      // This auxiliary supplies both the recursive call and its returned value.
+      trace.values[row * 533 + 501] += G::ONE;
+      witness.traces.insert(0, TraceSource::Host(trace));
+      witness
+    };
+    let fresh = system.system.prove_stage_1(corrupt());
+    assert_ne!(
+      fresh.stage_1_trace_commit, reference.preamble.headers[0].stage_1_trace,
+      "independent commitment must detect incorrect regeneration"
+    );
+    drop(fresh);
+    let barrier = system.system.batch_round_one(
+      claims
+        .iter()
+        .enumerate()
+        .map(|(shard, c)| (c.clone(), build(shard, true))),
+      Retention::MerkleTrees { max_bytes: 32 << 20 },
+    );
+    let bad =
+      system.system.batch_round_two(&system.key, barrier, vec![], |shard| {
+        if shard == 0 { corrupt() } else { build(shard, true) }
+      });
+    assert!(
+      system.verify(&claim, &bad).is_err(),
+      "cached root must not authenticate corrupted recursive-call values"
+    );
   }
 
   /// Small FRI parameters mirroring `vk_codec`'s test config: cheap to prove
@@ -2182,5 +2352,24 @@ mod tests {
     let retained = prove(Retention::Retain);
     assert_eq!(first, second, "two regenerating proves differ");
     assert_eq!(first, retained, "retain and regenerate differ");
+  }
+}
+
+fn trace_retention(requested: Retention) -> Retention {
+  #[cfg(feature = "cuda")]
+  if let Ok(value) = std::env::var("AIUR_TREE_CACHE_BYTES") {
+    let max_bytes = value
+      .parse::<usize>()
+      .expect("AIUR_TREE_CACHE_BYTES must be a nonnegative byte count");
+    return if max_bytes == 0 {
+      Retention::Regenerate
+    } else {
+      Retention::MerkleTrees { max_bytes }
+    };
+  }
+  if crate::trace::trace_only_lookups() && requested == Retention::Retain {
+    Retention::Regenerate
+  } else {
+    requested
   }
 }

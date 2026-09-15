@@ -939,6 +939,18 @@ private def runAggregateCmdNativeWith
     IO.eprintln "error: --reprove-slot requires aggregate cache reads"
     return 1
   let reproveSlotCode := reproveSlot?.map (· + 1) |>.getD 0
+  let subtree? := (p.flag? "subtree").map (·.as! Nat)
+  if subtree?.isSome && reproveSlot?.isSome then
+    IO.eprintln "error: --subtree cannot be combined with --reprove-slot"
+    return 1
+  if subtree?.isSome && p.hasFlag "wrap-root" then
+    IO.eprintln "error: --wrap-root applies to the root; --subtree proves a subtree"
+    return 1
+  if subtree?.isSome && p.hasFlag "no-cache" && !p.hasFlag "plan-only" then
+    IO.eprintln "error: --subtree publishes its root through the aggregate cache; \
+      it cannot run with --no-cache"
+    return 1
+  let subtreeCode := subtree?.map (· + 1) |>.getD 0
   let proofHexes := String.intercalate "\n"
     (p.variableArgsAs! String).toList
 
@@ -981,10 +993,16 @@ private def runAggregateCmdNativeWith
       recursionParameters.cacheFriBytes (!(p.hasFlag "no-cache"))
       (!(p.hasFlag "no-write")) (p.hasFlag "trace-shards")
       (((p.flag? "range").map (·.as! Nat)).getD 0) (p.hasFlag "wrap-root")
-      (((p.flag? "exec-ahead").map (·.as! Nat)).getD 1) false
+      (((p.flag? "exec-ahead").map (·.as! Nat)).getD 1) false subtreeCode
   match nativeResult with
   | .error e => IO.eprintln s!"aggregate failed: {e}"; return 1
-  | .ok _ => return 0
+  | .ok address =>
+    -- The root (or subtree root) proof address, alone on stdout, is what
+    -- a driver such as `ix prove --lanes` reads; the log lines are on stderr.
+    if !address.isEmpty then
+      IO.println address
+      (← IO.getStdout).flush
+    return 0
 
 /-- Aggregate with an explicit recursion-proof configuration. The CLI wrapper
 below supplies `defaultRecursionParameters`; keeping this seam explicit lets a
@@ -1220,6 +1238,7 @@ def aggregateCmd : Cli.Cmd := `[Cli|
     "trace-shards";  "Prove each slot as a batch of trace shards within its share of --max-ram (the budget divided by --jobs) instead of one unbudgeted proof; a slot no shard count can fit fails the run."
     "exec-ahead" : Nat; "Slots executing ahead of the provers (default 1): a ready join executes and plans while the previous one proves, so one GPU prover never waits for an execution; each slot ahead holds its execution record. 0: each slot executes and proves on one worker, --jobs at a time."
     "wrap-root";     "Wrap the root proof, each wrap a proof that verifies the previous one, until the final proof is a single trace shard."
+    "subtree" : Nat; "Prove only the plan subtree rooted at slot N (slot numbers as --plan-only prints them) from the proofs of the leaves under it, and print that slot's proof address; root validation and --wrap-root do not apply. The proof is published through the aggregate cache, where a later full run over every shard proof finds it and proves only what is above it. With --plan-only, print `subtree N shards: <ids>`, the --shards argument for `ix prove` over those leaves."
     "range" : Nat;   "Wrap a shard proof of more than N trace shards as a range-sum tree — leaves verifying at most N shards each (--jobs at a time), joins, and a root with the wrap's statement — instead of one proof verifying every shard. 0 (default): with --trace-shards, two leaves per node slot (2 × --jobs), so each slot executes its next leaf while proving one; without, wrap whole."
 
   ARGS:

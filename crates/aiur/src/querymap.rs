@@ -346,6 +346,9 @@ impl QueryMap {
   pub fn insert(&mut self, key: &[G], output: &[G], multiplicity: G) {
     debug_assert_eq!(key.len(), self.keys.stride);
     debug_assert!(self.get_index_of(key).is_none());
+    // Every path that grows a record comes through here, so this is
+    // where its retained bytes are counted against its cap.
+    crate::execute::note_retained(key.len() + output.len());
     if !self.out_stride_set {
       self.outs.stride = output.len();
       self.out_stride_set = true;
