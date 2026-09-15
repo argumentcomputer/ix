@@ -4,8 +4,8 @@ import Ix.Compile.Verify.Audit.Statements
 # Compiler-verification source sorry frontier
 
 Fail the build if any declaration emitted from an `Ix.Compile.Verify` source
-module directly references `sorryAx`. Named-specification debt is handled by
-per-root transitive manifests rather than being confused with local source
+module directly references `sorryAx`. Transitive debt from imported libraries
+is handled by per-root manifests rather than being confused with local source
 placeholders.
 -/
 

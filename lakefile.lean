@@ -266,13 +266,13 @@ lean_lib IxKernelConsistency where
 
 section IxCompileVerify
 
-/- Formal verification of the Lean-to-Ixon compiler. It still targets the
-legacy named-specification syntax (`Ix.Theory.Named.VExpr`) that
-`IxKernelVerify` uses, so it transitively builds part of that non-required
-track until the compiler relation is retargeted to the set model. Required CI
-builds it on its own (`lake build IxCompileVerify`). Kept as a separate
-non-default library so compiler proofs cannot accidentally inherit checker
-acceptance theorems as their specification. -/
+/- Formal verification of the Lean-to-Ixon compiler against the set-model
+syntax and environment (`Ix.Theory.Model`), the same endpoint as
+`IxKernelConsistency`; it imports nothing under `Ix.Theory.Named` (enforced
+by `Ix.Compile.Verify.Audit.NamedFree`). Required CI builds it on its own
+with `--wfail`. Kept as a separate non-default library so compiler proofs
+cannot accidentally inherit checker acceptance theorems as their
+specification. -/
 lean_lib IxCompileVerify where
   globs := #[.submodules `Ix.Compile.Verify]
 

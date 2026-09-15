@@ -691,7 +691,7 @@ theorem compileAndInternUnivCanon_run_refines
     rw [run_bind compileEnv blockEnv canonState _ _, horiginalRun]
     rfl
 
-/-- The production result therefore has the independent Ix.Theory.Named universe
+/-- The production result therefore has the independent set-model universe
 value assigned to the named source level. -/
 theorem compileUniv_run_value
     (compileEnv : Ix.CompileM.CompileEnv) (blockEnv : Ix.CompileM.BlockEnv)

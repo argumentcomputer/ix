@@ -8,7 +8,9 @@ These roots cover the first expression-level square, concrete catalog
 integrity, and the production compiler's finite-table transitions.  The
 explicit `KernelSourceWitness` assumption is data supplied to later theorems,
 not a global axiom, and no compiler theorem may inherit checker acceptance as
-a premise.
+a premise.  The value relations target the set model (`Ix.Theory.Model`);
+`Audit.NamedFree` separately checks that the proof modules import nothing
+under `Ix.Theory.Named`.
 -/
 
 namespace Ix.Compile.Verify.Audit.Statements

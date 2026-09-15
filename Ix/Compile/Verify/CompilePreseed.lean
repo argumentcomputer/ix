@@ -1,5 +1,5 @@
 import Ix.Compile.Verify.CompileConstantCodec
-import Ix.Theory.Named.Verify.QSort
+import Ix.Compile.Verify.QSort
 
 /-!
 # Production expression-table preseeding
@@ -3914,7 +3914,7 @@ theorem preseedExprTables_of_collect_run_ready_wireWF
   have hrefPerm : sortedRefs.toList.Perm refs.toList := by
     dsimp only [sortedRefs]
     exact Array.perm_iff_toList_perm.mp
-      (Array.qsort_perm (fun a b : Address => a.cmpBytes b == .lt)
+      (QSort.qsort_perm (fun a b : Address => a.cmpBytes b == .lt)
         0 (refs.size - 1) refs)
   have hsortedRefsWire : ∀ addr ∈ sortedRefs.toList,
       addr.hash.size = 32 := by
@@ -3972,7 +3972,7 @@ theorem preseedExprTables_of_collect_run_ready_wireWF
   have hunivPerm : sortedUnivs.toList.Perm keyed.toList := by
     dsimp only [sortedUnivs]
     exact Array.perm_iff_toList_perm.mp
-      (Array.qsort_perm
+      (QSort.qsort_perm
         (fun (a b : ByteArray × Ixon.Univ) =>
           Ix.CompileM.byteArrayCmp a.1 b.1 == .lt)
         0 (keyed.size - 1) keyed)
@@ -4160,7 +4160,7 @@ theorem preseedExprTables_singleton_run_ready_wireWF
   have hrefPerm : sortedRefs.toList.Perm refs.toList := by
     dsimp only [sortedRefs]
     exact Array.perm_iff_toList_perm.mp
-      (Array.qsort_perm (fun a b : Address => a.cmpBytes b == .lt)
+      (QSort.qsort_perm (fun a b : Address => a.cmpBytes b == .lt)
         0 (refs.size - 1) refs)
   have hsortedRefsWire : ∀ addr ∈ sortedRefs.toList,
       addr.hash.size = 32 := by
@@ -4225,7 +4225,7 @@ theorem preseedExprTables_singleton_run_ready_wireWF
   have hunivPerm : sortedUnivs.toList.Perm keyed.toList := by
     dsimp only [sortedUnivs]
     exact Array.perm_iff_toList_perm.mp
-      (Array.qsort_perm
+      (QSort.qsort_perm
         (fun (a b : ByteArray × Ixon.Univ) =>
           Ix.CompileM.byteArrayCmp a.1 b.1 == .lt)
         0 (keyed.size - 1) keyed)

@@ -2,9 +2,11 @@
 
 `Ix.Kernel` is the production Lean checker. `Ix.Kernel.Verify` contains its
 implementation proofs; `Ix.Compile.Verify` contains the Lean-to-Ixon compiler
-proofs. Their named specification and reference implementation lemmas are local
-under `Ix.Theory.Named`. Building or checking them requires no external
-formalization repository.
+proofs, stated against the set-model syntax and environment in
+`Ix.Theory.Model` and importing nothing under `Ix.Theory.Named`. The named
+specification and reference implementation lemmas of the kernel implementation
+proofs are local under `Ix.Theory.Named`. Building or checking them requires no
+external formalization repository.
 
 Certified acceptance has model-construction and relative consistency theorems,
 with a concrete set-model construction in the separate Mathlib package. A
