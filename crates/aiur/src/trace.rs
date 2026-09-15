@@ -185,6 +185,7 @@ impl Toplevel {
   /// there must be exactly `row_count`. An empty span yields an EMPTY trace
   /// (not a padded height-1 one): the prover deactivates the circuit, so it
   /// is neither committed nor opened.
+  #[tracing::instrument(level = "info", skip_all, name = "aiur/cpu_witness", fields(circuit = circuit_index, rows = row_count))]
   pub fn witness_data_range(
     &self,
     circuit_index: usize,
@@ -238,7 +239,10 @@ impl Toplevel {
     } else {
       height_no_padding.next_power_of_two()
     };
-    let mut rows = vec![G::ZERO; height * width];
+    let mut rows = {
+      let _g = tracing::info_span!("aiur/witness_zero", height, width).entered();
+      vec![G::ZERO; height * width]
+    };
     let rows_no_padding = &mut rows[0..height_no_padding * width];
     // Builder rows start zeroed (`Lookup::empty()` in every slot), so padding
     // rows need no writes at all.

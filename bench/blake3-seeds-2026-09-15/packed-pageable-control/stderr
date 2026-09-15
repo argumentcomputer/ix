@@ -1,0 +1,200 @@
+[aggregate] plan: 78 direct IxVM leaves + 77 binary joins (77 structural; threshold > 4096 subject leaves)
+  slot 0: raw shard 0 (4857 subjects)
+  slot 1: raw shard 1 (4794 subjects)
+  slot 2: structural shape 6 slots 0, 1 (9651 subjects)
+  slot 3: raw shard 2 (10004 subjects)
+  slot 4: structural shape 8 slots 2, 3 (19655 subjects)
+  slot 5: raw shard 3 (4046 subjects)
+  slot 6: raw shard 4 (5857 subjects)
+  slot 7: structural shape 6 slots 5, 6 (9903 subjects)
+  slot 8: raw shard 5 (6591 subjects)
+  slot 9: structural shape 8 slots 7, 8 (16494 subjects)
+  slot 10: structural shape 9 slots 4, 9 (36149 subjects)
+  slot 11: raw shard 6 (6978 subjects)
+  slot 12: raw shard 7 (7162 subjects)
+  slot 13: structural shape 6 slots 11, 12 (14140 subjects)
+  slot 14: raw shard 8 (15699 subjects)
+  slot 15: structural shape 8 slots 13, 14 (29839 subjects)
+  slot 16: raw shard 9 (13099 subjects)
+  slot 17: raw shard 10 (12715 subjects)
+  slot 18: structural shape 6 slots 16, 17 (25814 subjects)
+  slot 19: structural shape 9 slots 15, 18 (55653 subjects)
+  slot 20: structural shape 9 slots 10, 19 (91802 subjects)
+  slot 21: raw shard 11 (4029 subjects)
+  slot 22: raw shard 12 (5036 subjects)
+  slot 23: structural shape 6 slots 21, 22 (9065 subjects)
+  slot 24: raw shard 13 (6860 subjects)
+  slot 25: structural shape 8 slots 23, 24 (15925 subjects)
+  slot 26: raw shard 14 (5773 subjects)
+  slot 27: raw shard 15 (6705 subjects)
+  slot 28: structural shape 6 slots 26, 27 (12478 subjects)
+  slot 29: raw shard 16 (11915 subjects)
+  slot 30: raw shard 17 (13454 subjects)
+  slot 31: structural shape 6 slots 29, 30 (25369 subjects)
+  slot 32: structural shape 9 slots 28, 31 (37847 subjects)
+  slot 33: structural shape 9 slots 25, 32 (53772 subjects)
+  slot 34: raw shard 18 (5132 subjects)
+  slot 35: raw shard 19 (4924 subjects)
+  slot 36: structural shape 6 slots 34, 35 (10056 subjects)
+  slot 37: raw shard 20 (13877 subjects)
+  slot 38: structural shape 8 slots 36, 37 (23933 subjects)
+  slot 39: raw shard 21 (4062 subjects)
+  slot 40: raw shard 22 (5243 subjects)
+  slot 41: structural shape 6 slots 39, 40 (9305 subjects)
+  slot 42: raw shard 23 (9163 subjects)
+  slot 43: structural shape 8 slots 41, 42 (18468 subjects)
+  slot 44: structural shape 9 slots 38, 43 (42401 subjects)
+  slot 45: structural shape 9 slots 33, 44 (96173 subjects)
+  slot 46: structural shape 9 slots 20, 45 (187975 subjects)
+  slot 47: raw shard 24 (4801 subjects)
+  slot 48: raw shard 25 (5429 subjects)
+  slot 49: structural shape 6 slots 47, 48 (10230 subjects)
+  slot 50: raw shard 26 (9611 subjects)
+  slot 51: structural shape 8 slots 49, 50 (19841 subjects)
+  slot 52: raw shard 27 (5624 subjects)
+  slot 53: raw shard 28 (11010 subjects)
+  slot 54: structural shape 6 slots 52, 53 (16634 subjects)
+  slot 55: structural shape 9 slots 51, 54 (36475 subjects)
+  slot 56: raw shard 29 (4672 subjects)
+  slot 57: raw shard 30 (5478 subjects)
+  slot 58: structural shape 6 slots 56, 57 (10150 subjects)
+  slot 59: raw shard 31 (9180 subjects)
+  slot 60: structural shape 8 slots 58, 59 (19330 subjects)
+  slot 61: raw shard 32 (7779 subjects)
+  slot 62: raw shard 33 (10300 subjects)
+  slot 63: structural shape 6 slots 61, 62 (18079 subjects)
+  slot 64: structural shape 9 slots 60, 63 (37409 subjects)
+  slot 65: structural shape 9 slots 55, 64 (73884 subjects)
+  slot 66: raw shard 34 (4328 subjects)
+  slot 67: raw shard 35 (4952 subjects)
+  slot 68: structural shape 6 slots 66, 67 (9280 subjects)
+  slot 69: raw shard 36 (6654 subjects)
+  slot 70: structural shape 8 slots 68, 69 (15934 subjects)
+  slot 71: raw shard 37 (4978 subjects)
+  slot 72: raw shard 38 (6713 subjects)
+  slot 73: structural shape 6 slots 71, 72 (11691 subjects)
+  slot 74: structural shape 9 slots 70, 73 (27625 subjects)
+  slot 75: raw shard 39 (6415 subjects)
+  slot 76: raw shard 40 (5850 subjects)
+  slot 77: structural shape 6 slots 75, 76 (12265 subjects)
+  slot 78: raw shard 41 (4990 subjects)
+  slot 79: raw shard 42 (7567 subjects)
+  slot 80: structural shape 6 slots 78, 79 (12557 subjects)
+  slot 81: structural shape 9 slots 77, 80 (24822 subjects)
+  slot 82: structural shape 9 slots 74, 81 (52447 subjects)
+  slot 83: structural shape 9 slots 65, 82 (126331 subjects)
+  slot 84: structural shape 9 slots 46, 83 (314306 subjects)
+  slot 85: raw shard 43 (8289 subjects)
+  slot 86: raw shard 44 (6809 subjects)
+  slot 87: structural shape 6 slots 85, 86 (15098 subjects)
+  slot 88: raw shard 45 (16930 subjects)
+  slot 89: structural shape 8 slots 87, 88 (32028 subjects)
+  slot 90: raw shard 46 (9674 subjects)
+  slot 91: raw shard 47 (11939 subjects)
+  slot 92: structural shape 6 slots 90, 91 (21613 subjects)
+  slot 93: structural shape 9 slots 89, 92 (53641 subjects)
+  slot 94: raw shard 48 (2685 subjects)
+  slot 95: raw shard 49 (4687 subjects)
+  slot 96: structural shape 6 slots 94, 95 (7372 subjects)
+  slot 97: raw shard 50 (10971 subjects)
+  slot 98: structural shape 8 slots 96, 97 (18343 subjects)
+  slot 99: raw shard 51 (9828 subjects)
+  slot 100: raw shard 52 (9093 subjects)
+  slot 101: structural shape 6 slots 99, 100 (18921 subjects)
+  slot 102: structural shape 9 slots 98, 101 (37264 subjects)
+  slot 103: structural shape 9 slots 93, 102 (90905 subjects)
+  slot 104: raw shard 53 (8525 subjects)
+  slot 105: raw shard 54 (8243 subjects)
+  slot 106: structural shape 6 slots 104, 105 (16768 subjects)
+  slot 107: raw shard 55 (6634 subjects)
+  slot 108: raw shard 56 (6455 subjects)
+  slot 109: structural shape 6 slots 107, 108 (13089 subjects)
+  slot 110: raw shard 57 (9667 subjects)
+  slot 111: structural shape 8 slots 109, 110 (22756 subjects)
+  slot 112: structural shape 9 slots 106, 111 (39524 subjects)
+  slot 113: raw shard 58 (9628 subjects)
+  slot 114: raw shard 59 (8390 subjects)
+  slot 115: structural shape 6 slots 113, 114 (18018 subjects)
+  slot 116: raw shard 60 (7496 subjects)
+  slot 117: raw shard 61 (7810 subjects)
+  slot 118: structural shape 6 slots 116, 117 (15306 subjects)
+  slot 119: structural shape 9 slots 115, 118 (33324 subjects)
+  slot 120: structural shape 9 slots 112, 119 (72848 subjects)
+  slot 121: structural shape 9 slots 103, 120 (163753 subjects)
+  slot 122: raw shard 62 (21796 subjects)
+  slot 123: raw shard 63 (22578 subjects)
+  slot 124: structural shape 6 slots 122, 123 (44374 subjects)
+  slot 125: raw shard 64 (15895 subjects)
+  slot 126: raw shard 65 (15605 subjects)
+  slot 127: structural shape 6 slots 125, 126 (31500 subjects)
+  slot 128: structural shape 9 slots 124, 127 (75874 subjects)
+  slot 129: raw shard 66 (7700 subjects)
+  slot 130: raw shard 67 (7775 subjects)
+  slot 131: structural shape 6 slots 129, 130 (15475 subjects)
+  slot 132: raw shard 68 (13229 subjects)
+  slot 133: structural shape 8 slots 131, 132 (28704 subjects)
+  slot 134: raw shard 69 (13704 subjects)
+  slot 135: raw shard 70 (12680 subjects)
+  slot 136: structural shape 6 slots 134, 135 (26384 subjects)
+  slot 137: structural shape 9 slots 133, 136 (55088 subjects)
+  slot 138: structural shape 9 slots 128, 137 (130962 subjects)
+  slot 139: raw shard 71 (13865 subjects)
+  slot 140: raw shard 72 (8153 subjects)
+  slot 141: structural shape 6 slots 139, 140 (22018 subjects)
+  slot 142: raw shard 73 (6120 subjects)
+  slot 143: raw shard 74 (9312 subjects)
+  slot 144: structural shape 6 slots 142, 143 (15432 subjects)
+  slot 145: structural shape 9 slots 141, 144 (37450 subjects)
+  slot 146: raw shard 75 (11622 subjects)
+  slot 147: raw shard 76 (8078 subjects)
+  slot 148: structural shape 6 slots 146, 147 (19700 subjects)
+  slot 149: raw shard 77 (13328 subjects)
+  slot 150: structural shape 8 slots 148, 149 (33028 subjects)
+  slot 151: structural shape 9 slots 145, 150 (70478 subjects)
+  slot 152: structural shape 9 slots 138, 151 (201440 subjects)
+  slot 153: structural shape 9 slots 121, 152 (365193 subjects)
+  slot 154: structural shape 9 slots 84, 153 (679499 subjects)
+[aggregate] output writes disabled (--no-write)
+[aggregate] replay uses cached aggregate children; skipping 0 supplied shard proof wrapper(s)
+[aggregate] Rust startup: manifest 0.017s, env/claims 1.603s, plan/statements 0.131s, proofs 0.002s; total 1.753s
+[aggregate] replay slot 33: loading 2 immediate child proof(s)
+[aggregate] slot 25: cache hit 1d9f7a85a98e2dcf0c689327d514bdc631da7c17e618f38df5d2c72608dc33a0
+[aggregate] slot 32: cache hit 5105bbedeb8c2011fbe1b56739227fbdc72da9afabdeee1f69f83527134463c7
+[aggregate] structural-joining slots 25, 32 into 33
+[aggregate] replay slot 33: bypassing its cache entry
+[trace-shards] 7 shards for a 246960619520 B budget: record 14003112192 B, whole-execution peak 450975935970 B, heaviest shard peak 98450410129 B, regenerating each shard for round 2
+[trace-shards] committed widths: 86 171 33 62 239 202 26 53 19 28 45 44 103 25 79 47 32 46 29 374 925 12 11 15 153 59 24 46 78 46 282 30 49 42 44 63 33 55 28 15 28 25 25 15 39 111 84 24 41 27 104 27 47 75 21 18 30 53 15 40 231 263 75 24 67 72 259 114 106 23 23 59 26 39 31 50 35 77 81 65 96 122 121 205 23 41 25 19 16 17 18 19 20 21 23 24 39 45 47 11 24
+[trace-shards] shard 0: projected peak 82582271661 B, rows 9:0..2796992 20:0..1048576 32:0..5031303 90:0..362 99:0..256 100:0..65536
+[trace-shards] shard 1: projected peak 98450410129 B, rows 2:0..94 14:0..17 15:0..19 16:0..46 17:0..19 18:0..6228820 20:1048576..2097152 35:0..184277 38:0..84 39:0..17 40:0..19 41:0..17 42:0..19 43:0..2 44:0..45 45:0..2 46:0..17 47:0..1248 48:0..37 49:0..3 50:0..18 51:0..215 52:0..46 53:0..21 54:0..175 55:0..1074 56:0..2 57:0..33 58:0..100 59:0..54 60:0..24 61:0..17 62:0..19 63:0..18 64:0..2 83:0..1 85:0..18 88:0..16100353 93:0..222 95:0..317 96:0..18
+[trace-shards] shard 2: projected peak 85062970695 B, rows 3:0..17449 5:0..475524 19:0..501392 20:2097152..3145728 29:0..2684607 31:0..889102
+[trace-shards] shard 3: projected peak 80140404448 B, rows 10:0..1640798 20:3145728..4194304 22:0..40756 28:0..562265 30:0..351250 86:0..2484191 89:0..117454 94:0..2598112
+[trace-shards] shard 4: projected peak 79950291885 B, rows 0:0..691600 1:0..104790 4:0..201904 7:0..150111 12:0..424828 20:4194304..5242880 23:0..92203 24:0..1770 27:0..504546 33:0..630911 37:0..115943 65:0..397639 66:0..67784 91:0..842451 92:0..616743 97:0..1186848
+[trace-shards] shard 5: projected peak 60070830202 B, rows 6:0..153280 8:0..252378 11:0..172094 13:0..91066 20:5242880..6291456 21:0..361649 25:0..40756 26:0..329967 34:0..114300 36:0..118610 84:0..494540 87:0..39064 98:0..179455
+[trace-shards] shard 6: projected peak 56925325024 B, rows 20:6291456..7129136
+[aggregate] replay slot 33: shape 9, 53772 subjects, assumptions 13972/19354/23089, proof advice 16.8+15.3 MiB, 3 trees/1.8 MiB, 26019 paths/1.5 MiB, preimages 0.0 MiB, query-record peak 91.6 GiB (98450410129 bytes)
+[aggregate] replay slot 33: advice 0.405s, execute+prove 54.851s, persistence 0.000s, total 55.256s
+[aggregate] replay slot 33: proof 12beead9b79adc380e89315c871294470a76d7e9d574cce5e76b791e887697e2 (not persisted)
+[aggregate] replay slot 33: children 0.320s, target+verify 55.370s, address 0.038s, end-to-end 55.727s
+	Command being timed: "/home/sam/repos/ix/target/blake3-seeds-build/ix-packed-pageable aggregate --ixe /home/sam/benchdata/mathlib-gpu/mathlib.ixe --ixes /home/sam/benchdata/mathlib-gpu/mathlib-78.ixes --trace-shards --max-ram 230 --direct-joins --jobs 1 --no-write --reprove-slot 33"
+	User time (seconds): 152.08
+	System time (seconds): 8.75
+	Percent of CPU this job got: 271%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:59.25
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 27982612
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 62
+	Minor (reclaiming a frame) page faults: 160155
+	Voluntary context switches: 15789
+	Involuntary context switches: 6526
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 2816
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0

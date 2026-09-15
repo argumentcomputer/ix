@@ -47,8 +47,11 @@ circuits and unsupported layouts use the reference builder. Empty circuits
 remain inactive; unsupported seed stages or byte values also select the
 reference builder.
 
-Each real row uploads 162 canonical 64-bit words: 129 inputs, 32 recorded
-outputs and the multiplicity. The kernel writes the same 533 main columns.
+Each real row uploads a 176-byte seed: one stage byte, 128 input bytes,
+32 recorded output bytes, a canonical 64-bit multiplicity, and seven explicit
+padding bytes. Extraction checks the stage and byte bounds before narrowing.
+The Rust and CUDA layouts have matching compile-time size and offset checks.
+The kernel writes the same 533 main columns.
 The recursive-call output auxiliaries use the recorded result. The compiled
 lookup graph still emits the recursive-call and return messages. Execution
 and query recording are unchanged.
@@ -59,7 +62,10 @@ device traces. An LDE handle owns its generator until the last consumer
 finishes. Expansion and recovery upload at most 65,536 seed rows per tile.
 Lookup recovery generates a tile with one wrapped halo row after raw-trace
 release or LDE eviction. Seed allocations use the backend's per-device
-CUDA stream pool.
+CUDA stream pool. Uploads lease one of four reusable portable pinned buffers,
+shared across devices. Each holds at most 65,537 seeds (a tile plus its halo),
+so pinned seed staging is bounded to 44 MiB plus 704 bytes per process.
+The lease lasts until the per-thread CUDA stream finishes, including on error.
 
 The full expanded trace and LDE must still fit during construction. The
 prepared path reserves device headroom, releases raw traces and can spill

@@ -412,13 +412,7 @@ pub fn run(
   verify_idx: usize,
   aggr_idx: usize,
 ) -> Result<String, String> {
-  if let Ok(filter) = std::env::var("RUST_LOG") {
-    let _ = tracing_subscriber::fmt()
-      .with_env_filter(filter)
-      .with_ansi(false)
-      .with_writer(std::io::stderr)
-      .try_init();
-  }
+  crate::profile::init();
   let say = |m: &str| eprintln!("[lanes] {m}");
   if cfg.cache_fri_bytes.len() != 40 {
     return Err("aggregate cache FRI serialization must be 40 bytes".into());

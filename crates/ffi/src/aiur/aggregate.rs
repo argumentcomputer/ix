@@ -2082,6 +2082,7 @@ enum StagedSlot {
 /// The execution half of [`prove_slot`]: verification and, for a wrap or
 /// a join, the `ix_aggr` execution planned within the slot budget. No
 /// proving happens here, so it can run beside the prover.
+#[tracing::instrument(level = "info", skip_all, name = "aiur/prepare_slot", fields(slot = slot_index))]
 fn prepare_slot(
   ctx: ProveContext<'_>,
   slot_index: usize,
@@ -2132,6 +2133,7 @@ fn prepare_slot(
 }
 
 /// The proving half of [`prove_slot`].
+#[tracing::instrument(level = "info", skip_all, name = "aiur/finish_slot", fields(slot = slot_index))]
 fn finish_slot(
   ctx: ProveContext<'_>,
   slot_index: usize,
@@ -2222,6 +2224,7 @@ fn load_replay_child(
   }))
 }
 
+#[tracing::instrument(level = "info", skip_all, name = "aiur/replay", fields(slot = target))]
 fn run_replay(
   ctx: ProveContext<'_>,
   target: usize,
@@ -2622,6 +2625,7 @@ fn print_plan(
 }
 
 fn run(config: RunConfig<'_>) -> Result<String, String> {
+  crate::profile::init();
   if config.cache_fri_bytes.len() != 40 {
     return Err(format!(
       "aggregate cache FRI serialization is {} bytes, expected 40",
@@ -2748,7 +2752,9 @@ fn run(config: RunConfig<'_>) -> Result<String, String> {
   let home = std::env::var_os("HOME").ok_or("no HOME environment variable")?;
   let ix_root = PathBuf::from(home).join(".ix");
   let store_dir = ix_root.join("store");
-  let cache_path = ix_root.join("cache").join("aggregate");
+  let cache_path = std::env::var_os("AIUR_AGGREGATE_CACHE_DIR")
+    .map(PathBuf::from)
+    .unwrap_or_else(|| ix_root.join("cache").join("aggregate"));
   let cache_dir = config.use_cache.then_some(cache_path.as_path());
   if let Some(dir) = cache_dir {
     if config.write_outputs {

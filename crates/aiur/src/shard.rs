@@ -274,6 +274,7 @@ impl AiurSystem {
   /// witness indexes its queries directly rather than counting rows from
   /// the start of the function (which, over K shards built twice, would
   /// visit every query 2K times).
+  #[tracing::instrument(level = "info", skip_all, name = "aiur/row_index")]
   pub fn row_index(&self, record: &QueryRecord, plan: &ShardPlan) -> RowIndex {
     let circuit_types = self.circuit_types();
     let spans = circuit_types

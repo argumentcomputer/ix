@@ -1,0 +1,12 @@
+
+running 7 tests
+test gpu_trace::tests::blake3_cells_match_bytecode_and_cuda ... ok
+test gpu_trace::tests::blake3_sources_and_commitments_stay_on_their_device ... ok
+test gpu_trace::tests::compiled_signature_rejects_changed_body ... ok
+test gpu_trace::tests::concurrent_seed_uploads_keep_distinct_contents ... ok
+test gpu_trace::tests::failed_device_writer_releases_its_source ... ok
+test gpu_trace::tests::maximum_seed_tile_and_padding_match_scalar ... ok
+test gpu_trace::tests::seeds_reject_values_that_would_be_truncated ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 41 filtered out; finished in 1.35s
+

@@ -57,7 +57,10 @@ extern "C" fn rs_texray_init(
     prefixes.iter().any(|p| name.starts_with(p.as_str()))
   });
 
-  let _ = Registry::default().with(layer.with_filter(filter)).try_init();
+  let _ = Registry::default()
+    .with(crate::profile::layer())
+    .with(layer.with_filter(filter))
+    .try_init();
   LeanIOResult::ok(LeanOwned::box_usize(0))
 }
 

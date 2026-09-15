@@ -1,0 +1,8 @@
+{
+  "aiur/prove_planned": 27.287316547,
+  "aiur/prepare_slot": 30.007198165,
+  "stark/stage1_commit": 14.486008777,
+  "stark/lookup_construction": 5.639928647,
+  "stark/quotient": 2.705701142,
+  "stark/fri_open": 2.429780509
+}

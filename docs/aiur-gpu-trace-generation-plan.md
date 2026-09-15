@@ -99,18 +99,19 @@ required for correctness immediately.
 elements, two selector columns, and 402 auxiliary columns, for 533 main-trace
 columns. Its recorded result contains 32 elements. [Circuit source][blake3]
 
-| Per real row | Elements | Bytes with 64-bit field words |
+| Per real row | Elements | Packed bytes |
 | --- | ---: | ---: |
-| Input: stage plus 128 state bytes represented as field elements | 129 | 1,032 |
-| Recorded result | 32 | 256 |
+| Input: stage plus 128 state bytes | 129 | 129 |
+| Recorded result | 32 | 32 |
 | Final multiplicity | 1 | 8 |
-| Compact seed total | 162 | 1,296 |
+| Explicit alignment padding | — | 7 |
+| Compact seed total | 162 | 176 |
 | Expanded main trace | 533 | 4,264 |
 
-The ratio is `533 / 162 = 3.2901`. It describes row-upload bytes, excluding
-metadata, padding, and staging. It is not a prediction of runtime or peak
-VRAM reduction. Start with explicit 64-bit words; byte packing is a separate
-experiment after this path works.
+The ratio is `4264 / 176 = 24.2273`. It describes row-upload bytes, including
+seed padding but excluding metadata and staging. It is not a prediction of
+runtime or peak VRAM reduction. Extraction validates stage and byte bounds
+before narrowing; the multiplicity remains a full canonical field word.
 
 Prepare only the selected shard's nonzero-multiplicity queries, using the
 existing `RowIndex`, circuit membership, and query ordering. Carry the real
@@ -335,8 +336,9 @@ tier. [Current ix retention path][synthesis]
 
 **Admission and overlap.** Compact uploads do not remove the initial expanded
 trace's VRAM requirement. For `n` real BLAKE3 rows and padded height `h`,
-owned host seeds require `1296*n` bytes. A full device seed copy costs the
-same, or seeds can be uploaded in bounded tiles from the first generation.
+owned host seeds require `176*n` bytes. Device seeds are uploaded in bounded
+tiles. Four portable pinned staging slots hold at most 65,537 seeds each,
+for a process-wide maximum of 44 MiB plus 704 bytes.
 The full main trace requires `4264*h` bytes, and its LDE requires
 `4264*h*B` bytes for blowup `B`, before Merkle storage and scratch.
 A recovery tile requires up to `4264*(tile_rows+1)` bytes, plus its input

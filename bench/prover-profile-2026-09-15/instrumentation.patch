@@ -1,0 +1,155 @@
+--- a/crates/aiur/src/gpu_trace/mod.rs
++++ b/crates/aiur/src/gpu_trace/mod.rs
+@@ -68,6 +68,7 @@
+   }
+   let member = top.circuits[circuit].members[0];
+   let queries = &record.function_queries[member];
++  let _g = tracing::info_span!("aiur/blake3_seeds", circuit, rows = row_count).entered();
+   let lo = if start.0 == 0 { start.1 } else { queries.len() };
+   let hi = if end.0 == 0 { end.1 } else { queries.len() };
+   let mut seeds = Vec::with_capacity(row_count);
+@@ -142,6 +143,7 @@
+     &self,
+     output: multi_stark::cuda::DeviceTraceView<'_>,
+   ) -> Result<(), String> {
++    let _g = tracing::info_span!("aiur/blake3_device_rows", rows = output.rows()).entered();
+     assert_eq!(output.width(), WIDTH);
+     let mut done = 0;
+     while done < output.rows() {
+--- a/crates/aiur/src/shard.rs
++++ b/crates/aiur/src/shard.rs
+@@ -274,6 +274,7 @@
+   /// witness indexes its queries directly rather than counting rows from
+   /// the start of the function (which, over K shards built twice, would
+   /// visit every query 2K times).
++  #[tracing::instrument(level = "info", skip_all, name = "aiur/row_index")]
+   pub fn row_index(&self, record: &QueryRecord, plan: &ShardPlan) -> RowIndex {
+     let circuit_types = self.circuit_types();
+     let spans = circuit_types
+--- a/crates/aiur/src/synthesis.rs
++++ b/crates/aiur/src/synthesis.rs
+@@ -760,6 +760,7 @@
+   /// proving state never coexist, but the whole batch's stage 1 does. Under
+   /// [`Retention::Regenerate`] the record stays until the last shard is
+   /// proven and each shard's witness is built from it when needed, twice.
++  #[tracing::instrument(level = "info", skip_all, name = "aiur/prove_planned", fields(pieces = plan.num_shards()))]
+   pub fn prove_from_execution_planned(
+     &self,
+     fun_idx: FunIdx,
+@@ -785,7 +786,7 @@
+     let messages = Self::boundary_messages(plan);
+     let index = self.row_index(&query_record, plan);
+     let build = |shard: usize| {
+-      let _g = tracing::info_span!("aiur/witness").entered();
++      let _g = tracing::info_span!("aiur/witness", shard).entered();
+       self.prepared_shard_witness(&query_record, io_buffer, plan, &index, shard)
+     };
+     let proof = match retention {
+--- a/crates/aiur/src/trace.rs
++++ b/crates/aiur/src/trace.rs
+@@ -185,6 +185,7 @@
+   /// there must be exactly `row_count`. An empty span yields an EMPTY trace
+   /// (not a padded height-1 one): the prover deactivates the circuit, so it
+   /// is neither committed nor opened.
++  #[tracing::instrument(level = "info", skip_all, name = "aiur/cpu_witness", fields(circuit = circuit_index, rows = row_count))]
+   pub fn witness_data_range(
+     &self,
+     circuit_index: usize,
+@@ -238,7 +239,10 @@
+     } else {
+       height_no_padding.next_power_of_two()
+     };
+-    let mut rows = vec![G::ZERO; height * width];
++    let mut rows = {
++      let _g = tracing::info_span!("aiur/witness_zero", height, width).entered();
++      vec![G::ZERO; height * width]
++    };
+     let rows_no_padding = &mut rows[0..height_no_padding * width];
+     // Builder rows start zeroed (`Lookup::empty()` in every slot), so padding
+     // rows need no writes at all.
+--- a/crates/ffi/src/aiur/aggregate/lanes.rs
++++ b/crates/ffi/src/aiur/aggregate/lanes.rs
+@@ -454,13 +454,7 @@
+   verify_idx: usize,
+   aggr_idx: usize,
+ ) -> Result<String, String> {
+-  if let Ok(filter) = std::env::var("RUST_LOG") {
+-    let _ = tracing_subscriber::fmt()
+-      .with_env_filter(filter)
+-      .with_ansi(false)
+-      .with_writer(std::io::stderr)
+-      .try_init();
+-  }
++  crate::profile::init();
+   let say = |m: &str| eprintln!("[lanes] {m}");
+   if cfg.cache_fri_bytes.len() != 40 {
+     return Err("aggregate cache FRI serialization must be 40 bytes".into());
+--- a/crates/ffi/src/aiur/aggregate.rs
++++ b/crates/ffi/src/aiur/aggregate.rs
+@@ -2089,6 +2089,7 @@
+ /// The execution half of [`prove_slot`]: verification and, for a wrap or
+ /// a join, the `ix_aggr` execution planned within the slot budget. No
+ /// proving happens here, so it can run beside the prover.
++#[tracing::instrument(level = "info", skip_all, name = "aiur/prepare_slot", fields(slot = slot_index))]
+ fn prepare_slot(
+   ctx: ProveContext<'_>,
+   slot_index: usize,
+@@ -2139,6 +2140,7 @@
+ }
+ 
+ /// The proving half of [`prove_slot`].
++#[tracing::instrument(level = "info", skip_all, name = "aiur/finish_slot", fields(slot = slot_index))]
+ fn finish_slot(
+   ctx: ProveContext<'_>,
+   slot_index: usize,
+@@ -2229,6 +2231,7 @@
+   }))
+ }
+ 
++#[tracing::instrument(level = "info", skip_all, name = "aiur/replay", fields(slot = target))]
+ fn run_replay(
+   ctx: ProveContext<'_>,
+   target: usize,
+@@ -2629,6 +2632,7 @@
+ }
+ 
+ fn run(config: RunConfig<'_>) -> Result<String, String> {
++  crate::profile::init();
+   if config.cache_fri_bytes.len() != 40 {
+     return Err(format!(
+       "aggregate cache FRI serialization is {} bytes, expected 40",
+@@ -2755,7 +2759,9 @@
+   let home = std::env::var_os("HOME").ok_or("no HOME environment variable")?;
+   let ix_root = PathBuf::from(home).join(".ix");
+   let store_dir = ix_root.join("store");
+-  let cache_path = ix_root.join("cache").join("aggregate");
++  let cache_path = std::env::var_os("AIUR_AGGREGATE_CACHE_DIR")
++    .map(PathBuf::from)
++    .unwrap_or_else(|| ix_root.join("cache").join("aggregate"));
+   let cache_dir = config.use_cache.then_some(cache_path.as_path());
+   if let Some(dir) = cache_dir {
+     if config.write_outputs {
+--- a/crates/ffi/src/lib.rs
++++ b/crates/ffi/src/lib.rs
+@@ -21,6 +21,7 @@
+ ))]
+ pub mod lean_iroh;
+ pub mod texray;
++mod profile;
+ pub mod unsigned;
+ 
+ pub mod builder;
+--- a/crates/ffi/src/texray.rs
++++ b/crates/ffi/src/texray.rs
+@@ -57,7 +57,10 @@
+     prefixes.iter().any(|p| name.starts_with(p.as_str()))
+   });
+ 
+-  let _ = Registry::default().with(layer.with_filter(filter)).try_init();
++  let _ = Registry::default()
++    .with(crate::profile::layer())
++    .with(layer.with_filter(filter))
++    .try_init();
+   LeanIOResult::ok(LeanOwned::box_usize(0))
+ }
+ 

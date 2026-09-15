@@ -18,7 +18,28 @@ use crate::{
 };
 
 pub const WIDTH: usize = 533;
-const SEED_WORDS: usize = 162;
+
+#[derive(Clone)]
+#[repr(C)]
+struct Blake3Seed {
+  multiplicity: u64,
+  stage: u8,
+  input: [u8; 128],
+  output: [u8; 32],
+  // Explicit padding keeps every byte initialized when the seed is uploaded.
+  padding: [u8; 7],
+}
+
+const _: () = {
+  assert!(size_of::<Blake3Seed>() == 176);
+  assert!(align_of::<Blake3Seed>() == 8);
+  assert!(std::mem::offset_of!(Blake3Seed, multiplicity) == 0);
+  assert!(std::mem::offset_of!(Blake3Seed, stage) == 8);
+  assert!(std::mem::offset_of!(Blake3Seed, input) == 9);
+  assert!(std::mem::offset_of!(Blake3Seed, output) == 137);
+  assert!(std::mem::offset_of!(Blake3Seed, padding) == 169);
+};
+
 const LAYOUT: FunctionLayout = FunctionLayout {
   input_size: 129,
   selectors: 2,
@@ -68,6 +89,8 @@ pub(crate) fn prepare(
   }
   let member = top.circuits[circuit].members[0];
   let queries = &record.function_queries[member];
+  let _g = tracing::info_span!("aiur/blake3_seeds", circuit, rows = row_count)
+    .entered();
   let lo = if start.0 == 0 { start.1 } else { queries.len() };
   let hi = if end.0 == 0 { end.1 } else { queries.len() };
   let mut seeds = Vec::with_capacity(row_count);
@@ -89,12 +112,15 @@ pub(crate) fn prepare(
       );
       return None;
     }
-    let mut seed = [0; SEED_WORDS];
-    for (to, from) in seed.iter_mut().zip(input.iter().chain(result.output)) {
-      *to = from.as_canonical_u64();
-    }
-    seed[161] = result.multiplicity.as_canonical_u64();
-    seeds.push(seed);
+    seeds.push(Blake3Seed {
+      multiplicity: result.multiplicity.as_canonical_u64(),
+      stage: input[0].as_canonical_u64() as u8,
+      input: std::array::from_fn(|i| input[i + 1].as_canonical_u64() as u8),
+      output: std::array::from_fn(|i| {
+        result.output[i].as_canonical_u64() as u8
+      }),
+      padding: [0; 7],
+    });
   }
   assert_eq!(seeds.len(), row_count, "BLAKE3 query span row count");
   let height = row_count.next_power_of_two();
@@ -102,7 +128,7 @@ pub(crate) fn prepare(
     circuit,
     row_count,
     height,
-    seed_bytes = row_count * SEED_WORDS * 8,
+    seed_bytes = row_count * size_of::<Blake3Seed>(),
     main_bytes = height * WIDTH * 8,
     "prepared GPU BLAKE3 trace"
   );
@@ -113,7 +139,7 @@ pub(crate) fn prepare(
 }
 
 pub struct Blake3Trace {
-  seeds: Vec<[u64; SEED_WORDS]>,
+  seeds: Vec<Blake3Seed>,
   height: usize,
 }
 
@@ -125,7 +151,7 @@ impl TraceGenerator<G> for Blake3Trace {
     WIDTH
   }
   fn host_bytes(&self) -> usize {
-    self.seeds.capacity() * SEED_WORDS * 8
+    self.seeds.capacity() * size_of::<Blake3Seed>()
   }
 
   fn write_rows(&self, first: usize, output: &mut [G]) {
@@ -142,17 +168,17 @@ impl TraceGenerator<G> for Blake3Trace {
     &self,
     output: multi_stark::cuda::DeviceTraceView<'_>,
   ) -> Result<(), String> {
+    let _g =
+      tracing::info_span!("aiur/blake3_device_rows", rows = output.rows())
+        .entered();
     assert_eq!(output.width(), WIDTH);
     let mut done = 0;
     while done < output.rows() {
       let first = (output.first_row() + done) % self.height;
       let rows = (output.rows() - done).min(self.height - first);
       let real = rows.min(self.seeds.len().saturating_sub(first));
-      let seeds = if real == 0 {
-        std::ptr::null()
-      } else {
-        self.seeds[first..].as_ptr().cast()
-      };
+      let seeds =
+        if real == 0 { std::ptr::null() } else { self.seeds[first..].as_ptr() };
       let status = unsafe {
         aiur_blake3_trace(
           output.device_id(),
@@ -174,18 +200,19 @@ impl TraceGenerator<G> for Blake3Trace {
 unsafe extern "C" {
   fn aiur_blake3_trace(
     device: i32,
-    seeds: *const u64,
+    seeds: *const Blake3Seed,
     real: usize,
     rows: usize,
     output: *mut u64,
   ) -> i32;
 }
 
-fn write_row(seed: &[u64; SEED_WORDS], row: &mut [G]) {
-  for (to, &from) in row[..129].iter_mut().zip(seed) {
-    *to = G::from_u64(from);
+fn write_row(seed: &Blake3Seed, row: &mut [G]) {
+  row[0] = G::from_u8(seed.stage);
+  for (to, &from) in row[1..129].iter_mut().zip(&seed.input) {
+    *to = G::from_u8(from);
   }
-  row[131] = G::from_u64(seed[161]);
+  row[131] = G::from_u64(seed.multiplicity);
   let mut at = 132;
   let mut emit = |v: u64| {
     row[at] = G::from_u64(v);
@@ -193,15 +220,16 @@ fn write_row(seed: &[u64; SEED_WORDS], row: &mut [G]) {
   };
   let mut state = [0u32; 32];
   for (i, word) in state.iter_mut().enumerate() {
-    *word = (0..4).map(|b| (seed[1 + i * 4 + b] as u32) << (8 * b)).sum();
+    *word =
+      u32::from_le_bytes(seed.input[i * 4..i * 4 + 4].try_into().unwrap());
   }
-  if seed[0] == 7 {
+  if seed.stage == 7 {
     for i in 0..8 {
       emit_word(&mut emit, state[i] ^ state[i + 8]);
     }
     row[129] = G::ONE;
   } else {
-    emit((G::from_u64(seed[0]) - G::from_u8(7)).inverse().as_canonical_u64());
+    emit((G::from_u8(seed.stage) - G::from_u8(7)).inverse().as_canonical_u64());
     for [a, b, c, d, x, y] in [
       [0, 4, 8, 12, 16, 17],
       [1, 5, 9, 13, 18, 19],
@@ -225,8 +253,8 @@ fn write_row(seed: &[u64; SEED_WORDS], row: &mut [G]) {
       state[c] = add2(&mut emit, state[c], state[d]);
       state[b] = xor_rotate(&mut emit, state[b], state[c], 7);
     }
-    for &v in &seed[129..161] {
-      emit(v);
+    for &v in &seed.output {
+      emit(u64::from(v));
     }
     assert_eq!(at, WIDTH);
     row[130] = G::ONE;

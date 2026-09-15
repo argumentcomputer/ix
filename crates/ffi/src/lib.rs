@@ -21,6 +21,7 @@ pub mod lean_env;
 ))]
 pub mod lean_iroh;
 pub mod texray;
+mod profile;
 pub mod unsigned;
 
 pub mod builder;

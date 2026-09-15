@@ -760,6 +760,7 @@ impl AiurSystem {
   /// proving state never coexist, but the whole batch's stage 1 does. Under
   /// [`Retention::Regenerate`] the record stays until the last shard is
   /// proven and each shard's witness is built from it when needed, twice.
+  #[tracing::instrument(level = "info", skip_all, name = "aiur/prove_planned", fields(pieces = plan.num_shards()))]
   pub fn prove_from_execution_planned(
     &self,
     fun_idx: FunIdx,
@@ -785,7 +786,7 @@ impl AiurSystem {
     let messages = Self::boundary_messages(plan);
     let index = self.row_index(&query_record, plan);
     let build = |shard: usize| {
-      let _g = tracing::info_span!("aiur/witness").entered();
+      let _g = tracing::info_span!("aiur/witness", shard).entered();
       self.prepared_shard_witness(&query_record, io_buffer, plan, &index, shard)
     };
     let proof = match retention {

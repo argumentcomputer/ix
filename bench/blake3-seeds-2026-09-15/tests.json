@@ -1,0 +1,21 @@
+{
+  "command": [
+    "target/blake3-seeds-build/aiur-tests",
+    "gpu_trace::tests::",
+    "--test-threads=1"
+  ],
+  "environment": {
+    "CUDA_VISIBLE_DEVICES": "0,1,2,3",
+    "AIUR_TEST_GPU_DEVICES": "0,1,2,3",
+    "RAYON_NUM_THREADS": "4"
+  },
+  "cpu_affinity": [
+    68,
+    69,
+    70,
+    71
+  ],
+  "started_ns": 1789506253911012473,
+  "finished_ns": 1789506255579497911,
+  "exit_code": 0
+}

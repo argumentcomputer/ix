@@ -31,6 +31,26 @@ fn compiled_signature_rejects_changed_body() {
 }
 
 #[test]
+fn seeds_reject_values_that_would_be_truncated() {
+  let top = toplevel();
+  for (index, value, output_value, output_len) in [
+    (0, G::from_u8(8), G::ZERO, 32),
+    (1, G::from_u16(256), G::ZERO, 32),
+    (128, G::NEG_ONE, G::ZERO, 32),
+    (0, G::ZERO, G::from_u16(256), 32),
+    (0, G::ZERO, G::NEG_ONE, 32),
+    (0, G::ZERO, G::ZERO, 31),
+  ] {
+    let mut input = vec![G::ZERO; 129];
+    input[index] = value;
+    let output = vec![output_value; output_len];
+    let mut record = QueryRecord::new(&top);
+    record.function_queries[0].insert(&input, &output, G::ONE);
+    assert!(prepare(&top, 0, &record, &[], (0, 0), (0, 1), 1).is_none());
+  }
+}
+
+#[test]
 fn failed_device_writer_releases_its_source() {
   struct Failing;
   impl TraceGenerator<G> for Failing {
@@ -133,6 +153,61 @@ fn blake3_cells_match_bytecode_and_cuda() {
     assert_eq!(halo.values, expected, "wrapped lookup halo differs");
   }
   assert!(prepare(&top, 0, &record, &slots, (0, 0), (0, 0), 0).is_none());
+}
+
+fn patterned_source(rows: usize, salt: usize) -> Arc<dyn TraceGenerator<G>> {
+  Arc::new(Blake3Trace {
+    seeds: (0..rows)
+      .map(|r| Blake3Seed {
+        multiplicity: (G::NEG_ONE - G::from_usize(r + salt)).as_canonical_u64(),
+        stage: ((r + salt) % 8) as u8,
+        input: std::array::from_fn(|i| ((r * 37 + i + salt) % 256) as u8),
+        output: std::array::from_fn(|i| ((r + i * 19 + salt) % 256) as u8),
+        padding: [0; 7],
+      })
+      .collect(),
+    height: rows.next_power_of_two(),
+  })
+}
+
+#[test]
+fn maximum_seed_tile_and_padding_match_scalar() {
+  let source = patterned_source(65537, 0);
+  let dft = multi_stark::cuda::CudaDft::new(0);
+  for (first, rows) in [(0, 65537), (65536, 3), (131071, 2)] {
+    let actual = dft.generated_trace_rows(Arc::clone(&source), first, rows);
+    let mut expected = vec![G::ZERO; rows * WIDTH];
+    source.write_rows(first, &mut expected);
+    assert_eq!(actual.values, expected, "tile starting at {first}");
+  }
+}
+
+#[test]
+fn concurrent_seed_uploads_keep_distinct_contents() {
+  let devices: Vec<i32> = std::env::var("AIUR_TEST_GPU_DEVICES")
+    .unwrap_or_else(|_| "0".into())
+    .split(',')
+    .map(|s| s.parse().unwrap())
+    .collect();
+  let ready = std::sync::Barrier::new(8);
+  std::thread::scope(|scope| {
+    for worker in 0..8 {
+      let ready = &ready;
+      let device = devices[worker % devices.len()];
+      scope.spawn(move || {
+        let source = patterned_source(4095, worker * 13);
+        let dft = multi_stark::cuda::CudaDft::new(device);
+        ready.wait();
+        for first in [0, 1, 4095, 23] {
+          let mut expected = vec![G::ZERO; 4096 * WIDTH];
+          source.write_rows(first, &mut expected);
+          let actual =
+            dft.generated_trace_rows(Arc::clone(&source), first, 4096);
+          assert_eq!(actual.values, expected, "worker {worker}, first {first}");
+        }
+      });
+    }
+  });
 }
 
 #[test]
