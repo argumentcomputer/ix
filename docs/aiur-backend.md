@@ -1,4 +1,4 @@
-# Aiur backend: trace, wire, and execution
+# Aiur backend: trace, wire, execution, and static assignments
 
 The initial Aiur implementation provides a pinned pure target vocabulary and
 a checked logical-trace interface. It proves that active, balanced lookup
@@ -8,8 +8,10 @@ the complete pinned toplevel, checks its content root, and invokes the
 upstream component checker behind resource guards. The
 [witness-heap execution model](aiur-semantics.md) now interprets all pinned
 operations and controls and composes checked bytecode rows into finite
-executions. Source lowering, certificate-checker soundness, and extraction
-from the keyed AIR remain subsequent work.
+executions. The [static assignment checker](aiur-static.md) constructs the
+required certificate from ordinary row/rank data and checked metadata.
+Source lowering, universal counter-analyzer soundness, and extraction from
+the keyed AIR remain subsequent work.
 
 ## Reference and module boundaries
 
@@ -102,10 +104,17 @@ cannot strictly increase a natural rank, and a unit-counter cycle of length
 short-cycle bound. The bound concerns distinct trace rows, not the size of
 the unfolded derivation tree.
 
-This is a proposition about row facts, not yet a checker-to-AIR theorem for
-the upstream bytecode certificate. Counter positions, rank-limb decoding,
-component assignments, and field-step equalities must eventually be derived
-from the exact bytecode, layout, and satisfying assignment. General nonzero
+`Static.validate` now constructs this certificate: the pinned analyzer
+selects counter positions and directions, and the checker verifies every
+actual provider dependency. It retains the checked program metadata and
+uses separate order numbers when ranked and counter functions share an
+upstream component order. All four input/output unit directions, ranked
+fallback, and natural rank witnesses are covered by the
+[assignment contract](aiur-static.md).
+
+This is still a theorem about supplied logical rows. Universal analyzer/body
+soundness and deriving counter observations, rank limbs, component facts,
+and field-step equalities from the keyed AIR remain work. General nonzero
 steps, zero-step sub-orders, and broader output-counter recognition remain
 extensions.
 
@@ -123,7 +132,8 @@ derivations in a row-local semantics. [BytecodeSound](../Compilatrix/Aiur/Byteco
 now discharges that rule using checked replay of the actual function bodies,
 allowed advice, concrete gadget meanings, and the extracted witness heap.
 `Trace.Validated.public_bytecode` produces a finite `BytecodeEvalW` execution
-under the same static row certificate. The [execution contract](aiur-semantics.md)
+under the same static row certificate. `Static.CheckedTrace.public_bytecode`
+uses the certificate produced by the combined checker. The [execution contract](aiur-semantics.md)
 describes the precise treatment of calls, memory, hints, and continuations.
 Identification with a verifier-accepted assignment, the honest-evaluator
 refinement, bytecode/descriptor/key binding, primitive AIR conformance, and
@@ -141,7 +151,8 @@ establish trace acyclicity on their own.
 ```sh
 lake build AiurReference Compilatrix.Aiur CompilatrixTests.Aiur.Proofs \
   CompilatrixTests.Aiur.Execution.Proofs CompilatrixTests.Fences.Aiur \
-  CompilatrixTests.Fences.AiurWire CompilatrixTests.Fences.AiurExecution tests-aiur check-aiur
+  CompilatrixTests.Aiur.Static.Proofs CompilatrixTests.Fences.AiurWire \
+  CompilatrixTests.Fences.AiurExecution CompilatrixTests.Fences.AiurStatic tests-aiur check-aiur
 lake exe tests-aiur
 lake exe check-aiur --root .
 nix build .#checks.x86_64-linux.aiur
@@ -169,7 +180,10 @@ preimages, seven fresh-process corruption rejections, and 33 further exact
 axiom assertions. Component checking is still separate from proving its
 AIR interpretation. The execution extension adds 276 assertions and 39
 ordinary-logic axiom fences, including complete counter, ranked-mutual,
-memory, gadget, and continuation examples. Certificate-checker soundness,
-the upstream evaluator handoff and IxVM export/constraint dump, keyed AIR
+memory, gadget, and continuation examples. The static assignment extension
+adds 116 runtime assertions and 39 exact fences for construction of public
+executions from plain data, normalization/order lemmas, and universal
+rejection of cyclic attacks. Universal counter-analyzer soundness, the
+upstream evaluator handoff and IxVM export/constraint dump, keyed AIR
 extraction, and source/DSL lowering remain next. No IxVM performance or
 production proof-acceptance claim is made by these milestones.

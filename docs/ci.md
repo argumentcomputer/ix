@@ -62,7 +62,7 @@ local development records.
 ## Source and module boundaries
 
 [`Compilatrix.lean`](../Compilatrix.lean) exposes the production compiler API.
-The production import closure has 463 local modules with the Aiur execution model.
+The production import closure has 470 local modules with the Aiur static checker.
 The earlier CI refactor reduced that closure from 593 to 425 modules. It does
 not import test modules, example suites, fixture corpora, or fence aggregators.
 
@@ -87,6 +87,11 @@ four controls, witness memory, advice, and recursive trace examples. Its
 39 exact axiom assertions use ordinary logic and remain in the same required
 proof aggregate; large machine proofs and examples are separate from the
 production API.
+
+The [static assignment suite](aiur-static.md) adds 116 assertions and 39
+exact axiom fences to those same targets. Counter normalization and order
+proofs, concrete checker examples, and fences remain outside the production
+import closure. The combined suite runs 725 Aiur assertions.
 
 `lake exe tests` remains the aggregate entry point. The required Nix `tests`
 gate runs the individual entry points and their aggregate. New cases belong

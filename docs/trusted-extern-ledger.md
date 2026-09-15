@@ -293,9 +293,17 @@ against one heap and an explicit allowed-advice predicate. Thirty-nine new
 exact fences use only ordinary logic; no native interface or axiom is added.
 The 276 execution regressions and kernel examples remain in the Aiur gate.
 
+The [static assignment checker](aiur-static.md) extends this boundary with
+checked construction of that certificate from ordinary ranks and logical
+rows. Counter columns/directions come from the exact checked program; every
+provider dependency is checked. It adds 116 runtime assertions and 39 exact
+fences while preserving all 2177 prior assertions. Thirty-eight cones use
+ordinary logic; the addressed adapter inherits the existing BLAKE3 axiom
+through ingress evidence. No new native axiom or interface is introduced.
+
 The ledger records this model as `aiur-witness-bytecode-v0`. Its logical
 gadget channels are not Rust AIR channels. Primitive conformance, extraction
-from the keyed AIR, checker-to-static-row soundness, and refinement to the
+from the keyed AIR, universal counter-analyzer/body soundness, and refinement to the
 honest allocator/evaluator remain obligations. `ioSetInfo` and `ioWrite`
 have no constrained effect in this model, and hints retain arbitrary allowed
 answers until constrained code checks them. This is a specification boundary,

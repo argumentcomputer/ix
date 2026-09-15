@@ -14,11 +14,13 @@ The implementation is [OracleEval](../Compilatrix/Aiur/OracleEval.lean),
 operations and four controls at the unchanged upstream revision
 `a8c4d2d21eaf45ee9160bdd103dfbcefe31f7f03`.
 
-The static certificate still records facts about trace rows. Proving those
-facts from the bytecode component checker and the keyed AIR remains separate
-work. The local replay and logical gadget model are not an AIR extraction
-or conformance theorem. No production IxVM proof-acceptance claim follows
-from this milestone.
+The [static assignment checker](aiur-static.md) now constructs that
+certificate from ordinary row/rank data, binding counter choices to checked
+bytecode metadata and checking every actual dependency. Its combined
+`Static.validate` endpoint requires no caller-written static certificate.
+Universal analyzer/body soundness and extraction from the keyed AIR remain
+separate work. The local replay and logical gadget model are not an AIR
+conformance theorem. No production IxVM proof-acceptance claim follows.
 
 ## Local replay
 
@@ -142,6 +144,12 @@ with `Trace.Validated` and the supplied `StaticCertificate`. Local replay can
 accept a balanced cyclic trace; that trace cannot obtain the static
 certificate needed by this theorem.
 
+`Static.validate` combines these checks with checked construction of the
+static assignment. `Static.CheckedTrace.public_bytecode` supplies the public
+execution endpoint for its successful result. Addressed programs can use
+`Wire.Ingress.validateTrace` with the exact decoded toplevel and retained
+component-check limits.
+
 Default limits apply separately to each replay:
 
 | Limit | Default |
@@ -184,6 +192,6 @@ The upstream pure IO-type split still blocks unchanged importing of
 `BytecodeEval`. Refinement to that honest evaluator remains to be proved;
 in particular, witness pointers are not equated with insertion indices, and
 the reference's IO effects and hint allocations need a representation
-relation. Certificate-checker soundness, the production IxVM export and
-constraint dump, keyed AIR extraction, artifact/source bindings, primitive
-conformance, and Ixon/DSL lowering remain explicit subsequent obligations.
+relation. Universal counter-analyzer soundness, the production IxVM export
+and constraint dump, keyed AIR extraction, artifact/source bindings,
+primitive conformance, and Ixon/DSL lowering remain explicit obligations.

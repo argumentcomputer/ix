@@ -683,6 +683,7 @@
     "CompilatrixTests.Aiur.Proofs",
     "CompilatrixTests.Aiur.WireProofs",
     "CompilatrixTests.Aiur.Execution.Proofs",
+    "CompilatrixTests.Aiur.Static.Proofs",
     "Compilatrix.Ixby.Examples",
     "Compilatrix.Ixby.Report",
     "Compilatrix.Ixby.SymbolicExamples",
@@ -1112,6 +1113,12 @@
   "CompilatrixTests.Fences.AiurWire":
   {"path": "CompilatrixTests/Fences/AiurWire.lean",
    "imports": ["CompilatrixTests.Aiur.WireProofs"]},
+  "CompilatrixTests.Fences.AiurStatic":
+  {"path": "CompilatrixTests/Fences/AiurStatic.lean",
+   "imports":
+   ["Compilatrix.Aiur.Static.CounterProofs",
+    "Compilatrix.Aiur.Static.OrderProofs",
+    "CompilatrixTests.Aiur.Static.Proofs"]},
   "CompilatrixTests.Fences.AiurExecution":
   {"path": "CompilatrixTests/Fences/AiurExecution.lean",
    "imports":
@@ -1130,6 +1137,7 @@
     "CompilatrixTests.Fences.Aiur",
     "CompilatrixTests.Fences.AiurWire",
     "CompilatrixTests.Fences.AiurExecution",
+    "CompilatrixTests.Fences.AiurStatic",
     "CompilatrixTests.Fences.CallReuse",
     "CompilatrixTests.Fences.Erasure",
     "CompilatrixTests.Fences.HPT",
@@ -1154,6 +1162,35 @@
   "CompilatrixTests.Aiur.WireFixtures":
   {"path": "CompilatrixTests/Aiur/WireFixtures.lean",
    "imports": ["Compilatrix.Aiur.Wire.ComponentCheck"]},
+  "CompilatrixTests.Aiur.Static.Run":
+  {"path": "CompilatrixTests/Aiur/Static/Run.lean",
+   "imports":
+   ["CompilatrixTests.Aiur.Static.ProgramCases",
+    "CompilatrixTests.Aiur.Static.PositiveCases",
+    "CompilatrixTests.Aiur.Static.Rejections",
+    "CompilatrixTests.Aiur.Static.IngressCases"]},
+  "CompilatrixTests.Aiur.Static.Rejections":
+  {"path": "CompilatrixTests/Aiur/Static/Rejections.lean",
+   "imports": ["CompilatrixTests.Aiur.Static.Fixtures"]},
+  "CompilatrixTests.Aiur.Static.Proofs":
+  {"path": "CompilatrixTests/Aiur/Static/Proofs.lean",
+   "imports":
+   ["CompilatrixTests.Aiur.Static.Fixtures",
+    "CompilatrixTests.Aiur.Execution.Proofs"]},
+  "CompilatrixTests.Aiur.Static.ProgramCases":
+  {"path": "CompilatrixTests/Aiur/Static/ProgramCases.lean",
+   "imports": ["CompilatrixTests.Aiur.Static.Fixtures"]},
+  "CompilatrixTests.Aiur.Static.PositiveCases":
+  {"path": "CompilatrixTests/Aiur/Static/PositiveCases.lean",
+   "imports": ["CompilatrixTests.Aiur.Static.Fixtures"]},
+  "CompilatrixTests.Aiur.Static.IngressCases":
+  {"path": "CompilatrixTests/Aiur/Static/IngressCases.lean",
+   "imports": ["CompilatrixTests.Aiur.Static.Fixtures"]},
+  "CompilatrixTests.Aiur.Static.Fixtures":
+  {"path": "CompilatrixTests/Aiur/Static/Fixtures.lean",
+   "imports":
+   ["CompilatrixTests.Aiur.Execution.TraceFixtures",
+    "Compilatrix.Aiur.Static"]},
   "CompilatrixTests.Aiur.Run":
   {"path": "CompilatrixTests/Aiur/Run.lean",
    "imports": ["CompilatrixTests.Aiur.Fixtures"]},
@@ -1165,7 +1202,8 @@
    "imports":
    ["CompilatrixTests.Aiur.Run",
     "CompilatrixTests.Aiur.WireRun",
-    "CompilatrixTests.Aiur.Execution.Run"]},
+    "CompilatrixTests.Aiur.Execution.Run",
+    "CompilatrixTests.Aiur.Static.Run"]},
   "CompilatrixTests.Aiur.Fixtures":
   {"path": "CompilatrixTests/Aiur/Fixtures.lean",
    "imports": ["Compilatrix.Aiur"]},
@@ -3680,6 +3718,39 @@
   "Compilatrix.Aiur.Trace":
   {"path": "Compilatrix/Aiur/Trace.lean",
    "imports": ["Compilatrix.Aiur.Field"]},
+  "Compilatrix.Aiur.Static.Sound":
+  {"path": "Compilatrix/Aiur/Static/Sound.lean",
+   "imports":
+   ["Compilatrix.Aiur.Static.Check", "Compilatrix.Aiur.BytecodeSound"]},
+  "Compilatrix.Aiur.Static.Program":
+  {"path": "Compilatrix/Aiur/Static/Program.lean",
+   "imports":
+   ["Compilatrix.Aiur.Wire.ComponentCheck", "Compilatrix.Aiur.Static.Counter"]},
+  "Compilatrix.Aiur.Static.OrderProofs":
+  {"path": "Compilatrix/Aiur/Static/OrderProofs.lean",
+   "imports": ["Compilatrix.Aiur.Static.Assignment"]},
+  "Compilatrix.Aiur.Static.Ingress":
+  {"path": "Compilatrix/Aiur/Static/Ingress.lean",
+   "imports": ["Compilatrix.Aiur.Static.Sound"]},
+  "Compilatrix.Aiur.Static.CounterProofs":
+  {"path": "Compilatrix/Aiur/Static/CounterProofs.lean",
+   "imports": ["Compilatrix.Aiur.Static.Counter", "Compilatrix.Aiur.Field"]},
+  "Compilatrix.Aiur.Static.Counter":
+  {"path": "Compilatrix/Aiur/Static/Counter.lean",
+   "imports": ["Ix.Aiur.Compiler.UnitCounter"]},
+  "Compilatrix.Aiur.Static.Check":
+  {"path": "Compilatrix/Aiur/Static/Check.lean",
+   "imports":
+   ["Compilatrix.Aiur.Static.Assignment", "Compilatrix.Aiur.OracleEval.Rows"]},
+  "Compilatrix.Aiur.Static.Assignment":
+  {"path": "Compilatrix/Aiur/Static/Assignment.lean",
+   "imports":
+   ["Compilatrix.Aiur.Static.Program",
+    "Compilatrix.Aiur.Check",
+    "Compilatrix.Aiur.WellFounded"]},
+  "Compilatrix.Aiur.Static":
+  {"path": "Compilatrix/Aiur/Static.lean",
+   "imports": ["Compilatrix.Aiur.Static.Ingress"]},
   "Compilatrix.Aiur.OracleEval.Types":
   {"path": "Compilatrix/Aiur/OracleEval/Types.lean",
    "imports": ["Ix.Aiur.Stages.Bytecode", "Compilatrix.Aiur.Trace"]},
@@ -3746,7 +3817,8 @@
     "Compilatrix.Aiur.Certificate",
     "Compilatrix.Aiur.Wire",
     "Compilatrix.Aiur.OracleEval",
-    "Compilatrix.Aiur.BytecodeSound"]},
+    "Compilatrix.Aiur.BytecodeSound",
+    "Compilatrix.Aiur.Static"]},
   "Compilatrix.AddressEnv":
   {"path": "Compilatrix/AddressEnv.lean",
    "imports": ["Compilatrix.Ixon.Address", "Std.Data.HashMap.Lemmas"]},
