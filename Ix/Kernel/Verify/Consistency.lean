@@ -90,6 +90,10 @@ import Ix.Kernel.Verify.Consistency.Contracts
 import Ix.Kernel.Verify.Consistency.DefEqMemo
 import Ix.Kernel.Verify.Consistency.DefEqQuick
 import Ix.Kernel.Verify.Consistency.DefEqTiers
+import Ix.Kernel.Verify.Consistency.CheckedTyping
+import Ix.Kernel.Verify.Consistency.WhnfGeneric
+import Ix.Kernel.Verify.Consistency.WhnfLayers
+import Ix.Kernel.Verify.Consistency.WhnfSteps
 import Ix.Kernel.Verify.Consistency.Audit
 
 /-!
@@ -376,5 +380,12 @@ structural tier composes universe equality and the common-local binder
 comparison; the entry is assembled modulo the reducing tiers, the transport
 of recorded chains to the caller's registration, the binder annotation
 discipline, and hereditary typing of binder operands.
+The WHNF bodies are proved against scope-generic reduction contracts over a
+history-free reduction invariant with a checked (hereditary, canonical-atom)
+typing premise: the five memo layers, the bounded loops, leaves, explicit and
+local lets, multi-argument beta and head rebuilding after the recursive head
+call, and delta unfolding through the unfold memo are closed by induction on
+the method-table depth, and the projection, iota, literal, and quotient
+reducers remain seams collected in one assumption record per depth.
 General checker soundness remains outside this fragment.
 -/

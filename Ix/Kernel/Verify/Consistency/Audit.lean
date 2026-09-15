@@ -22,6 +22,7 @@ import Ix.Kernel.Verify.Consistency.BetaHistoryInference
 import Ix.Kernel.Verify.Consistency.Invariant
 import Ix.Kernel.Verify.Consistency.Contracts
 import Ix.Kernel.Verify.Consistency.DefEqTiers
+import Ix.Kernel.Verify.Consistency.WhnfSteps
 import Ix.Kernel.Verify.Audit.Basic
 
 /-! Exact full-dependency boundaries for the direct model-refinement roots.
@@ -1649,6 +1650,75 @@ private def wp3AxiomFreeRoots : Array Lean.Name := #[
   ``readScopedExpr?_all_annotated
 ]
 
+/-- WP4a: checked typing (hereditary typing with canonical atoms), the
+scope-generic reduction contracts over the history-free reduction invariant,
+the five WHNF memo layers, the bounded loops, and the WHNF step cases with
+delta, assembled per method-table depth under `WhnfSeamAssumptions`. -/
+private def wp4PureRoots : Array Lean.Name := #[
+  ``Ix.Kernel.Consistency.AExpr.appN_append, ``DefinitionBinding
+]
+
+private def wp4PropextRoots : Array Lean.Name := #[``constant_reading]
+
+private def wp4QuotRoots : Array Lean.Name := #[
+  ``Ix.Kernel.Consistency.AExpr.liftN_of_scope, ``Ix.Kernel.Consistency.AExpr.inst_of_scope,
+  ``Ix.Kernel.Consistency.AExpr.liftN_instL_of_scope, ``Ix.Kernel.Consistency.AExpr.inst_instL_of_scope,
+  ``betaWhnfBump, ``betaWhnfBump_run, ``tick_run, ``tryGetConst_loaded, ``UnfoldCacheSemantics.hit,
+  ``whnfWithNatSuccModeMissCharge_run, ``lambda_reading, ``runIntern_bind
+]
+
+private def wp4StandardRoots : Array Lean.Name := #[
+  ``CheckedTyping, ``CheckedTyping.typing, ``CheckedTyping.toHereditary, ``CheckedTyping.lambdaSpine,
+  ``CheckedTyping.weakenAt, ``CheckedTyping.liftValue, ``CheckedTyping.substituteAt,
+  ``CheckedTyping.lamType, ``CheckedTyping.appHead, ``CheckedTyping.headTyped,
+  ``CheckedTyping.rewriteApp, ``CheckedTyping.rewriteHead, ``CheckedTyping.betaStep,
+  ``CheckedTyping.betaPrefix, ``CheckedTyping.unfoldConst, ``CheckedTyping.constArity,
+  ``GenericReduction, ``GenericReduction.refl, ``GenericReduction.trans, ``GenericReduction.typing,
+  ``WhnfCacheSemantics.hit, ``WhnfCacheSemantics.insert, ``UnfoldCacheSemantics.insert,
+  ``levelEquivalent_conversion, ``constant_spine_arity, ``spine_arity_of_reading
+]
+
+private def wp4ExpressionRoots : Array Lean.Name := #[
+  ``internLoop_eq_foldlM, ``internLoop_run, ``tryReduceBitvec_noAccel, ``BetaWalkerResources,
+  ``consumeBetaLamsFuel_size, ``consumeBetaLams_lam_nonempty, ``finishAppResult_run
+]
+
+private def wp4ProductionRoots : Array Lean.Name := #[
+  ``ReductionInvariant, ``ReductionInvariant.ofChecker, ``ReductionInvariant.sourceState,
+  ``ReductionInvariant.inference, ``ReductionInvariant.coherent, ``ReductionInvariant.installed,
+  ``ReductionInvariant.owned, ``ReductionInvariant.cache, ``ReductionInvariant.ofMaps,
+  ``ReductionInvariant.ofIntern, ``ReductionInvariant.ofCtxAddrCache, ``ReductionInvariant.whnfKey,
+  ``ReductionInvariant.instrument, ``ReductionInvariant.charge, ``ReductionInvariant.getConst,
+  ``ReductionInvariant.tryGetConst, ``ReductionInvariant.bump, ``ReductionInvariant.tick,
+  ``ReductionInvariant.publishWhnf, ``ReductionInvariant.publishCore,
+  ``ReductionInvariant.publishCoreCheap, ``ReductionInvariant.publishNoDelta,
+  ``ReductionInvariant.publishNoDeltaCheap, ``ReductionInvariant.publishFull,
+  ``ReductionInvariant.publishUnfold,
+  ``ReductionOutcome, ``GenericSoundReduction, ``StepOutcome, ``SoundStep, ``ReducerOutcome,
+  ``SoundReducer, ``GenericWhnfContract, ``GenericSoundReduction.throw, ``GenericSoundReduction.pure,
+  ``GenericWhnfContract.zero, ``ReductionOutcome.scoped, ``runBounded_sound,
+  ``tryReduceNative_noAccel, ``tryReduceDecidable_noAccel,
+  ``LookupData, ``WhnfHitData, ``PreservesInvariant, ``PreservesInvariant.pure,
+  ``PreservesInvariant.throw, ``PreservesInvariant.bind, ``PreservesInvariant.get,
+  ``PreservesInvariant.tryGetConst, ``PreservesInvariant.getConst, ``PreservesInvariant.of_run,
+  ``PreservesInvariant.prims, ``PreservesInvariant.runPure,
+  ``isNatLiteralRecursorApp_preserves, ``isTransientNatLiteralWork_preserves,
+  ``ReductionOutcome.bind, ``ReductionOutcome.pure,
+  ``whnfCoreWithFlagsNonLeaf_sound, ``whnfNoDeltaImplNonLeaf_sound,
+  ``whnfWithNatSuccModeMissCharge_preserves, ``whnfWithNatSuccModeNonLeaf_sound,
+  ``WhnfSeamAssumptions, ``ReducerOutcome.absent, ``ReducerOutcome.found,
+  ``ReducerOutcome.bindPreserving, ``ReducerOutcome.bindProbe,
+  ``unfoldConstValue_ok, ``unfoldConstValue_error, ``unfoldConstValue_preserves,
+  ``unfolded_spine_reduction, ``unfolded_constant_reduction,
+  ``tryDeltaUnfold_sound, ``deltaUnfoldOne_sound,
+  ``StepOutcome.bindProbe, ``StepOutcome.bindReduction, ``StepOutcome.transport,
+  ``beta_prefix_reduction, ``rebuilt_spine_reduction, ``whnfCoreWithFlagsStep_app_sound,
+  ``whnfCoreWithFlagsStep_sound, ``whnfNoDeltaReducersStep_sound, ``whnfNoDeltaImplStep_sound,
+  ``whnfWithNatSuccModeStep_sound, ``whnfCoreWithFlags_sound, ``whnfCore_sound,
+  ``whnfNoDeltaImpl_sound, ``whnfWithNatSuccMode_sound, ``whnf_sound,
+  ``GenericWhnfContract.succ, ``GenericWhnfContract.methodsN
+]
+
 def roots : Array RootAllowance := #[
   { root := ``InterfaceExtends.refl, forbiddenDependencies := forbiddenProduction },
   { root := ``InterfaceExtends.trans, forbiddenDependencies := forbiddenProduction },
@@ -1910,6 +1980,19 @@ def roots : Array RootAllowance := #[
   ++ wp3AxiomFreeRoots.map (fun root => { root, forbiddenDependencies := forbiddenProduction })
   ++ #[{ root := ``readScopedExpr?_const_annotated, standardAxioms := #[``propext],
          forbiddenDependencies := forbiddenProduction }]
+  ++ wp4PureRoots.map (fun root => { root, forbiddenDependencies := forbiddenProduction })
+  ++ wp4PropextRoots.map (fun root => {
+    root, standardAxioms := #[``propext], forbiddenDependencies := forbiddenProduction })
+  ++ wp4QuotRoots.map (fun root => {
+    root, standardAxioms := #[``propext, ``Quot.sound], forbiddenDependencies := forbiddenProduction })
+  ++ wp4StandardRoots.map (fun root => {
+    root, standardAxioms := standard, forbiddenDependencies := forbiddenProduction })
+  ++ wp4ExpressionRoots.map (fun root => {
+    root, standardAxioms := standard, nativeAxioms := #[expressionNative],
+    forbiddenDependencies := forbiddenProduction })
+  ++ wp4ProductionRoots.map (fun root => {
+    root, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative],
+    forbiddenDependencies := forbiddenProduction })
 
 run_cmd Kernel.Verify.Audit.check roots
 

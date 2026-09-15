@@ -11,6 +11,7 @@ import Ix.Kernel.Verify.Consistency.SynthesisCacheHistory
 import Ix.Kernel.Verify.Consistency.BetaCacheHistory
 import Ix.Kernel.Verify.Consistency.LocalStateReading
 import Ix.Kernel.Verify.Consistency.SortCache
+import Ix.Kernel.Verify.Consistency.CheckedTyping
 
 /-!
 # The checker state invariant
@@ -42,20 +43,31 @@ universe u v
 
 /-! ### Semantic agreement of the reduction caches -/
 
-/-- Every stored WHNF result is convertible to, and retains every type of, a
-source expression with the key's address, read in some local context. -/
+/-- A result is a scope-generic sound reduction of a source: in every local
+scope where the source reads to a checked annotated term, the result reads to
+a convertible annotated term that is checked at every type of the source.
+Checked typing is the premise strong enough for beta reduction; plain
+semantic typing admits proof-regime applications whose reduct is not a
+conversion. Quantifying over scopes is what makes an address-keyed memo
+sound across the binder scopes of one run. -/
+def GenericReduction {β : Type u} (resolve : Address → Option (ConstRef β))
+    (entries : Model.Environment β) (source result : KExpr .anon) : Prop :=
+  ∀ (locals : List FVarId) (context : Model.Context β) (term : AExpr β),
+    readScopedExpr? resolve locals source = some term.erase →
+    (∃ type, CheckedTyping.{u,v} entries context term type) →
+    ∃ target : AExpr β, readScopedExpr? resolve locals result = some target.erase ∧
+      ConversionClaim.{u,v} entries context term target ∧
+      ∀ type, CheckedTyping.{u,v} entries context term type →
+        CheckedTyping.{u,v} entries context target type
+
+/-- Every stored WHNF result is a scope-generic sound reduction of a source
+expression with the key's address. -/
 def WhnfCacheSemantics {β : Type u} (resolve : Address → Option (ConstRef β))
     (entries : Model.Environment β) (state : TcState .anon) : Prop :=
   ∀ (partition : WhnfCachePartition) (key : Address × Address) (result : KExpr .anon),
     (partition.cache state)[key]? = some result →
-    ∃ (locals : List FVarId) (context : Model.Context β) (source : KExpr .anon)
-      (term target : AExpr β),
-      source.addr = key.1 ∧
-      readScopedExpr? resolve locals source = some term.erase ∧
-      readScopedExpr? resolve locals result = some target.erase ∧
-      ConversionClaim.{u,v} entries context term target ∧
-      ∀ type, TypingClaim.{u,v} entries context term type →
-        TypingClaim.{u,v} entries context target type
+    ∃ source : KExpr .anon, source.addr = key.1 ∧
+      GenericReduction.{u,v} resolve entries source result
 
 theorem WhnfCacheSemantics.ofMaps {β : Type u} {resolve : Address → Option (ConstRef β)}
     {entries : Model.Environment β} {before after : TcState .anon}
@@ -168,17 +180,19 @@ theorem EquivManagerSemantics.empty {β : Type u} {resolve : Address → Option 
     {entries : Model.Environment β} : EquivManagerSemantics.{u,v} resolve entries {} :=
   EquivManager.WF.empty
 
-/-- Every unfold entry is the universe instantiation of an admitted body at
+/-- Every unfold entry reads, up to the universe simplifications of the actual
+instantiation walker, to the universe instantiation of an admitted body at
 the head constant whose address keys it. -/
 def UnfoldCacheSemantics {β : Type u} (resolve : Address → Option (ConstRef β))
     (entries : Model.Environment β) (state : TcState .anon) : Prop :=
   ∀ (addr : Address) (value : KExpr .anon), state.env.unfoldCache[addr]? = some value →
     ∃ (id : KId .anon) (arguments : Array (KUniv .anon)) (info : ExprInfo .anon)
-      (ref : ConstRef β) (entry : ConstantEntry β) (body : AExpr β),
+      (ref : ConstRef β) (entry : ConstantEntry β) (body output : AExpr β),
       (KExpr.const id arguments info).addr = addr ∧
       resolve id.addr = some ref ∧ entries ref = some entry ∧ entry.body = some body ∧
       entry.universes = arguments.size ∧
-      readExpr? resolve value = some (body.instL (arguments.toList.map readLevel)).erase
+      readScopedExpr? resolve [] value = some output.erase ∧
+      AExpr.LevelEquivalent (body.instL (arguments.toList.map readLevel)) output
 
 theorem UnfoldCacheSemantics.ofMap {β : Type u} {resolve : Address → Option (ConstRef β)}
     {entries : Model.Environment β} {before after : TcState .anon}
