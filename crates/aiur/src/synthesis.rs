@@ -21,6 +21,7 @@ use crate::{
   function_channel,
   gadgets::{AiurGadget, bytes1::Bytes1, bytes2::Bytes2},
   memory::Memory,
+  trace_heights::fixed_trace_heights,
 };
 
 /// The concrete STARK configuration Aiur instantiates multi-stark with.
@@ -579,6 +580,13 @@ impl AiurSystem {
     if !self.toplevel.valid_claim_shape(claim) {
       return Err(VerificationError::InvalidClaim);
     }
+    if !fixed_trace_heights(
+      self.system.circuits.iter().map(|circuit| circuit.preprocessed_height),
+      &proof.active,
+      &proof.log_degrees,
+    ) {
+      return Err(VerificationError::InvalidProofShape);
+    }
     self.system.verify(claim, proof)
   }
 
@@ -598,6 +606,7 @@ impl AiurSystem {
 mod tests {
   mod acceptance;
   mod branchless;
+  mod byte_shapes;
   mod lookup_shapes;
 
   use super::*;
