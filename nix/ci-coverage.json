@@ -5,6 +5,10 @@
  ["Compilatrix",
   "Compilatrix.AddressEnv",
   "Compilatrix.Aiur",
+  "Compilatrix.Aiur.BytecodeEvalW",
+  "Compilatrix.Aiur.BytecodeSound",
+  "Compilatrix.Aiur.OracleEval",
+  "Compilatrix.Aiur.OracleEval.MachineProofs",
   "Compilatrix.Aiur.Wire",
   "Compilatrix.Aiur.Wire.CodecProofs",
   "Compilatrix.Aiur.Wire.IngressProofs",
@@ -603,9 +607,11 @@
   "Compilatrix.X86.WordRegionSafeControl",
   "Compilatrix.X86.WordRegionSafeMacros",
   "Compilatrix.X86.WordRegionSafeTrace",
+  "CompilatrixTests.Aiur.Execution.Proofs",
   "CompilatrixTests.Aiur.Proofs",
   "CompilatrixTests.Aiur.WireProofs",
   "CompilatrixTests.Fences.Aiur",
+  "CompilatrixTests.Fences.AiurExecution",
   "CompilatrixTests.Fences.AiurWire",
   "CompilatrixTests.IxIR1.Lower",
   "CompilatrixTests.IxIR1.ThesisBench",
@@ -613,5 +619,5 @@
   "CompilatrixTests.Pipeline.Integration"],
  "baseline": "6beaf5d0: complete required CI before factoring",
  "axiom_sha256":
- "ac5b04f6f10cf507d8df213304998c7b8322ae166cbe8b88401a92f80385ea8e",
- "axiom_count": 2138}
+ "511df62013cf3b1b08304b6c65501396296a568dc589b271ba50828773b3b44b",
+ "axiom_count": 2177}

@@ -179,6 +179,7 @@ import Compilatrix.Fence
 import Compilatrix.Ixby.Catalog
 import CompilatrixTests.Aiur.Proofs
 import CompilatrixTests.Aiur.WireProofs
+import CompilatrixTests.Aiur.Execution.Proofs
 import Compilatrix.Ixby.Examples
 import Compilatrix.Ixby.Report
 import Compilatrix.Ixby.SymbolicExamples

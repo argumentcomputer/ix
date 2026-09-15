@@ -264,9 +264,9 @@ balance, activity, a consumer bound, and one coherent witness heap. A mixed
 static-order/counter/rank certificate yields finite rooted derivations.
 
 The row certificate remains a premise until bytecode checking and AIR
-extraction establish its facts. The API does not yet identify those rows
-with the keyed circuit, interpret them as bytecode evaluation, or establish
-Ixon/DSL source preservation. Its 33 exact axiom assertions use only the
+extraction establish its facts. The logical-trace API alone does not identify
+those rows with the keyed circuit or establish Ixon/DSL source preservation.
+Its 33 exact axiom assertions use only the
 ordinary logical basis, and its source-inventory and regression gates are
 required. The ledger records this scope as `aiur-logical-trace-v0`.
 
@@ -285,6 +285,21 @@ Four handwritten golden fixtures, 308 runtime assertions, and fresh-process
 replay/corruption tests guard the wire contract. The production IxVM export,
 constraint dump, descriptor/key binding, and source preservation remain
 separate obligations under `aiur-bytecode-wire-v1`.
+
+The [witness-heap execution model](aiur-semantics.md) supplies concrete
+semantics for all 34 pinned opcodes and four controls. Checked local rows,
+the validated trace, and its static row certificate yield finite executions
+against one heap and an explicit allowed-advice predicate. Thirty-nine new
+exact fences use only ordinary logic; no native interface or axiom is added.
+The 276 execution regressions and kernel examples remain in the Aiur gate.
+
+The ledger records this model as `aiur-witness-bytecode-v0`. Its logical
+gadget channels are not Rust AIR channels. Primitive conformance, extraction
+from the keyed AIR, checker-to-static-row soundness, and refinement to the
+honest allocator/evaluator remain obligations. `ioSetInfo` and `ioWrite`
+have no constrained effect in this model, and hints retain arbitrary allowed
+answers until constrained code checks them. This is a specification boundary,
+not a new cryptographic or native trust assumption.
 
 ## Canonical IxIR₂ snapshot boundary
 

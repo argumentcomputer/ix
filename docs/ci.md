@@ -62,7 +62,7 @@ local development records.
 ## Source and module boundaries
 
 [`Compilatrix.lean`](../Compilatrix.lean) exposes the production compiler API.
-The production import closure has 438 local modules with the Aiur foundation.
+The production import closure has 463 local modules with the Aiur execution model.
 The earlier CI refactor reduced that closure from 593 to 425 modules. It does
 not import test modules, example suites, fixture corpora, or fence aggregators.
 
@@ -81,7 +81,12 @@ logical-trace, witness-memory, cycle, and pinned-source checks. The
 [wire gate](aiur-wire.md) additionally runs the complete bytecode codec
 regressions and fresh-process encoding/replay of four frozen fixtures,
 including malformed-byte/root/component rejection. Its pure and addressed
-proof cones are in the required fence aggregate.
+proof cones are in the required fence aggregate. The
+[execution suite](aiur-semantics.md) adds 276 assertions over all 34 opcodes,
+four controls, witness memory, advice, and recursive trace examples. Its
+39 exact axiom assertions use ordinary logic and remain in the same required
+proof aggregate; large machine proofs and examples are separate from the
+production API.
 
 `lake exe tests` remains the aggregate entry point. The required Nix `tests`
 gate runs the individual entry points and their aggregate. New cases belong

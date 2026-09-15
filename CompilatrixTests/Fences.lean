@@ -1,6 +1,7 @@
 import CompilatrixTests.Fences.Borrow
 import CompilatrixTests.Fences.Aiur
 import CompilatrixTests.Fences.AiurWire
+import CompilatrixTests.Fences.AiurExecution
 import CompilatrixTests.Fences.CallReuse
 import CompilatrixTests.Fences.Erasure
 import CompilatrixTests.Fences.HPT

@@ -1,13 +1,15 @@
-# Aiur backend foundation and wire boundary
+# Aiur backend: trace, wire, and execution
 
 The initial Aiur implementation provides a pinned pure target vocabulary and
 a checked logical-trace interface. It proves that active, balanced lookup
 demands have providers and that a static row certificate yields finite rooted
 derivations. The [canonical bytecode boundary](aiur-wire.md) now preserves
 the complete pinned toplevel, checks its content root, and invokes the
-upstream component checker behind resource guards. This is the foundation
-for the Ixon/DSL → AiurV2 backend; witness-heap bytecode evaluation, source
-lowering, and extraction from the keyed AIR remain subsequent work.
+upstream component checker behind resource guards. The
+[witness-heap execution model](aiur-semantics.md) now interprets all pinned
+operations and controls and composes checked bytecode rows into finite
+executions. Source lowering, certificate-checker soundness, and extraction
+from the keyed AIR remain subsequent work.
 
 ## Reference and module boundaries
 
@@ -117,12 +119,16 @@ image of a positive demand count below the characteristic; it does not
 assume nonnegative provider multiplicities.
 
 `Derivation.sound` is the generic induction principle for interpreting those
-derivations in a row-local semantics. This implementation does not discharge
-that local semantic rule for Aiur bytecode or identify these logical rows
-with a verifier-accepted assignment. AIR extraction, witness-heap bytecode
-evaluation, bytecode/descriptor/key binding, primitive semantics, and the
-source-preservation/backward-soundness results remain explicit work. The
-cryptographic proof-system boundary is not replaced by this trace checker.
+derivations in a row-local semantics. [BytecodeSound](../Compilatrix/Aiur/BytecodeSound.lean)
+now discharges that rule using checked replay of the actual function bodies,
+allowed advice, concrete gadget meanings, and the extracted witness heap.
+`Trace.Validated.public_bytecode` produces a finite `BytecodeEvalW` execution
+under the same static row certificate. The [execution contract](aiur-semantics.md)
+describes the precise treatment of calls, memory, hints, and continuations.
+Identification with a verifier-accepted assignment, the honest-evaluator
+refinement, bytecode/descriptor/key binding, primitive AIR conformance, and
+source preservation remain explicit work. The cryptographic proof-system
+boundary is not replaced by these checkers.
 
 The upstream frontend handoff does not change that order: Compilatrix will
 read addressed mode bytes and primitive identities, validate required typed
@@ -134,7 +140,8 @@ establish trace acyclicity on their own.
 
 ```sh
 lake build AiurReference Compilatrix.Aiur CompilatrixTests.Aiur.Proofs \
-  CompilatrixTests.Fences.Aiur CompilatrixTests.Fences.AiurWire tests-aiur check-aiur
+  CompilatrixTests.Aiur.Execution.Proofs CompilatrixTests.Fences.Aiur \
+  CompilatrixTests.Fences.AiurWire CompilatrixTests.Fences.AiurExecution tests-aiur check-aiur
 lake exe tests-aiur
 lake exe check-aiur --root .
 nix build .#checks.x86_64-linux.aiur
@@ -160,7 +167,9 @@ Nix check runs both executables through the shared CI artifact build.
 The wire extension adds 308 runtime assertions, four complete frozen
 preimages, seven fresh-process corruption rejections, and 33 further exact
 axiom assertions. Component checking is still separate from proving its
-AIR interpretation. The production IxVM exporter/constraint dump and
-witness-heap evaluator remain next, followed by extraction from the keyed
-AIR and source/DSL lowering. No IxVM performance or production
-proof-acceptance claim is made by this foundation.
+AIR interpretation. The execution extension adds 276 assertions and 39
+ordinary-logic axiom fences, including complete counter, ranked-mutual,
+memory, gadget, and continuation examples. Certificate-checker soundness,
+the upstream evaluator handoff and IxVM export/constraint dump, keyed AIR
+extraction, and source/DSL lowering remain next. No IxVM performance or
+production proof-acceptance claim is made by these milestones.

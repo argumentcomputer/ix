@@ -174,6 +174,7 @@
             (pkgs.lib.fileset.fileFilter (f: f.hasExt "lean") ./Compilatrix)
             ./docs/trusted-externs.json
             ./docs/aiur-wire.md
+            ./docs/aiur-semantics.md
             ./docs/x86-reference-model.json
             (pkgs.lib.fileset.fileFilter (f: f.hasExt "lean") ./scripts)
             ./scripts/inspect_ixby.py
