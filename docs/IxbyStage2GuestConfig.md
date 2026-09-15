@@ -1,5 +1,9 @@
 # Fixed Stage 2 guest configuration for the Init benchmark
 
+The newer [CSLib target](IxbyStage2CSLib.md) has separate keys and a verified
+recompiled guest. It is the preferred full Stage 3 workload. This document
+preserves the original Init target and its configuration unchanged.
+
 Use the current grouped native benchmark target, not the runtime-generated
 keys in a test wrapper. This is an implementation/benchmark target, **not a
 claim of completed production-security approval**.

@@ -1,13 +1,21 @@
-# Local path to proving the real Init execution
+# Path to proving the full Stage 2 guest execution
 
-The unchanged Stage 2 IXBF binary accepted the retained Init proof in
-5,372,353,187 reference transitions, with 710.70 seconds wall time and
-1,209,236 KiB maximum RSS. The original 16-billion-step and 16 MiB proof limits
-were sufficient. The CPU box has been powered off; this phase is local work.
+[CSLib](IxbyStage2CSLib.md) is the preferred workload, with the separately
+pinned [Init guest](IxbyStage2GuestConfig.md) retained as a fallback. The
+CSLib image was recompiled with its native keys and entrypoints; it accepts
+the real proof and rejects a changed claim and trailing proof bytes. Both
+workloads fit the original 16-billion-step and 16 MiB proof limits.
 
-This runtime result is not a Flock proof or a compiler/native refinement
-certificate. The target remains a generic, image-independent proving setup
-and a proof of the exact approved binary/input/output relation.
+| Reference execution | Program bytes | Input bytes | Transitions | Wall seconds | Peak RSS, KiB |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Init, original pinned guest | 1,002,355 | 9,611,120 | 5,372,353,187 | 710.70 | 1,209,236 |
+| CSLib, recompiled guest | 1,016,587 | 4,813,238 | 2,268,502,805 | 300.89 | 548,096 |
+
+On 2026-09-15 the CPU box is available for testing. These measurements are
+reference execution, not Flock proving costs or compiler/native refinement
+certificates. The target remains a generic, image-independent proving setup
+and a proof of the exact approved binary/input/output relation. No complete
+Stage 3 proof of either workload has been generated.
 
 ## Completed foundations
 
@@ -129,7 +137,7 @@ and a proof of the exact approved binary/input/output relation.
 2. **Streaming witness and measurements.** Produce bounded execution batches
    while recording actual opcode frequencies, stack depth, allocations, byte
    traffic, and Nat widths. Keep the untrusted witness generator separate from
-   verification. Do not materialize a five-billion-step trace just to profile
+   verification. Do not materialize billions of execution steps just to profile
    it. Static limits and native runtime are not prover-cost estimates.
 3. **Scalable code and memory authentication.** Replace capacity-wide selector
    scans and full-bank replication with a reviewed access construction for
@@ -153,18 +161,22 @@ and a proof of the exact approved binary/input/output relation.
    A concatenated list of endpoint hashes or an unchecked state-continuity
    claim is not an aggregate execution proof. Version the wider profile and
    proof envelope explicitly, retaining rejection of old/different setups.
-6. **Full pinned benchmark.** Regenerate the witness from the unchanged Init
-   artifacts, prove within an explicitly admitted resource envelope, and
+6. **Full pinned benchmark.** Regenerate the witness from the pinned CSLib
+   image and input, prove within an explicitly admitted resource envelope, and
    verify in a fresh process against the externally expected Exec statement.
    Record setup identities, raw/padded table geometry, witness/proof/verify
    time, peak memory and complete proof bytes. Require negatives for changed
    image, input, claim, memory access, boundary, budget and proof bytes.
+   Retain the original Init artifacts and configuration as a fallback; do not
+   interchange the two guests' key pins.
 
 The current native factories cap execution at 64 steps, functions at four,
-locals at 16, and program/I/O buffers at 512 bytes. Init's image has 681
-functions, 73 locals in its largest frame, 1,002,355 program bytes and
-9,611,120 input bytes. Raising constants alone does not address the current
-unrolled execution and memory construction.
+locals at 16, and program/I/O buffers at 512 bytes. Both full guest images
+have 681 functions and 73 locals in their largest frame, with the artifact
+sizes shown above. Raising constants alone does not address the current
+unrolled execution and memory construction. The next measurable milestone is
+a representative CSLib execution segment, including authenticated memory,
+proved and verified independently before estimating the full proving run.
 
 Source/image/ABI reflection and native constraint-to-reference refinement
 remain separate correctness obligations. Experimental proof acceptance does
@@ -173,4 +185,4 @@ not required merely to produce a native Stage 3 proof.
 
 No paid tier, hardware, storage, SRS, protocol security setting or existing
 resource cap is increased by this plan. Admit and measure each new component
-locally before any full-workload proving attempt.
+before any full-workload proving attempt on the available CPU box.
