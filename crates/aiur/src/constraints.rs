@@ -67,9 +67,8 @@ pub struct Constraints {
 struct ConstraintState {
   /// Index of the circuit member currently being walked.
   function_index: G,
-  /// Exactly one selector: the circuit backs a single function with a
-  /// single leaf block (no matches), so every lookup slot is written by
-  /// exactly one branch.
+  /// One function with terminal control and one selector: operation slots
+  /// have one writer. Selector count alone does not exclude empty branches.
   branchless: bool,
   /// Input size of the current member (inputs live in columns
   /// `0..input_size` for every member; the circuit reserves the max).
@@ -138,6 +137,20 @@ impl ConstraintState {
 }
 
 impl Toplevel {
+  /// Ungated lookup arguments are safe only with one writer per slot.
+  /// A branch with no return/yield still writes lookups, so counting the
+  /// terminal selectors alone does not establish that condition.
+  pub(crate) fn circuit_is_branchless(&self, circuit_index: usize) -> bool {
+    let circuit = &self.circuits[circuit_index];
+    let [member] = circuit.members.as_slice() else {
+      return false;
+    };
+    circuit.layout.selectors == 1
+      && self.functions.get(*member).is_some_and(|function| {
+        matches!(function.body.ctrl, Ctrl::Return(..) | Ctrl::Yield(..))
+      })
+  }
+
   /// Build the constraints of one circuit. The circuit's members are walked
   /// like branches of a single function: each walk restarts the auxiliary
   /// column / lookup-slot counters (so members share those, like match arms
@@ -158,7 +171,7 @@ impl Toplevel {
     };
     let mut state = ConstraintState {
       function_index: G::ZERO,
-      branchless: layout.selectors == 1,
+      branchless: self.circuit_is_branchless(circuit_index),
       input_size: 0,
       sel_base: 0,
       column: 0,

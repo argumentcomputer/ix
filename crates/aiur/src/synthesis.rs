@@ -164,7 +164,7 @@ impl AiurSystem {
       // superposed arguments are degree 2, and grouping would push the
       // logUp constraints past the quotient budget.
       let group_size =
-        if toplevel.circuits[i].layout.selectors == 1 && lookups.len() >= 2 {
+        if toplevel.circuit_is_branchless(i) && lookups.len() >= 2 {
           2
         } else {
           1
@@ -592,6 +592,7 @@ impl AiurSystem {
 #[cfg(test)]
 mod tests {
   mod acceptance;
+  mod branchless;
 
   use super::*;
   use crate::{
