@@ -80,7 +80,8 @@ and a proof of the exact approved binary/input/output relation.
     parentage, child order, depth and subtree spans; constrained reads consume
     the actual finished arena. Thirty-two proofs in separate Input/Output
     classes and ten recomputed wiring rejections cover bounded forests.
-    Scalable access and complete original artifact admission remain unfinished.
+    The following authenticated value component adds record-sized reads;
+    complete original artifact admission remains unfinished.
 12. [Source-bound typed executable bodies](IxbyFunctionalBodies.md): actual
     checked Program events produce complete owned function/block records,
     ordered operands, scalar payloads, operations, references, projection fields,
@@ -98,6 +99,16 @@ and a proof of the exact approved binary/input/output relation.
     original-byte-to-code-digest-to-typed-read chain.
     Sealing remains bounded by the existing loader. Full-image admission,
     original-source streaming and execution/memory consumers remain unfinished.
+14. [Authenticated typed transport values](IxbyFunctionalValueAccess.md):
+    the actual completed arena, original transport digest and code digest
+    form a constrained BLAKE3 image. The seal connects the arena's program
+    registry and context to the code's actual registry. Node/child/root reads
+    use reusable chunk handles; untrusted locators are checked against the
+    source-derived parent and ordinal. Forty-four honest proofs and nineteen
+    recomputed wiring rejections in the joint Input/Output classes cover
+    original bytes, code/value seals and typed reads. Full-image admission and
+    authentication for execution allocations, locals and continuations remain
+    unfinished.
 
 ## Next implementation gates
 
@@ -111,9 +122,9 @@ and a proof of the exact approved binary/input/output relation.
    guest Nat-limit, UTF-8 and generic state-selected dispatch are implemented,
    with complete source-bound grammar, declaration/header-registry and
    instruction/reference, typed transport-value and executable-body proofs for
-   explicit small-file classes. Authenticated typed code reads now reuse chunk
-   handles. Next are streaming full-image admission, execution consumers and
-   the Exec commitment bridge.
+   explicit small-file classes. Authenticated typed code and transport-value
+   reads now reuse chunk handles. Next are streaming full-image admission,
+   execution consumers and the Exec commitment bridge.
    Full-Init row differentials and small-file proofs do not close those obligations.
 2. **Streaming witness and measurements.** Produce bounded execution batches
    while recording actual opcode frequencies, stack depth, allocations, byte
@@ -123,8 +134,9 @@ and a proof of the exact approved binary/input/output relation.
 3. **Scalable code and memory authentication.** Replace capacity-wide selector
    scans and full-bank replication with a reviewed access construction for
    code, locals/continuations, and immutable constructor/PAP/byte/Nat records.
-   The bounded typed-code seal and reusable authenticated reads are implemented;
-   full-image sealing and execution/value-memory consumers remain required.
+   Bounded typed-code and transport-value seals and reusable authenticated
+   reads are implemented; full-image sealing, execution allocations and
+   local/continuation memory consumers remain required.
    Record identity, allocation order, field access and repeated reads must be
    constrained. Benchmark code-authentication and representative memory traces
    before choosing capacities or allocating a full circuit. Any new argument

@@ -1,5 +1,6 @@
 use super::super::{
   bodies::{BodyCapacity, FinishedProgramBodies},
+  references::CheckedProgramReferences,
   source::*,
 };
 use super::{layout::*, *};
@@ -21,6 +22,7 @@ pub struct SealedCode {
   layout: CodeLayout,
   root: [Wire; 2],
   length: Wire,
+  program: Option<CheckedProgramReferences>,
 }
 impl SealedCode {
   #[cfg(test)]
@@ -29,7 +31,12 @@ impl SealedCode {
     root: [Wire; 2],
     length: Wire,
   ) -> Self {
-    Self { layout, root, length }
+    Self { layout, root, length, program: None }
+  }
+  pub(in crate::ixby::ixbf_decode) fn program(
+    &self,
+  ) -> &CheckedProgramReferences {
+    self.program.as_ref().expect("actual code seal required for composition")
   }
   pub fn layout(&self) -> CodeLayout {
     self.layout
@@ -98,7 +105,12 @@ impl CodeCommitSlots {
     assert_eq!(words.len() as u64, self.layout.words());
     words.resize(self.hash.padded_words(), self.zero);
     let root = self.hash.hash(b, self.length, &words);
-    SealedCode { layout: self.layout, root, length: self.length }
+    SealedCode {
+      layout: self.layout,
+      root,
+      length: self.length,
+      program: Some(program.references().clone()),
+    }
   }
 }
 #[derive(Clone, Debug)]

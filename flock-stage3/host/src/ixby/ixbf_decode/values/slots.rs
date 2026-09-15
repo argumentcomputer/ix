@@ -14,7 +14,7 @@ use flock_prover::{
 #[derive(Clone, Debug)]
 pub struct ValueArenaState {
   dispatch: DispatchState,
-  program: Vec<Wire>,
+  program: CheckedProgramReferences,
   accumulator: [Wire; ACC_WORDS],
   count: Wire,
   bank: Vec<Wire>,
@@ -23,11 +23,18 @@ pub struct ValueArenaState {
 #[derive(Clone, Debug)]
 pub struct FinishedValueArena {
   config: ValueConfig,
+  program: CheckedProgramReferences,
   grammar: GrammarState,
   summary: [Wire; 3],
   bank: Vec<Wire>,
 }
 impl FinishedValueArena {
+  pub(super) fn program(&self) -> &CheckedProgramReferences {
+    &self.program
+  }
+  pub(super) fn binding(&self) -> &[Wire] {
+    &self.bank
+  }
   pub fn grammar(&self) -> GrammarState {
     self.grammar
   }
@@ -102,7 +109,7 @@ impl ValueArenaSlots {
     length: Wire,
     program: &CheckedProgramReferences,
   ) -> ValueArenaState {
-    let (capacity, bank) = program.registry().binding();
+    let (capacity, _) = program.registry().binding();
     assert_eq!(capacity, self.config.registry);
     ValueArenaState {
       dispatch: self.dispatch.initialize(
@@ -110,7 +117,7 @@ impl ValueArenaSlots {
         length,
         program.registry().context(),
       ),
-      program: bank.to_vec(),
+      program: program.clone(),
       accumulator: [self.zero; ACC_WORDS],
       count: self.zero,
       bank: vec![self.zero; self.config.arena.bank_words()],
@@ -128,7 +135,7 @@ impl ValueArenaSlots {
     let event = self.dispatch.step(b, state.dispatch, read);
     let mut link = vec![event.committed, event.tag];
     link.extend(event.fields);
-    link.extend(&state.program);
+    link.extend(state.program.registry().binding().1);
     let resolved = self.gate(b, ValueOp::Link, &link)[0];
     let mut node = grammar;
     node.extend([event.committed, event.tag]);
@@ -168,6 +175,7 @@ impl ValueArenaSlots {
     let output = self.gate(b, ValueOp::Finish, &input);
     FinishedValueArena {
       config: self.config,
+      program: state.program,
       grammar,
       summary: output[..3].try_into().unwrap(),
       bank: output[3..].to_vec(),

@@ -242,7 +242,14 @@ pub(in crate::ixby::ixbf_decode) fn encode(
   spec: &Spec,
   prove: bool,
 ) -> Fixture {
-  let source = program::encode(spec);
+  from_source(c, name, program::encode(spec), prove)
+}
+pub(in crate::ixby::ixbf_decode) fn from_source(
+  c: BodyCapacity,
+  name: &str,
+  source: program::Fixture,
+  prove: bool,
+) -> Fixture {
   let artifact =
     ixbf::decode_program(&source.bytes, ixbf::DecodeLimits::default())
       .unwrap_or_else(|e| panic!("{name}: {e:#}"));

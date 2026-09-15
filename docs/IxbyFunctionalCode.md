@@ -216,11 +216,15 @@ RAYON_NUM_THREADS=4 cargo test --release --locked \
 
 ## Remaining work
 
+The [transport-value seal](IxbyFunctionalValueAccess.md) now retains and connects
+the code's actual registry when committing typed Input/Output values. Their
+authenticated node/child/root reads also reuse chunk handles.
+
 The bounded seal and record-sized access construction must be extended to
 full-image loading and connected to actual execution consumers. Streaming
-original-source admission, value/local/continuation memory authentication,
-the approved original-wire execution class and raw-file/Exec commitment
-bridge remain required. Representative execution segments must be measured
+original-source admission, authentication for execution allocations, locals
+and continuations, the approved original-wire execution class and raw-file/Exec
+commitment bridge remain required. Representative execution segments must be measured
 before selecting full-workload capacities. VM-derived global fuel, complete
 segments, sound composition, a pinned Init benchmark and native refinement
 remain separate work. See the [scaling plan](IxbyStage3ScalePlan.md).

@@ -6,6 +6,7 @@
 //! authentication is the caller's responsibility. This is not an Exec profile,
 //! executable-body admission, or a native constraint/refinement theorem.
 
+pub mod access;
 mod bank;
 mod evaluate;
 #[cfg(test)]

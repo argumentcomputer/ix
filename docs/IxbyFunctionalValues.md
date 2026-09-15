@@ -10,8 +10,10 @@ The component preserves scalar values and payload ranges, derives parentage,
 child order, depth and complete subtree spans, and supplies constrained node,
 child and root reads. It completes bounded transport value materialization.
 The [typed body layer](IxbyFunctionalBodies.md) now materializes bounded
-executable records from the same Program events. Scalable access, the
-raw-file/Exec commitment bridge, native refinement and a full Init execution
+executable records from the same Program events. The
+[authenticated value-access layer](IxbyFunctionalValueAccess.md) now seals
+these actual records and reads them through reusable chunks. Full-image loading,
+the raw-file/Exec commitment bridge, native refinement and a full Init execution
 proof remain in the [scaling plan](IxbyStage3ScalePlan.md).
 
 ## Source and program binding
@@ -220,7 +222,10 @@ bounded class does not admit the 9,611,120-byte Init input or prove its executio
 The [typed body layer](IxbyFunctionalBodies.md) completes bounded executable
 records from the same checked Program. [Authenticated typed code reads](IxbyFunctionalCode.md)
 now consume a digest of those actual records through reusable chunk handles.
-Execution consumers and authenticated value/local/continuation memory remain
-required. Streaming witnesses, complete state segments with VM-derived
+[Authenticated transport-value access](IxbyFunctionalValueAccess.md) now seals
+the actual completed arena with its code and original transport digests, then
+reads nodes/children/roots through reusable chunks. Execution allocations,
+local/continuation memory and execution consumers remain required.
+Streaming witnesses, complete state segments with VM-derived
 global fuel, sound composition, a pinned Init proof
 and terminal compression remain separate work.
