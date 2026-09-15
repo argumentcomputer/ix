@@ -591,6 +591,8 @@ impl AiurSystem {
 
 #[cfg(test)]
 mod tests {
+  mod acceptance;
+
   use super::*;
   use crate::{
     bytecode::{Block, Ctrl, Function, FunctionLayout, Op, Toplevel},

@@ -171,7 +171,7 @@ impl Toplevel {
     // The shared multiplicity column: first auxiliary, right after the
     // selectors. The return lookup occupies the first lookup slot.
     let multiplicity = var(layout.input_size + layout.selectors);
-    state.lookups[0].multiplicity = -multiplicity;
+    state.lookups[0].multiplicity = -multiplicity.clone();
     let aux_start = layout.input_size + layout.selectors + 1;
     let mut sel_base = layout.input_size;
     let mut circuit_sel = Expr::from(G::ZERO);
@@ -205,8 +205,12 @@ impl Toplevel {
       state
         .constraints
         .zeros
-        .push(circuit_sel.clone() * (Expr::from(G::ONE) - circuit_sel));
+        .push(circuit_sel.clone() * (Expr::from(G::ONE) - circuit_sel.clone()));
     }
+    // Only active members can supply return lookups. Keep the lookup
+    // multiplicity linear and constrain its activity here, including every
+    // member of a grouped circuit.
+    state.constraints.zeros.push(multiplicity * (konst(G::ONE) - circuit_sel));
     (state.constraints, state.lookups)
   }
 }
