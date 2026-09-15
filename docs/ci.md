@@ -62,9 +62,9 @@ local development records.
 ## Source and module boundaries
 
 [`Compilatrix.lean`](../Compilatrix.lean) exposes the production compiler API.
-The production import closure has 425 local modules after this refactor,
-compared with 593 before it. It does not import test modules, example suites,
-fixture corpora, or fence aggregators.
+The production import closure has 438 local modules with the Aiur foundation.
+The earlier CI refactor reduced that closure from 593 to 425 modules. It does
+not import test modules, example suites, fixture corpora, or fence aggregators.
 
 The four runtime suites have independent entry points:
 
@@ -74,6 +74,10 @@ The four runtime suites have independent entry points:
 | Pipeline, ownership, reuse, and target integration | `lake exe tests-pipeline` |
 | HPT caches, persistence, and optimizer checks | `lake exe tests-hpt` |
 | Ixon codecs, sharing, and catalogs | `lake exe tests-ixon` |
+
+The Aiur target has a separate required `aiur` gate, running `tests-aiur`
+and `check-aiur --root .`. Its [contract](aiur-backend.md) records the
+logical-trace, witness-memory, cycle, and pinned-source checks.
 
 `lake exe tests` remains the aggregate entry point. The required Nix `tests`
 gate runs the individual entry points and their aggregate. New cases belong
@@ -88,6 +92,8 @@ contracts.
 [`nix/lean-modules.json`](../nix/lean-modules.json) records the exact local
 module paths, imports, and Lake target roots. Nix computes separate transitive
 source sets for the production library, CI programs, and complete proofs.
+The production artifact also includes the complete Aiur reference library
+required by its native facet; the public API keeps its narrower imports.
 The trust auditor receives the full source/configuration inventory separately.
 Editing a test body or its imports therefore does not change the production
 source hash. Changing the shared Lake configuration or toolchain can still
@@ -107,7 +113,8 @@ It also rejects test dependencies in the production closure.
 
 The refactor keeps all 34 previous Linux gates required and adds explicit
 proof, build-graph, and per-case Stage2 checks. The resulting Linux surface has
-44 checks. No correctness gate moved to a manual or scheduled trigger.
+44 checks; the Aiur foundation adds a 45th required check. No correctness
+gate moved to a manual or scheduled trigger.
 
 | Previous gate | Required coverage after factoring |
 | --- | --- |

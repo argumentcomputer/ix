@@ -21,6 +21,11 @@ in rec {
     test -x ./.lake/build/bin/catalog-contact
   '';
 
+  aiurCheck = mkCheck "aiur" [pkgs.coreutils] ''
+    ./.lake/build/bin/tests-aiur
+    ./.lake/build/bin/check-aiur --root ${auditSrc}
+  '';
+
   trustedExternCheck = mkCheck "check-trusted-externs" [pkgs.coreutils] ''
     ./.lake/build/bin/check-trusted-externs \
       --root ${auditSrc} \

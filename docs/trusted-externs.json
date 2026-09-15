@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "last_reviewed": "2026-09-14",
+  "last_reviewed": "2026-09-15",
   "policy": {
     "owner": "Compilatr.ix maintainers",
     "platform_baseline": "x86_64-linux",
@@ -350,6 +350,31 @@
     }
   ],
   "specification_assumptions": [
+    {
+      "id": "aiur-logical-trace-v0",
+      "status": "active",
+      "owner": "Compilatr.ix maintainers",
+      "scope": "Pinned pure Aiur target vocabulary and checked logical traces with finite rooted derivations and coherent witness memory",
+      "assumption": "The reference vocabulary is argumentcomputer/ix at a8c4d2d21eaf45ee9160bdd103dfbcefe31f7f03. Logical rows are a supplied projection; their identification with the keyed AIR, bytecode evaluation, proof-system acceptance, and Ixon/DSL source semantics is not yet established.",
+      "proof_effect": "No new axiom or native interface is introduced. Checked activity, field-weighted balance, a strict characteristic bound, and memory coherence yield active providers and one witness heap. A mixed static-order/unit-counter/rank row certificate yields finite derivations. It is not yet a bytecode checker-to-AIR theorem or source compilation theorem.",
+      "trust_basis": [
+        "Eleven unchanged Lean modules and both licenses are SHA-256 pinned by vendor/aiur/upstream.json and checked against the complete vendor inventory.",
+        "The upstream Lean 4.33.1 sources build unchanged with the repository Lean 4.33.0 toolchain; no native Aiur FFI or evaluator shim is imported.",
+        "Thirty-three new exact axiom assertions use only propext, Classical.choice, and Quot.sound; all prior required assertions remain registered.",
+        "The AIR adapter must derive the row facts and bound logical unit slots by the verifier's actual checked lookup budget; memory coherence alone does not imply type validity or heap acyclicity."
+      ],
+      "tests": [
+        "CompilatrixTests/Fences/Aiur.lean: 33 exact axiom assertions in the required proof aggregate",
+        "tests-aiur: 25 trace, memory, cycle, exact-message and resource regressions",
+        "CompilatrixTests/Aiur/Proofs.lean: mixed counter/order/rank derivation, witness pointer seven, and universal impossibility of static certificates for balanced self/mutual-call attacks",
+        "check-aiur: exact source inventory and four changed/missing/extra/revision mutation rejections"
+      ],
+      "retirement": {
+        "milestone": "AiurV2 bytecode, AIR extraction, and Ixon/DSL integration",
+        "replacement": "Exact artifact bindings and proved bytecode/row semantics, static-certificate extraction, and source preservation",
+        "exit_criteria": "Bind the source and descriptor to canonical bytecode and the keyed AIR; prove the local semantic and static row obligations; retain the named cryptographic proof-system boundary and all existing regression gates."
+      }
+    },
     {
       "id": "x86-v0-local-semantics",
       "status": "active-specification",
@@ -794,12 +819,32 @@
   ],
   "integrity": {
     "tracked_files": {
+      "Compilatrix/Aiur.lean": "2e43a3d83e58cc0c58756b84007ffa0c09e471e9d736b51d48204116bff5caed",
+      "Compilatrix/Aiur/Field.lean": "c8324184539084a1556b2b0677914c12830fa6f8e03df75116469a150d97fa95",
+      "Compilatrix/Aiur/Trace.lean": "a5f3eb9118ce93ad1503efd2de288b5b0c744cb3eed90d156912f505773b0b4e",
+      "Compilatrix/Aiur/Balance.lean": "d1247cb7d742aca41ef8a4ccb79f074551c3fe2414a1ff12ac4b0ae61820b506",
+      "Compilatrix/Aiur/Check.lean": "e6effb2c181b190805cf457eb39043c3e9626a69ca94a2f151b9f235de3cf7fd",
+      "Compilatrix/Aiur/Memory.lean": "6ebaf89973c3d2adec3dbee6cdfc78d44ce7851f8e39f7068be055623847f8ea",
+      "Compilatrix/Aiur/Finite.lean": "166839a04acc6b1793808c40427677bc238eaae40731ba09670dea9a3e52ca2a",
+      "Compilatrix/Aiur/WellFounded.lean": "8ea3057663917a12fee7649d51a2d9ee95b4d0ca95d949cea2070d7937396e15",
+      "Compilatrix/Aiur/Derivation.lean": "460c3fd12f2ab1096688aa241226c50ec617e81bc9bcd5228a470a144e52f2cf",
+      "Compilatrix/Aiur/Certificate.lean": "79ab36427e24fe85eb55c0695d08a35c341fd3ef07a537af01310b5f9eb73d4c",
+      "CompilatrixTests/Aiur/Fixtures.lean": "d02255e95c8786272c0f651f9aa8474da53f4091ca797f8e7278cf24176181e4",
+      "CompilatrixTests/Aiur/Proofs.lean": "62408d4236830994bcd31d6fb67abf3341876baa63f8ff5af78966f3500a7a91",
+      "CompilatrixTests/Aiur/Run.lean": "24ef70d1b90ec5778a445b112eb506b0fd61a6952f2212d612bd2bb971eeb7f0",
+      "CompilatrixTests/Aiur/Main.lean": "6ba75f14bfe16a190fd7c143c9711b87c3d6eeaf47bb6aa4e4ef9c822ac54dac",
+      "CompilatrixTests/Fences/Aiur.lean": "0021f79c34c673d5ca4f2bca621b4bdd0be4be51efdf7a930836a97c0d3f467b",
+      "Compilatrix/Tools/AiurCheck.lean": "3a1ebd631fe1d68582b1427704d5cdd8ba1a8bc3c9bb04bbcce80d9672f28701",
+      "scripts/CheckAiur.lean": "83c1e08082f1de02fb9cba8417b261c94767999950955e0f068ab3a3ca4625ee",
+      "vendor/aiur/upstream.json": "a92014ab6b38cff1fe7ad85a8b49a20575ce9ff0c077f1275b1b2176c091b61f",
+      "vendor/aiur/Ix/Aiur.lean": "6702c5369ba5feb7e6a6ca2b39ffc41637c103c277a457b8e62aa4815e25fef4",
+      "vendor/aiur/README.md": "ba4f560744397cdaaeafe5771d581527588e1770af90514bc16571158602ef5f",
       ".envrc": "87816b617d65211b5bc9a1141332863f8e3cb05c387ef539d87f459e81eb8d06",
       "flake.lock": "ca0711efa5d1703dfb9f63d990e47c031270fdcb9044f4f475610ccc0354a779",
-      "flake.nix": "2eb4b2007e70fadd740c74468b45f73f231c6cb51a01fdd4f0cab91b193277c5",
+      "flake.nix": "a4c3bcd892a82ef87f29b1073d2e90cbbea1496148327459f1ea3a7ba3c256c7",
       "fixtures/x86/native_harness.c": "95defbf83b11bc9d7d8dd5d6caf9b48c49ac1ecdf97913b540be9865eca50f52",
       "lake-manifest.json": "9bf1db3a73373ba24f654efe2948107c2a7034884335016d8878b8a5f5f346a7",
-      "lakefile.lean": "40369598da4b12fc9c258d4c64a99399fd8510e8e2f6acfd7a03f7c31ab14e2e",
+      "lakefile.lean": "d484e37611217004e9e3f7ea5fdf738cb6019764ff555122f26b7fb13ba0292e",
       "lean-toolchain": "302cd63c54178885b89e669f33b38f12f4dd7ae7e5cac537b3203e3768d8fb2b",
       "native/hpt_cache_sync.c": "f44c087cf80b2f5499ac1e25c0bb63be0f1e0687bc49a941c6b0ace8b03248f5",
       "Compilatrix/Tools/Check.lean": "680a94c630dc94304cccffed796178d3d0d77f1ea595a052176fef98c8b11e23",
@@ -910,7 +955,7 @@
       "benchmarks/compiler-scaling.md": "44d5f665e8c9a4331e06fd214dee6ab599ff9bcd6c06cf8edd823e97be416776",
       "benchmarks/native/scaling_harness.c": "7f59e2b78577d435c26176099df11e0bdd4d93f24cb173d567f7d04af13fc809",
       "fixtures/compiler-scaling/expected.json": "05921bd48b52d526890e1ceea2f6838fd965532e2ee3474db1ad1af94bc8a77e",
-      "Compilatrix.lean": "9ffbbd4289b5d337643e01ce6c3b201ed84777cd38462579a86252987525fdaf",
+      "Compilatrix.lean": "f451c5569afba6fd909e47140117622407e3308f2b4c2fc4bccbfc326dd0af56",
       "Compilatrix/Fence.lean": "86dfa4274faa74292fcee9f692f8f6e8ff7e63969ecebe2664ae6f020f25bf9c",
       "SourceModular.lean": "56c6636156b6f5d94fae525e3e6b16e7a0f7a982c337bc48f0478c339b2c5e53",
       "scripts/CheckSourceModular.lean": "a1f7d5cf152ace936026bea821b0ad32ab5ca8ff5d6cab2aa996ec9f1320f979",
@@ -1099,7 +1144,7 @@
       "CompilatrixTests/Addressing/Fixtures.lean": "27a6426f7850c1d25c65d3845b93050308b58684b98a6c09d728368357a75d86",
       "CompilatrixTests/Addressing/Main.lean": "1c6e0a6a6079e6004e3f8aa0f9bbacde238f843fe3401dd82c6f4f50d7cc83c7",
       "CompilatrixTests/Addressing/Run.lean": "0174850a37b1ad136b6fbae1523dc88039caf326175b12a452cf87199980df9d",
-      "CompilatrixTests/Fences.lean": "da925e7d1bf7f97e659d0188de999e4a8034254aed8a1cbffb032f6a4ebf7faf",
+      "CompilatrixTests/Fences.lean": "3adad85a87045199534fc593729186f2d7499007eef3421acb3bdf3d3f2d25d4",
       "CompilatrixTests/Fences/Borrow.lean": "18235e906f421e81777dba27cc3d7c0b531ae494e378f9b104a272aaee3a4d5e",
       "CompilatrixTests/Fences/CallReuse.lean": "9dc8abad3e749e26256a8454b5513eb7529c3d7cd3a8246ede62660b5d7616ab",
       "CompilatrixTests/Fences/Erasure.lean": "c7d8e43c5fdee8cea9a0baee38c39f53775f20a721551da1db20a7bfa4715ef1",
@@ -1127,17 +1172,17 @@
       "CompilatrixTests/Pipeline/Integration.lean": "bd0c57788bb07dd53fad7c4c796b7350ace99c7a19f995b18312db3630e6dfe6",
       "CompilatrixTests/Pipeline/Main.lean": "69bdb86eee80a9a93abd5d0db9e70c90f6458eb3590bbb8eac7b5c5ccf019de5",
       "CompilatrixTests/Pipeline/Run.lean": "29eb366348058c1346b6142176404f6c4a141d636c8e3e5c536fb69dc0032ac8",
-      "CompilatrixTests/Proofs.lean": "716171469cd66c0a0cc2342f8503475005d01d897e67c71b9aa0fcaf1b3dd9ee",
+      "CompilatrixTests/Proofs.lean": "833d2460636f0e5ddeb46e929a729a617eeb2df3727cc057263d58dd1381d2d9",
       "CompilatrixTests/Runtime.lean": "aa50766dfc52beb73aa4174be191f07cfb54cd50db2474c54e0a78cd668a8ce6",
       "CompilatrixTests/Support.lean": "f44bf2d304f25cfde35fbc621bbab81231894242b6eb406a2e16df6a81a8905c",
       "CompilatrixTests/Support/Lowering.lean": "d8f926a53519d11c150a13b29e7be6c314cec39d224de0bcb8a89507fe4a480c",
       "nix/build.nix": "3f9c5fe9b24941507f3475c850edb927d53a878f7b6b6404e919a33d36cc3996",
-      "nix/checks.nix": "091302408a3976b9e5729268e2f1316176df1082557ecb60973b4f7bd97e0233",
-      "nix/ci-coverage.json": "e77a744bbc7a8f38fa197b27e0a8feaeda6ecc94fd8be04ac10cbf99ca09e192",
-      "nix/ci-groups.json": "66574c94f08748cbb3e982bca32f8fcb494ba7d961ce191b233555ebc82a87de",
+      "nix/checks.nix": "c1dec1132474948ff3e8aaf35c3a7f0d2d9cca3abe266e883f0393ae9748744a",
+      "nix/ci-coverage.json": "f2c2f83ba71ca6aae658cbc80ad4cb53736f4dc269f2bf994723cb8b0cba438f",
+      "nix/ci-groups.json": "6db1224314298d7243b8437909285eef737aa3acc61d49b8cf8cdd382cadbef1",
       "nix/groups.nix": "c231009153b9aaf62aa0c4df16c39a6dd251c9312f1228d758d25499bfb42dc2",
-      "nix/lean-modules.json": "275e6b9d3be43e116f058e04b7d7cdf090d7825854022e8e7e1fc1f5b90eb80e",
-      "nix/sources.nix": "79c091a0f03ad09911bde40927cf0d36faf466c84a3ecca5fc707368e2771e25",
+      "nix/lean-modules.json": "363e3dc1a3c75f83bd01a069e851e2251cfc2657d7c37df334fb903c74e6a860",
+      "nix/sources.nix": "828ffd6fb1d4706329bc31fe1b2f4a8d5bc31e6a5b88dbe9346e4b36e6a1bbe8",
       "scripts/CheckBuildGraph.lean": "c2ab8681e1c1ceecab7905d0799868bb288ece6e4dd4bf7635b04adecf4f5d0c"
     },
     "flake_nodes": {

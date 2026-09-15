@@ -5,6 +5,7 @@
     "x86-encoder-decoder", "x86-byte-execution", "x86-stream-objects", "x86-elf-object",
     "source-coverage", "source-recursion", "source-call-reuse", "source-space",
     "source-modular", "assembly-scaling", "source-evidence", "ixby", "ixby-symbolic",
+    "aiur",
     "ixir2-identity", "source-unique-reuse", "source-borrow", "source-borrow-runtime"
   ],
   "native": [

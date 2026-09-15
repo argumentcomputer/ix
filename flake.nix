@@ -117,6 +117,7 @@
             ./SourceIxbyStage2.lean
             ./IxonToIxby.lean
             ./vendor/ixby
+            ./vendor/aiur
             ./vendor/stage2
             ./fixtures/ixby
             ./fixtures/ixby-symbolic
@@ -218,6 +219,7 @@
             assembly-scaling = assemblyScalingCheck;
             source-evidence = sourceEvidenceCheck;
             ixby = ixbyCheck;
+            aiur = aiurCheck;
             ixby-symbolic = ixbySymbolicCheck;
             ixby-stage2 = ixbyStage2Check;
             ixby-lean = ixbyLeanCheck;

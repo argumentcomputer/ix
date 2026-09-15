@@ -255,6 +255,21 @@ the same native BLAKE3 exception already required by checked HPT production
 and the final content-address rebuild; the attachment introduces no new
 trusted primitive.
 
+## Aiur logical-trace boundary
+
+The [Aiur foundation](aiur-backend.md) pins eleven pure upstream Lean modules
+at `a8c4d2d21eaf45ee9160bdd103dfbcefe31f7f03`. It introduces no native Aiur
+interface or new axiom. The checked logical-trace API retains field-weighted
+balance, activity, a consumer bound, and one coherent witness heap. A mixed
+static-order/counter/rank certificate yields finite rooted derivations.
+
+The row certificate remains a premise until bytecode checking and AIR
+extraction establish its facts. The API does not yet identify those rows
+with the keyed circuit, interpret them as bytecode evaluation, or establish
+Ixon/DSL source preservation. Its 33 exact axiom assertions use only the
+ordinary logical basis, and its source-inventory and regression gates are
+required. The ledger records this scope as `aiur-logical-trace-v0`.
+
 ## Canonical IxIR₂ snapshot boundary
 
 The [version-1 snapshot codec](ixir2-wire.md) adds complete ordered program and

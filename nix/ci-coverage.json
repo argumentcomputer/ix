@@ -4,6 +4,7 @@
  "proof_modules":
  ["Compilatrix",
   "Compilatrix.AddressEnv",
+  "Compilatrix.Aiur",
   "Compilatrix.Borrow.Pipeline",
   "Compilatrix.Borrow.Runtime",
   "Compilatrix.Borrow.RuntimeInput",
@@ -595,11 +596,13 @@
   "Compilatrix.X86.WordRegionSafeControl",
   "Compilatrix.X86.WordRegionSafeMacros",
   "Compilatrix.X86.WordRegionSafeTrace",
+  "CompilatrixTests.Aiur.Proofs",
+  "CompilatrixTests.Fences.Aiur",
   "CompilatrixTests.IxIR1.Lower",
   "CompilatrixTests.IxIR1.ThesisBench",
   "CompilatrixTests.IxIR1.WellModedGen",
   "CompilatrixTests.Pipeline.Integration"],
  "baseline": "6beaf5d0: complete required CI before factoring",
  "axiom_sha256":
- "e11448df9bc8d36d05e5e43c9cefb5b44d2eceac557486eb5ae172f570cb231d",
- "axiom_count": 2072}
+ "8c38475ea75dcf27f836949121ac501eee411ec3538af5efdd8998fa2b565f1f",
+ "axiom_count": 2105}

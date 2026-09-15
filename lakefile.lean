@@ -21,6 +21,11 @@ lean_lib Stage2Source where
   srcDir := "vendor/stage2"
   roots := #[`Ix.MultiStark.Verify]
 
+/- Pure Aiur target definitions and abstract counter/order lemmas. -/
+lean_lib AiurReference where
+  srcDir := "vendor/aiur"
+  roots := #[`Ix.Aiur, `Ix.IndexMap, `Ix.Lib]
+
 /- Blake3 FFI. Keep this revision in lockstep with the flake's
 `blake3-lean` input and `lake-manifest.json`. -/
 require Blake3 from git
@@ -61,6 +66,9 @@ lean_exe «tests-pipeline» where
 lean_exe «tests-hpt» where
   root := `CompilatrixTests.HPT.Main
 
+lean_exe «tests-aiur» where
+  root := `CompilatrixTests.Aiur.Main
+
 lean_exe «catalog-contact» where
   root := `CatalogContact
 
@@ -79,6 +87,10 @@ lean_exe «ixby-run» where
 lean_exe «check-ixby» where
   srcDir := "scripts"
   root := `CheckIxby
+
+lean_exe «check-aiur» where
+  srcDir := "scripts"
+  root := `CheckAiur
 
 lean_exe «check-ixby-lean» where
   srcDir := "scripts"

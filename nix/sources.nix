@@ -31,7 +31,9 @@
   dynamicRoots = ["Ix.MultiStark.Verify.Source" "Compilatrix.Ixby.Runtime.Examples"];
 in {
   inherit programTargets dynamicRoots;
-  production = source ["Compilatrix"];
+  # The native facet builds the whole reference library, including roots
+  # outside the production API's narrower bytecode/counter imports.
+  production = source (["Compilatrix"] ++ graph.targets.AiurReference.roots);
   programs = source (dynamicRoots ++ lib.concatMap (name: graph.targets.${name}.roots) programTargets);
   proofs = source ["CompilatrixTests.Proofs"];
   dependencies = lib.fileset.toSource {

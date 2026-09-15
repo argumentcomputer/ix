@@ -66,6 +66,7 @@ performance reports preserve evidence from their recorded revisions.
 | [Allocating physical CFGs](source-native-heap.md) | Leaf allocation/reuse across calls and joins, fixed spills, complete snapshots, finite heap/stack source-to-ELF preservation, and reclamation |
 | [Captured scalar exports](source-native-captured-scalar.md) | Checked closed initialization, one static Word capture, unary runtime application, complete reclamation, and source-to-ELF proof |
 | [Trust ledger](trusted-extern-ledger.md) | Native interfaces, seed/build trust, specification boundaries, and change control |
+| [Aiur backend foundation](aiur-backend.md) | Pinned target vocabulary, checked logical traces, witness memory, mixed counter/rank derivations, and remaining AIR/source boundaries |
 
 The [machine-readable trust ledger](trusted-externs.json) and
 [reference-model pin](x86-reference-model.json) support the corresponding prose

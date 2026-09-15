@@ -177,6 +177,7 @@ import Compilatrix.IxIR2.Borrow.OpenExamples
 import Compilatrix.Fence
 
 import Compilatrix.Ixby.Catalog
+import CompilatrixTests.Aiur.Proofs
 import Compilatrix.Ixby.Examples
 import Compilatrix.Ixby.Report
 import Compilatrix.Ixby.SymbolicExamples
