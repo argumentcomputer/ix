@@ -108,7 +108,7 @@
         "every .lean file in the pinned package tree is scanned for @[extern] declarations, so sibling modules cannot add symbols silently",
         "the Rust crate graph and checksums are locked and checked below",
         "the compiled tests check the official empty-input vector, determinism, input sensitivity, a complete serialized-constant address, complete IxIR0/IxIR1 declaration preimage addresses, dependency-rekeyed generated IxIR1 declaration digests, executable semantic audits, protected source identities, and version-3 recursively field-aware HPT cache/summary identities through deterministic production, persistent checked ingress, record-streamed filesystem parity with the pure codec, malformed-stream rejection, dependency-cone rebuilding, power-loss-durable sibling staging for snapshots and indexed chunks with ignored orphan transactions, lazy stale-corruption isolation, file-backed corruption recovery, depth-two fetch/case refinement with exact and one-below depth limits, checked case-binder field recovery through both the ordinary checker and deterministic producer, checked finite-constructor case pruning, PAP fusion across all saturation classes, exact scalar fetch forwarding after allocation and reuse, rooted declaration/SCC removal with exported-root and dynamic-apply fallbacks through deterministic one-rebuild graph regressions, and a compiler-emitted six-to-one stored-function reduction that preserves its exact constructor result",
-        "Nix builds the Rust static library in a sandbox and records its closure",
+        "Nix builds the Rust static library and Lean modules with the same pinned Lean 4.33.0 toolchain, rejects mismatched root/dependency toolchain pins, and records the closure",
         "the source-borrow gate checks eighteen accepted Ixon call chains, full caller/callee reconstruction, independent complete heap execution, actual RC reduction, checked baseline fallback, and thirteen corrupted artifacts; its four indexed source fences retain the existing addressed-source hash dependency while six core borrow fences use only propext and Quot.sound",
         "the source-borrow-runtime gate checks nine accepted open source functions, 144 independent direct/PAP comparisons, nine aliased lenders, exact baseline fallback, and twenty corrupted artifacts; structural proofs select before runtime arguments arrive and derive source/function/continuation preservation and complete owned-input reclamation with two fewer RC ticks and unchanged peak; ten new core/source-shape/input fences use only existing logical axioms and five indexed source fences retain the addressed-source hash dependency",
         "the version-1 IxIR2 snapshot gate uses an independent strict binary parser, complete source/program/context inspection views, fixed expected roots, and two fresh artifact sets; twenty exact axiom fences distinguish hash-independent codec laws from the existing addressed-source dependency",
@@ -178,9 +178,9 @@
         ]
       },
       "pins": {
-        "lake_rev": "aaf530784082a2c00b0a93648741429d274102ca",
+        "lake_rev": "c9b2273fb9c2c33b94eba091dc4111163f5db2bc",
         "flake_node": "blake3-lean",
-        "blake3_lean_rev": "aaf530784082a2c00b0a93648741429d274102ca",
+        "blake3_lean_rev": "c9b2273fb9c2c33b94eba091dc4111163f5db2bc",
         "blake3_upstream_rev": "b97a24f8754819755ef78d8016c0391c65c943c5",
         "blake3_version": "1.8.4",
         "lean_ffi_rev": "cc98ebf67bf453ac3827cb767f78b13ea674dd6a"
@@ -782,11 +782,11 @@
   "integrity": {
     "tracked_files": {
       ".envrc": "87816b617d65211b5bc9a1141332863f8e3cb05c387ef539d87f459e81eb8d06",
-      "flake.lock": "3c4a89a3d87dd10ac70c1c1a11449055f94abb1ad857b339c29f302160a6445f",
-      "flake.nix": "9d76350ed989e70dbf282f4f2a36b07c95cd29beccbe415e9b6807e01f6c4bc4",
+      "flake.lock": "ca0711efa5d1703dfb9f63d990e47c031270fdcb9044f4f475610ccc0354a779",
+      "flake.nix": "b504b9344da65ecf16ee31c56dfdc066590f2b1e36e21870449654f812391734",
       "fixtures/x86/native_harness.c": "95defbf83b11bc9d7d8dd5d6caf9b48c49ac1ecdf97913b540be9865eca50f52",
-      "lake-manifest.json": "96a10cee37eac24e288f45d01365c96c2333428c871593d74d9da3baaa9ea7c0",
-      "lakefile.lean": "ca9ee84b5b8ae2409b845e0e5ea043830cc097c78264c01d75969df371cf3617",
+      "lake-manifest.json": "9bf1db3a73373ba24f654efe2948107c2a7034884335016d8878b8a5f5f346a7",
+      "lakefile.lean": "114ee6e5026d9ea1254b0647f77def8c5f81037aaf33ea0c0613e0636827643a",
       "lean-toolchain": "302cd63c54178885b89e669f33b38f12f4dd7ae7e5cac537b3203e3768d8fb2b",
       "native/hpt_cache_sync.c": "f44c087cf80b2f5499ac1e25c0bb63be0f1e0687bc49a941c6b0ace8b03248f5",
       "Compilatrix/Tools/Check.lean": "680a94c630dc94304cccffed796178d3d0d77f1ea595a052176fef98c8b11e23",
@@ -1072,26 +1072,22 @@
       "Compilatrix/Ixby/Runtime/ArrayTreeUpdate.lean": "21ff022f1ecdceb69b4ad3dcdae14d0a81e187ff25c79179d4bcf99304c608fe",
       "Compilatrix/Ixby/Runtime/ArrayTrees.lean": "10d6d431b1077ae38917d1405c31a395d423de3ff2caf9036c592b1f44780b5e",
       "benchmarks/comparisons/lakefile.lean": "ad27b40565415b49daf60f5c0799d704d73ede44847945ff77ba3a35fc217705",
-      "benchmarks/comparisons/lake-manifest.json": "06920f9d85ef977e3cbb26b30095e986d9fcfe717e3c0fe2436373dc72aff7b2",
+      "benchmarks/comparisons/lake-manifest.json": "152f659aa6d7fb83e6fc6b59096a21a788761918319329aaf8099033640ddcdd",
       "benchmarks/comparisons/lean-toolchain": "302cd63c54178885b89e669f33b38f12f4dd7ae7e5cac537b3203e3768d8fb2b",
       "benchmarks/comparisons/shell.nix": "297bf6bd1aed4607fb0c2035c973e85d2d4468bc51e03ada0df8ab9df330eac1",
       "benchmarks/comparisons/Comparisons.lean": "b685f7a7f5d3364aedca88b4796175d11dc1b27520973d10427458f2b0f852f8"
     },
     "flake_nodes": {
       "blake3": "b97a24f8754819755ef78d8016c0391c65c943c5",
-      "blake3-lean": "aaf530784082a2c00b0a93648741429d274102ca",
+      "blake3-lean": "c9b2273fb9c2c33b94eba091dc4111163f5db2bc",
       "crane": "7cf72d978629469c4bd4206b95c402514c1f6000",
       "fenix": "a30830ebacdf957690dd8ea9ade9f12809ae0982",
       "flake-parts": "3107b77cd68437b9a76194f0f7f9c55f2329ca5b",
       "flake-parts_2": "a34fae9c08a15ad73f295041fec82323541400a9",
-      "flake-parts_3": "a34fae9c08a15ad73f295041fec82323541400a9",
-      "lean4-nix": "9edc9448c8fe9552ba2b66e6097abda6e14e5c6f",
-      "lean4-nix_2": "c41a770e44a990da275dad0f70da75f22197e597",
+      "lean4-nix": "c41a770e44a990da275dad0f70da75f22197e597",
       "nixpkgs": "1306659b587dc277866c7b69eb97e5f07864d8c4",
       "nixpkgs-lib": "333c4e0545a6da976206c74db8773a1645b5870a",
       "nixpkgs-lib_2": "2075416fcb47225d9b68ac469a5c4801a9c4dd85",
-      "nixpkgs-lib_3": "2075416fcb47225d9b68ac469a5c4801a9c4dd85",
-      "nixpkgs_2": "1306659b587dc277866c7b69eb97e5f07864d8c4",
       "rust-analyzer-src": "17d028e9d7161cf6ebf21e21d3c4a1835099e039"
     }
   }

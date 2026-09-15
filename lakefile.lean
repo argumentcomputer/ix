@@ -18,7 +18,7 @@ lean_lib Stage2Source where
 `blake3-lean` input and `lake-manifest.json`. -/
 require Blake3 from git
   "https://github.com/argumentcomputer/Blake3.lean" @
-  "aaf530784082a2c00b0a93648741429d274102ca"
+  "c9b2273fb9c2c33b94eba091dc4111163f5db2bc"
 
 /- The portable Lean filesystem API stops at buffered flush. Compile the
 small, ledgered POSIX durability boundary as a normal traced Lake input. -/

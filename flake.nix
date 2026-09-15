@@ -27,11 +27,10 @@
     # lakefile.lean/lake-manifest.json. Nested inputs (crane, fenix,
     # blake3 source, flake-parts) are pinned at lock time to ix's
     # flake.lock revs — the combination proven on this machine.
-    # NB: no lean4-nix follows — blake3-lean uses the lenianiva
-    # lean4-nix API (readToolchainFile), incompatible with our
-    # argumentcomputer fork; its lean4-nix is pinned at lock time to
-    # ix's rev instead.
-    blake3-lean.url = "github:argumentcomputer/Blake3.lean/aaf530784082a2c00b0a93648741429d274102ca";
+    # Share the toolchain helper so Lean modules and Rust FFI headers use
+    # the same reviewed Lean release and Nix derivation.
+    blake3-lean.url = "github:argumentcomputer/Blake3.lean/c9b2273fb9c2c33b94eba091dc4111163f5db2bc";
+    blake3-lean.inputs.lean4-nix.follows = "lean4-nix";
   };
 
   outputs = inputs @ {
@@ -70,6 +69,8 @@
       };
     # Reuse the pinned upstream flake and all its other inputs unchanged.
     blake3WithStaticCrates =
+      assert builtins.readFile (blake3-lean.outPath + "/lean-toolchain")
+        == builtins.readFile ./lean-toolchain;
       (import (blake3-lean.outPath + "/flake.nix")).outputs
       (blake3-lean.inputs
         // {
