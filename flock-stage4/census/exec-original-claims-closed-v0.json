@@ -1,0 +1,281 @@
+{
+  "schema": "ixby-stage4-original-claims-closed-evidence-v0",
+  "measurement_date": "2026-09-13",
+  "base_revision": "670bafc7529568d46809c17a4deeb4af17be3f6c",
+  "status": "whole_proof_free_original_claim_closure_refused_supported_domain_before_completion",
+  "flock_revision": "b310f35f35f68095537150a1c8c0a43caca9a29e",
+  "rustc": "1.98.0 (88d9e12ae 2026-08-18)",
+  "scope": "An explicit new Stage 4 composition verifies the complete original generic Flock execution proof and directly discharges every original deferred claim. It replaces only Stage 4 adapter-generated auxiliary folds, not original proof checks. The small packed scalar class is a diagnostic, not a scalable Stage 2 guest profile.",
+  "source_archive": {
+    "sha256": "1d195aa08e0488808984bffb34fa1089ce6fe5776bf06fb4d2d63d7f46a93cd6",
+    "files": 190,
+    "bytes": 539287,
+    "scope": "Frozen isolated native-workspace source used on the CPU host. Includes the complete closure implementation and pre-C0-storage-optimization FFLONK source; the census does not preprocess a key or use C0."
+  },
+  "source_hashes": [
+    {
+      "path": "flock-stage4/circuit/src/fixed_table_batch.rs",
+      "sha256": "70b01805b9d5d72984a12dbf82c07ee48e3927f7770016a9ea87501009279ddb"
+    },
+    {
+      "path": "flock-stage4/circuit/src/fixed_table_batch_tests.rs",
+      "sha256": "0c9929aa11f28f82c07e8a7edc8c33aa049772542fdc99ebfe58a463bf3b9be5"
+    },
+    {
+      "path": "flock-stage4/circuit/src/jagged_direct.rs",
+      "sha256": "da4df1dfb56df4b272843d26766825e4c87a9516ae86fa299a51501635c54be8"
+    },
+    {
+      "path": "flock-stage4/circuit/src/jagged_direct_tests.rs",
+      "sha256": "1ea52c60057526691aa8ec4d81e2559b8d73d9d1bae27b11b7ca9e1857835d86"
+    },
+    {
+      "path": "flock-stage4/circuit/src/original_claims.rs",
+      "sha256": "5c593990e8f2961589ebf20e481a01394978347b3ee4f812d4a83c4f190a7b4d"
+    },
+    {
+      "path": "flock-stage4/circuit/src/structured_matrices.rs",
+      "sha256": "8cfb9e70bddcbe5ee83fdc3359f4e7cdb53f1c55c961e2edc1cf79277b03809d"
+    },
+    {
+      "path": "flock-stage4/circuit/src/structured_matrices_tests.rs",
+      "sha256": "559b52b74c3303ea19805a0ca249a50e59aa0ba4820a5b04c53d864200920960"
+    },
+    {
+      "path": "flock-stage4/exec/src/direct_jagged_tests.rs",
+      "sha256": "ccab6043a237be7e46f05650c2386e3d2571a31b3b3baa88c7673c2b80c1fb1e"
+    },
+    {
+      "path": "flock-stage4/exec/src/direct_structure_tests.rs",
+      "sha256": "7d44946f8030296291e9ae971891083ed6f24faff12af78029e6cf9fe0681b78"
+    },
+    {
+      "path": "flock-stage4/exec/src/original_closure.rs",
+      "sha256": "ac105f077fa97d589272490c7976d73358665c36c6443982f7063b8a918a7518"
+    },
+    {
+      "path": "flock-stage4/exec/src/original_closure_tests.rs",
+      "sha256": "45db877581a0d4e7421844e36428538f532cd755b83a4d5cdd5d1da6697d243c"
+    },
+    {
+      "path": "flock-stage4/exec/src/packed_root_cost_tests.rs",
+      "sha256": "579c311df0e907757b953d7cb568b30b8fb0c344a76e24fd539cb9d2f124ed85"
+    },
+    {
+      "path": "flock-stage4/exec/src/shared_matrix_tests.rs",
+      "sha256": "30fbdc8303f683dbc212e1c4730c80ffc608261b51e489eadc70e1fbadc306f2"
+    },
+    {
+      "path": "flock-stage4/trace/src/jagged_direct.rs",
+      "sha256": "4115dfcaea9bee94912f35e510113c8b6c10b024af788014f3a5b15d88ae2f05"
+    },
+    {
+      "path": "flock-stage4/trace/src/jagged_direct_tests.rs",
+      "sha256": "cd37987b1612be5f342e8213720bf0e2325544f00293315e77225f518b8bd041"
+    },
+    {
+      "path": "flock-stage4/trace/src/original_claim_tables.rs",
+      "sha256": "2e4756b9e149ba25bf4422869bcf21e73b66cea7ee4b8ddb1f235c896329a2e8"
+    },
+    {
+      "path": "flock-stage4/trace/src/structured_matrices.rs",
+      "sha256": "5ee702b96de4e38f7a1deac2b52dddb334c9daf14bbc061372a4f2aa25309b88"
+    },
+    {
+      "path": "flock-stage4/trace/src/structured_matrices_tests.rs",
+      "sha256": "5b6814fe0330b9f447ab4f5098ce28d628f742422c6acf2e3a12566e2286fe4d"
+    },
+    {
+      "path": "flock-stage4/circuit/src/exec_relation.rs",
+      "sha256": "c623241d6e9a30051372ce10ce2a92a4834b1cf436f05042c950a64460fb71d6"
+    },
+    {
+      "path": "flock-stage4/circuit/src/f128.rs",
+      "sha256": "977e438d917284a93da5ca1b533af373a1e40001a9cc25ce238cf6def1a8ab93"
+    },
+    {
+      "path": "flock-stage4/circuit/src/lib.rs",
+      "sha256": "9066beec40c50cf4463af75e634a3a24eaa2c51feb7c03780522d167b6b1b03b"
+    },
+    {
+      "path": "flock-stage4/exec/src/closure_census.rs",
+      "sha256": "0a2432bc396a08fccbef6b25e94c44803a7844f86af10e7c8cf7a59e04f31936"
+    },
+    {
+      "path": "flock-stage4/exec/src/lib.rs",
+      "sha256": "c5988b74e3f61c073337f77554e4e3c92ae3fc711f2c53ef25279320b80176fb"
+    },
+    {
+      "path": "flock-stage4/exec/src/setup_emission.rs",
+      "sha256": "8395684241f034c52562e7cd5d32b0de93a8eb9cd43f2de858dc38d9b2fecd34"
+    },
+    {
+      "path": "flock-stage4/exec/src/tests.rs",
+      "sha256": "96b435731a3bceab9f9c1b704fa0501d9195d77ee30bda10b66d46c7d81ff012"
+    },
+    {
+      "path": "flock-stage4/trace/src/lib.rs",
+      "sha256": "41161fca145c0837a8c1c446267575485ef3d1ee6ae00de9aa67cefbe75153b0"
+    }
+  ],
+  "composition": {
+    "api": "compile_exec_original_claims_closure / CompiledExecOriginalClaimsClosure",
+    "digest": "2c8410985a6178661748c8635f17529d3821ce8962bb42f480e19425b807ef62",
+    "tables_digest": "2dd8611210d680307cf0c499ea8585f1e140caa654fc04f019fccdd57c30155f",
+    "setup_digest": "e02060020627b285c8c1d13989e9a18cb0f88595ca5bf414f8daaf4b6f713e96",
+    "replay_digest": "5299fddaa07d51bd22d1701d61d5b376a105c150fcc18c580d3395a8c7c1a2d0",
+    "matrix_claims": 64,
+    "structure_claims": 3,
+    "jagged_claims": 3,
+    "public_fr_values": 2,
+    "queries": [
+      244,
+      79,
+      48
+    ],
+    "query_grinding_bits": [
+      16,
+      16,
+      16
+    ],
+    "main_relation_unchanged": "The original transcript/PoW, S=H4(P,B,I,O), public Q=H5(P,B,O), zerocheck/lincheck, Product-GKR wiring, merged PCS/ring switch/multipoint/untwisted checks and inner Ligerito/Merkle checks use the same private shared emitter body.",
+    "direct_closure": "All 64 matrix low weights and high-point prefixes are shared only when their constrained bit wires are identical. Structure evaluates the complete eight-plane setup table with shared suffix wires. Jagged evaluates both scaled equality rows and every combination term at a shared constrained column point. Every original claim value is equated in-circuit to its exact evaluation.",
+    "setup_ownership": "Only approved replay/setup data compile immutable tables and topology. Every table ID, ordered claim set, geometry and source payload is checked before allocation. No guest/proof/table hint/native acceptance bit chooses topology. Compilation errors never select the legacy fold route as a fallback.",
+    "source_slots": {
+      "f128_words": 12613,
+      "digest32_words": 1113,
+      "byte_payloads": 380,
+      "byte_payload_bytes": 14592,
+      "logical_payload_bytes": 252016
+    }
+  },
+  "whole_census": {
+    "outcome": "RejectedBudget",
+    "complete": false,
+    "started_utc": "2026-09-13T12:30:51Z",
+    "finished_utc": "2026-09-13T12:55:14Z",
+    "test_exit_code": 0,
+    "test_pass_means": "The bounded diagnostic successfully returned and checked a typed domain refusal. It does not mean the circuit fit, an assignment was checked, or a terminal proof was generated.",
+    "limit_required_domain_rows": 1073741824,
+    "refused_prefix": {
+      "r1cs_constraints": 667661260,
+      "plonk_constraint_rows": 1073741821,
+      "plonk_auxiliary_wires": 406080561,
+      "last_phase": "MatrixFold"
+    },
+    "public_input_rows": 2,
+    "blinding_rows": 2,
+    "refused_required_rows": 1073741825,
+    "emission_and_setup_seconds": 1462.311,
+    "command_wall_seconds": 1462.44,
+    "maximum_test_process_rss_kib": 564120,
+    "maximum_sampled_virtual_size_kib": 626800,
+    "process_tree_rss_measured": false,
+    "main_completed_checkpoint": {
+      "r1cs_constraints": 331318108,
+      "plonk_constraint_rows": 543010856,
+      "elapsed_seconds": 805.14
+    },
+    "assigned_whole_census_run": false,
+    "full_count_or_projection_digest_known": false,
+    "raw_log": {
+      "path": "flock-stage4/census/exec-original-claims-closed-v0.log",
+      "sha256": "2ef7bf76100a6e9eed87cbe47b8b37f27524609978893e7d9128b3e1a32bd0d4"
+    },
+    "warning": "The first refused prefix exceeded the cap by one row, but substantial matrix work and the structure/jagged checks remained. Neither a one-row reduction nor a sum of separately allocated component counts is a demonstrated full fit."
+  },
+  "host_and_limits": {
+    "cpu": "Intel Xeon 6975P-C",
+    "logical_cpus": 64,
+    "physical_cores": 32,
+    "memory_bytes": 532326563840,
+    "virtual_address_limit_gib": 32,
+    "rayon_threads": 8,
+    "cargo_build_jobs": 16,
+    "timeout_seconds": 3600,
+    "kill_after_seconds": 30,
+    "rust_toolchain": "Existing rustup 1.98.0; no Rust installation or user configuration change.",
+    "measurement_scope": "Matrix-free setup/constraint projection, not full R1CS, witness, key, SRS, FFT, or scratch allocation. Low census RSS is not a prover peak or whole-pipeline admission."
+  },
+  "native_prefix_regression": {
+    "executions": 3,
+    "bundle_bytes_each": 236307,
+    "programs_and_inputs": "Local-return false, local-return true, and a different literal-return image under one approved packed small-class setup.",
+    "exact_r1cs_prefix_constraints": 4096,
+    "checks": [
+      "Complete immutable setup rebuilt identically before proofs.",
+      "Direct setup prefix equals legacy-fold setup prefix and each assigned native prefix.",
+      "All table identities/coverage/geometry preflight; malformed table sets reject without emission.",
+      "Source payload, materialized row, and tiny PLONK budgets reject with sticky errors; setup/assigned refusal agreement.",
+      "All component evaluations agree with independently computed native field/table values."
+    ],
+    "remote_test_exit_code": 0,
+    "remote_log_sha256": "17badc6e74e56e7c3fccdd7bf0626288ccc51472513b9fe6ee05598ec36e6ddc",
+    "scope": "Real Stage 3 proof/replay plus bounded Stage 4 prefixes, not complete circuit identity, assignment satisfaction, or a Stage 4 proof."
+  },
+  "independent_component_censuses": [
+    {
+      "component": "64 original matrices",
+      "r1cs_constraints": 349801921,
+      "plonk_constraint_rows": 552381742,
+      "projection_digest": "452f3e6eb82cb55af17c7045a1c65819926313ce16b729363dac5001fbfc383e",
+      "program_digest": "942c6cff1fb8d6f32e9229118e017d5cd6e5d128b51dfb22a8d0faede57ce676",
+      "setup_seconds": 625.124,
+      "assigned_seconds": 630.964,
+      "source_entries": 501855,
+      "low_pairs": 4096,
+      "low_blocks": 11230,
+      "coefficient_terms": 148967,
+      "shared_nodes": 63971
+    },
+    {
+      "component": "3 original structure claims",
+      "r1cs_constraints": 29459334,
+      "plonk_constraint_rows": 37492660,
+      "projection_digest": "4ae224444361b67c4daf6fb8e6089bc244b17cbe6727c166b25787f75f2654cb",
+      "program_digest": "ac31d6c819827702bc83d5e3ffdd23b7ee2d8908c5f74fea758bb346598eaa7b",
+      "setup_seconds": 77.299,
+      "assigned_seconds": 74.516
+    },
+    {
+      "component": "3 original jagged claims",
+      "r1cs_constraints": 48822117,
+      "plonk_constraint_rows": 78835570,
+      "projection_digest": "ec894e91217a0af1a7078168b8c68804dd35bd3fb45797abb49747618b400583",
+      "program_digest": "fa05dc32ea73a11ff473c171b0d1fab1445bd8e2aeb0c72cdaa1fccacbcf0038",
+      "setup_seconds": 84.665,
+      "assigned_seconds": 85.391,
+      "equality_nodes": 5166,
+      "row_nodes": 2976,
+      "combination_terms": 291
+    }
+  ],
+  "component_scope": "Each setup-only and assigned component census completed with exactly equal R1CS projection and PLONK census. Components independently allocate their inputs/claims and exclude the main verifier; they cannot be summed into a whole-relation count. Measurements preceded lint-only checked-conversion cleanup; program digests and native prefix identity were rechecked with the final frozen source.",
+  "regressions": {
+    "ordinary_workspace_passed": 228,
+    "ordinary_workspace_ignored": 31,
+    "per_crate": {
+      "fflonk": 89,
+      "trace": 43,
+      "circuit": 79,
+      "exec": 17
+    },
+    "clippy_all_targets_warnings_denied": "PASS",
+    "format_check": "PASS",
+    "scope": "Includes the independently committed derived-C0 storage optimization. Synthetic materialized gadgets test literal coefficients, false claims, every claim/output bit, identical setup/assigned matrices, strict wire-identity sharing, malformed geometry/coverage and fail-closed limits. No full Exec relation proof was generated."
+  },
+  "commands": [
+    "ulimit -v 33554432; RAYON_NUM_THREADS=8 CARGO_BUILD_JOBS=16 /usr/bin/time -v timeout --kill-after=30s 900 /home/john/.cargo/bin/rustup run 1.98 cargo test --manifest-path flock-stage4/Cargo.toml --release --offline --locked -p ixby-stage4-exec packed_small_original_claim_closure_is_owned_and_matches_native_prefixes -- --ignored --nocapture --test-threads=1",
+    "ulimit -v 33554432; RAYON_NUM_THREADS=8 CARGO_BUILD_JOBS=16 /usr/bin/time -v timeout --kill-after=30s 3600 /home/john/.cargo/bin/rustup run 1.98 cargo test --manifest-path flock-stage4/Cargo.toml --release --offline --locked -p ixby-stage4-exec packed_small_whole_original_claims_closed_census -- --ignored --nocapture --test-threads=1",
+    "ulimit -v 16777216; RAYON_NUM_THREADS=4 timeout 300 cargo test --release --offline --locked --manifest-path flock-stage4/Cargo.toml --workspace -- --test-threads=1",
+    "cargo clippy --release --offline --locked --manifest-path flock-stage4/Cargo.toml --workspace --all-targets -- -D warnings",
+    "cargo fmt --manifest-path flock-stage4/Cargo.toml --all -- --check"
+  ],
+  "whole_closed_r1cs_materialized": false,
+  "whole_closed_assignment_checked": false,
+  "terminal_key_or_srs_generated": false,
+  "terminal_proof_generated": false,
+  "whole_pipeline_resource_admitted": false,
+  "formal_refinement_or_compiler_handoff_completed": false,
+  "next_gate": "Reduce exact relation cost below the supported domain without weakening checks, complete setup/assigned whole census agreement, then whole-pipeline resource admission, actual materialization and complete isolated terminal proving/verification."
+}

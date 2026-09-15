@@ -53,12 +53,14 @@ import Tests.Ix.CondenseM
 import Tests.FFI
 import Tests.Keccak
 import Tests.MultiStark
+import Tests.MultiStark.Verify
 import Tests.Aggr
 import Tests.AggrSemantics
 import Tests.AggrActivation
 import Tests.Cli
 import Tests.Ix.Ixes
 import Tests.ShardMap
+import Tests.Ixby
 import Tests.Ix.EnvBody
 import Tests.Ix.Lean4Lean
 import Tests.Ix.MetaEnv
@@ -162,6 +164,7 @@ execute at module initialization for unrelated invocations. All are
 seconds-scale (measured 2026-08-05: aiur-prove ~11s, the rest 2-4s
 each). -/
 def primaryRunners : List (String × IO UInt32) := [
+  ("aiur-hoisting", AiurTests.Hoisting.suite),
   ("aiur-prove", do
     IO.println "aiur-prove"
     match AiurTestEnv.build (pure toplevel) with
@@ -204,10 +207,44 @@ def primaryRunners : List (String × IO UInt32) := [
   ("ix-aggr", Tests.Aggr.convergedSuite),
   -- `.ixes` manifest parser: trailing tree/peaks sections and strictness.
   ("ixes-manifest", Tests.Ix.Ixes.suite),
+  ("ixby", Tests.Ixby.Basic.suite),
+  ("ixby-crypto", Tests.Ixby.Crypto.suite),
+  ("ixby-codec", Tests.Ixby.Codec.suite),
+  ("ixby-nat-codec", Tests.Ixby.NatCodec.suite),
+  ("stage2-codec", Tests.MultiStark.Verify.Codec.suite),
+  ("stage2-claim", Tests.MultiStark.Verify.Claim.suite),
+  ("stage2-key", Tests.MultiStark.Verify.Key.suite),
+  ("stage2-transcript", Tests.MultiStark.Verify.Transcript.suite),
+  ("stage2-shape", Tests.MultiStark.Verify.Shape.suite),
+  ("stage2-ood", Tests.MultiStark.Verify.Ood.suite),
+  ("stage2-mmcs", Tests.MultiStark.Verify.Mmcs.suite),
+  ("stage2-fri", Tests.MultiStark.Verify.Fri.suite),
+  ("stage2-pcs", Tests.MultiStark.Verify.Pcs.suite),
+  ("stage2-source", Tests.MultiStark.Verify.Source.suite),
+  ("ixby-claim", Tests.Ixby.Claim.suite),
+  ("ixby-flock-contract", Tests.Ixby.Flock.Contract.suite),
+  ("ixby-flock-control", Tests.Ixby.Flock.Control.suite),
+  ("ixby-flock-bytes", Tests.Ixby.Flock.Bytes.suite),
+  ("ixby-flock-words", Tests.Ixby.Flock.Words.suite),
+  ("ixby-flock-objects", Tests.Ixby.Flock.Objects.suite),
+  ("ixby-flock-nats", Tests.Ixby.Flock.Nats.suite),
+  ("ixby-flock-applications", Tests.Ixby.Flock.Applications.suite),
+  ("ixby-aiur", Tests.Ixby.Aiur.Scalar.suite (withProofs := false)),
+  ("ixby-control", Tests.Ixby.Aiur.Control.suite (withProofs := false)),
+  ("ixby-objects", Tests.Ixby.Aiur.Objects.suite (withProofs := false)),
+  ("ixby-objects-memory", Tests.Ixby.Aiur.Objects.Memory.suite),
+  ("ixby-objects-table", Tests.Ixby.Aiur.Objects.Table.suite),
+  ("ixby-objects-parser", Tests.Ixby.Aiur.Objects.Parser.suite),
 ]
 
 /-- Ignored test runners - expensive, deferred IO actions run only when explicitly requested -/
 def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
+  ("stage2-codec-real", Tests.MultiStark.Verify.Native.suite),
+  ("stage2-wrapper-real", Tests.MultiStark.Verify.Wrapper.suite),
+  ("aiur-hoisting-prove", AiurTests.Hoisting.suite true),
+  ("ixby-aiur-prove", Tests.Ixby.Aiur.Scalar.suite),
+  ("ixby-control-prove", Tests.Ixby.Aiur.Control.suite),
+  ("ixby-objects-prove", Tests.Ixby.Aiur.Objects.suite),
   ("ixvm", do
     let kernelChecks ← kernelChecks env
     -- the kernel CheckEnv smokes .

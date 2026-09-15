@@ -1,0 +1,23 @@
+[package]
+name = "ixby-flock"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+bincode.workspace = true
+blake3.workspace = true
+flock-prover.workspace = true
+num-bigint = "=0.5.1"
+rayon.workspace = true
+serde.workspace = true
+
+[dev-dependencies]
+# Arithmetic differential oracles only; the native multi-stark verifier and
+# its Stage 2-specific advice export API are not dependencies of this backend.
+p3-field = { git = "https://github.com/Plonky3/Plonky3", rev = "3152b14a89067c83775a8076cc262ffc48a1fd7c" }
+p3-goldilocks = { git = "https://github.com/Plonky3/Plonky3", rev = "3152b14a89067c83775a8076cc262ffc48a1fd7c" }
+
+[lints]
+workspace = true

@@ -1,0 +1,131 @@
+{
+  "schema": "ixby-stage4-structural-blake3-root-census-v0",
+  "measurement_date": "2026-09-13",
+  "base_revision": "44cdbfd3",
+  "status": "exact_structural_root_components_and_matrix_free_census_not_a_closed_relation",
+  "setup_digest": "41163b87f03675917ac93824d8b1c11ab0c489c2fc2e03abece34d11fa3255f7",
+  "flock_revision": "b310f35f35f68095537150a1c8c0a43caca9a29e",
+  "source_table_compiler": {
+    "path": "crates/flock-prover/src/r1cs_hashes/blake3.rs",
+    "sha256": "47dc4afcfca3d8f19f5ced5696d7ab192dde8902f94280a93bceed037d9f648f",
+    "hash_recorded_before_port": true,
+    "reuse": "Public layout constants and Option-F linear row formulas only. Neither the upstream source nor any approved Stage 3 matrix, profile, key or transcript was modified."
+  },
+  "source_hashes": [
+    {
+      "path": "flock-stage4/trace/src/binary_linear_map.rs",
+      "sha256": "1716e6218e0a8142e7af3b07fc65123f2da18223707b983b745261d1d3b1b1c1"
+    },
+    {
+      "path": "flock-stage4/circuit/src/binary_linear_table.rs",
+      "sha256": "93f9d2b7ca6e790105c669d240b814a7df35dced9de626b17609c43b613ae152"
+    },
+    {
+      "path": "flock-stage4/exec/src/blake3_table.rs",
+      "sha256": "0d0d1396846c38a6bc9785c809cb3ad10ab022f77f17e0151a42bbfb904a795c"
+    },
+    {
+      "path": "flock-stage4/exec/src/blake3_table_formula.rs",
+      "sha256": "eba04e0fb28cb195743036badb05ee846d4f2b10fb7cd506482e37a5dd77bbf1"
+    },
+    {
+      "path": "flock-stage4/exec/src/blake3_table_tests.rs",
+      "sha256": "3f025ec0356c6331d7ac9d9de8092a45a2c115b361ee4a4c8e44f4742ff21cf4"
+    }
+  ],
+  "roots_closed": false,
+  "terminal_key_generated": false,
+  "terminal_proof_generated": false,
+  "stage3_tables_changed": false,
+  "root_maps_digest": "f0fd1a0ee44d21ed21a78ddb4408779fc867e86d8bbc37616151aa0c8ea5d9da",
+  "coefficient_validation": {
+    "method": "Exact expansion of each XOR node into its full binary coefficient vector, with every output row compared against the approved registry. No randomized fingerprints, sampled coefficient checks, or trusted value hints.",
+    "nonzero_entries": 44442498,
+    "shape_bounds": {
+      "inputs": 16384,
+      "outputs_per_matrix": 16384,
+      "raw_shared_xors": 100000
+    },
+    "validation_bounds": {
+      "coefficient_words_per_matrix": 64000000,
+      "total_source_entries": 48000000
+    },
+    "negative_cases": "Changing the constant-pin or final padding output fails exact comparison for each actual matrix. Shared source-entry and coefficient-memory limit failures are rejected. Neutral tests mutate every coefficient in a rectangular map and test malformed/dead references, duplicates, and all resource bounds.",
+    "command": "ulimit -v 33554432 && RAYON_NUM_THREADS=4 timeout 180 cargo test --release --locked --manifest-path flock-stage4/Cargo.toml -p ixby-stage4-exec structural_blake3_maps_match_every_coefficient_and_native_value -- --ignored --test-threads=1 --nocapture",
+    "exit_code": 0,
+    "test_duration_seconds": 5.8,
+    "compile_and_exact_coefficient_check_seconds": 0.155,
+    "native_differential": "Both map MLEs match the pinned native bilinear evaluator at three F128 row/column points each.",
+    "scope": "No guest proof, terminal key, or complete terminal R1CS was generated."
+  },
+  "constraint_census": {
+    "command": "ulimit -v 33554432 && RAYON_NUM_THREADS=4 timeout 900 cargo test --release --locked --manifest-path flock-stage4/Cargo.toml -p ixby-stage4-exec structural_blake3_root_component_constraint_census -- --ignored --test-threads=1 --nocapture",
+    "exit_code": 0,
+    "test_duration_seconds": 491.59,
+    "memory_limit_kib": 33554432,
+    "rayon_threads": 4,
+    "last_observed_process_vm_hwm_kib": 2654428,
+    "last_observed_process_vm_peak_kib": 2754616,
+    "memory_scope": "Linux cumulative process counters sampled at each component's completion, including approved native setup. Not a process-tree measurement or terminal prover peak.",
+    "satisfying_assignment_checked": false,
+    "matrices_materialized": false,
+    "scope": "Each component includes 28 freshly allocated private F128 point coordinates and its complete constrained MLE evaluation. It does not allocate a claimed-value input or constrain a terminal transcript/Exec statement. Values match the independent map oracle; matrices and assignments are discarded by projection.",
+    "post_census_change": "Checked conversions replaced casts of pinned layout constants and a registry index; the subsequent exact/native test preserved both map identities. The neutral map and circuit emitter sources were unchanged."
+  },
+  "matrices": [
+    {
+      "registry_slot": 9,
+      "side": "A",
+      "nonzeros": 27251212,
+      "inputs": 16384,
+      "outputs": 16384,
+      "retained_xors": 38756,
+      "map_digest": "0c68666fbc64f8f856c35b54e1f2e2f753ee977df3b51eb887a50dfe91755989",
+      "component_census_seconds": 248.527,
+      "r1cs": {
+        "public_variables": 0,
+        "private_variables": 139283713,
+        "constraints": 139902339,
+        "nonzero_terms": 652488839,
+        "projection_digest": "a3b56470956eb493b3657dec0827648581acbbf1fc41676f0064d9150bf7d67f"
+      },
+      "plonk": {
+        "public_input_rows": 0,
+        "constraint_rows": 221560957,
+        "padding_rows": 46874499,
+        "domain_size": 268435456,
+        "auxiliary_wires": 81658618
+      }
+    },
+    {
+      "registry_slot": 9,
+      "side": "B",
+      "nonzeros": 17191286,
+      "inputs": 16384,
+      "outputs": 16384,
+      "retained_xors": 47867,
+      "map_digest": "6f714007cea6da330b346db83a6a1deb6562cce82f45e4fcd27eb53bb58f1ab5",
+      "component_census_seconds": 237.7,
+      "r1cs": {
+        "public_variables": 0,
+        "private_variables": 132125296,
+        "constraints": 132705987,
+        "nonzero_terms": 619390139,
+        "projection_digest": "d989801ec2caa9c7aa8515663ecb3938ed95a6f92bbf6c56bb7ab5b38ed1c9ad"
+      },
+      "plonk": {
+        "public_input_rows": 0,
+        "constraint_rows": 209357185,
+        "padding_rows": 59078271,
+        "domain_size": 268435456,
+        "auxiliary_wires": 76651198
+      }
+    }
+  ],
+  "sum_of_independent_component_censuses": {
+    "r1cs_constraints": 272608326,
+    "plonk_constraint_rows": 430918142
+  },
+  "ordinary_component_tests": "Materialized rectangular-map MLEs match literal sparse sums, preserve matrix identity across different point values, and reject every changed claimed-value bit. These are small generic gadget tests, not materialized BLAKE3-root or full Exec circuits.",
+  "interpretation": "The structural formulas avoid expanding 44.4 million nonzeros at evaluation time and materially improve on the decision diagram's multi-billion product-cost reference. This remains far too large to claim a completed compact-proof gate. The complete relation still needs all other root evaluations, exact transcript/claim/identity connections, proof-free R1CS/key compilation, cost reduction, resource admission, materialization, and actual isolated terminal proving/verification."
+}

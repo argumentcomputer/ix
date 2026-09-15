@@ -1,0 +1,252 @@
+started 2026-09-13T20:17:15Z
+d4ddcf358b6a2a1321911170dae1b946ca75b583ab1aa541c37bee291f20d86c  source.tar.gz
+rustc 1.98.0 (88d9e12ae 2026-08-18)
+Filesystem        1B-blocks        Used    Available Use% Mounted on
+/dev/root      518933680128 93411135488 425505767424  19% /
+   Compiling ixby-flock v0.1.0 (/tmp/ixby-stage4-checked.LXLJyg/flock-stage3/host)
+   Compiling ix-terminal-circuit v0.1.0 (/tmp/ixby-stage4-checked.LXLJyg/flock-stage4/circuit)
+   Compiling ix-fflonk v0.1.0 (/tmp/ixby-stage4-checked.LXLJyg/flock-stage4/fflonk)
+   Compiling ixby-stage4-exec v0.1.0 (/tmp/ixby-stage4-checked.LXLJyg/flock-stage4/exec)
+    Finished `release` profile [optimized] target(s) in 13.44s
+     Running unittests src/lib.rs (/tmp/ixby-stage4-census.qBgBlb/flock-stage4/target/release/deps/ixby_stage4_exec-6ba1639268afd1a3)
+
+running 1 test
+test native::tests::original_closure_tests::packed_small_streamed_materialization_rejects_false_census_and_limits ... streamed closed-Exec false census, metadata/source/array bounds and checked-assignment preflights PASS; no complete materialization/key/proof
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 54 filtered out; finished in 1.18s
+
+	Command being timed: "timeout --kill-after=30s 900 /home/john/.cargo/bin/rustup run 1.98 cargo test --manifest-path flock-stage4/Cargo.toml --release --offline --locked -p ixby-stage4-exec native::tests::original_closure_tests::packed_small_streamed_materialization_rejects_false_census_and_limits -- --exact --ignored --nocapture --test-threads=1"
+	User time (seconds): 78.61
+	System time (seconds): 2.02
+	Percent of CPU this job got: 550%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:14.65
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 769544
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 58
+	Minor (reclaiming a frame) page faults: 1039546
+	Voluntary context switches: 6010
+	Involuntary context switches: 203
+	Swaps: 0
+	File system inputs: 112
+	File system outputs: 134552
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+    Finished `release` profile [optimized] target(s) in 0.03s
+     Running unittests src/lib.rs (/tmp/ixby-stage4-census.qBgBlb/flock-stage4/target/release/deps/ixby_stage4_exec-6ba1639268afd1a3)
+
+running 1 test
+test native::tests::original_closure_tests::packed_small_whole_ranged_original_claims_checked_assignment ... WHOLE checked-assignment preparation: composition=158396e249b6f752582f456cc852a55fa994310866bf4f95e3f9f03e3ec7f00e, tables=2dd8611210d680307cf0c499ea8585f1e140caa654fc04f019fccdd57c30155f, all 64 matrix/3 structure/3 jagged claims; pinned queries [244, 79, 48], grinding [16, 16, 16]; VmPeak:	  324624 kB; VmHWM:	  263668 kB
+checked-assignment setup Some(Transcript): 1 R1CS, 1 PLONK; 0.60s; VmPeak:	  324624 kB; VmHWM:	  263668 kB
+checked-assignment setup Some(Transcript): 10000000 R1CS, 18666856 PLONK; 19.57s; VmPeak:	  475532 kB; VmHWM:	  317476 kB
+checked-assignment setup Some(Transcript): 20000000 R1CS, 37556749 PLONK; 38.88s; VmPeak:	  475532 kB; VmHWM:	  365292 kB
+checked-assignment setup Some(Wiring): 24676164 R1CS, 46397612 PLONK; 47.98s; VmPeak:	  475532 kB; VmHWM:	  409916 kB
+checked-assignment setup Some(Statement): 24678724 R1CS, 46400172 PLONK; 47.99s; VmPeak:	  475532 kB; VmHWM:	  409916 kB
+checked-assignment setup Some(Wiring): 24757954 R1CS, 46549618 PLONK; 48.14s; VmPeak:	  475532 kB; VmHWM:	  409916 kB
+checked-assignment setup Some(Statement): 24764146 R1CS, 46561810 PLONK; 48.14s; VmPeak:	  475532 kB; VmHWM:	  409916 kB
+checked-assignment setup Some(Wiring): 24764658 R1CS, 46562322 PLONK; 48.14s; VmPeak:	  475532 kB; VmHWM:	  409916 kB
+checked-assignment setup Some(Wiring): 30000000 R1CS, 53793915 PLONK; 57.39s; VmPeak:	  475532 kB; VmHWM:	  409916 kB
+checked-assignment setup Some(Wiring): 40000000 R1CS, 67209062 PLONK; 74.60s; VmPeak:	  475532 kB; VmHWM:	  409916 kB
+checked-assignment setup Some(Lincheck): 42373233 R1CS, 70430422 PLONK; 79.70s; VmPeak:	  475532 kB; VmHWM:	  409916 kB
+checked-assignment setup Some(Zerocheck): 42381425 R1CS, 70438614 PLONK; 79.70s; VmPeak:	  475532 kB; VmHWM:	  409916 kB
+checked-assignment setup Some(Lincheck): 46755489 R1CS, 76433841 PLONK; 88.87s; VmPeak:	  475532 kB; VmHWM:	  409916 kB
+checked-assignment setup Some(Lincheck): 50000000 R1CS, 80891652 PLONK; 94.64s; VmPeak:	  475532 kB; VmHWM:	  409916 kB
+checked-assignment setup Some(Zerocheck): 55126964 R1CS, 87910477 PLONK; 103.64s; VmPeak:	  475532 kB; VmHWM:	  409916 kB
+checked-assignment setup Some(Lincheck): 55126965 R1CS, 87910731 PLONK; 103.64s; VmPeak:	  475532 kB; VmHWM:	  409916 kB
+checked-assignment setup Some(Pcs): 55126966 R1CS, 87910732 PLONK; 103.64s; VmPeak:	  475532 kB; VmHWM:	  409916 kB
+checked-assignment setup Some(Pcs): 60000000 R1CS, 94413197 PLONK; 112.75s; VmPeak:	  475532 kB; VmHWM:	  409916 kB
+checked-assignment setup Some(Pcs): 70000000 R1CS, 106843045 PLONK; 228.75s; VmPeak:	  561344 kB; VmHWM:	  470084 kB
+checked-assignment setup Some(Pcs): 80000000 R1CS, 118753565 PLONK; 298.03s; VmPeak:	  626880 kB; VmHWM:	  538588 kB
+checked-assignment setup Some(Pcs): 90000000 R1CS, 131362808 PLONK; 333.88s; VmPeak:	  692416 kB; VmHWM:	  549944 kB
+checked-assignment setup Some(Pcs): 100000000 R1CS, 144032166 PLONK; 355.60s; VmPeak:	  692416 kB; VmHWM:	  549944 kB
+checked-assignment setup Some(Pcs): 110000000 R1CS, 157789853 PLONK; 376.06s; VmPeak:	  692416 kB; VmHWM:	  549944 kB
+checked-assignment setup Some(Pcs): 120000000 R1CS, 170548507 PLONK; 391.45s; VmPeak:	  702384 kB; VmHWM:	  568148 kB
+checked-assignment setup Some(Pcs): 130000000 R1CS, 189675023 PLONK; 410.70s; VmPeak:	  702384 kB; VmHWM:	  582852 kB
+checked-assignment setup Some(Pcs): 140000000 R1CS, 208907131 PLONK; 430.10s; VmPeak:	  702384 kB; VmHWM:	  582856 kB
+checked-assignment setup Some(Pcs): 150000000 R1CS, 228150731 PLONK; 449.49s; VmPeak:	  702384 kB; VmHWM:	  582856 kB
+checked-assignment setup Some(Pcs): 160000000 R1CS, 247422082 PLONK; 468.85s; VmPeak:	  702384 kB; VmHWM:	  582856 kB
+checked-assignment setup Some(Pcs): 170000000 R1CS, 262557305 PLONK; 486.75s; VmPeak:	  702384 kB; VmHWM:	  583484 kB
+checked-assignment setup Some(Pcs): 180000000 R1CS, 275976300 PLONK; 503.94s; VmPeak:	  702384 kB; VmHWM:	  583484 kB
+checked-assignment setup Some(Pcs): 190000000 R1CS, 289395035 PLONK; 521.12s; VmPeak:	  702384 kB; VmHWM:	  583484 kB
+checked-assignment setup Some(Pcs): 200000000 R1CS, 302814030 PLONK; 538.29s; VmPeak:	  702384 kB; VmHWM:	  583484 kB
+checked-assignment setup Some(Pcs): 210000000 R1CS, 316431711 PLONK; 555.54s; VmPeak:	  702384 kB; VmHWM:	  583484 kB
+checked-assignment setup Some(Pcs): 220000000 R1CS, 334935867 PLONK; 574.51s; VmPeak:	  702384 kB; VmHWM:	  583484 kB
+checked-assignment setup Some(Pcs): 230000000 R1CS, 350105243 PLONK; 592.34s; VmPeak:	  702384 kB; VmHWM:	  583484 kB
+checked-assignment setup Some(Pcs): 240000000 R1CS, 364986484 PLONK; 610.24s; VmPeak:	  702384 kB; VmHWM:	  583484 kB
+checked-assignment setup Some(Pcs): 250000000 R1CS, 378111224 PLONK; 630.29s; VmPeak:	  702384 kB; VmHWM:	  583484 kB
+checked-assignment setup Some(Pcs): 260000000 R1CS, 391244333 PLONK; 649.07s; VmPeak:	  702384 kB; VmHWM:	  583484 kB
+checked-assignment setup Some(Pcs): 270000000 R1CS, 404371826 PLONK; 667.89s; VmPeak:	  702384 kB; VmHWM:	  583484 kB
+checked-assignment setup Some(Pcs): 280000000 R1CS, 417502276 PLONK; 686.70s; VmPeak:	  702384 kB; VmHWM:	  583484 kB
+checked-assignment setup Some(Pcs): 290000000 R1CS, 430636774 PLONK; 705.49s; VmPeak:	  702384 kB; VmHWM:	  583484 kB
+checked-assignment setup Some(Pcs): 300000000 R1CS, 443760158 PLONK; 724.31s; VmPeak:	  702384 kB; VmHWM:	  583484 kB
+checked-assignment setup Some(Pcs): 310000000 R1CS, 456896486 PLONK; 743.11s; VmPeak:	  702384 kB; VmHWM:	  583484 kB
+checked-assignment setup Some(Pcs): 320000000 R1CS, 470074031 PLONK; 761.53s; VmPeak:	  702384 kB; VmHWM:	  583484 kB
+checked-assignment setup Some(Pcs): 330000000 R1CS, 483273097 PLONK; 779.62s; VmPeak:	  702384 kB; VmHWM:	  583484 kB
+checked-assignment setup Some(MatrixFold): 332876536 R1CS, 487069613 PLONK; 784.61s; VmPeak:	  702384 kB; VmHWM:	  583484 kB
+checked-assignment setup Some(MatrixFold): 340000000 R1CS, 496345490 PLONK; 796.21s; VmPeak:	  702384 kB; VmHWM:	  583484 kB
+checked-assignment setup Some(MatrixFold): 350000000 R1CS, 509342112 PLONK; 812.45s; VmPeak:	  702384 kB; VmHWM:	  583484 kB
+checked-assignment setup Some(MatrixFold): 360000000 R1CS, 520766389 PLONK; 836.28s; VmPeak:	  702384 kB; VmHWM:	  583484 kB
+checked-assignment setup Some(MatrixFold): 370000000 R1CS, 530766389 PLONK; 867.00s; VmPeak:	  702384 kB; VmHWM:	  588348 kB
+checked-assignment setup Some(MatrixFold): 380000000 R1CS, 543350855 PLONK; 887.62s; VmPeak:	  702384 kB; VmHWM:	  589484 kB
+checked-assignment setup Some(MatrixFold): 390000000 R1CS, 556749702 PLONK; 905.01s; VmPeak:	  702384 kB; VmHWM:	  590584 kB
+checked-assignment setup Some(MatrixFold): 400000000 R1CS, 570156922 PLONK; 922.40s; VmPeak:	  702384 kB; VmHWM:	  591664 kB
+checked-assignment setup Some(MatrixFold): 410000000 R1CS, 583541562 PLONK; 939.80s; VmPeak:	  702384 kB; VmHWM:	  592744 kB
+checked-assignment setup Some(MatrixFold): 420000000 R1CS, 596911856 PLONK; 957.18s; VmPeak:	  702384 kB; VmHWM:	  593840 kB
+checked-assignment setup Some(MatrixFold): 430000000 R1CS, 610287586 PLONK; 974.57s; VmPeak:	  702384 kB; VmHWM:	  594940 kB
+checked-assignment setup Some(MatrixFold): 440000000 R1CS, 623682782 PLONK; 991.95s; VmPeak:	  702384 kB; VmHWM:	  596000 kB
+checked-assignment setup Some(MatrixFold): 450000000 R1CS, 637083540 PLONK; 1009.35s; VmPeak:	  702384 kB; VmHWM:	  597068 kB
+checked-assignment setup Some(MatrixFold): 460000000 R1CS, 650479285 PLONK; 1026.74s; VmPeak:	  702384 kB; VmHWM:	  598148 kB
+checked-assignment setup Some(MatrixFold): 470000000 R1CS, 663836962 PLONK; 1044.15s; VmPeak:	  702384 kB; VmHWM:	  599348 kB
+checked-assignment setup Some(MatrixFold): 480000000 R1CS, 677211645 PLONK; 1061.56s; VmPeak:	  702384 kB; VmHWM:	  600504 kB
+checked-assignment setup Some(MatrixFold): 490000000 R1CS, 690598539 PLONK; 1079.00s; VmPeak:	  702384 kB; VmHWM:	  601528 kB
+checked-assignment setup Some(MatrixFold): 500000000 R1CS, 703984911 PLONK; 1096.43s; VmPeak:	  702384 kB; VmHWM:	  602680 kB
+checked-assignment setup Some(MatrixFold): 510000000 R1CS, 717353705 PLONK; 1113.85s; VmPeak:	  702384 kB; VmHWM:	  603844 kB
+checked-assignment setup Some(MatrixFold): 520000000 R1CS, 730733497 PLONK; 1131.23s; VmPeak:	  702384 kB; VmHWM:	  604892 kB
+checked-assignment setup Some(MatrixFold): 530000000 R1CS, 744115007 PLONK; 1148.68s; VmPeak:	  702384 kB; VmHWM:	  606028 kB
+checked-assignment setup Some(MatrixFold): 540000000 R1CS, 757495927 PLONK; 1166.13s; VmPeak:	  702384 kB; VmHWM:	  607144 kB
+checked-assignment setup Some(MatrixFold): 550000000 R1CS, 770870395 PLONK; 1183.58s; VmPeak:	  702384 kB; VmHWM:	  608228 kB
+checked-assignment setup Some(MatrixFold): 560000000 R1CS, 784230509 PLONK; 1200.96s; VmPeak:	  702384 kB; VmHWM:	  609264 kB
+checked-assignment setup Some(MatrixFold): 570000000 R1CS, 797618782 PLONK; 1218.39s; VmPeak:	  702384 kB; VmHWM:	  610340 kB
+checked-assignment setup Some(MatrixFold): 580000000 R1CS, 810993352 PLONK; 1235.87s; VmPeak:	  702384 kB; VmHWM:	  611352 kB
+checked-assignment setup Some(MatrixFold): 590000000 R1CS, 824373853 PLONK; 1253.30s; VmPeak:	  702384 kB; VmHWM:	  612440 kB
+checked-assignment setup Some(MatrixFold): 600000000 R1CS, 837737935 PLONK; 1270.69s; VmPeak:	  702384 kB; VmHWM:	  613444 kB
+checked-assignment setup Some(MatrixFold): 610000000 R1CS, 851121781 PLONK; 1288.15s; VmPeak:	  702384 kB; VmHWM:	  614480 kB
+checked-assignment setup Some(MatrixFold): 620000000 R1CS, 864501875 PLONK; 1305.62s; VmPeak:	  702384 kB; VmHWM:	  615528 kB
+checked-assignment setup Some(MatrixFold): 630000000 R1CS, 877906709 PLONK; 1323.01s; VmPeak:	  702384 kB; VmHWM:	  616568 kB
+checked-assignment setup Some(MatrixFold): 640000000 R1CS, 891295135 PLONK; 1340.41s; VmPeak:	  702384 kB; VmHWM:	  617656 kB
+checked-assignment setup Some(MatrixFold): 650000000 R1CS, 904694492 PLONK; 1357.82s; VmPeak:	  702384 kB; VmHWM:	  618724 kB
+checked-assignment setup Some(MatrixFold): 660000000 R1CS, 918091545 PLONK; 1375.23s; VmPeak:	  702384 kB; VmHWM:	  619820 kB
+checked-assignment setup Some(MatrixFold): 670000000 R1CS, 931485240 PLONK; 1392.63s; VmPeak:	  702384 kB; VmHWM:	  620856 kB
+checked-assignment setup Some(MatrixFold): 680000000 R1CS, 944872179 PLONK; 1410.12s; VmPeak:	  702384 kB; VmHWM:	  620568 kB
+checked-assignment setup Some(MatrixFold): 690000000 R1CS, 956349715 PLONK; 1435.02s; VmPeak:	  702384 kB; VmHWM:	  620568 kB
+checked-assignment setup Some(MatrixFold): 700000000 R1CS, 967454231 PLONK; 1461.35s; VmPeak:	  702384 kB; VmHWM:	  620568 kB
+checked-assignment setup Some(MatrixFold): 710000000 R1CS, 979555849 PLONK; 1483.87s; VmPeak:	  702384 kB; VmHWM:	  620568 kB
+checked-assignment setup Some(MatrixFold): 720000000 R1CS, 993042484 PLONK; 1501.11s; VmPeak:	  702384 kB; VmHWM:	  620568 kB
+checked-assignment setup Some(MatrixFold): 730000000 R1CS, 1006430034 PLONK; 1518.16s; VmPeak:	  702384 kB; VmHWM:	  620568 kB
+checked-assignment setup Some(MatrixFold): 740000000 R1CS, 1019878156 PLONK; 1535.54s; VmPeak:	  702384 kB; VmHWM:	  620568 kB
+checked-assignment setup Some(MatrixFold): 750000000 R1CS, 1033214859 PLONK; 1553.36s; VmPeak:	  702384 kB; VmHWM:	  620568 kB
+COMPLETE checked-assignment SETUP census: ExecRootClosedCensusV0 { composition_digest: [21, 131, 150, 226, 73, 182, 247, 82, 88, 47, 69, 108, 200, 82, 165, 95, 169, 148, 49, 8, 102, 191, 79, 149, 227, 249, 240, 62, 62, 199, 240, 14], r1cs: R1csProjectionV1 { public_variables: 2, private_variables: 752489972, census: R1csCensusV1 { public_variables: 2, private_variables: 752489972, constraints: 757209570, nonzero_terms: 3483940136, constraints_by_phase: {Statement: 79742, Transcript: 24676163, Zerocheck: 4374065, Lincheck: 8379668, Wiring: 17617327, Pcs: 277749570, MatrixFold: 424333035} }, digest: [121, 119, 3, 206, 132, 165, 146, 139, 188, 4, 196, 191, 212, 123, 250, 208, 50, 74, 174, 105, 0, 92, 71, 22, 61, 92, 177, 251, 22, 161, 35, 252] }, plonk: PlonkGateCensusV1 { public_input_rows: 2, constraint_rows: 1042919351, padding_rows: 30822471, domain_size: 1073741824, auxiliary_wires: 285709781, rows_by_phase: {Statement: 149958, Transcript: 46397611, Zerocheck: 5995481, Lincheck: 11484829, Wiring: 23882852, Pcs: 399158881, MatrixFold: 555849739} }, public_scalar_bytes: 64 }; assignment payload 24079679200 bytes; 1566.327s; VmPeak:	  702384 kB; VmHWM:	  620568 kB. No checked witness yet.
+whole CHECKED assignment Transcript: 1 satisfied R1CS constraints; 0.01s; VmPeak:	25080316 kB; VmHWM:	 1019636 kB
+whole CHECKED assignment Transcript: 10000000 satisfied R1CS constraints; 21.17s; VmPeak:	25211388 kB; VmHWM:	 1158464 kB
+whole CHECKED assignment Transcript: 20000000 satisfied R1CS constraints; 42.72s; VmPeak:	25276924 kB; VmHWM:	 1491696 kB
+whole CHECKED assignment Wiring: 24676164 satisfied R1CS constraints; 52.84s; VmPeak:	25276924 kB; VmHWM:	 1680536 kB
+whole CHECKED assignment Statement: 24678724 satisfied R1CS constraints; 52.84s; VmPeak:	25276924 kB; VmHWM:	 1680536 kB
+whole CHECKED assignment Wiring: 24757954 satisfied R1CS constraints; 53.01s; VmPeak:	25276924 kB; VmHWM:	 1682960 kB
+whole CHECKED assignment Statement: 24764146 satisfied R1CS constraints; 53.02s; VmPeak:	25276924 kB; VmHWM:	 1683152 kB
+whole CHECKED assignment Wiring: 24764658 satisfied R1CS constraints; 53.02s; VmPeak:	25276924 kB; VmHWM:	 1683160 kB
+whole CHECKED assignment Wiring: 30000000 satisfied R1CS constraints; 63.51s; VmPeak:	25276924 kB; VmHWM:	 1845888 kB
+whole CHECKED assignment Wiring: 40000000 satisfied R1CS constraints; 83.02s; VmPeak:	25276924 kB; VmHWM:	 2156892 kB
+whole CHECKED assignment Lincheck: 42373233 satisfied R1CS constraints; 87.78s; VmPeak:	25276924 kB; VmHWM:	 2230716 kB
+whole CHECKED assignment Zerocheck: 42381425 satisfied R1CS constraints; 87.78s; VmPeak:	25276924 kB; VmHWM:	 2230972 kB
+whole CHECKED assignment Lincheck: 46755489 satisfied R1CS constraints; 96.58s; VmPeak:	25276924 kB; VmHWM:	 2367036 kB
+whole CHECKED assignment Lincheck: 50000000 satisfied R1CS constraints; 103.10s; VmPeak:	25276924 kB; VmHWM:	 2467964 kB
+whole CHECKED assignment Zerocheck: 55126964 satisfied R1CS constraints; 113.31s; VmPeak:	25276924 kB; VmHWM:	 2627440 kB
+whole CHECKED assignment Lincheck: 55126965 satisfied R1CS constraints; 113.31s; VmPeak:	25276924 kB; VmHWM:	 2627440 kB
+whole CHECKED assignment Pcs: 55126966 satisfied R1CS constraints; 113.31s; VmPeak:	25276924 kB; VmHWM:	 2627440 kB
+whole CHECKED assignment Pcs: 60000000 satisfied R1CS constraints; 123.53s; VmPeak:	25276924 kB; VmHWM:	 2779080 kB
+whole CHECKED assignment Pcs: 70000000 satisfied R1CS constraints; 148.33s; VmPeak:	25276924 kB; VmHWM:	 3090688 kB
+whole CHECKED assignment Pcs: 80000000 satisfied R1CS constraints; 174.73s; VmPeak:	25276924 kB; VmHWM:	 3402484 kB
+whole CHECKED assignment Pcs: 90000000 satisfied R1CS constraints; 198.39s; VmPeak:	25276924 kB; VmHWM:	 3713972 kB
+whole CHECKED assignment Pcs: 100000000 satisfied R1CS constraints; 222.52s; VmPeak:	25276924 kB; VmHWM:	 4025512 kB
+whole CHECKED assignment Pcs: 110000000 satisfied R1CS constraints; 245.34s; VmPeak:	25276924 kB; VmHWM:	 4336684 kB
+whole CHECKED assignment Pcs: 120000000 satisfied R1CS constraints; 262.90s; VmPeak:	25276924 kB; VmHWM:	 4651408 kB
+whole CHECKED assignment Pcs: 130000000 satisfied R1CS constraints; 284.10s; VmPeak:	25276924 kB; VmHWM:	 4958184 kB
+whole CHECKED assignment Pcs: 140000000 satisfied R1CS constraints; 305.44s; VmPeak:	25276924 kB; VmHWM:	 5263616 kB
+whole CHECKED assignment Pcs: 150000000 satisfied R1CS constraints; 326.78s; VmPeak:	25276924 kB; VmHWM:	 5569048 kB
+whole CHECKED assignment Pcs: 160000000 satisfied R1CS constraints; 348.09s; VmPeak:	25276924 kB; VmHWM:	 5874504 kB
+whole CHECKED assignment Pcs: 170000000 satisfied R1CS constraints; 368.22s; VmPeak:	25276924 kB; VmHWM:	 6184000 kB
+whole CHECKED assignment Pcs: 180000000 satisfied R1CS constraints; 387.80s; VmPeak:	25276924 kB; VmHWM:	 6495048 kB
+whole CHECKED assignment Pcs: 190000000 satisfied R1CS constraints; 407.37s; VmPeak:	25276924 kB; VmHWM:	 6806092 kB
+whole CHECKED assignment Pcs: 200000000 satisfied R1CS constraints; 426.93s; VmPeak:	25276924 kB; VmHWM:	 7117136 kB
+whole CHECKED assignment Pcs: 210000000 satisfied R1CS constraints; 446.56s; VmPeak:	25276924 kB; VmHWM:	 7428000 kB
+whole CHECKED assignment Pcs: 220000000 satisfied R1CS constraints; 467.53s; VmPeak:	25276924 kB; VmHWM:	 7734080 kB
+whole CHECKED assignment Pcs: 230000000 satisfied R1CS constraints; 487.64s; VmPeak:	25276924 kB; VmHWM:	 8043396 kB
+whole CHECKED assignment Pcs: 240000000 satisfied R1CS constraints; 507.85s; VmPeak:	25276924 kB; VmHWM:	 8353060 kB
+whole CHECKED assignment Pcs: 250000000 satisfied R1CS constraints; 528.91s; VmPeak:	25276924 kB; VmHWM:	 8664264 kB
+whole CHECKED assignment Pcs: 260000000 satisfied R1CS constraints; 549.98s; VmPeak:	25276924 kB; VmHWM:	 8975468 kB
+whole CHECKED assignment Pcs: 270000000 satisfied R1CS constraints; 571.09s; VmPeak:	25276924 kB; VmHWM:	 9286672 kB
+whole CHECKED assignment Pcs: 280000000 satisfied R1CS constraints; 592.17s; VmPeak:	25276924 kB; VmHWM:	 9597876 kB
+whole CHECKED assignment Pcs: 290000000 satisfied R1CS constraints; 613.22s; VmPeak:	25276924 kB; VmHWM:	 9909080 kB
+whole CHECKED assignment Pcs: 300000000 satisfied R1CS constraints; 634.33s; VmPeak:	25276924 kB; VmHWM:	10220288 kB
+whole CHECKED assignment Pcs: 310000000 satisfied R1CS constraints; 655.42s; VmPeak:	25276924 kB; VmHWM:	10531488 kB
+whole CHECKED assignment Pcs: 320000000 satisfied R1CS constraints; 676.12s; VmPeak:	25276924 kB; VmHWM:	10842652 kB
+whole CHECKED assignment Pcs: 330000000 satisfied R1CS constraints; 696.53s; VmPeak:	25276924 kB; VmHWM:	11153780 kB
+whole CHECKED assignment MatrixFold: 332876536 satisfied R1CS constraints; 702.20s; VmPeak:	25276924 kB; VmHWM:	11243252 kB
+whole CHECKED assignment MatrixFold: 340000000 satisfied R1CS constraints; 715.43s; VmPeak:	25276924 kB; VmHWM:	11464740 kB
+whole CHECKED assignment MatrixFold: 350000000 satisfied R1CS constraints; 733.98s; VmPeak:	25276924 kB; VmHWM:	11775656 kB
+whole CHECKED assignment MatrixFold: 360000000 satisfied R1CS constraints; 760.39s; VmPeak:	25276924 kB; VmHWM:	12087404 kB
+whole CHECKED assignment MatrixFold: 370000000 satisfied R1CS constraints; 793.92s; VmPeak:	25276924 kB; VmHWM:	12399904 kB
+whole CHECKED assignment MatrixFold: 380000000 satisfied R1CS constraints; 817.02s; VmPeak:	25276924 kB; VmHWM:	12711304 kB
+whole CHECKED assignment MatrixFold: 390000000 satisfied R1CS constraints; 836.81s; VmPeak:	25276924 kB; VmHWM:	13022348 kB
+whole CHECKED assignment MatrixFold: 400000000 satisfied R1CS constraints; 856.58s; VmPeak:	25276924 kB; VmHWM:	13333396 kB
+whole CHECKED assignment MatrixFold: 410000000 satisfied R1CS constraints; 876.38s; VmPeak:	25276924 kB; VmHWM:	13644444 kB
+whole CHECKED assignment MatrixFold: 420000000 satisfied R1CS constraints; 896.14s; VmPeak:	25276924 kB; VmHWM:	13955492 kB
+whole CHECKED assignment MatrixFold: 430000000 satisfied R1CS constraints; 915.91s; VmPeak:	25276924 kB; VmHWM:	14266540 kB
+whole CHECKED assignment MatrixFold: 440000000 satisfied R1CS constraints; 935.69s; VmPeak:	25276924 kB; VmHWM:	14577588 kB
+whole CHECKED assignment MatrixFold: 450000000 satisfied R1CS constraints; 955.47s; VmPeak:	25276924 kB; VmHWM:	14888636 kB
+whole CHECKED assignment MatrixFold: 460000000 satisfied R1CS constraints; 975.26s; VmPeak:	25276924 kB; VmHWM:	15199684 kB
+whole CHECKED assignment MatrixFold: 470000000 satisfied R1CS constraints; 995.07s; VmPeak:	25276924 kB; VmHWM:	15510736 kB
+whole CHECKED assignment MatrixFold: 480000000 satisfied R1CS constraints; 1014.86s; VmPeak:	25276924 kB; VmHWM:	15822060 kB
+whole CHECKED assignment MatrixFold: 490000000 satisfied R1CS constraints; 1034.69s; VmPeak:	25276924 kB; VmHWM:	16134140 kB
+whole CHECKED assignment MatrixFold: 500000000 satisfied R1CS constraints; 1054.51s; VmPeak:	25276924 kB; VmHWM:	16446344 kB
+whole CHECKED assignment MatrixFold: 510000000 satisfied R1CS constraints; 1074.33s; VmPeak:	25276924 kB; VmHWM:	16758560 kB
+whole CHECKED assignment MatrixFold: 520000000 satisfied R1CS constraints; 1094.10s; VmPeak:	25276924 kB; VmHWM:	17070656 kB
+whole CHECKED assignment MatrixFold: 530000000 satisfied R1CS constraints; 1113.94s; VmPeak:	25276924 kB; VmHWM:	17382844 kB
+whole CHECKED assignment MatrixFold: 540000000 satisfied R1CS constraints; 1133.78s; VmPeak:	25276924 kB; VmHWM:	17695016 kB
+whole CHECKED assignment MatrixFold: 550000000 satisfied R1CS constraints; 1153.61s; VmPeak:	25276924 kB; VmHWM:	18007156 kB
+whole CHECKED assignment MatrixFold: 560000000 satisfied R1CS constraints; 1173.38s; VmPeak:	25276924 kB; VmHWM:	18319240 kB
+whole CHECKED assignment MatrixFold: 570000000 satisfied R1CS constraints; 1193.20s; VmPeak:	25276924 kB; VmHWM:	18630400 kB
+whole CHECKED assignment MatrixFold: 580000000 satisfied R1CS constraints; 1213.07s; VmPeak:	25276924 kB; VmHWM:	18941456 kB
+whole CHECKED assignment MatrixFold: 590000000 satisfied R1CS constraints; 1232.89s; VmPeak:	25276924 kB; VmHWM:	19252512 kB
+whole CHECKED assignment MatrixFold: 600000000 satisfied R1CS constraints; 1252.66s; VmPeak:	25276924 kB; VmHWM:	19563556 kB
+whole CHECKED assignment MatrixFold: 610000000 satisfied R1CS constraints; 1272.49s; VmPeak:	25276924 kB; VmHWM:	19874612 kB
+whole CHECKED assignment MatrixFold: 620000000 satisfied R1CS constraints; 1292.35s; VmPeak:	25276924 kB; VmHWM:	20185668 kB
+whole CHECKED assignment MatrixFold: 630000000 satisfied R1CS constraints; 1312.12s; VmPeak:	25276924 kB; VmHWM:	20496716 kB
+whole CHECKED assignment MatrixFold: 640000000 satisfied R1CS constraints; 1331.90s; VmPeak:	25276924 kB; VmHWM:	20807760 kB
+whole CHECKED assignment MatrixFold: 650000000 satisfied R1CS constraints; 1351.70s; VmPeak:	25276924 kB; VmHWM:	21118808 kB
+whole CHECKED assignment MatrixFold: 660000000 satisfied R1CS constraints; 1371.49s; VmPeak:	25276924 kB; VmHWM:	21429856 kB
+whole CHECKED assignment MatrixFold: 670000000 satisfied R1CS constraints; 1391.29s; VmPeak:	25276924 kB; VmHWM:	21740904 kB
+whole CHECKED assignment MatrixFold: 680000000 satisfied R1CS constraints; 1411.15s; VmPeak:	25276924 kB; VmHWM:	22051956 kB
+whole CHECKED assignment MatrixFold: 690000000 satisfied R1CS constraints; 1438.51s; VmPeak:	25276924 kB; VmHWM:	22363824 kB
+whole CHECKED assignment MatrixFold: 700000000 satisfied R1CS constraints; 1467.35s; VmPeak:	25276924 kB; VmHWM:	22675852 kB
+whole CHECKED assignment MatrixFold: 710000000 satisfied R1CS constraints; 1492.27s; VmPeak:	25276924 kB; VmHWM:	22987456 kB
+whole CHECKED assignment MatrixFold: 720000000 satisfied R1CS constraints; 1511.67s; VmPeak:	25276924 kB; VmHWM:	23298468 kB
+whole CHECKED assignment MatrixFold: 730000000 satisfied R1CS constraints; 1530.89s; VmPeak:	25276924 kB; VmHWM:	23609460 kB
+whole CHECKED assignment MatrixFold: 740000000 satisfied R1CS constraints; 1550.43s; VmPeak:	25276924 kB; VmHWM:	23920488 kB
+whole CHECKED assignment MatrixFold: 750000000 satisfied R1CS constraints; 1570.44s; VmPeak:	25276924 kB; VmHWM:	24231560 kB
+COMPLETE WHOLE CHECKED assignment: 757209570 satisfied R1CS constraints, 752489975 variables, 24079679200 bytes; full setup projection 797703ce84a5928bbc04c4bfd47bfad0324aae69005c47163d5cb1fb16a123fc; canonical matrix identity d6f41218479a03ba5ae06e0ec4290005ead453ff69b90224ed9c48606d38ae33; 1584.986s checking, 3151.802s total; VmPeak:	25276924 kB; VmHWM:	24455840 kB. No PLONK gate arena, SRS, terminal key or Stage 4 proof.
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 54 filtered out; finished in 3152.54s
+
+	Command being timed: "timeout --kill-after=30s 10800 /home/john/.cargo/bin/rustup run 1.98 cargo test --manifest-path flock-stage4/Cargo.toml --release --offline --locked -p ixby-stage4-exec native::tests::original_closure_tests::packed_small_whole_ranged_original_claims_checked_assignment -- --exact --ignored --nocapture --test-threads=1"
+	User time (seconds): 3144.79
+	System time (seconds): 7.90
+	Percent of CPU this job got: 100%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 52:32.63
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 24450752
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 6212781
+	Voluntary context switches: 2700
+	Involuntary context switches: 16050
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 672
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+finished 2026-09-13T21:10:02Z

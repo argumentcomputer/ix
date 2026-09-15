@@ -1,0 +1,22 @@
+module
+public import Tests.Ixby.Basic
+public import Tests.Ixby.Crypto
+public import Tests.Ixby.Codec
+public import Tests.Ixby.NatCodec
+public import Tests.Ixby.Claim
+public import Tests.Ixby.Flock.Contract
+public import Tests.Ixby.Flock.Control
+public import Tests.Ixby.Flock.Bytes
+public import Tests.Ixby.Flock.Words
+public import Tests.Ixby.Flock.Objects
+public import Tests.Ixby.Flock.Nats
+public import Tests.Ixby.Flock.Applications
+public import Tests.Ixby.Aiur.Scalar
+public import Tests.Ixby.Aiur.Control
+public import Tests.Ixby.Aiur.Objects
+public import Tests.Ixby.Aiur.Objects.Memory
+public import Tests.Ixby.Aiur.Objects.Table
+public import Tests.Ixby.Aiur.Objects.Parser
+
+/-! IxBy test suites. Standalone executable entrypoints live in each backend
+suite's `Main.lean` module and are intentionally not imported here. -/

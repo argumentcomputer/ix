@@ -1,0 +1,72 @@
+{
+  "schema": "ixby-stage4-fflonk-derived-c0-storage-evidence-v1",
+  "measurement_date": "2026-09-13",
+  "base_revision": "670bafc7529568d46809c17a4deeb4af17be3f6c",
+  "status": "file_key_storage_reduced_with_small_proof_equivalence_not_whole_exec_proving_admission",
+  "rustc": "1.98.0 (88d9e12ae 2026-08-18)",
+  "scope": "Storage representation only. The file key derives C0 by interleaving its eight authenticated coefficient sources. No C0 payload or independent C0 authentication index is written. Polynomial order, preprocessing digest, commitment, VK, public inputs, blinding rules, SRS validation and proof transport are unchanged.",
+  "source_hashes": [
+    {
+      "path": "flock-stage4/fflonk/src/preprocessing_file.rs",
+      "sha256": "5d7e32cea8c8cff79eb99b44e470ebda025cf08a8f0751dbd08927cf4431b082"
+    },
+    {
+      "path": "flock-stage4/fflonk/src/capacity.rs",
+      "sha256": "da4d56ed1e3c2e7e9dca5c63f6784b7587b07ca7746fb51c26bb0a9dd1ca956e"
+    }
+  ],
+  "file_layout": {
+    "coefficient_columns": 8,
+    "sigma_evaluation_columns": 3,
+    "stored_c0_columns": 0,
+    "canonical_field_bytes": 32,
+    "payload_bytes_formula": "11 * n * 32",
+    "previous_payload_bytes_formula": "19 * n * 32",
+    "authentication_bytes_formula": "11 * ceil(n / 65536) * 32",
+    "reopen_raw_file_as_trusted_key_supported": false,
+    "integrity": "C0 reads authenticate complete source chunks against metadata retained from preprocessing, including repeated reads after a previous successful read. No file-supplied digest, table-value hint, unauthenticated cache, or new acceptance callback is introduced. Nonzero lengths are derived from the trusted generated-column metadata."
+  },
+  "conditional_domain_2_pow_30_model": {
+    "domain_size": 1073741824,
+    "previous_file_key_polynomial_bytes": 652835028992,
+    "file_key_polynomial_bytes": 377957122048,
+    "saved_payload_bytes": 274877906944,
+    "previous_file_key_authentication_bytes": 9961472,
+    "file_key_authentication_bytes": 5767168,
+    "compressed_file_srs_bytes_unchanged": 463856469048,
+    "key_plus_compressed_srs_bytes": 841813591096,
+    "single_largest_fft_array_bytes_unchanged": 137438953472,
+    "scope": "Checked capacity arithmetic, not an allocated full-domain key/SRS, measured peak RSS/disk, or a complete-prover fit. The key is 352 GiB instead of 608 GiB; the saving is 256 GiB (8/19 of the former payload). The separate SRS, circuit, witness, and prover scratch still require accounting."
+  },
+  "regressions": {
+    "focused_tests_passed": 5,
+    "fflonk_ordinary_tests_passed": 89,
+    "checks": [
+      "Every coefficient and sigma evaluation matches materialized preprocessing for both existing small R1CS fixtures.",
+      "Preprocessing digest, C0 commitment, VK, public inputs and canonical proof bytes match across materialized/file keys, memory/file workspaces, and borrowed/owned checked-witness APIs with two development blinding vectors.",
+      "An actual filesystem-backed key occupies exactly 11*n*32 bytes; capacity metadata agrees with the constructed keys.",
+      "Lazy C0 matches a separately stored interleaved reference across source/output chunk boundaries, unaligned ranges, reverse Horner evaluation and the partial tail.",
+      "Zero columns, trailing zeros and the distinct QM/QO interleaving slots retain exact nonzero-length metadata.",
+      "Out-of-range and overflow reads reject before modifying output buffers.",
+      "Mutating each of the eleven stored columns rejects proving; mutating any coefficient column also rejects a repeated C0 read. Restoring the bytes restores successful verification.",
+      "Wrong SRS identities, insufficient SRS degree, and nonempty scratch files remain rejected."
+    ],
+    "setup_scope": "Small arithmetic relation proofs with explicitly deterministic development tau/blinding. Not the complete IxBy/Flock verifier and not production setup."
+  },
+  "commands": [
+    "ulimit -v 16777216; RAYON_NUM_THREADS=4 timeout 300 cargo test --release --offline --locked --manifest-path flock-stage4/Cargo.toml -p ix-fflonk preprocessing_file::tests -- --test-threads=1 --nocapture",
+    "ulimit -v 16777216; RAYON_NUM_THREADS=4 timeout 300 cargo test --release --offline --locked --manifest-path flock-stage4/Cargo.toml -p ix-fflonk -- --test-threads=1",
+    "cargo clippy --release --offline --locked --manifest-path flock-stage4/Cargo.toml --workspace --all-targets -- -D warnings",
+    "cargo fmt --manifest-path flock-stage4/Cargo.toml --all -- --check"
+  ],
+  "remaining_resource_work": [
+    "C0 reads trade extra coefficient reads/authentication work for less retained storage; large-domain throughput has not been measured.",
+    "The existing prover workspace already recycles released extents. Its maximum simultaneous live data, circuit/witness lowering, SRS and preprocessing buffers still need whole-pipeline admission.",
+    "No RAM disk was mounted. RAM-backed scratch must share the same hard memory budget as FFTs, witness data and circuit representation.",
+    "Historical census reports retain their measured source identities and former 19-column file-key model; they are not silently rewritten by this optimization."
+  ],
+  "whole_exec_key_generated": false,
+  "whole_exec_proof_generated": false,
+  "whole_pipeline_resource_admitted": false,
+  "production_setup_approved": false
+}

@@ -1,0 +1,89 @@
+   Compiling ixby-stage4-exec v0.1.0 (/tmp/ixby-publish.yueY3c/flock-stage4/exec)
+    Finished `release` profile [optimized] target(s) in 4.56s
+     Running unittests src/lib.rs (flock-stage4/target/release/deps/ixby_stage4_exec-9dc746eb67795101)
+
+running 1 test
+test native::tests::shared_matrix_tests::order_tests::packed_small_shared_matrix_order_diagnostic ... shared matrix order 0: nodes=63971, branches=52740, fixed_low_pairs=4096, all 64 native differentials PASS; 0.018s; COMPONENT NODE COUNT ONLY, no adoption
+shared matrix order 1: nodes=156712, branches=145481, fixed_low_pairs=4096, all 64 native differentials PASS; 0.049s; COMPONENT NODE COUNT ONLY, no adoption
+shared matrix order 2: nodes=67951, branches=56720, fixed_low_pairs=4096, all 64 native differentials PASS; 0.020s; COMPONENT NODE COUNT ONLY, no adoption
+shared matrix order 3: nodes=159241, branches=148010, fixed_low_pairs=4096, all 64 native differentials PASS; 0.048s; COMPONENT NODE COUNT ONLY, no adoption
+shared matrix order 4: nodes=86888, branches=75657, fixed_low_pairs=4096, all 64 native differentials PASS; 0.025s; COMPONENT NODE COUNT ONLY, no adoption
+shared matrix order 5: nodes=97050, branches=85819, fixed_low_pairs=4096, all 64 native differentials PASS; 0.023s; COMPONENT NODE COUNT ONLY, no adoption
+shared matrix order 6: nodes=150278, branches=139047, fixed_low_pairs=4096, all 64 native differentials PASS; 0.046s; COMPONENT NODE COUNT ONLY, no adoption
+shared matrix order 7: nodes=141527, branches=130296, fixed_low_pairs=4096, all 64 native differentials PASS; 0.044s; COMPONENT NODE COUNT ONLY, no adoption
+shared matrix order 8: nodes=63504, branches=52273, fixed_low_pairs=4096, all 64 native differentials PASS; 0.018s; COMPONENT NODE COUNT ONLY, no adoption
+shared matrix order 9: nodes=72951, branches=61720, fixed_low_pairs=4096, all 64 native differentials PASS; 0.019s; COMPONENT NODE COUNT ONLY, no adoption
+shared matrix order 10: nodes=66588, branches=55357, fixed_low_pairs=4096, all 64 native differentials PASS; 0.018s; COMPONENT NODE COUNT ONLY, no adoption
+shared matrix order 11: nodes=70061, branches=58830, fixed_low_pairs=4096, all 64 native differentials PASS; 0.018s; COMPONENT NODE COUNT ONLY, no adoption
+shared matrix order 12: nodes=67040, branches=55809, fixed_low_pairs=4096, all 64 native differentials PASS; 0.018s; COMPONENT NODE COUNT ONLY, no adoption
+shared matrix order 13: nodes=75060, branches=63829, fixed_low_pairs=4096, all 64 native differentials PASS; 0.019s; COMPONENT NODE COUNT ONLY, no adoption
+shared matrix order 14: nodes=67184, branches=55953, fixed_low_pairs=4096, all 64 native differentials PASS; 0.018s; COMPONENT NODE COUNT ONLY, no adoption
+shared matrix order 15: nodes=78499, branches=67268, fixed_low_pairs=4096, all 64 native differentials PASS; 0.020s; COMPONENT NODE COUNT ONLY, no adoption
+shared matrix sift table=0 A k=17: standalone nodes baseline=7220, predefined=6949, sifted=6933, order=[21, 10, 8, 20, 9, 19, 7, 18, 6, 17, 16, 5, 15, 14, 4, 3, 13, 2, 12, 1, 11, 0]
+shared matrix sift table=0 B k=17: standalone nodes baseline=7630, predefined=7348, sifted=7341, order=[21, 10, 8, 20, 9, 19, 18, 7, 17, 6, 16, 5, 4, 15, 14, 3, 13, 2, 12, 1, 11, 0]
+shared matrix sift table=1 A k=16: standalone nodes baseline=1999, predefined=1926, sifted=1921, order=[19, 9, 18, 8, 5, 17, 7, 6, 16, 15, 14, 4, 13, 3, 12, 2, 11, 1, 10, 0]
+shared matrix sift table=1 B k=16: standalone nodes baseline=1984, predefined=1919, sifted=1917, order=[19, 9, 18, 8, 17, 7, 5, 16, 6, 15, 14, 4, 13, 3, 12, 2, 11, 1, 10, 0]
+shared matrix sift table=2 A k=16: standalone nodes baseline=18427, predefined=16792, sifted=16419, order=[9, 8, 19, 18, 17, 7, 16, 6, 15, 5, 14, 4, 13, 3, 1, 0, 2, 12, 11, 10]
+shared matrix sift table=2 B k=16: standalone nodes baseline=17386, predefined=15389, sifted=15171, order=[9, 8, 19, 18, 17, 7, 16, 6, 15, 5, 14, 4, 13, 3, 1, 0, 2, 12, 11, 10]
+shared matrix sift table=3 A k=15: standalone nodes baseline=1057, predefined=1045, sifted=1038, order=[17, 8, 6, 16, 7, 15, 14, 5, 13, 4, 12, 3, 11, 2, 10, 1, 0, 9]
+shared matrix sift table=3 B k=15: standalone nodes baseline=1589, predefined=1483, sifted=1476, order=[17, 8, 16, 6, 7, 15, 14, 5, 13, 4, 12, 3, 11, 10, 2, 1, 9, 0]
+shared matrix sift table=4 A k=14: standalone nodes baseline=411, predefined=408, sifted=401, order=[15, 7, 6, 4, 14, 5, 13, 12, 11, 3, 2, 10, 9, 1, 8, 0]
+shared matrix sift table=4 B k=14: standalone nodes baseline=439, predefined=411, sifted=407, order=[15, 7, 4, 14, 6, 12, 5, 13, 11, 3, 10, 2, 9, 1, 8, 0]
+shared matrix sift table=5 A k=14: standalone nodes baseline=633, predefined=612, sifted=610, order=[15, 7, 5, 14, 6, 13, 12, 4, 11, 3, 10, 2, 9, 1, 8, 0]
+shared matrix sift table=5 B k=14: standalone nodes baseline=786, predefined=760, sifted=759, order=[15, 7, 5, 14, 6, 13, 12, 4, 11, 3, 10, 2, 9, 1, 8, 0]
+shared matrix sift table=6 A k=14: standalone nodes baseline=1524, predefined=1466, sifted=1458, order=[5, 15, 7, 14, 6, 13, 12, 11, 4, 3, 10, 2, 9, 1, 8, 0]
+shared matrix sift table=6 B k=14: standalone nodes baseline=1608, predefined=1532, sifted=1527, order=[5, 15, 7, 6, 14, 13, 12, 4, 11, 10, 3, 2, 9, 1, 8, 0]
+shared matrix sift table=7 A k=13: standalone nodes baseline=488, predefined=475, sifted=471, order=[6, 4, 13, 5, 11, 12, 10, 3, 9, 2, 8, 1, 7, 0]
+shared matrix sift table=7 B k=13: standalone nodes baseline=397, predefined=377, sifted=373, order=[13, 4, 6, 5, 12, 10, 11, 3, 9, 2, 8, 1, 7, 0]
+shared matrix sift table=8 A k=13: standalone nodes baseline=401, predefined=382, sifted=379, order=[6, 13, 12, 11, 10, 4, 3, 5, 9, 8, 2, 1, 7, 0]
+shared matrix sift table=8 B k=13: standalone nodes baseline=497, predefined=474, sifted=472, order=[13, 6, 12, 5, 9, 11, 10, 4, 3, 2, 8, 1, 7, 0]
+shared matrix sift table=9 A k=13: standalone nodes baseline=293, predefined=276, sifted=276, order=[13, 6, 12, 5, 11, 4, 10, 3, 9, 2, 8, 1, 7, 0]
+shared matrix sift table=9 B k=13: standalone nodes baseline=353, predefined=345, sifted=344, order=[13, 6, 12, 5, 11, 4, 3, 10, 9, 2, 8, 1, 7, 0]
+shared matrix sift table=10 A k=13: standalone nodes baseline=116, predefined=113, sifted=113, order=[13, 6, 12, 5, 11, 4, 10, 3, 9, 2, 8, 1, 7, 0]
+shared matrix sift table=10 B k=13: standalone nodes baseline=111, predefined=108, sifted=105, order=[13, 4, 6, 5, 12, 11, 10, 3, 9, 2, 8, 1, 7, 0]
+shared matrix sift table=11 A k=12: standalone nodes baseline=421, predefined=401, sifted=397, order=[4, 11, 5, 8, 10, 9, 3, 2, 7, 1, 6, 0]
+shared matrix sift table=11 B k=12: standalone nodes baseline=665, predefined=653, sifted=642, order=[11, 5, 10, 9, 8, 3, 4, 2, 6, 0, 1, 7]
+shared matrix sift table=12 A k=12: standalone nodes baseline=176, predefined=166, sifted=159, order=[11, 10, 9, 2, 8, 5, 4, 3, 7, 0, 6, 1]
+shared matrix sift table=12 B k=12: standalone nodes baseline=176, predefined=166, sifted=159, order=[11, 10, 9, 2, 8, 5, 4, 3, 7, 0, 6, 1]
+shared matrix sift table=13 A k=12: standalone nodes baseline=446, predefined=429, sifted=429, order=[11, 5, 10, 4, 9, 3, 8, 2, 7, 1, 6, 0]
+shared matrix sift table=13 B k=12: standalone nodes baseline=387, predefined=379, sifted=378, order=[11, 5, 10, 3, 4, 9, 8, 2, 7, 1, 6, 0]
+shared matrix sift table=14 A k=12: standalone nodes baseline=446, predefined=429, sifted=429, order=[11, 5, 10, 4, 9, 3, 8, 2, 7, 1, 6, 0]
+shared matrix sift table=14 B k=12: standalone nodes baseline=387, predefined=379, sifted=378, order=[11, 5, 10, 3, 4, 9, 8, 2, 7, 1, 6, 0]
+shared matrix sift table=15 A k=12: standalone nodes baseline=446, predefined=429, sifted=429, order=[11, 5, 10, 4, 9, 3, 8, 2, 7, 1, 6, 0]
+shared matrix sift table=15 B k=12: standalone nodes baseline=387, predefined=379, sifted=378, order=[11, 5, 10, 3, 4, 9, 8, 2, 7, 1, 6, 0]
+shared matrix sift table=16 A k=12: standalone nodes baseline=446, predefined=429, sifted=429, order=[11, 5, 10, 4, 9, 3, 8, 2, 7, 1, 6, 0]
+shared matrix sift table=16 B k=12: standalone nodes baseline=387, predefined=379, sifted=378, order=[11, 5, 10, 3, 4, 9, 8, 2, 7, 1, 6, 0]
+shared matrix sift table=17 A k=12: standalone nodes baseline=446, predefined=429, sifted=429, order=[11, 5, 10, 4, 9, 3, 8, 2, 7, 1, 6, 0]
+shared matrix sift table=17 B k=12: standalone nodes baseline=387, predefined=379, sifted=378, order=[11, 5, 10, 3, 4, 9, 8, 2, 7, 1, 6, 0]
+shared matrix sift table=18 A k=11: standalone nodes baseline=331, predefined=327, sifted=320, order=[9, 3, 2, 4, 8, 7, 1, 6, 5, 0]
+shared matrix sift table=18 B k=11: standalone nodes baseline=210, predefined=191, sifted=190, order=[9, 4, 3, 7, 2, 6, 8, 1, 5, 0]
+shared matrix sift table=19 A k=10: standalone nodes baseline=25, predefined=22, sifted=20, order=[1, 2, 0, 3, 4, 5, 6, 7]
+shared matrix sift table=19 B k=10: standalone nodes baseline=25, predefined=22, sifted=20, order=[1, 2, 0, 3, 4, 5, 6, 7]
+shared matrix sift table=20 A k=10: standalone nodes baseline=66, predefined=61, sifted=58, order=[6, 5, 7, 1, 3, 2, 4, 0]
+shared matrix sift table=20 B k=10: standalone nodes baseline=55, predefined=52, sifted=50, order=[6, 5, 7, 1, 3, 2, 4, 0]
+shared matrix sift table=21 A k=9: standalone nodes baseline=36, predefined=36, sifted=36, order=[2, 5, 1, 4, 0, 3]
+shared matrix sift table=21 B k=9: standalone nodes baseline=29, predefined=29, sifted=28, order=[5, 2, 1, 4, 0, 3]
+shared matrix sift table=22 A k=9: standalone nodes baseline=34, predefined=33, sifted=33, order=[5, 2, 4, 1, 3, 0]
+shared matrix sift table=22 B k=9: standalone nodes baseline=34, predefined=32, sifted=31, order=[4, 2, 1, 5, 3, 0]
+shared matrix sift table=23 A k=9: standalone nodes baseline=12, predefined=10, sifted=10, order=[5, 2, 4, 1, 3, 0]
+shared matrix sift table=23 B k=9: standalone nodes baseline=12, predefined=10, sifted=10, order=[5, 2, 4, 1, 3, 0]
+shared matrix sift table=24 A k=9: standalone nodes baseline=16, predefined=14, sifted=12, order=[5, 0, 3, 2, 1, 4]
+shared matrix sift table=24 B k=9: standalone nodes baseline=16, predefined=14, sifted=12, order=[5, 0, 3, 2, 1, 4]
+shared matrix sift table=25 A k=9: standalone nodes baseline=16, predefined=14, sifted=12, order=[5, 0, 3, 2, 1, 4]
+shared matrix sift table=25 B k=9: standalone nodes baseline=16, predefined=14, sifted=12, order=[5, 0, 3, 2, 1, 4]
+shared matrix sift table=26 A k=9: standalone nodes baseline=16, predefined=14, sifted=12, order=[5, 0, 3, 2, 1, 4]
+shared matrix sift table=26 B k=9: standalone nodes baseline=16, predefined=14, sifted=12, order=[5, 0, 3, 2, 1, 4]
+shared matrix sift table=27 A k=9: standalone nodes baseline=16, predefined=14, sifted=12, order=[5, 0, 3, 2, 1, 4]
+shared matrix sift table=27 B k=9: standalone nodes baseline=16, predefined=14, sifted=12, order=[5, 0, 3, 2, 1, 4]
+shared matrix sift table=28 A k=9: standalone nodes baseline=24, predefined=21, sifted=20, order=[4, 3, 5, 0, 1, 2]
+shared matrix sift table=28 B k=9: standalone nodes baseline=20, predefined=18, sifted=17, order=[4, 3, 5, 0, 1, 2]
+shared matrix sift table=29 A k=8: standalone nodes baseline=13, predefined=11, sifted=10, order=[3, 2, 0, 1]
+shared matrix sift table=29 B k=8: standalone nodes baseline=13, predefined=11, sifted=10, order=[3, 2, 0, 1]
+shared matrix sift table=30 A k=8: standalone nodes baseline=9, predefined=8, sifted=8, order=[0, 2, 1, 3]
+shared matrix sift table=30 B k=8: standalone nodes baseline=9, predefined=8, sifted=8, order=[0, 2, 1, 3]
+shared matrix sift table=31 A k=8: standalone nodes baseline=13, predefined=11, sifted=10, order=[3, 2, 0, 1]
+shared matrix sift table=31 B k=8: standalone nodes baseline=13, predefined=11, sifted=10, order=[3, 2, 0, 1]
+shared matrix sifted: nodes=58928, branches=47697, fixed_low_pairs=4096, all 64 native differentials PASS; 3.610s; COMPONENT NODE COUNT ONLY, no adoption
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 47 filtered out; finished in 4.53s

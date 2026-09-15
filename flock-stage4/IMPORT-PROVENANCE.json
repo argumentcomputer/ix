@@ -1,0 +1,245 @@
+{
+  "schema": "ix-stage4-import-v1",
+  "source_revision": "8fdb3eab26491f2e79a6004016c2b7b96d0b4bda",
+  "source_branch": "jcb/flock-stage4",
+  "source_snapshot": "/home/jcb/projects/00/ix-flock-stage4",
+  "imported_on": "2026-09-12",
+  "scope": "Mechanical import of the independent trace, circuit, and fflonk crates. Historical root-conditional relation retained; not a complete closed generic IxBy proof.",
+  "files": [
+    {
+      "path": "flock-stage4/Cargo.lock",
+      "sha256": "0fb87d605aa0b703e269d96cf89715c4c7c34e9cb76408561aaca10fdbe7ef6e",
+      "git_blob": "8fa53e7b3dcd4800f9e92ad51c78c2d0db3fe5cd"
+    },
+    {
+      "path": "flock-stage4/Cargo.toml",
+      "sha256": "006151e3b266e4ea8e0935f308c756701312a9b6af40f8c30747032c2143b687",
+      "git_blob": "22086ea74c68a1ceabfad98076af85e74a9e3ce9"
+    },
+    {
+      "path": "flock-stage4/circuit/Cargo.toml",
+      "sha256": "54e7ffc99d2b6832d1a7356e3fdc78937dc8fd3f196fdf58c45d816d7148fc2f",
+      "git_blob": "e01f0da21e8bdb3bd0e3cd3514e9f597300b2e75"
+    },
+    {
+      "path": "flock-stage4/circuit/src/algebra.rs",
+      "sha256": "dc095fc2f1b1ea9f21e1fd6a5f5ad45983a75d4541bbaaad1101080fd8b3449d",
+      "git_blob": "e10c8591ed7de91a9bdd2aac242c3980eb88f119"
+    },
+    {
+      "path": "flock-stage4/circuit/src/blake3.rs",
+      "sha256": "d2166d9a9f2a4541fdcb8993d8195799e3349cff318cf3703e5caf4c12dfc25f",
+      "git_blob": "2a9ef329a8b67d3b87d220cf671c1e290f95f5dd"
+    },
+    {
+      "path": "flock-stage4/circuit/src/f128.rs",
+      "sha256": "6ed567fa8c4ffdc50ae38a94ac778797609e5aea7961f5a3046249020a37269c",
+      "git_blob": "25cad2e98f7175ade9a47b2a89260d76fcc53690"
+    },
+    {
+      "path": "flock-stage4/circuit/src/jagged_fold.rs",
+      "sha256": "1974c81ffd6d6c05e6379e181ab3065e441bf19fe9241039af7f9e5af60554f1",
+      "git_blob": "0936a55d08b336f8d41f9e477c9f49040d42b207"
+    },
+    {
+      "path": "flock-stage4/circuit/src/lib.rs",
+      "sha256": "61ab442173ffc31ce010074afde8cb07bfc7e49bcc457ecf7e23631c89878c13",
+      "git_blob": "2093c0cef928ba5047826b8fe46e4ac4b2903889"
+    },
+    {
+      "path": "flock-stage4/circuit/src/ligerito.rs",
+      "sha256": "eee7f0addc156779076743cce6c8ed154fc4fde126fe2b9f1991c9eb044a532e",
+      "git_blob": "c5a5176e5e3b0067263b19ca82ee04615643e40d"
+    },
+    {
+      "path": "flock-stage4/circuit/src/matrix_fold.rs",
+      "sha256": "67eb6cfe67c5c8c62a9c4fdcae1ba93f95e20b6aa526f42fef9eea54abf62011",
+      "git_blob": "965a48e30fdd957c97de26806c834012dae296c4"
+    },
+    {
+      "path": "flock-stage4/circuit/src/merged_pcs.rs",
+      "sha256": "b382d5a3c2ac25f61f389d97144490f2060be1052dd96ff74a34a364d81c500c",
+      "git_blob": "bc7703791ac93b32f945ccc81b04668a4c3be302"
+    },
+    {
+      "path": "flock-stage4/circuit/src/multipoint.rs",
+      "sha256": "ca9976d2d9f54641b20cc2b33c5e31bf0e1b166a5956aabfa96235884eeea1c7",
+      "git_blob": "861a9904c2d79a1a60968d843adeb0175a3d7295"
+    },
+    {
+      "path": "flock-stage4/circuit/src/public_inputs.rs",
+      "sha256": "dc2eda3eeddba2b30f5ca57f3202b9dfd27ad9009a43efb6f6e91ff17cdbbaf4",
+      "git_blob": "ba91239327368fcd2c4cf3bd426f5df6b1b25c01"
+    },
+    {
+      "path": "flock-stage4/circuit/src/r1cs.rs",
+      "sha256": "aea0d865dafb76c8568523cdad71bb0f01eb30bf80837e3b6de123fa4a6b0e3f",
+      "git_blob": "97785f18a865dce217f2be4fc3bba7d9cf65c7bf"
+    },
+    {
+      "path": "flock-stage4/circuit/src/relation.rs",
+      "sha256": "e9e6d9c31ae79ea9c4cc33603293975434494279b5aee5714a5cc35b75ac2527",
+      "git_blob": "d15f192a71386ea41b4a6d38f9bc2986c5c6f556"
+    },
+    {
+      "path": "flock-stage4/circuit/src/statement.rs",
+      "sha256": "448e67981d7a6e28cb4fdc9a6d8b2f0001f9207e1ef477411aed2647ccffc841",
+      "git_blob": "7413b576f90c2f32f2f348d0cfd428d2811a0a8b"
+    },
+    {
+      "path": "flock-stage4/circuit/src/structure_fold.rs",
+      "sha256": "c885dca6c8618700e143e52b402b23fc4535de5778a64287a63c594d2649f9b2",
+      "git_blob": "d2b4692d2efdef2933415e3037b0c624cea62289"
+    },
+    {
+      "path": "flock-stage4/circuit/src/transcript.rs",
+      "sha256": "4fe30b84f127655880f751210fe024fc2aad27a01ab8a8d378707aefe75de156",
+      "git_blob": "6c0494c7857c4fa2385e168f7325376f0b224c6a"
+    },
+    {
+      "path": "flock-stage4/circuit/src/wiring.rs",
+      "sha256": "9724fdf656c5548790d01bd49c7cad537725c0bfb8a882032ad4c6d4a7e90f9f",
+      "git_blob": "894187f168be9bd973e8c919f40d2a43a58f9ad1"
+    },
+    {
+      "path": "flock-stage4/fflonk/Cargo.toml",
+      "sha256": "e9dedbfe389da292ee67881491b02c984c92e00d84c3666a537035088b32d328",
+      "git_blob": "180f6c9528e2b9c96eef7214698214e690e03085"
+    },
+    {
+      "path": "flock-stage4/fflonk/examples/prover_memory.rs",
+      "sha256": "59f15bab61049f1c5c238fcaf7dac7b5897306709161f1cd125866f944cce7fe",
+      "git_blob": "120c9a1d2028fb52f8640fd7b6a8acdcf0e39827"
+    },
+    {
+      "path": "flock-stage4/fflonk/src/arithmetization.rs",
+      "sha256": "e09aae9a90cd0227163ea638a59b812d0ab5a3d9ed6015f97debde307b2cd009",
+      "git_blob": "5bc4c993ef6f6a0afd150f4cb1c7b24ace51149b"
+    },
+    {
+      "path": "flock-stage4/fflonk/src/capacity.rs",
+      "sha256": "33dbd29b4d118232f726543604162f69b7108f7b32139b945aabbc75c8243e8e",
+      "git_blob": "11a272388339675fa3b1d5e01c6a26ddebbb16db"
+    },
+    {
+      "path": "flock-stage4/fflonk/src/eip2537.rs",
+      "sha256": "5c3a806d68e3ece818ff0f63e74a7f88c5b54a4e97970b336e5ac5e8f9f1b014",
+      "git_blob": "e9a645a4790f5c5f61dcb19166c8af32f4218ea7"
+    },
+    {
+      "path": "flock-stage4/fflonk/src/kzg.rs",
+      "sha256": "32860b54d881f1c58105574e92157ff7a551afb695779ea6fb0dc61922d16cf0",
+      "git_blob": "17db8a0bc414c40fde25bb8f8cfd3334826deb1c"
+    },
+    {
+      "path": "flock-stage4/fflonk/src/kzg_srs_file.rs",
+      "sha256": "78551f6bf14c047970c6fe343fb92699564108428937669b6d1074c7d13badce",
+      "git_blob": "5801c0bb590e4001efa432a776f8f5c93326debf"
+    },
+    {
+      "path": "flock-stage4/fflonk/src/lib.rs",
+      "sha256": "d50ba9694075e91715693206c2f20b7df99cf0d5a2e6c0ef6c9f6b917fd59c82",
+      "git_blob": "c9a677c7dd40a9c16eea79c563984f734581cd85"
+    },
+    {
+      "path": "flock-stage4/fflonk/src/polynomial_storage.rs",
+      "sha256": "d56370e71ae3b879fd70ac53fe7a4969d314c0b532330f4ada74a46953a875f7",
+      "git_blob": "19b7ef966d400da8093811fb438516b8a6ba663f"
+    },
+    {
+      "path": "flock-stage4/fflonk/src/preprocessing.rs",
+      "sha256": "832040d0a7beaebaa8b8d7501d7ae1cc204fa813f8f8e7755cb4d5f9785c5184",
+      "git_blob": "27ab8bc4f136240f12658581bf46d7156a421989"
+    },
+    {
+      "path": "flock-stage4/fflonk/src/preprocessing_file.rs",
+      "sha256": "670792321762f21f51d7b30e7fcbb3548466c31cd1e843d83b01488792a73f29",
+      "git_blob": "8643e092ae107a6b3ce4fe5f1183fa9a60695096"
+    },
+    {
+      "path": "flock-stage4/fflonk/src/proof.rs",
+      "sha256": "025a1948bd556e99206c392b80ebc045b4be49b1a5739b35d940dca922f4206d",
+      "git_blob": "325733cde878dcb4cb0670a6dbe5e414624e36d1"
+    },
+    {
+      "path": "flock-stage4/fflonk/src/prover.rs",
+      "sha256": "92f9f4b3332466f2a8686c4950ac3a493c4fef79cb3fddb5a472266ea138cece",
+      "git_blob": "c40f5a7b5b217ebe676d430b631d87290ce9a1b3"
+    },
+    {
+      "path": "flock-stage4/fflonk/src/prover_workspace.rs",
+      "sha256": "130f3f44c8605daf2c43b86a412c37eb9b2d13b6c990e24eefb8d07856f2145b",
+      "git_blob": "ab6b4863782b0647ff8901930646517628b5a208"
+    },
+    {
+      "path": "flock-stage4/fflonk/src/transcript.rs",
+      "sha256": "8c6279143c3ce5ee437edbf41e8c616fec9d2ee57ebe01d4161d188acd7db7ac",
+      "git_blob": "44f0f15a919d38d759e65bee6d7d1f449eb14edd"
+    },
+    {
+      "path": "flock-stage4/fflonk/src/verifier.rs",
+      "sha256": "b5e1e2b01d265915cc319336cf50e6794ea1e2bf660c8db41f5b4e39365f7015",
+      "git_blob": "d36beaa64f0c049c763fce0fa761ca14174a3582"
+    },
+    {
+      "path": "flock-stage4/fflonk/src/verifier_key.rs",
+      "sha256": "a562be6e1dd0d42f2e78ba7bfaa8194253f27500ef182c6990f3f6874c1dc9e4",
+      "git_blob": "73b38226415e5ac35b10c219ec81ac6dcf6014fc"
+    },
+    {
+      "path": "flock-stage4/trace/Cargo.toml",
+      "sha256": "681121731147abe24c38f1a3af21417fca24ae5178d7a6797af7b9aecbee0f2e",
+      "git_blob": "42765490ce79f5eaf5091e5df96143eef604739a"
+    },
+    {
+      "path": "flock-stage4/trace/src/f128.rs",
+      "sha256": "baddd934b1b9d8b195fe7c2de10b35a8ddda56fae2c2901cd3c6e730be57ba4a",
+      "git_blob": "0ad90879d095483c28438c7c424c7dcbdba16e44"
+    },
+    {
+      "path": "flock-stage4/trace/src/jagged_fold.rs",
+      "sha256": "3f97aa0cab97c22b73e9640052e6ca28a49b5e624c0752683693e0e6d2a8e185",
+      "git_blob": "9a097c8eeb7f021ebc9ca1872f6f47a3f22a4db6"
+    },
+    {
+      "path": "flock-stage4/trace/src/lib.rs",
+      "sha256": "6a1f98270a57fd47d43d815b59d8c39ba3a88ba1d35c63c13c8256200781b9e4",
+      "git_blob": "b1850fb421adb699d62064d331f365b6d3111997"
+    },
+    {
+      "path": "flock-stage4/trace/src/ligerito.rs",
+      "sha256": "fcc92291a0bd9c52da5f5e4c288eca45e90f48c33d003c708fa1a4e95012c088",
+      "git_blob": "6ef7fcd5ea814cc3dfa2184df4ce018e694dd756"
+    },
+    {
+      "path": "flock-stage4/trace/src/matrix_fold.rs",
+      "sha256": "8bedca9bcafcf2b31eeaf66299cdfb12573a1ef17f95ed47e5149977e0332aa1",
+      "git_blob": "3b2ceb26c1a1c77eac5647e36cfeee584d9140b9"
+    },
+    {
+      "path": "flock-stage4/trace/src/merged_pcs.rs",
+      "sha256": "0778fb8b8ac38ed05912d56b2472742a918cfa5356db4f8eaee666f106dd39cc",
+      "git_blob": "0d5e5b66fcffec4dbb0df2a2228b3ce78ff710d4"
+    },
+    {
+      "path": "flock-stage4/trace/src/multipoint.rs",
+      "sha256": "0feac2f710b1fabafea61455ba2c0f225b74c885a8e40468a16d54681e1c6926",
+      "git_blob": "923c27a90b2ab49376d08b984f7c62c9f6fd7318"
+    },
+    {
+      "path": "flock-stage4/trace/src/statement.rs",
+      "sha256": "7bd0a7df48f8bb1c6aa490343f4ef1253accec66fb2d7e14c1bf03c88515fc9b",
+      "git_blob": "744e948aae5830fe9341fcf23de1b4bde243747b"
+    },
+    {
+      "path": "flock-stage4/trace/src/structure_fold.rs",
+      "sha256": "f1b91fb31971b26aec09a129609fb4d1ae316a0255e0a8adbfe2c5c1b5a715db",
+      "git_blob": "7dead371c4843c8ea61cc36568f212067b862d0d"
+    },
+    {
+      "path": "flock-stage4/trace/src/wiring.rs",
+      "sha256": "1475f472c487f8836d940931b032a81bef0a9135ba545ead4e10d66a7344679e",
+      "git_blob": "bbdd39fdfcc23c64109d1341fe4ccfcf827717d8"
+    }
+  ]
+}

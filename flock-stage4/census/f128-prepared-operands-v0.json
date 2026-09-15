@@ -1,0 +1,166 @@
+{
+  "schema": "ixby-stage4-prepared-f128-operands-evidence-v0",
+  "measurement_date": "2026-09-13",
+  "base_revision": "4fdbf4084516ce1a29f6753a20d797334d7fadbb",
+  "status": "exact_component_savings_and_explicit_composition_integration_tested_not_whole_domain_admission",
+  "source_hashes": [
+    {
+      "path": "flock-stage4/circuit/src/f128.rs",
+      "sha256": "fe0559f5696533b9e9896f613d3c8e8b8e685a9f96cba1640fb030d54d324111"
+    },
+    {
+      "path": "flock-stage4/circuit/src/f128_prepared.rs",
+      "sha256": "94da5e4b86f48cee0c7ac364e286c772cf55ac9531cbd03c79b3ebcbe4df25c6"
+    },
+    {
+      "path": "flock-stage4/circuit/src/f128_prepared_tests.rs",
+      "sha256": "f800da6297a5bf5d55e575c5d53b217d11ad767f1d39557b9dc7111db16da0ba"
+    },
+    {
+      "path": "flock-stage4/circuit/src/r1cs.rs",
+      "sha256": "79c618f6a735f2aad3f0273fa3391d0cfebcc5ddee3762356a6cce25b250cca4"
+    },
+    {
+      "path": "flock-stage4/circuit/src/lib.rs",
+      "sha256": "825247329e9dda94011f5509b136fd73f7c1f62a89c30680cb5fa70be4f745fe"
+    },
+    {
+      "path": "flock-stage4/fflonk/src/arithmetization.rs",
+      "sha256": "335c278fae3947693b0887dcff73417cb74d204629b4d26dcead27f653785dd2"
+    },
+    {
+      "path": "flock-stage4/fflonk/src/arithmetization_prepared_tests.rs",
+      "sha256": "29319ed6a1e873deb2644b4623395bd806a1b1b2042d93d2d1d18f034b51d777"
+    },
+    {
+      "path": "flock-stage4/exec/src/original_closure.rs",
+      "sha256": "527c67638b68a672cca76897c7bd1d5447895e9d14437cb8542986ef3bec8c36"
+    },
+    {
+      "path": "flock-stage4/exec/src/original_closure_tests.rs",
+      "sha256": "2ada0c76939c77cbe81b11f088f419bafda09e662361fbc36dba41ff19916618"
+    },
+    {
+      "path": "flock-stage4/exec/src/setup_emission.rs",
+      "sha256": "f5b50283234933922262244d3642a0e82cd6a2a419dc7818e5a45fbad69a0fc7"
+    },
+    {
+      "path": "flock-stage4/exec/src/lib.rs",
+      "sha256": "c8885564ea7d5ae346082ff808a4d1a3f4fd66795fada4aac5431ab66db786b3"
+    }
+  ],
+  "scope": "Reusable constrained Karatsuba operand preparation, with an explicit per-builder cache and setup-owned original-claim composition variant. The default uncached circuit and its historical composition identity remain unchanged. No proof parameters or root obligations are removed.",
+  "construction": {
+    "field": "GF(2^128), modulus x^128+x^7+x^2+x+1, little-endian polynomial basis",
+    "leaf_count": 27,
+    "leaf_bits": 16,
+    "radix": 32,
+    "shared_xor_definitions_per_dense_operand": 304,
+    "shared_packing_definitions_per_operand": 27,
+    "explanation": "Every prepared bit expression and packed Fr wire is derived from the exact original constrained operand bits. The unchanged bounded integer-convolution constraints, Boolean coefficient decompositions, Karatsuba reconstruction and field reduction constrain each product.",
+    "integer_embedding": "A sixteen-bit polynomial pack is less than 2^80; the integer product is less than 2^160 and therefore below the BLS12-381 scalar modulus. Radix-32 coefficients are bounded without carry aliases.",
+    "advice_accepted": false
+  },
+  "cache": {
+    "default_enabled": false,
+    "maximum_capacity": 1024,
+    "policy": "deterministic insertion-order FIFO",
+    "key": "the exact array of 128 source Variable identifiers, never private values",
+    "ownership": "one R1csBuilder; immutable reference-counted preparations; eviction cannot invalidate a product using an already borrowed preparation",
+    "configuration": "one explicit enable call on a fresh builder, before any public/private allocation or any constraint, including constant-only equations",
+    "constants_and_squares": "Shape-time constants and exact same-wire squaring retain the original shortcuts and do not populate the cache. Private zero or one is not a constant.",
+    "refusals": "Bad capacity, late/repeated enable and ambient cache selection by a composition are rejected. Sticky observer errors cannot return a successful prepared product or completed prefix."
+  },
+  "component_plonk_rows": [
+    {
+      "case": "single dense product",
+      "products": 1,
+      "distinct_inputs": 2,
+      "baseline": 9516,
+      "prepared": 9516,
+      "reused_preparations": 0,
+      "saved": 0
+    },
+    {
+      "case": "four products with one common operand",
+      "products": 4,
+      "distinct_inputs": 5,
+      "baseline": 37680,
+      "prepared": 35553,
+      "reused_preparations": 3,
+      "saved": 2127
+    },
+    {
+      "case": "two-by-two grid",
+      "products": 4,
+      "distinct_inputs": 4,
+      "baseline": 37552,
+      "prepared": 34716,
+      "reused_preparations": 4,
+      "saved": 2836
+    },
+    {
+      "case": "both operands repeated four times",
+      "products": 4,
+      "distinct_inputs": 2,
+      "baseline": 37296,
+      "prepared": 33042,
+      "reused_preparations": 6,
+      "saved": 4254
+    }
+  ],
+  "cost_interpretation": "In these complete dense-input components, each reused preparation removes 304 XOR rows and 27*15 affine packing rows: 709 PLONK rows. A single use has the same row count. These counts do not establish the saving for every possible aliased input pattern or the complete verifier.",
+  "composition": {
+    "api": "compile_exec_original_claims_closure_with_arithmetic",
+    "arithmetic": "ExecOriginalClosureArithmeticV0::PreparedF128Fifo1024V0",
+    "digest": "8fad78d09e0a3321876fe38d9381e9311b1be62ee69f3c82a9d44a8c0de481fc",
+    "default_uncached_digest": "2c8410985a6178661748c8635f17529d3821ce8962bb42f480e19425b807ef62",
+    "unchanged_tables_digest": "2dd8611210d680307cf0c499ea8585f1e140caa654fc04f019fccdd57c30155f",
+    "original_matrix_claims": 64,
+    "original_structure_claims": 3,
+    "original_jagged_claims": 3,
+    "ligerito_queries": [
+      244,
+      79,
+      48
+    ],
+    "grinding_bits": [
+      16,
+      16,
+      16
+    ],
+    "public_fr_limbs": 2,
+    "whole_census_test": "native::tests::original_closure_tests::packed_small_whole_prepared_original_claims_closed_census",
+    "whole_census_scope": "Separate bounded setup-only emission of the whole relation, including public/blinding reservations and hard 2^30 cutoff. A complete setup result must match the subsequent full native replay census. Neither is materialized satisfaction checking, key preprocessing, or a terminal proof."
+  },
+  "checks": [
+    "Materialized cached and manually prepared products match an independent carryless-field oracle, including private zero, nonzero, constants, squares, and high-bit vectors.",
+    "Full setup matrices equal assigned matrices for all tested assignments. Every input/output bit and packed preparation wire mutation is rejected by the materialized R1CS.",
+    "Exact-wire cache entries remain distinct for equal-valued private operands. Capacities 1, 2 and 4 have bounded deterministic eviction and value-independent projection digests across independent builders.",
+    "The default materialized circuit exactly equals the original Karatsuba emission. Existing multiplication golden counts continue to pass.",
+    "Actual R1CS-to-PLONK component counts match setup and assigned modes, both manual preparation and automatic cache reuse. Capacity one has no reuse in the measured schedules and retains baseline PLONK row counts.",
+    "Three real native Exec proofs pass the explicit arithmetic ownership tests and exact setup/assigned 4096-constraint prefix comparisons. Tables and source-slot counts are unchanged; ambient pre-enabled caches are rejected before emission.",
+    "Latest complete ordinary suite: 241 passed, zero failed, 35 ignored. All-target clippy with warnings denied and formatting checks pass."
+  ],
+  "test_result": {
+    "component_test_passed": 1,
+    "component_test_failed": 0,
+    "component_test_seconds": 0.72,
+    "ordinary_fflonk": 90,
+    "ordinary_trace": 48,
+    "ordinary_circuit": 86,
+    "ordinary_exec": 17,
+    "ordinary_total": 241,
+    "ignored_total": 35
+  },
+  "raw_log": {
+    "path": "flock-stage4/census/f128-prepared-operands-v0.log",
+    "sha256": "6517e5842d7dc58a2b0888044b2df024d05b825591546e758321db5b89a945ad",
+    "capture_normalization": "Trailing blank lines removed."
+  },
+  "command": "ulimit -v 16777216 && RAYON_NUM_THREADS=4 timeout 180 cargo test --manifest-path flock-stage4/Cargo.toml --release --offline --locked -p ix-fflonk prepared_tests -- --nocapture --test-threads=1",
+  "whole_census_result_included": false,
+  "full_materialized_relation_checked": false,
+  "terminal_key_generated": false,
+  "whole_closed_proof_generated": false
+}

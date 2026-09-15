@@ -1,0 +1,148 @@
+{
+  "schema": "ixby-stage4-f128-polynomial-carry-evidence-v1",
+  "measurement_date": "2026-09-13",
+  "base_revision": "861f5feace71941a34fbe2cb2bbaa43418b1fb4d",
+  "status": "exact_carry_encoding_with_measured_component_savings_not_whole_relation_admission_or_proof",
+  "rustc": "1.98.0 (88d9e12ae 2026-08-18)",
+  "source_hashes": [
+    {
+      "path": "flock-stage4/circuit/src/f128_ranged.rs",
+      "sha256": "e4e2fc2d0969f69612bae6e186ffd5896c0079fc9925bc248c52da2d851821c7"
+    },
+    {
+      "path": "flock-stage4/circuit/src/f128_ranged_tests.rs",
+      "sha256": "4359123137a603c6a391dd72d16eb4b6aed571a5addefee7078e082fb5e5a7a2"
+    },
+    {
+      "path": "flock-stage4/circuit/src/f128_prepared.rs",
+      "sha256": "8d9b35b3791d97da1e20b62382fb369c1559ad5d20386927de5a17a7dedefd6d"
+    },
+    {
+      "path": "flock-stage4/circuit/src/f128_prepared_tests.rs",
+      "sha256": "416f491cca63c40fbbf3603b09b1b50a052639d9c0790f07dcdc8a9f62f56e91"
+    },
+    {
+      "path": "flock-stage4/circuit/src/r1cs.rs",
+      "sha256": "4e204ded4b3b9324567c91e073415e5801b29f554cf73ba4fc5f7ff1c7e8382b"
+    },
+    {
+      "path": "flock-stage4/circuit/src/f128.rs",
+      "sha256": "e4256216aadf764c8378fd7e1dc1d3551917eaa738d963caff16ad7a7145175c"
+    },
+    {
+      "path": "flock-stage4/circuit/src/lib.rs",
+      "sha256": "c9d08ab255c9956a3b0a018ea269dbcda03604ca662b62e5c722f59bec1d6132"
+    },
+    {
+      "path": "flock-stage4/exec/src/original_closure.rs",
+      "sha256": "df3205b9aab0013f4edd587fe3e12181a660e1e00c39a19cbf9c364fc5076400"
+    },
+    {
+      "path": "flock-stage4/exec/src/original_closure_tests.rs",
+      "sha256": "53dc2dbfd51c3fd4101fd1925e5b0eff936da3d51b5e2fef36d8c8dcf86ca1de"
+    },
+    {
+      "path": "flock-stage4/fflonk/src/arithmetization_prepared_tests.rs",
+      "sha256": "63ff9b9f98fc99ed03f065b21f2b2d84125f30493a495fa9c706bc14fdb14de4"
+    }
+  ],
+  "encoding": {
+    "product": "F128PreparedProductV1::PolynomialCarriesV1",
+    "closed_composition": "ExecOriginalClosureArithmeticV0::PreparedRangedF128Fifo1024V1",
+    "composition_digest": "158396e249b6f752582f456cc852a55fa994310866bf4f95e3f9f03e3ec7f00e",
+    "unchanged_prepared_v0_composition_digest": "8fad78d09e0a3321876fe38d9381e9311b1be62ee69f3c82a9d44a8c0de481fc",
+    "unchanged_tables_digest": "2dd8611210d680307cf0c499ea8585f1e140caa654fc04f019fccdd57c30155f",
+    "unchanged_obligations": "64 original matrix, 3 structure and 3 jagged claims; public Q remains two Fr limbs; all transcript and root constraints remain.",
+    "pinned_queries": [
+      244,
+      79,
+      48
+    ],
+    "pinned_grinding_bits": [
+      16,
+      16,
+      16
+    ],
+    "selection": "Explicit proof-free mode, fixed on a fresh builder before any allocation or constraint. Both emitters reject ambient cache/product selection. Old uncached and Boolean-carry modes preserve their geometry and identities.",
+    "cache": "Same exact-wire FIFO, capacity 1024; source values and randomized hash iteration do not select topology."
+  },
+  "range_argument": {
+    "coefficient_encoding": "b + 2*c, with Boolean b and one Fr carry c in {0,...,floor(N/2)}, N the number of input-bit products contributing to the coefficient.",
+    "maximum_carry": 8,
+    "radix": 32,
+    "maximum_encoded_digit": 17,
+    "integer_bound": "Both packed products and digit sums are below 2^160, below Fr's modulus. Each digit is below radix 32. Equality in Fr therefore fixes the exact integer convolution and its characteristic-two parity without carry or modular aliases.",
+    "polynomial": "With m the maximum and p=c(c-m), p+i(m-i)=(c-i)(c-(m-i)). The emitted product trees multiply these factors. Only m=4,6,8 duplicate the middle root; duplication changes multiplicity, not the allowed values.",
+    "constraint_counts_for_maximum_0_through_8": [
+      1,
+      1,
+      2,
+      2,
+      3,
+      3,
+      4,
+      4,
+      5
+    ],
+    "unchanged": "Operand preparation, its defining XOR/pack constraints, 27-leaf Karatsuba reconstruction and GHASH field reduction."
+  },
+  "component_counts": [
+    {
+      "name": "single dense product",
+      "products": 1,
+      "boolean_carry_plonk_rows": 9516,
+      "polynomial_carry_plonk_rows": 8598,
+      "saved_rows": 918
+    },
+    {
+      "name": "four products with one common operand",
+      "products": 4,
+      "boolean_carry_plonk_rows": 35553,
+      "polynomial_carry_plonk_rows": 31881,
+      "saved_rows": 3672
+    },
+    {
+      "name": "two by two operand grid",
+      "products": 4,
+      "boolean_carry_plonk_rows": 34716,
+      "polynomial_carry_plonk_rows": 31044,
+      "saved_rows": 3672
+    },
+    {
+      "name": "four products with both operands repeated",
+      "products": 4,
+      "boolean_carry_plonk_rows": 33042,
+      "polynomial_carry_plonk_rows": 29370,
+      "saved_rows": 3672
+    }
+  ],
+  "count_scope": "Complete component counts including input allocation, not whole-relation counts or whole-relation percentage savings. Each 16-bit leaf saves 34 rows, times 27 leaves = 918 per dense product. Shape and assigned counts agree; explicit preparations and cache reuse have equal costs. Capacity-one no-reuse tests retain the same 918-row product saving.",
+  "regressions": {
+    "workspace_ordinary_tests_passed": 253,
+    "workspace_ignored_tests": 37,
+    "checks": [
+      "Symbolic elimination of each actual emitted range R1CS yields exactly the factored polynomial, compared coefficient by coefficient over Fr; this is an executable algebraic regression, not a Lean theorem.",
+      "All small integer roots pass; negative one, maximum+one, 19 and one-half reject with consistently recomputed auxiliary witnesses. Every product auxiliary mutation rejects.",
+      "All convolution widths 1 through 16 match an independent carryless parity oracle for zero, mixed and all-one inputs; every input, pack, parity, carry and auxiliary wire mutation rejects.",
+      "Complete materialized F128 2x2-product matrices are identical across zero/mixed/all-one seeds and setup emission; every input/output/pack mutation rejects.",
+      "Ranged cache capacities 1,2,4 preserve complete materialized setup/assignment equality across three seeds and bounded FIFO eviction; malformed/late configuration and sticky failures reject.",
+      "Actual materialized PLONK lowering matches the component projection and checks every lowered witness gate.",
+      "All old arithmetic tests and row goldens pass. Six actual native Exec proofs across both prepared modes pass setup ownership and prefix comparisons; these are not whole-matrix equality checks.",
+      "Workspace Clippy with warnings denied, formatting, and the complete ordinary workspace suite pass."
+    ],
+    "development_scope": "Existing small FFLONK proofs use deterministic development setup/blinding. No full closed-relation FFLONK proof or production setup is established by these tests."
+  },
+  "raw_component_log": "f128-polynomial-carries-v1.log",
+  "raw_component_log_sha256": "18917c70d7398e20a79ebd6a01f39e51668b9ff4c41e1d54a98522161b90fe2c",
+  "command": "ulimit -v 16777216; RAYON_NUM_THREADS=4 timeout 180 cargo test --release --offline --locked --manifest-path flock-stage4/Cargo.toml -p ix-fflonk ranged_carries_reduce_actual_prepared_product_plonk_cost -- --test-threads=1 --nocapture",
+  "next_whole_census_snapshot": {
+    "sha256": "ed970da4d814c3967bfe31f21df4a6cb0ffdcbe91bbfa291e63e790ba3d0c9dc",
+    "archive_bytes": 503661,
+    "source_files": 186,
+    "scope": "Frozen native sources including this encoding and the prior derived-sigma storage implementation. Separate bounded CPU-box census; no result is claimed in this component report."
+  },
+  "whole_relation_count_established": false,
+  "whole_pipeline_resource_admitted": false,
+  "whole_exec_key_generated": false,
+  "whole_exec_proof_generated": false
+}

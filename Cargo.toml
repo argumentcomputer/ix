@@ -10,10 +10,9 @@ members = [
   "crates/ixon",
   "crates/kernel",
 ]
-# `zisk/` and `sp1/` are their own Cargo workspaces (guest + host) built via
-# the respective zkVM toolchains; excluded so host workspace ops don't pick
-# them up.
-exclude = ["zisk", "sp1", "multi-stark"]
+# Separate proving workspaces have independent toolchains/dependency graphs;
+# exclude them so ordinary host workspace operations do not build them.
+exclude = ["zisk", "sp1", "multi-stark", "flock-stage3", "flock-stage4"]
 resolver = "2"
 
 [profile.dev]

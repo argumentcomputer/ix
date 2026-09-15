@@ -1,0 +1,850 @@
+{
+  "schema": "ixby-stage4-exact-cofactor-root-basis-v0",
+  "measurement_date": "2026-09-13",
+  "base_revision": "9a94d6862283940b37c36020fdf7f9d6ac3468b6",
+  "status": "measured_structure_component_reduction_integrated_not_a_full_closed_census_or_proof",
+  "rustc": "1.98.0 (88d9e12ae 2026-08-18)",
+  "flock_revision": "b310f35f35f68095537150a1c8c0a43caca9a29e",
+  "approved_exec_setup_digest": "41163b87f03675917ac93824d8b1c11ab0c489c2fc2e03abece34d11fa3255f7",
+  "source_diagram_table_set_digest": "9d2be8a8e0a1288cb2530830efc3ef2df98cfda721243132c318741504c58021",
+  "structure_source_diagram_digest": "364fd5d959e7e057f7b87eb2f87d1087741ac8f78e2fcaf815c2da795f693584",
+  "structure_basis_digest": "10a0c22f34c8772133f3eeb7140bb40a72e651aa29ff7a2d1eeb3d832e73cff9",
+  "root_closed_composition_digest": "2a5197d95f015ded732322e73a999bb128faab2e8ffd4c873a15a6c759db2d24",
+  "root_closed_table_set_digest": "2100cce6c5b5aa4136b68217fda000d2a10189f7863c530507e76cfb94e4a073",
+  "previous_composition_digest": "64caf60bc1fe39846d95e195e3ecf598b75a1bcf22820e5ef72836399c868bdc",
+  "previous_table_set_digest": "f020d4867674049eb517f7e7be472614f2e34453adaacbb9834374c6783a3199",
+  "digest_scope": "Setup/program identities, not complete R1CS or terminal key identities. Projection digests below address only the standalone component constraint stream.",
+  "stage3_tables_profile_key_or_transcript_changed": false,
+  "fflonk_codec_or_protocol_changed": false,
+  "complete_closed_census_produced": false,
+  "complete_closed_r1cs_materialized": false,
+  "complete_closed_assignment_checked": false,
+  "terminal_key_generated": false,
+  "terminal_proof_generated": false,
+  "source_hashes_scope": "All 13 new/modified Rust sources relative to base_revision. Frozen before the final native measurement sequence and rechecked after completion. Other source/manifests/dependencies are unchanged; later documentation edits do not affect the measured code.",
+  "source_hashes": [
+    {
+      "path": "flock-stage4/trace/src/fixed_table_basis.rs",
+      "sha256": "35d902a292dc4e38473cf98c7bb73500efb5e9a4d372441c08554fe44adbee60"
+    },
+    {
+      "path": "flock-stage4/trace/src/fixed_table_basis_tests.rs",
+      "sha256": "e3f2b4049d17c9ffb5b6b6c51352ca7573d1967f54ca919a5351aae9a0c50f83"
+    },
+    {
+      "path": "flock-stage4/trace/src/root_tables.rs",
+      "sha256": "95f14a6fbb093b9f2987d4281f3dcde130114700ce9b72e3c1a4097e7f889317"
+    },
+    {
+      "path": "flock-stage4/trace/src/lib.rs",
+      "sha256": "e831423f55e331b8e4e472ab1421dea245b6f57e5ba34225022f902418bad5c0"
+    },
+    {
+      "path": "flock-stage4/circuit/src/fixed_table_basis.rs",
+      "sha256": "b72eaabb3b90eccecf7cf1807d77edacc4fe6b7b4b2e26208fed87dad3ae59cd"
+    },
+    {
+      "path": "flock-stage4/circuit/src/fixed_table_basis_tests.rs",
+      "sha256": "4f91ff0b8f392a205bb80cb6c1c1284ff50f496a13b9f7bbdd6bed26674e55af"
+    },
+    {
+      "path": "flock-stage4/circuit/src/root_closure.rs",
+      "sha256": "5dba268bc5a2c87630c3e654c8c529e9d010e635a09c38de37f8153aa82a217a"
+    },
+    {
+      "path": "flock-stage4/circuit/src/root_closure_tests.rs",
+      "sha256": "8a59cf444ac8f704b6c480fdb80d0c1668aafc566b8b00296643f8eed093e5b0"
+    },
+    {
+      "path": "flock-stage4/circuit/src/lib.rs",
+      "sha256": "1732b97631a0f397351283fa1e020c79bff0e3e6bbe21d71b81ba8c4d2353cf2"
+    },
+    {
+      "path": "flock-stage4/exec/src/basis_table_tests.rs",
+      "sha256": "afd4bf73e46efd88ec4a543fe1b52d2b9be565357e2c5994ea589bb0bddf36a8"
+    },
+    {
+      "path": "flock-stage4/exec/src/closure.rs",
+      "sha256": "097944893523aeb0bf4efada72f64fd6c789cd7334a56636357a06003e6f064f"
+    },
+    {
+      "path": "flock-stage4/exec/src/closure_tests.rs",
+      "sha256": "8542559c4195c4973faaa42265a346423e41379611f4f20e850fbe5f59986a82"
+    },
+    {
+      "path": "flock-stage4/exec/src/tests.rs",
+      "sha256": "39f01580461c43a6cb4bdbea9f40cb4159c501de8a86ba16df09ed1cf0bc1a3e"
+    }
+  ],
+  "construction": {
+    "inputs": "A sealed validated F128FixedTableV0 Shannon program and explicit compilation limits only; no arbitrary layers, guest, point, expected value, statement, proof, native verifier witness, SRS or key.",
+    "exactness": "At each layer, reachable source cofactors decode into a GF(2) basis. Elimination acts on exact pairs of child coefficient vectors, retaining residual basis rows and source decoders. Leaves span the 128-bit constants; skipped coordinates have identical cofactors. Evaluating low + x * (low XOR high) uses each coordinate once, preserving all Boolean-cube coefficients and hence the F128 multilinear polynomial. Davio input is refused rather than expanded.",
+    "proof_status": "Algebraic construction with exhaustive small-coefficient tests, native differentials and materialized R1CS negatives; not a new kernel-certified refinement theorem or a full-relation soundness proof.",
+    "ownership": "Immutable fields/read-only getters; no unchecked constructor. The approved root compiler derives structure from its own exact diagram and propagates every budget failure without fallback.",
+    "adopted_programs": {
+      "binary_linear_matrices": 2,
+      "decision_diagram_matrices": 44,
+      "cofactor_basis_structure": 1,
+      "decision_diagram_jagged": 1
+    },
+    "adoption": "Only structure changes representation, following the paired exact constraint measurement. Successful rank compilation alone does not authorize adopting other candidate tables.",
+    "smaller_limits": {
+      "state_slots": 4000000,
+      "dense_words": 16000000,
+      "word_operations": 200000000,
+      "coefficient_terms": 8000000
+    },
+    "limit_scope": "Per basis compiler. Dense words are cumulative u64 payload allocations including scratch, not peak resident memory, and exclude the source DAG and container/allocator overhead. Source diagrams separately use the unchanged global 64000000-entry/2000000-node limit. Logical budgets are not whole-pipeline proving admission."
+  },
+  "ordinary_tests": {
+    "command": "cargo test --release --locked --manifest-path flock-stage4/Cargo.toml --workspace",
+    "exit_code": 0,
+    "passed": 207,
+    "ignored": 15,
+    "passed_by_crate": {
+      "fflonk": 88,
+      "trace": 34,
+      "circuit": 69,
+      "exec": 16
+    },
+    "format_diff_and_clippy_all_targets": "passed",
+    "coefficient_tests": "All 128 coefficient bits; exhaustive Boolean cubes through eight coordinates across four coefficient/order patterns; cancellation and reversed input determinism; 64-coordinate sparse and empty cubes; zero rank and constant tables; 128-dimensional leaf basis crosses decoder-word boundaries.",
+    "hostile_tests": "Each exact resource count passes and one less fails independently; Davio refusal; digest coverage of all program fields but not resource counters; program-kind identity and matrix/structure/jagged shape/overflow checks.",
+    "circuit_tests": "Literal sparse MLE agreement at zero, one and non-Boolean points. All output and claimed-value bits are constrained. Proof-free zero-scratch matrices equal complete assigned matrices exactly. Expanded root tests cover all three program kinds, all families, every claim bit, initial false claims and malformed root coverage before emission."
+  },
+  "debug_tests": {
+    "commands": [
+      "cargo test --locked --manifest-path flock-stage4/Cargo.toml -p ix-stage4-trace -p ix-terminal-circuit fixed_table_basis",
+      "cargo test --locked --manifest-path flock-stage4/Cargo.toml -p ix-terminal-circuit root_closure",
+      "cargo test --locked --manifest-path flock-stage4/Cargo.toml -p ix-stage4-trace cofactor_program_kind"
+    ],
+    "exit_code": 0,
+    "passed": 11,
+    "test_seconds_by_group": [
+      0.06,
+      21.69,
+      70.47,
+      0
+    ],
+    "scope": "Debug assertions enabled; test durations exclude compilation. This separate run overlapped the end of the native measurement sequence."
+  },
+  "native_experiments": {
+    "command": "ulimit -v 16777216; RAYON_NUM_THREADS=4 timeout 900 cargo test --release --locked --manifest-path flock-stage4/Cargo.toml -p ixby-stage4-exec cofactor_basis -- --ignored --test-threads=1 --nocapture",
+    "address_space_limit_kib": 16777216,
+    "rayon_threads": 4,
+    "timeout_seconds": 900,
+    "exit_code": 0,
+    "tests_passed": 3,
+    "total_test_seconds": 183.45,
+    "timing_scope": "Three tests in one process, each builds approved setup/tables; suite duration includes those steps but excludes Cargo compilation. Ordinary tests overlapped the beginning and debug tests the end. Observed timings, not controlled throughput claims.",
+    "smaller_budget": {
+      "complete_programs": 44,
+      "refused_programs": 4,
+      "source_table_compilation_seconds": 7.455,
+      "differentials_per_completed_program": 4,
+      "points": "All-zero, all-one, two non-Boolean F128 points generated from fixed seeds 7 and 0xb515; comparison with the exact source diagram in native Flock arithmetic.",
+      "scope": "Complete programs have exact construction plus native field differentials, not full matrix materialization or terminal proofs. Refused programs return no partial program, rank, or digest.",
+      "refused": [
+        {
+          "table": "Boolean 0 A",
+          "error": "WorkLimit",
+          "elapsed_seconds": 0.157,
+          "source_nodes": 100224
+        },
+        {
+          "table": "Boolean 0 B",
+          "error": "WorkLimit",
+          "elapsed_seconds": 0.131,
+          "source_nodes": 115460
+        },
+        {
+          "table": "Boolean 9 A",
+          "error": "WorkLimit",
+          "elapsed_seconds": 0.512,
+          "source_nodes": 677865
+        },
+        {
+          "table": "Boolean 9 B",
+          "error": "WorkLimit",
+          "elapsed_seconds": 0.427,
+          "source_nodes": 458053
+        }
+      ],
+      "programs": [
+        {
+          "table": "Boolean 1 A",
+          "elapsed_seconds": 0.007,
+          "source_nodes": 7594,
+          "ranks": [1, 1, 1, 2, 4, 7, 12, 17, 24, 34, 43, 73, 102, 157, 195, 285, 336, 479, 532, 632, 628, 650, 553, 492, 255, 128, 64, 32, 16, 8, 4, 2],
+          "leaf_rank": 1,
+          "nonzero_slope_sites_not_general_products": 5714,
+          "state_slots": 7861,
+          "dense_words": 156754,
+          "word_operations": 3096781,
+          "coefficient_terms": 233705,
+          "basis_digest": "9f3a580e1ffc8d77cd8244544ee6b63085f4f39e403bbe4e9adbea1ec5cb2a9d"
+        },
+        {
+          "table": "Boolean 1 B",
+          "elapsed_seconds": 0.007,
+          "source_nodes": 8527,
+          "ranks": [1, 1, 1, 2, 3, 6, 10, 15, 22, 33, 44, 69, 102, 151, 199, 278, 354, 493, 595, 800, 674, 782, 642, 512, 256, 128, 64, 32, 16, 8, 4, 2],
+          "leaf_rank": 1,
+          "nonzero_slope_sites_not_general_products": 6287,
+          "state_slots": 8657,
+          "dense_words": 204210,
+          "word_operations": 3247662,
+          "coefficient_terms": 225148,
+          "basis_digest": "eececb592b36bfd9e5ecfd1392a324bd0725774eccf14dc6d9776b01e4251e84"
+        },
+        {
+          "table": "Boolean 2 A",
+          "elapsed_seconds": 0.047,
+          "source_nodes": 24118,
+          "ranks": [1, 2, 4, 5, 8, 14, 20, 33, 46, 74, 108, 173, 254, 431, 673, 1177, 1927, 2512, 3644, 3391, 3388, 1926, 1019, 512, 256, 128, 64, 32, 16, 8, 4, 2],
+          "leaf_rank": 1,
+          "nonzero_slope_sites_not_general_products": 21796,
+          "state_slots": 24213,
+          "dense_words": 2590526,
+          "word_operations": 62939752,
+          "coefficient_terms": 2354463,
+          "basis_digest": "838cd725b7428420c8569e79767ac04d2b31fa3d96c4e27772ddd5e626e28375"
+        },
+        {
+          "table": "Boolean 2 B",
+          "elapsed_seconds": 0.014,
+          "source_nodes": 22263,
+          "ranks": [1, 2, 3, 4, 6, 12, 18, 31, 44, 72, 106, 169, 246, 408, 640, 1128, 1853, 2373, 3462, 3118, 3255, 1840, 1009, 509, 256, 128, 64, 32, 16, 8, 4, 2],
+          "leaf_rank": 1,
+          "nonzero_slope_sites_not_general_products": 20806,
+          "state_slots": 22333,
+          "dense_words": 2306525,
+          "word_operations": 8394161,
+          "coefficient_terms": 112391,
+          "basis_digest": "d91bbad73953b2810ca9e701f513a60b463d03f2e36db5d96635c07aa2fa967a"
+        },
+        {
+          "table": "Boolean 3 A",
+          "elapsed_seconds": 0.002,
+          "source_nodes": 4423,
+          "ranks": [1, 1, 1, 2, 4, 8, 13, 19, 26, 37, 45, 66, 79, 109, 118, 162, 195, 223, 232, 275, 313, 346, 354, 336, 252, 128, 64, 32, 16, 8, 4, 2],
+          "leaf_rank": 1,
+          "nonzero_slope_sites_not_general_products": 3434,
+          "state_slots": 4562,
+          "dense_words": 51486,
+          "word_operations": 439746,
+          "coefficient_terms": 41740,
+          "basis_digest": "ab4517bc9481dec8603bf0a213af98e42a691af836641824ef1677b79e36bdd5"
+        },
+        {
+          "table": "Boolean 3 B",
+          "elapsed_seconds": 0.003,
+          "source_nodes": 6189,
+          "ranks": [1, 1, 1, 2, 3, 6, 10, 19, 27, 43, 56, 92, 118, 182, 192, 290, 311, 446, 371, 529, 467, 633, 522, 509, 256, 128, 64, 32, 16, 8, 4, 2],
+          "leaf_rank": 1,
+          "nonzero_slope_sites_not_general_products": 5331,
+          "state_slots": 6247,
+          "dense_words": 112029,
+          "word_operations": 574797,
+          "coefficient_terms": 39429,
+          "basis_digest": "5926b41040b2d191a3aa90d40c03bbf8c8d0b04d9042f66d44d837d19dee0036"
+        },
+        {
+          "table": "Boolean 4 A",
+          "elapsed_seconds": 0.001,
+          "source_nodes": 2646,
+          "ranks": [1, 2, 4, 5, 7, 11, 15, 21, 27, 40, 57, 76, 71, 93, 87, 115, 123, 160, 163, 207, 241, 268, 187, 121, 64, 32, 16, 8, 4, 2],
+          "leaf_rank": 1,
+          "nonzero_slope_sites_not_general_products": 2221,
+          "state_slots": 2689,
+          "dense_words": 21337,
+          "word_operations": 96595,
+          "coefficient_terms": 11832,
+          "basis_digest": "784d024e9e57b948b259b4cb64be24dbd1c69b79a4768349d957a308ff3832e1"
+        },
+        {
+          "table": "Boolean 4 B",
+          "elapsed_seconds": 0.001,
+          "source_nodes": 3474,
+          "ranks": [1, 2, 3, 4, 6, 11, 15, 24, 37, 62, 105, 185, 127, 213, 147, 240, 169, 276, 204, 300, 228, 298, 178, 128, 64, 32, 16, 8, 4, 2],
+          "leaf_rank": 1,
+          "nonzero_slope_sites_not_general_products": 3079,
+          "state_slots": 3524,
+          "dense_words": 34934,
+          "word_operations": 118424,
+          "coefficient_terms": 9452,
+          "basis_digest": "11631055fca5b5771aa34924fe641189901493dadeb3905fad37cf47d95fe57e"
+        },
+        {
+          "table": "Boolean 5 A",
+          "elapsed_seconds": 0.001,
+          "source_nodes": 3669,
+          "ranks": [1, 1, 1, 2, 4, 7, 11, 20, 27, 40, 51, 81, 96, 149, 167, 230, 244, 274, 271, 250, 230, 227, 167, 122, 64, 32, 16, 8, 4, 2],
+          "leaf_rank": 1,
+          "nonzero_slope_sites_not_general_products": 2785,
+          "state_slots": 3734,
+          "dense_words": 38211,
+          "word_operations": 171983,
+          "coefficient_terms": 12275,
+          "basis_digest": "2914211887f894d601d3915b79be7b21075784b98128eca16edba983759d335f"
+        },
+        {
+          "table": "Boolean 5 B",
+          "elapsed_seconds": 0.002,
+          "source_nodes": 4541,
+          "ranks": [1, 1, 1, 2, 3, 6, 10, 17, 26, 42, 54, 89, 122, 198, 244, 381, 338, 449, 400, 432, 295, 286, 181, 128, 64, 32, 16, 8, 4, 2],
+          "leaf_rank": 1,
+          "nonzero_slope_sites_not_general_products": 3825,
+          "state_slots": 4597,
+          "dense_words": 69331,
+          "word_operations": 258978,
+          "coefficient_terms": 13185,
+          "basis_digest": "5ee78937f123d5b2b6b34882ae65e40e9ad43ec02bb8baf4301d1ece40db399c"
+        },
+        {
+          "table": "Boolean 6 A",
+          "elapsed_seconds": 0.002,
+          "source_nodes": 3923,
+          "ranks": [1, 2, 4, 5, 8, 11, 17, 30, 39, 66, 75, 115, 133, 196, 222, 293, 308, 343, 342, 309, 220, 128, 64, 32, 16, 8, 4, 2],
+          "leaf_rank": 1,
+          "nonzero_slope_sites_not_general_products": 2955,
+          "state_slots": 4038,
+          "dense_words": 46811,
+          "word_operations": 304933,
+          "coefficient_terms": 24968,
+          "basis_digest": "f4b2ba681094c90c35a76f9105ff586eaf655597b089ee6c2b84f35ef96ae5c2"
+        },
+        {
+          "table": "Boolean 6 B",
+          "elapsed_seconds": 0.002,
+          "source_nodes": 3923,
+          "ranks": [1, 2, 3, 4, 6, 9, 14, 28, 40, 66, 84, 128, 141, 209, 236, 311, 320, 356, 293, 285, 194, 128, 64, 32, 16, 8, 4, 2],
+          "leaf_rank": 1,
+          "nonzero_slope_sites_not_general_products": 2977,
+          "state_slots": 3996,
+          "dense_words": 48104,
+          "word_operations": 248265,
+          "coefficient_terms": 16104,
+          "basis_digest": "56f38e68603319fed5c1e3a46f699698e6c5c06f5ec6eea96b1367dd8c5059ea"
+        },
+        {
+          "table": "Boolean 7 A",
+          "elapsed_seconds": 0.001,
+          "source_nodes": 1653,
+          "ranks": [1, 2, 4, 5, 7, 9, 11, 16, 21, 32, 35, 48, 54, 83, 85, 111, 110, 129, 132, 140, 102, 100, 57, 32, 16, 8, 4, 2],
+          "leaf_rank": 1,
+          "nonzero_slope_sites_not_general_products": 1340,
+          "state_slots": 1711,
+          "dense_words": 9786,
+          "word_operations": 51694,
+          "coefficient_terms": 5074,
+          "basis_digest": "275d7cfe8a6d1f3de8c25d95345935a52710baf978b5d6b62af3ea5aea6355be"
+        },
+        {
+          "table": "Boolean 7 B",
+          "elapsed_seconds": 0.001,
+          "source_nodes": 1857,
+          "ranks": [1, 2, 3, 4, 7, 10, 12, 16, 19, 29, 35, 58, 69, 101, 112, 154, 161, 185, 157, 155, 116, 99, 59, 32, 16, 8, 4, 2],
+          "leaf_rank": 1,
+          "nonzero_slope_sites_not_general_products": 1618,
+          "state_slots": 1906,
+          "dense_words": 12902,
+          "word_operations": 53876,
+          "coefficient_terms": 4882,
+          "basis_digest": "86a8ff543b0e02ded0392d30742d0a3e121b3b588e71a646f52be3062c39ec12"
+        },
+        {
+          "table": "Boolean 8 A",
+          "elapsed_seconds": 0,
+          "source_nodes": 882,
+          "ranks": [1, 2, 4, 5, 7, 9, 11, 14, 14, 19, 19, 27, 29, 41, 39, 52, 49, 61, 60, 64, 57, 51, 43, 30, 16, 8, 4, 2],
+          "leaf_rank": 1,
+          "nonzero_slope_sites_not_general_products": 725,
+          "state_slots": 929,
+          "dense_words": 2997,
+          "word_operations": 15135,
+          "coefficient_terms": 2035,
+          "basis_digest": "0d80fd2e6bc9881f8ed3e3da4fbe470629b5762adef7038e8b64b29848cdce4d"
+        },
+        {
+          "table": "Boolean 8 B",
+          "elapsed_seconds": 0,
+          "source_nodes": 928,
+          "ranks": [1, 2, 2, 3, 6, 9, 10, 15, 19, 26, 24, 29, 32, 46, 48, 66, 70, 87, 74, 73, 60, 57, 37, 26, 16, 8, 4, 2],
+          "leaf_rank": 1,
+          "nonzero_slope_sites_not_general_products": 850,
+          "state_slots": 970,
+          "dense_words": 4156,
+          "word_operations": 15019,
+          "coefficient_terms": 1862,
+          "basis_digest": "5af315b6fc7985ccdb47c400c39ffbf22f15ad556645702de5abbd2f9f038c7c"
+        },
+        {
+          "table": "Boolean 10 A",
+          "elapsed_seconds": 0.001,
+          "source_nodes": 1335,
+          "ranks": [1, 2, 4, 6, 9, 13, 18, 28, 30, 43, 46, 61, 60, 78, 80, 97, 108, 97, 102, 84, 61, 31, 16, 8, 4, 2],
+          "leaf_rank": 1,
+          "nonzero_slope_sites_not_general_products": 1078,
+          "state_slots": 1384,
+          "dense_words": 6307,
+          "word_operations": 33235,
+          "coefficient_terms": 4110,
+          "basis_digest": "c6977bd0731148426c5bced797e0dacaa42dd64e69966d7c1192900cd91f6eae"
+        },
+        {
+          "table": "Boolean 10 B",
+          "elapsed_seconds": 0,
+          "source_nodes": 1136,
+          "ranks": [1, 2, 3, 4, 7, 13, 18, 27, 28, 39, 43, 57, 51, 68, 60, 82, 81, 130, 80, 110, 60, 32, 16, 8, 4, 2],
+          "leaf_rank": 1,
+          "nonzero_slope_sites_not_general_products": 1023,
+          "state_slots": 1174,
+          "dense_words": 5490,
+          "word_operations": 21592,
+          "coefficient_terms": 2861,
+          "basis_digest": "c9d16095711d65a400add4f38e71c14274527561f75e0487ea6f1f9cf9851c20"
+        },
+        {
+          "table": "Boolean 11 A",
+          "elapsed_seconds": 0,
+          "source_nodes": 181,
+          "ranks": [1, 2, 3, 4, 5, 9, 11, 15, 12, 15, 11, 9, 5, 7, 5, 7, 5, 7, 5, 7, 5, 7, 5, 6, 4, 2],
+          "leaf_rank": 1,
+          "nonzero_slope_sites_not_general_products": 173,
+          "state_slots": 214,
+          "dense_words": 642,
+          "word_operations": 2172,
+          "coefficient_terms": 397,
+          "basis_digest": "f62a23ea1b1e159af7ac1ceab20fb24c02433c6af0a86b030f2eae82f091597e"
+        },
+        {
+          "table": "Boolean 11 B",
+          "elapsed_seconds": 0,
+          "source_nodes": 176,
+          "ranks": [1, 2, 2, 3, 5, 7, 9, 14, 13, 16, 11, 9, 6, 8, 6, 8, 6, 8, 6, 8, 6, 8, 6, 6, 4, 2],
+          "leaf_rank": 1,
+          "nonzero_slope_sites_not_general_products": 177,
+          "state_slots": 209,
+          "dense_words": 627,
+          "word_operations": 2309,
+          "coefficient_terms": 414,
+          "basis_digest": "88c3098f2f4babb9e750baa89238fc3b87ad3b159bbe0c90debae7a620529699"
+        },
+        {
+          "table": "Boolean 12 A",
+          "elapsed_seconds": 0,
+          "source_nodes": 1015,
+          "ranks": [1, 2, 4, 7, 11, 18, 24, 36, 37, 56, 62, 83, 76, 85, 77, 81, 69, 68, 48, 32, 16, 8, 4, 2],
+          "leaf_rank": 1,
+          "nonzero_slope_sites_not_general_products": 900,
+          "state_slots": 1046,
+          "dense_words": 4840,
+          "word_operations": 21371,
+          "coefficient_terms": 2692,
+          "basis_digest": "83ed7ddf38b5d86761938cd1d6004ed7e4e5d3918c3a8af71f763d597b62e1a2"
+        },
+        {
+          "table": "Boolean 12 B",
+          "elapsed_seconds": 0.001,
+          "source_nodes": 1679,
+          "ranks": [1, 2, 3, 6, 11, 21, 30, 45, 56, 83, 109, 153, 141, 178, 140, 163, 120, 103, 59, 32, 16, 8, 4, 2],
+          "leaf_rank": 1,
+          "nonzero_slope_sites_not_general_products": 1483,
+          "state_slots": 1712,
+          "dense_words": 11343,
+          "word_operations": 41024,
+          "coefficient_terms": 4475,
+          "basis_digest": "6f9a4980d050340aa5ed8aca4950f561336d7eef4085eab41a8de2c0c3de9dfd"
+        },
+        {
+          "table": "Boolean 13 A",
+          "elapsed_seconds": 0.001,
+          "source_nodes": 1394,
+          "ranks": [1, 2, 4, 7, 10, 15, 20, 30, 35, 56, 62, 93, 107, 138, 113, 148, 108, 95, 53, 32, 16, 8, 4, 2],
+          "leaf_rank": 1,
+          "nonzero_slope_sites_not_general_products": 1156,
+          "state_slots": 1434,
+          "dense_words": 7632,
+          "word_operations": 61442,
+          "coefficient_terms": 8702,
+          "basis_digest": "f67ab659395db9084f358cf80355b6ff4374a70a545b6e1225002d589aed7e2c"
+        },
+        {
+          "table": "Boolean 13 B",
+          "elapsed_seconds": 0,
+          "source_nodes": 1209,
+          "ranks": [1, 2, 3, 6, 10, 16, 22, 32, 36, 50, 51, 73, 81, 93, 97, 97, 94, 72, 58, 32, 16, 8, 4, 2],
+          "leaf_rank": 1,
+          "nonzero_slope_sites_not_general_products": 951,
+          "state_slots": 1254,
+          "dense_words": 5848,
+          "word_operations": 34817,
+          "coefficient_terms": 3666,
+          "basis_digest": "a5c1088eedcaf98a92dadcd5ed3cf14585c76f17d9671102f3e72128725fa535"
+        },
+        {
+          "table": "Boolean 14 A",
+          "elapsed_seconds": 0.001,
+          "source_nodes": 1405,
+          "ranks": [1, 2, 4, 7, 10, 15, 20, 30, 35, 56, 62, 93, 107, 139, 114, 149, 109, 95, 53, 32, 16, 8, 4, 2],
+          "leaf_rank": 1,
+          "nonzero_slope_sites_not_general_products": 1160,
+          "state_slots": 1444,
+          "dense_words": 7680,
+          "word_operations": 62233,
+          "coefficient_terms": 8580,
+          "basis_digest": "63cb190eae24d26020a6c8218b7502028d8dd278563cce1bc439b6802f875b97"
+        },
+        {
+          "table": "Boolean 14 B",
+          "elapsed_seconds": 0,
+          "source_nodes": 1208,
+          "ranks": [1, 2, 3, 6, 10, 16, 22, 32, 36, 50, 51, 73, 81, 93, 97, 97, 94, 72, 58, 32, 16, 8, 4, 2],
+          "leaf_rank": 1,
+          "nonzero_slope_sites_not_general_products": 952,
+          "state_slots": 1252,
+          "dense_words": 5842,
+          "word_operations": 34903,
+          "coefficient_terms": 3600,
+          "basis_digest": "4ad86e300cdeddaf82ac4a6c1a5ced483670eeb71f7f62661517daab16088e88"
+        },
+        {
+          "table": "Boolean 15 A",
+          "elapsed_seconds": 0.001,
+          "source_nodes": 1397,
+          "ranks": [1, 2, 4, 7, 10, 15, 20, 30, 35, 56, 62, 93, 107, 138, 113, 148, 108, 95, 53, 32, 16, 8, 4, 2],
+          "leaf_rank": 1,
+          "nonzero_slope_sites_not_general_products": 1156,
+          "state_slots": 1436,
+          "dense_words": 7639,
+          "word_operations": 59040,
+          "coefficient_terms": 7949,
+          "basis_digest": "73872f78d5483e2279371566e01c850eed4fe982a8701bfe41c4c5af1cc807e4"
+        },
+        {
+          "table": "Boolean 15 B",
+          "elapsed_seconds": 0,
+          "source_nodes": 1209,
+          "ranks": [1, 2, 3, 6, 10, 16, 22, 32, 36, 50, 51, 73, 81, 93, 97, 97, 94, 72, 58, 32, 16, 8, 4, 2],
+          "leaf_rank": 1,
+          "nonzero_slope_sites_not_general_products": 951,
+          "state_slots": 1254,
+          "dense_words": 5848,
+          "word_operations": 34817,
+          "coefficient_terms": 3666,
+          "basis_digest": "a5c1088eedcaf98a92dadcd5ed3cf14585c76f17d9671102f3e72128725fa535"
+        },
+        {
+          "table": "Boolean 16 A",
+          "elapsed_seconds": 0.001,
+          "source_nodes": 1397,
+          "ranks": [1, 2, 4, 7, 10, 15, 20, 30, 35, 56, 62, 93, 107, 138, 113, 148, 108, 95, 53, 32, 16, 8, 4, 2],
+          "leaf_rank": 1,
+          "nonzero_slope_sites_not_general_products": 1156,
+          "state_slots": 1436,
+          "dense_words": 7639,
+          "word_operations": 59040,
+          "coefficient_terms": 7949,
+          "basis_digest": "73872f78d5483e2279371566e01c850eed4fe982a8701bfe41c4c5af1cc807e4"
+        },
+        {
+          "table": "Boolean 16 B",
+          "elapsed_seconds": 0,
+          "source_nodes": 1209,
+          "ranks": [1, 2, 3, 6, 10, 16, 22, 32, 36, 50, 51, 73, 81, 93, 97, 97, 94, 72, 58, 32, 16, 8, 4, 2],
+          "leaf_rank": 1,
+          "nonzero_slope_sites_not_general_products": 951,
+          "state_slots": 1254,
+          "dense_words": 5848,
+          "word_operations": 34817,
+          "coefficient_terms": 3666,
+          "basis_digest": "a5c1088eedcaf98a92dadcd5ed3cf14585c76f17d9671102f3e72128725fa535"
+        },
+        {
+          "table": "Boolean 17 A",
+          "elapsed_seconds": 0.001,
+          "source_nodes": 1405,
+          "ranks": [1, 2, 4, 7, 10, 15, 20, 30, 35, 56, 62, 93, 107, 139, 114, 149, 109, 95, 53, 32, 16, 8, 4, 2],
+          "leaf_rank": 1,
+          "nonzero_slope_sites_not_general_products": 1160,
+          "state_slots": 1444,
+          "dense_words": 7680,
+          "word_operations": 62598,
+          "coefficient_terms": 8650,
+          "basis_digest": "1a4b0877fa0de4ffa14cbad6629e27415b10ebb62096212d5a82eb08a9f4ce08"
+        },
+        {
+          "table": "Boolean 17 B",
+          "elapsed_seconds": 0,
+          "source_nodes": 1208,
+          "ranks": [1, 2, 3, 6, 10, 16, 22, 32, 36, 50, 51, 73, 81, 93, 97, 97, 94, 72, 58, 32, 16, 8, 4, 2],
+          "leaf_rank": 1,
+          "nonzero_slope_sites_not_general_products": 952,
+          "state_slots": 1252,
+          "dense_words": 5842,
+          "word_operations": 34499,
+          "coefficient_terms": 3610,
+          "basis_digest": "c99113c8abce334730b3fed25a0fad69a2db7e3c173da39451510498181c2e74"
+        },
+        {
+          "table": "Boolean 18 A",
+          "elapsed_seconds": 0,
+          "source_nodes": 1070,
+          "ranks": [1, 2, 4, 8, 15, 21, 31, 42, 53, 75, 77, 103, 79, 111, 80, 100, 61, 32, 16, 8, 4, 2],
+          "leaf_rank": 1,
+          "nonzero_slope_sites_not_general_products": 919,
+          "state_slots": 1096,
+          "dense_words": 5148,
+          "word_operations": 26119,
+          "coefficient_terms": 3956,
+          "basis_digest": "8c501fd1822f1242c513a6777d4b2a96a95dd88605a06f98c0a26733d0d724a6"
+        },
+        {
+          "table": "Boolean 18 B",
+          "elapsed_seconds": 0,
+          "source_nodes": 675,
+          "ranks": [1, 2, 3, 6, 10, 16, 19, 30, 32, 46, 40, 61, 47, 68, 49, 57, 38, 29, 16, 8, 4, 2],
+          "leaf_rank": 1,
+          "nonzero_slope_sites_not_general_products": 583,
+          "state_slots": 710,
+          "dense_words": 2447,
+          "word_operations": 13690,
+          "coefficient_terms": 2008,
+          "basis_digest": "851ee97d5062283cc239927e1073643d2a5a507471c7007ce48f216f472bcae0"
+        },
+        {
+          "table": "Boolean 19 A",
+          "elapsed_seconds": 0,
+          "source_nodes": 43,
+          "ranks": [1, 2, 2, 3, 3, 5, 4, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2],
+          "leaf_rank": 1,
+          "nonzero_slope_sites_not_general_products": 37,
+          "state_slots": 63,
+          "dense_words": 189,
+          "word_operations": 528,
+          "coefficient_terms": 86,
+          "basis_digest": "c44993cd47e322b97881f76193516c55b5bbc4af773416f60064065d5c4b1585"
+        },
+        {
+          "table": "Boolean 19 B",
+          "elapsed_seconds": 0,
+          "source_nodes": 43,
+          "ranks": [1, 2, 2, 3, 3, 5, 4, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2],
+          "leaf_rank": 1,
+          "nonzero_slope_sites_not_general_products": 37,
+          "state_slots": 63,
+          "dense_words": 189,
+          "word_operations": 528,
+          "coefficient_terms": 86,
+          "basis_digest": "c44993cd47e322b97881f76193516c55b5bbc4af773416f60064065d5c4b1585"
+        },
+        {
+          "table": "Boolean 20 A",
+          "elapsed_seconds": 0,
+          "source_nodes": 277,
+          "ranks": [1, 2, 4, 5, 8, 8, 8, 13, 16, 22, 20, 26, 21, 27, 22, 23, 15, 8, 4, 2],
+          "leaf_rank": 1,
+          "nonzero_slope_sites_not_general_products": 252,
+          "state_slots": 301,
+          "dense_words": 903,
+          "word_operations": 4252,
+          "coefficient_terms": 811,
+          "basis_digest": "37c82ede2b3056cc24b5c2090679fba728826d7940e8859141a5896f03ae3112"
+        },
+        {
+          "table": "Boolean 20 B",
+          "elapsed_seconds": 0,
+          "source_nodes": 180,
+          "ranks": [1, 2, 3, 4, 6, 7, 7, 11, 13, 15, 11, 14, 11, 14, 11, 11, 8, 5, 4, 2],
+          "leaf_rank": 1,
+          "nonzero_slope_sites_not_general_products": 159,
+          "state_slots": 207,
+          "dense_words": 621,
+          "word_operations": 2610,
+          "coefficient_terms": 407,
+          "basis_digest": "d91bdca2b4f1f8d42d83ca133d78c5890f598616c87c6f69e17af4235afd6018"
+        },
+        {
+          "table": "Boolean 21 A",
+          "elapsed_seconds": 0,
+          "source_nodes": 161,
+          "ranks": [1, 2, 3, 5, 5, 9, 10, 15, 14, 16, 15, 17, 15, 16, 11, 8, 4, 2],
+          "leaf_rank": 1,
+          "nonzero_slope_sites_not_general_products": 151,
+          "state_slots": 195,
+          "dense_words": 585,
+          "word_operations": 2002,
+          "coefficient_terms": 311,
+          "basis_digest": "10287baa562adfade81c3b85a20b20eed0c4c7c648247b052fec5c90d855ddaa"
+        },
+        {
+          "table": "Boolean 21 B",
+          "elapsed_seconds": 0,
+          "source_nodes": 137,
+          "ranks": [1, 2, 2, 4, 5, 6, 8, 9, 8, 13, 12, 17, 12, 14, 10, 6, 4, 2],
+          "leaf_rank": 1,
+          "nonzero_slope_sites_not_general_products": 135,
+          "state_slots": 153,
+          "dense_words": 459,
+          "word_operations": 1359,
+          "coefficient_terms": 263,
+          "basis_digest": "2dee76fe7bc1d4081a3fd26fbb1879b5457bf478a7d3590a3c00f909c16e2293"
+        },
+        {
+          "table": "Boolean 22 A",
+          "elapsed_seconds": 0,
+          "source_nodes": 71,
+          "ranks": [1, 2, 3, 4, 4, 5, 4, 5, 4, 5, 4, 5, 4, 5, 4, 5, 3, 2],
+          "leaf_rank": 1,
+          "nonzero_slope_sites_not_general_products": 69,
+          "state_slots": 87,
+          "dense_words": 261,
+          "word_operations": 821,
+          "coefficient_terms": 138,
+          "basis_digest": "ab150a6012f2a0bddfe9d07a5739b2eadb991ec1e3325edb374416a3a584049a"
+        },
+        {
+          "table": "Boolean 22 B",
+          "elapsed_seconds": 0,
+          "source_nodes": 52,
+          "ranks": [1, 2, 3, 3, 3, 4, 3, 4, 3, 4, 3, 4, 3, 4, 3, 4, 3, 2],
+          "leaf_rank": 1,
+          "nonzero_slope_sites_not_general_products": 55,
+          "state_slots": 74,
+          "dense_words": 222,
+          "word_operations": 715,
+          "coefficient_terms": 125,
+          "basis_digest": "b8791de735a28cde99830a29b7d24dbb4e2d0ba20e857868e13a8f25a0c88aa0"
+        },
+        {
+          "table": "structure",
+          "elapsed_seconds": 0.009,
+          "source_nodes": 23469,
+          "ranks": [1, 2, 3, 4, 7, 11, 17, 21, 32, 42, 67, 105, 137, 176, 228, 315, 272, 136, 68, 34],
+          "leaf_rank": 17,
+          "nonzero_slope_sites_not_general_products": 1620,
+          "state_slots": 23538,
+          "dense_words": 120959,
+          "word_operations": 2178925,
+          "coefficient_terms": 56065,
+          "basis_digest": "10a0c22f34c8772133f3eeb7140bb40a72e651aa29ff7a2d1eeb3d832e73cff9"
+        },
+        {
+          "table": "jagged",
+          "elapsed_seconds": 0.007,
+          "source_nodes": 19007,
+          "ranks": [1, 1, 1, 2, 3, 4, 5, 8, 11, 16, 21, 32, 43, 64, 85, 127, 169, 253, 336, 495, 496, 653, 655, 885, 864, 1087, 1023, 1178, 1131, 1273, 1241, 1286, 1076, 1032, 728, 640, 447, 377, 275, 304, 181, 173, 93, 64, 32, 16, 8, 4, 2],
+          "leaf_rank": 1,
+          "nonzero_slope_sites_not_general_products": 18867,
+          "state_slots": 19091,
+          "dense_words": 796682,
+          "word_operations": 1647007,
+          "coefficient_terms": 34013,
+          "basis_digest": "c2db3b8b69d0891935cf5f0db98fdb21c50bc79a7e78591a3b167a2e49d91fa2"
+        }
+      ]
+    },
+    "larger_budget": {
+      "limits": {
+        "state_slots": 4000000,
+        "dense_words": 64000000,
+        "word_operations": 4000000000,
+        "coefficient_terms": 16000000
+      },
+      "completed_programs": 0,
+      "refused": [
+        {
+          "table": "Boolean 0 A",
+          "error": "WorkLimit",
+          "elapsed_seconds": 1.847
+        },
+        {
+          "table": "Boolean 0 B",
+          "error": "WorkLimit",
+          "elapsed_seconds": 1.823
+        },
+        {
+          "table": "Boolean 9 A",
+          "error": "WorkLimit",
+          "elapsed_seconds": 2.648
+        },
+        {
+          "table": "Boolean 9 B",
+          "error": "CoefficientTermLimit",
+          "elapsed_seconds": 2.133
+        }
+      ],
+      "interpretation": "A 20x word-operation budget and doubled term cap do not complete these four candidates. No matrix/jagged replacement or silent limit increase is adopted."
+    },
+    "paired_structure_components": {
+      "component_scope": "Twenty freshly allocated private F128 point coordinates plus exact structure-table evaluation, MatrixFold phase, shape-only matrix-free emission. Zero public inputs. Excludes final claimed-value equality and every other verifier/root phase; not materialized R1CS or an assignment/proof check.",
+      "plonk_constraint_row_limit_per_component": 200000000,
+      "both_complete": true,
+      "source": {
+        "elapsed_seconds": 101.665,
+        "public_variables": 0,
+        "private_variables": 57426572,
+        "r1cs_constraints": 57687119,
+        "r1cs_nonzero_terms": 267174632,
+        "projection_digest": "6f0019018ad7660622ccc9e354b95dd2fb27e3861becfdd009c39f5725be822d",
+        "plonk_constraint_rows": 92024156,
+        "plonk_auxiliary_wires": 34337037,
+        "component_domain_size": 134217728,
+        "padding_rows": 42193572
+      },
+      "basis": {
+        "elapsed_seconds": 34.759,
+        "public_variables": 0,
+        "private_variables": 15955628,
+        "r1cs_constraints": 15998468,
+        "r1cs_nonzero_terms": 76719487,
+        "projection_digest": "301df757da7c47f427ed09bb66528b46695a8803ce4828087ba2440ee132df6f",
+        "plonk_constraint_rows": 21653222,
+        "plonk_auxiliary_wires": 5654754,
+        "component_domain_size": 33554432,
+        "padding_rows": 11901210
+      },
+      "saved_component_plonk_constraint_rows": 70370934,
+      "saved_component_plonk_constraint_rows_percent": 76.47006727233662,
+      "last_observed_test_process_vm_hwm_kib": 3348900,
+      "last_observed_test_process_vm_peak_kib": 3590384,
+      "memory_scope": "Cumulative Linux counters from the single process running all three tests; includes preceding compile-budget experiments and approved setup. Not a process-tree or terminal-prover peak.",
+      "repeat_evidence": "A preceding standalone paired run also completed with the same exact R1CS/PLONK counts and projection digests (101.693/34.957 seconds, 149.42 seconds including setup). Final frozen-source run above is authoritative."
+    }
+  },
+  "integrated_native_regression": {
+    "command": "ulimit -v 16777216; RAYON_NUM_THREADS=4 timeout 240 cargo test --release --locked --manifest-path flock-stage4/Cargo.toml -p ixby-stage4-exec setup_owned_closure_matches_all_real_fold_roots -- --ignored --test-threads=1 --nocapture",
+    "exit_code": 0,
+    "test_seconds": 33.45,
+    "two_compilations_and_preproof_checks_seconds": 15.24,
+    "executions": [
+      {
+        "branch": false,
+        "value": false
+      },
+      {
+        "branch": true,
+        "value": false
+      },
+      {
+        "branch": true,
+        "value": true
+      }
+    ],
+    "roots_compared_per_execution": 48,
+    "proof_free_exact_prefix_constraints": 4096,
+    "source_payload_bytes": 514449,
+    "missing_structure_budget_rejected_without_fallback": true,
+    "scope": "Two complete setup compilations and initial prefix/resource tests before any guest/proof, then a third intentionally refused setup compilation and three real Flock executions. All fold roots match, setup/assigned prefixes match exactly and prior source/row/identity negatives remain. Not a full closed relation check.",
+    "last_observed_process_vm_hwm_kib": 3368236,
+    "last_observed_process_vm_peak_kib": 3997636,
+    "memory_scope": "Cumulative native test-process counters, including native setup and Flock proofs. Not process-tree or terminal prover memory."
+  },
+  "remaining_cost_barrier": {
+    "new_whole_closed_census_run": false,
+    "historical_evidence": "exec-proof-free-root-closed-emission-v0.json",
+    "interpretation": "The historical supported-domain refusal occurs in earlier matrix work. Only the later structure evaluator changes; the earlier replay, matrix folds and matrix-root programs are unchanged. These standalone component savings cannot be subtracted from that partial prefix to claim a full census or admissible relation. The whole closed size remains unknown and unproven. Further cost redesign, complete feasible matrices/key preprocessing and an actual full FFLONK proof with isolated verification remain required.",
+    "original_plan_m3_m4_m7_m8_requirements_remain": true
+  }
+}

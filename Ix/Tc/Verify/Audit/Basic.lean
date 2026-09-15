@@ -187,13 +187,13 @@ private def checkOne (allowance : RootAllowance) : CommandElabM Unit := do
 
 /-- Check a complete executable trust manifest.  Duplicate roots are rejected
 instead of being silently audited twice. -/
-def check (allowances : Array RootAllowance) : CommandElabM Unit := do
+def check (allowances : Array RootAllowance) (label := "Ix.Tc verification") : CommandElabM Unit := do
   let mut roots : NameSet := {}
   for allowance in allowances do
     if roots.contains allowance.root then
       throwError m!"duplicate axiom-audit root: {allowance.root}"
     roots := roots.insert allowance.root
     checkOne allowance
-  logInfo m!"Ix.Tc verification trust audit passed for {allowances.size} theorem roots"
+  logInfo m!"{label} trust audit passed for {allowances.size} theorem roots"
 
 end Ix.Tc.Verify.Audit
