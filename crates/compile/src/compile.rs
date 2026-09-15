@@ -912,6 +912,7 @@ pub fn compile_expr(
     BuildLet(Address, bool),
     BuildProj(u64, u64, Address), // type_ref_idx, field_idx, struct_name_addr
     WrapMdata(Vec<KVMap>),
+    ApplyContract(crate::semantic_contract::Contract, LeanExpr),
     Cache(LeanExpr),
     /// Build a surgered call-site from compiled head + canonical args + collapsed args.
     BuildCallSite {
@@ -1755,6 +1756,12 @@ pub fn compile_expr(
           },
 
           ExprData::Mdata(kv, inner, _) => {
+            if crate::semantic_contract::has_metadata(kv) {
+              let contract = crate::semantic_contract::read(kv)?;
+              stack.push(Frame::ApplyContract(contract, inner.clone()));
+              stack.push(Frame::Compile(inner.clone()));
+              continue;
+            }
             // Compile KV map
             let mut pairs = Vec::new();
             for (k, v) in kv {
@@ -1850,6 +1857,11 @@ pub fn compile_expr(
           struct_name: struct_name_addr,
           child: child_root,
         }));
+      },
+
+      Frame::ApplyContract(contract, source) => {
+        let inner = results.pop().expect("ApplyContract missing expression");
+        results.push(contract.lower(&source, &inner)?);
       },
 
       Frame::WrapMdata(mdata) => {
@@ -2151,6 +2163,7 @@ fn audit_plan_head_arities(
     return Ok(0);
   }
 
+  let annotated = crate::semantic_contract::inspect(top)?;
   // `obscured` means this expression occurs in the function part of an outer
   // App whose telescope stopped at a non-App wrapper.  A short plan spine in
   // that position cannot be assigned a local source-order interface safely.
@@ -2173,6 +2186,15 @@ fn audit_plan_head_arities(
         let (head, args) = surgery::collect_lean_telescope(&e);
         match head.as_data() {
           ExprData::Const(name, _, _) => {
+            if annotated && plan_head_arity(stt, name).is_some() {
+              return Err(CompileError::UnsupportedExpr {
+                desc: format!(
+                  "resource contracts across non-identity call-site surgery: {} calls {}",
+                  owner.pretty(),
+                  name.pretty()
+                ),
+              });
+            }
             if let Some(arity) = plan_head_arity(stt, name)
               && args.len()
                 < if arity.head_rewrite { arity.expected } else { arity.floor }
@@ -2206,6 +2228,15 @@ fn audit_plan_head_arities(
         }
       },
       ExprData::Const(name, _, _) => {
+        if annotated && plan_head_arity(stt, name).is_some() {
+          return Err(CompileError::UnsupportedExpr {
+            desc: format!(
+              "resource contracts across non-identity call-site surgery: {} calls {}",
+              owner.pretty(),
+              name.pretty()
+            ),
+          });
+        }
         if let Some(arity) = plan_head_arity(stt, name)
           && (obscured || arity.head_rewrite)
         {
@@ -3320,14 +3351,36 @@ pub fn compare_expr(
     (ExprData::Fvar(..), _) | (_, ExprData::Fvar(..)) => {
       Err(CompileError::UnsupportedExpr { desc: "fvar in comparison".into() })
     },
-    (ExprData::Mdata(_, x, _), ExprData::Mdata(_, y, _)) => {
-      compare_expr(x, y, mut_ctx, x_lvls, y_lvls, stt)
+    (ExprData::Mdata(dx, xi, _), ExprData::Mdata(dy, yi, _)) => {
+      if crate::semantic_contract::has_metadata(dx) {
+        if crate::semantic_contract::has_metadata(dy) {
+          let cx = crate::semantic_contract::read(dx)?;
+          let cy = crate::semantic_contract::read(dy)?;
+          let order = SOrd::cmp(&cx.order_key(), &cy.order_key());
+          if order.ordering != Ordering::Equal {
+            return Ok(order);
+          }
+          compare_expr(xi, yi, mut_ctx, x_lvls, y_lvls, stt)
+        } else {
+          compare_expr(x, yi, mut_ctx, x_lvls, y_lvls, stt)
+        }
+      } else {
+        compare_expr(xi, y, mut_ctx, x_lvls, y_lvls, stt)
+      }
     },
-    (ExprData::Mdata(_, x, _), _) => {
-      compare_expr(x, y, mut_ctx, x_lvls, y_lvls, stt)
+    (ExprData::Mdata(data, inner, _), _) => {
+      if crate::semantic_contract::has_metadata(data) {
+        Ok(SOrd::gt(true))
+      } else {
+        compare_expr(inner, y, mut_ctx, x_lvls, y_lvls, stt)
+      }
     },
-    (_, ExprData::Mdata(_, y, _)) => {
-      compare_expr(x, y, mut_ctx, x_lvls, y_lvls, stt)
+    (_, ExprData::Mdata(data, inner, _)) => {
+      if crate::semantic_contract::has_metadata(data) {
+        Ok(SOrd::lt(true))
+      } else {
+        compare_expr(x, inner, mut_ctx, x_lvls, y_lvls, stt)
+      }
     },
     (ExprData::Bvar(x, _), ExprData::Bvar(y, _)) => Ok(SOrd::cmp(x, y)),
     (ExprData::Bvar(..), _) => Ok(SOrd::lt(true)),
@@ -4902,7 +4955,9 @@ pub mod mutual;
 pub mod nat_conv;
 pub mod surgery;
 pub(crate) mod validation;
-pub use env::{compile_env, compile_env_with_options};
+pub use env::{
+  compile_env, compile_env_with_options, compile_env_with_profile,
+};
 
 #[cfg(test)]
 mod tests {
@@ -5058,7 +5113,8 @@ mod tests {
     let result =
       compile_expr(&expr, &[], &MutCtx::default(), &mut cache, &stt).unwrap();
     match result.as_ref() {
-      Expr::Lam(ixon::expr::Uses::Many, ty, body) => {
+      Expr::Lam(contract, ty, body) => {
+        assert_eq!(*contract, ixon::contract::BinderContract::default());
         match ty.as_ref() {
           Expr::Sort(idx) => {
             assert_eq!(*idx, 0);

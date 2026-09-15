@@ -172,25 +172,25 @@ def exprListBytes (encode : Ixon.Expr → ByteArray) : List Ixon.Expr → ByteAr
   | expr :: exprs => encode expr ++ exprListBytes encode exprs
 
 def lamBinderListBytes (encode : Ixon.Expr → ByteArray) :
-    List (Ixon.Uses × Ixon.Expr) → ByteArray
+    List (Ixon.BinderContract × Ixon.Expr) → ByteArray
   | [] => ByteArray.empty
   | (uses, ty) :: binders =>
       [uses.toBits].toByteArray ++ encode ty ++
         lamBinderListBytes encode binders
 
 def allBinderListBytes (encode : Ixon.Expr → ByteArray) :
-    List (Ixon.Uses × Ixon.Owned × Ixon.Expr) → ByteArray
+    List (Ixon.BinderContract × Ixon.ValueContract × Ixon.Expr) → ByteArray
   | [] => ByteArray.empty
   | (uses, owned, ty) :: binders =>
-      [uses.toBits ||| (owned.toBits <<< 2)].toByteArray ++ encode ty ++
+      [Ixon.packAllContract uses owned].toByteArray ++ encode ty ++
         allBinderListBytes encode binders
 
-def allBinderMode (uses : Ixon.Uses) (owned : Ixon.Owned) : UInt8 :=
-  uses.toBits ||| (owned.toBits <<< 2)
+def allBinderMode (uses : Ixon.BinderContract) (owned : Ixon.ValueContract) : UInt8 :=
+  Ixon.packAllContract uses owned
 
 @[simp] theorem allBinderTriple_type
-    (uses : Ixon.Uses) (owned : Ixon.Owned) (ty : Ixon.Expr) :
-    ((uses, owned, ty) : Ixon.Uses × Ixon.Owned × Ixon.Expr).2.2 = ty := by
+    (uses : Ixon.BinderContract) (owned : Ixon.ValueContract) (ty : Ixon.Expr) :
+    ((uses, owned, ty) : Ixon.BinderContract × Ixon.ValueContract × Ixon.Expr).2.2 = ty := by
   rfl
 
 /-- Exact bytes written by the production codec when complete application
@@ -233,8 +233,9 @@ def spineWireEncode : Ixon.Expr → ByteArray
                   spineWireEncode binder.1.2.2) ++
           spineWireEncode expr.collectAllBinders.2
   | .letE nonDep ty val body =>
-      tag4Bytes Ixon.Expr.FLAG_LET (if nonDep then 1 else 0) ++
-        spineWireEncode ty ++ spineWireEncode val ++ spineWireEncode body
+      tag4Bytes Ixon.Expr.FLAG_LET nonDep.flags ++
+        ([nonDep.binder.toBits].toByteArray ++
+          (spineWireEncode ty ++ (spineWireEncode val ++ spineWireEncode body)))
   | .share idx => tag4Bytes Ixon.Expr.FLAG_SHARE idx
 termination_by expr => expr.nodeCount
 decreasing_by
@@ -303,11 +304,44 @@ theorem spineWireEncode_size_pos (expr : Ixon.Expr) :
       omega
   | letE nonDep ty val body =>
       have h := tag4Bytes_size_pos Ixon.Expr.FLAG_LET
-        (if nonDep then 1 else 0)
+        nonDep.flags
       simp only [spineWireEncode, ByteArray.size_append]
       omega
   | share idx => simpa [spineWireEncode] using
       tag4Bytes_size_pos Ixon.Expr.FLAG_SHARE idx
+
+theorem exprListBytes_size_ge_length (exprs : List Ixon.Expr) :
+    exprs.length ≤ (exprListBytes spineWireEncode exprs).size := by
+  induction exprs with
+  | nil => simp [exprListBytes]
+  | cons expr exprs ih =>
+    have hpos := spineWireEncode_size_pos expr
+    simp only [exprListBytes, ByteArray.size_append, List.length_cons]
+    omega
+
+theorem lamBinderListBytes_size_ge_length
+    (binders : List (Ixon.BinderContract × Ixon.Expr)) :
+    binders.length * 2 ≤ (lamBinderListBytes spineWireEncode binders).size := by
+  induction binders with
+  | nil => simp [lamBinderListBytes]
+  | cons binder binders ih =>
+    rcases binder with ⟨uses, ty⟩
+    have hpos := spineWireEncode_size_pos ty
+    simp only [lamBinderListBytes, ByteArray.size_append, List.length_cons,
+      List.size_toByteArray, List.length_nil]
+    omega
+
+theorem allBinderListBytes_size_ge_length
+    (binders : List (Ixon.BinderContract × Ixon.ValueContract × Ixon.Expr)) :
+    binders.length * 2 ≤ (allBinderListBytes spineWireEncode binders).size := by
+  induction binders with
+  | nil => simp [allBinderListBytes]
+  | cons binder binders ih =>
+    rcases binder with ⟨uses, owned, ty⟩
+    have hpos := spineWireEncode_size_pos ty
+    simp only [allBinderListBytes, ByteArray.size_append, List.length_cons,
+      List.size_toByteArray, List.length_nil]
+    omega
 
 theorem attachFold_exprListBytes (encode : Ixon.Expr → ByteArray)
     (exprs : List Ixon.Expr) (initial : ByteArray) :
@@ -324,18 +358,18 @@ theorem attachFold_exprListBytes (encode : Ixon.Expr → ByteArray)
       ih (initial ++ encode expr)
 
 theorem attachFold_lamBinderListBytes (encode : Ixon.Expr → ByteArray)
-    (binders : List (Ixon.Uses × Ixon.Expr)) (initial : ByteArray) :
+    (binders : List (Ixon.BinderContract × Ixon.Expr)) (initial : ByteArray) :
     binders.attach.foldl
         (fun bytes binder =>
           bytes ++ [binder.1.1.toBits].toByteArray ++ encode binder.1.2)
         initial = initial ++ lamBinderListBytes encode binders := by
   change binders.attach.foldl
       (fun bytes binder =>
-        (fun bytes (value : Ixon.Uses × Ixon.Expr) =>
+        (fun bytes (value : Ixon.BinderContract × Ixon.Expr) =>
           bytes ++ [value.1.toBits].toByteArray ++ encode value.2)
           bytes binder.1) initial = _
   rw [List.foldl_attach
-    (f := fun bytes (binder : Ixon.Uses × Ixon.Expr) =>
+    (f := fun bytes (binder : Ixon.BinderContract × Ixon.Expr) =>
       bytes ++ [binder.1.toBits].toByteArray ++ encode binder.2)]
   induction binders generalizing initial with
   | nil => simp [lamBinderListBytes]
@@ -345,7 +379,7 @@ theorem attachFold_lamBinderListBytes (encode : Ixon.Expr → ByteArray)
     simp only [ByteArray.append_assoc]
 
 theorem attachFold_allBinderListBytes (encode : Ixon.Expr → ByteArray)
-    (binders : List (Ixon.Uses × Ixon.Owned × Ixon.Expr))
+    (binders : List (Ixon.BinderContract × Ixon.ValueContract × Ixon.Expr))
     (initial : ByteArray) :
     binders.attach.foldl
         (fun bytes binder =>
@@ -354,12 +388,12 @@ theorem attachFold_allBinderListBytes (encode : Ixon.Expr → ByteArray)
       initial ++ allBinderListBytes encode binders := by
   change binders.attach.foldl
       (fun bytes binder =>
-        (fun bytes (value : Ixon.Uses × Ixon.Owned × Ixon.Expr) =>
+        (fun bytes (value : Ixon.BinderContract × Ixon.ValueContract × Ixon.Expr) =>
           bytes ++ [allBinderMode value.1 value.2.1].toByteArray ++
             encode value.2.2) bytes binder.1) initial = _
   rw [List.foldl_attach
     (f := fun bytes
-      (binder : Ixon.Uses × Ixon.Owned × Ixon.Expr) =>
+      (binder : Ixon.BinderContract × Ixon.ValueContract × Ixon.Expr) =>
       bytes ++ [allBinderMode binder.1 binder.2.1].toByteArray ++
         encode binder.2.2)]
   induction binders generalizing initial with
@@ -372,14 +406,14 @@ theorem attachFold_allBinderListBytes (encode : Ixon.Expr → ByteArray)
 def putExprList (exprs : List Ixon.Expr) : Ixon.PutM Unit :=
   exprs.foldlM (fun _ expr => Ixon.putExpr expr) ()
 
-def putLamBinderList (binders : List (Ixon.Uses × Ixon.Expr)) :
+def putLamBinderList (binders : List (Ixon.BinderContract × Ixon.Expr)) :
     Ixon.PutM Unit := do
   for binder in binders do
     Ixon.putU8 binder.1.toBits
     Ixon.putExpr binder.2
 
 def putAllBinderList
-    (binders : List (Ixon.Uses × Ixon.Owned × Ixon.Expr)) :
+    (binders : List (Ixon.BinderContract × Ixon.ValueContract × Ixon.Expr)) :
     Ixon.PutM Unit := do
   for binder in binders do
     Ixon.putU8 (allBinderMode binder.1 binder.2.1)
@@ -405,7 +439,7 @@ theorem putExprList_writes (encode : Ixon.Expr → ByteArray)
     simpa [putExprList, exprListBytes] using hhead.bind (ih htail)
 
 theorem putLamBinderList_writes (encode : Ixon.Expr → ByteArray)
-    (binders : List (Ixon.Uses × Ixon.Expr))
+    (binders : List (Ixon.BinderContract × Ixon.Expr))
     (h : ∀ binder, binder ∈ binders →
       Writes (Ixon.putExpr binder.2) (encode binder.2)) :
     Writes (putLamBinderList binders)
@@ -429,7 +463,7 @@ theorem putLamBinderList_writes (encode : Ixon.Expr → ByteArray)
         (putU8_writes uses.toBits).bind (hhead.bind (ih htail))
 
 theorem putAllBinderList_writes (encode : Ixon.Expr → ByteArray)
-    (binders : List (Ixon.Uses × Ixon.Owned × Ixon.Expr))
+    (binders : List (Ixon.BinderContract × Ixon.ValueContract × Ixon.Expr))
     (h : ∀ binder, binder ∈ binders →
       Writes (Ixon.putExpr binder.2.2) (encode binder.2.2)) :
     Writes (putAllBinderList binders)
@@ -458,7 +492,7 @@ theorem listFor_putExpr_eq (exprs : List Ixon.Expr) :
   simp [putExprList]
 
 theorem listFor_putLamBinders_eq
-    (binders : List (Ixon.Uses × Ixon.Expr)) :
+    (binders : List (Ixon.BinderContract × Ixon.Expr)) :
     (do
       for binder in binders do
         Ixon.putU8 binder.1.toBits
@@ -466,14 +500,14 @@ theorem listFor_putLamBinders_eq
   rfl
 
 theorem listFor_putAllBinders_eq
-    (binders : List (Ixon.Uses × Ixon.Owned × Ixon.Expr)) :
+    (binders : List (Ixon.BinderContract × Ixon.ValueContract × Ixon.Expr)) :
     (do
       for binder in binders do
-        Ixon.putU8 (binder.1.toBits ||| (binder.2.1.toBits <<< 2))
+        Ixon.putU8 (Ixon.packAllContract binder.1 binder.2.1)
         Ixon.putExpr binder.2.2) = putAllBinderList binders := by
   simp [putAllBinderList, allBinderMode]
 
-theorem putLamBinderList_bind (binders : List (Ixon.Uses × Ixon.Expr))
+theorem putLamBinderList_bind (binders : List (Ixon.BinderContract × Ixon.Expr))
     (next : Ixon.PutM α) :
     (do
       putLamBinderList binders
@@ -486,14 +520,14 @@ theorem putLamBinderList_bind (binders : List (Ixon.Uses × Ixon.Expr))
   simp [putLamBinderList]
 
 theorem putAllBinderList_bind
-    (binders : List (Ixon.Uses × Ixon.Owned × Ixon.Expr))
+    (binders : List (Ixon.BinderContract × Ixon.ValueContract × Ixon.Expr))
     (next : Ixon.PutM α) :
     (do
       putAllBinderList binders
       next) =
     (do
       for binder in binders do
-        Ixon.putU8 (binder.1.toBits ||| (binder.2.1.toBits <<< 2))
+        Ixon.putU8 (Ixon.packAllContract binder.1 binder.2.1)
         Ixon.putExpr binder.2.2
       next) := by
   simp [putAllBinderList, allBinderMode]
@@ -507,7 +541,7 @@ theorem putAllBinderList_bind
 
 @[simp] theorem attachFold_lamBinderListBytes_empty
     (encode : Ixon.Expr → ByteArray)
-    (binders : List (Ixon.Uses × Ixon.Expr)) :
+    (binders : List (Ixon.BinderContract × Ixon.Expr)) :
     binders.attach.foldl
         (fun bytes binder =>
           bytes ++ [binder.1.1.toBits].toByteArray ++ encode binder.1.2)
@@ -517,7 +551,7 @@ theorem putAllBinderList_bind
 
 @[simp] theorem attachFold_allBinderListBytes_empty
     (encode : Ixon.Expr → ByteArray)
-    (binders : List (Ixon.Uses × Ixon.Owned × Ixon.Expr)) :
+    (binders : List (Ixon.BinderContract × Ixon.ValueContract × Ixon.Expr)) :
     binders.attach.foldl
         (fun bytes binder =>
           bytes ++ [allBinderMode binder.1.1 binder.1.2.1].toByteArray ++
@@ -609,11 +643,13 @@ theorem putExpr_writes_spine (expr : Ixon.Expr) (h : expr.wireWF) :
   | letE nonDep ty val body =>
     obtain ⟨hty, hval, hbody⟩ := h
     have hwrite :=
-      (putTag4_writes Ixon.Expr.FLAG_LET (if nonDep then 1 else 0)).bind
-        ((putExpr_writes_spine ty hty).bind
-          ((putExpr_writes_spine val hval).bind
-            (putExpr_writes_spine body hbody)))
-    simpa [Ixon.putExpr, spineWireEncode, ByteArray.append_assoc] using hwrite
+      (putTag4_writes Ixon.Expr.FLAG_LET nonDep.flags).bind
+        ((putU8_writes nonDep.binder.toBits).bind
+          ((putExpr_writes_spine ty hty).bind
+            ((putExpr_writes_spine val hval).bind
+              (putExpr_writes_spine body hbody))))
+    simpa [Ixon.putExpr, Ixon.putBinderContract, spineWireEncode,
+      ByteArray.append_assoc] using hwrite
   | share idx =>
     simpa [Ixon.putExpr, spineWireEncode] using
       putTag4_writes Ixon.Expr.FLAG_SHARE idx
@@ -655,7 +691,7 @@ theorem spineWireEncode_app (fn arg : Ixon.Expr) :
   simp only [spineWireEncode]
   rw [attachFold_exprListBytes_empty]
 
-theorem spineWireEncode_lam (uses : Ixon.Uses) (ty body : Ixon.Expr) :
+theorem spineWireEncode_lam (uses : Ixon.BinderContract) (ty body : Ixon.Expr) :
     spineWireEncode (.lam uses ty body) =
       tag4Bytes Ixon.Expr.FLAG_LAM
           (Ixon.Expr.lam uses ty body).collectLamBinders.1.length.toUInt64 ++
@@ -666,7 +702,7 @@ theorem spineWireEncode_lam (uses : Ixon.Uses) (ty body : Ixon.Expr) :
   simp only [spineWireEncode]
   rw [attachFold_lamBinderListBytes_empty]
 
-theorem spineWireEncode_all (uses : Ixon.Uses) (owned : Ixon.Owned)
+theorem spineWireEncode_all (uses : Ixon.BinderContract) (owned : Ixon.ValueContract)
     (ty body : Ixon.Expr) :
     spineWireEncode (.all uses owned ty body) =
       tag4Bytes Ixon.Expr.FLAG_ALL
@@ -693,8 +729,8 @@ theorem exprListBytes_member_size_le (encode : Ixon.Expr → ByteArray)
 
 theorem lamBinderListBytes_member_size_le
     (encode : Ixon.Expr → ByteArray)
-    {binder : Ixon.Uses × Ixon.Expr}
-    {binders : List (Ixon.Uses × Ixon.Expr)} (hmem : binder ∈ binders) :
+    {binder : Ixon.BinderContract × Ixon.Expr}
+    {binders : List (Ixon.BinderContract × Ixon.Expr)} (hmem : binder ∈ binders) :
     (encode binder.2).size ≤
       (lamBinderListBytes encode binders).size := by
   induction binders with
@@ -710,8 +746,8 @@ theorem lamBinderListBytes_member_size_le
 
 theorem allBinderListBytes_member_size_le
     (encode : Ixon.Expr → ByteArray)
-    {binder : Ixon.Uses × Ixon.Owned × Ixon.Expr}
-    {binders : List (Ixon.Uses × Ixon.Owned × Ixon.Expr)}
+    {binder : Ixon.BinderContract × Ixon.ValueContract × Ixon.Expr}
+    {binders : List (Ixon.BinderContract × Ixon.ValueContract × Ixon.Expr)}
     (hmem : binder ∈ binders) :
     (encode binder.2.2).size ≤
       (allBinderListBytes encode binders).size := by
@@ -749,13 +785,9 @@ theorem getExprAppArgs_reads (getm : Ixon.GetM Ixon.Expr)
     have hrest := ih (.app base expr) htail
     simpa [Ixon.getExprAppArgs, exprListBytes] using hhead.bind hrest
 
-@[simp] theorem uses_ofBits_toBits (uses : Ixon.Uses) :
-    Ixon.Uses.ofBits? uses.toBits = some uses := by
-  cases uses <;> rfl
-
 theorem getExprLamBinders_reads (getm : Ixon.GetM Ixon.Expr)
     (encode : Ixon.Expr → ByteArray)
-    (binders : List (Ixon.Uses × Ixon.Expr))
+    (binders : List (Ixon.BinderContract × Ixon.Expr))
     (h : ∀ binder, binder ∈ binders →
       Reads getm (encode binder.2) binder.2) :
     Reads (Ixon.getExprLamBinders getm binders.length)
@@ -763,7 +795,7 @@ theorem getExprLamBinders_reads (getm : Ixon.GetM Ixon.Expr)
   induction binders with
   | nil =>
     simpa [Ixon.getExprLamBinders, lamBinderListBytes] using
-      (Reads.pure ([] : List (Ixon.Uses × Ixon.Expr)))
+      (Reads.pure ([] : List (Ixon.BinderContract × Ixon.Expr)))
   | cons binder binders ih =>
     rcases binder with ⟨uses, ty⟩
     have hty := h (uses, ty) (by simp)
@@ -772,43 +804,31 @@ theorem getExprLamBinders_reads (getm : Ixon.GetM Ixon.Expr)
       intro tail hmem
       exact h tail (by simp [hmem])
     have hreturn := Reads.pure
-      ((uses, ty) :: binders : List (Ixon.Uses × Ixon.Expr))
+      ((uses, ty) :: binders : List (Ixon.BinderContract × Ixon.Expr))
     have hafterTail := Reads.bind
-      (next := fun tail : List (Ixon.Uses × Ixon.Expr) =>
+      (next := fun tail : List (Ixon.BinderContract × Ixon.Expr) =>
         (pure ((uses, ty) :: tail) :
-          Ixon.GetM (List (Ixon.Uses × Ixon.Expr))))
+          Ixon.GetM (List (Ixon.BinderContract × Ixon.Expr))))
       (ih htail) hreturn
     have hafterTy := Reads.bind
       (next := fun decodedTy : Ixon.Expr => do
         let tail ← Ixon.getExprLamBinders getm binders.length
         return (uses, decodedTy) :: tail)
       hty hafterTail
-    have hafterMode : Reads
-        (do
-          let some decodedUses := Ixon.Uses.ofBits? uses.toBits
-            | throw s!"getExpr: invalid lambda mode {uses.toBits}"
-          let decodedTy ← getm
-          let tail ← Ixon.getExprLamBinders getm binders.length
-          return (decodedUses, decodedTy) :: tail)
-        (encode ty ++ lamBinderListBytes encode binders)
-        ((uses, ty) :: binders) := by
-      simpa using hafterTy
     have hall := Reads.bind
-      (next := fun mode : UInt8 => do
-        let some decodedUses := Ixon.Uses.ofBits? mode
-          | throw s!"getExpr: invalid lambda mode {mode}"
+      (next := fun decodedUses : Ixon.BinderContract => do
         let decodedTy ← getm
         let tail ← Ixon.getExprLamBinders getm binders.length
         return (decodedUses, decodedTy) :: tail)
-      (getU8_reads uses.toBits) hafterMode
+      (getBinderContract_reads uses) hafterTy
     rw [Ixon.getExprLamBinders.eq_def, lamBinderListBytes]
     simp only [List.length_cons]
     rw [ByteArray.append_assoc]
-    exact hall
+    simpa only [ByteArray.append_empty] using hall
 
 theorem getExprAllBinders_reads (getm : Ixon.GetM Ixon.Expr)
     (encode : Ixon.Expr → ByteArray)
-    (binders : List (Ixon.Uses × Ixon.Owned × Ixon.Expr))
+    (binders : List (Ixon.BinderContract × Ixon.ValueContract × Ixon.Expr))
     (h : ∀ binder, binder ∈ binders →
       Reads getm (encode binder.2.2) binder.2.2) :
     Reads (Ixon.getExprAllBinders getm binders.length)
@@ -817,19 +837,11 @@ theorem getExprAllBinders_reads (getm : Ixon.GetM Ixon.Expr)
   | nil =>
     simpa [Ixon.getExprAllBinders, allBinderListBytes] using
       (Reads.pure
-        ([] : List (Ixon.Uses × Ixon.Owned × Ixon.Expr)))
+        ([] : List (Ixon.BinderContract × Ixon.ValueContract × Ixon.Expr)))
   | cons binder binders ih =>
     rcases binder with ⟨uses, owned, ty⟩
     let mode := allBinderMode uses owned
     have hfields := forallMode_fields uses owned
-    obtain ⟨hmodeLe, huses, howned⟩ := hfields
-    change mode ≤ 7 at hmodeLe
-    change Ixon.Uses.ofBits? (mode &&& 0x03) = some uses at huses
-    change Ixon.Owned.ofBits? ((mode >>> 2) &&& 0x01) = some owned at howned
-    have hmodeNotGt : ¬ mode > 7 := by
-      simp only [UInt8.le_iff_toNat_le] at hmodeLe
-      simp only [UInt8.lt_iff_toNat_lt]
-      omega
     have hty := h (uses, owned, ty) (by simp)
     have htail : ∀ tail, tail ∈ binders →
         Reads getm (encode tail.2.2) tail.2.2 := by
@@ -837,11 +849,11 @@ theorem getExprAllBinders_reads (getm : Ixon.GetM Ixon.Expr)
       exact h tail (by simp [hmem])
     have hreturn := Reads.pure
       ((uses, owned, ty) :: binders :
-        List (Ixon.Uses × Ixon.Owned × Ixon.Expr))
+        List (Ixon.BinderContract × Ixon.ValueContract × Ixon.Expr))
     have hafterTail := Reads.bind
-      (next := fun tail : List (Ixon.Uses × Ixon.Owned × Ixon.Expr) =>
+      (next := fun tail : List (Ixon.BinderContract × Ixon.ValueContract × Ixon.Expr) =>
         (pure ((uses, owned, ty) :: tail) :
-          Ixon.GetM (List (Ixon.Uses × Ixon.Owned × Ixon.Expr))))
+          Ixon.GetM (List (Ixon.BinderContract × Ixon.ValueContract × Ixon.Expr))))
       (ih htail) hreturn
     have hafterTy := Reads.bind
       (next := fun decodedTy : Ixon.Expr => do
@@ -850,28 +862,18 @@ theorem getExprAllBinders_reads (getm : Ixon.GetM Ixon.Expr)
       hty hafterTail
     have hafterMode : Reads
         (do
-          if mode > 7 then
-            throw s!"getExpr: invalid forall mode {mode}"
-          let some decodedUses := Ixon.Uses.ofBits? (mode &&& 0x03)
-            | throw s!"getExpr: invalid forall usage mode {mode}"
-          let some decodedOwned :=
-              Ixon.Owned.ofBits? ((mode >>> 2) &&& 0x01)
-            | throw s!"getExpr: invalid forall ownership mode {mode}"
+          let some (decodedUses, decodedOwned) := Ixon.unpackAllContract? mode
+            | throw s!"getExpr: invalid forall contract {mode}"
           let decodedTy ← getm
           let tail ← Ixon.getExprAllBinders getm binders.length
           return (decodedUses, decodedOwned, decodedTy) :: tail)
         (encode ty ++ allBinderListBytes encode binders)
         ((uses, owned, ty) :: binders) := by
-      simpa [hmodeNotGt, huses, howned] using hafterTy
+      simpa only [mode, allBinderMode, hfields, ByteArray.append_empty] using hafterTy
     have hall := Reads.bind
       (next := fun decodedMode : UInt8 => do
-        if decodedMode > 7 then
-          throw s!"getExpr: invalid forall mode {decodedMode}"
-        let some decodedUses := Ixon.Uses.ofBits? (decodedMode &&& 0x03)
-          | throw s!"getExpr: invalid forall usage mode {decodedMode}"
-        let some decodedOwned :=
-            Ixon.Owned.ofBits? ((decodedMode >>> 2) &&& 0x01)
-          | throw s!"getExpr: invalid forall ownership mode {decodedMode}"
+        let some (decodedUses, decodedOwned) := Ixon.unpackAllContract? decodedMode
+          | throw s!"getExpr: invalid forall contract {decodedMode}"
         let decodedTy ← getm
         let tail ← Ixon.getExprAllBinders getm binders.length
         return (decodedUses, decodedOwned, decodedTy) :: tail)
@@ -903,7 +905,7 @@ theorem canonicalAppContinuation_reads (getm : Ixon.GetM Ixon.Expr)
   cases base <;> simp_all [notApp]
 
 theorem canonicalLamFinish_reads
-    (binders : List (Ixon.Uses × Ixon.Expr))
+    (binders : List (Ixon.BinderContract × Ixon.Expr))
     (base result : Ixon.Expr) (hbase : notLam base)
     (hreconstruct : binders.foldr
       (fun binder body => .lam binder.1 binder.2 body) base = result) :
@@ -918,7 +920,7 @@ theorem canonicalLamFinish_reads
   cases base <;> simp_all [notLam] <;> apply Reads.pure
 
 theorem canonicalAllFinish_reads
-    (binders : List (Ixon.Uses × Ixon.Owned × Ixon.Expr))
+    (binders : List (Ixon.BinderContract × Ixon.ValueContract × Ixon.Expr))
     (base result : Ixon.Expr) (hbase : notAll base)
     (hreconstruct : binders.foldr
       (fun binder body => .all binder.1 binder.2.1 binder.2.2 body)
@@ -983,11 +985,15 @@ theorem getExprFuel_reads_spine (expr : Ixon.Expr) (h : expr.wireWF)
         (next := fun decoded : List UInt64 =>
           (pure (Ixon.Expr.ref refIdx decoded.toArray) :
             Ixon.GetM Ixon.Expr)) hunivs hreturn
+      have hcheckedUnivs := Reads.checkCount univs.size.toUInt64 1
+        (by simpa [hcount] using tag0ListBytes_size_ge_length univs.toList)
+        hafterUnivs
       have htail0 := Reads.bind
         (next := fun decoded : Ixon.Tag0 => do
+          Ixon.checkCount univs.size.toUInt64
           let decodedUnivs ← Ixon.getTag0Sizes univs.toList.length
           return Ixon.Expr.ref decoded.size decodedUnivs.toArray)
-        hidx hafterUnivs
+        hidx hcheckedUnivs
       have hparsed : Reads
           (Ixon.getExprFromTag (Ixon.getExprFuel fuel)
             ⟨Ixon.Expr.FLAG_REF, univs.size.toUInt64⟩)
@@ -1014,11 +1020,15 @@ theorem getExprFuel_reads_spine (expr : Ixon.Expr) (h : expr.wireWF)
         (next := fun decoded : List UInt64 =>
           (pure (Ixon.Expr.recur recIdx decoded.toArray) :
             Ixon.GetM Ixon.Expr)) hunivs hreturn
+      have hcheckedUnivs := Reads.checkCount univs.size.toUInt64 1
+        (by simpa [hcount] using tag0ListBytes_size_ge_length univs.toList)
+        hafterUnivs
       have htail0 := Reads.bind
         (next := fun decoded : Ixon.Tag0 => do
+          Ixon.checkCount univs.size.toUInt64
           let decodedUnivs ← Ixon.getTag0Sizes univs.toList.length
           return Ixon.Expr.recur decoded.size decodedUnivs.toArray)
-        hidx hafterUnivs
+        hidx hcheckedUnivs
       have hparsed : Reads
           (Ixon.getExprFromTag (Ixon.getExprFuel fuel)
             ⟨Ixon.Expr.FLAG_REC, univs.size.toUInt64⟩)
@@ -1143,6 +1153,11 @@ theorem getExprFuel_reads_spine (expr : Ixon.Expr) (h : expr.wireWF)
           whole := by
         simp only [Ixon.getExprFromTag, Ixon.Expr.FLAG_APP, hcountBeq,
           Bool.false_eq_true, if_false]
+        apply Reads.checkCount args.length.toUInt64 1
+          (by
+            have hbytes := exprListBytes_size_ge_length args
+            simp only [hcount, ByteArray.size_append, Nat.mul_one]
+            omega)
         rw [hcount]
         exact Reads.bind
           (next := fun decodedBase : Ixon.Expr => do
@@ -1242,7 +1257,7 @@ theorem getExprFuel_reads_spine (expr : Ixon.Expr) (h : expr.wireWF)
           (lamBinderListBytes spineWireEncode binders ++
             spineWireEncode base) whole := by
         exact Reads.bind
-          (next := fun decodedBinders : List (Ixon.Uses × Ixon.Expr) => do
+          (next := fun decodedBinders : List (Ixon.BinderContract × Ixon.Expr) => do
             let decodedBase ← Ixon.getExprFuel fuel
             match decodedBase with
             | .lam .. => throw "getExpr: non-canonical lam telescope"
@@ -1257,6 +1272,11 @@ theorem getExprFuel_reads_spine (expr : Ixon.Expr) (h : expr.wireWF)
             spineWireEncode base) whole := by
         simp only [Ixon.getExprFromTag, Ixon.Expr.FLAG_LAM, hcountBeq,
           Bool.false_eq_true, if_false]
+        apply Reads.checkCount binders.length.toUInt64 2
+          (by
+            have hbytes := lamBinderListBytes_size_ge_length binders
+            simp only [hcount, ByteArray.size_append]
+            omega)
         rw [hcount]
         exact hparsed0
       have htag := getTag4_reads Ixon.Expr.FLAG_LAM binders.length.toUInt64
@@ -1356,7 +1376,7 @@ theorem getExprFuel_reads_spine (expr : Ixon.Expr) (h : expr.wireWF)
             spineWireEncode base) whole := by
         exact Reads.bind
           (next := fun decodedBinders :
-              List (Ixon.Uses × Ixon.Owned × Ixon.Expr) => do
+              List (Ixon.BinderContract × Ixon.ValueContract × Ixon.Expr) => do
             let decodedBase ← Ixon.getExprFuel fuel
             match decodedBase with
             | .all .. => throw "getExpr: non-canonical all telescope"
@@ -1372,6 +1392,11 @@ theorem getExprFuel_reads_spine (expr : Ixon.Expr) (h : expr.wireWF)
             spineWireEncode base) whole := by
         simp only [Ixon.getExprFromTag, Ixon.Expr.FLAG_ALL, hcountBeq,
           Bool.false_eq_true, if_false]
+        apply Reads.checkCount binders.length.toUInt64 2
+          (by
+            have hbytes := allBinderListBytes_size_ge_length binders
+            simp only [hcount, ByteArray.size_append]
+            omega)
         rw [hcount]
         exact hparsed0
       have htag := getTag4_reads Ixon.Expr.FLAG_ALL binders.length.toUInt64
@@ -1383,17 +1408,19 @@ theorem getExprFuel_reads_spine (expr : Ixon.Expr) (h : expr.wireWF)
     | letE nonDep ty val body =>
       obtain ⟨hty, hval, hbody⟩ := h
       have hsizes :
-          (tag4Bytes Ixon.Expr.FLAG_LET (if nonDep then 1 else 0)).size +
+          (tag4Bytes Ixon.Expr.FLAG_LET nonDep.flags).size + 1 +
               (spineWireEncode ty).size + (spineWireEncode val).size +
                 (spineWireEncode body).size ≤ fuel + 1 := by
-        simpa only [spineWireEncode, ByteArray.size_append] using hfuel
+        simpa only [spineWireEncode, ByteArray.size_append,
+          List.size_toByteArray, List.length_cons, List.length_nil,
+          Nat.zero_add, Nat.add_assoc] using hfuel
       have htagPos := tag4Bytes_size_pos Ixon.Expr.FLAG_LET
-        (if nonDep then 1 else 0)
+        nonDep.flags
       have htyRead := getExprFuel_reads_spine ty hty fuel (by omega)
       have hvalRead := getExprFuel_reads_spine val hval fuel (by omega)
       have hbodyRead := getExprFuel_reads_spine body hbody fuel (by omega)
       have htag := getTag4_reads Ixon.Expr.FLAG_LET
-        (if nonDep then 1 else 0) (by decide)
+        nonDep.flags (by decide)
       have hreturn := Reads.pure (Ixon.Expr.letE nonDep ty val body)
       have hafterBody := Reads.bind
         (next := fun decodedBody : Ixon.Expr =>
@@ -1412,11 +1439,15 @@ theorem getExprFuel_reads_spine (expr : Ixon.Expr) (h : expr.wireWF)
         htyRead hafterVal
       have hparsed : Reads
           (Ixon.getExprFromTag (Ixon.getExprFuel fuel)
-            ⟨Ixon.Expr.FLAG_LET, if nonDep then 1 else 0⟩)
-          (spineWireEncode ty ++ spineWireEncode val ++
-            spineWireEncode body) (.letE nonDep ty val body) := by
-        cases nonDep <;> simpa [Ixon.getExprFromTag, Ixon.Expr.FLAG_LET,
-          ByteArray.append_assoc] using hchildren
+            ⟨Ixon.Expr.FLAG_LET, nonDep.flags⟩)
+          ([nonDep.binder.toBits].toByteArray ++
+            spineWireEncode ty ++ spineWireEncode val ++ spineWireEncode body) (.letE nonDep ty val body) := by
+        simp only [Ixon.getExprFromTag, Ixon.Expr.FLAG_LET,
+          if_neg (letFlags_not_gt nonDep)]
+        simp only [ByteArray.append_assoc]
+        apply Reads.bind (getBinderContract_reads nonDep.binder)
+        simpa only [Ixon.LetContract.ofFlags?_flags, ByteArray.append_assoc,
+          ByteArray.append_empty] using hchildren
       have hall := Reads.bind
         (next := Ixon.getExprFromTag (Ixon.getExprFuel fuel)) htag hparsed
       simpa [Ixon.getExprFuel, spineWireEncode,

@@ -87,7 +87,7 @@ def resolveBinderSelector (source : Lean.ConstantInfo) (selector : BinderSelecto
 /-- Expand declaration shorthand into separate type/body occurrences. The
 result never marks earlier or later curried arrow results unique implicitly. -/
 def SourceContract.ofTelescope (source : Lean.ConstantInfo)
-    (contracts : Array TelescopeContract) (regions : Array Lean.Name := #[]) :
+    (contracts : Array TelescopeContract) :
     Except SourceContractError SourceContract := do
   let types := sourceTelescope source .type
   let bodies := sourceTelescope source .body
@@ -97,61 +97,42 @@ def SourceContract.ofTelescope (source : Lean.ConstantInfo)
     let some (typeSite, _) := types[index]?
       | throw (.argumentOutOfRange source.name index)
     binders := binders.push {
-      site := typeSite, uses := contract.uses, resultOwned := contract.resultOwned
-      owned := contract.owned, region := contract.region }
+      site := typeSite, uses := contract.uses, result := contract.result
+      value := contract.value, letKind := contract.letKind }
     if (sourceBody? source).isSome then
       let some (bodySite, _) := bodies[index]?
         | throw (.missingBodyBinder source.name index)
       binders := binders.push {
-        site := bodySite, uses := contract.uses, owned := contract.owned, region := contract.region }
-  return { source, binders, regions }
+        site := bodySite, uses := contract.uses, value := contract.value, letKind := contract.letKind }
+  return { source, binders }
 
-def resolveBinderContract (source : Lean.ConstantInfo) (regions : Array Lean.Name)
-    (contract : BinderContract) :
+def resolveBinderContract (source : Lean.ConstantInfo) (contract : BinderContract) :
     Except SourceContractError ResolvedBinderContract := do
-  let region ← match contract.region with
-    | none => pure none
-    | some name => match regions.idxOf? name with
-      | some index => pure (some index)
-      | none => throw (.unknownRegion source.name name)
   let some expr := sourceAtSite? source contract.site
     | throw (.invalidSite source.name contract.site)
-  match expr with
-  | .lam name _ _ binderInfo =>
-    if contract.resultOwned.isSome then
-      throw (.ownershipOnLambda source.name contract.site)
-    return {
-      site := contract.site
-      kind := .lam
-      name := name
-      binderInfo := binderInfo
-      uses := contract.uses
-      resultOwned := none
-      owned := contract.owned
-      region }
-  | .forallE name _ _ binderInfo =>
-    return {
-      site := contract.site
-      kind := .all
-      name := name
-      binderInfo := binderInfo
-      uses := contract.uses
-      resultOwned := some (contract.resultOwned.getD .shared)
-      owned := contract.owned
-      region }
-  | _ => throw (.expectedBinder source.name contract.site)
+  let (kind, name, binderInfo) ← match expr with
+    | .lam name _ _ info => pure (SourceBinderKind.lam, name, info)
+    | .forallE name _ _ info => pure (SourceBinderKind.all, name, info)
+    | .letE name _ _ _ _ => pure (SourceBinderKind.letE, name, Lean.BinderInfo.default)
+    | _ => throw (.expectedBinder source.name contract.site)
+  if kind != .all && contract.result.isSome then
+    throw (.resultOnNonArrow source.name contract.site)
+  if kind != .letE && contract.letKind != .value then
+    throw (.borrowOnNonLet source.name contract.site)
+  if contract.letKind == .borrowShared && contract.value != .localShared then
+    throw (.invalidBorrowView source.name contract.site)
+  return {
+    site := contract.site, kind, name, binderInfo
+    uses := contract.uses, value := contract.value, letKind := contract.letKind
+    result := if kind == .all then some (contract.result.getD .shared) else none }
 
 def ResolvedSourceContract.usesAt (contract : ResolvedSourceContract)
     (site : BinderSite) : Ixon.Uses :=
   ((contract.binders.find? fun binder => binder.site == site).map (·.uses)).getD .many
 
-def ResolvedSourceContract.ownedAt (contract : ResolvedSourceContract)
-    (site : BinderSite) : Ixon.Owned :=
-  ((contract.binders.find? fun binder => binder.site == site).map (·.owned)).getD .shared
-
-def ResolvedSourceContract.regionAt (contract : ResolvedSourceContract)
-    (site : BinderSite) : Option Nat :=
-  (contract.binders.find? fun binder => binder.site == site).bind (·.region)
+def ResolvedSourceContract.valueAt (contract : ResolvedSourceContract)
+    (site : BinderSite) : Ixon.ValueContract :=
+  ((contract.binders.find? fun binder => binder.site == site).map (·.value)).getD .shared
 
 private structure CollectedAnnotations where
   binders : Array (BinderSite × BinderAnnotation) := #[]
@@ -163,11 +144,16 @@ private def collectAnnotations (declaration : Lean.Name) (root : SourceRoot)
   let site : BinderSite := ⟨root, path⟩
   let mut acc := acc
   match expr with
-  | .lam name type _ _ | .forallE name type _ _ =>
+  | .lam name type _ _ | .forallE name type _ _ | .letE name type _ _ _ =>
     let annotation ← (binderAnnotation? type).mapError (.malformedAnnotation declaration site)
     if let some annotation := annotation then
       if annotation.binder != name then
-        throw (.annotationBinderMismatch declaration site annotation.binder name)
+        -- Expected arrow domains can be copied into an alpha-renamed lambda.
+        -- The original marker must already have been validated in the type.
+        let isLambda := match expr with | .lam .. => true | _ => false
+        unless isLambda && root == .body && acc.binders.any (fun (site, original) =>
+            site.root == .type && original == annotation) do
+          throw (.annotationBinderMismatch declaration site annotation.binder name)
       acc := { acc with binders := acc.binders.push (site, annotation) }
   | .mdata data _ =>
     let annotation ← (BinderAnnotation.ofMetadata? data).mapError (.malformedAnnotation declaration site)
@@ -202,16 +188,20 @@ def SourceContract.fromAnnotations (source : Lean.ConstantInfo) :
   let acc ← match sourceBody? source with
     | some body => collectAnnotations source.name .body body [] acc
     | none => pure acc
-  let regions := (acc.binders[0]?.map (·.2.regions)).getD #[]
   let mut origins : Std.HashSet (SourceRoot × Nat) := {}
   let mut binders := #[]
   for (site, annotation) in acc.binders do
-    if annotation.regions != regions then throw (.conflictingRegions source.name)
     let key := (site.root, annotation.origin)
     if origins.contains key then throw (.duplicateAnnotation source.name site.root annotation.origin)
     origins := origins.insert key
+    let isArrow := match sourceAtSite? source site with | some (.forallE ..) => true | _ => false
+    if !isArrow && annotation.result.isSome then
+      let copiedFromType := site.root == .body && acc.binders.any fun (other, original) =>
+        other.root == .type && original == annotation
+      unless copiedFromType do throw (.resultOnNonArrow source.name site)
     binders := binders.push {
-      site, uses := annotation.uses, owned := annotation.owned, region := annotation.region }
+      site, uses := annotation.uses, value := annotation.value
+      result := if isArrow then annotation.result else none, letKind := annotation.letKind }
   for (site, marker) in acc.markers do
     let some (_, annotation) := acc.binders.find? fun (binderSite, annotation) =>
         binderSite.root == site.root && annotation.origin == marker.origin
@@ -232,12 +222,12 @@ def SourceContract.fromAnnotations (source : Lean.ConstantInfo) :
           | throw (.expectedBinder source.name typeSite)
         let some (.lam bodyName bodyDomain _ bodyInfo) := sourceAtSite? source bodySite
           | throw (.expectedBinder source.name bodySite)
-        if typeName != bodyName || typeInfo != bodyInfo ||
+        if typeInfo != bodyInfo ||
             typeDomain.consumeMData != bodyDomain.consumeMData then
           throw (.annotationBinderMismatch source.name bodySite typeName bodyName)
         if !binders.any (·.site == bodySite) then
-          binders := binders.push { annotation with site := bodySite, resultOwned := none }
-  return { source, binders, regions }
+          binders := binders.push { annotation with site := bodySite, result := none }
+  return { source, binders }
 
 /-- Check direct declaration telescope correspondence. This is a structural
 preflight, not inference of nested function types or proof of resource validity.
@@ -255,14 +245,10 @@ def checkTelescopeConsistency (contract : ResolvedSourceContract) :
       let bodyUses := contract.usesAt bodySite
       if typeUses != bodyUses then
         throw (.inconsistentTelescope contract.source.name index typeUses bodyUses)
-      let typeOwned := contract.ownedAt typeSite
-      let bodyOwned := contract.ownedAt bodySite
-      if typeOwned != bodyOwned then
-        throw (.inconsistentOwnership contract.source.name index typeOwned bodyOwned)
-      let typeRegion := contract.regionAt typeSite
-      let bodyRegion := contract.regionAt bodySite
-      if typeRegion != bodyRegion then
-        throw (.inconsistentRegion contract.source.name index typeRegion bodyRegion)
+      let typeValue := contract.valueAt typeSite
+      let bodyValue := contract.valueAt bodySite
+      if typeValue != bodyValue then
+        throw (.inconsistentValue contract.source.name index typeValue bodyValue)
     | some (site, _), none | none, some (site, _) =>
       if contract.binders.any (fun binder => binder.site == site) then
         throw (.missingBodyBinder contract.source.name index)
@@ -277,25 +263,19 @@ def SourceContract.resolve (contract : SourceContract) (actual : Lean.ConstantIn
   if contract.source != actual then throw (.staleSource contract.source.name)
   if sourceHasAnnotations actual then
     let expected ← SourceContract.fromAnnotations actual
-    if expected.regions != contract.regions then throw (.conflictingRegions actual.name)
     for annotation in expected.binders do
       let some supplied := contract.binders.find? (·.site == annotation.site)
         | throw (.missingAnnotation actual.name annotation.site)
-      if supplied.uses != annotation.uses || supplied.owned != annotation.owned ||
-          supplied.region != annotation.region then
+      if supplied != annotation then
         throw (.conflictingAnnotation actual.name annotation.site)
-  let mut seenRegions : Std.HashSet Lean.Name := {}
-  for region in contract.regions do
-    if seenRegions.contains region then throw (.duplicateRegion actual.name region)
-    seenRegions := seenRegions.insert region
   let mut seen : Std.HashSet BinderSite := {}
   let mut binders := #[]
   for binder in contract.binders do
     if seen.contains binder.site then throw (.duplicateSite actual.name binder.site)
     seen := seen.insert binder.site
-    binders := binders.push (← resolveBinderContract actual contract.regions binder)
+    binders := binders.push (← resolveBinderContract actual binder)
   binders := binders.qsort fun a b => compare a.site b.site == .lt
-  let result : ResolvedSourceContract := { source := actual, binders, regions := contract.regions }
+  let result : ResolvedSourceContract := { source := actual, binders }
   checkTelescopeConsistency result
   return result
 

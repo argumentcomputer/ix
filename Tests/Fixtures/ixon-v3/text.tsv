@@ -1,0 +1,148 @@
+lam	0	0	fun (!0 x : A) => x
+lam	1	0	fun (!1 x : A) => x
+lam	2	0	fun (!& x : A) => x
+lam	3	0	fun (! x : A) => x
+lam	4	0	fun (0 x : A) => x
+lam	5	0	fun (1 x : A) => x
+lam	6	0	fun (& x : A) => x
+lam	7	0	fun (x : A) => x
+lam	8	0	fun (~!0 x : A) => x
+lam	9	0	fun (~!1 x : A) => x
+lam	10	0	fun (~!& x : A) => x
+lam	11	0	fun (~! x : A) => x
+lam	12	0	fun (~0 x : A) => x
+lam	13	0	fun (~1 x : A) => x
+lam	14	0	fun (~& x : A) => x
+lam	15	0	fun (~ x : A) => x
+all	0	0	(!0 x : A) → ! B
+all	0	1	(!0 x : A) → B
+all	0	2	(!0 x : A) → ~! B
+all	0	3	(!0 x : A) → ~ B
+all	1	0	(!1 x : A) → ! B
+all	1	1	(!1 x : A) → B
+all	1	2	(!1 x : A) → ~! B
+all	1	3	(!1 x : A) → ~ B
+all	2	0	(!& x : A) → ! B
+all	2	1	(!& x : A) → B
+all	2	2	(!& x : A) → ~! B
+all	2	3	(!& x : A) → ~ B
+all	3	0	(! x : A) → ! B
+all	3	1	(! x : A) → B
+all	3	2	(! x : A) → ~! B
+all	3	3	(! x : A) → ~ B
+all	4	0	(0 x : A) → ! B
+all	4	1	(0 x : A) → B
+all	4	2	(0 x : A) → ~! B
+all	4	3	(0 x : A) → ~ B
+all	5	0	(1 x : A) → ! B
+all	5	1	(1 x : A) → B
+all	5	2	(1 x : A) → ~! B
+all	5	3	(1 x : A) → ~ B
+all	6	0	(& x : A) → ! B
+all	6	1	(& x : A) → B
+all	6	2	(& x : A) → ~! B
+all	6	3	(& x : A) → ~ B
+all	7	0	(x : A) → ! B
+all	7	1	(x : A) → B
+all	7	2	(x : A) → ~! B
+all	7	3	(x : A) → ~ B
+all	8	0	(~!0 x : A) → ! B
+all	8	1	(~!0 x : A) → B
+all	8	2	(~!0 x : A) → ~! B
+all	8	3	(~!0 x : A) → ~ B
+all	9	0	(~!1 x : A) → ! B
+all	9	1	(~!1 x : A) → B
+all	9	2	(~!1 x : A) → ~! B
+all	9	3	(~!1 x : A) → ~ B
+all	10	0	(~!& x : A) → ! B
+all	10	1	(~!& x : A) → B
+all	10	2	(~!& x : A) → ~! B
+all	10	3	(~!& x : A) → ~ B
+all	11	0	(~! x : A) → ! B
+all	11	1	(~! x : A) → B
+all	11	2	(~! x : A) → ~! B
+all	11	3	(~! x : A) → ~ B
+all	12	0	(~0 x : A) → ! B
+all	12	1	(~0 x : A) → B
+all	12	2	(~0 x : A) → ~! B
+all	12	3	(~0 x : A) → ~ B
+all	13	0	(~1 x : A) → ! B
+all	13	1	(~1 x : A) → B
+all	13	2	(~1 x : A) → ~! B
+all	13	3	(~1 x : A) → ~ B
+all	14	0	(~& x : A) → ! B
+all	14	1	(~& x : A) → B
+all	14	2	(~& x : A) → ~! B
+all	14	3	(~& x : A) → ~ B
+all	15	0	(~ x : A) → ! B
+all	15	1	(~ x : A) → B
+all	15	2	(~ x : A) → ~! B
+all	15	3	(~ x : A) → ~ B
+arrow	7	0	A → ! B
+arrow	7	1	A → B
+arrow	7	2	A → ~! B
+arrow	7	3	A → ~ B
+let	0	0	let (!0 x : A) := y; x
+let	1	0	let (!1 x : A) := y; x
+let	2	0	let (!& x : A) := y; x
+let	3	0	let (! x : A) := y; x
+let	4	0	let (0 x : A) := y; x
+let	5	0	let (1 x : A) := y; x
+let	6	0	let (& x : A) := y; x
+let	7	0	let x : A := y; x
+let	8	0	let (~!0 x : A) := y; x
+let	9	0	let (~!1 x : A) := y; x
+let	10	0	let (~!& x : A) := y; x
+let	11	0	let (~! x : A) := y; x
+let	12	0	let (~0 x : A) := y; x
+let	13	0	let (~1 x : A) := y; x
+let	14	0	let (~& x : A) := y; x
+let	15	0	let (~ x : A) := y; x
+let	0	1	have (!0 x : A) := y; x
+let	1	1	have (!1 x : A) := y; x
+let	2	1	have (!& x : A) := y; x
+let	3	1	have (! x : A) := y; x
+let	4	1	have (0 x : A) := y; x
+let	5	1	have (1 x : A) := y; x
+let	6	1	have (& x : A) := y; x
+let	7	1	have x : A := y; x
+let	8	1	have (~!0 x : A) := y; x
+let	9	1	have (~!1 x : A) := y; x
+let	10	1	have (~!& x : A) := y; x
+let	11	1	have (~! x : A) := y; x
+let	12	1	have (~0 x : A) := y; x
+let	13	1	have (~1 x : A) := y; x
+let	14	1	have (~& x : A) := y; x
+let	15	1	have (~ x : A) := y; x
+let	0	2	let borrow (!0 x : A) := y; x
+let	1	2	let borrow (!1 x : A) := y; x
+let	2	2	let borrow (!& x : A) := y; x
+let	3	2	let borrow (! x : A) := y; x
+let	4	2	let borrow (0 x : A) := y; x
+let	5	2	let borrow (1 x : A) := y; x
+let	6	2	let borrow (& x : A) := y; x
+let	7	2	let borrow (x : A) := y; x
+let	8	2	let borrow (~!0 x : A) := y; x
+let	9	2	let borrow (~!1 x : A) := y; x
+let	10	2	let borrow (~!& x : A) := y; x
+let	11	2	let borrow (~! x : A) := y; x
+let	12	2	let borrow (~0 x : A) := y; x
+let	13	2	let borrow (~1 x : A) := y; x
+let	14	2	let borrow (~& x : A) := y; x
+let	15	2	let borrow (~ x : A) := y; x
+let	0	3	have borrow (!0 x : A) := y; x
+let	1	3	have borrow (!1 x : A) := y; x
+let	2	3	have borrow (!& x : A) := y; x
+let	3	3	have borrow (! x : A) := y; x
+let	4	3	have borrow (0 x : A) := y; x
+let	5	3	have borrow (1 x : A) := y; x
+let	6	3	have borrow (& x : A) := y; x
+let	7	3	have borrow (x : A) := y; x
+let	8	3	have borrow (~!0 x : A) := y; x
+let	9	3	have borrow (~!1 x : A) := y; x
+let	10	3	have borrow (~!& x : A) := y; x
+let	11	3	have borrow (~! x : A) := y; x
+let	12	3	have borrow (~0 x : A) := y; x
+let	13	3	have borrow (~1 x : A) := y; x
+let	14	3	have borrow (~& x : A) := y; x
+let	15	3	have borrow (~ x : A) := y; x

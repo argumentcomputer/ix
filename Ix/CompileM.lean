@@ -16,6 +16,8 @@ import Std.Sync
 public import Ix.Ixon
 public import Ix.IxonUniv
 public import Ix.Environment
+public import Ix.SemanticContract
+public import Ix.Compile.SourceContract.Transport
 public import Ix.Sharing
 public import Ix.Common
 public import Ix.Store
@@ -816,7 +818,7 @@ def compileExprNoSurgeryStep
       let (v, valRoot) ← compile val
       let (b, bodyRoot) ← compile body
       let root ← allocArenaNode (.letBinder nameAddr tyRoot valRoot bodyRoot)
-      pure (.letE nonDep t v b, root)
+      pure (.leanLet nonDep t v b, root)
 
     | .lit (.natVal n) _ => do
       let bytes := ByteArray.mk (Nat.toBytesLE n)
@@ -846,6 +848,14 @@ def compileExprNoSurgeryStep
       pure (.prj typeRefIdx fieldIdx.toUInt64 s, root)
 
     | .mdata kvData inner _ => do
+      if SemanticContract.hasMetadata kvData then
+        let contract ← match SemanticContract.read kvData with
+          | .ok contract => pure contract
+          | .error error => throw (.unsupportedExpr error)
+        let (value, root) ← compile inner
+        match contract.lower inner value with
+        | .ok value => return (value, root)
+        | .error error => throw (.unsupportedExpr error)
       let kvmap ← compileKVMap kvData
       let (innerResult, innerRoot) ← compile inner
       let root ← allocArenaNode (.mdata #[kvmap] innerRoot)
@@ -931,6 +941,9 @@ def auditPlanHeadArities (owner : Name) (top : Expr) : CompileM Unit := do
   if cenv.callSitePlans.isEmpty && cenv.belowCallSitePlans.isEmpty &&
       cenv.brecOnCallSitePlans.isEmpty then
     return
+  let annotated ← match Ix.SemanticContract.inspect top with
+    | .ok annotated => pure annotated
+    | .error error => throw (.unsupportedExpr error)
   -- Lean expressions are DAGs. Large tactic proofs may reach one shared
   -- subexpression through exponentially many tree paths, while the ordinary
   -- compiler memoizes it. Keep the audit linear in unique nodes as well.
@@ -949,6 +962,8 @@ def auditPlanHeadArities (owner : Name) (top : Expr) : CompileM Unit := do
       match head with
       | .const name _ _ =>
         if let some arity := planHeadArity? cenv name then
+          if annotated then
+            throw (.unsupportedExpr s!"resource contracts across non-identity call-site surgery: {owner.pretty} calls {name.pretty}")
           let need := if arity.headRewrite then arity.expected else arity.floor
           if args.size < need && (obscured || arity.headRewrite) then
             let suffix := if obscured then
@@ -962,6 +977,8 @@ expected at least {need}{suffix}")
         stack := stack.push (arg, false)
     | .const name _ _ =>
       if let some arity := planHeadArity? cenv name then
+        if annotated then
+          throw (.unsupportedExpr s!"resource contracts across non-identity call-site surgery: {owner.pretty} calls {name.pretty}")
         if obscured || arity.headRewrite then
           let need := if arity.headRewrite then arity.expected else arity.floor
           let suffix := if obscured then
@@ -1191,7 +1208,7 @@ partial def compileExprSurgical (e : Expr) : CompileM (Ixon.Expr × UInt64) := d
     let (v, valRoot) ← compileExprSurgical val
     let (b, bodyRoot) ← compileExprSurgical body
     let root ← allocArenaNode (.letBinder nameAddr tyRoot valRoot bodyRoot)
-    pure (.letE nonDep t v b, root)
+    pure (.leanLet nonDep t v b, root)
 
   | .lit (.natVal n) _ => do
     let bytes := ByteArray.mk (Nat.toBytesLE n)
@@ -1219,6 +1236,14 @@ partial def compileExprSurgical (e : Expr) : CompileM (Ixon.Expr × UInt64) := d
     pure (.prj typeRefIdx fieldIdx.toUInt64 s, root)
 
   | .mdata kvData inner _ => do
+    if SemanticContract.hasMetadata kvData then
+      let contract ← match SemanticContract.read kvData with
+        | .ok contract => pure contract
+        | .error error => throw (.unsupportedExpr error)
+      let (value, root) ← compileExprSurgical inner
+      match contract.lower inner value with
+      | .ok value => return (value, root)
+      | .error error => throw (.unsupportedExpr error)
     let kvmap ← compileKVMap kvData
     let (innerResult, innerRoot) ← compileExprSurgical inner
     let root ← allocArenaNode (.mdata #[kvmap] innerRoot)
@@ -2040,9 +2065,24 @@ well-founded measure. -/
   | _, .mvar .. => throw (.unsupportedExpr "metavariable in comparison")
   | .fvar .., _ => throw (.unsupportedExpr "fvar in comparison")
   | _, .fvar .. => throw (.unsupportedExpr "fvar in comparison")
-  | .mdata _ x _, .mdata _ y _ => compareExpr ctx xlvls ylvls x y
-  | .mdata _ x _, y => compareExpr ctx xlvls ylvls x y
-  | x, .mdata _ y _ => compareExpr ctx xlvls ylvls x y
+  | .mdata dx xi hx, .mdata dy yi hy => do
+    if SemanticContract.hasMetadata dx then
+      if SemanticContract.hasMetadata dy then
+        let cx ← match SemanticContract.read dx with
+          | .ok c => pure c | .error e => throw (.unsupportedExpr e)
+        let cy ← match SemanticContract.read dy with
+          | .ok c => pure c | .error e => throw (.unsupportedExpr e)
+        let order := compare cx.orderKey cy.orderKey
+        if order != .eq then return ⟨true, order⟩
+        compareExpr ctx xlvls ylvls xi yi
+      else compareExpr ctx xlvls ylvls (.mdata dx xi hx) yi
+    else compareExpr ctx xlvls ylvls xi (.mdata dy yi hy)
+  | .mdata data x _, y =>
+    if SemanticContract.hasMetadata data then pure ⟨true, .gt⟩
+    else compareExpr ctx xlvls ylvls x y
+  | x, .mdata data y _ =>
+    if SemanticContract.hasMetadata data then pure ⟨true, .lt⟩
+    else compareExpr ctx xlvls ylvls x y
   | .bvar x _, .bvar y _ => pure ⟨true, compare x y⟩
   | .bvar .., _ => pure ⟨true, .lt⟩
   | _, .bvar .. => pure ⟨true, .gt⟩
@@ -3986,7 +4026,7 @@ opaque rsCompileValidateAuxFFI
     `allowPartial := true`. Returns the structured compile status. -/
 def rsCompileEnvBytes (leanEnv : Lean.Environment) (outPath : String)
     (allowPartial : Bool := false) : IO CompileEnvStatus := do
-  let constList := leanEnv.constants.toList
+  let constList ← IO.ofExcept <| Ix.Compile.prepareRegisteredConstants leanEnv leanEnv.constants.toList
   let status ← rsCompileEnvBytesFFI constList outPath allowPartial
   if !allowPartial && !status.ungrounded.isEmpty then
     throw <| IO.userError <|
@@ -4043,6 +4083,7 @@ opaque rsCompilePhasesFFI : @& List (Lean.Name × Lean.ConstantInfo) → IO Rust
     `rsCompilePhases` covers the whole-environment case. -/
 def rsCompilePhasesOf (constList : List (Lean.Name × Lean.ConstantInfo)) :
     IO CompilePhases := do
+  let constList ← IO.ofExcept <| Ix.Compile.prepareSourceConstants constList
   let raw ← rsCompilePhasesFFI constList
 
   -- Convert RawEnvironment to Environment
@@ -4058,21 +4099,30 @@ def rsCompilePhasesOf (constList : List (Lean.Name × Lean.ConstantInfo)) :
 
 /-- Run all compilation phases using Rust and convert to Lean-friendly types.
     This is the main entry point for getting Rust compilation results. -/
-def rsCompilePhases (leanEnv : Lean.Environment) : IO CompilePhases :=
-  rsCompilePhasesOf leanEnv.constants.toList
+def rsCompilePhases (leanEnv : Lean.Environment) : IO CompilePhases := do
+  let constants ← IO.ofExcept <| Ix.Compile.prepareRegisteredConstants leanEnv leanEnv.constants.toList
+  let raw ← rsCompilePhasesFFI constants
+  return { rawEnv := raw.rawEnv.toEnvironment
+           condensed := raw.condensed.toCondensedBlocks
+           compileEnv := raw.compileEnv.toEnv }
 
 /-- Compile an explicit constant list to Ixon.Env using the Rust
     compiler. Use for compiles over constructed environments (e.g. the
     catalog `--audit` per-library comparison). -/
 def rsCompileEnvOf (constList : List (Lean.Name × Lean.ConstantInfo)) :
     IO Ixon.Env := do
+  let constList ← IO.ofExcept <| Ix.Compile.prepareSourceConstants constList
   let rawEnv ← rsCompileEnvFFI constList
   pure rawEnv.toEnv
 
 /-- Compile a Lean environment to Ixon.Env using the Rust compiler.
     Uses the direct FFI that returns structured Lean objects. -/
-def rsCompileEnv (leanEnv : Lean.Environment) : IO Ixon.Env :=
-  rsCompileEnvOf leanEnv.constants.toList
+def rsCompileEnv (leanEnv : Lean.Environment) : IO Ixon.Env := do
+  let constants ← IO.ofExcept <| Ix.Compile.prepareRegisteredConstants leanEnv leanEnv.constants.toList
+  let raw ← rsCompileEnvFFI constants
+  return raw.toEnv
 
 end
 end Ix.CompileM
+
+

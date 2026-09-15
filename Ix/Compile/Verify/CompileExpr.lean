@@ -112,7 +112,7 @@ inductive StructuralExpr : Ix.Expr → Prop where
       StructuralExpr (.mdata #[] inner hash)
 
 /-- The complete ordinary syntax accepted by the no-surgery compiler,
-including arbitrary totalized metadata maps. -/
+including totalized presentation metadata outside the semantic-contract namespace. -/
 inductive OrdinaryExpr : Ix.Expr → Prop where
   | bvar {idx hash} : OrdinaryExpr (.bvar idx hash)
   | sort {level hash} : OrdinaryExpr (.sort level hash)
@@ -129,7 +129,7 @@ inductive OrdinaryExpr : Ix.Expr → Prop where
   | lit {literal hash} : OrdinaryExpr (.lit literal hash)
   | proj {typeName field val hash} : OrdinaryExpr val →
       OrdinaryExpr (.proj typeName field val hash)
-  | mdata {data inner hash} : OrdinaryExpr inner →
+  | mdata {data inner hash} : SemanticContract.hasMetadata data = false → OrdinaryExpr inner →
       OrdinaryExpr (.mdata data inner hash)
 
 theorem StructuralExpr.ordinary {source : Ix.Expr} :
@@ -140,7 +140,7 @@ theorem StructuralExpr.ordinary {source : Ix.Expr} :
   | .all hty hbody => .all hty.ordinary hbody.ordinary
   | .letE hty hval hbody =>
     .letE hty.ordinary hval.ordinary hbody.ordinary
-  | .mdata hinner => .mdata hinner.ordinary
+  | .mdata hinner => .mdata (by simp [SemanticContract.hasMetadata]) hinner.ordinary
 
 /-- Ordinary syntax paired with the exact finite universe support needed by
 production `compileUniv`.  This is the recursive source domain of the frozen
@@ -171,7 +171,8 @@ inductive SupportedOrdinaryExpr (levelSupport : Ix.Level → Prop) :
       SupportedOrdinaryExpr levelSupport (.lit literal hash)
   | proj {typeName field val hash} : SupportedOrdinaryExpr levelSupport val →
       SupportedOrdinaryExpr levelSupport (.proj typeName field val hash)
-  | mdata {data inner hash} : SupportedOrdinaryExpr levelSupport inner →
+  | mdata {data inner hash} : SemanticContract.hasMetadata data = false →
+      SupportedOrdinaryExpr levelSupport inner →
       SupportedOrdinaryExpr levelSupport (.mdata data inner hash)
 
 theorem SupportedOrdinaryExpr.ordinary {levelSupport : Ix.Level → Prop}
@@ -187,7 +188,7 @@ theorem SupportedOrdinaryExpr.ordinary {levelSupport : Ix.Level → Prop}
     .letE hty.ordinary hval.ordinary hbody.ordinary
   | .lit => .lit
   | .proj hval => .proj hval.ordinary
-  | .mdata hinner => .mdata hinner.ordinary
+  | .mdata hplain hinner => .mdata hplain hinner.ordinary
 
 /-- Every production expression-cache entry in this slice came from the same
 reference compiler and belongs to the supported structural fragment. -/
@@ -1002,8 +1003,9 @@ private theorem compileExprNoSurgeryStep_structural_refines
     let root := innerState.arena.nodes.size.toUInt64
     let state' := allocState innerState (.mdata #[#[]] innerRoot)
     refine ⟨root, state', ?_, hinnerState.of_cache_eq (by rfl)⟩
-    rw [Ix.CompileM.compileExprNoSurgeryStep,
-      run_bind compileEnv blockEnv state _ _, run_compileEmptyKVMap]
+    simp only [Ix.CompileM.compileExprNoSurgeryStep,
+      show SemanticContract.hasMetadata #[] = false from by simp [SemanticContract.hasMetadata], Bool.false_eq_true, ↓reduceIte]
+    rw [run_bind compileEnv blockEnv state _ _, run_compileEmptyKVMap]
     simp only
     rw [run_bind compileEnv blockEnv state _ _, hinnerRun]
     simp only
@@ -2544,9 +2546,9 @@ private theorem compileAppNoSurgery_ordinary_refines
   | proj hval ihval =>
     simpa [Ix.CompileM.compileAppNoSurgery] using
       hrecur hdepth (SupportedOrdinaryExpr.proj hval) hstate href
-  | mdata hinner ihinner =>
+  | mdata hplain hinner ihinner =>
     simpa [Ix.CompileM.compileAppNoSurgery] using
-      hrecur hdepth (SupportedOrdinaryExpr.mdata hinner) hstate href
+      hrecur hdepth (SupportedOrdinaryExpr.mdata hplain hinner) hstate href
   | @app fn arg hash hfn harg ihfn iharg =>
     simp [compileExprRef] at href
     rcases href with ⟨fnTarget, hfnRef, argTarget, hargRef, rfl⟩
@@ -2637,9 +2639,9 @@ private theorem compileAppNoSurgery_ordinary_arena_refines
   | proj hval ihval =>
     simpa [Ix.CompileM.compileAppNoSurgery] using
       hrecur hdepth (SupportedOrdinaryExpr.proj hval) hstate harena hroom href
-  | mdata hinner ihinner =>
+  | mdata hplain hinner ihinner =>
     simpa [Ix.CompileM.compileAppNoSurgery] using
-      hrecur hdepth (SupportedOrdinaryExpr.mdata hinner) hstate harena hroom
+      hrecur hdepth (SupportedOrdinaryExpr.mdata hplain hinner) hstate harena hroom
         href
   | @app fn arg hash hfn harg ihfn iharg =>
     simp [compileExprRef] at href
@@ -3039,7 +3041,7 @@ private theorem compileExprNoSurgeryStep_ordinary_refines
         simp only
         rw [run_bind compileEnv blockEnv valState _ _, run_allocArenaNode]
         rfl
-  | @mdata data inner hash hinner =>
+  | @mdata data inner hash hplain hinner =>
     have hinnerRef :
         compileExprRef (frozenRefCompileCtx compileEnv blockEnv snapshot)
             inner = some target := by
@@ -3060,8 +3062,8 @@ private theorem compileExprNoSurgeryStep_ordinary_refines
     let finalState := allocState innerState node
     refine ⟨root, finalState, ?_,
       hinnerState.alloc node⟩
-    rw [Ix.CompileM.compileExprNoSurgeryStep,
-      run_bind compileEnv blockEnv state _ _, hmetaRun]
+    simp only [Ix.CompileM.compileExprNoSurgeryStep, hplain, Bool.false_eq_true, ↓reduceIte]
+    rw [run_bind compileEnv blockEnv state _ _, hmetaRun]
     simp only
     rw [run_bind compileEnv blockEnv metaState _ _, hinnerRun]
     simp only
@@ -3933,7 +3935,7 @@ private theorem compileExprNoSurgeryStep_ordinary_arena_refines
         simp only
         rw [run_bind compileEnv blockEnv valState _ _, run_allocArenaNode]
         rfl
-  | @mdata data inner hash hinner =>
+  | @mdata data inner hash hplain hinner =>
     have hinnerRef :
         compileExprRef (frozenRefCompileCtx compileEnv blockEnv snapshot)
             inner = some target := by
@@ -3989,8 +3991,8 @@ private theorem compileExprNoSurgeryStep_ordinary_arena_refines
           rw [← hmetaFrame.arena]
           exact ArenaExtends.trans hinnerArena.arenaExtends hallocExtends),
         hfinalGrowth⟩⟩
-    rw [Ix.CompileM.compileExprNoSurgeryStep,
-      run_bind compileEnv blockEnv state _ _, hmetaRun]
+    simp only [Ix.CompileM.compileExprNoSurgeryStep, hplain, Bool.false_eq_true, ↓reduceIte]
+    rw [run_bind compileEnv blockEnv state _ _, hmetaRun]
     simp only
     rw [run_bind compileEnv blockEnv metaState _ _, hinnerRun]
     simp only
@@ -4371,3 +4373,5 @@ theorem compileExpr_run_surgeryFree
   simp [hfree]
 
 end Ix.Compile.Verify
+
+

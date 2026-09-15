@@ -17,7 +17,7 @@ opaque opaqueIdentity (x : Nat) : Nat := x
 open Lean Ix.Compile in
 run_cmd do
   let source ← getConstInfo ``identity
-  let .ok contract := SourceContract.ofTelescope source #[{ binder := .name `x, uses := .linear, resultOwned := some .unique }]
+  let .ok contract := SourceContract.ofTelescope source #[{ binder := .name `x, uses := .linear, result := some .localUnique }]
     | throwError "failed to resolve imported identity fixture"
   let .ok env := registerSourceContract (← getEnv) contract
     | throwError "failed to register imported identity fixture"

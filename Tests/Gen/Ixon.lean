@@ -49,6 +49,18 @@ def genUses : Gen Uses :=
 def genOwned : Gen Owned :=
   elements #[.unique, .shared]
 
+def genLocality : Gen Locality :=
+  elements #[.unrestricted, .local]
+
+def genValueContract : Gen ValueContract :=
+  ValueContract.mk <$> genOwned <*> genLocality
+
+def genBinderContract : Gen BinderContract :=
+  BinderContract.mk <$> genUses <*> genValueContract
+
+def genLetContract : Gen LetContract :=
+  LetContract.mk <$> genBool <*> elements #[.value, .borrowShared] <*> genBinderContract
+
 def genArray (g: Gen α) : Gen (Array α) :=
   Array.mk <$> genList g
 
@@ -95,9 +107,9 @@ partial def genExpr : Gen Expr :=
     (15, .recur <$> genUInt64Small <*> genArray genUInt64Small),
     (5, .prj <$> genUInt64Small <*> genUInt64Small <*> genExpr),
     (5, .app <$> genExpr <*> genExpr),
-    (5, .lam <$> genUses <*> genExpr <*> genExpr),
-    (5, .all <$> genUses <*> genOwned <*> genExpr <*> genExpr),
-    (2, .letE <$> genBool <*> genExpr <*> genExpr <*> genExpr),
+    (5, .lam <$> genBinderContract <*> genExpr <*> genExpr),
+    (5, .all <$> genBinderContract <*> genValueContract <*> genExpr <*> genExpr),
+    (2, .letE <$> genLetContract <*> genExpr <*> genExpr <*> genExpr),
   ]
 
 def genDefinition : Gen Definition :=
@@ -752,3 +764,4 @@ instance : SampleableExt RawEnv := SampleableExt.mkSelfContained genRawEnv
 end Tests.Gen.Ixon
 
 end
+

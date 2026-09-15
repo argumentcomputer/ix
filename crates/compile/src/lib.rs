@@ -9,4 +9,5 @@ pub mod graph;
 pub mod ground;
 pub mod kernel_egress;
 pub mod mutual;
+pub mod semantic_contract;
 pub mod store;

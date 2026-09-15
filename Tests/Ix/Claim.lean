@@ -84,26 +84,26 @@ def claimEncodingTests : TestSeq :=
     (.reveal addr1 (.defn none (some .safe) none none none))
   let revealAllFields := Claim.ser (.reveal addr1
     (.defn (some .defn) (some .safe) (some 3) (some addr2) (some addr3)))
-  -- Eval claim: 0xE3 + 64 + 1 (opt) = 66 bytes; with asm = 98
+  -- Two scope bytes follow each claim tag. Eval = 68 bytes; with asm = 100
   test "Eval tag byte is 0xE3" (evalBytes.data[0]! == 0xE3)
-  ++ test "Eval no-asm size is 66" (evalBytes.size == 66)
-  ++ test "Eval with-asm size is 98" (evalWithAsm.size == 98)
-  -- Check claim: 0xE4 + 32 + 1 = 34 bytes; with asm = 66
+  ++ test "Eval no-asm size is 68" (evalBytes.size == 68)
+  ++ test "Eval with-asm size is 100" (evalWithAsm.size == 100)
+  -- Check: tag + scope + 32 + option = 36 bytes; with asm = 68
   ++ test "Check tag byte is 0xE4" (checkBytes.data[0]! == 0xE4)
-  ++ test "Check no-asm size is 34" (checkBytes.size == 34)
-  ++ test "Check with-asm size is 66" (checkWithAsm.size == 66)
-  -- CheckEnv claim: 0xE5 + 32 + 1 = 34 bytes
+  ++ test "Check no-asm size is 36" (checkBytes.size == 36)
+  ++ test "Check with-asm size is 68" (checkWithAsm.size == 68)
+  -- CheckEnv: tag + scope + 32 + option = 36 bytes
   ++ test "CheckEnv tag byte is 0xE5" (checkEnvBytes.data[0]! == 0xE5)
-  ++ test "CheckEnv no-asm size is 34" (checkEnvBytes.size == 34)
+  ++ test "CheckEnv no-asm size is 36" (checkEnvBytes.size == 36)
   -- Reveal claim: 0xE6
   ++ test "Reveal tag byte is 0xE6" (revealSafetyOnly.data[0]! == 0xE6)
-  -- Reveal safety-only defn: 1 (tag) + 32 (comm) + 1 (variant) + 1 (mask) + 1 (safety) = 36
-  ++ test "Reveal safety-only defn size is 36" (revealSafetyOnly.size == 36)
+  -- Reveal: tag + scope + commitment + variant + mask + safety = 38
+  ++ test "Reveal safety-only defn size is 38" (revealSafetyOnly.size == 38)
   ++ test "Reveal all-fields defn is larger"
        (revealAllFields.size > revealSafetyOnly.size)
-  -- Contains claim: 0xE7 + 64 = 65
+  -- Contains: tag + scope + two addresses = 67
   ++ test "Contains tag byte is 0xE7" (containsBytes.data[0]! == 0xE7)
-  ++ test "Contains size is 65" (containsBytes.size == 65)
+  ++ test "Contains size is 67" (containsBytes.size == 67)
 
 /-! ## Catalog claim: wire pin + Rust digest parity
 
@@ -121,7 +121,7 @@ private def catAsm : Address := Address.blake3 "assumptions".toUTF8
 
 /-- Must equal the Rust pin in `proof.rs::catalog_claim_wire_bytes_pinned`. -/
 private def catalogDigestPin : String :=
-  "608af1f5477517d14427da664ae7a62d46cd9236b2183481c7801910683579bf"
+  "1ae7fec8efde892b6b540888df70d53977a264bbc84be300d4335ce04c916072"
 
 def catalogClaimTests : TestSeq :=
   let someBytes := Claim.ser (.catalog catMembers catContent (some catAsm))
@@ -134,8 +134,8 @@ def catalogClaimTests : TestSeq :=
     | .error _ => false
   test "Catalog tag is 2 bytes 0xE8 0x08"
     (someBytes.data[0]! == 0xE8 && someBytes.data[1]! == 0x08)
-  ++ test "Catalog no-asm size is 99" (noneBytes.size == 2 + 64 + 1)
-  ++ test "Catalog with-asm size is 131" (someBytes.size == 2 + 64 + 33)
+  ++ test "Catalog no-asm size is 69" (noneBytes.size == 4 + 64 + 1)
+  ++ test "Catalog with-asm size is 101" (someBytes.size == 4 + 64 + 33)
   ++ test "Catalog digest parity with Rust pin"
        (toString (Address.blake3 someBytes) == catalogDigestPin)
   ++ test "Catalog proof wrapper tag is single-byte 0xF5"
@@ -150,3 +150,4 @@ public def Tests.Claim.suite : List TestSeq := [
   catalogClaimTests,
   checkIO "Claim serde roundtrips" (∀ c : Claim, claimSerde c),
 ]
+

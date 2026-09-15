@@ -142,7 +142,7 @@ def compileExprRef (ctx : RefCompileCtx) : Ix.Expr → Option Ixon.Expr
   | .forallE _ ty body _ _ =>
     return .leanAll (← compileExprRef ctx ty) (← compileExprRef ctx body)
   | .letE _ ty val body nonDep _ =>
-    return .letE nonDep (← compileExprRef ctx ty) (← compileExprRef ctx val)
+    return .leanLet nonDep (← compileExprRef ctx ty) (← compileExprRef ctx val)
       (← compileExprRef ctx body)
   | .lit literal _ => do
     let refIdx ← ctx.literalRef literal
@@ -218,7 +218,7 @@ theorem compileExprRef_spineCounts {ctx : RefCompileCtx}
   | letE _ ty value body nonDep _ ihty ihvalue ihbody =>
     simp [compileExprRef] at h
     rcases h with ⟨ty', hty, value', hvalue, body', hbody, rfl⟩
-    simp [Ixon.Expr.appCount, Ixon.Expr.lamCount, Ixon.Expr.allCount,
+    simp [Ixon.Expr.leanLet, Ixon.Expr.appCount, Ixon.Expr.lamCount, Ixon.Expr.allCount,
       sourceAppCount, sourceLamCount, sourceAllCount]
   | lit literal _ =>
     cases literal <;> simp [compileExprRef] at h <;>
@@ -342,7 +342,8 @@ theorem compileExprRef_leanFragment {ctx : RefCompileCtx}
   | letE _ ty val body nonDep _ ihty ihval ihbody =>
     simp [compileExprRef] at h
     rcases h with ⟨ty', hty, val', hval, body', hbody, rfl⟩
-    simp [Ixon.Expr.leanFragment, ihty hty, ihval hval, ihbody hbody]
+    simp [Ixon.Expr.leanLet, Ixon.LetContract.lean, Ixon.Expr.leanFragment,
+      ihty hty, ihval hval, ihbody hbody]
   | lit literal _ =>
     cases literal <;> simp [compileExprRef] at h <;>
       rcases h with ⟨idx, hidx, rfl⟩ <;> rfl

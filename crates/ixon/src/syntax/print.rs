@@ -8,6 +8,8 @@
 //! pinned `Name#hash` references are laid out — exists to reparse to
 //! the same tree.
 
+use crate::contract::{BinderContract, LetKind, Locality, ValueContract};
+use crate::expr::{Owned, Uses};
 use ix_common::env::{BinderInfo, NameComponent};
 
 use crate::syntax::ast::{
@@ -302,27 +304,37 @@ fn term_doc_bare(t: &Term) -> Doc {
       ds.push(group(nest(cat(vec![line(), term_doc(body, 0)]))));
       cat(ds)
     },
-    Term::Pi { binders, body, .. } => {
+    Term::Pi { binders, result, body, .. } => {
       let mut ds = Vec::new();
       for b in binders {
         ds.push(binder_doc(b));
         ds.push(text(" "));
       }
       ds.push(text("→"));
-      ds.push(group(nest(cat(vec![line(), term_doc(body, 1)]))));
+      ds.push(group(nest(cat(vec![line(), result_doc(*result, body)]))));
       cat(ds)
     },
-    Term::Arrow { dom, cod, .. } => cat(vec![
+    Term::Arrow { result, dom, cod, .. } => cat(vec![
       term_doc(dom, 2),
       text(" →"),
-      group(nest(cat(vec![line(), term_doc(cod, 1)]))),
+      group(nest(cat(vec![line(), result_doc(*result, cod)]))),
     ]),
-    Term::Let { non_dep, name, ty, val, body, .. } => {
-      let kw = if *non_dep { "have" } else { "let" };
+    Term::Let { contract, name, ty, val, body, .. } => {
+      let kw = if contract.non_dep { "have" } else { "let" };
+      let borrow =
+        if contract.kind == LetKind::BorrowShared { " borrow" } else { "" };
+      let annotated = contract.kind != LetKind::Value
+        || contract.binder != BinderContract::default();
+      let open = if annotated { "(" } else { "" };
+      let close = if annotated { ")" } else { "" };
       cat(vec![
-        text(format!("{kw} {} : ", binder_name_str(name))),
+        text(format!(
+          "{kw}{borrow} {open}{}{} : ",
+          binder_prefix(contract.binder),
+          binder_name_str(name)
+        )),
         term_doc(ty, 0),
-        text(" :="),
+        text(format!("{close} :=")),
         group(nest(cat(vec![line(), term_doc(val, 0)]))),
         text(";"),
         hard(),
@@ -336,10 +348,54 @@ fn term_doc_bare(t: &Term) -> Doc {
   }
 }
 
+fn value_prefix(value: ValueContract) -> String {
+  let mut prefix = String::new();
+  if value.locality == Locality::Local {
+    prefix.push('~');
+  }
+  if value.owned == Owned::Unique {
+    prefix.push('!');
+  }
+  prefix
+}
+
+fn binder_prefix(contract: BinderContract) -> String {
+  let mut prefix = value_prefix(contract.value);
+  match contract.uses {
+    Uses::Erased => prefix.push('0'),
+    Uses::Linear => prefix.push('1'),
+    Uses::Affine => prefix.push('&'),
+    Uses::Many => {},
+  }
+  if !prefix.is_empty() {
+    prefix.push(' ');
+  }
+  prefix
+}
+
+fn result_doc(result: ValueContract, term: &Term) -> Doc {
+  let prefix = value_prefix(result);
+  if prefix.is_empty() {
+    term_doc(term, 1)
+  } else {
+    cat(vec![text(format!("{prefix} ")), term_doc(term, 1)])
+  }
+}
+
 fn binder_name_str(b: &BinderName) -> String {
   match b {
     BinderName::Ident(c, _) => component_str(c),
     BinderName::Anon(_) => "_".to_string(),
+  }
+}
+
+// Numerals at the start of an unnamed instance type overlap usage prefixes.
+fn numeric_head(term: &Term) -> bool {
+  match term {
+    Term::NatLit(..) => true,
+    Term::App { head, .. } => numeric_head(head),
+    Term::Arrow { dom, .. } => numeric_head(dom),
+    _ => false,
   }
 }
 
@@ -350,10 +406,15 @@ fn binder_doc(b: &BinderGroup) -> Doc {
     BinderInfo::StrictImplicit => ("⦃", "⦄"),
     BinderInfo::InstImplicit => ("[", "]"),
   };
-  let mut ds = vec![text(open)];
+  let mut ds = vec![text(open), text(binder_prefix(b.contract))];
   if b.names.is_empty() {
-    // Unnamed instance binder `[T]`.
-    ds.push(term_doc(&b.ty, 0));
+    // Keep a numeric type distinct from a usage prefix, e.g. `[(1)]`.
+    let ty = term_doc(&b.ty, 0);
+    if b.contract == BinderContract::default() && numeric_head(&b.ty) {
+      ds.push(cat(vec![text("("), ty, text(")")]));
+    } else {
+      ds.push(ty);
+    }
   } else {
     let names: Vec<String> = b.names.iter().map(binder_name_str).collect();
     ds.push(text(format!("{} : ", names.join(" "))));
@@ -533,16 +594,13 @@ pub fn print_decl(d: &Decl) -> String {
 
 /// Print a whole file in canonical form: sections (imports block,
 /// declarations, optional trailing main expression) separated by
-/// blank lines, trailing newline. The version header is emitted only
-/// for versions ≥ 2 — absent means version 1, forever. The main
+/// blank lines, trailing newline. The version header is always emitted. The main
 /// expression's value prints at precedence 2 — `fun`/`let`/arrows
 /// parenthesize, so `⊢ (fun (x : A) => x) : A → A` rather than the
 /// visually ambiguous bare form (both reparse identically).
 pub fn print_file(f: &File) -> String {
   let mut sections: Vec<String> = Vec::new();
-  if f.version != 1 {
-    sections.push(format!("ixon {}", f.version));
-  }
+  sections.push(format!("ixon {}", f.version));
   if !f.imports.is_empty() {
     sections
       .push(f.imports.iter().map(import_str).collect::<Vec<_>>().join("\n"));

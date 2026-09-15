@@ -21,7 +21,7 @@ run_cmd do
     | throwError "imported identity contract is absent"
   unless contract.usesAt ⟨.type, []⟩ == .linear && contract.usesAt ⟨.body, []⟩ == .linear do
     throwError "imported identity modes changed"
-  unless (contract.binders.find? (·.site == ⟨.type, []⟩)).bind (·.resultOwned) == some .unique do
+  unless (contract.binders.find? (·.site == ⟨.type, []⟩)).bind (·.result) == some .localUnique do
     throwError "imported result ownership changed"
   let hint := resolved.measureHints[0]!
   unless hint.source.name == identity.name && hint.argument == 0 && hint.fixedStep == some 1 do

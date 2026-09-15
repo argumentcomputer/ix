@@ -40,20 +40,20 @@ private def expectError (actual : Except SourceContractError α) (expected : Sou
   | .ok _ => false
 
 private def resolvedModes (actual : Except SourceContractError ResolvedSourceContract) :
-    Array (BinderSite × Ixon.Uses × Option Ixon.Owned) :=
+    Array (BinderSite × Ixon.Uses × Option Ixon.ValueContract) :=
   match actual with
   | .error _ => #[]
-  | .ok contract => contract.binders.map fun binder => (binder.site, binder.uses, binder.resultOwned)
+  | .ok contract => contract.binders.map fun binder => (binder.site, binder.uses, binder.result)
 
 def telescopeTests : TestSeq :=
   test "identity resolves linear/unique type and linear body at independent sites"
-    (resolvedModes (resolveTelescope (identity) #[{ binder := .position 0, uses := .linear, resultOwned := some .unique }]) ==
+    (resolvedModes (resolveTelescope (identity) #[{ binder := .position 0, uses := .linear, result := some .unique }]) ==
       #[(⟨.type, []⟩, .linear, some .unique), (⟨.body, []⟩, .linear, none)]) ++
   test "all four usage modes are accepted without inferring resource validity"
     ([Ixon.Uses.erased, .linear, .affine, .many].all fun uses =>
-      (resolveTelescope (identity) #[{ binder := .position 0, uses, resultOwned := some .shared }]).isOk) ++
+      (resolveTelescope (identity) #[{ binder := .position 0, uses, result := some .shared }]).isOk) ++
   test "ownership shorthand affects only the selected curried arrow"
-    (resolvedModes (resolveTelescope curried #[{ binder := .name `y, uses := .linear, resultOwned := some .unique }]) ==
+    (resolvedModes (resolveTelescope curried #[{ binder := .name `y, uses := .linear, result := some .unique }]) ==
       #[(⟨.type, [.binderBody]⟩, .linear, some .unique),
         (⟨.body, [.binderBody]⟩, .linear, none)]) ++
   test "implicit argument retains its position and does not imply erasure"
@@ -98,7 +98,7 @@ def occurrenceTests : TestSeq := Id.run do
     test "position disambiguates shadowed declaration binders"
       ((resolveTelescope shadowed #[{ binder := .position 1, uses := .linear }]).isOk) ++
     test "metadata wrappers appear in resolved telescope paths"
-      (resolvedModes (resolveTelescope wrapped #[{ binder := .position 0, uses := .linear, resultOwned := some .unique }]) ==
+      (resolvedModes (resolveTelescope wrapped #[{ binder := .position 0, uses := .linear, result := some .unique }]) ==
         #[(⟨.type, [.metadata]⟩, .linear, some .unique),
           (⟨.body, [.metadata]⟩, .linear, none)]) ++
     test "invalid structural edges fail before canonicalization"
@@ -125,8 +125,8 @@ def rejectionTests : TestSeq := Id.run do
       (expectError (({ source := identity, binders := #[{ site := typeSite, uses := .linear }] } : SourceContract).resolve identity)
         (.inconsistentTelescope `identity 0 .linear .many)) ++
     test "a lambda has no independent result-ownership field"
-      (expectError (({ source := identity, binders := #[{ site := bodySite, uses := .many, resultOwned := some .shared }] } : SourceContract).resolve identity)
-        (.ownershipOnLambda `identity bodySite)) ++
+      (expectError (({ source := identity, binders := #[{ site := bodySite, uses := .many, result := some .shared }] } : SourceContract).resolve identity)
+        (.resultOnNonArrow `identity bodySite)) ++
     test "source binder spelling is part of the occurrence fingerprint"
       (expectError (contract.resolve renamed) (.staleSource `identity)) ++
     test "source BinderInfo drift invalidates a previously resolved contract"
@@ -186,53 +186,55 @@ def inputTests : TestSeq := Id.run do
       (expectError (({ hinted with measureHints := hinted.measureHints ++ hinted.measureHints }).resolve)
         (.duplicateMeasure `identity))
 
-def ownershipRegionTests : TestSeq := Id.run do
+def valueContractTests : TestSeq := Id.run do
   let source := identity
   let typeSite : BinderSite := ⟨.type, []⟩
   let bodySite : BinderSite := ⟨.body, []⟩
-  let unique : TelescopeContract := { binder := .position 0, uses := .many, owned := .unique }
-  let regional (name : Name) : TelescopeContract :=
-    { unique with uses := .affine, region := some name }
-  let resolveRegion (names : Array Name) (name : Name) := do
-    (← SourceContract.ofTelescope source #[regional name] names).resolve source
+  let unique : TelescopeContract := { binder := .position 0, uses := .many, value := .unique }
   let ownershipMismatch : SourceContract := {
-    source, binders := #[{ site := typeSite, uses := .many, owned := .unique }] }
-  let regionMismatch : SourceContract := {
-    source, regions := #[`a],
-    binders := #[{ site := typeSite, uses := .many, region := some `a }] }
-  return test "unique binder ownership is independent of arrow-result ownership"
+    source, binders := #[{ site := typeSite, uses := .many, value := .unique }] }
+  let localityMismatch : SourceContract := {
+    source, binders := #[{ site := typeSite, uses := .many, value := .localShared }] }
+  let values : List Ixon.ValueContract := [.shared, .unique, .localShared, .localUnique]
+  let modes : List Ixon.Uses := [.erased, .linear, .affine, .many]
+  let binding := definition `binding natType (.letE `view natType (.const `owner []) (.bvar 0) false)
+  let borrow : SourceContract := {
+    source := binding
+    binders := #[{ site := bodySite, uses := .affine, value := .localShared, letKind := .borrowShared }] }
+  return test "unique input is independent of the arrow result"
       (match resolveTelescope source #[unique] with
-        | .ok result => result.ownedAt typeSite == .unique && result.ownedAt bodySite == .unique &&
+        | .ok result => result.valueAt typeSite == .unique && result.valueAt bodySite == .unique &&
           result.usesAt typeSite == .many &&
-          (result.binders.find? (·.site == typeSite)).bind (·.resultOwned) == some .shared
+          (result.binders.find? (·.site == typeSite)).bind (·.result) == some .shared
         | .error _ => false) ++
-    test "binder ownership composes with all four usages without claiming validity"
-      ([Ixon.Uses.erased, .linear, .affine, .many].all fun uses =>
-        (resolveTelescope source #[{ unique with uses }]).isOk) ++
-    test "region parameters resolve to declaration-local indices on both roots"
-      (match resolveRegion #[`b, `a] `a with
-        | .ok result => result.regionAt typeSite == some 1 && result.regionAt bodySite == some 1 &&
-          result.ownedAt bodySite == .unique && result.usesAt bodySite == .affine
+    test "all 64 arrow contracts preserve input, result, and matching lambda fields"
+      (modes.all fun uses => values.all fun value => values.all fun output =>
+        match resolveTelescope source #[{ binder := .position 0, uses, value, result := some output }] with
+        | .ok c => c.valueAt typeSite == value && c.valueAt bodySite == value &&
+          c.usesAt typeSite == uses && c.usesAt bodySite == uses &&
+          (c.binders.find? (·.site == typeSite)).bind (·.result) == some output
         | .error _ => false) ++
-    test "renaming a bound region preserves all resolved assertions"
-      (match resolveRegion #[`a] `a, resolveRegion #[`renamed] `renamed with
-        | .ok first, .ok second => first.semantics == second.semantics
-        | _, _ => false) ++
-    test "unbound region names are rejected"
-      (expectError (resolveRegion #[`a] `missing) (.unknownRegion `identity `missing)) ++
-    test "duplicate region parameters are rejected"
-      (expectError (resolveRegion #[`a, `a] `a) (.duplicateRegion `identity `a)) ++
-    test "type and body must agree on binder ownership"
+    test "type and body must agree on ownership"
       (expectError (ownershipMismatch.resolve source)
-        (.inconsistentOwnership `identity 0 .unique .shared)) ++
-    test "type and body must agree on the region bound"
-      (expectError (regionMismatch.resolve source)
-        (.inconsistentRegion `identity 0 (some 0) none))
+        (.inconsistentValue `identity 0 .unique .shared)) ++
+    test "type and body must agree on locality"
+      (expectError (localityMismatch.resolve source)
+        (.inconsistentValue `identity 0 .localShared .shared)) ++
+    test "borrow let retains its explicit kind and shared local view"
+      (match borrow.resolve binding with
+        | .ok c => c.binders[0]!.kind == .letE && c.binders[0]!.letKind == .borrowShared &&
+          c.binders[0]!.value == .localShared && c.binders[0]!.result.isNone
+        | .error _ => false) ++
+    test "a shared borrow cannot manufacture unique ownership"
+      (expectError (({ borrow with binders := borrow.binders.map fun (b : BinderContract) => { b with value := .localUnique } }).resolve binding)
+        (.invalidBorrowView `binding bodySite)) ++
+    test "a borrow flag cannot annotate a function binder"
+      (expectError (resolveTelescope source #[{ unique with letKind := .borrowShared }])
+        (.borrowOnNonLet `identity typeSite))
 
 def markerTests : TestSeq := Id.run do
   let annotation : BinderAnnotation := {
-    origin := 0, binder := `x, uses := .affine, owned := .unique
-    region := some `a, regions := #[`a] }
+    origin := 0, binder := `x, uses := .affine, value := .localUnique }
   let data := annotation.toMetadata
   let borrowed := Lean.markBorrowed natType
   let duplicate := { data with entries := (sourceAnnotationKey, .ofNat 1) :: data.entries }
@@ -247,7 +249,7 @@ def markerTests : TestSeq := Id.run do
     rules := [⟨`constructor, 0, .mdata missingVersion natType⟩]
     k := false, isUnsafe := false }
   let shared := (List.range 28).foldl (fun expr _ => Expr.app expr expr) natType
-  return test "source annotation metadata roundtrips ownership, usage, region, and origin"
+  return test "source annotation metadata roundtrips ownership, usage, locality, and origin"
       (match BinderAnnotation.ofMetadata? data with
         | .ok decoded => decoded == some annotation
         | .error _ => false) ++
@@ -276,13 +278,13 @@ def markerTests : TestSeq := Id.run do
         match SourceContract.fromAnnotations marked with
         | .ok contract =>
           let changed : SourceContract := { contract with
-            binders := contract.binders.map fun binder => { binder with owned := .shared } }
+            binders := contract.binders.map fun binder => { binder with value := .shared } }
           contract.binders.size == 2 && (contract.resolve marked).isOk &&
           !(changed.resolve marked).isOk
         | .error _ => false)
 
 def suite : List TestSeq :=
-  [telescopeTests, occurrenceTests, rejectionTests, inputTests, ownershipRegionTests, markerTests]
+  [telescopeTests, occurrenceTests, rejectionTests, inputTests, valueContractTests, markerTests]
 
 end Tests.Ix.SourceContract
 

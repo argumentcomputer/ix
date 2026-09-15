@@ -15,8 +15,7 @@ private def plainSource : ConstantInfo := .axiomInfo {
   isUnsafe := false }
 
 private def annotation : BinderAnnotation := {
-  origin := 0, binder := `x, uses := .affine, owned := .unique
-  region := some `a, regions := #[`a] }
+  origin := 0, binder := `x, uses := .affine, value := .localUnique }
 
 private def markedSource : ConstantInfo := .axiomInfo {
   name := plainSource.name, levelParams := []
@@ -30,17 +29,17 @@ private def ioTest (description : String) (check : IO Bool) : TestSeq :=
 
 private def unsupported (result : Except String α) : Bool :=
   match result with
-  | .error message => message.startsWith "source binder contracts are not supported"
+  | .error message => (message.splitOn "external resource interface is absent").length > 1
   | .ok _ => false
 
 def suite : List TestSeq := [
-  ioTest "Lean constant-list driver rejects source markers before canonicalization" do
+  ioTest "Lean constant-list driver rejects an unadmitted annotated axiom" do
     return unsupported (← compileLeanConsts (constants markedSource) (numWorkers := 1)),
   ioTest "explicit Lean input rejects a missing annotation registry" do
     match ← compileLeanInput (.plain (constants markedSource)) (numWorkers := 1) with
     | .error message => return (message.splitOn "missingContract").length > 1
     | .ok _ => return false,
-  ioTest "explicit Lean input validates and rejects unsupported out-of-band contracts" do
+  ioTest "explicit Lean input requires an assumption for an annotated axiom" do
     let .ok contract := SourceContract.ofTelescope plainSource #[
       { binder := .position 0, uses := .linear }]
       | return false
@@ -61,7 +60,7 @@ def suite : List TestSeq := [
           let _ ← rsCompileEnvBytesFFI (constants markedSource) output.toString allowPartial
           pure false
         catch error =>
-          pure ((error.toString.splitOn "source binder contracts are not supported").length > 1)
+          pure ((error.toString.splitOn "unresolved source binder contracts").length > 1)
         if !rejected || (← output.pathExists) ||
             (← (System.FilePath.mk (output.toString ++ ".tmp")).pathExists) then
           return false
@@ -73,3 +72,4 @@ def suite : List TestSeq := [
 end Tests.Ix.SourceContract.Driver
 
 end
+

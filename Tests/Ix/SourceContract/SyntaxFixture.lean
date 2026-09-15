@@ -19,25 +19,34 @@ def withInstance {0 α : Type} [& inst : Inhabited α] : α := default
 def strictImplicit ⦃0 α : Type⦄ (1 x : α) : α := x
 def shadowed (1 _x : Nat) (& _x : Nat) : Nat := _x
 
-regions 'a in
-def nativeBorrow (!&'a x : @& Nat) : Nat := x
+def nativeBorrow (~!& x : @& Nat) : Nat := x
 
-regions 'a 'b in
-def twoRegions (!&'a x : Nat) (1'b y : Nat) : Nat := x + y
+def twoLocal (~!& x : Nat) (1~ y : Nat) : Nat := x + y
 
-regions 'renamed in
-def renamedRegion (!&'renamed value : Nat) : Nat := value
+def renamedLocal (~!& value : Nat) : Nat := value
 
-regions 'left 'right in
-def renamedTwoRegions (!&'left first : Nat) (1'right second : Nat) : Nat := first + second
+def renamedTwoLocal (~!& first : Nat) (1~ second : Nat) : Nat := first + second
 
-regions 'a in
-def unrestrictedRegion ('a x : Nat) : Nat := x
+def localShared (~ x : Nat) : Nat := x
 
-regions 'a in
-def uniqueRegion (!'a x : Nat) : Nat := x
+def localUnique (~! x : Nat) : Nat := x
 
 @[inline] private def privateIdentity (!1 x : Nat) : Nat := x
+
+def localResult (~ x : Nat) : ~ Nat := x
+def localUniqueResult (~!1 x : Nat) : ~! Nat := x
+def curriedResult (x y : Nat) : ~ Nat := x + y
+def dependentArrow : (~ _x : Nat) → ~ Nat := fun x => x
+def anonymousArrow : Nat → ~! Nat := fun x => x
+def quantified : ∀ (~ _x : Nat), ~ Nat := fun x => x
+def nestedLambda (x : Nat) : Nat := (fun (~1 y : Nat) => y) x
+def lambdaDefinition := fun (~1 x : Nat) => x
+def localLet (x : Nat) : Nat :=
+  let (~!1 y : Nat) := x
+  y
+def sharedLoan (!1 owner : Nat) : Nat :=
+  let borrow (~ view : Nat) := owner
+  view
 
 def privateDeclaration : Lean.Name := ``privateIdentity
 
@@ -54,7 +63,7 @@ run_cmd do
   | .error error => Lean.throwError m!"{error}"
 
 example : linear 3 = 3 := rfl
-example : twoRegions 2 5 = 7 := rfl
+example : twoLocal 2 5 = 7 := rfl
 example : privateIdentity 4 = 4 := rfl
 example : ordinaryChar = 'a' := rfl
 

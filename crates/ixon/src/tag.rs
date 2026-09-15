@@ -94,6 +94,9 @@ impl Tag4 {
     } else {
       u64::from(small)
     };
+    if large && (size < 8 || u64_byte_count(size) != small + 1) {
+      return Err("Tag4::get: noncanonical integer".into());
+    }
     Ok(Tag4 { flag, size })
   }
 
@@ -154,6 +157,9 @@ impl Tag2 {
     } else {
       u64::from(small)
     };
+    if large && (size < 32 || u64_byte_count(size) != small + 1) {
+      return Err("Tag2::get: noncanonical integer".into());
+    }
     Ok(Tag2 { flag, size })
   }
 
@@ -212,6 +218,9 @@ impl Tag0 {
     } else {
       u64::from(small)
     };
+    if large && (size < 128 || u64_byte_count(size) != small + 1) {
+      return Err("Tag0::get: noncanonical integer".into());
+    }
     Ok(Tag0 { size })
   }
 

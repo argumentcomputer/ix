@@ -40,7 +40,8 @@ public import Ix.CanonM
 public import Ix.Ground
 public import Ix.CompileM
 public import Ix.AuxGen.CompileAux
-public import Ix.Compile.SourceContract
+public import Ix.Compile.SourceContract.Transport
+public import Ix.Resource.Validate
 public section
 
 namespace Ix.CompileM
@@ -1019,13 +1020,29 @@ structure LeanPipelineOut where
     materialized pipeline.
 
     See the section docstring; phase timings print when `dbg` is set. -/
-def compileLeanConsts (consts : List (Lean.Name × Lean.ConstantInfo))
+def inspectSemanticSource (source : Lean.ConstantInfo) : Except String Unit := do
+  if !Ix.Compile.sourceHasSemanticContracts source then return
+  let (canonical, _) := (Ix.CanonM.canonConst source).run {}
+  let _ ← Ix.SemanticContract.inspect canonical.getCnst.type
+  match canonical with
+  | .defnInfo info => let _ ← Ix.SemanticContract.inspect info.value; pure ()
+  | .thmInfo info => let _ ← Ix.SemanticContract.inspect info.value; pure ()
+  | .opaqueInfo info => let _ ← Ix.SemanticContract.inspect info.value; pure ()
+  | .axiomInfo _ => pure ()
+  | _ => throw s!"annotated inductive/constructor/recursor transformations are unsupported: {source.name}"
+
+def compileDecoratedConsts (consts : List (Lean.Name × Lean.ConstantInfo))
     (rustRef : Option (Std.HashMap Name Address) := none)
     (numWorkers : Nat := 32) (dbg : Bool := false)
+    (resourceProfile : Option Ix.Resource.Profile := none)
     : IO (Except String LeanPipelineOut) := do
+  let annotated := consts.any fun (_, source) => Ix.Compile.sourceHasSemanticContracts source
   for (name, source) in consts do
     if Ix.Compile.sourceHasAnnotations source then
-      return .error s!"source binder contracts are not supported by this compiler yet: {name}"
+      return .error s!"unresolved source binder contracts: {name}"
+    match inspectSemanticSource source with
+    | .error error => return .error error
+    | .ok _ => pure ()
   -- IX_COMPILE_DBG=1 forces phase timing + the driver's periodic memory
   -- attribution trace without threading a flag through callers.
   let dbg := dbg || (← IO.getEnv "IX_COMPILE_DBG").isSome
@@ -1146,7 +1163,15 @@ def compileLeanConsts (consts : List (Lean.Name × Lean.ConstantInfo))
       IO.println s!"  [compile-lean] {cenv.ungrounded.size} per-block compile failures"
       for (n, e) in cenv.ungrounded.toList.take 5 do
         IO.println s!"    failed: {n.pretty}: {e.take 200}"
-    -- 6. Serialize.
+    -- Semantic emission is atomic: a failed source declaration must not
+    -- disappear into an otherwise successful partial artifact.
+    if annotated || resourceProfile.isSome then
+      if !ungrounded.isEmpty || !cenv.ungrounded.isEmpty then
+        return .error "resource compilation requires the complete requested closure"
+      match Ix.Resource.validate ixonEnv (resourceProfile.getD (Ix.Resource.standardProfile ixonEnv)) with
+      | .error error => return .error error
+      | .ok _ => pure ()
+    -- 6. Serialize only after the combined validation succeeds.
     match Ixon.serEnv ixonEnv with
     | .error e => return .error s!"serEnv failed: {e}"
     | .ok bytes =>
@@ -1159,19 +1184,45 @@ def compileLeanConsts (consts : List (Lean.Name × Lean.ConstantInfo))
         blockCount := condensed.blocks.size
         digests }
 
-/-- Explicit frontend boundary. Contract resolution runs before compilation.
-The current production emitter accepts only ordinary source; semantic contracts
-are rejected until transport through canonicalization and rewriting is complete.
-Optional measure proposals do not alter ordinary output. -/
+/-- Explicit frontend boundary: resolve occurrence contracts before
+canonicalization, then validate resources and erased types before emission. -/
 def compileLeanInput (input : Ix.Compile.CompileInput)
     (rustRef : Option (Std.HashMap Name Address) := none)
-    (numWorkers : Nat := 32) (dbg : Bool := false) :
+    (numWorkers : Nat := 32) (dbg : Bool := false)
+    (resourceProfile : Option Ix.Resource.Profile := none) :
     IO (Except String LeanPipelineOut) := do
-  let resolved ← match input.resolve with
-    | .ok resolved => pure resolved
+  let constants ← match input.prepare with
+    | .ok constants => pure constants
+    | .error error => return .error error
+  compileDecoratedConsts constants rustRef numWorkers dbg resourceProfile
+
+/-- Compile an isolated source list, extracting its checked occurrence records. -/
+def compileLeanConsts (consts : List (Lean.Name × Lean.ConstantInfo))
+    (rustRef : Option (Std.HashMap Name Address) := none)
+    (numWorkers : Nat := 32) (dbg : Bool := false)
+    (resourceProfile : Option Ix.Resource.Profile := none) :
+    IO (Except String LeanPipelineOut) := do
+  let input ← match Ix.Compile.CompileInput.fromAnnotations consts with
+    | .ok input => pure input
     | .error error => return .error (toString error)
-  if let some contract := resolved.contracts[0]? then
-    return .error s!"source binder contracts are not supported by this compiler yet: {contract.source.name}"
-  compileLeanConsts resolved.constants rustRef numWorkers dbg
+  compileLeanInput input rustRef numWorkers dbg resourceProfile
+
+/-- Native compiler entrypoint with an explicitly committed resource profile. -/
+@[extern "rs_compile_env_to_ixon_profile"]
+opaque rsCompileEnvProfileFFI :
+  @& List (Lean.Name × Lean.ConstantInfo) → @& ByteArray → IO Ixon.RawEnv
+
+def rsCompileInput (input : Ix.Compile.CompileInput)
+    (resourceProfile : Option Ix.Resource.Profile := none) : IO Ixon.Env := do
+  let constants ← IO.ofExcept input.prepare
+  let raw ← match resourceProfile with
+    | none => rsCompileEnvFFI constants
+    | some profile =>
+      let _ ← IO.ofExcept profile.address
+      rsCompileEnvProfileFFI constants profile.bytes
+  return raw.toEnv
 
 end Ix.CompileM
+
+
+

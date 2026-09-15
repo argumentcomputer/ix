@@ -21,9 +21,9 @@ structure BinderAnnotation where
   origin : Nat
   binder : Lean.Name
   uses : Ixon.Uses
-  owned : Ixon.Owned
-  region : Option Lean.Name
-  regions : Array Lean.Name
+  value : Ixon.ValueContract
+  result : Option Ixon.ValueContract := none
+  letKind : Ixon.LetKind := .value
   deriving BEq, Repr, Inhabited
 
 def hasSourceAnnotation (data : Lean.MData) : Bool :=
@@ -31,15 +31,13 @@ def hasSourceAnnotation (data : Lean.MData) : Bool :=
 
 def BinderAnnotation.toMetadata (annotation : BinderAnnotation) : Lean.MData := Id.run do
   let mut data := ({} : Lean.MData)
-    |>.setNat sourceAnnotationKey 1
+    |>.setNat sourceAnnotationKey 3
     |>.setNat `ix.source.binder.origin annotation.origin
     |>.setName `ix.source.binder.name annotation.binder
-    |>.setNat `ix.source.binder.uses annotation.uses.toBits.toNat
-    |>.setNat `ix.source.binder.owned annotation.owned.toBits.toNat
-    |>.setSyntax `ix.source.binder.regions
-      (Lean.mkNullNode (annotation.regions.map fun name => (Lean.mkIdent name).raw))
-  if let some region := annotation.region then
-    data := data.setName `ix.source.binder.region region
+    |>.setNat `ix.source.binder.contract (Ixon.BinderContract.toBits ⟨annotation.uses, annotation.value⟩).toNat
+    |>.setNat `ix.source.binder.letKind (match annotation.letKind with | .value => 0 | .borrowShared => 1)
+  if let some result := annotation.result then
+    data := data.setNat `ix.source.binder.result result.toBits.toNat
   return data
 
 /-- Strictly decode the reserved namespace. Other metadata, including Lean's
@@ -48,41 +46,37 @@ are errors, including when the version marker itself is missing. -/
 def BinderAnnotation.ofMetadata? (data : Lean.MData) : Except String (Option BinderAnnotation) := do
   if !hasSourceAnnotation data then return none
   let keys := #[sourceAnnotationKey, `ix.source.binder.origin, `ix.source.binder.name,
-    `ix.source.binder.uses, `ix.source.binder.owned, `ix.source.binder.regions,
-    `ix.source.binder.region]
+    `ix.source.binder.contract, `ix.source.binder.result, `ix.source.binder.letKind]
   let mut seen : Std.HashSet Lean.Name := {}
   for (key, _) in data.entries do
     if sourceAnnotationKey.isPrefixOf key then
       if !keys.contains key then throw s!"unknown source annotation field {key}"
       if seen.contains key then throw s!"duplicate source annotation field {key}"
       seen := seen.insert key
-  let some (.ofNat 1) := data.find sourceAnnotationKey
+  let some (.ofNat 3) := data.find sourceAnnotationKey
     | throw "unsupported or missing source annotation version"
   let some (.ofNat origin) := data.find `ix.source.binder.origin
     | throw "missing source annotation origin"
   let some (.ofName binder) := data.find `ix.source.binder.name
     | throw "missing source binder name"
-  let some (.ofNat uses) := data.find `ix.source.binder.uses
-    | throw "missing source binder usage"
-  if uses > 3 then throw "invalid source binder usage"
-  let some uses := Ixon.Uses.ofBits? uses.toUInt8
-    | throw "invalid source binder usage"
-  let some (.ofNat owned) := data.find `ix.source.binder.owned
-    | throw "missing source binder ownership"
-  if owned > 1 then throw "invalid source binder ownership"
-  let some owned := Ixon.Owned.ofBits? owned.toUInt8
-    | throw "invalid source binder ownership"
-  let some (.ofSyntax regions) := data.find `ix.source.binder.regions
-    | throw "missing source region parameters"
-  unless regions.isOfKind Lean.nullKind && regions.getArgs.all (·.isIdent) do
-    throw "invalid source region parameters"
-  let region ← match data.find `ix.source.binder.region with
+  let some (.ofNat bits) := data.find `ix.source.binder.contract
+    | throw "missing source binder contract"
+  if bits > 15 then throw "invalid source binder contract"
+  let some contract := Ixon.BinderContract.ofBits? bits.toUInt8
+    | throw "invalid source binder contract"
+  let result ← match data.find `ix.source.binder.result with
     | none => pure none
-    | some (.ofName name) => pure (some name)
-    | _ => throw "invalid source region reference"
-  return some {
-    origin, binder, uses, owned, region
-    regions := regions.getArgs.map (·.getId) }
+    | some (.ofNat bits) => do
+      if bits > 3 then throw "invalid source result contract"
+      let some result := Ixon.ValueContract.ofBits? bits.toUInt8
+        | throw "invalid source result contract"
+      pure (some result)
+    | _ => throw "invalid source result contract"
+  let letKind ← match data.find `ix.source.binder.letKind with
+    | some (.ofNat 0) => pure Ixon.LetKind.value
+    | some (.ofNat 1) => pure Ixon.LetKind.borrowShared
+    | _ => throw "invalid source let kind"
+  return some { origin, binder, uses := contract.uses, value := contract.value, result, letKind }
 
 /-- Read only the domain's outer metadata chain, without reducing its type. -/
 def binderAnnotation? : Lean.Expr → Except String (Option BinderAnnotation)

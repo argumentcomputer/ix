@@ -136,7 +136,7 @@ def envLetDefn : Ixon.Env × Address := Id.run do
   let (env, aAddr) := envA
   let c : Ixon.Constant :=
     ⟨.defn ⟨.defn, .safe, 0, .ref 0 #[],
-      .letE true (.ref 0 #[]) (.ref 0 #[]) (.var 0)⟩,
+      .letE (.lean true) (.ref 0 #[]) (.ref 0 #[]) (.var 0)⟩,
      #[], #[aAddr], #[]⟩
   let addr := Address.blake3 (Ixon.serConstant c)
   return (env.storeConst addr c, addr)

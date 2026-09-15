@@ -1,7 +1,7 @@
 import Ix.Compile.Verify.Codec
 
 /-!
-# Proof-visible v2 expression codec
+# Proof-visible v3 expression codec
 
 This expression slice proves the production writer/reader inverse for all
 constructors with wire-sized universe-instantiation vectors and canonical
@@ -82,16 +82,26 @@ def wireEncode : Ixon.Expr → ByteArray
         ([uses.toBits].toByteArray ++ (wireEncode ty ++ wireEncode body))
   | .all uses owned ty body =>
       tag4Bytes Ixon.Expr.FLAG_ALL 1 ++
-        ([uses.toBits ||| (owned.toBits <<< 2)].toByteArray ++
+        ([Ixon.packAllContract uses owned].toByteArray ++
           (wireEncode ty ++ wireEncode body))
   | .letE nonDep ty val body =>
-      tag4Bytes Ixon.Expr.FLAG_LET (if nonDep then 1 else 0) ++
-        wireEncode ty ++ wireEncode val ++ wireEncode body
+      tag4Bytes Ixon.Expr.FLAG_LET nonDep.flags ++
+        ([nonDep.binder.toBits].toByteArray ++
+          (wireEncode ty ++ (wireEncode val ++ wireEncode body)))
   | .share idx => tag4Bytes Ixon.Expr.FLAG_SHARE idx
 
 theorem tag0Bytes_size_pos (size : UInt64) : 0 < (tag0Bytes size).size := by
   unfold tag0Bytes
   split <;> simp <;> omega
+
+theorem tag0ListBytes_size_ge_length (idxs : List UInt64) :
+    idxs.length ≤ (tag0ListBytes idxs).size := by
+  induction idxs with
+  | nil => simp [tag0ListBytes]
+  | cons idx idxs ih =>
+    have hpos := tag0Bytes_size_pos idx
+    simp only [tag0ListBytes, ByteArray.size_append, List.length_cons]
+    omega
 
 theorem tag4Bytes_size_pos (flag : UInt8) (size : UInt64) :
     0 < (tag4Bytes flag size).size := by
@@ -130,17 +140,28 @@ theorem wireEncode_size_pos (e : Ixon.Expr) : 0 < (wireEncode e).size := by
     omega
   | letE nonDep ty val body =>
     have h := tag4Bytes_size_pos Ixon.Expr.FLAG_LET
-      (if nonDep then 1 else 0)
+      nonDep.flags
     simp only [wireEncode, ByteArray.size_append]
     omega
   | share idx =>
     simpa [wireEncode] using tag4Bytes_size_pos Ixon.Expr.FLAG_SHARE idx
 
-theorem forallMode_fields (uses : Ixon.Uses) (owned : Ixon.Owned) :
-    let mode := uses.toBits ||| (owned.toBits <<< 2)
-    mode ≤ 7 ∧ Ixon.Uses.ofBits? (mode &&& 0x03) = some uses ∧
-      Ixon.Owned.ofBits? ((mode >>> 2) &&& 0x01) = some owned := by
-  cases uses <;> cases owned <;> decide
+theorem forallMode_fields (uses : Ixon.BinderContract) (owned : Ixon.ValueContract) :
+    Ixon.unpackAllContract? (Ixon.packAllContract uses owned) = some (uses, owned) :=
+  Ixon.unpackAllContract?_packAllContract uses owned
+
+theorem getBinderContract_reads (binder : Ixon.BinderContract) :
+    Reads Ixon.getBinderContract [binder.toBits].toByteArray binder := by
+  intro before after
+  unfold Ixon.getBinderContract
+  change (EStateM.bind Ixon.getU8 _) _ = _
+  rw [EStateM.bind, getU8_reads binder.toBits before after]
+  simp only [Ixon.BinderContract.ofBits?_toBits]
+  rfl
+
+theorem letFlags_not_gt (contract : Ixon.LetContract) : ¬ contract.flags > 3 := by
+  rcases contract with ⟨nonDep, kind, binder⟩
+  cases nonDep <;> cases kind <;> simp [Ixon.LetContract.flags] <;> decide
 
 theorem indexVectorWF_count (idxs : Array UInt64) (h : IndexVectorWF idxs) :
     idxs.size.toUInt64.toNat = idxs.size := by
@@ -254,16 +275,18 @@ theorem putExpr_writes_single (e : Ixon.Expr) (h : SingleWireWF e) :
         ([(uses, owned, ty)], body) := by
       simp [Ixon.Expr.collectAllBinders, hcollect]
     have hwrite := (putTag4_writes Ixon.Expr.FLAG_ALL 1).bind
-      ((putU8_writes (uses.toBits ||| (owned.toBits <<< 2))).bind
+      ((putU8_writes (Ixon.packAllContract uses owned)).bind
         ((ihTy hty).bind (ihBody hbody)))
     simpa [Ixon.putExpr, wireEncode, hspine, byteArray_append_singleton,
       ByteArray.append_assoc] using hwrite
   | letE nonDep ty val body ihTy ihVal ihBody =>
     obtain ⟨hty, hval, hbody⟩ := h
     have hwrite :=
-      (putTag4_writes Ixon.Expr.FLAG_LET (if nonDep then 1 else 0)).bind
-        ((ihTy hty).bind ((ihVal hval).bind (ihBody hbody)))
-    simpa [Ixon.putExpr, wireEncode, ByteArray.append_assoc] using hwrite
+      (putTag4_writes Ixon.Expr.FLAG_LET nonDep.flags).bind
+        ((putU8_writes nonDep.binder.toBits).bind
+          ((ihTy hty).bind ((ihVal hval).bind (ihBody hbody))))
+    simpa [Ixon.putExpr, Ixon.putBinderContract, wireEncode,
+      ByteArray.append_assoc] using hwrite
   | share idx =>
     simpa [Ixon.putExpr, wireEncode] using
       putTag4_writes Ixon.Expr.FLAG_SHARE idx
@@ -327,12 +350,16 @@ theorem getExprFuel_reads_single (e : Ixon.Expr) (h : SingleWireWF e)
           (pure (Ixon.Expr.ref refIdx decoded.toArray) :
             Ixon.GetM Ixon.Expr))
         hunivs hreturn
+      have hcheckedUnivs := Reads.checkCount univs.size.toUInt64 1
+        (by simpa [hcount] using tag0ListBytes_size_ge_length univs.toList)
+        hafterUnivs
       have htail := Reads.bind
         (next := fun decoded : Ixon.Tag0 =>
           (do
+            Ixon.checkCount univs.size.toUInt64
             let decodedUnivs ← Ixon.getTag0Sizes univs.toList.length
             return Ixon.Expr.ref decoded.size decodedUnivs.toArray))
-        hidx hafterUnivs
+        hidx hcheckedUnivs
       have hparsed : Reads
           (Ixon.getExprFromTag (Ixon.getExprFuel fuel)
             ⟨Ixon.Expr.FLAG_REF, univs.size.toUInt64⟩)
@@ -363,12 +390,16 @@ theorem getExprFuel_reads_single (e : Ixon.Expr) (h : SingleWireWF e)
           (pure (Ixon.Expr.recur recIdx decoded.toArray) :
             Ixon.GetM Ixon.Expr))
         hunivs hreturn
+      have hcheckedUnivs := Reads.checkCount univs.size.toUInt64 1
+        (by simpa [hcount] using tag0ListBytes_size_ge_length univs.toList)
+        hafterUnivs
       have htail := Reads.bind
         (next := fun decoded : Ixon.Tag0 =>
           (do
+            Ixon.checkCount univs.size.toUInt64
             let decodedUnivs ← Ixon.getTag0Sizes univs.toList.length
             return Ixon.Expr.recur decoded.size decodedUnivs.toArray))
-        hidx hafterUnivs
+        hidx hcheckedUnivs
       have hparsed : Reads
           (Ixon.getExprFromTag (Ixon.getExprFuel fuel)
             ⟨Ixon.Expr.FLAG_REC, univs.size.toUInt64⟩)
@@ -469,12 +500,18 @@ theorem getExprFuel_reads_single (e : Ixon.Expr) (h : SingleWireWF e)
           (wireEncode fn ++ wireEncode arg) (.app fn arg) := by
         change Reads
           (do
+            Ixon.checkCount 1 1
             let base ← Ixon.getExprFuel fuel
             match base with
             | .app .. => throw "getExpr: non-canonical app base"
             | _ => pure ()
             Ixon.getExprAppArgs (Ixon.getExprFuel fuel) 1 base)
           (wireEncode fn ++ wireEncode arg) (.app fn arg)
+        apply Reads.checkCount 1 1
+          (by
+            have hpos := wireEncode_size_pos fn
+            simp only [ByteArray.size_append, UInt64.reduceToNat, Nat.one_mul]
+            omega)
         apply Reads.bind hfnRead
         cases fn <;> simp_all [notApp, Ixon.getExprAppArgs] <;>
           simpa [Ixon.getExprAppArgs] using hafterArg
@@ -497,18 +534,18 @@ theorem getExprFuel_reads_single (e : Ixon.Expr) (h : SingleWireWF e)
       have htyRead := ihTy hty fuel (by omega)
       have hbodyRead := ihBody hbody fuel (by omega)
       have htag := getTag4_reads Ixon.Expr.FLAG_LAM 1 (by decide)
-      have hmode := getU8_reads uses.toBits
+      have hmode := getBinderContract_reads uses
       have hempty : Reads
           (Ixon.getExprLamBinders (Ixon.getExprFuel fuel) 0)
           ByteArray.empty [] := by
         simpa [Ixon.getExprLamBinders] using
-          (Reads.pure ([] : List (Ixon.Uses × Ixon.Expr)))
+          (Reads.pure ([] : List (Ixon.BinderContract × Ixon.Expr)))
       have hlistReturn :=
-        Reads.pure ([(uses, ty)] : List (Ixon.Uses × Ixon.Expr))
+        Reads.pure ([(uses, ty)] : List (Ixon.BinderContract × Ixon.Expr))
       have hafterEmpty := Reads.bind
-        (next := fun tail : List (Ixon.Uses × Ixon.Expr) =>
+        (next := fun tail : List (Ixon.BinderContract × Ixon.Expr) =>
           (pure ((uses, ty) :: tail) :
-            Ixon.GetM (List (Ixon.Uses × Ixon.Expr))))
+            Ixon.GetM (List (Ixon.BinderContract × Ixon.Expr))))
         hempty hlistReturn
       have hafterTy := Reads.bind
         (next := fun decodedTy : Ixon.Expr => do
@@ -545,6 +582,7 @@ theorem getExprFuel_reads_single (e : Ixon.Expr) (h : SingleWireWF e)
           (.lam uses ty body) := by
         change Reads
           (do
+            Ixon.checkCount 1 2
             let binders ← Ixon.getExprLamBinders
               (Ixon.getExprFuel fuel) 1
             let decodedBody ← Ixon.getExprFuel fuel
@@ -555,6 +593,13 @@ theorem getExprFuel_reads_single (e : Ixon.Expr) (h : SingleWireWF e)
               (fun (u, t) result => Ixon.Expr.lam u t result) decodedBody)
           ([uses.toBits].toByteArray ++ wireEncode ty ++ wireEncode body)
           (.lam uses ty body)
+        apply Reads.checkCount 1 2
+          (by
+            have hpos := wireEncode_size_pos ty
+            simp only [ByteArray.size_append, List.size_toByteArray,
+              List.length_cons, List.length_nil, UInt64.reduceToNat,
+              Nat.one_mul]
+            omega)
         apply Reads.bind hbinders
         simpa using hbodyParsed
       have hall := Reads.bind
@@ -566,7 +611,7 @@ theorem getExprFuel_reads_single (e : Ixon.Expr) (h : SingleWireWF e)
     cases fuel with
     | zero => have hpos := wireEncode_size_pos (.all uses owned ty body); omega
     | succ fuel =>
-      let mode := uses.toBits ||| (owned.toBits <<< 2)
+      let mode := Ixon.packAllContract uses owned
       have hsizes :
           (tag4Bytes Ixon.Expr.FLAG_ALL 1).size + 1 +
               (wireEncode ty).size + (wireEncode body).size ≤ fuel + 1 := by
@@ -579,25 +624,17 @@ theorem getExprFuel_reads_single (e : Ixon.Expr) (h : SingleWireWF e)
       have htag := getTag4_reads Ixon.Expr.FLAG_ALL 1 (by decide)
       have hmode := getU8_reads mode
       have hfields := forallMode_fields uses owned
-      obtain ⟨hmodeLe, huses, howned⟩ := hfields
-      change mode ≤ 7 at hmodeLe
-      change Ixon.Uses.ofBits? (mode &&& 0x03) = some uses at huses
-      change Ixon.Owned.ofBits? ((mode >>> 2) &&& 0x01) = some owned at howned
-      have hmodeNotGt : ¬ mode > 7 := by
-        simp only [UInt8.le_iff_toNat_le] at hmodeLe
-        simp only [UInt8.lt_iff_toNat_lt]
-        omega
       have hempty : Reads
           (Ixon.getExprAllBinders (Ixon.getExprFuel fuel) 0)
           ByteArray.empty [] := by
         simpa [Ixon.getExprAllBinders] using
-          (Reads.pure ([] : List (Ixon.Uses × Ixon.Owned × Ixon.Expr)))
+          (Reads.pure ([] : List (Ixon.BinderContract × Ixon.ValueContract × Ixon.Expr)))
       have hlistReturn := Reads.pure
-        ([(uses, owned, ty)] : List (Ixon.Uses × Ixon.Owned × Ixon.Expr))
+        ([(uses, owned, ty)] : List (Ixon.BinderContract × Ixon.ValueContract × Ixon.Expr))
       have hafterEmpty := Reads.bind
-        (next := fun tail : List (Ixon.Uses × Ixon.Owned × Ixon.Expr) =>
+        (next := fun tail : List (Ixon.BinderContract × Ixon.ValueContract × Ixon.Expr) =>
           (pure ((uses, owned, ty) :: tail) :
-            Ixon.GetM (List (Ixon.Uses × Ixon.Owned × Ixon.Expr))))
+            Ixon.GetM (List (Ixon.BinderContract × Ixon.ValueContract × Ixon.Expr))))
         hempty hlistReturn
       have hafterTy := Reads.bind
         (next := fun decodedTy : Ixon.Expr => do
@@ -609,8 +646,7 @@ theorem getExprFuel_reads_single (e : Ixon.Expr) (h : SingleWireWF e)
           ([mode].toByteArray ++ wireEncode ty) [(uses, owned, ty)] := by
         rw [Ixon.getExprAllBinders]
         apply Reads.bind hmode
-        simp only [if_neg hmodeNotGt, huses, howned]
-        simpa using hafterTy
+        simpa only [mode, hfields, ByteArray.append_empty] using hafterTy
       have hfinish : Reads
           (do
             match body with
@@ -635,6 +671,7 @@ theorem getExprFuel_reads_single (e : Ixon.Expr) (h : SingleWireWF e)
           (.all uses owned ty body) := by
         change Reads
           (do
+            Ixon.checkCount 1 2
             let binders ← Ixon.getExprAllBinders
               (Ixon.getExprFuel fuel) 1
             let decodedBody ← Ixon.getExprFuel fuel
@@ -646,6 +683,13 @@ theorem getExprFuel_reads_single (e : Ixon.Expr) (h : SingleWireWF e)
               decodedBody)
           ([mode].toByteArray ++ wireEncode ty ++ wireEncode body)
           (.all uses owned ty body)
+        apply Reads.checkCount 1 2
+          (by
+            have hpos := wireEncode_size_pos ty
+            simp only [ByteArray.size_append, List.size_toByteArray,
+              List.length_cons, List.length_nil, UInt64.reduceToNat,
+              Nat.one_mul]
+            omega)
         apply Reads.bind hbinders
         simpa using hbodyParsed
       have hall := Reads.bind
@@ -659,17 +703,19 @@ theorem getExprFuel_reads_single (e : Ixon.Expr) (h : SingleWireWF e)
     | zero => have hpos := wireEncode_size_pos (.letE nonDep ty val body); omega
     | succ fuel =>
       have hsizes :
-          (tag4Bytes Ixon.Expr.FLAG_LET (if nonDep then 1 else 0)).size +
+          (tag4Bytes Ixon.Expr.FLAG_LET nonDep.flags).size + 1 +
               (wireEncode ty).size + (wireEncode val).size +
                 (wireEncode body).size ≤ fuel + 1 := by
-        simpa only [wireEncode, ByteArray.size_append] using hfuel
+        simpa only [wireEncode, ByteArray.size_append,
+          List.size_toByteArray, List.length_cons, List.length_nil,
+          Nat.zero_add, Nat.add_assoc] using hfuel
       have htagPos := tag4Bytes_size_pos Ixon.Expr.FLAG_LET
-        (if nonDep then 1 else 0)
+        nonDep.flags
       have htyRead := ihTy hty fuel (by omega)
       have hvalRead := ihVal hval fuel (by omega)
       have hbodyRead := ihBody hbody fuel (by omega)
       have htag := getTag4_reads Ixon.Expr.FLAG_LET
-        (if nonDep then 1 else 0) (by decide)
+        nonDep.flags (by decide)
       have hreturn := Reads.pure (Ixon.Expr.letE nonDep ty val body)
       have hafterBody := Reads.bind
         (next := fun decodedBody : Ixon.Expr =>
@@ -689,11 +735,16 @@ theorem getExprFuel_reads_single (e : Ixon.Expr) (h : SingleWireWF e)
         htyRead hafterVal
       have htail : Reads
           (Ixon.getExprFromTag (Ixon.getExprFuel fuel)
-            ⟨Ixon.Expr.FLAG_LET, if nonDep then 1 else 0⟩)
-          (wireEncode ty ++ wireEncode val ++ wireEncode body)
+            ⟨Ixon.Expr.FLAG_LET, nonDep.flags⟩)
+          ([nonDep.binder.toBits].toByteArray ++
+            wireEncode ty ++ wireEncode val ++ wireEncode body)
           (.letE nonDep ty val body) := by
-        cases nonDep <;> simpa [Ixon.getExprFromTag, Ixon.Expr.FLAG_LET,
-          ByteArray.append_assoc] using hchildren
+        simp only [Ixon.getExprFromTag, Ixon.Expr.FLAG_LET,
+          if_neg (letFlags_not_gt nonDep)]
+        simp only [ByteArray.append_assoc]
+        apply Reads.bind (getBinderContract_reads nonDep.binder)
+        simpa only [Ixon.LetContract.ofFlags?_flags, ByteArray.append_assoc,
+          ByteArray.append_empty] using hchildren
       have hall := Reads.bind
         (next := Ixon.getExprFromTag (Ixon.getExprFuel fuel)) htag htail
       simpa [Ixon.getExprFuel, wireEncode, ByteArray.append_assoc] using hall

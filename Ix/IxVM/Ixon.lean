@@ -6,7 +6,7 @@ public section
 namespace IxVM
 
 def ixon := ⟦
-  -- Ixon v2 binder usage. The wire representation is the enum ordinal.
+  -- Ixon v3 keeps usage, ownership, and locality independent.
   enum Uses {
     Erased,
     Linear,
@@ -14,12 +14,16 @@ def ixon := ⟦
     Many
   }
 
-  -- Ixon v2 forall-result ownership. The wire representation is the enum
-  -- ordinal in bit 2 of the forall mode byte.
   enum Owned {
     Unique,
     Shared
   }
+
+  enum Locality { Unrestricted, Local }
+  enum ValueContract { Mk(Owned, Locality) }
+  enum BinderContract { Mk(Uses, ValueContract) }
+  enum LetKind { Value, BorrowShared }
+  enum LetContract { Mk(G, LetKind, BinderContract) }
 
   -- Expression type
   enum Expr {
@@ -31,9 +35,9 @@ def ixon := ⟦
     Str(U64),
     Nat(U64),
     App(&Expr, &Expr),
-    Lam(Uses, &Expr, &Expr),
-    All(Uses, Owned, &Expr, &Expr),
-    Let(U64, &Expr, &Expr, &Expr),
+    Lam(BinderContract, &Expr, &Expr),
+    All(BinderContract, ValueContract, &Expr, &Expr),
+    Let(LetContract, &Expr, &Expr, &Expr),
     Share(U64)
   }
 

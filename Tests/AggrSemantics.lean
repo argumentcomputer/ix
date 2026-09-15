@@ -89,10 +89,10 @@ private def stage2FixtureStorePath (home : System.FilePath) : System.FilePath :=
 
 /-- Pin a real whole-Mathlib root at the persisted-proof boundary. The 3.33 GB
 environment and 52.5 MB manifest are identified in the adjacent provenance
-record rather than checked in. This proof predates the a8aab731 protocol bump:
-the gate re-hashes and decodes the exact wrapper, pins its unconditional root
-claim, and ensures the current backend rejects it at that protocol boundary
-instead of accidentally accepting an incompatible proof. -/
+record rather than checked in. This proof predates both the a8aab731 protocol
+bump and the Ixon v3 claim envelope. The gate re-hashes the exact old wrapper,
+pins its root bytes and unconditional flag, and checks rejection at the format
+boundary. No legacy decoding path is added to the production reader. -/
 private def stage2FixturePinnedAndFenced : IO Bool := do
   try
     unless (← stage2FixturePath.pathExists) do
@@ -108,11 +108,14 @@ private def stage2FixturePinnedAndFenced : IO Bool := do
     let some root := Address.fromString stage2FixtureRootHex | do
       IO.eprintln "invalid pinned Stage 2 fixture root"
       return false
-    let wrapper ← match Ix.Cli.VerifyCmd.decodeAggregateWrapperAt address bytes with
-      | .error e => IO.eprintln s!"Stage 2 fixture wrapper rejected: {e}"; return false
-      | .ok wrapper => pure wrapper
-    if wrapper.claim != .checkEnv root none then
-      IO.eprintln s!"Stage 2 fixture claim drifted: {wrapper.claim}"
+    if Address.blake3 bytes != address || bytes[0]! != 0xF2 ||
+        bytes.extract 1 33 != root.hash || bytes[33]! != 0 then
+      IO.eprintln "Stage 2 fixture bytes or historical root drifted"
+      return false
+    match Ix.Cli.VerifyCmd.decodeAggregateWrapperAt address bytes with
+    | .error "claim: unsupported object format" => pure ()
+    | _ =>
+      IO.eprintln "Stage 2 fixture did not reject at its format boundary"
       return false
     let ixExe : System.FilePath := ".lake" / "build" / "bin" / "ix"
     unless (← ixExe.pathExists) do
@@ -134,8 +137,8 @@ private def stage2FixturePinnedAndFenced : IO Bool := do
       if out.exitCode == 0 then
         IO.eprintln "obsolete Stage 2 fixture unexpectedly verified under the current protocol"
         return false
-      unless out.stderr.contains "InvalidProofShape" ||
-          out.stdout.contains "InvalidProofShape" do
+      unless out.stderr.contains "claim: unsupported object format" ||
+          out.stdout.contains "claim: unsupported object format" do
         IO.eprintln s!"obsolete Stage 2 fixture failed for an unexpected reason \
 ({out.exitCode}): {out.stderr.take 500}"
         return false

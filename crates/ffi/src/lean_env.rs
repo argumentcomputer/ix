@@ -2766,33 +2766,16 @@ extern "C" fn rs_compile_validate_aux(
             || expr.clone(),
             |shared| expand_shares_expr(shared, sharing),
           ),
-          Expr::Prj(type_ref_idx, field_idx, val) => Expr::prj(
-            *type_ref_idx,
-            *field_idx,
-            expand_shares_expr(val, sharing),
-          ),
-          Expr::App(fun, arg) => Expr::app(
-            expand_shares_expr(fun, sharing),
-            expand_shares_expr(arg, sharing),
-          ),
-          Expr::Lam(uses, ty, body) => Expr::lam_mode(
-            *uses,
-            expand_shares_expr(ty, sharing),
-            expand_shares_expr(body, sharing),
-          ),
-          Expr::All(uses, owned, ty, body) => Expr::all_mode(
-            *uses,
-            *owned,
-            expand_shares_expr(ty, sharing),
-            expand_shares_expr(body, sharing),
-          ),
-          Expr::Let(non_dep, ty, val, body) => Expr::let_(
-            *non_dep,
-            expand_shares_expr(ty, sharing),
-            expand_shares_expr(val, sharing),
-            expand_shares_expr(body, sharing),
-          ),
-          _ => expr.clone(),
+          _ => {
+            let children: Vec<_> = expr
+              .children()
+              .into_iter()
+              .map(|child| expand_shares_expr(child, sharing))
+              .collect();
+            Arc::new(
+              expr.with_children(&children).expect("share reconstruction"),
+            )
+          },
         }
       }
 

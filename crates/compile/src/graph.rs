@@ -397,7 +397,7 @@ mod tests {
         .install(|| compile_env_with_options(&env, CompileOptions::default()));
       assert!(
         matches!(result, Err(ixon::CompileError::UnsupportedExpr { desc })
-        if desc == "source binder contracts are not supported by this compiler yet: AAnnotated")
+        if desc == "unresolved source binder contracts: AAnnotated")
       );
     }
   }
@@ -679,10 +679,10 @@ mod tests {
       assert!(compiled.ungrounded.is_empty());
       let mut bytes = Vec::new();
       compiled.env.put(&mut bytes).unwrap();
-      // Captured from the per-constant scanner before the fold change.
+      // Migrated to Ixon v3; both worker counts must preserve these bytes.
       assert_eq!(
         blake3::hash(&bytes).to_hex().as_str(),
-        "d0a1c1490fad7e9e9236792c62ac3697dc7d3b541e3b3db12e00b9dd29ba36ed"
+        "34fe80b5eae41a9d430a4e2a61d499e9db25ea587af289f0b4fc63b7770924f5"
       );
     }
   }

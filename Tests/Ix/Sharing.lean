@@ -156,8 +156,8 @@ where
 def testKnownHashVar0 : TestSeq :=
   let e := Expr.var 0
   let h := computeExprHash e
-  -- Hash should be blake3([0x01, 0, 0, 0, 0, 0, 0, 0, 0])
-  let buf := ByteArray.empty.push 0x01 |>.append (uint64ToBytes 0)
+  -- V3 sharing uses the canonical scalar node header: Var(0) is [0x10].
+  let buf := ByteArray.mk #[0x10]
   let expected := Address.blake3 buf
   test "var 0 hash matches expected" (h == expected)
 
@@ -165,8 +165,8 @@ def testKnownHashVar0 : TestSeq :=
 def testKnownHashSort0 : TestSeq :=
   let e := Expr.sort 0
   let h := computeExprHash e
-  -- Hash should be blake3([0x00, 0, 0, 0, 0, 0, 0, 0, 0])
-  let buf := ByteArray.empty.push 0x00 |>.append (uint64ToBytes 0)
+  -- V3 sharing uses the canonical scalar node header: Sort(0) is [0x00].
+  let buf := ByteArray.mk #[0x00]
   let expected := Address.blake3 buf
   test "sort 0 hash matches expected" (h == expected)
 

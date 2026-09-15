@@ -1,6 +1,6 @@
 module
 
-public import Ix.IxonMode
+public import Ix.IxonContract
 
 /-!
 # Source contracts before canonicalization
@@ -46,17 +46,17 @@ structure BinderSite where
 inductive SourceBinderKind where
   | lam
   | all
+  | letE
   deriving BEq, DecidableEq, Repr, Inhabited
 
-/-- An explicit source annotation. `owned` describes the bound value (`! x`),
-independently of `resultOwned`, which describes an arrow's result. A region
-names a declaration parameter; it does not create a loan. -/
+/-- Independent input and result value contracts. A borrow kind is meaningful
+only at a let occurrence; locality alone never creates a loan. -/
 structure BinderContract where
   site : BinderSite
   uses : Ixon.Uses
-  resultOwned : Option Ixon.Owned := none
-  owned : Ixon.Owned := .shared
-  region : Option Lean.Name := none
+  result : Option Ixon.ValueContract := none
+  value : Ixon.ValueContract := .shared
+  letKind : Ixon.LetKind := .value
   deriving BEq, Repr, Inhabited
 
 /-- Contract binding uses an exact source snapshot, including the type, body,
@@ -66,7 +66,6 @@ alone cannot authorize reusing contracts for different source syntax. -/
 structure SourceContract where
   source : Lean.ConstantInfo
   binders : Array BinderContract
-  regions : Array Lean.Name := #[]
   deriving Repr, Inhabited
 
 /-- User-facing selectors are resolved once to elaborated telescope positions.
@@ -77,14 +76,14 @@ inductive BinderSelector where
   deriving BEq, Repr, Inhabited
 
 /-- Declaration shorthand that annotates corresponding type/body binders.
-Bound-value ownership and region apply to both occurrences; result ownership
-applies only to this position's arrow. -/
+The input contract applies to both occurrences; the independent result
+contract applies only to this position's arrow. -/
 structure TelescopeContract where
   binder : BinderSelector
   uses : Ixon.Uses
-  resultOwned : Option Ixon.Owned := none
-  owned : Ixon.Owned := .shared
-  region : Option Lean.Name := none
+  result : Option Ixon.ValueContract := none
+  value : Ixon.ValueContract := .shared
+  letKind : Ixon.LetKind := .value
   deriving Repr, Inhabited
 
 /-- Optional recursion information, bound to the exact source declaration.
@@ -107,25 +106,22 @@ def CompileInput.plain (constants : List (Lean.Name × Lean.ConstantInfo)) : Com
   { constants, contracts := #[] }
 
 /-- Diagnostic names and binder information are retained after resolving a
-site. On arrows, resultOwned is always populated, including the shared default.
-On lambdas it is absent. -/
+site. On arrows, result is always populated, including the shared default.
+On lambdas and lets it is absent. -/
 structure ResolvedBinderContract where
   site : BinderSite
   kind : SourceBinderKind
   name : Lean.Name
   binderInfo : Lean.BinderInfo
   uses : Ixon.Uses
-  resultOwned : Option Ixon.Owned
-  owned : Ixon.Owned
-  /-- Zero-based index into this declaration's region parameters. -/
-  region : Option Nat
+  result : Option Ixon.ValueContract
+  value : Ixon.ValueContract
+  letKind : Ixon.LetKind
   deriving Repr, Inhabited
 
 structure ResolvedSourceContract where
   source : Lean.ConstantInfo
   binders : Array ResolvedBinderContract
-  /-- Names are diagnostic source data; resolved references use bound indices. -/
-  regions : Array Lean.Name
   deriving Repr, Inhabited
 
 /-- The resolved assertion at one source occurrence, without diagnostic names.
@@ -134,24 +130,21 @@ structure BinderContractSemantics where
   site : BinderSite
   kind : SourceBinderKind
   uses : Ixon.Uses
-  resultOwned : Option Ixon.Owned
-  owned : Ixon.Owned
-  region : Option Nat
+  result : Option Ixon.ValueContract
+  value : Ixon.ValueContract
+  letKind : Ixon.LetKind
   deriving BEq, Repr, Inhabited
 
-/-- Region parameters are identified by their binding positions. Names and the
-exact source snapshot belong to validation and diagnostics, not these assertions.
+/-- Names and the exact source snapshot belong to validation and diagnostics.
 Source paths still refer to the elaborated tree; do not hash this as an artifact. -/
 structure SourceContractSemantics where
-  regionParameterCount : Nat
   binders : Array BinderContractSemantics
   deriving BEq, Repr, Inhabited
 
 def ResolvedSourceContract.semantics (contract : ResolvedSourceContract) : SourceContractSemantics :=
-  { regionParameterCount := contract.regions.size
-    binders := contract.binders.map fun binder => {
+  { binders := contract.binders.map fun binder => {
       site := binder.site, kind := binder.kind, uses := binder.uses
-      resultOwned := binder.resultOwned, owned := binder.owned, region := binder.region } }
+      result := binder.result, value := binder.value, letKind := binder.letKind } }
 
 structure ResolvedMeasureHint where
   source : Lean.ConstantInfo
@@ -175,7 +168,9 @@ inductive SourceContractError where
   | staleSource (name : Lean.Name)
   | invalidSite (name : Lean.Name) (site : BinderSite)
   | expectedBinder (name : Lean.Name) (site : BinderSite)
-  | ownershipOnLambda (name : Lean.Name) (site : BinderSite)
+  | resultOnNonArrow (name : Lean.Name) (site : BinderSite)
+  | borrowOnNonLet (name : Lean.Name) (site : BinderSite)
+  | invalidBorrowView (name : Lean.Name) (site : BinderSite)
   | duplicateSite (name : Lean.Name) (site : BinderSite)
   | argumentOutOfRange (name : Lean.Name) (index : Nat)
   | unknownBinder (declaration binder : Lean.Name)
@@ -183,13 +178,8 @@ inductive SourceContractError where
   | missingBodyBinder (name : Lean.Name) (index : Nat)
   | inconsistentTelescope (name : Lean.Name) (index : Nat)
       (typeUses bodyUses : Ixon.Uses)
-  | inconsistentOwnership (name : Lean.Name) (index : Nat)
-      (typeOwned bodyOwned : Ixon.Owned)
-  | inconsistentRegion (name : Lean.Name) (index : Nat)
-      (typeRegion bodyRegion : Option Nat)
-  | duplicateRegion (declaration region : Lean.Name)
-  | unknownRegion (declaration region : Lean.Name)
-  | conflictingRegions (declaration : Lean.Name)
+  | inconsistentValue (name : Lean.Name) (index : Nat)
+      (typeValue bodyValue : Ixon.ValueContract)
   | annotatedRecursorRule (declaration : Lean.Name)
   | malformedAnnotation (declaration : Lean.Name) (site : BinderSite) (reason : String)
   | misplacedAnnotation (declaration : Lean.Name) (site : BinderSite)

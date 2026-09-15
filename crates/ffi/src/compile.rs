@@ -27,7 +27,7 @@ use ixon::constant::Constant as IxonConstant;
 #[cfg(feature = "test-ffi")]
 use ixon::constant::ConstantInfo;
 #[cfg(feature = "test-ffi")]
-use ixon::expr::{Expr as IxonExpr, Owned as IxonOwned, Uses as IxonUses};
+use ixon::expr::Expr as IxonExpr;
 use ixon::{Comm, ConstantMeta};
 use lean_ffi::object::LeanIOResult;
 use lean_ffi::object::LeanNat;
@@ -574,19 +574,43 @@ pub extern "C" fn rs_compile_phases(
 pub extern "C" fn rs_compile_env_to_ixon(
   env_consts_ptr: LeanList<LeanBorrowed<'_>>,
 ) -> LeanIOResult<LeanOwned> {
+  compile_env_to_ixon_profile(env_consts_ptr, None)
+}
+
+/// Explicit canonical policy; the native compiler validates it before emission.
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_compile_env_to_ixon_profile(
+  env_consts_ptr: LeanList<LeanBorrowed<'_>>,
+  bytes: LeanByteArray<LeanBorrowed<'_>>,
+) -> LeanIOResult<LeanOwned> {
+  let profile =
+    match ixon::resource::addressed::Profile::from_bytes(bytes.as_bytes()) {
+      Ok(profile) => profile,
+      Err(error) => return LeanIOResult::error_string(&error),
+    };
+  compile_env_to_ixon_profile(env_consts_ptr, Some(&profile))
+}
+
+fn compile_env_to_ixon_profile(
+  env_consts_ptr: LeanList<LeanBorrowed<'_>>,
+  profile: Option<&ixon::resource::addressed::Profile>,
+) -> LeanIOResult<LeanOwned> {
   {
     let rust_env = crate::lean_env::decode_env(env_consts_ptr);
     let rust_env = Arc::new(rust_env);
 
-    let compile_stt =
-      match compile_env_with_options(&rust_env, CompileOptions::default()) {
-        Ok(stt) => stt,
-        Err(e) => {
-          let msg =
-            format!("rs_compile_env_to_ixon: compilation failed: {:?}", e);
-          return LeanIOResult::error_string(&msg);
-        },
-      };
+    let compile_stt = match ix_compile::compile::compile_env_with_profile(
+      &rust_env,
+      CompileOptions::default(),
+      profile,
+    ) {
+      Ok(stt) => stt,
+      Err(e) => {
+        let msg =
+          format!("rs_compile_env_to_ixon: compilation failed: {:?}", e);
+        return LeanIOResult::error_string(&msg);
+      },
+    };
 
     let mut cache = LeanBuildCache::with_capacity(rust_env.len());
 
@@ -936,96 +960,44 @@ extern "C" fn rs_get_block_sharing_len(
 // =============================================================================
 
 #[cfg(feature = "test-ffi")]
-/// Frame for iterative unshare traversal.
-enum UnshareFrame<'a> {
-  Visit(&'a Arc<IxonExpr>),
-  BuildApp,
-  BuildLam(IxonUses),
-  BuildAll(IxonUses, IxonOwned),
-  BuildLet(bool),
-  BuildPrj(u64, u64),
-}
-
-#[cfg(feature = "test-ffi")]
-/// Expand Share(idx) references in an expression using the sharing vector.
-/// This reconstructs the "pre-sharing" expression from the post-sharing
-/// representation. Uses iterative traversal to avoid stack overflow on deep
-/// expressions.
-#[allow(clippy::cast_possible_truncation)]
+/// Expand shares while preserving all v3 contracts and static groups.
 fn unshare_expr(
   expr: &Arc<IxonExpr>,
   sharing: &[Arc<IxonExpr>],
 ) -> Arc<IxonExpr> {
-  let mut stack: Vec<UnshareFrame<'_>> = vec![UnshareFrame::Visit(expr)];
-  let mut results: Vec<Arc<IxonExpr>> = Vec::new();
-
+  enum Frame<'a> {
+    Visit(&'a Arc<IxonExpr>),
+    Build(&'a IxonExpr),
+  }
+  let mut stack = vec![Frame::Visit(expr)];
+  let mut results: Vec<Arc<IxonExpr>> = vec![];
   while let Some(frame) = stack.pop() {
     match frame {
-      UnshareFrame::Visit(e) => match e.as_ref() {
-        IxonExpr::Share(idx) => {
-          if (*idx as usize) < sharing.len() {
-            stack.push(UnshareFrame::Visit(&sharing[*idx as usize]));
-          } else {
-            results.push(e.clone());
-          }
-        },
-        IxonExpr::App(f, a) => {
-          stack.push(UnshareFrame::BuildApp);
-          stack.push(UnshareFrame::Visit(a));
-          stack.push(UnshareFrame::Visit(f));
-        },
-        IxonExpr::Lam(uses, t, b) => {
-          stack.push(UnshareFrame::BuildLam(*uses));
-          stack.push(UnshareFrame::Visit(b));
-          stack.push(UnshareFrame::Visit(t));
-        },
-        IxonExpr::All(uses, owned, t, b) => {
-          stack.push(UnshareFrame::BuildAll(*uses, *owned));
-          stack.push(UnshareFrame::Visit(b));
-          stack.push(UnshareFrame::Visit(t));
-        },
-        IxonExpr::Let(nd, t, v, b) => {
-          stack.push(UnshareFrame::BuildLet(*nd));
-          stack.push(UnshareFrame::Visit(b));
-          stack.push(UnshareFrame::Visit(v));
-          stack.push(UnshareFrame::Visit(t));
-        },
-        IxonExpr::Prj(ti, fi, v) => {
-          stack.push(UnshareFrame::BuildPrj(*ti, *fi));
-          stack.push(UnshareFrame::Visit(v));
-        },
-        // Leaf nodes - no children to unshare
-        _ => results.push(e.clone()),
+      Frame::Visit(e) => {
+        if let IxonExpr::Share(idx) = e.as_ref()
+          && let Ok(idx) = usize::try_from(*idx)
+          && let Some(shared) = sharing.get(idx)
+        {
+          stack.push(Frame::Visit(shared));
+          continue;
+        }
+        let children = e.children();
+        if children.is_empty() {
+          results.push(e.clone());
+        } else {
+          stack.push(Frame::Build(e));
+          stack.extend(children.into_iter().rev().map(Frame::Visit));
+        }
       },
-      UnshareFrame::BuildApp => {
-        let a = results.pop().unwrap();
-        let f = results.pop().unwrap();
-        results.push(Arc::new(IxonExpr::App(f, a)));
-      },
-      UnshareFrame::BuildLam(uses) => {
-        let b = results.pop().unwrap();
-        let t = results.pop().unwrap();
-        results.push(Arc::new(IxonExpr::Lam(uses, t, b)));
-      },
-      UnshareFrame::BuildAll(uses, owned) => {
-        let b = results.pop().unwrap();
-        let t = results.pop().unwrap();
-        results.push(Arc::new(IxonExpr::All(uses, owned, t, b)));
-      },
-      UnshareFrame::BuildLet(nd) => {
-        let b = results.pop().unwrap();
-        let v = results.pop().unwrap();
-        let t = results.pop().unwrap();
-        results.push(Arc::new(IxonExpr::Let(nd, t, v, b)));
-      },
-      UnshareFrame::BuildPrj(ti, fi) => {
-        let v = results.pop().unwrap();
-        results.push(Arc::new(IxonExpr::Prj(ti, fi, v)));
+      Frame::Build(e) => {
+        let children = results.split_off(results.len() - e.children().len());
+        results.push(Arc::new(
+          e.with_children(&children).expect("unshare child count"),
+        ));
       },
     }
   }
-
-  results.pop().unwrap()
+  results.pop().expect("unshare result")
 }
 
 /// FFI: Get the pre-sharing root expressions for a constant.

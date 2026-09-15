@@ -25,6 +25,17 @@ def constructorBytes (constructor : Ixon.Constructor) : ByteArray :=
       tag0Bytes constructor.params ++ tag0Bytes constructor.fields ++
         Ix.Compile.Verify.Codec.Ixon.Expr.spineWireEncode constructor.typ
 
+theorem constructorBytes_size_ge (constructor : Ixon.Constructor) :
+    6 ≤ (constructorBytes constructor).size := by
+  have hl := Expr.tag0Bytes_size_pos constructor.lvls
+  have hc := Expr.tag0Bytes_size_pos constructor.cidx
+  have hp := Expr.tag0Bytes_size_pos constructor.params
+  have hf := Expr.tag0Bytes_size_pos constructor.fields
+  have ht := Expr.spineWireEncode_size_pos constructor.typ
+  simp only [constructorBytes, ByteArray.size_append, List.size_toByteArray,
+    List.length_cons, List.length_nil]
+  omega
+
 def ConstructorWireWF (constructor : Ixon.Constructor) : Prop :=
   Ixon.Expr.wireWF constructor.typ
 
@@ -45,11 +56,7 @@ theorem putConstructor_writes (constructor : Ixon.Constructor)
 theorem getConstructor_reads (constructor : Ixon.Constructor)
     (h : ConstructorWireWF constructor) :
     Reads Ixon.getConstructor (constructorBytes constructor) constructor := by
-  have hbool := getU8_reads (if constructor.isUnsafe then 1 else 0)
-  have hdecode :
-      (((if constructor.isUnsafe then 1 else 0) : UInt8) != 0) =
-        constructor.isUnsafe := by
-    cases constructor.isUnsafe <;> decide
+  have hbool := getBool_reads constructor.isUnsafe
   have hlvls := getTag0_reads constructor.lvls
   have hcidx := getTag0_reads constructor.cidx
   have hparams := getTag0_reads constructor.params
@@ -93,8 +100,7 @@ theorem getConstructor_reads (constructor : Ixon.Constructor)
         Ixon.Constructor))
     hlvls hafterCidx
   have hall := Reads.bind
-    (next := fun encodedUnsafe : UInt8 => do
-      let isUnsafe := encodedUnsafe != 0
+    (next := fun isUnsafe : Bool => do
       let lvls := (← Ixon.getTag0).size
       let cidx := (← Ixon.getTag0).size
       let params := (← Ixon.getTag0).size
@@ -102,7 +108,7 @@ theorem getConstructor_reads (constructor : Ixon.Constructor)
       let typ ← Ixon.getExpr
       return (⟨isUnsafe, lvls, cidx, params, fields, typ⟩ :
         Ixon.Constructor))
-    hbool (by simpa [hdecode] using hafterLvls)
+    hbool hafterLvls
   simpa [Ixon.getConstructor, constructorBytes,
     ByteArray.append_assoc] using hall
 
@@ -127,10 +133,10 @@ theorem getConstructorArray_reads (constructors : Array Ixon.Constructor)
 def inductiveFlags (inductiveInfo : Ixon.Inductive) : UInt8 :=
   Ixon.packBools [inductiveInfo.isUnsafe]
 
-theorem unpackInductiveFlags_pack (isUnsafe : Bool) :
-    let bools := Ixon.unpackBools 1 (Ixon.packBools [isUnsafe])
-    bools[0]! = isUnsafe := by
-  cases isUnsafe <;> decide
+theorem inductiveFlags_eq (inductiveInfo : Ixon.Inductive) :
+    inductiveFlags inductiveInfo = (if inductiveInfo.isUnsafe then 1 else 0) := by
+  unfold inductiveFlags
+  cases inductiveInfo.isUnsafe <;> decide
 
 def inductiveBytes (inductiveInfo : Ixon.Inductive) : ByteArray :=
   [inductiveFlags inductiveInfo].toByteArray ++
@@ -164,6 +170,7 @@ theorem putInductive_writes (inductiveInfo : Ixon.Inductive)
 def getInductiveConstructors (isUnsafe : Bool) (lvls params indices : UInt64)
     (typ : Ixon.Expr) : Ixon.GetM Ixon.Inductive := do
   let count := (← Ixon.getTag0).size.toNat
+  Ixon.checkCount count.toUInt64 6
   let mut constructors : Array Ixon.Constructor := #[]
   for _ in [0:count] do
     constructors := constructors.push (← Ixon.getConstructor)
@@ -176,12 +183,9 @@ def getInductiveAfterFlags (isUnsafe : Bool) : Ixon.GetM Ixon.Inductive := do
   let typ ← Ixon.getExpr
   getInductiveConstructors isUnsafe lvls params indices typ
 
-def getInductiveFromFlags (flags : UInt8) : Ixon.GetM Ixon.Inductive :=
-  let bools := Ixon.unpackBools 1 flags
-  getInductiveAfterFlags bools[0]!
-
 theorem getInductive_eq :
-    Ixon.getInductive = (Ixon.getU8 >>= getInductiveFromFlags) := by
+    Ixon.getInductive =
+      ((Ixon.Serialize.get (α := Bool)) >>= getInductiveAfterFlags) := by
   rfl
 
 theorem getInductiveConstructors_reads (inductiveInfo : Ixon.Inductive)
@@ -204,15 +208,22 @@ theorem getInductiveConstructors_reads (inductiveInfo : Ixon.Inductive)
     hconstructors hreturn
   have htail : Reads
       (do
+        Ixon.checkCount inductiveInfo.ctors.size.toUInt64.toNat.toUInt64 6
         let mut constructors : Array Ixon.Constructor := #[]
         for _ in [0:inductiveInfo.ctors.size.toUInt64.toNat] do
           constructors := constructors.push (← Ixon.getConstructor)
         return ({ inductiveInfo with ctors := constructors } : Ixon.Inductive))
       (listBytes constructorBytes inductiveInfo.ctors.toList)
       inductiveInfo := by
+    apply Reads.checkCount _ 6
+      (by
+        simpa [hdecode] using
+          listBytes_size_ge constructorBytes 6 inductiveInfo.ctors.toList
+            constructorBytes_size_ge)
     simpa [getMany, hdecode] using hafterConstructors
   have hall := Reads.bind
     (next := fun count : Ixon.Tag0 => do
+      Ixon.checkCount count.size.toNat.toUInt64 6
       let mut constructors : Array Ixon.Constructor := #[]
       for _ in [0:count.size.toNat] do
         constructors := constructors.push (← Ixon.getConstructor)
@@ -266,20 +277,11 @@ theorem getInductiveAfterFlags_reads (inductiveInfo : Ixon.Inductive)
 theorem getInductive_reads (inductiveInfo : Ixon.Inductive)
     (h : InductiveWireWF inductiveInfo) :
     Reads Ixon.getInductive (inductiveBytes inductiveInfo) inductiveInfo := by
-  have hflags := getU8_reads (inductiveFlags inductiveInfo)
-  have hdecode := unpackInductiveFlags_pack inductiveInfo.isUnsafe
+  have hflags := getBool_reads inductiveInfo.isUnsafe
   have htail := getInductiveAfterFlags_reads inductiveInfo h
-  have htail' : Reads (getInductiveFromFlags (inductiveFlags inductiveInfo))
-      (tag0Bytes inductiveInfo.lvls ++ tag0Bytes inductiveInfo.params ++
-        tag0Bytes inductiveInfo.indices ++
-          Ix.Compile.Verify.Codec.Ixon.Expr.spineWireEncode inductiveInfo.typ ++
-            tag0Bytes inductiveInfo.ctors.size.toUInt64 ++
-              listBytes constructorBytes inductiveInfo.ctors.toList)
-      inductiveInfo := by
-    simpa [getInductiveFromFlags, inductiveFlags, hdecode] using htail
-  have hall := Reads.bind (next := getInductiveFromFlags) hflags htail'
+  have hall := Reads.bind (next := getInductiveAfterFlags) hflags htail
   rw [getInductive_eq]
-  simpa [inductiveBytes, ByteArray.append_assoc] using hall
+  simpa [inductiveBytes, inductiveFlags_eq, ByteArray.append_assoc] using hall
 
 inductive MutConstWireWF : Ixon.MutConst → Prop where
   | defn {definition : Ixon.Definition} :

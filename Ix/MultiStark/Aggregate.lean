@@ -483,6 +483,10 @@ def aggregate := ⟦
   fn join_parse_check_env(bytes: ByteStream) -> (Addr, Option‹Addr›) {
     let (tag, s) = join_read_byte(bytes);
     assert_eq!(tag, 0xE5u8, "join: child claim is not CheckEnv");
+    let (format, s) = join_read_byte(s);
+    assert_eq!(format, 3u8, "join: unsupported object format");
+    let (validator, s) = join_read_byte(s);
+    assert_eq!(validator, 1u8, "join: wrong validator identity");
     let (root, s2) = join_read_address(s);
     let (assumptions, stop) = join_get_opt_address(s2);
     assert_eq!(load(stop), ListNode.Nil,
@@ -740,3 +744,4 @@ def aggregate := ⟦
 end MultiStark
 
 end
+

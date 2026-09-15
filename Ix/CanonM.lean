@@ -19,6 +19,7 @@ module
 
 public import Ix.Common
 public import Ix.Environment
+public import Ix.SemanticContract
 public import Ix.Address
 
 public section
@@ -600,8 +601,10 @@ partial def exprEqCached (a b : Lean.Expr) : EqState Bool := do
       if !(← exprEqCached valA valB) then return false
       exprEqCached bodyA bodyB
     | .lit lA, .lit lB => pure (lA == lB)
-    -- Mdata entries are ignored for semantic equality (they carry annotations, not semantics)
-    | .mdata _ eA, .mdata _ eB => exprEqCached eA eB
+    -- Presentation metadata is transparent; effective contracts are semantic.
+    | .mdata dataA eA, .mdata dataB eB => do
+      if SemanticContract.leanFields dataA != SemanticContract.leanFields dataB then return false
+      exprEqCached eA eB
     | .proj tnA idxA sA, .proj tnB idxB sB =>
       if tnA != tnB || idxA != idxB then return false
       exprEqCached sA sB
@@ -773,3 +776,4 @@ def uncanonEnvParallel (consts : HashMap Ix.Name Ix.ConstantInfo) (numWorkers : 
 end Ix.CanonM
 
 end
+

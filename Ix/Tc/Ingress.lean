@@ -6,6 +6,11 @@ public import Ix.Ixon
 /-!
 Mirror: crates/kernel/src/ingress.rs (the Ixon → kernel, anonymous-mode half)
 
+This is the **erased typing** boundary. V3 contracts are retained in the
+addressed source but erased for Lean kernel typing. Resource promises require
+`Ix.Resource.Validate`; successful ordinary typechecking alone establishes
+none of those promises.
+
 Anon ingress uses only `Ixon.Constant` data — never `ConstantMeta`,
 `Env.named`, or `Env.names`. Projection addresses are reconstructed
 deterministically from `(block, idx, [cidx])` via `serConstant` commitment,
@@ -303,8 +308,8 @@ def ingressExpr (ixonEnv : Ixon.Env) (ctx : IngressCtx) (root : Ixon.Expr) :
       | .all _ _ ty body =>
         stack := stack.push .allDone |>.push (.process body)
           |>.push (.process ty)
-      | .letE nd ty val body =>
-        stack := stack.push (.letDone nd) |>.push (.process body)
+      | .letE contract ty val body =>
+        stack := stack.push (.letDone contract.nonDep) |>.push (.process body)
           |>.push (.process val) |>.push (.process ty)
       | .prj typeRefIdx field val =>
         let some typeAddr := ctx.refs[typeRefIdx.toNat]?
@@ -601,3 +606,4 @@ end Ix.Tc
 
 end
 end
+

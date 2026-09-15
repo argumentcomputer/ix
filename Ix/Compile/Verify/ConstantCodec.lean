@@ -1,7 +1,7 @@
 import Ix.Compile.Verify.ExprSpineCodec
 
 /-!
-# Proof-visible v2 core constant codec
+# Proof-visible v3 core constant codec
 
 This slice composes the verified arbitrary-spine expression codec through
 production definition and axiom payloads, their `ConstantInfo` tags, and a
@@ -29,6 +29,19 @@ theorem unpackDefKindSafety_pack (kind : DefKind)
     Ixon.unpackDefKindSafety (Ixon.packDefKindSafety kind safety) =
       (kind, safety) := by
   cases kind <;> cases safety <;> decide
+
+theorem packDefKindSafety_valid (kind : DefKind) (safety : DefinitionSafety) :
+    ((Ixon.packDefKindSafety kind safety >>> 2 > 2) ||
+      (Ixon.packDefKindSafety kind safety &&& 3 > 2)) = false := by
+  cases kind <;> cases safety <;> decide
+
+theorem getBool_reads (value : Bool) :
+    Reads (Ixon.Serialize.get (α := Bool))
+      [if value then 1 else 0].toByteArray value := by
+  cases value <;> intro before after <;>
+    change (EStateM.bind Ixon.getU8 _) _ = _
+  all_goals rw [EStateM.bind, getU8_reads _ before after]
+  all_goals rfl
 
 theorem putDefinition_writes (definition : Ixon.Definition)
     (htyp : Ixon.Expr.wireWF definition.typ)
@@ -91,21 +104,37 @@ theorem getDefinition_reads (definition : Ixon.Definition)
       definition := by
     rw [unpackDefKindSafety_pack]
     simpa [ByteArray.append_assoc] using hafterLvls
+  have hchecked : Reads
+      (do
+        let packed := Ixon.packDefKindSafety definition.kind definition.safety
+        if packed >>> 2 > 2 || (packed &&& 3) > 2 then
+          throw "invalid definition kind/safety"
+        let (kind, safety) := Ixon.unpackDefKindSafety packed
+        let lvls := (← Ixon.getTag0).size
+        let typ ← Ixon.getExpr
+        let value ← Ixon.getExpr
+        return (⟨kind, safety, lvls, typ, value⟩ : Ixon.Definition))
+      (tag0Bytes definition.lvls ++ Expr.spineWireEncode definition.typ ++
+        Expr.spineWireEncode definition.value) definition := by
+    simpa only [packDefKindSafety_valid, Bool.false_eq_true, if_false]
+      using hafterLvls'
   have hall := Reads.bind
     (next := fun packed : UInt8 => do
+      if packed >>> 2 > 2 || (packed &&& 3) > 2 then
+        throw "invalid definition kind/safety"
       let (kind, safety) := Ixon.unpackDefKindSafety packed
       let lvls := (← Ixon.getTag0).size
       let typ ← Ixon.getExpr
       let value ← Ixon.getExpr
       return (⟨kind, safety, lvls, typ, value⟩ : Ixon.Definition))
-    hkind hafterLvls'
+    hkind hchecked
   simpa [Ixon.getDefinition, definitionBytes, unpackDefKindSafety_pack,
     ByteArray.append_assoc] using hall
 
 theorem getAxiom_reads (axiomInfo : Ixon.Axiom)
     (htyp : Ixon.Expr.wireWF axiomInfo.typ) :
     Reads Ixon.getAxiom (axiomBytes axiomInfo) axiomInfo := by
-  have hbool := getU8_reads (if axiomInfo.isUnsafe then 1 else 0)
+  have hbool := getBool_reads axiomInfo.isUnsafe
   have hlvls := getTag0_reads axiomInfo.lvls
   have htypRead := Expr.getExpr_reads_spine axiomInfo.typ htyp
   have hreturn := Reads.pure axiomInfo
@@ -118,27 +147,12 @@ theorem getAxiom_reads (axiomInfo : Ixon.Axiom)
       let typ ← Ixon.getExpr
       return ({ axiomInfo with lvls := lvls.size, typ } : Ixon.Axiom))
     hlvls hafterTyp
-  have hdecodeUnsafe :
-      (((if axiomInfo.isUnsafe then 1 else 0) : UInt8) != 0) =
-        axiomInfo.isUnsafe := by
-    cases axiomInfo.isUnsafe <;> decide
-  have hafterLvls' : Reads
-      (do
-        let lvls := (← Ixon.getTag0).size
-        let typ ← Ixon.getExpr
-        return (⟨(((if axiomInfo.isUnsafe then 1 else 0) : UInt8) != 0),
-          lvls, typ⟩ : Ixon.Axiom))
-      (tag0Bytes axiomInfo.lvls ++ Expr.spineWireEncode axiomInfo.typ)
-      axiomInfo := by
-    simp only [hdecodeUnsafe]
-    simpa using hafterLvls
   have hall := Reads.bind
-    (next := fun encodedUnsafe : UInt8 => do
-      let isUnsafe := encodedUnsafe != 0
+    (next := fun isUnsafe : Bool => do
       let lvls := (← Ixon.getTag0).size
       let typ ← Ixon.getExpr
       return (⟨isUnsafe, lvls, typ⟩ : Ixon.Axiom))
-    hbool hafterLvls'
+    hbool hafterLvls
   simpa [Ixon.getAxiom, axiomBytes, ByteArray.append_assoc] using hall
 
 theorem runGet_runPut_definition (definition : Ixon.Definition)

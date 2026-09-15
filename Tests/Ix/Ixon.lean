@@ -111,8 +111,8 @@ def exprUnits : TestSeq :=
     .all .many .shared (.sort 0) (.var 0),
     .all .linear .unique (.sort 0)
       (.all .erased .shared (.sort 1) (.var 0)),  -- Nested alls (telescope)
-    .letE true (.sort 0) (.var 0) (.var 1),
-    .letE false (.sort 0) (.var 0) (.var 1),
+    .letE (.lean true) (.sort 0) (.var 0) (.var 1),
+    .letE (.lean false) (.sort 0) (.var 0) (.var 1),
     .prj 0 1 (.var 0),
   ]
   cases.foldl (init := .done) fun acc e =>

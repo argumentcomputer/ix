@@ -41,12 +41,10 @@ initialize sourceMeasureExtension :
 private def mergeContracts (actual : Lean.ConstantInfo) (patches : Array SourceContract) :
     Except SourceContractError SourceContract := do
   let mut binders := #[]
-  let regions := (patches[0]?.map (·.regions)).getD #[]
   for patch in patches do
     if patch.source != actual then throw (.staleSource patch.source.name)
-    if patch.regions != regions then throw (.conflictingRegions actual.name)
     binders := binders ++ patch.binders
-  return { source := actual, binders, regions }
+  return { source := actual, binders }
 
 /-- Register a checked patch. Disjoint patches accumulate; duplicate or
 conflicting occurrences fail even when their requested modes are identical. -/
@@ -80,6 +78,8 @@ def compileInputFromEnv (env : Lean.Environment)
   for (name, actual) in constants do
     if let some patches := registry[name]? then
       contracts := contracts.push (← mergeContracts actual patches)
+    else if sourceHasAnnotations actual then
+      contracts := contracts.push (← SourceContract.fromAnnotations actual)
     measureHints := measureHints ++ (hints[name]?.getD #[])
   let input := { constants, contracts, measureHints : CompileInput }
   let _ ← input.resolve
@@ -88,3 +88,4 @@ def compileInputFromEnv (env : Lean.Environment)
 end Ix.Compile
 
 end
+

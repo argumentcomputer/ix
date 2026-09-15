@@ -8,9 +8,8 @@ This module connects the concrete E2 Boolean generation certificate to the
 E3-S production-driver adapter.  The runtime checker call remains a required
 gate, but semantic authority for these two coordinated blocks comes from the
 fixed family transition and existing-recursor certificates.  In particular,
-the proof does not reinterpret the runtime cache order as a topological
-semantic schedule: the recursor work item is physically enumerated first,
-while its successful checker call also validates and caches the family block.
+the proof supplies a topological semantic schedule independently of runtime
+cache order. The v3 address order enumerates the family before its recursor.
 
 The staged baseline below has the constructively generated Boolean Theory
 environment and an empty trust predicate.  Its `VEnv.WF` field is derived
@@ -80,7 +79,7 @@ def familyItem : AnonWorkItem :=
   .block familyBlockAddress familyId.addr
     #[familyId.addr, falseId.addr, trueId.addr]
 
-def booleanWork : Array AnonWorkItem := #[recursorItem, familyItem]
+def booleanWork : Array AnonWorkItem := #[familyItem, recursorItem]
 
 private theorem buildAnonWorkNative :
     buildAnonWork recursorIxonEnv = .ok booleanWork := by
@@ -106,25 +105,25 @@ def recursorProjectionConstant : Ixon.Constant :=
 
 private theorem sourceAddressesNative :
     orderedAnonConstAddrs recursorIxonEnv =
-      #[recursorId.addr, recursorBlockAddress, trueId.addr,
-        familyBlockAddress, falseId.addr, familyId.addr] := by
+      #[recursorId.addr, trueId.addr, familyBlockAddress,
+        recursorBlockAddress, falseId.addr, familyId.addr] := by
   native_decide
 
 theorem sourceAddresses :
     orderedAnonConstAddrs recursorIxonEnv =
-      #[recursorId.addr, recursorBlockAddress, trueId.addr,
-        familyBlockAddress, falseId.addr, familyId.addr] :=
+      #[recursorId.addr, trueId.addr, familyBlockAddress,
+        recursorBlockAddress, falseId.addr, familyId.addr] :=
   sourceAddressesNative
 
 private theorem sourceKeysNative :
     recursorIxonEnv.consts.keys =
-      [recursorBlockAddress, falseId.addr, recursorId.addr,
-        trueId.addr, familyBlockAddress, familyId.addr] := by
+      [falseId.addr, trueId.addr, recursorId.addr,
+        recursorBlockAddress, familyBlockAddress, familyId.addr] := by
   native_decide
 
 private theorem sourceAddressesNodupNative :
-    (#[recursorId.addr, recursorBlockAddress, trueId.addr,
-      familyBlockAddress, falseId.addr, familyId.addr] : Array Address).toList.Nodup := by
+    (#[recursorId.addr, trueId.addr, familyBlockAddress,
+        recursorBlockAddress, falseId.addr, familyId.addr] : Array Address).toList.Nodup := by
   native_decide
 
 private theorem recursorTargetsNonemptyNative :
@@ -140,8 +139,8 @@ is used to classify arbitrary successful lookups, independently of the
 ordering implementation used by `buildAnonWork`. -/
 theorem sourceKeys :
     recursorIxonEnv.consts.keys =
-      [recursorBlockAddress, falseId.addr, recursorId.addr,
-        trueId.addr, familyBlockAddress, familyId.addr] :=
+      [falseId.addr, trueId.addr, recursorId.addr,
+        recursorBlockAddress, familyBlockAddress, familyId.addr] :=
   sourceKeysNative
 
 private theorem familyBlockEntry :
@@ -204,14 +203,14 @@ private theorem sourceEntryCases {addr : Address} {constant : Ixon.Constant}
     exact .inr (.inr (.inr (.inl ⟨rfl,
       ExactAnonEntry.constant_unique hentry recursorProjectionEntry⟩)))
   · subst addr
-    exact .inl ⟨rfl,
-      ExactAnonEntry.constant_unique hentry recursorBlockEntry⟩
-  · subst addr
     exact .inr (.inl ⟨rfl,
       ExactAnonEntry.constant_unique hentry trueProjectionEntry⟩)
   · subst addr
     exact .inr (.inr (.inl ⟨rfl,
       ExactAnonEntry.constant_unique hentry familyBlockEntry⟩))
+  · subst addr
+    exact .inl ⟨rfl,
+      ExactAnonEntry.constant_unique hentry recursorBlockEntry⟩
   · subst addr
     exact .inr (.inr (.inr (.inr (.inl ⟨rfl,
       ExactAnonEntry.constant_unique hentry falseProjectionEntry⟩))))
@@ -231,9 +230,9 @@ def sourceWF : AnonWorkEnvWF recursorIxonEnv where
     simp at haddr
     rcases haddr with rfl | rfl | rfl | rfl | rfl | rfl
     · exact ⟨recursorProjectionConstant, recursorProjectionEntry⟩
-    · exact ⟨recursorBlockConstant, recursorBlockEntry⟩
     · exact ⟨trueProjectionConstant, trueProjectionEntry⟩
     · exact ⟨familyBlockConstant, familyBlockEntry⟩
+    · exact ⟨recursorBlockConstant, recursorBlockEntry⟩
     · exact ⟨falseProjectionConstant, falseProjectionEntry⟩
     · exact ⟨familyProjectionConstant, familyProjectionEntry⟩
   blocksNonempty := by
@@ -338,22 +337,12 @@ def blockOfIdempotent : IxonEnv.BlockOfIdempotent recursorIxonEnv := by
       rw [sourceKeys] at hkey
       simp at hkey
       rcases hkey with rfl | rfl | rfl | rfl | rfl | rfl
-      · simp [blockOfAddr, recursorBlockEntry.getConst,
-          recursorBlockConstant]
-      · simp [blockOfAddr, falseProjectionEntry.getConst,
-          familyBlockEntry.getConst, falseProjectionConstant,
-          familyBlockConstant]
-      · simp [blockOfAddr, recursorProjectionEntry.getConst,
-          recursorBlockEntry.getConst, recursorProjectionConstant,
-          recursorBlockConstant]
-      · simp [blockOfAddr, trueProjectionEntry.getConst,
-          familyBlockEntry.getConst, trueProjectionConstant,
-          familyBlockConstant]
-      · simp [blockOfAddr, familyBlockEntry.getConst,
-          familyBlockConstant]
-      · simp [blockOfAddr, familyProjectionEntry.getConst,
-          familyBlockEntry.getConst, familyProjectionConstant,
-          familyBlockConstant]
+      all_goals simp [blockOfAddr, recursorBlockEntry.getConst,
+        familyBlockEntry.getConst, falseProjectionEntry.getConst,
+        trueProjectionEntry.getConst, recursorProjectionEntry.getConst,
+        familyProjectionEntry.getConst, recursorBlockConstant,
+        familyBlockConstant, falseProjectionConstant, trueProjectionConstant,
+        recursorProjectionConstant, familyProjectionConstant]
 
 /-- Exact collapsed dependency catalog used by the Boolean driver theorem. -/
 def dependencyGraph : DependencyCatalog :=
@@ -410,7 +399,7 @@ theorem depsClosed :
   intro item hitem target hdependency
   rw [expectedAnonWork_eq] at hitem
   have hcases : item = recursorItem ∨ item = familyItem := by
-    simpa [booleanWork] using hitem
+    simpa [booleanWork, or_comm] using hitem
   rcases hcases with rfl | rfl
   · left
     change dependencyGraph.dependsOn recursorBlockAddress target at hdependency
@@ -429,16 +418,15 @@ theorem subjects_disjoint_assumptions :
   intro addr _ haddr
   simp [noAssumptions] at haddr
 
-/-- A semantic schedule may differ from the physical serial enumeration.
-The family is admitted first because every recursor reference collapses into
-that family block; the production driver still executes recursor-first. -/
+/-- The family is admitted first because every recursor reference collapses
+into that family block. This schedule agrees with the v3 address order. -/
 def wellFounded :
     WellFoundedBlocks dependencyGraph (expectedAnonWork recursorIxonEnv)
       sourceWF.subjects where
   schedule := [familyItem, recursorItem]
   permutation := by
     rw [expectedAnonWork_eq]
-    exact List.Perm.swap recursorItem familyItem []
+    exact List.Perm.refl _
   topological := by
     apply TopologicalFrom.cons
     · intro target hdependency _
@@ -459,7 +447,7 @@ def wellFounded :
     intro item target hitem hdependency _ houtside
     rw [expectedAnonWork_eq] at hitem
     have hcases : item = recursorItem ∨ item = familyItem := by
-      simpa [booleanWork] using hitem
+      simpa [booleanWork, or_comm] using hitem
     rcases hcases with rfl | rfl
     · change dependencyGraph.blockOf target ≠ recursorBlockAddress at houtside
       change (if dependencyGraph.blockOf target = recursorBlockAddress then 1 else 0) <
@@ -538,7 +526,7 @@ def supportedFragment :
   resources := by
     intro item hitem before checker hrun current hle hdeps hnot
     have hcases : item = recursorItem ∨ item = familyItem := by
-      simpa [booleanWork] using hitem
+      simpa [booleanWork, or_comm] using hitem
     by_cases hrecursor : item = recursorItem
     · subst item
       exact .block (recursorCertificateResources current hle)
@@ -562,8 +550,8 @@ def checkCfg : CheckCfg :=
   { verifyHashes := true, clearEvery := 1 }
 
 def successfulResults : Array CheckResult :=
-  #[⟨recursorId.addr, none⟩, ⟨familyId.addr, none⟩,
-    ⟨falseId.addr, none⟩, ⟨trueId.addr, none⟩]
+  #[⟨familyId.addr, none⟩, ⟨falseId.addr, none⟩,
+    ⟨trueId.addr, none⟩, ⟨recursorId.addr, none⟩]
 
 private theorem checkEnvAnonNative :
     checkEnvAnon recursorIxonEnv checkCfg = .ok successfulResults := by

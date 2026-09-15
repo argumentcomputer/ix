@@ -11,6 +11,7 @@ pub mod canon_univ;
 pub mod catalog;
 pub mod comm;
 pub mod constant;
+pub mod contract;
 #[cfg(not(target_arch = "riscv64"))]
 pub mod diff;
 pub mod env;
@@ -21,6 +22,7 @@ pub mod map;
 pub mod merkle;
 pub mod metadata;
 pub mod proof;
+pub mod resource;
 pub mod serialize;
 pub mod shard_claim;
 pub mod sharing;
@@ -28,8 +30,8 @@ pub mod syntax;
 pub mod tag;
 pub mod univ;
 
-/// Stable identifier for the v2 Ixon wire grammar.
-pub const WIRE_FORMAT_ID: &str = "ixon-v2";
+/// Stable identifier for the v3 Ixon wire grammar.
+pub const WIRE_FORMAT_ID: &str = "ixon-v3";
 
 // Re-export main types
 pub use comm::Comm;
@@ -285,7 +287,6 @@ mod doc_examples {
   fn expr_app_telescope() {
     // App(App(App(f, a), b), c) with f=Var(3), a=Var(2), b=Var(1), c=Var(0)
     // -> Tag4 { flag: 0x7, size: 3 } + f + a + b + c
-    // = 0x73 + 0x13 + 0x12 + 0x11 + 0x10
     let expr = Expr::app(
       Expr::app(Expr::app(Expr::var(3), Expr::var(2)), Expr::var(1)),
       Expr::var(0),
@@ -295,16 +296,15 @@ mod doc_examples {
     assert_eq!(
       buf,
       vec![0x73, 0x13, 0x12, 0x11, 0x10],
-      "App telescope should be [0x73, 0x13, 0x12, 0x11, 0x10]"
+      "App telescope contains its ordinary arguments"
     );
   }
 
   #[test]
   fn expr_lam_telescope() {
     // Lam(t1, Lam(t2, Lam(t3, body))) with all types Sort(0) and body Var(0)
-    // -> Tag4 { flag: 0x8, size: 3 } + (many, t1) + (many, t2)
-    //    + (many, t3) + body
-    // = 0x83 + 0x03 + 0x00 + 0x03 + 0x00 + 0x03 + 0x00 + 0x10
+    // Each binder uses one byte: many (3), shared (bit 2), unrestricted.
+    // Its domain follows; the body follows all three binders.
     let ty = Expr::sort(0);
     let expr = Expr::lam(
       ty.clone(),
@@ -314,8 +314,8 @@ mod doc_examples {
     serialize::put_expr(&expr, &mut buf);
     assert_eq!(
       buf,
-      vec![0x83, 0x03, 0x00, 0x03, 0x00, 0x03, 0x00, 0x10],
-      "Lam telescope should carry one v2 mode byte per binder"
+      vec![0x83, 0x07, 0x00, 0x07, 0x00, 0x07, 0x00, 0x10],
+      "Lam telescope carries explicit v3 input contracts"
     );
   }
 
@@ -335,7 +335,7 @@ mod doc_examples {
     claim.put(&mut buf);
     assert_eq!(buf[0], 0xE3, "Eval claim should start with 0xE3");
     // 1 (tag) + 64 (addresses) + 1 (opt=None) = 66
-    assert_eq!(buf.len(), 1 + 64 + 1, "Eval claim no-asm = 66 bytes");
+    assert_eq!(buf.len(), 1 + 2 + 64 + 1, "Eval claim no-asm = 68 bytes");
   }
 
   #[test]
@@ -353,9 +353,9 @@ mod doc_examples {
     proof.put(&mut buf);
     assert_eq!(buf[0], 0xF0, "Eval proof should start with 0xF0");
     // 1 (tag) + 64 (addresses) + 1 (opt) + 1 (len=4) + 4 (proof) = 71
-    assert_eq!(buf.len(), 71, "Eval proof no-asm + 4 proof bytes = 71 bytes");
-    assert_eq!(buf[66], 0x04, "proof.len byte should be 0x04");
-    assert_eq!(&buf[67..71], &[1, 2, 3, 4], "proof bytes should be [1,2,3,4]");
+    assert_eq!(buf.len(), 73, "Eval proof no-asm + 4 proof bytes = 73 bytes");
+    assert_eq!(buf[68], 0x04, "proof.len byte should be 0x04");
+    assert_eq!(&buf[69..73], &[1, 2, 3, 4], "proof bytes should be [1,2,3,4]");
   }
 
   #[test]
@@ -366,7 +366,7 @@ mod doc_examples {
     let mut buf = Vec::new();
     claim.put(&mut buf);
     assert_eq!(buf[0], 0xE4, "Check claim should start with 0xE4");
-    assert_eq!(buf.len(), 1 + 32 + 1, "Check claim no-asm = 34 bytes");
+    assert_eq!(buf.len(), 1 + 2 + 32 + 1, "Check claim no-asm = 36 bytes");
   }
 
   #[test]
@@ -493,7 +493,7 @@ mod doc_examples {
 
   #[test]
   fn env_tag() {
-    // Env -> Tag4 { flag: 0xE, size: VERSION } -> 0xE2 for v2
+    // Env -> Tag4 { flag: 0xE, size: VERSION } -> 0xE3 for v3
     let env = Env::new();
     let mut buf = Vec::new();
     env.put(&mut buf).unwrap();

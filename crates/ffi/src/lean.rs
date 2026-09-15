@@ -33,6 +33,9 @@ lean_ffi::lean_domain_type! {
 lean_ffi::lean_inductive! {
   // --- Ixon structures (single-constructor) ---
 
+  LeanIxonValueContract  [ { num_8: 2 } ];
+  LeanIxonBinderContract [ { num_obj: 1, num_8: 1 } ];
+  LeanIxonLetContract    [ { num_obj: 1, num_8: 2 } ];
   LeanIxonDefinition      [ { num_obj: 2, num_64: 1, num_8: 2 } ];
   LeanIxonRecursorRule    [ { num_obj: 1, num_64: 1 } ];
   LeanIxonRecursor        [ { num_obj: 2, num_64: 5, num_8: 2 } ];
@@ -93,9 +96,9 @@ lean_ffi::lean_inductive! {
     { num_64: 1 },                            // tag 5: str
     { num_64: 1 },                            // tag 6: nat
     { num_obj: 2 },                           // tag 7: app
-    { num_obj: 2, num_8: 1 },                 // tag 8: lam (uses)
-    { num_obj: 2, num_8: 2 },                 // tag 9: all (uses, owned)
-    { num_obj: 3, num_8: 1 },                 // tag 10: let
+    { num_obj: 3 },                           // tag 8: lam
+    { num_obj: 4 },                           // tag 9: all
+    { num_obj: 4 },                           // tag 10: let
     { num_64: 1 },                            // tag 11: share
   ];
 

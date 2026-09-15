@@ -533,6 +533,10 @@ def circuit := ⟦
   fn aggr_parse_check_env(bytes: ByteStream) -> (Addr, Option‹Addr›) {
     let (tag, s) = aggr_read_byte(bytes);
     assert_eq!(tag, 0xE5u8, "aggr: claim is not CheckEnv");
+    let (format, s) = aggr_read_byte(s);
+    assert_eq!(format, 3u8, "aggr: unsupported object format");
+    let (validator, s) = aggr_read_byte(s);
+    assert_eq!(validator, 1u8, "aggr: wrong validator identity");
     let (root, s2) = aggr_read_address(s);
     let (assumptions, stop) = aggr_get_opt_address(s2);
     assert_eq!(load(stop), ListNode.Nil,
@@ -800,3 +804,4 @@ def circuit := ⟦
 end Aggr
 
 end
+

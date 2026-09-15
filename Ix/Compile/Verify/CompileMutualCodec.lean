@@ -1755,6 +1755,7 @@ inductive CompareExprReady
       CompareExprReady compileEnv ctx levelCtx origin
         (.proj typeName field value hash)
   | mdata {data inner hash} :
+      SemanticContract.hasMetadata data = false →
       CompareExprReady compileEnv ctx levelCtx origin inner →
       CompareExprReady compileEnv ctx levelCtx origin
         (.mdata data inner hash)
@@ -1794,7 +1795,7 @@ theorem PreseedReady.compareReady
         obtain ⟨addr, haddr, _⟩ := hresolve
         exact ⟨addr, haddr⟩
       · exact ihvalue
-  | mdata _ ihinner => exact .mdata ihinner
+  | mdata hplain _ ihinner => exact .mdata hplain ihinner
 
 /-- Comparison readiness is insensitive to state fields outside the frozen
 expression-table view (in particular, to comparison-cache inserts). -/
@@ -1828,7 +1829,7 @@ theorem CompareExprReady.of_exprTableView_eq
         rw [resolveConstAddr?_of_exprTableView_eq compileEnv hview]
         exact haddr
       · exact ihvalue
-  | mdata _ ihinner => exact .mdata ihinner
+  | mdata hplain _ ihinner => exact .mdata hplain ihinner
 
 private theorem compareLevelList_run_ready
     (compileEnv : Ix.CompileM.CompileEnv)
@@ -1883,14 +1884,16 @@ theorem compareExpr_run_ready
   cases hx with
   | bvar =>
       cases hy with
-      | mdata hyinner =>
+      | mdata hyplain hyinner =>
+          simp only [hyplain, Bool.false_eq_true, ite_false]
           exact compareExpr_run_ready compileEnv blockEnv state ctx
             xlvls ylvls _ _ .bvar hyinner
       | bvar | sort | const | app | lam | all | letE | lit | proj =>
           exact ⟨_, rfl⟩
   | sort hxlevel =>
       cases hy with
-      | mdata hyinner =>
+      | mdata hyplain hyinner =>
+          simp only [hyplain, Bool.false_eq_true, ite_false]
           exact compareExpr_run_ready compileEnv blockEnv state ctx
             xlvls ylvls _ _ (.sort hxlevel) hyinner
       | sort hylevel =>
@@ -1900,7 +1903,8 @@ theorem compareExpr_run_ready
           exact ⟨_, rfl⟩
   | @const xname xlevels xhash hxlevels hxresolve =>
       cases hy with
-      | mdata hyinner =>
+      | mdata hyplain hyinner =>
+          simp only [hyplain, Bool.false_eq_true, ite_false]
           exact compareExpr_run_ready compileEnv blockEnv state ctx
             xlvls ylvls _ _ (.const hxlevels hxresolve) hyinner
       | @const yname ylevels yhash hylevels hyresolve =>
@@ -1936,7 +1940,8 @@ theorem compareExpr_run_ready
           exact ⟨_, rfl⟩
   | app hxfn hxarg =>
       cases hy with
-      | mdata hyinner =>
+      | mdata hyplain hyinner =>
+          simp only [hyplain, Bool.false_eq_true, ite_false]
           exact compareExpr_run_ready compileEnv blockEnv state ctx
             xlvls ylvls _ _ (.app hxfn hxarg) hyinner
       | app hyfn hyarg =>
@@ -1950,7 +1955,8 @@ theorem compareExpr_run_ready
           exact ⟨_, rfl⟩
   | lam hxty hxbody =>
       cases hy with
-      | mdata hyinner =>
+      | mdata hyplain hyinner =>
+          simp only [hyplain, Bool.false_eq_true, ite_false]
           exact compareExpr_run_ready compileEnv blockEnv state ctx
             xlvls ylvls _ _ (.lam hxty hxbody) hyinner
       | lam hyty hybody =>
@@ -1964,7 +1970,8 @@ theorem compareExpr_run_ready
           exact ⟨_, rfl⟩
   | all hxty hxbody =>
       cases hy with
-      | mdata hyinner =>
+      | mdata hyplain hyinner =>
+          simp only [hyplain, Bool.false_eq_true, ite_false]
           exact compareExpr_run_ready compileEnv blockEnv state ctx
             xlvls ylvls _ _ (.all hxty hxbody) hyinner
       | all hyty hybody =>
@@ -1978,7 +1985,8 @@ theorem compareExpr_run_ready
           exact ⟨_, rfl⟩
   | letE hxty hxvalue hxbody =>
       cases hy with
-      | mdata hyinner =>
+      | mdata hyplain hyinner =>
+          simp only [hyplain, Bool.false_eq_true, ite_false]
           exact compareExpr_run_ready compileEnv blockEnv state ctx
             xlvls ylvls _ _ (.letE hxty hxvalue hxbody) hyinner
       | letE hyty hyvalue hybody =>
@@ -1997,14 +2005,16 @@ theorem compareExpr_run_ready
           exact ⟨_, rfl⟩
   | lit =>
       cases hy with
-      | mdata hyinner =>
+      | mdata hyplain hyinner =>
+          simp only [hyplain, Bool.false_eq_true, ite_false]
           exact compareExpr_run_ready compileEnv blockEnv state ctx
             xlvls ylvls _ _ .lit hyinner
       | bvar | sort | const | app | lam | all | letE | lit | proj =>
           exact ⟨_, rfl⟩
   | @proj xtypeName xfield xvalue xhash hxresolve hxvalue =>
       cases hy with
-      | mdata hyinner =>
+      | mdata hyplain hyinner =>
+          simp only [hyplain, Bool.false_eq_true, ite_false]
           exact compareExpr_run_ready compileEnv blockEnv state ctx
             xlvls ylvls _ _ (.proj hxresolve hxvalue) hyinner
       | @proj ytypeName yfield yvalue yhash hyresolve hyvalue =>
@@ -2050,36 +2060,46 @@ theorem compareExpr_run_ready
                     exact htail ⟨true, compare xaddr yaddr⟩
       | bvar | sort | const | app | lam | all | letE | lit =>
           exact ⟨_, rfl⟩
-  | mdata hxinner =>
+  | mdata hxplain hxinner =>
       cases hy with
-      | mdata hyinner =>
+      | mdata hyplain hyinner =>
+          simp only [hxplain, Bool.false_eq_true, ite_false]
           exact compareExpr_run_ready compileEnv blockEnv state ctx
-            xlvls ylvls _ _ hxinner hyinner
+            xlvls ylvls _ _ hxinner (.mdata hyplain hyinner)
       | bvar =>
+          simp only [hxplain, Bool.false_eq_true, ite_false]
           exact compareExpr_run_ready compileEnv blockEnv state ctx
             xlvls ylvls _ _ hxinner .bvar
       | sort hylevel =>
+          simp only [hxplain, Bool.false_eq_true, ite_false]
           exact compareExpr_run_ready compileEnv blockEnv state ctx
             xlvls ylvls _ _ hxinner (.sort hylevel)
       | const hylevels hyresolve =>
+          simp only [hxplain, Bool.false_eq_true, ite_false]
           exact compareExpr_run_ready compileEnv blockEnv state ctx
             xlvls ylvls _ _ hxinner (.const hylevels hyresolve)
       | app hyfn hyarg =>
+          simp only [hxplain, Bool.false_eq_true, ite_false]
           exact compareExpr_run_ready compileEnv blockEnv state ctx
             xlvls ylvls _ _ hxinner (.app hyfn hyarg)
       | lam hyty hybody =>
+          simp only [hxplain, Bool.false_eq_true, ite_false]
           exact compareExpr_run_ready compileEnv blockEnv state ctx
             xlvls ylvls _ _ hxinner (.lam hyty hybody)
       | all hyty hybody =>
+          simp only [hxplain, Bool.false_eq_true, ite_false]
           exact compareExpr_run_ready compileEnv blockEnv state ctx
             xlvls ylvls _ _ hxinner (.all hyty hybody)
       | letE hyty hyvalue hybody =>
+          simp only [hxplain, Bool.false_eq_true, ite_false]
           exact compareExpr_run_ready compileEnv blockEnv state ctx
             xlvls ylvls _ _ hxinner (.letE hyty hyvalue hybody)
       | lit =>
+          simp only [hxplain, Bool.false_eq_true, ite_false]
           exact compareExpr_run_ready compileEnv blockEnv state ctx
             xlvls ylvls _ _ hxinner .lit
       | proj hyresolve hyvalue =>
+          simp only [hxplain, Bool.false_eq_true, ite_false]
           exact compareExpr_run_ready compileEnv blockEnv state ctx
             xlvls ylvls _ _ hxinner (.proj hyresolve hyvalue)
 termination_by Ix.CompileM.compareExprSize x +
