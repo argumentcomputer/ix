@@ -24,6 +24,7 @@ import Ix.Kernel.Verify.Consistency.Contracts
 import Ix.Kernel.Verify.Consistency.DefEqTiers
 import Ix.Kernel.Verify.Consistency.WhnfSteps
 import Ix.Kernel.Verify.Consistency.DefEqLazyDelta
+import Ix.Kernel.Verify.Consistency.Inductive.Run
 import Ix.Kernel.Verify.Audit.Basic
 
 /-! Exact full-dependency boundaries for the direct model-refinement roots.
@@ -1684,6 +1685,61 @@ private def wp4ExpressionRoots : Array Lean.Name := #[
   ``consumeBetaLamsFuel_size, ``consumeBetaLams_lam_nonempty, ``finishAppResult_run
 ]
 
+
+/-- Singleton inductive admission (WP5, first slice): pure syntax of the
+erased shape, the witness readers, and the generated-rule syntax. -/
+private def inductiveAxiomFreeRoots : Array Lean.Name := #[``Inductive.context_append]
+
+private def inductivePropextRoots : Array Lean.Name := #[
+  ``Inductive.erase_familyApp, ``Inductive.erase_shapeType, ``Inductive.peelForalls?_forallN,
+  ``Inductive.erase_annotateNever, ``Inductive.conditionsScopedCheck_sound, ``Inductive.modeOf_recUvars,
+  ``Inductive.recursorBlockOf?_recursor, ``Inductive.references_liftN, ``Inductive.referencesIn_insert_inv,
+  ``Inductive.motiveLevel_wf, ``Inductive.recursorBlock?_some
+]
+
+private def inductiveQuotRoots : Array Lean.Name := #[
+  ``Inductive.erase_recursiveFieldType, ``Inductive.erase_recursiveTypesFrom, ``Inductive.erase_constructorType,
+  ``Inductive.constructorShape?_type, ``Inductive.erasedShape?_sound, ``Inductive.eraseConstructor_annotate,
+  ``Inductive.eraseShape_annotate, ``Inductive.annotate_singleton, ``Inductive.recursorSourceCheck_sound,
+  ``Inductive.singletonWitnessCheck_sound, ``Inductive.readCtor?_source, ``Inductive.familyBlockOf?_family,
+  ``Inductive.familyBlock?_family, ``Inductive.mapM_some, ``Inductive.ctorMetadata_success,
+  ``Inductive.snapshot_success, ``Inductive.ContextRefs.push, ``Inductive.ContextRefs.context,
+  ``Inductive.scope_lamN_iff, ``Inductive.scope_forallN_iff, ``Inductive.scope_appN_iff,
+  ``Inductive.parameterVars_scope, ``Inductive.referencesIn_lamN_iff, ``Inductive.referencesIn_appN_iff,
+  ``Inductive.parameterVars_referencesIn, ``Inductive.length_ruleBinders, ``Inductive.ruleLhs_scope,
+  ``Inductive.ruleLhs_referencesIn, ``Inductive.referencesIn_forallN_iff, ``Inductive.forIn_yield_all,
+  ``Inductive.recursorSourceCheck_block
+]
+
+/-- Semantic transfer through the trivial family realization, formation
+splitting, the syntactic large-elimination cases, and validation scope. -/
+private def inductiveStandardRoots : Array Lean.Name := #[
+  ``Inductive.formed_append_inv, ``Inductive.typing_of_insert, ``Inductive.formed_of_insert,
+  ``Inductive.family_realizable, ``Inductive.largeEvidence_of_syntax,
+  ``Inductive.validateConst_type_scoped, ``Inductive.validateConst_rules_scoped
+]
+
+/-- Retained-check telescopes and the certified block theorem. The seam
+record is a hypothesis of these roots; no seam is an axiom. -/
+private def inductiveExpressionRoots : Array Lean.Name := #[
+  ``Inductive.classify_trace, ``Inductive.constructor_check_run, ``Inductive.constructors_trace,
+  ``Inductive.constructor_members_trace, ``Inductive.kTarget_success, ``Inductive.rules_trace,
+  ``Inductive.candidate_check_run, ``Inductive.CheckedTelescope.formed, ``Inductive.CheckedTelescope.get,
+  ``Inductive.telescopeChecks, ``Inductive.retypeCheck_context, ``Inductive.SingletonChecks.parametersFormed,
+  ``Inductive.SingletonChecks.constructorTelescopes, ``Inductive.singleton_checkedShape,
+  ``Inductive.singleton_checkedBlock, ``Inductive.singleton_published,
+  ``Inductive.MemberTypeRun.storedTypeCheck, ``Inductive.SingletonRunSupport.scope,
+  ``Inductive.SingletonRunSupport.checks, ``Inductive.singleton_admission
+]
+
+/-- Traces through the whole inductive and recursor block checkers reach the
+recursor generator's remaining generated proofs. -/
+private def inductiveProductionRoots : Array Lean.Name := #[
+  ``Inductive.resolved_member_run, ``Inductive.member_impl_run, ``Inductive.members_trace,
+  ``Inductive.inductive_block_trace, ``Inductive.prepared_run, ``Inductive.recursor_member_trace,
+  ``Inductive.RecursorMemberTrace.strict, ``Inductive.recursor_block_trace,
+  ``Inductive.RecursorBlockTrace.rulesScoped
+]
 private def wp4ProductionRoots : Array Lean.Name := #[
   ``ReductionInvariant, ``ReductionInvariant.ofChecker, ``ReductionInvariant.sourceState,
   ``ReductionInvariant.inference, ``ReductionInvariant.coherent, ``ReductionInvariant.installed,
@@ -2072,6 +2128,19 @@ def roots : Array RootAllowance := #[
   ++ wp3ReducingRecognizerRoots.map (fun root => {
     root, standardAxioms := #[``propext], forbiddenDependencies := forbiddenProduction })
   ++ wp3ReducingAxiomFreeRoots.map (fun root => { root, forbiddenDependencies := forbiddenProduction })
+  ++ inductiveAxiomFreeRoots.map (fun root => { root, forbiddenDependencies := forbiddenProduction })
+  ++ inductivePropextRoots.map (fun root => {
+    root, standardAxioms := #[``propext], forbiddenDependencies := forbiddenProduction })
+  ++ inductiveQuotRoots.map (fun root => {
+    root, standardAxioms := #[``propext, ``Quot.sound], forbiddenDependencies := forbiddenProduction })
+  ++ inductiveStandardRoots.map (fun root => {
+    root, standardAxioms := standard, forbiddenDependencies := forbiddenProduction })
+  ++ inductiveExpressionRoots.map (fun root => {
+    root, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative],
+    forbiddenDependencies := forbiddenProduction })
+  ++ inductiveProductionRoots.map (fun root => {
+    root, standardAxioms := standard, nativeAxioms := productionNative,
+    forbiddenDependencies := forbiddenProduction })
 
 run_cmd Kernel.Verify.Audit.check roots
 
