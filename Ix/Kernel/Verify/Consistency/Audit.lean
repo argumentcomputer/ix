@@ -9,6 +9,7 @@ import Ix.Kernel.Verify.Consistency.Environment
 import Ix.Kernel.Verify.Consistency.RecursiveCache
 import Ix.Kernel.Verify.Consistency.RecursiveState
 import Ix.Kernel.Verify.Consistency.SourceAgreement
+import Ix.Kernel.Verify.Consistency.Resolution
 import Ix.Kernel.Verify.Consistency.SourceCache
 import Ix.Kernel.Verify.Consistency.Dependencies
 import Ix.Kernel.Verify.Consistency.CheapBeta
@@ -1540,6 +1541,61 @@ private def literalRoots : Array Lean.Name := #[
   ``CheckerInvariant.inferNat
 ]
 
+/-- Canonical reference maps and standalone/projection classification are pure. -/
+private def resolutionDataRoots : Array Lean.Name := #[
+  ``memberRecord, ``AxiomSpec.Canonical, ``DefinitionSpec.Canonical, ``CanonicalOutside
+]
+
+private def resolutionClassificationRoots : Array Lean.Name := #[
+  ``Ixon.ConstantInfo.Standalone, ``Ixon.ConstantInfo.Projection,
+  ``Ixon.ConstantInfo.not_projection_of_standalone, ``ingressBlockAddr?_eq_none_iff,
+  ``WorkPosition.mem
+]
+
+/-- The canonical map over the stored source constants, its location
+characterization, injectivity on standalone coordinates, agreement with the
+certified adapter, the derived static bindings, and the canonical axiom
+interface reach only the source environment's finite maps. -/
+private def resolutionSourceRoots : Array Lean.Name := #[
+  ``Ixon.Env.mutMember?, ``Ixon.Env.resolveInfo, ``Ixon.Env.resolve, ``Ixon.Env.Locates,
+  ``Ixon.Env.resolve_stored, ``Ixon.Env.resolve_eq_some_iff, ``Ixon.Env.resolve_standalone,
+  ``Ixon.Env.mutMember?_some, ``Ixon.Env.Locates.stored, ``Ixon.Env.Locates.block_stored,
+  ``Ixon.Env.resolve_member_self_iff, ``Ixon.Env.recordOf, ``Ixon.Env.Locates.standalone_or_record,
+  ``Ixon.Env.recordOf_member_some, ``Ixon.Env.Standalone.no_member, ``Ixon.Env.Locates.same_ref,
+  ``Ixon.Env.resolve_standalone_injective, ``Ixon.LazyConstant.get?_of_get,
+  ``lazy_of_getConst?, ``getConst?_of_lazy, ``certified_resolveReference?_eq,
+  ``SourceMaterializes, ``sourceMaterializesCheck, ``mutMember?_of_stored,
+  ``PrimitiveNatBinding.ofLocated, ``PrimitiveNatBinding.ofStandalone,
+  ``PrimitiveNatBinding.ofInductive, ``axiomEnvironment_canonical, ``axiomEnvironment_installed
+]
+
+/-- Source-key membership, the verified loader, generated projection addresses,
+full injectivity, the finite materialization contract, and the exact standalone
+enumeration of `buildAnonWork` reach hashing and the ordered key enumeration. -/
+private def resolutionEnumerationRoots : Array Lean.Name := #[
+  ``mem_keys_of_getConst?, ``resolve_mem_keys, ``resolve_block_mem_keys,
+  ``ofConstantInfo_standalone_iff, ``getConst?_of_verified, ``projectionAddr?,
+  ``ProjectionsCanonical, ``projectionAddr?_of_projection, ``resolve_injective,
+  ``SourceMaterializes.ofCheck, ``buildAnonWorkItem_of_standalone, ``buildAnonWorkItem_standalone,
+  ``resolve_of_work_standalone, ``mem_orderedAnonConstAddrs, ``work_standalone_of_resolve,
+  ``work_standalone_iff, ``memberAddr, ``ProjectionsStored, ``resolve_memberAddr,
+  ``resolve_ctorProjAddr, ``resolve_anonBlockTargets
+]
+
+/-- Source prediction reaches expression and universe construction. -/
+private def resolutionPredictionRoots : Array Lean.Name := #[
+  ``resolve_of_predictStandalone?, ``StandaloneModelBinding.ofSource
+]
+
+/-- The environment theorems with every reference at its canonical coordinate
+reach the production driver like the atomic fragment. -/
+private def resolutionProductionRoots : Array Lean.Name := #[
+  ``ResolvedDefinitionPlan, ``ResolvedDefinitionPlan.atomic, ``ResolvedAxiomObservation,
+  ``ResolvedAxiomObservation.atomic, ``ResolvedEnvironmentFragment,
+  ``ResolvedEnvironmentFragment.atomic, ``checkEnvAnon_preserves_model_resolved,
+  ``checkEnvAnon_represents_source_resolved, ``checkEnvAnon_no_false_resolved
+]
+
 def roots : Array RootAllowance := #[
   { root := ``InterfaceExtends.refl, forbiddenDependencies := forbiddenProduction },
   { root := ``InterfaceExtends.trans, forbiddenDependencies := forbiddenProduction },
@@ -1774,6 +1830,19 @@ def roots : Array RootAllowance := #[
     forbiddenDependencies := forbiddenProduction })
   ++ literalRoots.map (fun root => {
     root, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative],
+    forbiddenDependencies := forbiddenProduction })
+  ++ resolutionDataRoots.map (fun root => { root, forbiddenDependencies := forbiddenProduction })
+  ++ resolutionClassificationRoots.map (fun root => {
+    root, standardAxioms := #[``propext], forbiddenDependencies := forbiddenProduction })
+  ++ resolutionSourceRoots.map (fun root => {
+    root, standardAxioms := #[``propext, ``Quot.sound], forbiddenDependencies := forbiddenProduction })
+  ++ resolutionEnumerationRoots.map (fun root => {
+    root, standardAxioms := standard, forbiddenDependencies := forbiddenProduction })
+  ++ resolutionPredictionRoots.map (fun root => {
+    root, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative],
+    forbiddenDependencies := forbiddenProduction })
+  ++ resolutionProductionRoots.map (fun root => {
+    root, standardAxioms := standard, nativeAxioms := productionNative,
     forbiddenDependencies := forbiddenProduction })
 
 run_cmd Kernel.Verify.Audit.check roots

@@ -16,6 +16,7 @@ import Ix.Kernel.Verify.Consistency.ScopedConstant
 import Ix.Kernel.Verify.Consistency.InferenceCache
 import Ix.Kernel.Verify.Consistency.SortCache
 import Ix.Kernel.Verify.Consistency.Literals
+import Ix.Kernel.Verify.Consistency.Resolution
 import Ix.Kernel.Verify.Consistency.ConstantCache
 import Ix.Kernel.Verify.Consistency.LazyCache
 import Ix.Kernel.Verify.Consistency.BlockCache
@@ -359,5 +360,11 @@ Natural-number literals infer to the interned primitive `Nat` constant; a
 static binding of that address to an admitted entry with a `natural` fact
 types the literal in both cache partitions, through the synthesis, cache
 trace, source-cache, and history recursions, and as invariant preservation.
+Model references are derived from the source environment: the canonical map
+`Ixon.Env.resolve` places standalones in their own one-member block and
+projections at their block coordinates, agrees with the certified adapter, is
+injective on standalone coordinates, enumerates exactly the driver's standalone
+items under a finite materialization contract, derives both static bindings, and
+restates the environment theorems with every reference at its canonical coordinate.
 General checker soundness remains outside this fragment.
 -/
