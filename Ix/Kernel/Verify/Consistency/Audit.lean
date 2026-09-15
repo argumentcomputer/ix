@@ -19,6 +19,7 @@ import Ix.Kernel.Verify.Consistency.BetaSourceInference
 import Ix.Kernel.Verify.Consistency.BetaExposureConstruction
 import Ix.Kernel.Verify.Consistency.BetaHistoryInference
 import Ix.Kernel.Verify.Consistency.Invariant
+import Ix.Kernel.Verify.Consistency.Contracts
 import Ix.Kernel.Verify.Audit.Basic
 
 /-! Exact full-dependency boundaries for the direct model-refinement roots.
@@ -1494,6 +1495,19 @@ private def wp1InitialRoots : Array Lean.Name := #[
   ``RunAssumptions.initialState, ``RunAssumptions.initialLoopState
 ]
 
+/-- The per-method soundness contracts over the checker invariant, their
+per-table bundle, the exhausted base case, the depth induction, and the
+conversion hash-path and sort-inference instances. Every statement mentions
+the invariant, so all reach the same expression and level constructions. -/
+private def wp1ContractRoots : Array Lean.Name := #[
+  ``ReductionPost, ``ConversionPost, ``FullInferencePost, ``InferenceOnlyPost,
+  ``SoundReduction, ``SoundConversion, ``SoundInference,
+  ``WhnfContract, ``DefEqContract, ``InferContract, ``MethodContracts, ``StepContracts,
+  ``SoundReduction.throw, ``SoundConversion.throw, ``SoundInference.throw,
+  ``MethodContracts.zero, ``MethodContracts.succ, ``MethodContracts.methodsN,
+  ``DefEqContract.hashPath, ``InferContract.sortPath
+]
+
 def roots : Array RootAllowance := #[
   { root := ``InterfaceExtends.refl, forbiddenDependencies := forbiddenProduction },
   { root := ``InterfaceExtends.trans, forbiddenDependencies := forbiddenProduction },
@@ -1716,6 +1730,9 @@ def roots : Array RootAllowance := #[
     forbiddenDependencies := forbiddenProduction })
   ++ wp1InitialRoots.map (fun root => {
     root, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative, nameNative],
+    forbiddenDependencies := forbiddenProduction })
+  ++ wp1ContractRoots.map (fun root => {
+    root, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative],
     forbiddenDependencies := forbiddenProduction })
 
 run_cmd Kernel.Verify.Audit.check roots

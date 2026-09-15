@@ -84,6 +84,7 @@ import Ix.Kernel.Verify.Consistency.Dependencies
 import Ix.Kernel.Verify.Consistency.Environment
 import Ix.Kernel.Verify.Consistency.RunAssumptions
 import Ix.Kernel.Verify.Consistency.Invariant
+import Ix.Kernel.Verify.Consistency.Contracts
 import Ix.Kernel.Verify.Consistency.Audit
 
 /-!
@@ -348,5 +349,10 @@ outcomes, key computation, binder and let opening, scope exit, cache clearing,
 per-item reset, and policy changes, and sort and free-variable inference are
 restated as its preservation. Re-expressing the other supported branches and
 deriving the atomic run records from it remain open.
+The soundness of reduction, conversion, and inference is stated as one mutual
+contract per method table over that invariant, closed by induction on the
+production method-table depth from the exhausted table and per-depth one-layer
+obligations that remain open; the conversion hash path and sort inference are
+instances.
 General checker soundness remains outside this fragment.
 -/
