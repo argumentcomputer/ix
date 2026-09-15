@@ -134,6 +134,7 @@ impl AiurSystem {
     commitment_parameters: CommitmentParameters,
     fri_parameters: FriParameters,
   ) -> Self {
+    toplevel.validate_lookup_shapes().expect("invalid Aiur lookup shapes");
     let mut circuit_inputs: Vec<CircuitInputs<G>> = Vec::new();
     let mut slot_widths: Vec<Vec<usize>> = Vec::new();
 
@@ -574,6 +575,9 @@ impl AiurSystem {
     claim: &[G],
     proof: &AiurProof,
   ) -> Result<(), VerificationError<PcsError>> {
+    if !self.toplevel.valid_claim_shape(claim) {
+      return Err(VerificationError::InvalidClaim);
+    }
     self.system.verify(claim, proof)
   }
 
@@ -593,6 +597,7 @@ impl AiurSystem {
 mod tests {
   mod acceptance;
   mod branchless;
+  mod lookup_shapes;
 
   use super::*;
   use crate::{
