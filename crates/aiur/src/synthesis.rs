@@ -22,7 +22,7 @@ use crate::{
   gadgets::{AiurGadget, bytes1::Bytes1, bytes2::Bytes2},
   lookup_budget::lookup_query_bound,
   memory::Memory,
-  trace_heights::fixed_trace_heights,
+  trace_heights::{fixed_trace_heights, trace_cap_coverage},
 };
 
 /// The concrete STARK configuration Aiur instantiates multi-stark with.
@@ -588,6 +588,13 @@ impl AiurSystem {
     ) {
       return Err(VerificationError::InvalidProofShape);
     }
+    if !trace_cap_coverage(
+      self.commitment_parameters.log_blowup,
+      self.commitment_parameters.cap_height,
+      &proof.log_degrees,
+    ) {
+      return Err(VerificationError::InvalidProofShape);
+    }
     if lookup_query_bound(
       self.slot_widths.iter().map(Vec::len),
       &proof.active,
@@ -619,6 +626,7 @@ mod tests {
   mod byte_shapes;
   mod lookup_budget;
   mod lookup_shapes;
+  mod mmcs;
 
   use super::*;
   use crate::{
