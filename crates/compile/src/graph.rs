@@ -9,7 +9,7 @@ use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::collections::hash_map::Entry;
 
-use ix_common::env::{ConstantInfo, Env, Expr, ExprData, Name};
+use ix_common::env::{ConstantInfo, Env, Expr, ExprData, Name, NameData};
 
 /// A set of [`Name`]s, used to represent the neighbors of a node in the reference graph.
 pub type NameSet = FxHashSet<Name>;
@@ -55,6 +55,8 @@ pub struct SetupScan {
   pub graph: RefGraph,
   pub immediate_ungrounded: FxHashMap<Name, crate::ground::GroundError>,
   pub ind_groups: FxHashMap<Name, Vec<Name>>,
+  /// Source contracts that the current conservative emitter cannot preserve.
+  pub source_contracts: Vec<Name>,
 }
 
 /// Fused whole-env setup pass: one decode per constant feeding the ref
@@ -75,6 +77,7 @@ pub fn setup_scan(env: &Env) -> SetupScan {
     in_refs: RefMap,
     ungrounded: FxHashMap<Name, crate::ground::GroundError>,
     ind_groups: FxHashMap<Name, Vec<Name>>,
+    source_contracts: Vec<Name>,
   }
 
   let names: Vec<&Name> = env.keys().collect();
@@ -84,7 +87,10 @@ pub fn setup_scan(env: &Env) -> SetupScan {
       let Some(constant) = env.get(name) else {
         return acc;
       };
-      let deps = get_constant_info_references(&constant);
+      let (deps, annotated) = inspect_constant_references(&constant);
+      if annotated {
+        acc.source_contracts.push(name.clone());
+      }
       // Keep an empty reverse-edge entry even for an isolated constant.
       // Missing referenced names also retain their incoming edges, as in
       // the reference graph used by ungroundedness propagation.
@@ -110,6 +116,7 @@ pub fn setup_scan(env: &Env) -> SetupScan {
       l.out_refs = merge_ref_maps(l.out_refs, r.out_refs);
       l.in_refs = merge_ref_maps(l.in_refs, r.in_refs);
       l.ungrounded.extend(r.ungrounded);
+      l.source_contracts.extend(r.source_contracts);
       for (k, v) in r.ind_groups {
         l.ind_groups.entry(k).or_insert(v);
       }
@@ -120,6 +127,7 @@ pub fn setup_scan(env: &Env) -> SetupScan {
     graph: RefGraph { out_refs: acc.out_refs, in_refs: acc.in_refs },
     immediate_ungrounded: acc.ungrounded,
     ind_groups: acc.ind_groups,
+    source_contracts: acc.source_contracts,
   }
 }
 
@@ -191,44 +199,80 @@ pub fn build_ref_graph(env: &Env) -> RefGraph {
 }
 
 pub fn get_constant_info_references(constant_info: &ConstantInfo) -> NameSet {
+  inspect_constant_references(constant_info).0
+}
+
+fn inspect_constant_references(
+  constant_info: &ConstantInfo,
+) -> (NameSet, bool) {
   let mut acc = NameSet::default();
   let mut visited: FxHashSet<&Expr> = FxHashSet::default();
+  let mut annotated = false;
   match constant_info {
     ConstantInfo::AxiomInfo(val) => {
-      collect_expr_references(&val.cnst.typ, &mut visited, &mut acc);
+      annotated |=
+        collect_expr_references(&val.cnst.typ, &mut visited, &mut acc);
     },
     ConstantInfo::DefnInfo(val) => {
-      collect_expr_references(&val.cnst.typ, &mut visited, &mut acc);
-      collect_expr_references(&val.value, &mut visited, &mut acc);
+      annotated |=
+        collect_expr_references(&val.cnst.typ, &mut visited, &mut acc);
+      annotated |= collect_expr_references(&val.value, &mut visited, &mut acc);
     },
     ConstantInfo::ThmInfo(val) => {
-      collect_expr_references(&val.cnst.typ, &mut visited, &mut acc);
-      collect_expr_references(&val.value, &mut visited, &mut acc);
+      annotated |=
+        collect_expr_references(&val.cnst.typ, &mut visited, &mut acc);
+      annotated |= collect_expr_references(&val.value, &mut visited, &mut acc);
     },
     ConstantInfo::OpaqueInfo(val) => {
-      collect_expr_references(&val.cnst.typ, &mut visited, &mut acc);
-      collect_expr_references(&val.value, &mut visited, &mut acc);
+      annotated |=
+        collect_expr_references(&val.cnst.typ, &mut visited, &mut acc);
+      annotated |= collect_expr_references(&val.value, &mut visited, &mut acc);
     },
     ConstantInfo::QuotInfo(val) => {
-      collect_expr_references(&val.cnst.typ, &mut visited, &mut acc);
+      annotated |=
+        collect_expr_references(&val.cnst.typ, &mut visited, &mut acc);
     },
     ConstantInfo::InductInfo(val) => {
-      collect_expr_references(&val.cnst.typ, &mut visited, &mut acc);
+      annotated |=
+        collect_expr_references(&val.cnst.typ, &mut visited, &mut acc);
       acc.extend(val.ctors.iter().cloned());
     },
     ConstantInfo::CtorInfo(val) => {
-      collect_expr_references(&val.cnst.typ, &mut visited, &mut acc);
+      annotated |=
+        collect_expr_references(&val.cnst.typ, &mut visited, &mut acc);
       acc.insert(val.induct.clone());
     },
     ConstantInfo::RecInfo(val) => {
-      collect_expr_references(&val.cnst.typ, &mut visited, &mut acc);
+      annotated |=
+        collect_expr_references(&val.cnst.typ, &mut visited, &mut acc);
       for rule in &val.rules {
         acc.insert(rule.ctor.clone());
-        collect_expr_references(&rule.rhs, &mut visited, &mut acc);
+        annotated |= collect_expr_references(&rule.rhs, &mut visited, &mut acc);
       }
     },
   }
-  acc
+  (acc, annotated)
+}
+
+/// Match the reserved Lean metadata namespace by components, without allocating
+/// strings or relying on a hash match. This also catches malformed markers.
+fn is_source_contract_key(mut key: &Name) -> bool {
+  loop {
+    if let NameData::Str(source_parent, binder, _) = key.as_data()
+      && binder == "binder"
+      && let NameData::Str(ix_parent, source, _) = source_parent.as_data()
+      && source == "source"
+      && let NameData::Str(root, ix, _) = ix_parent.as_data()
+      && ix == "ix"
+      && matches!(root.as_data(), NameData::Anonymous(_))
+    {
+      return true;
+    }
+    match key.as_data() {
+      NameData::Str(parent, ..) | NameData::Num(parent, ..) => key = parent,
+      NameData::Anonymous(_) => return false,
+    }
+  }
 }
 
 /// Iterative DAG walk pushing every `Const`/`Proj` head into one shared
@@ -246,7 +290,8 @@ fn collect_expr_references<'a>(
   expr: &'a Expr,
   visited: &mut FxHashSet<&'a Expr>,
   acc: &mut NameSet,
-) {
+) -> bool {
+  let mut annotated = false;
   let mut stack: Vec<&'a Expr> = vec![expr];
   while let Some(e) = stack.pop() {
     if !visited.insert(e) {
@@ -269,7 +314,10 @@ fn collect_expr_references<'a>(
         stack.push(value);
         stack.push(body);
       },
-      ExprData::Mdata(_, inner, _) => stack.push(inner),
+      ExprData::Mdata(data, inner, _) => {
+        annotated |= data.iter().any(|(key, _)| is_source_contract_key(key));
+        stack.push(inner);
+      },
       ExprData::Proj(type_name, _, inner, _) => {
         acc.insert(type_name.clone());
         stack.push(inner);
@@ -277,6 +325,7 @@ fn collect_expr_references<'a>(
       _ => {},
     }
   }
+  annotated
 }
 
 #[cfg(test)]
@@ -297,6 +346,119 @@ mod tests {
     ConstantVal { name: n(name), level_params: vec![], typ: sort0() }
   }
 
+  fn source_key() -> Name {
+    ["ix", "source", "binder"]
+      .into_iter()
+      .fold(Name::anon(), |parent, part| Name::str(parent, part.to_owned()))
+  }
+
+  #[test]
+  fn source_contract_namespace_is_structural() {
+    let key = source_key();
+    assert!(is_source_contract_key(&key));
+    assert!(is_source_contract_key(&Name::str(key.clone(), "owned".into())));
+    assert!(is_source_contract_key(&Name::num(key, Nat::from(1u64))));
+    assert!(!is_source_contract_key(&n("ix.source.binder")));
+    assert!(!is_source_contract_key(&n("borrowed")));
+    assert!(!is_source_contract_key(&Name::str(
+      Name::str(n("ix"), "source".into()),
+      "binders".into()
+    )));
+  }
+
+  #[test]
+  fn source_contract_environment_rejects_before_emission() {
+    use crate::compile::{CompileOptions, compile_env_with_options};
+    use std::sync::Arc;
+
+    let mut env = Env::default();
+    for name in ["ZAnnotated", "AAnnotated"] {
+      env.insert(
+        n(name),
+        ConstantInfo::AxiomInfo(AxiomVal {
+          cnst: ConstantVal {
+            name: n(name),
+            level_params: vec![],
+            // Even malformed markers must not be discarded as presentation data.
+            typ: Expr::mdata(
+              vec![(source_key(), DataValue::OfBool(true))],
+              sort0(),
+            ),
+          },
+          is_unsafe: false,
+        }),
+      );
+    }
+    let env = Arc::new(env);
+    for workers in [1, 4] {
+      let pool =
+        rayon::ThreadPoolBuilder::new().num_threads(workers).build().unwrap();
+      let result = pool
+        .install(|| compile_env_with_options(&env, CompileOptions::default()));
+      assert!(
+        matches!(result, Err(ixon::CompileError::UnsupportedExpr { desc })
+        if desc == "source binder contracts are not supported by this compiler yet: AAnnotated")
+      );
+    }
+  }
+
+  #[test]
+  fn source_contract_scan_covers_declaration_bodies() {
+    let mut env = Env::default();
+    let name = n("BodyMarker");
+    env.insert(
+      name.clone(),
+      ConstantInfo::DefnInfo(DefinitionVal {
+        cnst: ConstantVal {
+          name: name.clone(),
+          level_params: vec![],
+          typ: Expr::sort(Level::succ(Level::zero())),
+        },
+        value: Expr::mdata(
+          vec![(source_key(), DataValue::OfBool(true))],
+          sort0(),
+        ),
+        hints: ReducibilityHints::Abbrev,
+        safety: DefinitionSafety::Safe,
+        all: vec![name.clone()],
+      }),
+    );
+    assert_eq!(setup_scan(&env).source_contracts, vec![name]);
+  }
+
+  #[test]
+  fn source_contract_guard_preserves_native_borrow_metadata() {
+    use crate::compile::{CompileOptions, compile_env_with_options};
+    use std::sync::Arc;
+
+    let name = n("Ordinary");
+    let compile = |borrowed: bool| {
+      let mut env = Env::default();
+      let domain = if borrowed {
+        Expr::mdata(vec![(n("borrowed"), DataValue::OfBool(true))], sort0())
+      } else {
+        sort0()
+      };
+      env.insert(
+        name.clone(),
+        ConstantInfo::AxiomInfo(AxiomVal {
+          cnst: ConstantVal {
+            name: name.clone(),
+            level_params: vec![],
+            typ: Expr::all(n("x"), domain, sort0(), BinderInfo::Default),
+          },
+          is_unsafe: false,
+        }),
+      );
+      assert!(setup_scan(&env).source_contracts.is_empty());
+      let result =
+        compile_env_with_options(&Arc::new(env), CompileOptions::default())
+          .unwrap();
+      result.name_to_addr.get(&name).unwrap().value().clone()
+    };
+    assert_eq!(compile(false), compile(true));
+  }
+
   /// Frozen per-constant map/reduce implementation for differential tests
   /// and the opt-in performance comparison below.
   fn setup_scan_reference(env: &Env) -> SetupScan {
@@ -304,6 +466,7 @@ mod tests {
       graph: RefGraph::default(),
       immediate_ungrounded: FxHashMap::default(),
       ind_groups: FxHashMap::default(),
+      source_contracts: Vec::new(),
     };
     let names: Vec<_> = env.keys().collect();
     names
@@ -350,6 +513,7 @@ mod tests {
     assert_eq!(actual.graph.out_refs, expected.graph.out_refs);
     assert_eq!(actual.graph.in_refs, expected.graph.in_refs);
     assert_eq!(actual.ind_groups, expected.ind_groups);
+    assert_eq!(actual.source_contracts, expected.source_contracts);
     assert_eq!(
       actual.immediate_ungrounded.len(),
       expected.immediate_ungrounded.len()

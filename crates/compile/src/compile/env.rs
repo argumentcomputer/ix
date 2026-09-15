@@ -153,6 +153,16 @@ pub fn compile_env_with_options(
   // each additional full sweep would decode every constant again.
   let phase_start = Instant::now();
   let scan = setup_scan(lean_env.as_ref());
+  if let Some(name) =
+    scan.source_contracts.iter().min_by_key(|name| name.pretty())
+  {
+    return Err(CompileError::UnsupportedExpr {
+      desc: format!(
+        "source binder contracts are not supported by this compiler yet: {}",
+        name.pretty()
+      ),
+    });
+  }
   let graph = scan.graph;
   if *IX_VERBOSE {
     eprintln!(

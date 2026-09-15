@@ -40,6 +40,7 @@ public import Ix.CanonM
 public import Ix.Ground
 public import Ix.CompileM
 public import Ix.AuxGen.CompileAux
+public import Ix.Compile.SourceContract
 public section
 
 namespace Ix.CompileM
@@ -1022,6 +1023,9 @@ def compileLeanConsts (consts : List (Lean.Name × Lean.ConstantInfo))
     (rustRef : Option (Std.HashMap Name Address) := none)
     (numWorkers : Nat := 32) (dbg : Bool := false)
     : IO (Except String LeanPipelineOut) := do
+  for (name, source) in consts do
+    if Ix.Compile.sourceHasAnnotations source then
+      return .error s!"source binder contracts are not supported by this compiler yet: {name}"
   -- IX_COMPILE_DBG=1 forces phase timing + the driver's periodic memory
   -- attribution trace without threading a flag through callers.
   let dbg := dbg || (← IO.getEnv "IX_COMPILE_DBG").isSome
@@ -1154,5 +1158,20 @@ def compileLeanConsts (consts : List (Lean.Name × Lean.ConstantInfo))
         ungroundedCount := ungrounded.size
         blockCount := condensed.blocks.size
         digests }
+
+/-- Explicit frontend boundary. Contract resolution runs before compilation.
+The current production emitter accepts only ordinary source; semantic contracts
+are rejected until transport through canonicalization and rewriting is complete.
+Optional measure proposals do not alter ordinary output. -/
+def compileLeanInput (input : Ix.Compile.CompileInput)
+    (rustRef : Option (Std.HashMap Name Address) := none)
+    (numWorkers : Nat := 32) (dbg : Bool := false) :
+    IO (Except String LeanPipelineOut) := do
+  let resolved ← match input.resolve with
+    | .ok resolved => pure resolved
+    | .error error => return .error (toString error)
+  if let some contract := resolved.contracts[0]? then
+    return .error s!"source binder contracts are not supported by this compiler yet: {contract.source.name}"
+  compileLeanConsts resolved.constants rustRef numWorkers dbg
 
 end Ix.CompileM

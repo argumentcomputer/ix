@@ -158,6 +158,11 @@ lean_exe «arena-exclude» where
   root := `Tests.Ix.Kernel.ArenaExclude
   supportInterpreter := true
 
+/-- Focused source-contract checks, including fresh-module registration export. -/
+lean_exe «source-contract-tests» where
+  root := `Tests.SourceContractMain
+  supportInterpreter := true
+
 end Tests
 
 section Benchmarks
