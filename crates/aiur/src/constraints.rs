@@ -67,9 +67,8 @@ pub struct Constraints {
 struct ConstraintState {
   /// Index of the circuit member currently being walked.
   function_index: G,
-  /// Exactly one selector: the circuit backs a single function with a
-  /// single leaf block (no matches), so every lookup slot is written by
-  /// exactly one branch.
+  /// One function with terminal control and one selector: operation slots
+  /// have one writer. Selector count alone does not exclude empty branches.
   branchless: bool,
   /// Input size of the current member (inputs live in columns
   /// `0..input_size` for every member; the circuit reserves the max).
@@ -138,6 +137,20 @@ impl ConstraintState {
 }
 
 impl Toplevel {
+  /// Ungated lookup arguments are safe only with one writer per slot.
+  /// A branch with no return/yield still writes lookups, so counting the
+  /// terminal selectors alone does not establish that condition.
+  pub(crate) fn circuit_is_branchless(&self, circuit_index: usize) -> bool {
+    let circuit = &self.circuits[circuit_index];
+    let [member] = circuit.members.as_slice() else {
+      return false;
+    };
+    circuit.layout.selectors == 1
+      && self.functions.get(*member).is_some_and(|function| {
+        matches!(function.body.ctrl, Ctrl::Return(..) | Ctrl::Yield(..))
+      })
+  }
+
   /// Build the constraints of one circuit. The circuit's members are walked
   /// like branches of a single function: each walk restarts the auxiliary
   /// column / lookup-slot counters (so members share those, like match arms
@@ -158,7 +171,7 @@ impl Toplevel {
     };
     let mut state = ConstraintState {
       function_index: G::ZERO,
-      branchless: layout.selectors == 1,
+      branchless: self.circuit_is_branchless(circuit_index),
       input_size: 0,
       sel_base: 0,
       column: 0,
@@ -169,9 +182,9 @@ impl Toplevel {
       yield_info: vec![],
     };
     // The shared multiplicity column: first auxiliary, right after the
-    // selectors. The return lookup occupies the first lookup slot; its
-    // multiplicity is gated by the circuit-level selector below.
+    // selectors. The return lookup occupies the first lookup slot.
     let multiplicity = var(layout.input_size + layout.selectors);
+    state.lookups[0].multiplicity = -multiplicity.clone();
     let aux_start = layout.input_size + layout.selectors + 1;
     let mut sel_base = layout.input_size;
     let mut circuit_sel = Expr::from(G::ZERO);
@@ -207,11 +220,10 @@ impl Toplevel {
         .zeros
         .push(circuit_sel.clone() * (Expr::from(G::ONE) - circuit_sel.clone()));
     }
-    // The return pull is gated by the circuit-level selector: a padding row
-    // has every constraint switched off, so whatever it pulled would be an
-    // unconstrained return message (raw arguments, in a branchless circuit)
-    // with a multiplicity of the prover's choosing.
-    state.lookups[0].multiplicity = -(circuit_sel * multiplicity);
+    // Only active members can supply return lookups. Keep the lookup
+    // multiplicity linear and constrain its activity here, including every
+    // member of a grouped circuit.
+    state.constraints.zeros.push(multiplicity * (konst(G::ONE) - circuit_sel));
     (state.constraints, state.lookups)
   }
 }

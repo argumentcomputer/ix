@@ -1216,6 +1216,108 @@ def toplevel : Source.Toplevel := ⟦
     s1 + s2 + s3 + s4
   }
 
+  -- Hoisting must preserve caller scopes and left-to-right effects, including
+  -- a statement's position before lets in its continuation.
+  fn hoist_pair(a: G, b: G) -> (G, G) { (a, b) }
+  fn hoist_emit(x: G) -> G { io_write(0, [x]); x }
+  fn hoist_twice(x: G) -> G { let tmp = x + x; tmp }
+  enum HoistChoice { Left(G), Right(G) }
+  fn hoist_choose(c: HoistChoice) -> G {
+    match c { HoistChoice.Left(x) | HoistChoice.Right(x) => x, }
+  }
+  fn hoist_guarded(x: G) -> G {
+    assert_eq!(x, 0);
+    let y = @hoist_choose(HoistChoice.Left(7));
+    y
+  }
+  pub fn hoist_guarded_operand(x: G) -> G { @hoist_guarded(x) + 1 }
+  pub fn hoist_guarded_rhs(x: G) -> G { let y = @hoist_guarded(x); y + 1 }
+  pub fn hoist_guarded_return(x: G) -> G { return @hoist_guarded(x) }
+  pub fn hoist_write_then_branch(x: G) -> G {
+    let y = (io_write(0, [x]); let z = @hoist_choose(HoistChoice.Right(x)); z);
+    y + 1
+  }
+  pub fn hoist_metadata_then_branch(x: G) -> G {
+    let y = (io_set_info(0, [x], 3, 4); let z = @hoist_choose(HoistChoice.Right(x)); z);
+    y + 1
+  }
+  pub fn hoist_or_inline() -> (G, G) {
+    (@hoist_choose(HoistChoice.Left(4)), @hoist_choose(HoistChoice.Right(6)))
+  }
+
+  pub fn hoist_assert_shadow(x: G) -> G {
+    assert_eq!(x, 0);
+    let x = 0;
+    x
+  }
+  pub fn hoist_write_read(x: G) -> G {
+    io_write(0, [x]);
+    let ys = io_read(0, 0, 1);
+    ys[0]
+  }
+  pub fn hoist_set_get(x: G) -> (G, G) {
+    io_set_info(0, [x], 3, 4);
+    let info = io_get_info(0, [x]);
+    info
+  }
+  pub fn hoist_write_shadow(x: G) -> G {
+    let channel = 0;
+    io_write(channel, [x]);
+    let channel = 1;
+    io_write(channel, [x + 1]);
+    x
+  }
+  pub fn hoist_rhs_shadow(x: G) -> (G, G) {
+    let y = (let x = 2; x);
+    (x, y)
+  }
+  pub fn hoist_operand_shadow(x: G) -> G { x + (let x = 2; x) }
+  pub fn hoist_array_shadow(x: G) -> [G; 2] { [(let x = 2; x), x] }
+  pub fn hoist_call_shadow(x: G) -> (G, G) { hoist_pair((let x = 2; x), x) }
+  pub fn hoist_match_shadow(x: G) -> G {
+    match (let x = 0; x) { 0 => x, _ => 99, }
+  }
+  pub fn hoist_argument_order() -> G { hoist_emit(1) + (let x = hoist_emit(2); x) }
+  pub fn hoist_argument_cores() -> (G, G) {
+    hoist_pair((let x = 1; hoist_emit(x)), (let x = hoist_emit(2); x))
+  }
+  pub fn hoist_array_order() -> [G; 2] { [hoist_emit(1), (let x = hoist_emit(2); x)] }
+  pub fn hoist_inline_shadow(x: G) -> G { x + @hoist_twice((let x = 2; x)) }
+  -- Generated-looking names are valid identifiers too.
+  pub fn hoist_fresh_name(«inl#0»: G) -> G {
+    let y = @hoist_twice(2);
+    «inl#0» + y
+  }
+  pub fn hoist_inline_order() -> G { hoist_emit(1) + @hoist_twice(hoist_emit(2)) }
+  pub fn hoist_assert_argument_order() -> G {
+    assert_eq!(hoist_emit(1), (let ignored = hoist_emit(2); 1));
+    7
+  }
+  pub fn hoist_io_argument_order() -> G {
+    io_write(hoist_emit(0), [(let ignored = hoist_emit(1); 2)]);
+    7
+  }
+  pub fn hoist_info_argument_order() -> (G, G) {
+    io_set_info(hoist_emit(0), [(let ignored = hoist_emit(1); 7)],
+      (let ignored = hoist_emit(2); 3), (let ignored = hoist_emit(3); 4));
+    let info = io_get_info(0, [7]);
+    info
+  }
+  pub fn hoist_allocation_order() -> (G, G) {
+    (ptr_val(store(1)), (let p = store(2); ptr_val(p)))
+  }
+  pub fn hoist_return_continuation(x: G) -> G {
+    assert_eq!(x, 0);
+    let x = 7;
+    return x
+  }
+  pub fn hoist_lazy_arm(x: G) -> G {
+    match x {
+      0 => 7,
+      _ => assert_eq!(0, 1); let x = hoist_emit(9); x,
+    }
+  }
+
   -- Unconstrained field hints: `g_to_bytes` returns the 8 LE bytes of the
   -- CANONICAL u64 value as raw [G; 8] advice; `g_inverse` the field
   -- inverse with 0 ↦ 0.
@@ -1327,7 +1429,28 @@ private def myOpt2 (limb : String) : Global := Global.init "MyOpt2" |>.pushNames
 private def wrap (limb : String) : Global := Global.init "Wrap" |>.pushNamespace limb
 private def apair (limb : String) : Global := Global.init "APair" |>.pushNamespace limb
 
+-- Renaming must preserve invalid binding patterns so the checker still
+-- rejects them, while `hoist_or_inline` exercises a valid shared binder.
+private def hoistPatternRejections : TestSeq :=
+  let duplicate : Source.Toplevel := ⟦
+    pub fn duplicate(x: G) -> G { let (y, y) = (x, x); y }
+  ⟧
+  let alternatives : Source.Toplevel := ⟦
+    pub fn alternatives(x: G) -> G {
+      match (x, x) { (0, y) | (z, 1) => 0, _ => 1, }
+    }
+  ⟧
+  (withExceptOk "normalize duplicate binders" duplicate.inlineCalls fun t =>
+    let rejects : Bool := match t.checkAndSimplify with
+      | .error (.duplicatedBind _) => true | _ => false
+    test "duplicate binders remain invalid" (rejects = true)) ++
+  (withExceptOk "normalize mismatched or-pattern binders" alternatives.inlineCalls fun t =>
+    let rejects : Bool := match t.checkAndSimplify with
+      | .error (.differentBindings _ _) => true | _ => false
+    test "mismatched or-pattern binders remain invalid" (rejects = true))
+
 def tests : TestSeq :=
+  hoistPatternRejections ++
   -- Arithmetic + simple control flow
   runAgreement "add_one(41)" "add_one" [41] ++
   runAgreement "arith(3,4)" "arith" [3, 4] ++
@@ -1557,7 +1680,41 @@ def tests : TestSeq :=
   runAgreement "divmod_test" "divmod_test" [] ++
   -- Unconstrained g_to_bytes / g_inverse hints: all cases in one entry
   runAgreement "hint_test" "hint_test" [] ++
+  -- Scope and effect-order regressions: compare values AND IO across engines.
+  runAgreement "hoist_guarded_operand(0)" "hoist_guarded_operand" [0] ++
+  runAgreement "hoist_guarded_rhs(0)" "hoist_guarded_rhs" [0] ++
+  runAgreement "hoist_guarded_return(0)" "hoist_guarded_return" [0] ++
+  runAgreement "hoist_write_then_branch(7)" "hoist_write_then_branch" [7] ++
+  runAgreement "hoist_metadata_then_branch(7)" "hoist_metadata_then_branch" [7] ++
+  runAgreement "hoist_or_inline" "hoist_or_inline" [] ++
+  runAgreement "hoist_assert_shadow(0)" "hoist_assert_shadow" [0] ++
+  runAgreement "hoist_write_read(7)" "hoist_write_read" [7] ++
+  runAgreement "hoist_set_get(7)" "hoist_set_get" [7] ++
+  runAgreement "hoist_write_shadow(7)" "hoist_write_shadow" [7] ++
+  runAgreement "hoist_rhs_shadow(9)" "hoist_rhs_shadow" [9] ++
+  runAgreement "hoist_operand_shadow(9)" "hoist_operand_shadow" [9] ++
+  runAgreement "hoist_array_shadow(9)" "hoist_array_shadow" [9] ++
+  runAgreement "hoist_call_shadow(9)" "hoist_call_shadow" [9] ++
+  runAgreement "hoist_match_shadow(9)" "hoist_match_shadow" [9] ++
+  runAgreement "hoist_argument_order" "hoist_argument_order" [] ++
+  runAgreement "hoist_argument_cores" "hoist_argument_cores" [] ++
+  runAgreement "hoist_array_order" "hoist_array_order" [] ++
+  runAgreement "hoist_inline_shadow(9)" "hoist_inline_shadow" [9] ++
+  runAgreement "hoist_fresh_name(9)" "hoist_fresh_name" [9] ++
+  runAgreement "hoist_inline_order" "hoist_inline_order" [] ++
+  runAgreement "hoist_assert_argument_order" "hoist_assert_argument_order" [] ++
+  runAgreement "hoist_io_argument_order" "hoist_io_argument_order" [] ++
+  runAgreement "hoist_info_argument_order" "hoist_info_argument_order" [] ++
+  runAgreement "hoist_allocation_order" "hoist_allocation_order" [] ++
+  runAgreement "hoist_return_continuation(0)" "hoist_return_continuation" [0] ++
+  runAgreement "hoist_lazy_arm(0)" "hoist_lazy_arm" [0] ++
   -- ----- Negative paths: every engine must reject --------------------------
+  runFailureAgreement "hoist_guarded_operand(1) rejects" "hoist_guarded_operand" [1] ++
+  runFailureAgreement "hoist_guarded_rhs(1) rejects" "hoist_guarded_rhs" [1] ++
+  runFailureAgreement "hoist_guarded_return(1) rejects" "hoist_guarded_return" [1] ++
+  runFailureAgreement "hoist_assert_shadow(1) rejects" "hoist_assert_shadow" [1] ++
+  runFailureAgreement "hoist_return_continuation(1) rejects" "hoist_return_continuation" [1] ++
+  runFailureAgreement "hoist_lazy_arm(1) rejects" "hoist_lazy_arm" [1] ++
   -- assert_eq! mismatch
   runFailureAgreement "assert_same(7,8) rejects" "assert_same" [7, 8] ++
   -- u8_range_check out of range

@@ -36,8 +36,11 @@ The match compiler hoists a non-variable `match` scrutinee into a `let`
 `let` deep, where `Lower`'s non-tail-match detector (which only fires when a
 `match` is the *immediate* `letVar`/`letWild` RHS) can't see it. Floating the
 hoisted `let`s outward restores the invariant: the `match` becomes the direct
-RHS again. The hoisted `w`s are fresh match-compiler locals, so widening their
-scope over `b` cannot capture anything. -/
+RHS again. The source-normalization entry point freshens all source binders
+before this pass, and the match compiler introduces its own locals. Callers
+that invoke this helper directly must likewise ensure the floated binders do
+not occur free in `b`; it is not a capture-avoiding transformation on arbitrary
+unfreshened `Typed.Term`s. -/
 def mkLetFloating (τ : Typ) (e : Bool) (pat : Pattern) (v b : Term) : Term :=
   match v with
   | .let τ' e' pat' v' rest => .let τ' e' pat' v' (mkLetFloating τ e pat rest b)
@@ -178,8 +181,11 @@ def simplifyDecls (decls : Source.Decls) (typedDecls : Typed.Decls) :
     | .dataType dt => pure (acc.insert name (.dataType dt))
     | .constructor dt c => pure (acc.insert name (.constructor dt c))
 
-/-- Full pipeline `Source.Toplevel` → `Typed.Decls`:
-`mkDecls`, `wellFormedDecls`, typecheck, simplify. -/
+/-- Typecheck and simplify an already-normalized `Source.Toplevel`:
+`mkDecls`, `wellFormedDecls`, typecheck, simplify. The public `compile` pipeline
+runs `inlineCalls` first, including caller/callee hygiene. Direct callers of
+this stage must likewise eliminate inline calls and ensure fresh source
+binders before simplification widens any let scopes. -/
 def Source.Toplevel.checkAndSimplify (toplevel : Source.Toplevel) :
     Except CheckError Typed.Decls := do
   let decls ← toplevel.mkDecls

@@ -53,10 +53,10 @@ impl Memory {
       args.push(selector.clone() * Expr::main(col));
     }
     let width = Self::width(size);
-    // The pull is selector-gated like its arguments: a padding row must not
-    // contribute even the zero message with a multiplicity of its own.
-    let value_pull =
-      Lookup { multiplicity: -(selector.clone() * multiplicity), args };
+    // The pull's multiplicity stays linear; the `multiplicity * (1 - is_real)`
+    // constraint below keeps a padding row from contributing even the zero
+    // message with a multiplicity of its own.
+    let value_pull = Lookup { multiplicity: -multiplicity.clone(), args };
 
     // Segment boundaries. Every real row pushes `(memseg, size, ptr)` and
     // pulls `(memseg, size, ptr + 1)`, both with multiplicity `sel`. With
@@ -90,6 +90,8 @@ impl Memory {
     let is_real_transition = is_real_next * Expr::IsTransition;
     let constraints = vec![
       is_real.clone() * (is_real.clone() - one()),
+      // Padding cannot supply a memory lookup with nonzero multiplicity.
+      multiplicity * (one() - is_real.clone()),
       is_real_transition.clone() * (is_real - one()),
       is_real_transition * (ptr + one() - ptr_next),
     ];

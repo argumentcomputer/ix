@@ -17,8 +17,10 @@ use crate::{
   execute::{ExecError, IOBuffer, QueryRecord},
   function_channel,
   gadgets::{AiurGadget, bytes1::Bytes1, bytes2::Bytes2},
+  lookup_budget::lookup_query_bound,
   memory::Memory,
   shard::{RowIndex, ShardPlan},
+  trace_heights::{fixed_trace_heights, trace_cap_coverage},
 };
 
 /// The concrete STARK configuration Aiur instantiates multi-stark with.
@@ -246,6 +248,8 @@ impl AiurSystem {
     fri_parameters: FriParameters,
     device_id: Option<i32>,
   ) -> Self {
+    toplevel.validate_lookup_shapes().expect("invalid Aiur lookup shapes");
+    toplevel.validate_row_counts().expect("invalid Aiur control counts");
     let mut circuit_inputs: Vec<CircuitInputs<G>> = Vec::new();
     let mut slot_widths: Vec<Vec<usize>> = Vec::new();
 
@@ -276,7 +280,7 @@ impl AiurSystem {
       // superposed arguments are degree 2, and grouping would push the
       // logUp constraints past the quotient budget.
       let group_size =
-        if toplevel.circuits[i].layout.selectors == 1 && lookups.len() >= 2 {
+        if toplevel.circuit_is_branchless(i) && lookups.len() >= 2 {
           2
         } else {
           1
@@ -1150,6 +1154,33 @@ impl AiurSystem {
     claim: &[G],
     proof: &AiurProof,
   ) -> Result<(), AiurVerificationError> {
+    if !self.toplevel.valid_claim_shape(claim) {
+      return Err(AiurVerificationError::Stark(VerificationError::InvalidClaim));
+    }
+    // Every shard's header must describe a proof this system could have
+    // produced: fixed circuits at their exact heights, every trace matrix
+    // under the Merkle cap, and the lookup query count within bound.
+    for header in &proof.preamble.headers {
+      let well_shaped = fixed_trace_heights(
+        self.system.circuits.iter().map(|circuit| circuit.preprocessed_height),
+        &header.active,
+        &header.log_degrees,
+      ) && trace_cap_coverage(
+        self.commitment_parameters.log_blowup,
+        self.commitment_parameters.cap_height,
+        &header.log_degrees,
+      ) && lookup_query_bound(
+        self.slot_widths.iter().map(Vec::len),
+        &header.active,
+        &header.log_degrees,
+      )
+      .is_some();
+      if !well_shaped {
+        return Err(AiurVerificationError::Stark(
+          VerificationError::InvalidProofShape,
+        ));
+      }
+    }
     self
       .check_batch_policy(claim, &proof.preamble)
       .map_err(AiurVerificationError::Policy)?;
@@ -1171,6 +1202,13 @@ impl AiurSystem {
 
 #[cfg(test)]
 mod tests {
+  mod acceptance;
+  mod branchless;
+  mod byte_shapes;
+  mod lookup_budget;
+  mod lookup_shapes;
+  mod mmcs;
+
   use super::*;
   use crate::{
     bytecode::{Block, Ctrl, Function, FunctionLayout, Op, Toplevel},
