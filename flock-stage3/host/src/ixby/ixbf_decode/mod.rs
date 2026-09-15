@@ -6,6 +6,7 @@
 //! A host-selected byte window or acceptance bit cannot establish that link.
 //! Existing native codecs, factories, profile encodings and keys are unchanged.
 
+pub mod bodies;
 mod byte_span;
 #[cfg(test)]
 mod byte_span_tests;

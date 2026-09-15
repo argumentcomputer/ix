@@ -178,9 +178,11 @@ The [typed value layer](IxbyFunctionalValues.md) now consumes this completed
 program object for IXFI/IXFO constructor identities, PAP arities and transport
 context. It preserves scalar payloads/ranges and derives ownership, child order,
 depth and complete subtree spans under explicit physical bounds. This
-Program-only component still does not materialize executable bodies. Their
-ordered coverage, ownership and execution consumers remain required, as do
-larger-class native loader depth/allocation obligations.
+Program-only component supplies the actual events and checked registry to the
+[typed body layer](IxbyFunctionalBodies.md), which now materializes complete
+bounded function/block records, ordered operands, scalar payloads, targets and
+alternatives with constrained reads. Execution consumers and larger-class
+native loader depth/allocation obligations remain required.
 
 Larger files need shared chunk authentication and scalable registry/code/memory
 access. The raw-byte/Exec commitment bridge, streaming witnesses, VM-derived

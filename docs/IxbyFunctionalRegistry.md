@@ -238,8 +238,10 @@ actual typed reads to all Program reference/arity and successor-frame checks
 and rejects duplicate alternatives. The [typed value layer](IxbyFunctionalValues.md)
 now connects constructor values/PAP captures to that checked program, derives
 bounded forest ownership/order/depth and complete subtree spans, and supplies
-typed reads. Executable body records and their spans remain unfinished;
-native loader depth/allocation obligations for larger classes are not
+typed reads. The [typed body layer](IxbyFunctionalBodies.md) now constructs
+complete bounded function/block records and source spans, ordered operands,
+scalar payloads, targets and alternatives with constrained reads. Native
+loader depth/allocation obligations for larger classes are not
 discharged by these bounded records.
 
 Larger files still require shared chunk authentication and scalable registry

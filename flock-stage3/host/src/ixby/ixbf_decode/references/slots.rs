@@ -16,6 +16,14 @@ pub struct ProgramReferenceState {
   registry: ProgramRegistryState,
   events: Vec<(GrammarState, DispatchStepWires)>,
 }
+impl ProgramReferenceState {
+  /// Actual retained wires, including inactive steps, for typed body assembly.
+  pub(in crate::ixby::ixbf_decode) fn events(
+    &self,
+  ) -> &[(GrammarState, DispatchStepWires)] {
+    &self.events
+  }
+}
 
 /// Completed bounded instruction/reference checks. This does not certify a
 /// typed executable body/value representation or native constraint refinement.

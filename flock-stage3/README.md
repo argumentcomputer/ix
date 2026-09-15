@@ -21,8 +21,10 @@ and the explicit [byte](../docs/IxbyFlockBytes.md) and
 [scalar payload checks](../docs/IxbyFunctionalScalars.md),
 [authenticated original-byte reads](../docs/IxbyFunctionalSource.md),
 [state-selected whole-grammar dispatch](../docs/IxbyFunctionalDispatch.md),
-[source-bound declaration/header registries](../docs/IxbyFunctionalRegistry.md) and
-[complete instruction/reference checks](../docs/IxbyFunctionalReferences.md) start the
+[source-bound declaration/header registries](../docs/IxbyFunctionalRegistry.md),
+[complete instruction/reference checks](../docs/IxbyFunctionalReferences.md),
+[typed transport values](../docs/IxbyFunctionalValues.md) and
+[typed executable bodies](../docs/IxbyFunctionalBodies.md) start the
 [full-guest scaling path](../docs/IxbyStage3ScalePlan.md); they do not yet
 admit the compiler's IXBF artifact to the native Exec prover.
 It is excluded from the root Cargo workspace and has no `aiur`, `multi-stark`,
@@ -62,12 +64,13 @@ cargo fmt --manifest-path flock-stage3/Cargo.toml --all -- --check
 cargo clippy --release --locked --manifest-path flock-stage3/Cargo.toml --workspace --all-targets -- -D warnings
 ```
 
-All 244 ordinary tests pass, including byte, word, constructor, Nat,
+All 250 ordinary tests pass, including byte, word, constructor, Nat,
 application, complete-functional intake, wide-fuel, constrained-codec and
 complete-grammar/scalar-payload, source-authentication, generic-dispatch and
-source-bound registry, instruction/reference and
-[typed transport-value](../docs/IxbyFunctionalValues.md) regressions;
-41 proof/benchmark/external-fixture
+source-bound registry, instruction/reference,
+[typed transport-value](../docs/IxbyFunctionalValues.md) and
+[typed executable-body](../docs/IxbyFunctionalBodies.md) regressions;
+42 proof/benchmark/external-fixture
 tests are opt-in. The two imported
 conformance proofs are opt-in and also passed locally on 2026-09-12, including their serialized
 round trips and malicious operand/path/root/proof mutations:

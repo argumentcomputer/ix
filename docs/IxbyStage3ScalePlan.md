@@ -71,8 +71,8 @@ and a proof of the exact approved binary/input/output relation.
     complete event coverage with final-registry reads, forward/self/tail calls,
     exact/partial arities, owned successor frames and duplicate alternatives.
     Twenty-four small-file proofs and nine recomputed wiring rejections cover
-    all instruction/operation forms. The following component adds transport
-    values. Typed executable bodies, scalable access and the raw-file/Exec
+    all instruction/operation forms. The following components add transport
+    values and typed executable bodies. Scalable access and the raw-file/Exec
     commitment bridge remain unfinished.
 11. [Source-bound typed input/output values](IxbyFunctionalValues.md):
     actual dispatcher events and the checked program registry produce scalar,
@@ -80,8 +80,15 @@ and a proof of the exact approved binary/input/output relation.
     parentage, child order, depth and subtree spans; constrained reads consume
     the actual finished arena. Thirty-two proofs in separate Input/Output
     classes and ten recomputed wiring rejections cover bounded forests.
-    Typed executable bodies, scalable access and complete original artifact
-    admission remain unfinished.
+    Scalable access and complete original artifact admission remain unfinished.
+12. [Source-bound typed executable bodies](IxbyFunctionalBodies.md): actual
+    checked Program events produce complete owned function/block records,
+    ordered operands, scalar payloads, operations, references, projection fields,
+    successors and alternatives. Completion checks exact coverage, source spans
+    and canonical fields; constrained reads consume the actual finished bank.
+    Thirty-six proofs and fifteen recomputed wiring rejections cover the
+    component. This completes bounded body materialization. Scalable access,
+    execution consumers and the raw-file/Exec commitment bridge remain unfinished.
 
 ## Next implementation gates
 
@@ -94,9 +101,9 @@ and a proof of the exact approved binary/input/output relation.
    Codec, body/value-record, complete grammar-control, checked payload packing,
    guest Nat-limit, UTF-8 and generic state-selected dispatch are implemented,
    with complete source-bound grammar, declaration/header-registry and
-   instruction/reference and typed transport-value proofs for explicit
-   small-file classes. Next are typed executable-body materialization, scalable
-   chunk sharing and registry access, and the Exec commitment bridge.
+   instruction/reference, typed transport-value and executable-body proofs for
+   explicit small-file classes. Next are scalable chunk sharing and registry
+   access, execution consumers and the Exec commitment bridge.
    Full-Init row differentials and small-file proofs do not close those obligations.
 2. **Streaming witness and measurements.** Produce bounded execution batches
    while recording actual opcode frequencies, stack depth, allocations, byte

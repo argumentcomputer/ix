@@ -235,8 +235,10 @@ Program event to those reads, including forward references, exact/partial
 arities, successor frames and duplicate alternatives. The
 [typed value layer](IxbyFunctionalValues.md) now materializes bounded IXFI/IXFO
 forests with registry-bound references, scalar payloads, derived parentage,
-child order, depth and complete subtree spans. Typed executable bodies remain
-unfinished.
+child order, depth and complete subtree spans. The
+[typed body layer](IxbyFunctionalBodies.md) now constructs bounded executable
+function/block records, ordered operands, scalars, targets and alternatives
+from the same Program events and supplies constrained reads.
 Native loader depth/allocation limits and a formal
 source/native correspondence remain separate obligations.
 

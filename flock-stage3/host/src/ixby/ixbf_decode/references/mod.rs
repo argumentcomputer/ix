@@ -16,6 +16,17 @@ mod slots;
 #[cfg(test)]
 mod tests;
 
+#[cfg(test)]
+pub(in crate::ixby::ixbf_decode) fn test_programs()
+-> Vec<(&'static str, super::registry::fixtures::Spec)> {
+  fixtures::corpus()
+}
+#[cfg(test)]
+pub(in crate::ixby::ixbf_decode) fn test_invalid_programs()
+-> Vec<(&'static str, super::registry::fixtures::Spec)> {
+  fixtures::invalid()
+}
+
 pub use gate::{ReferenceGate, ReferenceOp, ReferenceRow};
 pub use slots::{
   CheckedProgramReferences, ProgramReferenceSlots, ProgramReferenceState,

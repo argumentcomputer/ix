@@ -9,9 +9,10 @@ supplies the transport's limits and entry arity.
 The component preserves scalar values and payload ranges, derives parentage,
 child order, depth and complete subtree spans, and supplies constrained node,
 child and root reads. It completes bounded transport value materialization.
-Typed executable bodies, scalable access, the raw-file/Exec commitment bridge,
-native refinement and a full Init execution proof remain in the
-[scaling plan](IxbyStage3ScalePlan.md).
+The [typed body layer](IxbyFunctionalBodies.md) now materializes bounded
+executable records from the same Program events. Scalable access, the
+raw-file/Exec commitment bridge, native refinement and a full Init execution
+proof remain in the [scaling plan](IxbyStage3ScalePlan.md).
 
 ## Source and program binding
 
@@ -216,7 +217,8 @@ RAYON_NUM_THREADS=4 cargo test --release --locked \
 The full Init transports still require larger-file authentication connected
 to a scalable checked program representation. A typed ByteArray range in this
 bounded class does not admit the 9,611,120-byte Init input or prove its execution.
-Complete executable-body materialization and runtime code/value/memory access
-are the next consumers of these records. Streaming witnesses, complete state
-segments with VM-derived global fuel, sound composition, a pinned Init proof
+The [typed body layer](IxbyFunctionalBodies.md) completes bounded executable
+records from the same checked Program. Runtime code/value/memory access remains
+the next consumer. Streaming witnesses, complete state segments with VM-derived
+global fuel, sound composition, a pinned Init proof
 and terminal compression remain separate work.
