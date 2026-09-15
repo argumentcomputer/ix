@@ -17,6 +17,7 @@ import Ix.Kernel.Verify.Consistency.InferenceCache
 import Ix.Kernel.Verify.Consistency.SortCache
 import Ix.Kernel.Verify.Consistency.Literals
 import Ix.Kernel.Verify.Consistency.Resolution
+import Ix.Kernel.Verify.Consistency.Quotient
 import Ix.Kernel.Verify.Consistency.ConstantCache
 import Ix.Kernel.Verify.Consistency.LazyCache
 import Ix.Kernel.Verify.Consistency.BlockCache
@@ -400,6 +401,10 @@ discipline, and hereditary typing of binder operands. The reducing tiers after
 the quick probe, from the eager `Bool.true` shortcut through the cheap passes,
 proof irrelevance, the lazy-delta loop, and the final WHNF tier, are proved
 modulo the reducer seams, which discharges that reducing-tail obligation.
+The four canonical quotient constants are admitted through the guard sequence of
+`checkQuot`: the canonical kernel types read as the certified quotient description, and
+a fragment containing all four extends every model of an initial interface that
+realizes the equality family, publishing the certified quotient entries and equations.
 General checker soundness remains outside this fragment.
 Singleton non-indexed inductive blocks are admitted through the certified
 `Ordinary` witness: the stored family, constructors, and one-member recursor

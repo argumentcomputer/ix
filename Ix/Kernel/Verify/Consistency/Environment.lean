@@ -446,13 +446,13 @@ theorem checkEnvAnon_atomic_preserves_model {β : Type u} [DecidableEq β]
   fragment.plan.sound wellFormed (fragment.serial_success accepted succeeded)
 
 /-- Exact type, universe arity, and value agreement with the declaration
-returned by production lookup. Axiom entries contain no body. -/
+returned by production lookup. Axiom and quotient entries contain no body. -/
 def DeclarationReading {β : Type u} (resolve : Address → Option (ConstRef β))
     (concrete : KConst .anon) (entry : ConstantEntry β) : Prop :=
   readExpr? resolve concrete.ty = some entry.type.erase ∧
     entry.universes = concrete.lvls.toNat ∧
     match concrete with
-    | .axio .. => entry.body = none
+    | .axio .. | .quot .. => entry.body = none
     | .defn (val := value) .. =>
       ∃ body, entry.body = some body ∧ readExpr? resolve value = some body.erase
     | _ => False

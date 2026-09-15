@@ -10,6 +10,7 @@ import Ix.Kernel.Verify.Consistency.RecursiveCache
 import Ix.Kernel.Verify.Consistency.RecursiveState
 import Ix.Kernel.Verify.Consistency.SourceAgreement
 import Ix.Kernel.Verify.Consistency.Resolution
+import Ix.Kernel.Verify.Consistency.Quotient
 import Ix.Kernel.Verify.Consistency.SourceCache
 import Ix.Kernel.Verify.Consistency.Dependencies
 import Ix.Kernel.Verify.Consistency.CheapBeta
@@ -1844,6 +1845,81 @@ private def wp3ReducingAxiomFreeRoots : Array Lean.Name := #[
   ``readScopedExpr?_str_none
 ]
 
+/-- Quotient kinds, the reserved primitive table, the certified reference
+package, and the declared production data are pure. -/
+private def quotientPureRoots : Array Lean.Name := #[
+  ``Ix.QuotKind.certified, ``Ix.QuotKind.universes, ``Ix.QuotKind.certified_injective,
+  ``Ix.QuotKind.eq_of_bne_eq_false, ``Ix.QuotKind.eq_lift_of_beq, ``Ix.QuotKind.beq_lift_eq_false,
+  ``Ix.QuotKind.all, ``Primitives.quot, ``QuotientRefs.certified, ``QuotientRefs.ref,
+  ``QuotientRefs.Injective, ``QuotientRefs.EqualityApart, ``typeType_scope, ``indType_scope,
+  ``indRuleLhs_scope, ``indRuleRhs_scope,
+  ``QuotientSpec.constant, ``QuotientBinding, ``QuotientBinding.quot, ``QuotientPackage.addresses
+]
+
+private def quotientKindRoots : Array Lean.Name := #[
+  ``Ix.QuotKind.certified_universes, ``Ix.QuotKind.mem_all
+]
+
+/-- The published quotient interface, its lookups, its syntactic closure, and
+the static equality binding reach only the set model's syntax. -/
+private def quotientInterfaceRoots : Array Lean.Name := #[
+  ``QuotientRefs.entryType, ``QuotientRefs.entry, ``quotientEnvironment,
+  ``quotientEnvironment_same, ``quotientEnvironment_old, ``quotientEnvironment_cases,
+  ``quotientEnvironment_extends, ``Theory.Model.AExpr.ReferencesIn.quotient,
+  ``Theory.Model.ConstantFact.ReferencesIn.quotient, ``ctorType_scope, ``liftType_scope,
+  ``liftRuleLhs_scope, ``liftRuleRhs_scope, ``QuotientRefs.entryType_scope,
+  ``QuotientRefs.equation_scope,
+  ``QuotientRefs.entryType_references, ``QuotientRefs.equation_references,
+  ``quotientEnvironment_wf, ``EqualityInterface, ``EqualityBinding, ``QuotientPackage.mem_addresses
+]
+
+/-- Formation of the four canonical quotient types from the model's rule
+producers, the certified values installed at the quotient references, and the
+model extension by the four constants. -/
+private def quotientModelRoots : Array Lean.Name := #[
+  ``typeType_formed, ``ctorType_formed, ``liftType_formed, ``indType_formed,
+  ``quotientAssignment, ``quotientAssignment_agrees, ``quotientAssignment_reading,
+  ``extend_quotients, ``PreservesModels.trans
+]
+
+/-- The guard sequence of `checkQuot`, the executed prefix of a quotient member
+check, the `Eq`/`Eq.refl` prerequisite facts, and the reading of the canonical
+kernel types reach expression and universe construction. -/
+private def quotientExprRoots : Array Lean.Name := #[
+  ``checkQuotBody_success, ``checkQuot_success, ``QuotTypeTrace, ``QuotTypeTrace.guards,
+  ``QuotTypeTrace.equality, ``QuotTypeTrace.synthesisTypeCheck, ``EqualityPrerequisite,
+  ``checkEqType_success, ``QuotTypeTrace.equalityPrerequisite, ``canonicalQuotType_reads,
+  ``QuotTypeTrace.reads
+]
+
+/-- The production smart-constructor readers reach expression or universe construction. -/
+private def quotientExprReaderRoots : Array Lean.Name := #[
+  ``readExpr?_mkAll, ``readExpr?_mkApp, ``readExpr?_mkVar
+]
+
+private def quotientLevelReaderRoots : Array Lean.Name := #[
+  ``readLevel_mkParam
+]
+
+private def quotientPlainReaderRoots : Array Lean.Name := #[
+  ``readLevel_mkZero
+]
+
+/-- Quotient constants at work positions and the environment fragment with the
+four constants reach the production driver like the resolved fragment. -/
+private def quotientProductionRoots : Array Lean.Name := #[
+  ``quot_type_trace, ``QuotientObservation, ``QuotientObservation.guards,
+  ``QuotientEnvironmentFragment, ``QuotientEnvironmentFragment.published,
+  ``QuotientEnvironmentFragment.serial_success, ``QuotientEnvironmentFragment.address,
+  ``QuotientEnvironmentFragment.universes, ``QuotientEnvironmentFragment.injective,
+  ``QuotientEnvironmentFragment.fresh, ``QuotientEnvironmentFragment.apart_of_present,
+  ``QuotientEnvironmentFragment.apart, ``QuotientEnvironmentFragment.binding,
+  ``QuotientEnvironmentFragment.published_wf, ``QuotientEnvironmentFragment.published_canonical,
+  ``QuotientEnvironmentFragment.atomicPlan, ``checkEnvAnon_preserves_model_quotient,
+  ``checkEnvAnon_quotient_published, ``checkEnvAnon_represents_source_quotient,
+  ``checkEnvAnon_no_false_quotient
+]
+
 def roots : Array RootAllowance := #[
   { root := ``InterfaceExtends.refl, forbiddenDependencies := forbiddenProduction },
   { root := ``InterfaceExtends.trans, forbiddenDependencies := forbiddenProduction },
@@ -2139,6 +2215,28 @@ def roots : Array RootAllowance := #[
     root, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative],
     forbiddenDependencies := forbiddenProduction })
   ++ inductiveProductionRoots.map (fun root => {
+    root, standardAxioms := standard, nativeAxioms := productionNative,
+    forbiddenDependencies := forbiddenProduction })
+  ++ quotientPureRoots.map (fun root => { root, forbiddenDependencies := forbiddenProduction })
+  ++ quotientKindRoots.map (fun root => {
+    root, standardAxioms := #[``propext], forbiddenDependencies := forbiddenProduction })
+  ++ quotientInterfaceRoots.map (fun root => {
+    root, standardAxioms := #[``propext, ``Quot.sound], forbiddenDependencies := forbiddenProduction })
+  ++ quotientModelRoots.map (fun root => {
+    root, standardAxioms := standard, forbiddenDependencies := forbiddenProduction })
+  ++ quotientExprRoots.map (fun root => {
+    root, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative],
+    forbiddenDependencies := forbiddenProduction })
+  ++ quotientExprReaderRoots.map (fun root => {
+    root, standardAxioms := #[``propext, ``Classical.choice], nativeAxioms := #[expressionNative],
+    forbiddenDependencies := forbiddenProduction })
+  ++ quotientLevelReaderRoots.map (fun root => {
+    root, standardAxioms := #[``propext, ``Classical.choice], nativeAxioms := #[levelNative],
+    forbiddenDependencies := forbiddenProduction })
+  ++ quotientPlainReaderRoots.map (fun root => {
+    root, standardAxioms := #[``propext, ``Classical.choice],
+    forbiddenDependencies := forbiddenProduction })
+  ++ quotientProductionRoots.map (fun root => {
     root, standardAxioms := standard, nativeAxioms := productionNative,
     forbiddenDependencies := forbiddenProduction })
 
