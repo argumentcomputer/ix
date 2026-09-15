@@ -93,9 +93,10 @@ constructor/function/block reads. Each read uses full u128 indices, derives
 its selectors in the constraint system, and requires a present record with
 the specified owner. Disabled reads require zero indices and return zero.
 Unused result fields are zero; the range is the stored original header range.
-These wires can supply later reference checks, including references to headers
-that appeared later in the file, but those semantic consumers remain to be
-connected.
+The later [instruction/reference wrapper](IxbyFunctionalReferences.md) consumes
+these wires for every actual Program event, including forward references,
+arity/frame checks and duplicate alternatives. Typed value/transport consumers
+remain to be connected.
 
 Input constants and validity residuals use separate verifier-owned zero wires.
 Residual outputs are never recycled as initial bank/context inputs; that would
@@ -232,10 +233,11 @@ RAYON_NUM_THREADS=4 cargo test --release --locked \
 
 ## Remaining work
 
-The next semantic layer must consume these actual registry reads and decoded
-event wires to check complete instruction/reference arities, successor frames,
-constructor values/PAP captures and duplicate alternatives, with exact ownership
-and ordered coverage of body/value records. Complete body/arena spans and
+The [instruction/reference layer](IxbyFunctionalReferences.md) now connects
+actual typed reads to all Program reference/arity and successor-frame checks
+and rejects duplicate alternatives. Constructor values/PAP captures still need
+their transport consumers, with exact ownership and ordered coverage of
+body/value records. Complete body/arena spans and
 native loader depth/allocation obligations are not discharged by header ranges.
 
 Larger files still require shared chunk authentication and scalable registry

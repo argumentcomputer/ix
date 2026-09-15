@@ -229,9 +229,11 @@ the small-file class. Larger files still need scalable shared chunk
 authentication; the full Init differential is not a source-bound Init proof.
 The [bounded registry layer](IxbyFunctionalRegistry.md) now binds exact
 constructor/function/block-header coverage, block ownership, constructor
-uniqueness and entry frames to these events and supports typed reads. Complete
-instruction/reference and value checks must still bind forward references,
-exact/partial arities and duplicate alternatives to the actual decoded wires.
+uniqueness and entry frames to these events and supports typed reads. The
+[instruction/reference layer](IxbyFunctionalReferences.md) connects every
+Program event to those reads, including forward references, exact/partial
+arities, successor frames and duplicate alternatives. Typed body/value
+materialization and transport reference checks remain unfinished.
 Native loader depth/allocation limits and a formal
 source/native correspondence remain separate obligations.
 

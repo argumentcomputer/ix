@@ -16,6 +16,11 @@ pub struct ProgramRegistryState {
   bank: Vec<Wire>,
   capacity: RegistryCapacity,
 }
+impl ProgramRegistryState {
+  pub(in crate::ixby::ixbf_decode) fn grammar(&self) -> GrammarState {
+    GrammarState(self.dispatch.0[..28].try_into().unwrap())
+  }
+}
 
 /// This means completed declaration/header registration, NOT whole-program
 /// semantic admission. The actual final grammar context is available for

@@ -1,7 +1,11 @@
-//! Source-bound declaration/header proof class. This is not Exec admission.
-//! Byte authentication and fixed dispatch precede all immutable registry reads.
+//! Source-bound instruction/reference proofs with isolated verification.
 use super::{
-  super::{dispatch::*, source::*, *},
+  super::{
+    dispatch::*,
+    registry::{RegistryGate, RegistryOp},
+    source::*,
+    *,
+  },
   *,
 };
 use crate::{
@@ -14,6 +18,7 @@ use crate::{
   },
   sizing::{CircuitEmitter, CountingEmitter},
 };
+use anyhow::{Result, ensure};
 use bincode::Options;
 use flock_prover::{
   challenger::FsChallenger,
@@ -43,13 +48,13 @@ use std::{
 const NU: usize = 7;
 const STEPS: usize = 32;
 const BYTES: usize = 1024;
-const OUTPUTS: usize = 55; // root[2], complete final grammar[28], queries[7], reads[18]
-const MAGIC: [u8; 8] = *b"IXFREG00";
+const OUTPUTS: usize = 30; // root[2], complete final grammar[28]
+const MAGIC: [u8; 8] = *b"IXFREF00";
 const MAX_BYTES: u64 = 8 * 1024 * 1024;
 const DOMAIN: &[u8] =
-  b"ix:ixby:ixbf-program-registry:bytes1024:steps32:nat4096:c2:f2:b2:v0";
-const CHILD: &str = "IXBY_REGISTRY_VERIFY_CHILD";
-const TEST: &str = "ixby::ixbf_decode::registry::proof_tests::source_bound_registries_verify_in_isolation_and_reject_recomputed_substitutions";
+  b"ix:ixby:ixbf-program-references:bytes1024:steps32:nat4096:c2:f2:b2:v0";
+const CHILD: &str = "IXBY_REFERENCES_VERIFY_CHILD";
+const TEST: &str = "ixby::ixbf_decode::references::proof_tests::source_bound_references_verify_in_isolation_and_reject_recomputed_substitutions";
 
 fn capacity() -> RegistryCapacity {
   RegistryCapacity::new(2, 2, 2).unwrap()
@@ -70,7 +75,7 @@ fn window_gate() -> SourceWindowGate {
   .unwrap()
 }
 struct Emission {
-  slots: ProgramRegistrySlots,
+  slots: ProgramReferenceSlots,
   hash: BoundedBlake3,
   window: SlotId,
   inputs: InputLayout,
@@ -79,42 +84,29 @@ struct Emission {
 fn emit(b: &mut impl CircuitEmitter) -> Emission {
   let mut b = LayoutEmitter::new(b);
   let slots =
-    ProgramRegistrySlots::declare(&mut b, NU, natural(), capacity()).unwrap();
+    ProgramReferenceSlots::declare(&mut b, NU, natural(), capacity()).unwrap();
   let hash = BoundedBlake3::declare(&mut b, NU, BYTES).unwrap();
   let window = b.slot(window_gate());
   let zero = b.fixed_public_input(F128::ZERO);
   let length = b.input();
   let bytes: Vec<_> = (0..64).map(|_| b.input()).collect();
-  let queries: [_; 7] = std::array::from_fn(|_| b.input());
   for word in hash.hash(&mut b, length, &bytes) {
     b.publish(word);
   }
   let mut state = slots.initialize(&mut b, length);
   for _ in 0..STEPS {
-    state = slots
-      .step(&mut b, state, |b, cursor, take| {
-        let mut input = vec![cursor, take];
-        input.extend_from_slice(&bytes);
-        input.extend_from_slice(&bytes);
-        let mut out = b.gate(window, &input);
-        b.connect(out.pop().unwrap(), zero);
-        SourceReadWires { file_length: out[0], words: out[4..].to_vec() }
-      })
-      .0;
+    state = slots.step(&mut b, state, |b, cursor, take| {
+      let mut input = vec![cursor, take];
+      input.extend_from_slice(&bytes);
+      input.extend_from_slice(&bytes);
+      let mut out = b.gate(window, &input);
+      b.connect(out.pop().unwrap(), zero);
+      SourceReadWires { file_length: out[0], words: out[4..].to_vec() }
+    });
   }
-  let registry = slots.finish(&mut b, state);
-  for word in registry.grammar().0.into_iter().chain(queries) {
+  let checked = slots.finish(&mut b, state);
+  for word in checked.registry().grammar().0 {
     b.publish(word);
-  }
-  let reads = [
-    slots.constructor(&mut b, &registry, queries[0], queries[1]),
-    slots.function(&mut b, &registry, queries[2], queries[3]),
-    slots.block(&mut b, &registry, queries[4], queries[5], queries[6]),
-  ];
-  for read in reads {
-    for word in read.fields.into_iter().chain([read.header_range]) {
-      b.publish(word);
-    }
   }
   let (inputs, public) = b.finish();
   Emission { slots, hash, window, inputs, public }
@@ -123,12 +115,14 @@ fn emit(b: &mut impl CircuitEmitter) -> Emission {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Attack {
   None,
-  CaptureFields,
-  CaptureAddress,
-  CaptureCarry,
-  FinishState,
-  ReadBank,
-  ReadRequest,
+  DecodedCall,
+  TailCallee,
+  Owner,
+  FrameMetadata,
+  ConstructorArity,
+  CalleeArity,
+  AlternativeCarry,
+  InactiveMetadata,
   SourceBuffer,
 }
 trait Driver: Send + Sync {
@@ -179,54 +173,82 @@ fn values<G: GateType<Hint = ()>>(g: &G, input: &[F128]) -> Vec<F128> {
   g.eval(input, &(), &mut out);
   out
 }
-fn alter_registry(g: &RegistryGate, rows: &mut [RegistryRow], attack: Attack) {
+fn alter_reference(
+  g: &ReferenceGate,
+  rows: &mut [ReferenceRow],
+  attack: Attack,
+) {
   let op = match attack {
-    Attack::CaptureFields | Attack::CaptureAddress | Attack::CaptureCarry => {
-      RegistryOp::Capture
+    Attack::DecodedCall
+    | Attack::TailCallee
+    | Attack::Owner
+    | Attack::AlternativeCarry
+    | Attack::InactiveMetadata => ReferenceOp::Request,
+    Attack::FrameMetadata | Attack::ConstructorArity | Attack::CalleeArity => {
+      ReferenceOp::Check
     },
-    Attack::FinishState => RegistryOp::Finish,
-    Attack::ReadBank => RegistryOp::Function,
-    Attack::ReadRequest => RegistryOp::Block,
     _ => return,
   };
   if g.op() != op {
     return;
   }
-  let row = match attack {
-    Attack::CaptureFields | Attack::CaptureAddress => {
-      rows.iter_mut().find(|r| r.0[TAG] == F128::new(3, 0)).unwrap()
-    },
-    Attack::CaptureCarry => {
-      rows.iter_mut().rev().find(|r| r.0[TAG] == F128::new(17, 0)).unwrap()
-    },
-    _ => &mut rows[0],
-  };
+  let row = rows
+    .iter_mut()
+    .find(|r| match attack {
+      Attack::DecodedCall => {
+        r.0[1].lo as u8 == grammar::Phase::Operation as u8
+          && r.0[FIELDS] == F128::new(5, 0)
+      },
+      Attack::TailCallee => {
+        r.0[1].lo as u8 == grammar::Phase::OperandCount as u8
+          && r.0[STATE] == F128::new(2, 0)
+      },
+      Attack::Owner => {
+        r.0[1].lo as u8 == grammar::Phase::Target as u8
+          && r.0[grammar::FUNCTION_INDEX] == F128::new(2, 0)
+      },
+      Attack::AlternativeCarry => {
+        r.0[1].lo as u8 == grammar::Phase::Alternative as u8
+          && r.0[STATE + 2] == F128::ONE
+      },
+      Attack::InactiveMetadata => r.0[TAG] == F128::new(17, 0),
+      Attack::FrameMetadata => r.0[BLOCK_ENABLE] == F128::ONE,
+      Attack::ConstructorArity => r.0[CONSTRUCT] == F128::ONE,
+      Attack::CalleeArity => {
+        r.0[FUNCTION_ENABLE] == F128::ONE && r.0[PARTIAL] == F128::ZERO
+      },
+      _ => false,
+    })
+    .expect("fixture exercises the attacked reference");
   let before = values(g, &row.0);
   assert_eq!(before.last(), Some(&F128::ZERO));
   match attack {
-    Attack::CaptureFields => row.0[FIELDS + 4].lo ^= 1,
-    Attack::CaptureAddress => {
-      assert_eq!(row.0[grammar::CTORS_LEFT], F128::new(2, 0));
-      row.0[grammar::CTORS_LEFT] = F128::ONE;
-      let fields = row.0[FIELDS..FIELDS + 5].to_vec();
-      row.0[CAPTURE_BANK] = F128::ONE;
-      row.0[CAPTURE_BANK + 1..CAPTURE_BANK + 6].copy_from_slice(&fields);
-      row.0[CAPTURE_BANK + 1].lo ^= 64;
-      row.0[CAPTURE_BANK + 6] = F128::new(row.0[0].lo - 1, row.0[0].lo);
+    Attack::DecodedCall => row.0[FIELDS + 2].lo ^= 1,
+    Attack::TailCallee => row.0[STATE + 1].lo ^= 1,
+    Attack::Owner => row.0[grammar::FUNCTION_INDEX] = F128::ONE,
+    Attack::AlternativeCarry => row.0[STATE + 2] = F128::ZERO,
+    Attack::InactiveMetadata => row.0[grammar::FUEL].lo ^= 1,
+    Attack::FrameMetadata => {
+      row.0[LOCALS].lo += 1;
+      row.0[BLOCK].lo += 1;
     },
-    Attack::CaptureCarry => row.0[CAPTURE_BANK + 5].lo ^= 1,
-    Attack::FinishState => row.0[grammar::FUEL].lo ^= 1,
-    Attack::ReadBank => row.0[READ_BANK + 1].lo ^= 1,
-    Attack::ReadRequest => row.0[1].lo ^= 1,
+    Attack::ConstructorArity => {
+      row.0[ARGUMENTS].lo += 1;
+      row.0[CTOR + 4].lo += 1;
+    },
+    Attack::CalleeArity => {
+      row.0[ARGUMENTS].lo += 1;
+      row.0[FUNCTION].lo += 1;
+    },
     _ => unreachable!(),
   }
   let after = values(g, &row.0);
   assert_eq!(after.last(), Some(&F128::ZERO));
   scalar_payload_tests::checked(g.plan(), &g.r1cs(), &row.0, &after);
-  if matches!(attack, Attack::FinishState | Attack::ReadBank) {
-    assert_eq!(before, after, "all local outputs are preserved");
+  if op == ReferenceOp::Check || attack == Attack::InactiveMetadata {
+    assert_eq!(before, after, "all local outputs preserved");
   } else {
-    assert_ne!(before, after, "outputs are recomputed, not overwritten");
+    assert_ne!(before, after, "new outputs are recomputed");
   }
 }
 fn alter_window(
@@ -266,7 +288,7 @@ fn setup() -> Setup {
   let mut b = ShapeBuilder::new(NU);
   let emission = emit(&mut b);
   let shape = b.finish().unwrap();
-  let dispatch = emission.slots.dispatch();
+  let dispatch = emission.slots.registry_slots().dispatch();
   let config = dispatch.config();
   let mut drivers: Vec<Box<dyn Driver>> = Vec::new();
   macro_rules! driver {
@@ -282,12 +304,20 @@ fn setup() -> Setup {
       }));
     }};
   }
-  for op in RegistryOp::ALL {
+  for op in ReferenceOp::ALL {
     driver!(
       emission.slots.slot(op),
+      ReferenceGate::new(NU, capacity(), op).unwrap(),
+      ReferenceGate,
+      alter_reference
+    );
+  }
+  for op in RegistryOp::ALL {
+    driver!(
+      emission.slots.registry_slots().slot(op),
       RegistryGate::new(NU, capacity(), op).unwrap(),
       RegistryGate,
-      alter_registry
+      untouched::<RegistryGate>
     );
   }
   for op in DispatchOp::ALL {
@@ -370,11 +400,11 @@ fn setup() -> Setup {
     alter: untouched::<Blake3Gate>,
   }));
   drivers.sort_by_key(|d| shape.registry_slot(d.slot()));
-  assert_eq!(drivers.len(), 35);
+  assert_eq!(drivers.len(), 37);
   for (index, d) in drivers.iter().enumerate() {
     assert_eq!(shape.registry_slot(d.slot()), index);
   }
-  assert_eq!(emission.inputs.private_words(), 72);
+  assert_eq!(emission.inputs.private_words(), 65);
   assert_eq!(emission.public.outputs(), OUTPUTS);
   Setup { shape, emission, drivers }
 }
@@ -428,7 +458,7 @@ fn prove(
     .serialize(&Bundle { magic: MAGIC, revision: 0, commitment, proof })
     .unwrap();
   eprintln!(
-    "registry proof {attack:?}: M={} bytes={}",
+    "reference proof {attack:?}: M={} bytes={}",
     union.dense_m(),
     bytes.len()
   );
@@ -437,14 +467,14 @@ fn prove(
 fn verify(expected: &[F128], bytes: &[u8], domain: &[u8]) -> Result<()> {
   ensure!(
     expected.len() == OUTPUTS && bytes.len() as u64 <= MAX_BYTES,
-    "registry proof/public size"
+    "reference proof/public size"
   );
   let bundle: Bundle = codec().deserialize(bytes)?;
   ensure!(
     bundle.magic == MAGIC && bundle.revision == 0,
-    "registry proof envelope"
+    "reference proof envelope"
   );
-  ensure!(codec().serialize(&bundle)? == bytes, "noncanonical registry proof");
+  ensure!(codec().serialize(&bundle)? == bytes, "noncanonical reference proof");
   let s = setup();
   let union = UnionInstance::new(&s.shape.registry, s.shape.counts.clone());
   let circuits: Vec<&dyn LincheckCircuit> = s
@@ -463,7 +493,7 @@ fn verify(expected: &[F128], bytes: &[u8], domain: &[u8]) -> Result<()> {
     &params(&union),
     &mut challenger,
   )
-  .map_err(|e| anyhow::anyhow!("registry proof rejected: {e:?}"))?;
+  .map_err(|e| anyhow::anyhow!("reference proof rejected: {e:?}"))?;
   Ok(())
 }
 fn isolated(
@@ -503,7 +533,7 @@ fn child() -> Result<()> {
     .read_to_end(&mut input)?;
   ensure!(
     (prefix..=prefix + MAX_BYTES as usize).contains(&input.len()),
-    "registry verifier input size"
+    "reference verifier input size"
   );
   let expected: Vec<_> = input[..prefix]
     .as_chunks::<16>()
@@ -516,39 +546,31 @@ fn child() -> Result<()> {
 fn witness(
   s: &Setup,
   fixture: &fixtures::Fixture,
-  queries: [F128; 7],
 ) -> (CircuitWitness, Vec<F128>) {
   let state = test_parse_program(&fixture.bytes, STEPS).unwrap();
-  let mut private = hash_tests::private_input(BYTES, &fixture.bytes);
-  private.extend(queries);
+  let private = hash_tests::private_input(BYTES, &fixture.bytes);
   let w = s.shape.run(&s.emission.inputs.assign(&private).unwrap(), &[]);
   let mut expected = hash_tests::expected(&fixture.bytes).to_vec();
   expected.extend(state);
-  expected.extend(queries);
-  expected.extend(fixture.results(&queries));
   assert_eq!(w.public, s.emission.public.instantiate(&expected).unwrap());
   assert_eq!(
     w.rows::<Blake3Gate>(s.emission.hash.compression_slot()).len(),
     17
   );
+  for op in ReferenceOp::ALL {
+    assert_eq!(w.rows::<ReferenceGate>(s.emission.slots.slot(op)).len(), STEPS);
+  }
   for op in RegistryOp::ALL {
     assert_eq!(
-      w.rows::<RegistryGate>(s.emission.slots.slot(op)).len(),
-      if op == RegistryOp::Capture { STEPS } else { 1 }
+      w.rows::<RegistryGate>(s.emission.slots.registry_slots().slot(op)).len(),
+      if op == RegistryOp::Finish { 1 } else { STEPS }
     );
   }
-  let captures =
-    w.rows::<RegistryGate>(s.emission.slots.slot(RegistryOp::Capture));
-  let count = captures
-    .iter()
-    .filter(|r| r.0[COMMITTED] == F128::ONE && (3..=5).contains(&r.0[TAG].lo))
-    .count();
-  assert_eq!(count, fixture.headers.len());
   (w, expected)
 }
 
 #[test]
-fn complete_registry_shape_is_proof_free_and_independent_of_image_and_read_requests()
+fn complete_reference_shape_is_source_independent_and_covers_all_instruction_forms()
  {
   let mut count = CountingEmitter::new();
   let emission = emit(&mut count);
@@ -557,135 +579,113 @@ fn complete_registry_shape_is_proof_free_and_independent_of_image_and_read_reque
   assert_eq!(emission.inputs, s.emission.inputs);
   assert_eq!(emission.public, s.emission.public);
   let identity = s.shape.circuit.digest();
-  for spec in fixtures::corpus() {
+  let mut instructions = [false; 8];
+  let mut operations = [false; 8];
+  for (name, spec) in fixtures::corpus() {
     let fixture = fixtures::encode(&spec);
     let artifact = crate::ixby::ixbf::decode_program(
       &fixture.bytes,
       crate::ixby::ixbf::DecodeLimits::default(),
     )
-    .unwrap();
+    .unwrap_or_else(|e| panic!("{name}: {e:#}"));
     assert_eq!(artifact.encode(), fixture.bytes);
-    assert_eq!(artifact.constructors().len(), spec.constructors.len());
-    assert_eq!(artifact.functions().len(), spec.functions.len());
-    for last in [false, true] {
-      witness(&s, &fixture, fixture.requests(last));
+    let (w, _) = witness(&s, &fixture);
+    for r in
+      w.rows::<ReferenceGate>(s.emission.slots.slot(ReferenceOp::Request))
+    {
+      if r.0[TAG] == F128::new(5, 0) {
+        instructions[r.0[FIELDS + 1].lo as usize] = true;
+      }
+      if r.0[TAG] == F128::new(12, 0) {
+        operations[r.0[FIELDS].lo as usize] = true;
+      }
     }
     assert_eq!(s.shape.circuit.digest(), identity);
   }
-}
-
-/// Reference negatives must pass the preceding source/grammar/header relation.
-/// This runs the unchanged registry setup with all public lookups disabled.
-pub(in crate::ixby::ixbf_decode) fn assert_registered(
-  fixtures: &[fixtures::Fixture],
-) {
-  let s = setup();
-  for fixture in fixtures {
-    witness(&s, fixture, [F128::ZERO; 7]);
-  }
+  assert_eq!(instructions, [true; 8]);
+  assert_eq!(operations, [true; 8]);
+  let union = UnionInstance::new(&s.shape.registry, s.shape.counts.clone());
+  eprintln!(
+    "reference census: tables={} M={} private={} public={}",
+    s.drivers.len(),
+    union.dense_m(),
+    s.emission.inputs.private_words(),
+    OUTPUTS
+  );
 }
 
 #[test]
-fn complete_registry_rejects_grammar_valid_duplicate_missing_owner_and_bad_entry_records()
+fn complete_reference_checks_reject_grammar_valid_bad_arities_frames_and_duplicate_alternatives()
  {
   let s = setup();
-  let rejects = |spec: fixtures::Spec, native_accepts: bool| {
+  registry::proof_tests::assert_registered(
+    &fixtures::invalid()
+      .iter()
+      .map(|(_, spec)| fixtures::encode(spec))
+      .collect::<Vec<_>>(),
+  );
+  for (name, spec) in fixtures::invalid() {
     let fixture = fixtures::encode(&spec);
-    // These are complete canonical grammars: rejection must come from the
-    // new registration/completion constraints, not the old grammar alone.
-    test_parse_program(&fixture.bytes, STEPS).unwrap();
-    assert_eq!(
+    test_parse_program(&fixture.bytes, STEPS)
+      .unwrap_or_else(|e| panic!("{name}: {e:#}"));
+    assert!(
       crate::ixby::ixbf::decode_program(
         &fixture.bytes,
-        crate::ixby::ixbf::DecodeLimits::default(),
+        crate::ixby::ixbf::DecodeLimits::default()
       )
-      .is_ok(),
-      native_accepts,
-      "semantic rejection versus an explicit physical capacity"
+      .is_err(),
+      "native validator must reject {name}"
     );
-    let mut private = hash_tests::private_input(BYTES, &fixture.bytes);
-    private.extend(fixture.requests(false));
+    let private = hash_tests::private_input(BYTES, &fixture.bytes);
     assert!(
-      std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        s.shape.run(&s.emission.inputs.assign(&private).unwrap(), &[])
-      }))
-      .is_err()
-    );
-  };
-  let mut duplicate = fixtures::multi();
-  duplicate.constructors[1][..4]
-    .copy_from_slice(&fixtures::multi().constructors[0][..4]);
-  rejects(duplicate, false); // second field count differs, identity does not
-  let mut bad_entry = fixtures::multi();
-  bad_entry.functions[0].blocks[1].0 = 1;
-  rejects(bad_entry, false);
-  let mut extra_constructor = fixtures::multi();
-  extra_constructor.constructors.push([0, 1, 2, 3, 0]);
-  rejects(extra_constructor, true);
-  let mut extra_function = fixtures::base();
-  extra_function.functions.resize(3, extra_function.functions[0].clone());
-  rejects(extra_function, true);
-  let mut extra_block = fixtures::base();
-  extra_block.functions[0].blocks.resize(3, (0, vec![1, 2]));
-  rejects(extra_block, true);
-
-  let fixture = fixtures::encode(&fixtures::base());
-  for (at, value) in [
-    (0, F128::ONE),
-    (1, F128::ONE),
-    (3, F128::ONE),
-    (5, F128::ONE),
-    (6, F128::new(0, 1)),
-  ] {
-    let mut query = fixture.requests(false);
-    query[at] = value;
-    let mut private = hash_tests::private_input(BYTES, &fixture.bytes);
-    private.extend(query);
-    assert!(
-      std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        s.shape.run(&s.emission.inputs.assign(&private).unwrap(), &[])
-      }))
-      .is_err()
+      std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| s
+        .shape
+        .run(&s.emission.inputs.assign(&private).unwrap(), &[])))
+      .is_err(),
+      "circuit must reject {name}"
     );
   }
 }
 
 #[test]
-#[ignore = "real source-bound registry proofs, isolated verification and recomputed wiring attacks"]
-fn source_bound_registries_verify_in_isolation_and_reject_recomputed_substitutions()
+#[ignore = "real source-bound reference proofs, isolated verification and recomputed wiring attacks"]
+fn source_bound_references_verify_in_isolation_and_reject_recomputed_substitutions()
  {
   if std::env::var_os(CHILD).is_some() {
     child().unwrap();
     return;
   }
   let s = setup();
-  let fixture = fixtures::encode(&fixtures::multi());
-  let (w, expected) = witness(&s, &fixture, fixture.requests(true));
-  let honest = prove(&s, &w, &expected, Attack::None);
-  isolated(&expected, &honest).unwrap();
-  for attack in [
-    Attack::CaptureFields,
-    Attack::CaptureAddress,
-    Attack::CaptureCarry,
-    Attack::FinishState,
-    Attack::ReadBank,
-    Attack::ReadRequest,
-    Attack::SourceBuffer,
-  ] {
-    let proof = prove(&s, &w, &expected, attack);
-    let failure = isolated(&expected, &proof).unwrap_err();
-    assert!(failure.contains("Wiring"), "{attack:?}: {failure}");
-    eprintln!("fresh registry verifier rejected {attack:?} at Wiring");
-  }
-  for (i, spec) in
-    fixtures::corpus().into_iter().enumerate().filter(|(i, _)| *i != 2)
-  {
+  let mut first = None;
+  for (name, spec) in fixtures::corpus() {
     let fixture = fixtures::encode(&spec);
-    let (w, expected) = witness(&s, &fixture, fixture.requests(i % 2 != 0));
+    let (w, expected) = witness(&s, &fixture);
     let proof = prove(&s, &w, &expected, Attack::None);
     isolated(&expected, &proof).unwrap();
+    eprintln!("fresh reference proof verified {name}");
+    if first.is_none() {
+      first = Some((expected.clone(), proof));
+    }
+    let attacks: &[Attack] = match name {
+      "call" => {
+        &[Attack::DecodedCall, Attack::FrameMetadata, Attack::CalleeArity]
+      },
+      "construct" => &[Attack::ConstructorArity],
+      "forward-tail" => &[Attack::TailCallee],
+      "owned-target" => &[Attack::Owner],
+      "alternatives" => &[Attack::AlternativeCarry],
+      "return" => &[Attack::InactiveMetadata, Attack::SourceBuffer],
+      _ => &[],
+    };
+    for &attack in attacks {
+      let proof = prove(&s, &w, &expected, attack);
+      let failure = isolated(&expected, &proof).unwrap_err();
+      assert!(failure.contains("Wiring"), "{attack:?}: {failure}");
+      eprintln!("fresh reference verifier rejected {attack:?} at Wiring");
+    }
   }
-  for at in [0, 2 + grammar::FUEL, 30, 31, 35, 37, 42, 54] {
+  let (expected, honest) = first.unwrap();
+  for at in [0, 1, 2, 2 + grammar::FUEL, 2 + grammar::ENTRY_ARITY] {
     let mut wrong = expected.clone();
     wrong[at].lo ^= 1;
     assert!(verify(&wrong, &honest, DOMAIN).is_err());
@@ -694,7 +694,7 @@ fn source_bound_registries_verify_in_isolation_and_reject_recomputed_substitutio
     verify(
       &expected,
       &honest,
-      b"ix:ixby:ixbf-dispatch-program:bytes1024:steps32:nat4096:v0"
+      b"ix:ixby:ixbf-program-registry:bytes1024:steps32:nat4096:c2:f2:b2:v0"
     )
     .is_err()
   );
@@ -703,6 +703,12 @@ fn source_bound_registries_verify_in_isolation_and_reject_recomputed_substitutio
     wrong[at] ^= 1;
     assert!(verify(&expected, &wrong, DOMAIN).is_err());
   }
+  let mut changed = honest.clone();
+  *changed.last_mut().unwrap() ^= 1;
+  assert!(verify(&expected, &changed, DOMAIN).is_err());
+  let mut wrong = honest.clone();
+  wrong[0..8].copy_from_slice(b"IXFREG00");
+  assert!(verify(&expected, &wrong, DOMAIN).is_err());
   let mut trailing = honest.clone();
   trailing.push(0);
   assert!(verify(&expected, &trailing, DOMAIN).is_err());

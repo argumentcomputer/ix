@@ -64,8 +64,14 @@ and a proof of the exact approved binary/input/output relation.
    block headers, exact coverage, full constructor uniqueness, entry-frame
    equality and constrained typed reads. Eight small-file proofs and seven
    recomputed wiring rejections connect these records to original bytes.
-   Instruction/reference semantics, typed value arenas, scalable registry
-   access and full-image semantic admission remain unfinished.
+   The following component adds instruction/reference semantics. Typed value
+   arenas, scalable registry access and full-image admission remain unfinished.
+10. [Source-bound instruction/reference checks](IxbyFunctionalReferences.md):
+    complete event coverage with final-registry reads, forward/self/tail calls,
+    exact/partial arities, owned successor frames and duplicate alternatives.
+    Twenty-four small-file proofs and nine recomputed wiring rejections cover
+    all instruction/operation forms. Typed executable bodies and value arenas,
+    scalable access and the raw-file/Exec commitment bridge remain unfinished.
 
 ## Next implementation gates
 
@@ -77,10 +83,10 @@ and a proof of the exact approved binary/input/output relation.
    binding to the original image, limits, primitive meanings and result ABI.
    Codec, body/value-record, complete grammar-control, checked payload packing,
    guest Nat-limit, UTF-8 and generic state-selected dispatch are implemented,
-   with complete source-bound grammar and declaration/header-registry proofs
-   for explicit small-file classes. Next are complete instruction/reference
-   checks using actual registry reads, typed body/value materialization,
-   scalable chunk sharing for larger files, and the Exec commitment bridge.
+   with complete source-bound grammar, declaration/header-registry and
+   instruction/reference proofs for explicit small-file classes. Next are
+   typed body/value materialization and transport reference checks, scalable
+   chunk sharing and registry access, and the Exec commitment bridge.
    Full-Init row differentials and small-file proofs do not close those obligations.
 2. **Streaming witness and measurements.** Produce bounded execution batches
    while recording actual opcode frequencies, stack depth, allocations, byte

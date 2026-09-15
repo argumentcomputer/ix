@@ -13,10 +13,10 @@
 
 mod evaluate;
 #[cfg(test)]
-mod fixtures;
+pub(in crate::ixby::ixbf_decode) mod fixtures;
 mod gate;
 #[cfg(test)]
-mod proof_tests;
+pub(in crate::ixby::ixbf_decode) mod proof_tests;
 mod relation;
 mod slots;
 #[cfg(test)]

@@ -177,9 +177,11 @@ function and owned block headers to those actual events, checks exact coverage,
 constructor uniqueness and entry frames, and supplies constrained typed reads.
 Larger files still need scalable shared chunk authentication and registry access.
 
-Remaining semantic work includes connecting complete reference/arity and
-successor-frame checks to those reads, full duplicate-alternative checks, and
-ownership/coverage of instruction bodies and typed value arenas. Afterwards,
+The [instruction/reference layer](IxbyFunctionalReferences.md) now connects
+every Program event to those actual reads, including exact/partial arities,
+owned successor frames, forward/self/tail calls and duplicate alternatives.
+Remaining work includes ownership/coverage of typed instruction bodies and
+value arenas, plus constructor-value/PAP transport checks. Afterwards,
 the execution path still needs streaming witnesses, scalable memory/code access,
 full-state segments and sound composition. Native/source refinement remains
 separate. See the [scaling plan](IxbyStage3ScalePlan.md).

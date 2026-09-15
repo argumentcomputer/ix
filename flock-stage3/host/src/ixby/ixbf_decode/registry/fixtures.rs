@@ -4,20 +4,20 @@ use super::*;
 use flock_prover::field::F128;
 
 #[derive(Clone)]
-pub(super) struct Function {
+pub(in crate::ixby::ixbf_decode) struct Function {
   pub arity: u128,
   pub entry: usize,
   pub blocks: Vec<(u128, Vec<u8>)>,
 }
 #[derive(Clone)]
-pub(super) struct Spec {
+pub(in crate::ixby::ixbf_decode) struct Spec {
   pub constructors: Vec<[u128; 5]>,
   pub functions: Vec<Function>,
   pub entry: usize,
   pub wide_limits: bool,
 }
 #[derive(Clone, Debug)]
-pub(super) struct Header {
+pub(in crate::ixby::ixbf_decode) struct Header {
   pub kind: RegistryOp,
   pub owner: usize,
   pub index: usize,
@@ -25,14 +25,14 @@ pub(super) struct Header {
   pub span: F128,
 }
 #[derive(Clone)]
-pub(super) struct Fixture {
+pub(in crate::ixby::ixbf_decode) struct Fixture {
   pub bytes: Vec<u8>,
   pub headers: Vec<Header>,
 }
-pub(super) fn word(value: u128) -> F128 {
+pub(in crate::ixby::ixbf_decode) fn word(value: u128) -> F128 {
   F128::new(value as u64, (value >> 64) as u64)
 }
-pub(super) fn nat(bytes: &mut Vec<u8>, mut n: u128) {
+pub(in crate::ixby::ixbf_decode) fn nat(bytes: &mut Vec<u8>, mut n: u128) {
   loop {
     let digit = (n & 127) as u8;
     n >>= 7;
@@ -63,7 +63,7 @@ fn record(
     span: F128::new(start as u64, end as u64),
   });
 }
-pub(super) fn encode(spec: &Spec) -> Fixture {
+pub(in crate::ixby::ixbf_decode) fn encode(spec: &Spec) -> Fixture {
   let mut bytes = b"IXBF\x01\0\0\0\0\0\0\0".to_vec();
   let mut limits = [8u128, 8, 8, 8, 8, 8, 32, 4096, 900, 900];
   if spec.wide_limits {
@@ -131,7 +131,7 @@ pub(super) fn encode(spec: &Spec) -> Fixture {
   }
   Fixture { bytes, headers }
 }
-pub(super) fn base() -> Spec {
+pub(in crate::ixby::ixbf_decode) fn base() -> Spec {
   Spec {
     constructors: vec![],
     functions: vec![Function {
@@ -143,7 +143,7 @@ pub(super) fn base() -> Spec {
     wide_limits: false,
   }
 }
-pub(super) fn multi() -> Spec {
+pub(in crate::ixby::ixbf_decode) fn multi() -> Spec {
   Spec {
     constructors: vec![
       [1u128 << 127, 3, 1u128 << 100, u128::MAX, 0],
@@ -165,7 +165,7 @@ pub(super) fn multi() -> Spec {
     wide_limits: false,
   }
 }
-pub(super) fn corpus() -> Vec<Spec> {
+pub(in crate::ixby::ixbf_decode) fn corpus() -> Vec<Spec> {
   let one = {
     let mut spec = base();
     spec.constructors = vec![[1, 2, 3, 4, 1]];
@@ -227,7 +227,7 @@ pub(super) fn corpus() -> Vec<Spec> {
 impl Fixture {
   /// These requests are independently expected public query parameters,
   /// not instruction/reference semantics or a prover-chosen approval policy.
-  pub(super) fn requests(&self, last: bool) -> [F128; 7] {
+  pub(in crate::ixby::ixbf_decode) fn requests(&self, last: bool) -> [F128; 7] {
     let select = |kind| {
       let mut entries = self.headers.iter().filter(|h| h.kind == kind);
       if last { entries.next_back() } else { entries.next() }
@@ -245,7 +245,10 @@ impl Fixture {
       word(block.index as u128),
     ]
   }
-  pub(super) fn results(&self, request: &[F128; 7]) -> Vec<F128> {
+  pub(in crate::ixby::ixbf_decode) fn results(
+    &self,
+    request: &[F128; 7],
+  ) -> Vec<F128> {
     let mut output = Vec::new();
     for (kind, enabled, index, owner) in [
       (RegistryOp::Constructor, request[0], request[1], F128::ZERO),

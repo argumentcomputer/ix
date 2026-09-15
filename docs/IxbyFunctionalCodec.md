@@ -137,8 +137,10 @@ complete small-file grammars with a once-authenticated shared byte buffer.
 The [declaration/header registry layer](IxbyFunctionalRegistry.md) additionally
 materializes constructors, functions and owned block headers, checks complete
 coverage/uniqueness/entry frames, and provides source-bound typed reads in a
-bounded class. Remaining instruction/reference and typed-value checks plus
-scalable shared chunk authentication are still required. ByteArray consumers
+bounded class. The [instruction/reference layer](IxbyFunctionalReferences.md)
+connects all Program arities, successor frames and duplicate alternatives to
+those actual reads. Typed body/value materialization, transport reference
+checks and scalable shared chunk authentication remain required. ByteArray consumers
 must use the actual constrained descriptor. The complete execution path still needs
 streaming witnesses, scalable memory/code access, full-state segments and
 sound composition. No source/refinement theorem is established here, and no
