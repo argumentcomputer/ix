@@ -21,6 +21,7 @@ import Ix.Kernel.Verify.Consistency.BetaExposureConstruction
 import Ix.Kernel.Verify.Consistency.BetaHistoryInference
 import Ix.Kernel.Verify.Consistency.Invariant
 import Ix.Kernel.Verify.Consistency.Contracts
+import Ix.Kernel.Verify.Consistency.DefEqTiers
 import Ix.Kernel.Verify.Audit.Basic
 
 /-! Exact full-dependency boundaries for the direct model-refinement roots.
@@ -1458,12 +1459,8 @@ private def wp1RunRoots : Array Lean.Name := #[
   ``RunAssumptions.universeCollisionFree, ``RunAssumptions.universeAddrFaithful,
   ``RunAssumptions.supportCollisionFree, ``RunAssumptions.conversionData, ``RunAssumptions.bound,
   ``WhnfCacheSemantics, ``WhnfCacheSemantics.ofMaps, ``WhnfCacheSemantics.ofEmpty,
-  ``DefEqCacheSemantics, ``DefEqCacheSemantics.ofMaps, ``DefEqCacheSemantics.ofEmpty,
-  ``EqKeyConversion, ``EquivManagerSemantics, ``EquivManagerSemantics.empty,
   ``UnfoldCacheSemantics.ofEmpty, ``IsPropCacheSemantics, ``IsPropCacheSemantics.ofMap,
-  ``IsPropCacheSemantics.ofEmpty, ``ReductionCacheSemantics, ``ReductionCacheSemantics.ofMapsManager,
-  ``ReductionCacheSemantics.ofMaps, ``ReductionCacheSemantics.ofEmpty, ``ReductionCacheSemantics.clear,
-  ``reset_eq
+  ``IsPropCacheSemantics.ofEmpty, ``reset_eq
 ]
 
 private def wp1PropextRoots : Array Lean.Name := #[
@@ -1594,6 +1591,62 @@ private def resolutionProductionRoots : Array Lean.Name := #[
   ``ResolvedAxiomObservation.atomic, ``ResolvedEnvironmentFragment,
   ``ResolvedEnvironmentFragment.atomic, ``checkEnvAnon_preserves_model_resolved,
   ``checkEnvAnon_represents_source_resolved, ``checkEnvAnon_no_false_resolved
+]
+
+/-- The DefEq memo semantics of the invariant and their transports: recorded
+conversions, justified edges and their chains, the manager representation,
+both cache partitions, and every memo update of the direct tiers. These reach
+expression construction through the recorded context-digest run. -/
+private def wp3MemoRoots : Array Lean.Name := #[
+  ``AddressConversion, ``EqKeyConversion, ``EqKeyChain, ``EqKeyChain.equivalence,
+  ``EquivManagerSemantics, ``EquivManagerSemantics.empty, ``DefEqCacheSemantics,
+  ``DefEqCacheSemantics.ofMaps, ``DefEqCacheSemantics.ofEmpty, ``ReductionCacheSemantics,
+  ``ReductionCacheSemantics.ofMapsManager, ``ReductionCacheSemantics.ofMaps,
+  ``ReductionCacheSemantics.ofEmpty, ``ReductionCacheSemantics.clear,
+  ``AddressConversion.symm, ``AddressConversion.canonical, ``EquivManagerSemantics.isEquiv,
+  ``EquivManagerSemantics.findRootKeys, ``EquivManagerSemantics.addEquiv,
+  ``DefEqCacheSemantics.setManager, ``DefEqCacheSemantics.ofInsert, ``DefEqCacheSemantics.hitEdge,
+  ``DefEqCacheSemantics.rootEdge, ``ctxAddrForLbr_ok, ``defEqCtxKey_def,
+  ``QuickBinderData, ``QuickBinderData.left, ``openBinder_support, ``quickDefEq_eq,
+  ``scopedResult, ``withLctxScope_run
+]
+
+/-- The direct conversion tiers under the contracts: invariant preservation
+through the entry's bookkeeping, the recorded-conversion origin and transport
+premise, the binder premises and resources, the quick structural tier, the
+argument-spine loop, the charged tail, the representative probe, and the
+assembled entry modulo the seam. -/
+private def wp3DirectTierRoots : Array Lean.Name := #[
+  ``CheckerInvariant.ofDefEqMemos, ``CheckerInvariant.ofDefEqUpdate, ``CheckerInvariant.ofDefEqScalars,
+  ``CheckerInvariant.addEquiv, ``CheckerInvariant.copyToCheap, ``CheckerInvariant.promoteCheapHit,
+  ``CheckerInvariant.afterBumpStats, ``CheckerInvariant.tickOutcome, ``CheckerInvariant.internStep,
+  ``CheckerInvariant.runInternStep, ``DefEqKeyOrigin, ``DefEqKeyOrigin.ofRun, ``DefEqMemoTransport,
+  ``AddressConversion.ofClaim, ``EqKeyConversion.ofClaim, ``DefEqBinderAssumptions,
+  ``DefEqTierResources, ``QuickBinderPost, ``quickBinder_sound, ``quickDefEq_sound,
+  ``SpineConversionPost, ``allDefEqSpineArgsList_sound, ``allDefEqSpineArgs_sound,
+  ``isDefEqAfterRootCacheMiss_sound, ``isDefEqAfterDirectCacheMiss_sound, ``DefEqSeamAssumptions,
+  ``isDefEqInner_sound, ``isDefEq_sound, ``isDefEq_direct_tiers, ``StepContracts.isDefEq_of_direct_tiers
+]
+
+/-- Model-level congruences, readings, and monadic run equations of the direct
+tiers that reach no production construction. -/
+private def wp3PureRoots : Array Lean.Name := #[
+  ``SpineReadings, ``ConversionClaim.constLevels, ``sameDefEqUniverses_sound,
+  ``ConversionClaim.constInstances, ``EqKey.rootCacheScopeMatches_eq, ``TypingClaim.pushConverted,
+  ``contextValid_pushConverted
+]
+
+/-- Run equations of the entry's primitive operations and of the monad. -/
+private def wp3PropextRoots : Array Lean.Name := #[
+  ``stepTrace_eq, ``bumpStats_eq, ``tick_eq, ``withEquiv_eq, ``canonicalPair_cases,
+  ``intern_eq, ``runIntern_eq, ``isDefEqCall_run, ``allDefEqSpineArgsList_cons, ``modify_run,
+  ``get_run, ``pure_run, ``throw_run, ``tryExcept_run
+]
+
+/-- Outcome-directed monadic reasoning and shape inversions of readings. -/
+private def wp3AxiomFreeRoots : Array Lean.Name := #[
+  ``EStateM.bind_cases, ``readScopedExpr?_sort_annotated, ``readScopedExpr?_lam_annotated,
+  ``readScopedExpr?_all_annotated
 ]
 
 def roots : Array RootAllowance := #[
@@ -1844,6 +1897,19 @@ def roots : Array RootAllowance := #[
   ++ resolutionProductionRoots.map (fun root => {
     root, standardAxioms := standard, nativeAxioms := productionNative,
     forbiddenDependencies := forbiddenProduction })
+  ++ wp3MemoRoots.map (fun root => {
+    root, standardAxioms := standard, nativeAxioms := #[expressionNative],
+    forbiddenDependencies := forbiddenProduction })
+  ++ wp3DirectTierRoots.map (fun root => {
+    root, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative],
+    forbiddenDependencies := forbiddenProduction })
+  ++ wp3PureRoots.map (fun root => {
+    root, standardAxioms := standard, forbiddenDependencies := forbiddenProduction })
+  ++ wp3PropextRoots.map (fun root => {
+    root, standardAxioms := #[``propext, ``Quot.sound], forbiddenDependencies := forbiddenProduction })
+  ++ wp3AxiomFreeRoots.map (fun root => { root, forbiddenDependencies := forbiddenProduction })
+  ++ #[{ root := ``readScopedExpr?_const_annotated, standardAxioms := #[``propext],
+         forbiddenDependencies := forbiddenProduction }]
 
 run_cmd Kernel.Verify.Audit.check roots
 

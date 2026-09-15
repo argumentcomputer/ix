@@ -4,6 +4,7 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 -/
 
 import Ix.Kernel.Verify.IngressState
+import Ix.Kernel.Verify.EquivalenceManager
 import Ix.Kernel.Verify.Consistency.RunAssumptions
 import Ix.Kernel.Verify.Consistency.SourceCache
 import Ix.Kernel.Verify.Consistency.SynthesisCacheHistory
@@ -83,19 +84,34 @@ def DefEqCachePartition.cache : DefEqCachePartition → TcState .anon →
   | .full, state => state.env.defEqCache
   | .cheap, state => state.env.defEqCheapCache
 
-/-- Every positive DefEq entry records two expressions with the key's
-addresses whose readings are convertible in some local context. Negative
-entries carry no claim. -/
+/-- A recorded conversion between two expression addresses at a context
+digest. Some structurally valid state registers a local context in which
+expressions with the two addresses read to typed annotated terms that are
+convertible there, and the digest is that state's actual context address at
+the pair's joint radius. The state, registration, sources, and annotated
+readings are existential, so a consumer at another registration needs an
+explicit transport premise: the conversion instance of the context-digest
+boundary of `docs/tc-context-digest-collision-boundary.md`. -/
+def AddressConversion {β : Type u} (resolve : Address → Option (ConstRef β))
+    (entries : Model.Environment β) (left right ctxAddr : Address) : Prop :=
+  ∃ (state : TcState .anon) (locals : List FVarId) (context : Model.Context β)
+    (a b : KExpr .anon) (ta tb : AExpr β),
+    a.addr = left ∧ b.addr = right ∧
+    LocalStateInvariant state ∧ LocalContextReading resolve locals state.lctx context ∧
+    (∃ after, TcM.ctxAddrForLbr (max a.lbr b.lbr) state = .ok ctxAddr after) ∧
+    readScopedExpr? resolve locals a = some ta.erase ∧
+    readScopedExpr? resolve locals b = some tb.erase ∧
+    (∃ type, TypingClaim.{u,v} entries context ta type) ∧
+    (∃ type, TypingClaim.{u,v} entries context tb type) ∧
+    ConversionClaim.{u,v} entries context ta tb
+
+/-- Every positive DefEq entry records a conversion between its two addresses
+at its context digest. Negative entries carry no claim. -/
 def DefEqCacheSemantics {β : Type u} (resolve : Address → Option (ConstRef β))
     (entries : Model.Environment β) (state : TcState .anon) : Prop :=
   ∀ (partition : DefEqCachePartition) (key : Address × Address × Address),
     (partition.cache state)[key]? = some true →
-    ∃ (locals : List FVarId) (context : Model.Context β) (left right : KExpr .anon)
-      (a b : AExpr β),
-      left.addr = key.1 ∧ right.addr = key.2.1 ∧
-      readScopedExpr? resolve locals left = some a.erase ∧
-      readScopedExpr? resolve locals right = some b.erase ∧
-      ConversionClaim.{u,v} entries context a b
+    AddressConversion.{u,v} resolve entries key.1 key.2.1 key.2.2
 
 theorem DefEqCacheSemantics.ofMaps {β : Type u} {resolve : Address → Option (ConstRef β)}
     {entries : Model.Environment β} {before after : TcState .anon}
@@ -114,29 +130,43 @@ theorem DefEqCacheSemantics.ofEmpty {β : Type u} (resolve : Address → Option 
   rw [empty partition] at stored
   simp at stored
 
-/-- A justified union-find edge joins two keys of the same context scope whose
-expressions read to convertible terms in some local context. -/
+/-- A justified union-find edge joins two keys of the same context scope
+through a recorded conversion of their expression addresses at that scope's
+digest. -/
 def EqKeyConversion {β : Type u} (resolve : Address → Option (ConstRef β))
     (entries : Model.Environment β) (left right : EqKey) : Prop :=
   left.ctxAddr = right.ctxAddr ∧ left.lbr = right.lbr ∧
-  ∃ (locals : List FVarId) (context : Model.Context β) (a b : KExpr .anon) (ta tb : AExpr β),
-    a.addr = left.exprAddr ∧ b.addr = right.exprAddr ∧
-    a.lbr = left.exprLbr ∧ b.lbr = right.exprLbr ∧
-    readScopedExpr? resolve locals a = some ta.erase ∧
-    readScopedExpr? resolve locals b = some tb.erase ∧
-    ConversionClaim.{u,v} entries context ta tb
+  AddressConversion.{u,v} resolve entries left.exprAddr right.exprAddr left.ctxAddr
 
-/-- Every parent link of the production union-find forest is a justified edge.
-This is the `edge` field of the named track's `EquivManager.WF`, restated here
-so the library does not import that module. -/
+/-- What a positive manager answer certifies: the two keys are joined by a
+chain of justified edges. This is the equivalence relation the production
+union-find represents; path halving and union compose edges along it. -/
+inductive EqKeyChain {β : Type u} (resolve : Address → Option (ConstRef β))
+    (entries : Model.Environment β) : EqKey → EqKey → Prop
+  | refl (key : EqKey) : EqKeyChain resolve entries key key
+  | edge {left right : EqKey} (justified : EqKeyConversion.{u,v} resolve entries left right) :
+      EqKeyChain resolve entries left right
+  | symm {left right : EqKey} (chain : EqKeyChain resolve entries left right) :
+      EqKeyChain resolve entries right left
+  | trans {left middle right : EqKey} (first : EqKeyChain resolve entries left middle)
+      (second : EqKeyChain resolve entries middle right) : EqKeyChain resolve entries left right
+
+theorem EqKeyChain.equivalence {β : Type u} (resolve : Address → Option (ConstRef β))
+    (entries : Model.Environment β) : Equivalence (EqKeyChain.{u,v} resolve entries) :=
+  ⟨.refl, .symm, .trans⟩
+
+/-- The production union-find forest represents the chain relation: every
+parent link is a chain of justified edges, parents are in bounds, and every
+key lookup resolves to an in-bounds node carrying that key. This is
+`EquivManager.WF` at the chain relation, so the verified union-find
+operations apply. -/
 def EquivManagerSemantics {β : Type u} (resolve : Address → Option (ConstRef β))
     (entries : Model.Environment β) (manager : EquivManager) : Prop :=
-  ∀ node, node < manager.parent.size →
-    EqKeyConversion.{u,v} resolve entries manager.nodeToKey[node]! manager.nodeToKey[manager.parent[node]!]!
+  EquivManager.WF (EqKeyChain.{u,v} resolve entries) manager
 
 theorem EquivManagerSemantics.empty {β : Type u} {resolve : Address → Option (ConstRef β)}
     {entries : Model.Environment β} : EquivManagerSemantics.{u,v} resolve entries {} :=
-  fun _ bound => (Nat.not_lt_zero _ bound).elim
+  EquivManager.WF.empty
 
 /-- Every unfold entry is the universe instantiation of an admitted body at
 the head constant whose address keys it. -/

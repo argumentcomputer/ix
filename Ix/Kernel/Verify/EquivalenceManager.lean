@@ -60,7 +60,7 @@ private theorem Array.getElemBang_setBang
 private theorem Array.getElemBang_push
     {α : Type} [Inhabited α] (xs : Array α) (v : α) (i : Nat)
     (hi : i < (xs.push v).size) :
-    (xs.push v)[i]! = if h : i < xs.size then xs[i]! else v := by
+    (xs.push v)[i]! = if _ : i < xs.size then xs[i]! else v := by
   by_cases h : i < xs.size
   · simp [getElem!_def, Array.getElem?_push, h, Nat.ne_of_lt h]
   · have hieq : i = xs.size := by
@@ -170,7 +170,7 @@ theorem findGo
         have hgp : gp < parent.size := h.parent_lt hp
         have hparent' : ParentSound R labels parent' := h.halve hR hnode
         have hsize : parent'.size = parent.size := by
-          simp [parent', Array.size_set!]
+          simp [parent']
         have hgp' : gp < parent'.size := by simpa [hsize]
         have hread : parent'[node]! = gp := by
           rw [Array.getElemBang_setBang parent node node gp hnode hnode]
@@ -313,7 +313,7 @@ theorem nodeForKey {R : EqKey → EqKey → Prop} (hR : Equivalence R)
         rw [Array.getElemBang_push em.parent node i (by simpa using hi)]
         split
         · exact Nat.lt_succ_of_lt (h.parents.parent_lt ‹_›)
-        · simpa [node] using hi
+        · simp [node] at hi ⊢
       · intro i hi
         simp only [em', Array.size_push] at hi
         change R (em.nodeToKey.push key)[i]!
@@ -342,7 +342,7 @@ theorem nodeForKey {R : EqKey → EqKey → Prop} (hR : Equivalence R)
             simp only [node] at hiOld ⊢
             omega
           subst i
-          simp [em', node, hlabelSize, hR.refl]
+          simp [node, hlabelSize, hR.refl]
     refine ⟨⟨hparents, ?_⟩, ?_, ?_⟩
     · intro other otherNode hlookup
       rw [Std.HashMap.getElem?_insert] at hlookup
@@ -352,7 +352,7 @@ theorem nodeForKey {R : EqKey → EqKey → Prop} (hR : Equivalence R)
         subst other
         cases hlookup
         constructor
-        · simp [em', node]
+        · simp
         · have hlast := Array.getElemBang_push em.nodeToKey key
             em.parent.size (by simp [hlabelSize])
           have hnot : ¬em.parent.size < em.nodeToKey.size := by
@@ -410,10 +410,10 @@ theorem union {R : EqKey → EqKey → Prop} (hR : Equivalence R)
   have hroots : R em2.nodeToKey[ra]! em2.nodeToKey[rb]! := by
     rw [hlabels2, hlabels1]
     exact hR.trans (hR.symm hra) (hR.trans hab hrb)
-  simp only [hfa, hfb]
+  simp only [hfb]
   split
   · simpa using hfindB.1
-  · simp only [Id.run, pure_bind]
+  · simp only [Id.run]
     have hraBound : ra < em2.parent.size := by
       rw [← hfindB.1.parents.size_eq, hlabels2,
         hfindA.1.parents.size_eq]
@@ -442,12 +442,12 @@ theorem isEquiv {R : EqKey → EqKey → Prop} (hR : Equivalence R)
     exact hR.refl _
   · next hne =>
     cases hmap1 : em.keyToNode[k1]? with
-    | none => simp [hmap1, h]
+    | none => simp [h]
     | some n1 =>
       cases hmap2 : em.keyToNode[k2]? with
-      | none => simp [hmap1, hmap2, h]
+      | none => simp [h]
       | some n2 =>
-        simp only [hmap1, hmap2]
+        simp only
         have hn1 := h.keyToNode hmap1
         have hn2 := h.keyToNode hmap2
         have hfind1 := h.find hR hn1.1
@@ -464,7 +464,7 @@ theorem isEquiv {R : EqKey → EqKey → Prop} (hR : Equivalence R)
         have hfind2 := hfind1.1.find hR hn2'
         rcases hf2 : em1.find n2 with ⟨r2, em2⟩
         rw [hf2] at hfind2
-        simp only [hf1, hf2]
+        simp only
         refine ⟨hfind2.1, fun hroots => ?_⟩
         have hr : r1 = r2 := eq_of_beq hroots
         have hk1 : R k1 em.nodeToKey[r1]! := by
@@ -495,7 +495,7 @@ theorem findRootKey {R : EqKey → EqKey → Prop} (hR : Equivalence R)
     have hfind := h.find hR hnode.1
     rcases hf : em.find node with ⟨root, em1⟩
     rw [hf] at hfind
-    simp only [hf]
+    simp only
     refine ⟨hfind.1, ?_⟩
     intro rootKey hroot
     have hrootBound : root < em1.nodeToKey.size := by
@@ -526,7 +526,7 @@ theorem findRootKeys {R : EqKey → EqKey → Prop} (hR : Equivalence R)
   have hright := hleft.1.findRootKey hR right
   rcases hrightRun : em1.findRootKey right with ⟨rightRoot, em2⟩
   rw [hrightRun] at hright
-  simp only [hleftRun, hrightRun]
+  simp only [hrightRun]
   exact ⟨hright.1, hleft.2, hright.2⟩
 
 /-- Recording one already-justified equivalence preserves manager validity. -/

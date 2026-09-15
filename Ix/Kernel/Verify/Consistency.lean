@@ -87,6 +87,9 @@ import Ix.Kernel.Verify.Consistency.Environment
 import Ix.Kernel.Verify.Consistency.RunAssumptions
 import Ix.Kernel.Verify.Consistency.Invariant
 import Ix.Kernel.Verify.Consistency.Contracts
+import Ix.Kernel.Verify.Consistency.DefEqMemo
+import Ix.Kernel.Verify.Consistency.DefEqQuick
+import Ix.Kernel.Verify.Consistency.DefEqTiers
 import Ix.Kernel.Verify.Consistency.Audit
 
 /-!
@@ -366,5 +369,12 @@ projections at their block coordinates, agrees with the certified adapter, is
 injective on standalone coordinates, enumerates exactly the driver's standalone
 items under a finite materialization contract, derives both static bindings, and
 restates the environment theorems with every reference at its canonical coordinate.
+The non-reducing conversion tiers are proved under those contracts: positive
+equivalence-manager and DefEq-cache answers certify chains of recorded
+conversions, every memo update preserves the invariant, and the quick
+structural tier composes universe equality and the common-local binder
+comparison; the entry is assembled modulo the reducing tiers, the transport
+of recorded chains to the caller's registration, the binder annotation
+discipline, and hereditary typing of binder operands.
 General checker soundness remains outside this fragment.
 -/
