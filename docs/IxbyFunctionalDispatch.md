@@ -232,8 +232,11 @@ constructor/function/block-header coverage, block ownership, constructor
 uniqueness and entry frames to these events and supports typed reads. The
 [instruction/reference layer](IxbyFunctionalReferences.md) connects every
 Program event to those reads, including forward references, exact/partial
-arities, successor frames and duplicate alternatives. Typed body/value
-materialization and transport reference checks remain unfinished.
+arities, successor frames and duplicate alternatives. The
+[typed value layer](IxbyFunctionalValues.md) now materializes bounded IXFI/IXFO
+forests with registry-bound references, scalar payloads, derived parentage,
+child order, depth and complete subtree spans. Typed executable bodies remain
+unfinished.
 Native loader depth/allocation limits and a formal
 source/native correspondence remain separate obligations.
 

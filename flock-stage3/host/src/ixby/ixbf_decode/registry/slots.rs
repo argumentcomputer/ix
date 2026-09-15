@@ -32,6 +32,11 @@ pub struct FinishedProgramRegistry {
   capacity: RegistryCapacity,
 }
 impl FinishedProgramRegistry {
+  pub(in crate::ixby::ixbf_decode) fn binding(
+    &self,
+  ) -> (RegistryCapacity, &[Wire]) {
+    (self.capacity, &self.bank)
+  }
   pub fn grammar(&self) -> GrammarState {
     self.state
   }

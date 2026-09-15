@@ -64,14 +64,24 @@ and a proof of the exact approved binary/input/output relation.
    block headers, exact coverage, full constructor uniqueness, entry-frame
    equality and constrained typed reads. Eight small-file proofs and seven
    recomputed wiring rejections connect these records to original bytes.
-   The following component adds instruction/reference semantics. Typed value
-   arenas, scalable registry access and full-image admission remain unfinished.
+   Subsequent components add instruction/reference semantics and bounded
+   transport values. Scalable registry access and full-image admission remain
+   unfinished.
 10. [Source-bound instruction/reference checks](IxbyFunctionalReferences.md):
     complete event coverage with final-registry reads, forward/self/tail calls,
     exact/partial arities, owned successor frames and duplicate alternatives.
     Twenty-four small-file proofs and nine recomputed wiring rejections cover
-    all instruction/operation forms. Typed executable bodies and value arenas,
-    scalable access and the raw-file/Exec commitment bridge remain unfinished.
+    all instruction/operation forms. The following component adds transport
+    values. Typed executable bodies, scalable access and the raw-file/Exec
+    commitment bridge remain unfinished.
+11. [Source-bound typed input/output values](IxbyFunctionalValues.md):
+    actual dispatcher events and the checked program registry produce scalar,
+    constructor and PAP records with exact payloads/ranges. Completion derives
+    parentage, child order, depth and subtree spans; constrained reads consume
+    the actual finished arena. Thirty-two proofs in separate Input/Output
+    classes and ten recomputed wiring rejections cover bounded forests.
+    Typed executable bodies, scalable access and complete original artifact
+    admission remain unfinished.
 
 ## Next implementation gates
 
@@ -84,8 +94,8 @@ and a proof of the exact approved binary/input/output relation.
    Codec, body/value-record, complete grammar-control, checked payload packing,
    guest Nat-limit, UTF-8 and generic state-selected dispatch are implemented,
    with complete source-bound grammar, declaration/header-registry and
-   instruction/reference proofs for explicit small-file classes. Next are
-   typed body/value materialization and transport reference checks, scalable
+   instruction/reference and typed transport-value proofs for explicit
+   small-file classes. Next are typed executable-body materialization, scalable
    chunk sharing and registry access, and the Exec commitment bridge.
    Full-Init row differentials and small-file proofs do not close those obligations.
 2. **Streaming witness and measurements.** Produce bounded execution batches

@@ -180,8 +180,10 @@ Larger files still need scalable shared chunk authentication and registry access
 The [instruction/reference layer](IxbyFunctionalReferences.md) now connects
 every Program event to those actual reads, including exact/partial arities,
 owned successor frames, forward/self/tail calls and duplicate alternatives.
-Remaining work includes ownership/coverage of typed instruction bodies and
-value arenas, plus constructor-value/PAP transport checks. Afterwards,
+The [typed value layer](IxbyFunctionalValues.md) adds constructor-value/PAP
+transport checks, scalar payload records, derived forest ownership/order/depth,
+complete subtree spans and constrained reads. Remaining work includes
+ownership/coverage of typed instruction bodies and scalable access. Afterwards,
 the execution path still needs streaming witnesses, scalable memory/code access,
 full-state segments and sound composition. Native/source refinement remains
 separate. See the [scaling plan](IxbyStage3ScalePlan.md).

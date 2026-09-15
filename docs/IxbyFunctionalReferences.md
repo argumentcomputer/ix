@@ -174,11 +174,13 @@ RAYON_NUM_THREADS=4 cargo test --release --locked \
 
 ## Remaining work
 
-Typed body/value materialization must preserve exact ownership, ordered
-coverage, scalar payload descriptors and complete spans for execution and
-transport validation. Constructor values and PAP captures need their own
-registry-bound checks; this Program-only component does not parse IXFI/IXFO
-forests. Native loader depth/allocation obligations remain separate.
+The [typed value layer](IxbyFunctionalValues.md) now consumes this completed
+program object for IXFI/IXFO constructor identities, PAP arities and transport
+context. It preserves scalar payloads/ranges and derives ownership, child order,
+depth and complete subtree spans under explicit physical bounds. This
+Program-only component still does not materialize executable bodies. Their
+ordered coverage, ownership and execution consumers remain required, as do
+larger-class native loader depth/allocation obligations.
 
 Larger files need shared chunk authentication and scalable registry/code/memory
 access. The raw-byte/Exec commitment bridge, streaming witnesses, VM-derived

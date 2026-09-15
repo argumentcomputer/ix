@@ -78,3 +78,22 @@ pub(in crate::ixby::ixbf_decode) fn test_parse_program(
     .state,
   )
 }
+
+#[cfg(test)]
+pub(in crate::ixby::ixbf_decode) fn test_parse_transport(
+  kind: super::GrammarKind,
+  bytes: &[u8],
+  program: &[flock_prover::field::F128; 28],
+  maximum_steps: usize,
+) -> anyhow::Result<[flock_prover::field::F128; 28]> {
+  assert_ne!(kind, super::GrammarKind::Program);
+  Ok(
+    model_tests::Model::new(model_tests::config(kind), false)
+      .parse(
+        bytes,
+        DISPATCH_CONTEXT_INDICES.map(|i| program[i]),
+        maximum_steps,
+      )?
+      .state,
+  )
+}

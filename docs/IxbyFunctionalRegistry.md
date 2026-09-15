@@ -235,10 +235,12 @@ RAYON_NUM_THREADS=4 cargo test --release --locked \
 
 The [instruction/reference layer](IxbyFunctionalReferences.md) now connects
 actual typed reads to all Program reference/arity and successor-frame checks
-and rejects duplicate alternatives. Constructor values/PAP captures still need
-their transport consumers, with exact ownership and ordered coverage of
-body/value records. Complete body/arena spans and
-native loader depth/allocation obligations are not discharged by header ranges.
+and rejects duplicate alternatives. The [typed value layer](IxbyFunctionalValues.md)
+now connects constructor values/PAP captures to that checked program, derives
+bounded forest ownership/order/depth and complete subtree spans, and supplies
+typed reads. Executable body records and their spans remain unfinished;
+native loader depth/allocation obligations for larger classes are not
+discharged by these bounded records.
 
 Larger files still require shared chunk authentication and scalable registry
 access; this dense bank and small-file setup cannot admit the full Init image.

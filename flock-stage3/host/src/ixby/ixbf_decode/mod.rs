@@ -42,6 +42,7 @@ mod synthesis;
 #[cfg(test)]
 mod tests;
 mod utf8;
+pub mod values;
 
 pub use byte_span::{
   ByteArraySpanGate, ByteArraySpanRow, ByteArraySpanSlot, ByteArraySpanWires,
