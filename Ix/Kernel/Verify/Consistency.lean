@@ -94,6 +94,9 @@ import Ix.Kernel.Verify.Consistency.CheckedTyping
 import Ix.Kernel.Verify.Consistency.WhnfGeneric
 import Ix.Kernel.Verify.Consistency.WhnfLayers
 import Ix.Kernel.Verify.Consistency.WhnfSteps
+import Ix.Kernel.Verify.Consistency.DefEqReducing
+import Ix.Kernel.Verify.Consistency.DefEqFinal
+import Ix.Kernel.Verify.Consistency.DefEqLazyDelta
 import Ix.Kernel.Verify.Consistency.Audit
 
 /-!
@@ -387,5 +390,9 @@ local lets, multi-argument beta and head rebuilding after the recursive head
 call, and delta unfolding through the unfold memo are closed by induction on
 the method-table depth, and the projection, iota, literal, and quotient
 reducers remain seams collected in one assumption record per depth.
+discipline, and hereditary typing of binder operands. The reducing tiers after
+the quick probe, from the eager `Bool.true` shortcut through the cheap passes,
+proof irrelevance, the lazy-delta loop, and the final WHNF tier, are proved
+modulo the reducer seams, which discharges that reducing-tail obligation.
 General checker soundness remains outside this fragment.
 -/

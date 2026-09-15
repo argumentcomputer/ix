@@ -23,6 +23,7 @@ import Ix.Kernel.Verify.Consistency.Invariant
 import Ix.Kernel.Verify.Consistency.Contracts
 import Ix.Kernel.Verify.Consistency.DefEqTiers
 import Ix.Kernel.Verify.Consistency.WhnfSteps
+import Ix.Kernel.Verify.Consistency.DefEqLazyDelta
 import Ix.Kernel.Verify.Audit.Basic
 
 /-! Exact full-dependency boundaries for the direct model-refinement roots.
@@ -1719,6 +1720,74 @@ private def wp4ProductionRoots : Array Lean.Name := #[
   ``GenericWhnfContract.succ, ``GenericWhnfContract.methodsN
 ]
 
+/-- The reducing conversion tiers under the contracts: the outcome shapes and
+seams of the reducing tail, invariant preservation through lookups and the
+is-prop and rejection-cache writes, the cheap reducers, proof irrelevance,
+the upper chain, the final tier, the lazy-delta loop, and the assembled
+body with its `StepContracts` corollary. These reach expression construction
+through the production bodies they run. -/
+private def wp3ReducingSeamRoots : Array Lean.Name := #[
+  ``CheckerInvariant.ofDefEqFailure, ``CheckerInvariant.ofIsPropInsert,
+  ``CheckerInvariant.tryGetConst, ``ConversionPost.ite, ``ConversionPost.optionalThen,
+  ``ConversionPost.pureFalse, ``ConversionPost.pureTrue, ``DefEqReducingResources,
+  ``DefEqReducingSeams, ``DefEqReducingSeams.formed, ``DefEqSeamAssumptions.ofReducing,
+  ``IsPropKeyOrigin, ``KeepsInvariant, ``KeepsInvariant.lookup, ``LazyDeltaPost,
+  ``LazyDeltaPost.lift, ``LazyPairInvariant, ``LazyPairInvariant.lift, ``LazyPairInvariant.refl,
+  ``LazyStepPost, ``LazyStepPost.lift, ``LazyStepPost.ofCallLeft, ``LazyStepPost.ofCallRight,
+  ``LazyStepPost.optionalLeft, ``LazyStepPost.optionalRight, ``OptionalConversionPost,
+  ``OptionalConversionPost.answer, ``OptionalConversionPost.ite, ``OptionalConversionPost.pureNone,
+  ``OptionalConversionPost.pureSome, ``OptionalReductionPost, ``PropositionPost,
+  ``SoundOptionalConversion, ``SoundOptionalReduction, ``SoundReduction.withCheapRecursionDepth,
+  ``StepContracts.isDefEq_of_reducing_tiers, ``classifyDeltaHead_keeps,
+  ``classifyPropTypeUncached_sound, ``defEqLazyDeltaStepAfterAcceleratorMiss_sound,
+  ``defEqLazyDeltaStepAfterDeltaClassification_sound, ``defEqLazyDeltaStepAfterNatMiss_sound,
+  ``defEqLazyDeltaStepAfterOffsetMiss_sound, ``defEqLazyDeltaStepAfterProjectionMiss_sound,
+  ``defEqLazyDeltaStepAfterSameHeadMiss_sound, ``defEqLazyDeltaStepWithEqualRank_sound,
+  ``defEqLazyDeltaStepWithLeftDelta_sound, ``defEqLazyDeltaStepWithRightDelta_sound,
+  ``defEqLazyDeltaStep_sound, ``defRankId_keeps, ``finishDefEqLazyDeltaStep_sound,
+  ``isDefEqAfterLazyDeltaStopped_sound, ``isDefEqInnerAfterBoolTrue_sound_of_tail,
+  ``isDefEqInnerAfterCorePass_sound_of_tail, ``isDefEqInnerAfterNoDeltaPass_sound_of_tail,
+  ``isDefEqInnerAfterProofIrrelevance_sound, ``isDefEqInnerAfterQuick_sound,
+  ``isDefEqInnerAfterQuick_sound_of_tail, ``isDefEqInnerAfterStringExpansion_sound_of_tail,
+  ``isDefEqWhnfAfterEta_sound, ``isDefEqWhnfAfterNat_sound, ``isDefEqWhnfAfterString_sound,
+  ``isDefEqWhnfAfterStructEta_sound, ``isDefEqWhnfAfterStructural_sound, ``isDefEqWhnf_sound,
+  ``isDelta_keeps, ``isPropType_sound, ``isRegular_keeps, ``rankDeltaHead_keeps,
+  ``runDefEqLazyDelta_sound, ``tryDefEqApp_sound, ``tryDefEqWhnfApp_sound,
+  ``tryDefEqWhnfEtaAfterGuard_sound, ``tryDefEqWhnfEta_sound, ``tryDefEqWhnfString_sound,
+  ``tryDefEqWhnfStructural_sound, ``tryEtaExpansionAfterGuard_sound, ``tryEtaExpansion_sound,
+  ``tryInferOnly_sound, ``tryProofIrrel_sound, ``trySameHeadSpineCached_sound,
+  ``trySameHeadSpineSpeculative_sound, ``trySameHeadSpine_sound, ``tryStructuralCongruence_sound,
+  ``whnfCoreForDefEq_def, ``whnfCoreForDefEq_sound, ``whnfNoDeltaForDefEq_def,
+  ``whnfNoDeltaForDefEq_sound
+]
+
+/-- Model-level congruences and readings of the reducing tiers that reach no
+production construction: spine congruence and hereditary typing, the hash
+path of a reduced pair, and the `Bool.true` reading. -/
+private def wp3ReducingPureRoots : Array Lean.Name := #[
+  ``AExpr.appN_typed, ``ConversionClaim.appN, ``ConversionClaim.ofAddrEq, ``SameRawAnnotations,
+  ``SpineReadings.ofLists, ``isBoolTrue_reading, ``spine_parts
+]
+
+/-- Run equations of the reducing tiers' primitives and the bounded-loop driver. -/
+private def wp3ReducingPropextRoots : Array Lean.Name := #[
+  ``RecM.ite_post, ``boolTrueAllowed, ``boolTrueReductionAllowed_run, ``inferOnlyCall_run,
+  ``isBoolTrue_run, ``Ix.Kernel.Consistency.monadLift_self, ``prims_run, ``runBoundedInvariant_sound,
+  ``try?_run, ``tryFinally_run, ``tryInferOnly_run, ``withCheapRecursionDepth_run
+]
+
+/-- The `Bool.true` recognizer, the string guard, and the legacy-variable reading. -/
+private def wp3ReducingRecognizerRoots : Array Lean.Name := #[
+  ``hasStringLiteralPair_eq_false, ``isBoolTrueAnswer, ``readScopedExpr?_var_none
+]
+
+/-- Outcome-directed bind equations and shape inversions of readings. -/
+private def wp3ReducingAxiomFreeRoots : Array Lean.Name := #[
+  ``Ix.Kernel.Consistency.EStateM.run_bind_error, ``Ix.Kernel.Consistency.EStateM.run_bind_ok,
+  ``readScopedExpr?_app_annotated, ``readScopedExpr?_nat_annotated, ``readScopedExpr?_prj_annotated,
+  ``readScopedExpr?_str_none
+]
+
 def roots : Array RootAllowance := #[
   { root := ``InterfaceExtends.refl, forbiddenDependencies := forbiddenProduction },
   { root := ``InterfaceExtends.trans, forbiddenDependencies := forbiddenProduction },
@@ -1993,6 +2062,16 @@ def roots : Array RootAllowance := #[
   ++ wp4ProductionRoots.map (fun root => {
     root, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative],
     forbiddenDependencies := forbiddenProduction })
+  ++ wp3ReducingSeamRoots.map (fun root => {
+    root, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative],
+    forbiddenDependencies := forbiddenProduction })
+  ++ wp3ReducingPureRoots.map (fun root => {
+    root, standardAxioms := standard, forbiddenDependencies := forbiddenProduction })
+  ++ wp3ReducingPropextRoots.map (fun root => {
+    root, standardAxioms := #[``propext, ``Quot.sound], forbiddenDependencies := forbiddenProduction })
+  ++ wp3ReducingRecognizerRoots.map (fun root => {
+    root, standardAxioms := #[``propext], forbiddenDependencies := forbiddenProduction })
+  ++ wp3ReducingAxiomFreeRoots.map (fun root => { root, forbiddenDependencies := forbiddenProduction })
 
 run_cmd Kernel.Verify.Audit.check roots
 
