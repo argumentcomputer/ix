@@ -1,5 +1,6 @@
 import Compilatrix.Tools.TrustLedger
 import Compilatrix.Tools.X86Check
+import Compilatrix.Tools.BuildGraph
 
 /-! Regression tests for the trust gate's failure paths. Mutations are confined
 to fresh temporary copies; the source tree and reviewed ledger are never edited. -/
@@ -102,6 +103,30 @@ private def disassemblyTests : IO Unit := do
   need ((Compilatrix.Tools.X86Check.instructionText "   a:\t0f\t(bad)\n").contains "(bad)")
     "invalid instruction escaped the instruction check"
 
+private def buildGraphTests (root : FilePath) : IO Unit := do
+  let checkGraph := Compilatrix.Tools.BuildGraph.check root
+  checkGraph
+  let api := root / "Compilatrix.lean"
+  withFile api ("import CompilatrixTests.Runtime\n" ++ (← IO.FS.readFile api)) do
+    rejects "stale source manifest" "Nix import manifest is stale" checkGraph
+    let actual ← Compilatrix.Tools.BuildGraph.manifest root
+    withFile (root / "nix/lean-modules.json") actual.pretty do
+      rejects "production imports tests" "production imports regression module" checkGraph
+  let proofs := root / "CompilatrixTests/Proofs.lean"
+  withFile proofs ((← IO.FS.readFile proofs).replace
+      "import CompilatrixTests.IxIR1.Lower\n" "") do
+    rejects "missing moved proof module" "required proof aggregate no longer builds" do
+      Compilatrix.Tools.BuildGraph.checkCoverage root (← Compilatrix.Tools.BuildGraph.manifest root)
+  let fence := root / "CompilatrixTests/Fences/Borrow.lean"
+  let source ← IO.FS.readFile fence
+  let assertions ← Compilatrix.Tools.BuildGraph.axiomAssertions source
+  need (!assertions.isEmpty) "empty axiom-fence regression fixture"
+  withFile fence (source.replace assertions.head! "") do
+    rejects "removed axiom assertion" "required axiom assertions or expected messages changed" checkGraph
+  let runtime := root / "CompilatrixTests/Pipeline/Run.lean"
+  withFile runtime ((← IO.FS.readFile runtime).replace "FAIL:" "REMOVED:") do
+    rejects "removed runtime assertions" "runtime assertion inventory changed" checkGraph
+
 private def regressionTests (source blakeSource : FilePath) : IO Unit := IO.FS.withTempDir fun temporary => do
   let root := temporary / "project"
   let blake := temporary / "Blake3"
@@ -118,6 +143,7 @@ private def regressionTests (source blakeSource : FilePath) : IO Unit := IO.FS.w
   copyFile (blakeSource / cargoRelative) (blake / cargoRelative)
   let check := audit root [("Blake3", blake.toString)] (some "6.3.0")
   check
+  buildGraphTests root
   let regression := root / "Compilatrix/AuditRegression.lean"
   for token in ["axiom", "sorry", "native_decide"] do
     withFile regression s!"{token} injected\n" do
@@ -180,4 +206,4 @@ def main (args : List String) : IO UInt32 := cli "Lean check regressions failed"
   lexerTests
   disassemblyTests
   regressionTests root blake
-  IO.println "Lean check regressions ok: source lexing, complete root/native inventories, integrity, Cargo, and CI rejection paths"
+  IO.println "Lean check regressions ok: source lexing, root/native inventories, build graph, proof/runtime coverage, integrity, Cargo, and CI rejection paths"

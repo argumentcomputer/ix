@@ -99,6 +99,22 @@ new executable roots, project/dependency extern drift, imports and native
 entry points, integrity changes, malformed/duplicate Cargo metadata, and CI
 action drift. The Nix trust-ledger check runs these regressions too.
 
+The [CI factoring guide](ci.md) records the preserved gate mapping and source
+boundaries. The `CompilatrixTests` Lake root keeps every moved test and fence
+inside the audited source inventory. Its files, the exact axiom/runtime
+inventory, import manifest, Nix job groups, shared-build definitions, and
+workflow are integrity-pinned. The required proof aggregate imports every
+fence; the old `Compilatrix/Fence.lean` and `Compilatrix/Ixby/Fence.lean` paths
+remain test-only compatibility imports. The native interfaces, theorem
+premises, expected axiom sets, and toolchain revisions are unchanged.
+
+The pinned upload/download actions transfer the producing workflow run's
+compiled runtime artifact and diagnostic logs. Downloads use its artifact ID
+and reject digest mismatch; a separate SHA-256 and expected Nix output-path
+check precede execution. Pinned Lean shared libraries supply the same CI
+runtime symbols previously linked into each executable. These changes affect
+build/runtime packaging and add no target-language native interface.
+
 ## Active native interface: BLAKE3 Rust
 
 | Field | Ledger value |

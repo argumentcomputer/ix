@@ -1,0 +1,26 @@
+{
+  "build": ["build", "proofs", "ci-workflow"],
+  "core": [
+    "build-graph", "trusted-extern-ledger", "tests", "catalog-contact",
+    "x86-encoder-decoder", "x86-byte-execution", "x86-stream-objects", "x86-elf-object",
+    "source-coverage", "source-recursion", "source-call-reuse", "source-space",
+    "source-modular", "assembly-scaling", "source-evidence", "ixby", "ixby-symbolic",
+    "ixir2-identity", "source-unique-reuse", "source-borrow", "source-borrow-runtime"
+  ],
+  "native": [
+    "source-native-unique", "source-native-runtime", "source-native-upstream",
+    "source-native-scalar", "source-native-physical-scalar", "source-native-heap",
+    "source-native-captured-scalar", "native-sharing", "native-graph"
+  ],
+  "native-allocating": ["source-native-allocating"],
+  "stage2-source": ["ixby-stage2"],
+  "stage2-frontend": ["ixby-lean"],
+  "stage2-errors-fast": [
+    "ixby-stage2-binary-wrong-claim-kind", "ixby-stage2-binary-trailing-public",
+    "ixby-stage2-binary-empty-proof", "ixby-stage2-binary-malformed-proof"
+  ],
+  "stage2-truncated": ["ixby-stage2-binary-truncated-proof"],
+  "stage2-trailing": ["ixby-stage2-binary-trailing-proof"],
+  "stage2-mismatch": ["ixby-stage2-binary-claim-mismatch"],
+  "stage2-valid": ["ixby-stage2-binary-valid"]
+}

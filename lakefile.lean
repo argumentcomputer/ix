@@ -2,7 +2,14 @@ import Lake
 
 open System Lake DSL
 
-package compilatrix
+package compilatrix where
+  /- CI distributes many executables together. Resolve Lean/Lake symbols from
+  the pinned shared libraries before the default static archives, avoiding a
+  separate copy of the compiler runtime in every test binary. -/
+  moreLinkArgs := match get_config? ciLeanLibDir with
+    | some directory => #[s!"-Wl,-rpath,{directory}", "-lLake_shared", "-lleanshared",
+        "-lleanshared_2", "-lleanshared_1", "-lInit_shared"]
+    | none => #[]
 
 /- Exact pure Ixby reference, pinned independently of its proving backends. -/
 lean_lib Ixby where
@@ -34,9 +41,25 @@ lean_lib Compilatrix where
   roots := #[`Compilatrix]
   moreLinkObjs := #[hpt_cache_sync]
 
+/- Test modules are separate from the production import root. -/
+lean_lib CompilatrixTests where
+  roots := #[`CompilatrixTests]
+
 /- Runtime tests (FFI execution cannot run in elaboration-time `#guard`s). -/
 lean_exe tests where
   root := `Tests
+
+lean_exe «tests-ixon» where
+  root := `CompilatrixTests.Ixon.Main
+
+lean_exe «tests-addressing» where
+  root := `CompilatrixTests.Addressing.Main
+
+lean_exe «tests-pipeline» where
+  root := `CompilatrixTests.Pipeline.Main
+
+lean_exe «tests-hpt» where
+  root := `CompilatrixTests.HPT.Main
 
 lean_exe «catalog-contact» where
   root := `CatalogContact
@@ -260,6 +283,10 @@ lean_lib Benchmark where
 lean_exe «check-tools-tests» where
   srcDir := "scripts"
   root := `CheckToolsTests
+
+lean_exe «check-build-graph» where
+  srcDir := "scripts"
+  root := `CheckBuildGraph
 
 /- Fixed-limit native join emission and baseline comparison. -/
 lean_exe «native-sharing» where

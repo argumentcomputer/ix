@@ -8,25 +8,144 @@ on:
 permissions:
   contents: read
 
+defaults:
+  run:
+    shell: bash
+
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  flake-check:
-    name: Nix flake checks
+  build:
+    name: Build compiler, CI programs, and proofs
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    outputs:
+      matrix: ${{ steps.bundle.outputs.matrix }}
+      archive-sha256: ${{ steps.bundle.outputs.archive-sha256 }}
+      runtime-path: ${{ steps.bundle.outputs.runtime-path }}
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
     steps:
       - name: Check out source
-        # v7.0.1; full commit pin is covered by the trusted-extern ledger.
+        # v7.0.1; action revisions are covered by the trusted-extern ledger.
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
 
       - name: Install Nix
-        # v22; full commit pin is covered by the trusted-extern ledger.
+        # v22
         uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25
 
-      - name: Run the complete check surface
-        run: nix flake check --accept-flake-config --print-build-logs
+      - name: Build shared artifacts and the complete proof collection
+        run: |
+          mkdir -p plans/ci
+          nix flake check --no-build --accept-flake-config
+          /usr/bin/time -v nix build .#ci-build .#ci-runtime-support --accept-flake-config --no-link \
+            --print-build-logs --max-jobs 2 2>&1 | tee plans/ci/build.log
+
+      - name: Export this run's CI runtime artifact
+        id: bundle
+        run: |
+          runtime=$(nix path-info .#ci-runtime --accept-flake-config)
+          support=$(nix path-info .#ci-runtime-support --accept-flake-config)
+          nix-store --query --requisites "$support" > plans/ci/support-paths.txt
+          nix-store --query --references "$runtime" > plans/ci/runtime-references.txt
+          while IFS= read -r reference; do
+            grep -Fxq -- "$reference" plans/ci/support-paths.txt
+          done < plans/ci/runtime-references.txt
+          /usr/bin/time -v nix-store --export "$runtime" | gzip -1 > plans/ci/runtime.nar.gz
+          digest=$(sha256sum plans/ci/runtime.nar.gz | cut -d ' ' -f 1)
+          printf 'archive-sha256=%s\nruntime-path=%s\n' "$digest" "$runtime" >> "$GITHUB_OUTPUT"
+          printf 'matrix=%s\n' "$(jq -c 'keys - ["build"]' nix/ci-groups.json)" >> "$GITHUB_OUTPUT"
+          du -h plans/ci/runtime.nar.gz
+          nix path-info --closure-size "$runtime"
+
+      - name: Share the compiled CI runtime
+        id: upload
+        # v7.0.1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ci-runtime-${{ github.run_id }}-${{ github.run_attempt }}
+          path: plans/ci/runtime.nar.gz
+          compression-level: 0
+          retention-days: 1
+          if-no-files-found: error
+
+      - name: Retain build diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ci-build-log-${{ github.run_id }}-${{ github.run_attempt }}
+          path: plans/ci/*.log
+          retention-days: 7
+          if-no-files-found: ignore
+
+  checks:
+    name: Checks (${{ matrix.group }})
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        group: ${{ fromJSON(needs.build.outputs.matrix) }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25
+
+      - name: Fetch the pinned runtime dependencies
+        run: nix build .#ci-runtime-support --accept-flake-config --no-link --print-build-logs
+
+      - name: Download this run's compiled CI runtime
+        # v8.0.1; use the producing job's artifact ID and reject digest mismatch.
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ needs.build.outputs.artifact-id }}
+          path: plans/ci
+          merge-multiple: true
+          digest-mismatch: error
+
+      - name: Verify and import the CI runtime
+        env:
+          ARCHIVE_SHA256: ${{ needs.build.outputs.archive-sha256 }}
+          RUNTIME_PATH: ${{ needs.build.outputs.runtime-path }}
+        run: |
+          printf '%s  plans/ci/runtime.nar.gz\n' "$ARCHIVE_SHA256" | sha256sum --check --strict
+          gzip -dc plans/ci/runtime.nar.gz | sudo "$(command -v nix-store)" --import | tee plans/ci/imported-paths.txt
+          test "$(nix path-info .#ci-runtime --accept-flake-config)" = "$RUNTIME_PATH"
+          nix-store --check-validity "$RUNTIME_PATH"
+
+      - name: Run the assigned required checks
+        env:
+          CI_GROUP: ${{ matrix.group }}
+        run: |
+          /usr/bin/time -v nix build ".#ci-$CI_GROUP" --accept-flake-config --no-link \
+            --print-build-logs --max-jobs 2 2>&1 | tee plans/ci/checks.log
+
+      - name: Retain check diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ci-${{ matrix.group }}-log-${{ github.run_id }}-${{ github.run_attempt }}
+          path: plans/ci/*.log
+          retention-days: 7
+          if-no-files-found: ignore
+
+  flake-check:
+    name: Nix flake checks
+    if: always()
+    needs: [build, checks]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require every build and check group to pass
+        env:
+          BUILD_RESULT: ${{ needs.build.result }}
+          CHECK_RESULT: ${{ needs.checks.result }}
+        run: test "$BUILD_RESULT" = success && test "$CHECK_RESULT" = success

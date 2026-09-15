@@ -1,0 +1,14 @@
+import CompilatrixTests.Fences.Borrow
+import CompilatrixTests.Fences.CallReuse
+import CompilatrixTests.Fences.Erasure
+import CompilatrixTests.Fences.HPT
+import CompilatrixTests.Fences.IxIR0
+import CompilatrixTests.Fences.IxIR1
+import CompilatrixTests.Fences.IxIR2
+import CompilatrixTests.Fences.Ixby
+import CompilatrixTests.Fences.Ixon
+import CompilatrixTests.Fences.Lowering
+import CompilatrixTests.Fences.Modular
+import CompilatrixTests.Fences.Recursion
+import CompilatrixTests.Fences.UniqueReuse
+import CompilatrixTests.Fences.X86

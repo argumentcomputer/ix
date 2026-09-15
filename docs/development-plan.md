@@ -21,7 +21,7 @@ For a new theorem-backed boundary:
    callback or substitute a theorem about a hand-built target.
 3. Expose semantic preservation, resource/cost laws, and native byte/runtime
    guarantees at their respective boundaries. Add public results to
-   [the axiom fence](../Compilatrix/Fence.lean) and preserve the existing axiom
+   [the axiom fences](../CompilatrixTests/Fences.lean) and preserve the existing axiom
    basis unless a deliberate trust change is part of the package.
 4. Exercise a non-degenerate input at the claimed entry point, checked
    fallback, and the negative boundaries affected by the extension.
@@ -51,6 +51,15 @@ environment. The CI gate is:
 nix flake check
 ```
 
+The [CI guide](ci.md) describes the shared build artifacts, required job
+groups, source boundaries, and coverage inventory. Focused runtime suites are
+`lake exe tests-addressing`, `lake exe tests-pipeline`, `lake exe tests-hpt`,
+and `lake exe tests-ixon`. Build all proofs and elaboration tests explicitly
+with `lake build CompilatrixTests.Proofs`; the default production library
+does not aggregate them. After changing imports or Lake roots, run
+`lake exe check-build-graph --write`, review the generated manifest, and run
+`lake exe check-build-graph`.
+
 Compiler-comparison and measurement runners are built separately with
 `lake -d benchmarks/comparisons build`. Their [optional environment and commands](../benchmarks/comparisons/README.md)
 include CakeML and CompCert; those toolchains are outside the CI check closure.
@@ -60,7 +69,7 @@ For the configured local development environment, the complete build and
 compiled regression surface is:
 
 ```sh
-lake build Compilatrix tests catalog-contact x86-object-fixture ixir2-fixture \
+lake build Compilatrix CompilatrixTests.Proofs tests catalog-contact x86-object-fixture ixir2-fixture \
   source-coverage source-modular assembly-scaling source-evidence source-recursion source-call-reuse source-unique-reuse \
   source-native-unique source-native-runtime source-native-allocating source-native-upstream source-native-scalar \
   source-native-physical-scalar source-native-heap heap-snapshot-object source-native-captured-scalar source-borrow source-borrow-runtime \
@@ -69,8 +78,9 @@ lake build Compilatrix tests catalog-contact x86-object-fixture ixir2-fixture \
   check-source-evidence check-source-call-reuse check-source-unique-reuse \
   check-source-native-unique check-source-native-runtime check-source-native-allocating check-source-native-upstream check-source-native-scalar \
   check-source-native-physical-scalar check-source-native-heap check-source-native-captured-scalar check-source-borrow \
-  check-source-borrow-runtime check-tools-tests
+  check-source-borrow-runtime check-tools-tests check-build-graph
 ./.lake/build/bin/tests
+./.lake/build/bin/check-build-graph
 ./.lake/build/bin/check-trusted-externs --root .
 ./.lake/build/bin/check-tools-tests --root .
 ./.lake/build/bin/check-x86-encoder --objdump objdump
