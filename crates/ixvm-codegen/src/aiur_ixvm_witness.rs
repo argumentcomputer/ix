@@ -217,7 +217,7 @@ pub fn build_claim_check_witness(
 /// Every primitive address the kernel can name, as the Lean seeder sees
 /// them: the parity table plus the reserved reduction markers. Built from
 /// `ix_common::prim_addrs::PrimAddrs`, which the `prim-addrs` parity test
-/// pins against `Ix.Tc.PrimAddrs`, so both seeders cover the same set by
+/// pins against `Ix.Kernel.PrimAddrs`, so both seeders cover the same set by
 /// construction.
 fn prim_addrs() -> Vec<Address> {
   let mut v: Vec<Address> = PrimAddrs::lean_parity_table()

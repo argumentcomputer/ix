@@ -599,12 +599,13 @@ non-required `named-spec-verification` workflow (manual dispatch or weekly
 schedule). The required kernel proof gate is
 `lake build --wfail IxKernelConsistency`; its audit additionally fails if any
 `Ix.Theory.Named` module is in the import closure of the consistency roots.
-Required CI still builds `IxCompileVerify` on its own. The model has a
-separate workflow triggered by changes to the package, interface, or
+Required CI builds `IxCompileVerify` on its own with `--wfail`. The model has
+a separate workflow triggered by changes to the package, interface, or
 configuration; the merge queue adds the expensive parity corpus.
 
 ```sh
-lake build IxKernelVerify IxCompileVerify
+lake build --wfail IxCompileVerify
+lake build IxKernelVerify          # legacy named track, non-strict, not required in CI
 lake build --wfail IxKernelConsistency
 lake run check-theory
 lake run check-certified

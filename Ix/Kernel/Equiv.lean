@@ -11,7 +11,7 @@ hash, the requested context-suffix radius, and the expression's intrinsic
 local-binder radius.
 
 Pure port: operations return the updated manager (path halving mutates on
-reads). Do not reuse the `IO.Ref`-based `Ix.UnionFind`.
+reads); the former `IO.Ref`-based `Ix.UnionFind` module was removed as unused.
 -/
 
 public section

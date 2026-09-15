@@ -10,7 +10,7 @@
 //! Regenerate with `lake test -- --ignored rust-kernel-build-primitives`, which
 //! dumps the current `(name, hex)` pairs — paste the updated lines into
 //! `PrimAddrs::new`. `lake test -- prim-addrs` pins this table against
-//! the Lean mirror in `Ix/Tc/Primitive.lean`.
+//! the Lean mirror in `Ix/Kernel/Primitive.lean`.
 
 use std::sync::LazyLock;
 

@@ -25,7 +25,7 @@
 //!
 //! Expression encoding is iterative (explicit frame stack): Init-scale
 //! terms overflow default runtime stacks (same reason
-//! `Ix/Tc/EgressLean.lean` uses a stack machine).
+//! `Ix/Kernel/EgressLean.lean` uses a stack machine).
 //!
 //! Known hole, deliberate: `DataValue::OfInt` inside mdata is rejected
 //! with an error. Lean's runtime `Int` is scalar-or-mpz (no exported

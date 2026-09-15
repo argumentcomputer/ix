@@ -87,9 +87,9 @@ const PROJECTION_PROBE_FUEL: u64 = 4_096;
 
 /// Step journal (`IX_STEP_TRACE=1`): one `[deq] <fuel> <a8> ~ <b8>` line
 /// per `is_def_eq` entry (plus `[whnf+]` lines in whnf.rs), mirroring the
-/// Lean kernel's `IX_TC_STEP_TRACE` journal (`Ix.Tc` / `TcM.stepTrace`).
+/// Lean kernel's `IX_TC_STEP_TRACE` journal (`Ix.Kernel` / `TcM.stepTrace`).
 /// Diffing the two sequences localizes a behavioral divergence at the
-/// first fork (workflow in `Ix/Tc/ParCheck.lean`). Unscoped by design —
+/// first fork (workflow in `Ix/Kernel/ParCheck.lean`). Unscoped by design —
 /// pair with a seeded single-constant run (`--consts <name>`).
 pub(crate) static IX_STEP_TRACE: crate::EnvFlag =
   crate::EnvFlag::new(|| crate::env_var("IX_STEP_TRACE").is_ok());

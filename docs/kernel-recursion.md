@@ -160,12 +160,15 @@ that consume no runtime fuel; semantic preservation is a further obligation.
 
 ## Validation
 
-Build the implementation proofs and run the kernel regressions:
+Build the required kernel proof gate and run the kernel regressions:
 
 ```sh
-lake build IxKernelVerify
+lake build --wfail IxKernelConsistency
 lake test --wfail -- tc-unit
 ```
+
+The legacy named-specification proofs build with `lake build IxKernelVerify`;
+they are no longer part of the required PR gate.
 
 The [kernel verification guide](kernel-verification.md#trust-checks) describes
 the exact trust audits and the complete local validation command.
