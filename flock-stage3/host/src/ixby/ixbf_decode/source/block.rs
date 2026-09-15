@@ -31,6 +31,14 @@ pub struct SourceBlockGate {
 
 #[derive(Clone, Debug)]
 pub struct SourceBlockRow(pub(super) [F128; 7]);
+#[cfg(test)]
+impl SourceBlockRow {
+  pub(in crate::ixby::ixbf_decode) fn test_inputs_mut(
+    &mut self,
+  ) -> &mut [F128; 7] {
+    &mut self.0
+  }
+}
 
 impl SourceBlockGate {
   pub fn new(nu: usize, depth: usize) -> Result<Self> {
@@ -41,7 +49,7 @@ impl SourceBlockGate {
   pub fn depth(&self) -> usize {
     self.depth
   }
-  pub(super) fn plan(&self) -> &BooleanR1csPlan {
+  pub(in crate::ixby::ixbf_decode) fn plan(&self) -> &BooleanR1csPlan {
     self.plan.get_or_init(|| build_plan(self.depth))
   }
   pub fn r1cs(&self) -> BlockR1cs {

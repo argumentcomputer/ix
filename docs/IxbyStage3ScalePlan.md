@@ -87,8 +87,17 @@ and a proof of the exact approved binary/input/output relation.
     successors and alternatives. Completion checks exact coverage, source spans
     and canonical fields; constrained reads consume the actual finished bank.
     Thirty-six proofs and fifteen recomputed wiring rejections cover the
-    component. This completes bounded body materialization. Scalable access,
-    execution consumers and the raw-file/Exec commitment bridge remain unfinished.
+    component. This completes bounded body materialization. The following
+    component adds authenticated code reads; execution consumers and the
+    raw-file/Exec commitment bridge remain unfinished.
+13. [Authenticated typed code access](IxbyFunctionalCode.md): actual completed
+    Program records and the original digest form a constrained BLAKE3 image.
+    Typed reads consume authenticated chunks and reuse their handles across
+    records, with full root/index binding and no whole-bank input per read.
+    Forty-one proofs and eleven recomputed wiring rejections cover the
+    original-byte-to-code-digest-to-typed-read chain.
+    Sealing remains bounded by the existing loader. Full-image admission,
+    original-source streaming and execution/memory consumers remain unfinished.
 
 ## Next implementation gates
 
@@ -102,8 +111,9 @@ and a proof of the exact approved binary/input/output relation.
    guest Nat-limit, UTF-8 and generic state-selected dispatch are implemented,
    with complete source-bound grammar, declaration/header-registry and
    instruction/reference, typed transport-value and executable-body proofs for
-   explicit small-file classes. Next are scalable chunk sharing and registry
-   access, execution consumers and the Exec commitment bridge.
+   explicit small-file classes. Authenticated typed code reads now reuse chunk
+   handles. Next are streaming full-image admission, execution consumers and
+   the Exec commitment bridge.
    Full-Init row differentials and small-file proofs do not close those obligations.
 2. **Streaming witness and measurements.** Produce bounded execution batches
    while recording actual opcode frequencies, stack depth, allocations, byte
@@ -113,6 +123,8 @@ and a proof of the exact approved binary/input/output relation.
 3. **Scalable code and memory authentication.** Replace capacity-wide selector
    scans and full-bank replication with a reviewed access construction for
    code, locals/continuations, and immutable constructor/PAP/byte/Nat records.
+   The bounded typed-code seal and reusable authenticated reads are implemented;
+   full-image sealing and execution/value-memory consumers remain required.
    Record identity, allocation order, field access and repeated reads must be
    constrained. Benchmark code-authentication and representative memory traces
    before choosing capacities or allocating a full circuit. Any new argument

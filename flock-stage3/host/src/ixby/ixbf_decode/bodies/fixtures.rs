@@ -10,8 +10,10 @@ use super::{
 use crate::ixby::ixbf::{self, Instruction, Operand, Operation, Scalar};
 use flock_prover::field::F128;
 use num_bigint::BigUint;
-pub(super) use program::{Function, Spec, base, nat, word};
-pub(super) struct Fixture {
+pub(in crate::ixby::ixbf_decode) use program::{
+  Function, Spec, base, nat, word,
+};
+pub(in crate::ixby::ixbf_decode) struct Fixture {
   pub name: String,
   pub source: program::Fixture,
   pub bank: Vec<F128>,
@@ -234,7 +236,7 @@ impl BlockEncoder {
     }
   }
 }
-pub(super) fn encode(
+pub(in crate::ixby::ixbf_decode) fn encode(
   c: BodyCapacity,
   name: &str,
   spec: &Spec,
@@ -286,7 +288,10 @@ pub(super) fn encode(
   Fixture { name: name.to_owned(), source, bank, prove }
 }
 impl Fixture {
-  pub(super) fn queries(&self, c: BodyCapacity) -> [F128; 13] {
+  pub(in crate::ixby::ixbf_decode) fn queries(
+    &self,
+    c: BodyCapacity,
+  ) -> [F128; 13] {
     let mut q = [F128::ZERO; 13];
     for f in 0..c.registry.functions() {
       if self.bank[f * FUNCTION_WORDS] != F128::ZERO {
@@ -336,7 +341,11 @@ impl Fixture {
     }
     q
   }
-  pub(super) fn results(&self, c: BodyCapacity, q: &[F128; 13]) -> Vec<F128> {
+  pub(in crate::ixby::ixbf_decode) fn results(
+    &self,
+    c: BodyCapacity,
+    q: &[F128; 13],
+  ) -> Vec<F128> {
     let mut out = Vec::new();
     for (kind, offset, width) in [
       (BodyOp::ReadFunction, 0, FUNCTION_WORDS),
@@ -379,7 +388,7 @@ fn let_op(operation: &[u8], locals: u128) -> Spec {
     vec![(locals, instruction), (locals + 1, vec![1, 2])];
   spec
 }
-pub(super) fn corpus(c: BodyCapacity) -> Vec<Fixture> {
+pub(in crate::ixby::ixbf_decode) fn corpus(c: BodyCapacity) -> Vec<Fixture> {
   let mut specs: Vec<_> = references::test_programs()
     .into_iter()
     .map(|(name, spec)| (name.to_owned(), spec, true))

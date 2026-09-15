@@ -18,6 +18,9 @@ pub struct FinishedProgramBodies {
   bank: Vec<Wire>,
 }
 impl FinishedProgramBodies {
+  pub(in crate::ixby::ixbf_decode) fn binding(&self) -> &[Wire] {
+    &self.bank
+  }
   pub fn references(&self) -> &CheckedProgramReferences {
     &self.program
   }

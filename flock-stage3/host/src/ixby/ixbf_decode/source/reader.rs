@@ -54,6 +54,25 @@ impl SourceReadSlots {
     nu: usize,
     capacity: SourceCapacity,
   ) -> Result<Self> {
+    Self::declare_inner(b, nu, capacity, None)
+  }
+  /// Same-emitter, same-row-domain reuse of the caller's explicitly selected
+  /// compression slots.
+  /// Existing standalone source declarations keep their exact emission order.
+  pub fn sharing_compression(
+    b: &mut impl CircuitEmitter,
+    nu: usize,
+    capacity: SourceCapacity,
+    compression: &Blake3CompressionSlots,
+  ) -> Result<Self> {
+    Self::declare_inner(b, nu, capacity, Some(compression.clone()))
+  }
+  fn declare_inner(
+    b: &mut impl CircuitEmitter,
+    nu: usize,
+    capacity: SourceCapacity,
+    shared: Option<Blake3CompressionSlots>,
+  ) -> Result<Self> {
     let window_gate = SourceWindowGate::new(nu, capacity)?;
     let block_gate = SourceBlockGate::new(nu, capacity.depth())?;
     let path_gate = SourcePathGate::new(nu, capacity.depth())?;
@@ -62,8 +81,12 @@ impl SourceReadSlots {
     let path = (b.slot(path_gate.clone()), path_gate);
     let select_gate = SelectWordsGate::new(nu, 2)?;
     let select = SelectWordsSlot::declare(b, select_gate.clone());
-    let compression =
-      Blake3CompressionSlots::declare(b, nu, Blake3Backend::LegacyOptionF)?;
+    let compression = match shared {
+      Some(compression) => compression,
+      None => {
+        Blake3CompressionSlots::declare(b, nu, Blake3Backend::LegacyOptionF)?
+      },
+    };
     let zero = b.fixed_public_input(F128::ZERO);
     let iv = pack8(&IV).map(|v| b.fixed_public_input(v));
     let block_indices =
@@ -134,7 +157,7 @@ impl SourceReadSlots {
     }
   }
 
-  fn authenticate_chunk(
+  pub(in crate::ixby::ixbf_decode) fn authenticate_chunk(
     &self,
     b: &mut impl CircuitEmitter,
     length: Wire,

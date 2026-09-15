@@ -218,7 +218,9 @@ The full Init transports still require larger-file authentication connected
 to a scalable checked program representation. A typed ByteArray range in this
 bounded class does not admit the 9,611,120-byte Init input or prove its execution.
 The [typed body layer](IxbyFunctionalBodies.md) completes bounded executable
-records from the same checked Program. Runtime code/value/memory access remains
-the next consumer. Streaming witnesses, complete state segments with VM-derived
+records from the same checked Program. [Authenticated typed code reads](IxbyFunctionalCode.md)
+now consume a digest of those actual records through reusable chunk handles.
+Execution consumers and authenticated value/local/continuation memory remain
+required. Streaming witnesses, complete state segments with VM-derived
 global fuel, sound composition, a pinned Init proof
 and terminal compression remain separate work.

@@ -7,7 +7,7 @@ mod bank;
 mod evaluate;
 mod finish;
 #[cfg(test)]
-mod fixtures;
+pub(in crate::ixby::ixbf_decode) mod fixtures;
 mod gate;
 mod operand;
 #[cfg(test)]

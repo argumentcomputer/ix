@@ -239,11 +239,13 @@ child order, depth and complete subtree spans. The
 [typed body layer](IxbyFunctionalBodies.md) now constructs bounded executable
 function/block records, ordered operands, scalars, targets and alternatives
 from the same Program events and supplies constrained reads.
+[Authenticated typed code access](IxbyFunctionalCode.md) now seals those
+actual records with their original digest and reuses authenticated chunk
+handles for typed consumers. Full-image sealing and execution consumers remain.
 Native loader depth/allocation limits and a formal
 source/native correspondence remain separate obligations.
 
 The raw-file digest still needs an explicit bridge to the Exec commitment
-chain. Execution needs streaming witnesses, scalable authenticated code/memory
+chain. Execution needs streaming witnesses, authenticated value/local/continuation memory,
 access, complete state segments with actual VM-derived global fuel, sound
-composition, and the full pinned Init proof. Work remains local and uncommitted;
-no cloud machine or old resource/security cap was changed.
+composition, and the full pinned Init proof. These component checks remain local.

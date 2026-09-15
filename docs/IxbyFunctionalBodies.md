@@ -206,8 +206,11 @@ RAYON_NUM_THREADS=4 cargo test --release --locked \
 
 ## Remaining work
 
-Full Init needs shared chunk authentication and scalable authenticated
-registry/code/memory access. The approved original-wire execution class and
+[Authenticated typed code access](IxbyFunctionalCode.md) now hashes the actual
+completed records together with the original digest and supplies reusable
+chunk handles for record-sized reads. Full Init still needs streaming
+original-source admission, full-image sealing and authenticated execution
+memory. The approved original-wire execution class and
 raw-file/Exec commitment bridge must connect these typed records to execution.
 Streaming witnesses, VM-derived global fuel, complete bounded execution
 segments, sound composition and a pinned full-Init benchmark remain. Native

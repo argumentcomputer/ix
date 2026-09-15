@@ -177,12 +177,15 @@ also includes the two new source tests. No cloud machine is needed.
 ## Remaining work
 
 The later [state-selected dispatcher](IxbyFunctionalDispatch.md) proves
-complete small-file grammars using one shared authenticated buffer. Remaining
-work includes authenticated typed record/payload materialization and scalable
-shared chunk use for larger files;
-authenticated registry ownership, coverage and forward references; complete
-duplicate-alternative checks; and the explicit raw-file/Exec commitment bridge.
-Execution still needs streaming witnesses, scalable code/memory access,
+complete small-file grammars using one shared authenticated buffer. Subsequent
+[registry/reference checks](IxbyFunctionalReferences.md),
+[typed values](IxbyFunctionalValues.md) and [bodies](IxbyFunctionalBodies.md)
+materialize source-bound records under explicit small capacities.
+[Authenticated typed code reads](IxbyFunctionalCode.md) now reuse chunk handles
+for those completed records while binding their original file digest.
+Larger-file source streaming and full-image admission remain required.
+Execution still needs the raw-file/Exec commitment bridge, streaming witnesses,
+authenticated value/local/continuation memory,
 complete state segments with VM-derived global fuel, sound composition and
 the full pinned Init proof. Native/source refinement remains separate.
-The work stays local and uncommitted; EC2 has not been restarted.
+This component's validation is local; it does not require restarting EC2.

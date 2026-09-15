@@ -244,10 +244,12 @@ scalar payloads, targets and alternatives with constrained reads. Native
 loader depth/allocation obligations for larger classes are not
 discharged by these bounded records.
 
-Larger files still require shared chunk authentication and scalable registry
-access; this dense bank and small-file setup cannot admit the full Init image.
-The raw-file/Exec commitment bridge, streaming execution witnesses, scalable
-authenticated code/memory, actual VM-derived global fuel, complete state
+[Authenticated typed code access](IxbyFunctionalCode.md) now seals the completed
+registry/body records and reads them through reusable chunk handles. This
+dense loader and small-file setup still cannot admit the full Init image.
+Streaming source admission, full-image sealing, the raw-file/Exec commitment
+bridge, streaming execution witnesses, authenticated execution memory,
+actual VM-derived global fuel, complete state
 segments and sound composition remain separate gates. Source/image/ABI and
 native constraint-to-reference refinement, the full pinned Init proof and
 terminal compression are not claimed. See the [scaling plan](IxbyStage3ScalePlan.md).

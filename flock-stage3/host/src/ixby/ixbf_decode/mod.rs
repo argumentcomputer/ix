@@ -10,6 +10,7 @@ pub mod bodies;
 mod byte_span;
 #[cfg(test)]
 mod byte_span_tests;
+pub mod code;
 pub mod dispatch;
 #[cfg(test)]
 mod external_tests;

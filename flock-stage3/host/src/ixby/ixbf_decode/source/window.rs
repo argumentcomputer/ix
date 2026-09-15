@@ -49,7 +49,7 @@ impl SourceWindowGate {
   pub fn capacity(&self) -> SourceCapacity {
     self.capacity
   }
-  pub(super) fn plan(&self) -> &BooleanR1csPlan {
+  pub(in crate::ixby::ixbf_decode) fn plan(&self) -> &BooleanR1csPlan {
     self.plan.get_or_init(|| build_plan(self.capacity))
   }
   pub fn r1cs(&self) -> BlockR1cs {

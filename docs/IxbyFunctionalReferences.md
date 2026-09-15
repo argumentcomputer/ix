@@ -184,7 +184,9 @@ bounded function/block records, ordered operands, scalar payloads, targets and
 alternatives with constrained reads. Execution consumers and larger-class
 native loader depth/allocation obligations remain required.
 
-Larger files need shared chunk authentication and scalable registry/code/memory
-access. The raw-byte/Exec commitment bridge, streaming witnesses, VM-derived
+[Authenticated typed code access](IxbyFunctionalCode.md) now hashes these
+completed records and reuses verified chunk handles. Larger files still need
+streaming source admission, full-image sealing and authenticated execution
+memory. The raw-byte/Exec commitment bridge, streaming witnesses, VM-derived
 global fuel, complete execution segments, sound composition and pinned Init
 proving remain ahead of terminal compression.

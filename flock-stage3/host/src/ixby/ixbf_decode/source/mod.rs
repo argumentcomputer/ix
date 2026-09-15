@@ -10,6 +10,14 @@ mod proof_tests;
 mod reader;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+pub(in crate::ixby::ixbf_decode) fn test_chunk_advice(
+  bytes: &[u8],
+  index: usize,
+  depth: usize,
+) -> Vec<flock_prover::field::F128> {
+  tests::NativeTree::new(bytes.to_vec()).proof(index, depth).inputs()
+}
 mod window;
 
 pub use block::{SourceBlockGate, SourceBlockRow};
