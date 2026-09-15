@@ -82,6 +82,8 @@ import Ix.Kernel.Verify.Consistency.SourceCache
 import Ix.Kernel.Verify.Consistency.Production
 import Ix.Kernel.Verify.Consistency.Dependencies
 import Ix.Kernel.Verify.Consistency.Environment
+import Ix.Kernel.Verify.Consistency.RunAssumptions
+import Ix.Kernel.Verify.Consistency.Invariant
 import Ix.Kernel.Verify.Consistency.Audit
 
 /-!
@@ -336,5 +338,15 @@ follows from the source binding and history without fresh cache witnesses.
 Model admission, mutual-member interpretations, general semantic cache
 invariants, finite execution resources, and automatic trace construction remain
 obligations.
+One run-level record now collects the finite source check, hash verification,
+and the collision and size resources over a run's finite syntax inventory. One
+checker-state invariant bundles ownership, coherence, source and catalog
+agreement, both cache histories, the local state and its reading, the
+context's synthesis origin, and semantic agreement of the remaining reduction
+memos. It holds at the driver's initial state, survives lookup on both
+outcomes, key computation, binder and let opening, scope exit, cache clearing,
+per-item reset, and policy changes, and sort and free-variable inference are
+restated as its preservation. Re-expressing the other supported branches and
+deriving the atomic run records from it remain open.
 General checker soundness remains outside this fragment.
 -/

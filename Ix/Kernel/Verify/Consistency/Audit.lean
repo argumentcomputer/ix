@@ -18,6 +18,7 @@ import Ix.Kernel.Verify.Consistency.LetCache
 import Ix.Kernel.Verify.Consistency.BetaSourceInference
 import Ix.Kernel.Verify.Consistency.BetaExposureConstruction
 import Ix.Kernel.Verify.Consistency.BetaHistoryInference
+import Ix.Kernel.Verify.Consistency.Invariant
 import Ix.Kernel.Verify.Audit.Basic
 
 /-! Exact full-dependency boundaries for the direct model-refinement roots.
@@ -1444,6 +1445,55 @@ private def modelLocalStateRoots : Array Lean.Name := #[
   ``LambdaInferenceTrace.absent
 ]
 
+/-- Finite inventories and the DefEq partition index. -/
+private def wp1PureRoots : Array Lean.Name := #[``RunDomain, ``DefEqCachePartition]
+
+/-- Run assumptions, their derived resources, and the semantic memo predicates
+with their map transports. -/
+private def wp1RunRoots : Array Lean.Name := #[
+  ``RunAssumptions, ``RunAssumptions.ownership, ``RunAssumptions.collisionFree,
+  ``RunAssumptions.keyCollisionFree, ``RunAssumptions.addrFaithful,
+  ``RunAssumptions.universeCollisionFree, ``RunAssumptions.universeAddrFaithful,
+  ``RunAssumptions.supportCollisionFree, ``RunAssumptions.conversionData, ``RunAssumptions.bound,
+  ``WhnfCacheSemantics, ``WhnfCacheSemantics.ofMaps, ``WhnfCacheSemantics.ofEmpty,
+  ``DefEqCacheSemantics, ``DefEqCacheSemantics.ofMaps, ``DefEqCacheSemantics.ofEmpty,
+  ``EqKeyConversion, ``EquivManagerSemantics, ``EquivManagerSemantics.empty,
+  ``UnfoldCacheSemantics.ofEmpty, ``IsPropCacheSemantics, ``IsPropCacheSemantics.ofMap,
+  ``IsPropCacheSemantics.ofEmpty, ``ReductionCacheSemantics, ``ReductionCacheSemantics.ofMapsManager,
+  ``ReductionCacheSemantics.ofMaps, ``ReductionCacheSemantics.ofEmpty, ``ReductionCacheSemantics.clear,
+  ``reset_eq
+]
+
+private def wp1PropextRoots : Array Lean.Name := #[
+  ``DefEqCachePartition.cache, ``UnfoldCacheSemantics, ``UnfoldCacheSemantics.ofMap
+]
+
+/-- Context-digest key computations reach expression construction only. -/
+private def wp1KeyRoots : Array Lean.Name := #[
+  ``ctxAddrForLbr_state, ``inferKey_state, ``whnfKey_state, ``defEqCtxKey_state
+]
+
+/-- The bundled checker invariant and its preservation through lookup, keys,
+opening, scope exit, clearing, reset, policy, and the sort and local leaves. -/
+private def wp1InvariantRoots : Array Lean.Name := #[
+  ``CheckerInvariant, ``CheckerInvariant.sourceState, ``CheckerInvariant.inference,
+  ``CheckerInvariant.coherent, ``CheckerInvariant.installed, ``CheckerInvariant.blocks,
+  ``CheckerInvariant.ownership, ``CheckerInvariant.owned, ``CheckerInvariant.agreement,
+  ``CheckerInvariant.cache, ``CheckerInvariant.inferenceHistory, ``CheckerInvariant.ofMaps,
+  ``CheckerInvariant.ofCtxAddrCache, ``CheckerInvariant.inferKey, ``CheckerInvariant.whnfKey,
+  ``CheckerInvariant.defEqCtxKey, ``CheckerInvariant.policy, ``CheckerInvariant.clearReductionCaches,
+  ``CheckerInvariant.reset, ``CheckerInvariant.getConst, ``CheckerInvariant.openBinder,
+  ``CheckerInvariant.openLet, ``CheckerInvariant.exitScope, ``CheckerInvariant.withLctxScope,
+  ``CheckerInvariant.inferSort, ``CheckerInvariant.inferFVar, ``getConst_ingressFrame,
+  ``InferenceStateInvariant.openLet, ``RunAssumptions.standaloneConversionData
+]
+
+/-- The driver's initial state reaches the production loader's name construction. -/
+private def wp1InitialRoots : Array Lean.Name := #[
+  ``CheckerInvariant.initial, ``CheckerInvariant.initialLoopState, ``ReductionCacheSemantics.initial,
+  ``RunAssumptions.initialState, ``RunAssumptions.initialLoopState
+]
+
 def roots : Array RootAllowance := #[
   { root := ``InterfaceExtends.refl, forbiddenDependencies := forbiddenProduction },
   { root := ``InterfaceExtends.trans, forbiddenDependencies := forbiddenProduction },
@@ -1653,6 +1703,20 @@ def roots : Array RootAllowance := #[
       forbiddenDependencies := forbiddenProduction }
   ]
   ++ #[{ root := ``extend_atomic_definition, standardAxioms := standard }]
+  ++ wp1PureRoots.map (fun root => { root, forbiddenDependencies := forbiddenProduction })
+  ++ wp1RunRoots.map (fun root => {
+    root, standardAxioms := standard, forbiddenDependencies := forbiddenProduction })
+  ++ wp1PropextRoots.map (fun root => {
+    root, standardAxioms := #[``propext, ``Quot.sound], forbiddenDependencies := forbiddenProduction })
+  ++ wp1KeyRoots.map (fun root => {
+    root, standardAxioms := standard, nativeAxioms := #[expressionNative],
+    forbiddenDependencies := forbiddenProduction })
+  ++ wp1InvariantRoots.map (fun root => {
+    root, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative],
+    forbiddenDependencies := forbiddenProduction })
+  ++ wp1InitialRoots.map (fun root => {
+    root, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative, nameNative],
+    forbiddenDependencies := forbiddenProduction })
 
 run_cmd Kernel.Verify.Audit.check roots
 
