@@ -26,7 +26,8 @@ def BinderInference.betaTyping {β : Type u} {resolve : Address → Option (Cons
     readScopedExpr? resolve locals source = some term.erase →
     SynthesisBetaTyping resolve incoming incomingContext incomingBounds entries context term type :=
   match support with
-  | .sort .. | .cachedSort .. | .const .. | .polymorphic .. | .cachedConst .. =>
+  | .sort .. | .cachedSort .. | .natLit .. | .cachedNatLit .. | .const .. | .polymorphic .. |
+    .cachedConst .. =>
       fun origin _ _ => .atom origin (by constructor)
   | .forallE miss trace opening domainTree bodyTree .. => fun origin agreement reading => by
       obtain ⟨domainReading, bodyReading⟩ := readScopedExpr?_all_parts reading
@@ -97,6 +98,8 @@ def SynthesisInference.betaTyping {β : Type u} {resolve : Address → Option (C
       inference.betaTyping (.source (.checked contextOrigin node agreement reading accepted)) agreement reading
   | node@(.fvar _ atIndex _) => fun contextOrigin agreement reading accepted =>
       .bvar (.source (.checked contextOrigin node agreement reading accepted)) atIndex
+  | node@(.natLit _ inference) => fun contextOrigin agreement reading accepted =>
+      inference.betaTyping (.source (.checked contextOrigin node agreement reading accepted)) agreement reading
   | .forallE miss trace opening domainTree bodyTree levelFaithful domainBound bodyBound coherent faithful =>
       fun contextOrigin agreement reading accepted => by
         let node := SynthesisInference.forallE miss trace opening domainTree bodyTree levelFaithful

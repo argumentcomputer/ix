@@ -17,7 +17,7 @@ universe u
 
 def InferenceCacheTrace.WhnfData (β : Type u) {fuel : Nat} {state : TcState .anon} {source : KExpr .anon} :
     InferenceCacheTrace.{u} fuel state source → Type (u + 1)
-  | .hit .. | .sort .. | .fvar .. | .const .. | .lazyConst .. => PUnit
+  | .hit .. | .sort .. | .fvar .. | .nat .. | .const .. | .lazyConst .. => PUnit
   | .app _ _ _ _ first second | .forallE _ _ first second |
     .lam _ _ _ first second | .lamBody _ _ _ first second => first.WhnfData β × second.WhnfData β
   | .appBeta _ _ trace _ _ first second =>
@@ -67,6 +67,10 @@ noncomputable def InferenceCacheTrace.whnfHistory {β : Type u} {fuel : Nat}
         · cases run
           exact keyed
         · contradiction
+  | .nat miss => fun _ history accepted =>
+      history.afterMiss miss accepted fun middle run keyed => by
+        obtain ⟨_, rfl⟩ := inferUncached_nat_run run
+        exact keyed.intern _
   | .const miss concrete loaded resources => fun _ history accepted =>
       history.afterMiss miss accepted fun middle run keyed => by
         apply Classical.choice

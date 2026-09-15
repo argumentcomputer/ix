@@ -15,6 +15,7 @@ import Ix.Kernel.Verify.Consistency.ScopedInstUniv
 import Ix.Kernel.Verify.Consistency.ScopedConstant
 import Ix.Kernel.Verify.Consistency.InferenceCache
 import Ix.Kernel.Verify.Consistency.SortCache
+import Ix.Kernel.Verify.Consistency.Literals
 import Ix.Kernel.Verify.Consistency.ConstantCache
 import Ix.Kernel.Verify.Consistency.LazyCache
 import Ix.Kernel.Verify.Consistency.BlockCache
@@ -354,5 +355,9 @@ contract per method table over that invariant, closed by induction on the
 production method-table depth from the exhausted table and per-depth one-layer
 obligations that remain open; the conversion hash path and sort inference are
 instances.
+Natural-number literals infer to the interned primitive `Nat` constant; a
+static binding of that address to an admitted entry with a `natural` fact
+types the literal in both cache partitions, through the synthesis, cache
+trace, source-cache, and history recursions, and as invariant preservation.
 General checker soundness remains outside this fragment.
 -/

@@ -23,7 +23,8 @@ theorem BinderInference.hereditary {β : Type u} {resolve : Address → Option (
     readScopedExpr? resolve locals source = some term.erase →
     HereditaryTyping.{u,v} entries context term type :=
   match support with
-  | .sort .. | .cachedSort .. | .const .. | .polymorphic .. | .cachedConst .. =>
+  | .sort .. | .cachedSort .. | .natLit .. | .cachedNatLit .. | .const .. | .polymorphic .. |
+    .cachedConst .. =>
       fun typed _ _ => .atom typed (by constructor)
   | .fvar _ _ atIndex => fun typed _ _ => .bvar typed atIndex
   | .forallE miss trace opening domainTree bodyTree .. => fun typed agreement reading => by

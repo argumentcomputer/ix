@@ -158,7 +158,8 @@ def BinderInference.variableSpineOrigin {β : Type u} {resolve : Address → Opt
       have spine := prior.spine.snoc (.source (.binderArgument trace functionTree head argumentTree
         keyedAgreement functionReading argumentReading conditions hashPath comparisonFaithful))
       exact ⟨prior.headType, prior.atIndex, by simpa only [← parts.1] using spine⟩
-  | .sort .. | .cachedSort .. | .const .. | .polymorphic .. | .cachedConst .. | .forallE .. | .lam .. => by
+  | .sort .. | .cachedSort .. | .natLit .. | .cachedNatLit .. | .const .. | .polymorphic .. |
+    .cachedConst .. | .forallE .. | .lam .. => by
       exact False.elim (not_variable_spine (by intro fn arg same; cases same)
         (by intro index same; cases same) index arguments headEquals)
 termination_by structural support
@@ -348,7 +349,8 @@ def BinderInference.spineOrigin {β : Type u} {resolve : Address → Option (Con
       simpa only [← parts.1] using prior.argumentsOrigin.snoc
         (.source (.binderArgument trace functionTree functionHead argumentTree keyedAgreement
           functionReading argumentReading conditions hashPath comparisonFaithful))
-  | .sort .. | .cachedSort .. | .fvar .. | .const .. | .polymorphic .. | .cachedConst .. | .forallE .. | .lam .. => by
+  | .sort .. | .cachedSort .. | .natLit .. | .cachedNatLit .. | .fvar .. | .const .. | .polymorphic .. |
+    .cachedConst .. | .forallE .. | .lam .. => by
       exact False.elim (empty (nonapp_spine_empty (by intro fn arg same; cases same) same))
 termination_by structural support
 

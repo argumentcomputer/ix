@@ -25,7 +25,7 @@ theorem SynthesisInference.outputReading {β : Type u}
     (accepted : RecM.infer source (methodsN fuel) before = .ok result after) :
     readScopedExpr? resolve locals result = some type.erase :=
   match support with
-  | .known inference _ | .reuseType inference .. | .fvar inference .. =>
+  | .known inference _ | .reuseType inference .. | .fvar inference .. | .natLit _ inference =>
       (BinderInference.sound.{u,u} inference agreement reading accepted).1
   | .cached _ _ _ _ hit cacheMatch resultReading => by
       rw [hit.run] at accepted

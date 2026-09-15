@@ -501,7 +501,7 @@ agreement assumption at any recursive boundary. -/
 def OwnedInferenceTrace.SourceData {fuel : Nat} {before : TcState .anon} {term : KExpr .anon}
     (tree : OwnedInferenceTrace fuel before term) (source : Ixon.Env) : Prop :=
   match tree with
-  | .hit _ | .sort _ | .fvar _ => True
+  | .hit _ | .sort _ | .fvar _ | .nat _ => True
   | @OwnedInferenceTrace.const _ _ id _ _ miss _ =>
       StandaloneConversionData source id.addr miss.keyed.env
   | .app _ _ _ _ _ first second | .forallE _ _ _ first second |
@@ -564,6 +564,11 @@ theorem OwnedInferenceTrace.preservesSource {source : Ixon.Env} {fuel : Nat}
       split at run
       · cases run; exact keyed
       · contradiction
+  | @nat fuel before value blob info miss =>
+      apply source_invariant_miss valid miss accepted
+      intro middle run keyed
+      obtain ⟨_, rfl⟩ := inferUncached_nat_run run
+      exact keyed.ofMaps rfl rfl rfl (keyed.state.coherent.internExpr _)
   | @const fuel before id arguments info miss data =>
       apply source_invariant_miss valid miss accepted
       intro middle run keyed

@@ -107,7 +107,7 @@ def InferenceCacheTrace.events {fuel : Nat} {before after : TcState .anon}
     (accepted : RecM.infer term (methodsN fuel) before = .ok result after) : List InferenceCacheEvent :=
   match tree with
   | .hit _ => []
-  | .sort miss | .fvar miss | .const miss .. | .lazyConst miss .. => [.ofRun miss accepted]
+  | .sort miss | .fvar miss | .nat miss | .const miss .. | .lazyConst miss .. => [.ofRun miss accepted]
   | .app _ miss trace _ functionTree argumentTree =>
       functionTree.events trace.functionRun ++ argumentTree.events trace.argumentRun ++ [.ofRun miss accepted]
   | .appBeta _ miss trace _ _ functionTree argumentTree =>
@@ -133,7 +133,7 @@ termination_by structural tree
 /-- Actual child publications, before the enclosing miss writes its result. -/
 def InferenceCacheTrace.childEvents {fuel : Nat} {before : TcState .anon} {source : KExpr .anon} :
     InferenceCacheTrace.{u} fuel before source → List InferenceCacheEvent
-  | .hit _ | .sort _ | .fvar _ | .const .. | .lazyConst .. => []
+  | .hit _ | .sort _ | .fvar _ | .nat _ | .const .. | .lazyConst .. => []
   | .app _ _ trace _ first second => first.events trace.functionRun ++ second.events trace.argumentRun
   | .appBeta _ _ trace _ _ first second => first.events trace.functionRun ++ second.events trace.argumentRun
   | .forallE _ trace first second => first.events trace.domainRun ++ second.events trace.bodyRun
@@ -223,6 +223,11 @@ theorem InferenceCacheTrace.cache_maps {fuel : Nat} {before after : TcState .ano
       · cases run
         exact ⟨rfl, rfl⟩
       · contradiction
+  | @nat fuel before value blob info miss =>
+      apply miss_maps miss accepted []
+      intro middle run
+      obtain ⟨_, rfl⟩ := inferUncached_nat_run run
+      exact ⟨rfl, rfl⟩
   | const miss concrete loaded resources =>
       apply miss_maps miss accepted []
       intro middle run

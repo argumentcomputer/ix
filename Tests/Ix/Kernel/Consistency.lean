@@ -4340,6 +4340,102 @@ private def polymorphicDefinitionCases : TestSeq :=
       | .error (.univParamMismatch expected actual) _ => expected == 2 && actual == 1
       | _ => false : Bool)
 
+/-- A one-inductive block `N : Sort 1` standing in for `Nat` at a fresh
+address, the literal blob for `3`, and four definitions over it:
+`three : N := 3`, `family : N → Sort 1 := fun _ => N`, `typed : family 3 := 3`
+(a literal in the declared type), and `bad : Sort 1 := 3`. The canonical
+`Nat` address needs the compiled prelude block, so the checker's primitive
+table is pointed at `N` instead. -/
+private def literalEnvironment :
+    Ixon.Env × Address × Address × Address × Address := Id.run do
+  let ind : Ixon.Inductive :=
+    ⟨false, 0, 0, 0, .sort 0, #[⟨false, 0, 0, 0, 0, .recur 0 #[]⟩]⟩
+  let block : Ixon.Constant := ⟨.muts #[.indc ind], #[], #[], #[sort1U]⟩
+  let (env, blockAddr) := storeMutsWithProjs {} block
+  let natAddr := Address.blake3 (Ixon.serConstant ⟨.iPrj ⟨0, blockAddr⟩, #[], #[], #[]⟩)
+  let (env, blobAddr) := env.storeBlob ⟨(3 : Nat).toBytesLE⟩
+  let (env, three) := storeConst env
+    ⟨.defn ⟨.defn, .safe, 0, .ref 0 #[], .nat 1⟩, #[], #[natAddr, blobAddr], #[]⟩
+  let (env, family) := storeConst env
+    ⟨.defn ⟨.defn, .safe, 0, .leanAll (.ref 0 #[]) (.sort 0), .leanLam (.ref 0 #[]) (.ref 0 #[])⟩,
+      #[], #[natAddr], #[sort1U]⟩
+  let (env, typed) := storeConst env
+    ⟨.defn ⟨.defn, .safe, 0, .app (.ref 1 #[]) (.nat 2), .nat 2⟩,
+      #[], #[natAddr, family, blobAddr], #[]⟩
+  let (env, bad) := storeConst env
+    ⟨.defn ⟨.defn, .safe, 0, .sort 0, .nat 0⟩, #[], #[blobAddr], #[sort1U]⟩
+  return (env, natAddr, three, typed, bad)
+
+/-- The lazy anon state whose primitive `Nat` is the fixture's inductive. -/
+private def literalState (env : Ixon.Env) (natAddr : Address) : TcState .anon :=
+  { TcState.newLazyAnon env with prims := { Primitives.ofAnonAddrs with nat := ⟨natAddr, ()⟩ } }
+
+private def literalNatConst (natAddr : Address) : KExpr .anon := .mkConst ⟨natAddr, ()⟩ #[]
+
+/-- A literal infers to exactly the interned primitive `Nat` constant, in one
+full-cache entry at the literal's key. -/
+private def literalInference : Bool :=
+  let (env, natAddr, _, _, _) := literalEnvironment
+  match TcM.infer (.mkNatLit 3) (literalState env natAddr) with
+  | .ok type after => type.addr == (literalNatConst natAddr).addr && after.env.inferCache.size == 1
+  | .error _ _ => false
+
+/-- A repeated literal is served from the same single full-cache entry. -/
+private def literalCacheReuse : Bool :=
+  let (env, natAddr, _, _, _) := literalEnvironment
+  let expected := literalNatConst natAddr
+  let action : TcM .anon Bool := do
+    let first ← TcM.infer (.mkNatLit 3)
+    let second ← TcM.infer (.mkNatLit 3)
+    let key ← TcM.inferKey (.mkNatLit 3)
+    let state ← get
+    return first.addr == expected.addr && second.addr == expected.addr &&
+      state.env.inferCache.size == 1 &&
+      (state.env.inferCache[key]?.map (·.addr)) == some expected.addr
+  match action (literalState env natAddr) with
+  | .ok passed _ => passed
+  | .error _ _ => false
+
+/-- Clearing the reduction caches drops the entry; re-inference restores it. -/
+private def literalCacheClearing : Bool :=
+  let (env, natAddr, _, _, _) := literalEnvironment
+  let expected := literalNatConst natAddr
+  let action : TcM .anon Bool := do
+    let _ ← TcM.infer (.mkNatLit 3)
+    modify fun state => { state with env := state.env.clearReductionCaches }
+    let cleared ← get
+    let again ← TcM.infer (.mkNatLit 3)
+    let state ← get
+    return cleared.env.inferCache.isEmpty && again.addr == expected.addr &&
+      state.env.inferCache.size == 1
+  match action (literalState env natAddr) with
+  | .ok passed _ => passed
+  | .error _ _ => false
+
+/-- `three : N := 3` and `typed : family 3 := 3` pass the per-item check. -/
+private def literalDefinitionsCheck : Bool :=
+  let (env, natAddr, three, typed, _) := literalEnvironment
+  let action : TcM .anon Unit := do
+    TcM.checkConst ⟨three, ()⟩
+    TcM.checkConst ⟨typed, ()⟩
+  match action (literalState env natAddr) with
+  | .ok () _ => true
+  | .error _ _ => false
+
+/-- `bad : Sort 1 := 3` fails: the literal's type is the primitive `Nat`. -/
+private def literalMismatchRejected : Bool :=
+  let (env, natAddr, _, _, bad) := literalEnvironment
+  match TcM.checkConst ⟨bad, ()⟩ (literalState env natAddr) with
+  | .ok () _ => false
+  | .error _ _ => true
+
+private def literalCases : TestSeq :=
+  test "natural literal: inference returns the interned primitive Nat constant" literalInference
+  ++ test "natural literal: a repeated literal reuses its single full-cache entry" literalCacheReuse
+  ++ test "natural literal: clearing drops the entry and re-inference restores it" literalCacheClearing
+  ++ test "natural literal: a literal body and a literal in the declared type check" literalDefinitionsCheck
+  ++ test "natural literal: a literal does not inhabit a sort" literalMismatchRejected
+
 public def suite : List TestSeq :=
   [cases, polymorphicCases, specializationCases, binderCases, applicationCases, multiBetaCases, cheapLambdaCases,
     cheapApplicationCases, exposedLambdaCases, repeatedBetaCases, betaTraceCases, hereditaryBetaCases, piExposureCases,
@@ -4347,6 +4443,6 @@ public def suite : List TestSeq :=
     lazyCacheCases, blockCacheCases, ingressCoherenceCases, sourceOwnershipCases, recursiveStateCases,
     sourceAgreementCases, sourceCacheCases, compositeCacheCases, letCases, sortExposureCases, mixedWhnfCases, letWhnfCases,
     headWhnfCases,
-    polymorphicDefinitionCases]
+    polymorphicDefinitionCases, literalCases]
 
 end Tests.Kernel.Consistency

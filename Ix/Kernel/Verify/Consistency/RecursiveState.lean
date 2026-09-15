@@ -182,6 +182,8 @@ inductive OwnedInferenceTrace : Nat → TcState .anon → KExpr .anon → Type
       OwnedInferenceTrace fuel before (.sort level info)
   | fvar {fuel before id name info} (miss : UncachedInference before (.fvar id name info)) :
       OwnedInferenceTrace fuel before (.fvar id name info)
+  | nat {fuel before value blob info} (miss : UncachedInference before (.nat value blob info)) :
+      OwnedInferenceTrace fuel before (.nat value blob info)
   | const {fuel before id arguments info}
       (miss : UncachedInference before (.const id arguments info))
       (data : ConstantInstantiationData miss.keyed id arguments) :
@@ -213,7 +215,7 @@ inductive OwnedInferenceTrace : Nat → TcState .anon → KExpr .anon → Type
 def OwnedInferenceTrace.writes {fuel : Nat} {before : TcState .anon} {term : KExpr .anon} :
     OwnedInferenceTrace fuel before term → List (Address × Address)
   | .hit _ => []
-  | .sort miss | .fvar miss | .const miss _ => [miss.key]
+  | .sort miss | .fvar miss | .nat miss | .const miss _ => [miss.key]
   | .app _ miss _ _ _ first second | .forallE miss _ _ first second |
       .lam _ miss _ _ _ first second => miss.key :: (first.writes ++ second.writes)
 
@@ -253,6 +255,11 @@ theorem OwnedInferenceTrace.preserves {source : Ixon.Env} {fuel : Nat}
       split at run
       · cases run; exact keyed
       · contradiction
+  | @nat fuel before value blob info miss =>
+      apply invariant_miss valid miss accepted
+      intro middle run keyed
+      obtain ⟨_, rfl⟩ := inferUncached_nat_run run
+      exact keyed.ofMaps rfl rfl rfl (keyed.coherent.internExpr _)
   | @const fuel before id arguments info miss data =>
       apply invariant_miss valid miss accepted
       intro middle run keyed
@@ -300,6 +307,7 @@ def OwnedInferenceTrace.toCacheTrace {source : Ixon.Env} {fuel : Nat}
   | .hit cached => .hit cached
   | .sort miss => .sort miss
   | .fvar miss => .fvar miss
+  | .nat miss => .nat miss
   | @OwnedInferenceTrace.const _ _ id _ _ miss data =>
       let keyed := valid.afterInferKey miss.keyRun
       let loader := keyed.owned.toVerified id.addr
@@ -355,6 +363,14 @@ def OwnedInferenceTrace.fvarOfKey {fuel : Nat} {before keyed : TcState .anon}
   rcases observeInferenceCache keyRun with ⟨hit, _, _⟩ | ⟨miss, _, _⟩
   · exact .hit hit
   · exact .fvar miss
+
+def OwnedInferenceTrace.natOfKey {fuel : Nat} {before keyed : TcState .anon}
+    {value : Nat} {blob : Address} {info : ExprInfo .anon} {key : Address × Address}
+    (keyRun : TcM.inferKey (.nat value blob info) before = .ok key keyed) :
+    OwnedInferenceTrace fuel before (.nat value blob info) := by
+  rcases observeInferenceCache keyRun with ⟨hit, _, _⟩ | ⟨miss, _, _⟩
+  · exact .hit hit
+  · exact .nat miss
 
 def OwnedInferenceTrace.constOfKey {fuel : Nat} {before keyed : TcState .anon}
     {id : KId .anon} {arguments : Array (KUniv .anon)} {info : ExprInfo .anon}

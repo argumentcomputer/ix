@@ -104,6 +104,15 @@ theorem BinderInference.outputCoherent {β : Type u}
       rw [cached.run] at accepted
       cases accepted
       simpa only [inferKey_environment cached.keyRun] using initial
+  | natLit miss binding coherent faithful =>
+      apply infer_miss_coherent miss accepted
+      intro middle run
+      obtain ⟨_, rfl⟩ := inferUncached_nat_run run
+      exact coherent.internExpr _
+  | cachedNatLit cached binding canonical =>
+      rw [cached.run] at accepted
+      cases accepted
+      simpa only [inferKey_environment cached.keyRun] using initial
   | fvar => exact tree.fvar_coherent initial accepted
   | const | polymorphic | cachedConst => exact tree.const_coherent initial accepted
   | app full miss trace functionTree head argumentTree conditions hashPath comparisonFaithful
@@ -142,7 +151,7 @@ theorem SynthesisInference.outputCoherent {β : Type u}
     (reading : readScopedExpr? resolve locals source = some term.erase)
     (accepted : RecM.infer source (methodsN fuel) before = .ok result after) : after.env.intern.WF :=
   match support with
-  | .known inference _ | .reuseType inference .. | .fvar inference .. =>
+  | .known inference _ | .reuseType inference .. | .fvar inference .. | .natLit _ inference =>
       inference.outputCoherent tree initial accepted
   | .cached _ _ _ _ observed _ _ | .cachedFrom _ observed _ => by
       rw [observed.run] at accepted

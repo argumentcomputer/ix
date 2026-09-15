@@ -193,6 +193,8 @@ inductive InferenceCacheTrace : Nat → TcState .anon → KExpr .anon → Type (
       InferenceCacheTrace fuel before (.sort level info)
   | fvar {fuel before id name info} (miss : UncachedInference before (.fvar id name info)) :
       InferenceCacheTrace fuel before (.fvar id name info)
+  | nat {fuel before value blob info} (miss : UncachedInference before (.nat value blob info)) :
+      InferenceCacheTrace fuel before (.nat value blob info)
   | const {fuel before id arguments info}
       (miss : UncachedInference before (.const id arguments info))
       (concrete : KConst .anon) (loaded : miss.keyed.env.get? id = some concrete)
@@ -281,7 +283,7 @@ hits contribute no key; recursive calls and each outer insertion are included. -
 def InferenceCacheTrace.writes {fuel : Nat} {before : TcState .anon} {term : KExpr .anon} :
     InferenceCacheTrace fuel before term → List (Address × Address)
   | .hit _ => []
-  | .sort miss | .fvar miss | .const miss .. | .lazyConst miss .. => [miss.key]
+  | .sort miss | .fvar miss | .nat miss | .const miss .. | .lazyConst miss .. => [miss.key]
   | .app _ miss _ _ first second | .appBeta _ miss _ _ _ first second |
       .forallE miss _ first second | .lam _ miss _ first second | .lamBody _ miss _ first second |
       .forallSort miss _ _ _ first second | .lamSort _ miss _ _ first second =>
@@ -306,6 +308,14 @@ def InferenceCacheTrace.fvarOfKey {fuel : Nat} {before keyed : TcState .anon}
   rcases observeInferenceCache keyRun with ⟨hit, _, _⟩ | ⟨miss, _, _⟩
   · exact .hit hit
   · exact .fvar miss
+
+def InferenceCacheTrace.natOfKey {fuel : Nat} {before keyed : TcState .anon}
+    {value : Nat} {blob : Address} {info : ExprInfo .anon} {key : Address × Address}
+    (keyRun : TcM.inferKey (.nat value blob info) before = .ok key keyed) :
+    InferenceCacheTrace fuel before (.nat value blob info) := by
+  rcases observeInferenceCache keyRun with ⟨hit, _, _⟩ | ⟨miss, _, _⟩
+  · exact .hit hit
+  · exact .nat miss
 
 def InferenceCacheTrace.constOfKey {fuel : Nat} {before keyed : TcState .anon}
     {id : KId .anon} {arguments : Array (KUniv .anon)} {info : ExprInfo .anon}
@@ -429,6 +439,12 @@ theorem InferenceCacheTrace.frame {fuel : Nat} {before after : TcState .anon}
       split at run
       · cases run; exact ⟨.refl key _, rfl⟩
       · contradiction
+  | @nat fuel before value blob info miss =>
+      simp only [writes, List.mem_singleton] at outside
+      apply infer_miss_frame miss (Ne.symm outside) accepted
+      intro middle run
+      obtain ⟨_, rfl⟩ := inferUncached_nat_run run
+      exact ⟨.of_eq rfl rfl rfl, rfl⟩
   | const miss concrete loaded resources =>
       simp only [writes, List.mem_singleton] at outside
       apply infer_miss_frame miss (Ne.symm outside) accepted
@@ -587,7 +603,7 @@ theorem InferenceCacheTrace.populated_outside {fuel : Nat} {before : TcState .an
     (stored : before.env.inferCache[key]? = some cached) : key ∉ tree.writes := by
   induction tree with
   | hit => simp [writes]
-  | sort miss | fvar miss | const miss concrete loaded resources | lazyConst miss loader resources =>
+  | sort miss | fvar miss | nat miss | const miss concrete loaded resources | lazyConst miss loader resources =>
       simpa only [writes, List.mem_singleton] using miss.ne_populated stored
   | app full miss trace hashPath functionTree argumentTree functionIH argumentIH =>
       have keyed : miss.keyed.env.inferCache[key]? = some cached := by

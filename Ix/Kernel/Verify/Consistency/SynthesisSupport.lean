@@ -72,6 +72,12 @@ inductive SynthesisInference {β : Type u}
       (atIndex : context[index]? = some type)
       (boundAtIndex : bounds[index]? = some level) :
       SynthesisInference resolve entries locals context bounds fuel before source (.bvar index) type level
+  | natLit {entries locals context bounds fuel before value blob info}
+      (binding : PrimitiveNatBinding resolve entries before.prims)
+      (inference : BinderInference resolve entries locals context fuel before (.nat value blob info)
+        (.natLit value) (.const binding.ref [])) :
+      SynthesisInference resolve entries locals context bounds fuel before (.nat value blob info)
+        (.natLit value) (.const binding.ref []) binding.level
   | app {entries locals context bounds fuel before fn arg info f a A A' B condition functionLevel argumentLevel}
       (full : before.inferOnly = false)
       (miss : UncachedInference before (.app fn arg info))

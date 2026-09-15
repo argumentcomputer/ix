@@ -60,6 +60,9 @@ theorem SynthesisInference.soundWithHereditary {β : Type u}
   | .fvar inference atIndex boundAtIndex => by
       obtain ⟨reads, typed⟩ := inference.synthesis (.bvar _) agreement reading accepted
       exact ⟨reads, typed, formed _ _ _ atIndex boundAtIndex, .bvar typed atIndex⟩
+  | .natLit binding inference => by
+      have reads := (BinderInference.sound.{u,v} inference agreement reading accepted).1
+      exact ⟨reads, binding.typing _ _, binding.formation _, .atom (binding.typing _ _) (.natLit _)⟩
   | .app full miss trace functionTree argumentTree conditions hashPath comparisonFaithful
       bodyConstructed argConstructed bodyBound argBound coherent faithful => by
       obtain ⟨state, run⟩ := infer_uncached_success miss accepted

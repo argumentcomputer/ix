@@ -30,14 +30,18 @@ inductive SourceCacheRequest (source : Ixon.Env) where
       (predicted : predictStandalone? source id.addr = .ok (some declaration))
       (arity : declaration.lvls.toNat = arguments.size)
       (substitution : KExpr.instantiateUnivParamsSpec declaration.ty arguments = .ok result)
+  /-- A closed natural-number literal, typed by the named primitive `Nat` constant. -/
+  | nat (value : Nat) (prim : KId .anon)
 
 def SourceCacheRequest.term {source : Ixon.Env} : SourceCacheRequest source → KExpr .anon
   | .sort level => .mkSort level
   | .const id arguments .. => .mkConst id arguments
+  | .nat value _ => .mkNatLit value
 
 def SourceCacheRequest.result {source : Ixon.Env} : SourceCacheRequest source → KExpr .anon
   | .sort level => .mkSort (.mkSucc level)
   | .const _ _ _ result .. => result
+  | .nat _ prim => .mkConst prim #[]
 
 def SourceCacheRequest.key {source : Ixon.Env} (request : SourceCacheRequest source) :
     Address × Address := (request.term.addr, emptyCtxAddr)
@@ -51,6 +55,7 @@ def SourceCacheRequest.Loaded {source : Ixon.Env} (request : SourceCacheRequest 
   match request with
   | .sort _ => True
   | .const id _ declaration .. => before.env.get? id = some declaration
+  | .nat .. => True
 
 theorem SourceCacheRequest.Loaded.frame {source : Ixon.Env} {request : SourceCacheRequest source}
     {before after : TcState .anon} (loaded : request.Loaded before)
@@ -59,6 +64,7 @@ theorem SourceCacheRequest.Loaded.frame {source : Ixon.Env} {request : SourceCac
   cases request with
   | sort => trivial
   | const => exact constants _ _ loaded
+  | nat => trivial
 
 theorem SourceCacheRequest.Loaded.ofMap {source : Ixon.Env} {request : SourceCacheRequest source}
     {before after : TcState .anon} (loaded : request.Loaded before)
@@ -199,6 +205,9 @@ private theorem request_sort {source : Ixon.Env} {request : SourceCacheRequest s
   | const id arguments declaration result predicted arity substitution =>
       change KExpr.sort level info = KExpr.const id arguments _ at equal
       cases equal
+  | nat value prim =>
+      change KExpr.sort level info = KExpr.nat value _ _ at equal
+      cases equal
 
 private theorem request_const {source : Ixon.Env} {request : SourceCacheRequest source}
     {id : KId .anon} {arguments : Array (KUniv .anon)} {info : ExprInfo .anon}
@@ -215,6 +224,28 @@ private theorem request_const {source : Ixon.Env} {request : SourceCacheRequest 
       change KExpr.const id arguments info = KExpr.const other levels _ at equal
       obtain ⟨rfl, rfl, _⟩ := KExpr.const.inj equal
       exact ⟨declaration, predicted, arity, substitution, fun _ loaded => loaded⟩
+  | nat value prim =>
+      change KExpr.const id arguments info = KExpr.nat value _ _ at equal
+      cases equal
+
+/-- A literal request at a literal's key names the same value; its expected
+type is the constant at the request's primitive. -/
+private theorem request_nat {source : Ixon.Env} {request : SourceCacheRequest source}
+    {value : Nat} {blob : Address} {info : ExprInfo .anon} (before : TcState .anon)
+    (equal : KExpr.nat value blob info = request.term) :
+    ∃ prim, request = .nat value prim ∧ request.result = KExpr.mkConst prim #[] ∧
+      request.Loaded before := by
+  cases request with
+  | sort level =>
+      change KExpr.nat value blob info = KExpr.sort level _ at equal
+      cases equal
+  | const id arguments declaration result predicted arity substitution =>
+      change KExpr.nat value blob info = KExpr.const id arguments _ at equal
+      cases equal
+  | nat other prim =>
+      change KExpr.nat value blob info = KExpr.nat other _ _ at equal
+      obtain ⟨rfl, _, _⟩ := KExpr.nat.inj equal
+      exact ⟨prim, rfl, rfl, trivial⟩
 
 /-- Recursive nodes contain only finite key-collision data and the proposed
 sort result's intern domain. Constant walkers already supply their finite
@@ -229,6 +260,11 @@ def OwnedInferenceTrace.CacheData {source : Ixon.Env} (catalog : List (SourceCac
       SourceCacheKeyData catalog term ∧ KExpr.KeyCollisionFree fun candidate =>
         miss.keyed.env.intern.ExprSupport candidate ∨ candidate = KExpr.mkSort (KUniv.mkSucc level)
   | .fvar _ | .const _ _ => SourceCacheKeyData catalog term
+  | @OwnedInferenceTrace.nat _ _ value _ _ miss =>
+      SourceCacheKeyData catalog term ∧
+        (∀ prim, SourceCacheRequest.nat value prim ∈ catalog → prim = miss.keyed.prims.nat) ∧
+        KExpr.KeyCollisionFree fun candidate => miss.keyed.env.intern.ExprSupport candidate ∨
+          candidate = KExpr.mkConst miss.keyed.prims.nat #[]
   | .app _ _ _ _ _ first second | .forallE _ _ _ first second |
       .lam _ _ _ _ _ first second =>
       SourceCacheKeyData catalog term ∧ first.CacheData catalog ∧ second.CacheData catalog
@@ -309,6 +345,18 @@ theorem OwnedInferenceTrace.preservesCache {source : Ixon.Env}
         have equal := cacheData.same member miss.keyRun same
         cases request <;> cases equal
       · contradiction
+  | @nat fuel before value blob info miss =>
+      apply source_cache_miss valid agreement miss accepted
+      intro middle run keyed cache
+      obtain ⟨rfl, rfl⟩ := inferUncached_nat_run run
+      refine ⟨cache.ofMaps rfl rfl rfl, ?_⟩
+      intro request member same
+      have equal := cacheData.1.same member miss.keyRun same
+      obtain ⟨prim, rfl, typeEq, loaded⟩ := request_nat _ equal
+      refine ⟨?_, loaded⟩
+      rw [typeEq, cacheData.2.1 prim member]
+      simpa only [KExpr.eraseMeta_anon] using
+        miss.keyed.env.intern.internExpr_eraseMeta keyed.state.coherent cacheData.2.2
   | @const fuel before id arguments info miss data =>
       apply source_cache_miss valid agreement miss accepted
       intro middle run keyed cache
@@ -583,6 +631,23 @@ def BinderInference.sortFromSourceCache {β : Type u} {source : Ixon.Env}
     BinderInference resolve entries locals context fuel before (.mkSort level)
       (.sort (readLevel level)) (.sort (.succ (readLevel level))) :=
   .sortOfAgreement rfl (valid.cache (.sort level) member).correct valid.state.state.coherent faithful
+
+/-- A literal leaf from catalog agreement at the literal's key. The catalog
+request names the run's primitive `Nat` constant; the binding supplies the
+model entry behind it. -/
+def BinderInference.natFromSourceCache {β : Type u} {source : Ixon.Env}
+    {resolve : Address → Option (ConstRef β)} {entries : Model.Environment β}
+    {locals : List FVarId} {context : Model.Context β} {fuel : Nat}
+    {catalog : List (SourceCacheRequest source)} {before : TcState .anon} {value : Nat}
+    (valid : SourceCacheInvariant catalog before)
+    (binding : PrimitiveNatBinding resolve entries before.prims)
+    (member : SourceCacheRequest.nat value before.prims.nat ∈ catalog)
+    (faithful : KExpr.KeyCollisionFree fun term => before.env.intern.ExprSupport term ∨
+      term = KExpr.mkConst before.prims.nat #[]) :
+    BinderInference resolve entries locals context fuel before (.mkNatLit value)
+      (.natLit value) (.const binding.ref []) :=
+  .natOfAgreement rfl binding (valid.cache (.nat value before.prims.nat) member).correct
+    valid.state.state.coherent faithful
 
 /-- Actual constant inference is model-typed after a history beginning with
 empty caches. Both cache partitions and the miss path are handled by actual

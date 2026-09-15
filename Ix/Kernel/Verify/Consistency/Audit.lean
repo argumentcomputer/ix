@@ -1508,6 +1508,38 @@ private def wp1ContractRoots : Array Lean.Name := #[
   ``DefEqContract.hashPath, ``InferContract.sortPath
 ]
 
+/-- The static primitive `Nat` binding and its address transport are pure data. -/
+private def literalPureRoots : Array Lean.Name := #[
+  ``PrimitiveNatBinding, ``PrimitiveNatBinding.ofPrims, ``PrimitiveNatBinding.ofPrims_ref,
+  ``PrimitiveNatBinding.ofPrims_level
+]
+
+/-- The model literal rule and the bound entry's formation reach only the set model. -/
+private def literalModelRoots : Array Lean.Name := #[
+  ``PrimitiveNatBinding.typing, ``PrimitiveNatBinding.formation
+]
+
+/-- Literal readings and key computation reach expression construction only. -/
+private def literalExprRoots : Array Lean.Name := #[
+  ``PrimitiveNatBinding.typeReading, ``readScopedExpr?_mkConst, ``readExpr?_mkConst,
+  ``inferKey_prims, ``UncachedInference.prims
+]
+
+/-- Natural-number literal inference at both cache partitions, the literal
+leaves of the inference, cache-trace, and source-cache trees (audited with
+their sort siblings' universe construction), and the restatement as invariant
+preservation. -/
+private def literalRoots : Array Lean.Name := #[
+  ``inferUncached_nat_run, ``inferUncached_nat_sound, ``inferUncached_nat_modelTyping,
+  ``infer_nat_sound, ``infer_nat_cached_sound, ``infer_nat_cache_agreement, ``infer_nat_cache_frame,
+  ``BinderInference.natLit, ``BinderInference.cachedNatLit, ``BinderInference.natOfAgreement,
+  ``SynthesisInference.natLit, ``SynthesisCacheSupplement.natOfKey,
+  ``InferenceCacheTrace.nat, ``InferenceCacheTrace.natOfKey,
+  ``OwnedInferenceTrace.nat, ``OwnedInferenceTrace.natOfKey,
+  ``SourceCacheRequest.nat, ``BinderInference.natFromSourceCache,
+  ``CheckerInvariant.inferNat
+]
+
 def roots : Array RootAllowance := #[
   { root := ``InterfaceExtends.refl, forbiddenDependencies := forbiddenProduction },
   { root := ``InterfaceExtends.trans, forbiddenDependencies := forbiddenProduction },
@@ -1732,6 +1764,15 @@ def roots : Array RootAllowance := #[
     root, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative, nameNative],
     forbiddenDependencies := forbiddenProduction })
   ++ wp1ContractRoots.map (fun root => {
+    root, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative],
+    forbiddenDependencies := forbiddenProduction })
+  ++ literalPureRoots.map (fun root => { root, forbiddenDependencies := forbiddenProduction })
+  ++ literalModelRoots.map (fun root => {
+    root, standardAxioms := standard, forbiddenDependencies := forbiddenProduction })
+  ++ literalExprRoots.map (fun root => {
+    root, standardAxioms := standard, nativeAxioms := #[expressionNative],
+    forbiddenDependencies := forbiddenProduction })
+  ++ literalRoots.map (fun root => {
     root, standardAxioms := standard, nativeAxioms := #[expressionNative, levelNative],
     forbiddenDependencies := forbiddenProduction })
 

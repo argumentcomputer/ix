@@ -898,6 +898,83 @@ theorem inferFVar {id : FVarId} {name : Mode.anon.F Name} {info : ExprInfo .anon
     semantics := valid.semantics.ofMaps (fun partition => by cases partition <;> rfl)
       (fun partition => by cases partition <;> rfl) rfl rfl rfl }
 
+/-! ### Demonstration: natural-number literal inference -/
+
+/-- A successful closed-literal inference changes only the intern table and
+the two inference maps. -/
+private theorem infer_nat_state {value : Nat} {fuel : Nat} {result : KExpr .anon}
+    {before after : TcState .anon}
+    (accepted : RecM.infer (KExpr.mkNatLit value) (methodsN fuel) before = .ok result after) :
+    ∃ table full only, after = {before with env := {before.env with
+      intern := table, inferCache := full, inferOnlyCache := only}} := by
+  have keyRun := inferKey_closed (term := KExpr.mkNatLit value) rfl before
+  rcases observeInferenceCache keyRun with ⟨hit, _, stateEq⟩ | ⟨miss, _, stateEq⟩
+  · rw [hit.run (methodsN fuel)] at accepted
+    cases accepted
+    rw [stateEq]
+    exact ⟨before.env.intern, before.env.inferCache, before.env.inferOnlyCache, rfl⟩
+  · obtain ⟨state, run, written⟩ := infer_uncached_success_state miss accepted
+    rw [stateEq] at run
+    obtain ⟨rfl, rfl⟩ := inferUncached_nat_run run
+    rw [written]
+    cases policy : before.inferOnly
+    · simp only [Bool.false_eq_true, ↓reduceIte]
+      exact ⟨_, _, before.env.inferOnlyCache, rfl⟩
+    · simp only [↓reduceIte]
+      exact ⟨_, before.env.inferCache, _, rfl⟩
+
+/-- Literal inference preserves the invariant and returns the primitive `Nat`
+constant, whose typing comes from the static binding of that address; the
+returned tree is derived from the maintained catalog agreement on a hit and
+from the actual intern step on a miss. Every catalog request for this literal
+names the run's primitive. -/
+theorem inferNat {value : Nat} {fuel : Nat} {result : KExpr .anon} {before after : TcState .anon}
+    (valid : CheckerInvariant.{u,v} resolve anchor entries source catalog locals context bounds before)
+    (binding : PrimitiveNatBinding resolve entries before.prims)
+    (member : SourceCacheRequest.nat value before.prims.nat ∈ catalog)
+    (unique : ∀ prim, SourceCacheRequest.nat value prim ∈ catalog → prim = before.prims.nat)
+    (keyData : SourceCacheKeyData catalog (KExpr.mkNatLit value))
+    (faithful : KExpr.KeyCollisionFree fun term => before.env.intern.ExprSupport term ∨
+      term = KExpr.mkConst before.prims.nat #[])
+    (accepted : RecM.infer (KExpr.mkNatLit value) (methodsN fuel) before = .ok result after) :
+    CheckerInvariant.{u,v} resolve anchor entries source catalog locals context bounds after ∧
+      result = KExpr.mkConst before.prims.nat #[] ∧
+      ScopedModelTyping.{u,v} resolve entries locals context (KExpr.mkNatLit value) result := by
+  have keyRun := inferKey_closed (term := KExpr.mkNatLit value) rfl before
+  obtain ⟨canonical, _⟩ := infer_nat_cache_agreement keyRun
+    (valid.cache (.nat value before.prims.nat) member).correct valid.coherent faithful accepted
+  refine ⟨?_, canonical, ⟨.natLit value, .const binding.ref [], rfl,
+    by rw [canonical]; exact binding.typeReading locals, binding.typing context value⟩⟩
+  have sourceCache : SourceCacheInvariant catalog after := by
+    rcases observeInferenceCache keyRun with ⟨hit, _, _⟩ | ⟨miss, _, stateEq⟩
+    · exact (OwnedInferenceTrace.hit (fuel := fuel) hit).preservesSourceCache valid.sourceCache
+        trivial trivial accepted
+    · exact (OwnedInferenceTrace.nat (fuel := fuel) miss).preservesSourceCache valid.sourceCache
+        trivial ⟨keyData, by rw [stateEq]; exact unique, by rw [stateEq]; exact faithful⟩ accepted
+  have synthesis : Nonempty (SynthesisCacheHistory resolve anchor entries after) := by
+    rcases observeInferenceCache keyRun with ⟨hit, _, _⟩ | ⟨miss, _, stateEq⟩
+    · exact valid.synthesis.elim fun history =>
+        ⟨history.afterInference (InferenceCacheTrace.hit hit : InferenceCacheTrace.{0} fuel before _)
+          accepted .nil⟩
+    · refine valid.synthesis.elim fun history => valid.origin.elim fun origin => ?_
+      have tree : SynthesisInference resolve entries locals context bounds fuel before
+          (KExpr.mkNatLit value) (.natLit value) (.const binding.ref []) binding.level :=
+        .natLit binding (.natLit miss binding (by rw [stateEq]; exact valid.coherent)
+          (by rw [stateEq]; exact faithful))
+      exact ⟨history.afterInference
+        (InferenceCacheTrace.nat miss : InferenceCacheTrace.{0} fuel before _) accepted
+        (.singleton (SynthesisEventCheck.ofSource tree origin valid.reading rfl miss accepted))⟩
+  obtain ⟨table, full, only, stateEq⟩ := infer_nat_state accepted
+  subst stateEq
+  exact {
+    sourceCache, synthesis
+    whnf := valid.whnf.elim fun history => ⟨history.ofMaps fun partition => by cases partition <;> rfl⟩
+    structural := ⟨valid.structural.coherent, valid.structural.allocated, valid.structural.loader⟩
+    reading := valid.reading
+    origin := valid.origin
+    semantics := valid.semantics.ofMaps (fun partition => by cases partition <;> rfl)
+      (fun partition => by cases partition <;> rfl) rfl rfl rfl }
+
 end CheckerInvariant
 
 end Ix.Kernel.Consistency

@@ -6,6 +6,7 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 import Ix.Kernel.Verify.Consistency.Application
 import Ix.Kernel.Verify.Consistency.ConstantCache
 import Ix.Kernel.Verify.Consistency.SortCache
+import Ix.Kernel.Verify.Consistency.Literals
 import Ix.Theory.Model.Checking
 
 /-!
@@ -348,6 +349,20 @@ inductive BinderInference {β : Type u}
       (canonical : hit.cached = KExpr.mkSort (KUniv.mkSucc level)) :
       BinderInference resolve entries locals context fuel before (.sort level info)
         (.sort (readLevel level)) (.sort (.succ (readLevel level)))
+  | natLit {locals context fuel before value blob info}
+      (miss : UncachedInference before (.nat value blob info))
+      (binding : PrimitiveNatBinding resolve entries before.prims)
+      (coherent : miss.keyed.env.intern.WF)
+      (faithful : KExpr.KeyCollisionFree fun term =>
+        miss.keyed.env.intern.ExprSupport term ∨ term = KExpr.mkConst before.prims.nat #[]) :
+      BinderInference resolve entries locals context fuel before (.nat value blob info)
+        (.natLit value) (.const binding.ref [])
+  | cachedNatLit {locals context fuel before value blob info}
+      (hit : InferenceCacheHit before (.nat value blob info))
+      (binding : PrimitiveNatBinding resolve entries before.prims)
+      (canonical : hit.cached = KExpr.mkConst before.prims.nat #[]) :
+      BinderInference resolve entries locals context fuel before (.nat value blob info)
+        (.natLit value) (.const binding.ref [])
   | fvar {locals context fuel before id name info index A}
       (cache : FVarInferenceSupport before id name info)
       (registered : localIndex? locals id = some index)
@@ -454,6 +469,28 @@ def BinderInference.sortOfAgreement {β : Type u}
   · exact .sort miss (by simpa only [stateEq] using coherent)
       (by simpa only [stateEq] using faithful)
 
+/-- Construct the literal leaf from a maintained cache invariant at its key.
+The production key and eligible hit/miss observation are derived. -/
+def BinderInference.natOfAgreement {β : Type u}
+    {resolve : Address → Option (ConstRef β)} {entries : Model.Environment β}
+    {locals : List FVarId} {context : Model.Context β} {fuel : Nat}
+    {before : TcState .anon} {value : Nat} {blob : Address} {info : ExprInfo .anon}
+    (closed : (KExpr.nat value blob info).lbr = 0)
+    (binding : PrimitiveNatBinding resolve entries before.prims)
+    (agreement : InferenceCacheAgreement before ((KExpr.nat value blob info).addr, emptyCtxAddr)
+      (KExpr.mkConst before.prims.nat #[]))
+    (coherent : before.env.intern.WF)
+    (faithful : KExpr.KeyCollisionFree fun term => before.env.intern.ExprSupport term ∨
+      term = KExpr.mkConst before.prims.nat #[]) :
+    BinderInference resolve entries locals context fuel before (.nat value blob info)
+      (.natLit value) (.const binding.ref []) := by
+  rcases observeInferenceCache (inferKey_closed closed before) with
+    ⟨hit, keyEq, stateEq⟩ | ⟨miss, _, stateEq⟩
+  · refine .cachedNatLit hit binding (InferenceCacheAgreement.selected hit ?_)
+    simpa only [keyEq, stateEq] using agreement
+  · exact .natLit miss binding (by simpa only [stateEq] using coherent)
+      (by simpa only [stateEq] using faithful)
+
 /-- Successful production inference reads the expected model type and checks
 the actual source term against it. No recursive semantic premise is supplied
 by the caller: induction follows the finite operational support tree. -/
@@ -480,6 +517,16 @@ theorem BinderInference.soundWithSynthesis {β : Type u}
       simp [AExpr.erase]
   | cachedSort hit canonical =>
       obtain ⟨typeReads, typed⟩ := infer_sort_cached_sound hit canonical accepted
+      exact ⟨typeReads, typed.checking, fun head => by cases head⟩
+  | @natLit locals context fuel before value blob info miss binding coherent faithful =>
+      obtain ⟨state, run⟩ := infer_uncached_success miss accepted
+      obtain ⟨_, _, typeReads, typed⟩ := inferUncached_nat_sound (context := context) locals
+        (binding.ofPrims (congrArg Primitives.nat miss.prims.symm)) coherent
+        (by rw [miss.prims]; exact faithful) run
+      exact ⟨typeReads, typed.checking, fun head => by cases head⟩
+  | @cachedNatLit locals context fuel before value blob info hit binding canonical =>
+      obtain ⟨typeReads, typed⟩ :=
+        infer_nat_cached_sound (context := context) hit binding canonical accepted
       exact ⟨typeReads, typed.checking, fun head => by cases head⟩
   | fvar cache registered atIndex =>
       obtain ⟨typeReads, typed⟩ := cache.sound agreement registered atIndex accepted

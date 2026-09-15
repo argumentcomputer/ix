@@ -65,6 +65,16 @@ def fvarOfKey {keyed : TcState .anon} {id : FVarId} {name : Mode.anon.F Name} {i
     unfold InferenceCacheTrace.fvarOfKey
     rcases observeInferenceCache run with ⟨hit, _, _⟩ | ⟨miss, _, _⟩ <;> exact PUnit.unit)
 
+def natOfKey {keyed : TcState .anon} {value : Nat} {blob : Address} {info : ExprInfo .anon}
+    {key : Address × Address} (run : TcM.inferKey (.nat value blob info) before = .ok key keyed) :
+    SynthesisCacheSupplement resolve anchor entries fuel before (.nat value blob info) :=
+  ofLeaf (.natOfKey run) (by
+    unfold InferenceCacheTrace.natOfKey
+    rcases observeInferenceCache run with ⟨hit, _, _⟩ | ⟨miss, _, _⟩ <;> rfl) (by
+    intro _
+    unfold InferenceCacheTrace.natOfKey
+    rcases observeInferenceCache run with ⟨hit, _, _⟩ | ⟨miss, _, _⟩ <;> exact PUnit.unit)
+
 def verifiedConstOfKey {keyed : TcState .anon} {id : KId .anon} {arguments : Array (KUniv .anon)}
     {info : ExprInfo .anon} {key : Address × Address}
     (run : TcM.inferKey (.const id arguments info) before = .ok key keyed)
@@ -95,7 +105,7 @@ def complete (data : SynthesisCacheSupplement resolve anchor entries fuel before
       rcases data with ⟨trace, children, whnf⟩
       cases trace with
       | hit => exact .nil
-      | sort miss | fvar miss | const miss concrete loaded resources | lazyConst miss loader resources =>
+      | sort miss | fvar miss | nat miss | const miss concrete loaded resources | lazyConst miss loader resources =>
           exact .singleton (.ofSource tree contextOrigin agreement reading miss accepted)
       | app full miss trace hashPath functionTree argumentTree =>
           exact children.append (.singleton (.ofSource tree contextOrigin agreement reading miss accepted))
@@ -129,7 +139,8 @@ def SynthesisInference.CacheData {β : Type u} {resolve : Address → Option (Co
     {source : KExpr .anon} {term type : AExpr β} {level : VLevel}
     (tree : SynthesisInference resolve entries locals context bounds fuel before source term type level) : Type (u + 1) :=
   match tree with
-  | .known .. | .reuseType .. | .fvar .. => SynthesisCacheSupplement resolve anchor entries fuel before source
+  | .known .. | .reuseType .. | .fvar .. | .natLit .. =>
+      SynthesisCacheSupplement resolve anchor entries fuel before source
   | .cached .. | .cachedFrom .. => PUnit
   | .app _ _ _ first second .. | .appBeta _ _ _ first _ _ _ second .. =>
       first.CacheData anchor × second.CacheData anchor
@@ -179,6 +190,8 @@ def SynthesisInference.cacheExecution {β : Type u} {resolve : Address → Optio
           contextOrigin agreement reading accepted
   | .fvar inference atIndex boundAtIndex => fun data contextOrigin agreement reading accepted =>
       data.complete (.fvar inference atIndex boundAtIndex) contextOrigin agreement reading accepted
+  | .natLit binding inference => fun data contextOrigin agreement reading accepted =>
+      data.complete (.natLit binding inference) contextOrigin agreement reading accepted
   | .cached _ _ _ _ hit _ _ | .cachedFrom _ hit _ => fun _ _ _ _ accepted =>
       ⟨.hit hit, .nil, fun _ => PUnit.unit, fun initial => by
         rw [hit.run] at accepted
