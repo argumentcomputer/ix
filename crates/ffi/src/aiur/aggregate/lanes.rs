@@ -1,39 +1,25 @@
-//! `ix prove --lanes N`: prove a partition on N GPUs in one process, one
-//! resident worker per device, and fold the result to one root proof.
+//! Shared CPU preparation feeding one resident prover per GPU.
 //!
-//! Every worker owns its device for the life of the run: an IxVM prover
-//! system and an aggregation prover system built on that device
-//! ([`AiurSystem::on_device`]), a pool of `--exec-jobs` preparation
-//! threads (CPU: a claim's execution and planning, or a join's advice and
-//! execution), and one proving thread (GPU). A bounded hand-off of one
-//! prepared item between them keeps each worker executing its next task
-//! while it proves the current one, and bounds what a worker holds to
-//! `--exec-jobs` executions, one prepared item and one proof.
-//!
-//! The scheduler on the calling thread holds the plan and one ready
-//! queue. A claim is ready from the start; a join is ready when both its
-//! children have proofs; the root is ready when its children have proofs
-//! and every claim is done. Each event from a worker (an item prepared, a
-//! preparation that failed, a proof finished) frees capacity, and the
-//! scheduler refills every worker with a ready join first, then the next
-//! claim, so joins bubble up while claims are still proving and the only
-//! serial work left at the end is the chain from the last claim to the
-//! root. Nothing is assigned ahead of time and nothing is spawned.
-//!
-//! Memory is enforced where it is consumed: every execution, a claim's, a
-//! join's or the root's, runs under a record cap that is its equal share
-//! of the record budget ([`aiur::execute::set_record_byte_cap`]); one that
-//! reaches its share reruns alone on a drained worker under the whole
-//! budget, and one that fails even alone stops the run naming itself. Every proof is persisted
-//! as it lands (claims to the store and the shard-proof index, joins to
-//! the aggregate cache), so rerunning the same command resumes from what
-//! was persisted; the persisted artifacts are not the coordination path.
+//! Claims and ready joins execute through one bounded queue. Prepared
+//! records go to the next available GPU, with joins taking priority.
+//! Record reservations follow their storage through both proving rounds.
+//! Under memory pressure executions wait for capacity; mutual blocking
+//! cancels the youngest waiter so the selected execution can finish.
+
+mod checkpoint;
+mod limits;
+mod queue;
+use limits::{HostBudget, cgroup_memory_limit};
+use queue::WorkQueue;
 
 use std::collections::VecDeque;
-use std::sync::{Mutex, mpsc};
+use std::sync::mpsc;
 use std::time::Instant;
 
-use aiur::execute::set_record_byte_cap;
+use aiur::execute::bind_record_reservation;
+use aiur::record_pool::{
+  PoolStats, ProverBudget, RecordPool, RecordReservation,
+};
 use aiur::synthesis::ShardRetention as Retention;
 use ixvm_codegen::aiur_ixvm_runner::execute_ixvm;
 use ixvm_codegen::aiur_ixvm_witness::build_shard_check_env_witness;
@@ -42,13 +28,21 @@ use super::*;
 
 pub struct Config {
   pub lanes: usize,
-  /// The host budget of one worker, bytes; 0 detects (against the whole
-  /// box, which is wrong beside other workers, so the run warns).
+  /// Per-GPU host budget in bytes, multiplied by `lanes`; 0 detects one
+  /// process-wide allowance.
   pub max_ram_bytes: usize,
-  /// Preparation threads per worker: claim executions ahead of the prover.
+  /// Preparation threads per GPU, combined into one process-wide pool.
   pub exec_jobs: usize,
   pub structural_above: usize,
   pub cache_fri_bytes: Vec<u8>,
+  pub out_manifest: Option<PathBuf>,
+}
+
+const DEFAULT_RECORD_MAX_BYTES: usize = 64 << 30;
+
+enum PassOutcome {
+  Complete { root: String, unproven: usize },
+  Refine(Vec<u32>),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -58,14 +52,13 @@ enum Work {
   Root,
 }
 
-/// What a worker's preparation threads receive.
-enum Prep {
-  Claim { shard: usize, cap: Option<usize> },
-  Join { slot: usize, children: Vec<Arc<Slot>>, cap: Option<usize> },
-  Root { slot: usize, children: Vec<Arc<Slot>>, cap: Option<usize> },
+struct Prep {
+  work: Work,
+  children: Vec<Arc<Slot>>,
+  reservation: RecordReservation,
 }
 
-/// What a preparation thread hands its worker's proving thread.
+/// A prepared host record consumed by whichever GPU becomes available.
 enum Item {
   Claim {
     shard: usize,
@@ -83,35 +76,38 @@ enum Item {
   },
 }
 
-/// What workers report to the scheduler.
-enum Event {
-  Prepared {
-    worker: usize,
-  },
-  PrepFailed {
-    worker: usize,
-    work: Work,
-    over_budget: Option<(usize, usize)>,
-    error: String,
-  },
-  Proven {
-    worker: usize,
-    work: Work,
-    result: Result<Arc<Slot>, String>,
-  },
-  RootProven {
-    worker: usize,
-    result: Result<String, String>,
-  },
+impl Item {
+  fn work(&self) -> Work {
+    match self {
+      Self::Claim { shard, .. } => Work::Claim(*shard),
+      Self::Join { slot, .. } => Work::Join(*slot),
+      Self::Root { .. } => Work::Root,
+    }
+  }
 }
 
-struct WorkerHandle {
-  prep: mpsc::Sender<Prep>,
-  preparing: usize,
-  waiting: usize,
-  /// An over-share unit of work is rerunning alone here; nothing else is
-  /// sent until it is proven.
-  alone: bool,
+enum Event {
+  ExecutionStarted { executor: usize, work: Work },
+  Prepared { executor: usize, work: Work, record_bytes: usize, secs: f64 },
+  PrepAvailable,
+  PrepFailed { executor: usize, work: Work, failure: PrepareFailure },
+  Proving { worker: usize, work: Work },
+  Proven { worker: usize, work: Work, result: Result<Arc<Slot>, String> },
+  RootProven { worker: usize, result: Result<String, String> },
+}
+
+struct ShutdownRun<'a> {
+  pool: &'a RecordPool,
+  prep: &'a WorkQueue<Prep>,
+  items: &'a WorkQueue<Item>,
+}
+
+impl Drop for ShutdownRun<'_> {
+  fn drop(&mut self) {
+    self.pool.shutdown();
+    self.prep.close();
+    self.items.close();
+  }
 }
 
 /// The shard-proof index entry of a claim, written like Stage 1 writes it.
@@ -165,61 +161,43 @@ fn resume_leaf(
   })
 }
 
-/// One worker's preparation thread: takes tasks from the worker's shared
-/// queue, does their CPU half, and hands the result to the proving thread.
 fn prepare_loop(
   ctx: ProveContext<'_>,
-  worker: usize,
+  executor: usize,
   env: &ixon::Env,
   owned: &[Vec<Address>],
   max_ram_bytes: Option<usize>,
-  prep: &Mutex<mpsc::Receiver<Prep>>,
-  items: &mpsc::SyncSender<Item>,
+  prep: &WorkQueue<Prep>,
+  items: &WorkQueue<Item>,
   events: &mpsc::Sender<Event>,
 ) {
-  loop {
-    let task = {
-      let Ok(guard) = prep.lock() else { return };
-      guard.recv()
-    };
-    let Ok(task) = task else { return };
-    match task {
-      Prep::Claim { shard, cap } => {
-        set_record_byte_cap(cap);
-        let outcome = (|| -> Result<Item, (Option<(usize, usize)>, String)> {
+  while let Some(task) = prep.pop() {
+    let Prep { work, children, reservation } = task;
+    let began = Instant::now();
+    let _ = events.send(Event::ExecutionStarted { executor, work });
+    let binding = bind_record_reservation(&reservation);
+    let outcome = (|| -> Result<Item, PrepareFailure> {
+      match work {
+        Work::Claim(shard) => {
           let (claim, input, mut io) =
             build_shard_check_env_witness(env, &owned[shard])
-              .map_err(|e| (None, format!("witness build: {e}")))?;
-          let prepared = ctx.ixvm_system.prepare_ixvm_within_budget(
-            ctx.verify_idx,
-            &input,
-            &mut io,
-            |toplevel, fun_idx, input, io_buffer| {
-              execute_ixvm(toplevel, fun_idx, input, io_buffer)
-            },
-            max_ram_bytes,
-            true,
-            Some(Retention::Regenerate),
-          );
-          let prepared = match prepared {
+              .map_err(|e| format!("witness build: {e}"))?;
+          let prepared = match ctx.ixvm_system.prepare_ixvm_within_budget(
+            ctx.verify_idx, &input, &mut io, execute_ixvm,
+            max_ram_bytes, true, Some(Retention::Regenerate),
+          ) {
             Ok(prepared) => prepared,
-            Err(GatedProve::Failed(
-              aiur::execute::ExecError::RecordBudgetExceeded { bytes, cap },
-            )) => return Err((Some((bytes, cap)), String::new())),
-            Err(GatedProve::Failed(error)) => {
-              return Err((None, format!("execution failed: {error}")));
+            Err(GatedProve::Failed(aiur::execute::ExecError::RecordBudgetExceeded { bytes, cap })) => {
+              return Err(PrepareFailure::OverRecordCap { bytes, cap });
             },
-            Err(GatedProve::Split { peak, .. }) => {
-              return Err((
-                None,
-                format!(
-                  "no trace-shard count fits the budget (whole-execution peak {peak} B) — raise --max-ram"
-                ),
-              ));
+            Err(GatedProve::Failed(aiur::execute::ExecError::RecordMemoryContention)) => {
+              return Err(PrepareFailure::MemoryContention);
             },
-            Err(_) => {
-              return Err((None, "execution did not prepare a proof".into()));
-            },
+            Err(GatedProve::Failed(error)) => return Err(format!("execution failed: {error}").into()),
+            Err(GatedProve::Split { peak, .. }) => return Err(format!(
+              "no trace-shard count fits the process budget (whole-execution peak {peak} B)"
+            ).into()),
+            Err(_) => return Err("execution did not prepare a proof".into()),
           };
           let mut claim_bytes = Vec::new();
           claim.put(&mut claim_bytes);
@@ -229,79 +207,59 @@ fn prepare_loop(
             claim_bytes,
             prepared: Box::new(prepared),
           })
-        })();
-        set_record_byte_cap(None);
-        match outcome {
-          Ok(item) => {
-            // Reported before the prover can see the item, so its proof
-            // never precedes this in the scheduler's event order.
-            let _ = events.send(Event::Prepared { worker });
-            if items.send(item).is_err() {
-              return;
-            }
-          },
-          Err((over_budget, error)) => {
-            let _ = events.send(Event::PrepFailed {
-              worker,
-              work: Work::Claim(shard),
-              over_budget,
-              error,
-            });
-          },
+        },
+        Work::Join(slot) => {
+          let staged = prepare_slot(ctx, slot, &children)?;
+          Ok(Item::Join { slot, staged: Box::new(staged) })
+        },
+        Work::Root => {
+          let slot = ctx.specs.len() - 1;
+          let staged = prepare_slot(ctx, slot, &children)?;
+          Ok(Item::Root { slot, staged: Box::new(staged) })
+        },
+      }
+    })();
+    reservation.finish_execution();
+    let measured = reservation.bytes();
+    drop(binding);
+    drop(reservation);
+    match outcome {
+      Ok(item) => {
+        // Publish preparation before handing ownership to a prover.
+        let _ = events.send(Event::Prepared {
+          executor,
+          work,
+          record_bytes: measured,
+          secs: began.elapsed().as_secs_f64(),
+        });
+        if items.push(item, !matches!(work, Work::Claim(_))).is_err() {
+          return;
         }
+        // A producer waiting on a full prepared queue still occupies its
+        // execution slot and retains the record's memory charge.
+        let _ = events.send(Event::PrepAvailable);
       },
-      Prep::Join { slot, children, cap }
-      | Prep::Root { slot, children, cap } => {
-        let is_root =
-          matches!(ctx.specs.get(slot).map(|s| s.op), Some(PlanOp::Join(..)))
-            && slot + 1 == ctx.specs.len();
-        set_record_byte_cap(cap);
-        let outcome = prepare_slot(ctx, slot, &children);
-        set_record_byte_cap(None);
-        match outcome {
-          Ok(staged) => {
-            let item = if is_root {
-              Item::Root { slot, staged: Box::new(staged) }
-            } else {
-              Item::Join { slot, staged: Box::new(staged) }
-            };
-            let _ = events.send(Event::Prepared { worker });
-            if items.send(item).is_err() {
-              return;
-            }
-          },
-          Err(failure) => {
-            let (over_budget, error) = match failure {
-              PrepareFailure::OverRecordCap { bytes, cap } => {
-                (Some((bytes, cap)), String::new())
-              },
-              PrepareFailure::Other(error) => (None, error),
-            };
-            let _ = events.send(Event::PrepFailed {
-              worker,
-              work: if is_root { Work::Root } else { Work::Join(slot) },
-              over_budget,
-              error,
-            });
-          },
-        }
+      Err(failure) => {
+        let _ = events.send(Event::PrepFailed { executor, work, failure });
       },
     }
   }
 }
 
-/// One worker's proving thread: proves prepared items in the order they
-/// arrive, persists each proof, and reports it.
+/// Each job's proving rounds stay on this device; completed proofs
+/// release records and make dependent joins ready.
 fn prove_loop(
   ctx: ProveContext<'_>,
   worker: usize,
   prepared_run: &PreparedRun,
   leaf_slot: &[usize],
   index_dir: &Path,
-  items: mpsc::Receiver<Item>,
+  items: &WorkQueue<Item>,
+  pool: &RecordPool,
   events: &mpsc::Sender<Event>,
 ) {
-  for item in items {
+  while let Some(item) = items.pop() {
+    let _ = events.send(Event::Proving { worker, work: item.work() });
     match item {
       Item::Claim { shard, claim, claim_bytes, prepared } => {
         let result = (|| -> Result<Arc<Slot>, String> {
@@ -348,7 +306,14 @@ fn prove_loop(
             if shards <= 1 {
               break;
             }
+            let reservation = pool
+              .try_admit()
+              .map_err(|error| format!("root wrap admission: {error:?}"))?
+              .ok_or("root wrap cannot acquire record capacity")?;
+            let binding = bind_record_reservation(&reservation);
             let next = wrap_root(ctx, &root, current)?;
+            drop(binding);
+            drop(reservation);
             if next.preamble.headers.len() >= shards {
               break;
             }
@@ -403,6 +368,83 @@ fn composed_verdict(
   (failures, leaves.iter().filter(|slot| slot.is_none()).count())
 }
 
+/// Percentile `p` (0–100) of `sorted`, nearest rank; 0 when empty.
+fn percentile(sorted: &[usize], p: usize) -> usize {
+  if sorted.is_empty() {
+    return 0;
+  }
+  let rank = (sorted.len() * p).div_ceil(100).max(1);
+  sorted[rank - 1]
+}
+
+/// Observed record sizes and execution times, with a p90-based candidate
+/// cut under inverse scaling. The initial reservation is admission credit,
+/// not a per-record size limit.
+#[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
+#[allow(clippy::cast_sign_loss)]
+fn record_summary(
+  say: &dyn Fn(&str),
+  shards: usize,
+  share: Option<usize>,
+  record_budget: Option<usize>,
+  contention_retries: usize,
+  claims: &[(usize, usize, f64)],
+  joins: &[(usize, usize, f64)],
+) {
+  let stats = |units: &[(usize, usize, f64)]| -> Option<String> {
+    if units.is_empty() {
+      return None;
+    }
+    let mut bytes: Vec<usize> = units.iter().map(|u| u.1).collect();
+    bytes.sort_unstable();
+    let total: usize = bytes.iter().sum();
+    let (largest_id, largest, _) =
+      units.iter().max_by_key(|u| u.1).copied().expect("nonempty");
+    let secs: Vec<f64> = units.iter().map(|u| u.2).collect();
+    let mean_secs = secs.iter().sum::<f64>() / secs.len() as f64;
+    let max_secs = secs.iter().copied().fold(0.0_f64, f64::max);
+    Some(format!(
+      "{} executed: record mean {} GiB, p50 {} GiB, p90 {} GiB, max {} GiB (unit {largest_id}); execution mean {mean_secs:.1}s, max {max_secs:.1}s",
+      units.len(),
+      format_gib(total / units.len()),
+      format_gib(percentile(&bytes, 50)),
+      format_gib(percentile(&bytes, 90)),
+      format_gib(largest),
+    ))
+  };
+  if let Some(line) = stats(claims) {
+    say(&format!("calibration: claims {line}"));
+  }
+  if let Some(line) = stats(joins) {
+    say(&format!("calibration: joins {line}"));
+  }
+  let (Some(share), Some(budget)) = (share, record_budget) else {
+    say("calibration: no --max-ram, so no share to calibrate against");
+    return;
+  };
+  if claims.len() != shards {
+    say(&format!(
+      "calibration: shard-count candidate unavailable; measured {} of {shards} claim records in the current partition",
+      claims.len()
+    ));
+    return;
+  }
+  let largest_claim = claims.iter().map(|u| u.1).max().unwrap_or(0);
+  let largest_join = joins.iter().map(|u| u.1).max().unwrap_or(0);
+  let mut claim_sizes: Vec<_> = claims.iter().map(|u| u.1).collect();
+  claim_sizes.sort_unstable();
+  let reanchored = ((shards as f64) * (percentile(&claim_sizes, 90) as f64)
+    / (share as f64))
+    .ceil() as usize;
+  say(&format!(
+    "calibration: {shards} shards at a {} GiB initial reservation ({} GiB shared record budget): largest claim record {}% of the initial reservation, largest join record {}%, {contention_retries} contention retry/retries; p90-scaled candidate {reanchored} shard(s) at this initial reservation (claims measured this run only; a resumed run measures fewer)",
+    format_gib(share),
+    format_gib(budget),
+    largest_claim * 100 / share.max(1),
+    largest_join * 100 / share.max(1),
+  ));
+}
+
 pub fn run(
   cfg: &Config,
   ixvm: &AiurSystem,
@@ -421,9 +463,115 @@ pub fn run(
   let manifest_bytes = fs::read(manifest_path).map_err(|error| {
     format!("read manifest {}: {error}", manifest_path.display())
   })?;
-  let manifest = ShardManifest::from_bytes(&manifest_bytes)
+  let source = ShardManifest::from_bytes(&manifest_bytes)
     .map_err(|error| format!("manifest parse failed: {error}"))?;
-  let prepared = prepare_run(env, &manifest)?;
+  let home = std::env::var_os("HOME").ok_or("no HOME environment variable")?;
+  let cache_root = std::env::var_os("AIUR_LANES_CACHE_DIR")
+    .map_or_else(|| PathBuf::from(home).join(".ix/cache"), PathBuf::from);
+  let checkpoint_path = cache_root
+    .join("refined-manifests")
+    .join(format!("{}.ixes", Address::hash(&manifest_bytes).hex()));
+  let mut manifest = match fs::read(&checkpoint_path) {
+    Ok(bytes) => {
+      let refined = ShardManifest::from_bytes(&bytes).map_err(|error| {
+        format!("refined manifest {}: {error}", checkpoint_path.display())
+      })?;
+      say(&format!(
+        "resuming refined partition with {} claims from {}",
+        refined.num_shards,
+        checkpoint_path.display()
+      ));
+      refined
+    },
+    Err(error) if error.kind() == std::io::ErrorKind::NotFound => source,
+    Err(error) => {
+      return Err(format!("read {}: {error}", checkpoint_path.display()));
+    },
+  };
+  let record_max_bytes = match std::env::var("AIUR_RECORD_MAX_BYTES") {
+    Ok(value) => value
+      .parse::<usize>()
+      .ok()
+      .filter(|&n| n > 0)
+      .ok_or("AIUR_RECORD_MAX_BYTES must be a positive integer")?,
+    Err(std::env::VarError::NotPresent) => DEFAULT_RECORD_MAX_BYTES,
+    Err(error) => return Err(format!("AIUR_RECORD_MAX_BYTES: {error}")),
+  };
+  let mut profile = None;
+  let mut pool_stats = PoolStats::default();
+  loop {
+    match run_manifest(
+      cfg,
+      ixvm,
+      aggr,
+      env,
+      &manifest,
+      verify_idx,
+      aggr_idx,
+      &cache_root,
+      record_max_bytes,
+      started,
+      &mut pool_stats,
+    )? {
+      PassOutcome::Complete { root, unproven } => {
+        if let Some(path) = &cfg.out_manifest {
+          checkpoint::write_atomic(path, &manifest.to_bytes())?;
+          say(&format!("final partition: {}", path.display()));
+        }
+        say(&format!(
+          "record pool: peak granted {} GiB, {} growth waits ({:.1}s summed across executions), {} contention retries",
+          format_gib(pool_stats.peak_reserved),
+          pool_stats.waits,
+          pool_stats.wait_time.as_secs_f64(),
+          pool_stats.retries,
+        ));
+        let coverage = if unproven == 0 {
+          String::new()
+        } else {
+          format!(
+            " ({unproven} claims retired under verified cached joins have no indexed proof)"
+          )
+        };
+        say(&format!(
+          "root {root} verified; composed verdict OK{coverage}; end to end {}s",
+          started.elapsed().as_secs()
+        ));
+        return Ok(root);
+      },
+      PassOutcome::Refine(ids) => {
+        let profile = profile
+          .get_or_insert_with(|| crate::kernel::static_block_profile(env));
+        let (refined, parts) = manifest.bisect_leaves(profile, &ids)?;
+        checkpoint::write_atomic(&checkpoint_path, &refined.to_bytes())?;
+        for (&id, parts) in ids.iter().zip(parts) {
+          say(&format!("split claim {id} into claims {parts:?}"));
+        }
+        say(&format!(
+          "refined partition: {} claims, saved to {}; continuing with completed proofs",
+          refined.num_shards,
+          checkpoint_path.display()
+        ));
+        manifest = refined;
+      },
+    }
+  }
+}
+
+fn run_manifest(
+  cfg: &Config,
+  ixvm: &AiurSystem,
+  aggr: &AiurSystem,
+  env: &ixon::Env,
+  manifest: &ShardManifest,
+  verify_idx: usize,
+  aggr_idx: usize,
+  cache_root: &Path,
+  record_max_bytes: usize,
+  started: Instant,
+  pool_stats: &mut PoolStats,
+) -> Result<PassOutcome, String> {
+  let say = |m: &str| eprintln!("[lanes] {m}");
+  let prepared = prepare_run(env, manifest)?;
   let ixvm_vk = aiur::vk_codec::aiur_system_to_bytes(ixvm)
     .map_err(|error| format!("IxVM VK serialization failed: {error}"))?;
   let aggr_vk = aiur::vk_codec::aiur_system_to_bytes(aggr)
@@ -465,43 +613,66 @@ pub fn run(
   let home = std::env::var_os("HOME").ok_or("no HOME environment variable")?;
   let ix_root = PathBuf::from(home).join(".ix");
   let store_dir = ix_root.join("store");
-  let cache_root = std::env::var_os("AIUR_LANES_CACHE_DIR")
-    .map_or_else(|| ix_root.join("cache"), PathBuf::from);
   let cache_dir = cache_root.join("aggregate");
   let index_dir = cache_root.join("shard-proofs");
   fs::create_dir_all(&cache_dir)
     .map_err(|error| format!("create {}: {error}", cache_dir.display()))?;
 
-  // Budgets, from first principles: each claim execution ahead gets an
-  // equal share of the host budget less the prover's working set (two
-  // shard witnesses at the cell budget plus staging) and the items a
-  // worker may hold beside its executions (one prepared, one proving).
-  let max_ram_bytes = if cfg.max_ram_bytes > 0 {
-    Some(cfg.max_ram_bytes)
-  } else {
-    say("warning: no --max-ram; each worker budgets against the whole box");
-    super::super::protocol::detected_ram_budget()
-  };
-  // Preparation threads per worker: the flag, or the worker's share of
-  // the cores when it is 0.
+  if cfg.lanes == 0 {
+    return Err("at least one lane is required".into());
+  }
   let exec_jobs = if cfg.exec_jobs == 0 {
     let cores = thread::available_parallelism().map_or(1, usize::from);
-    (cores / cfg.lanes.max(1)).max(1)
+    (cores / cfg.lanes).max(1)
   } else {
     cfg.exec_jobs
   };
-  let cells = super::super::protocol::trace_shard_max_cells();
-  let record_budget =
-    max_ram_bytes.map(|b| super::super::protocol::record_budget(b, cells));
-  let share = max_ram_bytes
-    .map(|b| super::super::protocol::record_share(b, cells, exec_jobs + 2));
-  if let (Some(budget), Some(share)) = (record_budget, share) {
-    say(&format!(
-      "record budget {} GiB per worker: {} GiB per execution with {exec_jobs} ahead; an execution over its share reruns alone",
-      format_gib(budget),
-      format_gib(share)
-    ));
-  }
+  let executions = exec_jobs
+    .checked_mul(cfg.lanes)
+    .ok_or("execution thread count overflow")?;
+  let cells = match std::env::var("AIUR_TRACE_SHARD_MAX_CELLS") {
+    Ok(value) => value
+      .parse::<usize>()
+      .ok()
+      .filter(|&n| n > 0)
+      .ok_or("AIUR_TRACE_SHARD_MAX_CELLS must be a positive integer")?,
+    Err(std::env::VarError::NotPresent) => 1_500_000_000,
+    Err(error) => return Err(format!("AIUR_TRACE_SHARD_MAX_CELLS: {error}")),
+  };
+  let cgroup_limit = cgroup_memory_limit();
+  let host = HostBudget::new(
+    cfg.lanes,
+    executions,
+    cfg.max_ram_bytes,
+    super::super::protocol::detected_ram_budget(),
+    cgroup_limit,
+    cells,
+  )?;
+  let max_ram_bytes = Some(host.limit);
+  let pool = RecordPool::for_provers(
+    host.records,
+    host.initial,
+    ProverBudget { trace_cells: cells, host_workspace: host.workspace },
+  )
+  .with_record_limit(record_max_bytes);
+  say(&format!(
+    "host budget {} GiB process-wide (requested {} GiB per GPU, visible cgroup limit {}): {} GiB shared records, {} GiB workspace per GPU, {} GiB headroom; {executions} CPU executions, {} prepared queue slots; {} GiB initial reservation, growth waits for shared capacity; {cells} trace cells",
+    format_gib(host.limit),
+    format_gib(cfg.max_ram_bytes),
+    cgroup_limit.map_or_else(
+      || "unlimited or unavailable".into(),
+      |bytes| format!("{} GiB", format_gib(bytes))
+    ),
+    format_gib(host.records),
+    format_gib(host.workspace),
+    format_gib(host.headroom),
+    cfg.lanes,
+    format_gib(host.initial.min(pool.record_limit())),
+  ));
+  say(&format!(
+    "per-record ceiling {} GiB; oversized environment claims are bisected automatically",
+    format_gib(pool.record_limit())
+  ));
 
   // A prover pair per device, sharing the bytecode of the systems the
   // CLI built. The verifying keys must not depend on the device: every
@@ -617,319 +788,319 @@ pub fn run(
   ));
 
   let (events_tx, events_rx) = mpsc::channel::<Event>();
-  let (result, unproven) = thread::scope(
-    |scope| -> Result<(String, usize), String> {
-      let mut workers: Vec<WorkerHandle> = Vec::with_capacity(cfg.lanes);
-      for (g, &ctx) in contexts.iter().enumerate() {
-        let (prep_tx, prep_rx) = mpsc::channel::<Prep>();
-        let prep_rx = Arc::new(Mutex::new(prep_rx));
-        let (item_tx, item_rx) = mpsc::sync_channel::<Item>(1);
-        for _ in 0..exec_jobs {
-          let prep_rx = Arc::clone(&prep_rx);
-          let item_tx = item_tx.clone();
-          let events = events_tx.clone();
-          let (env, owned) = (env, &owned);
-          scope.spawn(move || {
-            prepare_loop(
-              ctx,
-              g,
-              env,
-              owned,
-              max_ram_bytes,
-              &prep_rx,
-              &item_tx,
-              &events,
-            );
-          });
-        }
-        drop(item_tx);
-        let events = events_tx.clone();
-        let (prepared_run, leaf_slot, index_dir) =
-          (&prepared, &leaf_slot, &index_dir);
-        scope.spawn(move || {
-          prove_loop(
-            ctx,
-            g,
-            prepared_run,
-            leaf_slot,
-            index_dir,
-            item_rx,
-            &events,
-          );
-        });
-        workers.push(WorkerHandle {
-          prep: prep_tx,
-          preparing: 0,
-          waiting: 0,
-          alone: false,
-        });
-      }
-      drop(events_tx);
+  let prep_queue = WorkQueue::<Prep>::new(executions);
+  let item_queue = WorkQueue::<Item>::new(cfg.lanes);
+  let outcome = thread::scope(|scope| -> Result<PassOutcome, String> {
+    let _shutdown =
+      ShutdownRun { pool: &pool, prep: &prep_queue, items: &item_queue };
+    for executor in 0..executions {
+      let events = events_tx.clone();
+      let (ctx, owned, prep, items) =
+        (contexts[0], &owned, &prep_queue, &item_queue);
+      scope.spawn(move || {
+        prepare_loop(
+          ctx,
+          executor,
+          env,
+          owned,
+          max_ram_bytes,
+          prep,
+          items,
+          &events,
+        )
+      });
+    }
+    for (worker, &ctx) in contexts.iter().enumerate() {
+      let events = events_tx.clone();
+      let (prepared_run, leaf_slot, index_dir, items, pool) =
+        (&prepared, &leaf_slot, &index_dir, &item_queue, &pool);
+      scope.spawn(move || {
+        prove_loop(
+          ctx,
+          worker,
+          prepared_run,
+          leaf_slot,
+          index_dir,
+          items,
+          pool,
+          &events,
+        )
+      });
+    }
+    drop(events_tx);
 
-      let mut claim_queue: VecDeque<usize> =
-        (0..shards).filter(|&s| !claim_done[s]).collect();
-      let mut alone_queue: VecDeque<Work> = VecDeque::new();
-      let work_name = |work: Work| match work {
-        Work::Claim(shard) => {
-          format!("claim {}", prepared.shards[shard].original_id)
-        },
-        Work::Join(slot) => format!("join {slot}"),
-        Work::Root => "root".to_string(),
-      };
-      let mut dispatched: FxHashSet<usize> = FxHashSet::default();
-      let mut root_dispatched = false;
-      let mut root_address: Option<String> = None;
-      let mut failure: Option<String> = None;
-      let mut verdict: Option<
-        thread::ScopedJoinHandle<'_, (Vec<String>, usize)>,
-      > = None;
-      let ready_join = |slots: &[Option<Arc<Slot>>],
-                        dispatched: &FxHashSet<usize>| {
-        (0..root_slot).find(|&index| {
-          !retired[index]
-            && slots[index].is_none()
-            && !dispatched.contains(&index)
-            && match specs[index].op {
-              PlanOp::Join(l, r) => slots[l].is_some() && slots[r].is_some(),
-              PlanOp::Leaf(_) => false,
-            }
-        })
-      };
-      loop {
-        if failure.is_none() {
-          // An over-share claim reruns alone on worker 0 once it drains; the
-          // other workers carry on, and worker 0 takes no new claims meanwhile.
-          let drain = !alone_queue.is_empty();
-          if drain {
-            let worker = &mut workers[0];
-            if !worker.alone && worker.preparing == 0 && worker.waiting == 0 {
-              let work = alone_queue.pop_front().expect("nonempty");
-              say(&format!(
-                "worker 0: {} rerunning alone under the whole record budget",
-                work_name(work)
-              ));
-              let children_of = |slot: usize| {
-                let PlanOp::Join(l, r) = specs[slot].op else { unreachable!() };
-                vec![slots[l].clone().unwrap(), slots[r].clone().unwrap()]
-              };
-              let prep = match work {
-                Work::Claim(shard) => Prep::Claim { shard, cap: record_budget },
-                Work::Join(slot) => Prep::Join {
-                  slot,
-                  children: children_of(slot),
-                  cap: record_budget,
-                },
-                Work::Root => Prep::Root {
-                  slot: root_slot,
-                  children: children_of(root_slot),
-                  cap: record_budget,
-                },
-              };
-              let _ = worker.prep.send(prep);
-              worker.preparing += 1;
-              worker.alone = true;
-            }
+    let mut claim_queue: VecDeque<usize> =
+      (0..shards).filter(|&s| !claim_done[s]).collect();
+    let work_name = |work: Work| match work {
+      Work::Claim(shard) => {
+        format!("claim {}", prepared.shards[shard].original_id)
+      },
+      Work::Join(slot) => format!("join {slot}"),
+      Work::Root => "root".to_string(),
+    };
+    let mut dispatched: FxHashSet<usize> = FxHashSet::default();
+    let mut claim_records = Vec::new();
+    let mut join_records = Vec::new();
+    let mut contention_retries = 0usize;
+    let mut root_dispatched = false;
+    let mut root_address = None;
+    let mut failure = None;
+    let mut to_split = std::collections::BTreeSet::new();
+    let mut free_executors = executions;
+    let mut in_flight = 0usize;
+    let mut verdict: Option<
+      thread::ScopedJoinHandle<'_, (Vec<String>, usize)>,
+    > = None;
+    let ready_join = |slots: &[Option<Arc<Slot>>],
+                      dispatched: &FxHashSet<usize>| {
+      (0..root_slot).find(|&index| {
+        !retired[index]
+          && slots[index].is_none()
+          && !dispatched.contains(&index)
+          && match specs[index].op {
+            PlanOp::Join(l, r) => slots[l].is_some() && slots[r].is_some(),
+            PlanOp::Leaf(_) => false,
           }
-          // Each unit of work goes to the least-loaded worker with a free
-          // preparation slot, joins before the root before claims, so a
-          // ready join lands on an idle device rather than queueing behind
-          // the claims of whichever worker comes first.
-          loop {
-            let least_loaded = |exclude_draining: bool| {
-              workers
-                .iter()
-                .enumerate()
-                .filter(|(g, w)| {
-                  !w.alone
-                    && w.preparing < exec_jobs
-                    && !(exclude_draining && drain && *g == 0)
-                })
-                .min_by_key(|(g, w)| (w.preparing + w.waiting, *g))
-                .map(|(g, _)| g)
-            };
-            if let Some(index) = ready_join(&slots, &dispatched) {
-              let Some(g) = least_loaded(false) else { break };
-              let PlanOp::Join(l, r) = specs[index].op else { unreachable!() };
-              let children =
-                vec![slots[l].clone().unwrap(), slots[r].clone().unwrap()];
-              let _ = workers[g].prep.send(Prep::Join {
-                slot: index,
-                children,
-                cap: share,
-              });
-              dispatched.insert(index);
-              workers[g].preparing += 1;
-              continue;
-            }
-            if !root_dispatched
-              && claim_done.iter().all(|d| *d)
-              && slots[root_left].is_some()
-              && slots[root_right].is_some()
-            {
-              let Some(g) = least_loaded(false) else { break };
-              let children = vec![
-                slots[root_left].clone().unwrap(),
-                slots[root_right].clone().unwrap(),
-              ];
-              let _ = workers[g].prep.send(Prep::Root {
-                slot: root_slot,
-                children,
-                cap: share,
-              });
-              root_dispatched = true;
-              workers[g].preparing += 1;
-              say(&format!(
-                "worker {g}: root at +{}s",
-                started.elapsed().as_secs()
-              ));
-              // Every claim is done once the root is dispatched, so the
-              // composed verdict (CPU) runs beside the root's wraps (GPU). A
-              // claim retired under a cached join has a proof here only if
-              // the index still holds it.
-              let leaves: Vec<Option<Arc<Slot>>> =
+      })
+    };
+    loop {
+      while free_executors > 0 && to_split.is_empty() {
+        let work = if let Some(slot) = ready_join(&slots, &dispatched) {
+          Work::Join(slot)
+        } else if !root_dispatched
+          && claim_done.iter().all(|d| *d)
+          && slots[root_left].is_some()
+          && slots[root_right].is_some()
+        {
+          Work::Root
+        } else if let Some(&shard) = claim_queue.front() {
+          Work::Claim(shard)
+        } else {
+          break;
+        };
+        let Some(reservation) =
+          pool.try_admit().map_err(|e| format!("record admission: {e:?}"))?
+        else {
+          break;
+        };
+        let children = match work {
+          Work::Claim(_) => Vec::new(),
+          Work::Join(slot) => {
+            let PlanOp::Join(l, r) = specs[slot].op else { unreachable!() };
+            vec![slots[l].clone().unwrap(), slots[r].clone().unwrap()]
+          },
+          Work::Root => vec![
+            slots[root_left].clone().unwrap(),
+            slots[root_right].clone().unwrap(),
+          ],
+        };
+        prep_queue
+          .push(
+            Prep { work, children, reservation },
+            !matches!(work, Work::Claim(_)),
+          )
+          .map_err(|_| "execution queue closed")?;
+        free_executors -= 1;
+        in_flight += 1;
+        say(&format!(
+          "{} dispatched at +{}s",
+          work_name(work),
+          started.elapsed().as_secs()
+        ));
+        match work {
+          Work::Claim(_) => {
+            claim_queue.pop_front();
+          },
+          Work::Join(slot) => {
+            dispatched.insert(slot);
+          },
+          Work::Root => {
+            root_dispatched = true;
+            if verdict.is_none() {
+              let leaves: Vec<_> =
                 (0..shards).map(|s| slots[leaf_slot[s]].clone()).collect();
               let prepared_run = &prepared;
               verdict = Some(scope.spawn(move || {
                 composed_verdict(ixvm, verify_idx, prepared_run, &leaves)
               }));
-              break;
             }
-            let Some(&shard) = claim_queue.front() else { break };
-            let Some(g) = least_loaded(true) else { break };
-            claim_queue.pop_front();
-            let _ = workers[g].prep.send(Prep::Claim { shard, cap: share });
-            workers[g].preparing += 1;
+          },
+        }
+      }
+      if in_flight == 0 && free_executors == executions {
+        if !to_split.is_empty() {
+          break;
+        }
+        failure = Some(
+          "scheduler stalled: nothing runs and nothing can be admitted"
+            .to_string(),
+        );
+        break;
+      }
+      let event =
+        events_rx.recv().map_err(|e| format!("worker channel closed: {e}"))?;
+      match event {
+        Event::ExecutionStarted { executor, work } => say(&format!(
+          "executor {executor}: {} execution started at +{}s",
+          work_name(work),
+          started.elapsed().as_secs(),
+        )),
+        Event::Prepared { executor, work, record_bytes, secs } => {
+          say(&format!(
+            "executor {executor}: {} executed in {secs:.1}s, record {record_bytes} B ({} GiB) at +{}s",
+            work_name(work),
+            format_gib(record_bytes),
+            started.elapsed().as_secs(),
+          ));
+          match work {
+            Work::Claim(shard) => claim_records.push((
+              usize::try_from(prepared.shards[shard].original_id)
+                .unwrap_or(usize::MAX),
+              record_bytes,
+              secs,
+            )),
+            Work::Join(slot) => join_records.push((slot, record_bytes, secs)),
+            Work::Root => join_records.push((root_slot, record_bytes, secs)),
           }
-        }
-        if root_address.is_some() {
-          break;
-        }
-        let busy: usize = workers.iter().map(|w| w.preparing + w.waiting).sum();
-        if failure.is_some() && busy == 0 {
-          break;
-        }
-        if busy == 0 {
-          failure =
-            Some("scheduler stalled: nothing runs and nothing is ready".into());
-          break;
-        }
-        let event = events_rx
-          .recv()
-          .map_err(|error| format!("worker channel closed: {error}"))?;
-        match event {
-          Event::Prepared { worker } => {
-            workers[worker].preparing -= 1;
-            workers[worker].waiting += 1;
-          },
-          Event::PrepFailed { worker, work, over_budget, error } => {
-            workers[worker].preparing -= 1;
-            let was_alone =
-              std::mem::replace(&mut workers[worker].alone, false);
-            match over_budget {
-              Some((bytes, cap)) if !was_alone => {
-                say(&format!(
-                  "worker {worker}: {} reached {bytes} B, over its {cap} B share; queued to rerun alone",
+        },
+        Event::PrepAvailable => {
+          free_executors += 1;
+        },
+        Event::PrepFailed { executor, work, failure: error } => {
+          free_executors += 1;
+          in_flight -= 1;
+          match error {
+            PrepareFailure::MemoryContention => {
+              contention_retries += 1;
+              say(&format!(
+                "executor {executor}: {} released for memory contention; requeued",
+                work_name(work)
+              ));
+              match work {
+                Work::Claim(shard) => claim_queue.push_back(shard),
+                Work::Join(slot) => {
+                  dispatched.remove(&slot);
+                },
+                Work::Root => {
+                  root_dispatched = false;
+                },
+              }
+            },
+            PrepareFailure::OverRecordCap { bytes, cap } => {
+              if let Work::Claim(shard) = work {
+                let id = prepared.shards[shard].original_id;
+                let source = manifest
+                  .shards
+                  .iter()
+                  .find(|s| s.id == id)
+                  .expect("prepared claim belongs to the manifest");
+                if source.blocks.len() > 1 {
+                  to_split.insert(id);
+                  say(&format!(
+                    "claim {id}: record needs {bytes} B, above the {cap} B per-record ceiling; draining active work before splitting this claim"
+                  ));
+                } else {
+                  failure = Some(format!(
+                    "claim {id}: record needs {bytes} B, above the {cap} B per-record ceiling; its single atomic block cannot be split further"
+                  ));
+                }
+              } else {
+                failure = Some(format!(
+                  "{}: aggregation record needs {bytes} B, above the {cap} B per-record ceiling; an aggregation execution cannot be split as an environment claim",
                   work_name(work)
                 ));
-                alone_queue.push_back(work);
-              },
-              Some((bytes, cap)) => {
-                let remedy = match work {
-                  Work::Claim(_) => "cut this shard finer or raise --max-ram",
-                  Work::Join(_) | Work::Root => "raise --max-ram",
-                };
-                failure = Some(format!(
-                  "{}: record reached {bytes} B, over the whole record budget of {cap} B even alone; {remedy}",
-                  work_name(work)
-                ));
-              },
-              None => failure = Some(format!("{}: {error}", work_name(work))),
-            }
+              }
+            },
+            PrepareFailure::Other(error) => {
+              failure = Some(format!("{}: {error}", work_name(work)))
+            },
+          }
+        },
+        Event::Proving { worker, work } => say(&format!(
+          "worker {worker}: {} proving started at +{}s",
+          work_name(work),
+          started.elapsed().as_secs(),
+        )),
+        Event::Proven { worker, work, result } => {
+          in_flight -= 1;
+          match (work, result) {
+            (Work::Claim(shard), Ok(slot)) => {
+              slots[leaf_slot[shard]] = Some(slot);
+              claim_done[shard] = true;
+              say(&format!(
+                "worker {worker}: claim {} proven at +{}s ({} left)",
+                prepared.shards[shard].original_id,
+                started.elapsed().as_secs(),
+                claim_done.iter().filter(|d| !**d).count()
+              ));
+            },
+            (Work::Join(slot), Ok(proof)) => {
+              slots[slot] = Some(proof);
+              say(&format!(
+                "worker {worker}: join {slot} published at +{}s",
+                started.elapsed().as_secs()
+              ));
+            },
+            (_, Err(error)) => {
+              failure = Some(format!("{}: {error}", work_name(work)))
+            },
+            (Work::Root, Ok(_)) => {
+              unreachable!("root reports through RootProven")
+            },
+          }
+        },
+        Event::RootProven { worker, result } => match result {
+          Ok(address) => {
+            say(&format!(
+              "worker {worker}: root proven at +{}s",
+              started.elapsed().as_secs()
+            ));
+            root_address = Some(address);
           },
-          Event::Proven { worker, work, result } => {
-            workers[worker].waiting -= 1;
-            workers[worker].alone = false;
-            match (work, result) {
-              (Work::Claim(shard), Ok(slot)) => {
-                slots[leaf_slot[shard]] = Some(slot);
-                claim_done[shard] = true;
-                say(&format!(
-                  "worker {worker}: claim {} proven at +{}s ({} left)",
-                  prepared.shards[shard].original_id,
-                  started.elapsed().as_secs(),
-                  claim_done.iter().filter(|d| !**d).count()
-                ));
-              },
-              (Work::Join(slot), Ok(proof)) => {
-                slots[slot] = Some(proof);
-                say(&format!(
-                  "worker {worker}: join {slot} published at +{}s",
-                  started.elapsed().as_secs()
-                ));
-              },
-              (Work::Claim(shard), Err(error)) => {
-                failure = Some(format!(
-                  "claim {}: {error}",
-                  prepared.shards[shard].original_id
-                ));
-              },
-              (Work::Join(slot), Err(error)) => {
-                failure = Some(format!("join {slot}: {error}"))
-              },
-              (Work::Root, _) => {
-                unreachable!("the root reports through RootProven")
-              },
-            }
-          },
-          Event::RootProven { worker, result } => {
-            workers[worker].waiting -= 1;
-            match result {
-              Ok(address) => {
-                say(&format!(
-                  "worker {worker}: root proven at +{}s",
-                  started.elapsed().as_secs()
-                ));
-                root_address = Some(address);
-              },
-              Err(error) => failure = Some(format!("root: {error}")),
-            }
-          },
-        }
+          Err(error) => failure = Some(format!("root: {error}")),
+        },
       }
-      // Closing the task queues ends the workers.
-      workers.clear();
-      if let Some(error) = failure {
-        return Err(format!(
-          "{error}; rerun the same command to resume from what was persisted"
-        ));
+      if failure.is_some() || root_address.is_some() {
+        break;
       }
-      let root = root_address.ok_or_else(|| "no root proof".to_string())?;
-      let handle = verdict.ok_or_else(|| {
-        "the root was proven before the composed verdict started".to_string()
-      })?;
-      let (failures, unproven) = handle.join().map_err(|payload| {
+    }
+    drop(_shutdown);
+    if let Some(error) = failure {
+      return Err(format!(
+        "{error}; rerun the same command to resume from what was persisted"
+      ));
+    }
+    if !to_split.is_empty() {
+      return Ok(PassOutcome::Refine(to_split.into_iter().collect()));
+    }
+    let root = root_address.ok_or("no root proof")?;
+    record_summary(
+      &say,
+      shards,
+      Some(host.initial.min(pool.record_limit())),
+      Some(host.records),
+      contention_retries,
+      &claim_records,
+      &join_records,
+    );
+    let (failures, unproven) = verdict
+      .ok_or("root proven before composed verdict started")?
+      .join()
+      .map_err(|payload| {
         format!("composed verdict thread panicked: {}", panic_text(&payload))
       })?;
-      if failures.is_empty() {
-        Ok((root, unproven))
-      } else {
-        Err(failures.join("; "))
-      }
-    },
-  )?;
-
-  let coverage = if unproven == 0 {
-    String::new()
-  } else {
-    format!(
-      " ({unproven} claims retired under verified cached joins have no indexed proof)"
-    )
-  };
-  say(&format!(
-    "root {result} verified; composed verdict OK{coverage}; end to end {}s",
-    started.elapsed().as_secs()
-  ));
-  Ok(result)
+    if failures.is_empty() {
+      Ok(PassOutcome::Complete { root, unproven })
+    } else {
+      Err(failures.join("; "))
+    }
+  });
+  let stats = pool.stats();
+  pool_stats.peak_reserved = pool_stats.peak_reserved.max(stats.peak_reserved);
+  pool_stats.waits += stats.waits;
+  pool_stats.wait_time += stats.wait_time;
+  pool_stats.retries += stats.retries;
+  outcome
 }
 
 /// `AiurSystem.proveLanes`: the whole multi-device run.
@@ -946,6 +1117,7 @@ extern "C" fn rs_aiur_prove_lanes(
   exec_jobs: LeanNat<LeanBorrowed<'_>>,
   structural_above: LeanNat<LeanBorrowed<'_>>,
   cache_fri_bytes: LeanByteArray<LeanBorrowed<'_>>,
+  out_manifest: LeanString<LeanBorrowed<'_>>,
 ) -> LeanExcept<LeanOwned> {
   let cfg = Config {
     lanes: lean_unbox_nat_as_usize(lanes.inner()),
@@ -953,6 +1125,8 @@ extern "C" fn rs_aiur_prove_lanes(
     exec_jobs: lean_unbox_nat_as_usize(exec_jobs.inner()),
     structural_above: lean_unbox_nat_as_usize(structural_above.inner()),
     cache_fri_bytes: cache_fri_bytes.as_bytes().to_vec(),
+    out_manifest: (!out_manifest.as_str().is_empty())
+      .then(|| PathBuf::from(out_manifest.as_str())),
   };
   if cfg.lanes == 0 {
     return LeanExcept::error_string("at least one lane is required");

@@ -2280,7 +2280,7 @@ fn profile_block_size(env: &IxonEnv, block: &Address) -> u32 {
 ///   granularity, deduped, self-edges dropped. These are exactly the
 ///   edges that generate a shard's thin frontier, i.e. its ingress.
 #[allow(clippy::cast_possible_truncation)] // block sizes clamped to u32::MAX
-fn static_block_profile(env: &IxonEnv) -> BlockProfile {
+pub(crate) fn static_block_profile(env: &IxonEnv) -> BlockProfile {
   use rayon::prelude::*;
   let addrs: Vec<Address> =
     env.consts.iter().map(|e| e.key().clone()).collect();

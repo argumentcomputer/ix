@@ -957,6 +957,9 @@ impl AiurSystem {
     let (query_record, output) =
       executor(&self.toplevel, fun_idx, input.to_vec(), io_buffer)
         .map_err(GatedProve::Failed)?;
+    if let Some(reservation) = &query_record.budget.reservation {
+      reservation.finish_execution();
+    }
     drop(_g);
     let io = std::mem::replace(
       io_buffer,
@@ -964,6 +967,53 @@ impl AiurSystem {
     );
 
     let peak = self.peak_prove_bytes(&query_record).peak;
+    if let Some(budget) = query_record
+      .budget
+      .reservation
+      .as_ref()
+      .and_then(|reservation| reservation.prover_budget())
+    {
+      let record_bytes = crate::execute::record_retained_bytes(&query_record);
+      let mut cells = budget.trace_cells;
+      loop {
+        let plan = self.plan_shards(&query_record, Some(cells));
+        let workspace = (0..plan.num_shards())
+          .map(|shard| {
+            self.shard_host_workspace(
+              &plan,
+              shard,
+              !crate::trace::trace_only_lookups(),
+            )
+          })
+          .max()
+          .unwrap_or(0);
+        if workspace <= budget.host_workspace {
+          let shard_peak = (0..plan.num_shards())
+            .map(|shard| self.shard_peak_bytes(&plan, shard, record_bytes))
+            .max()
+            .unwrap_or(0);
+          eprintln!(
+            "[trace-shards] {} shards, {cells} committed cells: record {record_bytes} B in shared pool, host workspace {workspace} B of {} B reserved per prover; regenerating round 2",
+            plan.num_shards(),
+            budget.host_workspace,
+          );
+          return Ok(PreparedProve {
+            fun_idx,
+            input: input.to_vec(),
+            io,
+            record: query_record,
+            output,
+            plan,
+            retention: Retention::Regenerate,
+            peak: shard_peak,
+          });
+        }
+        if cells == 1 {
+          return Err(GatedProve::Split { peak: workspace, parts: 1 });
+        }
+        cells = (cells / 2).max(1);
+      }
+    }
     // `AIUR_TRACE_SHARD_MAX_CELLS` is a device-residency bound (VRAM) in
     // committed cells: with it every trace-sharded proof is planned to
     // cells, whatever the host peak, and the plan is then held to the host
@@ -1519,6 +1569,68 @@ mod tests {
       system.verify(&bad_claim, &proof).is_err(),
       "verification must reject a tampered claim"
     );
+  }
+
+  #[cfg(feature = "cuda")]
+  #[test]
+  fn record_pool_workspace_excludes_shape_only_lookup_payloads() {
+    let (cp, fp) = test_parameters();
+    let system = AiurSystem::build(call_and_memory_toplevel(), cp, fp);
+    let record = QueryRecord::new(system.toplevel());
+    let mut plan = system.single_shard_plan(&record);
+    plan.shards[0].rows[0] = 0..(1 << 20);
+    let full = system.shard_host_workspace(&plan, 0, true);
+    let shape_only = system.shard_host_workspace(&plan, 0, false);
+    assert!(shape_only < 512 << 20, "shape-only workspace: {shape_only}");
+    assert!(full > 512 << 20, "materialized lookup workspace: {full}");
+  }
+
+  #[cfg(feature = "cuda")]
+  #[test]
+  #[ignore = "requires two CUDA devices"]
+  fn record_pool_prepared_moves_between_devices() {
+    use crate::execute::bind_record_reservation;
+    use crate::record_pool::{ProverBudget, RecordPool};
+    let (cp, fp) = test_parameters();
+    let system = AiurSystem::build(call_and_memory_toplevel(), cp, fp);
+    let producer = system.on_device(0);
+    let consumer = system.on_device(1);
+    assert_eq!(
+      crate::vk_codec::aiur_system_to_bytes(&producer).unwrap(),
+      crate::vk_codec::aiur_system_to_bytes(&consumer).unwrap()
+    );
+    let pool = RecordPool::for_provers(
+      4096,
+      4096,
+      ProverBudget { trace_cells: 1_000_000, host_workspace: 1 << 30 },
+    );
+    let reservation = pool.try_admit().unwrap().unwrap();
+    let binding = bind_record_reservation(&reservation);
+    let input = [G::from_u64(3), G::from_u64(5)];
+    let prepared = producer
+      .prepare_ixvm_within_budget(
+        0,
+        &input,
+        &mut empty_io_buffer(),
+        |top, fun, input, io| top.execute(fun, input, io),
+        Some(1),
+        true,
+        None,
+      )
+      .unwrap_or_else(|_| {
+        panic!("pooled planning used the obsolete per-record ceiling")
+      });
+    let retained = crate::execute::record_retained_bytes(&prepared.record);
+    assert_eq!(pool.stats().reserved, retained);
+    drop(binding);
+    drop(reservation);
+    assert_eq!(pool.stats().reserved, retained);
+    let (claim, proof, _) =
+      std::thread::spawn(move || consumer.prove_prepared(prepared))
+        .join()
+        .unwrap();
+    assert_eq!(pool.stats().reserved, 0);
+    system.verify(&claim, &proof).unwrap();
   }
 
   /// Exercise promotion of a cached unconstrained call through nested calls.

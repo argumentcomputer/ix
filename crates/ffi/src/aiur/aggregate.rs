@@ -1609,6 +1609,9 @@ fn prepare_aggr_io(
     Err(GatedProve::Failed(
       aiur::execute::ExecError::RecordBudgetExceeded { bytes, cap },
     )) => Err(PrepareFailure::OverRecordCap { bytes, cap }),
+    Err(GatedProve::Failed(
+      aiur::execute::ExecError::RecordMemoryContention,
+    )) => Err(PrepareFailure::MemoryContention),
     Err(GatedProve::Failed(error)) => {
       Err(format!("{label}: execution failed: {error}").into())
     },
@@ -1623,6 +1626,7 @@ fn prepare_aggr_io(
 /// scheduler can answer by rerunning it alone, or anything else.
 pub(crate) enum PrepareFailure {
   OverRecordCap { bytes: usize, cap: usize },
+  MemoryContention,
   Other(String),
 }
 
@@ -1643,6 +1647,9 @@ impl From<PrepareFailure> for String {
     match failure {
       PrepareFailure::OverRecordCap { bytes, cap } => {
         format!("record reached {bytes} B, over the {cap} B record cap")
+      },
+      PrepareFailure::MemoryContention => {
+        "record cancelled to resolve memory contention".into()
       },
       PrepareFailure::Other(message) => message,
     }

@@ -409,7 +409,7 @@ private def emitCall (out : Nat) (callee : FunIdx) (args : Array ValIdx)
   -- whole result).
   let deferGuard : String :=
     if opUn then "false"
-    else s!"!unconstrained && record.defer_call({callee}, &__args[..])"
+    else s!"!unconstrained && record.defer_call({callee}, &__args[..])?"
   let blockExpr : String :=
     s!"\{ let __args: [G; IN_{callee}] = {argsStr};" ++
     s!" let __cu = {cuExpr};" ++
@@ -439,7 +439,7 @@ private def emitStore (out : Nat) (values : Array ValIdx) : Array RustStmt :=
     s!" } else \{" ++
     s!" aiur::execute::check_store(&record.budget, __mq, {size})?;" ++
     s!" let __ptr = G::from_usize(record.pointer_base + __mq.len());" ++
-    s!" __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained));" ++
+    s!" __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained))?;" ++
     s!" __ptr } }"
   #[.letStmt false s!"__v_{out}" (some "G") (.lit blockExpr)]
 
@@ -839,7 +839,7 @@ partial def emitCtrl (funIdx : FunIdx) (mcLabel? : Option String)
       .letStmt false "__ret" (some s!"[G; OUT_{funIdx}]")
         (.arrayLit (outs.map valVar))
     let insertCall : RustStmt := .exprStmt (.lit <|
-      s!"record.function_queries[{funIdx}].finish(&inp[..], &__ret[..], !unconstrained)")
+      s!"record.function_queries[{funIdx}].finish(&inp[..], &__ret[..], !unconstrained)?")
     -- Wrap in Ok(...) since fn now returns Result<[G; OUT_N], ExecError>.
     return #[outArr, insertCall,
       .returnStmt (.call (.var "Ok") #[.var "__ret"])]
@@ -954,8 +954,8 @@ def emitFunction (funIdx : FunIdx) (f : Function) : Array RustItem := Id.run do
     s!"  unconstrained: bool,\n" ++
     s!") -> Result<[G; OUT_{funIdx}], ExecError> {lbrace}\n" ++
     s!"  stacker::maybe_grow(64 * 1024, 4 * 1024 * 1024, || {lbrace}\n" ++
-    -- Function queries grow at calls, so the record's byte cap is checked
-    -- on entry as well as at every memory store.
+    -- Entry checks propagate cancellation even through memoized calls
+    -- that allocate no new query rows.
     s!"    aiur::execute::check_record_cap(&record.budget)?;\n" ++
     bodyText ++
     s!"  {rbrace})\n" ++

@@ -22,6 +22,14 @@ resident workers in one process, which is what `ix prove --lanes` runs
 today. §4 holds every measurement; the §6 estimate for the resident
 workers on Mathlib comes from a ten-minute sample, not a full run.
 
+**Shared execution (2026-09-15):** [§3.6](#36-shared-execution-and-memory-budget)
+describes a shared CPU execution pool, assignment to the next available GPU,
+and a process-wide record budget with waiting during memory pressure,
+implemented on this branch. The per-GPU preparation queues and resident-worker
+fixed caps in §3.4–§3.5 describe the preceding runtime. The later
+[111-shard Mathlib run](../bench/mathlib-seed-2026-09-15/README.md)
+provides a full-run measurement for that runtime and informs §3.6.
+
 ## 1. Principle: one process per GPU, artifacts as the only coordination
 
 Every unit of work in the current pipeline is persistent and
@@ -305,8 +313,10 @@ big-integer helper's rows all pass through it), and the total is checked
 against the cap at every memory store (`aiur::execute::check_store`, which
 the codegen emits in place of the bare pointer-limit test) and at every
 function entry (`check_record_cap`, emitted as each generated function's
-first statement, and in the interpreter's call path), so a record cannot
-pass its cap by more than one entry. The failure is a clean
+first statement, and in the interpreter's call path). These checks do not
+bound overshoot to one entry: consecutive recursive returns and the
+big-integer helper can insert multiple entries before another check.
+§3.6 requires reserving growth before allocation. A detected cap failure is a clean
 `ExecError::RecordBudgetExceeded`; `prepare_ixvm_within_budget` returns
 it as `GatedProve::Failed` instead of aborting the process (the profile is
 `panic = "abort"`).
@@ -318,10 +328,332 @@ execution ahead an equal share of it, `record_budget / (exec_jobs + 1)`,
 as its cap. A shard that reaches its share is queued to rerun alone:
 nothing new starts ahead, the lane drains, and it executes by itself
 under the whole record budget. A shard that fails even alone stops the
-run with the instruction to cut it finer or raise `--max-ram`. This
-makes `--exec-jobs` a ceiling rather than a promise, makes any shard
-count safe to try, and turns the number of shards that ran alone into
-the only signal needed for choosing a coarser or finer manifest.
+run with the instruction to cut it finer or raise `--max-ram`. The resident
+`--lanes` driver divides by `exec_jobs + 2`, accounting for one queued and
+one proving record beside the executions. Both drivers use fixed caps.
+Retry counts, execution time, GPU idle time and total wall time all matter
+when choosing a coarser manifest. The proposed policy below lets larger
+records use otherwise available memory before a retry becomes necessary.
+
+### 3.6 Shared execution and memory budget
+
+**Status: implemented on this branch, 2026-09-15.** Focused allocation,
+waiting, shutdown and cross-device proof checks pass. Init measurements are
+recorded in the [validation report](../bench/shared-execution-init-2026-09-15/README.md).
+
+#### Objective
+
+Choose the environment shard count to minimize complete proving time.
+For example, 50 environment shards produce 50 claims and 49 binary joins,
+plus any final wrapping. Fewer joins can justify longer individual
+executions and occasional waits for memory. Fifty is a candidate count,
+not a measured optimum.
+
+Environment shards and trace shards remain separate choices. A large
+environment shard produces one execution record; its proof can still use
+several trace shards bounded by the existing GPU cell budget. Reducing
+the environment shard count therefore does not require a larger maximum
+GPU matrix. It can change total trace work and duplicated execution, so
+the number of claims and joins alone does not predict the speedup.
+
+Fixed equal record caps should cease to determine the environment cut.
+Keep normal execution concurrency for small records, and reduce it
+temporarily when the combined live records consume the available RAM.
+
+#### One execution pool feeding four GPU workers
+
+```mermaid
+flowchart LR
+    R["Ready claims and joins"] --> E["Shared CPU execution pool"]
+    E --> Q["Bounded queue of prepared host records"]
+    Q --> G0["GPU 0 prover"]
+    Q --> G1["GPU 1 prover"]
+    Q --> G2["GPU 2 prover"]
+    Q --> G3["GPU 3 prover"]
+```
+
+Use one CPU preparation pool for claims, join advice and join execution.
+Preserve the total execution-thread ceiling initially: three threads per
+GPU becomes twelve shared threads. Assign a prepared item to a GPU when
+a proving worker takes it. A slow execution then does not strand a
+particular GPU while prepared work waits in another worker's queue.
+
+Keep one resident proving worker per device, owning its IxVM and
+aggregation systems, CUDA resources and device-memory admission. Once a
+worker takes a job, that job's proving rounds stay on its GPU. Proof
+completion makes dependent joins ready through the existing task graph.
+Prefer ready joins in both CPU and GPU scheduling so the aggregation
+tree advances while claims finish.
+
+The existing boundary supports this:
+[PreparedProve](../crates/aiur/src/synthesis.rs)
+owns a query record, IO, inputs, outputs and a trace-shard plan, with no
+GPU buffers or device identifier. Prepared joins contain the same type.
+The workers already construct matching systems and
+[check verifying-key equality](../crates/ffi/src/aiur/aggregate/lanes.rs).
+Passing a prepared item between threads transfers ownership without
+copying its host allocations.
+
+Bound the prepared queue by item count as well as the shared memory
+budget. Start with four queued items total, preserving today's aggregate
+one-per-GPU lookahead. Completed items held by producers waiting to
+enqueue also retain their memory charges.
+
+#### One host-record budget for the process
+
+Establish one effective process host limit. Reserve workspace for all
+concurrent provers, shared data and other host overhead; use the remainder
+for records. GPU VRAM admission remains per device. A large execution
+can borrow record capacity that other workers are not using.
+
+The current `--max-ram` and `--exec-jobs` settings are per worker. Translate
+and report their process-wide totals explicitly, checking the effective
+host limit against the cgroup allowance. Avoid silently interpreting an
+old per-worker value as the whole-process limit. Keep enough prover
+workspace outside the pool to finish existing proofs and release records.
+
+Each record owns a reservation through execution, the prepared queue and
+proving. The invariants are:
+
+```text
+sum of outstanding record grants <= process record budget
+each record's counted retained bytes <= its grant <= per-record ceiling
+```
+
+Acquire memory in modest chunks to reduce synchronization. Every query
+insertion charges its bytes before allocating. If local credit is
+insufficient, request enough additional credit to cover the insertion,
+including an entry larger than the normal chunk size. Unused granted
+credit counts against the pool. Return surplus credit when execution
+finishes; release the retained charge when its storage is dropped.
+
+The current counter measures field payloads plus fixed per-entry overhead.
+It counts that model exactly, rather than measuring exact RSS. IO buffers,
+execution stacks, allocator overhead and temporary hash-table growth need
+headroom outside the pool. The process memory limit remains a backstop.
+[Current accounting](../crates/aiur/src/execute.rs).
+
+#### Waiting and progress
+
+1. While credit is available, executions grow and run concurrently.
+2. When a growth request cannot be granted, pause that execution and stop
+   admitting new executions while growth requests remain outstanding.
+   Existing proofs continue, and executions with granted credit can finish.
+3. Select one waiting execution and retain its growth priority until its
+   execution finishes or is cancelled. Grant released memory to it first.
+   Plain FIFO ordering of individual requests can spread successive grants
+   among several unfinished large records and does not provide this rule.
+4. Record completion, release and cancellation wake waiters. Resume new
+   admissions when the selected execution finishes and capacity permits.
+5. If all remaining executions are waiting and no prepared/proving record
+   can release memory, cancel the youngest waiter other than the selected
+   execution. Wait for its storage to drop, grant the released credit and
+   requeue the cancelled work for later. Repeat only if necessary.
+
+Waiting alone cannot resolve the last case. In a 100 GiB pool, a paused
+record holding 40 GiB leaves another record at most 60 GiB. If the second
+record needs 64 GiB, it fits alone but cannot finish while both remain
+resident. Report the victim's retry as memory contention. A record whose
+own next insertion would exceed the per-record ceiling requests
+refinement immediately, without waiting for other records to drain.
+
+Pool state can remain small: available credit, record identities,
+used/granted bytes, execution/prepared/proving/waiting states, one preferred
+execution and cancellation state. A mutex and condition variable provide
+coordination; the existing dependency scheduler still decides which work
+is ready.
+
+#### Implementation
+
+- CPU workers share preparation and prepared queues. GPU identity is
+  attached when proving starts, independently of the execution thread.
+- Records and query maps own shared reservations. The thread-local
+  binding attaches a reservation during construction; it does not own
+  the reservation's lifetime after handoff.
+- Every query insertion reserves capacity first. Function returns and
+  BigUint list construction propagate allocation and cancellation errors
+  through ordinary results; the release build does not rely on unwinding.
+- Each final root wrap gets a reservation on the proving thread.
+- Planning checks reserved proving workspace separately from the record,
+  preserving the requested GPU trace-cell bound.
+- Failure and shutdown wake waiters and close both queues. Charges are
+  released after their storage drops. Contention retries and records
+  exceeding their individual ceiling have different outcomes.
+
+The runtime preserves `--max-ram` as a per-GPU value and `--exec-jobs`
+as threads per GPU, combining both across the process. With
+`--lanes 4 --exec-jobs 3 --max-ram 230` and 1.5 billion trace cells, it sets:
+
+- 920 GiB effective host limit, clamped to the visible cgroup allowance;
+- 24.2 GiB workspace per GPU and 92 GiB (10%) process headroom;
+- 730.8 GiB shared record capacity and 36.5 GiB initial admission credit;
+- a 64 GiB ceiling on each individual record.
+
+An execution can grow beyond its initial credit up to its individual
+ceiling. `AIUR_RECORD_MAX_BYTES` overrides the 64 GiB default; it must be
+positive and is clamped to the whole record pool. Both initial credit and
+subsequent grants respect the ceiling, so the fast insertion path cannot
+cross it. The pool grants further credit in 16 MiB chunks, or enough for a
+larger single insertion. With no explicit host limit, detection runs once
+for the process. The trace-cell bound is
+`AIUR_TRACE_SHARD_MAX_CELLS`, defaulting to 1.5 billion for the shared driver.
+
+The per-record ceiling limits the size of a single execution's data
+structures independently of available host RAM. The 64 GiB default is a
+provisional policy, not a measured threshold for cache behavior. Waiting
+still handles aggregate memory pressure below that ceiling.
+
+#### Automatic refinement at the record ceiling
+
+When an environment claim exceeds its ceiling, the scheduler stops new
+admissions and finishes work already in flight. It then bisects each
+oversized leaf using a min-cut over that leaf's dependency edges. Atomic
+blocks, including mutually recursive declarations, stay together. Part
+zero keeps the original leaf ID; the second part gets a fresh ID. The
+leaf's position in the aggregation tree becomes a two-child subtree.
+
+The refined partition is written atomically under
+`$AIUR_LANES_CACHE_DIR/refined-manifests/<source-manifest-hash>.ixes` (the
+usual `~/.ix/cache` when no cache override is set). Preparation restarts
+against that partition and verifies/reuses completed claim and aggregate
+proofs. Unrelated claims keep their identities. A child that still exceeds
+the ceiling is split again; every split has two nonempty children, so
+refinement makes progress toward atomic blocks.
+
+Rerunning the original command loads its checkpoint automatically.
+`--out-ixes` writes the final partition after successful verification.
+The source manifest remains an input unless it is explicitly also chosen
+as the output. Pool statistics cover all refinement passes. A shard-count
+candidate is omitted when only some claims of the current partition were
+executed, since reused proofs do not supply those record measurements.
+
+A single atomic block that exceeds the ceiling fails with a named error.
+The ceiling also applies to join and root-wrap records; oversized
+aggregation executions fail explicitly, since they cannot be bisected as
+environment claims. The shared pool and trace-shard workspace policy do
+not silently relax the ceiling for them.
+
+Planning checks host workspace separately from the pooled record, so a
+large admitted record does not hit the old per-worker planning ceiling.
+CUDA workspace covers two host witnesses, preprocessing and staging;
+shape-only lookup metadata contributes no materialized lookup payload.
+Records regenerate their traces for round two. A plan exceeding reserved
+workspace is cut into finer trace shards. Workspace accounting remains a
+model: allocator behavior and device spills still need the reported
+headroom and the cgroup backstop.
+
+#### Init validation and refinement
+
+The [Init validation](../bench/shared-execution-init-2026-09-15/README.md)
+used automatic sharding, which selected five claims, and one four-claim
+follow-up on the same binary and input. Both roots and composed verdicts
+verified, including final wrapping. Five claims took 351.72 seconds and
+178.85 GiB peak RSS; four took 341.35 seconds and 164.50 GiB. The 2.95%
+wall-time difference comes from one trial per count and is provisional.
+
+The first attempt exposed a workspace-model error: shape-only lookup
+metadata was charged as fully materialized host lookup buffers. Correcting
+that accounting preserved the 1.5-billion-cell bound and reduced plans
+from 31–35 to 8–10 trace shards per claim on the same five-claim manifest.
+A regression test checks both lookup modes.
+
+The four-claim cut completed its larger claims six seconds later, but
+removing one join let the root start 15 seconds earlier. This supports
+measuring complete execution and aggregation time when refining a cut.
+The automatic static-score seed remains a starting guess; the post-run
+p90 candidate considers memory alone and is not an automatic optimizer.
+
+Neither Init cut exhausted the shared memory pool. Waiting, mutual-block
+recovery, charge lifetime and shutdown are covered by focused tests;
+coarser Mathlib performance under memory pressure remains to be measured.
+
+The [record-ceiling validation](../bench/record-ceiling-2026-09-15/README.md)
+forced the four-claim fixture to exceed a temporary 22 GiB ceiling.
+Claim 0 split into two records of 13.3 and 10.7 GiB; the other three proofs
+were reused. The final five-claim partition verified in 477.74 seconds,
+with 128.93 GiB peak RSS and one split. Restart loaded the checkpoint and
+reused all five claims. A one-byte ceiling then rejected the first root
+wrap, confirming its reservation binding. The default remains 64 GiB.
+
+#### What the 111-shard Mathlib run establishes
+
+The [2026-09-15 result](../bench/mathlib-seed-2026-09-15/README.md)
+finished in 52:49 with zero cap trips, 522.4 GiB peak RSS and a verified
+root over 111 claims. Claim records averaged about 21.4 GiB, with a
+reported p90 of 25.1 GiB and a 38.2 GiB maximum. The 109 non-root join
+records averaged 13.5 GiB and peaked at 18.2 GiB; the root record was
+25.0 GiB. These sizes support charging each live record by its own usage
+instead of reserving the same 41.4 GiB for every completed record.
+
+Use the body of the claim distribution to propose candidate cuts. Under
+the provisional assumption that record quantiles scale inversely with
+the environment shard count:
+
+| Environment shards | Binary joins including root | Estimated claim mean | Estimated claim p90 |
+| ---: | ---: | ---: | ---: |
+| 90 | 89 | 26.4 GiB | 31.0 GiB |
+| 67 | 66 | 35.5 GiB | 41.6 GiB |
+| 50 | 49 | 47.5 GiB | 55.7 GiB |
+
+The p90/share calculation is `111 × 25.1 / 41.4 ≈ 67`. It is a starting
+estimate, not an optimum or a limit under the shared budget. Fifty is a
+useful aggressive candidate once waiting works. Ninety is a conservative
+next measurement under the existing runtime, removing 21 binary joins
+relative to 111 shards. None of these projections fixes the maximum at
+38 GiB: compare the contents of the heavy shards across cuts before
+concluding that one indivisible block explains it. The earlier compile
+also differs, limiting the comparison with the 128-shard measurements.
+
+Scheduling the final dependency chain matters alongside memory policy.
+The raw completion log shows:
+
+- The largest record, claim 70, was proved at +1762 s, well before the
+  last claim at +2640 s. It did not cause this run's final tail.
+- Twenty joins completed after the last claim, initially across all four
+  workers. The last non-GPU-0 completion was at +2808 s.
+- The root was dispatched at +2997 s and proved at +3164 s. The 524-second
+  interval after the last claim includes 357 seconds before root dispatch
+  and 167 seconds for root preparation, proving and wrapping.
+
+Thus the tail begins with a parallel drain and narrows into the final
+dependency chain. A shared queue can improve assignment while multiple
+jobs are ready, but cannot create parallel work along a single dependency
+chain. Fewer environment shards reduce total joins; they do not remove
+the whole tail automatically. For a balanced tree, both 111 and 67 leaves
+can have seven join levels, whereas 50 needs six. The actual manifest can
+be unbalanced.
+
+Retain join priority and record dispatch/ready/start/end timestamps to
+identify avoidable queue delay. Use execution-cost estimates to start
+expensive claims earlier when available; raw record size alone is not a
+complete scheduling score. The 43% sampled mean GPU utilization does not
+by itself identify how much time a new scheduler can recover.
+
+The 52:49 run is a baseline with GPU trace generation enabled. Its gap
+from the earlier 1:06:12 run combines a different cut, compile and trace
+mode, so it does not isolate any one change's speedup.
+
+#### Validation and measurement
+
+Use small host-only tests for concurrent growth, release after proving,
+growth priority, victim cancellation, whole-pool overflow and shutdown.
+Cover reservations through recursive returns and BigUint inserts, and
+release on both success and failure. Then verify that prepared claims
+and joins can be consumed by another GPU with matching systems. Include
+root wrapping in lifetime checks.
+
+Compare a reference cut and one aggressive cut using the same binary,
+Mathlib input, total CPU concurrency, GPU trace-cell bound and effective
+host limit, with isolated proof caches. Record complete wall time, CPU
+time, claim/join counts, execution waits, GPU idle time, live record bytes,
+peak RSS and retries. Verify the same final environment statement;
+different partitions need not produce identical proof bytes or addresses.
+Completion timestamps must be keyed by both task kind and ID, because
+claim numbers and join slot numbers overlap.
+
+Select the next cut from complete wall time: fewer joins must save more
+than is lost to longer executions, waits, retries and the final dependency
+tail. A full benchmark sweep is unnecessary for the first comparison.
 
 ## 4. Runbook
 
@@ -740,18 +1072,27 @@ the 920 GB scope), and `--exec-jobs 4` if the starvation shows again.
    calibration (233 at 400 GiB with the fitted exponents), which is a
    whole-execution FFT-peak model and would seed 459 here. Both are seeds:
    the record cap of §3.5 names any shard whose record exceeds its share,
-   and the split of a named shard is what remains to build (`ix shard
-   refine` gates on the CPU prover model; a record-size gate there, keeping
-   every other proof and cache entry, closes the loop without predicting
-   anything).
+   and the shared driver's subsequent record-size refinement is described
+   in §3.6. The separate `ix shard refine` command uses the CPU prover
+   model.
 
    The seed as first calibrated aims the heavy tail at the cap: it fits
    the largest of the 128 records (35.8 GiB) to the share, so at a
    41.4 GiB share it seeds 111 shards whose largest record would sit at
-   the share, and the tail is where the variance is. Each trip on Mathlib
-   costs a wasted execution plus a serial rerun on a drained worker,
-   about 2.5 min, more than the fewer joins save. The measurement we
-   have is "128 shards ran clean at a 41.4 GiB share", so calibrate on
+   the share, and the tail is where the variance is. A trip on Mathlib
+   costs a wasted partial execution plus a serial rerun on a drained
+   worker, one to 2.5 min of one worker depending on where it lands; one
+   fewer shard saves one join, about 85 s of worker time. So a coarser
+   cut wins unless it trips more than about once per four to seven shards
+   removed, which the tail decides, not a rule. (Measured 2026-09-15 at
+   111 shards, `bench/mathlib-seed-2026-09-15/`: the largest claim record
+   was 38.2 GiB, 92 % of the share, the next 28.4 GiB, and the largest
+   record did not shrink from the 128-way cut's 35.8 GiB while the mean
+   scaled approximately with 1/N. This supports trying a seed based on
+   the body of the distribution with a pause-and-grow policy for outliers.
+   The compile changed too, so the maximum's cause and scaling need more
+   evidence; see §3.6.) The measurement we
+   had first is "128 shards ran clean at a 41.4 GiB share", so calibrate on
    the reference share instead (128 at 230 GiB, 150 at 200 GiB, where the
    128-way cut's largest record already exceeds the 35.4 GiB share). The
    seed also ignores join records, which run under the same share; on

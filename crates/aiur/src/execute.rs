@@ -11,6 +11,7 @@ use crate::{
     bytes2::{Bytes2, Bytes2Op, Bytes2Queries},
   },
   querymap::QueryMap,
+  record_pool::{BudgetError, RecordReservation},
 };
 
 fn u32_value(map: &[G], bytes: &[usize]) -> u64 {
@@ -31,8 +32,7 @@ fn u32_sum(values: &[u64]) -> ([G; 4], G) {
 pub struct QueryRecord {
   pub function_queries: Vec<QueryMap>,
   pub memory_queries: FxIndexMap<usize, QueryMap>,
-  /// The cap on this record's retained bytes, if any, and the bookkeeping
-  /// [`check_store`] keeps to enforce it as the record grows.
+  /// Admission and lifetime of this record's retained query storage.
   pub budget: RecordBudget,
   pub bytes1_queries: Bytes1Queries,
   pub bytes2_queries: Bytes2Queries,
@@ -69,21 +69,25 @@ impl QueryRecord {
   /// Records a call to `callee` with `args` as deferred and returns `true`,
   /// or returns `false` when this record answers it itself (no ownership,
   /// another callee, or owned arguments).
-  pub fn defer_call(&mut self, callee: FunIdx, args: &[G]) -> bool {
+  pub fn defer_call(
+    &mut self,
+    callee: FunIdx,
+    args: &[G],
+  ) -> Result<bool, ExecError> {
     let Some(ownership) = &self.ownership else {
-      return false;
+      return Ok(false);
     };
     if ownership.callee != callee || ownership.owned.contains(args) {
-      return false;
+      return Ok(false);
     }
     let queries = &mut self.function_queries[callee];
     if queries.get_index_of(args).is_none() {
       // The entry a caller's row reads its (empty) output from; no
       // multiplicity, so no row.
-      queries.insert(args, &[], G::ZERO);
+      queries.insert(args, &[], G::ZERO)?;
     }
     *self.deferred.entry(args.to_vec()).or_insert(0) += 1;
-    true
+    Ok(true)
   }
 
   /// Adds another record's deferred calls to the multiplicities of the rows
@@ -132,22 +136,23 @@ impl QueryRecord {
 
   /// A record whose memory pointers start at `pointer_base`.
   pub fn with_pointer_base(toplevel: &Toplevel, pointer_base: usize) -> Self {
+    let budget = RecordBudget::for_this_thread();
     let function_queries = toplevel
       .functions
       .iter()
-      .map(|f| QueryMap::new(f.layout.input_size))
+      .map(|f| QueryMap::with_budget(f.layout.input_size, budget.clone()))
       .collect();
     let memory_queries = toplevel
       .memory_sizes
       .iter()
-      .map(|width| (*width, QueryMap::new(*width)))
+      .map(|width| (*width, QueryMap::with_budget(*width, budget.clone())))
       .collect();
     let bytes1_queries = Bytes1Queries::new();
     let bytes2_queries = Bytes2Queries::new();
     Self {
       function_queries,
       memory_queries,
-      budget: RecordBudget::for_this_thread(),
+      budget,
       bytes1_queries,
       bytes2_queries,
       pointer_base,
@@ -158,6 +163,8 @@ impl QueryRecord {
 }
 
 thread_local! {
+  static RECORD_RESERVATION: std::cell::RefCell<Option<RecordReservation>> =
+    const { std::cell::RefCell::new(None) };
   static RECORD_BYTE_CAP: std::cell::Cell<Option<usize>> =
     const { std::cell::Cell::new(None) };
   /// Retained bytes of the record being built on this thread, counted at
@@ -175,33 +182,86 @@ pub fn set_record_byte_cap(cap: Option<usize>) {
   RECORD_BYTE_CAP.with(|cell| cell.set(cap));
 }
 
+/// Binds admission to records constructed on the current thread. The
+/// records and their maps retain ownership after the binding ends.
+pub fn bind_record_reservation(
+  reservation: &RecordReservation,
+) -> RecordBinding {
+  let previous =
+    RECORD_RESERVATION.with(|cell| cell.replace(Some(reservation.clone())));
+  let cap = RECORD_BYTE_CAP.with(|cell| cell.replace(None));
+  RECORD_BYTES.with(|cell| cell.set(0));
+  RecordBinding { previous, cap, thread: std::marker::PhantomData }
+}
+
+pub struct RecordBinding {
+  previous: Option<RecordReservation>,
+  cap: Option<usize>,
+  thread: std::marker::PhantomData<std::rc::Rc<()>>,
+}
+
+impl Drop for RecordBinding {
+  fn drop(&mut self) {
+    RECORD_RESERVATION.with(|cell| cell.replace(self.previous.take()));
+    RECORD_BYTE_CAP.with(|cell| cell.set(self.cap));
+  }
+}
+
 /// Counts a query-map entry of `elems` field elements toward the record
 /// being built on this thread, as [`record_retained_bytes`] measures it.
 #[inline]
-pub fn note_retained(elems: usize) {
-  RECORD_BYTES.with(|cell| cell.set(cell.get() + elems * 8 + 21));
+pub fn note_retained(
+  elems: usize,
+  budget: &RecordBudget,
+) -> Result<(), ExecError> {
+  let bytes = elems.saturating_mul(8).saturating_add(21);
+  if let Some(reservation) = &budget.reservation {
+    reservation.reserve(bytes)?;
+  }
+  RECORD_BYTES.with(|cell| {
+    let next = cell.get().saturating_add(bytes);
+    if let Some(cap) = budget.cap {
+      if next > cap {
+        return Err(ExecError::RecordBudgetExceeded { bytes: next, cap });
+      }
+    }
+    cell.set(next);
+    Ok(())
+  })
 }
 
-/// A record's byte cap, fixed when the record is created.
-#[derive(Clone, Copy, Debug, Default)]
+/// Retained bytes of the record most recently built on this thread, as
+/// the cap measures them ([`note_retained`]): what a driver reads after
+/// an execution to report the record's size against its share.
+pub fn record_bytes() -> usize {
+  RECORD_BYTES.with(std::cell::Cell::get)
+}
+
+/// Fixed-cap admission or a share of a process-wide pool.
+#[derive(Clone, Debug, Default)]
 pub struct RecordBudget {
   pub cap: Option<usize>,
+  pub reservation: Option<RecordReservation>,
 }
 
 impl RecordBudget {
   /// The cap set for this thread, and a fresh count for the new record.
   fn for_this_thread() -> Self {
     RECORD_BYTES.with(|cell| cell.set(0));
-    Self { cap: RECORD_BYTE_CAP.with(std::cell::Cell::get) }
+    Self {
+      cap: RECORD_BYTE_CAP.with(std::cell::Cell::get),
+      reservation: RECORD_RESERVATION.with(|cell| cell.borrow().clone()),
+    }
   }
 }
 
-/// Whether the record being built on this thread is within `budget`'s cap;
-/// the generated kernel and the interpreter ask at every function entry,
-/// and [`check_store`] at every memory store, so a record cannot grow
-/// past its cap by more than one entry between checks.
+/// Function-entry cancellation check, also enforcing fixed-cap admission.
+/// Query insertion reserves capacity before allocating.
 #[inline]
 pub fn check_record_cap(budget: &RecordBudget) -> Result<(), ExecError> {
+  if let Some(reservation) = &budget.reservation {
+    reservation.check()?;
+  }
   let Some(cap) = budget.cap else {
     return Ok(());
   };
@@ -291,13 +351,15 @@ pub enum ExecError {
   InvalidMemorySize(usize),
   /// A width's table reached [`POINTER_LIMIT`] entries.
   MemoryTableFull(usize),
-  /// The record's retained bytes passed the cap set for this execution
-  /// ([`set_record_byte_cap`]); the execution stops cleanly instead of
-  /// growing past what its host budget allows.
+  /// The next insertion would exceed the execution's record ceiling.
+  /// Shared-pool pressure below the ceiling waits for capacity instead.
   RecordBudgetExceeded {
     bytes: usize,
     cap: usize,
   },
+  /// A paused execution releases its record so another can finish.
+  RecordMemoryContention,
+  RecordPoolShutdown,
   UnboundPointer {
     ptr: u64,
     size: usize,
@@ -348,6 +410,10 @@ impl std::fmt::Display for ExecError {
         f,
         "record reached {bytes} B of retained queries, over its cap of {cap} B"
       ),
+      Self::RecordMemoryContention => {
+        write!(f, "record cancelled to resolve memory contention")
+      },
+      Self::RecordPoolShutdown => write!(f, "record pool shut down"),
       Self::UnboundPointer { ptr, size } => {
         write!(f, "unbound pointer {ptr} for memory size {size}")
       },
@@ -383,6 +449,18 @@ impl std::fmt::Display for ExecError {
 }
 
 impl std::error::Error for ExecError {}
+
+impl From<BudgetError> for ExecError {
+  fn from(error: BudgetError) -> Self {
+    match error {
+      BudgetError::Exceeded { bytes, cap } => {
+        Self::RecordBudgetExceeded { bytes, cap }
+      },
+      BudgetError::Cancelled => Self::RecordMemoryContention,
+      BudgetError::Shutdown => Self::RecordPoolShutdown,
+    }
+  }
+}
 
 /// Gated by `IX_AIUR_QUERY_STATS=1`: dump per-function query-map sizes
 /// during/after execution so RAM blowups can be attributed to specific
@@ -549,7 +627,7 @@ impl Function {
           let callee_unconstrained = unconstrained || *op_unconstrained;
           // A call another record answers: the caller's row pushes it and
           // nothing runs here (the callee returns nothing).
-          if !callee_unconstrained && record.defer_call(*callee_idx, &args) {
+          if !callee_unconstrained && record.defer_call(*callee_idx, &args)? {
             continue;
           }
           let mut cached_output = None;
@@ -607,7 +685,7 @@ impl Function {
               &values,
               &[ptr],
               G::from_bool(!unconstrained),
-            );
+            )?;
             map.push(ptr);
           }
         },
@@ -876,14 +954,12 @@ impl Function {
             &mut record.memory_queries,
             record.pointer_base,
             &q_limbs,
-          )
-          .map_err(ExecError::UnconstrainedBigUintDivModFailed)?;
+          )?;
           let r_ptr = build_klimbs_u64(
             &mut record.memory_queries,
             record.pointer_base,
             &r_limbs,
-          )
-          .map_err(ExecError::UnconstrainedBigUintDivModFailed)?;
+          )?;
           map.push(q_ptr);
           map.push(r_ptr);
         },
@@ -957,7 +1033,7 @@ impl Function {
             &map[..input_size],
             &output,
             !unconstrained,
-          );
+          )?;
           if let Some(CallerState {
             fun_idx: caller_idx,
             map: caller_map,
@@ -1155,12 +1231,16 @@ pub fn unconstrained_big_uint_div_mod_helper(
   };
   let q_limbs = biguint_to_klimbs_u64(&q_big);
   let r_limbs = biguint_to_klimbs_u64(&r_big);
-  let q_ptr =
-    build_klimbs_u64(&mut record.memory_queries, record.pointer_base, &q_limbs)
-      .map_err(ExecError::UnconstrainedBigUintDivModFailed)?;
-  let r_ptr =
-    build_klimbs_u64(&mut record.memory_queries, record.pointer_base, &r_limbs)
-      .map_err(ExecError::UnconstrainedBigUintDivModFailed)?;
+  let q_ptr = build_klimbs_u64(
+    &mut record.memory_queries,
+    record.pointer_base,
+    &q_limbs,
+  )?;
+  let r_ptr = build_klimbs_u64(
+    &mut record.memory_queries,
+    record.pointer_base,
+    &r_limbs,
+  )?;
   Ok((q_ptr, r_ptr))
 }
 
@@ -1304,18 +1384,20 @@ fn build_klimbs_u64(
   memory: &mut FxIndexMap<usize, QueryMap>,
   pointer_base: usize,
   limbs: &[u64],
-) -> Result<G, String> {
-  let queries = memory.get_mut(&10).ok_or_else(|| {
-    "memory[10] channel not registered (no List<U64> in program?)".to_string()
-  })?;
+) -> Result<G, ExecError> {
+  let queries =
+    memory.get_mut(&10).ok_or_else(|| ExecError::InvalidMemorySize(10))?;
   // Find or insert the Nil ptr (tag = 1, padded payload all zero).
   let nil_key: Vec<G> =
     std::iter::once(G::ONE).chain((0..9).map(|_| G::ZERO)).collect();
   let mut tail_ptr = if let Some(out) = queries.get_mut(&nil_key) {
     out.output[0]
   } else {
+    if queries.len() >= POINTER_LIMIT {
+      return Err(ExecError::MemoryTableFull(10));
+    }
     let ptr = G::from_usize(pointer_base + queries.len());
-    queries.insert(&nil_key, &[ptr], G::ZERO);
+    queries.insert(&nil_key, &[ptr], G::ZERO)?;
     ptr
   };
   // Walk limbs in REVERSE so each Cons points at the previously-built tail.
@@ -1330,8 +1412,11 @@ fn build_klimbs_u64(
     tail_ptr = if let Some(out) = queries.get_mut(&key) {
       out.output[0]
     } else {
+      if queries.len() >= POINTER_LIMIT {
+        return Err(ExecError::MemoryTableFull(10));
+      }
       let ptr = G::from_usize(pointer_base + queries.len());
-      queries.insert(&key, &[ptr], G::ZERO);
+      queries.insert(&key, &[ptr], G::ZERO)?;
       ptr
     };
   }
@@ -1355,4 +1440,78 @@ pub fn record_retained_bytes(record: &QueryRecord) -> usize {
     entries += m.len();
   }
   elems * 8 + entries * 21
+}
+
+#[cfg(test)]
+mod record_pool_tests {
+  use super::*;
+  use crate::{bytecode::FunctionLayout, record_pool::RecordPool};
+
+  #[test]
+  fn return_chain_reserves_before_insertion_and_returns_an_error() {
+    let toplevel = Toplevel {
+      functions: (0..80)
+        .map(|i| Function {
+          body: Block {
+            ops: if i < 79 {
+              vec![Op::Call(i + 1, Vec::new(), 0, false)]
+            } else {
+              Vec::new()
+            },
+            ctrl: Ctrl::Return(0, Vec::new()),
+          },
+          layout: FunctionLayout {
+            input_size: 0,
+            selectors: 1,
+            auxiliaries: 1,
+            lookups: 2,
+          },
+          entry: i == 0,
+          constrained: true,
+        })
+        .collect(),
+      memory_sizes: Vec::new(),
+      circuits: Vec::new(),
+    };
+    let pool = RecordPool::new(1000, 100);
+    let reservation = pool.try_admit().unwrap().unwrap();
+    let binding = bind_record_reservation(&reservation);
+    let mut io = IOBuffer { data: Default::default(), map: Default::default() };
+    let error = toplevel.execute(0, Vec::new(), &mut io).err().unwrap();
+    assert_eq!(
+      error,
+      ExecError::RecordBudgetExceeded { bytes: 1008, cap: 1000 }
+    );
+    assert!(pool.stats().peak_reserved <= 1000);
+    drop(binding);
+    drop(reservation);
+    assert_eq!(pool.stats().reserved, 0);
+  }
+
+  #[test]
+  fn bigint_growth_is_charged_and_maps_keep_reservations_across_threads() {
+    let pool = RecordPool::new(300, 109);
+    let reservation = pool.try_admit().unwrap().unwrap();
+    let binding = bind_record_reservation(&reservation);
+    let mut record = QueryRecord::new(&Toplevel {
+      functions: Vec::new(),
+      memory_sizes: vec![10],
+      circuits: Vec::new(),
+    });
+    let result = build_klimbs_u64(&mut record.memory_queries, 0, &[1, 2, 3]);
+    assert_eq!(
+      result,
+      Err(ExecError::RecordBudgetExceeded { bytes: 327, cap: 300 })
+    );
+    assert_eq!(record.memory_queries[&10].len(), 2);
+    assert_eq!(record_retained_bytes(&record), 218);
+    reservation.finish_execution();
+    let table = record.memory_queries.swap_remove(&10).unwrap();
+    drop(record);
+    drop(binding);
+    drop(reservation);
+    assert_eq!(pool.stats().reserved, 218);
+    std::thread::spawn(move || drop(table)).join().unwrap();
+    assert_eq!(pool.stats().reserved, 0);
+  }
 }

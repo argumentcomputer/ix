@@ -256,12 +256,14 @@ in Rust; nothing is copied across the FFI), every claim and join scheduled
 over them as their inputs become ready, the root wrapped, and every claim
 proof verified natively at the end. `maxRamBytes` is one worker's host
 budget (0 detects); `execJobs` the claim executions ahead of each prover.
+Oversized environment claims are bisected and checkpointed; completed
+proofs are reused. A nonempty `outManifest` receives the final partition.
 Returns the verified root address; progress is printed on stderr. -/
 @[extern "rs_aiur_prove_lanes"]
 opaque proveLanes (ixvmSystem aggrSystem : @& AiurSystem)
   (envHandle : @& EnvHandle) (manifestPath : @& String)
   (verifyIdx aggrIdx lanes maxRamBytes execJobs structuralAbove : @& Nat)
-  (cacheFriBytes : @& ByteArray) : Except String String
+  (cacheFriBytes : @& ByteArray) (outManifest : @& String) : Except String String
 
 /-- Reconstruct and audit the manifest-relative aggregate root entirely in
 Rust, using the same ownership, frontier, pruning, and statement-fold code as

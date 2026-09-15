@@ -257,6 +257,37 @@ impl Hypergraph {
     let assignment = shard_of.into_iter().map(AtomicU32::into_inner).collect();
     (assignment, tree)
   }
+
+  fn bisect_subset(&self, vertices: &[u32], epsilon: f64) -> [Vec<u32>; 2] {
+    let mut local = vec![u32::MAX; self.num_vertices()];
+    let mut weights = Vec::with_capacity(vertices.len());
+    for (index, &vertex) in vertices.iter().enumerate() {
+      local[vertex as usize] = index as u32;
+      weights.push(self.vweight[vertex as usize]);
+    }
+    let cap = (weights.iter().map(|&w| u128::from(w)).sum::<u128>() / 2)
+      .clamp(1, u128::from(u64::MAX)) as u64;
+    let nets = self
+      .net_pins
+      .iter()
+      .zip(&self.net_weight)
+      .filter_map(|(pins, &weight)| {
+        let pins: Vec<_> = pins
+          .iter()
+          .map(|&v| local[v as usize])
+          .filter(|&v| v != u32::MAX)
+          .collect();
+        (pins.len() >= 2).then_some((weight, pins))
+      })
+      .collect();
+    let sub = SubHyper::assemble(vertices.to_vec(), weights, nets, cap);
+    let side = bisect(&sub, epsilon);
+    let mut parts = [Vec::new(), Vec::new()];
+    for (&vertex, side) in vertices.iter().zip(side) {
+      parts[side as usize].push(vertex);
+    }
+    parts
+  }
 }
 
 // ============================================================================
@@ -2256,6 +2287,60 @@ pub struct LeafRefinement {
 }
 
 impl ShardManifest {
+  /// Bisect selected leaves along their internal dependency edges. Every
+  /// block remains atomic, and unaffected leaves keep their IDs and tree
+  /// positions so their claim and aggregate proofs remain reusable.
+  pub fn bisect_leaves(
+    &self,
+    profile: &BlockProfile,
+    ids: &[u32],
+  ) -> Result<(ShardManifest, Vec<Vec<u32>>), String> {
+    let block_ids: rustc_hash::FxHashMap<_, _> = profile
+      .blocks()
+      .iter()
+      .enumerate()
+      .map(|(i, b)| (&b.addr, i as u32))
+      .collect();
+    let graph = Hypergraph::from_profile(profile);
+    let mut refinements = Vec::with_capacity(ids.len());
+    for &id in ids {
+      let shard = self
+        .shards
+        .iter()
+        .find(|shard| shard.id == id)
+        .ok_or_else(|| format!("cannot split missing shard {id}"))?;
+      if shard.blocks.len() < 2 {
+        return Err(format!(
+          "shard {id} contains {} atomic block(s) and cannot be split further",
+          shard.blocks.len()
+        ));
+      }
+      let vertices = shard
+        .blocks
+        .iter()
+        .map(|block| {
+          block_ids.get(block).copied().ok_or_else(|| {
+            format!(
+              "shard {id}: block {} is absent from the profile",
+              block.hex()
+            )
+          })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+      let parts = graph
+        .bisect_subset(&vertices, 0.05)
+        .into_iter()
+        .map(|part| {
+          part.into_iter().map(|b| profile.block(b).addr.clone()).collect()
+        })
+        .collect();
+      refinements.push(LeafRefinement { id, parts, part_peaks: vec![0, 0] });
+    }
+    let (mut refined, part_ids) = self.refine(profile, &refinements, &[])?;
+    seal_and_write(&mut refined, None)?;
+    Ok((refined, part_ids))
+  }
+
   /// Refine this manifest by cutting some of its leaves into parts, leaving
   /// every other leaf — block list, record, and place in the aggregation
   /// tree — exactly as it was.
@@ -3657,6 +3742,68 @@ mod tests {
     // Round trip keeps the tree and the peaks.
     let back = ShardManifest::from_bytes(&sealed.to_bytes()).unwrap();
     assert_eq!(back, sealed);
+  }
+
+  #[test]
+  fn bisect_leaves_preserves_other_claims_and_repeated_splits_progress() {
+    let (profile, original) = three_way();
+    let (refined, ids) = original.bisect_leaves(&profile, &[1]).unwrap();
+    assert_eq!(ids, vec![vec![1, 3]]);
+    assert_eq!(refined.shards[0], original.shards[0]);
+    assert_eq!(refined.shards[2], original.shards[2]);
+    let mut before = original.shards[1].blocks.clone();
+    before.sort_unstable();
+    let mut after = refined.shards[1].blocks.clone();
+    after.extend_from_slice(&refined.shards[3].blocks);
+    after.sort_unstable();
+    assert_eq!(before, after);
+    assert!(refined.shards[1].blocks.len() < before.len());
+    assert!(refined.shards[3].blocks.len() < before.len());
+    assert_eq!(
+      refined.tree,
+      original
+        .tree
+        .as_ref()
+        .map(|tree| tree.replace_leaf(1, &node(leaf(1), leaf(3))))
+    );
+    assert_eq!(
+      ShardManifest::from_bytes(&refined.to_bytes()).unwrap(),
+      refined
+    );
+    assert!(
+      refined
+        .bisect_leaves(&profile, &[1])
+        .unwrap_err()
+        .contains("atomic block")
+    );
+    assert!(
+      original
+        .bisect_leaves(&profile, &[99])
+        .unwrap_err()
+        .contains("missing shard")
+    );
+    assert!(
+      original
+        .bisect_leaves(&profile, &[1, 1])
+        .unwrap_err()
+        .contains("listed twice")
+    );
+  }
+
+  #[test]
+  fn bisect_leaves_handles_several_oversized_claims_in_one_pass() {
+    let (profile, original) = three_way();
+    let (refined, ids) = original.bisect_leaves(&profile, &[0, 2]).unwrap();
+    assert_eq!(ids, vec![vec![0, 3], vec![2, 4]]);
+    assert_eq!(refined.shards[1], original.shards[1]);
+    let mut blocks: Vec<_> =
+      refined.shards.iter().flat_map(|s| s.blocks.clone()).collect();
+    blocks.sort_unstable();
+    let mut expected: Vec<_> =
+      profile.blocks().iter().map(|b| b.addr.clone()).collect();
+    expected.sort_unstable();
+    assert_eq!(blocks, expected);
+    assert_eq!(refined.num_shards, original.num_shards + 2);
   }
 
   #[test]

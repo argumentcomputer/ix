@@ -546,6 +546,53 @@ impl AiurSystem {
     calibrate_prover_rss(analytic)
   }
 
+  /// Host workspace beside a separately charged record. CUDA keeps the
+  /// commitment phases on the device; reserve two host witnesses plus
+  /// upload staging. The CPU backend keeps every phase on the host.
+  pub(crate) fn shard_host_workspace(
+    &self,
+    plan: &ShardPlan,
+    shard: usize,
+    materialize_lookups: bool,
+  ) -> usize {
+    #[cfg(feature = "cuda")]
+    {
+      let phases = self.shard_phases(plan, shard);
+      let witness = if materialize_lookups {
+        phases.phase_witness
+      } else {
+        self
+          .circuit_types()
+          .iter()
+          .enumerate()
+          .map(|(i, circuit)| {
+            let rows = match circuit {
+              CircuitType::Bytes1 => 256,
+              CircuitType::Bytes2 => 65536,
+              _ => plan.shards[shard].rows[i].len(),
+            };
+            if rows == 0 {
+              0
+            } else {
+              8 * rows.next_power_of_two() * self.system.circuits[i].main_width
+            }
+          })
+          .sum()
+      };
+      calibrate_prover_rss(
+        witness
+          .saturating_mul(2)
+          .saturating_add(phases.preprocessed)
+          .saturating_add(256 << 20),
+      )
+    }
+    #[cfg(not(feature = "cuda"))]
+    {
+      let _ = materialize_lookups;
+      self.shard_peak_bytes(plan, shard, 0)
+    }
+  }
+
   /// The plan with the fewest shards whose projected peaks
   /// ([`Self::shard_peak_bytes`]) all fit `max_bytes`, with the heaviest
   /// shard's projected peak. When no shard count fits — the record plus

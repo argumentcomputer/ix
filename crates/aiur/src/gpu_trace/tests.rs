@@ -45,7 +45,7 @@ fn seeds_reject_values_that_would_be_truncated() {
     input[index] = value;
     let output = vec![output_value; output_len];
     let mut record = QueryRecord::new(&top);
-    record.function_queries[0].insert(&input, &output, G::ONE);
+    record.function_queries[0].insert(&input, &output, G::ONE).unwrap();
     assert!(prepare(&top, 0, &record, &[], (0, 0), (0, 1), 1).is_none());
   }
 }
