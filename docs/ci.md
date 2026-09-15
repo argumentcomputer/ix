@@ -11,6 +11,13 @@ the shared build and every matrix group succeed. Failed or skipped groups
 cannot produce a successful final status, and one failing group does not
 cancel the remaining diagnostic runs.
 
+The build job first evaluates every required Linux check's derivation with
+`nix eval`. Avoid `nix flake check --no-build` for this step: it enables a
+read-only store, while the Lake helper reads manifests from filtered sources
+that must first be copied into the store. That command can pass with a warm
+store and fail on a fresh runner. The normal `nix flake check` command builds
+checks and does not have this restriction.
+
 ## Build once, then execute
 
 The shared build has three artifacts:
@@ -48,6 +55,9 @@ follows GitHub's [same-workflow artifact mechanism](https://docs.github.com/en/a
 The `.lake` build cache, dependency source trees, Rust build products, and
 optional comparison toolchains are outside this transfer. Build and check
 logs are retained for seven days; the compiled artifact is retained for one.
+The workflow stages archives and diagnostics under
+`$RUNNER_TEMP/compilatrix-ci`, outside the checkout. `plans/` is reserved for
+local development records.
 
 ## Source and module boundaries
 

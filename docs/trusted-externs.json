@@ -1089,7 +1089,7 @@
       "benchmarks/comparisons/lean-toolchain": "302cd63c54178885b89e669f33b38f12f4dd7ae7e5cac537b3203e3768d8fb2b",
       "benchmarks/comparisons/shell.nix": "297bf6bd1aed4607fb0c2035c973e85d2d4468bc51e03ada0df8ab9df330eac1",
       "benchmarks/comparisons/Comparisons.lean": "b685f7a7f5d3364aedca88b4796175d11dc1b27520973d10427458f2b0f852f8",
-      ".github/workflows/ci.yml": "5597fab59bbef848bbb834671e1c7c4c2e7df309c1403475e9c2d5ae2808e352",
+      ".github/workflows/ci.yml": "1737074c1efe93ec58c374c4a4b01201a04125996832d6bbec655b82083772b3",
       "Compilatrix/IxIR1/Lower.lean": "1e067e92930efdbb257f78b23a3edb0a0daf13647ad170c20033139e47d32e7a",
       "Compilatrix/IxIR1/ThesisBench.lean": "02c538a95d7ac3ec54a3ea7426b948ebcc280717fc7d95a324df238cd5b72a3f",
       "Compilatrix/IxIR1/WellModedGen.lean": "2e35b55bc7157ea42c746f382b2236b7d41f6b4e16e79fa820ff0e3111e1086a",
