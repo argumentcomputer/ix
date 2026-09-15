@@ -1,4 +1,4 @@
-import Benchmark.ScalingBuild
+import Comparisons.ScalingBuild
 
 namespace Benchmark.CompilerScaling
 open Lean System Compilatrix.Tools.Check Compilatrix.Tools.UniqueCheck

@@ -1,5 +1,5 @@
-import Benchmark.ScalingRun
-import Benchmark.Analyze
+import Comparisons.ScalingRun
+import Comparisons.Analyze
 
 namespace Benchmark.CompilerScaling
 open Lean System Compilatrix.Tools.Check Compilatrix.Tools.UniqueCheck

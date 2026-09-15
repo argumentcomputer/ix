@@ -20,7 +20,7 @@
   },
   "datasets": {
     "generator": "xorshift64star-patterns/1",
-    "generator_source": "Benchmark/Data.lean",
+    "generator_source": "comparisons/Comparisons/Data.lean",
     "binary_bytes": 318256,
     "binary_blake3": "9e7b53b6321516f99019b0c55c99b719b89b046c0cf7281b7f545b3d9625a8f5",
     "input_cases": 585,

@@ -1,4 +1,4 @@
-import Benchmark.Environment
+import Comparisons.Environment
 
 namespace Benchmark
 open Lean System Compilatrix.Tools.Check Compilatrix.Tools.UniqueCheck

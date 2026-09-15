@@ -109,7 +109,8 @@ its own monotonic interval. Compiler wall/CPU/RSS envelopes and actual serialize
 IR/HPT evidence sizes accompany native text and executable/dependency sizes.
 The terminal request reads `Runtime.fullGC` through a runtime array because the
 pinned optimizer folds the directly inlined constant request. The diagnostic
-accepts only an actual additional GC event; `gc-smoke` checks this boundary in CI.
+accepts only an actual additional GC event; the optional `gc-smoke` command
+checks this boundary before comparison measurements.
 
 Two unchanged upstream entries, `applyClosed` and `letClosed`, use the same
 sessions and block count for a separate opaque native-call profile. They return
@@ -120,29 +121,35 @@ retained. No runtime-input or general N3 claim follows from these closed rows.
 
 ## Commands and replay
 
-Build the runner and producer/checker seeds in the pinned repository environment:
+Build the runner in its [isolated Lake package](comparisons/README.md) and the
+producer/checker seeds in the root package. Run from the repository root:
 
 ```sh
-lake build benchmark source-native-runtime check-source-native-runtime \
+nix-shell benchmarks/comparisons/shell.nix
+lake build source-native-runtime check-source-native-runtime \
   source-native-upstream check-source-native-upstream
+lake -d benchmarks/comparisons build
+benchmark=benchmarks/comparisons/.lake/build/bin/benchmark
 ```
 
 Use fresh directories for each command. The four compiler paths must resolve
 the exact lock in `toolchains.json`; CakeML's `basis_ffi.c` must be beside `cake`.
-The Nix correctness check builds that pinned bootstrap and all six adapters.
+The optional shell supplies the pinned bootstrap. Building and checking all
+six adapters is an explicit local command; ordinary CI excludes this package
+and its comparison toolchains.
 
 ```sh
-.lake/build/bin/benchmark build BUILD --gcc GCC_PATH --clang CLANG_PATH \
+"$benchmark" build BUILD --gcc GCC_PATH --clang CLANG_PATH \
   --compcert CCOMP_PATH --cakeml CAKE_PATH
-.lake/build/bin/benchmark verify BUILD VERIFY
-.lake/build/bin/benchmark smoke BUILD SMOKE 2
-.lake/build/bin/benchmark gc-smoke BUILD GC-SMOKE 2
-.lake/build/bin/benchmark analysis-self-check
-taskset --cpu-list 0 .lake/build/bin/benchmark pilot BUILD VERIFY PILOT 2
-taskset --cpu-list 0 .lake/build/bin/benchmark measure BUILD VERIFY PILOT MEASURED 2
-.lake/build/bin/benchmark diagnose BUILD PILOT MEASURED/diagnostics 2
-.lake/build/bin/benchmark analyze BUILD MEASURED MEASURED/analysis
-.lake/build/bin/benchmark reproduce BUILD MEASURED REPLAY
+"$benchmark" verify BUILD VERIFY
+"$benchmark" smoke BUILD SMOKE 2
+"$benchmark" gc-smoke BUILD GC-SMOKE 2
+"$benchmark" analysis-self-check
+taskset --cpu-list 0 "$benchmark" pilot BUILD VERIFY PILOT 2
+taskset --cpu-list 0 "$benchmark" measure BUILD VERIFY PILOT MEASURED 2
+"$benchmark" diagnose BUILD PILOT MEASURED/diagnostics 2
+"$benchmark" analyze BUILD MEASURED MEASURED/analysis
+"$benchmark" reproduce BUILD MEASURED REPLAY
 ```
 
 Replace `2` with an available core before the pilot; later commands must use
@@ -155,8 +162,9 @@ as it arrives. It does not append to an old run or silently resume a partial one
 starts processes with an empty environment plus the recorded build variables,
 uses the retained hashed producer/checker/compiler seeds, rebuilds every kernel
 and executable, checks byte equality and complete correctness, and regenerates
-the analysis from the original raw records. A separate Nix check rebuilds the
-project and runs correctness/smoke in its sandbox. Reproduction does not require
+the analysis from the original raw records. The root Nix checks rebuild the
+compiler and run its regression gates; comparison correctness and smoke runs
+are invoked separately through this package. Reproduction does not require
 new clock readings to equal old ones or claim a second physical CPU.
 
 The build retains source and tool identities, Nix closure paths, a source

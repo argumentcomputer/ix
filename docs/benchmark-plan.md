@@ -228,8 +228,9 @@ Fresh processes compare absent/persisted HPT stores and a single dependency
 edit; source certification still runs each time. Stage clocks, repeated
 diagnostics, whole-process costs and raw memory observations have explicit
 separate scopes. The [reference report](performance/compiler-scaling-2026-09-12/README.md)
-retains all observations and exact rejection boundaries. Its CI smoke checks
-correctness, corrupted records and artifact/analysis replay without thresholds.
+retains all observations and exact rejection boundaries. Its optional smoke
+command checks correctness, corrupted records and artifact/analysis replay
+without thresholds.
 
 The [modular assembly suite](../benchmarks/assembly-scaling.md) retains the
 source-unit cold/unchanged/dependency-edit/literal-premise-edit matrix and
@@ -273,8 +274,10 @@ artifact/analysis reproduction does not require identical timing samples.
 Resuming a run must reject incompatible artifacts, inputs, profiles, or metadata.
 Host timings remain outside deterministic compiler identities.
 
-Normal CI checks artifacts, correctness, schemas, short runner behavior, and
-invalid-result rejection. Dedicated performance runs establish variability
+Normal CI checks compiler artifacts, correctness, schemas, and invalid-result
+rejection. Compiler comparisons and measurement runners have an
+[isolated Lake build](../benchmarks/comparisons/README.md); their correctness,
+smoke, and replay commands run explicitly outside CI. Dedicated performance runs establish variability
 before choosing practical regression thresholds. Confirm a flagged change with
 repeated measurements and the declared uncertainty criterion before changing
 its reference. Track memory, size, and compiler-cost regressions alongside

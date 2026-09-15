@@ -1,9 +1,9 @@
-import Benchmark.ScalingPlan
+import Comparisons.ScalingPlan
 
 namespace Benchmark.CompilerScaling
 open Lean System Compilatrix.Tools.Check Compilatrix.Tools.UniqueCheck
 
-def buildSuite (output : FilePath) (profile : String) (worker : FilePath := ".lake/build/bin/compiler-scaling")
+def buildSuite (output : FilePath) (profile : String) (worker : FilePath)
     (gcc : String := "gcc") (timer : String := "time") : IO Unit := do
   need (["smoke", "full"].contains profile) "scaling profile must be smoke or full"
   let output ← absolute output
@@ -18,7 +18,7 @@ def buildSuite (output : FilePath) (profile : String) (worker : FilePath := ".la
   writeJson (output / "environment.json") (← environment core)
   IO.FS.writeFile (output / "protocol.md") (← IO.FS.readFile "benchmarks/compiler-scaling.md")
   let _ ← run "cp" #[worker.toString, (output / "tools/compiler-scaling").toString]
-  let _ ← run "cp" #[".lake/build/bin/benchmark", (output / "tools/benchmark").toString]
+  let _ ← run "cp" #[(← IO.appPath).toString, (output / "tools/benchmark").toString]
   IO.FS.writeFile (output / "harness/scaling_harness.c") (← IO.FS.readFile "benchmarks/native/scaling_harness.c")
   let _ ← logged (output / "logs") "harness" gcc
     (cFlags ++ #["-Wall", "-Wextra", "-Werror", "-c", (output / "harness/scaling_harness.c").toString,

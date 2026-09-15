@@ -1,5 +1,5 @@
-import Benchmark.ScalingAnalyze
-import Benchmark.Reproduce
+import Comparisons.ScalingAnalyze
+import Comparisons.Reproduce
 
 namespace Benchmark.CompilerScaling
 open Lean System Compilatrix.Tools.Check Compilatrix.Tools.UniqueCheck
@@ -60,7 +60,7 @@ def reproduceSuite (build measured output : FilePath) : IO Unit := do
 def smokeSuite (output : FilePath) (gcc : String := "gcc") (timer : String := "time") : IO Unit := do
   let output ← absolute output
   fresh output
-  buildSuite (output / "build") "smoke" ".lake/build/bin/compiler-scaling" gcc timer
+  buildSuite (output / "build") "smoke" (← scalingWorker) gcc timer
   verifySuite (output / "build") (output / "correctness")
   measureSuite (output / "build") (output / "correctness") (output / "measured") (← firstCore)
   analyzeSuite (output / "build") (output / "measured") (output / "measured/analysis")

@@ -3,7 +3,8 @@
 This measures the executable compiler and its checked artifacts under the
 existing default policies. It supplies a baseline for modular source
 certification (I3); it does not increase the 512-candidate limit or add a source
-certificate cache. No timing threshold is enforced in CI.
+certificate cache. The measurement runner is part of the
+[optional comparison package](comparisons/README.md), outside ordinary CI.
 
 ## Workloads and endpoints
 
@@ -136,7 +137,7 @@ With three consecutive sessions on a shared host, no confidence interval,
 causal speedup claim, or dedicated-machine performance guarantee is made.
 Affinity, CPU/tool identities, governor/turbo observations, kernel, load, and
 environment are retained. Stable environment changes fail the run.
-If sandboxed CI lacks sysfs topology, retain the `lscpu` failure as unavailable
+If a measurement sandbox lacks sysfs topology, retain the `lscpu` failure as unavailable
 diagnostic data; required CPU affinity and process observations still run.
 
 ## Correctness and replay
@@ -163,9 +164,11 @@ the compiler executable from Lean**. Installed tools must match recorded
 hashes. Fresh compilation timings may differ; original performance samples
 are reanalyzed and the summary/report must match byte for byte.
 
+Run from the repository root in the optional comparison environment:
+
 ```sh
-lake build benchmark compiler-scaling
-benchmark=.lake/build/bin/benchmark
+lake -d benchmarks/comparisons build
+benchmark=benchmarks/comparisons/.lake/build/bin/benchmark
 "$benchmark" compiler-scaling-build benchmarks/runs/scaling/build --profile full
 "$benchmark" compiler-scaling-verify benchmarks/runs/scaling/build benchmarks/runs/scaling/correctness
 # CORE must be an allowed CPU; the build's environment.json records one.

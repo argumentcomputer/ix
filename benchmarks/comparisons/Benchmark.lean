@@ -1,6 +1,6 @@
-import Benchmark.Reproduce
-import Benchmark.CounterFold
-import Benchmark.ScalingReproduce
+import Comparisons.Reproduce
+import Comparisons.CounterFold
+import Comparisons.ScalingReproduce
 
 open Compilatrix.Tools.Check
 
@@ -9,7 +9,7 @@ def main (args : List String) : IO UInt32 := cli "benchmark failed" do
   | "compiler-scaling-build" :: output :: options =>
     let options ← checked (parseArgs ["--profile", "--worker", "--gcc", "--time"] options)
     Benchmark.CompilerScaling.buildSuite output (option options "--profile" "full")
-      (option options "--worker" ".lake/build/bin/compiler-scaling") (option options "--gcc" "gcc") (option options "--time" "time")
+      (option options "--worker" (← Benchmark.scalingWorker).toString) (option options "--gcc" "gcc") (option options "--time" "time")
   | ["compiler-scaling-golden", build, output] =>
     Benchmark.writeJson output (← Benchmark.CompilerScaling.golden (← Benchmark.CompilerScaling.inspectBuild build))
   | ["compiler-scaling-verify", build, output] => Benchmark.CompilerScaling.verifySuite build output

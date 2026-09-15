@@ -12,7 +12,7 @@ scope and build commands.
 | Find current work and acceptance gates | [Roadmap](roadmap.md) |
 | Make and validate a change | [Development and validation](development-plan.md) |
 | Follow a preservation proof | [Simulation strategy](simulation-strategy.md), then the relevant source-family contract below |
-| Evaluate performance | [Results](performance/README.md), [implemented protocol](../benchmarks/protocol.md), and [benchmark design](benchmark-plan.md) |
+| Evaluate performance | [Results](performance/README.md), [optional comparison build](../benchmarks/comparisons/README.md), [implemented protocol](../benchmarks/protocol.md), and [benchmark design](benchmark-plan.md) |
 | Audit an assumption or limit | [Trust ledger](trusted-extern-ledger.md), [resource budgets](resource-budgets.md), and [lowering restrictions](lowering-restrictions.md) |
 
 The roadmap owns priorities and delivery state. Design documents explain

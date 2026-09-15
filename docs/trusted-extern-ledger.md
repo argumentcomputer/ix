@@ -86,6 +86,13 @@ comparison toolchains. Clock, allocation, GC, process-memory, compiler, and
 runtime measurements belong to build/measurement trust, separately from
 production source/compiler proof assumptions.
 
+The [comparison package](../benchmarks/comparisons/README.md) has its own Lake
+configuration and optional Nix shell. Its compiler-comparison and measurement
+commands run outside ordinary CI; CakeML and CompCert are not dependencies of
+the root flake checks. Comparison sources and package/toolchain configuration
+remain integrity-pinned. The root Lake source scan covers the compiler and
+its registered regression fixtures.
+
 `lake exe check-tools-tests` exercises the auditor on isolated temporary
 copies. It checks source literals/comments, unrecognized extern attributes,
 new executable roots, project/dependency extern drift, imports and native

@@ -51,6 +51,11 @@ environment. The CI gate is:
 nix flake check
 ```
 
+Compiler-comparison and measurement runners are built separately with
+`lake -d benchmarks/comparisons build`. Their [optional environment and commands](../benchmarks/comparisons/README.md)
+include CakeML and CompCert; those toolchains are outside the CI check closure.
+The root package retains the compiler's native and artifact regression gates.
+
 For the configured local development environment, the complete build and
 compiled regression surface is:
 
@@ -64,7 +69,7 @@ lake build Compilatrix tests catalog-contact x86-object-fixture ixir2-fixture \
   check-source-evidence check-source-call-reuse check-source-unique-reuse \
   check-source-native-unique check-source-native-runtime check-source-native-allocating check-source-native-upstream check-source-native-scalar \
   check-source-native-physical-scalar check-source-native-heap check-source-native-captured-scalar check-source-borrow \
-  check-source-borrow-runtime check-tools-tests benchmark
+  check-source-borrow-runtime check-tools-tests
 ./.lake/build/bin/tests
 ./.lake/build/bin/check-trusted-externs --root .
 ./.lake/build/bin/check-tools-tests --root .
@@ -101,7 +106,6 @@ lake build Compilatrix tests catalog-contact x86-object-fixture ixir2-fixture \
 ./.lake/build/bin/check-source-native-upstream \
   --fixture .lake/build/bin/source-native-upstream \
   --cc gcc --harness fixtures/source-native-upstream/native_harness.c
-./.lake/build/bin/benchmark analysis-self-check
 ./.lake/build/bin/check-source-native-scalar \
   --fixture .lake/build/bin/source-native-scalar \
   --cc gcc --harness fixtures/source-native-scalar/native_harness.c
@@ -128,8 +132,10 @@ Run checks appropriate to the changed boundary, followed by the required
 integration gate. Documentation-only changes need link, anchor, and consistency
 checks. An integrity-pinned input also needs its reviewed digest update and the
 trust check. Report cached builds, clean builds, Nix validation, and platform
-coverage accurately. Ordinary CI checks benchmark correctness and runner
-behavior; timing thresholds require a controlled performance host.
+coverage accurately. Ordinary CI checks compiler correctness and artifacts.
+Changes to the optional comparison package also require its explicit
+correctness, smoke, analysis, and replay commands. Timing thresholds require a
+controlled performance host.
 
 ## Documentation maintenance
 

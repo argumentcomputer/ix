@@ -1,4 +1,4 @@
-import Benchmark.Schedule
+import Comparisons.Schedule
 
 namespace Benchmark.CounterFold
 open Lean System Compilatrix.Tools.Check Compilatrix.Tools.UniqueCheck
@@ -84,7 +84,8 @@ def buildSuite (output : FilePath) (gcc : String := "gcc") (timerTool : String :
   IO.FS.writeFile (output / "nix-closure.txt") closure.stdout
   writeJson (output / "nix-closure-status.json") (Json.mkObj [("roots", toJson roots),
     ("exit_code", toJson closure.exitCode.toNat), ("stderr", toJson closure.stderr)])
-  for name in ["benchmark", "source-native-runtime", "check-source-native-runtime"] do
+  let _ ← run "cp" #[(← IO.appPath).toString, (output / "tools-bin/benchmark").toString]
+  for name in ["source-native-runtime", "check-source-native-runtime"] do
     let _ ← run "cp" #[s!".lake/build/bin/{name}", (output / s!"tools-bin/{name}").toString]
   writeJson (output / "build.json") (Json.mkObj [
     ("format", toJson "compilatrix/counter-fold-build/1"), ("variants", toJson variants),

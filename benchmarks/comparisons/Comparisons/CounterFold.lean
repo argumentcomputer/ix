@@ -1,5 +1,5 @@
-import Benchmark.CounterFoldRun
-import Benchmark.Reproduce
+import Comparisons.CounterFoldRun
+import Comparisons.Reproduce
 
 namespace Benchmark.CounterFold
 open Lean System Compilatrix.Tools.Check Compilatrix.Tools.UniqueCheck

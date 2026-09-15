@@ -1,4 +1,4 @@
-import Benchmark.Schedule
+import Comparisons.Schedule
 
 namespace Benchmark
 open Lean System Compilatrix.Tools.Check Compilatrix.Tools.UniqueCheck

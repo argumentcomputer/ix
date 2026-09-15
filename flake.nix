@@ -35,7 +35,6 @@
   };
 
   outputs = inputs @ {
-    nixpkgs,
     flake-parts,
     lean4-nix,
     blake3-lean,
@@ -133,7 +132,12 @@
             ./SourceNativeHeap.lean
             ./HeapSnapshotObject.lean
             ./SourceNativeCapturedScalar.lean
-            ./benchmarks
+            ./benchmarks/Benchmark
+            ./benchmarks/AssemblyScaling.lean
+            ./benchmarks/NativeGraph.lean
+            ./benchmarks/NativeSharing.lean
+            ./benchmarks/SourceEvidence.lean
+            ./benchmarks/native/scaling_harness.c
             ./SourceBorrow.lean
             ./SourceBorrowRuntime.lean
             ./fixtures/ixon-std-contact
@@ -210,7 +214,12 @@
             ./SourceNativeHeap.lean
             ./HeapSnapshotObject.lean
             ./SourceNativeCapturedScalar.lean
-            ./benchmarks
+            # Audit optional comparison sources without including their local
+            # build products or retained measurement bundles.
+            (pkgs.lib.fileset.difference ./benchmarks (pkgs.lib.fileset.unions [
+              (pkgs.lib.fileset.maybeMissing ./benchmarks/comparisons/.lake)
+              (pkgs.lib.fileset.maybeMissing ./benchmarks/runs)
+            ]))
             ./SourceBorrow.lean
             ./SourceBorrowRuntime.lean
             ./fixtures/ixon-std-contact
@@ -826,63 +835,6 @@
           '';
         };
 
-        cakeBootstrap = pkgs.stdenv.mkDerivation {
-          pname = "cakeml-benchmark-bootstrap";
-          version = "3479";
-          src = pkgs.fetchurl {
-            url = "https://github.com/CakeML/cakeml/releases/download/v3479/cake-x64-64.tar.gz";
-            sha256 = "e110bfcba19d6524ee4748608a67a275647445a048928cf623c2c9a973e31c9a";
-          };
-          makeFlags = ["cake" "CC=${pkgs.gcc}/bin/gcc"];
-          installPhase = ''
-            mkdir -p $out/bin
-            cp cake basis_ffi.c $out/bin/
-          '';
-        };
-
-        # Full correctness and deliberately short smoke samples have no host
-        # timing thresholds. Reference measurement remains an explicit command.
-        benchmarkCheck = lake2nix.mkPackage {
-          inherit lakeDeps;
-          lakeArtifacts = compilatrixLib;
-          src = leanSrc;
-          buildInputs = leanBuildInputs ++ [pkgs.gcc pkgs.clang pkgs.compcert
-            cakeBootstrap pkgs.binutils pkgs.time pkgs.which pkgs.git pkgs.ripgrep
-            pkgs.gnutar pkgs.gzip pkgs.util-linux pkgs.nix];
-          name = "benchmark";
-          installArtifacts = false;
-          postBuild = ''
-            lake build source-native-runtime check-source-native-runtime source-native-upstream check-source-native-upstream
-            ./.lake/build/bin/benchmark build "$TMPDIR/benchmark-build" \
-              --gcc ${pkgs.gcc}/bin/gcc --clang ${pkgs.clang}/bin/clang \
-              --compcert ${pkgs.compcert}/bin/ccomp --cakeml ${cakeBootstrap}/bin/cake \
-              --time ${pkgs.time}/bin/time
-            ./.lake/build/bin/benchmark verify "$TMPDIR/benchmark-build" "$TMPDIR/benchmark-verify"
-            ./.lake/build/bin/benchmark smoke "$TMPDIR/benchmark-build" "$TMPDIR/benchmark-smoke"
-            ./.lake/build/bin/benchmark gc-smoke "$TMPDIR/benchmark-build" "$TMPDIR/benchmark-gc-smoke"
-            ./.lake/build/bin/benchmark analysis-self-check
-            ./.lake/build/bin/benchmark counter-fold-build "$TMPDIR/counter-fold-build" \
-              --gcc ${pkgs.gcc}/bin/gcc --time ${pkgs.time}/bin/time
-            ./.lake/build/bin/benchmark counter-fold-verify "$TMPDIR/counter-fold-build" "$TMPDIR/counter-fold-verify"
-            ./.lake/build/bin/benchmark counter-fold-smoke "$TMPDIR/counter-fold-build" "$TMPDIR/counter-fold-smoke"
-          '';
-        };
-
-        compilerScalingCheck = lake2nix.mkPackage {
-          inherit lakeDeps;
-          lakeArtifacts = compilatrixLib;
-          src = leanSrc;
-          buildInputs = leanBuildInputs ++ [pkgs.gcc pkgs.binutils pkgs.time
-            pkgs.which pkgs.git pkgs.ripgrep pkgs.gnutar pkgs.gzip pkgs.util-linux pkgs.nix];
-          name = "compiler-scaling";
-          installArtifacts = false;
-          postBuild = ''
-            lake build benchmark
-            ./.lake/build/bin/benchmark compiler-scaling-smoke "$TMPDIR/compiler-scaling" \
-              --gcc ${pkgs.gcc}/bin/gcc --time ${pkgs.time}/bin/time
-          '';
-        };
-
         nativeSharingCheck = lake2nix.mkPackage {
           inherit lakeDeps;
           lakeArtifacts = compilatrixLib;
@@ -965,12 +917,6 @@
             touch $out
           '';
       in {
-        _module.args.pkgs = import nixpkgs {
-          inherit system;
-          config.allowUnfreePredicate = package:
-            pkgs.lib.getName package == "compcert";
-        };
-
         packages = {
           default = compilatrixLib;
           compilatrix = compilatrixLib;
@@ -1010,8 +956,6 @@
           tests = testsCheck;
           catalog-contact = catalogContactCheck;
         } // pkgs.lib.optionalAttrs (system == "x86_64-linux") {
-          benchmark-correctness-smoke = benchmarkCheck;
-          compiler-scaling-correctness-smoke = compilerScalingCheck;
           native-sharing = nativeSharingCheck;
           native-graph = nativeGraphCheck;
         };

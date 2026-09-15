@@ -288,8 +288,11 @@ commands and exact sampling details.
 | PERF2: broader native workloads | deferred; admit families as source/native support lands | Cover at least three computational families: an unchanged upstream program, runtime arithmetic/control, and heap traversal. Extend beyond 64 elements only with the required ABI/selector and F1 contracts. Add OCaml; report support gaps and a fixed common comparison subset. |
 | PERF3: optimization and compiler scaling | checked pairs and bounded scaling delivered | Extend the recorded source/IR families and checked optimization pairs under fixed policies. Retain phase/process costs, evidence growth, cache edits, neutral/adverse cases, rejections and reproducible artifacts; use results to activate M2d/I3 work. |
 
-Correctness and runner smoke tests belong in ordinary CI. Timing regression
-thresholds require history on a controlled host; the first shared-host runs
+Compiler correctness and artifact regression tests belong in ordinary CI.
+External compiler comparisons and measurement smoke runs use the
+[isolated comparison package](../benchmarks/comparisons/README.md), keeping
+CakeML and CompCert out of the CI build. Timing regression thresholds require
+history on a controlled host; the first shared-host runs
 do not establish that history. A speedup is not a delivery requirement.
 
 ## Acceptance testing and compiler explanation

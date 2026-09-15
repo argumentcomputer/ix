@@ -1,4 +1,4 @@
-import Benchmark.Data
+import Comparisons.Data
 
 /-! The benchmark oracle imports diagnostic IO and hashing, not the source
 compiler, target selector, emitter, or any comparison implementation. -/

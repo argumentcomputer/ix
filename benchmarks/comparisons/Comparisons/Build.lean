@@ -1,4 +1,4 @@
-import Benchmark.Check
+import Comparisons.Check
 
 namespace Benchmark
 open Lean System Compilatrix.Tools.Check Compilatrix.Tools.UniqueCheck
@@ -24,6 +24,10 @@ def buildEnvNames : Array String := #["PATH", "LIBCLANG_PATH", "LEAN_PATH", "LEA
 def absolute (path : FilePath) : IO FilePath := do
   if path.isAbsolute then return path
   return (← IO.currentDir) / path
+
+/-- Find the worker next to this runner, including in retained replay bundles. -/
+def scalingWorker : IO FilePath := do
+  return (← IO.appPath).parent.getD "." / "compiler-scaling"
 
 def fresh (output : FilePath) : IO Unit := do
   need (!(← output.pathExists)) s!"fresh output directory required: {output}"
@@ -117,6 +121,8 @@ def sourceSnapshot (output : FilePath) : IO Json := do
   return snapshot
 
 def buildSuite (output : FilePath) (tools : Toolchains) : IO Unit := do
+  let cake ← absolute ((← run "which" #[tools.cakeml]).trimAscii.toString : FilePath)
+  let tools := { tools with cakeml := cake.toString }
   let output ← absolute output
   let cFlags := cFlags ++ #[s!"-ffile-prefix-map={output}=/benchmark-build"]
   fresh output
@@ -237,7 +243,8 @@ def buildSuite (output : FilePath) (tools : Toolchains) : IO Unit := do
   IO.FS.writeFile (output / "nix-closure.txt") closure.stdout
   writeJson (output / "nix-closure-status.json") (Json.mkObj [("exit_code", toJson closure.exitCode.toNat),
     ("stderr", toJson closure.stderr), ("roots", toJson storePaths)])
-  for name in ["benchmark", "source-native-runtime", "check-source-native-runtime", "source-native-upstream", "check-source-native-upstream"] do
+  let _ ← run "cp" #[(← IO.appPath).toString, (output / "tools-bin/benchmark").toString]
+  for name in ["source-native-runtime", "check-source-native-runtime", "source-native-upstream", "check-source-native-upstream"] do
     let _ ← run "cp" #[s!".lake/build/bin/{name}", (output / s!"tools-bin/{name}").toString]
   let _ ← run "cp" #[tools.cakeml, (output / "tools-bin/cakeml-bootstrap").toString]
   IO.FS.writeFile (output / "tools-bin/basis_ffi.c") (← IO.FS.readFile basis)

@@ -1,4 +1,4 @@
-import Benchmark.Environment
+import Comparisons.Environment
 import Compilatrix.Tools.IxIR2Check
 
 /-! Compiler-scaling orchestration has no compiler/selector/evaluator imports.

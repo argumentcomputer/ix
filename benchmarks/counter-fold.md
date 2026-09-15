@@ -57,17 +57,20 @@ corruption regressions and a native harness. The report includes both envelopes,
 serialized pipeline bytes and object `.text` sizes. The proof checks are run
 before timing and documented separately.
 
-Run in the pinned repository environment, using fresh directories:
+Run from the repository root in the [optional comparison environment](comparisons/README.md),
+using fresh directories. These measurement commands are outside ordinary CI:
 
 ```sh
-lake build benchmark source-native-runtime check-source-native-runtime
-.lake/build/bin/benchmark counter-fold-build BUILD
-.lake/build/bin/benchmark counter-fold-verify BUILD VERIFY
-.lake/build/bin/benchmark counter-fold-smoke BUILD SMOKE 2
-taskset --cpu-list 0 .lake/build/bin/benchmark counter-fold-pilot BUILD VERIFY PILOT 2
-taskset --cpu-list 0 .lake/build/bin/benchmark counter-fold-measure BUILD VERIFY PILOT MEASURED 2
-.lake/build/bin/benchmark counter-fold-analyze BUILD MEASURED MEASURED/analysis
-.lake/build/bin/benchmark counter-fold-reproduce BUILD MEASURED REPLAY
+lake build source-native-runtime check-source-native-runtime
+lake -d benchmarks/comparisons build
+benchmark=benchmarks/comparisons/.lake/build/bin/benchmark
+"$benchmark" counter-fold-build BUILD
+"$benchmark" counter-fold-verify BUILD VERIFY
+"$benchmark" counter-fold-smoke BUILD SMOKE 2
+taskset --cpu-list 0 "$benchmark" counter-fold-pilot BUILD VERIFY PILOT 2
+taskset --cpu-list 0 "$benchmark" counter-fold-measure BUILD VERIFY PILOT MEASURED 2
+"$benchmark" counter-fold-analyze BUILD MEASURED MEASURED/analysis
+"$benchmark" counter-fold-reproduce BUILD MEASURED REPLAY
 ```
 
 Select available controller/worker cores before piloting and retain them for

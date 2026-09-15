@@ -249,18 +249,13 @@ lean_exe «check-source-borrow-runtime» where
   srcDir := "scripts"
   root := `CheckSourceBorrowRuntime
 
-/- Deterministic datasets and native comparison-suite orchestration. -/
+/- Compiler regression fixtures. External compiler comparisons and measurement
+runners live in the separate benchmarks/comparisons Lake package. -/
 lean_lib Benchmark where
   srcDir := "benchmarks"
-
-lean_exe benchmark where
-  srcDir := "benchmarks"
-  root := `Benchmark
-
-/- Fresh-process compiler scaling workers and artifact replay. -/
-lean_exe «compiler-scaling» where
-  srcDir := "benchmarks"
-  root := `CompilerScaling
+  roots := #[`Benchmark.Assembly, `Benchmark.NativeGraph, `Benchmark.NativeSharing,
+    `Benchmark.ScalingJoinInput, `Benchmark.ScalingJoins, `Benchmark.ScalingSources,
+    `Benchmark.ScalingVerify, `Benchmark.ScalingWorker, `Benchmark.SourceEvidence]
 
 lean_exe «check-tools-tests» where
   srcDir := "scripts"

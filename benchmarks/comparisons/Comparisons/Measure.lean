@@ -1,4 +1,4 @@
-import Benchmark.Pilot
+import Comparisons.Pilot
 
 namespace Benchmark
 open Lean System Compilatrix.Tools.Check Compilatrix.Tools.UniqueCheck
