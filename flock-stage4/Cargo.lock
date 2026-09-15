@@ -427,6 +427,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "ix-flock-recursion"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bincode",
+ "blake3",
+ "flock-prover",
+ "ix-stage4-trace",
+ "ixby-flock",
+ "ixby-stage4-exec",
+ "serde",
+]
+
+[[package]]
 name = "ix-stage4-trace"
 version = "0.1.0"
 dependencies = [

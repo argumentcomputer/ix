@@ -1,5 +1,6 @@
 //! Proof-free RS zerocheck/union-lincheck DAG and its exact PCS claim wires.
 
+use super::VerifierSetup;
 use super::algebra::{Addresses, Algebra, Symbol};
 use anyhow::{Result, ensure};
 use flock_prover::{
@@ -17,7 +18,6 @@ use ix_stage4_trace::{
   F128MatrixSideV1, F128MergedPcsBooleanClaimV1, F128StaticMatrixIdV1,
   F128StructuredWeightV1, F128VerifierPhaseV1 as Phase,
 };
-use ixby_flock::ixby::exec::CompiledExec;
 
 pub(crate) struct BooleanBlueprint {
   pub(crate) trace: F128AlgebraTraceV1,
@@ -26,7 +26,7 @@ pub(crate) struct BooleanBlueprint {
 }
 
 pub(crate) fn compile_boolean(
-  setup: &CompiledExec,
+  setup: &impl VerifierSetup,
 ) -> Result<BooleanBlueprint> {
   let shape = setup.verifier_shape();
   let union = UnionInstance::new(&shape.registry, shape.counts.clone());
@@ -165,7 +165,7 @@ pub(crate) fn compile_boolean(
       reported = a.add(reported, pin_term);
     }
     let matrix = F128StaticMatrixIdV1 {
-      registry_digest: setup.identities().registry,
+      registry_digest: setup.registry_digest(),
       table: table as u64,
       side: F128MatrixSideV1::A,
       variables: u32::try_from(ty.k_log)?,

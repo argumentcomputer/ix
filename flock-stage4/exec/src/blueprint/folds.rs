@@ -1,6 +1,7 @@
 //! Complete leaf accumulation topology. All input claims are covered exactly
 //! once; this compiler neither computes nor discharges their table values.
 
+use super::VerifierSetup;
 use super::{
   boolean::BooleanBlueprint,
   pcs::PcsBlueprint,
@@ -16,7 +17,6 @@ use ix_stage4_trace::{
   F128MatrixAccumulatorTraceV1, F128MatrixFoldClaimBindingV1,
   F128MatrixFoldRoundV1, F128MatrixFoldTraceV1, F128WiringTraceV1,
 };
-use ixby_flock::ixby::exec::CompiledExec;
 
 pub(crate) struct FoldBlueprint {
   pub(crate) hash: super::hash::HashBlueprint,
@@ -30,7 +30,7 @@ pub(crate) struct FoldBlueprint {
 }
 
 pub(crate) fn compile_folds(
-  setup: &CompiledExec,
+  setup: &impl VerifierSetup,
   wiring: &F128WiringTraceV1,
   boolean: &BooleanBlueprint,
   pcs: &PcsBlueprint,
@@ -73,7 +73,7 @@ pub(crate) fn compile_folds(
     });
   }
   let matrices = F128MatrixAccumulatorTraceV1 {
-    registry_digest: setup.identities().registry,
+    registry_digest: setup.registry_digest(),
     registry_digest_payload,
     prior_count_payload,
     prior_accumulators: 0,
@@ -97,7 +97,7 @@ pub(crate) fn compile_folds(
   let tail = fold_tail(&mut tape, 3, row_variables, column_variables, grinding);
   let structure = F128CircuitStructureAccumulatorTraceV1 {
     matrix: F128CircuitStructureMatrixIdV1 {
-      circuit_digest: setup.identities().circuit,
+      circuit_digest: setup.circuit_digest(),
       row_variables,
       column_variables,
     },

@@ -96,6 +96,9 @@ batch proofs (492,388,476 bytes), with one additional proof for each original
 transport. This checks complete grammar/scalar parsing and state continuity;
 full semantic admission, execution and recursive aggregation remain required.
 See [streaming results and composition work](../docs/IxbyFunctionalStreaming.md).
+The [first native Flock merge](../docs/IxbyFlockRecursion.md) now compresses two
+retained CSLib batches into one 375,155-byte proof bundle with independently
+checked root claims. Repeated recursion over the complete chain remains work.
 
 ```sh
 RAYON_NUM_THREADS=8 cargo test --release --locked --manifest-path flock-stage3/Cargo.toml --workspace conformance:: -- --ignored --test-threads=1

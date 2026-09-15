@@ -22,9 +22,19 @@ Tests include strict scalar/curve/subgroup decoding, invalid SRS/key rejection,
 nonzero blinding admission, authenticated scratch corruption, and identical
 proof/key results across memory and file backends for fixed test randomness.
 Small proofs use development setup and randomness, not production security.
-The generic replay and root-closure/setup prototypes pass 266 ordinary tests
-(101 FFLONK, 48 trace, 100 circuit, 17 replay/setup); thirty-nine heavier native,
-materialization, and census/optimization tests remain opt-in.
+The generic replay, root closure/setup and native recursion prototypes pass
+267 ordinary tests (101 FFLONK, 48 trace, 100 circuit, 17 replay/setup,
+one native recursion); forty-three heavier tests remain opt-in.
+
+## Native Flock parser merge
+
+The `recursive` crate proves the first two retained CSLib grammar batches in
+one native Flock proof. The 375,155-byte bundle includes 57,312 bytes of root
+advice. A fresh process verifies the parent and discharges all 152 child claims
+without receiving either child proof. The implementation uses the neutral
+verifier compiler in `exec` and native GF(2^128)/BLAKE3 constraints. Repeated
+recursion and accumulator folding for the complete 1,217-batch chain remain
+work. See [the relation, measurements and reproduction commands](../docs/IxbyFlockRecursion.md).
 
 ## Generic Exec replay
 

@@ -1,0 +1,18 @@
+[package]
+name = "ix-flock-recursion"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+blake3.workspace = true
+flock-prover.workspace = true
+ixby-flock.workspace = true
+ix-stage4-trace.workspace = true
+ixby-stage4-exec = { path = "../exec" }
+bincode = "1.3.3"
+serde = { version = "1", features = ["derive"] }
+
+[lints]
+workspace = true

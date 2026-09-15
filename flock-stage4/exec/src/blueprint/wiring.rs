@@ -1,6 +1,7 @@
 //! Exact symbolic Product-GKR DAG. No proof, guest, witness values, or native
 //! verifier invocation is an input to this compiler.
 
+use super::VerifierSetup;
 use anyhow::{Result, ensure};
 use flock_prover::{
   circuit::SigmaAssertion, field::F128, matrix_fold::FoldMatrix,
@@ -10,12 +11,12 @@ use ix_stage4_trace::{
   F128InputSourceV1 as Source, F128ReferenceV1 as Reference,
   F128VerifierPhaseV1 as Phase, F128WiringTraceV1,
 };
-use ixby_flock::ixby::{exec::CompiledExec, io::PublicWord};
+use ixby_flock::ixby::io::PublicWord;
 
 use super::algebra::{Addresses, Algebra, Symbol, encode};
 
 pub(crate) fn compile_wiring(
-  setup: &CompiledExec,
+  setup: &impl VerifierSetup,
 ) -> Result<F128WiringTraceV1> {
   let shape = setup.verifier_shape();
   let circuit = &shape.circuit;

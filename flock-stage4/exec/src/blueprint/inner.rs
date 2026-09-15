@@ -2,6 +2,7 @@
 //! and exact parent transcript. All loop bounds come from approved PCS data;
 //! queries are not sampled and duplicate query values cannot change topology.
 
+use super::VerifierSetup;
 use super::tape::{Tape, pow2};
 use anyhow::{Result, ensure};
 use flock_prover::{hash::HashKind, pcs::ligerito::VerifierConfig};
@@ -9,10 +10,9 @@ use ix_stage4_trace::{
   F128InnerLigeritoTraceV1, F128LigeritoLevelV1, F128LigeritoOodClaimV1,
   F128MergedPcsFrontendTraceV1, F256IndexPairV1, F256LigeritoMessageV1,
 };
-use ixby_flock::ixby::exec::CompiledExec;
 
 pub(super) fn compile_inner(
-  setup: &CompiledExec,
+  setup: &impl VerifierSetup,
   frontend: &F128MergedPcsFrontendTraceV1,
   tape: &mut Tape,
 ) -> Result<F128InnerLigeritoTraceV1> {

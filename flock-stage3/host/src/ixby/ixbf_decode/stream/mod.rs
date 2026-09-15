@@ -7,6 +7,7 @@
 //! expected source root/length/context, and genuine terminal completion.
 //! This is grammar/scalar admission, not registry admission or execution.
 
+pub mod batch;
 mod gate;
 #[cfg(test)]
 mod proof_tests;

@@ -125,6 +125,11 @@ Stage 3 proof of either workload has been generated.
     all three, deriving transport context from the verified Program. The
     Program chain is 492,388,476 bytes and is not recursively aggregated.
     Full semantic registry/body/value materialization and execution remain.
+16. [First native recursive Flock merge](IxbyFlockRecursion.md): two retained
+    CSLib Program batches produce one 375,155-byte parent proof bundle. A fresh
+    process verifies it without either child proof and discharges all 152
+    deferred claims. Repeated recursion and bounded accumulator folding are
+    still required for the complete 1,217-batch Program chain.
 
 ## Next implementation gates
 
@@ -171,8 +176,10 @@ Stage 3 proof of either workload has been generated.
    The current parser chain verifies every batch separately. Flock's pinned
    recursion tower has a BLAKE3-chain-specific first layer; adapting it to
    generic parser/execution proofs and their complete boundary statements
-   remains work. Start with a measured two-batch recursive proof and root
-   accumulator discharge; see the [composition outline](IxbyFunctionalStreaming.md#from-this-chain-to-one-flock-proof).
+   remains work. The [first measured parser merge](IxbyFlockRecursion.md)
+   proves two real batches and discharges their root claims. Next, constrain
+   mixed-class child verification and inherited-claim folds, then prove a
+   second recursive level before attempting the full tree.
    A concatenated list of endpoint hashes or an unchecked state-continuity
    claim is not an aggregate execution proof. Version the wider profile and
    proof envelope explicitly, retaining rejection of old/different setups.

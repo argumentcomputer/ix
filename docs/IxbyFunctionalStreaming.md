@@ -159,6 +159,27 @@ Program-derived context in 52.554 seconds. It received only the three chain
 paths and fixed expected original-file identities, with a cleared environment.
 Process wall time was 52.77 seconds and maximum RSS was 2,407,676 KiB.
 
+On the 64-thread Intel Xeon 6975P-C server, 32 workers with two Rayon threads
+each produced the Program chain in 90.042 seconds. Independent four-thread
+verification took 61.396 seconds internally and 61.48 seconds process wall
+time; the complete run took 152.050 seconds. The largest worker used
+2,625,452 KiB RSS and the verifier used 2,353,884 KiB. A corrected sampler
+visited every thread's child processes and deduplicated process IDs; its
+one-second samples reached 79,293,992 KiB (75.62 GiB) across the process tree.
+This is a sampled RSS sum, including shared pages, rather than exact physical
+memory use or a guarantee that no higher peak occurred between samples.
+
+The server used source commit `8c01e1435e13aa5e162901ec53f5cb0256146ed7`,
+with `-C target-cpu=x86-64-v4 -C target-feature=+pclmulqdq,+vpclmulqdq,+aes`.
+The test binary's SHA-256 was
+`e74175ab3a543f5647575bd44f673cf9e27083dcb42b0f815b2a3bfb8d7cabf7`.
+Its Program chain was byte-for-byte identical to the local chain below.
+The earlier host-native binary exited with an illegal-instruction error on
+Intel; that failed attempt is excluded from these measurements. Server logs,
+timings and the executed runner were copied to
+`/tmp/ixby-cslib-stream-server.81Hnil/`; the successful remote run remains
+under `/tmp/ixby-cslib-stream.81Hnil/`.
+
 The Program chain is about 469.58 MiB. Its SHA-256 is
 `158f92abd96b902542bc6fe032c4ee897fd804cc15960d69c9a9aa625f2320f2`.
 Original source BLAKE3 pins are:
@@ -191,9 +212,13 @@ takes exactly two `ChainProof` children and asserts one Boolean BLAKE3 table.
 Its application block is an eight-word hash-chain span. It cannot directly
 consume this 35-table, 63-word parser statement. Required work includes a
 general child verifier, the parser boundary/context relation, an expanded
-accumulator layout and measured recursion geometry. Existing generic verifier
-replay in [Stage 4](IxbyStage4Replay.md) provides related components, but is
-not an implemented parser-to-Flock recursion adapter.
+accumulator layout and measured recursion geometry. The first
+[native two-batch Flock merge](IxbyFlockRecursion.md) uses generic verifier
+replay components from [Stage 4](IxbyStage4Replay.md).
+Two retained CSLib batches produced a 375,155-byte parent bundle whose fresh
+root verifier checked both child verifiers and all 152 deferred claims. This
+first merge carries raw root claims; repeated recursion and bounded
+accumulator folding across the full chain remain work.
 
 Flock defers matrix, wiring and jagged-layout evaluations into accumulators.
 Their claims must be bound to actual child-verifier outputs, folded inside

@@ -7,11 +7,8 @@ use crate::{
     generate_f128_equality_witness_into,
   },
   hash::Blake3Gate,
-  ixby::{
-    io::{InputLayout, LayoutEmitter, PublicLayout},
-    select::SelectWordsGate,
-  },
-  sizing::{CircuitEmitter, CountingEmitter},
+  ixby::select::SelectWordsGate,
+  sizing::CountingEmitter,
 };
 use anyhow::{Result, ensure};
 use bincode::Options;
@@ -22,7 +19,6 @@ use flock_prover::{
   },
   field::F128,
   hash::HashKind,
-  lincheck::LincheckCircuit,
   pcs::{
     Commitment, PcsParams,
     ligerito::{LigeritoProfile, embedded_initial_k_or_default},
@@ -32,7 +28,6 @@ use flock_prover::{
   r1cs::BlockR1cs,
   r1cs_hashes::blake3 as flock_blake3,
   union::{SlotWitnessDest, UnionInstance},
-  verifier,
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -43,6 +38,9 @@ use std::{
 #[path = "cslib_tests.rs"]
 mod cslib_tests;
 
+use super::batch::{CompiledGrammarBatch, GrammarBatchStatement};
+pub(super) use super::batch::{Emission, config, domain, emit};
+
 const NU: usize = 7;
 const STEPS: usize = 32;
 const DEPTH: usize = 14;
@@ -52,15 +50,6 @@ const MAX_BYTES: u64 = 8 * 1024 * 1024;
 const CHILD: &str = "IXBY_STREAM_VERIFY_CHILD";
 const TEST: &str = "ixby::ixbf_decode::stream::proof_tests::batches_and_chains_verify_in_isolation_and_reject_substitutions";
 
-fn domain(kind: GrammarKind) -> &'static [u8] {
-  match kind {
-    GrammarKind::Program => {
-      b"ix:ixby:ixbf-stream-program:d14:steps32:nat4096:v0"
-    },
-    GrammarKind::Input => b"ix:ixby:ixbf-stream-input:d14:steps32:nat4096:v0",
-    GrammarKind::Output => b"ix:ixby:ixbf-stream-output:d14:steps32:nat4096:v0",
-  }
-}
 fn kind(tag: u8) -> Result<GrammarKind> {
   match tag {
     0 => Ok(GrammarKind::Program),
@@ -68,44 +57,6 @@ fn kind(tag: u8) -> Result<GrammarKind> {
     2 => Ok(GrammarKind::Output),
     _ => anyhow::bail!("unknown dispatch grammar"),
   }
-}
-
-pub(super) struct Emission {
-  pub slots: StreamSlots,
-  pub inputs: InputLayout,
-  pub public: PublicLayout,
-}
-pub(super) fn config(kind: GrammarKind) -> DispatchConfig {
-  DispatchConfig { kind, natural: NaturalCapacity::new(4096).unwrap() }
-}
-pub(super) fn emit(b: &mut impl CircuitEmitter, kind: GrammarKind) -> Emission {
-  let mut b = LayoutEmitter::new(b);
-  let slots = StreamSlots::declare(&mut b, NU, config(kind), DEPTH).unwrap();
-  let length = b.input();
-  let root = std::array::from_fn(|_| b.input());
-  let initial = DispatchState(std::array::from_fn(|_| b.input()));
-  let first = b.input();
-  let mut remaining = b.input();
-  let proofs = std::array::from_fn(|_| SourceChunkProofWires {
-    bytes: std::array::from_fn(|_| b.input()),
-    siblings: (0..DEPTH).map(|_| std::array::from_fn(|_| b.input())).collect(),
-  });
-  for word in [length].into_iter().chain(root).chain(initial.0) {
-    b.publish(word);
-  }
-  let cache = slots.authenticate(&mut b, length, root, first, &proofs);
-  let mut state = initial;
-  for _ in 0..STEPS {
-    let step = slots.step(&mut b, &cache, state, remaining);
-    state = step.event.state;
-    remaining = step.remaining;
-  }
-  slots.finish_batch(&mut b, remaining);
-  for word in state.0 {
-    b.publish(word);
-  }
-  let (inputs, public) = b.finish();
-  Emission { slots, inputs, public }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -123,7 +74,6 @@ enum Attack {
 }
 trait Driver: Send + Sync {
   fn slot(&self) -> SlotId;
-  fn table(&self) -> &BlockR1cs;
   fn prover<'a>(
     &'a self,
     witness: &'a CircuitWitness,
@@ -146,9 +96,6 @@ where
 {
   fn slot(&self) -> SlotId {
     self.slot
-  }
-  fn table(&self) -> &BlockR1cs {
-    &self.table
   }
   fn prover<'a>(
     &'a self,
@@ -474,54 +421,15 @@ fn prove(
   );
   bytes
 }
-fn verify_with(
-  s: &Setup,
-  kind: GrammarKind,
-  expected: &[F128],
-  bytes: &[u8],
-  domain: &[u8],
-) -> Result<()> {
-  ensure!(
-    expected.len() == OUTPUTS && bytes.len() as u64 <= MAX_BYTES,
-    "stream batch proof/public size"
-  );
-  let bundle: Bundle = codec().deserialize(bytes)?;
-  ensure!(
-    bundle.magic == MAGIC && bundle.kind == kind as u8,
-    "stream batch proof kind or revision"
-  );
-  ensure!(
-    codec().serialize(&bundle)? == bytes,
-    "noncanonical stream batch proof"
-  );
-  let union = UnionInstance::new(&s.shape.registry, s.shape.counts.clone());
-  let circuits: Vec<&dyn LincheckCircuit> = s
-    .drivers
-    .iter()
-    .map(|d| d.table().csc_lincheck_circuit() as &dyn LincheckCircuit)
-    .collect();
-  let mut challenger = FsChallenger::with_chained_blake3(domain);
-  verifier::verify_ligerito_union_circuit(
-    &union,
-    &s.shape.circuit,
-    &s.emission.public.instantiate(expected)?,
-    &circuits,
-    &bundle.commitment,
-    &bundle.proof,
-    &params(&union),
-    &mut challenger,
-  )
-  .map_err(|e| anyhow::anyhow!("stream batch proof rejected: {e:?}"))?;
-  Ok(())
-}
-
 fn verify(
   kind: GrammarKind,
   expected: &[F128],
   bytes: &[u8],
   domain: &[u8],
 ) -> Result<()> {
-  verify_with(&setup(kind), kind, expected, bytes, domain)
+  ensure!(domain == self::domain(kind), "parser batch transcript domain");
+  CompiledGrammarBatch::compile(kind)?
+    .verify(&GrammarBatchStatement::from_words(expected)?, bytes)
 }
 
 const CHAIN_MAGIC: &[u8; 8] = b"IXFSTC00";
@@ -582,7 +490,7 @@ fn verify_chain(
   let mut magic = [0; 8];
   input.read_exact(&mut magic)?;
   ensure!(&magic == CHAIN_MAGIC, "parser chain domain/revision");
-  let s = setup(kind);
+  let s = CompiledGrammarBatch::compile(kind)?;
   let mut state = [F128::ZERO; 30];
   state[0] = F128::new(0, length.lo);
   for (i, at) in DISPATCH_CONTEXT_INDICES.into_iter().enumerate() {
@@ -607,7 +515,7 @@ fn verify_chain(
     let mut statement = expected[..3].to_vec();
     statement.extend(state);
     statement.extend(next);
-    verify_with(&s, kind, &statement, &proof, domain(kind))?;
+    s.verify(&GrammarBatchStatement::from_words(&statement)?, &proof)?;
     state = next;
     batches += 1;
   }

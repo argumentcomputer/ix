@@ -2,6 +2,7 @@
 //! addresses follow the pinned recorder's inline child-before-parent order,
 //! including fork seeds and child closure. No proof values are synthesized.
 
+use super::VerifierSetup;
 use super::{algebra::Addresses, boolean::BooleanBlueprint};
 use anyhow::{Result, ensure};
 use flock_prover::union::UnionInstance;
@@ -10,7 +11,6 @@ use ix_stage4_trace::{
   F128MultipointRoundV1, F128MultipointTwistedAssistTraceV1,
   F128RingSwitchTraceV1, F128WiringTraceV1,
 };
-use ixby_flock::ixby::exec::CompiledExec;
 
 pub(crate) struct PcsBlueprint {
   pub(crate) frontend: F128MergedPcsFrontendTraceV1,
@@ -18,7 +18,7 @@ pub(crate) struct PcsBlueprint {
 }
 
 pub(crate) fn compile_pcs(
-  setup: &CompiledExec,
+  setup: &impl VerifierSetup,
   wiring: &F128WiringTraceV1,
   boolean: &BooleanBlueprint,
 ) -> Result<PcsBlueprint> {
@@ -134,7 +134,7 @@ pub(crate) fn compile_pcs(
   let multipoint = F128MultipointTwistedAssistTraceV1 {
     frontend_topology_digest: frontend.topology_digest(),
     matrix: F128JaggedMatrixIdV1 {
-      circuit_digest: setup.identities().circuit,
+      circuit_digest: setup.circuit_digest(),
       row_variables: column_variables,
       column_variables: u32::try_from(anchor_dimensions)?,
     },

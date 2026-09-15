@@ -1,5 +1,5 @@
 [workspace]
-members = ["circuit", "exec", "fflonk", "trace"]
+members = ["circuit", "exec", "fflonk", "recursive", "trace"]
 resolver = "2"
 
 [workspace.package]

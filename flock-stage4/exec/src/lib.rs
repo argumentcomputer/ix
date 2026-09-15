@@ -5,6 +5,7 @@
 //! proof-free key preprocessing and actual proving/isolated verification.
 //! The setup-only R1CS emitter and closed-root prototype are not that proof.
 
+mod batch_replay;
 mod blake3_table;
 mod blueprint;
 mod census;
@@ -18,6 +19,10 @@ mod root_tables;
 mod setup;
 mod setup_emission;
 
+pub use batch_replay::{
+  CompiledGrammarBatchReplay, GrammarBatchReplayWitness,
+  compile_grammar_batch_replay,
+};
 pub use blake3_table::{
   CompiledExecBlake3RootMaps, compile_exec_blake3_root_maps,
 };

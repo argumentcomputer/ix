@@ -2,6 +2,7 @@
 //! circuit/protocol geometry. Each fork, vector squeeze, label and grinding
 //! marker is explicit; equality of F128 address counts alone is insufficient.
 
+use super::VerifierSetup;
 use super::{
   boolean::BooleanBlueprint,
   pcs::PcsBlueprint,
@@ -13,7 +14,6 @@ use flock_prover::{
   challenger::grinding_bits_for_degree, union::UnionInstance,
 };
 use ix_stage4_trace::F128InnerLigeritoTraceV1;
-use ixby_flock::ixby::exec::CompiledExec;
 
 pub(crate) struct MainBlueprint {
   pub(crate) hash: super::hash::HashBlueprint,
@@ -25,7 +25,7 @@ pub(crate) struct MainBlueprint {
 }
 
 pub(crate) fn compile_transcript(
-  setup: &CompiledExec,
+  setup: &impl VerifierSetup,
   boolean: &BooleanBlueprint,
   pcs: &PcsBlueprint,
 ) -> Result<MainBlueprint> {
