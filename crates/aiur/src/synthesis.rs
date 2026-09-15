@@ -20,6 +20,7 @@ use crate::{
   execute::{ExecError, IOBuffer, QueryRecord},
   function_channel,
   gadgets::{AiurGadget, bytes1::Bytes1, bytes2::Bytes2},
+  lookup_budget::lookup_query_bound,
   memory::Memory,
   trace_heights::fixed_trace_heights,
 };
@@ -587,6 +588,15 @@ impl AiurSystem {
     ) {
       return Err(VerificationError::InvalidProofShape);
     }
+    if lookup_query_bound(
+      self.slot_widths.iter().map(Vec::len),
+      &proof.active,
+      &proof.log_degrees,
+    )
+    .is_none()
+    {
+      return Err(VerificationError::InvalidProofShape);
+    }
     self.system.verify(claim, proof)
   }
 
@@ -607,6 +617,7 @@ mod tests {
   mod acceptance;
   mod branchless;
   mod byte_shapes;
+  mod lookup_budget;
   mod lookup_shapes;
 
   use super::*;
