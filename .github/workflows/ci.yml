@@ -107,7 +107,7 @@ jobs:
           auto-config: false
           use-github-cache: false
       - name: Check compiler implementation proofs
-        run: lake build IxCompileVerify
+        run: lake build --wfail IxCompileVerify
       - name: Check direct kernel consistency refinement
         run: lake build --wfail IxKernelConsistency
       - name: Check consistency model and exact foundation manifest

@@ -337,11 +337,11 @@ script "build-all" (args) := do
   let exeNames := pkg.configTargets LeanExe.configKind |>.map (·.name.toString)
   -- The legacy named specification and the implementation proofs stated
   -- against it retain an audited frontier; the non-required
-  -- named-spec-verification workflow builds them without `--wfail`, and
-  -- required CI builds `IxCompileVerify` on its own. The set model, direct
-  -- consistency roots, and certified adapters are checked strictly.
+  -- named-spec-verification workflow builds them without `--wfail`. The set
+  -- model, direct consistency roots, compiler proofs, and certified adapters
+  -- are checked strictly.
   let allNames := (libNames ++ exeNames |>.toList).filter fun name =>
-    name != "IxKernelVerify" && name != "IxCompileVerify" && name != "IxTheoryNamed"
+    name != "IxKernelVerify" && name != "IxTheoryNamed"
   for name in allNames do
     IO.println s!"Building: {name}"
     let child ← IO.Process.spawn {
@@ -489,7 +489,8 @@ script "check-kernel" (args) := do
   unless args.isEmpty || args == ["--with-model"] do
     IO.eprintln "usage: lake run check-kernel [--with-model]"
     return 2
-  run "lake" #["build", "IxKernelVerify", "IxCompileVerify"]
+  run "lake" #["build", "--wfail", "IxCompileVerify"]
+  run "lake" #["build", "IxKernelVerify"]
   run "lake" #["build", "--wfail", "IxKernelConsistency"]
   run "lake" #["run", "check-theory"]
   run "lake" #["run", "check-certified"]

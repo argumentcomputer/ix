@@ -152,7 +152,7 @@ jobs:
       # named-spec-verification workflow builds them on demand.
       - name: Build Ix compiler verification
         if: ${{ matrix.kind == 'tc' }}
-        run: lake build IxCompileVerify
+        run: lake build --wfail IxCompileVerify
       - name: Check Ix.Kernel consistency refinement
         if: ${{ matrix.kind == 'tc' }}
         run: lake build --wfail IxKernelConsistency
