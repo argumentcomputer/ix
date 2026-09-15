@@ -70,8 +70,10 @@ no zero-progress payload event.
 The returned `DispatchStepWires` expose actual tag, bounds, fields, source
 cursor, next cursor, Nat magnitude and payload spans. `committed` is zero for
 intermediate string steps and Done padding. Consumers must use that flag when
-materializing events; speculative string rows are not extra values. Building
-authenticated typed registries/arenas from these wires is still required.
+materializing events; speculative string rows are not extra values. The later
+[registry layer](IxbyFunctionalRegistry.md) materializes bounded constructor
+declarations, function headers and owned block headers from these actual events.
+Complete instruction/reference checks and typed value arenas remain separate.
 
 `finish` separately pins both streaming words to zero and emits an explicit
 Done grammar row. That row requires genuine terminal phase, exact EOF and
@@ -225,9 +227,12 @@ For the external test, set the four explicit retained-fixture variables in
 The generic dispatcher now connects source, canonical decoders and grammar in
 the small-file class. Larger files still need scalable shared chunk
 authentication; the full Init differential is not a source-bound Init proof.
-Typed table materialization must bind ownership, ordered coverage, forward
-references, exact/partial arities and complete duplicate-alternative checks to
-the actual decoded wires. Native loader depth/allocation limits and a formal
+The [bounded registry layer](IxbyFunctionalRegistry.md) now binds exact
+constructor/function/block-header coverage, block ownership, constructor
+uniqueness and entry frames to these events and supports typed reads. Complete
+instruction/reference and value checks must still bind forward references,
+exact/partial arities and duplicate alternatives to the actual decoded wires.
+Native loader depth/allocation limits and a formal
 source/native correspondence remain separate obligations.
 
 The raw-file digest still needs an explicit bridge to the Exec commitment

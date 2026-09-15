@@ -171,13 +171,15 @@ kinds/bounds, complete ordered control traversal, cursor continuity, final EOF
 and preorder-forest completion. The scalar layer adds checked payload packing,
 guest Nat limits and UTF-8. The later [generic dispatcher](IxbyFunctionalDispatch.md)
 derives selection and byte requests from actual state and proves complete
-small-file grammars using one shared authenticated buffer. Larger files still
-need scalable shared chunk authentication. Registry facts must be bound to
-the original decoded records, including indices, ownership and forward
-references. The native test walk is not a substitute for those links.
+small-file grammars using one shared authenticated buffer. The subsequent
+[declaration/header registry](IxbyFunctionalRegistry.md) binds constructor,
+function and owned block headers to those actual events, checks exact coverage,
+constructor uniqueness and entry frames, and supplies constrained typed reads.
+Larger files still need scalable shared chunk authentication and registry access.
 
-Remaining semantic work includes complete duplicate-alternative checks and authenticated
-ownership/coverage of the full constructor and function registries. Afterwards,
+Remaining semantic work includes connecting complete reference/arity and
+successor-frame checks to those reads, full duplicate-alternative checks, and
+ownership/coverage of instruction bodies and typed value arenas. Afterwards,
 the execution path still needs streaming witnesses, scalable memory/code access,
 full-state segments and sound composition. Native/source refinement remains
 separate. See the [scaling plan](IxbyStage3ScalePlan.md).

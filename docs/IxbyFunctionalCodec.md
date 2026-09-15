@@ -134,8 +134,11 @@ ordered traversal and EOF. The scalar layer supplies checked payload packing,
 guest Nat limits and UTF-8. The later [generic dispatcher](IxbyFunctionalDispatch.md)
 derives decoder selection and source requests from carried state and proves
 complete small-file grammars with a once-authenticated shared byte buffer.
-Remaining semantic checks, authenticated typed registries and scalable shared
-chunk authentication for larger files are still required. ByteArray consumers
+The [declaration/header registry layer](IxbyFunctionalRegistry.md) additionally
+materializes constructors, functions and owned block headers, checks complete
+coverage/uniqueness/entry frames, and provides source-bound typed reads in a
+bounded class. Remaining instruction/reference and typed-value checks plus
+scalable shared chunk authentication are still required. ByteArray consumers
 must use the actual constrained descriptor. The complete execution path still needs
 streaming witnesses, scalable memory/code access, full-state segments and
 sound composition. No source/refinement theorem is established here, and no

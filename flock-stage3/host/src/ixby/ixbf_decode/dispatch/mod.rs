@@ -62,3 +62,19 @@ fn tags(b: &mut Builder, index: usize) -> Bits {
   b.require(b.one, valid);
   flags
 }
+
+#[cfg(test)]
+pub(in crate::ixby::ixbf_decode) fn test_parse_program(
+  bytes: &[u8],
+  maximum_steps: usize,
+) -> anyhow::Result<[flock_prover::field::F128; 28]> {
+  use flock_prover::field::F128;
+  Ok(
+    model_tests::Model::new(
+      model_tests::config(super::GrammarKind::Program),
+      false,
+    )
+    .parse(bytes, [F128::ZERO; 15], maximum_steps)?
+    .state,
+  )
+}

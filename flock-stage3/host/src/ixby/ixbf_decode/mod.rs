@@ -33,6 +33,7 @@ mod record;
 mod record_external_tests;
 #[cfg(test)]
 mod record_tests;
+pub mod registry;
 #[cfg(test)]
 mod scalar_payload_tests;
 pub mod source;
