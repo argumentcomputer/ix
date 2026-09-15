@@ -1,6 +1,7 @@
 import Ix.Compile.Verify.Catalog
 import Ix.Environment
-import Lean4Lean.Std.Basic
+
+open Ix.Theory (VLevel)
 
 /-!
 # Total ordinary-fragment compiler specification
@@ -35,7 +36,7 @@ def compileUnivRef (paramIndex : Ix.Name → Option UInt64) :
 /-- Independent Theory reading of a named Ix universe under the same
 positional parameter assignment. -/
 def sourceUnivValue (paramIndex : Ix.Name → Option UInt64) :
-    Ix.Level → Option Lean4Lean.VLevel
+    Ix.Level → Option Ix.Theory.VLevel
   | .zero _ => some .zero
   | .succ level _ => return .succ (← sourceUnivValue paramIndex level)
   | .max left right _ =>
@@ -154,6 +155,21 @@ def compileExprRef (ctx : RefCompileCtx) : Ix.Expr → Option Ixon.Expr
     return .prj (← ctx.refIndex typeName) field.toUInt64
       (← compileExprRef ctx val)
 
+/-- A successful `List.mapM` into `Option` preserves the input length. -/
+private theorem list_mapM_length_of_eq_some {f : α → Option β}
+    {xs : List α} {ys : List β} (h : xs.mapM f = some ys) :
+    ys.length = xs.length := by
+  induction xs generalizing ys with
+  | nil =>
+    simp only [List.mapM_nil, pure, Option.some.injEq] at h
+    subst h
+    rfl
+  | cons x xs ih =>
+    simp only [List.mapM_cons, Bind.bind, pure, Option.bind_eq_some_iff,
+      Option.some.injEq] at h
+    obtain ⟨y, _, ys', hys', rfl⟩ := h
+    simp [ih hys']
+
 /-- A successful `Array.mapM` preserves the input length. -/
 private theorem array_mapM_size_of_eq_some {f : α → Option β}
     {xs : Array α} {ys : Array β} (h : xs.mapM f = some ys) :
@@ -161,9 +177,7 @@ private theorem array_mapM_size_of_eq_some {f : α → Option β}
   have hmapped := congrArg (Option.map Array.toList) h
   change Array.toList <$> xs.mapM f = Option.map Array.toList (some ys) at hmapped
   rw [Array.toList_mapM] at hmapped
-  have hlength := Lean4Lean.List.Forall₂.length_eq
-    (Lean4Lean.List.mapM_eq_some.mp hmapped)
-  simpa using hlength.symm
+  simpa using list_mapM_length_of_eq_some hmapped
 
 /-- Reference compilation preserves the three root-spine lengths used by the
 Ixon expression wire format. -/

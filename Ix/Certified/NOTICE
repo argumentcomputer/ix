@@ -1,0 +1,22 @@
+Certified source and claim adapters
+
+Copyright (c) 2026 Argument Computer Corporation.
+Licensed under MIT OR Apache-2.0; see LICENSE-MIT and LICENSE-APACHE at the
+repository root.
+
+The source and claim adapters were reconstructed from the authenticated
+ix-pilot.patch and ix-c3.patch through ix-c7.patch supplied with the former
+Lean4Ix consistency work. Original adapter files, patches, source identities,
+reports, licenses and differential fixtures are retained in
+Tests/Fixtures/Certified/c7-handoff.tar.gz. Individual source and maintained
+file identities appear in Tests/Certified/ImportManifest.lean.
+
+Maintained theory imports use Ix.Theory, and the checker wrappers use
+Ix.Kernel. The five historical audits now traverse full checked declaration
+graphs and transitive runtime workers. The unused historical native profiling
+counter module is preserved in the archive but is not maintained or linked.
+
+The set model and its separate attribution are maintained under Ix/Theory.
+The old checkout is not a build or test dependency. This handoff archive
+contains the selected adapter sources and regression evidence, not the
+complete historical Ix base checkout.

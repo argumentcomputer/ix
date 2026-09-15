@@ -34,19 +34,25 @@ import Tests.Ix.RustSerialize
 import Tests.Ix.RustDecompile
 import Tests.Ix.Sharing
 import Tests.Ix.BenchMeasures
-import Tests.Ix.Tc.Unit
-import Tests.Ix.Tc.Substrate
-import Tests.Ix.Tc.IxonFixtures
-import Tests.Ix.Tc.WhnfTests
-import Tests.Ix.Tc.InferDefEq
-import Tests.Ix.Tc.CheckTests
-import Tests.Ix.Tc.AnonDiff
-import Tests.Ix.Tc.InitScale
-import Tests.Ix.Tc.TutorialTc
-import Tests.Ix.Tc.Roundtrip
-import Tests.Ix.Tc.IngressMetaTests
-import Tests.Ix.Tc.Pins
-import Tests.Ix.Tc.AccelDiff
+import Tests.Ix.Kernel.Unit
+import Tests.Ix.Kernel.Substrate
+import Tests.Ix.Kernel.IxonFixtures
+import Tests.Ix.Kernel.Resolution
+import Tests.Ix.Kernel.Inductive
+import Tests.Ix.Kernel.Quotient
+import Tests.Ix.Kernel.WhnfTests
+import Tests.Ix.Kernel.InferDefEq
+import Tests.Ix.Kernel.CheckTests
+import Tests.Ix.Kernel.Consistency
+import Tests.Ix.Kernel.DefinitionDependencies
+import Tests.Ix.Kernel.AnonDiff
+import Tests.Ix.Kernel.SafeRecursion
+import Tests.Ix.Kernel.InitScale
+import Tests.Ix.Kernel.TutorialTc
+import Tests.Ix.Kernel.CheckerRoundtrip
+import Tests.Ix.Kernel.IngressMetaTests
+import Tests.Ix.Kernel.Pins
+import Tests.Ix.Kernel.AccelDiff
 import Tests.Ix.CanonM
 import Tests.Ix.GraphM
 import Tests.Ix.CondenseM
@@ -60,7 +66,6 @@ import Tests.Cli
 import Tests.Ix.Ixes
 import Tests.ShardMap
 import Tests.Ix.EnvBody
-import Tests.Ix.Lean4Lean
 import Tests.Ix.MetaEnv
 import Tests.Ix.Catalog
 import Tests.Ix.CatalogDedup
@@ -106,10 +111,16 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("primitive-address-parity", Tests.Ix.Kernel.BuildPrimitives.paritySuite
     ++ Tests.Ix.Kernel.BuildPrimOrigs.paritySuite),
   ("decompile-unit", Tests.Decompile.unitSuite),
-  ("tc-unit", Tests.Tc.Unit.suite ++ Tests.Tc.Substrate.suite
-    ++ Tests.Tc.Fixtures.suite ++ Tests.Tc.WhnfTests.suite
-    ++ Tests.Tc.InferDefEq.suite ++ Tests.Tc.CheckTests.suite
-    ++ Tests.Tc.Roundtrip.unitTests ++ Tests.Tc.IngressMeta.unitTests),
+  ("tc-unit", Tests.Kernel.Unit.suite ++ Tests.Kernel.Substrate.suite
+    ++ Tests.Kernel.Fixtures.suite ++ Tests.Kernel.WhnfTests.suite
+    ++ Tests.Kernel.InferDefEq.suite ++ Tests.Kernel.CheckTests.suite
+    ++ Tests.Kernel.Consistency.suite ++ Tests.Kernel.Resolution.suite
+    ++ Tests.Kernel.Inductive.suite
+    ++ Tests.Kernel.Quotient.suite
+    ++ Tests.Kernel.DefinitionDependencies.suite
+    ++ Tests.Kernel.SafeRecursion.suite
+    ++ Tests.Kernel.Roundtrip.unitTests ++ Tests.Kernel.IngressMeta.unitTests),
+  ("tc-safe-recursion", Tests.Kernel.SafeRecursion.suite),
 ]
 
 /-- Ignored test suites - expensive, run only when explicitly requested. These require significant RAM -/
@@ -148,11 +159,11 @@ def ignoredSuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("kernel-check-tauceti-reduction", Tests.Ix.Kernel.CheckTauCetiReduction.suite),
   ("rust-kernel-build-primitives", Tests.Ix.Kernel.BuildPrimitives.suite),
   ("rust-kernel-build-prim-origs", Tests.Ix.Kernel.BuildPrimOrigs.suite),
-  ("tc-anon-diff", Tests.Tc.AnonDiff.suite),
-  ("tc-init", Tests.Tc.InitScale.suite),
-  ("tc-tutorial", Tests.Tc.TutorialTc.suite),
-  ("tc-roundtrip", Tests.Tc.Roundtrip.suite),
-  ("tc-ingress-meta", Tests.Tc.IngressMeta.suite),
+  ("tc-anon-diff", Tests.Kernel.AnonDiff.suite),
+  ("tc-init", Tests.Kernel.InitScale.suite),
+  ("tc-tutorial", Tests.Kernel.TutorialTc.suite),
+  ("tc-roundtrip", Tests.Kernel.Roundtrip.suite),
+  ("tc-ingress-meta", Tests.Kernel.IngressMeta.suite),
 ]
 
 /-- Primary test runners — quick suites run by default alongside
@@ -287,15 +298,12 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
   -- Tests.Ix.Compile.AuxGenDiff).
   ("aux-gen-diff", Tests.Compile.AuxGenDiff.run env),
   ("decompile-diff", Tests.Compile.DecompileDiff.run env),
-  -- lean4lean dependency smoke: accept a real closure, reject an
-  -- ill-typed decl (see Tests.Ix.Lean4Lean).
-  ("lean4lean", Tests.Ix.Lean4Lean.run env),
   -- Pure-Lean kernel regression pins against a real .ixe, compiled on
-  -- demand (see Tests.Tc.ParityEnv).
-  ("tc-pins", Tests.Tc.Pins.run),
+  -- demand (see Tests.Kernel.ParityEnv).
+  ("tc-pins", Tests.Kernel.Pins.run),
   -- Accelerated-vs-pure reduction differentials over that same real env
-  -- (see Tests.Tc.AccelDiff and TcState.noAccel).
-  ("tc-accel-diff", Tests.Tc.AccelDiff.run),
+  -- (see Tests.Kernel.AccelDiff and TcState.noAccel).
+  ("tc-accel-diff", Tests.Kernel.AccelDiff.run),
 ]
 
 def main (args : List String) : IO UInt32 := do

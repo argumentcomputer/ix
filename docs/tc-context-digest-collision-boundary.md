@@ -1,7 +1,7 @@
-# Ix.Tc context-digest collision boundary
+# Ix.Kernel context-digest collision boundary
 
-Snapshot: 2026-07-31. This note records a proof boundary for the K1/K2 cache
-soundness argument.
+This note records the context-digest assumptions needed for sound reduction,
+inference, and definitional-equality caches.
 
 ## Two distinct collision obligations
 
@@ -103,20 +103,20 @@ establish a genuinely global specification.
 The `ContextDigestSpec.execution` premise includes memo hits and requires
 `ContextDigestSpec.StateValid` for the pre-state. This is
 load-bearing: a successful lookup in `ctxAddrCache` is not evidence that the
-cached address is the digest of the current normalized suffix. Concrete K2
-must define that validity predicate from execution history or a strengthened
-state invariant. The interface now requires both `memoValid` and `preserves`,
+cached address is the digest of the current normalized suffix. Production
+proofs must establish that validity predicate from execution history or a
+strengthened state invariant. The interface requires both `memoValid` and `preserves`,
 so an implementation cannot label an initial state valid while leaving later
 memoized calls outside the proof domain.
 
-Production now exposes the pure calculation as
+Production exposes the pure calculation as
 `TcM.ctxAddrForLbrUncached`. The exact fast-path, cache-hit, and cache-miss
 equations prove immediate replay stability and preservation of
-`TcM.ContextAddrMemoValid`. This closes the operational memo-mutation part of
-K2; it does not yet prove that the pure hash input is the chosen semantic
+`TcM.ContextAddrMemoValid`. These establish the operational memo-mutation
+contract; they do not prove that the pure hash input is the chosen semantic
 normalization of the reconciled `KVLCtx`.
 
-## Required K2 discharge
+## Production proof obligations
 
 Instantiating the finite construction for production must:
 

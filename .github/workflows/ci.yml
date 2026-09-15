@@ -31,7 +31,9 @@ jobs:
         with:
           build-args: "--wfail -v"
           test: false
-      # build-all lint driver compiles every lib/exe target with --wfail, so a
+      # build-all checks production targets and the consistency foundation
+      # with --wfail. The legacy named-specification proofs are not part of
+      # this gate; named-spec-verification.yml builds them on demand. A
       # warning in any target (exes, benchmarks, Apps) — not just the default lib
       # lean-action builds above — fails CI.
       - name: Build all targets
@@ -86,6 +88,30 @@ jobs:
           use-github-cache: false
       - name: Test Ix CLI
         run: lake test --wfail -- cli
+      - name: Check certified source and claim adapters
+        run: lake run check-certified
+
+  theory:
+    needs: build
+    runs-on: warp-ubuntu-latest-x64-16x
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-rust-toolchain
+      - uses: actions/cache/restore@v6
+        with:
+          path: ./.lake
+          key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ github.sha }}
+          restore-keys: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-
+      - uses: leanprover/lean-action@v1
+        with:
+          auto-config: false
+          use-github-cache: false
+      - name: Check compiler implementation proofs
+        run: lake build --wfail IxCompileVerify
+      - name: Check direct kernel consistency refinement
+        run: lake build --wfail IxKernelConsistency
+      - name: Check consistency model and exact foundation manifest
+        run: lake run check-theory
 
   rust-test:
     runs-on: warp-ubuntu-latest-x64-8x

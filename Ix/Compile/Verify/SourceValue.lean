@@ -1,22 +1,24 @@
 import Ix.Compile.Verify.Reference
 
+open Ix.Theory (VLevel VExpr ConstRef)
+
 /-!
 # Source-to-Ixon value preservation
 
 This module closes the first expression-level compiler square.  `SourceExprRel`
-gives a named `Ix.Expr` an independent Lean4Lean meaning.  `RefCompileCtxRel`
-states that the finite indices chosen by `compileExprRef` point at the same
-universes, names, and literal bytes in the target tables.  The preservation
-theorem then constructs `IxonExprRel` for the exact compiler result.
+gives a named `Ix.Expr` an independent set-model meaning, read with the same
+conventions as `IxonExprRel`.  `RefCompileCtxRel` states that the finite
+indices chosen by `compileExprRef` point at the same universes, block
+references, and literal bytes in the target tables.  The preservation theorem
+then constructs `IxonExprRel` for the exact compiler result.
 -/
 
 namespace Ix.Compile.Verify
 
-open Lean4Lean (VConstant VEnv VExpr VLevel)
-
 /-- Independent semantic interpretation choices for named source syntax. -/
 structure SourceCtx where
-  nameOf : Ix.Name → Lean.Name
+  /-- The set-model block reference denoted by a source constant name. -/
+  refOf : Ix.Name → ConstRef Address
   univ? : Ix.Level → Option VLevel
 
 def SourceCtx.univArgs? (ctx : SourceCtx) (levels : Array Ix.Level) :
@@ -25,64 +27,61 @@ def SourceCtx.univArgs? (ctx : SourceCtx) (levels : Array Ix.Level) :
 
 /-- Raw semantic relation for the ordinary named-Ix compiler input.  Hash
 well-formedness and typing are separate source-witness obligations. -/
-inductive SourceExprRel (venv : VEnv) (sctx : SourceCtx)
-    (trProj : ProjectionRel) {uvars : Nat} :
-    List VExpr → Ix.Expr → VExpr → Prop where
-  | bvar {locals : List VExpr} {idx : Nat} {hash : Address} :
-    SourceExprRel venv sctx trProj locals (.bvar idx hash)
+inductive SourceExprRel (entries : Ix.Theory.Model.Environment Address)
+    (sctx : SourceCtx) (strings : StringRefs Address) :
+    Ix.Expr → VExpr Address → Prop where
+  | bvar {idx : Nat} {hash : Address} :
+    SourceExprRel entries sctx strings (.bvar idx hash)
       (.bvar idx.toUInt64.toNat)
-  | sort {locals : List VExpr} {level : Ix.Level} {hash : Address}
-      {u : VLevel} :
+  | sort {level : Ix.Level} {hash : Address} {u : VLevel} :
     sctx.univ? level = some u →
-    SourceExprRel venv sctx trProj locals (.sort level hash) (.sort u)
-  | const {locals : List VExpr} {name : Ix.Name} {levels : Array Ix.Level}
-      {hash : Address} {ci : VConstant} {us : List VLevel} :
-    venv.constants (sctx.nameOf name) = some ci →
+    SourceExprRel entries sctx strings (.sort level hash) (.sort u)
+  | const {name : Ix.Name} {levels : Array Ix.Level} {hash : Address}
+      {entry : Ix.Theory.Model.ConstantEntry Address} {us : List VLevel} :
+    entries (sctx.refOf name) = some entry →
     sctx.univArgs? levels = some us →
-    us.length = ci.uvars →
-    SourceExprRel venv sctx trProj locals (.const name levels hash)
-      (.const (sctx.nameOf name) us)
-  | app {locals : List VExpr} {fn arg : Ix.Expr} {hash : Address}
-      {fn' arg' : VExpr} :
-    SourceExprRel venv sctx trProj locals fn fn' →
-    SourceExprRel venv sctx trProj locals arg arg' →
-    SourceExprRel venv sctx trProj locals (.app fn arg hash) (.app fn' arg')
-  | lam {locals : List VExpr} {name : Ix.Name} {ty body : Ix.Expr}
-      {bi : Lean.BinderInfo} {hash : Address} {ty' body' : VExpr} :
-    SourceExprRel venv sctx trProj locals ty ty' →
-    SourceExprRel venv sctx trProj (ty' :: locals) body body' →
-    SourceExprRel venv sctx trProj locals (.lam name ty body bi hash)
+    us.length = entry.universes →
+    SourceExprRel entries sctx strings (.const name levels hash)
+      (.const (sctx.refOf name) us)
+  | app {fn arg : Ix.Expr} {hash : Address} {fn' arg' : VExpr Address} :
+    SourceExprRel entries sctx strings fn fn' →
+    SourceExprRel entries sctx strings arg arg' →
+    SourceExprRel entries sctx strings (.app fn arg hash) (.app fn' arg')
+  | lam {name : Ix.Name} {ty body : Ix.Expr} {bi : Lean.BinderInfo}
+      {hash : Address} {ty' body' : VExpr Address} :
+    SourceExprRel entries sctx strings ty ty' →
+    SourceExprRel entries sctx strings body body' →
+    SourceExprRel entries sctx strings (.lam name ty body bi hash)
       (.lam ty' body')
-  | all {locals : List VExpr} {name : Ix.Name} {ty body : Ix.Expr}
-      {bi : Lean.BinderInfo} {hash : Address} {ty' body' : VExpr} :
-    SourceExprRel venv sctx trProj locals ty ty' →
-    SourceExprRel venv sctx trProj (ty' :: locals) body body' →
-    SourceExprRel venv sctx trProj locals (.forallE name ty body bi hash)
+  | all {name : Ix.Name} {ty body : Ix.Expr} {bi : Lean.BinderInfo}
+      {hash : Address} {ty' body' : VExpr Address} :
+    SourceExprRel entries sctx strings ty ty' →
+    SourceExprRel entries sctx strings body body' →
+    SourceExprRel entries sctx strings (.forallE name ty body bi hash)
       (.forallE ty' body')
-  | letE {locals : List VExpr} {name : Ix.Name} {ty val body : Ix.Expr}
-      {nonDep : Bool} {hash : Address} {ty' val' body' : VExpr} :
-    SourceExprRel venv sctx trProj locals ty ty' →
-    SourceExprRel venv sctx trProj locals val val' →
-    SourceExprRel venv sctx trProj (ty' :: locals) body body' →
-    SourceExprRel venv sctx trProj locals
-      (.letE name ty val body nonDep hash) (body'.inst val')
-  | nat {locals : List VExpr} {value : Nat} {hash : Address} :
-    SourceExprRel venv sctx trProj locals (.lit (.natVal value) hash)
+  | letE {name : Ix.Name} {ty val body : Ix.Expr} {nonDep : Bool}
+      {hash : Address} {ty' val' body' : VExpr Address} :
+    SourceExprRel entries sctx strings ty ty' →
+    SourceExprRel entries sctx strings val val' →
+    SourceExprRel entries sctx strings body body' →
+    SourceExprRel entries sctx strings (.letE name ty val body nonDep hash)
+      (body'.inst val')
+  | nat {value : Nat} {hash : Address} :
+    SourceExprRel entries sctx strings (.lit (.natVal value) hash)
       (.natLit value)
-  | str {locals : List VExpr} {value : String} {hash : Address} :
-    SourceExprRel venv sctx trProj locals (.lit (.strVal value) hash)
-      (.trLiteral (.strVal value))
-  | mdata {locals : List VExpr} {data : Array (Ix.Name × Ix.DataValue)}
-      {inner : Ix.Expr} {hash : Address} {value : VExpr} :
-    SourceExprRel venv sctx trProj locals inner value →
-    SourceExprRel venv sctx trProj locals (.mdata data inner hash) value
-  | prj {locals : List VExpr} {typeName : Ix.Name} {field : Nat}
-      {val : Ix.Expr} {hash : Address} {ci : VConstant} {val' out : VExpr} :
-    venv.constants (sctx.nameOf typeName) = some ci →
-    SourceExprRel venv sctx trProj locals val val' →
-    trProj uvars locals (sctx.nameOf typeName) field.toUInt64.toNat val' out →
-    SourceExprRel venv sctx trProj locals
-      (.proj typeName field val hash) out
+  | str {value : String} {hash : Address} :
+    SourceExprRel entries sctx strings (.lit (.strVal value) hash)
+      (strings.stringLiteral value)
+  | mdata {data : Array (Ix.Name × Ix.DataValue)} {inner : Ix.Expr}
+      {hash : Address} {value : VExpr Address} :
+    SourceExprRel entries sctx strings inner value →
+    SourceExprRel entries sctx strings (.mdata data inner hash) value
+  | prj {typeName : Ix.Name} {field : Nat} {val : Ix.Expr} {hash : Address}
+      {entry : Ix.Theory.Model.ConstantEntry Address} {val' : VExpr Address} :
+    entries (sctx.refOf typeName) = some entry →
+    SourceExprRel entries sctx strings val val' →
+    SourceExprRel entries sctx strings (.proj typeName field val hash)
+      (.proj (sctx.refOf typeName) field.toUInt64.toNat val')
 
 /-- The reference compiler's index choices resolve to the source meaning in
 one concrete target context. -/
@@ -98,10 +97,10 @@ structure RefCompileCtxRel (compile : RefCompileCtx) (source : SourceCtx)
     dctx.univArgs? idxs = some us
   ref : ∀ {name idx}, compile.refIndex name = some idx →
     ∃ addr, dctx.refs[idx.toNat]? = some addr ∧
-      catalog.nameOf addr = some (source.nameOf name)
+      catalog.resolve addr = some (source.refOf name)
   recur : ∀ {name idx}, compile.mutIndex name = some idx →
     ∃ addr, dctx.mutAddrs[idx.toNat]? = some addr ∧
-      catalog.nameOf addr = some (source.nameOf name)
+      catalog.resolve addr = some (source.refOf name)
   nat : ∀ {value idx}, compile.literalRef (.natVal value) = some idx →
     ∃ addr bytes,
       dctx.refs[idx.toNat]? = some addr ∧
@@ -114,15 +113,15 @@ structure RefCompileCtxRel (compile : RefCompileCtx) (source : SourceCtx)
       String.fromUTF8? bytes = some value
 
 /-- Ordinary reference compilation preserves the independently stated
-Lean4Lean value. -/
-theorem compileExprRef_value {venv : VEnv} {sctx : SourceCtx}
-    {catalog : Catalog} {dctx : DecodeCtx} {compile : RefCompileCtx}
-    {trProj : ProjectionRel} {uvars : Nat} {locals : List VExpr}
-    {source : Ix.Expr} {target : Ixon.Expr} {value : VExpr}
+set-model value. -/
+theorem compileExprRef_value {entries : Ix.Theory.Model.Environment Address}
+    {sctx : SourceCtx} {catalog : Catalog} {dctx : DecodeCtx}
+    {compile : RefCompileCtx} {strings : StringRefs Address}
+    {source : Ix.Expr} {target : Ixon.Expr} {value : VExpr Address}
     (hctx : RefCompileCtxRel compile sctx catalog dctx)
-    (hsource : SourceExprRel (uvars := uvars) venv sctx trProj locals source value)
+    (hsource : SourceExprRel entries sctx strings source value)
     (hcompile : compileExprRef compile source = some target) :
-    IxonExprRel (uvars := uvars) venv catalog dctx trProj locals target value := by
+    IxonExprRel entries catalog dctx strings target value := by
   induction hsource generalizing target with
   | bvar =>
     simp [compileExprRef] at hcompile
@@ -132,19 +131,19 @@ theorem compileExprRef_value {venv : VEnv} {sctx : SourceCtx}
     simp [compileExprRef] at hcompile
     rcases hcompile with ⟨idx, hidx, rfl⟩
     exact .sort (hctx.univ hidx hvalue)
-  | const hconst hvalues harity =>
+  | const hentry hvalues harity =>
     simp [compileExprRef] at hcompile
     rcases hcompile with ⟨idxs, hidxs, hcompile⟩
     split at hcompile
     · rename_i idx hmut
       simp at hcompile
       subst target
-      rcases hctx.recur hmut with ⟨addr, href, hname⟩
-      exact .recur href hname hconst (hctx.univArgs hidxs hvalues) harity
+      rcases hctx.recur hmut with ⟨addr, href, hres⟩
+      exact .recur href hres hentry (hctx.univArgs hidxs hvalues) harity
     · simp at hcompile
       rcases hcompile with ⟨idx, hidx, rfl⟩
-      rcases hctx.ref hidx with ⟨addr, href, hname⟩
-      exact .ref href hname hconst (hctx.univArgs hidxs hvalues) harity
+      rcases hctx.ref hidx with ⟨addr, href, hres⟩
+      exact .ref href hres hentry (hctx.univArgs hidxs hvalues) harity
   | app _ _ ihfn iharg =>
     simp [compileExprRef] at hcompile
     rcases hcompile with ⟨fn, hfn, arg, harg, rfl⟩
@@ -165,18 +164,18 @@ theorem compileExprRef_value {venv : VEnv} {sctx : SourceCtx}
     simp [compileExprRef] at hcompile
     rcases hcompile with ⟨idx, hidx, rfl⟩
     rcases hctx.nat hidx with ⟨addr, bytes, href, hblob, hvalue⟩
-    simpa [hvalue] using IxonExprRel.nat (venv := venv) (trProj := trProj)
-      href hblob
+    simpa [hvalue] using
+      IxonExprRel.nat (entries := entries) (strings := strings) href hblob
   | str =>
     simp [compileExprRef] at hcompile
     rcases hcompile with ⟨idx, hidx, rfl⟩
     rcases hctx.str hidx with ⟨addr, bytes, href, hblob, hvalue⟩
     exact .str href hblob hvalue
   | mdata _ ih => exact ih hcompile
-  | prj hconst _ hproj ihval =>
+  | prj hentry _ ihval =>
     simp [compileExprRef] at hcompile
     rcases hcompile with ⟨typeIdx, htype, val, hval, rfl⟩
-    rcases hctx.ref htype with ⟨addr, href, hname⟩
-    exact .prj href hname hconst (ihval hval) hproj
+    rcases hctx.ref htype with ⟨addr, href, hres⟩
+    exact .prj href hres hentry (ihval hval)
 
 end Ix.Compile.Verify

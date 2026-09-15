@@ -6,7 +6,7 @@
 //! compilers, the Tc egress, and probes can all use it (the three kernel
 //! `NormLevel` implementations stay untouched and serve as the P4
 //! oracle). Mirrors `Ix/IxonUniv.lean`; the Géran machinery is the
-//! transliteration of `Ix/Tc/Level.lean:227-472` /
+//! transliteration of `Ix/Kernel/Level.lean:227-472` /
 //! `crates/kernel/src/level.rs` onto `ixon::univ::Univ`.
 //!
 //! The frozen kernel `mk*` rule set (M1–M8 / I1–I6, from Lean's
@@ -79,7 +79,7 @@ fn peel_offset(u: &Arc<Univ>) -> (Arc<Univ>, u64) {
   }
 }
 
-/// `mkMax` (Lean `kernel/level.cpp:81-103`; `Ix/Tc/Level.lean` `mkMax`;
+/// `mkMax` (Lean `kernel/level.cpp:81-103`; `Ix/Kernel/Level.lean` `mkMax`;
 /// `crates/kernel/src/level.rs` `KUniv::max`) transliterated to `Univ`.
 /// First applicable rule wins: M1 numerals → the larger (ties → `a`);
 /// M2 `max a a = a`; M3/M4 zero sides; M5/M6 absorption; M7 same-base
@@ -143,7 +143,7 @@ pub fn n_imax(a: Arc<Univ>, b: Arc<Univ>) -> Arc<Univ> {
 
 /// The kernel-rebuild closure on stored trees: bottom-up rebuild through
 /// the simplifying constructors — exactly what anon/meta ingress does.
-/// Mirrors `Ix.Tc.reduceIxonUniv`. A non-fixpoint entry reaches the
+/// Mirrors `Ix.Kernel.reduceIxonUniv`. A non-fixpoint entry reaches the
 /// kernel changed (the stage-1 decoration-presence test), and P6 pins
 /// that this rebuild refines into the Géran classes.
 pub fn reduce_univ(u: &Arc<Univ>) -> Arc<Univ> {
@@ -159,7 +159,7 @@ pub fn reduce_univ(u: &Arc<Univ>) -> Arc<Univ> {
 }
 
 // ============================================================================
-// Géran canonical form (Ix/Tc/Level.lean:231-431 on Univ)
+// Géran canonical form (Ix/Kernel/Level.lean:231-431 on Univ)
 // ============================================================================
 
 /// An imax-conditioning chain: sorted param indices.
@@ -185,7 +185,7 @@ pub type NormLevel = BTreeMap<Path, Node>;
 
 /// Insert `(idx, k)` into the sorted var list, max-merging offsets. `k`
 /// must be the current succ-accumulator (the classic port bug is
-/// dropping it — `Ix/Tc/Level.lean:249-252`).
+/// dropping it — `Ix/Kernel/Level.lean:249-252`).
 fn node_add_var(n: &mut Node, idx: u64, k: u64) {
   match n.vars.iter().position(|v| idx <= v.0) {
     Some(p) => {
@@ -309,7 +309,7 @@ fn is_subset(p2: &[u64], p1: &[u64]) -> bool {
 }
 
 /// Keep only the `xs` entries not dominated by a `ys` entry (merge-walk
-/// over sorted var lists). Mirrors `Ix.Tc.Level.subsumeVars`.
+/// over sorted var lists). Mirrors `Ix.Kernel.Level.subsumeVars`.
 fn subsume_vars(xs: &[(u64, u64)], ys: &[(u64, u64)]) -> Vec<(u64, u64)> {
   let mut out = Vec::new();
   let (mut xi, mut yi) = (0, 0);

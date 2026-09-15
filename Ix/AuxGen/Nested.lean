@@ -18,7 +18,7 @@
   `AuxLayout {perm, sourceCtorCounts}` metadata.
 
   The kernel re-derives this order via blake3 `AUX_INDC_VIEW` /
-  `AUX_MARKER_VIEW` seed addresses (`Ix/Tc/Inductive.lean:canonicalAuxOrder`,
+  `AUX_MARKER_VIEW` seed addresses (`Ix/Kernel/Inductive.lean:canonicalAuxOrder`,
   `crates/kernel/src/inductive.rs:canonical_aux_order`) — those seed
   strings are the CONSUMER's reconstruction and must not appear here: the
   compile side orders purely by marker ctor + `sortConsts`.

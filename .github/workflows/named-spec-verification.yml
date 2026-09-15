@@ -1,0 +1,49 @@
+name: Named specification verification
+
+# Legacy, non-required track: the Lean4Lean-derived named specification
+# (`Ix.Theory.Named`) and the `Ix.Kernel.Verify` implementation proofs
+# stated against it, with their exact trust manifests and sorry frontier.
+# The kernel proof gate required on every PR is `lake build --wfail
+# IxKernelConsistency` in ci.yml, whose audit rejects any `Ix.Theory.Named`
+# module in its import closure. This track is being retired in favour of the
+# set model, so it runs on demand and on a weekly schedule only; its audit
+# numbers are frozen at the counts recorded in the manifests it builds.
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Weekly, Monday 06:00 UTC.
+    - cron: '0 6 * * 1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  named-spec:
+    runs-on: warp-ubuntu-latest-x64-16x
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-rust-toolchain
+      # Same `.lake` cache as ci.yml (`./.lake`, per-sha key with prefix
+      # fallback): the newest CI build of the toolchain/manifest pair is
+      # restored and Lake rebuilds whatever differs. Restore-only: this
+      # workflow never publishes a cache entry that ci.yml could restore.
+      - uses: actions/cache/restore@v6
+        with:
+          path: ./.lake
+          key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ github.sha }}
+          restore-keys: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-
+      - uses: leanprover/lean-action@v1
+        with:
+          auto-config: false
+          use-github-cache: false
+      - name: Build named-specification implementation proofs
+        run: lake build IxKernelVerify
+      - name: Check Ix.Kernel exported theorem trust manifest
+        run: lake build Ix.Kernel.Verify.Audit.Completed Ix.Kernel.Verify.Audit.Conditional Ix.Kernel.Verify.Audit.Statements
+      - name: Check Ix.Kernel verification sorry frontier
+        run: lake build Ix.Kernel.Verify.Audit.SorryFrontier

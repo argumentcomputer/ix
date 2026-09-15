@@ -1,5 +1,5 @@
 import Ix.Compile.Verify.CompileConstantCodec
-import Lean4Lean.Verify.QSort
+import Ix.Compile.Verify.QSort
 
 /-!
 # Production expression-table preseeding
@@ -350,7 +350,9 @@ theorem PreseedCollectionWireWF.pushUniv
 
 theorem addressBlake3_wire (bytes : ByteArray) :
     (Address.blake3 bytes).hash.size = 32 := by
-  exact (Blake3.Rust.hash bytes).property
+  exact (Blake3.HasherOps.finalizeWithLength
+    (Blake3.Rust.hasherUpdate (Blake3.Rust.hasherInit ()) bytes) 32 (by
+      rcases System.Platform.numBits_eq with bits | bits <;> rw [bits] <;> decide)).property
 
 /-- Conservative number of reference payloads a source walk can append.
 Seen-set deduplication can only decrease this cost. -/
@@ -3912,7 +3914,7 @@ theorem preseedExprTables_of_collect_run_ready_wireWF
   have hrefPerm : sortedRefs.toList.Perm refs.toList := by
     dsimp only [sortedRefs]
     exact Array.perm_iff_toList_perm.mp
-      (Array.qsort_perm (fun a b : Address => a.cmpBytes b == .lt)
+      (QSort.qsort_perm (fun a b : Address => a.cmpBytes b == .lt)
         0 (refs.size - 1) refs)
   have hsortedRefsWire : ∀ addr ∈ sortedRefs.toList,
       addr.hash.size = 32 := by
@@ -3970,7 +3972,7 @@ theorem preseedExprTables_of_collect_run_ready_wireWF
   have hunivPerm : sortedUnivs.toList.Perm keyed.toList := by
     dsimp only [sortedUnivs]
     exact Array.perm_iff_toList_perm.mp
-      (Array.qsort_perm
+      (QSort.qsort_perm
         (fun (a b : ByteArray × Ixon.Univ) =>
           Ix.CompileM.byteArrayCmp a.1 b.1 == .lt)
         0 (keyed.size - 1) keyed)
@@ -4158,7 +4160,7 @@ theorem preseedExprTables_singleton_run_ready_wireWF
   have hrefPerm : sortedRefs.toList.Perm refs.toList := by
     dsimp only [sortedRefs]
     exact Array.perm_iff_toList_perm.mp
-      (Array.qsort_perm (fun a b : Address => a.cmpBytes b == .lt)
+      (QSort.qsort_perm (fun a b : Address => a.cmpBytes b == .lt)
         0 (refs.size - 1) refs)
   have hsortedRefsWire : ∀ addr ∈ sortedRefs.toList,
       addr.hash.size = 32 := by
@@ -4223,7 +4225,7 @@ theorem preseedExprTables_singleton_run_ready_wireWF
   have hunivPerm : sortedUnivs.toList.Perm keyed.toList := by
     dsimp only [sortedUnivs]
     exact Array.perm_iff_toList_perm.mp
-      (Array.qsort_perm
+      (QSort.qsort_perm
         (fun (a b : ByteArray × Ixon.Univ) =>
           Ix.CompileM.byteArrayCmp a.1 b.1 == .lt)
         0 (keyed.size - 1) keyed)

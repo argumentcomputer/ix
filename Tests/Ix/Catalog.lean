@@ -18,8 +18,8 @@
     members_root drift, non-topo deps, path-traversal labels).
   - Strict-anon compile (`rs_compile_env_anon`): §5 empty, §3 hints
     SURVIVE (the `finalize_hints` ordering pin from the plan's risk
-    table), and the env root equals the named compile's — the
-    anon-invariance the old C5 suite asserted, now structural.
+    table), and the env root equals the named compile's: content
+    identity is independent of source names.
 -/
 module
 

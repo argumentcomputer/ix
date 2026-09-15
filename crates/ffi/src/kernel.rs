@@ -969,7 +969,7 @@ unsafe extern "C" {
   fn lean_internal_set_thread_stack_size(size: usize);
 }
 
-/// `Ix.Tc.setLeanThreadStackSize : USize → BaseIO Unit`
+/// `Ix.Kernel.setLeanThreadStackSize : USize → BaseIO Unit`
 ///
 /// ABI adapter: the runtime setter is a bare `void(size_t)`, so Lean can't
 /// `@[extern]` it directly. The pure-Lean parallel checker calls this before

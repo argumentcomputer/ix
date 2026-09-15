@@ -19,7 +19,7 @@
   Consumed by: `validateAuxClosure` (validate-aux / aux-gen-diff /
   decompile-diff), and — via the Tests binary env — the whole-env
   tc-roundtrip and kernel-ixon-roundtrip suites, where the stage-1
-  spelling decorations (Lean `Ix.Tc` + Rust kernel) are load-bearing.
+  spelling decorations (Lean `Ix.Kernel` + Rust kernel) are load-bearing.
 
   Import note: `Lean.Elab.BuiltinEvalCommand` (the `run_cmd` elab), NOT
   all of `Lean` — the roundtrip suites' envs are this file's module

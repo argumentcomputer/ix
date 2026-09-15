@@ -174,7 +174,7 @@ def focusConsts : Array Lean.Name := #[
   `Tests.Ix.Compile.Mutual.PropRecMotives.pa_eq,
   `Tests.Ix.Compile.Mutual.PropRecMotives.pb2_length,
   `Tests.Ix.Compile.Mutual.PropRecMotives.pa2_eq,
-  -- Call-site shape coverage (plans/callsite-adapter-generalization.md):
+  -- Call-site shape coverage:
   -- direct full application at the Const head, inner-full redex, and
   -- dead-binder split redex (Collapsed-entry fallback), each in both
   -- source orders.

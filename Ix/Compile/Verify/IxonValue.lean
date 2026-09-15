@@ -1,13 +1,26 @@
 import Ix.Ixon
-import Lean4Lean.Theory.Literals
-import Lean4Lean.Theory.Typing.Env
+import Ix.Theory.Expr
+import Ix.Theory.Model.Environment
+import Ix.Compile.Verify.StdLemmas
+import Ix.Compile.Verify.StringLiteral
+
+open Ix.Theory (VLevel VExpr ConstRef)
 
 /-!
-# Ixon v2 expressions and Lean4Lean values
+# Ixon v2 expressions and set-model values
 
 This is the first compiler-facing semantic boundary.  It interprets an Ixon
-expression directly as a Lean4Lean `VExpr`; it does not run Ix.Tc and does not
-use checker acceptance as a specification.
+expression directly as a set-model `Ix.Theory.VExpr Address`; it does not run
+Ix.Kernel and does not use checker acceptance as a specification.
+
+The reading follows the conventions of the consistency reader
+`Ix.Kernel.Consistency.readExpr?`: constants resolve by content address to a
+block reference `ConstRef Address`, projections keep their structure reference
+and field index, natural-number literals are native, a let is read by
+substitution, and a string literal is the constructor expansion of
+`StringRefs.stringLiteral`.  Constant occurrences additionally require an
+entry in the set-model environment index with matching universe arity; this
+is the only use of the environment, so the relation is monotone in it.
 
 The relation is table-aware.  It resolves universe, reference, mutual-member,
 sharing, and literal indices against an explicit immutable context.  A cyclic
@@ -15,21 +28,26 @@ sharing table has no finite derivation.  Lambda usage and forall
 usage/ownership are intentionally absent from the semantic premises: ordinary
 Lean compilation inhabits `.many`/`.shared`, while v2 annotations remain
 available to later substructural passes without changing the Lean meaning.
+
+The former named-specification relation carried a local context and a
+declaration-supplied projection relation `trProj uvars locals name field val
+out` because that syntax had no projection constructor.  The set-model syntax
+has `VExpr.proj`, so the local context, universe count, and projection
+parameter are gone: downstream theorems that only threaded them through can
+drop those indices.
 -/
 
 namespace Ix.Compile.Verify
 
-open Lean4Lean (VConstant VEnv VExpr VLevel)
-
 /-- Immutable semantic views needed to interpret an Ixon expression. -/
 structure Catalog where
-  /-- Resolve a content address to its Theory declaration name. -/
-  nameOf : Address → Option Lean.Name
+  /-- Resolve a content address to its set-model block reference. -/
+  resolve : Address → Option (ConstRef Address)
   /-- Resolve literal content addresses to their committed bytes. -/
   blobs : Address → Option ByteArray
   /-- Resolve canonical constant payloads.  This stored view is deliberately
-  separate from `nameOf`: content integrity and semantic naming are distinct
-  obligations. -/
+  separate from `resolve`: content integrity and semantic reference are
+  distinct obligations. -/
   constants : Address → Option Ixon.Constant := fun _ => none
   /-- Resolve source-facing named registrations. -/
   named : Ix.Name → Option Ixon.Named := fun _ => none
@@ -68,124 +86,108 @@ def DecodeCtx.univArgs? (ctx : DecodeCtx) (idxs : Array UInt64) :
     Option (List VLevel) :=
   idxs.toList.mapM ctx.univ?
 
-/-- Projection interpretation is supplied by the surrounding declaration
-model.  Its universe/local-context indices match the existing raw Theory
-boundary, while this module remains independent of Ix.Tc. -/
-abbrev ProjectionRel :=
-  Nat → List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop
-
-namespace ProjectionRel
-
-/-- Projection-free fixtures use an uninhabited projection relation. -/
-def none : ProjectionRel := fun _ _ _ _ _ _ => False
-
-end ProjectionRel
-
-/-- Direct semantic relation from table-indexed Ixon syntax to Lean4Lean
+/-- Direct semantic relation from table-indexed Ixon syntax to set-model
 syntax.  This is a raw representation relation: typing and source-kernel
 well-formedness are separate obligations. -/
-inductive IxonExprRel (venv : VEnv) (catalog : Catalog) (dctx : DecodeCtx)
-    (trProj : ProjectionRel) {uvars : Nat} :
-    List VExpr → Ixon.Expr → VExpr → Prop where
-  | var {locals : List VExpr} {idx : UInt64} :
-    IxonExprRel venv catalog dctx trProj locals (.var idx) (.bvar idx.toNat)
-  | sort {locals : List VExpr} {idx : UInt64} {u : VLevel} :
+inductive IxonExprRel (entries : Ix.Theory.Model.Environment Address)
+    (catalog : Catalog) (dctx : DecodeCtx) (strings : StringRefs Address) :
+    Ixon.Expr → VExpr Address → Prop where
+  | var {idx : UInt64} :
+    IxonExprRel entries catalog dctx strings (.var idx) (.bvar idx.toNat)
+  | sort {idx : UInt64} {u : VLevel} :
     dctx.univ? idx = some u →
-    IxonExprRel venv catalog dctx trProj locals (.sort idx) (.sort u)
-  | ref {locals : List VExpr} {refIdx : UInt64}
-      {univIdxs : Array UInt64} {addr : Address} {name : Lean.Name}
-      {ci : VConstant} {us : List VLevel} :
+    IxonExprRel entries catalog dctx strings (.sort idx) (.sort u)
+  | ref {refIdx : UInt64} {univIdxs : Array UInt64} {addr : Address}
+      {ref : ConstRef Address} {entry : Ix.Theory.Model.ConstantEntry Address}
+      {us : List VLevel} :
     dctx.refs[refIdx.toNat]? = some addr →
-    catalog.nameOf addr = some name →
-    venv.constants name = some ci →
+    catalog.resolve addr = some ref →
+    entries ref = some entry →
     dctx.univArgs? univIdxs = some us →
-    us.length = ci.uvars →
-    IxonExprRel venv catalog dctx trProj locals (.ref refIdx univIdxs)
-      (.const name us)
-  | recur {locals : List VExpr} {recIdx : UInt64}
-      {univIdxs : Array UInt64} {addr : Address} {name : Lean.Name}
-      {ci : VConstant} {us : List VLevel} :
+    us.length = entry.universes →
+    IxonExprRel entries catalog dctx strings (.ref refIdx univIdxs)
+      (.const ref us)
+  | recur {recIdx : UInt64} {univIdxs : Array UInt64} {addr : Address}
+      {ref : ConstRef Address} {entry : Ix.Theory.Model.ConstantEntry Address}
+      {us : List VLevel} :
     dctx.mutAddrs[recIdx.toNat]? = some addr →
-    catalog.nameOf addr = some name →
-    venv.constants name = some ci →
+    catalog.resolve addr = some ref →
+    entries ref = some entry →
     dctx.univArgs? univIdxs = some us →
-    us.length = ci.uvars →
-    IxonExprRel venv catalog dctx trProj locals (.recur recIdx univIdxs)
-      (.const name us)
-  | app {locals : List VExpr} {fn arg : Ixon.Expr} {fn' arg' : VExpr} :
-    IxonExprRel venv catalog dctx trProj locals fn fn' →
-    IxonExprRel venv catalog dctx trProj locals arg arg' →
-    IxonExprRel venv catalog dctx trProj locals (.app fn arg) (.app fn' arg')
-  | lam {locals : List VExpr} {uses : Ixon.Uses} {ty body : Ixon.Expr}
-      {ty' body' : VExpr} :
-    IxonExprRel venv catalog dctx trProj locals ty ty' →
-    IxonExprRel venv catalog dctx trProj (ty' :: locals) body body' →
-    IxonExprRel venv catalog dctx trProj locals (.lam uses ty body)
+    us.length = entry.universes →
+    IxonExprRel entries catalog dctx strings (.recur recIdx univIdxs)
+      (.const ref us)
+  | app {fn arg : Ixon.Expr} {fn' arg' : VExpr Address} :
+    IxonExprRel entries catalog dctx strings fn fn' →
+    IxonExprRel entries catalog dctx strings arg arg' →
+    IxonExprRel entries catalog dctx strings (.app fn arg) (.app fn' arg')
+  | lam {uses : Ixon.Uses} {ty body : Ixon.Expr} {ty' body' : VExpr Address} :
+    IxonExprRel entries catalog dctx strings ty ty' →
+    IxonExprRel entries catalog dctx strings body body' →
+    IxonExprRel entries catalog dctx strings (.lam uses ty body)
       (.lam ty' body')
-  | all {locals : List VExpr} {uses : Ixon.Uses} {owned : Ixon.Owned}
-      {ty body : Ixon.Expr} {ty' body' : VExpr} :
-    IxonExprRel venv catalog dctx trProj locals ty ty' →
-    IxonExprRel venv catalog dctx trProj (ty' :: locals) body body' →
-    IxonExprRel venv catalog dctx trProj locals (.all uses owned ty body)
+  | all {uses : Ixon.Uses} {owned : Ixon.Owned} {ty body : Ixon.Expr}
+      {ty' body' : VExpr Address} :
+    IxonExprRel entries catalog dctx strings ty ty' →
+    IxonExprRel entries catalog dctx strings body body' →
+    IxonExprRel entries catalog dctx strings (.all uses owned ty body)
       (.forallE ty' body')
-  | letE {locals : List VExpr} {nonDep : Bool} {ty val body : Ixon.Expr}
-      {ty' val' body' : VExpr} :
-    IxonExprRel venv catalog dctx trProj locals ty ty' →
-    IxonExprRel venv catalog dctx trProj locals val val' →
-    IxonExprRel venv catalog dctx trProj (ty' :: locals) body body' →
-    IxonExprRel venv catalog dctx trProj locals (.letE nonDep ty val body)
+  | letE {nonDep : Bool} {ty val body : Ixon.Expr}
+      {ty' val' body' : VExpr Address} :
+    IxonExprRel entries catalog dctx strings ty ty' →
+    IxonExprRel entries catalog dctx strings val val' →
+    IxonExprRel entries catalog dctx strings body body' →
+    IxonExprRel entries catalog dctx strings (.letE nonDep ty val body)
       (body'.inst val')
-  | prj {locals : List VExpr} {typeRefIdx field : UInt64}
-      {val : Ixon.Expr} {addr : Address} {name : Lean.Name}
-      {ci : VConstant} {val' out : VExpr} :
+  | prj {typeRefIdx field : UInt64} {val : Ixon.Expr} {addr : Address}
+      {ref : ConstRef Address} {entry : Ix.Theory.Model.ConstantEntry Address}
+      {val' : VExpr Address} :
     dctx.refs[typeRefIdx.toNat]? = some addr →
-    catalog.nameOf addr = some name →
-    venv.constants name = some ci →
-    IxonExprRel venv catalog dctx trProj locals val val' →
-    trProj uvars locals name field.toNat val' out →
-    IxonExprRel venv catalog dctx trProj locals
-      (.prj typeRefIdx field val) out
-  | nat {locals : List VExpr} {refIdx : UInt64} {addr : Address}
-      {bytes : ByteArray} :
+    catalog.resolve addr = some ref →
+    entries ref = some entry →
+    IxonExprRel entries catalog dctx strings val val' →
+    IxonExprRel entries catalog dctx strings (.prj typeRefIdx field val)
+      (.proj ref field.toNat val')
+  | nat {refIdx : UInt64} {addr : Address} {bytes : ByteArray} :
     dctx.refs[refIdx.toNat]? = some addr →
     catalog.blobs addr = some bytes →
-    IxonExprRel venv catalog dctx trProj locals (.nat refIdx)
+    IxonExprRel entries catalog dctx strings (.nat refIdx)
       (.natLit (Nat.fromBytesLE bytes.data))
-  | str {locals : List VExpr} {refIdx : UInt64} {addr : Address}
-      {bytes : ByteArray} {value : String} :
+  | str {refIdx : UInt64} {addr : Address} {bytes : ByteArray}
+      {value : String} :
     dctx.refs[refIdx.toNat]? = some addr →
     catalog.blobs addr = some bytes →
     String.fromUTF8? bytes = some value →
-    IxonExprRel venv catalog dctx trProj locals (.str refIdx)
-      (.trLiteral (.strVal value))
-  | share {locals : List VExpr} {idx : UInt64} {expansion : Ixon.Expr}
-      {value : VExpr} :
+    IxonExprRel entries catalog dctx strings (.str refIdx)
+      (strings.stringLiteral value)
+  | share {idx : UInt64} {expansion : Ixon.Expr} {value : VExpr Address} :
     dctx.sharing[idx.toNat]? = some expansion →
-    IxonExprRel venv catalog dctx trProj locals expansion value →
-    IxonExprRel venv catalog dctx trProj locals (.share idx) value
+    IxonExprRel entries catalog dctx strings expansion value →
+    IxonExprRel entries catalog dctx strings (.share idx) value
 
 namespace IxonExprRel
 
-/-- The representation relation is monotone in the trusted Theory
-environment; only resolved constant-table witnesses are transported. -/
-theorem mono {venv venv' : VEnv} (henv : venv ≤ venv')
-    {catalog : Catalog} {dctx : DecodeCtx} {trProj : ProjectionRel}
-    {uvars : Nat} {locals : List VExpr} {expr : Ixon.Expr} {value : VExpr}
-    (h : IxonExprRel (uvars := uvars) venv catalog dctx trProj locals expr value) :
-    IxonExprRel (uvars := uvars) venv' catalog dctx trProj locals expr value := by
+/-- The representation relation is monotone in the set-model environment
+index; only resolved entry witnesses are transported. -/
+theorem mono {entries entries' : Ix.Theory.Model.Environment Address}
+    (henv : ∀ r e, entries r = some e → entries' r = some e)
+    {catalog : Catalog} {dctx : DecodeCtx} {strings : StringRefs Address}
+    {expr : Ixon.Expr} {value : VExpr Address}
+    (h : IxonExprRel entries catalog dctx strings expr value) :
+    IxonExprRel entries' catalog dctx strings expr value := by
   induction h with
   | var => exact .var
   | sort hidx => exact .sort hidx
-  | ref href hname hconst hunivs harity =>
-    exact .ref href hname (henv.constants hconst) hunivs harity
-  | recur href hname hconst hunivs harity =>
-    exact .recur href hname (henv.constants hconst) hunivs harity
+  | ref href hres hentry hunivs harity =>
+    exact .ref href hres (henv _ _ hentry) hunivs harity
+  | recur href hres hentry hunivs harity =>
+    exact .recur href hres (henv _ _ hentry) hunivs harity
   | app _ _ ihfn iharg => exact .app ihfn iharg
   | lam _ _ ihty ihbody => exact .lam ihty ihbody
   | all _ _ ihty ihbody => exact .all ihty ihbody
   | letE _ _ _ ihty ihval ihbody => exact .letE ihty ihval ihbody
-  | prj href hname hconst _ hproj ihval =>
-    exact .prj href hname (henv.constants hconst) ihval hproj
+  | prj href hres hentry _ ihval =>
+    exact .prj href hres (henv _ _ hentry) ihval
   | nat href hblob => exact .nat href hblob
   | str href hblob hutf8 => exact .str href hblob hutf8
   | share href _ ih => exact .share href ih
@@ -243,45 +245,42 @@ theorem eraseBinderModes_eq_self_of_leanFragment {expr : Ixon.Expr}
 
 namespace IxonExprRel
 
-/-- Erasing v2 modes preserves every direct Theory value derivation. -/
-theorem eraseModes {venv : VEnv} {catalog : Catalog} {dctx : DecodeCtx}
-    {trProj : ProjectionRel} {uvars : Nat} {locals : List VExpr}
-    {expr : Ixon.Expr} {value : VExpr}
-    (h : IxonExprRel (uvars := uvars) venv catalog dctx trProj locals expr value) :
-    IxonExprRel (uvars := uvars) venv catalog dctx trProj locals
-      (eraseBinderModes expr) value := by
+/-- Erasing v2 modes preserves every direct set-model value derivation. -/
+theorem eraseModes {entries : Ix.Theory.Model.Environment Address}
+    {catalog : Catalog} {dctx : DecodeCtx} {strings : StringRefs Address}
+    {expr : Ixon.Expr} {value : VExpr Address}
+    (h : IxonExprRel entries catalog dctx strings expr value) :
+    IxonExprRel entries catalog dctx strings (eraseBinderModes expr) value := by
   induction h with
   | var => exact .var
   | sort hidx => exact .sort hidx
-  | ref href hname hconst hunivs harity =>
-    exact .ref href hname hconst hunivs harity
-  | recur href hname hconst hunivs harity =>
-    exact .recur href hname hconst hunivs harity
+  | ref href hres hentry hunivs harity =>
+    exact .ref href hres hentry hunivs harity
+  | recur href hres hentry hunivs harity =>
+    exact .recur href hres hentry hunivs harity
   | app _ _ ihfn iharg => exact .app ihfn iharg
   | lam _ _ ihty ihbody => exact .lam ihty ihbody
   | all _ _ ihty ihbody => exact .all ihty ihbody
   | letE _ _ _ ihty ihval ihbody => exact .letE ihty ihval ihbody
-  | prj href hname hconst _ hproj ihval =>
-    exact .prj href hname hconst ihval hproj
+  | prj href hres hentry _ ihval => exact .prj href hres hentry ihval
   | nat href hblob => exact .nat href hblob
   | str href hblob hutf8 => exact .str href hblob hutf8
   | share href hexp _ => exact .share href hexp
 
 /-- A derivation for the conservative erasure can be decorated with the
 original v2 modes.  No semantic evidence is invented or discarded. -/
-theorem of_eraseModes {venv : VEnv} {catalog : Catalog} {dctx : DecodeCtx}
-    {trProj : ProjectionRel} {uvars : Nat} {locals : List VExpr}
-    {expr : Ixon.Expr} {value : VExpr}
-    (h : IxonExprRel (uvars := uvars) venv catalog dctx trProj locals
-      (eraseBinderModes expr) value) :
-    IxonExprRel (uvars := uvars) venv catalog dctx trProj locals expr value := by
-  induction expr generalizing locals value with
+theorem of_eraseModes {entries : Ix.Theory.Model.Environment Address}
+    {catalog : Catalog} {dctx : DecodeCtx} {strings : StringRefs Address}
+    {expr : Ixon.Expr} {value : VExpr Address}
+    (h : IxonExprRel entries catalog dctx strings (eraseBinderModes expr)
+      value) :
+    IxonExprRel entries catalog dctx strings expr value := by
+  induction expr generalizing value with
   | sort | var | ref | recur | str | nat | share =>
     simpa [eraseBinderModes] using h
   | prj typeIdx field val ih =>
     cases h with
-    | prj href hname hconst hval hproj =>
-      exact .prj href hname hconst (ih hval) hproj
+    | prj href hres hentry hval => exact .prj href hres hentry (ih hval)
   | app fn arg ihfn iharg =>
     cases h with
     | app hfn harg => exact .app (ihfn hfn) (iharg harg)
@@ -297,21 +296,22 @@ theorem of_eraseModes {venv : VEnv} {catalog : Catalog} {dctx : DecodeCtx}
       exact .letE (ihty hty) (ihval hval) (ihbody hbody)
 
 /-- V2 annotations are semantically inert at the Lean compiler boundary. -/
-theorem eraseModes_iff {venv : VEnv} {catalog : Catalog} {dctx : DecodeCtx}
-    {trProj : ProjectionRel} {uvars : Nat} {locals : List VExpr}
-    {expr : Ixon.Expr} {value : VExpr} :
-    IxonExprRel (uvars := uvars) venv catalog dctx trProj locals
-        (eraseBinderModes expr) value ↔
-      IxonExprRel (uvars := uvars) venv catalog dctx trProj locals expr value :=
+theorem eraseModes_iff {entries : Ix.Theory.Model.Environment Address}
+    {catalog : Catalog} {dctx : DecodeCtx} {strings : StringRefs Address}
+    {expr : Ixon.Expr} {value : VExpr Address} :
+    IxonExprRel entries catalog dctx strings (eraseBinderModes expr) value ↔
+      IxonExprRel entries catalog dctx strings expr value :=
   ⟨of_eraseModes, eraseModes⟩
 
 end IxonExprRel
 
-/-- Honest boundary for source-kernel meaning while upstream Lean4Lean
-construction remains incomplete.  Compiler theorems consume this explicit
-witness; no axiom is needed for the structural Ixon conversion itself. -/
-structure KernelSourceWitness where
-  venv : VEnv
-  wf : venv.WF
+/-- Honest boundary for source-kernel meaning: a set-model realization of the
+environment index against which the compiler relations are read.  Compiler
+theorems consume this explicit witness; no axiom is needed for the structural
+Ixon conversion itself. -/
+structure KernelSourceWitness (V : Type v) [Ix.Theory.Model.SetTheory V] where
+  entries : Ix.Theory.Model.Environment Address
+  constants : Ix.Theory.Model.Assignment Address V
+  realizes : Ix.Theory.Model.Realizes constants entries
 
 end Ix.Compile.Verify

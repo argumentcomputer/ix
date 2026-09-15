@@ -58,7 +58,7 @@ def testRustCheckTauCetiReduction : TestSeq :=
   ) .done
 
 def testLeanCheckTauCetiReduction : TestSeq :=
-  .individualIO s!"Ix.Tc check {focusConsts.size} inlined TauCeti reductions" none (do
+  .individualIO s!"Ix.Kernel check {focusConsts.size} inlined TauCeti reductions" none (do
     let leanEnv ← get_env!
     let (_, closedConsts) :=
       Tests.Ix.Kernel.TutorialMeta.collectDepsWithExtras leanEnv {} focusConsts.toList

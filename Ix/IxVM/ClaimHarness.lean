@@ -5,7 +5,7 @@ public import Ix.Claim
 public import Ix.AssumptionTree
 public import Ix.CompileM
 public import Ix.Common
-public import Ix.Tc.Primitive
+public import Ix.Kernel.Primitive
 
 public section
 
@@ -357,7 +357,7 @@ private def seedTreeAt (root : Address)
     key`. -/
 def closureFrom (env : Ixon.Env) (target : Address) : Std.HashSet Address :=
   closureFromRoots env
-    (#[target] ++ Ix.Tc.primAddrSet.toArray.filter env.consts.contains)
+    (#[target] ++ Ix.Kernel.primAddrSet.toArray.filter env.consts.contains)
 
 /-- Serializes `claim`, seeds its bytes at `key = blake3(claim)`, and
     populates the IOBuffer with the `closureFrom` byte scope of every
@@ -468,7 +468,7 @@ def shardCheckEnvClaimTrees (env : Ixon.Env) (owned : Array Address) :
 def shardCheckEnvClaim (env : Ixon.Env) (owned : Array Address) :
     Except String (Ix.Claim × Std.HashSet Address × Std.HashMap Address Ix.AssumptionTree) := do
   let (claim, trees) ← shardCheckEnvClaimTrees env owned
-  let primitiveRoots := Ix.Tc.primAddrSet.toArray.filter env.consts.contains
+  let primitiveRoots := Ix.Kernel.primAddrSet.toArray.filter env.consts.contains
   let closure := closureFromRoots env (owned ++ primitiveRoots)
   pure (claim, closure, trees)
 

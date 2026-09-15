@@ -1,0 +1,994 @@
+/-
+Copyright (c) 2026 Argument Computer Corporation.
+SPDX-License-Identifier: MIT OR Apache-2.0
+-/
+
+import Ix.Kernel.Verify.Consistency.BinderInference
+import Ix.Kernel.Verify.Consistency.LetInference
+import Ix.Kernel.Verify.Consistency.WhnfCacheFrame
+import Ix.Kernel.Verify.Consistency.SortInference
+import Ix.Kernel.Verify.Consistency.SourceOwnershipCheck
+
+/-!
+# Cache preservation through recursive inference
+
+Finite operational trees follow the actual smaller method table, recording
+the keys written by successful misses. An entry outside those writes and its
+loaded declaration survive the entire inference, so a closed cached witness
+can be reused afterward. Every initially populated full key is proved to be
+outside those writes by cache priority. No semantic typing or per-call cache
+frame is an input.
+-/
+
+namespace Ix.Kernel.Consistency
+
+open Theory Theory.Model
+
+universe u v
+
+/-- Key computation may memoize a context digest but cannot change policy. -/
+theorem inferKey_policy {term : KExpr .anon} {before after : TcState .anon}
+    {key : Address × Address} (run : TcM.inferKey term before = .ok key after) :
+    after.inferOnly = before.inferOnly := by
+  unfold TcM.inferKey at run
+  change EStateM.bind (TcM.ctxAddrForLbr term.lbr) _ before = _ at run
+  unfold TcM.ctxAddrForLbr at run
+  change EStateM.bind (fun state => EStateM.bind (get : TcM .anon (TcState .anon))
+    _ state) _ before = _ at run
+  simp only [EStateM.bind, show (get : TcM .anon (TcState .anon)) before =
+    .ok before before from rfl] at run
+  by_cases fast : (term.lbr == 0 || before.ctx.isEmpty) = true
+  · rw [if_pos fast] at run
+    cases run; rfl
+  · rw [if_neg fast] at run
+    cases cached : before.ctxAddrCache[(before.ctxId, term.lbr)]? <;>
+      rw [cached] at run <;> cases run <;> rfl
+
+/-- Context-digest memoization leaves the complete kernel environment intact. -/
+theorem inferKey_environment {term : KExpr .anon} {before after : TcState .anon}
+    {key : Address × Address} (run : TcM.inferKey term before = .ok key after) :
+    after.env = before.env := by
+  unfold TcM.inferKey at run
+  change EStateM.bind (TcM.ctxAddrForLbr term.lbr) _ before = _ at run
+  unfold TcM.ctxAddrForLbr at run
+  change EStateM.bind (fun state => EStateM.bind (get : TcM .anon (TcState .anon))
+    _ state) _ before = _ at run
+  simp only [EStateM.bind, show (get : TcM .anon (TcState .anon)) before =
+    .ok before before from rfl] at run
+  by_cases fast : (term.lbr == 0 || before.ctx.isEmpty) = true
+  · rw [if_pos fast] at run
+    cases run; rfl
+  · rw [if_neg fast] at run
+    cases cached : before.ctxAddrCache[(before.ctxId, term.lbr)]? <;>
+      rw [cached] at run <;> cases run <;> rfl
+
+/-- Key memoization preserves the reusable source ownership resource. -/
+def OwnedLazySupport.afterInferKey {term : KExpr .anon} {before after : TcState .anon}
+    {key : Address × Address} (support : OwnedLazySupport before)
+    (run : TcM.inferKey term before = .ok key after) : OwnedLazySupport after := by
+  refine ⟨support.source, support.ownership, ?_, ?_⟩
+  · unfold TcM.inferKey at run
+    change EStateM.bind (TcM.ctxAddrForLbr term.lbr) _ before = _ at run
+    unfold TcM.ctxAddrForLbr at run
+    change EStateM.bind (fun state => EStateM.bind (get : TcM .anon (TcState .anon))
+      _ state) _ before = _ at run
+    simp only [EStateM.bind, show (get : TcM .anon (TcState .anon)) before =
+      .ok before before from rfl] at run
+    by_cases fast : (term.lbr == 0 || before.ctx.isEmpty) = true
+    · rw [if_pos fast] at run
+      cases run; exact support.installed
+    · rw [if_neg fast] at run
+      cases cached : before.ctxAddrCache[(before.ctxId, term.lbr)]? <;>
+        rw [cached] at run <;> cases run <;> exact support.installed
+  · rw [inferKey_environment run]
+    exact support.blocks
+
+/-- Hash conversion executes only tracing and its optional statistics update.
+The exact state includes that counter update; it is not assumed unchanged. -/
+theorem isDefEq_hash_state {left right : KExpr .anon}
+    (equal : (left.addr == right.addr) = true)
+    (methods : Methods .anon) (before : TcState .anon) :
+    RecM.isDefEq left right methods before = .ok true
+      (if before.stats then {before with deqCalls := before.deqCalls + 1} else before) := by
+  have traced : TcM.stepTrace "deq"
+      (fun _ => s!"{TcM.addr8 left.addr} ~ {TcM.addr8 right.addr}") before = .ok () before := by
+    unfold TcM.stepTrace
+    change EStateM.bind (get : TcM .anon (TcState .anon)) _ before = _
+    rw [EStateM.bind, show (get : TcM .anon (TcState .anon)) before = .ok before before from rfl]
+    dsimp only
+    split <;> rfl
+  have bumped : TcM.bumpStats
+      (fun state : TcState .anon => {state with deqCalls := state.deqCalls + 1}) before =
+      .ok () (if before.stats then {before with deqCalls := before.deqCalls + 1} else before) := by
+    unfold TcM.bumpStats
+    change EStateM.bind (get : TcM .anon (TcState .anon)) _ before = _
+    rw [EStateM.bind, show (get : TcM .anon (TcState .anon)) before = .ok before before from rfl]
+    dsimp only
+    by_cases enabled : before.stats = true
+    · rw [if_pos enabled, if_pos enabled]; rfl
+    · rw [if_neg enabled, if_neg enabled]; rfl
+  change (RecM.isDefEq left right).run methods before = _
+  unfold RecM.isDefEq
+  rw [ReaderT.run_bind]
+  change EStateM.bind (TcM.stepTrace "deq"
+    (fun _ => s!"{TcM.addr8 left.addr} ~ {TcM.addr8 right.addr}")) _ before = _
+  rw [EStateM.bind, traced]
+  simp only [ReaderT.run_bind]
+  change EStateM.bind (TcM.bumpStats
+    (fun state : TcState .anon => {state with deqCalls := state.deqCalls + 1})) _ before = _
+  rw [EStateM.bind, bumped]
+  simp only [equal, if_true]
+  rfl
+
+/-- The supported conversion path retains inference caches, loaded sources,
+and the caller's checking policy even when statistics are enabled. -/
+theorem isDefEq_hash_frame {left right : KExpr .anon}
+    {methods : Methods .anon} {before after : TcState .anon}
+    (equal : (left.addr == right.addr) = true)
+    (run : RecM.isDefEq left right methods before = .ok true after)
+    (key : Address × Address) :
+    InferenceCacheFrame key before after ∧ after.inferOnly = before.inferOnly := by
+  rw [isDefEq_hash_state equal] at run
+  split at run <;> cases run <;> exact ⟨(.of_eq rfl rfl rfl), rfl⟩
+
+private theorem openBinder_policy {name : Mode.anon.F Name}
+    {bi : Mode.anon.F Lean.BinderInfo} {domain body opened : KExpr .anon}
+    {fresh : FVarId} {before after : TcState .anon}
+    (run : TcM.openBinder name bi domain body before = .ok (opened, fresh) after) :
+    after.inferOnly = before.inferOnly := by
+  rw [openBinder_eq] at run
+  split at run
+  · cases run; rfl
+  · contradiction
+
+private theorem openBinder_frame {name : Mode.anon.F Name}
+    {bi : Mode.anon.F Lean.BinderInfo} {domain body opened : KExpr .anon}
+    {fresh : FVarId} {before after : TcState .anon} (key : Address × Address)
+    (run : TcM.openBinder name bi domain body before = .ok (opened, fresh) after) :
+    InferenceCacheFrame key before after := by
+  have frame := PreservesInferenceCache.openBinder key name bi domain body before
+  rw [run] at frame
+  exact frame
+
+private theorem openLet_frame {name : Mode.anon.F Name} {domain value body opened : KExpr .anon}
+    {fresh : FVarId} {before after : TcState .anon} (key : Address × Address)
+    (run : TcM.openLet name domain value body before = .ok (opened, fresh) after) :
+    InferenceCacheFrame key before after := by
+  have state := openLet_inference_state run
+  exact .of_eq (congrArg (·[key]?) state.1) (congrArg (·[key]?) state.2.1) state.2.2.1
+
+private theorem infer_miss_frame {term result : KExpr .anon}
+    {methods : Methods .anon} {before after : TcState .anon} {key : Address × Address}
+    (miss : UncachedInference before term) (different : miss.key ≠ key)
+    (accepted : RecM.infer term methods before = .ok result after)
+    (uncached : ∀ middle,
+      RecM.inferUncached RecM.inferCall before.inferOnly term methods miss.keyed = .ok result middle →
+      InferenceCacheFrame key miss.keyed middle ∧ middle.inferOnly = miss.keyed.inferOnly) :
+    InferenceCacheFrame key before after ∧ after.inferOnly = before.inferOnly := by
+  obtain ⟨middle, run, written⟩ := infer_uncached_success_state miss accepted
+  obtain ⟨bodyFrame, bodyPolicy⟩ := uncached middle run
+  have keyFrame := PreservesInferenceCache.inferKey key term before
+  rw [miss.keyRun] at keyFrame
+  have writeRun : RecM.cacheInferResult before.inferOnly miss.key result methods middle =
+      .ok () after := by
+    rw [cacheInferResult_eq, written]
+  have tail := PreservesInferenceCache.write_other different before.inferOnly result methods middle
+  rw [writeRun] at tail
+  have policy : after.inferOnly = middle.inferOnly := by
+    rw [written]
+    cases before.inferOnly <;> rfl
+  exact ⟨keyFrame.trans (bodyFrame.trans tail),
+    policy.trans (bodyPolicy.trans (inferKey_policy miss.keyRun))⟩
+
+/-- Operational support for the successful recursive fragment. Hits write
+nothing, including repeated uses of the watched entry. Misses record their
+actual key; constant misses use a loaded source or verified standalone lazy
+loading, with finite walker resources at the actual post-lookup state.
+The lambda domain call is included even though semantic checking can omit its
+typing subtree once the declared type's formation has been established. -/
+inductive InferenceCacheTrace : Nat → TcState .anon → KExpr .anon → Type (u + 1)
+  | hit {fuel before term} (hit : InferenceCacheHit before term) :
+      InferenceCacheTrace fuel before term
+  | sort {fuel before level info} (miss : UncachedInference before (.sort level info)) :
+      InferenceCacheTrace fuel before (.sort level info)
+  | fvar {fuel before id name info} (miss : UncachedInference before (.fvar id name info)) :
+      InferenceCacheTrace fuel before (.fvar id name info)
+  | nat {fuel before value blob info} (miss : UncachedInference before (.nat value blob info)) :
+      InferenceCacheTrace fuel before (.nat value blob info)
+  | const {fuel before id arguments info}
+      (miss : UncachedInference before (.const id arguments info))
+      (concrete : KConst .anon) (loaded : miss.keyed.env.get? id = some concrete)
+      (resources : UniverseInstantiationSupport miss.keyed concrete.ty arguments) :
+      InferenceCacheTrace fuel before (.const id arguments info)
+  | lazyConst {fuel before id arguments info}
+      (miss : UncachedInference before (.const id arguments info))
+      (loader : VerifiedLazySupport miss.keyed id.addr)
+      (resources : ∀ concrete loaded, TcM.getConst id miss.keyed = .ok concrete loaded →
+        UniverseInstantiationSupport loaded concrete.ty arguments) :
+      InferenceCacheTrace fuel before (.const id arguments info)
+  | app {fuel before fn arg info} (full : before.inferOnly = false)
+      (miss : UncachedInference before (.app fn arg info))
+      (trace : ApplicationInferenceTrace fuel miss.keyed fn arg)
+      (hashPath : (trace.argumentType.addr == trace.domain.addr) = true)
+      (functionTree : InferenceCacheTrace fuel miss.keyed fn)
+      (argumentTree : InferenceCacheTrace fuel trace.functionState arg) :
+      InferenceCacheTrace (fuel + 1) before (.app fn arg info)
+  | appBeta {β : Type u} {resolve : Address → Option (ConstRef β)}
+      {locals fuel before fn arg info term condition domain body}
+      (full : before.inferOnly = false)
+      (miss : UncachedInference before (.app fn arg info))
+      (trace : ApplicationWhnfInferenceTrace fuel miss.keyed fn arg)
+      (exposure : BetaPiExposure resolve locals fuel trace.functionState trace.functionType
+        term condition domain body trace.domain trace.codomain)
+      (hashPath : (trace.argumentType.addr == trace.domain.addr) = true)
+      (functionTree : InferenceCacheTrace fuel miss.keyed fn)
+      (argumentTree : InferenceCacheTrace fuel trace.exposedState arg) :
+      InferenceCacheTrace (fuel + 1) before (.app fn arg info)
+  | forallE {fuel before name bi domain body info}
+      (miss : UncachedInference before (.all name bi domain body info))
+      (trace : ForallInferenceTrace fuel miss.keyed name bi domain body)
+      (domainTree : InferenceCacheTrace fuel miss.keyed domain)
+      (bodyTree : InferenceCacheTrace fuel trace.openedState trace.opened) :
+      InferenceCacheTrace (fuel + 1) before (.all name bi domain body info)
+  | lam {fuel before name bi domain body info} (full : before.inferOnly = false)
+      (miss : UncachedInference before (.lam name bi domain body info))
+      (trace : LambdaInferenceTrace fuel miss.keyed name bi domain body)
+      (domainTree : InferenceCacheTrace fuel miss.keyed domain)
+      (bodyTree : InferenceCacheTrace fuel trace.openedState trace.opened) :
+      InferenceCacheTrace (fuel + 1) before (.lam name bi domain body info)
+  | lamBody {fuel before name bi domain body info} (full : before.inferOnly = false)
+      (miss : UncachedInference before (.lam name bi domain body info))
+      (trace : LambdaBodyTrace fuel miss.keyed name bi domain body)
+      (domainTree : InferenceCacheTrace fuel miss.keyed domain)
+      (bodyTree : InferenceCacheTrace fuel trace.openedState trace.opened) :
+      InferenceCacheTrace (fuel + 1) before (.lam name bi domain body info)
+  | letE {fuel before name domain value body nonDep info} (full : before.inferOnly = false)
+      (miss : UncachedInference before (.letE name domain value body nonDep info))
+      (trace : LetInferenceTrace fuel miss.keyed name domain value body)
+      (hashPath : (trace.valueType.addr == domain.addr) = true)
+      (domainTree : InferenceCacheTrace fuel miss.keyed domain)
+      (valueTree : InferenceCacheTrace fuel trace.domainState value)
+      (bodyTree : InferenceCacheTrace fuel trace.openedState trace.opened) :
+      InferenceCacheTrace (fuel + 1) before (.letE name domain value body nonDep info)
+  | forallSort {β : Type u} {resolve : Address → Option (ConstRef β)}
+      {locals fuel before name bi domain body info domainType bodyType}
+      (miss : UncachedInference before (.all name bi domain body info))
+      (trace : ForallSortInferenceTrace fuel miss.keyed name bi domain body)
+      (domainExposure : trace.domainCheck.Exposure resolve locals domainType)
+      (bodyExposure : trace.bodyCheck.Exposure resolve (trace.fresh :: locals) bodyType)
+      (domainTree : InferenceCacheTrace fuel miss.keyed domain)
+      (bodyTree : InferenceCacheTrace fuel trace.openedState trace.opened) :
+      InferenceCacheTrace (fuel + 1) before (.all name bi domain body info)
+  | lamSort {β : Type u} {resolve : Address → Option (ConstRef β)}
+      {locals fuel before name bi domain body info domainType} (full : before.inferOnly = false)
+      (miss : UncachedInference before (.lam name bi domain body info))
+      (trace : LambdaSortInferenceTrace fuel miss.keyed name bi domain body)
+      (domainExposure : trace.domainCheck.Exposure resolve locals domainType)
+      (domainTree : InferenceCacheTrace fuel miss.keyed domain)
+      (bodyTree : InferenceCacheTrace fuel trace.openedState trace.opened) :
+      InferenceCacheTrace (fuel + 1) before (.lam name bi domain body info)
+  | letSort {β : Type u} {resolve : Address → Option (ConstRef β)}
+      {locals fuel before name domain value body nonDep info domainType} (full : before.inferOnly = false)
+      (miss : UncachedInference before (.letE name domain value body nonDep info))
+      (trace : LetSortInferenceTrace fuel miss.keyed name domain value body)
+      (domainExposure : trace.domainCheck.Exposure resolve locals domainType)
+      (hashPath : (trace.valueType.addr == domain.addr) = true)
+      (domainTree : InferenceCacheTrace fuel miss.keyed domain)
+      (valueTree : InferenceCacheTrace fuel trace.domainCheck.after value)
+      (bodyTree : InferenceCacheTrace fuel trace.openedState trace.opened) :
+      InferenceCacheTrace (fuel + 1) before (.letE name domain value body nonDep info)
+
+/-- The finite write footprint is computed from the operational tree. Cache
+hits contribute no key; recursive calls and each outer insertion are included. -/
+def InferenceCacheTrace.writes {fuel : Nat} {before : TcState .anon} {term : KExpr .anon} :
+    InferenceCacheTrace fuel before term → List (Address × Address)
+  | .hit _ => []
+  | .sort miss | .fvar miss | .nat miss | .const miss .. | .lazyConst miss .. => [miss.key]
+  | .app _ miss _ _ first second | .appBeta _ miss _ _ _ first second |
+      .forallE miss _ first second | .lam _ miss _ first second | .lamBody _ miss _ first second |
+      .forallSort miss _ _ _ first second | .lamSort _ miss _ _ first second =>
+      miss.key :: (first.writes ++ second.writes)
+  | .letE _ miss _ _ first second third | .letSort _ miss _ _ _ first second third =>
+      miss.key :: (first.writes ++ (second.writes ++ third.writes))
+
+/-- Leaf construction inspects the real cache policy; callers need not
+provide a separate hit/miss observation for a sort. -/
+def InferenceCacheTrace.sortOfKey {fuel : Nat} {before keyed : TcState .anon}
+    {level : KUniv .anon} {info : ExprInfo .anon} {key : Address × Address}
+    (keyRun : TcM.inferKey (.sort level info) before = .ok key keyed) :
+    InferenceCacheTrace fuel before (.sort level info) := by
+  rcases observeInferenceCache keyRun with ⟨hit, _, _⟩ | ⟨miss, _, _⟩
+  · exact .hit hit
+  · exact .sort miss
+
+def InferenceCacheTrace.fvarOfKey {fuel : Nat} {before keyed : TcState .anon}
+    {id : FVarId} {name : Mode.anon.F Name} {info : ExprInfo .anon} {key : Address × Address}
+    (keyRun : TcM.inferKey (.fvar id name info) before = .ok key keyed) :
+    InferenceCacheTrace fuel before (.fvar id name info) := by
+  rcases observeInferenceCache keyRun with ⟨hit, _, _⟩ | ⟨miss, _, _⟩
+  · exact .hit hit
+  · exact .fvar miss
+
+def InferenceCacheTrace.natOfKey {fuel : Nat} {before keyed : TcState .anon}
+    {value : Nat} {blob : Address} {info : ExprInfo .anon} {key : Address × Address}
+    (keyRun : TcM.inferKey (.nat value blob info) before = .ok key keyed) :
+    InferenceCacheTrace fuel before (.nat value blob info) := by
+  rcases observeInferenceCache keyRun with ⟨hit, _, _⟩ | ⟨miss, _, _⟩
+  · exact .hit hit
+  · exact .nat miss
+
+def InferenceCacheTrace.constOfKey {fuel : Nat} {before keyed : TcState .anon}
+    {id : KId .anon} {arguments : Array (KUniv .anon)} {info : ExprInfo .anon}
+    {key : Address × Address} {concrete : KConst .anon}
+    (keyRun : TcM.inferKey (.const id arguments info) before = .ok key keyed)
+    (loaded : keyed.env.get? id = some concrete)
+    (resources : UniverseInstantiationSupport keyed concrete.ty arguments) :
+    InferenceCacheTrace fuel before (.const id arguments info) := by
+  rcases observeInferenceCache keyRun with ⟨hit, _, _⟩ | ⟨miss, _, stateEq⟩
+  · exact .hit hit
+  · exact .const miss concrete (by simpa only [stateEq] using loaded)
+      (by simpa only [stateEq] using resources)
+
+/-- Construct a constant leaf that may load its declaration. Cache selection
+comes from the actual maps; walker resources concern the returned lookup state. -/
+def InferenceCacheTrace.verifiedConstOfKey {fuel : Nat} {before keyed : TcState .anon}
+    {id : KId .anon} {arguments : Array (KUniv .anon)} {info : ExprInfo .anon}
+    {key : Address × Address}
+    (keyRun : TcM.inferKey (.const id arguments info) before = .ok key keyed)
+    (loader : VerifiedLazySupport keyed id.addr)
+    (resources : ∀ concrete loaded, TcM.getConst id keyed = .ok concrete loaded →
+      UniverseInstantiationSupport loaded concrete.ty arguments) :
+    InferenceCacheTrace fuel before (.const id arguments info) := by
+  rcases observeInferenceCache keyRun with ⟨hit, _, _⟩ | ⟨miss, _, stateEq⟩
+  · exact .hit hit
+  · exact .lazyConst miss (by simpa only [stateEq] using loader)
+      (by simpa only [stateEq] using resources)
+
+/-- Standalone loaders remain a special case of the verified leaf. -/
+def InferenceCacheTrace.lazyConstOfKey {fuel : Nat} {before keyed : TcState .anon}
+    {id : KId .anon} {arguments : Array (KUniv .anon)} {info : ExprInfo .anon}
+    {key : Address × Address}
+    (keyRun : TcM.inferKey (.const id arguments info) before = .ok key keyed)
+    (loader : StandaloneLazySupport keyed id.addr)
+    (resources : ∀ concrete loaded, TcM.getConst id keyed = .ok concrete loaded →
+      UniverseInstantiationSupport loaded concrete.ty arguments) :
+    InferenceCacheTrace fuel before (.const id arguments info) :=
+  .verifiedConstOfKey keyRun loader.toVerified resources
+
+/-- A lazy constant leaf derives post-lookup coherence from the state before
+key computation. Only finite collision and level data are supplied afterward. -/
+def InferenceCacheTrace.coherentConstOfKey {fuel : Nat} {before keyed : TcState .anon}
+    {id : KId .anon} {arguments : Array (KUniv .anon)} {info : ExprInfo .anon}
+    {key : Address × Address}
+    (keyRun : TcM.inferKey (.const id arguments info) before = .ok key keyed)
+    (loader : VerifiedLazySupport keyed id.addr) (coherent : before.env.intern.WF)
+    (resources : ∀ concrete loaded, TcM.getConst id keyed = .ok concrete loaded →
+      (KExpr.CollisionFree fun candidate => loaded.env.intern.ExprSupport candidate ∨
+        KExpr.InstUnivReach arguments concrete.ty candidate) ∧
+      UniverseSubstitutionSupport arguments concrete.ty) :
+    InferenceCacheTrace fuel before (.const id arguments info) :=
+  .verifiedConstOfKey keyRun loader fun concrete loaded run =>
+    .afterVerifiedGetConst loader (by rwa [inferKey_environment keyRun]) run
+      (resources concrete loaded run).1 (resources concrete loaded run).2
+
+/-- Constant leaf construction uses one source resource for every address,
+deriving both overlap compatibility and post-load intern coherence. -/
+def InferenceCacheTrace.ownedConstOfKey {fuel : Nat} {before keyed : TcState .anon}
+    {id : KId .anon} {arguments : Array (KUniv .anon)} {info : ExprInfo .anon}
+    {key : Address × Address}
+    (keyRun : TcM.inferKey (.const id arguments info) before = .ok key keyed)
+    (loader : OwnedLazySupport before) (coherent : before.env.intern.WF)
+    (resources : ∀ concrete loaded, TcM.getConst id keyed = .ok concrete loaded →
+      (KExpr.CollisionFree fun candidate => loaded.env.intern.ExprSupport candidate ∨
+        KExpr.InstUnivReach arguments concrete.ty candidate) ∧
+      UniverseSubstitutionSupport arguments concrete.ty) :
+    InferenceCacheTrace fuel before (.const id arguments info) :=
+  .coherentConstOfKey keyRun ((loader.afterInferKey keyRun).toVerified id.addr) coherent resources
+
+/-- Every successful call in the finite tree preserves entries outside its
+computed write footprint and retains the loaded declarations and policy.
+The proof follows the recursive calls, then their real outer cache insertion. -/
+theorem InferenceCacheTrace.frame {fuel : Nat} {before after : TcState .anon}
+    {term result : KExpr .anon} (tree : InferenceCacheTrace fuel before term)
+    {key : Address × Address} (outside : key ∉ tree.writes)
+    (accepted : RecM.infer term (methodsN fuel) before = .ok result after) :
+    InferenceCacheFrame key before after ∧ after.inferOnly = before.inferOnly := by
+  induction tree generalizing result after with
+  | @hit fuel before term hit =>
+      rw [hit.run] at accepted
+      cases accepted
+      have frame := PreservesInferenceCache.inferKey key term before
+      rw [hit.keyRun] at frame
+      exact ⟨frame, inferKey_policy hit.keyRun⟩
+  | @sort fuel before level info miss =>
+      simp only [writes, List.mem_singleton] at outside
+      apply infer_miss_frame miss (Ne.symm outside) accepted
+      intro middle run
+      change EStateM.Result.ok
+        (miss.keyed.env.intern.internExpr (KExpr.mkSort (KUniv.mkSucc level))).1
+        {miss.keyed with env := {miss.keyed.env with intern :=
+          (miss.keyed.env.intern.internExpr (KExpr.mkSort (KUniv.mkSucc level))).2}} =
+        .ok result middle at run
+      cases run
+      exact ⟨(.of_eq rfl rfl rfl), rfl⟩
+  | lazyConst miss loader resources =>
+      simp only [writes, List.mem_singleton] at outside
+      apply infer_miss_frame miss (Ne.symm outside) accepted
+      intro middle run
+      obtain ⟨concrete, foundState, got, _, instantiated⟩ := inferUncached_const_instantiation run
+      have lookup := getConst_verified_cache loader
+      rw [got] at lookup
+      have resource := resources concrete foundState got
+      have post := TcM.instantiateUnivParams_wf resource.faithful
+        (fun _ h => Or.inr h) ⟨resource.coherent, fun _ h => Or.inl h⟩
+      rw [instantiated] at post
+      rw [post.2.2.1]
+      exact ⟨(lookup.cache key).trans (.of_eq rfl rfl rfl), lookup.policy⟩
+  | @fvar fuel before id name info miss =>
+      simp only [writes, List.mem_singleton] at outside
+      apply infer_miss_frame miss (Ne.symm outside) accepted
+      intro middle run
+      change (RecM.inferUncached RecM.inferCall before.inferOnly (.fvar id name info)).run
+        (methodsN fuel) miss.keyed = _ at run
+      unfold RecM.inferUncached at run
+      simp only [ReaderT.run_bind] at run
+      change EStateM.bind (get : TcM .anon (TcState .anon)) _ miss.keyed = _ at run
+      rw [EStateM.bind, show (get : TcM .anon (TcState .anon)) miss.keyed =
+        .ok miss.keyed miss.keyed from rfl] at run
+      dsimp only at run
+      split at run
+      · cases run; exact ⟨.refl key _, rfl⟩
+      · contradiction
+  | @nat fuel before value blob info miss =>
+      simp only [writes, List.mem_singleton] at outside
+      apply infer_miss_frame miss (Ne.symm outside) accepted
+      intro middle run
+      obtain ⟨_, rfl⟩ := inferUncached_nat_run run
+      exact ⟨.of_eq rfl rfl rfl, rfl⟩
+  | const miss concrete loaded resources =>
+      simp only [writes, List.mem_singleton] at outside
+      apply infer_miss_frame miss (Ne.symm outside) accepted
+      intro middle run
+      obtain ⟨actual, foundState, got, _, instantiated⟩ := inferUncached_const_instantiation run
+      rw [getConst_loaded loaded] at got
+      cases got
+      have post := TcM.instantiateUnivParams_wf resources.faithful
+        (fun _ h => Or.inr h) ⟨resources.coherent, fun _ h => Or.inl h⟩
+      rw [instantiated] at post
+      rw [post.2.2.1]
+      exact ⟨(.of_eq rfl rfl rfl), rfl⟩
+  | app full miss trace hashPath functionTree argumentTree functionIH argumentIH =>
+      simp only [writes, List.mem_cons, List.mem_append, not_or] at outside
+      apply infer_miss_frame miss (Ne.symm outside.1) accepted
+      intro middle run
+      rw [full] at run
+      obtain ⟨functionFrame, functionPolicy⟩ := functionIH outside.2.1 trace.functionRun
+      obtain ⟨argumentFrame, argumentPolicy⟩ := argumentIH outside.2.2 trace.argumentRun
+      obtain ⟨comparisonFrame, comparisonPolicy⟩ := isDefEq_hash_frame hashPath trace.compareRun key
+      have state := (trace.output_state run).2
+      rw [state]
+      exact ⟨(functionFrame.trans (argumentFrame.trans comparisonFrame)).trans (.of_eq rfl rfl rfl),
+        comparisonPolicy.trans (argumentPolicy.trans functionPolicy)⟩
+  | forallE miss trace domainTree bodyTree domainIH bodyIH =>
+      simp only [writes, List.mem_cons, List.mem_append, not_or] at outside
+      apply infer_miss_frame miss (Ne.symm outside.1) accepted
+      intro middle run
+      obtain ⟨domainFrame, domainPolicy⟩ := domainIH outside.2.1 trace.domainRun
+      obtain ⟨bodyFrame, bodyPolicy⟩ := bodyIH outside.2.2 trace.bodyRun
+      have opening := openBinder_frame key trace.openRun
+      have state := (trace.output_state run).2
+      rw [state]
+      exact ⟨(domainFrame.trans (opening.trans bodyFrame)).trans (.of_eq rfl rfl rfl),
+        bodyPolicy.trans ((openBinder_policy trace.openRun).trans domainPolicy)⟩
+  | appBeta full miss trace exposure hashPath functionTree argumentTree functionIH argumentIH =>
+      simp only [writes, List.mem_cons, List.mem_append, not_or] at outside
+      apply infer_miss_frame miss (Ne.symm outside.1) accepted
+      intro middle run
+      rw [full] at run
+      obtain ⟨functionFrame, functionPolicy⟩ := functionIH outside.2.1 trace.functionRun
+      obtain ⟨argumentFrame, argumentPolicy⟩ := argumentIH outside.2.2 trace.argumentRun
+      have exposureFrame : InferenceCacheFrame key trace.functionState trace.exposedState := by
+        rw [trace.exposure_state exposure]
+        exact exposure.inference_frame key
+      have exposurePolicy : trace.exposedState.inferOnly = trace.functionState.inferOnly := by
+        rw [trace.exposure_state exposure]
+        exact exposure.policy
+      obtain ⟨comparisonFrame, comparisonPolicy⟩ := isDefEq_hash_frame hashPath trace.compareRun key
+      rw [(trace.output_state run).2]
+      exact ⟨(functionFrame.trans (exposureFrame.trans (argumentFrame.trans comparisonFrame))).trans
+          (.of_eq rfl rfl rfl),
+        comparisonPolicy.trans (argumentPolicy.trans (exposurePolicy.trans functionPolicy))⟩
+  | lam full miss trace domainTree bodyTree domainIH bodyIH =>
+      simp only [writes, List.mem_cons, List.mem_append, not_or] at outside
+      apply infer_miss_frame miss (Ne.symm outside.1) accepted
+      intro middle run
+      rw [full] at run
+      obtain ⟨domainFrame, domainPolicy⟩ := domainIH outside.2.1 trace.domainRun
+      obtain ⟨bodyFrame, bodyPolicy⟩ := bodyIH outside.2.2 trace.bodyRun
+      have opening := openBinder_frame key trace.openRun
+      have state := (trace.output_state run).2
+      rw [state]
+      exact ⟨(domainFrame.trans (opening.trans bodyFrame)).trans (.of_eq rfl rfl rfl),
+        bodyPolicy.trans ((openBinder_policy trace.openRun).trans domainPolicy)⟩
+  | lamBody full miss trace domainTree bodyTree domainIH bodyIH =>
+      simp only [writes, List.mem_cons, List.mem_append, not_or] at outside
+      apply infer_miss_frame miss (Ne.symm outside.1) accepted
+      intro middle run
+      rw [full] at run
+      obtain ⟨domainFrame, domainPolicy⟩ := domainIH outside.2.1 trace.domainRun
+      obtain ⟨bodyFrame, bodyPolicy⟩ := bodyIH outside.2.2 trace.bodyRun
+      have opening := openBinder_frame key trace.openRun
+      have state := (trace.output_state run).2
+      rw [state]
+      exact ⟨(domainFrame.trans (opening.trans bodyFrame)).trans (.of_eq rfl rfl rfl),
+        bodyPolicy.trans ((openBinder_policy trace.openRun).trans domainPolicy)⟩
+  | letE full miss trace hashPath domainTree valueTree bodyTree domainIH valueIH bodyIH =>
+      simp only [writes, List.mem_cons, List.mem_append, not_or] at outside
+      apply infer_miss_frame miss (Ne.symm outside.1) accepted
+      intro middle run
+      rw [full] at run
+      obtain ⟨domainFrame, domainPolicy⟩ := domainIH outside.2.1 trace.domainRun
+      obtain ⟨valueFrame, valuePolicy⟩ := valueIH outside.2.2.1 trace.valueRun
+      obtain ⟨bodyFrame, bodyPolicy⟩ := bodyIH outside.2.2.2 trace.bodyRun
+      obtain ⟨comparisonFrame, comparisonPolicy⟩ := isDefEq_hash_frame hashPath trace.compareRun key
+      have opening := openLet_frame key trace.openRun
+      rw [(trace.output_state run).2]
+      exact ⟨(domainFrame.trans (valueFrame.trans (comparisonFrame.trans
+          (opening.trans bodyFrame)))).trans (.of_eq rfl rfl rfl),
+        bodyPolicy.trans ((openLet_inference_state trace.openRun).2.2.2.trans
+          (comparisonPolicy.trans (valuePolicy.trans domainPolicy)))⟩
+  | forallSort miss trace domainExposure bodyExposure domainTree bodyTree domainIH bodyIH =>
+      simp only [writes, List.mem_cons, List.mem_append, not_or] at outside
+      apply infer_miss_frame miss (Ne.symm outside.1) accepted
+      intro middle run
+      obtain ⟨domainFrame, domainPolicy⟩ := domainIH outside.2.1 trace.domainCheck.inferRun
+      obtain ⟨bodyFrame, bodyPolicy⟩ := bodyIH outside.2.2 trace.bodyCheck.inferRun
+      have domainExposed := trace.domainCheck.exposure_frame domainExposure key
+      have bodyExposed := trace.bodyCheck.exposure_frame bodyExposure key
+      have opening := openBinder_frame key trace.openRun
+      rw [(trace.output_state run).2]
+      exact ⟨(domainFrame.trans (domainExposed.trans (opening.trans (bodyFrame.trans bodyExposed)))).trans
+          (.of_eq rfl rfl rfl),
+        (trace.bodyCheck.exposure_policy bodyExposure).trans (bodyPolicy.trans
+          ((openBinder_policy trace.openRun).trans ((trace.domainCheck.exposure_policy domainExposure).trans domainPolicy)))⟩
+  | lamSort full miss trace domainExposure domainTree bodyTree domainIH bodyIH =>
+      simp only [writes, List.mem_cons, List.mem_append, not_or] at outside
+      apply infer_miss_frame miss (Ne.symm outside.1) accepted
+      intro middle run
+      rw [full] at run
+      obtain ⟨domainFrame, domainPolicy⟩ := domainIH outside.2.1 trace.domainCheck.inferRun
+      obtain ⟨bodyFrame, bodyPolicy⟩ := bodyIH outside.2.2 trace.bodyRun
+      have domainExposed := trace.domainCheck.exposure_frame domainExposure key
+      have opening := openBinder_frame key trace.openRun
+      rw [(trace.output_state run).2]
+      exact ⟨(domainFrame.trans (domainExposed.trans (opening.trans bodyFrame))).trans (.of_eq rfl rfl rfl),
+        bodyPolicy.trans ((openBinder_policy trace.openRun).trans
+          ((trace.domainCheck.exposure_policy domainExposure).trans domainPolicy))⟩
+  | letSort full miss trace domainExposure hashPath domainTree valueTree bodyTree domainIH valueIH bodyIH =>
+      simp only [writes, List.mem_cons, List.mem_append, not_or] at outside
+      apply infer_miss_frame miss (Ne.symm outside.1) accepted
+      intro middle run
+      rw [full] at run
+      obtain ⟨domainFrame, domainPolicy⟩ := domainIH outside.2.1 trace.domainCheck.inferRun
+      obtain ⟨valueFrame, valuePolicy⟩ := valueIH outside.2.2.1 trace.valueRun
+      obtain ⟨bodyFrame, bodyPolicy⟩ := bodyIH outside.2.2.2 trace.bodyRun
+      obtain ⟨comparisonFrame, comparisonPolicy⟩ := isDefEq_hash_frame hashPath trace.compareRun key
+      have domainExposed := trace.domainCheck.exposure_frame domainExposure key
+      have opening := openLet_frame key trace.openRun
+      rw [(trace.output_state run).2]
+      exact ⟨(domainFrame.trans (domainExposed.trans (valueFrame.trans (comparisonFrame.trans
+          (opening.trans bodyFrame))))).trans (.of_eq rfl rfl rfl),
+        bodyPolicy.trans ((openLet_inference_state trace.openRun).2.2.2.trans
+          (comparisonPolicy.trans (valuePolicy.trans
+            ((trace.domainCheck.exposure_policy domainExposure).trans domainPolicy))))⟩
+
+/-- A key already occupied in the full cache cannot be missed. Key
+memoization leaves the maps unchanged, and full entries precede both policies. -/
+private theorem UncachedInference.ne_populated {before : TcState .anon} {source result : KExpr .anon}
+    {key : Address × Address} (miss : UncachedInference before source)
+    (stored : before.env.inferCache[key]? = some result) : key ≠ miss.key := by
+  intro same
+  have keyed : miss.keyed.env.inferCache[key]? = some result := by
+    rw [inferKey_environment miss.keyRun]
+    exact stored
+  rw [same, miss.fullMiss] at keyed
+  cases keyed
+
+/-- The write footprint excludes every full entry present at call entry.
+This is derived from selection and the actual child calls, with no collision
+or disjoint-write premise. Full entries are eligible under either policy. -/
+theorem InferenceCacheTrace.populated_outside {fuel : Nat} {before : TcState .anon}
+    {term cached : KExpr .anon} {key : Address × Address}
+    (tree : InferenceCacheTrace.{u} fuel before term)
+    (stored : before.env.inferCache[key]? = some cached) : key ∉ tree.writes := by
+  induction tree with
+  | hit => simp [writes]
+  | sort miss | fvar miss | nat miss | const miss concrete loaded resources | lazyConst miss loader resources =>
+      simpa only [writes, List.mem_singleton] using miss.ne_populated stored
+  | app full miss trace hashPath functionTree argumentTree functionIH argumentIH =>
+      have keyed : miss.keyed.env.inferCache[key]? = some cached := by
+        rw [inferKey_environment miss.keyRun]
+        exact stored
+      have first := functionIH keyed
+      have next := (functionTree.frame first trace.functionRun).1.full.trans keyed
+      exact by
+        simpa only [writes, List.mem_cons, List.mem_append, not_or] using
+          ⟨miss.ne_populated stored, first, argumentIH next⟩
+  | appBeta full miss trace exposure hashPath functionTree argumentTree functionIH argumentIH =>
+      have keyed : miss.keyed.env.inferCache[key]? = some cached := by
+        rw [inferKey_environment miss.keyRun]
+        exact stored
+      have first := functionIH keyed
+      have inferred := (functionTree.frame first trace.functionRun).1.full.trans keyed
+      have next : trace.exposedState.env.inferCache[key]? = some cached := by
+        rw [trace.exposure_state exposure]
+        exact (exposure.inference_frame key).full.trans inferred
+      exact by
+        simpa only [writes, List.mem_cons, List.mem_append, not_or] using
+          ⟨miss.ne_populated stored, first, argumentIH next⟩
+  | forallE miss trace domainTree bodyTree domainIH bodyIH =>
+      have keyed : miss.keyed.env.inferCache[key]? = some cached := by
+        rw [inferKey_environment miss.keyRun]
+        exact stored
+      have first := domainIH keyed
+      have inferred := (domainTree.frame first trace.domainRun).1.full.trans keyed
+      have next := (openBinder_frame key trace.openRun).full.trans inferred
+      exact by
+        simpa only [writes, List.mem_cons, List.mem_append, not_or] using
+          ⟨miss.ne_populated stored, first, bodyIH next⟩
+  | lam full miss trace domainTree bodyTree domainIH bodyIH =>
+      have keyed : miss.keyed.env.inferCache[key]? = some cached := by
+        rw [inferKey_environment miss.keyRun]
+        exact stored
+      have first := domainIH keyed
+      have inferred := (domainTree.frame first trace.domainRun).1.full.trans keyed
+      have next := (openBinder_frame key trace.openRun).full.trans inferred
+      exact by
+        simpa only [writes, List.mem_cons, List.mem_append, not_or] using
+          ⟨miss.ne_populated stored, first, bodyIH next⟩
+  | lamBody full miss trace domainTree bodyTree domainIH bodyIH =>
+      have keyed : miss.keyed.env.inferCache[key]? = some cached := by
+        rw [inferKey_environment miss.keyRun]
+        exact stored
+      have first := domainIH keyed
+      have inferred := (domainTree.frame first trace.domainRun).1.full.trans keyed
+      have next := (openBinder_frame key trace.openRun).full.trans inferred
+      exact by
+        simpa only [writes, List.mem_cons, List.mem_append, not_or] using
+          ⟨miss.ne_populated stored, first, bodyIH next⟩
+  | letE full miss trace hashPath domainTree valueTree bodyTree domainIH valueIH bodyIH =>
+      have keyed : miss.keyed.env.inferCache[key]? = some cached := by
+        rw [inferKey_environment miss.keyRun]
+        exact stored
+      have first := domainIH keyed
+      have inferred := (domainTree.frame first trace.domainRun).1.full.trans keyed
+      have second := valueIH inferred
+      have checked := (valueTree.frame second trace.valueRun).1.full.trans inferred
+      have compared := (isDefEq_hash_frame hashPath trace.compareRun key).1.full.trans checked
+      have next := (openLet_frame key trace.openRun).full.trans compared
+      exact by
+        simpa only [writes, List.mem_cons, List.mem_append, not_or] using
+          ⟨miss.ne_populated stored, first, second, bodyIH next⟩
+  | forallSort miss trace domainExposure bodyExposure domainTree bodyTree domainIH bodyIH =>
+      have keyed : miss.keyed.env.inferCache[key]? = some cached := by
+        rw [inferKey_environment miss.keyRun]
+        exact stored
+      have first := domainIH keyed
+      have inferred := (domainTree.frame first trace.domainCheck.inferRun).1.full.trans keyed
+      have exposed := (trace.domainCheck.exposure_frame domainExposure key).full.trans inferred
+      have next := (openBinder_frame key trace.openRun).full.trans exposed
+      exact by
+        simpa only [writes, List.mem_cons, List.mem_append, not_or] using
+          ⟨miss.ne_populated stored, first, bodyIH next⟩
+  | lamSort full miss trace domainExposure domainTree bodyTree domainIH bodyIH =>
+      have keyed : miss.keyed.env.inferCache[key]? = some cached := by
+        rw [inferKey_environment miss.keyRun]
+        exact stored
+      have first := domainIH keyed
+      have inferred := (domainTree.frame first trace.domainCheck.inferRun).1.full.trans keyed
+      have exposed := (trace.domainCheck.exposure_frame domainExposure key).full.trans inferred
+      have next := (openBinder_frame key trace.openRun).full.trans exposed
+      exact by
+        simpa only [writes, List.mem_cons, List.mem_append, not_or] using
+          ⟨miss.ne_populated stored, first, bodyIH next⟩
+  | letSort full miss trace domainExposure hashPath domainTree valueTree bodyTree domainIH valueIH bodyIH =>
+      have keyed : miss.keyed.env.inferCache[key]? = some cached := by
+        rw [inferKey_environment miss.keyRun]
+        exact stored
+      have first := domainIH keyed
+      have inferred := (domainTree.frame first trace.domainCheck.inferRun).1.full.trans keyed
+      have exposed := (trace.domainCheck.exposure_frame domainExposure key).full.trans inferred
+      have second := valueIH exposed
+      have checked := (valueTree.frame second trace.valueRun).1.full.trans exposed
+      have compared := (isDefEq_hash_frame hashPath trace.compareRun key).1.full.trans checked
+      have next := (openLet_frame key trace.openRun).full.trans compared
+      exact by
+        simpa only [writes, List.mem_cons, List.mem_append, not_or] using
+          ⟨miss.ne_populated stored, first, second, bodyIH next⟩
+
+/-- A successful recursive call preserves both partitions at each initially
+populated full key, together with every previously loaded declaration. -/
+theorem InferenceCacheTrace.populated_frame {fuel : Nat} {before after : TcState .anon}
+    {term result cached : KExpr .anon} {key : Address × Address}
+    (tree : InferenceCacheTrace.{u} fuel before term)
+    (stored : before.env.inferCache[key]? = some cached)
+    (accepted : RecM.infer term (methodsN fuel) before = .ok result after) :
+    InferenceCacheFrame key before after ∧ after.inferOnly = before.inferOnly :=
+  tree.frame (tree.populated_outside stored) accepted
+
+/-- A verified constant call needs no separately constructed operational
+tree: the real key and cache selection build its hit or lazy-miss leaf. -/
+theorem infer_verifiedConst_cache_frame {fuel : Nat} {before keyed after : TcState .anon}
+    {id : KId .anon} {arguments : Array (KUniv .anon)} {info : ExprInfo .anon}
+    {key watched : Address × Address} {result : KExpr .anon}
+    (keyRun : TcM.inferKey (.const id arguments info) before = .ok key keyed)
+    (different : key ≠ watched) (loader : VerifiedLazySupport keyed id.addr)
+    (resources : ∀ concrete loaded, TcM.getConst id keyed = .ok concrete loaded →
+      UniverseInstantiationSupport loaded concrete.ty arguments)
+    (accepted : RecM.infer (.const id arguments info) (methodsN fuel) before = .ok result after) :
+    InferenceCacheFrame watched before after ∧ after.inferOnly = before.inferOnly := by
+  rcases observeInferenceCache keyRun with ⟨hit, _, _⟩ | ⟨miss, keyEq, stateEq⟩
+  · exact (InferenceCacheTrace.hit.{0} (fuel := fuel) hit).frame (by simp [InferenceCacheTrace.writes]) accepted
+  · let tree : InferenceCacheTrace.{0} fuel before (.const id arguments info) :=
+      .lazyConst miss (by simpa only [stateEq] using loader)
+        (by simpa only [stateEq] using resources)
+    apply tree.frame _ accepted
+    simpa only [tree, InferenceCacheTrace.writes, List.mem_singleton, keyEq] using Ne.symm different
+
+/-- Compatibility wrapper for a standalone constant call. -/
+theorem infer_lazyConst_cache_frame {fuel : Nat} {before keyed after : TcState .anon}
+    {id : KId .anon} {arguments : Array (KUniv .anon)} {info : ExprInfo .anon}
+    {key watched : Address × Address} {result : KExpr .anon}
+    (keyRun : TcM.inferKey (.const id arguments info) before = .ok key keyed)
+    (different : key ≠ watched) (loader : StandaloneLazySupport keyed id.addr)
+    (resources : ∀ concrete loaded, TcM.getConst id keyed = .ok concrete loaded →
+      UniverseInstantiationSupport loaded concrete.ty arguments)
+    (accepted : RecM.infer (.const id arguments info) (methodsN fuel) before = .ok result after) :
+    InferenceCacheFrame watched before after ∧ after.inferOnly = before.inferOnly :=
+  infer_verifiedConst_cache_frame keyRun different loader.toVerified resources accepted
+
+/-- Coherence survives the complete successful constant call, including
+key computation, actual loading, universe substitution, and the cache write. -/
+theorem infer_verifiedConst_coherent {fuel : Nat} {before keyed after : TcState .anon}
+    {id : KId .anon} {arguments : Array (KUniv .anon)} {info : ExprInfo .anon}
+    {key : Address × Address} {result : KExpr .anon}
+    (keyRun : TcM.inferKey (.const id arguments info) before = .ok key keyed)
+    (loader : VerifiedLazySupport keyed id.addr) (coherent : before.env.intern.WF)
+    (faithful : ∀ concrete loaded, TcM.getConst id keyed = .ok concrete loaded →
+      KExpr.CollisionFree fun candidate => loaded.env.intern.ExprSupport candidate ∨
+        KExpr.InstUnivReach arguments concrete.ty candidate)
+    (accepted : RecM.infer (.const id arguments info) (methodsN fuel) before = .ok result after) :
+    after.env.intern.WF := by
+  rcases observeInferenceCache keyRun with ⟨hit, _, _⟩ | ⟨miss, _, stateEq⟩
+  · rw [hit.run] at accepted
+    cases accepted
+    rwa [inferKey_environment hit.keyRun]
+  · obtain ⟨middle, run, written⟩ := infer_uncached_success_state miss accepted
+    rw [stateEq] at run
+    obtain ⟨concrete, loaded, got, _, instantiated⟩ := inferUncached_const_instantiation run
+    have lookup := getConst_coherent (id := id) loader.source true loader.installed
+      (by rwa [inferKey_environment keyRun])
+    rw [got] at lookup
+    have post := TcM.instantiateUnivParams_wf (faithful concrete loaded got)
+      (fun _ h => Or.inr h) ⟨lookup, fun _ h => Or.inl h⟩
+    rw [instantiated] at post
+    rw [written]
+    cases before.inferOnly <;> exact post.1.1
+
+/-- The complete constant call needs coherence only before it starts and
+returns it alongside cache preservation, ready for the next operation. -/
+theorem infer_coherentConst_cache_frame {fuel : Nat} {before keyed after : TcState .anon}
+    {id : KId .anon} {arguments : Array (KUniv .anon)} {info : ExprInfo .anon}
+    {key watched : Address × Address} {result : KExpr .anon}
+    (keyRun : TcM.inferKey (.const id arguments info) before = .ok key keyed)
+    (different : key ≠ watched) (loader : VerifiedLazySupport keyed id.addr)
+    (coherent : before.env.intern.WF)
+    (resources : ∀ concrete loaded, TcM.getConst id keyed = .ok concrete loaded →
+      (KExpr.CollisionFree fun candidate => loaded.env.intern.ExprSupport candidate ∨
+        KExpr.InstUnivReach arguments concrete.ty candidate) ∧
+      UniverseSubstitutionSupport arguments concrete.ty)
+    (accepted : RecM.infer (.const id arguments info) (methodsN fuel) before = .ok result after) :
+    InferenceCacheFrame watched before after ∧ after.inferOnly = before.inferOnly ∧
+      after.env.intern.WF :=
+  let frame := infer_verifiedConst_cache_frame keyRun different loader
+    (fun concrete loaded run => .afterVerifiedGetConst loader
+      (by rwa [inferKey_environment keyRun]) run
+      (resources concrete loaded run).1 (resources concrete loaded run).2) accepted
+  ⟨frame.1, frame.2, infer_verifiedConst_coherent keyRun loader coherent
+    (fun concrete loaded run => (resources concrete loaded run).1) accepted⟩
+
+/-- Source ownership survives the whole successful constant call, including
+key computation, substitution, and cache publication. It can be reused by the
+next call without checking the block-overlap condition again. -/
+def OwnedLazySupport.afterConstInference {fuel : Nat} {before keyed after : TcState .anon}
+    {id : KId .anon} {arguments : Array (KUniv .anon)} {info : ExprInfo .anon}
+    {key : Address × Address} {result : KExpr .anon}
+    (support : OwnedLazySupport before)
+    (keyRun : TcM.inferKey (.const id arguments info) before = .ok key keyed)
+    (coherent : before.env.intern.WF)
+    (faithful : ∀ concrete loaded, TcM.getConst id keyed = .ok concrete loaded →
+      KExpr.CollisionFree fun candidate => loaded.env.intern.ExprSupport candidate ∨
+        KExpr.InstUnivReach arguments concrete.ty candidate)
+    (accepted : RecM.infer (.const id arguments info) (methodsN fuel) before = .ok result after) :
+    OwnedLazySupport after := by
+  have kept : after.lazyFault = some (fun addr => ingressAnonAddrShallow support.source addr true) ∧
+      LoadedBlockInvariant support.source after.env := by
+    rcases observeInferenceCache keyRun with ⟨hit, _, _⟩ | ⟨miss, _, stateEq⟩
+    · rw [hit.run] at accepted
+      cases accepted
+      let keyedSupport := support.afterInferKey hit.keyRun
+      exact ⟨keyedSupport.installed, keyedSupport.blocks⟩
+    · obtain ⟨middle, run, written⟩ := infer_uncached_success_state miss accepted
+      rw [stateEq] at run
+      obtain ⟨concrete, loaded, got, _, instantiated⟩ := inferUncached_const_instantiation run
+      let keyedSupport := support.afterInferKey keyRun
+      let loadedSupport := keyedSupport.afterGetConst got
+      have lookup := getConst_coherent (id := id) keyedSupport.source true keyedSupport.installed
+        (by rwa [inferKey_environment keyRun])
+      rw [got] at lookup
+      have post := TcM.instantiateUnivParams_wf (faithful concrete loaded got)
+        (fun _ h => Or.inr h) ⟨lookup, fun _ h => Or.inl h⟩
+      rw [instantiated] at post
+      rw [written, post.2.2.1]
+      cases before.inferOnly <;> exact ⟨loadedSupport.installed, loadedSupport.blocks⟩
+  exact ⟨support.source, support.ownership, kept.1, kept.2⟩
+
+/-- Concrete agreement at an unwritten key is retained by the entire tree. -/
+theorem InferenceCacheTrace.agreement {fuel : Nat} {before after : TcState .anon}
+    {term result expected : KExpr .anon} (tree : InferenceCacheTrace fuel before term)
+    {key : Address × Address} (outside : key ∉ tree.writes)
+    (agreement : InferenceCacheAgreement before key expected)
+    (accepted : RecM.infer term (methodsN fuel) before = .ok result after) :
+    InferenceCacheAgreement after key expected :=
+  agreement.frame (tree.frame outside accepted).1
+
+/-- Reconstruct the later selected hit from the earlier closed hit and the
+whole recursive call, with no additional cache or policy observation. -/
+def InferenceCacheHit.afterInference {fuel : Nat} {before after : TcState .anon}
+    {cachedTerm term result : KExpr .anon} (hit : InferenceCacheHit before cachedTerm)
+    (closed : cachedTerm.lbr = 0) (tree : InferenceCacheTrace fuel before term)
+    (outside : (cachedTerm.addr, emptyCtxAddr) ∉ tree.writes)
+    (accepted : RecM.infer term (methodsN fuel) before = .ok result after) :
+    InferenceCacheHit after cachedTerm :=
+  hit.transport closed (tree.frame outside accepted).1 (tree.frame outside accepted).2
+
+/-- Carry the admitted declaration, substitution prediction, and selected
+constant hit through inference of an entire supported function body. -/
+def CachedConstantInferenceSupport.afterInference {β : Type u}
+    {resolve : Address → Option (ConstRef β)} {entries : Model.Environment β}
+    {fuel : Nat} {before after : TcState .anon} {term result : KExpr .anon}
+    {id : KId .anon} {arguments : Array (KUniv .anon)} {info : ExprInfo .anon}
+    {ref : ConstRef β} {entry : ConstantEntry β} {type : AExpr β}
+    (support : CachedConstantInferenceSupport resolve entries before id arguments info ref entry type)
+    (closed : (KExpr.const id arguments info).lbr = 0)
+    (tree : InferenceCacheTrace fuel before term)
+    (outside : ((KExpr.const id arguments info).addr, emptyCtxAddr) ∉ tree.writes)
+    (accepted : RecM.infer term (methodsN fuel) before = .ok result after) :
+    CachedConstantInferenceSupport resolve entries after id arguments info ref entry type :=
+  support.transport closed (tree.frame outside accepted).1 (tree.frame outside accepted).2
+
+/-- Reuse the complete earlier witness after inference may load another
+dependency, including a mutual block. Cache selection and declaration extension are derived. -/
+def CachedConstantInferenceSupport.afterVerifiedInference {β : Type u}
+    {resolve : Address → Option (ConstRef β)} {entries : Model.Environment β}
+    {fuel : Nat} {before keyed after : TcState .anon}
+    {id requested : KId .anon} {arguments requestedArguments : Array (KUniv .anon)}
+    {info requestedInfo : ExprInfo .anon} {key : Address × Address} {result : KExpr .anon}
+    {ref : ConstRef β} {entry : ConstantEntry β} {type : AExpr β}
+    (support : CachedConstantInferenceSupport resolve entries before id arguments info ref entry type)
+    (closed : (KExpr.const id arguments info).lbr = 0)
+    (keyRun : TcM.inferKey (.const requested requestedArguments requestedInfo) before = .ok key keyed)
+    (different : key ≠ ((KExpr.const id arguments info).addr, emptyCtxAddr))
+    (loader : VerifiedLazySupport keyed requested.addr)
+    (resources : ∀ concrete loaded, TcM.getConst requested keyed = .ok concrete loaded →
+      UniverseInstantiationSupport loaded concrete.ty requestedArguments)
+    (accepted : RecM.infer (.const requested requestedArguments requestedInfo)
+      (methodsN fuel) before = .ok result after) :
+    CachedConstantInferenceSupport resolve entries after id arguments info ref entry type :=
+  let frame := infer_verifiedConst_cache_frame keyRun different loader resources accepted
+  support.transport closed frame.1 frame.2
+
+/-- Standalone witness reuse is a special case of verified loading. -/
+def CachedConstantInferenceSupport.afterLazyInference {β : Type u}
+    {resolve : Address → Option (ConstRef β)} {entries : Model.Environment β}
+    {fuel : Nat} {before keyed after : TcState .anon}
+    {id requested : KId .anon} {arguments requestedArguments : Array (KUniv .anon)}
+    {info requestedInfo : ExprInfo .anon} {key : Address × Address} {result : KExpr .anon}
+    {ref : ConstRef β} {entry : ConstantEntry β} {type : AExpr β}
+    (support : CachedConstantInferenceSupport resolve entries before id arguments info ref entry type)
+    (closed : (KExpr.const id arguments info).lbr = 0)
+    (keyRun : TcM.inferKey (.const requested requestedArguments requestedInfo) before = .ok key keyed)
+    (different : key ≠ ((KExpr.const id arguments info).addr, emptyCtxAddr))
+    (loader : StandaloneLazySupport keyed requested.addr)
+    (resources : ∀ concrete loaded, TcM.getConst requested keyed = .ok concrete loaded →
+      UniverseInstantiationSupport loaded concrete.ty requestedArguments)
+    (accepted : RecM.infer (.const requested requestedArguments requestedInfo)
+      (methodsN fuel) before = .ok result after) :
+    CachedConstantInferenceSupport resolve entries after id arguments info ref entry type :=
+  support.afterVerifiedInference closed keyRun different loader.toVerified resources accepted
+
+/-- Reuse the old witness after loading and inference without assuming that
+the loader returned coherent intern tables. That fact follows from execution. -/
+def CachedConstantInferenceSupport.afterCoherentInference {β : Type u}
+    {resolve : Address → Option (ConstRef β)} {entries : Model.Environment β}
+    {fuel : Nat} {before keyed after : TcState .anon}
+    {id requested : KId .anon} {arguments requestedArguments : Array (KUniv .anon)}
+    {info requestedInfo : ExprInfo .anon} {key : Address × Address} {result : KExpr .anon}
+    {ref : ConstRef β} {entry : ConstantEntry β} {type : AExpr β}
+    (support : CachedConstantInferenceSupport resolve entries before id arguments info ref entry type)
+    (closed : (KExpr.const id arguments info).lbr = 0)
+    (keyRun : TcM.inferKey (.const requested requestedArguments requestedInfo) before = .ok key keyed)
+    (different : key ≠ ((KExpr.const id arguments info).addr, emptyCtxAddr))
+    (loader : VerifiedLazySupport keyed requested.addr) (coherent : before.env.intern.WF)
+    (resources : ∀ concrete loaded, TcM.getConst requested keyed = .ok concrete loaded →
+      (KExpr.CollisionFree fun candidate => loaded.env.intern.ExprSupport candidate ∨
+        KExpr.InstUnivReach requestedArguments concrete.ty candidate) ∧
+      UniverseSubstitutionSupport requestedArguments concrete.ty)
+    (accepted : RecM.infer (.const requested requestedArguments requestedInfo)
+      (methodsN fuel) before = .ok result after) :
+    CachedConstantInferenceSupport resolve entries after id arguments info ref entry type :=
+  let frame := infer_coherentConst_cache_frame keyRun different loader coherent resources accepted
+  support.transport closed frame.1 frame.2.1
+
+/-- An earlier closed cache witness survives constant inference using only
+the reusable source ownership invariant and finite substitution resources. -/
+def CachedConstantInferenceSupport.afterOwnedInference {β : Type u}
+    {resolve : Address → Option (ConstRef β)} {entries : Model.Environment β}
+    {fuel : Nat} {before keyed after : TcState .anon}
+    {id requested : KId .anon} {arguments requestedArguments : Array (KUniv .anon)}
+    {info requestedInfo : ExprInfo .anon} {key : Address × Address} {result : KExpr .anon}
+    {ref : ConstRef β} {entry : ConstantEntry β} {type : AExpr β}
+    (support : CachedConstantInferenceSupport resolve entries before id arguments info ref entry type)
+    (closed : (KExpr.const id arguments info).lbr = 0)
+    (keyRun : TcM.inferKey (.const requested requestedArguments requestedInfo) before = .ok key keyed)
+    (different : key ≠ ((KExpr.const id arguments info).addr, emptyCtxAddr))
+    (loader : OwnedLazySupport before) (coherent : before.env.intern.WF)
+    (resources : ∀ concrete loaded, TcM.getConst requested keyed = .ok concrete loaded →
+      (KExpr.CollisionFree fun candidate => loaded.env.intern.ExprSupport candidate ∨
+        KExpr.InstUnivReach requestedArguments concrete.ty candidate) ∧
+      UniverseSubstitutionSupport requestedArguments concrete.ty)
+    (accepted : RecM.infer (.const requested requestedArguments requestedInfo)
+      (methodsN fuel) before = .ok result after) :
+    CachedConstantInferenceSupport resolve entries after id arguments info ref entry type :=
+  support.afterCoherentInference closed keyRun different
+    ((loader.afterInferKey keyRun).toVerified requested.addr) coherent resources accepted
+
+/-- A later constant's actual returned type inherits typing from its earlier
+witness after recursive inference; no semantic premise about caches is added. -/
+theorem CachedConstantInferenceSupport.sound_after_inference {β : Type u}
+    {resolve : Address → Option (ConstRef β)} {entries : Model.Environment β}
+    {locals : List FVarId} {context : Model.Context β}
+    {fuel : Nat} {before middle after : TcState .anon} {term result cachedResult : KExpr .anon}
+    {id : KId .anon} {arguments : Array (KUniv .anon)} {info : ExprInfo .anon}
+    {ref : ConstRef β} {entry : ConstantEntry β} {type : AExpr β} {methods : Methods .anon}
+    (support : CachedConstantInferenceSupport resolve entries before id arguments info ref entry type)
+    (closed : (KExpr.const id arguments info).lbr = 0)
+    (tree : InferenceCacheTrace fuel before term)
+    (outside : ((KExpr.const id arguments info).addr, emptyCtxAddr) ∉ tree.writes)
+    (inferred : RecM.infer term (methodsN fuel) before = .ok result middle)
+    (accepted : RecM.infer (.const id arguments info) methods middle = .ok cachedResult after) :
+    readScopedExpr? resolve locals cachedResult = some type.erase ∧
+      TypingClaim.{u,v} entries context (.const ref (arguments.toList.map readLevel)) type :=
+  (support.afterInference closed tree outside inferred).sound accepted
+
+/-- Construct a later sort leaf using agreement preserved by a whole
+recursive call, deriving its current key and cache selection automatically. -/
+def BinderInference.sortAfterInference {β : Type u}
+    {resolve : Address → Option (ConstRef β)} {entries : Model.Environment β}
+    {locals : List FVarId} {context : Model.Context β} {fuel nextFuel : Nat}
+    {before after : TcState .anon} {term result : KExpr .anon}
+    {level : KUniv .anon} {info : ExprInfo .anon}
+    (closed : (KExpr.sort level info).lbr = 0)
+    (agreement : InferenceCacheAgreement before ((KExpr.sort level info).addr, emptyCtxAddr)
+      (KExpr.mkSort (KUniv.mkSucc level)))
+    (tree : InferenceCacheTrace fuel before term)
+    (outside : ((KExpr.sort level info).addr, emptyCtxAddr) ∉ tree.writes)
+    (accepted : RecM.infer term (methodsN fuel) before = .ok result after)
+    (coherent : after.env.intern.WF)
+    (faithful : KExpr.KeyCollisionFree fun candidate => after.env.intern.ExprSupport candidate ∨
+      candidate = KExpr.mkSort (KUniv.mkSucc level)) :
+    BinderInference resolve entries locals context nextFuel after (.sort level info)
+      (.sort (readLevel level)) (.sort (.succ (readLevel level))) :=
+  .sortOfAgreement closed (tree.agreement outside agreement accepted) coherent faithful
+
+end Ix.Kernel.Consistency

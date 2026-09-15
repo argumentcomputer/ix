@@ -4949,7 +4949,7 @@ flat[{gi}].id={}, rec_ids[{gi}]={}; complete recursor types differ",
         Ok(())
       },
       None => {
-        // C2: No generated recursor found — MUST NOT silently pass.
+        // Reject a recursor with no generated candidate for its major type.
         // If we can't generate a canonical recursor, we can't verify the provided one.
         Err(TcError::Other(format!(
           "check_recursor: no generated recursor for major {}",

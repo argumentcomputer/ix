@@ -24,7 +24,7 @@ closes the complete ordinary-expression tree: sorts, arbitrary-universe local
 and external constants, recursive projections, literals, structural
 composition, and arbitrary metadata maps including recursive syntax values.
 The proof covers warm caches, universe spelling patches, blob/name commits,
-and independent Lean4Lean values. Its strengthened frontier also relates the
+and independent set-model values. Its strengthened frontier also relates the
 returned `UInt64` root, including the encoded KV map, to the append-only
 presentation arena under an explicit no-wrap capacity premise.
 -/
@@ -1309,11 +1309,10 @@ theorem compileExpr_run_sort_refines
   exact hrun
 
 /-- The production sort result therefore denotes the same independent
-Lean4Lean value as the source sort. -/
+set-model value as the source sort. -/
 theorem compileExpr_run_sort_value
-    {venv : Lean4Lean.VEnv} {sctx : SourceCtx} {catalog : Catalog}
-    {dctx : DecodeCtx} {trProj : ProjectionRel}
-    {uvars : Nat} {locals : List Lean4Lean.VExpr}
+    {entries : Ix.Theory.Model.Environment Address} {sctx : SourceCtx}
+    {catalog : Catalog} {dctx : DecodeCtx} {strings : StringRefs Address}
     (compileEnv : Ix.CompileM.CompileEnv)
     (blockEnv : Ix.CompileM.BlockEnv)
     (snapshot : Ix.CompileM.BlockState) {levelSupport : Ix.Level → Prop}
@@ -1324,19 +1323,19 @@ theorem compileExpr_run_sort_value
     (hctx : RefCompileCtxRel
       (frozenRefCompileCtx compileEnv blockEnv snapshot) sctx catalog dctx)
     {state : Ix.CompileM.BlockState} {level : Ix.Level} {hash : Address}
-    {raw : Ixon.Univ} {idx : UInt64} {value : Lean4Lean.VExpr}
+    {raw : Ixon.Univ} {idx : UInt64} {value : Ix.Theory.VExpr Address}
     (hlevel : levelSupport level)
     (hstate : FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state)
     (hraw : compileUnivRef (univParamIndex blockEnv.univCtx) level = some raw)
     (hpreseed : snapshot.univsIndex.get? (Ixon.canonUniv raw) = some idx)
-    (hsource : SourceExprRel (uvars := uvars) venv sctx trProj locals
+    (hsource : SourceExprRel entries sctx strings
       (.sort level hash) value) :
     ∃ root state',
       Ix.CompileM.CompileM.run compileEnv blockEnv state
           (Ix.CompileM.compileExpr (.sort level hash)) =
         .ok ((.sort idx, root), state') ∧
       FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state' ∧
-      IxonExprRel (uvars := uvars) venv catalog dctx trProj locals
+      IxonExprRel entries catalog dctx strings
         (.sort idx) value := by
   obtain ⟨root, state', hrun, hstate'⟩ :=
     compileExpr_run_sort_refines compileEnv blockEnv snapshot hfree hclosed
@@ -2097,9 +2096,8 @@ theorem compileExpr_run_constEmpty_ref_refines
     Ix.CompileM.exprCompileDepth] using hrun
 
 theorem compileExpr_run_constEmpty_recur_value
-    {venv : Lean4Lean.VEnv} {sctx : SourceCtx} {catalog : Catalog}
-    {dctx : DecodeCtx} {trProj : ProjectionRel}
-    {uvars : Nat} {locals : List Lean4Lean.VExpr}
+    {entries : Ix.Theory.Model.Environment Address} {sctx : SourceCtx}
+    {catalog : Catalog} {dctx : DecodeCtx} {strings : StringRefs Address}
     (compileEnv : Ix.CompileM.CompileEnv)
     (blockEnv : Ix.CompileM.BlockEnv)
     (snapshot : Ix.CompileM.BlockState) {levelSupport : Ix.Level → Prop}
@@ -2108,17 +2106,17 @@ theorem compileExpr_run_constEmpty_recur_value
     (hctx : RefCompileCtxRel
       (frozenRefCompileCtx compileEnv blockEnv snapshot) sctx catalog dctx)
     {state : Ix.CompileM.BlockState} {name : Ix.Name} {hash : Address}
-    {recIdx : Nat} {value : Lean4Lean.VExpr}
+    {recIdx : Nat} {value : Ix.Theory.VExpr Address}
     (hstate : FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state)
     (hmut : blockEnv.mutCtx.get? name = some recIdx)
-    (hsource : SourceExprRel (uvars := uvars) venv sctx trProj locals
+    (hsource : SourceExprRel entries sctx strings
       (.const name #[] hash) value) :
     ∃ root state',
       Ix.CompileM.CompileM.run compileEnv blockEnv state
           (Ix.CompileM.compileExpr (.const name #[] hash)) =
         .ok ((.recur recIdx.toUInt64 #[], root), state') ∧
       FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state' ∧
-      IxonExprRel (uvars := uvars) venv catalog dctx trProj locals
+      IxonExprRel entries catalog dctx strings
         (.recur recIdx.toUInt64 #[]) value := by
   obtain ⟨root, state', hrun, hstate'⟩ :=
     compileExpr_run_constEmpty_recur_refines compileEnv blockEnv snapshot hfree
@@ -2138,9 +2136,8 @@ theorem compileExpr_run_constEmpty_recur_value
     compileExprRef_value hctx hsource href⟩
 
 theorem compileExpr_run_constEmpty_ref_value
-    {venv : Lean4Lean.VEnv} {sctx : SourceCtx} {catalog : Catalog}
-    {dctx : DecodeCtx} {trProj : ProjectionRel}
-    {uvars : Nat} {locals : List Lean4Lean.VExpr}
+    {entries : Ix.Theory.Model.Environment Address} {sctx : SourceCtx}
+    {catalog : Catalog} {dctx : DecodeCtx} {strings : StringRefs Address}
     (compileEnv : Ix.CompileM.CompileEnv)
     (blockEnv : Ix.CompileM.BlockEnv)
     (snapshot : Ix.CompileM.BlockState) {levelSupport : Ix.Level → Prop}
@@ -2149,19 +2146,19 @@ theorem compileExpr_run_constEmpty_ref_value
     (hctx : RefCompileCtxRel
       (frozenRefCompileCtx compileEnv blockEnv snapshot) sctx catalog dctx)
     {state : Ix.CompileM.BlockState} {name : Ix.Name} {hash addr : Address}
-    {refIdx : UInt64} {value : Lean4Lean.VExpr}
+    {refIdx : UInt64} {value : Ix.Theory.VExpr Address}
     (hstate : FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state)
     (hmut : blockEnv.mutCtx.get? name = none)
     (hresolve : resolveConstAddr? compileEnv snapshot name = some addr)
     (hpreseed : snapshot.refsIndex.get? addr = some refIdx)
-    (hsource : SourceExprRel (uvars := uvars) venv sctx trProj locals
+    (hsource : SourceExprRel entries sctx strings
       (.const name #[] hash) value) :
     ∃ root state',
       Ix.CompileM.CompileM.run compileEnv blockEnv state
           (Ix.CompileM.compileExpr (.const name #[] hash)) =
         .ok ((.ref refIdx #[], root), state') ∧
       FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state' ∧
-      IxonExprRel (uvars := uvars) venv catalog dctx trProj locals
+      IxonExprRel entries catalog dctx strings
         (.ref refIdx #[]) value := by
   obtain ⟨root, state', hrun, hstate'⟩ :=
     compileExpr_run_constEmpty_ref_refines compileEnv blockEnv snapshot hfree
@@ -2317,9 +2314,8 @@ theorem compileExpr_run_lit_refines
     Ix.CompileM.exprCompileDepth] using hrun
 
 theorem compileExpr_run_lit_value
-    {venv : Lean4Lean.VEnv} {sctx : SourceCtx} {catalog : Catalog}
-    {dctx : DecodeCtx} {trProj : ProjectionRel}
-    {uvars : Nat} {locals : List Lean4Lean.VExpr}
+    {entries : Ix.Theory.Model.Environment Address} {sctx : SourceCtx}
+    {catalog : Catalog} {dctx : DecodeCtx} {strings : StringRefs Address}
     (compileEnv : Ix.CompileM.CompileEnv)
     (blockEnv : Ix.CompileM.BlockEnv)
     (snapshot : Ix.CompileM.BlockState) {levelSupport : Ix.Level → Prop}
@@ -2328,17 +2324,17 @@ theorem compileExpr_run_lit_value
     (hctx : RefCompileCtxRel
       (frozenRefCompileCtx compileEnv blockEnv snapshot) sctx catalog dctx)
     {state : Ix.CompileM.BlockState} {literal : Lean.Literal} {hash : Address}
-    {refIdx : UInt64} {value : Lean4Lean.VExpr}
+    {refIdx : UInt64} {value : Ix.Theory.VExpr Address}
     (hstate : FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state)
     (hpreseed : snapshot.refsIndex.get? (literalAddress literal) = some refIdx)
-    (hsource : SourceExprRel (uvars := uvars) venv sctx trProj locals
+    (hsource : SourceExprRel entries sctx strings
       (.lit literal hash) value) :
     ∃ root state',
       Ix.CompileM.CompileM.run compileEnv blockEnv state
           (Ix.CompileM.compileExpr (.lit literal hash)) =
         .ok ((literalExpr literal refIdx, root), state') ∧
       FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state' ∧
-      IxonExprRel (uvars := uvars) venv catalog dctx trProj locals
+      IxonExprRel entries catalog dctx strings
         (literalExpr literal refIdx) value := by
   obtain ⟨root, state', hrun, hstate'⟩ :=
     compileExpr_run_lit_refines compileEnv blockEnv snapshot hfree
@@ -2460,28 +2456,28 @@ theorem compileExpr_run_structural_refines
   exact hrun
 
 /-- The production result in the structural fragment therefore denotes the
-same independent Lean4Lean value as its named Ix source. -/
+same independent set-model value as its named Ix source. -/
 theorem compileExpr_run_structural_value
-    {venv : Lean4Lean.VEnv} {sctx : SourceCtx} {catalog : Catalog}
-    {dctx : DecodeCtx} {ctx : RefCompileCtx} {trProj : ProjectionRel}
-    {uvars : Nat} {locals : List Lean4Lean.VExpr}
+    {entries : Ix.Theory.Model.Environment Address} {sctx : SourceCtx}
+    {catalog : Catalog} {dctx : DecodeCtx} {ctx : RefCompileCtx}
+    {strings : StringRefs Address}
     (compileEnv : Ix.CompileM.CompileEnv)
     (blockEnv : Ix.CompileM.BlockEnv)
     (hfree : compileEnv.surgeryFree = true)
     (hfaithful : ExprKeyFaithfulOn StructuralExpr)
     (hctx : RefCompileCtxRel ctx sctx catalog dctx)
     {state : Ix.CompileM.BlockState} {source : Ix.Expr}
-    {target : Ixon.Expr} {value : Lean4Lean.VExpr}
+    {target : Ixon.Expr} {value : Ix.Theory.VExpr Address}
     (hstruct : StructuralExpr source)
     (hstate : StructuralExprCacheWF ctx state)
-    (hsource : SourceExprRel (uvars := uvars) venv sctx trProj locals source value)
+    (hsource : SourceExprRel entries sctx strings source value)
     (href : compileExprRef ctx source = some target) :
     ∃ root state',
       Ix.CompileM.CompileM.run compileEnv blockEnv state
           (Ix.CompileM.compileExpr source) =
         .ok ((target, root), state') ∧
       StructuralExprCacheWF ctx state' ∧
-      IxonExprRel (uvars := uvars) venv catalog dctx trProj locals target value := by
+      IxonExprRel entries catalog dctx strings target value := by
   obtain ⟨root, state', hrun, hstate'⟩ :=
     compileExpr_run_structural_refines compileEnv blockEnv ctx hfree hfaithful
       hstruct hstate href
@@ -4140,12 +4136,11 @@ theorem compileExpr_run_ordinary_wireWF
       hlevelFaithful hexprFaithful hsource hstate href
   exact ⟨root, state', hrun, hstate', compileExprRef_wireWF hbound href⟩
 
-/-- Complete ordinary compilation preserves the independent Lean4Lean value
+/-- Complete ordinary compilation preserves the independent set-model value
 assigned to the source expression. -/
 theorem compileExpr_run_ordinary_value
-    {venv : Lean4Lean.VEnv} {sctx : SourceCtx} {catalog : Catalog}
-    {dctx : DecodeCtx} {trProj : ProjectionRel}
-    {uvars : Nat} {locals : List Lean4Lean.VExpr}
+    {entries : Ix.Theory.Model.Environment Address} {sctx : SourceCtx}
+    {catalog : Catalog} {dctx : DecodeCtx} {strings : StringRefs Address}
     (compileEnv : Ix.CompileM.CompileEnv)
     (blockEnv : Ix.CompileM.BlockEnv)
     (snapshot : Ix.CompileM.BlockState) {levelSupport : Ix.Level → Prop}
@@ -4156,10 +4151,10 @@ theorem compileExpr_run_ordinary_value
     (hctx : RefCompileCtxRel
       (frozenRefCompileCtx compileEnv blockEnv snapshot) sctx catalog dctx)
     {state : Ix.CompileM.BlockState} {source : Ix.Expr}
-    {target : Ixon.Expr} {value : Lean4Lean.VExpr}
+    {target : Ixon.Expr} {value : Ix.Theory.VExpr Address}
     (hordinary : SupportedOrdinaryExpr levelSupport source)
     (hstate : FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state)
-    (hsource : SourceExprRel (uvars := uvars) venv sctx trProj locals source value)
+    (hsource : SourceExprRel entries sctx strings source value)
     (href : compileExprRef
       (frozenRefCompileCtx compileEnv blockEnv snapshot) source = some target) :
     ∃ root state',
@@ -4167,7 +4162,7 @@ theorem compileExpr_run_ordinary_value
           (Ix.CompileM.compileExpr source) =
         .ok ((target, root), state') ∧
       FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state' ∧
-      IxonExprRel (uvars := uvars) venv catalog dctx trProj locals
+      IxonExprRel entries catalog dctx strings
         target value := by
   obtain ⟨root, state', hrun, hstate'⟩ :=
     compileExpr_run_ordinary_refines compileEnv blockEnv snapshot hfree hclosed
@@ -4320,9 +4315,8 @@ theorem compileExpr_run_ordinary_arena_refines
 /-- The strengthened public theorem exposes canonical value preservation and
 the faithful presentation sidecar in one result. -/
 theorem compileExpr_run_ordinary_arena_value
-    {venv : Lean4Lean.VEnv} {sctx : SourceCtx} {catalog : Catalog}
-    {dctx : DecodeCtx} {trProj : ProjectionRel}
-    {uvars : Nat} {locals : List Lean4Lean.VExpr}
+    {entries : Ix.Theory.Model.Environment Address} {sctx : SourceCtx}
+    {catalog : Catalog} {dctx : DecodeCtx} {strings : StringRefs Address}
     (compileEnv : Ix.CompileM.CompileEnv)
     (blockEnv : Ix.CompileM.BlockEnv)
     (snapshot : Ix.CompileM.BlockState) {levelSupport : Ix.Level → Prop}
@@ -4333,12 +4327,12 @@ theorem compileExpr_run_ordinary_arena_value
     (hctx : RefCompileCtxRel
       (frozenRefCompileCtx compileEnv blockEnv snapshot) sctx catalog dctx)
     {state : Ix.CompileM.BlockState} {source : Ix.Expr}
-    {target : Ixon.Expr} {value : Lean4Lean.VExpr}
+    {target : Ixon.Expr} {value : Ix.Theory.VExpr Address}
     (hordinary : SupportedOrdinaryExpr levelSupport source)
     (hstate : FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state)
     (harena : ArenaCacheWF state)
     (hroom : state.arena.nodes.size + exprArenaCost source < UInt64.size)
-    (hsource : SourceExprRel (uvars := uvars) venv sctx trProj locals source value)
+    (hsource : SourceExprRel entries sctx strings source value)
     (href : compileExprRef
       (frozenRefCompileCtx compileEnv blockEnv snapshot) source = some target) :
     ∃ root state',
@@ -4348,7 +4342,7 @@ theorem compileExpr_run_ordinary_arena_value
       FrozenExprStateWF compileEnv blockEnv levelSupport snapshot state' ∧
       ArenaCacheWF state' ∧
       ArenaCompileRel source root state.arena state'.arena ∧
-      IxonExprRel (uvars := uvars) venv catalog dctx trProj locals
+      IxonExprRel entries catalog dctx strings
         target value := by
   obtain ⟨root, state', hrun, hstate', hcache', harena'⟩ :=
     compileExpr_run_ordinary_arena_refines compileEnv blockEnv snapshot hfree

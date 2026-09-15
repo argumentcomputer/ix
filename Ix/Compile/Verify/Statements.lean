@@ -27,7 +27,7 @@ import Ix.Compile.Verify.SourceValue
 /-!
 # Public compiler-verification frontier
 
-The first slice exports a direct, table-aware Ixon-to-Lean4Lean relation, the
+The first slice exports a direct, table-aware Ixon-to-set-model relation, the
 constructive theorem that v2 binder modes do not change the related Theory
 value, a total ordinary-fragment reference compiler, and proofs that its
 universe values are preserved and its expression outputs inhabit the
@@ -158,14 +158,14 @@ digest-key faithfulness, well-addressed v2 expression tables and constants,
 and refinement proofs for the production reference/universe interning
 operations through `CompileM.run`. Production `compileUniv` is structurally
 total and refines the reference compiler while preserving both memo-cache
-soundness and the independent Lean4Lean universe value. In surgery-free
+soundness and the independent set-model universe value. In surgery-free
 environments, production `compileExpr` now selects a kernel-visible total
 path; its recursive structural fragment refines `compileExprRef`, preserves a
 sound collision-disciplined expression cache, retains flattened App-spine
-semantics, and composes with the independent Lean4Lean expression value. A
+semantics, and composes with the independent set-model expression value. A
 frozen-preseed state relation now closes the complete ordinary-expression
 tree through the actual production dispatcher, including arbitrary-universe
-local and external constants, recursive projections, and their Lean4Lean
+local and external constants, recursive projections, and their set-model
 value corollary. The strengthened theorem also exposes a structural
 `ArenaRel` for the returned metadata root, preserves every warm-cache root
 under append-only growth, and makes the `UInt64` arena-capacity boundary
@@ -209,8 +209,12 @@ all three `MutConst` member tags, and counted mutual blocks complete the
 production `ConstantInfo` grammar, yielding a top-level constant round trip
 for every variant in the explicit wire domain, with arbitrary canonical
 application, lambda, and forall spines in every expression payload.
-`KernelSourceWitness` is the sole
-upstream source-semantics boundary; later compiler-preservation slices take it
-as an explicit hypothesis until Lean4Lean can construct it for a replayed Lean
-environment.
+All expression values live in the set-model syntax `Ix.Theory.VExpr Address`,
+read with the conventions of the consistency reader
+`Ix.Kernel.Consistency.readExpr?` and indexed by an `Ix.Theory.Model.Environment`;
+no module of this library imports `Ix.Theory.Named` (enforced by
+`Audit.NamedFree`). `KernelSourceWitness`, a set-model realization of that
+environment index, is the sole upstream source-semantics boundary; later
+compiler-preservation slices take it as an explicit hypothesis until the
+consistency track constructs it for a replayed Lean environment.
 -/

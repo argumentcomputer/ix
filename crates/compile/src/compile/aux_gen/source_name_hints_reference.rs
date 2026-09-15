@@ -10,7 +10,7 @@ pub(super) fn source_name_hint_candidate(expr: &LeanExpr) -> bool {
 
 /// Name-erased structural content key for the source-name hint map.
 ///
-/// Mirrors the equivalence of the Lean pipeline's `Ix.Tc.KExpr` content
+/// Mirrors the equivalence of the Lean pipeline's `Ix.Kernel.KExpr` content
 /// addresses (`toKexprStatic ... |>.addr` in `Ix/AuxGen/Kernel.lean`) and
 /// of the kernel's `ExprKey`/`structural_eq`: display names, binder
 /// names, binder infos, and mdata are excluded; `Const`/`Prj` contribute

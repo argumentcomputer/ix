@@ -47,13 +47,13 @@ jobs:
           - name: Valgrind FFI
             kind: valgrind
             runner: warp-ubuntu-latest-x64-8x
-          - name: Ix.Tc verification and parity
+          - name: Ix.Kernel verification and parity
             kind: tc
             runner: warp-ubuntu-latest-x64-16x
             test_args: >-
               --ignored
               tc-anon-diff tc-init tc-tutorial tc-roundtrip tc-ingress-meta
-              tc-pins tc-accel-diff lean4lean
+              tc-pins tc-accel-diff
     runs-on: ${{ matrix.runner }}
     steps:
       - name: Validate merge-test variant
@@ -147,19 +147,19 @@ jobs:
             --suppressions=.github/valgrind.supp \
             .lake/build/bin/IxTests ffi
 
-      - name: Check Ix.Tc exported theorem trust manifest
+      # The legacy named-specification proofs (`IxKernelVerify` with its exact
+      # trust manifests and sorry frontier) are not required here; the
+      # named-spec-verification workflow builds them on demand.
+      - name: Build Ix compiler verification
         if: ${{ matrix.kind == 'tc' }}
-        run: lake build Ix.Tc.Verify.Audit.Completed Ix.Tc.Verify.Audit.Conditional Ix.Tc.Verify.Audit.Statements
-      - name: Build Ix.Tc formal verification
+        run: lake build --wfail IxCompileVerify
+      - name: Check Ix.Kernel consistency refinement
         if: ${{ matrix.kind == 'tc' }}
-        run: lake build IxTcVerify
-      - name: Check Ix.Tc verification sorry frontier
-        if: ${{ matrix.kind == 'tc' }}
-        run: lake build Ix.Tc.Verify.Audit.SorryFrontier
-      - name: Test Ix.Tc unit and adversarial fixtures
+        run: lake build --wfail IxKernelConsistency
+      - name: Test Ix.Kernel unit and adversarial fixtures
         if: ${{ matrix.kind == 'tc' }}
         run: lake test --wfail -- tc-unit
-      - name: Run Ix.Tc ignored tests
+      - name: Run Ix.Kernel ignored tests
         if: ${{ matrix.kind == 'tc' }}
         run: lake test --wfail -- ${{ matrix.test_args }}
 

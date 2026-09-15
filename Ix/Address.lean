@@ -45,7 +45,12 @@ instance : Hashable Address where
     ||| ((h.get! 7).toUInt64 <<< 56)
 
 /-- Compute the Blake3 hash of a `ByteArray`, returning an `Address`. -/
-def Address.blake3 (x: ByteArray) : Address := ⟨(Blake3.Rust.hash x).val⟩
+def Address.blake3 (x: ByteArray) : Address :=
+  let hasher := Blake3.Rust.hasherUpdate (Blake3.Rust.hasherInit ()) x
+  -- Supply a kernel-checked size bound: the upstream `hash` helper fills
+  -- this argument using native evaluation, adding an unnecessary axiom.
+  ⟨(Blake3.HasherOps.finalizeWithLength hasher 32 (by
+    rcases System.Platform.numBits_eq with bits | bits <;> rw [bits] <;> decide)).val⟩
 
 /-- Convert a nibble (0--15) to its lowercase hexadecimal character. -/
 def hexOfNat : Nat -> Option Char

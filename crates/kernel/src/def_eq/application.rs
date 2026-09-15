@@ -3,7 +3,7 @@
 //! Invariant: a Finish frame is reached ONLY after both child comparisons
 //! succeeded in the frame's original context. Thus every published equality
 //! follows from application congruence, not from a pending/visited-pair guess.
-//! See Ix/Tc/Verify/DefEq/SpineArguments.lean (TrAppSpine.defEq_of_zip) for the
+//! See Ix/Kernel/Verify/DefEq/SpineArguments.lean (TrAppSpine.defEq_of_zip) for the
 //! corresponding semantic rule. That theorem does not certify this Rust loop.
 //!
 //! No binders are opened here. All non-App pairs use ordinary conversion,
