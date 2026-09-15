@@ -7,6 +7,8 @@ a constrained byte selector, and the existing header decoder. It does not
 itself implement whole-file dispatch, registry admission or execution. The
 later [generic dispatcher](IxbyFunctionalDispatch.md) supplies state-selected
 decoding and a small-file proof that reuses one authenticated buffer.
+The [streaming layer](IxbyFunctionalStreaming.md) extends chunk reuse across
+bounded batches and proves the complete original CSLib grammars.
 
 These raw file digests are not the domain-separated Exec commitment chain.
 No old profile, key, factory, buffer limit, Flock pin or proof decoder changes.

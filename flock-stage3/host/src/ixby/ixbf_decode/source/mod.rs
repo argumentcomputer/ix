@@ -86,7 +86,7 @@ pub(super) fn choose_bits(
 }
 
 pub(super) struct FileBits {
-  last: Bits,
+  pub(super) last: Bits,
   /// Eleven-bit exact length of the last chunk, including empty-file zero.
   tail: Bits,
   single: usize,

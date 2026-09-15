@@ -19,9 +19,11 @@ mod routing;
 mod slots;
 #[cfg(test)]
 mod tests;
+mod witness;
 
 pub use gate::{DispatchConfig, DispatchGate, DispatchOp, DispatchRow};
 pub use slots::{DispatchSlots, DispatchState, DispatchStepWires};
+pub use witness::{DispatchEvaluator, EvaluatedStep};
 
 use super::synthesis::{Bits, Builder};
 

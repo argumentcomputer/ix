@@ -40,6 +40,7 @@ pub mod registry;
 #[cfg(test)]
 mod scalar_payload_tests;
 pub mod source;
+pub mod stream;
 mod synthesis;
 #[cfg(test)]
 mod tests;

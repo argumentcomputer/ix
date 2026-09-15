@@ -13,6 +13,10 @@ source-bound, complete wire-grammar/scalar checking for an explicit small-file
 class. It is **not** the native loader's full semantic admission, an Exec
 profile, a scalable Init parser proof, or an execution proof.
 
+The later [streaming component](IxbyFunctionalStreaming.md) reuses authenticated
+chunks across bounded batches and verifies the complete original CSLib grammar.
+The small-file measurements below describe this component's original proof class.
+
 No existing codec relation, Exec factory, key, proof decoder, capacity, Flock
 pin, compression backend or security setting changes. The only change to the
 existing source gate is a test-only input accessor for malicious-witness tests.

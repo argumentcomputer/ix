@@ -58,15 +58,15 @@ Stage 3 proof of either workload has been generated.
    exact offset and length. A separate final-chunk path prevents false length
    claims. The existing header decoder consumes those actual window wires.
    The following dispatcher reuses one authenticated buffer in a small-file
-   class. Larger-file shared chunk use and registry admission remain required;
-   the raw digest is not the Exec commitment chain.
+   class. Component 15 adds larger-file shared chunk use; full registry
+   admission remains required. The raw digest is not the Exec commitment chain.
 8. [State-selected whole-grammar dispatch](IxbyFunctionalDispatch.md): all
    decoder choices, bounds, source requests and cursor advances derive from
    carried state, including intermediate UTF-8 steps. An explicit 1 KiB,
    32-step class proves complete source-bound grammars while hashing one
    shared buffer once. The following layer adds bounded declaration/header
-   registries; larger-file authentication and the raw-file/Exec commitment
-   bridge remain unfinished.
+   registries; component 15 adds larger-file authentication. The raw-file/Exec
+   commitment bridge remains unfinished.
 9. [Source-bound declaration/header registries](IxbyFunctionalRegistry.md):
    state-derived immutable insertion of constructors, functions and owned
    block headers, exact coverage, full constructor uniqueness, entry-frame
@@ -105,8 +105,9 @@ Stage 3 proof of either workload has been generated.
     records, with full root/index binding and no whole-bank input per read.
     Forty-one proofs and eleven recomputed wiring rejections cover the
     original-byte-to-code-digest-to-typed-read chain.
-    Sealing remains bounded by the existing loader. Full-image admission,
-    original-source streaming and execution/memory consumers remain unfinished.
+    Sealing remains bounded by the existing loader. Component 15 adds source
+    streaming; full semantic admission and execution/memory consumers remain
+    unfinished.
 14. [Authenticated typed transport values](IxbyFunctionalValueAccess.md):
     the actual completed arena, original transport digest and code digest
     form a constrained BLAKE3 image. The seal connects the arena's program
@@ -117,6 +118,13 @@ Stage 3 proof of either workload has been generated.
     original bytes, code/value seals and typed reads. Full-image admission and
     authentication for execution allocations, locals and continuations remain
     unfinished.
+15. [Streaming original-file grammar proofs](IxbyFunctionalStreaming.md):
+    bounded batches share authenticated source chunks and preserve all grammar
+    and UTF-8 state. The complete original CSLib Program has 1,217 verified
+    Flock batch proofs; Input and Output each have one. A fresh process checks
+    all three, deriving transport context from the verified Program. The
+    Program chain is 492,388,476 bytes and is not recursively aggregated.
+    Full semantic registry/body/value materialization and execution remain.
 
 ## Next implementation gates
 
@@ -131,8 +139,10 @@ Stage 3 proof of either workload has been generated.
    with complete source-bound grammar, declaration/header-registry and
    instruction/reference, typed transport-value and executable-body proofs for
    explicit small-file classes. Authenticated typed code and transport-value
-   reads now reuse chunk handles. Next are streaming full-image admission,
-   execution consumers and the Exec commitment bridge.
+   reads now reuse chunk handles. Complete original-file grammar proofs now
+   span the full CSLib Program/Input/Output with shared source chunks. Next
+   are scalable semantic admission/materialization, execution consumers and
+   the Exec commitment bridge.
    Full-Init row differentials and small-file proofs do not close those obligations.
 2. **Streaming witness and measurements.** Produce bounded execution batches
    while recording actual opcode frequencies, stack depth, allocations, byte
@@ -158,6 +168,11 @@ Stage 3 proof of either workload has been generated.
    A local segment allowance must not reset the global semantic budget.
 5. **Sound composition.** Verify the complete segment chain; if one aggregate
    Stage 3 proof is required, implement and review its composition relation.
+   The current parser chain verifies every batch separately. Flock's pinned
+   recursion tower has a BLAKE3-chain-specific first layer; adapting it to
+   generic parser/execution proofs and their complete boundary statements
+   remains work. Start with a measured two-batch recursive proof and root
+   accumulator discharge; see the [composition outline](IxbyFunctionalStreaming.md#from-this-chain-to-one-flock-proof).
    A concatenated list of endpoint hashes or an unchecked state-continuity
    claim is not an aggregate execution proof. Version the wider profile and
    proof envelope explicitly, retaining rejection of old/different setups.

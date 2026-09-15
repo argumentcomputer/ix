@@ -7,7 +7,7 @@ primitives, bounded immutable constructors/PAPs, higher-order application,
 explicit revision-1 exact Nats,
 BLAKE3/Exec commitments, and direct Flock proofs, alongside labelled native
 gadget regressions. The native constraint-to-reference refinement,
-scalable guest execution, and compiled Stage 2 verifier remain unfinished.
+scalable guest execution, and full Stage 2 execution proof remain unfinished.
 See [the scalar execution boundary](../docs/IxbyFlockScalar.md)
 and the explicit [byte](../docs/IxbyFlockBytes.md) and
 [constructor](../docs/IxbyFlockObjects.md) setup upgrades, plus the
@@ -66,15 +66,16 @@ cargo fmt --manifest-path flock-stage3/Cargo.toml --all -- --check
 cargo clippy --release --locked --manifest-path flock-stage3/Cargo.toml --workspace --all-targets -- -D warnings
 ```
 
-All 263 ordinary tests pass, including byte, word, constructor, Nat,
+All 268 ordinary tests pass, including byte, word, constructor, Nat,
 application, complete-functional intake, wide-fuel, constrained-codec and
 complete-grammar/scalar-payload, source-authentication, generic-dispatch and
 source-bound registry, instruction/reference,
 [typed transport-value](../docs/IxbyFunctionalValues.md),
 [typed executable-body](../docs/IxbyFunctionalBodies.md),
-[authenticated code-access](../docs/IxbyFunctionalCode.md) and
-[authenticated transport-value](../docs/IxbyFunctionalValueAccess.md) regressions;
-44 proof/benchmark/external-fixture
+[authenticated code-access](../docs/IxbyFunctionalCode.md),
+[authenticated transport-value](../docs/IxbyFunctionalValueAccess.md) and
+[streaming original-file grammar](../docs/IxbyFunctionalStreaming.md) regressions;
+50 proof/benchmark/external-fixture
 tests are opt-in. The two imported
 conformance proofs are opt-in and also passed locally on 2026-09-12, including their serialized
 round trips and malicious operand/path/root/proof mutations:
@@ -89,6 +90,12 @@ framing. They are neither generic Exec proof sizes nor terminal FFLONK sizes.
 Tests ran with four Rayon workers, a 32 GiB virtual-address limit, and a
 300-second timeout per test; this is a bounded regression, not peak-RSS or
 production capacity evidence.
+
+The full original CSLib Program grammar also has a verified chain of 1,217
+batch proofs (492,388,476 bytes), with one additional proof for each original
+transport. This checks complete grammar/scalar parsing and state continuity;
+full semantic admission, execution and recursive aggregation remain required.
+See [streaming results and composition work](../docs/IxbyFunctionalStreaming.md).
 
 ```sh
 RAYON_NUM_THREADS=8 cargo test --release --locked --manifest-path flock-stage3/Cargo.toml --workspace conformance:: -- --ignored --test-threads=1
