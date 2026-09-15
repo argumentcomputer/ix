@@ -1,13 +1,14 @@
 import Ix.Kernel.Level
 import Batteries.Recycling.RBTree.Lemmas
-import Ix.Theory.Named.VLevel
+import Ix.Theory.VLevelLemmas
 
 /-!
 # Universe soundness against `Ix.Theory.VLevel`
 
-These proofs use classic imports to combine the named specification's helper
-lemmas with the exposed production definitions in `Ix.Kernel`. The `rfl`
-lemmas below verify unfolding across that module boundary.
+These proofs combine the shared universe lemmas of `Ix.Theory.VLevelLemmas`
+with the exposed production definitions in `Ix.Kernel`; no module of the
+named specification is imported. The `rfl` lemmas below verify unfolding
+across that module boundary.
 
 `KUniv` and `VLevel` align constructor-for-constructor (both carry
 positional params), so the translation `toVLevel` is a total structural

@@ -233,14 +233,18 @@ target ix_native_decide_dynlib pkg : Dynlib := do
     (pkg.buildDir / nameToSharedLib "ix_native_decide")
     (boxedObjs.push ixCdylib) #[]
 
-/- Formal verification of `Ix.Kernel` against the internal named specification.
-Non-default: `lake build ix` never
-touches it, and `build-all` (the lint driver) skips it by name because its
-internal named-specification proofs still emit named `sorry` warnings — `lake lint
+/- Legacy formal verification of `Ix.Kernel` against the internal named
+specification (`Ix.Theory.Named`, Lean4Lean-derived). This track is being
+retired in favour of the set model (`Ix.Theory.Model`); the required kernel
+proof gate is `IxKernelConsistency` below, whose audit rejects any
+`Ix.Theory.Named` module in its import closure. Non-default: `lake build ix`
+never touches it, and `build-all` (the lint driver) skips it by name because
+its named-specification proofs still emit named `sorry` warnings — `lake lint
 -- --wfail` would otherwise fail even though the Ix verification source has
-no local `sorry` tokens. Required CI builds it separately without `--wfail`,
-audits the exact local sorry frontier, and checks exact per-root transitive
-axiom plus direct-`sorryAx`-origin manifests. Dev loop:
+no local `sorry` tokens. It is not part of required CI: the non-required
+`named-spec-verification` workflow (manual or weekly) builds it without
+`--wfail`, audits the exact local sorry frontier, and checks exact per-root
+transitive axiom plus direct-`sorryAx`-origin manifests. Dev loop:
 `lake build IxKernelVerify`; focused trust audit:
 `lake build Ix.Kernel.Verify.Audit.Completed Ix.Kernel.Verify.Audit.Conditional
 Ix.Kernel.Verify.Audit.Statements`. -/
@@ -262,10 +266,13 @@ lean_lib IxKernelConsistency where
 
 section IxCompileVerify
 
-/- Formal verification of the Lean-to-Ixon compiler against the same
-internal named-specification endpoint as `IxKernelVerify`. Kept as a separate non-default
-library so compiler proofs cannot accidentally inherit checker acceptance
-theorems as their specification. -/
+/- Formal verification of the Lean-to-Ixon compiler. It still targets the
+legacy named-specification syntax (`Ix.Theory.Named.VExpr`) that
+`IxKernelVerify` uses, so it transitively builds part of that non-required
+track until the compiler relation is retargeted to the set model. Required CI
+builds it on its own (`lake build IxCompileVerify`). Kept as a separate
+non-default library so compiler proofs cannot accidentally inherit checker
+acceptance theorems as their specification. -/
 lean_lib IxCompileVerify where
   globs := #[.submodules `Ix.Compile.Verify]
 
@@ -328,9 +335,11 @@ script "build-all" (args) := do
   let pkg ← getRootPackage
   let libNames := pkg.configTargets LeanLib.configKind |>.map (·.name.toString)
   let exeNames := pkg.configTargets LeanExe.configKind |>.map (·.name.toString)
-  -- The named specification and its implementation proofs retain an audited
-  -- frontier. CI builds them separately without `--wfail`. The set model,
-  -- direct consistency roots, and certified adapters are checked strictly.
+  -- The legacy named specification and the implementation proofs stated
+  -- against it retain an audited frontier; the non-required
+  -- named-spec-verification workflow builds them without `--wfail`, and
+  -- required CI builds `IxCompileVerify` on its own. The set model, direct
+  -- consistency roots, and certified adapters are checked strictly.
   let allNames := (libNames ++ exeNames |>.toList).filter fun name =>
     name != "IxKernelVerify" && name != "IxCompileVerify" && name != "IxTheoryNamed"
   for name in allNames do
@@ -352,7 +361,7 @@ lean_lib IxTheory where
   globs := #[.one `Ix.Theory, .one `Ix.Theory.Certified,
     .one `Ix.Theory.Const, .one `Ix.Theory.Expr, .one `Ix.Theory.Quot,
     .one `Ix.Theory.Ref, .one `Ix.Theory.Rename, .one `Ix.Theory.Store,
-    .one `Ix.Theory.VLevel, .submodules `Ix.Theory.Certificate,
+    .one `Ix.Theory.VLevel, .one `Ix.Theory.VLevelLemmas, .submodules `Ix.Theory.Certificate,
     .submodules `Ix.Theory.Certified, .submodules `Ix.Theory.Inductive,
     .submodules `Ix.Theory.Model, .submodules `Ix.Theory.Std]
 

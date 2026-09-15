@@ -1,7 +1,7 @@
 import Lean.Elab.Command
 import Lean.PrivateName
 import Lean.Util.FoldConsts
-import Ix.Theory.Named.Std.AxiomAudit
+import Ix.Kernel.Verify.Audit.AxiomAudit
 
 /-!
 # Exact trust-boundary auditing for `Ix.Kernel.Verify`
@@ -67,8 +67,8 @@ private def sortNames (xs : Array Name) : Array Name :=
 
 namespace DependencyAudit
 
-abbrev State := Ix.Theory.Named.AxiomAudit.State
-abbrev collect := Ix.Theory.Named.AxiomAudit.collect
+abbrev State := Ix.Kernel.Verify.Audit.AxiomAudit.State
+abbrev collect := Ix.Kernel.Verify.Audit.AxiomAudit.collect
 
 end DependencyAudit
 
@@ -153,13 +153,13 @@ instead of being silently audited twice. -/
 def check (allowances : Array RootAllowance) : CommandElabM Unit := do
   let env ← getEnv
   let mut roots : NameSet := {}
-  let mut cache : Ix.Theory.Named.AxiomAudit.Cache := {}
+  let mut cache : Ix.Kernel.Verify.Audit.AxiomAudit.Cache := {}
   for allowance in allowances do
     if roots.contains allowance.root then
       throwError m!"duplicate axiom-audit root: {allowance.root}"
     roots := roots.insert allowance.root
     let (dependencies, nextCache) :=
-      Ix.Theory.Named.AxiomAudit.collectCached env allowance.root cache
+      Ix.Kernel.Verify.Audit.AxiomAudit.collectCached env allowance.root cache
     cache := nextCache
     checkOne allowance dependencies
   logInfo m!"Ix.Kernel verification trust audit passed for {allowances.size} theorem roots"

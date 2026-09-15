@@ -89,7 +89,8 @@ theorem SynthesisInference.outputReading {β : Type u}
         reducedCoherent closingFaithful reducedReads
       rw [trace.output run,
         internExpr_readScopedExpr? (table := trace.abstracted.2) closedCoherent faithful]
-      simp [LambdaBodyTrace.abstracted, LambdaBodyTrace.reduced, domainReads, AExpr.erase] at ⊢ closedReads
+      simp [LambdaBodyTrace.abstracted, LambdaBodyTrace.reduced, domainReads, AExpr.erase,
+        Option.bind_eq_some_iff] at ⊢ closedReads
       exact closedReads
   | .letE full localState miss trace opening _ _ bodyTree domainReading valueReading bodyReading
       _ _ _ substitution reduction => by
@@ -125,7 +126,7 @@ theorem SynthesisInference.outputReading {β : Type u}
       change readScopedExpr? resolve locals (trace.abstracted.2.internExpr _).1 = _
       rw [internExpr_readScopedExpr? (table := trace.abstracted.2) closedCoherent faithful]
       simp [LambdaSortInferenceTrace.abstracted, LambdaSortInferenceTrace.reduced, domainReads,
-        AExpr.erase] at ⊢ closedReads
+        AExpr.erase, Option.bind_eq_some_iff] at ⊢ closedReads
       exact closedReads
   | .letSort full localState miss trace opening _ _ bodyTree domainReading valueReading bodyReading
       _ _ _ substitution reduction => by

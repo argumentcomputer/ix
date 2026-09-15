@@ -588,9 +588,18 @@ lake run check-kernel --with-model
 
 It combines the following checks. Omit `--with-model` to skip the separate
 Mathlib package. Ordinary PR CI covers the root checks in its build, theory,
-and test jobs. The model has a separate workflow triggered by changes to the
-package, interface, or configuration; the merge queue adds the expensive
-parity corpus.
+and test jobs, with one exception: the named-specification build
+(`lake build IxKernelVerify` together with the
+`Ix.Kernel.Verify.Audit.Completed`, `Conditional`, `Statements`, and
+`SorryFrontier` manifests) is no longer part of the required PR gate. That
+track is being retired in favour of the set model, and it now runs in the
+non-required `named-spec-verification` workflow (manual dispatch or weekly
+schedule). The required kernel proof gate is
+`lake build --wfail IxKernelConsistency`; its audit additionally fails if any
+`Ix.Theory.Named` module is in the import closure of the consistency roots.
+Required CI still builds `IxCompileVerify` on its own. The model has a
+separate workflow triggered by changes to the package, interface, or
+configuration; the merge queue adds the expensive parity corpus.
 
 ```sh
 lake build IxKernelVerify IxCompileVerify

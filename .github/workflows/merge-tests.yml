@@ -147,18 +147,15 @@ jobs:
             --suppressions=.github/valgrind.supp \
             .lake/build/bin/IxTests ffi
 
-      - name: Check Ix.Kernel exported theorem trust manifest
+      # The legacy named-specification proofs (`IxKernelVerify` with its exact
+      # trust manifests and sorry frontier) are not required here; the
+      # named-spec-verification workflow builds them on demand.
+      - name: Build Ix compiler verification
         if: ${{ matrix.kind == 'tc' }}
-        run: lake build Ix.Kernel.Verify.Audit.Completed Ix.Kernel.Verify.Audit.Conditional Ix.Kernel.Verify.Audit.Statements
-      - name: Build Ix.Kernel formal verification
-        if: ${{ matrix.kind == 'tc' }}
-        run: lake build IxKernelVerify IxCompileVerify
+        run: lake build IxCompileVerify
       - name: Check Ix.Kernel consistency refinement
         if: ${{ matrix.kind == 'tc' }}
         run: lake build --wfail IxKernelConsistency
-      - name: Check Ix.Kernel verification sorry frontier
-        if: ${{ matrix.kind == 'tc' }}
-        run: lake build Ix.Kernel.Verify.Audit.SorryFrontier
       - name: Test Ix.Kernel unit and adversarial fixtures
         if: ${{ matrix.kind == 'tc' }}
         run: lake test --wfail -- tc-unit

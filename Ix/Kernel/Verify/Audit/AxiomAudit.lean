@@ -7,16 +7,22 @@ import Lean.Elab.Command
 import Lean.Util.FoldConsts
 
 /-!
-# Exact axiom checks for named-specification proofs
+# Exact axiom checks for kernel verification proofs
 
 The checked sets use resolved declaration names, independent of pretty-print
 width and dependency traversal order. Both missing and additional axioms fail
 the check; a namespace migration cannot silently widen the recorded boundary.
+
+This traversal is shared by the direct consistency audit
+(`Ix.Kernel.Verify.Audit.Basic`) and by the legacy named-specification
+proofs, which use the `#guard_named_axioms` command below. It depends on no
+`Ix.Theory` module, so the consistency build can import it without reaching
+the named specification.
 -/
 
 open Lean Elab Command
 
-namespace Ix.Theory.Named.AxiomAudit
+namespace Ix.Kernel.Verify.Audit.AxiomAudit
 
 /-- Traverse checked declarations directly. Imported axiom summaries can
 omit dependencies of mutually recursive declaration groups. -/
@@ -74,7 +80,7 @@ def collectCached (env : Environment) (root : Name) (cache : Cache) : State × C
 def collect (env : Environment) (root : Name) : State :=
   (collectCached env root {}).1
 
-end Ix.Theory.Named.AxiomAudit
+end Ix.Kernel.Verify.Audit.AxiomAudit
 
 syntax (name := guardNamedAxioms)
   "#guard_named_axioms " ident " [" ident,* "]" : command
@@ -84,7 +90,7 @@ elab_rules : command
     let rootName ← liftCoreM <| realizeGlobalConstNoOverloadWithInfo root
     let expected ← axioms.getElems.mapM fun axiomSyntax =>
       liftCoreM <| realizeGlobalConstNoOverloadWithInfo axiomSyntax
-    let actual := (Ix.Theory.Named.AxiomAudit.collect (← getEnv) rootName).axioms
+    let actual := (Ix.Kernel.Verify.Audit.AxiomAudit.collect (← getEnv) rootName).axioms
     unless actual.qsort Name.lt == expected.qsort Name.lt do
       let missing := expected.filter (!actual.contains ·)
       let additional := actual.filter (!expected.contains ·)
@@ -104,10 +110,10 @@ private inductive AuditFixture : Prop where
 
 run_cmd do
   let env ← getEnv
-  let (first, cache) := Ix.Theory.Named.AxiomAudit.collectCached env
+  let (first, cache) := Ix.Kernel.Verify.Audit.AxiomAudit.collectCached env
     ``AuditFixture.plain {}
-  let (independent, cache) := Ix.Theory.Named.AxiomAudit.collectCached env ``Eq.refl cache
-  let (sibling, _) := Ix.Theory.Named.AxiomAudit.collectCached env
+  let (independent, cache) := Ix.Kernel.Verify.Audit.AxiomAudit.collectCached env ``Eq.refl cache
+  let (sibling, _) := Ix.Kernel.Verify.Audit.AxiomAudit.collectCached env
     ``AuditFixture.withAxiom cache
   unless first.axioms == #[``propext] && independent.axioms.isEmpty &&
       sibling.axioms == #[``propext] do

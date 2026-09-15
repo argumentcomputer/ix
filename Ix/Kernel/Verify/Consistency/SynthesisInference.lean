@@ -171,7 +171,7 @@ theorem SynthesisInference.soundWithHereditary {β : Type u}
       · rw [trace.output run,
           internExpr_readScopedExpr? (table := trace.abstracted.2) closedCoherent faithful]
         simp [LambdaBodyTrace.abstracted, LambdaBodyTrace.reduced, domainReads,
-          AExpr.erase] at ⊢ closedReads
+          AExpr.erase, Option.bind_eq_some_iff] at ⊢ closedReads
         exact closedReads
   | .letE full localState miss trace opening domainTree valueTree bodyTree domainReading valueReading bodyReading
       conditions hashPath comparisonFaithful substitution reduction => by

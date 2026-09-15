@@ -4,7 +4,7 @@ SPDX-License-Identifier: Apache-2.0
 Source attribution and revision: Ix/Theory/Named/NOTICE.
 -/
 
-import Ix.Theory.Named.Std.AxiomAudit
+import Ix.Kernel.Verify.Audit.AxiomAudit
 import Ix.Theory.Named.Typing.UniqueTyping
 
 open Ix.Theory (VLevel)

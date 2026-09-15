@@ -1656,4 +1656,15 @@ def roots : Array RootAllowance := #[
 
 run_cmd Kernel.Verify.Audit.check roots
 
+/-! The direct consistency roots must stay independent of the retired named
+specification. Every module in this audit's import closure is checked by
+name, so a shared helper cannot reintroduce that dependency unnoticed. -/
+open Lean in
+run_cmd do
+  let modules := (← getEnv).allImportedModuleNames
+  let named := modules.filter (`Ix.Theory.Named).isPrefixOf
+  unless named.isEmpty do
+    throwError m!"consistency roots import named-specification modules: {named.toList}"
+  logInfo m!"Ix.Kernel consistency import audit passed: {modules.size} imported modules, none under Ix.Theory.Named"
+
 end Ix.Kernel.Consistency.Audit

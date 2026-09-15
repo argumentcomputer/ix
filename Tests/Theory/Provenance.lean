@@ -26,8 +26,7 @@ def main (args : List String) : IO Unit := do
   let named := actual.filter (·.startsWith "Ix/Theory/Named/")
   sameFiles ((actual.filter (!·.startsWith "Ix/Theory/Named/")).push "Ix/Theory.lean")
     (selected.map (·.target) ++ authored)
-  sameFiles named ((Tests.Theory.NamedManifest.selected.map (·.target)).push
-    "Ix/Theory/Named/Std/AxiomAudit.lean")
+  sameFiles named (Tests.Theory.NamedManifest.selected.map (·.target))
   need (← (FilePath.mk "Ix/Theory/Named/LICENSE").pathExists) "missing named-specification Apache license"
   need (← (FilePath.mk "Ix/Theory/Named/NOTICE").pathExists) "missing named-specification attribution"
   for path in selected.map (·.target) ++ authored do

@@ -32,7 +32,8 @@ jobs:
           build-args: "--wfail -v"
           test: false
       # build-all checks production targets and the consistency foundation
-      # with --wfail. Named implementation proofs have a separate trust gate. A
+      # with --wfail. The legacy named-specification proofs are not part of
+      # this gate; named-spec-verification.yml builds them on demand. A
       # warning in any target (exes, benchmarks, Apps) — not just the default lib
       # lean-action builds above — fails CI.
       - name: Build all targets
@@ -105,8 +106,8 @@ jobs:
         with:
           auto-config: false
           use-github-cache: false
-      - name: Check implementation proofs and exact trust manifests
-        run: lake build IxKernelVerify IxCompileVerify
+      - name: Check compiler implementation proofs
+        run: lake build IxCompileVerify
       - name: Check direct kernel consistency refinement
         run: lake build --wfail IxKernelConsistency
       - name: Check consistency model and exact foundation manifest
