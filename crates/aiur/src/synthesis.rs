@@ -135,6 +135,7 @@ impl AiurSystem {
     fri_parameters: FriParameters,
   ) -> Self {
     toplevel.validate_lookup_shapes().expect("invalid Aiur lookup shapes");
+    toplevel.validate_row_counts().expect("invalid Aiur control counts");
     let mut circuit_inputs: Vec<CircuitInputs<G>> = Vec::new();
     let mut slot_widths: Vec<Vec<usize>> = Vec::new();
 

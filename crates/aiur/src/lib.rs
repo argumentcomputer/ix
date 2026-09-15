@@ -5,6 +5,7 @@ pub mod gadgets;
 mod lookup_shapes;
 pub mod memory;
 pub mod querymap;
+mod row_counts;
 pub mod synthesis;
 pub mod trace;
 pub mod vk_codec;
