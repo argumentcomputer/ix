@@ -20,7 +20,9 @@ use crate::{
   execute::{ExecError, IOBuffer, QueryRecord},
   function_channel,
   gadgets::{AiurGadget, bytes1::Bytes1, bytes2::Bytes2},
+  lookup_budget::lookup_query_bound,
   memory::Memory,
+  trace_heights::{fixed_trace_heights, trace_cap_coverage},
 };
 
 /// The concrete STARK configuration Aiur instantiates multi-stark with.
@@ -134,6 +136,8 @@ impl AiurSystem {
     commitment_parameters: CommitmentParameters,
     fri_parameters: FriParameters,
   ) -> Self {
+    toplevel.validate_lookup_shapes().expect("invalid Aiur lookup shapes");
+    toplevel.validate_row_counts().expect("invalid Aiur control counts");
     let mut circuit_inputs: Vec<CircuitInputs<G>> = Vec::new();
     let mut slot_widths: Vec<Vec<usize>> = Vec::new();
 
@@ -164,7 +168,7 @@ impl AiurSystem {
       // superposed arguments are degree 2, and grouping would push the
       // logUp constraints past the quotient budget.
       let group_size =
-        if toplevel.circuits[i].layout.selectors == 1 && lookups.len() >= 2 {
+        if toplevel.circuit_is_branchless(i) && lookups.len() >= 2 {
           2
         } else {
           1
@@ -574,6 +578,32 @@ impl AiurSystem {
     claim: &[G],
     proof: &AiurProof,
   ) -> Result<(), VerificationError<PcsError>> {
+    if !self.toplevel.valid_claim_shape(claim) {
+      return Err(VerificationError::InvalidClaim);
+    }
+    if !fixed_trace_heights(
+      self.system.circuits.iter().map(|circuit| circuit.preprocessed_height),
+      &proof.active,
+      &proof.log_degrees,
+    ) {
+      return Err(VerificationError::InvalidProofShape);
+    }
+    if !trace_cap_coverage(
+      self.commitment_parameters.log_blowup,
+      self.commitment_parameters.cap_height,
+      &proof.log_degrees,
+    ) {
+      return Err(VerificationError::InvalidProofShape);
+    }
+    if lookup_query_bound(
+      self.slot_widths.iter().map(Vec::len),
+      &proof.active,
+      &proof.log_degrees,
+    )
+    .is_none()
+    {
+      return Err(VerificationError::InvalidProofShape);
+    }
     self.system.verify(claim, proof)
   }
 
@@ -591,6 +621,13 @@ impl AiurSystem {
 
 #[cfg(test)]
 mod tests {
+  mod acceptance;
+  mod branchless;
+  mod byte_shapes;
+  mod lookup_budget;
+  mod lookup_shapes;
+  mod mmcs;
+
   use super::*;
   use crate::{
     bytecode::{Block, Ctrl, Function, FunctionLayout, Op, Toplevel},
