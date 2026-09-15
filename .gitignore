@@ -14,5 +14,8 @@ result*
 # Scratch space: reference clones, experiments (untracked by design)
 scratchpad
 
+# Local plans, scratch programs, logs, and measurements
+/plans/
+
 # Retained benchmark bundles are addressed by digest in reviewed reports.
 /benchmarks/runs/
