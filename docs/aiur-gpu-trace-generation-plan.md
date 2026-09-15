@@ -1,30 +1,25 @@
 # GPU generation of Aiur BLAKE3 traces
 
-2026-09-14 design; implementation status updated 2026-09-15. The opt-in
-BLAKE3 writer and bounded tree checkpoint are implemented in the main ix
-and multi-stark checkouts. See the [implementation notes](aiur-gpu-trace-generation.md)
-for controls, memory behavior, focused tests and remaining benchmark gates.
-The first [four-GPU Init comparison](../bench/gpu-trace-init-2026-09-15/README.md)
-measured 4.0% lower wall time and 17.7% lower CPU time with GPU traces.
-All modes produced the same verified root. The tree cache had zero hits:
-its headroom rule evicted every retained entry. The workspace-estimation
-correction is a deferred experiment described in the
-[implementation notes](aiur-gpu-trace-generation.md). Broader enablement
-remains subject to the gates below. The original source review covers
-ix `sb/aiur-trace-sharding-gpu` at `8057152c`, including the current workspace
-changes, and the pinned multi-stark revision
+2026-09-14 design, retained as a record of the original proposal. The
+BLAKE3 GPU writer is implemented. The optional Merkle-tree cache described
+below was tested and then removed: retaining all 91 Init trees with a
+24 GiB allowance used more device memory without improving runtime in the
+measured run. Tree-retention sections below are historical proposals, not
+remaining implementation or enablement requirements.
+
+See the [current implementation notes](aiur-gpu-trace-generation.md),
+[retention results](../bench/tree-cache-2026-09-15/README.md), and
+[CPU/GPU trace comparison](../bench/gpu-trace-regenerate-2026-09-15/README.md).
+The original source review covered ix `8057152c` and multi-stark
 `f15a6c4d1672a5815eab0fa8a48683f8bd078f92`.
 
-**Decision.** Prototype GPU main-trace generation for `blake3_compress` only.
+**Decision.** Keep GPU main-trace generation for `blake3_compress` opt-in.
 Integrate with the single-process resident workers implemented in §3.4 of
-the [multi-GPU design][resident-workers]. Within that runtime, keep CPU
-execution semantics, shard planning, within-proof CPU witness lookahead, and
-`Retention::Regenerate` unchanged for the first comparison. Other circuits
-continue using their host trace builders. The next measured policy retains
-only Merkle trees across the barrier under a small explicit budget, while
-regenerating main traces and LDEs. Cross-round LDE retention in host RAM or
-VRAM is outside this plan; execution lookahead and active proving workspace
-take priority over the tree cache.
+the [multi-GPU design][resident-workers]. CPU execution semantics, shard
+planning, within-proof witness lookahead and `Retention::Regenerate` remain.
+Other circuits use their host trace builders. Round one keeps only headers;
+round two regenerates main traces, LDEs and Merkle trees. Cross-round tree
+and LDE caches are outside the current implementation.
 
 **Runtime dependency.** The branch runs one process with one resident prover
 session per GPU, one central ready queue, `--exec-jobs` preparation threads,

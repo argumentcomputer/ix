@@ -211,7 +211,7 @@ fn concurrent_seed_uploads_keep_distinct_contents() {
 }
 
 #[test]
-fn blake3_sources_and_trees_stay_on_their_device() {
+fn blake3_sources_and_commitments_stay_on_their_device() {
   use multi_stark::{
     config::StarkGenericConfig,
     types::{CommitmentParameters, FriParameters, GoldilocksBlake3Config},
@@ -251,12 +251,10 @@ fn blake3_sources_and_trees_stay_on_their_device() {
               3,
             )
             .unwrap();
-          let (root, data) =
-            config.commit_main(vec![(domain, source.clone())], None);
-          let tree = config.checkpoint_main(data, 1 << 20).unwrap();
-          let (restored, data) =
-            config.commit_main(vec![(domain, source)], Some(tree));
-          assert_eq!(root, restored);
+          let (root, data) = config.commit_main(vec![(domain, source.clone())]);
+          drop(data);
+          let (regenerated, data) = config.commit_main(vec![(domain, source)]);
+          assert_eq!(root, regenerated);
           drop(data);
           root
         })

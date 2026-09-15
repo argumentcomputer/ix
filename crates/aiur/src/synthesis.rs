@@ -802,7 +802,7 @@ impl AiurSystem {
           |shard| witnesses[shard].take().expect("each shard is built once"),
         )
       },
-      Retention::Regenerate | Retention::MerkleTrees { .. } => self
+      Retention::Regenerate => self
         .system
         .prove_batch_with(&self.key, &claims, messages, retention, build),
     };
@@ -1015,8 +1015,6 @@ impl AiurSystem {
               match retention {
                 Retention::Retain => "retaining every shard's stage 1",
                 Retention::Regenerate => "regenerating each shard for round 2",
-                Retention::MerkleTrees { .. } =>
-                  "retaining bounded Merkle trees; regenerating traces and LDEs",
               }
             );
             // Per-circuit committed widths, so a plan's padded cells and
@@ -1170,8 +1168,7 @@ mod tests {
 
   #[cfg(feature = "cuda")]
   #[test]
-  fn gpu_blake3_batch_tree_checkpoint_roundtrip() {
-    use multi_stark::config::StarkGenericConfig;
+  fn gpu_blake3_regenerated_batch_matches_cpu() {
     use multi_stark::p3_matrix::Matrix;
     use multi_stark::witness::{PreparedWitness, TraceSource};
     let (cp, fp) = test_parameters();
@@ -1217,17 +1214,11 @@ mod tests {
     };
     let weak_source = std::sync::Arc::downgrade(source);
     let stage1 = system.system.prove_stage_1(witness);
-    let checkpoint = system
-      .system
-      .config
-      .checkpoint_main(stage1.stage_1_trace_data, 32 << 20)
-      .unwrap();
+    drop(stage1);
     assert!(
       weak_source.upgrade().is_none(),
-      "tree checkpoint retained a generated source or LDE"
+      "released stage one retained a generated source or LDE"
     );
-    assert!(checkpoint.bytes() < 32 << 20);
-    drop(checkpoint);
 
     let reference = system.system.prove_batch_with(
       &system.key,
@@ -1237,44 +1228,36 @@ mod tests {
       |shard| build(shard, false),
     );
     system.verify(&claim, &reference).unwrap();
-    for (retention, evict) in [
-      (Retention::Regenerate, false),
-      (Retention::MerkleTrees { max_bytes: 32 << 20 }, false),
-      (Retention::MerkleTrees { max_bytes: 12 << 20 }, false),
-      (Retention::MerkleTrees { max_bytes: 32 << 20 }, true),
-      (Retention::MerkleTrees { max_bytes: 0 }, false),
-    ] {
-      let mut barrier = system.system.batch_round_one(
-        claims
-          .iter()
-          .enumerate()
-          .map(|(shard, c)| (c.clone(), build(shard, true))),
-        retention,
-      );
-      match retention {
-        Retention::MerkleTrees { max_bytes } if max_bytes > 0 => {
-          assert!(
-            barrier.tree_cache_bytes() > 0
-              && barrier.tree_cache_bytes() <= max_bytes
-          );
+    let witnesses: Vec<_> =
+      (0..claims.len()).map(|shard| build(shard, true)).collect();
+    let sources: Vec<_> = witnesses
+      .iter()
+      .flat_map(|witness| &witness.traces)
+      .filter_map(|trace| match trace {
+        TraceSource::Generated(source) => {
+          Some(std::sync::Arc::downgrade(source))
         },
-        _ => assert_eq!(barrier.tree_cache_bytes(), 0),
-      }
-      if evict {
-        barrier.trim_tree_cache(0);
-        assert_eq!(barrier.tree_cache_bytes(), 0);
-      }
-      let proof =
-        system.system.batch_round_two(&system.key, barrier, vec![], |shard| {
-          build(shard, true)
-        });
-      system.verify(&claim, &proof).unwrap();
-      assert_eq!(
-        proof.to_bytes().unwrap(),
-        reference.to_bytes().unwrap(),
-        "GPU/retention changed proof bytes"
-      );
-    }
+        TraceSource::Host(_) => None,
+      })
+      .collect();
+    let barrier = system.system.batch_round_one(
+      claims.iter().cloned().zip(witnesses),
+      Retention::Regenerate,
+    );
+    assert!(
+      sources.iter().all(|source| source.upgrade().is_none()),
+      "round one retained a generated source or LDE across the barrier"
+    );
+    let proof =
+      system.system.batch_round_two(&system.key, barrier, vec![], |shard| {
+        build(shard, true)
+      });
+    system.verify(&claim, &proof).unwrap();
+    assert_eq!(
+      proof.to_bytes().unwrap(),
+      reference.to_bytes().unwrap(),
+      "GPU generation changed proof bytes"
+    );
     let corrupt = || {
       let mut witness = build(0, true);
       let source = witness.traces.remove(0);
@@ -1298,16 +1281,14 @@ mod tests {
         .iter()
         .enumerate()
         .map(|(shard, c)| (c.clone(), build(shard, true))),
-      Retention::MerkleTrees { max_bytes: 32 << 20 },
+      Retention::Regenerate,
     );
-    let bad =
+    let bad = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
       system.system.batch_round_two(&system.key, barrier, vec![], |shard| {
         if shard == 0 { corrupt() } else { build(shard, true) }
-      });
-    assert!(
-      system.verify(&claim, &bad).is_err(),
-      "cached root must not authenticate corrupted recursive-call values"
-    );
+      })
+    }));
+    assert!(bad.is_err(), "round two must reject corrupted regenerated values");
   }
 
   /// Small FRI parameters mirroring `vk_codec`'s test config: cheap to prove
@@ -2357,17 +2338,6 @@ mod tests {
 }
 
 fn trace_retention(requested: Retention) -> Retention {
-  #[cfg(feature = "cuda")]
-  if let Ok(value) = std::env::var("AIUR_TREE_CACHE_BYTES") {
-    let max_bytes = value
-      .parse::<usize>()
-      .expect("AIUR_TREE_CACHE_BYTES must be a nonnegative byte count");
-    return if max_bytes == 0 {
-      Retention::Regenerate
-    } else {
-      Retention::MerkleTrees { max_bytes }
-    };
-  }
   if crate::trace::trace_only_lookups() && requested == Retention::Retain {
     Retention::Regenerate
   } else {
