@@ -1,12 +1,14 @@
 use multi_stark::{
+  config::StarkGenericConfig,
   expr::Expr,
   lookup::Lookup,
-  p3_field::PrimeCharacteristicRing,
+  p3_field::{BasedVectorSpace, PrimeCharacteristicRing},
   p3_matrix::dense::RowMajorMatrix,
   prover::Proof,
   system::{CircuitInputs, ProverKey, System, SystemWitness},
   types::{
-    CommitmentParameters, FriParameters, GoldilocksBlake3Config, PcsError,
+    CommitmentParameters, ExtVal, FriParameters, GoldilocksBlake3Config,
+    PcsError,
   },
   verifier::VerificationError,
 };
@@ -167,9 +169,9 @@ impl AiurSystem {
       // A branchless circuit's lookup arguments are sent raw (degree 1;
       // see `ConstraintState::gate`), so two lookups fit in one chained
       // accumulator step at degree 3 — within the degree the selector-gated
-      // constraints already pay for. Branching circuits keep k = 1: their
-      // superposed arguments are degree 2, and grouping would push the
-      // logUp constraints past the quotient budget.
+      // constraints already pay for. This is the conservative baseline;
+      // after compilation, retune against actual message degrees and the
+      // configured quotient budget, including the FFT cost of raising it.
       let group_size =
         if toplevel.circuit_is_branchless(i) && lookups.len() >= 2 {
           2
@@ -209,7 +211,15 @@ impl AiurSystem {
     );
 
     let config = AiurConfig::new(commitment_parameters, fri_parameters);
-    let (system, key) = System::new(config, circuit_inputs);
+    let (mut system, key) = System::new(config, circuit_inputs);
+    let blowup = system.config.max_quotient_degree();
+    for circuit in &mut system.circuits {
+      crate::lookup_groups::retune(
+        circuit,
+        blowup,
+        <ExtVal as BasedVectorSpace<G>>::DIMENSION,
+      );
+    }
     AiurSystem {
       system,
       key,
@@ -629,6 +639,7 @@ mod tests {
   mod branchless;
   mod byte_shapes;
   mod lookup_budget;
+  mod lookup_groups;
   mod lookup_shapes;
   mod mmcs;
 

@@ -104,12 +104,14 @@ structure FunctionLayout where
 def FunctionLayout.width (l : FunctionLayout) : Nat :=
   l.inputSize + l.selectors + l.auxiliaries
 
+/-- Layout-only estimate of main and stage-2 width. This lacks the control
+tree, compiled lookup degrees and PCS parameters; use the built system's
+`circuitShapes` for actual widths after lookup tuning. -/
 def FunctionLayout.totalWidth (l : FunctionLayout) : Nat :=
   -- Stage 2 commits max(⌈L/k⌉, 1) chained partial accumulators (no message
-  -- inverses); see `multi_stark::lookup::stage2_width`. Mirrors the
-  -- synthesis grouping rule (`crates/aiur/src/synthesis.rs`): branchless
-  -- functions (one selector) have raw degree-1 lookup arguments, so their
-  -- lookups are grouped 2 per accumulator step.
+  -- inverses); see `multi_stark::lookup::stage2_width`. Retain the original
+  -- single-selector heuristic here; synthesis checks control flow and
+  -- retunes using compiled degrees and the FFT cost.
   let slots := if l.selectors == 1 && l.lookups >= 2
     then (l.lookups + 1) / 2
     else max l.lookups 1

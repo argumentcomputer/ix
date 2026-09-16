@@ -3,6 +3,7 @@ pub mod constraints;
 pub mod execute;
 pub mod gadgets;
 mod lookup_budget;
+mod lookup_groups;
 mod lookup_shapes;
 pub mod memory;
 pub mod querymap;
