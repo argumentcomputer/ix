@@ -7,7 +7,7 @@ mod gate;
 mod relation;
 mod slots;
 #[cfg(test)]
-mod tests;
+pub(super) mod tests;
 use super::synthesis::*;
 pub use gate::{CodeCaptureGate, CodeCaptureRow};
 pub use slots::{CodeCaptureSlots, CodeCaptureWires};

@@ -71,8 +71,9 @@ original CSLib census contains 56,592 cells, including the unchanged
 1,016,587 source bytes, 681 functions, 6,763 blocks and 15,298 operands. Every
 packed block and operand passes the corresponding constrained consumer's row
 check. [Source-bound capture](IxbyFlockPagedAdmission.md) now constrains
-these writes from actual parser events. Full semantic reference validation
-and composition with input/initialization remain required.
+these writes from actual parser events. Complete semantic reference and
+constructor-ID checks now have component proofs. Their recursive composition
+with input/initialization remains required.
 
 ## Native initialization and original execution segments
 
@@ -195,8 +196,8 @@ Projection checks the constructor field index against the allocated vector.
 Projection of Erased returns Erased. Constructor cases authenticate the
 selected code alternative and require its declaration index to match the
 value before appending the fields to the current frame. Whole-program source
-admission must establish constructor-ID uniqueness; source-bound code capture
-now checks alternative uniqueness with a carried bitmap.
+admission includes the separate full constructor-ID uniqueness proof;
+source-bound code capture checks alternative uniqueness with a carried bitmap.
 
 Application handles empty arguments, Erased, partial applications, exact
 applications and excess arguments. Partial application copies captures and

@@ -30,7 +30,7 @@ fn nat(bytes: &mut Vec<u8>, mut n: u128) {
     }
   }
 }
-pub(super) fn sample() -> Vec<u8> {
+pub(in crate::ixby::ixbf_decode::paged) fn sample() -> Vec<u8> {
   let mut functions: Vec<Vec<(u128, Vec<u8>)>> = vec![vec![(1, vec![1, 0, 0])]];
   for op in [
     vec![0, 0, 0],
