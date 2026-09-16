@@ -94,26 +94,16 @@ def buildNumbers : BuildM Unit := do
     discard <| defineFunction name arity body
   define `Ixby.Runtime.nibbleWord 1 (nibbleTree 0 16 true 5)
   define `Ixby.Runtime.nibbleNat 1 (nibbleTree 0 16 false 5)
-  -- toWord n weight accumulator, consuming four low bits per iteration.
+  -- Preserve the weighted accumulator contract with explicit scalar conversion.
   define `Ixby.Runtime.toWord 3 do
-    let zero ← primitive .natEq [.local 0, rawNat 0]
-    branch zero (ret (.local 2)) do
-      let done ← primitive .word32Eq [.local 1, word 0]
-      branch done (ret (.local 2)) do
-        let digit ← call `Ixby.Runtime.nibbleWord [← primitive .natMod [.local 0, rawNat 16]]
-        let acc ← primitive .word32Add [.local 2, ← primitive .word32Mul [digit, .local 1]]
-        let next ← primitive .natDiv [.local 0, rawNat 16]
-        let weight ← primitive .word32Shl [.local 1, word 4]
-        tailCall `Ixby.Runtime.toWord [next, weight, acc]
+    let low ← primitive .natToWord32 [.local 0]
+    let weighted ← primitive .word32Mul [low, .local 1]
+    ret (← primitive .word32Add [.local 2, weighted])
   -- fromWordLoop word weight accumulator returns a raw mathematical Nat.
   define `Ixby.Runtime.fromWordLoop 3 do
-    let zero ← primitive .word32Eq [.local 0, word 0]
-    branch zero (ret (.local 2)) do
-      let digit ← call `Ixby.Runtime.nibbleNat [← primitive .word32And [.local 0, word 15]]
-      let acc ← primitive .natAdd [.local 2, ← primitive .natMul [digit, .local 1]]
-      let next ← primitive .word32Shr [.local 0, word 4]
-      let weight ← primitive .natMul [.local 1, rawNat 16]
-      tailCall `Ixby.Runtime.fromWordLoop [next, weight, acc]
+    let natural ← primitive .word32ToNat [.local 0]
+    let weighted ← primitive .natMul [natural, .local 1]
+    ret (← primitive .natAdd [.local 2, weighted])
   define `Ixby.Runtime.fromWord 1 do
     let n ← call `Ixby.Runtime.fromWordLoop [.local 0, rawNat 1, rawNat 0]
     ret (← pair n (.local 0))

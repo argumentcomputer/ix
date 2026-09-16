@@ -1,5 +1,6 @@
 import Compilatrix.Ixby.Binary
 import Compilatrix.Tools.Check
+import CompilatrixTests.Ixby.Conversions
 
 open Compilatrix.Tools.Check Compilatrix.Ixby Ix.Ixby
 
@@ -31,6 +32,8 @@ private def primArgs (p : Primitive) : List Scalar :=
   let f := Scalar.field (Goldilocks.reduce (goldilocksModulus - 3))
   let e := Scalar.extField ⟨Goldilocks.reduce 19, Goldilocks.reduce 23⟩
   match p with
+  | .natToWord32 => [n]
+  | .word32ToNat => [w]
   | .natAdd | .natSub | .natMul | .natDiv | .natMod | .natEq | .natLt => [n, .nat 0]
   | .strAppend | .strEq => [.str "a☃é", .str "β"]
   | .strLength => [.str "a☃é"]
@@ -59,6 +62,7 @@ def main (args : List String) : IO UInt32 := cli "check-ixby-binary" do
     | [path] => pure (some (System.FilePath.mk path))
     | _ => throw (IO.userError "usage: check-ixby-binary [export-directory]")
   if let some directory := directory then IO.FS.createDirAll directory
+  CompilatrixTests.Ixby.Conversions.run directory
   let load (name : Nat) (original : Binary.Artifact) := loaded original directory name
   let mut count := 0
   for scalar in #[Scalar.nat 0, .nat 127, .nat 128, .nat 16383, .nat 16384,
@@ -177,6 +181,8 @@ def main (args : List String) : IO UInt32 := cli "check-ixby-binary" do
   rejects (Binary.decode (bytes.push 0)) .trailing
   rejects (Binary.decode (bytes.set! 0 0)) .header
   rejects (Binary.decode (bytes.set! 4 0)) .version
+  rejects (Binary.decode (bytes.set! 8 0)) .version
+  rejects (Binary.decode (bytes.set! 8 2)) .version
   rejects (Binary.Internal.decode {} #[255] (Binary.Internal.readInstr {})) (.tag 255)
   rejects (Binary.Internal.decode {} #[255] (Binary.Internal.readOp {})) (.tag 255)
   rejects (Binary.Internal.decode {} #[1, 255, 0] (Binary.Internal.readOp {})) (.tag 255)

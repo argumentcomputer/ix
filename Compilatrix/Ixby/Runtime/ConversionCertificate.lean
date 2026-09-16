@@ -110,28 +110,31 @@ variable {program : Program} {links : Links} (certificate : Certificate program 
 
 include certificate
 
-theorem toWord_returns (room : 11 ≤ limits.locals) (capacity : 5 ≤ limits.natBits)
+-- Keep the existing caller-facing sufficient bounds; the direct execution
+-- theorem needs only six locals and validation of the source Nat.
+theorem toWord_returns (room : 11 ≤ limits.locals) (_capacity : 5 ≤ limits.natBits)
     (n : Nat) (valid : (Scalar.nat n).validate limits = .ok ())
-    (continuation : Array Continuation) (stack : continuation.size < limits.continuations) :
+    (continuation : Array Continuation) (_stack : continuation.size < limits.continuations) :
     Reaches limits program
       (frameState links.toWord 0 #[.scalar (.nat n), .scalar (.word32 1), .scalar (.word32 0)]
         continuation)
       (returned (.scalar (.word32 n.toUInt32)) continuation) := by
-  simpa using Conversion.toWord_returns certificate.toWord certificate.nibbleWord
-    limits room capacity n 1 0 valid continuation stack
+  simpa using Conversion.toWord_returns certificate.toWord
+    limits (by omega) n 1 0 valid continuation
 
-theorem fromWordLoop_returns (room : 10 ≤ limits.locals) (capacity : 33 ≤ limits.natBits)
+theorem fromWordLoop_returns (room : 10 ≤ limits.locals) (capacity : 32 ≤ limits.natBits)
     (word : UInt32) (continuation : Array Continuation)
-    (stack : continuation.size < limits.continuations) :
+    (_stack : continuation.size < limits.continuations) :
     Reaches limits program
       (frameState links.fromWordLoop 0
         #[.scalar (.word32 word), .scalar (.nat 1), .scalar (.nat 0)] continuation)
       (returned (.scalar (.nat word.toNat)) continuation) := by
   have resultValid : (Scalar.nat (0 + word.toNat * 1)).validate limits = .ok () := by
     simpa using validate_nat_of_bits word.toNat_lt (show 32 ≤ limits.natBits by omega)
-  have weightValid := validate_nat_of_bits (by decide : 1 * 16 ^ 8 < 2 ^ 33) capacity
-  simpa using Conversion.fromWordLoop_returns certificate.fromWordLoop certificate.nibbleNat
-    limits room (by omega) 8 word 1 0 word.toNat_lt resultValid weightValid continuation stack
+  have wordValid := validate_nat_of_bits word.toNat_lt capacity
+  have weightValid := validate_nat_of_bits (by decide : 1 < 2 ^ 32) capacity
+  simpa using Conversion.fromWordLoop_returns certificate.fromWordLoop
+    limits (by omega) word 1 0 wordValid weightValid resultValid continuation
 
 theorem fromRaw_returns (room : 2 ≤ limits.locals) (n : Nat)
     (continuation : Array Continuation) :
@@ -146,7 +149,7 @@ theorem fromRaw_returns (room : 2 ≤ limits.locals) (n : Nat)
       Frame.transfer, localRoom, bind, Except.bind, pure, Except.pure]
   rfl
 
-theorem fromWord_returns (room : 10 ≤ limits.locals) (capacity : 33 ≤ limits.natBits)
+theorem fromWord_returns (room : 10 ≤ limits.locals) (capacity : 32 ≤ limits.natBits)
     (word : UInt32) (continuation : Array Continuation)
     (stack : continuation.size + 2 ≤ limits.continuations) :
     Reaches limits program (frameState links.fromWord 0 #[.scalar (.word32 word)] continuation)

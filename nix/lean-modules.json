@@ -701,6 +701,7 @@
     "Compilatrix.Ixby.Fence",
     "Compilatrix.Ixby.Lean",
     "Compilatrix.Ixby.Binary",
+    "CompilatrixTests.Ixby.Conversions",
     "Compilatrix.Ixby.Runtime.Execute",
     "Compilatrix.Ixby.Runtime.Run",
     "CompilatrixTests.IxIR1.Lower",
@@ -790,6 +791,9 @@
     "Compilatrix.Ixon.Merkle",
     "Compilatrix.Ixon.CatalogIO",
     "Compilatrix.Coverage.StdContact"]},
+  "CompilatrixTests.Ixby.Conversions":
+  {"path": "CompilatrixTests/Ixby/Conversions.lean",
+   "imports": ["Compilatrix.Ixby.Binary", "Compilatrix.Tools.Check"]},
   "CompilatrixTests.IxIR1.WellModedGen":
   {"path": "CompilatrixTests/IxIR1/WellModedGen.lean",
    "imports": ["CompilatrixTests.Support.Lowering"]},
@@ -2861,7 +2865,7 @@
    ["Compilatrix.Ixby.Runtime.Array", "Ix.MultiStark.Verify.Codec.Wire"]},
   "Compilatrix.Ixby.Runtime.ToWord":
   {"path": "Compilatrix/Ixby/Runtime/ToWord.lean",
-   "imports": ["Compilatrix.Ixby.Runtime.Nibble"]},
+   "imports": ["Compilatrix.Ixby.Runtime.ConversionLaws"]},
   "Compilatrix.Ixby.Runtime.ScalarLaws":
   {"path": "Compilatrix/Ixby/Runtime/ScalarLaws.lean",
    "imports": ["Compilatrix.Ixby.Runtime.Representation"]},
@@ -2959,7 +2963,7 @@
     "Compilatrix.Ixby.Runtime.NatEquality"]},
   "Compilatrix.Ixby.Runtime.FromWord":
   {"path": "Compilatrix/Ixby/Runtime/FromWord.lean",
-   "imports": ["Compilatrix.Ixby.Runtime.Nibble"]},
+   "imports": ["Compilatrix.Ixby.Runtime.ConversionLaws"]},
   "Compilatrix.Ixby.Runtime.FieldConversion":
   {"path": "Compilatrix/Ixby/Runtime/FieldConversion.lean",
    "imports": ["Compilatrix.Ixby.Runtime.ConversionCertificate"]},
@@ -4369,7 +4373,10 @@
     "Compilatrix.Tools.Check"]},
   "CheckIxbyBinary":
   {"path": "scripts/CheckIxbyBinary.lean",
-   "imports": ["Compilatrix.Ixby.Binary", "Compilatrix.Tools.Check"]},
+   "imports":
+   ["Compilatrix.Ixby.Binary",
+    "Compilatrix.Tools.Check",
+    "CompilatrixTests.Ixby.Conversions"]},
   "CheckIxby":
   {"path": "scripts/CheckIxby.lean", "imports": ["Compilatrix.Tools.Check"]},
   "CheckIxIR2":

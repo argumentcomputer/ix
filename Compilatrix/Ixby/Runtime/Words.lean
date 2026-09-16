@@ -272,7 +272,7 @@ theorem usizeSub_evaluates (room : 14 ≤ limits.locals) (capacity : 65 ≤ limi
     Frame.check, inputs, frameState, show ¬limits.locals < 2 by omega,
     bind, Except.bind, pure, Except.pure]
 
-theorem u32And_evaluates (room : 11 ≤ limits.locals) (capacity : 33 ≤ limits.natBits)
+theorem u32And_evaluates (room : 11 ≤ limits.locals) (capacity : 32 ≤ limits.natBits)
     (bytesCapacity : 8 ≤ limits.byteArrayBytes) (a b : UInt32) (left right : Value)
     (leftRep : Number links.conversions.layout a.toNat left)
     (rightRep : Number links.conversions.layout b.toNat right)
@@ -285,7 +285,7 @@ theorem u32And_evaluates (room : 11 ≤ limits.locals) (capacity : 33 ≤ limits
     Frame.check, inputs, frameState, show ¬limits.locals < 2 by omega,
     bind, Except.bind, pure, Except.pure]
 
-theorem u32Or_evaluates (room : 11 ≤ limits.locals) (capacity : 33 ≤ limits.natBits)
+theorem u32Or_evaluates (room : 11 ≤ limits.locals) (capacity : 32 ≤ limits.natBits)
     (bytesCapacity : 8 ≤ limits.byteArrayBytes) (a b : UInt32) (left right : Value)
     (leftRep : Number links.conversions.layout a.toNat left)
     (rightRep : Number links.conversions.layout b.toNat right)
@@ -298,7 +298,7 @@ theorem u32Or_evaluates (room : 11 ≤ limits.locals) (capacity : 33 ≤ limits.
     Frame.check, inputs, frameState, show ¬limits.locals < 2 by omega,
     bind, Except.bind, pure, Except.pure]
 
-theorem u32Xor_evaluates (room : 11 ≤ limits.locals) (capacity : 33 ≤ limits.natBits)
+theorem u32Xor_evaluates (room : 11 ≤ limits.locals) (capacity : 32 ≤ limits.natBits)
     (bytesCapacity : 8 ≤ limits.byteArrayBytes) (a b : UInt32) (left right : Value)
     (leftRep : Number links.conversions.layout a.toNat left)
     (rightRep : Number links.conversions.layout b.toNat right)
@@ -311,7 +311,7 @@ theorem u32Xor_evaluates (room : 11 ≤ limits.locals) (capacity : 33 ≤ limits
     Frame.check, inputs, frameState, show ¬limits.locals < 2 by omega,
     bind, Except.bind, pure, Except.pure]
 
-theorem u8ShiftLeft_evaluates (room : 11 ≤ limits.locals) (capacity : 33 ≤ limits.natBits)
+theorem u8ShiftLeft_evaluates (room : 11 ≤ limits.locals) (capacity : 32 ≤ limits.natBits)
     (bytesCapacity : 8 ≤ limits.byteArrayBytes) (a b : UInt8) (left right : Value)
     (leftRep : Number links.conversions.layout a.toNat left)
     (rightRep : Number links.conversions.layout b.toNat right)
@@ -324,7 +324,7 @@ theorem u8ShiftLeft_evaluates (room : 11 ≤ limits.locals) (capacity : 33 ≤ l
     Frame.check, inputs, frameState, show ¬limits.locals < 2 by omega,
     bind, Except.bind, pure, Except.pure]
 
-theorem u8ShiftRight_evaluates (room : 11 ≤ limits.locals) (capacity : 33 ≤ limits.natBits)
+theorem u8ShiftRight_evaluates (room : 11 ≤ limits.locals) (capacity : 32 ≤ limits.natBits)
     (bytesCapacity : 8 ≤ limits.byteArrayBytes) (a b : UInt8) (left right : Value)
     (leftRep : Number links.conversions.layout a.toNat left)
     (rightRep : Number links.conversions.layout b.toNat right)
@@ -337,7 +337,7 @@ theorem u8ShiftRight_evaluates (room : 11 ≤ limits.locals) (capacity : 33 ≤ 
     Frame.check, inputs, frameState, show ¬limits.locals < 2 by omega,
     bind, Except.bind, pure, Except.pure]
 
-theorem u32ShiftLeft_evaluates (room : 11 ≤ limits.locals) (capacity : 33 ≤ limits.natBits)
+theorem u32ShiftLeft_evaluates (room : 11 ≤ limits.locals) (capacity : 32 ≤ limits.natBits)
     (bytesCapacity : 8 ≤ limits.byteArrayBytes) (a b : UInt32) (left right : Value)
     (leftRep : Number links.conversions.layout a.toNat left)
     (rightRep : Number links.conversions.layout b.toNat right)
@@ -350,7 +350,7 @@ theorem u32ShiftLeft_evaluates (room : 11 ≤ limits.locals) (capacity : 33 ≤ 
     Frame.check, inputs, frameState, show ¬limits.locals < 2 by omega,
     bind, Except.bind, pure, Except.pure]
 
-theorem u32ShiftRight_evaluates (room : 11 ≤ limits.locals) (capacity : 33 ≤ limits.natBits)
+theorem u32ShiftRight_evaluates (room : 11 ≤ limits.locals) (capacity : 32 ≤ limits.natBits)
     (bytesCapacity : 8 ≤ limits.byteArrayBytes) (a b : UInt32) (left right : Value)
     (leftRep : Number links.conversions.layout a.toNat left)
     (rightRep : Number links.conversions.layout b.toNat right)

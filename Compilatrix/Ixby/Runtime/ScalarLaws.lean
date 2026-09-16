@@ -8,6 +8,18 @@ namespace Compilatrix.Ixby.Runtime.Representation
 
 open Ix.Ixby
 
+theorem eval_natToWord32 (limits : Limits) (n : Nat)
+    (valid : (Scalar.nat n).validate limits = .ok ()) :
+    Primitive.natToWord32.eval limits [.scalar (.nat n)] =
+      .ok (.scalar (.word32 n.toUInt32)) := by
+  simp [Primitive.eval, Primitive.arity, valid] <;> rfl
+
+theorem eval_word32ToNat (limits : Limits) (word : UInt32)
+    (valid : (Scalar.nat word.toNat).validate limits = .ok ()) :
+    Primitive.word32ToNat.eval limits [.scalar (.word32 word)] =
+      .ok (.scalar (.nat word.toNat)) := by
+  simp [Primitive.eval, Primitive.arity, valid] <;> rfl
+
 theorem eval_natAdd (limits : Limits) (a b : Nat)
     (left : (Scalar.nat a).validate limits = .ok ())
     (right : (Scalar.nat b).validate limits = .ok ())

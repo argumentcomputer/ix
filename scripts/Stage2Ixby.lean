@@ -86,6 +86,7 @@ def main (args : List String) : IO UInt32 := cli "stage2-ixby" do
     IO.FS.writeBinFile programPath ⟨encoded⟩
     let metadata := Json.mkObj [
       ("format", toJson "compilatrix-ixby-binary/1"),
+      ("program_semantics", toJson Compilatrix.Ixby.Binary.programSemantics),
       ("bytes", toJson encoded.size), ("sha256", toJson (← sha256 programPath)),
       ("max_steps", toJson artifact.maxSteps)]
     let fields ← checked image.report.getObj?

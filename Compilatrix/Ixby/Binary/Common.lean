@@ -10,7 +10,8 @@ open Ix.Ixby
 
 abbrev Bytes := Array UInt8
 abbrev version : Nat := 1
-abbrev semantics : Nat := 0
+abbrev programSemantics : Nat := 1
+abbrev valueSemantics : Nat := 0
 
 structure Artifact where
   limits : Limits
@@ -53,7 +54,7 @@ def writeNatural (n : Nat) : Encoder Unit := do
     writeByte (digit + if i + 1 < width then 128 else 0).toUInt8
     n := n / 128
 
-def writeHeader (magic : String) : Encoder Unit := do
+def writeHeader (magic : String) (semantics : Nat) : Encoder Unit := do
   writeBytes magic.toUTF8.data
   writeBytes (bytesLE 4 version)
   writeBytes (bytesLE 4 semantics)
@@ -98,7 +99,7 @@ def readNatural : Decoder Nat := do
     weight := weight * 128
   throw .integerLimit
 
-def readHeader (magic : String) : Decoder Unit := do
+def readHeader (magic : String) (semantics : Nat) : Decoder Unit := do
   unless (← readBytes magic.utf8ByteSize) == magic.toUTF8.data do throw .header
   unless natOfBytesLE (← readBytes 4) == version do throw .version
   unless natOfBytesLE (← readBytes 4) == semantics do throw .version

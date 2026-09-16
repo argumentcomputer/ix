@@ -61,6 +61,12 @@ import Ix.Ixby.Eval
 
 /-! Required axiom fences for Ixby; expected messages are preserved verbatim. -/
 
+/-- info: 'Compilatrix.Ixby.Runtime.Representation.eval_natToWord32' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Representation.eval_natToWord32
+
+/-- info: 'Compilatrix.Ixby.Runtime.Representation.eval_word32ToNat' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Compilatrix.Ixby.Runtime.Representation.eval_word32ToNat
+
 /-- info: 'Compilatrix.Ixby.Data.eq_of_equal' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Compilatrix.Ixby.Data.eq_of_equal
 

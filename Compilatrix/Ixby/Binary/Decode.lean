@@ -129,7 +129,7 @@ def readFunction (limits : Limits) : Decoder Function := do
   return { arity, entry, blocks }
 
 def readArtifact : Decoder Artifact := do
-  readHeader "IXBF"
+  readHeader "IXBF" programSemantics
   let functions ← readNatural
   let constructors ← readNatural
   let blocks ← readNatural
@@ -164,7 +164,7 @@ def decode (bytes : Bytes) (limits : DecodeLimits := {}) :
 def decodeInput (artifact : Artifact) (bytes : Bytes) (limits : DecodeLimits := {}) :
     Except Error (Decoded (encodeInput artifact) bytes) := do
   let values ← Internal.decode limits bytes do
-    Internal.readHeader "IXFI"
+    Internal.readHeader "IXFI" valueSemantics
     Internal.readVector artifact.limits.operands
       (Internal.readValue artifact.limits limits.valueDepth)
   Internal.canonicalize (encodeInput artifact) bytes values
@@ -172,7 +172,7 @@ def decodeInput (artifact : Artifact) (bytes : Bytes) (limits : DecodeLimits := 
 def decodeOutput (artifact : Artifact) (bytes : Bytes) (limits : DecodeLimits := {}) :
     Except Error (Decoded (encodeOutput artifact) bytes) := do
   let value ← Internal.decode limits bytes do
-    Internal.readHeader "IXFO"
+    Internal.readHeader "IXFO" valueSemantics
     Internal.readValue artifact.limits limits.valueDepth
   Internal.canonicalize (encodeOutput artifact) bytes value
 

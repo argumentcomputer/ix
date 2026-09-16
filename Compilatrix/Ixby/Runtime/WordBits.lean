@@ -13,7 +13,7 @@ variable {program : Program} {links : Links} (certificate : Certificate program 
 
 include certificate
 
-theorem u32And_returns (room : 11 ≤ limits.locals) (capacity : 33 ≤ limits.natBits)
+theorem u32And_returns (room : 11 ≤ limits.locals) (capacity : 32 ≤ limits.natBits)
     (bytesCapacity : 8 ≤ limits.byteArrayBytes) (a b : UInt32) (left right : Value)
     (leftRep : Number links.conversions.layout a.toNat left)
     (rightRep : Number links.conversions.layout b.toNat right)
@@ -26,7 +26,7 @@ theorem u32And_returns (room : 11 ≤ limits.locals) (capacity : 33 ≤ limits.n
     ?_ continuation stack
   simp [Primitive.eval, Primitive.arity, Nat.toUInt32] <;> rfl
 
-theorem u32Or_returns (room : 11 ≤ limits.locals) (capacity : 33 ≤ limits.natBits)
+theorem u32Or_returns (room : 11 ≤ limits.locals) (capacity : 32 ≤ limits.natBits)
     (bytesCapacity : 8 ≤ limits.byteArrayBytes) (a b : UInt32) (left right : Value)
     (leftRep : Number links.conversions.layout a.toNat left)
     (rightRep : Number links.conversions.layout b.toNat right)
@@ -39,7 +39,7 @@ theorem u32Or_returns (room : 11 ≤ limits.locals) (capacity : 33 ≤ limits.na
     ?_ continuation stack
   simp [Primitive.eval, Primitive.arity, Nat.toUInt32] <;> rfl
 
-theorem u32Xor_returns (room : 11 ≤ limits.locals) (capacity : 33 ≤ limits.natBits)
+theorem u32Xor_returns (room : 11 ≤ limits.locals) (capacity : 32 ≤ limits.natBits)
     (bytesCapacity : 8 ≤ limits.byteArrayBytes) (a b : UInt32) (left right : Value)
     (leftRep : Number links.conversions.layout a.toNat left)
     (rightRep : Number links.conversions.layout b.toNat right)
@@ -52,7 +52,7 @@ theorem u32Xor_returns (room : 11 ≤ limits.locals) (capacity : 33 ≤ limits.n
     ?_ continuation stack
   simp [Primitive.eval, Primitive.arity, Nat.toUInt32] <;> rfl
 
-theorem u8ShiftLeft_returns (room : 11 ≤ limits.locals) (capacity : 33 ≤ limits.natBits)
+theorem u8ShiftLeft_returns (room : 11 ≤ limits.locals) (capacity : 32 ≤ limits.natBits)
     (bytesCapacity : 8 ≤ limits.byteArrayBytes) (a b : UInt8) (left right : Value)
     (leftRep : Number links.conversions.layout a.toNat left)
     (rightRep : Number links.conversions.layout b.toNat right)
@@ -70,7 +70,7 @@ theorem u8ShiftLeft_returns (room : 11 ≤ limits.locals) (capacity : 33 ≤ lim
       (a <<< b).toNat := u8_shiftLeft_nat a b
   simpa only [result] using path
 
-theorem u8ShiftRight_returns (room : 11 ≤ limits.locals) (capacity : 33 ≤ limits.natBits)
+theorem u8ShiftRight_returns (room : 11 ≤ limits.locals) (capacity : 32 ≤ limits.natBits)
     (bytesCapacity : 8 ≤ limits.byteArrayBytes) (a b : UInt8) (left right : Value)
     (leftRep : Number links.conversions.layout a.toNat left)
     (rightRep : Number links.conversions.layout b.toNat right)
@@ -88,7 +88,7 @@ theorem u8ShiftRight_returns (room : 11 ≤ limits.locals) (capacity : 33 ≤ li
       (a >>> b).toNat := u8_shiftRight_nat a b
   simpa only [result] using path
 
-theorem u32ShiftLeft_returns (room : 11 ≤ limits.locals) (capacity : 33 ≤ limits.natBits)
+theorem u32ShiftLeft_returns (room : 11 ≤ limits.locals) (capacity : 32 ≤ limits.natBits)
     (bytesCapacity : 8 ≤ limits.byteArrayBytes) (a b : UInt32) (left right : Value)
     (leftRep : Number links.conversions.layout a.toNat left)
     (rightRep : Number links.conversions.layout b.toNat right)
@@ -106,7 +106,7 @@ theorem u32ShiftLeft_returns (room : 11 ≤ limits.locals) (capacity : 33 ≤ li
       (a <<< b).toNat := u32_shiftLeft_nat a b
   simpa only [result] using path
 
-theorem u32ShiftRight_returns (room : 11 ≤ limits.locals) (capacity : 33 ≤ limits.natBits)
+theorem u32ShiftRight_returns (room : 11 ≤ limits.locals) (capacity : 32 ≤ limits.natBits)
     (bytesCapacity : 8 ≤ limits.byteArrayBytes) (a b : UInt32) (left right : Value)
     (leftRep : Number links.conversions.layout a.toNat left)
     (rightRep : Number links.conversions.layout b.toNat right)

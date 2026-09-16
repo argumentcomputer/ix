@@ -124,14 +124,14 @@ obligations remain separate from this working compilation path.
 | Fixed source, keys, entrypoints, limits and complete Ixon closure | Retained and pinned |
 | Complete catalog admission under explicit Stage2 compiler budgets | Passed |
 | Native execution of the unchanged source verifier | Exact claim acceptance; seven rejections |
-| Complete executable Ixby binary | Retained; 1,002,355 bytes; reproducible fresh compilation |
+| Complete executable Ixby binary | Retained; 1,002,199 bytes; program semantics 1; reproducible fresh compilation |
 | Serialized execution and input/output transport | Standalone loader; exact claim acceptance; seven rejections |
 | Native field, extension, word, byte and BLAKE3 lowering | Emitted and tested against the source |
 | Source-to-image reflection | Still open for this frontend |
 | Proving executor integration | Separate downstream work |
 
 The [binary inventory](../fixtures/ixby-stage2/reference-inventory.json)
-contains 681 functions, 6,763 blocks, and 146 constructor layouts, with entry
+contains 681 functions, 6,748 blocks, and 146 constructor layouts, with entry
 680. It records the artifact SHA-256, complete function and constructor
 inventories, primitive and instruction counts, explicit execution limits,
 and static frame maxima. An independent decoder reconstructs its structural

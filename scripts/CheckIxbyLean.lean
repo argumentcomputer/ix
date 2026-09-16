@@ -69,16 +69,15 @@ private def conversionMutations (image : Image) : IO Unit := do
     match changed.certifyConversions with
     | .error _ => pure ()
     | .ok _ => throw (IO.userError s!"conversion certificate accepted {label}")
-  reject (instruction links.toWord 6
-    (.letOp (.primitive .natMod [.local 0, .literal (.nat 15)]) 7)) "wrong radix"
-  reject (instruction links.toWord 11
-    (.letOp (.primitive .word32Shl [.local 1, .literal (.word32 3)]) 12)) "wrong word weight"
-  reject (instruction links.toWord 12 (.tailCall links.toWord [.local 9, .local 8, .local 10]))
-    "swapped recursive arguments"
-  reject (instruction links.fromWordLoop 3
-    (.letOp (.primitive .word32And [.local 0, .literal (.word32 7)]) 4)) "wrong digit mask"
-  reject (instruction links.fromWordLoop 9
-    (.tailCall links.toWord [.local 8, .local 9, .local 7])) "wrong recursive callee"
+  reject (instruction links.toWord 0
+    (.letOp (.primitive .word32ToNat [.local 0]) 1)) "wrong conversion direction"
+  reject (instruction links.toWord 1
+    (.letOp (.primitive .word32Mul [.local 3, .literal (.word32 1)]) 2)) "ignored word weight"
+  reject (instruction links.toWord 2
+    (.letOp (.primitive .word32Add [.literal (.word32 0), .local 4]) 3)) "ignored word accumulator"
+  reject (instruction links.fromWordLoop 1
+    (.letOp (.primitive .natAdd [.local 3, .local 1]) 2)) "wrong weighted Nat operation"
+  reject (instruction links.fromWordLoop 3 (.ret (.local 3))) "returned conversion alone"
   reject (instruction links.fromWord 1
     (.letOp (.construct links.cachedCtor [.local 0, .local 1]) 2)) "swapped cache fields"
   reject (instruction links.fromRaw 0
@@ -122,7 +121,7 @@ private def conversionExecutions (image : Image) : IO Unit := do
     count.modify (· + 1)
   let numbers := #[0, 1, 15, 16, 17, 2 ^ 28 - 1, 2 ^ 28, 2 ^ 32 - 1, 2 ^ 32, 2 ^ 32 + 1,
     Ix.Ixby.goldilocksModulus - 1, Ix.Ixby.goldilocksModulus, Ix.Ixby.goldilocksModulus + 1,
-    2 ^ 64, 2 ^ 80 + 17, 2 ^ 256 + 255]
+    2 ^ 64, 2 ^ 65 + 37, 2 ^ 80 + 17, 2 ^ 256 + 255, 2 ^ image.state.limits.natBits - 1]
   for n in numbers do
     let word := n.toUInt32
     let cached : Ix.Ixby.Value := .ctor links.layout.cached #[.scalar (.nat n), .scalar (.word32 word)]
@@ -130,6 +129,12 @@ private def conversionExecutions (image : Image) : IO Unit := do
     execute links.toWord #[.scalar (.nat n), .scalar (.word32 1), .scalar (.word32 0)] (.scalar (.word32 word))
     execute links.fromWordLoop #[.scalar (.word32 word), .scalar (.nat 1), .scalar (.nat 0)]
       (.scalar (.nat word.toNat))
+    for (weight, accumulator) in #[(0, 7), (3, 11), (4294967295, 4294967295)] do
+      execute links.toWord #[.scalar (.nat n), .scalar (.word32 weight.toUInt32),
+        .scalar (.word32 accumulator.toUInt32)]
+        (.scalar (.word32 (accumulator.toUInt32 + word * weight.toUInt32)))
+      execute links.fromWordLoop #[.scalar (.word32 word), .scalar (.nat weight), .scalar (.nat accumulator)]
+        (.scalar (.nat (accumulator + word.toNat * weight)))
     execute links.fromWord #[.scalar (.word32 word)]
       (.ctor links.layout.cached #[.scalar (.nat word.toNat), .scalar (.word32 word)])
     execute links.fromRaw #[.scalar (.nat n)] raw
@@ -157,23 +162,35 @@ private def conversionExecutions (image : Image) : IO Unit := do
     need same s!"conversion resource contract {id}: expected {reprStr expected}, got {reprStr actual}"
     localCount.modify (· + 1)
   let small : Ix.Ixby.Limits := {
-    image.state.limits with locals := 10, continuations := 2, natBits := 33, byteArrayBytes := 8 }
+    image.state.limits with locals := 6, continuations := 1, natBits := 32, byteArrayBytes := 8 }
   let maxWord : UInt32 := 4294967295
   localRun small links.fromWord #[.scalar (.word32 maxWord)]
     (.ok (.ctor links.layout.cached #[.scalar (.nat maxWord.toNat), .scalar (.word32 maxWord)]))
-  localRun { small with natBits := 32 } links.fromWord #[.scalar (.word32 maxWord)] (.error (.limit .natBits))
-  localRun { small with locals := 9 } links.fromWord #[.scalar (.word32 maxWord)] (.error (.limit .locals))
-  localRun { small with continuations := 1 } links.fromWord #[.scalar (.word32 maxWord)]
+  localRun { small with natBits := 31 } links.fromWord #[.scalar (.word32 maxWord)] (.error (.limit .natBits))
+  localRun { small with locals := 5 } links.fromWord #[.scalar (.word32 maxWord)] (.error (.limit .locals))
+  localRun { small with continuations := 0 } links.fromWord #[.scalar (.word32 maxWord)]
     (.error (.limit .continuations))
-  let toWordLimits := { small with locals := 11, continuations := 1, natBits := 128 }
+  let toWordLimits := { small with continuations := 0, natBits := 128 }
   let args : Array Ix.Ixby.Value := #[.scalar (.nat (2 ^ 80 + 17)), .scalar (.word32 1), .scalar (.word32 0)]
   localRun toWordLimits links.toWord args (.ok (.scalar (.word32 17)))
-  localRun { toWordLimits with locals := 10 } links.toWord args (.error (.limit .locals))
-  localRun { toWordLimits with continuations := 0 } links.toWord args (.error (.limit .continuations))
+  localRun { toWordLimits with locals := 5 } links.toWord args (.error (.limit .locals))
+  localRun { toWordLimits with natBits := 80 } links.toWord args (.error (.limit .natBits))
+  localRun { toWordLimits with natBits := 0 } links.toWord
+    #[.scalar (.nat 0), .scalar (.word32 7), .scalar (.word32 11)] (.ok (.scalar (.word32 11)))
+  localRun { small with continuations := 0, natBits := 0 } links.fromWordLoop
+    #[.scalar (.word32 0), .scalar (.nat 0), .scalar (.nat 0)] (.ok (.scalar (.nat 0)))
+  localRun { small with natBits := 5 } links.fromWordLoop
+    #[.scalar (.word32 maxWord), .scalar (.nat 0), .scalar (.nat 0)] (.error (.limit .natBits))
+  localRun { small with natBits := 5 } links.fromWordLoop
+    #[.scalar (.word32 0), .scalar (.nat 32), .scalar (.nat 0)] (.error (.limit .natBits))
+  localRun { small with natBits := 5 } links.fromWordLoop
+    #[.scalar (.word32 16), .scalar (.nat 2), .scalar (.nat 0)] (.error (.limit .natBits))
+  localRun { small with natBits := 5 } links.fromWordLoop
+    #[.scalar (.word32 16), .scalar (.nat 1), .scalar (.nat 16)] (.error (.limit .natBits))
   let field := Ix.Ixby.Goldilocks.reduce (Ix.Ixby.goldilocksModulus - 1)
-  localRun { small with natBits := 64 } links.fieldNatural #[.scalar (.field field)]
+  localRun { small with locals := 10, natBits := 64 } links.fieldNatural #[.scalar (.field field)]
     (.ok (.scalar (.nat field.val)))
-  localRun { small with natBits := 64, byteArrayBytes := 7 } links.fieldNatural #[.scalar (.field field)]
+  localRun { small with locals := 10, natBits := 64, byteArrayBytes := 7 } links.fieldNatural #[.scalar (.field field)]
     (.error (.limit .byteArrayBytes))
   let fieldLimits := { small with locals := 11, natBits := 64, byteArrayBytes := 0 }
   localRun fieldLimits links.fieldFromNatural #[.scalar (.nat 1)]
@@ -386,13 +403,13 @@ private def natArithmeticExecutions (image : Image) : IO Unit := do
   localRun { small with natBits := 65 } links.mul #[cached (2 ^ 32), cached (2 ^ 32)] (.ok (cached (2 ^ 64)))
   let maxField := field (Ix.Ixby.goldilocksModulus - 1)
   localRun small links.add #[maxField, cached 1] (.ok (raw Ix.Ixby.goldilocksModulus))
-  localRun { small with continuations := 2 } links.add #[maxField, cached 1] (.error (.limit .continuations))
+  localRun { small with continuations := 1 } links.add #[maxField, cached 1] (.error (.limit .continuations))
   localRun { small with byteArrayBytes := 7 } links.add #[cached 1, maxField] (.error (.limit .byteArrayBytes))
   localRun { small with natBits := 63 } links.add #[maxField, cached 0] (.error (.limit .natBits))
   let observationLimits := { small with locals := 10 }
   localRun observationLimits links.div #[maxField, raw 2] (.ok (raw ((Ix.Ixby.goldilocksModulus - 1) / 2)))
   localRun { observationLimits with locals := 9 } links.div #[maxField, raw 2] (.error (.limit .locals))
-  localRun { observationLimits with continuations := 2 } links.div #[maxField, raw 2]
+  localRun { observationLimits with continuations := 1 } links.div #[maxField, raw 2]
     (.error (.limit .continuations))
   localRun observationLimits links.div #[maxField, field 0] (.ok (raw 0))
   localRun observationLimits links.div #[cached 0, raw (2 ^ 64)] (.error (.limit .natBits))
@@ -405,7 +422,7 @@ private def natArithmeticExecutions (image : Image) : IO Unit := do
     (.error (.limit .locals))
   localRun observationLimits links.lessEqual #[maxField, raw (Ix.Ixby.goldilocksModulus - 1)]
     (.ok (.scalar (.bool true)))
-  localRun { observationLimits with continuations := 2 } links.lessEqual
+  localRun { observationLimits with continuations := 1 } links.lessEqual
     #[maxField, raw (Ix.Ixby.goldilocksModulus - 1)] (.error (.limit .continuations))
   localRun observationLimits links.equal #[raw Ix.Ixby.goldilocksModulus, field 0] (.ok (.scalar (.bool false)))
   localRun { observationLimits with byteArrayBytes := 7 } links.equal #[raw Ix.Ixby.goldilocksModulus, maxField]
@@ -417,7 +434,7 @@ private def natArithmeticExecutions (image : Image) : IO Unit := do
   localRun { nativeEquality with locals := 4 } links.equal #[maxField, maxField] (.error (.limit .locals))
   localRun { small with locals := 7 } links.equal #[cached 1, cached 1] (.ok (.scalar (.bool true)))
   localRun { small with locals := 6 } links.equal #[cached 1, cached 1] (.error (.limit .locals))
-  localRun { observationLimits with continuations := 2 } links.equal #[raw Ix.Ixby.goldilocksModulus, maxField]
+  localRun { observationLimits with continuations := 1 } links.equal #[raw Ix.Ixby.goldilocksModulus, maxField]
     (.error (.limit .continuations))
   IO.println s!"check-ixby-lean Nat arithmetic contracts: {← count.get} admitted executions; {← callerCount.get} caller cases; {← localCount.get} resource cases"
 
@@ -593,10 +610,10 @@ private def fieldExecutions (image : Image) : IO Unit := do
     need same s!"field resource contract {id}: expected {reprStr expected}, got {reprStr actual}"
     localCount.modify (· + 1)
   let small : Ix.Ixby.Limits := {
-    image.state.limits with locals := 11, continuations := 3, natBits := 64, byteArrayBytes := 0 }
+    image.state.limits with locals := 9, continuations := 2, natBits := 64, byteArrayBytes := 0 }
   localRun small links.reduce #[raw 1] (.ok (field 1))
-  localRun { small with locals := 10 } links.reduce #[raw 1] (.error (.limit .locals))
-  localRun { small with continuations := 2 } links.reduce #[raw 1] (.error (.limit .continuations))
+  localRun { small with locals := 8 } links.reduce #[raw 1] (.error (.limit .locals))
+  localRun { small with continuations := 1 } links.reduce #[raw 1] (.error (.limit .continuations))
   localRun { small with natBits := 63 } links.reduce #[cached 0] (.error (.limit .natBits))
   localRun small links.reduce #[raw (2 ^ 64)] (.error (.limit .natBits))
   localRun { small with natBits := 65 } links.reduce #[raw (2 ^ 64)] (.ok (field (2 ^ 64)))
@@ -608,7 +625,7 @@ private def fieldExecutions (image : Image) : IO Unit := do
   localRun small links.inverse #[raw Ix.Ixby.goldilocksModulus] (.ok (field 0))
   localRun small links.pack #[raw (Ix.Ixby.goldilocksModulus + 1), cached (Ix.Ixby.goldilocksModulus + 2)]
     (.ok (.scalar (.extField ⟨1, 2⟩)))
-  localRun { small with continuations := 2 } links.pack
+  localRun { small with continuations := 1 } links.pack
     #[raw (Ix.Ixby.goldilocksModulus + 1), cached (Ix.Ixby.goldilocksModulus + 2)]
     (.error (.limit .continuations))
   -- Native field inputs use the direct observer branch without Nat conversion.
@@ -869,11 +886,11 @@ private def natLoopExecutions (image : Image) : IO Unit := do
   let maxField := Ix.Ixby.goldilocksModulus - 1
   localRun observed links.log2 #[field maxField] (.ok (raw maxField.log2))
   localRun { observed with locals := 9 } links.log2 #[field maxField] (.error (.limit .locals))
-  localRun { observed with continuations := 2 } links.log2 #[field maxField] (.error (.limit .continuations))
+  localRun { observed with continuations := 1 } links.log2 #[field maxField] (.error (.limit .continuations))
   localRun { observed with byteArrayBytes := 7 } links.log2 #[field maxField] (.error (.limit .byteArrayBytes))
   localRun { observed with natBits := 63 } links.log2 #[field maxField] (.error (.limit .natBits))
   localRun observed links.shiftRight #[field maxField, field 1] (.ok (raw (maxField >>> 1)))
-  localRun { observed with continuations := 2 } links.shiftRight #[field maxField, field 1]
+  localRun { observed with continuations := 1 } links.shiftRight #[field maxField, field 1]
     (.error (.limit .continuations))
   localRun { observed with locals := 6, continuations := 1, byteArrayBytes := 0 }
     links.shiftRight #[cached 8, raw 3] (.ok (raw 1))
@@ -886,7 +903,7 @@ private def natLoopExecutions (image : Image) : IO Unit := do
   localRun power links.pow #[field maxField, cached 0] (.ok (cached 1))
   localRun power links.pow #[cached (2 ^ 64 - 1), cached 1] (.ok (cached (2 ^ 64 - 1)))
   localRun power links.pow #[field maxField, cached 1] (.ok (raw maxField))
-  localRun { power with continuations := 3 } links.pow #[field maxField, cached 1]
+  localRun { power with continuations := 2 } links.pow #[field maxField, cached 1]
     (.error (.limit .continuations))
   localRun { power with byteArrayBytes := 7 } links.pow #[field maxField, cached 1]
     (.error (.limit .byteArrayBytes))
@@ -1142,14 +1159,14 @@ private def wordExecutions (image : Image) : IO Unit := do
   localRun observed links.usizeEqual #[field maxField, raw maxField] (.ok (.scalar (.bool true)))
   localRun { observed with locals := 9 } links.usizeEqual #[field maxField, raw maxField]
     (.error (.limit .locals))
-  localRun { observed with continuations := 2 } links.usizeEqual #[field maxField, raw maxField]
+  localRun { observed with continuations := 1 } links.usizeEqual #[field maxField, raw maxField]
     (.error (.limit .continuations))
   localRun { observed with byteArrayBytes := 7 } links.usizeEqual #[field maxField, raw maxField]
     (.error (.limit .byteArrayBytes))
   localRun { observed with natBits := 63 } links.usizeEqual #[field maxField, raw maxField]
     (.error (.limit .natBits))
   localRun observed links.u8OfNat #[field maxField] (.ok (cached maxField.toUInt8.toNat))
-  localRun { observed with locals := 10 } links.u8OfNat #[raw 65535] (.error (.limit .locals))
+  localRun { observed with locals := 5 } links.u8OfNat #[raw 65535] (.error (.limit .locals))
   localRun { observed with natBits := 32 } links.u32OfNat #[cached 0] (.error (.limit .natBits))
   localRun { observed with natBits := 33 } links.u32OfNat #[cached 0] (.ok (cached 0))
   localRun observed links.usizeOfNat #[cached 0] (.error (.limit .natBits))
@@ -1171,15 +1188,15 @@ private def wordExecutions (image : Image) : IO Unit := do
   localRun modular links.usizeSub #[cached 0, cached 1] (.error (.limit .natBits))
   localRun { modular with natBits := 65 } links.usizeSub #[cached 0, cached 1] (.ok (cached (2 ^ 64 - 1)))
   localRun { modular with natBits := 65 } links.usizeSub #[field maxField, raw maxField] (.ok (cached 0))
-  let logical := { observed with continuations := 2, natBits := 33 }
+  let logical := { observed with continuations := 1, natBits := 32 }
   localRun logical links.u32And #[raw (2 ^ 32 - 1), field (2 ^ 32 - 1)] (.ok (cached (2 ^ 32 - 1)))
-  localRun { logical with locals := 10 } links.u32And #[raw (2 ^ 32 - 1), cached (2 ^ 32 - 1)]
+  localRun { logical with locals := 5 } links.u32And #[raw (2 ^ 32 - 1), cached (2 ^ 32 - 1)]
     (.error (.limit .locals))
-  localRun { logical with continuations := 1 } links.u32Or #[cached (2 ^ 32 - 1), cached 0]
+  localRun { logical with continuations := 0 } links.u32Or #[cached (2 ^ 32 - 1), cached 0]
     (.error (.limit .continuations))
   localRun { logical with byteArrayBytes := 7 } links.u32Xor #[field 1, cached 1]
     (.error (.limit .byteArrayBytes))
-  localRun { logical with natBits := 32 } links.u32Or #[cached (2 ^ 32 - 1), cached 0]
+  localRun { logical with natBits := 31 } links.u32Or #[cached (2 ^ 32 - 1), cached 0]
     (.error (.limit .natBits))
   localRun logical links.u32ShiftLeft #[field 1, raw 31] (.ok (cached (2 ^ 31)))
   localRun logical links.u32ShiftLeft #[field 1, raw 32] (.ok (cached 1))
@@ -1595,7 +1612,7 @@ private def arrayTreeResources (image : Image) : IO Unit := do
   for id in #[links.get, links.getBorrowed, links.uget, links.ugetBorrowed] do
     localRun observed id #[.erased, fieldArray, field 7, item] (.ok values[7]!)
   localRun { observed with locals := 9 } links.get #[.erased, fieldArray, field 7, item] (.error (.limit .locals))
-  localRun { observed with continuations := 3 } links.get #[.erased, fieldArray, field 7, item] (.error (.limit .continuations))
+  localRun { observed with continuations := 2 } links.get #[.erased, fieldArray, field 7, item] (.error (.limit .continuations))
   localRun { observed with byteArrayBytes := 7 } links.get #[.erased, fieldArray, field 7, item] (.error (.limit .byteArrayBytes))
   localRun observed links.get #[.erased, fieldArray, raw 8, item] (.error .notConstructor)
   localRun observed links.uset #[.erased, fieldArray, raw 8, item, .erased] (.error .notConstructor)
@@ -1605,7 +1622,7 @@ private def arrayTreeResources (image : Image) : IO Unit := do
   let usize := { observed with locals := 11, continuations := 3, natBits := 65 }
   localRun usize links.usize #[.erased, fieldArray] (.ok (cached 8))
   localRun { usize with natBits := 64 } links.usize #[.erased, fieldArray] (.error (.limit .natBits))
-  localRun { usize with continuations := 2 } links.usize #[.erased, fieldArray] (.error (.limit .continuations))
+  localRun { usize with continuations := 1 } links.usize #[.erased, fieldArray] (.error (.limit .continuations))
   localRun { usize with byteArrayBytes := 7 } links.usize #[.erased, fieldArray] (.error (.limit .byteArrayBytes))
   -- Exact tree capacity, rather than the small selected index/result, controls
   -- these primitive Nat failures.

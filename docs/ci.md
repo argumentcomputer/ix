@@ -63,6 +63,8 @@ local development records.
 
 [`Compilatrix.lean`](../Compilatrix.lean) exposes the production compiler API.
 The production import closure has 520 local modules with the Aiur AIR checkers, combined Ixon v3 source validator and catalog-v2 admission.
+Direct Nat/Word32 conversion proofs preserve this inventory and all existing
+nibble-helper proof and axiom-fence coverage.
 The earlier CI refactor reduced that closure from 593 to 425 modules. It does
 not import test modules, example suites, fixture corpora, or fence aggregators.
 

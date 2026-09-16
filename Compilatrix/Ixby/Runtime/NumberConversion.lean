@@ -153,7 +153,7 @@ theorem lowWord_returns (room : 11 ≤ limits.locals) (capacity : 5 ≤ limits.n
       rfl
     simpa only [fieldWord_low] using result
 
-theorem fromWord_represents (room : 10 ≤ limits.locals) (capacity : 33 ≤ limits.natBits)
+theorem fromWord_represents (room : 10 ≤ limits.locals) (capacity : 32 ≤ limits.natBits)
     (word : UInt32) (continuation : Array Continuation)
     (stack : continuation.size + 2 ≤ limits.continuations) :
     ∃ value, Reaches limits program
@@ -199,7 +199,7 @@ theorem lowWord_evaluates (room : 11 ≤ limits.locals) (capacity : 5 ≤ limits
     Frame.check, inputs, frameState, show ¬limits.locals < 1 by omega,
     bind, Except.bind, pure, Except.pure]
 
-theorem fromWord_evaluates (room : 10 ≤ limits.locals) (capacity : 33 ≤ limits.natBits)
+theorem fromWord_evaluates (room : 10 ≤ limits.locals) (capacity : 32 ≤ limits.natBits)
     (stack : 2 ≤ limits.continuations) (word : UInt32)
     (entry : program.entry = links.fromWord) (admitted : validateProgram limits program = .ok ())
     (inputs : validateInputValues limits program limits.inputNodes [.scalar (.word32 word)] = .ok ()) :

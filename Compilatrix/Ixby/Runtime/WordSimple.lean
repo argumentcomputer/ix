@@ -45,7 +45,7 @@ theorem compare_returns {program : Program} {links : Conversion.Links}
 theorem logical_returns {program : Program} {links : Conversion.Links}
     (conversions : Conversion.Certificate program links) {id : FunctionId} {operation : Primitive}
     (checked : Checked program id (logical links.lowWord links.fromWord operation))
-    (limits : Limits) (room : 11 ≤ limits.locals) (capacity : 33 ≤ limits.natBits)
+    (limits : Limits) (room : 11 ≤ limits.locals) (capacity : 32 ≤ limits.natBits)
     (bytesCapacity : 8 ≤ limits.byteArrayBytes) (a b : Nat) (left right : Value)
     (leftRep : Number links.layout a left) (rightRep : Number links.layout b right)
     (leftValid : (Scalar.nat a).validate limits = .ok ())
@@ -76,7 +76,7 @@ theorem shift_returns {program : Program} {links : Conversion.Links}
     (conversions : Conversion.Certificate program links) {id : FunctionId} {operation : Primitive}
     (bits : Nat) (width : bits = 8 ∨ bits = 32)
     (checked : Checked program id (shift links.lowWord links.fromWord operation bits))
-    (limits : Limits) (room : 11 ≤ limits.locals) (capacity : 33 ≤ limits.natBits)
+    (limits : Limits) (room : 11 ≤ limits.locals) (capacity : 32 ≤ limits.natBits)
     (bytesCapacity : 8 ≤ limits.byteArrayBytes) (a b : Nat) (left right : Value)
     (leftRep : Number links.layout a left) (rightRep : Number links.layout b right)
     (leftValid : (Scalar.nat a).validate limits = .ok ())

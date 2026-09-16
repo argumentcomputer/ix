@@ -2,7 +2,7 @@
 
 `Compilatrix.Ixby.Binary` serializes the complete functional runtime from the
 unchanged [pinned Ixby reference](../vendor/ixby/upstream.json). It covers all
-seven scalar kinds, all 45 primitives, and every constructor of `Op`, `Instr`,
+seven scalar kinds, all 47 primitives, and every constructor of `Op`, `Instr`,
 and `Value`. It includes the execution limits and maximum transition count.
 It has no proving-profile admission requirement.
 
@@ -11,10 +11,10 @@ The Stage2 handoff is [stage2.ixby](../fixtures/ixby-stage2/stage2.ixby), with
 
 | Property | Value |
 | --- | --- |
-| Bytes | 1,002,355 |
-| SHA-256 | `33d4515f4d45991a8d26f0db0377634989bbde7add145c225f16992312d3e903` |
+| Bytes | 1,002,199 |
+| SHA-256 | `82e8d1993e9d249e06d7d5fdae74eb1e81e39a65b81613db807dbcfa493756dc` |
 | Entry | Function 680, arity 2 |
-| Functions / blocks / constructor layouts | 681 / 6,763 / 146 |
+| Functions / blocks / constructor layouts | 681 / 6,748 / 146 |
 | Maximum function arity / frame locals / function blocks | 55 / 73 / 185 |
 | Maximum reference transitions | 16,000,000,000 |
 
@@ -57,9 +57,13 @@ UTF-8 is rejected. Counts are checked against applicable limits and remaining
 file bytes before iterating. Decoders do not preallocate from an unchecked
 count. Every file must end exactly after its payload.
 
-A header is four ASCII magic bytes, `u32 formatVersion = 1`, and
-`u32 semanticsVersion = 0`. Semantics version 0 identifies the pinned functional
-reference. These files are distinct from upstream's `IXBY` revision-0
+A header is four ASCII magic bytes, `u32 formatVersion = 1`, and a separate
+`u32 semanticsVersion`: **1 for programs, 0 for input and output values**.
+The exact program prefix is `49 58 42 46 01 00 00 00 01 00 00 00`.
+Program semantics 0 is rejected even when every instruction uses an old opcode;
+value semantics 1 is rejected. This breaking revision adds explicit Nat/Word32
+conversions. `programSemantics` and `valueSemantics` are separate constants.
+These files are distinct from upstream's `IXBY` revision-0
 cryptographic-profile format; their tags and opcodes must not be interchanged.
 
 ## Program file: `IXBF`
@@ -160,6 +164,7 @@ Primitive opcodes are fixed explicitly by this version:
 12 word32Mul       27 fieldInverse    42 bytesSlice
 13 word32And       28 fieldEq         43 bytesEq
 14 word32Or        29 fieldToBytes    44 blake3
+45 natToWord32     46 word32ToNat
 ```
 
 The theorem `primitiveOpcode_decodes` covers every primitive by cases.
@@ -167,6 +172,31 @@ Arithmetic, word shifts, field zero inverses, string length, byte slicing,
 BLAKE3, partial application, oversaturation, and error behavior are those of
 [Primitive](../vendor/ixby/Ix/Ixby/Primitive.lean) and the reference evaluator.
 The binary format adds serialization, not new evaluation rules.
+
+Both new primitives require exactly one argument. `natToWord32` validates its
+Nat source before returning `n mod 2^32`; an over-limit Nat cannot be made
+admissible by truncation. `word32ToNat` returns the exact unsigned value and
+validates that result against `natBits`. Zero fits a zero-bit Nat capacity.
+Arity checking precedes scalar validation, followed by source-type checking
+and result validation. Wrong types have no implicit coercion. Opcodes 47–255
+are invalid; whole-program validation enforces unary arity.
+
+The operation encodings for local slots 0 and 1 are respectively
+`01 2d 01 00 00` and `01 2e 01 00 01`. These exclude the surrounding instruction
+tag, block frame and successor. The separate experimental `IXBY`/`IXBP` codec
+continues to reject both primitives.
+
+Downstream Flock profiles retain the 184-byte `IXFP` layout: profile revision
+0, program format 1, **program semantics 1 at byte offset 12**, ten little-endian
+u128 limits, then u64 maximum steps. Regenerate the profile, program commitment,
+input/output commitments and final statement, even when input/output bytes
+are identical. Proof setups and proofs must bind these new artifacts. The
+paged backend's immediate Nat128 restriction is separate from the reference
+machine's declared Nat capacity.
+
+The [integration record](ixby-nat-word32.md) includes regenerated Stage2 and
+CSLib artifacts, measured transition counts, and an independently generated
+conversion fixture with its expected profile and statement.
 
 ## Input and output files
 

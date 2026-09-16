@@ -55,7 +55,14 @@ private def constructorABI (directory : FilePath) : IO Unit := do
 private def vendor (root : FilePath) : IO Unit := do
   let directory := root / "vendor/ixby"
   let pin ← readJson (directory / "upstream.json")
-  need ((← strField pin "revision") == "4fdbf4084516ce1a29f6753a20d797334d7fadbb") "Ixby revision drifted"
+  need ((← strField pin "revision") == "d4405b3ceb82e6d4cce19e48186f3272f8482e04") "Ixby revision drifted"
+  let revisions ← pairs (← field pin "file_revisions")
+  need ((revisions.map Prod.fst).mergeSort (· ≤ ·) ==
+    ["Ix/Ixby/Profile.lean", "Ix/Ixby/Codec/Common.lean", "Ix/Ixby/Codec/Encode.lean",
+      "Ix/Ixby/Codec/Decode.lean"].mergeSort (· ≤ ·)) "Ixby file revision inventory drifted"
+  for (_, revision) in revisions do
+    need ((← string revision) == "4fdbf4084516ce1a29f6753a20d797334d7fadbb")
+      "legacy crypto profile revision drifted"
   need ((← strField pin "repository") == "https://github.com/argumentcomputer/ix" &&
     (← strField pin "branch") == "jcb/ixby") "Ixby upstream identity drifted"
   let hashes ← pairs (← field pin "unchanged_files_sha256")

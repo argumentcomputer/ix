@@ -15,7 +15,8 @@ def primitives : Array Primitive := #[
   .fieldAdd, .fieldSub, .fieldMul, .fieldInverse, .fieldEq,
   .fieldToBytes, .bytesToField,
   .extAdd, .extSub, .extMul, .extInverse, .extEq, .extPack, .extFst, .extSnd,
-  .bytesLength, .bytesGet, .bytesAppend, .bytesSlice, .bytesEq, .blake3]
+  .bytesLength, .bytesGet, .bytesAppend, .bytesSlice, .bytesEq, .blake3,
+  .natToWord32, .word32ToNat]
 
 def primitiveOpcode (primitive : Primitive) : Nat :=
   primitives.toList.idxOf primitive
@@ -94,7 +95,7 @@ def writeFunction (function : Function) : Encoder Unit := do
     writeInstr block.instruction) function.blocks
 
 def writeArtifact (artifact : Artifact) : Encoder Unit := do
-  writeHeader "IXBF"
+  writeHeader "IXBF" programSemantics
   let l := artifact.limits
   for n in #[l.functions, l.constructors, l.blocks, l.locals, l.operands,
       l.continuations, l.inputNodes, l.natBits, l.stringBytes, l.byteArrayBytes,
@@ -120,13 +121,13 @@ def encodeInput (artifact : Artifact) (values : Array Value) : Except Error Byte
   let fn ← artifact.program.getFunction artifact.program.entry |>.mapError .reference
   unless values.size == fn.arity do throw (.reference (.arityMismatch fn.arity values.size))
   Internal.encode do
-    Internal.writeHeader "IXFI"
+    Internal.writeHeader "IXFI" valueSemantics
     Internal.writeVector (Internal.writeValue artifact.limits.inputNodes) values
 
 def encodeOutput (artifact : Artifact) (value : Value) : Except Error Bytes := do
   validateValues artifact #[value]
   Internal.encode do
-    Internal.writeHeader "IXFO"
+    Internal.writeHeader "IXFO" valueSemantics
     Internal.writeValue artifact.limits.inputNodes value
 
 end Compilatrix.Ixby.Binary

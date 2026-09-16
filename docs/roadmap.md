@@ -507,6 +507,12 @@ belong in those references.
 | B1/B2 | [Closed borrowed-call certificates](source-borrow.md) and [structural runtime borrowing](source-borrow-runtime.md), with lender preservation, two fewer RC operations, full reclamation, and unchanged peak. Recursive SCCs and native shared borrowing remain open. |
 | PERF1/PERF3 | [Native comparisons](performance/native-reverse-2026-09-09/README.md), [checked counter folding](performance/counter-fold-2026-09-10/README.md), [bounded compiler scaling](performance/compiler-scaling-2026-09-12/README.md), and [modular source costs](performance/modular-source-2026-09-12/README.md), with retained data and artifact/check/analysis replay. Broader workloads remain extensions. |
 
+The [Ixby Nat/Word32 revision](ixby-nat-word32.md) now emits program semantics 1
+and certifies the direct weighted conversion helpers. Regenerated CSLib
+reference execution preserves the exact output and uses 10.36% fewer
+transitions. The small conversion fixture passes native proof verification;
+full CSLib proving and typed source/image refinement remain open.
+
 The [compiler entry-point table](compiler-design.md#compiler-entry-points)
 identifies the checked APIs. `Pipeline.compileValidated` supplies source
 certification; the broader `Pipeline.compile` does not.

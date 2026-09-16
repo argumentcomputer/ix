@@ -115,6 +115,18 @@ check precede execution. Pinned Lean shared libraries supply the same CI
 runtime symbols previously linked into each executable. These changes affect
 build/runtime packaging and add no target-language native interface.
 
+The [Nat/Word32 integration](ixby-nat-word32.md) pins the updated Ixby reference
+and explicitly retains the older experimental crypto codec files at their
+recorded revision. Program semantics 1 adds two conversion primitives and
+replaces the generated weighted conversion loops with direct operations.
+Their proofs use the ordinary logical axiom set. All 2,412 previous exact
+axiom assertions remain, with two new primitive-evaluation assertions; all
+267 runtime failure assertions remain. The compiler toolchain and native
+interfaces are unchanged. The retained conversion fixture and CSLib record
+bind the new program, profile, I/O commitments and statement. Fresh verification
+of the small fixture's existing upstream proof supplies integration evidence,
+without asserting a full CSLib proof or universal source/image refinement.
+
 ## Active native interface: BLAKE3 Rust
 
 | Field | Ledger value |

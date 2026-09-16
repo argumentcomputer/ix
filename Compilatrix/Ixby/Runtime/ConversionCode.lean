@@ -64,34 +64,19 @@ def nibble (toWord : Bool) : Function :=
     ⟨5, .ret (output 14)⟩,
     ⟨5, .ret (output 15)⟩] }
 
-def toWord (self digit : FunctionId) : Function := {
+def toWord (_self _digit : FunctionId) : Function := {
   arity := 3, blocks := #[
-    ⟨3, .letOp (.primitive .natEq [.local 0, N 0]) 1⟩,
-    ⟨4, .branch (.local 3) 2 3⟩,
-    ⟨4, .ret (.local 2)⟩,
-    ⟨4, .letOp (.primitive .word32Eq [.local 1, W 0]) 4⟩,
-    ⟨5, .branch (.local 4) 5 6⟩,
-    ⟨5, .ret (.local 2)⟩,
-    ⟨5, .letOp (.primitive .natMod [.local 0, N 16]) 7⟩,
-    ⟨6, .letOp (.call digit [.local 5]) 8⟩,
-    ⟨7, .letOp (.primitive .word32Mul [.local 6, .local 1]) 9⟩,
-    ⟨8, .letOp (.primitive .word32Add [.local 2, .local 7]) 10⟩,
-    ⟨9, .letOp (.primitive .natDiv [.local 0, N 16]) 11⟩,
-    ⟨10, .letOp (.primitive .word32Shl [.local 1, W 4]) 12⟩,
-    ⟨11, .tailCall self [.local 9, .local 10, .local 8]⟩] }
+    ⟨3, .letOp (.primitive .natToWord32 [.local 0]) 1⟩,
+    ⟨4, .letOp (.primitive .word32Mul [.local 3, .local 1]) 2⟩,
+    ⟨5, .letOp (.primitive .word32Add [.local 2, .local 4]) 3⟩,
+    ⟨6, .ret (.local 5)⟩] }
 
-def fromWordLoop (self digit : FunctionId) : Function := {
+def fromWordLoop (_self _digit : FunctionId) : Function := {
   arity := 3, blocks := #[
-    ⟨3, .letOp (.primitive .word32Eq [.local 0, W 0]) 1⟩,
-    ⟨4, .branch (.local 3) 2 3⟩,
-    ⟨4, .ret (.local 2)⟩,
-    ⟨4, .letOp (.primitive .word32And [.local 0, W 15]) 4⟩,
-    ⟨5, .letOp (.call digit [.local 4]) 5⟩,
-    ⟨6, .letOp (.primitive .natMul [.local 5, .local 1]) 6⟩,
-    ⟨7, .letOp (.primitive .natAdd [.local 2, .local 6]) 7⟩,
-    ⟨8, .letOp (.primitive .word32Shr [.local 0, W 4]) 8⟩,
-    ⟨9, .letOp (.primitive .natMul [.local 1, N 16]) 9⟩,
-    ⟨10, .tailCall self [.local 8, .local 9, .local 7]⟩] }
+    ⟨3, .letOp (.primitive .word32ToNat [.local 0]) 1⟩,
+    ⟨4, .letOp (.primitive .natMul [.local 3, .local 1]) 2⟩,
+    ⟨5, .letOp (.primitive .natAdd [.local 2, .local 4]) 3⟩,
+    ⟨6, .ret (.local 5)⟩] }
 
 def fromWord (loop : FunctionId) (cached : Constructor) : Function := {
   arity := 1, blocks := #[

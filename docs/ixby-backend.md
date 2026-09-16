@@ -6,10 +6,13 @@ with native field and extension operations and a standalone runtime loader. Its
 execution tests do not extend the checked Ixon certificates described here.
 
 Compilatrix has a backend for the pure functional Ixby reference machine from
-[`jcb/ixby` at `4fdbf4084516ce1a29f6753a20d797334d7fadbb`](https://github.com/argumentcomputer/ix/tree/4fdbf4084516ce1a29f6753a20d797334d7fadbb/Ix/Ixby).
+[`jcb/ixby` at `d4405b3ceb82e6d4cce19e48186f3272f8482e04`](https://github.com/argumentcomputer/ix/tree/d4405b3ceb82e6d4cce19e48186f3272f8482e04/Ix/Ixby).
 It compiles checked Ixon through IxIR₀, without ownership lowering. The source
 modules, canonical codec, profile, and pure BLAKE3 implementation are vendored
-unchanged under [`vendor/ixby`](../vendor/ixby/README.md). The upstream toolchain
+unchanged under [`vendor/ixby`](../vendor/ixby/README.md), with four explicit
+file-revision exceptions retaining the earlier experimental crypto profile and
+codec. The new functional Nat/Word32 primitives and `IXBF` semantics revision 1
+do not broaden that separate profile. The upstream toolchain
 is 4.33.1; these exact modules also build with this repository's pinned 4.33.0.
 
 ## Entry points

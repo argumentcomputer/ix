@@ -105,18 +105,22 @@ with reference `run`, and with `Evaluates` after reference program/input
 admission. The proofs use concrete primitive semantics throughout.
 
 Both [digit converters](../Compilatrix/Ixby/Runtime/Nibble.lean) are proved for
-all sixteen possible digits. The [Nat-to-word loop](../Compilatrix/Ixby/Runtime/ToWord.lean)
-terminates and returns `accumulator + n.toUInt32 * weight`, including its zero
-Nat and zero weight exits. Its proof executes the nested digit call and the
-recursive tail call. It covers arbitrary Nat inputs that fit the explicit
-scalar limit, including inputs larger than a word or field.
+all sixteen possible digits and remain in the function inventory. The
+[Nat-to-word helper](../Compilatrix/Ixby/Runtime/ToWord.lean) now executes
+`natToWord32`, multiplication, addition and return, proving
+`accumulator + n.toUInt32 * weight` for arbitrary weights and accumulators.
+It validates the source Nat before truncation, including for zero weight,
+and covers arbitrary inputs within the declared scalar limit.
 
-The [word-to-Nat loop](../Compilatrix/Ixby/Runtime/FromWord.lean) terminates and
-returns the exact `accumulator + word.toNat * weight`. Its invariant bounds
-both the result and the final weight. With the usual initial weight of one,
-the helper computes an unused final weight of `2^32`; this requires **33 Nat
-bits**, although its result fits in 32. Tests confirm that the same nonzero
-eight-digit input fails at 32 bits and succeeds at 33.
+The [word-to-Nat helper](../Compilatrix/Ixby/Runtime/FromWord.lean) uses the
+same four-instruction structure and returns the exact
+`accumulator + word.toNat * weight`. Its theorem requires the converted word,
+input weight and final result to fit; nonnegativity then bounds the product
+and accumulator. The converted word must fit even when the weight is zero.
+The old fuel/final-weight invariant is obsolete: no `2^32` next weight is
+computed. The ordinary conversion now succeeds with **32 Nat bits** and its
+maximum-word regression fails at 31. Both direct helper theorems need six
+locals and preserve the continuation without pushing a frame.
 
 The [field adapters](../Compilatrix/Ixby/Runtime/FieldConversion.lean) execute
 both word conversions and the native reconstruction operations. `fieldNatural`
@@ -127,8 +131,8 @@ then cover all three values in the `Number` relation:
 | Helper | Result | Local slots | Nat bits | Spare continuations | Byte capacity |
 | --- | --- | ---: | ---: | ---: | ---: |
 | `toWord n 1 0` | `n.toUInt32` | 11 | 5 + input fits | 1 | 0 |
-| `fromWordLoop w 1 0` | Exact `w.toNat` | 10 | 33 | 1 | 0 |
-| `fromWord w` | Consistent cached number | 10 | 33 | 2 | 0 |
+| `fromWordLoop w 1 0` | Exact `w.toNat` | 10 | 32 | 1 | 0 |
+| `fromWord w` | Consistent cached number | 10 | 32 | 2 | 0 |
 | `fromRaw n` | Raw number containing `n` | 2 | No primitive Nat operation | 0 | 0 |
 | `fieldNatural f` | Exact `f.val` | 10 | 64 | 2 | 8 |
 | `fieldFromNatural n` | `Goldilocks.reduce n` | 11 | 64 + input fits | 2 | 0 |
@@ -136,7 +140,8 @@ then cover all three values in the `Number` relation:
 | `asField value` | Reduced represented Nat | 11 | 64 + represented Nat fits | 2 | 0 |
 | `lowWord value` | Low word of represented Nat | 11 | 5 + represented Nat fits | 1 | 8 |
 
-These are sufficient local-contract bounds. Whole-program admission also
+These are the retained caller-facing sufficient local-contract bounds; the
+direct helper theorems above have smaller requirements. Whole-program admission also
 checks every literal in the image and validates the input. The numeric
 representation relation is an additional premise; structural input validation
 alone does not establish cache consistency. Public `natural`, `asField`,
@@ -146,10 +151,12 @@ representation theorem establishes the cache invariant for its returned box.
 
 The comparison suite obtains all eleven certificates on every compiled image.
 It rejects 21 conversion mutations, including 17 that still pass structural
-admission. Another 224 admitted helper executions cover all number layouts,
-the field modulus boundaries, and large Nats; eleven local resource cases test
-successful thresholds and exact capacity errors. Stage2 compilation obtains
-the same certificates before export. Its binary and manifest are unchanged.
+admission. Another 360 admitted helper executions cover all number layouts,
+general weights and accumulators, field boundaries, and Nats through the
+configured 4,096-bit maximum. Seventeen local resource cases test successful
+thresholds and exact capacity errors. Stage2 compilation obtains the same
+certificates for the newly generated bodies before export. Its binary and
+manifest are regenerated under program semantics revision 1.
 
 ## Complete Nat arithmetic and comparisons
 
@@ -378,7 +385,7 @@ program admission, input validation, and the source representation premises.
 | Five comparisons | 10 | 64 | 3 | 8 |
 | UInt8/UInt32 arithmetic | 14 | 64 | 3 | 8 |
 | USize addition/subtraction | 14 | 65 | 3 | 8 |
-| Seven logical/shift helpers | 11 | 33 | 2 | 8 |
+| Seven logical/shift helpers | 11 | 32 | 2 | 8 |
 
 These are sufficient bounds across all admitted number layouts. Arbitrary
 Nat inputs to `ofNat` must also fit the selected scalar limit. Source word
@@ -386,8 +393,8 @@ operands already bound the other numeric intermediates. USize conversion,
 addition, and subtraction explicitly assume `System.Platform.numBits = 64`,
 matching the compiler's fixed width. Their 65-bit capacity is necessary even
 for some small results: truncating zero reads the literal `2^64`, and a
-wrapped sum can exceed the final source range. The logical/shift bound allows
-the word-to-Nat loop's final weight to reach `2^32`.
+wrapped sum can exceed the final source range. Logical/shift results need
+32 bits for the direct word-to-Nat conversion.
 
 Every regression image and Stage2 export obtains the word certificate. The
 word suite has 45,769 admitted executions, including every byte input, all
@@ -480,10 +487,10 @@ cmp fixtures/ixby-stage2/stage2.ixby /tmp/stage2.ixby
 nix flake check --no-update-lock-file
 ```
 
-The axiom fence includes 22 representation/scalar guards, 20 conversion and
+The axiom fence includes 24 representation/scalar guards, 20 conversion and
 continuation guards, 21 Nat arithmetic/comparison/call guards, 17 field/call
 guards, 19 Nat loop/arithmetic-bound/call guards, 76 word/source/call guards,
-and 53 array representation/source/call guards: 228 runtime guards in total.
+and 53 array representation/source/call guards: 230 runtime guards in total.
 They pin the contracts to
 subsets of `propext`, `Classical.choice`, and
 `Quot.sound`. The integration gate retains

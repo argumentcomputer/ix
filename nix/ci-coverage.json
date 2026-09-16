@@ -636,8 +636,9 @@
   "CompilatrixTests.IxIR1.Lower",
   "CompilatrixTests.IxIR1.ThesisBench",
   "CompilatrixTests.IxIR1.WellModedGen",
+  "CompilatrixTests.Ixby.Conversions",
   "CompilatrixTests.Pipeline.Integration"],
  "baseline": "6beaf5d0: complete required CI before factoring",
  "axiom_sha256":
- "8b1fc42e745e5444a79b0acd037326992c3a2fd2cbdebf1bd8fe1ab98c52d308",
- "axiom_count": 2412}
+ "2b3bfefe531c95416b8aa672ab5c4960a3139d7b8078a4457cc88cfc09bcd524",
+ "axiom_count": 2414}

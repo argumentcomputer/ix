@@ -2,8 +2,8 @@
 
 The typed frontend emits a complete, executable [Ixby binary](ixby-binary.md).
 The retained [Stage2 artifact](../fixtures/ixby-stage2/stage2.ixby) contains both
-fixed keys and the complete verifier code: 1,002,355 bytes, 681 functions,
-6,763 blocks, 146 constructor layouts, and entry function 680. A separate
+fixed keys and the complete verifier code: 1,002,199 bytes, 681 functions,
+6,748 blocks, 146 constructor layouts, and entry function 680. A separate
 `ixby-exec` process loads the binary and runs the unchanged Ixby evaluator.
 Execution needs no compiler environment or retained Lean source declarations.
 
@@ -30,8 +30,11 @@ Naturals retain their exact mathematical values. Arithmetic uses native Nat
 primitives with truncated subtraction and the reference division/remainder by
 zero behavior. An optional low Word32 cache supports byte indexing and word
 operations. Division and remainder produce uncached values; ordinary arithmetic
-propagates them without unnecessary word conversion. Conversions consume four
-bits at a time through comparisons with literals and ordinary instructions.
+propagates them without unnecessary word conversion. Explicit `natToWord32`
+and `word32ToNat` primitives implement conversions. The three-argument
+`toWord` and `fromWordLoop` helpers preserve their weights and accumulators
+with one conversion, multiplication, addition and return. The nibble helpers
+remain in the function inventory but these bodies no longer call them.
 The USize lowering uses 64-bit source semantics. The USize conversion and
 arithmetic proofs state that platform assumption explicitly and allow 65-bit
 intermediates before modular reduction.
@@ -60,7 +63,7 @@ source. No host invocation of the Stage2 verifier supplies an execution result.
 ## Binary artifact and ABI
 
 The [full binary format](ixby-binary.md) encodes all seven scalar kinds, all
-45 primitives, every operation and instruction, constructor identities,
+47 primitives, every operation and instruction, constructor identities,
 functions, blocks, entry point, execution capacities, and maximum steps.
 Minimal unsigned LEB128 encodes naturals, indices, counts, and the step budget;
 there is no implicit Word32 bound on Nat or the number of transitions.
@@ -107,7 +110,7 @@ seven native extension helpers and eleven number conversion helpers. Eight
 scalar mutations and 21 conversion mutations must fail certificate construction;
 five and 17 respectively remain structurally valid programs. The conversion
 contracts also have 224 admitted executions and eleven local resource cases,
-including the 33-bit final-weight requirement of word-to-Nat conversion.
+including exact 32-bit word-to-Nat capacity and validation before truncation.
 The eight Nat arithmetic/comparison certificates cover addition, subtraction,
 multiplication, division, remainder, equality, and both order comparisons for
 every input representation pair. Their contracts include exact results,
@@ -167,12 +170,17 @@ Fifty-three new axiom guards retain the ordinary logical basis. Packed bytes,
 ropes, their conversions, and the remaining collection helpers still need
 composition proofs; these array execution contracts require tree-backed inputs.
 
-The binary suite checks 81 decoded executions covering every scalar, primitive,
+The binary suite checks 83 decoded executions covering every scalar, primitive,
 operation, and instruction. It also checks structured constructor/PAP input and
 output, all proper-prefix truncations of representative artifacts, malformed
 tags, versions, UTF-8, booleans, fields, nonminimal integers, and loader limits.
 The independent Python decoder reads the exported test corpus and the full
 Stage2 artifact and checks reference structural admission.
+Additional kernel and runtime cases cover both conversion primitives, all
+47 opcodes, every invalid opcode, unary arity, scalar limits, exact value
+bytes, and rejection of retired program semantics. A seven-step conversion
+fixture matches an independent upstream encoding byte for byte and runs in
+a fresh standalone executor in the required Nix gate.
 
 The integration gate compares two fresh binaries and manifests byte for byte
 with each other and the retained artifacts. It runs the standalone executor
@@ -181,14 +189,14 @@ Stage2 cases from serialized binaries:
 
 | Case | Actual result | Reference transitions |
 | --- | --- | ---: |
-| Valid proof | Exact 34-byte claim | 4,527,451,540 |
-| Changed claim root | Erased | 1,673,425,178 |
-| Empty proof | Erased | 147,664,894 |
-| Truncated proof | Erased | 462,935,257 |
-| Trailing public byte | Erased | 253 |
-| Trailing proof byte | Erased | 462,956,800 |
-| Wrong claim kind | Erased | 420 |
-| Malformed proof | Erased | 147,664,913 |
+| Valid proof | Exact 34-byte claim | 4,139,932,137 |
+| Changed claim root | Erased | 1,667,519,158 |
+| Empty proof | Erased | 144,269,154 |
+| Truncated proof | Erased | 458,342,814 |
+| Trailing public byte | Erased | 103 |
+| Trailing proof byte | Erased | 458,364,357 |
+| Wrong claim kind | Erased | 233 |
+| Malformed proof | Erased | 144,269,154 |
 
 Step-limit exhaustion fails the test. The artifact allows 16 billion reference
 transitions. The runner executes chunks of one million transitions;
