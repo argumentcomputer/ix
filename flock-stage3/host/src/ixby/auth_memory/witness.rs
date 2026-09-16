@@ -4,7 +4,7 @@ use crate::hash::pack_bytes;
 use anyhow::{Result, ensure};
 use blake3::hazmat::{Mode, merge_subtrees_root};
 use flock_prover::field::F128;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 fn bytes(value: [F128; 2]) -> [u8; 32] {
   let mut out = [0; 32];
@@ -54,6 +54,44 @@ impl SparseMemory {
       empty.push(parent(&empty[level], &empty[level]));
     }
     Self { depth, empty, cells: HashMap::new(), nodes: HashMap::new() }
+  }
+  /// Construct untrusted initial-tree advice in linear work per populated
+  /// level. The resulting root and openings are identical to repeated writes.
+  /// Duplicate addresses, including explicit zero cells, are rejected.
+  pub fn from_cells(
+    depth: MemoryDepth,
+    cells: impl IntoIterator<Item = (u64, [F128; 2])>,
+  ) -> Result<Self> {
+    let mut memory = Self::new(depth);
+    let mut seen = HashSet::new();
+    let mut frontier = Vec::new();
+    for (address, value) in cells {
+      ensure!(depth.admits(address), "memory address out of range");
+      ensure!(seen.insert(address), "duplicate initial memory address");
+      if value != [F128::ZERO; 2] {
+        memory.cells.insert(address, value);
+        let digest = leaf(value);
+        if digest != memory.empty[0] {
+          memory.nodes.insert((0, address), digest);
+          frontier.push(address);
+        }
+      }
+    }
+    for level in 1..=depth.bits() {
+      let parents = frontier.iter().map(|i| i >> 1).collect::<HashSet<_>>();
+      frontier.clear();
+      for index in parents {
+        let digest = parent(
+          &memory.node(level - 1, index * 2),
+          &memory.node(level - 1, index * 2 + 1),
+        );
+        if digest != memory.empty[level] {
+          memory.nodes.insert((level, index), digest);
+          frontier.push(index);
+        }
+      }
+    }
+    Ok(memory)
   }
   pub fn root(&self) -> [F128; 2] {
     words(self.node(self.depth.bits(), 0))

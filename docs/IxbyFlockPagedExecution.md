@@ -73,6 +73,44 @@ packed block and operand passes the corresponding constrained consumer's row
 check. This does not prove source-to-code admission: the streaming parser
 still needs to constrain the writes and complete semantic reference checks.
 
+## Native initialization and original execution segments
+
+`NativeImage::load` decodes the original program and input, packs the complete
+code image, and places the unchanged input bytes in their own memory bank.
+Byte and string values keep exact offsets into those source files. Nested
+constructors and partial applications allocate immutable field vectors in
+child-before-parent order, then populate the entry function's actual locals.
+The entry frame, heap count and execution limits are derived from the decoded
+files. This is untrusted witness preparation; its memory root still requires
+constrained source admission.
+
+`SparseMemory::from_cells` constructs the native sparse tree by populated
+levels. It rejects duplicate and out-of-range addresses. Its roots, openings
+and subsequent writes match the existing sequential constructor, including
+depth 64 and explicit zero cells. This changes native advice generation only.
+
+The original 1,016,587-byte CSLib program and 4,813,238-byte input load into
+207,008 explicit memory cells in 273 milliseconds locally. The first 100
+Compact batches pass the actual execution circuit and all boundary equalities:
+726 microsteps, 173 logical steps and 45 allocated heap fields. Circuit
+evaluation took 8.883 seconds after loading and setup. This is a prefix check,
+not a completed run or a proving throughput estimate.
+
+An actual **419,091-byte proof** of batch 99 verifies in a fresh process
+receiving only the expected statement and proof. It covers microsteps
+719–726 and logical steps 171–173, starting from the expected memory root
+produced by the original prefix. Compact has `M=26` and 354,407 dense field
+words; setup took 3.644 seconds and proving 1.542 seconds with four Rayon
+threads. All 57 changed expected words, a changed byte-limit lane, malformed
+envelopes and two locally valid recomputed state/memory-clock attacks reject.
+The prefix before this segment and source admission are not proved by it.
+
+Three ordinary loader tests also cover all scalar kinds, exact byte offsets,
+wide natural values, nested constructor/PAP field order, a circuit-checked
+identity execution, truncation and physical-capacity rejection. The preceding
+byte/hash implementation's complete regression suite passed 311 tests with
+61 explicitly ignored proof/external-fixture tests.
+
 ## Instruction batches
 
 [`paged_exec`](../flock-stage3/host/src/ixby/paged_exec/mod.rs) now combines
@@ -296,5 +334,18 @@ RUSTFLAGS='-C target-cpu=native' RAYON_NUM_THREADS=4 cargo test --release \
   -- --ignored --nocapture --test-threads=1
 RUSTFLAGS='-C target-cpu=native' RAYON_NUM_THREADS=4 cargo test --release \
   --offline --manifest-path flock-stage3/Cargo.toml paged_exec::proof_tests \
+  -- --ignored --nocapture --test-threads=1
+# Explicit original files; these checks do not establish source admission.
+IXBY_PAGED_PROGRAM=/path/to/cslib.ixby \
+IXBY_PAGED_INPUT=/path/to/cslib.ixbi IXBY_PAGED_BATCHES=100 \
+RUSTFLAGS='-C target-cpu=native' RAYON_NUM_THREADS=4 cargo test --release \
+  --offline --manifest-path flock-stage3/Cargo.toml \
+  original_program_input_prefix_exercises_paged_execution \
+  -- --ignored --nocapture --test-threads=1
+IXBY_PAGED_PROGRAM=/path/to/cslib.ixby \
+IXBY_PAGED_INPUT=/path/to/cslib.ixbi IXBY_PAGED_PROOF_BATCH=99 \
+RUSTFLAGS='-C target-cpu=native' RAYON_NUM_THREADS=4 cargo test --release \
+  --offline --manifest-path flock-stage3/Cargo.toml \
+  original_execution_segment_proves_with_fresh_memory_root_binding \
   -- --ignored --nocapture --test-threads=1
 ```

@@ -47,7 +47,7 @@ impl Header {
     ]
   }
 }
-fn small(n: &BigUint, maximum: u64) -> Result<u64> {
+pub(crate) fn small(n: &BigUint, maximum: u64) -> Result<u64> {
   let digits = n.to_u64_digits();
   ensure!(
     digits.len() <= 1 && digits.first().copied().unwrap_or(0) <= maximum,
@@ -63,32 +63,45 @@ fn magnitude(n: &BigUint) -> Result<F128> {
     digits.get(1).copied().unwrap_or(0),
   ))
 }
-fn source_range(source: &[u8], slice: &[u8]) -> Result<F128> {
+fn source_range(source: &[u8], bank: u64, slice: &[u8]) -> Result<F128> {
   if slice.is_empty() {
     return Ok(F128::ZERO);
   }
   let offset = (slice.as_ptr() as usize)
     .checked_sub(source.as_ptr() as usize)
     .context("literal source range")?;
+  let end = offset.checked_add(slice.len()).context("literal source range")?;
   ensure!(
-    source.get(offset..offset + slice.len()) == Some(slice),
+    source.get(offset..end) == Some(slice),
     "literal does not belong to original source"
   );
-  Ok(F128::new((PROGRAM_BYTES << 5) + offset as u64, slice.len() as u64))
+  ensure!(
+    (end as u64) <= 1 << 41 && (slice.len() as u64) < 1 << 36,
+    "paged source byte capacity"
+  );
+  Ok(F128::new((bank << 5) + offset as u64, slice.len() as u64))
+}
+pub(crate) fn scalar(
+  source: &[u8],
+  bank: u64,
+  value: &Scalar<'_>,
+) -> Result<[F128; 2]> {
+  let (tag, payload) = match value {
+    Scalar::Nat(n) => (8, magnitude(n)?),
+    Scalar::Bool(v) => (1, F128::new(u64::from(*v), 0)),
+    Scalar::Word32(v) => (2, F128::new(u64::from(*v), 0)),
+    Scalar::Goldilocks(v) => (3, F128::new(*v, 0)),
+    Scalar::Extension(v) => (4, F128::new(v[0], v[1])),
+    Scalar::Bytes(v) => (6, source_range(source, bank, v)?),
+    Scalar::String(v) => (10, source_range(source, bank, v.as_bytes())?),
+  };
+  Ok([F128::new(tag, 0), payload])
 }
 fn operand(source: &[u8], value: &Operand<'_>) -> Result<[F128; 2]> {
   let (tag, payload) = match value {
     Operand::Local(index) => (0, F128::new(small(index, 127)?, 0)),
     Operand::Erased => (5, F128::ZERO),
-    Operand::Literal(value) => match value {
-      Scalar::Nat(n) => (8, magnitude(n)?),
-      Scalar::Bool(v) => (1, F128::new(u64::from(*v), 0)),
-      Scalar::Word32(v) => (2, F128::new(u64::from(*v), 0)),
-      Scalar::Goldilocks(v) => (3, F128::new(*v, 0)),
-      Scalar::Extension(v) => (4, F128::new(v[0], v[1])),
-      Scalar::Bytes(v) => (6, source_range(source, v)?),
-      Scalar::String(v) => (10, source_range(source, v.as_bytes())?),
-    },
+    Operand::Literal(value) => return scalar(source, PROGRAM_BYTES, value),
   };
   Ok([F128::new(tag, 0), payload])
 }

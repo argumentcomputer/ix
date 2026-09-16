@@ -12,4 +12,5 @@ pub use gate::{CodeGate, CodeGateKind, CodeRow};
 pub use model::{
   BLOCKS, CONSTRUCTORS, FUNCTIONS, Header, PackedProgram, block_address,
 };
+pub(crate) use model::{scalar, small};
 pub use slots::{CodeReadWires, CodeSlots, OperandReadWires};

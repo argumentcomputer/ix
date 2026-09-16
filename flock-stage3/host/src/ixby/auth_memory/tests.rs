@@ -359,3 +359,61 @@ fn count_tracks_depth_without_allocating_a_memory_bank() {
     count.ensure_matches(&shape).unwrap();
   }
 }
+
+#[test]
+fn bulk_tree_matches_sequential_roots_openings_and_later_writes() {
+  for bits in [0, 8, 40, 64] {
+    let depth = MemoryDepth::new(bits).unwrap();
+    let mask = if bits == 64 { u64::MAX } else { (1u64 << bits) - 1 };
+    let mut cells = std::collections::BTreeMap::new();
+    let mut random = 0xd32e_b1c5_7859_af01u64;
+    for i in 0..128 {
+      random ^= random << 13;
+      random ^= random >> 7;
+      random ^= random << 17;
+      let value = if i % 7 == 0 {
+        [F128::ZERO; 2]
+      } else {
+        [F128::new(i, random), F128::new(!random, i)]
+      };
+      cells.insert((i / 2) & mask, value);
+      cells.insert(random & mask, value);
+    }
+    cells.insert(mask, [F128::new(3, 4), F128::new(5, 6)]);
+    let mut sequential = SparseMemory::new(depth);
+    for (&address, &value) in &cells {
+      sequential.replace(address, value).unwrap();
+    }
+    let mut bulk = SparseMemory::from_cells(depth, cells.clone()).unwrap();
+    assert_eq!(bulk.root(), sequential.root());
+    for address in cells.keys().copied().chain([0, mask / 2, mask]) {
+      let a = bulk.open(address).unwrap();
+      let b = sequential.open(address).unwrap();
+      assert_eq!(a.words(), b.words());
+      assert_eq!(
+        bulk.value(address).unwrap(),
+        sequential.value(address).unwrap()
+      );
+    }
+    for (&address, &value) in &cells {
+      for value in [[F128::ZERO; 2], value] {
+        let a = bulk.replace(address, value).unwrap();
+        let b = sequential.replace(address, value).unwrap();
+        assert_eq!(a.words(), b.words());
+        assert_eq!(bulk.root(), sequential.root());
+      }
+    }
+    assert_eq!(
+      SparseMemory::from_cells(depth, []).unwrap().root(),
+      sequential.empty_root()
+    );
+    assert!(
+      SparseMemory::from_cells(depth, [(0, [F128::ZERO; 2]); 2]).is_err()
+    );
+    if bits != 64 {
+      assert!(
+        SparseMemory::from_cells(depth, [(mask + 1, [F128::ZERO; 2])]).is_err()
+      );
+    }
+  }
+}

@@ -7,6 +7,9 @@ mod byte_slots;
 mod byte_tests;
 mod bytes;
 mod gate;
+mod image;
+#[cfg(test)]
+mod image_tests;
 mod object_slots;
 #[cfg(test)]
 mod object_tests;
@@ -23,6 +26,7 @@ pub use batch::{BatchAdvice, BatchClass, BatchEmission, emit_batch};
 pub use bytes::ByteKind;
 use flock_prover::field::F128;
 pub use gate::{MicroGate, MicroKind, MicroRow};
+pub use image::NativeImage;
 pub use objects::ObjectKind;
 pub use slots::{ExecutionSlots, StepWires};
 pub use witness::{NativeMachine, RowAdvice};

@@ -714,3 +714,15 @@ fn proof_test(
     assert!(format!("{error}").contains("Wiring"));
   }
 }
+
+pub(super) fn original_proof_test(
+  test: &str,
+  fixture: fn() -> (BatchAdvice, Vec<RowAdvice>),
+) {
+  proof_test(
+    BatchClass::Compact,
+    test,
+    fixture,
+    &[Attack::OrderClock, Attack::MemoryClock],
+  );
+}
