@@ -37,8 +37,6 @@ fn konst(value: G) -> Expr {
 /// `256⁻¹` in the Goldilocks field. The field inversion is expensive, so it is
 /// computed once and reused by the byte carry-chain constraints.
 static INV_256: LazyLock<G> = LazyLock::new(|| G::from_u64(256).inverse());
-/// `65536⁻¹` for the two-limb u32 comparison carry chain.
-static INV_65536: LazyLock<G> = LazyLock::new(|| G::from_u64(65536).inverse());
 /// Constant expression for `(2^32)⁻¹`, built once from its Goldilocks
 /// value and cloned into every virtual u32 carry.
 static INV_2_POW_32_EXPR: LazyLock<Expr> =
@@ -738,34 +736,39 @@ impl Op {
       },
       Op::U32LessThan(x_idx, y_idx) => {
         // Bound a, b and the witness c to u32 values with two u16 limbs each.
-        // The boolean carry chain establishes the integer relation
-        //     a + c + 1 = b + carry * 2^32.
-        // Since 0 <= c < 2^32, a < b iff the final carry is zero. The +1
-        // makes equality return false. All sums are far below Goldilocks p.
+        // The whole-word carry establishes the integer relation
+        //     b + c = a + carry * 2^32.
+        // With c = (a - b) mod 2^32, a < b iff the carry is one; equality
+        // gives c = carry = 0. The bounded integer relation cannot wrap p.
         // Six scalar range lookups use the shared table's u16 channel.
         let a = state.map[*x_idx].0.clone();
         let b = state.map[*y_idx].0.clone();
-        let x: [Expr; 2] = array::from_fn(|_| state.next_auxiliary());
-        let y: [Expr; 2] = array::from_fn(|_| state.next_auxiliary());
-        let z: [Expr; 2] = array::from_fn(|_| state.next_auxiliary());
+        let a_limbs: [Expr; 2] = array::from_fn(|_| state.next_auxiliary());
+        let c_limbs: [Expr; 2] = array::from_fn(|_| state.next_auxiliary());
+        let b_limbs: [Expr; 2] = array::from_fn(|_| state.next_auxiliary());
         let recompose = |limbs: &[Expr; 2]| {
           limbs[0].clone() + limbs[1].clone() * konst(G::from_u32(65536))
         };
-        state.constraints.zeros.push(sel.clone() * (a - recompose(&x)));
-        state.constraints.zeros.push(sel.clone() * (b - recompose(&z)));
+        state
+          .constraints
+          .zeros
+          .push(sel.clone() * (a.clone() - recompose(&a_limbs)));
+        state
+          .constraints
+          .zeros
+          .push(sel.clone() * (b.clone() - recompose(&b_limbs)));
 
-        let mut carry = konst(G::ONE);
-        for k in 0..2 {
-          carry = (x[k].clone() + y[k].clone() + carry - z[k].clone())
-            * konst(*INV_65536);
-          state.constraints.zeros.push(
-            sel.clone() * carry.clone() * (carry.clone() - konst(G::ONE)),
-          );
-        }
-        for limb in x.into_iter().chain(y).chain(z) {
+        // Inputs are affine after multiplication materialization. Use the
+        // whole words directly: this carry is an expression, not a column.
+        let carry = (b + recompose(&c_limbs) - a) * INV_2_POW_32_EXPR.clone();
+        state
+          .constraints
+          .zeros
+          .push(sel.clone() * carry.clone() * (carry.clone() - konst(G::ONE)));
+        for limb in a_limbs.into_iter().chain(c_limbs).chain(b_limbs) {
           state.range_u16(sel, limb);
         }
-        state.map.push((konst(G::ONE) - carry, 1));
+        state.map.push((carry, 1));
       },
       Op::IOSetInfo(..) | Op::IOWrite(..) | Op::Debug(..) => (),
       Op::UnconstrainedBigUintDivMod(_, _) => {

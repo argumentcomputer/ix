@@ -62,7 +62,7 @@ fn honest_row(
   let aux = 2 + layout.selectors;
   row[aux] = G::ONE;
   let start = aux + 1;
-  let c = b.wrapping_sub(a).wrapping_sub(1);
+  let c = a.wrapping_sub(b);
   for (i, word) in [a, c, b].into_iter().enumerate() {
     row[start + 2 * i] = G::from_u16((word & 0xffff) as u16);
     row[start + 2 * i + 1] = G::from_u16((word >> 16) as u16);
@@ -210,7 +210,7 @@ fn u32_compare_proofs_and_decoded_keys_cover_boundaries_and_partitions() {
         let (table, _) =
           Bytes2.witness_data(&record, &system.slot_arg_widths(byte_circuit));
         let mut expected = vec![G::ZERO; 65_536];
-        for word in [a, b.wrapping_sub(a).wrapping_sub(1), b] {
+        for word in [a, a.wrapping_sub(b), b] {
           expected[usize::from((word & 0xffff) as u16)] += G::ONE;
           expected[usize::from((word >> 16) as u16)] += G::ONE;
         }
@@ -248,14 +248,18 @@ fn u32_compare_proofs_and_decoded_keys_cover_boundaries_and_partitions() {
 
 #[test]
 fn u32_compare_supplied_out_of_range_limbs_fail_lookup_verification() {
-  // These witnesses satisfy every local polynomial, including both carry
-  // bits. Each missing u16 bound would admit an invalid input or a false
+  // These witnesses satisfy every local polynomial, including the whole-word
+  // carry bit. Each missing u16 bound would admit an invalid input or a false
   // comparison of valid inputs. Supply them directly to bypass execution.
   let cases = [
-    (1_u64 << 32, 1_u64, [0_i64, 65536, 0, 0, 1, 0], false),
-    (0, 1_u64 << 32, [0, 0, 65535, 65535, 0, 65536], true),
-    (1, 2, [1, 0, 0, 65536, 2, 0], false),
-    (0, 0, [0, 0, 65535, -1, 0, 0], true),
+    (1_u64 << 32, 1_u64, [0_i64, 65536, 65535, 65535, 1, 0], false),
+    (0, 1_u64 << 32, [0, 0, 0, 0, 0, 65536], true),
+    (1, 2, [1, 0, -1, 0, 2, 0], false),
+    (0, 0, [0, 0, 0, 65536, 0, 0], true),
+    // Field wraparound also satisfies the carry equation unless the
+    // input limbs are range-checked. This literal is Goldilocks p - 1.
+    (0xffff_ffff_0000_0000, 0, [-1, 0, 65535, 65535, 0, 0], true),
+    (0, 0xffff_ffff_0000_0000, [0, 0, 1, 0, -1, 0], false),
   ];
   for grouped in [false, true] {
     let (cp, fp) = test_parameters();

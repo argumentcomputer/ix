@@ -567,7 +567,7 @@ impl Function {
           let result = G::from_bool(a_u32 < b_u32);
           map.push(result);
           if !unconstrained {
-            let c_u32 = b_u32.wrapping_sub(a_u32).wrapping_sub(1);
+            let c_u32 = a_u32.wrapping_sub(b_u32);
             for word in [a_u32, c_u32, b_u32] {
               record
                 .bytes2_queries

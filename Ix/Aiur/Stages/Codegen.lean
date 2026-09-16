@@ -621,7 +621,7 @@ private def emitU32LessThan (out : Nat) (x y : ValIdx) : Array RustStmt :=
     s!" let __b_u32 = u32::try_from(__b_val).ok().ok_or(ExecError::U32OutOfRange(__b_val))?;" ++
     s!" let __result = G::from_bool(__a_u32 < __b_u32);" ++
     s!" if !unconstrained \{" ++
-    s!" let __c_u32 = __b_u32.wrapping_sub(__a_u32).wrapping_sub(1);" ++
+    s!" let __c_u32 = __a_u32.wrapping_sub(__b_u32);" ++
     s!" for __word in [__a_u32, __c_u32, __b_u32] \{" ++
     s!" record.bytes2_queries.bump_u16_range_check((__word & 0xffff) as u16);" ++
     s!" record.bytes2_queries.bump_u16_range_check((__word >> 16) as u16);" ++

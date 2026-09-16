@@ -638,7 +638,7 @@ impl Op {
         let (b, _) = map[*y_idx];
         let a_u32 = u32::try_from(a.as_canonical_u64()).unwrap();
         let b_u32 = u32::try_from(b.as_canonical_u64()).unwrap();
-        let c_u32 = b_u32.wrapping_sub(a_u32).wrapping_sub(1);
+        let c_u32 = a_u32.wrapping_sub(b_u32);
         // Six auxiliaries and scalar queries, ordered as a, c, b, low first.
         // Execution already recorded these multiplicities.
         for word in [a_u32, c_u32, b_u32] {
