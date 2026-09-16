@@ -13,8 +13,8 @@ use ixby_flock::ixby::{
   io::PublicWord, ixbf_decode::stream::batch::CompiledGrammarBatch,
 };
 use ixby_stage4_exec::{
-  CompiledGrammarBatchReplay, GrammarBatchReplayWitness,
-  compile_grammar_batch_replay,
+  CompiledFlockReplay, CompiledGrammarBatchReplay, FlockVerifierSetup,
+  GrammarBatchReplayWitness, compile_grammar_batch_replay,
 };
 use std::collections::HashMap;
 
@@ -181,11 +181,11 @@ impl<'a> GrammarPairRelation<'a> {
   }
 }
 
-struct ChildWires {
-  application: Vec<F128VariablesV1>,
-  algebra: F128AlgebraCircuitOutputV1,
-  wiring: F128WiringCircuitOutputV1,
-  multipoint: F128MultipointTwistedAssistCircuitOutputV1,
+pub(crate) struct ChildWires {
+  pub(crate) application: Vec<F128VariablesV1>,
+  pub(crate) algebra: F128AlgebraCircuitOutputV1,
+  pub(crate) wiring: F128WiringCircuitOutputV1,
+  pub(crate) multipoint: F128MultipointTwistedAssistCircuitOutputV1,
 }
 
 fn emit_pair(
@@ -300,9 +300,9 @@ fn publish(
   })
 }
 
-fn emit_child(
+pub(crate) fn emit_child<S: FlockVerifierSetup>(
   b: &mut NativeBuilder,
-  replay: &CompiledGrammarBatchReplay<'_>,
+  replay: &CompiledFlockReplay<S>,
   advice: Option<&GrammarBatchReplayWitness>,
 ) -> Result<ChildWires> {
   let setup = replay.setup();
@@ -395,6 +395,43 @@ fn emit_child(
       private_values: &boolean_private,
     },
   )?;
+  let mut packed_direct = Vec::new();
+  if let Some(trace) = replay.element() {
+    let inputs = F128AlgebraCircuitInputsV1 {
+      public_values: &public,
+      observed_values: &transcript.observed_values,
+      challenges: &transcript.challenges,
+      private_values: &[],
+    };
+    let output = constrain_f128_algebra_trace(b, trace, inputs)?;
+    let mut constants = std::collections::BTreeMap::new();
+    for claim in replay.element_claims() {
+      let point = claim
+        .point
+        .iter()
+        .map(|&reference| {
+          resolve_reference(
+            b,
+            reference,
+            ConstraintPhase::Pcs,
+            inputs,
+            &output.operations,
+            &mut constants,
+          )
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+      let value = resolve_reference(
+        b,
+        claim.value,
+        ConstraintPhase::Pcs,
+        inputs,
+        &output.operations,
+        &mut constants,
+      )?;
+      packed_direct.push(F128PackedDirectClaimVariablesV1 { point, value });
+    }
+  }
+  packed_direct.extend(wiring.gather_claims.iter().cloned());
   let frontend = constrain_f128_merged_pcs_frontend(
     b,
     replay.merged_pcs(),
@@ -405,12 +442,13 @@ fn emit_child(
       private_values: &boolean_private,
       algebra_operations: &algebra.operations,
       byte_payloads: &transcript.byte_payloads,
-      packed_direct_claims: &wiring.gather_claims,
+      packed_direct_claims: &packed_direct,
     },
   )?;
-  let multipoint_private = advice
-    .map(|v| v.multipoint().private_values().to_vec())
-    .unwrap_or_else(|| vec![[0; 16]; 3]);
+  let multipoint_private =
+    advice.map(|v| v.multipoint().private_values().to_vec()).unwrap_or_else(
+      || vec![[0; 16]; replay.multipoint().jagged_claim_private_values.len()],
+    );
   let multipoint = constrain_f128_multipoint_twisted_assist(
     b,
     replay.multipoint(),
@@ -450,7 +488,8 @@ fn emit_child(
       frontend: &frontend,
     },
   )?;
-  let mut application = vec![public[0].clone(); APPLICATION_WORDS];
+  let mut application =
+    vec![public[0].clone(); setup.public_template().outputs()];
   for (word, value) in setup.public_template().words().iter().zip(&public) {
     if let PublicWord::Output(index) = word {
       application[*index] = value.clone();
@@ -459,7 +498,7 @@ fn emit_child(
   Ok(ChildWires { application, algebra, wiring, multipoint })
 }
 
-fn bind_bytes(
+pub(crate) fn bind_bytes(
   b: &mut NativeBuilder,
   words: &[F128TranscriptWordV1],
   bytes: &[u8],

@@ -1,0 +1,347 @@
+{
+  "accepted": true,
+  "batches": 1217,
+  "claim": "complete Program grammar parse",
+  "elapsed_seconds": 2099.489737206,
+  "identity": "645e27b9c5a3abecced8df15349e5a6b6b811f3adbf3cceb6e2fd1e2e1da36df",
+  "levels": [
+    {
+      "geometry": {
+        "arithmetic_operations": 835775,
+        "blake3_compressions": 30831,
+        "children": [
+          1,
+          1
+        ],
+        "dense_variables": 31,
+        "leaves": 2,
+        "packing_rows": 28621,
+        "root_advice_words": 2173,
+        "root_families": 72,
+        "row_variables": 15,
+        "variables": 2488961
+      },
+      "identity": "5b9797eb8621680d2739d431799e338dc6384b9ab39007e050852766a29b9b20",
+      "jobs": 608,
+      "leaves": 2,
+      "proving_seconds": 520.973563343,
+      "reused": 0,
+      "setup_seconds": 6.617069543
+    },
+    {
+      "geometry": {
+        "arithmetic_operations": 887050,
+        "blake3_compressions": 26146,
+        "children": [
+          2,
+          2
+        ],
+        "dense_variables": 31,
+        "leaves": 4,
+        "packing_rows": 25296,
+        "root_advice_words": 2322,
+        "root_families": 76,
+        "row_variables": 15,
+        "variables": 2458403
+      },
+      "identity": "5a54b8d75957d14346ae87ba6e7fd26887332971c32fd9e1ac4fb854b177556c",
+      "jobs": 304,
+      "leaves": 4,
+      "proving_seconds": 507.588534637,
+      "reused": 0,
+      "setup_seconds": 6.672785124
+    },
+    {
+      "geometry": {
+        "arithmetic_operations": 893289,
+        "blake3_compressions": 26565,
+        "children": [
+          4,
+          4
+        ],
+        "dense_variables": 31,
+        "leaves": 8,
+        "packing_rows": 25579,
+        "root_advice_words": 2413,
+        "root_families": 78,
+        "row_variables": 15,
+        "variables": 2492023
+      },
+      "identity": "dbff007ac069fd1ccff7c60ff16eb450f7ec07100dce6f1d08e9e5e68ca55e2a",
+      "jobs": 152,
+      "leaves": 8,
+      "proving_seconds": 316.378633801,
+      "reused": 0,
+      "setup_seconds": 6.713562267
+    },
+    {
+      "geometry": {
+        "arithmetic_operations": 895352,
+        "blake3_compressions": 26862,
+        "children": [
+          8,
+          8
+        ],
+        "dense_variables": 31,
+        "leaves": 16,
+        "packing_rows": 25862,
+        "root_advice_words": 2504,
+        "root_families": 80,
+        "row_variables": 15,
+        "variables": 2520129
+      },
+      "identity": "b387659898d7ccca5c4795a3a0312538ce12b64c0e4c14c5e71f8508f59fa7d8",
+      "jobs": 76,
+      "leaves": 16,
+      "proving_seconds": 198.571882395,
+      "reused": 0,
+      "setup_seconds": 6.776671836
+    },
+    {
+      "geometry": {
+        "arithmetic_operations": 897871,
+        "blake3_compressions": 27157,
+        "children": [
+          16,
+          16
+        ],
+        "dense_variables": 31,
+        "leaves": 32,
+        "packing_rows": 26145,
+        "root_advice_words": 2595,
+        "root_families": 82,
+        "row_variables": 15,
+        "variables": 2548917
+      },
+      "identity": "9b8c64dbb142cb91677d1348baf549d808da9f669303b4f67d86c5718a7bd66c",
+      "jobs": 38,
+      "leaves": 32,
+      "proving_seconds": 118.09589234,
+      "reused": 0,
+      "setup_seconds": 6.763311233
+    },
+    {
+      "geometry": {
+        "arithmetic_operations": 899898,
+        "blake3_compressions": 27454,
+        "children": [
+          32,
+          32
+        ],
+        "dense_variables": 31,
+        "leaves": 64,
+        "packing_rows": 26428,
+        "root_advice_words": 2686,
+        "root_families": 84,
+        "row_variables": 15,
+        "variables": 2576983
+      },
+      "identity": "0e2e67f7ca3a0337e9e76e9287ccf685b2f00cb5e979f9feed1f314be832c915",
+      "jobs": 19,
+      "leaves": 64,
+      "proving_seconds": 78.751073606,
+      "reused": 0,
+      "setup_seconds": 6.651319981
+    },
+    {
+      "geometry": {
+        "arithmetic_operations": 901945,
+        "blake3_compressions": 27747,
+        "children": [
+          64,
+          64
+        ],
+        "dense_variables": 31,
+        "leaves": 128,
+        "packing_rows": 26711,
+        "root_advice_words": 2777,
+        "root_families": 86,
+        "row_variables": 15,
+        "variables": 2605053
+      },
+      "identity": "c939e568ea1c225f2ec70ae049d77b4a3159ae9bc74feb3567e2f463de40fef9",
+      "jobs": 9,
+      "leaves": 128,
+      "proving_seconds": 57.987308924,
+      "reused": 0,
+      "setup_seconds": 6.728078144
+    },
+    {
+      "geometry": {
+        "arithmetic_operations": 904456,
+        "blake3_compressions": 28282,
+        "children": [
+          128,
+          128
+        ],
+        "dense_variables": 31,
+        "leaves": 256,
+        "packing_rows": 26994,
+        "root_advice_words": 2868,
+        "root_families": 88,
+        "row_variables": 15,
+        "variables": 2634791
+      },
+      "identity": "0c73070f2484b567b541462b809e077261bb1cb404864c2d18047941c34f5b32",
+      "jobs": 4,
+      "leaves": 256,
+      "proving_seconds": 31.966336011,
+      "reused": 0,
+      "setup_seconds": 6.694263631
+    },
+    {
+      "geometry": {
+        "arithmetic_operations": 906483,
+        "blake3_compressions": 28577,
+        "children": [
+          256,
+          256
+        ],
+        "dense_variables": 31,
+        "leaves": 512,
+        "packing_rows": 27277,
+        "root_advice_words": 2959,
+        "root_families": 90,
+        "row_variables": 15,
+        "variables": 2662845
+      },
+      "identity": "de589d98aee4818f8a6ac6b5c4dd6ebd7b01dc0e172ae49d5392d591a68af789",
+      "jobs": 2,
+      "leaves": 512,
+      "proving_seconds": 34.604057008,
+      "reused": 0,
+      "setup_seconds": 6.694600785
+    },
+    {
+      "geometry": {
+        "arithmetic_operations": 908514,
+        "blake3_compressions": 28872,
+        "children": [
+          512,
+          512
+        ],
+        "dense_variables": 31,
+        "leaves": 1024,
+        "packing_rows": 27560,
+        "root_advice_words": 3050,
+        "root_families": 92,
+        "row_variables": 15,
+        "variables": 2690907
+      },
+      "identity": "60f8d4f3867ccc4298e38ef65006de497566eb756efaf2f164797f1495b2f4e8",
+      "jobs": 1,
+      "leaves": 1024,
+      "proving_seconds": 37.365888737,
+      "reused": 0,
+      "setup_seconds": 6.739521035
+    },
+    {
+      "geometry": {
+        "arithmetic_operations": 870932,
+        "blake3_compressions": 29868,
+        "children": [
+          64,
+          1
+        ],
+        "dense_variables": 31,
+        "leaves": 65,
+        "packing_rows": 28607,
+        "root_advice_words": 2777,
+        "root_families": 86,
+        "row_variables": 15,
+        "variables": 2632953
+      },
+      "identity": "b9de23c239cd290244e0a4098fe42ed6ef7523ef64496db16c82bd13bf46e90d",
+      "jobs": 1,
+      "leaves": 65,
+      "proving_seconds": 19.88936007,
+      "reused": 0,
+      "setup_seconds": 6.73969699
+    },
+    {
+      "geometry": {
+        "arithmetic_operations": 905339,
+        "blake3_compressions": 28465,
+        "children": [
+          128,
+          65
+        ],
+        "dense_variables": 31,
+        "leaves": 193,
+        "packing_rows": 27277,
+        "root_advice_words": 2959,
+        "root_families": 90,
+        "row_variables": 15,
+        "variables": 2660984
+      },
+      "identity": "b237ae6b830c349687c9a1b0e794e8c44276ac453415f91b3308bf93d5b97202",
+      "jobs": 1,
+      "leaves": 193,
+      "proving_seconds": 32.156342014,
+      "reused": 0,
+      "setup_seconds": 6.689225365
+    },
+    {
+      "geometry": {
+        "arithmetic_operations": 911346,
+        "blake3_compressions": 29481,
+        "children": [
+          1024,
+          193
+        ],
+        "dense_variables": 31,
+        "leaves": 1217,
+        "packing_rows": 28409,
+        "root_advice_words": 3323,
+        "root_families": 98,
+        "row_variables": 15,
+        "variables": 2769854
+      },
+      "identity": "645e27b9c5a3abecced8df15349e5a6b6b811f3adbf3cceb6e2fd1e2e1da36df",
+      "jobs": 1,
+      "leaves": 1217,
+      "proving_seconds": 41.237628278,
+      "reused": 0,
+      "setup_seconds": 6.743569499
+    }
+  ],
+  "merges": 1216,
+  "proof_bytes": 360907,
+  "source": {
+    "blake3": "96ed4322c7e4db289b876848e885d02afd2958f829135d5108b565ce9d493c05",
+    "length": 1016587
+  },
+  "threads_per_worker": 4,
+  "verification_seconds": 12.35220947,
+  "workers": 8,
+  "measurement_date_utc": "2026-09-16",
+  "fresh_local_verification": {
+    "accepted": true,
+    "batches": 1217,
+    "claim": "complete Program grammar parse",
+    "identity": "645e27b9c5a3abecced8df15349e5a6b6b811f3adbf3cceb6e2fd1e2e1da36df",
+    "proof_bytes": 360907,
+    "rejection_checks": 9,
+    "setup_seconds": 80.389415644,
+    "source": {
+      "blake3": "96ed4322c7e4db289b876848e885d02afd2958f829135d5108b565ce9d493c05",
+      "length": 1016587
+    },
+    "verification_seconds": 13.187236838,
+    "process_wall_seconds": 96.23,
+    "maximum_rss_kib": 31355436
+  },
+  "process_wall_seconds": 2102.8,
+  "maximum_rss_kib": 54413188,
+  "memory_measurement": "GNU time maximum RSS for one process, including all worker threads",
+  "statement_bytes": 1008,
+  "leaf_chain_bytes": 492388476,
+  "hashes_sha256": {
+    "root.flock": "f4cbe2d0203bc57ed99d167ac8218271dca28007f9c93970dda0b560e7c9d163",
+    "root.statement": "17765dc30db5e28967f5fc53bb0681e6551d3adcbb13fc02ddc9efe22f12f937",
+    "executed_binary": "1f5f6ffdf633f85c0dcc7f332a151b4dcd5aac7898e31e92061a29cd8d0fd9ab"
+  },
+  "server": "Intel Xeon 6975P-C, 32 cores / 64 threads",
+  "compiler_flags": "-C target-cpu=x86-64-v4 -C target-feature=+pclmulqdq,+vpclmulqdq,+aes",
+  "scope": "Complete original Program grammar only; full semantic admission and execution remain separate obligations."
+}

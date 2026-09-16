@@ -2,7 +2,7 @@
 //! are recorded in EXEC-REPLAY-PROVENANCE.json. This module generates witnesses,
 //! not verification keys or closed terminal acceptance certificates.
 
-use anyhow::{Result, bail};
+use anyhow::{Result, bail, ensure};
 use flock_prover::{
   aggregate::{Accumulator, AggregateProof},
   challenger::Challenger,
@@ -1154,7 +1154,7 @@ pub(crate) fn export_wiring_f128_algebra<Ch: Challenger>(
   builder.assert_equal(claim_r, rhs)?;
 
   let gather_observations =
-    find_packed_direct_observations(&events, recording, &proof.gather, 2)?;
+    find_packed_direct_observations(&events, recording, &proof.gather, 2 + 2 * usize::from(events.iter().any(|e| matches!(e, IndexedTranscriptEvent::Label(l) if l == b"flock-element-union-zc-v0"))))?;
   let gather = gather_observations
     .iter()
     .zip(&proof.gather)
@@ -2235,15 +2235,22 @@ pub(crate) fn export_merged_pcs_frontend<Ch: Challenger>(
     });
   }
 
+  let mut packed_direct_observations = Vec::new();
+  if union.has_element() {
+    for _ in 0..2 {
+      packed_direct_observations.push(u64::try_from(cursor.observe(1)?)?);
+    }
+  }
   for &expected in &wiring.gather_observations {
     let found = cursor.observe(1)?;
+    packed_direct_observations.push(u64::try_from(found)?);
     if u64::try_from(found).expect("observation index fits u64") != expected {
       bail!("Stage 4 packed-direct order disagrees with the wiring export");
     }
   }
-  let batching_start = cursor.squeeze(2 + wiring.gather_observations.len())?;
+  let batching_start = cursor.squeeze(2 + packed_direct_observations.len())?;
   let batching_challenges = (batching_start
-    ..batching_start + 2 + wiring.gather_observations.len())
+    ..batching_start + 2 + packed_direct_observations.len())
     .map(|index| u64::try_from(index).expect("challenge index fits u64"))
     .collect::<Vec<_>>();
   let mut merged_rounds = Vec::with_capacity(dense_rounds);
@@ -2321,7 +2328,7 @@ pub(crate) fn export_merged_pcs_frontend<Ch: Challenger>(
     jagged_heights: heights,
     boolean_claims,
     ring_switches,
-    packed_direct_observations: wiring.gather_observations.clone(),
+    packed_direct_observations,
     batching_challenges,
     merged_rounds,
     q_eval_observation: u64::try_from(q_eval_observation)
@@ -2334,7 +2341,7 @@ pub(crate) fn export_merged_pcs_frontend<Ch: Challenger>(
     algebra.private_values.len(),
     algebra.trace.operations.len(),
     &recording.payloads().iter().map(Vec::len).collect::<Vec<_>>(),
-    &vec![expected_packed_variables; wiring.gather_observations.len()],
+    &vec![expected_packed_variables; trace.packed_direct_observations.len()],
   )?;
   Ok(trace)
 }
@@ -2350,7 +2357,37 @@ pub(crate) fn export_multipoint_twisted_assist<Ch: Challenger>(
   frontend: &F128MergedPcsFrontendTraceV1,
   deferred: &JaggedAssertion,
 ) -> Result<Stage4FlockMultipointTwistedAssistWitnessV1> {
+  export_multipoint_twisted_assist_mixed(
+    recording,
+    circuit_digest,
+    union,
+    proof,
+    wiring,
+    algebra,
+    frontend,
+    deferred,
+    None,
+  )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn export_multipoint_twisted_assist_mixed<Ch: Challenger>(
+  recording: &RecordingChallenger<Ch>,
+  circuit_digest: [u8; 32],
+  union: &UnionInstance<'_>,
+  proof: &MergedOpenProof,
+  wiring: &F128WiringTraceV1,
+  algebra: &Stage4F128AlgebraExportV1,
+  frontend: &F128MergedPcsFrontendTraceV1,
+  deferred: &JaggedAssertion,
+  element: Option<&flock_prover::element_r1cs::union::Claims>,
+) -> Result<Stage4FlockMultipointTwistedAssistWitnessV1> {
   let multipoint = &proof.frobenius;
+  ensure!(
+    element.is_some() == union.has_element(),
+    "element replay class mismatch"
+  );
+  let extra = usize::from(element.is_some());
   let dense_variables = frontend.merged_rounds.len();
   let witness_row_variables = usize::try_from(frontend.row_variables)
     .map_err(|error| anyhow::anyhow!("witness row dimension: {error}"))?;
@@ -2358,7 +2395,7 @@ pub(crate) fn export_multipoint_twisted_assist<Ch: Challenger>(
     .map_err(|error| anyhow::anyhow!("layout row dimension: {error}"))?;
   if multipoint.values.len() != 2
     || multipoint.values.iter().any(|values| values.len() != 128)
-    || multipoint.group_values.len() != 1
+    || multipoint.group_values.len() != 1 + extra
     || multipoint.rounds.len() != dense_variables
     || multipoint.anchor.rounds.len() != 2 * (dense_variables + 1)
   {
@@ -2367,7 +2404,7 @@ pub(crate) fn export_multipoint_twisted_assist<Ch: Challenger>(
   if deferred.k != layout_row_variables
     || deferred.m != dense_variables
     || deferred.rs.len() != 2
-    || deferred.groups.len() != 1
+    || deferred.groups.len() != 1 + extra
   {
     bail!("Stage 4 deferred jagged assertion has the wrong shape");
   }
@@ -2448,7 +2485,7 @@ pub(crate) fn export_multipoint_twisted_assist<Ch: Challenger>(
   let outer_gammas = frontend
     .batching_challenges
     .iter()
-    .skip(2)
+    .skip(2 + 2 * extra)
     .map(|&index| {
       recording
         .challenges()
@@ -2501,7 +2538,28 @@ pub(crate) fn export_multipoint_twisted_assist<Ch: Challenger>(
       bail!("Stage 4 ring-switch jagged column point disagrees");
     }
   }
-  let (combo, dense) = &deferred.groups[0];
+  if let Some(element) = element {
+    let (combo, dense) = &deferred.groups[0];
+    ensure!(combo.is_none() && dense.len() == 2, "element jagged group shape");
+    for (i, point) in
+      [&element.c_point, &element.lc_point].into_iter().enumerate()
+    {
+      let gamma = recording.challenges()
+        [usize::try_from(frontend.batching_challenges[2 + i])?];
+      let (actual_gamma, claim) = &dense[i];
+      ensure!(
+        *actual_gamma == gamma && claim.col == sigma,
+        "element jagged coefficient/column"
+      );
+      match &claim.row {
+        JaggedRowWeight::Eq(scale, actual)
+          if *scale == F128::ONE
+            && actual == &point[witness_row_variables..] => {},
+        _ => bail!("element jagged row point"),
+      }
+    }
+  }
+  let (combo, dense) = &deferred.groups[extra];
   if !dense.is_empty() {
     bail!("Stage 4 production scalar group unexpectedly has dense members");
   }
@@ -2523,17 +2581,16 @@ pub(crate) fn export_multipoint_twisted_assist<Ch: Challenger>(
   }
 
   let private_values = deferred
-    .rs
-    .iter()
-    .map(|claim| claim.value)
-    .chain(std::iter::once(combo.value))
-    .map(encode_f128)
+    .claims()
+    .into_iter()
+    .map(|claim| encode_f128(claim.value))
     .collect::<Vec<_>>();
   let matrix_column_variables = dense_variables
     .checked_add(1)
     .and_then(|value| value.checked_mul(2))
     .ok_or_else(|| anyhow::anyhow!("Stage 4 jagged matrix arity overflow"))?;
   let trace = F128MultipointTwistedAssistTraceV1 {
+    element_claims: union.has_element(),
     frontend_topology_digest: frontend.topology_digest(),
     matrix: F128JaggedMatrixIdV1 {
       circuit_digest,

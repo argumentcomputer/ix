@@ -52,6 +52,9 @@ pub struct F128MultipointRoundV1 {
 /// root discharge.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct F128MultipointTwistedAssistTraceV1 {
+  /// Adds the element C/LC scalar group before the wiring-gather group.
+  /// Its two dense Eq claims precede the gather Combo in the raw root list.
+  pub element_claims: bool,
   /// Pins this continuation to the exact merged-PCS frontend topology.
   pub frontend_topology_digest: [u8; 32],
   pub matrix: F128JaggedMatrixIdV1,
@@ -101,7 +104,8 @@ impl F128MultipointTwistedAssistTraceV1 {
         .dual_value_observations
         .iter()
         .any(|values| values.len() != F128_MULTIPOINT_DUAL_VALUES)
-      || self.group_value_observations.len() != F128_MULTIPOINT_SCALAR_GROUPS
+      || self.group_value_observations.len()
+        != F128_MULTIPOINT_SCALAR_GROUPS + usize::from(self.element_claims)
     {
       return Err(F128MultipointTraceError::InvalidShape(
         "multipoint value vectors have the wrong shape",
@@ -129,11 +133,13 @@ impl F128MultipointTwistedAssistTraceV1 {
         "a scalar-group address is outside the jagged row space",
       ));
     }
-    if self.jagged_claim_private_values.len() != F128_MULTIPOINT_JAGGED_CLAIMS
-      || private_values != F128_MULTIPOINT_JAGGED_CLAIMS
+    let expected_claims =
+      F128_MULTIPOINT_JAGGED_CLAIMS + 2 * usize::from(self.element_claims);
+    if self.jagged_claim_private_values.len() != expected_claims
+      || private_values != expected_claims
     {
       return Err(F128MultipointTraceError::InvalidShape(
-        "the deferred jagged assertion must contain exactly three values",
+        "the deferred jagged assertion has the wrong number of values",
       ));
     }
 
@@ -266,6 +272,9 @@ impl F128MultipointTwistedAssistTraceV1 {
       hasher.update(&address.to_le_bytes());
     }
     hash_indices(&mut hasher, &self.jagged_claim_private_values);
+    if self.element_claims {
+      hasher.update(b"mixed-element-group-v0");
+    }
     *hasher.finalize().as_bytes()
   }
 }
@@ -363,6 +372,7 @@ mod tests {
 
   fn fixture() -> F128MultipointTwistedAssistTraceV1 {
     F128MultipointTwistedAssistTraceV1 {
+      element_claims: false,
       frontend_topology_digest: [1; 32],
       matrix: F128JaggedMatrixIdV1 {
         circuit_digest: [2; 32],

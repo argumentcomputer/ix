@@ -13,7 +13,8 @@ UTF-8 and complete parser-state continuity. Full constructor uniqueness,
 instruction/reference admission, typed code/value materialization, execution
 memory, the raw-file/Exec commitment bridge and guest execution remain separate
 obligations. The semantic materializers still have their small-file capacity
-bounds. This chain is not a single recursive proof or a Stage 3 Exec proof.
+bounds. The [native aggregate](IxbyFlockRecursion.md) compresses the complete
+Program chain into one 360,907-byte proof; its claim remains grammar parsing.
 No existing Exec setup, key, capacity, dependency pin or security profile changes.
 
 ## Checked batches and source reuse
@@ -195,50 +196,28 @@ transport chains and joint verification logs under `transport/`. These scratch
 files are not repository fixtures. Original source paths and SHA-256 identities
 are recorded in [the CSLib target record](IxbyStage2CSLib.md).
 
-## From this chain to one Flock proof
+## One Flock proof for the complete Program chain
 
-Compressing the existing batch proofs requires a recursive composition
-relation. One parent proves both child verifiers accepted, binds their exact
-approved setups and original-file identities, and constrains the left final
-state to equal the right initial state. It publishes the combined range and
-endpoints. Repetition produces roughly eleven binary merge levels for 1,217
-leaves. Explicit coverage/count and padding rules must prevent omitted,
-duplicated or substituted ranges. The root requires genuine Start and complete
-Done, with transport metadata bound to the verified Program.
+The [complete native aggregation](IxbyFlockRecursion.md) now produces a
+360,907-byte bundle from all 1,217 retained Program batches. It uses 1,216
+binary merges, with the exact leaf count in approved setup and no padding.
+Every child verifier and all three source plus 30 boundary words are
+constrained. The root requires genuine Start, complete Done and exact EOF.
 
-The pinned Flock revision already contains a recursion tower under
-`crates/flock-prover/src/tower/`. Its first-level builder `build_fl_node_k`
-takes exactly two `ChainProof` children and asserts one Boolean BLAKE3 table.
-Its application block is an eight-word hash-chain span. It cannot directly
-consume this 35-table, 63-word parser statement. Required work includes a
-general child verifier, the parser boundary/context relation, an expanded
-accumulator layout and measured recursion geometry. The first
-[native two-batch Flock merge](IxbyFlockRecursion.md) uses generic verifier
-replay components from [Stage 4](IxbyStage4Replay.md).
-Two retained CSLib batches produced a 375,155-byte parent bundle whose fresh
-root verifier checked both child verifiers and all 152 deferred claims. This
-first merge carries raw root claims; repeated recursion and bounded
-accumulator folding across the full chain remain work.
+The implementation reuses the generic verifier compiler in
+[Stage 4](IxbyStage4Replay.md), supporting both Boolean leaves and mixed
+Boolean/element parents. Inherited matrix, wiring and jagged-layout claims
+are folded inside the circuit by approved table identity. All 98 final
+families are checked against compiled tables. The bundle includes the 3,323
+advice words needed for these checks; no child proofs or source bytes are
+needed by the receiver.
 
-Flock defers matrix, wiring and jagged-layout evaluations into accumulators.
-Their claims must be bound to actual child-verifier outputs, folded inside
-the parent relation and discharged against every approved table at the root.
-Calling the native accumulator helper or checking endpoint hashes alone does
-not compress proof validity. The recursive artifact must include all root
-data its verifier needs; leaf proofs can then remain prover-side.
-
-The next aggregation milestone is one two-batch parent proof verified in a
-fresh process, rejecting a changed source, substituted child, broken boundary
-and forged accumulator. Then measure proof bytes, peak memory, the exact
-table/PCS configuration and another recursion level before choosing the full
-tree's envelope. The final size and cost are not yet measured.
-
-An alternative is to re-prove every parser batch inside one larger direct
-Flock circuit, with intermediate states wired internally. That avoids recursive
-verifier work but combines the trace and wiring allocation. It needs a
-count-only resource census first and does not compress existing proof files.
-Full guest execution has billions of transitions and requires separate
-scalable execution/composition work in either case.
+The server run took 2,099.490 seconds internally and 2,102.80 seconds process
+wall time, with 54,413,188 KiB maximum process RSS across eight worker threads
+and their four-thread Rayon pools. The standalone `grammar-tree` runner
+provides proof-free census, durable aggregation with verified resumption,
+and root verification with rejection checks. Full guest execution still
+requires scalable semantic admission, memory and execution segments.
 
 ## Reproduction entrypoints
 

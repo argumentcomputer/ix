@@ -31,10 +31,7 @@ pub(crate) fn compile_transcript(
 ) -> Result<MainBlueprint> {
   let shape = setup.verifier_shape();
   let union = UnionInstance::new(&shape.registry, shape.counts.clone());
-  ensure!(
-    !union.has_element() && union.num_boolean() != 0,
-    "Boolean Exec tape required"
-  );
+  ensure!(union.num_boolean() != 0, "a Boolean class is required");
   let params = setup.pcs_params();
   let mut tape = Tape::new();
   tape.label(b"flock-mixed-v1");
@@ -107,6 +104,33 @@ pub(crate) fn compile_transcript(
     "Boolean algebra/tape address agreement"
   );
   tape.merge(wiring);
+  if union.has_element() {
+    let e = union.m_elem() - 7;
+    let grinding = params.element_grinding();
+    tape.label(b"flock-element-union-zc-v0");
+    tape.squeeze_slice(e, grinding.initial_bits(e));
+    for _ in 0..e {
+      tape.observe();
+      tape.observe();
+      tape.squeeze(grinding.round_bits());
+    }
+    for _ in 0..3 {
+      tape.observe();
+    }
+    tape.label(b"flock-element-union-lc-v0");
+    tape.squeeze(grinding.alpha_bits());
+    for _ in 0..e - union.n_log() {
+      tape.observe();
+      tape.observe();
+      tape.squeeze(grinding.round_bits());
+    }
+    let element =
+      super::element::compile_element(setup, boolean)?.expect("element setup");
+    ensure!(
+      tape.address == element.end,
+      "element algebra/tape address agreement"
+    );
+  }
 
   let grinding = params.opening_grinding();
   tape.label(b"flock-merged-open-v1");
@@ -156,8 +180,9 @@ pub(crate) fn compile_transcript(
       ensure!(child.observe() == expected, "multipoint value tape");
     }
     ensure!(
-      child.squeeze(nonzero(grinding.gamma_bits_for(2, 1)))
-        == mp.gamma_challenge,
+      child.squeeze(nonzero(
+        grinding.gamma_bits_for(2, mp.group_value_observations.len())
+      )) == mp.gamma_challenge,
       "multipoint gamma tape"
     );
     for round in &mp.multipoint_rounds {

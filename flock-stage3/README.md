@@ -94,11 +94,12 @@ production capacity evidence.
 The full original CSLib Program grammar also has a verified chain of 1,217
 batch proofs (492,388,476 bytes), with one additional proof for each original
 transport. This checks complete grammar/scalar parsing and state continuity;
-full semantic admission, execution and recursive aggregation remain required.
+full semantic admission and execution remain required.
 See [streaming results and composition work](../docs/IxbyFunctionalStreaming.md).
-The [first native Flock merge](../docs/IxbyFlockRecursion.md) now compresses two
-retained CSLib batches into one 375,155-byte proof bundle with independently
-checked root claims. Repeated recursion over the complete chain remains work.
+The [native Flock aggregate](../docs/IxbyFlockRecursion.md) now compresses all
+1,217 Program batches into one 360,907-byte proof bundle with constrained
+intermediate boundaries and folds, exact coverage, and complete Start/Done.
+The root verifier checks every approved fixed-table family without the leaves.
 
 ```sh
 RAYON_NUM_THREADS=8 cargo test --release --locked --manifest-path flock-stage3/Cargo.toml --workspace conformance:: -- --ignored --test-threads=1

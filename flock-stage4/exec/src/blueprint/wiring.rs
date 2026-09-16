@@ -23,10 +23,7 @@ pub(crate) fn compile_wiring(
   let cells = circuit.cells();
   let (nu, mu) = (cells.nu(), cells.mu());
   let union = UnionInstance::new(&shape.registry, shape.counts.clone());
-  ensure!(
-    !union.has_element() && union.num_boolean() != 0,
-    "Boolean Exec blueprint required"
-  );
+  ensure!(union.num_boolean() != 0, "a Boolean class is required");
   // Flock's one-sided fork samples two parent seed words, then observes them
   // as the child's first two words. Payload observations do not occupy F128
   // value addresses. Grinding nonces likewise occupy only the byte tape.
@@ -116,8 +113,14 @@ pub(crate) fn compile_wiring(
     .checked_sub(nu + 6)
     .ok_or_else(|| anyhow::anyhow!("lincheck blueprint dimension"))?;
   let boolean_observed = 128 + 2 * zero_rounds + 2 + 2 * linear_rounds + 64;
-  let gather_start =
-    addresses.observed + u64::try_from(boolean_observed + 2 + 256)?;
+  let gather_start = addresses.observed
+    + u64::try_from(
+      boolean_observed
+        + 2
+        + super::element::observed_words(&union)
+        + 256
+        + 2 * usize::from(union.has_element()),
+    )?;
   let gather_observations = (0..cells.num_gate_slots())
     .map(|index| gather_start + index as u64)
     .collect::<Vec<_>>();

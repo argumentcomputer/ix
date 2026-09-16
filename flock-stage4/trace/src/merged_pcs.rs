@@ -24,6 +24,14 @@ pub struct F128MergedPcsBooleanClaimV1 {
   pub value: F128ReferenceV1,
 }
 
+/// A field-word claim produced by an element PIOP. References address its
+/// separately compiled algebra DAG and the shared transcript.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct F128PackedDirectClaimV1 {
+  pub point: Vec<F128ReferenceV1>,
+  pub value: F128ReferenceV1,
+}
+
 /// Transcript locations for one succinct DP24 ring-switch proof.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct F128RingSwitchTraceV1 {

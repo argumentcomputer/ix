@@ -6,6 +6,7 @@ mod algebra;
 mod backend;
 mod blake3;
 mod f128;
+mod fold;
 mod gates;
 mod ligerito;
 mod merged_pcs;
@@ -13,10 +14,15 @@ mod multipoint;
 mod pair;
 mod proof;
 mod transcript;
+mod tree;
 mod wiring;
 
 pub use pair::{GrammarPairRelation, NativePairCensus};
 pub use proof::{CompiledGrammarPair, GrammarPairGeometry};
+pub use tree::{
+  CompiledGrammarNode, GrammarNodeGeometry, GrammarRootVerifier,
+  GrammarTreeCompiler, MAX_GRAMMAR_TREE_BYTES, MAX_GRAMMAR_TREE_LEAVES,
+};
 
 use algebra::*;
 use backend::{

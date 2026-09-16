@@ -123,13 +123,14 @@ Stage 3 proof of either workload has been generated.
     and UTF-8 state. The complete original CSLib Program has 1,217 verified
     Flock batch proofs; Input and Output each have one. A fresh process checks
     all three, deriving transport context from the verified Program. The
-    Program chain is 492,388,476 bytes and is not recursively aggregated.
+    Unaggregated Program chain is 492,388,476 bytes; component 16 compresses it.
     Full semantic registry/body/value materialization and execution remain.
-16. [First native recursive Flock merge](IxbyFlockRecursion.md): two retained
-    CSLib Program batches produce one 375,155-byte parent proof bundle. A fresh
-    process verifies it without either child proof and discharges all 152
-    deferred claims. Repeated recursion and bounded accumulator folding are
-    still required for the complete 1,217-batch Program chain.
+16. [Complete native recursive Flock aggregation](IxbyFlockRecursion.md): all
+    1,217 retained CSLib Program batches produce one 360,907-byte proof bundle.
+    Mixed Boolean/element child verification, complete boundary continuity,
+    exact coverage and inherited-claim folds are constrained. The root checks
+    genuine Start/Done/EOF and all 98 approved fixed-table families. The full
+    server aggregation took 35 minutes and 54,413,188 KiB peak process RSS.
 
 ## Next implementation gates
 
@@ -173,13 +174,10 @@ Stage 3 proof of either workload has been generated.
    A local segment allowance must not reset the global semantic budget.
 5. **Sound composition.** Verify the complete segment chain; if one aggregate
    Stage 3 proof is required, implement and review its composition relation.
-   The current parser chain verifies every batch separately. Flock's pinned
-   recursion tower has a BLAKE3-chain-specific first layer; adapting it to
-   generic parser/execution proofs and their complete boundary statements
-   remains work. The [first measured parser merge](IxbyFlockRecursion.md)
-   proves two real batches and discharges their root claims. Next, constrain
-   mixed-class child verification and inherited-claim folds, then prove a
-   second recursive level before attempting the full tree.
+   The [complete parser aggregate](IxbyFlockRecursion.md) now constrains mixed
+   child verification, all parser boundaries and inherited-claim folds across
+   the full 1,217-batch tree. Adapt this machinery to the complete execution
+   segment statement once that relation is implemented and measured.
    A concatenated list of endpoint hashes or an unchecked state-continuity
    claim is not an aggregate execution proof. Version the wider profile and
    proof envelope explicitly, retaining rejection of old/different setups.

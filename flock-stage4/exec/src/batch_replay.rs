@@ -2,7 +2,10 @@
 //! This reuses the existing verifier algebra/transcript compiler without an
 //! Exec commitment adapter. It is not an outer proof or a root certificate.
 use crate::{
-  blueprint::{self, BooleanBlueprint, MainBlueprint, PcsBlueprint},
+  blueprint::{
+    self, BooleanBlueprint, ElementBlueprint, MainBlueprint, PcsBlueprint,
+    VerifierSetup,
+  },
   replay::{
     self, Stage4FlockInnerLigeritoWitnessV1,
     Stage4FlockMergedPcsFrontendWitnessV1,
@@ -15,8 +18,10 @@ use flock_prover::{
   challenger::FsChallenger,
   circuit::SigmaAssertion,
   field::F128,
-  lincheck::MatrixAssertion,
+  lincheck::{CscCircuit, LincheckCircuit, MatrixAssertion},
   matrix_fold::JaggedAssertion,
+  pcs::Commitment,
+  proof::R1csProofCircuitMerged,
   transcript_record::RecordingChallenger,
   union::{UnionInstance, publics_digest},
   verifier,
@@ -33,25 +38,37 @@ use ixby_flock::ixby::{
 
 /// Immutable topology borrowed from the exact fixed parser-batch setup. The
 /// compiler never sees a source file, endpoint, proof or witness value.
-pub struct CompiledGrammarBatchReplay<'a> {
-  setup: &'a CompiledGrammarBatch,
+pub struct CompiledFlockReplay<S: VerifierSetup> {
+  setup: S,
   wiring: F128WiringTraceV1,
   boolean: BooleanBlueprint,
+  element: Option<ElementBlueprint>,
   pcs: PcsBlueprint,
   main: MainBlueprint,
   identity: [u8; 32],
 }
 
+pub type CompiledGrammarBatchReplay<'a> =
+  CompiledFlockReplay<&'a CompiledGrammarBatch>;
+
 pub fn compile_grammar_batch_replay(
   setup: &CompiledGrammarBatch,
 ) -> Result<CompiledGrammarBatchReplay<'_>> {
-  let wiring = blueprint::compile_wiring(setup)?;
-  let boolean = blueprint::compile_boolean(setup)?;
-  let pcs = blueprint::compile_pcs(setup, &wiring, &boolean)?;
-  let main = blueprint::compile_transcript(setup, &boolean, &pcs)?;
+  compile_flock_replay(setup)
+}
+
+/// Compile the verifier entirely from an independently approved setup.
+pub fn compile_flock_replay<S: VerifierSetup>(
+  setup: S,
+) -> Result<CompiledFlockReplay<S>> {
+  let wiring = blueprint::compile_wiring(&setup)?;
+  let boolean = blueprint::compile_boolean(&setup)?;
+  let element = blueprint::compile_element(&setup, &boolean)?;
+  let pcs = blueprint::compile_pcs(&setup, &wiring, &boolean)?;
+  let main = blueprint::compile_transcript(&setup, &boolean, &pcs)?;
   let mut hash = blake3::Hasher::new();
   hash.update(b"IxBy/grammar-batch-replay/v0\0");
-  hash.update(setup.transcript_domain());
+  hash.update(&setup.transcript_domain());
   for digest in [
     setup.verifier_shape().registry.digest(),
     setup.verifier_shape().circuit.digest(),
@@ -65,13 +82,25 @@ pub fn compile_grammar_batch_replay(
   ] {
     hash.update(&digest);
   }
+  if let Some(element) = &element {
+    hash.update(b"mixed-element-v0");
+    hash.update(&element.trace.topology_digest());
+  }
   let identity = *hash.finalize().as_bytes();
-  Ok(CompiledGrammarBatchReplay { setup, wiring, boolean, pcs, main, identity })
+  Ok(CompiledFlockReplay {
+    setup,
+    wiring,
+    boolean,
+    element,
+    pcs,
+    main,
+    identity,
+  })
 }
 
-impl CompiledGrammarBatchReplay<'_> {
-  pub fn setup(&self) -> &CompiledGrammarBatch {
-    self.setup
+impl<S: VerifierSetup> CompiledFlockReplay<S> {
+  pub fn setup(&self) -> &S {
+    &self.setup
   }
   pub fn identity(&self) -> [u8; 32] {
     self.identity
@@ -81,6 +110,12 @@ impl CompiledGrammarBatchReplay<'_> {
   }
   pub fn boolean(&self) -> &F128AlgebraTraceV1 {
     &self.boolean.trace
+  }
+  pub fn element(&self) -> Option<&F128AlgebraTraceV1> {
+    self.element.as_ref().map(|e| &e.trace)
+  }
+  pub fn element_claims(&self) -> &[ix_stage4_trace::F128PackedDirectClaimV1] {
+    self.element.as_ref().map_or(&[], |e| &e.pcs_claims)
   }
   pub fn merged_pcs(&self) -> &F128MergedPcsFrontendTraceV1 {
     &self.pcs.frontend
@@ -108,31 +143,34 @@ impl CompiledGrammarBatchReplay<'_> {
 
   /// Native verification and exact topology comparison are witness-generation
   /// checks. A parent must constrain all exported phases and every root claim.
-  pub fn replay(
+  pub fn replay_proof(
     &self,
-    expected: &GrammarBatchStatement,
-    bytes: &[u8],
+    public: &[F128],
+    commitment: &Commitment,
+    proof: &R1csProofCircuitMerged,
   ) -> Result<GrammarBatchReplayWitness> {
-    let verified = self.setup.verify_for_replay(expected, bytes)?;
     let shape = self.setup.verifier_shape();
     let params = self.setup.pcs_params();
     let domain = self.setup.transcript_domain();
-    let public = verified.public_values();
-    let proof = verified.proof();
-    let commitment = verified.commitment();
-    ensure!(
-      proof.element.is_none(),
-      "parser replay requires its Boolean class"
-    );
+    let circuits = shape
+      .registry
+      .boolean_types()
+      .iter()
+      .map(|ty| {
+        CscCircuit::from_matrices(&ty.a_0, &ty.b_0).with_const_pin(ty.const_pin)
+      })
+      .collect::<Vec<_>>();
+    let circuits =
+      circuits.iter().map(|c| c as &dyn LincheckCircuit).collect::<Vec<_>>();
     let union = UnionInstance::new(&shape.registry, shape.counts.clone());
     let mut recording =
-      RecordingChallenger::new(FsChallenger::with_chained_blake3(domain));
-    let (_, deferred, sigma) =
+      RecordingChallenger::new(FsChallenger::with_chained_blake3(&domain));
+    let (class_claims, deferred, sigma) =
       verifier::verify_ligerito_union_circuit_deferred(
         &union,
         &shape.circuit,
         public,
-        &self.setup.lincheck_circuits(),
+        &circuits,
         commitment,
         proof,
         params,
@@ -179,7 +217,7 @@ impl CompiledGrammarBatchReplay<'_> {
       &algebra,
     )?;
     ensure!(frontend == self.pcs.frontend, "parser merged PCS topology");
-    let multipoint = replay::export_multipoint_twisted_assist(
+    let multipoint = replay::export_multipoint_twisted_assist_mixed(
       &recording,
       shape.circuit.digest(),
       &union,
@@ -188,6 +226,7 @@ impl CompiledGrammarBatchReplay<'_> {
       &algebra,
       &frontend,
       &deferred.jagged,
+      class_claims.element.as_ref(),
     )?;
     ensure!(
       multipoint.trace() == &self.pcs.multipoint,
@@ -203,7 +242,7 @@ impl CompiledGrammarBatchReplay<'_> {
     let transcript =
       Stage4FlockTranscriptWitnessV1::from_recording_with_algebra(
         &recording,
-        domain,
+        &domain,
         algebra.trace,
         &algebra.private_values,
       )?;
@@ -241,6 +280,21 @@ impl CompiledGrammarBatchReplay<'_> {
       structure: sigma,
       jagged: deferred.jagged,
     })
+  }
+}
+
+impl CompiledGrammarBatchReplay<'_> {
+  pub fn replay(
+    &self,
+    expected: &GrammarBatchStatement,
+    bytes: &[u8],
+  ) -> Result<GrammarBatchReplayWitness> {
+    let verified = self.setup.verify_for_replay(expected, bytes)?;
+    self.replay_proof(
+      verified.public_values(),
+      verified.commitment(),
+      verified.proof(),
+    )
   }
 }
 

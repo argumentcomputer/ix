@@ -141,7 +141,11 @@ pub(crate) fn constrain_f128_multipoint_twisted_assist(
     &trace.jagged_claim_private_values,
     "jagged claim value",
   )?;
-  debug_assert_eq!(jagged_values.len(), F128_MULTIPOINT_JAGGED_CLAIMS);
+  let element_claims = 2 * usize::from(trace.element_claims);
+  debug_assert_eq!(
+    jagged_values.len(),
+    F128_MULTIPOINT_JAGGED_CLAIMS + element_claims
+  );
 
   let dual_values = trace
     .dual_value_observations
@@ -305,7 +309,7 @@ pub(crate) fn constrain_f128_multipoint_twisted_assist(
         .map(<[F128VariablesV1]>::to_vec)
     })
     .collect::<Result<Vec<_>, _>>()?;
-  let group_row = inputs.frontend.packed_direct_claims[0]
+  let group_row = inputs.frontend.packed_direct_claims[element_claims]
     .point
     .get(..witness_row_variables)
     .ok_or(F128MultipointCircuitError::FrontendMismatch(
@@ -319,6 +323,7 @@ pub(crate) fn constrain_f128_multipoint_twisted_assist(
     .frontend
     .packed_direct_claims
     .iter()
+    .skip(element_claims)
     .zip(&trace.group_column_addresses)
   {
     for (left, right) in
@@ -373,7 +378,7 @@ pub(crate) fn constrain_f128_multipoint_twisted_assist(
   let group_weighted = constrain_f128_multiply(
     builder,
     &group_coefficient,
-    &jagged_values[2],
+    &jagged_values[2 + element_claims],
     PHASE,
   )?;
   let group_contribution =
@@ -384,6 +389,45 @@ pub(crate) fn constrain_f128_multipoint_twisted_assist(
     &group_contribution,
     PHASE,
   )?;
+  if trace.element_claims {
+    let element_row =
+      &inputs.frontend.packed_direct_claims[0].point[..witness_row_variables];
+    for (left, right) in element_row.iter().zip(
+      &inputs.frontend.packed_direct_claims[1].point[..witness_row_variables],
+    ) {
+      enforce_f128_equal(builder, left, right, PHASE);
+    }
+    let boundary = constrain_boundary_factor(
+      builder,
+      element_row,
+      &point,
+      &sigma_eq_tables,
+      &zero,
+      &one,
+    )?;
+    let coefficient = constrain_f128_multiply(
+      builder,
+      &gamma_powers[2 * F128_MULTIPOINT_DUAL_VALUES],
+      &e_at,
+      PHASE,
+    )?;
+    let mut weighted_values = zero.clone();
+    for i in 0..2 {
+      let term = constrain_f128_multiply(
+        builder,
+        &inputs.frontend.batching_challenges[2 + i],
+        &jagged_values[2 + i],
+        PHASE,
+      )?;
+      weighted_values =
+        constrain_f128_add(builder, &weighted_values, &term, PHASE)?;
+    }
+    let term =
+      constrain_f128_multiply(builder, &coefficient, &weighted_values, PHASE)?;
+    let term = constrain_f128_multiply(builder, &term, &boundary, PHASE)?;
+    endpoint_expectation =
+      constrain_f128_add(builder, &endpoint_expectation, &term, PHASE)?;
+  }
   enforce_f128_equal(builder, &anchor_running, &endpoint_expectation, PHASE);
 
   let mut jagged_claims = Vec::with_capacity(F128_MULTIPOINT_JAGGED_CLAIMS);
@@ -407,11 +451,23 @@ pub(crate) fn constrain_f128_multipoint_twisted_assist(
       value: value.clone(),
     });
   }
+  for i in 0..element_claims {
+    jagged_claims.push(F128JaggedClaimVariablesV1 {
+      row: F128JaggedRowWeightVariablesV1::Eq {
+        scale: Box::new(one.clone()),
+        point: inputs.frontend.packed_direct_claims[i].point
+          [witness_row_variables..]
+          .to_vec(),
+      },
+      column_point: sigma.clone(),
+      value: jagged_values[2 + i].clone(),
+    });
+  }
   let combo_terms = inputs
     .frontend
     .batching_challenges
     .iter()
-    .skip(inputs.frontend.ring_switches.len())
+    .skip(inputs.frontend.ring_switches.len() + element_claims)
     .zip(&trace.group_column_addresses)
     .map(|(coefficient, &address)| F128JaggedComboTermVariablesV1 {
       coefficient: coefficient.clone(),
@@ -421,7 +477,7 @@ pub(crate) fn constrain_f128_multipoint_twisted_assist(
   jagged_claims.push(F128JaggedClaimVariablesV1 {
     row: F128JaggedRowWeightVariablesV1::Combo { terms: combo_terms },
     column_point: sigma.clone(),
-    value: jagged_values[2].clone(),
+    value: jagged_values[2 + element_claims].clone(),
   });
 
   Ok(F128MultipointTwistedAssistCircuitOutputV1 {
@@ -463,9 +519,13 @@ fn validate_frontend(
   }
   if frontend.ring_switches.len() != 2
     || frontend.rho.len() != dense_variables
-    || frontend.packed_direct_claims.len() != trace.group_column_addresses.len()
+    || frontend.packed_direct_claims.len()
+      != trace.group_column_addresses.len()
+        + 2 * usize::from(trace.element_claims)
     || frontend.batching_challenges.len()
-      != 2 + trace.group_column_addresses.len()
+      != 2
+        + trace.group_column_addresses.len()
+        + 2 * usize::from(trace.element_claims)
   {
     return Err(F128MultipointCircuitError::FrontendMismatch(
       "claim or challenge counts differ",

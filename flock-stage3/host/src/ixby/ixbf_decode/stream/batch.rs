@@ -136,6 +136,51 @@ impl GrammarBatchStatement {
   pub fn source_identity(&self) -> &[F128; 3] {
     self.0[..3].try_into().unwrap()
   }
+
+  /// Check whole-file endpoints after the batch or aggregate proof is verified.
+  /// Transport context must come from the application's verified Program.
+  /// This checks public-state predicates; it does not verify a proof itself.
+  pub fn check_complete(
+    &self,
+    kind: GrammarKind,
+    context: &[F128; 15],
+  ) -> Result<()> {
+    use crate::ixby::ixbf_decode::{
+      dispatch::DISPATCH_CONTEXT_INDICES, grammar,
+    };
+    ensure!(
+      kind != GrammarKind::Program || context.iter().all(|v| *v == F128::ZERO),
+      "Program initial context"
+    );
+    let length = self.source_identity()[0].lo;
+    let mut initial = [F128::ZERO; 30];
+    initial[0] = F128::new(0, length);
+    for (&index, &value) in DISPATCH_CONTEXT_INDICES.iter().zip(context) {
+      initial[index] = value;
+    }
+    ensure!(
+      self.initial() == &initial,
+      "grammar file did not start at initialization"
+    );
+    let state = self.final_state();
+    ensure!(
+      state[0] == F128::new(length, length)
+        && state[1].lo & 0xff == u64::from(grammar::Phase::Done as u8)
+        && state[28..] == [F128::ZERO; 2],
+      "grammar file did not finish at EOF"
+    );
+    for index in [
+      grammar::FUNCTIONS_LEFT,
+      grammar::BLOCKS_LEFT,
+      grammar::CTORS_LEFT,
+      grammar::ITEMS,
+      grammar::PAYLOAD,
+      grammar::PENDING,
+    ] {
+      ensure!(state[index] == F128::ZERO, "unfinished grammar obligation");
+    }
+    Ok(())
+  }
 }
 
 #[derive(Serialize, Deserialize)]

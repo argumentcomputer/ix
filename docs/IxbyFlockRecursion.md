@@ -1,19 +1,130 @@
-# First native Flock merge for streaming grammar proofs
+# Native Flock aggregation for streaming grammar proofs
 
-The first two retained CSLib Program batches now have one independently
-verified Flock proof. The proof bundle is **375,155 bytes**, including
-57,312 bytes of deferred root values. The verifier receives the expected
-source identity and outer parser states, this bundle, and its compiled setup.
-It receives no child proofs or original source bytes.
+All **1,217 retained CSLib Program batches** now form one **360,907-byte**
+native Flock proof bundle, including 53,168 bytes of folded root advice.
+The separate expected statement is 1,008 bytes. The root verifier receives
+these two files and externally expected source length/digest and batch count.
+It compiles the approved setup without reading proofs or source bytes.
 
-This completes the first two-batch merge experiment. The complete 1,217-batch
-Program chain has not been aggregated. Repeated recursion, accumulator folding,
-tree coverage/padding, and whole-file Start/Done checks remain to be implemented.
-The underlying claim is grammar parsing; it does not establish execution of
-the CSLib verifier. See [streaming scope](IxbyFunctionalStreaming.md) and the
+The claim is complete original Program grammar parsing, with genuine Start,
+complete Done at EOF, and all intermediate parser states connected. Full
+semantic program admission and execution of the CSLib verifier remain separate
+work. See [streaming scope](IxbyFunctionalStreaming.md) and the
 [execution plan](IxbyStage3ScalePlan.md).
 
-## Relation and setup
+## Complete aggregation relation
+
+`GrammarTreeCompiler` admits an exact leaf count from 2 through 65,536. Each
+node splits at the largest power of two strictly below its count. The complete
+CSLib root joins 1,024 and 193 leaves; the latter joins 128 and 65, and 65 joins
+64 and one. There are exactly 1,216 binary merges and no padding leaves.
+Every real leaf must advance its parser cursor. The count and child classes
+belong to setup and are checked before decoding a submitted root proof.
+
+Each parent constrains both complete child Flock verifiers, including mixed
+Boolean/element children at later levels. All three original-source words and
+all 30 intermediate state words are equal across each join. Source metadata,
+grammar counters, payload obligations and UTF-8 state therefore cannot change
+at an internal boundary. Root verification additionally enforces zero Program
+context at Start, complete Done and the exact externally expected file length.
+
+Original-matrix, circuit and jagged-layout claims are grouped by approved fixed
+table identity. Their values, points and weights are bound to actual child
+verifier outputs and inherited public advice, then folded inside each parent.
+Fresh fold challenges include the claims and approved identities. The final
+verifier checks every folded family against its compiled table. Descriptors,
+table identities and index mappings never come from proof bytes.
+
+The root has 98 fixed-table families and 3,323 root-advice words. Its geometry
+is 2,769,854 variables, 911,346 arithmetic operations, 28,409 packing rows and
+29,481 BLAKE3 compressions. The row domain has 15 variables and the dense
+commitment has 31. These are native GF(2^128)/BLAKE3 constraints; the Stage 4
+workspace supplies the reusable verifier compiler, without invoking FFLONK.
+
+### Full CSLib measurement
+
+The Intel Xeon 6975P-C server used eight in-process workers, each with four
+Rayon threads. A single setup was shared within each level, and proving graphs
+were released between levels while approved verifier cores were retained.
+
+| Measurement | Result |
+| --- | ---: |
+| Original retained Program chain | 492,388,476 bytes |
+| Aggregate proof, including all root advice | 360,907 bytes |
+| Expected statement | 1,008 bytes |
+| Complete server aggregation and root check | 2,099.490 s |
+| Process wall time | 2,102.80 s |
+| Single-process maximum RSS, GNU time | 54,413,188 KiB |
+| Final node proving, including advice | 41.237 s |
+| Server root verification after setup | 12.352 s |
+| Fresh local setup compilation | 80.389 s |
+| Fresh local root verification after setup | 13.187 s |
+| Fresh local process wall, including nine rejection checks | 96.23 s |
+| Fresh local maximum RSS, GNU time | 31,355,436 KiB |
+
+The process RSS includes every worker thread; it is not a sum of separate
+worker peaks. The original leaf proving run is excluded from these times.
+The local receiver ran outside the worktree with a cleared environment and
+received no child proof or source-file path. Nine checks rejected changed
+source/state words, setup/count header fields, root advice, damaged proof
+bytes, truncation and trailing data. A separate five-real-batch test exercised
+the uneven `4 + 1` tree and independent reception before the full run.
+Proofs and statements are written with create-new files. An explicit resume
+mode checks the source/count configuration and cryptographically verifies
+each cached node under its freshly compiled approved class before reuse.
+
+Pins:
+
+- Root setup: `645e27b9c5a3abecced8df15349e5a6b6b811f3adbf3cceb6e2fd1e2e1da36df`.
+- Proof SHA-256: `f4cbe2d0203bc57ed99d167ac8218271dca28007f9c93970dda0b560e7c9d163`.
+- Expected statement SHA-256: `17765dc30db5e28967f5fc53bb0681e6551d3adcbb13fc02ddc9efe22f12f937`.
+- Executed binary SHA-256: `1f5f6ffdf633f85c0dcc7f332a151b4dcd5aac7898e31e92061a29cd8d0fd9ab`.
+
+The server binary used
+`-C target-cpu=x86-64-v4 -C target-feature=+pclmulqdq,+vpclmulqdq,+aes`.
+The remote artifacts are under `/tmp/ixby-grammar-tree.I7oyt8/`; the root,
+statement, result, complete log and GNU timing were retrieved into
+`/tmp/ixby-tree-full-result.dvcvCN/`. These are scratch artifacts.
+The checked-in [measurement record](../flock-stage4/census/grammar-tree-cslib-v0.json)
+retains the per-level geometry, timings and artifact hashes.
+
+### Reproduce the complete tree
+
+```sh
+cargo build --release --locked --manifest-path flock-stage4/Cargo.toml \
+  -p ix-flock-recursion --bin grammar-tree
+
+# Compile the exact tree and report geometry without reading any proofs.
+flock-stage4/target/release/grammar-tree census --batches 1217
+
+# Prove every internal node; retain intermediate nodes for checked resumption.
+flock-stage4/target/release/grammar-tree aggregate \
+  --frames /path/to/program-frames --out /path/to/new-output \
+  --batches 1217 --length 1016587 \
+  --digest 96ed4322c7e4db289b876848e885d02afd2958f829135d5108b565ce9d493c05 \
+  --workers 8 --threads 4
+
+# Independent receiver: no original files, leaves or intermediate proofs.
+env -i RAYON_NUM_THREADS=4 /absolute/path/to/grammar-tree verify \
+  --proof /path/to/root.flock --statement /path/to/root.statement \
+  --batches 1217 --length 1016587 \
+  --digest 96ed4322c7e4db289b876848e885d02afd2958f829135d5108b565ce9d493c05 \
+  --check-rejections
+```
+
+The complete-tree implementation is in
+[tree.rs](../flock-stage4/recursive/src/tree.rs), with constrained folds in
+[fold.rs](../flock-stage4/recursive/src/fold.rs) and the reproducible runner in
+[grammar-tree.rs](../flock-stage4/recursive/src/bin/grammar-tree.rs).
+
+## Earlier two-child prototype
+
+The original pair experiment below retains its own setup and encoding. It
+carried raw root claims and produced a 375,155-byte bundle. The complete tree
+above uses mixed child verification, folded claims and an exact coverage
+relation, so these historical proof sizes and setup identities differ.
+
+### Pair relation and setup
 
 The fixed child setup is the existing 32-step, source-depth-14, Nat-4096
 grammar batch under Fast128. `CompiledGrammarBatch` owns its exact circuit,
@@ -51,7 +162,7 @@ position. Advice regeneration must reproduce that graph exactly. The root
 verifier compiles the approved setup; proof headers cannot select a registry,
 profile, circuit, transcript or public layout.
 
-## Deferred root checks
+### Pair deferred root checks
 
 Each child exports 70 original matrix claims, three circuit-structure claims
 and three jagged-layout claims. Their values and weights are circuit wires
@@ -70,7 +181,7 @@ must verify mixed Boolean/element Flock children, bind inherited claims to
 their public outputs, and constrain the folds. Merely running the native root
 checks while generating advice would not satisfy that requirement.
 
-## Measured first pair
+### Measured first pair
 
 The leaves are `program-000000.frame` and `program-000001.frame` from the
 complete retained CSLib Program run. Each frame is 404,592 bytes, including
@@ -126,7 +237,7 @@ Proof, expected statement, log and process timing are retained under
 fixtures. The original Program is 1,016,587 bytes with raw BLAKE3
 `96ed4322c7e4db289b876848e885d02afd2958f829135d5108b565ce9d493c05`.
 
-## Validation and entry points
+### Pair validation and entry points
 
 The fresh receiver runs with a cleared environment and only the parent-bundle
 and expected-statement paths. Changed source/state words, root advice,

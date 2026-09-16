@@ -24,10 +24,7 @@ pub(crate) fn compile_pcs(
 ) -> Result<PcsBlueprint> {
   let shape = setup.verifier_shape();
   let union = UnionInstance::new(&shape.registry, shape.counts.clone());
-  ensure!(
-    !union.has_element() && union.num_boolean() != 0,
-    "Boolean Exec blueprint required"
-  );
+  ensure!(union.num_boolean() != 0, "a Boolean class is required");
   let params = setup.pcs_params();
   let dense = params
     .m
@@ -50,22 +47,30 @@ pub(crate) fn compile_pcs(
         .all(|claim| { claim.x_outer.len() == 1 + packed_variables as usize }),
     "PCS Boolean/gather point dimensions"
   );
+  let element = super::element::compile_element(setup, boolean)?;
   let mut address = boolean.end;
   // Closing wiring digests are observed on the parent after its Boolean
   // branch. The child's two closing squeezes are already in boolean.end.
   address.observe_index();
   address.observe_index();
+  if let Some(element) = &element {
+    address = element.end;
+  }
+  let element_claims = 2 * usize::from(union.has_element());
+  let groups = 1 + usize::from(union.has_element());
+  let jagged_claims = 3 + element_claims;
   let ring_switches = (0..2)
     .map(|_| F128RingSwitchTraceV1 {
       s_hat_v_observations: (0..128).map(|_| address.observe_index()).collect(),
       r_dprime_challenges: (0..7).map(|_| address.challenge_index()).collect(),
     })
     .collect();
-  let packed_direct_observations = (0..wiring.gather_observations.len())
+  let packed_direct_observations = (0..element_claims
+    + wiring.gather_observations.len())
     .map(|_| address.observe_index())
     .collect::<Vec<_>>();
   ensure!(
-    packed_direct_observations == wiring.gather_observations,
+    packed_direct_observations[element_claims..] == wiring.gather_observations,
     "PCS/wiring gather schedule"
   );
   let batching_challenges = (0..2 + packed_direct_observations.len())
@@ -88,7 +93,8 @@ pub(crate) fn compile_pcs(
   let dual_value_observations = (0..2)
     .map(|_| (0..128).map(|_| address.observe_index()).collect())
     .collect();
-  let group_value_observations = vec![address.observe_index()];
+  let group_value_observations =
+    (0..groups).map(|_| address.observe_index()).collect();
   let gamma_challenge = address.challenge_index();
   let multipoint_rounds =
     (0..dense).map(|_| multipoint_round(&mut address)).collect();
@@ -132,6 +138,7 @@ pub(crate) fn compile_pcs(
     })
     .collect::<Result<Vec<_>>>()?;
   let multipoint = F128MultipointTwistedAssistTraceV1 {
+    element_claims: union.has_element(),
     frontend_topology_digest: frontend.topology_digest(),
     matrix: F128JaggedMatrixIdV1 {
       circuit_digest: setup.circuit_digest(),
@@ -148,7 +155,7 @@ pub(crate) fn compile_pcs(
     anchor_value_observation,
     anchor_rounds,
     group_column_addresses,
-    jagged_claim_private_values: vec![0, 1, 2],
+    jagged_claim_private_values: (0..jagged_claims).map(|i| i as u64).collect(),
   };
   frontend.validate(
     0,
@@ -157,12 +164,15 @@ pub(crate) fn compile_pcs(
     2 * union.num_boolean(),
     boolean.trace.operations.len(),
     &[32, 8 * shape.counts.len(), cap_nodes as usize * 32, 32, 32],
-    &vec![packed_variables as usize; wiring.gather_observations.len()],
+    &vec![
+      packed_variables as usize;
+      element_claims + wiring.gather_observations.len()
+    ],
   )?;
   multipoint.validate(
     usize::try_from(address.observed)?,
     usize::try_from(address.challenges)?,
-    3,
+    jagged_claims,
   )?;
   Ok(PcsBlueprint { frontend, multipoint })
 }

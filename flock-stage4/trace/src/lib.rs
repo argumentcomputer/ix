@@ -69,7 +69,7 @@ pub use merged_pcs::{
   F128_RING_SWITCH_SKIP_WEIGHTS, F128_RING_SWITCH_SLICES,
   F128MergedPcsBooleanClaimV1, F128MergedPcsFrontendCensusV1,
   F128MergedPcsFrontendTraceV1, F128MergedPcsRoundV1, F128MergedPcsTraceError,
-  F128RingSwitchTraceV1,
+  F128PackedDirectClaimV1, F128RingSwitchTraceV1,
 };
 pub use multipoint::{
   F128_FAMILY_H_CORRECTIONS, F128_MULTIPOINT_DUAL_VALUES,

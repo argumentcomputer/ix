@@ -30,10 +30,7 @@ pub(crate) fn compile_boolean(
 ) -> Result<BooleanBlueprint> {
   let shape = setup.verifier_shape();
   let union = UnionInstance::new(&shape.registry, shape.counts.clone());
-  ensure!(
-    !union.has_element() && union.num_boolean() != 0,
-    "Boolean Exec blueprint required"
-  );
+  ensure!(union.num_boolean() != 0, "a Boolean class is required");
   let mu = shape.circuit.cells().mu();
   let nu = union.n_log();
   let m = union.m_bool();

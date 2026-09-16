@@ -52,7 +52,7 @@ fn codec() -> impl Options {
     .with_limit(MAX_BYTES)
     .reject_trailing_bytes()
 }
-struct Slots {
+pub(crate) struct Slots {
   blake: SlotId,
   mac: SlotId,
   pack: SlotId,
@@ -77,6 +77,27 @@ pub struct CompiledGrammarPair<'a> {
   identity: [u8; 32],
   domain: Vec<u8>,
   lincheck: CscCircuit,
+}
+
+impl ixby_stage4_exec::FlockVerifierSetup for CompiledGrammarPair<'_> {
+  fn verifier_shape(&self) -> &CircuitShape {
+    &self.shape
+  }
+  fn pcs_params(&self) -> &PcsParams {
+    &self.params
+  }
+  fn public_template(&self) -> &PublicLayout {
+    &self.public
+  }
+  fn transcript_domain(&self) -> Vec<u8> {
+    self.domain.clone()
+  }
+  fn registry_digest(&self) -> [u8; 32] {
+    self.shape.registry.digest()
+  }
+  fn circuit_digest(&self) -> [u8; 32] {
+    self.shape.circuit.digest()
+  }
 }
 impl GrammarPairRelation<'_> {
   /// Counts exactly the same emission before any permutation/witness allocation.
@@ -161,61 +182,16 @@ impl<'a> CompiledGrammarPair<'a> {
     let left = self.relation.replay.replay(statements[0], proofs[0])?;
     let right = self.relation.replay.replay(statements[1], proofs[1])?;
     let advice = self.relation.advice([&left, &right])?;
-    let outputs = advice
-      .graph
-      .published
-      .iter()
-      .map(|&i| advice.values[i])
-      .collect::<Vec<_>>();
-    let expected = self.public.instantiate(&outputs)?;
-    let witness = self.shape.run(&advice.values, &[]);
-    ensure!(witness.public == expected, "recursive witness public vector");
-    drop(advice);
-    let rows = witness.rows::<Blake3Gate>(self.slots.blake);
-    let nu = self.nu;
-    let boolean = UnionSlotProverInput::in_place(
-      move |mut dst| {
-        dst.elide_padding_writes = false;
-        flock_blake3::generate_witness_batch_major_partial_into(rows, nu, dst)
-      },
-      &self.lincheck,
-    );
-    let mut element = vec![
-      (
-        self.shape.registry_slot(self.slots.mac),
-        witness.rows::<MacGate>(self.slots.mac),
-      ),
-      (
-        self.shape.registry_slot(self.slots.pack),
-        witness.rows::<PackGate>(self.slots.pack),
-      ),
-    ];
-    element.sort_by_key(|(index, _)| *index);
-    let element = element
-      .into_iter()
-      .map(|(_, rows)| {
-        UnionElementSlotInput::new(move |dst| {
-          dst.fill(F128::ZERO);
-          for (j, row) in rows.iter().enumerate() {
-            for (i, &value) in row.iter().enumerate() {
-              dst[(i << nu) + j] = value;
-            }
-          }
-        })
-      })
-      .collect();
-    let union =
-      UnionInstance::new(&self.shape.registry, self.shape.counts.clone());
-    let mut ch = FsChallenger::with_chained_blake3(&self.domain);
-    let (proof, commitment, _) = prover::prove_fast_ligerito_union_circuit(
-      &union,
-      &self.shape.circuit,
-      &witness.public,
+    let (proof, commitment, outputs) = prove_native(
+      &self.shape,
+      &self.slots,
+      &self.public,
+      self.nu,
       &self.params,
-      vec![boolean],
-      element,
-      &mut ch,
-    );
+      &self.lincheck,
+      advice,
+      &self.domain,
+    )?;
     let bundle = Bundle {
       magic: MAGIC,
       identity: self.identity,
@@ -269,7 +245,71 @@ impl<'a> CompiledGrammarPair<'a> {
   }
 }
 
-fn count(graph: &NativeGraph) -> Result<(CountingEmitter, usize, PcsParams)> {
+/// Shared Flock proving kernel for native recursion graphs.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn prove_native(
+  shape: &CircuitShape,
+  slots: &Slots,
+  public: &PublicLayout,
+  nu: usize,
+  params: &PcsParams,
+  lincheck: &CscCircuit,
+  advice: crate::backend::NativeBuilder,
+  domain: &[u8],
+) -> Result<(R1csProofCircuitMerged, Commitment, Vec<F128>)> {
+  let outputs = advice
+    .graph
+    .published
+    .iter()
+    .map(|&i| advice.values[i])
+    .collect::<Vec<_>>();
+  let expected = public.instantiate(&outputs)?;
+  let witness = shape.run(&advice.values, &[]);
+  ensure!(witness.public == expected, "recursive witness public vector");
+  drop(advice);
+  let rows = witness.rows::<Blake3Gate>(slots.blake);
+  let boolean = UnionSlotProverInput::in_place(
+    move |mut dst| {
+      dst.elide_padding_writes = false;
+      flock_blake3::generate_witness_batch_major_partial_into(rows, nu, dst)
+    },
+    lincheck,
+  );
+  let mut element = vec![
+    (shape.registry_slot(slots.mac), witness.rows::<MacGate>(slots.mac)),
+    (shape.registry_slot(slots.pack), witness.rows::<PackGate>(slots.pack)),
+  ];
+  element.sort_by_key(|(index, _)| *index);
+  let element = element
+    .into_iter()
+    .map(|(_, rows)| {
+      UnionElementSlotInput::new(move |dst| {
+        dst.fill(F128::ZERO);
+        for (j, row) in rows.iter().enumerate() {
+          for (i, &value) in row.iter().enumerate() {
+            dst[(i << nu) + j] = value;
+          }
+        }
+      })
+    })
+    .collect();
+  let union = UnionInstance::new(&shape.registry, shape.counts.clone());
+  let mut ch = FsChallenger::with_chained_blake3(domain);
+  let (proof, commitment, _) = prover::prove_fast_ligerito_union_circuit(
+    &union,
+    &shape.circuit,
+    &witness.public,
+    params,
+    vec![boolean],
+    element,
+    &mut ch,
+  );
+  Ok((proof, commitment, outputs))
+}
+
+pub(crate) fn count(
+  graph: &NativeGraph,
+) -> Result<(CountingEmitter, usize, PcsParams)> {
   let mut count = CountingEmitter::new();
   emit(&mut count, graph, CountingEmitter::COUNT_NU)?;
   let nu = count.required_nu(1)?;
@@ -291,10 +331,30 @@ fn count(graph: &NativeGraph) -> Result<(CountingEmitter, usize, PcsParams)> {
   Ok((count, nu, params))
 }
 
-fn emit(
+pub(crate) fn emit(
   b: &mut impl CircuitEmitter,
   graph: &NativeGraph,
   nu: usize,
+) -> Result<(Slots, PublicLayout)> {
+  emit_inner(b, graph, nu, false)
+}
+
+/// Keep shared wire classes as union roots. Moving a growing cell list into
+/// each new equality makes setup quadratic in its fanout.
+/// The original pair emitter retains its established permutation identity.
+pub(crate) fn emit_stable(
+  b: &mut impl CircuitEmitter,
+  graph: &NativeGraph,
+  nu: usize,
+) -> Result<(Slots, PublicLayout)> {
+  emit_inner(b, graph, nu, true)
+}
+
+fn emit_inner(
+  b: &mut impl CircuitEmitter,
+  graph: &NativeGraph,
+  nu: usize,
+  stable_roots: bool,
 ) -> Result<(Slots, PublicLayout)> {
   let mut b = LayoutEmitter::new(b);
   let slots = Slots {
@@ -333,11 +393,43 @@ fn emit(
   for (input, expected) in &graph.compressions {
     let actual = b.gate(slots.blake, &input.map(|i| wires[i]));
     for (&actual, &expected) in actual.iter().zip(expected) {
-      b.connect(actual, wires[expected]);
+      if stable_roots {
+        b.connect(wires[expected], actual);
+      } else {
+        b.connect(actual, wires[expected]);
+      }
     }
   }
-  for &(a, c) in &graph.equalities {
-    b.connect(wires[a], wires[c]);
+  if stable_roots {
+    // ShapeBuilder's connect moves the second class into the first without
+    // union by size. Track class sizes here so each cell moves O(log N)
+    // times, including the heavily shared zero and one classes.
+    let mut parents = (0..graph.variables).collect::<Vec<_>>();
+    let mut sizes = vec![1usize; graph.variables];
+    fn root(parents: &mut [usize], mut i: usize) -> usize {
+      while parents[i] != i {
+        parents[i] = parents[parents[i]];
+        i = parents[i];
+      }
+      i
+    }
+    for &(a, c) in &graph.equalities {
+      let mut a = root(&mut parents, a);
+      let mut c = root(&mut parents, c);
+      if a == c {
+        continue;
+      }
+      if sizes[a] < sizes[c] {
+        std::mem::swap(&mut a, &mut c);
+      }
+      b.connect(wires[a], wires[c]);
+      parents[c] = a;
+      sizes[a] += sizes[c];
+    }
+  } else {
+    for &(a, c) in &graph.equalities {
+      b.connect(wires[a], wires[c]);
+    }
   }
   for &i in &graph.published {
     b.publish(wires[i]);
@@ -385,6 +477,49 @@ mod tests {
       .map(|word| ixby_flock::hash::pack_bytes(word))
       .collect::<Vec<_>>();
     GrammarBatchStatement::from_words(&words).unwrap()
+  }
+
+  #[test]
+  #[ignore = "requires IXBY_PAIR_ROOT and IXBY_PAIR_EXPECTED retained artifacts"]
+  fn retained_parent_has_proof_free_mixed_replay() {
+    let child = CompiledGrammarBatch::compile(GrammarKind::Program).unwrap();
+    let compiled = CompiledGrammarPair::compile(&child).unwrap();
+    let replay = ixby_stage4_exec::compile_flock_replay(&compiled).unwrap();
+    let mut empty = crate::backend::NativeBuilder::new(true);
+    crate::pair::emit_child(&mut empty, &replay, None).unwrap();
+    eprintln!(
+      "mixed proof-free verifier: identity={} variables={} macs={} packs={} compressions={}",
+      ::blake3::Hash::from(replay.identity()),
+      empty.graph.variables,
+      empty.graph.macs.len(),
+      empty.graph.packs.len(),
+      empty.graph.compressions.len()
+    );
+    // The compiled topology above precedes all proof and statement reads.
+    let path = PathBuf::from(std::env::var_os("IXBY_PAIR_ROOT").unwrap());
+    let statement =
+      PathBuf::from(std::env::var_os("IXBY_PAIR_EXPECTED").unwrap());
+    let statement = expected(&statement);
+    let bytes = read_bounded(&path, MAX_BYTES);
+    compiled.verify(&statement, &bytes).unwrap();
+    let bundle: Bundle = codec().deserialize(&bytes).unwrap();
+    let mut outputs = statement.words().to_vec();
+    outputs.extend(bundle.root_advice);
+    let public = compiled.public.instantiate(&outputs).unwrap();
+    let witness =
+      replay.replay_proof(&public, &bundle.commitment, &bundle.proof).unwrap();
+    let mut actual = crate::backend::NativeBuilder::new(false);
+    let wires =
+      crate::pair::emit_child(&mut actual, &replay, Some(&witness)).unwrap();
+    assert_eq!(actual.graph, empty.graph);
+    actual.check().unwrap();
+    assert_eq!(wires.application.len(), outputs.len());
+    for (wire, value) in wires.application.iter().zip(&outputs) {
+      let index = wire.word(&mut actual);
+      assert_eq!(actual.values[index], *value);
+    }
+    assert_eq!(wires.multipoint.jagged_assertion.claims.len(), 5);
+    eprintln!("retained mixed parent replay: all native constraints satisfied");
   }
 
   #[test]

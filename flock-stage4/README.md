@@ -23,18 +23,20 @@ nonzero blinding admission, authenticated scratch corruption, and identical
 proof/key results across memory and file backends for fixed test randomness.
 Small proofs use development setup and randomness, not production security.
 The generic replay, root closure/setup and native recursion prototypes pass
-267 ordinary tests (101 FFLONK, 48 trace, 100 circuit, 17 replay/setup,
-one native recursion); forty-three heavier tests remain opt-in.
+268 ordinary tests (101 FFLONK, 48 trace, 100 circuit, 17 replay/setup,
+one native recursion and one tree-decomposition check).
 
-## Native Flock parser merge
+## Native Flock parser aggregation
 
-The `recursive` crate proves the first two retained CSLib grammar batches in
-one native Flock proof. The 375,155-byte bundle includes 57,312 bytes of root
-advice. A fresh process verifies the parent and discharges all 152 child claims
-without receiving either child proof. The implementation uses the neutral
-verifier compiler in `exec` and native GF(2^128)/BLAKE3 constraints. Repeated
-recursion and accumulator folding for the complete 1,217-batch chain remain
-work. See [the relation, measurements and reproduction commands](../docs/IxbyFlockRecursion.md).
+The `recursive` crate aggregates all 1,217 retained CSLib Program grammar
+batches into one 360,907-byte native Flock proof, including 53,168 bytes of
+folded root advice. It constrains mixed Boolean/element child verifiers,
+all intermediate parser boundaries, exact tree coverage and the inherited
+root-claim folds. Root verification checks complete Start/Done and every
+approved fixed-table family. The original 492,388,476-byte chain and source
+file are unnecessary for root verification. The server run took 35 minutes
+with a single-process peak of 54,413,188 KiB. Full guest execution remains
+separate work. See [the relation, measurements and reproduction commands](../docs/IxbyFlockRecursion.md).
 
 ## Generic Exec replay
 

@@ -20,12 +20,14 @@ mod setup;
 mod setup_emission;
 
 pub use batch_replay::{
-  CompiledGrammarBatchReplay, GrammarBatchReplayWitness,
-  compile_grammar_batch_replay,
+  CompiledFlockReplay, CompiledGrammarBatchReplay, GrammarBatchReplayWitness,
+  compile_flock_replay, compile_grammar_batch_replay,
 };
 pub use blake3_table::{
   CompiledExecBlake3RootMaps, compile_exec_blake3_root_maps,
 };
+pub use blueprint::VerifierSetup as FlockVerifierSetup;
+pub use blueprint::{CompiledTranscriptPlan, TranscriptPlan};
 pub use census::{
   ExecReplayCensusV0, ExecReplayProgressV0, census_exec_replay,
   census_exec_replay_observed,
