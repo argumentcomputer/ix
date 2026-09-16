@@ -152,6 +152,14 @@ for execution-class design, not constrained execution or proving estimates.
     Read-only code/operand/declaration consumers constrain full-width indices;
     the native packed original CSLib image fits these consumers. Source-to-code
     admission and full instruction/value/initialization integration remain.
+19. [Ordered instruction batches](IxbyFlockPagedExecution.md): actual code and
+    operand reads produce numeric, control, call and return actions; complete
+    state records form one exact execution chain, sharing their clocks with
+    authenticated memory. A fresh 378,667-byte proof covers 20 physical steps,
+    seven logical transitions and final halt. All 57 changed expected words
+    and eight locally valid recomputed instruction/clock attacks reject.
+    Full original source/input admission, heap/application and byte consumers,
+    output serialization and execution aggregation remain.
 
 ## Next implementation gates
 

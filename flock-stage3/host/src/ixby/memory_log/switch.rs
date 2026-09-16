@@ -22,7 +22,7 @@ pub struct SwitchRow(pub(super) Vec<F128>);
 
 impl SwitchGate {
   pub fn new(words: usize) -> Result<Self> {
-    ensure!((1..=16).contains(&words), "memory record word capacity");
+    ensure!((1..=32).contains(&words), "memory record word capacity");
     Ok(Self { words, table: Arc::new(OnceLock::new()) })
   }
   pub fn record_words(&self) -> usize {

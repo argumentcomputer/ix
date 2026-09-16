@@ -73,7 +73,44 @@ packed block and operand passes the corresponding constrained consumer's row
 check. This does not prove source-to-code admission: the streaming parser
 still needs to constrain the writes and complete semantic reference checks.
 
-## Local evidence
+## Instruction batches
+
+[`paged_exec`](../flock-stage3/host/src/ixby/paged_exec/mod.rs) now combines
+authenticated code fetch, operand resolution into scratch memory, numeric
+primitives, copy/return/Bool/Nat control, direct/self/tail calls, frame copies,
+continuation return, and terminal halt. Instruction actions come from the
+fetched code and resolved values. The proof does not publish a host-selected
+action sequence.
+
+The batch carries 24 state words, including all frame/fuel fields, allocation
+counters, instruction header and resolution cursor. The current finite Small
+factory reserves fixed quotas for each operation. Its rows may be grouped by
+operation: an exact permutation of complete state records proves one positive,
+unbroken execution chain. Each memory timestamp is derived from that same
+row's constrained clock and a fixed ordinal. Inactive rows are canonical zero;
+integer clocks cannot wrap. Both memory roots, both full states/clocks and all
+three static parameter words are verifier-bound.
+
+A genuine **378,667-byte instruction proof** verifies in a fresh process.
+The fixture performs 20 physical transitions and seven logical steps, using
+functions 680/671, Nat values above 64 bits, a call, argument copy, return to
+the caller and final halt. The class has 74 memory request slots, 24 boundary
+cells and 57 expected public words. Its dense witness is 314,142 field words
+(`M=26`). Setup took 2.789 seconds and proving 0.865 seconds with four Rayon
+threads. The complete test took 11.18 seconds and 4,813,568 KiB peak process RSS.
+
+All 57 changed expected words reject. Eight locally valid recomputed attacks
+against fetched headers, resolved operands, numeric results, call entries,
+return values, fuel, state clocks and memory clocks reject at Flock's wiring
+check. Truncated and extended proof envelopes reject. Four ordering tests also
+cover gaps, duplicate clocks, forks, inactive padding and full-state equality.
+
+The initial code root in this fixture is an independently expected memory
+image. Connecting that root to the original IXBF source remains required.
+This result covers a small instruction segment. The original CSLib execution
+remains unproved.
+
+## Numeric and component evidence
 
 The numeric dispatcher binds the functional primitive tag and exact arity to
 the existing Word32 and Goldilocks consumers, or to a new immediate Nat128
@@ -90,7 +127,8 @@ remain outside this execution profile.
   identities, and check the complete matrices and recycled-buffer padding.
 - Two primitive tests check all functional tags and arities, unused operands,
   type rejection, and combined numeric wiring against independent results.
-  A genuine combined instruction proof is still required.
+  Nat128 addition and multiplication are also exercised by the genuine
+  combined instruction proof above.
 
 - Five ordinary frame tests cover calls, tail calls, over-application, copy
   completion, semantic/physical bounds, all state padding, native/Boolean
@@ -116,10 +154,10 @@ ordered access through the exact permutation and authenticated boundaries.
 
 ## Remaining integration
 
-Connect original source admission and input initialization; operand gathering
-and instruction dispatch; immutable allocation and primitive consumers;
-complete execution boundaries and output serialization; and execution-proof
-aggregation. Then prove representative original-CSLib segments and measure
+Connect original source admission and input initialization; constructor,
+projection, closure and application consumers; byte primitives; complete
+execution boundaries and output serialization; and execution-proof aggregation.
+Then prove representative original-CSLib segments and measure
 the full run. None of the component results above substitutes for that run.
 
 ```sh
@@ -132,5 +170,9 @@ RUSTFLAGS='-C target-cpu=native' RAYON_NUM_THREADS=4 cargo test --release \
 RUSTFLAGS='-C target-cpu=native' RAYON_NUM_THREADS=4 cargo test --release \
   --offline --manifest-path flock-stage3/Cargo.toml \
   frame_memory_proof_verifies_fresh_and_rejects_recomputed_steps \
+  -- --ignored --nocapture --test-threads=1
+RUSTFLAGS='-C target-cpu=native' RAYON_NUM_THREADS=4 cargo test --release \
+  --offline --manifest-path flock-stage3/Cargo.toml \
+  instruction_batch_proves_fresh_and_rejects_locally_valid_recomputed_rows \
   -- --ignored --nocapture --test-threads=1
 ```

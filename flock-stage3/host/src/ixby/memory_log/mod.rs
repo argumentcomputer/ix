@@ -11,6 +11,7 @@ mod slots;
 mod switch;
 #[cfg(test)]
 mod tests;
+mod timed;
 mod witness;
 
 pub use audit::{
@@ -19,6 +20,7 @@ pub use audit::{
 pub use permutation::{PermutationPlan, PermutationSlots};
 pub use slots::{AccessWires, BoundaryWires, MemoryLogSlots};
 pub use switch::{SwitchGate, SwitchRow};
+pub use timed::{TimedAccessWires, TimedMemoryLogSlots};
 pub use witness::{
   AccessAdvice, BoundaryAdvice, MemoryBatch, MemoryBatchAdvice,
 };

@@ -123,6 +123,20 @@ impl MemoryLogSlots {
           .map(|record| record[..RECORD_WORDS].to_vec()),
       );
     }
+    self.check_records(b, initial_root, records, cells, switches)
+  }
+  /// The records must come from the old fixed-order preparation above or the
+  /// constrained timed-access gate. Keep this entry point module-private.
+  pub(super) fn check_records(
+    &self,
+    b: &mut impl CircuitEmitter,
+    initial_root: [Wire; 2],
+    mut records: Vec<Vec<Wire>>,
+    cells: &[BoundaryWires],
+    switches: &[Wire],
+  ) -> [Wire; 2] {
+    let plan = Self::plan(records.len(), cells.len()).unwrap();
+    assert_eq!(switches.len(), plan.switches());
     let mut root = initial_root;
     for cell in cells {
       root = self.memory.replace(

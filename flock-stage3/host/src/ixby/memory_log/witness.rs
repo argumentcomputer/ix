@@ -3,7 +3,7 @@
 //! Circuit consumers must supply their own address/flag/value wires to check.
 use super::{MemoryLogSlots, PAD, READ, SEAL, SEED, WRITE};
 use crate::ixby::auth_memory::{MemoryOpening, SparseMemory};
-use anyhow::Result;
+use anyhow::{Result, ensure};
 use flock_prover::field::F128;
 use std::collections::BTreeMap;
 
@@ -26,14 +26,76 @@ pub struct MemoryBatchAdvice {
   pub switches: Vec<F128>,
 }
 impl MemoryBatchAdvice {
-  pub fn private_boundary_words(&self) -> Vec<F128> {
+  pub fn boundary_words(&self) -> Vec<F128> {
     let mut words = Vec::new();
     for boundary in &self.boundaries {
       words.extend(boundary.opening.words());
       words.extend(boundary.final_value);
     }
+    words
+  }
+  pub fn private_boundary_words(&self) -> Vec<F128> {
+    let mut words = self.boundary_words();
     words.extend(&self.switches);
     words
+  }
+  /// Arrange chronological native accesses in a fixed class's grouped row
+  /// order. `None` is an inactive request. The circuit independently derives
+  /// each timestamp from the same clock used by its state transition.
+  pub fn timed_switches(
+    &self,
+    order: &[Option<(usize, u64, u8)>],
+  ) -> Result<Vec<F128>> {
+    let mut seen = vec![false; self.accesses.len()];
+    let padding =
+      [F128::ZERO, F128::ZERO, F128::new(PAD, 0), F128::ZERO, F128::ZERO];
+    let mut records =
+      Vec::with_capacity(order.len() + self.boundaries.len() * 2);
+    for request in order {
+      if let Some((index, clock, ordinal)) = *request {
+        ensure!(index < seen.len() && !seen[index], "timed access index");
+        ensure!(clock < (1u64 << 59) - 1 && ordinal < 32, "timed access clock");
+        seen[index] = true;
+        let access = self.accesses[index];
+        records.push([
+          F128::new(access.address, 0),
+          F128::new(clock * 32 + u64::from(ordinal) + 1, 0),
+          F128::new(if access.write { WRITE } else { READ }, 0),
+          access.value[0],
+          access.value[1],
+        ]);
+      } else {
+        records.push(padding);
+      }
+    }
+    ensure!(seen.iter().all(|&v| v), "missing timed memory access");
+    for boundary in &self.boundaries {
+      records.push([
+        F128::new(boundary.opening.address, 0),
+        F128::ZERO,
+        F128::new(SEED, 0),
+        boundary.opening.value[0],
+        boundary.opening.value[1],
+      ]);
+      records.push([
+        F128::new(boundary.opening.address, 0),
+        F128::new(u64::MAX, 0),
+        F128::new(SEAL, 0),
+        boundary.final_value[0],
+        boundary.final_value[1],
+      ]);
+    }
+    let plan = MemoryLogSlots::plan(order.len(), self.boundaries.len())?;
+    records.resize(plan.lanes(), padding);
+    let mut sorted = (0..plan.lanes()).collect::<Vec<_>>();
+    sorted.sort_by_key(|&i| {
+      (records[i][2].lo == PAD, records[i][0].lo, records[i][1].lo)
+    });
+    let mut destination = vec![0; plan.lanes()];
+    for (to, from) in sorted.into_iter().enumerate() {
+      destination[from] = to;
+    }
+    plan.route(&destination)
   }
 }
 
@@ -72,6 +134,22 @@ impl<'a> MemoryBatch<'a> {
     Ok(())
   }
   pub fn finish(self) -> Result<MemoryBatchAdvice> {
+    self.finish_padded(0)
+  }
+  /// Fixed factories may authenticate additional untouched cells to fill a
+  /// public boundary quota. Their seed and seal values must still match.
+  pub fn finish_padded(
+    mut self,
+    minimum_cells: usize,
+  ) -> Result<MemoryBatchAdvice> {
+    let mut candidate = 0;
+    while self.current.len() < minimum_cells {
+      if !self.current.contains_key(&candidate) {
+        let value = self.memory.value(candidate)?;
+        self.current.insert(candidate, value);
+      }
+      candidate += 1;
+    }
     let plan = MemoryLogSlots::plan(self.accesses.len(), self.current.len())?;
     let mut records = self
       .accesses
