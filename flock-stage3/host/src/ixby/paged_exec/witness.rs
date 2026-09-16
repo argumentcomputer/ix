@@ -4,6 +4,7 @@ use super::*;
 use crate::{
   extension::goldilocks_ext2_mul,
   goldilocks::goldilocks_add,
+  hash::{Blake3Gate, IV, pack8},
   ixby::{
     auth_memory::SparseMemory,
     decode::PrimitiveSet,
@@ -118,7 +119,13 @@ impl NativeMachine {
         let instruction = (h.lo >> 8) as u8;
         let op = (h.lo >> 16) as u8;
         match (instruction, op) {
-          (0, 1) => Chip::Numeric,
+          (0, 1) => {
+            if bytes::is_byte((h.lo >> 24) as u8) {
+              Chip::ByteStart
+            } else {
+              Chip::Numeric
+            }
+          },
           (0, 0) | (1 | 6 | 7, _) => Chip::Control,
           (0, 5 | 6) | (2 | 3, _) => Chip::Call,
           (0, 2) => Chip::Construct,
@@ -139,6 +146,23 @@ impl NativeMachine {
           Chip::StoreFinish
         }
       },
+      4 => Chip::ByteFinish,
+      5 => Chip::ByteRead,
+      6 => Chip::ByteAppend,
+      7 => Chip::ByteEq,
+      8 => Chip::HashBlock,
+      9 => {
+        let control = self.state[bytes::MERGE_CONTROL];
+        ensure!(control.lo <= 26, "BLAKE3 merge level");
+        if self.state[bytes::MERGE_MASK].lo & (1 << control.lo) != 0 {
+          Chip::HashCombine
+        } else if control.hi == 1 {
+          Chip::HashSkip
+        } else {
+          Chip::HashPush
+        }
+      },
+      10 => Chip::ByteEmit,
       p => bail!("pending implementation: paged micro phase {p}"),
     }))
   }
@@ -169,6 +193,34 @@ impl NativeMachine {
     } else {
       value.try_into().unwrap()
     })
+  }
+  fn byte_window(
+    &self,
+    memory: &MemoryBatch<'_>,
+    prefix: &[F128],
+    request: &[F128],
+  ) -> Result<(Vec<F128>, Vec<F128>, Vec<AccessAdvice>)> {
+    let pointer = request[0].lo;
+    let count = request[1].lo;
+    let n = ((pointer & 31) + count).div_ceil(32);
+    ensure!(n <= 3, "byte window cell count");
+    let mut advice = Vec::new();
+    for i in 0..3 {
+      advice.extend(if i < n {
+        memory.value((pointer >> 5) + i)?
+      } else {
+        [F128::ZERO; 2]
+      });
+    }
+    let input =
+      prefix.iter().chain(request).chain(&advice).copied().collect::<Vec<_>>();
+    let out = self.micro(MicroKind::Byte(ByteKind::Window), &input)?;
+    Ok((out[..4].to_vec(), advice, records(&out[4..])))
+  }
+  fn compress(input: [F128; 7]) -> [F128; 2] {
+    let mut out = Vec::new();
+    Blake3Gate { nu: 3 }.eval(&input, &(), &mut out);
+    out[..2].try_into().unwrap()
   }
   fn complete(
     &self,
@@ -429,6 +481,121 @@ impl NativeMachine {
           self.micro(MicroKind::Object(ObjectKind::StoreFinish), &prefix)?;
         after =
           self.complete(&prefix, &action, [F128::ZERO; 2], &mut accesses)?;
+      },
+      Chip::ByteStart => {
+        let count = (before[HEADER].lo >> 32) as u8 as usize;
+        advice = (0..3)
+          .map(|i| {
+            if i < count {
+              memory.value(SCRATCH + i as u64)
+            } else {
+              Ok([F128::ZERO; 2])
+            }
+          })
+          .collect::<Result<Vec<_>>>()?
+          .into_iter()
+          .flatten()
+          .collect::<Vec<_>>();
+        let out = self.micro(MicroKind::Scratch(3), &append(&advice))?;
+        accesses.extend(records(&out));
+        let args = advice
+          .iter()
+          .copied()
+          .chain([self.parameters[2]])
+          .collect::<Vec<_>>();
+        after = self
+          .micro(MicroKind::Byte(ByteKind::Start), &append(&args))?
+          .try_into()
+          .unwrap();
+      },
+      Chip::ByteRead | Chip::HashBlock => {
+        let kind = if chip == Chip::ByteRead {
+          ByteKind::ReadRequest
+        } else {
+          ByteKind::HashRequest
+        };
+        let request = self.micro(MicroKind::Byte(kind), &prefix)?;
+        let (data, replies, reads) =
+          self.byte_window(memory, &prefix, &request[..2])?;
+        advice = replies;
+        accesses.extend(reads);
+        let (kind, value) = if chip == Chip::ByteRead {
+          (ByteKind::ReadFinish, data)
+        } else {
+          (
+            ByteKind::HashFinish,
+            Self::compress([
+              request[2], request[3], data[0], data[1], data[2], data[3],
+              request[4],
+            ])
+            .to_vec(),
+          )
+        };
+        after = self
+          .micro(MicroKind::Byte(kind), &append(&value))?
+          .try_into()
+          .unwrap();
+      },
+      Chip::ByteAppend | Chip::ByteEq => {
+        let (request, finish) = if chip == Chip::ByteAppend {
+          (ByteKind::AppendRequest, ByteKind::AppendFinish)
+        } else {
+          (ByteKind::EqRequest, ByteKind::EqFinish)
+        };
+        let request = self.micro(MicroKind::Byte(request), &prefix)?;
+        let (a, replies_a, reads_a) =
+          self.byte_window(memory, &prefix, &request[..2])?;
+        let (b, replies_b, reads_b) =
+          self.byte_window(memory, &prefix, &request[2..])?;
+        advice = replies_a.into_iter().chain(replies_b).collect();
+        accesses.extend(reads_a);
+        accesses.extend(reads_b);
+        let data = a.into_iter().chain(b).collect::<Vec<_>>();
+        let out = self.micro(MicroKind::Byte(finish), &append(&data))?;
+        after = out[..STATE_WORDS].try_into().unwrap();
+        accesses.extend(records(&out[STATE_WORDS..]));
+      },
+      Chip::ByteFinish => {
+        advice = Vec::new();
+        let action = self.micro(MicroKind::Byte(ByteKind::Finish), &prefix)?;
+        after =
+          self.complete(&prefix, &action, [F128::ZERO; 2], &mut accesses)?;
+      },
+      Chip::ByteEmit | Chip::HashPush | Chip::HashSkip => {
+        advice = Vec::new();
+        let kind = match chip {
+          Chip::ByteEmit => ByteKind::Emit,
+          Chip::HashPush => ByteKind::HashPush,
+          _ => ByteKind::HashSkip,
+        };
+        let out = self.micro(MicroKind::Byte(kind), &prefix)?;
+        after = out[..STATE_WORDS].try_into().unwrap();
+        accesses.extend(records(&out[STATE_WORDS..]));
+      },
+      Chip::HashCombine => {
+        let request =
+          self.micro(MicroKind::Byte(ByteKind::HashMergeRequest), &prefix)?;
+        let cell = memory.value(request[0].lo)?;
+        advice = cell.to_vec();
+        accesses.push(AccessAdvice {
+          address: request[0].lo,
+          write: false,
+          value: cell,
+        });
+        let iv = pack8(&IV);
+        let digest = Self::compress([
+          iv[0],
+          iv[1],
+          cell[0],
+          cell[1],
+          before[bytes::CV],
+          before[bytes::CV + 1],
+          request[1],
+        ]);
+        after = self
+          .micro(MicroKind::Byte(ByteKind::HashMergeFinish), &append(&digest))?
+          .try_into()
+          .unwrap();
       },
     }
     ensure!(accesses.len() == chip.accesses(), "native access count");

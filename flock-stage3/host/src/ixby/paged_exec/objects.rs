@@ -52,28 +52,28 @@ impl ObjectKind {
     }
   }
 }
-type Bits = Vec<usize>;
+pub(super) type Bits = Vec<usize>;
 fn word(at: usize) -> Bits {
   (128 * at..128 * (at + 1)).collect()
 }
-struct S {
-  b: BooleanR1csBuilder,
-  one: usize,
-  zero: usize,
-  bad: Bits,
+pub(super) struct S {
+  pub(super) b: BooleanR1csBuilder,
+  pub(super) one: usize,
+  pub(super) zero: usize,
+  pub(super) bad: Bits,
 }
 impl S {
-  fn c(&self, n: usize, v: u64) -> Bits {
+  pub(super) fn c(&self, n: usize, v: u64) -> Bits {
     (0..n)
       .map(|i| if i < 64 && v & (1 << i) != 0 { self.one } else { self.zero })
       .collect()
   }
-  fn wide(&self, a: &[usize], n: usize) -> Bits {
+  pub(super) fn wide(&self, a: &[usize], n: usize) -> Bits {
     let mut a = a.to_vec();
     a.resize(n, self.zero);
     a
   }
-  fn eqc(&mut self, a: &[usize], v: u64) -> usize {
+  pub(super) fn eqc(&mut self, a: &[usize], v: u64) -> usize {
     let low =
       bits::equal_constant(&mut self.b, self.one, &a[..64.min(a.len())], v);
     if a.len() <= 64 {
@@ -82,36 +82,36 @@ impl S {
     let high = bits::equal_constant(&mut self.b, self.one, &a[64..], 0);
     self.and(low, high)
   }
-  fn eq(&mut self, a: &[usize], b: &[usize]) -> usize {
+  pub(super) fn eq(&mut self, a: &[usize], b: &[usize]) -> usize {
     bits::equal(&mut self.b, self.one, a, b)
   }
-  fn and(&mut self, a: usize, b: usize) -> usize {
+  pub(super) fn and(&mut self, a: usize, b: usize) -> usize {
     self.b.and(a, b)
   }
-  fn inv(&mut self, a: usize) -> usize {
+  pub(super) fn inv(&mut self, a: usize) -> usize {
     bits::not(&mut self.b, self.one, a)
   }
-  fn any(&mut self, a: &[usize]) -> usize {
+  pub(super) fn any(&mut self, a: &[usize]) -> usize {
     bits::any(&mut self.b, self.one, a)
   }
-  fn need(&mut self, f: usize, good: usize) {
+  pub(super) fn need(&mut self, f: usize, good: usize) {
     bits::require(&mut self.b, self.one, &mut self.bad, f, good);
   }
-  fn zeros(&mut self, f: usize, a: &[usize]) {
+  pub(super) fn zeros(&mut self, f: usize, a: &[usize]) {
     bits::require_zero(&mut self.b, self.one, &mut self.bad, f, a);
   }
-  fn same(&mut self, f: usize, a: &[usize], b: &[usize]) {
+  pub(super) fn same(&mut self, f: usize, a: &[usize], b: &[usize]) {
     let good = self.eq(a, b);
     self.need(f, good);
   }
-  fn is(&mut self, f: usize, a: &[usize], v: u64) {
+  pub(super) fn is(&mut self, f: usize, a: &[usize], v: u64) {
     let good = self.eqc(a, v);
     self.need(f, good);
   }
-  fn mask(&mut self, f: usize, a: &[usize]) -> Bits {
+  pub(super) fn mask(&mut self, f: usize, a: &[usize]) -> Bits {
     a.iter().map(|&x| self.and(f, x)).collect()
   }
-  fn choose(&mut self, f: usize, a: &[usize], b: &[usize]) -> Bits {
+  pub(super) fn choose(&mut self, f: usize, a: &[usize], b: &[usize]) -> Bits {
     assert_eq!(a.len(), b.len());
     let no = self.inv(f);
     a.iter()
@@ -123,27 +123,27 @@ impl S {
       })
       .collect()
   }
-  fn add(&mut self, a: &[usize], b: &[usize]) -> Bits {
+  pub(super) fn add(&mut self, a: &[usize], b: &[usize]) -> Bits {
     bits::add(&mut self.b, self.one, self.zero, a, b).0
   }
-  fn sub(&mut self, a: &[usize], b: &[usize]) -> Bits {
+  pub(super) fn sub(&mut self, a: &[usize], b: &[usize]) -> Bits {
     bits::subtract(&mut self.b, self.one, self.zero, a, b).0
   }
-  fn lt(&mut self, a: &[usize], b: &[usize]) -> usize {
+  pub(super) fn lt(&mut self, a: &[usize], b: &[usize]) -> usize {
     bits::subtract(&mut self.b, self.one, self.zero, a, b).1
   }
-  fn le(&mut self, f: usize, a: &[usize], b: &[usize]) {
+  pub(super) fn le(&mut self, f: usize, a: &[usize], b: &[usize]) {
     let over = self.lt(b, a);
     let good = self.inv(over);
     self.need(f, good);
   }
-  fn bound(&mut self, f: usize, a: &[usize], max: u64) {
+  pub(super) fn bound(&mut self, f: usize, a: &[usize], max: u64) {
     self.le(f, a, &self.c(a.len(), max));
   }
-  fn value(&mut self, f: usize, a: &[usize]) -> [usize; 10] {
+  pub(super) fn value(&mut self, f: usize, a: &[usize]) -> [usize; 10] {
     paged_value::cell(&mut self.b, self.one, &mut self.bad, f, a, false)
   }
-  fn vector(&mut self, pointer: &[usize], count: &[usize]) -> Bits {
+  pub(super) fn vector(&mut self, pointer: &[usize], count: &[usize]) -> Bits {
     let empty = self.eqc(count, 0);
     let live = self.inv(empty);
     let mut out = self.c(128, 0);
@@ -153,7 +153,7 @@ impl S {
   }
   /// Check a complete vector against the previously allocated heap prefix.
   /// Scratch is only allowed as a source of a heap allocation.
-  fn span(
+  pub(super) fn span(
     &mut self,
     f: usize,
     vector: &[usize],
@@ -180,17 +180,23 @@ impl S {
     let scratch_live = self.and(live, is_scratch);
     self.bound(scratch_live, &end, 65);
   }
-  fn action(&self, kind: ActionKind, target: &[usize]) -> Vec<Bits> {
+  pub(super) fn action(&self, kind: ActionKind, target: &[usize]) -> Vec<Bits> {
     let mut out = vec![self.c(128, 0); 5];
     out[0] = self.c(128, kind as u64);
     out[0][8..16].copy_from_slice(target);
     out
   }
-  fn phase(&mut self, e: usize, state: &[Bits], micro: u64, frame: Phase) {
+  pub(super) fn phase(
+    &mut self,
+    e: usize,
+    state: &[Bits],
+    micro: u64,
+    frame: Phase,
+  ) {
     self.is(e, &state[CONTROL], micro);
     self.is(e, &state[0][..8], frame as u64);
   }
-  fn instruction(
+  pub(super) fn instruction(
     &mut self,
     e: usize,
     state: &[Bits],
@@ -201,7 +207,7 @@ impl S {
     self.is(e, &state[HEADER][8..16], instruction);
     self.is(e, &state[HEADER][16..24], operation);
   }
-  fn start_store(
+  pub(super) fn start_store(
     &mut self,
     e: usize,
     state: &[Bits],
@@ -234,7 +240,12 @@ impl S {
     after[OLD_HEAP] = self.mask(heap, &state[HEAP_COUNT]);
     after
   }
-  fn store(&mut self, e: usize, state: &[Bits], finish: bool) -> Bits {
+  pub(super) fn store(
+    &mut self,
+    e: usize,
+    state: &[Bits],
+    finish: bool,
+  ) -> Bits {
     self.is(e, &state[CONTROL][..8], STORE);
     self.zeros(e, &state[CONTROL][25..]);
     self.zeros(e, &state[19..].concat());

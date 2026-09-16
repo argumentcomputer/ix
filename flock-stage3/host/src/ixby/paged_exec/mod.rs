@@ -2,6 +2,10 @@
 //! continuity and memory time all use the same actual circuit wires.
 //! The initial code/input memory root still requires source admission.
 mod batch;
+mod byte_slots;
+#[cfg(test)]
+mod byte_tests;
+mod bytes;
 mod gate;
 mod object_slots;
 #[cfg(test)]
@@ -16,6 +20,7 @@ mod tests;
 mod witness;
 
 pub use batch::{BatchAdvice, BatchClass, BatchEmission, emit_batch};
+pub use bytes::ByteKind;
 use flock_prover::field::F128;
 pub use gate::{MicroGate, MicroKind, MicroRow};
 pub use objects::ObjectKind;
@@ -32,6 +37,13 @@ pub const READY: u64 = 0;
 pub const RESOLVE: u64 = 1;
 pub const EXECUTE: u64 = 2;
 pub const STORE: u64 = 3;
+pub const BYTE_FINISH: u64 = 4;
+pub const BYTE_READ: u64 = 5;
+pub const BYTE_APPEND: u64 = 6;
+pub const BYTE_EQ: u64 = 7;
+pub const HASH_BLOCK: u64 = 8;
+pub const HASH_MERGE: u64 = 9;
+pub const BYTE_EMIT: u64 = 10;
 pub const PENDING: usize = 10;
 pub const SOURCE_A: usize = 15;
 pub const SOURCE_B: usize = 16;
@@ -55,9 +67,19 @@ pub enum Chip {
   Apply = 11,
   StoreCopy = 12,
   StoreFinish = 13,
+  ByteStart = 14,
+  ByteRead = 15,
+  ByteAppend = 16,
+  ByteEq = 17,
+  ByteFinish = 18,
+  ByteEmit = 19,
+  HashBlock = 20,
+  HashCombine = 21,
+  HashPush = 22,
+  HashSkip = 23,
 }
 impl Chip {
-  pub const ALL: [Self; 14] = [
+  pub const ALL: [Self; 24] = [
     Self::Fetch,
     Self::Resolve,
     Self::Numeric,
@@ -72,13 +94,28 @@ impl Chip {
     Self::Apply,
     Self::StoreCopy,
     Self::StoreFinish,
+    Self::ByteStart,
+    Self::ByteRead,
+    Self::ByteAppend,
+    Self::ByteEq,
+    Self::ByteFinish,
+    Self::ByteEmit,
+    Self::HashBlock,
+    Self::HashCombine,
+    Self::HashPush,
+    Self::HashSkip,
   ];
   pub fn advice_words(self) -> usize {
     match self {
       Self::Resolve | Self::Project => 4,
-      Self::Numeric => 6,
+      Self::Numeric | Self::ByteStart | Self::ByteRead | Self::HashBlock => 6,
+      Self::ByteAppend | Self::ByteEq => 12,
       Self::Case => 5,
-      Self::StoreFinish => 0,
+      Self::StoreFinish
+      | Self::ByteFinish
+      | Self::ByteEmit
+      | Self::HashPush
+      | Self::HashSkip => 0,
       _ => 2,
     }
   }
@@ -96,6 +133,13 @@ impl Chip {
       Self::Project | Self::Case => 5,
       Self::StoreCopy => 2,
       Self::StoreFinish => 3,
+      Self::ByteStart | Self::ByteRead | Self::ByteFinish | Self::HashBlock => {
+        3
+      },
+      Self::ByteAppend => 7,
+      Self::ByteEq => 6,
+      Self::ByteEmit | Self::HashCombine | Self::HashPush => 1,
+      Self::HashSkip => 0,
     }
   }
 }

@@ -155,18 +155,25 @@ for execution-class design, not constrained execution or proving estimates.
 19. [Ordered instruction batches](IxbyFlockPagedExecution.md): actual code and
     operand reads produce numeric, control, call and return actions; complete
     state records form one exact execution chain, sharing their clocks with
-    authenticated memory. A fresh 387,395-byte proof covers 20 physical steps,
+    authenticated memory. A fresh 399,571-byte proof covers 20 physical steps,
     seven logical transitions and final halt. All 57 changed expected words
     and eight locally valid recomputed instruction/clock attacks reject.
-    Full original source/input admission and byte consumers,
+    Full original source/input admission,
     output serialization and execution aggregation remain.
 20. [Immutable object execution](IxbyFlockPagedExecution.md#immutable-objects-and-application):
     constructor fields, projection, cases, closures and partial/exact/excess/tail
     application now use actual code, immutable allocations and authenticated
-    argument copies. A fresh 366,579-byte proof covers 144 microsteps and 37
+    argument copies. A fresh 378,755-byte proof covers 144 microsteps and 37
     logical transitions and rejects nine recomputed object/clock substitutions.
     The native batch runner checks fixed operation/cell quotas before each step;
     15-batch tests preserve pending copies, fuel, the final state and memory root.
+21. [Byte instructions and BLAKE3](IxbyFlockPagedExecution.md#byte-instructions-and-streaming-blake3):
+    all ten byte-related primitives use authenticated, arbitrarily aligned
+    memory ranges, immutable outputs and the original byte limit. Two fresh
+    378,755-byte proofs cover conversion/copy/equality and an unaligned
+    multi-chunk hash, rejecting 11 recomputed byte/hash substitutions. A
+    25-batch hash resumes pending chunk/tree operations with the same digest.
+    Full source/input admission, output binding and execution aggregation remain.
 
 ## Next implementation gates
 

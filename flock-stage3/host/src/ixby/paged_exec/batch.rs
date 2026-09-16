@@ -20,13 +20,25 @@ pub enum BatchClass {
   Small,
   Objects,
   Compact,
+  Bytes,
 }
 impl BatchClass {
-  pub fn quotas(self) -> [usize; 14] {
+  pub fn quotas(self) -> [usize; 24] {
     match self {
-      Self::Small => [6, 8, 2, 3, 2, 4, 0, 0, 0, 0, 0, 0, 0, 0],
-      Self::Objects => [24, 40, 8, 16, 2, 32, 4, 8, 8, 4, 4, 12, 48, 32],
-      Self::Compact => [2, 4, 1, 2, 1, 3, 1, 1, 1, 1, 1, 1, 2, 2],
+      Self::Small => {
+        [6, 8, 2, 3, 2, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+      },
+      Self::Objects => [
+        24, 40, 8, 16, 2, 32, 4, 8, 8, 4, 4, 12, 48, 32, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0,
+      ],
+      Self::Compact => {
+        [2, 4, 1, 2, 1, 3, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]
+      },
+      Self::Bytes => [
+        20, 36, 4, 4, 2, 8, 0, 0, 0, 0, 0, 0, 0, 0, 16, 8, 8, 4, 16, 8, 20, 8,
+        8, 8,
+      ],
     }
   }
   pub fn cells(self) -> usize {
@@ -34,6 +46,7 @@ impl BatchClass {
       Self::Small => 24,
       Self::Objects => 96,
       Self::Compact => 16,
+      Self::Bytes => 96,
     }
   }
   pub fn nu(self) -> usize {
@@ -41,6 +54,7 @@ impl BatchClass {
       Self::Small => 11,
       Self::Objects => 13,
       Self::Compact => 11,
+      Self::Bytes => 13,
     }
   }
   pub fn transitions(self) -> usize {
@@ -69,9 +83,10 @@ pub fn emit_batch(
 ) -> Result<BatchEmission> {
   let mut b = LayoutEmitter::new(b);
   let nu = class.nu();
-  let execution = ExecutionSlots::declare(&mut b, nu)?;
-  let order = StateChainSlots::declare(&mut b, nu, STATE_WORDS)?;
   let memory = TimedMemoryLogSlots::declare(&mut b, nu, MemoryDepth::new(40)?)?;
+  let execution =
+    ExecutionSlots::declare(&mut b, nu, memory.log().memory().compression())?;
+  let order = StateChainSlots::declare(&mut b, nu, STATE_WORDS)?;
   let parameters = std::array::from_fn(|_| {
     let w = b.input();
     b.publish(w);

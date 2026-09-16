@@ -78,29 +78,31 @@ still needs to constrain the writes and complete semantic reference checks.
 [`paged_exec`](../flock-stage3/host/src/ixby/paged_exec/mod.rs) now combines
 authenticated code fetch, operand resolution into scratch memory, numeric
 primitives, copy/return/Bool/Nat control, direct/self/tail calls, constructor
-creation/projection/cases, closures, application, frame copies, continuation
-return, and terminal halt. Instruction actions come from the
+creation/projection/cases, closures, application, byte primitives and BLAKE3,
+frame copies, continuation return, and terminal halt. Instruction actions come from the
 fetched code and resolved values. The proof does not publish a host-selected
 action sequence.
 
 The batch carries 24 state words, including all frame/fuel fields, allocation
 counters, instruction header, resolution cursor, and pending immutable copy.
-The finite Small, Compact and Objects factories reserve fixed quotas for each
+The finite Small, Compact, Objects and Bytes factories reserve fixed quotas for each
 operation. Their rows may be grouped by
 operation: an exact permutation of complete state records proves one positive,
 unbroken execution chain. Each memory timestamp is derived from that same
 row's constrained clock and a fixed ordinal. Inactive rows are canonical zero;
 integer clocks cannot wrap. Both memory roots, both full states/clocks and all
-three static parameter words are verifier-bound.
+three static parameter words are verifier-bound. Those words pack the locals
+and continuation limits; the fuel budget; and the Nat-bit and byte-array-byte
+limits. Original source admission must derive these exact limits.
 
-A genuine **387,395-byte instruction proof** verifies in a fresh process.
+A genuine **399,571-byte instruction proof** verifies in a fresh process.
 The fixture performs 20 physical transitions and seven logical steps, using
 functions 680/671, Nat values above 64 bits, a call, argument copy, return to
 the caller and final halt. The class has 74 memory request slots, 24 boundary
-cells and 57 expected public words. Its dense witness is 313,834 field words
-(`M=26`). Setup took 3.042 seconds and proving 1.070 seconds with four Rayon
-threads. This is the updated Small v1 setup containing the object tables;
-the preceding numeric/call-only v0 snapshot produced 378,667 bytes.
+cells and 57 expected public words. Its dense witness is 313,833 field words
+(`M=26`). Setup took 2.283 seconds and proving 1.343 seconds with four Rayon
+threads. This is the Small v2 setup containing the byte tables and limit;
+the earlier numeric/call-only v0 snapshot produced 378,667 bytes.
 
 All 57 changed expected words reject. Eight locally valid recomputed attacks
 against fetched headers, resolved operands, numeric results, call entries,
@@ -141,13 +143,13 @@ the individual copies preserve fuel.
 stops before any operation or distinct-cell quota is exceeded. Suspended
 copies resume from the next batch's fully bound boundary state.
 
-The **366,579-byte object instruction proof** covers 144 microsteps and 37
+The **378,755-byte object instruction proof** covers 144 microsteps and 37
 logical steps. Its program constructs and projects fields, selects a case,
 creates closures, performs partial/exact/excess/tail application, uses Erased
 and empty arguments, and halts with Nat 82. It touches 93 cells and allocates
 12 immutable fields. The fixed Objects class provides 242 operation slots,
-624 memory request slots and 96 boundary cells (`nu=13`, `M=28`, 1,922,206
-dense field words). Setup took 3.571 seconds and proving 2.671 seconds with
+624 memory request slots and 96 boundary cells (`nu=13`, `M=28`, 1,922,205
+dense field words). Setup took 2.561 seconds and proving 2.453 seconds with
 four Rayon threads.
 
 The proof verifies in a fresh process receiving only its 57 expected public
@@ -155,10 +157,10 @@ words and proof bytes. Every changed public word and malformed envelope
 rejects. Nine independently recomputed, locally valid malicious rows changing
 a copied field, heap counter, closure reference, argument splice, alternative
 target, copy index, function arity, state clock or memory clock reject at
-Flock's wiring check. The full test took 29.16 seconds and 15,613,620 KiB peak
-process RSS, measured by GNU time. This is a per-process maximum, not the sum
-of simultaneous parent and child memory. The run used a 64 GiB virtual-memory
-cap; a 32 GiB cap was insufficient.
+Flock's wiring check. The current Objects v1 setup includes the byte tables.
+The preceding object-only v0 proof was 366,579 bytes. It required a 64 GiB
+virtual-memory cap; a 32 GiB cap was insufficient. Current combined proof
+suite measurements appear below.
 
 Ordinary circuit tests also split the same computation across 15 Compact
 batches, including six boundaries inside pending copy operations. They reach
@@ -166,6 +168,63 @@ the identical final state and memory root, and reject premature completion,
 unallocated source spans, changed destinations, field bounds and invalid
 application arities. Boundary tests cover zero and 64 fields, the final heap
 cell, allocation overflow, empty application and recycled witness padding.
+
+## Byte instructions and streaming BLAKE3
+
+The execution circuit now supports all ten byte-related functional primitives:
+Word32/field conversion in both directions, length, get, append, slice,
+equality and BLAKE3. Scalar input types, exact arities, byte-array limits and
+operation bounds are checked before results are produced. Field decoding
+rejects a noncanonical Goldilocks value. Byte length rejects lengths that do
+not fit Word32.
+
+A constrained window reads up to 64 bytes from up to three authenticated
+32-byte cells, at any byte alignment. Every unused output byte is zero. Slice
+returns an exact subrange. Append reserves immutable dynamic-byte cells and
+copies each output cell from its checked source ranges; the final cell has
+zero padding. Equality can return false after an actual mismatching window;
+true requires the entire equal-length range. Pending operations carry their
+cursor, result range and old allocation counter across batch boundaries.
+
+BLAKE3 uses the standard compression relation, sharing its table with memory
+authentication. The circuit derives the chunk counter, block length,
+ChunkStart/ChunkEnd/Parent/Root flags, chaining value and final output. A
+separate scratch region stores intermediate tree digests. The carried merge
+mask and level determine every stack read, combination and push. Each stack
+read is preceded by this hash operation's corresponding write. Empty input,
+exact block/chunk boundaries and incomplete final chunks use the same rules.
+
+Two **378,755-byte proofs** verify independently in fresh processes:
+
+- A byte program performs 87 microsteps and 17 logical steps, exercises every
+  byte primitive, touches 68 cells and allocates five dynamic-byte cells.
+- A BLAKE3 program hashes 1,025 bytes starting at byte offset 31, proving the
+  second chunk and final tree merge against the authenticated source data.
+
+The fixed Bytes class has 96 boundary cells, `nu=13`, `M=28` and 1,896,013
+dense field words. The byte program's setup/prove times were 3.873/3.359
+seconds; the chunk-tree program's were 2.798/2.496 seconds, with four Rayon
+threads. All 57 expected-word mutations, a change to the byte-limit lane, and
+truncated/extended envelopes reject. Eleven independently recomputed attacks
+against byte pointers, allocations, conversions, copies, equality, limits,
+chunk counters, root flags, merge masks and chaining values reject at Flock's
+wiring check.
+
+The combined four-proof suite, including numeric/call and object regressions,
+all fresh receivers and 28 recomputed attacks, completed in 96.93 seconds.
+GNU time reported 23,523,312 KiB peak process RSS with a 64 GiB virtual-memory
+cap. This is a per-process maximum, not a simultaneous parent/child sum.
+
+Ordinary tests exhaust all 32 alignments and lengths 0 through 64, check
+semantic limits and canonical field decoding, and compare BLAKE3 with the
+independent library for 17 lengths from 0 through 8,193 at two alignments.
+A 3,073-byte hash also matches after 25 fixed batches, including 24 boundaries
+inside unfinished hashing. Append tests cover full-cell joins and allocations
+that resume in another batch. All inactive byte tables and recycled padding
+are checked against their complete matrices.
+
+These statements still start from independently expected code/input memory
+roots. They do not establish original-source admission or the full CSLib run.
 
 ## Numeric and component evidence
 
@@ -175,7 +234,7 @@ consumer. Nat128 addition and multiplication reject physical overflow;
 subtraction saturates at zero. Division and remainder constrain the full
 256-bit quotient/product identity and a remainder below the divisor, with
 explicit zero-divisor semantics. Equality and ordering produce canonical Bool
-values. Byte primitives produce requests for the separate byte consumer;
+values. Byte primitives use the separate instruction consumers above;
 they cannot be accepted as completed numeric operations. String operations
 remain outside this execution profile.
 
@@ -211,7 +270,7 @@ ordered access through the exact permutation and authenticated boundaries.
 
 ## Remaining integration
 
-Connect original source admission and input initialization; byte primitives; complete
+Connect original source admission and input initialization; complete
 execution boundaries and output serialization; and execution-proof aggregation.
 Then prove representative original-CSLib segments and measure
 the full run. None of the component results above substitutes for that run.
@@ -234,5 +293,8 @@ RUSTFLAGS='-C target-cpu=native' RAYON_NUM_THREADS=4 cargo test --release \
 RUSTFLAGS='-C target-cpu=native' RAYON_NUM_THREADS=4 cargo test --release \
   --offline --manifest-path flock-stage3/Cargo.toml \
   object_batch_proves_fresh_and_rejects_locally_valid_recomputed_rows \
+  -- --ignored --nocapture --test-threads=1
+RUSTFLAGS='-C target-cpu=native' RAYON_NUM_THREADS=4 cargo test --release \
+  --offline --manifest-path flock-stage3/Cargo.toml paged_exec::proof_tests \
   -- --ignored --nocapture --test-threads=1
 ```

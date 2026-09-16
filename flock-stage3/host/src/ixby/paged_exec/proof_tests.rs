@@ -48,9 +48,10 @@ use std::{
 
 fn domain(class: BatchClass) -> &'static [u8] {
   match class {
-    BatchClass::Small => b"IxBy/Flock/paged-execution:small:v1",
-    BatchClass::Objects => b"IxBy/Flock/paged-execution:objects:v0",
-    BatchClass::Compact => b"IxBy/Flock/paged-execution:compact:v0",
+    BatchClass::Small => b"IxBy/Flock/paged-execution:small:v2",
+    BatchClass::Objects => b"IxBy/Flock/paged-execution:objects:v1",
+    BatchClass::Compact => b"IxBy/Flock/paged-execution:compact:v1",
+    BatchClass::Bytes => b"IxBy/Flock/paged-execution:bytes:v0",
   }
 }
 const MAGIC: [u8; 8] = *b"IXFPGX00";
@@ -58,6 +59,8 @@ const MAX_BYTES: u64 = 16 * 1024 * 1024;
 const OUTPUTS: usize = 57;
 const TEST: &str = "ixby::paged_exec::proof_tests::instruction_batch_proves_fresh_and_rejects_locally_valid_recomputed_rows";
 const OBJECT_TEST: &str = "ixby::paged_exec::proof_tests::object_batch_proves_fresh_and_rejects_locally_valid_recomputed_rows";
+const BYTE_TEST: &str = "ixby::paged_exec::proof_tests::byte_batch_proves_fresh_and_rejects_locally_valid_recomputed_rows";
+const HASH_TEST: &str = "ixby::paged_exec::proof_tests::chunk_tree_hash_proves_fresh_and_rejects_recomputed_hash_rows";
 const CHILD: &str = "IXBY_PAGED_EXEC_VERIFY_CHILD";
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Attack {
@@ -77,6 +80,16 @@ enum Attack {
   Alternative,
   StoreIndex,
   ApplyDeclaration,
+  BytePointer,
+  ByteAllocation,
+  ByteConversion,
+  ByteCopy,
+  ByteEquality,
+  ByteLimit,
+  HashCounter,
+  HashRoot,
+  HashMask,
+  HashCv,
 }
 #[derive(Serialize, Deserialize)]
 struct Bundle {
@@ -177,10 +190,37 @@ fn micro_fill(
     (Attack::ApplyDeclaration, MicroKind::Object(ObjectKind::ApplyStart)) => {
       Some((1 + STATE_WORDS, F128::ONE))
     },
+    (Attack::BytePointer, MicroKind::Byte(ByteKind::Window)) => {
+      Some((1 + STATE_WORDS, F128::ONE))
+    },
+    (Attack::ByteAllocation, MicroKind::Byte(ByteKind::Start)) => {
+      Some((1 + BYTE_COUNT, F128::ONE))
+    },
+    (Attack::ByteConversion, MicroKind::Byte(ByteKind::ReadFinish))
+    | (Attack::ByteCopy, MicroKind::Byte(ByteKind::AppendFinish))
+    | (Attack::ByteEquality, MicroKind::Byte(ByteKind::EqFinish)) => {
+      Some((1 + STATE_WORDS, F128::ONE))
+    },
+    (Attack::ByteLimit, MicroKind::Byte(ByteKind::Start)) => {
+      Some((1 + STATE_WORDS + 6, F128::new(0, 1)))
+    },
+    (Attack::HashMask, MicroKind::Byte(ByteKind::HashMergeRequest)) => {
+      Some((1 + bytes::MERGE_MASK, F128::new(2, 0)))
+    },
+    (Attack::HashCv, MicroKind::Byte(ByteKind::HashFinish)) => {
+      Some((1 + bytes::CV, F128::ONE))
+    },
     _ => None,
   };
   if let Some((at, delta)) = target {
-    let row = rows.iter_mut().find(|r| r.0[0] == F128::ONE).unwrap();
+    let row = rows
+      .iter_mut()
+      .find(|r| {
+        r.0[0] == F128::ONE
+          && (attack != Attack::HashCv
+            || r.0[1 + bytes::POSITION].lo % 1024 != 0)
+      })
+      .unwrap();
     row.0[at] += delta;
     let local = MicroGate::new(3, gate.kind()).unwrap();
     let mut bits = vec![false; local.plan().k()];
@@ -367,8 +407,28 @@ fn drivers(emission: &BatchEmission, shape: &CircuitShape) -> Vec<Driver> {
       slot,
       Blake3Gate { nu },
       table,
-      move |_: &Blake3Gate, r, _, d| {
-        flock_blake3::generate_witness_batch_major_partial_into(r, nu, d)
+      move |_: &Blake3Gate, r, attack, d| {
+        let mut rows = r.to_vec();
+        if attack == Attack::HashCounter {
+          let row = rows
+            .iter_mut()
+            .find(|r| {
+              r.2 == 1
+                && r.3 == 1
+                && r.4 == crate::hash::CHUNK_START | crate::hash::CHUNK_END
+            })
+            .unwrap();
+          row.2 ^= 1;
+        } else if attack == Attack::HashRoot {
+          let row = rows
+            .iter_mut()
+            .find(|r| {
+              r.3 == 64 && r.4 == crate::hash::PARENT | crate::hash::ROOT
+            })
+            .unwrap();
+          row.4 ^= crate::hash::ROOT;
+        }
+        flock_blake3::generate_witness_batch_major_partial_into(&rows, nu, d)
       },
     ));
   }
@@ -533,6 +593,39 @@ fn object_batch_proves_fresh_and_rejects_locally_valid_recomputed_rows() {
     ],
   );
 }
+#[test]
+#[ignore = "real byte instruction proof, isolated verification and recomputed range/limit/value substitutions"]
+fn byte_batch_proves_fresh_and_rejects_locally_valid_recomputed_rows() {
+  proof_test(
+    BatchClass::Bytes,
+    BYTE_TEST,
+    byte_tests::fixture,
+    &[
+      Attack::BytePointer,
+      Attack::ByteAllocation,
+      Attack::ByteConversion,
+      Attack::ByteCopy,
+      Attack::ByteEquality,
+      Attack::ByteLimit,
+    ],
+  );
+}
+#[test]
+#[ignore = "real unaligned multi-chunk BLAKE3 execution proof, isolated verification and recomputed compression/merge substitutions"]
+fn chunk_tree_hash_proves_fresh_and_rejects_recomputed_hash_rows() {
+  proof_test(
+    BatchClass::Bytes,
+    HASH_TEST,
+    byte_tests::hash_fixture,
+    &[
+      Attack::BytePointer,
+      Attack::HashCounter,
+      Attack::HashRoot,
+      Attack::HashMask,
+      Attack::HashCv,
+    ],
+  );
+}
 fn proof_test(
   class: BatchClass,
   test: &str,
@@ -595,6 +688,9 @@ fn proof_test(
       "accepted public word {at}"
     );
   }
+  let mut bad_limit = advice.expected.clone();
+  bad_limit[2].hi ^= 1;
+  assert!(verify(&emission, &shape, &drivers, &bad_limit, &proof).is_err());
   assert!(
     verify(
       &emission,

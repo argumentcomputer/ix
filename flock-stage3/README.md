@@ -107,14 +107,15 @@ and full-width addresses constrained. A 512-access depth-40 batch proved in
 417 ms after setup and verified in a fresh process. [Paged execution consumers](../docs/IxbyFlockPagedExecution.md)
 now connect authenticated code fetch, operand gathering, numeric primitives,
 calls, frame copies, returns and fuel in one ordered instruction batch. A
-387,395-byte proof verifies in a fresh process and rejects eight recomputed
+399,571-byte proof verifies in a fresh process and rejects eight recomputed
 instruction/clock substitutions. The full-program packed-code census also
-passes locally. A separate 366,579-byte proof covers constructors, projection,
+passes locally. A separate 378,755-byte proof covers constructors, projection,
 cases, closures and partial/exact/excess/tail application across 144 microsteps;
 its fresh receiver rejects nine recomputed object/clock substitutions. The
-same computation resumes correctly across 15 fixed batches. Original code/input
-admission, byte consumers, output serialization and full execution aggregation
-remain.
+same computation resumes correctly across 15 fixed batches. Two further
+378,755-byte proofs cover all byte primitives and unaligned multi-chunk BLAKE3,
+with 11 recomputed byte/hash substitutions rejected. Original code/input
+admission, output serialization and full execution aggregation remain.
 
 ```sh
 RAYON_NUM_THREADS=8 cargo test --release --locked --manifest-path flock-stage3/Cargo.toml --workspace conformance:: -- --ignored --test-threads=1

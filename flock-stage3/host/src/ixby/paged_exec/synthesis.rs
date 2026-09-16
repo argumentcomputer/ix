@@ -44,6 +44,9 @@ pub(super) fn build(kind: MicroKind) -> BooleanR1csPlan {
   if let MicroKind::Object(kind) = kind {
     return objects::build(kind);
   }
+  if let MicroKind::Byte(kind) = kind {
+    return bytes::build(kind);
+  }
   let ni = kind.inputs();
   let no = kind.outputs();
   let mut b = Builder::new(16, (ni + no) * 128);
@@ -56,7 +59,6 @@ pub(super) fn build(kind: MicroKind) -> BooleanR1csPlan {
   let mut out = vec![vec![zero; 128]; no - 1];
   if kind == MicroKind::Parameters {
     bad.extend(128 + 64..256);
-    bad.extend(256 + 64..384);
     let bound = constant(one, zero, 64, 128);
     let below = subtract(&mut b, one, zero, &word(2)[..64], &bound).1;
     bad.push(below);
@@ -338,7 +340,9 @@ pub(super) fn build(kind: MicroKind) -> BooleanR1csPlan {
           *value = vec![zero; 128];
         }
       },
-      MicroKind::Parameters | MicroKind::Object(_) => unreachable!(),
+      MicroKind::Parameters | MicroKind::Object(_) | MicroKind::Byte(_) => {
+        unreachable!()
+      },
     }
     // A frame request intentionally supplies a halted frame and initial fuel
     // for inactive rows. Every other output is canonical zero when disabled.

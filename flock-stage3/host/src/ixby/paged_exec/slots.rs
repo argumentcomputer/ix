@@ -1,5 +1,6 @@
 use super::*;
 use crate::{
+  blake3_backend::Blake3CompressionSlots,
   ixby::{
     memory_log::AccessWires, paged_code::CodeSlots, paged_frame::FrameSlots,
     paged_primitive::NumericSlots,
@@ -18,13 +19,19 @@ pub struct ExecutionSlots {
   pub frame: FrameSlots,
   pub numeric: NumericSlots,
   pub(super) zero: Wire,
+  pub(super) compression: Blake3CompressionSlots,
+  pub(super) hash_iv: [Wire; 2],
 }
 pub struct StepWires {
   pub state: [Wire; STATE_WORDS],
   pub accesses: Vec<AccessWires>,
 }
 impl ExecutionSlots {
-  pub fn declare(b: &mut impl CircuitEmitter, nu: usize) -> Result<Self> {
+  pub fn declare(
+    b: &mut impl CircuitEmitter,
+    nu: usize,
+    compression: &Blake3CompressionSlots,
+  ) -> Result<Self> {
     let mut micro = Vec::new();
     for kind in MicroKind::ALL {
       let gate = MicroGate::new(nu, kind)?;
@@ -36,6 +43,9 @@ impl ExecutionSlots {
       frame: FrameSlots::declare(b, nu)?,
       numeric: NumericSlots::declare(b, nu)?,
       zero: b.fixed_public_input(F128::ZERO),
+      compression: compression.clone(),
+      hash_iv: crate::hash::pack8(&crate::hash::IV)
+        .map(|w| b.fixed_public_input(w)),
     })
   }
   pub fn gates(&self) -> impl Iterator<Item = (SlotId, &MicroGate)> {
@@ -52,6 +62,9 @@ impl ExecutionSlots {
     b.connect(*out.last().unwrap(), self.zero);
     out[..out.len() - 1].to_vec()
   }
+  /// Packed static words: (locals, continuations), (fuel budget, zero),
+  /// (Nat bits, byte-array byte limit). Source admission must derive these
+  /// exact values from the original program's semantic limits.
   pub fn parameters(&self, b: &mut impl CircuitEmitter, parameters: [Wire; 3]) {
     self.gate(b, MicroKind::Parameters, &parameters);
   }
@@ -207,6 +220,18 @@ impl ExecutionSlots {
           parameters,
           Vec::new(),
         )
+      },
+      Chip::ByteStart
+      | Chip::ByteRead
+      | Chip::ByteAppend
+      | Chip::ByteEq
+      | Chip::ByteFinish
+      | Chip::ByteEmit
+      | Chip::HashBlock
+      | Chip::HashCombine
+      | Chip::HashPush
+      | Chip::HashSkip => {
+        self.byte_step(b, chip, enabled, state, advice, parameters)
       },
       _ => self.object_step(b, chip, enabled, state, advice, parameters),
     }
