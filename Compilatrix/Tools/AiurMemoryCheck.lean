@@ -16,6 +16,7 @@ def expression : Compilatrix.Aiur.AIR.Expr → Json
   | .constant value => tuple [toJson "constant", toJson (toString value.n)]
   | .main column => tuple [toJson "main", toJson column]
   | .next column => tuple [toJson "next", toJson column]
+  | .preprocessed column => tuple [toJson "preprocessed", toJson column]
   | .transition => tuple [toJson "transition"]
   | .add left right => tuple [toJson "add", expression left, expression right]
   | .sub left right => tuple [toJson "sub", expression left, expression right]

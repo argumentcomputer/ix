@@ -5,6 +5,7 @@ import Compilatrix.Aiur.OracleEval
 import Compilatrix.Aiur.BytecodeSound
 import Compilatrix.Aiur.Static
 import Compilatrix.Aiur.AIR.Memory
+import Compilatrix.Aiur.AIR.Rank
 
 /-! Pinned Aiur definitions, addressed bytecode ingress, and checked local
 rows and static assignments yielding witness-heap executions.

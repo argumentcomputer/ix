@@ -14,8 +14,10 @@ The [counter-analyzer proof](aiur-counter-analysis.md) establishes the
 inferred self-call relation for every successful local body. The
 [memory AIR extraction](aiur-memory-air.md) now derives pointer uniqueness
 and one coherent heap from the modeled memory polynomials, with checked
-activity and exact lookup payloads. Source lowering and full extraction from
-the keyed AIR remain subsequent work.
+activity and exact lookup payloads. The [rank AIR extraction](aiur-rank-air.md)
+derives bounded limbs and natural rank increase from scalar-range balance
+and complete physical function-message binding. Source lowering and full
+extraction from the keyed AIR remain subsequent work.
 
 ## Reference and module boundaries
 
@@ -124,9 +126,13 @@ fallback, and natural rank witnesses are covered by the
 [assignment contract](aiur-static.md).
 
 The universal analyzer/body theorem now proves the inferred counter relation
-and its four normalized unit directions. Deriving local bodies, counter
-observations, rank limbs, component facts, and lookup bounds from the keyed
-AIR remains work. General nonzero
+and its four normalized unit directions. Rank extraction now derives each
+u16 limb from normalized range lookup balance and the fixed table, then
+proves that an ordered call's natural rank increases without field wrap.
+The trailing physical rank must remain in provider matching; equality of
+logical messages with that field erased is insufficient. Deriving local
+bodies, counter observations, component facts, lookup bounds, and the full
+rank-preserving projection from the keyed AIR remains work. General nonzero
 steps, zero-step sub-orders, and broader output-counter recognition remain
 extensions.
 
@@ -166,7 +172,11 @@ lake build AiurReference Compilatrix.Aiur CompilatrixTests.Aiur.Proofs \
   CompilatrixTests.Aiur.Static.Proofs CompilatrixTests.Fences.AiurWire \
   CompilatrixTests.Fences.AiurExecution CompilatrixTests.Fences.AiurStatic \
   Compilatrix.Aiur.CounterAnalysis CompilatrixTests.Aiur.CounterAnalysis.Proofs \
-  CompilatrixTests.Fences.AiurCounterAnalysis tests-aiur check-aiur
+  CompilatrixTests.Fences.AiurCounterAnalysis \
+  Compilatrix.Aiur.AIR.Memory.Sound Compilatrix.Aiur.AIR.Memory.Lookup \
+  CompilatrixTests.Fences.AiurMemoryAIR Compilatrix.Aiur.AIR.Rank.Sound \
+  Compilatrix.Aiur.AIR.Rank.GraphProofs CompilatrixTests.Fences.AiurRankAIR \
+  tests-aiur check-aiur
 lake exe tests-aiur
 lake exe check-aiur --root .
 nix build .#checks.x86_64-linux.aiur
@@ -202,7 +212,10 @@ and 48 ordinary-logic fences for universal body relations and short-cycle
 exclusion. The memory AIR extension adds 52 runtime assertions, 16 kernel
 regressions, and 46 ordinary-logic fences for local extraction and checked
 heap construction. It compares five frozen Rust graphs in a fresh process
-and rejects eight graph mutations. The upstream evaluator handoff and IxVM
+and rejects eight graph mutations. Rank AIR adds 71 runtime assertions,
+22 kernel regressions, and 63 ordinary-logic fences. Its six complete Rust
+function fixtures and full u16 table projection are checked in a fresh
+process with 14 mutation rejections. The upstream evaluator handoff and IxVM
 export/constraint dump, function/primitive and full keyed AIR extraction, and
 source/DSL lowering remain next. No IxVM performance or production
 proof-acceptance claim is made by these milestones.

@@ -99,7 +99,8 @@ nix build .#checks.x86_64-linux.aiur .#checks.x86_64-linux.proofs
 
 The suite adds 52 runtime assertions, 16 public kernel regressions, and 46
 exact ordinary-logic axiom fences while preserving all 2264 prior fences.
-The total Aiur runtime suite has 777 assertions. Function and primitive AIR
+The [rank AIR extension](aiur-rank-air.md) brings the total Aiur runtime suite
+to 848 assertions. Function and primitive AIR
 extraction, lookup-budget/key bindings, production IxVM export, the pure
 reference evaluator and allocator relation, and source/DSL lowering remain
 separate obligations. No production proof-acceptance or cost claim follows.

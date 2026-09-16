@@ -1,14 +1,18 @@
 import Compilatrix.Tools.AiurCheck
 import Compilatrix.Tools.AiurWireCheck
 import Compilatrix.Tools.AiurMemoryCheck
+import Compilatrix.Tools.AiurRankCheck
 
 open Compilatrix.Tools.Check
 
 def main (args : List String) : IO UInt32 := cli "Aiur check failed" do
-  let parsed ← checked (parseArgs ["--root", "--bytecode", "--expect-root", "--output", "--dump-memory-air"] args)
+  let parsed ← checked (parseArgs ["--root", "--bytecode", "--expect-root", "--output", "--dump-memory-air", "--dump-rank-air"] args)
   if let some output := optional parsed "--dump-memory-air" then
     need (parsed.length == 1) "--dump-memory-air cannot be combined with other options"
     Compilatrix.Tools.AiurMemoryCheck.emit output
+  else if let some output := optional parsed "--dump-rank-air" then
+    need (parsed.length == 1) "--dump-rank-air cannot be combined with other options"
+    Compilatrix.Tools.AiurRankCheck.emit output
   else if let some input := optional parsed "--bytecode" then
     need ((optional parsed "--root").isNone) "--root cannot be combined with --bytecode"
     let expected ← present (optional parsed "--expect-root") "--bytecode requires --expect-root"
@@ -22,3 +26,4 @@ def main (args : List String) : IO UInt32 := cli "Aiur check failed" do
     Compilatrix.Tools.AiurCheck.run root
     Compilatrix.Tools.AiurWireCheck.verifyFixtures root
     Compilatrix.Tools.AiurMemoryCheck.verifyFixtures root
+    Compilatrix.Tools.AiurRankCheck.verifyFixtures root

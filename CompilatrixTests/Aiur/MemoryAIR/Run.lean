@@ -62,7 +62,7 @@ def run : IO Unit := do
     ((pull 1).arguments.mapM (Expr.eval ((padding 99 88).window next false)) == some [0, 0, 0, 0])
   need count "zero width payload"
     ((pull 0).arguments.mapM (Expr.eval ((⟨1, 1, 9, []⟩ : Row).window next false)) == some [1, 0, 9])
-  let window : Window := ⟨[3, 4], [5], false⟩
+  let window : Window := ⟨[3, 4], [5], false, []⟩
   need count "arithmetic expression"
     ((Expr.sub (.mul (.main 0) (.main 1)) (.next 0)).eval window == some 7)
   need count "negative expression" ((Expr.neg (.main 0)).eval window == some (0 - 3))

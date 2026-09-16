@@ -53,7 +53,7 @@ def Row.project (bucket : Nat) (row : Row) : Compilatrix.Aiur.Row :=
   ⟨row.active, .memory bucket row.pointer row.values, row.multiplicity, []⟩
 
 def Row.window (row next : Row) (transition : Bool) : Window :=
-  ⟨row.columns, next.columns, transition⟩
+  ⟨row.columns, next.columns, transition, []⟩
 
 /-- The equations evaluated by `build`, in their original order. -/
 def Row.Equations (row next : Row) (transition : Bool) : Prop :=

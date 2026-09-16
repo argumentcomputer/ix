@@ -686,6 +686,7 @@
     "CompilatrixTests.Aiur.Static.Proofs",
     "CompilatrixTests.Aiur.CounterAnalysis.Proofs",
     "CompilatrixTests.Aiur.MemoryAIR.Proofs",
+    "CompilatrixTests.Aiur.RankAIR.Proofs",
     "Compilatrix.Ixby.Examples",
     "Compilatrix.Ixby.Report",
     "Compilatrix.Ixby.SymbolicExamples",
@@ -1121,6 +1122,9 @@
    ["Compilatrix.Aiur.Static.CounterProofs",
     "Compilatrix.Aiur.Static.OrderProofs",
     "CompilatrixTests.Aiur.Static.Proofs"]},
+  "CompilatrixTests.Fences.AiurRankAIR":
+  {"path": "CompilatrixTests/Fences/AiurRankAIR.lean",
+   "imports": ["CompilatrixTests.Aiur.RankAIR.Proofs"]},
   "CompilatrixTests.Fences.AiurMemoryAIR":
   {"path": "CompilatrixTests/Fences/AiurMemoryAIR.lean",
    "imports": ["CompilatrixTests.Aiur.MemoryAIR.Proofs"]},
@@ -1148,6 +1152,7 @@
     "CompilatrixTests.Fences.AiurStatic",
     "CompilatrixTests.Fences.AiurCounterAnalysis",
     "CompilatrixTests.Fences.AiurMemoryAIR",
+    "CompilatrixTests.Fences.AiurRankAIR",
     "CompilatrixTests.Fences.CallReuse",
     "CompilatrixTests.Fences.Erasure",
     "CompilatrixTests.Fences.HPT",
@@ -1204,6 +1209,18 @@
   "CompilatrixTests.Aiur.Run":
   {"path": "CompilatrixTests/Aiur/Run.lean",
    "imports": ["CompilatrixTests.Aiur.Fixtures"]},
+  "CompilatrixTests.Aiur.RankAIR.Run":
+  {"path": "CompilatrixTests/Aiur/RankAIR/Run.lean",
+   "imports": ["CompilatrixTests.Aiur.RankAIR.Fixtures"]},
+  "CompilatrixTests.Aiur.RankAIR.Proofs":
+  {"path": "CompilatrixTests/Aiur/RankAIR/Proofs.lean",
+   "imports":
+   ["CompilatrixTests.Aiur.RankAIR.Fixtures",
+    "Compilatrix.Aiur.AIR.Rank.Sound",
+    "Compilatrix.Aiur.AIR.Rank.GraphProofs"]},
+  "CompilatrixTests.Aiur.RankAIR.Fixtures":
+  {"path": "CompilatrixTests/Aiur/RankAIR/Fixtures.lean",
+   "imports": ["Compilatrix.Aiur.AIR.Rank"]},
   "CompilatrixTests.Aiur.Proofs":
   {"path": "CompilatrixTests/Aiur/Proofs.lean",
    "imports": ["CompilatrixTests.Aiur.Fixtures"]},
@@ -1226,7 +1243,8 @@
     "CompilatrixTests.Aiur.WireRun",
     "CompilatrixTests.Aiur.Execution.Run",
     "CompilatrixTests.Aiur.Static.Run",
-    "CompilatrixTests.Aiur.MemoryAIR.Run"]},
+    "CompilatrixTests.Aiur.MemoryAIR.Run",
+    "CompilatrixTests.Aiur.RankAIR.Run"]},
   "CompilatrixTests.Aiur.Fixtures":
   {"path": "CompilatrixTests/Aiur/Fixtures.lean",
    "imports": ["Compilatrix.Aiur"]},
@@ -2282,6 +2300,11 @@
   {"path": "Compilatrix/Tools/AiurWireCheck.lean",
    "imports":
    ["Compilatrix.Tools.Check", "Compilatrix.Aiur.Wire.ComponentCheck"]},
+  "Compilatrix.Tools.AiurRankCheck":
+  {"path": "Compilatrix/Tools/AiurRankCheck.lean",
+   "imports":
+   ["Compilatrix.Tools.AiurMemoryCheck",
+    "CompilatrixTests.Aiur.RankAIR.Fixtures"]},
   "Compilatrix.Tools.AiurMemoryCheck":
   {"path": "Compilatrix/Tools/AiurMemoryCheck.lean",
    "imports":
@@ -3910,6 +3933,38 @@
   "Compilatrix.Aiur.Balance":
   {"path": "Compilatrix/Aiur/Balance.lean",
    "imports": ["Compilatrix.Aiur.Trace"]},
+  "Compilatrix.Aiur.AIR.Rank.Sound":
+  {"path": "Compilatrix/Aiur/AIR/Rank/Sound.lean",
+   "imports":
+   ["Compilatrix.Aiur.AIR.Rank.Check",
+    "Compilatrix.Aiur.AIR.Rank.Balance",
+    "Compilatrix.Aiur.Static.Assignment"]},
+  "Compilatrix.Aiur.AIR.Rank.Range":
+  {"path": "Compilatrix/Aiur/AIR/Rank/Range.lean",
+   "imports": ["Compilatrix.Aiur.AIR.Rank.Arithmetic"]},
+  "Compilatrix.Aiur.AIR.Rank.Model":
+  {"path": "Compilatrix/Aiur/AIR/Rank/Model.lean",
+   "imports": ["Compilatrix.Aiur.AIR.Expr"]},
+  "Compilatrix.Aiur.AIR.Rank.GraphProofs":
+  {"path": "Compilatrix/Aiur/AIR/Rank/GraphProofs.lean",
+   "imports":
+   ["Compilatrix.Aiur.AIR.Rank.Graph", "Compilatrix.Aiur.AIR.Memory.Local"]},
+  "Compilatrix.Aiur.AIR.Rank.Graph":
+  {"path": "Compilatrix/Aiur/AIR/Rank/Graph.lean",
+   "imports": ["Compilatrix.Aiur.AIR.Rank.Model"]},
+  "Compilatrix.Aiur.AIR.Rank.Check":
+  {"path": "Compilatrix/Aiur/AIR/Rank/Check.lean",
+   "imports": ["Compilatrix.Aiur.AIR.Rank.Model"]},
+  "Compilatrix.Aiur.AIR.Rank.Balance":
+  {"path": "Compilatrix/Aiur/AIR/Rank/Balance.lean",
+   "imports": ["Compilatrix.Aiur.AIR.Rank.Range"]},
+  "Compilatrix.Aiur.AIR.Rank.Arithmetic":
+  {"path": "Compilatrix/Aiur/AIR/Rank/Arithmetic.lean",
+   "imports": ["Compilatrix.Aiur.AIR.Rank.Model", "Compilatrix.Aiur.Field"]},
+  "Compilatrix.Aiur.AIR.Rank":
+  {"path": "Compilatrix/Aiur/AIR/Rank.lean",
+   "imports":
+   ["Compilatrix.Aiur.AIR.Rank.Check", "Compilatrix.Aiur.AIR.Rank.Graph"]},
   "Compilatrix.Aiur.AIR.Memory.Sound":
   {"path": "Compilatrix/Aiur/AIR/Memory/Sound.lean",
    "imports":
@@ -3949,7 +4004,8 @@
     "Compilatrix.Aiur.OracleEval",
     "Compilatrix.Aiur.BytecodeSound",
     "Compilatrix.Aiur.Static",
-    "Compilatrix.Aiur.AIR.Memory"]},
+    "Compilatrix.Aiur.AIR.Memory",
+    "Compilatrix.Aiur.AIR.Rank"]},
   "Compilatrix.AddressEnv":
   {"path": "Compilatrix/AddressEnv.lean",
    "imports": ["Compilatrix.Ixon.Address", "Std.Data.HashMap.Lemmas"]},
@@ -4109,7 +4165,8 @@
    "imports":
    ["Compilatrix.Tools.AiurCheck",
     "Compilatrix.Tools.AiurWireCheck",
-    "Compilatrix.Tools.AiurMemoryCheck"]},
+    "Compilatrix.Tools.AiurMemoryCheck",
+    "Compilatrix.Tools.AiurRankCheck"]},
   "CatalogContact": {"path": "CatalogContact.lean", "imports": ["Compilatrix"]},
   "Benchmark.SourceEvidence":
   {"path": "benchmarks/Benchmark/SourceEvidence.lean",

@@ -321,6 +321,19 @@ from the actual pinned Rust builder are compared in a fresh process, with
 eight mutation rejections. This fixture evidence establishes no universal
 Rust theorem or full IxVM assignment/key binding.
 
+The [rank AIR extraction](aiur-rank-air.md) derives scalar-u16 bounds from
+normalized exact-message balance and fixed-table providers, then derives
+strict natural rank increase from the ordered call's complete physical
+message. The demand bound remains explicit; field multiplicities need not
+be natural counts. Rank is retained through matching, and the local checked
+edge theorem does not infer a whole static certificate after erasing that
+field. Its 71 runtime assertions, 22 kernel regressions, and 63 ordinary-logic
+fences preserve all 2310 prior assertions. Six actual Rust function fixtures
+and all 65,536 fixed-table row pairs are checked, with 14 mutation rejections.
+The optional producer includes the pinned Rust module tree unchanged; it
+adds no production dependency, native interface, or axiom. Selector facts,
+the full rank-preserving projection, and assignment/key binding remain open.
+
 The ledger records this model as `aiur-witness-bytecode-v0`. Its logical
 gadget channels are not Rust AIR channels. Primitive conformance, extraction
 from the keyed AIR, and refinement to the honest allocator/evaluator remain

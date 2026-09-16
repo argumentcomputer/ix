@@ -199,6 +199,10 @@ The upstream pure IO-type split still blocks unchanged importing of
 `BytecodeEval`. Refinement to that honest evaluator remains to be proved;
 in particular, witness pointers are not equated with insertion indices, and
 the reference's IO effects and hint allocations need a representation
-relation. Universal counter-analyzer soundness, the production IxVM export
-and constraint dump, keyed AIR extraction, artifact/source bindings,
-primitive conformance, and Ixon/DSL lowering remain explicit obligations.
+relation. Universal counter-analyzer soundness is established against the
+local model. [Memory](aiur-memory-air.md) and [rank](aiur-rank-air.md) AIR
+extraction establish their stated local polynomial and lookup consequences.
+The full projection must preserve physical function ranks through provider
+matching before erasing them for bytecode semantics. Production IxVM export
+and constraint dumps, keyed AIR extraction, artifact/source bindings,
+remaining primitive conformance, and Ixon/DSL lowering remain obligations.

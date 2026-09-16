@@ -1,6 +1,6 @@
 import Ix.Aiur.Goldilocks
 
-/-! The base-field expression fragment used by the pinned memory AIR.
+/-! The base-field expression fragment used by the pinned memory and rank AIR.
 Missing columns fail evaluation. This is not a parser or the complete
 multi-stark expression language. -/
 
@@ -12,6 +12,7 @@ inductive Expr where
   | constant (value : G)
   | main (column : Nat)
   | next (column : Nat)
+  | preprocessed (column : Nat)
   | transition
   | add (left right : Expr)
   | sub (left right : Expr)
@@ -23,12 +24,14 @@ structure Window where
   current : List G
   next : List G
   transition : Bool
+  preprocessed : List G := []
   deriving DecidableEq, Repr
 
 def Expr.eval (window : Window) : Expr → Option G
   | .constant value => some value
   | .main column => window.current[column]?
   | .next column => window.next[column]?
+  | .preprocessed column => window.preprocessed[column]?
   | .transition => some (if window.transition then 1 else 0)
   | .add left right => return (← left.eval window) + (← right.eval window)
   | .sub left right => return (← left.eval window) - (← right.eval window)

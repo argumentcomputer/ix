@@ -1,0 +1,24 @@
+# Used with a generated wrapper that includes the pinned lib.rs unchanged.
+[package]
+name = "compilatrix-aiur-rank-reference"
+version = "0.0.0"
+edition = "2024"
+
+[workspace]
+
+[features]
+default = []
+parallel = ["multi-stark/parallel"]
+cuda = ["multi-stark/cuda"]
+
+[dependencies]
+hashbrown = "0.15"
+indexmap = "2"
+libc = "0.2"
+multi-stark = { git = "https://github.com/argumentcomputer/multi-stark.git", rev = "9a90612286625b6cec59516532d4501677cf468c" }
+num-bigint = "0.4.6"
+rayon = "1"
+rustc-hash = "2"
+tracing = "0.1"
+tracing-texray = { git = "https://github.com/argumentcomputer/tracing-texray", rev = "465bbca0bea4721e58419c11cabd8cce21757822" }
+serde_json = "1"

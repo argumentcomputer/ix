@@ -62,7 +62,7 @@ local development records.
 ## Source and module boundaries
 
 [`Compilatrix.lean`](../Compilatrix.lean) exposes the production compiler API.
-The production import closure has 474 local modules with the Aiur memory AIR checker.
+The production import closure has 478 local modules with the Aiur memory and rank AIR checkers.
 The earlier CI refactor reduced that closure from 593 to 425 modules. It does
 not import test modules, example suites, fixture corpora, or fence aggregators.
 
@@ -98,13 +98,22 @@ regressions and 48 exact ordinary-logic fences. Its affine, replay, machine,
 and search proofs remain outside the production closure and are
 required through `CompilatrixTests.Proofs`. It preserves the runtime suites.
 
-The [memory AIR suite](aiur-memory-air.md) adds 52 runtime assertions, bringing
-the combined Aiur suite to 777. Its 16 public kernel regressions and 46 exact
+The [memory AIR suite](aiur-memory-air.md) adds 52 runtime assertions.
+Its 16 public kernel regressions and 46 exact
 ordinary-logic fences are required through the proof aggregate. The `aiur`
 gate compares five frozen graphs produced by the actual pinned Rust memory
 builder with a fresh-process Lean export and rejects eight graph mutations.
 The optional Rust exporter remains outside production and required CI; its
 source and the frozen graphs are included in the audited source inventory.
+
+The [rank AIR suite](aiur-rank-air.md) adds 71 runtime assertions, bringing
+the combined Aiur suite to 848. Its 22 kernel regressions and 63 ordinary-logic
+fences are required in the proof aggregate. Five extraction proof modules
+remain outside production. The `aiur` gate compares six complete Rust
+function-circuit fixtures and all 65,536 u16 fixed-table row pairs, repeats
+the Lean export in a fresh process, and rejects 14 graph/table mutations.
+The optional Rust producer and its preparation script are audited sources;
+required CI consumes the frozen artifacts without building that Rust crate.
 
 `lake exe tests` remains the aggregate entry point. The required Nix `tests`
 gate runs the individual entry points and their aggregate. New cases belong
