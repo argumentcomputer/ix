@@ -109,7 +109,14 @@
 
           # Rust package
           craneLib = (crane.mkLib pkgs).overrideToolchain rustToolchain;
-          src = craneLib.cleanCargoSource ./.;
+          # Rust tests embed the shared golden and binary handoff fixtures.
+          src = pkgs.lib.fileset.toSource {
+            root = ./.;
+            fileset = pkgs.lib.fileset.unions [
+              (pkgs.lib.fileset.fromSource (craneLib.cleanCargoSource ./.))
+              ./Tests/Fixtures/ixon-v3
+            ];
+          };
           craneArgs = {
             inherit src;
             pname = "ix";
