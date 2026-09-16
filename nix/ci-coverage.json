@@ -1,6 +1,6 @@
 {"runtime_failure_sha256":
- "e8562d5abd322798ea7d06e469bd0c314ef84c719981b81e0012f748cf43b1cd",
- "runtime_failure_count": 266,
+ "f6e7a9b39b4b46dc3d8fc96484c8cab76db88d5976247ef616e850234e7086b2",
+ "runtime_failure_count": 267,
  "proof_modules":
  ["Compilatrix",
   "Compilatrix.AddressEnv",
@@ -341,6 +341,7 @@
   "Compilatrix.Ixon.Univ",
   "Compilatrix.Ixon.UsageCheck",
   "Compilatrix.Ixon.Uses",
+  "Compilatrix.Ixon.V3.Resource.StateProofs",
   "Compilatrix.Ixon.Work",
   "Compilatrix.LoweredCompilation",
   "Compilatrix.LoweredCompilationSim",
@@ -629,11 +630,12 @@
   "CompilatrixTests.Fences.AiurRankAIR",
   "CompilatrixTests.Fences.AiurStatic",
   "CompilatrixTests.Fences.AiurWire",
+  "CompilatrixTests.Fences.IxonV3",
   "CompilatrixTests.IxIR1.Lower",
   "CompilatrixTests.IxIR1.ThesisBench",
   "CompilatrixTests.IxIR1.WellModedGen",
   "CompilatrixTests.Pipeline.Integration"],
  "baseline": "6beaf5d0: complete required CI before factoring",
  "axiom_sha256":
- "2aea377c8867f07d4f3695fb92277e5f1b3c1a80544ee5200296787fda387f61",
- "axiom_count": 2373}
+ "433d55e74fb3cac1822f1f7f1267fe9bfc11fa968ac899cc8159630e7ed2128a",
+ "axiom_count": 2400}

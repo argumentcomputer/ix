@@ -19,6 +19,12 @@ derives bounded limbs and natural rank increase from scalar-range balance
 and complete physical function-message binding. Source lowering and full
 extraction from the keyed AIR remain subsequent work.
 
+The source boundary now follows the [ix frontend and Ixon v3](ixon-v3.md),
+including independent usage, ownership, relative locality and scoped loans.
+Its resource admission consumes the published frontend handoff; erased
+typing and contract-preserving Ixon-to-Aiur lowering remain separate work.
+The source producer pin is independent of the target snapshot below.
+
 ## Reference and module boundaries
 
 [`vendor/aiur/upstream.json`](../vendor/aiur/upstream.json) pins eleven

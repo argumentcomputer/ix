@@ -24,7 +24,8 @@ performance reports preserve evidence from their recorded revisions.
 
 | Reference | Contents |
 | --- | --- |
-| [Ixon wire format](ixon-v2-wire.md) | Encoding, strict decoding, ingress checks, and codec laws |
+| [Ix frontend / Ixon v3](ixon-v3.md) | Independent usage, ownership, locality, scoped loans, addressed admission and pinned producer handoff |
+| [Frozen Ixon v2 wire format](ixon-v2-wire.md) | Encoding, strict decoding, ingress checks, and codec laws |
 | [Canonical sharing](canonical-sharing.md) | Sharing structure, exact compressor images, evaluator coherence, and semantic identity |
 | [Sharing policy](sharing-policy.md) | Frozen producer policy, pins, vectors, and change procedure |
 | [Catalog ingress](catalog-ingress.md) | ix catalog manifests, anonymous expressions, roots, coherence, and aggregate limits |

@@ -62,18 +62,24 @@ local development records.
 ## Source and module boundaries
 
 [`Compilatrix.lean`](../Compilatrix.lean) exposes the production compiler API.
-The production import closure has 478 local modules with the Aiur memory and rank AIR checkers.
+The production import closure has 489 local modules with the Aiur AIR checkers and Ixon v3 source adapter.
 The earlier CI refactor reduced that closure from 593 to 425 modules. It does
 not import test modules, example suites, fixture corpora, or fence aggregators.
 
-The four runtime suites have independent entry points:
+The five core runtime suites have independent entry points:
 
 | Suite | Direct command |
 | --- | --- |
 | Addressing, codecs, and cross-IR checks | `lake exe tests-addressing` |
 | Pipeline, ownership, reuse, and target integration | `lake exe tests-pipeline` |
 | HPT caches, persistence, and optimizer checks | `lake exe tests-hpt` |
-| Ixon codecs, sharing, and catalogs | `lake exe tests-ixon` |
+| Frozen Ixon v2 codecs, sharing, and catalogs | `lake exe tests-ixon` |
+| Ix frontend / Ixon v3 contracts, resource admission, and handoff | `lake exe tests-ixon-v3` |
+
+The v3 suite runs 1,211 assertions against frozen upstream fixtures. Its 27
+new exact axiom fences retain all 2,373 earlier assertions. State proofs
+and fixtures remain outside the production API. The public admission API
+checks resources; erased typing and v3 backend lowering remain separate.
 
 The Aiur target has a separate required `aiur` gate, running `tests-aiur`
 and `check-aiur --root .`. Its [contract](aiur-backend.md) records the

@@ -93,7 +93,7 @@ def checkCoverage (root : FilePath) (graph : Json) : IO Unit := do
     "required axiom assertions or expected messages changed; review the coverage inventory"
   let mut failures := []
   let runtime ← closure graph ["CompilatrixTests.Runtime"]
-  for suite in ["Addressing", "Pipeline", "HPT", "Ixon"] do
+  for suite in ["Addressing", "Pipeline", "HPT", "Ixon", "IxonV3"] do
     need (runtime.contains s!"CompilatrixTests.{suite}.Run") s!"unregistered runtime suite {suite}"
     failures := failures ++ (← runtimeFailures
       (← IO.FS.readFile (root / s!"CompilatrixTests/{suite}/Run.lean")))

@@ -255,6 +255,18 @@ the same native BLAKE3 exception already required by checked HPT production
 and the final content-address rebuild; the attachment introduces no new
 trusted primitive.
 
+## Ix frontend / Ixon v3 source boundary
+
+The [v3 source adapter](ixon-v3.md) is pinned independently to ix
+`2afb4eac340cd4cbe94ed9e507561f3ad8375ebd`. It preserves independent usage,
+ownership, relative locality, arrow results, and borrow lets. Pure resource
+algorithms and selected state invariants are adapted from that snapshot;
+canonical bytes, source roots, profile identities and native resource claim
+framing are checked against frozen producer fixtures. No native dependency
+or axiom is added. Erased typing, a whole-checker machine soundness theorem,
+v3 backend simulation, and IxVM resource proofs are outside this boundary.
+The old v2 compiler entry points keep their original proof and fixture scope.
+
 ## Aiur logical-trace boundary
 
 The [Aiur foundation](aiur-backend.md) pins eleven pure upstream Lean modules

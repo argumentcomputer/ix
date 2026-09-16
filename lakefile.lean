@@ -57,6 +57,12 @@ lean_exe tests where
 lean_exe «tests-ixon» where
   root := `CompilatrixTests.Ixon.Main
 
+lean_exe «tests-ixon-v3» where
+  root := `CompilatrixTests.IxonV3.Main
+
+lean_exe «check-ixon-v3» where
+  root := `CheckIxonV3
+
 lean_exe «tests-addressing» where
   root := `CompilatrixTests.Addressing.Main
 

@@ -1,0 +1,67 @@
+# name	expected	type (ixon-v3 hex)	body (ixon-v3 hex)
+ordinary identity	ok	911720002000	8107200010
+linear identity	ok	911520002000	8105200010
+linear unique transfer	ok	910120002000	8101200010
+unused erased	ok	911420002000	8104200060
+erased argument has zero demand	ok	911420002000	8104200071200410
+unused affine	ok	911620002000	8106200060
+missing linear consumption	usage	911520002000	8105200060
+runtime erased variable	usage	911420002000	8104200010
+many invocation scales demand	usage	911620002000	8106200071200510
+many permits repeated demand	ok	911720002000	8107200071200510
+linear ordinary let	ok	911520002000	81052000a00520001010
+erased let initializer	ok	911520002000	81052000a00420001011
+duplicate affine through let	usage	911620002000	81062000a00620001011
+shared cannot become unique	ownership	910520002000	8105200010
+unique cannot transfer twice despite many	moved	910320002000	81032000a001200010a00120001110
+permanent sharing relinquishes unique	ownership	910320002000	81032000a00620001011
+local input local output	ok	913d20002000	810d200010
+local unique input local unique output	ok	912920002000	8109200010
+local input cannot escape	unrestricted	911d20002000	810d200010
+local helper result can be forwarded	ok	913d20002000	810d200071200210
+inner local let cannot escape as local	escape	913520002000	81052000a00d20001010
+borrow ends before owner transfer	ok	910120002000	81012000a0062000a20f2000107120011011
+unique access during loan	loan	910120002000	81012000a20f20001011
+loan view cannot escape	escape	913320002000	81032000a20f20001010
+loan end does not restore permanently shared owner	ownership	910320002000	81032000a0062000a20f2000101111
+nested shared reborrow	ok	910120002000	81012000a0062000a20f200010a20f2000107120011011
+borrow requires owner place	place	911320002000	81032000a20f20007120031060
+borrow cannot manufacture unique view	borrow	911320002000	81032000a20b20001060
+moved owner cannot be borrowed	moved	910320002000	81032000a001200010a20f20001111
+projected loan suspends whole owner	loan	910120072007	81012007a20f200040071011
+projected loan ends before owner transfer	ok	910120072007	81012007a0062000a20f20004007107120011011
+unregistered projection has no optimistic rule	unsupported	911320002000	81032000400010
+shared closure cannot hide affine capture	capture	921620001720002000	8206200007200011
+unique closure retains finite capture	ok	920520001720002000	8205200007200011
+local closure may retain local input	ok	923f20003720002000	820f200007200011
+closure cannot hide local escape	unrestricted	921f20003720002000	820f200007200011
+aggregate cannot hide local escape	unrestricted	911d20002007	810d200071200810
+aggregate retains caller locality	ok	913d20002007	810d200071200810
+linear use in both alternatives	ok	911520002000	81052000732006601010
+linear missing in one alternative	usage	911520002000	81052000732006601060
+affine use in one alternative	ok	911620002000	81062000732006601060
+unique move in each alternative	ok	910120002000	8101200073200a601010
+alternative move prevents later use	moved	910320002000	81032000a002200073200a60106011
+partial selection is not an ordinary function	unsupported	911720002000	8107200071200610
+sharing checked in live binder context	ok	911520002000	81052000b0
+sharing cannot cache away erased restriction	usage	911420002000	81042000b0
+lambda and interface input must agree	binder	911520002000	8107200010
+fresh inner linear binder under many demand	ok	911720002000	81072000712005a00520001010
+discarding borrow before narrowing fresh result	ok	913320002000	81032000a20f20001071200110
+type formation has zero runtime demand	ok	91140000	81040010
+type use cannot discharge linear runtime obligation	usage	91150000	81050010
+selection cannot bypass its rule through a callback	unsupported	941720001520001620001620002000	810720002006
+shared aggregate cannot expose reusable unique closure	capture	921520071720002000	81052007410710
+unique aggregate transfers unique closure field	ok	920120071720002000	81012007410710
+shared field retains its reusable function contract	ok	921520071720002000	81052007420710
+projected borrow cannot launder unique closure	capture	911720072000	81072007a20f91172000200041071060
+capturing owner transfers it even when closure only borrows	ok	920120001720002000	82012000072000a20f20001171200110
+branch analysis follows a shared application head	ok	911520002000	8105200073b1601010
+erased owner cannot be restored through a borrow	unsupported	911020002000	81002000a20f20001071200110
+erased view cannot be restored through a reborrow	unsupported	911320002000	81032000a20c200010a20f20001071200110
+erased higher order argument still checks its contracts	type	91149115200020002000	81049115200020007181049117200020006010
+erased higher order argument with matching interface	ok	91149117200020002000	81049117200020007181049117200020006010
+reborrowing closure captures the view without moving its root	ok	910120002000	81012000a0062000a20f200010a00d91172000200081072000a20f2000117120011071106011
+higher order local callback and argument	ok	923f911d200020001d20002000	820f911d200020000d2000711110
+recursive contract retains resource across alternatives	ok	921720003d20002000	820720000d2000732009601072200b1110
+higher order contract mismatch	type	9217911d20002000179117200020002000	8207911d20002000072000a0059117200020001160

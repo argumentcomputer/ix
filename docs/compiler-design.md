@@ -33,7 +33,7 @@ stage is implemented.
 
 | Layer | Responsibility and constraint |
 | --- | --- |
-| Ixon | Strictly decoded, content-addressed source contracts. Uses/Owned are identity-bearing data; sharing and erasure checks define the accepted source boundary. |
+| Ixon | Strictly decoded, content-addressed source contracts. V3 usage, ownership, locality, result contracts, and let kind are independent identity-bearing data. Resource admission and erased typing are separate obligations; existing v2 backend interfaces retain their explicit compatibility scope. |
 | IxIR₀ | Pure, curried, eager erased semantic anchor, with closures and recursors close to source. Types/proofs disappear but runtime mode information must survive. Evaluator fuel is a termination device, not a performance cost. |
 | IxIR₀ˢ | Bounded source-level specialization: known targets, usage/world instantiations, arity absorption, and derived-recursion schemas. This is a transformation stage over IxIR₀, not an independently frozen wire format. |
 | IxIR₁ | First-order explicit store, saturated calls/PAPs, ownership effects, exact heap/RC counters, HPT, and shrinking consumers. Structured `case` remains non-consuming. |
@@ -73,6 +73,7 @@ and linked source-family documents give their current scope.
 
 | Interface | Result and selection boundary |
 | --- | --- |
+| [`Ixon.V3.admitResources`](../Compilatrix/Ixon/V3/Source.lean) | [Pinned ix frontend / Ixon v3](ixon-v3.md) anonymous ingress and resource admission, retaining exact bytes and profile. Erased typing and v3 backend lowering remain separate. |
 | [`Ixby.compileIxon`](../Compilatrix/Ixby/Source.lean) | Checked erasure → immutable Ixby. [Per-input execution certificates and canonical profile export](ixby-backend.md); global structural lowering correctness remains open. |
 | [`Pipeline.compileValidated`](../Compilatrix/Pipeline.lean) | Checked source erasure and owned IxIR₁. `Pipeline.compile` bypasses erasure certification and is not interchangeable for certified clients. |
 | [`Modular.build` / `restore`](../Compilatrix/Modular/Build.lean) and [`Modular.assemble`](../Compilatrix/Modular/Assemble.lean) | [Bounded source units](modular-source.md), exact evidence reuse or fresh retained checking, and proved composition into the existing source-validated IxIR₁ artifact. |
@@ -93,7 +94,7 @@ and linked source-family documents give their current scope.
 
 Keep three kinds of information distinct:
 
-- **Source contracts:** usage, ownership, and any future explicit locality
+- **Source contracts:** independent usage, ownership, and explicit locality
   affect Ixon identity.
 - **Analyses:** HPT, liveness, borrow, created-by, escape, reuse, and register
   allocation are checked sidecars keyed by the input artifact.
@@ -123,12 +124,18 @@ source derivation nor the ABI meaning of supplied layout bytes.
 ## Ownership, borrowing, and reuse
 
 Usage, uniqueness, borrowing, locality, and layout are distinct concepts.
-Using a value once does not by itself prove it has no aliases. The current
-source contract deliberately bundles `linear` (exactly one use) and `affine`
+Using a value once does not by itself prove it has no aliases. The frozen v2
+backend source contract bundles `linear` (exactly one use) and `affine`
 (at most one) with unique ownership; `many` uses shared RC, and `erased`
 has no runtime value. Arrow results additionally carry `Owned`. This adds no
 definitional-equality rule; the theory-level conservativity proof remains
 separate from operational compiler preservation.
+
+The new ix frontend emits [Ixon v3](ixon-v3.md), where a linear input may
+be shared and an unrestricted-use input may be unique. Never infer ownership
+from usage or pass v3 bytes through the v2 ownership checker. Preserve input
+and result locality and borrow lets through admission. A later backend bridge
+needs explicit source identity, contract preservation, and simulation evidence.
 
 Field worlds are currently homogeneous. Ordinary recursor lowering retains
 its documented mode restrictions, while the checked unique-source schema
@@ -307,8 +314,9 @@ precisely per root; they are not automatic implications between labels.
 
 Locality is an escape property orthogonal to ownership. Shared but local
 scratch graphs may have arbitrary internal aliases while avoiding per-object
-RC and using bulk release. Its roadmap gate requires residual cost after
-borrowing and reuse, then an IR experiment before source syntax changes.
+RC and using bulk release. The pinned ix frontend already commits relative `local` contracts in Ixon v3.
+The allocation prototype still needs evidence of residual cost after borrowing
+and reuse, then a checked IR implementation of region lifetimes.
 
 A rank-2 `RegionM r` alone does not prevent a region pointer escaping.
 Region-backed values must carry a marker such as `Local r α`, or an IR
@@ -327,10 +335,11 @@ stack or arena need not share the machine call stack.
 Reserved local slots die at region exit, so credit discharge is required per
 region as well as per activation. Specify nested-region ordering, promotion,
 growth/overflow, failure cleanup, and task ownership before extending the
-prototype. A source locality bit would be deep by default, default to global
-for ordinary Lean, and affect Ixon identity. Require a representative
-shared-scratch workload, escape negatives, promoted-byte/high-water counts,
-and native or zk improvement before that hash roll.
+prototype. V3 locality defaults to unrestricted for ordinary Lean and affects Ixon
+identity. Its scope and capture rules do not promise stack allocation or
+no-RC storage. Require a representative shared-scratch workload, escape
+negatives, promoted-byte/high-water counts, and native or zk improvement
+before enabling region allocation.
 
 ## Bootstrap and trust
 
@@ -359,8 +368,9 @@ Keep four obligations distinct:
 4. Statement faithfulness: what the user reads corresponds to the certified
    Ixon object. A sound checker alone does not establish this.
 
-The eventual frontend retargets upstream parser/macro/elaborator behavior to
-Ixon. Compatibility is complete environment/address equality. Start with
+The source producer is now the pinned ix shared frontend, including its
+explicit source contracts. Compilatrix consumes its v3 binary boundary;
+retargeting the parser/macro/elaborator itself remains future work. Compatibility is complete environment/address equality. Start with
 explicit mode annotations; infer them only after addressed contracts and
 diagnostics stabilize. Structural and well-founded recursion arrive as
 kernel terms; backend erasure/recovery must handle the required forms.

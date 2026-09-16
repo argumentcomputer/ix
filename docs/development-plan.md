@@ -54,7 +54,7 @@ nix flake check
 The [CI guide](ci.md) describes the shared build artifacts, required job
 groups, source boundaries, and coverage inventory. Focused runtime suites are
 `lake exe tests-addressing`, `lake exe tests-pipeline`, `lake exe tests-hpt`,
-and `lake exe tests-ixon`. Build all proofs and elaboration tests explicitly
+`lake exe tests-ixon`, and `lake exe tests-ixon-v3`. Build all proofs and elaboration tests explicitly
 with `lake build CompilatrixTests.Proofs`; the default production library
 does not aggregate them. After changing imports or Lake roots, run
 `lake exe check-build-graph --write`, review the generated manifest, and run

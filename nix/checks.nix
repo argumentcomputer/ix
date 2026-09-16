@@ -10,7 +10,7 @@
     "--cc ${pkgs.stdenv.cc}/bin/cc --harness ${auditSrc}/fixtures/x86/native_harness.c";
 in rec {
   testsCheck = mkCheck "tests" [] ''
-    for suite in addressing pipeline hpt ixon; do
+    for suite in addressing pipeline hpt ixon ixon-v3; do
       ./.lake/build/bin/tests-"$suite"
     done
     ./.lake/build/bin/tests | tee tests.out

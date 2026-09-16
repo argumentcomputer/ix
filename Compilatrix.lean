@@ -16,6 +16,7 @@ import Compilatrix.UniqueReuse.RuntimeObjectSpace
 import Compilatrix.UniqueReuse.AllocatingObjectSpace
 import Compilatrix.Borrow.RuntimeInput
 import Compilatrix.Ixby.Source
+import Compilatrix.Ixon.V3
 import Compilatrix.Aiur
 import Compilatrix.Ixby.Lean
 import Compilatrix.Ixby.Runtime.Run

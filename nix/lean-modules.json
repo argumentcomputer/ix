@@ -2,6 +2,8 @@
  {"x86-object-fixture": {"roots": ["X86ObjectFixture"], "kind": "lean_exe"},
   "tests-pipeline":
   {"roots": ["CompilatrixTests.Pipeline.Main"], "kind": "lean_exe"},
+  "tests-ixon-v3":
+  {"roots": ["CompilatrixTests.IxonV3.Main"], "kind": "lean_exe"},
   "tests-ixon": {"roots": ["CompilatrixTests.Ixon.Main"], "kind": "lean_exe"},
   "tests-hpt": {"roots": ["CompilatrixTests.HPT.Main"], "kind": "lean_exe"},
   "tests-aiur": {"roots": ["CompilatrixTests.Aiur.Main"], "kind": "lean_exe"},
@@ -83,6 +85,7 @@
   "check-source-borrow": {"roots": ["CheckSourceBorrow"], "kind": "lean_exe"},
   "check-native-sharing": {"roots": ["CheckNativeSharing"], "kind": "lean_exe"},
   "check-native-graph": {"roots": ["CheckNativeGraph"], "kind": "lean_exe"},
+  "check-ixon-v3": {"roots": ["CheckIxonV3"], "kind": "lean_exe"},
   "check-ixir2": {"roots": ["CheckIxIR2"], "kind": "lean_exe"},
   "check-ixby-symbolic": {"roots": ["CheckIxbySymbolic"], "kind": "lean_exe"},
   "check-ixby-stage2": {"roots": ["CheckIxbyStage2"], "kind": "lean_exe"},
@@ -498,7 +501,8 @@
    ["CompilatrixTests.Addressing.Run",
     "CompilatrixTests.Pipeline.Run",
     "CompilatrixTests.HPT.Run",
-    "CompilatrixTests.Ixon.Run"]},
+    "CompilatrixTests.Ixon.Run",
+    "CompilatrixTests.IxonV3.Run"]},
   "CompilatrixTests.Proofs":
   {"path": "CompilatrixTests/Proofs.lean",
    "imports":
@@ -680,6 +684,7 @@
     "Compilatrix.IxIR2.Borrow.OpenExamples",
     "Compilatrix.Fence",
     "Compilatrix.Ixby.Catalog",
+    "Compilatrix.Ixon.V3.Resource.StateProofs",
     "CompilatrixTests.Aiur.Proofs",
     "CompilatrixTests.Aiur.WireProofs",
     "CompilatrixTests.Aiur.Execution.Proofs",
@@ -721,6 +726,21 @@
    ["CompilatrixTests.Support",
     "CompilatrixTests.Addressing.Fixtures",
     "Compilatrix.IxIR2.Pipeline"]},
+  "CompilatrixTests.IxonV3.Run":
+  {"path": "CompilatrixTests/IxonV3/Run.lean",
+   "imports":
+   ["CompilatrixTests.IxonV3.Fixtures",
+    "CompilatrixTests.IxonV3.Handoff",
+    "Compilatrix.Tools.Check"]},
+  "CompilatrixTests.IxonV3.Main":
+  {"path": "CompilatrixTests/IxonV3/Main.lean",
+   "imports": ["CompilatrixTests.IxonV3.Run"]},
+  "CompilatrixTests.IxonV3.Handoff":
+  {"path": "CompilatrixTests/IxonV3/Handoff.lean",
+   "imports": ["Compilatrix.Ixon.V3.Source", "Compilatrix.Tools.Check"]},
+  "CompilatrixTests.IxonV3.Fixtures":
+  {"path": "CompilatrixTests/IxonV3/Fixtures.lean",
+   "imports": ["Compilatrix.Ixon.V3.Resource.Admit"]},
   "CompilatrixTests.Ixon.Run":
   {"path": "CompilatrixTests/Ixon/Run.lean",
    "imports": ["CompilatrixTests.Ixon.Fixtures", "Compilatrix.Pipeline"]},
@@ -898,6 +918,10 @@
     "Compilatrix.IxIR1.LowerProgress",
     "Compilatrix.IxIR1.LowerSim",
     "Compilatrix.IxIR1.LowerStateSim"]},
+  "CompilatrixTests.Fences.IxonV3":
+  {"path": "CompilatrixTests/Fences/IxonV3.lean",
+   "imports":
+   ["Compilatrix.Ixon.V3.Resource.StateProofs", "Compilatrix.Ixon.V3.Source"]},
   "CompilatrixTests.Fences.Ixon":
   {"path": "CompilatrixTests/Fences/Ixon.lean",
    "imports":
@@ -1161,6 +1185,7 @@
     "CompilatrixTests.Fences.IxIR2",
     "CompilatrixTests.Fences.Ixby",
     "CompilatrixTests.Fences.Ixon",
+    "CompilatrixTests.Fences.IxonV3",
     "CompilatrixTests.Fences.Lowering",
     "CompilatrixTests.Fences.Modular",
     "CompilatrixTests.Fences.Recursion",
@@ -2458,6 +2483,43 @@
    "imports": ["Compilatrix.Pipeline", "Compilatrix.EraseAddressedSim"]},
   "Compilatrix.Ixon.Work":
   {"path": "Compilatrix/Ixon/Work.lean", "imports": ["Compilatrix.Ixon.Const"]},
+  "Compilatrix.Ixon.V3.Source":
+  {"path": "Compilatrix/Ixon/V3/Source.lean",
+   "imports": ["Compilatrix.Ixon.V3.Resource.Addressed"]},
+  "Compilatrix.Ixon.V3.Resource.StateProofs":
+  {"path": "Compilatrix/Ixon/V3/Resource/StateProofs.lean",
+   "imports": ["Compilatrix.Ixon.V3.Resource.State"]},
+  "Compilatrix.Ixon.V3.Resource.State":
+  {"path": "Compilatrix/Ixon/V3/Resource/State.lean",
+   "imports": ["Compilatrix.Ixon.V3.Expr"]},
+  "Compilatrix.Ixon.V3.Resource.Check":
+  {"path": "Compilatrix/Ixon/V3/Resource/Check.lean",
+   "imports": ["Compilatrix.Ixon.V3.Resource.State"]},
+  "Compilatrix.Ixon.V3.Resource.Admit":
+  {"path": "Compilatrix/Ixon/V3/Resource/Admit.lean",
+   "imports": ["Compilatrix.Ixon.V3.Resource.Check"]},
+  "Compilatrix.Ixon.V3.Resource.Addressed":
+  {"path": "Compilatrix/Ixon/V3/Resource/Addressed.lean",
+   "imports":
+   ["Compilatrix.Ixon.V3.Resource.Admit", "Compilatrix.Ixon.V3.Env"]},
+  "Compilatrix.Ixon.V3.Expr":
+  {"path": "Compilatrix/Ixon/V3/Expr.lean",
+   "imports": ["Compilatrix.Ixon.Expr", "Compilatrix.Ixon.V3.Contracts"]},
+  "Compilatrix.Ixon.V3.Env":
+  {"path": "Compilatrix/Ixon/V3/Env.lean",
+   "imports": ["Compilatrix.Ixon.V3.ConstDecode", "Compilatrix.Ixon.Merkle"]},
+  "Compilatrix.Ixon.V3.Contracts":
+  {"path": "Compilatrix/Ixon/V3/Contracts.lean",
+   "imports": ["Compilatrix.Ixon.Uses"]},
+  "Compilatrix.Ixon.V3.ConstDecode":
+  {"path": "Compilatrix/Ixon/V3/ConstDecode.lean",
+   "imports": ["Compilatrix.Ixon.V3.Const"]},
+  "Compilatrix.Ixon.V3.Const":
+  {"path": "Compilatrix/Ixon/V3/Const.lean",
+   "imports": ["Compilatrix.Ixon.Const", "Compilatrix.Ixon.V3.Expr"]},
+  "Compilatrix.Ixon.V3":
+  {"path": "Compilatrix/Ixon/V3.lean",
+   "imports": ["Compilatrix.Ixon.V3.Source"]},
   "Compilatrix.Ixon.Uses":
   {"path": "Compilatrix/Ixon/Uses.lean", "imports": []},
   "Compilatrix.Ixon.UsageCheck":
@@ -4030,6 +4092,7 @@
     "Compilatrix.UniqueReuse.AllocatingObjectSpace",
     "Compilatrix.Borrow.RuntimeInput",
     "Compilatrix.Ixby.Source",
+    "Compilatrix.Ixon.V3",
     "Compilatrix.Aiur",
     "Compilatrix.Ixby.Lean",
     "Compilatrix.Ixby.Runtime.Run"]},
@@ -4132,6 +4195,8 @@
   "CheckNativeGraph":
   {"path": "scripts/CheckNativeGraph.lean",
    "imports": ["Compilatrix.Tools.NativeSharingCheck"]},
+  "CheckIxonV3":
+  {"path": "CheckIxonV3.lean", "imports": ["Compilatrix.Ixon.V3"]},
   "CheckIxbySymbolic":
   {"path": "scripts/CheckIxbySymbolic.lean",
    "imports": ["Compilatrix.Tools.Check"]},

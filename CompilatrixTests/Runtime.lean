@@ -2,6 +2,7 @@ import CompilatrixTests.Addressing.Run
 import CompilatrixTests.Pipeline.Run
 import CompilatrixTests.HPT.Run
 import CompilatrixTests.Ixon.Run
+import CompilatrixTests.IxonV3.Run
 
 namespace CompilatrixTests
 
@@ -18,6 +19,9 @@ def runAll : IO UInt32 := do
   ok := passed && ok
   let passed ← Ixon.run
   IO.println s!"tests-ixon: {passed}"
+  ok := passed && ok
+  let passed ← IxonV3.run
+  IO.println s!"tests-ixon-v3: {passed}"
   ok := passed && ok
   if ok then
     IO.println "tests-ok"
