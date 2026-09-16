@@ -4,6 +4,7 @@
 pub mod code_capture;
 pub mod commitment_bridge;
 pub mod constructor_ids;
+pub mod endpoints;
 pub mod finalize;
 pub mod initialize;
 pub mod input_capture;

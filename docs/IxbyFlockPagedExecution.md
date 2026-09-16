@@ -138,6 +138,53 @@ same 454,035-byte proof size. An ordinary test checks actual advice and complete
 statement boundaries through all five setups. Clippy passes with warnings
 denied.
 
+## Complete endpoint binding
+
+[`CompiledEndpoints`](../flock-stage3/host/src/ixby/ixbf_decode/paged/endpoints/mod.rs)
+constrains the joins among eleven component statements: original Program
+bytes, code capture, reference validation, constructor-ID uniqueness,
+original Input bytes, input capture, execution, output bytes, and the three
+artifact commitment bridges. Its conditional public statement contains all
+283 component words followed by the two-word final digest. Every fact passes
+through a committed table, including parser metadata checked in a child proof.
+
+The circuit requires an empty initial memory tree, complete source and parser
+boundaries, complete reference validation, matching program context and memory
+roots, actual initialization, increasing execution clocks, terminal halt and
+exact fuel accounting. It binds the returned Bytes value and final memory to
+the complete output chain. The commitment bridges use the actual profile and
+program digests, and the endpoint circuit computes both the profile hash and
+`S = H(4, P || B || I || O)` with constrained BLAKE3.
+
+The explicit `FunctionalProfile` encoding is **IXFP revision 0**, original
+format 1, semantics 0. Its 184 bytes contain four little-endian header words,
+ten 128-bit limits in original IXBF order, and a 64-bit fuel budget. Setup owns
+these bytes; the captured program must have exactly the same limits and fuel.
+It is a new descriptor, distinct from the earlier IXBP fixed-capacity codec.
+Nat128, physical memory capacities and the supported execution operations still
+limit this proving implementation. This does not claim the older IXBP
+`Codec.Evaluates` theorem for original IXBF/IXFI/IXFO files; native constraint
+refinement remains an additional obligation.
+
+An original-format identity program returning a 34-byte Bytes value passes
+every component circuit, and its **132,891-byte endpoint proof** verifies in
+a fresh process receiving only the approved profile, expected statement and
+proof. Setup took 2.564 seconds; witness construction and proving took
+261 milliseconds with four Rayon threads (`M=22`). All 285 public words reject
+both low-bit and high-bit changes. Six locally valid recomputed witnesses
+changing parser metadata, source length, final clock, initial fuel, final
+result and profile hashing reject at Flock's wiring check. Changed setup
+profile and malformed proof envelopes also reject. The complete proof test
+took 43.96 seconds, including construction and checking of all component
+advice.
+
+This endpoint proof remains conditional: the closing recursive proof must
+verify every component chain, equate all 283 facts and expose only `S` as the
+execution statement. That composition and the full original CSLib run remain
+in progress.
+
+## Instruction execution relation
+
 [`paged_exec`](../flock-stage3/host/src/ixby/paged_exec/mod.rs) now combines
 authenticated code fetch, operand resolution into scratch memory, numeric
 primitives, copy/return/Bool/Nat control, direct/self/tail calls, constructor
