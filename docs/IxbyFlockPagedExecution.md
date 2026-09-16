@@ -129,6 +129,8 @@ and requires strictly increasing, nonwrapping clocks. Setup checks every
 Boolean table's complete matrices and input/output schema against its witness
 driver, including the shared memory tree. The existing circuit layouts,
 transcript domains and proof envelopes are unchanged.
+The compiled setup retains immutable prover data and discards emission-only
+canonicality queues, allowing workers to share it safely.
 
 The four instruction/object/byte/hash proof tests now use this API, including
 their fresh-process verifiers and 28 locally valid recomputed attacks. They

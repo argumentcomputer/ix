@@ -1,6 +1,7 @@
 use super::*;
 use crate::ixby::{
-  io::PublicLayout, ixbf_decode::paged::proof_support::Driver,
+  io::{InputLayout, PublicLayout},
+  ixbf_decode::paged::proof_support::Driver,
   memory_log::SwitchGate,
 };
 use crate::sizing::CountingEmitter;
@@ -8,7 +9,7 @@ use anyhow::{Result, ensure};
 use bincode::Options;
 use flock_prover::{
   challenger::FsChallenger,
-  circuit::builder::{CircuitShape, CircuitWitness, ShapeBuilder},
+  circuit::builder::{CircuitShape, CircuitWitness, ShapeBuilder, SlotId},
   hash::HashKind,
   lincheck::{CscCircuit, LincheckCircuit},
   pcs::{
@@ -38,7 +39,10 @@ fn codec() -> impl Options {
 }
 pub struct CompiledPagedExecution {
   pub(super) shape: CircuitShape,
-  pub(super) emission: BatchEmission,
+  class: BatchClass,
+  inputs: InputLayout,
+  public: PublicLayout,
+  elements: Vec<(SlotId, SwitchGate)>,
   pub(super) drivers: Vec<Box<dyn Driver>>,
   linchecks: Vec<CscCircuit>,
   params: PcsParams,
@@ -86,29 +90,50 @@ impl CompiledPagedExecution {
       num_lanes: union.commit_lanes(log_batch_size),
       merkle_hash: HashKind::Blake3,
     };
-    Ok(Self { shape, emission, drivers, linchecks, params })
+    let mut elements = vec![
+      emission.order.permutation().gate(),
+      emission.memory.log().permutation().gate(),
+    ];
+    if let Some(tree) = &emission.tree {
+      elements.push(tree.permutation().gate());
+    }
+    elements.sort_by_key(|(slot, _)| shape.registry_slot(*slot));
+    let elements =
+      elements.into_iter().map(|(slot, gate)| (slot, gate.clone())).collect();
+    // Emission-time canonicality queues are no longer needed. Keeping only
+    // immutable prover data lets workers share one compiled setup safely.
+    Ok(Self {
+      shape,
+      class,
+      inputs: emission.inputs,
+      public: emission.public,
+      elements,
+      drivers,
+      linchecks,
+      params,
+    })
   }
   pub fn class(&self) -> BatchClass {
-    self.emission.class
+    self.class
   }
   pub fn verifier_shape(&self) -> &CircuitShape {
     &self.shape
   }
   pub fn public_template(&self) -> &PublicLayout {
-    &self.emission.public
+    &self.public
   }
   pub fn pcs_params(&self) -> &PcsParams {
     &self.params
   }
   pub fn transcript_domain(&self) -> &'static [u8] {
-    self.emission.class.transcript_domain()
+    self.class.transcript_domain()
   }
   pub fn lincheck_circuits(&self) -> Vec<&dyn LincheckCircuit> {
     self.linchecks.iter().map(|c| c as &dyn LincheckCircuit).collect()
   }
   pub(super) fn witness(&self, advice: &BatchAdvice) -> Result<CircuitWitness> {
     let statement = ExecutionStatement::from_words(&advice.expected)?;
-    let input = self.emission.inputs.assign(&advice.private)?;
+    let input = self.inputs.assign(&advice.private)?;
     let witness =
       std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         self.shape.run(&input, &[])
@@ -138,19 +163,12 @@ impl CompiledPagedExecution {
   ) -> Result<Vec<u8>> {
     let union =
       UnionInstance::new(&self.shape.registry, self.shape.counts.clone());
-    let mut gates = vec![
-      self.emission.order.permutation().gate(),
-      self.emission.memory.log().permutation().gate(),
-    ];
-    if let Some(tree) = &self.emission.tree {
-      gates.push(tree.permutation().gate());
-    }
-    let nu = self.emission.class.nu();
-    gates.sort_by_key(|(slot, _)| self.shape.registry_slot(*slot));
-    let elements = gates
-      .into_iter()
+    let nu = self.class.nu();
+    let elements = self
+      .elements
+      .iter()
       .map(|(slot, g)| {
-        let rows = witness.rows::<SwitchGate>(slot);
+        let rows = witness.rows::<SwitchGate>(*slot);
         UnionElementSlotInput::new(move |dst| g.fill_witness(rows, nu, dst))
       })
       .collect();

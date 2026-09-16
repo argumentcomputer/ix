@@ -604,7 +604,10 @@ fn proof_test(
 ) {
   let setup_start = std::time::Instant::now();
   let compiled = CompiledPagedExecution::compile(class).unwrap();
-  let emission = &compiled.emission;
+  let mut counter = crate::sizing::CountingEmitter::new();
+  let emission = emit_batch(&mut counter, class).unwrap();
+  counter.ensure_matches(&compiled.shape).unwrap();
+  let emission = &emission;
   let shape = &compiled.shape;
   let setup_elapsed = setup_start.elapsed();
   if std::env::var_os(CHILD).is_some() {
