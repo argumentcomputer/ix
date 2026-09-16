@@ -487,10 +487,10 @@ as threads per GPU, combining both across the process. With
 - 920 GiB effective host limit, clamped to the visible cgroup allowance;
 - 24.2 GiB workspace per GPU and 92 GiB (10%) process headroom;
 - 730.8 GiB shared record capacity and 36.5 GiB initial admission credit;
-- a 64 GiB ceiling on each individual record.
+- a 128 GiB ceiling on each individual record.
 
 An execution can grow beyond its initial credit up to its individual
-ceiling. `AIUR_RECORD_MAX_BYTES` overrides the 64 GiB default; it must be
+ceiling. `AIUR_RECORD_MAX_BYTES` overrides the 128 GiB default; it must be
 positive and is clamped to the whole record pool. Both initial credit and
 subsequent grants respect the ceiling, so the fast insertion path cannot
 cross it. The pool grants further credit in 16 MiB chunks, or enough for a
@@ -499,7 +499,9 @@ for the process. The trace-cell bound is
 `AIUR_TRACE_SHARD_MAX_CELLS`, defaulting to 1.5 billion for the shared driver.
 
 The per-record ceiling limits the size of a single execution's data
-structures independently of available host RAM. The 64 GiB default is a
+structures independently of available host RAM. The default was 64 GiB
+until the Anthropic FLT probe of 2026-09-16 executed single-constant
+records of 89.5 and 71.4 GiB cleanly; 128 GiB holds them. It is still a
 provisional policy, not a measured threshold for cache behavior. Waiting
 still handles aggregate memory pressure below that ceiling.
 
@@ -573,7 +575,7 @@ Claim 0 split into two records of 13.3 and 10.7 GiB; the other three proofs
 were reused. The final five-claim partition verified in 477.74 seconds,
 with 128.93 GiB peak RSS and one split. Restart loaded the checkpoint and
 reused all five claims. A one-byte ceiling then rejected the first root
-wrap, confirming its reservation binding. The default remains 64 GiB.
+wrap, confirming its reservation binding. The default is now 128 GiB.
 
 #### What the 111-shard Mathlib run establishes
 

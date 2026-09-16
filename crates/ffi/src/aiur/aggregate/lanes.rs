@@ -38,7 +38,12 @@ pub struct Config {
   pub out_manifest: Option<PathBuf>,
 }
 
-const DEFAULT_RECORD_MAX_BYTES: usize = 64 << 30;
+/// The default ceiling on one execution record's counted bytes. 128 GiB
+/// holds every Anthropic FLT constant as one claim: the two largest of its
+/// single-constant shards are 89.5 and 71.4 GiB, executed to completion
+/// without any sign of the query map thrashing (bench/mathlib-seed-2026-09-15
+/// and ~/benchdata/flt/probe). `AIUR_RECORD_MAX_BYTES` overrides it.
+const DEFAULT_RECORD_MAX_BYTES: usize = 128 << 30;
 
 enum PassOutcome {
   Complete { root: String, unproven: usize },

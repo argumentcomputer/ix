@@ -1,6 +1,6 @@
 # Record ceiling and automatic environment-shard refinement
 
-The shared scheduler limits each query record to **64 GiB of counted
+The shared scheduler limits each query record to **128 GiB of counted
 retained bytes**, independently of the process-wide memory pool. Records
 can still wait for shared capacity and grow below that ceiling. Override
 the ceiling with `AIUR_RECORD_MAX_BYTES` (a positive integer in bytes).
@@ -17,7 +17,8 @@ The refined manifest is saved atomically beneath
 content hash. Restarting the original command resumes that partition.
 `--out-ixes` writes the final partition after successful verification.
 
-64 GiB is a provisional size policy, not a measured cache-performance
+128 GiB is a provisional size policy (raised from 64 GiB after the FLT
+probe measured single-constant records of 89.5 and 71.4 GiB), not a measured cache-performance
 threshold. The accounting includes field payload and fixed entry overhead;
 it does not measure RSS. The completed 78-shard Mathlib run's maximum
 claim record was 44.9 GiB, below the default ceiling.
@@ -69,7 +70,7 @@ See the [result](results/init/result.json),
 [build metadata](results/build/build.json). The measured binary's SHA-256 is
 `fcee7ae4b3ee661c56f5189c200d388f0dcff1e91c180164e8927eec2bcbc67d`.
 Timing includes discarded execution and the extra claim/join caused by
-the deliberately low ceiling. The 64 GiB default remains unbenchmarked as
+the deliberately low ceiling. The 128 GiB default remains unbenchmarked as
 a performance threshold.
 
 The root-wrap log's legacy `query-record peak` label reports an estimated
