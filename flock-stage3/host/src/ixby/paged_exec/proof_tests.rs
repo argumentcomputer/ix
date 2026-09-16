@@ -19,15 +19,12 @@ use crate::{
   multiplication::{self, GoldilocksMulPairGate},
   sizing::CountedGate,
 };
-use anyhow::{Result, ensure};
+use anyhow::Result;
 use bincode::Options;
 use flock_prover::{
   challenger::FsChallenger,
-  circuit::builder::{
-    CircuitShape, CircuitWitness, GateType, ShapeBuilder, SlotId,
-  },
+  circuit::builder::{CircuitShape, CircuitWitness, GateType, SlotId},
   hash::HashKind,
-  lincheck::LincheckCircuit,
   pcs::{
     Commitment, PcsParams,
     ligerito::{LigeritoProfile, embedded_initial_k_or_default},
@@ -37,7 +34,6 @@ use flock_prover::{
   r1cs::BlockR1cs,
   r1cs_hashes::blake3 as flock_blake3,
   union::{SlotWitnessDest, UnionInstance},
-  verifier,
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -46,17 +42,6 @@ use std::{
   sync::Arc,
 };
 
-fn domain(class: BatchClass) -> &'static [u8] {
-  match class {
-    BatchClass::Small => b"IxBy/Flock/paged-execution:small:v2",
-    BatchClass::Objects => b"IxBy/Flock/paged-execution:objects:v1",
-    BatchClass::Compact => b"IxBy/Flock/paged-execution:compact:v1",
-    BatchClass::Bytes => b"IxBy/Flock/paged-execution:bytes:v0",
-    BatchClass::SharedCompact => {
-      b"IxBy/Flock/paged-execution:shared-compact:v0"
-    },
-  }
-}
 const MAGIC: [u8; 8] = *b"IXFPGX00";
 const MAX_BYTES: u64 = 16 * 1024 * 1024;
 const OUTPUTS: usize = 57;
@@ -455,13 +440,6 @@ fn drivers(emission: &BatchEmission, shape: &CircuitShape) -> Vec<Driver> {
   );
   result
 }
-fn setup(class: BatchClass) -> (BatchEmission, CircuitShape, Vec<Driver>) {
-  let mut b = ShapeBuilder::new(class.nu());
-  let emission = emit_batch(&mut b, class).unwrap();
-  let shape = b.finish().unwrap();
-  let drivers = drivers(&emission, &shape);
-  (emission, shape, drivers)
-}
 fn params(union: &UnionInstance<'_>) -> PcsParams {
   let m = union.dense_m();
   assert!((22..=35).contains(&m));
@@ -502,7 +480,7 @@ fn prove(
     })
     .collect();
   let mut challenger =
-    FsChallenger::with_chained_blake3(domain(emission.class));
+    FsChallenger::with_chained_blake3(emission.class.transcript_domain());
   let (proof, commitment, _) = prover::prove_fast_ligerito_union_circuit(
     &union,
     &shape.circuit,
@@ -515,38 +493,11 @@ fn prove(
   codec().serialize(&Bundle { magic: MAGIC, commitment, proof }).unwrap()
 }
 fn verify(
-  emission: &BatchEmission,
-  shape: &CircuitShape,
-  drivers: &[Driver],
+  compiled: &CompiledPagedExecution,
   expected: &[F128],
   proof: &[u8],
 ) -> Result<()> {
-  let public = emission.public.instantiate(expected)?;
-  ensure!(proof.len() as u64 <= MAX_BYTES, "paged execution proof size");
-  let bundle: Bundle = codec().deserialize(proof)?;
-  ensure!(
-    bundle.magic == MAGIC && codec().serialize(&bundle)? == proof,
-    "paged execution envelope"
-  );
-  let union = UnionInstance::new(&shape.registry, shape.counts.clone());
-  let circuits = drivers
-    .iter()
-    .map(|d| d.table.csc_lincheck_circuit() as &dyn LincheckCircuit)
-    .collect::<Vec<_>>();
-  let mut challenger =
-    FsChallenger::with_chained_blake3(domain(emission.class));
-  verifier::verify_ligerito_union_circuit(
-    &union,
-    &shape.circuit,
-    &public,
-    &circuits,
-    &bundle.commitment,
-    &bundle.proof,
-    &params(&union),
-    &mut challenger,
-  )
-  .map_err(|e| anyhow::anyhow!("paged execution proof rejected: {e:?}"))?;
-  Ok(())
+  compiled.verify(&ExecutionStatement::from_words(expected)?, proof)
 }
 fn isolated(test: &str, expected: &[F128], proof: &[u8]) -> bool {
   let mut child = Command::new(std::env::current_exe().unwrap())
@@ -652,7 +603,9 @@ fn proof_test(
   attacks: &[Attack],
 ) {
   let setup_start = std::time::Instant::now();
-  let (emission, shape, drivers) = setup(class);
+  let compiled = CompiledPagedExecution::compile(class).unwrap();
+  let emission = &compiled.emission;
+  let shape = &compiled.shape;
   let setup_elapsed = setup_start.elapsed();
   if std::env::var_os(CHILD).is_some() {
     let mut bytes = Vec::new();
@@ -669,8 +622,7 @@ fn proof_test(
       .iter()
       .map(|w| pack_bytes(w))
       .collect::<Vec<_>>();
-    verify(&emission, &shape, &drivers, &expected, &bytes[OUTPUTS * 16..])
-      .unwrap();
+    verify(&compiled, &expected, &bytes[OUTPUTS * 16..]).unwrap();
     return;
   }
   let (advice, _) = fixture();
@@ -688,9 +640,9 @@ fn proof_test(
     geometry.dense_m(),
     geometry.dense_words()
   );
-  let proof = prove(&emission, &shape, &drivers, &witness, Attack::None);
+  let proof = compiled.prove(&advice).unwrap();
   let prove_elapsed = start.elapsed();
-  verify(&emission, &shape, &drivers, &advice.expected, &proof).unwrap();
+  verify(&compiled, &advice.expected, &proof).unwrap();
   assert!(isolated(test, &advice.expected, &proof));
   let union = UnionInstance::new(&shape.registry, shape.counts.clone());
   eprintln!(
@@ -703,32 +655,23 @@ fn proof_test(
     let mut bad = advice.expected.clone();
     bad[at] += F128::ONE;
     assert!(
-      verify(&emission, &shape, &drivers, &bad, &proof).is_err(),
+      verify(&compiled, &bad, &proof).is_err(),
       "accepted public word {at}"
     );
   }
   let mut bad_limit = advice.expected.clone();
   bad_limit[2].hi ^= 1;
-  assert!(verify(&emission, &shape, &drivers, &bad_limit, &proof).is_err());
+  assert!(verify(&compiled, &bad_limit, &proof).is_err());
   assert!(
-    verify(
-      &emission,
-      &shape,
-      &drivers,
-      &advice.expected,
-      &proof[..proof.len() - 1]
-    )
-    .is_err()
+    verify(&compiled, &advice.expected, &proof[..proof.len() - 1]).is_err()
   );
   let mut extended = proof.clone();
   extended.push(0);
-  assert!(
-    verify(&emission, &shape, &drivers, &advice.expected, &extended).is_err()
-  );
+  assert!(verify(&compiled, &advice.expected, &extended).is_err());
+  let drivers = drivers(emission, shape);
   for &attack in attacks {
-    let bad = prove(&emission, &shape, &drivers, &witness, attack);
-    let error =
-      verify(&emission, &shape, &drivers, &advice.expected, &bad).unwrap_err();
+    let bad = prove(emission, shape, &drivers, &witness, attack);
+    let error = verify(&compiled, &advice.expected, &bad).unwrap_err();
     eprintln!("recomputed {attack:?} rejected: {error}");
     assert!(format!("{error}").contains("Wiring"));
   }

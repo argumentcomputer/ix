@@ -122,6 +122,22 @@ byte/hash implementation's complete regression suite passed 311 tests with
 
 ## Instruction batches
 
+`CompiledPagedExecution::compile(class)` provides the production setup,
+advice-checking, proving, verification and recursive-replay interface for all
+five fixed batch classes. `ExecutionStatement` binds exactly 57 field words
+and requires strictly increasing, nonwrapping clocks. Setup checks every
+Boolean table's complete matrices and input/output schema against its witness
+driver, including the shared memory tree. The existing circuit layouts,
+transcript domains and proof envelopes are unchanged.
+
+The four instruction/object/byte/hash proof tests now use this API, including
+their fresh-process verifiers and 28 locally valid recomputed attacks. They
+passed in 116.66 seconds. The original SharedCompact segment also passed
+through this API, including its two recomputed clock attacks; it produced the
+same 454,035-byte proof size. An ordinary test checks actual advice and complete
+statement boundaries through all five setups. Clippy passes with warnings
+denied.
+
 [`paged_exec`](../flock-stage3/host/src/ixby/paged_exec/mod.rs) now combines
 authenticated code fetch, operand resolution into scratch memory, numeric
 primitives, copy/return/Bool/Nat control, direct/self/tail calls, constructor

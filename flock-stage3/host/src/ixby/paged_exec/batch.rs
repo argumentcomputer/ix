@@ -27,6 +27,15 @@ pub enum BatchClass {
   SharedCompact,
 }
 impl BatchClass {
+  pub fn transcript_domain(self) -> &'static [u8] {
+    match self {
+      Self::Small => b"IxBy/Flock/paged-execution:small:v2",
+      Self::Objects => b"IxBy/Flock/paged-execution:objects:v1",
+      Self::Compact => b"IxBy/Flock/paged-execution:compact:v1",
+      Self::Bytes => b"IxBy/Flock/paged-execution:bytes:v0",
+      Self::SharedCompact => b"IxBy/Flock/paged-execution:shared-compact:v0",
+    }
+  }
   pub fn quotas(self) -> [usize; 24] {
     match self {
       Self::Small => {

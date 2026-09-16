@@ -5,7 +5,7 @@ use flock_prover::{
   r1cs::{BlockR1cs, SparseBinaryMatrix},
   union::SlotWitnessDest,
 };
-pub(super) trait Driver: Send + Sync {
+pub(in crate::ixby) trait Driver: Send + Sync {
   fn slot(&self) -> SlotId;
   fn validate(&self, shape: &CircuitShape) -> Result<()>;
   fn prover<'a>(
@@ -83,7 +83,7 @@ where
     )
   }
 }
-pub(super) fn driver<G>(
+pub(in crate::ixby) fn driver<G>(
   slot: SlotId,
   gate: G,
   table: BlockR1cs,

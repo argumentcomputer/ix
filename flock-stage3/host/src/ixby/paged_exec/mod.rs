@@ -14,6 +14,8 @@ mod object_slots;
 #[cfg(test)]
 mod object_tests;
 mod objects;
+mod proof;
+mod proof_drivers;
 #[cfg(test)]
 mod proof_tests;
 mod slots;
@@ -28,10 +30,12 @@ use flock_prover::field::F128;
 pub use gate::{MicroGate, MicroKind, MicroRow};
 pub use image::NativeImage;
 pub use objects::ObjectKind;
+pub use proof::{CompiledPagedExecution, VerifiedPagedExecution};
 pub use slots::{ExecutionSlots, StepWires};
 pub use witness::{NativeMachine, RowAdvice};
 
 pub const STATE_WORDS: usize = 24;
+pub const PUBLIC_WORDS: usize = 57;
 pub const FUEL: usize = 5;
 pub const HEAP_COUNT: usize = 6;
 pub const BYTE_COUNT: usize = 7;
@@ -53,6 +57,37 @@ pub const SOURCE_A: usize = 15;
 pub const SOURCE_B: usize = 16;
 pub const DESTINATION: usize = 17;
 pub const OLD_HEAP: usize = 18;
+
+/// Three shared parameters followed by two complete [clock, state24, root2]
+/// endpoints. Successful verification proves only this segment; source,
+/// initialization and termination belong to the enclosing complete relation.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ExecutionStatement([F128; PUBLIC_WORDS]);
+impl ExecutionStatement {
+  pub fn from_words(words: &[F128]) -> anyhow::Result<Self> {
+    anyhow::ensure!(words.len() == PUBLIC_WORDS, "execution public width");
+    anyhow::ensure!(
+      words[3].hi == 0
+        && words[30].hi == 0
+        && words[3].lo < words[30].lo
+        && words[30].lo < 1 << 59,
+      "execution clock endpoints"
+    );
+    Ok(Self(words.try_into().unwrap()))
+  }
+  pub fn words(&self) -> &[F128; PUBLIC_WORDS] {
+    &self.0
+  }
+  pub fn parameters(&self) -> &[F128; 3] {
+    self.0[..3].try_into().unwrap()
+  }
+  pub fn initial(&self) -> &[F128; 27] {
+    self.0[3..30].try_into().unwrap()
+  }
+  pub fn final_state(&self) -> &[F128; 27] {
+    self.0[30..].try_into().unwrap()
+  }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(usize)]

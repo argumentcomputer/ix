@@ -30,6 +30,46 @@ fn natural(mut n: u128) -> Vec<u8> {
 }
 
 #[test]
+fn production_execution_setups_validate_every_driver_and_complete_boundaries() {
+  let source = input(&[0, 3, 1, 2, 3, 4]);
+  for class in [
+    BatchClass::Small,
+    BatchClass::Objects,
+    BatchClass::Compact,
+    BatchClass::Bytes,
+    BatchClass::SharedCompact,
+  ] {
+    let compiled = CompiledPagedExecution::compile(class).unwrap();
+    let mut image =
+      NativeImage::load(IDENTITY, &source, DecodeLimits::default()).unwrap();
+    let initial_root = image.memory.root();
+    let mut machine = image.machine().unwrap();
+    let advice = machine.batch(class, &mut image.memory).unwrap().unwrap();
+    compiled.check_advice(&advice).unwrap();
+    let statement = ExecutionStatement::from_words(&advice.expected).unwrap();
+    assert_eq!(statement.parameters(), &image.parameters);
+    assert_eq!(statement.initial()[0], F128::ZERO);
+    assert_eq!(statement.initial()[1..25], image.state);
+    assert_eq!(statement.initial()[25..], initial_root);
+    assert_eq!(statement.final_state()[0], F128::new(4, 0));
+    assert_eq!(statement.final_state()[1..25], machine.state);
+    assert_eq!(statement.final_state()[25..], image.memory.root());
+    assert!(machine.next_chip().unwrap().is_none());
+    for (at, value) in [
+      (3, F128::new(4, 0)),
+      (30, F128::ZERO),
+      (30, F128::new(1 << 59, 0)),
+      (30, F128::new(4, 1)),
+    ] {
+      let mut bad = advice.expected.clone();
+      bad[at] = value;
+      assert!(ExecutionStatement::from_words(&bad).is_err());
+    }
+    assert_eq!(compiled.public_template().outputs(), PUBLIC_WORDS);
+  }
+}
+
+#[test]
 fn original_scalar_payloads_and_byte_ranges_survive_native_loading() {
   let wide = (1u128 << 65) + 7;
   let mut nat = vec![0, 0];

@@ -12,4 +12,4 @@ pub mod references;
 pub mod source_bytes;
 mod synthesis;
 
-mod proof_support;
+pub(in crate::ixby) mod proof_support;
