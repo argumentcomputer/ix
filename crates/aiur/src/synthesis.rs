@@ -201,7 +201,7 @@ impl AiurSystem {
     // Gadgets. The byte chips' lookup arguments are preprocessed columns
     // and their multiplicities main columns (all degree 1), so their
     // lookups also group 2 per chained step at degree 3 — halving the
-    // stage-2 accumulators (Bytes2: 7 → 4 at height 65536).
+    // stage-2 accumulators (Bytes2: 8 → 4 at height 65536).
     push_circuit(
       Bytes1.main_width(),
       Bytes1.preprocessed(),
@@ -665,6 +665,7 @@ mod tests {
   mod lookup_shapes;
   mod mmcs;
   mod peak;
+  mod u32_compare;
 
   use super::*;
   use crate::{

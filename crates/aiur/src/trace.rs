@@ -24,6 +24,7 @@ use crate::{
   u8_add_channel, u8_bit_decomposition_channel, u8_mul_channel,
   u8_range_check_channel, u8_shift_left_channel, u8_shift_right_channel,
   u8_sub_channel, u8_xor_channel, u8_xor_split4_channel, u8_xor_split7_channel,
+  u16_range_check_channel,
 };
 
 struct ColumnIndex {
@@ -637,37 +638,21 @@ impl Op {
         let (b, _) = map[*y_idx];
         let a_u32 = u32::try_from(a.as_canonical_u64()).unwrap();
         let b_u32 = u32::try_from(b.as_canonical_u64()).unwrap();
-        let x_bytes: [u8; 4] = a_u32.to_le_bytes();
-        let z_bytes: [u8; 4] = b_u32.to_le_bytes();
-        // Witness: c = if a < b then b - a - 1 else 2^32 + b - a - 1
         let c_u32 = b_u32.wrapping_sub(a_u32).wrapping_sub(1);
-        let y_bytes: [u8; 4] = c_u32.to_le_bytes();
-
-        // Push 12 byte auxiliaries: x (a bytes), y (c bytes), z (b bytes)
-        for &byte in x_bytes.iter().chain(y_bytes.iter()).chain(z_bytes.iter())
-        {
-          slice.push_auxiliary(index, G::from_u8(byte));
+        // Six auxiliaries and scalar queries, ordered as a, c, b, low first.
+        // Execution already recorded these multiplicities.
+        for word in [a_u32, c_u32, b_u32] {
+          for shift in [0, 16] {
+            let limb = G::from_u16(((word >> shift) & 0xffff) as u16);
+            slice.push_auxiliary(index, limb);
+            slice.push_lookup(
+              index,
+              G::ONE,
+              &[u16_range_check_channel(), limb],
+            );
+          }
         }
-
-        // Range-check byte pairs via Bytes2 lookups
-        let rc_channel = u8_range_check_channel();
-        for (i, j) in [
-          (x_bytes[0], x_bytes[1]),
-          (x_bytes[2], x_bytes[3]),
-          (y_bytes[0], y_bytes[1]),
-          (y_bytes[2], y_bytes[3]),
-          (z_bytes[0], z_bytes[1]),
-          (z_bytes[2], z_bytes[3]),
-        ] {
-          slice.push_lookup(
-            index,
-            G::ONE,
-            &[rc_channel, G::from_u8(i), G::from_u8(j)],
-          );
-        }
-
-        let result = G::from_bool(a_u32 < b_u32);
-        map.push((result, 1));
+        map.push((G::from_bool(a_u32 < b_u32), 1));
       },
       Op::U8RangeCheck(i, j) => {
         // No `map.push`: the `u8` outputs alias the inputs. Just require the

@@ -611,9 +611,8 @@ private def emitU8Sub (out : Nat) (i j : ValIdx) : Array RustStmt :=
     declVal (out + 1) (.field (.var "__b2_sub") "1")
   ]
 
-/-- `Op::U32LessThan`: mirror execute.rs lines 477-505. Pure
-    compare + 6-byte-pair range-check via
-    `bytes2_queries.bump_range_check` (constrained mode only). -/
+/-- `Op::U32LessThan`: mirror the checked comparison in `execute.rs`,
+    recording six scalar u16 range queries in constrained mode. -/
 private def emitU32LessThan (out : Nat) (x y : ValIdx) : Array RustStmt :=
   let blockExpr : String :=
     s!"\{ let __a_val = __v_{x}.as_canonical_u64();" ++
@@ -622,17 +621,11 @@ private def emitU32LessThan (out : Nat) (x y : ValIdx) : Array RustStmt :=
     s!" let __b_u32 = u32::try_from(__b_val).ok().ok_or(ExecError::U32OutOfRange(__b_val))?;" ++
     s!" let __result = G::from_bool(__a_u32 < __b_u32);" ++
     s!" if !unconstrained \{" ++
-    s!" let __x_bytes = __a_u32.to_le_bytes();" ++
-    s!" let __z_bytes = __b_u32.to_le_bytes();" ++
     s!" let __c_u32 = __b_u32.wrapping_sub(__a_u32).wrapping_sub(1);" ++
-    s!" let __y_bytes = __c_u32.to_le_bytes();" ++
-    s!" record.bytes2_queries.bump_range_check(&G::from_u8(__x_bytes[0]), &G::from_u8(__x_bytes[1]));" ++
-    s!" record.bytes2_queries.bump_range_check(&G::from_u8(__x_bytes[2]), &G::from_u8(__x_bytes[3]));" ++
-    s!" record.bytes2_queries.bump_range_check(&G::from_u8(__y_bytes[0]), &G::from_u8(__y_bytes[1]));" ++
-    s!" record.bytes2_queries.bump_range_check(&G::from_u8(__y_bytes[2]), &G::from_u8(__y_bytes[3]));" ++
-    s!" record.bytes2_queries.bump_range_check(&G::from_u8(__z_bytes[0]), &G::from_u8(__z_bytes[1]));" ++
-    s!" record.bytes2_queries.bump_range_check(&G::from_u8(__z_bytes[2]), &G::from_u8(__z_bytes[3]));" ++
-    s!" } __result }"
+    s!" for __word in [__a_u32, __c_u32, __b_u32] \{" ++
+    s!" record.bytes2_queries.bump_u16_range_check((__word & 0xffff) as u16);" ++
+    s!" record.bytes2_queries.bump_u16_range_check((__word >> 16) as u16);" ++
+    s!" } } __result }"
   #[.letStmt false s!"__v_{out}" (some "G") (.lit blockExpr)]
 
 private def u32PackExpr (xs : Array ValIdx) : String :=
