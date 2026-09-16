@@ -287,9 +287,15 @@ fn immutable_reservations_reject_unallocated_spans_wrong_fields_and_skipped_copi
 #[test]
 fn fixed_batches_resume_pending_allocations_and_argument_splices_without_losing_state()
  {
+  object_batches(BatchClass::Compact);
+}
+#[test]
+fn shared_memory_batches_preserve_object_application_and_copy_boundaries() {
+  object_batches(BatchClass::SharedCompact);
+}
+fn object_batches(class: BatchClass) {
   let (whole, _) = fixture();
   let (mut memory, parameters, state) = program();
-  let class = BatchClass::Compact;
   let mut machine = NativeMachine::new(state, 0, parameters).unwrap();
   let mut b = ShapeBuilder::new(class.nu());
   let emission = emit_batch(&mut b, class).unwrap();

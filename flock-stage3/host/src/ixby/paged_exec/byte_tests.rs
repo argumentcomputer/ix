@@ -428,10 +428,16 @@ fn byte_limits_slice_get_and_field_canonicality_reject_invalid_operations() {
 #[test]
 fn hash_batches_carry_chunk_counters_pending_merges_and_the_final_root_digest()
 {
+  hash_batches(BatchClass::Compact);
+}
+#[test]
+fn shared_memory_batches_preserve_unaligned_hash_windows_and_tree_merges() {
+  hash_batches(BatchClass::SharedCompact);
+}
+fn hash_batches(class: BatchClass) {
   let data = (0..3073).map(|i| (i * 37 + i / 13) as u8).collect::<Vec<_>>();
   let (mut memory, parameters) = hash_program(&data, 31);
   let mut machine = NativeMachine::new(initial(), 0, parameters).unwrap();
-  let class = BatchClass::Compact;
   let mut b = ShapeBuilder::new(class.nu());
   let emission = emit_batch(&mut b, class).unwrap();
   let shape = b.finish().unwrap();

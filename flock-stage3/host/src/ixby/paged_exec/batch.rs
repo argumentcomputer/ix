@@ -1,7 +1,10 @@
 use super::*;
 use crate::{
   ixby::{
-    auth_memory::{MemoryDepth, MemoryOpeningWires},
+    auth_memory::{
+      MemoryDepth, MemoryOpeningWires,
+      multi::{MultiAdvice, MultiCapacity, MultiMemorySlots, MultiProofWires},
+    },
     execution_order::{
       self, BoundaryWires as StateBoundary, StateChainSlots, TransitionWires,
     },
@@ -21,6 +24,7 @@ pub enum BatchClass {
   Objects,
   Compact,
   Bytes,
+  SharedCompact,
 }
 impl BatchClass {
   pub fn quotas(self) -> [usize; 24] {
@@ -32,7 +36,7 @@ impl BatchClass {
         24, 40, 8, 16, 2, 32, 4, 8, 8, 4, 4, 12, 48, 32, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0,
       ],
-      Self::Compact => {
+      Self::Compact | Self::SharedCompact => {
         [2, 4, 1, 2, 1, 3, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]
       },
       Self::Bytes => [
@@ -45,7 +49,7 @@ impl BatchClass {
     match self {
       Self::Small => 24,
       Self::Objects => 96,
-      Self::Compact => 16,
+      Self::Compact | Self::SharedCompact => 16,
       Self::Bytes => 96,
     }
   }
@@ -55,10 +59,19 @@ impl BatchClass {
       Self::Objects => 13,
       Self::Compact => 11,
       Self::Bytes => 13,
+      Self::SharedCompact => 10,
     }
   }
   pub fn transitions(self) -> usize {
     self.quotas().iter().sum()
+  }
+  pub fn shared_memory(self) -> Option<MultiCapacity> {
+    match self {
+      Self::SharedCompact => {
+        Some(MultiCapacity::new(self.cells(), 192).unwrap())
+      },
+      _ => None,
+    }
   }
   pub fn accesses(self) -> usize {
     self
@@ -74,6 +87,7 @@ pub struct BatchEmission {
   pub execution: ExecutionSlots,
   pub order: StateChainSlots,
   pub memory: TimedMemoryLogSlots,
+  pub tree: Option<MultiMemorySlots>,
   pub inputs: InputLayout,
   pub public: PublicLayout,
 }
@@ -87,6 +101,17 @@ pub fn emit_batch(
   let execution =
     ExecutionSlots::declare(&mut b, nu, memory.log().memory().compression())?;
   let order = StateChainSlots::declare(&mut b, nu, STATE_WORDS)?;
+  let tree = class
+    .shared_memory()
+    .map(|_| {
+      MultiMemorySlots::sharing_compression(
+        &mut b,
+        nu,
+        MemoryDepth::new(40)?,
+        memory.log().memory().compression(),
+      )
+    })
+    .transpose()?;
   let parameters = std::array::from_fn(|_| {
     let w = b.input();
     b.publish(w);
@@ -154,25 +179,48 @@ pub fn emit_batch(
     &transitions,
     &switches,
   );
-  let cells = (0..class.cells())
-    .map(|_| BoundaryWires {
-      address: b.input(),
-      opening: MemoryOpeningWires {
-        value: std::array::from_fn(|_| b.input()),
-        siblings: (0..40).map(|_| std::array::from_fn(|_| b.input())).collect(),
-      },
-      final_value: std::array::from_fn(|_| b.input()),
-    })
-    .collect::<Vec<_>>();
-  let switches = (0..MemoryLogSlots::plan(class.accesses(), class.cells())?
-    .switches())
-    .map(|_| b.input())
-    .collect::<Vec<_>>();
-  for w in memory.check(&mut b, initial_root, &accesses, &cells, &switches) {
-    b.publish(w);
+  if let Some(tree) = &tree {
+    let final_root = std::array::from_fn(|_| {
+      let w = b.input();
+      b.publish(w);
+      w
+    });
+    let proof = MultiProofWires::inputs(&mut b, class.shared_memory().unwrap());
+    let switches = (0..MemoryLogSlots::plan(class.accesses(), class.cells())?
+      .switches())
+      .map(|_| b.input())
+      .collect::<Vec<_>>();
+    memory.check_shared(
+      &mut b,
+      tree,
+      [initial_root, final_root],
+      &accesses,
+      &proof,
+      &switches,
+    );
+  } else {
+    let cells = (0..class.cells())
+      .map(|_| BoundaryWires {
+        address: b.input(),
+        opening: MemoryOpeningWires {
+          value: std::array::from_fn(|_| b.input()),
+          siblings: (0..40)
+            .map(|_| std::array::from_fn(|_| b.input()))
+            .collect(),
+        },
+        final_value: std::array::from_fn(|_| b.input()),
+      })
+      .collect::<Vec<_>>();
+    let switches = (0..MemoryLogSlots::plan(class.accesses(), class.cells())?
+      .switches())
+      .map(|_| b.input())
+      .collect::<Vec<_>>();
+    for w in memory.check(&mut b, initial_root, &accesses, &cells, &switches) {
+      b.publish(w);
+    }
   }
   let (inputs, public) = b.finish();
-  Ok(BatchEmission { class, execution, order, memory, inputs, public })
+  Ok(BatchEmission { class, execution, order, memory, tree, inputs, public })
 }
 
 pub struct BatchAdvice {
@@ -186,6 +234,28 @@ impl BatchAdvice {
     rows: &[RowAdvice],
     memory: &MemoryBatchAdvice,
   ) -> Result<Self> {
+    Self::assemble(class, parameters, rows, memory, None)
+  }
+  pub fn new_shared(
+    class: BatchClass,
+    parameters: [F128; 3],
+    rows: &[RowAdvice],
+    memory: &MemoryBatchAdvice,
+    tree: &MultiAdvice,
+  ) -> Result<Self> {
+    Self::assemble(class, parameters, rows, memory, Some(tree))
+  }
+  fn assemble(
+    class: BatchClass,
+    parameters: [F128; 3],
+    rows: &[RowAdvice],
+    memory: &MemoryBatchAdvice,
+    tree: Option<&MultiAdvice>,
+  ) -> Result<Self> {
+    ensure!(
+      class.shared_memory().is_some() == tree.is_some(),
+      "execution memory profile"
+    );
     ensure!(!rows.is_empty(), "execution batch must make progress");
     ensure!(
       memory.boundaries.len() == class.cells(),
@@ -267,7 +337,24 @@ impl BatchAdvice {
     state_records
       .resize(StateChainSlots::plan(class.transitions())?.lanes(), pad);
     private.extend(execution_order::routing(&state_records)?);
-    private.extend(memory.boundary_words());
+    if let Some(tree) = tree {
+      let roots = memory
+        .initial_root
+        .into_iter()
+        .chain(memory.final_root)
+        .collect::<Vec<_>>();
+      let boundary = memory.boundary_words();
+      ensure!(
+        tree.private.get(..4) == Some(roots.as_slice())
+          && tree.private.get(4..4 + boundary.len())
+            == Some(boundary.as_slice()),
+        "native execution shared-tree boundary"
+      );
+      private.extend(memory.final_root);
+      private.extend_from_slice(&tree.private[4..]);
+    } else {
+      private.extend(memory.boundary_words());
+    }
     private.extend(memory.timed_switches(&memory_order)?);
     Ok(Self { private, expected })
   }

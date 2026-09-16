@@ -111,9 +111,62 @@ depths 16, 40 and 64. Their dense domains range from 24 to 31 variables, within
 the pinned configurations. Those larger counts alone are not proving or
 peak-memory measurements.
 
+## Shared tree authentication
+
+[`auth_memory::multi`](../flock-stage3/host/src/ixby/auth_memory/multi/mod.rs)
+authenticates all boundary cells through one shared tree. Leaves use the same
+domain-separated cell hash as the original memory. Each internal node hashes
+its actual old and new children. An unchanged sibling subtree contributes one
+private frontier digest, used identically on both sides.
+
+An exact permutation connects complete six-word node records: presence,
+`(level, index)`, old digest and new digest. Its supplied records are the
+leaves, frontier and parent outputs. Its requested records are every parent's
+two children and one externally expected root pair. Levels decrease by one
+at every child edge; indices become `2*i` and `2*i+1`. Every supplied node
+must therefore connect to that single root. There can be no disconnected
+cycle, orphan, duplicate branch or substituted address. The cryptographic
+leaf/parent checks bind the values; frontier nodes cannot change between
+the two roots.
+
+The setup fixes `L` leaves and at most `P` internal nodes. It reserves
+`P+1-L` frontier slots. Unused internal/frontier records are canonical zero.
+Directed equality gates compare the routed records with actual child/root
+wires without introducing cycles in the circuit graph. The existing exact
+memory audit uses the same leaf address and old/new value wires.
+
+Two genuine proofs verify in fresh processes:
+
+| Depth-40 class | Actual parents / capacity | Compressions | Proof bytes | Setup | Prove |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Three cells | 41 / 48 | 102 | 296,723 | 1.896 s | 0.259 s |
+| 96 clustered cells | 162 / 192 | 576 | 380,771 | 2.310 s | 0.313 s |
+
+The 96-cell class uses `M=25` and 220,546 dense field words. Separate paths
+would require 7,872 compressions for those 96 cells. The measurements use
+four Rayon threads; another execution proof test ran concurrently. Both
+memory tests, fresh receivers and attacks completed in 11.90 seconds, with
+1,627,100 KiB maximum process RSS under a 32 GiB virtual-memory cap.
+
+Every expected-word change and malformed envelope rejects. Eleven locally
+valid recomputed attacks against leaf addresses, parent positions/levels,
+children, parent/frontier digests, record equality, routing, cell hashes,
+compression flags and inactive-node activation reject at Flock's wiring
+check. Ordinary tests check every output bit and recycled padding, compare
+simultaneous updates with sequential roots/openings, and cover empty updates,
+depth-zero root leaves and complete depth-64 paths.
+
+`MemoryBatch::finish_shared` generates the native simultaneous-update advice.
+The fixed and timed memory-log APIs expose this path alongside their original
+single-cell-path APIs. Callers must use the same actual leaf wires for both
+tree authentication and the ordered access audit.
+
 ## Reproduce
 
 ```sh
+RUSTFLAGS='-C target-cpu=native' RAYON_NUM_THREADS=4 cargo test --release \
+  --offline --manifest-path flock-stage3/Cargo.toml auth_memory::multi:: \
+  -- --ignored --nocapture --test-threads=1
 cargo test --release --locked --manifest-path flock-stage3/Cargo.toml \
   --workspace auth_memory -- --test-threads=1
 cargo test --release --locked --manifest-path flock-stage3/Cargo.toml \

@@ -4,7 +4,7 @@ use crate::hash::pack_bytes;
 use anyhow::{Result, ensure};
 use blake3::hazmat::{Mode, merge_subtrees_root};
 use flock_prover::field::F128;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 fn bytes(value: [F128; 2]) -> [u8; 32] {
   let mut out = [0; 32];
@@ -32,6 +32,39 @@ pub struct MemoryOpening {
   pub address: u64,
   pub value: [F128; 2],
   pub siblings: Vec<[F128; 2]>,
+}
+#[derive(Clone, Debug)]
+pub struct LeafUpdate {
+  pub address: u64,
+  pub old: [F128; 2],
+  pub new: [F128; 2],
+  pub old_hash: [F128; 2],
+  pub new_hash: [F128; 2],
+}
+#[derive(Clone, Debug)]
+pub struct ParentUpdate {
+  pub level: usize,
+  pub index: u64,
+  pub old_children: [[F128; 2]; 2],
+  pub new_children: [[F128; 2]; 2],
+  pub old_hash: [F128; 2],
+  pub new_hash: [F128; 2],
+}
+#[derive(Clone, Debug)]
+pub struct FrontierNode {
+  pub level: usize,
+  pub index: u64,
+  pub hash: [F128; 2],
+}
+/// Untrusted advice for one shared tree of simultaneous cell replacements.
+#[derive(Clone, Debug)]
+pub struct MultiUpdate {
+  pub depth: MemoryDepth,
+  pub initial_root: [F128; 2],
+  pub final_root: [F128; 2],
+  pub leaves: Vec<LeafUpdate>,
+  pub parents: Vec<ParentUpdate>,
+  pub frontier: Vec<FrontierNode>,
 }
 impl MemoryOpening {
   pub fn words(&self) -> Vec<F128> {
@@ -96,6 +129,9 @@ impl SparseMemory {
   pub fn root(&self) -> [F128; 2] {
     words(self.node(self.depth.bits(), 0))
   }
+  pub fn depth(&self) -> MemoryDepth {
+    self.depth
+  }
   pub fn empty_root(&self) -> [F128; 2] {
     words(self.empty[self.depth.bits()])
   }
@@ -147,5 +183,100 @@ impl SparseMemory {
       }
     }
     Ok(old)
+  }
+  /// Untrusted simultaneous-update advice. Every distinct internal node is
+  /// recomputed once, and unchanged sibling subtrees form a shared frontier.
+  /// Validate all addresses before making any change to the native memory.
+  pub fn replace_many(
+    &mut self,
+    updates: impl IntoIterator<Item = (u64, [F128; 2])>,
+  ) -> Result<MultiUpdate> {
+    let updates = updates.into_iter().collect::<Vec<_>>();
+    let mut addresses = HashSet::new();
+    let mut internal = BTreeSet::new();
+    for &(address, _) in &updates {
+      ensure!(self.depth.admits(address), "memory address out of range");
+      ensure!(addresses.insert(address), "duplicate memory update address");
+      for level in 1..=self.depth.bits() {
+        internal
+          .insert((level, address.checked_shr(level as u32).unwrap_or(0)));
+      }
+    }
+    let initial_root = self.root();
+    let mut frontier = Vec::new();
+    let mut parents = Vec::with_capacity(internal.len());
+    for &(level, index) in &internal {
+      let children = [index * 2, index * 2 + 1];
+      let old_children =
+        children.map(|child| words(self.node(level - 1, child)));
+      for (&child, &hash) in children.iter().zip(&old_children) {
+        let covered = if level == 1 {
+          addresses.contains(&child)
+        } else {
+          internal.contains(&(level - 1, child))
+        };
+        if !covered {
+          frontier.push(FrontierNode { level: level - 1, index: child, hash });
+        }
+      }
+      parents.push(ParentUpdate {
+        level,
+        index,
+        old_children,
+        new_children: [[F128::ZERO; 2]; 2],
+        old_hash: words(self.node(level, index)),
+        new_hash: [F128::ZERO; 2],
+      });
+    }
+    if updates.is_empty() {
+      frontier.push(FrontierNode {
+        level: self.depth.bits(),
+        index: 0,
+        hash: initial_root,
+      });
+    }
+    let mut leaves = Vec::with_capacity(updates.len());
+    for (address, new) in updates {
+      let old = self.cells.get(&address).copied().unwrap_or([F128::ZERO; 2]);
+      let old_hash = words(self.node(0, address));
+      if new == [F128::ZERO; 2] {
+        self.cells.remove(&address);
+      } else {
+        self.cells.insert(address, new);
+      }
+      let hash = leaf(new);
+      if hash == self.empty[0] {
+        self.nodes.remove(&(0, address));
+      } else {
+        self.nodes.insert((0, address), hash);
+      }
+      leaves.push(LeafUpdate {
+        address,
+        old,
+        new,
+        old_hash,
+        new_hash: words(hash),
+      });
+    }
+    for node in &mut parents {
+      let left = self.node(node.level - 1, node.index * 2);
+      let right = self.node(node.level - 1, node.index * 2 + 1);
+      node.new_children = [words(left), words(right)];
+      let hash = parent(&left, &right);
+      if hash == self.empty[node.level] {
+        self.nodes.remove(&(node.level, node.index));
+      } else {
+        self.nodes.insert((node.level, node.index), hash);
+      }
+      node.new_hash = words(hash);
+    }
+    Ok(MultiUpdate {
+      depth: self.depth,
+      initial_root,
+      final_root: self.root(),
+      leaves,
+      parents,
+      frontier,
+    })
   }
 }

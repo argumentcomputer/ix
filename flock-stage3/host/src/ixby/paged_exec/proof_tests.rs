@@ -4,7 +4,7 @@ use crate::{
   goldilocks::{self, CanonicalGoldilocksQuadGate, GoldilocksAddPairGate},
   hash::{Blake3Gate, pack_bytes},
   ixby::{
-    auth_memory::MemoryGate,
+    auth_memory::{MemoryGate, multi::MultiGate},
     decode::PrimitiveSet,
     execution_order::{OrderGate, OrderKind},
     memory_log::{AuditGate, SwitchGate},
@@ -52,6 +52,9 @@ fn domain(class: BatchClass) -> &'static [u8] {
     BatchClass::Objects => b"IxBy/Flock/paged-execution:objects:v1",
     BatchClass::Compact => b"IxBy/Flock/paged-execution:compact:v1",
     BatchClass::Bytes => b"IxBy/Flock/paged-execution:bytes:v0",
+    BatchClass::SharedCompact => {
+      b"IxBy/Flock/paged-execution:shared-compact:v0"
+    },
   }
 }
 const MAGIC: [u8; 8] = *b"IXFPGX00";
@@ -395,6 +398,16 @@ fn drivers(emission: &BatchEmission, shape: &CircuitShape) -> Vec<Driver> {
       |g: &MemoryGate, r, _, d| g.generate_witness_into(r, d),
     ));
   }
+  if let Some(tree) = &emission.tree {
+    for (slot, gate) in tree.gates() {
+      result.push(Driver::new(
+        slot,
+        gate.clone(),
+        gate.r1cs(),
+        |g: &MultiGate, r, _, d| g.generate_witness_into(r, d),
+      ));
+    }
+  }
   let (slot, gate) = log.audit_gate();
   result.push(Driver::new(
     slot,
@@ -436,7 +449,10 @@ fn drivers(emission: &BatchEmission, shape: &CircuitShape) -> Vec<Driver> {
   for (i, d) in result.iter().enumerate() {
     assert_eq!(shape.registry_slot(d.slot), i);
   }
-  assert_eq!(result.len() + 2, shape.counts.len());
+  assert_eq!(
+    result.len() + 2 + usize::from(emission.tree.is_some()),
+    shape.counts.len()
+  );
   result
 }
 fn setup(class: BatchClass) -> (BatchEmission, CircuitShape, Vec<Driver>) {
@@ -473,6 +489,9 @@ fn prove(
     emission.order.permutation().gate(),
     emission.memory.log().permutation().gate(),
   ];
+  if let Some(tree) = &emission.tree {
+    switches.push(tree.permutation().gate());
+  }
   switches.sort_by_key(|(slot, _)| shape.registry_slot(*slot));
   let nu = emission.class.nu();
   let element = switches
@@ -716,13 +735,9 @@ fn proof_test(
 }
 
 pub(super) fn original_proof_test(
+  class: BatchClass,
   test: &str,
   fixture: fn() -> (BatchAdvice, Vec<RowAdvice>),
 ) {
-  proof_test(
-    BatchClass::Compact,
-    test,
-    fixture,
-    &[Attack::OrderClock, Attack::MemoryClock],
-  );
+  proof_test(class, test, fixture, &[Attack::OrderClock, Attack::MemoryClock]);
 }

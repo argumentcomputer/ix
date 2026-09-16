@@ -1,6 +1,9 @@
 use super::*;
 use crate::{
-  ixby::auth_memory::{MemoryAccessSlots, MemoryDepth, MemoryOpeningWires},
+  ixby::auth_memory::{
+    MemoryAccessSlots, MemoryDepth, MemoryOpeningWires,
+    multi::{LeafWires, MultiMemorySlots, MultiProofWires},
+  },
   sizing::{CircuitEmitter, CountedGate},
 };
 use anyhow::Result;
@@ -92,8 +95,16 @@ impl MemoryLogSlots {
   ) -> [Wire; 2] {
     let plan = Self::plan(accesses.len(), cells.len()).unwrap();
     assert_eq!(switches.len(), plan.switches());
+    let records = self.prepare_records(b, accesses);
+    self.check_records(b, initial_root, records, cells, switches)
+  }
+  fn prepare_records(
+    &self,
+    b: &mut impl CircuitEmitter,
+    accesses: &[AccessWires],
+  ) -> Vec<Vec<Wire>> {
     let (switch_slot, switch_gate) = self.permutation.gate();
-    let mut records = Vec::with_capacity(plan.lanes());
+    let mut records = Vec::with_capacity(accesses.len());
     for (batch_index, batch) in
       accesses.chunks(switch::SWITCHES_PER_ROW).enumerate()
     {
@@ -123,7 +134,34 @@ impl MemoryLogSlots {
           .map(|record| record[..RECORD_WORDS].to_vec()),
       );
     }
-    self.check_records(b, initial_root, records, cells, switches)
+    records
+  }
+  /// Authenticate the same actual old/new cells through a shared Merkle tree.
+  /// Both roots are caller wires, and the exact access audit is unchanged.
+  pub fn check_shared(
+    &self,
+    b: &mut impl CircuitEmitter,
+    tree: &MultiMemorySlots,
+    roots: [[Wire; 2]; 2],
+    accesses: &[AccessWires],
+    proof: &MultiProofWires,
+    switches: &[Wire],
+  ) {
+    let records = self.prepare_records(b, accesses);
+    self.check_shared_records(b, tree, roots, records, proof, switches);
+  }
+  pub(super) fn check_shared_records(
+    &self,
+    b: &mut impl CircuitEmitter,
+    tree: &MultiMemorySlots,
+    roots: [[Wire; 2]; 2],
+    records: Vec<Vec<Wire>>,
+    proof: &MultiProofWires,
+    switches: &[Wire],
+  ) {
+    assert_eq!(tree.depth(), self.memory.depth());
+    tree.check(b, roots, proof);
+    self.audit_records(b, records, &proof.leaves, switches);
   }
   /// The records must come from the old fixed-order preparation above or the
   /// constrained timed-access gate. Keep this entry point module-private.
@@ -131,12 +169,10 @@ impl MemoryLogSlots {
     &self,
     b: &mut impl CircuitEmitter,
     initial_root: [Wire; 2],
-    mut records: Vec<Vec<Wire>>,
+    records: Vec<Vec<Wire>>,
     cells: &[BoundaryWires],
     switches: &[Wire],
   ) -> [Wire; 2] {
-    let plan = Self::plan(records.len(), cells.len()).unwrap();
-    assert_eq!(switches.len(), plan.switches());
     let mut root = initial_root;
     for cell in cells {
       root = self.memory.replace(
@@ -146,19 +182,41 @@ impl MemoryLogSlots {
         &cell.opening,
         cell.final_value,
       );
+    }
+    let leaves = cells
+      .iter()
+      .map(|cell| LeafWires {
+        address: cell.address,
+        old: cell.opening.value,
+        new: cell.final_value,
+      })
+      .collect::<Vec<_>>();
+    self.audit_records(b, records, &leaves, switches);
+    root
+  }
+  fn audit_records(
+    &self,
+    b: &mut impl CircuitEmitter,
+    mut records: Vec<Vec<Wire>>,
+    cells: &[LeafWires],
+    switches: &[Wire],
+  ) {
+    let plan = Self::plan(records.len(), cells.len()).unwrap();
+    assert_eq!(switches.len(), plan.switches());
+    for cell in cells {
       records.push(vec![
         cell.address,
         self.zero,
         self.kinds[SEED as usize],
-        cell.opening.value[0],
-        cell.opening.value[1],
+        cell.old[0],
+        cell.old[1],
       ]);
       records.push(vec![
         cell.address,
         self.last,
         self.kinds[SEAL as usize],
-        cell.final_value[0],
-        cell.final_value[1],
+        cell.new[0],
+        cell.new[1],
       ]);
     }
     let padding = vec![
@@ -180,6 +238,5 @@ impl MemoryLogSlots {
       b.connect(output[0], self.residual);
       previous = current;
     }
-    root
   }
 }

@@ -2,7 +2,10 @@
 //! authentication paths are computed once per touched cell at batch commit.
 //! Circuit consumers must supply their own address/flag/value wires to check.
 use super::{MemoryLogSlots, PAD, READ, SEAL, SEED, WRITE};
-use crate::ixby::auth_memory::{MemoryOpening, SparseMemory};
+use crate::ixby::auth_memory::{
+  MemoryOpening, SparseMemory,
+  multi::{MultiAdvice, MultiCapacity},
+};
 use anyhow::{Result, ensure};
 use flock_prover::field::F128;
 use std::collections::{BTreeMap, BTreeSet};
@@ -26,6 +29,16 @@ pub struct MemoryBatchAdvice {
   pub switches: Vec<F128>,
 }
 impl MemoryBatchAdvice {
+  fn ordered_switches(&self) -> Result<Vec<F128>> {
+    let order = (0..self.accesses.len())
+      .map(|index| {
+        // The general timed helper uses clock*32+ordinal+1. This packs the
+        // fixed chronological sequence into those same exact integer times.
+        Some((index, index as u64 / 32, (index % 32) as u8))
+      })
+      .collect::<Vec<_>>();
+    self.timed_switches(&order)
+  }
   pub fn boundary_words(&self) -> Vec<F128> {
     let mut words = Vec::new();
     for boundary in &self.boundaries {
@@ -131,6 +144,44 @@ impl<'a> MemoryBatch<'a> {
         .collect::<BTreeSet<_>>()
         .len()
   }
+  /// Quotas are setup policy; this only decides when native advice should
+  /// stop. Every parent and leaf is independently checked by the proof.
+  pub fn fits_shared(
+    &self,
+    accesses: &[AccessAdvice],
+    capacity: MultiCapacity,
+  ) -> bool {
+    let mut addresses = self
+      .current
+      .keys()
+      .copied()
+      .chain(accesses.iter().map(|a| a.address))
+      .collect::<BTreeSet<_>>();
+    if addresses.len() > capacity.leaves {
+      return false;
+    }
+    let mut candidate = 0;
+    while addresses.len() < capacity.leaves {
+      if !self.memory.depth().admits(candidate) {
+        return false;
+      }
+      addresses.insert(candidate);
+      candidate += 1;
+    }
+    let mut parents = BTreeSet::new();
+    for address in addresses {
+      if !self.memory.depth().admits(address) {
+        return false;
+      }
+      for level in 1..=self.memory.depth().bits() {
+        parents.insert((level, address.checked_shr(level as u32).unwrap_or(0)));
+        if parents.len() > capacity.parents {
+          return false;
+        }
+      }
+    }
+    true
+  }
   pub fn read(&mut self, address: u64) -> Result<[F128; 2]> {
     let value = self.value(address)?;
     self.current.insert(address, value);
@@ -146,12 +197,7 @@ impl<'a> MemoryBatch<'a> {
   pub fn finish(self) -> Result<MemoryBatchAdvice> {
     self.finish_padded(0)
   }
-  /// Fixed factories may authenticate additional untouched cells to fill a
-  /// public boundary quota. Their seed and seal values must still match.
-  pub fn finish_padded(
-    mut self,
-    minimum_cells: usize,
-  ) -> Result<MemoryBatchAdvice> {
+  fn pad(&mut self, minimum_cells: usize) -> Result<()> {
     let mut candidate = 0;
     while self.current.len() < minimum_cells {
       if !self.current.contains_key(&candidate) {
@@ -160,6 +206,46 @@ impl<'a> MemoryBatch<'a> {
       }
       candidate += 1;
     }
+    Ok(())
+  }
+  pub fn finish_shared(
+    mut self,
+    capacity: MultiCapacity,
+  ) -> Result<(MemoryBatchAdvice, MultiAdvice)> {
+    ensure!(self.fits_shared(&[], capacity), "shared memory batch quota");
+    self.pad(capacity.leaves)?;
+    // Check the fixed audit capacity before changing the backing memory.
+    MemoryLogSlots::plan(self.accesses.len(), self.current.len())?;
+    let update = self.memory.replace_many(self.current)?;
+    let tree = MultiAdvice::new(capacity, &update)?;
+    let mut memory = MemoryBatchAdvice {
+      initial_root: update.initial_root,
+      final_root: update.final_root,
+      accesses: self.accesses,
+      boundaries: update
+        .leaves
+        .iter()
+        .map(|leaf| BoundaryAdvice {
+          opening: MemoryOpening {
+            address: leaf.address,
+            value: leaf.old,
+            siblings: Vec::new(),
+          },
+          final_value: leaf.new,
+        })
+        .collect(),
+      switches: Vec::new(),
+    };
+    memory.switches = memory.ordered_switches()?;
+    Ok((memory, tree))
+  }
+  /// Fixed factories may authenticate additional untouched cells to fill a
+  /// public boundary quota. Their seed and seal values must still match.
+  pub fn finish_padded(
+    mut self,
+    minimum_cells: usize,
+  ) -> Result<MemoryBatchAdvice> {
+    self.pad(minimum_cells)?;
     let plan = MemoryLogSlots::plan(self.accesses.len(), self.current.len())?;
     let mut records = self
       .accesses

@@ -96,6 +96,11 @@ Compact batches pass the actual execution circuit and all boundary equalities:
 evaluation took 8.883 seconds after loading and setup. This is a prefix check,
 not a completed run or a proving throughput estimate.
 
+A longer run of 10,000 Compact batches also passes: 84,761 microsteps,
+21,687 logical steps, 2,802 heap fields and 68 dynamic-byte cells. Its circuit
+evaluation took 797.087 seconds after loading and setup. It checks every
+batch boundary and uses the same original program and input.
+
 An actual **419,091-byte proof** of batch 99 verifies in a fresh process
 receiving only the expected statement and proof. It covers microsteps
 719–726 and logical steps 171–173, starting from the expected memory root
@@ -123,7 +128,7 @@ action sequence.
 
 The batch carries 24 state words, including all frame/fuel fields, allocation
 counters, instruction header, resolution cursor, and pending immutable copy.
-The finite Small, Compact, Objects and Bytes factories reserve fixed quotas for each
+The finite Small, Compact, Objects, Bytes and SharedCompact factories reserve fixed quotas for each
 operation. Their rows may be grouped by
 operation: an exact permutation of complete state records proves one positive,
 unbroken execution chain. Each memory timestamp is derived from that same
@@ -152,6 +157,27 @@ The initial code root in this fixture is an independently expected memory
 image. Connecting that root to the original IXBF source remains required.
 This result covers a small instruction segment. The original CSLib execution
 remains unproved.
+
+### Execution with a shared memory tree
+
+SharedCompact uses the same instruction quotas as Compact, with 16 boundary
+cells, up to 192 internal tree nodes and `nu=10`. Its memory check uses the
+[shared-path relation](IxbyFlockMemory.md#shared-tree-authentication). The
+native batch stops before its parent-node quota as well as its cell and
+instruction quotas; boundaries can therefore differ from Compact's.
+
+An original-CSLib SharedCompact segment produces a **454,035-byte proof**
+that verifies in a fresh process. It covers microsteps 410–417 and logical
+steps 89–91. Setup took 3.615 seconds and proving 1.127 seconds with four
+Rayon threads (`M=26`, 416,313 dense field words). All expected-word and
+envelope changes, plus recomputed state-clock and memory-clock attacks,
+reject. This proof still starts from an expected root whose source admission
+is pending. It is not a full-run throughput measurement.
+
+The object/application fixture and unaligned 3,073-byte hash also pass their
+actual circuits across SharedCompact boundaries. They preserve all carried
+state, final values and fuel; the object test reaches the same final memory
+root as its whole-program fixture.
 
 ## Immutable objects and application
 

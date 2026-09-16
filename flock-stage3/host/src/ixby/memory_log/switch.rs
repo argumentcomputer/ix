@@ -18,7 +18,7 @@ pub struct SwitchGate {
   table: Arc<OnceLock<Arc<ElementTableType>>>,
 }
 #[derive(Clone, Debug)]
-pub struct SwitchRow(pub(super) Vec<F128>);
+pub struct SwitchRow(pub(crate) Vec<F128>);
 
 impl SwitchGate {
   pub fn new(words: usize) -> Result<Self> {

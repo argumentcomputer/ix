@@ -655,6 +655,12 @@ impl NativeMachine {
       if memory.prospective_cells(&row.accesses) > class.cells() {
         break;
       }
+      if class
+        .shared_memory()
+        .is_some_and(|capacity| !memory.fits_shared(&row.accesses, capacity))
+      {
+        break;
+      }
       self.commit(&mut memory, &row)?;
       counts[chip as usize] += 1;
       rows.push(row);
@@ -663,7 +669,13 @@ impl NativeMachine {
       !rows.is_empty(),
       "batch class cannot admit the next execution step"
     );
-    let memory = memory.finish_padded(class.cells())?;
-    Ok(Some(BatchAdvice::new(class, self.parameters, &rows, &memory)?))
+    let advice = if let Some(capacity) = class.shared_memory() {
+      let (memory, tree) = memory.finish_shared(capacity)?;
+      BatchAdvice::new_shared(class, self.parameters, &rows, &memory, &tree)?
+    } else {
+      let memory = memory.finish_padded(class.cells())?;
+      BatchAdvice::new(class, self.parameters, &rows, &memory)?
+    };
+    Ok(Some(advice))
   }
 }

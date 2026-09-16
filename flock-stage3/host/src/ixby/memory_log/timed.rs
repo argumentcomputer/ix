@@ -1,7 +1,10 @@
 use super::{AccessWires, BoundaryWires, MemoryLogSlots};
 use crate::{
   ixby::{
-    auth_memory::MemoryDepth,
+    auth_memory::{
+      MemoryDepth,
+      multi::{MultiMemorySlots, MultiProofWires},
+    },
     execution_order::{OrderGate, OrderKind},
   },
   sizing::CircuitEmitter,
@@ -53,7 +56,27 @@ impl TimedMemoryLogSlots {
     cells: &[BoundaryWires],
     switches: &[Wire],
   ) -> [Wire; 2] {
-    let records = accesses
+    let records = self.records(b, accesses);
+    self.log.check_records(b, root, records, cells, switches)
+  }
+  pub fn check_shared(
+    &self,
+    b: &mut impl CircuitEmitter,
+    tree: &MultiMemorySlots,
+    roots: [[Wire; 2]; 2],
+    accesses: &[TimedAccessWires],
+    proof: &MultiProofWires,
+    switches: &[Wire],
+  ) {
+    let records = self.records(b, accesses);
+    self.log.check_shared_records(b, tree, roots, records, proof, switches);
+  }
+  fn records(
+    &self,
+    b: &mut impl CircuitEmitter,
+    accesses: &[TimedAccessWires],
+  ) -> Vec<Vec<Wire>> {
+    accesses
       .iter()
       .map(|request| {
         assert!(request.ordinal < 32);
@@ -75,7 +98,6 @@ impl TimedMemoryLogSlots {
         b.connect(output[5], self.residual);
         output[..5].to_vec()
       })
-      .collect();
-    self.log.check_records(b, root, records, cells, switches)
+      .collect()
   }
 }

@@ -224,6 +224,7 @@ fn original_program_input_prefix_exercises_paged_execution() {
 #[ignore = "requires original IXBF/IXFI; proves one conditional execution segment with a fresh receiver"]
 fn original_execution_segment_proves_with_fresh_memory_root_binding() {
   proof_tests::original_proof_test(
+    BatchClass::Compact,
     "ixby::paged_exec::image_tests::original_execution_segment_proves_with_fresh_memory_root_binding",
     || {
       let program = std::fs::read(
@@ -256,6 +257,45 @@ fn original_execution_segment_proves_with_fresh_memory_root_binding() {
         .expect("execution segment");
       eprintln!(
         "original segment: batch={index} clocks={before}..{} logical_steps={fuel}..{}; expected memory root is conditional, source admission remains unproved",
+        machine.clock, machine.state[FUEL].hi
+      );
+      (advice, Vec::new())
+    },
+  );
+}
+
+#[test]
+#[ignore = "requires original IXBF/IXFI; execution proof using shared tree authentication and a fresh receiver"]
+fn original_execution_segment_with_shared_tree_proves_fresh() {
+  proof_tests::original_proof_test(
+    BatchClass::SharedCompact,
+    "ixby::paged_exec::image_tests::original_execution_segment_with_shared_tree_proves_fresh",
+    || {
+      let program = std::fs::read(
+        std::env::var_os("IXBY_PAGED_PROGRAM").expect("IXBY_PAGED_PROGRAM"),
+      )
+      .unwrap();
+      let input = std::fs::read(
+        std::env::var_os("IXBY_PAGED_INPUT").expect("IXBY_PAGED_INPUT"),
+      )
+      .unwrap();
+      let mut image =
+        NativeImage::load(&program, &input, DecodeLimits::default()).unwrap();
+      let mut machine = image.machine().unwrap();
+      for _ in 0..99 {
+        machine
+          .batch(BatchClass::SharedCompact, &mut image.memory)
+          .unwrap()
+          .expect("execution prefix");
+      }
+      let before = machine.clock;
+      let fuel = machine.state[FUEL].hi;
+      let advice = machine
+        .batch(BatchClass::SharedCompact, &mut image.memory)
+        .unwrap()
+        .expect("execution segment");
+      eprintln!(
+        "original shared-tree segment: batch=99 clocks={before}..{} logical_steps={fuel}..{}; expected initial memory remains conditional on source admission",
         machine.clock, machine.state[FUEL].hi
       );
       (advice, Vec::new())

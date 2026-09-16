@@ -8,6 +8,7 @@
 
 mod arena;
 mod gate;
+pub mod multi;
 #[cfg(test)]
 mod proof_tests;
 #[cfg(test)]
@@ -16,7 +17,10 @@ mod witness;
 
 pub use arena::{ArenaStateWires, ImmutableArenaSlots};
 pub use gate::{MemoryGate, MemoryGateKind, MemoryRow};
-pub use witness::{MemoryOpening, SparseMemory};
+pub use witness::{
+  FrontierNode, LeafUpdate, MemoryOpening, MultiUpdate, ParentUpdate,
+  SparseMemory,
+};
 
 use crate::{
   blake3_backend::{Blake3Backend, Blake3CompressionSlots},
