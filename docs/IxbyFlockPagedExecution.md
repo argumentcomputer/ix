@@ -124,11 +124,13 @@ byte/hash implementation's complete regression suite passed 311 tests with
 
 `CompiledPagedExecution::compile(class)` provides the production setup,
 advice-checking, proving, verification and recursive-replay interface for all
-six fixed batch classes. `ExecutionStatement` binds exactly 57 field words
+nine fixed batch classes. `ExecutionStatement` binds exactly 57 field words
 and requires strictly increasing, nonwrapping clocks. Setup checks every
 Boolean table's complete matrices and input/output schema against its witness
-driver, including the shared memory tree. The existing circuit layouts,
-transcript domains and proof envelopes are unchanged.
+driver, including the shared memory tree. The six existing classes retain
+their circuit layouts and transcript domains. The three Boolean-routing
+classes have separate approved setups and domains; the public statement and
+proof envelope are unchanged.
 The compiled setup retains immutable prover data and discards emission-only
 canonicality queues, allowing workers to share it safely.
 
@@ -137,7 +139,8 @@ their fresh-process verifiers and 28 locally valid recomputed attacks. They
 passed in 116.66 seconds. The original SharedCompact segment also passed
 through this API, including its two recomputed clock attacks; it produced the
 same 454,035-byte proof size. An ordinary test checks actual advice and complete
-statement boundaries through all six setups. Clippy passes with warnings
+statement boundaries through the six original setups and both Boolean-routing
+counterparts. The larger class has genuine proof checks. Clippy passes with warnings
 denied.
 
 ## Complete endpoint binding
@@ -327,7 +330,7 @@ Building the instruction-gate witness took another 0.779 seconds. These
 measurements guide optimization; they do not establish a hardware bandwidth
 ceiling or a full-workload rate.
 
-The current Fetch quota is 32. The independent reference profile records
+The original Shared Fetch quota is 32. The independent reference profile records
 1,956,519,385 Eval transitions, giving a quota-based floor of **61,141,231
 execution leaves** when each Eval requires its instruction fetch. At the
 observed leaf size that is about **30.5 TB**, before recursive nodes. A linear
@@ -336,14 +339,9 @@ leaves alone. This excludes native replay, admission, output and aggregation;
 it is an estimate, not a measured full-run duration. An unbounded complete
 CSLib proof job was not launched.
 
-Raising useful work per proof therefore starts with cheaper state/memory
-ordering and a compact working layout. A larger segment can then share its
-boundary memory authentication across more instructions. Workload-specific
-instruction and byte/hash classes can further reduce unused capacity, with
-every class and full boundary join still checked by the approved verifier.
-An initial engineering target is 1,024 guest instructions per proof; it is
-not an implemented class or a measured speedup. Progress must be assessed in
-seconds and peak memory per guest instruction, including recursive costs.
+These measurements motivated the Boolean routing and larger fixed class
+below. Further progress must be assessed in seconds and peak memory per guest
+instruction, including recursive costs.
 
 Reproduce the bounded throughput measurement with the existing test harness:
 
@@ -370,6 +368,107 @@ cargo test --release --locked --manifest-path flock-stage3/Cargo.toml \
 bounds sample size and worker count. `PCS_TRACE=1` enables the existing native
 prover's phase timings. The checked-in record retains exact per-sample times,
 artifact hashes, both fresh receiver receipts and the address-limit failure.
+
+### Boolean routing and the 1,024-fetch class
+
+`shared-compact-boolean` and `shared-boolean` retain the corresponding Shared
+quotas and memory capacities, and express all three whole-record switching
+networks as Boolean tables. Each selector is exactly zero or one, and every
+bit of every state and memory word remains constrained. The packed witness
+writer computes complete field words directly and is checked against the
+table's sparse matrices. This preserves the existing proof protocol.
+
+An entirely Boolean union can use Flock's support-aware working buffers.
+Witness generation writes the useful rows and the final eight-row group;
+it skips the remaining unused rows when the prover permits this. Clearing
+the final group is necessary because the pinned x86 zerocheck kernel reads
+512-bit units. Row domains smaller than 64 rows clear all padding because
+those reads can span column gaps. Mixed Boolean/element unions continue to
+write all padding. The Boolean Shared layout has 4 GiB per padded buffer,
+compared with 8 GiB for the original Shared layout.
+
+`shared-1024` uses this routing with **1,024 Fetch slots, 8,128 total
+microstep slots, 2,048 distinct memory cells and 8,191 shared-tree parents**.
+Its row capacity is 32,768, and its commitment has `M=33`. The exact useful
+witness contains 59,381,425 field words; the padded address domain remains
+16 GiB per buffer. These are reserved capacities, not guaranteed instruction
+counts: a batch ends when any instruction family or memory capacity fills.
+Logical Eval/Apply/Return steps differ from Fetch operations, and a batch may
+contain either more or fewer than 1,024 logical steps.
+
+The new transcript domains end in `shared-compact-boolean:v0`,
+`shared-boolean:v0` and `shared-1024:v0`. Callers select the class explicitly,
+including in the production CLI and recursive verifier setup. Existing class
+identities remain compatible with previously generated proofs.
+
+The final binary produced these verified server samples. Worker wall time
+excludes setup and native replay, and includes verification and retained proof
+writes. The first two rows cover identical execution boundaries.
+
+| Class | Workers × threads | Batch indices | Logical steps | Worker wall, seconds | Steps/second | Peak RSS, GiB |
+| --- | --- | --- | ---: | ---: | ---: | ---: |
+| Shared | 1 × 4 | 0–7 | 252 | 36.137 | 6.973 | 19.772 |
+| SharedBoolean | 1 × 4 | 0–7 | 252 | 32.742 | 7.697 | 8.493 |
+| Shared1024 | 8 × 4 | 0–15 | 16,906 | 57.849 | 292.245 | 163.962 |
+
+The larger sample averages **1,056.625 logical steps per proof**, versus
+37.156 in the previous 64-batch Shared sample: **28.4 times as much work**.
+Each larger proof is 612,155 bytes, versus 498,939 bytes. Its measured leaf
+throughput is **8.4 times** the previous best of 34.767 steps/second on the
+same server. The equal-capacity Boolean change alone cuts paired peak RSS
+from 19.772 to 8.493 GiB, making larger batches affordable.
+
+The [measurement record](../flock-stage3/profile/cslib-large-execution-v0.json)
+retains all 96 proof samples, including four-worker and later-window runs,
+exact per-family row usage, failed trials, binary hashes and fresh verification
+receipts. Short-window leaf throughput excludes recursive aggregation and
+does not establish a complete CSLib proving rate. Applying that rate to the
+full reference trace would still project about 90 days for execution leaves
+alone, before admission, output and recursion.
+
+All three new classes pass genuine original-CSLib leaf proofs, fresh
+verification, changed expected statements and malformed envelopes. Locally
+valid recomputed state-clock and memory-clock witnesses reject at the wiring
+check. A fresh receiver also accepts larger-class server batch 256, covering
+logical steps 313,360–314,604, with only its expected statement and proof.
+An old Shared proof remains verifiable with the updated implementation.
+
+The first three larger CSLib leaves cover 14,359 microsteps and 3,604 logical
+steps. Genuine recursive nodes joining two and three leaves verify, producing
+389,443 and 376,467 bytes. The second level includes a recursive child and a
+raw execution leaf. Repeated, reversed and skipped genuine segments reject.
+The final node verifies in a fresh process, which also rejects low-bit and
+high-bit changes independently in every one of its 57 public words.
+The two nodes took 84.1 and 88.9 seconds locally for proving plus verification;
+their setup and fresh receiver are additional costs. These are correctness
+runs, separate from the server leaf-throughput measurements.
+These remain conditional execution chains; they do not prove the preceding
+source-admission obligations or the complete CSLib workload.
+
+The switching networks remain the largest useful-data cost: 48,242,688 field
+words, or 81.2% of the larger class. The improvement comes from cheaper
+witness storage and generation, then amortizing fixed boundary work across
+larger batches. A smaller ordering argument and specialized byte/hash quotas
+remain opportunities for further improvement.
+
+Use the bounded harness above with `IXBY_PAGED_NATIVE_CLASS=shared-1024`,
+`IXBY_PROOF_SKIP=0`, `IXBY_PROOF_BATCHES=16`, `IXBY_PROOF_WORKERS=8` and
+`IXBY_PROOF_THREADS=4` to reproduce the larger-class server sample. Resource
+limits must accommodate both address reservations and resident memory; the
+eight-worker run used a 1,536 GiB virtual-address allowance within a separate
+400 GiB physical-memory cap on the 495 GiB server. This is a benchmark setting,
+not a requirement for one worker. The complete CLI selects the same approved
+class with `--class shared-1024`.
+
+The independently checked 83-step countdown also passes the complete CLI
+using this class: its 367 microsteps fit one execution leaf, all eleven
+component proofs and the endpoint proof verify, and recursive aggregation
+produces a **502,979-byte root**. A fresh process accepts it with only the
+approved profile, independently expected digest and root proof. Complete
+proving took 715.7 seconds on the server; fresh setup took 170.9 seconds and
+verification 23.3 seconds. This small workload validates composition and the
+padding fix; its timing does not measure large-workload throughput. See the
+[complete countdown record](../flock-stage4/census/paged-execution-countdown-1024-v0.json).
 
 ## Immutable objects and application
 

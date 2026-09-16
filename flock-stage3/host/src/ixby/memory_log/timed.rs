@@ -1,4 +1,4 @@
-use super::{AccessWires, BoundaryWires, MemoryLogSlots};
+use super::{AccessWires, BoundaryWires, MemoryLogSlots, RoutingKind};
 use crate::{
   ixby::{
     auth_memory::{
@@ -35,9 +35,17 @@ impl TimedMemoryLogSlots {
     nu: usize,
     depth: MemoryDepth,
   ) -> Result<Self> {
+    Self::declare_with_routing(b, nu, depth, RoutingKind::Element)
+  }
+  pub fn declare_with_routing(
+    b: &mut impl CircuitEmitter,
+    nu: usize,
+    depth: MemoryDepth,
+    routing: RoutingKind,
+  ) -> Result<Self> {
     let prepare = OrderGate::new(nu, OrderKind::Access)?;
     Ok(Self {
-      log: MemoryLogSlots::declare(b, nu, depth)?,
+      log: MemoryLogSlots::declare_with_routing(b, nu, depth, routing)?,
       prepare: (b.slot(prepare.clone()), prepare),
       residual: b.fixed_public_input(F128::ZERO),
     })

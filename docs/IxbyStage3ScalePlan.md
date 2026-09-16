@@ -213,6 +213,19 @@ current-status section below.
     The table census attributes 78.6% of dense field data to switching
     networks and finds a 58.5-fold padded working domain. These measurements
     establish the need to reduce per-instruction proving cost before a full run.
+26. [Boolean routing and larger batches](IxbyFlockPagedExecution.md#boolean-routing-and-the-1024-fetch-class):
+    three separate classes preserve exact whole-record routing while enabling
+    support-aware witness generation. `shared-1024` provides 1,024 Fetch slots
+    and 8,128 microstep slots. The first sixteen CSLib batches average 1,057
+    logical steps per proof, versus 37 in the previous Shared sample. Leaf
+    throughput reaches 292.245 logical steps/second with eight workers,
+    8.4 times the previous best short sample. The larger leaves also compose
+    through two recursive levels with fresh
+    verification and rejection of repeated, reversed and skipped segments.
+    The complete 83-step countdown fits one execution leaf and produces a
+    502,979-byte root accepted from only the approved setup, expected digest
+    and root proof. A dirty-buffer regression covers the padding bug found
+    while composing large execution and small commitment proofs.
 
 ## Current integration and next measurements
 
@@ -220,11 +233,13 @@ The complete original-format proof path is implemented and has genuine
 small-workload proofs. The original CSLib program has a complete grammar
 aggregate and conditional execution-segment proofs. **The complete
 2,268,502,805-step CSLib execution has not been proved.** Server measurements
-show that the current layout does not provide a practical full-run budget.
-The fixed Fetch quota implies at least 61 million execution leaves against
-the recorded reference profile; the best short-window throughput extrapolates
-to roughly 755 days for leaf proving alone. This is a projection, not a
-measured full execution, and excludes admission and aggregation.
+show a substantial improvement from the original Shared layout, but do not
+yet establish a practical full-run budget. The 1,024-Fetch class reduces the
+quota-based floor from 61 million to 1.91 million execution leaves against
+the recorded reference profile. At its measured leaf size this still implies
+at least 1.17 TB before recursive nodes; other instruction and memory quotas
+can require additional leaves. Short-window rates are not complete-run
+measurements and exclude native replay, admission, output and aggregation.
 
 The current paged path streams bounded execution segments over depth-40
 authenticated memory and accepts original artifacts up to 16 MiB. Its physical
@@ -233,14 +248,15 @@ These are separate, explicit factories from the retained 64-step legacy Exec
 classes. The original binary, functional limits, input and canonical output
 remain bound by admission, initialization, finalization and commitments.
 
-1. **Reduce cost before enlarging batches.** The measured switching networks
-   and padded buffers are the first targets. Cheaper state/memory ordering
-   and compact working storage should make larger segments affordable while
-   preserving complete state, memory and fuel checks. Then evaluate an initial
-   1,024-instruction batch target and workload-specific classes. This target
-   is not implemented. Compare time and peak memory per guest instruction,
-   including recursive costs; simply raising all quotas is insufficient.
-   The two measured prefix windows do not cover the full byte/hash workload.
+1. **Further reduce ordering and instruction-family costs.** Boolean routing
+   and the 1,024-Fetch class are implemented and measured. The exact switching
+   networks still occupy 81.2% of the larger class's useful field data. A
+   smaller consistency argument and workload-specific classes remain the next
+   targets. ByteStart/ByteFinish or Resume quotas already end some measured
+   batches before their Fetch quota fills. Preserve complete state, memory
+   and fuel checks, and compare time and peak memory per logical step,
+   including recursive costs. The measured windows do not cover the full
+   byte/hash workload.
 2. **Long-run operation.** The CLI retains and verifies bounded proof files;
    it currently generates and proves leaves sequentially. `--resume`
    regenerates native state from the beginning before checking cached leaves.

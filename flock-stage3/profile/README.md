@@ -52,6 +52,18 @@ The [CPU server throughput record](cslib-server-proof-throughput-v0.json)
 contains 148 verified proof samples across two prefix windows, worker scaling,
 fresh local reception, and the exact table-cost census. The best short sample
 reaches 34.767 logical steps per second; full CSLib proving is not practical
-with this layout. Switching networks occupy 78.6% of the dense witness, and
+with that original layout. Switching networks occupy 78.6% of the dense witness, and
 the padded working domain is 58.5 times the useful field data. See the
 [measured costs and reproduction commands](../../docs/IxbyFlockPagedExecution.md#cpu-server-throughput-and-cost-breakdown).
+
+The [larger execution record](cslib-large-execution-v0.json) records the separate
+Boolean-routing classes and `shared-1024`, which has 1,024 Fetch slots. It
+contains 96 verified proof samples, with the final larger-class run reaching
+292.245 logical steps/second and averaging 1,057 logical steps per proof. It
+retains actual per-family row usage, server throughput and memory measurements,
+the table census, fresh leaf verification and a genuine two-level recursive
+CSLib execution chain. It also records the partial-padding failure found in a
+complete small proof and its dirty-buffer regression. The separate
+[complete countdown record](../../flock-stage4/census/paged-execution-countdown-1024-v0.json)
+records successful full proving and fresh verification with the final class.
+Complete original CSLib execution remains unproved.

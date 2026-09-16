@@ -39,6 +39,8 @@ fn production_execution_setups_validate_every_driver_and_complete_boundaries() {
     BatchClass::Bytes,
     BatchClass::SharedCompact,
     BatchClass::Shared,
+    BatchClass::SharedCompactBoolean,
+    BatchClass::SharedBoolean,
   ] {
     let compiled = CompiledPagedExecution::compile(class).unwrap();
     let mut image =
@@ -474,4 +476,61 @@ fn shared_execution_class_exact_census() {
     registry.element_types().len()
   );
   assert!(union.has_element() && (22..=35).contains(&union.dense_m()));
+}
+
+fn original_boolean_advice(class: BatchClass) -> (BatchAdvice, Vec<RowAdvice>) {
+  let program =
+    std::fs::read(std::env::var_os("IXBY_PAGED_PROGRAM").unwrap()).unwrap();
+  let input =
+    std::fs::read(std::env::var_os("IXBY_PAGED_INPUT").unwrap()).unwrap();
+  let index = std::env::var("IXBY_PAGED_PROOF_BATCH")
+    .map_or(0, |s| s.parse::<usize>().unwrap());
+  assert!(index < 10_000);
+  let mut image =
+    NativeImage::load(&program, &input, DecodeLimits::default()).unwrap();
+  let mut machine = image.machine().unwrap();
+  machine.compare_native_advice = false;
+  for _ in 0..index {
+    machine.batch(class, &mut image.memory).unwrap().expect("execution prefix");
+  }
+  let advice = machine
+    .batch(class, &mut image.memory)
+    .unwrap()
+    .expect("execution segment");
+  eprintln!(
+    "original {class:?} segment {index}: microsteps={} logical_steps={}",
+    advice.expected[30].lo - advice.expected[3].lo,
+    advice.expected[31 + FUEL].hi - advice.expected[4 + FUEL].hi
+  );
+  (advice, Vec::new())
+}
+
+#[test]
+#[ignore = "original artifacts; Boolean routing proof, recomputed clock attacks and fresh receiver"]
+fn original_boolean_execution_segment_proves_fresh() {
+  proof_tests::original_proof_test(
+    BatchClass::SharedBoolean,
+    "ixby::paged_exec::image_tests::original_boolean_execution_segment_proves_fresh",
+    || original_boolean_advice(BatchClass::SharedBoolean),
+  );
+}
+
+#[test]
+#[ignore = "original artifacts; compact Boolean routing proof, recomputed clock attacks and fresh receiver"]
+fn original_compact_boolean_execution_segment_proves_fresh() {
+  proof_tests::original_proof_test(
+    BatchClass::SharedCompactBoolean,
+    "ixby::paged_exec::image_tests::original_compact_boolean_execution_segment_proves_fresh",
+    || original_boolean_advice(BatchClass::SharedCompactBoolean),
+  );
+}
+
+#[test]
+#[ignore = "original artifacts; 1,024-fetch proof, recomputed clock attacks and fresh receiver"]
+fn original_1024_execution_segment_proves_fresh() {
+  proof_tests::original_proof_test(
+    BatchClass::Shared1024,
+    "ixby::paged_exec::image_tests::original_1024_execution_segment_proves_fresh",
+    || original_boolean_advice(BatchClass::Shared1024),
+  );
 }

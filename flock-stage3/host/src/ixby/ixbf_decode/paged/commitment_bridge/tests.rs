@@ -185,6 +185,50 @@ fn bridge_controls_and_transformed_words_have_exact_rows_and_padding() {
   }
 }
 const CHILD: &str = "IXBY_COMMITMENT_BRIDGE_VERIFY_CHILD";
+#[test]
+#[ignore = "real commitment proofs with deliberately recycled witness storage"]
+fn bridge_proves_with_dirty_buffers_and_partial_row_groups() {
+  use flock_prover::prover::UnionSlotProverInput;
+
+  let setup =
+    CompiledCommitmentBridge::compile(ArtifactDomain::Program).unwrap();
+  let parent = [F128::new(17, 31), F128::new(123, 456)];
+  for n in [47, 977] {
+    for advice in batches(ArtifactDomain::Program, &data(n), parent, &setup) {
+      let witness = setup.witness(&advice).unwrap();
+      let mut inputs =
+        setup.drivers.iter().map(|d| d.prover(&witness)).collect::<Vec<_>>();
+      let mut slots = Vec::new();
+      for source in [&setup.emission.source, &setup.emission.prefixed] {
+        let (slot, gate) = source.select_gate();
+        let index = setup.shape.registry_slot(slot);
+        if slots.contains(&index) {
+          continue;
+        }
+        slots.push(index);
+        let rows = witness.rows::<crate::ixby::select::SelectWordsGate>(slot);
+        assert_ne!(rows.len() % 4, 0, "exercise the RS partial 512-bit read");
+        let gate = gate.clone();
+        let lincheck = inputs[index].lincheck_circuit;
+        inputs[index] = UnionSlotProverInput::in_place(
+          move |dst| {
+            assert!(dst.elide_padding_writes, "exercise recycled storage");
+            let poison = F128::new(u64::MAX, u64::MAX);
+            dst.z.fill(poison);
+            dst.a.fill(poison);
+            dst.b.fill(poison);
+            gate.generate_witness_into(rows, dst)
+          },
+          lincheck,
+        );
+      }
+      assert!(!slots.is_empty());
+      let proof = setup.prove_rows(&witness, inputs).unwrap();
+      setup.verify(&advice.statement, &proof).unwrap();
+    }
+  }
+}
+
 const TEST: &str = "ixby::ixbf_decode::paged::commitment_bridge::tests::bridges_prove_fresh_and_reject_recomputed_prefixes";
 fn fresh_verify(
   domain: ArtifactDomain,

@@ -1,4 +1,4 @@
-use super::{SwitchGate, switch::SWITCHES_PER_ROW};
+use super::{BooleanSwitchGate, SwitchGate, switch::SWITCHES_PER_ROW};
 use crate::sizing::{CircuitEmitter, CountedGate};
 use anyhow::{Result, ensure};
 use flock_prover::{
@@ -115,19 +115,69 @@ fn route(destination: &[usize]) -> Vec<Vec<bool>> {
   result
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum RoutingKind {
+  #[default]
+  Element,
+  Boolean,
+}
+enum RoutingGate {
+  Element(SwitchGate),
+  Boolean(BooleanSwitchGate),
+}
 pub struct PermutationSlots {
-  gate: SwitchGate,
+  gate: RoutingGate,
+  words: usize,
   slot: SlotId,
   zero: Wire,
 }
 impl PermutationSlots {
   pub fn declare(b: &mut impl CircuitEmitter, words: usize) -> Result<Self> {
-    let gate = SwitchGate::new(words)?;
-    let slot = b.slot(gate.clone());
-    Ok(Self { gate, slot, zero: b.fixed_public_input(F128::ZERO) })
+    Self::declare_with_routing(b, 3, words, RoutingKind::Element)
+  }
+  pub fn declare_with_routing(
+    b: &mut impl CircuitEmitter,
+    nu: usize,
+    words: usize,
+    kind: RoutingKind,
+  ) -> Result<Self> {
+    let (gate, slot) = match kind {
+      RoutingKind::Element => {
+        let gate = SwitchGate::new(words)?;
+        let slot = b.slot(gate.clone());
+        (RoutingGate::Element(gate), slot)
+      },
+      RoutingKind::Boolean => {
+        let gate = BooleanSwitchGate::new(nu, words)?;
+        let slot = b.slot(gate.clone());
+        (RoutingGate::Boolean(gate), slot)
+      },
+    };
+    Ok(Self { gate, words, slot, zero: b.fixed_public_input(F128::ZERO) })
   }
   pub fn gate(&self) -> (SlotId, &SwitchGate) {
-    (self.slot, &self.gate)
+    self.element_gate().expect("element routing gate")
+  }
+  pub fn element_gate(&self) -> Option<(SlotId, &SwitchGate)> {
+    match &self.gate {
+      RoutingGate::Element(g) => Some((self.slot, g)),
+      RoutingGate::Boolean(_) => None,
+    }
+  }
+  pub fn boolean_gate(&self) -> Option<(SlotId, &BooleanSwitchGate)> {
+    match &self.gate {
+      RoutingGate::Boolean(g) => Some((self.slot, g)),
+      RoutingGate::Element(_) => None,
+    }
+  }
+  pub fn input_count(&self) -> usize {
+    match &self.gate {
+      RoutingGate::Element(g) => g.input_count(),
+      RoutingGate::Boolean(g) => g.input_count(),
+    }
+  }
+  pub fn slot(&self) -> SlotId {
+    self.slot
   }
   pub fn permute(
     &self,
@@ -136,7 +186,7 @@ impl PermutationSlots {
     records: &[Vec<Wire>],
     switches: &[Wire],
   ) -> Vec<Vec<Wire>> {
-    let words = self.gate.record_words();
+    let words = self.words;
     assert_eq!(records.len(), plan.lanes());
     assert_eq!(switches.len(), plan.switches());
     assert!(records.iter().all(|record| record.len() == words));
@@ -145,13 +195,13 @@ impl PermutationSlots {
     for stage in 0..plan.stages() {
       let pairs = plan.pairs(stage).collect::<Vec<_>>();
       for batch in pairs.chunks(SWITCHES_PER_ROW) {
-        let mut input = Vec::with_capacity(self.gate.input_count());
+        let mut input = Vec::with_capacity(self.input_count());
         for &(left, right) in batch {
           input.push(*advice.next().unwrap());
           input.extend_from_slice(&current[left]);
           input.extend_from_slice(&current[right]);
         }
-        input.resize(self.gate.input_count(), self.zero);
+        input.resize(self.input_count(), self.zero);
         let output = b.gate(self.slot, &input);
         for (&(left, right), result) in
           batch.iter().zip(output.chunks_exact(2 * words))

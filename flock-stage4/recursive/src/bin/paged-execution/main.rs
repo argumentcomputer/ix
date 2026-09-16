@@ -65,6 +65,9 @@ fn class(name: &str) -> Result<BatchClass> {
     "bytes" => BatchClass::Bytes,
     "shared-compact" => BatchClass::SharedCompact,
     "shared" => BatchClass::Shared,
+    "shared-compact-boolean" => BatchClass::SharedCompactBoolean,
+    "shared-boolean" => BatchClass::SharedBoolean,
+    "shared-1024" => BatchClass::Shared1024,
     _ => anyhow::bail!("unknown execution class {name}"),
   })
 }

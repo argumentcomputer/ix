@@ -8,7 +8,7 @@ mod synthesis;
 mod tests;
 
 use crate::{
-  ixby::memory_log::{PermutationPlan, PermutationSlots},
+  ixby::memory_log::{PermutationPlan, PermutationSlots, RoutingKind},
   sizing::CircuitEmitter,
 };
 use anyhow::{Result, ensure};
@@ -51,6 +51,14 @@ impl StateChainSlots {
     nu: usize,
     words: usize,
   ) -> Result<Self> {
+    Self::declare_with_routing(b, nu, words, RoutingKind::Element)
+  }
+  pub fn declare_with_routing(
+    b: &mut impl CircuitEmitter,
+    nu: usize,
+    words: usize,
+    routing: RoutingKind,
+  ) -> Result<Self> {
     ensure!((1..=30).contains(&words), "state chain word capacity");
     let prepare = OrderGate::new(nu, OrderKind::Prepare(words))?;
     let audit = OrderGate::new(nu, OrderKind::Audit(words))?;
@@ -58,7 +66,12 @@ impl StateChainSlots {
       words,
       prepare: (b.slot(prepare.clone()), prepare),
       audit: (b.slot(audit.clone()), audit),
-      permutation: PermutationSlots::declare(b, words + 2)?,
+      permutation: PermutationSlots::declare_with_routing(
+        b,
+        nu,
+        words + 2,
+        routing,
+      )?,
       kinds: std::array::from_fn(|i| {
         b.fixed_public_input(F128::new(i as u64, 0))
       }),

@@ -7,7 +7,7 @@ use crate::{
   hash::{
     CHUNK_END, CHUNK_START, IV, PARENT, ROOT, pack_bytes, pack_params, pack8,
   },
-  ixby::memory_log::PermutationSlots,
+  ixby::memory_log::{PermutationSlots, RoutingKind},
   sizing::CircuitEmitter,
 };
 use anyhow::Result;
@@ -103,6 +103,21 @@ impl MultiMemorySlots {
     depth: MemoryDepth,
     compression: &Blake3CompressionSlots,
   ) -> Result<Self> {
+    Self::sharing_compression_with_routing(
+      b,
+      nu,
+      depth,
+      compression,
+      RoutingKind::Element,
+    )
+  }
+  pub fn sharing_compression_with_routing(
+    b: &mut impl CircuitEmitter,
+    nu: usize,
+    depth: MemoryDepth,
+    compression: &Blake3CompressionSlots,
+    routing: RoutingKind,
+  ) -> Result<Self> {
     let gates = MultiKind::ALL
       .into_iter()
       .map(|kind| {
@@ -117,7 +132,12 @@ impl MultiMemorySlots {
       depth,
       gates,
       compression: compression.clone(),
-      permutation: PermutationSlots::declare(b, CLAIM_WORDS)?,
+      permutation: PermutationSlots::declare_with_routing(
+        b,
+        nu,
+        CLAIM_WORDS,
+        routing,
+      )?,
       zero: b.fixed_public_input(F128::ZERO),
       one: b.fixed_public_input(F128::ONE),
       root_position: b.fixed_public_input(F128::new(depth.bits() as u64, 0)),

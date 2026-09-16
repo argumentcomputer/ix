@@ -77,7 +77,9 @@ impl CompiledPagedExecution {
     let union = UnionInstance::new(&shape.registry, shape.counts.clone());
     let m = union.dense_m();
     ensure!(
-      union.has_element() && (22..=35).contains(&m),
+      union.has_element()
+        == (class.routing() == crate::ixby::memory_log::RoutingKind::Element)
+        && (22..=35).contains(&m),
       "paged execution PCS geometry"
     );
     let profile = LigeritoProfile::Fast128;
@@ -91,12 +93,13 @@ impl CompiledPagedExecution {
       merkle_hash: HashKind::Blake3,
     };
     let mut elements = vec![
-      emission.order.permutation().gate(),
-      emission.memory.log().permutation().gate(),
+      emission.order.permutation().element_gate(),
+      emission.memory.log().permutation().element_gate(),
     ];
     if let Some(tree) = &emission.tree {
-      elements.push(tree.permutation().gate());
+      elements.push(tree.permutation().element_gate());
     }
+    let mut elements = elements.into_iter().flatten().collect::<Vec<_>>();
     elements.sort_by_key(|(slot, _)| shape.registry_slot(*slot));
     let elements =
       elements.into_iter().map(|(slot, gate)| (slot, gate.clone())).collect();

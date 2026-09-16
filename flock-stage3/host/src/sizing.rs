@@ -290,7 +290,13 @@ mod tests {
   fn paged_execution_table_costs() {
     use crate::ixby::paged_exec::{BatchClass, emit_batch};
     use flock_prover::union::UnionInstance;
-    for class in [BatchClass::SharedCompact, BatchClass::Shared] {
+    for class in [
+      BatchClass::SharedCompact,
+      BatchClass::Shared,
+      BatchClass::SharedCompactBoolean,
+      BatchClass::SharedBoolean,
+      BatchClass::Shared1024,
+    ] {
       let mut count = CountingEmitter::new();
       let _ = emit_batch(&mut count, class).unwrap();
       let mut totals = std::collections::BTreeMap::new();

@@ -134,9 +134,8 @@ impl MicroGate {
   pub fn generate_witness_into(
     &self,
     rows: &[MicroRow],
-    mut dst: SlotWitnessDest<'_>,
+    dst: SlotWitnessDest<'_>,
   ) -> Vec<u8> {
-    dst.elide_padding_writes = false;
     generate_boolean_witness_into(
       self.plan(),
       rows,

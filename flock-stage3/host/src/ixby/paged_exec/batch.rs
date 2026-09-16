@@ -10,8 +10,8 @@ use crate::{
     },
     io::{InputLayout, LayoutEmitter, PublicLayout},
     memory_log::{
-      BoundaryWires, MemoryBatchAdvice, MemoryLogSlots, TimedAccessWires,
-      TimedMemoryLogSlots,
+      BoundaryWires, MemoryBatchAdvice, MemoryLogSlots, RoutingKind,
+      TimedAccessWires, TimedMemoryLogSlots,
     },
   },
   sizing::CircuitEmitter,
@@ -26,6 +26,10 @@ pub enum BatchClass {
   Bytes,
   SharedCompact,
   Shared,
+  SharedCompactBoolean,
+  SharedBoolean,
+  /// 1,024 fetch slots, with separate bounds for other instruction families.
+  Shared1024,
 }
 impl BatchClass {
   pub fn transcript_domain(self) -> &'static [u8] {
@@ -36,6 +40,11 @@ impl BatchClass {
       Self::Bytes => b"IxBy/Flock/paged-execution:bytes:v0",
       Self::SharedCompact => b"IxBy/Flock/paged-execution:shared-compact:v0",
       Self::Shared => b"IxBy/Flock/paged-execution:shared:v0",
+      Self::SharedCompactBoolean => {
+        b"IxBy/Flock/paged-execution:shared-compact-boolean:v0"
+      },
+      Self::SharedBoolean => b"IxBy/Flock/paged-execution:shared-boolean:v0",
+      Self::Shared1024 => b"IxBy/Flock/paged-execution:shared-1024:v0",
     }
   }
   pub fn quotas(self) -> [usize; 24] {
@@ -47,10 +56,16 @@ impl BatchClass {
         24, 40, 8, 16, 2, 32, 4, 8, 8, 4, 4, 12, 48, 32, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0,
       ],
-      Self::Compact | Self::SharedCompact => {
+      Self::Compact | Self::SharedCompact | Self::SharedCompactBoolean => {
         [2, 4, 1, 2, 1, 3, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]
       },
-      Self::Shared => Self::SharedCompact.quotas().map(|quota| quota * 16),
+      Self::Shared | Self::SharedBoolean => {
+        Self::SharedCompact.quotas().map(|quota| quota * 16)
+      },
+      Self::Shared1024 => [
+        1024, 2048, 384, 512, 256, 1024, 128, 64, 64, 256, 256, 256, 768, 512,
+        32, 64, 64, 64, 32, 64, 64, 64, 64, 64,
+      ],
       Self::Bytes => [
         20, 36, 4, 4, 2, 8, 0, 0, 0, 0, 0, 0, 0, 0, 16, 8, 8, 4, 16, 8, 20, 8,
         8, 8,
@@ -61,8 +76,9 @@ impl BatchClass {
     match self {
       Self::Small => 24,
       Self::Objects => 96,
-      Self::Compact | Self::SharedCompact => 16,
-      Self::Shared => 256,
+      Self::Compact | Self::SharedCompact | Self::SharedCompactBoolean => 16,
+      Self::Shared | Self::SharedBoolean => 256,
+      Self::Shared1024 => 2048,
       Self::Bytes => 96,
     }
   }
@@ -72,8 +88,9 @@ impl BatchClass {
       Self::Objects => 13,
       Self::Compact => 11,
       Self::Bytes => 13,
-      Self::SharedCompact => 10,
-      Self::Shared => 13,
+      Self::SharedCompact | Self::SharedCompactBoolean => 10,
+      Self::Shared | Self::SharedBoolean => 13,
+      Self::Shared1024 => 15,
     }
   }
   pub fn transitions(self) -> usize {
@@ -81,10 +98,15 @@ impl BatchClass {
   }
   pub fn shared_memory(self) -> Option<MultiCapacity> {
     match self {
-      Self::SharedCompact => {
+      Self::SharedCompact | Self::SharedCompactBoolean => {
         Some(MultiCapacity::new(self.cells(), 192).unwrap())
       },
-      Self::Shared => Some(MultiCapacity::new(self.cells(), 3_072).unwrap()),
+      Self::Shared | Self::SharedBoolean => {
+        Some(MultiCapacity::new(self.cells(), 3_072).unwrap())
+      },
+      Self::Shared1024 => {
+        Some(MultiCapacity::new(self.cells(), 8_191).unwrap())
+      },
       _ => None,
     }
   }
@@ -95,6 +117,14 @@ impl BatchClass {
       .zip(Chip::ALL)
       .map(|(n, c)| n * c.accesses())
       .sum()
+  }
+  pub fn routing(self) -> RoutingKind {
+    match self {
+      Self::SharedCompactBoolean | Self::SharedBoolean | Self::Shared1024 => {
+        RoutingKind::Boolean
+      },
+      _ => RoutingKind::Element,
+    }
   }
 }
 pub struct BatchEmission {
@@ -112,18 +142,29 @@ pub fn emit_batch(
 ) -> Result<BatchEmission> {
   let mut b = LayoutEmitter::new(b);
   let nu = class.nu();
-  let memory = TimedMemoryLogSlots::declare(&mut b, nu, MemoryDepth::new(40)?)?;
+  let memory = TimedMemoryLogSlots::declare_with_routing(
+    &mut b,
+    nu,
+    MemoryDepth::new(40)?,
+    class.routing(),
+  )?;
   let execution =
     ExecutionSlots::declare(&mut b, nu, memory.log().memory().compression())?;
-  let order = StateChainSlots::declare(&mut b, nu, STATE_WORDS)?;
+  let order = StateChainSlots::declare_with_routing(
+    &mut b,
+    nu,
+    STATE_WORDS,
+    class.routing(),
+  )?;
   let tree = class
     .shared_memory()
     .map(|_| {
-      MultiMemorySlots::sharing_compression(
+      MultiMemorySlots::sharing_compression_with_routing(
         &mut b,
         nu,
         MemoryDepth::new(40)?,
         memory.log().memory().compression(),
+        class.routing(),
       )
     })
     .transpose()?;

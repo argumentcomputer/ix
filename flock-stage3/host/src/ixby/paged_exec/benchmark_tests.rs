@@ -45,6 +45,9 @@ fn original_execution_proof_throughput() {
   let class = match std::env::var("IXBY_PAGED_NATIVE_CLASS").as_deref() {
     Ok("shared") | Err(_) => BatchClass::Shared,
     Ok("shared-compact") => BatchClass::SharedCompact,
+    Ok("shared-compact-boolean") => BatchClass::SharedCompactBoolean,
+    Ok("shared-boolean") => BatchClass::SharedBoolean,
+    Ok("shared-1024") => BatchClass::Shared1024,
     _ => panic!("IXBY_PAGED_NATIVE_CLASS must be shared or shared-compact"),
   };
   let out = std::env::var_os("IXBY_PROOF_OUT").map(std::path::PathBuf::from);
@@ -79,6 +82,17 @@ fn original_execution_proof_throughput() {
     })
     .collect();
   let native_seconds = generating.elapsed().as_secs_f64();
+  for (batch, advice) in advice.iter().enumerate() {
+    let mut at = 55;
+    let mut counts = [0; 24];
+    for (chip, quota) in Chip::ALL.into_iter().zip(class.quotas()) {
+      for _ in 0..quota {
+        counts[chip as usize] += usize::from(advice.private[at] == F128::ONE);
+        at += 2 + STATE_WORDS + chip.advice_words();
+      }
+    }
+    eprintln!("proof_quota,{},{counts:?}", skip + batch);
+  }
   let statements: Vec<_> = advice
     .iter()
     .map(|a| ExecutionStatement::from_words(&a.expected).unwrap())

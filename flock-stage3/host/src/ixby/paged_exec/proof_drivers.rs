@@ -8,7 +8,7 @@ use crate::{
     decode::PrimitiveSet,
     execution_order::OrderGate,
     ixbf_decode::paged::proof_support::{Driver, driver},
-    memory_log::AuditGate,
+    memory_log::{AuditGate, BooleanSwitchGate},
     paged_code::CodeGate,
     paged_frame::FrameGate,
     paged_nat::Nat128Gate,
@@ -145,6 +145,23 @@ pub(super) fn drivers(
     ));
   }
   let log = emission.memory.log();
+  for permutation in [
+    Some(emission.order.permutation()),
+    Some(log.permutation()),
+    emission.tree.as_ref().map(|tree| tree.permutation()),
+  ]
+  .into_iter()
+  .flatten()
+  {
+    if let Some((slot, gate)) = permutation.boolean_gate() {
+      result.push(driver(
+        slot,
+        gate.clone(),
+        gate.r1cs(),
+        BooleanSwitchGate::generate_witness_into,
+      ));
+    }
+  }
   for (slot, gate) in log.memory().gates() {
     result.push(driver(
       slot,
@@ -175,8 +192,7 @@ pub(super) fn drivers(
       slot,
       Blake3Gate { nu },
       table,
-      |g: &Blake3Gate, rows, mut dst| {
-        dst.elide_padding_writes = false;
+      |g: &Blake3Gate, rows, dst| {
         flock_blake3::generate_witness_batch_major_partial_into(rows, g.nu, dst)
       },
     ));

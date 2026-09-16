@@ -4,6 +4,7 @@
 //! is used. Memory authentication and execution are separate callers.
 
 mod audit;
+mod boolean_switch;
 mod permutation;
 #[cfg(test)]
 mod proof_tests;
@@ -17,7 +18,8 @@ mod witness;
 pub use audit::{
   AuditGate, AuditRow, PAD, READ, RECORD_WORDS, SEAL, SEED, WRITE,
 };
-pub use permutation::{PermutationPlan, PermutationSlots};
+pub use boolean_switch::{BooleanSwitchGate, BooleanSwitchRow};
+pub use permutation::{PermutationPlan, PermutationSlots, RoutingKind};
 pub use slots::{AccessWires, BoundaryWires, MemoryLogSlots};
 pub use switch::{SwitchGate, SwitchRow};
 pub use timed::{TimedAccessWires, TimedMemoryLogSlots};

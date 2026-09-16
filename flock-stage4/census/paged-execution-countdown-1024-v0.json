@@ -1,0 +1,268 @@
+{
+  "format": "IxBy/paged-execution-cli-measurement/v0",
+  "date_utc": "2026-09-16",
+  "scope": "Complete original-format countdown with the final padding fix; 40 tail calls, 83 independently checked reference transitions, one Shared1024 execution leaf, all component proofs and a final recursive root.",
+  "source_base_commit": "71dbcf26",
+  "execution_class": "shared-1024",
+  "profile_limits": [
+    1,
+    0,
+    3,
+    3,
+    2,
+    0,
+    8,
+    4096,
+    64,
+    64
+  ],
+  "fuel": 83,
+  "component_counts": [
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1
+  ],
+  "artifact_bytes": {
+    "program": 47,
+    "input": 53,
+    "output": 49,
+    "payload": 34
+  },
+  "setup_identity": "b69020d6dec8102f924a625a1e1327c70e746c86abe664686b72f8d862e586ac",
+  "geometry": {
+    "application_words": 2,
+    "arithmetic_operations": 904704,
+    "blake3_compressions": 43297,
+    "children": [
+      11,
+      1
+    ],
+    "dense_variables": 31,
+    "leaves": 12,
+    "packing_rows": 51099,
+    "root_advice_words": 10228,
+    "root_families": 321,
+    "row_variables": 16,
+    "variables": 4709082
+  },
+  "proof_bytes": 502979,
+  "proof_sha256": "511cb4b6766a11653e33b482cd73eca3b330ca2b645af099ddf9ea17f4584ed6",
+  "statement_digest_hex": "4443003345bdface108d630d9b5f665e9d99f0957316c88766e9b241d70940f1",
+  "statement_sha256": "6b2cf7b6c344f02c637b2455ebdf19d382a8129899f8b77c235f38a1e4a17893",
+  "profile_sha256": "672ceb9d1f0f454504ea181b588b2d5b77d91475c18c70fea4d4e489588e0707",
+  "program_sha256": "8b1addfffd26467722c05e4642ca2a1be872650e42fdc0e2fceee5f734ede594",
+  "input_sha256": "5450fadc341693c9986606dd3064ee79bb5a39d44768dd77af2a51f57236e296",
+  "output_sha256": "8c4aab081d536a3a69059b040ff68e79bead32a6a9c9938c34be39121cf4a7f7",
+  "proving_binary_sha256": "db7db73707238c8d965d6021037f2a69d095c351b889dd09245da5177d549963",
+  "rustflags": "-C target-cpu=x86-64-v4 -C target-feature=+pclmulqdq,+vpclmulqdq,+aes",
+  "rayon_threads": 8,
+  "server": {
+    "cpu": "Intel Xeon 6975P-C",
+    "physical_cores": 32,
+    "logical_cpus": 64,
+    "reported_ram_gib": 495,
+    "swap_bytes": 0,
+    "reported_available_disk_gb": 376
+  },
+  "leaf_generation_and_proving_seconds": 89.738696502,
+  "complete_prove_command_seconds": 715.667215796,
+  "final_verification_seconds_in_prover": 21.123882413,
+  "proving_receipt": {
+    "log_sha256": "99a890d00514ecda3cbb91e3dc249aaec73fd873ef0c0e89773c23cd2bdfc144",
+    "gnu_time": {
+      "wall_seconds": 722.53,
+      "maximum_rss_kib": 77839700,
+      "user_seconds": 856.9,
+      "system_seconds": 73.42,
+      "log_sha256": "c5570a2f28256fa592cf0d0f84d41bc404b5545514b90df64e5e59206bd864a5"
+    }
+  },
+  "fresh_setup_seconds": 170.896330129,
+  "fresh_verification_seconds": 23.290390973,
+  "fresh_receipt": {
+    "log_sha256": "4ffb29037f3c1c450a16ddcf8e746f07dd84a4e434e612b430a057b86f9cd995",
+    "gnu_time": {
+      "wall_seconds": 197.78,
+      "maximum_rss_kib": 64593836,
+      "user_seconds": 171.14,
+      "system_seconds": 26.86,
+      "log_sha256": "841056d46dfd43ec2d4a881dd5b4b74d5f9e0b9bf454915f0a979ce1f795196d"
+    }
+  },
+  "fresh_receiver": "Cleared environment; separate directory contains only the approved profile, independently expected digest and one root proof. Class and all eleven counts are explicit arguments; setup is compiled before reading the expected digest or proof.",
+  "independent_reference": {
+    "transitions": 83,
+    "output_matches": true,
+    "binary_sha256": "d17f50b7d7b343ffa7e5c0c6b23c6e433987e971acb7e94539ee4d7503e76cfa"
+  },
+  "reference_fixture_record": "paged-execution-countdown-v0.json",
+  "reference_note": "The independently checked reference execution is reused for the exact same pinned program, input, output and functional profile; the larger class changes only physical proving capacities.",
+  "execution_microstep_intervals": [
+    [
+      0,
+      367
+    ]
+  ],
+  "execution_consumed_fuel_intervals": [
+    [
+      0,
+      83
+    ]
+  ],
+  "execution_leaf_proof_bytes": [
+    612155
+  ],
+  "execution_statement_sha256": "1a392549b1ab898b111bfc6d4b2c76a5c8ba199a20635e42b8b344d2f3c0e1c6",
+  "proof_events": [
+    {
+      "bytes": 393532,
+      "event": "proved",
+      "name": "leaves/00/0000000/0000000000",
+      "seconds": 0.397747717
+    },
+    {
+      "bytes": 452899,
+      "event": "proved",
+      "name": "leaves/01/0000000/0000000000",
+      "seconds": 0.838103584
+    },
+    {
+      "bytes": 335443,
+      "event": "proved",
+      "name": "leaves/02/0000000/0000000000",
+      "seconds": 0.367669591
+    },
+    {
+      "bytes": 298019,
+      "event": "proved",
+      "name": "leaves/03/0000000/0000000000",
+      "seconds": 0.582185495
+    },
+    {
+      "bytes": 393532,
+      "event": "proved",
+      "name": "leaves/04/0000000/0000000000",
+      "seconds": 0.35267089
+    },
+    {
+      "bytes": 452891,
+      "event": "proved",
+      "name": "leaves/05/0000000/0000000000",
+      "seconds": 0.757600942
+    },
+    {
+      "bytes": 612155,
+      "event": "proved",
+      "name": "leaves/06/0000000/0000000000",
+      "seconds": 15.759841432
+    },
+    {
+      "bytes": 351259,
+      "event": "proved",
+      "name": "leaves/07/0000000/0000000000",
+      "seconds": 0.420294562
+    },
+    {
+      "bytes": 282612,
+      "event": "proved",
+      "name": "leaves/08/0000000/0000000000",
+      "seconds": 0.306617109
+    },
+    {
+      "bytes": 282612,
+      "event": "proved",
+      "name": "leaves/09/0000000/0000000000",
+      "seconds": 0.305072857
+    },
+    {
+      "bytes": 282612,
+      "event": "proved",
+      "name": "leaves/10/0000000/0000000000",
+      "seconds": 0.306886173
+    },
+    {
+      "bytes": 132891,
+      "event": "proved",
+      "name": "endpoints",
+      "seconds": 0.282622038
+    },
+    {
+      "bytes": 357707,
+      "event": "proved",
+      "name": "facts-00-02",
+      "seconds": 6.463271155
+    },
+    {
+      "bytes": 308619,
+      "event": "proved",
+      "name": "facts-02-04",
+      "seconds": 5.070295595
+    },
+    {
+      "bytes": 362267,
+      "event": "proved",
+      "name": "facts-00-04",
+      "seconds": 16.219672864
+    },
+    {
+      "bytes": 356779,
+      "event": "proved",
+      "name": "facts-04-06",
+      "seconds": 6.362994463
+    },
+    {
+      "bytes": 432539,
+      "event": "proved",
+      "name": "facts-06-08",
+      "seconds": 45.255073737000004
+    },
+    {
+      "bytes": 450195,
+      "event": "proved",
+      "name": "facts-04-08",
+      "seconds": 45.286245804
+    },
+    {
+      "bytes": 478115,
+      "event": "proved",
+      "name": "facts-00-08",
+      "seconds": 61.983030594
+    },
+    {
+      "bytes": 322251,
+      "event": "proved",
+      "name": "facts-08-10",
+      "seconds": 4.052666716
+    },
+    {
+      "bytes": 336731,
+      "event": "proved",
+      "name": "facts-08-11",
+      "seconds": 9.718191713
+    },
+    {
+      "bytes": 493475,
+      "event": "proved",
+      "name": "facts-00-11",
+      "seconds": 73.992547912
+    },
+    {
+      "bytes": 502979,
+      "event": "proved",
+      "name": "root",
+      "seconds": 77.677324313
+    }
+  ],
+  "all_leaf_and_recursive_proofs_verified": true,
+  "partial_padding_failure_fixed": true,
+  "fixture_generator": "flock-stage4/fixtures/paged-execution-countdown.py",
+  "full_cslib_execution_proved": false
+}

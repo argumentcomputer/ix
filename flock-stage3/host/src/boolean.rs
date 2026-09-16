@@ -341,6 +341,10 @@ pub fn generate_boolean_rows_into<T: Sync>(
   let useful_words = useful_bits.div_ceil(64);
   let stored_words = 2 * useful_chunks;
   let SlotWitnessDest { z, a, b, elide_padding_writes } = dst;
+  // The pinned x86 RS round-one kernel reads prefixes of 8192-bit blocks
+  // in 512-bit units. For row domains below 64 it can read gaps between
+  // columns; otherwise only the final partial row group needs cleansing.
+  let elide_padding_writes = elide_padding_writes && nu >= 6;
   for buffer in [&*z, &*a, &*b] {
     assert_eq!(buffer.len(), slot_words, "Boolean slot destination length");
   }
@@ -415,7 +419,7 @@ pub fn generate_boolean_rows_into<T: Sync>(
       // disjoint `k`-byte stripe block. The raw pointers avoid materializing
       // and then copying a second capacity-sized set of slot buffers.
       for chunk in 0..useful_chunks {
-        for lane in 0..live {
+        for lane in 0..GROUP_ROWS {
           let at = (chunk << nu) + first_row + lane;
           let word = 2 * chunk;
           unsafe {
@@ -462,6 +466,98 @@ pub fn generate_boolean_rows_into<T: Sync>(
     },
   );
 
+  stripe
+}
+
+/// Packed counterpart for tables with a specialized word-level evaluator.
+/// `fill_row` fills z, A*z and B*z according to the approved table; callers
+/// compare this path against its sparse matrices. Padding follows the same
+/// upstream `SlotWitnessDest` contract as the bit-level driver.
+pub fn generate_boolean_packed_rows_into<T: Sync>(
+  k_log: usize,
+  useful_bits: usize,
+  rows: &[T],
+  nu: usize,
+  dst: SlotWitnessDest<'_>,
+  fill_row: impl Fn(&T, &mut [F128], &mut [F128], &mut [F128]) + Send + Sync,
+) -> Vec<u8> {
+  assert!(nu >= 3 && k_log >= 7);
+  let capacity = 1usize << nu;
+  let k = 1usize << k_log;
+  let columns = useful_bits.div_ceil(128);
+  assert!(rows.len() <= capacity && useful_bits <= k);
+  let SlotWitnessDest { z, a, b, elide_padding_writes } = dst;
+  let elide_padding_writes = elide_padding_writes && nu >= 6;
+  for buffer in [&*z, &*a, &*b] {
+    assert_eq!(buffer.len(), capacity * (k / 128));
+  }
+  if !elide_padding_writes {
+    [&mut *z, &mut *a, &mut *b].into_par_iter().for_each(|buffer| {
+      buffer.par_chunks_mut(1 << 16).for_each(|chunk| chunk.fill(F128::ZERO));
+    });
+  }
+  let mut stripe = scratch::take_u8(capacity * k / 8);
+  if !elide_padding_writes {
+    stripe.par_chunks_mut(1 << 20).for_each(|chunk| chunk.fill(0));
+  }
+  let z_ptr = SendPtr(z.as_mut_ptr());
+  let a_ptr = SendPtr(a.as_mut_ptr());
+  let b_ptr = SendPtr(b.as_mut_ptr());
+  stripe
+    .par_chunks_mut(k)
+    .take(rows.len().div_ceil(8))
+    .enumerate()
+    .for_each_init(
+      || {
+        (
+          vec![F128::ZERO; columns],
+          vec![F128::ZERO; columns],
+          vec![F128::ZERO; columns],
+          vec![[0u64; 8]; columns * 2],
+        )
+      },
+      |(rz, ra, rb, lanes), (group, stripe)| {
+        lanes.fill([0; 8]);
+        let first = group * 8;
+        let live = rows.len().saturating_sub(first).min(8);
+        for lane in 0..live {
+          rz.fill(F128::ZERO);
+          ra.fill(F128::ZERO);
+          rb.fill(F128::ZERO);
+          fill_row(&rows[first + lane], rz, ra, rb);
+          for column in 0..columns {
+            let at = (column << nu) + first + lane;
+            // Groups own disjoint outer rows in every packed column.
+            unsafe {
+              z_ptr.get().add(at).write(rz[column]);
+              a_ptr.get().add(at).write(ra[column]);
+              b_ptr.get().add(at).write(rb[column]);
+            }
+            lanes[column * 2][lane] = rz[column].lo;
+            lanes[column * 2 + 1][lane] = rz[column].hi;
+          }
+        }
+        // Match the bit-level driver: the RS kernel may read up to three
+        // padding rows at a boundary. Clear the complete eight-row group.
+        for column in 0..columns {
+          for lane in live..8 {
+            let at = (column << nu) + first + lane;
+            unsafe {
+              z_ptr.get().add(at).write(F128::ZERO);
+              a_ptr.get().add(at).write(F128::ZERO);
+              b_ptr.get().add(at).write(F128::ZERO);
+            }
+          }
+        }
+        for (word, values) in lanes.iter().enumerate() {
+          transpose_8_u64s_to_64_bytes(
+            values,
+            &mut stripe[word * 64..(word + 1) * 64],
+          );
+        }
+        stripe[columns * 128..].fill(0);
+      },
+    );
   stripe
 }
 

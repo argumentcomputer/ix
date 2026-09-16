@@ -236,12 +236,11 @@ component counts, and verifies one final root. Each original artifact is
 limited to 16 MiB by the current source classes. The output argument supplies
 the original canonical IXFO bytes; the proof binds these to the returned Bytes
 value. The currently supported execution classes are `small`, `objects`,
-`compact`, `bytes`, `shared-compact` and `shared`. The last class has explicit
-larger instruction and shared-memory quotas; see its
-[original-CSLib segment measurement](IxbyFlockPagedExecution.md#larger-shared-execution-batch).
-The [CPU throughput measurements](IxbyFlockPagedExecution.md#cpu-server-throughput-and-cost-breakdown)
-show that full CSLib execution is currently impractical: cheaper ordering
-circuits and a compact working layout are needed before increasing batch size.
+`compact`, `bytes`, `shared-compact`, `shared`, `shared-compact-boolean`,
+`shared-boolean` and `shared-1024`. The last three use Boolean routing and
+separate approved setups; `shared-1024` has 1,024 Fetch slots. See the
+[larger-class implementation and measurements](IxbyFlockPagedExecution.md#boolean-routing-and-the-1024-fetch-class).
+The complete original CSLib execution remains unproved.
 
 ```sh
 RUSTFLAGS='-C target-cpu=native' cargo build --release --locked \
@@ -338,6 +337,16 @@ Both retained execution levels verify, and all 57 expected words reject
 independent low- and high-half mutations. This test takes 98.32 seconds.
 See the [complete countdown measurement](../flock-stage4/census/paged-execution-countdown-v0.json)
 for artifact pins, setup identity, proof timings and peak memory.
+
+The same pinned countdown also passes with `shared-1024`: one execution leaf
+covers microsteps 0–367 and fuel 0–83, and all eleven component counts are one.
+Its complete **502,979-byte root** verifies in a fresh process from only the
+approved profile, expected digest and root proof. The
+[larger-class countdown record](../flock-stage4/census/paged-execution-countdown-1024-v0.json)
+records 715.7 seconds for complete proving on the CPU server, 170.9 seconds
+for fresh setup and 23.3 seconds for verification. A separate genuine CSLib
+chain exercises multiple larger execution leaves and two recursive levels;
+see the [larger execution checks](IxbyFlockPagedExecution.md#boolean-routing-and-the-1024-fetch-class).
 
 To reproduce after building the CLI above, choose two new directories:
 

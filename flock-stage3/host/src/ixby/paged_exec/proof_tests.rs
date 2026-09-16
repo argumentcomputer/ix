@@ -7,7 +7,7 @@ use crate::{
     auth_memory::{MemoryGate, multi::MultiGate},
     decode::PrimitiveSet,
     execution_order::{OrderGate, OrderKind},
-    memory_log::{AuditGate, SwitchGate},
+    memory_log::{AuditGate, BooleanSwitchGate, SwitchGate},
     paged_code::CodeGate,
     paged_frame::FrameGate,
     paged_nat::Nat128Gate,
@@ -126,13 +126,7 @@ impl Driver {
     attack: Attack,
   ) -> UnionSlotProverInput<'a> {
     let generate = (self.make)(witness, attack);
-    UnionSlotProverInput::in_place(
-      move |mut dst| {
-        dst.elide_padding_writes = false;
-        generate(dst)
-      },
-      self.table.csc_lincheck_circuit(),
-    )
+    UnionSlotProverInput::in_place(generate, self.table.csc_lincheck_circuit())
   }
 }
 fn micro_fill(
@@ -375,6 +369,25 @@ fn drivers(emission: &BatchEmission, shape: &CircuitShape) -> Vec<Driver> {
   let (slot, gate) = emission.memory.prepare_gate();
   result.push(order_driver(slot, gate, OrderKind::Access, Attack::MemoryClock));
   let log = emission.memory.log();
+  for permutation in [
+    Some(emission.order.permutation()),
+    Some(log.permutation()),
+    emission.tree.as_ref().map(|tree| tree.permutation()),
+  ]
+  .into_iter()
+  .flatten()
+  {
+    if let Some((slot, gate)) = permutation.boolean_gate() {
+      result.push(Driver::new(
+        slot,
+        gate.clone(),
+        gate.r1cs(),
+        |g: &BooleanSwitchGate, rows, _, dst| {
+          g.generate_witness_into(rows, dst)
+        },
+      ));
+    }
+  }
   for (slot, gate) in log.memory().gates() {
     result.push(Driver::new(
       slot,
@@ -434,10 +447,7 @@ fn drivers(emission: &BatchEmission, shape: &CircuitShape) -> Vec<Driver> {
   for (i, d) in result.iter().enumerate() {
     assert_eq!(shape.registry_slot(d.slot), i);
   }
-  assert_eq!(
-    result.len() + 2 + usize::from(emission.tree.is_some()),
-    shape.counts.len()
-  );
+  assert_eq!(result.len(), shape.registry.boolean_types().len());
   result
 }
 fn params(union: &UnionInstance<'_>) -> PcsParams {
@@ -464,12 +474,13 @@ fn prove(
   let union = UnionInstance::new(&shape.registry, shape.counts.clone());
   let boolean = drivers.iter().map(|d| d.prover(witness, attack)).collect();
   let mut switches = vec![
-    emission.order.permutation().gate(),
-    emission.memory.log().permutation().gate(),
+    emission.order.permutation().element_gate(),
+    emission.memory.log().permutation().element_gate(),
   ];
   if let Some(tree) = &emission.tree {
-    switches.push(tree.permutation().gate());
+    switches.push(tree.permutation().element_gate());
   }
+  let mut switches = switches.into_iter().flatten().collect::<Vec<_>>();
   switches.sort_by_key(|(slot, _)| shape.registry_slot(*slot));
   let nu = emission.class.nu();
   let element = switches
@@ -599,7 +610,7 @@ fn chunk_tree_hash_proves_fresh_and_rejects_recomputed_hash_rows() {
 fn proof_test(
   class: BatchClass,
   test: &str,
-  fixture: fn() -> (BatchAdvice, Vec<RowAdvice>),
+  fixture: impl FnOnce() -> (BatchAdvice, Vec<RowAdvice>),
   attacks: &[Attack],
 ) {
   let setup_start = std::time::Instant::now();
@@ -688,7 +699,7 @@ fn proof_test(
 pub(super) fn original_proof_test(
   class: BatchClass,
   test: &str,
-  fixture: fn() -> (BatchAdvice, Vec<RowAdvice>),
+  fixture: impl FnOnce() -> (BatchAdvice, Vec<RowAdvice>),
 ) {
   proof_test(class, test, fixture, &[Attack::OrderClock, Attack::MemoryClock]);
 }

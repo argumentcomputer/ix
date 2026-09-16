@@ -4,7 +4,7 @@ use crate::{
     MemoryAccessSlots, MemoryDepth, MemoryOpeningWires,
     multi::{LeafWires, MultiMemorySlots, MultiProofWires},
   },
-  sizing::{CircuitEmitter, CountedGate},
+  sizing::CircuitEmitter,
 };
 use anyhow::Result;
 use flock_prover::{
@@ -44,7 +44,16 @@ impl MemoryLogSlots {
     nu: usize,
     depth: MemoryDepth,
   ) -> Result<Self> {
-    let permutation = PermutationSlots::declare(b, RECORD_WORDS)?;
+    Self::declare_with_routing(b, nu, depth, RoutingKind::Element)
+  }
+  pub fn declare_with_routing(
+    b: &mut impl CircuitEmitter,
+    nu: usize,
+    depth: MemoryDepth,
+    routing: RoutingKind,
+  ) -> Result<Self> {
+    let permutation =
+      PermutationSlots::declare_with_routing(b, nu, RECORD_WORDS, routing)?;
     let gate = AuditGate::new(nu)?;
     let audit = (b.slot(gate.clone()), gate);
     let memory = MemoryAccessSlots::declare(b, nu, depth)?;
@@ -103,12 +112,13 @@ impl MemoryLogSlots {
     b: &mut impl CircuitEmitter,
     accesses: &[AccessWires],
   ) -> Vec<Vec<Wire>> {
-    let (switch_slot, switch_gate) = self.permutation.gate();
+    let switch_slot = self.permutation.slot();
+    let input_count = self.permutation.input_count();
     let mut records = Vec::with_capacity(accesses.len());
     for (batch_index, batch) in
       accesses.chunks(switch::SWITCHES_PER_ROW).enumerate()
     {
-      let mut input = Vec::with_capacity(switch_gate.input_count());
+      let mut input = Vec::with_capacity(input_count);
       for (i, access) in batch.iter().enumerate() {
         let clock = batch_index * switch::SWITCHES_PER_ROW + i + 1;
         let clock = b.fixed_public_input(F128::new(clock as u64, 0));
@@ -123,7 +133,7 @@ impl MemoryLogSlots {
           ]);
         }
       }
-      input.resize(switch_gate.input_count(), self.zero);
+      input.resize(input_count, self.zero);
       let output = b.gate(switch_slot, &input);
       records.extend(
         output
