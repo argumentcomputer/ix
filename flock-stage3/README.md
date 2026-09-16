@@ -124,8 +124,10 @@ parser/code/memory proofs reject recomputed substitutions. The complete CSLib
 program passes 1,227 joint circuit evaluations with the exact final packed
 memory root. Complete semantic reference walks and full 512-bit constructor-ID
 uniqueness now have fresh proofs as well. All 994 original reference circuit
-batches and all 146 original constructor IDs pass. Recursive composition,
-typed input initialization, output binding and the full execution run remain.
+batches and all 146 original constructor IDs pass. Typed input materialization
+also has fresh proofs, and the full original input produces the exact initial
+memory root, machine state and parameters. Recursive composition, output
+binding and the full execution run remain.
 
 ```sh
 RAYON_NUM_THREADS=8 cargo test --release --locked --manifest-path flock-stage3/Cargo.toml --workspace conformance:: -- --ignored --test-threads=1

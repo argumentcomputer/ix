@@ -183,9 +183,11 @@ foundations above. Three joint parser/code/memory proofs verify in fresh
 processes, and all 1,227 original CSLib code batches pass their actual
 circuits with the exact packed memory root. Complete semantic reference walks
 and full constructor-ID uniqueness now have fresh component proofs; all 994
-original reference batches and all 146 IDs pass their actual circuits. Recursive
-composition, typed input/entry initialization and output/Exec commitment
-binding remain.
+original reference batches and all 146 IDs pass their actual circuits. Input
+materialization now has fresh proofs and produces the exact original initial
+memory root, state and parameters. Recursive composition must consume these
+initialization constraints. Output/Exec commitment binding and the full
+execution proof run remain.
 
 1. **Constrained binary correspondence.** Define the approved native
    IXBF/IXFI/IXFO execution class and its identities. Constrain canonical

@@ -66,12 +66,15 @@ impl NativeImage {
       .map(|(i, decl)| (&decl.id, i))
       .collect::<BTreeMap<_, _>>();
     let forest = input.values();
-    let mut values = vec![[F128::ZERO; 2]; forest.nodes().len()];
+    let mut destinations = vec![None; forest.nodes().len()];
+    for (index, &root) in forest.roots().iter().enumerate() {
+      destinations[root] = Some(LOCALS + index as u64);
+    }
     let mut heap = 0u64;
-    // Decoder-owned preorder means every child's cell is available before its
-    // parent. Each field vector is allocated once, in its original order.
-    for (index, node) in forest.nodes().iter().enumerate().rev() {
-      values[index] = match &node.kind {
+    // Reserve each field vector at its parent's preorder event. The streaming
+    // input circuit uses this same allocation order and then fills its children.
+    for (index, node) in forest.nodes().iter().enumerate() {
+      let value = match &node.kind {
         ValueKind::Scalar(value) => scalar(input.source(), INPUT_BYTES, value)?,
         ValueKind::Erased => [F128::new(5, 0), F128::ZERO],
         ValueKind::Constructor(_) | ValueKind::PartialApplication(_) => {
@@ -91,23 +94,23 @@ impl NativeImage {
           let pointer = if count == 0 { 0 } else { HEAP + heap };
           for &child in &node.children {
             ensure!(
-              child > index && child < values.len(),
+              child > index && child < destinations.len(),
               "input value preorder"
             );
-            cells.push((HEAP + heap, values[child]));
+            ensure!(destinations[child].is_none(), "duplicate input parent");
+            destinations[child] = Some(HEAP + heap);
             heap += 1;
           }
           [F128::new(tag, reference as u64), F128::new(pointer, count)]
         },
       };
+      cells
+        .push((destinations[index].context("input value destination")?, value));
     }
     let entry = artifact.entry();
     let function = &artifact.functions()[entry];
     let arity = small(&function.arity, 64)? as u8;
     ensure!(forest.roots().len() == arity as usize, "input entry arity");
-    for (index, &root) in forest.roots().iter().enumerate() {
-      cells.push((LOCALS + index as u64, values[root]));
-    }
     let mut state = initial_state(
       FrameState::eval(entry as u16, function.entry as u8, arity, 0).words(),
       budget,

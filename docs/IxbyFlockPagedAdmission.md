@@ -2,8 +2,9 @@
 
 The paged execution memory now has constrained original-byte loading,
 source-bound code capture, complete program reference checks and full
-constructor-ID uniqueness. Their proof chains still need recursive composition
-with typed input initialization, output binding and execution. These components
+constructor-ID uniqueness, typed input materialization and initialization
+constraints. Their proof chains still need recursive composition with output
+binding and execution. These components
 do not yet establish a full CSLib execution proof.
 
 ## Original byte banks
@@ -151,20 +152,79 @@ Setup took 2.728 seconds; honest witness evaluation plus proving took
 0.393–0.709 seconds. The full adversarial/fresh-verifier test took 11.17 seconds
 wall time and peaked at 2,585,128 KiB process RSS with four Rayon threads.
 
+## Typed input and initialization
+
+[`input_capture`](../flock-stage3/host/src/ixby/ixbf_decode/paged/input_capture/mod.rs)
+consumes actual Input dispatcher events. Root values go directly to entry
+locals. Every constructor or partial application reserves its field vector
+in preorder, writes its value to the current destination, and fills children
+in source order. Constructor events match all 512 ID bits and the field count
+against authenticated declarations. Partial applications read the actual
+function declaration and require fewer captures than its arity.
+
+Five carried words contain the unfilled span, heap count, stack depth, pending
+scalar kind and entry-function declaration. The stack stores only nonempty
+remaining sibling spans, so a completed value needs at most one pop. Each
+pop clears its stack cell. Completion requires an empty span, empty stack and
+no unfinished scalar. Field reservations are monotonic, every destination
+derives from the parsed forest, and all allocated fields are filled before
+initialization completes.
+
+Scalars retain exact Nat128 magnitudes and fixed scalar bits. Bytes and
+Strings point to authenticated ranges in the original Input byte bank;
+String events additionally complete UTF-8 validation. The component requires
+the Program context and initial memory root from the preceding admission
+stages, including original byte-bank loading. Its physical bounds are 64
+entry arguments/fields/captures, 65,536 input nodes and a 36-bit heap counter.
+
+Each row has six ordered memory accesses: three declaration reads, a stack
+read, a stack write/clear and a value write. The batch carries all 30 parser
+words, five materialization words and two root words at each endpoint, plus
+the source identity: **77 public words**. The fixed 32-row class has 32 leaves,
+at most 255 parents, `nu=10`, `M=26` and 493,808 dense field words.
+
+Two real **452,891-byte proofs** verify in fresh processes receiving only
+expected statements and proof bytes. All 77 public-word substitutions and
+malformed envelopes reject. Seven locally valid recomputed entry-arity,
+constructor-ID, allocation, saved-frontier, natural, byte-range and resolved
+constructor-index substitutions reject at Flock's wiring check. Setup took
+4.326 seconds; honest witness evaluation plus proving took 0.366–0.670 seconds
+per batch. The complete adversarial/fresh-verifier test took 18.10 seconds
+wall time and peaked at 3,747,496 KiB process RSS with four Rayon threads.
+
+The complete original **4,813,238-byte input** passes one circuit batch with
+nine parser events and a **452,891-byte proof** that verifies in a fresh
+process. That test took 17.13 seconds, including setup and verification. The
+resulting memory root equals the complete native
+execution image exactly. The native loader now reserves heap vectors in the
+same preorder; nested constructor/PAP execution tests pass with that layout.
+Tests also cover all scalar kinds, zero roots, empty objects/captures, 64-field
+vectors, nested sibling spans and exact stack cleanup.
+
+[`initialize`](../flock-stage3/host/src/ixby/ixbf_decode/paged/initialize.rs)
+derives the three execution parameters, all 24 initial machine words and
+clock zero from the actual Program context and completed Input state. It
+checks the entry declaration/arity, exhausted frontier, heap count, exact
+64-bit fuel budget and semantic limits. Frame copying, continuations,
+dynamic-byte allocation and pending execution state start at zero. The
+Nat128 execution class requires a semantic Nat limit of at least 128 bits.
+The original initial state and parameters match the native loader exactly;
+the final recursive composition must consume these initialization wires.
+
 ## Proof interfaces and remaining work
 
 `CompiledSourceBytes`, `CompiledCodeCapture`, `CompiledReferences` and
-`CompiledConstructorIds` expose fixed compilation,
+`CompiledConstructorIds` and `CompiledInputCapture` expose fixed compilation,
 proving, verification and verified child-replay inputs. Setup is compiled
 before examining any source, statement, advice or proof. Replay objects are
 native witness material; recursive composition must constrain the complete
-child verifier and its inherited claims.
+child verifier and its inherited claims. Compilation also compares every
+prover driver's matrices and wire schema with the compiled verifier registry.
 
-Input grammar events must materialize actual heap values and entry locals,
-using the admitted program context. Initialization must derive the execution
-parameters, fuel and entry frame. Final output bytes must be tied to the
-halted value. The final relation must bind all source identities, memory/state
-boundaries and the original Exec commitment format.
+Final output bytes must be tied to the halted value. The final relation must
+compose the admission and execution chains, consume the initialization
+constraints, and bind all source identities, memory/state boundaries and the
+original Exec commitment format. Full execution proof generation remains.
 
 ## Reproduction
 
@@ -188,6 +248,10 @@ RUSTFLAGS='-C target-cpu=native' RAYON_NUM_THREADS=4 cargo test --release \
   --offline --manifest-path flock-stage3/Cargo.toml \
   constructor_ids_prove_fresh_and_reject_recomputed_ids \
   -- --ignored --nocapture --test-threads=1
+RUSTFLAGS='-C target-cpu=native' RAYON_NUM_THREADS=4 cargo test --release \
+  --offline --manifest-path flock-stage3/Cargo.toml \
+  input_capture_proves_fresh_and_rejects_recomputed_values \
+  -- --ignored --nocapture --test-threads=1
 IXBY_PAGED_PROGRAM=/path/to/cslib.ixby \
 RUSTFLAGS='-C target-cpu=native' RAYON_NUM_THREADS=4 cargo test --release \
   --offline --manifest-path flock-stage3/Cargo.toml \
@@ -202,5 +266,11 @@ IXBY_PAGED_PROGRAM=/path/to/cslib.ixby \
 RUSTFLAGS='-C target-cpu=native' RAYON_NUM_THREADS=4 cargo test --release \
   --offline --manifest-path flock-stage3/Cargo.toml \
   original_program_all_constructor_ids \
+  -- --ignored --nocapture --test-threads=1
+IXBY_PAGED_PROGRAM=/path/to/cslib.ixby \
+IXBY_PAGED_INPUT=/path/to/cslib.ixbi \
+RUSTFLAGS='-C target-cpu=native' RAYON_NUM_THREADS=4 cargo test --release \
+  --offline --manifest-path flock-stage3/Cargo.toml \
+  original_input_materializes_the_exact_initial_execution_image \
   -- --ignored --nocapture --test-threads=1
 ```

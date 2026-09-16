@@ -139,6 +139,9 @@ impl CompiledSourceBytes {
           .all(|(i, d)| shape.registry_slot(d.slot()) == i),
       "source bytes driver registry"
     );
+    for driver in &drivers {
+      driver.validate(&shape)?;
+    }
     let linchecks = shape
       .registry
       .boolean_types()

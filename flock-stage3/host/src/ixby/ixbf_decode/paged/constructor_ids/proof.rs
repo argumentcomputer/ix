@@ -100,6 +100,9 @@ impl CompiledConstructorIds {
           .all(|(i, d)| shape.registry_slot(d.slot()) == i),
       "constructor IDs driver registry"
     );
+    for driver in &drivers {
+      driver.validate(&shape)?;
+    }
     let linchecks = shape
       .registry
       .boolean_types()

@@ -3,6 +3,8 @@
 //! these endpoints to grammar, code validation, initialization and execution.
 pub mod code_capture;
 pub mod constructor_ids;
+pub mod initialize;
+pub mod input_capture;
 pub mod references;
 pub mod source_bytes;
 mod synthesis;

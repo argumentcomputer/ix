@@ -73,15 +73,17 @@ packed block and operand passes the corresponding constrained consumer's row
 check. [Source-bound capture](IxbyFlockPagedAdmission.md) now constrains
 these writes from actual parser events. Complete semantic reference and
 constructor-ID checks now have component proofs. Their recursive composition
-with input/initialization remains required.
+with input/initialization remains required. Typed input materialization now
+has fresh component proofs and produces the exact initial execution image;
+the initialization constraints derive all machine words and parameters.
 
 ## Native initialization and original execution segments
 
 `NativeImage::load` decodes the original program and input, packs the complete
 code image, and places the unchanged input bytes in their own memory bank.
 Byte and string values keep exact offsets into those source files. Nested
-constructors and partial applications allocate immutable field vectors in
-child-before-parent order, then populate the entry function's actual locals.
+constructors and partial applications reserve immutable field vectors in
+preorder, then fill each value's assigned heap cell or entry local.
 The entry frame, heap count and execution limits are derived from the decoded
 files. This is untrusted witness preparation; its memory root still requires
 constrained source admission.
@@ -337,8 +339,8 @@ ordered access through the exact permutation and authenticated boundaries.
 
 ## Remaining integration
 
-Connect original source admission and input initialization; complete
-execution boundaries and output serialization; and execution-proof aggregation.
+Compose original source admission and input initialization; bind
+output serialization; and complete execution-proof aggregation.
 Then prove representative original-CSLib segments and measure
 the full run. None of the component results above substitutes for that run.
 

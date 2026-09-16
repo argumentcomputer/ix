@@ -93,14 +93,14 @@ fn nested_constructor_and_partial_application_input_runs_in_actual_batch() {
   let source = input(&value);
   let mut image =
     NativeImage::load(&program, &source, DecodeLimits::default()).unwrap();
-  let root = [F128::new(7, 0), F128::new(HEAP + 2, 2)];
+  let root = [F128::new(7, 0), F128::new(HEAP, 2)];
   assert_eq!(image.state[HEAP_COUNT], F128::new(4, 0));
   assert_eq!(image.memory.value(LOCALS).unwrap(), root);
   for (i, expected) in [
+    [F128::new(2, 0), F128::new(0x04030201, 0)],
+    [F128::new(9, 1), F128::new(HEAP + 2, 2)],
     [F128::new(8, 0), F128::new(7, 2)],
     [F128::new(5, 0), F128::ZERO],
-    [F128::new(2, 0), F128::new(0x04030201, 0)],
-    [F128::new(9, 1), F128::new(HEAP, 2)],
   ]
   .into_iter()
   .enumerate()
