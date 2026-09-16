@@ -684,6 +684,7 @@
     "CompilatrixTests.Aiur.WireProofs",
     "CompilatrixTests.Aiur.Execution.Proofs",
     "CompilatrixTests.Aiur.Static.Proofs",
+    "CompilatrixTests.Aiur.CounterAnalysis.Proofs",
     "Compilatrix.Ixby.Examples",
     "Compilatrix.Ixby.Report",
     "Compilatrix.Ixby.SymbolicExamples",
@@ -1124,6 +1125,9 @@
    "imports":
    ["Compilatrix.Aiur.OracleEval.MachineProofs",
     "CompilatrixTests.Aiur.Execution.Proofs"]},
+  "CompilatrixTests.Fences.AiurCounterAnalysis":
+  {"path": "CompilatrixTests/Fences/AiurCounterAnalysis.lean",
+   "imports": ["CompilatrixTests.Aiur.CounterAnalysis.Proofs"]},
   "CompilatrixTests.Fences.Aiur":
   {"path": "CompilatrixTests/Fences/Aiur.lean",
    "imports":
@@ -1138,6 +1142,7 @@
     "CompilatrixTests.Fences.AiurWire",
     "CompilatrixTests.Fences.AiurExecution",
     "CompilatrixTests.Fences.AiurStatic",
+    "CompilatrixTests.Fences.AiurCounterAnalysis",
     "CompilatrixTests.Fences.CallReuse",
     "CompilatrixTests.Fences.Erasure",
     "CompilatrixTests.Fences.HPT",
@@ -1242,6 +1247,14 @@
    "imports":
    ["CompilatrixTests.Aiur.Execution.ControlFixtures",
     "CompilatrixTests.Aiur.Execution.OpCases"]},
+  "CompilatrixTests.Aiur.CounterAnalysis.Proofs":
+  {"path": "CompilatrixTests/Aiur/CounterAnalysis/Proofs.lean",
+   "imports":
+   ["CompilatrixTests.Aiur.CounterAnalysis.Fixtures",
+    "Compilatrix.Aiur.CounterAnalysis"]},
+  "CompilatrixTests.Aiur.CounterAnalysis.Fixtures":
+  {"path": "CompilatrixTests/Aiur/CounterAnalysis/Fixtures.lean",
+   "imports": ["CompilatrixTests.Aiur.Static.Fixtures"]},
   "CompilatrixTests.Addressing.Run":
   {"path": "CompilatrixTests/Addressing/Run.lean",
    "imports":
@@ -3789,6 +3802,69 @@
   "Compilatrix.Aiur.Derivation":
   {"path": "Compilatrix/Aiur/Derivation.lean",
    "imports": ["Compilatrix.Aiur.Balance"]},
+  "Compilatrix.Aiur.CounterAnalysis.Step":
+  {"path": "Compilatrix/Aiur/CounterAnalysis/Step.lean",
+   "imports":
+   ["Compilatrix.Aiur.CounterAnalysis.Calls",
+    "Compilatrix.Aiur.CounterAnalysis.Replay"]},
+  "Compilatrix.Aiur.CounterAnalysis.Sound":
+  {"path": "Compilatrix/Aiur/CounterAnalysis/Sound.lean",
+   "imports":
+   ["Compilatrix.Aiur.CounterAnalysis.Search",
+    "Compilatrix.Aiur.Static.CounterProofs"]},
+  "Compilatrix.Aiur.CounterAnalysis.Search":
+  {"path": "Compilatrix/Aiur/CounterAnalysis/Search.lean",
+   "imports":
+   ["Compilatrix.Aiur.CounterAnalysis.Body",
+    "Compilatrix.Aiur.CounterAnalysis.Loops"]},
+  "Compilatrix.Aiur.CounterAnalysis.ReplayHelpers":
+  {"path": "Compilatrix/Aiur/CounterAnalysis/ReplayHelpers.lean",
+   "imports": ["Compilatrix.Aiur.CounterAnalysis.Effects"]},
+  "Compilatrix.Aiur.CounterAnalysis.Replay":
+  {"path": "Compilatrix/Aiur/CounterAnalysis/Replay.lean",
+   "imports": ["Compilatrix.Aiur.CounterAnalysis.ReplayHelpers"]},
+  "Compilatrix.Aiur.CounterAnalysis.Registers":
+  {"path": "Compilatrix/Aiur/CounterAnalysis/Registers.lean",
+   "imports":
+   ["Compilatrix.Aiur.CounterAnalysis.Affine",
+    "Compilatrix.Aiur.CounterAnalysis.Effects"]},
+  "Compilatrix.Aiur.CounterAnalysis.Machine":
+  {"path": "Compilatrix/Aiur/CounterAnalysis/Machine.lean",
+   "imports": ["Compilatrix.Aiur.CounterAnalysis.Control"]},
+  "Compilatrix.Aiur.CounterAnalysis.Loops":
+  {"path": "Compilatrix/Aiur/CounterAnalysis/Loops.lean",
+   "imports": ["Init.Data.Range.Lemmas", "Init.Data.List.Monadic"]},
+  "Compilatrix.Aiur.CounterAnalysis.Invariant":
+  {"path": "Compilatrix/Aiur/CounterAnalysis/Invariant.lean",
+   "imports": ["Compilatrix.Aiur.CounterAnalysis.Registers"]},
+  "Compilatrix.Aiur.CounterAnalysis.Field":
+  {"path": "Compilatrix/Aiur/CounterAnalysis/Field.lean",
+   "imports": ["Compilatrix.Aiur.Field"]},
+  "Compilatrix.Aiur.CounterAnalysis.Effects":
+  {"path": "Compilatrix/Aiur/CounterAnalysis/Effects.lean",
+   "imports":
+   ["Compilatrix.Aiur.OracleEval.Op", "Ix.Aiur.Compiler.UnitCounter"]},
+  "Compilatrix.Aiur.CounterAnalysis.Control":
+  {"path": "Compilatrix/Aiur/CounterAnalysis/Control.lean",
+   "imports":
+   ["Compilatrix.Aiur.CounterAnalysis.Step",
+    "Compilatrix.Aiur.OracleEval.Machine",
+    "Compilatrix.Aiur.Static.Counter"]},
+  "Compilatrix.Aiur.CounterAnalysis.Calls":
+  {"path": "Compilatrix/Aiur/CounterAnalysis/Calls.lean",
+   "imports": ["Compilatrix.Aiur.CounterAnalysis.Invariant"]},
+  "Compilatrix.Aiur.CounterAnalysis.Body":
+  {"path": "Compilatrix/Aiur/CounterAnalysis/Body.lean",
+   "imports":
+   ["Compilatrix.Aiur.CounterAnalysis.Machine",
+    "Compilatrix.Aiur.OracleEval.Local"]},
+  "Compilatrix.Aiur.CounterAnalysis.Affine":
+  {"path": "Compilatrix/Aiur/CounterAnalysis/Affine.lean",
+   "imports":
+   ["Compilatrix.Aiur.CounterAnalysis.Field", "Ix.Aiur.Compiler.UnitCounter"]},
+  "Compilatrix.Aiur.CounterAnalysis":
+  {"path": "Compilatrix/Aiur/CounterAnalysis.lean",
+   "imports": ["Compilatrix.Aiur.CounterAnalysis.Sound"]},
   "Compilatrix.Aiur.Check":
   {"path": "Compilatrix/Aiur/Check.lean",
    "imports": ["Compilatrix.Aiur.Balance", "Compilatrix.Aiur.Memory"]},

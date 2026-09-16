@@ -12,8 +12,9 @@ This endpoint checks dependencies in a supplied logical trace. It does not
 derive that trace from a verifier-accepted AIR assignment. In particular,
 the upstream counter analyzer chooses a column and direction, while this
 checker verifies every relevant counter equation on the actual rows.
-A universal semantic theorem for the analyzer and an extraction theorem
-from the keyed AIR remain separate obligations.
+The [universal analyzer theorem](aiur-counter-analysis.md) now proves those
+equations for every successful local body. Extraction from the keyed AIR
+remains a separate obligation.
 
 ## Program binding
 
@@ -67,8 +68,9 @@ Input steps describe `child = parent + step`; output steps describe
 `parent = child + step`. The normalization lemmas prove that each case
 gives `child_counter = parent_counter + 1`, including Goldilocks wraparound.
 They use the pinned field representation, without a new field-law or
-primality axiom. These lemmas establish the direction convention; actual
-edge equations are still checked rather than assumed from the analyzer.
+primality axiom. The universal analyzer theorem composes these lemmas with
+the inferred body relation. This endpoint still checks actual edge equations
+as part of validating the supplied logical trace.
 
 ## Dependency and replay checks
 
@@ -113,8 +115,9 @@ for every program, rank array, replay tape, advice policy, and limit setting.
 Of the 39 new exact axiom fences, 38 use only the existing logical basis;
 the ingress adapter retains the existing native BLAKE3 exception.
 
-The remaining backend work includes universal analyzer/body soundness,
-production IxVM bytecode export and constraint artifacts, extraction of
+The [analyzer/body proof](aiur-counter-analysis.md) is now complete for the
+local model. Remaining backend work includes production IxVM bytecode
+export and constraint artifacts, extraction of
 local and static row facts from the keyed AIR, primitive conformance,
 honest-evaluator/allocator refinement, artifact/source/key bindings, and
 Ixon/DSL lowering. Checked logical-trace execution does not establish

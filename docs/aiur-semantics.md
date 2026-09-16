@@ -18,8 +18,9 @@ The [static assignment checker](aiur-static.md) now constructs that
 certificate from ordinary row/rank data, binding counter choices to checked
 bytecode metadata and checking every actual dependency. Its combined
 `Static.validate` endpoint requires no caller-written static certificate.
-Universal analyzer/body soundness and extraction from the keyed AIR remain
-separate work. The local replay and logical gadget model are not an AIR
+The [universal analyzer/body theorem](aiur-counter-analysis.md) proves every
+inferred self-call counter step in this local model. Extraction from the
+keyed AIR remains separate work. The local replay and logical gadget model are not an AIR
 conformance theorem. No production IxVM proof-acceptance claim follows.
 
 ## Local replay

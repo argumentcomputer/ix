@@ -10,8 +10,9 @@ upstream component checker behind resource guards. The
 operations and controls and composes checked bytecode rows into finite
 executions. The [static assignment checker](aiur-static.md) constructs the
 required certificate from ordinary row/rank data and checked metadata.
-Source lowering, universal counter-analyzer soundness, and extraction from
-the keyed AIR remain subsequent work.
+The [counter-analyzer proof](aiur-counter-analysis.md) establishes the
+inferred self-call relation for every successful local body. Source lowering
+and extraction from the keyed AIR remain subsequent work.
 
 ## Reference and module boundaries
 
@@ -112,9 +113,10 @@ upstream component order. All four input/output unit directions, ranked
 fallback, and natural rank witnesses are covered by the
 [assignment contract](aiur-static.md).
 
-This is still a theorem about supplied logical rows. Universal analyzer/body
-soundness and deriving counter observations, rank limbs, component facts,
-and field-step equalities from the keyed AIR remain work. General nonzero
+The universal analyzer/body theorem now proves the inferred counter relation
+and its four normalized unit directions. Deriving local bodies, counter
+observations, rank limbs, component facts, and lookup bounds from the keyed
+AIR remains work. General nonzero
 steps, zero-step sub-orders, and broader output-counter recognition remain
 extensions.
 
@@ -152,7 +154,9 @@ establish trace acyclicity on their own.
 lake build AiurReference Compilatrix.Aiur CompilatrixTests.Aiur.Proofs \
   CompilatrixTests.Aiur.Execution.Proofs CompilatrixTests.Fences.Aiur \
   CompilatrixTests.Aiur.Static.Proofs CompilatrixTests.Fences.AiurWire \
-  CompilatrixTests.Fences.AiurExecution CompilatrixTests.Fences.AiurStatic tests-aiur check-aiur
+  CompilatrixTests.Fences.AiurExecution CompilatrixTests.Fences.AiurStatic \
+  Compilatrix.Aiur.CounterAnalysis CompilatrixTests.Aiur.CounterAnalysis.Proofs \
+  CompilatrixTests.Fences.AiurCounterAnalysis tests-aiur check-aiur
 lake exe tests-aiur
 lake exe check-aiur --root .
 nix build .#checks.x86_64-linux.aiur
@@ -183,7 +187,8 @@ ordinary-logic axiom fences, including complete counter, ranked-mutual,
 memory, gadget, and continuation examples. The static assignment extension
 adds 116 runtime assertions and 39 exact fences for construction of public
 executions from plain data, normalization/order lemmas, and universal
-rejection of cyclic attacks. Universal counter-analyzer soundness, the
-upstream evaluator handoff and IxVM export/constraint dump, keyed AIR
+rejection of cyclic attacks. The analyzer proof adds 19 kernel regressions
+and 48 ordinary-logic fences for universal body relations and short-cycle
+exclusion. The upstream evaluator handoff and IxVM export/constraint dump, keyed AIR
 extraction, and source/DSL lowering remain next. No IxVM performance or
 production proof-acceptance claim is made by these milestones.

@@ -93,6 +93,11 @@ exact axiom fences to those same targets. Counter normalization and order
 proofs, concrete checker examples, and fences remain outside the production
 import closure. The combined suite runs 725 Aiur assertions.
 
+The [counter-analyzer proof](aiur-counter-analysis.md) adds 19 public kernel
+regressions and 48 exact ordinary-logic fences. Its affine, replay, machine,
+and search proofs remain outside the 470-module production closure and are
+required through `CompilatrixTests.Proofs`. It preserves the runtime suites.
+
 `lake exe tests` remains the aggregate entry point. The required Nix `tests`
 gate runs the individual entry points and their aggregate. New cases belong
 in the corresponding `CompilatrixTests.<Area>` module.

@@ -70,6 +70,7 @@ performance reports preserve evidence from their recorded revisions.
 | [Aiur bytecode wire format](aiur-wire.md) | Complete canonical bytecode, bounded addressed ingress, component-check evidence, frozen fixtures, and the ix exporter contract |
 | [Aiur witness-heap execution](aiur-semantics.md) | Bounded bytecode replay, explicit advice, concrete memory/gadget meanings, and validated public executions under the static row certificate |
 | [Aiur checked static assignments](aiur-static.md) | Program-bound counter/rank assignments and public execution from ordinary trace, rank, and replay data |
+| [Aiur counter-analyzer soundness](aiur-counter-analysis.md) | Universal soundness of the pinned counter search against local bytecode replay, all four directions, and short-cycle exclusion |
 
 The [machine-readable trust ledger](trusted-externs.json) and
 [reference-model pin](x86-reference-model.json) support the corresponding prose

@@ -176,6 +176,7 @@
             ./docs/aiur-wire.md
             ./docs/aiur-semantics.md
             ./docs/aiur-static.md
+            ./docs/aiur-counter-analysis.md
             ./docs/x86-reference-model.json
             (pkgs.lib.fileset.fileFilter (f: f.hasExt "lean") ./scripts)
             ./scripts/inspect_ixby.py

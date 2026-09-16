@@ -301,10 +301,17 @@ fences while preserving all 2177 prior assertions. Thirty-eight cones use
 ordinary logic; the addressed adapter inherits the existing BLAKE3 axiom
 through ingress evidence. No new native axiom or interface is introduced.
 
+The [universal counter-analyzer proof](aiur-counter-analysis.md) connects the
+actual pinned search and checker to every successful local body, with
+arbitrary replies and advice. It proves all four normalized directions and
+excludes short self-call cycles. Its 19 kernel regressions and 48 exact
+ordinary-logic fences preserve all 2216 prior assertions. It adds no new
+axiom or native interface and leaves executable validation unchanged.
+
 The ledger records this model as `aiur-witness-bytecode-v0`. Its logical
 gadget channels are not Rust AIR channels. Primitive conformance, extraction
-from the keyed AIR, universal counter-analyzer/body soundness, and refinement to the
-honest allocator/evaluator remain obligations. `ioSetInfo` and `ioWrite`
+from the keyed AIR, and refinement to the honest allocator/evaluator remain
+obligations. `ioSetInfo` and `ioWrite`
 have no constrained effect in this model, and hints retain arbitrary allowed
 answers until constrained code checks them. This is a specification boundary,
 not a new cryptographic or native trust assumption.
