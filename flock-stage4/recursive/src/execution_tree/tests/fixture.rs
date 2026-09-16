@@ -33,7 +33,7 @@ use std::{
 };
 
 const IDENTITY: &[u8] = &[
-  b'I', b'X', b'B', b'F', 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 1, 0, 8, 0x80,
+  b'I', b'X', b'B', b'F', 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 1, 0, 8, 0x80,
   0x20, 64, 64, 24, 0, 0, 1, 1, 0, 1, 1, 1, 0, 0,
 ];
 const COUNTS: [usize; 11] = [1; 11];
@@ -419,9 +419,22 @@ fn fresh_verify(expected: [F128; 2], proof: &[u8]) {
 #[ignore = "fresh receiver supplied only an approved setup, S and a root proof"]
 fn complete_root_receiver() {
   assert!(std::env::var_os("IXBY_COMPLETE_ROOT_RECEIVER").is_some());
+  check_root_receiver(profile(), BatchClass::Small);
+}
+
+#[test]
+#[ignore = "fresh receiver for the semantics-1 conversion CLI fixture; stdin contains only S and the root proof"]
+fn conversion_root_receiver() {
+  assert!(std::env::var_os("IXBY_CONVERSION_ROOT_RECEIVER").is_some());
+  let profile =
+    FunctionalProfile::new([1, 0, 6, 6, 2, 0, 8, 128, 0, 64], 7).unwrap();
+  check_root_receiver(profile, BatchClass::Bytes);
+}
+
+fn check_root_receiver(profile: FunctionalProfile, class: BatchClass) {
   let started = Instant::now();
-  let mut compiler =
-    PagedTreeCompiler::new(profile(), BatchClass::Small, COUNTS).unwrap();
+  // This entire setup is fixed before the receiver reads any proof bytes.
+  let mut compiler = PagedTreeCompiler::new(profile, class, COUNTS).unwrap();
   let verifier = compiler.verifier().unwrap();
   drop(compiler);
   eprintln!(

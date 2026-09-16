@@ -110,7 +110,7 @@ fn original_corpus_and_full_init_dispatch_without_an_ast_schedule() {
   let image = fixtures::read(&fixtures::path("IXBY_IXBF_STAGE2_IMAGE"));
   assert_eq!(
     blake3::hash(&image).to_hex().as_str(),
-    "a661dfede7c18bfb915d031393ffb258e65c21940d48039cdf44ab16428fe301"
+    crate::ixby::test_support::INIT_PROGRAM_V1_BLAKE3
   );
   let parsed = check_program(&model, &image);
   assert_eq!(parsed.events[3], 146);

@@ -1,5 +1,10 @@
 # Constrained functional records and reference checks
 
+The current program revision admits 47 primitive opcodes, including the unary
+conversions `45` and `46`. See the [compiler handoff](CompilatrixNatWord32Handoff.md).
+Input/output headers remain at semantics 0. Milestone measurements below
+describe their original revisions and must not be read as current setup pins.
+
 The `ixby::ixbf_decode` record components extend the
 [original-wire codecs](IxbyFunctionalCodec.md) toward IXBF/IXFI/IXFO body and
 value admission. They decode local records and check relations between their

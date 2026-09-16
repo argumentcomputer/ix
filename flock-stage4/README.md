@@ -1,5 +1,12 @@
 # Experimental Stage 4 native core
 
+Current complete-functional execution uses **IXBF format 1, semantics 1** and
+the matching IXFP program revision. See the
+[Nat/Word32 compiler handoff](../docs/CompilatrixNatWord32Handoff.md) for the
+breaking format change and `fixtures/paged-execution-conversions.py` for an
+independent end-to-end fixture. Older measurement records keep their original
+revision pins.
+
 This independent Cargo workspace contains the reusable trace, R1CS circuit,
 and KZG-FFLONK components imported from `jcb/flock-stage4` at `8fdb3eab`.
 `IMPORT-PROVENANCE.json` records the original revision and SHA-256/Git blob

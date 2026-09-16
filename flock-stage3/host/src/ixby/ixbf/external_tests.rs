@@ -44,7 +44,7 @@ fn compiler_corpus_covers_complete_functional_wire() {
   let mut scalars = [0usize; 7];
   let mut instructions = [0usize; 8];
   let mut operations = [0usize; 8];
-  let mut primitives = [0usize; 45];
+  let mut primitives = [0usize; 47];
   for path in &files {
     let bytes = read(path);
     let artifact = decode_program(&bytes, DecodeLimits::default()).unwrap();
@@ -89,7 +89,7 @@ fn compiler_corpus_covers_complete_functional_wire() {
   assert_eq!(input.values().depth(), 3);
   assert_eq!(input.values().nodes().len(), 4);
   eprintln!(
-    "independent IXBF corpus: {} programs; all 45 primitives, 7 scalar kinds, 8 operations and 8 instructions; structured I/O",
+    "independent IXBF corpus: {} programs; all 47 primitives, 7 scalar kinds, 8 operations and 8 instructions; structured I/O",
     files.len()
   );
 }
@@ -100,7 +100,7 @@ fn retained_stage2_init_artifacts_match_exact_pins() {
   let bytes = read(&path("IXBY_IXBF_STAGE2_IMAGE"));
   assert_eq!(
     blake3::hash(&bytes).to_hex().as_str(),
-    "a661dfede7c18bfb915d031393ffb258e65c21940d48039cdf44ab16428fe301"
+    crate::ixby::test_support::INIT_PROGRAM_V1_BLAKE3
   );
   let artifact = decode_program(&bytes, DecodeLimits::default()).unwrap();
   let census = artifact.inventory();

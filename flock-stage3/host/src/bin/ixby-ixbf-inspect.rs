@@ -63,9 +63,10 @@ fn main() -> Result<()> {
   println!("  \"constraint_refinement_certified\": false,");
   println!("  \"source_certified\": false,");
   println!(
-    "  \"program\": {{\"bytes\": {}, \"raw_blake3\": \"{}\", \"wire_format\": 1, \"semantics\": 0}},",
+    "  \"program\": {{\"bytes\": {}, \"raw_blake3\": \"{}\", \"wire_format\": 1, \"semantics\": {}}},",
     inventory.program_bytes,
-    blake3::hash(&program_bytes).to_hex()
+    blake3::hash(&program_bytes).to_hex(),
+    ixbf::PROGRAM_SEMANTICS_VERSION
   );
   println!("  \"entry\": {},", artifact.entry());
   println!("  \"max_steps_decimal\": \"{}\",", artifact.max_steps());

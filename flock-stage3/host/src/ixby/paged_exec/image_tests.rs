@@ -9,9 +9,9 @@ use crate::{
 };
 use flock_prover::circuit::builder::ShapeBuilder;
 
-// Independently encoded format-1, semantics-0 identity: arity 1, return local 0.
+// Independently encoded format-1, semantics-1 identity: arity 1, return local 0.
 const IDENTITY: &[u8] = &[
-  b'I', b'X', b'B', b'F', 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 1, 0, 8, 0x80,
+  b'I', b'X', b'B', b'F', 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 1, 0, 8, 0x80,
   0x20, 64, 64, 24, 0, 0, 1, 1, 0, 1, 1, 1, 0, 0,
 ];
 fn input(value: &[u8]) -> Vec<u8> {
@@ -26,6 +26,42 @@ fn natural(mut n: u128) -> Vec<u8> {
     if n == 0 {
       return out;
     }
+  }
+}
+
+#[test]
+fn direct_conversions_execute_with_exact_fuel_and_authenticated_code() {
+  // Independent three-block program: Nat -> Word32 -> Nat -> return.
+  let program = [
+    b'I', b'X', b'B', b'F', 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3, 3, 1, 0, 8, 128,
+    1, 0, 64, 4, 0, 0, 1, 1, 0, 3, 1, 0, 1, 45, 1, 0, 0, 1, 2, 0, 1, 46, 1, 0,
+    1, 2, 3, 1, 0, 2,
+  ];
+  let class = BatchClass::Small;
+  let setup = CompiledPagedExecution::compile(class).unwrap();
+  for n in [0, 1, (1 << 32) - 1, 1 << 32, (1 << 65) + 37, u128::MAX] {
+    let mut value = vec![0, 0];
+    value.extend(natural(n));
+    let source = input(&value);
+    let mut image =
+      NativeImage::load(&program, &source, DecodeLimits::default()).unwrap();
+    let mut machine = image.machine().unwrap();
+    let advice = machine.batch(class, &mut image.memory).unwrap().unwrap();
+    setup.check_advice(&advice).unwrap();
+    assert!(machine.next_chip().unwrap().is_none());
+    assert_eq!(machine.state[FUEL], F128::new(0, 4));
+    assert_eq!(machine.state[0].lo as u8, Phase::Halted as u8);
+    assert_eq!(
+      &machine.state[2..4],
+      &[F128::new(8, 0), F128::new((n as u64) & u64::from(u32::MAX), 0)]
+    );
+
+    let mut exhausted = program;
+    exhausted[23] = 3;
+    let mut image =
+      NativeImage::load(&exhausted, &source, DecodeLimits::default()).unwrap();
+    let mut machine = image.machine().unwrap();
+    assert!(machine.batch(class, &mut image.memory).is_err());
   }
 }
 

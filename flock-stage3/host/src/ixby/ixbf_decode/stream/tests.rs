@@ -19,7 +19,7 @@ pub(super) fn natural(bytes: &mut Vec<u8>, mut value: u128) {
   }
 }
 pub(super) fn program(scalar: Option<&[u8]>, arity: u128) -> Vec<u8> {
-  let mut bytes = b"IXBF\x01\0\0\0\0\0\0\0".to_vec();
+  let mut bytes = b"IXBF\x01\0\0\0\x01\0\0\0".to_vec();
   for value in [
     8,
     8,

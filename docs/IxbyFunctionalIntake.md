@@ -1,18 +1,26 @@
 # Complete functional binary intake
 
-`flock-stage3/host/src/ixby/ixbf` reads the Compilatrix **IXBF format 1,
-semantics 0** program and its IXFI/IXFO transports. It is a host-side foundation
+`flock-stage3/host/src/ixby/ixbf` reads **IXBF format 1, semantics 1** programs
+and format-1/semantics-0 IXFI/IXFO transports. It is a host-side foundation
 for witness generation and sizing, not a constrained decoder or a Flock
 proving-profile adapter. No native Exec factory consumes its acceptance bit,
 decoded tables, or inventory. Existing IXBY/IXBI/IXBO codecs and keys are
 unchanged.
+
+The program revision is breaking: semantics-0 programs reject. Opcodes `45`
+and `46` add unary Nat → Word32 and Word32 → Nat conversions. The
+[compiler handoff](CompilatrixNatWord32Handoff.md) specifies their limits,
+encoding, compiler integration, and current validation. Earlier measurements
+below describe the semantics-0 milestone and its original artifacts.
 
 ## Exact boundary
 
 The reader covers every functional scalar, operand, operation, instruction,
 primitive, constructor identity, and closure/PAP value. Explicit opcode-name
 mapping covers all 42 native crypto/Nat operations; the three String operations
-have no native counterpart. Mapping names does not prove their correspondence.
+and two conversions have no opcode in that older native registry. The paged
+execution backend implements the conversions directly. Mapping names does not
+prove their correspondence.
 
 All scalar naturals and potentially unbounded metadata retain arbitrary
 precision: limits, fuel, arities, local counts/references, constructor
@@ -65,13 +73,14 @@ The real retained Stage 2 image and successful Init transports passed intake:
 
 ## Tests and remaining work
 
-Twenty ordinary tests cover all wire families, large metadata, exact scalar
+Twenty-one ordinary tests cover all wire families, large metadata, exact scalar
 bounds, malformed/truncated/nonminimal data, dead-code validation, whole-forest
 fuel, and a 2,048-deep value with an explicit loader upgrade. Two additional
 opt-in tests check an independent compiler corpus and pinned real Init files.
-The exported corpus passed for 81 programs and its structured I/O fixture;
-coverage checks require all 45 primitives, seven scalars, eight operations,
-and eight instruction kinds.
+The original exported corpus passed for 81 programs and its structured I/O
+fixture. The current coverage check requires all **47** primitives, seven
+scalars, eight operations, and eight instruction kinds. Re-export it after
+the compiler integration; the old 45-primitive corpus is insufficient.
 
 ```sh
 cargo test --release --locked --manifest-path flock-stage3/Cargo.toml \
@@ -89,6 +98,15 @@ IXBY_IXBF_INIT_OUTPUT=/path/to/init.ixbo \
 The independently built Compilatrix `check-ixby-binary <export-directory>`
 command produces the corpus. The real-artifact test requires the exact retained
 hashes and claim; it does not silently accept a substitute fixture.
+
+The retained Init parser fixture now uses semantics 1: change only byte 8 of
+the original 1,002,355-byte program from `0` to `1`. Its exact raw BLAKE3 is
+`ad104d099c9e7dbf2ac6466d8aa8d55bc06c18d90bcb0083ed9f66153c492db4`.
+The original semantics-0 hash was
+`a661dfede7c18bfb915d031393ffb258e65c21940d48039cdf44ab16428fe301`.
+The I/O hashes, body, offsets, and census remain fixed. This fixture exercises
+the current parser; it is not an optimized compiler image or a reuse of an old
+execution proof. Production intake performs no header migration.
 
 The [constrained codec components](IxbyFunctionalCodec.md) now check original
 header metadata, natural payloads and ByteArray ranges, with isolated component

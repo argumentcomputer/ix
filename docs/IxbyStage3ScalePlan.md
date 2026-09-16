@@ -253,6 +253,13 @@ current-status section below.
     produces a 510,115-byte root accepted by a fresh final-code verifier.
     [Function-level profiling](IxbyPerformance.md) also identifies
     the runtime work that future IxBy and compiler changes can reduce.
+29. [Direct Nat/Word32 conversions](CompilatrixNatWord32Handoff.md): unary
+    opcodes 45 and 46 have Lean reference semantics, strict binary intake,
+    authenticated code admission, and Nat128 proof constraints. IXBF program
+    semantics 1 and matching IXFP profiles replace the old program revision;
+    I/O encoding stays at semantics 0. A seven-step conversion program has a
+    complete 499,443-byte execution proof. Compiler adoption and the resulting
+    CSLib trace and performance measurement remain pending.
 
 ## Current integration and next measurements
 
@@ -281,8 +288,9 @@ remain bound by admission, initialization, finalization and commitments.
    the linked class's useful field data. The
    [runtime profile](IxbyPerformance.md) prioritizes direct numeric conversions,
    simpler numeric representations, native persistent-array operations and
-   byte builders. These require new semantics/compiler/constraint work and a
-   newly bound compiled image. Workload-specific proof classes remain another
+   byte builders. Direct Nat/Word32 primitives are available; their compiler
+   integration and the other runtime changes require further work and a newly
+   bound compiled image. Workload-specific proof classes remain another
    target. ByteStart/ByteFinish or Resume quotas already end some measured
    batches before their Fetch quota fills. Preserve complete state, memory
    and fuel checks, and compare time and peak memory per logical step,

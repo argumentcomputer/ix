@@ -30,6 +30,8 @@ pub use primitive::Primitive;
 
 pub const FORMAT_VERSION: u32 = 1;
 pub const SEMANTICS_VERSION: u32 = 0;
+/// Breaking program-language revision. Typed IXFI/IXFO values remain at zero.
+pub const PROGRAM_SEMANTICS_VERSION: u32 = 1;
 
 /// Parse and validate every declaration, including unreachable instructions.
 /// Host loader limits are independent of the semantic limits inside the file.

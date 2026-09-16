@@ -35,6 +35,8 @@ pub(in crate::ixby::ixbf_decode::paged) fn sample() -> Vec<u8> {
   for op in [
     vec![0, 0, 0],
     vec![1, Primitive::NatAdd.opcode(), 2, 0, 0, 2],
+    vec![1, Primitive::NatToWord32.opcode(), 1, 0, 0],
+    vec![1, Primitive::Word32ToNat.opcode(), 1, 0, 0],
     vec![2, 1, 1, 0, 0],
     vec![3, 0, 0, 0],
     vec![4, 0, 0],
@@ -91,7 +93,7 @@ pub(in crate::ixby::ixbf_decode::paged) fn sample() -> Vec<u8> {
     ret.extend(scalar);
     functions.push(vec![(1, ret)]);
   }
-  let mut source = b"IXBF\x01\0\0\0\0\0\0\0".to_vec();
+  let mut source = b"IXBF\x01\0\0\0\x01\0\0\0".to_vec();
   for n in [
     1024, 256, 256, 128, 64, 1024, 65536, 4096, 16777216, 16777216, 100000, 0,
     2,

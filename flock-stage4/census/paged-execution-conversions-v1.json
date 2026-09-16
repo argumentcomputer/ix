@@ -1,0 +1,688 @@
+{
+  "binaries": {
+    "fresh_verifier": {
+      "blake3": "07a62cba0cbf2cf636a2d74b4b924155134b9820a063b1c440a0feeb57c25ee8",
+      "bytes": 22387400,
+      "sha256": "8ebc92d7784074a395b205d43f88ea7cb7ac1b558585e036602f543ed8d0b22e"
+    },
+    "producer": {
+      "blake3": "45ab7d54d12b7e17862595b851f538c30feb14f769df1412936f724b9235d3f5",
+      "bytes": 20954880,
+      "sha256": "46f7b7cf09a1a34e8923a8ed494990189a2c2bdbbbe9e28f5c3d2e6faab8fd8d"
+    }
+  },
+  "environment": {
+    "cpu": "AMD Ryzen 9 7950X3D 16-Core Processor",
+    "flock_commit": "b310f35f35f68095537150a1c8c0a43caca9a29e",
+    "lean": "4.33.1",
+    "memory_max_gib": 84,
+    "rayon_threads": 4,
+    "rust": "1.98.1",
+    "rustflags": "-Ctarget-cpu=native",
+    "swap_max_bytes": 0,
+    "virtual_memory_max_gib": 768
+  },
+  "final_reviewed_sources_sha256": {
+    "Ix/Ixby/Basic.lean": "1471a061421970e1ff309a1482cae3b2870ef65c5c34989f0f19a81b12ba4fff",
+    "Ix/Ixby/Primitive.lean": "7bce80492e2af52e3a374bee51aeda572471fd01b08bcbbf78928e60f7986c6e",
+    "Tests/Ixby/Basic.lean": "47c159d36e2c0b9050d26def14c1a9d0f024e37a79a2968b92c60a796f4522a3",
+    "Tests/Ixby/NatCodec.lean": "4fd4343af486a4f7b01d5f238f3ccf79cbf6da4c3d1b13c058c5b252392436ad",
+    "flock-stage3/host/src/bin/ixby-ixbf-inspect.rs": "ea41afbf734bf384363058b8234700c0612096b9da6308d194f345083f21736a",
+    "flock-stage3/host/src/ixby/ixbf/decode.rs": "7d6aaadce11edf7d93698938ebcfad9e580c4e1ecb4b1cd3ec5070be189cdba8",
+    "flock-stage3/host/src/ixby/ixbf/encode.rs": "a6f74fb3893a4330cb9f71b1b8e161220b7981ca5b1fb33e0f5b97ca16eb167c",
+    "flock-stage3/host/src/ixby/ixbf/external_tests.rs": "dc194f6c17e0997743ca131719f55b87361d223f36fa304e5e7f2609b6f86ad5",
+    "flock-stage3/host/src/ixby/ixbf/inventory.rs": "3d25a207770a633e7e5d6a78e03edbb54dcd1271be90b4c212811a371d8e2e20",
+    "flock-stage3/host/src/ixby/ixbf/mod.rs": "3eea066684c3f81bfd0b7c6ba81ed00ea152763f8a6f7025a20a5e4d7a355efd",
+    "flock-stage3/host/src/ixby/ixbf/primitive.rs": "62852295445b77ce9dc2d4566e8ee526510d821ed840e377e2a1501965d397ef",
+    "flock-stage3/host/src/ixby/ixbf/tests.rs": "f7d93faa3601030e40b0a3ae6acfb2e44d627f37ce18a445496e4e1c32fb0136",
+    "flock-stage3/host/src/ixby/ixbf_decode/bodies/proof_tests.rs": "adf30f8836efb2d305ab4c81f29d0b5c0d24758bf2b99c38ce5ae4ab1c951706",
+    "flock-stage3/host/src/ixby/ixbf_decode/dispatch/external_tests.rs": "b2be58a69fe58bc20285702a79f00e4736b19779fd4bc654eff51a87f5a45d96",
+    "flock-stage3/host/src/ixby/ixbf_decode/dispatch/model_tests.rs": "73672579bc4bf5b8df50a62c0d6ff15b7fe6c335d0459b049fffa6925f5be989",
+    "flock-stage3/host/src/ixby/ixbf_decode/dispatch/routing.rs": "7797f00162bc8d0228ec9c9477282de1cbdd9002d81658b3a8352da2f9a1bf66",
+    "flock-stage3/host/src/ixby/ixbf_decode/external_tests.rs": "5b74a2b746ed283dafe72f5a760cf0faa6390fffb42c601301964da45d4cb79b",
+    "flock-stage3/host/src/ixby/ixbf_decode/header.rs": "e0d22a6509ad06b81f3feb7a5b0ed86225c675e8385c784081180105a4bebf8d",
+    "flock-stage3/host/src/ixby/ixbf_decode/header_tests.rs": "9e3b17ade654d8a29685041386fd01fbf142137067337b4015839a1bd6c98a97",
+    "flock-stage3/host/src/ixby/ixbf_decode/mod.rs": "b900ce6e0aee73280c2450e783c613b64ee86700a7bfe92663bfbab13ed47cf3",
+    "flock-stage3/host/src/ixby/ixbf_decode/paged/code_capture/batch.rs": "5b6f3197f4d51b0791c8cc1b79f7a8643667164510de427dac8680c869330551",
+    "flock-stage3/host/src/ixby/ixbf_decode/paged/code_capture/tests.rs": "dbae7ab92f187fc8f269951d2a8223cb04fd7c974604766a2cdded1a6c44e132",
+    "flock-stage3/host/src/ixby/ixbf_decode/paged/endpoints/mod.rs": "96eaf998a11a0699d10e98f6b82d501a6a1d18435c92a72af1329efd6b94fdc4",
+    "flock-stage3/host/src/ixby/ixbf_decode/paged/endpoints/profile.rs": "dd7dda6b745c86b0e7fd51077651f659c262b75a68213874e54b6f4955c7cf1a",
+    "flock-stage3/host/src/ixby/ixbf_decode/paged/endpoints/tests.rs": "1adf05aeedb624c37b66414cb0a92368cd81ebbcf03be9732efbb5a6d131ca03",
+    "flock-stage3/host/src/ixby/ixbf_decode/paged/input_capture/batch/tests.rs": "7f587cf955360768856fbbf1c4ba47b8902bb49f0a6ca1103dfd2f5ec2fcef94",
+    "flock-stage3/host/src/ixby/ixbf_decode/proof_tests.rs": "91bf8be75987265a485ef405c2a0146a705f5d98a69d71edea7dfa55f81d3d83",
+    "flock-stage3/host/src/ixby/ixbf_decode/record.rs": "11c29dc9f4b460ad6f201810c1b1c8ac5ba5c20cb3ed7ee2bdca970bf63a3f98",
+    "flock-stage3/host/src/ixby/ixbf_decode/record_external_tests.rs": "80c38c52a9b303fe27ffb9f14e15a87ea27370dbdb5cd19ee4a8ce854bc5a441",
+    "flock-stage3/host/src/ixby/ixbf_decode/record_tests.rs": "dcb71c342ec2c922203a50843eabebe998604116f2f876a0125d6ca1bcb6c073",
+    "flock-stage3/host/src/ixby/ixbf_decode/registry/fixtures.rs": "241e41839c28a5d998cdf75d253141ea7fe5fe38e5ccb9554f56c9515ed4286a",
+    "flock-stage3/host/src/ixby/ixbf_decode/stream/batch.rs": "065b41869230fecc5f8cb8b78dd78c194f25ba2955250bef71767f6507176f82",
+    "flock-stage3/host/src/ixby/ixbf_decode/stream/tests.rs": "7cc5449e837c52683c1fcbb9b34376af54818a82e5cc99618e600fb9d2828a5c",
+    "flock-stage3/host/src/ixby/paged_code/tests.rs": "ee97ac3f5f2dc0ae221d48b2d6231ac81ee1f75f77569a8d7c0f386e058e6f6a",
+    "flock-stage3/host/src/ixby/paged_exec/batch.rs": "f0c64e8326349ea39fae39348f7097556e440f268c115f6f6be61568d43efa00",
+    "flock-stage3/host/src/ixby/paged_exec/image_tests.rs": "afad156e04c737a9d6eded15798eddbedac26a2f73c0ba867061385b81966d30",
+    "flock-stage3/host/src/ixby/paged_nat.rs": "6967c8e80e0d530780a30d87debb6f25041a844e44d4474ef967108e05ead7c8",
+    "flock-stage3/host/src/ixby/paged_primitive/gate.rs": "32dfa7ee0bc0af00f3f97a13af380897e1217f4a4ffc75cae41e5e37e494b7e6",
+    "flock-stage3/host/src/ixby/paged_primitive/tests.rs": "de72a42b50e87c74852c44862979bcf8b06c431b93ad39b166813454af8a43b9",
+    "flock-stage3/host/src/ixby/test_support.rs": "ec62df9fa78a6579993ed645eb4ac4246f94529a199ad6b95718894a8784aeb4",
+    "flock-stage4/fixtures/paged-execution-conversions.py": "b66a043a24d73b760467c0cc0ed0539345baa436f327dcdd3aa9eefaa2bc1eee",
+    "flock-stage4/fixtures/paged-execution-countdown.py": "eb4128941310e4d70ef03bd060f42f43c979071e60880fc89e96cd78d6233601",
+    "flock-stage4/recursive/src/execution_tree/tests/fixture.rs": "49f6742bc6f1dfc9ea93a0e35ee08b005337c0337766b5a14e0be14990129b95"
+  },
+  "fixture": {
+    "artifacts": {
+      "input.ixbi": {
+        "blake3": "7300caf57d52f67eab8dc45bc136a963eb0f6805eb3451aa5a795e12366268e9",
+        "bytes": 25,
+        "hex": "495846490100000000000000010000a5808080808080808004",
+        "sha256": "19365549cbe29002fbf904c254ae8033eba082c984a8641359f0325018d260d4"
+      },
+      "output.ixbo": {
+        "blake3": "7fa9785df969cbbe2dade69b608dde719a36c01fb0585122f85485691342a81c",
+        "bytes": 19,
+        "hex": "4958464f01000000000000000006042a000000",
+        "sha256": "8d826c31e05ceec2743ff54b5e4b6fc9264585ec7bbb84f66879275c7a423726"
+      },
+      "profile.ixfp": {
+        "blake3": "019f9b36c8a1dd0cf1b7d46c376ff32d637f20cc7b408b12814cf4d438f50728",
+        "bytes": 184,
+        "hex": "49584650000000000100000001000000010000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000060000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000080000000000000000000000000000008000000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000700000000000000",
+        "sha256": "bd17f6f711b1933b6b1795f6eb86c57ffd50b58eaad24941a1fe345e71eff92d"
+      },
+      "program.ixby": {
+        "blake3": "683477ce79df036fa48e5e052a1e7d7421e976c9d25053e314cc4b1c458d3886",
+        "bytes": 77,
+        "hex": "4958424601000000010000000100060602000880010040070000010100060100012d010000010200012e0100010203000100020002010005030400012d01000304050001150100040506010005",
+        "sha256": "2ec6130fddfb255fe1a73693735c0498ea2dc8f5ab953a268c44c2ec159db939"
+      }
+    },
+    "fuel": 7,
+    "generator": "flock-stage4/fixtures/paged-execution-conversions.py",
+    "input_nat": "36893488147419103269",
+    "limits": [
+      1,
+      0,
+      6,
+      6,
+      2,
+      0,
+      8,
+      128,
+      0,
+      64
+    ],
+    "logical_steps": 7,
+    "micro_steps": 22,
+    "output_bytes": [
+      42,
+      0,
+      0,
+      0
+    ],
+    "primitive_sites": {
+      "NatAdd": 1,
+      "NatToWord32": 2,
+      "Word32ToBytes": 1,
+      "Word32ToNat": 1
+    }
+  },
+  "format": "ixby-paged-execution-conversions/v1",
+  "fresh_verification": {
+    "accepted": true,
+    "inputs": "32-byte independently calculated S and root proof only; cleared environment outside the worktree",
+    "negative_checks": {
+      "changed_proof_bytes": 4,
+      "changed_root_advice": 1,
+      "changed_statement_low_high_bits": 4,
+      "trailing_byte": 1,
+      "truncation": 1
+    },
+    "process": {
+      "command": "timeout 900 env -i RAYON_NUM_THREADS=4 IXBY_CONVERSION_ROOT_RECEIVER=1 ./verify --ignored --exact execution_tree::tests::fixture::conversion_root_receiver --test-threads=1 --nocapture",
+      "exit_status": 0,
+      "maximum_rss_kib": 57729820,
+      "system_seconds": 27.92,
+      "user_seconds": 131.96,
+      "wall_time": "2:40.76"
+    },
+    "profile_and_class_fixed_before_stdin": true,
+    "same_setup_identity_as_producer": true,
+    "setup_seconds": 137.121359169,
+    "verification_seconds": 18.551449468
+  },
+  "independent_statement": {
+    "B": "5dc7413e6cf81577ba64e6d41f9eff4610cf40d7a002f834647c9f3c82eb8806",
+    "I": "8f4948a1429ff420a7eb79fcb4b2768c57d83f3aef61ff76855540fe6f080b22",
+    "O": "39360e03c1903572f172c14e296541dff0def05e965d9bf64317785981660fec",
+    "P": "1dde97ddb1d8e090b7c1d09ff2cfb0beedbb269e19159e1676f9f002cbac18f1",
+    "S": "ecc83e788c114efa6d11fd2a0621fc3472303b38f5ce1de9953e6be684e62e37",
+    "algorithm": "BLAKE3 b3sum 1.8.2, independent of the proof CLI"
+  },
+  "limitations": [
+    "No compiler integration in this patch.",
+    "No new CSLib reference trace or measured CSLib speedup.",
+    "No full CSLib execution proof.",
+    "Native constraint-to-Lean refinement is a separate formal obligation."
+  ],
+  "parent_commit": "e21e2778a0d1a32c52b3d661ed07e04aad6e93fa",
+  "proof": {
+    "class": "bytes",
+    "component_counts": [
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1
+    ],
+    "endpoint_proofs": 1,
+    "execution_statement_hex": "06000000000000000000000000000000070000000000000000000000000000008000000000000000400000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000007000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000390ee7a324ab2c4efddc49ecaa8ad60e0c6b1f0b155c48e4271f487f53ca47ee160000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000060000000000000000000000000000000000000000140000040000000000000000000000000000000000000000000000000000000000000007000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002f60070edc2ebcb36b5de033dd9a9f64a1c0702e86b0a40877d3f2a0d3b9b1a2",
+    "geometry": {
+      "application_words": 2,
+      "arithmetic_operations": 903114,
+      "blake3_compressions": 42836,
+      "children": [
+        11,
+        1
+      ],
+      "dense_variables": 31,
+      "leaves": 12,
+      "packing_rows": 50406,
+      "root_advice_words": 10007,
+      "root_families": 315,
+      "row_variables": 16,
+      "variables": 4646193
+    },
+    "identity": "12249b432770149d2c8de73e1721fa8ab3fc4d8ab0fc5f65d45cdd2ca0668d80",
+    "leaf_receipts": {
+      "00": {
+        "blake3": "21ff7a1c6969d7fda36402ed14a3925d979775da8476a2144b9e14f754cd852c",
+        "bytes": 393532,
+        "sha256": "39a05e90665b5ee5ae4f5d59bbe9ee076bc34a6c9a180043c115fdf514c29037"
+      },
+      "01": {
+        "blake3": "3803eee5dbbde6e3ed0f420a13fe0166991c9610567e75fb0fa30e1a0e00aa5f",
+        "bytes": 452899,
+        "sha256": "99e55aa0d8bd9521d1b9b3b098851b5260e9d79699466381721d379d801e2b24"
+      },
+      "02": {
+        "blake3": "09ad1e16b5a30bed8cac276d0b1373b4302f143c4a42de65727fb494db6630a0",
+        "bytes": 335443,
+        "sha256": "86adb39338ada3470ddad8d45fc816469035cb42e473c3bf1650369f6c83c464"
+      },
+      "03": {
+        "blake3": "eb196d16c36f9b43d12e211e26af0afa267ee171f4e04a251b736cd5e0cc1862",
+        "bytes": 298019,
+        "sha256": "0798b55c6fec8ec4bfca1b860755b2dfa66dbbd4aa76835b7c7ccbaf7f9dc28e"
+      },
+      "04": {
+        "blake3": "4840dc68381cb202f3e318c44a74611665cd4723b582f4ff423b82b24c3dd29f",
+        "bytes": 393532,
+        "sha256": "2236d694d6e413018f008d89b444f06278205d4b4011795eb7879c1c98740de8"
+      },
+      "05": {
+        "blake3": "592ed5c75056a5ac4ca560b681a9d6e8bb67c5b6f7999a66b3cdcc598ec54bfd",
+        "bytes": 452891,
+        "sha256": "c6adced0c0b182e239173a934e40ad48c3eceb14c2aa347dce2953659e79702d"
+      },
+      "06": {
+        "blake3": "c82b172067cc03079e8bb6973679f4db86ceb8205d81d426f52da11070761130",
+        "bytes": 378755,
+        "sha256": "9554eb018fbcefdfa5ccb685cb8d0762396e37dbe3ec8ba780a39e3f271b4faf"
+      },
+      "07": {
+        "blake3": "f37565cfd943a95d5057355f9d44fc5db5ee212a8e9fda84fa8191509a2d2246",
+        "bytes": 351259,
+        "sha256": "b06a52fc26916fb940f16f92f601c02c164383f800f7b36724ea87f33e8be772"
+      },
+      "08": {
+        "blake3": "e7e6272d60f2d975dd50467fd7b4cd7030a5805dada826d53551dc7f14da267c",
+        "bytes": 282612,
+        "sha256": "0e03ebc78ff3d5ff19c26bfd9e41a93465af326dfec4b1d06caf5309f0df5aa2"
+      },
+      "09": {
+        "blake3": "f2196ac4fed60b798998a59232416aa715f716b2b510edec363fbb8b58e95b8a",
+        "bytes": 282612,
+        "sha256": "fa1352e556eacf87bb36c963499d000f3e254e5b5e52a20020bf7ec405a7c67c"
+      },
+      "10": {
+        "blake3": "a629572d45c1fa34d3248ce67a73f245ac49c7439d20a43cbc361a52a4fe4e78",
+        "bytes": 282612,
+        "sha256": "ba8b3a13eef182bcfd347787b4bf55b21c5d06975637d63c354d98331d7ae8bf"
+      }
+    },
+    "root": {
+      "blake3": "62412f323628bb81862f7cc8d4e1b15344d08cfacab228544dfc0fc12fdfcaa3",
+      "bytes": 499443,
+      "sha256": "dfb6e07e3a46cd930b5661ab4532466b81f58f34c179374970fcdf7179aefc42"
+    }
+  },
+  "proving": {
+    "aggregation_seconds_including_setup_and_verification": 514.580672595,
+    "cli_seconds": 560.111493644,
+    "events": [
+      {
+        "bytes": 393532,
+        "event": "proved",
+        "name": "leaves/00/0000000/0000000000",
+        "seconds": 0.38895097
+      },
+      {
+        "bytes": 452899,
+        "event": "proved",
+        "name": "leaves/01/0000000/0000000000",
+        "seconds": 0.737256462
+      },
+      {
+        "bytes": 335443,
+        "event": "proved",
+        "name": "leaves/02/0000000/0000000000",
+        "seconds": 0.319515619
+      },
+      {
+        "bytes": 298019,
+        "event": "proved",
+        "name": "leaves/03/0000000/0000000000",
+        "seconds": 0.590035075
+      },
+      {
+        "bytes": 393532,
+        "event": "proved",
+        "name": "leaves/04/0000000/0000000000",
+        "seconds": 0.267744952
+      },
+      {
+        "bytes": 452891,
+        "event": "proved",
+        "name": "leaves/05/0000000/0000000000",
+        "seconds": 0.705112996
+      },
+      {
+        "bytes": 378755,
+        "event": "proved",
+        "name": "leaves/06/0000000/0000000000",
+        "seconds": 2.8967976909999997
+      },
+      {
+        "bytes": 351259,
+        "event": "proved",
+        "name": "leaves/07/0000000/0000000000",
+        "seconds": 0.422210985
+      },
+      {
+        "bytes": 282612,
+        "event": "proved",
+        "name": "leaves/08/0000000/0000000000",
+        "seconds": 0.286234284
+      },
+      {
+        "bytes": 282612,
+        "event": "proved",
+        "name": "leaves/09/0000000/0000000000",
+        "seconds": 0.275973928
+      },
+      {
+        "bytes": 282612,
+        "event": "proved",
+        "name": "leaves/10/0000000/0000000000",
+        "seconds": 0.275026888
+      },
+      {
+        "bytes": 132891,
+        "event": "proved",
+        "name": "endpoints",
+        "seconds": 0.2518574
+      },
+      {
+        "event": "complete_setup",
+        "geometry": {
+          "application_words": 2,
+          "arithmetic_operations": 903114,
+          "blake3_compressions": 42836,
+          "children": [
+            11,
+            1
+          ],
+          "dense_variables": 31,
+          "leaves": 12,
+          "packing_rows": 50406,
+          "root_advice_words": 10007,
+          "root_families": 315,
+          "row_variables": 16,
+          "variables": 4646193
+        },
+        "identity": "12249b432770149d2c8de73e1721fa8ab3fc4d8ab0fc5f65d45cdd2ca0668d80",
+        "seconds": 128.5664859
+      },
+      {
+        "event": "facts_setup",
+        "geometry": {
+          "application_words": 90,
+          "arithmetic_operations": 893421,
+          "blake3_compressions": 32473,
+          "children": [
+            1,
+            1
+          ],
+          "dense_variables": 31,
+          "leaves": 2,
+          "packing_rows": 30620,
+          "root_advice_words": 2885,
+          "root_families": 98,
+          "row_variables": 15,
+          "variables": 2768832
+        },
+        "name": "facts-00-02",
+        "seconds": 6.959487735
+      },
+      {
+        "bytes": 357707,
+        "event": "proved",
+        "name": "facts-00-02",
+        "seconds": 7.793295254
+      },
+      {
+        "event": "facts_setup",
+        "geometry": {
+          "application_words": 14,
+          "arithmetic_operations": 838896,
+          "blake3_compressions": 21453,
+          "children": [
+            1,
+            1
+          ],
+          "dense_variables": 31,
+          "leaves": 2,
+          "packing_rows": 25279,
+          "root_advice_words": 769,
+          "root_families": 26,
+          "row_variables": 15,
+          "variables": 2102762
+        },
+        "name": "facts-02-04",
+        "seconds": 6.279429857
+      },
+      {
+        "bytes": 308619,
+        "event": "proved",
+        "name": "facts-02-04",
+        "seconds": 6.28094194
+      },
+      {
+        "event": "facts_setup",
+        "geometry": {
+          "application_words": 104,
+          "arithmetic_operations": 899180,
+          "blake3_compressions": 28366,
+          "children": [
+            2,
+            2
+          ],
+          "dense_variables": 31,
+          "leaves": 4,
+          "packing_rows": 28734,
+          "root_advice_words": 3408,
+          "root_families": 112,
+          "row_variables": 15,
+          "variables": 2779664
+        },
+        "name": "facts-00-04",
+        "seconds": 6.539972796
+      },
+      {
+        "bytes": 362267,
+        "event": "proved",
+        "name": "facts-00-04",
+        "seconds": 17.770508174
+      },
+      {
+        "event": "facts_setup",
+        "geometry": {
+          "application_words": 86,
+          "arithmetic_operations": 892146,
+          "blake3_compressions": 32307,
+          "children": [
+            1,
+            1
+          ],
+          "dense_variables": 31,
+          "leaves": 2,
+          "packing_rows": 30435,
+          "root_advice_words": 2827,
+          "root_families": 96,
+          "row_variables": 15,
+          "variables": 2750760
+        },
+        "name": "facts-04-06",
+        "seconds": 6.743818936
+      },
+      {
+        "bytes": 356779,
+        "event": "proved",
+        "name": "facts-04-06",
+        "seconds": 6.479776602
+      },
+      {
+        "event": "facts_setup",
+        "geometry": {
+          "application_words": 66,
+          "arithmetic_operations": 1144260,
+          "blake3_compressions": 41360,
+          "children": [
+            1,
+            1
+          ],
+          "dense_variables": 31,
+          "leaves": 2,
+          "packing_rows": 38843,
+          "root_advice_words": 4891,
+          "root_families": 157,
+          "row_variables": 16,
+          "variables": 3692248
+        },
+        "name": "facts-06-08",
+        "seconds": 7.108719616
+      },
+      {
+        "bytes": 413779,
+        "event": "proved",
+        "name": "facts-06-08",
+        "seconds": 19.4584691
+      },
+      {
+        "event": "facts_setup",
+        "geometry": {
+          "application_words": 152,
+          "arithmetic_operations": 988381,
+          "blake3_compressions": 39943,
+          "children": [
+            2,
+            2
+          ],
+          "dense_variables": 31,
+          "leaves": 4,
+          "packing_rows": 40736,
+          "root_advice_words": 7184,
+          "root_families": 230,
+          "row_variables": 16,
+          "variables": 3967149
+        },
+        "name": "facts-04-08",
+        "seconds": 7.4797319380000005
+      },
+      {
+        "bytes": 444755,
+        "event": "proved",
+        "name": "facts-04-08",
+        "seconds": 32.927505223
+      },
+      {
+        "event": "facts_setup",
+        "geometry": {
+          "application_words": 256,
+          "arithmetic_operations": 1084021,
+          "blake3_compressions": 45262,
+          "children": [
+            4,
+            4
+          ],
+          "dense_variables": 31,
+          "leaves": 8,
+          "packing_rows": 44341,
+          "root_advice_words": 8334,
+          "root_families": 261,
+          "row_variables": 16,
+          "variables": 4406763
+        },
+        "name": "facts-00-08",
+        "seconds": 8.267822609
+      },
+      {
+        "bytes": 474579,
+        "event": "proved",
+        "name": "facts-00-08",
+        "seconds": 50.500952147
+      },
+      {
+        "event": "facts_setup",
+        "geometry": {
+          "application_words": 18,
+          "arithmetic_operations": 570237,
+          "blake3_compressions": 16531,
+          "children": [
+            1,
+            1
+          ],
+          "dense_variables": 30,
+          "leaves": 2,
+          "packing_rows": 22574,
+          "root_advice_words": 751,
+          "root_families": 25,
+          "row_variables": 15,
+          "variables": 1697503
+        },
+        "name": "facts-08-10",
+        "seconds": 5.743882457
+      },
+      {
+        "bytes": 322251,
+        "event": "proved",
+        "name": "facts-08-10",
+        "seconds": 4.5232397859999995
+      },
+      {
+        "event": "facts_setup",
+        "geometry": {
+          "application_words": 27,
+          "arithmetic_operations": 705547,
+          "blake3_compressions": 18683,
+          "children": [
+            2,
+            1
+          ],
+          "dense_variables": 30,
+          "leaves": 3,
+          "packing_rows": 21494,
+          "root_advice_words": 942,
+          "root_families": 30,
+          "row_variables": 15,
+          "variables": 1859520
+        },
+        "name": "facts-08-11",
+        "seconds": 6.374316359
+      },
+      {
+        "bytes": 336731,
+        "event": "proved",
+        "name": "facts-08-11",
+        "seconds": 10.752963146
+      },
+      {
+        "event": "facts_setup",
+        "geometry": {
+          "application_words": 283,
+          "arithmetic_operations": 1051221,
+          "blake3_compressions": 45491,
+          "children": [
+            8,
+            3
+          ],
+          "dense_variables": 31,
+          "leaves": 11,
+          "packing_rows": 46429,
+          "root_advice_words": 9175,
+          "root_families": 285,
+          "row_variables": 16,
+          "variables": 4581113
+        },
+        "name": "facts-00-11",
+        "seconds": 8.333628005
+      },
+      {
+        "bytes": 488035,
+        "event": "proved",
+        "name": "facts-00-11",
+        "seconds": 63.793042928
+      },
+      {
+        "bytes": 499443,
+        "event": "proved",
+        "name": "root",
+        "seconds": 68.608308777
+      }
+    ],
+    "final_verification_seconds": 17.442746196,
+    "leaves_seconds": 45.413234387,
+    "measurement_note": "Local integration run overlapped unit tests and builds; no performance comparison or CSLib speedup is claimed.",
+    "process": {
+      "command": "timeout 1800 /tmp/ixby-nat-word32-20260916/paged-execution-native-v1 prove --profile /tmp/ixby-nat-word32-20260916/fixture/profile.ixfp --class bytes --threads 4 --program /tmp/ixby-nat-word32-20260916/fixture/program.ixby --input /tmp/ixby-nat-word32-20260916/fixture/input.ixbi --output /tmp/ixby-nat-word32-20260916/fixture/output.ixbo --out /tmp/ixby-nat-word32-20260916/proof",
+      "exit_status": 0,
+      "maximum_rss_kib": 81068848,
+      "system_seconds": 64.57,
+      "user_seconds": 599.27,
+      "wall_time": "9:28.13"
+    }
+  },
+  "recorded_at_utc": "2026-09-16T22:12:36.822334+00:00",
+  "retained_logs_directory": "/tmp/ixby-nat-word32-20260916",
+  "scope": "Complete native Flock proof of an independently encoded conversion fixture; compiler adoption and full CSLib execution remain pending.",
+  "source_note": "Final reviewed sources. Between producer and verifier builds only redundant lexical scopes were removed from the conversion gates; fresh verification confirms the identical complete setup identity.",
+  "validation": {
+    "affected_rust_opt_in_tests_not_run": 18,
+    "affected_rust_tests": 55,
+    "clippy_stage3_and_stage4_all_targets_warnings_denied": true,
+    "explicit_additional_tests": [
+      "retained Init with program semantics-1 header and exact unchanged body/I/O pins",
+      "fresh conversion root receiver with eleven rejection cases"
+    ],
+    "lean_runner": "import Tests.Ixby.Basic\nimport Tests.Ixby.Crypto\nimport Tests.Ixby.Codec\nimport Tests.Ixby.NatCodec\n\ndef main : IO UInt32 := do\n  let a \u2190 Tests.Ixby.Basic.suite\n  let b \u2190 Tests.Ixby.Crypto.suite\n  let c \u2190 Tests.Ixby.Codec.suite\n  let d \u2190 Tests.Ixby.NatCodec.suite\n  return a ||| b ||| c ||| d\n",
+    "lean_runtime_checks": 339,
+    "lean_source_theorem_frontier": 3240,
+    "lean_theorem_roots_audited": 333,
+    "new_independent_compiler_corpus_47_primitives": "Pending compiler integration; current checks require all 47 opcodes.",
+    "recursion_opt_in_tests": 16,
+    "recursion_ordinary_tests": 4
+  },
+  "wire": {
+    "input_output_semantics": 0,
+    "new_unary_opcodes": {
+      "45": "NatToWord32, n modulo 2^32",
+      "46": "Word32ToNat, exact unsigned value"
+    },
+    "old_program_semantics_zero_accepted": false,
+    "profile": {
+      "magic": "IXFP",
+      "program_format": 1,
+      "program_semantics": 1,
+      "revision": 0
+    },
+    "program": {
+      "format": 1,
+      "magic": "IXBF",
+      "semantics": 1
+    }
+  }
+}

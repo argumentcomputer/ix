@@ -8,6 +8,7 @@ open Ix.Ixby
 
 private def nv (n : Nat) : Value := .scalar (.nat n)
 private def bv (b : Bool) : Value := .scalar (.bool b)
+private def wv (w : UInt32) : Value := .scalar (.word32 w)
 private def sv (s : String) : Value := .scalar (.str s)
 private def lit (n : Nat) : Operand := .literal (.nat n)
 private def fn (arity : Nat) (blocks : Array Block) : Function := { arity, blocks }
@@ -169,8 +170,43 @@ private def sumList : Program := {
     ⟨5, .tailCallSelf [.local 3, .local 4]⟩]]
 }
 
+-- Same guest computation as the independent binary conversion fixture.
+private def conversionPipeline : Program := single 1 #[
+  ⟨1, .letOp (.primitive .natToWord32 [.local 0]) 1⟩,
+  ⟨2, .letOp (.primitive .word32ToNat [.local 1]) 2⟩,
+  ⟨3, .letOp (.primitive .natAdd [.local 2, lit 5]) 3⟩,
+  ⟨4, .letOp (.primitive .natToWord32 [.local 3]) 4⟩,
+  ⟨5, .letOp (.primitive .word32ToBytes [.local 4]) 5⟩,
+  ⟨6, .ret (.local 5)⟩]
+
 private def checks : IO (List Check) := do
   return [
+    ("conversion pipeline returns independently expected bytes in seven steps",
+      accepts conversionPipeline #[nv (2^65 + 37)] (.scalar (.bytes #[42, 0, 0, 0]))
+        7 { natBits := 128, byteArrayBytes := 64 }),
+    ("conversion pipeline cannot halt with six steps",
+      rejects conversionPipeline #[nv (2^65 + 37)] .outOfFuel
+        6 { natBits := 128, byteArrayBytes := 64 }),
+    ("Nat to Word32 keeps exactly the low 32 bits", [0, 1, 2^32 - 1, 2^32,
+        2^65 + 37, 2^128 - 1, 2^256 + 91].all fun n =>
+      accepts (primitiveProgram .natToWord32) #[nv n] (wv n.toUInt32)),
+    ("Word32 to Nat is exact", ([0, 1, 0x80000000, 0xffffffff] : List UInt32).all fun w =>
+      accepts (primitiveProgram .word32ToNat) #[wv w] (nv w.toNat)),
+    ("Nat to Word32 validates source capacity before truncation",
+      rejects (primitiveProgram .natToWord32) #[nv (2^32)] (.limit .natBits)
+        1000 { natBits := 32 }),
+    ("Word32 to Nat validates result capacity",
+      rejects (primitiveProgram .word32ToNat) #[wv 256] (.limit .natBits)
+        1000 { natBits := 8 }),
+    ("zero conversions fit a zero-bit Nat limit",
+      accepts (primitiveProgram .natToWord32) #[nv 0] (wv 0) 1000 { natBits := 0 } &&
+      accepts (primitiveProgram .word32ToNat) #[wv 0] (nv 0) 1000 { natBits := 0 }),
+    ("Nat to Word32 requires Nat",
+      rejects (primitiveProgram .natToWord32) #[wv 1] (.primitiveType .natToWord32)),
+    ("Word32 to Nat requires Word32",
+      rejects (primitiveProgram .word32ToNat) #[nv 1] (.primitiveType .word32ToNat)),
+    ("conversions have unary arity", Primitive.natToWord32.arity == 1 &&
+      Primitive.word32ToNat.arity == 1),
     ("literal result", accepts (literalProgram (.nat 42)) #[] (nv 42) 2),
     ("successful execution tolerates extra fuel",
       accepts (literalProgram (.nat 42)) #[] (nv 42) 200),
@@ -390,6 +426,20 @@ private def checks : IO (List Check) := do
       | .error (.frameSize 1 0) => true
       | _ => false)
   ]
+
+-- Kernel-checked cases use the same public semantics that Compilatrix vendors.
+example : Primitive.eval { natBits := 256 } .natToWord32 [nv (2^200 + 37)] =
+    .ok (wv 37) := rfl
+example : Primitive.eval { natBits := 32 } .word32ToNat [wv 0xffffffff] =
+    .ok (nv (2^32 - 1)) := rfl
+example : Primitive.eval { natBits := 8 } .natToWord32 [nv 256] =
+    .error (.limit .natBits) := rfl
+example : Primitive.eval { natBits := 8 } .word32ToNat [wv 256] =
+    .error (.limit .natBits) := rfl
+example : Primitive.eval {} .natToWord32 [] =
+    .error (.arityMismatch 1 0) := rfl
+example : Primitive.eval {} .word32ToNat [wv 1, wv 2] =
+    .error (.arityMismatch 1 2) := rfl
 
 -- A small source observation with a real call/constructor target. The theorem
 -- quantifies over both runtime inputs; it does not claim an IxIR₀/Compilatrix

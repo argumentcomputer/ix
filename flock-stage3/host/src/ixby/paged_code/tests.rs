@@ -57,6 +57,31 @@ fn block_fetch_derives_address_and_checks_the_complete_instruction_header() {
       F128::ZERO
     ]
   );
+  for primitive in crate::ixby::ixbf::Primitive::ALL {
+    let mut header = h;
+    header.primitive = primitive.opcode();
+    header.arguments = primitive.arity() as u8;
+    header.operands = primitive.arity() as u8;
+    let mut input = vec![F128::ONE, frame()];
+    input.extend(header.words());
+    accept(&gate, &input);
+    if primitive.is_conversion() {
+      for count in [0, 2, 3] {
+        header.arguments = count;
+        header.operands = count;
+        let mut wrong = vec![F128::ONE, frame()];
+        wrong.extend(header.words());
+        reject(&gate, &wrong);
+      }
+    }
+  }
+  for primitive in [47, 127, 255] {
+    let mut header = h;
+    header.primitive = primitive;
+    let mut wrong = vec![F128::ONE, frame()];
+    wrong.extend(header.words());
+    reject(&gate, &wrong);
+  }
   for (at, low, high) in [
     (0, 2, 0),
     (0, 0, 1),

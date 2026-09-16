@@ -160,7 +160,7 @@ pub(super) fn evaluate(input: &[F128]) -> Vec<F128> {
       word.lo.to_le_bytes().into_iter().chain(word.hi.to_le_bytes())
     })
     .collect();
-  let expected = *b"IXBF\x01\0\0\0\0\0\0\0";
+  let expected = *b"IXBF\x01\0\0\0\x01\0\0\0";
   let mut violation = input[0].hi != 0 || bytes[..12] != expected;
   violation |= bytes
     .iter()
@@ -253,7 +253,7 @@ fn build_plan() -> BooleanR1csPlan {
       &(128 + index * 8..136 + index * 8).collect::<Vec<_>>(),
     );
   }
-  for (index, byte) in b"IXBF\x01\0\0\0\0\0\0\0".iter().enumerate() {
+  for (index, byte) in b"IXBF\x01\0\0\0\x01\0\0\0".iter().enumerate() {
     let good = b.eq_const(
       &(128 + index * 8..136 + index * 8).collect::<Vec<_>>(),
       u64::from(*byte),

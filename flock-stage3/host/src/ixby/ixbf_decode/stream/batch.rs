@@ -43,7 +43,7 @@ const MAGIC: [u8; 8] = *b"IXFSTB00";
 pub(super) fn domain(kind: GrammarKind) -> &'static [u8] {
   match kind {
     GrammarKind::Program => {
-      b"ix:ixby:ixbf-stream-program:d14:steps32:nat4096:v0"
+      b"ix:ixby:ixbf-stream-program:d14:steps32:nat4096:v1"
     },
     GrammarKind::Input => b"ix:ixby:ixbf-stream-input:d14:steps32:nat4096:v0",
     GrammarKind::Output => b"ix:ixby:ixbf-stream-output:d14:steps32:nat4096:v0",

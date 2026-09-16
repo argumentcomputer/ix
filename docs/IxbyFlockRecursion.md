@@ -1,5 +1,10 @@
 # Native Flock aggregation for parsing and execution
 
+The [direct-conversion revision](CompilatrixNatWord32Handoff.md) uses IXBF
+format 1, semantics 1 and new execution/admission setups. Rebuild the profile,
+statement and proofs for that interface. The earlier measurements below refer
+to their original program revision and retained verifier binaries.
+
 An original-format identity program now has a **499,347-byte complete execution
 proof**. A fresh receiver verifies the approved profile/class/tree and the
 32-byte expected digest, with no program, input, output or child proofs.

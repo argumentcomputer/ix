@@ -90,7 +90,7 @@ impl GateType for PrimitiveRouteGate {
   }
 }
 pub(super) fn numeric(p: Primitive) -> bool {
-  matches!(p.opcode(), 0..=6 | 10..=20 | 23..=28 | 31..=38)
+  matches!(p.opcode(), 0..=6 | 10..=20 | 23..=28 | 31..=38 | 45..=46)
 }
 fn range(start: usize, length: usize) -> Vec<usize> {
   (start..start + length).collect()
@@ -111,7 +111,8 @@ fn build() -> BooleanR1csPlan {
   require(&mut b, one, &mut bad, enabled, instruction);
   require(&mut b, one, &mut bad, enabled, operation);
   let mut flags = Vec::new();
-  for p in Primitive::ALL {
+  let primitives = &Primitive::ALL;
+  for p in primitives {
     let equal =
       equal_constant(&mut b, one, &range(152, 8), u64::from(p.opcode()));
     flags.push(b.and(enabled, equal));
@@ -120,21 +121,23 @@ fn build() -> BooleanR1csPlan {
   require(&mut b, one, &mut bad, enabled, valid);
   // No String primitive is admitted in this physical execution component yet.
   bad.extend_from_slice(&flags[7..10]);
-  let nat = b.xor(&flags[..7], one);
-  let scalar_flags = Primitive::ALL
+  let mut nat_flags = flags[..7].to_vec();
+  nat_flags.extend_from_slice(&flags[45..47]);
+  let nat = b.xor(&nat_flags, one);
+  let scalar_flags = primitives
     .iter()
-    .filter(|p| numeric(**p) && p.opcode() >= 10)
+    .filter(|p| numeric(**p) && p.opcode() >= 10 && !p.is_conversion())
     .map(|p| flags[p.opcode() as usize])
     .collect::<Vec<_>>();
   let scalar = b.xor(&scalar_flags, one);
-  let byte_flags = Primitive::ALL
+  let byte_flags = primitives
     .iter()
     .filter(|p| !numeric(**p) && p.opcode() >= 10)
     .map(|p| flags[p.opcode() as usize])
     .collect::<Vec<_>>();
   let bytes = b.xor(&byte_flags, one);
   let mut arity = vec![zero; 8];
-  for (p, &flag) in Primitive::ALL.iter().zip(&flags) {
+  for (p, &flag) in primitives.iter().zip(&flags) {
     for (bit, target) in arity.iter_mut().enumerate() {
       if p.arity() & (1 << bit) != 0 {
         *target = b.xor(&[*target, flag], one);
@@ -148,7 +151,7 @@ fn build() -> BooleanR1csPlan {
   }
   for index in 0..3 {
     let used = b.xor(
-      &Primitive::ALL
+      &primitives
         .iter()
         .filter(|p| p.arity() > index)
         .map(|p| flags[p.opcode() as usize])
@@ -173,11 +176,17 @@ fn build() -> BooleanR1csPlan {
       }
     }
   }
+  // Controls 8 and 9 reuse the Nat128 backend; the unused argument is zero.
+  out[128 + 3] = b.xor(&[flags[45], flags[46]], one);
+  out[128] = b.xor(&[out[128], flags[46]], one);
   for bit in 0..512 {
     out[256 + bit] = b.and(nat, 256 + bit);
   }
   out[6 * 128 + 33] = scalar; // Existing scalar table's instruction kind = 2.
-  for p in Primitive::ALL.iter().filter(|p| numeric(**p) && p.opcode() >= 10) {
+  for p in primitives
+    .iter()
+    .filter(|p| numeric(**p) && p.opcode() >= 10 && !p.is_conversion())
+  {
     let flag = flags[p.opcode() as usize];
     let code = p.native_opcode().unwrap();
     for bit in 0..8 {
@@ -193,7 +202,7 @@ fn build() -> BooleanR1csPlan {
   for bit in 0..512 {
     out[8 * 128 + bit] = b.and(scalar, 256 + bit);
   }
-  for p in Primitive::ALL.iter().filter(|p| !numeric(**p) && p.opcode() >= 10) {
+  for p in primitives.iter().filter(|p| !numeric(**p) && p.opcode() >= 10) {
     let flag = flags[p.opcode() as usize];
     let code = p.opcode() + 1;
     for bit in 0..8 {

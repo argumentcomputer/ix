@@ -21,7 +21,7 @@ use crate::ixby::{
 use flock_prover::circuit::builder::GateType;
 
 const IDENTITY: &[u8] = &[
-  b'I', b'X', b'B', b'F', 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 1, 0, 8, 0x80,
+  b'I', b'X', b'B', b'F', 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 1, 0, 8, 0x80,
   0x20, 64, 64, 24, 0, 0, 1, 1, 0, 1, 1, 1, 0, 0,
 ];
 fn profile() -> FunctionalProfile {

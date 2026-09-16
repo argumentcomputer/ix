@@ -119,6 +119,7 @@ impl GateType for Nat128Gate {
 }
 /// Control zero is canonical inactive padding; 1..7 mean functional Nat
 /// Add/Sub/Mul/Div/Mod/Eq/Lt. The caller must derive it from actual code wires.
+/// Revision one also admits 8 = NatToWord32 and 9 = Word32ToNat.
 pub struct Nat128Slot {
   slot: SlotId,
   gate: Nat128Gate,
@@ -151,11 +152,25 @@ impl Nat128Slot {
 fn native(row: &Nat128Row) -> Option<[F128; 3]> {
   let input = row.input;
   let control = input[0].lo;
-  if input[0].hi != 0 || control > 7 {
+  if input[0].hi != 0 || control > 9 {
     return None;
   }
   if control == 0 {
     return (input[1..] == [F128::ZERO; 4]).then_some([F128::ZERO; 3]);
+  }
+  if control >= 8 {
+    let tag = if control == 8 { 8 } else { 2 };
+    if input[1] != F128::new(tag, 0)
+      || input[3..] != [F128::ZERO; 2]
+      || (control == 9 && integer(input[2]) > u128::from(u32::MAX))
+    {
+      return None;
+    }
+    return Some([
+      F128::new(if control == 8 { 2 } else { 8 }, 0),
+      F128::new(input[2].lo & u64::from(u32::MAX), 0),
+      F128::ZERO,
+    ]);
   }
   if input[1] != F128::new(8, 0) || input[3] != F128::new(8, 0) {
     return None;
@@ -191,17 +206,27 @@ fn build() -> BooleanR1csPlan {
   }
   let one = b.alloc_constant_one();
   let zero = b.xor(&[one, one], one);
-  let flags = (0..=7)
-    .map(|i| equal_constant(&mut b, one, &range(0, 3), i))
+  let control_bits = 4;
+  let flags = (0..=9)
+    .map(|i| equal_constant(&mut b, one, &range(0, control_bits), i))
     .collect::<Vec<_>>();
-  let enabled = not(&mut b, one, flags[0]);
-  let mut bad = range(3, 125);
+  let mut bad = range(control_bits, 128 - control_bits);
+  let valid = b.xor(&flags, one);
+  require(&mut b, one, &mut bad, one, valid);
   require_zero(&mut b, one, &mut bad, flags[0], &range(128, 512));
+  let binary = b.xor(&flags[1..=7], one);
   for at in [128, 384] {
     let tag = equal_constant(&mut b, one, &range(at, 64), 8);
-    require(&mut b, one, &mut bad, enabled, tag);
-    require_zero(&mut b, one, &mut bad, enabled, &range(at + 64, 64));
+    require(&mut b, one, &mut bad, binary, tag);
+    require_zero(&mut b, one, &mut bad, binary, &range(at + 64, 64));
   }
+  for (flag, tag) in [(flags[8], 8), (flags[9], 2)] {
+    let typed = equal_constant(&mut b, one, &range(128, 64), tag);
+    require(&mut b, one, &mut bad, flag, typed);
+    require_zero(&mut b, one, &mut bad, flag, &range(192, 64));
+    require_zero(&mut b, one, &mut bad, flag, &range(384, 256));
+  }
+  require_zero(&mut b, one, &mut bad, flags[9], &range(288, 96));
   let a = range(256, 128);
   let rhs = range(512, 128);
   let q = range(QUOTIENT, 128);
@@ -259,9 +284,12 @@ fn build() -> BooleanR1csPlan {
   let comparison_equal = b.and(flags[6], same);
   let comparison_less = b.and(flags[7], borrow);
   let comparison = b.xor(&[comparison_equal, comparison_less], one);
-  let integer_result = b.xor(&flags[1..=5], one);
+  let mut integer_flags = flags[1..=5].to_vec();
+  integer_flags.push(flags[9]);
+  let integer_result = b.xor(&integer_flags, one);
   let boolean_result = b.xor(&flags[6..=7], one);
   b.write_xor(INPUTS * 128, &[boolean_result], one);
+  b.write_xor(INPUTS * 128 + 1, &[flags[8]], one);
   b.write_xor(INPUTS * 128 + 3, &[integer_result], one);
   for bit in 0..128 {
     let mut terms =
@@ -271,6 +299,10 @@ fn build() -> BooleanR1csPlan {
         .collect::<Vec<_>>();
     if bit == 0 {
       terms.push(comparison);
+    }
+    if bit < 32 {
+      terms.push(b.and(flags[8], a[bit]));
+      terms.push(b.and(flags[9], a[bit]));
     }
     b.write_xor((INPUTS + 1) * 128 + bit, &terms, one);
   }
@@ -282,6 +314,104 @@ fn build() -> BooleanR1csPlan {
 #[cfg(test)]
 mod tests {
   use super::*;
+  #[test]
+  fn conversions_preserve_low_bits_and_constrain_types_padding_and_outputs() {
+    let gate = Nat128Gate::new(3).unwrap();
+    let table = gate.r1cs();
+    for control in [8, 9] {
+      let tag = if control == 8 { 8 } else { 2 };
+      let values = if control == 8 {
+        vec![0, 1, (1 << 32) - 1, 1 << 32, (1 << 65) + 37, u128::MAX]
+      } else {
+        vec![0, 1, 1 << 31, (1 << 32) - 1]
+      };
+      for a in values {
+        let input = [
+          F128::new(control, 0),
+          F128::new(tag, 0),
+          word(a),
+          F128::ZERO,
+          F128::ZERO,
+        ];
+        let mut output = Vec::new();
+        let row = gate.eval(&input, &(), &mut output);
+        assert_eq!(checked(&gate, &row), output);
+        assert_eq!(
+          output,
+          [
+            F128::new(if control == 8 { 2 } else { 8 }, 0),
+            word(a & u128::from(u32::MAX)),
+            F128::ZERO
+          ]
+        );
+      }
+      let row = gate.eval(
+        &[
+          F128::new(control, 0),
+          F128::new(tag, 0),
+          word(37),
+          F128::ZERO,
+          F128::ZERO,
+        ],
+        &(),
+        &mut Vec::new(),
+      );
+      // A dishonest prover cannot change any tag, payload, or residual bit.
+      let mut bits = vec![false; gate.plan().k()];
+      gate.plan().fill_row(&mut bits, |bits| fill(&row, bits));
+      bits.resize(table.n(), false);
+      for bit in INPUTS * 128..(INPUTS + OUTPUTS) * 128 {
+        bits[bit] = !bits[bit];
+        assert!(!table.satisfies(&bits), "unconstrained output bit {bit}");
+        bits[bit] = !bits[bit];
+      }
+      for at in [1, 3, 4] {
+        for bit in 0..128 {
+          let mut changed = row.clone();
+          changed.input[at] += word(1 << bit);
+          assert_eq!(checked(&gate, &changed)[2], F128::ONE);
+        }
+      }
+      for bit in 0..128 {
+        let mut changed = row.clone();
+        changed.input[2] += word(1 << bit);
+        let out = checked(&gate, &changed);
+        assert_eq!(
+          out[2],
+          if control == 9 && bit >= 32 { F128::ONE } else { F128::ZERO }
+        );
+        if out[2] == F128::ZERO {
+          assert_eq!(
+            out[1],
+            word(integer(changed.input[2]) & u128::from(u32::MAX))
+          );
+        }
+        for quotient in [true, false] {
+          let mut changed = row.clone();
+          if quotient {
+            changed.quotient = word(1 << bit);
+          } else {
+            changed.remainder = word(1 << bit);
+          }
+          assert_eq!(checked(&gate, &changed)[2], F128::ONE);
+        }
+      }
+    }
+    for control in 10..16 {
+      let row = gate.eval(
+        &[
+          F128::new(control, 0),
+          F128::ZERO,
+          F128::ZERO,
+          F128::ZERO,
+          F128::ZERO,
+        ],
+        &(),
+        &mut Vec::new(),
+      );
+      assert_eq!(checked(&gate, &row)[2], F128::ONE);
+    }
+  }
   fn checked(gate: &Nat128Gate, row: &Nat128Row) -> Vec<F128> {
     let mut bits = vec![false; gate.plan().k()];
     gate.plan().fill_row(&mut bits, |bits| fill(row, bits));

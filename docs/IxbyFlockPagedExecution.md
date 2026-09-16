@@ -2,7 +2,11 @@
 
 These components are part of the full functional Stage 3 implementation in
 progress. They do not yet provide an original-CSLib execution proof. The
-existing fixed-capacity Exec profiles, statements, and setup keys are unchanged.
+current complete-functional interface uses IXBF format 1, semantics 1. The
+[conversion revision](CompilatrixNatWord32Handoff.md) adds direct Nat/Word32
+primitives, updates IXFP's program semantics, and changes the execution,
+parser/capture, and endpoint setups. Regenerate their proofs and statements.
+Measurements below retain the identities of their original revisions.
 
 ## Frames and continuations
 
@@ -162,7 +166,7 @@ program digests, and the endpoint circuit computes both the profile hash and
 `S = H(4, P || B || I || O)` with constrained BLAKE3.
 
 The explicit `FunctionalProfile` encoding is **IXFP revision 0**, original
-format 1, semantics 0. Its 184 bytes contain four little-endian header words,
+format 1, semantics 1. Its 184 bytes contain four little-endian header words,
 ten 128-bit limits in original IXBF order, and a 64-bit fuel budget. Setup owns
 these bytes; the captured program must have exactly the same limits and fuel.
 It is a new descriptor, distinct from the earlier IXBP fixed-capacity codec.

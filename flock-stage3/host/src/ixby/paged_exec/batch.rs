@@ -38,28 +38,28 @@ pub enum BatchClass {
 impl BatchClass {
   pub fn transcript_domain(self) -> &'static [u8] {
     match self {
-      Self::Small => b"IxBy/Flock/paged-execution:small:v2",
-      Self::Objects => b"IxBy/Flock/paged-execution:objects:v1",
-      Self::Compact => b"IxBy/Flock/paged-execution:compact:v1",
-      Self::Bytes => b"IxBy/Flock/paged-execution:bytes:v0",
-      Self::SharedCompact => b"IxBy/Flock/paged-execution:shared-compact:v0",
-      Self::Shared => b"IxBy/Flock/paged-execution:shared:v0",
+      Self::Small => b"IxBy/Flock/paged-execution:small:v3",
+      Self::Objects => b"IxBy/Flock/paged-execution:objects:v2",
+      Self::Compact => b"IxBy/Flock/paged-execution:compact:v2",
+      Self::Bytes => b"IxBy/Flock/paged-execution:bytes:v1",
+      Self::SharedCompact => b"IxBy/Flock/paged-execution:shared-compact:v1",
+      Self::Shared => b"IxBy/Flock/paged-execution:shared:v1",
       Self::SharedCompactBoolean => {
-        b"IxBy/Flock/paged-execution:shared-compact-boolean:v0"
+        b"IxBy/Flock/paged-execution:shared-compact-boolean:v1"
       },
-      Self::SharedBoolean => b"IxBy/Flock/paged-execution:shared-boolean:v0",
-      Self::Shared1024 => b"IxBy/Flock/paged-execution:shared-1024:v0",
+      Self::SharedBoolean => b"IxBy/Flock/paged-execution:shared-boolean:v1",
+      Self::Shared1024 => b"IxBy/Flock/paged-execution:shared-1024:v1",
       Self::SharedCompactPacked => {
-        b"IxBy/Flock/paged-execution:shared-compact-packed:v0"
+        b"IxBy/Flock/paged-execution:shared-compact-packed:v1"
       },
       Self::SharedPacked1024 => {
-        b"IxBy/Flock/paged-execution:shared-packed-1024:v0"
+        b"IxBy/Flock/paged-execution:shared-packed-1024:v1"
       },
       Self::SharedCompactLinked => {
-        b"IxBy/Flock/paged-execution:shared-compact-linked:v0"
+        b"IxBy/Flock/paged-execution:shared-compact-linked:v1"
       },
       Self::SharedLinked1024 => {
-        b"IxBy/Flock/paged-execution:shared-linked-1024:v0"
+        b"IxBy/Flock/paged-execution:shared-linked-1024:v1"
       },
     }
   }

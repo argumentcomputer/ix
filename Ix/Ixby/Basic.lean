@@ -81,12 +81,16 @@ inductive Primitive where
   | fieldToBytes | bytesToField
   | extAdd | extSub | extMul | extInverse | extEq | extPack | extFst | extSnd
   | bytesLength | bytesGet | bytesAppend | bytesSlice | bytesEq | blake3
+  /-- Explicit low-32-bit conversion, modulo `2^32`. -/
+  | natToWord32
+  /-- Exact nonnegative integer represented by a Word32. -/
+  | word32ToNat
   deriving BEq, DecidableEq, Repr, Inhabited
 
 def Primitive.arity : Primitive → Nat
   | .strLength | .word32ToBytes | .bytesToWord32 | .word32ToField
   | .fieldInverse | .fieldToBytes | .bytesToField | .extInverse | .extFst | .extSnd
-  | .bytesLength | .blake3 => 1
+  | .bytesLength | .blake3 | .natToWord32 | .word32ToNat => 1
   | .bytesSlice => 3
   | _ => 2
 

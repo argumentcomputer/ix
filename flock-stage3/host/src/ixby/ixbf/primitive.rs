@@ -47,10 +47,12 @@ pub enum Primitive {
   BytesSlice,
   BytesEq,
   Blake3,
+  NatToWord32,
+  Word32ToNat,
 }
 
 impl Primitive {
-  pub const ALL: [Self; 45] = [
+  pub const ALL: [Self; 47] = [
     Self::NatAdd,
     Self::NatSub,
     Self::NatMul,
@@ -96,7 +98,13 @@ impl Primitive {
     Self::BytesSlice,
     Self::BytesEq,
     Self::Blake3,
+    Self::NatToWord32,
+    Self::Word32ToNat,
   ];
+
+  pub fn is_conversion(self) -> bool {
+    matches!(self, Self::NatToWord32 | Self::Word32ToNat)
+  }
 
   pub fn from_opcode(opcode: u8) -> Option<Self> {
     Self::ALL.get(usize::from(opcode)).copied()
@@ -119,7 +127,9 @@ impl Primitive {
       | Self::ExtensionFirst
       | Self::ExtensionSecond
       | Self::BytesLength
-      | Self::Blake3 => 1,
+      | Self::Blake3
+      | Self::NatToWord32
+      | Self::Word32ToNat => 1,
       Self::BytesSlice => 3,
       _ => 2,
     }
@@ -128,7 +138,7 @@ impl Primitive {
   /// Name correspondence only. This does NOT certify primitive semantics,
   /// translate an image, or authorize any native setup/profile upgrade.
   pub fn native_opcode(self) -> Option<u8> {
-    const OPCODES: [Option<u8>; 45] = [
+    const OPCODES: [Option<u8>; 47] = [
       Some(35),
       Some(36),
       Some(37),
@@ -174,6 +184,8 @@ impl Primitive {
       Some(32),
       Some(33),
       Some(34),
+      None,
+      None,
     ];
     OPCODES[usize::from(self.opcode())]
   }

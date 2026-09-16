@@ -47,7 +47,7 @@ completed declaration registry and captured bodies. It requires Done/EOF,
 exhausted obligations, empty current state, exact function/block coverage,
 header equality, ordered complete block spans and contiguous function spans
 ending at EOF. It checks canonical instruction fields, exact operand counts,
-all 45 original primitive arities, ordered operand/alternative prefixes, local
+all 47 functional primitive arities, ordered operand/alternative prefixes, local
 and target bounds, unique alternatives, scalar canonicality and Nat high bits.
 Existing reference checks supply constructor/callee arities and successor frames.
 

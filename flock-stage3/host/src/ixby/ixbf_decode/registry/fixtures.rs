@@ -64,7 +64,7 @@ fn record(
   });
 }
 pub(in crate::ixby::ixbf_decode) fn encode(spec: &Spec) -> Fixture {
-  let mut bytes = b"IXBF\x01\0\0\0\0\0\0\0".to_vec();
+  let mut bytes = b"IXBF\x01\0\0\0\x01\0\0\0".to_vec();
   let mut limits = [8u128, 8, 8, 8, 8, 8, 32, 4096, 900, 900];
   if spec.wide_limits {
     limits[3] = u128::MAX;

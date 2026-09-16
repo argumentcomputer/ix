@@ -38,7 +38,7 @@ pub struct Inventory {
 
 struct Census {
   result: Inventory,
-  primitive_counts: [usize; 45],
+  primitive_counts: [usize; 47],
 }
 
 impl Census {
@@ -187,7 +187,7 @@ impl Artifact<'_> {
         })
         .to_vec(),
       },
-      primitive_counts: [0; 45],
+      primitive_counts: [0; 47],
     };
     for function in self.functions() {
       census.result.blocks += function.blocks.len();

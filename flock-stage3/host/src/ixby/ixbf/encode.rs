@@ -1,4 +1,6 @@
-use super::{FORMAT_VERSION, SEMANTICS_VERSION, model::*};
+use super::{
+  FORMAT_VERSION, PROGRAM_SEMANTICS_VERSION, SEMANTICS_VERSION, model::*,
+};
 use num_bigint::BigUint;
 
 struct Writer(Vec<u8>);
@@ -8,7 +10,12 @@ impl Writer {
     let mut value = Self(Vec::new());
     value.0.extend_from_slice(magic);
     value.0.extend_from_slice(&FORMAT_VERSION.to_le_bytes());
-    value.0.extend_from_slice(&SEMANTICS_VERSION.to_le_bytes());
+    let semantics = if magic == b"IXBF" {
+      PROGRAM_SEMANTICS_VERSION
+    } else {
+      SEMANTICS_VERSION
+    };
+    value.0.extend_from_slice(&semantics.to_le_bytes());
     value
   }
   fn byte(&mut self, value: u8) {

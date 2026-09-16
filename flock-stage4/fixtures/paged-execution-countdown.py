@@ -23,7 +23,7 @@ def natural(value: int) -> bytes:
 
 
 def header(magic: bytes) -> bytes:
-    return magic + struct.pack("<II", 1, 0)
+    return magic + struct.pack("<II", 1, 1 if magic == b"IXBF" else 0)
 
 
 def main() -> None:

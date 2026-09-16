@@ -1,5 +1,6 @@
 use super::{
-  FORMAT_VERSION, SEMANTICS_VERSION, model::*, primitive::Primitive,
+  FORMAT_VERSION, PROGRAM_SEMANTICS_VERSION, SEMANTICS_VERSION, model::*,
+  primitive::Primitive,
 };
 use anyhow::{Context, Result, bail, ensure};
 use num_bigint::BigUint;
@@ -125,8 +126,14 @@ impl<'a> Reader<'a> {
       u32::from_le_bytes(self.fixed()?) == FORMAT_VERSION,
       "unsupported functional binary format version"
     );
+    let semantics = u32::from_le_bytes(self.fixed()?);
     ensure!(
-      u32::from_le_bytes(self.fixed()?) == SEMANTICS_VERSION,
+      semantics
+        == if magic == b"IXBF" {
+          PROGRAM_SEMANTICS_VERSION
+        } else {
+          SEMANTICS_VERSION
+        },
       "unsupported functional binary semantics version"
     );
     Ok(())

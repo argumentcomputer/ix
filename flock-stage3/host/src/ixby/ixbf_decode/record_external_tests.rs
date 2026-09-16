@@ -697,7 +697,7 @@ fn original_compiler_corpus_and_full_init_body_records_match_constraints() {
     external_tests::read(&external_tests::path("IXBY_IXBF_STAGE2_IMAGE"));
   assert_eq!(
     blake3::hash(&image).to_hex().as_str(),
-    "a661dfede7c18bfb915d031393ffb258e65c21940d48039cdf44ab16428fe301"
+    crate::ixby::test_support::INIT_PROGRAM_V1_BLAKE3
   );
   let mut init = Census::default();
   program(&image, &tables, &mut init);
@@ -745,10 +745,7 @@ fn original_identity_and_init_transport_value_records_match_constraints() {
     };
     if init {
       for (bytes, hash) in [
-        (
-          &program,
-          "a661dfede7c18bfb915d031393ffb258e65c21940d48039cdf44ab16428fe301",
-        ),
+        (&program, crate::ixby::test_support::INIT_PROGRAM_V1_BLAKE3),
         (
           &input,
           "713a6a0b72dbaad673192c38c6e10115b1386482394cc22a945837c1a03f11c8",

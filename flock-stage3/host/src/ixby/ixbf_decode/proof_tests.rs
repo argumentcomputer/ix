@@ -1361,7 +1361,7 @@ fn codec_record_domains_tags_and_fixed_public_templates_are_distinct() {
 }
 
 const GRAMMAR_IDENTITY: &[u8] = &[
-  b'I', b'X', b'B', b'F', 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 1, 0, 8, 0x80,
+  b'I', b'X', b'B', b'F', 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 1, 0, 8, 0x80,
   0x20, 64, 64, 24, 0, 0, 1, 1, 0, 1, 1, 1, 0, 0,
 ];
 
@@ -1764,7 +1764,7 @@ fn retained_init_call_and_callee_records_verify_in_isolation() {
     external_tests::read(&external_tests::path("IXBY_IXBF_STAGE2_IMAGE"));
   assert_eq!(
     blake3::hash(&bytes).to_hex().as_str(),
-    "a661dfede7c18bfb915d031393ffb258e65c21940d48039cdf44ab16428fe301"
+    crate::ixby::test_support::INIT_PROGRAM_V1_BLAKE3
   );
   let artifact =
     ixbf::decode_program(&bytes, ixbf::DecodeLimits::default()).unwrap();
@@ -1972,7 +1972,7 @@ fn retained_init_prefix_and_decoded_budget_verify_in_isolation() {
     external_tests::read(&external_tests::path("IXBY_IXBF_STAGE2_IMAGE"));
   assert_eq!(
     blake3::hash(&bytes).to_hex().as_str(),
-    "a661dfede7c18bfb915d031393ffb258e65c21940d48039cdf44ab16428fe301"
+    crate::ixby::test_support::INIT_PROGRAM_V1_BLAKE3
   );
   let artifact = crate::ixby::ixbf::decode_program(
     &bytes,
@@ -1999,7 +1999,7 @@ fn retained_init_byte_spans_and_program_limit_verify_in_isolation() {
     external_tests::read(&external_tests::path("IXBY_IXBF_STAGE2_IMAGE"));
   assert_eq!(
     blake3::hash(&program).to_hex().as_str(),
-    "a661dfede7c18bfb915d031393ffb258e65c21940d48039cdf44ab16428fe301"
+    crate::ixby::test_support::INIT_PROGRAM_V1_BLAKE3
   );
   let artifact =
     ixbf::decode_program(&program, ixbf::DecodeLimits::default()).unwrap();

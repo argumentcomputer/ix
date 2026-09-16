@@ -61,6 +61,11 @@ fn routing_uses_functional_tags_and_exact_arity_without_truncating_nat() {
     assert_eq!(out[19], F128::ZERO);
     if p.opcode() < 7 {
       assert_eq!(out[1], F128::new(u64::from(p.opcode() + 1), 0));
+    } else if p.is_conversion() {
+      assert_eq!(out[0], F128::ONE);
+      assert_eq!(out[1], F128::new(u64::from(p.opcode() - 37), 0));
+      assert_eq!(&out[2..4], &values[0]);
+      assert_eq!(&out[4..19], &[F128::ZERO; 15]);
     } else if gate::numeric(p) {
       assert_eq!(out[6], F128::new(2 << 32, 0));
       assert_eq!(
@@ -147,6 +152,16 @@ fn numeric_primitive_wires_match_nat_word_and_field_oracles() {
         nat(magnitude)
       };
       (vec![nat(a), nat(c)], expected)
+    } else if p == Primitive::NatToWord32 {
+      (
+        vec![[F128::new(8, 0), F128::new(0x1234_5678_ffff_ffff, 1 << 63)]],
+        word32_words(u32::MAX),
+      )
+    } else if p == Primitive::Word32ToNat {
+      (
+        vec![word32_words(u32::MAX)],
+        [F128::new(8, 0), F128::new(u64::from(u32::MAX), 0)],
+      )
     } else {
       let code = p.native_opcode().unwrap();
       let (a, c) = (0xffff_ffffu32, 37u32);

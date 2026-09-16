@@ -40,9 +40,11 @@ precise specifications:
 - Word32 to Nat: the exact nonnegative integer value.
 - Field to Nat, where needed: the canonical representative.
 
-Add the logical primitives, canonical encoding, reference semantics and
-constrained implementations together. Then update the compiler's numeric
-runtime and its representation certificates. Boundary cases must include
+The Nat/Word32 primitives, reference semantics, binary revision and constrained
+implementations are now available. The
+[compiler handoff](CompilatrixNatWord32Handoff.md) describes the runtime and
+certificate changes still needed in Compilatrix. Field-to-Nat remains a
+proposal. Boundary cases include
 zero, `2^32 - 1`, `2^32`, and larger Nats; the reference run observes 65-bit
 Nats, so a blanket replacement of Nat with Word32 would change this workload.
 
@@ -78,9 +80,11 @@ as well as logical transitions, on the replacement representation.
 
 ## Validation and current scope
 
-These runtime changes are **proposals**. They require coordinated changes to
-IxBy semantics, the compiler and the proof backend, followed by a new reference
-run and matching output. A recompiled program has a new program commitment;
+Direct Nat/Word32 conversion support is implemented in Ixby; compiler adoption
+and its measured CSLib benefit remain pending. The representation, array and
+byte changes remain proposals. They require coordinated changes to IxBy
+semantics, the compiler and the proof backend, followed by a new reference run
+and matching output. A recompiled program has a new program commitment;
 its admission proof and expected statement must bind that image explicitly.
 
 The current [state-linking optimization](IxbyFlockPagedExecution.md#direct-state-linking)

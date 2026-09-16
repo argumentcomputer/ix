@@ -84,6 +84,11 @@ example : Primitive.eval profile.limits .natDiv [n 17, n 0] = .ok (n 0) := rfl
 example : Primitive.eval profile.limits .natMod [n 17, n 0] = .ok (n 17) := rfl
 
 private def checks : IO (List Check) := pure [
+  ("experimental IXBY profiles exclude the complete IXBF conversions",
+    (Profile.primitiveOpcode {} .natToWord32).isNone &&
+    (Profile.primitiveOpcode {} .word32ToNat).isNone &&
+    (profile.primitiveOpcode .natToWord32).isNone &&
+    (profile.primitiveOpcode .word32ToNat).isNone),
   ("Nat revision explicitly admitted", profile.validate.isOk),
   ("v0 cannot enable Nat by changing capacity", !(Profile.validate {
     limits := { natBits := 96, stringBytes := 0 } }).isOk),

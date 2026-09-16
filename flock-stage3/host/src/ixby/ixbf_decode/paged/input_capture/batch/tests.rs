@@ -38,7 +38,7 @@ pub(super) fn id(out: &mut Vec<u8>, i: usize) {
   nat(out, (1 << 127) + i as u128);
 }
 pub(super) fn program(arity: usize) -> Vec<u8> {
-  let mut out = b"IXBF\x01\0\0\0\0\0\0\0".to_vec();
+  let mut out = b"IXBF\x01\0\0\0\x01\0\0\0".to_vec();
   for n in [
     1024, 256, 256, 128, 64, 1024, 65536, 4096, 16777216, 16777216, 100000, 0,
     4,

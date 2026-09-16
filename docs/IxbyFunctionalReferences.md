@@ -61,7 +61,7 @@ limit. Full constructor uniqueness is already enforced by registry completion,
 so distinct alternative indices identify distinct constructors.
 
 The existing decoder and grammar constraints continue to check local operand
-bounds, all 45 primitive tags and their arities, operation/operand counts,
+bounds, all 47 primitive tags and their arities, operation/operand counts,
 canonical scalars, Nat limits and UTF-8. Copy, projection, application and
 return add no static registry-arity check beyond their existing operand checks.
 Runtime operand types and dynamic application behavior belong to execution.

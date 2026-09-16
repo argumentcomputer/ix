@@ -23,12 +23,15 @@ impl FunctionalProfile {
   pub fn max_steps(&self) -> u64 {
     self.max_steps
   }
-  /// IXFP, profile revision 0, original format 1, semantics 0, ten u128
+  /// IXFP, profile revision 0, original format 1, semantics 1, ten u128
   /// little-endian limits, then the u64 fuel budget: exactly 184 bytes.
   pub fn encode(&self) -> [u8; 184] {
     let mut out = [0; 184];
     out[..4].copy_from_slice(b"IXFP");
     out[8..12].copy_from_slice(&1u32.to_le_bytes());
+    out[12..16].copy_from_slice(
+      &crate::ixby::ixbf::PROGRAM_SEMANTICS_VERSION.to_le_bytes(),
+    );
     for (i, n) in self.limits.iter().enumerate() {
       out[16 + 16 * i..32 + 16 * i].copy_from_slice(&n.to_le_bytes());
     }
@@ -43,7 +46,8 @@ impl FunctionalProfile {
     ensure!(
       bytes[4..8] == [0; 4]
         && bytes[8..12] == 1u32.to_le_bytes()
-        && bytes[12..16] == [0; 4],
+        && bytes[12..16]
+          == crate::ixby::ixbf::PROGRAM_SEMANTICS_VERSION.to_le_bytes(),
       "functional profile revision"
     );
     let limits = std::array::from_fn(|i| {

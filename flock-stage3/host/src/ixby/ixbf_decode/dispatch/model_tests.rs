@@ -224,7 +224,7 @@ pub(super) fn nat(bytes: &mut Vec<u8>, mut n: u128) {
   }
 }
 pub(super) fn program(scalar: Option<&[u8]>, arity: u128) -> Vec<u8> {
-  let mut bytes = b"IXBF\x01\0\0\0\0\0\0\0".to_vec();
+  let mut bytes = b"IXBF\x01\0\0\0\x01\0\0\0".to_vec();
   for value in [
     8,
     8,
@@ -271,7 +271,7 @@ pub(super) fn transport(kind: GrammarKind, scalar: &[u8]) -> Vec<u8> {
 /// Independently encoded declaration, Let/Copy, target, constructor-case
 /// alternative and return; every successor has the correct local frame.
 pub(super) fn branching_program() -> Vec<u8> {
-  let mut bytes = b"IXBF\x01\0\0\0\0\0\0\0".to_vec();
+  let mut bytes = b"IXBF\x01\0\0\0\x01\0\0\0".to_vec();
   for value in [8, 8, 8, 8, 8, 8, 32, 4096, 900, 900, 1u128 << 100, 0, 1] {
     nat(&mut bytes, value);
   }

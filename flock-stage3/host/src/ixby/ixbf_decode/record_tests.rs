@@ -285,7 +285,7 @@ fn record_semantic_bounds_bad_tags_and_noncanonical_metadata_reject() {
     (RecordKind::Scalar, vec![7], [0; 3]),
     (RecordKind::Scalar, vec![2, 2], [0; 3]),
     (RecordKind::Operation, vec![8], [8, 4, 10]),
-    (RecordKind::Operation, vec![1, 45, 2, 2, 2], [8, 4, 10]),
+    (RecordKind::Operation, vec![1, 47, 2, 2, 2], [8, 4, 10]),
     (RecordKind::Operation, vec![1, 42, 2, 2, 2], [8, 4, 10]),
     (RecordKind::Operation, vec![1, 0, 3, 2, 2, 2], [8, 4, 10]),
     (RecordKind::Operation, vec![2, 4, 0], [8, 4, 10]),

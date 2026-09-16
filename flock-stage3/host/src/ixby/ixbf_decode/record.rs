@@ -509,7 +509,7 @@ fn build_plan(kind: RecordKind) -> BooleanR1csPlan {
       fields[0] = r.fixed(1, enabled);
       let tags = r.tags(enabled, &fields[0], 8);
       fields[1] = r.fixed(1, tags[1]);
-      let primitives = r.tags(tags[1], &fields[1], 45);
+      let primitives = r.tags(tags[1], &fields[1], 47);
       fields[4] = (0..128)
         .map(|bit| {
           let sources: Vec<_> = primitives
@@ -539,11 +539,11 @@ fn build_plan(kind: RecordKind) -> BooleanR1csPlan {
   r.finish(&fields)
 }
 
-// Kept explicit in circuit synthesis. Tests compare all 45 entries against
+// Kept explicit in circuit synthesis. Tests compare all 47 entries against
 // the independent functional opcode registry; this is not a native-opcode map.
 fn primitive_arity(opcode: u8) -> u8 {
   match opcode {
-    8 | 21 | 22 | 23 | 27 | 29 | 30 | 34 | 37 | 38 | 39 | 44 => 1,
+    8 | 21 | 22 | 23 | 27 | 29 | 30 | 34 | 37 | 38 | 39 | 44 | 45 | 46 => 1,
     42 => 3,
     _ => 2,
   }
@@ -752,8 +752,8 @@ pub(super) fn evaluate(
       let tag = r.tag(enabled, 8);
       fields[0] = u128::from(tag);
       if enabled && tag == 1 {
-        fields[1] = u128::from(r.tag(true, 45));
-        fields[4] = if fields[1] < 45 {
+        fields[1] = u128::from(r.tag(true, 47));
+        fields[4] = if fields[1] < 47 {
           u128::from(primitive_arity(fields[1] as u8))
         } else {
           0

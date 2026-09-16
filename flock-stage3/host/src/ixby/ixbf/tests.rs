@@ -70,9 +70,9 @@ fn rich_program() -> Vec<u8> {
 }
 
 // Independently hand-encoded identity program. Functional format 1, semantics
-// 0; one function, arity 1, one block, return local 0. Not IXBY profile bytes.
+// 1; one function, arity 1, one block, return local 0. Not IXBY profile bytes.
 const IDENTITY: &[u8] = &[
-  b'I', b'X', b'B', b'F', 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 1, 0, 8, 0x80,
+  b'I', b'X', b'B', b'F', 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 1, 0, 8, 0x80,
   0x20, 64, 64, 24, 0, 0, 1, 1, 0, 1, 1, 1, 0, 0,
 ];
 
@@ -84,6 +84,36 @@ fn independently_encoded_identity_roundtrips_with_original_ranges() {
   assert_eq!(artifact.max_steps().to_string(), "24");
   assert_eq!(artifact.functions()[0].blocks[0].encoded, 30..34);
   assert_eq!(artifact.inventory().instructions, [0, 1, 0, 0, 0, 0, 0, 0]);
+}
+
+#[test]
+fn conversion_opcodes_are_unary_and_require_program_semantics_one() {
+  for opcode in [45, 46] {
+    // Independent complete program: arity one, apply the unary opcode, return.
+    let mut program = vec![
+      b'I', b'X', b'B', b'F', 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2, 2, 2, 0, 8, 128,
+      1, 0, 64, 3, 0, 0, 1, 1, 0, 2, 1, 0, 1, opcode, 1, 0, 0, 1, 2, 1, 0, 1,
+    ];
+    let artifact = decode_program(&program, DecodeLimits::default()).unwrap();
+    assert_eq!(artifact.encode(), program);
+    assert_eq!(artifact.inventory().primitives.len(), 1);
+    for count in [0, 2] {
+      let mut wrong = program.clone();
+      wrong[34] = count;
+      reject_program(&wrong);
+    }
+    program[8] = 0;
+    reject_program(&program);
+  }
+  // The breaking revision also rejects old programs that contain no conversion.
+  let mut old = IDENTITY.to_vec();
+  old[8] = 0;
+  reject_program(&old);
+  let artifact = decode_program(IDENTITY, DecodeLimits::default()).unwrap();
+  let mut input = scalar_input(Scalar::Nat(n(1)));
+  assert_eq!(&input[8..12], &[0; 4]);
+  input[8] = 1;
+  assert!(decode_input(&artifact, &input, DecodeLimits::default()).is_err());
 }
 
 #[test]
@@ -100,14 +130,16 @@ fn functional_opcode_names_map_explicitly_without_aliases() {
           Some(primitive.arity())
         );
       },
-      None => assert!((7..=9).contains(&primitive.opcode())),
+      None => assert!(
+        (7..=9).contains(&primitive.opcode()) || primitive.is_conversion()
+      ),
     }
   }
   assert_eq!(
     native.into_iter().collect::<Vec<_>>(),
     (0..42).collect::<Vec<_>>()
   );
-  for opcode in 45..=u8::MAX {
+  for opcode in 47..=u8::MAX {
     assert_eq!(Primitive::from_opcode(opcode), None);
   }
 }
