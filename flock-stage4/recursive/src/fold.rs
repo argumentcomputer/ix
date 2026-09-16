@@ -40,11 +40,17 @@ pub(crate) enum TableKey {
     rows: u32,
     columns: u32,
   },
+  /// Execution trees may share a complete identical Boolean matrix across
+  /// distinct registries. The digest binds every sparse entry and dimension.
+  Matrix {
+    digest: [u8; 32],
+    variables: u32,
+  },
 }
 impl TableKey {
   pub(crate) fn dimensions(&self) -> (usize, usize) {
     match self {
-      Self::Boolean { variables, .. } => {
+      Self::Boolean { variables, .. } | Self::Matrix { variables, .. } => {
         (*variables as usize, *variables as usize)
       },
       Self::Structure { rows, columns, .. }
@@ -72,6 +78,11 @@ impl TableKey {
         out.extend(circuit);
         out.extend(rows.to_le_bytes());
         out.extend(columns.to_le_bytes());
+      },
+      Self::Matrix { digest, variables } => {
+        out.push(3);
+        out.extend(digest);
+        out.extend(variables.to_le_bytes());
       },
     }
     out

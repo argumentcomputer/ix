@@ -1,4 +1,11 @@
-# Native Flock aggregation for streaming grammar proofs
+# Native Flock aggregation for parsing and execution
+
+An original-format identity program now has a **499,347-byte complete execution
+proof**. A fresh receiver verifies the approved profile/class/tree and the
+32-byte expected digest, with no program, input, output or child proofs.
+See [complete execution aggregation](#complete-paged-execution-aggregation).
+
+## Complete original CSLib grammar aggregation
 
 All **1,217 retained CSLib Program batches** now form one **360,907-byte**
 native Flock proof bundle, including 53,168 bytes of folded root advice.
@@ -9,7 +16,7 @@ It compiles the approved setup without reading proofs or source bytes.
 The claim is complete original Program grammar parsing, with genuine Start,
 complete Done at EOF, and all intermediate parser states connected. Full
 semantic program admission and execution of the CSLib verifier remain separate
-work. See [streaming scope](IxbyFunctionalStreaming.md) and the
+full-workload measurements. See [streaming scope](IxbyFunctionalStreaming.md) and the
 [execution plan](IxbyStage3ScalePlan.md).
 
 ## Complete aggregation relation
@@ -116,6 +123,110 @@ The complete-tree implementation is in
 [tree.rs](../flock-stage4/recursive/src/tree.rs), with constrained folds in
 [fold.rs](../flock-stage4/recursive/src/fold.rs) and the reproducible runner in
 [grammar-tree.rs](../flock-stage4/recursive/src/bin/grammar-tree.rs).
+
+## Complete paged execution aggregation
+
+[`PagedTreeCompiler`](../flock-stage4/recursive/src/execution_tree/mod.rs)
+composes genuine production proofs for all eleven
+[paged components](IxbyFlockPagedAdmission.md) and the
+[endpoint relation](IxbyFlockPagedExecution.md#complete-endpoint-binding).
+The verifier receives an externally selected IXFP profile, execution class,
+eleven exact component counts, expected `S`, and one strict `IXFPTR00` bundle.
+The profile and every child setup are compiled before reading proof bytes.
+The final application statement is exactly the two field words of `S`.
+
+The relation has three operations:
+
+- **Chain:** connect every shared field and every boundary field of adjacent
+  batches of the same component. Each genuine batch must make progress. Code,
+  input and execution boundaries include all parser, capture, machine, clock
+  and memory-root words, including suspended operations.
+- **Concatenate:** collect complete component-chain statements in the fixed
+  eleven-component protocol order, preserving all 283 words.
+- **Close:** verify the concatenation and endpoint proofs, equate all 283
+  component words, and publish only the endpoint proof's `S`.
+
+Every operation constrains both complete child Flock verifiers. Fresh and
+inherited Boolean-matrix, circuit-structure and jagged-layout claims enter the
+parent's constrained folds; final verification checks all actual fixed tables.
+Boolean claims can share a fold only after resolving their original table and
+hashing its complete sparse matrix, dimensions and variable count. Identical
+matrices from different registries therefore share work without dropping any
+claim. This reduces the measured closing node from 558 to 315 table families
+and from dense domain `M=32` to `M=31`.
+
+The new tree policy admits 1 through `2^31` batches per component, with exactly
+one constructor-ID component. Binary component chains use the largest power
+of two strictly below the count; ordered component concatenation uses the same
+rule on its component range. Exact setup compilation still enforces the native
+recursion geometry limits. This count policy is separate from the existing
+grammar tree's 65,536-leaf policy. The grammar tree's 1,217-leaf circuit and
+setup identity remain unchanged after extracting the shared accumulator code.
+
+### Complete original-format proof measurement
+
+The fixture independently encodes a 34-byte IXBF identity program, a 50-byte
+IXFI input and a 49-byte IXFO output containing a 34-byte Bytes value. It proves
+every component using the production APIs, verifies all saved proofs, and
+checks the initial captured memory against the native image. An independent
+hash implementation derives the expected original-artifact commitment.
+Each component has one batch; the endpoint proof is the twelfth leaf.
+
+| Local measurement, four Rayon threads | Result |
+| --- | ---: |
+| Final proof, including all root advice | 499,347 bytes |
+| Externally expected statement | 32 bytes |
+| Root-advice words | 10,001 |
+| Closing node witness and proving | 46.392 s |
+| Fresh receiver setup | 138.569 s |
+| Fresh receiver verification after setup | 16.788 s |
+| Complete test, including all leaf/node proofs and fresh receiver | 629.27 s |
+| GNU time wall time | 632.61 s |
+| GNU time maximum RSS | 68,963,992 KiB |
+
+The RSS is the reported maximum for this invocation, not a sum of process
+peaks. The parent releases its compiler and proving graphs before starting the
+fresh receiver. The receiver runs with a cleared environment and gets only
+`S` and the root proof on stdin; its approved setup is part of the fixture.
+
+The closing node has 4,644,403 variables, 902,986 arithmetic operations,
+50,388 packing rows, 42,819 BLAKE3 compressions, 16 row variables and dense
+domain `M=31`. Its setup identity is
+`c0e99ed53b2c69f09c6dff31ec235f1289dffc93efa8838de4c2f4c168829d54`.
+The [measurement record](../flock-stage4/census/paged-execution-identity-v0.json)
+retains artifact hashes and exact timings.
+
+A second genuinely valid endpoint proof changes parser metadata while keeping
+`S` unchanged. The closing circuit rejects it when paired with the original
+component root, exercising the equality of facts that endpoint checks alone
+do not interpret. The fresh receiver also rejects both halves of each changed
+digest word, changed root advice, setup/count headers, damaged proof bytes,
+truncation and trailing bytes.
+
+A separate 5,121-byte source test proves three batches across two recursive
+levels. It rejects individually valid leaf proofs with disconnected memory
+roots and all eighteen low/high-bit changes to the nine root statement words.
+Its final proof is 304,891 bytes; the test takes 37.95 seconds.
+
+```sh
+RUSTFLAGS='-C target-cpu=native' RAYON_NUM_THREADS=4 cargo test --release \
+  --offline --manifest-path flock-stage4/Cargo.toml -p ix-flock-recursion \
+  --lib \
+  execution_tree::tests::fixture::original_bytes_identity_proves_one_execution_digest \
+  -- --ignored --exact --nocapture --test-threads=1
+
+RUSTFLAGS='-C target-cpu=native' RAYON_NUM_THREADS=4 cargo test --release \
+  --offline --manifest-path flock-stage4/Cargo.toml -p ix-flock-recursion \
+  source_chain_links_all_boundaries_through_two_recursive_levels \
+  -- --ignored --nocapture --test-threads=1
+```
+
+`IXBY_PAGED_EXECUTION_OUT` optionally selects a retained fixture directory.
+Cached proofs are accepted only after checking the newly generated expected
+statement and the current approved verifier. The measurements establish a
+complete original-format execution proof for this small fixture. They do not
+measure the 2.268-billion-step CSLib execution, larger execution batches, or
+the additional Lean refinement from these native constraints to semantics.
 
 ## Earlier two-child prototype
 

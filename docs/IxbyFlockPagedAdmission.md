@@ -3,9 +3,10 @@
 The paged execution memory now has constrained original-byte loading,
 source-bound code capture, complete program reference checks and full
 constructor-ID uniqueness, typed input materialization and initialization
-constraints. Their proof chains still need recursive composition with output
-binding and execution. These components
-do not yet establish a full CSLib execution proof.
+constraints. Their proof chains now have
+[recursive composition with output binding and execution](IxbyFlockRecursion.md#complete-paged-execution-aggregation),
+validated by a complete original-format identity proof and fresh receiver.
+The full CSLib execution proof remains to be generated.
 
 ## Original byte banks
 
@@ -298,10 +299,11 @@ native witness material; recursive composition must constrain the complete
 child verifier and its inherited claims. Compilation also compares every
 prover driver's matrices and wire schema with the compiled verifier registry.
 
-The final relation must compose the admission, execution, output and commitment
-chains, consume the initialization/finalization constraints, and bind the
-approved profile, all source identities, memory/state boundaries and final
-Exec statement digest. Full execution proof generation remains.
+The implemented final relation composes the admission, execution, output and
+commitment chains, consumes initialization/finalization constraints, and binds
+the approved profile, all source identities, memory/state boundaries and final
+Exec statement digest. The original-format identity fixture has a complete
+499,347-byte proof. Full CSLib execution proof generation remains.
 
 ## Reproduction
 

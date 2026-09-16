@@ -2,9 +2,9 @@
 //! A node with N leaves splits at the largest power of two below N. Setups
 //! depend on grammar and leaf count, never on a file, proof, state, or advice.
 use crate::{
-  F128JaggedRowWeightVariablesV1,
+  accumulator::{PublishedRoot, collect_claims, fresh_tables, publish_roots},
   backend::{NativeBuilder, NativeGraph},
-  fold::{Claim, FoldPlan, Groups, Row, StaticTable, TableKey},
+  fold::{Claim, FoldPlan, Groups, StaticTable, TableKey},
   pair::{ChildWires, emit_child},
   proof::{Slots, count, emit_stable, prove_native},
 };
@@ -12,19 +12,15 @@ use anyhow::{Result, ensure};
 use bincode::Options;
 use flock_prover::{
   challenger::FsChallenger,
-  circuit::{
-    SigmaAssertion,
-    builder::{CircuitShape, ShapeBuilder},
-  },
+  circuit::builder::{CircuitShape, ShapeBuilder},
   field::F128,
   lincheck::CscCircuit,
-  matrix_fold::{FoldMatrix, JaggedTable, MatrixClaim, Weight},
-  pcs::{Commitment, PcsParams, jagged::JaggedParams},
+  matrix_fold::{MatrixClaim, Weight},
+  pcs::{Commitment, PcsParams},
   proof::R1csProofCircuitMerged,
   union::UnionInstance,
   verifier,
 };
-use ix_stage4_trace::F128MatrixSideV1;
 use ixby_flock::ixby::{
   io::PublicLayout,
   ixbf_decode::{
@@ -37,10 +33,7 @@ use ixby_stage4_exec::{
   compile_flock_replay,
 };
 use serde::{Deserialize, Serialize};
-use std::{
-  collections::{BTreeMap, HashMap},
-  sync::Arc,
-};
+use std::{collections::BTreeMap, sync::Arc};
 
 const DOMAIN: &[u8] = b"IxBy/Flock/grammar-tree/native/v0\0";
 const MAGIC: [u8; 8] = *b"IXFSTR00";
@@ -64,13 +57,6 @@ struct Bundle {
   root_advice: Vec<F128>,
   commitment: Commitment,
   proof: R1csProofCircuitMerged,
-}
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct PublishedRoot {
-  key: TableKey,
-  row: Vec<usize>,
-  column: Vec<usize>,
-  value: usize,
 }
 struct NodeCore {
   leaves: usize,
@@ -166,50 +152,6 @@ impl FlockVerifierSetup for ChildSetup {
     self.setup().circuit_digest()
   }
 }
-fn fresh_tables(
-  setup: &dyn FlockVerifierSetup,
-) -> Result<BTreeMap<TableKey, StaticTable>> {
-  let shape = setup.verifier_shape();
-  let registry = Arc::new(shape.registry.clone());
-  let mut tables = BTreeMap::new();
-  for (table, ty) in registry.boolean_types().iter().enumerate() {
-    for side in [F128MatrixSideV1::A, F128MatrixSideV1::B] {
-      let key = TableKey::Boolean {
-        registry: registry.digest(),
-        table: u64::try_from(table)?,
-        side,
-        variables: u32::try_from(ty.k_log)?,
-      };
-      tables.insert(
-        key,
-        StaticTable::Boolean { registry: registry.clone(), table, side },
-      );
-    }
-  }
-  let circuit = Arc::new(shape.circuit.clone());
-  let structure = SigmaAssertion::matrix(&circuit);
-  let key = TableKey::Structure {
-    circuit: circuit.digest(),
-    rows: structure.n_rows().ilog2(),
-    columns: structure.n_cols().ilog2(),
-  };
-  tables.insert(key, StaticTable::Structure(circuit));
-  let union = UnionInstance::new(&shape.registry, shape.counts.clone());
-  let params = JaggedParams::from_heights(
-    &union.jagged_heights(),
-    union.n_log(),
-    setup.pcs_params().m - 7,
-  );
-  let table = Arc::new(JaggedTable::from_params(&params));
-  let key = TableKey::Jagged {
-    circuit: shape.circuit.digest(),
-    rows: u32::try_from(table.k)?,
-    columns: u32::try_from(table.n_col_vars())?,
-  };
-  tables.insert(key, StaticTable::Jagged(table));
-  Ok(tables)
-}
-
 /// Reuses each immutable subtree setup during a bounded aggregation run.
 pub struct GrammarTreeCompiler {
   children: BTreeMap<usize, Arc<ChildSetup>>,
@@ -565,102 +507,19 @@ fn replay_child(
     },
   }
 }
-fn add(
-  groups: &mut Groups,
-  tables: &BTreeMap<TableKey, StaticTable>,
-  key: TableKey,
-  claim: Claim,
-) -> Result<()> {
-  let table = tables
-    .get(&key)
-    .ok_or_else(|| anyhow::anyhow!("unknown recursive claim family"))?;
-  groups
-    .entry(key)
-    .or_insert_with(|| (table.clone(), Vec::new()))
-    .1
-    .push(claim);
-  Ok(())
-}
 fn child_claims(
   b: &mut NativeBuilder,
   setup: &ChildSetup,
   child: &ChildWires,
   groups: &mut Groups,
 ) -> Result<()> {
-  let one = b.constant(F128::ONE);
-  for claim in &child.algebra.deferred_matrix_claims {
-    let id = claim.matrix;
-    let key = TableKey::Boolean {
-      registry: id.registry_digest,
-      table: id.table,
-      side: id.side,
-      variables: id.variables,
-    };
-    let row = Row::Tensor {
-      low: claim.row.low.iter().map(|v| v.word(b)).collect(),
-      point: claim.row.point.iter().map(|v| v.word(b)).collect(),
-    };
-    let c = Claim {
-      row,
-      column_low: claim.column.low.iter().map(|v| v.word(b)).collect(),
-      column: claim.column.point.iter().map(|v| v.word(b)).collect(),
-      value: claim.value.word(b),
-    };
-    add(groups, &setup.fresh, key, c)?;
-  }
-  for claim in &child.wiring.circuit_structure_claims {
-    let id = claim.matrix;
-    let key = TableKey::Structure {
-      circuit: id.circuit_digest,
-      rows: id.row_variables,
-      columns: id.column_variables,
-    };
-    let row = claim.row_point.iter().map(|v| v.word(b)).collect();
-    let column = claim.column_point.iter().map(|v| v.word(b)).collect();
-    let value = claim.value.word(b);
-    let c = Claim::plain(b, row, column, value);
-    add(groups, &setup.fresh, key, c)?;
-  }
-  let id = child.multipoint.jagged_assertion.matrix;
-  let key = TableKey::Jagged {
-    circuit: id.circuit_digest,
-    rows: id.row_variables,
-    columns: id.column_variables,
+  let inherited = match &setup.owner {
+    ChildOwner::Leaf(_) => None,
+    ChildOwner::Node(node) => {
+      Some((node.roots.as_slice(), &node.tables, node.outputs))
+    },
   };
-  for claim in &child.multipoint.jagged_assertion.claims {
-    let row = match &claim.row {
-      F128JaggedRowWeightVariablesV1::Eq { scale, point } => Row::Tensor {
-        low: vec![scale.word(b)],
-        point: point.iter().map(|v| v.word(b)).collect(),
-      },
-      F128JaggedRowWeightVariablesV1::Combo { terms } => Row::Combo(
-        terms.iter().map(|t| (t.coefficient.word(b), t.address)).collect(),
-      ),
-    };
-    let c = Claim {
-      row,
-      column_low: vec![one],
-      column: claim.column_point.iter().map(|v| v.word(b)).collect(),
-      value: claim.value.word(b),
-    };
-    add(groups, &setup.fresh, key.clone(), c)?;
-  }
-  if let ChildOwner::Node(node) = &setup.owner {
-    ensure!(
-      child.application.len() == node.outputs,
-      "inherited accumulator width"
-    );
-    for root in &node.roots {
-      let row =
-        root.row.iter().map(|&i| child.application[i].word(b)).collect();
-      let column =
-        root.column.iter().map(|&i| child.application[i].word(b)).collect();
-      let value = child.application[root.value].word(b);
-      let c = Claim::plain(b, row, column, value);
-      add(groups, &node.tables, root.key.clone(), c)?;
-    }
-  }
-  Ok(())
+  collect_claims(b, &setup.fresh, child, groups, inherited)
 }
 fn emit_children(
   b: &mut NativeBuilder,
@@ -726,35 +585,7 @@ fn publish(
   roots: Vec<(TableKey, Claim)>,
 ) -> Result<Vec<PublishedRoot>> {
   ensure!(application.len() == APPLICATION, "grammar tree output width");
-  b.graph.published = application;
-  let mut indices = b
-    .graph
-    .published
-    .iter()
-    .enumerate()
-    .map(|(i, &w)| (w, i))
-    .collect::<HashMap<_, _>>();
-  let mut publish = |word: usize| {
-    *indices.entry(word).or_insert_with(|| {
-      let i = b.graph.published.len();
-      b.graph.published.push(word);
-      i
-    })
-  };
-  roots
-    .into_iter()
-    .map(|(key, c)| {
-      let Row::Tensor { point, .. } = c.row else {
-        unreachable!("folded row is Eq")
-      };
-      Ok(PublishedRoot {
-        key,
-        row: point.into_iter().map(&mut publish).collect(),
-        column: c.column.into_iter().map(&mut publish).collect(),
-        value: publish(c.value),
-      })
-    })
-    .collect()
+  publish_roots(b, application, roots)
 }
 
 #[cfg(test)]

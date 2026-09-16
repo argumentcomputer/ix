@@ -35,8 +35,27 @@ all intermediate parser boundaries, exact tree coverage and the inherited
 root-claim folds. Root verification checks complete Start/Done and every
 approved fixed-table family. The original 492,388,476-byte chain and source
 file are unnecessary for root verification. The server run took 35 minutes
-with a single-process peak of 54,413,188 KiB. Full guest execution remains
-separate work. See [the relation, measurements and reproduction commands](../docs/IxbyFlockRecursion.md).
+with a single-process peak of 54,413,188 KiB. The full CSLib execution remains
+to be measured. See [the relation, measurements and reproduction commands](../docs/IxbyFlockRecursion.md).
+
+## Complete original-format execution aggregation
+
+`recursive::PagedTreeCompiler` combines eleven production Stage 3 component
+chains and their endpoint proof. It binds original program and input bytes,
+captured code/data, reference checks, initialization, execution, exact halt
+and fuel, output bytes and all artifact commitments. Every fresh and inherited
+fixed-table claim is folded into the closing proof and checked by the final
+verifier. Profile, execution class and component counts are external setup
+inputs; the application statement is only the two-word digest `S`.
+
+The original-format 34-byte Bytes identity fixture produces a **499,347-byte**
+complete proof. A fresh receiver receives only the approved setup, expected
+digest and proof. Its verification takes 16.788 seconds after setup; the
+complete fixture, including all proofs and the fresh receiver, takes 629.27
+seconds locally with four threads. Genuine but inconsistent child proofs
+reject at the closing relation. A three-batch source test also checks two
+recursive levels and rejects disconnected memory boundaries.
+See the [complete relation and measurements](../docs/IxbyFlockRecursion.md#complete-paged-execution-aggregation).
 
 ## Generic Exec replay
 

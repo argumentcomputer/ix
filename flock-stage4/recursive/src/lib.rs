@@ -2,9 +2,11 @@
 //! Setup fixes the verifier graph before any child statement or proof is read.
 //! Deferred claims remain explicit until a root verifier discharges them.
 
+mod accumulator;
 mod algebra;
 mod backend;
 mod blake3;
+mod execution_tree;
 mod f128;
 mod fold;
 mod gates;
@@ -17,6 +19,10 @@ mod transcript;
 mod tree;
 mod wiring;
 
+pub use execution_tree::{
+  CompiledPagedNode, MAX_PAGED_CHAIN_LEAVES, MAX_PAGED_TREE_BYTES,
+  PagedExecutionVerifier, PagedNodeGeometry, PagedNodeProof, PagedTreeCompiler,
+};
 pub use pair::{GrammarPairRelation, NativePairCensus};
 pub use proof::{CompiledGrammarPair, GrammarPairGeometry};
 pub use tree::{

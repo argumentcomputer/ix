@@ -180,10 +180,14 @@ profile and malformed proof envelopes also reject. The complete proof test
 took 43.96 seconds, including construction and checking of all component
 advice.
 
-This endpoint proof remains conditional: the closing recursive proof must
-verify every component chain, equate all 283 facts and expose only `S` as the
-execution statement. That composition and the full original CSLib run remain
-in progress.
+The endpoint proof alone remains conditional. The implemented
+[closing recursive proof](IxbyFlockRecursion.md#complete-paged-execution-aggregation)
+verifies every component chain, equates all 283 facts and exposes only `S`.
+The original-format identity fixture now has a **499,347-byte complete proof**
+that verifies in a fresh process with only the approved setup and expected
+digest. A valid endpoint proof with changed parser metadata and unchanged `S`
+rejects when joined to the original component root. The complete original
+CSLib execution remains to be measured.
 
 ## Instruction execution relation
 
@@ -404,11 +408,12 @@ ordered access through the exact permutation and authenticated boundaries.
 
 ## Remaining integration
 
-Compose [source admission, initialization, output and commitment
-binding](IxbyFlockPagedAdmission.md); consume exact finalization; and complete
-execution-proof aggregation. Original-CSLib execution segments already have
-conditional proofs under Compact and SharedCompact. Larger-batch throughput,
-the complete original execution and final independent verification remain.
+Source admission, initialization, exact finalization, output and commitment
+binding now compose into one independently verified original-format execution
+proof. Original-CSLib execution segments also have conditional proofs under
+Compact and SharedCompact. Larger-batch throughput, the complete original
+CSLib execution and its final independent verification remain. Native
+constraint refinement to the formal semantics is a separate obligation.
 
 ```sh
 RUSTFLAGS='-C target-cpu=native' RAYON_NUM_THREADS=4 cargo test --release \
