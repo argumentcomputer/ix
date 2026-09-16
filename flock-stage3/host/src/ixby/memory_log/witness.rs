@@ -5,7 +5,7 @@ use super::{MemoryLogSlots, PAD, READ, SEAL, SEED, WRITE};
 use crate::ixby::auth_memory::{MemoryOpening, SparseMemory};
 use anyhow::{Result, ensure};
 use flock_prover::field::F128;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Copy, Debug)]
 pub struct AccessAdvice {
@@ -120,6 +120,16 @@ impl<'a> MemoryBatch<'a> {
       Some(value) => Ok(*value),
       None => self.memory.value(address),
     }
+  }
+  /// Distinct cells after a proposed step, without modifying the trace.
+  pub fn prospective_cells(&self, accesses: &[AccessAdvice]) -> usize {
+    self.current.len()
+      + accesses
+        .iter()
+        .map(|a| a.address)
+        .filter(|a| !self.current.contains_key(a))
+        .collect::<BTreeSet<_>>()
+        .len()
   }
   pub fn read(&mut self, address: u64) -> Result<[F128; 2]> {
     let value = self.value(address)?;

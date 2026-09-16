@@ -77,27 +77,30 @@ still needs to constrain the writes and complete semantic reference checks.
 
 [`paged_exec`](../flock-stage3/host/src/ixby/paged_exec/mod.rs) now combines
 authenticated code fetch, operand resolution into scratch memory, numeric
-primitives, copy/return/Bool/Nat control, direct/self/tail calls, frame copies,
-continuation return, and terminal halt. Instruction actions come from the
+primitives, copy/return/Bool/Nat control, direct/self/tail calls, constructor
+creation/projection/cases, closures, application, frame copies, continuation
+return, and terminal halt. Instruction actions come from the
 fetched code and resolved values. The proof does not publish a host-selected
 action sequence.
 
 The batch carries 24 state words, including all frame/fuel fields, allocation
-counters, instruction header and resolution cursor. The current finite Small
-factory reserves fixed quotas for each operation. Its rows may be grouped by
+counters, instruction header, resolution cursor, and pending immutable copy.
+The finite Small, Compact and Objects factories reserve fixed quotas for each
+operation. Their rows may be grouped by
 operation: an exact permutation of complete state records proves one positive,
 unbroken execution chain. Each memory timestamp is derived from that same
 row's constrained clock and a fixed ordinal. Inactive rows are canonical zero;
 integer clocks cannot wrap. Both memory roots, both full states/clocks and all
 three static parameter words are verifier-bound.
 
-A genuine **378,667-byte instruction proof** verifies in a fresh process.
+A genuine **387,395-byte instruction proof** verifies in a fresh process.
 The fixture performs 20 physical transitions and seven logical steps, using
 functions 680/671, Nat values above 64 bits, a call, argument copy, return to
 the caller and final halt. The class has 74 memory request slots, 24 boundary
-cells and 57 expected public words. Its dense witness is 314,142 field words
-(`M=26`). Setup took 2.789 seconds and proving 0.865 seconds with four Rayon
-threads. The complete test took 11.18 seconds and 4,813,568 KiB peak process RSS.
+cells and 57 expected public words. Its dense witness is 313,834 field words
+(`M=26`). Setup took 3.042 seconds and proving 1.070 seconds with four Rayon
+threads. This is the updated Small v1 setup containing the object tables;
+the preceding numeric/call-only v0 snapshot produced 378,667 bytes.
 
 All 57 changed expected words reject. Eight locally valid recomputed attacks
 against fetched headers, resolved operands, numeric results, call entries,
@@ -109,6 +112,60 @@ The initial code root in this fixture is an independently expected memory
 image. Connecting that root to the original IXBF source remains required.
 This result covers a small instruction segment. The original CSLib execution
 remains unproved.
+
+## Immutable objects and application
+
+Constructors, closure captures and persistent application arguments reserve
+an exact range at the current heap counter. Every copied field is an actual
+authenticated read and write of the same canonical value. Sources must fit
+the previously allocated heap prefix or the resolved scratch vector. Heap
+reservations cannot wrap or overwrite a previous allocation. The 24-word
+state carries both source vectors, the destination, copy position and pending
+frame action. The result becomes available only after the last field is
+copied. Zero-field objects still complete the logical instruction once.
+
+Projection checks the constructor field index against the allocated vector.
+Projection of Erased returns Erased. Constructor cases authenticate the
+selected code alternative and require its declaration index to match the
+value before appending the fields to the current frame. Whole-program source
+admission must establish constructor-ID and alternative uniqueness.
+
+Application handles empty arguments, Erased, partial applications, exact
+applications and excess arguments. Partial application copies captures and
+arguments into a new immutable vector. Function entry copies the required
+prefix into scratch and records any remaining arguments in an authenticated
+Apply continuation. Each semantic Apply transition consumes one fuel unit;
+the individual copies preserve fuel.
+
+`NativeMachine::batch` previews a step before changing memory or state. It
+stops before any operation or distinct-cell quota is exceeded. Suspended
+copies resume from the next batch's fully bound boundary state.
+
+The **366,579-byte object instruction proof** covers 144 microsteps and 37
+logical steps. Its program constructs and projects fields, selects a case,
+creates closures, performs partial/exact/excess/tail application, uses Erased
+and empty arguments, and halts with Nat 82. It touches 93 cells and allocates
+12 immutable fields. The fixed Objects class provides 242 operation slots,
+624 memory request slots and 96 boundary cells (`nu=13`, `M=28`, 1,922,206
+dense field words). Setup took 3.571 seconds and proving 2.671 seconds with
+four Rayon threads.
+
+The proof verifies in a fresh process receiving only its 57 expected public
+words and proof bytes. Every changed public word and malformed envelope
+rejects. Nine independently recomputed, locally valid malicious rows changing
+a copied field, heap counter, closure reference, argument splice, alternative
+target, copy index, function arity, state clock or memory clock reject at
+Flock's wiring check. The full test took 29.16 seconds and 15,613,620 KiB peak
+process RSS, measured by GNU time. This is a per-process maximum, not the sum
+of simultaneous parent and child memory. The run used a 64 GiB virtual-memory
+cap; a 32 GiB cap was insufficient.
+
+Ordinary circuit tests also split the same computation across 15 Compact
+batches, including six boundaries inside pending copy operations. They reach
+the identical final state and memory root, and reject premature completion,
+unallocated source spans, changed destinations, field bounds and invalid
+application arities. Boundary tests cover zero and 64 fields, the final heap
+cell, allocation overflow, empty application and recycled witness padding.
 
 ## Numeric and component evidence
 
@@ -154,8 +211,7 @@ ordered access through the exact permutation and authenticated boundaries.
 
 ## Remaining integration
 
-Connect original source admission and input initialization; constructor,
-projection, closure and application consumers; byte primitives; complete
+Connect original source admission and input initialization; byte primitives; complete
 execution boundaries and output serialization; and execution-proof aggregation.
 Then prove representative original-CSLib segments and measure
 the full run. None of the component results above substitutes for that run.
@@ -174,5 +230,9 @@ RUSTFLAGS='-C target-cpu=native' RAYON_NUM_THREADS=4 cargo test --release \
 RUSTFLAGS='-C target-cpu=native' RAYON_NUM_THREADS=4 cargo test --release \
   --offline --manifest-path flock-stage3/Cargo.toml \
   instruction_batch_proves_fresh_and_rejects_locally_valid_recomputed_rows \
+  -- --ignored --nocapture --test-threads=1
+RUSTFLAGS='-C target-cpu=native' RAYON_NUM_THREADS=4 cargo test --release \
+  --offline --manifest-path flock-stage3/Cargo.toml \
+  object_batch_proves_fresh_and_rejects_locally_valid_recomputed_rows \
   -- --ignored --nocapture --test-threads=1
 ```

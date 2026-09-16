@@ -46,11 +46,18 @@ use std::{
   sync::Arc,
 };
 
-const DOMAIN: &[u8] = b"IxBy/Flock/paged-execution:small:v0";
+fn domain(class: BatchClass) -> &'static [u8] {
+  match class {
+    BatchClass::Small => b"IxBy/Flock/paged-execution:small:v1",
+    BatchClass::Objects => b"IxBy/Flock/paged-execution:objects:v0",
+    BatchClass::Compact => b"IxBy/Flock/paged-execution:compact:v0",
+  }
+}
 const MAGIC: [u8; 8] = *b"IXFPGX00";
 const MAX_BYTES: u64 = 16 * 1024 * 1024;
 const OUTPUTS: usize = 57;
 const TEST: &str = "ixby::paged_exec::proof_tests::instruction_batch_proves_fresh_and_rejects_locally_valid_recomputed_rows";
+const OBJECT_TEST: &str = "ixby::paged_exec::proof_tests::object_batch_proves_fresh_and_rejects_locally_valid_recomputed_rows";
 const CHILD: &str = "IXBY_PAGED_EXEC_VERIFY_CHILD";
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Attack {
@@ -63,6 +70,13 @@ enum Attack {
   Fuel,
   OrderClock,
   MemoryClock,
+  Field,
+  HeapReservation,
+  Closure,
+  Splice,
+  Alternative,
+  StoreIndex,
+  ApplyDeclaration,
 }
 #[derive(Serialize, Deserialize)]
 struct Bundle {
@@ -141,6 +155,27 @@ fn micro_fill(
     },
     (Attack::Fuel, MicroKind::Complete) => {
       Some((1 + STATE_WORDS + 5, F128::new(1, 1)))
+    },
+    (Attack::Field, MicroKind::Object(ObjectKind::StoreCopy)) => {
+      Some((2 + STATE_WORDS, F128::ONE))
+    },
+    (Attack::HeapReservation, MicroKind::Object(ObjectKind::Construct)) => {
+      Some((1 + HEAP_COUNT, F128::ONE))
+    },
+    (Attack::Closure, MicroKind::Object(ObjectKind::Closure)) => {
+      Some((1 + HEADER, F128::new(0, 2)))
+    },
+    (Attack::Splice, MicroKind::Object(ObjectKind::ApplyStart)) => {
+      Some((1 + 3, F128::ONE))
+    },
+    (Attack::Alternative, MicroKind::Object(ObjectKind::CaseAction)) => {
+      Some((3 + STATE_WORDS, F128::new(1 << 8, 0)))
+    },
+    (Attack::StoreIndex, MicroKind::Object(ObjectKind::StoreCopy)) => {
+      Some((1 + CONTROL, F128::new(1 << 8, 0)))
+    },
+    (Attack::ApplyDeclaration, MicroKind::Object(ObjectKind::ApplyStart)) => {
+      Some((1 + STATE_WORDS, F128::ONE))
     },
     _ => None,
   };
@@ -344,9 +379,9 @@ fn drivers(emission: &BatchEmission, shape: &CircuitShape) -> Vec<Driver> {
   assert_eq!(result.len() + 2, shape.counts.len());
   result
 }
-fn setup() -> (BatchEmission, CircuitShape, Vec<Driver>) {
-  let mut b = ShapeBuilder::new(BatchClass::Small.nu());
-  let emission = emit_batch(&mut b, BatchClass::Small).unwrap();
+fn setup(class: BatchClass) -> (BatchEmission, CircuitShape, Vec<Driver>) {
+  let mut b = ShapeBuilder::new(class.nu());
+  let emission = emit_batch(&mut b, class).unwrap();
   let shape = b.finish().unwrap();
   let drivers = drivers(&emission, &shape);
   (emission, shape, drivers)
@@ -387,7 +422,8 @@ fn prove(
       UnionElementSlotInput::new(move |dst| gate.fill_witness(&rows, nu, dst))
     })
     .collect();
-  let mut challenger = FsChallenger::with_chained_blake3(DOMAIN);
+  let mut challenger =
+    FsChallenger::with_chained_blake3(domain(emission.class));
   let (proof, commitment, _) = prover::prove_fast_ligerito_union_circuit(
     &union,
     &shape.circuit,
@@ -418,7 +454,8 @@ fn verify(
     .iter()
     .map(|d| d.table.csc_lincheck_circuit() as &dyn LincheckCircuit)
     .collect::<Vec<_>>();
-  let mut challenger = FsChallenger::with_chained_blake3(DOMAIN);
+  let mut challenger =
+    FsChallenger::with_chained_blake3(domain(emission.class));
   verifier::verify_ligerito_union_circuit(
     &union,
     &shape.circuit,
@@ -432,9 +469,9 @@ fn verify(
   .map_err(|e| anyhow::anyhow!("paged execution proof rejected: {e:?}"))?;
   Ok(())
 }
-fn isolated(expected: &[F128], proof: &[u8]) -> bool {
+fn isolated(test: &str, expected: &[F128], proof: &[u8]) -> bool {
   let mut child = Command::new(std::env::current_exe().unwrap())
-    .args(["--ignored", "--exact", TEST, "--test-threads=1", "--nocapture"])
+    .args(["--ignored", "--exact", test, "--test-threads=1", "--nocapture"])
     .current_dir(std::env::temp_dir())
     .env_clear()
     .env(CHILD, "1")
@@ -460,8 +497,50 @@ fn isolated(expected: &[F128], proof: &[u8]) -> bool {
 #[test]
 #[ignore = "real mixed instruction/state-order/fuel/memory proof and independently verified malicious-row rejections"]
 fn instruction_batch_proves_fresh_and_rejects_locally_valid_recomputed_rows() {
+  proof_test(
+    BatchClass::Small,
+    TEST,
+    tests::fixture,
+    &[
+      Attack::Fetch,
+      Attack::Operand,
+      Attack::Numeric,
+      Attack::Call,
+      Attack::Return,
+      Attack::Fuel,
+      Attack::OrderClock,
+      Attack::MemoryClock,
+    ],
+  );
+}
+#[test]
+#[ignore = "real object/application instruction proof, fresh receiver and recomputed malformed heap/splice/alternative rows"]
+fn object_batch_proves_fresh_and_rejects_locally_valid_recomputed_rows() {
+  proof_test(
+    BatchClass::Objects,
+    OBJECT_TEST,
+    object_tests::fixture,
+    &[
+      Attack::Field,
+      Attack::HeapReservation,
+      Attack::Closure,
+      Attack::Splice,
+      Attack::Alternative,
+      Attack::StoreIndex,
+      Attack::ApplyDeclaration,
+      Attack::OrderClock,
+      Attack::MemoryClock,
+    ],
+  );
+}
+fn proof_test(
+  class: BatchClass,
+  test: &str,
+  fixture: fn() -> (BatchAdvice, Vec<RowAdvice>),
+  attacks: &[Attack],
+) {
   let setup_start = std::time::Instant::now();
-  let (emission, shape, drivers) = setup();
+  let (emission, shape, drivers) = setup(class);
   let setup_elapsed = setup_start.elapsed();
   if std::env::var_os(CHILD).is_some() {
     let mut bytes = Vec::new();
@@ -482,7 +561,7 @@ fn instruction_batch_proves_fresh_and_rejects_locally_valid_recomputed_rows() {
       .unwrap();
     return;
   }
-  let (advice, _) = tests::fixture();
+  let (advice, _) = fixture();
   let witness =
     shape.run(&emission.inputs.assign(&advice.private).unwrap(), &[]);
   assert_eq!(advice.expected.len(), OUTPUTS);
@@ -491,10 +570,16 @@ fn instruction_batch_proves_fresh_and_rejects_locally_valid_recomputed_rows() {
     emission.public.instantiate(&advice.expected).unwrap()
   );
   let start = std::time::Instant::now();
+  let geometry = UnionInstance::new(&shape.registry, shape.counts.clone());
+  eprintln!(
+    "paged execution geometry: M={}, dense={} words",
+    geometry.dense_m(),
+    geometry.dense_words()
+  );
   let proof = prove(&emission, &shape, &drivers, &witness, Attack::None);
   let prove_elapsed = start.elapsed();
   verify(&emission, &shape, &drivers, &advice.expected, &proof).unwrap();
-  assert!(isolated(&advice.expected, &proof));
+  assert!(isolated(test, &advice.expected, &proof));
   let union = UnionInstance::new(&shape.registry, shape.counts.clone());
   eprintln!(
     "paged execution proof: {} bytes, setup {setup_elapsed:?}, prove {prove_elapsed:?}, M={}, dense={} words",
@@ -525,16 +610,7 @@ fn instruction_batch_proves_fresh_and_rejects_locally_valid_recomputed_rows() {
   assert!(
     verify(&emission, &shape, &drivers, &advice.expected, &extended).is_err()
   );
-  for attack in [
-    Attack::Fetch,
-    Attack::Operand,
-    Attack::Numeric,
-    Attack::Call,
-    Attack::Return,
-    Attack::Fuel,
-    Attack::OrderClock,
-    Attack::MemoryClock,
-  ] {
+  for &attack in attacks {
     let bad = prove(&emission, &shape, &drivers, &witness, attack);
     let error =
       verify(&emission, &shape, &drivers, &advice.expected, &bad).unwrap_err();

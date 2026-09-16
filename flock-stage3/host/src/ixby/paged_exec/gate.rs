@@ -1,4 +1,4 @@
-use super::STATE_WORDS;
+use super::{ObjectKind, STATE_WORDS};
 use crate::{
   boolean::{BooleanR1csPlan, generate_boolean_witness_into},
   ixby::bits::{evaluate_words, fill_words},
@@ -27,9 +27,10 @@ pub enum MicroKind {
   Resume,
   FrameRequest,
   Complete,
+  Object(ObjectKind),
 }
 impl MicroKind {
-  pub const ALL: [Self; 13] = [
+  pub const ALL: [Self; 26] = [
     Self::Parameters,
     Self::Fetch,
     Self::ResolveRequest,
@@ -43,9 +44,23 @@ impl MicroKind {
     Self::Resume,
     Self::FrameRequest,
     Self::Complete,
+    Self::Object(ObjectKind::Reference),
+    Self::Object(ObjectKind::Construct),
+    Self::Object(ObjectKind::Closure),
+    Self::Object(ObjectKind::OperandRequest),
+    Self::Object(ObjectKind::ApplyInstruction),
+    Self::Object(ObjectKind::ProjectRequest),
+    Self::Object(ObjectKind::ProjectAction),
+    Self::Object(ObjectKind::CaseAction),
+    Self::Object(ObjectKind::ApplyRequest),
+    Self::Object(ObjectKind::ApplyStart),
+    Self::Object(ObjectKind::StoreRequest),
+    Self::Object(ObjectKind::StoreCopy),
+    Self::Object(ObjectKind::StoreFinish),
   ];
   pub fn inputs(self) -> usize {
     match self {
+      Self::Object(kind) => 1 + STATE_WORDS + kind.extra_inputs(),
       Self::Parameters => 3,
       Self::Fetch
       | Self::ResolveFinish
@@ -60,6 +75,7 @@ impl MicroKind {
   }
   pub fn outputs(self) -> usize {
     match self {
+      Self::Object(kind) => kind.outputs() + 1,
       Self::Parameters | Self::Resume => 1,
       Self::Fetch | Self::Complete => STATE_WORDS + 1,
       Self::ResolveRequest => 3,

@@ -5,16 +5,19 @@ use crate::{
   extension::goldilocks_ext2_mul,
   goldilocks::goldilocks_add,
   ixby::{
+    auth_memory::SparseMemory,
     decode::PrimitiveSet,
     memory_log::{AccessAdvice, MemoryBatch},
-    paged_code::{CodeGate, CodeGateKind, FUNCTIONS, block_address},
+    paged_code::{
+      CONSTRUCTORS, CodeGate, CodeGateKind, FUNCTIONS, block_address,
+    },
     paged_frame::{CONTINUATIONS, FrameGate, LOCALS, Phase, SCRATCH},
     paged_nat::Nat128Gate,
     paged_primitive::PrimitiveRouteGate,
     primitive::{PrimitiveFinishGate, PrimitivePrepareGate},
   },
 };
-use anyhow::{Result, bail, ensure};
+use anyhow::{Context, Result, bail, ensure};
 use flock_prover::circuit::builder::GateType;
 
 pub struct RowAdvice {
@@ -77,6 +80,8 @@ impl NativeMachine {
         CodeGateKind::Block,
         CodeGateKind::Operand,
         CodeGateKind::Function,
+        CodeGateKind::Constructor,
+        CodeGateKind::Alternative,
       ]
       .into_iter()
       .map(|k| CodeGate::new(3, k))
@@ -96,6 +101,7 @@ impl NativeMachine {
   }
   fn micro(&self, kind: MicroKind, input: &[F128]) -> Result<Vec<F128>> {
     run(self.micro.iter().find(|g| g.kind() == kind).unwrap(), input)
+      .with_context(|| format!("execution {kind:?}"))
   }
   pub fn next_chip(&self) -> Result<Option<Chip>> {
     Ok(Some(match self.state[CONTROL].lo as u8 {
@@ -103,6 +109,7 @@ impl NativeMachine {
         x if x == Phase::Eval as u8 => Chip::Fetch,
         x if x == Phase::Return as u8 || x == Phase::Copy as u8 => Chip::Resume,
         x if x == Phase::Halted as u8 => return Ok(None),
+        x if x == Phase::Apply as u8 => Chip::Apply,
         p => bail!("pending implementation: paged frame phase {p}"),
       },
       1 => Chip::Resolve,
@@ -114,9 +121,22 @@ impl NativeMachine {
           (0, 1) => Chip::Numeric,
           (0, 0) | (1 | 6 | 7, _) => Chip::Control,
           (0, 5 | 6) | (2 | 3, _) => Chip::Call,
+          (0, 2) => Chip::Construct,
+          (0, 3) => Chip::Project,
+          (0, 4) => Chip::Closure,
+          (0, 7) | (4, _) => Chip::ApplyInstruction,
+          (5, _) => Chip::Case,
           _ => bail!(
             "pending implementation: paged instruction {instruction}, operation {op}"
           ),
+        }
+      },
+      3 => {
+        let control = self.state[CONTROL].lo;
+        if ((control >> 8) as u8) < (control >> 16) as u8 {
+          Chip::StoreCopy
+        } else {
+          Chip::StoreFinish
         }
       },
       p => bail!("pending implementation: paged micro phase {p}"),
@@ -189,7 +209,7 @@ impl NativeMachine {
     )?;
     Ok(after.try_into().unwrap())
   }
-  pub fn step(&mut self, memory: &mut MemoryBatch<'_>) -> Result<RowAdvice> {
+  pub fn preview(&self, memory: &MemoryBatch<'_>) -> Result<RowAdvice> {
     let chip = self
       .next_chip()?
       .ok_or_else(|| anyhow::anyhow!("execution already halted"))?;
@@ -294,9 +314,140 @@ impl NativeMachine {
         after =
           self.complete(&prefix, &[F128::ZERO; 5], cell, &mut accesses)?;
       },
+      Chip::Construct | Chip::Closure => {
+        let reference =
+          self.micro(MicroKind::Object(ObjectKind::Reference), &prefix)?[0];
+        let (at, address, kind) = if chip == Chip::Construct {
+          (3, CONSTRUCTORS + 3 * reference.lo + 2, ObjectKind::Construct)
+        } else {
+          (2, FUNCTIONS + reference.lo, ObjectKind::Closure)
+        };
+        let cell = memory.value(address)?;
+        advice = cell.to_vec();
+        let read =
+          run(&self.code[at], &[F128::ONE, reference, cell[0], cell[1]])?;
+        accesses.extend(records(&read));
+        after = self
+          .micro(MicroKind::Object(kind), &append(&cell))?
+          .try_into()
+          .unwrap();
+      },
+      Chip::ApplyInstruction | Chip::Project | Chip::Case => {
+        let request =
+          self.micro(MicroKind::Object(ObjectKind::OperandRequest), &prefix)?;
+        let value = memory.value(request[0].lo)?;
+        accesses.push(AccessAdvice {
+          address: request[0].lo,
+          write: false,
+          value,
+        });
+        if chip == Chip::ApplyInstruction {
+          advice = value.to_vec();
+          after = self
+            .micro(
+              MicroKind::Object(ObjectKind::ApplyInstruction),
+              &append(&value),
+            )?
+            .try_into()
+            .unwrap();
+        } else {
+          let action = if chip == Chip::Project {
+            let address = self.micro(
+              MicroKind::Object(ObjectKind::ProjectRequest),
+              &append(&value),
+            )?[0];
+            let field = memory.value(address.lo)?;
+            accesses.push(AccessAdvice {
+              address: address.lo,
+              write: false,
+              value: field,
+            });
+            advice = value.into_iter().chain(field).collect::<Vec<_>>();
+            self.micro(
+              MicroKind::Object(ObjectKind::ProjectAction),
+              &append(&advice),
+            )?
+          } else {
+            let mut selected = None;
+            for i in 0..request[1].lo {
+              let alt =
+                memory.value(block_address(function, block) + 128 + i)?;
+              if alt[0].lo as u8 as u64 == value[0].hi {
+                selected = Some((F128::new(i, 0), alt));
+                break;
+              }
+            }
+            let (index, alt) = selected.ok_or_else(|| {
+              anyhow::anyhow!("constructor alternative missing")
+            })?;
+            let read = run(
+              &self.code[4],
+              &[F128::ONE, before[0], index, request[1], alt[0], alt[1]],
+            )?;
+            accesses.extend(records(&read));
+            advice =
+              value.into_iter().chain([index]).chain(alt).collect::<Vec<_>>();
+            self.micro(
+              MicroKind::Object(ObjectKind::CaseAction),
+              &append(&value.into_iter().chain(alt).collect::<Vec<_>>()),
+            )?
+          };
+          after =
+            self.complete(&prefix, &action, [F128::ZERO; 2], &mut accesses)?;
+        }
+      },
+      Chip::Apply => {
+        let request =
+          self.micro(MicroKind::Object(ObjectKind::ApplyRequest), &prefix)?;
+        let cell = if request[0] == F128::ONE {
+          memory.value(FUNCTIONS + request[1].lo)?
+        } else {
+          [F128::ZERO; 2]
+        };
+        advice = cell.to_vec();
+        let read =
+          run(&self.code[2], &[request[0], request[1], cell[0], cell[1]])?;
+        accesses.extend(records(&read));
+        after = self
+          .micro(MicroKind::Object(ObjectKind::ApplyStart), &append(&cell))?
+          .try_into()
+          .unwrap();
+      },
+      Chip::StoreCopy => {
+        let address =
+          self.micro(MicroKind::Object(ObjectKind::StoreRequest), &prefix)?[0];
+        let cell = memory.value(address.lo)?;
+        advice = cell.to_vec();
+        let out = self
+          .micro(MicroKind::Object(ObjectKind::StoreCopy), &append(&cell))?;
+        after = out[..STATE_WORDS].try_into().unwrap();
+        accesses.extend(records(&out[STATE_WORDS..]));
+      },
+      Chip::StoreFinish => {
+        advice = Vec::new();
+        let action =
+          self.micro(MicroKind::Object(ObjectKind::StoreFinish), &prefix)?;
+        after =
+          self.complete(&prefix, &action, [F128::ZERO; 2], &mut accesses)?;
+      },
     }
     ensure!(accesses.len() == chip.accesses(), "native access count");
-    for access in &accesses {
+    Ok(RowAdvice { chip, clock: self.clock, before, after, advice, accesses })
+  }
+  pub fn commit(
+    &mut self,
+    memory: &mut MemoryBatch<'_>,
+    row: &RowAdvice,
+  ) -> Result<()> {
+    ensure!(
+      row.clock == self.clock && row.before == self.state,
+      "stale execution preview"
+    );
+    let clock = self
+      .clock
+      .checked_add(1)
+      .ok_or_else(|| anyhow::anyhow!("execution clock exhausted"))?;
+    for access in &row.accesses {
       if access.write {
         memory.write(access.address, access.value)?;
       } else {
@@ -306,13 +457,46 @@ impl NativeMachine {
         );
       }
     }
-    let row =
-      RowAdvice { chip, clock: self.clock, before, after, advice, accesses };
-    self.state = after;
-    self.clock = self
-      .clock
-      .checked_add(1)
-      .ok_or_else(|| anyhow::anyhow!("execution clock exhausted"))?;
+    self.state = row.after;
+    self.clock = clock;
+    Ok(())
+  }
+  pub fn step(&mut self, memory: &mut MemoryBatch<'_>) -> Result<RowAdvice> {
+    let row = self.preview(memory)?;
+    self.commit(memory, &row)?;
     Ok(row)
+  }
+  /// Stop before exceeding any fixed circuit quota. A suspended instruction
+  /// is carried in the complete public boundary state, including its copy job.
+  pub fn batch(
+    &mut self,
+    class: BatchClass,
+    memory: &mut SparseMemory,
+  ) -> Result<Option<BatchAdvice>> {
+    if self.next_chip()?.is_none() {
+      return Ok(None);
+    }
+    let mut memory = MemoryBatch::new(memory);
+    let mut counts = [0; Chip::ALL.len()];
+    let quotas = class.quotas();
+    let mut rows = Vec::new();
+    while let Some(chip) = self.next_chip()? {
+      if counts[chip as usize] == quotas[chip as usize] {
+        break;
+      }
+      let row = self.preview(&memory)?;
+      if memory.prospective_cells(&row.accesses) > class.cells() {
+        break;
+      }
+      self.commit(&mut memory, &row)?;
+      counts[chip as usize] += 1;
+      rows.push(row);
+    }
+    ensure!(
+      !rows.is_empty(),
+      "batch class cannot admit the next execution step"
+    );
+    let memory = memory.finish_padded(class.cells())?;
+    Ok(Some(BatchAdvice::new(class, self.parameters, &rows, &memory)?))
   }
 }

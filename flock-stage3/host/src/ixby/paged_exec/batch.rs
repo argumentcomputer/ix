@@ -18,21 +18,29 @@ use anyhow::{Result, ensure};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BatchClass {
   Small,
+  Objects,
+  Compact,
 }
 impl BatchClass {
-  pub fn quotas(self) -> [usize; 6] {
+  pub fn quotas(self) -> [usize; 14] {
     match self {
-      Self::Small => [6, 8, 2, 3, 2, 4],
+      Self::Small => [6, 8, 2, 3, 2, 4, 0, 0, 0, 0, 0, 0, 0, 0],
+      Self::Objects => [24, 40, 8, 16, 2, 32, 4, 8, 8, 4, 4, 12, 48, 32],
+      Self::Compact => [2, 4, 1, 2, 1, 3, 1, 1, 1, 1, 1, 1, 2, 2],
     }
   }
   pub fn cells(self) -> usize {
     match self {
       Self::Small => 24,
+      Self::Objects => 96,
+      Self::Compact => 16,
     }
   }
   pub fn nu(self) -> usize {
     match self {
       Self::Small => 11,
+      Self::Objects => 13,
+      Self::Compact => 11,
     }
   }
   pub fn transitions(self) -> usize {

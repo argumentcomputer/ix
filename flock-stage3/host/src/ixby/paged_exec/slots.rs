@@ -17,7 +17,7 @@ pub struct ExecutionSlots {
   pub code: CodeSlots,
   pub frame: FrameSlots,
   pub numeric: NumericSlots,
-  zero: Wire,
+  pub(super) zero: Wire,
 }
 pub struct StepWires {
   pub state: [Wire; STATE_WORDS],
@@ -41,7 +41,7 @@ impl ExecutionSlots {
   pub fn gates(&self) -> impl Iterator<Item = (SlotId, &MicroGate)> {
     self.micro.iter().map(|(s, g)| (*s, g))
   }
-  fn gate(
+  pub(super) fn gate(
     &self,
     b: &mut impl CircuitEmitter,
     kind: MicroKind,
@@ -59,7 +59,7 @@ impl ExecutionSlots {
     self.numeric.finish_canonical(b);
   }
   #[allow(clippy::too_many_arguments)]
-  fn complete(
+  pub(super) fn complete(
     &self,
     b: &mut impl CircuitEmitter,
     enabled: Wire,
@@ -208,6 +208,7 @@ impl ExecutionSlots {
           Vec::new(),
         )
       },
+      _ => self.object_step(b, chip, enabled, state, advice, parameters),
     }
   }
 }

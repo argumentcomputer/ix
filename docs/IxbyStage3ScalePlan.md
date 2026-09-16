@@ -155,11 +155,18 @@ for execution-class design, not constrained execution or proving estimates.
 19. [Ordered instruction batches](IxbyFlockPagedExecution.md): actual code and
     operand reads produce numeric, control, call and return actions; complete
     state records form one exact execution chain, sharing their clocks with
-    authenticated memory. A fresh 378,667-byte proof covers 20 physical steps,
+    authenticated memory. A fresh 387,395-byte proof covers 20 physical steps,
     seven logical transitions and final halt. All 57 changed expected words
     and eight locally valid recomputed instruction/clock attacks reject.
-    Full original source/input admission, heap/application and byte consumers,
+    Full original source/input admission and byte consumers,
     output serialization and execution aggregation remain.
+20. [Immutable object execution](IxbyFlockPagedExecution.md#immutable-objects-and-application):
+    constructor fields, projection, cases, closures and partial/exact/excess/tail
+    application now use actual code, immutable allocations and authenticated
+    argument copies. A fresh 366,579-byte proof covers 144 microsteps and 37
+    logical transitions and rejects nine recomputed object/clock substitutions.
+    The native batch runner checks fixed operation/cell quotas before each step;
+    15-batch tests preserve pending copies, fuel, the final state and memory root.
 
 ## Next implementation gates
 

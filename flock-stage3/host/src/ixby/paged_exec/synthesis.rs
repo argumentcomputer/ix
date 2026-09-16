@@ -41,6 +41,9 @@ fn copy_output(
   }
 }
 pub(super) fn build(kind: MicroKind) -> BooleanR1csPlan {
+  if let MicroKind::Object(kind) = kind {
+    return objects::build(kind);
+  }
   let ni = kind.inputs();
   let no = kind.outputs();
   let mut b = Builder::new(16, (ni + no) * 128);
@@ -62,9 +65,10 @@ pub(super) fn build(kind: MicroKind) -> BooleanR1csPlan {
     bad.extend(1..128);
     let disabled = not(&mut b, one, enabled);
     let state = (0..STATE_WORDS).map(|i| word(1 + i)).collect::<Vec<_>>();
-    // The currently implemented chips have no suspended heap/byte operation.
-    for bits in &state[10..] {
-      require_zero(&mut b, one, &mut bad, enabled, bits);
+    if !matches!(kind, MicroKind::FrameRequest | MicroKind::Complete) {
+      for bits in &state[10..] {
+        require_zero(&mut b, one, &mut bad, enabled, bits);
+      }
     }
     for i in [HEAP_COUNT, BYTE_COUNT] {
       require_zero(&mut b, one, &mut bad, enabled, &state[i][37..]);
@@ -330,8 +334,11 @@ pub(super) fn build(kind: MicroKind) -> BooleanR1csPlan {
         }
         out[CONTROL] = vec![zero; 128];
         out[HEADER] = vec![zero; 128];
+        for value in &mut out[10..] {
+          *value = vec![zero; 128];
+        }
       },
-      MicroKind::Parameters => unreachable!(),
+      MicroKind::Parameters | MicroKind::Object(_) => unreachable!(),
     }
     // A frame request intentionally supplies a halted frame and initial fuel
     // for inactive rows. Every other output is canonical zero when disabled.
