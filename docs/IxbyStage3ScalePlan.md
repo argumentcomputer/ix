@@ -145,6 +145,13 @@ for execution-class design, not constrained execution or proving estimates.
     auditing. Fresh-process component proofs reject recomputed path, counter,
     routing and value substitutions. A 512-access depth-40 batch proved in
     417 ms after setup. Execution consumers and full-state integration remain.
+18. [Paged frame and code consumers](IxbyFlockPagedExecution.md): frame,
+    continuation, tail-call, over-application and copy transitions derive
+    actual memory addresses and bind 64-bit fuel. Fresh mixed component proofs
+    reject recomputed target, depth, value, caller and fuel substitutions.
+    Read-only code/operand/declaration consumers constrain full-width indices;
+    the native packed original CSLib image fits these consumers. Source-to-code
+    admission and full instruction/value/initialization integration remain.
 
 ## Next implementation gates
 

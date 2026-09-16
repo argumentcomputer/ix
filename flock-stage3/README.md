@@ -104,8 +104,12 @@ The root verifier checks every approved fixed-table family without the leaves.
 [Execution memory components](../docs/IxbyFlockMemory.md) now prove mutable
 cells, immutable allocation and ordered batches of reads/writes, with roots
 and full-width addresses constrained. A 512-access depth-40 batch proved in
-417 ms after setup and verified in a fresh process. The machine, code/input
-admission and global execution boundaries still need to consume these wires.
+417 ms after setup and verified in a fresh process. [Paged execution consumers](../docs/IxbyFlockPagedExecution.md)
+now connect frame/continuation transitions and fuel to those memory accesses,
+with fresh 309,235-byte component proofs. Constrained code/operand fetches
+and the full-program packed-code census also pass locally. Original code/input
+admission, instruction dispatch, primitives and complete execution boundaries
+still need integration.
 
 ```sh
 RAYON_NUM_THREADS=8 cargo test --release --locked --manifest-path flock-stage3/Cargo.toml --workspace conformance:: -- --ignored --test-threads=1

@@ -61,6 +61,11 @@ impl SparseMemory {
   pub fn empty_root(&self) -> [F128; 2] {
     words(self.empty[self.depth.bits()])
   }
+  /// Untrusted native advice without constructing an authentication path.
+  pub fn value(&self, address: u64) -> Result<[F128; 2]> {
+    ensure!(self.depth.admits(address), "memory address out of range");
+    Ok(self.cells.get(&address).copied().unwrap_or([F128::ZERO; 2]))
+  }
   fn node(&self, level: usize, index: u64) -> [u8; 32] {
     self.nodes.get(&(level, index)).copied().unwrap_or(self.empty[level])
   }

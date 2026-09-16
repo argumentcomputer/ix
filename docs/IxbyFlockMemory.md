@@ -3,8 +3,11 @@
 The Stage 3 backend now has constrained mutable 32-byte cells, immutable
 allocation, and an exact batched read/write relation. Real Flock component
 proofs verify in fresh processes. These components will supply execution
-memory; full instruction, frame, allocation and program-admission consumers
+memory; full instruction, allocation and program-admission consumers
 still need integration into the segmented execution relation.
+The [paged frame component](IxbyFlockPagedExecution.md) now consumes these
+memory wires for frame and continuation transitions, with separate real proof
+tests covering their joint wiring and fuel accounting.
 
 ## Cell authentication and allocation
 
