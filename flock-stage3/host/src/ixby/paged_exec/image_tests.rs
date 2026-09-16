@@ -534,3 +534,57 @@ fn original_1024_execution_segment_proves_fresh() {
     || original_boolean_advice(BatchClass::Shared1024),
   );
 }
+
+#[test]
+#[ignore = "original artifacts; packed routing proof, recomputed clock attacks and fresh receiver"]
+fn original_compact_packed_execution_segment_proves_fresh() {
+  proof_tests::original_proof_test(
+    BatchClass::SharedCompactPacked,
+    "ixby::paged_exec::image_tests::original_compact_packed_execution_segment_proves_fresh",
+    || original_boolean_advice(BatchClass::SharedCompactPacked),
+  );
+}
+
+#[test]
+#[ignore = "original artifacts; packed 1,024-fetch proof, recomputed clock attacks and fresh receiver"]
+fn original_packed_1024_execution_segment_proves_fresh() {
+  proof_tests::original_proof_test(
+    BatchClass::SharedPacked1024,
+    "ixby::paged_exec::image_tests::original_packed_1024_execution_segment_proves_fresh",
+    || original_boolean_advice(BatchClass::SharedPacked1024),
+  );
+}
+
+#[test]
+fn packed_state_layout_covers_instruction_object_byte_and_hash_states() {
+  use crate::ixby::memory_log::RecordPackingGate;
+  use flock_prover::circuit::builder::GateType;
+  let layout = batch::state_record_layout();
+  assert_eq!((layout.words(), layout.packed_words()), (26, 15));
+  let pack = RecordPackingGate::new(3, layout.clone(), false).unwrap();
+  let unpack = RecordPackingGate::new(3, layout, true).unwrap();
+  for fixture in [
+    tests::fixture,
+    object_tests::fixture,
+    byte_tests::fixture,
+    byte_tests::hash_fixture,
+  ] {
+    let (_, rows) = fixture();
+    assert!(!rows.is_empty());
+    for row in rows {
+      for state in [row.before, row.after] {
+        let record =
+          [vec![F128::new(row.clock, 0), F128::ONE], state.to_vec()].concat();
+        let mut packed = Vec::new();
+        pack.eval(&record, &(), &mut packed);
+        let mut full = Vec::new();
+        unpack.eval(&packed, &(), &mut full);
+        assert_eq!(
+          full, record,
+          "packing changed {:?} at clock {}",
+          row.chip, row.clock
+        );
+      }
+    }
+  }
+}

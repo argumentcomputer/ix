@@ -68,6 +68,8 @@ fn class(name: &str) -> Result<BatchClass> {
     "shared-compact-boolean" => BatchClass::SharedCompactBoolean,
     "shared-boolean" => BatchClass::SharedBoolean,
     "shared-1024" => BatchClass::Shared1024,
+    "shared-compact-packed" => BatchClass::SharedCompactPacked,
+    "shared-packed-1024" => BatchClass::SharedPacked1024,
     _ => anyhow::bail!("unknown execution class {name}"),
   })
 }

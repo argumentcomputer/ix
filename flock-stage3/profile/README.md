@@ -67,3 +67,14 @@ complete small proof and its dirty-buffer regression. The separate
 [complete countdown record](../../flock-stage4/census/paged-execution-countdown-1024-v0.json)
 records successful full proving and fresh verification with the final class.
 Complete original CSLib execution remains unproved.
+
+The [packed execution record](cslib-packed-execution-v0.json) measures exact
+bit packing around the existing Boolean routing networks. It records 72
+verified benchmark proofs, a controlled 24.1% throughput improvement and
+27.1% lower peak memory at eight workers, and a 415.918-step/second sample
+with sixteen workers. The record includes the exact packing masks, 26.4%
+smaller useful witness, fresh leaf receivers, two recursive levels and their
+114 public-word rejections. The
+[packed countdown record](../../flock-stage4/census/paged-execution-countdown-packed-v0.json)
+records the complete small fixture separately. These measurements do not
+establish a complete CSLib proving rate.

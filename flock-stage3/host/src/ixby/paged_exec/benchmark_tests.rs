@@ -48,6 +48,8 @@ fn original_execution_proof_throughput() {
     Ok("shared-compact-boolean") => BatchClass::SharedCompactBoolean,
     Ok("shared-boolean") => BatchClass::SharedBoolean,
     Ok("shared-1024") => BatchClass::Shared1024,
+    Ok("shared-compact-packed") => BatchClass::SharedCompactPacked,
+    Ok("shared-packed-1024") => BatchClass::SharedPacked1024,
     _ => panic!("IXBY_PAGED_NATIVE_CLASS must be shared or shared-compact"),
   };
   let out = std::env::var_os("IXBY_PROOF_OUT").map(std::path::PathBuf::from);

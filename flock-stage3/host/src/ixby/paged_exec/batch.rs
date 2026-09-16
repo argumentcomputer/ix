@@ -10,8 +10,8 @@ use crate::{
     },
     io::{InputLayout, LayoutEmitter, PublicLayout},
     memory_log::{
-      BoundaryWires, MemoryBatchAdvice, MemoryLogSlots, RoutingKind,
-      TimedAccessWires, TimedMemoryLogSlots,
+      BoundaryWires, MemoryBatchAdvice, MemoryLogSlots, RecordLayout,
+      RoutingKind, TimedAccessWires, TimedMemoryLogSlots,
     },
   },
   sizing::CircuitEmitter,
@@ -30,6 +30,8 @@ pub enum BatchClass {
   SharedBoolean,
   /// 1,024 fetch slots, with separate bounds for other instruction families.
   Shared1024,
+  SharedCompactPacked,
+  SharedPacked1024,
 }
 impl BatchClass {
   pub fn transcript_domain(self) -> &'static [u8] {
@@ -45,6 +47,12 @@ impl BatchClass {
       },
       Self::SharedBoolean => b"IxBy/Flock/paged-execution:shared-boolean:v0",
       Self::Shared1024 => b"IxBy/Flock/paged-execution:shared-1024:v0",
+      Self::SharedCompactPacked => {
+        b"IxBy/Flock/paged-execution:shared-compact-packed:v0"
+      },
+      Self::SharedPacked1024 => {
+        b"IxBy/Flock/paged-execution:shared-packed-1024:v0"
+      },
     }
   }
   pub fn quotas(self) -> [usize; 24] {
@@ -56,13 +64,16 @@ impl BatchClass {
         24, 40, 8, 16, 2, 32, 4, 8, 8, 4, 4, 12, 48, 32, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0,
       ],
-      Self::Compact | Self::SharedCompact | Self::SharedCompactBoolean => {
+      Self::Compact
+      | Self::SharedCompact
+      | Self::SharedCompactBoolean
+      | Self::SharedCompactPacked => {
         [2, 4, 1, 2, 1, 3, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]
       },
       Self::Shared | Self::SharedBoolean => {
         Self::SharedCompact.quotas().map(|quota| quota * 16)
       },
-      Self::Shared1024 => [
+      Self::Shared1024 | Self::SharedPacked1024 => [
         1024, 2048, 384, 512, 256, 1024, 128, 64, 64, 256, 256, 256, 768, 512,
         32, 64, 64, 64, 32, 64, 64, 64, 64, 64,
       ],
@@ -76,9 +87,12 @@ impl BatchClass {
     match self {
       Self::Small => 24,
       Self::Objects => 96,
-      Self::Compact | Self::SharedCompact | Self::SharedCompactBoolean => 16,
+      Self::Compact
+      | Self::SharedCompact
+      | Self::SharedCompactBoolean
+      | Self::SharedCompactPacked => 16,
       Self::Shared | Self::SharedBoolean => 256,
-      Self::Shared1024 => 2048,
+      Self::Shared1024 | Self::SharedPacked1024 => 2048,
       Self::Bytes => 96,
     }
   }
@@ -88,9 +102,11 @@ impl BatchClass {
       Self::Objects => 13,
       Self::Compact => 11,
       Self::Bytes => 13,
-      Self::SharedCompact | Self::SharedCompactBoolean => 10,
+      Self::SharedCompact
+      | Self::SharedCompactBoolean
+      | Self::SharedCompactPacked => 10,
       Self::Shared | Self::SharedBoolean => 13,
-      Self::Shared1024 => 15,
+      Self::Shared1024 | Self::SharedPacked1024 => 15,
     }
   }
   pub fn transitions(self) -> usize {
@@ -98,13 +114,15 @@ impl BatchClass {
   }
   pub fn shared_memory(self) -> Option<MultiCapacity> {
     match self {
-      Self::SharedCompact | Self::SharedCompactBoolean => {
+      Self::SharedCompact
+      | Self::SharedCompactBoolean
+      | Self::SharedCompactPacked => {
         Some(MultiCapacity::new(self.cells(), 192).unwrap())
       },
       Self::Shared | Self::SharedBoolean => {
         Some(MultiCapacity::new(self.cells(), 3_072).unwrap())
       },
-      Self::Shared1024 => {
+      Self::Shared1024 | Self::SharedPacked1024 => {
         Some(MultiCapacity::new(self.cells(), 8_191).unwrap())
       },
       _ => None,
@@ -123,9 +141,33 @@ impl BatchClass {
       Self::SharedCompactBoolean | Self::SharedBoolean | Self::Shared1024 => {
         RoutingKind::Boolean
       },
+      Self::SharedCompactPacked | Self::SharedPacked1024 => {
+        RoutingKind::BooleanPacked
+      },
       _ => RoutingKind::Element,
     }
   }
+}
+/// Canonical paged machine state: the layout preserves every active bit of
+/// each register, including complete value/hash words. The packing gate
+/// constrains every omitted bit, including the three reserved state words.
+pub(super) fn state_record_layout() -> RecordLayout {
+  let mut masks = [
+    64, 3, // Clock and record kind.
+    88, 64, 128, 128, 72, // Frame.
+    128, 37, 37, 25,
+    128, // Fuel budget and usage, heap/byte counts, control, instruction.
+    128, 128, 128, 128,
+    72, // Pending frame or byte results/ranges/position.
+    72, 72, 128, 128, 27, 65, 0, 0, 0,
+  ]
+  .map(RecordLayout::low_bits)
+  .to_vec();
+  // The frame header reserves bits 40..48 between locals and depth.
+  masks[2] &= !(RecordLayout::low_bits(8) << 40);
+  // BLAKE3 merge level in bits 0..8, final-chunk flag in bit 64.
+  masks[2 + 20] = RecordLayout::low_bits(8) | (1 << 64);
+  RecordLayout::new(masks).unwrap()
 }
 pub struct BatchEmission {
   pub class: BatchClass,
@@ -150,11 +192,12 @@ pub fn emit_batch(
   )?;
   let execution =
     ExecutionSlots::declare(&mut b, nu, memory.log().memory().compression())?;
-  let order = StateChainSlots::declare_with_routing(
+  let order = StateChainSlots::declare_with_record_layout(
     &mut b,
     nu,
     STATE_WORDS,
     class.routing(),
+    (class.routing() == RoutingKind::BooleanPacked).then(state_record_layout),
   )?;
   let tree = class
     .shared_memory()

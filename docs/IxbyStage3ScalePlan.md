@@ -226,6 +226,19 @@ current-status section below.
     502,979-byte root accepted from only the approved setup, expected digest
     and root proof. A dirty-buffer regression covers the padding bug found
     while composing large execution and small commitment proofs.
+27. [Exact record packing](IxbyFlockPagedExecution.md#exact-packing-of-routing-records):
+    two new classes constrain unused record bits to zero, pack before the
+    existing switching networks and unpack before the same audits. State
+    records shrink from 26 field words to 15, memory records from five to
+    three, and tree records from six to five. The larger class uses 26.4%
+    less useful witness data and 11.7% smaller leaves. Paired eight-worker
+    throughput rises from 278.091 to 345.213 logical steps/second with 27.1%
+    less peak RSS. A 32-batch, sixteen-worker sample reaches 415.918 steps/second.
+    Both packed classes pass genuine CSLib proofs and fresh verification;
+    three larger leaves compose through two recursive levels and reject
+    nonadjacent segments and 114 changed public statements.
+    The complete 83-step countdown produces a 509,475-byte root accepted
+    independently from the approved profile, expected digest and proof.
 
 ## Current integration and next measurements
 
@@ -236,8 +249,8 @@ aggregate and conditional execution-segment proofs. **The complete
 show a substantial improvement from the original Shared layout, but do not
 yet establish a practical full-run budget. The 1,024-Fetch class reduces the
 quota-based floor from 61 million to 1.91 million execution leaves against
-the recorded reference profile. At its measured leaf size this still implies
-at least 1.17 TB before recursive nodes; other instruction and memory quotas
+the recorded reference profile. At the packed leaf size this still implies
+at least 1.03 TB before recursive nodes; other instruction and memory quotas
 can require additional leaves. Short-window rates are not complete-run
 measurements and exclude native replay, admission, output and aggregation.
 
@@ -248,9 +261,10 @@ These are separate, explicit factories from the retained 64-step legacy Exec
 classes. The original binary, functional limits, input and canonical output
 remain bound by admission, initialization, finalization and commitments.
 
-1. **Further reduce ordering and instruction-family costs.** Boolean routing
-   and the 1,024-Fetch class are implemented and measured. The exact switching
-   networks still occupy 81.2% of the larger class's useful field data. A
+1. **Further reduce ordering and instruction-family costs.** Boolean routing,
+   exact record packing and the 1,024-Fetch classes are implemented and
+   measured. The exact switching networks still occupy 69.1% of the packed
+   class's useful field data. A
    smaller consistency argument and workload-specific classes remain the next
    targets. ByteStart/ByteFinish or Resume quotas already end some measured
    batches before their Fetch quota fills. Preserve complete state, memory

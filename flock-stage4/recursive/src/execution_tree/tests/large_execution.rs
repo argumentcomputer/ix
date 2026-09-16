@@ -1,4 +1,4 @@
-//! Recurse over actual CSLib execution proofs made with Boolean routing.
+//! Recurse over actual CSLib execution proofs with either Boolean layout.
 use super::*;
 use ixby_flock::{hash::pack_bytes, ixby::paged_exec::ExecutionStatement};
 use std::{
@@ -9,9 +9,10 @@ use std::{
 };
 
 const TEST: &str = "execution_tree::tests::large_execution::original_1024_execution_chain_proves_fresh";
+const PACKED_TEST: &str = "execution_tree::tests::large_execution::original_packed_1024_execution_chain_proves_fresh";
 const CHILD: &str = "IXBY_LARGE_EXECUTION_CHAIN_RECEIVER";
 
-fn compiler() -> PagedTreeCompiler {
+fn compiler(class: BatchClass) -> PagedTreeCompiler {
   // Approved original CSLib functional limits, fixed before any proof read.
   let profile = FunctionalProfile::new(
     [65536, 4096, 65536, 8192, 1024, 65536, 65536, 4096, 65536, 16777216],
@@ -20,7 +21,7 @@ fn compiler() -> PagedTreeCompiler {
   .unwrap();
   let mut counts = [1; 11];
   counts[Component::Execution as usize] = 3;
-  PagedTreeCompiler::new(profile, BatchClass::Shared1024, counts).unwrap()
+  PagedTreeCompiler::new(profile, class, counts).unwrap()
 }
 
 fn read(path: &Path, limit: u64) -> Vec<u8> {
@@ -76,7 +77,17 @@ fn save(name: &str, proof: &PagedNodeProof) {
 #[test]
 #[ignore = "requires three original 1,024-fetch execution proofs; two recursive levels, boundary attacks, fresh receiver"]
 fn original_1024_execution_chain_proves_fresh() {
-  let mut compiler = compiler();
+  proof_chain(BatchClass::Shared1024, TEST);
+}
+
+#[test]
+#[ignore = "requires three original packed 1,024-fetch proofs; two recursive levels, boundary attacks, fresh receiver"]
+fn original_packed_1024_execution_chain_proves_fresh() {
+  proof_chain(BatchClass::SharedPacked1024, PACKED_TEST);
+}
+
+fn proof_chain(class: BatchClass, test: &str) {
+  let mut compiler = compiler(class);
   if std::env::var_os(CHILD).is_some() {
     let node = compiler.compile_component(Component::Execution, 3).unwrap();
     let mut bytes = Vec::new();
@@ -170,7 +181,7 @@ fn original_1024_execution_chain_proves_fresh() {
   drop(leaves);
   drop(first);
   let mut child = Command::new(std::env::current_exe().unwrap())
-    .args([TEST, "--ignored", "--exact", "--nocapture", "--test-threads=1"])
+    .args([test, "--ignored", "--exact", "--nocapture", "--test-threads=1"])
     .current_dir(std::env::temp_dir())
     .env_clear()
     .env(CHILD, "1")

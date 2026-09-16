@@ -5,6 +5,7 @@
 
 mod audit;
 mod boolean_switch;
+mod packing;
 mod permutation;
 #[cfg(test)]
 mod proof_tests;
@@ -19,6 +20,7 @@ pub use audit::{
   AuditGate, AuditRow, PAD, READ, RECORD_WORDS, SEAL, SEED, WRITE,
 };
 pub use boolean_switch::{BooleanSwitchGate, BooleanSwitchRow};
+pub use packing::{RecordLayout, RecordPackingGate, RecordPackingRow};
 pub use permutation::{PermutationPlan, PermutationSlots, RoutingKind};
 pub use slots::{AccessWires, BoundaryWires, MemoryLogSlots};
 pub use switch::{SwitchGate, SwitchRow};

@@ -132,12 +132,22 @@ impl MultiMemorySlots {
       depth,
       gates,
       compression: compression.clone(),
-      permutation: PermutationSlots::declare_with_routing(
-        b,
-        nu,
-        CLAIM_WORDS,
-        routing,
-      )?,
+      permutation: if routing == RoutingKind::BooleanPacked {
+        use crate::ixby::memory_log::RecordLayout;
+        let position = RecordLayout::low_bits(7)
+          | (RecordLayout::low_bits(depth.bits()) << 64);
+        let layout = RecordLayout::new(vec![
+          1,
+          position,
+          u128::MAX,
+          u128::MAX,
+          u128::MAX,
+          u128::MAX,
+        ])?;
+        PermutationSlots::declare_packed(b, nu, layout)?
+      } else {
+        PermutationSlots::declare_with_routing(b, nu, CLAIM_WORDS, routing)?
+      },
       zero: b.fixed_public_input(F128::ZERO),
       one: b.fixed_public_input(F128::ONE),
       root_position: b.fixed_public_input(F128::new(depth.bits() as u64, 0)),

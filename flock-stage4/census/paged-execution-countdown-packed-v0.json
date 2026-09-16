@@ -1,0 +1,588 @@
+{
+  "format": "IxBy/packed-execution-complete-countdown/v0",
+  "date_utc": "2026-09-16",
+  "source_base_commit": "a3d93d3d9bc6c46e67fc7660ee0b679934b7cd99",
+  "class": "SharedPacked1024",
+  "cli_class": "shared-packed-1024",
+  "scope": "Complete original-format 83-logical-step countdown. This is a correctness fixture, not the full CSLib proof or a controlled whole-pipeline speed comparison.",
+  "reference_record": "paged-execution-countdown-1024-v0.json",
+  "reference_record_sha256": "8fb23bab07c37999f3186b6bcb5d9696d10d0d5651ccd636c5ae80d1cc1faf09",
+  "reference_artifacts": {
+    "profile_limits": [
+      1,
+      0,
+      3,
+      3,
+      2,
+      0,
+      8,
+      4096,
+      64,
+      64
+    ],
+    "fuel": 83,
+    "artifact_bytes": {
+      "program": 47,
+      "input": 53,
+      "output": 49,
+      "payload": 34
+    },
+    "program_sha256": "8b1addfffd26467722c05e4642ca2a1be872650e42fdc0e2fceee5f734ede594",
+    "input_sha256": "5450fadc341693c9986606dd3064ee79bb5a39d44768dd77af2a51f57236e296",
+    "output_sha256": "8c4aab081d536a3a69059b040ff68e79bead32a6a9c9938c34be39121cf4a7f7",
+    "profile_sha256": "672ceb9d1f0f454504ea181b588b2d5b77d91475c18c70fea4d4e489588e0707",
+    "independent_reference": {
+      "transitions": 83,
+      "output_matches": true,
+      "binary_sha256": "d17f50b7d7b343ffa7e5c0c6b23c6e433987e971acb7e94539ee4d7503e76cfa"
+    },
+    "fixture_generator": "flock-stage4/fixtures/paged-execution-countdown.py"
+  },
+  "expected_statement_hex": "4443003345bdface108d630d9b5f665e9d99f0957316c88766e9b241d70940f1",
+  "profile": {
+    "bytes": 184,
+    "sha256": "672ceb9d1f0f454504ea181b588b2d5b77d91475c18c70fea4d4e489588e0707"
+  },
+  "root": {
+    "bytes": 509475,
+    "sha256": "5d58ced2e8d84d418e4b7242539b0994e6b877e25d1c7f6e05fefc7822e585fa"
+  },
+  "component_counts": [
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1
+  ],
+  "setup_identity": "626d4db3871fc8495b7e3cd2d21d4d5244325db8d5b5b4f2911cc85af958be7e",
+  "geometry": {
+    "application_words": 2,
+    "arithmetic_operations": 907110,
+    "blake3_compressions": 44051,
+    "children": [
+      11,
+      1
+    ],
+    "dense_variables": 31,
+    "leaves": 12,
+    "packing_rows": 52020,
+    "root_advice_words": 10515,
+    "root_families": 333,
+    "row_variables": 16,
+    "variables": 4793576
+  },
+  "complete_prove_command_seconds": 642.408597818,
+  "leaf_generation_and_proving_seconds": 82.631290288,
+  "final_verification_seconds_in_prover": 17.790950285,
+  "fresh_setup_seconds": 166.355117995,
+  "fresh_verification_seconds": 19.984702769,
+  "prover_events": [
+    {
+      "bytes": 393532,
+      "event": "proved",
+      "name": "leaves/00/0000000/0000000000",
+      "seconds": 0.399664096
+    },
+    {
+      "bytes": 452899,
+      "event": "proved",
+      "name": "leaves/01/0000000/0000000000",
+      "seconds": 0.824484881
+    },
+    {
+      "bytes": 335443,
+      "event": "proved",
+      "name": "leaves/02/0000000/0000000000",
+      "seconds": 0.371258517
+    },
+    {
+      "bytes": 298019,
+      "event": "proved",
+      "name": "leaves/03/0000000/0000000000",
+      "seconds": 0.624273126
+    },
+    {
+      "bytes": 393532,
+      "event": "proved",
+      "name": "leaves/04/0000000/0000000000",
+      "seconds": 0.335856435
+    },
+    {
+      "bytes": 452891,
+      "event": "proved",
+      "name": "leaves/05/0000000/0000000000",
+      "seconds": 0.787190934
+    },
+    {
+      "bytes": 540251,
+      "event": "proved",
+      "name": "leaves/06/0000000/0000000000",
+      "seconds": 12.948739592
+    },
+    {
+      "bytes": 351259,
+      "event": "proved",
+      "name": "leaves/07/0000000/0000000000",
+      "seconds": 0.404514667
+    },
+    {
+      "bytes": 282612,
+      "event": "proved",
+      "name": "leaves/08/0000000/0000000000",
+      "seconds": 0.301394797
+    },
+    {
+      "bytes": 282612,
+      "event": "proved",
+      "name": "leaves/09/0000000/0000000000",
+      "seconds": 0.304929758
+    },
+    {
+      "bytes": 282612,
+      "event": "proved",
+      "name": "leaves/10/0000000/0000000000",
+      "seconds": 0.304153426
+    },
+    {
+      "bytes": 132891,
+      "event": "proved",
+      "name": "endpoints",
+      "seconds": 0.278991579
+    },
+    {
+      "event": "complete_setup",
+      "geometry": {
+        "application_words": 2,
+        "arithmetic_operations": 907110,
+        "blake3_compressions": 44051,
+        "children": [
+          11,
+          1
+        ],
+        "dense_variables": 31,
+        "leaves": 12,
+        "packing_rows": 52020,
+        "root_advice_words": 10515,
+        "root_families": 333,
+        "row_variables": 16,
+        "variables": 4793576
+      },
+      "identity": "626d4db3871fc8495b7e3cd2d21d4d5244325db8d5b5b4f2911cc85af958be7e",
+      "seconds": 163.635798341
+    },
+    {
+      "event": "facts_setup",
+      "geometry": {
+        "application_words": 90,
+        "arithmetic_operations": 893421,
+        "blake3_compressions": 32473,
+        "children": [
+          1,
+          1
+        ],
+        "dense_variables": 31,
+        "leaves": 2,
+        "packing_rows": 30620,
+        "root_advice_words": 2885,
+        "root_families": 98,
+        "row_variables": 15,
+        "variables": 2768832
+      },
+      "name": "facts-00-02",
+      "seconds": 7.421379114
+    },
+    {
+      "bytes": 357707,
+      "event": "proved",
+      "name": "facts-00-02",
+      "seconds": 6.560408794
+    },
+    {
+      "event": "facts_setup",
+      "geometry": {
+        "application_words": 14,
+        "arithmetic_operations": 838896,
+        "blake3_compressions": 21453,
+        "children": [
+          1,
+          1
+        ],
+        "dense_variables": 31,
+        "leaves": 2,
+        "packing_rows": 25279,
+        "root_advice_words": 769,
+        "root_families": 26,
+        "row_variables": 15,
+        "variables": 2102762
+      },
+      "name": "facts-02-04",
+      "seconds": 6.657527581
+    },
+    {
+      "bytes": 308619,
+      "event": "proved",
+      "name": "facts-02-04",
+      "seconds": 5.025991932
+    },
+    {
+      "event": "facts_setup",
+      "geometry": {
+        "application_words": 104,
+        "arithmetic_operations": 899180,
+        "blake3_compressions": 28366,
+        "children": [
+          2,
+          2
+        ],
+        "dense_variables": 31,
+        "leaves": 4,
+        "packing_rows": 28734,
+        "root_advice_words": 3408,
+        "root_families": 112,
+        "row_variables": 15,
+        "variables": 2779664
+      },
+      "name": "facts-00-04",
+      "seconds": 6.974392541
+    },
+    {
+      "bytes": 362267,
+      "event": "proved",
+      "name": "facts-00-04",
+      "seconds": 16.288668432
+    },
+    {
+      "event": "facts_setup",
+      "geometry": {
+        "application_words": 86,
+        "arithmetic_operations": 892146,
+        "blake3_compressions": 32307,
+        "children": [
+          1,
+          1
+        ],
+        "dense_variables": 31,
+        "leaves": 2,
+        "packing_rows": 30435,
+        "root_advice_words": 2827,
+        "root_families": 96,
+        "row_variables": 15,
+        "variables": 2750761
+      },
+      "name": "facts-04-06",
+      "seconds": 7.114491007
+    },
+    {
+      "bytes": 356779,
+      "event": "proved",
+      "name": "facts-04-06",
+      "seconds": 6.314580798
+    },
+    {
+      "event": "facts_setup",
+      "geometry": {
+        "application_words": 66,
+        "arithmetic_operations": 1287416,
+        "blake3_compressions": 52438,
+        "children": [
+          1,
+          1
+        ],
+        "dense_variables": 31,
+        "leaves": 2,
+        "packing_rows": 41167,
+        "root_advice_words": 5399,
+        "root_families": 175,
+        "row_variables": 16,
+        "variables": 4084493
+      },
+      "name": "facts-06-08",
+      "seconds": 8.703036623
+    },
+    {
+      "bytes": 437131,
+      "event": "proved",
+      "name": "facts-06-08",
+      "seconds": 27.329518886
+    },
+    {
+      "event": "facts_setup",
+      "geometry": {
+        "application_words": 152,
+        "arithmetic_operations": 995429,
+        "blake3_compressions": 41383,
+        "children": [
+          2,
+          2
+        ],
+        "dense_variables": 31,
+        "leaves": 4,
+        "packing_rows": 42350,
+        "root_advice_words": 7692,
+        "root_families": 248,
+        "row_variables": 16,
+        "variables": 4119693
+      },
+      "name": "facts-04-08",
+      "seconds": 8.288257058
+    },
+    {
+      "bytes": 456691,
+      "event": "proved",
+      "name": "facts-04-08",
+      "seconds": 34.893692194
+    },
+    {
+      "event": "facts_setup",
+      "geometry": {
+        "application_words": 256,
+        "arithmetic_operations": 1088299,
+        "blake3_compressions": 46377,
+        "children": [
+          4,
+          4
+        ],
+        "dense_variables": 31,
+        "leaves": 8,
+        "packing_rows": 45955,
+        "root_advice_words": 8842,
+        "root_families": 279,
+        "row_variables": 16,
+        "variables": 4554124
+      },
+      "name": "facts-00-08",
+      "seconds": 8.450710859
+    },
+    {
+      "bytes": 484611,
+      "event": "proved",
+      "name": "facts-00-08",
+      "seconds": 51.67070665
+    },
+    {
+      "event": "facts_setup",
+      "geometry": {
+        "application_words": 18,
+        "arithmetic_operations": 570237,
+        "blake3_compressions": 16531,
+        "children": [
+          1,
+          1
+        ],
+        "dense_variables": 30,
+        "leaves": 2,
+        "packing_rows": 22574,
+        "root_advice_words": 751,
+        "root_families": 25,
+        "row_variables": 15,
+        "variables": 1697503
+      },
+      "name": "facts-08-10",
+      "seconds": 6.113316227
+    },
+    {
+      "bytes": 322251,
+      "event": "proved",
+      "name": "facts-08-10",
+      "seconds": 4.087619963
+    },
+    {
+      "event": "facts_setup",
+      "geometry": {
+        "application_words": 27,
+        "arithmetic_operations": 705547,
+        "blake3_compressions": 18683,
+        "children": [
+          2,
+          1
+        ],
+        "dense_variables": 30,
+        "leaves": 3,
+        "packing_rows": 21494,
+        "root_advice_words": 942,
+        "root_families": 30,
+        "row_variables": 15,
+        "variables": 1859520
+      },
+      "name": "facts-08-11",
+      "seconds": 6.699592449
+    },
+    {
+      "bytes": 336731,
+      "event": "proved",
+      "name": "facts-08-11",
+      "seconds": 9.755433973
+    },
+    {
+      "event": "facts_setup",
+      "geometry": {
+        "application_words": 283,
+        "arithmetic_operations": 1054971,
+        "blake3_compressions": 46586,
+        "children": [
+          8,
+          3
+        ],
+        "dense_variables": 31,
+        "leaves": 11,
+        "packing_rows": 48043,
+        "root_advice_words": 9683,
+        "root_families": 303,
+        "row_variables": 16,
+        "variables": 4727676
+      },
+      "name": "facts-00-11",
+      "seconds": 8.799023228
+    },
+    {
+      "bytes": 499971,
+      "event": "proved",
+      "name": "facts-00-11",
+      "seconds": 63.57272615
+    },
+    {
+      "bytes": 509475,
+      "event": "proved",
+      "name": "root",
+      "seconds": 67.535372337
+    },
+    {
+      "elapsed_seconds": 642.408597818,
+      "execution": {
+        "accepted": true,
+        "claim": "complete original-format paged execution",
+        "counts": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "elapsed_seconds": 559.663078973,
+        "geometry": {
+          "application_words": 2,
+          "arithmetic_operations": 907110,
+          "blake3_compressions": 44051,
+          "children": [
+            11,
+            1
+          ],
+          "dense_variables": 31,
+          "leaves": 12,
+          "packing_rows": 52020,
+          "root_advice_words": 10515,
+          "root_families": 333,
+          "row_variables": 16,
+          "variables": 4793576
+        },
+        "identity": "626d4db3871fc8495b7e3cd2d21d4d5244325db8d5b5b4f2911cc85af958be7e",
+        "proof_bytes": 509475,
+        "verification_seconds": 17.790950285
+      },
+      "leaves": {
+        "class": "shared-packed-1024",
+        "counts": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "elapsed_seconds": 82.631290288,
+        "statement": "countdown-packed-proof/expected.statement"
+      }
+    }
+  ],
+  "receiver_events": [
+    {
+      "accepted": true,
+      "claim": "complete original-format paged execution",
+      "counts": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "identity": "626d4db3871fc8495b7e3cd2d21d4d5244325db8d5b5b4f2911cc85af958be7e",
+      "proof_bytes": 509475,
+      "setup_seconds": 166.355117995,
+      "verification_seconds": 19.984702769
+    }
+  ],
+  "proving_timing": {
+    "receipt_sha256": "f0bbe49931c255fb7a6334a221b72471ec7b6f254f3499cb703dd403b1c9866d",
+    "user_seconds": 766.28,
+    "system_seconds": 74.42,
+    "cpu_percent": 129,
+    "peak_rss_kib": 74210448,
+    "exit_status": 0,
+    "wall_seconds": 650.55,
+    "peak_rss_gib": 70.77259826660156
+  },
+  "fresh_receiver_timing": {
+    "receipt_sha256": "12c3ff2383670f5e1e42b703d73eef282e1a652b5da770dd348d2f4bb2944303",
+    "user_seconds": 163.4,
+    "system_seconds": 27.14,
+    "cpu_percent": 100,
+    "peak_rss_kib": 61585976,
+    "exit_status": 0,
+    "wall_seconds": 190.32,
+    "peak_rss_gib": 58.73296356201172
+  },
+  "fresh_receiver_files": [
+    "profile.ixfp",
+    "expected.statement",
+    "root.flock"
+  ],
+  "fresh_receiver_environment": "env -i; class and all eleven counts explicitly approved before proof read",
+  "cli_binary": {
+    "bytes": 20297376,
+    "sha256": "ab8e100e1124e0df9b180b024f207ebf6da943f5e801914dd96bfce60080841b"
+  },
+  "execution_statement": {
+    "sha256": "1a392549b1ab898b111bfc6d4b2c76a5c8ba199a20635e42b8b344d2f3c0e1c6",
+    "clock": [
+      0,
+      367
+    ],
+    "logical_fuel": [
+      0,
+      83
+    ],
+    "heap_fields": [
+      0,
+      0
+    ],
+    "byte_cells": [
+      0,
+      0
+    ]
+  },
+  "prover_log_sha256": "f83f3d72e8b699ec25c03b6e1f9557336fd9511eeb76cf2709276bea9a01aee6",
+  "receiver_log_sha256": "b869a80ded36c07284f9d92545bccc1a8f6d0815dd7a3e77ce880866a59d8072"
+}

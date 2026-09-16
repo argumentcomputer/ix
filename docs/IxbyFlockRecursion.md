@@ -237,9 +237,17 @@ limited to 16 MiB by the current source classes. The output argument supplies
 the original canonical IXFO bytes; the proof binds these to the returned Bytes
 value. The currently supported execution classes are `small`, `objects`,
 `compact`, `bytes`, `shared-compact`, `shared`, `shared-compact-boolean`,
-`shared-boolean` and `shared-1024`. The last three use Boolean routing and
-separate approved setups; `shared-1024` has 1,024 Fetch slots. See the
-[larger-class implementation and measurements](IxbyFlockPagedExecution.md#boolean-routing-and-the-1024-fetch-class).
+`shared-boolean`, `shared-1024`, `shared-compact-packed` and
+`shared-packed-1024`. The last five use Boolean routing and separate approved
+setups; both 1,024 classes have 1,024 Fetch slots. The packed classes also
+constrain and remove unused record bits before routing. See the
+[larger-class implementation and measurements](IxbyFlockPagedExecution.md#boolean-routing-and-the-1024-fetch-class)
+and [exact record packing](IxbyFlockPagedExecution.md#exact-packing-of-routing-records).
+The packed 1,024 class passes two recursive levels over three genuine CSLib
+leaves, including a fresh receiver and 114 public-word mutations. It also
+produces a complete 509,475-byte countdown root accepted from the approved
+profile, expected digest and proof; see the
+[packed countdown record](../flock-stage4/census/paged-execution-countdown-packed-v0.json).
 The complete original CSLib execution remains unproved.
 
 ```sh

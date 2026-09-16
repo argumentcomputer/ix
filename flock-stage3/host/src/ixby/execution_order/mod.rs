@@ -8,7 +8,9 @@ mod synthesis;
 mod tests;
 
 use crate::{
-  ixby::memory_log::{PermutationPlan, PermutationSlots, RoutingKind},
+  ixby::memory_log::{
+    PermutationPlan, PermutationSlots, RecordLayout, RoutingKind,
+  },
   sizing::CircuitEmitter,
 };
 use anyhow::{Result, ensure};
@@ -59,6 +61,15 @@ impl StateChainSlots {
     words: usize,
     routing: RoutingKind,
   ) -> Result<Self> {
+    Self::declare_with_record_layout(b, nu, words, routing, None)
+  }
+  pub fn declare_with_record_layout(
+    b: &mut impl CircuitEmitter,
+    nu: usize,
+    words: usize,
+    routing: RoutingKind,
+    layout: Option<RecordLayout>,
+  ) -> Result<Self> {
     ensure!((1..=30).contains(&words), "state chain word capacity");
     let prepare = OrderGate::new(nu, OrderKind::Prepare(words))?;
     let audit = OrderGate::new(nu, OrderKind::Audit(words))?;
@@ -66,12 +77,15 @@ impl StateChainSlots {
       words,
       prepare: (b.slot(prepare.clone()), prepare),
       audit: (b.slot(audit.clone()), audit),
-      permutation: PermutationSlots::declare_with_routing(
-        b,
-        nu,
-        words + 2,
-        routing,
-      )?,
+      permutation: if let Some(layout) = layout {
+        ensure!(
+          routing == RoutingKind::BooleanPacked && layout.words() == words + 2,
+          "state record packing layout"
+        );
+        PermutationSlots::declare_packed(b, nu, layout)?
+      } else {
+        PermutationSlots::declare_with_routing(b, nu, words + 2, routing)?
+      },
       kinds: std::array::from_fn(|i| {
         b.fixed_public_input(F128::new(i as u64, 0))
       }),

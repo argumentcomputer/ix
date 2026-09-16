@@ -1,4 +1,7 @@
-use super::{BooleanSwitchGate, SwitchGate, switch::SWITCHES_PER_ROW};
+use super::{
+  BooleanSwitchGate, RecordLayout, RecordPackingGate, SwitchGate,
+  switch::SWITCHES_PER_ROW,
+};
 use crate::sizing::{CircuitEmitter, CountedGate};
 use anyhow::{Result, ensure};
 use flock_prover::{
@@ -120,6 +123,7 @@ pub enum RoutingKind {
   #[default]
   Element,
   Boolean,
+  BooleanPacked,
 }
 enum RoutingGate {
   Element(SwitchGate),
@@ -130,6 +134,7 @@ pub struct PermutationSlots {
   words: usize,
   slot: SlotId,
   zero: Wire,
+  packing: Option<[(SlotId, RecordPackingGate); 2]>,
 }
 impl PermutationSlots {
   pub fn declare(b: &mut impl CircuitEmitter, words: usize) -> Result<Self> {
@@ -152,8 +157,39 @@ impl PermutationSlots {
         let slot = b.slot(gate.clone());
         (RoutingGate::Boolean(gate), slot)
       },
+      RoutingKind::BooleanPacked => {
+        anyhow::bail!("packed routing requires an explicit record layout")
+      },
     };
-    Ok(Self { gate, words, slot, zero: b.fixed_public_input(F128::ZERO) })
+    Ok(Self {
+      gate,
+      words,
+      slot,
+      zero: b.fixed_public_input(F128::ZERO),
+      packing: None,
+    })
+  }
+  pub fn declare_packed(
+    b: &mut impl CircuitEmitter,
+    nu: usize,
+    layout: RecordLayout,
+  ) -> Result<Self> {
+    let mut slots = Self::declare_with_routing(
+      b,
+      nu,
+      layout.packed_words(),
+      RoutingKind::Boolean,
+    )?;
+    let pack = RecordPackingGate::new(nu, layout.clone(), false)?;
+    let unpack = RecordPackingGate::new(nu, layout, true)?;
+    slots.packing =
+      Some([(b.slot(pack.clone()), pack), (b.slot(unpack.clone()), unpack)]);
+    Ok(slots)
+  }
+  pub fn packing_gates(
+    &self,
+  ) -> impl Iterator<Item = (SlotId, &RecordPackingGate)> {
+    self.packing.iter().flatten().map(|(slot, gate)| (*slot, gate))
   }
   pub fn gate(&self) -> (SlotId, &SwitchGate) {
     self.element_gate().expect("element routing gate")
@@ -179,6 +215,38 @@ impl PermutationSlots {
   pub fn slot(&self) -> SlotId {
     self.slot
   }
+  pub(super) fn full_switch_input_count(&self) -> usize {
+    let words = self
+      .packing
+      .as_ref()
+      .map_or(self.words, |gates| gates[0].1.input_count());
+    SWITCHES_PER_ROW * (1 + 2 * words)
+  }
+  /// Used by the untimed memory caller to select read/write kinds. Packing
+  /// applies at this boundary too; the repeated permutation stages below
+  /// pack once for the entire network.
+  pub(super) fn switch_full_records(
+    &self,
+    b: &mut impl CircuitEmitter,
+    input: &[Wire],
+  ) -> Vec<Wire> {
+    assert_eq!(input.len(), self.full_switch_input_count());
+    let Some([(pack_slot, pack), (unpack_slot, _)]) = &self.packing else {
+      return b.gate(self.slot, input);
+    };
+    let width = pack.input_count();
+    let mut packed = Vec::with_capacity(self.input_count());
+    for lane in input.chunks_exact(1 + 2 * width) {
+      packed.push(lane[0]);
+      for record in lane[1..].chunks_exact(width) {
+        packed.extend(b.gate(*pack_slot, record));
+      }
+    }
+    b.gate(self.slot, &packed)
+      .chunks_exact(self.words)
+      .flat_map(|record| b.gate(*unpack_slot, record))
+      .collect()
+  }
   pub fn permute(
     &self,
     b: &mut impl CircuitEmitter,
@@ -189,8 +257,13 @@ impl PermutationSlots {
     let words = self.words;
     assert_eq!(records.len(), plan.lanes());
     assert_eq!(switches.len(), plan.switches());
-    assert!(records.iter().all(|record| record.len() == words));
-    let mut current = records.to_vec();
+    let mut current = if let Some([(slot, gate), _]) = &self.packing {
+      assert!(records.iter().all(|record| record.len() == gate.input_count()));
+      records.iter().map(|record| b.gate(*slot, record)).collect()
+    } else {
+      assert!(records.iter().all(|record| record.len() == words));
+      records.to_vec()
+    };
     let mut advice = switches.iter();
     for stage in 0..plan.stages() {
       let pairs = plan.pairs(stage).collect::<Vec<_>>();
@@ -212,6 +285,10 @@ impl PermutationSlots {
       }
     }
     assert!(advice.next().is_none());
-    current
+    if let Some([_, (slot, _)]) = &self.packing {
+      current.iter().map(|record| b.gate(*slot, record)).collect()
+    } else {
+      current
+    }
   }
 }

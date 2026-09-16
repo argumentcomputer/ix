@@ -8,7 +8,7 @@ use crate::{
     decode::PrimitiveSet,
     execution_order::OrderGate,
     ixbf_decode::paged::proof_support::{Driver, driver},
-    memory_log::{AuditGate, BooleanSwitchGate},
+    memory_log::{AuditGate, BooleanSwitchGate, RecordPackingGate},
     paged_code::CodeGate,
     paged_frame::FrameGate,
     paged_nat::Nat128Gate,
@@ -153,6 +153,14 @@ pub(super) fn drivers(
   .into_iter()
   .flatten()
   {
+    for (slot, gate) in permutation.packing_gates() {
+      result.push(driver(
+        slot,
+        gate.clone(),
+        gate.r1cs(),
+        RecordPackingGate::generate_witness_into,
+      ));
+    }
     if let Some((slot, gate)) = permutation.boolean_gate() {
       result.push(driver(
         slot,

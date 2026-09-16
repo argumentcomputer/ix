@@ -52,8 +52,14 @@ impl MemoryLogSlots {
     depth: MemoryDepth,
     routing: RoutingKind,
   ) -> Result<Self> {
-    let permutation =
-      PermutationSlots::declare_with_routing(b, nu, RECORD_WORDS, routing)?;
+    let permutation = if routing == RoutingKind::BooleanPacked {
+      let layout = RecordLayout::new(
+        [depth.bits(), 64, 3, 128, 128].map(RecordLayout::low_bits).to_vec(),
+      )?;
+      PermutationSlots::declare_packed(b, nu, layout)?
+    } else {
+      PermutationSlots::declare_with_routing(b, nu, RECORD_WORDS, routing)?
+    };
     let gate = AuditGate::new(nu)?;
     let audit = (b.slot(gate.clone()), gate);
     let memory = MemoryAccessSlots::declare(b, nu, depth)?;
@@ -112,8 +118,7 @@ impl MemoryLogSlots {
     b: &mut impl CircuitEmitter,
     accesses: &[AccessWires],
   ) -> Vec<Vec<Wire>> {
-    let switch_slot = self.permutation.slot();
-    let input_count = self.permutation.input_count();
+    let input_count = self.permutation.full_switch_input_count();
     let mut records = Vec::with_capacity(accesses.len());
     for (batch_index, batch) in
       accesses.chunks(switch::SWITCHES_PER_ROW).enumerate()
@@ -134,7 +139,7 @@ impl MemoryLogSlots {
         }
       }
       input.resize(input_count, self.zero);
-      let output = b.gate(switch_slot, &input);
+      let output = self.permutation.switch_full_records(b, &input);
       records.extend(
         output
           .as_chunks::<{ 2 * RECORD_WORDS }>()

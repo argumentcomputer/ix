@@ -7,7 +7,7 @@ use crate::{
     auth_memory::{MemoryGate, multi::MultiGate},
     decode::PrimitiveSet,
     execution_order::{OrderGate, OrderKind},
-    memory_log::{AuditGate, BooleanSwitchGate, SwitchGate},
+    memory_log::{AuditGate, BooleanSwitchGate, RecordPackingGate, SwitchGate},
     paged_code::CodeGate,
     paged_frame::FrameGate,
     paged_nat::Nat128Gate,
@@ -377,6 +377,14 @@ fn drivers(emission: &BatchEmission, shape: &CircuitShape) -> Vec<Driver> {
   .into_iter()
   .flatten()
   {
+    for (slot, gate) in permutation.packing_gates() {
+      result.push(Driver::new(
+        slot,
+        gate.clone(),
+        gate.r1cs(),
+        |g: &RecordPackingGate, r, _, d| g.generate_witness_into(r, d),
+      ));
+    }
     if let Some((slot, gate)) = permutation.boolean_gate() {
       result.push(Driver::new(
         slot,

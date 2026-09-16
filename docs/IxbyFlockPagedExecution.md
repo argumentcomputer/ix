@@ -124,11 +124,11 @@ byte/hash implementation's complete regression suite passed 311 tests with
 
 `CompiledPagedExecution::compile(class)` provides the production setup,
 advice-checking, proving, verification and recursive-replay interface for all
-nine fixed batch classes. `ExecutionStatement` binds exactly 57 field words
+eleven fixed batch classes. `ExecutionStatement` binds exactly 57 field words
 and requires strictly increasing, nonwrapping clocks. Setup checks every
 Boolean table's complete matrices and input/output schema against its witness
-driver, including the shared memory tree. The six existing classes retain
-their circuit layouts and transcript domains. The three Boolean-routing
+driver, including the shared memory tree. The six original classes retain
+their circuit layouts and transcript domains. The five Boolean-routing
 classes have separate approved setups and domains; the public statement and
 proof envelope are unchanged.
 The compiled setup retains immutable prover data and discards emission-only
@@ -469,6 +469,103 @@ proving took 715.7 seconds on the server; fresh setup took 170.9 seconds and
 verification 23.3 seconds. This small workload validates composition and the
 padding fix; its timing does not measure large-workload throughput. See the
 [complete countdown record](../flock-stage4/census/paged-execution-countdown-1024-v0.json).
+
+### Exact packing of routing records
+
+`shared-compact-packed` and `shared-packed-1024` keep the capacities of
+`shared-compact-boolean` and `shared-1024`. They pack canonical record bits
+before each switching network and unpack them before the existing audit.
+Packing and unpacking are Boolean circuit gates: every omitted input bit and
+every unused bit in the packed representation must be zero. The resulting
+map is injective on accepted records, so the fixed network still establishes
+an exact permutation of complete records. There is no hash, random
+fingerprint, new permutation argument or change to the Flock protocol.
+
+| Routed record | Original field words | Packed field words | Preserved data |
+| --- | ---: | ---: | --- |
+| Execution state | 26 | 15 | Clock, kind, both fuel limbs, all live state fields and full value/hash words |
+| Timed memory | 5 | 3 | 40-bit address, 64-bit time, kind and both complete value words |
+| Shared tree | 6 | 5 | Enabled flag, level and position, all four digest words |
+
+The state representation uses 1,914 bits. It removes the frame header's
+reserved bits, high padding in bounded counters and vectors, unused merge
+control bits, and three reserved state words. Fuel retains both its budget
+and usage counters. Hash chaining values and value payloads retain all 128
+bits per field word. The exact masks are part of the approved packing
+matrices in `state_record_layout`; a prover cannot choose a different mask.
+This is an additional canonicality requirement of the new classes. The nine
+earlier class identities, matrices and domains remain unchanged.
+
+The larger packed class contains **43,718,321 useful field words**, down from
+59,381,425: **26.4% less witness data**, including the packing gates. Routing
+falls from 48,242,688 to 30,220,288 words; packing and unpacking add 2,359,296.
+The padded address domain remains 16 GiB per buffer, with `M=33`. A packed
+execution leaf is **540,251 bytes**, versus 612,155, a reduction of **11.7%**.
+The compact packed class contains 357,685 useful field words and produces a
+412,011-byte execution proof.
+
+The new transcript domains end in `shared-compact-packed:v0` and
+`shared-packed-1024:v0`. Select the latter with
+`IXBY_PAGED_NATIVE_CLASS=shared-packed-1024` in the bounded benchmark, or
+`--class shared-packed-1024` in the complete CLI. The verifier selects its
+approved class before reading proof bytes, including for recursive children.
+
+Packing tests check every removed input bit, every output bit, complete
+round trips, and packed witness buffers against the sparse matrices. They
+also cover recycled buffers and partial groups of eight rows. Execution
+fixtures cover instruction, object, byte and multi-chunk hash states. Both
+new classes pass actual CSLib segment proofs, isolated verification, changed
+public statements and recomputed state-clock and memory-clock substitutions.
+
+The server comparison used the same binary and byte-identical statements for
+both 16-batch runs. As above, worker wall excludes native replay and setup,
+and includes proof generation, verification and writes.
+
+| Class | Workers × threads | Batch indices | Logical steps | Worker wall, seconds | Steps/second | Peak RSS, GiB |
+| --- | --- | --- | ---: | ---: | ---: | ---: |
+| Shared1024 | 8 × 4 | 0–15 | 16,906 | 60.793 | 278.091 | 163.756 |
+| SharedPacked1024 | 8 × 4 | 0–15 | 16,906 | 48.973 | 345.213 | 119.402 |
+| SharedPacked1024 | 8 × 4 | 256–263 | 9,932 | 24.852 | 399.648 | 119.418 |
+| SharedPacked1024 | 16 × 2 | 0–31 | 36,418 | 87.560 | 415.918 | 172.800 |
+
+Packing improves the controlled eight-worker throughput by **24.1%** and
+reduces peak RSS by **27.1%**. The sixteen-worker sample covers more batches,
+so its ratio to the eight-worker result does not isolate the effect of worker
+count. It uses a 3,072 GiB virtual-address allowance within the same separate
+400 GiB resident-memory cap. Every measured proof verifies. A fresh local
+process accepts packed batch 256 using only its 912-byte statement and proof;
+another accepts an old Shared1024 proof from the preceding implementation.
+
+The [packed execution record](../flock-stage3/profile/cslib-packed-execution-v0.json)
+retains all 72 benchmark samples, exact table costs, per-family row usage,
+binary and source hashes, and verification receipts. The three traced baseline
+proofs used to locate the cost are recorded separately. The affected tests
+pass 81 checks, and both workspaces pass formatting and all-target Clippy with
+warnings denied.
+
+The first three packed CSLib leaves also pass two recursive levels, producing
+394,035-byte and 381,059-byte nodes. The joins cover the same 14,359 microsteps
+and 3,604 logical steps as the earlier large-class chain. Proving plus
+verification took 46.3 and 59.5 seconds locally; setup is additional. Repeated,
+reversed and skipped genuine leaves reject. The final node passes a fresh
+receiver and all 114 independent low/high public-word mutations. These are
+correctness checks, rather than a controlled recursive-throughput comparison.
+
+The complete 83-step countdown produces a **509,475-byte root**, accepted by
+a fresh process given only the approved profile, independently expected
+digest and proof. It proves all eleven components plus endpoints, with one
+540,251-byte execution leaf. Complete proving took 642.4 seconds; fresh setup
+took 166.4 seconds and verification 20.0 seconds. The six packing tables add
+twelve fixed-matrix claim families at the root, whose size grows from the
+earlier 502,979 bytes. This fixture validates composition; it does not measure
+complete CSLib throughput. Its pins and receipts are in the
+[packed countdown record](../flock-stage4/census/paged-execution-countdown-packed-v0.json).
+
+Routing still occupies **69.1%** of the packed class's useful field data.
+Even the 32-batch leaf rate would project about **63 days** for the original
+reference trace, before native replay, source admission, output and recursive
+aggregation. This is not a full-run budget. Further reductions in routing and
+instruction-family costs remain necessary; complete CSLib execution is unproved.
 
 ## Immutable objects and application
 

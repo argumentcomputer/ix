@@ -188,7 +188,7 @@ mod tests {
   #[test]
   fn boolean_switch_constraints_bind_every_word_and_all_selector_bits() {
     // Check matrices directly, bypassing the native evaluator's selector check.
-    for words in [1, 5, 6, 26] {
+    for words in [1, 3, 5, 6, 15, 26] {
       let gate = BooleanSwitchGate::new(3, words).unwrap();
       let element = super::super::SwitchGate::new(words).unwrap();
       let mut input = Vec::new();
@@ -250,7 +250,7 @@ mod tests {
   #[test]
   fn packed_switch_witness_matches_sparse_matrices_and_recycled_padding() {
     use crate::boolean::generate_boolean_witness;
-    for words in [1, 5, 6, 26] {
+    for words in [1, 3, 5, 6, 15, 26] {
       let gate = BooleanSwitchGate::new(6, words).unwrap();
       let rows: Vec<_> = (0..9)
         .map(|row| {
