@@ -206,14 +206,25 @@ current-status section below.
     proves in 5.933 seconds, produces 498,939 bytes and verifies freshly.
     Recomputed state-clock and memory-clock attacks reject. A separate native
     prefix generates 150,607 microsteps in 8.172 seconds without proving.
+25. [CPU server execution throughput](IxbyFlockPagedExecution.md#cpu-server-throughput-and-cost-breakdown):
+    148 actual proof samples pass across two prefix windows, with independent
+    local reception of server proofs. Eight workers reach 31.631–33.166
+    logical steps per second; sixteen reach 34.767 with 276.663 GiB peak RSS.
+    The table census attributes 78.6% of dense field data to switching
+    networks and finds a 58.5-fold padded working domain. These measurements
+    establish the need to reduce per-instruction proving cost before a full run.
 
 ## Current integration and next measurements
 
 The complete original-format proof path is implemented and has genuine
 small-workload proofs. The original CSLib program has a complete grammar
 aggregate and conditional execution-segment proofs. **The complete
-2,268,502,805-step CSLib execution has not been proved.** The segment timings
-above do not establish a practical full-run budget.
+2,268,502,805-step CSLib execution has not been proved.** Server measurements
+show that the current layout does not provide a practical full-run budget.
+The fixed Fetch quota implies at least 61 million execution leaves against
+the recorded reference profile; the best short-window throughput extrapolates
+to roughly 755 days for leaf proving alone. This is a projection, not a
+measured full execution, and excludes admission and aggregation.
 
 The current paged path streams bounded execution segments over depth-40
 authenticated memory and accepts original artifacts up to 16 MiB. Its physical
@@ -222,18 +233,22 @@ These are separate, explicit factories from the retained 64-step legacy Exec
 classes. The original binary, functional limits, input and canonical output
 remain bound by admission, initialization, finalization and commitments.
 
-1. **Representative proving throughput.** Measure actual execution proofs
-   across arithmetic, calls, objects, memory growth and the large byte/hash
-   workload. Record setup, native advice, witness, proof and verification
-   separately, including peak memory. The first Shared segment is a baseline;
-   neither native reference speed nor the instruction-slot quota gives a
-   full-workload proving estimate.
+1. **Reduce cost before enlarging batches.** The measured switching networks
+   and padded buffers are the first targets. Cheaper state/memory ordering
+   and compact working storage should make larger segments affordable while
+   preserving complete state, memory and fuel checks. Then evaluate an initial
+   1,024-instruction batch target and workload-specific classes. This target
+   is not implemented. Compare time and peak memory per guest instruction,
+   including recursive costs; simply raising all quotas is insufficient.
+   The two measured prefix windows do not cover the full byte/hash workload.
 2. **Long-run operation.** The CLI retains and verifies bounded proof files;
    it currently generates and proves leaves sequentially. `--resume`
    regenerates native state from the beginning before checking cached leaves.
-   Parallel workers and native state checkpoints remain throughput and
-   resumption work for a large run. Their implementation must preserve the
-   existing complete state, memory-root and global-fuel checks.
+   The bounded benchmark demonstrates shared-setup parallel workers, but the
+   CLI still needs a bounded pipeline and native state checkpoints. Their
+   implementation must preserve the existing complete state, memory-root and
+   global-fuel checks. These operational changes do not remove the measured
+   per-instruction proving cost.
 3. **Full pinned benchmark.** Generate all original CSLib component proofs,
    aggregate their exact counts, and verify the root in a fresh process against
    the [independently computed original-artifact digest](../flock-stage3/profile/cslib-paged-statement-v0.json). Record setup

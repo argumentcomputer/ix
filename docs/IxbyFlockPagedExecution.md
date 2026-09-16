@@ -124,7 +124,7 @@ byte/hash implementation's complete regression suite passed 311 tests with
 
 `CompiledPagedExecution::compile(class)` provides the production setup,
 advice-checking, proving, verification and recursive-replay interface for all
-five fixed batch classes. `ExecutionStatement` binds exactly 57 field words
+six fixed batch classes. `ExecutionStatement` binds exactly 57 field words
 and requires strictly increasing, nonwrapping clocks. Setup checks every
 Boolean table's complete matrices and input/output schema against its witness
 driver, including the shared memory tree. The existing circuit layouts,
@@ -137,7 +137,7 @@ their fresh-process verifiers and 28 locally valid recomputed attacks. They
 passed in 116.66 seconds. The original SharedCompact segment also passed
 through this API, including its two recomputed clock attacks; it produced the
 same 454,035-byte proof size. An ordinary test checks actual advice and complete
-statement boundaries through all five setups. Clippy passes with warnings
+statement boundaries through all six setups. Clippy passes with warnings
 denied.
 
 ## Complete endpoint binding
@@ -278,6 +278,98 @@ also pins a native prefix of 1,000 Shared batches: 150,607 microsteps and
 accelerated calculation in that prefix to its Boolean plan. Native advice
 timings exclude complete batch checks and proving. These results do not yet
 establish practical throughput for the 2.268-billion-step workload.
+
+### CPU server throughput and cost breakdown
+
+The 32-core Intel Xeon 6975P-C server with 495 GiB RAM ran the Shared class
+against the pinned original CSLib program and input. Each worker used the
+same immutable compiled setup and its own Rayon pool. Every sample produced
+an actual proof and passed the production verifier. Setup and native replay
+are excluded from the worker times below; worker startup, verification and
+retained proof writes are included.
+
+| Workers × threads | Batch indices | Logical steps | Worker wall, seconds | Steps/second | Process peak RSS, GiB |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 1 × 4 | 0–15 | 567 | 79.540 | 7.128 | 22.862 |
+| 8 × 4 | 0–31 | 1,181 | 37.336 | 31.631 | 141.020 |
+| 16 × 2 | 0–63 | 2,378 | 68.399 | 34.767 | 276.663 |
+| 8 × 4 | 9,990–10,021 | 1,234 | 37.207 | 33.166 | 141.571 |
+
+The later window starts after 388,624 consumed logical steps. Replaying its
+9,990 preceding native batches took 103.771 seconds. Each measured proof is
+498,939 bytes. Including four separate phase-timing samples, 148 proofs
+passed across 96 distinct batch indices. Fresh local processes also accepted
+server proofs 63 and 9,990 with only the externally supplied expected boundary
+and proof, after compiling the fixed Shared setup. These are conditional
+segment proofs; neither the skipped prefix nor complete CSLib execution is
+proved by this measurement.
+
+The first 16-worker attempt reached a 448 GiB virtual-address cap while using
+190.755 GiB resident memory. A new run passed with a 768 GiB address allowance
+and a user service scope enforcing a separate 400 GiB physical-memory cap.
+The failed attempt and successful retry are both retained in the
+[measurement record](../flock-stage3/profile/cslib-server-proof-throughput-v0.json).
+
+The exact table census identifies two structural costs:
+
+- **Routing occupies 78.6% of the useful field data:** the three switching
+  networks use 7,216,128 of 9,175,281 dense field words. These networks reorder
+  complete execution states, timed memory records and shared-tree records.
+- **The padded witness is 58.5 times the useful field data:** the union layout
+  has 536,870,912 field words, or 8 GiB per padded buffer, for about 147 MB of
+  useful data. The prover also maintains other witness and argument buffers.
+
+The phase trace shows this cost before final commitment: in a warm sample,
+Flock witness materialization took 1.098 seconds, Boolean consistency and
+wiring took 1.118 seconds, element consistency took 0.346 seconds, commitment
+took 0.156 seconds, and opening plus buffer return took 0.914 seconds.
+Building the instruction-gate witness took another 0.779 seconds. These
+measurements guide optimization; they do not establish a hardware bandwidth
+ceiling or a full-workload rate.
+
+The current Fetch quota is 32. The independent reference profile records
+1,956,519,385 Eval transitions, giving a quota-based floor of **61,141,231
+execution leaves** when each Eval requires its instruction fetch. At the
+observed leaf size that is about **30.5 TB**, before recursive nodes. A linear
+extrapolation from the fastest short sample is about **755 days** for execution
+leaves alone. This excludes native replay, admission, output and aggregation;
+it is an estimate, not a measured full-run duration. An unbounded complete
+CSLib proof job was not launched.
+
+Raising useful work per proof therefore starts with cheaper state/memory
+ordering and a compact working layout. A larger segment can then share its
+boundary memory authentication across more instructions. Workload-specific
+instruction and byte/hash classes can further reduce unused capacity, with
+every class and full boundary join still checked by the approved verifier.
+An initial engineering target is 1,024 guest instructions per proof; it is
+not an implemented class or a measured speedup. Progress must be assessed in
+seconds and peak memory per guest instruction, including recursive costs.
+
+Reproduce the bounded throughput measurement with the existing test harness:
+
+```sh
+IXBY_PAGED_PROGRAM=/path/to/cslib.ixby \
+IXBY_PAGED_INPUT=/path/to/cslib.ixbi \
+IXBY_PAGED_NATIVE_CLASS=shared \
+IXBY_PROOF_BATCHES=32 IXBY_PROOF_SKIP=9990 \
+IXBY_PROOF_WORKERS=8 IXBY_PROOF_THREADS=4 \
+IXBY_PROOF_OUT=/path/to/new-segment-proof-directory \
+RUSTFLAGS='-C target-cpu=native' RAYON_NUM_THREADS=4 \
+cargo test --release --locked --manifest-path flock-stage3/Cargo.toml \
+  -p ixby-flock --lib \
+  ixby::paged_exec::benchmark_tests::original_execution_proof_throughput \
+  -- --ignored --exact --nocapture --test-threads=1
+
+RUSTFLAGS='-C target-cpu=native' RAYON_NUM_THREADS=4 \
+cargo test --release --locked --manifest-path flock-stage3/Cargo.toml \
+  -p ixby-flock --lib sizing::tests::paged_execution_table_costs \
+  -- --ignored --exact --nocapture --test-threads=1
+```
+
+`IXBY_PROOF_OUT` is optional; supplied directories must be new. The harness
+bounds sample size and worker count. `PCS_TRACE=1` enables the existing native
+prover's phase timings. The checked-in record retains exact per-sample times,
+artifact hashes, both fresh receiver receipts and the address-limit failure.
 
 ## Immutable objects and application
 

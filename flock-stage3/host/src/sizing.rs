@@ -284,4 +284,44 @@ mod tests {
     count.slots[0].outputs += 1;
     assert!(count.ensure_matches(&shape).is_err());
   }
+
+  #[test]
+  #[ignore = "exact per-table execution cost census; materializes inner matrices"]
+  fn paged_execution_table_costs() {
+    use crate::ixby::paged_exec::{BatchClass, emit_batch};
+    use flock_prover::union::UnionInstance;
+    for class in [BatchClass::SharedCompact, BatchClass::Shared] {
+      let mut count = CountingEmitter::new();
+      let _ = emit_batch(&mut count, class).unwrap();
+      let mut totals = std::collections::BTreeMap::new();
+      for slot in &count.slots {
+        let table = (slot.table_at)(class.nu());
+        let columns =
+          table.useful_bits.div_ceil(128).min(1 << (table.k_log - 7));
+        let words = slot.rows * columns;
+        let entry = totals.entry(slot.name).or_insert((0usize, 0usize));
+        entry.0 += slot.rows;
+        entry.1 += words;
+      }
+      let (registry, rows) = count.registry(class.nu());
+      let union = UnionInstance::new(&registry, rows);
+      assert_eq!(
+        totals.values().map(|(_, words)| words).sum::<usize>(),
+        union.dense_words()
+      );
+      let mut totals: Vec<_> = totals.into_iter().collect();
+      totals.sort_by_key(|(_, (_, words))| std::cmp::Reverse(*words));
+      for (name, (rows, words)) in totals {
+        eprintln!("execution_cost,{class:?},{name},{rows},{words}");
+      }
+      eprintln!(
+        "execution_cost_total,{class:?},dense_words={},padded_words={},boolean_words={},m_total={},dense_m={}",
+        union.dense_words(),
+        union.packed_len(),
+        union.boolean_packed_len(),
+        union.m_total(),
+        union.dense_m()
+      );
+    }
+  }
 }

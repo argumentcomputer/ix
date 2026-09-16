@@ -47,3 +47,11 @@ The [original-artifact expectation](cslib-paged-statement-v0.json) pins the
 184-byte IXFP descriptor, the three artifact hashes and independently computed
 32-byte statement for a future complete CSLib proof. Computing this statement
 does not prove the execution.
+
+The [CPU server throughput record](cslib-server-proof-throughput-v0.json)
+contains 148 verified proof samples across two prefix windows, worker scaling,
+fresh local reception, and the exact table-cost census. The best short sample
+reaches 34.767 logical steps per second; full CSLib proving is not practical
+with this layout. Switching networks occupy 78.6% of the dense witness, and
+the padded working domain is 58.5 times the useful field data. See the
+[measured costs and reproduction commands](../../docs/IxbyFlockPagedExecution.md#cpu-server-throughput-and-cost-breakdown).

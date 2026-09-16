@@ -239,6 +239,9 @@ value. The currently supported execution classes are `small`, `objects`,
 `compact`, `bytes`, `shared-compact` and `shared`. The last class has explicit
 larger instruction and shared-memory quotas; see its
 [original-CSLib segment measurement](IxbyFlockPagedExecution.md#larger-shared-execution-batch).
+The [CPU throughput measurements](IxbyFlockPagedExecution.md#cpu-server-throughput-and-cost-breakdown)
+show that full CSLib execution is currently impractical: cheaper ordering
+circuits and a compact working layout are needed before increasing batch size.
 
 ```sh
 RUSTFLAGS='-C target-cpu=native' cargo build --release --locked \

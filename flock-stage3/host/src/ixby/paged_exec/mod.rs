@@ -2,6 +2,8 @@
 //! continuity and memory time all use the same actual circuit wires.
 //! The initial code/input memory root still requires source admission.
 mod batch;
+#[cfg(test)]
+mod benchmark_tests;
 mod byte_slots;
 #[cfg(test)]
 mod byte_tests;
