@@ -1,0 +1,138 @@
+{
+  "format": "IxBy/paged-execution-cli-measurement/v0",
+  "date_utc": "2026-09-16",
+  "scope": "complete original-format countdown; 40 tail calls, 83 reference transitions, three execution batches and two recursive execution levels",
+  "execution_class": "shared",
+  "profile_limits": [
+    1,
+    0,
+    3,
+    3,
+    2,
+    0,
+    8,
+    4096,
+    64,
+    64
+  ],
+  "fuel": 83,
+  "component_counts": [
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    3,
+    1,
+    1,
+    1,
+    1
+  ],
+  "artifact_bytes": {
+    "program": 47,
+    "input": 53,
+    "output": 49,
+    "payload": 34
+  },
+  "setup_identity": "37e01fbff75bf617120c89d663232df3e0e69ed25c49f57cddf4a9d5ca34529f",
+  "geometry": {
+    "application_words": 2,
+    "arithmetic_operations": 908018,
+    "blake3_compressions": 43466,
+    "children": [
+      13,
+      1
+    ],
+    "dense_variables": 31,
+    "leaves": 14,
+    "packing_rows": 51002,
+    "root_advice_words": 10199,
+    "root_families": 319,
+    "row_variables": 16,
+    "variables": 4706590
+  },
+  "proof_bytes": 502515,
+  "statement_digest_hex": "4443003345bdface108d630d9b5f665e9d99f0957316c88766e9b241d70940f1",
+  "proof_sha256": "ef592065e83d5f5b9c3a53f160fc67ed70836579eb56f4f4af8bed736e8f18de",
+  "statement_sha256": "6b2cf7b6c344f02c637b2455ebdf19d382a8129899f8b77c235f38a1e4a17893",
+  "profile_sha256": "672ceb9d1f0f454504ea181b588b2d5b77d91475c18c70fea4d4e489588e0707",
+  "program_sha256": "8b1addfffd26467722c05e4642ca2a1be872650e42fdc0e2fceee5f734ede594",
+  "input_sha256": "5450fadc341693c9986606dd3064ee79bb5a39d44768dd77af2a51f57236e296",
+  "output_sha256": "8c4aab081d536a3a69059b040ff68e79bead32a6a9c9938c34be39121cf4a7f7",
+  "proving_binary_sha256": "278ea84153c5880152a28393e4f7807a81582ce93b95a7119e3bb087c111c7c0",
+  "rustflags": "-C target-cpu=native",
+  "rayon_threads": 4,
+  "leaf_generation_and_proving_seconds": 57.601134746,
+  "complete_prove_command_seconds": 715.894562981,
+  "proving_gnu_time_wall_seconds": 724.47,
+  "proving_gnu_time_maximum_rss_kib": 87641812,
+  "fresh_setup_seconds": 147.775257624,
+  "fresh_verification_seconds": 22.61565883,
+  "fresh_gnu_time_wall_seconds": 175.69,
+  "fresh_gnu_time_maximum_rss_kib": 63796636,
+  "fresh_receiver": "cleared environment outside worktree; directory contains only the approved profile, independently computed expected digest and one root proof; class and counts are explicit arguments",
+  "reference": {
+    "transitions": 83,
+    "output_matches": true,
+    "binary_sha256": "d17f50b7d7b343ffa7e5c0c6b23c6e433987e971acb7e94539ee4d7503e76cfa"
+  },
+  "execution_microstep_intervals": [
+    [
+      0,
+      144
+    ],
+    [
+      144,
+      288
+    ],
+    [
+      288,
+      367
+    ]
+  ],
+  "execution_consumed_fuel_intervals": [
+    [
+      0,
+      32
+    ],
+    [
+      32,
+      64
+    ],
+    [
+      64,
+      83
+    ]
+  ],
+  "execution_leaf_proof_bytes": [
+    498939,
+    498939,
+    498939
+  ],
+  "execution_chain_proof_bytes": {
+    "two_leaves": 375315,
+    "three_leaves": 412403
+  },
+  "budget_negative": {
+    "fuel": 82,
+    "reference_rejection": "Ix.Ixby.Error.outOfFuel",
+    "prover_rejection": "execution fuel exhausted"
+  },
+  "chain_negative_test": {
+    "name": "execution_tree::tests::countdown::execution_chain_rejects_repeated_reversed_and_skipped_valid_segments",
+    "individually_verified_genuine_leaves": 3,
+    "rejected_child_pairs": [
+      "repeated 0,0",
+      "reversed 1,0",
+      "skipped 0,2"
+    ],
+    "changed_expected_words": 57,
+    "changed_word_halves": "low and high independently; 114 rejected mutations",
+    "test_seconds": 98.32,
+    "gnu_time_wall_seconds": 99.03,
+    "gnu_time_maximum_rss_kib": 11413192,
+    "test_binary_sha256": "feecb784c4c60e4f0e6d4975d4baf4ff5a899a435d4242af90b3fcbdf0387c09"
+  },
+  "fixture_generator": "flock-stage4/fixtures/paged-execution-countdown.py"
+}

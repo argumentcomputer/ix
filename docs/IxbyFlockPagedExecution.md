@@ -201,7 +201,7 @@ action sequence.
 
 The batch carries 24 state words, including all frame/fuel fields, allocation
 counters, instruction header, resolution cursor, and pending immutable copy.
-The finite Small, Compact, Objects, Bytes and SharedCompact factories reserve fixed quotas for each
+The finite Small, Compact, Objects, Bytes, SharedCompact and Shared factories reserve fixed quotas for each
 operation. Their rows may be grouped by
 operation: an exact permutation of complete state records proves one positive,
 unbroken execution chain. Each memory timestamp is derived from that same
@@ -251,6 +251,33 @@ The object/application fixture and unaligned 3,073-byte hash also pass their
 actual circuits across SharedCompact boundaries. They preserve all carried
 state, final values and fuel; the object test reaches the same final memory
 root as its whole-program fixture.
+
+### Larger shared execution batch
+
+The explicit `Shared` v0 class multiplies the Compact instruction quotas by
+16. It reserves 688 microstep slots, 1,936 memory requests, 256 boundary cells
+and 3,072 internal tree nodes at `nu=13`. Its transcript domain is
+`IxBy/Flock/paged-execution:shared:v0`. The exact count pass requires 8,192
+rows in its largest table and matches the compiled production setup. Its
+commitment has `M=31`, 9,175,281 dense field words and three element tables.
+The existing classes retain their domains, capacities and constraints.
+
+A genuine original-CSLib batch covers microsteps 1,207–1,325 and logical
+steps 292–324. Its **498,939-byte proof** takes 5.933 seconds after 8.123
+seconds of setup with four Rayon threads. A fresh receiver verifies it;
+changed expected words and proof envelopes reject, as do locally valid
+recomputed state-clock and memory-clock rows. The complete test takes 33.87
+seconds, with 24,785,868 KiB maximum process RSS. The parent releases its
+proving graph before starting the fresh receiver. This segment starts from
+an independently supplied memory root; it alone does not establish the full
+original execution or source admission.
+
+The [measurement record](../flock-stage3/profile/cslib-shared-execution-v0.json)
+also pins a native prefix of 1,000 Shared batches: 150,607 microsteps and
+38,746 logical steps in 8.172 seconds. A separate run compares every
+accelerated calculation in that prefix to its Boolean plan. Native advice
+timings exclude complete batch checks and proving. These results do not yet
+establish practical throughput for the 2.268-billion-step workload.
 
 ## Immutable objects and application
 
@@ -430,17 +457,18 @@ run compares every accelerated calculation in this prefix to its Boolean
 plan. All 20 execution tests and six memory-log tests pass. The four real
 execution proofs, fresh receivers and 28 recomputed attacks pass in 114.48
 seconds, and the original SharedCompact segment still produces a verified
-454,035-byte proof. Full-workload and larger-batch proving throughput remain
-separate measurements.
+454,035-byte proof. The larger Shared measurement above uses a different
+physical class; full-workload proving throughput remains unmeasured.
 
 ## Remaining integration
 
 Source admission, initialization, exact finalization, output and commitment
 binding now compose into one independently verified original-format execution
 proof. Original-CSLib execution segments also have conditional proofs under
-Compact and SharedCompact. Larger-batch throughput, the complete original
-CSLib execution and its final independent verification remain. Native
-constraint refinement to the formal semantics is a separate obligation.
+Compact, SharedCompact and Shared. Practical full-workload throughput, the
+complete original CSLib execution and its final independent verification
+remain. Native constraint refinement to the formal semantics is a separate
+obligation.
 
 ```sh
 RUSTFLAGS='-C target-cpu=native' RAYON_NUM_THREADS=4 cargo test --release \
@@ -476,5 +504,11 @@ IXBY_PAGED_INPUT=/path/to/cslib.ixbi IXBY_PAGED_PROOF_BATCH=99 \
 RUSTFLAGS='-C target-cpu=native' RAYON_NUM_THREADS=4 cargo test --release \
   --offline --manifest-path flock-stage3/Cargo.toml \
   original_execution_segment_proves_with_fresh_memory_root_binding \
+  -- --ignored --nocapture --test-threads=1
+IXBY_PAGED_PROGRAM=/path/to/cslib.ixby \
+IXBY_PAGED_INPUT=/path/to/cslib.ixbi IXBY_PAGED_PROOF_BATCH=9 \
+RUSTFLAGS='-C target-cpu=native' RAYON_NUM_THREADS=4 cargo test --release \
+  --offline --manifest-path flock-stage3/Cargo.toml \
+  original_shared_execution_segment_proves_fresh \
   -- --ignored --nocapture --test-threads=1
 ```

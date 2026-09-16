@@ -32,3 +32,18 @@ python3 flock-stage3/profile/summarize.py \
 A smaller final step cap produces a prefix report with `completed=false`.
 Full reports include all 6,763 instruction descriptions and block counts;
 the summary weights their opcode names by the observed visit counts.
+
+## Native Flock execution segment
+
+The separate [Shared execution measurement](cslib-shared-execution-v0.json)
+records a genuine proof of 118 original-CSLib microsteps and 32 logical steps,
+including fresh verification and recomputed clock rejections. It also records
+a longer native advice prefix whose accelerated calculations are compared
+with their Boolean plans. See the [class, timings and reproduction command](../../docs/IxbyFlockPagedExecution.md#larger-shared-execution-batch).
+These measurements cover a conditional segment and advice generation; the
+complete CSLib execution remains unproved.
+
+The [original-artifact expectation](cslib-paged-statement-v0.json) pins the
+184-byte IXFP descriptor, the three artifact hashes and independently computed
+32-byte statement for a future complete CSLib proof. Computing this statement
+does not prove the execution.

@@ -25,6 +25,7 @@ pub enum BatchClass {
   Compact,
   Bytes,
   SharedCompact,
+  Shared,
 }
 impl BatchClass {
   pub fn transcript_domain(self) -> &'static [u8] {
@@ -34,6 +35,7 @@ impl BatchClass {
       Self::Compact => b"IxBy/Flock/paged-execution:compact:v1",
       Self::Bytes => b"IxBy/Flock/paged-execution:bytes:v0",
       Self::SharedCompact => b"IxBy/Flock/paged-execution:shared-compact:v0",
+      Self::Shared => b"IxBy/Flock/paged-execution:shared:v0",
     }
   }
   pub fn quotas(self) -> [usize; 24] {
@@ -48,6 +50,7 @@ impl BatchClass {
       Self::Compact | Self::SharedCompact => {
         [2, 4, 1, 2, 1, 3, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]
       },
+      Self::Shared => Self::SharedCompact.quotas().map(|quota| quota * 16),
       Self::Bytes => [
         20, 36, 4, 4, 2, 8, 0, 0, 0, 0, 0, 0, 0, 0, 16, 8, 8, 4, 16, 8, 20, 8,
         8, 8,
@@ -59,6 +62,7 @@ impl BatchClass {
       Self::Small => 24,
       Self::Objects => 96,
       Self::Compact | Self::SharedCompact => 16,
+      Self::Shared => 256,
       Self::Bytes => 96,
     }
   }
@@ -69,6 +73,7 @@ impl BatchClass {
       Self::Compact => 11,
       Self::Bytes => 13,
       Self::SharedCompact => 10,
+      Self::Shared => 13,
     }
   }
   pub fn transitions(self) -> usize {
@@ -79,6 +84,7 @@ impl BatchClass {
       Self::SharedCompact => {
         Some(MultiCapacity::new(self.cells(), 192).unwrap())
       },
+      Self::Shared => Some(MultiCapacity::new(self.cells(), 3_072).unwrap()),
       _ => None,
     }
   }

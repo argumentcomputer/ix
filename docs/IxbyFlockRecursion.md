@@ -236,7 +236,9 @@ component counts, and verifies one final root. Each original artifact is
 limited to 16 MiB by the current source classes. The output argument supplies
 the original canonical IXFO bytes; the proof binds these to the returned Bytes
 value. The currently supported execution classes are `small`, `objects`,
-`compact`, `bytes` and `shared-compact`.
+`compact`, `bytes`, `shared-compact` and `shared`. The last class has explicit
+larger instruction and shared-memory quotas; see its
+[original-CSLib segment measurement](IxbyFlockPagedExecution.md#larger-shared-execution-batch).
 
 ```sh
 RUSTFLAGS='-C target-cpu=native' cargo build --release --locked \
@@ -293,6 +295,71 @@ An independent CLI receiver verifies it in 20.105 seconds after 147.553 seconds
 of setup, using a separately computed expected digest. Checked leaf resumption
 also passes. This is a second small-workload measurement, not a full CSLib run.
 See the [CLI measurement record](../flock-stage4/census/paged-execution-cli-v0.json).
+
+With `--class shared`, the same 1,025-byte fixture produces a **503,875-byte**
+root in 643.673 seconds. A fresh CLI verifier accepts it in 21.636 seconds
+after 149.079 seconds of setup. Its input directory contains only the approved
+profile, independently computed expected digest and root proof. Peak process
+RSS is 88,764,532 KiB for the complete proving command and 65,067,824 KiB for
+the fresh verifier. See the [Shared CLI measurement](../flock-stage4/census/paged-execution-shared-cli-v0.json).
+
+### Execution spanning several batches
+
+The [countdown fixture](../flock-stage4/fixtures/paged-execution-countdown.py)
+takes a Bytes value and the natural 40. It repeatedly cases on the natural
+and tail-calls itself with its predecessor, then returns the original Bytes.
+The independent reference interpreter takes exactly **83 transitions**,
+including the final return-to-halt transition, and produces the expected
+49-byte output. A fuel budget of 82 fails in both the reference interpreter
+and the CLI prover; the generator's `--fuel 82` option reproduces that case.
+
+The Shared class produces three genuine execution proofs. Their full state,
+memory and fuel boundaries join across two recursive levels:
+
+| Batch | Microstep interval | Consumed fuel interval |
+| --- | --- | --- |
+| 0 | 0–144 | 0–32 |
+| 1 | 144–288 | 32–64 |
+| 2 | 288–367 | 64–83 |
+
+All thirteen component proofs and the endpoint proof produce one
+**502,515-byte complete root** in 715.895 seconds. A fresh CLI receiver
+accepts it in 22.616 seconds after 147.775 seconds of setup, with only the
+approved profile, expected digest and root proof in its input directory.
+This is a complete small execution spanning multiple execution batches;
+the original CSLib execution remains unproved.
+
+A separate check first verifies each genuine execution leaf, then rejects
+repeated, reversed and skipped segment pairs at the recursive constraints.
+Both retained execution levels verify, and all 57 expected words reject
+independent low- and high-half mutations. This test takes 98.32 seconds.
+See the [complete countdown measurement](../flock-stage4/census/paged-execution-countdown-v0.json)
+for artifact pins, setup identity, proof timings and peak memory.
+
+To reproduce after building the CLI above, choose two new directories:
+
+```sh
+countdown_files=/path/to/new-countdown-files
+countdown_proofs=/path/to/new-countdown-proofs
+paged_cli=flock-stage4/target/release/paged-execution
+python3 flock-stage4/fixtures/paged-execution-countdown.py --out "$countdown_files"
+"$paged_cli" profile --program "$countdown_files/program.ixby" \
+  --out "$countdown_files/profile.ixfp"
+"$paged_cli" statement --profile "$countdown_files/profile.ixfp" \
+  --program "$countdown_files/program.ixby" --input "$countdown_files/input.ixbi" \
+  --output "$countdown_files/output.ixbo" --out "$countdown_files/expected.statement"
+"$paged_cli" prove --profile "$countdown_files/profile.ixfp" --class shared \
+  --program "$countdown_files/program.ixby" --input "$countdown_files/input.ixbi" \
+  --output "$countdown_files/output.ixbo" --out "$countdown_proofs" --threads 4
+"$paged_cli" verify --profile "$countdown_files/profile.ixfp" --class shared \
+  --counts 1,1,1,1,1,1,3,1,1,1,1 --statement "$countdown_files/expected.statement" \
+  --proof "$countdown_proofs/root.flock" --threads 4
+IXBY_COUNTDOWN_PROOFS="$countdown_proofs" RUSTFLAGS='-C target-cpu=native' \
+  RAYON_NUM_THREADS=4 cargo test --release --locked \
+  --manifest-path flock-stage4/Cargo.toml -p ix-flock-recursion \
+  execution_chain_rejects_repeated_reversed_and_skipped_valid_segments \
+  -- --ignored --nocapture --test-threads=1
+```
 
 ## Earlier two-child prototype
 

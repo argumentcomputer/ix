@@ -1,4 +1,5 @@
 use super::*;
+mod countdown;
 mod fixture;
 fn profile() -> FunctionalProfile {
   FunctionalProfile::new([1, 0, 1, 1, 1, 0, 8, 4096, 64, 64], 24).unwrap()

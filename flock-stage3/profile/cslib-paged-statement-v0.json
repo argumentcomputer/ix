@@ -1,0 +1,25 @@
+{
+  "format": "IxBy/original-artifact-expectation/v0",
+  "date_utc": "2026-09-16",
+  "scope": "native commitment to the original CSLib artifacts and explicit IXFP profile; no complete execution proof",
+  "program_bytes": 1016587,
+  "input_bytes": 4813238,
+  "output_bytes": 49,
+  "program_sha256": "1c864b7a10614549f1bba23e465b9e70a9dabeff5615c5885aa0e55517ce3f09",
+  "input_sha256": "8b03e43e9ec59ee9d82af519de11c2ca7930e09942ee5e0f85263e851ea0ffcc",
+  "output_sha256": "c810a2a4d205ae4ff03a0bb910f03c8f7824f572228a480d9c1c2eea2f2c7198",
+  "functional_profile": {
+    "magic": "IXFP",
+    "revision": 0,
+    "artifact_format": 1,
+    "semantics": 0,
+    "limits": [65536, 4096, 65536, 8192, 1024, 65536, 65536, 4096, 65536, 16777216],
+    "fuel": 16000000000,
+    "bytes": 184,
+    "sha256": "13f31dcf4798889eed55fd78b3faf7c68486dac974e3e81b875699e4e89b1e46",
+    "hex": "495846500000000001000000000000000000010000000000000000000000000000100000000000000000000000000000000001000000000000000000000000000020000000000000000000000000000000040000000000000000000000000000000001000000000000000000000000000000010000000000000000000000000000100000000000000000000000000000000001000000000000000000000000000000000100000000000000000000000000a0acb903000000"
+  },
+  "expected_statement_hex": "e4dde333aabbbbe1035be38c75d1203342b303c202a4f0935694bfa1850f91c9",
+  "statement_sha256": "cc28857a5a7fcf30480cae4e00707766ed328453f8a930e0bd072fb1e890303a",
+  "reproduction": "paged-execution profile from the original program, followed by paged-execution statement with this profile and the three original artifacts"
+}

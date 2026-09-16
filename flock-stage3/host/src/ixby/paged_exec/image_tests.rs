@@ -38,6 +38,7 @@ fn production_execution_setups_validate_every_driver_and_complete_boundaries() {
     BatchClass::Compact,
     BatchClass::Bytes,
     BatchClass::SharedCompact,
+    BatchClass::Shared,
   ] {
     let compiled = CompiledPagedExecution::compile(class).unwrap();
     let mut image =
@@ -354,6 +355,11 @@ fn original_native_advice_generation_prefix() {
     .unwrap_or_else(|_| "10000".into())
     .parse::<usize>()
     .unwrap();
+  let class = match std::env::var("IXBY_PAGED_NATIVE_CLASS").as_deref() {
+    Ok("shared") => BatchClass::Shared,
+    Ok("shared-compact") | Err(_) => BatchClass::SharedCompact,
+    _ => panic!("IXBY_PAGED_NATIVE_CLASS must be shared or shared-compact"),
+  };
   assert!((1..=100_000).contains(&batches));
   let started = std::time::Instant::now();
   let mut image =
@@ -369,15 +375,13 @@ fn original_native_advice_generation_prefix() {
   machine.compare_native_advice =
     std::env::var_os("IXBY_COMPARE_NATIVE_ADVICE").is_some();
   eprintln!(
-    "differential comparison against actual Boolean plans: {}",
+    "native class={class:?}; differential comparison against actual Boolean plans: {}",
     machine.compare_native_advice
   );
   let started = std::time::Instant::now();
   let mut completed = 0;
   for _ in 0..batches {
-    let Some(_advice) =
-      machine.batch(BatchClass::SharedCompact, &mut image.memory).unwrap()
-    else {
+    let Some(_advice) = machine.batch(class, &mut image.memory).unwrap() else {
       break;
     };
     completed += 1;
@@ -399,4 +403,75 @@ fn original_native_advice_generation_prefix() {
     machine.state[BYTE_COUNT].lo,
     started.elapsed()
   );
+}
+
+#[test]
+#[ignore = "original IXBF/IXFI; larger execution batch, actual proof, recomputed clock attacks and fresh receiver"]
+fn original_shared_execution_segment_proves_fresh() {
+  proof_tests::original_proof_test(
+    BatchClass::Shared,
+    "ixby::paged_exec::image_tests::original_shared_execution_segment_proves_fresh",
+    || {
+      let program =
+        std::fs::read(std::env::var_os("IXBY_PAGED_PROGRAM").unwrap()).unwrap();
+      let input =
+        std::fs::read(std::env::var_os("IXBY_PAGED_INPUT").unwrap()).unwrap();
+      let index = std::env::var("IXBY_PAGED_PROOF_BATCH")
+        .unwrap_or_else(|_| "9".into())
+        .parse::<usize>()
+        .unwrap();
+      assert!(index < 10_000);
+      let mut image =
+        NativeImage::load(&program, &input, DecodeLimits::default()).unwrap();
+      let mut machine = image.machine().unwrap();
+      for _ in 0..index {
+        machine
+          .batch(BatchClass::Shared, &mut image.memory)
+          .unwrap()
+          .expect("execution prefix");
+      }
+      let before = machine.clock;
+      let fuel = machine.state[FUEL].hi;
+      let advice = machine
+        .batch(BatchClass::Shared, &mut image.memory)
+        .unwrap()
+        .expect("execution segment");
+      eprintln!(
+        "original shared execution segment: batch={index} clocks={before}..{} logical_steps={fuel}..{}; expected initial memory remains conditional on source admission",
+        machine.clock, machine.state[FUEL].hi
+      );
+      (advice, Vec::new())
+    },
+  );
+}
+
+#[test]
+#[ignore = "counts and materializes the fixed inner tables for the larger execution class"]
+fn shared_execution_class_exact_census() {
+  use crate::sizing::CountingEmitter;
+  use flock_prover::union::UnionInstance;
+  let class = BatchClass::Shared;
+  let mut counter = CountingEmitter::new();
+  let _ = emit_batch(&mut counter, class).unwrap();
+  let required_nu = counter.required_nu(3).unwrap();
+  for (table, rows) in counter.table_rows() {
+    eprintln!("shared execution table: {table} rows={rows}");
+  }
+  eprintln!(
+    "shared execution census: transitions={} accesses={} cells={} required_nu={required_nu} approved_nu={}",
+    class.transitions(),
+    class.accesses(),
+    class.cells(),
+    class.nu()
+  );
+  assert!(required_nu <= class.nu());
+  let (registry, counts) = counter.registry(class.nu());
+  let union = UnionInstance::new(&registry, counts);
+  eprintln!(
+    "shared execution census: M={} dense={} words element_tables={}",
+    union.dense_m(),
+    union.dense_words(),
+    registry.element_types().len()
+  );
+  assert!(union.has_element() && (22..=35).contains(&union.dense_m()));
 }

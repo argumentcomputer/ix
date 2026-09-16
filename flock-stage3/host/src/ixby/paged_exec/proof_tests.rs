@@ -607,7 +607,6 @@ fn proof_test(
   let mut counter = crate::sizing::CountingEmitter::new();
   let emission = emit_batch(&mut counter, class).unwrap();
   counter.ensure_matches(&compiled.shape).unwrap();
-  let emission = &emission;
   let shape = &compiled.shape;
   let setup_elapsed = setup_start.elapsed();
   if std::env::var_os(CHILD).is_some() {
@@ -646,7 +645,6 @@ fn proof_test(
   let proof = compiled.prove(&advice).unwrap();
   let prove_elapsed = start.elapsed();
   verify(&compiled, &advice.expected, &proof).unwrap();
-  assert!(isolated(test, &advice.expected, &proof));
   let union = UnionInstance::new(&shape.registry, shape.counts.clone());
   eprintln!(
     "paged execution proof: {} bytes, setup {setup_elapsed:?}, prove {prove_elapsed:?}, M={}, dense={} words",
@@ -671,13 +669,20 @@ fn proof_test(
   let mut extended = proof.clone();
   extended.push(0);
   assert!(verify(&compiled, &advice.expected, &extended).is_err());
-  let drivers = drivers(emission, shape);
+  let drivers = drivers(&emission, shape);
   for &attack in attacks {
-    let bad = prove(emission, shape, &drivers, &witness, attack);
+    let bad = prove(&emission, shape, &drivers, &witness, attack);
     let error = verify(&compiled, &advice.expected, &bad).unwrap_err();
     eprintln!("recomputed {attack:?} rejected: {error}");
     assert!(format!("{error}").contains("Wiring"));
   }
+  // The fresh receiver compiles its own approved setup. Release the parent's
+  // proving graph before spawning it, including for the larger fixed class.
+  drop(drivers);
+  drop(witness);
+  drop(emission);
+  drop(compiled);
+  assert!(isolated(test, &advice.expected, &proof));
 }
 
 pub(super) fn original_proof_test(

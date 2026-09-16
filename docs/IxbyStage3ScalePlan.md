@@ -11,7 +11,7 @@ workloads fit the original 16-billion-step and 16 MiB proof limits.
 | Init, original pinned guest | 1,002,355 | 9,611,120 | 5,372,353,187 | 710.70 | 1,209,236 |
 | CSLib, recompiled guest | 1,016,587 | 4,813,238 | 2,268,502,805 | 300.89 | 548,096 |
 
-On 2026-09-15 the CPU box is available for testing. These measurements are
+The CPU box supplied the reference measurements on 2026-09-15. These are
 reference execution, not Flock proving costs or compiler/native refinement
 certificates. The target remains a generic, image-independent proving setup
 and a proof of the exact approved binary/input/output relation. No complete
@@ -26,6 +26,10 @@ cover inspected operands/locals/returns/applications. These are measurements
 for execution-class design, not constrained execution or proving estimates.
 
 ## Completed foundations
+
+The entries below record individual component milestones. Their integration
+into a complete original-format proof is described in entries 22–24 and the
+current-status section below.
 
 1. [Strict functional intake](IxbyFunctionalIntake.md): canonical
    IXBF/IXFI/IXFO, full typed syntax, arbitrary-precision metadata, whole-image
@@ -175,97 +179,68 @@ for execution-class design, not constrained execution or proving estimates.
     25-batch hash resumes pending chunk/tree operations with the same digest.
     Full source/input admission, output binding and execution aggregation remain.
 
-## Next implementation gates
+22. [Complete paged admission and endpoint binding](IxbyFlockPagedAdmission.md):
+    original-byte banks, code materialization, semantic references, full
+    constructor-ID uniqueness, typed input and initialization, exact Bytes
+    output and artifact commitments have production proof APIs. All 1,227
+    original code batches, 994 reference batches, 146 constructor IDs and
+    5,695 commitment-bridge batches pass their actual circuits. A fixed IXFP
+    descriptor binds original limits and fuel; the endpoint circuit links all
+    283 component facts and derives the final digest `S`.
+23. [Complete recursive execution](IxbyFlockRecursion.md#complete-paged-execution-aggregation):
+    eleven component chains and the endpoint proof now close into one proof
+    whose verifier checks every fresh and inherited fixed-table claim. A
+    34-byte Bytes identity execution produces a 499,347-byte root; a separate
+    CLI execution returning 1,025 bytes produces a 503,683-byte root. Both
+    verify independently from the approved setup, expected digest and root
+    proof alone. Genuine but incompatible children reject. The CLI implements
+    original-artifact commitments, streamed proving, checked reuse, aggregation,
+    setup census and final verification. An independently checked countdown
+    fixture executes 83 reference transitions across three execution batches
+    and produces a 502,515-byte complete root; a budget of 82 fails.
+24. [Native advice and larger execution batches](IxbyFlockPagedExecution.md#larger-shared-execution-batch):
+    direct native advice is checked against the unchanged Boolean plans in
+    tests, and actual proof generation retains all circuit constraints. The
+    fixed Shared class has 688 microstep slots, 256 authenticated cells and
+    `M=31`. An original-CSLib segment of 118 microsteps and 32 logical steps
+    proves in 5.933 seconds, produces 498,939 bytes and verifies freshly.
+    Recomputed state-clock and memory-clock attacks reject. A separate native
+    prefix generates 150,607 microsteps in 8.172 seconds without proving.
 
-The [paged admission implementation](IxbyFlockPagedAdmission.md) now adds
-original-byte-bank proofs and source-bound packed-code writes to the
-foundations above. Three joint parser/code/memory proofs verify in fresh
-processes, and all 1,227 original CSLib code batches pass their actual
-circuits with the exact packed memory root. Complete semantic reference walks
-and full constructor-ID uniqueness now have fresh component proofs; all 994
-original reference batches and all 146 IDs pass their actual circuits. Input
-materialization now has fresh proofs and produces the exact original initial
-memory root, state and parameters. Bytes output and the exact domain-separated
-artifact commitment bridge now have fresh component proofs; all 5,695 original
-bridge circuits pass. Recursive composition must consume the initialization,
-finalization and all linked endpoints, bind the approved original-wire profile
-and final statement digest, and cover the full execution proof run.
+## Current integration and next measurements
 
-1. **Constrained binary correspondence.** Define the approved native
-   IXBF/IXFI/IXFO execution class and its identities. Constrain canonical
-   admission and the actual decoded code/input, or supply an explicit checked
-   correspondence for a different representation. A host transcode, renamed
-   header, or matching example output cannot establish this bridge. Preserve
-   binding to the original image, limits, primitive meanings and result ABI.
-   Codec, body/value-record, complete grammar-control, checked payload packing,
-   guest Nat-limit, UTF-8 and generic state-selected dispatch are implemented,
-   with complete source-bound grammar, declaration/header-registry and
-   instruction/reference, typed transport-value and executable-body proofs for
-   explicit small-file classes. Authenticated typed code and transport-value
-   reads now reuse chunk handles. Complete original-file grammar proofs now
-   span the full CSLib Program/Input/Output with shared source chunks. Next
-   is their complete recursive composition with the scalable semantic
-   admission, execution consumers and artifact commitment bridge.
-   Full-Init row differentials and small-file proofs do not close those obligations.
-2. **Streaming witness and measurements.** Produce bounded execution batches
-   while recording actual opcode frequencies, stack depth, allocations, byte
-   traffic, and Nat widths. Keep the untrusted witness generator separate from
-   verification. Do not materialize billions of execution steps just to profile
-   it. The complete reference control/block census and observed maxima are
-   retained in the profiling report above. Bounded execution-memory witness
-   generation and full allocation/byte-traffic measurements remain. Static
-   limits and native runtime are not prover-cost estimates.
-3. **Scalable code and memory authentication.** Replace capacity-wide selector
-   scans and full-bank replication with a reviewed access construction for
-   code, locals/continuations, and immutable constructor/PAP/byte/Nat records.
-   Bounded typed-code and transport-value seals and reusable authenticated
-   reads are implemented; full-image sealing, execution allocations and
-   local/continuation memory consumers remain required. Authenticated mutable
-   cells, immutable allocation and an exact batched memory log are now proved
-   independently; connect the actual execution addresses/values and complete
-   machine boundaries to these components.
-   Record identity, allocation order, field access and repeated reads must be
-   constrained. Benchmark code-authentication and representative memory traces
-   before choosing capacities or allocating a full circuit. Any new argument
-   or backend identity must be explicit; do not bypass admission guards.
-4. **Complete bounded execution segments.** Bind each boundary to the same
-   program, input and budget, including control/frame state, continuations,
-   all relevant arena commitments and allocation counters, and global fuel.
-   Enforce an authentic initial state, exact adjacent-state equality, ordered
-   coverage without skips/restarts, and a genuine final halt/output. The new
-   fuel ledger must consume actual control wires, not prover-selected kinds.
-   A local segment allowance must not reset the global semantic budget.
-5. **Sound composition.** Verify the complete segment chain; if one aggregate
-   Stage 3 proof is required, implement and review its composition relation.
-   The [complete parser aggregate](IxbyFlockRecursion.md) now constrains mixed
-   child verification, all parser boundaries and inherited-claim folds across
-   the full 1,217-batch tree. Adapt this machinery to the complete execution
-   segment statement once that relation is implemented and measured.
-   A concatenated list of endpoint hashes or an unchecked state-continuity
-   claim is not an aggregate execution proof. Version the wider profile and
-   proof envelope explicitly, retaining rejection of old/different setups.
-6. **Full pinned benchmark.** Regenerate the witness from the pinned CSLib
-   image and input, prove within an explicitly admitted resource envelope, and
-   verify in a fresh process against the externally expected Exec statement.
-   Record setup identities, raw/padded table geometry, witness/proof/verify
-   time, peak memory and complete proof bytes. Require negatives for changed
-   image, input, claim, memory access, boundary, budget and proof bytes.
-   Retain the original Init artifacts and configuration as a fallback; do not
-   interchange the two guests' key pins.
+The complete original-format proof path is implemented and has genuine
+small-workload proofs. The original CSLib program has a complete grammar
+aggregate and conditional execution-segment proofs. **The complete
+2,268,502,805-step CSLib execution has not been proved.** The segment timings
+above do not establish a practical full-run budget.
 
-The current native factories cap execution at 64 steps, functions at four,
-locals at 16, and program/I/O buffers at 512 bytes. Both full guest images
-have 681 functions and 73 locals in their largest frame, with the artifact
-sizes shown above. Raising constants alone does not address the current
-unrolled execution and memory construction. The next measurable milestone is
-a representative CSLib execution segment, including authenticated memory,
-proved and verified independently before estimating the full proving run.
+The current paged path streams bounded execution segments over depth-40
+authenticated memory and accepts original artifacts up to 16 MiB. Its physical
+numeric representation is Nat128; the original observed maximum is 65 bits.
+These are separate, explicit factories from the retained 64-step legacy Exec
+classes. The original binary, functional limits, input and canonical output
+remain bound by admission, initialization, finalization and commitments.
 
-Source/image/ABI reflection and native constraint-to-reference refinement
-remain separate correctness obligations. Experimental proof acceptance does
-not close them. Stage 4 terminal compression is a later, distinct task and is
-not required merely to produce a native Stage 3 proof.
+1. **Representative proving throughput.** Measure actual execution proofs
+   across arithmetic, calls, objects, memory growth and the large byte/hash
+   workload. Record setup, native advice, witness, proof and verification
+   separately, including peak memory. The first Shared segment is a baseline;
+   neither native reference speed nor the instruction-slot quota gives a
+   full-workload proving estimate.
+2. **Long-run operation.** The CLI retains and verifies bounded proof files;
+   it currently generates and proves leaves sequentially. `--resume`
+   regenerates native state from the beginning before checking cached leaves.
+   Parallel workers and native state checkpoints remain throughput and
+   resumption work for a large run. Their implementation must preserve the
+   existing complete state, memory-root and global-fuel checks.
+3. **Full pinned benchmark.** Generate all original CSLib component proofs,
+   aggregate their exact counts, and verify the root in a fresh process against
+   the [independently computed original-artifact digest](../flock-stage3/profile/cslib-paged-statement-v0.json). Record setup
+   identities, table geometry, wall time, memory, storage and proof bytes.
+   Exercise changed artifact, boundary, memory, budget and proof inputs. Keep
+   the separately pinned Init artifacts distinct if using the fallback.
 
-No paid tier, hardware, storage, SRS, protocol security setting or existing
-resource cap is increased by this plan. Admit and measure each new component
-before any full-workload proving attempt on the available CPU box.
+Native constraint-to-reference refinement remains a separate correctness
+obligation. The native Flock execution proof does not supply that formal
+refinement. Terminal FFLONK compression is also a separate later task.

@@ -64,6 +64,13 @@ with a 1,025-byte result uses multiple output and commitment batches and has
 a verified 503,683-byte root. The [workflow and its current limits](../docs/IxbyFlockRecursion.md#original-artifact-command-line-workflow)
 include explicit verifier profile/class/count inputs and retained proof files.
 
+The [countdown case](../docs/IxbyFlockRecursion.md#execution-spanning-several-batches)
+matches 83 reference transitions across three Shared execution batches and
+produces a **502,515-byte** complete proof, verified in a fresh process.
+Repeated, reversed and skipped genuine segments reject at the recursive
+relation, as do all 114 low/high changes to its execution statement. A budget
+of 82 fails in both the reference interpreter and the prover.
+
 ## Generic Exec replay
 
 `exec::compile_exec_replay` takes only an approved `CompiledExec` and produces
