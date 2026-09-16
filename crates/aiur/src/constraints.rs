@@ -13,10 +13,9 @@ use crate::{
     bytes1::{Bytes1, Bytes1Op},
     bytes2::{Bytes2, Bytes2Op},
   },
-  memory_channel, u8_add_channel, u8_and_channel, u8_bit_decomposition_channel,
-  u8_less_than_channel, u8_mul_channel, u8_or_channel, u8_range_check_channel,
-  u8_shift_left_channel, u8_shift_right_channel, u8_sub_channel,
-  u8_xor_channel, u8_xor_split4_channel, u8_xor_split7_channel,
+  memory_channel, u8_add_channel, u8_bit_decomposition_channel, u8_mul_channel,
+  u8_range_check_channel, u8_shift_left_channel, u8_shift_right_channel,
+  u8_sub_channel, u8_xor_channel, u8_xor_split4_channel, u8_xor_split7_channel,
 };
 
 type Expr = multi_stark::expr::Expr<G>;
@@ -661,30 +660,39 @@ impl Op {
         state.map.push((z, 1));
         state.map.push((borrow, x_deg.max(y_deg).max(1)));
       },
-      Op::U8And(i, j) => bytes2_constraints(
-        *i,
-        *j,
-        &Bytes2Op::And,
-        u8_and_channel(),
-        sel.clone(),
-        state,
-      ),
-      Op::U8Or(i, j) => bytes2_constraints(
-        *i,
-        *j,
-        &Bytes2Op::Or,
-        u8_or_channel(),
-        sel.clone(),
-        state,
-      ),
-      Op::U8LessThan(i, j) => bytes2_constraints(
-        *i,
-        *j,
-        &Bytes2Op::LessThan,
-        u8_less_than_channel(),
-        sel.clone(),
-        state,
-      ),
+      Op::U8And(i, j) | Op::U8Or(i, j) | Op::U8LessThan(i, j) => {
+        let x = state.map[*i].0.clone();
+        let y = state.map[*j].0.clone();
+        let output = state.next_auxiliary();
+        // The table binds x and y to bytes. Each affine result uniquely
+        // determines the original output over Goldilocks (2 and 256 are
+        // nonzero), without a new column or polynomial constraint.
+        let (channel, result) = match self {
+          Op::U8And(..) => (
+            u8_xor_channel(),
+            x.clone() + y.clone() - konst(G::TWO) * output.clone(),
+          ),
+          Op::U8Or(..) => (
+            u8_xor_channel(),
+            konst(G::TWO) * output.clone() - x.clone() - y.clone(),
+          ),
+          Op::U8LessThan(..) => (
+            u8_sub_channel(),
+            x.clone() - y.clone() + konst(G::from_u16(256)) * output.clone(),
+          ),
+          _ => unreachable!(),
+        };
+        let args = vec![
+          state.gate(sel, konst(channel)),
+          state.gate(sel, x),
+          state.gate(sel, y),
+          state.gate(sel, result),
+        ];
+        let lookup = state.next_lookup();
+        combine_lookup_args(lookup, args);
+        lookup.multiplicity = lookup.multiplicity.clone() + sel.clone();
+        state.map.push((output, 1));
+      },
       Op::U8XorSplit7(i, j) => bytes2_constraints(
         *i,
         *j,

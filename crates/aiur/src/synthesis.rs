@@ -201,7 +201,7 @@ impl AiurSystem {
     // Gadgets. The byte chips' lookup arguments are preprocessed columns
     // and their multiplicities main columns (all degree 1), so their
     // lookups also group 2 per chained step at degree 3 — halving the
-    // stage-2 accumulators (Bytes2: 10 → 5 at height 65536).
+    // stage-2 accumulators (Bytes2: 7 → 4 at height 65536).
     push_circuit(
       Bytes1.main_width(),
       Bytes1.preprocessed(),
@@ -657,6 +657,7 @@ impl AiurSystem {
 mod tests {
   mod acceptance;
   mod branchless;
+  mod byte_consolidation;
   mod byte_shapes;
   mod host_timings;
   mod lookup_budget;
@@ -1055,7 +1056,7 @@ mod tests {
     // height doubles as the committed trace height.
     assert_eq!(shapes[3].preprocessed_width, 11);
     assert_eq!(shapes[3].preprocessed_height, 256);
-    assert_eq!(shapes[4].preprocessed_width, 14);
+    assert_eq!(shapes[4].preprocessed_width, 11);
     assert_eq!(shapes[4].preprocessed_height, 65536);
   }
 }

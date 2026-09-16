@@ -21,10 +21,9 @@ use crate::{
   gadgets::{bytes1::Bytes1, bytes2::Bytes2},
   memory::Memory,
   querymap::QueryMap,
-  u8_add_channel, u8_and_channel, u8_bit_decomposition_channel,
-  u8_less_than_channel, u8_mul_channel, u8_or_channel, u8_range_check_channel,
-  u8_shift_left_channel, u8_shift_right_channel, u8_sub_channel,
-  u8_xor_channel, u8_xor_split4_channel, u8_xor_split7_channel,
+  u8_add_channel, u8_bit_decomposition_channel, u8_mul_channel,
+  u8_range_check_channel, u8_shift_left_channel, u8_shift_right_channel,
+  u8_sub_channel, u8_xor_channel, u8_xor_split4_channel, u8_xor_split7_channel,
 };
 
 struct ColumnIndex {
@@ -577,7 +576,11 @@ impl Op {
         let and = Bytes2::and(&i, &j);
         map.push((and, 1));
         slice.push_auxiliary(index, and);
-        slice.push_lookup(index, G::ONE, &[u8_and_channel(), i, j, and]);
+        slice.push_lookup(
+          index,
+          G::ONE,
+          &[u8_xor_channel(), i, j, i + j - G::TWO * and],
+        );
       },
       Op::U8Or(i, j) => {
         let (i, _) = map[*i];
@@ -585,7 +588,11 @@ impl Op {
         let or = Bytes2::or(&i, &j);
         map.push((or, 1));
         slice.push_auxiliary(index, or);
-        slice.push_lookup(index, G::ONE, &[u8_or_channel(), i, j, or]);
+        slice.push_lookup(
+          index,
+          G::ONE,
+          &[u8_xor_channel(), i, j, G::TWO * or - i - j],
+        );
       },
       Op::U8LessThan(i, j) => {
         let (i, _) = map[*i];
@@ -596,7 +603,7 @@ impl Op {
         slice.push_lookup(
           index,
           G::ONE,
-          &[u8_less_than_channel(), i, j, less_than],
+          &[u8_sub_channel(), i, j, i - j + G::from_u16(256) * less_than],
         );
       },
       Op::U8XorSplit7(i, j) => {

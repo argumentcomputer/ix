@@ -60,6 +60,9 @@ pub fn u8_sub_channel() -> G {
   G::from_u8(7)
 }
 
+// Legacy AND/OR/comparison channel IDs remain reserved. Their operations
+// now use affine arguments on the XOR/subtraction channels; Bytes2 does not
+// provide these three channels. Keep later channel IDs unchanged.
 #[inline]
 pub fn u8_and_channel() -> G {
   G::from_u8(8)
