@@ -21,6 +21,7 @@ use crate::{
   function_channel,
   gadgets::{AiurGadget, bytes1::Bytes1, bytes2::Bytes2},
   lookup_budget::lookup_query_bound,
+  lookup_shapes::{ClaimShape, valid_claim_shape},
   memory::Memory,
   trace_heights::{fixed_trace_heights, trace_cap_coverage},
 };
@@ -76,6 +77,7 @@ pub enum GatedProve {
 
 pub struct AiurSystem {
   toplevel: Toplevel,
+  claim_shapes: Vec<Option<ClaimShape>>,
   // perhaps remove the key from the system in verifier only mode?
   key: ProverKey<AiurConfig>,
   /// The parameters the system's config was built from, kept for the
@@ -136,7 +138,8 @@ impl AiurSystem {
     commitment_parameters: CommitmentParameters,
     fri_parameters: FriParameters,
   ) -> Self {
-    toplevel.validate_lookup_shapes().expect("invalid Aiur lookup shapes");
+    let claim_shapes =
+      toplevel.checked_claim_shapes().expect("invalid Aiur lookup shapes");
     toplevel.validate_row_counts().expect("invalid Aiur control counts");
     let mut circuit_inputs: Vec<CircuitInputs<G>> = Vec::new();
     let mut slot_widths: Vec<Vec<usize>> = Vec::new();
@@ -211,6 +214,7 @@ impl AiurSystem {
       system,
       key,
       toplevel,
+      claim_shapes,
       commitment_parameters,
       fri_parameters,
       slot_widths,
@@ -578,7 +582,7 @@ impl AiurSystem {
     claim: &[G],
     proof: &AiurProof,
   ) -> Result<(), VerificationError<PcsError>> {
-    if !self.toplevel.valid_claim_shape(claim) {
+    if !valid_claim_shape(&self.claim_shapes, claim) {
       return Err(VerificationError::InvalidClaim);
     }
     if !fixed_trace_heights(
