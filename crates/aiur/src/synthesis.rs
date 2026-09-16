@@ -1,7 +1,7 @@
 use multi_stark::{
   config::StarkGenericConfig,
   expr::Expr,
-  lookup::Lookup,
+  lookup::{Lookup, LookupRowMut},
   p3_field::{BasedVectorSpace, PrimeCharacteristicRing},
   p3_matrix::dense::RowMajorMatrix,
   prover::Proof,
@@ -48,7 +48,7 @@ pub struct PeakProveBytes {
 // Across the 168 completed Mathlib shard proofs at multi-stark 2892243e,
 // measured RSS / analytic peak had median 1.0678 and maximum under-prediction
 // 1.0714. A 7.5% envelope covers the full sample with a small margin. The
-// workspace now pins a8aab731; retain this historical guard, but re-calibrate
+// workspace now pins 9a906122; retain this historical guard, but re-calibrate
 // before treating it as a full-scale safety bound for the new prover.
 const PROVER_RSS_CALIBRATION_NUMERATOR: usize = 43;
 const PROVER_RSS_CALIBRATION_DENOMINATOR: usize = 40;
@@ -113,19 +113,26 @@ pub struct CircuitShape {
   pub preprocessed_height: usize,
 }
 
-/// Raw row count of a circuit under `record`, ceil-divided into `parts`
-/// even shares — `parts = 1` is the record's exact heights. The byte
-/// gadgets keep their fixed heights: they are the same size in every
+/// Conservative row count of a circuit under `record`, ceil-divided into
+/// `parts` even shares. Sum member-function rows before dividing; circuit
+/// indices are not function indices. Unlike witness generation, this count
+/// includes zero-multiplicity hint rows. The byte gadgets keep their fixed
+/// heights: they are the same size in every
 /// shard and are most of the peak model's floor, which dividing cannot
 /// shrink.
-fn raw_of(
-  record: &QueryRecord,
+fn raw_of<'a>(
+  toplevel: &'a Toplevel,
+  record: &'a QueryRecord,
   parts: usize,
-) -> impl Fn(usize, &CircuitType) -> usize + '_ {
+) -> impl Fn(usize, &CircuitType) -> usize + 'a {
   move |_, ct| match ct {
-    CircuitType::Function { idx } => {
-      record.function_queries[*idx].len().div_ceil(parts)
-    },
+    CircuitType::Function { idx } => toplevel.circuits[*idx]
+      .members
+      .iter()
+      .fold(0usize, |rows, &member| {
+        rows.saturating_add(record.function_queries[member].len())
+      })
+      .div_ceil(parts),
     CircuitType::Memory { width } => {
       record.memory_queries.get(width).map_or(0, |m| m.len().div_ceil(parts))
     },
@@ -275,7 +282,7 @@ impl AiurSystem {
   /// Predicted peak prover resident bytes for a record, from circuit
   /// shapes alone — the analytic counterpart of an empirical GiB-per-fft
   /// line. The terms mirror the allocation schedule originally calibrated at
-  /// multi-stark rev `2892243e`. The workspace now pins `a8aab731`, so the
+  /// multi-stark rev `2892243e`. The workspace now pins `9a906122`, so the
   /// model remains useful for relative shard sizing but needs a measured
   /// full-scale re-calibration before its absolute bound is relied upon:
   ///
@@ -298,7 +305,7 @@ impl AiurSystem {
   /// which per-fft models blur.
   pub fn peak_prove_bytes(&self, record: &QueryRecord) -> PeakProveBytes {
     self.peak_prove_bytes_by(
-      raw_of(record, 1),
+      raw_of(&self.toplevel, record, 1),
       crate::execute::record_retained_bytes(record),
     )
   }
@@ -335,11 +342,21 @@ impl AiurSystem {
       }
       let n = raw.next_power_of_two();
       let c = &self.system.circuits[i];
-      let d = c.stage_2_width / (1 + c.num_lookups); // extension degree
+      // Grouped accumulator width does not determine the extension degree.
+      let d = <ExtVal as BasedVectorSpace<G>>::DIMENSION;
       let args: usize = self.slot_widths[i].iter().sum();
       let q = c.quotient_degree();
-      witness +=
-        S * n * c.main_width + S * n * (c.num_lookups + args) + 40 * raw;
+      let metadata = match ct {
+        CircuitType::Function { idx } => crate::trace::witness_metadata_bytes(
+          self.toplevel.circuits[*idx].members.len(),
+          raw,
+        ),
+        _ => 0,
+      };
+      witness += S * n * c.main_width
+        + S * n * (c.num_lookups + args)
+        + size_of::<LookupRowMut<'_, G>>() * n
+        + metadata;
       s1_lde += S * b * n * c.main_width;
       lookup_w += S * n * (c.num_lookups + args);
       msgs += 2 * S * d * n * c.num_lookups;
@@ -389,7 +406,10 @@ impl AiurSystem {
     // count; stop rather than search forever.
     while parts < (1 << 20) {
       let peak = self
-        .peak_prove_bytes_by(raw_of(record, parts), record_bytes / parts)
+        .peak_prove_bytes_by(
+          raw_of(&self.toplevel, record, parts),
+          record_bytes / parts,
+        )
         .peak;
       if peak <= max_bytes {
         break;
@@ -638,10 +658,12 @@ mod tests {
   mod acceptance;
   mod branchless;
   mod byte_shapes;
+  mod host_timings;
   mod lookup_budget;
   mod lookup_groups;
   mod lookup_shapes;
   mod mmcs;
+  mod peak;
 
   use super::*;
   use crate::{
