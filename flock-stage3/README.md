@@ -126,8 +126,11 @@ memory root. Complete semantic reference walks and full 512-bit constructor-ID
 uniqueness now have fresh proofs as well. All 994 original reference circuit
 batches and all 146 original constructor IDs pass. Typed input materialization
 also has fresh proofs, and the full original input produces the exact initial
-memory root, machine state and parameters. Recursive composition, output
-binding and the full execution run remain.
+memory root, machine state and parameters. Original `IXFO` Bytes output now
+has fresh 351,259-byte memory/source proofs. The exact artifact commitment
+bridge has fresh 282,612-byte proofs, and all 5,695 original bridge circuits
+pass. Recursive composition, the approved original-wire profile and the full
+execution run remain.
 
 ```sh
 RAYON_NUM_THREADS=8 cargo test --release --locked --manifest-path flock-stage3/Cargo.toml --workspace conformance:: -- --ignored --test-threads=1

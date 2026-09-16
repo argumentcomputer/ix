@@ -185,9 +185,11 @@ circuits with the exact packed memory root. Complete semantic reference walks
 and full constructor-ID uniqueness now have fresh component proofs; all 994
 original reference batches and all 146 IDs pass their actual circuits. Input
 materialization now has fresh proofs and produces the exact original initial
-memory root, state and parameters. Recursive composition must consume these
-initialization constraints. Output/Exec commitment binding and the full
-execution proof run remain.
+memory root, state and parameters. Bytes output and the exact domain-separated
+artifact commitment bridge now have fresh component proofs; all 5,695 original
+bridge circuits pass. Recursive composition must consume the initialization,
+finalization and all linked endpoints, bind the approved original-wire profile
+and final statement digest, and cover the full execution proof run.
 
 1. **Constrained binary correspondence.** Define the approved native
    IXBF/IXFI/IXFO execution class and its identities. Constrain canonical
@@ -202,8 +204,8 @@ execution proof run remain.
    explicit small-file classes. Authenticated typed code and transport-value
    reads now reuse chunk handles. Complete original-file grammar proofs now
    span the full CSLib Program/Input/Output with shared source chunks. Next
-   are scalable semantic admission/materialization, execution consumers and
-   the Exec commitment bridge.
+   is their complete recursive composition with the scalable semantic
+   admission, execution consumers and artifact commitment bridge.
    Full-Init row differentials and small-file proofs do not close those obligations.
 2. **Streaming witness and measurements.** Produce bounded execution batches
    while recording actual opcode frequencies, stack depth, allocations, byte

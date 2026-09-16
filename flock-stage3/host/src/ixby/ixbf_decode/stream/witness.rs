@@ -18,11 +18,17 @@ fn words(bytes: &[u8]) -> Vec<F128> {
 }
 
 pub(in crate::ixby::ixbf_decode) struct Tree<'a> {
-  bytes: &'a [u8],
+  bytes: std::borrow::Cow<'a, [u8]>,
   levels: Vec<Vec<[u8; 32]>>,
 }
 impl<'a> Tree<'a> {
   pub(in crate::ixby::ixbf_decode) fn new(bytes: &'a [u8]) -> Self {
+    Self::from_bytes(std::borrow::Cow::Borrowed(bytes))
+  }
+  pub(in crate::ixby::ixbf_decode) fn owned(bytes: Vec<u8>) -> Tree<'static> {
+    Tree::from_bytes(std::borrow::Cow::Owned(bytes))
+  }
+  fn from_bytes(bytes: std::borrow::Cow<'a, [u8]>) -> Self {
     let mut leaves: Vec<_> = bytes
       .chunks(1024)
       .enumerate()

@@ -339,10 +339,11 @@ ordered access through the exact permutation and authenticated boundaries.
 
 ## Remaining integration
 
-Compose original source admission and input initialization; bind
-output serialization; and complete execution-proof aggregation.
-Then prove representative original-CSLib segments and measure
-the full run. None of the component results above substitutes for that run.
+Compose [source admission, initialization, output and commitment
+binding](IxbyFlockPagedAdmission.md); consume exact finalization; and complete
+execution-proof aggregation. Original-CSLib execution segments already have
+conditional proofs under Compact and SharedCompact. Larger-batch throughput,
+the complete original execution and final independent verification remain.
 
 ```sh
 RUSTFLAGS='-C target-cpu=native' RAYON_NUM_THREADS=4 cargo test --release \

@@ -211,20 +211,97 @@ Nat128 execution class requires a semantic Nat limit of at least 128 bits.
 The original initial state and parameters match the native loader exactly;
 the final recursive composition must consume these initialization wires.
 
+## Output bytes and exact termination
+
+[`output_bytes`](../flock-stage3/host/src/ixby/ixbf_decode/paged/output_bytes/)
+checks original `IXFO` results whose value is Bytes. It derives the canonical
+header and minimal LEB128 length from the actual result descriptor, checks
+exact EOF, and compares every payload window with authenticated execution
+memory. Reads may cross both source chunks and memory cells. Empty results
+have one checked zero-length window. Other result types require a separate
+output profile.
+
+Each fixed batch checks up to 32 consecutive 32-byte windows. The public
+statement contains the source length/digest, read-only memory root, complete
+result descriptor, and initial/final window indices: **9 words**. Completion
+requires index zero through `max(1, ceil(length / 32))`. The first row must
+advance; shared source identity, memory, result and every intermediate index
+must match across batches. The class uses 40 memory leaves, 255 parents,
+`nu=10`, `M=26` and 322,267 dense field words.
+
+Two **351,259-byte proofs** (unaligned multi-chunk data and empty bytes) verify
+in fresh processes. All nine expected-word changes and malformed envelopes
+reject. Six locally valid recomputed header, result-pointer, window-index,
+enabled-row and memory-byte substitutions fail Flock wiring verification.
+Setup took 3.366 seconds; witness evaluation plus proving took 0.147–0.395
+seconds. The adversarial test took 12.10 seconds wall time and peaked at
+2,498,296 KiB process RSS with four Rayon threads.
+
+The original **49-byte output**, containing a **34-byte Bytes result**, also
+has a 351,259-byte proof verified in a fresh process. This test supplies the
+result memory and descriptor; binding them to the completed original execution
+still belongs to the final composition.
+
+[`finalize`](../flock-stage3/host/src/ixby/ixbf_decode/paged/finalize.rs) checks
+the actual halted frame, empty pending machine state, exact remaining/consumed
+fuel sum, byte-array semantic limit and result range. Program and Input ranges
+must lie inside their exact source lengths; dynamic ranges must lie inside
+allocated byte cells. It derives the result and consumed steps from those
+wires. Like initialization, finalization still needs to be consumed by the
+recursive root.
+
+## Original-byte commitment bridge
+
+[`commitment_bridge`](../flock-stage3/host/src/ixby/ixbf_decode/paged/commitment_bridge/)
+binds each original file to the existing artifact hash preimage:
+
+```text
+"IxBy/commit/v0" || 00 || domain || parentDigest[32] || originalFile
+```
+
+Domains 1, 2 and 3 are distinct verifier-owned setups. Each batch authenticates
+original source chunks, constructs one complete prefixed chunk from their
+actual words, and authenticates it to the expected artifact digest. The
+48-byte prefix changes chunk alignment; the relation checks that shift and
+both files' final-chunk padding. Both exact lengths are authenticated.
+A complete chain covers every prefixed chunk from zero through EOF. Its parent
+must be the profile digest for Program and the same Program digest for Input
+and Output in the final composition. A raw digest alone cannot establish this
+relation.
+
+The bridge publishes **9 words**: raw source length/digest, parent digest,
+artifact digest and two chunk indices. Its fixed Boolean-only class has
+`nu=10`, `M=22` and 21,383 dense field words. Native source trees can own the
+prefixed buffer, avoiding reconstruction for each batch.
+
+Six **282,612-byte proofs**, covering first and final chunks under all three
+domains, verify in fresh processes. Six locally valid recomputed length,
+index, parent, source-word and final-padding substitutions fail at wiring.
+All nine changed expected words and malformed envelopes reject. Warm witness
+evaluation plus proving took 0.052–0.304 seconds per batch in that test.
+
+All original bridge circuits pass: **993 Program batches, 4,701 Input batches,
+and one Output batch**. Fresh proofs also pass for the first and final batch of
+each file (five proofs total). These are circuit checks for all batches and
+proofs for the boundaries, not yet an aggregated proof of the three complete
+chains. The fixture's profile-parent digest is conditional; the final root
+must supply and bind the approved profile.
+
 ## Proof interfaces and remaining work
 
-`CompiledSourceBytes`, `CompiledCodeCapture`, `CompiledReferences` and
-`CompiledConstructorIds` and `CompiledInputCapture` expose fixed compilation,
+`CompiledSourceBytes`, `CompiledCodeCapture`, `CompiledReferences`,
+`CompiledConstructorIds`, `CompiledInputCapture`, `CompiledOutputBytes` and
+`CompiledCommitmentBridge` expose fixed compilation,
 proving, verification and verified child-replay inputs. Setup is compiled
 before examining any source, statement, advice or proof. Replay objects are
 native witness material; recursive composition must constrain the complete
 child verifier and its inherited claims. Compilation also compares every
 prover driver's matrices and wire schema with the compiled verifier registry.
 
-Final output bytes must be tied to the halted value. The final relation must
-compose the admission and execution chains, consume the initialization
-constraints, and bind all source identities, memory/state boundaries and the
-original Exec commitment format. Full execution proof generation remains.
+The final relation must compose the admission, execution, output and commitment
+chains, consume the initialization/finalization constraints, and bind the
+approved profile, all source identities, memory/state boundaries and final
+Exec statement digest. Full execution proof generation remains.
 
 ## Reproduction
 
@@ -252,6 +329,14 @@ RUSTFLAGS='-C target-cpu=native' RAYON_NUM_THREADS=4 cargo test --release \
   --offline --manifest-path flock-stage3/Cargo.toml \
   input_capture_proves_fresh_and_rejects_recomputed_values \
   -- --ignored --nocapture --test-threads=1
+RUSTFLAGS='-C target-cpu=native' RAYON_NUM_THREADS=4 cargo test --release \
+  --offline --manifest-path flock-stage3/Cargo.toml \
+  output_bytes_prove_fresh_and_reject_recomputed_ranges \
+  -- --ignored --nocapture --test-threads=1
+RUSTFLAGS='-C target-cpu=native' RAYON_NUM_THREADS=4 cargo test --release \
+  --offline --manifest-path flock-stage3/Cargo.toml \
+  bridges_prove_fresh_and_reject_recomputed_prefixes \
+  -- --ignored --nocapture --test-threads=1
 IXBY_PAGED_PROGRAM=/path/to/cslib.ixby \
 RUSTFLAGS='-C target-cpu=native' RAYON_NUM_THREADS=4 cargo test --release \
   --offline --manifest-path flock-stage3/Cargo.toml \
@@ -272,5 +357,12 @@ IXBY_PAGED_INPUT=/path/to/cslib.ixbi \
 RUSTFLAGS='-C target-cpu=native' RAYON_NUM_THREADS=4 cargo test --release \
   --offline --manifest-path flock-stage3/Cargo.toml \
   original_input_materializes_the_exact_initial_execution_image \
+  -- --ignored --nocapture --test-threads=1
+IXBY_PAGED_PROGRAM=/path/to/cslib.ixby \
+IXBY_PAGED_INPUT=/path/to/cslib.ixbi \
+IXBY_PAGED_OUTPUT=/path/to/expected.ixbo \
+RUSTFLAGS='-C target-cpu=native' RAYON_NUM_THREADS=4 cargo test --release \
+  --offline --manifest-path flock-stage3/Cargo.toml \
+  original_artifacts_complete_commitment_bridge_circuits \
   -- --ignored --nocapture --test-threads=1
 ```
