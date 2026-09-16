@@ -98,10 +98,9 @@ def scopedRead (body : E) : E :=
   bind (b .affine) (borrow (v 0) body) (v 1)
 
 def cases : Array Case := #[
+  -- Usage
   ⟨"ordinary identity", arr (b .many), lam (b .many) (v 0), "ok"⟩,
   ⟨"linear identity", arr (b .linear), lam (b .linear) (v 0), "ok"⟩,
-  ⟨"linear unique transfer", arr (b .linear .unique) .unique,
-    lam (b .linear .unique) (v 0), "ok"⟩,
   ⟨"unused erased", arr (b .erased), lam (b .erased) zero, "ok"⟩,
   ⟨"erased argument has zero demand", arr (b .erased),
     lam (b .erased) (call 4 (v 0)), "ok"⟩,
@@ -116,6 +115,16 @@ def cases : Array Case := #[
     lam (b .linear) (bind (b .erased) (v 0) (v 1)), "ok"⟩,
   ⟨"duplicate affine through let", arr (b .affine),
     lam (b .affine) (bind (b .affine) (v 0) (v 1)), "usage"⟩,
+  ⟨"fresh inner linear binder under many demand", arr (b .many),
+    lam (b .many) (call 5 (bind (b .linear) (v 0) (v 0))), "ok"⟩,
+  ⟨"type formation has zero runtime demand", arr (b .erased) .shared (.sort 0) (.sort 0),
+    lam (b .erased) (v 0) (.sort 0), "ok"⟩,
+  ⟨"type use cannot discharge linear runtime obligation", arr (b .linear) .shared (.sort 0) (.sort 0),
+    lam (b .linear) (v 0) (.sort 0), "usage"⟩,
+
+  -- Ownership transfers
+  ⟨"linear unique transfer", arr (b .linear .unique) .unique,
+    lam (b .linear .unique) (v 0), "ok"⟩,
   ⟨"shared cannot become unique", arr (b .linear) .unique,
     lam (b .linear) (v 0), "ownership"⟩,
   ⟨"unique cannot transfer twice despite many", arr (b .many .unique) .unique,
@@ -123,6 +132,8 @@ def cases : Array Case := #[
       (bind (b .linear .unique) (v 1) (v 0))), "moved"⟩,
   ⟨"permanent sharing relinquishes unique", arr (b .many .unique) .unique,
     lam (b .many .unique) (bind (b .affine) (v 0) (v 1)), "ownership"⟩,
+
+  -- Locality
   ⟨"local input local output", arr (b .linear .localShared) .localShared,
     lam (b .linear .localShared) (v 0), "ok"⟩,
   ⟨"local unique input local unique output", arr (b .linear .localUnique) .localUnique,
@@ -133,6 +144,8 @@ def cases : Array Case := #[
     lam (b .linear .localShared) (call 2 (v 0)), "ok"⟩,
   ⟨"inner local let cannot escape as local", arr (b .linear) .localShared,
     lam (b .linear) (bind (b .linear .localShared) (v 0) (v 0)), "escape"⟩,
+
+  -- Shared loans
   ⟨"borrow ends before owner transfer", arr (b .linear .unique) .unique,
     lam (b .linear .unique) (scopedRead (call 1 (v 0))), "ok"⟩,
   ⟨"unique access during loan", arr (b .linear .unique) .unique,
@@ -158,8 +171,14 @@ def cases : Array Case := #[
   ⟨"projected loan ends before owner transfer", arr (b .linear .unique) .unique pairTy pairTy,
     lam (b .linear .unique)
       (bind (b .affine) (borrow (.prj 7 0 (v 0)) (call 1 (v 0))) (v 1)) pairTy, "ok"⟩,
-  ⟨"unregistered projection has no optimistic rule", arr (b .many .unique),
-    lam (b .many .unique) (.prj 0 0 (v 0)), "unsupported"⟩,
+  ⟨"discarding borrow before narrowing fresh result", arr (b .many .unique) .localShared,
+    lam (b .many .unique) (borrow (v 0) (call 1 (v 0))), "ok"⟩,
+  ⟨"erased owner cannot be restored through a borrow", arr (b .erased .unique),
+    lam (b .erased .unique) (borrow (v 0) (call 1 (v 0))), "unsupported"⟩,
+  ⟨"erased view cannot be restored through a reborrow", arr (b .many .unique),
+    lam (b .many .unique) (borrow (v 0) (borrow (v 0) (call 1 (v 0))) .erased), "unsupported"⟩,
+
+  -- Captures and projections
   ⟨"shared closure cannot hide affine capture", arr (b .affine) .shared natTy (closureType .shared),
     lam (b .affine) (lam (b .many) (v 1)), "capture"⟩,
   ⟨"unique closure retains finite capture", arr (b .linear) .unique natTy (closureType .shared),
@@ -172,6 +191,23 @@ def cases : Array Case := #[
     lam (b .linear .localShared) (call 8 (v 0)), "unrestricted"⟩,
   ⟨"aggregate retains caller locality", arr (b .linear .localShared) .localShared natTy pairTy,
     lam (b .linear .localShared) (call 8 (v 0)), "ok"⟩,
+  ⟨"shared aggregate cannot expose reusable unique closure", arr (b .linear) .shared pairTy (closureType .shared),
+    lam (b .linear) (.prj 7 1 (v 0)) pairTy, "capture"⟩,
+  ⟨"unique aggregate transfers unique closure field", arr (b .linear .unique) .unique pairTy (closureType .shared),
+    lam (b .linear .unique) (.prj 7 1 (v 0)) pairTy, "ok"⟩,
+  ⟨"shared field retains its reusable function contract", arr (b .linear) .shared pairTy (closureType .shared),
+    lam (b .linear) (.prj 7 2 (v 0)) pairTy, "ok"⟩,
+  ⟨"projected borrow cannot launder unique closure", arr (b .many) .shared pairTy natTy,
+    lam (b .many) (borrow (.prj 7 1 (v 0)) zero .many (closureType .shared)) pairTy, "capture"⟩,
+  ⟨"capturing owner transfers it even when closure only borrows", arr (b .linear .unique) .unique natTy (closureType .shared),
+    lam (b .linear .unique) (lam (b .many) (borrow (v 1) (call 1 (v 0)))), "ok"⟩,
+  ⟨"reborrowing closure captures the view without moving its root", arr (b .linear .unique) .unique,
+    lam (b .linear .unique) (scopedRead
+      (bind (b .linear .localShared)
+        (lam (b .many) (borrow (v 1) (call 1 (v 0))))
+        (.app (v 0) zero) (closureType .shared))), "ok"⟩,
+
+  -- Branches and selection
   ⟨"linear use in both alternatives", arr (b .linear),
     lam (b .linear) (choose 6 (v 0) (v 0)), "ok"⟩,
   ⟨"linear missing in one alternative", arr (b .linear),
@@ -184,50 +220,27 @@ def cases : Array Case := #[
     lam (b .many .unique) (bind (b .affine .unique) (choose 10 (v 0) zero) (v 1)), "moved"⟩,
   ⟨"partial selection is not an ordinary function", arr (b .many),
     lam (b .many) (call 6 (v 0)), "unsupported"⟩,
+  ⟨"selection cannot bypass its rule through a callback", arr (b .many) .shared natTy (choiceType .shared),
+    lam (b .many) (ref 6), "unsupported"⟩,
+  ⟨"branch analysis follows a shared application head", arr (b .linear),
+    lam (b .linear) (.app (.app (.app (.share 1) zero) (v 0)) (v 0)), "ok"⟩,
+
+  -- Interfaces and sharing
+  ⟨"unregistered projection has no optimistic rule", arr (b .many .unique),
+    lam (b .many .unique) (.prj 0 0 (v 0)), "unsupported"⟩,
   ⟨"sharing checked in live binder context", arr (b .linear),
     lam (b .linear) (.share 0), "ok"⟩,
   ⟨"sharing cannot cache away erased restriction", arr (b .erased),
     lam (b .erased) (.share 0), "usage"⟩,
   ⟨"lambda and interface input must agree", arr (b .linear),
     lam (b .many) (v 0), "binder"⟩,
-  ⟨"fresh inner linear binder under many demand", arr (b .many),
-    lam (b .many) (call 5 (bind (b .linear) (v 0) (v 0))), "ok"⟩,
-  ⟨"discarding borrow before narrowing fresh result", arr (b .many .unique) .localShared,
-    lam (b .many .unique) (borrow (v 0) (call 1 (v 0))), "ok"⟩,
-  ⟨"type formation has zero runtime demand", arr (b .erased) .shared (.sort 0) (.sort 0),
-    lam (b .erased) (v 0) (.sort 0), "ok"⟩,
-  ⟨"type use cannot discharge linear runtime obligation", arr (b .linear) .shared (.sort 0) (.sort 0),
-    lam (b .linear) (v 0) (.sort 0), "usage"⟩,
-  ⟨"selection cannot bypass its rule through a callback", arr (b .many) .shared natTy (choiceType .shared),
-    lam (b .many) (ref 6), "unsupported"⟩,
-  ⟨"shared aggregate cannot expose reusable unique closure", arr (b .linear) .shared pairTy (closureType .shared),
-    lam (b .linear) (.prj 7 1 (v 0)) pairTy, "capture"⟩,
-  ⟨"unique aggregate transfers unique closure field", arr (b .linear .unique) .unique pairTy (closureType .shared),
-    lam (b .linear .unique) (.prj 7 1 (v 0)) pairTy, "ok"⟩,
-  ⟨"shared field retains its reusable function contract", arr (b .linear) .shared pairTy (closureType .shared),
-    lam (b .linear) (.prj 7 2 (v 0)) pairTy, "ok"⟩,
-  ⟨"projected borrow cannot launder unique closure", arr (b .many) .shared pairTy natTy,
-    lam (b .many) (borrow (.prj 7 1 (v 0)) zero .many (closureType .shared)) pairTy, "capture"⟩,
-  ⟨"capturing owner transfers it even when closure only borrows", arr (b .linear .unique) .unique natTy (closureType .shared),
-    lam (b .linear .unique) (lam (b .many) (borrow (v 1) (call 1 (v 0)))), "ok"⟩,
-  ⟨"branch analysis follows a shared application head", arr (b .linear),
-    lam (b .linear) (.app (.app (.app (.share 1) zero) (v 0)) (v 0)), "ok"⟩,
-  ⟨"erased owner cannot be restored through a borrow", arr (b .erased .unique),
-    lam (b .erased .unique) (borrow (v 0) (call 1 (v 0))), "unsupported"⟩,
-  ⟨"erased view cannot be restored through a reborrow", arr (b .many .unique),
-    lam (b .many .unique) (borrow (v 0) (borrow (v 0) (call 1 (v 0))) .erased), "unsupported"⟩,
   ⟨"erased higher order argument still checks its contracts", arr (b .erased) .shared (arr (b .linear)) natTy,
     lam (b .erased) (.app (lam (b .erased) zero (arr (b .many))) (v 0)) (arr (b .linear)), "type"⟩,
   ⟨"erased higher order argument with matching interface", arr (b .erased) .shared (arr (b .many)) natTy,
-    lam (b .erased) (.app (lam (b .erased) zero (arr (b .many))) (v 0)) (arr (b .many)), "ok"⟩,
-  ⟨"reborrowing closure captures the view without moving its root", arr (b .linear .unique) .unique,
-    lam (b .linear .unique) (scopedRead
-      (bind (b .linear .localShared)
-        (lam (b .many) (borrow (v 1) (call 1 (v 0))))
-        (.app (v 0) zero) (closureType .shared))), "ok"⟩
+    lam (b .erased) (.app (lam (b .erased) zero (arr (b .many))) (v 0)) (arr (b .many)), "ok"⟩
 ]
 
-def additionalCases : Array Case := Id.run do
+def higherOrderCases : Array Case := Id.run do
   let callback := arr (b .linear .localShared)
   let type := arr (b .many .localShared) .localShared callback
     (arr (b .linear .localShared))
@@ -248,18 +261,23 @@ def additionalCases : Array Case := Id.run do
     ⟨"higher order contract mismatch", mismatched, mismatchBody, "type"⟩
   ]
 
-def allCases : Array Case := cases ++ additionalCases
+def allCases : Array Case := cases ++ higherOrderCases
 
-def run : IO Unit := do
+def runFixtureCases : IO Nat := do
   let file ← IO.FS.readFile "Tests/Fixtures/ixon-v3/resource.tsv"
+  let lines := file.splitOn "\n"
   for test in allCases do
     let actual := runCase test.type test.value
     let code := match actual with | .ok _ => "ok" | .error e => errorCode e
     unless code == test.expected do
       throw <| IO.userError s!"resource: {test.name}: expected {test.expected}, got {repr actual}"
     let line := s!"{test.name}\t{test.expected}\t{hexOfBytes (runPut (putExpr test.type))}\t{hexOfBytes (runPut (putExpr test.value))}"
-    unless (file.splitOn "\n").contains line do
+    unless lines.contains line do
       throw <| IO.userError s!"resource fixture bytes differ: {test.name}"
+  return allCases.size
+
+def runContractMatrix : IO Nat := do
+  let mut checks := 0
   for code in [0:16] do
     let some input := BinderContract.ofBits? code.toUInt8
       | throw <| IO.userError "invalid generated input code"
@@ -272,13 +290,22 @@ def run : IO Unit := do
          (input.value.locality == .unrestricted || result.locality == .local))
       unless (runCase (arr input result) (lam input body)).toOption.isSome == allowed do
         throw <| IO.userError s!"resource contract matrix differs at {code}/{resultCode}"
-  -- Budget exhaustion is an error, including cycles through open sharing.
+      checks := checks + 1
+  return checks
+
+/-- Budget exhaustion is an error, including cycles through open sharing. -/
+def checkSharingBudget : IO Unit := do
   let cyclic := { program with sharing := #[.share 0] }
   let action := analyze 20 { program := cyclic } (.share 0) none 0 .linear
   match action.run {} with
   | .error .budget _ => pure ()
   | _ => throw <| IO.userError "cyclic sharing did not exhaust the bound"
-  IO.println s!"Resource checker: {allCases.size + 65} positive/negative and mode checks passed"
+
+def run : IO Unit := do
+  let fixtures ← runFixtureCases
+  let matrix ← runContractMatrix
+  checkSharingBudget
+  IO.println s!"Resource checker: {fixtures + matrix + 1} positive/negative and mode checks passed"
 
 end Tests.Resource
 

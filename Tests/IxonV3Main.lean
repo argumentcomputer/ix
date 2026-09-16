@@ -22,11 +22,12 @@ def main (args : List String) : IO Unit := do
     Tests.IxonV3Handoff.writeArtifacts "/tmp/ixon-v3-handoff"
   else
     Tests.IxonV3Handoff.check "Tests/Fixtures/ixon-v3/handoff"
-  let checks ← Tests.IxonV3.runGolden
+  let cases ← Tests.IxonV3.readExprCases
+  let checks ← Tests.IxonV3.runGolden cases
   IO.println s!"Ixon v3: {checks} golden byte and rejection checks passed"
-  let ffiChecks ← Tests.IxonV3.runFFI
+  let ffiChecks ← Tests.IxonV3.runFFI cases
   IO.println s!"Ixon v3: {ffiChecks} FFI, byte parity, and sharing hash checks passed"
-  let vmChecks ← Tests.IxonV3.runVM
+  let vmChecks ← Tests.IxonV3.runVM cases
   IO.println s!"Ixon v3: {vmChecks} VM execution, interpretation, and proof checks passed"
   let textChecks ← Tests.IxonV3.runText
   IO.println s!"Ixon v3: {textChecks} text contract and rejection checks passed"

@@ -7,9 +7,17 @@ public section
 namespace Tests.IxonV3
 open Ixon
 
+structure ExprCase where
+  name : String
+  expr : Expr
+  bytes : ByteArray
+
+def lambdaTelescope : Expr :=
+  .lam .many (.sort 0) (.lam .many (.sort 0) (.lam .many (.sort 0) (.var 0)))
+
 def fixtures : List (String × Expr) := [
   ("app", .app (.app (.app (.var 3) (.var 2)) (.var 1)) (.var 0)),
-  ("lam", .lam .many (.sort 0) (.lam .many (.sort 0) (.lam .many (.sort 0) (.var 0)))),
+  ("lam", lambdaTelescope),
   ("lam_local_unique", .lam ⟨.linear, .localUnique⟩ (.sort 0) (.var 0)),
   ("lam_affine_local", .lam ⟨.affine, .localShared⟩ (.sort 0) (.var 0)),
   ("all", .all ⟨.linear, .localUnique⟩ .localUnique (.sort 0)
@@ -27,37 +35,41 @@ def usages : Array Uses := #[.erased, .linear, .affine, .many]
 
 /-- Every representable combination. Resource validity is checked separately
 from these representation tests, including for borrow-let contracts. -/
-def modeCases : List (String × Expr × ByteArray) := Id.run do
+def modeCases : List ExprCase := Id.run do
   let mut cases := #[]
   for v in [:4] do
     for u in [:4] do
       let contract : BinderContract := ⟨usages[u]!, valueContracts[v]!⟩
       let code := (u + 4 * v).toUInt8
-      cases := cases.push (s!"lambda-{u}-{v}", .lam contract (.sort 0) (.var 0),
-        ByteArray.mk #[0x81, code, 0x00, 0x10])
+      cases := cases.push ⟨s!"lambda-{u}-{v}", .lam contract (.sort 0) (.var 0),
+        ByteArray.mk #[0x81, code, 0x00, 0x10]⟩
       for r in [:4] do
-        cases := cases.push (s!"forall-{u}-{v}-{r}",
+        cases := cases.push ⟨s!"forall-{u}-{v}-{r}",
           .all contract valueContracts[r]! (.sort 0) (.var 0),
-          ByteArray.mk #[0x91, code + 16 * r.toUInt8, 0x00, 0x10])
+          ByteArray.mk #[0x91, code + 16 * r.toUInt8, 0x00, 0x10]⟩
       for flags in [:4] do
         let lc : LetContract := {
           nonDep := flags % 2 == 1
           kind := if flags / 2 == 1 then .borrowShared else .value
           binder := contract
         }
-        cases := cases.push (s!"let-{u}-{v}-{flags}", .letE lc (.sort 0) (.var 1) (.var 0),
-          ByteArray.mk #[0xA0 + flags.toUInt8, code, 0x00, 0x11, 0x10])
+        cases := cases.push ⟨s!"let-{u}-{v}-{flags}", .letE lc (.sort 0) (.var 1) (.var 0),
+          ByteArray.mk #[0xA0 + flags.toUInt8, code, 0x00, 0x11, 0x10]⟩
   return cases.toList
 
-def modeFixtures : List (String × Expr) := modeCases.map fun (label, expr, _) => (label, expr)
-
-def parseHex : List Char → Except String (List UInt8)
-  | [] => .ok []
-  | hi :: lo :: rest => do
-    let some hi := natOfHex hi | throw "invalid hex digit"
-    let some lo := natOfHex lo | throw "invalid hex digit"
-    return (hi * 16 + lo).toUInt8 :: (← parseHex rest)
-  | _ => .error "odd hex length"
+/-- Load independent golden bytes once for the Lean, Rust FFI, and VM suites. -/
+def readExprCases : IO (List ExprCase) := do
+  let file ← IO.FS.readFile "Tests/Fixtures/ixon-v3/expressions.txt"
+  let lines := file.splitOn "\n"
+  let golden : List ExprCase ← fixtures.mapM fun (name, expr) => do
+    let some line := lines.find? (·.startsWith (name ++ " "))
+      | throw <| IO.userError s!"missing fixture {name}"
+    let [_, hex] := line.splitOn " "
+      | throw <| IO.userError s!"invalid fixture row: {line}"
+    let some bytes := bytesOfHex hex
+      | throw <| IO.userError s!"invalid fixture hex: {name}"
+    return { name, expr, bytes }
+  return golden ++ modeCases
 
 def checkBytes (name : String) (expr : Expr) (expected : ByteArray) : IO Nat := do
   let actual := runPut (putExpr expr)
@@ -74,43 +86,38 @@ def checkBytes (name : String) (expr : Expr) (expected : ByteArray) : IO Nat := 
       throw <| IO.userError s!"{name}: accepted truncation at {n}"
   return expected.size + 3
 
-def malformed : Array ByteArray := (#[] : Array ByteArray) ++ #[
-  .mk #[0x70], .mk #[0x80], .mk #[0x90],
-  .mk #[0x71, 0x71, 0x10, 0x11, 0x12],
-  .mk #[0x81, 0x07, 0x00, 0x81, 0x07, 0x00, 0x10],
-  .mk #[0x91, 0x17, 0x00, 0x91, 0x17, 0x00, 0x10],
-  .mk #[0xA4, 0x07, 0x00, 0x10, 0x10],
-  .mk #[0x18, 0x00], .mk #[0x28, 0x07, 0x00], .mk #[0x20, 0x80, 0x00],
-  .mk #[0x87, 0x07, 0x00, 0x10], .mk #[0x77, 0x10]
+def malformedCases : Array (String × ByteArray) := #[
+  ("empty-app", .mk #[0x70]),
+  ("empty-lambda", .mk #[0x80]),
+  ("empty-forall", .mk #[0x90]),
+  ("split-app-telescope", .mk #[0x71, 0x71, 0x10, 0x11, 0x12]),
+  ("split-lambda-telescope", .mk #[0x81, 0x07, 0x00, 0x81, 0x07, 0x00, 0x10]),
+  ("split-forall-telescope", .mk #[0x91, 0x17, 0x00, 0x91, 0x17, 0x00, 0x10]),
+  ("reserved-let-flags", .mk #[0xA4, 0x07, 0x00, 0x10, 0x10]),
+  ("nonminimal-variable", .mk #[0x18, 0x00]),
+  ("nonminimal-reference-count", .mk #[0x28, 0x07, 0x00]),
+  ("nonminimal-reference-index", .mk #[0x20, 0x80, 0x00]),
+  ("truncated-lambda-telescope", .mk #[0x87, 0x07, 0x00, 0x10]),
+  ("truncated-app-telescope", .mk #[0x77, 0x10])
 ]
 
-def runGolden : IO Nat := do
-  let file ← IO.FS.readFile "Tests/Fixtures/ixon-v3/expressions.txt"
-  let mut checks := 0
-  for (name, expr) in fixtures do
-    let some line := (file.splitOn "\n").find? (·.startsWith (name ++ " "))
-      | throw <| IO.userError s!"missing fixture {name}"
-    let some hex := (line.splitOn " ")[1]?
-      | throw <| IO.userError s!"missing bytes for {name}"
-    let expected ← match parseHex hex.toList with
-      | .ok bytes => pure (ByteArray.mk bytes.toArray)
-      | .error e => throw <| IO.userError e
-    checks := checks + (← checkBytes name expr expected)
-  for (name, expr, expected) in modeCases do
-    checks := checks + (← checkBytes name expr expected)
-  for bytes in malformed do
-    if (runGetExact getExpr bytes).toOption.isSome then
-      throw <| IO.userError s!"accepted noncanonical bytes {hexOfBytes bytes}"
-    checks := checks + 1
+/-- Shared raw rejection cases for the native Lean decoder and VM. -/
+def rejectedExprCases : Array (String × ByteArray) := Id.run do
+  let mut cases := malformedCases
   for code in [16:256] do
-    for bytes in #[ByteArray.mk #[0x81, code.toUInt8, 0x00, 0x10],
-        ByteArray.mk #[0xA0, code.toUInt8, 0x00, 0x10, 0x10]] do
-      if (runGetExact getExpr bytes).toOption.isSome then
-        throw <| IO.userError s!"accepted reserved contract bits {code}"
-      checks := checks + 1
+    cases := cases.push (s!"lambda-reserved-binder-{code}", .mk #[0x81, code.toUInt8, 0x00, 0x10])
+    cases := cases.push (s!"let-reserved-binder-{code}", .mk #[0xA0, code.toUInt8, 0x00, 0x10, 0x10])
   for code in [64:256] do
-    if (runGetExact getExpr (.mk #[0x91, code.toUInt8, 0x00, 0x10])).toOption.isSome then
-      throw <| IO.userError s!"accepted reserved forall bits {code}"
+    cases := cases.push (s!"forall-reserved-bits-{code}", .mk #[0x91, code.toUInt8, 0x00, 0x10])
+  return cases
+
+def runGolden (cases : List ExprCase) : IO Nat := do
+  let mut checks := 0
+  for test in cases do
+    checks := checks + (← checkBytes test.name test.expr test.bytes)
+  for (name, bytes) in rejectedExprCases do
+    if (runGetExact getExpr bytes).toOption.isSome then
+      throw <| IO.userError s!"{name}: accepted noncanonical bytes {hexOfBytes bytes}"
     checks := checks + 1
   return checks
 
