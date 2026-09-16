@@ -1,5 +1,8 @@
 # Aiur GPU trace codegen: implementation plan
 
+Current status, verified defects and the recommended order of remaining work
+are in the [handoff](aiur-trace-codegen-handoff.md).
+
 Reviewed after the main merge on 2026-09-15: ix
 `92fa743c9950d4e0c2e13d0b820b371e914e232d` and multi-stark
 `9ba93c0b448c77b99eafe867c3078a83ee0eef2f`; Rust execution artifacts were
