@@ -342,3 +342,61 @@ fn original_execution_segment_with_shared_tree_proves_fresh() {
     },
   );
 }
+
+#[test]
+#[ignore = "original artifacts; native advice-generation throughput only, no proof claim"]
+fn original_native_advice_generation_prefix() {
+  let program =
+    std::fs::read(std::env::var_os("IXBY_PAGED_PROGRAM").unwrap()).unwrap();
+  let input =
+    std::fs::read(std::env::var_os("IXBY_PAGED_INPUT").unwrap()).unwrap();
+  let batches = std::env::var("IXBY_PAGED_BATCHES")
+    .unwrap_or_else(|_| "10000".into())
+    .parse::<usize>()
+    .unwrap();
+  assert!((1..=100_000).contains(&batches));
+  let started = std::time::Instant::now();
+  let mut image =
+    NativeImage::load(&program, &input, DecodeLimits::default()).unwrap();
+  eprintln!(
+    "native throughput image: program={} input={} cells={} load={:?}",
+    program.len(),
+    input.len(),
+    image.cell_count,
+    started.elapsed()
+  );
+  let mut machine = image.machine().unwrap();
+  machine.compare_native_advice =
+    std::env::var_os("IXBY_COMPARE_NATIVE_ADVICE").is_some();
+  eprintln!(
+    "differential comparison against actual Boolean plans: {}",
+    machine.compare_native_advice
+  );
+  let started = std::time::Instant::now();
+  let mut completed = 0;
+  for _ in 0..batches {
+    let Some(_advice) =
+      machine.batch(BatchClass::SharedCompact, &mut image.memory).unwrap()
+    else {
+      break;
+    };
+    completed += 1;
+    if completed % 1000 == 0 {
+      eprintln!(
+        "native advice prefix: batches={completed} microsteps={} logical_steps={} elapsed={:?}",
+        machine.clock,
+        machine.state[FUEL].hi,
+        started.elapsed()
+      );
+    }
+  }
+  assert!(machine.clock > 0);
+  eprintln!(
+    "native advice generation ONLY: batches={completed} microsteps={} logical_steps={} heap_fields={} byte_cells={} elapsed={:?}; no complete batch-table checks or proofs in this throughput loop",
+    machine.clock,
+    machine.state[FUEL].hi,
+    machine.state[HEAP_COUNT].lo,
+    machine.state[BYTE_COUNT].lo,
+    started.elapsed()
+  );
+}

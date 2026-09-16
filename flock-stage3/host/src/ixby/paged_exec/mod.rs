@@ -6,6 +6,7 @@ mod byte_slots;
 #[cfg(test)]
 mod byte_tests;
 mod bytes;
+mod fast_advice;
 mod gate;
 mod image;
 #[cfg(test)]

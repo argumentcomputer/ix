@@ -406,6 +406,33 @@ The memory advice generator uses a native overlay during a batch and computes
 Merkle paths once per touched cell at commit. The circuit still checks every
 ordered access through the exact permutation and authenticated boundaries.
 
+## Native advice generation
+
+Common instruction and code-access advice now uses direct native calculations.
+Production gate evaluation, complete Boolean matrices, witness schemas and
+Flock verification retain their existing constraints. The direct calculations
+supply untrusted advice. Test-mode machines compare every accelerated result
+against the unchanged Boolean plan, including calls, returns, Nat branches,
+object operations and byte/hash fixtures.
+
+Shared-memory admission also counts exact parent paths from sorted addresses
+and the same smallest-unused-address padding. It uses each pair's first common
+ancestor and counts a dense padding prefix by level. Exhaustive small-address
+subsets and wider 40/64-bit cases agree with explicit path enumeration,
+including duplicate addresses, padding and capacity failures.
+
+On the original 1,016,587-byte program and 4,813,238-byte input, 10,000
+SharedCompact batches generate 33,212 microsteps and 8,352 logical steps.
+Native generation takes **4.212 seconds**, compared with **6.525 seconds**
+before these changes; the parent-count change alone takes 5.934 seconds.
+These are advice timings without complete batch checks or proving. A separate
+run compares every accelerated calculation in this prefix to its Boolean
+plan. All 20 execution tests and six memory-log tests pass. The four real
+execution proofs, fresh receivers and 28 recomputed attacks pass in 114.48
+seconds, and the original SharedCompact segment still produces a verified
+454,035-byte proof. Full-workload and larger-batch proving throughput remain
+separate measurements.
+
 ## Remaining integration
 
 Source admission, initialization, exact finalization, output and commitment

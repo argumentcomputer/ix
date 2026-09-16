@@ -40,6 +40,8 @@ pub struct NativeMachine {
   nat: Nat128Gate,
   prepare: PrimitivePrepareGate,
   finish: PrimitiveFinishGate,
+  #[cfg(test)]
+  pub(super) compare_native_advice: bool,
 }
 fn run<G: GateType<Hint = ()>>(gate: &G, input: &[F128]) -> Result<Vec<F128>> {
   let mut output = Vec::new();
@@ -96,13 +98,40 @@ impl NativeMachine {
         PrimitiveSet::crypto().crypto_scalar_subset(),
       )?,
       finish: PrimitiveFinishGate::new(3)?,
+      #[cfg(test)]
+      compare_native_advice: true,
     };
     machine.micro(MicroKind::Parameters, &parameters)?;
     Ok(machine)
   }
   fn micro(&self, kind: MicroKind, input: &[F128]) -> Result<Vec<F128>> {
-    run(self.micro.iter().find(|g| g.kind() == kind).unwrap(), input)
-      .with_context(|| format!("execution {kind:?}"))
+    let gate = self.micro.iter().find(|g| g.kind() == kind).unwrap();
+    if let Some(out) = fast_advice::micro(kind, input) {
+      #[cfg(test)]
+      if self.compare_native_advice {
+        ensure!(
+          out == run(gate, input)?,
+          "native {kind:?} advice differs from Boolean plan"
+        );
+      }
+      return Ok(out);
+    }
+    run(gate, input).with_context(|| format!("execution {kind:?}"))
+  }
+  fn code(&self, index: usize, input: &[F128]) -> Result<Vec<F128>> {
+    let gate = &self.code[index];
+    if let Some(out) = fast_advice::code(gate.kind(), input) {
+      #[cfg(test)]
+      if self.compare_native_advice {
+        ensure!(
+          out == run(gate, input)?,
+          "native {:?} advice differs from Boolean plan",
+          gate.kind()
+        );
+      }
+      return Ok(out);
+    }
+    run(gate, input)
   }
   pub fn next_chip(&self) -> Result<Option<Chip>> {
     Ok(Some(match self.state[CONTROL].lo as u8 {
@@ -280,8 +309,7 @@ impl NativeMachine {
       Chip::Fetch => {
         let cell = memory.value(block_address(function, block))?;
         advice = cell.to_vec();
-        let read =
-          run(&self.code[0], &[F128::ONE, before[0], cell[0], cell[1]])?;
+        let read = self.code(0, &[F128::ONE, before[0], cell[0], cell[1]])?;
         accesses.extend(records(&read));
         after =
           self.micro(MicroKind::Fetch, &append(&cell))?.try_into().unwrap();
@@ -296,8 +324,8 @@ impl NativeMachine {
           [F128::ZERO; 2]
         };
         advice = cell.into_iter().chain(local).collect();
-        let read = run(
-          &self.code[1],
+        let read = self.code(
+          1,
           &[
             F128::ONE,
             before[0],
@@ -345,8 +373,7 @@ impl NativeMachine {
         let reference = self.micro(MicroKind::CallReference, &prefix)?[0];
         let cell = memory.value(FUNCTIONS + reference.lo)?;
         advice = cell.to_vec();
-        let read =
-          run(&self.code[2], &[F128::ONE, reference, cell[0], cell[1]])?;
+        let read = self.code(2, &[F128::ONE, reference, cell[0], cell[1]])?;
         accesses.extend(records(&read));
         let action = self.micro(MicroKind::CallAction, &append(&cell))?;
         after =
@@ -376,8 +403,7 @@ impl NativeMachine {
         };
         let cell = memory.value(address)?;
         advice = cell.to_vec();
-        let read =
-          run(&self.code[at], &[F128::ONE, reference, cell[0], cell[1]])?;
+        let read = self.code(at, &[F128::ONE, reference, cell[0], cell[1]])?;
         accesses.extend(records(&read));
         after = self
           .micro(MicroKind::Object(kind), &append(&cell))?
@@ -432,8 +458,8 @@ impl NativeMachine {
             let (index, alt) = selected.ok_or_else(|| {
               anyhow::anyhow!("constructor alternative missing")
             })?;
-            let read = run(
-              &self.code[4],
+            let read = self.code(
+              4,
               &[F128::ONE, before[0], index, request[1], alt[0], alt[1]],
             )?;
             accesses.extend(records(&read));
@@ -457,8 +483,7 @@ impl NativeMachine {
           [F128::ZERO; 2]
         };
         advice = cell.to_vec();
-        let read =
-          run(&self.code[2], &[request[0], request[1], cell[0], cell[1]])?;
+        let read = self.code(2, &[request[0], request[1], cell[0], cell[1]])?;
         accesses.extend(records(&read));
         after = self
           .micro(MicroKind::Object(ObjectKind::ApplyStart), &append(&cell))?

@@ -3,12 +3,65 @@
 //! Circuit consumers must supply their own address/flag/value wires to check.
 use super::{MemoryLogSlots, PAD, READ, SEAL, SEED, WRITE};
 use crate::ixby::auth_memory::{
-  MemoryOpening, SparseMemory,
+  MemoryDepth, MemoryOpening, SparseMemory,
   multi::{MultiAdvice, MultiCapacity},
 };
 use anyhow::{Result, ensure};
 use flock_prover::field::F128;
 use std::collections::{BTreeMap, BTreeSet};
+
+/// Exact parent count for the same smallest-unused-address padding used at
+/// commit. Sorted neighboring leaves contribute one new parent at each level
+/// below their first common ancestor. A dense padding prefix is counted by
+/// its occupied nodes per level, without constructing every path.
+fn shared_parent_count(
+  depth: MemoryDepth,
+  mut addresses: Vec<u64>,
+  leaves: usize,
+) -> Option<usize> {
+  addresses.sort_unstable();
+  addresses.dedup();
+  if addresses.len() > leaves || addresses.iter().any(|&a| !depth.admits(a)) {
+    return None;
+  }
+  let mut missing = u64::try_from(leaves - addresses.len()).ok()?;
+  let mut padding_end = 0u64;
+  for &address in &addresses {
+    if missing == 0 {
+      break;
+    }
+    let gap = address.checked_sub(padding_end)?;
+    if gap >= missing {
+      break;
+    }
+    missing -= gap;
+    padding_end = address.checked_add(1)?;
+  }
+  padding_end = padding_end.checked_add(missing)?;
+  if padding_end != 0 && !depth.admits(padding_end - 1) {
+    return None;
+  }
+  let mut parents = 0usize;
+  if padding_end != 0 {
+    for level in 1..=depth.bits() {
+      let count =
+        (padding_end - 1).checked_shr(u32::try_from(level).ok()?).unwrap_or(0)
+          + 1;
+      parents = parents.checked_add(usize::try_from(count).ok()?)?;
+    }
+  }
+  let mut previous = padding_end.checked_sub(1);
+  for &address in addresses.iter().filter(|&&a| a >= padding_end) {
+    let contribution = if let Some(before) = previous {
+      usize::try_from((before ^ address).checked_ilog2()?).ok()?
+    } else {
+      depth.bits()
+    };
+    parents = parents.checked_add(contribution)?;
+    previous = Some(address);
+  }
+  Some(parents)
+}
 
 #[derive(Clone, Copy, Debug)]
 pub struct AccessAdvice {
@@ -151,36 +204,14 @@ impl<'a> MemoryBatch<'a> {
     accesses: &[AccessAdvice],
     capacity: MultiCapacity,
   ) -> bool {
-    let mut addresses = self
+    let addresses = self
       .current
       .keys()
       .copied()
       .chain(accesses.iter().map(|a| a.address))
-      .collect::<BTreeSet<_>>();
-    if addresses.len() > capacity.leaves {
-      return false;
-    }
-    let mut candidate = 0;
-    while addresses.len() < capacity.leaves {
-      if !self.memory.depth().admits(candidate) {
-        return false;
-      }
-      addresses.insert(candidate);
-      candidate += 1;
-    }
-    let mut parents = BTreeSet::new();
-    for address in addresses {
-      if !self.memory.depth().admits(address) {
-        return false;
-      }
-      for level in 1..=self.memory.depth().bits() {
-        parents.insert((level, address.checked_shr(level as u32).unwrap_or(0)));
-        if parents.len() > capacity.parents {
-          return false;
-        }
-      }
-    }
-    true
+      .collect::<Vec<_>>();
+    shared_parent_count(self.memory.depth(), addresses, capacity.leaves)
+      .is_some_and(|parents| parents <= capacity.parents)
   }
   pub fn read(&mut self, address: u64) -> Result<[F128; 2]> {
     let value = self.value(address)?;
@@ -299,5 +330,92 @@ impl<'a> MemoryBatch<'a> {
       boundaries,
       switches: plan.route(&destination)?,
     })
+  }
+}
+
+#[cfg(test)]
+mod quota_tests {
+  use super::*;
+  fn reference(
+    depth: MemoryDepth,
+    addresses: &[u64],
+    leaves: usize,
+  ) -> Option<usize> {
+    let mut addresses = addresses.iter().copied().collect::<BTreeSet<_>>();
+    if addresses.len() > leaves {
+      return None;
+    }
+    let mut candidate = 0;
+    while addresses.len() < leaves {
+      if !depth.admits(candidate) {
+        return None;
+      }
+      addresses.insert(candidate);
+      candidate += 1;
+    }
+    let mut parents = BTreeSet::new();
+    for address in addresses {
+      if !depth.admits(address) {
+        return None;
+      }
+      for level in 1..=depth.bits() {
+        parents.insert((
+          level,
+          address.checked_shr(u32::try_from(level).unwrap()).unwrap_or(0),
+        ));
+      }
+    }
+    Some(parents.len())
+  }
+  #[test]
+  fn sorted_parent_count_matches_exact_paths_and_low_address_padding() {
+    for depth in 0..=4 {
+      let d = MemoryDepth::new(depth).unwrap();
+      let domain = 1usize << depth;
+      for mask in 0usize..1usize << domain {
+        let addresses = (0..domain)
+          .filter(|i| mask & (1 << i) != 0)
+          .map(|i| u64::try_from(i).unwrap())
+          .collect::<Vec<_>>();
+        for leaves in [
+          addresses.len().saturating_sub(1),
+          addresses.len(),
+          (addresses.len() + domain) / 2,
+          domain,
+          domain + 1,
+        ] {
+          assert_eq!(
+            shared_parent_count(d, addresses.clone(), leaves),
+            reference(d, &addresses, leaves),
+            "depth={depth} leaves={leaves} addresses={addresses:?}"
+          );
+        }
+      }
+    }
+    for depth in [8, 16, 40, 63, 64] {
+      let d = MemoryDepth::new(depth).unwrap();
+      let last =
+        u64::MAX.checked_shr(u32::try_from(64 - depth).unwrap()).unwrap();
+      for seed in 0u64..128 {
+        let mut addresses = vec![0, 1, last, last / 2];
+        let mut state = seed + 1;
+        for _ in 0..32 {
+          state = state.wrapping_mul(6364136223846793005).wrapping_add(1);
+          addresses.push(state & last);
+        }
+        addresses.extend_from_within(..4);
+        addresses.reverse();
+        for leaves in [0, 4, 16, 32, 64, 256, 512] {
+          assert_eq!(
+            shared_parent_count(d, addresses.clone(), leaves),
+            reference(d, &addresses, leaves),
+            "depth={depth} leaves={leaves} seed={seed}"
+          );
+        }
+      }
+      if depth < 64 {
+        assert!(shared_parent_count(d, vec![1 << depth], 2).is_none());
+      }
+    }
   }
 }
