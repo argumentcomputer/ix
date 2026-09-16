@@ -228,6 +228,72 @@ complete original-format execution proof for this small fixture. They do not
 measure the 2.268-billion-step CSLib execution, larger execution batches, or
 the additional Lean refinement from these native constraints to semantics.
 
+### Original-artifact command-line workflow
+
+[`paged-execution`](../flock-stage4/recursive/src/bin/paged-execution/main.rs)
+streams leaf generation, retains proofs in bounded files, aggregates exact
+component counts, and verifies one final root. Each original artifact is
+limited to 16 MiB by the current source classes. The output argument supplies
+the original canonical IXFO bytes; the proof binds these to the returned Bytes
+value. The currently supported execution classes are `small`, `objects`,
+`compact`, `bytes` and `shared-compact`.
+
+```sh
+RUSTFLAGS='-C target-cpu=native' cargo build --release --locked \
+  --manifest-path flock-stage4/Cargo.toml -p ix-flock-recursion \
+  --bin paged-execution
+
+# Extract the explicit functional descriptor; every output path must be new.
+flock-stage4/target/release/paged-execution profile \
+  --program /path/to/original.ixby --out /path/to/profile.ixfp
+
+# Independently compute the expected digest from the original byte strings.
+flock-stage4/target/release/paged-execution statement \
+  --profile /path/to/profile.ixfp --program /path/to/original.ixby \
+  --input /path/to/original.ixbi --output /path/to/original.ixbo \
+  --out /path/to/expected.statement
+
+# Prove leaves and the complete root; use a new run directory.
+flock-stage4/target/release/paged-execution prove \
+  --profile /path/to/profile.ixfp --class shared-compact \
+  --program /path/to/original.ixby --input /path/to/original.ixbi \
+  --output /path/to/original.ixbo --out /path/to/run --threads 4
+
+# Repeat the same prove command with --resume to check and reuse saved proofs.
+# leaves.json records the eleven component counts. The caller supplies the
+# approved counts explicitly to verification and aggregation.
+env -i /absolute/path/to/paged-execution verify \
+  --profile /path/to/profile.ixfp --class shared-compact \
+  --counts N0,N1,N2,N3,N4,N5,N6,N7,N8,N9,N10 \
+  --statement /path/to/expected.statement --proof /path/to/run/root.flock \
+  --threads 4
+```
+
+The `leaves` command uses the same arguments as `prove` and stops after saving
+all checked leaf proofs, the endpoint proof and component counts. `aggregate`
+takes `--profile`, `--class`, `--counts`, `--statement`, `--dir` and `--threads`
+to finish such a directory. `census` takes the profile, class and counts to
+compile the complete tree without reading proof bytes. Exact final setup is
+preflighted before any recursive proving begins.
+
+Resumption checks the original file hashes, profile and class. It regenerates
+native state to obtain each leaf's expected statement and verifies every saved
+leaf before reuse; it does not yet restore native execution from a checkpoint.
+Every retained intermediate is verified under the freshly compiled approved
+node. A retained complete root can be verified directly without reopening its
+children. Sharded proof directories avoid placing every batch in one directory.
+Atomic file writes leave incomplete pairs recoverable; complete but invalid
+cached proofs cause an error.
+
+A separate CLI fixture returns 1,025 bytes and exercises two output batches
+and two batches in each Input/Output commitment bridge. Its approved counts
+are `[1,1,1,1,1,1,1,2,1,2,2]`, including fourteen component leaves plus the
+endpoint proof. The CLI produces a **503,683-byte** proof in 601.319 seconds.
+An independent CLI receiver verifies it in 20.105 seconds after 147.553 seconds
+of setup, using a separately computed expected digest. Checked leaf resumption
+also passes. This is a second small-workload measurement, not a full CSLib run.
+See the [CLI measurement record](../flock-stage4/census/paged-execution-cli-v0.json).
+
 ## Earlier two-child prototype
 
 The original pair experiment below retains its own setup and encoding. It

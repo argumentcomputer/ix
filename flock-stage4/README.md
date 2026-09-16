@@ -57,6 +57,13 @@ reject at the closing relation. A three-batch source test also checks two
 recursive levels and rejects disconnected memory boundaries.
 See the [complete relation and measurements](../docs/IxbyFlockRecursion.md#complete-paged-execution-aggregation).
 
+The `paged-execution` binary supplies profile extraction, original-artifact
+commitments, streamed leaf proving, checked resumption, complete aggregation,
+proof-free setup census and independent verification. A second CLI fixture
+with a 1,025-byte result uses multiple output and commitment batches and has
+a verified 503,683-byte root. The [workflow and its current limits](../docs/IxbyFlockRecursion.md#original-artifact-command-line-workflow)
+include explicit verifier profile/class/count inputs and retained proof files.
+
 ## Generic Exec replay
 
 `exec::compile_exec_replay` takes only an approved `CompiledExec` and produces
