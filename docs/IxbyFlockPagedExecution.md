@@ -75,6 +75,23 @@ still needs to constrain the writes and complete semantic reference checks.
 
 ## Local evidence
 
+The numeric dispatcher binds the functional primitive tag and exact arity to
+the existing Word32 and Goldilocks consumers, or to a new immediate Nat128
+consumer. Nat128 addition and multiplication reject physical overflow;
+subtraction saturates at zero. Division and remainder constrain the full
+256-bit quotient/product identity and a remainder below the divisor, with
+explicit zero-divisor semantics. Equality and ordering produce canonical Bool
+values. Byte primitives produce requests for the separate byte consumer;
+they cannot be accepted as completed numeric operations. String operations
+remain outside this execution profile.
+
+- Three Nat128 tests compare boundary values with exact native arithmetic,
+  constrain every quotient/remainder advice bit, reject low-half-only product
+  identities, and check the complete matrices and recycled-buffer padding.
+- Two primitive tests check all functional tags and arities, unused operands,
+  type rejection, and combined numeric wiring against independent results.
+  A genuine combined instruction proof is still required.
+
 - Five ordinary frame tests cover calls, tail calls, over-application, copy
   completion, semantic/physical bounds, all state padding, native/Boolean
   differential checks, and the combined frame/fuel/memory wiring.

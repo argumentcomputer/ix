@@ -200,7 +200,7 @@ fn build_goldilocks_mul_plan() -> GoldilocksMulPlan {
 }
 
 /// Convert a set of same-weight Boolean terms into canonical binary bits.
-fn sum_bit_columns(
+pub(crate) fn sum_bit_columns(
   builder: &mut BooleanR1csBuilder,
   mut columns: Vec<Vec<usize>>,
   one: usize,

@@ -24,6 +24,8 @@ pub mod nat_value;
 pub mod object_value;
 pub mod paged_code;
 pub mod paged_frame;
+pub mod paged_nat;
+pub mod paged_primitive;
 pub mod paged_value;
 pub mod primitive;
 pub mod select;
