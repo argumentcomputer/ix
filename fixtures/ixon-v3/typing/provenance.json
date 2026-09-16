@@ -1,0 +1,16 @@
+{
+  "source_revision": "2afb4eac340cd4cbe94ed9e507561f3ad8375ebd",
+  "source_generator": "Tests/IxonV3Primitives.lean",
+  "source_environment_sha256": "b1c195362fd3ad612d63996a143a4035cf3bab4baf1e5dee008f01b9cffb33d8",
+  "producer_binary_sha256": "994152e6bf6d42a1ed9b5c874a3a5e641c23eb84756717a413a4ca41e52947d0",
+  "producer_version": "4.33.1|0.0.1",
+  "producer_build": "Pre-existing local executable and primitive environment; not rebuilt for this extraction. The exported primitive inventory is byte-identical to the committed v3 fixture.",
+  "extraction": "ix pack --anon --out OUTPUT.ixe SOURCE.ixe NAME",
+  "reference_check": "ix check-rs --anon --workers 1 OUTPUT.ixe",
+  "files": {
+    "Nat.ixe": {"sha256": "c4273638c7b7e89ba24c38072dd71bab8e8a85144e04d132095ca774cd2a5d88", "constants": 4, "main": "35e1cc809f6f076521a43f85068d5592220407c0532b6a08952f40d8523d04bc"},
+    "Nat.add.ixe": {"sha256": "a4290c1b5dae5dbf175b1028869727ee10252d63f9866ba5db9abf0d7dc37eeb", "constants": 18, "main": "724db797e1817545a08371432fd1fa6428a37dcf9c1671df7e464849db0a81ac", "rust_checked_targets": 15},
+    "String.ixe": {"sha256": "39fac45f5f272c597931311306e6ab31471153262104fe64fbbbeee67eba2bea", "constants": 307, "main": "9d6ae43429ec02a9338bbcd0db0ac193d75ebd46f884bfcbd2c42bf7faea150d", "rust_checked_targets": 278},
+    "Quot.lift.ixe": {"sha256": "cd691ee096b3716c2c91e2310ef2c817bac26ba5d8d61ca9061989f76c929995", "constants": 5, "main": "86b365e75bb4230f04c6e4f3a7ca6988adf574616d79a3d7477ad65cac102110", "rust_checked_targets": 4}
+  }
+}

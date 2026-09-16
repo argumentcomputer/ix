@@ -9,4 +9,6 @@ file and subject/profile/claim hashes.
 
 Run `lake exe tests-ixon-v3` from the repository root. See
 [`docs/ixon-v3.md`](../../docs/ixon-v3.md) for admitted behavior, budgets,
-the independent Aiur target pin, and remaining typing/backend obligations.
+the independent Aiur target pin, combined typing/resource admission, and
+remaining backend obligations. The additional `typing/` bundles have their
+own extraction provenance; they are not part of the original portable package.

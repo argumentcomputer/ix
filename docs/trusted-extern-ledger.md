@@ -120,7 +120,7 @@ build/runtime packaging and add no target-language native interface.
 | Field | Ledger value |
 | --- | --- |
 | Owner | Compilatr.ix maintainers |
-| Project entry point | `Blake3.Rust.hash` in `Compilatrix/Ixon/Hash.lean` |
+| Project entry points | `Blake3.Rust.hash` in `Compilatrix/Ixon/Hash.lean`; `Blake3.Rust.Hasher` in the v3 typechecker's node/context hashing |
 | Assumed semantics | Standard BLAKE3 XOF over exactly the input bytes; a 32-byte request is the standard 256-bit digest |
 | Logical/proof status | Assumption: no Lean refinement theorem currently connects returned bytes to a pure BLAKE3 specification. Canonical-address identity is conditional on an explicit pairwise `Address.Blake3NoCollision` premise; no global hash-injectivity axiom is asserted. Generic evaluator readdressing, HPT evaluator and case-binder-field concretization, owner-sensitive case pruning, exact scalar fetch forwarding, local PAP/application refinement, and the rooted-restriction fuel induction are hash-independent and stay in the ordinary logical axiom set. Production addressed-lowering corollaries, checked HPT cache/summary/consumer results, and the public reachability theorems that validate an exact input digest consume native hashes, so `Compilatrix/Fence.lean` pins their exact additional `Blake3.HasherOps.hash._native.native_decide.ax_1✝` dependency. |
 | Evidence | Official empty-input vector, output length, determinism/input-sensitivity checks, a full constant-address fixture, complete IxIR₀/IxIR₁ declaration byte+address fixtures, frozen dependency-chain/nested-lambda/constructor-wrapper readdressing digests, executable semantic audits, a protected-source-identity collision regression, the frozen ledger-oracle cyclic block/member digests, and five version-3 HPT cache keys plus five checked recursively field-aware summary addresses exercised through deterministic production, persistent canonical record/store ingress, record-streamed filesystem parity with the pure codec, malformed-stream rejection, dependency-cone rebuilding, file-backed corruption recovery, depth-two fetch/case refinement, checked case-binder field recovery through the ordinary checker and deterministic producer, checked finite-constructor case pruning, PAP fusion across all saturation classes, exact scalar fetch forwarding after allocation and reuse, and checked rooted declaration/SCC removal with exported-root and dynamic-apply fallbacks through deterministic one-rebuild regressions in `Tests.lean` |
@@ -132,6 +132,12 @@ The Nix build shares the root Lean 4.33.0 toolchain with Blake3's Lean modules
 and Rust FFI header generation. It rejects differing root and dependency
 `lean-toolchain` pins. This dependency update preserves the BLAKE3 and
 lean-ffi revisions, Cargo lock, Lean declarations, and native source code.
+
+The v3 checker uses incremental `Hasher.init`, `update` and
+`finalizeWithLength` for tagged node and context preimages. These call the
+same three active native symbols as the existing hash entry point. The
+32-byte output bound is discharged by a kernel proof; no additional native
+reflection axiom is introduced. Keyed and derive-key operations remain unused.
 
 The audit enumerates extern declarations across the entire pinned package
 source tree — every `.lean` file, in `@[extern ...] opaque`/`def` and
@@ -262,9 +268,14 @@ The [v3 source adapter](ixon-v3.md) is pinned independently to ix
 ownership, relative locality, arrow results, and borrow lets. Pure resource
 algorithms and selected state invariants are adapted from that snapshot;
 canonical bytes, source roots, profile identities and native resource claim
-framing are checked against frozen producer fixtures. No native dependency
-or axiom is added. Erased typing, a whole-checker machine soundness theorem,
-v3 backend simulation, and IxVM resource proofs are outside this boundary.
+framing are checked against frozen producer fixtures. The combined validator
+now executes the pinned anonymous erased typechecker on the same raw bytes,
+fixes literal primitives, and checks every source key. Pure integer codecs,
+ordered universe maps and explicit hash-length proofs avoid additional native
+interfaces or reflection axioms. Eight new exact fences retain the existing
+BLAKE3 axiom basis. Four frozen primitive closures, canonical recursors and
+adversarial cases run in the required suite. A whole-checker semantic soundness
+theorem, v3 backend simulation and IxVM resource proofs remain outside this boundary.
 The old v2 compiler entry points keep their original proof and fixture scope.
 
 ## Aiur logical-trace boundary

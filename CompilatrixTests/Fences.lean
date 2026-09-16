@@ -15,6 +15,7 @@ import CompilatrixTests.Fences.IxIR2
 import CompilatrixTests.Fences.Ixby
 import CompilatrixTests.Fences.Ixon
 import CompilatrixTests.Fences.IxonV3
+import CompilatrixTests.Fences.IxonV3Typing
 import CompilatrixTests.Fences.Lowering
 import CompilatrixTests.Fences.Modular
 import CompilatrixTests.Fences.Recursion

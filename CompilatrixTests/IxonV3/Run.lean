@@ -1,5 +1,7 @@
 import CompilatrixTests.IxonV3.Fixtures
 import CompilatrixTests.IxonV3.Handoff
+import CompilatrixTests.IxonV3.Typing
+import CompilatrixTests.IxonV3.Primitives
 import Compilatrix.Tools.Check
 
 namespace CompilatrixTests.IxonV3
@@ -70,7 +72,9 @@ def run : IO Bool := do
     require ((decodeExpr oversizedLevels).toOption.isNone) "universe arguments bypassed count bound"
     assertions := assertions + 3
     assertions := assertions + (← handoff root)
-    IO.println s!"ixon-v3-tests-ok: {assertions} contract, wire, and resource assertions"
+    assertions := assertions + (← Typing.run root)
+    assertions := assertions + (← Primitives.run root)
+    IO.println s!"ixon-v3-tests-ok: {assertions} contract, wire, typing, and resource assertions"
     return true
   catch error =>
     IO.eprintln s!"FAIL: Ixon v3: {error}"

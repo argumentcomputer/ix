@@ -631,11 +631,12 @@
   "CompilatrixTests.Fences.AiurStatic",
   "CompilatrixTests.Fences.AiurWire",
   "CompilatrixTests.Fences.IxonV3",
+  "CompilatrixTests.Fences.IxonV3Typing",
   "CompilatrixTests.IxIR1.Lower",
   "CompilatrixTests.IxIR1.ThesisBench",
   "CompilatrixTests.IxIR1.WellModedGen",
   "CompilatrixTests.Pipeline.Integration"],
  "baseline": "6beaf5d0: complete required CI before factoring",
  "axiom_sha256":
- "433d55e74fb3cac1822f1f7f1267fe9bfc11fa968ac899cc8159630e7ed2128a",
- "axiom_count": 2400}
+ "7e30f68cc3eaf846183bc5b9dee7bd59bc96fd43f1d594138b5cdbe49772470c",
+ "axiom_count": 2408}

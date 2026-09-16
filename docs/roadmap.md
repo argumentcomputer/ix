@@ -461,7 +461,7 @@ need makes it necessary sooner.
 
 | Track | Wake condition and first exit |
 | --- | --- |
-| Frontend/address oracle | [Ix frontend / Ixon v3](ixon-v3.md) is now pinned with independent ownership/locality contracts, strict anonymous ingress, upstream resource admission, and frozen complete handoff fixtures. Erased typing, contract-preserving v3 lowering and catalog-v2 admission remain separate work; retargeting the frontend itself still requires complete environment/address equality. |
+| Frontend/address oracle | [Ix frontend / Ixon v3](ixon-v3.md) has independent ownership/locality contracts and combined erased-typing/resource validation over canonical addressed bytes, with fixed primitive identities, complete handoff fixtures and real primitive closures. Contract-preserving v3 lowering and catalog-v2 admission remain separate work; retargeting the frontend itself still requires complete environment/address equality. |
 | Surface modes and inference | Addressed contracts and diagnostics are stable. Start with explicit annotations; inference is a separate extension. |
 | Statement faithfulness | Before certifying what a user reads. A verified printer/round-trip relation connects displayed statements to certified Ixon addresses. |
 | Reflection/TCB policy | Before proof-by-evaluation puts compiler execution in the logical soundness boundary. State the additional trust/theorem obligations explicitly. |

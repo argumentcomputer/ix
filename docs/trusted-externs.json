@@ -26,7 +26,8 @@
       "import_root": "Blake3",
       "lean_module": "Blake3.Rust",
       "project_entrypoints": [
-        "Blake3.Rust.hash"
+        "Blake3.Rust.hash",
+        "Blake3.Rust.Hasher"
       ],
       "foreign_symbols": [
         {
@@ -39,7 +40,7 @@
           "lean_name": "Blake3.Rust.hasherInit",
           "symbol": "rs_blake3_init",
           "module": "Blake3.Rust",
-          "reachability": "imported; called by Blake3.Rust.hash"
+          "reachability": "imported; called by Blake3.Rust.hash and the v3 checker's incremental Hasher API"
         },
         {
           "lean_name": "Blake3.Rust.hasherInitKeyed",
@@ -57,13 +58,13 @@
           "lean_name": "Blake3.Rust.hasherUpdate",
           "symbol": "rs_blake3_hasher_update",
           "module": "Blake3.Rust",
-          "reachability": "imported; called by Blake3.Rust.hash"
+          "reachability": "imported; called by Blake3.Rust.hash and the v3 checker's incremental Hasher API"
         },
         {
           "lean_name": "Blake3.Rust.hasherFinalize",
           "symbol": "rs_blake3_hasher_finalize",
           "module": "Blake3.Rust",
-          "reachability": "imported; called by Blake3.Rust.hash"
+          "reachability": "imported; called by Blake3.Rust.hash and the v3 checker's incremental Hasher API"
         },
         {
           "lean_name": "Blake3.C.internalVersion",
@@ -105,6 +106,7 @@
       "semantics_assumed": "The active init/update/finalize path returns the standard BLAKE3 extendable-output hash of exactly the supplied bytes; a 32-byte request returns the standard 256-bit digest. The FFI respects Lean ownership, lifetime, array-size, and C-ABI contracts. Uncalled keyed, derive-key, and version exports are covered because importing Blake3.Rust makes them reachable to downstream Lean code, but Compilatr.ix does not currently rely on their results. The sibling Blake3.C module binds the vendored C implementation behind six c_blake3_* externs; Compilatr.ix does not import it, so they are inventoried as present-but-unimported and any drift in the package tree's extern set fails the check.",
       "proof_effect": "Content addresses use this result operationally. There is no Lean theorem connecting the returned bytes to a pure BLAKE3 specification, so collision resistance and conformance are explicit assumptions rather than proved facts. Generic evaluator readdressing, HPT evaluator and case-binder-field concretization, owner-sensitive case pruning, exact scalar fetch forwarding, local PAP/application refinement, and the rooted-restriction fuel induction are hash-independent and remain in the ordinary logical axiom set, while the indexed production addressed-lowering, checked HPT cache/summary/accepted-result/consumer theorem cones, and public reachability theorems that validate an exact input digest intentionally expose Blake3.HasherOps.hash._native.native_decide.ax_1✝ because they consume actual native digests; Compilatrix/Fence.lean pins that exact exception. The opaque FFI declarations also cross a proof-bearing subtype boundary for output length. Canonical IxIR2 snapshot byte-codec laws use only existing logical axioms; addressed ingress and exact checked-source program/context recovery retain this same native hash exception, with an explicit pairwise collision premise for recovering artifact equality from root equality. Modular source context transport uses exact binding equality and only ordinary logical axioms; its assembled closed-source theorem retains the same production BLAKE3 dependency. Reuse also compares full finite contexts, and serialized source records reconstruct proofs through the ordinary checker. Indexed whole-program IxIR1 addressing proves exact equality with the original semantic and exact-source audit predicates, including malformed inputs. Its prepared lookup indexes retain first-binding precedence and reverse preimages; the returned compilation certificate and native hash exception are unchanged. Modular source preparation retains a proof of successful canonical-address validation only for exact owned entries, and shares a completed preparation within certificate production and checking. Full fresh-checker equality covers current context and policy rejection behavior; canonical facts do not replace dependency, usage, literal, or resource checks. Persisted records reconstruct canonical evidence afresh. Three additional exact fences retain the existing logical and native BLAKE3 basis; source queries, certificate bytes, native symbols, and native contracts are unchanged. The backend-independent checked Ixon erasure prefix exposes the same native hash dependency; Ixby lowering admission, total data equality, reference determinism, and fixed-input value/byte execution refinement introduce no new native boundary. Reusable Ixby symbolic substitution and value/byte reflection quantify over all admitted opaque-data argument arrays using only ordinary logical axioms; runtime data inspection remains outside the checked fragment.",
       "trust_basis": [
+        "The v3 checker also uses Blake3.Rust.Hasher.init, update and finalizeWithLength for tagged node and context preimages. They resolve to the same three active native symbols; no keyed or derive-key operation is used. An explicit kernel proof discharges the 32-byte output bound, and eight exact input/literal fences retain the existing axiom basis.",
         "Blake3.lean and lean-ffi are revision-pinned",
         "every .lean file in the pinned package tree is scanned for @[extern] declarations, so sibling modules cannot add symbols silently",
         "the Rust crate graph and checksums are locked and checked below",
@@ -354,26 +356,27 @@
       "id": "ix-frontend-ixon-v3",
       "status": "active-specification",
       "owner": "Compilatr.ix maintainers",
-      "scope": "Pinned ix frontend binary source contracts, anonymous environment ingress and addressed resource admission",
-      "assumption": "The v3 schema and adapted resource rules match argumentcomputer/ix jcb/aiur-frontend at 2afb4eac340cd4cbe94ed9e507561f3ad8375ebd. This source revision is independent of the Aiur target pin. Resource-only admission does not establish erased Lean typing, a whole-checker operational theorem, backend simulation or an IxVM resource proof.",
-      "proof_effect": "Twenty-five exact fences cover contract bit roundtrips, quantity laws and executed scope/owner/loan state invariants using only ordinary logic. Two addressed-input equation fences inherit the existing BLAKE3 native exception. No native interface or axiom is added; existing v2 backend proof domains are unchanged.",
+      "scope": "Pinned ix frontend binary source contracts, anonymous ingress and combined erased typing, primitive pins and resource admission",
+      "assumption": "The v3 schema, adapted resource rules and anonymous typechecking algorithms match argumentcomputer/ix jcb/aiur-frontend at 2afb4eac340cd4cbe94ed9e507561f3ad8375ebd, with documented consumer bounds and raw-byte adapters. This source revision is independent of the Aiur target pin. Executing the checker does not provide a whole-checker semantic soundness theorem, backend simulation or an IxVM resource proof.",
+      "proof_effect": "Twenty-five exact fences cover contract roundtrips, quantity laws and scope/owner/loan invariants; two cover the original resource-input equations. Eight more cover literal-pin soundness and combined-input equations, retaining only ordinary logic and the existing BLAKE3 native exception. Explicit kernel proofs discharge hash-length bounds. No native interface or axiom is added; existing v2 backend proof domains are unchanged.",
       "trust_basis": [
         "Usage, input ownership and relative locality remain independent. Arrow result contracts and borrow-let kinds are preserved in addressed bytes; no v2 ownership inference or implicit projection is applied.",
         "Strict bounded decoding validates canonical expressions/constants, sorted environment tables, object hashes, complete constant roots, main membership and hint indices. Presentation metadata is outside anonymous admission.",
         "The resource adapter rebuilds references and sharing from raw bytes and binds external interfaces, shareable types, choice behavior, literal pins and checker limits to a canonical profile. No cached materialization grants facts.",
-        "Native Resource claim decoding and subject/profile matching establish framing and binding only. Full upstream Resource validation separately runs erased typing and validates literal identities; Compilatrix does not implement that combined validator here.",
+        "ValidatedInput retains successful resource, literal-profile and erased-typing equations over the same decoded byte-indexed source. Its checkClaim binds the native Resource subject/profile after these checks. ResourceInput.checkClaimBinding alone remains a binding check.",
+        "The typechecker always verifies raw materializations, checks every constant key, rejects sharing cycles and empty/orphan blocks, and applies finite consumer conversion/count/dispatch/fuel bounds. No frontend FFI, parallel worker native shim, metadata ingress or egress dependency is imported.",
         "The selected state proofs do not justify stack allocation, region allocation, RC elimination or arbitrary backend ownership conversion. These require their own source-bound refinement."
       ],
       "tests": [
-        "tests-ixon-v3: 1211 assertions cover all contract bits, frozen expression/addressed vectors, all 66 producer resource cases, native resource claim framing and the complete accepted/rejected handoff, including semantic depth after telescope expansion.",
+        "tests-ixon-v3: 1403 assertions cover contract bits, frozen expression/addressed vectors, all 66 producer resource cases, native claim framing, the complete handoff, erased typing, primitive inventories and real primitive closures.",
         "Malformed and truncated input, wrong format/validator/domain/root/profile, corrupt object bytes and consumer budget excess reject. Frozen handoff file digests and source/profile/claim identities match the producer manifest.",
-        "CompilatrixTests/Fences/IxonV3.lean adds 27 exact fences while retaining every prior axiom assertion and runtime failure assertion. The v3 suite runs in the required core tests gate and aggregate runtime executable."
+        "CompilatrixTests/Fences/IxonV3.lean and IxonV3Typing.lean supply 35 exact fences while retaining every prior assertion. The required core and aggregate suites cover ordinary ill-typed components, positivity, recursors, sharing cycles, safety, literal profiles, valid Nat/String literals and true/false arithmetic proofs. The additional primitive bundles record pre-existing producer-binary provenance rather than claiming a fresh authenticated build."
       ],
       "retirement": {
         "milestone": "Typed v3 source-to-target refinement",
-        "replacement": "A combined erased-typing/resource validator and explicit contract-preserving lowering with original source/profile binding and target simulation",
+        "replacement": "A whole-checker semantic theorem and explicit contract-preserving lowering with original source/profile binding and target simulation",
         "exit_criteria": [
-          "Validate erased typing over the exact v3 bytes and bind literal primitives to the v3 kernel identities.",
+          "Prove the combined checker sound with respect to its source typing and resource semantics.",
           "Prove v3 backend simulation without inferring uniqueness from usage or dropping locality and active loans.",
           "Keep catalog-v2 format/validator identity and native/IxVM resource claim scopes explicit."
         ]
@@ -919,9 +922,44 @@
   ],
   "integrity": {
     "tracked_files": {
-      "Compilatrix/Ixon/V3.lean": "669fa2471b74735d0b896fe7dd580a57569e17ee2bf03ded6cc35980bcd1007d",
-      "CheckIxonV3.lean": "77e37639ff7fb3d318e522dcf6121ec321a51d0795d6ad448aa2e674dc59c51c",
-      "docs/ixon-v3.md": "210b18f39174ae67a2dfa41708cf8513d140ad5393fcad01e0cc73bb9cf3e41a",
+      "Compilatrix/Ixon/V3/Validate.lean": "d92d4df4c612834cd9ab9db824bf82b2b0188c7d72bbea7a1e95b61727c807f7",
+      "CompilatrixTests/Fences/IxonV3Typing.lean": "165301f800dbf23b88d41b6190745c8627b953b5de1e48c37b72f9556f5ab23f",
+      "CompilatrixTests/IxonV3/TypingFixtures.lean": "820bf819a961003beb76572682bbb85502eb0f3245eefa1321eefe321c86c2cc",
+      "CompilatrixTests/IxonV3/Typing.lean": "0a5edf6c4e19ef12efcf9e5a027c4f78828718ba63362c5c76a68fcc7dbddae2",
+      "CompilatrixTests/IxonV3/Primitives.lean": "beec962d2d3bb89cc52dce1df93252c5ebe916f04841fdf9ed7be8fbefe484cb",
+      "Compilatrix/Ixon/V3/Tc/Bounds.lean": "c9ca97021fa4d3af937f20662b721540c7b2977e2d20f3f4663c86bbd46df4db",
+      "Compilatrix/Ixon/V3/Tc/CanonicalCheck.lean": "f44b3a7e3026673332204cf9bb96ce156dc193b442a54cb8840592903bc2ae76",
+      "Compilatrix/Ixon/V3/Tc/Check.lean": "9fd421e1124b2456e2488e68aea864f2e4126a01d92a3f2e157a5f386bb06829",
+      "Compilatrix/Ixon/V3/Tc/Const.lean": "caaf6aa092e937305e884a893c0373d500233c357479159e70476300beadc20d",
+      "Compilatrix/Ixon/V3/Tc/DefEq.lean": "488800dd5eaa9ad74f564e5f3284479d539bf823e9ad9552c86189100b6dabb6",
+      "Compilatrix/Ixon/V3/Tc/Driver.lean": "b068b53edd376a5d19bad6b921764e12969e61670f59846c93a7ad4d0c86c272",
+      "Compilatrix/Ixon/V3/Tc/Env.lean": "fc0a6bb8ae59c39ceeb6e598f8b7acc80749d166af14bd89d1d5f43ef6f3e691",
+      "Compilatrix/Ixon/V3/Tc/Equiv.lean": "73d035d1d52a5c6d8d98015281f2b903da89a912b0135a5e60b6f3f5be34288a",
+      "Compilatrix/Ixon/V3/Tc/Error.lean": "a0439e96bf0be3632f1063be4f864ed86c232e8451fcf05cb6b34d59e9c2bdf7",
+      "Compilatrix/Ixon/V3/Tc/Expr.lean": "ded533712adcb72a327977fa2a8a0b35825730253e5224a55a4731ff1f9e14d6",
+      "Compilatrix/Ixon/V3/Tc/Id.lean": "043489f4307138e69f7fc24c017383bb38e453b9329e6586675f70a76b8b5125",
+      "Compilatrix/Ixon/V3/Tc/Inductive.lean": "6227a234e52d74b10d90034edd5c9f2039df20885ac0c87e29e2ac96286c2160",
+      "Compilatrix/Ixon/V3/Tc/Infer.lean": "3b794ac27f595e03189c03986cb4150483975f1b365482e1ac6d3e671b1fde08",
+      "Compilatrix/Ixon/V3/Tc/Ingress.lean": "2fd296c8272714a654e02132b509e62148367d0c9c0bf38157c61144f989328b",
+      "Compilatrix/Ixon/V3/Tc/Knot.lean": "1af9f1628cc7021843aaf492e501cadb8e87e04c6a148f3158263395a0e032bb",
+      "Compilatrix/Ixon/V3/Tc/Lctx.lean": "8131381c569f74d8c5b4a3ff8143856d77055580fdd6077ef5160d65cc5c6d51",
+      "Compilatrix/Ixon/V3/Tc/Level.lean": "9f1c7b19c1a0425899063f609ceabf54e31f43acb1242a8f42c3db2f40628e54",
+      "Compilatrix/Ixon/V3/Tc/Metadata.lean": "bbbad1ede62ca58c460544adb810dc3f329fd2462c4d313905cb670dae1dfc66",
+      "Compilatrix/Ixon/V3/Tc/Mode.lean": "3dd83797608e3f2552be89194b8b7dfd0c074fde49b635b51dcf57c406019da3",
+      "Compilatrix/Ixon/V3/Tc/Monad.lean": "e5676d6187ee40645935a3190267d5686b4dd07da99505baa72d2e093f63e1ac",
+      "Compilatrix/Ixon/V3/Tc/Primitive.lean": "46aa060c8d90c6361a48c97828a5ab955e31c8ac4197ebe7656af8a2fbc6ebf0",
+      "Compilatrix/Ixon/V3/Tc/Subst.lean": "051a82e83248822b69fa2cd6ccec6b8475a7ce6c826f78aaed9fc7893b17585b",
+      "Compilatrix/Ixon/V3/Tc/Support.lean": "a20fd89080c72a9d21a5759959f433c9c4a2c0d8c9fd4950c4cd3bb3d91e71d5",
+      "Compilatrix/Ixon/V3/Tc/Whnf.lean": "f7a390563cd9d13cc08cb2124ad785b8e4ba26470cd66328120af9104526c434",
+      "fixtures/ixon-v3/typing/Nat.add.ixe": "a4290c1b5dae5dbf175b1028869727ee10252d63f9866ba5db9abf0d7dc37eeb",
+      "fixtures/ixon-v3/typing/Nat.ixe": "c4273638c7b7e89ba24c38072dd71bab8e8a85144e04d132095ca774cd2a5d88",
+      "fixtures/ixon-v3/typing/Quot.lift.ixe": "cd691ee096b3716c2c91e2310ef2c817bac26ba5d8d61ca9061989f76c929995",
+      "fixtures/ixon-v3/typing/README.md": "f48fd9b14b06940b73a86cdbfde4687c5f1288a16d1ae1260c2785df6f8efd25",
+      "fixtures/ixon-v3/typing/String.ixe": "39fac45f5f272c597931311306e6ab31471153262104fe64fbbbeee67eba2bea",
+      "fixtures/ixon-v3/typing/provenance.json": "ca67011201b174138806f0b8502ef3b57cb240c0839f70613005f51cd8fc155b",
+      "Compilatrix/Ixon/V3.lean": "f872aab6bdeca4cf6cd2e5d33704e64d173fe8e1dd4e7b12caa38a02f9b2a891",
+      "CheckIxonV3.lean": "078d4ff3d6be0325ec53550ed97f86a5ee164bda9411b4aba4ce4da20dd90cdc",
+      "docs/ixon-v3.md": "3eb79edcd5e365eba42785c00f0e97e486b513a136b78e9f209d3044b7016bed",
       "CompilatrixTests/Fences/IxonV3.lean": "6aca80beb3325e9cd0a0891c23f1ec94bc0e167309188a3787847a881b8e04ef",
       "Compilatrix/Ixon/V3/Const.lean": "649968af838058067153d0867d6957107bbfcb1f0342c85b79ffd28989bf4045",
       "Compilatrix/Ixon/V3/ConstDecode.lean": "d7486a41b8cb904cfce7ffc7f44b39b73e64924b85a6bf7dcb25f79bd646784d",
@@ -937,10 +975,10 @@
       "CompilatrixTests/IxonV3/Fixtures.lean": "dc2d93cc7723d0382705f1eb9f7438db78267d15fead0d46e26f93396f01db40",
       "CompilatrixTests/IxonV3/Handoff.lean": "be118470c9b994824740cc95ca1c6ee72d9902f4a6a00c59f995182fe476d3b1",
       "CompilatrixTests/IxonV3/Main.lean": "a788716b857726fe3fbe6d66b8805a892ddf5a60333368131a77997fd142fdab",
-      "CompilatrixTests/IxonV3/Run.lean": "4367a8e6579300b230c1400cf9a5a6ab88cd96a2bc2f28a746456bcb89476b7b",
+      "CompilatrixTests/IxonV3/Run.lean": "b76fc1d2014634d46d0ac0ef9cf5f142eaef49521c9ca159074a9244b66ba84c",
       "fixtures/ixon-v3/LICENSE-APACHE": "b28f8e76818565e459f777688228fd41d4de08df939c47709e931d8a733c152a",
       "fixtures/ixon-v3/LICENSE-MIT": "dc9de72071a0c52ba5ea1796e08a4a19a9d5f931e742db66290867246dc2a418",
-      "fixtures/ixon-v3/README.md": "ff473469047c9cbce342a535180556ef201c1ebfb9494bbec42596110a9ab58d",
+      "fixtures/ixon-v3/README.md": "25bdbaf4f88bad5220de2b44a9a00b785463fe4f3de6c8cee554009658632294",
       "fixtures/ixon-v3/addressed.tsv": "b2907e7fa06665f947b5baa5ffef28a5915a576f86be862152e70662cf14c50f",
       "fixtures/ixon-v3/claims.tsv": "99269f0a3cd6c930f2f576ad7e7c01f6b95d26f0c4ea68ddfa2ffb177cdc8a05",
       "fixtures/ixon-v3/expressions.txt": "0656ac3fd72f76ade116b4d346970e110d92cdc81835cdca15461f5b7e01755b",
@@ -1402,7 +1440,7 @@
       "CompilatrixTests/Addressing/Fixtures.lean": "27a6426f7850c1d25c65d3845b93050308b58684b98a6c09d728368357a75d86",
       "CompilatrixTests/Addressing/Main.lean": "1c6e0a6a6079e6004e3f8aa0f9bbacde238f843fe3401dd82c6f4f50d7cc83c7",
       "CompilatrixTests/Addressing/Run.lean": "0174850a37b1ad136b6fbae1523dc88039caf326175b12a452cf87199980df9d",
-      "CompilatrixTests/Fences.lean": "94ad0282ec71918e50aaa550751f292c75957333f7129c0b33729e3af83f15a6",
+      "CompilatrixTests/Fences.lean": "cbfb52230dee36b6e8c7a59e2086a22bb7d1bcdbe9d0e5020b90a523cf568719",
       "CompilatrixTests/Fences/Borrow.lean": "18235e906f421e81777dba27cc3d7c0b531ae494e378f9b104a272aaee3a4d5e",
       "CompilatrixTests/Fences/CallReuse.lean": "9dc8abad3e749e26256a8454b5513eb7529c3d7cd3a8246ede62660b5d7616ab",
       "CompilatrixTests/Fences/Erasure.lean": "c7d8e43c5fdee8cea9a0baee38c39f53775f20a721551da1db20a7bfa4715ef1",
@@ -1436,10 +1474,10 @@
       "CompilatrixTests/Support/Lowering.lean": "d8f926a53519d11c150a13b29e7be6c314cec39d224de0bcb8a89507fe4a480c",
       "nix/build.nix": "3f9c5fe9b24941507f3475c850edb927d53a878f7b6b6404e919a33d36cc3996",
       "nix/checks.nix": "9dca25f37ac23eb6dbed2e00f5bc8d321162d1ec59bb0f9fbe8ce068f6e2d682",
-      "nix/ci-coverage.json": "4bb514f4eacf08d914e93fd877bf1bc78cbacf00f11aab0315cc23856214d5d1",
+      "nix/ci-coverage.json": "d3950a99091b1c93b8951289741e932d37f5378d393a8764c557b650cb7196bf",
       "nix/ci-groups.json": "6db1224314298d7243b8437909285eef737aa3acc61d49b8cf8cdd382cadbef1",
       "nix/groups.nix": "c231009153b9aaf62aa0c4df16c39a6dd251c9312f1228d758d25499bfb42dc2",
-      "nix/lean-modules.json": "e3b8ab53f0ee87cd4855331bdadcfec3e83128fdf068d9af7fd2b6dabddf0c27",
+      "nix/lean-modules.json": "b707aa014cff802e7889f30342916244ecdf74da326a49ec9299d656090a45b2",
       "nix/sources.nix": "828ffd6fb1d4706329bc31fe1b2f4a8d5bc31e6a5b88dbe9346e4b36e6a1bbe8",
       "scripts/CheckBuildGraph.lean": "c2ab8681e1c1ceecab7905d0799868bb288ece6e4dd4bf7635b04adecf4f5d0c"
     },
