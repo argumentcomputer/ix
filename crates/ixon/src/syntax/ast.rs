@@ -10,6 +10,7 @@
 //! derived `PartialEq`; roundtrip tests therefore compare at the text
 //! level (`print ∘ parse ∘ print = print`), not by AST equality.
 
+use crate::contract::{BinderContract, LetContract, ValueContract};
 use bignat::Nat;
 use ix_common::env::{BinderInfo, NameComponent};
 
@@ -120,6 +121,7 @@ impl BinderName {
 /// unnamed instance form `[C]`, `names` is empty.
 #[derive(Debug, Clone, PartialEq)]
 pub struct BinderGroup {
+  pub contract: BinderContract,
   pub info: BinderInfo,
   pub names: Vec<BinderName>,
   pub ty: Term,
@@ -139,13 +141,18 @@ pub enum Term {
   /// `fun (x : A) (y : B) => e`.
   Fun { binders: Vec<BinderGroup>, body: Box<Term>, span: Span },
   /// Dependent function type `(x : A) (y : B) → C`.
-  Pi { binders: Vec<BinderGroup>, body: Box<Term>, span: Span },
+  Pi {
+    binders: Vec<BinderGroup>,
+    result: ValueContract,
+    body: Box<Term>,
+    span: Span,
+  },
   /// Non-dependent function type `A → B`.
-  Arrow { dom: Box<Term>, cod: Box<Term>, span: Span },
+  Arrow { result: ValueContract, dom: Box<Term>, cod: Box<Term>, span: Span },
   /// `let x : T := v; b` (`non_dep = false`) or
   /// `have x : T := v; b` (`non_dep = true`) — address-relevant.
   Let {
-    non_dep: bool,
+    contract: LetContract,
     name: BinderName,
     ty: Box<Term>,
     val: Box<Term>,

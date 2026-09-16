@@ -15,16 +15,15 @@
 module
 
 public import Lean.Expr
+public import Ix.IxonContract
 
 public section
 
 namespace Ixon.Syntax
 
-/-- Grammar version this implementation speaks . The `ixon <n>`
-    header is optional: absent means version 1, forever; grammar
-    versions ≥ 2 must declare themselves, and canonical version-1
-    output omits the header. Mirrors Rust `syntax::VERSION`. -/
-def VERSION : Nat := 1
+/-- Current grammar. Whole files require `ixon 3`; standalone terms use
+the current grammar directly. -/
+def VERSION : Nat := 3
 
 /-- Parser resource caps . Mirrors Rust
     `syntax::Limits`, including the defaults. -/
@@ -120,11 +119,11 @@ inductive Term where
       printer flattens nested spines. -/
   | app (head : Term) (args : Array Term) (span : Span)
   | lam (binders : Array BinderGroup) (body : Term) (span : Span)
-  | pi (binders : Array BinderGroup) (body : Term) (span : Span)
-  | arrow (dom cod : Term) (span : Span)
+  | pi (binders : Array BinderGroup) (result : Ixon.ValueContract) (body : Term) (span : Span)
+  | arrow (result : Ixon.ValueContract) (dom cod : Term) (span : Span)
   /-- `let` (`nonDep = false`) / `have` (`nonDep = true`) —
       address-relevant. -/
-  | letE (nonDep : Bool) (name : BinderName) (ty val body : Term)
+  | letE (contract : Ixon.LetContract) (name : BinderName) (ty val body : Term)
       (span : Span)
   | natLit (n : Nat) (span : Span)
   | strLit (s : String) (span : Span)
@@ -134,7 +133,7 @@ inductive Term where
     metadata only, never address-relevant. Unnamed instance `[T]` has
     empty `names`. -/
 inductive BinderGroup where
-  | mk (info : Lean.BinderInfo) (names : Array BinderName) (ty : Term)
+  | mk (contract : Ixon.BinderContract) (info : Lean.BinderInfo) (names : Array BinderName) (ty : Term)
       (span : Span)
 
 end
@@ -142,24 +141,27 @@ end
 instance : Inhabited Term := ⟨.sort .prop {}⟩
 
 instance : Inhabited BinderGroup :=
-  ⟨.mk .default #[] (.sort .prop {}) {}⟩
+  ⟨.mk .many .default #[] (.sort .prop {}) {}⟩
+
+def BinderGroup.contract : BinderGroup → Ixon.BinderContract
+  | .mk c _ _ _ _ => c
 
 def BinderGroup.info : BinderGroup → Lean.BinderInfo
-  | .mk i _ _ _ => i
+  | .mk _ i _ _ _ => i
 
 def BinderGroup.names : BinderGroup → Array BinderName
-  | .mk _ n _ _ => n
+  | .mk _ _ n _ _ => n
 
 def BinderGroup.ty : BinderGroup → Term
-  | .mk _ _ t _ => t
+  | .mk _ _ _ t _ => t
 
 def BinderGroup.span : BinderGroup → Span
-  | .mk _ _ _ s => s
+  | .mk _ _ _ _ s => s
 
 def Term.span : Term → Span
   | .ref r => r.span
   | .sort _ s | .natLit _ s | .strLit _ s => s
-  | .app _ _ s | .lam _ _ s | .pi _ _ s | .arrow _ _ s
+  | .app _ _ s | .lam _ _ s | .pi _ _ _ s | .arrow _ _ _ s
   | .letE _ _ _ _ _ s | .proj _ _ _ s => s
 
 /-- `def` / `theorem` / `opaque` — address-relevant. -/
@@ -343,10 +345,10 @@ partial def countTermNodes : Term → Nat
     | _ => 1
   | .app h args _ =>
     args.foldl (fun acc a => acc + countTermNodes a) (1 + countTermNodes h)
-  | .lam bs body _ | .pi bs body _ =>
+  | .lam bs body _ | .pi bs _ body _ =>
     bs.foldl (fun acc b => acc + 1 + countTermNodes b.ty)
       (1 + countTermNodes body)
-  | .arrow d c _ => 1 + countTermNodes d + countTermNodes c
+  | .arrow _ d c _ => 1 + countTermNodes d + countTermNodes c
   | .letE _ _ t v b _ =>
     1 + countTermNodes t + countTermNodes v + countTermNodes b
   | .natLit .. | .strLit .. => 1

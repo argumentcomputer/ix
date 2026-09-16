@@ -561,14 +561,14 @@ def ingressExprMeta (ixonEnv : Ixon.Env) (ctx : IngressMetaCtx)
           |>.push (.process body bodyArena)
           |>.push (.binderPush name)
           |>.push (.process ty tyArena)
-      | .letE nd ty val body =>
+      | .letE contract ty val body =>
         let (name, tyArena, valArena, bodyArena) ← match node with
           | .letBinder nameAddr tyChild valChild bodyChild =>
             pure (resolveName ixonEnv nameAddr, tyChild, valChild, bodyChild)
           | _ => do
             let n ← synthName
             pure (n, currentIdx, currentIdx, currentIdx)
-        stack := stack.push (.letDone name nd mdata)
+        stack := stack.push (.letDone name contract.nonDep mdata)
           |>.push .binderPop
           |>.push (.process body bodyArena)
           |>.push (.binderPush name)
@@ -958,3 +958,4 @@ end Ix.Tc
 
 end
 end
+

@@ -158,6 +158,7 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
   let allowPartial := p.hasFlag "allow-partial"
   let strictAnon := p.hasFlag "anon"
   let start ← IO.monoMsNow
+  let constList ← IO.ofExcept <| Ix.Compile.prepareRegisteredConstants leanEnv constList
   let status ← if strictAnon then
       Ix.CompileM.rsCompileEnvBytesAnonFFI constList outPath allowPartial
     else
@@ -262,3 +263,4 @@ def compileCmd : Cli.Cmd := `[Cli|
 ]
 
 end
+

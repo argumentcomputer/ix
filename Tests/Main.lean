@@ -33,6 +33,10 @@ import Tests.Ix.Kernel.PrimAddrs
 import Tests.Ix.RustSerialize
 import Tests.Ix.RustDecompile
 import Tests.Ix.Sharing
+import Tests.Ix.SourceContract
+import Tests.Ix.SourceContract.ImportCheck
+import Tests.Ix.SourceContract.SyntaxCheck
+import Tests.Ix.SourceContract.Driver
 import Tests.Ix.BenchMeasures
 import Tests.Ix.Tc.Unit
 import Tests.Ix.Tc.Substrate
@@ -95,6 +99,7 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("canon", [Tests.CanonM.suite]),
   ("keccak", Tests.Keccak.suite),
   ("sharing", Tests.Sharing.suite),
+  ("source-contract", Tests.Ix.SourceContract.suite ++ Tests.Ix.SourceContract.Driver.suite),
   ("graph-unit", Tests.Ix.GraphM.suite),
   ("condense-unit", Tests.Ix.CondenseM.suite),
   ("bench-measures", Tests.Ix.BenchMeasures.suite),
@@ -228,22 +233,22 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
     match AiurTestEnv.build IxVM.ixVM IxVM.functionGroups, AiurTestEnv.build IxVM.ixVMFull with
     | .error e, _ | _, .error e =>
       IO.eprintln s!"IxVM env build failed: {e}"; return 1
-    | .ok v2Env, .ok v2FullEnv =>
+    | .ok vmEnv, .ok fullVmEnv =>
       -- Kernel-arena fixtures: the repo's NEGATIVE corpus (every
       -- `bad_*` must be rejected by an in-kernel assert_eq!). Runs
       -- through the kernel's subject-only `verify_const` debug
       -- entrypoint, which lives only in the FULL toplevel — the
       -- production one carries `verify_claim` alone.
-      let arenaSeq ← Tests.Ix.Kernel.Arena.arenaTests env v2FullEnv.compiled
+      let arenaSeq ← Tests.Ix.Kernel.Arena.arenaTests env fullVmEnv.compiled
       -- Adversarial Ixon: exploit attempts authored as raw Ixon
       -- constants, below the layer the arena's Lean fixtures can
       -- reach. Each case pins the kernel's verdict, which is REJECT
       -- except where accepting is the specified claim semantics.
-      let exploitSeq ← Tests.Ix.IxVM.Exploits.exploitTests env v2Env.compiled
+      let exploitSeq ← Tests.Ix.IxVM.Exploits.exploitTests env vmEnv.compiled
       let aiurSeq := (kernelChecks ++
           [envFull, envFrontier, checkAsm,
            revealFields, revealExpr, revealModes, revealCPrj, containsTc]).foldl
-        (init := .done) fun s tc => s ++ v2Env.runTestCase tc
+        (init := .done) fun s tc => s ++ vmEnv.runTestCase tc
       -- Codegen parity gate: the generated Rust kernel is emitted from
       -- the toplevel, so this runs the same witnesses through both
       -- engines and asserts they agree. It is only meaningful against a
@@ -252,9 +257,9 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
       -- `kernelChecks` cases (`runParityCase` ignores the FFT pins), so
       -- the per-constant witness setup runs once, not twice.
       let paritySeq := kernelChecks.foldl (init := .done) fun s tc =>
-        s ++ runParityCase v2Env.compiled tc
+        s ++ runParityCase vmEnv.compiled tc
       let fullSeq := [kernelUnitTests, serdeTest].foldl (init := .done)
-        fun s tc => s ++ v2FullEnv.runTestCase tc
+        fun s tc => s ++ fullVmEnv.runTestCase tc
       -- Shard pipeline: witness built in Rust (thin-frontier claim,
       -- parallel closure walk) and run on the native kernel. Pinned FFT
       -- is the regression signal.
@@ -264,8 +269,8 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
         -- constants throws instead of skipping.
         | none => pure (LSpec.test "shard pipeline: SKIP (target absent)" true)
         | some (handle, ownedBlob) =>
-          let funIdx := v2Env.compiled.getFuncIdx `verify_claim |>.get!
-          match v2Env.compiled.bytecode.shardCheckWithEnv
+          let funIdx := vmEnv.compiled.getFuncIdx `verify_claim |>.get!
+          match vmEnv.compiled.bytecode.shardCheckWithEnv
                   funIdx handle ownedBlob false with
           | .error e =>
             pure (LSpec.test s!"shard pipeline execution: {e}" false)
@@ -274,10 +279,10 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
             -- (`.round.toUInt64.toNat`): any cost shift must be an
             -- explicit, reviewed bump.
             let actual :=
-              (Aiur.computeStats v2Env.compiled qc v2Env.shapes).totalFftCost.round.toUInt64.toNat
+              (Aiur.computeStats vmEnv.compiled qc vmEnv.shapes).totalFftCost.round.toUInt64.toNat
             pure (LSpec.test
-              s!"Shard pipeline FFT matches: expected 6_999_296_124, got {actual}"
-              (actual = 6_999_296_124))
+              s!"Shard pipeline FFT matches: expected 7_072_190_269, got {actual}"
+              (actual = 7_072_190_269))
       LSpec.lspecIO
         (.ofList [("ixvm",
           [fullSeq, aiurSeq, arenaSeq, exploitSeq, paritySeq, shardSeq])]) []),

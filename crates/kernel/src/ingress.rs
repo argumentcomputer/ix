@@ -1212,6 +1212,8 @@ fn ingress_expr<M: KernelMode>(
             }
           },
 
+          // Kernel ingress checks erased Lean types. Resource claims additionally
+          // require the addressed validator in `crate::resource`.
           IxonExpr::Lam(_, ty, body) => {
             bump_convert_stat!(stats, lam_nodes);
             if let ExprMetaData::EtaCallSite { wrapper_meta, .. } = node {
@@ -1297,7 +1299,7 @@ fn ingress_expr<M: KernelMode>(
             };
             stack.push(ExprFrame::LetDone {
               name: M::meta_field(name.clone()),
-              nd: *nd,
+              nd: nd.non_dep,
               mdata,
             });
             stack.push(ExprFrame::BinderPop);

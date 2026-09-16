@@ -219,7 +219,7 @@ private def hintToG : Lean.ReducibilityHints → Aiur.G
 /-! ## IxVM IOBuffer interface
 
 This section is the normative description of the host↔kernel interface.
-The host seeds payloads on five channels (0–4); the Aiur kernel consumes
+The host seeds payloads on channels 0–5; the Aiur kernel consumes
 them via `io_get_info` + `#read_byte_stream`. Each channel carries one
 value shape and each key is the content address of the value it maps to
 — no overloading, no in-band discriminators.
@@ -231,6 +231,12 @@ value shape and each key is the content address of the value it maps to
 | 2       | constant wire bytes    | const addr            | const bytes  |
 | 3       | Defn reducibility hint | Defn addr             | single G     |
 | 4       | blob raw bytes         | blob addr             | raw bytes    |
+| 5       | resource profile       | profile addr          | profile bytes |
+
+Channel 5 reserves the native resource-claim witness layout. IxVM currently
+rejects `resource-v1` claims explicitly: a native validation result cannot be
+used as a circuit proof. Its `Check` and `CheckEnv` claims assert erased Lean
+typing and bind that validator identity in their hashed claim bytes.
 
 An address is seeded on ch 2 iff it is a constant, and on ch 4 iff it is
 a blob. The two sets are disjoint and neither carries an entry on the
@@ -364,7 +370,8 @@ def closureFrom (env : Ixon.Env) (target : Address) : Std.HashSet Address :=
     address the claim variant names (plus any caller-supplied
     `AssumptionTree`s under their merkle roots). -/
 def buildClaimWitness (env : Ixon.Env) (claim : Ix.Claim)
-    (trees : Std.HashMap Address Ix.AssumptionTree := {}) :
+    (trees : Std.HashMap Address Ix.AssumptionTree := {})
+    (profiles : Std.HashMap Address ByteArray := {}) :
     Except String ClaimWitness := do
   let claimBytes := Ix.Claim.ser claim
   let digestKey := packedDigestKey (Address.blake3 claimBytes)
@@ -387,6 +394,13 @@ def buildClaimWitness (env : Ixon.Env) (claim : Ix.Claim)
     ioBuffer := addEntries env (fun _ => true) ioBuffer
     ioBuffer ← seedTreeAt root trees ioBuffer
     ioBuffer ← seedAsm asm ioBuffer
+  | .resource root profile =>
+    ioBuffer := addEntries env (fun _ => true) ioBuffer
+    ioBuffer ← seedTreeAt root trees ioBuffer
+    let some bytes := profiles[profile]? <|> env.blobs[profile]?
+      | throw s!"no resource profile supplied for {profile}"
+    unless Address.blake3 bytes == profile do throw "resource profile hash mismatch"
+    ioBuffer := ioBuffer.extend 5 (addrKey profile) (bytes.data.map .ofUInt8)
   | .reveal comm _info =>
     ioBuffer := addEntries env (closureFrom env comm).contains ioBuffer
   | .contains tree _target =>

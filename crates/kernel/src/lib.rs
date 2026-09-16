@@ -161,6 +161,7 @@ pub mod primitive;
 // host-only partitioner — it uses rayon + `std::time` (gated to the same
 // non-riscv targets that supply those deps), and the guest never partitions.
 pub mod profile;
+pub mod resource;
 #[cfg(not(target_arch = "riscv64"))]
 pub mod shard;
 pub mod subst;

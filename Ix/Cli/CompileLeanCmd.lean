@@ -53,7 +53,8 @@ def runCompileLeanCmd (p : Cli.Parsed) : IO UInt32 := do
   IO.println s!"[compile-lean] {constList.length} constants, {workers} workers"
 
   let t0 ← IO.monoMsNow
-  match ← Ix.CompileM.compileLeanConsts constList (numWorkers := workers)
+  let input ← IO.ofExcept ((Ix.Compile.compileInputFromEnv fe.env constList).mapError toString)
+  match ← Ix.CompileM.compileLeanInput input (numWorkers := workers)
       (dbg := true) with
   | .error e =>
     IO.println s!"[compile-lean] FAILED: {e}"
@@ -85,7 +86,8 @@ serialize the grounded subset)"
       let tR ← IO.monoMsNow
       let dir ← IO.FS.createTempDir
       let rustOut := dir / "rust-check.ixe"
-      let _ ← Ix.CompileM.rsCompileEnvBytesFFI constList rustOut.toString true
+      let constants ← IO.ofExcept input.prepare
+      let _ ← Ix.CompileM.rsCompileEnvBytesFFI constants rustOut.toString true
       let rustBytes ← IO.FS.readBinFile rustOut
       IO.FS.removeDirAll dir
       let tRe := (← IO.monoMsNow) - tR
@@ -120,3 +122,4 @@ def compileLeanCmd : Cli.Cmd := `[Cli|
 ]
 
 end
+

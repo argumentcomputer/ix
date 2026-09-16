@@ -94,6 +94,7 @@ def genClaim : Gen Claim :=
     (10, Claim.reveal   <$> genAddress <*> genRevealConstantInfo),
     (10, Claim.contains <$> genAddress <*> genAddress),
     (10, Claim.catalog  <$> genAddress <*> genAddress <*> genOptAddress),
+    (10, Claim.resource <$> genAddress <*> genAddress),
   ]
 
 /-! ## Shrinkable instances -/
@@ -131,6 +132,7 @@ instance : Shrinkable Claim where
       (.reveal comm <$> Shrinkable.shrink info) ++ [.check comm none]
     | .contains t _ => [.checkEnv t none]
     | .catalog m _ none => [.checkEnv m none]
+    | .resource _ _ => []
     | .catalog m c (some _) => [.catalog m c none]
 
 /-! ## SampleableExt instances -/
@@ -144,3 +146,4 @@ instance : SampleableExt Claim := SampleableExt.mkSelfContained genClaim
 end Tests.Gen.Claim
 
 end
+

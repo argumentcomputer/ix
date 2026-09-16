@@ -4,12 +4,12 @@ public import Ix.Common
 /-!
 # Ixon binder modes
 
-Ixon v2 carries substructural intent directly on binder nodes.  Ordinary
+Ixon v3 carries independent usage, ownership, and locality contracts. Ordinary
 Lean compilation inhabits the conservative fragment: every lambda/forall
 binder is `.many`, and every forall result is `.shared`.
 -/
 
-public section
+@[expose] public section
 
 namespace Ixon
 
@@ -75,7 +75,7 @@ def ofBits? : UInt8 → Option Uses
 
 end Uses
 
-/-- Ownership available to the caller for a forall result. -/
+/-- Ownership of a bound or returned value, independent of usage and locality. -/
 inductive Owned where
   | unique
   | shared

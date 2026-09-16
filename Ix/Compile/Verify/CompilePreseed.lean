@@ -275,6 +275,7 @@ inductive PreseedReady
       PreseedReady compileEnv blockEnv levelSupport origin
         (.proj typeName field val hash)
   | mdata {data inner hash} :
+      SemanticContract.hasMetadata data = false →
       PreseedReady compileEnv blockEnv levelSupport origin inner →
       PreseedReady compileEnv blockEnv levelSupport origin
         (.mdata data inner hash)
@@ -295,7 +296,7 @@ theorem PreseedReady.supported
     .letE hty.supported hval.supported hbody.supported
   | .lit => .lit
   | .proj _ hval => .proj hval.supported
-  | .mdata hinner => .mdata hinner.supported
+  | .mdata hplain hinner => .mdata hplain hinner.supported
 
 /-- Every payload accumulated so far is suitable for its eventual primary
 table: addresses have the fixed BLAKE3 width and raw universes canonicalize
@@ -822,7 +823,7 @@ theorem PreseedCollectionCovers.compileExprRef_of_indexed
     obtain ⟨tyTarget, htyTarget⟩ := ihty
     obtain ⟨valueTarget, hvalueTarget⟩ := ihvalue
     obtain ⟨bodyTarget, hbodyTarget⟩ := ihbody
-    exact ⟨.letE nonDep tyTarget valueTarget bodyTarget,
+    exact ⟨.leanLet nonDep tyTarget valueTarget bodyTarget,
       by simp [compileExprRef, htyTarget, hvalueTarget, hbodyTarget]⟩
   | @lit literal hash hmem =>
     obtain ⟨idx, hidx⟩ := hindexed.refs (literalAddress literal) hmem
@@ -1333,7 +1334,7 @@ theorem collectExprTablesStructural_run_ready
       · have hvalUniv := hvalSize.univs
         dsimp [preseedUnivCount] at hvalUniv ⊢
         omega
-  | @mdata data inner hash hinner ihinner =>
+  | @mdata data inner hash hplain hinner ihinner =>
     rcases acc with ⟨refs, univs, seen⟩
     rw [Ix.CompileM.collectExprTablesStructural]
     by_cases hseen : seen.contains
@@ -1812,10 +1813,10 @@ theorem collectExprTablesStructural_run_ready_covers
         hvalueSeen.dropHead hexprFaithful hordinary hcovered⟩
       rw [run_bind, hlookup]
       exact hvalueRun
-  | @mdata data inner hash hinner ihinner =>
+  | @mdata data inner hash hplain hinner ihinner =>
     rcases acc with ⟨refs, univs, seen⟩
     let source := Ix.Expr.mdata data inner hash
-    have hordinary : OrdinaryExpr source := .mdata hinner.supported.ordinary
+    have hordinary : OrdinaryExpr source := .mdata hplain hinner.supported.ordinary
     rw [Ix.CompileM.collectExprTablesStructural]
     by_cases hhit : seen.contains (source.getHash, ctxKey) = true
     · rw [if_pos hhit]
@@ -4825,3 +4826,4 @@ theorem preseedExprTables_run_univsFinal
           rfl
 
 end Ix.Compile.Verify
+

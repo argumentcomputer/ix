@@ -22,6 +22,24 @@ def recursorRuleBytes (rule : Ixon.RecursorRule) : ByteArray :=
   tag0Bytes rule.fields ++
     Ix.Compile.Verify.Codec.Ixon.Expr.spineWireEncode rule.rhs
 
+theorem listBytes_size_ge (encode : α → ByteArray) (minimum : Nat) (values : List α)
+    (h : ∀ value, minimum ≤ (encode value).size) :
+    values.length * minimum ≤ (listBytes encode values).size := by
+  induction values with
+  | nil => simp [listBytes]
+  | cons value values ih =>
+    have hhead := h value
+    simp only [listBytes, ByteArray.size_append, List.length_cons, Nat.add_mul,
+      Nat.one_mul]
+    omega
+
+theorem recursorRuleBytes_size_ge (rule : Ixon.RecursorRule) :
+    2 ≤ (recursorRuleBytes rule).size := by
+  have htag := Expr.tag0Bytes_size_pos rule.fields
+  have hexpr := Expr.spineWireEncode_size_pos rule.rhs
+  simp only [recursorRuleBytes, ByteArray.size_append]
+  omega
+
 def RecursorRuleWireWF (rule : Ixon.RecursorRule) : Prop :=
   Ixon.Expr.wireWF rule.rhs
 
@@ -72,6 +90,10 @@ theorem unpackRecursorFlags_pack (k isUnsafe : Bool) :
     bools[0]! = k ∧ bools[1]! = isUnsafe := by
   cases k <;> cases isUnsafe <;> decide
 
+theorem recursorFlags_valid (k isUnsafe : Bool) :
+    ¬ Ixon.packBools [k, isUnsafe] > 3 := by
+  cases k <;> cases isUnsafe <;> decide
+
 def recursorBytes (recursor : Ixon.Recursor) : ByteArray :=
   [recursorFlags recursor].toByteArray ++
     tag0Bytes recursor.lvls ++ tag0Bytes recursor.params ++
@@ -105,6 +127,7 @@ theorem putRecursor_writes (recursor : Ixon.Recursor)
 def getRecursorRules (k isUnsafe : Bool) (lvls params indices motives minors : UInt64)
     (typ : Ixon.Expr) : Ixon.GetM Ixon.Recursor := do
   let count := (← Ixon.getTag0).size.toNat
+  Ixon.checkCount count.toUInt64 2
   let mut rules : Array Ixon.RecursorRule := #[]
   for _ in [0:count] do
     rules := rules.push (← Ixon.getRecursorRule)
@@ -119,7 +142,8 @@ def getRecursorAfterFlags (k isUnsafe : Bool) : Ixon.GetM Ixon.Recursor := do
   let typ ← Ixon.getExpr
   getRecursorRules k isUnsafe lvls params indices motives minors typ
 
-def getRecursorFromFlags (flags : UInt8) : Ixon.GetM Ixon.Recursor :=
+def getRecursorFromFlags (flags : UInt8) : Ixon.GetM Ixon.Recursor := do
+  if flags > 3 then throw "invalid recursor flags"
   let bools := Ixon.unpackBools 2 flags
   getRecursorAfterFlags bools[0]! bools[1]!
 
@@ -147,14 +171,21 @@ theorem getRecursorRules_reads (recursor : Ixon.Recursor)
     hrules hreturn
   have htail : Reads
       (do
+        Ixon.checkCount recursor.rules.size.toUInt64.toNat.toUInt64 2
         let mut rules : Array Ixon.RecursorRule := #[]
         for _ in [0:recursor.rules.size.toUInt64.toNat] do
           rules := rules.push (← Ixon.getRecursorRule)
         return ({ recursor with rules } : Ixon.Recursor))
       (listBytes recursorRuleBytes recursor.rules.toList) recursor := by
+    apply Reads.checkCount _ 2
+      (by
+        simpa [hdecode] using
+          listBytes_size_ge recursorRuleBytes 2 recursor.rules.toList
+            recursorRuleBytes_size_ge)
     simpa [getMany, hdecode] using hafterRules
   have hall := Reads.bind
     (next := fun count : Ixon.Tag0 => do
+      Ixon.checkCount count.size.toNat.toUInt64 2
       let mut rules : Array Ixon.RecursorRule := #[]
       for _ in [0:count.size.toNat] do
         rules := rules.push (← Ixon.getRecursorRule)
@@ -241,7 +272,8 @@ theorem getRecursor_reads (recursor : Ixon.Recursor)
               tag0Bytes recursor.rules.size.toUInt64 ++
                 listBytes recursorRuleBytes recursor.rules.toList)
       recursor := by
-    simpa [getRecursorFromFlags, recursorFlags, hdecode.1, hdecode.2] using htail
+    simpa [getRecursorFromFlags, recursorFlags, recursorFlags_valid,
+      hdecode.1, hdecode.2] using htail
   have hall := Reads.bind (next := getRecursorFromFlags) hflags htail'
   rw [getRecursor_eq]
   simpa [recursorBytes, ByteArray.append_assoc] using hall

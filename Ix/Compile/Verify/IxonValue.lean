@@ -3,7 +3,7 @@ import Lean4Lean.Theory.Literals
 import Lean4Lean.Theory.Typing.Env
 
 /-!
-# Ixon v2 expressions and Lean4Lean values
+# Ixon v3 expressions and Lean4Lean values
 
 This is the first compiler-facing semantic boundary.  It interprets an Ixon
 expression directly as a Lean4Lean `VExpr`; it does not run Ix.Tc and does not
@@ -13,7 +13,7 @@ The relation is table-aware.  It resolves universe, reference, mutual-member,
 sharing, and literal indices against an explicit immutable context.  A cyclic
 sharing table has no finite derivation.  Lambda usage and forall
 usage/ownership are intentionally absent from the semantic premises: ordinary
-Lean compilation inhabits `.many`/`.shared`, while v2 annotations remain
+Lean compilation inhabits `.many`/`.shared`, while v3 contracts remain
 available to later substructural passes without changing the Lean meaning.
 -/
 
@@ -116,19 +116,19 @@ inductive IxonExprRel (venv : VEnv) (catalog : Catalog) (dctx : DecodeCtx)
     IxonExprRel venv catalog dctx trProj locals fn fn' →
     IxonExprRel venv catalog dctx trProj locals arg arg' →
     IxonExprRel venv catalog dctx trProj locals (.app fn arg) (.app fn' arg')
-  | lam {locals : List VExpr} {uses : Ixon.Uses} {ty body : Ixon.Expr}
+  | lam {locals : List VExpr} {uses : Ixon.BinderContract} {ty body : Ixon.Expr}
       {ty' body' : VExpr} :
     IxonExprRel venv catalog dctx trProj locals ty ty' →
     IxonExprRel venv catalog dctx trProj (ty' :: locals) body body' →
     IxonExprRel venv catalog dctx trProj locals (.lam uses ty body)
       (.lam ty' body')
-  | all {locals : List VExpr} {uses : Ixon.Uses} {owned : Ixon.Owned}
+  | all {locals : List VExpr} {uses : Ixon.BinderContract} {owned : Ixon.ValueContract}
       {ty body : Ixon.Expr} {ty' body' : VExpr} :
     IxonExprRel venv catalog dctx trProj locals ty ty' →
     IxonExprRel venv catalog dctx trProj (ty' :: locals) body body' →
     IxonExprRel venv catalog dctx trProj locals (.all uses owned ty body)
       (.forallE ty' body')
-  | letE {locals : List VExpr} {nonDep : Bool} {ty val body : Ixon.Expr}
+  | letE {locals : List VExpr} {nonDep : Ixon.LetContract} {ty val body : Ixon.Expr}
       {ty' val' body' : VExpr} :
     IxonExprRel venv catalog dctx trProj locals ty ty' →
     IxonExprRel venv catalog dctx trProj locals val val' →
@@ -192,7 +192,7 @@ theorem mono {venv venv' : VEnv} (henv : venv ≤ venv')
 
 end IxonExprRel
 
-/-- Erase v2 substructural annotations into the conservative Lean fragment. -/
+/-- Erase v3 contracts into the conservative Lean fragment. -/
 def eraseBinderModes : Ixon.Expr → Ixon.Expr
   | .sort idx => .sort idx
   | .var idx => .var idx
@@ -205,19 +205,19 @@ def eraseBinderModes : Ixon.Expr → Ixon.Expr
   | .lam _ ty body => .leanLam (eraseBinderModes ty) (eraseBinderModes body)
   | .all _ _ ty body => .leanAll (eraseBinderModes ty) (eraseBinderModes body)
   | .letE nonDep ty val body =>
-    .letE nonDep (eraseBinderModes ty) (eraseBinderModes val)
+    .leanLet nonDep.nonDep (eraseBinderModes ty) (eraseBinderModes val)
       (eraseBinderModes body)
   | .share idx => .share idx
 
 @[simp] theorem eraseModes_idem (expr : Ixon.Expr) :
     eraseBinderModes (eraseBinderModes expr) = eraseBinderModes expr := by
   induction expr <;>
-    simp [eraseBinderModes, Ixon.Expr.leanLam, Ixon.Expr.leanAll, *]
+    simp [eraseBinderModes, Ixon.Expr.leanLam, Ixon.Expr.leanAll, Ixon.Expr.leanLet, Ixon.LetContract.lean, *]
 
 @[simp] theorem leanFragment_eraseModes (expr : Ixon.Expr) :
     (eraseBinderModes expr).leanFragment = true := by
   induction expr <;>
-    simp [eraseBinderModes, Ixon.Expr.leanLam, Ixon.Expr.leanAll,
+    simp [eraseBinderModes, Ixon.Expr.leanLam, Ixon.Expr.leanAll, Ixon.Expr.leanLet, Ixon.LetContract.lean,
       Ixon.Expr.leanFragment, *]
 
 /-- A conservative-fragment expression is unchanged by mode erasure. -/
@@ -231,19 +231,24 @@ theorem eraseBinderModes_eq_self_of_leanFragment {expr : Ixon.Expr}
   | app fn arg ihfn iharg =>
     simp only [Ixon.Expr.leanFragment, Bool.and_eq_true] at h
     simp [eraseBinderModes, ihfn h.1, iharg h.2]
-  | lam uses ty body ihty ihbody =>
-    cases uses <;>
-      simp_all [Ixon.Expr.leanFragment, eraseBinderModes, Ixon.Expr.leanLam]
-  | all uses owned ty body ihty ihbody =>
-    cases uses <;> cases owned <;>
-      simp_all [Ixon.Expr.leanFragment, eraseBinderModes, Ixon.Expr.leanAll]
-  | letE nonDep ty val body ihty ihval ihbody =>
-    simp only [Ixon.Expr.leanFragment, Bool.and_eq_true] at h
-    simp [eraseBinderModes, ihty h.1.1, ihval h.1.2, ihbody h.2]
+  | lam contract ty body ihty ihbody =>
+    simp only [Ixon.Expr.leanFragment, Bool.and_eq_true, beq_iff_eq] at h
+    rcases h with ⟨⟨rfl, hty⟩, hbody⟩
+    simp [eraseBinderModes, Ixon.Expr.leanLam, ihty hty, ihbody hbody]
+  | all contract result ty body ihty ihbody =>
+    simp only [Ixon.Expr.leanFragment, Bool.and_eq_true, beq_iff_eq] at h
+    rcases h with ⟨⟨⟨rfl, rfl⟩, hty⟩, hbody⟩
+    simp [eraseBinderModes, Ixon.Expr.leanAll, ihty hty, ihbody hbody]
+  | letE contract ty val body ihty ihval ihbody =>
+    rcases contract with ⟨nonDep, kind, binder⟩
+    simp only [Ixon.Expr.leanFragment, Bool.and_eq_true, beq_iff_eq] at h
+    rcases h with ⟨⟨⟨⟨rfl, rfl⟩, hty⟩, hval⟩, hbody⟩
+    simp [eraseBinderModes, Ixon.Expr.leanLet, Ixon.LetContract.lean,
+      ihty hty, ihval hval, ihbody hbody]
 
 namespace IxonExprRel
 
-/-- Erasing v2 modes preserves every direct Theory value derivation. -/
+/-- Erasing v3 contracts preserves every direct Theory value derivation. -/
 theorem eraseModes {venv : VEnv} {catalog : Catalog} {dctx : DecodeCtx}
     {trProj : ProjectionRel} {uvars : Nat} {locals : List VExpr}
     {expr : Ixon.Expr} {value : VExpr}
@@ -268,7 +273,7 @@ theorem eraseModes {venv : VEnv} {catalog : Catalog} {dctx : DecodeCtx}
   | share href hexp _ => exact .share href hexp
 
 /-- A derivation for the conservative erasure can be decorated with the
-original v2 modes.  No semantic evidence is invented or discarded. -/
+original v3 contracts.  No semantic evidence is invented or discarded. -/
 theorem of_eraseModes {venv : VEnv} {catalog : Catalog} {dctx : DecodeCtx}
     {trProj : ProjectionRel} {uvars : Nat} {locals : List VExpr}
     {expr : Ixon.Expr} {value : VExpr}
@@ -296,7 +301,7 @@ theorem of_eraseModes {venv : VEnv} {catalog : Catalog} {dctx : DecodeCtx}
     | letE hty hval hbody =>
       exact .letE (ihty hty) (ihval hval) (ihbody hbody)
 
-/-- V2 annotations are semantically inert at the Lean compiler boundary. -/
+/-- V3 contracts are semantically inert at the Lean compiler boundary. -/
 theorem eraseModes_iff {venv : VEnv} {catalog : Catalog} {dctx : DecodeCtx}
     {trProj : ProjectionRel} {uvars : Nat} {locals : List VExpr}
     {expr : Ixon.Expr} {value : VExpr} :

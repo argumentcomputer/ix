@@ -1223,10 +1223,15 @@ def claim := ⟦
                   + to_field(sz7)), 0,
       "claim: tag4 size exceeds a single byte");
     let variant = size[0];
+    let (format, s) = read_byte(s);
+    assert_eq!(format, 3u8, "claim: unsupported object format");
+    let (validator, s) = read_byte(s);
     match variant {
       4 =>
+        assert_eq!(validator, 1u8, "claim: wrong validator identity");
         let (target, s2) = get_address(s);
-        let (asm, _s3) = get_opt_addr(s2);
+        let (asm, rest) = get_opt_addr(s2);
+        assert_eq!(load(rest), ListNode.Nil, "claim: trailing bytes");
         match asm {
           Option.None => run_check_transitive(target),
           Option.Some(r) =>
@@ -1235,17 +1240,29 @@ def claim := ⟦
             env_walk(target, RBTreeMap.Nil, asm_set, 0),
         },
       5 =>
+        assert_eq!(validator, 1u8, "claim: wrong validator identity");
         let (root, s2) = get_address(s);
-        let (asm, _s3) = get_opt_addr(s2);
+        let (asm, rest) = get_opt_addr(s2);
+        assert_eq!(load(rest), ListNode.Nil, "claim: trailing bytes");
         run_check_env(root, asm),
       6 =>
+        assert_eq!(validator, 0u8, "claim: wrong validator identity");
         let (comm, s2) = get_address(s);
-        let (info, _s3) = get_reveal_info(s2);
+        let (info, rest) = get_reveal_info(s2);
+        assert_eq!(load(rest), ListNode.Nil, "claim: trailing bytes");
         run_reveal(comm, info),
       7 =>
+        assert_eq!(validator, 0u8, "claim: wrong validator identity");
         let (tree, s2) = get_address(s);
-        let (target, _s3) = get_address(s2);
+        let (target, rest) = get_address(s2);
+        assert_eq!(load(rest), ListNode.Nil, "claim: trailing bytes");
         run_contains(tree, target),
+      9 =>
+        assert_eq!(validator, 2u8, "claim: wrong resource validator identity");
+        -- Native resource admission is not a circuit proof. Keep this
+        -- unsupported boundary explicit; no host success flag is trusted.
+        assert_eq!(0, 1, "claim: resource-v1 is not implemented by IxVM");
+        (),
     }
   }
 ⟧

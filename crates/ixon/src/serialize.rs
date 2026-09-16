@@ -17,7 +17,11 @@ use super::constant::{
   Definition, DefinitionProj, Inductive, InductiveProj, MutConst, Quotient,
   Recursor, RecursorProj, RecursorRule,
 };
-use super::expr::{Expr, Owned, Uses};
+use super::contract::{
+  BinderContract, LetContract, ValueContract, get_binder_contract,
+  pack_all_contract, put_binder_contract, unpack_all_contract,
+};
+use super::expr::Expr;
 use super::metadata::IxonByteSerde;
 use super::tag::{Tag0, Tag4};
 use super::univ::{Univ, get_univ, put_univ};
@@ -38,7 +42,7 @@ fn put_u8(x: u8, buf: &mut Vec<u8>) {
   buf.push(x);
 }
 
-fn get_u8(buf: &mut &[u8]) -> Result<u8, String> {
+pub(crate) fn get_u8(buf: &mut &[u8]) -> Result<u8, String> {
   match buf.split_first() {
     Some((&x, rest)) => {
       *buf = rest;
@@ -341,378 +345,289 @@ pub fn unpack_bools(n: usize, b: u8) -> Vec<bool> {
 // Expression serialization
 // ============================================================================
 
-/// Serialize an expression to bytes (iterative to avoid stack overflow).
+/// Serialize maximal ordinary telescopes without recursive host-stack calls.
 pub fn put_expr(e: &Expr, buf: &mut Vec<u8>) {
-  enum PutExprFrame<'a> {
+  enum Work<'a> {
     Expr(&'a Expr),
-    Mode(u8),
+    Byte(u8),
   }
-
-  let mut stack = vec![PutExprFrame::Expr(e)];
-
-  while let Some(frame) = stack.pop() {
-    let curr = match frame {
-      PutExprFrame::Expr(curr) => curr,
-      PutExprFrame::Mode(mode) => {
-        put_u8(mode, buf);
+  let mut work = vec![Work::Expr(e)];
+  while let Some(next) = work.pop() {
+    let e = match next {
+      Work::Expr(e) => e,
+      Work::Byte(b) => {
+        buf.push(b);
         continue;
       },
     };
-    match curr {
-      Expr::Sort(univ_idx) => {
-        Tag4::new(Expr::FLAG_SORT, *univ_idx).put(buf);
-      },
-      Expr::Var(idx) => {
-        Tag4::new(Expr::FLAG_VAR, *idx).put(buf);
-      },
-      Expr::Ref(ref_idx, univ_indices) => {
-        Tag4::new(Expr::FLAG_REF, univ_indices.len() as u64).put(buf);
-        put_u64(*ref_idx, buf);
-        for idx in univ_indices {
-          put_u64(*idx, buf);
+    match e {
+      Expr::Sort(n) => Tag4::new(Expr::FLAG_SORT, *n).put(buf),
+      Expr::Var(n) => Tag4::new(Expr::FLAG_VAR, *n).put(buf),
+      Expr::Str(n) => Tag4::new(Expr::FLAG_STR, *n).put(buf),
+      Expr::Nat(n) => Tag4::new(Expr::FLAG_NAT, *n).put(buf),
+      Expr::Share(n) => Tag4::new(Expr::FLAG_SHARE, *n).put(buf),
+      Expr::Ref(n, levels) | Expr::Rec(n, levels) => {
+        Tag4::new(
+          if matches!(e, Expr::Ref(..)) {
+            Expr::FLAG_REF
+          } else {
+            Expr::FLAG_REC
+          },
+          levels.len() as u64,
+        )
+        .put(buf);
+        put_u64(*n, buf);
+        for level in levels {
+          put_u64(*level, buf);
         }
       },
-      Expr::Rec(rec_idx, univ_indices) => {
-        Tag4::new(Expr::FLAG_REC, univ_indices.len() as u64).put(buf);
-        put_u64(*rec_idx, buf);
-        for idx in univ_indices {
-          put_u64(*idx, buf);
-        }
-      },
-      Expr::Prj(type_ref_idx, field_idx, val) => {
-        Tag4::new(Expr::FLAG_PRJ, *field_idx).put(buf);
-        put_u64(*type_ref_idx, buf);
-        stack.push(PutExprFrame::Expr(val));
-      },
-      Expr::Str(ref_idx) => {
-        Tag4::new(Expr::FLAG_STR, *ref_idx).put(buf);
-      },
-      Expr::Nat(ref_idx) => {
-        Tag4::new(Expr::FLAG_NAT, *ref_idx).put(buf);
+      Expr::Prj(t, field, value) => {
+        Tag4::new(Expr::FLAG_PRJ, *field).put(buf);
+        put_u64(*t, buf);
+        work.push(Work::Expr(value));
       },
       Expr::App(..) => {
-        // Telescope compression: count nested apps
-        let count = curr.app_telescope_count();
-        Tag4::new(Expr::FLAG_APP, count).put(buf);
-        // Collect function and args
-        let mut e = curr;
-        let mut args = Vec::with_capacity(count as usize);
-        while let Expr::App(func, arg) = e {
-          args.push(arg.as_ref());
-          e = func.as_ref();
+        Tag4::new(Expr::FLAG_APP, e.app_telescope_count()).put(buf);
+        let mut head = e;
+        while let Expr::App(f, a) = head {
+          work.push(Work::Expr(a));
+          head = f;
         }
-        // Push in reverse order: args (reversed back to normal), then func
-        for arg in &args {
-          stack.push(PutExprFrame::Expr(arg));
-        }
-        stack.push(PutExprFrame::Expr(e)); // func last, processed first
+        work.push(Work::Expr(head));
       },
-      Expr::Lam(..) => {
-        // Telescope compression: count nested lambdas
-        let count = curr.lam_telescope_count();
-        Tag4::new(Expr::FLAG_LAM, count).put(buf);
-        // Collect types and body
-        let mut e = curr;
-        let mut binders = Vec::with_capacity(count as usize);
-        while let Expr::Lam(uses, t, b) = e {
-          binders.push((*uses, t.as_ref()));
-          e = b.as_ref();
+      Expr::Lam(..) | Expr::All(..) => {
+        let all = matches!(e, Expr::All(..));
+        Tag4::new(
+          if all { Expr::FLAG_ALL } else { Expr::FLAG_LAM },
+          if all { e.all_telescope_count() } else { e.lam_telescope_count() },
+        )
+        .put(buf);
+        let mut body = e;
+        let mut binders = vec![];
+        loop {
+          match body {
+            Expr::Lam(c, ty, b) if !all => {
+              binders.extend([Work::Byte(c.to_bits()), Work::Expr(ty)]);
+              body = b;
+            },
+            Expr::All(c, v, ty, b) if all => {
+              binders.extend([
+                Work::Byte(pack_all_contract(*c, *v)),
+                Work::Expr(ty),
+              ]);
+              body = b;
+            },
+            _ => break,
+          }
         }
-        // Each binder is encoded as its mode byte followed by its type.
-        stack.push(PutExprFrame::Expr(e)); // body
-        for (uses, ty) in binders.into_iter().rev() {
-          stack.push(PutExprFrame::Expr(ty));
-          stack.push(PutExprFrame::Mode(uses.to_bits()));
-        }
+        work.push(Work::Expr(body));
+        work.extend(binders.into_iter().rev());
       },
-      Expr::All(..) => {
-        // Telescope compression: count nested foralls
-        let count = curr.all_telescope_count();
-        Tag4::new(Expr::FLAG_ALL, count).put(buf);
-        // Collect types and body
-        let mut e = curr;
-        let mut binders = Vec::with_capacity(count as usize);
-        while let Expr::All(uses, owned, t, b) = e {
-          binders.push((*uses, *owned, t.as_ref()));
-          e = b.as_ref();
-        }
-        // Uses occupies bits 0-1 and Owned occupies bit 2.
-        stack.push(PutExprFrame::Expr(e)); // body
-        for (uses, owned, ty) in binders.into_iter().rev() {
-          stack.push(PutExprFrame::Expr(ty));
-          stack
-            .push(PutExprFrame::Mode(uses.to_bits() | (owned.to_bits() << 2)));
-        }
-      },
-      Expr::Let(non_dep, ty, val, body) => {
-        // size=0 for dep, size=1 for non_dep
-        Tag4::new(Expr::FLAG_LET, if *non_dep { 1 } else { 0 }).put(buf);
-        stack.push(PutExprFrame::Expr(body)); // Process body last
-        stack.push(PutExprFrame::Expr(val));
-        stack.push(PutExprFrame::Expr(ty)); // Process ty first
-      },
-      Expr::Share(idx) => {
-        Tag4::new(Expr::FLAG_SHARE, *idx).put(buf);
+      Expr::Let(c, ty, value, body) => {
+        Tag4::new(Expr::FLAG_LET, c.flags()).put(buf);
+        put_binder_contract(&c.binder, buf);
+        work.extend([Work::Expr(body), Work::Expr(value), Work::Expr(ty)]);
       },
     }
   }
 }
 
-/// Frame for iterative expression deserialization.
+type BinderGroup = (BinderContract, Option<ValueContract>, Arc<Expr>);
+
 enum GetExprFrame {
-  /// Parse an expression from the buffer
   Parse,
-  /// Build Prj with stored idx, pop val and typ
-  BuildPrj(u64, u64), // type_ref_idx, field_idx
-  /// Build App: pop func and arg, push App(func, arg)
-  BuildApp,
-  /// Reject a nested App base before collecting the flattened arguments.
-  CheckAppBase(u64),
-  /// Collect n more args for App telescope, then wrap
-  CollectApps(u64),
-  /// Collect remaining Lam types: have `collected`, need `remaining` more
-  CollectLamType {
-    collected: Vec<(Uses, Arc<Expr>)>,
+  Prj(u64, u64),
+  App,
+  CheckApp(u64),
+  Apps(u64),
+  Groups {
+    all: bool,
+    groups: Vec<BinderGroup>,
     remaining: u64,
-    uses: Uses,
   },
-  /// Build Lam telescope: wrap body in Lams using stored types
-  BuildLams(Vec<(Uses, Arc<Expr>)>),
-  /// Collect remaining All types: have `collected`, need `remaining` more
-  CollectAllType {
-    collected: Vec<(Uses, Owned, Arc<Expr>)>,
+  Domain {
+    all: bool,
+    groups: Vec<BinderGroup>,
     remaining: u64,
-    uses: Uses,
-    owned: Owned,
+    binder: BinderContract,
+    result: Option<ValueContract>,
   },
-  /// Build All telescope: wrap body in Alls using stored types
-  BuildAlls(Vec<(Uses, Owned, Arc<Expr>)>),
-  /// Build Let with stored non_dep flag
-  BuildLet(bool),
+  Binders {
+    all: bool,
+    groups: Vec<BinderGroup>,
+  },
+  Let(LetContract),
 }
 
-/// Deserialize an expression from bytes (iterative to avoid stack overflow).
+/// Bounded iterative decoding with canonical telescope and contract checks.
+/// Type, scope, and resource validity are separate admission obligations.
 pub fn get_expr(buf: &mut &[u8]) -> Result<Arc<Expr>, String> {
-  let mut work: Vec<GetExprFrame> = vec![GetExprFrame::Parse];
-  let mut results: Vec<Arc<Expr>> = Vec::new();
-
-  while let Some(frame) = work.pop() {
-    match frame {
+  let mut work = vec![GetExprFrame::Parse];
+  let mut results: Vec<Arc<Expr>> = vec![];
+  while let Some(next) = work.pop() {
+    match next {
       GetExprFrame::Parse => {
         let tag = Tag4::get(buf)?;
         match tag.flag {
-          Expr::FLAG_SORT => {
-            results.push(Expr::sort(tag.size));
-          },
-          Expr::FLAG_VAR => {
-            results.push(Expr::var(tag.size));
-          },
-          Expr::FLAG_REF => {
-            let ref_idx = get_u64(buf)?;
-            let mut univ_indices =
-              Vec::with_capacity(capped_capacity(tag.size, buf));
-            for _ in 0..tag.size {
-              univ_indices.push(get_u64(buf)?);
+          Expr::FLAG_SORT => results.push(Expr::sort(tag.size)),
+          Expr::FLAG_VAR => results.push(Expr::var(tag.size)),
+          Expr::FLAG_STR => results.push(Expr::str(tag.size)),
+          Expr::FLAG_NAT => results.push(Expr::nat(tag.size)),
+          Expr::FLAG_SHARE => results.push(Expr::share(tag.size)),
+          Expr::FLAG_REF | Expr::FLAG_REC => {
+            let index = get_u64(buf)?;
+            if tag.size > buf.len() as u64 {
+              return Err(
+                "get_expr: universe count exceeds remaining bytes".into(),
+              );
             }
-            results.push(Expr::reference(ref_idx, univ_indices));
-          },
-          Expr::FLAG_REC => {
-            let rec_idx = get_u64(buf)?;
-            let mut univ_indices =
-              Vec::with_capacity(capped_capacity(tag.size, buf));
+            let mut levels = Vec::with_capacity(tag.size as usize);
             for _ in 0..tag.size {
-              univ_indices.push(get_u64(buf)?);
+              levels.push(get_u64(buf)?);
             }
-            results.push(Expr::rec(rec_idx, univ_indices));
+            results.push(if tag.flag == Expr::FLAG_REF {
+              Expr::reference(index, levels)
+            } else {
+              Expr::rec(index, levels)
+            });
           },
           Expr::FLAG_PRJ => {
-            let type_ref_idx = get_u64(buf)?;
-            // Parse val, then build Prj
-            work.push(GetExprFrame::BuildPrj(type_ref_idx, tag.size));
-            work.push(GetExprFrame::Parse); // val
+            work.extend([
+              GetExprFrame::Prj(get_u64(buf)?, tag.size),
+              GetExprFrame::Parse,
+            ]);
           },
-          Expr::FLAG_STR => {
-            results.push(Expr::str(tag.size));
-          },
-          Expr::FLAG_NAT => {
-            results.push(Expr::nat(tag.size));
-          },
-          Expr::FLAG_APP => {
+          Expr::FLAG_APP | Expr::FLAG_LAM | Expr::FLAG_ALL => {
             if tag.size == 0 {
-              return Err("get_expr: empty app spine".to_string());
+              return Err("get_expr: empty telescope".into());
             }
-            // Parse func, then collect args and wrap
-            work.push(GetExprFrame::CheckAppBase(tag.size));
-            work.push(GetExprFrame::Parse); // func
-          },
-          Expr::FLAG_LAM => {
-            if tag.size == 0 {
-              return Err("get_expr: Lam with zero binders".to_string());
+            let minimum = if tag.flag == Expr::FLAG_APP { 1 } else { 2 };
+            if tag.size > (buf.len() / minimum) as u64 {
+              return Err(
+                "get_expr: telescope count exceeds remaining bytes".into(),
+              );
             }
-            let mode = get_u8(buf)?;
-            let uses = Uses::from_bits(mode)
-              .ok_or_else(|| format!("get_expr: invalid lambda mode {mode}"))?;
-            // Start collecting types
-            work.push(GetExprFrame::CollectLamType {
-              collected: Vec::new(),
-              remaining: tag.size,
-              uses,
-            });
-            work.push(GetExprFrame::Parse); // first type
-          },
-          Expr::FLAG_ALL => {
-            if tag.size == 0 {
-              return Err("get_expr: All with zero binders".to_string());
+            if tag.flag == Expr::FLAG_APP {
+              work.extend([
+                GetExprFrame::CheckApp(tag.size),
+                GetExprFrame::Parse,
+              ]);
+            } else {
+              work.push(GetExprFrame::Groups {
+                all: tag.flag == Expr::FLAG_ALL,
+                groups: vec![],
+                remaining: tag.size,
+              });
             }
-            let mode = get_u8(buf)?;
-            if mode > 0b111 {
-              return Err(format!("get_expr: invalid forall mode {mode}"));
-            }
-            let uses = Uses::from_bits(mode & 0b11)
-              .ok_or_else(|| format!("get_expr: invalid forall mode {mode}"))?;
-            let owned = Owned::from_bits((mode >> 2) & 0b1)
-              .ok_or_else(|| format!("get_expr: invalid forall mode {mode}"))?;
-            // Start collecting types
-            work.push(GetExprFrame::CollectAllType {
-              collected: Vec::new(),
-              remaining: tag.size,
-              uses,
-              owned,
-            });
-            work.push(GetExprFrame::Parse); // first type
           },
           Expr::FLAG_LET => {
-            // size=0 for dep, size=1 for non_dep
-            if tag.size > 1 {
-              return Err(format!(
-                "get_expr: invalid letE nonDep {}",
-                tag.size
-              ));
+            if tag.size > 3 {
+              return Err("get_expr: invalid let flags".into());
             }
-            let non_dep = tag.size == 1;
-            work.push(GetExprFrame::BuildLet(non_dep));
-            work.push(GetExprFrame::Parse); // body
-            work.push(GetExprFrame::Parse); // val
-            work.push(GetExprFrame::Parse); // ty
+            let binder = get_binder_contract(buf)?;
+            let contract = LetContract::from_flags(tag.size, binder)
+              .ok_or("get_expr: invalid let flags")?;
+            work.extend([
+              GetExprFrame::Let(contract),
+              GetExprFrame::Parse,
+              GetExprFrame::Parse,
+              GetExprFrame::Parse,
+            ]);
           },
-          Expr::FLAG_SHARE => {
-            results.push(Expr::share(tag.size));
-          },
-          f => return Err(format!("get_expr: invalid flag {f}")),
+          other => return Err(format!("get_expr: invalid flag {other}")),
         }
       },
-      GetExprFrame::BuildPrj(type_ref_idx, field_idx) => {
-        let val = results.pop().ok_or("get_expr: missing val for Prj")?;
-        results.push(Expr::prj(type_ref_idx, field_idx, val));
+      GetExprFrame::Prj(t, field) => {
+        let value =
+          results.pop().ok_or("get_expr: missing projection value")?;
+        results.push(Expr::prj(t, field, value));
       },
-      GetExprFrame::BuildApp => {
-        let arg = results.pop().ok_or("get_expr: missing arg for App")?;
-        let func = results.pop().ok_or("get_expr: missing func for App")?;
-        results.push(Expr::app(func, arg));
+      GetExprFrame::App => {
+        let arg = results.pop().ok_or("get_expr: missing argument")?;
+        let fun = results.pop().ok_or("get_expr: missing function")?;
+        results.push(Expr::app(fun, arg));
       },
-      GetExprFrame::CheckAppBase(remaining) => {
-        let base =
-          results.last().ok_or("get_expr: missing base for App telescope")?;
-        if matches!(base.as_ref(), Expr::App(..)) {
-          return Err("get_expr: non-canonical app base".to_string());
+      GetExprFrame::CheckApp(remaining) => {
+        if matches!(results.last().map(|e| e.as_ref()), Some(Expr::App(..))) {
+          return Err("get_expr: non-canonical app base".into());
         }
-        work.push(GetExprFrame::CollectApps(remaining));
+        work.push(GetExprFrame::Apps(remaining));
       },
-      GetExprFrame::CollectApps(remaining) => {
+      GetExprFrame::Apps(remaining) => {
+        if remaining > 0 {
+          work.extend([
+            GetExprFrame::Apps(remaining - 1),
+            GetExprFrame::App,
+            GetExprFrame::Parse,
+          ]);
+        }
+      },
+      GetExprFrame::Groups { all, groups, remaining } => {
         if remaining == 0 {
-          // All args collected, result is already on stack
+          work.extend([
+            GetExprFrame::Binders { all, groups },
+            GetExprFrame::Parse,
+          ]);
         } else {
-          // Parse next arg, apply to current func
-          work.push(GetExprFrame::CollectApps(remaining - 1));
-          work.push(GetExprFrame::BuildApp);
-          work.push(GetExprFrame::Parse); // arg
+          let bits = get_u8(buf)?;
+          let (binder, result) = if all {
+            let (binder, result) =
+              unpack_all_contract(bits).ok_or_else(|| {
+                format!("get_expr: invalid forall contract {bits}")
+              })?;
+            (binder, Some(result))
+          } else {
+            (
+              BinderContract::from_bits(bits).ok_or_else(|| {
+                format!("get_expr: invalid lambda contract {bits}")
+              })?,
+              None,
+            )
+          };
+          work.extend([
+            GetExprFrame::Domain {
+              all,
+              groups,
+              remaining: remaining - 1,
+              binder,
+              result,
+            },
+            GetExprFrame::Parse,
+          ]);
         }
       },
-      GetExprFrame::CollectLamType { mut collected, remaining, uses } => {
-        // Pop the just-parsed type
-        let ty = results.pop().ok_or("get_expr: missing type for Lam")?;
-        collected.push((uses, ty));
-
-        if remaining > 1 {
-          // More types to collect
-          let mode = get_u8(buf)?;
-          let uses = Uses::from_bits(mode)
-            .ok_or_else(|| format!("get_expr: invalid lambda mode {mode}"))?;
-          work.push(GetExprFrame::CollectLamType {
-            collected,
-            remaining: remaining - 1,
-            uses,
-          });
-          work.push(GetExprFrame::Parse); // next type
-        } else {
-          // All types collected, now parse body
-          work.push(GetExprFrame::BuildLams(collected));
-          work.push(GetExprFrame::Parse); // body
-        }
+      GetExprFrame::Domain { all, mut groups, remaining, binder, result } => {
+        let ty = results.pop().ok_or("get_expr: missing binder domain")?;
+        groups.push((binder, result, ty));
+        work.push(GetExprFrame::Groups { all, groups, remaining });
       },
-      GetExprFrame::BuildLams(types) => {
-        let mut body = results.pop().ok_or("get_expr: missing body for Lam")?;
-        if matches!(body.as_ref(), Expr::Lam(..)) {
-          return Err("get_expr: non-canonical lam telescope".to_string());
+      GetExprFrame::Binders { all, groups } => {
+        let mut body = results.pop().ok_or("get_expr: missing binder body")?;
+        if (all && matches!(body.as_ref(), Expr::All(..)))
+          || (!all && matches!(body.as_ref(), Expr::Lam(..)))
+        {
+          return Err("get_expr: non-canonical binder telescope".into());
         }
-        for (uses, ty) in types.into_iter().rev() {
-          body = Expr::lam_mode(uses, ty, body);
+        for (contract, result, ty) in groups.into_iter().rev() {
+          body = match result {
+            Some(result) => Expr::all_contract(contract, result, ty, body),
+            None => Expr::lam_contract(contract, ty, body),
+          };
         }
         results.push(body);
       },
-      GetExprFrame::CollectAllType {
-        mut collected,
-        remaining,
-        uses,
-        owned,
-      } => {
-        // Pop the just-parsed type
-        let ty = results.pop().ok_or("get_expr: missing type for All")?;
-        collected.push((uses, owned, ty));
-
-        if remaining > 1 {
-          // More types to collect
-          let mode = get_u8(buf)?;
-          if mode > 0b111 {
-            return Err(format!("get_expr: invalid forall mode {mode}"));
-          }
-          let uses = Uses::from_bits(mode & 0b11)
-            .ok_or_else(|| format!("get_expr: invalid forall mode {mode}"))?;
-          let owned = Owned::from_bits((mode >> 2) & 0b1)
-            .ok_or_else(|| format!("get_expr: invalid forall mode {mode}"))?;
-          work.push(GetExprFrame::CollectAllType {
-            collected,
-            remaining: remaining - 1,
-            uses,
-            owned,
-          });
-          work.push(GetExprFrame::Parse); // next type
-        } else {
-          // All types collected, now parse body
-          work.push(GetExprFrame::BuildAlls(collected));
-          work.push(GetExprFrame::Parse); // body
-        }
-      },
-      GetExprFrame::BuildAlls(types) => {
-        let mut body = results.pop().ok_or("get_expr: missing body for All")?;
-        if matches!(body.as_ref(), Expr::All(..)) {
-          return Err("get_expr: non-canonical all telescope".to_string());
-        }
-        for (uses, owned, ty) in types.into_iter().rev() {
-          body = Expr::all_mode(uses, owned, ty, body);
-        }
-        results.push(body);
-      },
-      GetExprFrame::BuildLet(non_dep) => {
-        let body = results.pop().ok_or("get_expr: missing body for Let")?;
-        let val = results.pop().ok_or("get_expr: missing val for Let")?;
-        let ty = results.pop().ok_or("get_expr: missing ty for Let")?;
-        results.push(Expr::let_(non_dep, ty, val, body));
+      GetExprFrame::Let(contract) => {
+        let body = results.pop().ok_or("get_expr: missing let body")?;
+        let value = results.pop().ok_or("get_expr: missing let value")?;
+        let ty = results.pop().ok_or("get_expr: missing let type")?;
+        results.push(Expr::let_contract(contract, ty, value, body));
       },
     }
   }
-
-  results.pop().ok_or_else(|| "get_expr: no result".to_string())
+  if results.len() != 1 {
+    return Err("get_expr: invalid result stack".into());
+  }
+  results.pop().ok_or_else(|| "get_expr: no result".into())
 }
 
 // ============================================================================
@@ -853,7 +768,11 @@ impl Recursor {
   }
 
   pub fn get(buf: &mut &[u8]) -> Result<Self, String> {
-    let bools = unpack_bools(2, get_u8(buf)?);
+    let flags = get_u8(buf)?;
+    if flags > 3 {
+      return Err("invalid recursor flags".into());
+    }
+    let bools = unpack_bools(2, flags);
     let lvls = get_u64(buf)?;
     let params = get_u64(buf)?;
     let indices = get_u64(buf)?;
@@ -944,7 +863,7 @@ impl Inductive {
   }
 
   pub fn get(buf: &mut &[u8]) -> Result<Self, String> {
-    let bools = unpack_bools(1, get_u8(buf)?);
+    let bools = [get_bool(buf)?];
     let lvls = get_u64(buf)?;
     let params = get_u64(buf)?;
     let indices = get_u64(buf)?;
@@ -1627,7 +1546,7 @@ impl Env {
   /// back-compat reading of old versions — `.ixe` files are
   /// regenerated artifacts. Mirrors `Ixon.Env.VERSION` in
   /// `Ix/Ixon.lean`.
-  pub const VERSION: u64 = 2;
+  pub const VERSION: u64 = 3;
 
   /// Serialize an Env to bytes.
   ///
@@ -3348,21 +3267,225 @@ mod tests {
   use quickcheck::{Arbitrary, Gen};
   use quickcheck_macros::quickcheck;
 
+  fn v3_fixture_exprs() -> Vec<(&'static str, Arc<Expr>)> {
+    use crate::contract::LetKind;
+    use crate::expr::Uses;
+    let binder = |uses, value| BinderContract { uses, value };
+    vec![
+      (
+        "app",
+        Expr::app(
+          Expr::app(Expr::app(Expr::var(3), Expr::var(2)), Expr::var(1)),
+          Expr::var(0),
+        ),
+      ),
+      (
+        "lam",
+        Expr::lam(
+          Expr::sort(0),
+          Expr::lam(Expr::sort(0), Expr::lam(Expr::sort(0), Expr::var(0))),
+        ),
+      ),
+      (
+        "lam_local_unique",
+        Expr::lam_contract(
+          binder(Uses::Linear, ValueContract::local_unique()),
+          Expr::sort(0),
+          Expr::var(0),
+        ),
+      ),
+      (
+        "lam_affine_local",
+        Expr::lam_contract(
+          binder(Uses::Affine, ValueContract::local_shared()),
+          Expr::sort(0),
+          Expr::var(0),
+        ),
+      ),
+      (
+        "all",
+        Expr::all_contract(
+          binder(Uses::Linear, ValueContract::local_unique()),
+          ValueContract::local_unique(),
+          Expr::sort(0),
+          Expr::all(Expr::sort(0), Expr::var(0)),
+        ),
+      ),
+      (
+        "ordinary_let",
+        Expr::let_contract(
+          LetContract {
+            non_dep: true,
+            kind: LetKind::Value,
+            binder: binder(Uses::Erased, ValueContract::unique()),
+          },
+          Expr::sort(0),
+          Expr::nat(1),
+          Expr::var(0),
+        ),
+      ),
+      (
+        "local_unique_let",
+        Expr::let_contract(
+          LetContract {
+            non_dep: false,
+            kind: LetKind::Value,
+            binder: binder(Uses::Affine, ValueContract::local_unique()),
+          },
+          Expr::sort(0),
+          Expr::var(1),
+          Expr::var(0),
+        ),
+      ),
+      (
+        "borrow",
+        Expr::let_contract(
+          LetContract::borrow(false, Uses::Affine),
+          Expr::sort(0),
+          Expr::prj(2, 1, Expr::var(1)),
+          Expr::var(0),
+        ),
+      ),
+      (
+        "borrow_nondep",
+        Expr::let_contract(
+          LetContract::borrow(true, Uses::Many),
+          Expr::sort(0),
+          Expr::var(1),
+          Expr::var(0),
+        ),
+      ),
+      ("reference", Expr::reference(0, vec![])),
+      ("recursion", Expr::rec(2, vec![0, 1])),
+    ]
+  }
+
   #[test]
-  fn rejects_noncanonical_v2_exprs() {
+  fn v3_independent_golden_expressions() {
+    let file = include_str!("../../../Tests/Fixtures/ixon-v3/expressions.txt");
+    for (name, expr) in v3_fixture_exprs() {
+      let line = file
+        .lines()
+        .find(|line| line.starts_with(&format!("{name} ")))
+        .unwrap();
+      let hex = line.split_whitespace().nth(1).unwrap();
+      let expected: Vec<_> = hex
+        .as_bytes()
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|pair| {
+          u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap()
+        })
+        .collect();
+      let mut actual = vec![];
+      put_expr(&expr, &mut actual);
+      assert_eq!(actual, expected, "{name}");
+      let mut input = expected.as_slice();
+      assert_eq!(get_expr(&mut input).unwrap(), expr, "{name}");
+      assert!(input.is_empty(), "{name}: unread bytes");
+      for end in 0..expected.len() {
+        assert!(
+          get_expr(&mut &expected[..end]).is_err(),
+          "{name}: accepted truncation at {end}"
+        );
+      }
+    }
+  }
+
+  #[test]
+  fn v3_exhaustive_mode_bytes_and_hashes() {
+    use crate::contract::LetKind;
+    use crate::expr::Uses;
+    let values = [
+      ValueContract::unique(),
+      ValueContract::shared(),
+      ValueContract::local_unique(),
+      ValueContract::local_shared(),
+    ];
+    let uses = [Uses::Erased, Uses::Linear, Uses::Affine, Uses::Many];
+    let mut hashes = std::collections::HashSet::new();
+    for (value_code, value) in values.into_iter().enumerate() {
+      for (use_code, uses) in uses.into_iter().enumerate() {
+        let input = BinderContract { uses, value };
+        let input_code = (use_code + 4 * value_code) as u8;
+        let lam = Expr::lam_contract(input, Expr::sort(0), Expr::var(0));
+        let mut bytes = vec![];
+        put_expr(&lam, &mut bytes);
+        assert_eq!(bytes, [0x81, input_code, 0x00, 0x10]);
+        assert_eq!(get_expr(&mut bytes.as_slice()).unwrap(), lam);
+        assert!(hashes.insert(crate::sharing::hash_expr(&lam)));
+        for (result_code, result) in values.into_iter().enumerate() {
+          let all =
+            Expr::all_contract(input, result, Expr::sort(0), Expr::var(0));
+          let mut bytes = vec![];
+          put_expr(&all, &mut bytes);
+          assert_eq!(
+            bytes,
+            [0x91, input_code + 16 * result_code as u8, 0x00, 0x10]
+          );
+          assert_eq!(get_expr(&mut bytes.as_slice()).unwrap(), all);
+          assert!(hashes.insert(crate::sharing::hash_expr(&all)));
+        }
+        for non_dep in [false, true] {
+          for kind in [LetKind::Value, LetKind::BorrowShared] {
+            let let_expr = Expr::let_contract(
+              LetContract { non_dep, kind, binder: input },
+              Expr::sort(0),
+              Expr::var(1),
+              Expr::var(0),
+            );
+            let mut bytes = vec![];
+            put_expr(&let_expr, &mut bytes);
+            assert_eq!(
+              bytes,
+              [
+                0xA0
+                  + u8::from(non_dep)
+                  + if kind == LetKind::BorrowShared { 2 } else { 0 },
+                input_code,
+                0x00,
+                0x11,
+                0x10
+              ]
+            );
+            assert_eq!(get_expr(&mut bytes.as_slice()).unwrap(), let_expr);
+            assert!(hashes.insert(crate::sharing::hash_expr(&let_expr)));
+          }
+        }
+      }
+    }
+    assert_eq!(hashes.len(), 16 + 64 + 64);
+  }
+
+  #[test]
+  fn rejects_noncanonical_v3_exprs() {
     let malformed: &[&[u8]] = &[
       &[0x70],
-      &[0x71, 0x71, 0x10, 0x11, 0x12],
-      &[0x81, 0x03, 0x00, 0x81, 0x03, 0x00, 0x10],
-      &[0x91, 0x07, 0x00, 0x91, 0x07, 0x00, 0x10],
-      &[0xA2],
-      &[0x81, 0x04],
-      &[0x91, 0x08],
+      &[0x80],
+      &[0x90],                                     // empty telescopes
+      &[0x71, 0x71, 0x10, 0x11, 0x12],             // nonmaximal application
+      &[0x81, 0x07, 0x00, 0x81, 0x07, 0x00, 0x10], // nonmaximal lambda
+      &[0x91, 0x17, 0x00, 0x91, 0x17, 0x00, 0x10], // nonmaximal forall
+      &[0xA4, 0x07, 0x00, 0x10, 0x10],             // reserved let flag
+      &[0x18, 0x00],                               // nonminimal Tag4
+      &[0x28, 0x07, 0x00], // nonminimal reference telescope count
+      &[0x20, 0x80, 0x00], // nonminimal Tag0
+      &[0x87, 0x07, 0x00, 0x10], // impossible binder count
+      &[0x77, 0x10],       // impossible argument count
     ];
-
     for bytes in malformed {
       let mut input = *bytes;
       assert!(get_expr(&mut input).is_err(), "accepted {bytes:02x?}");
+    }
+    for code in 16..=u8::MAX {
+      assert!(get_expr(&mut [0x81, code, 0x00, 0x10].as_slice()).is_err());
+      assert!(
+        get_expr(&mut [0xA0, code, 0x00, 0x10, 0x10].as_slice()).is_err()
+      );
+    }
+    for code in 64..=u8::MAX {
+      assert!(get_expr(&mut [0x91, code, 0x00, 0x10].as_slice()).is_err());
     }
   }
 

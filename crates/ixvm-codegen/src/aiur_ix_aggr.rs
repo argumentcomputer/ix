@@ -21954,29 +21954,43 @@ fn aiur_fn_231(
     if (__v_1 != __v_3) {
       return Err(ExecError::AssertEqMismatch { lhs: __v_1.as_canonical_u64(), rhs: __v_3.as_canonical_u64(), msg: Some("aggr: claim is not CheckEnv".to_string()) });
     }
-    let __r_arr: [G; OUT_207] = { let __args: [G; IN_207] = [__v_2]; let __cu = unconstrained; let __hit = record.function_queries[207].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[207].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[207].bump_multiplicity(__i); } let __ret: [G; OUT_207] = unsafe { *(record.function_queries[207].output_at(__i).as_ptr() as *const [G; OUT_207]) }; __ret }, _ => aiur_fn_207(__args, record, io_buffer, __cu)? } };
+    let __r_arr: [G; OUT_77] = { let __args: [G; IN_77] = [__v_2]; let __cu = unconstrained; let __hit = record.function_queries[77].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[77].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[77].bump_multiplicity(__i); } let __ret: [G; OUT_77] = unsafe { *(record.function_queries[77].output_at(__i).as_ptr() as *const [G; OUT_77]) }; __ret }, _ => aiur_fn_77(__args, record, io_buffer, __cu)? } };
     let __v_4: G = __r_arr[0];
     let __v_5: G = __r_arr[1];
-    let __r_arr: [G; OUT_230] = { let __args: [G; IN_230] = [__v_5]; let __cu = unconstrained; let __hit = record.function_queries[230].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[230].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[230].bump_multiplicity(__i); } let __ret: [G; OUT_230] = unsafe { *(record.function_queries[230].output_at(__i).as_ptr() as *const [G; OUT_230]) }; __ret }, _ => aiur_fn_230(__args, record, io_buffer, __cu)? } };
-    let __v_6: G = __r_arr[0];
-    let __v_7: G = __r_arr[1];
-    let __v_8: G = __r_arr[2];
-    let __loaded: [G; 3] = { let __mq = record.memory_queries.get_mut(&3).ok_or(ExecError::InvalidMemorySize(3))?; let __ptr_u64 = __v_8.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; if __ptr_usize >= __mq.len() { return Err(ExecError::UnboundPointer { ptr: __ptr_u64, size: 3 }); } if !unconstrained { __mq.bump_multiplicity(__ptr_usize); } let (__args, _) = __mq.get_index(__ptr_usize).expect("bounds checked above"); let __arr: [G; 3] = __args[..3].try_into().unwrap(); __arr };
-    let __v_9: G = __loaded[0];
-    let __v_10: G = __loaded[1];
-    let __v_11: G = __loaded[2];
-    let __v_12: G = G::from_u64(1);
-    let __v_13: G = G::from_u64(1);
-    if (__v_9 != __v_12) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_9.as_canonical_u64(), rhs: __v_12.as_canonical_u64(), msg: Some("aggr: trailing bytes after CheckEnv claim".to_string()) });
+    let __v_6: G = G::from_u64(3);
+    if (__v_4 != __v_6) {
+      return Err(ExecError::AssertEqMismatch { lhs: __v_4.as_canonical_u64(), rhs: __v_6.as_canonical_u64(), msg: Some("aggr: unsupported object format".to_string()) });
     }
-    if (__v_10 != __v_13) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_10.as_canonical_u64(), rhs: __v_13.as_canonical_u64(), msg: Some("aggr: trailing bytes after CheckEnv claim".to_string()) });
+    let __r_arr: [G; OUT_77] = { let __args: [G; IN_77] = [__v_5]; let __cu = unconstrained; let __hit = record.function_queries[77].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[77].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[77].bump_multiplicity(__i); } let __ret: [G; OUT_77] = unsafe { *(record.function_queries[77].output_at(__i).as_ptr() as *const [G; OUT_77]) }; __ret }, _ => aiur_fn_77(__args, record, io_buffer, __cu)? } };
+    let __v_7: G = __r_arr[0];
+    let __v_8: G = __r_arr[1];
+    let __v_9: G = G::from_u64(1);
+    if (__v_7 != __v_9) {
+      return Err(ExecError::AssertEqMismatch { lhs: __v_7.as_canonical_u64(), rhs: __v_9.as_canonical_u64(), msg: Some("aggr: wrong validator identity".to_string()) });
     }
-    if (__v_11 != __v_13) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_11.as_canonical_u64(), rhs: __v_13.as_canonical_u64(), msg: Some("aggr: trailing bytes after CheckEnv claim".to_string()) });
+    let __r_arr: [G; OUT_207] = { let __args: [G; IN_207] = [__v_8]; let __cu = unconstrained; let __hit = record.function_queries[207].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[207].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[207].bump_multiplicity(__i); } let __ret: [G; OUT_207] = unsafe { *(record.function_queries[207].output_at(__i).as_ptr() as *const [G; OUT_207]) }; __ret }, _ => aiur_fn_207(__args, record, io_buffer, __cu)? } };
+    let __v_10: G = __r_arr[0];
+    let __v_11: G = __r_arr[1];
+    let __r_arr: [G; OUT_230] = { let __args: [G; IN_230] = [__v_11]; let __cu = unconstrained; let __hit = record.function_queries[230].get_index_of(&__args[..]); match __hit { Some(__i) if __cu || record.function_queries[230].mult_at(__i) != G::ZERO => { if !unconstrained { record.function_queries[230].bump_multiplicity(__i); } let __ret: [G; OUT_230] = unsafe { *(record.function_queries[230].output_at(__i).as_ptr() as *const [G; OUT_230]) }; __ret }, _ => aiur_fn_230(__args, record, io_buffer, __cu)? } };
+    let __v_12: G = __r_arr[0];
+    let __v_13: G = __r_arr[1];
+    let __v_14: G = __r_arr[2];
+    let __loaded: [G; 3] = { let __mq = record.memory_queries.get_mut(&3).ok_or(ExecError::InvalidMemorySize(3))?; let __ptr_u64 = __v_14.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; if __ptr_usize >= __mq.len() { return Err(ExecError::UnboundPointer { ptr: __ptr_u64, size: 3 }); } if !unconstrained { __mq.bump_multiplicity(__ptr_usize); } let (__args, _) = __mq.get_index(__ptr_usize).expect("bounds checked above"); let __arr: [G; 3] = __args[..3].try_into().unwrap(); __arr };
+    let __v_15: G = __loaded[0];
+    let __v_16: G = __loaded[1];
+    let __v_17: G = __loaded[2];
+    let __v_18: G = G::from_u64(1);
+    let __v_19: G = G::from_u64(1);
+    if (__v_15 != __v_18) {
+      return Err(ExecError::AssertEqMismatch { lhs: __v_15.as_canonical_u64(), rhs: __v_18.as_canonical_u64(), msg: Some("aggr: trailing bytes after CheckEnv claim".to_string()) });
     }
-    let __ret: [G; OUT_231] = [__v_4, __v_6, __v_7];
+    if (__v_16 != __v_19) {
+      return Err(ExecError::AssertEqMismatch { lhs: __v_16.as_canonical_u64(), rhs: __v_19.as_canonical_u64(), msg: Some("aggr: trailing bytes after CheckEnv claim".to_string()) });
+    }
+    if (__v_17 != __v_19) {
+      return Err(ExecError::AssertEqMismatch { lhs: __v_17.as_canonical_u64(), rhs: __v_19.as_canonical_u64(), msg: Some("aggr: trailing bytes after CheckEnv claim".to_string()) });
+    }
+    let __ret: [G; OUT_231] = [__v_10, __v_12, __v_13];
     record.function_queries[231].finish(&inp[..], &__ret[..], !unconstrained);
     return Ok(__ret);
   })

@@ -146,13 +146,38 @@ pub fn compile_env_with_options(
   lean_env: &Arc<LeanEnv>,
   options: CompileOptions,
 ) -> Result<CompileState, CompileError> {
+  compile_env_with_profile(lean_env, options, None)
+}
+
+/// Compile semantic input with an explicit profile, or the built-in profile
+/// when omitted. No annotated result can bypass combined validation.
+pub fn compile_env_with_profile(
+  lean_env: &Arc<LeanEnv>,
+  options: CompileOptions,
+  profile: Option<&ixon::resource::addressed::Profile>,
+) -> Result<CompileState, CompileError> {
   let _memory_sampler = crate::diag::memory_sampler("compile_env");
+  let mut semantic_sources = Vec::new();
+  for name in lean_env.keys() {
+    if let Some(c) = lean_env.get(name)
+      && crate::semantic_contract::inspect_constant(&c)?
+    {
+      semantic_sources.push(name.clone());
+    }
+  }
   let setup_start = Instant::now();
   // Whole-env scan: ref graph + immediate groundedness + inductive
   // groups in one decode per constant — the env decodes lazily, so
   // each additional full sweep would decode every constant again.
   let phase_start = Instant::now();
   let scan = setup_scan(lean_env.as_ref());
+  if let Some(name) =
+    scan.source_contracts.iter().min_by_key(|name| name.pretty())
+  {
+    return Err(CompileError::UnsupportedExpr {
+      desc: format!("unresolved source binder contracts: {}", name.pretty()),
+    });
+  }
   let graph = scan.graph;
   if *IX_VERBOSE {
     eprintln!(
@@ -1014,6 +1039,35 @@ pub fn compile_env_with_options(
   }
 
   stt.finalize_hints();
+
+  if !semantic_sources.is_empty() || profile.is_some() {
+    if !stt.ungrounded.is_empty() {
+      return Err(CompileError::UnsupportedExpr {
+        desc: "resource compilation requires the complete requested closure"
+          .into(),
+      });
+    }
+    for source in &semantic_sources {
+      if stt.aux_gen_extra_names.contains(source) {
+        return Err(CompileError::UnsupportedExpr {
+          desc: format!(
+            "resource contract source was replaced by auxiliary generation: {}",
+            source.pretty()
+          ),
+        });
+      }
+    }
+    let default_profile;
+    let profile = match profile {
+      Some(profile) => profile,
+      None => {
+        default_profile = ix_kernel::resource::standard_profile(&stt.env);
+        &default_profile
+      },
+    };
+    ix_kernel::resource::validate(&stt.env, profile)
+      .map_err(|desc| CompileError::UnsupportedExpr { desc })?;
+  }
 
   if *IX_VERBOSE {
     let total_elapsed = compile_start.elapsed().as_secs_f64();

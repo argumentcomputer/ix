@@ -552,16 +552,16 @@ fn wrong_successor_rule_returning_first_minor(
     IxonExpr::Lam(motive_uses, motive_ty, rest) => match rest.as_ref() {
       IxonExpr::Lam(h_zero_uses, h_zero_ty, rest) => match rest.as_ref() {
         IxonExpr::Lam(h_succ_uses, h_succ_ty, rest) => match rest.as_ref() {
-          IxonExpr::Lam(n_uses, n_ty, _) => Ok(IxonExpr::lam_mode(
+          IxonExpr::Lam(n_uses, n_ty, _) => Ok(IxonExpr::lam_contract(
             *motive_uses,
             motive_ty.clone(),
-            IxonExpr::lam_mode(
+            IxonExpr::lam_contract(
               *h_zero_uses,
               h_zero_ty.clone(),
-              IxonExpr::lam_mode(
+              IxonExpr::lam_contract(
                 *h_succ_uses,
                 h_succ_ty.clone(),
-                IxonExpr::lam_mode(*n_uses, n_ty.clone(), IxonExpr::var(2)),
+                IxonExpr::lam_contract(*n_uses, n_ty.clone(), IxonExpr::var(2)),
               ),
             ),
           )),

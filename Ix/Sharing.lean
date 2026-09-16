@@ -51,62 +51,32 @@ def tag0EncodedSize (value : UInt64) : Nat :=
 def tag4EncodedSize (size : UInt64) : Nat :=
   if size < 8 then 1 else 1 + size.byteCount.toNat
 
-/-- Compute the sharing hash for an expression node given its child hashes.
-    This is the single source of truth for sharing hash computation.
-    MUST match Rust's `hash_node` exactly for hash compatibility. -/
+/-- Canonical scalar/contract bytes, followed by fixed-size child hashes.
+    This grammar agrees with Rust's structural sharing hash. -/
+def putNodeHeader : Ixon.Expr → Ixon.PutM Unit
+  | e@(.sort _) | e@(.var _) | e@(.ref ..) | e@(.recur ..) |
+      e@(.str _) | e@(.nat _) | e@(.share _) => Ixon.putExpr e
+  | .prj idx field _ => do
+    Ixon.putTag4 ⟨Ixon.Expr.FLAG_PRJ, field⟩
+    Ixon.putTag0 ⟨idx⟩
+  | .app .. => Ixon.putTag4 ⟨Ixon.Expr.FLAG_APP, 1⟩
+  | .lam contract .. => do
+    Ixon.putTag4 ⟨Ixon.Expr.FLAG_LAM, 1⟩
+    Ixon.putBinderContract contract
+  | .all contract result .. => do
+    Ixon.putTag4 ⟨Ixon.Expr.FLAG_ALL, 1⟩
+    Ixon.putU8 (Ixon.packAllContract contract result)
+  | .letE contract .. => do
+    Ixon.putTag4 ⟨Ixon.Expr.FLAG_LET, contract.flags⟩
+    Ixon.putBinderContract contract.binder
+
 def computeNodeHash (e : Ixon.Expr) (childHashes : Array Address) : Address :=
-  let buf := ByteArray.emptyWithCapacity 100
-  let buf := match e with
-    | .sort univIdx =>
-      buf.push Ixon.Expr.FLAG_SORT |>.append (uint64ToBytes univIdx)
-    | .var idx =>
-      buf.push Ixon.Expr.FLAG_VAR |>.append (uint64ToBytes idx)
-    | .ref refIdx univIndices =>
-      let base := buf.push Ixon.Expr.FLAG_REF
-        |>.append (uint64ToBytes refIdx)
-        |>.append (uint64ToBytes univIndices.size.toUInt64)
-      univIndices.foldl (fun buf idx => buf.append (uint64ToBytes idx)) base
-    | .recur recIdx univIndices =>
-      let base := buf.push Ixon.Expr.FLAG_REC
-        |>.append (uint64ToBytes recIdx)
-        |>.append (uint64ToBytes univIndices.size.toUInt64)
-      univIndices.foldl (fun buf idx => buf.append (uint64ToBytes idx)) base
-    | .prj typeRefIdx fieldIdx _ =>
-      buf.push Ixon.Expr.FLAG_PRJ
-        |>.append (uint64ToBytes typeRefIdx)
-        |>.append (uint64ToBytes fieldIdx)
-        |>.append childHashes[0]!.hash
-    | .str refIdx =>
-      buf.push Ixon.Expr.FLAG_STR |>.append (uint64ToBytes refIdx)
-    | .nat refIdx =>
-      buf.push Ixon.Expr.FLAG_NAT |>.append (uint64ToBytes refIdx)
-    | .app _ _ =>
-      buf.push Ixon.Expr.FLAG_APP
-        |>.append childHashes[0]!.hash
-        |>.append childHashes[1]!.hash
-    | .lam uses _ _ =>
-      buf.push Ixon.Expr.FLAG_LAM
-        |>.push uses.toBits
-        |>.append childHashes[0]!.hash
-        |>.append childHashes[1]!.hash
-    | .all uses owned _ _ =>
-      buf.push Ixon.Expr.FLAG_ALL
-        |>.push (uses.toBits ||| (owned.toBits <<< 2))
-        |>.append childHashes[0]!.hash
-        |>.append childHashes[1]!.hash
-    | .letE nonDep _ _ _ =>
-      buf.push Ixon.Expr.FLAG_LET
-        |>.push (if nonDep then 1 else 0)
-        |>.append childHashes[0]!.hash
-        |>.append childHashes[1]!.hash
-        |>.append childHashes[2]!.hash
-    | .share idx =>
-      buf.push Ixon.Expr.FLAG_SHARE |>.append (uint64ToBytes idx)
-  Address.blake3 buf
+  Address.blake3 <| childHashes.foldl (fun bytes h => bytes ++ h.hash)
+    (Ixon.runPut (putNodeHeader e))
 
 /-- Compute the sharing hash of an expression recursively (for testing).
     Uses computeNodeHash as the single source of truth. -/
-partial def computeExprHash (e : Ixon.Expr) : Address :=
+def computeExprHash (e : Ixon.Expr) : Address :=
   let childHashes := match e with
     | .sort _ | .var _ | .ref _ _ | .recur _ _ | .str _ | .nat _ | .share _ => #[]
     | .prj _ _ val => #[computeExprHash val]
@@ -129,35 +99,7 @@ structure SubtermInfo where
 
 /-- Compute the base size of a node (Tag4 header size) for Ixon serialization. -/
 def computeBaseSize (e : Ixon.Expr) : Nat :=
-  match e with
-  | .sort univIdx =>
-    if univIdx < 8 then 1 else 1 + univIdx.byteCount.toNat
-  | .var idx =>
-    if idx < 8 then 1 else 1 + idx.byteCount.toNat
-  | .ref refIdx univIndices =>
-    -- Tag4 for size + Tag0 for refIdx + Tag0 for each universe index
-    tag4EncodedSize univIndices.size.toUInt64
-    + tag0EncodedSize refIdx
-    + univIndices.foldl (fun acc idx => acc + tag0EncodedSize idx) 0
-  | .recur recIdx univIndices =>
-    -- Tag4 for size + Tag0 for recIdx + Tag0 for each universe index
-    tag4EncodedSize univIndices.size.toUInt64
-    + tag0EncodedSize recIdx
-    + univIndices.foldl (fun acc idx => acc + tag0EncodedSize idx) 0
-  | .prj typeRefIdx fieldIdx _ =>
-    let tagSize := if fieldIdx < 8 then 1 else 1 + fieldIdx.byteCount.toNat
-    let refIdxSize := if typeRefIdx < 128 then 1 else 1 + typeRefIdx.byteCount.toNat
-    tagSize + refIdxSize
-  | .str refIdx =>
-    if refIdx < 8 then 1 else 1 + refIdx.byteCount.toNat
-  | .nat refIdx =>
-    if refIdx < 8 then 1 else 1 + refIdx.byteCount.toNat
-  | .app _ _ => 1  -- telescope count >= 1
-  | .lam _ _ _ => 2
-  | .all _ _ _ _ => 2
-  | .letE _ _ _ _ => 1  -- size encodes non_dep flag
-  | .share idx =>
-    if idx < 8 then 1 else 1 + idx.byteCount.toNat
+  (Ixon.runPut (putNodeHeader e)).size
 
 /-- Get the memory address of an expression for identity-based caching.
     This is safe because we only use it within a single analysis pass
@@ -438,6 +380,7 @@ def rewriteWithSharing (e : Ixon.Expr)
       .letE nonDep (rewriteWithSharing ty hashToIdx ptrToHash)
         (rewriteWithSharing value hashToIdx ptrToHash)
         (rewriteWithSharing body hashToIdx ptrToHash)
+
 termination_by e
 
 /-- State threaded while sharing-vector entries are built. -/
