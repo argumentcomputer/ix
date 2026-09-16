@@ -12,3 +12,5 @@ Run `lake exe tests-ixon-v3` from the repository root. See
 the independent Aiur target pin, combined typing/resource admission, and
 remaining backend obligations. The additional `typing/` bundles have their
 own extraction provenance; they are not part of the original portable package.
+The `catalog/` fixtures record producer assembly and an independently checked
+chunk partition over those same primitive bytes.

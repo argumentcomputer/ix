@@ -53,15 +53,20 @@ lean_lib CompilatrixTests where
 /- Runtime tests (FFI execution cannot run in elaboration-time `#guard`s). -/
 lean_exe tests where
   root := `Tests
+  needs := #[.mk (.packageTarget .anonymous `«check-ixon-v3-catalog»)]
 
 lean_exe «tests-ixon» where
   root := `CompilatrixTests.Ixon.Main
 
 lean_exe «tests-ixon-v3» where
   root := `CompilatrixTests.IxonV3.Main
+  needs := #[.mk (.packageTarget .anonymous `«check-ixon-v3-catalog»)]
 
 lean_exe «check-ixon-v3» where
   root := `CheckIxonV3
+
+lean_exe «check-ixon-v3-catalog» where
+  root := `CheckIxonV3Catalog
 
 lean_exe «tests-addressing» where
   root := `CompilatrixTests.Addressing.Main

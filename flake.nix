@@ -121,6 +121,7 @@
             ./vendor/stage2
             ./fixtures/ixon-v3
             ./CheckIxonV3.lean
+            ./CheckIxonV3Catalog.lean
             ./docs/ixon-v3.md
             ./fixtures/aiur-bytecode
             ./fixtures/aiur-memory-air

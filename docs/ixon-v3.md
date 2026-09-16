@@ -119,9 +119,65 @@ v2 linear/affine inputs imply uniqueness, while v3 usage and ownership are
 independent. A contract-preserving, source-bound backend simulation is still
 required before v3 lowering can grant ownership/locality
 optimizations. Aiur Ixon/DSL lowering remains a later target milestone.
-V3 catalog manifests also changed to version 2 with format/validator fields;
-the old catalog command rejects that version. Catalog-v2 admission is separate
-work and must not strip these fields to reuse a v2 identity.
+
+## Catalog-v2 admission
+
+[`Ixon.V3.Catalog.admit`](../Compilatrix/Ixon/V3/Catalog/Admit.lean) accepts
+manifest **version 2**, object format **3**, and validator **1**
+(`erased-lean-v1`). It checks the manifest, original piece bytes, membership,
+and the erased typing of every constant in the complete union. `load` exposes
+the structural boundary without granting a typing verdict. The byte-indexed
+`Admitted` record retains the load, scope, content-root and typing equations.
+Neither function projects into the frozen v2 compiler types.
+
+The loader recomputes both catalog roots, checks every piece's size, file hash
+and constant root, and rejects unresolved external assumptions. Fat members
+must carry no assumptions; overlapping addressed constants and blobs are
+deduplicated only after byte equality is checked. Hints merge by their minimum
+encoded value, and a main is retained only when all present mains agree.
+Original piece metadata, manifest extensions, source pins, toolchains and
+optional preimage hashes are retained without treating them as evidence.
+
+Chunked catalogs require complete original member address lists. Those lists
+must be strictly sorted and match each member's committed root and count.
+They must cover the union, and each constant must occur in exactly one chunk
+whose owner is the first member containing it. A member may overlap earlier
+members, so its own chunks alone cannot reconstruct its full root. The pinned
+producer's structural verifier does not authenticate these full lists; this
+consumer requires the supplemental witness explicitly.
+
+```sh
+lake exe check-ixon-v3-catalog fixtures/ixon-v3/catalog/fat.ixc
+lake exe check-ixon-v3-catalog fixtures/ixon-v3/catalog/chunked.ixc \
+  fixtures/ixon-v3/catalog/chunked.ixc/members.json
+```
+
+The optional JSON witness is an array of member arrays containing 64 literal
+ASCII hex digits per address, in manifest order. Escaped strings and other
+JSON shapes are rejected before general parsing. Fat catalogs derive their own lists and
+reject a supplemental witness. Its spelling is a consumer input convention,
+not a replacement producer manifest. The command reads regular files in
+bounded chunks and reports the manifest hash, union root and validator scope.
+It rejects leaf symlinks and does not provide a concurrent directory snapshot.
+
+Default catalog budgets are 1 MiB of manifest bytes, 4,096 members, 65,536
+dependency edges, 16,384 storage units, 16 MiB per piece and 64 MiB total piece
+bytes. Aggregate constants, blobs, assumptions and hints each have a 65,536
+entry limit; each unique object table has a 16,384 entry limit. Complete
+member lists have a combined 131,072 address limit. The environment decoder
+and typechecker retain their own bounds. The JSON witness also has a byte
+limit derived from the member/address budgets. These are in-memory consumer
+limits, not a streaming or mmap implementation.
+
+Validator 1 grants **erased typing only**. Resource admission still needs an
+explicit, canonically decoded `Resource.Profile`, canonical literal pins and
+`Resource.Addressed.checkResources` on this same union. The suite confirms
+that the local-escape fixture passes catalog typing and fails resource checks.
+Catalog identity alone grants no ownership, locality or backend optimization.
+Four exact fences retain the existing logical/native BLAKE3 basis; they do not
+prove the whole loader or checker semantically sound. Frozen producer and
+chunk-partition [fixtures](../fixtures/ixon-v3/catalog/README.md) record their
+different provenance and independent Rust verification.
 
 ## Evidence and provenance
 

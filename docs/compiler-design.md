@@ -74,6 +74,7 @@ and linked source-family documents give their current scope.
 | Interface | Result and selection boundary |
 | --- | --- |
 | [`Ixon.V3.validate`](../Compilatrix/Ixon/V3/Validate.lean) | [Pinned ix frontend / Ixon v3](ixon-v3.md) anonymous ingress, erased typing, primitive pins and resource admission over the same bytes and profile. V3 backend refinement remains separate. |
+| [`Ixon.V3.Catalog.admit`](../Compilatrix/Ixon/V3/Catalog/Admit.lean) | Catalog-v2 / object format 3 / validator 1 authenticates original piece bytes, complete member coverage and first-owner chunks, then typechecks the union. Resource profiles and v3 backend refinement remain separate. |
 | [`Ixby.compileIxon`](../Compilatrix/Ixby/Source.lean) | Checked erasure → immutable Ixby. [Per-input execution certificates and canonical profile export](ixby-backend.md); global structural lowering correctness remains open. |
 | [`Pipeline.compileValidated`](../Compilatrix/Pipeline.lean) | Checked source erasure and owned IxIR₁. `Pipeline.compile` bypasses erasure certification and is not interchangeable for certified clients. |
 | [`Modular.build` / `restore`](../Compilatrix/Modular/Build.lean) and [`Modular.assemble`](../Compilatrix/Modular/Assemble.lean) | [Bounded source units](modular-source.md), exact evidence reuse or fresh retained checking, and proved composition into the existing source-validated IxIR₁ artifact. |

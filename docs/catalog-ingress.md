@@ -2,6 +2,11 @@
 
 Last reviewed 2026-08-25.
 
+This page describes the frozen catalog-v1 / Ixon-v2 compiler boundary.
+[Catalog-v2 / Ixon-v3 admission](ixon-v3.md#catalog-v2-admission) has a
+separate manifest scope, full membership witnesses for overlapping chunks,
+and erased typing; it does not lower through this v2 pipeline.
+
 `Compilatrix/Ixon/Catalog.lean` is the corpus boundary between ix-exported
 artifacts and the checked compiler pipeline. It consumes bytes rather than
 performing filesystem I/O:

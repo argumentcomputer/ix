@@ -85,6 +85,8 @@
   "check-source-borrow": {"roots": ["CheckSourceBorrow"], "kind": "lean_exe"},
   "check-native-sharing": {"roots": ["CheckNativeSharing"], "kind": "lean_exe"},
   "check-native-graph": {"roots": ["CheckNativeGraph"], "kind": "lean_exe"},
+  "check-ixon-v3-catalog":
+  {"roots": ["CheckIxonV3Catalog"], "kind": "lean_exe"},
   "check-ixon-v3": {"roots": ["CheckIxonV3"], "kind": "lean_exe"},
   "check-ixir2": {"roots": ["CheckIxIR2"], "kind": "lean_exe"},
   "check-ixby-symbolic": {"roots": ["CheckIxbySymbolic"], "kind": "lean_exe"},
@@ -739,6 +741,7 @@
     "CompilatrixTests.IxonV3.Handoff",
     "CompilatrixTests.IxonV3.Typing",
     "CompilatrixTests.IxonV3.Primitives",
+    "CompilatrixTests.IxonV3.Catalog.Run",
     "Compilatrix.Tools.Check"]},
   "CompilatrixTests.IxonV3.Primitives":
   {"path": "CompilatrixTests/IxonV3/Primitives.lean",
@@ -752,6 +755,26 @@
   "CompilatrixTests.IxonV3.Fixtures":
   {"path": "CompilatrixTests/IxonV3/Fixtures.lean",
    "imports": ["Compilatrix.Ixon.V3.Resource.Admit"]},
+  "CompilatrixTests.IxonV3.Catalog.Wire":
+  {"path": "CompilatrixTests/IxonV3/Catalog/Wire.lean",
+   "imports": ["CompilatrixTests.IxonV3.Catalog.Admission"]},
+  "CompilatrixTests.IxonV3.Catalog.Run":
+  {"path": "CompilatrixTests/IxonV3/Catalog/Run.lean",
+   "imports":
+   ["CompilatrixTests.IxonV3.Catalog.Wire",
+    "CompilatrixTests.IxonV3.Catalog.Files"]},
+  "CompilatrixTests.IxonV3.Catalog.Fixtures":
+  {"path": "CompilatrixTests/IxonV3/Catalog/Fixtures.lean",
+   "imports":
+   ["CompilatrixTests.IxonV3.TypingFixtures", "Compilatrix.Ixon.V3.Catalog"]},
+  "CompilatrixTests.IxonV3.Catalog.Files":
+  {"path": "CompilatrixTests/IxonV3/Catalog/Files.lean",
+   "imports":
+   ["CompilatrixTests.IxonV3.Catalog.Admission",
+    "Compilatrix.Tools.IxonV3Catalog"]},
+  "CompilatrixTests.IxonV3.Catalog.Admission":
+  {"path": "CompilatrixTests/IxonV3/Catalog/Admission.lean",
+   "imports": ["CompilatrixTests.IxonV3.Catalog.Fixtures"]},
   "CompilatrixTests.Ixon.Run":
   {"path": "CompilatrixTests/Ixon/Run.lean",
    "imports": ["CompilatrixTests.Ixon.Fixtures", "Compilatrix.Pipeline"]},
@@ -932,6 +955,9 @@
   "CompilatrixTests.Fences.IxonV3Typing":
   {"path": "CompilatrixTests/Fences/IxonV3Typing.lean",
    "imports": ["Compilatrix.Ixon.V3.Validate"]},
+  "CompilatrixTests.Fences.IxonV3Catalog":
+  {"path": "CompilatrixTests/Fences/IxonV3Catalog.lean",
+   "imports": ["Compilatrix.Ixon.V3.Catalog"]},
   "CompilatrixTests.Fences.IxonV3":
   {"path": "CompilatrixTests/Fences/IxonV3.lean",
    "imports":
@@ -1201,6 +1227,7 @@
     "CompilatrixTests.Fences.Ixon",
     "CompilatrixTests.Fences.IxonV3",
     "CompilatrixTests.Fences.IxonV3Typing",
+    "CompilatrixTests.Fences.IxonV3Catalog",
     "CompilatrixTests.Fences.Lowering",
     "CompilatrixTests.Fences.Modular",
     "CompilatrixTests.Fences.Recursion",
@@ -2305,6 +2332,9 @@
   {"path": "Compilatrix/Tools/NativeSharingCheck.lean",
    "imports":
    ["Compilatrix.Tools.HeapNativeCheck", "Compilatrix.Tools.X86Check"]},
+  "Compilatrix.Tools.IxonV3Catalog":
+  {"path": "Compilatrix/Tools/IxonV3Catalog.lean",
+   "imports": ["Compilatrix.Ixon.V3.Catalog", "Compilatrix.Tools.Check"]},
   "Compilatrix.Tools.IxIR2Check":
   {"path": "Compilatrix/Tools/IxIR2Check.lean",
    "imports":
@@ -2619,9 +2649,30 @@
   "Compilatrix.Ixon.V3.Const":
   {"path": "Compilatrix/Ixon/V3/Const.lean",
    "imports": ["Compilatrix.Ixon.Const", "Compilatrix.Ixon.V3.Expr"]},
+  "Compilatrix.Ixon.V3.Catalog.Manifest":
+  {"path": "Compilatrix/Ixon/V3/Catalog/Manifest.lean",
+   "imports": ["Compilatrix.Ixon.V3.Catalog.Basic"]},
+  "Compilatrix.Ixon.V3.Catalog.Load":
+  {"path": "Compilatrix/Ixon/V3/Catalog/Load.lean",
+   "imports":
+   ["Compilatrix.Ixon.V3.Catalog.Manifest",
+    "Compilatrix.Ixon.V3.Catalog.Coverage"]},
+  "Compilatrix.Ixon.V3.Catalog.Coverage":
+  {"path": "Compilatrix/Ixon/V3/Catalog/Coverage.lean",
+   "imports": ["Compilatrix.Ixon.V3.Catalog.Basic"]},
+  "Compilatrix.Ixon.V3.Catalog.Basic":
+  {"path": "Compilatrix/Ixon/V3/Catalog/Basic.lean",
+   "imports": ["Compilatrix.Ixon.V3.Env"]},
+  "Compilatrix.Ixon.V3.Catalog.Admit":
+  {"path": "Compilatrix/Ixon/V3/Catalog/Admit.lean",
+   "imports":
+   ["Compilatrix.Ixon.V3.Catalog.Load", "Compilatrix.Ixon.V3.Tc.Driver"]},
+  "Compilatrix.Ixon.V3.Catalog":
+  {"path": "Compilatrix/Ixon/V3/Catalog.lean",
+   "imports": ["Compilatrix.Ixon.V3.Catalog.Admit"]},
   "Compilatrix.Ixon.V3":
   {"path": "Compilatrix/Ixon/V3.lean",
-   "imports": ["Compilatrix.Ixon.V3.Validate"]},
+   "imports": ["Compilatrix.Ixon.V3.Validate", "Compilatrix.Ixon.V3.Catalog"]},
   "Compilatrix.Ixon.Uses":
   {"path": "Compilatrix/Ixon/Uses.lean", "imports": []},
   "Compilatrix.Ixon.UsageCheck":
@@ -4297,6 +4348,9 @@
   "CheckNativeGraph":
   {"path": "scripts/CheckNativeGraph.lean",
    "imports": ["Compilatrix.Tools.NativeSharingCheck"]},
+  "CheckIxonV3Catalog":
+  {"path": "CheckIxonV3Catalog.lean",
+   "imports": ["Compilatrix.Tools.IxonV3Catalog"]},
   "CheckIxonV3":
   {"path": "CheckIxonV3.lean", "imports": ["Compilatrix.Ixon.V3"]},
   "CheckIxbySymbolic":

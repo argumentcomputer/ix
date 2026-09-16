@@ -278,6 +278,17 @@ adversarial cases run in the required suite. A whole-checker semantic soundness
 theorem, v3 backend simulation and IxVM resource proofs remain outside this boundary.
 The old v2 compiler entry points keep their original proof and fixture scope.
 
+Catalog-v2 admission additionally binds manifest version 2, object format 3
+and erased-lean-v1 (validator 1) to original manifest/piece bytes. It verifies
+roots, file hashes, counts, aggregate bounds, closed union assumptions and
+actual union typing. Chunked membership requires complete sorted address
+witnesses checked against each committed member root and count; first-owner
+assignment and full union coverage are checked explicitly. Producer labels,
+pins and preimage hashes are metadata, not proof. Four further exact fences
+preserve the same axiom basis. The 445 catalog assertions include producer
+fat and independently Rust-verified chunk fixtures, corruptions, exact bounds
+and filesystem/CLI tests. Validator 1 does not select a resource profile.
+
 ## Aiur logical-trace boundary
 
 The [Aiur foundation](aiur-backend.md) pins eleven pure upstream Lean modules

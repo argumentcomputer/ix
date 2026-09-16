@@ -62,7 +62,7 @@ local development records.
 ## Source and module boundaries
 
 [`Compilatrix.lean`](../Compilatrix.lean) exposes the production compiler API.
-The production import closure has 514 local modules with the Aiur AIR checkers and combined Ixon v3 source validator.
+The production import closure has 520 local modules with the Aiur AIR checkers, combined Ixon v3 source validator and catalog-v2 admission.
 The earlier CI refactor reduced that closure from 593 to 425 modules. It does
 not import test modules, example suites, fixture corpora, or fence aggregators.
 
@@ -74,13 +74,17 @@ The five core runtime suites have independent entry points:
 | Pipeline, ownership, reuse, and target integration | `lake exe tests-pipeline` |
 | HPT caches, persistence, and optimizer checks | `lake exe tests-hpt` |
 | Frozen Ixon v2 codecs, sharing, and catalogs | `lake exe tests-ixon` |
-| Ix frontend / Ixon v3 contracts, typing, resource admission, and handoff | `lake exe tests-ixon-v3` |
+| Ix frontend / Ixon v3 contracts, typing, resource admission, handoff and catalogs | `lake exe tests-ixon-v3` |
 
-The v3 suite runs 1,403 assertions, including frozen upstream resource and
-primitive fixtures. Its 35 exact axiom fences retain all 2,373 earlier
+The v3 suite runs 1,848 assertions, including frozen upstream resource,
+primitive and catalog fixtures. Its 39 exact axiom fences retain all 2,373 earlier
 assertions. State proofs and fixtures remain outside the production API.
 The public validator combines erased typing, resource checks and canonical
 literal pins over the same bytes; v3 backend lowering remains separate.
+Catalog validator 1 checks the authenticated union's erased typing. Full
+member witnesses authenticate overlapping chunked members; explicit resource
+profiles remain separate. Both test executable targets depend on the catalog
+CLI for their fresh-process checks, so the direct commands build it as needed.
 
 The Aiur target has a separate required `aiur` gate, running `tests-aiur`
 and `check-aiur --root .`. Its [contract](aiur-backend.md) records the
