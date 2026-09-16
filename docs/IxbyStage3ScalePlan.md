@@ -17,6 +17,14 @@ certificates. The target remains a generic, image-independent proving setup
 and a proof of the exact approved binary/input/output relation. No complete
 Stage 3 proof of either workload has been generated.
 
+A subsequent [complete reference observer run](../flock-stage3/profile/README.md)
+matched the same CSLib output and transition count in 345.94 seconds, with
+627,068 KiB maximum RSS. It observed 73 locals, 647 continuations, 65-bit
+Nats, byte arrays through 4,813,182 bytes, nine constructor fields and three
+PAP captures. Its opcode census covers all executed blocks; value maxima
+cover inspected operands/locals/returns/applications. These are measurements
+for execution-class design, not constrained execution or proving estimates.
+
 ## Completed foundations
 
 1. [Strict functional intake](IxbyFunctionalIntake.md): canonical
@@ -131,6 +139,12 @@ Stage 3 proof of either workload has been generated.
     exact coverage and inherited-claim folds are constrained. The root checks
     genuine Start/Done/EOF and all 98 approved fixed-table families. The full
     server aggregation took 35 minutes and 54,413,188 KiB peak process RSS.
+17. [Authenticated cells and batched memory](IxbyFlockMemory.md): full-u64
+    addressing, old/new root continuity, exact immutable allocation/read
+    bounds, and a fixed whole-record permutation with ordered read/write
+    auditing. Fresh-process component proofs reject recomputed path, counter,
+    routing and value substitutions. A 512-access depth-40 batch proved in
+    417 ms after setup. Execution consumers and full-state integration remain.
 
 ## Next implementation gates
 
@@ -154,13 +168,19 @@ Stage 3 proof of either workload has been generated.
    while recording actual opcode frequencies, stack depth, allocations, byte
    traffic, and Nat widths. Keep the untrusted witness generator separate from
    verification. Do not materialize billions of execution steps just to profile
-   it. Static limits and native runtime are not prover-cost estimates.
+   it. The complete reference control/block census and observed maxima are
+   retained in the profiling report above. Bounded execution-memory witness
+   generation and full allocation/byte-traffic measurements remain. Static
+   limits and native runtime are not prover-cost estimates.
 3. **Scalable code and memory authentication.** Replace capacity-wide selector
    scans and full-bank replication with a reviewed access construction for
    code, locals/continuations, and immutable constructor/PAP/byte/Nat records.
    Bounded typed-code and transport-value seals and reusable authenticated
    reads are implemented; full-image sealing, execution allocations and
-   local/continuation memory consumers remain required.
+   local/continuation memory consumers remain required. Authenticated mutable
+   cells, immutable allocation and an exact batched memory log are now proved
+   independently; connect the actual execution addresses/values and complete
+   machine boundaries to these components.
    Record identity, allocation order, field access and repeated reads must be
    constrained. Benchmark code-authentication and representative memory traces
    before choosing capacities or allocating a full circuit. Any new argument

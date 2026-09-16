@@ -5,6 +5,7 @@
 //! guest profile remain unfinished; this is not a Stage 4 compact proof.
 
 pub mod access;
+pub mod auth_memory;
 mod bits;
 pub mod bounded_hash;
 pub mod byte_value;
@@ -18,6 +19,7 @@ pub mod ixbf;
 pub mod ixbf_decode;
 pub mod length;
 pub mod machine;
+pub mod memory_log;
 pub mod nat_value;
 pub mod object_value;
 pub mod primitive;

@@ -101,6 +101,12 @@ The [native Flock aggregate](../docs/IxbyFlockRecursion.md) now compresses all
 intermediate boundaries and folds, exact coverage, and complete Start/Done.
 The root verifier checks every approved fixed-table family without the leaves.
 
+[Execution memory components](../docs/IxbyFlockMemory.md) now prove mutable
+cells, immutable allocation and ordered batches of reads/writes, with roots
+and full-width addresses constrained. A 512-access depth-40 batch proved in
+417 ms after setup and verified in a fresh process. The machine, code/input
+admission and global execution boundaries still need to consume these wires.
+
 ```sh
 RAYON_NUM_THREADS=8 cargo test --release --locked --manifest-path flock-stage3/Cargo.toml --workspace conformance:: -- --ignored --test-threads=1
 ```

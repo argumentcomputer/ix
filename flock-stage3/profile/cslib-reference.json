@@ -1,0 +1,95 @@
+{
+  "completed": true,
+  "control_counts_eval_ret_apply": [
+    1956519385,
+    310840074,
+    1143346
+  ],
+  "max_apply_arguments": 2,
+  "max_continuations": 647,
+  "max_locals": 73,
+  "max_observed_bytes": 4813182,
+  "max_observed_constructor_fields": 9,
+  "max_observed_nat_bits": 65,
+  "max_observed_pap_captures": 3,
+  "reference_transitions": 2268502805,
+  "executed_blocks": 5404,
+  "total_blocks": 6763,
+  "instructions": {
+    "letOp": 995877025,
+    "ret": 310840074,
+    "caseCtor": 285495285,
+    "branch": 263093733,
+    "tailCall": 101213266,
+    "tailApply": 2
+  },
+  "operations": {
+    "primitive": 515289479,
+    "call": 309696729,
+    "construct": 102554472,
+    "project": 67188531,
+    "apply": 1143344,
+    "closure": 4470
+  },
+  "primitives": {
+    "natLt": 93654887,
+    "natEq": 84545515,
+    "natDiv": 63592179,
+    "word32Lt": 59752580,
+    "word32Add": 48222614,
+    "natSub": 33099985,
+    "word32Eq": 30236564,
+    "natAdd": 24532701,
+    "natMul": 17290061,
+    "natMod": 8387951,
+    "word32And": 7732742,
+    "word32Shr": 7720294,
+    "word32Mul": 5461838,
+    "word32Sub": 5124677,
+    "word32Shl": 4420088,
+    "bytesSlice": 3189845,
+    "extMul": 2773237,
+    "word32ToField": 2191266,
+    "bytesToWord32": 1986978,
+    "fieldMul": 1740882,
+    "bytesAppend": 1615736,
+    "fieldToBytes": 1449821,
+    "fieldAdd": 1095633,
+    "word32ToBytes": 1082671,
+    "extPack": 996088,
+    "extAdd": 959960,
+    "extSub": 936003,
+    "bytesToField": 483410,
+    "fieldEq": 470200,
+    "bytesGet": 191378,
+    "bytesLength": 95686,
+    "extFst": 65900,
+    "extSnd": 65900,
+    "fieldSub": 56236,
+    "blake3": 37068,
+    "fieldInverse": 30651,
+    "extEq": 251,
+    "bytesEq": 3,
+    "word32Or": 0,
+    "word32Xor": 0,
+    "extInverse": 0
+  },
+  "scope": "Native reference execution observation; no Flock proof. Value maxima cover inspected values, not a traversal of all reachable values.",
+  "measurement_date_utc": "2026-09-16",
+  "wall_seconds": 345.94,
+  "maximum_rss_kib": 627068,
+  "artifacts": {
+    "program": {
+      "bytes": 1016587,
+      "sha256": "1c864b7a10614549f1bba23e465b9e70a9dabeff5615c5885aa0e55517ce3f09"
+    },
+    "input": {
+      "bytes": 4813238,
+      "sha256": "8b03e43e9ec59ee9d82af519de11c2ca7930e09942ee5e0f85263e851ea0ffcc"
+    },
+    "output": {
+      "bytes": 49,
+      "sha256": "c810a2a4d205ae4ff03a0bb910f03c8f7824f572228a480d9c1c2eea2f2c7198"
+    }
+  }
+}
