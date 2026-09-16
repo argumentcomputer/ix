@@ -117,6 +117,14 @@ same computation resumes correctly across 15 fixed batches. Two further
 with 11 recomputed byte/hash substitutions rejected. Original code/input
 admission, output serialization and full execution aggregation remain.
 
+[Paged source admission](../docs/IxbyFlockPagedAdmission.md) now proves the
+original bytes' writes to execution byte banks and the actual parser events'
+writes to packed code. Fresh 393,532-byte source proofs and 452,899-byte joint
+parser/code/memory proofs reject recomputed substitutions. The complete CSLib
+program passes 1,227 joint circuit evaluations with the exact final packed
+memory root. Full semantic reference checks and typed input initialization
+remain before that code can enter a complete original execution proof.
+
 ```sh
 RAYON_NUM_THREADS=8 cargo test --release --locked --manifest-path flock-stage3/Cargo.toml --workspace conformance:: -- --ignored --test-threads=1
 ```

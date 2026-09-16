@@ -1,5 +1,6 @@
 use super::*;
 use crate::{
+  blake3_backend::Blake3CompressionSlots,
   equality::F128EqualityGate,
   ixby::{
     ixbf_decode::{dispatch::*, source::*},
@@ -44,9 +45,32 @@ impl StreamSlots {
     config: DispatchConfig,
     depth: usize,
   ) -> Result<Self> {
+    Self::declare_inner(b, nu, config, depth, None)
+  }
+  pub fn sharing_compression(
+    b: &mut impl CircuitEmitter,
+    nu: usize,
+    config: DispatchConfig,
+    depth: usize,
+    compression: &Blake3CompressionSlots,
+  ) -> Result<Self> {
+    Self::declare_inner(b, nu, config, depth, Some(compression))
+  }
+  fn declare_inner(
+    b: &mut impl CircuitEmitter,
+    nu: usize,
+    config: DispatchConfig,
+    depth: usize,
+    compression: Option<&Blake3CompressionSlots>,
+  ) -> Result<Self> {
     let capacity = SourceCapacity::new(depth, config.window_bytes())?;
     let dispatch = DispatchSlots::declare(b, nu, config)?;
-    let source = SourceReadSlots::declare(b, nu, capacity)?;
+    let source = match compression {
+      Some(compression) => {
+        SourceReadSlots::sharing_compression(b, nu, capacity, compression)?
+      },
+      None => SourceReadSlots::declare(b, nu, capacity)?,
+    };
     let controls = StreamOp::ALL
       .into_iter()
       .map(|op| Ok(b.slot(StreamGate::new(nu, capacity, op)?)))

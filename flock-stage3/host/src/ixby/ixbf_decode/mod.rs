@@ -27,6 +27,7 @@ mod link;
 mod link_tests;
 mod natural;
 mod natural_limit;
+pub mod paged;
 mod payload;
 #[cfg(test)]
 mod proof_tests;

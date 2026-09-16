@@ -177,6 +177,13 @@ for execution-class design, not constrained execution or proving estimates.
 
 ## Next implementation gates
 
+The [paged admission implementation](IxbyFlockPagedAdmission.md) now adds
+original-byte-bank proofs and source-bound packed-code writes to the
+foundations above. Three joint parser/code/memory proofs verify in fresh
+processes, and all 1,227 original CSLib code batches pass their actual
+circuits with the exact packed memory root. Semantic reference validation,
+typed input/entry initialization and output/Exec commitment binding remain.
+
 1. **Constrained binary correspondence.** Define the approved native
    IXBF/IXFI/IXFO execution class and its identities. Constrain canonical
    admission and the actual decoded code/input, or supply an explicit checked

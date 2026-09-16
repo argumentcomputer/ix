@@ -17,12 +17,12 @@ fn words(bytes: &[u8]) -> Vec<F128> {
   bytes.as_chunks::<16>().0.iter().map(|w| pack_bytes(w)).collect()
 }
 
-struct Tree<'a> {
+pub(in crate::ixby::ixbf_decode) struct Tree<'a> {
   bytes: &'a [u8],
   levels: Vec<Vec<[u8; 32]>>,
 }
 impl<'a> Tree<'a> {
-  fn new(bytes: &'a [u8]) -> Self {
+  pub(in crate::ixby::ixbf_decode) fn new(bytes: &'a [u8]) -> Self {
     let mut leaves: Vec<_> = bytes
       .chunks(1024)
       .enumerate()
@@ -55,7 +55,11 @@ impl<'a> Tree<'a> {
     }
     Self { bytes, levels }
   }
-  fn advice(&self, index: usize, depth: usize) -> Vec<F128> {
+  pub(in crate::ixby::ixbf_decode) fn advice(
+    &self,
+    index: usize,
+    depth: usize,
+  ) -> Vec<F128> {
     let at = index * 1024;
     let end = (at + 1024).min(self.bytes.len());
     let mut chunk = [0; 1024];

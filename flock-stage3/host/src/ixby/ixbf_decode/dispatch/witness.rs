@@ -31,6 +31,11 @@ pub struct EvaluatedStep {
   pub state: [F128; 30],
   pub tag: u8,
   pub committed: bool,
+  pub fields: [F128; GRAMMAR_EVENT_FIELDS],
+  pub next: F128,
+  pub natural_magnitude: Vec<F128>,
+  pub natural_range: F128,
+  pub payload_range: F128,
 }
 impl DispatchEvaluator {
   pub fn new(config: DispatchConfig) -> Result<Self> {
@@ -101,7 +106,7 @@ impl DispatchEvaluator {
     input.extend_from_slice(&nat[1..]);
     let magnitude = eval(&self.natural, &input)?;
     let mut input = vec![state[grammar::LIMITS + 7], route[14]];
-    input.extend(magnitude);
+    input.extend_from_slice(&magnitude);
     eval(&self.limit, &input)?;
     let payload =
       eval(&self.payload, &[state[0], req[8], route[NATURAL_PORT + n + 2]])?;
@@ -119,7 +124,7 @@ impl DispatchEvaluator {
     let event = self.control(DispatchOp::Merge, &merge)?;
     let mut input = state[..28].to_vec();
     input.extend_from_slice(&req[..4]);
-    input.extend(event);
+    input.extend_from_slice(&event);
     let next = eval(&self.grammar, &input)?;
     let mut input = state.to_vec();
     input.extend(next);
@@ -130,6 +135,11 @@ impl DispatchEvaluator {
       state: next.try_into().unwrap(),
       tag: req[0].lo as u8,
       committed,
+      fields: event[..GRAMMAR_EVENT_FIELDS].try_into().unwrap(),
+      next: event[GRAMMAR_EVENT_FIELDS],
+      natural_magnitude: magnitude,
+      natural_range: nat_cursor[1],
+      payload_range: payload[1],
     })
   }
 }
