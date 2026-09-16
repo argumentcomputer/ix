@@ -1,0 +1,3 @@
+[codegen --check] crates/ixvm-codegen/src/aiur_ixvm.rs up to date (6184681 bytes, 798 aiur fns)
+[codegen --check] crates/ixvm-codegen/src/aiur_multi_stark.rs up to date (2517685 bytes, 296 aiur fns)
+[codegen --check] crates/ixvm-codegen/src/aiur_ix_aggr.rs up to date (2563890 bytes, 313 aiur fns)

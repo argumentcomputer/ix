@@ -1,0 +1,37 @@
+aiur-trace-plan
+  ✓ ∃: degree-sensitive allocations and virtual carries
+  ✓ ∃: unused auxiliary writes survive but virtual return expressions need no row work
+  ✓ ∃: short branches reserve the maximum including default inverses
+  ✓ ∃: nested continuations consume their own yields and preserve the outer scope
+  ✓ ∃: incorrect shared auxiliary reservation is rejected
+  ✓ ∃: incorrect shared lookup reservation is rejected
+  ✓ ∃: continuation cannot refer to a discarded branch local
+  ✓ ∃: returned-call alias skips key arithmetic but retains strict-check dependencies
+  ✓ ∃: call-result-to-load chain retains CPU key arithmetic
+  ✓ ∃: early return retains the branch decision guarding a continuation read
+  ✓ ∃: nested return retains its decision guarding an enclosing continuation read
+  ✓ ∃: branch seed slots overlap and continuation starts after the larger arm
+  ✓ ∃: store, load, IO and BigUint are reads; execution-only effects have no seed
+  ✓ ∃: zero-output calls allocate a lookup without a seed or a key recomputation
+  ✓ ∃: unconstrained call results need advice but no call lookup
+  ✓ ∃: 129 inputs and 32 aliased outputs have the BLAKE3 seed-size bounds
+  ✓ ∃: invalid value index
+  ✓ ∃: invalid callee index
+  ✓ ∃: callee input arity mismatch
+  ✓ ∃: callee output arity mismatch
+  ✓ ∃: memory read without its table
+  ✓ ∃: u32 operands must have four bytes
+  ✓ ∃: yield cannot escape a function
+  ✓ ∃: yield arity must match its continuation
+  ✓ ∃: duplicate selector allocation
+  ✓ ∃: selector outside the declared region
+  ✓ ∃: duplicate match cases
+  ✓ ∃: grouped functions retain member plans and merge only circuit regions
+  ✓ ∃: missing constrained member
+  ✓ ∃: duplicate circuit member
+  ✓ ∃: declared circuit layout must match its members
+  ✓ ∃: unconstrained function cannot be a circuit member
+  ✓ ∃: report ordering is independent of alias-map insertion order
+  ✓ ∃: report has group offsets, unknown weights and mandatory byte-table heights
+  ✓ ∃: one-selector match with an empty arm is not branchless
+

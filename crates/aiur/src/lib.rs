@@ -12,6 +12,7 @@ mod row_counts;
 pub mod shard;
 pub mod synthesis;
 pub mod trace;
+pub mod trace_codegen;
 mod trace_heights;
 pub mod vk_codec;
 

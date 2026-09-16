@@ -95,6 +95,7 @@ inductive RustExpr where
   | deref (e : RustExpr)
   /-- `&e`. -/
   | ref (e : RustExpr)
+  | tryExpr (e : RustExpr)
   /-- `vec![...]`, `[...]`, etc. — `macro!(args)`. -/
   | macroCall (name : String) (args : Array RustExpr)
   /-- A Rust array literal: `[a, b, c]`. -/
@@ -111,6 +112,7 @@ inductive RustStmt where
   | letStmt (isMut : Bool) (name : String) (ty : Option String) (val : RustExpr)
   /-- `*target += val;` (used for multiplicity bumps). -/
   | addAssign (target : RustExpr) (val : RustExpr)
+  | assign (target : RustExpr) (val : RustExpr)
   /-- `expr;` -/
   | exprStmt (e : RustExpr)
   /-- `return expr;` -/
@@ -180,6 +182,7 @@ partial def RustExpr.toStr : RustExpr → String
   | .binop op a b => s!"({a.toStr} {op} {b.toStr})"
   | .deref e => s!"*{e.toStr}"
   | .ref e => s!"&{e.toStr}"
+  | .tryExpr e => s!"{e.toStr}?"
   | .macroCall n args =>
     let argList := ", ".intercalate (args.toList.map RustExpr.toStr)
     s!"{n}!({argList})"
@@ -202,6 +205,8 @@ partial def RustStmt.toStr (d : Nat) : RustStmt → String
     s!"{indent d}let {mutStr}{name}{tyStr} = {val.toStr};\n"
   | .addAssign target val =>
     s!"{indent d}{target.toStr} += {val.toStr};\n"
+  | .assign target val =>
+    s!"{indent d}{target.toStr} = {val.toStr};\n"
   | .exprStmt e => s!"{indent d}{e.toStr};\n"
   | .returnStmt e => s!"{indent d}return {e.toStr};\n"
   | .ifLetSome binding scrut thenStmts elseStmts => Id.run do
@@ -326,37 +331,6 @@ def calleeUnconstrained (opUn : Bool) : RustExpr :=
     small local Vec inside a sub-block and read outputs back out as
     G values.
 -/
-
-/-- How many ValIdx slots an Op consumes (i.e. how much it grows
-    Aiur's value-stack). MUST match `execute.rs`'s `map.push` /
-    `map.extend` totals exactly per arm — else local-variable names
-    drift from the bytecode's expected ValIdx layout and subsequent
-    ops index the wrong values. -/
-def Op.outputCount : Op → Nat
-  | .const _ => 1
-  | .add _ _ | .sub _ _ | .mul _ _ | .eqZero _ => 1
-  | .call _ _ outSize _ => outSize
-  | .store _ => 1
-  | .load size _ => size
-  | .assertEq _ _ _ => 0
-  | .ioGetInfo _ _ => 2
-  | .ioSetInfo _ _ _ _ => 0
-  | .ioRead _ _ len => len
-  | .ioWrite _ _ => 0
-  | .u8BitDecomposition _ => 8
-  | .u8ShiftLeft _ | .u8ShiftRight _ => 1
-  | .u8Xor _ _ | .u8And _ _ | .u8Or _ _ | .u8LessThan _ _ => 1
-  | .u8Mul _ _ => 2
-  | .u8Add _ _ | .u8Sub _ _ => 2
-  | .u8XorSplit7 _ _ | .u8XorSplit4 _ _ => 2
-  | .u32LessThan _ _ => 1
-  | .u8RangeCheck _ _ => 0
-  | .unconstrainedBigUintDivMod _ _ => 2
-  | .unconstrainedGToBytes _ => 8
-  | .unconstrainedGInverse _ => 1
-  | .unconstrainedU32Add _ _ | .unconstrainedU32Add3 _ _ _ => 5
-  | .u32ToField _ => 1
-  | .debug _ _ => 0
 
 private def emitConst (out : Nat) (c : Aiur.G) : Array RustStmt :=
   #[declVal out (gFromU64 c.n)]

@@ -60,10 +60,13 @@ def cargoArgs (testFfi : Bool := false) (net : Bool := false) : IO (Array String
   -- IX_NO_PAR=1 disables parallel; IX_CUDA=1/true/yes enables CUDA.
   let ixNoPar ← IO.getEnv "IX_NO_PAR"
   let ixCuda ← IO.getEnv "IX_CUDA"
+  let ixTraceCodegen ← IO.getEnv "IX_CUDA_TRACE_CODEGEN"
   let mut features : Array String := #[]
   if ixNoPar != some "1" then features := features.push "parallel"
   if ixCuda == some "1" || ixCuda == some "true" || ixCuda == some "yes" then
     features := features.push "cuda"
+  if ixTraceCodegen == some "1" || ixTraceCodegen == some "true" || ixTraceCodegen == some "yes" then
+    features := features.push "cuda-trace-codegen"
   if net && !System.Platform.isOSX then features := features.push "net"
   if testFfi then features := features.push "test-ffi"
   IO.println s!"Ix Rust features: {if features.isEmpty then "none" else ",".intercalate features.toList}"
@@ -78,7 +81,10 @@ archive from a previous invocation. -/
 def buildRustStatic (pkg : Package) (args : Array String) (tag : String) :
     SpawnM (Job FilePath) := do
   let sources ← inputDir (pkg.dir / "crates") true fun path =>
-    path.extension == some "rs" || path.fileName == "Cargo.toml"
+    path.extension == some "rs" || path.extension == some "cu" ||
+    path.extension == some "cuh" || path.extension == some "h" ||
+    path.extension == some "hpp" || path.fileName == "Cargo.toml" ||
+    path.fileName == "trace-manifest.json"
   let manifests := Job.collectArray #[
     ← inputTextFile (pkg.dir / "Cargo.toml"),
     ← inputTextFile (pkg.dir / "Cargo.lock")

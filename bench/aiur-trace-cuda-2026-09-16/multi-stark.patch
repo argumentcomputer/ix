@@ -1,0 +1,223 @@
+diff --git a/Cargo.toml b/Cargo.toml
+index e3aac95..3455901 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -5,6 +5,7 @@ edition = "2024"
+ authors = ["Argument Engineering <engineering@argument.xyz>"]
+ license = "MIT OR Apache-2.0"
+ rust-version = "1.98"
++links = "multi_stark_cuda"
+ 
+ # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+ 
+diff --git a/build.rs b/build.rs
+index 438365e..03dc72c 100644
+--- a/build.rs
++++ b/build.rs
+@@ -11,6 +11,7 @@ use std::process::Command;
+ fn main() {
+     println!("cargo:rerun-if-changed=build.rs");
+     println!("cargo:rerun-if-changed=cuda/kernels.cu");
++    println!("cargo:rerun-if-changed=cuda/goldilocks.cuh");
+     println!("cargo:rerun-if-env-changed=NVCC");
+     println!("cargo:rerun-if-env-changed=CUDA_HOME");
+     println!("cargo:rerun-if-env-changed=CUDA_PATH");
+@@ -20,6 +21,9 @@ fn main() {
+         return;
+     }
+ 
++    let include = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap()).join("cuda");
++    println!("cargo:include={}", include.display());
++
+     assert_eq!(
+         env::var("CARGO_CFG_TARGET_OS").as_deref(),
+         Ok("linux"),
+diff --git a/cuda/kernels.cu b/cuda/kernels.cu
+index 92353e3..e85ca48 100644
+--- a/cuda/kernels.cu
++++ b/cuda/kernels.cu
+@@ -5,6 +5,7 @@
+ // deferred to the later PCS/FRI backend.
+ 
+ #include <cuda_runtime.h>
++#include "goldilocks.cuh"
+ 
+ #include <stddef.h>
+ #include <stdint.h>
+@@ -19,8 +20,7 @@
+ 
+ namespace {
+ 
+-constexpr uint64_t GOLDILOCKS_P = 0xffffffff00000001ULL;
+-constexpr uint64_t GOLDILOCKS_EPSILON = 0x00000000ffffffffULL;
++using namespace multi_stark_cuda;
+ constexpr unsigned int THREADS = 256;
+ constexpr unsigned int MAX_BLOCKS = 65535;
+ constexpr size_t BLAKE3_CHUNK_BYTES = 1024;
+@@ -75,56 +75,6 @@ __device__ __constant__ unsigned int BLAKE3_PERMUTATION[16] = {
+     2, 6, 3, 10, 7, 0, 4, 13, 1, 11, 12, 5, 9, 14, 15, 8,
+ };
+ 
+-__device__ __forceinline__ uint64_t canonicalize(uint64_t value) {
+-    return value >= GOLDILOCKS_P ? value - GOLDILOCKS_P : value;
+-}
+-
+-__device__ __forceinline__ uint64_t goldilocks_add(uint64_t left, uint64_t right) {
+-    left = canonicalize(left);
+-    right = canonicalize(right);
+-    // Written this way to avoid relying on overflow behavior in the source
+-    // language. `GOLDILOCKS_P - right` is always representable.
+-    const uint64_t gap = GOLDILOCKS_P - right;
+-    return left >= gap ? left - gap : left + right;
+-}
+-
+-__device__ __forceinline__ uint64_t goldilocks_sub(uint64_t left, uint64_t right) {
+-    left = canonicalize(left);
+-    right = canonicalize(right);
+-    return left >= right ? left - right : GOLDILOCKS_P - (right - left);
+-}
+-
+-__device__ __forceinline__ uint64_t goldilocks_mul(uint64_t left, uint64_t right) {
+-    left = canonicalize(left);
+-    right = canonicalize(right);
+-
+-    const uint64_t low = left * right;
+-    const uint64_t high = __umul64hi(left, right);
+-
+-    // Reduce low + high * 2^64 using 2^64 = 2^32 - 1 (mod p).
+-    const uint64_t high_high = high >> 32;
+-    const uint64_t high_low = high & GOLDILOCKS_EPSILON;
+-    uint64_t reduced_low = low - high_high;
+-    if (low < high_high) {
+-        // The wrapped subtraction added 2^64; replace that with +p.
+-        reduced_low -= GOLDILOCKS_EPSILON;
+-    }
+-    const uint64_t reduced_high = high_low * GOLDILOCKS_EPSILON;
+-    return goldilocks_add(reduced_low, reduced_high);
+-}
+-
+-__device__ __forceinline__ uint64_t goldilocks_pow(uint64_t base, uint64_t exponent) {
+-    uint64_t result = 1;
+-    while (exponent != 0) {
+-        if ((exponent & 1U) != 0) {
+-            result = goldilocks_mul(result, base);
+-        }
+-        base = goldilocks_mul(base, base);
+-        exponent >>= 1;
+-    }
+-    return result;
+-}
+-
+ __device__ __forceinline__ uint32_t rotate_right(uint32_t value,
+                                                   unsigned int count) {
+     return __funnelshift_r(value, value, count);
+@@ -714,23 +664,6 @@ struct PendingLookupLde {
+     }
+ };
+ 
+-// The resident PCS canonicalizes every committed LDE, and interpolation
+-// tables are serialized with `as_canonical_u64`. Restrict the faster
+-// canonical-input arithmetic to this boundary instead of weakening the
+-// representation guarantees of lookup/quotient code, whose host inputs may
+-// legitimately use lazy representatives.
+-__device__ __forceinline__ uint64_t canonical_add(uint64_t a,uint64_t b){
+-    const uint64_t sum=a+b;
+-    if(sum<a)return sum+GOLDILOCKS_EPSILON;
+-    return sum>=GOLDILOCKS_P?sum-GOLDILOCKS_P:sum;
+-}
+-__device__ __forceinline__ uint64_t canonical_mul(uint64_t a,uint64_t b){
+-    const uint64_t low=a*b,high=__umul64hi(a,b),high_high=high>>32;
+-    uint64_t reduced_low=low-high_high;
+-    if(low<high_high)reduced_low-=GOLDILOCKS_EPSILON;
+-    const uint64_t reduced_high=(high&GOLDILOCKS_EPSILON)*GOLDILOCKS_EPSILON;
+-    return canonical_add(canonicalize(reduced_low),canonicalize(reduced_high));
+-}
+ __device__ __forceinline__ Ext2 canonical_ext2_add(Ext2 a,Ext2 b){
+     return {canonical_add(a.c0,b.c0),canonical_add(a.c1,b.c1)};
+ }
+diff --git a/cuda/goldilocks.cuh b/cuda/goldilocks.cuh
+new file mode 100644
+index 0000000..abebe64
+--- /dev/null
++++ b/cuda/goldilocks.cuh
+@@ -0,0 +1,80 @@
++// SPDX-License-Identifier: MIT OR Apache-2.0
++#pragma once
++
++#include <cuda_runtime.h>
++#include <stdint.h>
++
++namespace multi_stark_cuda {
++
++constexpr uint64_t GOLDILOCKS_P = 0xffffffff00000001ULL;
++constexpr uint64_t GOLDILOCKS_EPSILON = 0x00000000ffffffffULL;
++
++__device__ __forceinline__ uint64_t canonicalize(uint64_t value) {
++    return value >= GOLDILOCKS_P ? value - GOLDILOCKS_P : value;
++}
++
++__device__ __forceinline__ uint64_t goldilocks_add(uint64_t left, uint64_t right) {
++    left = canonicalize(left);
++    right = canonicalize(right);
++    // Written this way to avoid relying on overflow behavior in the source
++    // language. `GOLDILOCKS_P - right` is always representable.
++    const uint64_t gap = GOLDILOCKS_P - right;
++    return left >= gap ? left - gap : left + right;
++}
++
++__device__ __forceinline__ uint64_t goldilocks_sub(uint64_t left, uint64_t right) {
++    left = canonicalize(left);
++    right = canonicalize(right);
++    return left >= right ? left - right : GOLDILOCKS_P - (right - left);
++}
++
++__device__ __forceinline__ uint64_t goldilocks_mul(uint64_t left, uint64_t right) {
++    left = canonicalize(left);
++    right = canonicalize(right);
++
++    const uint64_t low = left * right;
++    const uint64_t high = __umul64hi(left, right);
++
++    // Reduce low + high * 2^64 using 2^64 = 2^32 - 1 (mod p).
++    const uint64_t high_high = high >> 32;
++    const uint64_t high_low = high & GOLDILOCKS_EPSILON;
++    uint64_t reduced_low = low - high_high;
++    if (low < high_high) {
++        // The wrapped subtraction added 2^64; replace that with +p.
++        reduced_low -= GOLDILOCKS_EPSILON;
++    }
++    const uint64_t reduced_high = high_low * GOLDILOCKS_EPSILON;
++    return goldilocks_add(reduced_low, reduced_high);
++}
++
++__device__ __forceinline__ uint64_t goldilocks_pow(uint64_t base, uint64_t exponent) {
++    uint64_t result = 1;
++    while (exponent != 0) {
++        if ((exponent & 1U) != 0) {
++            result = goldilocks_mul(result, base);
++        }
++        base = goldilocks_mul(base, base);
++        exponent >>= 1;
++    }
++    return result;
++}
++
++// The resident PCS canonicalizes every committed LDE, and interpolation
++// tables are serialized with `as_canonical_u64`. Restrict the faster
++// canonical-input arithmetic to this boundary instead of weakening the
++// representation guarantees of lookup/quotient code, whose host inputs may
++// legitimately use lazy representatives.
++__device__ __forceinline__ uint64_t canonical_add(uint64_t a,uint64_t b){
++    const uint64_t sum=a+b;
++    if(sum<a)return sum+GOLDILOCKS_EPSILON;
++    return sum>=GOLDILOCKS_P?sum-GOLDILOCKS_P:sum;
++}
++__device__ __forceinline__ uint64_t canonical_mul(uint64_t a,uint64_t b){
++    const uint64_t low=a*b,high=__umul64hi(a,b),high_high=high>>32;
++    uint64_t reduced_low=low-high_high;
++    if(low<high_high)reduced_low-=GOLDILOCKS_EPSILON;
++    const uint64_t reduced_high=(high&GOLDILOCKS_EPSILON)*GOLDILOCKS_EPSILON;
++    return canonical_add(canonicalize(reduced_low),canonicalize(reduced_high));
++}
++
++} // namespace multi_stark_cuda

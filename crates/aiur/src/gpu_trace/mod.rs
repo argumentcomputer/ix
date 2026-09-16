@@ -13,7 +13,7 @@ use multi_stark::{
 use crate::{
   G,
   bytecode::{FunctionLayout, Toplevel},
-  execute::QueryRecord,
+  execute::{IOBuffer, QueryRecord},
   trace::QueryPosition,
 };
 
@@ -21,7 +21,7 @@ pub const WIDTH: usize = 533;
 
 #[derive(Clone)]
 #[repr(C)]
-struct Blake3Seed {
+pub(crate) struct Blake3Seed {
   multiplicity: u64,
   stage: u8,
   input: [u8; 128],
@@ -47,19 +47,79 @@ const LAYOUT: FunctionLayout = FunctionLayout {
   lookups: 194,
 };
 
-pub(crate) fn enabled() -> bool {
-  match std::env::var("AIUR_GPU_TRACE").as_deref() {
-    Err(_) | Ok("cpu") => false,
-    Ok("blake3") => {
+pub(crate) enum TraceProvider {
+  Cpu,
+  Blake3,
+  #[cfg(feature = "cuda-trace-codegen")]
+  Generated(crate::trace_codegen::cuda::RegisteredCudaProgram),
+}
+
+impl TraceProvider {
+  pub(crate) fn from_env(_top: Arc<Toplevel>) -> Self {
+    let mode = std::env::var("AIUR_GPU_TRACE").unwrap_or_else(|_| "cpu".into());
+    if mode != "cpu" {
       assert!(
         crate::trace::trace_only_lookups(),
-        "AIUR_GPU_TRACE=blake3 requires AIUR_TRACE_ONLY_LOOKUPS=1"
+        "AIUR_GPU_TRACE={mode} requires AIUR_TRACE_ONLY_LOOKUPS=1"
       );
-      true
-    },
-    Ok(value) => {
-      panic!("unsupported AIUR_GPU_TRACE={value}; use cpu or blake3")
-    },
+    }
+    match mode.as_str() {
+      "cpu" => Self::Cpu,
+      "blake3" => Self::Blake3,
+      #[cfg(feature = "cuda-trace-codegen")]
+      "generated" => Self::Generated(
+        crate::trace_codegen::programs::register(_top)
+          .unwrap_or_else(|error| panic!("AIUR_GPU_TRACE=generated: {error}")),
+      ),
+      #[cfg(not(feature = "cuda-trace-codegen"))]
+      "generated" => panic!(
+        "AIUR_GPU_TRACE=generated requires the cuda-trace-codegen feature (IX_CUDA_TRACE_CODEGEN=1)"
+      ),
+      _ => panic!(
+        "unsupported AIUR_GPU_TRACE={mode}; use cpu, blake3, or generated"
+      ),
+    }
+  }
+
+  pub(crate) fn prepare(
+    &self,
+    top: &Toplevel,
+    circuit: usize,
+    record: &QueryRecord,
+    _io: &IOBuffer,
+    slots: &[usize],
+    start: QueryPosition,
+    end: QueryPosition,
+    row_count: usize,
+  ) -> Option<(TraceSource<G>, LookupValues<G>)> {
+    match self {
+      Self::Cpu => None,
+      Self::Blake3 => {
+        prepare(top, circuit, record, slots, start, end, row_count)
+      },
+      #[cfg(feature = "cuda-trace-codegen")]
+      Self::Generated(program) => {
+        if row_count == 0 {
+          return None;
+        }
+        let bound = program.bound();
+        if !bound.supports(circuit) {
+          tracing::debug!(
+            circuit,
+            rows = row_count,
+            "CPU trace: circuit lacks generated CUDA coverage"
+          );
+          return None;
+        }
+        Some(
+          bound
+            .prepare(circuit, record, _io, slots, start, end, row_count, false)
+            .unwrap_or_else(|error| {
+              panic!("generated CUDA seed preparation: {error}")
+            }),
+        )
+      },
+    }
   }
 }
 
@@ -198,7 +258,7 @@ impl TraceGenerator<G> for Blake3Trace {
 }
 
 unsafe extern "C" {
-  fn aiur_blake3_trace(
+  pub(crate) fn aiur_blake3_trace(
     device: i32,
     seeds: *const Blake3Seed,
     real: usize,

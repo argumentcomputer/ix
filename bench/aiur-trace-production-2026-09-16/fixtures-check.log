@@ -1,0 +1,7 @@
+crates/aiur/src/trace_codegen/tests/generated.rs: 187744 bytes
+crates/aiur/src/trace_codegen/tests/generated_cuda.rs: 5084 bytes
+crates/aiur/cuda/generated/fixtures.cu: 133817 bytes
+crates/aiur/src/trace_codegen/tests/blake3.rs: 116192 bytes
+crates/aiur/src/trace_codegen/tests/blake3_cuda.rs: 637 bytes
+crates/aiur/cuda/generated/blake3.cu: 71748 bytes
+crates/aiur/cuda/trace-manifest.json: 684 bytes

@@ -1,0 +1,10 @@
+
+running 1 test
+test synthesis::tests::codegen_blake3_regenerated_batch_matches_cpu ... 
+thread '<unnamed>' (1561932) panicked at /tmp/multi-stark-gpu-trace-codegen/src/batch.rs:602:21:
+shard 0 did not reproduce its round-one header
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 99 filtered out; finished in 0.36s
+

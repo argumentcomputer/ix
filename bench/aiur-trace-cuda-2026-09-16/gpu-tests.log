@@ -1,0 +1,30 @@
+
+running 25 tests
+test trace_codegen::tests::cuda::blake3_performance_gate ... ignored, opt-in optimized same-input comparison with the handwritten CUDA writer
+test trace_codegen::tests::cuda::cuda_binding_rejects_changed_seed_width ... ok
+test trace_codegen::tests::cuda::device_errors_release_the_staging_lease ... ok
+test trace_codegen::tests::cuda::concurrent_uploads_keep_frozen_seeds ... ok
+test trace_codegen::tests::cuda::mixed_codecs_bound_unused_seed_capacity ... ok
+test trace_codegen::tests::canonical_wide_words_preserve_u128_carries ... ok
+test trace_codegen::tests::cuda::regrouping_and_frozen_seeds ... ok
+test trace_codegen::tests::call_load_dependencies_and_nonzero_pointer_namespace ... ok
+test trace_codegen::tests::big_uint_results_resolve_existing_list_nodes ... ok
+test trace_codegen::tests::current_blake3_bytecode_all_stages_and_negative_multiplicities ... ok
+test trace_codegen::tests::library_binding_rejects_changed_callees_and_grouping ... ok
+test trace_codegen::tests::missing_match_and_inactive_queries_are_rejected ... ok
+test trace_codegen::tests::early_returns_do_not_resolve_unexecuted_reads ... ok
+test trace_codegen::tests::scalar_rejects_noncanonical_seed_words ... ok
+test trace_codegen::tests::seed_codec_guards_and_wide_fallback ... ok
+test trace_codegen::tests::io_reads_and_shared_branch_seed_slots ... ok
+test trace_codegen::tests::branch_columns_and_grouped_member_offsets ... ok
+test trace_codegen::tests::nested_yields_compute_host_read_keys ... ok
+test trace_codegen::tests::zero_output_reads_do_not_need_seeds ... ok
+test trace_codegen::tests::strict_alias_verification_and_unconstrained_calls ... ok
+test trace_codegen::tests::current_u64_multiply_bytecode_boundaries ... ok
+test trace_codegen::tests::u32_boundaries_and_virtual_values ... ok
+test trace_codegen::tests::byte_operations_and_virtual_carries ... ok
+test trace_codegen::tests::canonical_fields_zero_inverses_and_constant_degree ... ok
+test trace_codegen::tests::cuda::maximum_tile_and_wrapped_halo ... ok
+
+test result: ok. 24 passed; 0 failed; 1 ignored; 0 measured; 75 filtered out; finished in 1.30s
+

@@ -1,0 +1,5 @@
+     Locking 1 package to latest compatible version
+      Adding multi-stark v0.1.0 (/tmp/multi-stark-gpu-trace-codegen)
+   Compiling aiur v0.1.0 (/tmp/ix-gpu-trace-codegen/crates/aiur)
+    Finished `release` profile [optimized] target(s) in 12.01s
+  Executable unittests src/lib.rs (/tmp/ix-trace-experiments-0_99hznm/cargo-target/release/deps/aiur-3cb93212d62afc80)

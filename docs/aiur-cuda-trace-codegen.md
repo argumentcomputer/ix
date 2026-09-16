@@ -1,9 +1,151 @@
 # Aiur GPU trace codegen: implementation plan
 
-Research against the local ix and multi-stark working trees, 2026-09-15,
-including the 176-byte BLAKE3 seed implementation and its completed join
-comparison. The general emitter described here is not implemented.
-Measurements below come from existing runs.
+Reviewed after the main merge on 2026-09-15: ix
+`92fa743c9950d4e0c2e13d0b820b371e914e232d` and multi-stark
+`9ba93c0b448c77b99eafe867c3078a83ee0eef2f`; Rust execution artifacts were
+regenerated in ix `dcfa650564dc0d3193eda4719503771370eb7957`. The trace planner,
+static report, Rust seed packer, scalar row emitter and CUDA emitter are
+implemented. The generated BLAKE3 performance gate and a regenerated proof
+pass. Opt-in production BLAKE3 dispatch is implemented for all three programs.
+A paired production join verifies identical proofs with comparable proving
+times: 23.49 s handwritten and 23.55 s generated. Full circuit coverage remains
+pending. The [production comparison](../bench/aiur-trace-replay-2026-09-16/README.md)
+records the single-pair limits and slower generated seed preparation.
+Current measurements are in the [CUDA validation](../bench/aiur-trace-cuda-2026-09-16/README.md).
+Production integration checks are in the
+[dispatch checkpoint](../bench/aiur-trace-production-2026-09-16/README.md).
+The earlier proof profiles below are historical evidence from before this merge.
+
+## Implementation status
+
+The compiler foundation was validated with four CPU threads; the Rust
+emission stage uses the subsequently authorized eight-thread limit. Work
+and build artifacts are isolated from the FLT checkout. The existing BLAKE3
+provider remains available; `AIUR_GPU_TRACE=generated` selects the compiled
+provider when built with `IX_CUDA_TRACE_CODEGEN=1`. See the
+[static inventory](../bench/aiur-trace-plan-2026-09-15/README.md) and
+[seed/scalar validation](../bench/aiur-trace-codegen-2026-09-16/README.md) and
+[CUDA results](../bench/aiur-trace-cuda-2026-09-16/README.md).
+All 35 planner fixtures, 19 CPU correctness tests and 26 GPU tests pass,
+plus the two-round generated BLAKE3 proof test. The earlier scalar emission
+stage type-checked all 1,220 constrained functions across the three programs;
+full production CUDA compilation remains pending. Existing execution modules
+still regenerate byte for byte.
+
+- [`TracePlan.lean`](../Ix/Aiur/Stages/TracePlan.lean) walks final bytecode,
+  resolves branch-local values to unique IDs, and records operation, default
+  inverse and continuation-merge column spans. It calls the existing
+  `Layout.opLayout` allocator, validates each continuation's shared maxima,
+  and checks the full function layout independently with `Layout.blockLayout`.
+  It also validates operand/call/yield shapes, selector allocation and the
+  grouped circuit partition.
+- The same pass reserves canonical seed words for multiplicity, inputs and
+  external results; mutually exclusive branches share seed space. Separate
+  dependency sets describe GPU row work, normal host preparation and host
+  preparation with returned-call alias checks. Live SSA values are retained
+  alongside live operations so emitted continuations bind only the values
+  preparation needs. Branch decisions that can skip continuation reads remain
+  live in host preparation.
+- [`TraceReport.lean`](../Ix/Aiur/Stages/TraceReport.lean) serializes that plan
+  with deterministic aliases, circuit/member offsets and memory/byte-table
+  shapes. The command is `ix codegen --trace-report`, optionally selecting
+  `--target ixvm`, `multi-stark` or `ix-aggr`. It uses the production grouping
+  explicitly, independent of `IX_NO_FUNCTION_GROUPS`, and writes one JSON
+  document to stdout. Ordinary Rust generation retains its existing output.
+- [`Tests/Aiur/TracePlan.lean`](../Tests/Aiur/TracePlan.lean) contains the
+  `aiur-trace-plan` fixtures for degree-sensitive columns, virtual carries,
+  branch sharing, nested yields, early returns, returned-call aliases,
+  external-read dependencies, malformed bytecode, groups and report metadata.
+  The 129-input/32-output seed fixture checks size arithmetic. Separately,
+  the real program inventory recovers BLAKE3's 533 columns and 162 canonical
+  seed words, with no CPU key arithmetic in normal preparation.
+- [`TraceCodegen.lean`](../Ix/Aiur/Stages/TraceCodegen.lean) emits read-only
+  Rust packers, direct guarded byte packers, checked packers and scalar writers for every bytecode operation
+  and control form. `ix codegen --trace-rust --target <program>` writes one
+  experimental module to stdout. Checked packing verifies each returned-call
+  alias on the selected row and reports the function, query and operation on
+  failure. Normal packing omits the alias's call-key arithmetic.
+- [`trace_codegen.rs`](../crates/aiur/src/trace_codegen.rs) resolves external
+  reads from immutable records/I/O, checks complete-library compatibility
+  including case order and unconstrained callees, and places canonical scalar
+  cells at grouped member offsets. The versioned canonical encoding in
+  [`TraceContract.lean`](../Ix/Aiur/Stages/TraceContract.lean) and its Rust
+  counterpart hashes the complete function library. Registration compares
+  the bytecode, Rust and CUDA identities and seed widths; valid circuit
+  regrouping is checked separately. The structural expected-program guard
+  remains as well. Both codecs retain an eight-byte multiplicity.
+- [`TraceCodegen` fixtures](../Tests/Aiur/TraceCodegen.lean) generate the
+  [Rust parity tests' input](../crates/aiur/src/trace_codegen/tests.rs).
+  They compare exact canonical cells with the existing `populate_row`, cover
+  external reads, shared branch spans, nested continuations, zero inverses,
+  field/u32 boundaries, grouped offsets and negative multiplicities, and use
+  the current compiler's BLAKE3 body for all eight compression stages. The
+  scalar writer needs only the seed after preparation; it has no record or
+  I/O access. CUDA fixtures cover exact cells, grouped member boundaries,
+  padded/wrapped halos, 65,537-row tiles and concurrent staging across four
+  GPUs. The current `u64_mul` bytecode also passes exact GPU parity.
+- [`TraceCuda.lean`](../Ix/Aiur/Stages/TraceCuda.lean) emits both seed codecs
+  for every operation/control form and a matching Rust registry. The CLI
+  requires an explicit function selection, e.g. `--trace-cuda --target ixvm
+  --trace-functions 33,127`; `--trace-cuda-registry` emits its companion.
+  Selected production BLAKE3/`u64_mul` sources compile for `sm_120`.
+- [`cuda.rs`](../crates/aiur/src/trace_codegen/cuda.rs) packs immutable member
+  spans and fills backend device views synchronously. One shared uploader
+  owns four bounded 16 MiB staging slots. The opt-in `cuda-trace-codegen`
+  build validates its manifests and caches each CUDA unit independently.
+  The workspace's multi-stark dependency includes the shared CUDA header and
+  Cargo include metadata. The original paired patch remains preserved with
+  the [benchmark](../bench/aiur-trace-cuda-2026-09-16/README.md).
+- `ix codegen --trace-bundle` emits the selected production CUDA units,
+  Rust writers/registries and a separate source-digest manifest for all three
+  programs; `--trace-bundle --check` checks them without writing. The current
+  selection is BLAKE3 only. Partial coverage does not weaken the complete-library
+  compatibility check. `AiurSystem` registers the provider once and shares it
+  across `on_device` systems. Uncovered circuits use CPU traces, with coverage
+  totals at registration and per-circuit debug logging. Missing or stale library
+  registration fails before proving, and requesting generated traces without
+  the build feature fails explicitly. This mode is not full strict coverage.
+- Generated BLAKE3 passes the step-2 5% microbenchmark gate: final frozen
+  medians are 8.496 versus 8.367 ms for preparation and 2.265 versus 2.392 ms
+  for synchronous upload/generation on 65,536 rows. This is comparable
+  callback performance, not an end-to-end proof speedup. The complete
+  two-round proof matches CPU-trace proof bytes, verifies, releases its
+  seeds at the barrier and rejects altered regeneration.
+- A production FLT join replay passes with both providers using the same
+  binary, GPU and eight CPU cores. Both reproduce the cached proof and exact
+  six-piece plan. Proving takes 23.494 versus 23.545 s (+0.22% generated);
+  seed preparation takes 2.332 versus 2.779 s (+19.2%). The single pair
+  supports comparable proof performance at BLAKE3 coverage, without proving
+  a speedup or utilization gain. See the
+  [replay results](../bench/aiur-trace-replay-2026-09-16/README.md).
+- Shared operation input/output metadata now lives in
+  [`Bytecode.lean`](../Ix/Aiur/Stages/Bytecode.lean). Lake's Rust input filter
+  also tracks `.cu`, `.cuh`, `.h`, `.hpp` and `trace-manifest.json` files.
+
+Report limitations are explicit: operation counts count static sites, not
+executed work; real-row weights and padded heights are `null`; timings and
+dynamic branch frequencies are unavailable. `canonical_seed_bytes` describes
+the planned full-width representation. `guarded_u8_seed_bytes` is only an
+optimistic aligned size if every payload value fits in a byte, with the
+multiplicity retained at eight bytes. The codec now checks that guard, but
+the inventory alone supplies no range proof or measured workload-weighted
+expansion ratio. Operation `repr` text is diagnostic,
+not the compatibility fingerprint.
+
+The static portion of step 0 is available in the function CSV and report
+metadata. It supports `u64_mul` as the first arithmetic target after BLAKE3:
+its standalone row has 90 columns, its canonical seed has 17 words, and
+normal preparation needs no external reads or arithmetic. Matching row
+weights and CPU packing costs remain missing from step 0. The function
+packer/scalar portion of step 1 and the generated-BLAKE3 CUDA gate in
+step 2 are implemented. Step 3 has complete opcode/control emission and a
+first production arithmetic fixture, but not full production compilation,
+weighted dispatch thresholds or resource measurements for every function.
+Production BLAKE3 registration/dispatch is implemented. Memory and byte-table
+primitives, full strict coverage, weighted coverage expansion and representative
+end-to-end comparisons beyond the BLAKE3 join pair remain. The handwritten
+provider remains available; the paired replay establishes a production
+comparison before expanding coverage.
 
 ## Recommendation
 
@@ -16,6 +158,12 @@ and CUDA row writers from that plan.
 This extends the current implementation naturally. The substantial new work
 is deriving the trace plan and preparing seeds efficiently. Changing the
 output language would leave those problems in place.
+
+The merge leaves the bytecode operations, layout allocator, reference trace
+writer, packed BLAKE3 provider and nvcc path unchanged. It changes source
+normalization, IxVM function bodies/groups, lookup constraints and proof
+validation. The architecture still applies; generated artifacts and the
+performance baseline must use the merged compiler and system together.
 
 **Completion means:** every constrained function in the compiled IxVM,
 MultiStark and aggregation programs has a generated trace writer, including
@@ -85,6 +233,15 @@ deduplication and constrained-function selection. It contains:
 | Seed schema | Logical values, encoding widths, byte offsets, alignment and variant guards |
 | Contract | Function layout, bytecode identity and seed/writer ABI version |
 
+Enter through `Source.Toplevel.compile`, which performs hygienic inlining
+and preserves left-to-right argument evaluation before lowering. Build the
+trace plan from its final bytecode. Do not bypass normalization by calling
+`checkAndSimplify` directly, or hoist external reads out of lazy branches.
+The merge fixes precisely those ordering and name-capture cases, including
+assertions/IO before continuations and early returns. Reuse the corresponding
+source fixtures when testing the generated packer. [Compiler entry][compiler-entry],
+[source normalization][normalization], [ordering fixtures][ordering-tests].
+
 Generate three products from the same plan: the Rust seed packer, a scalar
 Rust row writer and the CUDA row writer. The scalar writer isolates compiler
 errors from device errors; the existing bytecode trace builder remains the
@@ -96,6 +253,16 @@ independent column allocator. Lift/reuse `Op.outputCount` as shared bytecode
 metadata where useful, and check that its output count agrees with the
 layout step's value-stack change. Check the final planned layout against
 the layout already attached to the bytecode.
+
+At runtime, retain the `validate_lookup_shapes` and `validate_row_counts`
+checks now performed by `AiurSystem::build_on_device` before selecting a
+generated provider. Mirror their requirements in codegen diagnostics:
+constrained call input/output arities, continuation yield arities, valid
+callee bindings and enough selectors for every return/yield leaf. Consumed
+yields still allocate selectors, and an empty match is still a control node.
+These structural checks do not replace the plan's value-index and exact
+column-layout validation. [Lookup shapes][lookup-shapes],
+[control counts][control-counts], [system construction][system-build].
 
 Keep the structured target representation used by the Rust emitter. Add a
 small CUDA expression/statement formatter; reusing the Rust execution
@@ -125,8 +292,10 @@ multiplicity as a canonical `u64`, and checks Rust/CUDA sizes and offsets at
 compile time. Seed bytes fall by 86.4%. The completed join-33 comparison
 measured proving at 24.756 s versus 27.177 s without CUPTI, an 8.9% reduction,
 with the same proof and trace-piece boundaries. These are single replays,
-not a full Mathlib throughput measurement. The general compiler's BLAKE3
-acceptance target is this packed representation. [Packing benchmark][packing-benchmark].
+not a full Mathlib throughput measurement, and both used the frozen program
+before the merge. The general compiler's BLAKE3 acceptance target is this
+packed representation; measure its performance against a packed provider
+built from the same merged revision. [Packing benchmark][packing-benchmark].
 
 That shortcut needs to be recognized by the compiler. A generic packer that
 always recomputes call arguments would repeat the BLAKE3 mixing arithmetic
@@ -160,6 +329,13 @@ Recommended preparation rules:
 | Deterministic field/byte hints | Resolve on CPU only if needed by preparation | Compute using matching integer/field semantics |
 | BigUint division hint | Use the existing read-only helper to recover the two result pointers; use an established output alias when possible | Write the two pointers as witness columns |
 
+The merged IxVM IO seeder now fills its final channel arenas directly in
+parallel, with deterministic offsets and no converted intermediate buffers.
+Generated trace preparation should read these finalized arenas and copy only
+the required seed values. Rebuilding the IO buffer or restoring a second
+full field-element copy would lose that memory improvement.
+[IO preparation][io-preparation].
+
 BigUint is a concrete expensive case: its current trace helper reconstructs
 the big integers, performs division again, and resolves the recorded list
 pointers. Moving that work into a seed packer would not remove its CPU cost.
@@ -191,6 +367,14 @@ the parent's recorded output. Applying that optimization preserves the
 caller/callee lookup constraints. More complicated output relationships need
 their own analysis; final outputs should not be treated as a general-purpose
 replacement for intermediate results.
+
+In strict validation mode, check the alias on a bounded deterministic sample
+for each alias site and observed branch. Recompute the sampled call's key,
+look up its recorded result and compare canonical words with the parent's
+output. Report the function, site and row immediately on disagreement.
+This deliberately pays some CPU recomputation in validation; normal packing
+keeps the shortcut. Query-map deduplication alone does not establish the
+alias: its justification is the selected branch's unchanged terminal return.
 
 Capturing an extra execution log or putting query hash tables on the GPU
 would change the memory and runtime design substantially. Neither is needed
@@ -263,6 +447,14 @@ the shared sizes. Use those facts to emit constant column addresses instead
 of rebuilding a dynamic column interpreter inside each GPU thread.
 [Shared-layout calculation][shared-layout], [row control flow][trace-control].
 
+Check every branch's degree transitions and auxiliary/lookup usage during
+plan construction. At each `MatchContinue`, the maxima across arms must
+equal `shared_aux` and `shared_lookups` exactly, including explicit-case
+inverse columns in the default arm. Shorter arms need not use the maximum.
+Then check merge offsets and the continuation's starting degree environment.
+A matching final function width alone is insufficient to catch a shifted
+column inside one branch.
+
 Every allocated witness column remains part of the output, even if its
 value has no later program use. Dead-value elimination can remove temporary
 calculations and unnecessary record keys; it must not remove required trace
@@ -270,6 +462,29 @@ writes or change commitment bytes. Assertions, IO writes and debug operations
 have no row writes, but their inputs may still be needed elsewhere in the
 plan. Unconstrained call outputs still occupy auxiliary columns even though
 those calls do not emit a lookup.
+
+### Lookup and padding rules from the merged main
+
+Use the current circuit graph and `slot_widths` to construct shape-only lookup
+metadata. Do not derive lookup grouping from selector count or embed a copy
+of the old lookup expressions in the CUDA writer.
+
+- **Branchless has a structural definition:** exactly one member, one selector
+  and a top-level `Return` or `Yield`. A match with an empty arm can have only
+  one terminal selector while still writing different operations into a
+  shared lookup slot. `circuit_is_branchless` controls argument gating and
+  the two-lookups-per-group optimization. [Branchless check][branchless].
+- **Padding multiplicity must be zero:** function-return and memory pulls
+  now use linear multiplicity `-m`. Separate constraints require
+  `m * (1 - active_selector) = 0`. For grouped functions, use the circuit's
+  member activity expression, not just its first selector. Zero all padding
+  cells, including multiplicity, on initial generation and halo regeneration.
+  Preserve full field multiplicities on active rows. [Function constraints][function-padding],
+  [memory constraints][memory-constraints].
+
+Honest main-trace rows retain their layout, but the constraint and lookup
+graphs changed. Equal dimensions therefore do not imply compatible verifying
+keys or reusable proofs across the merge.
 
 ## Grouped functions and runtime ownership
 
@@ -290,8 +505,13 @@ sort rows by codec or branch. [Current row ordering][row-order].
 
 The generic preparation entry point needs `&IOBuffer` as well as the query
 record. The current BLAKE3-only `prepare` signature omits it. Adapt
-`prepare_shard_witness` to supply that immutable input to generated packers
+`prepared_shard_witness` to supply that immutable input to generated packers
 and dispatch every `CircuitType`, not just singleton function circuits.
+
+Build spans from the actual merged grouping table. The merge removes
+`ixvm_group_29` and changes the IxVM function library; old numeric circuit
+IDs and group counts are not a dispatch contract. Recompute the name/ID map
+from the final deduplicated library and runtime groups. [IxVM groups][function-groups].
 
 ### Memory and byte-table coverage
 
@@ -315,11 +535,39 @@ Verify this independently of the performance benefit for function circuits.
 [Memory rows][memory], [Bytes1][bytes1], [Bytes2][bytes2],
 [shard dispatch][shard-dispatch].
 
+The verifier now requires every fixed preprocessed table to be active at
+its exact height. A zero Bytes1/Bytes2 table is still 256/65,536 rows; it must
+not become an empty or omitted trace. Keep canonical circuit order separate
+from active-trace degree order. The verifier also checks that the Merkle cap
+covers every trace and that `1 + sum(active height * lookup slot count)`
+stays below the field characteristic. Reuse these checks and their fixtures
+for the generated path; they are proof-shape conditions, independent of
+seed-memory budgeting. [Height and cap checks][trace-heights],
+[lookup query bound][lookup-budget].
+
 Both CPU and CUDA row writers must consume the same frozen seed representation.
 The source must support regeneration without consulting mutable query state.
 Preserve device selection, bounded uploads, completion before returning the
 borrowed output buffer, empty circuits, and wrapped halo rows.
 [Current CUDA wrapper][cuda-wrapper], [device view][device-view].
+
+For the shared scheduler, `PreparedProve` owns the finalized record and IO
+buffer through both proving rounds; keep that ownership and the record's
+reservation alive until the batch finishes. Round-two preparation must read
+the same finalized execution. The pool's retry mechanism selects paused,
+still-executing records; `finish_execution` marks a prepared record ineligible
+for that eviction. The pool waits for retained records to drain before
+cancelling a peer to resolve mutual execution blocking. Do not move seed
+regeneration onto a scheduler lookup that could find a replacement
+execution. [Prepared ownership][prepared-owner],
+[pool lifetime][pool-lifetime].
+
+The separate `prove_record_supplier` API explicitly permits deterministic
+re-execution between rounds. If generated traces are used there, require
+identical canonical rows, query order, pointer bases and IO results for the
+saved shard plan; do not impose a batch-long record-retention requirement
+on that streaming API. Owned seed buffers still live until their consumers
+finish. [Record supplier][record-supplier].
 
 Keep the existing shape-only lookup path: the generated writer fills the
 main trace; the backend derives lookup messages from the circuit graph.
@@ -335,6 +583,9 @@ currently budgets the trace, LDE, configured reserve and an additional
 128 MiB; it does not ask the generator for its temporary device-memory
 requirement. `host_bytes()` describes retained host storage only.
 [Current admission][admission], [TraceGenerator][generator].
+The backend separately admits Merkle construction with `96 * max_lde_height`
+plus that reserve, spilling active LDEs when needed. Keep this separate
+construction check; neither admission step is a retained-tree allowance.
 
 Use one shared uploader implementation, compiled once, with four portable
 pinned slots and an explicit byte capacity per slot. A 16 MiB slot is a
@@ -383,6 +634,9 @@ does not run a Lean compiler that first needs the Rust library being built.
    duplicate kernels. Test both production grouping and singleton circuits.
    Keep emission deterministic; the environment variable disabling grouping
    must not silently change generated files. [Codegen command][codegen-command].
+   Regenerate all three execution modules and the new trace artifacts from
+   the same merged compiler. Existing local regeneration is not evidence
+   that `--check`, interpreter parity or the GPU body guard has passed.
 2. Extend `crates/aiur/build.rs` to compile the generated source manifest and
    track its files and headers. Keep CUDA feature gating, static linking and
    per-thread stream flags. For this machine, the existing architecture
@@ -396,8 +650,11 @@ does not run a Lean compiler that first needs the Rust library being built.
 4. Keep kernels and their device helpers self-contained within compilation
    units, with inline helpers included from headers. Aiur calls read seeds,
    so they do not require cross-file device calls. Partition functions into
-   modest translation units rather than spawning a compiler for every tiny
-   function. Keep the shared uploader in one implementation file.
+   modest, stable translation units rather than spawning a compiler for
+   every tiny function. Compile units incrementally, keyed by source,
+   included headers, nvcc version, flags and architecture, so changing one
+   generated unit does not recompile unrelated units. Keep the shared
+   uploader in one implementation file.
 5. Extract the backend's existing Goldilocks helpers into a shared header
    and expose its include directory through Cargo build metadata, including
    the manifest's `links` declaration needed to pass that metadata to the
@@ -417,6 +674,12 @@ the same encoding in Lean and Rust. Keep the legal grouping separate and
 validate its members, merged widths and selector offsets at registration.
 This binds packers to the correct callee query tables while allowing the
 same member writer in grouped and singleton circuits.
+
+Keep this writer-compatibility contract separate from proof-system identity.
+The current AIR/lookup graph, grouping, key and proof parameters determine
+which proofs belong to a comparison. Build lookup metadata from the validated
+runtime system; a bytecode fingerprint or unchanged 533-column BLAKE3 layout
+does not authorize reuse of a verifying key from before the merge.
 
 This stricter whole-library contract is simpler than introducing callee
 relocations immediately. Cross-program kernel deduplication can follow once
@@ -443,6 +706,14 @@ Build reusable optimizations into the trace plan:
 - Remove computations used only by a discarded record-key calculation after
   applying returned-call aliases. Keep all allocated witness writes.
 
+Use the merged `u64_mul`/`u64_mul_column` as the first arithmetic fixture after
+BLAKE3. They now use radix-`2^16` products, canonical `UnconstrainedGToBytes`
+hints and byte range checks instead of recursive `split_carry` calls. This
+exercises generic field-degree and byte-decomposition lowering without adding
+a function-specific kernel. All eight allocated byte-hint columns must still
+be written, even when only five bytes are used in reconstruction.
+[Merged limb multiplication][limb-multiplication].
+
 These are rules for bytecode patterns and value bounds, with no BLAKE3-name
 dispatch. Begin with exact generic operations and add the rules needed to
 reach the existing packed provider's performance.
@@ -456,35 +727,67 @@ operation semantics or establish the required bounds.
 
 Start with the current one-thread-per-row mapping and straight-line locals.
 Inspect compiler register, stack and spill reports for the large functions.
-Change the mapping or split a kernel only when those reports and a measured
-slowdown justify it. Keep the first vertical slice small; compiling all
-constrained functions across all three programs is a later completion gate,
-not a prerequisite for validating the compiler design.
+Include a large live-value plan in the early compiler measurements; source
+length is not a measurement of simultaneous live registers. Reserve a
+performance step for a cooperative warp-per-row writer, shared-memory
+staging or split kernels if spills dominate. Compare only the implicated
+mapping and retain the simpler mapping where it wins.
+
+Row-major scalar stores can waste memory transactions, but a byte-volume
+estimate using nominal bandwidth does not establish their actual cost.
+Measure generated-writer time and memory throughput before changing the
+layout expected by the backend. No transposed main-trace format is required
+for the first implementation.
 
 ## Implementation sequence
 
 Each step produces a reviewable result and has a concrete exit condition.
 Temporary coverage limits must be visible in the generated report.
 
+Before step 1, align the existing execution artifacts with the merged source:
+regenerate with the current compiler, run its `--check` and focused
+generated/interpreter parity fixtures, and verify actual BLAKE3 dispatch.
+The provider files are unchanged by the merge; that alone does not establish
+that newly compiled bytecode passes their structural guard.
+
 | Step | Implementation | Exit condition |
 | --- | --- | --- |
-| 1. Trace plan and CPU oracle | Expose layout annotations, model control flow and external reads, emit immutable Rust preparation and scalar rows | Exact cell parity on focused fixtures, including unequal branches, nested continuations and call-result-to-load dependencies |
-| 2. Generated BLAKE3 | Add the CUDA formatter, shared arithmetic/uploader, build manifest, registry and compatibility check; implement returned-call aliases and compact seeds | Emit the 176-byte seed and all 533 columns without a handwritten function body; match the packed provider's correctness and useful performance |
-| 3. Complete bytecode lowering | Cover every operation and control variant, including IO, stores/loads, unconstrained call outputs and BigUint hint recovery; provide full-width variants | Compile every constrained function in IxVM, MultiStark and aggregation; an unhandled opcode is a codegen error with a function/operation diagnostic |
-| 4. All circuit families | Assemble grouped spans, add memory/byte primitives, pass IO through preparation and dispatch all circuit types | Strict generated mode completes production-grouped fixtures with no unsupported-circuit fallback; row/lookup/proof bytes agree |
-| 5. Performance and replacement | Add coverage/cost reporting, optimize the most expensive generated plans, compare the two frozen workloads below, then remove the handwritten BLAKE3 body and writer | Verified proofs, complete coverage, useful wall/CPU savings and bounded memory; adding another Aiur function requires no function-specific CUDA code |
+| 0. Cost and coverage inventory | Analyze the merged bytecode before CUDA implementation: function/group widths, external-read dependencies, seed-size bounds, row weights and CPU work retained by packing | Report byte expansion and likely exposed CPU savings for the largest contributors, distinguish missing data from measured weights, and choose the coverage order |
+| 1. Trace plan and CPU oracle | Expose layout annotations, refine the inventory to exact seed schemas, emit immutable Rust preparation and scalar rows | Exact cell parity, per-branch degree/count checks, ordering fixtures and agreement with merged system validators |
+| 2. Generated BLAKE3 | Add the CUDA formatter, shared arithmetic/uploader, build manifest, registry and compatibility check; implement returned-call aliases and compact seeds | Emit the 176-byte seed and all 533 columns; exact parity and at most 5% regression in seed preparation and synchronous upload-plus-generation time against the same-revision packed provider |
+| 3. Complete bytecode lowering | Cover every operation/control variant and all three programs; start new arithmetic coverage with merged `u64_mul`; add full-width variants, incremental compilation and measured dispatch thresholds | Every constrained function has a compilable writer; unsupported opcodes are codegen errors; build cost, registers/spills and runtime eligibility are reported |
+| 4. All circuit families | Assemble grouped spans, add memory/byte primitives, pass IO through preparation and dispatch all circuit types | Strict mode has no unsupported-circuit fallback; grouped halos, padding multiplicities, fixed-table activity/heights and current proof validation agree with the reference path |
+| 5. Performance and replacement | Optimize weighted hot plans, try a cooperative mapping if measured spills require it, compare the two workload inputs below on the merged system, then remove the handwritten BLAKE3 body and writer | Verified proofs, complete coverage, useful wall/CPU savings and bounded memory; adding another Aiur function requires no function-specific CUDA code |
 
 Step 2 should retain the current provider as a temporary comparison target.
 After its replacement is validated, keep frozen benchmark binaries and the
 independent bytecode builder as references; maintaining two BLAKE3 source
 implementations would defeat the purpose of this work.
 
+The 5% limit is an engineering acceptance threshold, not a predicted speedup.
+Measure preparation and synchronous callbacks separately on identical real
+rows, padded heights, codecs, device and build settings. If a result is too
+close to normal timing variation, repeat only that comparison. If step 2
+misses this gate, stop expanding coverage and fix the generic lowering or
+runtime first; keep the existing packed provider. If the cost inventory
+shows negligible avoidable CPU work and transfer volume in the remaining
+hot circuits, defer the broad rollout instead of assuming function count
+will produce a benefit.
+
 Implement an explicit generated mode and a strict validation mode. Strict
 mode rejects missing writers, compatibility mismatches and accidental CPU
 fallbacks, with the circuit/member and reason. A normal rollout can retain
-the reference fallback. A later automatic mode may choose CPU work for tiny
-circuits when measurements justify it; that is a cost policy, not missing
-compiler coverage.
+the reference fallback. Establish automatic dispatch thresholds in step 3,
+using measured launch/packing cost, rows, width and seed expansion. A fixed
+row threshold alone ignores how different the circuits are. Strict mode
+ignores those cost thresholds to exercise every generated writer.
+
+Compile only constrained functions needed by each program, using stable
+translation units and incremental objects. Execution-module function counts
+include unconstrained code and are not a CUDA kernel count. An optional
+development build may select a reported subset for fast iteration; the full
+coverage build must compile every constrained writer. A function absent from
+one Mathlib run must not silently lose GPU support for other workloads.
 
 ### Correctness gates
 
@@ -493,20 +796,33 @@ canonical trace cell against both the generated scalar and CUDA writers;
 matching only function outputs would miss misplaced witnesses.
 
 - **Operations and branches:** exercise all opcode variants and relevant
-  field/byte boundaries, multiple default inverse witnesses, unequal branch
-  widths, nested `MatchContinue`, yields and early returns. Check both
-  final columns and layout/dependency annotations.
+  field/byte boundaries, including `EqZero(0)`, inverse-of-zero behavior,
+  `p-1` and values around `2^32`. Assert each raw device word is below `p`
+  and equals the oracle's canonical `u64` before any field conversion can
+  normalize it. A scrutinee equal to an explicit case must
+  select that case, not the default; a deliberately forged default selector
+  must fail constraints. Cover multiple default inverses, unequal branch
+  widths, nested continuations, yields and early returns. Check branch
+  maxima against shared sizes at compile time, not only on sampled paths.
 - **External values:** cover call-result-to-load chains, returned-call
   aliases, constrained and unconstrained calls, stores with nonzero pointer
   bases, IO and BigUint hints. Confirm preparation leaves the record and
-  multiplicities unchanged.
+  multiplicities unchanged. Exercise strict sampled alias comparisons and
+  failures, plus the merged source ordering/shadowing fixtures.
 - **Representation:** test compact guards and full-width variants, large
   canonical multiplicities, explicit padding, empty spans, power-of-two
   padding, partial ranges and wrapped lookup halos. Function rows filter
   zero multiplicities; memory pointer intervals retain them.
 - **Groups and primitives:** use different member input/auxiliary widths and
-  selector counts. Check member boundaries and fixed byte-table dimensions,
-  including unassigned zero tables and memory segment boundaries.
+  selector counts. Request a lookup halo across a member boundary, a tile
+  crossing real rows into padding, and a halo wrapping padded height back
+  to the first member. Check fixed byte-table dimensions/activity, including
+  unassigned zero tables and memory segment boundaries.
+- **Merged verifier contracts:** run the acceptance, branchless, byte-shape,
+  lookup-shape/budget, control-count and cap-coverage fixtures with generated
+  rows where applicable. Include a one-selector match with an empty arm,
+  inactive rows with forged multiplicity and malformed public claim arities.
+  Require rejection by the current verifier. [Verifier regressions][verifier-tests].
 - **Compatibility and build:** mutate bytecode, callee bindings, layouts and
   ABI versions. Test canonical fingerprint agreement between Lean and Rust,
   deterministic `codegen --check`, CUDA/header-only rebuild tracking and
@@ -515,18 +831,48 @@ matching only function outputs would miss misplaced witnesses.
   tests and verify staging is released after failures. Producers must not
   allocate GPU memory. Exercise both proving rounds, release at the barrier,
   and lookup regeneration after forced LDE spill, including tiny halo tiles.
+  Hold a prepared record through competing pool growth requests; its
+  reservation and round-two seed contents must stay unchanged. Separately,
+  ensure a cancelled execution never hands a partial record to preparation
+  and a retry cannot replace a record already used by round one.
 
 Finish with the existing sharded proof test and byte-for-byte proof comparison
-under identical settings. These are compiler/runtime correctness gates;
-do not substitute a large Mathlib run for the focused tests.
+under the same merged system and identical settings. Old proof addresses
+are not expected outputs for the changed AIR/program. These are compiler/runtime
+correctness gates; do not substitute a large Mathlib run for the focused tests.
 
 ### Coverage and bounded performance measurements
 
 Emit a static report mapping program, circuit/member IDs and stable semantic
 names to main width, seed stride, external-read count and codec variants.
 Include constrained functions with no rows in a particular test workload.
-Use this map to identify the frozen claim's expensive circuits 12, 106, 107,
-42 and 119 instead of guessing their names from numeric IDs.
+This report belongs in step 0 and is refined as the trace plan is built.
+The frozen claim's expensive circuits 12, 106, 107, 42 and 119 are identifiers
+in the old grouped system. Resolve them against that exact old library to
+interpret the profile, then map semantic functions to the merged library;
+do not use those numbers directly in the new build.
+
+For each current circuit, estimate one-generation expanded bytes as
+`8 * padded_height * circuit_width` and seed bytes as the sum of
+`real_member_rows * member_seed_stride`. Report their ratio, zero-padding
+cost and repeated uploads for the two rounds and lookup halos. BLAKE3's
+real-row ratio is `4264 / 176`, about **24.2x**. A ratio near one implies
+little transfer-volume saving; CPU arithmetic/allocation savings must then
+justify generation. Memory and byte tables need their own accounting.
+
+The first inventory can report conservative full-width seed bounds and
+optimistic checked compact bounds. Exact strides require returned-call alias
+and external-read dependency analysis; column counts alone cannot supply
+them. Track the computation needed to form record keys as well as the values
+copied into the seed. Aggregate by bytes and CPU cost, not by function count
+or an unweighted mean of ratios.
+
+Use actual row fields from matching execution/profile data. In the existing
+`analysis.json`, `cpu_circuits[].count` counts timed span instances, not rows;
+the function witness spans record a separate `rows` field. Group totals
+also do not reveal the member distribution. Mark unavailable member weights
+explicitly. Refresh weights on the merged program because the new limb
+arithmetic, let inference and grouping change the workload.
 
 At runtime record, per circuit/member:
 
@@ -537,12 +883,22 @@ At runtime record, per circuit/member:
 - Exposed consumer waits and GPU kernel-idle intervals, rather than treating
   all overlapping CPU trace time as available wall-time savings.
 
-Use two workloads: the existing representative **claim 9** and **join 33**.
-Compare the frozen packed BLAKE3 baseline against the complete generated path
-using the same records, trace-piece boundaries, device, compiler settings and
-concurrency. Run a focused profile for attribution and an ordinary timed
-replay for wall time; repeat only if a failure or an ambiguous result warrants
-it. No shard-count or budget sweep is needed for this comparison.
+Use two workload inputs: the existing representative **claim 9** and
+**join 33**, with their manifest/cache identity recorded. Re-execute the claim
+under the merged program and establish a same-revision packed BLAKE3 baseline.
+For the join, use child proofs accepted by the rebuilt recursive verifier;
+do not assume old cached proofs or keys are compatible across the merge.
+If rebuilding the original join's children is costly, use one existing
+compatible join of comparable size and record the substitution.
+
+Within each pair, use the same finalized record/IO, system/key, trace-piece
+boundaries, device, compiler settings and concurrency. Confirm dispatch and
+keep a separate cache namespace for the changed system. Compare provider
+selection within that revision; comparing a frozen old executable directly
+with a merged generated executable would mix compiler and GPU effects.
+Run a focused profile for attribution and an ordinary timed replay for wall
+time; repeat only if a failure or ambiguous result warrants it. No full
+Mathlib proof, shard-count sweep or budget sweep is needed for this gate.
 
 Report proof wall time, CPU time, transfer volume, peak host/device memory,
 seed-preparation cost and compiler resource reports together. Track build time
@@ -554,7 +910,7 @@ generation. A faster row kernel alone does not meet that performance gate.
 
 Broader trace generation is the best-supported next direction, but existing
 data does not establish that it will raise whole-run utilization to 90%.
-The representative claim profile predates packed seeds:
+The representative claim profile predates packed seeds and the main merge:
 
 | Observation | Implication |
 | --- | --- |
@@ -572,6 +928,18 @@ The completed packed-seed experiment gives a concrete scale: an 86.4%
 reduction in BLAKE3 seed traffic produced an 8.9% reduction in join proving
 time, with unchanged peak live device allocations. That supports the direction
 without implying a proportional utilization increase. [Packing benchmark][packing-benchmark].
+The earlier Init pair measured 304.11 s versus 286.06 s, a 5.93% end-to-end
+reduction for BLAKE3 generation alone. Neither experiment measures complete
+generated-function coverage. [Init comparison][init-benchmark].
+
+There is no measured 10–15% ceiling for full coverage. Stage-one commitment
+includes seed/main-trace transport and generation: its kernel-idle intervals
+cannot all be classified as unaffected host work. The packing comparison
+already reduced that phase from 14.891 s to 13.232 s in the profiled join.
+Conversely, FRI/opening gaps are not directly removed by trace generation.
+Use the weighted cost inventory and a merged-build profile to estimate the
+remaining benefit; keep the numerical gate at step 2 tied to the available
+like-for-like provider comparison.
 
 As a rough illustration, if the claim's kernel time stayed at 37.13 s,
 90% busy time would require proving to finish in about 41.3 s. That removes
@@ -590,35 +958,54 @@ proofs need explicit memory admission: the representative claim's 63.63 GiB
 live peak would total 127.26 GiB if duplicated, exceeding the device capacity.
 That concurrency work is separate from the compiler and need not block it.
 
-[execution-emitter]: /home/sam/repos/ix/Ix/Aiur/Stages/Codegen.lean:375
-[trace-ops]: /home/sam/repos/ix/crates/aiur/src/trace.rs:440
-[guard]: /home/sam/repos/ix/crates/aiur/src/gpu_trace/mod.rs:66
-[constraints]: /home/sam/repos/ix/crates/aiur/src/constraints.rs:302
-[generator]: /home/sam/repos/multi-stark/src/witness.rs:9
-[recovery]: /home/sam/repos/multi-stark/cuda/kernels.cu:3384
-[seeds]: /home/sam/repos/ix/crates/aiur/src/gpu_trace/mod.rs:78
-[tail-call]: /home/sam/repos/ix/crates/aiur/src/gpu_trace/blake3_body.rs:753
-[querymap]: /home/sam/repos/ix/crates/aiur/src/querymap.rs:249
-[biguint]: /home/sam/repos/ix/crates/aiur/src/execute.rs:1251
-[layout-ops]: /home/sam/repos/ix/Ix/Aiur/Compiler/Layout.lean:158
-[output-count]: /home/sam/repos/ix/Ix/Aiur/Stages/Codegen.lean:335
-[shared-layout]: /home/sam/repos/ix/Ix/Aiur/Compiler/Lower.lean:392
-[trace-control]: /home/sam/repos/ix/crates/aiur/src/trace.rs:332
-[circuit-layout]: /home/sam/repos/ix/crates/aiur/src/bytecode.rs:13
-[row-order]: /home/sam/repos/ix/crates/aiur/src/trace.rs:188
-[memory]: /home/sam/repos/ix/crates/aiur/src/memory.rs:115
-[bytes1]: /home/sam/repos/ix/crates/aiur/src/gadgets/bytes1.rs:157
-[bytes2]: /home/sam/repos/ix/crates/aiur/src/gadgets/bytes2.rs:284
-[shard-dispatch]: /home/sam/repos/ix/crates/aiur/src/shard.rs:349
-[cuda-wrapper]: /home/sam/repos/ix/crates/aiur/cuda/blake3_trace.cu:149
-[device-view]: /home/sam/repos/multi-stark/src/cuda/mod.rs:248
-[runtime-doc]: /home/sam/repos/ix/docs/aiur-gpu-trace-generation.md
-[admission]: /home/sam/repos/multi-stark/src/cuda/witness.rs:75
-[codegen-command]: /home/sam/repos/ix/Ix/Cli/CodegenCmd.lean:70
-[build]: /home/sam/repos/ix/crates/aiur/build.rs:34
-[lake-build]: /home/sam/repos/ix/lakefile.lean:78
-[cuda-writer]: /home/sam/repos/ix/crates/aiur/cuda/blake3_trace.cu:74
-[field]: /home/sam/repos/multi-stark/cuda/kernels.cu:80
-[byte-ops]: /home/sam/repos/ix/crates/aiur/src/gadgets/bytes2.rs:449
-[profile]: /home/sam/repos/ix/bench/prover-profile-2026-09-15/README.md
-[packing-benchmark]: /home/sam/repos/ix/bench/blake3-seeds-2026-09-15/README.md
+[execution-emitter]: ../Ix/Aiur/Stages/Codegen.lean#L694
+[trace-ops]: ../crates/aiur/src/trace.rs#L440
+[guard]: ../crates/aiur/src/gpu_trace/mod.rs#L66
+[constraints]: ../crates/aiur/src/constraints.rs#L313
+[generator]: https://github.com/argumentcomputer/multi-stark/blob/9ba93c0b448c77b99eafe867c3078a83ee0eef2f/src/witness.rs#L9
+[recovery]: https://github.com/argumentcomputer/multi-stark/blob/9ba93c0b448c77b99eafe867c3078a83ee0eef2f/cuda/kernels.cu#L3384
+[seeds]: ../crates/aiur/src/gpu_trace/mod.rs#L78
+[tail-call]: ../crates/aiur/src/gpu_trace/blake3_body.rs#L753
+[querymap]: ../crates/aiur/src/querymap.rs#L249
+[biguint]: ../crates/aiur/src/execute.rs#L1251
+[layout-ops]: ../Ix/Aiur/Compiler/Layout.lean#L158
+[output-count]: ../Ix/Aiur/Stages/Bytecode.lean#L79
+[shared-layout]: ../Ix/Aiur/Compiler/Lower.lean#L392
+[trace-control]: ../crates/aiur/src/trace.rs#L332
+[circuit-layout]: ../crates/aiur/src/bytecode.rs#L13
+[row-order]: ../crates/aiur/src/trace.rs#L188
+[memory]: ../crates/aiur/src/memory.rs#L115
+[bytes1]: ../crates/aiur/src/gadgets/bytes1.rs#L157
+[bytes2]: ../crates/aiur/src/gadgets/bytes2.rs#L284
+[shard-dispatch]: ../crates/aiur/src/shard.rs#L349
+[cuda-wrapper]: ../crates/aiur/cuda/blake3_trace.cu#L149
+[device-view]: https://github.com/argumentcomputer/multi-stark/blob/9ba93c0b448c77b99eafe867c3078a83ee0eef2f/src/cuda/mod.rs#L248
+[runtime-doc]: ../docs/aiur-gpu-trace-generation.md
+[admission]: https://github.com/argumentcomputer/multi-stark/blob/9ba93c0b448c77b99eafe867c3078a83ee0eef2f/src/cuda/witness.rs#L75
+[codegen-command]: ../Ix/Cli/CodegenCmd.lean#L145
+[build]: ../crates/aiur/build.rs#L34
+[lake-build]: ../lakefile.lean#L78
+[cuda-writer]: ../crates/aiur/cuda/blake3_trace.cu#L74
+[field]: https://github.com/argumentcomputer/multi-stark/blob/9ba93c0b448c77b99eafe867c3078a83ee0eef2f/cuda/kernels.cu#L80
+[byte-ops]: ../crates/aiur/src/gadgets/bytes2.rs#L449
+[profile]: ../bench/prover-profile-2026-09-15/README.md
+[packing-benchmark]: ../bench/blake3-seeds-2026-09-15/README.md
+[compiler-entry]: ../Ix/Aiur/Compiler.lean#L193
+[normalization]: ../Ix/Aiur/Stages/Source.lean#L995
+[ordering-tests]: ../Tests/Aiur/Cross.lean#L1245
+[lookup-shapes]: ../crates/aiur/src/lookup_shapes.rs#L103
+[control-counts]: ../crates/aiur/src/row_counts.rs#L76
+[system-build]: ../crates/aiur/src/synthesis.rs#L245
+[io-preparation]: ../crates/ixvm-codegen/src/aiur_ixvm_witness.rs#L115
+[branchless]: ../crates/aiur/src/constraints.rs#L143
+[function-padding]: ../crates/aiur/src/constraints.rs#L182
+[memory-constraints]: ../crates/aiur/src/memory.rs#L43
+[function-groups]: ../Ix/IxVM/FunctionGroups.lean
+[trace-heights]: ../crates/aiur/src/trace_heights.rs
+[lookup-budget]: ../crates/aiur/src/lookup_budget.rs
+[prepared-owner]: ../crates/aiur/src/synthesis.rs#L111
+[pool-lifetime]: ../crates/aiur/src/record_pool.rs#L194
+[record-supplier]: ../crates/aiur/src/synthesis.rs#L589
+[limb-multiplication]: ../Ix/IxVM/Kernel/Klimbs.lean#L274
+[verifier-tests]: ../crates/aiur/src/synthesis/tests
+[init-benchmark]: ../bench/gpu-trace-regenerate-2026-09-15/README.md

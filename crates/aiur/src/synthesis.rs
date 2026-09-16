@@ -124,6 +124,8 @@ pub struct AiurSystem {
   /// Shared with the systems [`Self::on_device`] derives for other GPUs,
   /// so the bytecode crosses the FFI once and is never copied.
   toplevel: std::sync::Arc<Toplevel>,
+  #[cfg(feature = "cuda")]
+  pub(crate) trace_provider: std::sync::Arc<crate::gpu_trace::TraceProvider>,
   // perhaps remove the key from the system in verifier only mode?
   key: ProverKey<AiurConfig>,
   /// The parameters the system's config was built from, kept for the
@@ -221,10 +223,17 @@ impl AiurSystem {
     commitment_parameters: CommitmentParameters,
     fri_parameters: FriParameters,
   ) -> Self {
+    #[cfg(not(feature = "cuda"))]
+    assert!(
+      std::env::var("AIUR_GPU_TRACE").as_deref() != Ok("generated"),
+      "AIUR_GPU_TRACE=generated requires the cuda-trace-codegen feature (IX_CUDA_TRACE_CODEGEN=1)"
+    );
     Self::build_on_device(
       std::sync::Arc::new(toplevel),
       commitment_parameters,
       fri_parameters,
+      None,
+      #[cfg(feature = "cuda")]
       None,
     )
   }
@@ -239,6 +248,8 @@ impl AiurSystem {
       self.commitment_parameters,
       self.fri_parameters,
       Some(device_id),
+      #[cfg(feature = "cuda")]
+      Some(std::sync::Arc::clone(&self.trace_provider)),
     )
   }
 
@@ -247,9 +258,18 @@ impl AiurSystem {
     commitment_parameters: CommitmentParameters,
     fri_parameters: FriParameters,
     device_id: Option<i32>,
+    #[cfg(feature = "cuda")] trace_provider: Option<
+      std::sync::Arc<crate::gpu_trace::TraceProvider>,
+    >,
   ) -> Self {
     toplevel.validate_lookup_shapes().expect("invalid Aiur lookup shapes");
     toplevel.validate_row_counts().expect("invalid Aiur control counts");
+    #[cfg(feature = "cuda")]
+    let trace_provider = trace_provider.unwrap_or_else(|| {
+      std::sync::Arc::new(crate::gpu_trace::TraceProvider::from_env(
+        toplevel.clone(),
+      ))
+    });
     let mut circuit_inputs: Vec<CircuitInputs<G>> = Vec::new();
     let mut slot_widths: Vec<Vec<usize>> = Vec::new();
 
@@ -324,6 +344,8 @@ impl AiurSystem {
       system,
       key,
       toplevel,
+      #[cfg(feature = "cuda")]
+      trace_provider,
       commitment_parameters,
       fri_parameters,
       slot_widths,
@@ -1257,10 +1279,46 @@ mod tests {
   #[cfg(feature = "cuda")]
   #[test]
   fn gpu_blake3_regenerated_batch_matches_cpu() {
+    blake3_regenerated_batch(false);
+  }
+
+  #[cfg(feature = "cuda-trace-codegen")]
+  #[test]
+  fn codegen_blake3_regenerated_batch_matches_cpu() {
+    blake3_regenerated_batch(true);
+  }
+
+  #[cfg(feature = "cuda")]
+  fn blake3_regenerated_batch(codegen: bool) {
     use multi_stark::p3_matrix::Matrix;
     use multi_stark::witness::{PreparedWitness, TraceSource};
     let (cp, fp) = test_parameters();
-    let system = AiurSystem::build(crate::gpu_trace::tests::toplevel(), cp, fp);
+    let mut system =
+      AiurSystem::build(crate::gpu_trace::tests::toplevel(), cp, fp);
+    let provider = crate::gpu_trace::TraceProvider::Blake3;
+    #[cfg(feature = "cuda-trace-codegen")]
+    let provider = if codegen {
+      crate::gpu_trace::TraceProvider::Generated(
+        crate::trace_codegen::tests::blake3_cuda::CUDA
+          .register(
+            &crate::trace_codegen::tests::blake3::PROGRAM,
+            system.toplevel.clone(),
+          )
+          .unwrap(),
+      )
+    } else {
+      provider
+    };
+    #[cfg(not(feature = "cuda-trace-codegen"))]
+    assert!(!codegen);
+    system.trace_provider = std::sync::Arc::new(provider);
+    if codegen {
+      let other = system.on_device(0);
+      assert!(std::sync::Arc::ptr_eq(
+        &system.trace_provider,
+        &other.trace_provider,
+      ));
+    }
     let mut io = empty_io_buffer();
     let mut input = vec![G::ZERO];
     input.extend((0..128).map(|i| G::from_usize((i * 37 + 19) % 256)));
@@ -1276,25 +1334,12 @@ mod tests {
     claim.extend(input);
     claim.extend(output);
     let claims = vec![vec![claim.clone()], vec![]];
-    let build = |shard: usize, generated: bool| {
-      let mut witness: PreparedWitness<G> =
-        system.shard_witness(&record, &io, &plan, &index, shard).into();
+    let build = |shard: usize, generated: bool| -> PreparedWitness<G> {
       if generated {
-        let range = &plan.shards[shard].rows[0];
-        let (source, lookups) = crate::gpu_trace::prepare(
-          system.toplevel(),
-          0,
-          &record,
-          &system.slot_arg_widths(0),
-          (0, range.start),
-          (0, range.end),
-          range.len(),
-        )
-        .unwrap();
-        witness.traces[0] = source;
-        witness.lookups[0] = lookups;
+        system.prepared_shard_witness(&record, &io, &plan, &index, shard)
+      } else {
+        system.shard_witness(&record, &io, &plan, &index, shard).into()
       }
-      witness
     };
     let witness = build(0, true);
     let TraceSource::Generated(source) = &witness.traces[0] else {

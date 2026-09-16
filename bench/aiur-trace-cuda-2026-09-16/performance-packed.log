@@ -1,0 +1,11 @@
+
+running 1 test
+test trace_codegen::tests::cuda::blake3_performance_gate ... upload_handwritten: rows=65536, median_ms=2.4194, samples_ms=[2.3733880000000003, 2.39642, 2.396503, 2.402683, 2.4194400000000003, 2.420582, 2.427247, 2.4274829999999996, 2.427574]
+upload_generated: rows=65536, median_ms=2.2688, samples_ms=[2.247034, 2.259626, 2.261869, 2.266691, 2.2688360000000003, 2.275608, 2.280319, 2.288198, 2.305585]
+prepare_handwritten: rows=65536, median_ms=8.9932, samples_ms=[8.731602, 8.976398999999999, 8.983717, 8.987169, 8.993165, 8.996709000000001, 8.998199999999999, 8.99985, 9.043995]
+prepare_generated: rows=65536, median_ms=8.5099, samples_ms=[8.476424, 8.480694, 8.486439, 8.494458, 8.509862, 8.510644, 8.519309, 8.536062000000001, 8.550106]
+upload_ratio=0.9378, preparation_ratio=0.9463
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 93 filtered out; finished in 0.53s
+

@@ -1,0 +1,25 @@
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function '_ZN10trace_ixvm15kernel_ixvm_127ILb0EEEvPKhmmN10aiur_trace6LayoutEPmPj' for 'sm_120'
+ptxas info    : Function properties for _ZN10trace_ixvm15kernel_ixvm_127ILb0EEEvPKhmmN10aiur_trace6LayoutEPmPj
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 62 registers, used 0 barriers
+ptxas info    : Compile time = 64.286 ms
+ptxas info    : Compiling entry function '_ZN10trace_ixvm15kernel_ixvm_127ILb1EEEvPKhmmN10aiur_trace6LayoutEPmPj' for 'sm_120'
+ptxas info    : Function properties for _ZN10trace_ixvm15kernel_ixvm_127ILb1EEEvPKhmmN10aiur_trace6LayoutEPmPj
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 48 registers, used 0 barriers
+ptxas info    : Compile time = 67.892 ms
+ptxas info    : Compiling entry function '_ZN10trace_ixvm14kernel_ixvm_33ILb0EEEvPKhmmN10aiur_trace6LayoutEPmPj' for 'sm_120'
+ptxas info    : Function properties for _ZN10trace_ixvm14kernel_ixvm_33ILb0EEEvPKhmmN10aiur_trace6LayoutEPmPj
+    160 bytes stack frame, 176 bytes spill stores, 208 bytes spill loads
+ptxas info    : Used 254 registers, used 0 barriers, 160 bytes cumulative stack size
+ptxas info    : Compile time = 240.631 ms
+ptxas info    : Function properties for _ZN49_INTERNAL_c937cdab_18_ixvm_blake3_mul_cu_6b96c13910aiur_trace7inverseEm
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Compiling entry function '_ZN10trace_ixvm14kernel_ixvm_33ILb1EEEvPKhmmN10aiur_trace6LayoutEPmPj' for 'sm_120'
+ptxas info    : Function properties for _ZN10trace_ixvm14kernel_ixvm_33ILb1EEEvPKhmmN10aiur_trace6LayoutEPmPj
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 178 registers, used 0 barriers
+ptxas info    : Compile time = 265.529 ms
+ptxas info    : Function properties for _ZN49_INTERNAL_c937cdab_18_ixvm_blake3_mul_cu_6b96c13910aiur_trace7inverseEm
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads

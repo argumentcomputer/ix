@@ -1,0 +1,10 @@
+crates/aiur/src/trace_codegen/programs/ixvm.rs: 1193063 bytes
+crates/aiur/src/trace_codegen/programs/ixvm_cuda.rs: 8308 bytes
+crates/aiur/cuda/generated/production/ixvm.cu: 71743 bytes
+crates/aiur/src/trace_codegen/programs/multi_stark.rs: 555154 bytes
+crates/aiur/src/trace_codegen/programs/multi_stark_cuda.rs: 3470 bytes
+crates/aiur/cuda/generated/production/multi_stark.cu: 71812 bytes
+crates/aiur/src/trace_codegen/programs/ix_aggr.rs: 558108 bytes
+crates/aiur/src/trace_codegen/programs/ix_aggr_cuda.rs: 3622 bytes
+crates/aiur/cuda/generated/production/ix_aggr.cu: 71770 bytes
+crates/aiur/cuda/generated/production/trace-manifest.json: 1049 bytes

@@ -1,0 +1,4 @@
+{"event":"new","fields":{"slot":"33"},"id":1,"name":"aiur/replay","parent":null,"pid":1593492,"target":"ix_ffi::aiur::aggregate","tid":"1593496","ts_ns":1789532346807754517}
+{"event":"enter","id":1,"pid":1593492,"tid":"1593496","ts_ns":1789532346807784524}
+{"event":"exit","id":1,"pid":1593492,"tid":"1593496","ts_ns":1789532346807813020}
+{"event":"close","id":1,"pid":1593492,"tid":"1593496","ts_ns":1789532346807815082}

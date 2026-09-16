@@ -354,11 +354,7 @@ impl AiurSystem {
     index: &RowIndex,
     shard: usize,
   ) -> multi_stark::witness::PreparedWitness<G> {
-    #[cfg(feature = "cuda")]
-    let generated = crate::gpu_trace::enabled();
-    #[cfg(not(feature = "cuda"))]
-    let generated = false;
-    self.prepare_shard_witness(record, io_buffer, plan, index, shard, generated)
+    self.prepare_shard_witness(record, io_buffer, plan, index, shard, true)
   }
 
   fn prepare_shard_witness(
@@ -385,10 +381,11 @@ impl AiurSystem {
         if _generated {
           if let CircuitType::Function { idx } = circuit_type {
             let (start, end) = index.queries(circuit_idx, &range);
-            if let Some(prepared) = crate::gpu_trace::prepare(
+            if let Some(prepared) = self.trace_provider.prepare(
               self.toplevel(),
               idx,
               record,
+              io_buffer,
               &slot_arg_widths,
               start,
               end,

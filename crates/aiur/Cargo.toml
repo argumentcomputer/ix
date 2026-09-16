@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+blake3 = { workspace = true }
 bincode = { version = "2", features = ["serde"] }
 hashbrown = { workspace = true }
 indexmap = { workspace = true }
@@ -16,6 +17,10 @@ rustc-hash = { workspace = true }
 tracing = { workspace = true }
 tracing-texray = { workspace = true }
 
+[build-dependencies]
+blake3 = { workspace = true }
+serde_json = { workspace = true }
+
 [dev-dependencies]
 # Exercise the native MMCS at the same Plonky3 revision as multi-stark.
 p3-blake3 = { git = "https://github.com/Plonky3/Plonky3", rev = "3152b14a89067c83775a8076cc262ffc48a1fd7c" }
@@ -26,6 +31,7 @@ p3-symmetric = { git = "https://github.com/Plonky3/Plonky3", rev = "3152b14a8906
 default = []
 parallel = ["multi-stark/parallel"]
 cuda = ["multi-stark/cuda"]
+cuda-trace-codegen = ["cuda"]
 
 [lints]
 workspace = true

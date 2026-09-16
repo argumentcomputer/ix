@@ -37,37 +37,125 @@ fn main() {
   let library = out_dir.join("libaiur_trace_cuda.a");
   let architectures = cuda_architectures(&nvcc);
 
-  let mut command = Command::new(&nvcc);
-  command
-    .arg("--lib")
-    .arg("--std=c++17")
-    .arg("--cudart=static")
-    .arg("--default-stream=per-thread")
-    .arg("-O3")
-    .arg("-lineinfo")
-    .arg("--compiler-options=-fPIC")
-    .arg("-o")
-    .arg(&library)
-    .arg("cuda/blake3_trace.cu");
-
+  let mut sources = vec![PathBuf::from("cuda/blake3_trace.cu")];
+  let mut includes = vec![PathBuf::from("cuda")];
+  let mut headers = Vec::new();
+  if env::var_os("CARGO_FEATURE_CUDA_TRACE_CODEGEN").is_some() {
+    let include = env::var_os("DEP_MULTI_STARK_CUDA_INCLUDE")
+      .expect("cuda-trace-codegen requires multi-stark's shared CUDA field header metadata");
+    includes.push(PathBuf::from(&include));
+    headers.extend([
+      PathBuf::from("cuda/trace_runtime.cuh"),
+      PathBuf::from("cuda/trace_primitives.cuh"),
+      PathBuf::from(include).join("goldilocks.cuh"),
+    ]);
+    sources.push(PathBuf::from("cuda/trace_runtime.cu"));
+    for manifest_path in [
+      "cuda/trace-manifest.json",
+      "cuda/generated/production/trace-manifest.json",
+    ] {
+      println!("cargo:rerun-if-changed={manifest_path}");
+      let manifest: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(manifest_path).expect("missing trace manifest"),
+      )
+      .expect("invalid trace manifest");
+      assert_eq!(
+        manifest["abi"].as_u64(),
+        Some(1),
+        "unsupported trace manifest ABI"
+      );
+      for unit in manifest["units"].as_array().expect("manifest units") {
+        let path =
+          PathBuf::from(unit["source"].as_str().expect("CUDA unit source"));
+        assert!(
+          path
+            .components()
+            .all(|c| matches!(c, std::path::Component::Normal(_)))
+            && path.starts_with("cuda/generated")
+            && path.extension().is_some_and(|e| e == "cu"),
+          "CUDA unit path must be inside cuda/generated"
+        );
+        let bytes = std::fs::read(&path).expect("missing generated CUDA unit");
+        let digest: Vec<u8> = serde_json::from_value(unit["digest"].clone())
+          .expect("CUDA unit digest");
+        assert_eq!(
+          blake3::hash(&bytes).as_bytes().as_slice(),
+          digest,
+          "generated CUDA unit differs from its manifest: {}",
+          path.display()
+        );
+        assert!(!sources.contains(&path), "duplicate CUDA unit");
+        sources.push(path);
+      }
+    }
+  }
+  let mut common = vec![
+    "--std=c++17".to_owned(),
+    "--cudart=static".to_owned(),
+    "--default-stream=per-thread".to_owned(),
+    "-O3".to_owned(),
+    "-lineinfo".to_owned(),
+    "--compiler-options=-fPIC".to_owned(),
+    "--ptxas-options=-v".to_owned(),
+  ];
   for architecture in &architectures {
-    command.arg(format!(
+    common.push(format!(
       "-gencode=arch=compute_{architecture},code=sm_{architecture}"
     ));
   }
-  // Emit native cubins only. A toolkit can produce PTX newer than the
-  // installed driver understands even when both support the GPU's native
-  // ISA (for example nvcc 13.3 with a CUDA-13.2-capable production
-  // driver). In that case the runtime may select the incompatible PTX and
-  // reject an otherwise usable exact-architecture cubin with error 222.
-
-  let status = command.status().unwrap_or_else(|error| {
-    panic!(
-      "failed to execute {:?}: {error}; install the CUDA toolkit or set NVCC",
-      nvcc
-    )
-  });
-  assert!(status.success(), "nvcc failed with status {status}");
+  // Exact-architecture cubins avoid PTX newer than the installed driver.
+  let version = Command::new(&nvcc)
+    .arg("--version")
+    .output()
+    .expect("failed to query nvcc version");
+  assert!(version.status.success(), "nvcc --version failed");
+  let mut key = blake3::Hasher::new();
+  key.update(&version.stdout);
+  key.update(nvcc.as_encoded_bytes());
+  for arg in &common {
+    key.update(arg.as_bytes());
+    key.update(&[0]);
+  }
+  for include in &includes {
+    key.update(include.as_os_str().as_encoded_bytes());
+    key.update(&[0]);
+  }
+  for header in &headers {
+    println!("cargo:rerun-if-changed={}", header.display());
+    key.update(&std::fs::read(header).expect("missing CUDA header"));
+  }
+  let mut objects = Vec::new();
+  for source in sources {
+    println!("cargo:rerun-if-changed={}", source.display());
+    let mut hash = key.clone();
+    hash.update(&std::fs::read(&source).expect("missing CUDA source"));
+    let object = out_dir.join(format!("{}.o", hash.finalize().to_hex()));
+    if !object.is_file() {
+      let mut command = Command::new(&nvcc);
+      command.args(&common);
+      for include in &includes {
+        command.arg("-I").arg(include);
+      }
+      command.arg("-c").arg(&source).arg("-o").arg(&object);
+      let output = command.output().expect("failed to execute nvcc");
+      std::io::Write::write_all(&mut std::io::stderr(), &output.stderr)
+        .unwrap();
+      if !output.status.success() {
+        let _ = std::fs::remove_file(&object);
+        panic!("nvcc failed for {}: {}", source.display(), output.status);
+      }
+    }
+    objects.push(object);
+  }
+  let _ = std::fs::remove_file(&library);
+  let status = Command::new(&nvcc)
+    .arg("--lib")
+    .arg("-o")
+    .arg(&library)
+    .args(&objects)
+    .status()
+    .expect("failed to archive CUDA objects");
+  assert!(status.success(), "nvcc archive failed: {status}");
 
   println!("cargo:rustc-link-search=native={}", out_dir.display());
   println!("cargo:rustc-link-lib=static=aiur_trace_cuda");

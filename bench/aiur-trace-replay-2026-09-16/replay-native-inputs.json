@@ -1,0 +1,2537 @@
+{
+  "files": {
+    "/home/sam/repos/ix/.lake/packages/Cli/Cli/Basic.lean": {
+      "kind": "source",
+      "expected": "47afe12fe110e74c",
+      "module": "Cli/Basic.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/Cli/.lake/build/ir/Cli/Basic.c": {
+      "kind": "c",
+      "expected": "ab7c441eaa750741",
+      "module": "Cli/Basic.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/Cli/.lake/build/ir/Cli/Basic.c.o.export": {
+      "kind": "object",
+      "expected": "ae03407e08370160",
+      "module": "Cli/Basic.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/Cli/Cli/Extensions.lean": {
+      "kind": "source",
+      "expected": "11359fb361876632",
+      "module": "Cli/Extensions.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/Cli/.lake/build/ir/Cli/Extensions.c": {
+      "kind": "c",
+      "expected": "b46167dd0a44c68b",
+      "module": "Cli/Extensions.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/Cli/.lake/build/ir/Cli/Extensions.c.o.export": {
+      "kind": "object",
+      "expected": "b206f9af6cbd5c7d",
+      "module": "Cli/Extensions.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/Cli/Cli.lean": {
+      "kind": "source",
+      "expected": "d3d26a644a549a19",
+      "module": "Cli.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/Cli/.lake/build/ir/Cli.c": {
+      "kind": "c",
+      "expected": "f7af6724f389db8a",
+      "module": "Cli.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/Cli/.lake/build/ir/Cli.c.o.export": {
+      "kind": "object",
+      "expected": "f20020714fa9bd28",
+      "module": "Cli.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/Common.lean": {
+      "kind": "source",
+      "expected": "702ecb504bd5b1a4",
+      "module": "Ix/Common.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Common.c": {
+      "kind": "c",
+      "expected": "65805b4611ba5959",
+      "module": "Ix/Common.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Common.c.o.export": {
+      "kind": "object",
+      "expected": "86dcf292cf5a4640",
+      "module": "Ix/Common.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/Blake3/Blake3.lean": {
+      "kind": "source",
+      "expected": "c8e4d36ec59cab19",
+      "module": "Blake3.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/Blake3/.lake/build/ir/Blake3.c": {
+      "kind": "c",
+      "expected": "ffb8e7077dd48970",
+      "module": "Blake3.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/Blake3/.lake/build/ir/Blake3.c.o.export": {
+      "kind": "object",
+      "expected": "cecca64126191ec6",
+      "module": "Blake3.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/Blake3/Blake3/Rust.lean": {
+      "kind": "source",
+      "expected": "55ffcb9044467ad0",
+      "module": "Blake3/Rust.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/Blake3/.lake/build/ir/Blake3/Rust.c": {
+      "kind": "c",
+      "expected": "fcf88c072cbed872",
+      "module": "Blake3/Rust.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/Blake3/.lake/build/ir/Blake3/Rust.c.o.export": {
+      "kind": "object",
+      "expected": "292e13402d7b139f",
+      "module": "Blake3/Rust.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/Address.lean": {
+      "kind": "source",
+      "expected": "065aae4083879393",
+      "module": "Ix/Address.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Address.c": {
+      "kind": "c",
+      "expected": "bc8312cba7170c9d",
+      "module": "Ix/Address.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Address.c.o.export": {
+      "kind": "object",
+      "expected": "4e0af8bbc3b2ed06",
+      "module": "Ix/Address.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/Environment.lean": {
+      "kind": "source",
+      "expected": "b11f8e7b2e060c37",
+      "module": "Ix/Environment.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Environment.c": {
+      "kind": "c",
+      "expected": "ff0c6fa46c55a388",
+      "module": "Ix/Environment.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Environment.c.o.export": {
+      "kind": "object",
+      "expected": "4cafede83bc74044",
+      "module": "Ix/Environment.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/Aiur/Goldilocks.lean": {
+      "kind": "source",
+      "expected": "00fe0bbfb94df6c2",
+      "module": "Ix/Aiur/Goldilocks.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Goldilocks.c": {
+      "kind": "c",
+      "expected": "661ff3bf1c1c0274",
+      "module": "Ix/Aiur/Goldilocks.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Goldilocks.c.o.export": {
+      "kind": "object",
+      "expected": "e6c91c0b9de757a2",
+      "module": "Ix/Aiur/Goldilocks.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/Aiur/Stages/Bytecode.lean": {
+      "kind": "source",
+      "expected": "0bcd39614db44545",
+      "module": "Ix/Aiur/Stages/Bytecode.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Stages/Bytecode.c": {
+      "kind": "c",
+      "expected": "896a724be1b1a96e",
+      "module": "Ix/Aiur/Stages/Bytecode.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Stages/Bytecode.c.o.export": {
+      "kind": "object",
+      "expected": "5c345cb325408861",
+      "module": "Ix/Aiur/Stages/Bytecode.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/Aiur/Semantics/BytecodeFfi.lean": {
+      "kind": "source",
+      "expected": "4464c56591cf05f5",
+      "module": "Ix/Aiur/Semantics/BytecodeFfi.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Semantics/BytecodeFfi.c": {
+      "kind": "c",
+      "expected": "405ef197d308a36b",
+      "module": "Ix/Aiur/Semantics/BytecodeFfi.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Semantics/BytecodeFfi.c.o.export": {
+      "kind": "object",
+      "expected": "97d7dce42cca4b67",
+      "module": "Ix/Aiur/Semantics/BytecodeFfi.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/Aiur/Protocol.lean": {
+      "kind": "source",
+      "expected": "b1c52bbedc683fb7",
+      "module": "Ix/Aiur/Protocol.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Protocol.c": {
+      "kind": "c",
+      "expected": "9274d9020b8625a1",
+      "module": "Ix/Aiur/Protocol.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Protocol.c.o.export": {
+      "kind": "object",
+      "expected": "dfc1742da8719e9d",
+      "module": "Ix/Aiur/Protocol.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/IxonMode.lean": {
+      "kind": "source",
+      "expected": "7f2bdf63bfc24916",
+      "module": "Ix/IxonMode.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxonMode.c": {
+      "kind": "c",
+      "expected": "5d45fc5ce4add8a8",
+      "module": "Ix/IxonMode.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxonMode.c.o.export": {
+      "kind": "object",
+      "expected": "c67778468a284a61",
+      "module": "Ix/IxonMode.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/Merkle.lean": {
+      "kind": "source",
+      "expected": "948b0a53c1b963f6",
+      "module": "Ix/Merkle.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Merkle.c": {
+      "kind": "c",
+      "expected": "3903788770fc84ed",
+      "module": "Ix/Merkle.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Merkle.c.o.export": {
+      "kind": "object",
+      "expected": "49c6eb87e24aefc9",
+      "module": "Ix/Merkle.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/Ixon.lean": {
+      "kind": "source",
+      "expected": "3b9915c91ea2ef78",
+      "module": "Ix/Ixon.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Ixon.c": {
+      "kind": "c",
+      "expected": "8494c231e5cc78a0",
+      "module": "Ix/Ixon.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Ixon.c.o.export": {
+      "kind": "object",
+      "expected": "a3e715634e1021fd",
+      "module": "Ix/Ixon.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/Claim.lean": {
+      "kind": "source",
+      "expected": "717b66169cd8008d",
+      "module": "Ix/Claim.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Claim.c": {
+      "kind": "c",
+      "expected": "8ea26c50e9cc4be7",
+      "module": "Ix/Claim.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Claim.c.o.export": {
+      "kind": "object",
+      "expected": "67c53d95772fbe07",
+      "module": "Ix/Claim.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/AssumptionTree.lean": {
+      "kind": "source",
+      "expected": "42c6dbe34b5f111c",
+      "module": "Ix/AssumptionTree.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/AssumptionTree.c": {
+      "kind": "c",
+      "expected": "fd28db5aa2cced1b",
+      "module": "Ix/AssumptionTree.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/AssumptionTree.c.o.export": {
+      "kind": "object",
+      "expected": "9c3332c57294ed28",
+      "module": "Ix/AssumptionTree.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/Batteries/Tactic/Unreachable.lean": {
+      "kind": "source",
+      "expected": "1821789f94cc0631",
+      "module": "Batteries/Tactic/Unreachable.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Tactic/Unreachable.c": {
+      "kind": "c",
+      "expected": "6cc7a10595d199b2",
+      "module": "Batteries/Tactic/Unreachable.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Tactic/Unreachable.c.o.export": {
+      "kind": "object",
+      "expected": "338cd9fffbf780cc",
+      "module": "Batteries/Tactic/Unreachable.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/Batteries/Linter/UnreachableTactic.lean": {
+      "kind": "source",
+      "expected": "05cb39d3e5f293f4",
+      "module": "Batteries/Linter/UnreachableTactic.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Linter/UnreachableTactic.c": {
+      "kind": "c",
+      "expected": "05f2a1351a3379ba",
+      "module": "Batteries/Linter/UnreachableTactic.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Linter/UnreachableTactic.c.o.export": {
+      "kind": "object",
+      "expected": "6a601681e8843578",
+      "module": "Batteries/Linter/UnreachableTactic.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/Batteries/Lean/TagAttribute.lean": {
+      "kind": "source",
+      "expected": "a9a2d0d4bfd25e14",
+      "module": "Batteries/Lean/TagAttribute.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Lean/TagAttribute.c": {
+      "kind": "c",
+      "expected": "4299199d7344e7d2",
+      "module": "Batteries/Lean/TagAttribute.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Lean/TagAttribute.c.o.export": {
+      "kind": "object",
+      "expected": "ec8935023df00fb2",
+      "module": "Batteries/Lean/TagAttribute.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/Batteries/Lean/AttributeExtra.lean": {
+      "kind": "source",
+      "expected": "238839c5ae7ecf54",
+      "module": "Batteries/Lean/AttributeExtra.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Lean/AttributeExtra.c": {
+      "kind": "c",
+      "expected": "4ab70aabed74fe40",
+      "module": "Batteries/Lean/AttributeExtra.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Lean/AttributeExtra.c.o.export": {
+      "kind": "object",
+      "expected": "97f6746a14e18082",
+      "module": "Batteries/Lean/AttributeExtra.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/Batteries/Linter/UnnecessarySeqFocus.lean": {
+      "kind": "source",
+      "expected": "4f9ee5469a9bec4c",
+      "module": "Batteries/Linter/UnnecessarySeqFocus.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Linter/UnnecessarySeqFocus.c": {
+      "kind": "c",
+      "expected": "bc0c39c983a24ebd",
+      "module": "Batteries/Linter/UnnecessarySeqFocus.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Linter/UnnecessarySeqFocus.c.o.export": {
+      "kind": "object",
+      "expected": "00bed951315d6df7",
+      "module": "Batteries/Linter/UnnecessarySeqFocus.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/Batteries/Linter.lean": {
+      "kind": "source",
+      "expected": "14ca49406099ccc2",
+      "module": "Batteries/Linter.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Linter.c": {
+      "kind": "c",
+      "expected": "b3cf9f290e582fc1",
+      "module": "Batteries/Linter.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Linter.c.o.export": {
+      "kind": "object",
+      "expected": "b5a3143319297bf6",
+      "module": "Batteries/Linter.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/Batteries/Tactic/Init.lean": {
+      "kind": "source",
+      "expected": "c94dea505ba8e082",
+      "module": "Batteries/Tactic/Init.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Tactic/Init.c": {
+      "kind": "c",
+      "expected": "86f883175e3f4550",
+      "module": "Batteries/Tactic/Init.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Tactic/Init.c.o.export": {
+      "kind": "object",
+      "expected": "0f49d9c00a6d0bb3",
+      "module": "Batteries/Tactic/Init.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/Batteries/Tactic/SeqFocus.lean": {
+      "kind": "source",
+      "expected": "4f936020d50dabb1",
+      "module": "Batteries/Tactic/SeqFocus.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Tactic/SeqFocus.c": {
+      "kind": "c",
+      "expected": "42199376904f1688",
+      "module": "Batteries/Tactic/SeqFocus.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Tactic/SeqFocus.c.o.export": {
+      "kind": "object",
+      "expected": "b3e7e272c68bb6ba",
+      "module": "Batteries/Tactic/SeqFocus.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/Batteries/Tactic/Lint/Basic.lean": {
+      "kind": "source",
+      "expected": "03ac2ee2036ae389",
+      "module": "Batteries/Tactic/Lint/Basic.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Tactic/Lint/Basic.c": {
+      "kind": "c",
+      "expected": "c87db3241d35d5c8",
+      "module": "Batteries/Tactic/Lint/Basic.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Tactic/Lint/Basic.c.o.export": {
+      "kind": "object",
+      "expected": "54b878fc35dfb5c0",
+      "module": "Batteries/Tactic/Lint/Basic.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/Batteries/Tactic/Lint/Misc.lean": {
+      "kind": "source",
+      "expected": "aae7ec12d23515ae",
+      "module": "Batteries/Tactic/Lint/Misc.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Tactic/Lint/Misc.c": {
+      "kind": "c",
+      "expected": "5af3e82cf3a6eee5",
+      "module": "Batteries/Tactic/Lint/Misc.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Tactic/Lint/Misc.c.o.export": {
+      "kind": "object",
+      "expected": "75c5872750266ac4",
+      "module": "Batteries/Tactic/Lint/Misc.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/Batteries/Lean/Syntax.lean": {
+      "kind": "source",
+      "expected": "ef77c24ed6af545b",
+      "module": "Batteries/Lean/Syntax.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Lean/Syntax.c": {
+      "kind": "c",
+      "expected": "4747ad0fc702d331",
+      "module": "Batteries/Lean/Syntax.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Lean/Syntax.c.o.export": {
+      "kind": "object",
+      "expected": "137fd78292871dfd",
+      "module": "Batteries/Lean/Syntax.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/Batteries/Util/ProofWanted.lean": {
+      "kind": "source",
+      "expected": "51722c8057089613",
+      "module": "Batteries/Util/ProofWanted.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Util/ProofWanted.c": {
+      "kind": "c",
+      "expected": "476c22ec70d6ad95",
+      "module": "Batteries/Util/ProofWanted.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Util/ProofWanted.c.o.export": {
+      "kind": "object",
+      "expected": "6610d2fc522aaeb3",
+      "module": "Batteries/Util/ProofWanted.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/Batteries/Tactic/Basic.lean": {
+      "kind": "source",
+      "expected": "e9ac7a9877ce279f",
+      "module": "Batteries/Tactic/Basic.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Tactic/Basic.c": {
+      "kind": "c",
+      "expected": "a3a8ad1c46af7d4e",
+      "module": "Batteries/Tactic/Basic.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Tactic/Basic.c.o.export": {
+      "kind": "object",
+      "expected": "376c84fcd74dec39",
+      "module": "Batteries/Tactic/Basic.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/Batteries/Classes/Order.lean": {
+      "kind": "source",
+      "expected": "139d1aaa316e1124",
+      "module": "Batteries/Classes/Order.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Classes/Order.c": {
+      "kind": "c",
+      "expected": "0b16bca0530db8af",
+      "module": "Batteries/Classes/Order.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Classes/Order.c.o.export": {
+      "kind": "object",
+      "expected": "cf559317deb19641",
+      "module": "Batteries/Classes/Order.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/Batteries/Control/ForInStep/Basic.lean": {
+      "kind": "source",
+      "expected": "d4cdc4a560b5f4c5",
+      "module": "Batteries/Control/ForInStep/Basic.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Control/ForInStep/Basic.c": {
+      "kind": "c",
+      "expected": "c8a55f9bdc7f4e36",
+      "module": "Batteries/Control/ForInStep/Basic.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Control/ForInStep/Basic.c.o.export": {
+      "kind": "object",
+      "expected": "c43e39036e42aa5b",
+      "module": "Batteries/Control/ForInStep/Basic.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/Batteries/Recycling/RBTree/Basic.lean": {
+      "kind": "source",
+      "expected": "6ad5dafd1b18ea25",
+      "module": "Batteries/Recycling/RBTree/Basic.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Recycling/RBTree/Basic.c": {
+      "kind": "c",
+      "expected": "0d89f82bfde7ec3f",
+      "module": "Batteries/Recycling/RBTree/Basic.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Recycling/RBTree/Basic.c.o.export": {
+      "kind": "object",
+      "expected": "c37553ee7c91d251",
+      "module": "Batteries/Recycling/RBTree/Basic.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/IxonUniv.lean": {
+      "kind": "source",
+      "expected": "641195868ad02b63",
+      "module": "Ix/IxonUniv.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxonUniv.c": {
+      "kind": "c",
+      "expected": "c178315077c1377a",
+      "module": "Ix/IxonUniv.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxonUniv.c.o.export": {
+      "kind": "object",
+      "expected": "8020a76c98ababf6",
+      "module": "Ix/IxonUniv.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/Sharing.lean": {
+      "kind": "source",
+      "expected": "72d8c7f4097e1eb3",
+      "module": "Ix/Sharing.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Sharing.c": {
+      "kind": "c",
+      "expected": "658d6150ff5e5eda",
+      "module": "Ix/Sharing.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Sharing.c.o.export": {
+      "kind": "object",
+      "expected": "5b05e22de9d601d9",
+      "module": "Ix/Sharing.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/Store.lean": {
+      "kind": "source",
+      "expected": "9d863857e7983435",
+      "module": "Ix/Store.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Store.c": {
+      "kind": "c",
+      "expected": "b53a0a2b92d81e96",
+      "module": "Ix/Store.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Store.c.o.export": {
+      "kind": "object",
+      "expected": "fd59b0adcfc1c40c",
+      "module": "Ix/Store.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/Mutual.lean": {
+      "kind": "source",
+      "expected": "575198bd9ed067f1",
+      "module": "Ix/Mutual.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Mutual.c": {
+      "kind": "c",
+      "expected": "727d6e6da47974cd",
+      "module": "Ix/Mutual.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Mutual.c.o.export": {
+      "kind": "object",
+      "expected": "a885049162ea245c",
+      "module": "Ix/Mutual.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/GraphM.lean": {
+      "kind": "source",
+      "expected": "fbccf9b8c3c76d7c",
+      "module": "Ix/GraphM.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/GraphM.c": {
+      "kind": "c",
+      "expected": "5da57eab05b8a019",
+      "module": "Ix/GraphM.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/GraphM.c.o.export": {
+      "kind": "object",
+      "expected": "769f5834118896a4",
+      "module": "Ix/GraphM.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/CondenseM.lean": {
+      "kind": "source",
+      "expected": "fb7ec13e3374293c",
+      "module": "Ix/CondenseM.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/CondenseM.c": {
+      "kind": "c",
+      "expected": "2cbf1beec016275e",
+      "module": "Ix/CondenseM.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/CondenseM.c.o.export": {
+      "kind": "object",
+      "expected": "7eb6eb7461288d11",
+      "module": "Ix/CondenseM.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/SOrder.lean": {
+      "kind": "source",
+      "expected": "da38b6a6a3d776f9",
+      "module": "Ix/SOrder.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/SOrder.c": {
+      "kind": "c",
+      "expected": "64460cbb5e982c2d",
+      "module": "Ix/SOrder.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/SOrder.c.o.export": {
+      "kind": "object",
+      "expected": "5845debccd845dc5",
+      "module": "Ix/SOrder.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/CallSitePlan.lean": {
+      "kind": "source",
+      "expected": "46f32587a6ffd3c6",
+      "module": "Ix/CallSitePlan.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/CallSitePlan.c": {
+      "kind": "c",
+      "expected": "7ceba8612502d109",
+      "module": "Ix/CallSitePlan.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/CallSitePlan.c.o.export": {
+      "kind": "object",
+      "expected": "6a253dc76a970e86",
+      "module": "Ix/CallSitePlan.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/AuxGen/ExprUtils.lean": {
+      "kind": "source",
+      "expected": "aa64b117fa01aeba",
+      "module": "Ix/AuxGen/ExprUtils.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/AuxGen/ExprUtils.c": {
+      "kind": "c",
+      "expected": "69391679b122e39c",
+      "module": "Ix/AuxGen/ExprUtils.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/AuxGen/ExprUtils.c.o.export": {
+      "kind": "object",
+      "expected": "c21acba96e525827",
+      "module": "Ix/AuxGen/ExprUtils.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/CallSiteSurgery.lean": {
+      "kind": "source",
+      "expected": "91aa282ea21a7dd7",
+      "module": "Ix/CallSiteSurgery.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/CallSiteSurgery.c": {
+      "kind": "c",
+      "expected": "1bae981bfe2b2cb4",
+      "module": "Ix/CallSiteSurgery.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/CallSiteSurgery.c.o.export": {
+      "kind": "object",
+      "expected": "d8ceed1076e87b4d",
+      "module": "Ix/CallSiteSurgery.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/CanonM.lean": {
+      "kind": "source",
+      "expected": "48b2100e5251237b",
+      "module": "Ix/CanonM.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/CanonM.c": {
+      "kind": "c",
+      "expected": "da068bd11ae49a68",
+      "module": "Ix/CanonM.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/CanonM.c.o.export": {
+      "kind": "object",
+      "expected": "4a37d6913c60fc4b",
+      "module": "Ix/CanonM.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/CompileM.lean": {
+      "kind": "source",
+      "expected": "fade2a8e69c02188",
+      "module": "Ix/CompileM.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/CompileM.c": {
+      "kind": "c",
+      "expected": "ba336762ae4a9fc3",
+      "module": "Ix/CompileM.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/CompileM.c.o.export": {
+      "kind": "object",
+      "expected": "8cd230d029848938",
+      "module": "Ix/CompileM.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/Tc/Mode.lean": {
+      "kind": "source",
+      "expected": "0ae5faa61c04aef5",
+      "module": "Ix/Tc/Mode.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Tc/Mode.c": {
+      "kind": "c",
+      "expected": "59d5e7b2d9f82b64",
+      "module": "Ix/Tc/Mode.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Tc/Mode.c.o.export": {
+      "kind": "object",
+      "expected": "a3312a2a0c8b8376",
+      "module": "Ix/Tc/Mode.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/Tc/Id.lean": {
+      "kind": "source",
+      "expected": "dbd64ffd5210fb0c",
+      "module": "Ix/Tc/Id.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Tc/Id.c": {
+      "kind": "c",
+      "expected": "70fadb307af9113d",
+      "module": "Ix/Tc/Id.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Tc/Id.c.o.export": {
+      "kind": "object",
+      "expected": "98b74b9c2c080c05",
+      "module": "Ix/Tc/Id.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/Unsigned.lean": {
+      "kind": "source",
+      "expected": "7b348a1ed9248bb4",
+      "module": "Ix/Unsigned.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Unsigned.c": {
+      "kind": "c",
+      "expected": "ffe5a28f7145a16e",
+      "module": "Ix/Unsigned.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Unsigned.c.o.export": {
+      "kind": "object",
+      "expected": "21fed6a9a1eb03a5",
+      "module": "Ix/Unsigned.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/Tc/Level.lean": {
+      "kind": "source",
+      "expected": "acb986022c85880d",
+      "module": "Ix/Tc/Level.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Tc/Level.c": {
+      "kind": "c",
+      "expected": "3213b40a0ea3cbe0",
+      "module": "Ix/Tc/Level.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Tc/Level.c.o.export": {
+      "kind": "object",
+      "expected": "db3481fb74712b7d",
+      "module": "Ix/Tc/Level.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/Tc/Expr.lean": {
+      "kind": "source",
+      "expected": "16009aa0033aba0b",
+      "module": "Ix/Tc/Expr.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Tc/Expr.c": {
+      "kind": "c",
+      "expected": "7570e99eb2de4692",
+      "module": "Ix/Tc/Expr.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Tc/Expr.c.o.export": {
+      "kind": "object",
+      "expected": "47c9563c3f0072d5",
+      "module": "Ix/Tc/Expr.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/Tc/Const.lean": {
+      "kind": "source",
+      "expected": "e2e5aacd1fe3d95d",
+      "module": "Ix/Tc/Const.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Tc/Const.c": {
+      "kind": "c",
+      "expected": "aa4d441963864690",
+      "module": "Ix/Tc/Const.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Tc/Const.c.o.export": {
+      "kind": "object",
+      "expected": "692bde1c6045a040",
+      "module": "Ix/Tc/Const.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/Tc/Error.lean": {
+      "kind": "source",
+      "expected": "593ff6dc8d3deb3a",
+      "module": "Ix/Tc/Error.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Tc/Error.c": {
+      "kind": "c",
+      "expected": "db1b012f210a83e5",
+      "module": "Ix/Tc/Error.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Tc/Error.c.o.export": {
+      "kind": "object",
+      "expected": "0922045df85d878f",
+      "module": "Ix/Tc/Error.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/Tc/Env.lean": {
+      "kind": "source",
+      "expected": "22aaa45d78867635",
+      "module": "Ix/Tc/Env.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Tc/Env.c": {
+      "kind": "c",
+      "expected": "96e76e9c94d6ec6f",
+      "module": "Ix/Tc/Env.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Tc/Env.c.o.export": {
+      "kind": "object",
+      "expected": "f962f24420951237",
+      "module": "Ix/Tc/Env.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/Tc/Primitive.lean": {
+      "kind": "source",
+      "expected": "54ce6056f90aa52c",
+      "module": "Ix/Tc/Primitive.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Tc/Primitive.c": {
+      "kind": "c",
+      "expected": "29e80b1935edc7c7",
+      "module": "Ix/Tc/Primitive.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Tc/Primitive.c.o.export": {
+      "kind": "object",
+      "expected": "0411a70374c902e9",
+      "module": "Ix/Tc/Primitive.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/IxVM/ClaimHarness.lean": {
+      "kind": "source",
+      "expected": "e89a428e43d45b3c",
+      "module": "Ix/IxVM/ClaimHarness.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/ClaimHarness.c": {
+      "kind": "c",
+      "expected": "d75457d7dbdff306",
+      "module": "Ix/IxVM/ClaimHarness.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/ClaimHarness.c.o.export": {
+      "kind": "object",
+      "expected": "ef6f64273e916cbe",
+      "module": "Ix/IxVM/ClaimHarness.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/Batteries/Data/String/AsciiCasing.lean": {
+      "kind": "source",
+      "expected": "2914e59c685eaf47",
+      "module": "Batteries/Data/String/AsciiCasing.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/String/AsciiCasing.c": {
+      "kind": "c",
+      "expected": "89ae29b4825be753",
+      "module": "Batteries/Data/String/AsciiCasing.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/String/AsciiCasing.c.o.export": {
+      "kind": "object",
+      "expected": "2287b7215e6a661b",
+      "module": "Batteries/Data/String/AsciiCasing.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/Batteries/Data/String/Basic.lean": {
+      "kind": "source",
+      "expected": "b29f9ee788f1ffe1",
+      "module": "Batteries/Data/String/Basic.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/String/Basic.c": {
+      "kind": "c",
+      "expected": "6196eb506203db97",
+      "module": "Batteries/Data/String/Basic.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/String/Basic.c.o.export": {
+      "kind": "object",
+      "expected": "4b43ee63c1afc445",
+      "module": "Batteries/Data/String/Basic.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/Batteries/Data/String/Legacy.lean": {
+      "kind": "source",
+      "expected": "60047e7c7e8d8d41",
+      "module": "Batteries/Data/String/Legacy.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/String/Legacy.c": {
+      "kind": "c",
+      "expected": "a684ea3ad0443383",
+      "module": "Batteries/Data/String/Legacy.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/String/Legacy.c.o.export": {
+      "kind": "object",
+      "expected": "942696bc55833a89",
+      "module": "Batteries/Data/String/Legacy.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/Batteries/CodeAction/Deprecated.lean": {
+      "kind": "source",
+      "expected": "2d6ab6a34d079a1a",
+      "module": "Batteries/CodeAction/Deprecated.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/CodeAction/Deprecated.c": {
+      "kind": "c",
+      "expected": "5010d9d3e23eaa90",
+      "module": "Batteries/CodeAction/Deprecated.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/CodeAction/Deprecated.c.o.export": {
+      "kind": "object",
+      "expected": "6a5bd6845ac3fb94",
+      "module": "Batteries/CodeAction/Deprecated.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/Batteries/Tactic/Alias.lean": {
+      "kind": "source",
+      "expected": "168423eee0e898b5",
+      "module": "Batteries/Tactic/Alias.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Tactic/Alias.c": {
+      "kind": "c",
+      "expected": "87c0f64ea787b9f8",
+      "module": "Batteries/Tactic/Alias.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Tactic/Alias.c.o.export": {
+      "kind": "object",
+      "expected": "a51e35635ea01d2d",
+      "module": "Batteries/Tactic/Alias.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/Batteries/Data/List/Basic.lean": {
+      "kind": "source",
+      "expected": "336c1df23df6a0a5",
+      "module": "Batteries/Data/List/Basic.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/List/Basic.c": {
+      "kind": "c",
+      "expected": "70a291d2624aebdd",
+      "module": "Batteries/Data/List/Basic.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/List/Basic.c.o.export": {
+      "kind": "object",
+      "expected": "8db04ce08998c0a1",
+      "module": "Batteries/Data/List/Basic.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/Batteries/Data/String/Lemmas.lean": {
+      "kind": "source",
+      "expected": "814aa01006db0545",
+      "module": "Batteries/Data/String/Lemmas.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/String/Lemmas.c": {
+      "kind": "c",
+      "expected": "ef8e35c0c636f80f",
+      "module": "Batteries/Data/String/Lemmas.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/String/Lemmas.c.o.export": {
+      "kind": "object",
+      "expected": "8a649d2486f4a521",
+      "module": "Batteries/Data/String/Lemmas.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/Batteries/Data/Array/Match.lean": {
+      "kind": "source",
+      "expected": "a80b6b0911fe7b1d",
+      "module": "Batteries/Data/Array/Match.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/Array/Match.c": {
+      "kind": "c",
+      "expected": "fb1f703360de44db",
+      "module": "Batteries/Data/Array/Match.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/Array/Match.c.o.export": {
+      "kind": "object",
+      "expected": "84f205233d02981f",
+      "module": "Batteries/Data/Array/Match.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/Batteries/Data/String/Matcher.lean": {
+      "kind": "source",
+      "expected": "88cf35bc68bc21dd",
+      "module": "Batteries/Data/String/Matcher.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/String/Matcher.c": {
+      "kind": "c",
+      "expected": "efe165868b7a6043",
+      "module": "Batteries/Data/String/Matcher.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/String/Matcher.c.o.export": {
+      "kind": "object",
+      "expected": "9f6d94df7359cd64",
+      "module": "Batteries/Data/String/Matcher.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/Batteries/Data/String.lean": {
+      "kind": "source",
+      "expected": "3d89eaef72582e31",
+      "module": "Batteries/Data/String.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/String.c": {
+      "kind": "c",
+      "expected": "145b9165d50f1589",
+      "module": "Batteries/Data/String.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/String.c.o.export": {
+      "kind": "object",
+      "expected": "f255b17f576de248",
+      "module": "Batteries/Data/String.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/Meta.lean": {
+      "kind": "source",
+      "expected": "300644529be1cb8c",
+      "module": "Ix/Meta.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Meta.c": {
+      "kind": "c",
+      "expected": "4e5288cd323c603e",
+      "module": "Ix/Meta.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Meta.c.o.export": {
+      "kind": "object",
+      "expected": "06c34986c125a8ff",
+      "module": "Ix/Meta.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/Cli/NameResolve.lean": {
+      "kind": "source",
+      "expected": "dc3a7e5482565225",
+      "module": "Ix/Cli/NameResolve.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Cli/NameResolve.c": {
+      "kind": "c",
+      "expected": "48b41ef38483b217",
+      "module": "Ix/Cli/NameResolve.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Cli/NameResolve.c.o.export": {
+      "kind": "object",
+      "expected": "cf28ea6a8ad8863b",
+      "module": "Ix/Cli/NameResolve.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/TracingTexray.lean": {
+      "kind": "source",
+      "expected": "ef36b540bb60efa3",
+      "module": "Ix/TracingTexray.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/TracingTexray.c": {
+      "kind": "c",
+      "expected": "f0ebc2a5c9eb60f6",
+      "module": "Ix/TracingTexray.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/TracingTexray.c.o.export": {
+      "kind": "object",
+      "expected": "1dcadacacf638bed",
+      "module": "Ix/TracingTexray.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/Lib.lean": {
+      "kind": "source",
+      "expected": "ed8645ac237ffd40",
+      "module": "Ix/Lib.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Lib.c": {
+      "kind": "c",
+      "expected": "64bedde57be4567b",
+      "module": "Ix/Lib.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Lib.c.o.export": {
+      "kind": "object",
+      "expected": "2545d731ee52c7b5",
+      "module": "Ix/Lib.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/IndexMap.lean": {
+      "kind": "source",
+      "expected": "470f56b5aba8827c",
+      "module": "Ix/IndexMap.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IndexMap.c": {
+      "kind": "c",
+      "expected": "4d28d171c93cbc22",
+      "module": "Ix/IndexMap.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IndexMap.c.o.export": {
+      "kind": "object",
+      "expected": "12d9d6c5cb0c8768",
+      "module": "Ix/IndexMap.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/Aiur/Stages/Source.lean": {
+      "kind": "source",
+      "expected": "0a0a49dfb25bf7fd",
+      "module": "Ix/Aiur/Stages/Source.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Stages/Source.c": {
+      "kind": "c",
+      "expected": "63e2c97164a8982f",
+      "module": "Ix/Aiur/Stages/Source.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Stages/Source.c.o.export": {
+      "kind": "object",
+      "expected": "1f1ca8257757c806",
+      "module": "Ix/Aiur/Stages/Source.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/Aiur/Meta.lean": {
+      "kind": "source",
+      "expected": "819cf45afbcdd2a6",
+      "module": "Ix/Aiur/Meta.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Meta.c": {
+      "kind": "c",
+      "expected": "2ec7972f5458efd0",
+      "module": "Ix/Aiur/Meta.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Meta.c.o.export": {
+      "kind": "object",
+      "expected": "4935b76e1d3b7db6",
+      "module": "Ix/Aiur/Meta.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/IxVM/Blake3.lean": {
+      "kind": "source",
+      "expected": "03b8c816fc965230",
+      "module": "Ix/IxVM/Blake3.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/Blake3.c": {
+      "kind": "c",
+      "expected": "9529e76c3605f96e",
+      "module": "Ix/IxVM/Blake3.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/Blake3.c.o.export": {
+      "kind": "object",
+      "expected": "8365fc77de281292",
+      "module": "Ix/IxVM/Blake3.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/IxVM/Core.lean": {
+      "kind": "source",
+      "expected": "2c02376bd5496605",
+      "module": "Ix/IxVM/Core.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/Core.c": {
+      "kind": "c",
+      "expected": "8bc19c64f0dbc128",
+      "module": "Ix/IxVM/Core.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/Core.c.o.export": {
+      "kind": "object",
+      "expected": "e37da076cd96d3bf",
+      "module": "Ix/IxVM/Core.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/IxVM/ByteStream.lean": {
+      "kind": "source",
+      "expected": "e2a4caeb8cdf8626",
+      "module": "Ix/IxVM/ByteStream.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/ByteStream.c": {
+      "kind": "c",
+      "expected": "9cc3829fd5960dcf",
+      "module": "Ix/IxVM/ByteStream.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/ByteStream.c.o.export": {
+      "kind": "object",
+      "expected": "f3785169d9d7eefb",
+      "module": "Ix/IxVM/ByteStream.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/MultiStark/Deserialize.lean": {
+      "kind": "source",
+      "expected": "460a3764d1db50ac",
+      "module": "Ix/MultiStark/Deserialize.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/MultiStark/Deserialize.c": {
+      "kind": "c",
+      "expected": "5cfe909b3190654e",
+      "module": "Ix/MultiStark/Deserialize.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/MultiStark/Deserialize.c.o.export": {
+      "kind": "object",
+      "expected": "186e5f8016f3e3ff",
+      "module": "Ix/MultiStark/Deserialize.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/MultiStark/Keccak.lean": {
+      "kind": "source",
+      "expected": "b1c6b4633923c5f1",
+      "module": "Ix/MultiStark/Keccak.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/MultiStark/Keccak.c": {
+      "kind": "c",
+      "expected": "e2ee4f701122e0f4",
+      "module": "Ix/MultiStark/Keccak.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/MultiStark/Keccak.c.o.export": {
+      "kind": "object",
+      "expected": "61bd217dfb326fe8",
+      "module": "Ix/MultiStark/Keccak.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/MultiStark/Pcs.lean": {
+      "kind": "source",
+      "expected": "d3456e865ac5c272",
+      "module": "Ix/MultiStark/Pcs.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/MultiStark/Pcs.c": {
+      "kind": "c",
+      "expected": "cc9e9ffe6817331a",
+      "module": "Ix/MultiStark/Pcs.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/MultiStark/Pcs.c.o.export": {
+      "kind": "object",
+      "expected": "3b6c4d65debbe497",
+      "module": "Ix/MultiStark/Pcs.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/MultiStark/SystemDeserialize.lean": {
+      "kind": "source",
+      "expected": "837a643bff4d7912",
+      "module": "Ix/MultiStark/SystemDeserialize.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/MultiStark/SystemDeserialize.c": {
+      "kind": "c",
+      "expected": "0d3ff5cde741c891",
+      "module": "Ix/MultiStark/SystemDeserialize.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/MultiStark/SystemDeserialize.c.o.export": {
+      "kind": "object",
+      "expected": "b6be9f175d72fab9",
+      "module": "Ix/MultiStark/SystemDeserialize.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/MultiStark/Verifier.lean": {
+      "kind": "source",
+      "expected": "392ee84be5022884",
+      "module": "Ix/MultiStark/Verifier.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/MultiStark/Verifier.c": {
+      "kind": "c",
+      "expected": "38af95e26950286b",
+      "module": "Ix/MultiStark/Verifier.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/MultiStark/Verifier.c.o.export": {
+      "kind": "object",
+      "expected": "c65212d54485c3c0",
+      "module": "Ix/MultiStark/Verifier.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/Aggr/Circuit.lean": {
+      "kind": "source",
+      "expected": "e8c3de35ec330b03",
+      "module": "Ix/Aggr/Circuit.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aggr/Circuit.c": {
+      "kind": "c",
+      "expected": "bee8c8219d05b890",
+      "module": "Ix/Aggr/Circuit.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aggr/Circuit.c.o.export": {
+      "kind": "object",
+      "expected": "1fc9ec220be3bf84",
+      "module": "Ix/Aggr/Circuit.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/Aggr/FunctionGroups.lean": {
+      "kind": "source",
+      "expected": "79ad7dd58b66ed66",
+      "module": "Ix/Aggr/FunctionGroups.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aggr/FunctionGroups.c": {
+      "kind": "c",
+      "expected": "2a2741073a38ec19",
+      "module": "Ix/Aggr/FunctionGroups.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aggr/FunctionGroups.c.o.export": {
+      "kind": "object",
+      "expected": "06e6c9a5ae08db82",
+      "module": "Ix/Aggr/FunctionGroups.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/Aggr/Host.lean": {
+      "kind": "source",
+      "expected": "c012126eb504ab40",
+      "module": "Ix/Aggr/Host.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aggr/Host.c": {
+      "kind": "c",
+      "expected": "5c55f91e21eda24e",
+      "module": "Ix/Aggr/Host.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aggr/Host.c.o.export": {
+      "kind": "object",
+      "expected": "55eca301228f90c1",
+      "module": "Ix/Aggr/Host.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/MultiStark/Goldilocks.lean": {
+      "kind": "source",
+      "expected": "be555d7d986834ae",
+      "module": "Ix/MultiStark/Goldilocks.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/MultiStark/Goldilocks.c": {
+      "kind": "c",
+      "expected": "26534aaf7cfb34fc",
+      "module": "Ix/MultiStark/Goldilocks.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/MultiStark/Goldilocks.c.o.export": {
+      "kind": "object",
+      "expected": "6877a924954e48b1",
+      "module": "Ix/MultiStark/Goldilocks.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/MultiStark/Aggregate.lean": {
+      "kind": "source",
+      "expected": "587b82d1d30315a6",
+      "module": "Ix/MultiStark/Aggregate.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/MultiStark/Aggregate.c": {
+      "kind": "c",
+      "expected": "45636e1afaeef12f",
+      "module": "Ix/MultiStark/Aggregate.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/MultiStark/Aggregate.c.o.export": {
+      "kind": "object",
+      "expected": "d6fa3a77acaf349e",
+      "module": "Ix/MultiStark/Aggregate.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/MultiStark/Host.lean": {
+      "kind": "source",
+      "expected": "f9605e9e029a0519",
+      "module": "Ix/MultiStark/Host.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/MultiStark/Host.c": {
+      "kind": "c",
+      "expected": "303bfaa4357607e1",
+      "module": "Ix/MultiStark/Host.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/MultiStark/Host.c.o.export": {
+      "kind": "object",
+      "expected": "69699d22002513ad",
+      "module": "Ix/MultiStark/Host.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/MultiStark/VerifierFunctionGroups.lean": {
+      "kind": "source",
+      "expected": "1c304aaac7f49e3c",
+      "module": "Ix/MultiStark/VerifierFunctionGroups.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/MultiStark/VerifierFunctionGroups.c": {
+      "kind": "c",
+      "expected": "24e4366712011ff2",
+      "module": "Ix/MultiStark/VerifierFunctionGroups.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/MultiStark/VerifierFunctionGroups.c.o.export": {
+      "kind": "object",
+      "expected": "516bce7d820a47c8",
+      "module": "Ix/MultiStark/VerifierFunctionGroups.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/MultiStark/Tests.lean": {
+      "kind": "source",
+      "expected": "fd79c6ca8dbe8ea5",
+      "module": "Ix/MultiStark/Tests.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/MultiStark/Tests.c": {
+      "kind": "c",
+      "expected": "ea4746043cfcba3b",
+      "module": "Ix/MultiStark/Tests.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/MultiStark/Tests.c.o.export": {
+      "kind": "object",
+      "expected": "151a4895a82c59c0",
+      "module": "Ix/MultiStark/Tests.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/MultiStark.lean": {
+      "kind": "source",
+      "expected": "82767a20fd301254",
+      "module": "Ix/MultiStark.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/MultiStark.c": {
+      "kind": "c",
+      "expected": "911c1ea9ca9be270",
+      "module": "Ix/MultiStark.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/MultiStark.c.o.export": {
+      "kind": "object",
+      "expected": "34b53b2697f11e68",
+      "module": "Ix/MultiStark.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/Aggr.lean": {
+      "kind": "source",
+      "expected": "e67fd523adb2c66d",
+      "module": "Ix/Aggr.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aggr.c": {
+      "kind": "c",
+      "expected": "9b9509d503f31433",
+      "module": "Ix/Aggr.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aggr.c.o.export": {
+      "kind": "object",
+      "expected": "2496088eb0ec9038",
+      "module": "Ix/Aggr.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/Aiur/Stages/Typed.lean": {
+      "kind": "source",
+      "expected": "858a8572ccbbcee9",
+      "module": "Ix/Aiur/Stages/Typed.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Stages/Typed.c": {
+      "kind": "c",
+      "expected": "11abc17b80f7d94c",
+      "module": "Ix/Aiur/Stages/Typed.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Stages/Typed.c.o.export": {
+      "kind": "object",
+      "expected": "f72194df4ec94ef3",
+      "module": "Ix/Aiur/Stages/Typed.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/Aiur/Stages/Simple.lean": {
+      "kind": "source",
+      "expected": "eb6a190a056239e5",
+      "module": "Ix/Aiur/Stages/Simple.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Stages/Simple.c": {
+      "kind": "c",
+      "expected": "9d463e2a9b7ebd7c",
+      "module": "Ix/Aiur/Stages/Simple.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Stages/Simple.c.o.export": {
+      "kind": "object",
+      "expected": "619067c55f80c930",
+      "module": "Ix/Aiur/Stages/Simple.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/Aiur/Stages/Concrete.lean": {
+      "kind": "source",
+      "expected": "6f8aea3eb65938e1",
+      "module": "Ix/Aiur/Stages/Concrete.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Stages/Concrete.c": {
+      "kind": "c",
+      "expected": "bb78843896733a33",
+      "module": "Ix/Aiur/Stages/Concrete.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Stages/Concrete.c.o.export": {
+      "kind": "object",
+      "expected": "889bc3c4825cb6f6",
+      "module": "Ix/Aiur/Stages/Concrete.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/Aiur/Compiler/Layout.lean": {
+      "kind": "source",
+      "expected": "f18387ecd5b0c2d8",
+      "module": "Ix/Aiur/Compiler/Layout.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Compiler/Layout.c": {
+      "kind": "c",
+      "expected": "f1cb75a2b78b565b",
+      "module": "Ix/Aiur/Compiler/Layout.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Compiler/Layout.c.o.export": {
+      "kind": "object",
+      "expected": "1a974fe19bc6b73a",
+      "module": "Ix/Aiur/Compiler/Layout.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/Aiur/Compiler/Lower.lean": {
+      "kind": "source",
+      "expected": "831dfb18156e5b9a",
+      "module": "Ix/Aiur/Compiler/Lower.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Compiler/Lower.c": {
+      "kind": "c",
+      "expected": "ea12daa8757bc580",
+      "module": "Ix/Aiur/Compiler/Lower.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Compiler/Lower.c.o.export": {
+      "kind": "object",
+      "expected": "0b26ba6ac3ba84c6",
+      "module": "Ix/Aiur/Compiler/Lower.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/Aiur/Compiler/Dedup.lean": {
+      "kind": "source",
+      "expected": "edc01bbb2d43577c",
+      "module": "Ix/Aiur/Compiler/Dedup.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Compiler/Dedup.c": {
+      "kind": "c",
+      "expected": "fda0859e1607194a",
+      "module": "Ix/Aiur/Compiler/Dedup.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Compiler/Dedup.c.o.export": {
+      "kind": "object",
+      "expected": "18aba66467c6bc07",
+      "module": "Ix/Aiur/Compiler/Dedup.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/Aiur/Compiler/Check.lean": {
+      "kind": "source",
+      "expected": "0caf97e8ae688490",
+      "module": "Ix/Aiur/Compiler/Check.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Compiler/Check.c": {
+      "kind": "c",
+      "expected": "d3a1bd4e37d1686f",
+      "module": "Ix/Aiur/Compiler/Check.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Compiler/Check.c.o.export": {
+      "kind": "object",
+      "expected": "7bff093651d56bfe",
+      "module": "Ix/Aiur/Compiler/Check.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/SmallMap.lean": {
+      "kind": "source",
+      "expected": "2e513ab3dd5aa561",
+      "module": "Ix/SmallMap.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/SmallMap.c": {
+      "kind": "c",
+      "expected": "254a9b518b843224",
+      "module": "Ix/SmallMap.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/SmallMap.c.o.export": {
+      "kind": "object",
+      "expected": "678c070f00e3dd34",
+      "module": "Ix/SmallMap.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/Aiur/Compiler/Match.lean": {
+      "kind": "source",
+      "expected": "687f399dade1e8c1",
+      "module": "Ix/Aiur/Compiler/Match.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Compiler/Match.c": {
+      "kind": "c",
+      "expected": "7cdffe29ed7694f1",
+      "module": "Ix/Aiur/Compiler/Match.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Compiler/Match.c.o.export": {
+      "kind": "object",
+      "expected": "838b382e2da846b6",
+      "module": "Ix/Aiur/Compiler/Match.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/Aiur/Compiler/Simple.lean": {
+      "kind": "source",
+      "expected": "ef414075bb899715",
+      "module": "Ix/Aiur/Compiler/Simple.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Compiler/Simple.c": {
+      "kind": "c",
+      "expected": "d44ee9f4defa60c2",
+      "module": "Ix/Aiur/Compiler/Simple.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Compiler/Simple.c.o.export": {
+      "kind": "object",
+      "expected": "554a574eace4f64b",
+      "module": "Ix/Aiur/Compiler/Simple.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/Aiur/Compiler/Concretize.lean": {
+      "kind": "source",
+      "expected": "7117cb2008a070ec",
+      "module": "Ix/Aiur/Compiler/Concretize.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Compiler/Concretize.c": {
+      "kind": "c",
+      "expected": "3424c24c354a8ba3",
+      "module": "Ix/Aiur/Compiler/Concretize.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Compiler/Concretize.c.o.export": {
+      "kind": "object",
+      "expected": "1d37b42e9b73aaaa",
+      "module": "Ix/Aiur/Compiler/Concretize.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/Aiur/Compiler.lean": {
+      "kind": "source",
+      "expected": "c054008a9904c46e",
+      "module": "Ix/Aiur/Compiler.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Compiler.c": {
+      "kind": "c",
+      "expected": "da26b408d1940a86",
+      "module": "Ix/Aiur/Compiler.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Compiler.c.o.export": {
+      "kind": "object",
+      "expected": "3ecf6ac82c6ef9a3",
+      "module": "Ix/Aiur/Compiler.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/Aiur/Semantics/Flatten.lean": {
+      "kind": "source",
+      "expected": "796ffd63d533489b",
+      "module": "Ix/Aiur/Semantics/Flatten.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Semantics/Flatten.c": {
+      "kind": "c",
+      "expected": "1219d0540f796b73",
+      "module": "Ix/Aiur/Semantics/Flatten.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Semantics/Flatten.c.o.export": {
+      "kind": "object",
+      "expected": "5ffd715f4702cd9a",
+      "module": "Ix/Aiur/Semantics/Flatten.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/Aiur/Interpret.lean": {
+      "kind": "source",
+      "expected": "57a74afe363d9253",
+      "module": "Ix/Aiur/Interpret.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Interpret.c": {
+      "kind": "c",
+      "expected": "9d9a0d25f08010f3",
+      "module": "Ix/Aiur/Interpret.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Interpret.c.o.export": {
+      "kind": "object",
+      "expected": "dcb7c91636c9c571",
+      "module": "Ix/Aiur/Interpret.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/Aiur/Statistics.lean": {
+      "kind": "source",
+      "expected": "e93b8db673f928a3",
+      "module": "Ix/Aiur/Statistics.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Statistics.c": {
+      "kind": "c",
+      "expected": "cc74f3dc6617bbc8",
+      "module": "Ix/Aiur/Statistics.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Statistics.c.o.export": {
+      "kind": "object",
+      "expected": "277a62854f754d83",
+      "module": "Ix/Aiur/Statistics.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/IxVM/FunctionGroups.lean": {
+      "kind": "source",
+      "expected": "0ed450cdff86fa7a",
+      "module": "Ix/IxVM/FunctionGroups.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/FunctionGroups.c": {
+      "kind": "c",
+      "expected": "2304ac35edb13a1b",
+      "module": "Ix/IxVM/FunctionGroups.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/FunctionGroups.c.o.export": {
+      "kind": "object",
+      "expected": "46d637b0eba064e7",
+      "module": "Ix/IxVM/FunctionGroups.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/IxVM/RBTreeMap.lean": {
+      "kind": "source",
+      "expected": "c766f73f80699c5e",
+      "module": "Ix/IxVM/RBTreeMap.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/RBTreeMap.c": {
+      "kind": "c",
+      "expected": "7a0cee6edd9680d2",
+      "module": "Ix/IxVM/RBTreeMap.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/RBTreeMap.c.o.export": {
+      "kind": "object",
+      "expected": "c560d508218a821f",
+      "module": "Ix/IxVM/RBTreeMap.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/IxVM/Ixon.lean": {
+      "kind": "source",
+      "expected": "8a20190a00bce482",
+      "module": "Ix/IxVM/Ixon.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/Ixon.c": {
+      "kind": "c",
+      "expected": "afe50bfb782f09d5",
+      "module": "Ix/IxVM/Ixon.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/Ixon.c.o.export": {
+      "kind": "object",
+      "expected": "fdaae835a009a894",
+      "module": "Ix/IxVM/Ixon.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/IxVM/IxonSerialize.lean": {
+      "kind": "source",
+      "expected": "1dc96b31c302c7d6",
+      "module": "Ix/IxVM/IxonSerialize.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/IxonSerialize.c": {
+      "kind": "c",
+      "expected": "8414e03e59701adc",
+      "module": "Ix/IxVM/IxonSerialize.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/IxonSerialize.c.o.export": {
+      "kind": "object",
+      "expected": "b3e2290f0d4f235f",
+      "module": "Ix/IxVM/IxonSerialize.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/IxVM/IxonDeserialize.lean": {
+      "kind": "source",
+      "expected": "41e49a33995be04f",
+      "module": "Ix/IxVM/IxonDeserialize.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/IxonDeserialize.c": {
+      "kind": "c",
+      "expected": "1b92cb2e65c74ccc",
+      "module": "Ix/IxVM/IxonDeserialize.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/IxonDeserialize.c.o.export": {
+      "kind": "object",
+      "expected": "01c7c166b207c4c0",
+      "module": "Ix/IxVM/IxonDeserialize.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/IxVM.lean": {
+      "kind": "source",
+      "expected": "071375806adcc017",
+      "module": "Ix/IxVM.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM.c": {
+      "kind": "c",
+      "expected": "e32530819b3ac425",
+      "module": "Ix/IxVM.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM.c.o.export": {
+      "kind": "object",
+      "expected": "71e1245b8247c37d",
+      "module": "Ix/IxVM.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/IxVM/KernelTypes.lean": {
+      "kind": "source",
+      "expected": "50ace9883134f45c",
+      "module": "Ix/IxVM/KernelTypes.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/KernelTypes.c": {
+      "kind": "c",
+      "expected": "d74ed7bdbb437916",
+      "module": "Ix/IxVM/KernelTypes.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/KernelTypes.c.o.export": {
+      "kind": "object",
+      "expected": "38b8d65b81442756",
+      "module": "Ix/IxVM/KernelTypes.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/IxVM/Kernel/Klimbs.lean": {
+      "kind": "source",
+      "expected": "1410e96aa6091e76",
+      "module": "Ix/IxVM/Kernel/Klimbs.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/Kernel/Klimbs.c": {
+      "kind": "c",
+      "expected": "eeaab54c81fc0e46",
+      "module": "Ix/IxVM/Kernel/Klimbs.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/Kernel/Klimbs.c.o.export": {
+      "kind": "object",
+      "expected": "3b27bdf15a165004",
+      "module": "Ix/IxVM/Kernel/Klimbs.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/IxVM/Kernel/NatPrim.lean": {
+      "kind": "source",
+      "expected": "ad764ad48316815d",
+      "module": "Ix/IxVM/Kernel/NatPrim.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/Kernel/NatPrim.c": {
+      "kind": "c",
+      "expected": "36acda166dff2a7b",
+      "module": "Ix/IxVM/Kernel/NatPrim.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/Kernel/NatPrim.c.o.export": {
+      "kind": "object",
+      "expected": "709f42348088a0e7",
+      "module": "Ix/IxVM/Kernel/NatPrim.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/IxVM/Convert.lean": {
+      "kind": "source",
+      "expected": "d29a2a914ff81bb0",
+      "module": "Ix/IxVM/Convert.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/Convert.c": {
+      "kind": "c",
+      "expected": "c31c2974092c7b2e",
+      "module": "Ix/IxVM/Convert.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/Convert.c.o.export": {
+      "kind": "object",
+      "expected": "cc83c66545ce0196",
+      "module": "Ix/IxVM/Convert.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/IxVM/Ingress.lean": {
+      "kind": "source",
+      "expected": "9cdf5432c35f5e19",
+      "module": "Ix/IxVM/Ingress.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/Ingress.c": {
+      "kind": "c",
+      "expected": "90f2426c6898f4ef",
+      "module": "Ix/IxVM/Ingress.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/Ingress.c.o.export": {
+      "kind": "object",
+      "expected": "f85706ce1e3c3251",
+      "module": "Ix/IxVM/Ingress.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/IxVM/Kernel/Levels.lean": {
+      "kind": "source",
+      "expected": "cc43705e0de6fd1c",
+      "module": "Ix/IxVM/Kernel/Levels.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/Kernel/Levels.c": {
+      "kind": "c",
+      "expected": "8544b7f5713130ea",
+      "module": "Ix/IxVM/Kernel/Levels.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/Kernel/Levels.c.o.export": {
+      "kind": "object",
+      "expected": "6658c1c013064be9",
+      "module": "Ix/IxVM/Kernel/Levels.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/IxVM/Kernel/Subst.lean": {
+      "kind": "source",
+      "expected": "755e0018ea482f16",
+      "module": "Ix/IxVM/Kernel/Subst.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/Kernel/Subst.c": {
+      "kind": "c",
+      "expected": "75c0045ecc3594e3",
+      "module": "Ix/IxVM/Kernel/Subst.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/Kernel/Subst.c.o.export": {
+      "kind": "object",
+      "expected": "e3dae6e74534feed",
+      "module": "Ix/IxVM/Kernel/Subst.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/IxVM/Kernel/Whnf.lean": {
+      "kind": "source",
+      "expected": "553b7a863af5e0d8",
+      "module": "Ix/IxVM/Kernel/Whnf.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/Kernel/Whnf.c": {
+      "kind": "c",
+      "expected": "c764ce66f92688bb",
+      "module": "Ix/IxVM/Kernel/Whnf.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/Kernel/Whnf.c.o.export": {
+      "kind": "object",
+      "expected": "2098bbf40dc42ba3",
+      "module": "Ix/IxVM/Kernel/Whnf.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/IxVM/Kernel/InferOnly.lean": {
+      "kind": "source",
+      "expected": "236a3fa031415a18",
+      "module": "Ix/IxVM/Kernel/InferOnly.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/Kernel/InferOnly.c": {
+      "kind": "c",
+      "expected": "5c5500496a782f9d",
+      "module": "Ix/IxVM/Kernel/InferOnly.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/Kernel/InferOnly.c.o.export": {
+      "kind": "object",
+      "expected": "ee17257e270bb723",
+      "module": "Ix/IxVM/Kernel/InferOnly.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/IxVM/Kernel/DefEq.lean": {
+      "kind": "source",
+      "expected": "82665dd8429f13a4",
+      "module": "Ix/IxVM/Kernel/DefEq.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/Kernel/DefEq.c": {
+      "kind": "c",
+      "expected": "1418dcf1fb1368a9",
+      "module": "Ix/IxVM/Kernel/DefEq.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/Kernel/DefEq.c.o.export": {
+      "kind": "object",
+      "expected": "8d63342741927146",
+      "module": "Ix/IxVM/Kernel/DefEq.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/IxVM/Kernel/Infer.lean": {
+      "kind": "source",
+      "expected": "89138c261ea31351",
+      "module": "Ix/IxVM/Kernel/Infer.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/Kernel/Infer.c": {
+      "kind": "c",
+      "expected": "ca5a01375025a1b1",
+      "module": "Ix/IxVM/Kernel/Infer.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/Kernel/Infer.c.o.export": {
+      "kind": "object",
+      "expected": "56cced23fb667bf7",
+      "module": "Ix/IxVM/Kernel/Infer.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/IxVM/Kernel/CanonicalCheck.lean": {
+      "kind": "source",
+      "expected": "6f26827c8f1ad866",
+      "module": "Ix/IxVM/Kernel/CanonicalCheck.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/Kernel/CanonicalCheck.c": {
+      "kind": "c",
+      "expected": "6074a5f105359109",
+      "module": "Ix/IxVM/Kernel/CanonicalCheck.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/Kernel/CanonicalCheck.c.o.export": {
+      "kind": "object",
+      "expected": "52b6728f06bc2dab",
+      "module": "Ix/IxVM/Kernel/CanonicalCheck.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/IxVM/Kernel/Check.lean": {
+      "kind": "source",
+      "expected": "2af0bc124fce2949",
+      "module": "Ix/IxVM/Kernel/Check.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/Kernel/Check.c": {
+      "kind": "c",
+      "expected": "a4617f6fc5407c4c",
+      "module": "Ix/IxVM/Kernel/Check.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/Kernel/Check.c.o.export": {
+      "kind": "object",
+      "expected": "df4ad4735728c658",
+      "module": "Ix/IxVM/Kernel/Check.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/IxVM/Kernel/Claim.lean": {
+      "kind": "source",
+      "expected": "48e767c0c6f911d5",
+      "module": "Ix/IxVM/Kernel/Claim.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/Kernel/Claim.c": {
+      "kind": "c",
+      "expected": "c5bff0e76aa6e062",
+      "module": "Ix/IxVM/Kernel/Claim.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/Kernel/Claim.c.o.export": {
+      "kind": "object",
+      "expected": "b5a8fdd7a24868a2",
+      "module": "Ix/IxVM/Kernel/Claim.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/IxVM/Toplevel.lean": {
+      "kind": "source",
+      "expected": "feab9ec348e37b12",
+      "module": "Ix/IxVM/Toplevel.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/Toplevel.c": {
+      "kind": "c",
+      "expected": "6d3d27150c5e58fb",
+      "module": "Ix/IxVM/Toplevel.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/Toplevel.c.o.export": {
+      "kind": "object",
+      "expected": "7dc89a8cb91fd918",
+      "module": "Ix/IxVM/Toplevel.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/Benchmark/Results.lean": {
+      "kind": "source",
+      "expected": "22daeb19f863701a",
+      "module": "Ix/Benchmark/Results.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Benchmark/Results.c": {
+      "kind": "c",
+      "expected": "9cd0a7f1beea7ab5",
+      "module": "Ix/Benchmark/Results.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Benchmark/Results.c.o.export": {
+      "kind": "object",
+      "expected": "6219bd5824825053",
+      "module": "Ix/Benchmark/Results.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/KernelCheck.lean": {
+      "kind": "source",
+      "expected": "ab4c498a1036bf41",
+      "module": "Ix/KernelCheck.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/KernelCheck.c": {
+      "kind": "c",
+      "expected": "4293091c3e8680ab",
+      "module": "Ix/KernelCheck.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/KernelCheck.c.o.export": {
+      "kind": "object",
+      "expected": "f03ba2832e68c394",
+      "module": "Ix/KernelCheck.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/Cli/CheckCmd.lean": {
+      "kind": "source",
+      "expected": "8e86dea409e51ab5",
+      "module": "Ix/Cli/CheckCmd.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Cli/CheckCmd.c": {
+      "kind": "c",
+      "expected": "e9bb4912e1aad4f4",
+      "module": "Ix/Cli/CheckCmd.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Cli/CheckCmd.c.o.export": {
+      "kind": "object",
+      "expected": "c270c9d5f66f4d45",
+      "module": "Ix/Cli/CheckCmd.c.o.export"
+    },
+    "/tmp/ix-gpu-trace-codegen/Ix/Cli/AggregateCmd.lean": {
+      "kind": "source",
+      "expected": "9f45f3b0f05f4956",
+      "module": "Ix/Cli/AggregateCmd.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Cli/AggregateCmd.c": {
+      "kind": "c",
+      "expected": "750d7f97a46f75d4",
+      "module": "Ix/Cli/AggregateCmd.c.o.export"
+    },
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Cli/AggregateCmd.c.o.export": {
+      "kind": "object",
+      "expected": "b02dba60a4eb34c5",
+      "module": "Ix/Cli/AggregateCmd.c.o.export"
+    }
+  },
+  "objects": [
+    "/home/sam/repos/ix/.lake/packages/Cli/.lake/build/ir/Cli/Basic.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/Cli/.lake/build/ir/Cli/Extensions.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/Cli/.lake/build/ir/Cli.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Common.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/Blake3/.lake/build/ir/Blake3.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/Blake3/.lake/build/ir/Blake3/Rust.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Address.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Environment.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Goldilocks.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Stages/Bytecode.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Semantics/BytecodeFfi.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Protocol.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxonMode.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Merkle.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Ixon.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Claim.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/AssumptionTree.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Tactic/Unreachable.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Linter/UnreachableTactic.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Lean/TagAttribute.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Lean/AttributeExtra.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Linter/UnnecessarySeqFocus.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Linter.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Tactic/Init.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Tactic/SeqFocus.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Tactic/Lint/Basic.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Tactic/Lint/Misc.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Lean/Syntax.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Util/ProofWanted.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Tactic/Basic.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Classes/Order.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Control/ForInStep/Basic.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Recycling/RBTree/Basic.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxonUniv.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Sharing.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Store.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Mutual.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/GraphM.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/CondenseM.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/SOrder.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/CallSitePlan.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/AuxGen/ExprUtils.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/CallSiteSurgery.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/CanonM.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/CompileM.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Tc/Mode.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Tc/Id.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Unsigned.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Tc/Level.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Tc/Expr.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Tc/Const.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Tc/Error.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Tc/Env.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Tc/Primitive.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/ClaimHarness.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/String/AsciiCasing.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/String/Basic.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/String/Legacy.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/CodeAction/Deprecated.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Tactic/Alias.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/List/Basic.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/String/Lemmas.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/Array/Match.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/String/Matcher.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/String.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Meta.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Cli/NameResolve.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/TracingTexray.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Lib.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IndexMap.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Stages/Source.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Meta.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/Blake3.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/Core.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/ByteStream.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/MultiStark/Deserialize.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/MultiStark/Keccak.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/MultiStark/Pcs.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/MultiStark/SystemDeserialize.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/MultiStark/Verifier.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aggr/Circuit.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aggr/FunctionGroups.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aggr/Host.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/MultiStark/Goldilocks.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/MultiStark/Aggregate.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/MultiStark/Host.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/MultiStark/VerifierFunctionGroups.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/MultiStark/Tests.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/MultiStark.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aggr.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Stages/Typed.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Stages/Simple.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Stages/Concrete.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Compiler/Layout.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Compiler/Lower.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Compiler/Dedup.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Compiler/Check.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/SmallMap.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Compiler/Match.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Compiler/Simple.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Compiler/Concretize.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Compiler.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Semantics/Flatten.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Interpret.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Statistics.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/FunctionGroups.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/RBTreeMap.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/Ixon.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/IxonSerialize.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/IxonDeserialize.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/KernelTypes.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/Kernel/Klimbs.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/Kernel/NatPrim.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/Convert.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/Ingress.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/Kernel/Levels.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/Kernel/Subst.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/Kernel/Whnf.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/Kernel/InferOnly.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/Kernel/DefEq.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/Kernel/Infer.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/Kernel/CanonicalCheck.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/Kernel/Check.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/Kernel/Claim.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/Toplevel.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Benchmark/Results.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/KernelCheck.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Cli/CheckCmd.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Cli/AggregateCmd.c.o.export"
+  ],
+  "link_args": [
+    "/home/sam/repos/ix/.lake/build/ir/Main.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/Cli/.lake/build/ir/Cli/Basic.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/Cli/.lake/build/ir/Cli/Extensions.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/Cli/.lake/build/ir/Cli.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Common.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/Blake3/.lake/build/ir/Blake3.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/Blake3/.lake/build/ir/Blake3/Rust.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Address.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Environment.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Goldilocks.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Stages/Bytecode.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Semantics/BytecodeFfi.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Protocol.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxonMode.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Merkle.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Ixon.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Claim.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/AssumptionTree.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Tactic/Unreachable.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Linter/UnreachableTactic.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Lean/TagAttribute.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Lean/AttributeExtra.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Linter/UnnecessarySeqFocus.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Linter.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Tactic/Init.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Tactic/SeqFocus.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Tactic/Lint/Basic.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Tactic/Lint/Misc.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Lean/Syntax.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Util/ProofWanted.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Tactic/Basic.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Classes/Order.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Control/ForInStep/Basic.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Recycling/RBTree/Basic.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxonUniv.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Sharing.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Store.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Mutual.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/GraphM.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/CondenseM.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/SOrder.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/CallSitePlan.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/AuxGen/ExprUtils.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/CallSiteSurgery.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/CanonM.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/CompileM.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Tc/Mode.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Tc/Id.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Unsigned.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Tc/Level.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Tc/Expr.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Tc/Const.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Tc/Error.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Tc/Env.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Tc/Primitive.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/ClaimHarness.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/String/AsciiCasing.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/String/Basic.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/String/Legacy.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/CodeAction/Deprecated.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Tactic/Alias.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/List/Basic.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/String/Lemmas.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/Array/Match.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/String/Matcher.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/String.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Meta.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Cli/NameResolve.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Cli/AddrOfCmd.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/TracingTexray.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Lib.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IndexMap.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Stages/Source.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Meta.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/Blake3.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/Core.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/ByteStream.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/MultiStark/Deserialize.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/MultiStark/Keccak.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/MultiStark/Pcs.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/MultiStark/SystemDeserialize.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/MultiStark/Verifier.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aggr/Circuit.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aggr/FunctionGroups.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aggr/Host.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/MultiStark/Goldilocks.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/MultiStark/Aggregate.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/MultiStark/Host.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/MultiStark/VerifierFunctionGroups.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/MultiStark/Tests.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/MultiStark.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aggr.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Stages/Typed.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Stages/Simple.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Stages/Concrete.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Compiler/Layout.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Compiler/Lower.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Compiler/Dedup.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Compiler/Check.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/SmallMap.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Compiler/Match.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Compiler/Simple.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Compiler/Concretize.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Compiler.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Semantics/Flatten.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Interpret.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Statistics.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/FunctionGroups.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/RBTreeMap.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/Ixon.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/IxonSerialize.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/IxonDeserialize.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/KernelTypes.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/Kernel/Klimbs.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/Kernel/NatPrim.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/Convert.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/Ingress.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/Kernel/Levels.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/Kernel/Subst.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/Kernel/Whnf.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/Kernel/InferOnly.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/Kernel/DefEq.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/Kernel/Infer.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/Kernel/CanonicalCheck.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/Kernel/Check.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/Kernel/Claim.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxVM/Toplevel.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Benchmark/Results.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/KernelCheck.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Cli/CheckCmd.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Cli/AggregateCmd.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/BenchConstants.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Cli/ConstsFile.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Watchdog.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Cli/BenchCmd.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Cli/BenchPlots.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Cli/BenchReport.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Stages/Codegen.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Cli/CodegenCmd.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/EnvScope.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Cli/ValidateCmd.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Cli/CheckRsCmd.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Tc/Equiv.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Tc/Subst.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Tc/Lctx.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Tc/Monad.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Tc/Ingress.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Tc/CanonicalCheck.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Tc/IngressMeta.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Tc/Egress.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Tc/EgressLean.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Tc/Whnf.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Tc/Infer.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Tc/DefEq.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Tc/Knot.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Tc/Inductive.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Tc/Check.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Tc/Driver.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Tc/ParCheck.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Tc/Validate.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Tc.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Cli/CheckLeanCmd.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Ground.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/AuxGen/Types.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/AuxGen/Levels.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/AuxGen/Nested.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/AuxGen/Kernel.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/AuxGen/Recursor.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/AuxGen/CasesOn.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/AuxGen/RecOn.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/AuxGen/Below.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/AuxGen/BRecOn.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/AuxGen/Patches.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/AuxGen/Surgery.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/AuxGen/CompileAux.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/CompileDriver.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Cli/CompileLeanCmd.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/DecompileM.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/DecompileRoundtrip.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/DecompileDriver.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Cli/ValidateLeanCmd.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Cli/CatalogCmd.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Cli/ClaimCmd.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Cli/CompileCmd.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Cli/DecompileCmd.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Cli/DiffCmd.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Cli/IngressCmd.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Cli/MergeCmd.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Cli/NameOfCmd.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Cli/PackCmd.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Cli/ProfileCmd.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Cli/ShardProofIndex.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Cli/ProveCmd.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Cli/RefineCmd.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Cli/ShardCmd.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Cli/TreeCmd.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Cli/VerifyCmd.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Iroh/Serve.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Cli/ServeCmd.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Iroh/Connect.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Cli/ConnectCmd.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxonSyntax/AST.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxonSyntax/Error.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxonSyntax/Parser.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxonSyntax/Print.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxonSyntax.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Replay.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Catalog.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/ImportIxe.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Commit.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/IxEval.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Cronos.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Util/LibraryNote.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Classes/Cast.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Classes/RatCast.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Lean/EStateM.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Lean/Except.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Recycling/MonadSatisfying/Basic.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Classes/SatisfiesM.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/CodeAction/Attr.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/CodeAction/Basic.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Lean/Position.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/CodeAction/Misc.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/CodeAction/Match.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/CodeAction.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Control/Lemmas.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Control/LawfulMonadState.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Control/OptionT.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Control/AlternativeMonad.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Control/ForInStep/Lemmas.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Control/ForInStep.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Control/Monad.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/MLList/Basic.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Control/Nondet/Basic.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/UInt.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/Array/Basic.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/Array/Init/Lemmas.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/List/Lemmas.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/Array/Lemmas.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/Array/Merge.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Recycling/MonadSatisfying/Array.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/Array/Monadic.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/Array/Pairwise.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/List/Scan.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/Array/Scan.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/Array.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/AssocList.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/BinaryHeap/Basic.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/BinaryHeap.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/BinomialHeap/Basic.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/BinomialHeap/Lemmas.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/BinomialHeap.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/BitVec/Basic.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/Nat/Basic.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/Nat/Lemmas.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/Fin/OfBits.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/Int.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/BitVec/Lemmas.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/BitVec.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/Bool.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/ByteArray.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/ByteSlice.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/Char/Basic.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/Char/AsciiCasing.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/Char.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Tactic/OpenPrivate.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Tactic/Lint/Simp.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Tactic/Lint/TypeClass.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Tactic/Lint/Frontend.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Tactic/Lint.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/DList/Basic.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/DList/Lemmas.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/DList.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/Fin/Basic.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/Fin/Lemmas.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Tactic/Trans.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/Fin/Coding.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/Fin/Fold.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/Fin.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/Float/Basic.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/Float/Lemmas.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/Float/Rat.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/Float.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/FloatArray.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Lean/HashMap.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/HashMap/Basic.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/HashMap.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/List/ArrayMap.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/List/Count.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/List/Init/Lemmas.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/List/Interleave.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/List/Matcher.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Recycling/MonadSatisfying/List.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/List/Monadic.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/List/Pairwise.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/List/Perm.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/List.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/MLList/Heartbeats.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Lean/System/IO.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/MLList/IO.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/MLList.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/NameSet.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/Nat/Bisect.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/Nat/Bitwise/Lemmas.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/Nat/Bitwise.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/Nat/Gcd.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/Nat.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/PairingHeap.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/RBMap/Basic.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Recycling/RBTree/WF.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Recycling/RBTree/Depth.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/RBMap/Depth.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Recycling/RBTree/Alter.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Recycling/RBTree/Lemmas.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/RBMap/Lemmas.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/RBMap/Alter.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/RBMap/WF.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/RBMap.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/Random/MersenneTwister.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/Random.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/Range/Lemmas.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/Range.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/Rat/Float.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/Rat.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/RunningStats.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/Stream.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Util/Panic.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/UnionFind/Basic.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/UnionFind/Lemmas.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/UnionFind.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/Vector/Basic.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/Vector/Lemmas.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Recycling/MonadSatisfying/Vector.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/Vector/Monadic.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Data/Vector.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Lean/Expr.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Lean/Float.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Lean/HashSet.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Lean/IO/Process.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Lean/Json.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Lean/LawfulMonad.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Lean/LawfulMonadLift.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Lean/Meta/Basic.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Lean/Meta/Expr.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Lean/PersistentHashMap.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Lean/Meta/DiscrTree.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Lean/Meta/Inaccessible.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Lean/Meta/InstantiateMVars.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Lean/MonadBacktrack.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Lean/Meta/SavedState.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Lean/Meta/Simp.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Lean/Meta/UnusedNames.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Lean/NameMapAttribute.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Lean/PersistentHashSet.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Recycling/MonadSatisfying/Lean.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Lean/SatisfiesM.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Lean/Util/EnvSearch.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Logic.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Recycling/MonadSatisfying.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Recycling/RBTree.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Tactic/Case.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Tactic/Congr.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Tactic/Exact.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Tactic/GeneralizeProofs.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Tactic/HelpCmd.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Tactic/Instances.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Tactic/Lemma.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Tactic/NoMatch.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Tactic/PermuteGoals.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Tactic/PrintDependents.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Tactic/PrintOpaques.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Tactic/PrintPrefix.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Tactic/ShowUnused.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Tactic/SqueezeScope.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Util/Cache.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Util/ExtendedBinder.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries/Util/Pickle.c.o.export",
+    "/home/sam/repos/ix/.lake/packages/batteries/.lake/build/ir/Batteries.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Benchmark/Common.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Benchmark/Estimate.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Benchmark/Distribution.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Benchmark/Data.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Benchmark/Change.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Benchmark/OneShot.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Benchmark/Serde.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Benchmark/Ansi.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Benchmark/Tukey.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Benchmark/Report.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Benchmark/Bench.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Semantics/SourceEval.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur/Semantics/BytecodeEval.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix/Aiur.c.o.export",
+    "/home/sam/repos/ix/.lake/build/ir/Ix.c.o.export",
+    "/home/sam/repos/ix/.lake/build/lib/libix_ffi_net.a",
+    "/home/sam/repos/ix/.lake/build/lib/libix_ffi_default.a",
+    "/home/sam/repos/ix/.lake/packages/Blake3/rust/target/release/libblake3_rs.a",
+    "-rdynamic",
+    "-L",
+    "/home/sam/.elan/toolchains/leanprover--lean4---v4.33.1/lib/lean",
+    "--sysroot",
+    "/home/sam/.elan/toolchains/leanprover--lean4---v4.33.1",
+    "-L",
+    "/home/sam/.elan/toolchains/leanprover--lean4---v4.33.1/lib",
+    "-L",
+    "/home/sam/.elan/toolchains/leanprover--lean4---v4.33.1/lib/glibc",
+    "-lc",
+    "-lc_nonshared",
+    "-Wl,--as-needed",
+    "-l:ld.so",
+    "-Wl,--no-as-needed",
+    "-lpthread_nonshared",
+    "-Wl,--as-needed",
+    "-Wl,-Bstatic",
+    "-lgmp",
+    "-lunwind",
+    "-luv",
+    "-lssl",
+    "-lcrypto",
+    "-Wl,-Bdynamic",
+    "-Wl,--no-as-needed",
+    "-fuse-ld=lld",
+    "-Wl,--start-group",
+    "-lleancpp",
+    "-lLean",
+    "-Wl,--end-group",
+    "-lStd",
+    "-Wl,--start-group",
+    "-lInit",
+    "-lleanrt",
+    "-Wl,--end-group",
+    "-Wl,-Bstatic",
+    "-lc++",
+    "-lc++abi",
+    "-Wl,-Bdynamic",
+    "-lLake",
+    "-Wl,--as-needed",
+    "-lgmp",
+    "-luv",
+    "-lssl",
+    "-lcrypto",
+    "-lpthread",
+    "-ldl",
+    "-lrt",
+    "-Wl,--no-as-needed",
+    "-Wl,--gc-sections",
+    "-lm",
+    "-ldl",
+    "-pthread"
+  ]
+}

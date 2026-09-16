@@ -1,0 +1,125 @@
+    Checking cfg-if v1.0.4
+    Checking either v1.15.0
+    Checking crossbeam-utils v0.8.21
+    Checking once_cell v1.21.4
+    Checking num-traits v0.2.19
+    Checking cpufeatures v0.3.0
+    Checking serde_core v1.0.228
+    Checking pin-project-lite v0.2.17
+    Checking rand_core v0.10.1
+    Checking scopeguard v1.2.0
+    Checking lock_api v0.4.14
+    Checking libc v0.2.186
+    Checking chacha20 v0.10.2
+    Checking tracing-core v0.1.36
+    Checking itertools v0.15.0
+    Checking spin v0.12.3
+    Checking rand v0.10.1
+    Checking crossbeam-epoch v0.9.20
+    Checking smallvec v1.15.1
+    Checking tracing v0.1.44
+   Compiling version_check v0.9.5
+    Checking crossbeam-deque v0.8.6
+    Checking num-integer v0.1.46
+   Compiling blake3 v1.8.5
+    Checking typenum v1.20.0
+    Checking rayon-core v1.13.0
+   Compiling generic-array v0.14.7
+    Checking constant_time_eq v0.4.2
+    Checking arrayref v0.3.9
+    Checking parking_lot_core v0.9.12
+    Checking num-bigint v0.5.1
+    Checking arrayvec v0.7.6
+    Checking num-bigint v0.4.6
+    Checking rayon v1.12.0
+    Checking crunchy v0.2.4
+   Compiling glob v0.3.3
+    Checking equivalent v1.0.2
+    Checking log v0.4.29
+   Compiling object v0.37.3
+   Compiling clang-sys v1.8.1
+    Checking tiny-keccak v2.0.2
+    Checking hashbrown v0.17.0
+    Checking regex-syntax v0.8.10
+    Checking memchr v2.8.0
+   Compiling prettyplease v0.2.37
+    Checking crypto-common v0.1.7
+    Checking block-buffer v0.10.4
+    Checking bitflags v2.11.1
+    Checking linux-raw-sys v0.12.1
+    Checking rustc-hash v2.1.2
+   Compiling minimal-lexical v0.2.1
+    Checking bignat v0.1.0 (https://github.com/argumentcomputer/lean-ffi.git?rev=93c7e52952ae94546be08313f4ff3922984c84d5#93c7e529)
+    Checking serde v1.0.228
+    Checking lazy_static v1.5.0
+    Checking rustix v1.1.4
+    Checking sharded-slab v0.1.7
+   Compiling nom v7.1.3
+    Checking regex-automata v0.4.14
+    Checking thiserror v2.0.18
+    Checking p3-maybe-rayon v0.6.0 (https://github.com/Plonky3/Plonky3?rev=3152b14a89067c83775a8076cc262ffc48a1fd7c#3152b14a)
+    Checking indexmap v2.14.0
+    Checking p3-util v0.6.0 (https://github.com/Plonky3/Plonky3?rev=3152b14a89067c83775a8076cc262ffc48a1fd7c#3152b14a)
+    Checking digest v0.10.7
+    Checking libm v0.2.16
+    Checking p3-field v0.6.0 (https://github.com/Plonky3/Plonky3?rev=3152b14a89067c83775a8076cc262ffc48a1fd7c#3152b14a)
+    Checking tracing-log v0.2.0
+   Compiling libloading v0.8.9
+    Checking itertools v0.14.0
+    Checking thread_local v1.1.9
+    Checking p3-matrix v0.6.0 (https://github.com/Plonky3/Plonky3?rev=3152b14a89067c83775a8076cc262ffc48a1fd7c#3152b14a)
+    Checking p3-symmetric v0.6.0 (https://github.com/Plonky3/Plonky3?rev=3152b14a89067c83775a8076cc262ffc48a1fd7c#3152b14a)
+    Checking nu-ansi-term v0.50.3
+    Checking cpufeatures v0.2.17
+   Compiling multi-stark v0.1.0 (/tmp/multi-stark-gpu-trace-codegen)
+    Checking hashbrown v0.14.5
+   Compiling bindgen v0.72.1
+    Checking matchers v0.2.0
+    Checking p3-dft v0.6.0 (https://github.com/Plonky3/Plonky3?rev=3152b14a89067c83775a8076cc262ffc48a1fd7c#3152b14a)
+    Checking p3-multilinear-util v0.6.0 (https://github.com/Plonky3/Plonky3?rev=3152b14a89067c83775a8076cc262ffc48a1fd7c#3152b14a)
+    Checking p3-air v0.6.0 (https://github.com/Plonky3/Plonky3?rev=3152b14a89067c83775a8076cc262ffc48a1fd7c#3152b14a)
+    Checking dashmap v6.1.0
+   Compiling regex v1.12.3
+    Checking p3-mds v0.6.0 (https://github.com/Plonky3/Plonky3?rev=3152b14a89067c83775a8076cc262ffc48a1fd7c#3152b14a)
+    Checking p3-commit v0.6.0 (https://github.com/Plonky3/Plonky3?rev=3152b14a89067c83775a8076cc262ffc48a1fd7c#3152b14a)
+   Compiling itertools v0.13.0
+   Compiling ar_archive_writer v0.5.2
+    Checking p3-poseidon1 v0.6.0 (https://github.com/Plonky3/Plonky3?rev=3152b14a89067c83775a8076cc262ffc48a1fd7c#3152b14a)
+    Checking p3-security v0.6.0 (https://github.com/Plonky3/Plonky3?rev=3152b14a89067c83775a8076cc262ffc48a1fd7c#3152b14a)
+    Checking p3-poseidon2 v0.6.0 (https://github.com/Plonky3/Plonky3?rev=3152b14a89067c83775a8076cc262ffc48a1fd7c#3152b14a)
+    Checking tracing-subscriber v0.3.23
+    Checking sha2 v0.10.9
+    Checking p3-challenger v0.6.0 (https://github.com/Plonky3/Plonky3?rev=3152b14a89067c83775a8076cc262ffc48a1fd7c#3152b14a)
+   Compiling cexpr v0.6.0
+    Checking ix-common v0.1.0 (/tmp/ix-gpu-trace-codegen/crates/common)
+   Compiling psm v0.1.31
+    Checking terminal_size v0.4.4
+    Checking parking_lot v0.12.5
+    Checking memmap2 v0.9.11
+    Checking unty v0.0.4
+    Checking bincode v2.0.1
+    Checking tracing-texray v0.2.0 (https://github.com/argumentcomputer/tracing-texray?rev=fedd785ba02f16042f041fb8b0db9014955c6460#fedd785b)
+    Checking p3-fri v0.6.0 (https://github.com/Plonky3/Plonky3?rev=3152b14a89067c83775a8076cc262ffc48a1fd7c#3152b14a)
+    Checking p3-goldilocks v0.6.0 (https://github.com/Plonky3/Plonky3?rev=3152b14a89067c83775a8076cc262ffc48a1fd7c#3152b14a)
+    Checking ixon v0.1.0 (/tmp/ix-gpu-trace-codegen/crates/ixon)
+    Checking p3-merkle-tree v0.6.0 (https://github.com/Plonky3/Plonky3?rev=3152b14a89067c83775a8076cc262ffc48a1fd7c#3152b14a)
+   Compiling aiur v0.1.0 (/tmp/ix-gpu-trace-codegen/crates/aiur)
+    Checking p3-blake3 v0.6.0 (https://github.com/Plonky3/Plonky3?rev=3152b14a89067c83775a8076cc262ffc48a1fd7c#3152b14a)
+    Checking p3-keccak v0.6.0 (https://github.com/Plonky3/Plonky3?rev=3152b14a89067c83775a8076cc262ffc48a1fd7c#3152b14a)
+   Compiling zmij v1.0.21
+   Compiling libmimalloc-sys v0.1.49 (https://github.com/argumentcomputer/mimalloc_rust.git?rev=616cc1f130d9ea2a1111a46b4e98c140e078f882#616cc1f1)
+   Compiling stacker v0.1.24
+    Checking foldhash v0.1.5
+    Checking allocator-api2 v0.2.21
+   Compiling anyhow v1.0.103
+   Compiling serde_json v1.0.149
+    Checking itoa v1.0.18
+    Checking hashbrown v0.15.5
+    Checking ix-bench v0.1.0 (/tmp/ix-gpu-trace-codegen/crates/bench)
+    Checking ix-kernel v0.1.0 (/tmp/ix-gpu-trace-codegen/crates/kernel)
+   Compiling lean-ffi v0.1.0 (https://github.com/argumentcomputer/lean-ffi.git?rev=93c7e52952ae94546be08313f4ff3922984c84d5#93c7e529)
+    Checking ix-compile v0.1.0 (/tmp/ix-gpu-trace-codegen/crates/compile)
+    Checking mimalloc v0.1.52 (https://github.com/argumentcomputer/mimalloc_rust.git?rev=616cc1f130d9ea2a1111a46b4e98c140e078f882#616cc1f1)
+    Checking ixvm-codegen v0.1.0 (/tmp/ix-gpu-trace-codegen/crates/ixvm-codegen)
+    Checking ix-ffi v0.1.0 (/tmp/ix-gpu-trace-codegen/crates/ffi)
+    Finished `release` profile [optimized] target(s) in 58.14s

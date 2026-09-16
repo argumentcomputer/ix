@@ -51,6 +51,7 @@ name = "aiur"
 version = "0.1.0"
 dependencies = [
  "bincode",
+ "blake3",
  "hashbrown 0.15.5",
  "indexmap",
  "libc",
@@ -61,6 +62,7 @@ dependencies = [
  "p3-symmetric",
  "rayon",
  "rustc-hash",
+ "serde_json",
  "tracing",
  "tracing-texray",
 ]
@@ -2107,7 +2109,7 @@ dependencies = [
 [[package]]
 name = "multi-stark"
 version = "0.1.0"
-source = "git+https://github.com/argumentcomputer/multi-stark.git?rev=b6629c29a5435ded52f1453aeb3b86ac9ad121d8#b6629c29a5435ded52f1453aeb3b86ac9ad121d8"
+source = "git+https://github.com/argumentcomputer/multi-stark.git?rev=337435786287755c448cf6332e1dc15d706fcaed#337435786287755c448cf6332e1dc15d706fcaed"
 dependencies = [
  "bincode",
  "itertools 0.14.0",

@@ -1,0 +1,27 @@
+   Compiling aiur v0.1.0 (/tmp/ix-gpu-trace-codegen/crates/aiur)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.32s
+     Running unittests src/lib.rs (/tmp/ix-trace-experiments-0_99hznm/cargo-target/debug/deps/aiur-2a7e67bdb72ad95b)
+
+running 19 tests
+test trace_codegen::tests::canonical_wide_words_preserve_u128_carries ... ok
+test trace_codegen::tests::current_blake3_bytecode_all_stages_and_negative_multiplicities ... ok
+test trace_codegen::tests::call_load_dependencies_and_nonzero_pointer_namespace ... ok
+test trace_codegen::tests::library_binding_rejects_changed_callees_and_grouping ... ok
+test trace_codegen::tests::missing_match_and_inactive_queries_are_rejected ... ok
+test trace_codegen::tests::io_reads_and_shared_branch_seed_slots ... ok
+test trace_codegen::tests::big_uint_results_resolve_existing_list_nodes ... ok
+test trace_codegen::tests::scalar_rejects_noncanonical_seed_words ... ok
+test trace_codegen::tests::seed_codec_guards_and_wide_fallback ... ok
+test trace_codegen::tests::early_returns_do_not_resolve_unexecuted_reads ... ok
+test trace_codegen::tests::partial_coverage_keeps_library_and_descriptor_checks ... ok
+test trace_codegen::tests::zero_output_reads_do_not_need_seeds ... ok
+test trace_codegen::tests::nested_yields_compute_host_read_keys ... ok
+test trace_codegen::tests::branch_columns_and_grouped_member_offsets ... ok
+test trace_codegen::tests::strict_alias_verification_and_unconstrained_calls ... ok
+test trace_codegen::tests::current_u64_multiply_bytecode_boundaries ... ok
+test trace_codegen::tests::u32_boundaries_and_virtual_values ... ok
+test trace_codegen::tests::byte_operations_and_virtual_carries ... ok
+test trace_codegen::tests::canonical_fields_zero_inverses_and_constant_degree ... ok
+
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 67 filtered out; finished in 0.13s
+
