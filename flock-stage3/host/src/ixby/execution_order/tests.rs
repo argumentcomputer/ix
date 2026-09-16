@@ -192,9 +192,20 @@ struct Emission {
   inputs: InputLayout,
   public: PublicLayout,
 }
-fn emit(b: &mut impl CircuitEmitter) -> Emission {
+fn emit(b: &mut impl CircuitEmitter, linked: bool) -> Emission {
   let mut b = LayoutEmitter::new(b);
-  let chain = StateChainSlots::declare(&mut b, 9, 2).unwrap();
+  let chain = if linked {
+    StateChainSlots::declare_linked(
+      &mut b,
+      9,
+      2,
+      RecordLayout::new(vec![u64::MAX as u128, 0, u128::MAX, u128::MAX])
+        .unwrap(),
+    )
+    .unwrap()
+  } else {
+    StateChainSlots::declare(&mut b, 9, 2).unwrap()
+  };
   let memory =
     TimedMemoryLogSlots::declare(&mut b, 9, MemoryDepth::new(8).unwrap())
       .unwrap();
@@ -235,7 +246,7 @@ fn emit(b: &mut impl CircuitEmitter) -> Emission {
       },
     });
   }
-  let switches = (0..StateChainSlots::plan(4).unwrap().switches())
+  let switches = (0..chain.routing_plan(4).unwrap().switches())
     .map(|_| b.input())
     .collect::<Vec<_>>();
   chain.check(&mut b, start, end, &rows, &switches);
@@ -256,7 +267,7 @@ fn emit(b: &mut impl CircuitEmitter) -> Emission {
   let (inputs, public) = b.finish();
   Emission { inputs, public }
 }
-fn fixture() -> (Vec<F128>, Vec<F128>) {
+fn fixture(linked: bool) -> (Vec<F128>, Vec<F128>) {
   let mut memory = SparseMemory::new(MemoryDepth::new(8).unwrap());
   let value = [F128::new(123, 456), F128::new(789, 10)];
   let start = [f(7), f(8)];
@@ -296,8 +307,12 @@ fn fixture() -> (Vec<F128>, Vec<F128>) {
     }
   }
   chain_records.extend([record(5, SEED, &start), record(8, SEAL, &end)]);
-  chain_records.resize(StateChainSlots::plan(4).unwrap().lanes(), pad(2));
-  private.extend(routing(&chain_records).unwrap());
+  if linked {
+    private.extend(linked_routing(&chain_records).unwrap());
+  } else {
+    chain_records.resize(StateChainSlots::plan(4).unwrap().lanes(), pad(2));
+    private.extend(routing(&chain_records).unwrap());
+  }
   let opening = memory.replace(42, value).unwrap();
   private.extend(opening.words());
   private.extend(value);
@@ -325,13 +340,20 @@ fn fixture() -> (Vec<F128>, Vec<F128>) {
 }
 #[test]
 fn grouped_rows_share_one_state_chain_and_chronological_authenticated_memory() {
+  grouped_rows(false);
+}
+#[test]
+fn linked_rows_share_one_state_chain_and_chronological_authenticated_memory() {
+  grouped_rows(true);
+}
+fn grouped_rows(linked: bool) {
   let mut b = ShapeBuilder::new(9);
-  let emission = emit(&mut b);
+  let emission = emit(&mut b, linked);
   let shape: CircuitShape = b.finish().unwrap();
   let mut count = CountingEmitter::new();
-  emit(&mut count);
+  emit(&mut count, linked);
   count.ensure_matches(&shape).unwrap();
-  let (private, expected) = fixture();
+  let (private, expected) = fixture(linked);
   let witness = shape.run(&emission.inputs.assign(&private).unwrap(), &[]);
   assert_eq!(witness.public, emission.public.instantiate(&expected).unwrap());
   for at in [2, 3, 5, 6, 8, 9, 10, 11, 12, 13, 14, 16, 17, 19, 29, 39] {

@@ -132,11 +132,9 @@ pub(super) fn drivers(
       extension::generate_lane_repack_witness_into(r, g.nu, d)
     },
   ));
-  for (slot, gate) in [
-    emission.order.prepare_gate(),
-    emission.order.audit_gate(),
-    emission.memory.prepare_gate(),
-  ] {
+  for (slot, gate) in
+    emission.order.gates().chain([emission.memory.prepare_gate()])
+  {
     result.push(driver(
       slot,
       gate.clone(),

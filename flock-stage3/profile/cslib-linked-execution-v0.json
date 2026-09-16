@@ -1,0 +1,4520 @@
+{
+  "format": "IxBy/exact-linked-execution/v0",
+  "date_utc": "2026-09-16",
+  "source_base_commit": "ad9db5168068c745d02f34e9a617c57718570452",
+  "final_source_file_sha256": {
+    "flock-stage3/host/src/ixby/execution_order/gate.rs": "a83766cf45f894a9f8159c30f0e9c9ef7b55521e31cff9e40ac934b71e8338b0",
+    "flock-stage3/host/src/ixby/execution_order/linked.rs": "094b48182c10f8fd97aea16924ba7e4edc194de6f249fefa7b0ee62f7fcac08e",
+    "flock-stage3/host/src/ixby/execution_order/linked_tests.rs": "3391d40b0838667a9fb682ff9dec285d550200a25fa7f5488739b0b07726201f",
+    "flock-stage3/host/src/ixby/execution_order/mod.rs": "518d3e2d577c6b7c5de8a3f31e4efc98ce6e5e0f4964f3545dba9165430482e2",
+    "flock-stage3/host/src/ixby/execution_order/synthesis.rs": "1020521d9580139015f19b86ac08cd5701852044e454eb781f0cd5e6ec93fbf1",
+    "flock-stage3/host/src/ixby/execution_order/tests.rs": "2d6ea77565839eb262c13832b647726389b4c8cebd4e8825b5cd77310f90fafd",
+    "flock-stage3/host/src/ixby/paged_exec/batch.rs": "1540edcfedb0fbe96f4553bacace7bf9de523c94008633a617f155b3ae0a2326",
+    "flock-stage3/host/src/ixby/paged_exec/benchmark_tests.rs": "04bdd882033e4f2e96c269fced22613b81221690dfb3cbeac92cfec815dcf08c",
+    "flock-stage3/host/src/ixby/paged_exec/image_tests.rs": "0360fbf36247fd7062b3ce72faa96b7011c70e257a8d744ede96bfff548e41c9",
+    "flock-stage3/host/src/ixby/paged_exec/proof_drivers.rs": "7b21ed983bbbbe1ef376c52c15ddcf2078ea7410e67a423da3271b6f4281a5f1",
+    "flock-stage3/host/src/ixby/paged_exec/proof_tests.rs": "51b892f0f2ba74449cca3fefa34b5f05ba72065c927f9ae17c5a1a62d303cd6d",
+    "flock-stage3/host/src/sizing.rs": "2cc91b88be4673365aa620bc9863b47a7aae6d1e7f4daca7547f160995999e14",
+    "flock-stage4/recursive/src/bin/paged-execution/main.rs": "d786088b238f362813411f1bdec76fc4f6d74758349e69647d7b26b8277a125a",
+    "flock-stage4/recursive/src/execution_tree/tests/large_execution.rs": "2a4f666b41f12ad90a66586b6cc4153341bc4990cf529bacb66dc76b056b9a8f"
+  },
+  "scope": "Exact after/before state-record permutation with nonwrapping clock progress. Verified conditional CSLib leaves, two recursive levels, and a complete small countdown. Full original CSLib execution remains unproved.",
+  "flock_revision": "b310f35f35f68095537150a1c8c0a43caca9a29e",
+  "cargo_lock_sha256": {
+    "flock-stage3/Cargo.lock": "e10963e5b6b05fce113fe4d9b7a831fa8e9537f4e8f2f56926c30076249830da",
+    "flock-stage4/Cargo.lock": "dc29d1d752a6c6cc72cfe8dc6dd4be803bf813e322444384af67dd3d2d71fcfd"
+  },
+  "server_rustflags": "-Ctarget-cpu=x86-64-v4 -Ctarget-feature=+pclmulqdq,+vpclmulqdq,+aes",
+  "local_rustflags": "-C target-cpu=native",
+  "server": {
+    "cpu": "Intel Xeon 6975P-C",
+    "physical_cores": 32,
+    "logical_cpus": 64,
+    "reported_ram_gib": 495,
+    "swap_bytes": 0,
+    "reported_available_disk_gb": 376
+  },
+  "server_directory": "/home/john/work/ixby-stage3-execution-20260916.CYhUmf",
+  "local_evidence_directory": "/tmp/ixby-linked-execution-20260916",
+  "previous_record": "cslib-packed-execution-v0.json",
+  "previous_record_sha256": "206830944e6b6b491d1ada436888ef7a17043b2841d5e54f657cc9cb87b736ec",
+  "original_artifacts": {
+    "program": {
+      "bytes": 1016587,
+      "sha256": "1c864b7a10614549f1bba23e465b9e70a9dabeff5615c5885aa0e55517ce3f09"
+    },
+    "input": {
+      "bytes": 4813238,
+      "sha256": "8b03e43e9ec59ee9d82af519de11c2ca7930e09942ee5e0f85263e851ea0ffcc"
+    },
+    "output": {
+      "bytes": 49,
+      "sha256": "c810a2a4d205ae4ff03a0bb910f03c8f7824f572228a480d9c1c2eea2f2c7198"
+    }
+  },
+  "expected_complete_cslib_statement_hex": "e4dde333aabbbbe1035be38c75d1203342b303c202a4f0935694bfa1850f91c9",
+  "binaries": {
+    "ixby-paged-tests-v4-v1": {
+      "bytes": 28914968,
+      "sha256": "68685fb22bcd0d2d845f8ba6fa53736568e9994ed200c6c99651a628494f1360"
+    },
+    "ixby-paged-tests-native-v1": {
+      "bytes": 29384344,
+      "sha256": "617849349f39c34e03ac4a902a76f87fc65854c73c196713b2d6b038fab070fe"
+    },
+    "ixby-paged-tests-native-v2": {
+      "bytes": 29383712,
+      "sha256": "1dab421c2ab982f2d26d7d845eedbe69b0e7987de19e83cbcc4590f1d0bc5d92"
+    },
+    "ixby-paged-tests-v4-v2": {
+      "bytes": 28914032,
+      "sha256": "d38f651ad6e871bfab66f2251b65463bd30220247bf89385d9eacf8e561844f5"
+    },
+    "ixby-recursive-tests-native-v2": {
+      "bytes": 22283608,
+      "sha256": "fa432b8fed0ef6487e043ebfee1f76429960bc8f6d6028e3b2c67d2d29040c38"
+    },
+    "paged-execution-v4-v1": {
+      "bytes": 20339008,
+      "sha256": "75a68d9f4ff356fe7a9125a53ac2b0284fb0eae16970da684a4741d944cd9ebd"
+    },
+    "paged-execution-native-v2": {
+      "bytes": 20898904,
+      "sha256": "be05524a0beb6d8aaa69342ec00a22996d8d9414f456b54ce635cbda49f3dc5b"
+    }
+  },
+  "binary_provenance": {
+    "V1": "Used for all three server benchmark runs, the initial affected/leaf tests and complete countdown generation.",
+    "V2": "Final code, used for local paired setup measurement, the final state-ordering tests, retained leaf receivers, recursive CSLib chain and fresh complete-countdown receiver.",
+    "V1_to_V2_changes": [
+      "Reverse the arguments of linked residual connections so ShapeBuilder appends to the growing class.",
+      "Use as_chunks for fixed record groups to satisfy Clippy.",
+      "Increase the bounded opt-in benchmark worker maximum from 16 to 32; 32 workers were not measured."
+    ],
+    "final_source_hashes_apply_to": "V2; V1 source differs as explicitly listed above.",
+    "same_circuit_evidence": "Final V2 code accepts V1 server leaves and the V1 complete root; the complete setup identity is identical.",
+    "server_final_binary_measured": false
+  },
+  "classes": {
+    "SharedCompactLinked": {
+      "domain": "IxBy/Flock/paged-execution:shared-compact-linked:v0",
+      "capacity_reference": "SharedCompactPacked",
+      "nu": 10,
+      "proof_bytes": 389043
+    },
+    "SharedLinked1024": {
+      "name": "SharedLinked1024",
+      "cli": "shared-linked-1024",
+      "transcript_domain": "IxBy/Flock/paged-execution:shared-linked-1024:v0",
+      "row_variables": 15,
+      "microstep_slots": 8128,
+      "memory_access_slots": 23360,
+      "distinct_cells": 2048,
+      "shared_tree_parents": 8191,
+      "chip_order": [
+        "Fetch",
+        "Resolve",
+        "Numeric",
+        "Control",
+        "Call",
+        "Resume",
+        "Construct",
+        "Closure",
+        "ApplyInstruction",
+        "Project",
+        "Case",
+        "Apply",
+        "StoreCopy",
+        "StoreFinish",
+        "ByteStart",
+        "ByteRead",
+        "ByteAppend",
+        "ByteEq",
+        "ByteFinish",
+        "ByteEmit",
+        "HashBlock",
+        "HashCombine",
+        "HashPush",
+        "HashSkip"
+      ],
+      "quotas": {
+        "Fetch": 1024,
+        "Resolve": 2048,
+        "Numeric": 384,
+        "Control": 512,
+        "Call": 256,
+        "Resume": 1024,
+        "Construct": 128,
+        "Closure": 64,
+        "ApplyInstruction": 64,
+        "Project": 256,
+        "Case": 256,
+        "Apply": 256,
+        "StoreCopy": 768,
+        "StoreFinish": 512,
+        "ByteStart": 32,
+        "ByteRead": 64,
+        "ByteAppend": 64,
+        "ByteEq": 64,
+        "ByteFinish": 32,
+        "ByteEmit": 64,
+        "HashBlock": 64,
+        "HashCombine": 64,
+        "HashPush": 64,
+        "HashSkip": 64
+      },
+      "statement_words": 57,
+      "old_classes_unchanged": true,
+      "proof_bytes": 607299
+    }
+  },
+  "state_linking": {
+    "sources": "After-state of every transition slot plus the initial boundary.",
+    "targets": "Before-state of every transition slot plus the final boundary.",
+    "record_equality": "Exact fixed Bene\u0161 permutation with Boolean selectors and one constrained XOR residual per complete output/target word.",
+    "clock_relation": "Each enabled transition has a canonical u64 before-clock and advances it by one without overflow. Disabled slots have zero clocks and states. Initial clock is strictly less than final clock.",
+    "chain_argument": "After cancelling equal padding multiplicities, c(t)-c(t-1)=[t=initial]-[t=final] with c(-1)=0. Thus exactly one enabled transition exists at each clock in the interval. Exact full-state equality links these transitions.",
+    "state_lanes_before_after": [
+      16384,
+      8192
+    ],
+    "state_stages_before_after": [
+      27,
+      25
+    ],
+    "record_packing_reference": "cslib-packed-execution-v0.json#record_packing",
+    "unchanged": [
+      "Memory ordering and shared-tree routing",
+      "All eleven earlier class matrices, quotas and transcript domains",
+      "Original CSLib program/input/output pins and reference execution"
+    ],
+    "setup_fix": "Keep the growing zero-wire equivalence class first in connect(a,b), which appends b into a. This avoids repeated copying of the growing class without changing final connections."
+  },
+  "commitment_layout": {
+    "dense_M_before_after": [
+      33,
+      32
+    ],
+    "committed_field_buffer_bytes_before_after": [
+      1073741824,
+      536870912
+    ],
+    "padded_union_buffer_bytes": 17179869184,
+    "k": 6,
+    "occupied_lanes_before_after": [
+      42,
+      63
+    ],
+    "proof_bytes_before_after": [
+      540251,
+      607299
+    ],
+    "explanation": "The smaller dense domain has shorter columns but more occupied lanes. Query openings carry more lane values, accounting for proof growth despite fewer committed words.",
+    "security_policy": "Existing Fast128 parameter files and verifier checks remain unchanged; no weakened settings or new multiset assumptions."
+  },
+  "census": {
+    "SharedCompact": {
+      "tables": [
+        {
+          "name": "SwitchGate",
+          "rows": 444,
+          "dense_words": 293824
+        },
+        {
+          "name": "Blake3Gate",
+          "rows": 420,
+          "dense_words": 38640
+        },
+        {
+          "name": "MultiGate",
+          "rows": 897,
+          "dense_words": 33842
+        },
+        {
+          "name": "OrderGate",
+          "rows": 292,
+          "dense_words": 23563
+        },
+        {
+          "name": "MicroGate",
+          "rows": 109,
+          "dense_words": 12145
+        },
+        {
+          "name": "AuditGate",
+          "rows": 256,
+          "dense_words": 9472
+        },
+        {
+          "name": "FrameGate",
+          "rows": 13,
+          "dense_words": 2262
+        },
+        {
+          "name": "Nat128Gate",
+          "rows": 1,
+          "dense_words": 686
+        },
+        {
+          "name": "GoldilocksMulPairGate",
+          "rows": 2,
+          "dense_words": 662
+        },
+        {
+          "name": "CodeGate",
+          "rows": 11,
+          "dense_words": 627
+        },
+        {
+          "name": "Fuel64StepGate",
+          "rows": 13,
+          "dense_words": 169
+        },
+        {
+          "name": "PrimitiveRouteGate",
+          "rows": 1,
+          "dense_words": 143
+        },
+        {
+          "name": "PrimitivePrepareGate",
+          "rows": 1,
+          "dense_words": 112
+        },
+        {
+          "name": "GoldilocksAddPairGate",
+          "rows": 6,
+          "dense_words": 84
+        },
+        {
+          "name": "PrimitiveFinishGate",
+          "rows": 1,
+          "dense_words": 29
+        },
+        {
+          "name": "CanonicalGoldilocksQuadGate",
+          "rows": 6,
+          "dense_words": 24
+        },
+        {
+          "name": "GoldilocksLaneRepackGate",
+          "rows": 3,
+          "dense_words": 18
+        },
+        {
+          "name": "SelectWordsGate",
+          "rows": 1,
+          "dense_words": 11
+        },
+        {
+          "name": "MemoryGate",
+          "rows": 0,
+          "dense_words": 0
+        }
+      ],
+      "dense_words": 416313,
+      "padded_words": 67108864,
+      "boolean_words": 33554432,
+      "m_total": 33,
+      "dense_m": 26
+    },
+    "Shared": {
+      "tables": [
+        {
+          "name": "SwitchGate",
+          "rows": 10688,
+          "dense_words": 7216128
+        },
+        {
+          "name": "Blake3Gate",
+          "rows": 6720,
+          "dense_words": 618240
+        },
+        {
+          "name": "MultiGate",
+          "rows": 14337,
+          "dense_words": 540962
+        },
+        {
+          "name": "OrderGate",
+          "rows": 4672,
+          "dense_words": 377008
+        },
+        {
+          "name": "MicroGate",
+          "rows": 1729,
+          "dense_words": 194215
+        },
+        {
+          "name": "AuditGate",
+          "rows": 4096,
+          "dense_words": 151552
+        },
+        {
+          "name": "FrameGate",
+          "rows": 208,
+          "dense_words": 36192
+        },
+        {
+          "name": "Nat128Gate",
+          "rows": 16,
+          "dense_words": 10976
+        },
+        {
+          "name": "GoldilocksMulPairGate",
+          "rows": 32,
+          "dense_words": 10592
+        },
+        {
+          "name": "CodeGate",
+          "rows": 176,
+          "dense_words": 10032
+        },
+        {
+          "name": "Fuel64StepGate",
+          "rows": 208,
+          "dense_words": 2704
+        },
+        {
+          "name": "PrimitiveRouteGate",
+          "rows": 16,
+          "dense_words": 2288
+        },
+        {
+          "name": "PrimitivePrepareGate",
+          "rows": 16,
+          "dense_words": 1792
+        },
+        {
+          "name": "GoldilocksAddPairGate",
+          "rows": 96,
+          "dense_words": 1344
+        },
+        {
+          "name": "PrimitiveFinishGate",
+          "rows": 16,
+          "dense_words": 464
+        },
+        {
+          "name": "CanonicalGoldilocksQuadGate",
+          "rows": 82,
+          "dense_words": 328
+        },
+        {
+          "name": "GoldilocksLaneRepackGate",
+          "rows": 48,
+          "dense_words": 288
+        },
+        {
+          "name": "SelectWordsGate",
+          "rows": 16,
+          "dense_words": 176
+        },
+        {
+          "name": "MemoryGate",
+          "rows": 0,
+          "dense_words": 0
+        }
+      ],
+      "dense_words": 9175281,
+      "padded_words": 536870912,
+      "boolean_words": 268435456,
+      "m_total": 36,
+      "dense_m": 31
+    },
+    "SharedCompactBoolean": {
+      "tables": [
+        {
+          "name": "BooleanSwitchGate",
+          "rows": 444,
+          "dense_words": 294268
+        },
+        {
+          "name": "Blake3Gate",
+          "rows": 420,
+          "dense_words": 38640
+        },
+        {
+          "name": "MultiGate",
+          "rows": 897,
+          "dense_words": 33842
+        },
+        {
+          "name": "OrderGate",
+          "rows": 292,
+          "dense_words": 23563
+        },
+        {
+          "name": "MicroGate",
+          "rows": 109,
+          "dense_words": 12145
+        },
+        {
+          "name": "AuditGate",
+          "rows": 256,
+          "dense_words": 9472
+        },
+        {
+          "name": "FrameGate",
+          "rows": 13,
+          "dense_words": 2262
+        },
+        {
+          "name": "Nat128Gate",
+          "rows": 1,
+          "dense_words": 686
+        },
+        {
+          "name": "GoldilocksMulPairGate",
+          "rows": 2,
+          "dense_words": 662
+        },
+        {
+          "name": "CodeGate",
+          "rows": 11,
+          "dense_words": 627
+        },
+        {
+          "name": "Fuel64StepGate",
+          "rows": 13,
+          "dense_words": 169
+        },
+        {
+          "name": "PrimitiveRouteGate",
+          "rows": 1,
+          "dense_words": 143
+        },
+        {
+          "name": "PrimitivePrepareGate",
+          "rows": 1,
+          "dense_words": 112
+        },
+        {
+          "name": "GoldilocksAddPairGate",
+          "rows": 6,
+          "dense_words": 84
+        },
+        {
+          "name": "PrimitiveFinishGate",
+          "rows": 1,
+          "dense_words": 29
+        },
+        {
+          "name": "CanonicalGoldilocksQuadGate",
+          "rows": 6,
+          "dense_words": 24
+        },
+        {
+          "name": "GoldilocksLaneRepackGate",
+          "rows": 3,
+          "dense_words": 18
+        },
+        {
+          "name": "SelectWordsGate",
+          "rows": 1,
+          "dense_words": 11
+        },
+        {
+          "name": "MemoryGate",
+          "rows": 0,
+          "dense_words": 0
+        }
+      ],
+      "dense_words": 416757,
+      "padded_words": 33554432,
+      "boolean_words": 33554432,
+      "m_total": 32,
+      "dense_m": 26
+    },
+    "SharedBoolean": {
+      "tables": [
+        {
+          "name": "BooleanSwitchGate",
+          "rows": 10688,
+          "dense_words": 7226816
+        },
+        {
+          "name": "Blake3Gate",
+          "rows": 6720,
+          "dense_words": 618240
+        },
+        {
+          "name": "MultiGate",
+          "rows": 14337,
+          "dense_words": 540962
+        },
+        {
+          "name": "OrderGate",
+          "rows": 4672,
+          "dense_words": 377008
+        },
+        {
+          "name": "MicroGate",
+          "rows": 1729,
+          "dense_words": 194215
+        },
+        {
+          "name": "AuditGate",
+          "rows": 4096,
+          "dense_words": 151552
+        },
+        {
+          "name": "FrameGate",
+          "rows": 208,
+          "dense_words": 36192
+        },
+        {
+          "name": "Nat128Gate",
+          "rows": 16,
+          "dense_words": 10976
+        },
+        {
+          "name": "GoldilocksMulPairGate",
+          "rows": 32,
+          "dense_words": 10592
+        },
+        {
+          "name": "CodeGate",
+          "rows": 176,
+          "dense_words": 10032
+        },
+        {
+          "name": "Fuel64StepGate",
+          "rows": 208,
+          "dense_words": 2704
+        },
+        {
+          "name": "PrimitiveRouteGate",
+          "rows": 16,
+          "dense_words": 2288
+        },
+        {
+          "name": "PrimitivePrepareGate",
+          "rows": 16,
+          "dense_words": 1792
+        },
+        {
+          "name": "GoldilocksAddPairGate",
+          "rows": 96,
+          "dense_words": 1344
+        },
+        {
+          "name": "PrimitiveFinishGate",
+          "rows": 16,
+          "dense_words": 464
+        },
+        {
+          "name": "CanonicalGoldilocksQuadGate",
+          "rows": 82,
+          "dense_words": 328
+        },
+        {
+          "name": "GoldilocksLaneRepackGate",
+          "rows": 48,
+          "dense_words": 288
+        },
+        {
+          "name": "SelectWordsGate",
+          "rows": 16,
+          "dense_words": 176
+        },
+        {
+          "name": "MemoryGate",
+          "rows": 0,
+          "dense_words": 0
+        }
+      ],
+      "dense_words": 9185969,
+      "padded_words": 268435456,
+      "boolean_words": 268435456,
+      "m_total": 35,
+      "dense_m": 31
+    },
+    "Shared1024": {
+      "tables": [
+        {
+          "name": "BooleanSwitchGate",
+          "rows": 57344,
+          "dense_words": 48242688
+        },
+        {
+          "name": "OrderGate",
+          "rows": 47872,
+          "dense_words": 3522496
+        },
+        {
+          "name": "Blake3Gate",
+          "rows": 20606,
+          "dense_words": 1895752
+        },
+        {
+          "name": "MicroGate",
+          "rows": 19809,
+          "dense_words": 1664263
+        },
+        {
+          "name": "MultiGate",
+          "rows": 32767,
+          "dense_words": 1279926
+        },
+        {
+          "name": "AuditGate",
+          "rows": 32768,
+          "dense_words": 1212416
+        },
+        {
+          "name": "FrameGate",
+          "rows": 3232,
+          "dense_words": 562368
+        },
+        {
+          "name": "CodeGate",
+          "rows": 4032,
+          "dense_words": 281600
+        },
+        {
+          "name": "Nat128Gate",
+          "rows": 384,
+          "dense_words": 263424
+        },
+        {
+          "name": "GoldilocksMulPairGate",
+          "rows": 768,
+          "dense_words": 254208
+        },
+        {
+          "name": "PrimitiveRouteGate",
+          "rows": 384,
+          "dense_words": 54912
+        },
+        {
+          "name": "PrimitivePrepareGate",
+          "rows": 384,
+          "dense_words": 43008
+        },
+        {
+          "name": "Fuel64StepGate",
+          "rows": 3232,
+          "dense_words": 42016
+        },
+        {
+          "name": "GoldilocksAddPairGate",
+          "rows": 2304,
+          "dense_words": 32256
+        },
+        {
+          "name": "PrimitiveFinishGate",
+          "rows": 384,
+          "dense_words": 11136
+        },
+        {
+          "name": "CanonicalGoldilocksQuadGate",
+          "rows": 1955,
+          "dense_words": 7820
+        },
+        {
+          "name": "GoldilocksLaneRepackGate",
+          "rows": 1152,
+          "dense_words": 6912
+        },
+        {
+          "name": "SelectWordsGate",
+          "rows": 384,
+          "dense_words": 4224
+        },
+        {
+          "name": "MemoryGate",
+          "rows": 0,
+          "dense_words": 0
+        }
+      ],
+      "dense_words": 59381425,
+      "padded_words": 1073741824,
+      "boolean_words": 1073741824,
+      "m_total": 37,
+      "dense_m": 33
+    },
+    "SharedCompactPacked": {
+      "tables": [
+        {
+          "name": "BooleanSwitchGate",
+          "rows": 444,
+          "dense_words": 207548
+        },
+        {
+          "name": "Blake3Gate",
+          "rows": 420,
+          "dense_words": 38640
+        },
+        {
+          "name": "MultiGate",
+          "rows": 897,
+          "dense_words": 33842
+        },
+        {
+          "name": "RecordPackingGate",
+          "rows": 1792,
+          "dense_words": 27648
+        },
+        {
+          "name": "OrderGate",
+          "rows": 292,
+          "dense_words": 23563
+        },
+        {
+          "name": "MicroGate",
+          "rows": 109,
+          "dense_words": 12145
+        },
+        {
+          "name": "AuditGate",
+          "rows": 256,
+          "dense_words": 9472
+        },
+        {
+          "name": "FrameGate",
+          "rows": 13,
+          "dense_words": 2262
+        },
+        {
+          "name": "Nat128Gate",
+          "rows": 1,
+          "dense_words": 686
+        },
+        {
+          "name": "GoldilocksMulPairGate",
+          "rows": 2,
+          "dense_words": 662
+        },
+        {
+          "name": "CodeGate",
+          "rows": 11,
+          "dense_words": 627
+        },
+        {
+          "name": "Fuel64StepGate",
+          "rows": 13,
+          "dense_words": 169
+        },
+        {
+          "name": "PrimitiveRouteGate",
+          "rows": 1,
+          "dense_words": 143
+        },
+        {
+          "name": "PrimitivePrepareGate",
+          "rows": 1,
+          "dense_words": 112
+        },
+        {
+          "name": "GoldilocksAddPairGate",
+          "rows": 6,
+          "dense_words": 84
+        },
+        {
+          "name": "PrimitiveFinishGate",
+          "rows": 1,
+          "dense_words": 29
+        },
+        {
+          "name": "CanonicalGoldilocksQuadGate",
+          "rows": 6,
+          "dense_words": 24
+        },
+        {
+          "name": "GoldilocksLaneRepackGate",
+          "rows": 3,
+          "dense_words": 18
+        },
+        {
+          "name": "SelectWordsGate",
+          "rows": 1,
+          "dense_words": 11
+        },
+        {
+          "name": "MemoryGate",
+          "rows": 0,
+          "dense_words": 0
+        }
+      ],
+      "dense_words": 357685,
+      "padded_words": 33554432,
+      "boolean_words": 33554432,
+      "m_total": 32,
+      "dense_m": 26
+    },
+    "SharedPacked1024": {
+      "tables": [
+        {
+          "name": "BooleanSwitchGate",
+          "rows": 57344,
+          "dense_words": 30220288
+        },
+        {
+          "name": "OrderGate",
+          "rows": 47872,
+          "dense_words": 3522496
+        },
+        {
+          "name": "RecordPackingGate",
+          "rows": 131072,
+          "dense_words": 2359296
+        },
+        {
+          "name": "Blake3Gate",
+          "rows": 20606,
+          "dense_words": 1895752
+        },
+        {
+          "name": "MicroGate",
+          "rows": 19809,
+          "dense_words": 1664263
+        },
+        {
+          "name": "MultiGate",
+          "rows": 32767,
+          "dense_words": 1279926
+        },
+        {
+          "name": "AuditGate",
+          "rows": 32768,
+          "dense_words": 1212416
+        },
+        {
+          "name": "FrameGate",
+          "rows": 3232,
+          "dense_words": 562368
+        },
+        {
+          "name": "CodeGate",
+          "rows": 4032,
+          "dense_words": 281600
+        },
+        {
+          "name": "Nat128Gate",
+          "rows": 384,
+          "dense_words": 263424
+        },
+        {
+          "name": "GoldilocksMulPairGate",
+          "rows": 768,
+          "dense_words": 254208
+        },
+        {
+          "name": "PrimitiveRouteGate",
+          "rows": 384,
+          "dense_words": 54912
+        },
+        {
+          "name": "PrimitivePrepareGate",
+          "rows": 384,
+          "dense_words": 43008
+        },
+        {
+          "name": "Fuel64StepGate",
+          "rows": 3232,
+          "dense_words": 42016
+        },
+        {
+          "name": "GoldilocksAddPairGate",
+          "rows": 2304,
+          "dense_words": 32256
+        },
+        {
+          "name": "PrimitiveFinishGate",
+          "rows": 384,
+          "dense_words": 11136
+        },
+        {
+          "name": "CanonicalGoldilocksQuadGate",
+          "rows": 1955,
+          "dense_words": 7820
+        },
+        {
+          "name": "GoldilocksLaneRepackGate",
+          "rows": 1152,
+          "dense_words": 6912
+        },
+        {
+          "name": "SelectWordsGate",
+          "rows": 384,
+          "dense_words": 4224
+        },
+        {
+          "name": "MemoryGate",
+          "rows": 0,
+          "dense_words": 0
+        }
+      ],
+      "dense_words": 43718321,
+      "padded_words": 1073741824,
+      "boolean_words": 1073741824,
+      "m_total": 37,
+      "dense_m": 33
+    },
+    "SharedCompactLinked": {
+      "tables": [
+        {
+          "name": "BooleanSwitchGate",
+          "rows": 414,
+          "dense_words": 171038
+        },
+        {
+          "name": "Blake3Gate",
+          "rows": 420,
+          "dense_words": 38640
+        },
+        {
+          "name": "MultiGate",
+          "rows": 897,
+          "dense_words": 33842
+        },
+        {
+          "name": "RecordPackingGate",
+          "rows": 1664,
+          "dense_words": 22272
+        },
+        {
+          "name": "OrderGate",
+          "rows": 229,
+          "dense_words": 13138
+        },
+        {
+          "name": "MicroGate",
+          "rows": 109,
+          "dense_words": 12145
+        },
+        {
+          "name": "AuditGate",
+          "rows": 256,
+          "dense_words": 9472
+        },
+        {
+          "name": "FrameGate",
+          "rows": 13,
+          "dense_words": 2262
+        },
+        {
+          "name": "Nat128Gate",
+          "rows": 1,
+          "dense_words": 686
+        },
+        {
+          "name": "GoldilocksMulPairGate",
+          "rows": 2,
+          "dense_words": 662
+        },
+        {
+          "name": "CodeGate",
+          "rows": 11,
+          "dense_words": 627
+        },
+        {
+          "name": "Fuel64StepGate",
+          "rows": 13,
+          "dense_words": 169
+        },
+        {
+          "name": "PrimitiveRouteGate",
+          "rows": 1,
+          "dense_words": 143
+        },
+        {
+          "name": "PrimitivePrepareGate",
+          "rows": 1,
+          "dense_words": 112
+        },
+        {
+          "name": "GoldilocksAddPairGate",
+          "rows": 6,
+          "dense_words": 84
+        },
+        {
+          "name": "PrimitiveFinishGate",
+          "rows": 1,
+          "dense_words": 29
+        },
+        {
+          "name": "CanonicalGoldilocksQuadGate",
+          "rows": 6,
+          "dense_words": 24
+        },
+        {
+          "name": "GoldilocksLaneRepackGate",
+          "rows": 3,
+          "dense_words": 18
+        },
+        {
+          "name": "SelectWordsGate",
+          "rows": 1,
+          "dense_words": 11
+        },
+        {
+          "name": "MemoryGate",
+          "rows": 0,
+          "dense_words": 0
+        }
+      ],
+      "dense_words": 305374,
+      "padded_words": 33554432,
+      "boolean_words": 33554432,
+      "m_total": 32,
+      "dense_m": 26
+    },
+    "SharedLinked1024": {
+      "tables": [
+        {
+          "name": "BooleanSwitchGate",
+          "rows": 49920,
+          "dense_words": 21185280
+        },
+        {
+          "name": "OrderGate",
+          "rows": 39681,
+          "dense_words": 2187207
+        },
+        {
+          "name": "Blake3Gate",
+          "rows": 20606,
+          "dense_words": 1895752
+        },
+        {
+          "name": "RecordPackingGate",
+          "rows": 114688,
+          "dense_words": 1671168
+        },
+        {
+          "name": "MicroGate",
+          "rows": 19809,
+          "dense_words": 1664263
+        },
+        {
+          "name": "MultiGate",
+          "rows": 32767,
+          "dense_words": 1279926
+        },
+        {
+          "name": "AuditGate",
+          "rows": 32768,
+          "dense_words": 1212416
+        },
+        {
+          "name": "FrameGate",
+          "rows": 3232,
+          "dense_words": 562368
+        },
+        {
+          "name": "CodeGate",
+          "rows": 4032,
+          "dense_words": 281600
+        },
+        {
+          "name": "Nat128Gate",
+          "rows": 384,
+          "dense_words": 263424
+        },
+        {
+          "name": "GoldilocksMulPairGate",
+          "rows": 768,
+          "dense_words": 254208
+        },
+        {
+          "name": "PrimitiveRouteGate",
+          "rows": 384,
+          "dense_words": 54912
+        },
+        {
+          "name": "PrimitivePrepareGate",
+          "rows": 384,
+          "dense_words": 43008
+        },
+        {
+          "name": "Fuel64StepGate",
+          "rows": 3232,
+          "dense_words": 42016
+        },
+        {
+          "name": "GoldilocksAddPairGate",
+          "rows": 2304,
+          "dense_words": 32256
+        },
+        {
+          "name": "PrimitiveFinishGate",
+          "rows": 384,
+          "dense_words": 11136
+        },
+        {
+          "name": "CanonicalGoldilocksQuadGate",
+          "rows": 1955,
+          "dense_words": 7820
+        },
+        {
+          "name": "GoldilocksLaneRepackGate",
+          "rows": 1152,
+          "dense_words": 6912
+        },
+        {
+          "name": "SelectWordsGate",
+          "rows": 384,
+          "dense_words": 4224
+        },
+        {
+          "name": "MemoryGate",
+          "rows": 0,
+          "dense_words": 0
+        }
+      ],
+      "dense_words": 32659896,
+      "padded_words": 1073741824,
+      "boolean_words": 1073741824,
+      "m_total": 37,
+      "dense_m": 32
+    }
+  },
+  "proof_benchmark_samples": 72,
+  "benchmarks": [
+    {
+      "class": "SharedPacked1024",
+      "skip": 0,
+      "batches": 32,
+      "workers": 16,
+      "threads_per_worker": 2,
+      "load_seconds": 0.171124513,
+      "skip_seconds": 4.7e-08,
+      "native_seconds": 5.786126296,
+      "setup_seconds": 20.696044463,
+      "microsteps": 141609,
+      "logical_steps": 36418,
+      "worker_wall_seconds": 90.336429558,
+      "batches_per_second": 0.354231401,
+      "logical_steps_per_second": 403.137473754,
+      "name": "linked-paired-baseline-v2",
+      "samples": [
+        {
+          "batch": 0,
+          "worker": 1,
+          "microsteps": 4827,
+          "logical_steps": 1217,
+          "witness_seconds": 3.165802835,
+          "prove_seconds": 42.060487127,
+          "verify_seconds": 0.554940043,
+          "proof_bytes": 540251,
+          "chip_rows": [
+            1024,
+            1530,
+            215,
+            308,
+            234,
+            930,
+            108,
+            2,
+            2,
+            0,
+            147,
+            2,
+            190,
+            114,
+            8,
+            5,
+            0,
+            0,
+            8,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "batch": 1,
+          "worker": 6,
+          "microsteps": 4774,
+          "logical_steps": 1199,
+          "witness_seconds": 2.937778892,
+          "prove_seconds": 43.46584187,
+          "verify_seconds": 0.743081903,
+          "proof_bytes": 540251,
+          "chip_rows": [
+            1024,
+            1588,
+            269,
+            318,
+            201,
+            897,
+            81,
+            0,
+            0,
+            0,
+            148,
+            0,
+            146,
+            81,
+            7,
+            7,
+            0,
+            0,
+            7,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "batch": 2,
+          "worker": 0,
+          "microsteps": 4758,
+          "logical_steps": 1188,
+          "witness_seconds": 2.905179888,
+          "prove_seconds": 43.818858567,
+          "verify_seconds": 0.512830449,
+          "proof_bytes": 540251,
+          "chip_rows": [
+            1024,
+            1612,
+            292,
+            315,
+            192,
+            869,
+            77,
+            0,
+            0,
+            0,
+            142,
+            0,
+            140,
+            77,
+            6,
+            6,
+            0,
+            0,
+            6,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "batch": 3,
+          "worker": 2,
+          "microsteps": 4808,
+          "logical_steps": 1194,
+          "witness_seconds": 2.943524864,
+          "prove_seconds": 43.241994899,
+          "verify_seconds": 0.810608497,
+          "proof_bytes": 540251,
+          "chip_rows": [
+            1024,
+            1618,
+            278,
+            320,
+            190,
+            884,
+            86,
+            0,
+            0,
+            0,
+            144,
+            0,
+            160,
+            86,
+            6,
+            6,
+            0,
+            0,
+            6,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "batch": 4,
+          "worker": 5,
+          "microsteps": 4794,
+          "logical_steps": 1194,
+          "witness_seconds": 3.174074005,
+          "prove_seconds": 43.386820375,
+          "verify_seconds": 0.588926798,
+          "proof_bytes": 540251,
+          "chip_rows": [
+            1024,
+            1613,
+            278,
+            318,
+            197,
+            894,
+            79,
+            0,
+            0,
+            0,
+            145,
+            0,
+            146,
+            79,
+            7,
+            7,
+            0,
+            0,
+            7,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "batch": 5,
+          "worker": 9,
+          "microsteps": 4755,
+          "logical_steps": 1187,
+          "witness_seconds": 3.39979489,
+          "prove_seconds": 35.560584661,
+          "verify_seconds": 0.376089748,
+          "proof_bytes": 540251,
+          "chip_rows": [
+            1024,
+            1604,
+            273,
+            319,
+            185,
+            860,
+            78,
+            0,
+            0,
+            17,
+            138,
+            0,
+            141,
+            78,
+            14,
+            3,
+            3,
+            0,
+            14,
+            4,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "batch": 6,
+          "worker": 8,
+          "microsteps": 1094,
+          "logical_steps": 289,
+          "witness_seconds": 3.273696051,
+          "prove_seconds": 38.625818336,
+          "verify_seconds": 0.256412232,
+          "proof_bytes": 540251,
+          "chip_rows": [
+            258,
+            399,
+            68,
+            81,
+            32,
+            128,
+            0,
+            0,
+            0,
+            32,
+            12,
+            0,
+            0,
+            0,
+            32,
+            0,
+            8,
+            0,
+            32,
+            12,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "batch": 7,
+          "worker": 4,
+          "microsteps": 1196,
+          "logical_steps": 316,
+          "witness_seconds": 2.987119764,
+          "prove_seconds": 42.739119721,
+          "verify_seconds": 0.829794548,
+          "proof_bytes": 540251,
+          "chip_rows": [
+            283,
+            441,
+            81,
+            91,
+            34,
+            135,
+            0,
+            0,
+            0,
+            34,
+            11,
+            0,
+            0,
+            0,
+            32,
+            0,
+            12,
+            0,
+            32,
+            10,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "batch": 8,
+          "worker": 7,
+          "microsteps": 2673,
+          "logical_steps": 694,
+          "witness_seconds": 3.179992799,
+          "prove_seconds": 36.160980831,
+          "verify_seconds": 0.254800735,
+          "proof_bytes": 540251,
+          "chip_rows": [
+            579,
+            838,
+            97,
+            177,
+            127,
+            521,
+            36,
+            1,
+            1,
+            22,
+            86,
+            1,
+            61,
+            39,
+            32,
+            2,
+            11,
+            2,
+            32,
+            8,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "batch": 9,
+          "worker": 3,
+          "microsteps": 4661,
+          "logical_steps": 1194,
+          "witness_seconds": 3.022585714,
+          "prove_seconds": 42.935044164,
+          "verify_seconds": 0.891891909,
+          "proof_bytes": 540251,
+          "chip_rows": [
+            979,
+            1397,
+            147,
+            284,
+            245,
+            1024,
+            91,
+            0,
+            0,
+            0,
+            194,
+            0,
+            161,
+            91,
+            19,
+            10,
+            0,
+            0,
+            19,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "batch": 10,
+          "worker": 12,
+          "microsteps": 4757,
+          "logical_steps": 1225,
+          "witness_seconds": 2.910247181,
+          "prove_seconds": 42.752647154,
+          "verify_seconds": 0.740893669,
+          "proof_bytes": 540251,
+          "chip_rows": [
+            1008,
+            1439,
+            162,
+            299,
+            251,
+            1024,
+            91,
+            1,
+            1,
+            0,
+            187,
+            1,
+            159,
+            94,
+            16,
+            8,
+            0,
+            0,
+            16,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "batch": 11,
+          "worker": 10,
+          "microsteps": 4658,
+          "logical_steps": 1208,
+          "witness_seconds": 3.151285639,
+          "prove_seconds": 42.625939971,
+          "verify_seconds": 0.924912796,
+          "proof_bytes": 540251,
+          "chip_rows": [
+            990,
+            1398,
+            151,
+            298,
+            252,
+            1024,
+            86,
+            1,
+            1,
+            0,
+            185,
+            1,
+            143,
+            89,
+            16,
+            7,
+            0,
+            0,
+            16,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "batch": 12,
+          "worker": 11,
+          "microsteps": 4605,
+          "logical_steps": 1198,
+          "witness_seconds": 3.13890612,
+          "prove_seconds": 39.395888364,
+          "verify_seconds": 0.28347043,
+          "proof_bytes": 540251,
+          "chip_rows": [
+            967,
+            1354,
+            123,
+            301,
+            249,
+            1024,
+            93,
+            0,
+            2,
+            0,
+            189,
+            2,
+            178,
+            97,
+            10,
+            6,
+            0,
+            0,
+            10,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "batch": 13,
+          "worker": 14,
+          "microsteps": 4517,
+          "logical_steps": 1167,
+          "witness_seconds": 2.961013082,
+          "prove_seconds": 42.437612211,
+          "verify_seconds": 0.553014446,
+          "proof_bytes": 540251,
+          "chip_rows": [
+            942,
+            1321,
+            115,
+            287,
+            249,
+            1024,
+            93,
+            0,
+            2,
+            0,
+            186,
+            2,
+            173,
+            97,
+            10,
+            6,
+            0,
+            0,
+            10,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "batch": 14,
+          "worker": 15,
+          "microsteps": 4776,
+          "logical_steps": 1231,
+          "witness_seconds": 3.145156811,
+          "prove_seconds": 41.824922356,
+          "verify_seconds": 0.248031907,
+          "proof_bytes": 540251,
+          "chip_rows": [
+            1009,
+            1448,
+            165,
+            306,
+            247,
+            1024,
+            89,
+            0,
+            2,
+            0,
+            186,
+            2,
+            169,
+            93,
+            14,
+            8,
+            0,
+            0,
+            14,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "batch": 15,
+          "worker": 13,
+          "microsteps": 4620,
+          "logical_steps": 1205,
+          "witness_seconds": 2.790801722,
+          "prove_seconds": 43.398796786,
+          "verify_seconds": 0.94808421,
+          "proof_bytes": 540251,
+          "chip_rows": [
+            975,
+            1361,
+            126,
+            304,
+            252,
+            1024,
+            92,
+            0,
+            1,
+            0,
+            188,
+            1,
+            172,
+            94,
+            12,
+            6,
+            0,
+            0,
+            12,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "batch": 16,
+          "worker": 9,
+          "microsteps": 4693,
+          "logical_steps": 1209,
+          "witness_seconds": 2.623478615,
+          "prove_seconds": 35.513760152,
+          "verify_seconds": 0.243458164,
+          "proof_bytes": 540251,
+          "chip_rows": [
+            984,
+            1405,
+            145,
+            299,
+            246,
+            1024,
+            93,
+            0,
+            2,
+            0,
+            188,
+            2,
+            179,
+            97,
+            11,
+            7,
+            0,
+            0,
+            11,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "batch": 17,
+          "worker": 7,
+          "microsteps": 4661,
+          "logical_steps": 1206,
+          "witness_seconds": 2.470659912,
+          "prove_seconds": 35.672378508,
+          "verify_seconds": 0.239895274,
+          "proof_bytes": 540251,
+          "chip_rows": [
+            982,
+            1386,
+            138,
+            299,
+            249,
+            1024,
+            93,
+            0,
+            1,
+            0,
+            189,
+            1,
+            171,
+            95,
+            13,
+            7,
+            0,
+            0,
+            13,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "batch": 18,
+          "worker": 8,
+          "microsteps": 4601,
+          "logical_steps": 1199,
+          "witness_seconds": 2.594599681,
+          "prove_seconds": 33.334265852,
+          "verify_seconds": 0.327082126,
+          "proof_bytes": 540251,
+          "chip_rows": [
+            971,
+            1359,
+            131,
+            301,
+            252,
+            1024,
+            88,
+            0,
+            2,
+            0,
+            187,
+            2,
+            166,
+            92,
+            10,
+            6,
+            0,
+            0,
+            10,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "batch": 19,
+          "worker": 11,
+          "microsteps": 4701,
+          "logical_steps": 1210,
+          "witness_seconds": 2.814201257,
+          "prove_seconds": 32.628106711,
+          "verify_seconds": 0.243755575,
+          "proof_bytes": 540251,
+          "chip_rows": [
+            988,
+            1411,
+            149,
+            299,
+            244,
+            1024,
+            90,
+            0,
+            2,
+            0,
+            190,
+            2,
+            172,
+            94,
+            14,
+            8,
+            0,
+            0,
+            14,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "batch": 20,
+          "worker": 15,
+          "microsteps": 4602,
+          "logical_steps": 1199,
+          "witness_seconds": 2.623492149,
+          "prove_seconds": 41.267762377,
+          "verify_seconds": 0.459320973,
+          "proof_bytes": 540251,
+          "chip_rows": [
+            970,
+            1355,
+            125,
+            300,
+            251,
+            1024,
+            91,
+            0,
+            1,
+            0,
+            190,
+            1,
+            171,
+            93,
+            12,
+            6,
+            0,
+            0,
+            12,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "batch": 21,
+          "worker": 1,
+          "microsteps": 4677,
+          "logical_steps": 1204,
+          "witness_seconds": 2.684271263,
+          "prove_seconds": 39.876563655,
+          "verify_seconds": 0.364801061,
+          "proof_bytes": 540251,
+          "chip_rows": [
+            981,
+            1399,
+            143,
+            300,
+            248,
+            1024,
+            92,
+            0,
+            2,
+            0,
+            185,
+            2,
+            176,
+            96,
+            11,
+            7,
+            0,
+            0,
+            11,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "batch": 22,
+          "worker": 14,
+          "microsteps": 4738,
+          "logical_steps": 1228,
+          "witness_seconds": 2.475533722,
+          "prove_seconds": 40.625978675,
+          "verify_seconds": 0.374235672,
+          "proof_bytes": 540251,
+          "chip_rows": [
+            1001,
+            1422,
+            150,
+            305,
+            249,
+            1024,
+            94,
+            0,
+            1,
+            0,
+            189,
+            1,
+            173,
+            96,
+            13,
+            7,
+            0,
+            0,
+            13,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "batch": 23,
+          "worker": 12,
+          "microsteps": 4623,
+          "logical_steps": 1203,
+          "witness_seconds": 2.601938025,
+          "prove_seconds": 40.900057084,
+          "verify_seconds": 0.289759887,
+          "proof_bytes": 540251,
+          "chip_rows": [
+            977,
+            1375,
+            139,
+            303,
+            250,
+            1024,
+            85,
+            0,
+            2,
+            0,
+            187,
+            2,
+            162,
+            89,
+            11,
+            6,
+            0,
+            0,
+            11,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "batch": 24,
+          "worker": 4,
+          "microsteps": 4824,
+          "logical_steps": 1242,
+          "witness_seconds": 2.537125841,
+          "prove_seconds": 40.50218679,
+          "verify_seconds": 0.291559422,
+          "proof_bytes": 540251,
+          "chip_rows": [
+            1019,
+            1467,
+            168,
+            310,
+            249,
+            1024,
+            92,
+            0,
+            2,
+            0,
+            185,
+            2,
+            176,
+            96,
+            13,
+            8,
+            0,
+            0,
+            13,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "batch": 25,
+          "worker": 10,
+          "microsteps": 4757,
+          "logical_steps": 1237,
+          "witness_seconds": 2.555319722,
+          "prove_seconds": 40.442989532,
+          "verify_seconds": 0.35664413,
+          "proof_bytes": 540251,
+          "chip_rows": [
+            1012,
+            1429,
+            157,
+            311,
+            252,
+            1024,
+            90,
+            0,
+            1,
+            0,
+            188,
+            1,
+            167,
+            92,
+            13,
+            7,
+            0,
+            0,
+            13,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "batch": 26,
+          "worker": 3,
+          "microsteps": 4737,
+          "logical_steps": 1228,
+          "witness_seconds": 2.775206303,
+          "prove_seconds": 36.532241692,
+          "verify_seconds": 0.301493421,
+          "proof_bytes": 540251,
+          "chip_rows": [
+            1000,
+            1423,
+            151,
+            310,
+            250,
+            1024,
+            92,
+            0,
+            2,
+            0,
+            185,
+            2,
+            176,
+            96,
+            10,
+            6,
+            0,
+            0,
+            10,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "batch": 27,
+          "worker": 2,
+          "microsteps": 4707,
+          "logical_steps": 1221,
+          "witness_seconds": 2.537224069,
+          "prove_seconds": 40.48302864,
+          "verify_seconds": 0.276963202,
+          "proof_bytes": 540251,
+          "chip_rows": [
+            1000,
+            1417,
+            157,
+            303,
+            251,
+            1024,
+            87,
+            0,
+            1,
+            0,
+            188,
+            1,
+            156,
+            89,
+            13,
+            7,
+            0,
+            0,
+            13,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "batch": 28,
+          "worker": 13,
+          "microsteps": 4740,
+          "logical_steps": 1234,
+          "witness_seconds": 2.499129338,
+          "prove_seconds": 39.776554051,
+          "verify_seconds": 0.323916589,
+          "proof_bytes": 540251,
+          "chip_rows": [
+            1004,
+            1420,
+            150,
+            314,
+            252,
+            1024,
+            91,
+            0,
+            2,
+            0,
+            185,
+            2,
+            175,
+            95,
+            10,
+            6,
+            0,
+            0,
+            10,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "batch": 29,
+          "worker": 6,
+          "microsteps": 4770,
+          "logical_steps": 1228,
+          "witness_seconds": 2.438040408,
+          "prove_seconds": 36.22278197,
+          "verify_seconds": 0.28756833,
+          "proof_bytes": 540251,
+          "chip_rows": [
+            1008,
+            1445,
+            162,
+            303,
+            247,
+            1024,
+            90,
+            0,
+            1,
+            0,
+            189,
+            1,
+            168,
+            92,
+            16,
+            8,
+            0,
+            0,
+            16,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "batch": 30,
+          "worker": 5,
+          "microsteps": 4829,
+          "logical_steps": 1246,
+          "witness_seconds": 2.344334175,
+          "prove_seconds": 39.49722679,
+          "verify_seconds": 0.432435454,
+          "proof_bytes": 540251,
+          "chip_rows": [
+            1021,
+            1470,
+            171,
+            313,
+            249,
+            1024,
+            93,
+            0,
+            2,
+            0,
+            182,
+            2,
+            176,
+            97,
+            11,
+            7,
+            0,
+            0,
+            11,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "batch": 31,
+          "worker": 0,
+          "microsteps": 4676,
+          "logical_steps": 1218,
+          "witness_seconds": 2.417778681,
+          "prove_seconds": 38.60680715,
+          "verify_seconds": 0.350112833,
+          "proof_bytes": 540251,
+          "chip_rows": [
+            992,
+            1399,
+            149,
+            307,
+            251,
+            1024,
+            86,
+            0,
+            2,
+            0,
+            187,
+            2,
+            161,
+            90,
+            10,
+            6,
+            0,
+            0,
+            10,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "timing": {
+        "receipt_sha256": "27a2698b585fa88b3f63fa80b1f81f8f45b4651ed4fc71dd27668e3ad0d2664f",
+        "user_seconds": 1680.43,
+        "system_seconds": 306.06,
+        "cpu_percent": 1674,
+        "peak_rss_kib": 177210624,
+        "exit_status": 0,
+        "wall_seconds": 118.59,
+        "peak_rss_gib": 169.001220703125
+      },
+      "log_sha256": "07e9479a0e8d92a15afd7644cefbdc46a0ee367ea15286cbe4ca8f9a231a306f",
+      "every_proof_verified": true
+    },
+    {
+      "class": "SharedLinked1024",
+      "skip": 0,
+      "batches": 32,
+      "workers": 16,
+      "threads_per_worker": 2,
+      "load_seconds": 0.17276506,
+      "skip_seconds": 4.8e-08,
+      "native_seconds": 5.631392119,
+      "setup_seconds": 78.434679918,
+      "microsteps": 141609,
+      "logical_steps": 36418,
+      "worker_wall_seconds": 68.632164378,
+      "batches_per_second": 0.466253692,
+      "logical_steps_per_second": 530.625841834,
+      "name": "linked-sixteen-v1",
+      "samples": [
+        {
+          "batch": 0,
+          "worker": 5,
+          "microsteps": 4827,
+          "logical_steps": 1217,
+          "witness_seconds": 2.792082017,
+          "prove_seconds": 32.950077391,
+          "verify_seconds": 0.216430633,
+          "proof_bytes": 607299,
+          "chip_rows": [
+            1024,
+            1530,
+            215,
+            308,
+            234,
+            930,
+            108,
+            2,
+            2,
+            0,
+            147,
+            2,
+            190,
+            114,
+            8,
+            5,
+            0,
+            0,
+            8,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "batch": 1,
+          "worker": 8,
+          "microsteps": 4774,
+          "logical_steps": 1199,
+          "witness_seconds": 2.876698468,
+          "prove_seconds": 30.557218446,
+          "verify_seconds": 0.335308274,
+          "proof_bytes": 607299,
+          "chip_rows": [
+            1024,
+            1588,
+            269,
+            318,
+            201,
+            897,
+            81,
+            0,
+            0,
+            0,
+            148,
+            0,
+            146,
+            81,
+            7,
+            7,
+            0,
+            0,
+            7,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "batch": 2,
+          "worker": 1,
+          "microsteps": 4758,
+          "logical_steps": 1188,
+          "witness_seconds": 3.01252432,
+          "prove_seconds": 31.565092001,
+          "verify_seconds": 0.207377017,
+          "proof_bytes": 607299,
+          "chip_rows": [
+            1024,
+            1612,
+            292,
+            315,
+            192,
+            869,
+            77,
+            0,
+            0,
+            0,
+            142,
+            0,
+            140,
+            77,
+            6,
+            6,
+            0,
+            0,
+            6,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "batch": 3,
+          "worker": 0,
+          "microsteps": 4808,
+          "logical_steps": 1194,
+          "witness_seconds": 3.396718314,
+          "prove_seconds": 32.778628693,
+          "verify_seconds": 0.249355441,
+          "proof_bytes": 607299,
+          "chip_rows": [
+            1024,
+            1618,
+            278,
+            320,
+            190,
+            884,
+            86,
+            0,
+            0,
+            0,
+            144,
+            0,
+            160,
+            86,
+            6,
+            6,
+            0,
+            0,
+            6,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "batch": 4,
+          "worker": 4,
+          "microsteps": 4794,
+          "logical_steps": 1194,
+          "witness_seconds": 2.536609945,
+          "prove_seconds": 27.946175065,
+          "verify_seconds": 0.240905216,
+          "proof_bytes": 607299,
+          "chip_rows": [
+            1024,
+            1613,
+            278,
+            318,
+            197,
+            894,
+            79,
+            0,
+            0,
+            0,
+            145,
+            0,
+            146,
+            79,
+            7,
+            7,
+            0,
+            0,
+            7,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "batch": 5,
+          "worker": 7,
+          "microsteps": 4755,
+          "logical_steps": 1187,
+          "witness_seconds": 2.740454592,
+          "prove_seconds": 32.753719056,
+          "verify_seconds": 0.361344111,
+          "proof_bytes": 607299,
+          "chip_rows": [
+            1024,
+            1604,
+            273,
+            319,
+            185,
+            860,
+            78,
+            0,
+            0,
+            17,
+            138,
+            0,
+            141,
+            78,
+            14,
+            3,
+            3,
+            0,
+            14,
+            4,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "batch": 6,
+          "worker": 3,
+          "microsteps": 1094,
+          "logical_steps": 289,
+          "witness_seconds": 3.215541954,
+          "prove_seconds": 30.427110549,
+          "verify_seconds": 0.295080088,
+          "proof_bytes": 607299,
+          "chip_rows": [
+            258,
+            399,
+            68,
+            81,
+            32,
+            128,
+            0,
+            0,
+            0,
+            32,
+            12,
+            0,
+            0,
+            0,
+            32,
+            0,
+            8,
+            0,
+            32,
+            12,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "batch": 7,
+          "worker": 10,
+          "microsteps": 1196,
+          "logical_steps": 316,
+          "witness_seconds": 3.321550453,
+          "prove_seconds": 31.960399341,
+          "verify_seconds": 0.262634823,
+          "proof_bytes": 607299,
+          "chip_rows": [
+            283,
+            441,
+            81,
+            91,
+            34,
+            135,
+            0,
+            0,
+            0,
+            34,
+            11,
+            0,
+            0,
+            0,
+            32,
+            0,
+            12,
+            0,
+            32,
+            10,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "batch": 8,
+          "worker": 11,
+          "microsteps": 2673,
+          "logical_steps": 694,
+          "witness_seconds": 2.695315416,
+          "prove_seconds": 33.611802249,
+          "verify_seconds": 0.236325319,
+          "proof_bytes": 607299,
+          "chip_rows": [
+            579,
+            838,
+            97,
+            177,
+            127,
+            521,
+            36,
+            1,
+            1,
+            22,
+            86,
+            1,
+            61,
+            39,
+            32,
+            2,
+            11,
+            2,
+            32,
+            8,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "batch": 9,
+          "worker": 12,
+          "microsteps": 4661,
+          "logical_steps": 1194,
+          "witness_seconds": 3.308104211,
+          "prove_seconds": 33.122154356,
+          "verify_seconds": 0.211152392,
+          "proof_bytes": 607299,
+          "chip_rows": [
+            979,
+            1397,
+            147,
+            284,
+            245,
+            1024,
+            91,
+            0,
+            0,
+            0,
+            194,
+            0,
+            161,
+            91,
+            19,
+            10,
+            0,
+            0,
+            19,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "batch": 10,
+          "worker": 14,
+          "microsteps": 4757,
+          "logical_steps": 1225,
+          "witness_seconds": 3.276381896,
+          "prove_seconds": 25.77127725,
+          "verify_seconds": 1.289528731,
+          "proof_bytes": 607299,
+          "chip_rows": [
+            1008,
+            1439,
+            162,
+            299,
+            251,
+            1024,
+            91,
+            1,
+            1,
+            0,
+            187,
+            1,
+            159,
+            94,
+            16,
+            8,
+            0,
+            0,
+            16,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "batch": 11,
+          "worker": 6,
+          "microsteps": 4658,
+          "logical_steps": 1208,
+          "witness_seconds": 2.946112472,
+          "prove_seconds": 31.976576069,
+          "verify_seconds": 0.203267479,
+          "proof_bytes": 607299,
+          "chip_rows": [
+            990,
+            1398,
+            151,
+            298,
+            252,
+            1024,
+            86,
+            1,
+            1,
+            0,
+            185,
+            1,
+            143,
+            89,
+            16,
+            7,
+            0,
+            0,
+            16,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "batch": 12,
+          "worker": 13,
+          "microsteps": 4605,
+          "logical_steps": 1198,
+          "witness_seconds": 2.773057017,
+          "prove_seconds": 32.624071845,
+          "verify_seconds": 0.272761534,
+          "proof_bytes": 607299,
+          "chip_rows": [
+            967,
+            1354,
+            123,
+            301,
+            249,
+            1024,
+            93,
+            0,
+            2,
+            0,
+            189,
+            2,
+            178,
+            97,
+            10,
+            6,
+            0,
+            0,
+            10,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "batch": 13,
+          "worker": 15,
+          "microsteps": 4517,
+          "logical_steps": 1167,
+          "witness_seconds": 2.905509416,
+          "prove_seconds": 29.712343418,
+          "verify_seconds": 0.22445813,
+          "proof_bytes": 607299,
+          "chip_rows": [
+            942,
+            1321,
+            115,
+            287,
+            249,
+            1024,
+            93,
+            0,
+            2,
+            0,
+            186,
+            2,
+            173,
+            97,
+            10,
+            6,
+            0,
+            0,
+            10,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "batch": 14,
+          "worker": 9,
+          "microsteps": 4776,
+          "logical_steps": 1231,
+          "witness_seconds": 2.782264861,
+          "prove_seconds": 31.008079008,
+          "verify_seconds": 0.253710305,
+          "proof_bytes": 607299,
+          "chip_rows": [
+            1009,
+            1448,
+            165,
+            306,
+            247,
+            1024,
+            89,
+            0,
+            2,
+            0,
+            186,
+            2,
+            169,
+            93,
+            14,
+            8,
+            0,
+            0,
+            14,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "batch": 15,
+          "worker": 2,
+          "microsteps": 4620,
+          "logical_steps": 1205,
+          "witness_seconds": 2.881468946,
+          "prove_seconds": 33.172975455,
+          "verify_seconds": 0.237256794,
+          "proof_bytes": 607299,
+          "chip_rows": [
+            975,
+            1361,
+            126,
+            304,
+            252,
+            1024,
+            92,
+            0,
+            1,
+            0,
+            188,
+            1,
+            172,
+            94,
+            12,
+            6,
+            0,
+            0,
+            12,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "batch": 16,
+          "worker": 14,
+          "microsteps": 4693,
+          "logical_steps": 1209,
+          "witness_seconds": 2.593264861,
+          "prove_seconds": 27.12967042,
+          "verify_seconds": 0.345747297,
+          "proof_bytes": 607299,
+          "chip_rows": [
+            984,
+            1405,
+            145,
+            299,
+            246,
+            1024,
+            93,
+            0,
+            2,
+            0,
+            188,
+            2,
+            179,
+            97,
+            11,
+            7,
+            0,
+            0,
+            11,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "batch": 17,
+          "worker": 4,
+          "microsteps": 4661,
+          "logical_steps": 1206,
+          "witness_seconds": 2.297257587,
+          "prove_seconds": 27.186507987,
+          "verify_seconds": 0.253015262,
+          "proof_bytes": 607299,
+          "chip_rows": [
+            982,
+            1386,
+            138,
+            299,
+            249,
+            1024,
+            93,
+            0,
+            1,
+            0,
+            189,
+            1,
+            171,
+            95,
+            13,
+            7,
+            0,
+            0,
+            13,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "batch": 18,
+          "worker": 15,
+          "microsteps": 4601,
+          "logical_steps": 1199,
+          "witness_seconds": 2.591470112,
+          "prove_seconds": 27.65974827,
+          "verify_seconds": 0.221793754,
+          "proof_bytes": 607299,
+          "chip_rows": [
+            971,
+            1359,
+            131,
+            301,
+            252,
+            1024,
+            88,
+            0,
+            2,
+            0,
+            187,
+            2,
+            166,
+            92,
+            10,
+            6,
+            0,
+            0,
+            10,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "batch": 19,
+          "worker": 8,
+          "microsteps": 4701,
+          "logical_steps": 1210,
+          "witness_seconds": 2.395312407,
+          "prove_seconds": 26.690387237,
+          "verify_seconds": 0.212899802,
+          "proof_bytes": 607299,
+          "chip_rows": [
+            988,
+            1411,
+            149,
+            299,
+            244,
+            1024,
+            90,
+            0,
+            2,
+            0,
+            190,
+            2,
+            172,
+            94,
+            14,
+            8,
+            0,
+            0,
+            14,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "batch": 20,
+          "worker": 3,
+          "microsteps": 4602,
+          "logical_steps": 1199,
+          "witness_seconds": 2.492347455,
+          "prove_seconds": 28.389306934,
+          "verify_seconds": 0.216207983,
+          "proof_bytes": 607299,
+          "chip_rows": [
+            970,
+            1355,
+            125,
+            300,
+            251,
+            1024,
+            91,
+            0,
+            1,
+            0,
+            190,
+            1,
+            171,
+            93,
+            12,
+            6,
+            0,
+            0,
+            12,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "batch": 21,
+          "worker": 9,
+          "microsteps": 4677,
+          "logical_steps": 1204,
+          "witness_seconds": 2.163007659,
+          "prove_seconds": 26.491092474,
+          "verify_seconds": 0.299996941,
+          "proof_bytes": 607299,
+          "chip_rows": [
+            981,
+            1399,
+            143,
+            300,
+            248,
+            1024,
+            92,
+            0,
+            2,
+            0,
+            185,
+            2,
+            176,
+            96,
+            11,
+            7,
+            0,
+            0,
+            11,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "batch": 22,
+          "worker": 1,
+          "microsteps": 4738,
+          "logical_steps": 1228,
+          "witness_seconds": 2.433399092,
+          "prove_seconds": 28.858579698,
+          "verify_seconds": 0.207497548,
+          "proof_bytes": 607299,
+          "chip_rows": [
+            1001,
+            1422,
+            150,
+            305,
+            249,
+            1024,
+            94,
+            0,
+            1,
+            0,
+            189,
+            1,
+            173,
+            96,
+            13,
+            7,
+            0,
+            0,
+            13,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "batch": 23,
+          "worker": 6,
+          "microsteps": 4623,
+          "logical_steps": 1203,
+          "witness_seconds": 2.395401104,
+          "prove_seconds": 27.566832046,
+          "verify_seconds": 0.217853967,
+          "proof_bytes": 607299,
+          "chip_rows": [
+            977,
+            1375,
+            139,
+            303,
+            250,
+            1024,
+            85,
+            0,
+            2,
+            0,
+            187,
+            2,
+            162,
+            89,
+            11,
+            6,
+            0,
+            0,
+            11,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "batch": 24,
+          "worker": 10,
+          "microsteps": 4824,
+          "logical_steps": 1242,
+          "witness_seconds": 2.724602923,
+          "prove_seconds": 25.79366108,
+          "verify_seconds": 0.210314626,
+          "proof_bytes": 607299,
+          "chip_rows": [
+            1019,
+            1467,
+            168,
+            310,
+            249,
+            1024,
+            92,
+            0,
+            2,
+            0,
+            185,
+            2,
+            176,
+            96,
+            13,
+            8,
+            0,
+            0,
+            13,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "batch": 25,
+          "worker": 13,
+          "microsteps": 4757,
+          "logical_steps": 1237,
+          "witness_seconds": 2.523952634,
+          "prove_seconds": 26.924275135,
+          "verify_seconds": 0.283908306,
+          "proof_bytes": 607299,
+          "chip_rows": [
+            1012,
+            1429,
+            157,
+            311,
+            252,
+            1024,
+            90,
+            0,
+            1,
+            0,
+            188,
+            1,
+            167,
+            92,
+            13,
+            7,
+            0,
+            0,
+            13,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "batch": 26,
+          "worker": 7,
+          "microsteps": 4737,
+          "logical_steps": 1228,
+          "witness_seconds": 2.550549699,
+          "prove_seconds": 29.988988103,
+          "verify_seconds": 0.193844086,
+          "proof_bytes": 607299,
+          "chip_rows": [
+            1000,
+            1423,
+            151,
+            310,
+            250,
+            1024,
+            92,
+            0,
+            2,
+            0,
+            185,
+            2,
+            176,
+            96,
+            10,
+            6,
+            0,
+            0,
+            10,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "batch": 27,
+          "worker": 5,
+          "microsteps": 4707,
+          "logical_steps": 1221,
+          "witness_seconds": 2.404681462,
+          "prove_seconds": 29.589319262,
+          "verify_seconds": 0.287266545,
+          "proof_bytes": 607299,
+          "chip_rows": [
+            1000,
+            1417,
+            157,
+            303,
+            251,
+            1024,
+            87,
+            0,
+            1,
+            0,
+            188,
+            1,
+            156,
+            89,
+            13,
+            7,
+            0,
+            0,
+            13,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "batch": 28,
+          "worker": 2,
+          "microsteps": 4740,
+          "logical_steps": 1234,
+          "witness_seconds": 2.617032625,
+          "prove_seconds": 29.216895256,
+          "verify_seconds": 0.20373621,
+          "proof_bytes": 607299,
+          "chip_rows": [
+            1004,
+            1420,
+            150,
+            314,
+            252,
+            1024,
+            91,
+            0,
+            2,
+            0,
+            185,
+            2,
+            175,
+            95,
+            10,
+            6,
+            0,
+            0,
+            10,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "batch": 29,
+          "worker": 0,
+          "microsteps": 4770,
+          "logical_steps": 1228,
+          "witness_seconds": 2.81308163,
+          "prove_seconds": 28.668064055,
+          "verify_seconds": 0.215812023,
+          "proof_bytes": 607299,
+          "chip_rows": [
+            1008,
+            1445,
+            162,
+            303,
+            247,
+            1024,
+            90,
+            0,
+            1,
+            0,
+            189,
+            1,
+            168,
+            92,
+            16,
+            8,
+            0,
+            0,
+            16,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "batch": 30,
+          "worker": 11,
+          "microsteps": 4829,
+          "logical_steps": 1246,
+          "witness_seconds": 2.375752871,
+          "prove_seconds": 28.12718311,
+          "verify_seconds": 0.304457941,
+          "proof_bytes": 607299,
+          "chip_rows": [
+            1021,
+            1470,
+            171,
+            313,
+            249,
+            1024,
+            93,
+            0,
+            2,
+            0,
+            182,
+            2,
+            176,
+            97,
+            11,
+            7,
+            0,
+            0,
+            11,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "batch": 31,
+          "worker": 12,
+          "microsteps": 4676,
+          "logical_steps": 1218,
+          "witness_seconds": 2.40859882,
+          "prove_seconds": 28.183596764,
+          "verify_seconds": 0.20656362,
+          "proof_bytes": 607299,
+          "chip_rows": [
+            992,
+            1399,
+            149,
+            307,
+            251,
+            1024,
+            86,
+            0,
+            2,
+            0,
+            187,
+            2,
+            161,
+            90,
+            10,
+            6,
+            0,
+            0,
+            10,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "timing": {
+        "receipt_sha256": "2ae017edab8fdf3a6574086d935d2de95494fd71a799ebf6a3cfa9b11e36178f",
+        "user_seconds": 1369.83,
+        "system_seconds": 214.45,
+        "cpu_percent": 1024,
+        "peak_rss_kib": 133141828,
+        "exit_status": 0,
+        "wall_seconds": 154.59,
+        "peak_rss_gib": 126.97394180297852
+      },
+      "log_sha256": "f09e55055a0e2f5822fdcda5f49ba6c4034fe9167bf13e7b73c0337978d72346",
+      "every_proof_verified": true
+    },
+    {
+      "class": "SharedLinked1024",
+      "skip": 256,
+      "batches": 8,
+      "workers": 8,
+      "threads_per_worker": 4,
+      "load_seconds": 0.170233909,
+      "skip_seconds": 48.456603866,
+      "native_seconds": 1.509859808,
+      "setup_seconds": 75.69789279,
+      "microsteps": 38322,
+      "logical_steps": 9932,
+      "worker_wall_seconds": 18.874089777,
+      "batches_per_second": 0.4238615,
+      "logical_steps_per_second": 526.224051986,
+      "name": "linked-later-v1",
+      "samples": [
+        {
+          "batch": 256,
+          "worker": 0,
+          "microsteps": 4825,
+          "logical_steps": 1244,
+          "witness_seconds": 2.149367633,
+          "prove_seconds": 16.029525767,
+          "verify_seconds": 0.201946478,
+          "proof_bytes": 607299,
+          "chip_rows": [
+            1024,
+            1479,
+            179,
+            311,
+            247,
+            1019,
+            86,
+            0,
+            2,
+            0,
+            185,
+            2,
+            165,
+            90,
+            14,
+            8,
+            0,
+            0,
+            14,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "batch": 257,
+          "worker": 4,
+          "microsteps": 4796,
+          "logical_steps": 1253,
+          "witness_seconds": 2.216844902,
+          "prove_seconds": 14.947575591,
+          "verify_seconds": 0.204902814,
+          "proof_bytes": 607299,
+          "chip_rows": [
+            1024,
+            1454,
+            167,
+            322,
+            252,
+            1019,
+            89,
+            0,
+            1,
+            0,
+            183,
+            1,
+            168,
+            91,
+            10,
+            5,
+            0,
+            0,
+            10,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "batch": 258,
+          "worker": 6,
+          "microsteps": 4828,
+          "logical_steps": 1240,
+          "witness_seconds": 2.421599897,
+          "prove_seconds": 16.23480849,
+          "verify_seconds": 0.19476125,
+          "proof_bytes": 607299,
+          "chip_rows": [
+            1024,
+            1487,
+            185,
+            309,
+            244,
+            1005,
+            90,
+            0,
+            2,
+            0,
+            181,
+            2,
+            171,
+            94,
+            13,
+            8,
+            0,
+            0,
+            13,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "batch": 259,
+          "worker": 1,
+          "microsteps": 4783,
+          "logical_steps": 1251,
+          "witness_seconds": 2.316837193,
+          "prove_seconds": 13.528003598,
+          "verify_seconds": 0.565635355,
+          "proof_bytes": 607299,
+          "chip_rows": [
+            1024,
+            1444,
+            165,
+            319,
+            253,
+            1018,
+            88,
+            0,
+            1,
+            0,
+            186,
+            1,
+            164,
+            90,
+            12,
+            6,
+            0,
+            0,
+            12,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "batch": 260,
+          "worker": 3,
+          "microsteps": 4821,
+          "logical_steps": 1245,
+          "witness_seconds": 2.343463901,
+          "prove_seconds": 15.582213608,
+          "verify_seconds": 0.203737076,
+          "proof_bytes": 607299,
+          "chip_rows": [
+            1024,
+            1480,
+            180,
+            315,
+            248,
+            1010,
+            89,
+            0,
+            2,
+            0,
+            179,
+            2,
+            170,
+            93,
+            11,
+            7,
+            0,
+            0,
+            11,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "batch": 261,
+          "worker": 2,
+          "microsteps": 4788,
+          "logical_steps": 1240,
+          "witness_seconds": 2.137876517,
+          "prove_seconds": 16.396281846,
+          "verify_seconds": 0.231473063,
+          "proof_bytes": 607299,
+          "chip_rows": [
+            1024,
+            1472,
+            185,
+            312,
+            247,
+            1003,
+            85,
+            0,
+            1,
+            0,
+            181,
+            1,
+            157,
+            87,
+            13,
+            7,
+            0,
+            0,
+            13,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "batch": 262,
+          "worker": 5,
+          "microsteps": 4792,
+          "logical_steps": 1237,
+          "witness_seconds": 2.096956229,
+          "prove_seconds": 14.2632755,
+          "verify_seconds": 0.247784429,
+          "proof_bytes": 607299,
+          "chip_rows": [
+            1024,
+            1487,
+            194,
+            311,
+            240,
+            987,
+            87,
+            0,
+            1,
+            0,
+            178,
+            1,
+            160,
+            89,
+            13,
+            7,
+            0,
+            0,
+            13,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "batch": 263,
+          "worker": 7,
+          "microsteps": 4689,
+          "logical_steps": 1222,
+          "witness_seconds": 2.153132058,
+          "prove_seconds": 14.075614573,
+          "verify_seconds": 0.290278772,
+          "proof_bytes": 607299,
+          "chip_rows": [
+            995,
+            1405,
+            149,
+            309,
+            252,
+            1024,
+            85,
+            0,
+            2,
+            0,
+            187,
+            2,
+            162,
+            89,
+            11,
+            6,
+            0,
+            0,
+            11,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "timing": {
+        "receipt_sha256": "02263196d6bfbf29e3b679c452f0c5da31cc743aa5ed6b3b57fed7a9e8c1103c",
+        "user_seconds": 450.55,
+        "system_seconds": 66.41,
+        "cpu_percent": 353,
+        "peak_rss_kib": 86165504,
+        "exit_status": 0,
+        "wall_seconds": 146.23,
+        "peak_rss_gib": 82.173828125
+      },
+      "log_sha256": "fae67d7b400d45507b66b368ae8d64d904aa050c9284fc6fb293f672cc2ec330",
+      "every_proof_verified": true
+    }
+  ],
+  "paired_comparison": {
+    "same_binary": true,
+    "same_workers_threads": [
+      16,
+      2
+    ],
+    "same_indices": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29,
+      30,
+      31
+    ],
+    "all_32_statements_byte_equal": true,
+    "check": "Remote cmp of all 32 matching statements completed successfully; first three and later batch 256 also match retained preceding-class statements locally.",
+    "throughput_ratio": 1.3162404300767017,
+    "worker_time_reduction_fraction": 0.24026038317205023,
+    "peak_rss_reduction_fraction": 0.24868032742777313,
+    "whole_command_seconds_before_after": [
+      118.59,
+      154.59
+    ],
+    "setup_seconds_before_after": [
+      20.696044463,
+      78.434679918
+    ]
+  },
+  "local_setup_comparison": {
+    "host": {
+      "cpu": "AMD Ryzen 9 7950X3D",
+      "physical_cores": 16,
+      "logical_cpus": 32,
+      "reported_ram_gib": 124
+    },
+    "same_segments": [
+      0,
+      1,
+      2
+    ],
+    "same_workers_threads": [
+      1,
+      4
+    ],
+    "runs": [
+      {
+        "class": "SharedLinked1024",
+        "skip": 0,
+        "batches": 3,
+        "workers": 1,
+        "threads_per_worker": 4,
+        "load_seconds": 0.250364599,
+        "skip_seconds": 2e-08,
+        "native_seconds": 0.449451563,
+        "setup_seconds": 44.509930728,
+        "microsteps": 14359,
+        "logical_steps": 3604,
+        "worker_wall_seconds": 28.535768592,
+        "batches_per_second": 0.105131214,
+        "logical_steps_per_second": 126.297631984,
+        "name": "setup-baseline-v1",
+        "samples": [
+          {
+            "batch": 0,
+            "worker": 0,
+            "microsteps": 4827,
+            "logical_steps": 1217,
+            "witness_seconds": 1.53610337,
+            "prove_seconds": 7.95383215,
+            "verify_seconds": 0.178984482,
+            "proof_bytes": 607299,
+            "chip_rows": [
+              1024,
+              1530,
+              215,
+              308,
+              234,
+              930,
+              108,
+              2,
+              2,
+              0,
+              147,
+              2,
+              190,
+              114,
+              8,
+              5,
+              0,
+              0,
+              8,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "batch": 1,
+            "worker": 0,
+            "microsteps": 4774,
+            "logical_steps": 1199,
+            "witness_seconds": 1.424079608,
+            "prove_seconds": 7.747248996,
+            "verify_seconds": 0.173698227,
+            "proof_bytes": 607299,
+            "chip_rows": [
+              1024,
+              1588,
+              269,
+              318,
+              201,
+              897,
+              81,
+              0,
+              0,
+              0,
+              148,
+              0,
+              146,
+              81,
+              7,
+              7,
+              0,
+              0,
+              7,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "batch": 2,
+            "worker": 0,
+            "microsteps": 4758,
+            "logical_steps": 1188,
+            "witness_seconds": 1.412728871,
+            "prove_seconds": 7.841896425,
+            "verify_seconds": 0.168130741,
+            "proof_bytes": 607299,
+            "chip_rows": [
+              1024,
+              1612,
+              292,
+              315,
+              192,
+              869,
+              77,
+              0,
+              0,
+              0,
+              142,
+              0,
+              140,
+              77,
+              6,
+              6,
+              0,
+              0,
+              6,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "timing": {
+          "receipt_sha256": "b85b8a9adec042b2013133b91de4789302d6d159717f2e6a28e4c008efe60fb5",
+          "user_seconds": 109.58,
+          "system_seconds": 21.94,
+          "cpu_percent": 174,
+          "peak_rss_kib": 17756796,
+          "exit_status": 0,
+          "wall_seconds": 75.3,
+          "peak_rss_gib": 16.934200286865234
+        },
+        "log_sha256": "e413e5a17f2b7d9f67034eddc863e78352bdf9f87b0f6e1b4034a2bd03780288",
+        "every_proof_verified": true
+      },
+      {
+        "class": "SharedLinked1024",
+        "skip": 0,
+        "batches": 3,
+        "workers": 1,
+        "threads_per_worker": 4,
+        "load_seconds": 0.234086592,
+        "skip_seconds": 3e-08,
+        "native_seconds": 0.446254071,
+        "setup_seconds": 38.442508286,
+        "microsteps": 14359,
+        "logical_steps": 3604,
+        "worker_wall_seconds": 28.639471181,
+        "batches_per_second": 0.104750538,
+        "logical_steps_per_second": 125.840312386,
+        "name": "setup-final-v2",
+        "samples": [
+          {
+            "batch": 0,
+            "worker": 0,
+            "microsteps": 4827,
+            "logical_steps": 1217,
+            "witness_seconds": 1.555660452,
+            "prove_seconds": 8.055832551,
+            "verify_seconds": 0.174312104,
+            "proof_bytes": 607299,
+            "chip_rows": [
+              1024,
+              1530,
+              215,
+              308,
+              234,
+              930,
+              108,
+              2,
+              2,
+              0,
+              147,
+              2,
+              190,
+              114,
+              8,
+              5,
+              0,
+              0,
+              8,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "batch": 1,
+            "worker": 0,
+            "microsteps": 4774,
+            "logical_steps": 1199,
+            "witness_seconds": 1.430476583,
+            "prove_seconds": 7.766536083,
+            "verify_seconds": 0.169182018,
+            "proof_bytes": 607299,
+            "chip_rows": [
+              1024,
+              1588,
+              269,
+              318,
+              201,
+              897,
+              81,
+              0,
+              0,
+              0,
+              148,
+              0,
+              146,
+              81,
+              7,
+              7,
+              0,
+              0,
+              7,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "batch": 2,
+            "worker": 0,
+            "microsteps": 4758,
+            "logical_steps": 1188,
+            "witness_seconds": 1.414662635,
+            "prove_seconds": 7.800807864,
+            "verify_seconds": 0.172553315,
+            "proof_bytes": 607299,
+            "chip_rows": [
+              1024,
+              1612,
+              292,
+              315,
+              192,
+              869,
+              77,
+              0,
+              0,
+              0,
+              142,
+              0,
+              140,
+              77,
+              6,
+              6,
+              0,
+              0,
+              6,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "timing": {
+          "receipt_sha256": "688725d9dadfc9ddf5a105bdc8b6343828e5022835241f76f0ca76a06adfe33b",
+          "user_seconds": 103.55,
+          "system_seconds": 22.25,
+          "cpu_percent": 181,
+          "peak_rss_kib": 17800152,
+          "exit_status": 0,
+          "wall_seconds": 69.39,
+          "peak_rss_gib": 16.975547790527344
+        },
+        "log_sha256": "7887bd1e3eaa3c9a043575a159c3019937ae3d978b051250c9f8430d06a9fb9d",
+        "every_proof_verified": true
+      }
+    ],
+    "statement_bytes_equal_to_each_other_and_server": true,
+    "setup_reduction_fraction": 0.13631615108722583,
+    "limits": "One sequential pair, no other heavy jobs. Measures the setup-construction fix locally; it is not a server throughput or full-pipeline comparison."
+  },
+  "measurement_limits": [
+    "Worker wall excludes loading, native replay and setup; includes witness generation, proving, verification and proof writes.",
+    "Whole-command times are reported separately. V1 linked setup is slower and makes the paired whole command slower despite improved worker throughput.",
+    "The final setup-construction fix is measured only locally; the final V2 server executable was not run.",
+    "Server runs use a 400 GiB resident-memory cap and no swap. Sixteen workers allow 3072 GiB virtual addresses; eight allow 1536 GiB. RSS is measured over the whole process.",
+    "Different prefix windows and worker counts are separate samples, not isolated worker-scaling comparisons.",
+    "Short conditional leaf rates exclude admission, full byte/hash workload, output and recursive aggregation, and do not establish complete CSLib proving throughput."
+  ],
+  "leaf_validation": {
+    "new_classes_genuine_proofs_and_fresh_receivers": [
+      "SharedCompactLinked",
+      "SharedLinked1024"
+    ],
+    "each_class_rejects": [
+      "57 independently changed public words",
+      "High byte-limit limb",
+      "Truncated proof",
+      "Trailing proof byte",
+      "Locally valid recomputed OrderClock rows",
+      "Locally valid recomputed MemoryClock rows"
+    ],
+    "large_proof_run": {
+      "timing": {
+        "receipt_sha256": "83456eed5de39cebfe929d60b224b0825ee1066436bca3dabfef3449fffe9701",
+        "user_seconds": 161.53,
+        "system_seconds": 26.54,
+        "cpu_percent": 146,
+        "peak_rss_kib": 17564800,
+        "exit_status": 0,
+        "wall_seconds": 127.98,
+        "peak_rss_gib": 16.7510986328125
+      },
+      "log_sha256": "232fba94219688862b48565bef2ce88293c52fb42f380bd906a0e6de948c2532"
+    },
+    "compact_proof_run": {
+      "timing": {
+        "receipt_sha256": "5c3adf8022f19aed02c81b6e3676b4f327d7ab29b517cd9c5c7c3afc642e1dcc",
+        "user_seconds": 14.48,
+        "system_seconds": 4.85,
+        "cpu_percent": 110,
+        "peak_rss_kib": 5918136,
+        "exit_status": 0,
+        "wall_seconds": 17.44,
+        "peak_rss_gib": 5.643974304199219
+      },
+      "log_sha256": "e4313f2c4038ceec8826cc190c55cc98fc56b08333ee177142a5cab51f7e899c"
+    },
+    "later_fresh_receiver": {
+      "accepted": true,
+      "proof": {
+        "bytes": 607299,
+        "sha256": "02625e52e1ff0f385da2c660c90dc0b1aa6b0f04da7eead10e3ec1f7d63e4727"
+      },
+      "statement": {
+        "sha256": "2070eb1ac22270a4889dbfe06a80b72436612e12b314965b959a520a6e6e3fe9",
+        "clock": [
+          1211582,
+          1216407
+        ],
+        "logical_fuel": [
+          313360,
+          314604
+        ],
+        "heap_fields": [
+          41669,
+          41832
+        ],
+        "byte_cells": [
+          68,
+          68
+        ]
+      },
+      "timing": {
+        "receipt_sha256": "3d6685037f9d91f2964332f77d14ecdd6b318bdce34e53d10424b9aabd7402bc",
+        "user_seconds": 36.46,
+        "system_seconds": 3.59,
+        "cpu_percent": 99,
+        "peak_rss_kib": 6811744,
+        "exit_status": 0,
+        "wall_seconds": 40.18,
+        "peak_rss_gib": 6.496185302734375
+      },
+      "log_sha256": "1e0f12696a2c04c2d381dd700a9f665a8f2ec67509f1a00acada44e2ff9907e2"
+    },
+    "previous_binary_legacy_proof_receiver": {
+      "accepted": true,
+      "class": "SharedPacked1024",
+      "proof": {
+        "bytes": 540251,
+        "sha256": "a4341448a8ff5c60a8d30792f086ab9d62bd4af83ee2d9f33ef4f7365cdcefd1"
+      },
+      "timing": {
+        "receipt_sha256": "af75c24083dc0fc5b827f416d5988f9f38119d65d61ed195a2e88ec5770d7450",
+        "user_seconds": 16.42,
+        "system_seconds": 4.07,
+        "cpu_percent": 99,
+        "peak_rss_kib": 7957952,
+        "exit_status": 0,
+        "wall_seconds": 20.53,
+        "peak_rss_gib": 7.58929443359375
+      },
+      "log_sha256": "63e93381364a89972238dd2f8ddb96fd3f00afb43a85ce18af68bf240e6c9903"
+    }
+  },
+  "recursive_chain": {
+    "class": "SharedLinked1024",
+    "leaf_indices": [
+      0,
+      1,
+      2
+    ],
+    "setup_policy": "Fixed original CSLib profile with fuel 16,000,000,000 and three execution leaves; compile approved class and counts before reading proof bytes.",
+    "nodes": [
+      {
+        "leaves": 2,
+        "prove_and_verify_seconds": 46.309341245,
+        "geometry": {
+          "leaves": 2,
+          "application_words": 57,
+          "variables": 4565043,
+          "arithmetic_operations": 1661580,
+          "packing_rows": 41437,
+          "blake3_compressions": 73295,
+          "row_variables": 17,
+          "dense_variables": 32,
+          "root_families": 159,
+          "root_advice_words": 4896,
+          "children": [
+            1,
+            1
+          ]
+        },
+        "proof": {
+          "bytes": 392771,
+          "sha256": "e21cf410d1a4fa2d90f34e6aac540ac84f0cef1214d4ad8f89335207b68bf882"
+        },
+        "statement": {
+          "sha256": "3d592f5a2ec6332b8e9778a784902afe9d024334159cf1d1f079d67654cc1b20",
+          "clock": [
+            0,
+            9601
+          ],
+          "logical_fuel": [
+            0,
+            2416
+          ],
+          "heap_fields": [
+            0,
+            334
+          ],
+          "byte_cells": [
+            0,
+            0
+          ]
+        }
+      },
+      {
+        "leaves": 3,
+        "prove_and_verify_seconds": 59.284318422,
+        "geometry": {
+          "leaves": 3,
+          "application_words": 57,
+          "variables": 4015028,
+          "arithmetic_operations": 1353625,
+          "packing_rows": 37913,
+          "blake3_compressions": 55115,
+          "row_variables": 16,
+          "dense_variables": 31,
+          "root_families": 161,
+          "root_advice_words": 4991,
+          "children": [
+            2,
+            1
+          ]
+        },
+        "proof": {
+          "bytes": 430603,
+          "sha256": "4f3fec632a73b02bb491050d700f9d8993b53990c8598e12eea7e021da7e5a84"
+        },
+        "statement": {
+          "sha256": "80de916c052323fc84f26c3aadfb41b597202c81f3732ab5dd92b1dbb6b7b938",
+          "clock": [
+            0,
+            14359
+          ],
+          "logical_fuel": [
+            0,
+            3604
+          ],
+          "heap_fields": [
+            0,
+            474
+          ],
+          "byte_cells": [
+            0,
+            0
+          ]
+        }
+      }
+    ],
+    "fresh_process_accepted": true,
+    "fresh_public_mutations_rejected": 114,
+    "fresh_mutations": "Independently flip bit 0 and bit 127 in each of 57 public words.",
+    "valid_nonadjacent_children_rejected": [
+      "repeated",
+      "reversed",
+      "skipped"
+    ],
+    "timing": {
+      "receipt_sha256": "61ab43ed3148c0b8b3ead3b1a0c5bcb91ab76a66a019ba17c800ef1cdfda00be",
+      "user_seconds": 356.25,
+      "system_seconds": 32.32,
+      "cpu_percent": 106,
+      "peak_rss_kib": 28016500,
+      "exit_status": 0,
+      "wall_seconds": 363.95,
+      "peak_rss_gib": 26.718616485595703
+    },
+    "log_sha256": "c2d6336e2df1713d892ab6c1421c837690f90b29c67aa79251f5665ea6aa73f2",
+    "scope": "Conditional CSLib execution prefix; source admission and complete execution are outside this chain.",
+    "binary": {
+      "bytes": 22283608,
+      "sha256": "fa432b8fed0ef6487e043ebfee1f76429960bc8f6d6028e3b2c67d2d29040c38"
+    },
+    "leaf_binary": {
+      "bytes": 28914968,
+      "sha256": "68685fb22bcd0d2d845f8ba6fa53736568e9994ed200c6c99651a628494f1360"
+    }
+  },
+  "complete_countdown_record": "flock-stage4/census/paged-execution-countdown-linked-v0.json",
+  "runtime_opportunity_record": "flock-stage3/profile/cslib-runtime-costs-v0.json",
+  "checks": {
+    "affected_suite": {
+      "passed": 86,
+      "ignored": 28,
+      "timing": {
+        "receipt_sha256": "3466f47ff24ee60043045594b7a0332016b139a3b53a60997244e744ee90c4e5",
+        "user_seconds": 147.16,
+        "system_seconds": 17.9,
+        "cpu_percent": 99,
+        "peak_rss_kib": 4888844,
+        "exit_status": 0,
+        "wall_seconds": 165.96,
+        "peak_rss_gib": 4.662364959716797
+      },
+      "log_sha256": "daa8e4e4f284d668e5b350d2b4834cff2f9da813747b1ec64d5f6a307825d1e6"
+    },
+    "final_ordering_tests": {
+      "passed": 9,
+      "timing": {
+        "receipt_sha256": "4586860c0332a18f8ad97cd295d3c5a33bfa904fee41e0c33d89a5be1fbdf221",
+        "user_seconds": 2.76,
+        "system_seconds": 0.6,
+        "cpu_percent": 99,
+        "peak_rss_kib": 825600,
+        "exit_status": 0,
+        "wall_seconds": 3.37,
+        "peak_rss_gib": 0.787353515625
+      },
+      "log_sha256": "eb9806aff0418164e199dbf5db60320cac8faf1939f2b104b6ec999208931d17"
+    },
+    "recursive_ordinary_tests": {
+      "passed": 4,
+      "ignored": 15,
+      "log_sha256": "0afcc1d4dc55b0aa3c180462192f446aa955632a81649f8efcf67bd4208e723f"
+    },
+    "clippy_stage3_all_targets_deny_warnings": {
+      "passed": true,
+      "log_sha256": "4d8eca3976fb1bb5ccf1c2d5f95c4b5c84b24f736a4665be5c38888cdb664bac"
+    },
+    "clippy_stage4_all_targets_deny_warnings": {
+      "passed": true,
+      "log_sha256": "48e5e87c3d67528e7836382c575b77f1fda613d0070b224bd29cb91cecc8f110"
+    },
+    "fmt_stage3_and_stage4": true,
+    "runtime_record_reproduced_byte_for_byte": true
+  },
+  "development_receipts": {
+    "initial_invalid_shape": {
+      "reason": "Directly merging state producers caused a witness-graph cycle. Replaced with directed XOR residual gates connected to a dedicated constrained-zero class; the subsequent ordering and genuine proof tests pass.",
+      "logs_sha256": {
+        "order-tests.log": "79187545782b1d318d69855a9e1c319daa71f5c25aa5ec385cdabddc049be875",
+        "order-tests-v2.log": "f96bc64727cf3fd0388765ba139e89de527a86132cc5643d14bd8d5ce70aa7f6",
+        "order-tests-v3.log": "435c7db95c335dea44f2856ac6cbf097ef35d6cef7013fad5a1e13586af06a9a"
+      }
+    },
+    "unmeasured_attempts": [
+      "Initial benchmark output directory already existed; it failed before proving and was rerun with a new directory.",
+      "A 32-worker V1 attempt failed the configured 16-worker bound before proving. No 32-worker rate is claimed."
+    ]
+  },
+  "full_run_projection": {
+    "status": "Not proved; not a committed runtime or budget.",
+    "reference_logical_steps": 2268502805,
+    "quota_based_minimum_execution_leaves": 1910664,
+    "minimum_raw_execution_leaf_bytes": 1160344336536,
+    "days_if_the_32_batch_leaf_rate_held": 49.480853423133205,
+    "excludes": [
+      "Native replay",
+      "Admission and output",
+      "Recursive proving",
+      "Extra leaves required by other quotas",
+      "Long-run performance changes"
+    ]
+  }
+}

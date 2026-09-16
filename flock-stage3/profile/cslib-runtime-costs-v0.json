@@ -1,0 +1,5121 @@
+{
+  "scope": "Exclusive function/block counts from the unchanged completed native reference run; no Flock proof or measured optimization speedup.",
+  "reference_transitions": 2268502805,
+  "eval_ret_apply_transitions": [
+    1956519385,
+    310840074,
+    1143346
+  ],
+  "artifacts": {
+    "program": {
+      "bytes": 1016587,
+      "sha256": "1c864b7a10614549f1bba23e465b9e70a9dabeff5615c5885aa0e55517ce3f09"
+    },
+    "observer_report": {
+      "bytes": 4548657,
+      "sha256": "c3d563ffd1927e561482626ba559367477bceb774386ce0d1bd418b3a0f5c1b8"
+    },
+    "compiler_inventory": {
+      "bytes": 79877,
+      "sha256": "c618836ea658f337e214d3973de3a1d64585214374c9c968d3d9131817e9957b"
+    },
+    "reference_census": {
+      "bytes": 2420,
+      "sha256": "f549bf6fffc57f37a71fe6d4efcc2a2e71b811671042300a9377a7f4df861d4e"
+    }
+  },
+  "groups": {
+    "array_tree_navigation": {
+      "members": [
+        "Ixby.Runtime.treeGet",
+        "Ixby.Runtime.treeSet"
+      ],
+      "eval_transitions": 479966998,
+      "fraction_of_all_transitions": 0.21157875447282068
+    },
+    "byte_rope_helpers": {
+      "members": [
+        "Ixby.Runtime.byteAppend",
+        "Ixby.Runtime.byteHeight",
+        "Ixby.Runtime.byteNode",
+        "Ixby.Runtime.byteBalance"
+      ],
+      "eval_transitions": 328622405,
+      "fraction_of_all_transitions": 0.14486312482210045
+    },
+    "number_unboxing": {
+      "members": [
+        "Ixby.Runtime.natural"
+      ],
+      "eval_transitions": 220428864,
+      "fraction_of_all_transitions": 0.09716931515982852
+    },
+    "nibble_conversion_helpers": {
+      "members": [
+        "Ixby.Runtime.toWord",
+        "Ixby.Runtime.fromWordLoop",
+        "Ixby.Runtime.nibbleWord",
+        "Ixby.Runtime.nibbleNat"
+      ],
+      "eval_transitions": 240523261,
+      "fraction_of_all_transitions": 0.10602731478659115
+    }
+  },
+  "functions": [
+    {
+      "index": 52,
+      "name": "Ixby.Runtime.treeGet",
+      "blocks": 12,
+      "eval_transitions": 335006283,
+      "fraction_of_all_transitions": 0.1476772619639763
+    },
+    {
+      "index": 5,
+      "name": "Ixby.Runtime.natural",
+      "blocks": 4,
+      "eval_transitions": 220428864,
+      "fraction_of_all_transitions": 0.09716931515982852
+    },
+    {
+      "index": 53,
+      "name": "Ixby.Runtime.treeSet",
+      "blocks": 25,
+      "eval_transitions": 144960715,
+      "fraction_of_all_transitions": 0.0639014925088444
+    },
+    {
+      "index": 14,
+      "name": "Nat.add",
+      "blocks": 16,
+      "eval_transitions": 121757470,
+      "fraction_of_all_transitions": 0.05367305243424638
+    },
+    {
+      "index": 89,
+      "name": "Ixby.Runtime.byteAppend",
+      "blocks": 62,
+      "eval_transitions": 104180921,
+      "fraction_of_all_transitions": 0.04592496900174651
+    },
+    {
+      "index": 86,
+      "name": "Ixby.Runtime.byteHeight",
+      "blocks": 3,
+      "eval_transitions": 89619976,
+      "fraction_of_all_transitions": 0.03950622225481445
+    },
+    {
+      "index": 1,
+      "name": "Ixby.Runtime.fromWordLoop",
+      "blocks": 10,
+      "eval_transitions": 73176276,
+      "fraction_of_all_transitions": 0.032257520616114026
+    },
+    {
+      "index": 87,
+      "name": "Ixby.Runtime.byteNode",
+      "blocks": 13,
+      "eval_transitions": 71033820,
+      "fraction_of_all_transitions": 0.031313084490543534
+    },
+    {
+      "index": 10,
+      "name": "Ixby.Runtime.nibbleNat",
+      "blocks": 46,
+      "eval_transitions": 69482646,
+      "fraction_of_all_transitions": 0.030629296929610805
+    },
+    {
+      "index": 88,
+      "name": "Ixby.Runtime.byteBalance",
+      "blocks": 35,
+      "eval_transitions": 63787688,
+      "fraction_of_all_transitions": 0.028118849074995966
+    },
+    {
+      "index": 15,
+      "name": "Nat.sub",
+      "blocks": 22,
+      "eval_transitions": 62757798,
+      "fraction_of_all_transitions": 0.02766485360374064
+    },
+    {
+      "index": 0,
+      "name": "Ixby.Runtime.toWord",
+      "blocks": 13,
+      "eval_transitions": 58111555,
+      "fraction_of_all_transitions": 0.025616699645209386
+    },
+    {
+      "index": 62,
+      "name": "Array.size",
+      "blocks": 4,
+      "eval_transitions": 55704512,
+      "fraction_of_all_transitions": 0.024555628442346142
+    },
+    {
+      "index": 19,
+      "name": "Nat.decEq",
+      "blocks": 20,
+      "eval_transitions": 43045131,
+      "fraction_of_all_transitions": 0.018975127958900627
+    },
+    {
+      "index": 9,
+      "name": "Ixby.Runtime.nibbleWord",
+      "blocks": 46,
+      "eval_transitions": 39752784,
+      "fraction_of_all_transitions": 0.01752379759565693
+    },
+    {
+      "index": 20,
+      "name": "Nat.decLt",
+      "blocks": 4,
+      "eval_transitions": 38563996,
+      "fraction_of_all_transitions": 0.01699975680656035
+    },
+    {
+      "index": 66,
+      "name": "Array.getInternal",
+      "blocks": 11,
+      "eval_transitions": 33909018,
+      "fraction_of_all_transitions": 0.014947752290744909
+    },
+    {
+      "index": 57,
+      "name": "Ixby.Runtime.toList",
+      "blocks": 9,
+      "eval_transitions": 23633320,
+      "fraction_of_all_transitions": 0.010418025469446136
+    },
+    {
+      "index": 72,
+      "name": "Array.push",
+      "blocks": 20,
+      "eval_transitions": 23530819,
+      "fraction_of_all_transitions": 0.010372841042178036
+    },
+    {
+      "index": 78,
+      "name": "Array.append._redArg",
+      "blocks": 26,
+      "eval_transitions": 12676038,
+      "fraction_of_all_transitions": 0.005587843211857964
+    },
+    {
+      "index": 16,
+      "name": "Nat.mul",
+      "blocks": 16,
+      "eval_transitions": 10189546,
+      "fraction_of_all_transitions": 0.00449174935007409
+    },
+    {
+      "index": 8,
+      "name": "Ixby.Runtime.fieldFromNatural",
+      "blocks": 9,
+      "eval_transitions": 9860697,
+      "fraction_of_all_transitions": 0.004346786337784582
+    },
+    {
+      "index": 4,
+      "name": "Ixby.Runtime.lowWord",
+      "blocks": 7,
+      "eval_transitions": 9192348,
+      "fraction_of_all_transitions": 0.004052165145989317
+    },
+    {
+      "index": 106,
+      "name": "MultiStark.Verify.Codec.Wire.writeBytes",
+      "blocks": 14,
+      "eval_transitions": 8298589,
+      "fraction_of_all_transitions": 0.003658178857751071
+    },
+    {
+      "index": 677,
+      "name": "MultiStark.Verify.Fri.coordinateStep",
+      "blocks": 9,
+      "eval_transitions": 8103600,
+      "fraction_of_all_transitions": 0.0035722239276666885
+    },
+    {
+      "index": 123,
+      "name": "Except.ok",
+      "blocks": 2,
+      "eval_transitions": 7960290,
+      "fraction_of_all_transitions": 0.0035090501023206802
+    },
+    {
+      "index": 7,
+      "name": "Ixby.Runtime.asField",
+      "blocks": 4,
+      "eval_transitions": 7810066,
+      "fraction_of_all_transitions": 0.0034428284517814384
+    },
+    {
+      "index": 21,
+      "name": "Nat.decLe",
+      "blocks": 6,
+      "eval_transitions": 7372120,
+      "fraction_of_all_transitions": 0.0032497733675934336
+    },
+    {
+      "index": 645,
+      "name": "List.lengthTRAux._redArg",
+      "blocks": 5,
+      "eval_transitions": 7316458,
+      "fraction_of_all_transitions": 0.0032252364792645693
+    },
+    {
+      "index": 76,
+      "name": "Array.extract._redArg",
+      "blocks": 39,
+      "eval_transitions": 7269804,
+      "fraction_of_all_transitions": 0.0032046704919106326
+    },
+    {
+      "index": 113,
+      "name": "MultiStark.Verify.Codec.Wire.readField",
+      "blocks": 29,
+      "eval_transitions": 7251150,
+      "fraction_of_all_transitions": 0.0031964474471963458
+    },
+    {
+      "index": 122,
+      "name": "Prod.mk",
+      "blocks": 2,
+      "eval_transitions": 6883004,
+      "fraction_of_all_transitions": 0.0030341615557314683
+    },
+    {
+      "index": 11,
+      "name": "Ixby.Runtime.shiftRightLoop",
+      "blocks": 10,
+      "eval_transitions": 6870554,
+      "fraction_of_all_transitions": 0.003028673354450624
+    },
+    {
+      "index": 13,
+      "name": "Ixby.Runtime.powLoop",
+      "blocks": 18,
+      "eval_transitions": 6862664,
+      "fraction_of_all_transitions": 0.003025195289542523
+    },
+    {
+      "index": 18,
+      "name": "Nat.mod",
+      "blocks": 4,
+      "eval_transitions": 6770524,
+      "fraction_of_all_transitions": 0.0029845781918704747
+    },
+    {
+      "index": 107,
+      "name": "MultiStark.Verify.Codec.Wire.readBytes",
+      "blocks": 12,
+      "eval_transitions": 6642262,
+      "fraction_of_all_transitions": 0.002928037816554518
+    },
+    {
+      "index": 110,
+      "name": "MultiStark.Verify.Codec.Wire.littleEndian",
+      "blocks": 15,
+      "eval_transitions": 6588430,
+      "fraction_of_all_transitions": 0.002904307627691031
+    },
+    {
+      "index": 60,
+      "name": "Ixby.Runtime.extract",
+      "blocks": 8,
+      "eval_transitions": 6019416,
+      "fraction_of_all_transitions": 0.002653475229006825
+    },
+    {
+      "index": 332,
+      "name": "MultiStark.Verify.Codec.Wire.readRepeatedFrom._redArg",
+      "blocks": 14,
+      "eval_transitions": 5728468,
+      "fraction_of_all_transitions": 0.0025252197120382226
+    },
+    {
+      "index": 48,
+      "name": "USize.add",
+      "blocks": 12,
+      "eval_transitions": 5639304,
+      "fraction_of_all_transitions": 0.0024859144928410172
+    },
+    {
+      "index": 101,
+      "name": "Ix.Ixby.ExtGoldilocks.mul",
+      "blocks": 2,
+      "eval_transitions": 5546474,
+      "fraction_of_all_transitions": 0.002444993229796778
+    },
+    {
+      "index": 118,
+      "name": "MultiStark.Verify.ensure._redArg",
+      "blocks": 4,
+      "eval_transitions": 5026053,
+      "fraction_of_all_transitions": 0.002215581567244304
+    },
+    {
+      "index": 6,
+      "name": "Ixby.Runtime.fieldNatural",
+      "blocks": 10,
+      "eval_transitions": 4995610,
+      "fraction_of_all_transitions": 0.0022021617028593447
+    },
+    {
+      "index": 3,
+      "name": "Ixby.Runtime.fromRaw",
+      "blocks": 2,
+      "eval_transitions": 4819174,
+      "fraction_of_all_transitions": 0.0021243852947318703
+    },
+    {
+      "index": 668,
+      "name": "Array.isEqvAux._at_.MultiStark.Verify.Mmcs.checkSameRows.spec_0._redArg",
+      "blocks": 12,
+      "eval_transitions": 4772800,
+      "fraction_of_all_transitions": 0.0021039427368043304
+    },
+    {
+      "index": 120,
+      "name": "PUnit.unit",
+      "blocks": 2,
+      "eval_transitions": 4762442,
+      "fraction_of_all_transitions": 0.0020993767296664198
+    },
+    {
+      "index": 578,
+      "name": "Ix.Ixby.Goldilocks.pow.go",
+      "blocks": 22,
+      "eval_transitions": 4716569,
+      "fraction_of_all_transitions": 0.0020791550222482532
+    },
+    {
+      "index": 676,
+      "name": "List.zipWith._at_.List.zip.spec_0._redArg",
+      "blocks": 7,
+      "eval_transitions": 4552800,
+      "fraction_of_all_transitions": 0.002006962473207081
+    },
+    {
+      "index": 290,
+      "name": "List.cons",
+      "blocks": 2,
+      "eval_transitions": 4345088,
+      "fraction_of_all_transitions": 0.0019153989981511175
+    },
+    {
+      "index": 670,
+      "name": "_private.Init.Data.Array.Basic.0.Array.foldlMUnsafe.fold._at_.MultiStark.Verify.Mmcs.hashRow.spec_0",
+      "blocks": 10,
+      "eval_transitions": 4047747,
+      "fraction_of_all_transitions": 0.0017843253228862549
+    },
+    {
+      "index": 98,
+      "name": "Ix.Ixby.ExtGoldilocks.mk",
+      "blocks": 4,
+      "eval_transitions": 3984352,
+      "fraction_of_all_transitions": 0.0017563795782919475
+    },
+    {
+      "index": 108,
+      "name": "Ixby.Runtime.wireLittleLoop",
+      "blocks": 12,
+      "eval_transitions": 3879600,
+      "fraction_of_all_transitions": 0.001710202866599497
+    },
+    {
+      "index": 577,
+      "name": "MultiStark.Verify.Fri.reverseBits.go",
+      "blocks": 12,
+      "eval_transitions": 3693700,
+      "fraction_of_all_transitions": 0.0016282545438598213
+    },
+    {
+      "index": 428,
+      "name": "MultiStark.Verify.Arithmetic.embed",
+      "blocks": 4,
+      "eval_transitions": 3689140,
+      "fraction_of_all_transitions": 0.0016262444074870781
+    },
+    {
+      "index": 95,
+      "name": "Ix.Ixby.Goldilocks.mul",
+      "blocks": 5,
+      "eval_transitions": 3226245,
+      "fraction_of_all_transitions": 0.0014221913205877653
+    },
+    {
+      "index": 334,
+      "name": "MultiStark.Verify.Codec.Wire.writeList._redArg",
+      "blocks": 9,
+      "eval_transitions": 2883701,
+      "fraction_of_all_transitions": 0.001271191286889328
+    },
+    {
+      "index": 673,
+      "name": "MultiStark.Verify.Fri.reduceCoordinatePairs",
+      "blocks": 4,
+      "eval_transitions": 2752000,
+      "fraction_of_all_transitions": 0.0012131349337255945
+    },
+    {
+      "index": 114,
+      "name": "MultiStark.Verify.Codec.Wire.writeField",
+      "blocks": 5,
+      "eval_transitions": 2417050,
+      "fraction_of_all_transitions": 0.001065482482398782
+    },
+    {
+      "index": 23,
+      "name": "Nat.shiftRight",
+      "blocks": 3,
+      "eval_transitions": 2086203,
+      "fraction_of_all_transitions": 0.0009196387129880582
+    },
+    {
+      "index": 50,
+      "name": "USize.decEq",
+      "blocks": 4,
+      "eval_transitions": 1944372,
+      "fraction_of_all_transitions": 0.0008571168595050514
+    },
+    {
+      "index": 99,
+      "name": "Ix.Ixby.ExtGoldilocks.add",
+      "blocks": 2,
+      "eval_transitions": 1919920,
+      "fraction_of_all_transitions": 0.0008463379440255971
+    },
+    {
+      "index": 100,
+      "name": "Ix.Ixby.ExtGoldilocks.sub",
+      "blocks": 2,
+      "eval_transitions": 1872006,
+      "fraction_of_all_transitions": 0.0008252165242528761
+    },
+    {
+      "index": 56,
+      "name": "Ixby.Runtime.fromList",
+      "blocks": 4,
+      "eval_transitions": 1867874,
+      "fraction_of_all_transitions": 0.0008233950585747677
+    },
+    {
+      "index": 493,
+      "name": "List.reverseAux._redArg",
+      "blocks": 4,
+      "eval_transitions": 1802634,
+      "fraction_of_all_transitions": 0.0007946360022243834
+    },
+    {
+      "index": 109,
+      "name": "Ixby.Runtime.wireFromLoop",
+      "blocks": 10,
+      "eval_transitions": 1613463,
+      "fraction_of_all_transitions": 0.0007112457592927684
+    },
+    {
+      "index": 669,
+      "name": "MultiStark.Verify.Mmcs.layerRowsFrom",
+      "blocks": 24,
+      "eval_transitions": 1519994,
+      "fraction_of_all_transitions": 0.000670042812664717
+    },
+    {
+      "index": 424,
+      "name": "MultiStark.Verify.Arithmetic.twoAdicGenerator",
+      "blocks": 76,
+      "eval_transitions": 1513448,
+      "fraction_of_all_transitions": 0.0006671572090033188
+    },
+    {
+      "index": 12,
+      "name": "Ixby.Runtime.log2Loop",
+      "blocks": 6,
+      "eval_transitions": 1494238,
+      "fraction_of_all_transitions": 0.000658689068713759
+    },
+    {
+      "index": 125,
+      "name": "MultiStark.Verify.Codec.Wire.ReadState.mk",
+      "blocks": 2,
+      "eval_transitions": 1315574,
+      "fraction_of_all_transitions": 0.0005799305150076727
+    },
+    {
+      "index": 121,
+      "name": "MultiStark.Verify.Codec.Wire.WriteState.mk",
+      "blocks": 2,
+      "eval_transitions": 1315566,
+      "fraction_of_all_transitions": 0.0005799269884526327
+    },
+    {
+      "index": 237,
+      "name": "MultiStark.Verify.Codec.KeyWire.readNode",
+      "blocks": 185,
+      "eval_transitions": 1295029,
+      "fraction_of_all_transitions": 0.0005708738808458295
+    },
+    {
+      "index": 117,
+      "name": "MultiStark.Verify.DecodeError.byteLimit",
+      "blocks": 2,
+      "eval_transitions": 1276712,
+      "fraction_of_all_transitions": 0.0005627993922625985
+    },
+    {
+      "index": 55,
+      "name": "Ixby.Runtime.toBytes",
+      "blocks": 5,
+      "eval_transitions": 1232501,
+      "fraction_of_all_transitions": 0.0005433103266539712
+    },
+    {
+      "index": 124,
+      "name": "MultiStark.Verify.DecodeError.truncated",
+      "blocks": 2,
+      "eval_transitions": 1207684,
+      "fraction_of_all_transitions": 0.0005323705121008215
+    },
+    {
+      "index": 28,
+      "name": "UInt8.decEq",
+      "blocks": 4,
+      "eval_transitions": 1146528,
+      "fraction_of_all_transitions": 0.0005054117620983061
+    },
+    {
+      "index": 406,
+      "name": "MultiStark.Verify.KeyValidation.getDegree",
+      "blocks": 7,
+      "eval_transitions": 1075020,
+      "fraction_of_all_transitions": 0.0004738896498741601
+    },
+    {
+      "index": 338,
+      "name": "MultiStark.Verify.KeyValidation.degreesFrom",
+      "blocks": 13,
+      "eval_transitions": 1031850,
+      "fraction_of_all_transitions": 0.00045485947724009976
+    },
+    {
+      "index": 333,
+      "name": "MultiStark.Verify.Codec.Wire.writeNat",
+      "blocks": 11,
+      "eval_transitions": 955070,
+      "fraction_of_all_transitions": 0.0004210133652446597
+    },
+    {
+      "index": 111,
+      "name": "MultiStark.Verify.Codec.Wire.fromLittleEndian",
+      "blocks": 21,
+      "eval_transitions": 896827,
+      "fraction_of_all_transitions": 0.00039533872209604785
+    },
+    {
+      "index": 2,
+      "name": "Ixby.Runtime.fromWord",
+      "blocks": 3,
+      "eval_transitions": 696264,
+      "fraction_of_all_transitions": 0.00030692666478761526
+    },
+    {
+      "index": 235,
+      "name": "MultiStark.Verify.Codec.Wire.readNat",
+      "blocks": 7,
+      "eval_transitions": 573042,
+      "fraction_of_all_transitions": 0.00025260801914679583
+    },
+    {
+      "index": 595,
+      "name": "MultiStark.Verify.Mmcs.parents",
+      "blocks": 46,
+      "eval_transitions": 487811,
+      "fraction_of_all_transitions": 0.00021503654257108137
+    },
+    {
+      "index": 68,
+      "name": "Array.uget",
+      "blocks": 1,
+      "eval_transitions": 483783,
+      "fraction_of_all_transitions": 0.00021326092210849172
+    },
+    {
+      "index": 405,
+      "name": "MultiStark.Verify.KeyValidation.nodeDegree",
+      "blocks": 37,
+      "eval_transitions": 453915,
+      "fraction_of_all_transitions": 0.00020009452886702515
+    },
+    {
+      "index": 22,
+      "name": "Nat.pow",
+      "blocks": 3,
+      "eval_transitions": 427182,
+      "fraction_of_all_transitions": 0.00018831010438181937
+    },
+    {
+      "index": 372,
+      "name": "MultiStark.Verify.Arithmetic.inverse",
+      "blocks": 18,
+      "eval_transitions": 408816,
+      "fraction_of_all_transitions": 0.00018021401564896896
+    },
+    {
+      "index": 81,
+      "name": "Array.toList",
+      "blocks": 3,
+      "eval_transitions": 397326,
+      "fraction_of_all_transitions": 0.00017514900097291263
+    },
+    {
+      "index": 509,
+      "name": "MultiStark.Verify.Ood.getAt._redArg",
+      "blocks": 7,
+      "eval_transitions": 388960,
+      "fraction_of_all_transitions": 0.0001714611060399372
+    },
+    {
+      "index": 153,
+      "name": "MultiStark.Verify.Codec.Wire.readByte",
+      "blocks": 12,
+      "eval_transitions": 345140,
+      "fraction_of_all_transitions": 0.00015214440080888505
+    },
+    {
+      "index": 65,
+      "name": "Array.mkEmpty",
+      "blocks": 4,
+      "eval_transitions": 331552,
+      "fraction_of_all_transitions": 0.00014615454707361494
+    },
+    {
+      "index": 186,
+      "name": "MultiStark.Verify.Codec.Wire.readCounted._redArg",
+      "blocks": 20,
+      "eval_transitions": 330276,
+      "fraction_of_all_transitions": 0.00014559206154475087
+    },
+    {
+      "index": 661,
+      "name": "Ixby.Runtime.Lifted.661",
+      "blocks": 17,
+      "eval_transitions": 330200,
+      "fraction_of_all_transitions": 0.00014555855927187182
+    },
+    {
+      "index": 335,
+      "name": "MultiStark.Verify.Codec.KeyWire.writeNode",
+      "blocks": 77,
+      "eval_transitions": 324840,
+      "fraction_of_all_transitions": 0.00014319576739513885
+    },
+    {
+      "index": 652,
+      "name": "MultiStark.Verify.Mmcs.getAt._redArg",
+      "blocks": 7,
+      "eval_transitions": 324235,
+      "fraction_of_all_transitions": 0.0001429290716702464
+    },
+    {
+      "index": 494,
+      "name": "Ixby.Runtime.Lifted.494",
+      "blocks": 12,
+      "eval_transitions": 316743,
+      "fraction_of_all_transitions": 0.00013962645287538008
+    },
+    {
+      "index": 295,
+      "name": "MultiStark.Verify.Transcript.observeBytes",
+      "blocks": 21,
+      "eval_transitions": 298368,
+      "fraction_of_all_transitions": 0.0001315263967681098
+    },
+    {
+      "index": 251,
+      "name": "MultiStark.Verify.Codec.Wire.writeCounted._redArg",
+      "blocks": 16,
+      "eval_transitions": 271992,
+      "fraction_of_all_transitions": 0.00011989934480155955
+    },
+    {
+      "index": 659,
+      "name": "Ixby.Runtime.Lifted.659",
+      "blocks": 20,
+      "eval_transitions": 258400,
+      "fraction_of_all_transitions": 0.00011390772778876947
+    },
+    {
+      "index": 73,
+      "name": "Array.set!",
+      "blocks": 13,
+      "eval_transitions": 257488,
+      "fraction_of_all_transitions": 0.00011350570051422088
+    },
+    {
+      "index": 662,
+      "name": "MultiStark.Verify.Fri.reduceCoordinates",
+      "blocks": 11,
+      "eval_transitions": 254000,
+      "fraction_of_all_transitions": 0.00011196812251682448
+    },
+    {
+      "index": 637,
+      "name": "MultiStark.Verify.Fri.reducePoints",
+      "blocks": 11,
+      "eval_transitions": 248800,
+      "fraction_of_all_transitions": 0.0001096758617408895
+    },
+    {
+      "index": 675,
+      "name": "MultiStark.Verify.Mmcs.checkSameRows",
+      "blocks": 16,
+      "eval_transitions": 240119,
+      "fraction_of_all_transitions": 0.00010584910870321803
+    },
+    {
+      "index": 508,
+      "name": "MultiStark.Verify.Ood.evalNode",
+      "blocks": 60,
+      "eval_transitions": 230042,
+      "fraction_of_all_transitions": 0.00010140697181108401
+    },
+    {
+      "index": 140,
+      "name": "MultiStark.Verify.Codec.Wire.readDigest",
+      "blocks": 12,
+      "eval_transitions": 224325,
+      "fraction_of_all_transitions": 9.888680741569548e-05
+    },
+    {
+      "index": 112,
+      "name": "MultiStark.Verify.Codec.Wire.writeByte",
+      "blocks": 6,
+      "eval_transitions": 207072,
+      "fraction_of_all_transitions": 9.128135065277118e-05
+    },
+    {
+      "index": 254,
+      "name": "MultiStark.Verify.KeyError.degree",
+      "blocks": 2,
+      "eval_transitions": 206610,
+      "fraction_of_all_transitions": 9.107769209921695e-05
+    },
+    {
+      "index": 104,
+      "name": "Ixby.Runtime.extFirst",
+      "blocks": 3,
+      "eval_transitions": 197700,
+      "fraction_of_all_transitions": 8.714999142352835e-05
+    },
+    {
+      "index": 105,
+      "name": "Ixby.Runtime.extSecond",
+      "blocks": 3,
+      "eval_transitions": 197700,
+      "fraction_of_all_transitions": 8.714999142352835e-05
+    },
+    {
+      "index": 625,
+      "name": "Ixby.Runtime.Lifted.625",
+      "blocks": 9,
+      "eval_transitions": 196880,
+      "fraction_of_all_transitions": 8.67885195319386e-05
+    },
+    {
+      "index": 339,
+      "name": "MultiStark.Verify.KeyValidation.maxRootsFrom",
+      "blocks": 10,
+      "eval_transitions": 196386,
+      "fraction_of_all_transitions": 8.657075475822477e-05
+    },
+    {
+      "index": 337,
+      "name": "MultiStark.Verify.DecodeError.integerRange",
+      "blocks": 2,
+      "eval_transitions": 191014,
+      "fraction_of_all_transitions": 8.420267304893194e-05
+    },
+    {
+      "index": 285,
+      "name": "List.nil",
+      "blocks": 2,
+      "eval_transitions": 189166,
+      "fraction_of_all_transitions": 8.338803883471503e-05
+    },
+    {
+      "index": 85,
+      "name": "Ix.Ixby.Blake3.hash",
+      "blocks": 5,
+      "eval_transitions": 185340,
+      "fraction_of_all_transitions": 8.170146388688287e-05
+    },
+    {
+      "index": 49,
+      "name": "USize.sub",
+      "blocks": 13,
+      "eval_transitions": 179361,
+      "fraction_of_all_transitions": 7.906580481393762e-05
+    },
+    {
+      "index": 430,
+      "name": "MultiStark.Verify.Ood.sweepFrom",
+      "blocks": 8,
+      "eval_transitions": 172025,
+      "fraction_of_all_transitions": 7.583195384234934e-05
+    },
+    {
+      "index": 614,
+      "name": "MultiStark.Verify.Mmcs.checkQueryRows",
+      "blocks": 15,
+      "eval_transitions": 170900,
+      "fraction_of_all_transitions": 7.53360320398634e-05
+    },
+    {
+      "index": 609,
+      "name": "MultiStark.Verify.Fri.reduceMatrix",
+      "blocks": 16,
+      "eval_transitions": 168600,
+      "fraction_of_all_transitions": 7.432214746589216e-05
+    },
+    {
+      "index": 397,
+      "name": "MultiStark.Verify.Fri.getAt._redArg",
+      "blocks": 7,
+      "eval_transitions": 161270,
+      "fraction_of_all_transitions": 7.109094141058379e-05
+    },
+    {
+      "index": 422,
+      "name": "MultiStark.Verify.Arithmetic.inverseBase",
+      "blocks": 7,
+      "eval_transitions": 153255,
+      "fraction_of_all_transitions": 6.7557774079984e-05
+    },
+    {
+      "index": 94,
+      "name": "Ix.Ixby.Goldilocks.sub",
+      "blocks": 5,
+      "eval_transitions": 152755,
+      "fraction_of_all_transitions": 6.733736438999025e-05
+    },
+    {
+      "index": 636,
+      "name": "Ixby.Runtime.Lifted.636",
+      "blocks": 11,
+      "eval_transitions": 136800,
+      "fraction_of_all_transitions": 6.030409118228972e-05
+    },
+    {
+      "index": 369,
+      "name": "MultiStark.Verify.Transcript.observeChunks",
+      "blocks": 10,
+      "eval_transitions": 127153,
+      "fraction_of_all_transitions": 5.605150662355033e-05
+    },
+    {
+      "index": 619,
+      "name": "MultiStark.Verify.Mmcs.takeFrontier",
+      "blocks": 7,
+      "eval_transitions": 124475,
+      "fraction_of_all_transitions": 5.487099232394381e-05
+    },
+    {
+      "index": 97,
+      "name": "Ix.Ixby.Goldilocks.inverse",
+      "blocks": 4,
+      "eval_transitions": 122604,
+      "fraction_of_all_transitions": 5.40462192639872e-05
+    },
+    {
+      "index": 604,
+      "name": "MultiStark.Verify.Arithmetic.Coordinates.mul",
+      "blocks": 13,
+      "eval_transitions": 121784,
+      "fraction_of_all_transitions": 5.368474737239745e-05
+    },
+    {
+      "index": 446,
+      "name": "MultiStark.Verify.Fri.Error.width",
+      "blocks": 2,
+      "eval_transitions": 116602,
+      "fraction_of_all_transitions": 5.140042134530224e-05
+    },
+    {
+      "index": 91,
+      "name": "Ixby.Runtime.byteFlatten",
+      "blocks": 6,
+      "eval_transitions": 104380,
+      "fraction_of_all_transitions": 4.6012726883095035e-05
+    },
+    {
+      "index": 201,
+      "name": "MultiStark.Verify.Codec.Wire.readExt",
+      "blocks": 11,
+      "eval_transitions": 103995,
+      "fraction_of_all_transitions": 4.584301142179985e-05
+    },
+    {
+      "index": 667,
+      "name": "_private.Init.Data.List.Sort.Impl.0.List.MergeSort.Internal.mergeTR.go._redArg",
+      "blocks": 10,
+      "eval_transitions": 103053,
+      "fraction_of_all_transitions": 4.5427759565851626e-05
+    },
+    {
+      "index": 96,
+      "name": "Ix.Ixby.Goldilocks.neg",
+      "blocks": 4,
+      "eval_transitions": 102740,
+      "fraction_of_all_transitions": 4.528978309991554e-05
+    },
+    {
+      "index": 616,
+      "name": "List.lengthTR._redArg",
+      "blocks": 2,
+      "eval_transitions": 101658,
+      "fraction_of_all_transitions": 4.481281653076907e-05
+    },
+    {
+      "index": 246,
+      "name": "MultiStark.Verify.Codec.Wire.writeVectorWidth._redArg",
+      "blocks": 6,
+      "eval_transitions": 97135,
+      "fraction_of_all_transitions": 4.281899047508561e-05
+    },
+    {
+      "index": 572,
+      "name": "Ixby.Runtime.Lifted.572",
+      "blocks": 44,
+      "eval_transitions": 92500,
+      "fraction_of_all_transitions": 4.077579264884356e-05
+    },
+    {
+      "index": 674,
+      "name": "_private.Init.Data.List.Sort.Impl.0.List.MergeSort.Internal.splitRevAt.go._redArg",
+      "blocks": 10,
+      "eval_transitions": 91843,
+      "fraction_of_all_transitions": 4.0486174316191776e-05
+    },
+    {
+      "index": 544,
+      "name": "Ix.Ixby.Goldilocks.pow",
+      "blocks": 4,
+      "eval_transitions": 91200,
+      "fraction_of_all_transitions": 4.020272745485982e-05
+    },
+    {
+      "index": 638,
+      "name": "Ixby.Runtime.Lifted.638",
+      "blocks": 8,
+      "eval_transitions": 91200,
+      "fraction_of_all_transitions": 4.020272745485982e-05
+    },
+    {
+      "index": 80,
+      "name": "Array.mk",
+      "blocks": 3,
+      "eval_transitions": 86142,
+      "fraction_of_all_transitions": 3.797306303088305e-05
+    },
+    {
+      "index": 664,
+      "name": "MultiStark.Verify.Fri.interpolationProducts",
+      "blocks": 12,
+      "eval_transitions": 85000,
+      "fraction_of_all_transitions": 3.746964729893733e-05
+    },
+    {
+      "index": 642,
+      "name": "MultiStark.Verify.Fri.interpolateFrom",
+      "blocks": 21,
+      "eval_transitions": 82500,
+      "fraction_of_all_transitions": 3.636759884896858e-05
+    },
+    {
+      "index": 300,
+      "name": "MultiStark.Verify.Transcript.observeExt",
+      "blocks": 9,
+      "eval_transitions": 81513,
+      "fraction_of_all_transitions": 3.593251012092092e-05
+    },
+    {
+      "index": 29,
+      "name": "UInt8.add",
+      "blocks": 13,
+      "eval_transitions": 80912,
+      "fraction_of_all_transitions": 3.566757767354844e-05
+    },
+    {
+      "index": 241,
+      "name": "MultiStark.Verify.DecodeError.vectorLimit",
+      "blocks": 2,
+      "eval_transitions": 77712,
+      "fraction_of_all_transitions": 3.425695565758844e-05
+    },
+    {
+      "index": 242,
+      "name": "MultiStark.Verify.DecodeError.itemLimit",
+      "blocks": 2,
+      "eval_transitions": 77712,
+      "fraction_of_all_transitions": 3.425695565758844e-05
+    },
+    {
+      "index": 182,
+      "name": "MultiStark.Verify.Codec.Wire.readVectorWidth._redArg",
+      "blocks": 5,
+      "eval_transitions": 77708,
+      "fraction_of_all_transitions": 3.425519238006849e-05
+    },
+    {
+      "index": 631,
+      "name": "_private.Init.Data.Array.Basic.0.Array.foldrMUnsafe.fold._at_.List.zipIdxTR.spec_0._redArg",
+      "blocks": 13,
+      "eval_transitions": 77511,
+      "fraction_of_all_transitions": 3.4168350962210956e-05
+    },
+    {
+      "index": 17,
+      "name": "Nat.div",
+      "blocks": 4,
+      "eval_transitions": 77212,
+      "fraction_of_all_transitions": 3.403654596759469e-05
+    },
+    {
+      "index": 568,
+      "name": "MultiStark.Verify.Fri.reduceMatrices",
+      "blocks": 10,
+      "eval_transitions": 77200,
+      "fraction_of_all_transitions": 3.403125613503484e-05
+    },
+    {
+      "index": 431,
+      "name": "MultiStark.Verify.Ood.readRefs",
+      "blocks": 13,
+      "eval_transitions": 76853,
+      "fraction_of_all_transitions": 3.387829181017918e-05
+    },
+    {
+      "index": 635,
+      "name": "MultiStark.Verify.Fri.queryPoint",
+      "blocks": 6,
+      "eval_transitions": 76000,
+      "fraction_of_all_transitions": 3.350227287904985e-05
+    },
+    {
+      "index": 660,
+      "name": "Ixby.Runtime.Lifted.660",
+      "blocks": 6,
+      "eval_transitions": 76000,
+      "fraction_of_all_transitions": 3.350227287904985e-05
+    },
+    {
+      "index": 657,
+      "name": "_private.Init.Data.Array.Basic.0.Array.foldrMUnsafe.fold._at_.List.foldrTR._at_.MultiStark.Verify.Ood.lookupMessage.spec_0.spec_0",
+      "blocks": 10,
+      "eval_transitions": 74085,
+      "fraction_of_all_transitions": 3.265810376637379e-05
+    },
+    {
+      "index": 441,
+      "name": "MultiStark.Verify.Arithmetic.scale",
+      "blocks": 5,
+      "eval_transitions": 72350,
+      "fraction_of_all_transitions": 3.1893282142095475e-05
+    },
+    {
+      "index": 280,
+      "name": "MultiStark.Verify.Codec.Wire.writeExt",
+      "blocks": 7,
+      "eval_transitions": 69330,
+      "fraction_of_all_transitions": 3.0562007614533234e-05
+    },
+    {
+      "index": 678,
+      "name": "Ixby.Runtime.Lifted.678",
+      "blocks": 5,
+      "eval_transitions": 68944,
+      "fraction_of_all_transitions": 3.039185133385806e-05
+    },
+    {
+      "index": 74,
+      "name": "Array.uset",
+      "blocks": 5,
+      "eval_transitions": 67944,
+      "fraction_of_all_transitions": 2.995103195387056e-05
+    },
+    {
+      "index": 640,
+      "name": "_private.Init.Data.Array.Basic.0.Array.mapMUnsafe.map._at_.MultiStark.Verify.Fri.rowPoints.spec_0",
+      "blocks": 13,
+      "eval_transitions": 67500,
+      "fraction_of_all_transitions": 2.9755308149156113e-05
+    },
+    {
+      "index": 46,
+      "name": "USize.ofNat",
+      "blocks": 5,
+      "eval_transitions": 67430,
+      "fraction_of_all_transitions": 2.972445079255699e-05
+    },
+    {
+      "index": 656,
+      "name": "MultiStark.Verify.Mmcs.hashRow",
+      "blocks": 18,
+      "eval_transitions": 66781,
+      "fraction_of_all_transitions": 2.94383590149451e-05
+    },
+    {
+      "index": 621,
+      "name": "MultiStark.Verify.Mmcs.Node.mk",
+      "blocks": 2,
+      "eval_transitions": 66746,
+      "fraction_of_all_transitions": 2.9422930336645538e-05
+    },
+    {
+      "index": 92,
+      "name": "Ix.Ixby.Goldilocks.reduce",
+      "blocks": 3,
+      "eval_transitions": 64533,
+      "fraction_of_all_transitions": 2.8447397048733207e-05
+    },
+    {
+      "index": 510,
+      "name": "MultiStark.Verify.Arithmetic.Coordinates.mk",
+      "blocks": 2,
+      "eval_transitions": 63502,
+      "fraction_of_all_transitions": 2.7992912267966097e-05
+    },
+    {
+      "index": 622,
+      "name": "MultiStark.Verify.Mmcs.compress",
+      "blocks": 2,
+      "eval_transitions": 61874,
+      "fraction_of_all_transitions": 2.7275258317346448e-05
+    },
+    {
+      "index": 350,
+      "name": "_private.Init.Data.Array.Basic.0.Array.ofFn.go._redArg",
+      "blocks": 11,
+      "eval_transitions": 60168,
+      "fraction_of_all_transitions": 2.652322045508778e-05
+    },
+    {
+      "index": 304,
+      "name": "MultiStark.Verify.Arithmetic.zero",
+      "blocks": 4,
+      "eval_transitions": 56824,
+      "fraction_of_all_transitions": 2.5049120448409585e-05
+    },
+    {
+      "index": 495,
+      "name": "Ixby.Runtime.Lifted.495",
+      "blocks": 7,
+      "eval_transitions": 56016,
+      "fraction_of_all_transitions": 2.4692938389379687e-05
+    },
+    {
+      "index": 618,
+      "name": "MultiStark.Verify.Mmcs.leafStep",
+      "blocks": 35,
+      "eval_transitions": 51852,
+      "fraction_of_all_transitions": 2.2857366491111745e-05
+    },
+    {
+      "index": 574,
+      "name": "MultiStark.Verify.Fri.foldRow",
+      "blocks": 24,
+      "eval_transitions": 50000,
+      "fraction_of_all_transitions": 2.20409689993749e-05
+    },
+    {
+      "index": 591,
+      "name": "MultiStark.Verify.Mmcs.leaves._lam_0",
+      "blocks": 3,
+      "eval_transitions": 47793,
+      "fraction_of_all_transitions": 2.106808062774249e-05
+    },
+    {
+      "index": 426,
+      "name": "MultiStark.Verify.Arithmetic.one",
+      "blocks": 6,
+      "eval_transitions": 46944,
+      "fraction_of_all_transitions": 2.0693824974133105e-05
+    },
+    {
+      "index": 302,
+      "name": "MultiStark.Verify.Transcript.observeExts",
+      "blocks": 10,
+      "eval_transitions": 46299,
+      "fraction_of_all_transitions": 2.040949647404117e-05
+    },
+    {
+      "index": 24,
+      "name": "Nat.log2",
+      "blocks": 2,
+      "eval_transitions": 46232,
+      "fraction_of_all_transitions": 2.0379961575582006e-05
+    },
+    {
+      "index": 402,
+      "name": "List.reverse._redArg",
+      "blocks": 2,
+      "eval_transitions": 45686,
+      "fraction_of_all_transitions": 2.0139274194108833e-05
+    },
+    {
+      "index": 543,
+      "name": "MultiStark.Verify.Fri.reverseBits",
+      "blocks": 2,
+      "eval_transitions": 45600,
+      "fraction_of_all_transitions": 2.010136372742991e-05
+    },
+    {
+      "index": 51,
+      "name": "USize.decLt",
+      "blocks": 4,
+      "eval_transitions": 44528,
+      "fraction_of_all_transitions": 1.962880535208331e-05
+    },
+    {
+      "index": 561,
+      "name": "MultiStark.Verify.Arithmetic.Coordinates.add",
+      "blocks": 5,
+      "eval_transitions": 43645,
+      "fraction_of_all_transitions": 1.923956183955435e-05
+    },
+    {
+      "index": 647,
+      "name": "_private.Init.Data.List.Sort.Impl.0.List.MergeSort.Internal.mergeSortTR\u2082.run'._redArg",
+      "blocks": 26,
+      "eval_transitions": 43326,
+      "fraction_of_all_transitions": 1.9098940457338337e-05
+    },
+    {
+      "index": 489,
+      "name": "MultiStark.Verify.Fri.commitRows",
+      "blocks": 22,
+      "eval_transitions": 42600,
+      "fraction_of_all_transitions": 1.8778905587467413e-05
+    },
+    {
+      "index": 655,
+      "name": "MultiStark.Verify.Mmcs.layerRows",
+      "blocks": 9,
+      "eval_transitions": 42497,
+      "fraction_of_all_transitions": 1.8733501191328702e-05
+    },
+    {
+      "index": 605,
+      "name": "List.zipIdxTR._redArg",
+      "blocks": 14,
+      "eval_transitions": 40989,
+      "fraction_of_all_transitions": 1.8068745566307555e-05
+    },
+    {
+      "index": 627,
+      "name": "MultiStark.Verify.Mmcs.injectNodes",
+      "blocks": 14,
+      "eval_transitions": 40065,
+      "fraction_of_all_transitions": 1.7661428459199105e-05
+    },
+    {
+      "index": 639,
+      "name": "Ixby.Runtime.Lifted.639",
+      "blocks": 21,
+      "eval_transitions": 40000,
+      "fraction_of_all_transitions": 1.763277519949992e-05
+    },
+    {
+      "index": 294,
+      "name": "MultiStark.Verify.Transcript.Challenger.mk",
+      "blocks": 2,
+      "eval_transitions": 39874,
+      "fraction_of_all_transitions": 1.7577231957621494e-05
+    },
+    {
+      "index": 243,
+      "name": "MultiStark.Verify.Codec.Wire.readRepeated._redArg",
+      "blocks": 2,
+      "eval_transitions": 38856,
+      "fraction_of_all_transitions": 1.712847782879422e-05
+    },
+    {
+      "index": 487,
+      "name": "MultiStark.Verify.Fri.foldRounds",
+      "blocks": 20,
+      "eval_transitions": 38100,
+      "fraction_of_all_transitions": 1.6795218377523673e-05
+    },
+    {
+      "index": 617,
+      "name": "_private.Init.Data.List.Sort.Impl.0.List.MergeSort.Internal.mergeSortTR\u2082.run._redArg",
+      "blocks": 26,
+      "eval_transitions": 37352,
+      "fraction_of_all_transitions": 1.6465485481293024e-05
+    },
+    {
+      "index": 199,
+      "name": "MultiStark.Verify.Codec.Wire.readVector._redArg",
+      "blocks": 2,
+      "eval_transitions": 37208,
+      "fraction_of_all_transitions": 1.6402007490574824e-05
+    },
+    {
+      "index": 278,
+      "name": "MultiStark.Verify.Codec.Wire.writeVector._redArg",
+      "blocks": 2,
+      "eval_transitions": 37208,
+      "fraction_of_all_transitions": 1.6402007490574824e-05
+    },
+    {
+      "index": 384,
+      "name": "_private.Init.Data.Array.Basic.0.Array.foldlMUnsafe.fold._at_.MultiStark.Verify.Ood.evaluate.spec_0",
+      "blocks": 10,
+      "eval_transitions": 35862,
+      "fraction_of_all_transitions": 1.5808664605111652e-05
+    },
+    {
+      "index": 471,
+      "name": "MultiStark.Verify.Fri.Error.height",
+      "blocks": 2,
+      "eval_transitions": 35462,
+      "fraction_of_all_transitions": 1.5632336853116654e-05
+    },
+    {
+      "index": 644,
+      "name": "MultiStark.Verify.Mmcs.Error.rowWidth",
+      "blocks": 2,
+      "eval_transitions": 35400,
+      "fraction_of_all_transitions": 1.560500605155743e-05
+    },
+    {
+      "index": 523,
+      "name": "_private.Init.Data.Array.Basic.0.Array.anyMUnsafe.any._at_.MultiStark.Verify.Fri.shape.spec_3",
+      "blocks": 17,
+      "eval_transitions": 35075,
+      "fraction_of_all_transitions": 1.546173975306149e-05
+    },
+    {
+      "index": 547,
+      "name": "MultiStark.Verify.Fri.flattenRow",
+      "blocks": 7,
+      "eval_transitions": 35000,
+      "fraction_of_all_transitions": 1.5428678299562428e-05
+    },
+    {
+      "index": 590,
+      "name": "MultiStark.Verify.Mmcs.checkRowList",
+      "blocks": 16,
+      "eval_transitions": 34887,
+      "fraction_of_all_transitions": 1.537886570962384e-05
+    },
+    {
+      "index": 615,
+      "name": "_private.Init.Data.Array.Basic.0.Array.mapFinIdxMUnsafe.map._at_.Array.zipIdx.spec_0._redArg",
+      "blocks": 13,
+      "eval_transitions": 34887,
+      "fraction_of_all_transitions": 1.537886570962384e-05
+    },
+    {
+      "index": 679,
+      "name": "MultiStark.Verify.Mmcs.Error.groupRow",
+      "blocks": 2,
+      "eval_transitions": 34472,
+      "fraction_of_all_transitions": 1.519592566692903e-05
+    },
+    {
+      "index": 64,
+      "name": "Array.emptyWithCapacity",
+      "blocks": 4,
+      "eval_transitions": 34300,
+      "fraction_of_all_transitions": 1.512010473357118e-05
+    },
+    {
+      "index": 127,
+      "name": "Option.some",
+      "blocks": 2,
+      "eval_transitions": 30418,
+      "fraction_of_all_transitions": 1.3408843900459713e-05
+    },
+    {
+      "index": 448,
+      "name": "MultiStark.Verify.Fri.Error.point",
+      "blocks": 2,
+      "eval_transitions": 30402,
+      "fraction_of_all_transitions": 1.3401790790379913e-05
+    },
+    {
+      "index": 325,
+      "name": "MultiStark.Verify.Node.mul",
+      "blocks": 2,
+      "eval_transitions": 30094,
+      "fraction_of_all_transitions": 1.3266018421343764e-05
+    },
+    {
+      "index": 342,
+      "name": "MultiStark.Verify.KeyValidation.logupDegreeFrom",
+      "blocks": 19,
+      "eval_transitions": 29985,
+      "fraction_of_all_transitions": 1.3217969108925126e-05
+    },
+    {
+      "index": 575,
+      "name": "MultiStark.Verify.Fri.rollIn",
+      "blocks": 16,
+      "eval_transitions": 29000,
+      "fraction_of_all_transitions": 1.2783762019637441e-05
+    },
+    {
+      "index": 54,
+      "name": "Ixby.Runtime.treeBytes",
+      "blocks": 21,
+      "eval_transitions": 28978,
+      "fraction_of_all_transitions": 1.2774063993277716e-05
+    },
+    {
+      "index": 623,
+      "name": "Ixby.Runtime.Lifted.623",
+      "blocks": 14,
+      "eval_transitions": 28884,
+      "fraction_of_all_transitions": 1.2732626971558891e-05
+    },
+    {
+      "index": 626,
+      "name": "_private.Init.Data.Array.Basic.0.Array.anyMUnsafe.any._at_.MultiStark.Verify.Mmcs.inject.spec_0",
+      "blocks": 11,
+      "eval_transitions": 28399,
+      "fraction_of_all_transitions": 1.2518829572264955e-05
+    },
+    {
+      "index": 498,
+      "name": "MultiStark.Verify.KeyValidation.lookupDegrees",
+      "blocks": 19,
+      "eval_transitions": 28020,
+      "fraction_of_all_transitions": 1.2351759027249692e-05
+    },
+    {
+      "index": 538,
+      "name": "MultiStark.Verify.Fri.collectReduced",
+      "blocks": 15,
+      "eval_transitions": 27600,
+      "fraction_of_all_transitions": 1.2166614887654945e-05
+    },
+    {
+      "index": 539,
+      "name": "MultiStark.Verify.Fri.foldRound",
+      "blocks": 14,
+      "eval_transitions": 27500,
+      "fraction_of_all_transitions": 1.2122532949656193e-05
+    },
+    {
+      "index": 59,
+      "name": "Ixby.Runtime.copyArray",
+      "blocks": 8,
+      "eval_transitions": 26568,
+      "fraction_of_all_transitions": 1.1711689287507846e-05
+    },
+    {
+      "index": 323,
+      "name": "MultiStark.Verify.Node.add",
+      "blocks": 2,
+      "eval_transitions": 25556,
+      "fraction_of_all_transitions": 1.1265580074960498e-05
+    },
+    {
+      "index": 672,
+      "name": "List.zipWith._at_.List.zip.spec_0",
+      "blocks": 1,
+      "eval_transitions": 25400,
+      "fraction_of_all_transitions": 1.1196812251682449e-05
+    },
+    {
+      "index": 247,
+      "name": "MultiStark.Verify.Codec.Wire.writeDigest",
+      "blocks": 1,
+      "eval_transitions": 24924,
+      "fraction_of_all_transitions": 1.0986982226808399e-05
+    },
+    {
+      "index": 404,
+      "name": "Ixby.Runtime.Lifted.404",
+      "blocks": 9,
+      "eval_transitions": 24878,
+      "fraction_of_all_transitions": 1.0966704535328974e-05
+    },
+    {
+      "index": 573,
+      "name": "MultiStark.Verify.Fri.insertValue",
+      "blocks": 16,
+      "eval_transitions": 24590,
+      "fraction_of_all_transitions": 1.0839748553892575e-05
+    },
+    {
+      "index": 570,
+      "name": "List.range.loop",
+      "blocks": 8,
+      "eval_transitions": 23500,
+      "fraction_of_all_transitions": 1.0359255429706202e-05
+    },
+    {
+      "index": 641,
+      "name": "Ixby.Runtime.Lifted.641",
+      "blocks": 10,
+      "eval_transitions": 22500,
+      "fraction_of_all_transitions": 9.918436049718704e-06
+    },
+    {
+      "index": 654,
+      "name": "MultiStark.Verify.Mmcs.freshLeaf",
+      "blocks": 10,
+      "eval_transitions": 21924,
+      "fraction_of_all_transitions": 9.664524086845905e-06
+    },
+    {
+      "index": 138,
+      "name": "Bool.true",
+      "blocks": 1,
+      "eval_transitions": 20864,
+      "fraction_of_all_transitions": 9.197255544059158e-06
+    },
+    {
+      "index": 269,
+      "name": "_private.Init.Data.Array.Basic.0.Array.anyMUnsafe.any._at_.MultiStark.Verify.KeyValidation.circuit.spec_0",
+      "blocks": 12,
+      "eval_transitions": 20580,
+      "fraction_of_all_transitions": 9.072062840142709e-06
+    },
+    {
+      "index": 425,
+      "name": "MultiStark.Verify.Arithmetic.pow2",
+      "blocks": 8,
+      "eval_transitions": 20380,
+      "fraction_of_all_transitions": 8.983898964145208e-06
+    },
+    {
+      "index": 610,
+      "name": "MultiStark.Verify.Fri.rowPoints",
+      "blocks": 9,
+      "eval_transitions": 20000,
+      "fraction_of_all_transitions": 8.81638759974996e-06
+    },
+    {
+      "index": 611,
+      "name": "MultiStark.Verify.Fri.interpolate",
+      "blocks": 11,
+      "eval_transitions": 20000,
+      "fraction_of_all_transitions": 8.81638759974996e-06
+    },
+    {
+      "index": 408,
+      "name": "MultiStark.Verify.KeyValidation.groupDegree",
+      "blocks": 12,
+      "eval_transitions": 19590,
+      "fraction_of_all_transitions": 8.635651653955086e-06
+    },
+    {
+      "index": 30,
+      "name": "UInt8.shiftLeft",
+      "blocks": 6,
+      "eval_transitions": 18672,
+      "fraction_of_all_transitions": 8.230979463126562e-06
+    },
+    {
+      "index": 496,
+      "name": "MultiStark.Verify.KeyError.column",
+      "blocks": 2,
+      "eval_transitions": 18672,
+      "fraction_of_all_transitions": 8.230979463126562e-06
+    },
+    {
+      "index": 276,
+      "name": "MultiStark.Verify.Codec.Wire.readVector",
+      "blocks": 1,
+      "eval_transitions": 18506,
+      "fraction_of_all_transitions": 8.157803446048638e-06
+    },
+    {
+      "index": 349,
+      "name": "MultiStark.Verify.Codec.Wire.writeVector",
+      "blocks": 1,
+      "eval_transitions": 18506,
+      "fraction_of_all_transitions": 8.157803446048638e-06
+    },
+    {
+      "index": 501,
+      "name": "List.foldl._at_.MultiStark.Verify.KeyValidation.groupDegree.spec_2",
+      "blocks": 9,
+      "eval_transitions": 18009,
+      "fraction_of_all_transitions": 7.93871621419485e-06
+    },
+    {
+      "index": 537,
+      "name": "List.mapTR.loop._at_.MultiStark.Verify.Fri.reduceQuery.spec_0",
+      "blocks": 6,
+      "eval_transitions": 16700,
+      "fraction_of_all_transitions": 7.361683645791216e-06
+    },
+    {
+      "index": 671,
+      "name": "MultiStark.Verify.Arithmetic.Coordinates.embed",
+      "blocks": 2,
+      "eval_transitions": 16016,
+      "fraction_of_all_transitions": 7.060163189879767e-06
+    },
+    {
+      "index": 403,
+      "name": "Ixby.Runtime.Lifted.403",
+      "blocks": 6,
+      "eval_transitions": 15560,
+      "fraction_of_all_transitions": 6.859149552605469e-06
+    },
+    {
+      "index": 594,
+      "name": "MultiStark.Verify.Mmcs.leavesFrom",
+      "blocks": 7,
+      "eval_transitions": 14558,
+      "fraction_of_all_transitions": 6.417448533857996e-06
+    },
+    {
+      "index": 79,
+      "name": "Array.pop",
+      "blocks": 16,
+      "eval_transitions": 14168,
+      "fraction_of_all_transitions": 6.245528975662871e-06
+    },
+    {
+      "index": 558,
+      "name": "_private.Init.Data.Range.Basic.0.Std.Legacy.Range.forIn'.loop._at_.MultiStark.Verify.Transcript.draw64.spec_0._redArg",
+      "blocks": 11,
+      "eval_transitions": 13524,
+      "fraction_of_all_transitions": 5.961641294950922e-06
+    },
+    {
+      "index": 599,
+      "name": "MultiStark.Verify.Transcript.drawByte",
+      "blocks": 16,
+      "eval_transitions": 12992,
+      "fraction_of_all_transitions": 5.727125384797573e-06
+    },
+    {
+      "index": 435,
+      "name": "MultiStark.Verify.Ood.readCoordinates",
+      "blocks": 10,
+      "eval_transitions": 12048,
+      "fraction_of_all_transitions": 5.310991890089375e-06
+    },
+    {
+      "index": 438,
+      "name": "MultiStark.Verify.Ood.lookupGroupsFrom",
+      "blocks": 23,
+      "eval_transitions": 12004,
+      "fraction_of_all_transitions": 5.291595837369926e-06
+    },
+    {
+      "index": 499,
+      "name": "List.mapTR.loop._at_.MultiStark.Verify.KeyValidation.groupDegree.spec_0",
+      "blocks": 5,
+      "eval_transitions": 11970,
+      "fraction_of_all_transitions": 5.276607978450351e-06
+    },
+    {
+      "index": 606,
+      "name": "List.foldl._at_.MultiStark.Verify.Ood.groupPolynomial.spec_2",
+      "blocks": 16,
+      "eval_transitions": 11371,
+      "fraction_of_all_transitions": 5.012557169837839e-06
+    },
+    {
+      "index": 453,
+      "name": "MultiStark.Verify.Fri.Error.limit",
+      "blocks": 2,
+      "eval_transitions": 10002,
+      "fraction_of_all_transitions": 4.4090754386349544e-06
+    },
+    {
+      "index": 468,
+      "name": "MultiStark.Verify.Fri.Error.arity",
+      "blocks": 2,
+      "eval_transitions": 10002,
+      "fraction_of_all_transitions": 4.4090754386349544e-06
+    },
+    {
+      "index": 566,
+      "name": "Ixby.Runtime.Lifted.566",
+      "blocks": 5,
+      "eval_transitions": 10000,
+      "fraction_of_all_transitions": 4.40819379987498e-06
+    },
+    {
+      "index": 555,
+      "name": "List.foldr._at_.List.sum._at_.MultiStark.Verify.KeyValidation.groupDegree.spec_1.spec_1",
+      "blocks": 4,
+      "eval_transitions": 9957,
+      "fraction_of_all_transitions": 4.389238566535517e-06
+    },
+    {
+      "index": 628,
+      "name": "Array.isEqvAux._at_.MultiStark.Verify.instBEqDigest.beq.spec_0._redArg",
+      "blocks": 12,
+      "eval_transitions": 9396,
+      "fraction_of_all_transitions": 4.141938894362531e-06
+    },
+    {
+      "index": 562,
+      "name": "MultiStark.Verify.Ood.lookupEntries",
+      "blocks": 16,
+      "eval_transitions": 9340,
+      "fraction_of_all_transitions": 4.117253009083231e-06
+    },
+    {
+      "index": 559,
+      "name": "Ixby.Runtime.Lifted.559",
+      "blocks": 5,
+      "eval_transitions": 9336,
+      "fraction_of_all_transitions": 4.115489731563281e-06
+    },
+    {
+      "index": 666,
+      "name": "List.MergeSort.Internal.splitRevInTwo'._redArg",
+      "blocks": 5,
+      "eval_transitions": 9135,
+      "fraction_of_all_transitions": 4.026885036185794e-06
+    },
+    {
+      "index": 512,
+      "name": "Ixby.Runtime.Lifted.512",
+      "blocks": 15,
+      "eval_transitions": 8489,
+      "fraction_of_all_transitions": 3.74211571671387e-06
+    },
+    {
+      "index": 653,
+      "name": "Array.isEqvAux._at_.MultiStark.Verify.Mmcs.leafStep.spec_0._redArg",
+      "blocks": 17,
+      "eval_transitions": 8352,
+      "fraction_of_all_transitions": 3.681723461655583e-06
+    },
+    {
+      "index": 534,
+      "name": "MultiStark.Verify.Fri.reduceBatches",
+      "blocks": 25,
+      "eval_transitions": 8200,
+      "fraction_of_all_transitions": 3.6147189158974835e-06
+    },
+    {
+      "index": 343,
+      "name": "Ixby.Runtime.Lifted.343",
+      "blocks": 5,
+      "eval_transitions": 8052,
+      "fraction_of_all_transitions": 3.549477647659334e-06
+    },
+    {
+      "index": 486,
+      "name": "MultiStark.Verify.Fri.FoldState.mk",
+      "blocks": 2,
+      "eval_transitions": 7800,
+      "fraction_of_all_transitions": 3.438391163902484e-06
+    },
+    {
+      "index": 633,
+      "name": "List.drop._redArg",
+      "blocks": 9,
+      "eval_transitions": 7507,
+      "fraction_of_all_transitions": 3.309231085566147e-06
+    },
+    {
+      "index": 238,
+      "name": "MultiStark.Verify.Codec.KeyWire.readLookup",
+      "blocks": 13,
+      "eval_transitions": 7381,
+      "fraction_of_all_transitions": 3.2536878436877225e-06
+    },
+    {
+      "index": 511,
+      "name": "MultiStark.Verify.Ood.lookupTarget",
+      "blocks": 18,
+      "eval_transitions": 7283,
+      "fraction_of_all_transitions": 3.2104875444489475e-06
+    },
+    {
+      "index": 341,
+      "name": "MultiStark.Verify.Circuit.lookupGroups",
+      "blocks": 7,
+      "eval_transitions": 7218,
+      "fraction_of_all_transitions": 3.18183428474976e-06
+    },
+    {
+      "index": 407,
+      "name": "Ixby.Runtime.Lifted.407",
+      "blocks": 7,
+      "eval_transitions": 7218,
+      "fraction_of_all_transitions": 3.18183428474976e-06
+    },
+    {
+      "index": 436,
+      "name": "MultiStark.Verify.Arithmetic.Coordinates.sub",
+      "blocks": 5,
+      "eval_transitions": 6870,
+      "fraction_of_all_transitions": 3.0284291405141112e-06
+    },
+    {
+      "index": 259,
+      "name": "MultiStark.Verify.KeyValidation.maxRoots",
+      "blocks": 3,
+      "eval_transitions": 6489,
+      "fraction_of_all_transitions": 2.8604769567388743e-06
+    },
+    {
+      "index": 646,
+      "name": "List.MergeSort.Internal.splitRevInTwo._redArg",
+      "blocks": 6,
+      "eval_transitions": 6264,
+      "fraction_of_all_transitions": 2.7612925962416873e-06
+    },
+    {
+      "index": 328,
+      "name": "MultiStark.Verify.Node.var",
+      "blocks": 2,
+      "eval_transitions": 6224,
+      "fraction_of_all_transitions": 2.7436598210421872e-06
+    },
+    {
+      "index": 329,
+      "name": "MultiStark.Verify.Source.main",
+      "blocks": 2,
+      "eval_transitions": 6174,
+      "fraction_of_all_transitions": 2.7216188520428125e-06
+    },
+    {
+      "index": 613,
+      "name": "MultiStark.Verify.Mmcs.Error.matrixCount",
+      "blocks": 2,
+      "eval_transitions": 5800,
+      "fraction_of_all_transitions": 2.556752403927488e-06
+    },
+    {
+      "index": 651,
+      "name": "MultiStark.Verify.Mmcs.Error.index",
+      "blocks": 2,
+      "eval_transitions": 5800,
+      "fraction_of_all_transitions": 2.556752403927488e-06
+    },
+    {
+      "index": 648,
+      "name": "List.MergeSort.Internal.mergeTR._redArg",
+      "blocks": 2,
+      "eval_transitions": 5742,
+      "fraction_of_all_transitions": 2.5311848798882135e-06
+    },
+    {
+      "index": 665,
+      "name": "List.MergeSort.Internal.splitRevAt._redArg",
+      "blocks": 2,
+      "eval_transitions": 5742,
+      "fraction_of_all_transitions": 2.5311848798882135e-06
+    },
+    {
+      "index": 552,
+      "name": "MultiStark.Verify.Mmcs.walk",
+      "blocks": 16,
+      "eval_transitions": 5533,
+      "fraction_of_all_transitions": 2.439053629470826e-06
+    },
+    {
+      "index": 600,
+      "name": "MultiStark.Verify.Ood.lookupMessage",
+      "blocks": 9,
+      "eval_transitions": 5368,
+      "fraction_of_all_transitions": 2.366318431772889e-06
+    },
+    {
+      "index": 630,
+      "name": "List.foldrTR._at_.MultiStark.Verify.Ood.lookupMessage.spec_0",
+      "blocks": 9,
+      "eval_transitions": 5368,
+      "fraction_of_all_transitions": 2.366318431772889e-06
+    },
+    {
+      "index": 563,
+      "name": "MultiStark.Verify.Ood.groupPolynomial",
+      "blocks": 8,
+      "eval_transitions": 5224,
+      "fraction_of_all_transitions": 2.3028404410546894e-06
+    },
+    {
+      "index": 532,
+      "name": "_private.Init.Data.Array.Basic.0.Array.mapMUnsafe.map._at_.MultiStark.Verify.Fri.authenticateInputBatches.spec_1",
+      "blocks": 14,
+      "eval_transitions": 5212,
+      "fraction_of_all_transitions": 2.2975506084948394e-06
+    },
+    {
+      "index": 63,
+      "name": "Array.usize",
+      "blocks": 2,
+      "eval_transitions": 5084,
+      "fraction_of_all_transitions": 2.2411257278564395e-06
+    },
+    {
+      "index": 283,
+      "name": "Array.range._lam_0",
+      "blocks": 1,
+      "eval_transitions": 5016,
+      "fraction_of_all_transitions": 2.21115001001729e-06
+    },
+    {
+      "index": 206,
+      "name": "Array.range",
+      "blocks": 2,
+      "eval_transitions": 5004,
+      "fraction_of_all_transitions": 2.20586017745744e-06
+    },
+    {
+      "index": 284,
+      "name": "Array.ofFn._redArg",
+      "blocks": 2,
+      "eval_transitions": 5004,
+      "fraction_of_all_transitions": 2.20586017745744e-06
+    },
+    {
+      "index": 576,
+      "name": "MultiStark.Verify.Fri.QueryRound.mk",
+      "blocks": 2,
+      "eval_transitions": 5000,
+      "fraction_of_all_transitions": 2.20409689993749e-06
+    },
+    {
+      "index": 624,
+      "name": "MultiStark.Verify.Mmcs.Error.internalShape",
+      "blocks": 2,
+      "eval_transitions": 4814,
+      "fraction_of_all_transitions": 2.1221044952598154e-06
+    },
+    {
+      "index": 603,
+      "name": "List.foldl._at_.MultiStark.Verify.Ood.groupPolynomial.spec_1",
+      "blocks": 4,
+      "eval_transitions": 4769,
+      "fraction_of_all_transitions": 2.102267623160378e-06
+    },
+    {
+      "index": 336,
+      "name": "MultiStark.Verify.Codec.KeyWire.writeLookup",
+      "blocks": 8,
+      "eval_transitions": 4697,
+      "fraction_of_all_transitions": 2.070528627801278e-06
+    },
+    {
+      "index": 324,
+      "name": "MultiStark.Verify.Node.sub",
+      "blocks": 2,
+      "eval_transitions": 4610,
+      "fraction_of_all_transitions": 2.0321773417423656e-06
+    },
+    {
+      "index": 596,
+      "name": "MultiStark.Verify.Mmcs.inject",
+      "blocks": 13,
+      "eval_transitions": 4490,
+      "fraction_of_all_transitions": 1.979279016143866e-06
+    },
+    {
+      "index": 61,
+      "name": "Ixby.Runtime.replicate",
+      "blocks": 8,
+      "eval_transitions": 4100,
+      "fraction_of_all_transitions": 1.8073594579487417e-06
+    },
+    {
+      "index": 601,
+      "name": "List.mapTR.loop._at_.MultiStark.Verify.Ood.groupPolynomial.spec_0",
+      "blocks": 5,
+      "eval_transitions": 3990,
+      "fraction_of_all_transitions": 1.7588693261501168e-06
+    },
+    {
+      "index": 602,
+      "name": "MultiStark.Verify.Arithmetic.Coordinates.one",
+      "blocks": 3,
+      "eval_transitions": 3972,
+      "fraction_of_all_transitions": 1.7509345773103419e-06
+    },
+    {
+      "index": 500,
+      "name": "List.sum._at_.MultiStark.Verify.KeyValidation.groupDegree.spec_1",
+      "blocks": 2,
+      "eval_transitions": 3918,
+      "fraction_of_all_transitions": 1.727130330791017e-06
+    },
+    {
+      "index": 565,
+      "name": "_private.Init.Data.Array.Basic.0.Array.anyMUnsafe.any._at_.MultiStark.Verify.Fri.shape.spec_0",
+      "blocks": 16,
+      "eval_transitions": 3758,
+      "fraction_of_all_transitions": 1.6565992299930174e-06
+    },
+    {
+      "index": 658,
+      "name": "_private.Init.Data.List.Impl.0.List.takeTR.go._redArg",
+      "blocks": 10,
+      "eval_transitions": 3499,
+      "fraction_of_all_transitions": 1.5424270105762553e-06
+    },
+    {
+      "index": 513,
+      "name": "MultiStark.Verify.Ood.groupEquation",
+      "blocks": 6,
+      "eval_transitions": 3265,
+      "fraction_of_all_transitions": 1.4392752756591809e-06
+    },
+    {
+      "index": 437,
+      "name": "MultiStark.Verify.Arithmetic.Coordinates.scale",
+      "blocks": 4,
+      "eval_transitions": 3084,
+      "fraction_of_all_transitions": 1.3594869678814438e-06
+    },
+    {
+      "index": 286,
+      "name": "MultiStark.Verify.Shape.getAt._redArg",
+      "blocks": 7,
+      "eval_transitions": 3020,
+      "fraction_of_all_transitions": 1.3312745275622438e-06
+    },
+    {
+      "index": 47,
+      "name": "USize.toNat",
+      "blocks": 1,
+      "eval_transitions": 2900,
+      "fraction_of_all_transitions": 1.278376201963744e-06
+    },
+    {
+      "index": 571,
+      "name": "MultiStark.Verify.Fri.ReducedOpening.mk",
+      "blocks": 2,
+      "eval_transitions": 2800,
+      "fraction_of_all_transitions": 1.2342942639649944e-06
+    },
+    {
+      "index": 26,
+      "name": "UInt8.toNat",
+      "blocks": 1,
+      "eval_transitions": 2750,
+      "fraction_of_all_transitions": 1.2122532949656195e-06
+    },
+    {
+      "index": 289,
+      "name": "MultiStark.Verify.Shape.activeValues",
+      "blocks": 38,
+      "eval_transitions": 2600,
+      "fraction_of_all_transitions": 1.1461303879674947e-06
+    },
+    {
+      "index": 567,
+      "name": "_private.Init.Data.Array.Basic.0.Array.foldlMUnsafe.fold._at_.MultiStark.Verify.Mmcs.maxLogHeight.spec_0",
+      "blocks": 9,
+      "eval_transitions": 2402,
+      "fraction_of_all_transitions": 1.0588481507299701e-06
+    },
+    {
+      "index": 362,
+      "name": "MultiStark.Verify.Transcript.observeNats",
+      "blocks": 9,
+      "eval_transitions": 2396,
+      "fraction_of_all_transitions": 1.0562032344500451e-06
+    },
+    {
+      "index": 444,
+      "name": "MultiStark.Verify.Pcs.observePointList",
+      "blocks": 11,
+      "eval_transitions": 2386,
+      "fraction_of_all_transitions": 1.0517950406501703e-06
+    },
+    {
+      "index": 589,
+      "name": "_private.Init.Data.Array.Basic.0.Array.anyMUnsafe.any._at_.MultiStark.Verify.Mmcs.geometry.spec_1",
+      "blocks": 15,
+      "eval_transitions": 2211,
+      "fraction_of_all_transitions": 9.74651649152358e-07
+    },
+    {
+      "index": 516,
+      "name": "_private.Init.Data.Array.Basic.0.Array.anyMUnsafe.any._at_.MultiStark.Verify.Fri.shape.spec_1",
+      "blocks": 17,
+      "eval_transitions": 2140,
+      "fraction_of_all_transitions": 9.433534731732457e-07
+    },
+    {
+      "index": 318,
+      "name": "MultiStark.Verify.Node.const",
+      "blocks": 2,
+      "eval_transitions": 2134,
+      "fraction_of_all_transitions": 9.407085568933206e-07
+    },
+    {
+      "index": 488,
+      "name": "MultiStark.Verify.Fri.finishQuery",
+      "blocks": 25,
+      "eval_transitions": 2100,
+      "fraction_of_all_transitions": 9.257206979737457e-07
+    },
+    {
+      "index": 353,
+      "name": "MultiStark.Verify.Shape.twoRows",
+      "blocks": 14,
+      "eval_transitions": 2040,
+      "fraction_of_all_transitions": 8.992715351744959e-07
+    },
+    {
+      "index": 584,
+      "name": "_private.Init.Data.Array.Basic.0.Array.anyMUnsafe.any._at_.MultiStark.Verify.Mmcs.geometry.spec_0",
+      "blocks": 14,
+      "eval_transitions": 2034,
+      "fraction_of_all_transitions": 8.966266188945709e-07
+    },
+    {
+      "index": 482,
+      "name": "MultiStark.Verify.Fri.reduceQuery",
+      "blocks": 24,
+      "eval_transitions": 2000,
+      "fraction_of_all_transitions": 8.81638759974996e-07
+    },
+    {
+      "index": 620,
+      "name": "Ixby.Runtime.Lifted.620",
+      "blocks": 7,
+      "eval_transitions": 1995,
+      "fraction_of_all_transitions": 8.794346630750584e-07
+    },
+    {
+      "index": 530,
+      "name": "_private.Init.Data.Array.Basic.0.Array.mapMUnsafe.map._at_.MultiStark.Verify.Fri.authenticateInputBatches.spec_0",
+      "blocks": 14,
+      "eval_transitions": 1988,
+      "fraction_of_all_transitions": 8.76348927415146e-07
+    },
+    {
+      "index": 460,
+      "name": "_private.Init.Data.Array.Basic.0.Array.anyMUnsafe.any._at_.MultiStark.Verify.Fri.shape.spec_10",
+      "blocks": 16,
+      "eval_transitions": 1979,
+      "fraction_of_all_transitions": 8.723815529952585e-07
+    },
+    {
+      "index": 270,
+      "name": "Ixby.Runtime.Lifted.270",
+      "blocks": 17,
+      "eval_transitions": 1950,
+      "fraction_of_all_transitions": 8.59597790975621e-07
+    },
+    {
+      "index": 417,
+      "name": "MultiStark.Verify.Transcript.observeNat",
+      "blocks": 6,
+      "eval_transitions": 1912,
+      "fraction_of_all_transitions": 8.428466545360961e-07
+    },
+    {
+      "index": 649,
+      "name": "Ixby.Runtime.Lifted.649",
+      "blocks": 5,
+      "eval_transitions": 1856,
+      "fraction_of_all_transitions": 8.181607692567962e-07
+    },
+    {
+      "index": 160,
+      "name": "MultiStark.Verify.KeyValidation.circuits",
+      "blocks": 26,
+      "eval_transitions": 1806,
+      "fraction_of_all_transitions": 7.961198002574213e-07
+    },
+    {
+      "index": 410,
+      "name": "MultiStark.Verify.Shape.ceilLog2",
+      "blocks": 8,
+      "eval_transitions": 1800,
+      "fraction_of_all_transitions": 7.934748839774963e-07
+    },
+    {
+      "index": 211,
+      "name": "MultiStark.Verify.Shape.checkCircuits",
+      "blocks": 30,
+      "eval_transitions": 1706,
+      "fraction_of_all_transitions": 7.520378622586716e-07
+    },
+    {
+      "index": 518,
+      "name": "_private.Init.Data.Array.Basic.0.Array.anyMUnsafe.any._at_.MultiStark.Verify.Fri.shape.spec_2",
+      "blocks": 13,
+      "eval_transitions": 1684,
+      "fraction_of_all_transitions": 7.423398358989466e-07
+    },
+    {
+      "index": 264,
+      "name": "Ixby.Runtime.Lifted.264",
+      "blocks": 21,
+      "eval_transitions": 1662,
+      "fraction_of_all_transitions": 7.326418095392216e-07
+    },
+    {
+      "index": 181,
+      "name": "MultiStark.Verify.Codec.KeyWire.readCircuit",
+      "blocks": 41,
+      "eval_transitions": 1650,
+      "fraction_of_all_transitions": 7.273519769793717e-07
+    },
+    {
+      "index": 268,
+      "name": "Ixby.Runtime.Lifted.268",
+      "blocks": 16,
+      "eval_transitions": 1650,
+      "fraction_of_all_transitions": 7.273519769793717e-07
+    },
+    {
+      "index": 505,
+      "name": "MultiStark.Verify.Transcript.draw64",
+      "blocks": 10,
+      "eval_transitions": 1610,
+      "fraction_of_all_transitions": 7.097192017798717e-07
+    },
+    {
+      "index": 398,
+      "name": "MultiStark.Verify.Fri.foldQuery",
+      "blocks": 20,
+      "eval_transitions": 1600,
+      "fraction_of_all_transitions": 7.053110079799967e-07
+    },
+    {
+      "index": 351,
+      "name": "MultiStark.Verify.Shape.quotientLog",
+      "blocks": 6,
+      "eval_transitions": 1500,
+      "fraction_of_all_transitions": 6.612290699812469e-07
+    },
+    {
+      "index": 485,
+      "name": "Ixby.Runtime.Lifted.485",
+      "blocks": 19,
+      "eval_transitions": 1500,
+      "fraction_of_all_transitions": 6.612290699812469e-07
+    },
+    {
+      "index": 245,
+      "name": "MultiStark.Verify.Codec.KeyWire.writeCircuit",
+      "blocks": 36,
+      "eval_transitions": 1450,
+      "fraction_of_all_transitions": 6.39188100981872e-07
+    },
+    {
+      "index": 307,
+      "name": "MultiStark.Verify.Ood.evaluate",
+      "blocks": 41,
+      "eval_transitions": 1450,
+      "fraction_of_all_transitions": 6.39188100981872e-07
+    },
+    {
+      "index": 503,
+      "name": "MultiStark.Verify.Transcript.observeField",
+      "blocks": 3,
+      "eval_transitions": 1437,
+      "fraction_of_all_transitions": 6.334574490420346e-07
+    },
+    {
+      "index": 477,
+      "name": "MultiStark.Verify.Fri.queryIndices",
+      "blocks": 19,
+      "eval_transitions": 1406,
+      "fraction_of_all_transitions": 6.197920482624222e-07
+    },
+    {
+      "index": 316,
+      "name": "MultiStark.Verify.Fri.foldQueries",
+      "blocks": 19,
+      "eval_transitions": 1405,
+      "fraction_of_all_transitions": 6.193512288824346e-07
+    },
+    {
+      "index": 257,
+      "name": "Ixby.Runtime.Lifted.257",
+      "blocks": 15,
+      "eval_transitions": 1350,
+      "fraction_of_all_transitions": 5.951061629831223e-07
+    },
+    {
+      "index": 266,
+      "name": "Ixby.Runtime.Lifted.266",
+      "blocks": 11,
+      "eval_transitions": 1350,
+      "fraction_of_all_transitions": 5.951061629831223e-07
+    },
+    {
+      "index": 375,
+      "name": "MultiStark.Verify.Ood.publicValues",
+      "blocks": 27,
+      "eval_transitions": 1350,
+      "fraction_of_all_transitions": 5.951061629831223e-07
+    },
+    {
+      "index": 331,
+      "name": "MultiStark.Verify.Lookup.mk",
+      "blocks": 2,
+      "eval_transitions": 1342,
+      "fraction_of_all_transitions": 5.915796079432222e-07
+    },
+    {
+      "index": 629,
+      "name": "MultiStark.Verify.Arithmetic.Coordinates.zero",
+      "blocks": 2,
+      "eval_transitions": 1342,
+      "fraction_of_all_transitions": 5.915796079432222e-07
+    },
+    {
+      "index": 634,
+      "name": "List.appendTR._redArg",
+      "blocks": 2,
+      "eval_transitions": 1342,
+      "fraction_of_all_transitions": 5.915796079432222e-07
+    },
+    {
+      "index": 310,
+      "name": "MultiStark.Verify.Pcs.activeMatrices",
+      "blocks": 33,
+      "eval_transitions": 1305,
+      "fraction_of_all_transitions": 5.752692908836848e-07
+    },
+    {
+      "index": 374,
+      "name": "MultiStark.Verify.Ood.selectors",
+      "blocks": 37,
+      "eval_transitions": 1250,
+      "fraction_of_all_transitions": 5.510242249843724e-07
+    },
+    {
+      "index": 385,
+      "name": "MultiStark.Verify.Pcs.twoPoints",
+      "blocks": 14,
+      "eval_transitions": 1224,
+      "fraction_of_all_transitions": 5.395629211046975e-07
+    },
+    {
+      "index": 457,
+      "name": "_private.Init.Data.Array.Basic.0.Array.foldlMUnsafe.fold._at_.MultiStark.Verify.Fri.shape.spec_9",
+      "blocks": 10,
+      "eval_transitions": 1219,
+      "fraction_of_all_transitions": 5.3735882420476e-07
+    },
+    {
+      "index": 396,
+      "name": "MultiStark.Verify.Fri.reduceQueries",
+      "blocks": 16,
+      "eval_transitions": 1205,
+      "fraction_of_all_transitions": 5.311873528849351e-07
+    },
+    {
+      "index": 481,
+      "name": "_private.Init.Data.Array.Basic.0.Array.anyMUnsafe.any._at_.MultiStark.Verify.Fri.authenticateInputs.spec_0",
+      "blocks": 15,
+      "eval_transitions": 1203,
+      "fraction_of_all_transitions": 5.3030571412496e-07
+    },
+    {
+      "index": 433,
+      "name": "Ixby.Runtime.Lifted.433",
+      "blocks": 30,
+      "eval_transitions": 1200,
+      "fraction_of_all_transitions": 5.289832559849975e-07
+    },
+    {
+      "index": 443,
+      "name": "_private.Init.Data.Array.Basic.0.Array.forIn'Unsafe.loop._at_.MultiStark.Verify.Pcs.preprocessedMatrix.spec_0",
+      "blocks": 16,
+      "eval_transitions": 1184,
+      "fraction_of_all_transitions": 5.219301459051975e-07
+    },
+    {
+      "index": 355,
+      "name": "Ixby.Runtime.Lifted.355",
+      "blocks": 15,
+      "eval_transitions": 1100,
+      "fraction_of_all_transitions": 4.849013179862478e-07
+    },
+    {
+      "index": 612,
+      "name": "_private.Init.Data.Array.Basic.0.Array.foldrMUnsafe.fold._at_.List.foldrTR._at_.MultiStark.Verify.Fri.polynomial.spec_0.spec_0",
+      "blocks": 9,
+      "eval_transitions": 1100,
+      "fraction_of_all_transitions": 4.849013179862478e-07
+    },
+    {
+      "index": 390,
+      "name": "MultiStark.Verify.Pcs.observeMatrixList",
+      "blocks": 11,
+      "eval_transitions": 1080,
+      "fraction_of_all_transitions": 4.760849303864978e-07
+    },
+    {
+      "index": 255,
+      "name": "Ixby.Runtime.Lifted.255",
+      "blocks": 8,
+      "eval_transitions": 1050,
+      "fraction_of_all_transitions": 4.6286034898687284e-07
+    },
+    {
+      "index": 354,
+      "name": "MultiStark.Verify.Circuit.stage2Width",
+      "blocks": 3,
+      "eval_transitions": 1050,
+      "fraction_of_all_transitions": 4.6286034898687284e-07
+    },
+    {
+      "index": 413,
+      "name": "Ixby.Runtime.Lifted.413",
+      "blocks": 6,
+      "eval_transitions": 1020,
+      "fraction_of_all_transitions": 4.4963576758724793e-07
+    },
+    {
+      "index": 527,
+      "name": "MultiStark.Verify.Transcript.sampleBits",
+      "blocks": 12,
+      "eval_transitions": 1010,
+      "fraction_of_all_transitions": 4.4522757378737293e-07
+    },
+    {
+      "index": 400,
+      "name": "MultiStark.Verify.Fri.Error.count",
+      "blocks": 2,
+      "eval_transitions": 1006,
+      "fraction_of_all_transitions": 4.4346429626742296e-07
+    },
+    {
+      "index": 439,
+      "name": "MultiStark.Verify.Ood.quotientFrom",
+      "blocks": 12,
+      "eval_transitions": 1000,
+      "fraction_of_all_transitions": 4.40819379987498e-07
+    },
+    {
+      "index": 607,
+      "name": "Ixby.Runtime.Lifted.607",
+      "blocks": 3,
+      "eval_transitions": 987,
+      "fraction_of_all_transitions": 4.350887280476605e-07
+    },
+    {
+      "index": 650,
+      "name": "MultiStark.Verify.Mmcs.Error.duplicateRow",
+      "blocks": 2,
+      "eval_transitions": 928,
+      "fraction_of_all_transitions": 4.090803846283981e-07
+    },
+    {
+      "index": 195,
+      "name": "MultiStark.Verify.KeyValidation.circuit",
+      "blocks": 7,
+      "eval_transitions": 900,
+      "fraction_of_all_transitions": 3.9673744198874815e-07
+    },
+    {
+      "index": 358,
+      "name": "MultiStark.Verify.Shape.oneRow",
+      "blocks": 12,
+      "eval_transitions": 900,
+      "fraction_of_all_transitions": 3.9673744198874815e-07
+    },
+    {
+      "index": 409,
+      "name": "Ixby.Runtime.Lifted.409",
+      "blocks": 3,
+      "eval_transitions": 900,
+      "fraction_of_all_transitions": 3.9673744198874815e-07
+    },
+    {
+      "index": 130,
+      "name": "Bool.false",
+      "blocks": 1,
+      "eval_transitions": 813,
+      "fraction_of_all_transitions": 3.5838615592983587e-07
+    },
+    {
+      "index": 535,
+      "name": "MultiStark.Verify.Fri.checkConstant",
+      "blocks": 11,
+      "eval_transitions": 800,
+      "fraction_of_all_transitions": 3.5265550398999837e-07
+    },
+    {
+      "index": 579,
+      "name": "List.foldrTR._at_.MultiStark.Verify.Fri.polynomial.spec_0",
+      "blocks": 9,
+      "eval_transitions": 800,
+      "fraction_of_all_transitions": 3.5265550398999837e-07
+    },
+    {
+      "index": 401,
+      "name": "MultiStark.Verify.Fri.authenticateCommitRounds",
+      "blocks": 39,
+      "eval_transitions": 778,
+      "fraction_of_all_transitions": 3.429574776302734e-07
+    },
+    {
+      "index": 166,
+      "name": "_private.Init.Data.Array.Basic.0.Array.foldlMUnsafe.fold._at_.MultiStark.Verify.validateKey.spec_0",
+      "blocks": 8,
+      "eval_transitions": 765,
+      "fraction_of_all_transitions": 3.3722682569043596e-07
+    },
+    {
+      "index": 258,
+      "name": "MultiStark.Verify.KeyValidation.degrees",
+      "blocks": 5,
+      "eval_transitions": 750,
+      "fraction_of_all_transitions": 3.3061453499062346e-07
+    },
+    {
+      "index": 261,
+      "name": "MultiStark.Verify.KeyValidation.logupDegree",
+      "blocks": 6,
+      "eval_transitions": 750,
+      "fraction_of_all_transitions": 3.3061453499062346e-07
+    },
+    {
+      "index": 491,
+      "name": "MultiStark.Verify.Mmcs.check",
+      "blocks": 31,
+      "eval_transitions": 725,
+      "fraction_of_all_transitions": 3.19594050490936e-07
+    },
+    {
+      "index": 228,
+      "name": "MultiStark.Verify.Ood.checkFrom",
+      "blocks": 22,
+      "eval_transitions": 704,
+      "fraction_of_all_transitions": 3.1033684351119857e-07
+    },
+    {
+      "index": 632,
+      "name": "_private.Init.Data.List.Impl.0.List.takeTR.go",
+      "blocks": 1,
+      "eval_transitions": 671,
+      "fraction_of_all_transitions": 2.957898039716111e-07
+    },
+    {
+      "index": 381,
+      "name": "MultiStark.Verify.Ood.recombineQuotient",
+      "blocks": 14,
+      "eval_transitions": 650,
+      "fraction_of_all_transitions": 2.865325969918737e-07
+    },
+    {
+      "index": 414,
+      "name": "MultiStark.Verify.Shape.Error.width",
+      "blocks": 2,
+      "eval_transitions": 608,
+      "fraction_of_all_transitions": 2.6801818303239876e-07
+    },
+    {
+      "index": 564,
+      "name": "Ixby.Runtime.Lifted.564",
+      "blocks": 5,
+      "eval_transitions": 608,
+      "fraction_of_all_transitions": 2.6801818303239876e-07
+    },
+    {
+      "index": 162,
+      "name": "MultiStark.Verify.KeyError.preprocessing",
+      "blocks": 2,
+      "eval_transitions": 606,
+      "fraction_of_all_transitions": 2.6713654427242375e-07
+    },
+    {
+      "index": 220,
+      "name": "_private.Init.Data.Array.Basic.0.Array.foldlMUnsafe.fold._at_.MultiStark.Verify.Shape.check.spec_1",
+      "blocks": 8,
+      "eval_transitions": 606,
+      "fraction_of_all_transitions": 2.6713654427242375e-07
+    },
+    {
+      "index": 256,
+      "name": "Ixby.Runtime.Lifted.256",
+      "blocks": 5,
+      "eval_transitions": 600,
+      "fraction_of_all_transitions": 2.6449162799249877e-07
+    },
+    {
+      "index": 357,
+      "name": "MultiStark.Verify.Shape.quotientDegree",
+      "blocks": 3,
+      "eval_transitions": 600,
+      "fraction_of_all_transitions": 2.6449162799249877e-07
+    },
+    {
+      "index": 420,
+      "name": "MultiStark.Verify.Transcript.sampleFieldWith",
+      "blocks": 15,
+      "eval_transitions": 600,
+      "fraction_of_all_transitions": 2.6449162799249877e-07
+    },
+    {
+      "index": 483,
+      "name": "MultiStark.Verify.Fri.initialOpening",
+      "blocks": 8,
+      "eval_transitions": 600,
+      "fraction_of_all_transitions": 2.6449162799249877e-07
+    },
+    {
+      "index": 502,
+      "name": "MultiStark.Verify.Circuit.shapeWords",
+      "blocks": 12,
+      "eval_transitions": 600,
+      "fraction_of_all_transitions": 2.6449162799249877e-07
+    },
+    {
+      "index": 514,
+      "name": "MultiStark.Verify.Arithmetic.basis",
+      "blocks": 6,
+      "eval_transitions": 600,
+      "fraction_of_all_transitions": 2.6449162799249877e-07
+    },
+    {
+      "index": 198,
+      "name": "MultiStark.Verify.Codec.Wire.readBool",
+      "blocks": 18,
+      "eval_transitions": 550,
+      "fraction_of_all_transitions": 2.424506589931239e-07
+    },
+    {
+      "index": 356,
+      "name": "MultiStark.Verify.Shape.preprocessedRows",
+      "blocks": 17,
+      "eval_transitions": 520,
+      "fraction_of_all_transitions": 2.2922607759349894e-07
+    },
+    {
+      "index": 312,
+      "name": "MultiStark.Verify.Pcs.preprocessedMatrices",
+      "blocks": 24,
+      "eval_transitions": 513,
+      "fraction_of_all_transitions": 2.2614034193358646e-07
+    },
+    {
+      "index": 215,
+      "name": "_private.Init.Data.Array.Basic.0.Array.foldlMUnsafe.fold._at_.MultiStark.Verify.Shape.check.spec_0",
+      "blocks": 8,
+      "eval_transitions": 510,
+      "fraction_of_all_transitions": 2.2481788379362397e-07
+    },
+    {
+      "index": 386,
+      "name": "MultiStark.Verify.Pcs.PointOpening.mk",
+      "blocks": 2,
+      "eval_transitions": 508,
+      "fraction_of_all_transitions": 2.2393624503364896e-07
+    },
+    {
+      "index": 103,
+      "name": "Ix.Ixby.instBEqExtGoldilocks.beq",
+      "blocks": 2,
+      "eval_transitions": 502,
+      "fraction_of_all_transitions": 2.2129132875372397e-07
+    },
+    {
+      "index": 82,
+      "name": "Array.replicate",
+      "blocks": 6,
+      "eval_transitions": 500,
+      "fraction_of_all_transitions": 2.20409689993749e-07
+    },
+    {
+      "index": 379,
+      "name": "MultiStark.Verify.Ood.lookupValues",
+      "blocks": 11,
+      "eval_transitions": 500,
+      "fraction_of_all_transitions": 2.20409689993749e-07
+    },
+    {
+      "index": 128,
+      "name": "Option.none",
+      "blocks": 2,
+      "eval_transitions": 494,
+      "fraction_of_all_transitions": 2.1776477371382398e-07
+    },
+    {
+      "index": 519,
+      "name": "Ixby.Runtime.Lifted.519",
+      "blocks": 3,
+      "eval_transitions": 456,
+      "fraction_of_all_transitions": 2.0101363727429908e-07
+    },
+    {
+      "index": 185,
+      "name": "MultiStark.Verify.Codec.KeyWire.readIndex",
+      "blocks": 12,
+      "eval_transitions": 450,
+      "fraction_of_all_transitions": 1.9836872099437407e-07
+    },
+    {
+      "index": 197,
+      "name": "Ixby.Runtime.Lifted.197",
+      "blocks": 3,
+      "eval_transitions": 450,
+      "fraction_of_all_transitions": 1.9836872099437407e-07
+    },
+    {
+      "index": 340,
+      "name": "Ixby.Runtime.Lifted.340",
+      "blocks": 3,
+      "eval_transitions": 450,
+      "fraction_of_all_transitions": 1.9836872099437407e-07
+    },
+    {
+      "index": 582,
+      "name": "Ixby.Runtime.Lifted.582",
+      "blocks": 21,
+      "eval_transitions": 435,
+      "fraction_of_all_transitions": 1.9175643029456162e-07
+    },
+    {
+      "index": 475,
+      "name": "MultiStark.Verify.Fri.commitPhase",
+      "blocks": 27,
+      "eval_transitions": 430,
+      "fraction_of_all_transitions": 1.8955233339462412e-07
+    },
+    {
+      "index": 466,
+      "name": "_private.Init.Data.Array.Basic.0.Array.anyMUnsafe.any._at_.MultiStark.Verify.Fri.shape.spec_12",
+      "blocks": 22,
+      "eval_transitions": 428,
+      "fraction_of_all_transitions": 1.8867069463464913e-07
+    },
+    {
+      "index": 554,
+      "name": "MultiStark.Verify.Mmcs.checkCap",
+      "blocks": 16,
+      "eval_transitions": 406,
+      "fraction_of_all_transitions": 1.7897266827492417e-07
+    },
+    {
+      "index": 416,
+      "name": "_private.Init.Data.Array.Basic.0.Array.foldlMUnsafe.fold._at_.MultiStark.Verify.Key.shapeWords.spec_0",
+      "blocks": 9,
+      "eval_transitions": 403,
+      "fraction_of_all_transitions": 1.7765021013496168e-07
+    },
+    {
+      "index": 383,
+      "name": "MultiStark.Verify.Circuit.constraintCount",
+      "blocks": 4,
+      "eval_transitions": 400,
+      "fraction_of_all_transitions": 1.7632775199499919e-07
+    },
+    {
+      "index": 427,
+      "name": "MultiStark.Verify.Arithmetic.divide",
+      "blocks": 6,
+      "eval_transitions": 400,
+      "fraction_of_all_transitions": 1.7632775199499919e-07
+    },
+    {
+      "index": 469,
+      "name": "_private.Init.Data.Array.Basic.0.Array.anyMUnsafe.any._at_.MultiStark.Verify.Fri.shape.spec_13",
+      "blocks": 18,
+      "eval_transitions": 378,
+      "fraction_of_all_transitions": 1.6662972563527422e-07
+    },
+    {
+      "index": 587,
+      "name": "Ixby.Runtime.Lifted.587",
+      "blocks": 19,
+      "eval_transitions": 377,
+      "fraction_of_all_transitions": 1.6618890625528674e-07
+    },
+    {
+      "index": 274,
+      "name": "MultiStark.Verify.Codec.Wire.readCommitPhaseStep",
+      "blocks": 18,
+      "eval_transitions": 375,
+      "fraction_of_all_transitions": 1.6530726749531173e-07
+    },
+    {
+      "index": 490,
+      "name": "MultiStark.Verify.Mmcs.Dimension.mk",
+      "blocks": 2,
+      "eval_transitions": 354,
+      "fraction_of_all_transitions": 1.5605006051557427e-07
+    },
+    {
+      "index": 377,
+      "name": "MultiStark.Verify.Ood.sweep",
+      "blocks": 7,
+      "eval_transitions": 350,
+      "fraction_of_all_transitions": 1.542867829956243e-07
+    },
+    {
+      "index": 560,
+      "name": "MultiStark.Verify.Arithmetic.neg",
+      "blocks": 5,
+      "eval_transitions": 335,
+      "fraction_of_all_transitions": 1.4767449229581182e-07
+    },
+    {
+      "index": 473,
+      "name": "_private.Init.Data.Array.Basic.0.Array.anyMUnsafe.any._at_.MultiStark.Verify.Fri.shape.spec_14",
+      "blocks": 15,
+      "eval_transitions": 328,
+      "fraction_of_all_transitions": 1.4458875663589933e-07
+    },
+    {
+      "index": 557,
+      "name": "Std.Legacy.Range.mk",
+      "blocks": 2,
+      "eval_transitions": 322,
+      "fraction_of_all_transitions": 1.4194384035597435e-07
+    },
+    {
+      "index": 387,
+      "name": "MultiStark.Verify.Pcs.Matrix.mk",
+      "blocks": 2,
+      "eval_transitions": 304,
+      "fraction_of_all_transitions": 1.3400909151619938e-07
+    },
+    {
+      "index": 253,
+      "name": "Ixby.Runtime.Lifted.253",
+      "blocks": 2,
+      "eval_transitions": 300,
+      "fraction_of_all_transitions": 1.3224581399624938e-07
+    },
+    {
+      "index": 265,
+      "name": "MultiStark.Verify.KeyError.lookupGroup",
+      "blocks": 2,
+      "eval_transitions": 300,
+      "fraction_of_all_transitions": 1.3224581399624938e-07
+    },
+    {
+      "index": 267,
+      "name": "MultiStark.Verify.KeyError.width",
+      "blocks": 2,
+      "eval_transitions": 300,
+      "fraction_of_all_transitions": 1.3224581399624938e-07
+    },
+    {
+      "index": 291,
+      "name": "Ixby.Runtime.Lifted.291",
+      "blocks": 3,
+      "eval_transitions": 300,
+      "fraction_of_all_transitions": 1.3224581399624938e-07
+    },
+    {
+      "index": 292,
+      "name": "Ixby.Runtime.Lifted.292",
+      "blocks": 3,
+      "eval_transitions": 300,
+      "fraction_of_all_transitions": 1.3224581399624938e-07
+    },
+    {
+      "index": 378,
+      "name": "MultiStark.Verify.Ood.roots",
+      "blocks": 8,
+      "eval_transitions": 300,
+      "fraction_of_all_transitions": 1.3224581399624938e-07
+    },
+    {
+      "index": 545,
+      "name": "MultiStark.Verify.Fri.polynomial",
+      "blocks": 3,
+      "eval_transitions": 300,
+      "fraction_of_all_transitions": 1.3224581399624938e-07
+    },
+    {
+      "index": 531,
+      "name": "MultiStark.Verify.Mmcs.maxLogHeight",
+      "blocks": 15,
+      "eval_transitions": 297,
+      "fraction_of_all_transitions": 1.309233558562869e-07
+    },
+    {
+      "index": 551,
+      "name": "MultiStark.Verify.Mmcs.leaves",
+      "blocks": 11,
+      "eval_transitions": 290,
+      "fraction_of_all_transitions": 1.278376201963744e-07
+    },
+    {
+      "index": 472,
+      "name": "_private.Init.Data.Array.Basic.0.Array.mapMUnsafe.map._at_.MultiStark.Verify.Fri.shape.spec_4",
+      "blocks": 12,
+      "eval_transitions": 278,
+      "fraction_of_all_transitions": 1.2254778763652444e-07
+    },
+    {
+      "index": 348,
+      "name": "MultiStark.Verify.Codec.Wire.writeCommitPhaseStep",
+      "blocks": 13,
+      "eval_transitions": 275,
+      "fraction_of_all_transitions": 1.2122532949656195e-07
+    },
+    {
+      "index": 299,
+      "name": "MultiStark.Verify.Transcript.sampleExt",
+      "blocks": 13,
+      "eval_transitions": 270,
+      "fraction_of_all_transitions": 1.1902123259662445e-07
+    },
+    {
+      "index": 380,
+      "name": "Ixby.Runtime.Lifted.380",
+      "blocks": 6,
+      "eval_transitions": 250,
+      "fraction_of_all_transitions": 1.102048449968745e-07
+    },
+    {
+      "index": 207,
+      "name": "_private.Init.Data.Array.Basic.0.Array.mapMUnsafe.map._at_.MultiStark.Verify.packDigest.spec_0",
+      "blocks": 16,
+      "eval_transitions": 246,
+      "fraction_of_all_transitions": 1.084415674769245e-07
+    },
+    {
+      "index": 192,
+      "name": "_private.Init.Data.Array.Basic.0.Array.anyMUnsafe.any._at_.MultiStark.Verify.Parameters.admissible.spec_0",
+      "blocks": 14,
+      "eval_transitions": 240,
+      "fraction_of_all_transitions": 1.0579665119699952e-07
+    },
+    {
+      "index": 524,
+      "name": "Ixby.Runtime.Lifted.524",
+      "blocks": 12,
+      "eval_transitions": 225,
+      "fraction_of_all_transitions": 9.918436049718704e-08
+    },
+    {
+      "index": 352,
+      "name": "MultiStark.Verify.Shape.Error.height",
+      "blocks": 2,
+      "eval_transitions": 208,
+      "fraction_of_all_transitions": 9.169043103739957e-08
+    },
+    {
+      "index": 250,
+      "name": "MultiStark.Verify.Codec.KeyWire.writeIndex",
+      "blocks": 11,
+      "eval_transitions": 204,
+      "fraction_of_all_transitions": 8.992715351744959e-08
+    },
+    {
+      "index": 585,
+      "name": "Ixby.Runtime.Lifted.585",
+      "blocks": 9,
+      "eval_transitions": 203,
+      "fraction_of_all_transitions": 8.948633413746208e-08
+    },
+    {
+      "index": 363,
+      "name": "List.mapTR.loop._at_.MultiStark.Verify.Transcript.beforeLookup.spec_0",
+      "blocks": 7,
+      "eval_transitions": 202,
+      "fraction_of_all_transitions": 8.904551475747459e-08
+    },
+    {
+      "index": 365,
+      "name": "List.mapTR.loop._at_.MultiStark.Verify.Transcript.beforeLookup.spec_1",
+      "blocks": 5,
+      "eval_transitions": 202,
+      "fraction_of_all_transitions": 8.904551475747459e-08
+    },
+    {
+      "index": 359,
+      "name": "MultiStark.Verify.Shape.CircuitValues.mk",
+      "blocks": 2,
+      "eval_transitions": 200,
+      "fraction_of_all_transitions": 8.816387599749959e-08
+    },
+    {
+      "index": 434,
+      "name": "MultiStark.Verify.Ood.Error.width",
+      "blocks": 2,
+      "eval_transitions": 200,
+      "fraction_of_all_transitions": 8.816387599749959e-08
+    },
+    {
+      "index": 484,
+      "name": "MultiStark.Verify.Fri.Error.initial",
+      "blocks": 2,
+      "eval_transitions": 200,
+      "fraction_of_all_transitions": 8.816387599749959e-08
+    },
+    {
+      "index": 536,
+      "name": "List.range",
+      "blocks": 2,
+      "eval_transitions": 200,
+      "fraction_of_all_transitions": 8.816387599749959e-08
+    },
+    {
+      "index": 540,
+      "name": "MultiStark.Verify.Fri.Error.foldHeight",
+      "blocks": 2,
+      "eval_transitions": 200,
+      "fraction_of_all_transitions": 8.816387599749959e-08
+    },
+    {
+      "index": 541,
+      "name": "MultiStark.Verify.Fri.Error.unconsumed",
+      "blocks": 2,
+      "eval_transitions": 200,
+      "fraction_of_all_transitions": 8.816387599749959e-08
+    },
+    {
+      "index": 546,
+      "name": "MultiStark.Verify.Fri.Error.finalPoly",
+      "blocks": 2,
+      "eval_transitions": 200,
+      "fraction_of_all_transitions": 8.816387599749959e-08
+    },
+    {
+      "index": 569,
+      "name": "MultiStark.Verify.Fri.Error.constant",
+      "blocks": 2,
+      "eval_transitions": 200,
+      "fraction_of_all_transitions": 8.816387599749959e-08
+    },
+    {
+      "index": 548,
+      "name": "MultiStark.Verify.Mmcs.geometry",
+      "blocks": 8,
+      "eval_transitions": 174,
+      "fraction_of_all_transitions": 7.670257211782464e-08
+    },
+    {
+      "index": 476,
+      "name": "MultiStark.Verify.Transcript.checkWitness",
+      "blocks": 28,
+      "eval_transitions": 167,
+      "fraction_of_all_transitions": 7.361683645791216e-08
+    },
+    {
+      "index": 506,
+      "name": "_private.Init.Data.Array.Basic.0.Array.foldrMUnsafe.fold._at_.List.foldrTR._at_.MultiStark.Verify.Ood.claimFingerprint.spec_0.spec_0",
+      "blocks": 10,
+      "eval_transitions": 165,
+      "fraction_of_all_transitions": 7.273519769793716e-08
+    },
+    {
+      "index": 277,
+      "name": "MultiStark.Verify.Codec.Wire.writeBool",
+      "blocks": 5,
+      "eval_transitions": 150,
+      "fraction_of_all_transitions": 6.612290699812469e-08
+    },
+    {
+      "index": 370,
+      "name": "List.mapTR.loop._at_.MultiStark.Verify.Transcript.observeCap.spec_0",
+      "blocks": 4,
+      "eval_transitions": 145,
+      "fraction_of_all_transitions": 6.39188100981872e-08
+    },
+    {
+      "index": 580,
+      "name": "Ixby.Runtime.Lifted.580",
+      "blocks": 6,
+      "eval_transitions": 145,
+      "fraction_of_all_transitions": 6.39188100981872e-08
+    },
+    {
+      "index": 597,
+      "name": "MultiStark.Verify.instBEqDigest.beq",
+      "blocks": 6,
+      "eval_transitions": 145,
+      "fraction_of_all_transitions": 6.39188100981872e-08
+    },
+    {
+      "index": 326,
+      "name": "MultiStark.Verify.Node.neg",
+      "blocks": 2,
+      "eval_transitions": 134,
+      "fraction_of_all_transitions": 5.9069796918324726e-08
+    },
+    {
+      "index": 367,
+      "name": "MultiStark.Verify.Transcript.sampleField",
+      "blocks": 2,
+      "eval_transitions": 120,
+      "fraction_of_all_transitions": 5.289832559849976e-08
+    },
+    {
+      "index": 301,
+      "name": "MultiStark.Verify.Transcript.observeCap",
+      "blocks": 4,
+      "eval_transitions": 116,
+      "fraction_of_all_transitions": 5.113504807854976e-08
+    },
+    {
+      "index": 226,
+      "name": "MultiStark.Verify.Ood.Error.count",
+      "blocks": 2,
+      "eval_transitions": 102,
+      "fraction_of_all_transitions": 4.4963576758724795e-08
+    },
+    {
+      "index": 239,
+      "name": "MultiStark.Verify.Circuit.mk",
+      "blocks": 2,
+      "eval_transitions": 100,
+      "fraction_of_all_transitions": 4.4081937998749797e-08
+    },
+    {
+      "index": 240,
+      "name": "Ixby.Runtime.Lifted.240",
+      "blocks": 2,
+      "eval_transitions": 100,
+      "fraction_of_all_transitions": 4.4081937998749797e-08
+    },
+    {
+      "index": 308,
+      "name": "MultiStark.Verify.Ood.Error.mismatch",
+      "blocks": 2,
+      "eval_transitions": 100,
+      "fraction_of_all_transitions": 4.4081937998749797e-08
+    },
+    {
+      "index": 376,
+      "name": "MultiStark.Verify.Ood.View.mk",
+      "blocks": 2,
+      "eval_transitions": 100,
+      "fraction_of_all_transitions": 4.4081937998749797e-08
+    },
+    {
+      "index": 382,
+      "name": "MultiStark.Verify.Ood.Evaluation.mk",
+      "blocks": 2,
+      "eval_transitions": 100,
+      "fraction_of_all_transitions": 4.4081937998749797e-08
+    },
+    {
+      "index": 418,
+      "name": "Ixby.Runtime.Lifted.418",
+      "blocks": 2,
+      "eval_transitions": 100,
+      "fraction_of_all_transitions": 4.4081937998749797e-08
+    },
+    {
+      "index": 429,
+      "name": "MultiStark.Verify.Ood.Selectors.mk",
+      "blocks": 2,
+      "eval_transitions": 100,
+      "fraction_of_all_transitions": 4.4081937998749797e-08
+    },
+    {
+      "index": 521,
+      "name": "Ixby.Runtime.Lifted.521",
+      "blocks": 5,
+      "eval_transitions": 100,
+      "fraction_of_all_transitions": 4.4081937998749797e-08
+    },
+    {
+      "index": 556,
+      "name": "List.mapTR.loop._at_.MultiStark.Verify.Transcript.observeFields.spec_0",
+      "blocks": 6,
+      "eval_transitions": 92,
+      "fraction_of_all_transitions": 4.055538295884981e-08
+    },
+    {
+      "index": 529,
+      "name": "Ixby.Runtime.Lifted.529",
+      "blocks": 27,
+      "eval_transitions": 88,
+      "fraction_of_all_transitions": 3.879210543889982e-08
+    },
+    {
+      "index": 592,
+      "name": "Array.zipIdx._redArg",
+      "blocks": 3,
+      "eval_transitions": 87,
+      "fraction_of_all_transitions": 3.835128605891232e-08
+    },
+    {
+      "index": 520,
+      "name": "List.foldr._at_.List.sum._at_.MultiStark.Verify.Fri.shape.spec_5.spec_5",
+      "blocks": 4,
+      "eval_transitions": 77,
+      "fraction_of_all_transitions": 3.3943092259037344e-08
+    },
+    {
+      "index": 297,
+      "name": "MultiStark.Verify.Transcript.observeParameters",
+      "blocks": 17,
+      "eval_transitions": 74,
+      "fraction_of_all_transitions": 3.262063411907485e-08
+    },
+    {
+      "index": 190,
+      "name": "Ixby.Runtime.Lifted.190",
+      "blocks": 27,
+      "eval_transitions": 60,
+      "fraction_of_all_transitions": 2.644916279924988e-08
+    },
+    {
+      "index": 449,
+      "name": "_private.Init.Data.Array.Basic.0.Array.anyMUnsafe.any._at_.MultiStark.Verify.Fri.shape.spec_6",
+      "blocks": 17,
+      "eval_transitions": 59,
+      "fraction_of_all_transitions": 2.600834341926238e-08
+    },
+    {
+      "index": 451,
+      "name": "_private.Init.Data.Array.Basic.0.Array.anyMUnsafe.any._at_.MultiStark.Verify.Fri.shape.spec_7",
+      "blocks": 17,
+      "eval_transitions": 59,
+      "fraction_of_all_transitions": 2.600834341926238e-08
+    },
+    {
+      "index": 344,
+      "name": "MultiStark.Verify.BatchOpening.mk",
+      "blocks": 2,
+      "eval_transitions": 58,
+      "fraction_of_all_transitions": 2.556752403927488e-08
+    },
+    {
+      "index": 549,
+      "name": "MultiStark.Verify.Mmcs.Error.queryCount",
+      "blocks": 2,
+      "eval_transitions": 58,
+      "fraction_of_all_transitions": 2.556752403927488e-08
+    },
+    {
+      "index": 550,
+      "name": "MultiStark.Verify.Mmcs.checkRows",
+      "blocks": 2,
+      "eval_transitions": 58,
+      "fraction_of_all_transitions": 2.556752403927488e-08
+    },
+    {
+      "index": 553,
+      "name": "MultiStark.Verify.Mmcs.Error.frontier",
+      "blocks": 2,
+      "eval_transitions": 58,
+      "fraction_of_all_transitions": 2.556752403927488e-08
+    },
+    {
+      "index": 581,
+      "name": "MultiStark.Verify.Mmcs.Error.unboundMatrix",
+      "blocks": 2,
+      "eval_transitions": 58,
+      "fraction_of_all_transitions": 2.556752403927488e-08
+    },
+    {
+      "index": 583,
+      "name": "MultiStark.Verify.Mmcs.Error.capShape",
+      "blocks": 2,
+      "eval_transitions": 58,
+      "fraction_of_all_transitions": 2.556752403927488e-08
+    },
+    {
+      "index": 586,
+      "name": "MultiStark.Verify.Mmcs.Error.height",
+      "blocks": 2,
+      "eval_transitions": 58,
+      "fraction_of_all_transitions": 2.556752403927488e-08
+    },
+    {
+      "index": 588,
+      "name": "MultiStark.Verify.Mmcs.Error.emptyMatrices",
+      "blocks": 2,
+      "eval_transitions": 58,
+      "fraction_of_all_transitions": 2.556752403927488e-08
+    },
+    {
+      "index": 593,
+      "name": "List.MergeSort.Internal.mergeSortTR\u2082._redArg",
+      "blocks": 2,
+      "eval_transitions": 58,
+      "fraction_of_all_transitions": 2.556752403927488e-08
+    },
+    {
+      "index": 598,
+      "name": "MultiStark.Verify.Mmcs.Error.capMismatch",
+      "blocks": 2,
+      "eval_transitions": 58,
+      "fraction_of_all_transitions": 2.556752403927488e-08
+    },
+    {
+      "index": 271,
+      "name": "MultiStark.Verify.Codec.Wire.readCap",
+      "blocks": 2,
+      "eval_transitions": 56,
+      "fraction_of_all_transitions": 2.4685885279299886e-08
+    },
+    {
+      "index": 346,
+      "name": "MultiStark.Verify.Codec.Wire.writeCap",
+      "blocks": 2,
+      "eval_transitions": 56,
+      "fraction_of_all_transitions": 2.4685885279299886e-08
+    },
+    {
+      "index": 273,
+      "name": "MultiStark.Verify.Codec.Wire.readBatchOpening",
+      "blocks": 15,
+      "eval_transitions": 52,
+      "fraction_of_all_transitions": 2.2922607759349893e-08
+    },
+    {
+      "index": 134,
+      "name": "MultiStark.Verify.Codec.Wire.decode._redArg",
+      "blocks": 20,
+      "eval_transitions": 51,
+      "fraction_of_all_transitions": 2.2481788379362397e-08
+    },
+    {
+      "index": 191,
+      "name": "MultiStark.Verify.Parameters.words",
+      "blocks": 10,
+      "eval_transitions": 50,
+      "fraction_of_all_transitions": 2.2040968999374898e-08
+    },
+    {
+      "index": 327,
+      "name": "MultiStark.Verify.Source.preprocessed",
+      "blocks": 2,
+      "eval_transitions": 50,
+      "fraction_of_all_transitions": 2.2040968999374898e-08
+    },
+    {
+      "index": 345,
+      "name": "MultiStark.Verify.CommitPhaseStep.mk",
+      "blocks": 2,
+      "eval_transitions": 50,
+      "fraction_of_all_transitions": 2.2040968999374898e-08
+    },
+    {
+      "index": 522,
+      "name": "Ixby.Runtime.Lifted.522",
+      "blocks": 3,
+      "eval_transitions": 50,
+      "fraction_of_all_transitions": 2.2040968999374898e-08
+    },
+    {
+      "index": 455,
+      "name": "_private.Init.Data.Array.Basic.0.Array.anyMUnsafe.any._at_.MultiStark.Verify.Fri.shape.spec_8",
+      "blocks": 13,
+      "eval_transitions": 47,
+      "fraction_of_all_transitions": 2.0718510859412404e-08
+    },
+    {
+      "index": 263,
+      "name": "Ixby.Runtime.Lifted.263",
+      "blocks": 8,
+      "eval_transitions": 42,
+      "fraction_of_all_transitions": 1.8514413959474915e-08
+    },
+    {
+      "index": 164,
+      "name": "Ixby.Runtime.Lifted.164",
+      "blocks": 21,
+      "eval_transitions": 39,
+      "fraction_of_all_transitions": 1.719195581951242e-08
+    },
+    {
+      "index": 146,
+      "name": "MultiStark.Verify.validateKey",
+      "blocks": 14,
+      "eval_transitions": 36,
+      "fraction_of_all_transitions": 1.5869497679549928e-08
+    },
+    {
+      "index": 194,
+      "name": "Ixby.Runtime.Lifted.194",
+      "blocks": 7,
+      "eval_transitions": 36,
+      "fraction_of_all_transitions": 1.5869497679549928e-08
+    },
+    {
+      "index": 223,
+      "name": "MultiStark.Verify.Transcript.prefixReplay",
+      "blocks": 46,
+      "eval_transitions": 36,
+      "fraction_of_all_transitions": 1.5869497679549928e-08
+    },
+    {
+      "index": 347,
+      "name": "MultiStark.Verify.Codec.Wire.writeBatchOpening",
+      "blocks": 10,
+      "eval_transitions": 36,
+      "fraction_of_all_transitions": 1.5869497679549928e-08
+    },
+    {
+      "index": 464,
+      "name": "_private.Init.Data.Array.Basic.0.Array.foldlMUnsafe.fold._at_.MultiStark.Verify.Fri.shape.spec_11",
+      "blocks": 9,
+      "eval_transitions": 35,
+      "fraction_of_all_transitions": 1.542867829956243e-08
+    },
+    {
+      "index": 479,
+      "name": "MultiStark.Verify.Fri.authenticateInputBatches",
+      "blocks": 12,
+      "eval_transitions": 35,
+      "fraction_of_all_transitions": 1.542867829956243e-08
+    },
+    {
+      "index": 168,
+      "name": "MultiStark.Verify.Codec.Wire.readProof",
+      "blocks": 43,
+      "eval_transitions": 34,
+      "fraction_of_all_transitions": 1.498785891957493e-08
+    },
+    {
+      "index": 157,
+      "name": "MultiStark.Verify.Parameters.admissible",
+      "blocks": 14,
+      "eval_transitions": 33,
+      "fraction_of_all_transitions": 1.4547039539587434e-08
+    },
+    {
+      "index": 172,
+      "name": "MultiStark.Verify.Shape.check",
+      "blocks": 21,
+      "eval_transitions": 32,
+      "fraction_of_all_transitions": 1.4106220159599935e-08
+    },
+    {
+      "index": 313,
+      "name": "MultiStark.Verify.Pcs.observeRoundList",
+      "blocks": 11,
+      "eval_transitions": 32,
+      "fraction_of_all_transitions": 1.4106220159599935e-08
+    },
+    {
+      "index": 184,
+      "name": "MultiStark.Verify.Codec.Wire.readOption._redArg",
+      "blocks": 23,
+      "eval_transitions": 30,
+      "fraction_of_all_transitions": 1.322458139962494e-08
+    },
+    {
+      "index": 205,
+      "name": "MultiStark.Verify.Codec.Wire.writeProof",
+      "blocks": 38,
+      "eval_transitions": 30,
+      "fraction_of_all_transitions": 1.322458139962494e-08
+    },
+    {
+      "index": 229,
+      "name": "MultiStark.Verify.Pcs.rounds",
+      "blocks": 35,
+      "eval_transitions": 30,
+      "fraction_of_all_transitions": 1.322458139962494e-08
+    },
+    {
+      "index": 392,
+      "name": "MultiStark.Verify.Fri.replayAction",
+      "blocks": 34,
+      "eval_transitions": 28,
+      "fraction_of_all_transitions": 1.2342942639649943e-08
+    },
+    {
+      "index": 680,
+      "name": "Ixby.Runtime.Stage2Guest",
+      "blocks": 28,
+      "eval_transitions": 27,
+      "fraction_of_all_transitions": 1.1902123259662446e-08
+    },
+    {
+      "index": 202,
+      "name": "MultiStark.Verify.Codec.Wire.readFri",
+      "blocks": 32,
+      "eval_transitions": 26,
+      "fraction_of_all_transitions": 1.1461303879674947e-08
+    },
+    {
+      "index": 213,
+      "name": "Ixby.Runtime.Lifted.213",
+      "blocks": 21,
+      "eval_transitions": 26,
+      "fraction_of_all_transitions": 1.1461303879674947e-08
+    },
+    {
+      "index": 218,
+      "name": "Ixby.Runtime.Lifted.218",
+      "blocks": 21,
+      "eval_transitions": 26,
+      "fraction_of_all_transitions": 1.1461303879674947e-08
+    },
+    {
+      "index": 180,
+      "name": "MultiStark.Verify.Codec.KeyWire.readParameters",
+      "blocks": 32,
+      "eval_transitions": 25,
+      "fraction_of_all_transitions": 1.1020484499687449e-08
+    },
+    {
+      "index": 262,
+      "name": "Ixby.Runtime.Lifted.262",
+      "blocks": 5,
+      "eval_transitions": 24,
+      "fraction_of_all_transitions": 1.0579665119699952e-08
+    },
+    {
+      "index": 388,
+      "name": "MultiStark.Verify.Pcs.preprocessedMatrix",
+      "blocks": 14,
+      "eval_transitions": 24,
+      "fraction_of_all_transitions": 1.0579665119699952e-08
+    },
+    {
+      "index": 281,
+      "name": "MultiStark.Verify.Codec.Wire.writeFri",
+      "blocks": 27,
+      "eval_transitions": 22,
+      "fraction_of_all_transitions": 9.698026359724955e-09
+    },
+    {
+      "index": 155,
+      "name": "MultiStark.Verify.Codec.KeyWire.read",
+      "blocks": 25,
+      "eval_transitions": 21,
+      "fraction_of_all_transitions": 9.257206979737458e-09
+    },
+    {
+      "index": 163,
+      "name": "Ixby.Runtime.Lifted.163",
+      "blocks": 14,
+      "eval_transitions": 21,
+      "fraction_of_all_transitions": 9.257206979737458e-09
+    },
+    {
+      "index": 139,
+      "name": "MultiStark.Verify.Codec.Wire.readTag",
+      "blocks": 13,
+      "eval_transitions": 20,
+      "fraction_of_all_transitions": 8.816387599749959e-09
+    },
+    {
+      "index": 188,
+      "name": "MultiStark.Verify.Codec.KeyWire.write",
+      "blocks": 25,
+      "eval_transitions": 20,
+      "fraction_of_all_transitions": 8.816387599749959e-09
+    },
+    {
+      "index": 209,
+      "name": "Ixby.Runtime.Lifted.209",
+      "blocks": 12,
+      "eval_transitions": 20,
+      "fraction_of_all_transitions": 8.816387599749959e-09
+    },
+    {
+      "index": 216,
+      "name": "Ixby.Runtime.Lifted.216",
+      "blocks": 13,
+      "eval_transitions": 20,
+      "fraction_of_all_transitions": 8.816387599749959e-09
+    },
+    {
+      "index": 391,
+      "name": "MultiStark.Verify.Fri.shape",
+      "blocks": 22,
+      "eval_transitions": 19,
+      "fraction_of_all_transitions": 8.375568219762461e-09
+    },
+    {
+      "index": 470,
+      "name": "Ixby.Runtime.Lifted.470",
+      "blocks": 26,
+      "eval_transitions": 19,
+      "fraction_of_all_transitions": 8.375568219762461e-09
+    },
+    {
+      "index": 176,
+      "name": "MultiStark.Verify.Ood.check",
+      "blocks": 22,
+      "eval_transitions": 18,
+      "fraction_of_all_transitions": 7.934748839774964e-09
+    },
+    {
+      "index": 189,
+      "name": "MultiStark.Verify.Codec.Wire.encode",
+      "blocks": 10,
+      "eval_transitions": 18,
+      "fraction_of_all_transitions": 7.934748839774964e-09
+    },
+    {
+      "index": 196,
+      "name": "Ixby.Runtime.Lifted.196",
+      "blocks": 4,
+      "eval_transitions": 18,
+      "fraction_of_all_transitions": 7.934748839774964e-09
+    },
+    {
+      "index": 322,
+      "name": "MultiStark.Verify.Node.transition",
+      "blocks": 2,
+      "eval_transitions": 18,
+      "fraction_of_all_transitions": 7.934748839774964e-09
+    },
+    {
+      "index": 480,
+      "name": "Ixby.Runtime.Lifted.480",
+      "blocks": 25,
+      "eval_transitions": 18,
+      "fraction_of_all_transitions": 7.934748839774964e-09
+    },
+    {
+      "index": 454,
+      "name": "Ixby.Runtime.Lifted.454",
+      "blocks": 24,
+      "eval_transitions": 17,
+      "fraction_of_all_transitions": 7.493929459787465e-09
+    },
+    {
+      "index": 462,
+      "name": "Ixby.Runtime.Lifted.462",
+      "blocks": 25,
+      "eval_transitions": 17,
+      "fraction_of_all_transitions": 7.493929459787465e-09
+    },
+    {
+      "index": 142,
+      "name": "MultiStark.Verify.ClosedCheckEnv.bytes",
+      "blocks": 8,
+      "eval_transitions": 16,
+      "fraction_of_all_transitions": 7.053110079799967e-09
+    },
+    {
+      "index": 150,
+      "name": "MultiStark.Verify.AggregateConfig.expectedClaim",
+      "blocks": 16,
+      "eval_transitions": 16,
+      "fraction_of_all_transitions": 7.053110079799967e-09
+    },
+    {
+      "index": 203,
+      "name": "MultiStark.Verify.Codec.Wire.readRound",
+      "blocks": 4,
+      "eval_transitions": 16,
+      "fraction_of_all_transitions": 7.053110079799967e-09
+    },
+    {
+      "index": 282,
+      "name": "MultiStark.Verify.Codec.Wire.writeRound",
+      "blocks": 4,
+      "eval_transitions": 16,
+      "fraction_of_all_transitions": 7.053110079799967e-09
+    },
+    {
+      "index": 515,
+      "name": "Ixby.Runtime.Lifted.515",
+      "blocks": 5,
+      "eval_transitions": 16,
+      "fraction_of_all_transitions": 7.053110079799967e-09
+    },
+    {
+      "index": 517,
+      "name": "Ixby.Runtime.Lifted.517",
+      "blocks": 5,
+      "eval_transitions": 16,
+      "fraction_of_all_transitions": 7.053110079799967e-09
+    },
+    {
+      "index": 136,
+      "name": "MultiStark.Verify.Codec.Wire.canonicalize._redArg",
+      "blocks": 8,
+      "eval_transitions": 15,
+      "fraction_of_all_transitions": 6.61229069981247e-09
+    },
+    {
+      "index": 137,
+      "name": "MultiStark.Verify.checkClaim",
+      "blocks": 23,
+      "eval_transitions": 15,
+      "fraction_of_all_transitions": 6.61229069981247e-09
+    },
+    {
+      "index": 167,
+      "name": "Ixby.Runtime.Lifted.167",
+      "blocks": 6,
+      "eval_transitions": 15,
+      "fraction_of_all_transitions": 6.61229069981247e-09
+    },
+    {
+      "index": 233,
+      "name": "MultiStark.Verify.Fri.check",
+      "blocks": 19,
+      "eval_transitions": 15,
+      "fraction_of_all_transitions": 6.61229069981247e-09
+    },
+    {
+      "index": 298,
+      "name": "MultiStark.Verify.Transcript.beforeLookup",
+      "blocks": 20,
+      "eval_transitions": 15,
+      "fraction_of_all_transitions": 6.61229069981247e-09
+    },
+    {
+      "index": 314,
+      "name": "MultiStark.Verify.Fri.replay",
+      "blocks": 18,
+      "eval_transitions": 15,
+      "fraction_of_all_transitions": 6.61229069981247e-09
+    },
+    {
+      "index": 361,
+      "name": "MultiStark.Verify.Key.shapeWords",
+      "blocks": 22,
+      "eval_transitions": 15,
+      "fraction_of_all_transitions": 6.61229069981247e-09
+    },
+    {
+      "index": 151,
+      "name": "MultiStark.Verify.checkTyped",
+      "blocks": 22,
+      "eval_transitions": 14,
+      "fraction_of_all_transitions": 6.1714713198249716e-09
+    },
+    {
+      "index": 217,
+      "name": "Ixby.Runtime.Lifted.217",
+      "blocks": 8,
+      "eval_transitions": 14,
+      "fraction_of_all_transitions": 6.1714713198249716e-09
+    },
+    {
+      "index": 222,
+      "name": "MultiStark.Verify.Transcript.seed",
+      "blocks": 16,
+      "eval_transitions": 14,
+      "fraction_of_all_transitions": 6.1714713198249716e-09
+    },
+    {
+      "index": 133,
+      "name": "MultiStark.Verify.readClosedCheckEnv",
+      "blocks": 16,
+      "eval_transitions": 13,
+      "fraction_of_all_transitions": 5.730651939837473e-09
+    },
+    {
+      "index": 364,
+      "name": "Ixby.Runtime.Lifted.364",
+      "blocks": 16,
+      "eval_transitions": 13,
+      "fraction_of_all_transitions": 5.730651939837473e-09
+    },
+    {
+      "index": 395,
+      "name": "MultiStark.Verify.Fri.authenticateInputs",
+      "blocks": 15,
+      "eval_transitions": 13,
+      "fraction_of_all_transitions": 5.730651939837473e-09
+    },
+    {
+      "index": 419,
+      "name": "MultiStark.Verify.Transcript.observeClaimList",
+      "blocks": 14,
+      "eval_transitions": 13,
+      "fraction_of_all_transitions": 5.730651939837473e-09
+    },
+    {
+      "index": 115,
+      "name": "Array.instDecidableEqImpl._at_.MultiStark.Verify.Codec.Wire.canonicalize.spec_0",
+      "blocks": 4,
+      "eval_transitions": 12,
+      "fraction_of_all_transitions": 5.289832559849976e-09
+    },
+    {
+      "index": 161,
+      "name": "Ixby.Runtime.Lifted.161",
+      "blocks": 5,
+      "eval_transitions": 12,
+      "fraction_of_all_transitions": 5.289832559849976e-09
+    },
+    {
+      "index": 200,
+      "name": "MultiStark.Verify.Codec.Wire.readCommitments",
+      "blocks": 15,
+      "eval_transitions": 12,
+      "fraction_of_all_transitions": 5.289832559849976e-09
+    },
+    {
+      "index": 249,
+      "name": "MultiStark.Verify.Codec.Wire.writeOption._redArg",
+      "blocks": 9,
+      "eval_transitions": 12,
+      "fraction_of_all_transitions": 5.289832559849976e-09
+    },
+    {
+      "index": 178,
+      "name": "MultiStark.Verify.Pcs.check",
+      "blocks": 17,
+      "eval_transitions": 11,
+      "fraction_of_all_transitions": 4.849013179862478e-09
+    },
+    {
+      "index": 458,
+      "name": "Ixby.Runtime.Lifted.458",
+      "blocks": 17,
+      "eval_transitions": 11,
+      "fraction_of_all_transitions": 4.849013179862478e-09
+    },
+    {
+      "index": 171,
+      "name": "MultiStark.Verify.packDigest",
+      "blocks": 5,
+      "eval_transitions": 10,
+      "fraction_of_all_transitions": 4.408193799874979e-09
+    },
+    {
+      "index": 221,
+      "name": "_private.Init.Data.Array.Basic.0.Array.anyMUnsafe.any._at_.MultiStark.Verify.Shape.check.spec_2",
+      "blocks": 9,
+      "eval_transitions": 10,
+      "fraction_of_all_transitions": 4.408193799874979e-09
+    },
+    {
+      "index": 305,
+      "name": "MultiStark.Verify.Ood.initialAccumulatorFrom",
+      "blocks": 11,
+      "eval_transitions": 10,
+      "fraction_of_all_transitions": 4.408193799874979e-09
+    },
+    {
+      "index": 317,
+      "name": "MultiStark.Verify.Fri.authenticateCommits",
+      "blocks": 11,
+      "eval_transitions": 10,
+      "fraction_of_all_transitions": 4.408193799874979e-09
+    },
+    {
+      "index": 447,
+      "name": "Ixby.Runtime.Lifted.447",
+      "blocks": 16,
+      "eval_transitions": 10,
+      "fraction_of_all_transitions": 4.408193799874979e-09
+    },
+    {
+      "index": 459,
+      "name": "MultiStark.Verify.Fri.Error.empty",
+      "blocks": 2,
+      "eval_transitions": 10,
+      "fraction_of_all_transitions": 4.408193799874979e-09
+    },
+    {
+      "index": 467,
+      "name": "Ixby.Runtime.Lifted.467",
+      "blocks": 16,
+      "eval_transitions": 10,
+      "fraction_of_all_transitions": 4.408193799874979e-09
+    },
+    {
+      "index": 159,
+      "name": "Ixby.Runtime.Lifted.159",
+      "blocks": 3,
+      "eval_transitions": 9,
+      "fraction_of_all_transitions": 3.967374419887482e-09
+    },
+    {
+      "index": 170,
+      "name": "MultiStark.Verify.AggregateConfig.allowedIdentity",
+      "blocks": 9,
+      "eval_transitions": 9,
+      "fraction_of_all_transitions": 3.967374419887482e-09
+    },
+    {
+      "index": 315,
+      "name": "MultiStark.Verify.Fri.openInputs",
+      "blocks": 11,
+      "eval_transitions": 9,
+      "fraction_of_all_transitions": 3.967374419887482e-09
+    },
+    {
+      "index": 450,
+      "name": "Ixby.Runtime.Lifted.450",
+      "blocks": 15,
+      "eval_transitions": 9,
+      "fraction_of_all_transitions": 3.967374419887482e-09
+    },
+    {
+      "index": 456,
+      "name": "Ixby.Runtime.Lifted.456",
+      "blocks": 16,
+      "eval_transitions": 9,
+      "fraction_of_all_transitions": 3.967374419887482e-09
+    },
+    {
+      "index": 465,
+      "name": "Ixby.Runtime.Lifted.465",
+      "blocks": 15,
+      "eval_transitions": 9,
+      "fraction_of_all_transitions": 3.967374419887482e-09
+    },
+    {
+      "index": 129,
+      "name": "MultiStark.Verify.decodeClosedCheckEnv",
+      "blocks": 9,
+      "eval_transitions": 8,
+      "fraction_of_all_transitions": 3.5265550398999836e-09
+    },
+    {
+      "index": 224,
+      "name": "MultiStark.Verify.Ood.balanced",
+      "blocks": 9,
+      "eval_transitions": 8,
+      "fraction_of_all_transitions": 3.5265550398999836e-09
+    },
+    {
+      "index": 279,
+      "name": "MultiStark.Verify.Codec.Wire.writeCommitments",
+      "blocks": 10,
+      "eval_transitions": 8,
+      "fraction_of_all_transitions": 3.5265550398999836e-09
+    },
+    {
+      "index": 311,
+      "name": "MultiStark.Verify.Pcs.Round.mk",
+      "blocks": 2,
+      "eval_transitions": 8,
+      "fraction_of_all_transitions": 3.5265550398999836e-09
+    },
+    {
+      "index": 421,
+      "name": "List.foldrTR._at_.MultiStark.Verify.Ood.claimFingerprint.spec_0",
+      "blocks": 9,
+      "eval_transitions": 8,
+      "fraction_of_all_transitions": 3.5265550398999836e-09
+    },
+    {
+      "index": 141,
+      "name": "MultiStark.Verify.DecodeError.trailing",
+      "blocks": 2,
+      "eval_transitions": 6,
+      "fraction_of_all_transitions": 2.644916279924988e-09
+    },
+    {
+      "index": 158,
+      "name": "MultiStark.Verify.KeyError.parameters",
+      "blocks": 2,
+      "eval_transitions": 6,
+      "fraction_of_all_transitions": 2.644916279924988e-09
+    },
+    {
+      "index": 165,
+      "name": "MultiStark.Verify.KeyError.circuits",
+      "blocks": 2,
+      "eval_transitions": 6,
+      "fraction_of_all_transitions": 2.644916279924988e-09
+    },
+    {
+      "index": 212,
+      "name": "Ixby.Runtime.Lifted.212",
+      "blocks": 5,
+      "eval_transitions": 6,
+      "fraction_of_all_transitions": 2.644916279924988e-09
+    },
+    {
+      "index": 366,
+      "name": "MultiStark.Verify.Transcript.observeClaims",
+      "blocks": 7,
+      "eval_transitions": 6,
+      "fraction_of_all_transitions": 2.644916279924988e-09
+    },
+    {
+      "index": 399,
+      "name": "Ixby.Runtime.Lifted.399",
+      "blocks": 7,
+      "eval_transitions": 6,
+      "fraction_of_all_transitions": 2.644916279924988e-09
+    },
+    {
+      "index": 445,
+      "name": "Ixby.Runtime.Lifted.445",
+      "blocks": 7,
+      "eval_transitions": 6,
+      "fraction_of_all_transitions": 2.644916279924988e-09
+    },
+    {
+      "index": 144,
+      "name": "MultiStark.Verify.Codec.decodeKey",
+      "blocks": 6,
+      "eval_transitions": 5,
+      "fraction_of_all_transitions": 2.2040968999374897e-09
+    },
+    {
+      "index": 148,
+      "name": "MultiStark.Verify.Codec.decodeProof",
+      "blocks": 6,
+      "eval_transitions": 5,
+      "fraction_of_all_transitions": 2.2040968999374897e-09
+    },
+    {
+      "index": 244,
+      "name": "MultiStark.Verify.Codec.KeyWire.writeParameters",
+      "blocks": 5,
+      "eval_transitions": 5,
+      "fraction_of_all_transitions": 2.2040968999374897e-09
+    },
+    {
+      "index": 461,
+      "name": "Ixby.Runtime.Lifted.461",
+      "blocks": 7,
+      "eval_transitions": 5,
+      "fraction_of_all_transitions": 2.2040968999374897e-09
+    },
+    {
+      "index": 474,
+      "name": "Ixby.Runtime.Lifted.474",
+      "blocks": 6,
+      "eval_transitions": 5,
+      "fraction_of_all_transitions": 2.2040968999374897e-09
+    },
+    {
+      "index": 154,
+      "name": "MultiStark.Verify.DecodeError.tag",
+      "blocks": 2,
+      "eval_transitions": 4,
+      "fraction_of_all_transitions": 1.7632775199499918e-09
+    },
+    {
+      "index": 174,
+      "name": "MultiStark.Verify.Transcript.replay",
+      "blocks": 5,
+      "eval_transitions": 4,
+      "fraction_of_all_transitions": 1.7632775199499918e-09
+    },
+    {
+      "index": 210,
+      "name": "MultiStark.Verify.Shape.Error.preprocessing",
+      "blocks": 2,
+      "eval_transitions": 4,
+      "fraction_of_all_transitions": 1.7632775199499918e-09
+    },
+    {
+      "index": 214,
+      "name": "MultiStark.Verify.Shape.Error.count",
+      "blocks": 2,
+      "eval_transitions": 4,
+      "fraction_of_all_transitions": 1.7632775199499918e-09
+    },
+    {
+      "index": 219,
+      "name": "MultiStark.Verify.Shape.Error.activation",
+      "blocks": 2,
+      "eval_transitions": 4,
+      "fraction_of_all_transitions": 1.7632775199499918e-09
+    },
+    {
+      "index": 452,
+      "name": "MultiStark.Verify.Fri.Error.query",
+      "blocks": 2,
+      "eval_transitions": 4,
+      "fraction_of_all_transitions": 1.7632775199499918e-09
+    },
+    {
+      "index": 478,
+      "name": "Ixby.Runtime.Lifted.478",
+      "blocks": 5,
+      "eval_transitions": 4,
+      "fraction_of_all_transitions": 1.7632775199499918e-09
+    },
+    {
+      "index": 504,
+      "name": "MultiStark.Verify.Transcript.observeFields",
+      "blocks": 4,
+      "eval_transitions": 4,
+      "fraction_of_all_transitions": 1.7632775199499918e-09
+    },
+    {
+      "index": 116,
+      "name": "MultiStark.Verify.claimBytesWrapper",
+      "blocks": 4,
+      "eval_transitions": 3,
+      "fraction_of_all_transitions": 1.322458139962494e-09
+    },
+    {
+      "index": 126,
+      "name": "MultiStark.Verify.stage2VerifyBytes",
+      "blocks": 4,
+      "eval_transitions": 3,
+      "fraction_of_all_transitions": 1.322458139962494e-09
+    },
+    {
+      "index": 131,
+      "name": "MultiStark.Verify.stage2Verify",
+      "blocks": 4,
+      "eval_transitions": 3,
+      "fraction_of_all_transitions": 1.322458139962494e-09
+    },
+    {
+      "index": 227,
+      "name": "MultiStark.Verify.Ood.initialAccumulator",
+      "blocks": 3,
+      "eval_transitions": 3,
+      "fraction_of_all_transitions": 1.322458139962494e-09
+    },
+    {
+      "index": 293,
+      "name": "Ixby.Runtime.Lifted.293",
+      "blocks": 4,
+      "eval_transitions": 3,
+      "fraction_of_all_transitions": 1.322458139962494e-09
+    },
+    {
+      "index": 371,
+      "name": "MultiStark.Verify.Ood.claimFingerprint",
+      "blocks": 3,
+      "eval_transitions": 3,
+      "fraction_of_all_transitions": 1.322458139962494e-09
+    },
+    {
+      "index": 132,
+      "name": "MultiStark.Verify.DecodeLimits.mk",
+      "blocks": 2,
+      "eval_transitions": 2,
+      "fraction_of_all_transitions": 8.816387599749959e-10
+    },
+    {
+      "index": 135,
+      "name": "MultiStark.Verify.decodeClosedCheckEnv._lam_0",
+      "blocks": 2,
+      "eval_transitions": 2,
+      "fraction_of_all_transitions": 8.816387599749959e-10
+    },
+    {
+      "index": 156,
+      "name": "MultiStark.Verify.Codec.encodeKey",
+      "blocks": 2,
+      "eval_transitions": 2,
+      "fraction_of_all_transitions": 8.816387599749959e-10
+    },
+    {
+      "index": 169,
+      "name": "MultiStark.Verify.Codec.encodeProof",
+      "blocks": 2,
+      "eval_transitions": 2,
+      "fraction_of_all_transitions": 8.816387599749959e-10
+    },
+    {
+      "index": 187,
+      "name": "MultiStark.Verify.Key.mk",
+      "blocks": 2,
+      "eval_transitions": 2,
+      "fraction_of_all_transitions": 8.816387599749959e-10
+    },
+    {
+      "index": 204,
+      "name": "MultiStark.Verify.Proof.mk",
+      "blocks": 2,
+      "eval_transitions": 2,
+      "fraction_of_all_transitions": 8.816387599749959e-10
+    },
+    {
+      "index": 225,
+      "name": "MultiStark.Verify.Ood.Error.balance",
+      "blocks": 2,
+      "eval_transitions": 2,
+      "fraction_of_all_transitions": 8.816387599749959e-10
+    },
+    {
+      "index": 231,
+      "name": "MultiStark.Verify.Pcs.observeOpenings",
+      "blocks": 2,
+      "eval_transitions": 2,
+      "fraction_of_all_transitions": 8.816387599749959e-10
+    },
+    {
+      "index": 236,
+      "name": "MultiStark.Verify.Parameters.mk",
+      "blocks": 2,
+      "eval_transitions": 2,
+      "fraction_of_all_transitions": 8.816387599749959e-10
+    },
+    {
+      "index": 272,
+      "name": "MultiStark.Verify.Commitments.mk",
+      "blocks": 2,
+      "eval_transitions": 2,
+      "fraction_of_all_transitions": 8.816387599749959e-10
+    },
+    {
+      "index": 275,
+      "name": "MultiStark.Verify.FriProof.mk",
+      "blocks": 2,
+      "eval_transitions": 2,
+      "fraction_of_all_transitions": 8.816387599749959e-10
+    },
+    {
+      "index": 303,
+      "name": "MultiStark.Verify.Transcript.Challenges.mk",
+      "blocks": 2,
+      "eval_transitions": 2,
+      "fraction_of_all_transitions": 8.816387599749959e-10
+    },
+    {
+      "index": 394,
+      "name": "MultiStark.Verify.Fri.Challenges.mk",
+      "blocks": 2,
+      "eval_transitions": 2,
+      "fraction_of_all_transitions": 8.816387599749959e-10
+    },
+    {
+      "index": 463,
+      "name": "List.sum._at_.MultiStark.Verify.Fri.shape.spec_5",
+      "blocks": 2,
+      "eval_transitions": 2,
+      "fraction_of_all_transitions": 8.816387599749959e-10
+    },
+    {
+      "index": 83,
+      "name": "String.toUTF8",
+      "blocks": 1,
+      "eval_transitions": 1,
+      "fraction_of_all_transitions": 4.4081937998749795e-10
+    },
+    {
+      "index": 84,
+      "name": "ByteArray.data",
+      "blocks": 1,
+      "eval_transitions": 1,
+      "fraction_of_all_transitions": 4.4081937998749795e-10
+    },
+    {
+      "index": 183,
+      "name": "MultiStark.Verify.Codec.Wire.readVectorWidth",
+      "blocks": 1,
+      "eval_transitions": 1,
+      "fraction_of_all_transitions": 4.4081937998749795e-10
+    },
+    {
+      "index": 248,
+      "name": "MultiStark.Verify.Codec.Wire.writeVectorWidth",
+      "blocks": 1,
+      "eval_transitions": 1,
+      "fraction_of_all_transitions": 4.4081937998749795e-10
+    },
+    {
+      "index": 25,
+      "name": "UInt8.ofNat",
+      "blocks": 6,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 27,
+      "name": "UInt8.toUInt32",
+      "blocks": 1,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 31,
+      "name": "UInt8.shiftRight",
+      "blocks": 6,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 32,
+      "name": "UInt32.ofNat",
+      "blocks": 5,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 33,
+      "name": "UInt32.ofNatLT",
+      "blocks": 5,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 34,
+      "name": "UInt32.toUInt8",
+      "blocks": 6,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 35,
+      "name": "UInt32.toNat",
+      "blocks": 1,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 36,
+      "name": "UInt32.add",
+      "blocks": 12,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 37,
+      "name": "UInt32.sub",
+      "blocks": 13,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 38,
+      "name": "UInt32.mul",
+      "blocks": 12,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 39,
+      "name": "UInt32.land",
+      "blocks": 4,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 40,
+      "name": "UInt32.lor",
+      "blocks": 4,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 41,
+      "name": "UInt32.xor",
+      "blocks": 4,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 42,
+      "name": "UInt32.shiftLeft",
+      "blocks": 5,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 43,
+      "name": "UInt32.shiftRight",
+      "blocks": 5,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 44,
+      "name": "UInt32.decEq",
+      "blocks": 4,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 45,
+      "name": "UInt32.decLt",
+      "blocks": 4,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 58,
+      "name": "Ixby.Runtime.fromBytes",
+      "blocks": 10,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 67,
+      "name": "Array.getInternalBorrowed",
+      "blocks": 1,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 69,
+      "name": "Array.ugetBorrowed",
+      "blocks": 1,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 70,
+      "name": "Array.get!Internal",
+      "blocks": 5,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 71,
+      "name": "Array.get!InternalBorrowed",
+      "blocks": 5,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 75,
+      "name": "Array.extract",
+      "blocks": 1,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 77,
+      "name": "Array.append",
+      "blocks": 1,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 90,
+      "name": "Ixby.Runtime.byteGet",
+      "blocks": 10,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 93,
+      "name": "Ix.Ixby.Goldilocks.add",
+      "blocks": 5,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 102,
+      "name": "Ix.Ixby.ExtGoldilocks.inverse",
+      "blocks": 2,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 119,
+      "name": "Except.error",
+      "blocks": 2,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 143,
+      "name": "MultiStark.Verify.DecodeError.nonCanonical",
+      "blocks": 2,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 145,
+      "name": "MultiStark.Verify.SourceError.keyDecode",
+      "blocks": 2,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 147,
+      "name": "MultiStark.Verify.SourceError.keyShape",
+      "blocks": 2,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 149,
+      "name": "MultiStark.Verify.SourceError.proofDecode",
+      "blocks": 2,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 152,
+      "name": "MultiStark.Verify.SourceError.check",
+      "blocks": 2,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 173,
+      "name": "MultiStark.Verify.CheckError.shape",
+      "blocks": 2,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 175,
+      "name": "MultiStark.Verify.CheckError.transcript",
+      "blocks": 2,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 177,
+      "name": "MultiStark.Verify.CheckError.ood",
+      "blocks": 2,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 179,
+      "name": "MultiStark.Verify.CheckError.pcs",
+      "blocks": 2,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 193,
+      "name": "Ixby.Runtime.Lifted.193",
+      "blocks": 2,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 208,
+      "name": "MultiStark.Verify.Shape.Error.key",
+      "blocks": 2,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 230,
+      "name": "MultiStark.Verify.Pcs.CheckError.rounds",
+      "blocks": 2,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 232,
+      "name": "MultiStark.Verify.Pcs.CheckError.transcript",
+      "blocks": 2,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 234,
+      "name": "MultiStark.Verify.Pcs.CheckError.fri",
+      "blocks": 2,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 252,
+      "name": "MultiStark.Verify.DecodeError.shape",
+      "blocks": 2,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 260,
+      "name": "MultiStark.Verify.KeyError.reference",
+      "blocks": 2,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 287,
+      "name": "Ixby.Runtime.Lifted.287",
+      "blocks": 6,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 288,
+      "name": "MultiStark.Verify.Shape.inactivePreprocessed",
+      "blocks": 12,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 296,
+      "name": "MultiStark.Verify.Transcript.Error.observationLimit",
+      "blocks": 2,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 306,
+      "name": "Ixby.Runtime.Lifted.306",
+      "blocks": 2,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 309,
+      "name": "MultiStark.Verify.Pcs.Error.shape",
+      "blocks": 2,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 319,
+      "name": "MultiStark.Verify.Node.public",
+      "blocks": 2,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 320,
+      "name": "MultiStark.Verify.Node.first",
+      "blocks": 2,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 321,
+      "name": "MultiStark.Verify.Node.last",
+      "blocks": 2,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 330,
+      "name": "MultiStark.Verify.Source.stage2",
+      "blocks": 2,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 360,
+      "name": "MultiStark.Verify.Transcript.Error.fieldRange",
+      "blocks": 2,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 368,
+      "name": "MultiStark.Verify.Transcript.Error.sampleExhausted",
+      "blocks": 2,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 373,
+      "name": "MultiStark.Verify.Ood.Error.arithmetic",
+      "blocks": 2,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 389,
+      "name": "MultiStark.Verify.Pcs.Error.count",
+      "blocks": 2,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 393,
+      "name": "MultiStark.Verify.Fri.Error.transcript",
+      "blocks": 2,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 411,
+      "name": "Ixby.Runtime.Lifted.411",
+      "blocks": 2,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 412,
+      "name": "MultiStark.Verify.Shape.Error.points",
+      "blocks": 2,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 415,
+      "name": "Ixby.Runtime.Lifted.415",
+      "blocks": 2,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 423,
+      "name": "MultiStark.Verify.Arithmetic.Error.zeroDenominator",
+      "blocks": 2,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 432,
+      "name": "MultiStark.Verify.Ood.Error.reference",
+      "blocks": 2,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 440,
+      "name": "MultiStark.Verify.Pcs.Error.arithmetic",
+      "blocks": 2,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 442,
+      "name": "Ixby.Runtime.Lifted.442",
+      "blocks": 6,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 492,
+      "name": "MultiStark.Verify.Fri.Error.commitMmcs",
+      "blocks": 2,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 497,
+      "name": "MultiStark.Verify.KeyError.publicIndex",
+      "blocks": 2,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 507,
+      "name": "MultiStark.Verify.Arithmetic.Error.logDegree",
+      "blocks": 2,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 525,
+      "name": "Ixby.Runtime.Lifted.525",
+      "blocks": 2,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 526,
+      "name": "MultiStark.Verify.Transcript.Error.bitRange",
+      "blocks": 2,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 528,
+      "name": "MultiStark.Verify.Transcript.Error.pow",
+      "blocks": 2,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 533,
+      "name": "MultiStark.Verify.Fri.Error.inputMmcs",
+      "blocks": 2,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 542,
+      "name": "MultiStark.Verify.Fri.Error.arithmetic",
+      "blocks": 2,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 608,
+      "name": "Ixby.Runtime.Lifted.608",
+      "blocks": 2,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 643,
+      "name": "Ixby.Runtime.Lifted.643",
+      "blocks": 2,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    },
+    {
+      "index": 663,
+      "name": "Ixby.Runtime.Lifted.663",
+      "blocks": 2,
+      "eval_transitions": 0,
+      "fraction_of_all_transitions": 0.0
+    }
+  ],
+  "top_blocks": [
+    {
+      "function": 5,
+      "name": "Ixby.Runtime.natural",
+      "block": 0,
+      "eval_transitions": 110214432,
+      "instruction": "Ix.Ixby.Instr.caseCtor\n  (Ix.Ixby.Operand.local 0)\n  [{ ctor := 0, target := 1 }, { ctor := 1, target := 2 }, { ctor := 2, target := 3 }]"
+    },
+    {
+      "function": 5,
+      "name": "Ixby.Runtime.natural",
+      "block": 1,
+      "eval_transitions": 105590740,
+      "instruction": "Ix.Ixby.Instr.ret (Ix.Ixby.Operand.local 1)"
+    },
+    {
+      "function": 52,
+      "name": "Ixby.Runtime.treeGet",
+      "block": 0,
+      "eval_transitions": 47565985,
+      "instruction": "Ix.Ixby.Instr.letOp\n  (Ix.Ixby.Op.primitive\n    (Ix.Ixby.Primitive.natEq)\n    [Ix.Ixby.Operand.local 1, Ix.Ixby.Operand.literal (Ix.Ixby.Scalar.nat 1)])\n  1"
+    },
+    {
+      "function": 52,
+      "name": "Ixby.Runtime.treeGet",
+      "block": 1,
+      "eval_transitions": 47565985,
+      "instruction": "Ix.Ixby.Instr.branch (Ix.Ixby.Operand.local 3) 2 3"
+    },
+    {
+      "function": 86,
+      "name": "Ixby.Runtime.byteHeight",
+      "block": 0,
+      "eval_transitions": 44809988,
+      "instruction": "Ix.Ixby.Instr.caseCtor (Ix.Ixby.Operand.local 0) [{ ctor := 3, target := 1 }, { ctor := 4, target := 2 }]"
+    },
+    {
+      "function": 52,
+      "name": "Ixby.Runtime.treeGet",
+      "block": 3,
+      "eval_transitions": 41958491,
+      "instruction": "Ix.Ixby.Instr.letOp\n  (Ix.Ixby.Op.primitive\n    (Ix.Ixby.Primitive.natDiv)\n    [Ix.Ixby.Operand.local 1, Ix.Ixby.Operand.literal (Ix.Ixby.Scalar.nat 2)])\n  5"
+    },
+    {
+      "function": 52,
+      "name": "Ixby.Runtime.treeGet",
+      "block": 5,
+      "eval_transitions": 41958491,
+      "instruction": "Ix.Ixby.Instr.letOp\n  (Ix.Ixby.Op.primitive (Ix.Ixby.Primitive.natLt) [Ix.Ixby.Operand.local 2, Ix.Ixby.Operand.local 4])\n  6"
+    },
+    {
+      "function": 52,
+      "name": "Ixby.Runtime.treeGet",
+      "block": 6,
+      "eval_transitions": 41958491,
+      "instruction": "Ix.Ixby.Instr.branch (Ix.Ixby.Operand.local 5) 7 8"
+    },
+    {
+      "function": 86,
+      "name": "Ixby.Runtime.byteHeight",
+      "block": 2,
+      "eval_transitions": 33696673,
+      "instruction": "Ix.Ixby.Instr.ret (Ix.Ixby.Operand.local 2)"
+    },
+    {
+      "function": 62,
+      "name": "Array.size",
+      "block": 0,
+      "eval_transitions": 27852256,
+      "instruction": "Ix.Ixby.Instr.caseCtor\n  (Ix.Ixby.Operand.local 1)\n  [{ ctor := 3, target := 1 }, { ctor := 8, target := 2 }, { ctor := 4, target := 3 }]"
+    },
+    {
+      "function": 52,
+      "name": "Ixby.Runtime.treeGet",
+      "block": 7,
+      "eval_transitions": 23091621,
+      "instruction": "Ix.Ixby.Instr.letOp (Ix.Ixby.Op.project (Ix.Ixby.Operand.local 0) 0) 9"
+    },
+    {
+      "function": 52,
+      "name": "Ixby.Runtime.treeGet",
+      "block": 9,
+      "eval_transitions": 23091621,
+      "instruction": "Ix.Ixby.Instr.tailCall 52 [Ix.Ixby.Operand.local 6, Ix.Ixby.Operand.local 4, Ix.Ixby.Operand.local 2]"
+    },
+    {
+      "function": 52,
+      "name": "Ixby.Runtime.treeGet",
+      "block": 8,
+      "eval_transitions": 18866870,
+      "instruction": "Ix.Ixby.Instr.letOp (Ix.Ixby.Op.project (Ix.Ixby.Operand.local 0) 1) 10"
+    },
+    {
+      "function": 52,
+      "name": "Ixby.Runtime.treeGet",
+      "block": 10,
+      "eval_transitions": 18866870,
+      "instruction": "Ix.Ixby.Instr.letOp\n  (Ix.Ixby.Op.primitive (Ix.Ixby.Primitive.natSub) [Ix.Ixby.Operand.local 2, Ix.Ixby.Operand.local 4])\n  11"
+    },
+    {
+      "function": 52,
+      "name": "Ixby.Runtime.treeGet",
+      "block": 11,
+      "eval_transitions": 18866870,
+      "instruction": "Ix.Ixby.Instr.tailCall 52 [Ix.Ixby.Operand.local 6, Ix.Ixby.Operand.local 4, Ix.Ixby.Operand.local 7]"
+    },
+    {
+      "function": 53,
+      "name": "Ixby.Runtime.treeSet",
+      "block": 0,
+      "eval_transitions": 16292956,
+      "instruction": "Ix.Ixby.Instr.letOp\n  (Ix.Ixby.Op.primitive\n    (Ix.Ixby.Primitive.natEq)\n    [Ix.Ixby.Operand.local 1, Ix.Ixby.Operand.literal (Ix.Ixby.Scalar.nat 1)])\n  1"
+    },
+    {
+      "function": 53,
+      "name": "Ixby.Runtime.treeSet",
+      "block": 1,
+      "eval_transitions": 16292956,
+      "instruction": "Ix.Ixby.Instr.branch (Ix.Ixby.Operand.local 4) 2 3"
+    },
+    {
+      "function": 14,
+      "name": "Nat.add",
+      "block": 0,
+      "eval_transitions": 15306772,
+      "instruction": "Ix.Ixby.Instr.letOp (Ix.Ixby.Op.call 5 [Ix.Ixby.Operand.local 0]) 1"
+    },
+    {
+      "function": 14,
+      "name": "Nat.add",
+      "block": 1,
+      "eval_transitions": 15306772,
+      "instruction": "Ix.Ixby.Instr.letOp (Ix.Ixby.Op.call 5 [Ix.Ixby.Operand.local 1]) 2"
+    },
+    {
+      "function": 14,
+      "name": "Nat.add",
+      "block": 2,
+      "eval_transitions": 15306772,
+      "instruction": "Ix.Ixby.Instr.letOp\n  (Ix.Ixby.Op.primitive (Ix.Ixby.Primitive.natAdd) [Ix.Ixby.Operand.local 2, Ix.Ixby.Operand.local 3])\n  3"
+    },
+    {
+      "function": 14,
+      "name": "Nat.add",
+      "block": 3,
+      "eval_transitions": 15306772,
+      "instruction": "Ix.Ixby.Instr.caseCtor\n  (Ix.Ixby.Operand.local 0)\n  [{ ctor := 0, target := 4 }, { ctor := 1, target := 5 }, { ctor := 2, target := 6 }]"
+    },
+    {
+      "function": 14,
+      "name": "Nat.add",
+      "block": 4,
+      "eval_transitions": 14969919,
+      "instruction": "Ix.Ixby.Instr.caseCtor\n  (Ix.Ixby.Operand.local 1)\n  [{ ctor := 0, target := 7 }, { ctor := 1, target := 8 }, { ctor := 2, target := 9 }]"
+    },
+    {
+      "function": 14,
+      "name": "Nat.add",
+      "block": 7,
+      "eval_transitions": 14946919,
+      "instruction": "Ix.Ixby.Instr.letOp\n  (Ix.Ixby.Op.primitive (Ix.Ixby.Primitive.word32Add) [Ix.Ixby.Operand.local 6, Ix.Ixby.Operand.local 8])\n  10"
+    },
+    {
+      "function": 14,
+      "name": "Nat.add",
+      "block": 10,
+      "eval_transitions": 14946919,
+      "instruction": "Ix.Ixby.Instr.letOp (Ix.Ixby.Op.construct 0 [Ix.Ixby.Operand.local 4, Ix.Ixby.Operand.local 9]) 11"
+    },
+    {
+      "function": 14,
+      "name": "Nat.add",
+      "block": 11,
+      "eval_transitions": 14946919,
+      "instruction": "Ix.Ixby.Instr.ret (Ix.Ixby.Operand.local 10)"
+    },
+    {
+      "function": 62,
+      "name": "Array.size",
+      "block": 3,
+      "eval_transitions": 14854256,
+      "instruction": "Ix.Ixby.Instr.ret (Ix.Ixby.Operand.local 2)"
+    },
+    {
+      "function": 53,
+      "name": "Ixby.Runtime.treeSet",
+      "block": 3,
+      "eval_transitions": 13976848,
+      "instruction": "Ix.Ixby.Instr.letOp\n  (Ix.Ixby.Op.primitive\n    (Ix.Ixby.Primitive.natDiv)\n    [Ix.Ixby.Operand.local 1, Ix.Ixby.Operand.literal (Ix.Ixby.Scalar.nat 2)])\n  5"
+    },
+    {
+      "function": 53,
+      "name": "Ixby.Runtime.treeSet",
+      "block": 5,
+      "eval_transitions": 13976848,
+      "instruction": "Ix.Ixby.Instr.caseCtor (Ix.Ixby.Operand.local 0) [{ ctor := 6, target := 6 }, { ctor := 7, target := 7 }]"
+    },
+    {
+      "function": 53,
+      "name": "Ixby.Runtime.treeSet",
+      "block": 7,
+      "eval_transitions": 11846551,
+      "instruction": "Ix.Ixby.Instr.letOp\n  (Ix.Ixby.Op.primitive (Ix.Ixby.Primitive.natLt) [Ix.Ixby.Operand.local 2, Ix.Ixby.Operand.local 5])\n  17"
+    },
+    {
+      "function": 53,
+      "name": "Ixby.Runtime.treeSet",
+      "block": 17,
+      "eval_transitions": 11846551,
+      "instruction": "Ix.Ixby.Instr.branch (Ix.Ixby.Operand.local 8) 18 19"
+    },
+    {
+      "function": 86,
+      "name": "Ixby.Runtime.byteHeight",
+      "block": 1,
+      "eval_transitions": 11113315,
+      "instruction": "Ix.Ixby.Instr.ret (Ix.Ixby.Operand.literal (Ix.Ixby.Scalar.word32 0))"
+    },
+    {
+      "function": 20,
+      "name": "Nat.decLt",
+      "block": 0,
+      "eval_transitions": 9640999,
+      "instruction": "Ix.Ixby.Instr.letOp (Ix.Ixby.Op.call 5 [Ix.Ixby.Operand.local 0]) 1"
+    },
+    {
+      "function": 20,
+      "name": "Nat.decLt",
+      "block": 1,
+      "eval_transitions": 9640999,
+      "instruction": "Ix.Ixby.Instr.letOp (Ix.Ixby.Op.call 5 [Ix.Ixby.Operand.local 1]) 2"
+    },
+    {
+      "function": 20,
+      "name": "Nat.decLt",
+      "block": 2,
+      "eval_transitions": 9640999,
+      "instruction": "Ix.Ixby.Instr.letOp\n  (Ix.Ixby.Op.primitive (Ix.Ixby.Primitive.natLt) [Ix.Ixby.Operand.local 2, Ix.Ixby.Operand.local 3])\n  3"
+    },
+    {
+      "function": 20,
+      "name": "Nat.decLt",
+      "block": 3,
+      "eval_transitions": 9640999,
+      "instruction": "Ix.Ixby.Instr.ret (Ix.Ixby.Operand.local 4)"
+    },
+    {
+      "function": 1,
+      "name": "Ixby.Runtime.fromWordLoop",
+      "block": 0,
+      "eval_transitions": 8951504,
+      "instruction": "Ix.Ixby.Instr.letOp\n  (Ix.Ixby.Op.primitive\n    (Ix.Ixby.Primitive.word32Eq)\n    [Ix.Ixby.Operand.local 0, Ix.Ixby.Operand.literal (Ix.Ixby.Scalar.word32 0)])\n  1"
+    },
+    {
+      "function": 1,
+      "name": "Ixby.Runtime.fromWordLoop",
+      "block": 1,
+      "eval_transitions": 8951504,
+      "instruction": "Ix.Ixby.Instr.branch (Ix.Ixby.Operand.local 3) 2 3"
+    },
+    {
+      "function": 62,
+      "name": "Array.size",
+      "block": 2,
+      "eval_transitions": 8758764,
+      "instruction": "Ix.Ixby.Instr.ret (Ix.Ixby.Operand.local 2)"
+    },
+    {
+      "function": 19,
+      "name": "Nat.decEq",
+      "block": 0,
+      "eval_transitions": 8696936,
+      "instruction": "Ix.Ixby.Instr.caseCtor\n  (Ix.Ixby.Operand.local 0)\n  [{ ctor := 0, target := 1 }, { ctor := 1, target := 2 }, { ctor := 2, target := 3 }]"
+    },
+    {
+      "function": 89,
+      "name": "Ixby.Runtime.byteAppend",
+      "block": 0,
+      "eval_transitions": 8212882,
+      "instruction": "Ix.Ixby.Instr.letOp (Ix.Ixby.Op.call 86 [Ix.Ixby.Operand.local 0]) 1"
+    }
+  ],
+  "limits": [
+    "Function names come from the compiler inventory joined by checked function indices and block counts.",
+    "Function counts include their own call instructions; callee instructions are attributed to the callee.",
+    "Return-control and apply-control transitions have no function attribution in this observer.",
+    "Replacing a helper still requires checked semantics, compiler correspondence, and constrained execution; these counts are not removable-work estimates."
+  ]
+}

@@ -3,6 +3,9 @@
 //! permutation and local audit prove one uninterrupted positive-length chain.
 //! This module does not itself establish instruction semantics.
 mod gate;
+mod linked;
+#[cfg(test)]
+mod linked_tests;
 mod synthesis;
 #[cfg(test)]
 mod tests;
@@ -19,6 +22,7 @@ use flock_prover::{
   field::F128,
 };
 pub use gate::{OrderGate, OrderKind, OrderRow};
+pub use linked::linked_routing;
 
 pub const SEED: u64 = 0;
 pub const AFTER: u64 = 1;
@@ -41,11 +45,13 @@ pub struct StateChainSlots {
   words: usize,
   prepare: (SlotId, OrderGate),
   audit: (SlotId, OrderGate),
+  matching: Option<(SlotId, OrderGate)>,
   permutation: PermutationSlots,
   kinds: [Wire; 5],
   zero: Wire,
   one: Wire,
   residual: Wire,
+  linked: bool,
 }
 impl StateChainSlots {
   pub fn declare(
@@ -70,13 +76,50 @@ impl StateChainSlots {
     routing: RoutingKind,
     layout: Option<RecordLayout>,
   ) -> Result<Self> {
+    Self::declare_inner(b, nu, words, routing, layout, false)
+  }
+  /// Match after-states and the initial boundary to before-states and the
+  /// final boundary. Exact record equality and nonwrapping clocks establish
+  /// the chain with half as many routed records as the sorted audit.
+  pub fn declare_linked(
+    b: &mut impl CircuitEmitter,
+    nu: usize,
+    words: usize,
+    layout: RecordLayout,
+  ) -> Result<Self> {
+    Self::declare_inner(
+      b,
+      nu,
+      words,
+      RoutingKind::BooleanPacked,
+      Some(layout),
+      true,
+    )
+  }
+  fn declare_inner(
+    b: &mut impl CircuitEmitter,
+    nu: usize,
+    words: usize,
+    routing: RoutingKind,
+    layout: Option<RecordLayout>,
+    linked: bool,
+  ) -> Result<Self> {
     ensure!((1..=30).contains(&words), "state chain word capacity");
     let prepare = OrderGate::new(nu, OrderKind::Prepare(words))?;
-    let audit = OrderGate::new(nu, OrderKind::Audit(words))?;
+    let audit = OrderGate::new(
+      nu,
+      if linked { OrderKind::Endpoints } else { OrderKind::Audit(words) },
+    )?;
     Ok(Self {
       words,
       prepare: (b.slot(prepare.clone()), prepare),
       audit: (b.slot(audit.clone()), audit),
+      matching: if linked {
+        let gate = OrderGate::new(nu, OrderKind::Match(words))?;
+        Some((b.slot(gate.clone()), gate))
+      } else {
+        None
+      },
       permutation: if let Some(layout) = layout {
         ensure!(
           routing == RoutingKind::BooleanPacked && layout.words() == words + 2,
@@ -92,6 +135,7 @@ impl StateChainSlots {
       zero: b.fixed_public_input(F128::ZERO),
       one: b.fixed_public_input(F128::ONE),
       residual: b.fixed_public_input(F128::ZERO),
+      linked,
     })
   }
   pub fn prepare_gate(&self) -> (SlotId, &OrderGate) {
@@ -99,6 +143,11 @@ impl StateChainSlots {
   }
   pub fn audit_gate(&self) -> (SlotId, &OrderGate) {
     (self.audit.0, &self.audit.1)
+  }
+  pub fn gates(&self) -> impl Iterator<Item = (SlotId, &OrderGate)> {
+    [self.prepare_gate(), self.audit_gate()]
+      .into_iter()
+      .chain(self.matching.iter().map(|(slot, gate)| (*slot, gate)))
   }
   pub fn permutation(&self) -> &PermutationSlots {
     &self.permutation
@@ -110,6 +159,20 @@ impl StateChainSlots {
       .and_then(usize::checked_next_power_of_two)
       .ok_or_else(|| anyhow::anyhow!("state chain count overflow"))?;
     PermutationPlan::new(count)
+  }
+  pub fn linked_plan(transitions: usize) -> Result<PermutationPlan> {
+    let count = transitions
+      .checked_add(1)
+      .and_then(usize::checked_next_power_of_two)
+      .ok_or_else(|| anyhow::anyhow!("linked state chain count overflow"))?;
+    PermutationPlan::new(count)
+  }
+  pub fn routing_plan(&self, transitions: usize) -> Result<PermutationPlan> {
+    if self.linked {
+      Self::linked_plan(transitions)
+    } else {
+      Self::plan(transitions)
+    }
   }
   /// Bind both boundary states/clocks to the caller's statement. Every row's
   /// after-state must be derived by its semantic consumer, not free advice.
@@ -123,6 +186,10 @@ impl StateChainSlots {
   ) {
     assert_eq!(start.state.len(), self.words);
     assert_eq!(end.state.len(), self.words);
+    if self.linked {
+      self.check_linked(b, start, end, rows, switches);
+      return;
+    }
     let plan = Self::plan(rows.len()).unwrap();
     let mut records = Vec::with_capacity(plan.lanes());
     for row in rows {

@@ -32,6 +32,8 @@ pub enum BatchClass {
   Shared1024,
   SharedCompactPacked,
   SharedPacked1024,
+  SharedCompactLinked,
+  SharedLinked1024,
 }
 impl BatchClass {
   pub fn transcript_domain(self) -> &'static [u8] {
@@ -53,6 +55,12 @@ impl BatchClass {
       Self::SharedPacked1024 => {
         b"IxBy/Flock/paged-execution:shared-packed-1024:v0"
       },
+      Self::SharedCompactLinked => {
+        b"IxBy/Flock/paged-execution:shared-compact-linked:v0"
+      },
+      Self::SharedLinked1024 => {
+        b"IxBy/Flock/paged-execution:shared-linked-1024:v0"
+      },
     }
   }
   pub fn quotas(self) -> [usize; 24] {
@@ -67,13 +75,14 @@ impl BatchClass {
       Self::Compact
       | Self::SharedCompact
       | Self::SharedCompactBoolean
-      | Self::SharedCompactPacked => {
+      | Self::SharedCompactPacked
+      | Self::SharedCompactLinked => {
         [2, 4, 1, 2, 1, 3, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]
       },
       Self::Shared | Self::SharedBoolean => {
         Self::SharedCompact.quotas().map(|quota| quota * 16)
       },
-      Self::Shared1024 | Self::SharedPacked1024 => [
+      Self::Shared1024 | Self::SharedPacked1024 | Self::SharedLinked1024 => [
         1024, 2048, 384, 512, 256, 1024, 128, 64, 64, 256, 256, 256, 768, 512,
         32, 64, 64, 64, 32, 64, 64, 64, 64, 64,
       ],
@@ -90,9 +99,12 @@ impl BatchClass {
       Self::Compact
       | Self::SharedCompact
       | Self::SharedCompactBoolean
-      | Self::SharedCompactPacked => 16,
+      | Self::SharedCompactPacked
+      | Self::SharedCompactLinked => 16,
       Self::Shared | Self::SharedBoolean => 256,
-      Self::Shared1024 | Self::SharedPacked1024 => 2048,
+      Self::Shared1024 | Self::SharedPacked1024 | Self::SharedLinked1024 => {
+        2048
+      },
       Self::Bytes => 96,
     }
   }
@@ -104,9 +116,10 @@ impl BatchClass {
       Self::Bytes => 13,
       Self::SharedCompact
       | Self::SharedCompactBoolean
-      | Self::SharedCompactPacked => 10,
+      | Self::SharedCompactPacked
+      | Self::SharedCompactLinked => 10,
       Self::Shared | Self::SharedBoolean => 13,
-      Self::Shared1024 | Self::SharedPacked1024 => 15,
+      Self::Shared1024 | Self::SharedPacked1024 | Self::SharedLinked1024 => 15,
     }
   }
   pub fn transitions(self) -> usize {
@@ -116,13 +129,14 @@ impl BatchClass {
     match self {
       Self::SharedCompact
       | Self::SharedCompactBoolean
-      | Self::SharedCompactPacked => {
+      | Self::SharedCompactPacked
+      | Self::SharedCompactLinked => {
         Some(MultiCapacity::new(self.cells(), 192).unwrap())
       },
       Self::Shared | Self::SharedBoolean => {
         Some(MultiCapacity::new(self.cells(), 3_072).unwrap())
       },
-      Self::Shared1024 | Self::SharedPacked1024 => {
+      Self::Shared1024 | Self::SharedPacked1024 | Self::SharedLinked1024 => {
         Some(MultiCapacity::new(self.cells(), 8_191).unwrap())
       },
       _ => None,
@@ -141,11 +155,15 @@ impl BatchClass {
       Self::SharedCompactBoolean | Self::SharedBoolean | Self::Shared1024 => {
         RoutingKind::Boolean
       },
-      Self::SharedCompactPacked | Self::SharedPacked1024 => {
-        RoutingKind::BooleanPacked
-      },
+      Self::SharedCompactPacked
+      | Self::SharedPacked1024
+      | Self::SharedCompactLinked
+      | Self::SharedLinked1024 => RoutingKind::BooleanPacked,
       _ => RoutingKind::Element,
     }
+  }
+  pub fn linked_states(self) -> bool {
+    matches!(self, Self::SharedCompactLinked | Self::SharedLinked1024)
   }
 }
 /// Canonical paged machine state: the layout preserves every active bit of
@@ -192,13 +210,22 @@ pub fn emit_batch(
   )?;
   let execution =
     ExecutionSlots::declare(&mut b, nu, memory.log().memory().compression())?;
-  let order = StateChainSlots::declare_with_record_layout(
-    &mut b,
-    nu,
-    STATE_WORDS,
-    class.routing(),
-    (class.routing() == RoutingKind::BooleanPacked).then(state_record_layout),
-  )?;
+  let order = if class.linked_states() {
+    StateChainSlots::declare_linked(
+      &mut b,
+      nu,
+      STATE_WORDS,
+      state_record_layout(),
+    )?
+  } else {
+    StateChainSlots::declare_with_record_layout(
+      &mut b,
+      nu,
+      STATE_WORDS,
+      class.routing(),
+      (class.routing() == RoutingKind::BooleanPacked).then(state_record_layout),
+    )?
+  };
   let tree = class
     .shared_memory()
     .map(|_| {
@@ -268,7 +295,7 @@ pub fn emit_batch(
     }
   }
   execution.finish_canonical(&mut b);
-  let switches = (0..StateChainSlots::plan(class.transitions())?.switches())
+  let switches = (0..order.routing_plan(class.transitions())?.switches())
     .map(|_| b.input())
     .collect::<Vec<_>>();
   order.check(
@@ -433,9 +460,13 @@ impl BatchAdvice {
       record(start.clock, execution_order::SEED, &start.before),
       record(end.clock + 1, execution_order::SEAL, &end.after),
     ]);
-    state_records
-      .resize(StateChainSlots::plan(class.transitions())?.lanes(), pad);
-    private.extend(execution_order::routing(&state_records)?);
+    if class.linked_states() {
+      private.extend(execution_order::linked_routing(&state_records)?);
+    } else {
+      state_records
+        .resize(StateChainSlots::plan(class.transitions())?.lanes(), pad);
+      private.extend(execution_order::routing(&state_records)?);
+    }
     if let Some(tree) = tree {
       let roots = memory
         .initial_root

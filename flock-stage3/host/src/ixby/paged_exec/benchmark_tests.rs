@@ -39,7 +39,7 @@ fn original_execution_proof_throughput() {
     std::fs::read(std::env::var_os("IXBY_PAGED_INPUT").unwrap()).unwrap();
   let count = option("IXBY_PROOF_BATCHES", 32, 1..=256);
   let skip = option("IXBY_PROOF_SKIP", 0, 0..=100_000);
-  let workers = option("IXBY_PROOF_WORKERS", 1, 1..=16).min(count);
+  let workers = option("IXBY_PROOF_WORKERS", 1, 1..=32).min(count);
   let threads = option("IXBY_PROOF_THREADS", 4, 1..=64);
   assert!(workers * threads <= 64, "benchmark CPU thread bound");
   let class = match std::env::var("IXBY_PAGED_NATIVE_CLASS").as_deref() {
@@ -50,6 +50,8 @@ fn original_execution_proof_throughput() {
     Ok("shared-1024") => BatchClass::Shared1024,
     Ok("shared-compact-packed") => BatchClass::SharedCompactPacked,
     Ok("shared-packed-1024") => BatchClass::SharedPacked1024,
+    Ok("shared-compact-linked") => BatchClass::SharedCompactLinked,
+    Ok("shared-linked-1024") => BatchClass::SharedLinked1024,
     _ => panic!("IXBY_PAGED_NATIVE_CLASS must be shared or shared-compact"),
   };
   let out = std::env::var_os("IXBY_PROOF_OUT").map(std::path::PathBuf::from);

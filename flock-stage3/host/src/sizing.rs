@@ -298,6 +298,8 @@ mod tests {
       BatchClass::Shared1024,
       BatchClass::SharedCompactPacked,
       BatchClass::SharedPacked1024,
+      BatchClass::SharedCompactLinked,
+      BatchClass::SharedLinked1024,
     ] {
       let mut count = CountingEmitter::new();
       let _ = emit_batch(&mut count, class).unwrap();

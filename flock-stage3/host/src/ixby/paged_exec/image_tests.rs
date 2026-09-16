@@ -41,6 +41,7 @@ fn production_execution_setups_validate_every_driver_and_complete_boundaries() {
     BatchClass::Shared,
     BatchClass::SharedCompactBoolean,
     BatchClass::SharedBoolean,
+    BatchClass::SharedCompactLinked,
   ] {
     let compiled = CompiledPagedExecution::compile(class).unwrap();
     let mut image =
@@ -552,6 +553,26 @@ fn original_packed_1024_execution_segment_proves_fresh() {
     BatchClass::SharedPacked1024,
     "ixby::paged_exec::image_tests::original_packed_1024_execution_segment_proves_fresh",
     || original_boolean_advice(BatchClass::SharedPacked1024),
+  );
+}
+
+#[test]
+#[ignore = "original artifacts; linked-state proof, recomputed clock attacks and fresh receiver"]
+fn original_compact_linked_execution_segment_proves_fresh() {
+  proof_tests::original_proof_test(
+    BatchClass::SharedCompactLinked,
+    "ixby::paged_exec::image_tests::original_compact_linked_execution_segment_proves_fresh",
+    || original_boolean_advice(BatchClass::SharedCompactLinked),
+  );
+}
+
+#[test]
+#[ignore = "original artifacts; linked 1,024-fetch proof, recomputed clock attacks and fresh receiver"]
+fn original_linked_1024_execution_segment_proves_fresh() {
+  proof_tests::original_proof_test(
+    BatchClass::SharedLinked1024,
+    "ixby::paged_exec::image_tests::original_linked_1024_execution_segment_proves_fresh",
+    || original_boolean_advice(BatchClass::SharedLinked1024),
   );
 }
 

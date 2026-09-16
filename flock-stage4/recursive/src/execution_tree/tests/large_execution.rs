@@ -10,6 +10,7 @@ use std::{
 
 const TEST: &str = "execution_tree::tests::large_execution::original_1024_execution_chain_proves_fresh";
 const PACKED_TEST: &str = "execution_tree::tests::large_execution::original_packed_1024_execution_chain_proves_fresh";
+const LINKED_TEST: &str = "execution_tree::tests::large_execution::original_linked_1024_execution_chain_proves_fresh";
 const CHILD: &str = "IXBY_LARGE_EXECUTION_CHAIN_RECEIVER";
 
 fn compiler(class: BatchClass) -> PagedTreeCompiler {
@@ -84,6 +85,12 @@ fn original_1024_execution_chain_proves_fresh() {
 #[ignore = "requires three original packed 1,024-fetch proofs; two recursive levels, boundary attacks, fresh receiver"]
 fn original_packed_1024_execution_chain_proves_fresh() {
   proof_chain(BatchClass::SharedPacked1024, PACKED_TEST);
+}
+
+#[test]
+#[ignore = "requires three original linked 1,024-fetch proofs; two recursive levels, boundary attacks, fresh receiver"]
+fn original_linked_1024_execution_chain_proves_fresh() {
+  proof_chain(BatchClass::SharedLinked1024, LINKED_TEST);
 }
 
 fn proof_chain(class: BatchClass, test: &str) {

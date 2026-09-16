@@ -1,7 +1,9 @@
 use super::{AFTER, BEFORE, OrderKind, PAD, SEAL, SEED};
 use crate::{
   boolean::{BooleanR1csBuilder as Builder, BooleanR1csPlan},
-  ixby::bits::{any, equal, equal_constant, not, require, require_zero},
+  ixby::bits::{
+    any, equal, equal_constant, not, require, require_zero, subtract,
+  },
 };
 
 fn word(i: usize) -> Vec<usize> {
@@ -41,6 +43,8 @@ pub(super) fn build(kind: OrderKind) -> BooleanR1csPlan {
   let (inputs, outputs, k) = match kind {
     OrderKind::Prepare(n) => (2 + 2 * n, 5, 16),
     OrderKind::Audit(n) => (2 * (n + 2) + 2, 1, 16),
+    OrderKind::Endpoints => (2, 1, 12),
+    OrderKind::Match(n) => (2 * (n + 2), n + 2, 14),
     OrderKind::Access => (7, 6, 14),
   };
   let mut b = Builder::new(k, (inputs + outputs) * 128);
@@ -51,6 +55,19 @@ pub(super) fn build(kind: OrderKind) -> BooleanR1csPlan {
   let zero = b.xor(&[one, one], one);
   let mut bad = Vec::new();
   match kind {
+    OrderKind::Match(n) => {
+      for bit in 0..(n + 2) * 128 {
+        b.write_xor(inputs * 128 + bit, &[bit, (n + 2) * 128 + bit], one);
+      }
+      return b.finish();
+    },
+    OrderKind::Endpoints => {
+      bad.extend(64..128);
+      bad.extend(192..256);
+      let (_, less) =
+        subtract(&mut b, one, zero, &word(0)[..64], &word(1)[..64]);
+      require(&mut b, one, &mut bad, one, less);
+    },
     OrderKind::Prepare(n) => {
       let enabled = 0;
       let disabled = not(&mut b, one, enabled);

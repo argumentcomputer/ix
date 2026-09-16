@@ -1,0 +1,610 @@
+{
+  "format": "IxBy/linked-execution-complete-countdown/v0",
+  "date_utc": "2026-09-16",
+  "source_base_commit": "ad9db5168068c745d02f34e9a617c57718570452",
+  "class": "SharedLinked1024",
+  "cli_class": "shared-linked-1024",
+  "scope": "Complete original-format 83-logical-step countdown. A correctness fixture, not the full CSLib proof or a controlled whole-pipeline speed comparison.",
+  "reference_record": "paged-execution-countdown-1024-v0.json",
+  "reference_record_sha256": "8fb23bab07c37999f3186b6bcb5d9696d10d0d5651ccd636c5ae80d1cc1faf09",
+  "reference_artifacts": {
+    "profile_limits": [
+      1,
+      0,
+      3,
+      3,
+      2,
+      0,
+      8,
+      4096,
+      64,
+      64
+    ],
+    "fuel": 83,
+    "artifact_bytes": {
+      "program": 47,
+      "input": 53,
+      "output": 49,
+      "payload": 34
+    },
+    "program_sha256": "8b1addfffd26467722c05e4642ca2a1be872650e42fdc0e2fceee5f734ede594",
+    "input_sha256": "5450fadc341693c9986606dd3064ee79bb5a39d44768dd77af2a51f57236e296",
+    "output_sha256": "8c4aab081d536a3a69059b040ff68e79bead32a6a9c9938c34be39121cf4a7f7",
+    "profile_sha256": "672ceb9d1f0f454504ea181b588b2d5b77d91475c18c70fea4d4e489588e0707",
+    "independent_reference": {
+      "transitions": 83,
+      "output_matches": true,
+      "binary_sha256": "d17f50b7d7b343ffa7e5c0c6b23c6e433987e971acb7e94539ee4d7503e76cfa"
+    },
+    "fixture_generator": "flock-stage4/fixtures/paged-execution-countdown.py"
+  },
+  "expected_statement_hex": "4443003345bdface108d630d9b5f665e9d99f0957316c88766e9b241d70940f1",
+  "expected_statement": {
+    "bytes": 32,
+    "sha256": "6b2cf7b6c344f02c637b2455ebdf19d382a8129899f8b77c235f38a1e4a17893"
+  },
+  "profile": {
+    "bytes": 184,
+    "sha256": "672ceb9d1f0f454504ea181b588b2d5b77d91475c18c70fea4d4e489588e0707"
+  },
+  "root": {
+    "bytes": 510115,
+    "sha256": "eb4e1e9bb0cfdded852455a7bebad100b902ebddcb54c727b7a1bed97e73509b"
+  },
+  "component_counts": [
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1
+  ],
+  "setup_identity": "a79d783b6d15837fe6588f70d10ba347808ba3f048e5121d0213d174611225e8",
+  "geometry": {
+    "application_words": 2,
+    "arithmetic_operations": 907800,
+    "blake3_compressions": 44167,
+    "children": [
+      11,
+      1
+    ],
+    "dense_variables": 31,
+    "leaves": 12,
+    "packing_rows": 52150,
+    "root_advice_words": 10555,
+    "root_families": 335,
+    "row_variables": 16,
+    "variables": 4806056
+  },
+  "complete_prove_command_seconds": 687.530132881,
+  "leaf_generation_and_proving_seconds": 96.145973393,
+  "final_verification_seconds_in_prover": 19.454851926,
+  "fresh_setup_seconds": 162.454125296,
+  "fresh_verification_seconds": 20.316789549,
+  "prover_events": [
+    {
+      "bytes": 393532,
+      "event": "proved",
+      "name": "leaves/00/0000000/0000000000",
+      "seconds": 0.342564204
+    },
+    {
+      "bytes": 452899,
+      "event": "proved",
+      "name": "leaves/01/0000000/0000000000",
+      "seconds": 0.712786162
+    },
+    {
+      "bytes": 335443,
+      "event": "proved",
+      "name": "leaves/02/0000000/0000000000",
+      "seconds": 0.342285656
+    },
+    {
+      "bytes": 298019,
+      "event": "proved",
+      "name": "leaves/03/0000000/0000000000",
+      "seconds": 0.623479395
+    },
+    {
+      "bytes": 393532,
+      "event": "proved",
+      "name": "leaves/04/0000000/0000000000",
+      "seconds": 0.295129504
+    },
+    {
+      "bytes": 452891,
+      "event": "proved",
+      "name": "leaves/05/0000000/0000000000",
+      "seconds": 0.672929323
+    },
+    {
+      "bytes": 607299,
+      "event": "proved",
+      "name": "leaves/06/0000000/0000000000",
+      "seconds": 10.642140475
+    },
+    {
+      "bytes": 351259,
+      "event": "proved",
+      "name": "leaves/07/0000000/0000000000",
+      "seconds": 0.364926363
+    },
+    {
+      "bytes": 282612,
+      "event": "proved",
+      "name": "leaves/08/0000000/0000000000",
+      "seconds": 0.251723115
+    },
+    {
+      "bytes": 282612,
+      "event": "proved",
+      "name": "leaves/09/0000000/0000000000",
+      "seconds": 0.250320233
+    },
+    {
+      "bytes": 282612,
+      "event": "proved",
+      "name": "leaves/10/0000000/0000000000",
+      "seconds": 0.250148923
+    },
+    {
+      "bytes": 132891,
+      "event": "proved",
+      "name": "endpoints",
+      "seconds": 0.228382359
+    },
+    {
+      "event": "complete_setup",
+      "geometry": {
+        "application_words": 2,
+        "arithmetic_operations": 907800,
+        "blake3_compressions": 44167,
+        "children": [
+          11,
+          1
+        ],
+        "dense_variables": 31,
+        "leaves": 12,
+        "packing_rows": 52150,
+        "root_advice_words": 10555,
+        "root_families": 335,
+        "row_variables": 16,
+        "variables": 4806056
+      },
+      "identity": "a79d783b6d15837fe6588f70d10ba347808ba3f048e5121d0213d174611225e8",
+      "seconds": 175.302097186
+    },
+    {
+      "event": "facts_setup",
+      "geometry": {
+        "application_words": 90,
+        "arithmetic_operations": 893421,
+        "blake3_compressions": 32473,
+        "children": [
+          1,
+          1
+        ],
+        "dense_variables": 31,
+        "leaves": 2,
+        "packing_rows": 30620,
+        "root_advice_words": 2885,
+        "root_families": 98,
+        "row_variables": 15,
+        "variables": 2768832
+      },
+      "name": "facts-00-02",
+      "seconds": 6.588395465
+    },
+    {
+      "bytes": 357707,
+      "event": "proved",
+      "name": "facts-00-02",
+      "seconds": 6.913183807
+    },
+    {
+      "event": "facts_setup",
+      "geometry": {
+        "application_words": 14,
+        "arithmetic_operations": 838896,
+        "blake3_compressions": 21453,
+        "children": [
+          1,
+          1
+        ],
+        "dense_variables": 31,
+        "leaves": 2,
+        "packing_rows": 25279,
+        "root_advice_words": 769,
+        "root_families": 26,
+        "row_variables": 15,
+        "variables": 2102762
+      },
+      "name": "facts-02-04",
+      "seconds": 5.798759669
+    },
+    {
+      "bytes": 308619,
+      "event": "proved",
+      "name": "facts-02-04",
+      "seconds": 5.496415014
+    },
+    {
+      "event": "facts_setup",
+      "geometry": {
+        "application_words": 104,
+        "arithmetic_operations": 899180,
+        "blake3_compressions": 28366,
+        "children": [
+          2,
+          2
+        ],
+        "dense_variables": 31,
+        "leaves": 4,
+        "packing_rows": 28734,
+        "root_advice_words": 3408,
+        "root_families": 112,
+        "row_variables": 15,
+        "variables": 2779664
+      },
+      "name": "facts-00-04",
+      "seconds": 6.000578124
+    },
+    {
+      "bytes": 362267,
+      "event": "proved",
+      "name": "facts-00-04",
+      "seconds": 17.644014217
+    },
+    {
+      "event": "facts_setup",
+      "geometry": {
+        "application_words": 86,
+        "arithmetic_operations": 892146,
+        "blake3_compressions": 32307,
+        "children": [
+          1,
+          1
+        ],
+        "dense_variables": 31,
+        "leaves": 2,
+        "packing_rows": 30435,
+        "root_advice_words": 2827,
+        "root_families": 96,
+        "row_variables": 15,
+        "variables": 2750761
+      },
+      "name": "facts-04-06",
+      "seconds": 5.997529369
+    },
+    {
+      "bytes": 356779,
+      "event": "proved",
+      "name": "facts-04-06",
+      "seconds": 6.65273816
+    },
+    {
+      "event": "facts_setup",
+      "geometry": {
+        "application_words": 66,
+        "arithmetic_operations": 1254443,
+        "blake3_compressions": 53370,
+        "children": [
+          1,
+          1
+        ],
+        "dense_variables": 31,
+        "leaves": 2,
+        "packing_rows": 41290,
+        "root_advice_words": 5439,
+        "root_families": 177,
+        "row_variables": 16,
+        "variables": 4070330
+      },
+      "name": "facts-06-08",
+      "seconds": 7.708652203
+    },
+    {
+      "bytes": 435875,
+      "event": "proved",
+      "name": "facts-06-08",
+      "seconds": 30.46130668
+    },
+    {
+      "event": "facts_setup",
+      "geometry": {
+        "application_words": 152,
+        "arithmetic_operations": 995889,
+        "blake3_compressions": 41500,
+        "children": [
+          2,
+          2
+        ],
+        "dense_variables": 31,
+        "leaves": 4,
+        "packing_rows": 42480,
+        "root_advice_words": 7732,
+        "root_families": 250,
+        "row_variables": 16,
+        "variables": 4131831
+      },
+      "name": "facts-04-08",
+      "seconds": 7.096328942
+    },
+    {
+      "bytes": 457331,
+      "event": "proved",
+      "name": "facts-04-08",
+      "seconds": 38.379571225
+    },
+    {
+      "event": "facts_setup",
+      "geometry": {
+        "application_words": 256,
+        "arithmetic_operations": 1088987,
+        "blake3_compressions": 46493,
+        "children": [
+          4,
+          4
+        ],
+        "dense_variables": 31,
+        "leaves": 8,
+        "packing_rows": 46085,
+        "root_advice_words": 8882,
+        "root_families": 281,
+        "row_variables": 16,
+        "variables": 4566602
+      },
+      "name": "facts-00-08",
+      "seconds": 7.594718483
+    },
+    {
+      "bytes": 485251,
+      "event": "proved",
+      "name": "facts-00-08",
+      "seconds": 57.259828228
+    },
+    {
+      "event": "facts_setup",
+      "geometry": {
+        "application_words": 18,
+        "arithmetic_operations": 570237,
+        "blake3_compressions": 16531,
+        "children": [
+          1,
+          1
+        ],
+        "dense_variables": 30,
+        "leaves": 2,
+        "packing_rows": 22574,
+        "root_advice_words": 751,
+        "root_families": 25,
+        "row_variables": 15,
+        "variables": 1697503
+      },
+      "name": "facts-08-10",
+      "seconds": 5.320018652
+    },
+    {
+      "bytes": 322251,
+      "event": "proved",
+      "name": "facts-08-10",
+      "seconds": 4.416141515
+    },
+    {
+      "event": "facts_setup",
+      "geometry": {
+        "application_words": 27,
+        "arithmetic_operations": 705547,
+        "blake3_compressions": 18683,
+        "children": [
+          2,
+          1
+        ],
+        "dense_variables": 30,
+        "leaves": 3,
+        "packing_rows": 21494,
+        "root_advice_words": 942,
+        "root_families": 30,
+        "row_variables": 15,
+        "variables": 1859520
+      },
+      "name": "facts-08-11",
+      "seconds": 5.905923059
+    },
+    {
+      "bytes": 336731,
+      "event": "proved",
+      "name": "facts-08-11",
+      "seconds": 10.580691833
+    },
+    {
+      "event": "facts_setup",
+      "geometry": {
+        "application_words": 283,
+        "arithmetic_operations": 1055667,
+        "blake3_compressions": 46702,
+        "children": [
+          8,
+          3
+        ],
+        "dense_variables": 31,
+        "leaves": 11,
+        "packing_rows": 48173,
+        "root_advice_words": 9723,
+        "root_families": 305,
+        "row_variables": 16,
+        "variables": 4740162
+      },
+      "name": "facts-00-11",
+      "seconds": 7.859375407
+    },
+    {
+      "bytes": 500611,
+      "event": "proved",
+      "name": "facts-00-11",
+      "seconds": 70.149158838
+    },
+    {
+      "bytes": 510115,
+      "event": "proved",
+      "name": "root",
+      "seconds": 73.741189181
+    },
+    {
+      "elapsed_seconds": 687.530132881,
+      "execution": {
+        "accepted": true,
+        "claim": "complete original-format paged execution",
+        "counts": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "elapsed_seconds": 591.238066239,
+        "geometry": {
+          "application_words": 2,
+          "arithmetic_operations": 907800,
+          "blake3_compressions": 44167,
+          "children": [
+            11,
+            1
+          ],
+          "dense_variables": 31,
+          "leaves": 12,
+          "packing_rows": 52150,
+          "root_advice_words": 10555,
+          "root_families": 335,
+          "row_variables": 16,
+          "variables": 4806056
+        },
+        "identity": "a79d783b6d15837fe6588f70d10ba347808ba3f048e5121d0213d174611225e8",
+        "proof_bytes": 510115,
+        "verification_seconds": 19.454851926
+      },
+      "leaves": {
+        "class": "shared-linked-1024",
+        "counts": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "elapsed_seconds": 96.145973393,
+        "statement": "/tmp/ixby-linked-execution-20260916/countdown-run/expected.statement"
+      }
+    }
+  ],
+  "receiver_events": [
+    {
+      "accepted": true,
+      "claim": "complete original-format paged execution",
+      "counts": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "identity": "a79d783b6d15837fe6588f70d10ba347808ba3f048e5121d0213d174611225e8",
+      "proof_bytes": 510115,
+      "setup_seconds": 162.454125296,
+      "verification_seconds": 20.316789549
+    }
+  ],
+  "proving_timing": {
+    "receipt_sha256": "eb3497f5a52fe6123e44673c8db81261c23a9f1df7664ef55e72dae990644907",
+    "user_seconds": 759.72,
+    "system_seconds": 62.63,
+    "cpu_percent": 118,
+    "peak_rss_kib": 73335036,
+    "exit_status": 0,
+    "wall_seconds": 695.56,
+    "peak_rss_gib": 69.93774032592773
+  },
+  "fresh_receiver_timing": {
+    "receipt_sha256": "f68c8ac773e3df94125f75d67edac2eba281fdc8f079426db53f274c86291a9a",
+    "user_seconds": 161.05,
+    "system_seconds": 26.09,
+    "cpu_percent": 99,
+    "peak_rss_kib": 61043912,
+    "exit_status": 0,
+    "wall_seconds": 187.78,
+    "peak_rss_gib": 58.21601104736328
+  },
+  "fresh_receiver_files": [
+    "profile.ixfp",
+    "expected.statement",
+    "root.flock"
+  ],
+  "fresh_receiver_environment": "env -i; class and all eleven counts explicitly selected before proof read",
+  "prover_binary": {
+    "bytes": 20339008,
+    "sha256": "75a68d9f4ff356fe7a9125a53ac2b0284fb0eae16970da684a4741d944cd9ebd"
+  },
+  "fresh_receiver_binary": {
+    "bytes": 20898904,
+    "sha256": "be05524a0beb6d8aaa69342ec00a22996d8d9414f456b54ce635cbda49f3dc5b"
+  },
+  "binary_difference": "V1 prover predates the linked zero-wire connection-order setup fix. V2 receiver includes it and accepts the same proof with the same setup identity.",
+  "local_host": {
+    "cpu": "AMD Ryzen 9 7950X3D",
+    "physical_cores": 16,
+    "logical_cpus": 32,
+    "reported_ram_gib": 124
+  },
+  "resource_limits": {
+    "resident_memory_gib": 84,
+    "swap_bytes": 0,
+    "virtual_address_gib": 768,
+    "threads": 4
+  },
+  "execution_statement": {
+    "sha256": "1a392549b1ab898b111bfc6d4b2c76a5c8ba199a20635e42b8b344d2f3c0e1c6",
+    "clock": [
+      0,
+      367
+    ],
+    "logical_fuel": [
+      0,
+      83
+    ],
+    "heap_fields": [
+      0,
+      0
+    ],
+    "byte_cells": [
+      0,
+      0
+    ]
+  },
+  "prover_log_sha256": "ba70c58c8595d3c85fc2b4705637aa27e6dedbe9bf22645f2a370c673cfbdd28",
+  "receiver_log_sha256": "18b40662e6becd22f26680ed0a936107584e6dee96808aedddb8fae17deaddd7",
+  "full_cslib_execution_proved": false
+}

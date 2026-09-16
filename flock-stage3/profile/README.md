@@ -33,6 +33,14 @@ A smaller final step cap produces a prefix report with `completed=false`.
 Full reports include all 6,763 instruction descriptions and block counts;
 the summary weights their opcode names by the observed visit counts.
 
+The [function cost record](cslib-runtime-costs-v0.json) joins those observations
+to the compiler's function inventory, checking both against the pinned image.
+Eleven helpers for array traversal, byte ropes, numeric conversion and number
+unboxing account for 56.0% of all reference transitions. These are exclusive
+instruction counts, not measured optimization gains. See
+[IxBy performance priorities](../../docs/IxbyPerformance.md) for the proposed
+runtime changes and the `function_costs.py` reproduction command.
+
 ## Native Flock execution segment
 
 The separate [Shared execution measurement](cslib-shared-execution-v0.json)
@@ -78,3 +86,16 @@ smaller useful witness, fresh leaf receivers, two recursive levels and their
 [packed countdown record](../../flock-stage4/census/paged-execution-countdown-packed-v0.json)
 records the complete small fixture separately. These measurements do not
 establish a complete CSLib proving rate.
+
+The [linked execution record](cslib-linked-execution-v0.json) replaces the
+state sorting audit with exact after/before record matching and checked clock
+progress. It records 72 verified server proofs, a paired 31.6% higher worker
+rate and 24.9% lower peak RSS, and 25.3% fewer useful witness words. Larger
+commitment query openings increase the execution leaf to 607,299 bytes.
+The record distinguishes the server executable's slow setup from the final
+construction fix measured locally. The
+[linked countdown record](../../flock-stage4/census/paged-execution-countdown-linked-v0.json)
+records a complete 510,115-byte root accepted in a fresh process. The execution
+record also includes two recursive levels over three genuine CSLib leaves,
+fresh verification and 114 public-word mutation rejections. Full CSLib
+execution remains unproved.

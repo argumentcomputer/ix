@@ -19,6 +19,10 @@ pub enum OrderKind {
   Prepare(usize),
   /// [previous[N+2], current[N+2], first, last] -> residual
   Audit(usize),
+  /// [initial clock, final clock] -> residual; both are u64 and initial < final.
+  Endpoints,
+  /// [left[N+2], right[N+2]] -> one XOR residual per complete field word.
+  Match(usize),
   /// [enabled, clock, ordinal, address, write, value[2]] -> [memory record[5], residual]
   Access,
 }
@@ -33,13 +37,18 @@ pub struct OrderRow(pub(crate) Vec<F128>);
 impl OrderGate {
   pub fn new(nu: usize, kind: OrderKind) -> Result<Self> {
     ensure!((3..=20).contains(&nu), "execution order row domain");
-    if let OrderKind::Prepare(n) | OrderKind::Audit(n) = kind {
+    if let OrderKind::Prepare(n) | OrderKind::Audit(n) | OrderKind::Match(n) =
+      kind
+    {
       ensure!((1..=30).contains(&n), "execution state words");
     }
     Ok(Self { nu, kind, plan: Arc::new(OnceLock::new()) })
   }
   pub(crate) fn plan(&self) -> &BooleanR1csPlan {
     self.plan.get_or_init(|| super::synthesis::build(self.kind))
+  }
+  pub fn kind(&self) -> OrderKind {
+    self.kind
   }
   pub fn r1cs(&self) -> BlockR1cs {
     self.plan().block_r1cs(self.nu)
@@ -63,13 +72,16 @@ impl CountedGate for OrderGate {
     match self.kind {
       OrderKind::Prepare(n) => 2 + 2 * n,
       OrderKind::Audit(n) => 2 * (n + 2) + 2,
+      OrderKind::Endpoints => 2,
+      OrderKind::Match(n) => 2 * (n + 2),
       OrderKind::Access => 7,
     }
   }
   fn output_count(&self) -> usize {
     match self.kind {
       OrderKind::Prepare(_) => 5,
-      OrderKind::Audit(_) => 1,
+      OrderKind::Audit(_) | OrderKind::Endpoints => 1,
+      OrderKind::Match(n) => n + 2,
       OrderKind::Access => 6,
     }
   }

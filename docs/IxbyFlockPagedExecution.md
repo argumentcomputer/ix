@@ -124,11 +124,11 @@ byte/hash implementation's complete regression suite passed 311 tests with
 
 `CompiledPagedExecution::compile(class)` provides the production setup,
 advice-checking, proving, verification and recursive-replay interface for all
-eleven fixed batch classes. `ExecutionStatement` binds exactly 57 field words
+thirteen fixed batch classes. `ExecutionStatement` binds exactly 57 field words
 and requires strictly increasing, nonwrapping clocks. Setup checks every
 Boolean table's complete matrices and input/output schema against its witness
 driver, including the shared memory tree. The six original classes retain
-their circuit layouts and transcript domains. The five Boolean-routing
+their circuit layouts and transcript domains. The seven Boolean-routing
 classes have separate approved setups and domains; the public statement and
 proof envelope are unchanged.
 The compiled setup retains immutable prover data and discards emission-only
@@ -566,6 +566,128 @@ Even the 32-batch leaf rate would project about **63 days** for the original
 reference trace, before native replay, source admission, output and recursive
 aggregation. This is not a full-run budget. Further reductions in routing and
 instruction-family costs remain necessary; complete CSLib execution is unproved.
+
+### Direct state linking
+
+`shared-compact-linked` and `shared-linked-1024` keep the packed classes'
+capacities and canonical record layouts. For `N` transition slots, they route
+`N` after-states plus the initial boundary into `N` before-states plus the
+final boundary. A fixed Beneš network establishes exact equality of these
+multisets. Each output is compared with its target using one XOR residual per
+complete field word, with every residual constrained to zero.
+
+This halves the state network's lanes from `next_power_of_two(2N + 2)` to
+`next_power_of_two(N + 1)`. The 1,024-fetch class uses 8,192 state lanes and 25
+switching stages, replacing 16,384 lanes and 27 stages. Memory and shared-tree
+routing are unchanged. No fingerprint or probabilistic multiset check replaces
+the full records.
+
+The existing preparation gate proves that every enabled transition advances
+its 64-bit clock by one without overflow. Every disabled transition has zero
+clock and zero before/after states. A new boundary gate requires two canonical
+64-bit clocks with `initial < final`.
+
+To see why matching proves a single chain, cancel the identical padding
+records from both multisets. Let `c(t)` count enabled transitions with
+before-clock `t`. Exact matching implies
+`c(t) - c(t-1) = [t = initial] - [t = final]`, with `c(-1) = 0` and no clock
+wraparound, where brackets are one when the condition holds and zero otherwise.
+Thus there is exactly one transition at each clock from `initial`
+through `final - 1`, and none elsewhere. At each shared clock, equality of the
+complete record links the preceding after-state to the next before-state.
+This excludes duplicate, missing and disconnected transitions. Positive
+boundary progress excludes an empty chain.
+
+The larger class uses **32,659,896 useful field words**, down from 43,718,321
+for the packed class: **25.3% less**. Routing uses 21,185,280 words, ordering and
+matching use 2,187,207, and packing uses 1,671,168. Other table-family costs are
+unchanged. The dense commitment domain falls from `M=33` to `M=32`; the padded
+union address domain stays at 16 GiB per buffer. The compact linked class
+uses 305,374 words and produces a 389,043-byte execution proof.
+
+The larger linked leaf is **607,299 bytes**, compared with 540,251 for the
+packed class. The existing commitment layout now occupies 63 lanes of the
+smaller domain, compared with 42 in the preceding domain. Its query openings
+carry more lane values even though there are fewer committed words. The
+existing Fast128 settings remain in force. Proof size depends on the commitment
+layout as well as the number of witness words.
+
+Setup also keeps the growing zero-constraint wire class as the first argument
+to `ShapeBuilder::connect`. The builder appends the second class into the
+first; reversing these arguments repeatedly copied the growing list. The
+optimized construction preserves the same wire equivalence classes.
+
+The new transcript domains end in `shared-compact-linked:v0` and
+`shared-linked-1024:v0`. The verifier selects the class before reading proof
+bytes. The eleven preceding classes retain their existing matrices and
+domains.
+
+#### Linked execution measurements
+
+The same server executable proves the same 32 segment statements with both
+layouts, using sixteen workers with two threads each. All corresponding
+912-byte statements compare byte for byte. A later linked window checks
+another eight segments with eight workers and four threads each.
+
+| Class | Workers × threads | Batch indices | Logical steps | Worker wall seconds | Logical steps/second | Peak RSS GiB |
+| --- | ---: | --- | ---: | ---: | ---: | ---: |
+| SharedPacked1024 | 16 × 2 | 0–31 | 36,418 | 90.336 | 403.137 | 169.001 |
+| SharedLinked1024 | 16 × 2 | 0–31 | 36,418 | 68.632 | 530.626 | 126.974 |
+| SharedLinked1024 | 8 × 4 | 256–263 | 9,932 | 18.874 | 526.224 | 82.174 |
+
+The paired worker rate improves **31.6%** and peak process memory falls
+**24.9%**. Worker wall includes witness generation, proving, verification and
+proof writes; it excludes native replay and setup. All **72** benchmark
+proofs verify. The runs use the same 400 GiB resident-memory cap, no swap and
+the existing Fast128 proof parameters.
+
+The server executable predates the setup-copy fix described above. Its linked
+setup took 78.435 seconds versus 20.696 for the packed class, making the whole
+command slower: 154.59 versus 118.59 seconds. The final setup fix is measured
+separately on the local machine: the same three linked segments take 44.510
+seconds of setup before the fix and 38.443 after, a 13.6% reduction. Their
+worker times are effectively unchanged at 28.536 and 28.639 seconds; whole
+commands take 75.30 and 69.39 seconds. This is one sequential local pair,
+without other heavy jobs. Final-code throughput has not been measured on the
+server. Setup remains a cost to amortize across many batches.
+The [linked execution record](../flock-stage3/profile/cslib-linked-execution-v0.json)
+keeps the binary identities, per-segment times, row usage and measurement
+limits explicit.
+
+The four new state-ordering tests exercise every bit of complete record
+equality, all high clock bits, zero-state transitions at clock zero, and
+duplicate, missing, disconnected, disabled, empty and overflowing chains.
+Both new classes pass genuine CSLib leaf proofs, all 57 public-word mutations,
+a high byte-limit limb, malformed envelopes, and locally valid recomputed
+state/memory-clock attacks. A fresh final-code process accepts server batch
+256 using only its statement and proof; another accepts a retained packed
+leaf from the preceding implementation.
+
+Three genuine linked CSLib leaves pass two recursive levels, producing
+**392,771-byte** and **430,603-byte** proofs. The final-code child process
+accepts the three-leaf statement and proof and rejects all 114 independent
+low/high public-word mutations. Repeated, reversed and skipped genuine leaves
+reject at the constrained joins. Proving plus verification takes 46.3 and
+59.3 seconds locally, with setup additional; these are correctness checks.
+
+The complete original-format 83-step countdown produces a **510,115-byte**
+root. A fresh final-code verifier accepts the earlier executable's root using
+only the approved profile, independently expected digest and proof. Its setup
+identity is unchanged. All eleven component counts are one; the execution
+statement still covers 367 microsteps and 83 logical transitions. See the
+[linked countdown record](../flock-stage4/census/paged-execution-countdown-linked-v0.json).
+
+At this leaf size, the existing quota-based floor of 1,910,664 leaves implies
+at least 1.16 TB of raw execution proofs before recursive nodes. Extending the
+32-batch worker rate to the full reference trace would take about 49.5 days
+for execution leaves alone. This is an extrapolation, not a practical full-run
+budget; other quotas and the unmeasured workload can add substantial cost.
+Complete CSLib execution remains unproved.
+
+For changes to the work expressed by IxBy itself, see the
+[runtime performance priorities](IxbyPerformance.md), which identify the
+numeric conversion, persistent-array and byte-rope costs in the full reference
+trace.
 
 ## Immutable objects and application
 

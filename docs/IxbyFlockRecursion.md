@@ -237,17 +237,28 @@ limited to 16 MiB by the current source classes. The output argument supplies
 the original canonical IXFO bytes; the proof binds these to the returned Bytes
 value. The currently supported execution classes are `small`, `objects`,
 `compact`, `bytes`, `shared-compact`, `shared`, `shared-compact-boolean`,
-`shared-boolean`, `shared-1024`, `shared-compact-packed` and
-`shared-packed-1024`. The last five use Boolean routing and separate approved
-setups; both 1,024 classes have 1,024 Fetch slots. The packed classes also
-constrain and remove unused record bits before routing. See the
+`shared-boolean`, `shared-1024`, `shared-compact-packed`,
+`shared-packed-1024`, `shared-compact-linked` and `shared-linked-1024`.
+The last seven use Boolean routing and separate approved setups; all three
+1,024 classes have 1,024 Fetch slots. The packed and linked classes also
+constrain and remove unused record bits before routing. The linked classes
+match after-states to before-states with half as many state lanes. See the
 [larger-class implementation and measurements](IxbyFlockPagedExecution.md#boolean-routing-and-the-1024-fetch-class)
-and [exact record packing](IxbyFlockPagedExecution.md#exact-packing-of-routing-records).
+and [direct state linking](IxbyFlockPagedExecution.md#direct-state-linking).
 The packed 1,024 class passes two recursive levels over three genuine CSLib
 leaves, including a fresh receiver and 114 public-word mutations. It also
 produces a complete 509,475-byte countdown root accepted from the approved
 profile, expected digest and proof; see the
 [packed countdown record](../flock-stage4/census/paged-execution-countdown-packed-v0.json).
+The linked class produces a **510,115-byte** complete root for that same
+countdown, accepted by a fresh final-code receiver with the same approved
+profile and expected application digest. Its 607,299-byte execution leaf
+retains the exact preceding execution statement. See the
+[linked countdown record](../flock-stage4/census/paged-execution-countdown-linked-v0.json).
+Three genuine linked CSLib leaves also pass two recursive levels with
+392,771-byte and 430,603-byte proofs. The final process accepts their root and
+rejects all 114 public-word mutations; valid repeated, reversed and skipped
+segments reject at the recursive joins.
 The complete original CSLib execution remains unproved.
 
 ```sh

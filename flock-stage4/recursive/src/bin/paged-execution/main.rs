@@ -70,6 +70,8 @@ fn class(name: &str) -> Result<BatchClass> {
     "shared-1024" => BatchClass::Shared1024,
     "shared-compact-packed" => BatchClass::SharedCompactPacked,
     "shared-packed-1024" => BatchClass::SharedPacked1024,
+    "shared-compact-linked" => BatchClass::SharedCompactLinked,
+    "shared-linked-1024" => BatchClass::SharedLinked1024,
     _ => anyhow::bail!("unknown execution class {name}"),
   })
 }

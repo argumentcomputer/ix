@@ -352,20 +352,14 @@ fn drivers(emission: &BatchEmission, shape: &CircuitShape) -> Vec<Driver> {
       extension::generate_lane_repack_witness_into(r, nu, d)
     },
   ));
-  let (slot, gate) = emission.order.prepare_gate();
-  result.push(order_driver(
-    slot,
-    gate,
-    OrderKind::Prepare(STATE_WORDS),
-    Attack::OrderClock,
-  ));
-  let (slot, gate) = emission.order.audit_gate();
-  result.push(order_driver(
-    slot,
-    gate,
-    OrderKind::Audit(STATE_WORDS),
-    Attack::None,
-  ));
+  for (slot, gate) in emission.order.gates() {
+    let attack = if matches!(gate.kind(), OrderKind::Prepare(_)) {
+      Attack::OrderClock
+    } else {
+      Attack::None
+    };
+    result.push(order_driver(slot, gate, gate.kind(), attack));
+  }
   let (slot, gate) = emission.memory.prepare_gate();
   result.push(order_driver(slot, gate, OrderKind::Access, Attack::MemoryClock));
   let log = emission.memory.log();

@@ -239,6 +239,20 @@ current-status section below.
     nonadjacent segments and 114 changed public statements.
     The complete 83-step countdown produces a 509,475-byte root accepted
     independently from the approved profile, expected digest and proof.
+28. [Direct state linking](IxbyFlockPagedExecution.md#direct-state-linking):
+    two new classes match complete after-states to before-states through an
+    exact permutation, with checked clocks establishing one positive chain.
+    This halves state-routing lanes and reduces the larger class's useful
+    witness by another 25.3%. Paired 32-batch server measurements improve
+    worker throughput from 403.137 to 530.626 logical steps/second and reduce
+    peak RSS by 24.9%. The 607,299-byte leaf is larger because its smaller
+    commitment domain uses more occupied lanes. Setup construction now appends
+    new constraints to the growing zero-wire class without repeatedly copying
+    that class, reducing local setup from 44.51 to 38.44 seconds. This final
+    setup fix has not been measured on the server. The complete countdown
+    produces a 510,115-byte root accepted by a fresh final-code verifier.
+    [Function-level profiling](IxbyPerformance.md) also identifies
+    the runtime work that future IxBy and compiler changes can reduce.
 
 ## Current integration and next measurements
 
@@ -249,8 +263,8 @@ aggregate and conditional execution-segment proofs. **The complete
 show a substantial improvement from the original Shared layout, but do not
 yet establish a practical full-run budget. The 1,024-Fetch class reduces the
 quota-based floor from 61 million to 1.91 million execution leaves against
-the recorded reference profile. At the packed leaf size this still implies
-at least 1.03 TB before recursive nodes; other instruction and memory quotas
+the recorded reference profile. At the linked leaf size this still implies
+at least 1.16 TB before recursive nodes; other instruction and memory quotas
 can require additional leaves. Short-window rates are not complete-run
 measurements and exclude native replay, admission, output and aggregation.
 
@@ -261,12 +275,15 @@ These are separate, explicit factories from the retained 64-step legacy Exec
 classes. The original binary, functional limits, input and canonical output
 remain bound by admission, initialization, finalization and commitments.
 
-1. **Further reduce ordering and instruction-family costs.** Boolean routing,
-   exact record packing and the 1,024-Fetch classes are implemented and
-   measured. The exact switching networks still occupy 69.1% of the packed
-   class's useful field data. A
-   smaller consistency argument and workload-specific classes remain the next
-   targets. ByteStart/ByteFinish or Resume quotas already end some measured
+1. **Reduce runtime work and remaining routing costs.** Boolean routing,
+   exact record packing, direct state linking and the 1,024-Fetch classes are
+   implemented and measured. The switching networks still occupy 64.9% of
+   the linked class's useful field data. The
+   [runtime profile](IxbyPerformance.md) prioritizes direct numeric conversions,
+   simpler numeric representations, native persistent-array operations and
+   byte builders. These require new semantics/compiler/constraint work and a
+   newly bound compiled image. Workload-specific proof classes remain another
+   target. ByteStart/ByteFinish or Resume quotas already end some measured
    batches before their Fetch quota fills. Preserve complete state, memory
    and fuel checks, and compare time and peak memory per logical step,
    including recursive costs. The measured windows do not cover the full
