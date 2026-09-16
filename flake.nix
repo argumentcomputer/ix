@@ -120,6 +120,8 @@
             ./vendor/aiur
             ./vendor/stage2
             ./fixtures/aiur-bytecode
+            ./fixtures/aiur-memory-air
+            ./tools/aiur-memory-reference
             ./fixtures/ixby
             ./fixtures/ixby-symbolic
             ./fixtures/ixby-stage2
@@ -177,6 +179,7 @@
             ./docs/aiur-semantics.md
             ./docs/aiur-static.md
             ./docs/aiur-counter-analysis.md
+            ./docs/aiur-memory-air.md
             ./docs/x86-reference-model.json
             (pkgs.lib.fileset.fileFilter (f: f.hasExt "lean") ./scripts)
             ./scripts/inspect_ixby.py

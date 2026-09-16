@@ -4,6 +4,7 @@ import CompilatrixTests.Fences.AiurWire
 import CompilatrixTests.Fences.AiurExecution
 import CompilatrixTests.Fences.AiurStatic
 import CompilatrixTests.Fences.AiurCounterAnalysis
+import CompilatrixTests.Fences.AiurMemoryAIR
 import CompilatrixTests.Fences.CallReuse
 import CompilatrixTests.Fences.Erasure
 import CompilatrixTests.Fences.HPT

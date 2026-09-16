@@ -5,6 +5,8 @@
  ["Compilatrix",
   "Compilatrix.AddressEnv",
   "Compilatrix.Aiur",
+  "Compilatrix.Aiur.AIR.Memory.Lookup",
+  "Compilatrix.Aiur.AIR.Memory.Sound",
   "Compilatrix.Aiur.BytecodeEvalW",
   "Compilatrix.Aiur.BytecodeSound",
   "Compilatrix.Aiur.CounterAnalysis",
@@ -613,12 +615,14 @@
   "Compilatrix.X86.WordRegionSafeTrace",
   "CompilatrixTests.Aiur.CounterAnalysis.Proofs",
   "CompilatrixTests.Aiur.Execution.Proofs",
+  "CompilatrixTests.Aiur.MemoryAIR.Proofs",
   "CompilatrixTests.Aiur.Proofs",
   "CompilatrixTests.Aiur.Static.Proofs",
   "CompilatrixTests.Aiur.WireProofs",
   "CompilatrixTests.Fences.Aiur",
   "CompilatrixTests.Fences.AiurCounterAnalysis",
   "CompilatrixTests.Fences.AiurExecution",
+  "CompilatrixTests.Fences.AiurMemoryAIR",
   "CompilatrixTests.Fences.AiurStatic",
   "CompilatrixTests.Fences.AiurWire",
   "CompilatrixTests.IxIR1.Lower",
@@ -627,5 +631,5 @@
   "CompilatrixTests.Pipeline.Integration"],
  "baseline": "6beaf5d0: complete required CI before factoring",
  "axiom_sha256":
- "a64eee20fb18e2ae7d8576655b71a7befe9d89f8c81fff1e4eb20643b01b1279",
- "axiom_count": 2264}
+ "0b72e11b8e4c0d469c4417a14001740d4c187760e11011115818a1eafd3581e1",
+ "axiom_count": 2310}

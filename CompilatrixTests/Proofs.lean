@@ -182,6 +182,7 @@ import CompilatrixTests.Aiur.WireProofs
 import CompilatrixTests.Aiur.Execution.Proofs
 import CompilatrixTests.Aiur.Static.Proofs
 import CompilatrixTests.Aiur.CounterAnalysis.Proofs
+import CompilatrixTests.Aiur.MemoryAIR.Proofs
 import Compilatrix.Ixby.Examples
 import Compilatrix.Ixby.Report
 import Compilatrix.Ixby.SymbolicExamples

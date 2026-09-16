@@ -308,6 +308,19 @@ excludes short self-call cycles. Its 19 kernel regressions and 48 exact
 ordinary-logic fences preserve all 2216 prior assertions. It adds no new
 axiom or native interface and leaves executable validation unchanged.
 
+The [memory AIR extraction](aiur-memory-air.md) proves selected-pointer
+uniqueness and one coherent heap from the four modeled memory polynomials,
+distinct bucket identities, and table heights below the characteristic.
+It handles arbitrary starting pointers and field wraparound. Exact lookup
+weight and payload theorems connect the physical memory channel to the
+logical cell. Activity additionally requires Boolean selectors, which the
+bounded table checker checks; deriving Booleanity from the polynomial alone
+remains open. Its 52 runtime assertions, 16 kernel regressions, and 46 exact
+ordinary-logic fences preserve all 2264 prior assertions. Five frozen graphs
+from the actual pinned Rust builder are compared in a fresh process, with
+eight mutation rejections. This fixture evidence establishes no universal
+Rust theorem or full IxVM assignment/key binding.
+
 The ledger records this model as `aiur-witness-bytecode-v0`. Its logical
 gadget channels are not Rust AIR channels. Primitive conformance, extraction
 from the keyed AIR, and refinement to the honest allocator/evaluator remain

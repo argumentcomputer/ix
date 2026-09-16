@@ -11,8 +11,11 @@ operations and controls and composes checked bytecode rows into finite
 executions. The [static assignment checker](aiur-static.md) constructs the
 required certificate from ordinary row/rank data and checked metadata.
 The [counter-analyzer proof](aiur-counter-analysis.md) establishes the
-inferred self-call relation for every successful local body. Source lowering
-and extraction from the keyed AIR remain subsequent work.
+inferred self-call relation for every successful local body. The
+[memory AIR extraction](aiur-memory-air.md) now derives pointer uniqueness
+and one coherent heap from the modeled memory polynomials, with checked
+activity and exact lookup payloads. Source lowering and full extraction from
+the keyed AIR remain subsequent work.
 
 ## Reference and module boundaries
 
@@ -87,6 +90,13 @@ Coherence does not establish valid datatype tags, ranges, pointer-field
 layouts, or heap acyclicity. A coherent self-referential memory cell is
 therefore deliberately accepted by this boundary. Those stronger properties
 need their own constrained representation or source-admission evidence.
+
+The memory AIR checker derives coherence from the four modeled memory
+polynomials, distinct bucket identities, and bounded table heights. It proves
+pointer uniqueness through field wraparound and checks selector Booleanity
+for activity. Its graphs match five frozen outputs of the actual pinned Rust
+memory builder. The [memory AIR contract](aiur-memory-air.md) states the exact
+extraction and remaining Booleanity, assignment, and key-binding boundaries.
 
 ## Static order, counters, and ranks
 
@@ -189,6 +199,10 @@ adds 116 runtime assertions and 39 exact fences for construction of public
 executions from plain data, normalization/order lemmas, and universal
 rejection of cyclic attacks. The analyzer proof adds 19 kernel regressions
 and 48 ordinary-logic fences for universal body relations and short-cycle
-exclusion. The upstream evaluator handoff and IxVM export/constraint dump, keyed AIR
-extraction, and source/DSL lowering remain next. No IxVM performance or
-production proof-acceptance claim is made by these milestones.
+exclusion. The memory AIR extension adds 52 runtime assertions, 16 kernel
+regressions, and 46 ordinary-logic fences for local extraction and checked
+heap construction. It compares five frozen Rust graphs in a fresh process
+and rejects eight graph mutations. The upstream evaluator handoff and IxVM
+export/constraint dump, function/primitive and full keyed AIR extraction, and
+source/DSL lowering remain next. No IxVM performance or production
+proof-acceptance claim is made by these milestones.

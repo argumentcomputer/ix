@@ -62,7 +62,7 @@ local development records.
 ## Source and module boundaries
 
 [`Compilatrix.lean`](../Compilatrix.lean) exposes the production compiler API.
-The production import closure has 470 local modules with the Aiur static checker.
+The production import closure has 474 local modules with the Aiur memory AIR checker.
 The earlier CI refactor reduced that closure from 593 to 425 modules. It does
 not import test modules, example suites, fixture corpora, or fence aggregators.
 
@@ -91,12 +91,20 @@ production API.
 The [static assignment suite](aiur-static.md) adds 116 assertions and 39
 exact axiom fences to those same targets. Counter normalization and order
 proofs, concrete checker examples, and fences remain outside the production
-import closure. The combined suite runs 725 Aiur assertions.
+import closure.
 
 The [counter-analyzer proof](aiur-counter-analysis.md) adds 19 public kernel
 regressions and 48 exact ordinary-logic fences. Its affine, replay, machine,
-and search proofs remain outside the 470-module production closure and are
+and search proofs remain outside the production closure and are
 required through `CompilatrixTests.Proofs`. It preserves the runtime suites.
+
+The [memory AIR suite](aiur-memory-air.md) adds 52 runtime assertions, bringing
+the combined Aiur suite to 777. Its 16 public kernel regressions and 46 exact
+ordinary-logic fences are required through the proof aggregate. The `aiur`
+gate compares five frozen graphs produced by the actual pinned Rust memory
+builder with a fresh-process Lean export and rejects eight graph mutations.
+The optional Rust exporter remains outside production and required CI; its
+source and the frozen graphs are included in the audited source inventory.
 
 `lake exe tests` remains the aggregate entry point. The required Nix `tests`
 gate runs the individual entry points and their aggregate. New cases belong

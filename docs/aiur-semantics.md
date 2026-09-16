@@ -23,6 +23,12 @@ inferred self-call counter step in this local model. Extraction from the
 keyed AIR remains separate work. The local replay and logical gadget model are not an AIR
 conformance theorem. No production IxVM proof-acceptance claim follows.
 
+The [memory AIR extraction](aiur-memory-air.md) now derives the coherent heap
+from modeled memory polynomials and checked table metadata. It preserves
+the physical lookup payload and derives memory leaf meanings through
+`AIR.Memory.Checked.message_eval`. Selector Booleanity is checked explicitly;
+its polynomial derivation and full assignment/key bindings remain separate.
+
 ## Local replay
 
 `OracleEval.runFunction` takes a toplevel, consumer limits, a function index,
