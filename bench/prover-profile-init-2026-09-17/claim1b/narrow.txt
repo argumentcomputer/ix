@@ -1,0 +1,25 @@
+radix-2 total 4.78s: narrow 4.30s, wide residue 0.49s, unmatched 0.00s
+  quotient codeword                              1.77s
+  lookup LDE (narrow widths)                     1.16s
+  main trace width 6                             1.00s
+  residue stage of a wide transform              0.49s
+  main trace width 7                             0.36s
+  main trace width 3                             0.00s
+  main trace width 5                             0.00s
+commit sources "generated"  sum of spans   9.78s, idle inside   3.81s
+commit sources "host"       sum of spans   9.07s, idle inside   5.83s
+stark/commit_merkle              union   4.33s idle   0.02s n=22
+stark/fri_open                   union   5.73s idle   3.50s n=11
+stark/fri_streamed: absent
+stark/fri_prepare: absent
+stark/fri_interpolate: absent
+stark/fri_observe_openings: absent
+stark/fri_reduce: absent
+stark/fri_prove: absent
+stark/fri_round_commit: absent
+stark/fri_commit_grind           union   0.00s idle   0.00s n=256
+stark/fri_queries: absent
+stark/fri_query_grind            union   0.14s idle   0.14s n=11
+stark/fri_input_openings         union   0.02s idle   0.02s n=11
+stark/fri_commit_phase_opening   union   0.02s idle   0.02s n=256
+cuda/fri_fold                    union   0.01s idle   0.00s n=256

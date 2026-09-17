@@ -52,12 +52,23 @@ Claim 1, 16.2 s with no kernel:
   1.2 s, live filter 0.9 s), 3.5 s has a device callback active, and 2.8 s
   has neither: the commit's own uploads, `cudaHostRegister` (0.8 s over
   124 calls) and hashing.
-- 3.5 s inside FRI and opening with no host span at all, 8% of the proof.
-  The production query proof of work is 20 bits
-  (`Ix/Aiur/Protocol.lean`, `defaultFriParameters`) and the CUDA FRI path
-  grinds it on the host, so the grind, the sibling gathers and the
-  opening's synchronous copies are all candidates; a span around each is
-  the next step, before choosing a fix.
+- 3.5 s inside FRI and opening, 8% of the proof. Spans added to the
+  streamed opening path (`claim1e/phases.txt`, multi-stark `fed36dc`) place
+  3.21 s of it in the preparation step, all pure host time, 0.29 s per
+  shard: `pcs.rs` builds the full coset of the largest LDE height on the
+  host, 2^26 elements per shard, bit-reverses it, converts it and uploads it
+  for the denominators. That vector depends only on the height, so a
+  per-height cache on the host and the device removes it. The rest of the
+  phase is small: query grind 0.15 s at 20 bits, queries 0.19 s, the 256
+  round commitments 1.94 s of union with 0.01 s idle, interpolation 0.34 s,
+  input openings 0.02 s. `apis.py` confirms the gap is host compute, not
+  waits: 3.05 s of the idle has no CUDA API call active.
+- 9.9 s inside stage-one commit, of which `apis.py` puts 7.8 s in host
+  compute and 2.0 s in CUDA waits, mostly stream synchronization. Per
+  source, host-built traces spend 5.8 s of their 9.0 s of span time with an
+  idle device and generated sources 3.9 s of 9.8 s (`claim1b/narrow.txt`),
+  so the staged synchronous upload of host traces is the larger commit-side
+  target.
 - 1.9 s inside lookup construction. The lookup-phase callbacks total
   1.01 s of union on the claim and 0.68 s on the join (`split.py` of the
   seed-cache bench), of which 0.2 s coincides with an idle device; the
@@ -68,6 +79,12 @@ witness or packing active), 1.2 s in lookup construction, 0.9 s in FRI.
 
 ## Reading it
 
+- **Per transform shape** (`claim1b/shapes.txt`, `join5b/shapes.txt`,
+  kernels attributed by time to the innermost active LDE span): on the
+  claim, radix-2 time is 4.3 s of narrow transforms, of which 1.8 s are
+  width-2 quotient codewords, 1.2 s lookup LDEs of width 2 to 6 and 1.4 s
+  main traces of width 6 and 7, against 0.5 s of residue stages of wide
+  transforms; on the join 0.8 s narrow against 0.5 s residues.
 - **NTT is the largest single family, 43 to 47% of kernel time**, with
   BLAKE3 hashing at 22%; halving both would shorten either proof by
   roughly 22%, if the saved kernel time is on the critical path. On the

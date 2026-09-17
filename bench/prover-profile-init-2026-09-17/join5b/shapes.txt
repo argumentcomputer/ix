@@ -1,0 +1,74 @@
+thread pairs: 1 linux tids claimed by more than one CUPTI tid: 0
+kernel time unmatched to a cuda/* span: 0.00s; launches with concurrent candidate spans on several threads: 36176
+family               span               kind          height   width   sum s      n
+radix8_dif           cuda/lde           "generated"   1048576     533    2.96    182
+evaluate_quotient    cuda/quotient_lde                                  2.24    106
+blake3_hash_rows     stark/commit_merkle                                 2.09   9506
+accumulate_reduced   stark/fri_open                                     1.23    562
+radix8_dif           cuda/lookup_lde    "graph"      1048576            1.12    169
+blake3_hash_rows     stark/lookup_construction                                 0.78   3106
+lookup_messages      cuda/lookup_lde    "graph"      1048576            0.53    256
+other                cuda/lookup_lde    "graph"      1048576            0.42   1376
+radix2_dif           cuda/lde           "generated"   1048576     533    0.40     14
+gather_resident      stark/commit_merkle                                 0.30  11500
+radix2_dif           cuda/quotient_lde                                  0.28   2358
+radix8_dif           cuda/lde           "host"       8388608      37    0.27     30
+other                cuda/lde           "generated"   1048576     533    0.27    448
+blake3_hash_short    stark/commit_merkle                                 0.25   1994
+radix8_dif           cuda/lde           "generated"    524288     533    0.21     26
+radix2_dif           cuda/lookup_lde    "graph"      1048576            0.17    139
+radix2_dif           cuda/lde           "host"       8388608       6    0.14     96
+blake3_hash_digest   stark/commit_merkle                                 0.12    472
+radix8_dif           cuda/lde           "host"       4194304      30    0.11     30
+radix8_dif           cuda/lde           "host"       1048576     134    0.10     26
+radix2_dif           cuda/lookup_lde    "graph"      4194304            0.10    140
+other                stark/fri_open                                     0.10    977
+radix4_dif           cuda/lde           "generated"   1048576     533    0.09     14
+gather_resident      stark/lookup_construction                                 0.09   3551
+radix8_dif           cuda/lde           "generated"    524288     234    0.09     26
+radix8_dif           cuda/lookup_lde    "graph"       524288            0.09     52
+blake3_hash_short    stark/lookup_construction                                 0.08    445
+blake3_hash_short    stark/quotient                                     0.07    309
+radix2_dif           cuda/lookup_lde    "graph"      8388608            0.07     49
+other                cuda/quotient_lde                                  0.07    838
+lookup_messages      cuda/lookup_lde    "graph"       524288            0.07     64
+radix8_dif           cuda/lde           "host"       4194304      18    0.07     30
+radix8_dif           cuda/lde           "host"       1048576      81    0.06     26
+radix8_dif           cuda/lde           "host"       4194304      17    0.06     30
+blake3_hash_digest   stark/quotient                                     0.06    236
+blake3_hash_digest   stark/lookup_construction                                 0.06    236
+radix8_dif           cuda/lde           "host"       2097152      35    0.06     28
+radix8_dif           cuda/lde           "host"       4194304      15    0.05     30
+blake3_hash_digest   stark/fri_open                                     0.05   2069
+radix8_dif           cuda/lde           "host"       1048576      68    0.05     26
+
+stark/fri_open                                               union   2.29s idle   0.85s n=8
+('stark/commit_source', '"host"', '4194304', '18')           union   0.71s idle   0.64s n=2
+('stark/commit_source', '"host"', '8388608', '37')           union   0.92s idle   0.59s n=2
+('stark/commit_source', '"generated"', '1048576', '533')     union   4.25s idle   0.52s n=14
+('stark/commit_source', '"host"', '32768', '46')             union   0.28s idle   0.28s n=2
+('stark/commit_source', '"host"', '1048576', '134')          union   0.40s idle   0.27s n=2
+('stark/commit_source', '"host"', '262144', '240')           union   0.31s idle   0.27s n=2
+('stark/commit_source', '"host"', '4194304', '30')           union   0.33s idle   0.21s n=2
+('stark/commit_source', '"host"', '1048576', '68')           union   0.26s idle   0.20s n=2
+('stark/commit_source', '"host"', '1048576', '81')           union   0.27s idle   0.19s n=2
+stark/fri_query_grind                                        union   0.17s idle   0.17s n=8
+('stark/commit_source', '"host"', '2097152', '30')           union   0.18s idle   0.13s n=2
+('stark/commit_source', '"host"', '4194304', '17')           union   0.19s idle   0.13s n=2
+('stark/commit_source', '"host"', '2097152', '35')           union   0.18s idle   0.12s n=2
+('stark/commit_source', '"host"', '4194304', '15')           union   0.16s idle   0.10s n=2
+('stark/commit_source', '"host"', '262144', '207')           union   0.14s idle   0.10s n=2
+('stark/commit_source', '"host"', '4194304', '13')           union   0.14s idle   0.09s n=2
+('stark/commit_source', '"host"', '8388608', '6')            union   0.23s idle   0.09s n=2
+('stark/commit_source', '"host"', '1048576', '48')           union   0.13s idle   0.08s n=2
+('stark/commit_source', '"host"', '1048576', '33')           union   0.10s idle   0.07s n=2
+('stark/commit_source', '"generated"', '524288', '234')      union   0.16s idle   0.06s n=2
+('stark/commit_source', '"host"', '2097152', '18')           union   0.09s idle   0.06s n=2
+('stark/commit_source', '"host"', '1048576', '30')           union   0.08s idle   0.05s n=2
+('stark/commit_source', '"host"', '524288', '45')            union   0.07s idle   0.05s n=2
+('stark/commit_source', '"host"', '524288', '43')            union   0.06s idle   0.04s n=2
+('stark/commit_source', '"host"', '2097152', '9')            union   0.05s idle   0.03s n=2
+('stark/commit_source', '"generated"', '524288', '533')      union   0.27s idle   0.03s n=2
+('stark/commit_source', '"host"', '524288', '16')            union   0.04s idle   0.03s n=4
+('stark/commit_source', '"host"', '1048576', '13')           union   0.03s idle   0.02s n=2
+('stark/commit_source', '"host"', '262144', '43')            union   0.03s idle   0.02s n=2
