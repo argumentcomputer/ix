@@ -515,6 +515,11 @@ CSLib preserves the exact expected output in 360,337,913 logical transitions,
 calculated statement. Full CSLib proving and typed source/image refinement
 remain open.
 
+[Certified ordinary leaf-call inlining](ixby-inline.md) further reduces the
+CSLib run to 299,248,427 transitions, 16.95% below the runtime revision 2
+baseline. Complete-image certificates preserve successful results and account
+explicitly for eliminated fuel and continuation overhead.
+
 The [compiler entry-point table](compiler-design.md#compiler-entry-points)
 identifies the checked APIs. `Pipeline.compileValidated` supplies source
 certification; the broader `Pipeline.compile` does not.

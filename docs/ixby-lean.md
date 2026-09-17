@@ -2,7 +2,7 @@
 
 The typed frontend emits a complete format-1, semantics-2 [Ixby binary](ixby-binary.md).
 The retained [Stage2 artifact](../fixtures/ixby-stage2/stage2.ixby) includes both
-fixed keys and the verifier code: 991,142 bytes, 672 functions, 5,816 blocks,
+fixed keys and the verifier code: 991,043 bytes, 672 functions, 5,816 blocks,
 140 constructor layouts, and entry function 671. A separate `ixby-exec`
 process loads the binary without a compiler environment or Lean source.
 Its chunked executor is kernel-proved equivalent to the pinned reference,
@@ -14,6 +14,11 @@ whole-program validation. Unknown runtime externs reject; packed-byte capacity
 must be below `2^32`. [Runtime certificates](ixby-representation.md) bind all 97
 scalar/collection/field helpers and ten optional wire helpers to their complete
 bodies before Stage2 export.
+
+Stage2 export additionally applies [certified ordinary leaf-call inlining](ixby-inline.md)
+and checks the decoded binary against the original image. The pass preserves
+successful executions at the same fuel and limits; reverse simulation allows
+the explicitly bounded call overhead. `compile-baseline` disables this pass.
 
 The frontend remains experimental. General LCNF source refinement, source
 authentication, proof erasure, and specialization are outside these contracts.
@@ -52,14 +57,17 @@ replaces the retired semantic modes.
 The Stage2 adapter embeds 925,789 original key bytes, entrypoints 755/243,
 and fixed source configuration. Inputs are public claim Bytes and private
 native proof Bytes. Success returns the exact 34-byte claim; rejection returns
-erased. Its valid execution takes **711,293,203 logical transitions**.
+erased. Its valid execution takes **593,867,713 logical transitions** after
+inlining, versus 711,293,203 in the runtime revision 2 baseline.
 All eight cases remain separate required Nix checks: valid, changed claim,
 empty/truncated/malformed proof, trailing public/proof bytes, and wrong claim
 kind. Step exhaustion fails the gate; the image permits 16 billion transitions.
 
 The independently keyed CSLib image is recompiled and compared with its
-retained expected output. It takes **360,337,913 logical transitions**, versus
-2,033,412,182 for revision 1. The [integration record](ixby-runtime-v2.md)
+retained expected output. It takes **299,248,427 logical transitions** after
+inlining, versus 360,337,913 in runtime revision 2 and 2,033,412,182 in revision 1.
+The [inlining record](ixby-inline.md) documents the new certificate and measurements.
+The earlier [integration record](ixby-runtime-v2.md)
 contains artifacts, commitments, the helper census, measurement conditions,
 and native fixture verification. A complete CSLib native proof has not been
 generated.

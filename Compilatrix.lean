@@ -19,6 +19,7 @@ import Compilatrix.Ixby.Source
 import Compilatrix.Ixon.V3
 import Compilatrix.Aiur
 import Compilatrix.Ixby.Lean
+import Compilatrix.Ixby.Inline.Image
 import Compilatrix.Ixby.Runtime.Run
 
 /-! Production compiler API. The complete regression and proof collection is

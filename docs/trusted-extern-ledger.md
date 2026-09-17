@@ -130,6 +130,13 @@ statements. Fresh verification of the existing revision 2 fixture root is
 integration evidence; full CSLib proving and universal source/image refinement
 remain open.
 
+The [certified inliner](ixby-inline.md) adds 111 exact ordinary-logical axiom
+fences while preserving all 2,649 earlier assertions. Its complete-image
+checker binds original and selected code; same-fuel success preservation and
+explicit fuel/continuation reflection are kernel proofs. Selected and decoded
+images retain all 107 runtime/wire body certificates. No upstream reference,
+native interface, or source-refinement assumption changes.
+
 ## Active native interface: BLAKE3 Rust
 
 | Field | Ledger value |

@@ -124,7 +124,7 @@ obligations remain separate from this working compilation path.
 | Fixed source, keys, entrypoints, limits and complete Ixon closure | Retained and pinned |
 | Complete catalog admission under explicit Stage2 compiler budgets | Passed |
 | Native execution of the unchanged source verifier | Exact claim acceptance; seven rejections |
-| Complete executable Ixby binary | Retained; 991,142 bytes; format 1, semantics 2; reproducible fresh compilation |
+| Complete executable Ixby binary | Retained; 991,043 bytes; format 1, semantics 2; reproducible fresh compilation with certified leaf inlining |
 | Serialized execution and input/output transport | Standalone loader; exact claim acceptance; seven rejections |
 | Native field, extension, word, byte and BLAKE3 lowering | Emitted and tested against the source |
 | Source-to-image reflection | Still open for this frontend |

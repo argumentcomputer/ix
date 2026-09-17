@@ -60,6 +60,10 @@ does not aggregate them. After changing imports or Lake roots, run
 `lake exe check-build-graph --write`, review the generated manifest, and run
 `lake exe check-build-graph`.
 
+The focused Ixby optimizer gate is `lake exe check-ixby-inline`; it also runs
+inside `check-ixby-lean` and the required `ixby-lean` Nix check. Its kernel
+contracts and exact axiom fences are included in `CompilatrixTests.Proofs`.
+
 Compiler-comparison and measurement runners are built separately with
 `lake -d benchmarks/comparisons build`. Their [optional environment and commands](../benchmarks/comparisons/README.md)
 include CakeML and CompCert; those toolchains are outside the CI check closure.

@@ -1,4 +1,5 @@
 import Compilatrix.Ixby.Runtime.Native.Image
+import Compilatrix.Ixby.Inline.Image
 import Compilatrix.Ixby.Runtime.Wire
 import Compilatrix.Ixby.Runtime.Field
 import Compilatrix.Ixby.Binary
@@ -65,16 +66,24 @@ def main (args : List String) : IO UInt32 := cli "stage2-ixby" do
   let (directory, name, path) ← match args with
     | [directory, name] => pure (directory, name, none)
     | [directory, name, path] => pure (directory, name, some path)
-    | _ => throw (IO.userError "usage: stage2-ixby <fixture-directory> <compile|case> [program.ixby]")
+    | _ => throw (IO.userError "usage: stage2-ixby <fixture-directory> <compile|compile-baseline|case> [program.ixby]")
   let directory : System.FilePath := directory
   let programPath : System.FilePath := path.getD (directory / "stage2.ixby").toString
-  if name == "compile" then
-    let image ← buildImage directory
+  if name == "compile" || name == "compile-baseline" then
+    let original ← buildImage directory
+    let policy : Compilatrix.Ixby.Inline.Policy := {
+      enabled := name == "compile", protectedPrefix := 108 }
+    let selected ← checked (Compilatrix.Ixby.Inline.optimizeImage original policy)
+    let image := selected.image
+    discard <| checked image.certifyWireRuntime
     let artifact : Compilatrix.Ixby.Binary.Artifact := {
       limits := image.state.limits, maxSteps := 16000000000, program := image.program }
     let encoded ← checked (Compilatrix.Ixby.Binary.encode artifact |>.mapError reprStr)
     let decoded ← checked (Compilatrix.Ixby.Binary.decode encoded |>.mapError reprStr)
     need (decoded.value == artifact) "serialized Stage2 image changed during decoding"
+    discard <| checked (Compilatrix.Ixby.Inline.check decoded.value.limits
+      original.program decoded.value.program policy.protectedPrefix)
+    discard <| checked ({ image with program := decoded.value.program } : Image).certifyWireRuntime
     if let some parent := programPath.parent then IO.FS.createDirAll parent
     IO.FS.writeBinFile programPath ⟨encoded⟩
     let metadata := Json.mkObj [
@@ -83,7 +92,17 @@ def main (args : List String) : IO UInt32 := cli "stage2-ixby" do
       ("bytes", toJson encoded.size), ("sha256", toJson (← sha256 programPath)),
       ("max_steps", toJson artifact.maxSteps)]
     let fields ← checked image.report.getObj?
-    let report := Json.mkObj (("artifact", metadata) :: fields.toList)
+    let baseline ← checked (Compilatrix.Ixby.Binary.encode
+      { artifact with program := original.program } |>.mapError reprStr)
+    let optimization := Json.mkObj [
+      ("pass", toJson "ordinary-leaf-inlining"), ("version", toJson policy.version),
+      ("enabled", toJson policy.enabled), ("status", toJson (reprStr selected.selected.status)),
+      ("protected_prefix", toJson policy.protectedPrefix),
+      ("scan_work", toJson (Compilatrix.Ixby.Inline.work original.program)),
+      ("max_work", toJson policy.maxWork),
+      ("original_binary_blake3", toJson (Compilatrix.Ixon.Address.blake3 ⟨baseline⟩).toHex),
+      ("decoded_program_certificate_checked", toJson true)]
+    let report := Json.mkObj (("artifact", metadata) :: ("optimization", optimization) :: fields.toList)
     IO.FS.writeFile (programPath.toString ++ ".json") (report.pretty ++ "\n")
     IO.println s!"stage2-ixby compiled: {image.program.functions.size} functions; {encoded.size} binary bytes; {programPath}"
     return

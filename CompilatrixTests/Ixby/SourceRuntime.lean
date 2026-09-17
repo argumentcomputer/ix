@@ -58,13 +58,15 @@ private def numberList (image : Image) (values : List Nat) : Except String Ix.Ix
   let cons ← image.ctorId `List.cons
   values.foldrM (fun n tail => do return .ctor cons #[← image.number n, tail]) (.ctor nil #[])
 
-def run (certify : Image → IO Unit) : IO Nat := do
+def run (certify : Image → IO Unit) (transform : Image → IO Image := pure) : IO Nat := do
   initSearchPath (← findSysroot)
   let env ← importModules #[{ module := `Compilatrix.Ixby.Runtime.Examples }] {}
   let compileImage (env : Environment) (name : Name) (wire := false) : IO Image := do
     let image ← compileImage env name wire
     certify image
-    return image
+    let result ← transform image
+    certify result
+    return result
   compileRejects env `Nat.add { byteArrayBytes := 2 ^ 32 }
     "typed Ixby packed byte capacity must fit Word32 indices"
   compileRejects env `Float.add {} "unsupported typed runtime extern Float.add"

@@ -107,6 +107,10 @@ lean_exe «check-ixby-lean» where
   srcDir := "scripts"
   root := `CheckIxbyLean
 
+lean_exe «check-ixby-inline» where
+  srcDir := "scripts"
+  root := `CheckIxbyInline
+
 lean_exe «check-ixby-binary» where
   srcDir := "scripts"
   root := `CheckIxbyBinary

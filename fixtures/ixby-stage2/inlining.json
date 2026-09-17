@@ -1,0 +1,63 @@
+{"stage2":
+ {"selected_program":
+  {"sha256": "3972e070a6eeed636d76fa303b69a1a1dc748bb4dd716a6ad5f4fd5fc595179e",
+   "bytes": 991043},
+  "reference_transitions":
+  {"wrong-claim-kind": 111,
+   "valid": 593867713,
+   "truncated-proof": 123460608,
+   "trailing-public": 58,
+   "trailing-proof": 123462802,
+   "malformed-proof": 24345263,
+   "empty-proof": 24345263,
+   "claim-mismatch": 194313245},
+  "original_program":
+  {"sha256": "bdad2a586bfc2cd4a200cce5e51d5f12a46675f8a4c2f8e663608322fe6270ae",
+   "bytes": 991142},
+  "manifest":
+  {"sha256": "94260baa72e4d3f81eb5e1728ce24b8d7ef6cbdc6e0dde330d2ccbbf65756bae",
+   "bytes": 79565},
+  "baseline_transitions": 711293203},
+ "semantics": 2,
+ "pass":
+ {"version": 1,
+  "source_refinement": "general typed LCNF source refinement remains open",
+  "runtime_and_wire_bodies_checked": 107,
+  "reflection":
+  "same successful output, four times fuel, one additional continuation slot",
+  "protected_prefix": 108,
+  "prior_axiom_fences_preserved": 2649,
+  "forward": "same successful output, same limits and fuel",
+  "axiom_fences_added": 111},
+ "format": "compilatrix-ixby-inlining/1",
+ "cslib":
+ {"selected_transitions": 299248427,
+  "selected_program":
+  {"sha256": "0e24001e77e25bbcc2b358fb2a01027f0bb4168850e4cb5788b85049605f4cec",
+   "bytes": 1005275},
+  "saved_transitions": 61089486,
+  "producer_measurement":
+  {"scan_work": 21669,
+   "runtime_and_wire_bodies_checked": 107,
+   "program_bytes": 1005275,
+   "predicted_transitions": 299248427,
+   "predicted_saved_transitions": 61089486,
+   "ordinary_sites": 954,
+   "functions": 672,
+   "dynamic_calls": 20363162},
+  "original_program":
+  {"sha256": "7cdc4a7000011a2d9a18324b5d127bcdb13bc3842100fb4b69355ea162c133b5",
+   "bytes": 1005374},
+  "input":
+  {"sha256": "713507a9b57d662a138423a50d5d9afc820101f0aab37ba818525d19605f2e9f",
+   "bytes": 4813238},
+  "identical_output":
+  {"sha256": "ff31bd76a92893521bab4d89f822cd0d1a78146a7a000e31268460e946f5fc45",
+   "bytes": 49},
+  "fresh_source_adapter":
+  {"sha256": "10ce412d0930815541a7c5c26b9a76a70b8264c30d3f8a86d4c11c0114ddea0b",
+   "bytes": 9258},
+  "fresh_compilation_matches_measured_program": true,
+  "complete_native_proof_generated": false,
+  "baseline_transitions": 360337913},
+ "baseline_revision": "191b2a9e8baf46e736ce4de6746b6b2a6374b673"}

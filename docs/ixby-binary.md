@@ -13,8 +13,8 @@ The Stage2 handoff is [stage2.ixby](../fixtures/ixby-stage2/stage2.ixby), with
 
 | Property | Value |
 | --- | --- |
-| Bytes | 991,142 |
-| SHA-256 | `bdad2a586bfc2cd4a200cce5e51d5f12a46675f8a4c2f8e663608322fe6270ae` |
+| Bytes | 991,043 |
+| SHA-256 | `3972e070a6eeed636d76fa303b69a1a1dc748bb4dd716a6ad5f4fd5fc595179e` |
 | Entry | Function 671, arity 2 |
 | Functions / blocks / constructor layouts | 672 / 5,816 / 140 |
 | Maximum reference transitions | 16,000,000,000 |
@@ -24,7 +24,8 @@ are embedded in the binary. Arguments are raw public claim bytes and raw
 private native multiproof bytes, each a `Value.scalar (.bytes ...)`.
 Success returns raw claim bytes; rejection returns `Value.erased`.
 
-The compiler produces the binary and manifest in one command:
+The compiler applies [certified leaf-call inlining](ixby-inline.md), then
+produces the binary and manifest in one command:
 
 ```sh
 lake build stage2-ixby ixby-exec
