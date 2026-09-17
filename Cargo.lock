@@ -2124,7 +2124,7 @@ dependencies = [
 [[package]]
 name = "multi-stark"
 version = "0.1.0"
-source = "git+https://github.com/argumentcomputer/multi-stark.git?rev=b14e623d1dad8d0ee9e1c3504f2429a31b8e9fef#b14e623d1dad8d0ee9e1c3504f2429a31b8e9fef"
+source = "git+https://github.com/argumentcomputer/multi-stark.git?rev=59df87a454461c27904af3e5afbcd7bcacc1f37c#59df87a454461c27904af3e5afbcd7bcacc1f37c"
 dependencies = [
  "bincode",
  "itertools 0.14.0",
@@ -3696,7 +3696,7 @@ dependencies = [
 [[package]]
 name = "sppark"
 version = "0.1.15"
-source = "git+https://github.com/argumentcomputer/sppark?rev=176af27edd74ff51e0e8c601e6aa344b1a854f59#176af27edd74ff51e0e8c601e6aa344b1a854f59"
+source = "git+https://github.com/argumentcomputer/sppark?rev=e10e107673aa22861f0f8b9758fc62169ab919ae#e10e107673aa22861f0f8b9758fc62169ab919ae"
 dependencies = [
  "cc",
  "which",

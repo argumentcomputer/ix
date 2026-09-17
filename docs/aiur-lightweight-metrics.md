@@ -5,11 +5,10 @@ prover. The parent directory must exist. An existing file is never
 overwritten; a creation/write failure prints a warning and proving continues.
 `AIUR_METRICS_RUN_ID` is an optional label recorded in the metadata.
 
-The binary must include these changes in both ix and multi-stark. Until the
-backend changes are published and ix's dependency pin is updated, build with
-the local multi-stark path override described in the
+Use the usual CUDA build; ix pins the published multi-stark and sppark
+revisions, so no local dependency overrides are needed. Host setup is in the
 [build notes](../bench/prover-profile-init-2026-09-17/README.md#reproducing-on-this-host).
-Use the usual CUDA build; AOT seed metrics require `IX_CUDA_TRACE_CODEGEN=1`
+AOT seed metrics require `IX_CUDA_TRACE_CODEGEN=1`
 (Cargo feature `cuda-trace-codegen`). No additional metrics feature is needed.
 An old binary will ignore `AIUR_METRICS`.
 
@@ -21,7 +20,7 @@ concurrency, memory limits and trace settings:
 ```bash
 metrics_dir="$(mktemp -d /tmp/aiur-metrics.XXXXXX)"
 export AIUR_METRICS="$metrics_dir/metrics.jsonl"
-export AIUR_METRICS_RUN_ID=mathlib-legacy
+export AIUR_METRICS_RUN_ID=mathlib-sppark
 ```
 
 For lightweight collection, run `ix` directly, without `profile.sh`, Nsight
@@ -127,10 +126,12 @@ The collected groups are:
   successful constant uploads, staged upload calls/requested bytes/chunks,
   failures and host elapsed nanoseconds. Staged-upload time includes staging,
   slot waits and the operation's existing completion wait; it is not DMA time.
-- **NTT baseline:** coarse DFT/LDE operation host times with device, backend
+- **NTT:** coarse DFT/LDE operation host times with device, backend
   and dimensions, plus `ntt_snapshot.last.transforms` by log-height and width
   bucket (`1`, `2`, `3-7`, `8+`). Native counts are transform attempts, not
-  butterfly-stage launches. CPU/no-op dispatch is labeled in the Rust spans.
+  butterfly-stage launches. All GPU transforms use sppark; there are no
+  taken/declined counters or separate backend buckets. CPU/no-op dispatch
+  is labeled in the Rust spans.
   Lookup/quotient LDE spans include their surrounding work, not just the NTT.
 - **Memory/admission:** LDE spill bytes, lookup job path and admission sizes,
   process RSS at boundaries, and the last driver-free/total-device reading
@@ -150,9 +151,9 @@ Use the latest snapshot per device for run totals (or differences across
 explicitly isolated intervals). Do not attribute snapshot differences to
 individual overlapping proofs. Snapshot fields are read independently and
 can reflect concurrent updates. Compare cold coset builds separately from
-warm hits. A future sppark integration must update backend labels and native
-counting at its transform entry points; these measurements establish the
-current implementation's workload and complete-operation baseline.
+warm hits. GPU counts now cover the sppark entry points at every height.
+Historical snapshots may include separate first-party/sppark buckets and
+taken/declined counts; new snapshots use one transform-shape bucket set.
 
 The collector aggregates coarse spans/events in memory and writes only at
 boundaries. It adds no CUDA events, device synchronizations, kernel activity

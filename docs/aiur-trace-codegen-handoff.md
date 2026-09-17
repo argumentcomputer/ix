@@ -148,8 +148,8 @@ and the bind step checks the emitted offsets against the widths.
 | `AIUR_GPU_TRACE_MEMORY=1` | With `generated`: build memory-table rows on the device too; off by default because it moved no fewer bytes and cost 5 s on Init |
 | `AIUR_PROFILE=<new .jsonl>` | Timestamped span events; `aiur/cpu_circuit` (circuit, kind, rows) and `aiur/codegen_seeds` give per-circuit witness time |
 | `AIUR_METRICS=<new .jsonl>` | Lightweight per-piece summaries; [collection commands and field definitions](aiur-lightweight-metrics.md) |
-| `IX_CUDA_SPPARK=1` (Lake) or `--features cuda-sppark` (Cargo) | Compiles the sppark transform backend (multi-stark's `cuda-sppark`); implies `cuda` |
-| `MULTI_STARK_CUDA_NTT=sppark` | Routes transforms of at least 2^18 rows through sppark; unset, the first-party kernels run. `MULTI_STARK_SPPARK_MIN_LOG_HEIGHT`, `_PANEL_BYTES`, `_BATCH_BYTES`, `_FUSED` and `_STAGE_TIMING` are the backend's settings, listed in multi-stark's README; `docs/aiur-gpu-sppark-ntt-plan.md` has the evidence |
+| `IX_CUDA=1` (Lake) or `--features cuda` (Cargo) | Enables CUDA, including sppark for every GPU transform; tiny generic matrices retain the CPU DFT |
+| `MULTI_STARK_SPPARK_PANEL_BYTES`, `_BATCH_BYTES`, `_STAGE_TIMING` | Panel scratch budget, batching budget and optional synchronizing stage timer; listed in multi-stark's README. No backend selector or height threshold is needed |
 
 Registration happens once per `AiurSystem` and is shared across the
 per-device clones. A library whose fingerprint matches no generated program
@@ -179,7 +179,7 @@ cargo test -p aiur trace_codegen::tests
 
 # GPU tests and the two-round generated proof.
 NVCC=/usr/local/cuda-13.3/bin/nvcc MULTI_STARK_CUDA_ARCHS=120 \
-  cargo test -p aiur --release --features cuda-trace-codegen -- --test-threads 1
+  cargo test -p aiur --release --features cuda-trace-codegen
 ```
 
 The paired production replay lives in
@@ -240,11 +240,10 @@ memory (on a 96 GiB card 100 GB passes and 101.5 GB fails in stage-1
 admission before any lookup runs):
 
 ```sh
-taskset -c 0-7 env RAYON_NUM_THREADS=8 OMP_NUM_THREADS=8 \
-  AIUR_GPU_TRACE=cpu AIUR_TRACE_ONLY_LOOKUPS=1 \
+AIUR_GPU_TRACE=cpu AIUR_TRACE_ONLY_LOOKUPS=1 \
   MULTI_STARK_CUDA_TRACE_FORCE_SPILL=1 MULTI_STARK_CUDA_LOOKUP_TRACE_TILE_ROWS=3 \
   MULTI_STARK_CUDA_MIN_FREE_BYTES=100000000000 MULTI_STARK_CUDA_MEMORY_LOG=1 \
-  "$test_binary" regenerated_batch_matches_cpu --test-threads=1 --nocapture
+  "$test_binary" regenerated_batch_matches_cpu --nocapture
 ```
 
 The `shard 0 did not reproduce its round-one header` panic in that output
