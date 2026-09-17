@@ -205,3 +205,51 @@ them, of which the tiled scatter is 60 ms, the batched forward stages 59,
 the inverse stages 15, the restoring pass 15 and the gather 7. The scatter
 moves 36 GB in those 60 ms, a third of what the gather achieves per byte,
 so it is the next kernel to tune.
+
+
+## Single GPU transform engine (2026-09-17)
+
+`removal-resident.csv` records the sppark-only implementation with immutable
+plans and borrowed caller streams. There is no backend selector, height
+threshold, `cuda-sppark` feature or alternative expansion mode. Historical
+commands above describe their recorded revisions.
+
+One cold iteration followed by seven warm iterations per shape, one RTX PRO
+6000 Blackwell, CUDA 13.3, no CPU affinity or thread-pool caps and no profiler.
+Input construction is outside the timed interval; upload is included.
+
+| Shape (log height, width, blowup) | recorded first-party ms | current ms |
+| --- | ---: | ---: |
+| 8, 20, 4 | 0.038 | 0.028 |
+| 16, 2, 4 | 0.148 | 0.111 |
+| 17, 16, 4 | 0.953 | 0.969 |
+| 18, 128, 2 | 13.950 | 10.294 |
+| 20, 533, 4 | 385.487 | 278.522 |
+| 22, 2, 4 | 9.508 | 3.584 |
+| 24, 6, 4 | 169.076 | 54.988 |
+| 24, 17, 4 | 215.323 | 193.768 |
+
+Baseline: `glue-legacy.csv`. These are comparisons between recorded revisions,
+not a same-binary A/B. See the plan's implementation section for correctness
+checks. Current reproduction from the multi-stark checkout:
+
+```bash
+MULTI_STARK_CUDA_ARCHS=120 cargo build --release --features parallel,cuda \
+  --example cuda_resident_lde_bench
+LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libcuda.so.1 \
+LD_LIBRARY_PATH=/nix/store/xm08aqdd7pxcdhm0ak6aqb1v7hw5q6ri-gcc-14.3.0-lib/lib \
+  target/release/examples/cuda_resident_lde_bench > resident.csv
+```
+
+For the Nix-managed shell on this host, preserve its installed
+`LIBCLANG_PATH` when sourcing the old benchmark `env.sh`. With that file's
+system `CLANG_PATH`, set
+`BINDGEN_EXTRA_CLANG_ARGS="-resource-dir=/usr/lib/llvm-21/lib/clang/21 -std=gnu17"`.
+Adding a second Clang resource include directory with `-I` can hide the
+C atomic definitions through the duplicated header guard.
+
+`removal-acceptance.txt` records the claim 1, join 5 and complete four-shard
+Init checks. All verify and reproduce the prior proof addresses/root. The
+commands use all 32 available CPUs with normal thread-pool defaults and only
+lightweight metrics. These are correctness acceptance runs, not a controlled
+performance A/B; the record notes the differing CPU setup and build overlap.

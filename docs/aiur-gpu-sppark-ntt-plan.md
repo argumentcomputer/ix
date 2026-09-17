@@ -742,3 +742,95 @@ the fork's fail-fast runtime mode becomes the only path on a CUDA error,
 an abort where the Rust side panics; converting `CUDA_OK` to returned
 status in the fork is possible but is a larger upstream divergence, and
 the recommendation is to accept the abort for the prover and record it.
+
+
+## First-party removal implemented (2026-09-17)
+
+Every GPU transform now uses sppark. The radix-2/4/8 kernels, host and device
+NTT twiddle caches, fallback dispatch, backend selector and height threshold,
+extra Cargo/Lake feature, expansion-order experiment and backend comparison
+lock are removed. The generic CPU DFT cutoff is unchanged. The obsolete host
+model of the deleted CUDA kernels is also removed; GPU results are checked
+against the CPU DFT and complete proof bytes.
+
+A cached immutable plan fixes each shape's scratch bytes, panel width, launch
+groups and shared coset powers. Panel/batch settings are read when `CudaDft`
+is constructed. Generated and host trace commitment, lookup construction and
+quotient admission all use these plans. Parallel host-LDE waves reserve the
+workspace of every simultaneous transform. Domain, byte-overflow and
+single-column budget failures are assertions before device allocation.
+
+The fork's non-owning `stream_t` constructor keeps producer, transforms,
+consumer and pooled scratch allocation/freeing on the caller's stream. Its
+logical device ID is mapped from the CUDA ordinal. The per-batch private
+stream and event handoff are gone. A fresh nonblocking-stream test checks
+ordering and verifies the wrapper does not destroy the caller's stream.
+
+GPU metrics have one set of transform-shape counters. CPU/no-op labels remain
+on coarse generic-entry spans. Collection instructions are in
+[the lightweight metrics guide](aiur-lightweight-metrics.md). CUDA errors in
+the fork retain its documented fail-fast behavior.
+
+Validation uses normal build, Rayon and test parallelism, without CPU affinity
+or thread-count caps:
+
+- All 85 CUDA library tests pass, including raw representatives, height one,
+  multiple panels/batch groups, resident storage, regeneration and proof digests.
+- Release clippy passes for all CUDA targets with warnings denied.
+- The CPU-only and CUDA `proof_compatibility` examples produce identical
+  17,213-byte proofs, SHA-256
+  `25564a01d1d352b1ec2de56b019b641d24acc81083133e79274a86829b2a5dd5`.
+- `ix-ffi` checks with `parallel,cuda`; Lake builds the generated-trace `ix`
+  executable with `parallel,cuda,cuda-trace-codegen,net`.
+- [Resident measurements](../bench/sppark-lde-2026-09-17/removal-resident.csv)
+  contain one cold and seven warm iterations on every benchmark shape. The
+  BLAKE3 shape is 278.5 ms against the recorded first-party 385.5 ms;
+  2^24 x 6, blowup 4 is 55.0 ms against 169.1 ms. These compare recorded
+  revisions, not two selectable backends in one binary. All shapes are ahead
+  of or within 2% of the recorded first-party median.
+
+The lightweight-only replay also exposed a tracing filter mismatch: the device
+snapshot guard used `enabled!`, whose metadata is neither an event nor a span.
+The event-only metrics filter declined it. `event_enabled!` now matches the
+actual snapshots, so `AIUR_METRICS` collects device/NTT counters with `RUST_LOG`
+unset.
+
+Dependency commits: sppark `e10e107` (borrowed streams), multi-stark
+`521e180` (removal), `55a5b6e` (snapshot filter), and `59df87a` (review guards).
+Ix pins `59df87a`, which pins sppark `e10e107`. Both revisions are published
+on `multi-stark/sb/trace-sharding-gpu` and `sppark/dev`, respectively; the
+remote branch heads match the lockfile pins. Normal Cargo resolution uses
+these git dependencies without local path overrides. The locked ix-ffi check
+with `parallel,cuda-trace-codegen` passes against these published pins, and
+Lake loads the updated configuration successfully.
+
+[Claim/join/Init acceptance](../bench/sppark-lde-2026-09-17/removal-acceptance.txt)
+passes: claim 1 and join 5 reproduce their cached proof addresses; the full
+four-shard Init run verifies root
+`cef56bca82bd3d5fb10c162e174c6f26550b3eaff51d92570d7bce7ba92d5f0e`
+with composed verdict OK. Claim proving is 32.6 s, join proving 18.1 s and Init
+end to end 396 s. These are acceptance observations, not a controlled timing
+A/B: thread-pool defaults replace the earlier 24-core limits and the Init tail
+overlapped the rebuild for the metrics filter fix.
+
+The snapshot fix is verified by replaying join 5 with only `AIUR_METRICS`:
+748 NTT snapshot records and 16 device snapshots across the 16 piece boundaries,
+with `RUST_LOG` unset and the identical cached proof address. These snapshots
+are cumulative; their transform counts must not be summed across boundaries.
+
+The review's shape-contract fix checks the explicit buffer height, width and
+extended height against the plan in the shared CUDA helpers before the NTT
+launch. Forward transforms also reject coset plans. `RawPlan` is non-copyable
+with private fields; callers borrow it through its owning `TransformPlan`.
+The rejection test covers mismatched dimensions and forward/coset plans for
+host transforms and resident creation, checking unchanged host output and a
+null resident handle. The complete CUDA suite passes with 85 tests. The README
+identifies sppark throughout, the deleted radix experiment is marked historical,
+and the restoring stage's timer label is `restore`.
+
+After the review guards (`59df87a`), release clippy passes for all CUDA targets
+and the complete proof fixture is still byte-identical to the CPU reference.
+The production claim/join/Init replays exercise the removal at `521e180`; the
+lightweight-only counter replay exercises `55a5b6e`; the shape-rejection tests,
+85-test suite and repeated CPU proof-byte comparison exercise the final guard
+revision. The guards change rejection behavior, not successful transforms.
