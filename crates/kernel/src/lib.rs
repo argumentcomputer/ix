@@ -145,6 +145,7 @@ pub mod id;
 pub mod inductive;
 pub mod infer;
 pub mod ingress;
+pub mod ixon_checker;
 pub mod lctx;
 pub mod level;
 pub mod mode;

@@ -729,6 +729,12 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     &mut self,
     c: &KConst<M>,
   ) -> Result<(), TcError<M>> {
+    // Ixon ingress admits all local Rec edges before publishing a block.
+    // External references are content addressed and cannot form back edges.
+    // The full traversal remains necessary for arbitrary, mutable raw KEnvs.
+    if self.ixon_ingress {
+      return Ok(());
+    }
     if !matches!(c, KConst::Defn { safety: DefinitionSafety::Safe, .. }) {
       return Ok(());
     }

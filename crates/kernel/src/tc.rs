@@ -116,6 +116,9 @@ pub struct LazyAnonIngress<'a> {
 pub struct TypeChecker<'a, M: KernelMode> {
   /// Worker-owned kernel environment (constants, caches, intern table).
   pub env: &'a mut KEnv<M>,
+  /// Set only by the Ixon checker, whose private KEnv is populated entirely
+  /// by address-verified anonymous ingress with local recursion admission.
+  pub(crate) ixon_ingress: bool,
   /// Optional read-only Ixon source used to fault constants into `env` when
   /// typechecking discovers a missing address.
   lazy_ixon: Option<LazyIxonIngress<'a>>,
@@ -227,6 +230,7 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
       env,
       lazy_ixon: None,
       lazy_anon: None,
+      ixon_ingress: false,
       prims,
       ctx: Vec::new(),
       let_vals: Vec::new(),
