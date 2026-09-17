@@ -53,6 +53,40 @@ proof durations above are its `aiur/prove_planned` boundaries. Its cost
 was not measured separately here; the comparison above is against a run
 without it, on a different tree.
 
+## Second run: four executions per lane
+
+Same inputs, binary and environment, `EXEC_JOBS=4 run-lanes4.sh`: 16
+executions, 24 admission slots, a 30.4 GiB initial reservation. Same root,
+verified, composed verdict OK.
+
+| Quantity | `--exec-jobs 3` | `--exec-jobs 4` |
+|---|---:|---:|
+| Wall, `/usr/bin/time` | 40:02 | **37:59** |
+| Prover end to end | 2,396 s | **2,274 s** (−5.1%) |
+| Last claim proven | +1,938 s | +1,793 s |
+| Root dispatched / proven | +2,236 s / +2,396 s | +2,115 s / +2,273 s |
+| Claim execution mean / max | 225 s / 414 s | 235 s / 440 s |
+| Claim proof mean / total | 58.0 s / 4,524 s | 59.3 s / 4,623 s |
+| Join proof mean / total | 27.7 s / 2,214 s | 28.2 s / 2,253 s |
+| Prover work per GPU, occupancy | 1,685 s, 70% | 1,719 s, 76% |
+| Mean sampled GPU utilization | 49 to 54% | 53 to 57% |
+| Peak process RSS | 527 GiB | 733 GiB |
+| Record pool peak grant | 650.5 of 731 GiB | **726.8 of 731 GiB**, 0 waits |
+| Initial reservation, largest claim | 36.5 GiB, 120% | 30.4 GiB, 144% |
+| p90-scaled candidate | 71 | 85 |
+
+**Reading.** A third more execution supply bought 7.5% on the claim phase
+and 5% end to end, not the 12 to 15% the occupancy gap suggested: each
+execution slowed by 4% with 16 of them sharing the cores with the
+workers' host witness work, and the GPUs, at 76% occupancy, are closer
+to their own limit. The cost is memory: the pool peaked at 726.8 of
+730.8 GiB, four GiB from its first growth wait, and peak RSS rose 206 GiB.
+This is the ceiling for `--exec-jobs` at 78 shards and `--max-ram 230` on
+this box; going further needs smaller records, which means more shards,
+as the candidate of 85 at the 30.4 GiB reservation also says. The proofs
+themselves are unchanged (59 s claims, 28 s joins), so proof cost is
+independent of execution concurrency at this level.
+
 ## The staging lease bug
 
 `crates/aiur/cuda/trace_runtime.cu` stages seed uploads through a ring of
@@ -84,7 +118,8 @@ fails with status 400 before the fix and passes after; the whole
 | Command | `run-lanes4.sh <label>`: `systemd-run --user --scope -p MemoryMax=920G -- ix prove --ixe mathlib.ixe --ixes mathlib-78.ixes --trace-shards --lanes 4 --exec-jobs 3 --max-ram 230` |
 
 Files: `mathlib78-lanes4-meta.txt`, `mathlib78-lanes4-summary.txt`,
-`run-lanes4.sh`. Raw logs, the metrics file, the GPU samples and the
+`mathlib78-lanes4-exec4-meta.txt`, `mathlib78-lanes4-exec4-summary.txt`,
+`run-lanes4.sh` (`EXEC_JOBS` selects the executions per lane). Raw logs, the metrics file, the GPU samples and the
 lanes cache are in `~/benchdata/mathlib/runs/mathlib78-lanes4-metrics-2/`
 on the four-GPU box; the aborted first attempt is beside it without the
 `-2`.
