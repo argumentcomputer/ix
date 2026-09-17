@@ -10,15 +10,23 @@ namespace {
 // the DMA of the chunks before it and the blanking of the output. The
 // kernel still runs once over the whole span: a per-chunk launch would
 // leave most of the device idle.
+//
+// Events belong to the device that was current when they were created, and
+// recording one on another device's stream fails with
+// cudaErrorInvalidResourceHandle, so every device has its own slots. The
+// pinned buffers are allocated on first use, so devices that never upload
+// cost nothing.
 constexpr size_t RING = 8;
 constexpr size_t CHUNK_BYTES = (MAX_SEED_BYTES / RING) & ~size_t(7);
+constexpr int MAX_DEVICES = 64;
+constexpr size_t SLOTS_PER_DEVICE = 4;
 
 struct Slot {
     uint8_t* data = nullptr;
     cudaEvent_t events[RING] = {};
     bool busy = false;
 };
-Slot slots[4];
+Slot slots[MAX_DEVICES][SLOTS_PER_DEVICE];
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t ready = PTHREAD_COND_INITIALIZER;
 
@@ -35,10 +43,13 @@ public:
         pthread_cond_signal(&ready);
         pthread_mutex_unlock(&mutex);
     }
-    cudaError_t acquire() {
+    // The caller has made `device` current: the slot's events are created
+    // on it, and the slot only ever serves that device.
+    cudaError_t acquire(int device) {
+        if (device < 0 || device >= MAX_DEVICES) return cudaErrorInvalidDevice;
         pthread_mutex_lock(&mutex);
         while (!slot_) {
-            for (auto& slot : slots) if (!slot.busy) {
+            for (auto& slot : slots[device]) if (!slot.busy) {
                 slot.busy = true;
                 slot_ = &slot;
                 break;
@@ -141,7 +152,7 @@ int upload(int device, const uint8_t* seeds, uint32_t encoding,
     if (status != cudaSuccess) return int(status);
     // A lease bounds both pinned memory and live device seed allocations.
     Lease lease;
-    status = lease.acquire();
+    status = lease.acquire(device);
     if (status != cudaSuccess) return int(status);
     *lease.error() = 0;
     const size_t bytes = real * seed_stride;
@@ -195,7 +206,7 @@ extern "C" int aiur_trace_seed_cache_upload(int device, const uint8_t* const* sp
         return int(status);
     }
     Lease lease;
-    status = lease.acquire();
+    status = lease.acquire(device);
     size_t offset = 0, chunk = 0;
     for (size_t i = 0; status == cudaSuccess && i < count; ++i) {
         status = stage_copy(lease, buffer + offset, spans[i], lengths[i], chunk);
