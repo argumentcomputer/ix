@@ -146,3 +146,9 @@ is the batched build before the glue rewrite), all shapes through sppark:
 
 Below 2^18 input rows the first-party kernels win (0.60 to 0.91x), which
 sets the default `MULTI_STARK_SPPARK_MIN_LOG_HEIGHT` at 18.
+
+Building `ix` against the local fork: the ix worktree's `.cargo/config.toml`
+needs a `[patch]` for `https://github.com/argumentcomputer/sppark` pointing
+at the fork's `rust` directory next to the multi-stark one, or the archive
+compiles the adapter against the pinned upstream revision and fails on the
+batched entry. Both overrides and the lockfile change stay uncommitted.
