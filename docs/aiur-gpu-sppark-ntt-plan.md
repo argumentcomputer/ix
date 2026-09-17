@@ -541,3 +541,50 @@ the aggregate entries do, so `RUST_LOG=prover_metrics=info AIUR_METRICS=1`
 prints the backend counters for a claim as well as a join; `--texray`
 installs its own subscriber first and silences them, so a counted claim
 runs without it.
+
+## Milestone 4, column batching (2026-09-17)
+
+The whole Init proof through milestone 3, same binary both ways, one GPU:
+415 s to 405 s end to end, the proving union 223 s to 201 s, same root
+(`bench/sppark-lde-2026-09-17/init-q4-compare.txt`). Against the recorded
+coset-cache run the first-party numbers reproduce within a second.
+
+An audit of milestones 2 and 3 found six things, fixed in multi-stark
+`d870622`: the dispatch rule now takes the whole shape (tall enough,
+extended height within upstream's compiled domain of 2^28, one column's
+scratch within the panel budget) and declines otherwise instead of failing
+after allocation; lookup and quotient admission add the sppark panels; the
+converted paths skip the first-party twiddle tables (prewarm, lookup and
+quotient sites); the backend selector is an atomic with one publication of
+the environment setting; the comparison tests serialize on a lock; the
+LDE, lookup and quotient spans label the backend they ran on.
+
+Column batching is the fork's `8b624cd` (`NTT::Base_dev_ptr_batch`: the
+mixed-radix kernels take the vector from the grid's second dimension, the
+permutation and coset passes loop) and multi-stark `fccfb20`. The adapter
+transforms a panel's columns in groups sized to the device's L2
+(`MULTI_STARK_SPPARK_BATCH_BYTES`, 0 for one column per launch sequence).
+Whole-panel batching was measured first: it rescued the short wide shapes
+(2^16 x 925: 52 to 21 ms) but cost the tall ones 3 to 7 percent, because a
+column that fits the L2 lost the reuse between stages the serial path had.
+L2-sized groups keep both (`bench/sppark-lde-2026-09-17/README.md`, the
+batching table): every benchmarked shape is at or ahead of the first-party
+kernels, 1.05 to 1.19x on the 2^16 to 2^18 shapes that were 0.43 to 0.88x
+unbatched, 2.4 to 2.7x on the tall narrow ones, 1.15x on the BLAKE3 piece.
+The coefficient panel is compact, so an LDE's scratch is (N + M) words per
+column. A batch of vectors is checked against the vectors one by one for
+every order, direction and coset setting, and the unbatched setting
+against the first-party kernels.
+
+Fork patch record (`argumentcomputer/sppark`, branch `dev`, from upstream
+`17278d7`): `6c5d826` and `13b6226` the `SPPARK_NO_CXX_RUNTIME` build mode,
+`8b624cd` the batched entry. Attribution: the batched entry adds a grid
+dimension and a stride to upstream's kernels and launchers, arithmetic
+unchanged.
+
+Open in this milestone: the height threshold, which the batching results
+say can come down, measured on the short shapes the proofs actually commit;
+the fused expansion (`LDE_expand`, inverse NR paired with forward RN); and
+the paired claim/join replays with the batched build. Still administrative:
+push the fork's `dev` and pin `8b624cd` in multi-stark's manifest and
+lockfile in place of the upstream revision and the local path override.

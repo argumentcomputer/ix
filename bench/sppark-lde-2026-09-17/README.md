@@ -54,3 +54,54 @@ against multi-stark `312cbbe`, once on the first-party kernels and once
 with `MULTI_STARK_CUDA_NTT=sppark`, no CUPTI. `replay-join5.txt` and
 `replay-claim1.txt` hold the runs' final metrics snapshots (dispatch counts
 and transform shapes per backend) and timings.
+
+## Whole Init proof at milestone 3
+
+`init-q4-compare.txt`: the four-shard Init proof (`run.sh`, generated
+traces, `--exec-jobs 2 --max-ram 200`, one GPU) with the milestone-3 binary,
+once on the first-party kernels and once with `MULTI_STARK_CUDA_NTT=sppark`,
+against the recorded coset-cache run. Same root, same verdict.
+
+| Quantity | coset run (before) | same binary, first-party | sppark above 2^20 |
+| --- | ---: | ---: | ---: |
+| Wall / end to end | 418.5 / 416 s | 418.3 / 415 s | 408.0 / 405 s |
+| `aiur/prove_planned` union | 223.6 s | 223.0 s | 201.1 s |
+| `stark/stage1_commit` union | 115.6 s | 115.0 s | 105.5 s |
+| `stark/lookup_construction` union | 48.7 s | 48.7 s | 41.5 s |
+| `stark/quotient` union | 35.3 s | 35.4 s | 30.0 s |
+| `stark/fri_open` union | 16.4 s | 16.4 s | 16.4 s |
+| GPU utilization | 43.6% | 44.5% | 37.9% |
+
+The proving union falls 10 percent; the end-to-end time 2.4 percent, since
+the one GPU worker waits on executions and joins for much of the run.
+
+## Column batching (milestone 4, fork `8b624cd`)
+
+Same benchmark, multi-stark with the batched adapter, nine iterations,
+medians of the warm eight, `MULTI_STARK_SPPARK_MIN_LOG_HEIGHT=1` so every
+shape takes the path. Four settings: `batching-legacy.csv` (first-party),
+`batching-unbatched.csv` (`MULTI_STARK_SPPARK_BATCH_BYTES=0`, one launch
+sequence per column), `batching-whole-panel.csv` (every column of a panel
+in one sequence, an earlier build of the same change) and
+`batching-grouped.csv` (the default: groups sized to the 128 MiB L2).
+
+| Shape (log height, width, blowup) | first-party | one per column | whole panel | grouped |
+| --- | ---: | ---: | ---: | ---: |
+| 20, 1, 2 | 0.71 | 0.65 | 0.68 | 0.65 |
+| 20, 8, 2 | 2.94 | 3.17 | 2.94 | 3.03 |
+| 18, 40, 2 | 3.87 | 4.59 | 3.75 | 3.59 |
+| 18, 128, 2 | 13.89 | 15.84 | 12.18 | 11.68 |
+| 16, 925, 2 | 24.45 | 52.36 | 21.39 | 20.84 |
+| 18, 40, 4 | 5.56 | 5.95 | 5.25 | 4.92 |
+| 20, 533, 4 | 385.34 | 343.26 | 355.34 | 335.55 |
+| 24, 6, 4 | 169.56 | 62.10 | 62.99 | 62.12 |
+| 24, 17, 4 | 215.14 | 203.08 | 205.83 | 203.43 |
+| 22, 2, 4 | 9.60 | 3.99 | 4.28 | 4.00 |
+| 20, 2, 4 | 1.41 | 1.22 | 1.21 | 1.21 |
+
+Whole-panel batching rescues the short wide shapes but costs the tall
+ones 3 to 7 percent: with every column through one stage before the next,
+a column that fits the L2 loses the reuse between stages the serial path
+had. Groups sized to the L2 keep both, and every shape is now at or ahead
+of the first-party kernels, so the height threshold can come down; that
+is measured next.
