@@ -102,14 +102,42 @@ def CompileInput.prepare (input : CompileInput) :
   let resolved ← input.resolve.mapError toString
   resolved.decorate
 
+/-- Ordinary declarations need no occurrence resolution or decoration. Check
+both reserved namespaces in one shared-expression walk, retaining the input
+name/uniqueness checks even when there are no contracts to resolve. Any selected
+registration or metadata marker uses the full validation path below. -/
+def checkOrdinaryConstants (constants : List (Lean.Name × Lean.ConstantInfo))
+    (registered : Lean.Name → Bool) : Except String Bool := do
+  let hasContracts (expr : Lean.Expr) := (expr.find? fun
+    | .mdata data _ => data.entries.any fun (key, _) =>
+        sourceAnnotationKey.isPrefixOf key || Ix.SemanticContract.key.isPrefixOf key
+    | _ => false).isSome
+  let mut selected : Std.HashSet Lean.Name := {}
+  for (name, source) in constants do
+    if name != source.name then
+      throw (toString <| SourceContractError.declarationNameMismatch name source.name)
+    if selected.contains name then
+      throw (toString <| SourceContractError.duplicateDeclaration name)
+    selected := selected.insert name
+    if registered name || hasContracts source.type ||
+        ((sourceBody? source).map hasContracts).getD false then return false
+    if let .recInfo info := source then
+      if info.rules.any (hasContracts ·.rhs) then return false
+  return true
+
 def prepareSourceConstants (constants : List (Lean.Name × Lean.ConstantInfo)) :
     Except String (List (Lean.Name × Lean.ConstantInfo)) := do
+  if ← checkOrdinaryConstants constants (fun _ => false) then return constants
   let input ← (CompileInput.fromAnnotations constants).mapError toString
   input.prepare
 
 def prepareRegisteredConstants (env : Lean.Environment)
     (constants : List (Lean.Name × Lean.ConstantInfo)) :
     Except String (List (Lean.Name × Lean.ConstantInfo)) := do
+  let registry := sourceContractExtension.getState env
+  let hints := sourceMeasureExtension.getState env
+  if ← checkOrdinaryConstants constants (fun name => registry.contains name || hints.contains name) then
+    return constants
   let input ← (compileInputFromEnv env constants).mapError toString
   input.prepare
 

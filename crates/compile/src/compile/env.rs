@@ -157,20 +157,13 @@ pub fn compile_env_with_profile(
   profile: Option<&ixon::resource::addressed::Profile>,
 ) -> Result<CompileState, CompileError> {
   let _memory_sampler = crate::diag::memory_sampler("compile_env");
-  let mut semantic_sources = Vec::new();
-  for name in lean_env.keys() {
-    if let Some(c) = lean_env.get(name)
-      && crate::semantic_contract::inspect_constant(&c)?
-    {
-      semantic_sources.push(name.clone());
-    }
-  }
   let setup_start = Instant::now();
   // Whole-env scan: ref graph + immediate groundedness + inductive
   // groups in one decode per constant — the env decodes lazily, so
   // each additional full sweep would decode every constant again.
   let phase_start = Instant::now();
   let scan = setup_scan(lean_env.as_ref());
+  let semantic_sources = scan.semantic_sources?;
   if let Some(name) =
     scan.source_contracts.iter().min_by_key(|name| name.pretty())
   {
