@@ -88,3 +88,36 @@ witness or packing active), 1.2 s in lookup construction, 0.9 s in FRI.
   span and filtering per chunk removes them without changing the seeds.
 - Execution is 2.2x the claim proof and 1.2x the join proof on 24 cores,
   the same ratios the lanes runs show.
+
+## Reproducing on this host
+
+The fixtures, the lanes cache with the four Init shard proofs and the two
+joins, the scripts and the control binary live in `~/benchdata/init-gpu`
+(`init.ixe`, `init-4.ixes`, `lanes-cache/`, `ix-control`, `run.sh`,
+`profile.sh`, `compare.py`, `split.py`, `idle.py`, `shapes.py`, `narrow.py`,
+`apis.py`, `env.sh`). `profile.sh <binary> <label> claim 1` and
+`profile.sh <binary> <label> join 5 $(cat lanes-cache/shard-proofs/*)`
+replay the two units with CUPTI; `shapes.py <dir>` attributes kernel time
+per transform shape and `narrow.py <dir> shapes.py` splits radix-2 time and
+reports the commit and FRI sub-phases.
+
+Building `ix` here: source `env.sh`, which puts the Nix store's Lean 4.33.1
+on the path, sets `LEAN_SYSROOT`, `IX_CUDA=1 IX_CUDA_TRACE_CODEGEN=1`,
+`NVCC`, `MULTI_STARK_CUDA_ARCHS=120`, `RUSTUP_TOOLCHAIN=stable` (which is
+1.98.1 here), `CLANG_PATH=/usr/lib/llvm-21/bin/clang` for bindgen, and
+`CFLAGS=-std=gnu17` so gcc 15 does not redirect `strtol` to a C23 symbol
+the Lean toolchain's libc lacks. To build against a local multi-stark,
+append the `[patch]` table to the tracked `.cargo/config.toml` rather than
+replacing it, since it carries `-Ctarget-cpu=native`, and restore it and
+`Cargo.lock` afterwards. Lake's trace for the Rust archive covers ix's own
+sources and lockfile, not a path-patched multi-stark, so after changing
+multi-stark delete `.lake/build/lib/libix_ffi_*` and `.lake/build/bin/ix`
+before `lake build ix`, or the old archive is relinked unchanged. The
+sandbox hides the GPU; run anything that opens the device outside it.
+
+sppark at `17278d7` compiles and links for sm_120 with CUDA 13.3:
+`~/benchdata/init-gpu/sppark-smoke.cu` builds with
+`nvcc -std=c++17 -O2 -arch=sm_120 -I<sppark> -DFEATURE_GOLDILOCKS smoke.cu
+<sppark>/util/all_gpus.cpp` and round-trips a 2^20 transform through
+`NTT::Base_dev_ptr` with no mismatches. The crate resolves as a git
+dependency with the `cuda` feature and exports `DEP_SPPARK_ROOT`.
