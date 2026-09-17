@@ -31,9 +31,8 @@ That regression, and the unprofiled 139 s of seed packing, are the next
 trace-generation targets (item 8). The span summarizer `spans.py` had
 undercounted short spans across ID reuse; every archived summary was
 recomputed. The multi-stark admission fix (defect 1) is commit `d557aa7` on
-`sb/trace-sharding-gpu`, not pushed, and ix still pins `3374357`:
-push it, bump the pin, and drop the `--config` patch from the commands
-below. `--exec-jobs 3` is the executor count to prove with; on Init it
+`sb/trace-sharding-gpu`, pushed and pinned by ix, so the `--config`
+patch below is only needed for the next multi-stark change. `--exec-jobs 3` is the executor count to prove with; on Init it
 closed the one executor-caused gap (438 to 425 s), the rest of the idle
 GPU is the four-shard graph.
 
@@ -425,8 +424,8 @@ Lower priority, to measure as coverage grows:
 
 1. Fix lookup admission in multi-stark so budgeting and execution agree on
    the kernel, and re-run the forced-spill proof at a tight
-   `MULTI_STARK_CUDA_MIN_FREE_BYTES`. Done on the multi-stark branch (see
-   defect 1); remaining: commit, push, bump the ix pin.
+   `MULTI_STARK_CUDA_MIN_FREE_BYTES`. Done: multi-stark `d557aa7` (see
+   defect 1), pinned by ix.
 2. Add `lake exe ix codegen --trace-bundle --check` to `ci.yml` next to the
    existing codegen check. Clamp the handwritten tile loop while there.
    Done: the CI step exists; the tile loop went with the provider.
