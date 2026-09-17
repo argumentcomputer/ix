@@ -52,6 +52,23 @@ def suite : List TestSeq := [
       let .ok marked := prepare (constants markedSource) | return false
       if marked == constants markedSource then return false
     return true,
+  ioTest "parallel source preflight checks every batch and its final remainder" do
+    let sources := (List.range 2049).map fun i =>
+      let name := Lean.Name.num plainSource.name i
+      let source : ConstantInfo := .axiomInfo {
+        name, levelParams := [], type := plainSource.type, isUnsafe := false }
+      (name, source)
+    if (checkOrdinaryConstants sources (fun _ => false)).toOption != some true then return false
+    for index in [1023, 1024, 2048] do
+      let marked := sources.mapIdx fun i (name, source) =>
+        if i != index then (name, source) else
+          let source : ConstantInfo := .axiomInfo {
+            name, levelParams := []
+            type := .mdata (({} : Lean.MData).setNat `ix.contract.unknown 1) source.type
+            isUnsafe := false }
+          (name, source)
+      if (checkOrdinaryConstants marked (fun _ => false)).toOption != some false then return false
+    return true,
   ioTest "Lean constant-list driver rejects an unadmitted annotated axiom" do
     return unsupported (← compileLeanConsts (constants markedSource) (numWorkers := 1)),
   ioTest "explicit Lean input rejects a missing annotation registry" do
