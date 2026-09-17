@@ -2705,6 +2705,7 @@ fn ffi_catch_unwind(
   context: &str,
   f: impl FnOnce() -> LeanOwned,
 ) -> LeanExcept<LeanOwned> {
+  crate::profile::init();
   match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
     Ok(value) => LeanExcept::ok(value),
     Err(payload) => {
@@ -2722,6 +2723,7 @@ fn ffi_catch_unwind_except(
   context: &str,
   f: impl FnOnce() -> LeanExcept<LeanOwned>,
 ) -> LeanExcept<LeanOwned> {
+  crate::profile::init();
   match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
     Ok(result) => result,
     Err(payload) => {

@@ -144,8 +144,10 @@ and the bind step checks the emitted offsets against the widths.
 | `MULTI_STARK_CUDA_MIN_FREE_BYTES=<bytes>` | Device headroom kept by spilling; default is a quarter of the card |
 | `MULTI_STARK_CUDA_MEMORY_LOG=1` | Logs stage-1 placement and, per lookup job, `graph=` path, budget and free bytes to stderr |
 | `AIUR_TEST_GPU_DEVICES=0,1,2,3` | Devices for the concurrent fixture |
+| `AIUR_GPU_SEED_CACHE_BYTES=<bytes>` | Most seed bytes kept resident per device for round-two sources, default 16 GiB; the backend releases caches before it spills any LDE, and after each LDE's lookup job |
 | `AIUR_GPU_TRACE_MEMORY=1` | With `generated`: build memory-table rows on the device too; off by default because it moved no fewer bytes and cost 5 s on Init |
 | `AIUR_PROFILE=<new .jsonl>` | Timestamped span events; `aiur/cpu_circuit` (circuit, kind, rows) and `aiur/codegen_seeds` give per-circuit witness time |
+| `AIUR_METRICS=<new .jsonl>` | Lightweight per-piece summaries; [collection commands and field definitions](aiur-lightweight-metrics.md) |
 
 Registration happens once per `AiurSystem` and is shared across the
 per-device clones. A library whose fingerprint matches no generated program
@@ -285,6 +287,7 @@ across span-ID reuse.
 | Init proof, 4 claims, one GPU, CPU traces vs BLAKE3-only vs weighted coverage vs pipelined upload (`bench/aiur-trace-init-2026-09-16`) | 472 vs 452 vs 442 vs 441 s end to end, same root; CPU time 3537 vs 2983 vs 2106 vs 2094 s; device callbacks 29.9 vs 27.4 s union; lookup construction 38 s with CPU traces, 54 s generated |
 | Mathlib, 78 shards, one GPU, 15-minute windows, CPU vs generated traces (`bench/aiur-trace-mathlib-2026-09-17`) | Same 11 claims: proof −13.8 s, stage-one commit −39.4 s, lookup construction +35.8 s, host witness −118 s, seed packing 139 s, device callbacks 74 s; claim proof 54.7 vs 53.4 s mean, join 31.3 vs 28.5 s; no fallbacks |
 | Two-round generated BLAKE3 proof, normal and forced spill at 100 GB reserve | Same bytes as CPU traces; altered regeneration rejected |
+| Init, generated traces, device-resident seeds off vs on (`bench/aiur-seed-cache-2026-09-17`) | Lookup construction 53.7 to 48.6 s, its callbacks 11.3 to 6.3 s, proving union 256.5 to 250.6 s, end to end 433 to 431 s, same root |
 | BLAKE3 gate, 65,536 rows, preparation handwritten vs generated, before removal | 7.84 vs 7.64 ms and 7.45 vs 7.80 ms |
 | BLAKE3 gate, synchronous upload handwritten vs generated, before removal | 2.30 vs 2.28 ms |
 | Paired FLT join replay, one pair, before the typed schema | Same proof and six-piece plan |
@@ -483,7 +486,12 @@ Lower priority, to measure as coverage grows:
    every tile through the callbacks (Init shows the same, 38 s to 54 s);
    measure bounded retention of expensive raw traces and caching of the
    compact device seeds against the extra live device memory, preserving
-   admission and eviction. (b) Split the seed-packing span into query
+   admission and eviction. Built: a round-two source uploads its seeds
+   once, at its first commit tile, into one device allocation; the lookup
+   tiles run from it with no host copy, no staging and no seed allocation;
+   multi-stark frees it after the LDE's lookup job, before any LDE spill
+   or eviction, and under `AIUR_GPU_SEED_CACHE_BYTES`. Round one keeps
+   nothing. The paired Init and Mathlib measurements are still to run. (b) Split the seed-packing span into query
    filtering, packing, allocation, concatenation and scheduling waits
    before choosing between direct writes into the final buffers, wider
    parallelism and a device-side gather from record tables; the last

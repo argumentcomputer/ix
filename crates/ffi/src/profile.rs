@@ -1,9 +1,9 @@
-//! Opt-in timestamped span events for correlation with CUDA activity traces.
+//! Opt-in lightweight summaries and timestamped profiling events.
 
 use std::{
   fs::{File, OpenOptions},
   io::Write,
-  sync::{Arc, Mutex, OnceLock},
+  sync::{Arc, Mutex, Once, OnceLock},
   time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -13,8 +13,11 @@ use tracing_subscriber::{
   Layer, filter::filter_fn, layer::Context, prelude::*,
 };
 
+mod metrics;
+
 type Sink = Arc<Mutex<File>>;
 static SINK: OnceLock<Option<Sink>> = OnceLock::new();
+static INIT: Once = Once::new();
 
 thread_local! {
   static TID: String = std::fs::read_link("/proc/thread-self")
@@ -122,15 +125,33 @@ where
 
 pub(crate) fn init() {
   if std::env::var_os("AIUR_PROFILE").is_none()
+    && std::env::var_os("AIUR_METRICS").is_none()
     && std::env::var_os("RUST_LOG").is_none()
   {
     return;
   }
-  let fmt = std::env::var("RUST_LOG").ok().map(|filter| {
-    tracing_subscriber::fmt::layer()
-      .with_ansi(false)
-      .with_writer(std::io::stderr)
-      .with_filter(tracing_subscriber::EnvFilter::new(filter))
+  INIT.call_once(|| {
+    let mut layers = Vec::new();
+    if let Some(timeline) = layer::<tracing_subscriber::Registry>() {
+      layers.push(timeline.boxed());
+    }
+    if let Some(metrics) = metrics::Metrics::from_env() {
+      layers.push(metrics.with_filter(filter_fn(metrics::selected)).boxed());
+    }
+    if let Ok(filter) = std::env::var("RUST_LOG") {
+      layers.push(
+        tracing_subscriber::fmt::layer()
+          .with_ansi(false)
+          .with_writer(std::io::stderr)
+          .with_filter(tracing_subscriber::EnvFilter::new(filter))
+        .boxed(),
+      );
+    }
+    if layers.is_empty() {
+      return;
+    }
+    if let Err(error) = tracing_subscriber::registry().with(layers).try_init() {
+      eprintln!("[profile] cannot install subscriber: {error}");
+    }
   });
-  let _ = tracing_subscriber::registry().with(layer()).with(fmt).try_init();
 }

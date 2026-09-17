@@ -1,0 +1,35 @@
+[aggregate] plan: 4 direct IxVM leaves + 3 binary joins (3 structural; threshold > 4096 subject leaves)
+  slot 0: raw shard 0 (18295 subjects)
+  slot 1: raw shard 1 (16440 subjects)
+  slot 2: structural shape 6 slots 0, 1 (34735 subjects)
+  slot 3: raw shard 2 (11390 subjects)
+  slot 4: raw shard 3 (10496 subjects)
+  slot 5: structural shape 6 slots 3, 4 (21886 subjects)
+  slot 6: structural shape 9 slots 2, 5 (56621 subjects)
+[aggregate] output writes disabled (--no-write)
+[aggregate] Rust startup: manifest 0.001s, env/claims 0.101s, plan/statements 0.003s, proofs 0.035s; total 0.140s
+[aggregate] replay slot 5: loading 2 immediate child proof(s)
+[aggregate] structural-joining slots 3, 4 into 5
+[aggregate] replay slot 5: bypassing its cache entry
+[trace-shards] 8 shards for a 214748364800 B budget: record 14633395166 B, whole-execution peak 445950095970 B, heaviest shard peak 83259825858 B, regenerating each shard for round 2
+[trace-shards] committed widths: 86 171 33 62 239 202 26 53 19 28 45 44 103 25 79 47 32 46 29 374 925 14 11 15 153 59 24 46 78 46 282 30 49 42 44 63 33 55 28 15 28 31 25 15 39 111 84 24 41 27 104 27 47 75 21 18 30 57 15 40 231 263 75 24 67 72 259 114 106 23 23 59 26 39 31 50 35 77 81 65 96 122 121 205 23 41 25 21 16 17 18 19 20 21 23 24 39 45 47 11 24
+[trace-shards] shard 0: projected peak 83259825858 B, rows 9:0..3216024 20:0..1048576 32:0..5818277 90:0..444 99:0..256 100:0..65536
+[trace-shards] shard 1: projected peak 82758047764 B, rows 3:0..32346 5:0..547570 18:0..2947138 20:1048576..2097152 29:0..3159851 41:0..19 43:0..2 55:0..3480
+[trace-shards] shard 2: projected peak 83259824551 B, rows 2:0..94 12:0..577005 14:0..19 16:0..62 20:2097152..3145728 24:0..1976 30:0..413610 35:0..338230 38:0..104 44:0..61 45:0..2 46:0..19 47:0..3865 50:0..20 51:0..434 52:0..62 53:0..25 54:0..386 56:0..2 57:0..45 59:0..74 60:0..32 61:0..19 86:0..2848003 88:0..7466550 93:0..742 95:0..657
+[trace-shards] shard 3: projected peak 80976637366 B, rows 0:0..851186 1:0..16918 10:0..661386 15:0..21 17:0..21 19:0..161660 20:3145728..4194304 27:0..1309065 39:0..19 40:0..21 42:0..21 48:0..21 49:0..3 58:0..123 62:0..21 63:0..20 64:0..2 83:0..1 85:0..20 94:0..2992017 96:0..20 97:0..1357240
+[trace-shards] shard 4: projected peak 79102049218 B, rows 4:0..154466 6:0..325349 7:0..185113 8:0..413049 11:0..197079 13:0..174956 20:4194304..5242880 21:0..787211 23:0..306504 25:0..142964 26:0..464886 28:0..831505 31:0..1179962 33:0..1023572 34:0..224600 36:0..136291 37:0..279075 65:0..67742 66:0..17044 84:0..712429 87:0..133953 91:0..1163622 92:0..1018842 98:0..132180
+[trace-shards] shard 5: projected peak 57837340815 B, rows 20:5242880..6291456 22:0..142964 89:0..141946
+[trace-shards] shard 6: projected peak 57602879222 B, rows 20:6291456..7340032
+[trace-shards] shard 7: projected peak 36735797391 B, rows 20:7340032..7816600
+[aggregate] replay slot 5: shape 6, 21886 subjects, assumptions 2843/2755/3177, proof advice 20.2+18.8 MiB, 3 trees/0.2 MiB, 4664 paths/0.7 MiB, preimages 0.0 MiB, query-record peak 77.5 GiB (83259825858 bytes)
+[aggregate] replay slot 5: advice 0.443s, execute+prove 53.334s, persistence 0.000s, total 53.777s
+[aggregate] replay slot 5: proof 6aaff85641805f0b44a900f2b8a73c9f1376a4342e53d32c9321b0f4cc29b1ca (not persisted)
+[aggregate] replay slot 5: children 0.341s, target+verify 53.890s, address 0.035s, end-to-end 54.267s
+[cupti] 282088 records, 0 dropped, 0 invalid
+	Command being timed: "taskset -c 8-31 /tmp/claude-30033/-home-sam-repos-ix/600c2770-9c8b-416f-bd8c-d410ce1560d0/scratchpad/bench/ix-profile aggregate --ixe /tmp/claude-30033/-home-sam-repos-ix/600c2770-9c8b-416f-bd8c-d410ce1560d0/scratchpad/bench/init.ixe --ixes /tmp/claude-30033/-home-sam-repos-ix/600c2770-9c8b-416f-bd8c-d410ce1560d0/scratchpad/bench/init-4.ixes --trace-shards --max-ram 200 --direct-joins --jobs 1 --no-write --reprove-slot 5 4d7031666cca1a52f1a2428603f0d5d36c7e119a6a0e5769f578166e9c19c564 92c090d29bee06ed2ecc601867f6cd7e4a7c6945ec852b21fb757835ff9e4863 c2bf45e4de9b5174e7ce1c690997ee58352d19cd5d4f634f71406fec21ea5111 76b30010a05aded3ca63659d3a51f54eb7042c951621573e75f8fff510f86202"
+	User time (seconds): 130.54
+	System time (seconds): 8.37
+	Percent of CPU this job got: 244%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:56.72
+	Maximum resident set size (kbytes): 25310808
+	Exit status: 0

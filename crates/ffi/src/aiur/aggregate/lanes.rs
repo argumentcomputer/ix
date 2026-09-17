@@ -264,6 +264,10 @@ fn prove_loop(
   events: &mpsc::Sender<Event>,
 ) {
   while let Some(item) = items.pop() {
+    let _metrics =
+      tracing::info_span!(target: "prover_metrics", "aiur/metrics_unit",
+      work = ?item.work(), worker)
+      .entered();
     let _ = events.send(Event::Proving { worker, work: item.work() });
     match item {
       Item::Claim { shard, claim, claim_bytes, prepared } => {

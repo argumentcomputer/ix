@@ -63,6 +63,62 @@ public:
     cudaEvent_t event(size_t index) const { return slot_->events[index]; }
     uint32_t* error() const { return reinterpret_cast<uint32_t*>(slot_->data + MAX_SEED_BYTES); }
 };
+
+// Streams `bytes` from pageable `source` to `destination` on the calling
+// thread's stream through the lease's ring, so each host copy overlaps the
+// transfers before it. `chunk` counts the lease's transfers so far and is
+// carried across calls: a ring slot is reused only once the transfer it
+// last staged has landed, whichever span that transfer belonged to. The
+// last chunks are still in flight on return.
+cudaError_t stage_copy(const Lease& lease, uint8_t* destination,
+    const uint8_t* source, size_t bytes, size_t& chunk) {
+    cudaError_t status = cudaSuccess;
+    size_t offset = 0;
+    for (; status == cudaSuccess && offset < bytes; ++chunk) {
+        const size_t index = chunk % RING;
+        if (chunk >= RING) status = cudaEventSynchronize(lease.event(index));
+        const size_t length = std::min(CHUNK_BYTES, bytes - offset);
+        if (status == cudaSuccess) {
+            std::memcpy(lease.chunk(index), source + offset, length);
+            status = cudaMemcpyAsync(destination + offset, lease.chunk(index), length,
+                cudaMemcpyHostToDevice, cudaStreamPerThread);
+        }
+        if (status == cudaSuccess) status = cudaEventRecord(lease.event(index), cudaStreamPerThread);
+        offset += length;
+    }
+    return status;
+}
+
+bool on_device(const void* pointer, cudaError_t& status) {
+    cudaPointerAttributes attributes{};
+    status = cudaPointerGetAttributes(&attributes, pointer);
+    return status == cudaSuccess && attributes.type == cudaMemoryTypeDevice;
+}
+
+// Rows from seeds already resident on the device: no staging, no seed
+// allocation, one error word for the launch.
+int generate_resident(const uint8_t* seeds, uint32_t encoding, size_t real,
+    size_t rows, Layout layout, uint64_t* output, Launch launch) {
+    uint32_t* device_error = nullptr;
+    cudaError_t status = cudaMallocAsync(reinterpret_cast<void**>(&device_error), 4, cudaStreamPerThread);
+    if (status == cudaSuccess) status = cudaMemsetAsync(device_error, 0, 4, cudaStreamPerThread);
+    if (status == cudaSuccess)
+        status = cudaMemsetAsync(output, 0, rows * layout.width * 8, cudaStreamPerThread);
+    if (status == cudaSuccess)
+        status = launch(seeds, encoding, real, rows, layout, output, device_error);
+    uint32_t error = 0;
+    if (status == cudaSuccess)
+        status = cudaMemcpyAsync(&error, device_error, 4, cudaMemcpyDeviceToHost, cudaStreamPerThread);
+    if (device_error) {
+        const auto freed = cudaFreeAsync(device_error, cudaStreamPerThread);
+        if (status == cudaSuccess) status = freed;
+    }
+    // The output may cross threads immediately after return.
+    const auto synced = cudaStreamSynchronize(cudaStreamPerThread);
+    if (status == cudaSuccess) status = synced;
+    if (status != cudaSuccess) return int(status);
+    return error ? 10000 + int(error) : 0;
+}
 } // namespace
 
 int upload(int device, const uint8_t* seeds, uint32_t encoding,
@@ -80,6 +136,9 @@ int upload(int device, const uint8_t* seeds, uint32_t encoding,
         const auto synced = cudaStreamSynchronize(cudaStreamPerThread);
         return int(status == cudaSuccess ? synced : status);
     }
+    if (on_device(seeds, status))
+        return generate_resident(seeds, encoding, real, rows, layout, output, launch);
+    if (status != cudaSuccess) return int(status);
     // A lease bounds both pinned memory and live device seed allocations.
     Lease lease;
     status = lease.acquire();
@@ -98,20 +157,8 @@ int upload(int device, const uint8_t* seeds, uint32_t encoding,
     // cheaper than a zero pass over each row inside the kernel.
     if (status == cudaSuccess)
         status = cudaMemsetAsync(output, 0, rows * layout.width * 8, cudaStreamPerThread);
-    size_t offset = 0;
-    for (size_t chunk = 0; status == cudaSuccess && offset < bytes; ++chunk) {
-        const size_t index = chunk % RING;
-        // The buffer is free once its previous transfer has landed.
-        if (chunk >= RING) status = cudaEventSynchronize(lease.event(index));
-        const size_t length = std::min(CHUNK_BYTES, bytes - offset);
-        if (status == cudaSuccess) {
-            std::memcpy(lease.chunk(index), seeds + offset, length);
-            status = cudaMemcpyAsync(device_seeds + offset, lease.chunk(index), length,
-                cudaMemcpyHostToDevice, cudaStreamPerThread);
-        }
-        if (status == cudaSuccess) status = cudaEventRecord(lease.event(index), cudaStreamPerThread);
-        offset += length;
-    }
+    size_t chunk = 0;
+    if (status == cudaSuccess) status = stage_copy(lease, device_seeds, seeds, bytes, chunk);
     if (status == cudaSuccess)
         status = launch(device_seeds, encoding, real, rows, layout, output, device_error);
     if (status == cudaSuccess) status = cudaMemcpyAsync(lease.error(), device_error, 4, cudaMemcpyDeviceToHost, cudaStreamPerThread);
@@ -124,6 +171,52 @@ int upload(int device, const uint8_t* seeds, uint32_t encoding,
     if (status == cudaSuccess) status = synced;
     if (status != cudaSuccess) return int(status);
     return *lease.error() ? 10000 + int(*lease.error()) : 0;
+}
+
+extern "C" int aiur_trace_seed_cache_upload(int device, const uint8_t* const* spans,
+    const size_t* lengths, size_t count, size_t total, uint8_t** cached) {
+    if (!cached) return int(cudaErrorInvalidValue);
+    *cached = nullptr;
+    if (!spans || !lengths || !count || !total) return int(cudaErrorInvalidValue);
+    size_t sum = 0;
+    for (size_t i = 0; i < count; ++i) {
+        if (!spans[i] || !lengths[i] || lengths[i] > total - sum)
+            return int(cudaErrorInvalidValue);
+        sum += lengths[i];
+    }
+    if (sum != total) return int(cudaErrorInvalidValue);
+    cudaError_t status = cudaSetDevice(device);
+    if (status != cudaSuccess) return int(status);
+    uint8_t* buffer = nullptr;
+    status = cudaMalloc(reinterpret_cast<void**>(&buffer), total);
+    if (status != cudaSuccess) {
+        // Out of memory is an answer, not a sticky fault.
+        cudaGetLastError();
+        return int(status);
+    }
+    Lease lease;
+    status = lease.acquire();
+    size_t offset = 0, chunk = 0;
+    for (size_t i = 0; status == cudaSuccess && i < count; ++i) {
+        status = stage_copy(lease, buffer + offset, spans[i], lengths[i], chunk);
+        offset += lengths[i];
+    }
+    // The lease's chunks are reused as soon as it is released.
+    const auto synced = cudaStreamSynchronize(cudaStreamPerThread);
+    if (status == cudaSuccess) status = synced;
+    if (status != cudaSuccess) {
+        cudaFree(buffer);
+        return int(status);
+    }
+    *cached = buffer;
+    return 0;
+}
+
+extern "C" int aiur_trace_seed_cache_free(int device, uint8_t* cached) {
+    if (!cached) return 0;
+    cudaError_t status = cudaSetDevice(device);
+    if (status == cudaSuccess) status = cudaFree(cached);
+    return int(status);
 }
 // Memory-table rows: `[multiplicity, 1, pointer, values...]` from seeds of
 // `[multiplicity, pointer, values...]`, one thread per row. Every table row

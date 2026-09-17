@@ -1,0 +1,1093 @@
+{
+  "proof_s": 40.34362243,
+  "kernel_s": 28.703881623,
+  "kernel_busy_fraction": 0.7114849855836309,
+  "transfer_only_s": 2.456427307,
+  "phases": {
+    "aiur/codegen_concat": {
+      "count": 90,
+      "entries": 90,
+      "union_s": 2.352814135,
+      "inside_proof_s": 2.352814135,
+      "no_kernel_s": 0.973642526,
+      "kernel_s": 1.379171609
+    },
+    "aiur/codegen_device_rows": {
+      "count": 9672,
+      "entries": 9672,
+      "union_s": 4.542308399,
+      "inside_proof_s": 4.542308399,
+      "no_kernel_s": 3.554596012,
+      "kernel_s": 0.987712387
+    },
+    "aiur/codegen_filter": {
+      "count": 90,
+      "entries": 90,
+      "union_s": 1.294839453,
+      "inside_proof_s": 1.294839453,
+      "no_kernel_s": 1.067605094,
+      "kernel_s": 0.227234359
+    },
+    "aiur/codegen_pack": {
+      "count": 90,
+      "entries": 90,
+      "union_s": 6.687358736,
+      "inside_proof_s": 6.687358736,
+      "no_kernel_s": 3.831167035,
+      "kernel_s": 2.856191701
+    },
+    "aiur/codegen_seeds": {
+      "count": 72,
+      "entries": 72,
+      "union_s": 9.519951786,
+      "inside_proof_s": 9.519951786,
+      "no_kernel_s": 5.173657483,
+      "kernel_s": 4.346294303
+    },
+    "aiur/codegen_widen": {
+      "count": 2,
+      "entries": 2,
+      "union_s": 5.996e-06,
+      "inside_proof_s": 5.996e-06,
+      "no_kernel_s": 5.996e-06,
+      "kernel_s": 0.0
+    },
+    "aiur/cpu_circuit": {
+      "count": 4438,
+      "entries": 4438,
+      "union_s": 8.886918838,
+      "inside_proof_s": 8.886918838,
+      "no_kernel_s": 5.56047215,
+      "kernel_s": 3.326446688
+    },
+    "aiur/cpu_witness": {
+      "count": 3998,
+      "entries": 3998,
+      "union_s": 8.790742952,
+      "inside_proof_s": 8.790742952,
+      "no_kernel_s": 5.531697355,
+      "kernel_s": 3.259045597
+    },
+    "aiur/execute_ixvm": {
+      "count": 1,
+      "entries": 1,
+      "union_s": 96.125789214,
+      "inside_proof_s": 0.0,
+      "no_kernel_s": 0.0,
+      "kernel_s": 0.0
+    },
+    "aiur/prove_ixvm_within_budget": {
+      "count": 1,
+      "entries": 1,
+      "union_s": 136.87479674,
+      "inside_proof_s": 40.34362243,
+      "no_kernel_s": 11.639740807,
+      "kernel_s": 28.703881623
+    },
+    "aiur/prove_planned": {
+      "count": 1,
+      "entries": 1,
+      "union_s": 40.34362243,
+      "inside_proof_s": 40.34362243,
+      "no_kernel_s": 11.639740807,
+      "kernel_s": 28.703881623
+    },
+    "aiur/row_index": {
+      "count": 1,
+      "entries": 1,
+      "union_s": 0.097356253,
+      "inside_proof_s": 0.097356253,
+      "no_kernel_s": 0.097356253,
+      "kernel_s": 0.0
+    },
+    "aiur/witness": {
+      "count": 22,
+      "entries": 22,
+      "union_s": 12.475622661,
+      "inside_proof_s": 12.475622661,
+      "no_kernel_s": 7.04006134,
+      "kernel_s": 5.435561321
+    },
+    "aiur/witness_zero": {
+      "count": 3998,
+      "entries": 3998,
+      "union_s": 1.00917877,
+      "inside_proof_s": 1.00917877,
+      "no_kernel_s": 0.758774082,
+      "kernel_s": 0.250404688
+    },
+    "cuda/fri_fold": {
+      "count": 256,
+      "entries": 256,
+      "union_s": 0.006901515,
+      "inside_proof_s": 0.006901515,
+      "no_kernel_s": 0.00567757,
+      "kernel_s": 0.001223945
+    },
+    "cuda/lde": {
+      "count": 442,
+      "entries": 442,
+      "union_s": 16.157304091,
+      "inside_proof_s": 16.147526509,
+      "no_kernel_s": 6.942621703,
+      "kernel_s": 9.204904806
+    },
+    "cuda/lookup_lde": {
+      "count": 220,
+      "entries": 220,
+      "union_s": 5.640858843,
+      "inside_proof_s": 5.640858843,
+      "no_kernel_s": 0.837887498,
+      "kernel_s": 4.802971345
+    },
+    "cuda/quotient_lde": {
+      "count": 220,
+      "entries": 220,
+      "union_s": 6.085912201,
+      "inside_proof_s": 6.085912201,
+      "no_kernel_s": 0.054336639,
+      "kernel_s": 6.031575562
+    },
+    "stark/batch_round_1": {
+      "count": 11,
+      "entries": 11,
+      "union_s": 11.423335781,
+      "inside_proof_s": 11.423335781,
+      "no_kernel_s": 4.655842873,
+      "kernel_s": 6.767492908
+    },
+    "stark/batch_round_2": {
+      "count": 11,
+      "entries": 11,
+      "union_s": 28.226885698,
+      "inside_proof_s": 28.226885698,
+      "no_kernel_s": 6.290496983,
+      "kernel_s": 21.936388715
+    },
+    "stark/batch_round_one": {
+      "count": 1,
+      "entries": 2,
+      "union_s": 11.74130822,
+      "inside_proof_s": 11.74130822,
+      "no_kernel_s": 4.973815312,
+      "kernel_s": 6.767492908
+    },
+    "stark/batch_round_two": {
+      "count": 1,
+      "entries": 2,
+      "union_s": 28.504732364,
+      "inside_proof_s": 28.504732364,
+      "no_kernel_s": 6.568343649,
+      "kernel_s": 21.936388715
+    },
+    "stark/commit_merkle": {
+      "count": 22,
+      "entries": 22,
+      "union_s": 4.335908931,
+      "inside_proof_s": 4.335908931,
+      "no_kernel_s": 0.024306535,
+      "kernel_s": 4.311602396
+    },
+    "stark/commit_source": {
+      "count": 440,
+      "entries": 440,
+      "union_s": 17.298805184,
+      "inside_proof_s": 17.298805184,
+      "no_kernel_s": 8.093900378,
+      "kernel_s": 9.204904806
+    },
+    "stark/fri_commit_grind": {
+      "count": 256,
+      "entries": 256,
+      "union_s": 0.002404184,
+      "inside_proof_s": 0.002404184,
+      "no_kernel_s": 0.002404184,
+      "kernel_s": 0.0
+    },
+    "stark/fri_commit_phase_opening": {
+      "count": 256,
+      "entries": 256,
+      "union_s": 0.022947073,
+      "inside_proof_s": 0.022947073,
+      "no_kernel_s": 0.022181053,
+      "kernel_s": 0.00076602
+    },
+    "stark/fri_input_openings": {
+      "count": 11,
+      "entries": 11,
+      "union_s": 0.016416642,
+      "inside_proof_s": 0.016416642,
+      "no_kernel_s": 0.015880129,
+      "kernel_s": 0.000536513
+    },
+    "stark/fri_interpolate": {
+      "count": 11,
+      "entries": 11,
+      "union_s": 0.338651627,
+      "inside_proof_s": 0.338651627,
+      "no_kernel_s": 0.053437973,
+      "kernel_s": 0.285213654
+    },
+    "stark/fri_observe_openings": {
+      "count": 11,
+      "entries": 11,
+      "union_s": 0.001546597,
+      "inside_proof_s": 0.001546597,
+      "no_kernel_s": 0.001546597,
+      "kernel_s": 0.0
+    },
+    "stark/fri_open": {
+      "count": 11,
+      "entries": 11,
+      "union_s": 2.937344812,
+      "inside_proof_s": 2.937344812,
+      "no_kernel_s": 0.714079051,
+      "kernel_s": 2.223265761
+    },
+    "stark/fri_prepare": {
+      "count": 11,
+      "entries": 11,
+      "union_s": 0.424845623,
+      "inside_proof_s": 0.424845623,
+      "no_kernel_s": 0.422588306,
+      "kernel_s": 0.002257317
+    },
+    "stark/fri_prove": {
+      "count": 11,
+      "entries": 11,
+      "union_s": 2.1518533,
+      "inside_proof_s": 2.1518533,
+      "no_kernel_s": 0.223826201,
+      "kernel_s": 1.928027099
+    },
+    "stark/fri_queries": {
+      "count": 11,
+      "entries": 11,
+      "union_s": 0.190035612,
+      "inside_proof_s": 0.190035612,
+      "no_kernel_s": 0.188733079,
+      "kernel_s": 0.001302533
+    },
+    "stark/fri_query_grind": {
+      "count": 11,
+      "entries": 11,
+      "union_s": 0.144884077,
+      "inside_proof_s": 0.144884077,
+      "no_kernel_s": 0.144884077,
+      "kernel_s": 0.0
+    },
+    "stark/fri_reduce": {
+      "count": 11,
+      "entries": 11,
+      "union_s": 2.170506185,
+      "inside_proof_s": 2.170506185,
+      "no_kernel_s": 0.235018216,
+      "kernel_s": 1.935487969
+    },
+    "stark/fri_round_commit": {
+      "count": 256,
+      "entries": 256,
+      "union_s": 1.938756492,
+      "inside_proof_s": 1.938756492,
+      "no_kernel_s": 0.014340391,
+      "kernel_s": 1.924416101
+    },
+    "stark/fri_streamed": {
+      "count": 11,
+      "entries": 11,
+      "union_s": 2.93692382,
+      "inside_proof_s": 2.93692382,
+      "no_kernel_s": 0.713658059,
+      "kernel_s": 2.223265761
+    },
+    "stark/lookup_construction": {
+      "count": 11,
+      "entries": 11,
+      "union_s": 8.160928995,
+      "inside_proof_s": 8.160928995,
+      "no_kernel_s": 1.930266606,
+      "kernel_s": 6.230662389
+    },
+    "stark/prove_batch_shard": {
+      "count": 11,
+      "entries": 11,
+      "union_s": 17.936241182,
+      "inside_proof_s": 17.936241182,
+      "no_kernel_s": 2.748866761,
+      "kernel_s": 15.187374421
+    },
+    "stark/quotient": {
+      "count": 11,
+      "entries": 11,
+      "union_s": 6.806992278,
+      "inside_proof_s": 6.806992278,
+      "no_kernel_s": 0.073546007,
+      "kernel_s": 6.733446271
+    },
+    "stark/stage1_commit": {
+      "count": 22,
+      "entries": 22,
+      "union_s": 21.677654252,
+      "inside_proof_s": 21.677654252,
+      "no_kernel_s": 8.16114705,
+      "kernel_s": 13.516507202
+    }
+  },
+  "activity_summary": {
+    "kind": "summary",
+    "records": 881161,
+    "dropped": 0,
+    "invalid": 0
+  },
+  "device_memory": {
+    "peak_live_bytes": 68857959336,
+    "final_live_bytes": 1476393768,
+    "unmatched_frees": 0
+  },
+  "transfers": [
+    {
+      "copy_kind": 1,
+      "bytes": 91645209752,
+      "count": 29833,
+      "union_s": 2.264949828
+    },
+    {
+      "copy_kind": 2,
+      "bytes": 28265744,
+      "count": 16446,
+      "union_s": 0.008014324
+    },
+    {
+      "copy_kind": 8,
+      "bytes": 138631339584,
+      "count": 442,
+      "union_s": 0.183937873
+    }
+  ],
+  "outside_stages_s": 0.760702093,
+  "outside_stages_no_kernel_s": 0.760702093,
+  "outside_stages_witness_s": 0.59466726,
+  "blake3_seed_transfers": {
+    "bytes": 0,
+    "count": 0,
+    "union_s": 0.0
+  },
+  "top_kernels": [
+    {
+      "name": "_ZN43_GLOBAL__N__1ea943d6_10_kernels_cu_9237c49b16radix8_dif_stageEPmmmmPKm",
+      "count": 6283,
+      "union_s": 8.256321376
+    },
+    {
+      "name": "_ZN43_GLOBAL__N__1ea943d6_10_kernels_cu_9237c49b16radix2_dif_stageEPmmmmPKm",
+      "count": 9252,
+      "union_s": 4.784103033
+    },
+    {
+      "name": "_ZN43_GLOBAL__N__1ea943d6_10_kernels_cu_9237c49b17evaluate_quotientEPmPKNS_14ConstraintNodeEmmPKjmPKNS_16ConstraintLookupEmS5_mNS_14QuotientMatrixES9_S9_PKmSB_SB_SB_mmmS0_mmb",
+      "count": 220,
+      "union_s": 3.806784363
+    },
+    {
+      "name": "_ZN43_GLOBAL__N__1ea943d6_10_kernels_cu_9237c49b29blake3_hash_short_rows_kernelEPhPKhmm",
+      "count": 14994,
+      "union_s": 2.479590463
+    },
+    {
+      "name": "_ZN43_GLOBAL__N__1ea943d6_10_kernels_cu_9237c49b23blake3_hash_rows_kernelEPhPKhmm",
+      "count": 8706,
+      "union_s": 2.363520289
+    },
+    {
+      "name": "_ZN43_GLOBAL__N__1ea943d6_10_kernels_cu_9237c49b26accumulate_reduced_openingEPNS_4Ext2EPKNS_11ResidentLdeEPKS0_S6_mS0_S0_m",
+      "count": 1144,
+      "union_s": 1.444012683
+    },
+    {
+      "name": "_ZN43_GLOBAL__N__1ea943d6_10_kernels_cu_9237c49b31blake3_hash_digest_pairs_kernelEPhPKhS2_mb",
+      "count": 4822,
+      "union_s": 1.375055089
+    },
+    {
+      "name": "_ZN43_GLOBAL__N__1ea943d6_10_kernels_cu_9237c49b21lookup_messages_graphEPNS_4Ext2EPmS2_PKNS_14ConstraintNodeEmmPKNS_16ConstraintLookupEmPKjPKNS_11ResidentLdeEPKmmbS0_S0_mmmmS2_",
+      "count": 5703,
+      "union_s": 1.220322079
+    },
+    {
+      "name": "_ZN43_GLOBAL__N__1ea943d6_10_kernels_cu_9237c49b25gather_resident_lde_groupEPmPKPKmS2_mmm",
+      "count": 23700,
+      "union_s": 0.654280793
+    },
+    {
+      "name": "_ZN43_GLOBAL__N__1ea943d6_10_kernels_cu_9237c49b16radix4_dif_stageEPmmmmPKm",
+      "count": 362,
+      "union_s": 0.38716189
+    },
+    {
+      "name": "_ZN43_GLOBAL__N__1ea943d6_10_kernels_cu_9237c49b27bit_reverse_scale_and_shiftEPmmmjmPKm",
+      "count": 662,
+      "union_s": 0.337549446
+    },
+    {
+      "name": "_ZN43_GLOBAL__N__1ea943d6_10_kernels_cu_9237c49b38initialize_coset_selector_denominatorsEPmmmmmmmm",
+      "count": 220,
+      "union_s": 0.300528005
+    },
+    {
+      "name": "_ZN43_GLOBAL__N__1ea943d6_10_kernels_cu_9237c49b25batch_inverse_norm_blocksEPmPKmS2_m",
+      "count": 12434,
+      "union_s": 0.233756401
+    },
+    {
+      "name": "_ZN43_GLOBAL__N__1ea943d6_10_kernels_cu_9237c49b23canonicalize_goldilocksEPmm",
+      "count": 220,
+      "union_s": 0.211737787
+    },
+    {
+      "name": "_ZN43_GLOBAL__N__1ea943d6_10_kernels_cu_9237c49b22interpolate_lde_blocksEPKNS_22InterpolationBlockDescEm",
+      "count": 682,
+      "union_s": 0.186011293
+    },
+    {
+      "name": "_ZN10trace_ixvm14kernel_ixvm_33ILb1EEEvPKhmmN10aiur_trace6LayoutEPmPj",
+      "count": 322,
+      "union_s": 0.130359393
+    },
+    {
+      "name": "_ZN43_GLOBAL__N__1ea943d6_10_kernels_cu_9237c49b16scan_ext2_blocksEPNS_4Ext2ES1_PKS0_m",
+      "count": 625,
+      "union_s": 0.052810073
+    },
+    {
+      "name": "_ZN43_GLOBAL__N__1ea943d6_10_kernels_cu_9237c49b22add_scan_block_offsetsEPNS_4Ext2EPKS0_m",
+      "count": 405,
+      "union_s": 0.051127066
+    },
+    {
+      "name": "_ZN43_GLOBAL__N__1ea943d6_10_kernels_cu_9237c49b19norm_block_productsEPmPKmm",
+      "count": 6192,
+      "union_s": 0.047927827
+    },
+    {
+      "name": "_ZN43_GLOBAL__N__1ea943d6_10_kernels_cu_9237c49b27lookup_group_deltas_batchedEPNS_4Ext2EPKmPKS0_S3_mmmm",
+      "count": 5703,
+      "union_s": 0.046159183
+    }
+  ],
+  "top_apis": [
+    {
+      "kind": "runtime",
+      "name": "cudaHostRegister_v4000",
+      "count": 124,
+      "union_s": 0.794113644,
+      "no_kernel_s": 0.794113644
+    },
+    {
+      "kind": "runtime",
+      "name": "cudaMemcpy_ptds_v7000",
+      "count": 11193,
+      "union_s": 9.71950268,
+      "no_kernel_s": 0.703173314
+    },
+    {
+      "kind": "runtime",
+      "name": "cudaStreamSynchronize_ptsz_v7000",
+      "count": 18809,
+      "union_s": 18.960348436,
+      "no_kernel_s": 0.549488928
+    },
+    {
+      "kind": "runtime",
+      "name": "cudaMemcpyAsync_ptsz_v7000",
+      "count": 35529,
+      "union_s": 1.147011528,
+      "no_kernel_s": 0.409416638
+    },
+    {
+      "kind": "runtime",
+      "name": "cudaHostUnregister_v4000",
+      "count": 124,
+      "union_s": 0.263573338,
+      "no_kernel_s": 0.263573338
+    },
+    {
+      "kind": "runtime",
+      "name": "cudaMallocAsync_ptsz_v11020",
+      "count": 36481,
+      "union_s": 0.165854137,
+      "no_kernel_s": 0.143550848
+    },
+    {
+      "kind": "runtime",
+      "name": "cudaLaunchKernel_ptsz_v7000",
+      "count": 119482,
+      "union_s": 0.49809326,
+      "no_kernel_s": 0.134302956
+    },
+    {
+      "kind": "runtime",
+      "name": "cudaMemsetAsync_ptsz_v7000",
+      "count": 31837,
+      "union_s": 0.120422472,
+      "no_kernel_s": 0.105475501
+    },
+    {
+      "kind": "runtime",
+      "name": "cudaEventSynchronize_v3020",
+      "count": 8852,
+      "union_s": 0.076855995,
+      "no_kernel_s": 0.076855995
+    },
+    {
+      "kind": "runtime",
+      "name": "cudaFreeAsync_ptsz_v11020",
+      "count": 36481,
+      "union_s": 0.04639833,
+      "no_kernel_s": 0.028403736
+    },
+    {
+      "kind": "runtime",
+      "name": "cudaMemGetInfo_v3020",
+      "count": 2346,
+      "union_s": 0.021740434,
+      "no_kernel_s": 0.021740434
+    },
+    {
+      "kind": "runtime",
+      "name": "cudaEventRecord_ptsz_v7000",
+      "count": 19167,
+      "union_s": 0.020101131,
+      "no_kernel_s": 0.020101131
+    },
+    {
+      "kind": "runtime",
+      "name": "cudaMallocHost_v3020",
+      "count": 1,
+      "union_s": 0.019803014,
+      "no_kernel_s": 0.019803014
+    },
+    {
+      "kind": "runtime",
+      "name": "cudaMalloc_v3020",
+      "count": 132,
+      "union_s": 0.01653056,
+      "no_kernel_s": 0.016335369
+    },
+    {
+      "kind": "runtime",
+      "name": "cudaSetDevice_v3020",
+      "count": 25089,
+      "union_s": 0.013418563,
+      "no_kernel_s": 0.012180152
+    },
+    {
+      "kind": "runtime",
+      "name": "cudaPointerGetAttributes_v4000",
+      "count": 14412,
+      "union_s": 0.011732208,
+      "no_kernel_s": 0.010640051
+    },
+    {
+      "kind": "runtime",
+      "name": "cudaFree_v3020",
+      "count": 36,
+      "union_s": 0.008380191,
+      "no_kernel_s": 0.008380191
+    },
+    {
+      "kind": "driver",
+      "name": "cuKernelGetName",
+      "count": 119482,
+      "union_s": 0.01794151,
+      "no_kernel_s": 0.008283636
+    },
+    {
+      "kind": "runtime",
+      "name": "cudaHostAlloc_v3020",
+      "count": 1,
+      "union_s": 0.005214628,
+      "no_kernel_s": 0.005214628
+    },
+    {
+      "kind": "runtime",
+      "name": "cudaGetLastError_v3020",
+      "count": 120190,
+      "union_s": 0.011798667,
+      "no_kernel_s": 0.00322237
+    }
+  ],
+  "cpu_circuits": [
+    {
+      "circuit": "108",
+      "count": 22,
+      "union_s": 2.428832524,
+      "no_kernel_s": 1.807617004
+    },
+    {
+      "circuit": "14",
+      "count": 22,
+      "union_s": 2.424357748,
+      "no_kernel_s": 1.803290455
+    },
+    {
+      "circuit": "121",
+      "count": 22,
+      "union_s": 2.423724181,
+      "no_kernel_s": 1.802552214
+    },
+    {
+      "circuit": "125",
+      "count": 22,
+      "union_s": 2.420807153,
+      "no_kernel_s": 1.799225539
+    },
+    {
+      "circuit": "11",
+      "count": 22,
+      "union_s": 2.324133144,
+      "no_kernel_s": 1.723302173
+    },
+    {
+      "circuit": "115",
+      "count": 22,
+      "union_s": 2.115271832,
+      "no_kernel_s": 1.583557261
+    },
+    {
+      "circuit": "0",
+      "count": 22,
+      "union_s": 2.069822897,
+      "no_kernel_s": 1.551907929
+    },
+    {
+      "circuit": "182",
+      "count": 22,
+      "union_s": 1.983332574,
+      "no_kernel_s": 1.496753655
+    },
+    {
+      "circuit": "25",
+      "count": 22,
+      "union_s": 1.964917987,
+      "no_kernel_s": 1.440627562
+    },
+    {
+      "circuit": "126",
+      "count": 22,
+      "union_s": 1.926695518,
+      "no_kernel_s": 1.454074217
+    },
+    {
+      "circuit": "105",
+      "count": 22,
+      "union_s": 1.809167301,
+      "no_kernel_s": 1.330219334
+    },
+    {
+      "circuit": "37",
+      "count": 22,
+      "union_s": 1.770210469,
+      "no_kernel_s": 1.310915209
+    },
+    {
+      "circuit": "169",
+      "count": 22,
+      "union_s": 1.741486952,
+      "no_kernel_s": 1.310012622
+    },
+    {
+      "circuit": "81",
+      "count": 22,
+      "union_s": 1.736650526,
+      "no_kernel_s": 1.257902882
+    },
+    {
+      "circuit": "166",
+      "count": 22,
+      "union_s": 1.581687515,
+      "no_kernel_s": 1.12158288
+    },
+    {
+      "circuit": "44",
+      "count": 22,
+      "union_s": 1.581656648,
+      "no_kernel_s": 1.121586106
+    },
+    {
+      "circuit": "122",
+      "count": 22,
+      "union_s": 1.580652051,
+      "no_kernel_s": 1.120532888
+    },
+    {
+      "circuit": "132",
+      "count": 22,
+      "union_s": 1.580449029,
+      "no_kernel_s": 1.120192232
+    },
+    {
+      "circuit": "109",
+      "count": 22,
+      "union_s": 1.577789035,
+      "no_kernel_s": 1.117738082
+    },
+    {
+      "circuit": "167",
+      "count": 22,
+      "union_s": 1.575342271,
+      "no_kernel_s": 1.115290725
+    }
+  ],
+  "longest_gaps": [
+    {
+      "start_s": 0.0,
+      "duration_s": 0.464254117,
+      "phases": {
+        "cuda/lde": 0.028522365,
+        "aiur/row_index": 0.097356253,
+        "aiur/witness_zero": 0.013274143,
+        "aiur/cpu_witness": 0.079371597,
+        "aiur/cpu_circuit": 0.079467645,
+        "aiur/codegen_filter": 0.09552533,
+        "aiur/codegen_pack": 0.166773649,
+        "aiur/codegen_concat": 0.150918322,
+        "aiur/codegen_seeds": 0.363857213,
+        "aiur/witness": 0.366617943,
+        "aiur/codegen_device_rows": 0.009382854,
+        "stark/commit_source": 0.047849126,
+        "stark/stage1_commit": 0.049324698,
+        "stark/batch_round_1": 0.049363991,
+        "stark/batch_round_one": 0.366791652,
+        "aiur/prove_planned": 0.464254117,
+        "aiur/prove_ixvm_within_budget": 0.464254117
+      }
+    },
+    {
+      "start_s": 13.969904282,
+      "duration_s": 0.421623902,
+      "phases": {
+        "stark/fri_prepare": 0.421519059,
+        "stark/fri_streamed": 0.421532024,
+        "stark/fri_open": 0.421553647,
+        "stark/prove_batch_shard": 0.421623902,
+        "stark/batch_round_2": 0.421623902,
+        "stark/batch_round_two": 0.421623902,
+        "aiur/prove_planned": 0.421623902,
+        "aiur/prove_ixvm_within_budget": 0.421623902
+      }
+    },
+    {
+      "start_s": 8.063820746,
+      "duration_s": 0.36380004,
+      "phases": {
+        "cuda/lde": 0.002235613,
+        "aiur/cpu_witness": 0.362936067,
+        "aiur/cpu_circuit": 0.36380004,
+        "aiur/codegen_pack": 0.362213133,
+        "aiur/codegen_concat": 0.001571865,
+        "aiur/codegen_seeds": 0.36380004,
+        "aiur/witness": 0.36380004,
+        "stark/commit_source": 0.363644884,
+        "stark/stage1_commit": 0.36380004,
+        "stark/batch_round_1": 0.36380004,
+        "stark/batch_round_one": 0.36380004,
+        "aiur/prove_planned": 0.36380004,
+        "aiur/prove_ixvm_within_budget": 0.36380004
+      }
+    },
+    {
+      "start_s": 11.838442425,
+      "duration_s": 0.311439784,
+      "phases": {
+        "cuda/lde": 0.030045108,
+        "aiur/witness_zero": 0.025358271,
+        "aiur/cpu_witness": 0.061006553,
+        "aiur/cpu_circuit": 0.061072201,
+        "aiur/codegen_filter": 0.087998979,
+        "aiur/codegen_pack": 0.151330188,
+        "aiur/codegen_concat": 0.112132875,
+        "aiur/codegen_seeds": 0.307112787,
+        "aiur/witness": 0.310934066,
+        "aiur/codegen_device_rows": 0.029911725,
+        "stark/commit_source": 0.030102632,
+        "stark/stage1_commit": 0.033647529,
+        "stark/batch_round_2": 0.033638576,
+        "stark/batch_round_two": 0.311052675,
+        "aiur/prove_planned": 0.311439784,
+        "aiur/prove_ixvm_within_budget": 0.311439784
+      }
+    },
+    {
+      "start_s": 6.498366428,
+      "duration_s": 0.291600414,
+      "phases": {
+        "aiur/cpu_witness": 0.291600414,
+        "aiur/cpu_circuit": 0.291600414,
+        "aiur/codegen_pack": 0.291600414,
+        "aiur/codegen_seeds": 0.291600414,
+        "aiur/witness": 0.291600414,
+        "stark/commit_source": 0.291429934,
+        "stark/stage1_commit": 0.291600414,
+        "stark/batch_round_1": 0.291600414,
+        "stark/batch_round_one": 0.291600414,
+        "aiur/prove_planned": 0.291600414,
+        "aiur/prove_ixvm_within_budget": 0.291600414
+      }
+    },
+    {
+      "start_s": 19.728832024,
+      "duration_s": 0.186016594,
+      "phases": {
+        "cuda/lde": 0.185793951,
+        "aiur/cpu_witness": 0.170880245,
+        "aiur/cpu_circuit": 0.170896444,
+        "aiur/codegen_pack": 0.171153238,
+        "aiur/codegen_concat": 0.01543148,
+        "aiur/codegen_seeds": 0.186016594,
+        "aiur/witness": 0.186016594,
+        "aiur/codegen_device_rows": 0.185686325,
+        "stark/commit_source": 0.185876889,
+        "stark/stage1_commit": 0.186016594,
+        "stark/batch_round_2": 0.186016594,
+        "stark/batch_round_two": 0.186016594,
+        "aiur/prove_planned": 0.186016594,
+        "aiur/prove_ixvm_within_budget": 0.186016594
+      }
+    },
+    {
+      "start_s": 0.887258286,
+      "duration_s": 0.171577344,
+      "phases": {
+        "cuda/lde": 0.00955984,
+        "aiur/codegen_device_rows": 0.004010041,
+        "stark/commit_source": 0.171464526,
+        "stark/stage1_commit": 0.171577344,
+        "stark/batch_round_1": 0.171577344,
+        "stark/batch_round_one": 0.171577344,
+        "aiur/prove_planned": 0.171577344,
+        "aiur/prove_ixvm_within_budget": 0.171577344
+      }
+    },
+    {
+      "start_s": 15.818750433,
+      "duration_s": 0.168543243,
+      "phases": {
+        "cuda/lookup_lde": 0.003047066,
+        "stark/lookup_construction": 0.168543243,
+        "stark/prove_batch_shard": 0.168543243,
+        "stark/batch_round_2": 0.168543243,
+        "stark/batch_round_two": 0.168543243,
+        "aiur/prove_planned": 0.168543243,
+        "aiur/prove_ixvm_within_budget": 0.168543243
+      }
+    },
+    {
+      "start_s": 1.858181991,
+      "duration_s": 0.157309493,
+      "phases": {
+        "cuda/lde": 0.081468532,
+        "aiur/codegen_concat": 0.156662669,
+        "aiur/codegen_seeds": 0.157309493,
+        "aiur/witness": 0.157309493,
+        "stark/commit_source": 0.157268779,
+        "stark/stage1_commit": 0.157309493,
+        "stark/batch_round_1": 0.157309493,
+        "stark/batch_round_one": 0.157309493,
+        "aiur/prove_planned": 0.157309493,
+        "aiur/prove_ixvm_within_budget": 0.157309493
+      }
+    },
+    {
+      "start_s": 34.702835333,
+      "duration_s": 0.156468894,
+      "phases": {
+        "cuda/lde": 0.15629283,
+        "aiur/cpu_witness": 0.156468894,
+        "aiur/cpu_circuit": 0.156468894,
+        "aiur/witness": 0.156468894,
+        "stark/commit_source": 0.156347874,
+        "stark/stage1_commit": 0.156468894,
+        "stark/batch_round_2": 0.156468894,
+        "stark/batch_round_two": 0.156468894,
+        "aiur/prove_planned": 0.156468894,
+        "aiur/prove_ixvm_within_budget": 0.156468894
+      }
+    },
+    {
+      "start_s": 14.965355309,
+      "duration_s": 0.149738744,
+      "phases": {
+        "cuda/lde": 0.149629721,
+        "aiur/codegen_pack": 0.089562652,
+        "aiur/codegen_concat": 0.060147775,
+        "aiur/codegen_seeds": 0.149738744,
+        "aiur/witness": 0.149738744,
+        "stark/commit_source": 0.149680795,
+        "stark/stage1_commit": 0.149738744,
+        "stark/batch_round_2": 0.149738744,
+        "stark/batch_round_two": 0.149738744,
+        "aiur/prove_planned": 0.149738744,
+        "aiur/prove_ixvm_within_budget": 0.149738744
+      }
+    },
+    {
+      "start_s": 17.325545362,
+      "duration_s": 0.143577117,
+      "phases": {
+        "cuda/lde": 0.139575911,
+        "aiur/witness_zero": 0.018106985,
+        "aiur/cpu_witness": 0.139044464,
+        "aiur/cpu_circuit": 0.139053582,
+        "aiur/codegen_filter": 0.104110205,
+        "aiur/codegen_pack": 0.112845824,
+        "aiur/codegen_seeds": 0.138906846,
+        "aiur/witness": 0.13970333,
+        "aiur/codegen_device_rows": 0.13954071,
+        "stark/commit_source": 0.139596682,
+        "stark/stage1_commit": 0.139702059,
+        "stark/prove_batch_shard": 0.003794163,
+        "stark/batch_round_2": 0.143550003,
+        "stark/batch_round_two": 0.143577117,
+        "aiur/prove_planned": 0.143577117,
+        "aiur/prove_ixvm_within_budget": 0.143577117
+      }
+    },
+    {
+      "start_s": 0.755703506,
+      "duration_s": 0.129746111,
+      "phases": {
+        "cuda/lde": 0.022132413,
+        "aiur/cpu_witness": 0.106903703,
+        "aiur/cpu_circuit": 0.106925546,
+        "aiur/witness": 0.107002425,
+        "stark/commit_source": 0.129694882,
+        "stark/stage1_commit": 0.129746111,
+        "stark/batch_round_1": 0.129746111,
+        "stark/batch_round_one": 0.129746111,
+        "aiur/prove_planned": 0.129746111,
+        "aiur/prove_ixvm_within_budget": 0.129746111
+      }
+    },
+    {
+      "start_s": 34.448931106,
+      "duration_s": 0.123660017,
+      "phases": {
+        "cuda/lde": 0.123403619,
+        "aiur/witness_zero": 0.065429139,
+        "aiur/cpu_witness": 0.123660017,
+        "aiur/cpu_circuit": 0.123660017,
+        "aiur/witness": 0.123660017,
+        "stark/commit_source": 0.123482346,
+        "stark/stage1_commit": 0.123660017,
+        "stark/batch_round_2": 0.123660017,
+        "stark/batch_round_two": 0.123660017,
+        "aiur/prove_planned": 0.123660017,
+        "aiur/prove_ixvm_within_budget": 0.123660017
+      }
+    },
+    {
+      "start_s": 30.42096779,
+      "duration_s": 0.121719333,
+      "phases": {
+        "cuda/lde": 0.121488246,
+        "aiur/cpu_witness": 0.121719333,
+        "aiur/cpu_circuit": 0.121719333,
+        "aiur/codegen_pack": 0.121719333,
+        "aiur/codegen_seeds": 0.121719333,
+        "aiur/witness": 0.121719333,
+        "stark/commit_source": 0.12156677,
+        "stark/stage1_commit": 0.121719333,
+        "stark/batch_round_2": 0.121719333,
+        "stark/batch_round_two": 0.121719333,
+        "aiur/prove_planned": 0.121719333,
+        "aiur/prove_ixvm_within_budget": 0.121719333
+      }
+    },
+    {
+      "start_s": 34.297905127,
+      "duration_s": 0.121642576,
+      "phases": {
+        "cuda/lde": 0.121393222,
+        "aiur/witness_zero": 0.061571207,
+        "aiur/cpu_witness": 0.121642576,
+        "aiur/cpu_circuit": 0.121642576,
+        "aiur/witness": 0.121642576,
+        "stark/commit_source": 0.121467184,
+        "stark/stage1_commit": 0.121642576,
+        "stark/batch_round_2": 0.121642576,
+        "stark/batch_round_two": 0.121642576,
+        "aiur/prove_planned": 0.121642576,
+        "aiur/prove_ixvm_within_budget": 0.121642576
+      }
+    },
+    {
+      "start_s": 9.877196215,
+      "duration_s": 0.107350875,
+      "phases": {
+        "cuda/lde": 0.107142398,
+        "aiur/cpu_witness": 0.107350875,
+        "aiur/cpu_circuit": 0.107350875,
+        "aiur/witness": 0.107350875,
+        "stark/commit_source": 0.107199921,
+        "stark/stage1_commit": 0.107350875,
+        "stark/batch_round_1": 0.107350875,
+        "stark/batch_round_one": 0.107350875,
+        "aiur/prove_planned": 0.107350875,
+        "aiur/prove_ixvm_within_budget": 0.107350875
+      }
+    },
+    {
+      "start_s": 30.264191431,
+      "duration_s": 0.10730298,
+      "phases": {
+        "cuda/lde": 0.107161322,
+        "aiur/cpu_witness": 0.10730298,
+        "aiur/cpu_circuit": 0.10730298,
+        "aiur/codegen_pack": 0.10730298,
+        "aiur/codegen_seeds": 0.10730298,
+        "aiur/witness": 0.10730298,
+        "stark/commit_source": 0.107199816,
+        "stark/stage1_commit": 0.10730298,
+        "stark/batch_round_2": 0.10730298,
+        "stark/batch_round_two": 0.10730298,
+        "aiur/prove_planned": 0.10730298,
+        "aiur/prove_ixvm_within_budget": 0.10730298
+      }
+    },
+    {
+      "start_s": 30.725028827,
+      "duration_s": 0.106840549,
+      "phases": {
+        "cuda/lde": 0.106663947,
+        "aiur/cpu_witness": 0.106840549,
+        "aiur/cpu_circuit": 0.106840549,
+        "aiur/codegen_pack": 0.106840549,
+        "aiur/codegen_seeds": 0.106840549,
+        "aiur/witness": 0.106840549,
+        "stark/commit_source": 0.106719202,
+        "stark/stage1_commit": 0.106840549,
+        "stark/batch_round_2": 0.106840549,
+        "stark/batch_round_two": 0.106840549,
+        "aiur/prove_planned": 0.106840549,
+        "aiur/prove_ixvm_within_budget": 0.106840549
+      }
+    },
+    {
+      "start_s": 10.013946326,
+      "duration_s": 0.106644859,
+      "phases": {
+        "cuda/lde": 0.106409582,
+        "aiur/witness_zero": 0.00100227,
+        "aiur/cpu_witness": 0.106644859,
+        "aiur/cpu_circuit": 0.106644859,
+        "aiur/witness": 0.106644859,
+        "stark/commit_source": 0.106480385,
+        "stark/stage1_commit": 0.106644859,
+        "stark/batch_round_1": 0.106644859,
+        "stark/batch_round_one": 0.106644859,
+        "aiur/prove_planned": 0.106644859,
+        "aiur/prove_ixvm_within_budget": 0.106644859
+      }
+    }
+  ]
+}

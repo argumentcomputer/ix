@@ -87,7 +87,10 @@ impl TraceProvider {
     }
   }
 
-  /// `None` leaves the circuit to the CPU trace builder.
+  /// `None` leaves the circuit to the CPU trace builder. With
+  /// `retain_device_seeds` the source keeps its seeds on the device from its
+  /// first tile until the backend releases them, so the lookup pass
+  /// regenerates rows without the host.
   pub(crate) fn prepare(
     &self,
     _top: &Toplevel,
@@ -98,6 +101,7 @@ impl TraceProvider {
     _start: QueryPosition,
     _end: QueryPosition,
     _row_count: usize,
+    _retain_device_seeds: bool,
   ) -> Option<(TraceSource<G>, LookupValues<G>)> {
     match self {
       Self::Cpu => None,
@@ -108,6 +112,8 @@ impl TraceProvider {
         }
         let bound = program.bound();
         if !bound.supports(_circuit) {
+          tracing::info!(target: "prover_metrics", metric = "fallback",
+            circuit = _circuit, reason = "uncovered", rows = _row_count);
           tracing::debug!(
             circuit = _circuit,
             rows = _row_count,
@@ -119,10 +125,20 @@ impl TraceProvider {
         // packer or a resource ran out; the CPU builder is the reference, so
         // fall back to it and say so rather than abort the proof.
         match bound.prepare(
-          _circuit, _record, _io, _slots, _start, _end, _row_count, false,
+          _circuit,
+          _record,
+          _io,
+          _slots,
+          _start,
+          _end,
+          _row_count,
+          false,
+          _retain_device_seeds,
         ) {
           Ok(prepared) => Some(prepared),
           Err(error) => {
+            tracing::info!(target: "prover_metrics", metric = "fallback",
+              circuit = _circuit, reason = "preparation_error", rows = _row_count);
             tracing::warn!(
               circuit = _circuit,
               rows = _row_count,
