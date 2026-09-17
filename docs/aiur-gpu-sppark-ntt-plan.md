@@ -445,8 +445,16 @@ the Nix glibc 2.40 loader with that gcc library directory on
 `LD_LIBRARY_PATH`, exactly as the bench runners set it. `ldd` on the relinked
 binary resolves `libstdc++.so.6` there and `ix --help` runs
 (`bench/prover-profile-init-2026-09-17/README.md` has the environment).
-Open item for milestone 2: carry those three arguments into Lake's link of
-`ix` when `IX_CUDA_SPPARK=1`, with the library directory supplied by the
-environment rather than hard-coded, or drop the runtime dependency in the
-dependency fork by replacing the thread pool and exceptions in the paths
-the adapter uses.
+Resolved by the dependency fork instead: `argumentcomputer/sppark`, branch
+`multi-stark/no-cxx-runtime`, adds a `SPPARK_NO_CXX_RUNTIME` build mode in
+which `CUDA_OK` records the first failing CUDA call in a thread-local
+status that `sppark_take_cuda_error()` returns, `gpu_t` carries no thread
+pool, and the three container error hooks libstdc++'s headers call are
+defined weakly to abort. multi-stark compiles the sppark units with that
+mode and the adapter reads the status after each transform. With it the
+archive references nothing from libstdc++: `ix` relinks with Lake's
+unchanged response file, no added flags, starts, and `ldd` shows no
+libstdc++ at all. The contract tests and the full suite pass against the
+fork. What remains is administrative: push the fork branch and pin its
+revision in multi-stark's `Cargo.toml` and lockfile, which today name the
+fork's main at the upstream revision with a local path override.
