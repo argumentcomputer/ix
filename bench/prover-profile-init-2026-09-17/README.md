@@ -53,28 +53,36 @@ Claim 1, 16.2 s with no kernel:
   has neither: the commit's own uploads, `cudaHostRegister` (0.8 s over
   124 calls) and hashing.
 - 3.5 s inside FRI and opening with no host span at all, 8% of the proof.
-  The query proof of work is 0 bits on these proofs, so this is not the
-  grind; sibling gathers and the opening's synchronous copies are the
-  candidates, and a span around each is the next step.
-- 1.9 s inside lookup construction, of which the callbacks are 0.2 s: the
-  resident seeds have removed the callback cost, what is left is per-job
-  admission and synchronization.
+  The production query proof of work is 20 bits
+  (`Ix/Aiur/Protocol.lean`, `defaultFriParameters`) and the CUDA FRI path
+  grinds it on the host, so the grind, the sibling gathers and the
+  opening's synchronous copies are all candidates; a span around each is
+  the next step, before choosing a fix.
+- 1.9 s inside lookup construction. The lookup-phase callbacks total
+  1.01 s of union on the claim and 0.68 s on the join (`split.py` of the
+  seed-cache bench), of which 0.2 s coincides with an idle device; the
+  rest of the idle time is per-job admission and synchronization.
 
 Join 5, 7.5 s with no kernel: 4.3 s in stage-one commit (2.0 s with no
 witness or packing active), 1.2 s in lookup construction, 0.9 s in FRI.
 
 ## Reading it
 
-- **NTT is the largest single family, 43 to 47% of kernel time**, and on
-  the claim a third of it is radix-2 stages: the narrow-width fallback for
-  matrices under eight columns and the width-2 codewords, 9,252 launches.
-  A fused narrow transform is the cheapest kernel item and worth about 12%
-  of the claim's kernel time on its own; the radix-8 fusion is the larger
-  and harder half.
-- **Kernels are busy 64 to 69% of the proof**, up from 56 to 58% in the
-  September 15 profiles, after packed seeds, pipelined upload and resident
-  seeds. The remaining idle time is the commit's host side, FRI's host
-  side, and lookup admission, in that order.
+- **NTT is the largest single family, 43 to 47% of kernel time**, with
+  BLAKE3 hashing at 22%; halving both would shorten either proof by
+  roughly 22%, if the saved kernel time is on the critical path. On the
+  claim a third of the NTT time is radix-2 stages, 9,252 launches; that
+  kernel serves the narrow-width fallback and the residue stages of wide
+  transforms, and the width-2 codewords already end in a fused tail, so the
+  launches must be split by width and height before the narrow transform
+  is sized as a project.
+- **Kernels are busy 64 to 69% of the proof**, against 56 to 58% in the
+  September 15 profiles; those were Mathlib units, so the difference is
+  not attributable to the seed work alone, whose controlled effect is the
+  5.9 s of 256.5 s in `bench/aiur-seed-cache-2026-09-17`. The remaining
+  idle time is the commit's host side, FRI's host side, and lookup
+  admission, in that order. A host span active during an idle stretch
+  identifies a candidate, not a cause.
 - **Packing's fixed parts are a quarter of it**: filter plus concatenate
   are 3.5 of the claim's 9.3 s of packing union. Packing straight into the
   span and filtering per chunk removes them without changing the seeds.
