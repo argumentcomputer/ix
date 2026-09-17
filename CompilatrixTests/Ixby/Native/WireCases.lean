@@ -71,6 +71,35 @@ def wireCases (image : Image) (check : Check) : IO Unit := do
       (← okay (← pair unit (state (writer joined) 9)))
     check 106 #[natural value.val, state (writer #[0xaa]) 8]
       (← error `MultiStark.Verify.DecodeError.byteLimit)
+  -- Fixed-width and general integer writes against the source writer, through
+  -- writer buffers and ordinary packed states, plus the range helper directly.
+  for width in #[0, 1, 2, 3, 4, 5, 8, 9] do
+    for n in #[0, 1, 255, 256, 65535, 65536, 2 ^ 32 - 1, 2 ^ 32, 2 ^ 64 - 1, 2 ^ 64, 2 ^ 80 + 17] do
+      for before in #[#[], #[0xaa, 0xbb]] do
+        for limit in #[0, before.size + width - 1, before.size + width, 64] do
+          let source := MultiStark.Verify.Codec.Wire.writeNat width n
+            { bytes := before, limit, vectorLimit := 17, items := 29 }
+          let expected ← match source with
+            | .ok (_, final) => okay (← pair unit (state (writer final.bytes) limit))
+            | .error .integerRange => error `MultiStark.Verify.DecodeError.integerRange
+            | .error .byteLimit => error `MultiStark.Verify.DecodeError.byteLimit
+            | .error _ => throw (IO.userError "unexpected source writeNat error")
+          check 111 #[natural width, natural n, state (writer before) limit] expected
+          let packedExpected ← match source with
+            | .ok (_, final) => okay (← pair unit (state (packed final.bytes) limit))
+            | _ => pure expected
+          check 111 #[natural width, natural n, state (packed before) limit] packedExpected
+      -- The range helper takes its bound as an argument; below it, the result is
+      -- the source byte write of the source encoding.
+      for bound in #[0, n, n + 1, 2 ^ 64] do
+        let expected ← if n < bound then
+            match MultiStark.Verify.Codec.Wire.writeBytes
+                (MultiStark.Verify.Codec.Wire.littleEndian width n)
+                { bytes := #[], limit := 64, vectorLimit := 17, items := 29 } with
+            | .ok (_, final) => okay (← pair unit (state (writer final.bytes) 64))
+            | .error _ => throw (IO.userError "unexpected source writeBytes rejection")
+          else error `MultiStark.Verify.DecodeError.integerRange
+        check 110 #[natural width, natural n, state (writer #[]) 64, natural bound] expected
   -- Row hashing: native field rows, arbitrary builder prefixes, suffix ranges,
   -- and rejection of the byte views that cannot represent a field row.
   let fieldValues : Array Nat := #[0, 1, 255, 256, 2 ^ 32 - 1, 2 ^ 32, 2 ^ 63,

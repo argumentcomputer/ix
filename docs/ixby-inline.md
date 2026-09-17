@@ -12,7 +12,8 @@ The subsequent [single-dispatch array-read change](ixby-array-read.md) retains
 these inlining certificates. [FRI source fusion](ixby-fri-fusion.md) follows it
 and retains the inliner's separate complete-image certificate.
 [Certified row hashing](ixby-row-hash.md) extends the protected prefix to 110
-functions without changing the inliner or its certificate.
+functions and [fixed-width writes](ixby-shift-width.md) to 112, without
+changing the inliner or its certificate.
 
 ## Checked transformation
 
@@ -29,9 +30,10 @@ order, duplication, literals, and erased values.
 Only ordinary `letOp (call ...)` instructions change. Function signatures,
 entry points, block counts and indices, local-frame contracts, constructors,
 and all other instructions remain equal. Tail calls are deferred. Stage2
-protects functions 0–109: all 97 runtime helpers, the source `readBytes` target,
-ten wire helpers, and the two [row-hash helpers](ixby-row-hash.md). Existing
-complete-body certificates check the selected image again.
+protects functions 0–111: all 97 runtime helpers, the source `readBytes` target,
+ten wire helpers, the two [row-hash helpers](ixby-row-hash.md), and the two
+[fixed-width write helpers](ixby-shift-width.md). Existing complete-body
+certificates check the selected image again.
 
 Policy version 1 has an enable flag, protected-prefix length, and a structural
 producer budget of 1,000,000 declarations, blocks, and operands. This budget

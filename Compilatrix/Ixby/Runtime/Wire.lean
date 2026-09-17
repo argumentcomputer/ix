@@ -50,7 +50,8 @@ def buildWire : BuildM Unit := do
       (`MultiStark.Verify.Codec.Wire.readField, 1),
       (`MultiStark.Verify.Codec.Wire.writeField, 2),
       (`Array.instDecidableEqImpl._at_.MultiStark.Verify.Codec.Wire.canonicalize.spec_0, 2),
-      (`Ixby.Runtime.rowBytesLoop, 4), (`MultiStark.Verify.Mmcs.hashRow, 1)] do
+      (`Ixby.Runtime.rowBytesLoop, 4), (`MultiStark.Verify.Mmcs.hashRow, 1),
+      (`Ixby.Runtime.wireNatRange, 4), (`MultiStark.Verify.Codec.Wire.writeNat, 3)] do
     discard <| reserveFunction name arity
   let define (name : Name) (arity : Nat) (body : CodeM Unit) : BuildM Unit :=
     discard <| defineFunction name arity body
@@ -185,5 +186,24 @@ def buildWire : BuildM Unit := do
         let data ← call `Ixby.Runtime.rowBytesLoop [fields[0]!, rawNat 0, size, builder]
         ret (← pack (← primitive .blake3 [data]) (rawNat 32))),
       (`Ixby.Runtime.WriterBuffer, 1, fun _ => trap)]
+  -- Fixed-width range checks use precomputed bounds instead of the
+  -- repeated-squaring power; other widths still compute `2 ^ (8 * width)`.
+  -- The range helper writes the checked value through the existing encoder
+  -- or rejects with the source's integer-range error.
+  define `Ixby.Runtime.wireNatRange 4 do
+    branch (← primitive .natLt [.local 1, .local 3])
+      (do
+        let encoded ← call `MultiStark.Verify.Codec.Wire.littleEndian [.local 0, .local 1]
+        tailCall `MultiStark.Verify.Codec.Wire.writeBytes [encoded, .local 2])
+      (do ret (← make `Except.error [← make `MultiStark.Verify.DecodeError.integerRange []]))
+  define `MultiStark.Verify.Codec.Wire.writeNat 3 do
+    let range (limit : Operand) : CodeM Unit :=
+      tailCall `Ixby.Runtime.wireNatRange [.local 0, .local 1, .local 2, limit]
+    branch (← primitive .natEq [.local 0, rawNat 2]) (range (rawNat 65536)) do
+      branch (← primitive .natEq [.local 0, rawNat 8]) (range (rawNat (2 ^ 64))) do
+        branch (← primitive .natEq [.local 0, rawNat 1]) (range (rawNat 256)) do
+          branch (← primitive .natEq [.local 0, rawNat 4]) (range (rawNat (2 ^ 32))) do
+            let bits ← primitive .natMul [rawNat 8, .local 0]
+            range (← call `Nat.pow [rawNat 2, bits])
 
 end Compilatrix.Ixby.Runtime

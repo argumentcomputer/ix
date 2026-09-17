@@ -539,6 +539,12 @@ to a builder-based runtime body whose complete-body certificate hashes exactly
 the source preimage; source equality, inlining, and all earlier helper
 certificates remain in place.
 
+[Shift-by-one and fixed-width writes](ixby-shift-width.md) reduce Stage2–CSLib
+to 217,047,989 transitions (4.71%) and the singleton fixture to 441,279,047
+(3.76%), with identical outputs. The shift wrapper halves directly when the
+count is one, and the pinned fixed-width integer writer compares against
+precomputed bounds; both retain complete-body certificates.
+
 The [compiler entry-point table](compiler-design.md#compiler-entry-points)
 identifies the checked APIs. `Pipeline.compileValidated` supplies source
 certification; the broader `Pipeline.compile` does not.

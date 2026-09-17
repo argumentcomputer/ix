@@ -86,10 +86,17 @@ def fuelCases (image : Image) : IO Nat := do
         (if n == 0 then 12 else if m == 0 then 14 else 25)
   for n in #[0, 1, 2, 3, 7, 256, 2 ^ 64, 2 ^ 256] do
     for k in #[0, 1, 2, 31, 32, 64, 128, 257] do
-      check 21 #[natural n, natural k] (natural (n >>> k)) (shiftCost n k + 2)
+      check 21 #[natural n, natural k] (natural (n >>> k)) (if k == 1 then 5 else shiftCost n k + 4)
     check 22 #[natural n] (natural n.log2) (5 * n.log2 + 5)
   for e in #[0, 1, 2, 3, 4, 7, 8, 31, 32, 65, 127] do
     check 20 #[natural 3, natural e] (natural (3 ^ e)) (powCost e + 2)
+  let stateId ← checked (image.ctorId `MultiStark.Verify.Codec.Wire.WriteState.mk)
+  let emptyState : Value := .ctor stateId #[writer #[], natural 64, natural 17, natural 29]
+  let rangeError : Value := .ctor (← checked (image.ctorId `Except.error))
+    #[.ctor (← checked (image.ctorId `MultiStark.Verify.DecodeError.integerRange)) #[]]
+  check 110 #[natural 1, natural 5, emptyState, natural 5] rangeError 6
+  for (width, steps) in #[(2, 9), (8, 11), (1, 13), (4, 15), (3, 70)] do
+    check 111 #[natural width, natural (2 ^ (8 * width)), emptyState] rangeError steps
   for width in #[0, 1, 3, 4, 5, 7, 8, 9, 32, 33, 65] do
     check 98 #[natural width, natural 37, .byteBuilder #[42]]
       (.scalar (.bytes (#[42] ++ (List.range width).toArray.map (fun i => (37 / 256 ^ i).toUInt8))))

@@ -206,12 +206,34 @@ theorem Certificate.natShiftRight_returns (room : 6 ≤ limits.locals) (capacity
   have loop := (certificate.function 9).code
   change program.getFunction 21 = .ok Code.Nat_shiftRight at code
   change program.getFunction 9 = .ok Code.Ixby_Runtime_shiftRightLoop at loop
-  apply Reaches.trans (b := frameState 9 0 #[natural n, natural shift] continuation)
-  · apply Reaches.of_step
-    simp [step, stepEval, Frame.check, code, loop, Code.Nat_shiftRight, Code.Ixby_Runtime_shiftRightLoop,
-      frameState, Frame.read, Frame.readOperands, enter, show ¬limits.locals < 2 by omega,
-      bind, Except.bind, pure, Except.pure]
-  · exact certificate.shiftRightLoop_returns limits room capacity n shift nValid shiftValid continuation
+  have localRoom : ∀ k, k ≤ 6 → ¬limits.locals < k := by omega
+  have oneValid : NatValid limits 1 := validate_nat_of_bits (by decide : 1 < 2 ^ 2) capacity
+  have twoValid : NatValid limits 2 := validate_nat_of_bits (by decide : 2 < 2 ^ 2) capacity
+  have compare := eval_natEq limits shift 1 shiftValid oneValid
+  by_cases one : shift = 1
+  · -- The direct halving path: no loop entry, no recursion.
+    subst shift
+    have halved := eval_natDiv limits n 2 nValid twoValid
+      (validate_nat_mono (Nat.div_le_self n 2) nValid)
+    rw [Nat.shiftRight_eq_div_pow, Nat.pow_one]
+    apply reaches_of_chunk (fuel := 4) (count := 0)
+    iterate 4
+      rw [runChunk]
+      simp [step, stepEval, Frame.check, code, Code.Nat_shiftRight, frameState, returned, natural,
+        Frame.read, Frame.readOperands, Frame.transfer, evalOp, compare, halved, localRoom,
+        bind, Except.bind, pure, Except.pure]
+    rfl
+  · have differs : (shift == 1) = false := beq_eq_false_iff_ne.mpr one
+    apply Reaches.trans (b := frameState 9 0 #[natural n, natural shift] continuation)
+    · apply reaches_of_chunk (fuel := 3) (count := 0)
+      iterate 3
+        rw [runChunk]
+        simp [step, stepEval, Frame.check, code, loop, Code.Nat_shiftRight,
+          Code.Ixby_Runtime_shiftRightLoop, frameState, natural, Frame.read, Frame.readOperands,
+          Frame.transfer, enter, evalOp, compare, differs, localRoom,
+          bind, Except.bind, pure, Except.pure]
+      rfl
+    · exact certificate.shiftRightLoop_returns limits room capacity n shift nValid shiftValid continuation
 
 theorem Certificate.natLog2_returns (room : 5 ≤ limits.locals) (capacity : 2 ≤ limits.natBits)
     (n : Nat) (valid : NatValid limits n) (continuation : Array Continuation) :

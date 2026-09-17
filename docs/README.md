@@ -93,6 +93,7 @@ status.
 - [Single-dispatch array reads](ixby-array-read.md): preserved helper contracts, lower fuel and stack requirements, and measured Stage2/CSLib savings.
 - [FRI coordinate loop fusion](ixby-fri-fusion.md): kernel source equality, checked selection and fallback, and measured savings on both Stage2 workloads.
 - [Certified row hashing](ixby-row-hash.md): builder-based MMCS row serialization with complete-body certificates, an unchanged hash preimage, and measured savings on both Stage2 workloads.
+- [Shift-by-one and fixed-width writes](ixby-shift-width.md): direct halving in the shift wrapper, precomputed integer-write bounds with certified bodies, and measured savings on both Stage2 workloads.
 - [Experimental typed Lean frontend](ixby-lean.md): retained LCNF lowering, runtime representations, and Stage2 reference execution without a source certificate.
 - [Historical Nat/Word32 integration](ixby-nat-word32.md): revision 1 conversion proofs, artifacts, CSLib measurements, and small-proof verification; superseded by runtime revision 2.
 - [Typed runtime representation proofs](ixby-representation.md): current scalar, array, byte-view/builder and caller contracts; exact body certificates; and the chunked/reference executor equivalence.

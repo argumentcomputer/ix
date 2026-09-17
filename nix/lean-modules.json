@@ -1075,6 +1075,9 @@
     "Compilatrix.Ixon.Sharing.Indexed",
     "Compilatrix.Ixon.Univ",
     "Compilatrix.Ixon.UsageCheck"]},
+  "CompilatrixTests.Fences.IxbyWireNat":
+  {"path": "CompilatrixTests/Fences/IxbyWireNat.lean",
+   "imports": ["Compilatrix.Ixby.Runtime.Native.WireNat"]},
   "CompilatrixTests.Fences.IxbyRowHash":
   {"path": "CompilatrixTests/Fences/IxbyRowHash.lean",
    "imports": ["Compilatrix.Ixby.Runtime.Native.RowHash"]},
@@ -1351,6 +1354,7 @@
     "CompilatrixTests.Fences.IxbyInline",
     "CompilatrixTests.Fences.IxbyFri",
     "CompilatrixTests.Fences.IxbyRowHash",
+    "CompilatrixTests.Fences.IxbyWireNat",
     "CompilatrixTests.Fences.Ixon",
     "CompilatrixTests.Fences.IxonV3",
     "CompilatrixTests.Fences.IxonV3Typing",
@@ -3044,6 +3048,12 @@
    "imports":
    ["Compilatrix.Ixby.Runtime.Native.WireCertificate",
     "Compilatrix.Ixby.Runtime.Native.Values"]},
+  "Compilatrix.Ixby.Runtime.Native.WireNat":
+  {"path": "Compilatrix/Ixby/Runtime/Native/WireNat.lean",
+   "imports":
+   ["Compilatrix.Ixby.Runtime.Native.WireValues",
+    "Compilatrix.Ixby.Runtime.Native.NatLoops",
+    "Compilatrix.Ixby.Runtime.Native.Sequence"]},
   "Compilatrix.Ixby.Runtime.Native.WireEncode":
   {"path": "Compilatrix/Ixby/Runtime/Native/WireEncode.lean",
    "imports":
@@ -3183,7 +3193,8 @@
     "Compilatrix.Ixby.Runtime.Native.ArrayRead",
     "Compilatrix.Ixby.Runtime.Native.WireWrite",
     "Compilatrix.Ixby.Runtime.Native.WireEncode",
-    "Compilatrix.Ixby.Runtime.Native.RowHash"]},
+    "Compilatrix.Ixby.Runtime.Native.RowHash",
+    "Compilatrix.Ixby.Runtime.Native.WireNat"]},
   "Compilatrix.Ixby.Runtime.NatSub":
   {"path": "Compilatrix/Ixby/Runtime/NatSub.lean",
    "imports": ["Compilatrix.Ixby.Runtime.NatBinary"]},

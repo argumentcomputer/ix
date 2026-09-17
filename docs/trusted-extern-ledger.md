@@ -162,6 +162,13 @@ trap. All 2,771 prior fences, helper theorem premises, and the 107 earlier
 body certificates remain; two certified bodies are added and the inliner
 protects the 110-function prefix. No native or reference interface changes.
 
+[Shift-by-one and fixed-width writes](ixby-shift-width.md) change one runtime
+helper body and add two certified wire bodies with eight exact ordinary-logical
+fences; the shift contract is re-proved with its previous statement, and the
+fixed-width bounds equal the source powers by decision. All 2,781 prior fences
+and helper theorem premises remain; the inliner protects the 112-function
+prefix. No native or reference interface changes.
+
 ## Active native interface: BLAKE3 Rust
 
 | Field | Ledger value |

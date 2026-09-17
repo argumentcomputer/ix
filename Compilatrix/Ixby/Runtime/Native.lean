@@ -13,6 +13,7 @@ import Compilatrix.Ixby.Runtime.Native.ArrayRead
 import Compilatrix.Ixby.Runtime.Native.WireWrite
 import Compilatrix.Ixby.Runtime.Native.WireEncode
 import Compilatrix.Ixby.Runtime.Native.RowHash
+import Compilatrix.Ixby.Runtime.Native.WireNat
 
 /-! Current runtime body certificates and compositional execution proofs.
 This aggregate is for proof checks; the frontend imports only its certificate

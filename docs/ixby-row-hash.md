@@ -20,7 +20,9 @@ not a full Init verification claim. The baseline is revision
 leaf-call inlining and single-dispatch array reads. Artifact identities and
 execution evidence are in [row-hash.json](../fixtures/ixby-stage2/row-hash.json).
 The earlier CSLib profile counted 447,726 hashed fields, so the saving is about
-59 logical transitions per field.
+59 logical transitions per field. The subsequent
+[shift and width change](ixby-shift-width.md) retains these bodies and
+certificates while further reducing both workloads.
 
 ## Helper bodies and certificates
 

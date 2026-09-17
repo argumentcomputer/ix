@@ -18,6 +18,7 @@ import CompilatrixTests.Fences.IxbyArrayRead
 import CompilatrixTests.Fences.IxbyInline
 import CompilatrixTests.Fences.IxbyFri
 import CompilatrixTests.Fences.IxbyRowHash
+import CompilatrixTests.Fences.IxbyWireNat
 import CompilatrixTests.Fences.Ixon
 import CompilatrixTests.Fences.IxonV3
 import CompilatrixTests.Fences.IxonV3Typing

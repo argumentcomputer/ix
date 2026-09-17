@@ -109,6 +109,25 @@ def resourceCases (image : Image) : IO Nat := do
   run { natBits := 64, byteArrayBytes := 31 } 109 #[row] (.error (.limit .byteArrayBytes))
   run {} 109 #[packed] (.error .notConstructor)
   run {} 109 #[writer] (.error .notConstructor)
+  let stateId ← checked (image.ctorId `MultiStark.Verify.Codec.Wire.WriteState.mk)
+  let emptyState : Value := .ctor stateId #[writer, natural 64, natural 17, natural 29]
+  let integerRange : Value := .ctor (← checked (image.ctorId `Except.error))
+    #[.ctor (← checked (image.ctorId `MultiStark.Verify.DecodeError.integerRange)) #[]]
+  run { locals := 7, natBits := 2 } 110 #[natural 1, natural 3, emptyState, natural 3] (.ok integerRange)
+  run { locals := 6, natBits := 2 } 110 #[natural 1, natural 3, emptyState, natural 3]
+    (.error (.limit .locals))
+  run { locals := 7, natBits := 1 } 110 #[natural 1, natural 3, emptyState, natural 3]
+    (.error (.limit .natBits))
+  run { natBits := 64 } 111 #[natural 8, natural 5, emptyState] (.error (.limit .natBits))
+  run { natBits := 65 } 111 #[natural 8, natural (2 ^ 64), emptyState] (.ok integerRange)
+  run { locals := 7, natBits := 17, continuations := 0 } 111 #[natural 2, natural 65536, emptyState]
+    (.ok integerRange)
+  run { locals := 9, natBits := 25, continuations := 0 } 111 #[natural 3, natural 5, emptyState]
+    (.error (.limit .continuations))
+  run { locals := 9, natBits := 25, continuations := 1 } 111 #[natural 3, natural (2 ^ 24), emptyState]
+    (.error (.limit .locals))
+  run { locals := 10, natBits := 25, continuations := 1 } 111 #[natural 3, natural (2 ^ 24), emptyState]
+    (.ok integerRange)
   IO.println s!"native resources: {← count.get} exact local, continuation, byte, scalar and fuel cases"
   return ← count.get
 

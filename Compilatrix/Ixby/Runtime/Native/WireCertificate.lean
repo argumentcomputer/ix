@@ -10,7 +10,8 @@ def wireConstructors : Array (Name × CtorDecl) := Code.constructors ++ #[
   (`Except.error, ⟨⟨1, 0, 6⟩, 1⟩), (`Except.ok, ⟨⟨1, 0, 7⟩, 1⟩),
   (`MultiStark.Verify.DecodeError.byteLimit, ⟨⟨1, 0, 8⟩, 0⟩),
   (`PUnit.unit, ⟨⟨1, 0, 9⟩, 0⟩), (`Prod.mk, ⟨⟨1, 0, 10⟩, 2⟩),
-  (`MultiStark.Verify.DecodeError.field, ⟨⟨1, 0, 11⟩, 0⟩)]
+  (`MultiStark.Verify.DecodeError.field, ⟨⟨1, 0, 11⟩, 0⟩),
+  (`MultiStark.Verify.DecodeError.integerRange, ⟨⟨1, 0, 12⟩, 0⟩)]
 
 structure WireCertificate (program : Program) where
   runtime : Certificate program
@@ -53,5 +54,8 @@ theorem WireCertificate.pairCtor {program : Program} (certificate : WireCertific
 
 theorem WireCertificate.fieldErrorCtor {program : Program} (certificate : WireCertificate program) :
     program.getConstructor 11 = .ok ⟨⟨1, 0, 11⟩, 0⟩ := certificate.constructor 11
+
+theorem WireCertificate.integerRangeCtor {program : Program} (certificate : WireCertificate program) :
+    program.getConstructor 12 = .ok ⟨⟨1, 0, 12⟩, 0⟩ := certificate.constructor 12
 
 end Compilatrix.Ixby.Runtime.Native

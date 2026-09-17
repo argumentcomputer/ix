@@ -71,7 +71,10 @@ runs through `check-ixby-lean` and the required `ixby-lean` Nix check. Its
 source equality proofs and exact fences remain in `CompilatrixTests.Proofs`.
 The [row-hash helpers](ixby-row-hash.md) run through `check-ixby-lean`, including
 oracle, resource, exact-fuel, mutation and source suites; their body
-certificates and ten exact fences are in `CompilatrixTests.Proofs`.
+certificates and ten exact fences are in `CompilatrixTests.Proofs`. The
+[shift and fixed-width helpers](ixby-shift-width.md) are covered by the same
+gate; their re-proved and new contracts and eight exact fences are in
+`CompilatrixTests.Proofs`.
 
 Compiler-comparison and measurement runners are built separately with
 `lake -d benchmarks/comparisons build`. Their [optional environment and commands](../benchmarks/comparisons/README.md)

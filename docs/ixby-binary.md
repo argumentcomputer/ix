@@ -13,10 +13,10 @@ The Stage2 handoff is [stage2.ixby](../fixtures/ixby-stage2/stage2.ixby), with
 
 | Property | Value |
 | --- | --- |
-| Bytes | 990,915 |
-| SHA-256 | `ecc5620b969f9bc4b63465431a05bcae8010525eb2841d42a1aa05472a4e106f` |
-| Entry | Function 668, arity 2 |
-| Functions / blocks / constructor layouts | 669 / 5,807 / 140 |
+| Bytes | 991,071 |
+| SHA-256 | `a11acaea8f8be6e4546c3a1971ddddf73e770381cfc219c2dc6764f52169f397` |
+| Entry | Function 669, arity 2 |
+| Functions / blocks / constructor layouts | 670 / 5,824 / 140 |
 | Maximum reference transitions | 16,000,000,000 |
 
 Both original keys, entrypoints 755/243, and the fixed verifier configuration
@@ -24,7 +24,8 @@ are embedded in the binary. Arguments are raw public claim bytes and raw
 private native multiproof bytes, each a `Value.scalar (.bytes ...)`.
 Success returns raw claim bytes; rejection returns `Value.erased`.
 
-The compiler binds [certified row hashing](ixby-row-hash.md), selects
+The compiler binds [certified row hashing](ixby-row-hash.md) and
+[fixed-width integer writes](ixby-shift-width.md), selects
 [FRI loop fusion by source equality](ixby-fri-fusion.md), emits
 [certified single-dispatch array reads](ixby-array-read.md)
 and applies [certified leaf-call inlining](ixby-inline.md), then produces the

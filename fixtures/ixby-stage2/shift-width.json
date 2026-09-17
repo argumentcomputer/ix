@@ -1,0 +1,83 @@
+{"stage2_singleton":
+ {"without_optional_optimizations_program":
+  {"sha256": "246cbf337d3a732ab394101848cb5b2fbbf91c00a36d195c2939fb7426d3c56b",
+   "bytes": 991289},
+  "without_fusion_program":
+  {"sha256": "96b8a397b7803ce36eb35de56821db88ceb8753d62482132d1a8e6217a74638c",
+   "bytes": 991167},
+  "selected_program":
+  {"sha256": "a11acaea8f8be6e4546c3a1971ddddf73e770381cfc219c2dc6764f52169f397",
+   "bytes": 991071},
+  "saved_valid_transitions": 17233045,
+  "reference_transitions":
+  {"wrong-claim-kind": 107,
+   "valid": 441279047,
+   "truncated-proof": 118244589,
+   "trailing-public": 58,
+   "trailing-proof": 118246783,
+   "malformed-proof": 19130844,
+   "empty-proof": 19130844,
+   "claim-mismatch": 180235326},
+  "original_program":
+  {"sha256": "ecc5620b969f9bc4b63465431a05bcae8010525eb2841d42a1aa05472a4e106f",
+   "bytes": 990915},
+  "manifest":
+  {"sha256": "6ae94d9d7dc5848119a0021585275c056ae5be4d8b19b843c036ccf8721eac85",
+   "bytes": 79544},
+  "coverage": "singleton smoke proof; not full Init verification",
+  "baseline_transitions": 458512092},
+ "stage2_cslib":
+ {"selected_transitions": 217047989,
+  "selected_program":
+  {"sha256": "5540d5b47c589e034f21086455efbfd53fc7b841caffb47c8949592def29e3d5",
+   "bytes": 1005303},
+  "saved_transitions": 10732772,
+  "original_program":
+  {"sha256": "5bbd0505e902311f099aa71d0b8998beaa8f108b1661b68730e8a4eeb2d290f9",
+   "bytes": 1005147},
+  "input":
+  {"sha256": "713507a9b57d662a138423a50d5d9afc820101f0aab37ba818525d19605f2e9f",
+   "bytes": 4813238},
+  "identical_output":
+  {"sha256": "ff31bd76a92893521bab4d89f822cd0d1a78146a7a000e31268460e946f5fc45",
+   "bytes": 49},
+  "fresh_source_adapter":
+  {"sha256": "d2d25981e71e22382bed4353cf2626742fee9bba9be494e101a1fb79e418e394",
+   "bytes": 10425},
+  "executed_fresh_compilation": true,
+  "complete_native_proof_generated": false,
+  "baseline_transitions": 227780761},
+ "semantics": 2,
+ "format": "compilatrix-ixby-shift-width/1",
+ "change":
+ {"vendored_source_unchanged": true,
+  "source_function_replaced_by_certified_body":
+  "MultiStark.Verify.Codec.Wire.writeNat",
+  "shift_by_one_transitions": {"previous_nonzero": 12, "current": 5},
+  "runtime_and_wire_bodies_checked": 111,
+  "reference_limits_and_constructor_layouts_identical": true,
+  "protected_prefix_functions": 112,
+  "prior_helper_theorem_premises_preserved": true,
+  "prior_axiom_fences_preserved": 2781,
+  "previous_helper_bodies_identical": 108,
+  "kernel_theorems":
+  ["Compilatrix.Ixby.Runtime.Native.Certificate.natShiftRight_returns",
+   "Compilatrix.Ixby.Runtime.Native.WireCertificate.writeNat_encodes",
+   "Compilatrix.Ixby.Runtime.Native.WireCertificate.writeNat_rejects",
+   "Compilatrix.Ixby.Runtime.Native.WireCertificate.wireNatRange_encodes",
+   "Compilatrix.Ixby.Runtime.Native.WireCertificate.wireNatRange_rejects"],
+  "inlining_certificate":
+  "separate complete-image certificate after source lowering",
+  "helpers":
+  ["Nat.shiftRight",
+   "Ixby.Runtime.wireNatRange",
+   "MultiStark.Verify.Codec.Wire.writeNat"],
+  "general_source_to_ixby_refinement":
+  "open; the certificate is at the helper-body boundary",
+  "functions": [21, 110, 111],
+  "fixed_width_bounds":
+  "widths 1, 2, 4, 8 compare against precomputed 2^(8*width); other widths use the certified power loop",
+  "changed_runtime_body":
+  "Nat.shiftRight: direct halving when the count is one; loop otherwise",
+  "axiom_fences_added": 8},
+ "baseline_revision": "c1543bfbcb0b8af98e06bd59c808041622d4b7b7"}

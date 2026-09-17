@@ -70,7 +70,7 @@ def certificateMutations (image : Image) : IO Nat := do
   let sourceChanged := changeFunction image 97 fun fn =>
     { fn with blocks := fn.blocks.modify 0 fun block => { block with instruction := .ret .erased } }
   discard <| checked sourceChanged.certifyWireRuntime
-  IO.println s!"native certificates: 109 complete helper bodies; {← rejected.get} mutations rejected ({← admitted.get} structurally admitted); source-body boundary checked"
+  IO.println s!"native certificates: 111 complete helper bodies; {← rejected.get} mutations rejected ({← admitted.get} structurally admitted); source-body boundary checked"
   return ← rejected.get
 
 end CompilatrixTests.Ixby.Native

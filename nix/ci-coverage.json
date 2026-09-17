@@ -352,6 +352,7 @@
   "Compilatrix.Ixby.Runtime.Native.Values",
   "Compilatrix.Ixby.Runtime.Native.WireCertificate",
   "Compilatrix.Ixby.Runtime.Native.WireEncode",
+  "Compilatrix.Ixby.Runtime.Native.WireNat",
   "Compilatrix.Ixby.Runtime.Native.WireValues",
   "Compilatrix.Ixby.Runtime.Native.WireWrite",
   "Compilatrix.Ixby.Runtime.Native.Words",
@@ -706,6 +707,7 @@
   "CompilatrixTests.Fences.IxbyInline",
   "CompilatrixTests.Fences.IxbyNative",
   "CompilatrixTests.Fences.IxbyRowHash",
+  "CompilatrixTests.Fences.IxbyWireNat",
   "CompilatrixTests.Fences.IxonV3",
   "CompilatrixTests.Fences.IxonV3Catalog",
   "CompilatrixTests.Fences.IxonV3Typing",
@@ -716,5 +718,5 @@
   "CompilatrixTests.Pipeline.Integration"],
  "baseline": "6beaf5d0: complete required CI before factoring",
  "axiom_sha256":
- "aceee9c8a369ce159e8fb7d3774a513ceb37e29c8b1e28ad8111bfd578c8f331",
- "axiom_count": 2781}
+ "ad5ac4f8415f571a46c568e7e438044d30a19e009907807c7c3025c66b95dcf4",
+ "axiom_count": 2789}

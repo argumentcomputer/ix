@@ -82,7 +82,12 @@ def buildNumbers : BuildM Unit := do
         let n ← primitive .natDiv [.local 0, rawNat 2]
         let shift ← primitive .natSub [.local 1, rawNat 1]
         tailCall `Ixby.Runtime.shiftRightLoop [n, shift]
-  define `Nat.shiftRight 2 (tailCall `Ixby.Runtime.shiftRightLoop [.local 0, .local 1])
+  -- Every profiled Stage2 shift is by one; halve directly and keep the loop
+  -- for every other count.
+  define `Nat.shiftRight 2 do
+    branch (← primitive .natEq [.local 1, rawNat 1])
+      (do ret (← primitive .natDiv [.local 0, rawNat 2]))
+      (tailCall `Ixby.Runtime.shiftRightLoop [.local 0, .local 1])
   define `Ixby.Runtime.log2Loop 2 do
     branch (← primitive .natLt [.local 0, rawNat 2]) (ret (.local 1)) do
       let n ← primitive .natDiv [.local 0, rawNat 2]

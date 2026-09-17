@@ -216,6 +216,14 @@ def run (certify : Image → IO Unit) (transform : Image → IO Image := pure) :
             ← checked (image.number limit)] (source n initial limit)
           count := count + 1
   for wire in #[false, true] do
+    let image ← compileImage env ``wireNatWrite wire
+    for width in #[0, 1, 2, 3, 4, 5, 8, 9] do
+      for n in #[0, 1, 255, 256, 65535, 65536, 2 ^ 32 - 1, 2 ^ 32, 2 ^ 64 - 1, 2 ^ 64, 2 ^ 80 + 17] do
+        for (initial, limit) in #[(#[], 8), (#[255], 9), (#[0, 128, 255], 3)] do
+          runBytes image #[← checked (image.number width), ← checked (image.number n),
+            ← checked (image.bytes initial), ← checked (image.number limit)] (wireNatWrite width n initial limit)
+          count := count + 1
+  for wire in #[false, true] do
     let image ← compileImage env ``rowHash wire
     for values in #[#[], #[0], #[1, Ix.Ixby.goldilocksModulus - 1, Ix.Ixby.goldilocksModulus, 2 ^ 80 + 17],
         (Array.range 65).map (· * 1000003)] do

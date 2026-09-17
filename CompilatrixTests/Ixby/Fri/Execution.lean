@@ -56,7 +56,7 @@ def execution (env : Environment) : IO Unit := do
     "fused loop was not compiled"
   need (!(fused.state.functionNames.contains ``MultiStark.Verify.Fri.reduceCoordinatePairs))
     "fused image still compiles the list fold"
-  let inlined ← checked (Compilatrix.Ixby.Inline.optimizeImage fused { protectedPrefix := 110 })
+  let inlined ← checked (Compilatrix.Ixby.Inline.optimizeImage fused { protectedPrefix := 112 })
   discard <| checked inlined.image.certifyWireRuntime
   let images := #[original, fused, inlined.image]
   let x := ext 17 23

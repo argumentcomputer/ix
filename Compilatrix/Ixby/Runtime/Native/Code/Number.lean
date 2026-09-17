@@ -211,7 +211,11 @@ def Nat_shiftRight : Function := {
   arity := 2
   entry := 0
   blocks := #[
-    ⟨2, .tailCall 9 [.local 0, .local 1]⟩] }
+    ⟨2, .letOp (.primitive .natEq [.local 1, .literal (.nat 1)]) 1⟩,
+    ⟨3, .branch (.local 2) 2 3⟩,
+    ⟨3, .letOp (.primitive .natDiv [.local 0, .literal (.nat 2)]) 4⟩,
+    ⟨3, .tailCall 9 [.local 0, .local 1]⟩,
+    ⟨4, .ret (.local 3)⟩] }
 
 /-- `Nat.log2`, private function 22. -/
 def Nat_log2 : Function := {

@@ -83,6 +83,14 @@ def wireFieldWrite (n : Nat) (initial : Array UInt8) (limit : Nat) : Array UInt8
 def wireFieldWriteRaw (n : Nat) (initial : Array UInt8) (limit : Nat) : Array UInt8 :=
   writeFieldResult ⟨n % Ix.Ixby.goldilocksModulus, Nat.mod_lt _ (by decide)⟩ initial limit
 
+def wireNatWrite (width n : Nat) (initial : Array UInt8) (limit : Nat) : Array UInt8 :=
+  match MultiStark.Verify.Codec.Wire.writeNat width n
+      { bytes := initial, limit, vectorLimit := 17, items := 29 } with
+  | .error .byteLimit => #[0]
+  | .error .integerRange => #[3]
+  | .error _ => #[1]
+  | .ok (_, state) => #[2, state.vectorLimit.toUInt8, state.items.toUInt8] ++ state.bytes
+
 def replicate (n : Nat) : Nat :=
   (Array.replicate n 7).foldl (· + ·) 0
 
