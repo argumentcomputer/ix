@@ -2,13 +2,20 @@
 
 ## Current runtime-v2 CSLib workload
 
+The [complete native census](cslib-runtime-v2-native.json) covers
+1,703,268,652 physical steps and matches every compiler block count, fuel and
+expected output. The [batch/proof comparison](cslib-runtime-v2-tuning.json)
+and [reproduction bundle](cslib-tuning-v0/README.md) record the selected
+`cslib-2048` class, 341 capture replays, and actual equal-work recursive trees.
+
 The [new compiler export and retained evidence](cslib-runtime-v2/README.md)
 cover **360,337,913 logical transitions** with exact expected output.
 The [reference summary](cslib-runtime-v2-reference.json),
 [function costs](cslib-runtime-v2-costs.json), and
 [two new physical windows](cslib-runtime-v2-physical.json) bind the copied
 runtime-v2 program and input. See the [current priorities](../../docs/IxbyPerformance.md)
-for the remaining opportunities, including recursive joins.
+for the remaining opportunities, including recursive joins. The two-prefix
+record is retained as the initial measurement before full profiling.
 
 ## Historical reference image and observer
 

@@ -1,0 +1,26 @@
+
+running 1 test
+test execution_tree::tests::large_execution::execution_range_chain_proves_fresh has been running for over 60 seconds
+{"class":"shared-linked-1024","event":"chain_setup","geometry":{"application_words":57,"arithmetic_operations":2034899,"blake3_compressions":83494,"children":[1,1],"dense_variables":32,"leaves":2,"packing_rows":44198,"root_advice_words":5627,"root_families":181,"row_variables":17,"variables":5242138},"identity":"de4a012be2dfe87d82e0dd5e80df4215e50dad7064751d1eb5bcd108ab5b172a","leaves":2,"seconds":134.271910977}
+{"bytes":415891,"class":"shared-linked-1024","event":"chain_proof","first_leaf":0,"geometry":{"application_words":57,"arithmetic_operations":2034899,"blake3_compressions":83494,"children":[1,1],"dense_variables":32,"leaves":2,"packing_rows":44198,"root_advice_words":5627,"root_families":181,"row_variables":17,"variables":5242138},"leaves":2,"seconds":156.815083078}
+{"bytes":415891,"class":"shared-linked-1024","event":"chain_proof","first_leaf":2,"geometry":{"application_words":57,"arithmetic_operations":2034899,"blake3_compressions":83494,"children":[1,1],"dense_variables":32,"leaves":2,"packing_rows":44198,"root_advice_words":5627,"root_families":181,"row_variables":17,"variables":5242138},"leaves":2,"seconds":160.229683832}
+{"class":"shared-linked-1024","event":"chain_setup","geometry":{"application_words":57,"arithmetic_operations":1071040,"blake3_compressions":40234,"children":[2,2],"dense_variables":31,"leaves":4,"packing_rows":36397,"root_advice_words":5722,"root_families":183,"row_variables":16,"variables":3683220},"identity":"a1b2d4b3ebcda3220b36d0efdb134c67a7e24dd65ed4f84c64609ffddc038358","leaves":4,"seconds":7.717623007}
+{"bytes":421363,"class":"shared-linked-1024","event":"chain_proof","first_leaf":0,"geometry":{"application_words":57,"arithmetic_operations":1071040,"blake3_compressions":40234,"children":[2,2],"dense_variables":31,"leaves":4,"packing_rows":36397,"root_advice_words":5722,"root_families":183,"row_variables":16,"variables":3683220},"leaves":4,"seconds":122.472596208}
+{"bytes":415891,"class":"shared-linked-1024","event":"chain_proof","first_leaf":4,"geometry":{"application_words":57,"arithmetic_operations":2034899,"blake3_compressions":83494,"children":[1,1],"dense_variables":32,"leaves":2,"packing_rows":44198,"root_advice_words":5627,"root_families":181,"row_variables":17,"variables":5242138},"leaves":2,"seconds":162.257373634}
+{"class":"shared-linked-1024","event":"chain_setup","geometry":{"application_words":57,"arithmetic_operations":1553296,"blake3_compressions":61870,"children":[2,1],"dense_variables":32,"leaves":3,"packing_rows":40445,"root_advice_words":5722,"root_families":183,"row_variables":16,"variables":4475906},"identity":"2869bda528a6ad9fb1b4707c4d72e413f6010bb1533ba1c55cb44a2c51bc2252","leaves":3,"seconds":9.844706706}
+{"bytes":399107,"class":"shared-linked-1024","event":"chain_proof","first_leaf":4,"geometry":{"application_words":57,"arithmetic_operations":1553296,"blake3_compressions":61870,"children":[2,1],"dense_variables":32,"leaves":3,"packing_rows":40445,"root_advice_words":5722,"root_families":183,"row_variables":16,"variables":4475906},"leaves":3,"seconds":140.092111262}
+{"class":"shared-linked-1024","event":"chain_setup","geometry":{"application_words":57,"arithmetic_operations":1052099,"blake3_compressions":40303,"children":[4,3],"dense_variables":31,"leaves":7,"packing_rows":36789,"root_advice_words":5908,"root_families":187,"row_variables":16,"variables":3698566},"identity":"033b94b0dbf4cd4aebb6d3ce5fe7bf18eac84f96a88e29528bcdef797c813cb5","leaves":7,"seconds":8.045205202}
+{"bytes":424339,"class":"shared-linked-1024","event":"chain_proof","first_leaf":0,"geometry":{"application_words":57,"arithmetic_operations":1052099,"blake3_compressions":40303,"children":[4,3],"dense_variables":31,"leaves":7,"packing_rows":36789,"root_advice_words":5908,"root_families":187,"row_variables":16,"variables":3698566},"leaves":7,"seconds":116.40599362}
+
+running 1 test
+test execution_tree::tests::large_execution::execution_range_chain_proves_fresh ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 21 filtered out; finished in 187.35s
+
+{"class":"shared-linked-1024","event":"chain_receiver_setup","geometry":{"application_words":57,"arithmetic_operations":1052099,"blake3_compressions":40303,"children":[4,3],"dense_variables":31,"leaves":7,"packing_rows":36789,"root_advice_words":5908,"root_families":187,"row_variables":16,"variables":3698566},"identity":"033b94b0dbf4cd4aebb6d3ce5fe7bf18eac84f96a88e29528bcdef797c813cb5","seconds":159.556518136}
+{"bytes":424339,"class":"shared-linked-1024","event":"chain_receiver_accepted","seconds":23.802834886}
+chain receiver rejected all 114 public-word mutations, truncation and trailing data
+
+test execution_tree::tests::large_execution::execution_range_chain_proves_fresh ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 21 filtered out; finished in 1210.80s

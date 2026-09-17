@@ -60,6 +60,16 @@ pub(super) fn shape(class: BatchClass) -> Option<BatchShape> {
       6143,
       16,
     ),
+    BatchClass::Cslib2048 => (
+      [
+        2048, 3419, 619, 632, 539, 2268, 285, 16, 39, 154, 365, 39, 633, 357,
+        73, 39, 16, 64, 73, 39, 64, 16, 16, 16, 248, 1360, 585, 248, 256, 768,
+        768,
+      ],
+      1536,
+      4095,
+      16,
+    ),
     _ => return None,
   };
   Some(BatchShape { quotas, cells, parents: Some(parents), nu })

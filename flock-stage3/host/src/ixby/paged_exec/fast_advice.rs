@@ -19,6 +19,20 @@ pub(super) fn micro(kind: MicroKind, input: &[F128]) -> Option<Vec<F128>> {
       &input[1 + STATE_WORDS..],
     );
   }
+  if let MicroKind::Object(kind) = kind {
+    return super::object_native::evaluate(
+      kind,
+      &input[1..1 + STATE_WORDS],
+      &input[1 + STATE_WORDS..],
+    );
+  }
+  if let MicroKind::Byte(kind) = kind {
+    return super::byte_native::evaluate(
+      kind,
+      &input[1..1 + STATE_WORDS],
+      &input[1 + STATE_WORDS..],
+    );
+  }
   if matches!(
     kind,
     MicroKind::Parameters

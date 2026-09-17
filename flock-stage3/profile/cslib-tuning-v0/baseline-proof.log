@@ -1,0 +1,24 @@
+
+running 1 test
+proof_quota,0,[817, 1349, 135, 220, 195, 906, 76, 2, 2, 0, 124, 2, 104, 82, 32, 29, 0, 0, 32, 0, 0, 0, 0, 0, 30, 132, 109, 30, 0, 0, 0]
+proof_quota,1,[251, 467, 51, 52, 45, 203, 8, 0, 0, 0, 23, 0, 8, 8, 32, 5, 0, 0, 32, 14, 0, 0, 0, 0, 40, 137, 32, 40, 0, 0, 0]
+proof_quota,2,[128, 272, 32, 16, 16, 64, 0, 0, 0, 0, 0, 0, 0, 0, 32, 0, 0, 0, 32, 16, 0, 0, 0, 0, 32, 112, 0, 32, 0, 0, 0]
+proof_quota,3,[586, 940, 122, 157, 141, 555, 57, 1, 1, 0, 65, 1, 83, 60, 32, 10, 0, 2, 32, 4, 0, 0, 0, 0, 10, 28, 0, 10, 34, 34, 2]
+proof_quota,4,[751, 1190, 153, 208, 187, 733, 83, 2, 1, 0, 85, 1, 122, 87, 32, 15, 0, 0, 32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+proof_quota,5,[985, 1579, 184, 316, 256, 1022, 95, 0, 6, 0, 101, 6, 162, 107, 27, 17, 0, 0, 27, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+proof_quota,6,[378, 594, 76, 126, 96, 368, 32, 0, 1, 0, 36, 1, 52, 34, 11, 5, 0, 0, 11, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+test ixby::paged_exec::benchmark_tests::original_execution_proof_throughput has been running for over 60 seconds
+proof_setup_identity,shared-linked-1024,37cb7b730ccd6340c56901247e3456f75958450e3ed63e3b01eb76a15a90844a,ef739246c1c73ec2547b36c5474fcb2121c5af3273d5a10ad2a0fd1075327468,16,33
+proof benchmark: class=SharedLinked1024 skip=0 batches=7 workers=1 threads=2 load_seconds=0.244399411 skip_seconds=0.000000030 native_seconds=0.668854273 setup_seconds=121.867867911
+proof_sample,batch,worker,microsteps,logical_steps,witness_seconds,prove_seconds,verify_seconds,bytes
+proof_sample,0,0,4408,966,2.386047327,25.573859295,0.309409791,624091
+proof_sample,1,0,1448,275,2.214711769,25.309084065,0.315944693,624091
+proof_sample,2,0,784,128,2.234881256,25.483876115,0.316160827,624091
+proof_sample,3,0,2967,684,2.232472103,26.585740408,0.315725657,624091
+proof_sample,4,0,3682,887,2.285517609,26.368173347,0.307408973,624091
+proof_sample,5,0,4890,1201,2.215821518,26.118409708,0.319430206,624091
+proof_sample,6,0,1821,457,2.501811034,25.922968428,0.312736332,624091
+proof benchmark complete: batches=7 microsteps=20000 logical_steps=4598 worker_wall_seconds=199.872599246 batches_per_second=0.035022309 logical_steps_per_second=23.004654051; every segment proof verified; source admission, complete execution and aggregation are outside this benchmark
+test ixby::paged_exec::benchmark_tests::original_execution_proof_throughput ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 381 filtered out; finished in 324.36s

@@ -1,0 +1,19 @@
+
+running 15 tests
+test ixby::memory_log::boolean_switch::tests::packed_switch_clears_small_row_domains ... ok
+test ixby::memory_log::boolean_switch::tests::boolean_switch_constraints_bind_every_word_and_all_selector_bits ... ok
+test ixby::memory_log::packing::tests::packed_record_writer_matches_matrices_and_recycled_buffers ... ok
+test ixby::memory_log::packing::tests::packing_is_exact_and_removed_bits_cannot_hide_data ... ok
+test ixby::memory_log::packing::tests::untimed_kind_selection_packs_and_restores_complete_records ... ok
+test ixby::memory_log::proof_tests::batched_memory_benchmark ... ignored, measured 512-access memory batch; run with an explicit process memory cap
+test ixby::memory_log::proof_tests::memory_log_proofs_verify_in_isolation_and_reject_recomputed_accesses ... ignored, real authenticated memory log proofs with exact whole-record routing and malicious row substitutions
+test ixby::memory_log::boolean_switch::tests::packed_switch_witness_matches_sparse_matrices_and_recycled_padding ... ok
+test ixby::memory_log::tests::complete_small_permutations_and_large_routes_cover_every_record ... ok
+test ixby::memory_log::tests::counted_fixed_topology_moves_all_record_words ... ok
+test ixby::memory_log::tests::memory_batch_census ... ignored, proof-free memory geometry for candidate execution batch sizes
+test ixby::memory_log::tests::ordered_audit_requires_seed_seal_and_exact_read_after_write_values ... ok
+test ixby::memory_log::tests::switches_bind_whole_records_boolean_selectors_and_recycled_padding ... ok
+test ixby::memory_log::witness::quota_tests::sorted_parent_count_matches_exact_paths_and_low_address_padding ... ok
+test ixby::memory_log::tests::authenticated_log_binds_repeated_accesses_boundaries_and_padding ... ok
+
+test result: ok. 12 passed; 0 failed; 3 ignored; 0 measured; 368 filtered out; finished in 4.75s

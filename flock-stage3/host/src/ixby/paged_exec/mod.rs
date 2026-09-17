@@ -4,6 +4,7 @@
 mod batch;
 #[cfg(test)]
 mod benchmark_tests;
+mod byte_native;
 mod byte_slots;
 #[cfg(test)]
 mod byte_tests;
@@ -19,10 +20,14 @@ mod gate;
 mod image;
 #[cfg(test)]
 mod image_tests;
+mod numeric_native;
+mod object_native;
 mod object_slots;
 #[cfg(test)]
 mod object_tests;
 mod objects;
+#[cfg(test)]
+mod profile_tests;
 mod proof;
 mod proof_drivers;
 #[cfg(test)]

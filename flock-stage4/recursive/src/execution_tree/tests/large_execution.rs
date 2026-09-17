@@ -12,6 +12,8 @@ const TEST: &str = "execution_tree::tests::large_execution::original_1024_execut
 const PACKED_TEST: &str = "execution_tree::tests::large_execution::original_packed_1024_execution_chain_proves_fresh";
 const LINKED_TEST: &str = "execution_tree::tests::large_execution::original_linked_1024_execution_chain_proves_fresh";
 const SHAPE_TEST: &str = "execution_tree::tests::large_execution::execution_batch_shape_chain_proves_fresh";
+const RANGE_TEST: &str =
+  "execution_tree::tests::large_execution::execution_range_chain_proves_fresh";
 const CHILD: &str = "IXBY_LARGE_EXECUTION_CHAIN_RECEIVER";
 
 fn compiler(class: BatchClass, leaves: usize) -> PagedTreeCompiler {
@@ -106,8 +108,89 @@ fn execution_batch_shape_chain_proves_fresh() {
   proof_chain(class, SHAPE_TEST);
 }
 
+#[test]
+#[ignore = "caller-selected 2..256 adjacent execution proofs; exact range, every join, fresh receiver"]
+fn execution_range_chain_proves_fresh() {
+  let class = BatchClass::from_name(
+    &std::env::var("IXBY_EXECUTION_CHAIN_CLASS").unwrap(),
+  )
+  .unwrap();
+  proof_chain(class, RANGE_TEST);
+}
+
+fn range_chain(
+  mut compiler: PagedTreeCompiler,
+  class: BatchClass,
+  count: usize,
+) {
+  fn subtree(
+    compiler: &mut PagedTreeCompiler,
+    setups: &mut BTreeMap<usize, CompiledPagedNode>,
+    class: BatchClass,
+    leaves: &[PagedNodeProof],
+    first: usize,
+  ) -> PagedNodeProof {
+    if leaves.len() == 1 {
+      return PagedNodeProof {
+        statement: leaves[0].statement.clone(),
+        proof: leaves[0].proof.clone(),
+      };
+    }
+    let count = leaves.len();
+    let split = 1usize << (count - 1).ilog2();
+    let left = subtree(compiler, setups, class, &leaves[..split], first);
+    let right =
+      subtree(compiler, setups, class, &leaves[split..], first + split);
+    let node = setups.entry(count).or_insert_with(|| {
+      let started = Instant::now();
+      let node = compiler.compile_component(Component::Execution, count).unwrap();
+      eprintln!("{}", serde_json::json!({"event":"chain_setup", "class":class.name(),
+        "leaves":count,"seconds":started.elapsed().as_secs_f64(),"geometry":node.geometry(),
+        "identity":blake3::Hash::from(node.identity()).to_hex().as_str()}));
+      node
+    });
+    let started = Instant::now();
+    let proof = node
+      .prove([&left.statement, &right.statement], [&left.proof, &right.proof])
+      .unwrap();
+    assert_eq!(proof.statement, expected(&left.statement, &right.statement));
+    node.verify(&proof.statement, &proof.proof).unwrap();
+    eprintln!(
+      "{}",
+      serde_json::json!({"event":"chain_proof", "class":class.name(),
+      "leaves":count,"first_leaf":first,"seconds":started.elapsed().as_secs_f64(),
+      "bytes":proof.proof.len(),"geometry":node.geometry()})
+    );
+    save(&format!("range-{first}-{count}"), &proof);
+    proof
+  }
+  let dir = std::env::var_os("IXBY_LARGE_EXECUTION_PROOFS").unwrap();
+  let leaves =
+    (0..count).map(|i| record(Path::new(&dir), i)).collect::<Vec<_>>();
+  for pair in leaves.windows(2) {
+    expected(&pair[0].statement, &pair[1].statement);
+  }
+  let mut setups = BTreeMap::new();
+  let root = subtree(&mut compiler, &mut setups, class, &leaves, 0);
+  assert_eq!(&root.statement[..30], &leaves[0].statement[..30]);
+  assert_eq!(&root.statement[30..], &leaves[count - 1].statement[30..]);
+  drop(setups);
+  drop(compiler);
+  drop(leaves);
+  fresh_receiver(class, count, RANGE_TEST, &root);
+}
+
 fn proof_chain(class: BatchClass, test: &str) {
-  let count = if test == SHAPE_TEST { 4 } else { 3 };
+  let count = if test == RANGE_TEST {
+    let count: usize =
+      std::env::var("IXBY_EXECUTION_CHAIN_LEAVES").unwrap().parse().unwrap();
+    assert!((2..=256).contains(&count));
+    count
+  } else if test == SHAPE_TEST {
+    4
+  } else {
+    3
+  };
   let mut compiler = compiler(class, count);
   let compiling = Instant::now();
   if std::env::var_os(CHILD).is_some() {
@@ -152,6 +235,10 @@ fn proof_chain(class: BatchClass, test: &str) {
     eprintln!(
       "chain receiver rejected all 114 public-word mutations, truncation and trailing data"
     );
+    return;
+  }
+  if test == RANGE_TEST {
+    range_chain(compiler, class, count);
     return;
   }
   let node = compiler.compile_component(Component::Execution, 2).unwrap();
@@ -285,12 +372,22 @@ fn proof_chain(class: BatchClass, test: &str) {
   drop(leaves);
   drop(first);
   drop(right);
+  fresh_receiver(class, count, test, &root);
+}
+
+fn fresh_receiver(
+  class: BatchClass,
+  count: usize,
+  test: &str,
+  root: &PagedNodeProof,
+) {
   let mut child = Command::new(std::env::current_exe().unwrap())
     .args([test, "--ignored", "--exact", "--nocapture", "--test-threads=1"])
     .current_dir(std::env::temp_dir())
     .env_clear()
     .env(CHILD, "1")
     .env("IXBY_EXECUTION_CHAIN_CLASS", class.name())
+    .env("IXBY_EXECUTION_CHAIN_LEAVES", count.to_string())
     .env("RAYON_NUM_THREADS", "2")
     .env("MALLOC_ARENA_MAX", "2")
     .stdin(Stdio::piped())

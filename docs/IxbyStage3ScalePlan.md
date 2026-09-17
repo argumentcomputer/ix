@@ -292,14 +292,23 @@ current-status section below.
     transitions; two new native windows cover the first 200,000 microsteps.
     Their copy/byte quota stops demonstrate that the earlier synthetic
     arithmetic classes require retuning for this workload.
+33. [Complete native CSLib profile and exact-work tuning](IxbyCslibTuning.md):
+    the full 1,703,268,652-microstep native execution checks the expected output
+    and matches all 5,816 compiler block counts and 360,337,913 logical steps.
+    Direct advice calculators accelerate the matched native pilot about 8x.
+    The new `cslib-2048` class is checked against 341 captured windows and
+    measured over the same 20,000-microstep segment as the linked baseline,
+    including every recursive join and fresh-root verification.
 
 ## Current integration and next measurements
 
 The [current performance report](IxbyPerformance.md) ranks optimization work
 for the copied 360,337,913-transition workload. The
 [semantics-2 batch report](IxbyBatchTuning.md) supplies measured leaf and join
-costs on earlier workloads. Their arithmetic long-run model illustrates the
-scale problem; it does not predict runtime-v2 CSLib proof time.
+costs on earlier workloads. The [current CSLib tuning report](IxbyCslibTuning.md)
+adds complete native profiling and a bounded proof comparison. The earlier
+arithmetic long-run model illustrates the scale problem; it does not predict
+runtime-v2 CSLib proof time.
 
 ### Historical scale estimates
 
@@ -327,9 +336,9 @@ The older fixed-capacity Exec classes have been removed. The original
 binary, functional limits, input and canonical output
 remain bound by admission, initialization, finalization and commitments.
 
-1. **Measure and reduce complete-run costs.** Extend physical profiling across
-   the new workload, including byte/hash and arithmetic phases, and retune
-   quotas against that trace. Prioritize cheaper state/memory routing,
+1. **Measure and reduce complete-run costs.** Use the complete native profile
+   and captured-window validation of `cslib-2048` as the new baseline.
+   Prioritize cheaper state/memory routing,
    recursive replay, and fused instruction handling alongside the remaining
    compiler wrapper, collection, and codec costs. Compare the same useful
    execution including joins, setup, and admission. Preserve exact state,

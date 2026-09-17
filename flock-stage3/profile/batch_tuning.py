@@ -62,7 +62,7 @@ def records(text: str, prefix: str):
             yield line[at:]
 
 
-def census(path: Path) -> dict:
+def census(path: Path, expected_sources: int | None = 4) -> dict:
     shapes = []
     sources = {}
     for line in passed(path).splitlines():
@@ -99,7 +99,9 @@ def census(path: Path) -> dict:
                 "stops": {name: n for name, n in zip(
                     CHIP_NAMES + ["Cells", "Parents"], stops, strict=True) if n},
             }
-    assert len(sources) == 4 and shapes
+    assert sources and shapes
+    if expected_sources is not None:
+        assert len(sources) == expected_sources
     return {"log": receipt(path), "sources": sources, "shapes": shapes}
 
 

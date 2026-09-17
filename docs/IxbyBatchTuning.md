@@ -10,8 +10,8 @@ The [compiler handoff](CompilatrixRuntimeV2Handoff.md) remains the language
 contract. Batch selection is a separate verifier setup decision.
 
 The compiler's actual runtime-v2 CSLib export is now available. The
-[new physical samples and optimization priorities](IxbyPerformance.md)
-measure that image separately. The retained CSLib measurements below remain
+[complete physical profile and equal-work proof comparison](IxbyCslibTuning.md)
+measure that image separately and add the `cslib-2048` class. The retained CSLib measurements below remain
 the earlier header-migrated image; their historical results are unchanged.
 
 The [measurement record](../flock-stage3/profile/execution-batch-tuning-v0.json)

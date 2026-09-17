@@ -1,0 +1,59 @@
+
+running 55 tests
+test ixby::paged_exec::benchmark_tests::original_execution_proof_throughput ... ignored, original artifacts; bounded actual-proof throughput measurement with shared setup
+test ixby::paged_exec::benchmark_tests::selected_execution_leaf_receiver ... ignored, caller-selected class before proof read; stdin is statement57 followed by one bounded proof
+test ixby::paged_exec::byte_tests::byte_append_splices_full_cells_and_resumes_partial_allocations ... ok
+test ixby::paged_exec::byte_tests::byte_limits_slice_get_and_field_canonicality_reject_invalid_operations ... ok
+test ixby::paged_exec::byte_tests::byte_windows_select_all_unaligned_lengths_and_reject_pointer_and_count_aliases ... ok
+test ixby::paged_exec::byte_tests::every_inactive_byte_table_is_canonical_including_recycled_padding ... ok
+test ixby::paged_exec::byte_tests::hash_batches_carry_chunk_counters_pending_merges_and_the_final_root_digest ... ok
+test ixby::paged_exec::byte_tests::byte_instructions_and_unaligned_chunk_tree_hash_use_authenticated_cells ... ok
+test ixby::paged_exec::byte_tests::streaming_blake3_matches_reference_across_empty_blocks_chunks_and_tree_shapes ... ok
+test ixby::paged_exec::collection_tests::array_bounds_types_fuel_and_builder_capacity_fail_closed ... ok
+test ixby::paged_exec::collection_tests::builders_freeze_unaligned_chunks_without_recopying_prefixes_or_mutating_aliases ... ok
+test ixby::paged_exec::byte_tests::shared_memory_batches_preserve_unaligned_hash_windows_and_tree_merges ... ok
+test ixby::paged_exec::collection_tests::every_collection_gate_has_canonical_inactive_padding ... ok
+test ixby::paged_exec::collection_tests::field_conversions_use_canonical_representatives_and_full_nat128_reduction ... ok
+test ixby::paged_exec::collection_tests::flat_input_arrays_share_spans_on_update_and_accept_arbitrary_values ... ok
+test ixby::paged_exec::collection_tests::persistent_arrays_cross_every_tree_boundary_and_preserve_old_versions ... ok
+test ixby::paged_exec::image_tests::direct_conversions_execute_with_exact_fuel_and_authenticated_code ... ok
+test ixby::paged_exec::image_tests::native_loading_rejects_truncation_and_unrepresentable_functional_values ... ok
+test ixby::paged_exec::image_tests::nested_constructor_and_partial_application_input_runs_in_actual_batch ... ok
+test ixby::paged_exec::image_tests::original_1024_execution_segment_proves_fresh ... ignored, original artifacts; 1,024-fetch proof, recomputed clock attacks and fresh receiver
+test ixby::paged_exec::image_tests::original_boolean_execution_segment_proves_fresh ... ignored, original artifacts; Boolean routing proof, recomputed clock attacks and fresh receiver
+test ixby::paged_exec::image_tests::original_compact_boolean_execution_segment_proves_fresh ... ignored, original artifacts; compact Boolean routing proof, recomputed clock attacks and fresh receiver
+test ixby::paged_exec::image_tests::original_compact_linked_execution_segment_proves_fresh ... ignored, original artifacts; linked-state proof, recomputed clock attacks and fresh receiver
+test ixby::paged_exec::image_tests::original_compact_packed_execution_segment_proves_fresh ... ignored, original artifacts; packed routing proof, recomputed clock attacks and fresh receiver
+test ixby::paged_exec::image_tests::original_execution_segment_proves_with_fresh_memory_root_binding ... ignored, requires original IXBF/IXFI; proves one conditional execution segment with a fresh receiver
+test ixby::paged_exec::image_tests::original_execution_segment_with_shared_tree_proves_fresh ... ignored, requires original IXBF/IXFI; execution proof using shared tree authentication and a fresh receiver
+test ixby::paged_exec::image_tests::original_linked_1024_execution_segment_proves_fresh ... ignored, original artifacts; linked 1,024-fetch proof, recomputed clock attacks and fresh receiver
+test ixby::paged_exec::image_tests::original_native_advice_generation_prefix ... ignored, original artifacts; native advice-generation throughput only, no proof claim
+test ixby::paged_exec::image_tests::original_packed_1024_execution_segment_proves_fresh ... ignored, original artifacts; packed 1,024-fetch proof, recomputed clock attacks and fresh receiver
+test ixby::paged_exec::image_tests::original_program_input_prefix_exercises_paged_execution ... ignored, requires explicit original IXBF/IXFI files; native prefix and actual circuit batches
+test ixby::paged_exec::image_tests::original_scalar_payloads_and_byte_ranges_survive_native_loading ... ok
+test ixby::paged_exec::image_tests::original_shared_execution_segment_proves_fresh ... ignored, original IXBF/IXFI; larger execution batch, actual proof, recomputed clock attacks and fresh receiver
+test ixby::paged_exec::image_tests::packed_state_layout_covers_instruction_object_byte_and_hash_states ... ok
+test ixby::paged_exec::collection_tests::collection_batches_bind_all_microstate_outputs_and_shared_memory ... ok
+test ixby::paged_exec::image_tests::shared_execution_class_exact_census ... ignored, counts and materializes the fixed inner tables for the larger execution class
+test ixby::paged_exec::object_tests::constructors_closures_partial_exact_excess_and_tail_application_share_authenticated_execution ... ok
+test ixby::paged_exec::object_tests::exact_batch_boundaries_preserve_state_and_roots_across_classes ... ok
+test ixby::paged_exec::object_tests::fixed_batches_resume_pending_allocations_and_argument_splices_without_losing_state ... ok
+test ixby::paged_exec::object_tests::heap_capacity_zero_fields_full_vectors_and_empty_apply_follow_integer_boundaries ... ok
+test ixby::paged_exec::object_tests::immutable_reservations_reject_unallocated_spans_wrong_fields_and_skipped_copies ... ok
+test ixby::paged_exec::object_tests::object_rows_and_recycled_padding_match_complete_matrices ... ok
+test ixby::paged_exec::object_tests::shared_memory_batches_preserve_object_application_and_copy_boundaries ... ok
+test ixby::paged_exec::profile_tests::captured_window_quota_census ... ignored, replay bounded address-only windows into exact quota and circuit counters; no proofs
+test ixby::paged_exec::profile_tests::streaming_native_execution_profile ... ignored, streaming native census over caller-supplied original artifacts; no proofs
+test ixby::paged_exec::proof_tests::byte_batch_proves_fresh_and_rejects_locally_valid_recomputed_rows ... ignored, real byte instruction proof, isolated verification and recomputed range/limit/value substitutions
+test ixby::paged_exec::proof_tests::chunk_tree_hash_proves_fresh_and_rejects_recomputed_hash_rows ... ignored, real unaligned multi-chunk BLAKE3 execution proof, isolated verification and recomputed compression/merge substitutions
+test ixby::paged_exec::proof_tests::instruction_batch_proves_fresh_and_rejects_locally_valid_recomputed_rows ... ignored, real mixed instruction/state-order/fuel/memory proof and independently verified malicious-row rejections
+test ixby::paged_exec::proof_tests::object_batch_proves_fresh_and_rejects_locally_valid_recomputed_rows ... ignored, real object/application instruction proof, fresh receiver and recomputed malformed heap/splice/alternative rows
+test ixby::paged_exec::quota_tests::every_named_execution_class_fits_its_exact_emission ... ok
+test ixby::paged_exec::quota_tests::physical_batch_complete_counts ... ignored, complete independent fixtures; native execution and exact leaf/join counts, no proofs
+test ixby::paged_exec::quota_tests::physical_batch_quota_sweep ... ignored, requires independent fixtures; exact emission census and native quota/padding sweep, no proofs
+test ixby::paged_exec::tests::control_actions_enforce_reference_branch_case_nat_and_tail_call_semantics ... ok
+test ixby::paged_exec::tests::instructions_fetch_resolve_compute_call_copy_return_and_halt_in_one_authenticated_batch ... ok
+test ixby::paged_exec::witness::native_tests::numeric_advice_matches_boolean_plans_at_integer_and_field_boundaries ... ok
+test ixby::paged_exec::image_tests::production_execution_setups_validate_every_driver_and_complete_boundaries ... ok
+
+test result: ok. 32 passed; 0 failed; 23 ignored; 0 measured; 328 filtered out; finished in 76.36s

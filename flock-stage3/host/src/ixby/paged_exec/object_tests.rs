@@ -212,6 +212,36 @@ fn constructors_closures_partial_exact_excess_and_tail_application_share_authent
   }
 }
 
+#[test]
+fn exact_batch_boundaries_preserve_state_and_roots_across_classes() {
+  let mut endpoints = Vec::new();
+  for class in [BatchClass::Objects, BatchClass::SharedCompactLinked] {
+    let (mut memory, parameters, state) = program();
+    let mut machine = NativeMachine::new(state, 0, parameters).unwrap();
+    let mut boundaries = Vec::new();
+    let mut previous: Option<ExecutionStatement> = None;
+    for end in [1, 7, 32, 64] {
+      while machine.clock < end {
+        let advice =
+          machine.batch_until(class, &mut memory, end).unwrap().unwrap();
+        let statement =
+          ExecutionStatement::from_words(&advice.expected).unwrap();
+        if let Some(before) = &previous {
+          assert_eq!(before.final_state(), statement.initial());
+        }
+        assert!(statement.final_state()[0].lo <= end);
+        previous = Some(statement);
+      }
+      assert_eq!(machine.clock, end);
+      boundaries.push(*previous.as_ref().unwrap().final_state());
+      assert!(machine.batch_until(class, &mut memory, end).unwrap().is_none());
+      assert!(machine.batch_until(class, &mut memory, end - 1).is_err());
+    }
+    endpoints.push(boundaries);
+  }
+  assert_eq!(endpoints[0], endpoints[1]);
+}
+
 fn evaluate(
   kind: ObjectKind,
   state: [F128; STATE_WORDS],

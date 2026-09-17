@@ -34,11 +34,29 @@ fn every_named_execution_class_fits_its_exact_emission() {
   assert!(BatchClass::from_name("unapproved-quota-shape").is_err());
 }
 
-struct Trace {
-  name: String,
-  rows: Vec<RowAdvice>,
-  counts: [usize; 31],
-  halted: bool,
+/// Only addresses and fuel are needed for quota counting. This deliberately
+/// omits values and full states and cannot serve as execution proof advice.
+pub(super) struct CountedRow {
+  pub chip: Chip,
+  pub logical_before: u64,
+  pub logical_after: u64,
+  pub addresses: Vec<u64>,
+}
+impl From<&RowAdvice> for CountedRow {
+  fn from(row: &RowAdvice) -> Self {
+    Self {
+      chip: row.chip,
+      logical_before: row.before[FUEL].hi,
+      logical_after: row.after[FUEL].hi,
+      addresses: row.accesses.iter().map(|a| a.address).collect(),
+    }
+  }
+}
+pub(super) struct Trace {
+  pub name: String,
+  pub rows: Vec<CountedRow>,
+  pub counts: [usize; 31],
+  pub halted: bool,
 }
 fn trace(name: &str, directory: &Path, skip: usize, limit: usize) -> Trace {
   let program = std::fs::read(directory.join("program.ixby")).unwrap();
@@ -51,6 +69,7 @@ fn trace(name: &str, directory: &Path, skip: usize, limit: usize) -> Trace {
   let mut memory = MemoryBatch::new(&mut image.memory);
   for _ in 0..skip {
     machine.step(&mut memory).expect("holdout starts before halt");
+    memory.discard_profile_accesses();
   }
   let initial_clock = machine.clock;
   let initial_fuel = machine.state[FUEL].hi;
@@ -59,7 +78,8 @@ fn trace(name: &str, directory: &Path, skip: usize, limit: usize) -> Trace {
   while rows.len() < limit && machine.next_chip().unwrap().is_some() {
     let row = machine.step(&mut memory).unwrap();
     counts[row.chip as usize] += 1;
-    rows.push(row);
+    rows.push(CountedRow::from(&row));
+    memory.discard_profile_accesses();
   }
   assert!(!rows.is_empty());
   eprintln!(
@@ -80,14 +100,17 @@ fn trace(name: &str, directory: &Path, skip: usize, limit: usize) -> Trace {
 
 /// Keep a positive fallback quota for every family. A class may suspend an
 /// instruction, but it must always admit its next microstep in a fresh leaf.
-fn candidate_quotas(counts: [usize; 31], fetch: usize) -> [usize; 31] {
+pub(super) fn candidate_quotas(
+  counts: [usize; 31],
+  fetch: usize,
+) -> [usize; 31] {
   let scale = fetch.div_ceil(1024);
   let floor = fetch.div_ceil(128);
   let mut quotas = [floor; 31];
   quotas[0] = fetch;
   let target: Vec<_> = counts[1..]
     .iter()
-    .map(|&n| (n * fetch).div_ceil(counts[0]).max(floor))
+    .map(|&n| (n * fetch).div_ceil(counts[0].max(1)).max(floor))
     .collect();
   let available = 8192 * scale - 1 - fetch - 30 * floor;
   let wanted: usize = target.iter().map(|&n| n - floor).sum();
@@ -123,9 +146,9 @@ fn sample(
         break;
       }
       let added: Vec<_> = row
-        .accesses
+        .addresses
         .iter()
-        .map(|a| a.address)
+        .copied()
         .filter(|a| !addresses.contains(a))
         .collect::<BTreeSet<_>>()
         .into_iter()
@@ -162,15 +185,15 @@ fn sample(
           "full_execution_batch,{},{},{batches},{first},{at},{},{}",
           trace.name,
           class.name(),
-          trace.rows[first].before[FUEL].hi,
-          trace.rows[at - 1].after[FUEL].hi
+          trace.rows[first].logical_before,
+          trace.rows[at - 1].logical_after
         );
       }
       batches += 1;
       complete_rows += at - first;
       complete_fetch += counts[Chip::Fetch as usize];
       complete_logical +=
-        trace.rows[at - 1].after[FUEL].hi - trace.rows[first].before[FUEL].hi;
+        trace.rows[at - 1].logical_after - trace.rows[first].logical_before;
     }
   }
   eprintln!(
@@ -180,7 +203,7 @@ fn sample(
   (batches, complete_logical)
 }
 
-fn census(name: &str, shape: BatchShape, traces: &[Trace]) {
+pub(super) fn census(name: &str, shape: BatchShape, traces: &[Trace]) {
   let started = Instant::now();
   let mut count = CountingEmitter::new();
   batch::emit_shape(&mut count, BatchClass::SharedLinked1024, shape).unwrap();
@@ -242,8 +265,8 @@ fn physical_batch_complete_counts() {
         sample(&trace, BatchShape::from_class(class), Some(class));
       assert_eq!(
         logical,
-        trace.rows.last().unwrap().after[FUEL].hi
-          - trace.rows.first().unwrap().before[FUEL].hi
+        trace.rows.last().unwrap().logical_after
+          - trace.rows.first().unwrap().logical_before
       );
       eprintln!(
         "full_execution_count,{name},{},{},{leaves},{logical},{}",

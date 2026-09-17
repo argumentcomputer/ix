@@ -1,0 +1,3 @@
+*.flock binary
+*.statement binary
+*.ixqp.gz binary

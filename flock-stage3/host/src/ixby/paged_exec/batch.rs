@@ -43,9 +43,11 @@ pub enum BatchClass {
   Arrays768,
   Builders768,
   Mixed3072,
+  /// Runtime-v2 CSLib phases, including bounded byte-builder copy capacity.
+  Cslib2048,
 }
 impl BatchClass {
-  pub const ALL: [Self; 19] = [
+  pub const ALL: [Self; 20] = [
     Self::Small,
     Self::Objects,
     Self::Compact,
@@ -65,6 +67,7 @@ impl BatchClass {
     Self::Arrays768,
     Self::Builders768,
     Self::Mixed3072,
+    Self::Cslib2048,
   ];
   pub fn name(self) -> &'static str {
     match self {
@@ -87,6 +90,7 @@ impl BatchClass {
       Self::Arrays768 => "arrays-768",
       Self::Builders768 => "builders-768",
       Self::Mixed3072 => "mixed-3072",
+      Self::Cslib2048 => "cslib-2048",
     }
   }
   pub fn from_name(name: &str) -> Result<Self> {
@@ -126,6 +130,7 @@ impl BatchClass {
       Self::Arrays768 => b"IxBy/Flock/paged-execution:arrays-768:v0",
       Self::Builders768 => b"IxBy/Flock/paged-execution:builders-768:v0",
       Self::Mixed3072 => b"IxBy/Flock/paged-execution:mixed-3072:v0",
+      Self::Cslib2048 => b"IxBy/Flock/paged-execution:cslib-2048:v0",
     }
   }
   pub fn quotas(self) -> [usize; 31] {

@@ -187,6 +187,16 @@ impl<'a> MemoryBatch<'a> {
       None => self.memory.value(address),
     }
   }
+  /// Count-only runs retain current values but discard the chronological log.
+  /// The resulting overlay is for profiling, not proof-advice construction.
+  #[cfg(test)]
+  pub(crate) fn discard_profile_accesses(&mut self) {
+    self.accesses.clear();
+  }
+  #[cfg(test)]
+  pub(crate) fn profile_cells(&self) -> usize {
+    self.current.len()
+  }
   /// Distinct cells after a proposed step, without modifying the trace.
   pub fn prospective_cells(&self, accesses: &[AccessAdvice]) -> usize {
     self.current.len()

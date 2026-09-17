@@ -80,6 +80,9 @@ fn original_execution_proof_throughput() {
   let input =
     std::fs::read(std::env::var_os("IXBY_PAGED_INPUT").unwrap()).unwrap();
   let count = option("IXBY_PROOF_BATCHES", 32, 1..=256);
+  let end_clock = std::env::var("IXBY_PROOF_END_CLOCK")
+    .ok()
+    .map(|s| s.parse::<u64>().expect("unsigned end clock"));
   let skip = option("IXBY_PROOF_SKIP", 0, 0..=100_000);
   let workers = option("IXBY_PROOF_WORKERS", 1, 1..=32).min(count);
   let threads = option("IXBY_PROOF_THREADS", 4, 1..=64);
@@ -95,7 +98,7 @@ fn original_execution_proof_throughput() {
     write_new(
       &out.join("config.txt"),
       format!(
-        "claim=conditional execution segments\nclass={class:?}\nprogram_blake3={}\ninput_blake3={}\nskip={skip}\nbatches={count}\nworkers={workers}\nthreads_per_worker={threads}\n",
+        "claim=conditional execution segments\nclass={class:?}\nprogram_blake3={}\ninput_blake3={}\nskip={skip}\nbatch_limit={count}\nend_clock={end_clock:?}\nworkers={workers}\nthreads_per_worker={threads}\n",
         blake3::hash(&program), blake3::hash(&input)
       ).as_bytes(),
     );
@@ -112,14 +115,23 @@ fn original_execution_proof_throughput() {
   }
   let skip_seconds = skipping.elapsed().as_secs_f64();
   let generating = Instant::now();
-  let advice: Vec<_> = (0..count)
-    .map(|_| {
+  let mut advice = Vec::new();
+  for _ in 0..count {
+    if end_clock.is_some_and(|end| machine.clock == end) {
+      break;
+    }
+    advice.push(
       machine
-        .batch(class, &mut image.memory)
+        .batch_until(class, &mut image.memory, end_clock.unwrap_or(u64::MAX))
         .unwrap()
-        .expect("sample before halt")
-    })
-    .collect();
+        .expect("sample before halt"),
+    );
+  }
+  if let Some(end) = end_clock {
+    assert_eq!(machine.clock, end, "batch limit before requested boundary");
+  }
+  let count = advice.len();
+  assert!(count > 0, "empty proof range");
   let native_seconds = generating.elapsed().as_secs_f64();
   for (batch, advice) in advice.iter().enumerate() {
     let mut at = 55;

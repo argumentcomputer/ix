@@ -3,17 +3,19 @@
 The compiler's new CSLib verifier is [copied into IxBy](../flock-stage4/fixtures/cslib-runtime-v2/README.md):
 **1,005,374 program bytes, 672 functions, and 360,337,913 logical transitions**
 to the exact expected output. It uses the runtime-v2 array, byte-builder, and
-unboxed numeric primitives. This document ranks further optimization
-opportunities; their speedups have not been measured.
+unboxed numeric primitives. The [first profiling and batch-tuning increment](IxbyCslibTuning.md)
+is implemented and measured. This document ranks the remaining opportunities.
 
 The [complete reference census](../flock-stage3/profile/cslib-runtime-v2-reference.json),
 [exclusive function costs](../flock-stage3/profile/cslib-runtime-v2-costs.json),
-and [new native prefix counts](../flock-stage3/profile/cslib-runtime-v2-physical.json)
+and [complete native profile](../flock-stage3/profile/cslib-runtime-v2-native.json)
 pin the actual exported bytes. The import checks SHA256 and BLAKE3 against the
 compiler record, checks all 672 function counts, and independently reproduces
 the original profile and P/B/I/O/S commitments. The complete observation came
-from the compiler's chunked reference interpreter. The new local measurements
-cover only two short native windows; a complete CSLib Flock proof is still open.
+from the compiler's chunked reference interpreter. Local execution now checks
+the expected output, fuel and all 5,816 block counts through **1,703,268,652
+physical microsteps**. A complete CSLib Flock proof is still open; the new
+proof comparison covers the same 20,000 physical steps with both classes.
 
 ## Scale and the optimization target
 
@@ -75,7 +77,21 @@ ordinary call operations, 20,862,427 tail calls, 22,543,217 constructions, and
 37,512,228 constructor cases. These opcode counts overlap the function groups;
 do not add them as independent savings.
 
-## Fresh physical evidence: retuning is necessary
+## Physical evidence and the first measured improvement
+
+The [full-run tuning report](IxbyCslibTuning.md) replaces the initial prefix
+as the main physical evidence. Fetch, Resolve and Resume account for 64.55%
+of all microsteps; builder copies/emits add 127,974,958 rows. Native advice
+generation is about 8x faster on the matched million-row pilot.
+
+Across 341 evenly spaced captures, the selected `cslib-2048` class needs 5,733
+leaves for those independent windows, versus 12,345 with `shared-linked-1024`,
+including each window's last partial leaf. It retains the same commitment
+size. Four windows regress at the smaller shared-tree parent bound; the
+report records those cases and actual equal-work leaf-plus-join timings.
+
+The original prefix comparison below remains useful for understanding why
+the earlier specialized geometries were unsuitable.
 
 The existing count-only harness executed the copied program through 200,000
 physical microsteps, covering its first 48,599 logical transitions. It evaluated
@@ -102,10 +118,10 @@ The old arithmetic geometry cannot be used to forecast the new CSLib run.
 
 ### 1. Fit physical quotas to the new program, across execution phases
 
-Increase the copy/byte quotas that currently force short leaves. Collect
-windows from decoding, key validation, MMCS hashing, and FRI arithmetic before
-selecting a class. Optimize the maximum and distribution of short leaves as
-well as average occupancy. Keep every family able to make progress.
+The complete profile, captured-window sweep and first `cslib-2048` class are
+[measured](IxbyCslibTuning.md). Continue checking short-leaf distributions and
+phase-specific limits, particularly sparse memory trees. Keep every family
+able to make progress.
 
 Sweep 3K/4K and then larger useful batches while tracking all three switching
 networks and commitment padding. A bigger fetch quota alone does not help when
@@ -252,14 +268,16 @@ admission and output/closing work in the final benchmark.
 
 ## Suggested order of work
 
-1. Extend physical profiling across the complete new workload; attribute rows,
-   memory traffic, allocation, hash blocks, and batch stops to phases/functions.
-2. Retune two candidate geometries and measure equal-work leaf-plus-join trees.
-   Start small wrapper/codec compiler experiments against the complete census.
-3. Prototype one cheaper routing/memory argument and profile recursive replay.
+1. Use the completed physical census and equal-work batch comparison as the
+   baseline. Test small wrapper/codec compiler changes against the exact output,
+   block counts and physical traffic.
+2. Prototype one cheaper routing/memory argument and profile recursive replay.
    These address the largest current proof costs.
-4. Revisit larger batches, block fusion, and worker scaling after those costs
-   change. Require measured end-to-end improvement at each step.
+3. Fuse operand and argument-copy microsteps, preserving semantic fuel and
+   authenticated boundaries. Evaluate a small approved set of phase-specific
+   classes within one recursive chain.
+4. Revisit larger batches and worker scaling as those costs change. Require
+   measured end-to-end improvement at each step.
 
 Reproduction commands and imported evidence are in the
 [profile directory](../flock-stage3/profile/cslib-runtime-v2/README.md).

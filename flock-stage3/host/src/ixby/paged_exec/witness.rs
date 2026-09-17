@@ -29,6 +29,7 @@ pub struct RowAdvice {
   pub advice: Vec<F128>,
   pub accesses: Vec<AccessAdvice>,
 }
+
 pub struct NativeMachine {
   pub state: [F128; STATE_WORDS],
   pub clock: u64,
@@ -208,6 +209,39 @@ impl NativeMachine {
     }))
   }
   fn numeric(&self, header: F128, args: &[F128]) -> Result<[F128; 2]> {
+    if let Some(p) = numeric_native::primitive(header, args) {
+      let opcode = p.opcode();
+      let direct = if matches!(opcode, 0..=6 | 45..=48) {
+        let control = if opcode <= 6 { opcode + 1 } else { opcode - 37 };
+        let input = [
+          F128::new(u64::from(control), 0),
+          args[0],
+          args[1],
+          args[2],
+          args[3],
+        ];
+        Some(run(&self.nat, &input)?.try_into().unwrap())
+      } else {
+        numeric_native::scalar(p, args)
+      };
+      if let Some(value) = direct {
+        #[cfg(test)]
+        if self.compare_native_advice {
+          ensure!(
+            value == self.numeric_reference(header, args)?,
+            "native {p:?} advice differs from Boolean plans"
+          );
+        }
+        return Ok(value);
+      }
+    }
+    self.numeric_reference(header, args)
+  }
+  fn numeric_reference(
+    &self,
+    header: F128,
+    args: &[F128],
+  ) -> Result<[F128; 2]> {
     let r = run(
       &self.route,
       &[F128::ONE, header]
@@ -690,6 +724,23 @@ impl NativeMachine {
     class: BatchClass,
     memory: &mut SparseMemory,
   ) -> Result<Option<BatchAdvice>> {
+    self.batch_until(class, memory, u64::MAX)
+  }
+  /// End at an exact physical clock, or earlier at the class's fixed quotas.
+  /// Padding and the authenticated boundary relation are identical to batch().
+  pub fn batch_until(
+    &mut self,
+    class: BatchClass,
+    memory: &mut SparseMemory,
+    end_clock: u64,
+  ) -> Result<Option<BatchAdvice>> {
+    ensure!(
+      end_clock >= self.clock,
+      "execution boundary precedes current clock"
+    );
+    if end_clock == self.clock {
+      return Ok(None);
+    }
     if self.next_chip()?.is_none() {
       return Ok(None);
     }
@@ -698,7 +749,9 @@ impl NativeMachine {
     let quotas = class.quotas();
     let mut rows = Vec::new();
     while let Some(chip) = self.next_chip()? {
-      if counts[chip as usize] == quotas[chip as usize] {
+      if self.clock == end_clock
+        || counts[chip as usize] == quotas[chip as usize]
+      {
         break;
       }
       let row = self.preview(&memory)?;
@@ -727,5 +780,83 @@ impl NativeMachine {
       BatchAdvice::new(class, self.parameters, &rows, &memory)?
     };
     Ok(Some(advice))
+  }
+}
+
+#[cfg(test)]
+mod native_tests {
+  use super::*;
+  use crate::{
+    goldilocks::GOLDILOCKS_MODULUS as P,
+    ixby::{ixbf::Primitive, paged_code::Header},
+  };
+
+  #[test]
+  fn numeric_advice_matches_boolean_plans_at_integer_and_field_boundaries() {
+    let machine = NativeMachine::new(
+      [F128::ZERO; STATE_WORDS],
+      0,
+      [F128::new(4096, 4096), F128::new(16_000_000_000, 0), F128::new(4096, 0)],
+    )
+    .unwrap();
+    let values = [
+      0u128,
+      1,
+      2,
+      7,
+      31,
+      32,
+      33,
+      255,
+      u32::MAX as u128,
+      (1u128 << 32),
+      P as u128 - 1,
+      P as u128,
+      u64::MAX as u128,
+      (1u128 << 65) + 3,
+      u128::MAX,
+    ];
+    for p in Primitive::ALL {
+      let code = p.opcode();
+      if !matches!(code, 0..=6 | 10..=20 | 23..=28 | 31..=38 | 45..=48) {
+        continue;
+      }
+      for (i, &a) in values.iter().enumerate() {
+        for &b in &[0, 1, values[(i + 3) % values.len()]] {
+          let tag = match code {
+            0..=6 | 45 | 48 => 8,
+            10..=23 | 46 => 2,
+            24..=28 | 36 | 47 => 3,
+            _ => 4,
+          };
+          let value = |n: u128| match tag {
+            2 => F128::new(u64::from(n as u32), 0),
+            3 => F128::new((n % u128::from(P)) as u64, 0),
+            4 => F128::new((n as u64) % P, ((n >> 64) as u64) % P),
+            _ => F128::new(n as u64, (n >> 64) as u64),
+          };
+          let mut args = [F128::ZERO; 6];
+          args[..2].copy_from_slice(&[F128::new(tag, 0), value(a)]);
+          if p.arity() == 2 {
+            args[2..4].copy_from_slice(&[F128::new(tag, 0), value(b)]);
+          }
+          let h = Header {
+            operation: 1,
+            primitive: code,
+            operands: p.arity() as u8,
+            arguments: p.arity() as u8,
+            ..Header::default()
+          }
+          .words()[0];
+          let expected = machine.numeric_reference(h, &args);
+          let actual = machine.numeric(h, &args);
+          match (expected, actual) {
+            (Ok(a), Ok(b)) => assert_eq!(a, b, "{p:?}"),
+            (Err(_), Err(_)) => {},
+            (a, b) => panic!("numeric mismatch {p:?}: {a:?} / {b:?}"),
+          }
+        }
+      }
+    }
   }
 }

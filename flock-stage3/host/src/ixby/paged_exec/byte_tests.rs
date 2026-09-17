@@ -296,6 +296,11 @@ fn byte_windows_select_all_unaligned_lengths_and_reject_pointer_and_count_aliase
       let mut out = Vec::new();
       let row = gate.eval(&input, &(), &mut out);
       assert_eq!(out.last(), Some(&F128::ZERO));
+      assert_eq!(
+        fast_advice::micro(MicroKind::Byte(ByteKind::Window), &input)
+          .as_deref(),
+        Some(&out[..out.len() - 1]),
+      );
       let data = out[..4]
         .iter()
         .flat_map(|w| {
