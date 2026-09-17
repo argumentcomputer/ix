@@ -1,0 +1,34 @@
+{
+  "array_access_wrappers": [
+    "Array.getInternal",
+    "Array.size",
+    "Array.push"
+  ],
+  "array_bulk_and_list_conversion": [
+    "Array.extract._redArg",
+    "Array.append._redArg",
+    "Ixby.Runtime.toList",
+    "Ixby.Runtime.fromList",
+    "Ixby.Runtime.extract"
+  ],
+  "wire_codec_helpers": [
+    "MultiStark.Verify.Codec.Wire.writeBytes",
+    "MultiStark.Verify.Codec.Wire.readBytes",
+    "MultiStark.Verify.Codec.Wire.readField",
+    "MultiStark.Verify.Codec.Wire.writeField",
+    "MultiStark.Verify.Codec.Wire.littleEndian",
+    "MultiStark.Verify.Codec.Wire.fromLittleEndian",
+    "Ixby.Runtime.wireLittleLoop",
+    "Ixby.Runtime.wireFromLoop",
+    "Ixby.Runtime.toBytes",
+    "Ixby.Runtime.appendBytes"
+  ],
+  "nat_power_shift_and_log": [
+    "Ixby.Runtime.powLoop",
+    "Ixby.Runtime.shiftRightLoop",
+    "Ixby.Runtime.log2Loop"
+  ],
+  "goldilocks_multiply_wrapper": [
+    "Ix.Ixby.Goldilocks.mul"
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "format": "IxBy/cslib-runtime-v2-import/v0",
+  "compiler_checkout_revision": "191b2a9e8baf46e736ce4de6746b6b2a6374b673",
+  "source_directory": "/home/jcb/projects/compilatrix/plans/ixby-runtime-v2/handoff",
+  "source_record": "fixtures/ixby-stage2/runtime-v2-integration.json",
+  "source_record_pin": {
+    "bytes": 77417,
+    "sha256": "b389ce79ff0e50bcd0d4e26440a5d83482a23057957e31d014e2056766d417c1",
+    "blake3": "5d3fb4756fc7179a5b6ecfd2005f82e650414089cb97e7d7181065a528938e78"
+  },
+  "imported_on": "2026-09-17",
+  "validation": "Copied five execution artifacts and checked byte counts, SHA256 and BLAKE3 against the compiler record. Observer, inventory, observer source and timing pins also matched. The compressed observer expands to the exact source bytes."
+}

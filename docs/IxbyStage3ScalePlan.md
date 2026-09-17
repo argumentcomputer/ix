@@ -1,5 +1,14 @@
 # Path to proving the full Stage 2 guest execution
 
+The current target is the [new runtime-v2 CSLib export](../flock-stage4/fixtures/cslib-runtime-v2/README.md):
+1,005,374 program bytes, 672 functions, and 360,337,913 logical transitions
+to exact expected output. Its [optimization priorities](IxbyPerformance.md)
+use the complete compiler observation and new local native prefix counts.
+The earlier measurements and component milestones below retain their original
+scope; no complete CSLib Flock execution proof has been generated.
+
+## Historical original workloads
+
 [CSLib](IxbyStage2CSLib.md) is the preferred workload, with the separately
 pinned [Init guest](IxbyStage2GuestConfig.md) retained as a fallback. The
 CSLib image was recompiled with its native keys and entrypoints; it accepts
@@ -258,15 +267,15 @@ current-status section below.
     authenticated code admission, and Nat128 proof constraints. IXBF program
     semantics 1 and matching IXFP profiles replace the old program revision;
     I/O encoding stays at semantics 0. A seven-step conversion program has a
-    complete 499,443-byte execution proof. Compiler adoption and the resulting
-    CSLib trace and performance measurement remain pending.
+    complete 499,443-byte execution proof. Compiler adoption was completed
+    with the runtime-v2 export in entry 32.
 30. [Runtime revision 2](CompilatrixRuntimeV2Handoff.md): unboxed numeric ABI,
     direct Field/Nat conversions, persistent arrays, immutable byte builders,
     and shared byte slices. All functional artifacts use semantics 2; the old
     fixed-arena IXBY/IXBP backends are retired. A 15-step independent fixture
     exercising every new opcode has a 517,843-byte complete root, accepted by
-    a fresh receiver that rejects eleven tampered variants. Compiler
-    integration and the new CSLib trace remain pending.
+    a fresh receiver that rejects eleven tampered variants. The compiler
+    integration and new CSLib trace are recorded in entry 32.
 31. [Physical batch tuning](IxbyBatchTuning.md): exact quota and padding sweeps
     over arithmetic, persistent arrays, byte builders, and a retained CSLib
     prefix. Named workload classes include a 4,096-fetch prototype and
@@ -276,12 +285,26 @@ current-status section below.
     the common arithmetic fixture needs 19 leaves with 4K, versus 97 with 768.
     Including measured joins reverses their leaf-only throughput ranking in
     the longer-run model; 3K retains a lower startup and memory cost than 4K.
+32. [Compiled runtime-v2 CSLib and remaining costs](IxbyPerformance.md): the
+    compiler's actual program/input/output/profile/statement are copied and
+    checked against upstream hashes. IxBy independently reproduces the profile
+    and commitments. The complete compiler observation has 360,337,913 logical
+    transitions; two new native windows cover the first 200,000 microsteps.
+    Their copy/byte quota stops demonstrate that the earlier synthetic
+    arithmetic classes require retuning for this workload.
 
 ## Current integration and next measurements
 
-The [semantics-2 batch report](IxbyBatchTuning.md) contains the current physical
-class measurements. The following full-run estimates use the older compiled
-image and revision-1 proof geometries.
+The [current performance report](IxbyPerformance.md) ranks optimization work
+for the copied 360,337,913-transition workload. The
+[semantics-2 batch report](IxbyBatchTuning.md) supplies measured leaf and join
+costs on earlier workloads. Their arithmetic long-run model illustrates the
+scale problem; it does not predict runtime-v2 CSLib proof time.
+
+### Historical scale estimates
+
+The following estimates use the older compiled image and revision-1 proof
+geometries.
 
 The complete original-format proof path is implemented and has genuine
 small-workload proofs. The original CSLib program has a complete grammar
@@ -295,6 +318,8 @@ at least 1.16 TB before recursive nodes; other instruction and memory quotas
 can require additional leaves. Short-window rates are not complete-run
 measurements and exclude native replay, admission, output and aggregation.
 
+### Current bounds and next steps
+
 The current paged path streams bounded execution segments over depth-40
 authenticated memory and accepts original artifacts up to 16 MiB. Its physical
 numeric representation is Nat128; the original observed maximum is 65 bits.
@@ -302,20 +327,15 @@ The older fixed-capacity Exec classes have been removed. The original
 binary, functional limits, input and canonical output
 remain bound by admission, initialization, finalization and commitments.
 
-1. **Reduce runtime work and remaining routing costs.** Boolean routing,
-   exact record packing, direct state linking and the 1,024-Fetch classes are
-   implemented and measured. The switching networks still occupy 64.9% of
-   the linked class's useful field data. The
-   [runtime profile](IxbyPerformance.md) prioritizes direct numeric conversions,
-   simpler numeric representations, native persistent-array operations and
-   byte builders. All these runtime operations are available in revision 2;
-   compiler integration requires further work and a newly bound compiled
-   image. [Workload-specific proof classes](IxbyBatchTuning.md) are now
-   available, with exact quota and padding measurements. Their selection must
-   be rechecked against the new compiler's trace. Preserve complete state,
-   memory and fuel checks, and compare time and peak memory per logical step,
-   including recursive costs. The measured windows do not cover the full
-   byte/hash workload.
+1. **Measure and reduce complete-run costs.** Extend physical profiling across
+   the new workload, including byte/hash and arithmetic phases, and retune
+   quotas against that trace. Prioritize cheaper state/memory routing,
+   recursive replay, and fused instruction handling alongside the remaining
+   compiler wrapper, collection, and codec costs. Compare the same useful
+   execution including joins, setup, and admission. Preserve exact state,
+   memory, fuel, and expected-output bindings. The
+   [ranked opportunities](IxbyPerformance.md#ranked-opportunities) give the
+   evidence and first validation step for each direction.
 2. **Long-run operation.** The CLI retains and verifies bounded proof files;
    it currently generates and proves leaves sequentially. `--resume`
    regenerates native state from the beginning before checking cached leaves.
@@ -324,9 +344,9 @@ remain bound by admission, initialization, finalization and commitments.
    implementation must preserve the existing complete state, memory-root and
    global-fuel checks. These operational changes do not remove the measured
    per-instruction proving cost.
-3. **Full pinned benchmark.** Generate all original CSLib component proofs,
+3. **Full pinned benchmark.** Generate all copied runtime-v2 CSLib component proofs,
    aggregate their exact counts, and verify the root in a fresh process against
-   the [independently computed original-artifact digest](../flock-stage3/profile/cslib-paged-statement-v0.json). Record setup
+   the [independently checked artifact digest](../flock-stage3/profile/cslib-runtime-v2-reference.json). Record setup
    identities, table geometry, wall time, memory, storage and proof bytes.
    Exercise changed artifact, boundary, memory, budget and proof inputs. Keep
    the separately pinned Init artifacts distinct if using the fallback.

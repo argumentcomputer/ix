@@ -5,6 +5,7 @@ Counts are exclusive logical transitions, not timing or projected proof savings.
 The original observer output is checked against the pinned reference census.
 """
 import argparse
+import gzip
 import hashlib
 import json
 from pathlib import Path
@@ -34,8 +35,11 @@ def main():
     parser.add_argument("--reference", required=True, type=Path)
     parser.add_argument("--program", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--groups", type=Path,
+                        help="JSON object mapping group names to function-name lists")
     args = parser.parse_args()
-    report = json.loads(args.report.read_text())
+    raw_report = args.report.read_bytes()
+    report = json.loads(gzip.decompress(raw_report) if args.report.suffix == ".gz" else raw_report)
     inventory = json.loads(args.inventory.read_text())
     reference = json.loads(args.reference.read_text())
     if not report["completed"]:
@@ -57,6 +61,8 @@ def main():
     if bases[0] != 0 or len(counts) != inventory["blocks"]:
         raise ValueError("function inventory block domain mismatch")
     total = report["reference_transitions"]
+    if sum(report["control_counts_eval_ret_apply"]) != total:
+        raise ValueError("control counts do not cover all reference transitions")
     rows = []
     blocks = []
     for i, function in enumerate(functions):
@@ -77,7 +83,8 @@ def main():
     if len(by_name) != len(rows):
         raise ValueError("duplicate function names")
     groups = {}
-    for name, members in GROUPS.items():
+    definitions = json.loads(args.groups.read_text()) if args.groups else GROUPS
+    for name, members in definitions.items():
         count = sum(by_name[member]["eval_transitions"] for member in members)
         groups[name] = {"members": members, "eval_transitions": count,
                         "fraction_of_all_transitions": count / total}
@@ -97,6 +104,8 @@ def main():
             "Replacing a helper still requires checked semantics, compiler correspondence, and constrained execution; these counts are not removable-work estimates.",
         ],
     }
+    if args.groups:
+        result["artifacts"]["group_definitions"] = pin(args.groups)
     with args.output.open("x") as output:
         json.dump(result, output, indent=2)
         output.write("\n")

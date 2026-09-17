@@ -3,8 +3,11 @@
 This is the current compiler contract. It supersedes the
 [Nat/Word32 revision-1 handoff](CompilatrixNatWord32Handoff.md).
 The IxBy reference interpreter, codecs, and paged proof backend implement the
-runtime changes below. Compilatrix lowering and representation certificates
-remain the compiler owner's integration work; no compiler checkout was changed.
+runtime changes below. Compilatrix has completed its runtime-v2 integration
+and exported the [new CSLib workload](../flock-stage4/fixtures/cslib-runtime-v2/README.md).
+Its complete reference observation matches expected output in 360,337,913
+logical transitions. The [performance priorities](IxbyPerformance.md) now use
+that image; a complete CSLib Flock proof remains open.
 
 ## Required migration
 
@@ -181,10 +184,12 @@ I = H_2(B || input)    O = H_3(B || output)
 S = H_4(P || B || I || O)
 ```
 
-## Compiler changes and acceptance checks
+## Compiler migration checklist
 
-The earlier handoff inspected Compilatrix at `18da375`; adapt these paths to
-the compiler's current revision:
+The checklist below records the migration requirements. The imported
+[compiler integration record](../flock-stage3/profile/cslib-runtime-v2/compiler-integration.json)
+contains the compiler's completed integration evidence. The earlier handoff
+inspected Compilatrix at `18da375`; paths below are from that handoff:
 
 - Update the vendored reference definitions and `vendor/ixby/upstream.json`
   with the actual IxBy commit and source hashes. Relevant definitions are
@@ -279,10 +284,13 @@ MALLOC_ARENA_MAX=2 flock-stage4/target/release/paged-execution verify \
 
 The implementation has executable constraints and proof tests. A general
 kernel-checked refinement theorem from the native collection circuits to the
-Lean interpreter remains open, as does the compiler's source representation
-proof. Neither is implied by proving an execution fixture.
+Lean interpreter remains open. The compiler record supplies its artifact
+and reference-execution evidence; a general source-to-image refinement theorem is
+not implied by proving an execution fixture.
 
 The earlier CSLib helper census measured `natural` at 9.72%, array tree get/set
 at 21.16%, and four byte-tree helpers at 14.49% of logical transitions. These
-are previous helper costs, **not measured savings**. Report a speedup only
-after compiling and measuring the new CSLib image.
+are previous helper costs, **not measured savings**. The new compiler's own
+before/after comparison reports 82.28% fewer transitions; its revision-1
+baseline differs from that older census. See the
+[current analysis](IxbyPerformance.md#what-the-new-program-spends-transitions-on).

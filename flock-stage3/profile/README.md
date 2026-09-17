@@ -1,5 +1,17 @@
 # Reference execution profiling
 
+## Current runtime-v2 CSLib workload
+
+The [new compiler export and retained evidence](cslib-runtime-v2/README.md)
+cover **360,337,913 logical transitions** with exact expected output.
+The [reference summary](cslib-runtime-v2-reference.json),
+[function costs](cslib-runtime-v2-costs.json), and
+[two new physical windows](cslib-runtime-v2-physical.json) bind the copied
+runtime-v2 program and input. See the [current priorities](../../docs/IxbyPerformance.md)
+for the remaining opportunities, including recursive joins.
+
+## Historical reference image and observer
+
 `ExecutionProfile.lean` observes the unchanged reference `Ix.Ixby.step`.
 It validates the initial state and checks the exact expected output when the
 guest halts. It records block and control counts, frame/continuation sizes,
@@ -38,8 +50,9 @@ to the compiler's function inventory, checking both against the pinned image.
 Eleven helpers for array traversal, byte ropes, numeric conversion and number
 unboxing account for 56.0% of all reference transitions. These are exclusive
 instruction counts, not measured optimization gains. See
-[IxBy performance priorities](../../docs/IxbyPerformance.md) for the proposed
-runtime changes and the `function_costs.py` reproduction command.
+[IxBy performance priorities](../../docs/IxbyPerformance.md) for the new image's
+remaining costs. `function_costs.py` retains the historical groups by default;
+`--groups` selects an explicit group file for a different compiler image.
 
 ## Native Flock execution segment
 

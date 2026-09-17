@@ -1,0 +1,168 @@
+{
+  "completed": true,
+  "control_counts_eval_ret_apply": [
+    303848647,
+    55345920,
+    1143346
+  ],
+  "max_apply_arguments": 2,
+  "max_continuations": 647,
+  "max_locals": 66,
+  "max_observed_bytes": 4813182,
+  "max_observed_constructor_fields": 9,
+  "max_observed_nat_bits": 65,
+  "max_observed_pap_captures": 3,
+  "reference_transitions": 360337913,
+  "executed_blocks": 4569,
+  "total_blocks": 5816,
+  "instructions": {
+    "letOp": 164673407,
+    "ret": 55345920,
+    "caseCtor": 37512228,
+    "branch": 25454663,
+    "tailCall": 20862427,
+    "tailApply": 2
+  },
+  "operations": {
+    "primitive": 83259559,
+    "call": 54202575,
+    "construct": 22543217,
+    "project": 3520242,
+    "apply": 1143344,
+    "closure": 4470
+  },
+  "primitives": {
+    "natEq": 12013381,
+    "natLt": 11363230,
+    "arrayLength": 6475026,
+    "natSub": 6462216,
+    "natAdd": 6058466,
+    "arrayGet": 5608850,
+    "natToField": 3905033,
+    "natToWord32": 3341570,
+    "natMod": 2866576,
+    "extMul": 2773237,
+    "byteBuilderAppend": 2592093,
+    "arrayPush": 2287222,
+    "natDiv": 2143030,
+    "bytesSlice": 1723848,
+    "fieldToNat": 1368857,
+    "natMul": 1349912,
+    "word32ToBytes": 1082671,
+    "extPack": 996088,
+    "byteBuilderFreeze": 976357,
+    "byteBuilderEmpty": 976357,
+    "extAdd": 959960,
+    "extSub": 936003,
+    "word32Eq": 708443,
+    "fieldMul": 645249,
+    "byteBuilderLength": 638355,
+    "bytesToWord32": 521006,
+    "word32Lt": 483410,
+    "bytesToField": 483410,
+    "fieldToBytes": 483410,
+    "word32ToNat": 194006,
+    "bytesGet": 191378,
+    "word32Sub": 153656,
+    "bytesLength": 95688,
+    "arrayEmpty": 91586,
+    "extFst": 65900,
+    "extSnd": 65900,
+    "fieldSub": 56236,
+    "blake3": 37068,
+    "arraySet": 32186,
+    "fieldInverse": 30651,
+    "word32And": 12448,
+    "word32Add": 6224,
+    "word32Shl": 3112,
+    "extEq": 251,
+    "bytesEq": 3,
+    "word32Mul": 0,
+    "word32Shr": 0,
+    "word32Or": 0,
+    "word32Xor": 0,
+    "fieldAdd": 0,
+    "extInverse": 0
+  },
+  "scope": "Native reference execution observation; no Flock proof. Value maxima cover inspected values, not a traversal of all reachable values.",
+  "format": "IxBy/cslib-runtime-v2-reference/v0",
+  "runtime_semantics": 2,
+  "artifacts": {
+    "program": {
+      "bytes": 1005374,
+      "sha256": "7cdc4a7000011a2d9a18324b5d127bcdb13bc3842100fb4b69355ea162c133b5"
+    },
+    "input": {
+      "bytes": 4813238,
+      "sha256": "713507a9b57d662a138423a50d5d9afc820101f0aab37ba818525d19605f2e9f"
+    },
+    "output": {
+      "bytes": 49,
+      "sha256": "ff31bd76a92893521bab4d89f822cd0d1a78146a7a000e31268460e946f5fc45"
+    },
+    "profile": {
+      "bytes": 184,
+      "sha256": "40a49292d4dc3fe4e1939b5e0b69197d589f8bca0774f3d1385ef750716fc318"
+    },
+    "statement": {
+      "bytes": 32,
+      "sha256": "7350756b88100637da36212def7c2f81a31396c1515cc089124f54da7fb2ad9f"
+    },
+    "observer_gzip": {
+      "bytes": 829446,
+      "sha256": "bbda28345113af37f760c470fa09df624ade680686744eb5371a2f23bfd72d03"
+    },
+    "inventory": {
+      "bytes": 79190,
+      "sha256": "f16ec7528f95cc68ac93960fd84052ac2c1ca4294ce90f264862e846b44b9fa2"
+    },
+    "compiler_integration": {
+      "bytes": 77417,
+      "sha256": "b389ce79ff0e50bcd0d4e26440a5d83482a23057957e31d014e2056766d417c1"
+    }
+  },
+  "commitments": {
+    "P": "094cbbebac9cef59548e5f843078e90f09e9c4736973ff269d69f003b1fdb04b",
+    "B": "6a743b50f9d2e2b75f0b795e3039898bcc80942d42685cf7387310d4f1b1d865",
+    "I": "99d21c4dbf7f742698ebc303a3c6dcb5acda8b506696c836fe1c8d664e6b9d6a",
+    "O": "89cbf3fdb18716de367b2bf1b2bc0117a864488bfe2e37cd0b27721a512a1b82",
+    "S": "606c7970ae81d1773249b6652dd1a31b685ea2b0d54fc73bd4fd786ae808caeb"
+  },
+  "observer_implementation": "Compiler-provided observer of its kernel-proved chunked simulation of Ix.Ixby.step. Exact output comparison at halt. The imported complete run was not rerun here.",
+  "observer_process": {
+    "command": "plans/ixby-runtime-v2/observer/execution-profile plans/ixby-runtime-v2/cslib.ixby plans/ixby-runtime-v2/cslib.ixbi plans/ixby-runtime-v2/cslib.ixbo plans/ixby-runtime-v2/cslib-observer.json 16000000000",
+    "wall_seconds": 72.61,
+    "user_seconds": 72.17,
+    "system_seconds": 0.14,
+    "max_rss_kib": 574524,
+    "swaps": 0,
+    "exit_code": 0,
+    "receipt": {
+      "bytes": 925,
+      "sha256": "a7f5ff04df3d706807d81d72cdbce62fdfbc957dcfc171f6a4f1ad8667d43dcd"
+    }
+  },
+  "compiler_comparison": {
+    "saved_transitions": 1673074269,
+    "reference_transitions": 360337913,
+    "max_observed_nat_bits": 65,
+    "max_locals": 66,
+    "max_continuations": 647,
+    "controls": [
+      303848647,
+      55345920,
+      1143346
+    ],
+    "baseline_v1_transitions": 2033412182
+  },
+  "local_import_validation": {
+    "sha256_and_blake3": "All five execution artifacts and uncompressed observer/inventory/source/time files matched the compiler record.",
+    "counts": "All 672 functions and all Eval/Ret/Apply totals match the compiler record; function spans cover all 5,816 blocks.",
+    "profile": "IxBy CLI decoded the original program and independently reproduced identical profile bytes.",
+    "statement": "IxBy CLI and independent b3sum commitment chain reproduced identical P/B/I/O/S and statement bytes.",
+    "cli_binary": {
+      "bytes": 20631016,
+      "sha256": "cfb9a00f0a2f6173998ecd927663385ec8bc20874004283d1af5f60f0b2dadf4"
+    }
+  }
+}

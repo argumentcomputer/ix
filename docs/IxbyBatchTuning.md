@@ -9,6 +9,11 @@ The IXBF/IXFI/IXFO formats, 58 primitives, and execution statement are unchanged
 The [compiler handoff](CompilatrixRuntimeV2Handoff.md) remains the language
 contract. Batch selection is a separate verifier setup decision.
 
+The compiler's actual runtime-v2 CSLib export is now available. The
+[new physical samples and optimization priorities](IxbyPerformance.md)
+measure that image separately. The retained CSLib measurements below remain
+the earlier header-migrated image; their historical results are unchanged.
+
 The [measurement record](../flock-stage3/profile/execution-batch-tuning-v0.json)
 contains the full sweep, held-out census, native batch boundaries, proof
 receipts, setup identities, and timing model. Its
