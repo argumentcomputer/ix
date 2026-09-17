@@ -1,0 +1,4 @@
+    Checking ixby-flock v0.1.0 (/tmp/ixby-publish.yueY3c/flock-stage3/host)
+    Checking ixby-stage4-exec v0.1.0 (/tmp/ixby-publish.yueY3c/flock-stage4/exec)
+    Checking ix-flock-recursion v0.1.0 (/tmp/ixby-publish.yueY3c/flock-stage4/recursive)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.73s

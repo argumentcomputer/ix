@@ -304,6 +304,14 @@ current-status section below.
     table. Exact live-cell marginals reduce the matched two joins from 300.26
     to 36.61 seconds. Both proofs, public statements and setup identities are
     byte-identical; differential table checks and fresh receivers pass.
+35. [Checked interpreter fusion](IxbyFusion.md): operand/consumer, argument-copy
+    and small-call compositions retain exact original clocks, state, fuel and
+    memory roots. Across 341 captures they remove 45.47% of circuit rows and
+    16.71% of memory events. The optional smaller class reduces matched
+    leaf-plus-join work from 128.88 to 86.63 seconds and leaf peak RSS from
+    31.45 to 18.34 GiB, but needs more leaves in 337 captured windows. Genuine
+    recursive trees and fresh-root rejection checks pass; broad proof-time
+    improvement remains to be established.
 
 ## Current integration and next measurements
 
@@ -313,7 +321,9 @@ for the copied 360,337,913-transition workload. The
 costs on earlier workloads. The [current CSLib tuning report](IxbyCslibTuning.md)
 adds complete native profiling and a bounded proof comparison. The
 [recursive follow-up](IxbyRecursiveTuning.md) measures faster aggregation
-using identical leaf and node proofs. The earlier
+using identical leaf and node proofs. The [fusion follow-up](IxbyFusion.md)
+remeasures both leaves and joins at identical public boundaries, and records
+the smaller layout's adverse leaf counts across the full capture set. The earlier
 arithmetic long-run model illustrates the scale problem; it does not predict
 runtime-v2 CSLib proof time.
 

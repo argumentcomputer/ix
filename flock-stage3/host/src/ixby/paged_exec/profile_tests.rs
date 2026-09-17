@@ -70,7 +70,10 @@ fn write_window(
   Ok(())
 }
 
-fn read_window(path: &Path, sources: [[u8; 32]; 2]) -> Result<(u64, Trace)> {
+pub(super) fn read_window(
+  path: &Path,
+  sources: [[u8; 32]; 2],
+) -> Result<(u64, Trace)> {
   let mut input = BufReader::new(File::open(path)?);
   let mut magic = [0; 8];
   input.read_exact(&mut magic)?;
@@ -387,7 +390,8 @@ fn captured_window_quota_census() -> Result<()> {
     traces.push(trace);
   }
   for class in BatchClass::ALL.into_iter().filter(|class| {
-    *class == BatchClass::SharedLinked1024 || tuning::shape(*class).is_some()
+    *class == BatchClass::SharedLinked1024
+      || (!class.fused() && tuning::shape(*class).is_some())
   }) {
     quota_tests::census(
       class.name(),
@@ -448,7 +452,13 @@ fn captured_window_quota_census() -> Result<()> {
               "{name}{}-{fetch}-{cells}-{parents}",
               if bulk { "-bulk" } else { "" }
             ),
-            batch::BatchShape { quotas, cells, parents: Some(parents), nu: 19 },
+            batch::BatchShape {
+              quotas,
+              fused: [0; Chip::FUSED.len()],
+              cells,
+              parents: Some(parents),
+              nu: 19,
+            },
             &traces,
           );
         }

@@ -1,7 +1,7 @@
 //! Named physical setups selected by the semantics-2 quota census.
 //! These constants are verifier policy, never inferred from a proof or trace.
-//! The complete 31-family order is `Chip::ALL`; measurements and workload
-//! limits are recorded in docs/IxbyBatchTuning.md.
+//! The original 31-family order is `Chip::ALL`; fused families are appended
+//! in `Chip::FUSED` order. See docs/IxbyBatchTuning.md and docs/IxbyFusion.md.
 use super::{BatchClass, batch::BatchShape};
 
 pub(super) fn shape(class: BatchClass) -> Option<BatchShape> {
@@ -70,7 +70,41 @@ pub(super) fn shape(class: BatchClass) -> Option<BatchShape> {
       4095,
       16,
     ),
+    BatchClass::FusedCompact => {
+      (BatchClass::SharedCompactLinked.quotas(), 24, 255, 11)
+    },
+    BatchClass::CslibFused => (
+      [
+        679, 905, 64, 10, 10, 400, 179, 10, 25, 97, 229, 25, 396, 224, 80, 40,
+        10, 40, 80, 25, 40, 10, 10, 10, 155, 850, 366, 155, 160, 480, 480,
+      ],
+      1152,
+      4095,
+      15,
+    ),
     _ => return None,
   };
-  Some(BatchShape { quotas, cells, parents: Some(parents), nu })
+  Some(BatchShape {
+    quotas,
+    fused: class.fused_quotas(),
+    cells,
+    parents: Some(parents),
+    nu,
+  })
+}
+
+/// Count-only starting point from five preselected full-run captures. The
+/// production fused layout additionally avoids state/memory padding cliffs.
+#[cfg(test)]
+pub(super) fn fused_reference_shape() -> BatchShape {
+  BatchShape {
+    quotas: [
+      1086, 1448, 67, 16, 16, 593, 285, 16, 39, 154, 365, 39, 633, 357, 73, 39,
+      16, 64, 73, 39, 64, 16, 16, 16, 248, 1360, 585, 248, 256, 768, 768,
+    ],
+    fused: [632, 587, 230, 37, 39, 250, 180, 115],
+    cells: 1536,
+    parents: Some(4095),
+    nu: 16,
+  }
 }

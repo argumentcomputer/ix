@@ -36,6 +36,7 @@ fn every_named_execution_class_fits_its_exact_emission() {
 
 /// Only addresses and fuel are needed for quota counting. This deliberately
 /// omits values and full states and cannot serve as execution proof advice.
+#[derive(Clone)]
 pub(super) struct CountedRow {
   pub chip: Chip,
   pub logical_before: u64,
@@ -298,7 +299,8 @@ fn physical_batch_quota_sweep() {
   }
   if std::env::var_os("IXBY_QUOTA_NAMED_ONLY").is_some() {
     for class in BatchClass::ALL.into_iter().filter(|class| {
-      *class == BatchClass::SharedLinked1024 || tuning::shape(*class).is_some()
+      *class == BatchClass::SharedLinked1024
+        || (!class.fused() && tuning::shape(*class).is_some())
     }) {
       census(class.name(), BatchShape::from_class(class), &traces);
     }
@@ -326,7 +328,13 @@ fn physical_batch_quota_sweep() {
           }
           census(
             &format!("{}-{fetch}-{cells}-{parents}", trace.name),
-            BatchShape { quotas, cells, parents: Some(parents), nu: 19 },
+            BatchShape {
+              quotas,
+              fused: [0; Chip::FUSED.len()],
+              cells,
+              parents: Some(parents),
+              nu: 19,
+            },
             &traces,
           );
         }

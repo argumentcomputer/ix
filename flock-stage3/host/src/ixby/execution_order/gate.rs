@@ -17,6 +17,8 @@ use std::sync::{Arc, OnceLock};
 pub enum OrderKind {
   /// [enabled, clock, before[N], after[N]] -> [before clock/kind, after clock/kind, residual]
   Prepare(usize),
+  /// Same preparation, with a positive setup-selected clock increment.
+  PrepareSpan(usize, u8),
   /// [previous[N+2], current[N+2], first, last] -> residual
   Audit(usize),
   /// [initial clock, final clock] -> residual; both are u64 and initial < final.
@@ -37,10 +39,15 @@ pub struct OrderRow(pub(crate) Vec<F128>);
 impl OrderGate {
   pub fn new(nu: usize, kind: OrderKind) -> Result<Self> {
     ensure!((3..=20).contains(&nu), "execution order row domain");
-    if let OrderKind::Prepare(n) | OrderKind::Audit(n) | OrderKind::Match(n) =
-      kind
+    if let OrderKind::Prepare(n)
+    | OrderKind::PrepareSpan(n, _)
+    | OrderKind::Audit(n)
+    | OrderKind::Match(n) = kind
     {
       ensure!((1..=30).contains(&n), "execution state words");
+    }
+    if let OrderKind::PrepareSpan(_, span) = kind {
+      ensure!((2..=10).contains(&span), "execution clock span");
     }
     Ok(Self { nu, kind, plan: Arc::new(OnceLock::new()) })
   }
@@ -70,7 +77,7 @@ impl OrderGate {
 impl CountedGate for OrderGate {
   fn input_count(&self) -> usize {
     match self.kind {
-      OrderKind::Prepare(n) => 2 + 2 * n,
+      OrderKind::Prepare(n) | OrderKind::PrepareSpan(n, _) => 2 + 2 * n,
       OrderKind::Audit(n) => 2 * (n + 2) + 2,
       OrderKind::Endpoints => 2,
       OrderKind::Match(n) => 2 * (n + 2),
@@ -79,7 +86,7 @@ impl CountedGate for OrderGate {
   }
   fn output_count(&self) -> usize {
     match self.kind {
-      OrderKind::Prepare(_) => 5,
+      OrderKind::Prepare(_) | OrderKind::PrepareSpan(_, _) => 5,
       OrderKind::Audit(_) | OrderKind::Endpoints => 1,
       OrderKind::Match(n) => n + 2,
       OrderKind::Access => 6,

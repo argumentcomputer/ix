@@ -45,9 +45,12 @@ pub enum BatchClass {
   Mixed3072,
   /// Runtime-v2 CSLib phases, including bounded byte-builder copy capacity.
   Cslib2048,
+  /// Fused instruction/copy rows with original microstep clocks.
+  FusedCompact,
+  CslibFused,
 }
 impl BatchClass {
-  pub const ALL: [Self; 20] = [
+  pub const ALL: [Self; 22] = [
     Self::Small,
     Self::Objects,
     Self::Compact,
@@ -68,6 +71,8 @@ impl BatchClass {
     Self::Builders768,
     Self::Mixed3072,
     Self::Cslib2048,
+    Self::FusedCompact,
+    Self::CslibFused,
   ];
   pub fn name(self) -> &'static str {
     match self {
@@ -91,6 +96,8 @@ impl BatchClass {
       Self::Builders768 => "builders-768",
       Self::Mixed3072 => "mixed-3072",
       Self::Cslib2048 => "cslib-2048",
+      Self::FusedCompact => "fused-compact",
+      Self::CslibFused => "cslib-fused",
     }
   }
   pub fn from_name(name: &str) -> Result<Self> {
@@ -131,7 +138,25 @@ impl BatchClass {
       Self::Builders768 => b"IxBy/Flock/paged-execution:builders-768:v0",
       Self::Mixed3072 => b"IxBy/Flock/paged-execution:mixed-3072:v0",
       Self::Cslib2048 => b"IxBy/Flock/paged-execution:cslib-2048:v0",
+      Self::FusedCompact => b"IxBy/Flock/paged-execution:fused-compact:v0",
+      Self::CslibFused => b"IxBy/Flock/paged-execution:cslib-fused:v0",
     }
+  }
+  pub fn fused(self) -> bool {
+    matches!(self, Self::FusedCompact | Self::CslibFused)
+  }
+  pub fn fused_quotas(self) -> [usize; Chip::FUSED.len()] {
+    match self {
+      Self::FusedCompact => [2; Chip::FUSED.len()],
+      Self::CslibFused => [544, 367, 144, 32, 40, 192, 113, 104],
+      _ => [0; Chip::FUSED.len()],
+    }
+  }
+  pub fn chip_quotas(self) -> impl Iterator<Item = (Chip, usize)> {
+    Chip::ALL
+      .into_iter()
+      .zip(self.quotas())
+      .chain(Chip::FUSED.into_iter().zip(self.fused_quotas()))
   }
   pub fn quotas(self) -> [usize; 31] {
     let old = match self {
@@ -208,7 +233,7 @@ impl BatchClass {
     }
   }
   pub fn transitions(self) -> usize {
-    self.quotas().iter().sum()
+    self.chip_quotas().map(|(_, quota)| quota).sum()
   }
   pub fn shared_memory(self) -> Option<MultiCapacity> {
     match self {
@@ -228,12 +253,7 @@ impl BatchClass {
     }
   }
   pub fn accesses(self) -> usize {
-    self
-      .quotas()
-      .into_iter()
-      .zip(Chip::ALL)
-      .map(|(n, c)| n * c.accesses())
-      .sum()
+    self.chip_quotas().map(|(chip, quota)| quota * chip.accesses()).sum()
   }
   pub fn routing(self) -> RoutingKind {
     match self {
@@ -293,6 +313,7 @@ pub struct BatchEmission {
 #[derive(Clone, Copy, Debug)]
 pub(super) struct BatchShape {
   pub quotas: [usize; 31],
+  pub fused: [usize; Chip::FUSED.len()],
   pub cells: usize,
   pub parents: Option<usize>,
   pub nu: usize,
@@ -301,16 +322,23 @@ impl BatchShape {
   pub(super) fn from_class(class: BatchClass) -> Self {
     Self {
       quotas: class.quotas(),
+      fused: class.fused_quotas(),
       cells: class.cells(),
       parents: class.shared_memory().map(|c| c.parents),
       nu: class.nu(),
     }
   }
   pub(super) fn transitions(self) -> usize {
-    self.quotas.iter().sum()
+    self.quotas.iter().chain(&self.fused).sum()
   }
   pub(super) fn accesses(self) -> usize {
-    self.quotas.into_iter().zip(Chip::ALL).map(|(n, c)| n * c.accesses()).sum()
+    self.chip_quotas().map(|(chip, quota)| quota * chip.accesses()).sum()
+  }
+  pub(super) fn chip_quotas(self) -> impl Iterator<Item = (Chip, usize)> {
+    Chip::ALL
+      .into_iter()
+      .zip(self.quotas)
+      .chain(Chip::FUSED.into_iter().zip(self.fused))
   }
   pub(super) fn shared_memory(self) -> Option<MultiCapacity> {
     self.parents.map(|parents| MultiCapacity::new(self.cells, parents).unwrap())
@@ -335,9 +363,24 @@ pub(super) fn emit_shape(
     MemoryDepth::new(40)?,
     class.routing(),
   )?;
-  let execution =
-    ExecutionSlots::declare(&mut b, nu, memory.log().memory().compression())?;
-  let order = if class.linked_states() {
+  let execution = if class.fused() {
+    ExecutionSlots::declare_fused(
+      &mut b,
+      nu,
+      memory.log().memory().compression(),
+    )?
+  } else {
+    ExecutionSlots::declare(&mut b, nu, memory.log().memory().compression())?
+  };
+  let order = if class.fused() {
+    StateChainSlots::declare_linked_spans(
+      &mut b,
+      nu,
+      STATE_WORDS,
+      state_record_layout(),
+      &[2, 3, 4, 6, 8, 10],
+    )?
+  } else if class.linked_states() {
     StateChainSlots::declare_linked(
       &mut b,
       nu,
@@ -396,7 +439,7 @@ pub(super) fn emit_shape(
     .collect();
   let mut transitions = Vec::new();
   let mut accesses = Vec::new();
-  for (chip, count) in Chip::ALL.into_iter().zip(shape.quotas) {
+  for (chip, count) in shape.chip_quotas() {
     for _ in 0..count {
       let enabled = b.input();
       let clock = b.input();
@@ -408,6 +451,7 @@ pub(super) fn emit_shape(
       transitions.push(TransitionWires {
         enabled,
         clock,
+        span: chip.span(),
         before: before.to_vec(),
         after: step.state.to_vec(),
       });
@@ -439,6 +483,32 @@ pub(super) fn emit_shape(
       w
     });
     let proof = MultiProofWires::inputs(&mut b, shape.shared_memory().unwrap());
+    if class.fused() {
+      // Authenticate the reserved zero cell once per batch. Merely binding
+      // an omitted dummy read's wires to zero would not check its memory cell
+      // for a conditional segment with an arbitrary initial root.
+      let nil = &proof.leaves[0];
+      let matching = execution.forwarding_gate().unwrap().0;
+      for value in [nil.old, nil.new] {
+        // Consume the boundary inputs through an actual equality gate. The
+        // pinned builder does not merge cells added to an aliased input
+        // after connect(), so an early input-only connection is insufficient.
+        let residuals = b.gate(
+          matching,
+          &[
+            nil.address,
+            value[0],
+            value[1],
+            execution.zero,
+            execution.zero,
+            execution.zero,
+          ],
+        );
+        for residual in residuals {
+          execution.constrain_zero(&mut b, residual);
+        }
+      }
+    }
     let switches = (0..MemoryLogSlots::plan(shape.accesses(), shape.cells)?
       .switches())
       .map(|_| b.input())
@@ -520,13 +590,7 @@ impl BatchAdvice {
     private.push(F128::new(start.clock, 0));
     private.extend(start.before);
     private.extend(memory.initial_root);
-    private.push(F128::new(
-      end
-        .clock
-        .checked_add(1)
-        .ok_or_else(|| anyhow::anyhow!("execution clock overflow"))?,
-      0,
-    ));
+    private.push(F128::new(end.end_clock()?, 0));
     private.extend(end.after);
     let mut expected = private.clone();
     expected.extend(memory.final_root);
@@ -535,7 +599,7 @@ impl BatchAdvice {
     for (i, row) in rows.iter().enumerate() {
       if i > 0 {
         ensure!(
-          rows[i - 1].clock.checked_add(1) == Some(row.clock)
+          rows[i - 1].end_clock()? == row.clock
             && rows[i - 1].after == row.before,
           "native execution discontinuity"
         );
@@ -554,7 +618,7 @@ impl BatchAdvice {
     pad[1] = F128::new(execution_order::PAD, 0);
     let mut state_records = Vec::new();
     let mut memory_order = Vec::new();
-    for (chip, quota) in Chip::ALL.into_iter().zip(class.quotas()) {
+    for (chip, quota) in class.chip_quotas() {
       let matching = rows
         .iter()
         .enumerate()
@@ -568,7 +632,7 @@ impl BatchAdvice {
           private.extend(&row.advice);
           state_records.extend([
             record(row.clock, execution_order::BEFORE, &row.before),
-            record(row.clock + 1, execution_order::AFTER, &row.after),
+            record(row.end_clock()?, execution_order::AFTER, &row.after),
           ]);
           memory_order.extend((0..chip.accesses()).map(|ordinal| {
             Some((offsets[index] + ordinal, row.clock, ordinal as u8))
@@ -585,7 +649,7 @@ impl BatchAdvice {
     }
     state_records.extend([
       record(start.clock, execution_order::SEED, &start.before),
-      record(end.clock + 1, execution_order::SEAL, &end.after),
+      record(end.end_clock()?, execution_order::SEAL, &end.after),
     ]);
     if class.linked_states() {
       private.extend(execution_order::linked_routing(&state_records)?);

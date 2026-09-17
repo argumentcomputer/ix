@@ -133,15 +133,17 @@ fn original_execution_proof_throughput() {
   let count = advice.len();
   assert!(count > 0, "empty proof range");
   let native_seconds = generating.elapsed().as_secs_f64();
+  let mut circuit_rows = 0;
   for (batch, advice) in advice.iter().enumerate() {
     let mut at = 55;
-    let mut counts = [0; Chip::ALL.len()];
-    for (chip, quota) in Chip::ALL.into_iter().zip(class.quotas()) {
+    let mut counts = [0; Chip::COUNT];
+    for (chip, quota) in class.chip_quotas() {
       for _ in 0..quota {
         counts[chip as usize] += usize::from(advice.private[at] == F128::ONE);
         at += 2 + STATE_WORDS + chip.advice_words();
       }
     }
+    circuit_rows += counts.iter().sum::<usize>();
     eprintln!("proof_quota,{},{counts:?}", skip + batch);
   }
   let statements: Vec<_> = advice
@@ -210,7 +212,7 @@ fn original_execution_proof_throughput() {
   });
   let elapsed = proving.elapsed().as_secs_f64();
   eprintln!(
-    "proof benchmark complete: batches={count} microsteps={microsteps} logical_steps={logical_steps} worker_wall_seconds={elapsed:.9} batches_per_second={:.9} logical_steps_per_second={:.9}; every segment proof verified; source admission, complete execution and aggregation are outside this benchmark",
+    "proof benchmark complete: batches={count} microsteps={microsteps} circuit_rows={circuit_rows} logical_steps={logical_steps} worker_wall_seconds={elapsed:.9} batches_per_second={:.9} logical_steps_per_second={:.9}; every segment proof verified; source admission, complete execution and aggregation are outside this benchmark",
     count as f64 / elapsed,
     logical_steps as f64 / elapsed
   );

@@ -21,15 +21,26 @@ use crate::{
 use anyhow::{Context, Result, bail, ensure};
 use flock_prover::circuit::builder::GateType;
 
+#[derive(Clone, Debug)]
 pub struct RowAdvice {
   pub chip: Chip,
+  /// Original microstep clock; a fused row advances by `chip.span()`.
   pub clock: u64,
   pub before: [F128; STATE_WORDS],
   pub after: [F128; STATE_WORDS],
   pub advice: Vec<F128>,
   pub accesses: Vec<AccessAdvice>,
 }
+impl RowAdvice {
+  pub fn end_clock(&self) -> Result<u64> {
+    self
+      .clock
+      .checked_add(u64::from(self.chip.span()))
+      .ok_or_else(|| anyhow::anyhow!("execution clock exhausted"))
+  }
+}
 
+#[derive(Clone)]
 pub struct NativeMachine {
   pub state: [F128; STATE_WORDS],
   pub clock: u64,
@@ -352,6 +363,16 @@ impl NativeMachine {
     let advice;
     let after;
     match chip {
+      Chip::FusedControl
+      | Chip::FusedNumeric
+      | Chip::CopyPair
+      | Chip::FusedCall0
+      | Chip::FusedCall1
+      | Chip::FusedCall2
+      | Chip::FusedCall3
+      | Chip::FusedCall4 => {
+        unreachable!("fused rows are selected by preview_for_class")
+      },
       Chip::CollectionStart
       | Chip::ArrayStep
       | Chip::ArrayAscend
@@ -694,10 +715,7 @@ impl NativeMachine {
       row.clock == self.clock && row.before == self.state,
       "stale execution preview"
     );
-    let clock = self
-      .clock
-      .checked_add(1)
-      .ok_or_else(|| anyhow::anyhow!("execution clock exhausted"))?;
+    let clock = row.end_clock()?;
     for access in &row.accesses {
       if access.write {
         memory.write(access.address, access.value)?;
@@ -717,6 +735,180 @@ impl NativeMachine {
     self.commit(memory, &row)?;
     Ok(row)
   }
+  /// Select only setup-authorized fusions. An exact stop inside a potential
+  /// fusion falls back to the original single-step relation.
+  pub fn preview_for_class(
+    &self,
+    class: BatchClass,
+    memory: &MemoryBatch<'_>,
+    end_clock: u64,
+  ) -> Result<RowAdvice> {
+    if class.fused()
+      && let Some(chip) = self.fused_chip(memory)?
+      && self
+        .clock
+        .checked_add(u64::from(chip.span()))
+        .is_some_and(|end| end <= end_clock)
+    {
+      return self.preview_fused(chip, memory);
+    }
+    self.preview(memory)
+  }
+  fn fused_chip(&self, memory: &MemoryBatch<'_>) -> Result<Option<Chip>> {
+    if self.state[CONTROL] != F128::ZERO {
+      return Ok(None);
+    }
+    let frame = self.state[0];
+    if frame.lo as u8 == Phase::Copy as u8 {
+      let index = frame.hi & 255;
+      let count = (frame.hi >> 8) & 255;
+      return Ok(
+        count.checked_sub(index).filter(|n| *n >= 2).map(|_| Chip::CopyPair),
+      );
+    }
+    if frame.lo as u8 != Phase::Eval as u8 {
+      return Ok(None);
+    }
+    let header = memory
+      .value(block_address((frame.lo >> 8) as u16, (frame.lo >> 24) as u8))?[0];
+    let instruction = (header.lo >> 8) as u8;
+    let operation = (header.lo >> 16) as u8;
+    let primitive = (header.lo >> 24) as u8;
+    let count = (header.lo >> 32) as u8;
+    Ok(match (instruction, operation, count) {
+      (0, 5 | 6, 0..=4) | (2 | 3, _, 0..=4) => {
+        Some(Chip::FUSED_CALLS[count as usize])
+      },
+      (0, 0, 1) | (1 | 6 | 7, _, 1) => Some(Chip::FusedControl),
+      (0, 1, 2)
+        if !collections::is_collection(primitive)
+          && !bytes::is_byte(primitive) =>
+      {
+        Some(Chip::FusedNumeric)
+      },
+      _ => None,
+    })
+  }
+  fn preview_fused(
+    &self,
+    chip: Chip,
+    memory: &MemoryBatch<'_>,
+  ) -> Result<RowAdvice> {
+    let mut view = self.clone();
+    let mut advice = Vec::new();
+    let mut accesses = Vec::new();
+    let call_arity = chip.call_arity();
+    let mut operands = Vec::new();
+    let components = if chip == Chip::CopyPair {
+      vec![Chip::Resume, Chip::Resume]
+    } else if let Some(arity) = call_arity {
+      std::iter::once(Chip::Fetch)
+        .chain(std::iter::repeat_n(Chip::Resolve, arity))
+        .collect()
+    } else if chip == Chip::FusedControl {
+      vec![Chip::Fetch, Chip::Resolve]
+    } else {
+      vec![Chip::Fetch, Chip::Resolve, Chip::Resolve]
+    };
+    for &expected in &components {
+      let row = view.preview(memory)?;
+      ensure!(row.chip == expected, "fused execution phase");
+      if chip == Chip::CopyPair {
+        let unused = row.accesses[1];
+        ensure!(
+          unused.address == 0
+            && !unused.write
+            && unused.value == [F128::ZERO; 2],
+          "fused copy continuation"
+        );
+        accesses.extend([row.accesses[0], row.accesses[2]]);
+      } else {
+        if row.chip == Chip::Resolve {
+          operands.extend(row.accesses[2].value);
+        }
+        accesses.extend(row.accesses.iter().copied());
+      }
+      advice.extend(row.advice);
+      view.state = row.after;
+      view.clock = row.clock + 1;
+    }
+    if let Some(arity) = call_arity {
+      let row = view.preview(memory)?;
+      ensure!(row.chip == Chip::Call, "fused call phase");
+      for i in [1, 3] {
+        let unused = row.accesses[i];
+        ensure!(
+          unused.address == 0
+            && !unused.write
+            && unused.value == [F128::ZERO; 2],
+          "fused call unused event"
+        );
+      }
+      accesses.extend([row.accesses[0], row.accesses[2]]);
+      advice.extend(row.advice);
+      view.state = row.after;
+      ensure!(operands.len() == 2 * arity, "fused call arity");
+      for (i, reply) in operands.as_chunks::<2>().0.iter().enumerate() {
+        let prefix =
+          [F128::ONE].into_iter().chain(view.state).collect::<Vec<_>>();
+        view.micro(MicroKind::Resume, &prefix)?;
+        let mut copied = Vec::new();
+        view.state =
+          view.complete(&prefix, &[F128::ZERO; 5], *reply, &mut copied)?;
+        ensure!(
+          copied[0].address == SCRATCH + i as u64
+            && !copied[0].write
+            && copied[0].value == *reply,
+          "fused argument forwarding"
+        );
+        let unused = copied[1];
+        ensure!(
+          unused.address == 0
+            && !unused.write
+            && unused.value == [F128::ZERO; 2],
+          "fused call copy continuation"
+        );
+        accesses.push(copied[2]);
+      }
+    } else if chip != Chip::CopyPair {
+      operands.resize(6, F128::ZERO);
+      let numeric = chip == Chip::FusedNumeric;
+      let count = if numeric { 3 } else { 1 };
+      let prefix =
+        [F128::ONE].into_iter().chain(view.state).collect::<Vec<_>>();
+      view.micro(
+        MicroKind::Scratch(count),
+        &prefix
+          .iter()
+          .copied()
+          .chain(operands[..2 * count].iter().copied())
+          .collect::<Vec<_>>(),
+      )?;
+      let (value, kind) = if numeric {
+        (view.numeric(view.state[HEADER], &operands)?, MicroKind::NumericAction)
+      } else {
+        ([operands[0], operands[1]], MicroKind::ControlAction)
+      };
+      let action = view.micro(
+        kind,
+        &prefix.iter().copied().chain(value).collect::<Vec<_>>(),
+      )?;
+      view.state =
+        view.complete(&prefix, &action, [F128::ZERO; 2], &mut accesses)?;
+    }
+    ensure!(
+      advice.len() == chip.advice_words() && accesses.len() == chip.accesses(),
+      "fused execution width"
+    );
+    Ok(RowAdvice {
+      chip,
+      clock: self.clock,
+      before: self.state,
+      after: view.state,
+      advice,
+      accesses,
+    })
+  }
   /// Stop before exceeding any fixed circuit quota. A suspended instruction
   /// is carried in the complete public boundary state, including its copy job.
   pub fn batch(
@@ -726,7 +918,8 @@ impl NativeMachine {
   ) -> Result<Option<BatchAdvice>> {
     self.batch_until(class, memory, u64::MAX)
   }
-  /// End at an exact physical clock, or earlier at the class's fixed quotas.
+  /// End at an exact original microstep clock, or earlier at fixed quotas.
+  /// Fusion falls back to single steps when the stop lies inside a macro.
   /// Padding and the authenticated boundary relation are identical to batch().
   pub fn batch_until(
     &mut self,
@@ -745,27 +938,45 @@ impl NativeMachine {
       return Ok(None);
     }
     let mut memory = MemoryBatch::new(memory);
-    let mut counts = [0; Chip::ALL.len()];
-    let quotas = class.quotas();
+    if class.fused() {
+      // Dummy reads may be omitted only with the reserved cell authenticated
+      // as zero. The fused circuit pins its first boundary leaf independently.
+      memory.include_cell(0)?;
+      ensure!(
+        memory.value(0)? == [F128::ZERO; 2],
+        "reserved execution cell must be zero"
+      );
+    }
+    let mut counts = [0; Chip::COUNT];
+    let mut quotas = [0; Chip::COUNT];
+    for (chip, quota) in class.chip_quotas() {
+      quotas[chip as usize] = quota;
+    }
     let mut rows = Vec::new();
-    while let Some(chip) = self.next_chip()? {
-      if self.clock == end_clock
-        || counts[chip as usize] == quotas[chip as usize]
-      {
+    while self.next_chip()?.is_some() {
+      if self.clock == end_clock {
         break;
       }
-      let row = self.preview(&memory)?;
-      if memory.prospective_cells(&row.accesses) > class.cells() {
-        break;
+      let mut row = self.preview_for_class(class, &memory, end_clock)?;
+      let fits = |row: &RowAdvice| {
+        counts[row.chip as usize] < quotas[row.chip as usize]
+          && memory.prospective_cells(&row.accesses) <= class.cells()
+          && class
+            .shared_memory()
+            .is_none_or(|capacity| memory.fits_shared(&row.accesses, capacity))
+      };
+      let mut admitted = fits(&row);
+      if !admitted && rows.is_empty() && row.chip.span() > 1 {
+        // Tiny classes may fit each original step but not its entire fused
+        // memory footprint. Preserve their ability to make progress.
+        row = self.preview(&memory)?;
+        admitted = fits(&row);
       }
-      if class
-        .shared_memory()
-        .is_some_and(|capacity| !memory.fits_shared(&row.accesses, capacity))
-      {
+      if !admitted {
         break;
       }
       self.commit(&mut memory, &row)?;
-      counts[chip as usize] += 1;
+      counts[row.chip as usize] += 1;
       rows.push(row);
     }
     ensure!(

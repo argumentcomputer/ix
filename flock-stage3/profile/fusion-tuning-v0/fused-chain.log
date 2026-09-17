@@ -1,0 +1,20 @@
+
+running 1 test
+{"class":"cslib-fused","event":"chain_setup","geometry":{"application_words":57,"arithmetic_operations":1921716,"blake3_compressions":86732,"children":[1,1],"dense_variables":32,"leaves":2,"packing_rows":45457,"root_advice_words":6078,"root_families":195,"row_variables":17,"variables":5259335},"identity":"e02cf61b4b025d7f17782c9fc1860163542bbf8e1e11a6b26cd753831d480578","leaves":2,"seconds":53.988272733}
+test execution_tree::tests::large_execution::execution_range_chain_proves_fresh has been running for over 60 seconds
+{"bytes":423107,"class":"cslib-fused","event":"chain_proof","first_leaf":0,"geometry":{"application_words":57,"arithmetic_operations":1921716,"blake3_compressions":86732,"children":[1,1],"dense_variables":32,"leaves":2,"packing_rows":45457,"root_advice_words":6078,"root_families":195,"row_variables":17,"variables":5259335},"leaves":2,"seconds":18.426430325}
+{"class":"cslib-fused","event":"chain_setup","geometry":{"application_words":57,"arithmetic_operations":1503060,"blake3_compressions":64311,"children":[2,1],"dense_variables":32,"leaves":3,"packing_rows":41786,"root_advice_words":6173,"root_families":197,"row_variables":16,"variables":4557013},"identity":"9353bc6900cf807a3d537e557a013bdbe7b9aac026574b9db9deb4322549622f","leaves":3,"seconds":10.000219155}
+{"bytes":406323,"class":"cslib-fused","event":"chain_proof","first_leaf":0,"geometry":{"application_words":57,"arithmetic_operations":1503060,"blake3_compressions":64311,"children":[2,1],"dense_variables":32,"leaves":3,"packing_rows":41786,"root_advice_words":6173,"root_families":197,"row_variables":16,"variables":4557013},"leaves":3,"seconds":16.558307007}
+
+running 1 test
+test execution_tree::tests::large_execution::execution_range_chain_proves_fresh ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 22 filtered out; finished in 66.71s
+
+{"class":"cslib-fused","event":"chain_receiver_setup","geometry":{"application_words":57,"arithmetic_operations":1503060,"blake3_compressions":64311,"children":[2,1],"dense_variables":32,"leaves":3,"packing_rows":41786,"root_advice_words":6173,"root_families":197,"row_variables":16,"variables":4557013},"identity":"9353bc6900cf807a3d537e557a013bdbe7b9aac026574b9db9deb4322549622f","seconds":63.65434433}
+{"bytes":406323,"class":"cslib-fused","event":"chain_receiver_accepted","seconds":0.548779716}
+chain receiver rejected all 114 public-word mutations, truncation and trailing data
+
+test execution_tree::tests::large_execution::execution_range_chain_proves_fresh ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 22 filtered out; finished in 169.12s

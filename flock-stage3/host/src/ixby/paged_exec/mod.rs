@@ -16,6 +16,11 @@ mod collection_tests;
 mod collection_witness;
 mod collections;
 mod fast_advice;
+mod fusion;
+#[cfg(test)]
+mod fusion_census;
+#[cfg(test)]
+mod fusion_tests;
 mod gate;
 mod image;
 #[cfg(test)]
@@ -141,8 +146,17 @@ pub enum Chip {
   BuilderNode = 28,
   BuilderCopy = 29,
   BuilderEmit = 30,
+  FusedControl = 31,
+  FusedNumeric = 32,
+  CopyPair = 33,
+  FusedCall0 = 34,
+  FusedCall1 = 35,
+  FusedCall2 = 36,
+  FusedCall3 = 37,
+  FusedCall4 = 38,
 }
 impl Chip {
+  /// Original family order, also used by the version-0 profile captures.
   pub const ALL: [Self; 31] = [
     Self::Fetch,
     Self::Resolve,
@@ -176,8 +190,50 @@ impl Chip {
     Self::BuilderCopy,
     Self::BuilderEmit,
   ];
-  pub fn advice_words(self) -> usize {
+  pub const FUSED_CALLS: [Self; 5] = [
+    Self::FusedCall0,
+    Self::FusedCall1,
+    Self::FusedCall2,
+    Self::FusedCall3,
+    Self::FusedCall4,
+  ];
+  pub const FUSED: [Self; 8] = [
+    Self::FusedControl,
+    Self::FusedNumeric,
+    Self::CopyPair,
+    Self::FusedCall0,
+    Self::FusedCall1,
+    Self::FusedCall2,
+    Self::FusedCall3,
+    Self::FusedCall4,
+  ];
+  pub const COUNT: usize = Self::ALL.len() + Self::FUSED.len();
+  pub fn call_arity(self) -> Option<usize> {
+    Self::FUSED_CALLS.iter().position(|&chip| chip == self)
+  }
+  /// Original microsteps represented by one physical circuit row. Keeping
+  /// this clock allows fused and ordinary leaves to share exact boundaries.
+  pub fn span(self) -> u8 {
     match self {
+      Self::FusedControl => 3,
+      Self::FusedNumeric => 4,
+      Self::CopyPair => 2,
+      Self::FusedCall0 => 2,
+      Self::FusedCall1 => 4,
+      Self::FusedCall2 => 6,
+      Self::FusedCall3 => 8,
+      Self::FusedCall4 => 10,
+      _ => 1,
+    }
+  }
+  pub fn advice_words(self) -> usize {
+    if let Some(arity) = self.call_arity() {
+      return 4 + 4 * arity;
+    }
+    match self {
+      Self::FusedControl => 6,
+      Self::FusedNumeric => 10,
+      Self::CopyPair => 4,
       Self::Resolve | Self::Project => 4,
       Self::CollectionStart | Self::BuilderCopy => 6,
       Self::ArrayStep | Self::ArrayAscend => 2,
@@ -195,7 +251,13 @@ impl Chip {
     }
   }
   pub fn accesses(self) -> usize {
+    if let Some(arity) = self.call_arity() {
+      return 3 + 4 * arity;
+    }
     match self {
+      Self::FusedControl => 7,
+      Self::FusedNumeric => 10,
+      Self::CopyPair => 4,
       Self::Fetch => 1,
       Self::CollectionStart => 5,
       Self::ArrayStep | Self::CollectionFinish | Self::BuilderCopy => 3,
@@ -219,6 +281,11 @@ impl Chip {
       Self::ByteEq => 6,
       Self::ByteEmit | Self::HashCombine | Self::HashPush => 1,
       Self::HashSkip => 0,
+      Self::FusedCall0
+      | Self::FusedCall1
+      | Self::FusedCall2
+      | Self::FusedCall3
+      | Self::FusedCall4 => unreachable!(),
     }
   }
 }

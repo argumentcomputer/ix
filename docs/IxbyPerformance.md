@@ -7,6 +7,9 @@ unboxed numeric primitives. The [first profiling and batch-tuning increment](Ixb
 is implemented and measured. The subsequent
 [recursive table-evaluation optimization](IxbyRecursiveTuning.md) reduces the
 same two joins from 300.26 to 36.61 seconds while preserving both proof bytes.
+The [first interpreter-fusion increment](IxbyFusion.md) now reduces matched
+leaf-plus-join work from 128.88 to 86.63 seconds. Its smaller optional class
+needs more leaves across most captured phases, so broader tuning remains open.
 This document ranks the remaining opportunities.
 
 The [complete reference census](../flock-stage3/profile/cslib-runtime-v2-reference.json),
@@ -18,7 +21,8 @@ the original profile and P/B/I/O/S commitments. The complete observation came
 from the compiler's chunked reference interpreter. Local execution now checks
 the expected output, fuel and all 5,816 block counts through **1,703,268,652
 physical microsteps**. A complete CSLib Flock proof is still open; the new
-proof comparison covers the same 20,000 physical steps with both classes.
+proof comparisons cover the same 20,000 original microsteps with both classes.
+Fused circuit rows can represent several of those original microsteps.
 
 ## Historical scale illustration and the optimization target
 
@@ -186,18 +190,23 @@ long-run model's join dominance predates this evaluator change.
 ### 4. Fuse interpreter microsteps and keep temporary values off the memory log
 
 `Fetch`, `Resolve`, and `Resume` account for **64.55% of the complete native
-run's microsteps**. Today an operand can be read into scratch memory and then read
-again by its consumer; entering a function copies resolved arguments cell by
-cell. Caller locals already stay in their existing bank across a call.
+run's original microsteps**. The [first implementation](IxbyFusion.md) combines
+single-operand control, binary numeric instructions, two-copy sequences and
+calls with up to four arguments. Checked values travel directly to consumers;
+scratch writes remain authenticated to preserve exact boundary memory roots.
+All arguments resolve before a tail call can overwrite caller locals.
 
-Try common operand/consumer combinations, checked straight-line blocks, and
-direct argument transfer. Keep temporary values in circuit wires when their
-lifetime allows it. Authenticate the consumed instructions and preserve exact
-fuel, errors, branch behavior, and boundary state. This can reduce physical
-work while keeping the original program and its logical transition count.
+Across 341 captures, fusion removes 45.47% of rows and 16.71% of memory events.
+The smaller `cslib-fused` commitment halves padded words and reduces the matched
+20,000-original-step leaf-plus-join measurement 32.8%, but needs 62.76% more
+leaves across the captured windows. A larger count-only candidate reduces
+leaves just 4.43%. This is an optional layout, with no whole-workload speedup
+established. Fewer rows alone do not settle total proof cost.
 
-**First check:** count removed microsteps, memory events, and tree parents on
-real windows, then prove the replacement against the existing path.
+**Next check:** improve the balance of fused and ordinary quotas across phases,
+then measure longer equal-work trees. Unary numeric operations and additional
+checked straight-line combinations remain candidates. Preserve source binding,
+exact fuel, branch behavior and authenticated boundary state.
 
 ### 5. Inline and specialize small compiler runtime wrappers
 
@@ -280,11 +289,11 @@ admission and output/closing work in the final benchmark.
 
 ## Suggested order of work
 
-1. Use the complete physical census, tuned batches and faster recursive table
-   evaluation as the baseline. Leaf production now dominates the measured
-   segment. Fuse operand and argument-copy microsteps while preserving semantic
-   fuel and authenticated boundaries; test compiler wrapper/codec changes
-   against the exact output, block counts and physical traffic.
+1. Use the complete physical census, tuned batches, faster recursive table
+   evaluation and optional fused execution as the baseline. Validate further
+   fused quota choices over broad phases and longer equal-work proof trees
+   before adopting a workload default. Test compiler wrapper/codec changes
+   against exact output, block counts and physical traffic.
 2. Prototype one cheaper routing/memory argument, including its recursive cost.
    This remains a major leaf-circuit opportunity.
 3. Specialize fixed public data in recursive verification and measure further

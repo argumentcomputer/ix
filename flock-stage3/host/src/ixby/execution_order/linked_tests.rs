@@ -13,6 +13,48 @@ fn f(value: u64) -> F128 {
 }
 
 #[test]
+fn fused_clock_spans_are_fixed_positive_nonwrapping_and_canonical() {
+  for span in [0, 1, 11, u8::MAX] {
+    assert!(OrderGate::new(3, OrderKind::PrepareSpan(1, span)).is_err());
+  }
+  for span in 2..=10 {
+    let gate = OrderGate::new(3, OrderKind::PrepareSpan(1, span)).unwrap();
+    let table = gate.r1cs();
+    let check = |input: [F128; 4], valid: bool| {
+      let mut bits = vec![false; gate.plan().k()];
+      gate.plan().fill_row(&mut bits, |bits| fill_words(&input, bits));
+      let output = read_words(&bits, 4, 5);
+      assert_eq!(output[4], f(u64::from(!valid)));
+      if valid && input[0] == f(1) {
+        assert_eq!(
+          output[..4],
+          [input[1], f(BEFORE), f(input[1].lo + u64::from(span)), f(AFTER)]
+        );
+      }
+      bits.resize(table.n(), false);
+      assert!(table.satisfies(&bits));
+      if !valid {
+        bits[8 * 128] = false;
+        assert!(!table.satisfies(&bits));
+      }
+    };
+    for clock in [0, 1, 1 << 40, u64::MAX - u64::from(span)] {
+      check([f(1), f(clock), F128::new(7, 9), F128::new(11, 13)], true);
+      check([f(1), F128::new(clock, 1), f(0), f(0)], false);
+    }
+    for offset in 0..u64::from(span) {
+      check([f(1), f(u64::MAX - offset), f(0), f(0)], false);
+    }
+    check([f(0); 4], true);
+    for at in 0..4 {
+      let mut bad = [f(0); 4];
+      bad[at] = if at == 0 { f(2) } else { f(1) };
+      check(bad, false);
+    }
+  }
+}
+
+#[test]
 fn linked_match_checks_every_bit_of_both_records_without_fingerprints() {
   for words in [1, 24, 30] {
     let gate = OrderGate::new(3, OrderKind::Match(words)).unwrap();
@@ -91,6 +133,7 @@ fn emit(b: &mut impl CircuitEmitter) -> InputLayout {
   let end = boundary();
   let rows = (0..6)
     .map(|_| TransitionWires {
+      span: 1,
       enabled: b.input(),
       clock: b.input(),
       before: (0..2).map(|_| b.input()).collect(),

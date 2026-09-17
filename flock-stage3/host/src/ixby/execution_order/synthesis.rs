@@ -41,7 +41,7 @@ fn masked(b: &mut Builder, flag: usize, bits: &[usize]) -> Vec<usize> {
 }
 pub(super) fn build(kind: OrderKind) -> BooleanR1csPlan {
   let (inputs, outputs, k) = match kind {
-    OrderKind::Prepare(n) => (2 + 2 * n, 5, 16),
+    OrderKind::Prepare(n) | OrderKind::PrepareSpan(n, _) => (2 + 2 * n, 5, 16),
     OrderKind::Audit(n) => (2 * (n + 2) + 2, 1, 16),
     OrderKind::Endpoints => (2, 1, 12),
     OrderKind::Match(n) => (2 * (n + 2), n + 2, 14),
@@ -68,7 +68,7 @@ pub(super) fn build(kind: OrderKind) -> BooleanR1csPlan {
         subtract(&mut b, one, zero, &word(0)[..64], &word(1)[..64]);
       require(&mut b, one, &mut bad, one, less);
     },
-    OrderKind::Prepare(n) => {
+    OrderKind::Prepare(n) | OrderKind::PrepareSpan(n, _) => {
       let enabled = 0;
       let disabled = not(&mut b, one, enabled);
       bad.extend(1..128);
@@ -80,8 +80,16 @@ pub(super) fn build(kind: OrderKind) -> BooleanR1csPlan {
         disabled,
         &(128..(2 + 2 * n) * 128).collect::<Vec<_>>(),
       );
-      let (next, overflow) = increment(&mut b, one, &word(1)[..64]);
-      require_zero(&mut b, one, &mut bad, enabled, &[overflow]);
+      // Retain the original one-step gate exactly. Fused rows use a fixed
+      // number of checked increments; no witness can choose its own span.
+      let span =
+        if let OrderKind::PrepareSpan(_, span) = kind { span } else { 1 };
+      let mut next = word(1)[..64].to_vec();
+      for _ in 0..span {
+        let (sum, overflow) = increment(&mut b, one, &next);
+        require_zero(&mut b, one, &mut bad, enabled, &[overflow]);
+        next = sum;
+      }
       let before = masked(&mut b, enabled, &word(1));
       let after = masked(&mut b, enabled, &next);
       output(&mut b, one, zero, inputs, &before);

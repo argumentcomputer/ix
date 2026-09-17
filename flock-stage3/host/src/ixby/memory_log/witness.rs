@@ -187,6 +187,13 @@ impl<'a> MemoryBatch<'a> {
       None => self.memory.value(address),
     }
   }
+  /// Include a cell in the authenticated boundary without adding an access.
+  /// The circuit must independently constrain any invariant on its value.
+  pub fn include_cell(&mut self, address: u64) -> Result<()> {
+    let value = self.value(address)?;
+    self.current.entry(address).or_insert(value);
+    Ok(())
+  }
   /// Count-only runs retain current values but discard the chronological log.
   /// The resulting overlay is for profiling, not proof-advice construction.
   #[cfg(test)]

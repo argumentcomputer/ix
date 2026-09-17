@@ -2,6 +2,13 @@
 
 ## Current runtime-v2 CSLib workload
 
+The [fusion comparison](cslib-runtime-v2-fusion.json) checks all 341 captured
+windows and newly measured equal-work leaf/recursive trees. The optional
+fused layout removes 45.47% of sampled rows and reduces bounded cached proof
+work from 128.88 to 86.63 seconds, with more leaves across most phases. See
+the [results and limits](../../docs/IxbyFusion.md) and
+[reproduction bundle](fusion-tuning-v0/README.md).
+
 The [recursive evaluator comparison](cslib-runtime-v2-recursion.json) records
 both same-proof trees, phase/family timings and unchanged setup identities.
 It reduces the two measured joins from 300.26 to 36.61 seconds; see the

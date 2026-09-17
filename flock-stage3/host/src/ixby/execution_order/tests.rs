@@ -234,7 +234,7 @@ fn emit(b: &mut impl CircuitEmitter, linked: bool) -> Emission {
     let clock = b.input();
     let before = (0..2).map(|_| b.input()).collect();
     let after = (0..2).map(|_| b.input()).collect();
-    rows.push(TransitionWires { enabled, clock, before, after });
+    rows.push(TransitionWires { enabled, clock, span: 1, before, after });
     accesses.push(TimedAccessWires {
       enabled,
       clock,

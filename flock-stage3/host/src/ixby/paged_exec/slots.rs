@@ -2,7 +2,10 @@ use super::*;
 use crate::{
   blake3_backend::Blake3CompressionSlots,
   ixby::{
-    memory_log::AccessWires, paged_code::CodeSlots, paged_frame::FrameSlots,
+    execution_order::{OrderGate, OrderKind},
+    memory_log::AccessWires,
+    paged_code::CodeSlots,
+    paged_frame::FrameSlots,
     paged_primitive::NumericSlots,
   },
   sizing::CircuitEmitter,
@@ -21,6 +24,8 @@ pub struct ExecutionSlots {
   pub(super) zero: Wire,
   pub(super) compression: Blake3CompressionSlots,
   pub(super) hash_iv: [Wire; 2],
+  pub(super) forwarding: Option<(SlotId, OrderGate)>,
+  residual: Option<Wire>,
 }
 pub struct StepWires {
   pub state: [Wire; STATE_WORDS],
@@ -46,10 +51,40 @@ impl ExecutionSlots {
       compression: compression.clone(),
       hash_iv: crate::hash::pack8(&crate::hash::IV)
         .map(|w| b.fixed_public_input(w)),
+      forwarding: None,
+      residual: None,
     })
+  }
+  pub fn declare_fused(
+    b: &mut impl CircuitEmitter,
+    nu: usize,
+    compression: &Blake3CompressionSlots,
+  ) -> Result<Self> {
+    let mut slots = Self::declare(b, nu, compression)?;
+    // Three complete field words: address and both value limbs. This gate
+    // uses XOR residuals so the equality cannot introduce a witness cycle.
+    let gate = OrderGate::new(nu, OrderKind::Match(1))?;
+    slots.forwarding = Some((b.slot(gate.clone()), gate));
+    // Output residuals and input constants need separate wire classes: one
+    // class for both would introduce cycles in Flock's gate dataflow.
+    slots.residual = Some(b.fixed_public_input(F128::ZERO));
+    Ok(slots)
+  }
+  pub fn forwarding_gate(&self) -> Option<(SlotId, &OrderGate)> {
+    self.forwarding.as_ref().map(|(slot, gate)| (*slot, gate))
   }
   pub fn gates(&self) -> impl Iterator<Item = (SlotId, &MicroGate)> {
     self.micro.iter().map(|(s, g)| (*s, g))
+  }
+  pub(super) fn constrain_zero(&self, b: &mut impl CircuitEmitter, wire: Wire) {
+    if let Some(residual) = self.residual {
+      // Keep the growing output class rooted here. The separate input zero
+      // is never aliased, including when ordinary rows share this setup.
+      b.connect(residual, wire);
+    } else {
+      // Preserve the circuit identities of the existing benchmark classes.
+      b.connect(wire, self.zero);
+    }
   }
   pub(super) fn gate(
     &self,
@@ -59,7 +94,7 @@ impl ExecutionSlots {
   ) -> Vec<Wire> {
     let (slot, _) = self.micro.iter().find(|(_, g)| g.kind() == kind).unwrap();
     let out = b.gate(*slot, input);
-    b.connect(*out.last().unwrap(), self.zero);
+    self.constrain_zero(b, *out.last().unwrap());
     out[..out.len() - 1].to_vec()
   }
   /// Packed static words: (locals, continuations), (fuel budget, zero),
@@ -127,6 +162,16 @@ impl ExecutionSlots {
       prefix.iter().copied().chain(values.iter().copied()).collect::<Vec<_>>()
     };
     match chip {
+      Chip::FusedControl
+      | Chip::FusedNumeric
+      | Chip::CopyPair
+      | Chip::FusedCall0
+      | Chip::FusedCall1
+      | Chip::FusedCall2
+      | Chip::FusedCall3
+      | Chip::FusedCall4 => {
+        self.fused_step(b, chip, enabled, state, advice, parameters)
+      },
       Chip::CollectionStart
       | Chip::ArrayStep
       | Chip::ArrayAscend
@@ -187,7 +232,7 @@ impl ExecutionSlots {
             state[HEADER],
             advice.try_into().unwrap(),
           );
-          b.connect(result.byte_code, self.zero);
+          self.constrain_zero(b, result.byte_code);
           (result.value, MicroKind::NumericAction)
         } else {
           (advice.try_into().unwrap(), MicroKind::ControlAction)

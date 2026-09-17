@@ -1,0 +1,55 @@
+
+running 15 tests
+test ixby::memory_log::proof_tests::batched_memory_benchmark ... ignored, measured 512-access memory batch; run with an explicit process memory cap
+test ixby::memory_log::proof_tests::memory_log_proofs_verify_in_isolation_and_reject_recomputed_accesses ... ignored, real authenticated memory log proofs with exact whole-record routing and malicious row substitutions
+test ixby::memory_log::tests::memory_batch_census ... ignored, proof-free memory geometry for candidate execution batch sizes
+test ixby::memory_log::tests::switches_bind_whole_records_boolean_selectors_and_recycled_padding ... ok
+test ixby::memory_log::tests::counted_fixed_topology_moves_all_record_words ... ok
+test ixby::memory_log::packing::tests::packing_is_exact_and_removed_bits_cannot_hide_data ... ok
+test ixby::memory_log::boolean_switch::tests::packed_switch_clears_small_row_domains ... ok
+test ixby::memory_log::packing::tests::packed_record_writer_matches_matrices_and_recycled_buffers ... ok
+test ixby::memory_log::packing::tests::untimed_kind_selection_packs_and_restores_complete_records ... ok
+test ixby::memory_log::boolean_switch::tests::boolean_switch_constraints_bind_every_word_and_all_selector_bits ... ok
+test ixby::memory_log::tests::complete_small_permutations_and_large_routes_cover_every_record ... ok
+test ixby::memory_log::witness::quota_tests::sorted_parent_count_matches_exact_paths_and_low_address_padding ... ok
+test ixby::memory_log::tests::ordered_audit_requires_seed_seal_and_exact_read_after_write_values ... ok
+
+thread 'ixby::memory_log::tests::authenticated_log_binds_repeated_accesses_boundaries_and_padding' (773825) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 1, class root 2552, step 155)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+thread 'ixby::memory_log::tests::authenticated_log_binds_repeated_accesses_boundaries_and_padding' (773825) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 1, class root 2552, step 155)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::memory_log::tests::authenticated_log_binds_repeated_accesses_boundaries_and_padding' (773825) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 1, class root 2552, step 163)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::memory_log::tests::authenticated_log_binds_repeated_accesses_boundaries_and_padding' (773825) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 4, class root 538, step 18)
+  left: F128 { lo: 12556206665910279864, hi: 13448197310692136645 }
+ right: F128 { lo: 13670522091020056363, hi: 15365847723901158229 }
+
+thread 'ixby::memory_log::tests::authenticated_log_binds_repeated_accesses_boundaries_and_padding' (773825) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 4, class root 538, step 18)
+  left: F128 { lo: 12556206665910279864, hi: 13448197310692136645 }
+ right: F128 { lo: 17106835376380337959, hi: 6124658408729042956 }
+
+thread 'ixby::memory_log::tests::authenticated_log_binds_repeated_accesses_boundaries_and_padding' (773825) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 4, class root 538, step 18)
+  left: F128 { lo: 12556206665910279864, hi: 13448197310692136645 }
+ right: F128 { lo: 8013639667928557778, hi: 10565977594348156350 }
+
+thread 'ixby::memory_log::tests::authenticated_log_binds_repeated_accesses_boundaries_and_padding' (773825) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 4, class root 692, step 54)
+  left: F128 { lo: 6545253866655377241, hi: 8091723377053919810 }
+ right: F128 { lo: 8501178459228341625, hi: 11235279289774321096 }
+test ixby::memory_log::boolean_switch::tests::packed_switch_witness_matches_sparse_matrices_and_recycled_padding ... ok
+test ixby::memory_log::tests::authenticated_log_binds_repeated_accesses_boundaries_and_padding ... ok
+
+test result: ok. 12 passed; 0 failed; 3 ignored; 0 measured; 378 filtered out; finished in 4.59s

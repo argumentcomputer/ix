@@ -1,0 +1,16 @@
+
+running 1 test
+proof_quota,0,[440, 621, 38, 0, 0, 234, 84, 2, 2, 0, 147, 2, 112, 90, 80, 34, 0, 0, 80, 22, 0, 0, 0, 0, 86, 325, 141, 86, 0, 0, 0, 280, 164, 92, 12, 10, 68, 55, 103]
+proof_quota,1,[435, 599, 50, 0, 1, 272, 133, 3, 2, 0, 144, 2, 195, 140, 77, 24, 0, 2, 77, 12, 0, 0, 0, 0, 26, 84, 0, 26, 34, 34, 2, 357, 227, 119, 32, 29, 106, 99, 56]
+proof_quota,2,[371, 494, 45, 0, 0, 345, 134, 0, 7, 0, 143, 7, 224, 148, 41, 23, 0, 0, 41, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 458, 229, 118, 24, 31, 165, 84, 61]
+proof_setup_identity,cslib-fused,5ad23688651da4e12bbe34836f81c37671f192d45211a7cba49370e426ded9cc,127e1dc36ed6e7b6f5c3bcc2661fa5c7247d4c458ac809b7770f2334cc847b77,15,32
+proof benchmark: class=CslibFused skip=0 batches=3 workers=1 threads=2 load_seconds=0.235162743 skip_seconds=0.000000020 native_seconds=0.251514404 setup_seconds=40.947480051
+proof_sample,batch,worker,microsteps,logical_steps,witness_seconds,prove_seconds,verify_seconds,bytes
+proof_sample,0,0,6248,1305,1.818036562,15.576490293,0.225595917,628771
+test ixby::paged_exec::benchmark_tests::original_execution_proof_throughput has been running for over 60 seconds
+proof_sample,1,0,6759,1567,1.776001080,14.905518941,0.221789185,628771
+proof_sample,2,0,6993,1726,1.835993099,15.059814710,0.222121847,628771
+proof benchmark complete: batches=3 microsteps=20000 circuit_rows=10002 logical_steps=4598 worker_wall_seconds=51.796274286 batches_per_second=0.057919224 logical_steps_per_second=88.770863607; every segment proof verified; source admission, complete execution and aggregation are outside this benchmark
+test ixby::paged_exec::benchmark_tests::original_execution_proof_throughput ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 392 filtered out; finished in 94.44s

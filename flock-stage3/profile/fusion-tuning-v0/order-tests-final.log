@@ -1,0 +1,500 @@
+
+running 10 tests
+test ixby::execution_order::linked_tests::linked_routing_matches_all_words_and_preserves_duplicate_padding_counts ... ok
+test ixby::execution_order::linked_tests::linked_match_checks_every_bit_of_both_records_without_fingerprints ... ok
+
+thread 'ixby::execution_order::linked_tests::linked_circuit_binds_full_states_and_rejects_extra_missing_or_disabled_steps' (773800) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 2, class root 8, step 30)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+thread 'ixby::execution_order::linked_tests::linked_circuit_binds_full_states_and_rejects_extra_missing_or_disabled_steps' (773800) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 2, class root 8, step 30)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 0, hi: 9223372036854775808 }
+
+thread 'ixby::execution_order::linked_tests::linked_circuit_binds_full_states_and_rejects_extra_missing_or_disabled_steps' (773800) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 2, class root 8, step 30)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::linked_tests::linked_circuit_binds_full_states_and_rejects_extra_missing_or_disabled_steps' (773800) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 2, class root 8, step 30)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 0, hi: 9223372036854775808 }
+
+thread 'ixby::execution_order::linked_tests::linked_circuit_binds_full_states_and_rejects_extra_missing_or_disabled_steps' (773800) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 2, class root 8, step 34)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::linked_tests::linked_circuit_binds_full_states_and_rejects_extra_missing_or_disabled_steps' (773800) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 2, class root 8, step 34)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 0, hi: 9223372036854775808 }
+
+thread 'ixby::execution_order::linked_tests::linked_circuit_binds_full_states_and_rejects_extra_missing_or_disabled_steps' (773800) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 2, class root 8, step 34)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::linked_tests::linked_circuit_binds_full_states_and_rejects_extra_missing_or_disabled_steps' (773800) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 2, class root 8, step 34)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 0, hi: 9223372036854775808 }
+
+thread 'ixby::execution_order::linked_tests::linked_circuit_binds_full_states_and_rejects_extra_missing_or_disabled_steps' (773800) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 2, class root 8, step 28)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::linked_tests::linked_circuit_binds_full_states_and_rejects_extra_missing_or_disabled_steps' (773800) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 2, class root 8, step 28)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 0, hi: 9223372036854775808 }
+
+thread 'ixby::execution_order::linked_tests::linked_circuit_binds_full_states_and_rejects_extra_missing_or_disabled_steps' (773800) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 2, class root 8, step 28)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::linked_tests::linked_circuit_binds_full_states_and_rejects_extra_missing_or_disabled_steps' (773800) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 2, class root 8, step 28)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 0, hi: 9223372036854775808 }
+
+thread 'ixby::execution_order::linked_tests::linked_circuit_binds_full_states_and_rejects_extra_missing_or_disabled_steps' (773800) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 2, class root 8, step 34)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::linked_tests::linked_circuit_binds_full_states_and_rejects_extra_missing_or_disabled_steps' (773800) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 2, class root 8, step 34)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 0, hi: 9223372036854775808 }
+
+thread 'ixby::execution_order::linked_tests::linked_circuit_binds_full_states_and_rejects_extra_missing_or_disabled_steps' (773800) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 2, class root 8, step 34)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::linked_tests::linked_circuit_binds_full_states_and_rejects_extra_missing_or_disabled_steps' (773800) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 2, class root 8, step 34)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 0, hi: 9223372036854775808 }
+
+thread 'ixby::execution_order::linked_tests::linked_circuit_binds_full_states_and_rejects_extra_missing_or_disabled_steps' (773800) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 2, class root 8, step 30)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::linked_tests::linked_circuit_binds_full_states_and_rejects_extra_missing_or_disabled_steps' (773800) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 2, class root 8, step 30)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 0, hi: 9223372036854775808 }
+
+thread 'ixby::execution_order::linked_tests::linked_circuit_binds_full_states_and_rejects_extra_missing_or_disabled_steps' (773800) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 2, class root 8, step 30)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::linked_tests::linked_circuit_binds_full_states_and_rejects_extra_missing_or_disabled_steps' (773800) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 2, class root 8, step 30)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 0, hi: 9223372036854775808 }
+
+thread 'ixby::execution_order::linked_tests::linked_circuit_binds_full_states_and_rejects_extra_missing_or_disabled_steps' (773800) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 2, class root 8, step 31)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::linked_tests::linked_circuit_binds_full_states_and_rejects_extra_missing_or_disabled_steps' (773800) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 2, class root 8, step 31)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 0, hi: 9223372036854775808 }
+
+thread 'ixby::execution_order::linked_tests::linked_circuit_binds_full_states_and_rejects_extra_missing_or_disabled_steps' (773800) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 2, class root 8, step 31)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::linked_tests::linked_circuit_binds_full_states_and_rejects_extra_missing_or_disabled_steps' (773800) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 2, class root 8, step 31)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 0, hi: 9223372036854775808 }
+
+thread 'ixby::execution_order::linked_tests::linked_circuit_binds_full_states_and_rejects_extra_missing_or_disabled_steps' (773800) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 2, class root 8, step 31)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::linked_tests::linked_circuit_binds_full_states_and_rejects_extra_missing_or_disabled_steps' (773800) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 2, class root 8, step 31)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 0, hi: 9223372036854775808 }
+
+thread 'ixby::execution_order::linked_tests::linked_circuit_binds_full_states_and_rejects_extra_missing_or_disabled_steps' (773800) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 2, class root 8, step 31)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::linked_tests::linked_circuit_binds_full_states_and_rejects_extra_missing_or_disabled_steps' (773800) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 2, class root 8, step 31)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 0, hi: 9223372036854775808 }
+
+thread 'ixby::execution_order::linked_tests::linked_circuit_binds_full_states_and_rejects_extra_missing_or_disabled_steps' (773800) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 2, class root 8, step 28)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::linked_tests::linked_circuit_binds_full_states_and_rejects_extra_missing_or_disabled_steps' (773800) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 2, class root 8, step 28)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 0, hi: 9223372036854775808 }
+
+thread 'ixby::execution_order::linked_tests::linked_circuit_binds_full_states_and_rejects_extra_missing_or_disabled_steps' (773800) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 2, class root 8, step 28)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::linked_tests::linked_circuit_binds_full_states_and_rejects_extra_missing_or_disabled_steps' (773800) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 2, class root 8, step 28)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 0, hi: 9223372036854775808 }
+
+thread 'ixby::execution_order::linked_tests::linked_circuit_binds_full_states_and_rejects_extra_missing_or_disabled_steps' (773800) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 2, class root 8, step 30)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::linked_tests::linked_circuit_binds_full_states_and_rejects_extra_missing_or_disabled_steps' (773800) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 1, class root 8, step 6)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::linked_tests::linked_circuit_binds_full_states_and_rejects_extra_missing_or_disabled_steps' (773800) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 2, class root 8, step 34)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::linked_tests::linked_circuit_binds_full_states_and_rejects_extra_missing_or_disabled_steps' (773800) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 1, class root 8, step 6)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::linked_tests::linked_circuit_binds_full_states_and_rejects_extra_missing_or_disabled_steps' (773800) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 0, class root 8, step 0)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::linked_tests::linked_circuit_binds_full_states_and_rejects_extra_missing_or_disabled_steps' (773800) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 0, class root 8, step 0)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::linked_tests::linked_circuit_binds_full_states_and_rejects_extra_missing_or_disabled_steps' (773800) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 2, class root 8, step 28)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::linked_tests::linked_circuit_binds_full_states_and_rejects_extra_missing_or_disabled_steps' (773800) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 0, class root 8, step 0)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::linked_tests::linked_circuit_binds_full_states_and_rejects_extra_missing_or_disabled_steps' (773800) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 2, class root 8, step 29)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::linked_tests::linked_circuit_binds_full_states_and_rejects_extra_missing_or_disabled_steps' (773800) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 0, class root 8, step 1)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::linked_tests::linked_circuit_binds_full_states_and_rejects_extra_missing_or_disabled_steps' (773800) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 0, class root 8, step 1)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::linked_tests::linked_circuit_binds_full_states_and_rejects_extra_missing_or_disabled_steps' (773800) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 0, class root 8, step 1)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::linked_tests::linked_circuit_binds_full_states_and_rejects_extra_missing_or_disabled_steps' (773800) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 0, class root 8, step 1)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::linked_tests::linked_circuit_binds_full_states_and_rejects_extra_missing_or_disabled_steps' (773800) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 0, class root 8, step 1)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::linked_tests::linked_circuit_binds_full_states_and_rejects_extra_missing_or_disabled_steps' (773800) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 0, class root 8, step 1)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::linked_tests::linked_circuit_binds_full_states_and_rejects_extra_missing_or_disabled_steps' (773800) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 0, class root 8, step 1)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::linked_tests::linked_circuit_binds_full_states_and_rejects_extra_missing_or_disabled_steps' (773800) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 0, class root 8, step 1)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::linked_tests::linked_circuit_binds_full_states_and_rejects_extra_missing_or_disabled_steps' (773800) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 0, class root 8, step 1)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::linked_tests::linked_circuit_binds_full_states_and_rejects_extra_missing_or_disabled_steps' (773800) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 0, class root 8, step 1)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::linked_tests::linked_circuit_binds_full_states_and_rejects_extra_missing_or_disabled_steps' (773800) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 0, class root 8, step 1)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::linked_tests::linked_circuit_binds_full_states_and_rejects_extra_missing_or_disabled_steps' (773800) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 0, class root 8, step 2)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::linked_tests::linked_circuit_binds_full_states_and_rejects_extra_missing_or_disabled_steps' (773800) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 0, class root 8, step 2)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::linked_tests::linked_circuit_binds_full_states_and_rejects_extra_missing_or_disabled_steps' (773800) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 2, class root 8, step 30)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::linked_tests::linked_circuit_binds_full_states_and_rejects_extra_missing_or_disabled_steps' (773800) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 0, class root 8, step 2)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::linked_tests::linked_circuit_binds_full_states_and_rejects_extra_missing_or_disabled_steps' (773800) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 0, class root 8, step 3)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::linked_tests::linked_circuit_binds_full_states_and_rejects_extra_missing_or_disabled_steps' (773800) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 0, class root 8, step 3)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::linked_tests::linked_circuit_binds_full_states_and_rejects_extra_missing_or_disabled_steps' (773800) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 2, class root 8, step 28)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 15, hi: 0 }
+
+thread 'ixby::execution_order::linked_tests::linked_circuit_binds_full_states_and_rejects_extra_missing_or_disabled_steps' (773800) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 0, class root 8, step 3)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::linked_tests::linked_circuit_binds_full_states_and_rejects_extra_missing_or_disabled_steps' (773800) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 2, class root 8, step 29)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::linked_tests::linked_circuit_binds_full_states_and_rejects_extra_missing_or_disabled_steps' (773800) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 2, class root 8, step 32)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::linked_tests::linked_circuit_binds_full_states_and_rejects_extra_missing_or_disabled_steps' (773800) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 2, class root 8, step 28)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 7, hi: 0 }
+
+thread 'ixby::execution_order::linked_tests::linked_circuit_binds_full_states_and_rejects_extra_missing_or_disabled_steps' (773800) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 0, class root 8, step 3)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::linked_tests::linked_circuit_binds_full_states_and_rejects_extra_missing_or_disabled_steps' (773800) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 1, class root 8, step 6)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+test ixby::execution_order::tests::memory_times_derive_from_the_actual_step_and_fixed_ordinal_without_wrap ... ok
+test ixby::execution_order::linked_tests::linked_circuit_binds_full_states_and_rejects_extra_missing_or_disabled_steps ... ok
+test ixby::execution_order::linked_tests::linked_endpoints_require_positive_progress_and_bind_all_clock_bits ... ok
+test ixby::execution_order::tests::transition_preparation_narrows_every_control_and_canonicalizes_inactive_rows ... ok
+test ixby::execution_order::tests::state_audit_requires_one_positive_unbroken_chain_with_full_state_equality ... ok
+test ixby::execution_order::linked_tests::fused_clock_spans_are_fixed_positive_nonwrapping_and_canonical ... ok
+
+thread 'ixby::execution_order::tests::grouped_rows_share_one_state_chain_and_chronological_authenticated_memory' (773804) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 1, class root 1070, step 12)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::tests::grouped_rows_share_one_state_chain_and_chronological_authenticated_memory' (773804) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 1, class root 1070, step 12)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::tests::grouped_rows_share_one_state_chain_and_chronological_authenticated_memory' (773804) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 1, class root 1070, step 18)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::tests::grouped_rows_share_one_state_chain_and_chronological_authenticated_memory' (773804) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 1, class root 1070, step 18)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::tests::grouped_rows_share_one_state_chain_and_chronological_authenticated_memory' (773804) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 0, class root 1070, step 0)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::tests::grouped_rows_share_one_state_chain_and_chronological_authenticated_memory' (773804) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 1, class root 1070, step 16)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::tests::grouped_rows_share_one_state_chain_and_chronological_authenticated_memory' (773804) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 1, class root 1070, step 16)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::tests::grouped_rows_share_one_state_chain_and_chronological_authenticated_memory' (773804) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 1, class root 1070, step 16)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::tests::grouped_rows_share_one_state_chain_and_chronological_authenticated_memory' (773804) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 1, class root 1070, step 18)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::tests::grouped_rows_share_one_state_chain_and_chronological_authenticated_memory' (773804) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 1, class root 1070, step 18)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::tests::grouped_rows_share_one_state_chain_and_chronological_authenticated_memory' (773804) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 4, class root 2101, step 75)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::tests::grouped_rows_share_one_state_chain_and_chronological_authenticated_memory' (773804) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 4, class root 2101, step 75)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::tests::grouped_rows_share_one_state_chain_and_chronological_authenticated_memory' (773804) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 4, class root 2101, step 75)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::tests::grouped_rows_share_one_state_chain_and_chronological_authenticated_memory' (773804) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 0, class root 1070, step 1)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::tests::grouped_rows_share_one_state_chain_and_chronological_authenticated_memory' (773804) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 1, class root 1070, step 12)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::tests::grouped_rows_share_one_state_chain_and_chronological_authenticated_memory' (773804) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 1, class root 1070, step 14)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+test ixby::execution_order::tests::grouped_rows_share_one_state_chain_and_chronological_authenticated_memory ... ok
+
+thread 'ixby::execution_order::tests::linked_rows_share_one_state_chain_and_chronological_authenticated_memory' (773805) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 2, class root 8, step 28)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::tests::linked_rows_share_one_state_chain_and_chronological_authenticated_memory' (773805) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 2, class root 8, step 28)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::tests::linked_rows_share_one_state_chain_and_chronological_authenticated_memory' (773805) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 2, class root 8, step 30)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::tests::linked_rows_share_one_state_chain_and_chronological_authenticated_memory' (773805) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 2, class root 8, step 30)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::tests::linked_rows_share_one_state_chain_and_chronological_authenticated_memory' (773805) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 0, class root 8, step 0)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::tests::linked_rows_share_one_state_chain_and_chronological_authenticated_memory' (773805) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 2, class root 8, step 26)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::tests::linked_rows_share_one_state_chain_and_chronological_authenticated_memory' (773805) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 2, class root 8, step 26)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::tests::linked_rows_share_one_state_chain_and_chronological_authenticated_memory' (773805) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 2, class root 8, step 26)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::tests::linked_rows_share_one_state_chain_and_chronological_authenticated_memory' (773805) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 2, class root 8, step 30)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::tests::linked_rows_share_one_state_chain_and_chronological_authenticated_memory' (773805) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 2, class root 8, step 30)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::tests::linked_rows_share_one_state_chain_and_chronological_authenticated_memory' (773805) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 7, class root 1722, step 82)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::tests::linked_rows_share_one_state_chain_and_chronological_authenticated_memory' (773805) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 7, class root 1722, step 82)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::tests::linked_rows_share_one_state_chain_and_chronological_authenticated_memory' (773805) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 7, class root 1722, step 82)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::tests::linked_rows_share_one_state_chain_and_chronological_authenticated_memory' (773805) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 0, class root 8, step 1)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::tests::linked_rows_share_one_state_chain_and_chronological_authenticated_memory' (773805) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 2, class root 8, step 28)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 1, hi: 0 }
+
+thread 'ixby::execution_order::tests::linked_rows_share_one_state_chain_and_chronological_authenticated_memory' (773805) panicked at /home/jcb/.cargo/git/checkouts/flock-4487d88407b3b86b/b310f35/crates/flock-core/src/circuit/builder.rs:1440:21:
+assertion `left == right` failed: a connected wire disagrees with the gate output that produces it (slot 2, class root 8, step 26)
+  left: F128 { lo: 0, hi: 0 }
+ right: F128 { lo: 15, hi: 0 }
+test ixby::execution_order::tests::linked_rows_share_one_state_chain_and_chronological_authenticated_memory ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 383 filtered out; finished in 2.48s

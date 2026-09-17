@@ -1,0 +1,23 @@
+	Command being timed: "/tmp/ixby-fusion-tuning-20260917/leaf-tests-v14 ixby::paged_exec::benchmark_tests::original_execution_proof_throughput --exact --ignored --nocapture"
+	User time (seconds): 111.91
+	System time (seconds): 23.48
+	Percent of CPU this job got: 142%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 1:34.95
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 19227328
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 15744344
+	Voluntary context switches: 1207
+	Involuntary context switches: 5473
+	Swaps: 0
+	File system inputs: 8
+	File system outputs: 3752
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0

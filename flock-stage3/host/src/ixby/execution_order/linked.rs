@@ -19,7 +19,7 @@ impl StateChainSlots {
       let mut input = vec![row.enabled, row.clock];
       input.extend(&row.before);
       input.extend(&row.after);
-      let prepared = b.gate(self.prepare.0, &input);
+      let prepared = b.gate(self.prepare_slot(row.span), &input);
       b.connect(self.residual, prepared[4]);
       let record = |clock, state: &[Wire]| {
         [clock, self.zero].into_iter().chain(state.iter().copied()).collect()

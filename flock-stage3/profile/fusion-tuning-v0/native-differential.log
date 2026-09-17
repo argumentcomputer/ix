@@ -1,0 +1,6 @@
+
+running 1 test
+fusion_differential,100000,24172,280116,226162,[5519, 7498, 656, 0, 2, 4672, 1855, 5, 80, 0, 2096, 80, 3096, 2020, 713, 374, 0, 2, 713, 34, 0, 0, 0, 0, 112, 409, 141, 112, 34, 34, 2, 6207, 3373, 1701, 312, 369, 2195, 1247, 898],6cb98536ddf8ed1af36775fffea7fd92588cae535626e2ab6273e3a76027fae7,84418860c872d76e77c9b7fa466d091a6f995cd1ed7a1872fb5349131aea17c3
+test ixby::paged_exec::fusion_tests::original_fused_execution_matches_each_original_boundary ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 392 filtered out; finished in 0.87s

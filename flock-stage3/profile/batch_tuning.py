@@ -152,7 +152,8 @@ def table_costs(root: Path) -> dict:
         elif parts[0] == "execution_cost_total":
             entry.update({key: int(value) for key, value in (p.split("=") for p in parts[2:])})
             assert sum(t["dense_words"] for t in entry["tables"]) == entry["dense_words"]
-    assert len(result) == 19
+    # Later revisions append named classes to the historical table census.
+    assert len(result) >= 19
     return {"log": receipt(path), "classes": result,
             "note": "padded_words and boolean_words are the historical full-union layouts; the production dense commitment has 2^(dense_m-7) 128-bit words."}
 
@@ -211,7 +212,10 @@ def leaf_run(root: Path, tag: str, extension: bool = False) -> dict:
         statement = words(stem.with_suffix(".statement"))
         assert statement[30][0] - statement[3][0] == micro
         assert statement[36][1] - statement[9][1] == logical
-        assert len(quotas[batch]) == len(CHIP_NAMES)
+        # New binaries append fused families. These historical classes must
+        # still contain only the original single-microstep rows.
+        assert len(quotas[batch]) >= len(CHIP_NAMES)
+        assert not any(quotas[batch][len(CHIP_NAMES):])
         assert sum(quotas[batch]) == micro
         if previous is not None:
             assert previous[:3] == statement[:3] and previous[30:] == statement[3:30]

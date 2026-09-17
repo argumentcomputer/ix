@@ -34,6 +34,8 @@ pub const PAD: u64 = 4;
 pub struct TransitionWires {
   pub enabled: Wire,
   pub clock: Wire,
+  /// Number of original microsteps checked by this semantic consumer.
+  pub span: u8,
   pub before: Vec<Wire>,
   pub after: Vec<Wire>,
 }
@@ -44,6 +46,7 @@ pub struct BoundaryWires {
 pub struct StateChainSlots {
   words: usize,
   prepare: (SlotId, OrderGate),
+  spans: Vec<(u8, SlotId, OrderGate)>,
   audit: (SlotId, OrderGate),
   matching: Option<(SlotId, OrderGate)>,
   permutation: PermutationSlots,
@@ -96,6 +99,26 @@ impl StateChainSlots {
       true,
     )
   }
+  /// Additional fixed spans are part of the compiled verifier policy.
+  /// Consumers must check every intermediate step on actual circuit wires.
+  pub fn declare_linked_spans(
+    b: &mut impl CircuitEmitter,
+    nu: usize,
+    words: usize,
+    layout: RecordLayout,
+    spans: &[u8],
+  ) -> Result<Self> {
+    let mut slots = Self::declare_linked(b, nu, words, layout)?;
+    for &span in spans {
+      ensure!(
+        slots.spans.iter().all(|(s, _, _)| *s != span),
+        "duplicate clock span"
+      );
+      let gate = OrderGate::new(nu, OrderKind::PrepareSpan(words, span))?;
+      slots.spans.push((span, b.slot(gate.clone()), gate));
+    }
+    Ok(slots)
+  }
   fn declare_inner(
     b: &mut impl CircuitEmitter,
     nu: usize,
@@ -113,6 +136,7 @@ impl StateChainSlots {
     Ok(Self {
       words,
       prepare: (b.slot(prepare.clone()), prepare),
+      spans: Vec::new(),
       audit: (b.slot(audit.clone()), audit),
       matching: if linked {
         let gate = OrderGate::new(nu, OrderKind::Match(words))?;
@@ -148,6 +172,19 @@ impl StateChainSlots {
     [self.prepare_gate(), self.audit_gate()]
       .into_iter()
       .chain(self.matching.iter().map(|(slot, gate)| (*slot, gate)))
+      .chain(self.spans.iter().map(|(_, slot, gate)| (*slot, gate)))
+  }
+  fn prepare_slot(&self, span: u8) -> SlotId {
+    if span == 1 {
+      self.prepare.0
+    } else {
+      self
+        .spans
+        .iter()
+        .find(|(s, _, _)| *s == span)
+        .expect("undeclared execution clock span")
+        .1
+    }
   }
   pub fn permutation(&self) -> &PermutationSlots {
     &self.permutation
@@ -193,6 +230,7 @@ impl StateChainSlots {
     let plan = Self::plan(rows.len()).unwrap();
     let mut records = Vec::with_capacity(plan.lanes());
     for row in rows {
+      assert_eq!(row.span, 1, "fused rows require linked state ordering");
       assert_eq!(row.before.len(), self.words);
       assert_eq!(row.after.len(), self.words);
       let mut input = vec![row.enabled, row.clock];
