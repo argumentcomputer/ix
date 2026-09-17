@@ -657,3 +657,88 @@ synchronization fewer per LDE; the collector records the sppark path, and
 its first kernel split names the tiled scatter as the next kernel to tune
 (60 of 157 ms on the BLAKE3 shape). The adapter's stage timer stays for
 quick reads; whole-proof profiles go through the collector again.
+
+## Removing the first-party NTT (map, 2026-09-17)
+
+The question is whether the first-party CUDA transform is still needed
+anywhere once sppark is the production NTT. Two measurements answer it.
+
+- Per-shape transform time in the profiled units (the CUPTI attribution in
+  `bench/prover-profile-init-2026-09-17`, first-party build): the claim
+  spends 9.47 s in first-party transform kernels: 5.52 s on LDEs at
+  heights of 2^18 and up, 3.95 s in the quotient's transforms (attributed
+  without a shape; they run at 2^22 to 2^26 rows), and no measurable time
+  below 2^18; the join 6.55 s, 4.72 s, 1.83 s and none. Every shape in
+  the first two groups is faster through sppark (1.07x to 2.7x); the
+  third group, where sppark is 0.6 to 0.9x, is a share that rounds to
+  zero. The height threshold and the two-backend dispatch exist for it.
+- sppark's own limits never bite the prover: the compiled domain is 2^28
+  and the largest extended height 2^26; one column pair at 2^26 is 640 MB
+  against the 4 GiB panel budget; heights of one are an identity the
+  component can answer itself; width zero is handled in Rust.
+
+So no first-party fallback is required for correctness or for speed, and
+the design becomes one transform component with assertions where the
+second backend used to be. What that removes, by place:
+
+- `multi-stark/cuda/kernels.cu`: the radix-2, -4 and -8 DIF stages and
+  tails, `launch_dif`, `bit_reverse_scale_and_shift`, the twiddle kinds
+  of the constant cache and the twiddle halves of the constant prewarm,
+  the first-party branches of the three dispatch helpers and of
+  `coset_lde_create`, the canonicalization passes after first-party
+  transforms (sppark's output is canonical), the per-backend metrics. About
+  a hundred references to twiddles go with them.
+- `multi-stark/src/cuda/mod.rs`: the host twiddle cache and its lock, the
+  optional-table helpers, the table parameters on ten FFI entries (23
+  parameters), the three backend-label helpers, the `height_inverse`
+  arguments (sppark normalizes; the quotient's slice weights keep their
+  own factor, which is arithmetic rather than transform plumbing).
+- `multi-stark/src/cuda/sppark.rs`: the `Backend` selector, the test lock,
+  the height threshold and the three `takes` predicates, replaced by the
+  component's single plan; the comparison tests move to the CPU reference
+  and the proof digests, which the existing CPU-against-CUDA tests already
+  provide once the CUDA side is sppark.
+- Features: `cuda-sppark` folds into `cuda` in multi-stark, aiur and
+  ix-ffi, and `IX_CUDA_SPPARK` goes from Lake; the fork becomes a hard
+  dependency of every CUDA build (the extra nvcc step is about 20 s, and
+  CI fetches the fork's pinned revision).
+- Settings and docs: `MULTI_STARK_CUDA_NTT` and `_MIN_LOG_HEIGHT` go;
+  `_PANEL_BYTES`, `_BATCH_BYTES` and `_STAGE_TIMING` stay; the resident
+  bench's first-party mode goes and the recorded CSVs become the baseline.
+
+What is built in the same pass:
+
+1. One immutable transform plan, owned by the component: for a shape
+   (height, width, blowup, direction) it fixes the scratch bytes, the panel
+   columns and batch groups, and the only constant a coset transform needs,
+   the shift powers. Commit, lookup and quotient admission consume the
+   plan's scratch figure instead of computing panels separately, and the
+   kernels consume the plan instead of reading table pointers. That is the
+   audit-prone area, and it collapses to one function.
+2. A borrowed-stream entry in the fork: a `stream_t` over the caller's
+   `cudaStream_t`, non-owning. The adapter then runs upstream's launches on
+   the caller's stream, and the per-batch stream, the two events, the wait
+   and the failure-path drain go away; scratch, transforms and the free
+   follow one stream's order.
+3. The expansion-order experiment deleted: `MULTI_STARK_SPPARK_FUSED`, the
+   reversed-powers scratch, the spread kernel and the reversing-scatter
+   branches. The measurements stay in the bench directory and the code in
+   history. First-stage fusion remains a separate, optional fork change.
+4. Metrics with one backend: transform shapes per device stay, the
+   taken/declined counters go.
+
+Order: the fork's borrowed stream first (small, independently testable
+through the existing adapter tests); then multi-stark in one branch, the
+plan type before the deletions so every entry converts against it; then
+aiur, ix-ffi and Lake drop the feature forwarding and bump the pin. The
+acceptance evidence is the existing CPU-reference and proof-digest tests,
+the resident bench against the recorded first-party CSVs, and the claim,
+join and Init replays. Expected size: about 600 lines out of `kernels.cu`,
+200 out of `mod.rs`, 150 out of `sppark.rs`, and about 150 in for the plan.
+
+Two things this does not remove. The CPU DFT for the generic entries'
+tiny matrices (under 2^15 cells) is the right tool there and stays. And
+the fork's fail-fast runtime mode becomes the only path on a CUDA error,
+an abort where the Rust side panics; converting `CUDA_OK` to returned
+status in the fork is possible but is a larger upstream divergence, and
+the recommendation is to accept the abort for the prover and record it.
