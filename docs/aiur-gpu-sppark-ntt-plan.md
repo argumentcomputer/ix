@@ -602,5 +602,19 @@ of the BLAKE3 shape's LDE. The fused expansion was implemented behind
 and the evidence is in `bench/sppark-lde-2026-09-17/README.md`. Final
 resident LDE ratios against the first-party kernels: 1.36x on the BLAKE3
 shape, 2.7x and 2.2x on the tall narrow ones, 1.07 to 1.22x from 2^18 up;
-every proof shape from 2^18 rows takes sppark. The batched build's whole-
-unit replays and Init run come next with this build.
+every proof shape from 2^18 rows takes sppark.
+
+Whole units and the whole proof with this build
+(`bench/sppark-lde-2026-09-17/README.md`, milestone 4 section): claim 1
+2:21.8 to 2:18.9, join 5 51.5 to 48.8 s, Init 415 to 402 s end to end with
+the proving union 223 to 192 s, same proof hash and root. Milestone 4's
+adaptations, batching, the glue rewrite and the threshold, took the
+transforms from 1.2x to 1.4x on the wide shapes and to 2.2 to 2.7x on
+the tall narrow ones, and the proving union another 4 percent below
+milestone 3; the units move little more because transforms are now a
+small share of them. Milestone 5's decision rests on this: the backend
+is byte-identical and never slower on a proof shape, so the remaining
+questions are the default (opt-in until the Mathlib measurement, since
+upstream's fail-fast mode aborts on a CUDA error where the Rust side
+panics) and the pins. Fork tip to pin: `176af27` (the patch record in its
+README on top of `8b624cd`).

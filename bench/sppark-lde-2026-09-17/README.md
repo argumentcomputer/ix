@@ -152,3 +152,26 @@ needs a `[patch]` for `https://github.com/argumentcomputer/sppark` pointing
 at the fork's `rust` directory next to the multi-stark one, or the archive
 compiles the adapter against the pinned upstream revision and fails on the
 batched entry. Both overrides and the lockfile change stay uncommitted.
+
+## Whole units and the whole Init proof at milestone 4
+
+The `ix` binary linked against multi-stark `8a1f9f9` and the fork's
+`176af27`, replayed and run as above (`replay-milestone4.txt`,
+`init-q4-compare.txt`). Same proof hash on the join, same root on Init.
+
+| Quantity | first-party | sppark, milestone 3 (from 2^20) | sppark, milestone 4 (from 2^18) |
+| --- | ---: | ---: | ---: |
+| claim 1 wall | 2:21.8 | 2:19.0 | 2:18.9 |
+| join 5 execute+prove | 51.5 s | 49.4 s | 48.8 s |
+| Init end to end | 415 s | 405 s | 402 s |
+| Init `aiur/prove_planned` union | 223.0 s | 201.1 s | 192.3 s |
+| Init `stark/stage1_commit` union | 115.0 s | 105.5 s | 98.5 s |
+| Init `stark/lookup_construction` union | 48.7 s | 41.5 s | 39.8 s |
+| Init `stark/quotient` union | 35.4 s | 30.0 s | 29.9 s |
+| Init dispatches, claim 1 | 0 taken | 379 taken, 723 declined | 603 taken, 499 declined |
+
+The proving union is 14 percent below the first-party kernels; the end to
+end 3 percent, since the single GPU worker waits on executions and joins
+for much of the run. The transforms are now a small share of each unit,
+which is why the resident LDE gains of 1.4 to 2.7x move the units by only
+a few percent more than milestone 3 did.
