@@ -489,7 +489,7 @@ belong in those references.
 | Ingress and identity | Strict [Ixon codecs/sharing](ixon-v2-wire.md), bounded [catalog ingress](catalog-ingress.md), and cycle-safe [IxIR₀/IxIR₁ addressing](ixir-content-addressing.md). The full Std catalog retains a downstream rejection. |
 | I2 snapshots | [Canonical IxIR₂ identity](ixir2-wire.md): complete ordered programs and finite contexts, bounded codec proofs, addressed ingress, exact checked-source recovery, and an independent fresh-process gate. Logical declaration keys are retained; modular certification and durable storage remain separate. |
 | I3 source units | [Modular source certification](modular-source.md): exact finite interfaces, proved evidence transport/composition, unaffected-unit reuse, strict retained proof recovery, and 611 reachable declarations assembled from 11 bounded units. Automatic partitioning and the compiler's full closure remain open. |
-| Ixby backend | [Functional Ixby](ixby-backend.md): checked Ixon erasure, closures/recursors, runtime data arguments and exact upstream codecs. [Reusable refinement](ixby-symbolic.md) covers all admitted inputs of programs with a finite symbolic path and opaque parameters. The [fixed Stage2 fixture](ixby-stage2-fixture.md) passes complete catalog admission. A separate [typed Lean frontend](ixby-lean.md) exports a [complete functional binary](ixby-binary.md) using native fields/extensions and executes the valid Stage2 proof and seven rejection cases in a standalone runtime; [runtime representation proofs](ixby-representation.md) establish exact number/byte laws and certify all fourteen emitted field helpers, eleven complete number conversions, eight Nat arithmetic/comparison helpers, six Nat shift/logarithm/power functions, and 27 UInt8/UInt32/USize helpers with caller continuations, covering all emitted number and field helpers, plus fifteen tree-backed array helpers with live-prefix and capacity-growth proofs; packed-byte/rope composition, remaining collection helpers, complete source/image certification and downstream proving integration remain open. |
+| Ixby backend | [Functional Ixby](ixby-backend.md): checked Ixon erasure, closures/recursors, runtime data arguments and current upstream codecs. [Reusable refinement](ixby-symbolic.md) covers finite symbolic paths and opaque parameters. The [typed Lean frontend](ixby-lean.md) emits semantics-2 images with unboxed scalars, native persistent arrays, immutable byte builders, complete helper-body certificates, and a kernel-proved chunked/reference executor equivalence. [Representation proofs](ixby-representation.md) cover scalar operations, loops, native arrays, packed views, builders, and callers. Stage2 and CSLib execute with exact independently expected outputs. General LCNF source/image refinement, remaining helper source-operation proofs, native circuit refinement, and full CSLib proving remain open. |
 | Validated source and O1 | [Source preservation](simulation-strategy.md), owned IxIR₁, checked [HPT](hpt-certificates.md), and five [shrinking consumers](optimizer-harness.md). Source sharing/oracle premises remain explicit; the optimized universal counter law is `frees ≤ allocs`. |
 | Baseline IxIR₂ and R1–R4 | [Checked CFG lowering](ixir2-spec.md), physical baseline transport, selected shared reuse, fallback, reclamation, allocation/free comparison, and RC/peak-live bounds in the accepted compiler domain. |
 | C1/N1 | [Bounded coverage](source-coverage.md) and synthetic exact-Word scalar native entries, with complete fresh-process artifacts. |
@@ -507,11 +507,13 @@ belong in those references.
 | B1/B2 | [Closed borrowed-call certificates](source-borrow.md) and [structural runtime borrowing](source-borrow-runtime.md), with lender preservation, two fewer RC operations, full reclamation, and unchanged peak. Recursive SCCs and native shared borrowing remain open. |
 | PERF1/PERF3 | [Native comparisons](performance/native-reverse-2026-09-09/README.md), [checked counter folding](performance/counter-fold-2026-09-10/README.md), [bounded compiler scaling](performance/compiler-scaling-2026-09-12/README.md), and [modular source costs](performance/modular-source-2026-09-12/README.md), with retained data and artifact/check/analysis replay. Broader workloads remain extensions. |
 
-The [Ixby Nat/Word32 revision](ixby-nat-word32.md) now emits program semantics 1
-and certifies the direct weighted conversion helpers. Regenerated CSLib
-reference execution preserves the exact output and uses 10.36% fewer
-transitions. The small conversion fixture passes native proof verification;
-full CSLib proving and typed source/image refinement remain open.
+The [Ixby runtime revision 2](ixby-runtime-v2.md) emits format 1, semantics 2
+for programs and I/O, with regenerated 184-byte profiles and commitments.
+CSLib preserves the exact expected output in 360,337,913 logical transitions,
+82.28% fewer than the retained revision 1 run. The eleven-opcode fixture's
+517,843-byte native proof passes fresh verification against an independently
+calculated statement. Full CSLib proving and typed source/image refinement
+remain open.
 
 The [compiler entry-point table](compiler-design.md#compiler-entry-points)
 identifies the checked APIs. `Pipeline.compileValidated` supplies source

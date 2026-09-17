@@ -93,8 +93,9 @@ def rejections : Except String (List String) := do
       ("function-limit", simple, { limits := { functions := 1 } }),
       ("constructor-limit", simple, { limits := { constructors := 3 } }),
       ("local-limit", simple, { limits := { locals := 0 } }),
-      ("nat-profile", { simple with main := nat 0 }, Config.crypto),
-      ("string-profile", { simple with main := .lit (.str "") }, Config.crypto)] do
+      ("nat-profile-limit", { simple with main := nat 1 }, Config.profile { limits := { natBits := 0 } }),
+      ("string-profile-limit", { simple with main := .lit (.str "x") },
+        Config.profile { limits := { stringBytes := 0 } })] do
     rejected := rejected ++ [← reject name (compile source config)]
   for (name, main) in [
       ("apply-data", .app (nat 1) (nat 2)),
@@ -116,7 +117,8 @@ def rejections : Except String (List String) := do
   rejected := rejected ++ [← reject "function-output-data-abi" funResult.certify]
   let divergent ← compile { declarations := [(address 8, .defn .shared (.ref (address 8)))], main := .ref (address 8) }
   rejected := rejected ++ [← reject "runtime-divergence" (divergent.execute #[] 50)]
-  rejected := rejected ++ [← reject "profile-limit-binding" compiled.export]
+  rejected := rejected ++ [← reject "profile-limit-binding"
+    (compiled.export { limits := { functions := 17 } })]
   return rejected
 
 end Compilatrix.Ixby.Examples

@@ -25,7 +25,7 @@ theorem nibbleWord_returns {program : Program} {id : FunctionId}
       rw [runChunk]
       simp [step, stepEval, Frame.check, checked.code, nibble, frameState,
         returned, evalOp, Frame.readOperands, Frame.read, Frame.transfer,
-        Primitive.eval, Primitive.arity, N, W,
+        Primitive.eval, Primitive.evalScalarUnchecked, Primitive.arity, N, W,
         localRoom, nats, bind, Except.bind, pure, Except.pure]
     rfl
 
@@ -44,7 +44,7 @@ private theorem nibbleNat_returns_nat {program : Program} {id : FunctionId}
       rw [runChunk]
       simp [step, stepEval, Frame.check, checked.code, nibble, frameState,
         returned, evalOp, Frame.readOperands, Frame.read, Frame.transfer,
-        Primitive.eval, Primitive.arity, N, W,
+        Primitive.eval, Primitive.evalScalarUnchecked, Primitive.arity, N, W,
         localRoom, bind, Except.bind, pure, Except.pure]
     rfl
 

@@ -25,7 +25,8 @@ private def leb (bytes : ByteArray) : Nat → Nat → IO (Nat × Nat)
     let (high, next) ← leb bytes fuel (offset + 1)
     return (byte % 128 + high * 128, next)
 
-/-- Independently inspect the constructor ABI's fixed-width byte layout. -/
+/-- Independently inspect the current header and constructor ABI. Addresses
+remain fixed-width; table counts, members, tags and arities use LEB128. -/
 private def constructorABI (directory : FilePath) : IO Unit := do
   let image ← IO.FS.readBinFile (directory / "program.ixby")
   let source ← readJson (directory / "source.json")
@@ -40,29 +41,38 @@ private def constructorABI (directory : FilePath) : IO Unit := do
       let (arity, finish) ← leb bytes bytes.size next
       need (finish == bytes.size) "constructor source payload has trailing bytes"
       constructors := constructors ++ [(address, tag, arity)]
-  need (u32 image 12 == constructors.length + 4) "Ixby constructor table count differs"
+  need (image.extract 0 4 == "IXBF".toUTF8 && u32 image 4 == 1 && u32 image 8 == 2)
+    "Ixby current header differs"
+  let mut offset := 12
+  for _ in [:12] do
+    let (_, next) ← leb image image.size offset
+    offset := next
+  let (count, next) ← leb image image.size offset
+  offset := next
+  need (count == constructors.length + 4) "Ixby constructor table count differs"
   for i in [:4] do
-    let offset := 16 + i * 44
-    need (image.extract offset (offset + 32) == ⟨Array.replicate 32 0⟩ &&
-      u32 image (offset + 32) == 1 && u32 image (offset + 36) == i &&
-      u32 image (offset + 40) == (if i == 0 then 0 else 1)) "Ixby private box ABI differs"
-  for ((address, tag, arity), index) in constructors.zipIdx do
-    let offset := 16 + (index + 4) * 44
-    need (image.extract offset (offset + 32) == address && u32 image (offset + 32) == 0 &&
-      u32 image (offset + 36) == tag && u32 image (offset + 40) == arity)
+    let block := image.extract offset (offset + 32)
+    let (member, next) ← leb image image.size (offset + 32)
+    let (tag, next) ← leb image image.size next
+    let (arity, next) ← leb image image.size next
+    offset := next
+    need (block == ⟨Array.replicate 32 0⟩ && member == 1 && tag == i &&
+      arity == (if i == 0 then 0 else 1)) "Ixby private box ABI differs"
+  for (address, tag, arity) in constructors do
+    let block := image.extract offset (offset + 32)
+    let (actualMember, next) ← leb image image.size (offset + 32)
+    let (actualTag, next) ← leb image image.size next
+    let (actualArity, next) ← leb image image.size next
+    offset := next
+    need (block == address && actualMember == 0 && actualTag == tag && actualArity == arity)
       "Ixby source constructor address/tag/arity changed at byte export"
 
 private def vendor (root : FilePath) : IO Unit := do
   let directory := root / "vendor/ixby"
   let pin ← readJson (directory / "upstream.json")
-  need ((← strField pin "revision") == "d4405b3ceb82e6d4cce19e48186f3272f8482e04") "Ixby revision drifted"
-  let revisions ← pairs (← field pin "file_revisions")
-  need ((revisions.map Prod.fst).mergeSort (· ≤ ·) ==
-    ["Ix/Ixby/Profile.lean", "Ix/Ixby/Codec/Common.lean", "Ix/Ixby/Codec/Encode.lean",
-      "Ix/Ixby/Codec/Decode.lean"].mergeSort (· ≤ ·)) "Ixby file revision inventory drifted"
-  for (_, revision) in revisions do
-    need ((← string revision) == "4fdbf4084516ce1a29f6753a20d797334d7fadbb")
-      "legacy crypto profile revision drifted"
+  need ((← strField pin "revision") == "6836a77c3f432c83c42428490e56811f4a69808d") "Ixby revision drifted"
+  need (match pin.getObjVal? "file_revisions" with | .error _ => true | .ok _ => false)
+    "Ixby files must all use the pinned runtime revision"
   need ((← strField pin "repository") == "https://github.com/argumentcomputer/ix" &&
     (← strField pin "branch") == "jcb/ixby") "Ixby upstream identity drifted"
   let hashes ← pairs (← field pin "unchanged_files_sha256")
@@ -75,7 +85,7 @@ private def vendor (root : FilePath) : IO Unit := do
     "Ixby vendored inventory differs"
 
 private def runImage (runner : String) (directory output : FilePath) (fuel : String := "100000") : IO Unit := do
-  let _ ← run runner #[(directory / "profile.ixbp").toString, (directory / "program.ixby").toString,
+  let _ ← run runner #[(directory / "profile.ixfp").toString, (directory / "program.ixby").toString,
     (directory / "input.ixbi").toString, output.toString, fuel]
   same (directory / "output.ixbo") output
 
@@ -86,7 +96,7 @@ private def mutate (runner : String) (directory output : FilePath) (name : Strin
   try
     IO.FS.writeBinFile file (change original)
     let result ← IO.Process.output { cmd := runner, args := #[
-      (directory / "profile.ixbp").toString, (directory / "program.ixby").toString,
+      (directory / "profile.ixfp").toString, (directory / "program.ixby").toString,
       (directory / "input.ixbi").toString, output.toString, "100000"] }
     need (result.exitCode == 1 && result.stderr.contains "ixby-run:" && !(← output.pathExists))
       s!"Ixby corrupted artifact was not rejected: {name}"
@@ -122,11 +132,11 @@ def main (args : List String) : IO UInt32 := cli "Ixby check failed" do
         for (file, change) in [
             ("program.ixby", fun bytes : ByteArray => bytes.push 0),
             ("program.ixby", fun bytes : ByteArray => bytes.extract 0 (bytes.size - 1)),
-            ("program.ixby", fun bytes : ByteArray => bytes.set! 4 1),
+            ("program.ixby", fun bytes : ByteArray => bytes.set! 4 0),
             ("program.ixby", fun bytes : ByteArray => bytes.set! 8 255),
             ("input.ixbi", fun bytes : ByteArray => bytes.push 0),
             ("input.ixbi", fun bytes : ByteArray => bytes.extract 0 (bytes.size - 1)),
-            ("profile.ixbp", fun bytes : ByteArray => bytes.set! 40 1)] do
+            ("profile.ixfp", fun bytes : ByteArray => bytes.set! 12 1)] do
           mutate runner program (directory / s!"bad-{mutations}.ixbo") file change
           mutations := mutations + 1
         wireCases := wireCases + 1
@@ -140,7 +150,7 @@ def main (args : List String) : IO UInt32 := cli "Ixby check failed" do
       IO.FS.writeBinFile (catalog / s!"CompilatrixUpstream.{name}.ixe")
         (← checked (unhex (← IO.FS.readFile (upstream / s!"{name}.ixe.hex"))))
       let output := directory / s!"compiled-{name}"
-      let _ ← run compiler #[catalog.toString, main, output.toString, "proving"]
-      for file in ["program.ixby", "profile.ixbp", "source.json", "program.txt"] do
+      let _ ← run compiler #[catalog.toString, main, output.toString]
+      for file in ["program.ixby", "profile.ixfp", "source.json", "program.txt"] do
         same (first / s!"upstream-{name}" / file) (output / file)
     IO.println s!"Ixby check ok: 33 cases, 270 generated, 29 rejections, {wireCases} canonical runs, {mutations} byte mutations, 3 catalog compilations"

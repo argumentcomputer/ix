@@ -55,7 +55,7 @@ def fixture : Binary.Artifact := {
     ⟨6, .ret (.local 5)⟩] }] } }
 
 def run (directory : Option System.FilePath := none) : IO Unit := do
-  need (Binary.primitives.size == 47) "functional opcode inventory differs"
+  need (Binary.primitives.size == 58) "functional opcode inventory differs"
   need (Binary.primitiveOpcode .natToWord32 == 45 &&
     Binary.primitiveOpcode .word32ToNat == 46) "conversion opcodes differ"
   for (n, low) in #[(0, 0), (1, 1), (2 ^ 32 - 1, 4294967295), (2 ^ 32, 0),
@@ -78,9 +78,10 @@ def run (directory : Option System.FilePath := none) : IO Unit := do
       eval primitive 4096 [value] (.error (.primitiveType primitive))
     let image : Binary.Artifact := { fixture with program := unary primitive }
     let bytes ← checked (Binary.encode image |>.mapError reprStr)
-    need (bytes.extract 0 12 == #[0x49, 0x58, 0x42, 0x46, 1, 0, 0, 0, 1, 0, 0, 0])
+    need (bytes.extract 0 12 == #[0x49, 0x58, 0x42, 0x46, 1, 0, 0, 0, 2, 0, 0, 0])
       "IXBF program header differs"
     rejected (Binary.decode (bytes.set! 8 0)) .version
+    rejected (Binary.decode (bytes.set! 8 1)) .version
     for count in #[0, 2] do
       let bad := unary primitive (List.replicate count (.local 0))
       rejected (Binary.encode { image with program := bad }) (.reference (.invalidInstruction 0 0))
@@ -88,11 +89,10 @@ def run (directory : Option System.FilePath := none) : IO Unit := do
       let badBytes ← checked (Binary.Internal.encode
         (Binary.Internal.writeArtifact { image with program := bad }) |>.mapError reprStr)
       rejected (Binary.decode badBytes) (.reference (.invalidInstruction 0 0))
-    need (!primitive.cryptoOpcode.isSome) "legacy IXBY profile admitted conversion"
   eval .natToWord32 4096 [.scalar (.word32 0)] (.error (.primitiveType .natToWord32))
   eval .word32ToNat 4096 [.scalar (.nat 0)] (.error (.primitiveType .word32ToNat))
   eval .word32ToNat 0 [.scalar (.nat 1)] (.error (.limit .natBits))
-  for opcode in [47:256] do
+  for opcode in [58:256] do
     rejected (Binary.Internal.decode {} #[1, opcode.toUInt8, 1, 0, 0]
       (Binary.Internal.readOp {})) (.tag opcode)
   for (primitive, bytes, slot) in #[(Primitive.natToWord32, #[1, 45, 1, 0, 0], 0),
@@ -102,18 +102,20 @@ def run (directory : Option System.FilePath := none) : IO Unit := do
     need (same (Binary.Internal.decode {} bytes (Binary.Internal.readOp {}))
       (.ok (.primitive primitive [.local slot]))) "conversion operation decoding differs"
   let input ← checked (Binary.encodeInput fixture #[.scalar (.nat (2 ^ 65 + 37))] |>.mapError reprStr)
-  need (input == #[0x49, 0x58, 0x46, 0x49, 1, 0, 0, 0, 0, 0, 0, 0,
+  need (input == #[0x49, 0x58, 0x46, 0x49, 1, 0, 0, 0, 2, 0, 0, 0,
     1, 0, 0, 0xa5, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 4])
     "independent IXFI bytes differ"
   let expected : Value := .scalar (.bytes #[42, 0, 0, 0])
   let output ← checked (Binary.encodeOutput fixture expected |>.mapError reprStr)
-  need (output == #[0x49, 0x58, 0x46, 0x4f, 1, 0, 0, 0, 0, 0, 0, 0, 0, 6, 4, 42, 0, 0, 0])
+  need (output == #[0x49, 0x58, 0x46, 0x4f, 1, 0, 0, 0, 2, 0, 0, 0, 0, 6, 4, 42, 0, 0, 0])
     "independent IXFO bytes differ"
   rejected (Binary.decodeInput fixture (input.set! 8 1)) .version
   rejected (Binary.decodeOutput fixture (output.set! 8 1)) .version
+  rejected (Binary.decodeInput fixture (input.set! 8 0)) .version
+  rejected (Binary.decodeOutput fixture (output.set! 8 0)) .version
   let program ← checked (Binary.encode fixture |>.mapError reprStr)
   let independent ← checked (unhex
-    "4958424601000000010000000100060602000880010040070000010100060100012d010000010200012e0100010203000100020002010005030400012d01000304050001150100040506010005")
+    "4958424601000000020000000100060602000880010040070000010100060100012d010000010200012e0100010203000100020002010005030400012d01000304050001150100040506010005")
   need (program == independent.data) "independent IXBF conversion program differs"
   let loaded ← checked (Binary.decode program |>.mapError reprStr)
   let inputs ← checked (Binary.decodeInput loaded.value input |>.mapError reprStr)
@@ -125,6 +127,6 @@ def run (directory : Option System.FilePath := none) : IO Unit := do
     IO.FS.writeBinFile (directory / "conversions.ixby") ⟨program⟩
     IO.FS.writeBinFile (directory / "conversions.ixbi") ⟨input⟩
     IO.FS.writeBinFile (directory / "conversions.ixbo") ⟨output⟩
-  IO.println "conversion primitives: kernel boundaries, scalar limits, types, unary arity, 47 opcodes, exact headers/I/O and execution passed"
+  IO.println "conversion primitives: kernel boundaries, scalar limits, types, unary arity, 58 opcodes, exact headers/I/O and execution passed"
 
 end CompilatrixTests.Ixby.Conversions

@@ -93,7 +93,6 @@ private def expression : Nat → List Operand → Code → IxIR0.Expr → M (Ope
         return (operand, code)
     | .erased => code.emit (.construct 0 [])
     | .lit literal =>
-        if (← get).config.proving then throw "Ixby proving profile excludes Nat/String literals"
         match literal with
         | .nat n => code.emit (.construct 1 [.literal (.nat n)])
         | .str s => code.emit (.construct 2 [.literal (.str s)])
@@ -145,7 +144,7 @@ private def recursor (global : Global) (numArgs : Nat) (natLit : Bool)
         let fields := (List.range ctor.fields).map (fun i => Operand.local (arity + i))
         let code ← rule global arity fields { blocks, locals := arity + ctor.fields } branch.rhs
         blocks := code.blocks
-  if natLit && !(← get).config.proving then
+  if natLit then
     alternatives := alternatives ++ [{ ctor := 1, target := blocks.size }]
     let natCase := blocks.size
     blocks := blocks.push { locals := arity + 1, instruction := .ret .erased }

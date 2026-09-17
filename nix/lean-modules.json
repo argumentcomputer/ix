@@ -137,7 +137,7 @@
   "Stage2Ixby":
   {"path": "scripts/Stage2Ixby.lean",
    "imports":
-   ["Compilatrix.Ixby.LeanSound",
+   ["Compilatrix.Ixby.Runtime.Native.Image",
     "Compilatrix.Ixby.Runtime.Wire",
     "Compilatrix.Ixby.Runtime.Field",
     "Compilatrix.Ixby.Binary",
@@ -791,9 +791,64 @@
     "Compilatrix.Ixon.Merkle",
     "Compilatrix.Ixon.CatalogIO",
     "Compilatrix.Coverage.StdContact"]},
+  "CompilatrixTests.Ixby.SourceRuntime":
+  {"path": "CompilatrixTests/Ixby/SourceRuntime.lean",
+   "imports":
+   ["Compilatrix.Ixby.Lean",
+    "Compilatrix.Ixby.Runtime.Examples",
+    "Compilatrix.Ixby.Runtime.Wire",
+    "Compilatrix.Ixby.Runtime.Field",
+    "Compilatrix.Ixby.Runtime.Chunked.Execute",
+    "Compilatrix.Tools.Check"]},
+  "CompilatrixTests.Ixby.RuntimeV2":
+  {"path": "CompilatrixTests/Ixby/RuntimeV2.lean",
+   "imports": ["Compilatrix.Ixby.Binary", "Compilatrix.Tools.Check"]},
+  "CompilatrixTests.Ixby.Native.WordCases":
+  {"path": "CompilatrixTests/Ixby/Native/WordCases.lean",
+   "imports": ["CompilatrixTests.Ixby.Native.Support"]},
+  "CompilatrixTests.Ixby.Native.WireCases":
+  {"path": "CompilatrixTests/Ixby/Native/WireCases.lean",
+   "imports": ["CompilatrixTests.Ixby.Native.Support"]},
+  "CompilatrixTests.Ixby.Native.Support":
+  {"path": "CompilatrixTests/Ixby/Native/Support.lean",
+   "imports":
+   ["CompilatrixTests.Ixby.SourceRuntime",
+    "Compilatrix.Ixby.Runtime.Native.Image"]},
+  "CompilatrixTests.Ixby.Native.ScalarCases":
+  {"path": "CompilatrixTests/Ixby/Native/ScalarCases.lean",
+   "imports": ["CompilatrixTests.Ixby.Native.Support"]},
+  "CompilatrixTests.Ixby.Native.Resources":
+  {"path": "CompilatrixTests/Ixby/Native/Resources.lean",
+   "imports": ["CompilatrixTests.Ixby.Native.Support"]},
+  "CompilatrixTests.Ixby.Native.Main":
+  {"path": "CompilatrixTests/Ixby/Native/Main.lean",
+   "imports":
+   ["CompilatrixTests.Ixby.Native.Certificates",
+    "CompilatrixTests.Ixby.Native.ScalarCases",
+    "CompilatrixTests.Ixby.Native.WordCases",
+    "CompilatrixTests.Ixby.Native.ArrayCases",
+    "CompilatrixTests.Ixby.Native.WireCases",
+    "CompilatrixTests.Ixby.Native.Resources",
+    "CompilatrixTests.Ixby.Native.Fuel"]},
+  "CompilatrixTests.Ixby.Native.Fuel":
+  {"path": "CompilatrixTests/Ixby/Native/Fuel.lean",
+   "imports": ["CompilatrixTests.Ixby.Native.Support"]},
+  "CompilatrixTests.Ixby.Native.Certificates":
+  {"path": "CompilatrixTests/Ixby/Native/Certificates.lean",
+   "imports":
+   ["CompilatrixTests.Ixby.Native.Support", "Compilatrix.Ixby.Binary"]},
+  "CompilatrixTests.Ixby.Native.ArrayCases":
+  {"path": "CompilatrixTests/Ixby/Native/ArrayCases.lean",
+   "imports": ["CompilatrixTests.Ixby.Native.Support"]},
   "CompilatrixTests.Ixby.Conversions":
   {"path": "CompilatrixTests/Ixby/Conversions.lean",
    "imports": ["Compilatrix.Ixby.Binary", "Compilatrix.Tools.Check"]},
+  "CompilatrixTests.Ixby.Chunked":
+  {"path": "CompilatrixTests/Ixby/Chunked.lean",
+   "imports":
+   ["Compilatrix.Ixby.Runtime.Chunked.Execute",
+    "Compilatrix.Ixby.Runtime.Execute",
+    "CompilatrixTests.Ixby.RuntimeV2"]},
   "CompilatrixTests.IxIR1.WellModedGen":
   {"path": "CompilatrixTests/IxIR1/WellModedGen.lean",
    "imports": ["CompilatrixTests.Support.Lowering"]},
@@ -976,6 +1031,11 @@
     "Compilatrix.Ixon.Sharing.Indexed",
     "Compilatrix.Ixon.Univ",
     "Compilatrix.Ixon.UsageCheck"]},
+  "CompilatrixTests.Fences.IxbyNative":
+  {"path": "CompilatrixTests/Fences/IxbyNative.lean",
+   "imports":
+   ["Compilatrix.Ixby.Runtime.Native",
+    "Compilatrix.Ixby.Runtime.Chunked.Simulation"]},
   "CompilatrixTests.Fences.Ixby":
   {"path": "CompilatrixTests/Fences/Ixby.lean",
    "imports":
@@ -1228,6 +1288,7 @@
     "CompilatrixTests.Fences.IxIR1",
     "CompilatrixTests.Fences.IxIR2",
     "CompilatrixTests.Fences.Ixby",
+    "CompilatrixTests.Fences.IxbyNative",
     "CompilatrixTests.Fences.Ixon",
     "CompilatrixTests.Fences.IxonV3",
     "CompilatrixTests.Fences.IxonV3Typing",
@@ -2877,12 +2938,16 @@
    "imports": ["Compilatrix.Ixby.Runtime.ScalarFunction"]},
   "Compilatrix.Ixby.Runtime.Run":
   {"path": "Compilatrix/Ixby/Runtime/Run.lean",
-   "imports": ["Compilatrix.Ixby.Binary", "Compilatrix.Ixby.Runtime.Execute"]},
+   "imports":
+   ["Compilatrix.Ixby.Binary", "Compilatrix.Ixby.Runtime.Chunked.Execute"]},
   "Compilatrix.Ixby.Runtime.Representation":
   {"path": "Compilatrix/Ixby/Runtime/Representation.lean",
    "imports": ["Ix.Ixby"]},
   "Compilatrix.Ixby.Runtime.Report":
   {"path": "Compilatrix/Ixby/Runtime/Report.lean",
+   "imports": ["Compilatrix.Ixby.Lean"]},
+  "Compilatrix.Ixby.Runtime.NumberImageModel":
+  {"path": "Compilatrix/Ixby/Runtime/NumberImageModel.lean",
    "imports": ["Compilatrix.Ixby.Lean"]},
   "Compilatrix.Ixby.Runtime.NumberConversion":
   {"path": "Compilatrix/Ixby/Runtime/NumberConversion.lean",
@@ -2896,6 +2961,150 @@
   "Compilatrix.Ixby.Runtime.NaturalCall":
   {"path": "Compilatrix/Ixby/Runtime/NaturalCall.lean",
    "imports": ["Compilatrix.Ixby.Runtime.NumberConversion"]},
+  "Compilatrix.Ixby.Runtime.Native.Words":
+  {"path": "Compilatrix/Ixby/Runtime/Native/Words.lean",
+   "imports":
+   ["Compilatrix.Ixby.Runtime.Native.Scalars",
+    "Compilatrix.Ixby.Runtime.WordShiftLaws"]},
+  "Compilatrix.Ixby.Runtime.Native.WireWrite":
+  {"path": "Compilatrix/Ixby/Runtime/Native/WireWrite.lean",
+   "imports":
+   ["Compilatrix.Ixby.Runtime.Native.ByteLoops",
+    "Compilatrix.Ixby.Runtime.Native.WireValues"]},
+  "Compilatrix.Ixby.Runtime.Native.WireValues":
+  {"path": "Compilatrix/Ixby/Runtime/Native/WireValues.lean",
+   "imports":
+   ["Compilatrix.Ixby.Runtime.Native.WireCertificate",
+    "Compilatrix.Ixby.Runtime.Native.Values"]},
+  "Compilatrix.Ixby.Runtime.Native.WireEncode":
+  {"path": "Compilatrix/Ixby/Runtime/Native/WireEncode.lean",
+   "imports":
+   ["Compilatrix.Ixby.Runtime.Native.ByteWords",
+    "Compilatrix.Ixby.Runtime.Native.WireValues",
+    "Compilatrix.Ixby.Runtime.Native.Sequence"]},
+  "Compilatrix.Ixby.Runtime.Native.WireCertificate":
+  {"path": "Compilatrix/Ixby/Runtime/Native/WireCertificate.lean",
+   "imports":
+   ["Compilatrix.Ixby.Runtime.Native.Certificate",
+    "Compilatrix.Ixby.Runtime.Native.Code.Wire"]},
+  "Compilatrix.Ixby.Runtime.Native.Values":
+  {"path": "Compilatrix/Ixby/Runtime/Native/Values.lean",
+   "imports": ["Compilatrix.Ixby.Runtime.ScalarLaws"]},
+  "Compilatrix.Ixby.Runtime.Native.USize":
+  {"path": "Compilatrix/Ixby/Runtime/Native/USize.lean",
+   "imports": ["Compilatrix.Ixby.Runtime.Native.Scalars"]},
+  "Compilatrix.Ixby.Runtime.Native.Sequence":
+  {"path": "Compilatrix/Ixby/Runtime/Native/Sequence.lean",
+   "imports":
+   ["Compilatrix.Ixby.Runtime.Native.Values",
+    "Compilatrix.Ixby.Runtime.ConversionLaws"]},
+  "Compilatrix.Ixby.Runtime.Native.Scalars":
+  {"path": "Compilatrix/Ixby/Runtime/Native/Scalars.lean",
+   "imports":
+   ["Compilatrix.Ixby.Runtime.Native.Machine",
+    "Compilatrix.Ixby.Runtime.Native.Values",
+    "Compilatrix.Ixby.Runtime.ToWord",
+    "Compilatrix.Ixby.Runtime.FromWord"]},
+  "Compilatrix.Ixby.Runtime.Native.PackedArray":
+  {"path": "Compilatrix/Ixby/Runtime/Native/PackedArray.lean",
+   "imports":
+   ["Compilatrix.Ixby.Runtime.Native.ByteWords",
+    "Compilatrix.Ixby.Runtime.Native.Sequence"]},
+  "Compilatrix.Ixby.Runtime.Native.NatLoops":
+  {"path": "Compilatrix/Ixby/Runtime/Native/NatLoops.lean",
+   "imports":
+   ["Compilatrix.Ixby.Runtime.Native.Scalars",
+    "Compilatrix.Ixby.Runtime.NatPowLaws"]},
+  "Compilatrix.Ixby.Runtime.Native.Machine":
+  {"path": "Compilatrix/Ixby/Runtime/Native/Machine.lean",
+   "imports":
+   ["Compilatrix.Ixby.Runtime.Native.Certificate",
+    "Compilatrix.Ixby.Runtime.Execution"]},
+  "Compilatrix.Ixby.Runtime.Native.Image":
+  {"path": "Compilatrix/Ixby/Runtime/Native/Image.lean",
+   "imports":
+   ["Compilatrix.Ixby.Lean",
+    "Compilatrix.Ixby.Runtime.Native.WireCertificate"]},
+  "Compilatrix.Ixby.Runtime.Native.Fields":
+  {"path": "Compilatrix/Ixby/Runtime/Native/Fields.lean",
+   "imports": ["Compilatrix.Ixby.Runtime.Native.Scalars"]},
+  "Compilatrix.Ixby.Runtime.Native.CollectionLaws":
+  {"path": "Compilatrix/Ixby/Runtime/Native/CollectionLaws.lean",
+   "imports": ["Compilatrix.Ixby.Runtime.Native.Values"]},
+  "Compilatrix.Ixby.Runtime.Native.Code.Wire":
+  {"path": "Compilatrix/Ixby/Runtime/Native/Code/Wire.lean",
+   "imports": ["Compilatrix.Ixby.Runtime.Native.Code.Basic"]},
+  "Compilatrix.Ixby.Runtime.Native.Code.Number":
+  {"path": "Compilatrix/Ixby/Runtime/Native/Code/Number.lean",
+   "imports": ["Compilatrix.Ixby.Runtime.Native.Code.Basic"]},
+  "Compilatrix.Ixby.Runtime.Native.Code.Field":
+  {"path": "Compilatrix/Ixby/Runtime/Native/Code/Field.lean",
+   "imports": ["Compilatrix.Ixby.Runtime.Native.Code.Basic"]},
+  "Compilatrix.Ixby.Runtime.Native.Code.Basic":
+  {"path": "Compilatrix/Ixby/Runtime/Native/Code/Basic.lean",
+   "imports": ["Lean", "Ix.Ixby"]},
+  "Compilatrix.Ixby.Runtime.Native.Code.Array":
+  {"path": "Compilatrix/Ixby/Runtime/Native/Code/Array.lean",
+   "imports": ["Compilatrix.Ixby.Runtime.Native.Code.Basic"]},
+  "Compilatrix.Ixby.Runtime.Native.Code":
+  {"path": "Compilatrix/Ixby/Runtime/Native/Code.lean",
+   "imports":
+   ["Compilatrix.Ixby.Runtime.Native.Code.Number",
+    "Compilatrix.Ixby.Runtime.Native.Code.Array",
+    "Compilatrix.Ixby.Runtime.Native.Code.Field"]},
+  "Compilatrix.Ixby.Runtime.Native.Certificate":
+  {"path": "Compilatrix/Ixby/Runtime/Native/Certificate.lean",
+   "imports":
+   ["Compilatrix.Ixby.Runtime.Native.Code",
+    "Compilatrix.Ixby.Runtime.ScalarFunction"]},
+  "Compilatrix.Ixby.Runtime.Native.BytesBasic":
+  {"path": "Compilatrix/Ixby/Runtime/Native/BytesBasic.lean",
+   "imports":
+   ["Compilatrix.Ixby.Runtime.Native.Machine",
+    "Compilatrix.Ixby.Runtime.Native.CollectionLaws"]},
+  "Compilatrix.Ixby.Runtime.Native.ByteWords":
+  {"path": "Compilatrix/Ixby/Runtime/Native/ByteWords.lean",
+   "imports": ["Compilatrix.Ixby.Runtime.Native.BytesBasic"]},
+  "Compilatrix.Ixby.Runtime.Native.ByteLoops":
+  {"path": "Compilatrix/Ixby/Runtime/Native/ByteLoops.lean",
+   "imports":
+   ["Compilatrix.Ixby.Runtime.Native.ByteWords",
+    "Compilatrix.Ixby.Runtime.Native.Sequence"]},
+  "Compilatrix.Ixby.Runtime.Native.ArrayLoops":
+  {"path": "Compilatrix/Ixby/Runtime/Native/ArrayLoops.lean",
+   "imports":
+   ["Compilatrix.Ixby.Runtime.Native.ArrayBasic",
+    "Compilatrix.Ixby.Runtime.Native.Sequence"]},
+  "Compilatrix.Ixby.Runtime.Native.ArrayExtract":
+  {"path": "Compilatrix/Ixby/Runtime/Native/ArrayExtract.lean",
+   "imports": ["Compilatrix.Ixby.Runtime.Native.ArrayLoops"]},
+  "Compilatrix.Ixby.Runtime.Native.ArrayBasic":
+  {"path": "Compilatrix/Ixby/Runtime/Native/ArrayBasic.lean",
+   "imports":
+   ["Compilatrix.Ixby.Runtime.Native.Machine",
+    "Compilatrix.Ixby.Runtime.Native.CollectionLaws"]},
+  "Compilatrix.Ixby.Runtime.Native.ArrayAppend":
+  {"path": "Compilatrix/Ixby/Runtime/Native/ArrayAppend.lean",
+   "imports": ["Compilatrix.Ixby.Runtime.Native.ArrayLoops"]},
+  "Compilatrix.Ixby.Runtime.Native.ArrayAccess":
+  {"path": "Compilatrix/Ixby/Runtime/Native/ArrayAccess.lean",
+   "imports": ["Compilatrix.Ixby.Runtime.Native.ArrayBasic"]},
+  "Compilatrix.Ixby.Runtime.Native":
+  {"path": "Compilatrix/Ixby/Runtime/Native.lean",
+   "imports":
+   ["Compilatrix.Ixby.Runtime.Native.Image",
+    "Compilatrix.Ixby.Runtime.Native.Scalars",
+    "Compilatrix.Ixby.Runtime.Native.NatLoops",
+    "Compilatrix.Ixby.Runtime.Native.Fields",
+    "Compilatrix.Ixby.Runtime.Native.Words",
+    "Compilatrix.Ixby.Runtime.Native.USize",
+    "Compilatrix.Ixby.Runtime.Native.ArrayAccess",
+    "Compilatrix.Ixby.Runtime.Native.ArrayAppend",
+    "Compilatrix.Ixby.Runtime.Native.ArrayExtract",
+    "Compilatrix.Ixby.Runtime.Native.ByteLoops",
+    "Compilatrix.Ixby.Runtime.Native.PackedArray",
+    "Compilatrix.Ixby.Runtime.Native.WireWrite",
+    "Compilatrix.Ixby.Runtime.Native.WireEncode"]},
   "Compilatrix.Ixby.Runtime.NatSub":
   {"path": "Compilatrix/Ixby/Runtime/NatSub.lean",
    "imports": ["Compilatrix.Ixby.Runtime.NatBinary"]},
@@ -3006,6 +3215,53 @@
   {"path": "Compilatrix/Ixby/Runtime/ConversionCertificate.lean",
    "imports":
    ["Compilatrix.Ixby.Runtime.ToWord", "Compilatrix.Ixby.Runtime.FromWord"]},
+  "Compilatrix.Ixby.Runtime.Chunked.Value":
+  {"path": "Compilatrix/Ixby/Runtime/Chunked/Value.lean",
+   "imports": ["Compilatrix.Ixby.Runtime.Chunked.Builder"]},
+  "Compilatrix.Ixby.Runtime.Chunked.Simulation":
+  {"path": "Compilatrix/Ixby/Runtime/Chunked/Simulation.lean",
+   "imports":
+   ["Compilatrix.Ixby.Runtime.Chunked.EvalSimulation",
+    "Compilatrix.Ixby.Runtime.Chunked.ApplySimulation",
+    "Compilatrix.Ixby.Runtime.Chunked.Execute",
+    "Compilatrix.Ixby.Runtime.Execute"]},
+  "Compilatrix.Ixby.Runtime.Chunked.ScalarSimulation":
+  {"path": "Compilatrix/Ixby/Runtime/Chunked/ScalarSimulation.lean",
+   "imports": ["Compilatrix.Ixby.Runtime.Chunked.Primitive"]},
+  "Compilatrix.Ixby.Runtime.Chunked.Representation":
+  {"path": "Compilatrix/Ixby/Runtime/Chunked/Representation.lean",
+   "imports": ["Compilatrix.Ixby.Runtime.Chunked.Machine"]},
+  "Compilatrix.Ixby.Runtime.Chunked.PrimitiveSimulation":
+  {"path": "Compilatrix/Ixby/Runtime/Chunked/PrimitiveSimulation.lean",
+   "imports": ["Compilatrix.Ixby.Runtime.Chunked.ScalarSimulation"]},
+  "Compilatrix.Ixby.Runtime.Chunked.Primitive":
+  {"path": "Compilatrix/Ixby/Runtime/Chunked/Primitive.lean",
+   "imports": ["Ix.Ixby.Primitive", "Compilatrix.Ixby.Runtime.Chunked.Value"]},
+  "Compilatrix.Ixby.Runtime.Chunked.OpSimulation":
+  {"path": "Compilatrix/Ixby/Runtime/Chunked/OpSimulation.lean",
+   "imports":
+   ["Compilatrix.Ixby.Runtime.Chunked.FrameSimulation",
+    "Compilatrix.Ixby.Runtime.Chunked.PrimitiveSimulation"]},
+  "Compilatrix.Ixby.Runtime.Chunked.Machine":
+  {"path": "Compilatrix/Ixby/Runtime/Chunked/Machine.lean",
+   "imports": ["Ix.Ixby.Eval", "Compilatrix.Ixby.Runtime.Chunked.Primitive"]},
+  "Compilatrix.Ixby.Runtime.Chunked.FrameSimulation":
+  {"path": "Compilatrix/Ixby/Runtime/Chunked/FrameSimulation.lean",
+   "imports": ["Compilatrix.Ixby.Runtime.Chunked.Representation"]},
+  "Compilatrix.Ixby.Runtime.Chunked.Execute":
+  {"path": "Compilatrix/Ixby/Runtime/Chunked/Execute.lean",
+   "imports": ["Compilatrix.Ixby.Runtime.Chunked.Representation"]},
+  "Compilatrix.Ixby.Runtime.Chunked.EvalSimulation":
+  {"path": "Compilatrix/Ixby/Runtime/Chunked/EvalSimulation.lean",
+   "imports": ["Compilatrix.Ixby.Runtime.Chunked.OpSimulation"]},
+  "Compilatrix.Ixby.Runtime.Chunked.Builder":
+  {"path": "Compilatrix/Ixby/Runtime/Chunked/Builder.lean",
+   "imports": ["Ix.Ixby.Basic"]},
+  "Compilatrix.Ixby.Runtime.Chunked.ApplySimulation":
+  {"path": "Compilatrix/Ixby/Runtime/Chunked/ApplySimulation.lean",
+   "imports":
+   ["Compilatrix.Ixby.Runtime.Chunked.FrameSimulation",
+    "Compilatrix.Ixby.Runtime.Chunked.PrimitiveSimulation"]},
   "Compilatrix.Ixby.Runtime.Bytes":
   {"path": "Compilatrix/Ixby/Runtime/Bytes.lean",
    "imports": ["Compilatrix.Ixby.Runtime.Number"]},
@@ -3086,7 +3342,7 @@
   "Compilatrix.Ixby.LeanSound":
   {"path": "Compilatrix/Ixby/LeanSound.lean",
    "imports":
-   ["Compilatrix.Ixby.Lean",
+   ["Compilatrix.Ixby.Runtime.NumberImageModel",
     "Compilatrix.Ixby.Runtime.ScalarCertificate",
     "Compilatrix.Ixby.Runtime.NumberConversion",
     "Compilatrix.Ixby.Runtime.NatArithmetic",
@@ -4365,18 +4621,15 @@
    "imports": ["Compilatrix.Tools.Check"]},
   "CheckIxbyLean":
   {"path": "scripts/CheckIxbyLean.lean",
-   "imports":
-   ["Compilatrix.Ixby.LeanSound",
-    "Compilatrix.Ixby.Runtime.Examples",
-    "Compilatrix.Ixby.Runtime.Wire",
-    "Compilatrix.Ixby.Runtime.Field",
-    "Compilatrix.Tools.Check"]},
+   "imports": ["CompilatrixTests.Ixby.Native.Main"]},
   "CheckIxbyBinary":
   {"path": "scripts/CheckIxbyBinary.lean",
    "imports":
    ["Compilatrix.Ixby.Binary",
     "Compilatrix.Tools.Check",
-    "CompilatrixTests.Ixby.Conversions"]},
+    "CompilatrixTests.Ixby.Conversions",
+    "CompilatrixTests.Ixby.RuntimeV2",
+    "CompilatrixTests.Ixby.Chunked"]},
   "CheckIxby":
   {"path": "scripts/CheckIxby.lean", "imports": ["Compilatrix.Tools.Check"]},
   "CheckIxIR2":

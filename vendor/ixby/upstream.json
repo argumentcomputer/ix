@@ -1,34 +1,36 @@
-{
-  "repository": "https://github.com/argumentcomputer/ix",
-  "branch": "jcb/ixby",
-  "revision": "d4405b3ceb82e6d4cce19e48186f3272f8482e04",
-  "upstream_toolchain": "leanprover/lean4:v4.33.1",
-  "file_revisions": {
-    "Ix/Ixby/Profile.lean": "4fdbf4084516ce1a29f6753a20d797334d7fadbb",
-    "Ix/Ixby/Codec/Common.lean": "4fdbf4084516ce1a29f6753a20d797334d7fadbb",
-    "Ix/Ixby/Codec/Encode.lean": "4fdbf4084516ce1a29f6753a20d797334d7fadbb",
-    "Ix/Ixby/Codec/Decode.lean": "4fdbf4084516ce1a29f6753a20d797334d7fadbb"
-  },
-  "unchanged_files_sha256": {
-    "Ix/Ixby/Goldilocks.lean": "87b6aa0d8ffeff883ce68363d34ada9c15f0aa24a31581aac5f618b6d4726eba",
-    "Ix/Ixby/Blake3.lean": "4d1c2f8e13da83e1addfd814cb056c32d69b65518d8b183dc4b9b61ee819f933",
-    "Ix/Ixby/Basic.lean": "1471a061421970e1ff309a1482cae3b2870ef65c5c34989f0f19a81b12ba4fff",
-    "Ix/Ixby/Primitive.lean": "7bce80492e2af52e3a374bee51aeda572471fd01b08bcbbf78928e60f7986c6e",
-    "Ix/Ixby/Validate.lean": "f2450385ebe41bcc6e798acab6004d64a9dad3c0efaafef5e4e642e1e26b7e95",
-    "Ix/Ixby/Eval.lean": "d0b713968891af452ad3a78dff3eae92d61cc8f2a08651a4f57867a0b5ca9e77",
-    "Ix/Ixby/Composition.lean": "1e5fcf15f23dc3e0d4e594285d77e5daff0af8ba1ef2e2561f7f827f9c709a48",
-    "Ix/Ixby/Profile.lean": "54b19becac4ad5fb6fc546e68fa104a32a7a4198a4e5690d8b7d39d7ac28c2cf",
-    "Ix/Ixby/Codec/Common.lean": "2138a01348112adbe1abfd912198fa09d902e619b22691a465e9fdf483615690",
-    "Ix/Ixby/Codec/Encode.lean": "be3e14d5f95fb0ca1da9af4948238a7f00286f6c55cf294b26c74c96b4b53393",
-    "Ix/Ixby/Codec/Decode.lean": "b3eb4b83097941045fff50a88335e41cfc2117a67dca0df9bc90d742c5803fc3",
-    "Ix/Ixby/Codec.lean": "b6bd6d0810f5e222f1fb4af39d370dd5d6ffaf6a4e30aae1fdb8857937be27d0",
-    "Ix/Ixby/Commitment.lean": "cbf57f3d902a46e41588fa4dcaeaedc3b227a5757a818403eaa2c6504892d484",
-    "LICENSE-MIT": "dc9de72071a0c52ba5ea1796e08a4a19a9d5f931e742db66290867246dc2a418",
-    "LICENSE-APACHE": "b28f8e76818565e459f777688228fd41d4de08df939c47709e931d8a733c152a"
-  },
-  "local_files": [
-    "Ix/Ixby.lean",
-    "README.md",
-    "upstream.json"
-  ]
-}
+{"upstream_toolchain": "leanprover/lean4:v4.33.1",
+ "unchanged_files_sha256":
+ {"LICENSE-MIT":
+  "dc9de72071a0c52ba5ea1796e08a4a19a9d5f931e742db66290867246dc2a418",
+  "LICENSE-APACHE":
+  "b28f8e76818565e459f777688228fd41d4de08df939c47709e931d8a733c152a",
+  "Ix/Ixby/Validate.lean":
+  "acca0336d56ebbb3f1179f74d018e19c719e1443affd783d98aa85db05cbdb04",
+  "Ix/Ixby/Profile.lean":
+  "c54c269cd7e27c78b72682a9dce3de68f6d93a3573d95047b5adec590591e484",
+  "Ix/Ixby/Primitive.lean":
+  "3aa5dc059b824168c35776df53f6c1526a87ab2c69781585cd7b7d1a1afac32e",
+  "Ix/Ixby/Goldilocks.lean":
+  "87b6aa0d8ffeff883ce68363d34ada9c15f0aa24a31581aac5f618b6d4726eba",
+  "Ix/Ixby/Eval.lean":
+  "d0b713968891af452ad3a78dff3eae92d61cc8f2a08651a4f57867a0b5ca9e77",
+  "Ix/Ixby/Composition.lean":
+  "1e5fcf15f23dc3e0d4e594285d77e5daff0af8ba1ef2e2561f7f827f9c709a48",
+  "Ix/Ixby/Commitment.lean":
+  "cbf57f3d902a46e41588fa4dcaeaedc3b227a5757a818403eaa2c6504892d484",
+  "Ix/Ixby/Codec/Encode.lean":
+  "aec2d8f934cd16c494f7017353096fa1b1ce5b019bf8f14c04e1f42c19523033",
+  "Ix/Ixby/Codec/Decode.lean":
+  "0c89b416bdeb99b6aaae9a18306d363424f626eca61ca3ec020cc2fac72e27af",
+  "Ix/Ixby/Codec/Common.lean":
+  "86a3b1a39917d9e7cb8245993af74a9b37a66d89ce71abf879b56d025e6e99b1",
+  "Ix/Ixby/Codec.lean":
+  "b6bd6d0810f5e222f1fb4af39d370dd5d6ffaf6a4e30aae1fdb8857937be27d0",
+  "Ix/Ixby/Blake3.lean":
+  "4d1c2f8e13da83e1addfd814cb056c32d69b65518d8b183dc4b9b61ee819f933",
+  "Ix/Ixby/Basic.lean":
+  "7b5414fe8417aeeb5e8b03372bc2448c1d36bf1dd5ce766f082150381e9dd24b"},
+ "revision": "6836a77c3f432c83c42428490e56811f4a69808d",
+ "repository": "https://github.com/argumentcomputer/ix",
+ "local_files": ["Ix/Ixby.lean", "README.md", "upstream.json"],
+ "branch": "jcb/ixby"}

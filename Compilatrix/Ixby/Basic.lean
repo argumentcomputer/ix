@@ -19,8 +19,6 @@ def Source.ctx (source : Source) : IxIR0.Ctx :=
 
 structure Config where
   limits : Ix.Ixby.Limits := {}
-  /-- Match the current cryptographic profile's exclusion of Nat/String. -/
-  proving : Bool := false
   depth : Nat := 10000
   work : Nat := 1000000
   deriving BEq, Repr, Inhabited
@@ -130,10 +128,8 @@ def admitData (limits : Ix.Ixby.Limits) : Nat → List Data → Except String Un
 def encodeData (source : Source) (config : Config) : Nat → Data → Except String Ix.Ixby.Value
   | 0, _ => .error "Ixby input data depth limit"
   | fuel + 1, data => match data with
-    | .nat n => if config.proving then .error "Ixby proving profile excludes Nat" else
-        .ok (.ctor (boxId 1) #[.scalar (.nat n)])
-    | .str s => if config.proving then .error "Ixby proving profile excludes String" else
-        .ok (.ctor (boxId 2) #[.scalar (.str s)])
+    | .nat n => .ok (.ctor (boxId 1) #[.scalar (.nat n)])
+    | .str s => .ok (.ctor (boxId 2) #[.scalar (.str s)])
     | .erased => .ok (.ctor (boxId 0) #[])
     | .ctor address tag fields => do
         unless source.constructors.any (fun ctor => ctor.address == address &&

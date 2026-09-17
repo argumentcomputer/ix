@@ -6,13 +6,12 @@ with native field and extension operations and a standalone runtime loader. Its
 execution tests do not extend the checked Ixon certificates described here.
 
 Compilatrix has a backend for the pure functional Ixby reference machine from
-[`jcb/ixby` at `d4405b3ceb82e6d4cce19e48186f3272f8482e04`](https://github.com/argumentcomputer/ix/tree/d4405b3ceb82e6d4cce19e48186f3272f8482e04/Ix/Ixby).
+[`ix` at `6836a77c3f432c83c42428490e56811f4a69808d`](https://github.com/argumentcomputer/ix/tree/6836a77c3f432c83c42428490e56811f4a69808d/Ix/Ixby).
 It compiles checked Ixon through IxIR₀, without ownership lowering. The source
 modules, canonical codec, profile, and pure BLAKE3 implementation are vendored
-unchanged under [`vendor/ixby`](../vendor/ixby/README.md), with four explicit
-file-revision exceptions retaining the earlier experimental crypto profile and
-codec. The new functional Nat/Word32 primitives and `IXBF` semantics revision 1
-do not broaden that separate profile. The upstream toolchain
+unchanged under [`vendor/ixby`](../vendor/ixby/README.md), all at the same
+revision. IXBF, IXFI, and IXFO use format 1 and semantics 2; IXFP is the current
+184-byte profile. The old semantic profiles are retired. The upstream toolchain
 is 4.33.1; these exact modules also build with this repository's pinned 4.33.0.
 
 ## Entry points
@@ -26,16 +25,13 @@ Neither compiler executes the source program.
 ```sh
 lake build ixon-to-ixby ixby-run source-ixby check-ixby
 
-# General reference program; MAIN is a 64-digit source address.
-lake exe ixon-to-ixby path/to/program.ixc MAIN new-output reference
-
-# Canonical bytes admitted by the current upstream proving profile.
-lake exe ixon-to-ixby path/to/program.ixc MAIN new-output proving
+# Canonical runtime program; MAIN is a 64-digit source address.
+lake exe ixon-to-ixby path/to/program.ixc MAIN new-output
 
 # Reproduce checked source examples and their byte artifacts.
 lake exe source-ixby /tmp/ixby-examples
 lake exe ixby-run \
-  /tmp/ixby-examples/upstream-captureClosed/profile.ixbp \
+  /tmp/ixby-examples/upstream-captureClosed/profile.ixfp \
   /tmp/ixby-examples/upstream-captureClosed/program.ixby \
   /tmp/ixby-examples/upstream-captureClosed/input.ixbi \
   /tmp/ixby-result.ixbo 100000
@@ -43,11 +39,10 @@ lake exe ixby-run \
 
 The compiler requires a new output directory. It writes the exact source
 declarations/main in `source.json`, the complete reference program in
-`program.txt`, and its configuration. Proving mode also writes `program.ixby`
-and `profile.ixbp`. Reference mode's text is an inspection view, not a new wire
-format. General execution is available through `Compiled.execute` in Lean.
+`program.txt`, its configuration, `program.ixby`, and `profile.ixfp`.
+General execution is also available through `Compiled.execute` in Lean.
 
-The optional arguments after the mode are a runtime arity and a Nat-block
+The optional positional arguments are a runtime arity and a Nat-block
 address. With arity `n`, entry evaluates the selected definition and applies it
 to the `n` supplied arguments in order. The Nat-block argument configures the
 existing source literal-recursor semantics; no declaration name is guessed.
@@ -116,19 +111,18 @@ data certification also bounds the output forest before decoding it.
 
 ## Canonical profile
 
-The upstream revision-0 proving codec excludes Nat and String, including their
-literals and `caseNat` instructions in unused code. `Config.crypto profile`
-selects this fragment, uses the exact profile limits, rejects retained literal
-expressions and host literal inputs, and emits constructor-only recursor cases.
-It can compile explicit constructor Nats. General reference compilation includes
-literal dispatch and uses Ixby's mathematical Nat/String semantics.
+`Config.profile profile` uses the exact semantic limits of the current
+profile. Nat and String retain their ordinary semantics and are admitted
+subject to their capacities. There is no reference/proving semantic selector.
+Physical backend constraints, including immediate Nat128 arithmetic and
+unsupported string execution, remain separate from reference admission.
 
-`Compiled.export profile` calls the original `IXBP`/`IXBY` codecs and decodes the
+`Compiled.export profile` calls the pinned `IXFP`/`IXBF` codecs and decodes the
 program again. It retains kernel equality between the decoded program and the
 compiler image, and between the profile and compilation limits. Changing limits
-at export is rejected. `Exported.certify` additionally produces canonical `IXBI`
-and `IXBO` artifacts using the original byte executor. No target opcodes or wire
-tags were added. The standalone runner imports the reference codec and no
+at export is rejected. `Exported.certify` additionally produces canonical `IXFI`
+and `IXFO` artifacts using the reference byte executor. The standalone runner
+imports the reference codec and no
 compiler modules.
 
 Admission to this reference profile does not mean admission to every upstream

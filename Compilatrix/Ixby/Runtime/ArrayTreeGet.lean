@@ -39,7 +39,7 @@ theorem treeGet_returns (room : 8 ≤ limits.locals) (capacity : 2 ≤ limits.na
         rw [runChunk]
         simp [step, stepEval, Frame.check, certificate.treeGet.code, ArrayTrees.treeGet,
           frameState, returned, Tree.encode, Frame.read, Frame.readOperands, Frame.transfer,
-          evalOp, Primitive.eval, Primitive.arity, N, smallNat, localRoom,
+          evalOp, Primitive.eval, Primitive.evalScalarUnchecked, Primitive.arity, N, smallNat, localRoom,
           bind, Except.bind, pure, Except.pure]
       rfl
   | succ height ih =>
@@ -61,7 +61,7 @@ theorem treeGet_returns (room : 8 ≤ limits.locals) (capacity : 2 ≤ limits.na
           rw [runChunk]
           simp [step, stepEval, Frame.check, certificate.treeGet.code, ArrayTrees.treeGet,
             frameState, Tree.encode, Frame.read, Frame.readOperands, Frame.transfer, enter,
-            evalOp, Primitive.eval, Primitive.arity, N, valid, nextValid, indexValid, notLeaf,
+            evalOp, Primitive.eval, Primitive.evalScalarUnchecked, Primitive.arity, N, valid, nextValid, indexValid, notLeaf,
             goLeft, pow_half, smallNat, localRoom, bind, Except.bind, pure, Except.pure]
         rfl
       · have restBound : index - 2 ^ height < 2 ^ height := by omega
@@ -75,7 +75,7 @@ theorem treeGet_returns (room : 8 ≤ limits.locals) (capacity : 2 ≤ limits.na
           rw [runChunk]
           simp [step, stepEval, Frame.check, certificate.treeGet.code, ArrayTrees.treeGet,
             frameState, Tree.encode, Frame.read, Frame.readOperands, Frame.transfer, enter,
-            evalOp, Primitive.eval, Primitive.arity, N, valid, nextValid, indexValid, restValid,
+            evalOp, Primitive.eval, Primitive.evalScalarUnchecked, Primitive.arity, N, valid, nextValid, indexValid, restValid,
             notLeaf, goLeft, pow_half, smallNat, localRoom, bind, Except.bind, pure, Except.pure]
         rfl
 

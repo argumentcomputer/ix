@@ -26,7 +26,7 @@ theorem lt_returns (room : 10 ≤ limits.locals) (capacity : 64 ≤ limits.natBi
     capacity bytesCapacity a b left right leftRep rightRep continuation stack
   have result : Primitive.natLt.eval limits [.scalar (.nat a), .scalar (.nat b)] =
       .ok (.scalar (.bool (decide (a < b)))) := by
-    simp [Primitive.eval, Primitive.arity, leftValid, rightValid] <;> rfl
+    simp [Primitive.eval, Primitive.evalScalarUnchecked, Primitive.arity, leftValid, rightValid] <;> rfl
   apply observed.trans
   apply reaches_of_chunk (fuel := 2) (count := 0)
   iterate 2
@@ -49,7 +49,7 @@ theorem le_returns (room : 10 ≤ limits.locals) (capacity : 64 ≤ limits.natBi
     capacity bytesCapacity a b left right leftRep rightRep continuation stack
   have result : Primitive.natLt.eval limits [.scalar (.nat b), .scalar (.nat a)] =
       .ok (.scalar (.bool (decide (b < a)))) := by
-    simp [Primitive.eval, Primitive.arity, leftValid, rightValid] <;> rfl
+    simp [Primitive.eval, Primitive.evalScalarUnchecked, Primitive.arity, leftValid, rightValid] <;> rfl
   apply observed.trans
   by_cases ordered : a ≤ b
   all_goals

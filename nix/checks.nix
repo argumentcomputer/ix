@@ -136,9 +136,12 @@ in rec {
   ixbyLeanCheck = mkCheck "check-ixby-lean" [pkgs.coreutils pkgs.gzip pkgs.diffutils pkgs.python3] ''
     ./.lake/build/bin/check-ixby-lean
     ./.lake/build/bin/check-ixby-binary binary-cases
-    cmp binary-cases/conversions.ixby ${auditSrc}/fixtures/ixby-stage2/conversions-v1/program.ixby
-    cmp binary-cases/conversions.ixbi ${auditSrc}/fixtures/ixby-stage2/conversions-v1/input.ixbi
-    cmp binary-cases/conversions.ixbo ${auditSrc}/fixtures/ixby-stage2/conversions-v1/output.ixbo
+    cmp binary-cases/conversions.ixby ${auditSrc}/fixtures/ixby-stage2/conversions-v2/program.ixby
+    cmp binary-cases/conversions.ixbi ${auditSrc}/fixtures/ixby-stage2/conversions-v2/input.ixbi
+    cmp binary-cases/conversions.ixbo ${auditSrc}/fixtures/ixby-stage2/conversions-v2/output.ixbo
+    for artifact in program.ixby input.ixbi output.ixbo profile.ixfp; do
+      cmp "binary-cases/runtime-v2/$artifact" "${auditSrc}/fixtures/ixby-stage2/runtime-v2/$artifact"
+    done
     for image in binary-cases/*.ixby; do
       python3 scripts/inspect_ixby.py "$image" > /dev/null
     done
@@ -149,6 +152,8 @@ in rec {
       cmp identity.ixbo actual.ixbo
       env -u LEAN_PATH ./ixby-exec conversions.ixby conversions.ixbi conversions-actual.ixbo
       cmp conversions.ixbo conversions-actual.ixbo
+      env -u LEAN_PATH ./ixby-exec runtime-v2/program.ixby runtime-v2/input.ixbi runtime-v2/actual.ixbo
+      cmp runtime-v2/output.ixbo runtime-v2/actual.ixbo
     )
     ./.lake/build/bin/stage2-ixby ${auditSrc}/fixtures/ixby-stage2 compile stage2.ixby
     ./.lake/build/bin/stage2-ixby ${auditSrc}/fixtures/ixby-stage2 compile replay.ixby

@@ -47,7 +47,7 @@ private def runWire {source config} (compiled : Compiled source config) (output 
   let certificate ← checked compiled.certifySymbolic
   let exported ← checked compiled.export
   writeProgram certificate output
-  IO.FS.writeBinFile (output / "profile.ixbp") ⟨exported.profileBytes⟩
+  IO.FS.writeBinFile (output / "profile.ixfp") ⟨exported.profileBytes⟩
   IO.FS.writeBinFile (output / "program.ixby") ⟨exported.programBytes⟩
   let mut rows : Array Json := #[]
   for (data, index) in inputs.zipIdx do
@@ -104,7 +104,7 @@ def main (args : List String) : IO UInt32 := cli "source-ixby-symbolic" do
     let reference ← runReference test (output / test.name / "reference")
     referenceRuns := referenceRuns + 16
     let wire ← if test.wire then do
-        let compiled ← checked (compile test.source Config.crypto)
+        let compiled ← checked (compile test.source Config.profile)
         let inputs := (List.range 5).map (SymbolicExamples.inputs SymbolicExamples.wirePool test.parameters)
         let wire ← runWire compiled (output / test.name / "wire") inputs test.expected
         canonicalRuns := canonicalRuns + 5
@@ -113,7 +113,7 @@ def main (args : List String) : IO UInt32 := cli "source-ixby-symbolic" do
     rows := rows.push (Json.mkObj [("name", toJson test.name), ("parameters", toJson test.parameters),
       ("origin", toJson "ixir0-open"), ("reference", reference), ("wire", wire)])
   for (name, parameters, constants, root) in ← checked SymbolicExamples.ixonSources do
-    let compiled ← checked (compileIxon constants root {} Config.crypto parameters)
+    let compiled ← checked (compileIxon constants root {} Config.profile parameters)
     let source : Source := {
       declarations := compiled.erasure.erasure.result.raw
       main := entryExpression root parameters, parameters }
@@ -128,7 +128,7 @@ def main (args : List String) : IO UInt32 := cli "source-ixby-symbolic" do
     if let .nat expected := fixture.expected then
       let loaded ← checked (← Coverage.Upstream.load upstream fixture)
       let source := loaded.source
-      let compiled ← checked (compileIxon source.constants source.root source.config Config.crypto 0
+      let compiled ← checked (compileIxon source.constants source.root source.config Config.profile 0
         source.policy.checkFuel source.policy.eraseFuel source.policy.validateFuel)
       let certificate ← checked compiled.target.certifySymbolic
       let result := certificate.result.instantiate (fun _ => .erased)

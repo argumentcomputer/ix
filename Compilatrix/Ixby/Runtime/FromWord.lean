@@ -28,7 +28,7 @@ theorem fromWordLoop_returns {program : Program} {id digit : FunctionId}
   iterate 4
     rw [runChunk]
     simp [step, stepEval, Frame.check, checked.code, fromWordLoop, frameState, returned,
-      evalOp, Frame.readOperands, Frame.read, Frame.transfer, Primitive.eval,
+      evalOp, Frame.readOperands, Frame.read, Frame.transfer, Primitive.eval, Primitive.evalScalarUnchecked,
       Primitive.arity, localRoom, wordValid, weightValid, accumulatorValid,
       productValid, resultValid, bind, Except.bind, pure, Except.pure]
   rfl

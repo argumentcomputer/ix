@@ -110,7 +110,7 @@ theorem push_with_space_returns (room : 13 ≤ limits.locals) (capacity : 64 ≤
       rw [runChunk]
       simp [locals, before, step, stepEval, Frame.check, certificate.push.code, ArrayTrees.push,
         frameState, Frame.read, Frame.readOperands, Frame.transfer, evalOp,
-        Primitive.eval, Primitive.arity, sizeValid, valid, space,
+        Primitive.eval, Primitive.evalScalarUnchecked, Primitive.arity, sizeValid, valid, space,
         localRoom, bind, Except.bind, pure, Except.pure]
     rfl
   let updated := (tree.set height n value).encode links.layout
@@ -169,7 +169,7 @@ theorem push_full_returns (room : 16 ≤ limits.locals) (capacity : 64 ≤ limit
       simp [locals, before, grown, step, stepEval, Frame.check, certificate.push.code, ArrayTrees.push,
         certificate.emptyCtor, certificate.nodeCtor, frameState, Tree.encode,
         Frame.read, Frame.readOperands, Frame.transfer, evalOp,
-        Primitive.eval, Primitive.arity, sizeValid, valid, doubled,
+        Primitive.eval, Primitive.evalScalarUnchecked, Primitive.arity, sizeValid, valid, doubled,
         localRoom, bind, Except.bind, pure, Except.pure]
     rfl
   let updated := (grown.set (height + 1) (2 ^ height) value).encode links.layout

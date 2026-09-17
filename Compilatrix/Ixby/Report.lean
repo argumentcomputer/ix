@@ -70,7 +70,7 @@ def writeCase (directory : System.FilePath) (result : ReportCase) : IO Unit := d
   IO.FS.writeFile (directory / "program.txt") (result.program ++ "\n")
   IO.FS.writeFile (directory / "result.json") (result.row.pretty 100 ++ "\n")
   if let some bundle := result.bundle then
-    for (name, bytes) in [("profile.ixbp", bundle.profile), ("program.ixby", bundle.program),
+    for (name, bytes) in [("profile.ixfp", bundle.profile), ("program.ixby", bundle.program),
         ("input.ixbi", bundle.input), ("output.ixbo", bundle.output)] do
       IO.FS.writeBinFile (directory / name) ⟨bytes⟩
 

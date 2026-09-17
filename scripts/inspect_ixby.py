@@ -20,11 +20,11 @@ PRIMITIVES = (
     "word32Shr word32Rotr word32Eq word32Lt word32ToBytes bytesToWord32 word32ToField "
     "fieldAdd fieldSub fieldMul fieldInverse fieldEq fieldToBytes bytesToField "
     "extAdd extSub extMul extInverse extEq extPack extFst extSnd "
-    "bytesLength bytesGet bytesAppend bytesSlice bytesEq blake3 natToWord32 word32ToNat"
+    "bytesLength bytesGet bytesAppend bytesSlice bytesEq blake3 natToWord32 word32ToNat fieldToNat natToField arrayEmpty arrayLength arrayGet arraySet arrayPush byteBuilderEmpty byteBuilderAppend byteBuilderFreeze byteBuilderLength"
 ).split()
 UNARY = set((
     "strLength word32ToBytes bytesToWord32 word32ToField fieldInverse fieldToBytes "
-    "bytesToField extInverse extFst extSnd bytesLength blake3 natToWord32 word32ToNat"
+    "bytesToField extInverse extFst extSnd bytesLength blake3 natToWord32 word32ToNat fieldToNat natToField arrayLength byteBuilderFreeze byteBuilderLength"
 ).split())
 OP_NAMES = "copy primitive construct project closure call callSelf apply".split()
 INSTR_NAMES = "letOp ret tailCall tailCallSelf tailApply caseCtor caseNat branch".split()
@@ -155,7 +155,7 @@ class Reader:
 
     def artifact(self):
         require(self.take(4) == b"IXBF", "wrong binary magic")
-        require(self.fixed(4) == 1 and self.fixed(4) == 1, "unsupported binary version")
+        require(self.fixed(4) == 1 and self.fixed(4) == 2, "unsupported binary version")
         self.limits = {name: self.natural() for name in LIMIT_NAMES}
         max_steps, entry = self.natural(), self.natural()
         constructors = self.vector(
@@ -211,7 +211,7 @@ def inspect(data):
                     name = PRIMITIVES[op[1]]
                     primitive_counts["Ix.Ixby.Primitive." + name] += 1
                     operands(op[2], locals_count)
-                    require(len(op[2]) == (1 if name in UNARY else 3 if name == "bytesSlice" else 2), "primitive arity")
+                    require(len(op[2]) == (0 if name in ("arrayEmpty", "byteBuilderEmpty") else 1 if name in UNARY else 3 if name in ("bytesSlice", "arraySet") else 2), "primitive arity")
                 elif op_tag == 2:
                     operands(op[2], locals_count)
                     require(op[1] < len(constructors) and len(op[2]) == constructors[op[1]][1], "constructor arity")
@@ -245,7 +245,7 @@ def inspect(data):
                 target(instruction[2], locals_count)
                 target(instruction[3], locals_count + (tag == 6))
     return {
-        "artifact": {"format": "compilatrix-ixby-binary/1", "program_semantics": 1, "bytes": len(data),
+        "artifact": {"format": "compilatrix-ixby-binary/1", "program_semantics": 2, "bytes": len(data),
                      "sha256": hashlib.sha256(data).hexdigest(), "max_steps": max_steps},
         "entry": entry, "functions": len(functions), "constructors": len(constructors),
         "blocks": sum(len(f[2]) for f in functions),

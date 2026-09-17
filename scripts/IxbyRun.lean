@@ -13,10 +13,10 @@ private def readBounded (path : System.FilePath) (limit : Nat) : IO (Array UInt8
 
 def main (args : List String) : IO UInt32 := cli "ixby-run" do
   let [profilePath, programPath, inputPath, outputPath, steps] := args |
-    throw (IO.userError "usage: ixby-run <profile.ixbp> <program.ixby> <input.ixbi> <new-output.ixbo> <fuel>")
+    throw (IO.userError "usage: ixby-run <profile.ixfp> <program.ixby> <input.ixbi> <new-output.ixbo> <fuel>")
   let some fuel := steps.toNat? | throw (IO.userError "invalid Ixby fuel")
   need (!(← (System.FilePath.mk outputPath).pathExists)) "Ixby runner requires a new output file"
-  let profile ← checked ((Ix.Ixby.Codec.decodeProfile (← readBounded profilePath 68)).mapError reprStr)
+  let profile ← checked ((Ix.Ixby.Codec.decodeProfile (← readBounded profilePath 184)).mapError reprStr)
   -- Host read caps remain independent of the policy claimed by a profile file.
   let program ← readBounded programPath (min profile.value.programBytes 16777216)
   let input ← readBounded inputPath (min profile.value.valueBytes 16777216)

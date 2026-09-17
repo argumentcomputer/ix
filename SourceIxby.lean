@@ -42,7 +42,7 @@ private def runAll (upstream : System.FilePath) : IO (List ReportCase × List St
   for fixture in Coverage.Upstream.fixtures do
     let loaded ← checked (← Coverage.Upstream.load upstream fixture)
     let source := loaded.source
-    let compiled := compileIxon source.constants source.root source.config Config.crypto 0
+    let compiled := compileIxon source.constants source.root source.config Config.profile 0
       source.policy.checkFuel source.policy.eraseFuel source.policy.validateFuel
     match fixture.expected with
     | .nat number =>
@@ -59,7 +59,7 @@ private def runAll (upstream : System.FilePath) : IO (List ReportCase × List St
   let dynamic : Source := {
     declarations := [(address, .ctor 0 1)]
     main := .app (.lam .many (.proj 0 (.var 0))) (.var 0), parameters := 1 }
-  let compiled ← checked (compile dynamic Config.crypto)
+  let compiled ← checked (compile dynamic Config.profile)
   let exported ← checked compiled.export
   for (name, input) in [("wire-runtime-erased", Data.erased),
       ("wire-runtime-constructor", .ctor address 0 [.erased])] do
@@ -77,7 +77,7 @@ def main (args : List String) : IO UInt32 := cli "source-ixby" do
   for result in results do writeCase (output / result.name) result
   let report := Lean.Json.mkObj [
     ("format", Lean.toJson "compilatrix/ixby/1"),
-    ("ixby_revision", Lean.toJson "4fdbf4084516ce1a29f6753a20d797334d7fadbb"),
+    ("ixby_revision", Lean.toJson "6836a77c3f432c83c42428490e56811f4a69808d"),
     ("cases", Lean.toJson (results.map ReportCase.row)),
     ("generated", Lean.toJson generated), ("rejections", Lean.toJson rejected)]
   IO.FS.writeFile (output / "report.json") (report.pretty 100 ++ "\n")

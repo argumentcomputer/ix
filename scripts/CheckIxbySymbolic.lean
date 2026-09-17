@@ -15,7 +15,7 @@ private def same (first second : FilePath) : IO Unit := do
   need ((← IO.FS.readBinFile first) == (← IO.FS.readBinFile second)) s!"symbolic artifact drift: {first}"
 
 private def runImage (runner : String) (program input output : FilePath) : IO Unit := do
-  let _ ← run runner #[(program / "profile.ixbp").toString, (program / "program.ixby").toString,
+  let _ ← run runner #[(program / "profile.ixfp").toString, (program / "program.ixby").toString,
     (input / "input.ixbi").toString, output.toString, "100000"]
   same (input / "output.ixbo") output
 
@@ -25,7 +25,7 @@ private def corrupt (runner : String) (program input output file : FilePath)
   try
     IO.FS.writeBinFile file (change original)
     let result ← IO.Process.output { cmd := runner, args := #[
-      (program / "profile.ixbp").toString, (program / "program.ixby").toString,
+      (program / "profile.ixfp").toString, (program / "program.ixby").toString,
       (input / "input.ixbi").toString, output.toString, "100000"] }
     need (result.exitCode == 1 && result.stderr.contains "ixby-run:" && !(← output.pathExists))
       s!"symbolic corrupt artifact accepted: {file}"
@@ -66,11 +66,11 @@ def main (args : List String) : IO UInt32 := cli "Ixby symbolic check failed" do
     for (file, change) in [
         (program / "program.ixby", fun bytes : ByteArray => bytes.push 0),
         (program / "program.ixby", fun bytes : ByteArray => bytes.extract 0 (bytes.size - 1)),
-        (program / "program.ixby", fun bytes : ByteArray => bytes.set! 4 1),
+        (program / "program.ixby", fun bytes : ByteArray => bytes.set! 4 0),
         (program / "program.ixby", fun bytes : ByteArray => bytes.set! 8 255),
         (input / "input.ixbi", fun bytes : ByteArray => bytes.push 0),
         (input / "input.ixbi", fun bytes : ByteArray => bytes.extract 0 (bytes.size - 1)),
-        (program / "profile.ixbp", fun bytes : ByteArray => bytes.set! 40 1)] do
+        (program / "profile.ixfp", fun bytes : ByteArray => bytes.set! 12 1)] do
       corrupt runner program input (directory / s!"bad-{mutations}.ixbo") file change
       mutations := mutations + 1
     for (name, root) in [
@@ -83,7 +83,7 @@ def main (args : List String) : IO UInt32 := cli "Ixby symbolic check failed" do
       IO.FS.writeBinFile (catalog / s!"CompilatrixUpstream.{name}.ixe")
         (← checked (unhex (← IO.FS.readFile (upstream / s!"{name}.ixe.hex"))))
       let output := directory / s!"compiled-{name}"
-      let _ ← run compiler #[catalog.toString, root, output.toString, "proving", "--symbolic"]
-      for file in ["program.ixby", "profile.ixbp", "source.json", "program.txt", "config.txt", "symbolic.json"] do
+      let _ ← run compiler #[catalog.toString, root, output.toString, "--symbolic"]
+      for file in ["program.ixby", "profile.ixfp", "source.json", "program.txt", "config.txt", "symbolic.json"] do
         same (first / s!"upstream-{name}" / "wire" / file) (output / file)
     IO.println s!"Ixby symbolic check ok: 44 certificates, 576 reference runs, {count} canonical runs, 30 rejections, {mutations} byte mutations, 3 catalog certifications"

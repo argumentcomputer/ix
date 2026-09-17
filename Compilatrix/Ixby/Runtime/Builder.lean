@@ -163,11 +163,11 @@ def word (n : Nat) : Operand := .literal (.word32 n.toUInt32)
 def boolean (b : Bool) : Operand := .literal (.bool b)
 
 def number (value : Nat) : CodeM Operand :=
-  make `Ixby.Runtime.Number [rawNat value, word value]
+  pure (rawNat value)
 
-def lowWord (value : Operand) : CodeM Operand := call `Ixby.Runtime.lowWord [value]
+def lowWord (value : Operand) : CodeM Operand := primitive .natToWord32 [value]
 
-def natural (value : Operand) : CodeM Operand := call `Ixby.Runtime.natural [value]
+def natural (value : Operand) : CodeM Operand := pure value
 
 def numberParts (value : Operand) : CodeM (Operand × Operand) := do
   return (← natural value, ← lowWord value)

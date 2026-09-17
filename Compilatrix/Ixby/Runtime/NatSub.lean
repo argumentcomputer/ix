@@ -27,7 +27,7 @@ theorem sub_returns {program : Program} {links : NatArithmetic.Links}
   by_cases underflow : a < b
   · have less : Primitive.natLt.eval limits [.scalar (.nat a), .scalar (.nat b)] =
         .ok (.scalar (.bool true)) := by
-      simp [Primitive.eval, Primitive.arity, leftValid, rightValid, underflow] <;> rfl
+      simp [Primitive.eval, Primitive.evalScalarUnchecked, Primitive.arity, leftValid, rightValid, underflow] <;> rfl
     refine ⟨_, beforeOp.trans ?_, cached_sub_underflow links.conversions.layout a b underflow⟩
     apply reaches_of_chunk (fuel := 4) (count := 0)
     iterate 4
@@ -39,7 +39,7 @@ theorem sub_returns {program : Program} {links : NatArithmetic.Links}
   · have ordered : b ≤ a := by omega
     have less : Primitive.natLt.eval limits [.scalar (.nat a), .scalar (.nat b)] =
         .ok (.scalar (.bool false)) := by
-      simp [Primitive.eval, Primitive.arity, leftValid, rightValid, underflow] <;> rfl
+      simp [Primitive.eval, Primitive.evalScalarUnchecked, Primitive.arity, leftValid, rightValid, underflow] <;> rfl
     have branchPath : Reaches limits program
         (frameState links.sub 2 #[left, right, .scalar (.nat a), .scalar (.nat b)] continuation)
         (frameState links.sub 5
@@ -78,7 +78,7 @@ theorem sub_returns {program : Program} {links : NatArithmetic.Links}
     have wordResult : Primitive.word32Sub.eval limits
         [.scalar (.word32 a.toUInt32), .scalar (.word32 b.toUInt32)] =
         .ok (.scalar (.word32 (a - b).toUInt32)) := by
-      simp [Primitive.eval, Primitive.arity, Nat.toUInt32, UInt32.ofNat_sub ordered] <;> rfl
+      simp [Primitive.eval, Primitive.evalScalarUnchecked, Primitive.arity, Nat.toUInt32, UInt32.ofNat_sub ordered] <;> rfl
     cases leftRep <;> cases rightRep
     case cached.cached =>
       refine ⟨_, beforeSubtract.trans ?_, Number.cached (a - b)⟩

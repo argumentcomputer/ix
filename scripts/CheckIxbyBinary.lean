@@ -1,6 +1,8 @@
 import Compilatrix.Ixby.Binary
 import Compilatrix.Tools.Check
 import CompilatrixTests.Ixby.Conversions
+import CompilatrixTests.Ixby.RuntimeV2
+import CompilatrixTests.Ixby.Chunked
 
 open Compilatrix.Tools.Check Compilatrix.Ixby Ix.Ixby
 
@@ -26,7 +28,17 @@ private def failed {α : Type} : Except Binary.Error α → Bool
   | .error _ => true
   | .ok _ => false
 
-private def primArgs (p : Primitive) : List Scalar :=
+private def primArgs (p : Primitive) : List Value :=
+  match p with
+  | .arrayEmpty | .byteBuilderEmpty => []
+  | .arrayLength => [.array #[.erased, .scalar (.nat 7)]]
+  | .arrayGet => [.array #[.erased, .array #[.scalar (.nat 7)]], .scalar (.nat 1)]
+  | .arraySet => [.array #[.erased], .scalar (.nat 0), .array #[.scalar (.nat 7)]]
+  | .arrayPush => [.array #[], .array #[.scalar (.nat 7)]]
+  | .byteBuilderAppend => [.byteBuilder #[0, 255], .scalar (.bytes #[128, 1])]
+  | .byteBuilderFreeze | .byteBuilderLength => [.byteBuilder #[0, 255, 128, 1]]
+  | p => (scalarArgs p).map Value.scalar
+where scalarArgs (p : Primitive) : List Scalar :=
   let n := Scalar.nat (2 ^ 80 + 127)
   let w := Scalar.word32 0xfedcba98
   let f := Scalar.field (Goldilocks.reduce (goldilocksModulus - 3))
@@ -34,6 +46,8 @@ private def primArgs (p : Primitive) : List Scalar :=
   match p with
   | .natToWord32 => [n]
   | .word32ToNat => [w]
+  | .fieldToNat => [f]
+  | .natToField => [n]
   | .natAdd | .natSub | .natMul | .natDiv | .natMod | .natEq | .natLt => [n, .nat 0]
   | .strAppend | .strEq => [.str "a☃é", .str "β"]
   | .strLength => [.str "a☃é"]
@@ -51,7 +65,10 @@ private def primArgs (p : Primitive) : List Scalar :=
   | _ => [w, .word32 5]
 
 private def execute (image : Binary.Artifact) (args : Array Value) : IO Value := do
-  checked (Ix.Ixby.execute image.limits image.program args 10000 |>.mapError reprStr)
+  let reference ← checked (Ix.Ixby.execute image.limits image.program args 10000 |>.mapError reprStr)
+  let chunked ← checked (Runtime.Chunked.execute image.limits image.program args 10000 |>.mapError reprStr)
+  need (reference == chunked) "chunked decoded artifact differs from the reference"
+  return reference
 
 private def function (arity : Nat) (blocks : Array (Nat × Instr)) : Function :=
   { arity, blocks := blocks.map fun (locals, instruction) => { locals, instruction } }
@@ -63,6 +80,8 @@ def main (args : List String) : IO UInt32 := cli "check-ixby-binary" do
     | _ => throw (IO.userError "usage: check-ixby-binary [export-directory]")
   if let some directory := directory then IO.FS.createDirAll directory
   CompilatrixTests.Ixby.Conversions.run directory
+  CompilatrixTests.Ixby.RuntimeV2.run directory
+  discard <| CompilatrixTests.Ixby.Chunked.run
   let load (name : Nat) (original : Binary.Artifact) := loaded original directory name
   let mut count := 0
   for scalar in #[Scalar.nat 0, .nat 127, .nat 128, .nat 16383, .nat 16384,
@@ -79,14 +98,15 @@ def main (args : List String) : IO UInt32 := cli "check-ixby-binary" do
   for primitive in Binary.primitives do
     let args := primArgs primitive
     let fn : Function := {
-      arity := 0
+      arity := args.length
       blocks := #[
-        { locals := 0, instruction := .letOp (.primitive primitive (args.map Operand.literal)) 1 },
-        { locals := 1, instruction := .ret (.local 0) }] }
+        { locals := args.length, instruction := .letOp
+            (.primitive primitive ((List.range args.length).map Operand.local)) 1 },
+        { locals := args.length + 1, instruction := .ret (.local args.length) }] }
     let original := artifact { functions := #[fn] }
     let decoded ← load count original
-    let expected ← checked (primitive.eval original.limits (args.map Value.scalar) |>.mapError reprStr)
-    need ((← execute decoded #[]) == expected) s!"primitive execution changed: {reprStr primitive}"
+    let expected ← checked (primitive.eval original.limits args |>.mapError reprStr)
+    need ((← execute decoded args.toArray) == expected) s!"primitive execution changed: {reprStr primitive}"
     count := count + 1
   let natCase : Function := {
     arity := 1
@@ -142,7 +162,8 @@ def main (args : List String) : IO UInt32 := cli "check-ixby-binary" do
   let identity : Function := { arity := 1, blocks := #[{ locals := 1, instruction := .ret (.local 0) }] }
   let binary : Function := { arity := 2, blocks := #[{ locals := 2, instruction := .ret (.local 0) }] }
   let image ← load count (artifact { functions := #[identity, binary], constructors := #[⟨id, 2⟩] })
-  let value : Value := .ctor id #[.scalar (.str "λ"), .pap 1 #[.scalar (.nat (2 ^ 90))]]
+  let value : Value := .array #[.ctor id #[.scalar (.str "λ"),
+    .pap 1 #[.array #[.scalar (.nat (2 ^ 90)), .erased]]], .erased]
   let input ← checked (Binary.encodeInput image #[value] |>.mapError reprStr)
   let inputValue ← checked (Binary.decodeInput image input |>.mapError reprStr)
   need (inputValue.value == #[value]) "structured input changed"
@@ -182,7 +203,7 @@ def main (args : List String) : IO UInt32 := cli "check-ixby-binary" do
   rejects (Binary.decode (bytes.set! 0 0)) .header
   rejects (Binary.decode (bytes.set! 4 0)) .version
   rejects (Binary.decode (bytes.set! 8 0)) .version
-  rejects (Binary.decode (bytes.set! 8 2)) .version
+  rejects (Binary.decode (bytes.set! 8 1)) .version
   rejects (Binary.Internal.decode {} #[255] (Binary.Internal.readInstr {})) (.tag 255)
   rejects (Binary.Internal.decode {} #[255] (Binary.Internal.readOp {})) (.tag 255)
   rejects (Binary.Internal.decode {} #[1, 255, 0] (Binary.Internal.readOp {})) (.tag 255)

@@ -90,5 +90,6 @@ status.
 
 - [Ixby backend](ixby-backend.md): checked Ixon compilation, functional bytecode, canonical profile export, and per-input execution certificates.
 - [Experimental typed Lean frontend](ixby-lean.md): retained LCNF lowering, runtime representations, and Stage2 reference execution without a source certificate.
-- [Nat/Word32 integration](ixby-nat-word32.md): program semantics 1, direct weighted conversions, regenerated artifacts, CSLib transition measurements, and small-proof verification.
-- [Typed runtime representation proofs](ixby-representation.md): exact numeric/byte laws, number decoding, all 52 emitted number helpers and all 14 field helpers, complete conversion/arithmetic loops, modular word operations, fifteen tree-backed array helpers, and caller continuations.
+- [Historical Nat/Word32 integration](ixby-nat-word32.md): revision 1 conversion proofs, artifacts, CSLib measurements, and small-proof verification; superseded by runtime revision 2.
+- [Typed runtime representation proofs](ixby-representation.md): current scalar, array, byte-view/builder and caller contracts; exact body certificates; and the chunked/reference executor equivalence.
+- [Runtime revision 2 integration](ixby-runtime-v2.md): regenerated artifacts and commitments, CSLib execution/helper census, native fixture verification, and retained gate coverage.

@@ -30,7 +30,7 @@ theorem eval_fieldChunk (limits : Limits) (field : Goldilocks) (start : UInt32)
       [.scalar (.bytes (bytesLE 8 field.val)), .scalar (.word32 start), .scalar (.word32 4)] =
       .ok (.scalar (.bytes (fieldChunk field start.toNat))) := by
   have fits : start.toNat + 4 ≤ 8 := by omega
-  simp [Primitive.eval, Primitive.arity, Scalar.validate,
+  simp [Primitive.eval, Primitive.evalScalarUnchecked, Primitive.arity, Scalar.validate,
     fieldChunk, Array.size_extract, Nat.not_lt.mpr capacity, fits,
     show ¬limits.byteArrayBytes < 4 by omega] <;> rfl
 
@@ -38,7 +38,7 @@ theorem eval_fieldWord (limits : Limits) (field : Goldilocks) (start : Nat)
     (small : start ≤ 4) (capacity : 8 ≤ limits.byteArrayBytes) :
     Primitive.bytesToWord32.eval limits [.scalar (.bytes (fieldChunk field start))] =
       .ok (.scalar (.word32 (fieldWord field start))) := by
-  simp [Primitive.eval, Primitive.arity, Scalar.validate, fieldChunk_size field start small,
+  simp [Primitive.eval, Primitive.evalScalarUnchecked, Primitive.arity, Scalar.validate, fieldChunk_size field start small,
     fieldWord, show ¬limits.byteArrayBytes < 4 by omega] <;> rfl
 
 theorem fieldWord_pair (field : Goldilocks) :
@@ -85,7 +85,7 @@ theorem fieldFromNatural_returns (room : 11 ≤ limits.locals) (capacity : 64 �
       simp [step, stepEval, Frame.check, certificate.fieldFromNatural.code, certificate.toWord.code,
         Conversion.fieldFromNatural, Conversion.toWord, frameState, savedLow, reduced,
         evalOp, Frame.readOperands, Frame.read, Frame.transfer, State.push, enter,
-        Primitive.eval, Primitive.arity, N, W, localRoom, valid, modulusValid, reducedValid,
+        Primitive.eval, Primitive.evalScalarUnchecked, Primitive.arity, N, W, localRoom, valid, modulusValid, reducedValid,
         show ¬continuation.size ≥ limits.continuations by omega,
         bind, Except.bind, pure, Except.pure]
     rfl
@@ -109,7 +109,7 @@ theorem fieldFromNatural_returns (room : 11 ≤ limits.locals) (capacity : 64 �
       simp [step, stepEval, Frame.check, certificate.fieldFromNatural.code, certificate.toWord.code,
         Conversion.fieldFromNatural, Conversion.toWord, frameState, savedLow, savedHigh, reduced, highNat,
         evalOp, Frame.readOperands, Frame.read, Frame.transfer, State.push, enter,
-        Primitive.eval, Primitive.arity, N, W, localRoom, reducedValid, baseValid, highValid,
+        Primitive.eval, Primitive.evalScalarUnchecked, Primitive.arity, N, W, localRoom, reducedValid, baseValid, highValid,
         show ¬continuation.size ≥ limits.continuations by omega,
         bind, Except.bind, pure, Except.pure]
     rfl
@@ -130,7 +130,7 @@ theorem fieldFromNatural_returns (room : 11 ≤ limits.locals) (capacity : 64 �
       rw [runChunk]
       simp [step, stepEval, Frame.check, certificate.fieldFromNatural.code, Conversion.fieldFromNatural,
         frameState, returned, savedHigh, evalOp, Frame.readOperands, Frame.read, Frame.transfer,
-        Primitive.eval, Primitive.arity, localRoom, bind, Except.bind, pure, Except.pure]
+        Primitive.eval, Primitive.evalScalarUnchecked, Primitive.arity, localRoom, bind, Except.bind, pure, Except.pure]
     rfl
   have complete := beforeLow.trans (lowPath.trans (resumeLow.trans
     (beforeHigh.trans (highPath.trans (resumeHigh.trans suffix)))))

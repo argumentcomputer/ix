@@ -20,8 +20,8 @@
   "argument-boxing-node-budget",
   "argument-nat-bits",
   "argument-string-bytes",
-  "profile-nat",
-  "profile-string",
+  "profile-nat-limit",
+  "profile-string-limit",
   "mutated-argument-order",
   "mutated-capture-order",
   "mutated-constructor-address",
@@ -33,11 +33,11 @@
  "format": "compilatrix/ixby-symbolic-check/1",
  "cases":
  [{"wire":
-   {"runs_digest": "48bc849c903ad2d0bcc6e4ef6e98968de39d7a6c9bc9e2a787a2ccdf074812f7",
+   {"runs_digest": "50ebb7d2f4b08f3335a0e7c333730354a50fc5f4d730b6b64409102818de67c5",
     "runs": 5,
     "result": {"parameter": 0},
-    "program_bytes": 2461,
-    "program": "2b5b8c75ba9a7c04dcf5a94058b275b03a2405df87fbabb21f2a66b239ad65c9"},
+    "program_bytes": 1101,
+    "program": "a9d346c826ec4f67e307d94ac36555aec24286f9b18eb1d97a0cd66d85b38ca0"},
    "reference":
    {"source": "499b43835cf1ee74729d787f66d05f2bef24ee2c769a7a5964ea19a98966b6db",
     "runs_digest": "f87dbd21c7b5d3e907b374d2eef7ea90a2a4d85628a5db8d23fa17f1fd6f8841",
@@ -50,11 +50,11 @@
    "origin": "ixir0-open",
    "name": "identity"},
   {"wire":
-   {"runs_digest": "48bc849c903ad2d0bcc6e4ef6e98968de39d7a6c9bc9e2a787a2ccdf074812f7",
+   {"runs_digest": "50ebb7d2f4b08f3335a0e7c333730354a50fc5f4d730b6b64409102818de67c5",
     "runs": 5,
     "result": {"parameter": 0},
-    "program_bytes": 2557,
-    "program": "ccf34c421b44da6da3511ea252275c15c13445ae3d9c951293466070667e7ecf"},
+    "program_bytes": 1134,
+    "program": "8f97283fb0028fd23ba7966bc62856e1c5a9db32febad0c8f97d71fd10c94d7d"},
    "reference":
    {"source": "34c2d57e3484de9c956002cad91eb0931087d5c3d256ff3e2e90709142864213",
     "runs_digest": "f87dbd21c7b5d3e907b374d2eef7ea90a2a4d85628a5db8d23fa17f1fd6f8841",
@@ -67,11 +67,11 @@
    "origin": "ixir0-open",
    "name": "beta"},
   {"wire":
-   {"runs_digest": "48bc849c903ad2d0bcc6e4ef6e98968de39d7a6c9bc9e2a787a2ccdf074812f7",
+   {"runs_digest": "50ebb7d2f4b08f3335a0e7c333730354a50fc5f4d730b6b64409102818de67c5",
     "runs": 5,
     "result": {"parameter": 0},
-    "program_bytes": 2507,
-    "program": "b376db95670bf65a05ac934bd8c6241679e0fc9525f6dc857a6f8cf7b8a1e857"},
+    "program_bytes": 1117,
+    "program": "9a276c13e33f15999209396ab084bc5aeda11d18d78a854d88747dee6a358623"},
    "reference":
    {"source": "4ee242bf08f0d77e578bb9a98f08bd50c3677d226b6cf9593cec526a4133cf10",
     "runs_digest": "f87dbd21c7b5d3e907b374d2eef7ea90a2a4d85628a5db8d23fa17f1fd6f8841",
@@ -84,11 +84,11 @@
    "origin": "ixir0-open",
    "name": "global-call"},
   {"wire":
-   {"runs_digest": "fbc9b9d42bebe21dc2c8e3aebf9aa7914817b93c1eb8f2754febcde464a2d259",
+   {"runs_digest": "382bea6d1d73599329133cedb415e81f8fcf92e03a66fb828af822ef9032cc55",
     "runs": 5,
     "result": {"parameter": 0},
-    "program_bytes": 2668,
-    "program": "b153a3f60f85ef93ab3c756d5dc366140cd82aa9b3f05f8e2c2782d698580b26"},
+    "program_bytes": 1173,
+    "program": "411b37f786cb4479d56fa000b3ff7d2be78571795456518da1c4021dd701ce88"},
    "reference":
    {"source": "1c005f3047ee31ef8c1be06b7e42b708b37c072e4efe183496432acdf81a5fea",
     "runs_digest": "71757928120cc96cb66b9c5954df4b6568d365416a3a421bc32db77b832c4423",
@@ -101,11 +101,11 @@
    "origin": "ixir0-open",
    "name": "capture-first"},
   {"wire":
-   {"runs_digest": "75eee92e465bda386b3f3b3715d1c3c9139f82ae3ba1df969adeb5198a2ffa33",
+   {"runs_digest": "cf3d9edb526a155deb99a8585702d7ad97e2c996554e653736410040247421c1",
     "runs": 5,
     "result": {"parameter": 1},
-    "program_bytes": 2668,
-    "program": "55c408acfe258cb8f63a5be2c39a9e715525ed666e7f10b5a2ea55609bcfd211"},
+    "program_bytes": 1173,
+    "program": "0e11a429c0ca946c3d4acd3126609bbbce9223c571e80f0bce30c35494d95f79"},
    "reference":
    {"source": "14e77e25b6a3bf71cb562f78abf0f0da5b537b5a07de1538bd879cf4a3d0ae19",
     "runs_digest": "273f4bda9c67eacefe1095218d634c1d5c09673f1558570c30196322ba00c25b",
@@ -118,11 +118,11 @@
    "origin": "ixir0-open",
    "name": "capture-second"},
   {"wire":
-   {"runs_digest": "fbc9b9d42bebe21dc2c8e3aebf9aa7914817b93c1eb8f2754febcde464a2d259",
+   {"runs_digest": "382bea6d1d73599329133cedb415e81f8fcf92e03a66fb828af822ef9032cc55",
     "runs": 5,
     "result": {"parameter": 0},
-    "program_bytes": 2567,
-    "program": "5fd9b799d91b74980d1ee5fc302034c3f8ac8f6b3e1a46d055bfe063dfaec878"},
+    "program_bytes": 1138,
+    "program": "77b5177a00f57a9f92d86020902ae3214d32f2dded1cfb4903b05a7301ebddf4"},
    "reference":
    {"source": "1a19bacdf7612d892352866750093812454f6da97444f667ebf86fc319403559",
     "runs_digest": "71757928120cc96cb66b9c5954df4b6568d365416a3a421bc32db77b832c4423",
@@ -135,11 +135,11 @@
    "origin": "ixir0-open",
    "name": "let-capture"},
   {"wire":
-   {"runs_digest": "48bc849c903ad2d0bcc6e4ef6e98968de39d7a6c9bc9e2a787a2ccdf074812f7",
+   {"runs_digest": "50ebb7d2f4b08f3335a0e7c333730354a50fc5f4d730b6b64409102818de67c5",
     "runs": 5,
     "result": {"parameter": 0},
-    "program_bytes": 2754,
-    "program": "f7056a536d06b6e8d34a2daa1f2f07b610d03f5cc984bc69ed3f5aa541ebad71"},
+    "program_bytes": 1202,
+    "program": "9ffa8d3ac49c5801a853ef06198e424144af563ff62b6f15ce9082908f74fb45"},
    "reference":
    {"source": "bd866a9be0ba108656de2183e90f37de8933d4ee96c4e85be105f92971d99c89",
     "runs_digest": "f87dbd21c7b5d3e907b374d2eef7ea90a2a4d85628a5db8d23fa17f1fd6f8841",
@@ -152,14 +152,14 @@
    "origin": "ixir0-open",
    "name": "higher-order"},
   {"wire":
-   {"runs_digest": "61bbb1443f1bfc1b3899e78c9a62cc09472a5e5ce3c633420bb7093f6338fd4f",
+   {"runs_digest": "b7a847110b2a56865998f773c7cc752b70754adec0d37f0d3d4a132aef2a6fc2",
     "runs": 5,
     "result":
     {"tag": 2,
      "fields": [{"parameter": 0}, {"parameter": 1}],
      "address": "0303030303030303030303030303030303030303030303030303030303030303"},
-    "program_bytes": 2558,
-    "program": "ff2745a01e42361ad8b164f61a2b96f44c7400d7509e7c4ae671feae2407ead7"},
+    "program_bytes": 1135,
+    "program": "e1ee2b8eddc21a824a210ab28628f1d80cfd5ecc246b52d152ac0d56e4b23832"},
    "reference":
    {"source": "77e09fd7ab0352be42c758975ae2e4d716495a7190ac365bbbc7ed8698f93fa6",
     "runs_digest": "08d133a48b1070a25ac1a0d2973159da6a8aa1a85a7abc9d8022a1985002d381",
@@ -175,14 +175,14 @@
    "origin": "ixir0-open",
    "name": "pair"},
   {"wire":
-   {"runs_digest": "bca5a8f4660d43f24f3a75875ea418550a146fc8ac879233dd002efa22a55e6a",
+   {"runs_digest": "5e47e79678795b908e6b238de9c5567c492d502251d00a0edbadad32c647a353",
     "runs": 5,
     "result":
     {"tag": 2,
      "fields": [{"parameter": 1}, {"parameter": 0}],
      "address": "0303030303030303030303030303030303030303030303030303030303030303"},
-    "program_bytes": 2558,
-    "program": "a6f08d3b903cace490fce25f2195c792837acffe5a75c828fb71ef6dfaad8ced"},
+    "program_bytes": 1135,
+    "program": "8a42f13edb25b9ac29380a974f2ffc053832d2eaa75b019f1a840df3b109acba"},
    "reference":
    {"source": "fb2cbfd866ab2907d22baa5d7e0b63acfc27690224b5690b9312f74359f2a869",
     "runs_digest": "f82aa8c95b472e0e1eb782c533796db88817b49bff969ea078e941bdf7202dc4",
@@ -198,14 +198,14 @@
    "origin": "ixir0-open",
    "name": "pair-swapped"},
   {"wire":
-   {"runs_digest": "8374c8159bb97637c05c99b58f2e27ffb1bffc34df61540343fae150472e1aeb",
+   {"runs_digest": "a10e558bf74a8f7f09d0f32a0f2371c74fe492c03cbaba9b9300efb4762a2954",
     "runs": 5,
     "result":
     {"tag": 2,
      "fields": [{"parameter": 0}, {"parameter": 0}],
      "address": "0303030303030303030303030303030303030303030303030303030303030303"},
-    "program_bytes": 2558,
-    "program": "6435f8019976078dfd43f2ed6ee5196f3adcc2307f537b6d74ab14bea26cc5a4"},
+    "program_bytes": 1135,
+    "program": "7802a401a734076cfa7f2fd8fa931b3eea183d4548a46c930f6e0c8698966b3a"},
    "reference":
    {"source": "e272072dc3cb942d0972e93df9152218c38694a3519dc939b730509894de8c03",
     "runs_digest": "3460485fa127cb9623de6dd70a07e8c93eb0a914f333816b28ca9a5291471357",
@@ -221,7 +221,7 @@
    "origin": "ixir0-open",
    "name": "duplicate"},
   {"wire":
-   {"runs_digest": "a1a3449389ec3775c8da1bfd83bae43ef592154bc3c2776cea0574407aed63e7",
+   {"runs_digest": "41f09ac515c0131395bd9d8dbb720817aeade9a6d08db1db2846629e808be6f1",
     "runs": 5,
     "result":
     {"tag": 1,
@@ -230,8 +230,8 @@
        "fields": [{"parameter": 0}, {"parameter": 1}],
        "address": "0303030303030303030303030303030303030303030303030303030303030303"}],
      "address": "0202020202020202020202020202020202020202020202020202020202020202"},
-    "program_bytes": 2627,
-    "program": "74e10c550be1ebc730982fd6b7677f7a3838d637b03bcc4482e65696837f006e"},
+    "program_bytes": 1159,
+    "program": "2443685eebfa411afa72e7d5376338df4a8f608bb4581084d7e4b4e1e6bd1666"},
    "reference":
    {"source": "11d4156c546639f31e89250a1fd156785845fb7f415db838d6bc7c89b9ee6084",
     "runs_digest": "c31476cc1417ca4d968b66738dc1f6f4a4d38d16bbd5169c722b556c9cb4a358",
@@ -250,14 +250,14 @@
    "origin": "ixir0-open",
    "name": "nested-data"},
   {"wire":
-   {"runs_digest": "61bbb1443f1bfc1b3899e78c9a62cc09472a5e5ce3c633420bb7093f6338fd4f",
+   {"runs_digest": "b7a847110b2a56865998f773c7cc752b70754adec0d37f0d3d4a132aef2a6fc2",
     "runs": 5,
     "result":
     {"tag": 2,
      "fields": [{"parameter": 0}, {"parameter": 1}],
      "address": "0303030303030303030303030303030303030303030303030303030303030303"},
-    "program_bytes": 2558,
-    "program": "ff2745a01e42361ad8b164f61a2b96f44c7400d7509e7c4ae671feae2407ead7"},
+    "program_bytes": 1135,
+    "program": "e1ee2b8eddc21a824a210ab28628f1d80cfd5ecc246b52d152ac0d56e4b23832"},
    "reference":
    {"source": "8c94d4638f3b5304faf68468919d9a12a9e0b8be60dfc2d39ddd6939fc7e2802",
     "runs_digest": "08d133a48b1070a25ac1a0d2973159da6a8aa1a85a7abc9d8022a1985002d381",
@@ -273,11 +273,11 @@
    "origin": "ixir0-open",
    "name": "partial-constructor"},
   {"wire":
-   {"runs_digest": "fbc9b9d42bebe21dc2c8e3aebf9aa7914817b93c1eb8f2754febcde464a2d259",
+   {"runs_digest": "382bea6d1d73599329133cedb415e81f8fcf92e03a66fb828af822ef9032cc55",
     "runs": 5,
     "result": {"parameter": 0},
-    "program_bytes": 2679,
-    "program": "22e71ca2fefe636257bdcf294fc419747a6a1d7275979c5e988459e3db9ebd53"},
+    "program_bytes": 1175,
+    "program": "eae700386f99654d588b367e0993f5662be20411b2dfe9b8690a042ed6f5f5c5"},
    "reference":
    {"source": "f59309f0e25022f4aea660a9b7274cc3f48f97761df621e9bc0f8108d793761d",
     "runs_digest": "71757928120cc96cb66b9c5954df4b6568d365416a3a421bc32db77b832c4423",
@@ -290,14 +290,14 @@
    "origin": "ixir0-open",
    "name": "project-known"},
   {"wire":
-   {"runs_digest": "206ff981ea7e0901b41b21202b84422c0a0a3bd64ff39a28f53482a68a2f8fc0",
+   {"runs_digest": "4d572ddcf400cfef7793817998f90401e2f06e8e4071f38ff38e8c745352d09d",
     "runs": 5,
     "result":
     {"tag": 2,
      "fields": [{"parameter": 0}, {"parameter": 1}],
      "address": "0404040404040404040404040404040404040404040404040404040404040404"},
-    "program_bytes": 2558,
-    "program": "115225cf618cde5ec64413dabeea451100f081f0869f9727a1e9cf5c6d188c88"},
+    "program_bytes": 1135,
+    "program": "3a38463ce3e25c510d621d95b02e67b92e24586a5d0534e74f7dd51040c40017"},
    "reference":
    {"source": "d4512b4ac0e28e02694982b15faba126154f170a5476cfb44e6c0a14ab5b7011",
     "runs_digest": "184851da63f957db3f16fb5cda51ad0a6bc6119e8b5a052bc3bf5ffaae900470",
@@ -313,11 +313,11 @@
    "origin": "ixir0-open",
    "name": "same-tag-identity"},
   {"wire":
-   {"runs_digest": "fbc9b9d42bebe21dc2c8e3aebf9aa7914817b93c1eb8f2754febcde464a2d259",
+   {"runs_digest": "382bea6d1d73599329133cedb415e81f8fcf92e03a66fb828af822ef9032cc55",
     "runs": 5,
     "result": {"parameter": 0},
-    "program_bytes": 2627,
-    "program": "084e6a48f1a8b120ddb5a7be0f890dae9a841b974f879c5b87d93e7cf2e79713"},
+    "program_bytes": 1159,
+    "program": "b18d7ddbc86b7e944a83dc956c34f4fd9fc92ce7c946507f78787203a4f172ed"},
    "reference":
    {"source": "da6de5c163a0d462f0bce76344045574d7bb0343c19542ef44e3cca7f687eac3",
     "runs_digest": "71757928120cc96cb66b9c5954df4b6568d365416a3a421bc32db77b832c4423",
@@ -330,11 +330,11 @@
    "origin": "ixir0-open",
    "name": "case-known"},
   {"wire":
-   {"runs_digest": "fbc9b9d42bebe21dc2c8e3aebf9aa7914817b93c1eb8f2754febcde464a2d259",
+   {"runs_digest": "382bea6d1d73599329133cedb415e81f8fcf92e03a66fb828af822ef9032cc55",
     "runs": 5,
     "result": {"parameter": 0},
-    "program_bytes": 2627,
-    "program": "576600c2e5e0431309fa9482baed9ec1a0d8bc9cbd64f7bfdae3c59b9dbf61de"},
+    "program_bytes": 1159,
+    "program": "c16bd4e69714157b7345df5285face91abe97597565d32d60b8740dce341f963"},
    "reference":
    {"source": "34c38fb6830bc43b5541257064f1b14c11123eda8dabe32d4b540e68199b3448",
     "runs_digest": "71757928120cc96cb66b9c5954df4b6568d365416a3a421bc32db77b832c4423",
@@ -347,14 +347,14 @@
    "origin": "ixir0-open",
    "name": "case-other-address"},
   {"wire":
-   {"runs_digest": "78739a3bb957cc76651b3095766b6bd7f0a93b5681b85ece6bff3254538f1115",
+   {"runs_digest": "01e4c81bdc01887bb128e5d920c72bf77f0aa2f48bd67d0b64ba2c7c6914fbc9",
     "runs": 5,
     "result":
     {"tag": 2,
      "fields": [{"parameter": 0}, {"parameter": 1}],
      "address": "0303030303030303030303030303030303030303030303030303030303030303"},
-    "program_bytes": 2655,
-    "program": "98f5ef0b624f81247145b2d37abf5a5fb1c7a5410d5bef23c831af15d209da70"},
+    "program_bytes": 1169,
+    "program": "084d5695ac49ec2083b1f5f8e7625f71094940f920bc64b3d5212b27a272a762"},
    "reference":
    {"source": "336bf101d6c93590b24a98ed206bc01fecb44aaca4f536cfec24219d1a273578",
     "runs_digest": "58534e8dbacdab94ea3abff23d9ab781fccd128099ea7e266195bd727548ae7a",
@@ -370,11 +370,11 @@
    "origin": "ixir0-open",
    "name": "recursor-prefix"},
   {"wire":
-   {"runs_digest": "48bc849c903ad2d0bcc6e4ef6e98968de39d7a6c9bc9e2a787a2ccdf074812f7",
+   {"runs_digest": "50ebb7d2f4b08f3335a0e7c333730354a50fc5f4d730b6b64409102818de67c5",
     "runs": 5,
     "result": {"parameter": 0},
-    "program_bytes": 3197,
-    "program": "44c9c8dcaea26f832968085f3cfe3bdd5d5a1de50e92afbfd3d29b4a111e45b1"},
+    "program_bytes": 1357,
+    "program": "67bac275bd4815305bf7cdf0903309d355ecb4765d90fd857c1ec95ca2f745d5"},
    "reference":
    {"source": "90a1a1e8e4ad4f0297844430f956717d5022d05e900a9fab887faf95143ddc61",
     "runs_digest": "f87dbd21c7b5d3e907b374d2eef7ea90a2a4d85628a5db8d23fa17f1fd6f8841",
@@ -399,11 +399,11 @@
    "origin": "ixir0-open",
    "name": "literal-recursion"},
   {"wire":
-   {"runs_digest": "b2964ef72238ba5b808d176deacf6920fee2741ec1bd996a54654410b5f45e93",
+   {"runs_digest": "50b05795d15e9f66f0b51e2662e2b88f98b7b4bacbb990c0c7bca2cc53335035",
     "runs": 5,
     "result": {"erased": true},
-    "program_bytes": 2507,
-    "program": "f66e7c6386a6ebe029091bb15bc03370a51cc29c19471a6b74d839cb9f548d17"},
+    "program_bytes": 1117,
+    "program": "41cbdf70904f959f88cc0dd5fc2dec1f87d84c0562344d202ff102f494d4ad22"},
    "reference":
    {"source": "eec0bd0922c9163726523d75c3015c3a08a8ce00fa8e62e29a7e0ddcc269b776",
     "runs_digest": "9e7d95f691b10a5a2c76019fd616e5d18164c8c9a1f1ce288f4463e09d0ae6e5",
@@ -416,11 +416,11 @@
    "origin": "ixir0-open",
    "name": "erased-apply"},
   {"wire":
-   {"runs_digest": "b2964ef72238ba5b808d176deacf6920fee2741ec1bd996a54654410b5f45e93",
+   {"runs_digest": "50b05795d15e9f66f0b51e2662e2b88f98b7b4bacbb990c0c7bca2cc53335035",
     "runs": 5,
     "result": {"erased": true},
-    "program_bytes": 2546,
-    "program": "7f2c3b200c2e256e70c2dfd137556d26fc4c35beed38c3b718c266331dc4f6ea"},
+    "program_bytes": 1129,
+    "program": "f3b0db09d5be98df59ea2a92508fb12ea9f96f06146a1580943ade6c5b75f19b"},
    "reference":
    {"source": "c64ea2e8fb8e087c5199d59f9620e4eda3163b989bfa47aa5b1534cd1845b482",
     "runs_digest": "9e7d95f691b10a5a2c76019fd616e5d18164c8c9a1f1ce288f4463e09d0ae6e5",
@@ -433,14 +433,14 @@
    "origin": "ixir0-open",
    "name": "erased-project"},
   {"wire":
-   {"runs_digest": "61bbb1443f1bfc1b3899e78c9a62cc09472a5e5ce3c633420bb7093f6338fd4f",
+   {"runs_digest": "b7a847110b2a56865998f773c7cc752b70754adec0d37f0d3d4a132aef2a6fc2",
     "runs": 5,
     "result":
     {"tag": 2,
      "fields": [{"parameter": 0}, {"parameter": 1}],
      "address": "0303030303030303030303030303030303030303030303030303030303030303"},
-    "program_bytes": 2535,
-    "program": "0bd18db15b61d79e916c1fad2e0b923b831192c3bde2929128f2e5aba60fd031"},
+    "program_bytes": 1127,
+    "program": "3922b69fc953dce09beb212ae0e36bfbbe180d2009fabbc7a0b6eecc8b5cc064"},
    "reference":
    {"source": "af58e9420b7844da57ccf40a5ef6d82287839806085cdf93402f6531c1841e18",
     "runs_digest": "08d133a48b1070a25ac1a0d2973159da6a8aa1a85a7abc9d8022a1985002d381",
@@ -456,14 +456,14 @@
    "origin": "ixir0-open",
    "name": "curried-global"},
   {"wire":
-   {"runs_digest": "4691507fbc05daa5027aa92d6232c1afca37ab50ef5e4487f8a394ea6a1d45c2",
+   {"runs_digest": "0d113be829461791ba5d83a8a0e6a3a1262edd8fd5a235ff64598d6da51baac4",
     "runs": 5,
     "result":
     {"tag": 2,
      "fields": [{"parameter": 0}, {"parameter": 3}],
      "address": "0303030303030303030303030303030303030303030303030303030303030303"},
-    "program_bytes": 2558,
-    "program": "274304f2434829927ccbb968600adbf7130f15292bb381bbbafc7acb1b986285"},
+    "program_bytes": 1135,
+    "program": "0d13e7908b558fc082b5c3ae55fafc55ca12e98e1da7696015ae62f93d868df8"},
    "reference":
    {"source": "498357d978a9e58acc1f252a7afa5a571138b568de56f960ff9abbb88f42881d",
     "runs_digest": "6fed1291ce71204a7821955931234d174bdefafc35c8f2b91112c5ddff7689b1",
@@ -479,11 +479,11 @@
    "origin": "ixir0-open",
    "name": "four-argument-order"},
   {"wire":
-   {"runs_digest": "fbc9b9d42bebe21dc2c8e3aebf9aa7914817b93c1eb8f2754febcde464a2d259",
+   {"runs_digest": "382bea6d1d73599329133cedb415e81f8fcf92e03a66fb828af822ef9032cc55",
     "runs": 5,
     "result": {"parameter": 0},
-    "program_bytes": 2562,
-    "program": "4fb2f80c5ab16918607716a115aefa9a60b1a53a486eec41a0eb5bac95cc47ec"},
+    "program_bytes": 1136,
+    "program": "055b17fc0d021b8bedc414ec1f704b26fef9a18e48f1db198f088ce1a18196f3"},
    "reference":
    {"source": "097e2c580812d486d3b7d6b9992f671e76bfb976bc2fbfb1a742bad10ed11176",
     "runs_digest": "71757928120cc96cb66b9c5954df4b6568d365416a3a421bc32db77b832c4423",
@@ -496,14 +496,14 @@
    "origin": "ixir0-open",
    "name": "two-live-captures"},
   {"wire":
-   {"runs_digest": "61bbb1443f1bfc1b3899e78c9a62cc09472a5e5ce3c633420bb7093f6338fd4f",
+   {"runs_digest": "b7a847110b2a56865998f773c7cc752b70754adec0d37f0d3d4a132aef2a6fc2",
     "runs": 5,
     "result":
     {"tag": 2,
      "fields": [{"parameter": 0}, {"parameter": 1}],
      "address": "0303030303030303030303030303030303030303030303030303030303030303"},
-    "program_bytes": 2604,
-    "program": "39f4e5d93dad2affe03f164ba4ad4f61276b44c20ac7bd903b57a2eac0a0ea72"},
+    "program_bytes": 1151,
+    "program": "daf10c24f1a1b21fa0e20730e1e8ee86e5f198f3d4eea971f22737e8ce81b37e"},
    "reference":
    {"source": "77d88c58aeeb0ce8ba43622d0530f9961e5f52559480b7836180041da3353d84",
     "runs_digest": "08d133a48b1070a25ac1a0d2973159da6a8aa1a85a7abc9d8022a1985002d381",
@@ -519,14 +519,14 @@
    "origin": "ixir0-open",
    "name": "generated-calls-1"},
   {"wire":
-   {"runs_digest": "61bbb1443f1bfc1b3899e78c9a62cc09472a5e5ce3c633420bb7093f6338fd4f",
+   {"runs_digest": "b7a847110b2a56865998f773c7cc752b70754adec0d37f0d3d4a132aef2a6fc2",
     "runs": 5,
     "result":
     {"tag": 2,
      "fields": [{"parameter": 0}, {"parameter": 1}],
      "address": "0303030303030303030303030303030303030303030303030303030303030303"},
-    "program_bytes": 2650,
-    "program": "8a30b030c8ee79a73d7ffb94bb24f453a14d9d5ada82c72395adc2ed3ecb42f1"},
+    "program_bytes": 1167,
+    "program": "961b497ec85427afcd99a2d96f716c8dbf8389ae79324c504eab543f0239155b"},
    "reference":
    {"source": "7d41a51d543ac015460bc980527e16851c4a1bac09f3f8067b8f4260694d9c59",
     "runs_digest": "08d133a48b1070a25ac1a0d2973159da6a8aa1a85a7abc9d8022a1985002d381",
@@ -542,14 +542,14 @@
    "origin": "ixir0-open",
    "name": "generated-calls-2"},
   {"wire":
-   {"runs_digest": "61bbb1443f1bfc1b3899e78c9a62cc09472a5e5ce3c633420bb7093f6338fd4f",
+   {"runs_digest": "b7a847110b2a56865998f773c7cc752b70754adec0d37f0d3d4a132aef2a6fc2",
     "runs": 5,
     "result":
     {"tag": 2,
      "fields": [{"parameter": 0}, {"parameter": 1}],
      "address": "0303030303030303030303030303030303030303030303030303030303030303"},
-    "program_bytes": 2696,
-    "program": "7b273d8a2c660c01ce0320386b9810bb3371d32cea23ca249ea2f42919c33b7d"},
+    "program_bytes": 1183,
+    "program": "42375f786799193bbb2eb9da848faebf711f93410e11fcc68df00437c74e4f09"},
    "reference":
    {"source": "32f077cd7a6dd62d3c9f1b219943b660e487f653e3703fcac60319a19099c7c5",
     "runs_digest": "08d133a48b1070a25ac1a0d2973159da6a8aa1a85a7abc9d8022a1985002d381",
@@ -565,14 +565,14 @@
    "origin": "ixir0-open",
    "name": "generated-calls-3"},
   {"wire":
-   {"runs_digest": "61bbb1443f1bfc1b3899e78c9a62cc09472a5e5ce3c633420bb7093f6338fd4f",
+   {"runs_digest": "b7a847110b2a56865998f773c7cc752b70754adec0d37f0d3d4a132aef2a6fc2",
     "runs": 5,
     "result":
     {"tag": 2,
      "fields": [{"parameter": 0}, {"parameter": 1}],
      "address": "0303030303030303030303030303030303030303030303030303030303030303"},
-    "program_bytes": 2742,
-    "program": "6eae7b453131b69d89cdfa7b9e7c6a2d801aa36b4f92008a851e68f63e9da8f9"},
+    "program_bytes": 1199,
+    "program": "d7c5340c8e92a38f3a276fd4168e97ba4afca25b5835a0548af8191e6c88ae5c"},
    "reference":
    {"source": "5da5f3f42b597d94a0ce6a22c40a25741b68680f6e0fdcdb64a571a18fb5c2a5",
     "runs_digest": "08d133a48b1070a25ac1a0d2973159da6a8aa1a85a7abc9d8022a1985002d381",
@@ -588,14 +588,14 @@
    "origin": "ixir0-open",
    "name": "generated-calls-4"},
   {"wire":
-   {"runs_digest": "61bbb1443f1bfc1b3899e78c9a62cc09472a5e5ce3c633420bb7093f6338fd4f",
+   {"runs_digest": "b7a847110b2a56865998f773c7cc752b70754adec0d37f0d3d4a132aef2a6fc2",
     "runs": 5,
     "result":
     {"tag": 2,
      "fields": [{"parameter": 0}, {"parameter": 1}],
      "address": "0303030303030303030303030303030303030303030303030303030303030303"},
-    "program_bytes": 2788,
-    "program": "c80ec7fe8c0bbd3fcf65537bba7c344b6d119e5c85398ad29f4743e8351ce897"},
+    "program_bytes": 1215,
+    "program": "af4b31a32a71efe543b58a686f779f6366bd31ad6b31a41f9a5efa768030fc31"},
    "reference":
    {"source": "8107c470d5c28f46d3339070b7661db5c2398f2e782f0ee610d71d977678d6f9",
     "runs_digest": "08d133a48b1070a25ac1a0d2973159da6a8aa1a85a7abc9d8022a1985002d381",
@@ -611,14 +611,14 @@
    "origin": "ixir0-open",
    "name": "generated-calls-5"},
   {"wire":
-   {"runs_digest": "61bbb1443f1bfc1b3899e78c9a62cc09472a5e5ce3c633420bb7093f6338fd4f",
+   {"runs_digest": "b7a847110b2a56865998f773c7cc752b70754adec0d37f0d3d4a132aef2a6fc2",
     "runs": 5,
     "result":
     {"tag": 2,
      "fields": [{"parameter": 0}, {"parameter": 1}],
      "address": "0303030303030303030303030303030303030303030303030303030303030303"},
-    "program_bytes": 2834,
-    "program": "8072c255d1458325e9c76bb0872b0215112fdfeb8b52b56fc99434334bfeb2d2"},
+    "program_bytes": 1231,
+    "program": "aa7da09a39641e16c74519f21e01e46f0b0bf47b4a54542912950ec455d93b2c"},
    "reference":
    {"source": "8ef7a8ad764144df0982961db23a204ccecca0b8c77a9f4042486b05201d3af0",
     "runs_digest": "08d133a48b1070a25ac1a0d2973159da6a8aa1a85a7abc9d8022a1985002d381",
@@ -634,14 +634,14 @@
    "origin": "ixir0-open",
    "name": "generated-calls-6"},
   {"wire":
-   {"runs_digest": "61bbb1443f1bfc1b3899e78c9a62cc09472a5e5ce3c633420bb7093f6338fd4f",
+   {"runs_digest": "b7a847110b2a56865998f773c7cc752b70754adec0d37f0d3d4a132aef2a6fc2",
     "runs": 5,
     "result":
     {"tag": 2,
      "fields": [{"parameter": 0}, {"parameter": 1}],
      "address": "0303030303030303030303030303030303030303030303030303030303030303"},
-    "program_bytes": 2880,
-    "program": "f44b5a909e289da139ecb2c6f4e0cd5ce29477a0227cbd2e427625e30841a984"},
+    "program_bytes": 1247,
+    "program": "293c7be3a8cf6451da2542e082865c17634a39b4cf2b7837e4c9cd4b15337db6"},
    "reference":
    {"source": "bb533cae8e630bde4cc86b666093857e08d3a8e4c1f6787ebab111ca8e59d909",
     "runs_digest": "08d133a48b1070a25ac1a0d2973159da6a8aa1a85a7abc9d8022a1985002d381",
@@ -657,14 +657,14 @@
    "origin": "ixir0-open",
    "name": "generated-calls-7"},
   {"wire":
-   {"runs_digest": "61bbb1443f1bfc1b3899e78c9a62cc09472a5e5ce3c633420bb7093f6338fd4f",
+   {"runs_digest": "b7a847110b2a56865998f773c7cc752b70754adec0d37f0d3d4a132aef2a6fc2",
     "runs": 5,
     "result":
     {"tag": 2,
      "fields": [{"parameter": 0}, {"parameter": 1}],
      "address": "0303030303030303030303030303030303030303030303030303030303030303"},
-    "program_bytes": 2926,
-    "program": "8136471015e1d6ab6931ca2720a5545438190abc5c58aa72bcb15b1da75920ba"},
+    "program_bytes": 1263,
+    "program": "bc8307aa0bd858fe00c33935180748a44e022e6399b4993f71c970c7aac03079"},
    "reference":
    {"source": "2503b1b9f3467dbceed5e28807d0b46be17534fc286d46354d9b03df7b3b6b3c",
     "runs_digest": "08d133a48b1070a25ac1a0d2973159da6a8aa1a85a7abc9d8022a1985002d381",
@@ -680,14 +680,14 @@
    "origin": "ixir0-open",
    "name": "generated-calls-8"},
   {"wire":
-   {"runs_digest": "61bbb1443f1bfc1b3899e78c9a62cc09472a5e5ce3c633420bb7093f6338fd4f",
+   {"runs_digest": "b7a847110b2a56865998f773c7cc752b70754adec0d37f0d3d4a132aef2a6fc2",
     "runs": 5,
     "result":
     {"tag": 2,
      "fields": [{"parameter": 0}, {"parameter": 1}],
      "address": "0303030303030303030303030303030303030303030303030303030303030303"},
-    "program_bytes": 2972,
-    "program": "48906f957bd5d0299a11b6c63e54c468f78498ce7da4a684b0313dfab660dbc8"},
+    "program_bytes": 1279,
+    "program": "78299d377a6b22b41f544aaf603ca28901937f231807ad0c20785c041cd1b930"},
    "reference":
    {"source": "ab76959b8da4fb5ea97531c8ada61061a971fb603ab7be267a99fe0d698b7dd4",
     "runs_digest": "08d133a48b1070a25ac1a0d2973159da6a8aa1a85a7abc9d8022a1985002d381",
@@ -703,14 +703,14 @@
    "origin": "ixir0-open",
    "name": "generated-calls-9"},
   {"wire":
-   {"runs_digest": "61bbb1443f1bfc1b3899e78c9a62cc09472a5e5ce3c633420bb7093f6338fd4f",
+   {"runs_digest": "b7a847110b2a56865998f773c7cc752b70754adec0d37f0d3d4a132aef2a6fc2",
     "runs": 5,
     "result":
     {"tag": 2,
      "fields": [{"parameter": 0}, {"parameter": 1}],
      "address": "0303030303030303030303030303030303030303030303030303030303030303"},
-    "program_bytes": 3018,
-    "program": "cb75af695bc1f5928f5e9fecdb47ccb9a079353a2336dbd49542669a36b42f1b"},
+    "program_bytes": 1295,
+    "program": "9d230af68618a2701e123ba07c5fe9a4c57231d3d2fe63bbae281b266e8fb061"},
    "reference":
    {"source": "dc7b9ff3cb5c2dc2033fd52de76fce809772efb2d547a45eed054fb88d12a8cb",
     "runs_digest": "08d133a48b1070a25ac1a0d2973159da6a8aa1a85a7abc9d8022a1985002d381",
@@ -726,14 +726,14 @@
    "origin": "ixir0-open",
    "name": "generated-calls-10"},
   {"wire":
-   {"runs_digest": "61bbb1443f1bfc1b3899e78c9a62cc09472a5e5ce3c633420bb7093f6338fd4f",
+   {"runs_digest": "b7a847110b2a56865998f773c7cc752b70754adec0d37f0d3d4a132aef2a6fc2",
     "runs": 5,
     "result":
     {"tag": 2,
      "fields": [{"parameter": 0}, {"parameter": 1}],
      "address": "0303030303030303030303030303030303030303030303030303030303030303"},
-    "program_bytes": 3064,
-    "program": "0f91de0207120373b5714c9f54c3755cc4443ead8c27f38649741475a4a53324"},
+    "program_bytes": 1311,
+    "program": "53013e89f5e56d3be460209745f3e203a19b47a08c876210c85f7f1e5ea8193c"},
    "reference":
    {"source": "f22c50cf225f2ae050d0a779ee4558224e5265c4adbb9fa1e5c5de3ed93bbe34",
     "runs_digest": "08d133a48b1070a25ac1a0d2973159da6a8aa1a85a7abc9d8022a1985002d381",
@@ -749,14 +749,14 @@
    "origin": "ixir0-open",
    "name": "generated-calls-11"},
   {"wire":
-   {"runs_digest": "61bbb1443f1bfc1b3899e78c9a62cc09472a5e5ce3c633420bb7093f6338fd4f",
+   {"runs_digest": "b7a847110b2a56865998f773c7cc752b70754adec0d37f0d3d4a132aef2a6fc2",
     "runs": 5,
     "result":
     {"tag": 2,
      "fields": [{"parameter": 0}, {"parameter": 1}],
      "address": "0303030303030303030303030303030303030303030303030303030303030303"},
-    "program_bytes": 3110,
-    "program": "7d2cff33daf316eb9fc7d51c849f68daac3444941221942acfba84ac13d1db16"},
+    "program_bytes": 1327,
+    "program": "76564114abfa2ffecdf6367255deda416736ac2f5a97903dc48efdc8734302a2"},
    "reference":
    {"source": "cd09cbde294c43df0ee5d71ad856f7e4d7b1689b679393db502f1ad54aa1fbf6",
     "runs_digest": "08d133a48b1070a25ac1a0d2973159da6a8aa1a85a7abc9d8022a1985002d381",
@@ -772,57 +772,57 @@
    "origin": "ixir0-open",
    "name": "generated-calls-12"},
   {"wire":
-   {"runs_digest": "2d3f16dcf8a7a325d77b5f8d8073a1c3053bdb11d9448d239bc00a19529c6745",
+   {"runs_digest": "571747ff555b5ccee8aa07f45aab8097640dbba5c6c8e1ba4b2513c35708fdf4",
     "runs": 5,
     "result": {"parameter": 0},
-    "program_bytes": 673,
-    "program": "2a7628af8de4f8b672edd8fc0ffbc51fba10ddf30b62d8130f09f7cf2943f900"},
+    "program_bytes": 381,
+    "program": "5de8754ae33bfb8c15f2d4eccbd24bce6773c5e2b31120a5eb9e561bd30124bf"},
    "reference": null,
    "parameters": 1,
    "origin": "checked-ixon-open",
    "name": "ixon-identity"},
   {"wire":
-   {"runs_digest": "829d684e357edcc278709855226b0e31d37fdacebec43450f3c96736210c9e00",
+   {"runs_digest": "b9cb1210936dffbcadcae70553a53ef01796c26cbc798d7f02a142054e447439",
     "runs": 5,
     "result": {"parameter": 0},
-    "program_bytes": 854,
-    "program": "fc7bdc3e0d3be8b1377c0eaf2bdcc00ce453c684714862c2ccfe89394a1f8966"},
+    "program_bytes": 442,
+    "program": "b1383edf12a4559bd789d20330a8b9104d4a6f0b5077c28757324265d4ccca36"},
    "reference": null,
    "parameters": 2,
    "origin": "checked-ixon-open",
    "name": "ixon-first"},
   {"wire":
-   {"runs_digest": "3c33c0305fb956ff3b8650586d4cd84c4561b837f79951b0c74a31f43a6ae7f1",
+   {"runs_digest": "e9f7a3bcb0d593f6cdf11fee7a7bbe1e82488e69ab22b22923c1dc614347ab1a",
     "runs": 5,
     "result": {"parameter": 1},
-    "program_bytes": 854,
-    "program": "5b958bcbe3d56bc4734fdd70a0840a346cd13f5bdca3e53ed851d9f6d835adc7"},
+    "program_bytes": 442,
+    "program": "448959ad7f76e37313ea5adb2ac5c6b0e79376fb8675a06745b9f2909a0dc668"},
    "reference": null,
    "parameters": 2,
    "origin": "checked-ixon-open",
    "name": "ixon-second"},
   {"wire":
-   {"runs_digest": "2d3f16dcf8a7a325d77b5f8d8073a1c3053bdb11d9448d239bc00a19529c6745",
+   {"runs_digest": "571747ff555b5ccee8aa07f45aab8097640dbba5c6c8e1ba4b2513c35708fdf4",
     "runs": 5,
     "result": {"parameter": 0},
-    "program_bytes": 850,
-    "program": "8870c8352f688df7aa46b25a35d61a5105246cd016c454c927d7a1fb3f0df2c7"},
+    "program_bytes": 441,
+    "program": "710f7cde03a6307ead1b33d59b1fcc83c742cc1b64797ddb8e0ab8517bb90abd"},
    "reference": null,
    "parameters": 1,
    "origin": "checked-ixon-open",
    "name": "ixon-helper"},
   {"wire":
-   {"runs_digest": "2d3f16dcf8a7a325d77b5f8d8073a1c3053bdb11d9448d239bc00a19529c6745",
+   {"runs_digest": "571747ff555b5ccee8aa07f45aab8097640dbba5c6c8e1ba4b2513c35708fdf4",
     "runs": 5,
     "result": {"parameter": 0},
-    "program_bytes": 859,
-    "program": "6b9c1ee996b2fc3fa125932f205e07b79112dfddac35818757a69f1828e0053b"},
+    "program_bytes": 444,
+    "program": "bf6f413ced5cf3767462a283e7c50950966ce4c3c38eadfa700878764797642d"},
    "reference": null,
    "parameters": 1,
    "origin": "checked-ixon-open",
    "name": "ixon-local-capture"},
   {"wire":
-   {"runs_digest": "da0ae78b056bc15f0a9accfea9c9eeb2c4784987c0c38364934866a790a39ef6",
+   {"runs_digest": "5737556543c3c8fb0d6dba5199d55a4f30ae8b220fe02657880d2fde3ee37dae",
     "runs": 1,
     "result":
     {"tag": 1,
@@ -837,14 +837,14 @@
          "address": "8c09ca644b10decad158d37006e81cdc1b84761312260546449aa02e343b2b0c"}],
        "address": "8c09ca644b10decad158d37006e81cdc1b84761312260546449aa02e343b2b0c"}],
      "address": "8c09ca644b10decad158d37006e81cdc1b84761312260546449aa02e343b2b0c"},
-    "program_bytes": 1084,
-    "program": "7d5dc36b0fc5f330bbf1fb6f06be2d8e16c3532c08e2bdbb34db00a52a1256f0"},
+    "program_bytes": 522,
+    "program": "5dab2c1dc10ef7f7560ebf3cbf4ffd1ac7bd0a969f7e80b0a0feb1041d405b57"},
    "reference": null,
    "parameters": 0,
    "origin": "upstream-ixon",
    "name": "upstream-applyClosed"},
   {"wire":
-   {"runs_digest": "a83ef75adccf315438745ea7a4e60da0e80a02977c1df56ea40f3ac225840ae0",
+   {"runs_digest": "1c49e10ac1a64c40b9a6404f32ea7d6ccb863eadfc96f3f3d3671d67c9848cab",
     "runs": 1,
     "result":
     {"tag": 1,
@@ -856,14 +856,14 @@
          "address": "50e5d69d806bc1c616cace4230c982a0ee5b350b3efe3b1a15801df77fc00c8c"}],
        "address": "8c09ca644b10decad158d37006e81cdc1b84761312260546449aa02e343b2b0c"}],
      "address": "8c09ca644b10decad158d37006e81cdc1b84761312260546449aa02e343b2b0c"},
-    "program_bytes": 1107,
-    "program": "e5919e4ec02fb20568cf2e265f2896c81f5dd73a9132a154396693dcdad4abbd"},
+    "program_bytes": 530,
+    "program": "d8f0444fef603ef4c5b6d35f6c1e179fa88bd4330def48206044d8a63e3e83fd"},
    "reference": null,
    "parameters": 0,
    "origin": "upstream-ixon",
    "name": "upstream-captureClosed"},
   {"wire":
-   {"runs_digest": "630cbcebead83711f6d08df55f0d9fcff5796f3f0ebfc74ddb670a9679e5b6c7",
+   {"runs_digest": "7b595eb5408d76b580e146f5e780c2382af67e7b26c240a8edef3ec08de6ca89",
     "runs": 1,
     "result":
     {"tag": 1,
@@ -881,8 +881,8 @@
          "address": "8c09ca644b10decad158d37006e81cdc1b84761312260546449aa02e343b2b0c"}],
        "address": "8c09ca644b10decad158d37006e81cdc1b84761312260546449aa02e343b2b0c"}],
      "address": "8c09ca644b10decad158d37006e81cdc1b84761312260546449aa02e343b2b0c"},
-    "program_bytes": 1153,
-    "program": "7e72c5bf4c9d156fcfac075212aeb40d39c6ce90f15a9fff3c48f9f020212e32"},
+    "program_bytes": 546,
+    "program": "3bd4d0004643b65e1007f1b0860a9f52d2b9845b90086549a08d2d6fd4f94a2b"},
    "reference": null,
    "parameters": 0,
    "origin": "upstream-ixon",

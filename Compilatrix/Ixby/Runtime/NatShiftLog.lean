@@ -35,7 +35,7 @@ theorem shiftRightLoop_returns (room : 6 ≤ limits.locals) (capacity : 2 ≤ li
         rw [runChunk]
         simp [step, stepEval, Frame.check, certificate.shiftRightLoop.code, NatLoops.shiftRightLoop,
           certificate.arithmetic.conversions.fromRaw.code, fromRaw, frameState, Frame.read,
-          Frame.readOperands, Frame.transfer, enter, evalOp, Primitive.eval, Primitive.arity,
+          Frame.readOperands, Frame.transfer, enter, evalOp, Primitive.eval, Primitive.evalScalarUnchecked, Primitive.arity,
           N, smallNat, localRoom, bind, Except.bind, pure, Except.pure]
       rfl
     exact ⟨_, beforeLoop.trans (certificate.arithmetic.conversions.fromRaw_returns limits (by omega)
@@ -49,7 +49,7 @@ theorem shiftRightLoop_returns (room : 6 ≤ limits.locals) (capacity : 2 ≤ li
         rw [runChunk]
         simp [step, stepEval, Frame.check, certificate.shiftRightLoop.code, NatLoops.shiftRightLoop,
           certificate.arithmetic.conversions.cached, frameState, returned, Frame.read,
-          Frame.readOperands, Frame.transfer, evalOp, Primitive.eval, Primitive.arity,
+          Frame.readOperands, Frame.transfer, evalOp, Primitive.eval, Primitive.evalScalarUnchecked, Primitive.arity,
           N, W, shiftValid, smallNat, localRoom, bind, Except.bind, pure, Except.pure]
       rfl
     · have nextN := validate_nat_mono (Nat.div_le_self n 2) nValid
@@ -62,7 +62,7 @@ theorem shiftRightLoop_returns (room : 6 ≤ limits.locals) (capacity : 2 ≤ li
           rw [runChunk]
           simp [step, stepEval, Frame.check, certificate.shiftRightLoop.code, NatLoops.shiftRightLoop,
             frameState, Frame.read, Frame.readOperands, Frame.transfer, enter, evalOp,
-            Primitive.eval, Primitive.arity, N, nValid, shiftValid, nextN, nextShift, zero,
+            Primitive.eval, Primitive.evalScalarUnchecked, Primitive.arity, N, nValid, shiftValid, nextN, nextShift, zero,
             smallNat, localRoom, bind, Except.bind, pure, Except.pure]
         rfl
       obtain ⟨value, path, represented⟩ := ih (n / 2) nextN nextShift
@@ -91,7 +91,7 @@ theorem log2Loop_returns (room : 5 ≤ limits.locals) (capacity : 2 ≤ limits.n
           rw [runChunk]
           simp [step, stepEval, Frame.check, certificate.log2Loop.code, NatLoops.log2Loop,
             certificate.arithmetic.conversions.fromRaw.code, fromRaw, frameState, Frame.read,
-            Frame.readOperands, Frame.transfer, enter, evalOp, Primitive.eval, Primitive.arity,
+            Frame.readOperands, Frame.transfer, enter, evalOp, Primitive.eval, Primitive.evalScalarUnchecked, Primitive.arity,
             N, nValid, done, smallNat, localRoom, bind, Except.bind, pure, Except.pure]
         rfl
       simpa only [result, Nat.add_zero] using beforeLoop.trans
@@ -114,7 +114,7 @@ theorem log2Loop_returns (room : 5 ≤ limits.locals) (capacity : 2 ≤ limits.n
           rw [runChunk]
           simp [step, stepEval, Frame.check, certificate.log2Loop.code, NatLoops.log2Loop,
             frameState, Frame.read, Frame.readOperands, Frame.transfer, enter, evalOp,
-            Primitive.eval, Primitive.arity, N, nValid, accValid, nextN, nextAcc, done,
+            Primitive.eval, Primitive.evalScalarUnchecked, Primitive.arity, N, nValid, accValid, nextN, nextAcc, done,
             smallNat, localRoom, bind, Except.bind, pure, Except.pure]
         rfl
       have recursive := ih (n / 2) (Nat.div_lt_self (by omega) (by decide)) (accumulator + 1)

@@ -54,7 +54,7 @@ theorem u32Less_returns (room : 10 ≤ limits.locals) (capacity : 64 ≤ limits.
   have rightValid := validate_nat_of_bits b.toNat_lt (show 32 ≤ limits.natBits by omega)
   apply compare_returns certificate.conversions certificate.u32Less limits room capacity bytesCapacity
     a.toNat b.toNat left right leftRep rightRep _ ?_ continuation stack
-  simp [Primitive.eval, Primitive.arity, leftValid, rightValid, UInt32.lt_iff_toNat_lt] <;> rfl
+  simp [Primitive.eval, Primitive.evalScalarUnchecked, Primitive.arity, leftValid, rightValid, UInt32.lt_iff_toNat_lt] <;> rfl
 
 theorem usizeEqual_returns (room : 10 ≤ limits.locals) (capacity : 64 ≤ limits.natBits)
     (bytesCapacity : 8 ≤ limits.byteArrayBytes) (a b : USize) (left right : Value)
@@ -83,7 +83,7 @@ theorem usizeLess_returns (room : 10 ≤ limits.locals) (capacity : 64 ≤ limit
   have rightValid := validate_nat_of_bits b.toNat_lt (show 64 ≤ limits.natBits by omega)
   apply compare_returns certificate.conversions certificate.usizeLess limits room capacity bytesCapacity
     a.toNat b.toNat left right leftRep rightRep _ ?_ continuation stack
-  simp [Primitive.eval, Primitive.arity, leftValid, rightValid, USize.lt_iff_toNat_lt] <;> rfl
+  simp [Primitive.eval, Primitive.evalScalarUnchecked, Primitive.arity, leftValid, rightValid, USize.lt_iff_toNat_lt] <;> rfl
 
 
 end Compilatrix.Ixby.Runtime.Words.Certificate

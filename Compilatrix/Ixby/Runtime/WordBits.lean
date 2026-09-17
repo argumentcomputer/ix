@@ -24,7 +24,7 @@ theorem u32And_returns (room : 11 ≤ limits.locals) (capacity : 32 ≤ limits.n
     a.toNat b.toNat left right leftRep rightRep
     (validate_nat_of_bits a.toNat_lt (by omega)) (validate_nat_of_bits b.toNat_lt (by omega)) (a &&& b)
     ?_ continuation stack
-  simp [Primitive.eval, Primitive.arity, Nat.toUInt32] <;> rfl
+  simp [Primitive.eval, Primitive.evalScalarUnchecked, Primitive.arity, Nat.toUInt32] <;> rfl
 
 theorem u32Or_returns (room : 11 ≤ limits.locals) (capacity : 32 ≤ limits.natBits)
     (bytesCapacity : 8 ≤ limits.byteArrayBytes) (a b : UInt32) (left right : Value)
@@ -37,7 +37,7 @@ theorem u32Or_returns (room : 11 ≤ limits.locals) (capacity : 32 ≤ limits.na
     a.toNat b.toNat left right leftRep rightRep
     (validate_nat_of_bits a.toNat_lt (by omega)) (validate_nat_of_bits b.toNat_lt (by omega)) (a ||| b)
     ?_ continuation stack
-  simp [Primitive.eval, Primitive.arity, Nat.toUInt32] <;> rfl
+  simp [Primitive.eval, Primitive.evalScalarUnchecked, Primitive.arity, Nat.toUInt32] <;> rfl
 
 theorem u32Xor_returns (room : 11 ≤ limits.locals) (capacity : 32 ≤ limits.natBits)
     (bytesCapacity : 8 ≤ limits.byteArrayBytes) (a b : UInt32) (left right : Value)
@@ -50,7 +50,7 @@ theorem u32Xor_returns (room : 11 ≤ limits.locals) (capacity : 32 ≤ limits.n
     a.toNat b.toNat left right leftRep rightRep
     (validate_nat_of_bits a.toNat_lt (by omega)) (validate_nat_of_bits b.toNat_lt (by omega)) (a ^^^ b)
     ?_ continuation stack
-  simp [Primitive.eval, Primitive.arity, Nat.toUInt32] <;> rfl
+  simp [Primitive.eval, Primitive.evalScalarUnchecked, Primitive.arity, Nat.toUInt32] <;> rfl
 
 theorem u8ShiftLeft_returns (room : 11 ≤ limits.locals) (capacity : 32 ≤ limits.natBits)
     (bytesCapacity : 8 ≤ limits.byteArrayBytes) (a b : UInt8) (left right : Value)
@@ -64,7 +64,7 @@ theorem u8ShiftLeft_returns (room : 11 ≤ limits.locals) (capacity : 32 ≤ lim
     limits room capacity bytesCapacity a.toNat b.toNat left right leftRep rightRep
     (validate_nat_of_bits a.toNat_lt (by omega)) (validate_nat_of_bits b.toNat_lt (by omega))
     (a.toUInt32 <<< (b.toUInt32 &&& 7))
-    (by simp [Primitive.eval, Primitive.arity, bounded] <;> rfl)
+    (by simp [Primitive.eval, Primitive.evalScalarUnchecked, Primitive.arity, bounded] <;> rfl)
     continuation stack
   have result : (if 8 < 32 then (a.toUInt32 <<< (b.toUInt32 &&& 7)) &&& (2 ^ 8 - 1).toUInt32 else (a.toUInt32 <<< (b.toUInt32 &&& 7))).toNat =
       (a <<< b).toNat := u8_shiftLeft_nat a b
@@ -82,7 +82,7 @@ theorem u8ShiftRight_returns (room : 11 ≤ limits.locals) (capacity : 32 ≤ li
     limits room capacity bytesCapacity a.toNat b.toNat left right leftRep rightRep
     (validate_nat_of_bits a.toNat_lt (by omega)) (validate_nat_of_bits b.toNat_lt (by omega))
     (a.toUInt32 >>> (b.toUInt32 &&& 7))
-    (by simp [Primitive.eval, Primitive.arity, bounded] <;> rfl)
+    (by simp [Primitive.eval, Primitive.evalScalarUnchecked, Primitive.arity, bounded] <;> rfl)
     continuation stack
   have result : (if 8 < 32 then (a.toUInt32 >>> (b.toUInt32 &&& 7)) &&& (2 ^ 8 - 1).toUInt32 else (a.toUInt32 >>> (b.toUInt32 &&& 7))).toNat =
       (a >>> b).toNat := u8_shiftRight_nat a b
@@ -100,7 +100,7 @@ theorem u32ShiftLeft_returns (room : 11 ≤ limits.locals) (capacity : 32 ≤ li
     limits room capacity bytesCapacity a.toNat b.toNat left right leftRep rightRep
     (validate_nat_of_bits a.toNat_lt (by omega)) (validate_nat_of_bits b.toNat_lt (by omega))
     (a <<< (b &&& 31))
-    (by simp [Primitive.eval, Primitive.arity, Nat.toUInt32, bounded] <;> rfl)
+    (by simp [Primitive.eval, Primitive.evalScalarUnchecked, Primitive.arity, Nat.toUInt32, bounded] <;> rfl)
     continuation stack
   have result : (if 32 < 32 then (a <<< (b &&& 31)) &&& (2 ^ 32 - 1).toUInt32 else (a <<< (b &&& 31))).toNat =
       (a <<< b).toNat := u32_shiftLeft_nat a b
@@ -118,7 +118,7 @@ theorem u32ShiftRight_returns (room : 11 ≤ limits.locals) (capacity : 32 ≤ l
     limits room capacity bytesCapacity a.toNat b.toNat left right leftRep rightRep
     (validate_nat_of_bits a.toNat_lt (by omega)) (validate_nat_of_bits b.toNat_lt (by omega))
     (a >>> (b &&& 31))
-    (by simp [Primitive.eval, Primitive.arity, Nat.toUInt32, bounded] <;> rfl)
+    (by simp [Primitive.eval, Primitive.evalScalarUnchecked, Primitive.arity, Nat.toUInt32, bounded] <;> rfl)
     continuation stack
   have result : (if 32 < 32 then (a >>> (b &&& 31)) &&& (2 ^ 32 - 1).toUInt32 else (a >>> (b &&& 31))).toNat =
       (a >>> b).toNat := u32_shiftRight_nat a b

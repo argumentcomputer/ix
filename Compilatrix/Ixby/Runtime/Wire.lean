@@ -38,10 +38,11 @@ private def pack (data size : Operand) : CodeM Operand :=
   make `Ixby.Runtime.Bytes [data, size]
 
 def buildWire : BuildM Unit := do
-  sourceFunction `MultiStark.Verify.Codec.Wire.writeBytes
   sourceFunction `MultiStark.Verify.Codec.Wire.readBytes
   for (name, arity) in #[
       (`Ixby.Runtime.wireLittleLoop, 3), (`Ixby.Runtime.wireFromLoop, 3),
+      (`MultiStark.Verify.Codec.Wire.encode, 2),
+      (`MultiStark.Verify.Codec.Wire.writeBytes, 2),
       (`MultiStark.Verify.Codec.Wire.littleEndian, 2),
       (`MultiStark.Verify.Codec.Wire.fromLittleEndian, 1),
       (`MultiStark.Verify.Codec.Wire.writeByte, 2),
@@ -51,20 +52,56 @@ def buildWire : BuildM Unit := do
     discard <| reserveFunction name arity
   let define (name : Name) (arity : Nat) (body : CodeM Unit) : BuildM Unit :=
     discard <| defineFunction name arity body
-  -- Raw width, raw natural, accumulated scalar bytes. The uncommon arbitrary
+  -- The internal buffer is introduced only by encode and frozen on success.
+  -- Direct writer calls with ordinary source states still return source arrays.
+  define `MultiStark.Verify.Codec.Wire.encode 2 do
+    let buffer ← make `Ixby.Runtime.WriterBuffer [← primitive .byteBuilderEmpty []]
+    let state ← make `MultiStark.Verify.Codec.Wire.WriteState.mk
+      [buffer, ← project (.local 0) 0, ← project (.local 0) 1, ← project (.local 0) 2]
+    let result ← emit (.apply (.local 1) [state])
+    caseCtor result #[
+      (`Except.error, 1, fun _ => ret result),
+      (`Except.ok, 1, fun fields => do
+        let state ← project fields[0]! 1
+        let source ← project state 0
+        let data ← call `Ixby.Runtime.toBytes [source]
+        let size ← primitive .word32ToNat [← primitive .bytesLength [data]]
+        ret (← make `Except.ok [← pack data size]))]
+  define `MultiStark.Verify.Codec.Wire.writeBytes 2 do
+    let source ← project (.local 1) 0
+    let size ← call `Array.size [.erased, source]
+    let count ← call `Array.size [.erased, .local 0]
+    let next ← primitive .natAdd [size, count]
+    let limit ← project (.local 1) 1
+    branch (← primitive .natLt [limit, next])
+      (do ret (← make `Except.error [← make `MultiStark.Verify.DecodeError.byteLimit []])) do
+        let finish (value : Operand) : CodeM Unit := do
+          let state ← make `MultiStark.Verify.Codec.Wire.WriteState.mk
+            [value, limit, ← project (.local 1) 2, ← project (.local 1) 3]
+          ret (← make `Except.ok [← make `Prod.mk [← make `PUnit.unit [], state]])
+        let ordinary : CodeM Unit := do
+          finish (← call `Array.append._redArg [source, .local 0])
+        caseCtor source #[
+          (`Ixby.Runtime.Bytes, 2, fun _ => ordinary),
+          (`Ixby.Runtime.Array, 1, fun _ => ordinary),
+          (`Ixby.Runtime.WriterBuffer, 1, fun fields => do
+            let data ← call `Ixby.Runtime.toBytes [.local 0]
+            let appended ← primitive .byteBuilderAppend [fields[0]!, data]
+            finish (← make `Ixby.Runtime.WriterBuffer [appended]))]
+  -- Raw width, raw natural, accumulated builder. The uncommon arbitrary
   -- width case consumes a word at a time, including a final partial word.
   define `Ixby.Runtime.wireLittleLoop 3 do
-    let low ← call `Ixby.Runtime.toWord [.local 1, word 1, word 0]
+    let low ← primitive .natToWord32 [.local 1]
     let encoded ← primitive .word32ToBytes [low]
     branch (← primitive .natLt [.local 0, rawNat 5])
       (do
-        let width ← call `Ixby.Runtime.toWord [.local 0, word 1, word 0]
+        let width ← primitive .natToWord32 [.local 0]
         let encoded ← primitive .bytesSlice [encoded, word 0, width]
-        ret (← primitive .bytesAppend [.local 2, encoded]))
+        ret (← primitive .byteBuilderFreeze [← primitive .byteBuilderAppend [.local 2, encoded]]))
       (do
         let rest ← primitive .natSub [.local 0, rawNat 4]
         let high ← primitive .natDiv [.local 1, rawNat (2 ^ 32)]
-        let encoded ← primitive .bytesAppend [.local 2, encoded]
+        let encoded ← primitive .byteBuilderAppend [.local 2, encoded]
         tailCall `Ixby.Runtime.wireLittleLoop [rest, high, encoded])
   define `MultiStark.Verify.Codec.Wire.littleEndian 2 do
     let (width, widthLow) ← numberParts (.local 0)
@@ -75,29 +112,30 @@ def buildWire : BuildM Unit := do
       (do
         let rest ← primitive .natSub [width, rawNat 4]
         let high ← primitive .natDiv [n, rawNat (2 ^ 32)]
-        let encoded ← call `Ixby.Runtime.wireLittleLoop [rest, high, encoded]
+        let builder ← primitive .byteBuilderAppend [← primitive .byteBuilderEmpty [], encoded]
+        let encoded ← call `Ixby.Runtime.wireLittleLoop [rest, high, builder]
         ret (← pack encoded (.local 0)))
   define `Ixby.Runtime.wireFromLoop 3 do
     branch (← primitive .word32Eq [.local 1, word 0]) (ret (.local 2)) do
       let next ← primitive .word32Sub [.local 1, word 1]
-      let byte ← call `Ixby.Runtime.fromWord [← primitive .bytesGet [.local 0, next]]
-      let acc ← call `Nat.add [byte, ← call `Nat.mul [.local 2, ← number 256]]
+      let byte ← primitive .word32ToNat [← primitive .bytesGet [.local 0, next]]
+      let acc ← primitive .natAdd [byte, ← primitive .natMul [.local 2, rawNat 256]]
       tailCall `Ixby.Runtime.wireFromLoop [.local 0, next, acc]
   define `MultiStark.Verify.Codec.Wire.fromLittleEndian 1 do
     let data ← call `Ixby.Runtime.toBytes [.local 0]
     let size ← primitive .bytesLength [data]
     let wordAt (offset : Nat) : CodeM Operand := do
-      call `Ixby.Runtime.fromWord [← primitive .bytesToWord32
+      primitive .word32ToNat [← primitive .bytesToWord32
         [← primitive .bytesSlice [data, word offset, word 4]]]
     branch (← primitive .word32Eq [size, word 4])
       (do ret (← wordAt 0)) do
         branch (← primitive .word32Eq [size, word 8])
           (do
-            let high ← call `Nat.mul [← wordAt 4, ← number (2 ^ 32)]
-            tailCall `Nat.add [← wordAt 0, high])
+            let high ← primitive .natMul [← wordAt 4, rawNat (2 ^ 32)]
+            ret (← primitive .natAdd [← wordAt 0, high]))
           (do tailCall `Ixby.Runtime.wireFromLoop [data, size, ← number 0])
   define `MultiStark.Verify.Codec.Wire.writeByte 2 do
-    let encoded ← primitive .word32ToBytes [← lowWord (.local 0)]
+    let encoded ← primitive .word32ToBytes [.local 0]
     let byte ← pack (← primitive .bytesSlice [encoded, word 0, word 1]) (← number 1)
     tailCall `MultiStark.Verify.Codec.Wire.writeBytes [byte, .local 1]
   define `MultiStark.Verify.Codec.Wire.readField 1 do
@@ -109,7 +147,7 @@ def buildWire : BuildM Unit := do
         let data ← call `Ixby.Runtime.toBytes [← project pair 0]
         let high ← primitive .bytesToWord32 [← primitive .bytesSlice [data, word 4, word 4]]
         let accept : CodeM Unit := do
-          let field ← make `Ixby.Runtime.FieldNumber [← primitive .bytesToField [data]]
+          let field ← primitive .fieldToNat [← primitive .bytesToField [data]]
           let pair ← make `Prod.mk [field, ← project pair 1]
           ret (← make `Except.ok [pair])
         branch (← primitive .word32Lt [high, word (2 ^ 32 - 1)]) accept do
@@ -117,7 +155,7 @@ def buildWire : BuildM Unit := do
           branch (← primitive .word32Eq [low, word 0]) accept do
             ret (← make `Except.error [← make `MultiStark.Verify.DecodeError.field []]))]
   define `MultiStark.Verify.Codec.Wire.writeField 2 do
-    let data ← primitive .fieldToBytes [← call `Ixby.Runtime.asField [.local 0]]
+    let data ← primitive .fieldToBytes [← primitive .natToField [.local 0]]
     tailCall `MultiStark.Verify.Codec.Wire.writeBytes [← pack data (← number 8), .local 1]
   define `Array.instDecidableEqImpl._at_.MultiStark.Verify.Codec.Wire.canonicalize.spec_0 2 do
     let left ← call `Ixby.Runtime.toBytes [.local 0]

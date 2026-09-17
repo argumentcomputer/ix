@@ -47,7 +47,7 @@ theorem powLoop_returns (room : 11 ≤ limits.locals) (capacity : 64 ≤ limits.
         rw [runChunk]
         simp [step, stepEval, Frame.check, certificate.powLoop.code, NatLoops.powLoop,
           frameState, returned, Frame.read, Frame.readOperands, Frame.transfer, evalOp,
-          Primitive.eval, Primitive.arity, N, smallNat, localRoom, bind, Except.bind, pure, Except.pure]
+          Primitive.eval, Primitive.evalScalarUnchecked, Primitive.arity, N, smallNat, localRoom, bind, Except.bind, pure, Except.pure]
       rfl
     · have nextValid := validate_nat_mono (Nat.div_le_self exponent 2) exponentValid
       have bitValid := validate_nat_mono (Nat.mod_le exponent 2) exponentValid
@@ -64,7 +64,7 @@ theorem powLoop_returns (room : 11 ≤ limits.locals) (capacity : 64 ≤ limits.
             rw [runChunk]
             simp [step, stepEval, Frame.check, certificate.powLoop.code, NatLoops.powLoop,
               frameState, locals, Frame.read, Frame.readOperands, Frame.transfer, evalOp,
-              Primitive.eval, Primitive.arity, N, exponentValid, nextValid,
+              Primitive.eval, Primitive.evalScalarUnchecked, Primitive.arity, N, exponentValid, nextValid,
               notZero, odd, smallNat, localRoom, bind, Except.bind, pure, Except.pure]
           rfl
         have productValid := validate_nat_mono (pow_accumulator_le base exponent accumulator (by omega)) resultValid
@@ -84,7 +84,7 @@ theorem powLoop_returns (room : 11 ≤ limits.locals) (capacity : 64 ≤ limits.
             rw [runChunk]
             simp [step, stepEval, Frame.check, certificate.powLoop.code, NatLoops.powLoop,
               frameState, returned, locals, Frame.read, Frame.readOperands, Frame.transfer, evalOp,
-              Primitive.eval, Primitive.arity, N, last, smallNat, localRoom,
+              Primitive.eval, Primitive.evalScalarUnchecked, Primitive.arity, N, last, smallNat, localRoom,
               bind, Except.bind, pure, Except.pure]
           rfl
         · have remaining : 0 < exponent / 2 := by omega
@@ -98,7 +98,7 @@ theorem powLoop_returns (room : 11 ≤ limits.locals) (capacity : 64 ≤ limits.
               rw [runChunk]
               simp [step, stepEval, Frame.check, certificate.powLoop.code, NatLoops.powLoop,
                 frameState, locals, squareLocals, Frame.read, Frame.readOperands, Frame.transfer, evalOp,
-                Primitive.eval, Primitive.arity, N, notLast, nextValid, smallNat, localRoom,
+                Primitive.eval, Primitive.evalScalarUnchecked, Primitive.arity, N, notLast, nextValid, smallNat, localRoom,
                 bind, Except.bind, pure, Except.pure]
             rfl
           have squareValid := validate_nat_mono (pow_square_le base exponent remaining) powerValid
@@ -139,7 +139,7 @@ theorem powLoop_returns (room : 11 ≤ limits.locals) (capacity : 64 ≤ limits.
             rw [runChunk]
             simp [step, stepEval, Frame.check, certificate.powLoop.code, NatLoops.powLoop,
               frameState, locals, Frame.read, Frame.readOperands, Frame.transfer, evalOp,
-              Primitive.eval, Primitive.arity, N, exponentValid, nextValid, bitValid,
+              Primitive.eval, Primitive.evalScalarUnchecked, Primitive.arity, N, exponentValid, nextValid, bitValid,
               notZero, notOdd, notLast, smallNat, localRoom,
               bind, Except.bind, pure, Except.pure]
           rfl

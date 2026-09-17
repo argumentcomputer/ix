@@ -73,9 +73,9 @@ private def letValue (locals : Locals) : LCNF.LetValue .pure → CodeM Operand
   | .lit literal => match literal with
     | .nat n => number n
     | .str s => packedBytes s.toUTF8.data
-    | .uint8 n => number n.toNat
-    | .uint16 n => number n.toNat
-    | .uint32 n => number n.toNat
+    | .uint8 n => pure (word n.toNat)
+    | .uint16 n => pure (word n.toNat)
+    | .uint32 n => pure (word n.toNat)
     | .uint64 n | .usize n => number n.toNat
   | .proj name field value _ => do
     let value ← lookup locals value
@@ -155,16 +155,14 @@ mutual
             throwThe String "typed Ixby missing zero branch"
           let some (params, succ) := findAlt cases.alts ``Nat.succ |
             throwThe String "typed Ixby missing successor branch"
-          let (n, low) ← numberParts value
           let count := (← get).locals
           let zeroBlock ← reserveBlock
           let succBlock ← reserveBlock
-          terminate (.caseNat n zeroBlock succBlock)
+          terminate (.caseNat value zeroBlock succBlock)
           enter zeroBlock count
           code fuel locals joins zero
           enter succBlock (count + 1)
-          let pred ← make `Ixby.Runtime.Number
-            [.local count, ← primitive .word32Sub [low, word 1]]
+          let pred := Operand.local count
           let locals := if params.isEmpty then locals else locals.push (params[0]!.fvarId, pred)
           code fuel locals joins succ
         else
@@ -238,25 +236,20 @@ def Image.ctorId (image : Image) (name : Name) : Except String CtorId := do
   let some index := image.state.constructorNames[name]? | throw s!"missing output layout {name}"
   return image.program.constructors[index]!.id
 
-def Image.number (image : Image) (n : Nat) : Except String Value := do
-  return .ctor (← image.ctorId `Ixby.Runtime.Number) #[.scalar (.nat n), .scalar (.word32 n.toUInt32)]
+def Image.number (_image : Image) (n : Nat) : Except String Value :=
+  .ok (.scalar (.nat n))
+
+def Image.word (_image : Image) (word : UInt32) : Value := .scalar (.word32 word)
 
 def Image.bytes (image : Image) (bytes : Array UInt8) : Except String Value := do
   return .ctor (← image.ctorId `Ixby.Runtime.Bytes) #[.scalar (.bytes bytes), ← image.number bytes.size]
 
-def Image.decodeNumber (image : Image) (value : Value) : Except String Nat := do
-  if let .ctor id #[.scalar (.field f)] := value then
-    unless id == (← image.ctorId `Ixby.Runtime.FieldNumber) do
-      throw "typed Ixby field number layout failed"
-    return f.val
-  if let .ctor id #[.scalar (.nat n)] := value then
-    unless id == (← image.ctorId `Ixby.Runtime.RawNumber) do
-      throw "typed Ixby raw number layout failed"
-    return n
-  let .ctor id #[.scalar (.nat n), .scalar (.word32 low)] := value |
-    throw "typed Ixby output is not a number"
-  unless id == (← image.ctorId `Ixby.Runtime.Number) && low == n.toUInt32 do
-    throw "typed Ixby output number invariant failed"
-  return n
+def Image.decodeNumber (_image : Image) : Value → Except String Nat
+  | .scalar (.nat n) => .ok n
+  | _ => .error "typed Ixby output is not a Nat scalar"
+
+def Image.decodeWord (_image : Image) : Value → Except String UInt32
+  | .scalar (.word32 word) => .ok word
+  | _ => .error "typed Ixby output is not a Word32 scalar"
 
 end Compilatrix.Ixby.LeanFrontend

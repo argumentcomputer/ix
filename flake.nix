@@ -182,6 +182,7 @@
             (pkgs.lib.fileset.fileFilter (f: f.hasExt "lean") ./Compilatrix)
             ./docs/trusted-externs.json
             ./docs/ixby-nat-word32.md
+            ./docs/ixby-runtime-v2.md
             ./docs/aiur-wire.md
             ./docs/aiur-semantics.md
             ./docs/aiur-static.md

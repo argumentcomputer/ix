@@ -29,7 +29,7 @@ theorem add_returns (room : 11 ≤ limits.locals) (capacity : 64 ≤ limits.natB
   apply binary_returns certificate.conversions certificate.add limits room capacity bytesCapacity
     a b (a + b) left right leftRep rightRep
     (eval_natAdd limits a b leftValid rightValid resultValid) ?_ continuation stack
-  simp [Primitive.eval, Primitive.arity, Nat.toUInt32] <;> rfl
+  simp [Primitive.eval, Primitive.evalScalarUnchecked, Primitive.arity, Nat.toUInt32] <;> rfl
 
 theorem mul_returns (room : 11 ≤ limits.locals) (capacity : 64 ≤ limits.natBits)
     (bytesCapacity : 8 ≤ limits.byteArrayBytes) (a b : Nat) (left right : Value)
@@ -43,7 +43,7 @@ theorem mul_returns (room : 11 ≤ limits.locals) (capacity : 64 ≤ limits.natB
   apply binary_returns certificate.conversions certificate.mul limits room capacity bytesCapacity
     a b (a * b) left right leftRep rightRep
     (eval_natMul limits a b leftValid rightValid resultValid) ?_ continuation stack
-  simp [Primitive.eval, Primitive.arity, Nat.toUInt32] <;> rfl
+  simp [Primitive.eval, Primitive.evalScalarUnchecked, Primitive.arity, Nat.toUInt32] <;> rfl
 
 theorem add_evaluates (room : 11 ≤ limits.locals) (capacity : 64 ≤ limits.natBits)
     (bytesCapacity : 8 ≤ limits.byteArrayBytes) (stack : 3 ≤ limits.continuations)

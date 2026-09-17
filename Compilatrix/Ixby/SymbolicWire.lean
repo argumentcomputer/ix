@@ -10,6 +10,8 @@ mutual
     | .scalar a, .scalar b => decide (a = b)
     | .ctor a xs, .ctor b ys => decide (a = b) && array xs ys
     | .pap a xs, .pap b ys => a == b && array xs ys
+    | .array xs, .array ys => array xs ys
+    | .byteBuilder xs, .byteBuilder ys => decide (xs = ys)
     | .erased, .erased => true
     | _, _ => false
   def array : Array Ix.Ixby.Value → Array Ix.Ixby.Value → Bool
@@ -34,6 +36,11 @@ theorem value_eq (a : Ix.Ixby.Value) : ∀ b, value a b = true → a = b := by
       cases b <;> simp_all [value]
       exact ih _ h.2
   | erased => intro b h; cases b <;> simp_all [value]
+  | array xs ih =>
+      intro b h
+      cases b <;> simp_all [value]
+      exact ih _ h
+  | byteBuilder bytes => intro b h; cases b <;> simp_all [value]
   | mk xs ih =>
       rename_i ys h
       cases ys with

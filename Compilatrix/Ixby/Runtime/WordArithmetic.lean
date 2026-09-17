@@ -30,7 +30,7 @@ theorem u8Add_returns (room : 14 ≤ limits.locals) (capacity : 64 ≤ limits.na
     limits room capacity bytesCapacity a.toNat b.toNat (a.toNat + b.toNat) left right
     leftRep rightRep leftValid rightValid resultValid modulusValid
     (eval_natAdd limits a.toNat b.toNat leftValid rightValid resultValid)
-    (by simp [Primitive.eval, Primitive.arity, Nat.toUInt32] <;> rfl) continuation stack
+    (by simp [Primitive.eval, Primitive.evalScalarUnchecked, Primitive.arity, Nat.toUInt32] <;> rfl) continuation stack
   simpa only [UInt8.toNat_add] using path
 
 theorem u32Add_returns (room : 14 ≤ limits.locals) (capacity : 64 ≤ limits.natBits)
@@ -51,7 +51,7 @@ theorem u32Add_returns (room : 14 ≤ limits.locals) (capacity : 64 ≤ limits.n
     limits room capacity bytesCapacity a.toNat b.toNat (a.toNat + b.toNat) left right
     leftRep rightRep leftValid rightValid resultValid modulusValid
     (eval_natAdd limits a.toNat b.toNat leftValid rightValid resultValid)
-    (by simp [Primitive.eval, Primitive.arity, Nat.toUInt32] <;> rfl) continuation stack
+    (by simp [Primitive.eval, Primitive.evalScalarUnchecked, Primitive.arity, Nat.toUInt32] <;> rfl) continuation stack
   simpa only [UInt32.toNat_add] using path
 
 theorem u32Mul_returns (room : 14 ≤ limits.locals) (capacity : 64 ≤ limits.natBits)
@@ -75,7 +75,7 @@ theorem u32Mul_returns (room : 14 ≤ limits.locals) (capacity : 64 ≤ limits.n
     limits room capacity bytesCapacity a.toNat b.toNat (a.toNat * b.toNat) left right
     leftRep rightRep leftValid rightValid resultValid modulusValid
     (eval_natMul limits a.toNat b.toNat leftValid rightValid resultValid)
-    (by simp [Primitive.eval, Primitive.arity, Nat.toUInt32] <;> rfl) continuation stack
+    (by simp [Primitive.eval, Primitive.evalScalarUnchecked, Primitive.arity, Nat.toUInt32] <;> rfl) continuation stack
   simpa only [UInt32.toNat_mul] using path
 
 theorem usizeAdd_returns (room : 14 ≤ limits.locals) (capacity : 65 ≤ limits.natBits)
@@ -96,7 +96,7 @@ theorem usizeAdd_returns (room : 14 ≤ limits.locals) (capacity : 65 ≤ limits
     limits room (by omega) bytesCapacity a.toNat b.toNat (a.toNat + b.toNat) left right
     leftRep rightRep leftValid rightValid resultValid modulusValid
     (eval_natAdd limits a.toNat b.toNat leftValid rightValid resultValid)
-    (by simp [Primitive.eval, Primitive.arity, Nat.toUInt32] <;> rfl) continuation stack
+    (by simp [Primitive.eval, Primitive.evalScalarUnchecked, Primitive.arity, Nat.toUInt32] <;> rfl) continuation stack
   simpa only [USize.toNat_add, platform] using path
 
 theorem u32Sub_returns (room : 14 ≤ limits.locals) (capacity : 64 ≤ limits.natBits)

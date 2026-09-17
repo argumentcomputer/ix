@@ -124,15 +124,15 @@ obligations remain separate from this working compilation path.
 | Fixed source, keys, entrypoints, limits and complete Ixon closure | Retained and pinned |
 | Complete catalog admission under explicit Stage2 compiler budgets | Passed |
 | Native execution of the unchanged source verifier | Exact claim acceptance; seven rejections |
-| Complete executable Ixby binary | Retained; 1,002,199 bytes; program semantics 1; reproducible fresh compilation |
+| Complete executable Ixby binary | Retained; 991,142 bytes; format 1, semantics 2; reproducible fresh compilation |
 | Serialized execution and input/output transport | Standalone loader; exact claim acceptance; seven rejections |
 | Native field, extension, word, byte and BLAKE3 lowering | Emitted and tested against the source |
 | Source-to-image reflection | Still open for this frontend |
 | Proving executor integration | Separate downstream work |
 
 The [binary inventory](../fixtures/ixby-stage2/reference-inventory.json)
-contains 681 functions, 6,748 blocks, and 146 constructor layouts, with entry
-680. It records the artifact SHA-256, complete function and constructor
+contains 672 functions, 5,816 blocks, and 140 constructor layouts, with entry
+671. It records the artifact SHA-256, complete function and constructor
 inventories, primitive and instruction counts, explicit execution limits,
 and static frame maxima. An independent decoder reconstructs its structural
 fields from the binary.
@@ -171,23 +171,16 @@ fixed data, and adapter. The reusable symbolic checker does not yet cover this
 guest's runtime input inspection. A structural simulation or compositional
 checker would need to cover branches, parsing, recursive calls, and the exact
 bytes/erased observation for every admitted input.
-The [runtime representation proofs](ixby-representation.md) supply exact
-number/byte laws and certificates for all fourteen generated field helpers,
-eleven complete number conversion helpers, eight Nat arithmetic/comparison
-helpers, six Nat shift/logarithm/power functions, and 27 UInt8/UInt32/USize
-helpers. This covers all 52 emitted number helpers and all 14 field helpers.
-These include division by zero, mixed equality, modular field operations,
-zero inverse, extension
-packing, complete Nat loops with intermediate bounds, modular word arithmetic,
-masked shifts, and caller continuations. USize conversion/arithmetic source
-contracts explicitly assume a 64-bit platform and 65-bit Nat intermediates.
-Fifteen tree-backed array helpers now compose these contracts through sparse
-tree lookup/update, empty/size/USize observations, public lookup aliases,
-push with capacity growth, `set!`, and `uset`. Their source element relation,
-tree capacity, caller stack, and ordinary program/input admission remain
-explicit. Every Stage2 export obtains the array certificate. Packed bytes,
-ropes, and the remaining collection helpers are still separate obligations.
-These proofs do not yet compose through this complete source or the Stage2 adapter.
+The [runtime representation proofs](ixby-representation.md) bind all 97
+scalar/collection/field helpers and ten wire helpers to complete revision 2
+bodies. They cover unboxed scalar conversions, Nat/word/field arithmetic,
+complete numeric loops, native array representation/access/update/append,
+packed byte views, immutable builders, and writer-buffer composition. USize
+source contracts retain a 64-bit platform premise and 65-bit intermediates.
+Every Stage2 export obtains the current certificates. The chunked executor
+has an unrestricted kernel proof of equality with the reference, including
+errors and exact fuel. General LCNF source refinement and the complete
+Stage2 source/adapter simulation remain open.
 
 Proving executor support, resource measurement, execution soundness, and
 Stage2/Stage3 composition belong to the downstream proving effort. They do not
@@ -236,7 +229,7 @@ is a valid runtime input for this guest, not the Init claim. The original
 Ixon proof-envelope digest, checked extraction layout, raw proof digest, and
 compressed file digest are retained separately. The source gate tests the
 source. The separate typed frontend now also executes the compiled image;
-its [eight binary execution cases](ixby-lean.md#reproduction-and-tests) establish
+its [eight binary execution cases](ixby-lean.md#reproduction-and-required-checks) establish
 agreement on these fixtures, without universal source/image reflection.
 
 To regenerate the source exports, use the recorded exporter and Lean 4.33.1

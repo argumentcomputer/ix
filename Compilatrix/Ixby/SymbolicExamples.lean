@@ -169,8 +169,10 @@ def rejections : Except String (List String) := do
     (Arguments.check simple { limits := { natBits := 1 } } 100 #[.nat 4])]
   rejected := rejected ++ [← reject "argument-string-bytes"
     (Arguments.check simple { limits := { stringBytes := 1 } } 100 #[.str "λ"]) ]
-  rejected := rejected ++ [← reject "profile-nat" (Arguments.check simple Config.crypto 100 #[.nat 0])]
-  rejected := rejected ++ [← reject "profile-string" (Arguments.check simple Config.crypto 100 #[.str ""])]
+  rejected := rejected ++ [← reject "profile-nat-limit"
+    (Arguments.check simple (Config.profile { limits := { natBits := 0 } }) 100 #[.nat 1])]
+  rejected := rejected ++ [← reject "profile-string-limit"
+    (Arguments.check simple (Config.profile { limits := { stringBytes := 0 } }) 100 #[.str "x"])]
   -- Each candidate below still passes the original whole-image validator.
   let first : Source := { declarations, parameters := 2, main := .var 1 }
   let second ← compile { first with main := .var 0 }
@@ -194,10 +196,10 @@ def rejections : Except String (List String) := do
   rejected := rejected ++ [← reject "mutated-constructor-address" (certifySymbolicImage constructed {} swapped)]
   let badArity := { pairCode.program with constructors := constructors.modify 6 (fun ctor => { ctor with fields := 3 }) }
   rejected := rejected ++ [← reject "mutated-constructor-arity" (certifySymbolicImage constructed {} badArity)]
-  let wireCode ← compile simple Config.crypto
+  let wireCode ← compile simple Config.profile
   let exported ← wireCode.export
-  let first ← Arguments.check simple Config.crypto 100 #[.erased]
-  let second ← Arguments.check simple Config.crypto 100 #[.ctor (address 1) 0 []]
+  let first ← Arguments.check simple Config.profile 100 #[.erased]
+  let second ← Arguments.check simple Config.profile 100 #[.ctor (address 1) 0 []]
   let original ← first.export exported
   let _ ← first.read exported original.bytes
   rejected := rejected ++ [← reject "misbound-canonical-input" (second.read exported original.bytes)]

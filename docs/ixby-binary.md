@@ -2,20 +2,21 @@
 
 `Compilatrix.Ixby.Binary` serializes the complete functional runtime from the
 unchanged [pinned Ixby reference](../vendor/ixby/upstream.json). It covers all
-seven scalar kinds, all 47 primitives, and every constructor of `Op`, `Instr`,
-and `Value`. It includes the execution limits and maximum transition count.
-It has no proving-profile admission requirement.
+seven scalar kinds, all 58 primitives, and every operation and instruction.
+It includes persistent array values, execution limits, and maximum transition
+count. Internal byte builders are rejected recursively by serialization.
+Current artifacts use format 1 and semantics 2, matching the pinned upstream
+functional codec. Physical prover admission remains a separate constraint.
 
 The Stage2 handoff is [stage2.ixby](../fixtures/ixby-stage2/stage2.ixby), with
 [reference-inventory.json](../fixtures/ixby-stage2/reference-inventory.json):
 
 | Property | Value |
 | --- | --- |
-| Bytes | 1,002,199 |
-| SHA-256 | `82e8d1993e9d249e06d7d5fdae74eb1e81e39a65b81613db807dbcfa493756dc` |
-| Entry | Function 680, arity 2 |
-| Functions / blocks / constructor layouts | 681 / 6,748 / 146 |
-| Maximum function arity / frame locals / function blocks | 55 / 73 / 185 |
+| Bytes | 991,142 |
+| SHA-256 | `bdad2a586bfc2cd4a200cce5e51d5f12a46675f8a4c2f8e663608322fe6270ae` |
+| Entry | Function 671, arity 2 |
+| Functions / blocks / constructor layouts | 672 / 5,816 / 140 |
 | Maximum reference transitions | 16,000,000,000 |
 
 Both original keys, entrypoints 755/243, and the fixed verifier configuration
@@ -34,8 +35,8 @@ python3 scripts/inspect_ixby.py /tmp/stage2.ixby --expected /tmp/stage2.ixby.jso
 The independent Python reader checks the complete instruction graph, scalar
 encodings, constructor identities, call arities, locals, and successor frame
 contracts. It reproduces inventory fields directly from the binary.
-`ixby-exec` loads the binary and runs the reference evaluator without loading
-Lean source declarations:
+`ixby-exec` loads the binary and runs the kernel-proved chunked implementation
+of the reference evaluator without loading Lean source declarations:
 
 ```sh
 .lake/build/bin/ixby-exec program.ixby input.ixbi output.ixbo execution.json
@@ -57,14 +58,18 @@ UTF-8 is rejected. Counts are checked against applicable limits and remaining
 file bytes before iterating. Decoders do not preallocate from an unchecked
 count. Every file must end exactly after its payload.
 
-A header is four ASCII magic bytes, `u32 formatVersion = 1`, and a separate
-`u32 semanticsVersion`: **1 for programs, 0 for input and output values**.
-The exact program prefix is `49 58 42 46 01 00 00 00 01 00 00 00`.
-Program semantics 0 is rejected even when every instruction uses an old opcode;
-value semantics 1 is rejected. This breaking revision adds explicit Nat/Word32
-conversions. `programSemantics` and `valueSemantics` are separate constants.
-These files are distinct from upstream's `IXBY` revision-0
-cryptographic-profile format; their tags and opcodes must not be interchanged.
+A header is four ASCII magic bytes, `u32 formatVersion = 1`, and
+`u32 semanticsVersion = 2`. One semantics constant applies to all three files:
+
+| Artifact | Twelve-byte header |
+| --- | --- |
+| Program | `49 58 42 46 01 00 00 00 02 00 00 00` |
+| Input | `49 58 46 49 01 00 00 00 02 00 00 00` |
+| Output | `49 58 46 4f 01 00 00 00 02 00 00 00` |
+
+Semantics 0 and 1 reject for every artifact, even when all instructions use
+older opcodes. The old `IXBY`/`IXBP` formats and semantic profile selectors
+are retired, with no legacy fallback.
 
 ## Program file: `IXBF`
 
@@ -164,7 +169,11 @@ Primitive opcodes are fixed explicitly by this version:
 12 word32Mul       27 fieldInverse    42 bytesSlice
 13 word32And       28 fieldEq         43 bytesEq
 14 word32Or        29 fieldToBytes    44 blake3
-45 natToWord32     46 word32ToNat
+45 natToWord32     46 word32ToNat     47 fieldToNat
+48 natToField      49 arrayEmpty      50 arrayLength
+51 arrayGet        52 arraySet        53 arrayPush
+54 byteBuilderEmpty 55 byteBuilderAppend
+56 byteBuilderFreeze 57 byteBuilderLength
 ```
 
 The theorem `primitiveOpcode_decodes` covers every primitive by cases.
@@ -173,28 +182,28 @@ BLAKE3, partial application, oversaturation, and error behavior are those of
 [Primitive](../vendor/ixby/Ix/Ixby/Primitive.lean) and the reference evaluator.
 The binary format adds serialization, not new evaluation rules.
 
-Both new primitives require exactly one argument. `natToWord32` validates its
+All four scalar conversions at 45–48 are unary. `natToWord32` validates its
 Nat source before returning `n mod 2^32`; an over-limit Nat cannot be made
 admissible by truncation. `word32ToNat` returns the exact unsigned value and
 validates that result against `natBits`. Zero fits a zero-bit Nat capacity.
 Arity checking precedes scalar validation, followed by source-type checking
-and result validation. Wrong types have no implicit coercion. Opcodes 47–255
-are invalid; whole-program validation enforces unary arity.
+and result validation. `fieldToNat` returns the canonical representative;
+`natToField` reduces modulo the Goldilocks modulus. Wrong types have no
+implicit coercion. Opcodes 58–255 reject.
 
 The operation encodings for local slots 0 and 1 are respectively
 `01 2d 01 00 00` and `01 2e 01 00 01`. These exclude the surrounding instruction
-tag, block frame and successor. The separate experimental `IXBY`/`IXBP` codec
-continues to reject both primitives.
+tag, block frame and successor.
 
 Downstream Flock profiles retain the 184-byte `IXFP` layout: profile revision
-0, program format 1, **program semantics 1 at byte offset 12**, ten little-endian
+0, program format 1, **semantics 2 at byte offset 12**, ten little-endian
 u128 limits, then u64 maximum steps. Regenerate the profile, program commitment,
-input/output commitments and final statement, even when input/output bytes
-are identical. Proof setups and proofs must bind these new artifacts. The
+input/output commitments and final statement. Proof setups and proofs must
+bind the current artifacts. The
 paged backend's immediate Nat128 restriction is separate from the reference
 machine's declared Nat capacity.
 
-The [integration record](ixby-nat-word32.md) includes regenerated Stage2 and
+The [integration record](ixby-runtime-v2.md) includes regenerated Stage2 and
 CSLib artifacts, measured transition counts, and an independently generated
 conversion fixture with its expected profile and statement.
 
@@ -211,6 +220,19 @@ Output = header("IXFO"), Value result
 | 1 | ConstructorId, `vector(Value)` fields |
 | 2 | `nat functionIndex`, `vector(Value)` captured arguments |
 | 3 | Empty: erased |
+| 4 | `vector(Value)` native persistent array |
+
+Array length is strictly below `2^32`; elements share input-node and depth
+budgets with the other value kinds. Arrays may be nested inside arrays,
+constructors, or PAPs. Builders are internal values and cannot be serialized,
+including through any nested value. Wire tags 5–255 reject.
+
+`arrayGet` and `arraySet` check full Nat indices before addressing. `arrayPush`
+rejects a resulting length of `2^32`. These operations preserve prior aliases.
+The two empty primitives have arity zero but still bind a result local.
+Builder append accepts Builder and Bytes and checks the resulting byte limit;
+freeze returns Bytes, and length returns a capacity-checked Nat. Checked
+`bytesSlice` takes Bytes and two Word32 values; its sum uses nonwrapping bounds.
 
 Input arity must equal the entry function's arity. Both input and output
 admission use the program's constructor, PAP, scalar, and `inputNodes` bounds.
@@ -239,7 +261,7 @@ def scalar_bytes(data):
 claim = (fixture / "smoke-public.claim").read_bytes()
 proof = gzip.decompress((fixture / "smoke-native-proof.bin.gz").read_bytes())
 Path("/tmp/stage2.ixbi").write_bytes(
-    b"IXFI" + struct.pack("<II", 1, 0) + nat(2)
+    b"IXFI" + struct.pack("<II", 1, 2) + nat(2)
     + scalar_bytes(claim) + scalar_bytes(proof))
 ```
 

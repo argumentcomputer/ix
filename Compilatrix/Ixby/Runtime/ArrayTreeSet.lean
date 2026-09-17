@@ -34,7 +34,7 @@ theorem treeSet_returns (room : 12 ≤ limits.locals) (capacity : 2 ≤ limits.n
       rw [runChunk]
       simp [step, stepEval, Frame.check, certificate.treeSet.code, ArrayTrees.treeSet, certificate.leafCtor,
         frameState, returned, Tree.set, Tree.encode, Frame.read, Frame.readOperands, Frame.transfer,
-        evalOp, Primitive.eval, Primitive.arity, N, smallNat, localRoom, bind, Except.bind, pure,
+        evalOp, Primitive.eval, Primitive.evalScalarUnchecked, Primitive.arity, N, smallNat, localRoom, bind, Except.bind, pure,
         Except.pure]
     rfl
   | succ height ih =>
@@ -60,7 +60,7 @@ theorem treeSet_returns (room : 12 ≤ limits.locals) (capacity : 2 ≤ limits.n
             rw [runChunk]
             simp [locals, step, stepEval, Frame.check, certificate.treeSet.code, ArrayTrees.treeSet,
               certificate.emptyCtor, frameState, Tree.encode, Frame.read, Frame.readOperands,
-              Frame.transfer, evalOp, selectCase, Primitive.eval, Primitive.arity, N, valid, nextValid,
+              Frame.transfer, evalOp, selectCase, Primitive.eval, Primitive.evalScalarUnchecked, Primitive.arity, N, valid, nextValid,
               indexValid, notLeafB, goLeft, pow_half, smallNat, localRoom, bind, Except.bind, pure,
               Except.pure]
           rfl
@@ -103,7 +103,7 @@ theorem treeSet_returns (room : 12 ≤ limits.locals) (capacity : 2 ≤ limits.n
             rw [runChunk]
             simp [locals, step, stepEval, Frame.check, certificate.treeSet.code, ArrayTrees.treeSet,
               certificate.emptyCtor, frameState, Tree.encode, Frame.read, Frame.readOperands,
-              Frame.transfer, evalOp, selectCase, Primitive.eval, Primitive.arity, N, valid, nextValid,
+              Frame.transfer, evalOp, selectCase, Primitive.eval, Primitive.evalScalarUnchecked, Primitive.arity, N, valid, nextValid,
               indexValid, restValid, notLeafB, goLeft, pow_half, smallNat, localRoom, bind, Except.bind,
               pure, Except.pure]
           rfl
@@ -149,7 +149,7 @@ theorem treeSet_returns (room : 12 ≤ limits.locals) (capacity : 2 ≤ limits.n
             simp [locals, step, stepEval, Frame.check, certificate.treeSet.code, ArrayTrees.treeSet,
               certificate.emptyCtor, certificate.nodeCtor, certificate.emptyNode, frameState,
               Tree.encode, Frame.read, Frame.readOperands, Frame.transfer, evalOp, selectCase,
-              Primitive.eval, Primitive.arity, N, valid, nextValid, indexValid, notLeafB, goLeft,
+              Primitive.eval, Primitive.evalScalarUnchecked, Primitive.arity, N, valid, nextValid, indexValid, notLeafB, goLeft,
               pow_half, smallNat, localRoom, bind, Except.bind, pure, Except.pure]
           rfl
         have recursive := ih left index nextBound nextValid
@@ -192,7 +192,7 @@ theorem treeSet_returns (room : 12 ≤ limits.locals) (capacity : 2 ≤ limits.n
             simp [locals, step, stepEval, Frame.check, certificate.treeSet.code, ArrayTrees.treeSet,
               certificate.emptyCtor, certificate.nodeCtor, certificate.emptyNode, frameState,
               Tree.encode, Frame.read, Frame.readOperands, Frame.transfer, evalOp, selectCase,
-              Primitive.eval, Primitive.arity, N, valid, nextValid, indexValid, restValid, notLeafB,
+              Primitive.eval, Primitive.evalScalarUnchecked, Primitive.arity, N, valid, nextValid, indexValid, restValid, notLeafB,
               goLeft, pow_half, smallNat, localRoom, bind, Except.bind, pure, Except.pure]
           rfl
         have recursive := ih right (index - 2 ^ height) nextBound nextValid

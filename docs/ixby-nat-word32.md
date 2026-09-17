@@ -1,5 +1,10 @@
 # Nat/Word32 integration, program semantics 1
 
+This is the historical revision 1 validation record. The current
+[runtime revision 2](ixby-runtime-v2.md) supersedes its artifact format,
+vendor inventory, runtime representations, and measurements. Retained
+`conversions-v1` files are historical bytes and are rejected by current loaders.
+
 Compilatrix emits the breaking IXBF program revision with direct Nat/Word32
 conversions from Ixby revision `d4405b3ceb82e6d4cce19e48186f3272f8482e04`.
 The compiler remains on Lean 4.33.0. The [vendor record](../vendor/ixby/upstream.json)

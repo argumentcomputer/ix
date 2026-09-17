@@ -1,7 +1,6 @@
 import Compilatrix.Ixby.Certificate
 
-/-! Exact upstream revision-0 program/profile/input/output bytes. The current
-codec excludes Nat/String; the general reference machine remains available. -/
+/-! Exact upstream format-1, semantics-2 program/profile/input/output bytes. -/
 
 namespace Compilatrix.Ixby
 
@@ -12,8 +11,8 @@ deriving instance DecidableEq for Ix.Ixby.Limits
 deriving instance DecidableEq for Ix.Ixby.Function
 deriving instance DecidableEq for Ix.Ixby.Program
 
-def Config.crypto (profile : Profile := {}) : Config :=
-  { limits := profile.limits, proving := true }
+def Config.profile (profile : Profile := {}) : Config :=
+  { limits := profile.limits }
 
 /-- Exact image and limit binding, established by compiling, encoding, and
 decoding with the unmodified upstream implementation. -/

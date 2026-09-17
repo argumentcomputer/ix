@@ -35,7 +35,7 @@ theorem modular_returns {program : Program} {links : Conversion.Links}
   have masked : Primitive.word32And.eval limits
       [.scalar (.word32 n.toUInt32), .scalar (.word32 255)] =
       .ok (.scalar (.word32 (n % 256).toUInt32)) := by
-    simp [Primitive.eval, Primitive.arity, lowWord_mask8] <;> rfl
+    simp [Primitive.eval, Primitive.evalScalarUnchecked, Primitive.arity, lowWord_mask8] <;> rfl
   have cache32 := (lowWord_mod n 32 (by decide)).symm
   have cache64 := (lowWord_mod n 64 (by decide)).symm
   simp only [Nat.toUInt32, Nat.reducePow] at cache32 cache64
@@ -105,7 +105,7 @@ theorem subtract_returns {program : Program} {links : Conversion.Links}
   have wordResult : Primitive.word32Sub.eval limits
       [.scalar (.word32 a.toUInt32), .scalar (.word32 b.toUInt32)] = .ok (.scalar (.word32 n.toUInt32)) := by
     have word := lowWord_subtract a b bits (by rcases width with rfl | rfl <;> decide) bounded
-    simp [Primitive.eval, Primitive.arity, word, n] <;> rfl
+    simp [Primitive.eval, Primitive.evalScalarUnchecked, Primitive.arity, word, n] <;> rfl
   have reduced := eval_natMod limits n (2 ^ bits) resultValid modulusValid
     (validate_nat_mono (Nat.mod_le n (2 ^ bits)) resultValid)
   have cache := (lowWord_mod n bits (by rcases width with rfl | rfl <;> decide)).symm

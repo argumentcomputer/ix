@@ -1,4 +1,4 @@
-import Compilatrix.Ixby.Lean
+import Compilatrix.Ixby.Runtime.NumberImageModel
 import Compilatrix.Ixby.Runtime.ScalarCertificate
 import Compilatrix.Ixby.Runtime.NumberConversion
 import Compilatrix.Ixby.Runtime.NatArithmetic
@@ -7,10 +7,11 @@ import Compilatrix.Ixby.Runtime.NatLoops
 import Compilatrix.Ixby.Runtime.Words
 import Compilatrix.Ixby.Runtime.ArrayTrees
 
-/-! Typed-frontend proof boundaries: exact number decoding and checked
-execution of all emitted field helpers, complete number conversions, and Nat
-arithmetic, comparisons, and recursive shift, logarithm, and power helpers.
-This does not certify Lean proof erasure or the general LCNF lowering. -/
+/-! Retained boxed-runtime models and their conditional image certificates.
+Their original mathematical obligations remain checked, but these bodies are
+not emitted by the revision-two frontend. Current unboxed image certificates
+and execution contracts live in `Runtime.Native`. Neither interface certifies
+Lean proof erasure or general LCNF lowering. -/
 
 namespace Compilatrix.Ixby.LeanFrontend
 
@@ -41,7 +42,7 @@ def Image.certifyNumberLayout (image : Image) : Except String image.NumberLayout
 
 theorem Image.decodeNumber_represents {image : Image} {layout : NumberLayout}
     (layouts : image.HasNumberLayout layout) {n : Nat} {value : Value}
-    (represented : Number layout n value) : image.decodeNumber value = .ok n := by
+    (represented : Number layout n value) : image.decodeModelNumber value = .ok n := by
   cases represented with
   | cached n =>
     change (do
@@ -64,12 +65,12 @@ theorem Image.decodeNumber_represents {image : Image} {layout : NumberLayout}
 
 theorem Image.number_represents {image : Image} {layout : NumberLayout}
     (layouts : image.HasNumberLayout layout) (n : Nat) :
-    ∃ value, image.number n = .ok value ∧ Number layout n value := by
-  exact ⟨_, by simp [Image.number, layouts.1, bind, Except.bind, pure, Except.pure], .cached n⟩
+    ∃ value, image.modelNumber n = .ok value ∧ Number layout n value := by
+  exact ⟨_, by simp [Image.modelNumber, layouts.1, bind, Except.bind, pure, Except.pure], .cached n⟩
 
 theorem Image.number_decode_roundtrip {image : Image} {layout : NumberLayout}
     (layouts : image.HasNumberLayout layout) (n : Nat) :
-    (image.number n).bind image.decodeNumber = .ok n := by
+    (image.modelNumber n).bind image.decodeModelNumber = .ok n := by
   obtain ⟨value, encoded, represented⟩ := image.number_represents layouts n
   rw [encoded]
   exact image.decodeNumber_represents layouts represented
@@ -84,7 +85,7 @@ theorem Image.number_representation_unique {image : Image} {layout : NumberLayou
 theorem Image.decodeNumber_rejects_bad_cache {image : Image} {layout : NumberLayout}
     (layouts : image.HasNumberLayout layout) (n : Nat) (word : UInt32)
     (bad : word ≠ n.toUInt32) :
-    image.decodeNumber (.ctor layout.cached #[.scalar (.nat n), .scalar (.word32 word)]) =
+    image.decodeModelNumber (.ctor layout.cached #[.scalar (.nat n), .scalar (.word32 word)]) =
       .error "typed Ixby output number invariant failed" := by
   change (do
     unless layout.cached == (← image.ctorId `Ixby.Runtime.Number) && word == n.toUInt32 do

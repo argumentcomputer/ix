@@ -34,14 +34,10 @@ def word32Rotr (a n : UInt32) : UInt32 :=
   let shift := n % 32
   if shift == 0 then a else (a >>> shift) ||| (a <<< (32 - shift))
 
-def Primitive.eval (limits : Limits) (primitive : Primitive) (args : List Value) :
+/-- Arithmetic dispatch after argument admission. Use `Primitive.eval` for
+the public execution boundary, including arity and capacity checks. -/
+def Primitive.evalScalarUnchecked (primitive : Primitive) (args : List Value) :
     Except Error Value := do
-  if args.length != primitive.arity then
-    throw (.arityMismatch primitive.arity args.length)
-  -- Check byte/large-scalar bounds before computing any variable-size result,
-  -- including when this public helper is called outside whole-image execution.
-  for arg in args do
-    if let .scalar value := arg then value.validate limits
   let result : Scalar ← match primitive, args with
     | .natAdd, [.scalar (.nat a), .scalar (.nat b)] => pure (.nat (a + b))
     | .natSub, [.scalar (.nat a), .scalar (.nat b)] => pure (.nat (a - b))
@@ -52,6 +48,8 @@ def Primitive.eval (limits : Limits) (primitive : Primitive) (args : List Value)
     | .natLt, [.scalar (.nat a), .scalar (.nat b)] => pure (.bool (a < b))
     | .natToWord32, [.scalar (.nat n)] => pure (.word32 n.toUInt32)
     | .word32ToNat, [.scalar (.word32 w)] => pure (.nat w.toNat)
+    | .fieldToNat, [.scalar (.field f)] => pure (.nat f.val)
+    | .natToField, [.scalar (.nat n)] => pure (.field (Goldilocks.reduce n))
     | .strAppend, [.scalar (.str a), .scalar (.str b)] => pure (.str (a ++ b))
     | .strLength, [.scalar (.str s)] => pure (.nat s.length)
     | .strEq, [.scalar (.str a), .scalar (.str b)] => pure (.bool (a == b))
@@ -99,9 +97,6 @@ def Primitive.eval (limits : Limits) (primitive : Primitive) (args : List Value)
       match a[i.toNat]? with
       | some b => pure (.word32 b.toUInt32)
       | none => throw (.primitiveValue primitive)
-    | .bytesAppend, [.scalar (.bytes a), .scalar (.bytes b)] =>
-      if a.size + b.size > limits.byteArrayBytes then throw (.limit .byteArrayBytes)
-      else pure (.bytes (a ++ b))
     | .bytesSlice, [.scalar (.bytes a), .scalar (.word32 start), .scalar (.word32 length)] =>
       if start.toNat + length.toNat ≤ a.size then
         pure (.bytes (a.extract start.toNat (start.toNat + length.toNat)))
@@ -109,7 +104,48 @@ def Primitive.eval (limits : Limits) (primitive : Primitive) (args : List Value)
     | .bytesEq, [.scalar (.bytes a), .scalar (.bytes b)] => pure (.bool (a == b))
     | .blake3, [.scalar (.bytes a)] => pure (.bytes (Blake3.hash a))
     | _, _ => throw (.primitiveType primitive)
-  result.validate limits
   return .scalar result
+
+/-- Collection operations are functional: every result can coexist with all
+previous versions. Bounds are checked before access or allocation. The reference
+uses mathematical sequences; the native backend shares persistent paths/chunks. -/
+def Primitive.eval (limits : Limits) (primitive : Primitive) (args : List Value) :
+    Except Error Value := do
+  if args.length != primitive.arity then
+    throw (.arityMismatch primitive.arity args.length)
+  -- Validate arguments and variable-size bounds before allocating a result.
+  for arg in args do
+    match arg with
+    | .scalar value => value.validate limits
+    | .array values =>
+      if values.size ≥ 2 ^ 32 then throw (.primitiveValue primitive)
+    | .byteBuilder bytes => (Scalar.bytes bytes).validate limits
+    | _ => pure ()
+  let result ← match primitive, args with
+    | .arrayEmpty, [] => pure (.array #[])
+    | .arrayLength, [.array values] => pure (.scalar (.nat values.size))
+    | .arrayGet, [.array values, .scalar (.nat i)] =>
+      match values[i]? with
+      | some value => pure value
+      | none => throw (.primitiveValue primitive)
+    | .arraySet, [.array values, .scalar (.nat i), value] =>
+      if i < values.size then pure (.array (values.set! i value))
+      else throw (.primitiveValue primitive)
+    | .arrayPush, [.array values, value] =>
+      if values.size + 1 < 2 ^ 32 then pure (.array (values.push value))
+      else throw (.primitiveValue primitive)
+    | .byteBuilderEmpty, [] => pure (.byteBuilder #[])
+    | .byteBuilderAppend, [.byteBuilder bytes, .scalar (.bytes chunk)] =>
+      if bytes.size + chunk.size > limits.byteArrayBytes then
+        throw (.limit .byteArrayBytes)
+      else pure (.byteBuilder (bytes ++ chunk))
+    | .byteBuilderFreeze, [.byteBuilder bytes] => pure (.scalar (.bytes bytes))
+    | .byteBuilderLength, [.byteBuilder bytes] => pure (.scalar (.nat bytes.size))
+    | .bytesAppend, [.scalar (.bytes a), .scalar (.bytes b)] =>
+      if a.size + b.size > limits.byteArrayBytes then throw (.limit .byteArrayBytes)
+      else pure (.scalar (.bytes (a ++ b)))
+    | _, _ => Primitive.evalScalarUnchecked primitive args
+  if let .scalar value := result then value.validate limits
+  return result
 
 end Ix.Ixby

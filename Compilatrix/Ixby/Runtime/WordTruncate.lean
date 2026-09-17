@@ -34,7 +34,7 @@ theorem truncate_returns {program : Program} {links : Conversion.Links}
   have masked : Primitive.word32And.eval limits
       [.scalar (.word32 n.toUInt32), .scalar (.word32 255)] =
       .ok (.scalar (.word32 (n % 256).toUInt32)) := by
-    simp [Primitive.eval, Primitive.arity, lowWord_mask8] <;> rfl
+    simp [Primitive.eval, Primitive.evalScalarUnchecked, Primitive.arity, lowWord_mask8] <;> rfl
   have cache32 := (lowWord_mod n 32 (by decide)).symm
   have cache64 := (lowWord_mod n 64 (by decide)).symm
   simp only [Nat.toUInt32, Nat.reducePow] at cache32 cache64

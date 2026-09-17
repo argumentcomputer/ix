@@ -115,17 +115,20 @@ check precede execution. Pinned Lean shared libraries supply the same CI
 runtime symbols previously linked into each executable. These changes affect
 build/runtime packaging and add no target-language native interface.
 
-The [Nat/Word32 integration](ixby-nat-word32.md) pins the updated Ixby reference
-and explicitly retains the older experimental crypto codec files at their
-recorded revision. Program semantics 1 adds two conversion primitives and
-replaces the generated weighted conversion loops with direct operations.
-Their proofs use the ordinary logical axiom set. All 2,412 previous exact
-axiom assertions remain, with two new primitive-evaluation assertions; all
-267 runtime failure assertions remain. The compiler toolchain and native
-interfaces are unchanged. The retained conversion fixture and CSLib record
-bind the new program, profile, I/O commitments and statement. Fresh verification
-of the small fixture's existing upstream proof supplies integration evidence,
-without asserting a full CSLib proof or universal source/image refinement.
+The [runtime revision 2 integration](ixby-runtime-v2.md) pins every Ixby source
+file to one upstream revision. Current artifacts use format 1 and semantics 2;
+the retired crypto profile is absent. Unboxed scalars, persistent arrays, and
+immutable builders replace the typed runtime's numeric and collection trees.
+All 2,414 previous exact axiom assertions and 267 runtime failure assertions
+remain unchanged. Another 235 exact roots cover current helper contracts and
+the unrestricted chunked/reference simulation on the ordinary logical basis.
+Old boxed/tree proofs remain checked models, with an explicit
+[gate mapping](ixby-representation.md#required-validation-and-retained-coverage).
+The compiler toolchain and native interfaces are unchanged. New fixture and
+CSLib records bind current program/profile/input/output commitments and
+statements. Fresh verification of the existing revision 2 fixture root is
+integration evidence; full CSLib proving and universal source/image refinement
+remain open.
 
 ## Active native interface: BLAKE3 Rust
 

@@ -4,8 +4,7 @@ namespace Compilatrix.Ixby.Binary
 
 open Ix.Ixby
 
-/-- Stable explicit opcodes for every primitive of the pinned reference model.
-This table is independent of the smaller proving-profile opcode table. -/
+/-- Stable explicit opcodes for every primitive of the current revision. -/
 def primitives : Array Primitive := #[
   .natAdd, .natSub, .natMul, .natDiv, .natMod, .natEq, .natLt,
   .strAppend, .strLength, .strEq,
@@ -16,7 +15,9 @@ def primitives : Array Primitive := #[
   .fieldToBytes, .bytesToField,
   .extAdd, .extSub, .extMul, .extInverse, .extEq, .extPack, .extFst, .extSnd,
   .bytesLength, .bytesGet, .bytesAppend, .bytesSlice, .bytesEq, .blake3,
-  .natToWord32, .word32ToNat]
+  .natToWord32, .word32ToNat, .fieldToNat, .natToField,
+  .arrayEmpty, .arrayLength, .arrayGet, .arraySet, .arrayPush,
+  .byteBuilderEmpty, .byteBuilderAppend, .byteBuilderFreeze, .byteBuilderLength]
 
 def primitiveOpcode (primitive : Primitive) : Nat :=
   primitives.toList.idxOf primitive
@@ -51,6 +52,8 @@ def writeValue : Nat → Value → Encoder Unit
     | .pap function captured => do
       writeByte 2; writeNatural function; writeVector (writeValue fuel) captured
     | .erased => writeByte 3
+    | .array values => do writeByte 4; writeVector (writeValue fuel) values
+    | .byteBuilder _ => throw .internalValue
 
 def writeOperand : Operand → Encoder Unit
   | .local slot => do writeByte 0; writeNatural slot
@@ -95,7 +98,7 @@ def writeFunction (function : Function) : Encoder Unit := do
     writeInstr block.instruction) function.blocks
 
 def writeArtifact (artifact : Artifact) : Encoder Unit := do
-  writeHeader "IXBF" programSemantics
+  writeHeader "IXBF"
   let l := artifact.limits
   for n in #[l.functions, l.constructors, l.blocks, l.locals, l.operands,
       l.continuations, l.inputNodes, l.natBits, l.stringBytes, l.byteArrayBytes,
@@ -121,13 +124,13 @@ def encodeInput (artifact : Artifact) (values : Array Value) : Except Error Byte
   let fn ← artifact.program.getFunction artifact.program.entry |>.mapError .reference
   unless values.size == fn.arity do throw (.reference (.arityMismatch fn.arity values.size))
   Internal.encode do
-    Internal.writeHeader "IXFI" valueSemantics
+    Internal.writeHeader "IXFI"
     Internal.writeVector (Internal.writeValue artifact.limits.inputNodes) values
 
 def encodeOutput (artifact : Artifact) (value : Value) : Except Error Bytes := do
   validateValues artifact #[value]
   Internal.encode do
-    Internal.writeHeader "IXFO" valueSemantics
+    Internal.writeHeader "IXFO"
     Internal.writeValue artifact.limits.inputNodes value
 
 end Compilatrix.Ixby.Binary

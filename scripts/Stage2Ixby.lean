@@ -1,4 +1,4 @@
-import Compilatrix.Ixby.LeanSound
+import Compilatrix.Ixby.Runtime.Native.Image
 import Compilatrix.Ixby.Runtime.Wire
 import Compilatrix.Ixby.Runtime.Field
 import Compilatrix.Ixby.Binary
@@ -58,14 +58,7 @@ private def buildImage (directory : System.FilePath) : IO Image := do
     { fileName := "Stage2 typed Ixby compilation", fileMap := default, maxRecDepth := 32768, maxHeartbeats := 0 }
     { env }
   let image ← checked result
-  discard <| checked image.certifyNumberLayout
-  discard <| checked image.certifyScalars
-  discard <| checked image.certifyConversions
-  discard <| checked image.certifyNatArithmetic
-  discard <| checked image.certifyFields
-  discard <| checked image.certifyNatLoops
-  discard <| checked image.certifyWords
-  discard <| checked image.certifyArrayTrees
+  discard <| checked image.certifyWireRuntime
   return image
 
 def main (args : List String) : IO UInt32 := cli "stage2-ixby" do
@@ -86,7 +79,7 @@ def main (args : List String) : IO UInt32 := cli "stage2-ixby" do
     IO.FS.writeBinFile programPath ⟨encoded⟩
     let metadata := Json.mkObj [
       ("format", toJson "compilatrix-ixby-binary/1"),
-      ("program_semantics", toJson Compilatrix.Ixby.Binary.programSemantics),
+      ("program_semantics", toJson Compilatrix.Ixby.Binary.semantics),
       ("bytes", toJson encoded.size), ("sha256", toJson (← sha256 programPath)),
       ("max_steps", toJson artifact.maxSteps)]
     let fields ← checked image.report.getObj?

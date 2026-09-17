@@ -30,7 +30,7 @@ add that capability.
 These restrictions bound the checked control path, not the number of future
 inputs. Inputs may be any `Data` arrays admitted by the fixed arity, constructor
 table, value limits, and chosen observation depth. Literal Nat/String inputs
-are available in reference mode; the original proving profile excludes them.
+are admitted by the current semantics-2 profile within its declared capacities.
 
 ## Proof and exact image binding
 

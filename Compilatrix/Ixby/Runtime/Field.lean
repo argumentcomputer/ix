@@ -1,15 +1,14 @@
 import Compilatrix.Ixby.Runtime.Number
 
-/-! Representation-aware lowering of the pinned base/extension field source.
-Base-field values retain a lazy exact Nat view; extension values use the
-runtime's extension scalar directly, including source projections. -/
+/-! Lean erases `Fin p` to Nat. Base-field operations therefore convert Nat to
+Field explicitly and return a canonical Nat. Field scalars stay unboxed within
+the operation; extension values use the native extension scalar throughout. -/
 
 namespace Compilatrix.Ixby.Runtime
 
 open Lean Ix.Ixby
 
-private def wrap (value : Operand) : CodeM Operand :=
-  make `Ixby.Runtime.FieldNumber [value]
+private def wrap (value : Operand) : CodeM Operand := primitive .fieldToNat [value]
 
 def buildFields : BuildM Unit := do
   for (name, arity) in #[
@@ -27,21 +26,21 @@ def buildFields : BuildM Unit := do
   let define (name : Name) (arity : Nat) (body : CodeM Unit) : BuildM Unit :=
     discard <| defineFunction name arity body
   define `Ix.Ixby.Goldilocks.reduce 1 do
-    ret (← wrap (← call `Ixby.Runtime.asField [.local 0]))
+    ret (← wrap (← primitive .natToField [.local 0]))
   for (name, operation) in #[(`Ix.Ixby.Goldilocks.add, Primitive.fieldAdd),
       (`Ix.Ixby.Goldilocks.sub, .fieldSub), (`Ix.Ixby.Goldilocks.mul, .fieldMul)] do
     define name 2 do
-      let a ← call `Ixby.Runtime.asField [.local 0]
-      let b ← call `Ixby.Runtime.asField [.local 1]
+      let a ← primitive .natToField [.local 0]
+      let b ← primitive .natToField [.local 1]
       ret (← wrap (← primitive operation [a, b]))
   define `Ix.Ixby.Goldilocks.neg 1 do
-    let a ← call `Ixby.Runtime.asField [.local 0]
+    let a ← primitive .natToField [.local 0]
     ret (← wrap (← primitive .fieldSub [.literal (.field 0), a]))
   define `Ix.Ixby.Goldilocks.inverse 1 do
-    ret (← wrap (← primitive .fieldInverse [← call `Ixby.Runtime.asField [.local 0]]))
+    ret (← wrap (← primitive .fieldInverse [← primitive .natToField [.local 0]]))
   define `Ix.Ixby.ExtGoldilocks.mk 2 do
-    let a ← call `Ixby.Runtime.asField [.local 0]
-    let b ← call `Ixby.Runtime.asField [.local 1]
+    let a ← primitive .natToField [.local 0]
+    let b ← primitive .natToField [.local 1]
     ret (← primitive .extPack [a, b])
   for (name, operation) in #[(`Ix.Ixby.ExtGoldilocks.add, Primitive.extAdd),
       (`Ix.Ixby.ExtGoldilocks.sub, .extSub), (`Ix.Ixby.ExtGoldilocks.mul, .extMul),

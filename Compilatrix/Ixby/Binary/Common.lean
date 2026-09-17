@@ -10,8 +10,7 @@ open Ix.Ixby
 
 abbrev Bytes := Array UInt8
 abbrev version : Nat := 1
-abbrev programSemantics : Nat := 1
-abbrev valueSemantics : Nat := 0
+abbrev semantics : Nat := 2
 
 structure Artifact where
   limits : Limits
@@ -32,7 +31,7 @@ inductive Error where
   | reference (error : Ix.Ixby.Error)
   | header | version | nonCanonical | truncated | trailing
   | tag (value : Nat)
-  | byteLimit | integerLimit | countLimit | nodeLimit | depthLimit
+  | byteLimit | integerLimit | countLimit | nodeLimit | depthLimit | internalValue
   deriving BEq, DecidableEq, Repr, Inhabited
 
 structure Decoded {α : Type} (encode : α → Except Error Bytes) (bytes : Bytes) where
@@ -54,7 +53,7 @@ def writeNatural (n : Nat) : Encoder Unit := do
     writeByte (digit + if i + 1 < width then 128 else 0).toUInt8
     n := n / 128
 
-def writeHeader (magic : String) (semantics : Nat) : Encoder Unit := do
+def writeHeader (magic : String) : Encoder Unit := do
   writeBytes magic.toUTF8.data
   writeBytes (bytesLE 4 version)
   writeBytes (bytesLE 4 semantics)
@@ -99,7 +98,7 @@ def readNatural : Decoder Nat := do
     weight := weight * 128
   throw .integerLimit
 
-def readHeader (magic : String) (semantics : Nat) : Decoder Unit := do
+def readHeader (magic : String) : Decoder Unit := do
   unless (← readBytes magic.utf8ByteSize) == magic.toUTF8.data do throw .header
   unless natOfBytesLE (← readBytes 4) == version do throw .version
   unless natOfBytesLE (← readBytes 4) == semantics do throw .version

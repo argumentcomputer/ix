@@ -92,7 +92,7 @@ theorem shift_returns {program : Program} {links : Conversion.Links}
   have mask : Primitive.word32And.eval limits
       [.scalar (.word32 b.toUInt32), .scalar (.word32 (bits - 1).toUInt32)] =
       .ok (.scalar (.word32 (b.toUInt32 &&& (bits - 1).toUInt32))) := by
-    simp [Primitive.eval, Primitive.arity] <;> rfl
+    simp [Primitive.eval, Primitive.evalScalarUnchecked, Primitive.arity] <;> rfl
   rcases width with rfl | rfl
   all_goals
     simp [Nat.toUInt32] at mask evaluated
@@ -100,7 +100,7 @@ theorem shift_returns {program : Program} {links : Conversion.Links}
       bytesCapacity a b left right leftRep rightRep leftValid rightValid continuation stack
     have maskResult : Primitive.word32And.eval limits
         [.scalar (.word32 word), .scalar (.word32 255)] = .ok (.scalar (.word32 (word &&& 255))) := by
-      simp [Primitive.eval, Primitive.arity] <;> rfl
+      simp [Primitive.eval, Primitive.evalScalarUnchecked, Primitive.arity] <;> rfl
   case inl =>
     have beforeReturn : Reaches limits program
         (frameState id 2 #[left, right, .scalar (.word32 a.toUInt32), .scalar (.word32 b.toUInt32)] continuation)
