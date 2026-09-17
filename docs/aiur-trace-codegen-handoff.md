@@ -148,6 +148,8 @@ and the bind step checks the emitted offsets against the widths.
 | `AIUR_GPU_TRACE_MEMORY=1` | With `generated`: build memory-table rows on the device too; off by default because it moved no fewer bytes and cost 5 s on Init |
 | `AIUR_PROFILE=<new .jsonl>` | Timestamped span events; `aiur/cpu_circuit` (circuit, kind, rows) and `aiur/codegen_seeds` give per-circuit witness time |
 | `AIUR_METRICS=<new .jsonl>` | Lightweight per-piece summaries; [collection commands and field definitions](aiur-lightweight-metrics.md) |
+| `IX_CUDA_SPPARK=1` (Lake) or `--features cuda-sppark` (Cargo) | Compiles the sppark transform backend (multi-stark's `cuda-sppark`); implies `cuda` |
+| `MULTI_STARK_CUDA_NTT=sppark` | Routes transforms of at least 2^18 rows through sppark; unset, the first-party kernels run. `MULTI_STARK_SPPARK_MIN_LOG_HEIGHT`, `_PANEL_BYTES`, `_BATCH_BYTES`, `_FUSED` and `_STAGE_TIMING` are the backend's settings, listed in multi-stark's README; `docs/aiur-gpu-sppark-ntt-plan.md` has the evidence |
 
 Registration happens once per `AiurSystem` and is shared across the
 per-device clones. A library whose fingerprint matches no generated program
