@@ -14,7 +14,7 @@ use std::collections::{BTreeMap, BTreeSet};
 /// commit. Sorted neighboring leaves contribute one new parent at each level
 /// below their first common ancestor. A dense padding prefix is counted by
 /// its occupied nodes per level, without constructing every path.
-fn shared_parent_count(
+pub(crate) fn shared_parent_count(
   depth: MemoryDepth,
   mut addresses: Vec<u64>,
   leaves: usize,

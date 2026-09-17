@@ -34,8 +34,67 @@ pub enum BatchClass {
   SharedPacked1024,
   SharedCompactLinked,
   SharedLinked1024,
+  /// Measured workload-specific quotas; all use shared memory and exact
+  /// packed state linking. Every family retains a positive fallback quota.
+  Arithmetic768,
+  Arithmetic3072,
+  /// 4K fetch prototype. Larger leaves need not be faster per useful step.
+  Arithmetic4096,
+  Arrays768,
+  Builders768,
+  Mixed3072,
 }
 impl BatchClass {
+  pub const ALL: [Self; 19] = [
+    Self::Small,
+    Self::Objects,
+    Self::Compact,
+    Self::Bytes,
+    Self::SharedCompact,
+    Self::Shared,
+    Self::SharedCompactBoolean,
+    Self::SharedBoolean,
+    Self::Shared1024,
+    Self::SharedCompactPacked,
+    Self::SharedPacked1024,
+    Self::SharedCompactLinked,
+    Self::SharedLinked1024,
+    Self::Arithmetic768,
+    Self::Arithmetic3072,
+    Self::Arithmetic4096,
+    Self::Arrays768,
+    Self::Builders768,
+    Self::Mixed3072,
+  ];
+  pub fn name(self) -> &'static str {
+    match self {
+      Self::Small => "small",
+      Self::Objects => "objects",
+      Self::Compact => "compact",
+      Self::Bytes => "bytes",
+      Self::SharedCompact => "shared-compact",
+      Self::Shared => "shared",
+      Self::SharedCompactBoolean => "shared-compact-boolean",
+      Self::SharedBoolean => "shared-boolean",
+      Self::Shared1024 => "shared-1024",
+      Self::SharedCompactPacked => "shared-compact-packed",
+      Self::SharedPacked1024 => "shared-packed-1024",
+      Self::SharedCompactLinked => "shared-compact-linked",
+      Self::SharedLinked1024 => "shared-linked-1024",
+      Self::Arithmetic768 => "arithmetic-768",
+      Self::Arithmetic3072 => "arithmetic-3072",
+      Self::Arithmetic4096 => "arithmetic-4096",
+      Self::Arrays768 => "arrays-768",
+      Self::Builders768 => "builders-768",
+      Self::Mixed3072 => "mixed-3072",
+    }
+  }
+  pub fn from_name(name: &str) -> Result<Self> {
+    Self::ALL
+      .into_iter()
+      .find(|class| class.name() == name)
+      .ok_or_else(|| anyhow::anyhow!("unknown execution class {name}"))
+  }
   pub fn transcript_domain(self) -> &'static [u8] {
     match self {
       Self::Small => b"IxBy/Flock/paged-execution:small:v4",
@@ -48,19 +107,25 @@ impl BatchClass {
         b"IxBy/Flock/paged-execution:shared-compact-boolean:v2"
       },
       Self::SharedBoolean => b"IxBy/Flock/paged-execution:shared-boolean:v2",
-      Self::Shared1024 => b"IxBy/Flock/paged-execution:shared-1024:v2",
+      Self::Shared1024 => b"IxBy/Flock/paged-execution:shared-1024:v3",
       Self::SharedCompactPacked => {
         b"IxBy/Flock/paged-execution:shared-compact-packed:v2"
       },
       Self::SharedPacked1024 => {
-        b"IxBy/Flock/paged-execution:shared-packed-1024:v2"
+        b"IxBy/Flock/paged-execution:shared-packed-1024:v3"
       },
       Self::SharedCompactLinked => {
         b"IxBy/Flock/paged-execution:shared-compact-linked:v2"
       },
       Self::SharedLinked1024 => {
-        b"IxBy/Flock/paged-execution:shared-linked-1024:v2"
+        b"IxBy/Flock/paged-execution:shared-linked-1024:v3"
       },
+      Self::Arithmetic768 => b"IxBy/Flock/paged-execution:arithmetic-768:v0",
+      Self::Arithmetic3072 => b"IxBy/Flock/paged-execution:arithmetic-3072:v0",
+      Self::Arithmetic4096 => b"IxBy/Flock/paged-execution:arithmetic-4096:v0",
+      Self::Arrays768 => b"IxBy/Flock/paged-execution:arrays-768:v0",
+      Self::Builders768 => b"IxBy/Flock/paged-execution:builders-768:v0",
+      Self::Mixed3072 => b"IxBy/Flock/paged-execution:mixed-3072:v0",
     }
   }
   pub fn quotas(self) -> [usize; 31] {
@@ -91,6 +156,7 @@ impl BatchClass {
         20, 36, 4, 4, 2, 8, 0, 0, 0, 0, 0, 0, 0, 0, 16, 8, 8, 4, 16, 8, 20, 8,
         8, 8,
       ],
+      _ => return tuning::shape(self).unwrap().quotas,
     };
     let extra = match self {
       Self::Small => [0; 7],
@@ -118,6 +184,7 @@ impl BatchClass {
         2048
       },
       Self::Bytes => 96,
+      _ => tuning::shape(self).unwrap().cells,
     }
   }
   pub fn nu(self) -> usize {
@@ -131,7 +198,8 @@ impl BatchClass {
       | Self::SharedCompactPacked
       | Self::SharedCompactLinked => 10,
       Self::Shared | Self::SharedBoolean => 13,
-      Self::Shared1024 | Self::SharedPacked1024 | Self::SharedLinked1024 => 15,
+      Self::Shared1024 | Self::SharedPacked1024 | Self::SharedLinked1024 => 16,
+      _ => tuning::shape(self).unwrap().nu,
     }
   }
   pub fn transitions(self) -> usize {
@@ -151,7 +219,7 @@ impl BatchClass {
       Self::Shared1024 | Self::SharedPacked1024 | Self::SharedLinked1024 => {
         Some(MultiCapacity::new(self.cells(), 8_191).unwrap())
       },
-      _ => None,
+      _ => tuning::shape(self).and_then(BatchShape::shared_memory),
     }
   }
   pub fn accesses(self) -> usize {
@@ -171,11 +239,13 @@ impl BatchClass {
       | Self::SharedPacked1024
       | Self::SharedCompactLinked
       | Self::SharedLinked1024 => RoutingKind::BooleanPacked,
+      _ if tuning::shape(self).is_some() => RoutingKind::BooleanPacked,
       _ => RoutingKind::Element,
     }
   }
   pub fn linked_states(self) -> bool {
     matches!(self, Self::SharedCompactLinked | Self::SharedLinked1024)
+      || tuning::shape(self).is_some()
   }
 }
 /// Canonical paged machine state: the layout preserves every active bit of
@@ -212,12 +282,48 @@ pub struct BatchEmission {
   pub inputs: InputLayout,
   pub public: PublicLayout,
 }
+/// Physical bounds used by the shared emitter. Only named `BatchClass`
+/// values enter production; the opt-in census can sweep candidate bounds
+/// through this same emitter before a class is approved.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct BatchShape {
+  pub quotas: [usize; 31],
+  pub cells: usize,
+  pub parents: Option<usize>,
+  pub nu: usize,
+}
+impl BatchShape {
+  pub(super) fn from_class(class: BatchClass) -> Self {
+    Self {
+      quotas: class.quotas(),
+      cells: class.cells(),
+      parents: class.shared_memory().map(|c| c.parents),
+      nu: class.nu(),
+    }
+  }
+  pub(super) fn transitions(self) -> usize {
+    self.quotas.iter().sum()
+  }
+  pub(super) fn accesses(self) -> usize {
+    self.quotas.into_iter().zip(Chip::ALL).map(|(n, c)| n * c.accesses()).sum()
+  }
+  pub(super) fn shared_memory(self) -> Option<MultiCapacity> {
+    self.parents.map(|parents| MultiCapacity::new(self.cells, parents).unwrap())
+  }
+}
 pub fn emit_batch(
   b: &mut impl CircuitEmitter,
   class: BatchClass,
 ) -> Result<BatchEmission> {
+  emit_shape(b, class, BatchShape::from_class(class))
+}
+pub(super) fn emit_shape(
+  b: &mut impl CircuitEmitter,
+  class: BatchClass,
+  shape: BatchShape,
+) -> Result<BatchEmission> {
   let mut b = LayoutEmitter::new(b);
-  let nu = class.nu();
+  let nu = shape.nu;
   let memory = TimedMemoryLogSlots::declare_with_routing(
     &mut b,
     nu,
@@ -242,7 +348,7 @@ pub fn emit_batch(
       (class.routing() == RoutingKind::BooleanPacked).then(state_record_layout),
     )?
   };
-  let tree = class
+  let tree = shape
     .shared_memory()
     .map(|_| {
       MultiMemorySlots::sharing_compression_with_routing(
@@ -285,7 +391,7 @@ pub fn emit_batch(
     .collect();
   let mut transitions = Vec::new();
   let mut accesses = Vec::new();
-  for (chip, count) in Chip::ALL.into_iter().zip(class.quotas()) {
+  for (chip, count) in Chip::ALL.into_iter().zip(shape.quotas) {
     for _ in 0..count {
       let enabled = b.input();
       let clock = b.input();
@@ -311,7 +417,7 @@ pub fn emit_batch(
     }
   }
   execution.finish_canonical(&mut b);
-  let switches = (0..order.routing_plan(class.transitions())?.switches())
+  let switches = (0..order.routing_plan(shape.transitions())?.switches())
     .map(|_| b.input())
     .collect::<Vec<_>>();
   order.check(
@@ -327,8 +433,8 @@ pub fn emit_batch(
       b.publish(w);
       w
     });
-    let proof = MultiProofWires::inputs(&mut b, class.shared_memory().unwrap());
-    let switches = (0..MemoryLogSlots::plan(class.accesses(), class.cells())?
+    let proof = MultiProofWires::inputs(&mut b, shape.shared_memory().unwrap());
+    let switches = (0..MemoryLogSlots::plan(shape.accesses(), shape.cells)?
       .switches())
       .map(|_| b.input())
       .collect::<Vec<_>>();
@@ -341,7 +447,7 @@ pub fn emit_batch(
       &switches,
     );
   } else {
-    let cells = (0..class.cells())
+    let cells = (0..shape.cells)
       .map(|_| BoundaryWires {
         address: b.input(),
         opening: MemoryOpeningWires {
@@ -353,7 +459,7 @@ pub fn emit_batch(
         final_value: std::array::from_fn(|_| b.input()),
       })
       .collect::<Vec<_>>();
-    let switches = (0..MemoryLogSlots::plan(class.accesses(), class.cells())?
+    let switches = (0..MemoryLogSlots::plan(shape.accesses(), shape.cells)?
       .switches())
       .map(|_| b.input())
       .collect::<Vec<_>>();

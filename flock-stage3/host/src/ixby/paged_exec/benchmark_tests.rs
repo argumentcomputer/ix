@@ -3,7 +3,7 @@
 use super::*;
 use crate::ixby::ixbf::DecodeLimits;
 use std::{
-  io::Write,
+  io::{Read, Write},
   path::Path,
   sync::atomic::{AtomicUsize, Ordering},
   time::Instant,
@@ -30,6 +30,48 @@ fn write_new(path: &Path, bytes: &[u8]) {
   file.sync_all().unwrap();
 }
 
+fn setup_identity(setup: &CompiledPagedExecution) {
+  eprintln!(
+    "proof_setup_identity,{},{},{},{},{}",
+    setup.class().name(),
+    blake3::Hash::from(setup.shape.registry.digest()),
+    blake3::Hash::from(setup.shape.circuit.digest()),
+    setup.class().nu(),
+    setup.pcs_params().m
+  );
+}
+
+#[test]
+#[ignore = "caller-selected class before proof read; stdin is statement57 followed by one bounded proof"]
+fn selected_execution_leaf_receiver() {
+  let class =
+    BatchClass::from_name(&std::env::var("IXBY_EXECUTION_CLASS").unwrap())
+      .unwrap();
+  let started = Instant::now();
+  let setup = CompiledPagedExecution::compile(class).unwrap();
+  let setup_seconds = started.elapsed().as_secs_f64();
+  setup_identity(&setup);
+  let limit = (16 << 20) + PUBLIC_WORDS * 16;
+  let mut bytes = Vec::new();
+  std::io::stdin().take(limit as u64 + 1).read_to_end(&mut bytes).unwrap();
+  assert!((PUBLIC_WORDS * 16 + 1..=limit).contains(&bytes.len()));
+  let statement = bytes[..PUBLIC_WORDS * 16]
+    .as_chunks::<16>()
+    .0
+    .iter()
+    .map(|word| crate::hash::pack_bytes(word))
+    .collect::<Vec<_>>();
+  let expected = ExecutionStatement::from_words(&statement).unwrap();
+  let started = Instant::now();
+  setup.verify(&expected, &bytes[PUBLIC_WORDS * 16..]).unwrap();
+  eprintln!(
+    "leaf receiver accepted: class={} setup_seconds={setup_seconds:.9} verify_seconds={:.9} bytes={}",
+    class.name(),
+    started.elapsed().as_secs_f64(),
+    bytes.len() - PUBLIC_WORDS * 16
+  );
+}
+
 #[test]
 #[ignore = "original artifacts; bounded actual-proof throughput measurement with shared setup"]
 fn original_execution_proof_throughput() {
@@ -42,18 +84,11 @@ fn original_execution_proof_throughput() {
   let workers = option("IXBY_PROOF_WORKERS", 1, 1..=32).min(count);
   let threads = option("IXBY_PROOF_THREADS", 4, 1..=64);
   assert!(workers * threads <= 64, "benchmark CPU thread bound");
-  let class = match std::env::var("IXBY_PAGED_NATIVE_CLASS").as_deref() {
-    Ok("shared") | Err(_) => BatchClass::Shared,
-    Ok("shared-compact") => BatchClass::SharedCompact,
-    Ok("shared-compact-boolean") => BatchClass::SharedCompactBoolean,
-    Ok("shared-boolean") => BatchClass::SharedBoolean,
-    Ok("shared-1024") => BatchClass::Shared1024,
-    Ok("shared-compact-packed") => BatchClass::SharedCompactPacked,
-    Ok("shared-packed-1024") => BatchClass::SharedPacked1024,
-    Ok("shared-compact-linked") => BatchClass::SharedCompactLinked,
-    Ok("shared-linked-1024") => BatchClass::SharedLinked1024,
-    _ => panic!("IXBY_PAGED_NATIVE_CLASS must be shared or shared-compact"),
-  };
+  let class = BatchClass::from_name(
+    &std::env::var("IXBY_PAGED_NATIVE_CLASS")
+      .unwrap_or_else(|_| "shared".into()),
+  )
+  .unwrap();
   let out = std::env::var_os("IXBY_PROOF_OUT").map(std::path::PathBuf::from);
   if let Some(out) = &out {
     std::fs::create_dir(out).unwrap();
@@ -88,7 +123,7 @@ fn original_execution_proof_throughput() {
   let native_seconds = generating.elapsed().as_secs_f64();
   for (batch, advice) in advice.iter().enumerate() {
     let mut at = 55;
-    let mut counts = [0; 24];
+    let mut counts = [0; Chip::ALL.len()];
     for (chip, quota) in Chip::ALL.into_iter().zip(class.quotas()) {
       for _ in 0..quota {
         counts[chip as usize] += usize::from(advice.private[at] == F128::ONE);
@@ -112,6 +147,7 @@ fn original_execution_proof_throughput() {
   let compiling = Instant::now();
   let setup = CompiledPagedExecution::compile(class).unwrap();
   let setup_seconds = compiling.elapsed().as_secs_f64();
+  setup_identity(&setup);
   let next = AtomicUsize::new(0);
   eprintln!(
     "proof benchmark: class={class:?} skip={skip} batches={count} workers={workers} threads={threads} load_seconds={load_seconds:.9} skip_seconds={skip_seconds:.9} native_seconds={native_seconds:.9} setup_seconds={setup_seconds:.9}"

@@ -59,6 +59,7 @@ See the handoff for types, failure behavior, capacity checks, and native costs.
 | Rust functional reader | [ixbf/](../flock-stage3/host/src/ixby/ixbf/) |
 | Constrained byte admission | [ixbf_decode/](../flock-stage3/host/src/ixby/ixbf_decode/) |
 | Paged execution and collections | [paged_exec/](../flock-stage3/host/src/ixby/paged_exec/) |
+| Physical batch selection and measurements | [Batch tuning](IxbyBatchTuning.md) |
 | Complete recursive proof | [execution_tree/](../flock-stage4/recursive/src/execution_tree/) |
 
 The trust gate checks 19 current theorem roots and a 711-theorem source frontier.

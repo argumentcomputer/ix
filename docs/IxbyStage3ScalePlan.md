@@ -267,8 +267,21 @@ current-status section below.
     exercising every new opcode has a 517,843-byte complete root, accepted by
     a fresh receiver that rejects eleven tampered variants. Compiler
     integration and the new CSLib trace remain pending.
+31. [Physical batch tuning](IxbyBatchTuning.md): exact quota and padding sweeps
+    over arithmetic, persistent arrays, byte builders, and a retained CSLib
+    prefix. Named workload classes include a 4,096-fetch prototype and
+    geometries that avoid costly routing boundaries. The compiler ABI is
+    unchanged; physical setup identities are separate from semantic versions.
+    Genuine four-leaf trees and exact native counts expose the join trade-off:
+    the common arithmetic fixture needs 19 leaves with 4K, versus 97 with 768.
+    Including measured joins reverses their leaf-only throughput ranking in
+    the longer-run model; 3K retains a lower startup and memory cost than 4K.
 
 ## Current integration and next measurements
+
+The [semantics-2 batch report](IxbyBatchTuning.md) contains the current physical
+class measurements. The following full-run estimates use the older compiled
+image and revision-1 proof geometries.
 
 The complete original-format proof path is implemented and has genuine
 small-workload proofs. The original CSLib program has a complete grammar
@@ -297,10 +310,10 @@ remain bound by admission, initialization, finalization and commitments.
    simpler numeric representations, native persistent-array operations and
    byte builders. All these runtime operations are available in revision 2;
    compiler integration requires further work and a newly bound compiled
-   image. Workload-specific proof classes remain another
-   target. ByteStart/ByteFinish or Resume quotas already end some measured
-   batches before their Fetch quota fills. Preserve complete state, memory
-   and fuel checks, and compare time and peak memory per logical step,
+   image. [Workload-specific proof classes](IxbyBatchTuning.md) are now
+   available, with exact quota and padding measurements. Their selection must
+   be rechecked against the new compiler's trace. Preserve complete state,
+   memory and fuel checks, and compare time and peak memory per logical step,
    including recursive costs. The measured windows do not cover the full
    byte/hash workload.
 2. **Long-run operation.** The CLI retains and verifies bounded proof files;

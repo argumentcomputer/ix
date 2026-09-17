@@ -18,6 +18,8 @@ and its public factories have been removed.
   [execution](../docs/IxbyFlockPagedExecution.md): constrained original-byte path.
 - [Stage 4](../flock-stage4/README.md): one recursive proof of the complete
   execution statement.
+- [Batch tuning](../docs/IxbyBatchTuning.md): exact quota/padding census,
+  workload-specific classes, and the 4K fetch prototype.
 
 The reference model supports more than every physical proving class. The
 current complete proof uses Nat128 and a Bytes terminal result; it has finite

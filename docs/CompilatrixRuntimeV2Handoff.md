@@ -22,6 +22,8 @@ been retired. Their Lean Aiur adapters, fixed-arena Flock interpreters, and
 Stage 4 `CompiledExec` adapters were removed. The generic arithmetic, memory,
 verifier replay, and current paged recursive proof components remain.
 Execution batch classes are physical proof geometries, not semantic versions.
+The [batch tuning report](IxbyBatchTuning.md) describes the available workload
+shapes and 4K prototype. Selecting one does not require a compiler ABI change.
 
 ## Scalar ABI
 

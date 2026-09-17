@@ -27,10 +27,13 @@ mod proof;
 mod proof_drivers;
 #[cfg(test)]
 mod proof_tests;
+#[cfg(test)]
+mod quota_tests;
 mod slots;
 mod synthesis;
 #[cfg(test)]
 mod tests;
+mod tuning;
 mod witness;
 
 pub use batch::{BatchAdvice, BatchClass, BatchEmission, emit_batch};

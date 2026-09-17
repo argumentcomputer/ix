@@ -58,22 +58,7 @@ impl Options {
   }
 }
 fn class(name: &str) -> Result<BatchClass> {
-  Ok(match name {
-    "small" => BatchClass::Small,
-    "objects" => BatchClass::Objects,
-    "compact" => BatchClass::Compact,
-    "bytes" => BatchClass::Bytes,
-    "shared-compact" => BatchClass::SharedCompact,
-    "shared" => BatchClass::Shared,
-    "shared-compact-boolean" => BatchClass::SharedCompactBoolean,
-    "shared-boolean" => BatchClass::SharedBoolean,
-    "shared-1024" => BatchClass::Shared1024,
-    "shared-compact-packed" => BatchClass::SharedCompactPacked,
-    "shared-packed-1024" => BatchClass::SharedPacked1024,
-    "shared-compact-linked" => BatchClass::SharedCompactLinked,
-    "shared-linked-1024" => BatchClass::SharedLinked1024,
-    _ => anyhow::bail!("unknown execution class {name}"),
-  })
+  BatchClass::from_name(name)
 }
 fn counts(value: &str) -> Result<[usize; 11]> {
   value

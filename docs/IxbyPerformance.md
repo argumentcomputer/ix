@@ -3,7 +3,9 @@
 The [revision-2 runtime](CompilatrixRuntimeV2Handoff.md) now provides unboxed
 numeric scalars and conversions, persistent arrays, immutable byte builders,
 and zero-copy slices. Compiler adoption and a new CSLib measurement remain
-pending. All counts below refer to the earlier compiled image.
+pending. The runtime-helper counts below refer to the earlier compiled image.
+The [batch tuning report](IxbyBatchTuning.md) separately measures physical
+proof geometries on the current runtime, including a 4K fetch prototype.
 
 The completed CSLib reference run executes **2,268,502,805 logical
 transitions**. Eleven compiler-runtime helpers account for **56.0%** of them.

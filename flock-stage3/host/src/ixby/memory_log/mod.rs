@@ -25,6 +25,8 @@ pub use permutation::{PermutationPlan, PermutationSlots, RoutingKind};
 pub use slots::{AccessWires, BoundaryWires, MemoryLogSlots};
 pub use switch::{SwitchGate, SwitchRow};
 pub use timed::{TimedAccessWires, TimedMemoryLogSlots};
+#[cfg(test)]
+pub(crate) use witness::shared_parent_count;
 pub use witness::{
   AccessAdvice, BoundaryAdvice, MemoryBatch, MemoryBatchAdvice,
 };
