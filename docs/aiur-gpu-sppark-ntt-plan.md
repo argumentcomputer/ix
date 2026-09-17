@@ -445,8 +445,8 @@ the Nix glibc 2.40 loader with that gcc library directory on
 `LD_LIBRARY_PATH`, exactly as the bench runners set it. `ldd` on the relinked
 binary resolves `libstdc++.so.6` there and `ix --help` runs
 (`bench/prover-profile-init-2026-09-17/README.md` has the environment).
-Resolved by the dependency fork instead: `argumentcomputer/sppark`, branch
-`multi-stark/no-cxx-runtime`, adds a `SPPARK_NO_CXX_RUNTIME` build mode in
+Resolved by the dependency fork instead: `argumentcomputer/sppark`, whose `dev`
+branch is where its changes land, adds a `SPPARK_NO_CXX_RUNTIME` build mode in
 which `CUDA_OK` records the first failing CUDA call in a thread-local
 status that `sppark_take_cuda_error()` returns, `gpu_t` carries no thread
 pool, and the three container error hooks libstdc++'s headers call are
