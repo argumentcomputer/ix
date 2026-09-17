@@ -183,9 +183,11 @@ Folding or a different accumulation protocol is a larger research option,
 requiring an explicit integration and soundness design.
 
 **First check:** actual equal-work trees at several depths, including mixed
-leaf/node joins and cached-setup memory. The optimized two-join segment now
-spends about 71% of its cached total in unchanged leaf production. The earlier
-long-run model's join dominance predates this evaluator change.
+leaf/node joins and cached-setup memory. Before interpreter fusion, the
+optimized two-join segment spent about 71% of its cached total in leaf
+production. The latest fused comparison spends about 60% in leaves and 40%
+in joins. Reprofile both as the layout changes; the earlier long-run model's
+join dominance predates these improvements.
 
 ### 4. Fuse interpreter microsteps and keep temporary values off the memory log
 
@@ -204,9 +206,9 @@ leaves just 4.43%. This is an optional layout, with no whole-workload speedup
 established. Fewer rows alone do not settle total proof cost.
 
 **Next check:** improve the balance of fused and ordinary quotas across phases,
-then measure longer equal-work trees. Unary numeric operations and additional
-checked straight-line combinations remain candidates. Preserve source binding,
-exact fuel, branch behavior and authenticated boundary state.
+then measure longer equal-work trees. The
+[follow-up experiments](#follow-up-experiments-after-interpreter-fusion)
+below retain the remaining composition and temporary-memory opportunities.
 
 ### 5. Inline and specialize small compiler runtime wrappers
 
@@ -287,13 +289,67 @@ steps per leaf this run already needs roughly 88,000 leaves and as many joins.
 Keeping every witness, setup, and proof resident will not scale. Include
 admission and output/closing work in the final benchmark.
 
+## Follow-up experiments after interpreter fusion
+
+These candidates remain unimplemented. The
+[fusion census](../flock-stage3/profile/cslib-runtime-v2-fusion.json) records
+quota stops across independent windows; a stop count identifies a capacity
+limit. Each candidate needs a separate proof-time measurement.
+
+1. **Balance fused quotas and test larger layouts.** The small class needs
+   9,331 captured leaves versus 5,733 for `cslib-2048`; the larger candidate
+   needs 5,479 but has only count evidence. Sweep ordinary/fused quotas while
+   tracking routing and commitment padding. Prove longer identical ranges,
+   including adverse phases, before choosing a default or approved mixed-class
+   chain. Later-phase proofs require actual replay or validated checkpoints;
+   address captures alone cannot supply their witnesses.
+2. **Fuse unary numeric consumers and more frequent call/copy sequences.**
+   Remaining `Numeric` capacity causes 521 stops in the small fused class.
+   First count which operations are unary, including scalar conversions.
+   Profile call arities before extending fusion beyond four arguments or
+   increasing copy width. Preserve argument resolution before overlapping
+   local writes, exact fuel, and stops inside an unfinished composition.
+3. **Batch builder copying and emission.** In the small fused class,
+   `BuilderCopy` and `BuilderEmit` cause 1,702 and 492 stops respectively.
+   Try bounded copy chunks and checked
+   combinations with their setup/finish steps. Measure cells and tree parents
+   as well as events; retain immutable sharing, partial-chunk checks and exact
+   output bytes. Compare against simply raising those quotas.
+4. **Coalesce temporary scratch writes within checked blocks.** Current fusion
+   retains every write. Explore carrying intermediate values on wires and
+   authenticating the final scratch values at the block boundary. This needs
+   explicit lifetime and alias checks, identical boundary roots, and an
+   ordinary fallback for earlier cuts. Count savings after boundary writes
+   are restored before changing the memory relation.
+5. **Specialize fixed clock spans.** The new clock gates repeat checked
+   single-step increments. Census a direct addition of the setup's fixed span,
+   retaining 64-bit bounds, overflow rejection and inactive-row constraints.
+   Proceed only if the gate or padded circuit cost improves.
+6. **Reuse compiled setups and specialize fixed public hashing.** The fused
+   run takes 265.62 seconds across its processes versus 86.63 seconds of cached
+   proof work. Separate setup, replay, I/O and fresh-receiver startup in the
+   profile. Share immutable setups by their complete identity across producer
+   phases, and test precomputing hash blocks containing only approved fixed
+   public words. Preserve exact transcript bytes and fresh verification;
+   include cache memory in the worker budget.
+
+The broader ranked backlog remains open: cheaper state/memory arguments and
+immutable-code lookups, four/eight-child recursion, compiler wrapper and codec
+specialization, bulk collections, prover kernels, and a bounded concurrent
+pipeline with checkpoints. For every candidate, compare the same execution
+including all joins, and report setup, peak memory and final proof bytes
+separately. The fused root is 406,323 bytes versus 404,083 for the baseline;
+its measured benefit is proving cost. Terminal FFLONK compression remains a
+separate step in the [scale plan](IxbyStage3ScalePlan.md#current-bounds-and-next-steps).
+
 ## Suggested order of work
 
 1. Use the complete physical census, tuned batches, faster recursive table
    evaluation and optional fused execution as the baseline. Validate further
    fused quota choices over broad phases and longer equal-work proof trees
-   before adopting a workload default. Test compiler wrapper/codec changes
-   against exact output, block counts and physical traffic.
+   before adopting a workload default. Use the follow-up experiments above
+   for unary consumers, builder copying and temporary writes. Test compiler
+   wrapper/codec changes against exact output, block counts and physical traffic.
 2. Prototype one cheaper routing/memory argument, including its recursive cost.
    This remains a major leaf-circuit opportunity.
 3. Specialize fixed public data in recursive verification and measure further

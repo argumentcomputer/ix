@@ -354,10 +354,15 @@ binary, functional limits, input and canonical output
 remain bound by admission, initialization, finalization and commitments.
 
 1. **Measure and reduce complete-run costs.** Use the complete native profile
-   and captured-window validation of `cslib-2048` as the new baseline.
-   Prioritize cheaper state/memory routing,
-   recursive replay, and fused instruction handling alongside the remaining
-   compiler wrapper, collection, and codec costs. Compare the same useful
+   and captured-window validation of `cslib-2048` and optional `cslib-fused`
+   as the baseline. Retain the
+   [concrete follow-up experiments](IxbyPerformance.md#follow-up-experiments-after-interpreter-fusion):
+   balance fused quotas against join counts; add unary numeric and profiled
+   call/copy compositions; batch builder copying; evaluate scratch-write
+   coalescing and fixed-span clock gates; reuse setups and specialize fixed
+   public hashing. Cheaper state/memory arguments, immutable-code lookups,
+   wider recursive joins, prover kernels, and compiler wrapper/collection/codec
+   changes remain additional opportunities. Compare the same useful
    execution including joins, setup, and admission. Preserve exact state,
    memory, fuel, and expected-output bindings. The
    [ranked opportunities](IxbyPerformance.md#ranked-opportunities) give the
