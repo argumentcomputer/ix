@@ -1,0 +1,11 @@
+[shard] trace-shard seed (cuda build): bytes=1.4680e9; round(78 x (bytes/1.4680e9) x (41.4 GiB / 31.7 GiB record share: 245 GiB per worker, 1500000000 cells, 5 executions ahead)) -> 102 shard(s) (heuristic; the record cap names any shard over its share)
+[lanes] host budget 980.0 GiB process-wide (requested 245.0 GiB per GPU, visible cgroup limit 980.0 GiB): 784.8 GiB shared records, 24.2 GiB workspace per GPU, 98.0 GiB headroom; 20 CPU executions, 4 prepared queue slots; 28.0 GiB initial reservation, growth waits for shared capacity; 1500000000 trace cells
+[lanes] per-record ceiling 128.0 GiB; oversized environment claims are bisected automatically
+[aggregate] root wrap proven in 24.3s (query-record peak 69.4 GiB): 12 shard(s) verified into 4
+[aggregate] root wrap proven in 11.3s (query-record peak 62.6 GiB): 4 shard(s) verified into 2
+[aggregate] root wrap proven in 7.4s (query-record peak 60.0 GiB): 2 shard(s) verified into 1
+[lanes] calibration: claims 102 executed: record mean 22.4 GiB, p50 22.2 GiB, p90 26.9 GiB, max 38.6 GiB (unit 65); execution mean 191.9s, max 406.1s
+[lanes] calibration: joins 101 executed: record mean 14.2 GiB, p50 14.3 GiB, p90 16.0 GiB, max 25.1 GiB (unit 202); execution mean 49.1s, max 77.3s
+[lanes] calibration: 102 shards at a 28.0 GiB initial reservation (784.8 GiB shared record budget): largest claim record 138% of the initial reservation, largest join record 89%, 0 contention retry/retries; p90-scaled candidate 99 shard(s) at this initial reservation (claims measured this run only; a resumed run measures fewer)
+[lanes] record pool: peak granted 741.9 GiB, 0 growth waits (0.0s summed across executions), 0 contention retries
+[lanes] root b130434cb488535671eeb36b43d7f8607e4bf9151ce674ea2a77451cfaf489ae verified; composed verdict OK; end to end 2175s

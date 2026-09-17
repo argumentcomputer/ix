@@ -130,6 +130,49 @@ Against the 2026-09-15 reference on the same manifest the prover is now
 coset cache and upload ring, the resident seeds, the fourth execution
 per lane and sppark together.
 
+## Fourth run: five executions per lane, 102 shards, the whole box
+
+The fifth execution per lane does not fit the 78-shard records in any
+pool this host can offer (20 records in flight already peak at 726 GiB),
+so the cut was reseeded for the new flags: `ix shard mathlib.ixe --max-ram
+245 --exec-jobs 5` gives **102 shards** (14.4 MB per shard, `mathlib-seed-
+245-5.ixes`, sha256 `b5433790…`), and the run used 245 GiB per lane under a
+980 GiB scope, 98% of the host: a 784.8 GiB pool, 28 admission slots, a
+28.0 GiB initial reservation, 20 executions. sppark on, as in the third
+run. Root `b130434c…` (a different partition, so a different tree and
+root), verified, composed verdict OK.
+
+| Quantity | 78 shards, 4 per lane, 230 GiB | 102 shards, 5 per lane, 245 GiB |
+|---|---:|---:|
+| Wall, `/usr/bin/time` | 36:00 | 36:20 |
+| Prover end to end | 2,154 s | 2,175 s (+1%) |
+| Last claim proven | +1,696 s | +1,741 s |
+| Root dispatched / proven | +2,001 s / +2,154 s | +2,023 s / +2,174 s |
+| Claim record mean / p90 / max | 28.4 / 32.9 / 44.0 GiB | 22.4 / 26.9 / 38.6 GiB |
+| Claim execution mean / total | 243 s / 18,950 s | 192 s / 19,570 s |
+| Join execution mean / total | 55 s / 4,260 s | 49 s / 4,960 s |
+| Claim proof mean / total | 54.5 s / 4,249 s | 43.2 s / 4,411 s |
+| Join proof mean / total | 25.5 s / 2,041 s | 22.9 s / 2,380 s (104 incl. wraps) |
+| Prover work per GPU, occupancy | 1,572 s, 73% | 1,698 s, 78% |
+| Mean sampled GPU utilization | 45 to 48% | 48 to 53% |
+| Peak process RSS | 697 GiB | 711 GiB |
+| Record pool peak grant | 725.8 of 731 GiB | 741.9 of 785 GiB, 0 waits |
+| p90-scaled candidate | 85 | 99 |
+
+**Reading.** A wash: the two configurations are within 1% of each other.
+The extra execution supply did arrive (execution thread time per unit of
+supply fell from 1,450 s to 1,227 s) and the claim phase would have
+ended earlier on execution alone, but the finer cut costs 3% more claim
+execution, 16% more join execution, 4% more claim proving and 17% more
+join proving, and the GPUs, at 78% occupancy, are the limit again. That
+is the crossover the earlier runs pointed at: at 78 shards and four
+executions the run was execution-bound with GPU headroom; at 102 and
+five it is GPU-bound with execution headroom. Anything between lands in
+the same 2,150 to 2,180 s band. The next gains are in the proofs
+themselves, or in the per-shard overheads of execution and joins, not in
+the schedule. Memory was never the limit at either setting; the fourth
+run's pool peaked at 742 of 785 GiB and RSS at 711 of 999 GiB.
+
 ## The staging lease bug
 
 `crates/aiur/cuda/trace_runtime.cu` stages seed uploads through a ring of
@@ -163,7 +206,10 @@ fails with status 400 before the fix and passes after; the whole
 Files: `mathlib78-lanes4-meta.txt`, `mathlib78-lanes4-summary.txt`,
 `mathlib78-lanes4-exec4-meta.txt`, `mathlib78-lanes4-exec4-summary.txt`,
 `mathlib78-lanes4-exec4-sppark-meta.txt`,
-`mathlib78-lanes4-exec4-sppark-summary.txt`, `run-lanes4.sh` (`EXEC_JOBS` selects the executions per lane). Raw logs, the metrics file, the GPU samples and the
+`mathlib78-lanes4-exec4-sppark-summary.txt`,
+`mathlib102-lanes4-exec5-sppark-meta.txt`,
+`mathlib102-lanes4-exec5-sppark-summary.txt`, `run-lanes4.sh` (`EXEC_JOBS`, `MAX_RAM`, `MEM_MAX` and `IXES` select the
+executions per lane, the per-lane budget, the scope cap and the manifest). Raw logs, the metrics file, the GPU samples and the
 lanes cache are in `~/benchdata/mathlib/runs/mathlib78-lanes4-metrics-2/`
 on the four-GPU box; the aborted first attempt is beside it without the
 `-2`.
