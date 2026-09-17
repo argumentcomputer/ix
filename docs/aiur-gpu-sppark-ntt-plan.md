@@ -588,3 +588,19 @@ the fused expansion (`LDE_expand`, inverse NR paired with forward RN); and
 the paired claim/join replays with the batched build. Still administrative:
 push the fork's `dev` and pin `8b624cd` in multi-stark's manifest and
 lockfile in place of the upstream revision and the local path override.
+
+### Panel glue, the fused expansion and the threshold (2026-09-17, later)
+
+multi-stark `0ca9402` lowers the height threshold to 2^18 on the batched
+measurements, and `8a1f9f9` rewrites the panel glue: the gather and scatter
+are tiled transposes (row-per-thread kernels for matrices narrower than
+eight columns) and the restoring expansion runs one column per grid row;
+the per-element kernels with a 64-bit division each had taken two thirds
+of the BLAKE3 shape's LDE. The fused expansion was implemented behind
+`MULTI_STARK_SPPARK_FUSED` and measured: equal on the wide shape, 15 to
+18 percent behind on the tall ones, so the restoring path is the default
+and the evidence is in `bench/sppark-lde-2026-09-17/README.md`. Final
+resident LDE ratios against the first-party kernels: 1.36x on the BLAKE3
+shape, 2.7x and 2.2x on the tall narrow ones, 1.07 to 1.22x from 2^18 up;
+every proof shape from 2^18 rows takes sppark. The batched build's whole-
+unit replays and Init run come next with this build.

@@ -105,3 +105,44 @@ a column that fits the L2 loses the reuse between stages the serial path
 had. Groups sized to the L2 keep both, and every shape is now at or ahead
 of the first-party kernels, so the height threshold can come down; that
 is measured next.
+
+## Panel glue and the fused expansion (milestone 4, multi-stark `8a1f9f9`)
+
+`MULTI_STARK_SPPARK_STAGE_TIMING=1` splits every LDE into its five
+stages (`stages-before.txt`, `stages-after.txt`, the last panel of the
+last iteration). Before, on the BLAKE3 shape (2^20 x 533, blowup 4, six
+panels): gather 24 ms, inverse 22, restore-and-shift 79, forward 100,
+scatter 124, of 349 ms; the three glue passes were per-element kernels with
+a 64-bit division each and strided accesses. After, with tiled transposes
+and a one-column-per-grid-row expansion: gather 8, inverse 13, restore 15,
+forward 58, scatter 63.
+
+The plan's fused expansion (bit-reversed coefficients spread with the coset
+powers straight into a forward RN transform, the row permutation folded
+into the scatter) was implemented and measured against the restoring path
+with the same glue (`expansion-restoring.csv`, `expansion-fused.csv`,
+`MULTI_STARK_SPPARK_FUSED`): 284 against 289 ms on the BLAKE3 shape,
+62 against 73 ms on 2^24 x 6, 202 against 238 ms on 2^24 x 17. The
+reversing scatter costs what the restoring pass saves, so the restoring
+path is the default and the fused one stays available as evidence.
+
+Final medians (`glue-legacy.csv`, `glue-sppark.csv`; `glue-before-sppark.csv`
+is the batched build before the glue rewrite), all shapes through sppark:
+
+| Shape (log height, width, blowup) | first-party ms | sppark ms | ratio |
+| --- | ---: | ---: | ---: |
+| 16, 2, 4 | 0.148 | 0.209 | 0.71 |
+| 17, 16, 4 | 0.953 | 1.106 | 0.86 |
+| 18, 2, 4 | 0.474 | 0.443 | 1.07 |
+| 18, 40, 4 | 5.58 | 4.92 | 1.13 |
+| 18, 128, 2 | 13.95 | 11.40 | 1.22 |
+| 19, 2, 4 | 0.757 | 0.679 | 1.11 |
+| 19, 49, 4 | 14.82 | 13.70 | 1.08 |
+| 20, 2, 4 | 1.40 | 1.19 | 1.18 |
+| 20, 533, 4 | 385.5 | 284.1 | 1.36 |
+| 22, 2, 4 | 9.51 | 4.28 | 2.22 |
+| 24, 6, 4 | 169.1 | 62.5 | 2.71 |
+| 24, 17, 4 | 215.3 | 201.1 | 1.07 |
+
+Below 2^18 input rows the first-party kernels win (0.60 to 0.91x), which
+sets the default `MULTI_STARK_SPPARK_MIN_LOG_HEIGHT` at 18.
