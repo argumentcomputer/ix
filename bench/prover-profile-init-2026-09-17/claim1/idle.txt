@@ -1,0 +1,51 @@
+aiur/prove_planned: union 44.89s, kernel 28.69s, idle 16.20s
+  idle with no witness/packing span active: 8.32s
+  aiur/prove_ixvm_within_budget   16.20s
+  stark/batch_round_two           10.38s
+  stark/batch_round_2             10.09s
+  stark/stage1_commit              9.91s
+  aiur/witness                     7.03s
+  stark/batch_round_one            5.74s
+  stark/prove_batch_shard          5.58s
+  aiur/codegen_seeds               5.57s
+  stark/batch_round_1              5.43s
+  aiur/cpu_circuit                 5.27s
+  aiur/cpu_witness                 5.23s
+  aiur/codegen_pack                3.84s
+  aiur/codegen_device_rows         3.75s
+  stark/fri_open                   3.52s
+
+stark/stage1_commit: union 23.42s, kernel 13.51s, idle 9.91s
+  idle with no witness/packing span active: 2.84s
+  aiur/prove_ixvm_within_budget    9.91s
+  aiur/prove_planned               9.91s
+  aiur/witness                     6.43s
+  stark/batch_round_one            5.39s
+  stark/batch_round_1              5.39s
+  aiur/cpu_circuit                 5.21s
+  aiur/cpu_witness                 5.17s
+  aiur/codegen_seeds               4.98s
+  stark/batch_round_two            4.51s
+  stark/batch_round_2              4.51s
+  aiur/codegen_pack                3.58s
+  aiur/codegen_device_rows         3.54s
+  aiur/codegen_concat              1.15s
+  aiur/codegen_filter              0.94s
+
+stark/lookup_construction: union 8.16s, kernel 6.22s, idle 1.94s
+  idle with no witness/packing span active: 1.73s
+  aiur/prove_ixvm_within_budget    1.94s
+  aiur/prove_planned               1.94s
+  stark/batch_round_two            1.94s
+  stark/batch_round_2              1.94s
+  stark/prove_batch_shard          1.94s
+  aiur/codegen_device_rows         0.20s
+
+stark/fri_open: union 5.74s, kernel 2.23s, idle 3.52s
+  idle with no witness/packing span active: 3.52s
+  aiur/prove_ixvm_within_budget    3.52s
+  aiur/prove_planned               3.52s
+  stark/batch_round_two            3.52s
+  stark/batch_round_2              3.52s
+  stark/prove_batch_shard          3.52s
+

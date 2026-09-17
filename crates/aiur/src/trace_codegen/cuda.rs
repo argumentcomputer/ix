@@ -215,11 +215,15 @@ impl BoundCudaProgram<'_> {
       if SeedEncoding::Canonical.stride(schema) > MAX_SEED_BYTES {
         return Err(error(function, None, "seed exceeds the upload limit"));
       }
-      let live: Vec<usize> = (lo..hi)
-        .filter(|&query| {
-          queries.get_index(query).unwrap().1.multiplicity != G::ZERO
-        })
-        .collect();
+      let live: Vec<usize> = {
+        let _filter = tracing::info_span!("aiur/codegen_filter", function)
+          .entered();
+        (lo..hi)
+          .filter(|&query| {
+            queries.get_index(query).unwrap().1.multiplicity != G::ZERO
+          })
+          .collect()
+      };
       if live.is_empty() {
         continue;
       }
@@ -229,17 +233,26 @@ impl BoundCudaProgram<'_> {
       // codec: if any chunk turned, the others are widened the same way, so
       // no row is ever packed twice and no span mixes encodings.
       let typed_first = !check_aliases && !schema.is_canonical();
-      let mut chunks = live
-        .par_chunks(CHUNK_ROWS)
-        .map(|rows| {
-          pack_chunk(&bound, record, io, rows, typed_first, check_aliases)
-        })
-        .collect::<TraceResult<Vec<_>>>()?;
+      let mut chunks = {
+        let _pack =
+          tracing::info_span!("aiur/codegen_pack", function, rows = live.len())
+            .entered();
+        live
+          .par_chunks(CHUNK_ROWS)
+          .map(|rows| {
+            pack_chunk(&bound, record, io, rows, typed_first, check_aliases)
+          })
+          .collect::<TraceResult<Vec<_>>>()?
+      };
       if typed_first
         && chunks.iter().any(|chunk| chunk.encoding == SeedEncoding::Canonical)
       {
+        let _widen =
+          tracing::info_span!("aiur/codegen_widen", function).entered();
         chunks.par_iter_mut().for_each(|chunk| chunk.widen(schema));
       }
+      let _concat =
+        tracing::info_span!("aiur/codegen_concat", function).entered();
       // Every chunk of the run now shares one encoding, so a span's final
       // size is known when it opens: the rest of the run, within the tile and
       // staging limits.
