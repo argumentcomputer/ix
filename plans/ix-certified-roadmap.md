@@ -1,815 +1,924 @@
-# IxCertified port and growth plan
+# Ix.Kernel: certified kernel roadmap
 
-Date: 2026-09-16. Status: planning; the fresh workspace and branch exist, but
-the library port has not started.
+Date: 2026-09-16, status updated 2026-09-17. K0 is implemented on
+`jcb/ix-certified`: the model is ported to `Ix.Kernel.Model`, the address
+split and Blake3 pin bump are in, the declining kernel has its three public
+theorems with frozen statements, and `lake run check-kernel` passes (strict
+build, axiom, import, and runtime audits with negative controls, provenance
+with source hashes). Still open in K0: building the ported `Models/SetTheory`
+package against Mathlib and a clean-checkout build.
 
-This plan establishes a separate, certified Ix library in Lean. Its first
-release will preserve con-leche's complete connection from an executable
-declaration checker to a set-theoretic model and relative consistency.
-Subsequent work will add completed results from the Ix consistency branch,
-then verified representations, Ixon codecs, source adapters, and other Ix
-components. Every addition must preserve the public acceptance theorem.
+## Revision note
 
-The implementation may retain annotations, perform additional checks, reject
-unsupported inputs, and use different data structures from the production Ix
-checker. These choices are available tools for keeping the proofs tractable.
+This revision replaces the earlier `IxCertified` port plan. Three changes:
 
-## 1. Starting points and scope
+1. The certified checker is `Ix.Kernel`, inside the ordinary `Ix`
+   namespace. There is no separate `IxCertified` library or namespace. The
+   whole `Ix` namespace is the aspiration; certification status is tracked
+   per component by a ledger and enforced by audits, not by a namespace wall.
+2. The model is simplified. The kernel keeps the set-theoretic model, the
+   binder regime annotations, and the collapse of definitional equality to
+   set equality. It drops the machinery con-leche needed around them for a
+   name-based, stream-parsed, cache-simulated checker with generated
+   inductive models.
+3. The kernel is built on Ix-native data: content addresses and block/member
+   references instead of names, positional universe parameters, de Bruijn
+   terms, and Ixon's declaration shapes. Con-leche supplies proof techniques
+   and regression evidence, not code to port. The old Ix consistency branch
+   supplies the semantic model, which is already written in this style.
 
-### Repository checkpoints
+Second pass, same day, three additions: the Blake3 package now ships a pure
+Lean implementation, which becomes the certified hash wherever one is
+needed; `Ix.Kernel` is planned to replace `Ix.Tc` completely rather than
+coexist with it; and Ixon's substructural binder modes are carried from the
+start and planned as a later performance lever.
+
+## 1. Thesis and scope
+
+`Ix.Kernel` is a reference type checker for Ixon-shaped declarations,
+written in Lean, with a machine-checked theorem that every environment it
+accepts has a model in an explicit set theory, and therefore contains no
+proof of `False`. It is designed for the proof first: pure functions over
+small inductive types, explicit fuel, structural equality, no caches, no
+hashing, no foreign code in its execution closure. Performance comes later
+through promotions that carry their own simulation theorems.
+
+### Starting points
 
 | Source | Pinned revision | Role |
 | --- | --- | --- |
-| `~/projects/ix-certified` | `main` at `cf77c957e50d64a5ed42330d3ae8c176296e7d1d` | Fresh jj workspace; branch `jcb/ix-certified`; implementation destination |
-| `~/projects/con-leche` | `c431b1ca1b7a93486dd3e0440d3ee82abe90ccd0` | Initial checker, semantics, model, complete acceptance proofs, and relevant regression evidence |
-| `~/projects/ix`, branch `jcb/ix-kernel-consistency` | `ad60e5f6dd23655da79cf9898d2b6b3fefbe8658` | Completed Ix model and certificate results, concrete model construction, audits, fixtures, and selected implementation lemmas |
+| `~/projects/ix-certified` | `main` at `cf77c957e50d64a5ed42330d3ae8c176296e7d1d` | jj workspace; branch `jcb/ix-certified`; destination |
+| `~/projects/ix`, branch `jcb/ix-kernel-consistency` | `ad60e5f6dd23655da79cf9898d2b6b3fefbe8658` | `Ix.Theory`: address-native set model, semantic judgments, admission constructions, closed acceptance theorems; `Models/SetTheory`: Mathlib instance of the set theory |
+| `~/projects/con-leche` | `c431b1ca1b7a93486dd3e0440d3ee82abe90ccd0` | Proof style, checker soundness techniques, inductive/Nat/quotient constructions, audit and regression practice |
 
-The destination and current Ix checkpoint use Lean `v4.33.1`; the con-leche
-checkpoint uses `v4.33.0`. Preserve the destination toolchain initially and
-measure the compatibility work. Toolchain changes are separate, recorded
-changes with their own verification results.
+The destination and the old branch both use Lean `v4.33.1`; con-leche uses
+`v4.33.0`. Because code is taken from the old branch and only techniques
+from con-leche, no toolchain migration is on the critical path. The old
+workspace's jj working-copy change sits above the pin; compare it with the
+pin before extracting anything, and record which one was used.
 
-The inspected con-leche tree contains 486 Lean modules under `ConLeche/`.
-The first port is therefore an extraction of a substantial, coherent proof
-dependency closure. It is not just the small set-theory foundation previously
-copied into Ix.
+Sizes that shape the choices (measured on the pinned trees):
 
-The existing branch already defines a Lake target named `IxCertified`, but
-that target roots at `Ix.Certified` and links `ix_rs`. The destination starts
-from main and does not contain that target. The new target described here
-will own the top-level `IxCertified` namespace and a separately audited
-dependency graph.
-
-### Results to preserve
-
-The source provides several distinct results; preserve their statements and
-scope when extracting them:
-
-| Source result | What it establishes | Use in this plan |
+| Tree | Lines | Notes |
 | --- | --- | --- |
-| `ConLeche.model_exists` | Success of `Cached.checkDecls .verified pins ds` constructs a model of the resulting environment, for every pin list and every supplied `SetTheory V` | Initial public acceptance theorem |
-| `ConLeche.Denotes_functional` | The public denotation relation has at most one result | Public semantic specification |
-| `ConLeche.Cached.checkDecls_sound` | Accepted declarations construct the stronger internal environment invariant | Proof dependency of the public theorem |
-| `ConLeche.Cached.no_proof_of_False_cached` | An accepted environment contains no constant with the pinned `False` type | Environment-level consistency corollary |
-| `ConLeche.no_False_theorem_accepted` | An input declaration array containing a theorem record of the pinned `False` type cannot be accepted | Input-level consistency corollary |
-| `ConLeche.Cached.checkDecls_consts` and related stream theorems | Record the connection between input declarations and installed constants | Preserve source fidelity within their exact proved scope |
-| `Ix.Theory.Certified.accepted_has_model`, `accepted_proof_sound`, `no_proof_of_False` | The Ix certificate validator checks its supplied witnesses and constructs the model needed for accepted proofs | Later pure certificate API |
-| `Ix.Certified.LogicalReceipt.closed_subject_meaning`, `no_False` | Closed logical receipts establish the selected source subjects' meaning and relative consistency under the enforced profile | Later source and claim API after its dependencies qualify |
-| `IxSetTheoryModel.carneiro_implies_ix` | The specified inaccessible-cardinal hypothesis supplies the existing Ix set-theory interface | Reuse for an instance of the exact new interface |
+| con-leche `ConLeche/` | 220,971 in 486 modules | `Model/` 80K, `Verify/` 70K, `Semantics/` 23K, `Kernel/` 18K, `Frontend/` 16K, `Cached/` 5K, set theory and set model 5K |
+| old branch `Ix/Theory/` without `Named/` | about 27K | model 9K, set theory and set model 4K, inductive support 1K, syntax 2K, `Certified/` 10K, `Certificate/` 1K |
+| old branch `Ix/Theory/Named/` | 112K | lean4lean-derived named specification; excluded |
+| main `Ix/Tc/` implementation | 16K | production pure-Lean checker mirroring `crates/kernel` |
+| main `Ix/Tc/Verify/` | 181K in 404 modules | sorry-bearing verification against lean4lean; excluded |
 
-Con-leche's `no_False_declaration` additionally covers a particular JSON file
-template through parsing and preparation. It is not a general theorem about
-all byte encodings or arbitrary source transformations. The initial library
-will use the declaration-array theorem; byte-level claims are separate
-milestones.
+The old branch's `Ix.Theory` imports nothing from the rest of `Ix` except
+one audit helper, and nothing outside Lean, Std and Batteries. It is a
+self-contained address-native model with closed theorems. That is the core
+this plan builds on.
 
-### Scope of the first release
+### What the first release contains
 
-The first release consists of an executable Lean checker over its own typed
-declaration representation, its semantics and model construction, the public
-acceptance and no-False theorems, a concrete relative model construction,
-audits, and executable examples.
+- `Ix.Kernel`: syntax, environment, levels, reduction, inference, conversion,
+  declaration checking, and inductive validation for the profile in section 3.
+- `Ix.Kernel.Model`: the set theory interface, set constructions, total
+  interpretation, semantic judgments, and model-extension constructions.
+- `Ix.Kernel.Verify`: soundness of the checker against the model.
+- `Ix.Kernel.Consistency`: the public acceptance and no-False theorems.
+- Audits, tests, positive and adversarial fixtures, and the separate Mathlib
+  package instantiating the set theory under an explicit large-cardinal
+  hypothesis.
 
-The following are later work and are not prerequisites for that release:
+### Not prerequisites for the first release
 
-- Equivalence with, completeness for, or consistency of main's `Ix.Tc`.
-- Completion of the old branch's M2–M4 production-refinement roadmap.
-- Converting the certified core to Ix's content-addressed representation.
-- Full Ixon serialization, filesystem transport, and source-file fidelity.
-- Performance parity with either Ix or Lean's kernel.
+- Ixon byte decoding, filesystem transport, claims, receipts, and any theorem
+  about bytes or hashes (K3 to K5 below).
+- Replacement of `Ix.Tc` (K6) and parity or refinement claims about the Rust
+  kernel or the IxVM kernel.
+- Continuation of `Ix.Tc.Verify` or any lean4lean-based specification.
+- Mutual and nested inductives, string literals, accelerated Nat operations,
+  caches, interning, and parallel checking.
 - Rust, IxVM, Aiur, circuit, or proof-system execution correctness.
-
-The old branch is a source of proved components. Its unfinished method-table
-contracts and execution-history infrastructure do not become obligations of
-the new library merely because they exist.
 
 ## 2. Certification contract
 
-### The public acceptance theorem
+### The public theorems
 
-The initial theorem should retain the following source shape, after namespace
-adaptation:
+Target shapes, to be fixed at K0 on a kernel that rejects everything and
+preserved by every later milestone:
 
 ```lean
-theorem model_exists (V : Type w) [SetTheory V]
-    (pins : List NatOpPinSet) (ds : Array Declaration) (env : Env)
-    (accepted : Cached.checkDecls .verified pins ds = .ok env) :
-    Nonempty (Model V env)
+namespace Ix.Kernel
+
+/-- Check declarations in order against an environment that already has a
+model. Every reference must resolve to an installed constant. -/
+def checkDecls (cfg : Config) (env : Env) (decls : List Decl) : Except Error Env
+
+/-- The closed entry point: start from the empty environment. -/
+def check (cfg : Config) (decls : List Decl) : Except Error Env :=
+  checkDecls cfg Env.empty decls
+
+theorem checkDecls_has_model (V : Type w) [SetTheory V]
+    (m : Model V env) (h : checkDecls cfg env decls = .ok env') :
+    Nonempty (Model V env')
+
+theorem check_has_model (V : Type w) [SetTheory V]
+    (h : check cfg decls = .ok env) : Nonempty (Model V env)
+
+/-- `A` denotes the empty set in every model of `env`. -/
+def Env.EmptyType (env : Env) (universes : Nat) (A : AExpr) : Prop
+
+/-- No accepted constant inhabits an empty type. The hypothesis is semantic,
+so no pinned `False` is needed; K2 proves that a constructor-free inductive
+with no indices is an `EmptyType` in any sort, which gives Lean's `False`
+and `Empty` as corollaries with syntactic hypotheses. -/
+theorem no_proof_of_False (V : Type w) [SetTheory V]
+    (h : check cfg decls = .ok env) (hr : env.toEnvironment r = some entry)
+    (hA : env.EmptyType entry.universes entry.type) : False
 ```
 
-This is a target statement, not a declaration already implemented in this
-workspace. A small public `check` wrapper may fix `.verified`; its theorem
-must be derived from the exact function the API executes.
+The conditional theorem extends an environment that is already modeled; the
+closed theorem constructs its starting model itself. Both are about the
+exact function the API executes. A caller never supplies checker soundness,
+annotation agreement, a model of unchecked input, a dependency order proof,
+or a witness.
 
-Preserve the input theorem that a `thmDecl` with the pinned `False` type
-cannot occur in a successfully checked declaration array. Also expose the
-environment-level theorem and the source correspondence results needed to
-interpret acceptance. A theorem merely about a conveniently chosen internal
-environment is insufficient as the public API contract.
-
-No caller of the closed acceptance API should have to supply checker
-soundness, annotation agreement, valid cache histories, admitted-declaration
-meaning, a model of unchecked input, or a successful execution's semantic
-invariants. The implementation and its proof must construct those facts.
-
-Conditional extension APIs can remain useful. They must name their actual
-preconditions and stay distinct from the closed acceptance API. For example,
-extending an already modeled interface may assume that interface's model;
-checking a closed input must establish its starting model itself.
+`Model V env` is the old branch's notion: one assignment of a set to every
+reference at every universe instance, under which every stored constant is
+a member of what its type denotes, every stored body denotes the constant,
+and every published equation holds. Definitional equalities need no clause
+of their own: an accepted `rfl` theorem `a = b` is a constant inside the
+truth value of `⟦a⟧ = ⟦b⟧`, so both sides denote the same set.
 
 ### Mathematical assumptions
 
-Consistency remains relative to an explicit `SetTheory V`. This interface
-contains the set-theoretic operations and laws and a countable tower of
-Grothendieck universes. The separate Mathlib construction supplies an instance
-under the explicit `OmegaInaccessibles` hypothesis.
+Consistency is relative to an explicit `SetTheory V`: membership with
+extensionality, pairing, union, power set, regularity, a replacement scheme,
+and a countable tower of Grothendieck universes. This is the interface the
+old branch ported from con-leche; it is retained unchanged. The separate
+Mathlib package supplies an instance under `OmegaInaccessibles`.
 
 The proof audit permits Lean's standard logical axioms, `propext`,
-`Classical.choice`, and `Quot.sound`, with exact sets recorded per public
-root. A root may use fewer. Absence of additional Lean axioms does not remove
-the theorem's explicit set-theoretic hypothesis.
+`Classical.choice`, and `Quot.sound`, with the exact set recorded per public
+root. Reject `sorryAx`, `Lean.ofReduceBool`, new project axioms, and unnamed
+semantic premises from the certified closure. Audit checked theorem types,
+definition bodies, and inductive constructor types; an axiom list alone does
+not reveal an impossible or overly strong hypothesis.
 
-Reject `sorryAx`, `Lean.ofReduceBool`, new project axioms, and unnamed
-semantic premises from the certified proof closure. Audit checked theorem
-types, definition bodies, and inductive constructor types; an axiom list
-alone does not reveal an impossible or overly strong theorem hypothesis.
+### Execution boundary
 
-### Executable and source boundaries
+The theorem is about the specified Lean functions. The Lean kernel,
+compiler, runtime, and standard data representations are the execution
+foundation. The certified execution closure contains no `@[extern]`,
+`implemented_by`, `unsafe`, `partial`, or `native_decide` reached from the
+public operations, and no `ix_rs`, C, or Rust BLAKE3 symbol. An `Address`
+inside the kernel is an opaque 32-byte key; the kernel never hashes.
 
-The mathematical theorem is about the specified Lean functions. The Lean
-kernel, compiler, runtime, and standard data representations remain the
-ordinary execution foundation. Record con-leche's existing use of computed
-fields and proved compiler simplifications. Do not expand that boundary by
-silently linking the existing Ix Rust library or a foreign hash implementation.
+Where a certified operation outside the kernel needs BLAKE3 (address
+reconstruction after K4, authentication and subject roots in K5), it calls
+`Blake3.Pure.hash` from the Blake3 package at revision
+`18b4b1c8937e32f88463bb8f5ee16a7b5f24fcc1` or later: a total Lean function
+for one-shot unkeyed hashing whose package audits 50 proof roots for the
+standard axioms only and whose module imports neither FFI backend. The C
+and Rust backends stay host accelerators, tied to the pure function by the
+package's differential vectors and by our own corpus tests. The binding
+between bytes and addresses is then a theorem about `Blake3.Pure.hash`, not
+a hypothesis; only collision resistance remains an explicit assumption where
+a claim needs uniqueness, and the consistency theorem never uses it. No
+axiom asserts that equal digests imply equal values.
 
-Proof dependencies, imported modules, and compiled execution dependencies
-need separate inventories. An optimization justified by a proved `csimp`
-equation has different evidence from an unchecked `implemented_by` or an
-opaque foreign function. Passing an axiom audit does not establish that a
-foreign implementation matches its Lean specification.
-
-Data supplied by a generator or witness search is untrusted input to a
-validator. Its successful validation may be certified even when the search
-procedure has no correctness or completeness theorem. Place such tools
-outside the certified implementation unless their own advertised contract is
-proved. Preserve the distinction between correctness of a checked declaration
-and fidelity of a transformation from an earlier source representation.
+Data produced by search or generation is untrusted input. Proof
+dependencies, imported modules, and compiled execution dependencies are
+inventoried separately.
 
 ### Coverage and rejection
 
-Retain the supported cases and restrictions of the pinned upstream verified
-checker. Unsupported features, exhausted resources, missing witnesses, and
-failed checks must return a non-accepting result. No certified command may
-fall back to the legacy checker and turn its verdict into certified success.
+The kernel has three outcomes: accept, reject (the input is wrong), and
+decline (the kernel does not support the input and says why). Only accept
+carries the theorem. Fuel exhaustion declines. No certified command falls
+back to `Ix.Tc` or the Rust kernel and reports their verdict as certified.
 
-Maintain positive accepted examples alongside rejection examples. An
-implementation that rejects everything satisfies a weak no-False statement
-but does not satisfy this plan's functionality requirements. Soundness,
-coverage, completeness, and performance are separately reported properties.
+Positive accepted fixtures accompany every feature and every rejection
+fixture. A kernel that rejects everything satisfies the no-False theorem and
+fails the functionality requirements. Soundness, coverage, completeness, and
+performance are reported separately.
 
-## 3. Library structure and dependency rules
+## 3. Design of `Ix.Kernel`
 
-### Proposed layout
+### 3.1 Syntax
 
-The following paths are planned. Introduce optional directories only when
-their corresponding component is ready.
+Kernel terms are the old branch's `VExpr`/`AExpr` over `ConstRef Address`,
+extended with `let`:
 
-```text
-IxCertified.lean                 Small public API and theorem imports
-IxCertified/
-  Kernel/                       Ported names, levels, expressions, declarations, checker
-  Cached/                       Ported executable cached implementation
-  SetTheory/                    The shared abstract foundation and its derivations
-  SetModel/                     Set constructions used by the model
-  Term/                         Ported term support required by the proof
-  Semantics/                    Interpretation and semantic judgments
-  Model/                        Environment invariant and model construction
-  Verify/                       Proofs about the executable checker
-  Denotes.lean                   Public denotation and model specification
-  Consistency.lean               Public acceptance and no-False theorems
-  Theory/                       Later extraction of the closed Ix certificate theory
-  Certificate/                  Later public certificate validation API
-  Data/                         Later verified reusable representations
-  Codec/Ixon/                   Later proved Ixon schema and codecs
-  Source/                       Later declaration/source correspondence
-  Claims/                       Later pure receipt and claim validation
-Tests/IxCertified/              Proof, import, runtime, provenance, and regression gates
-Tools/IxCertified/              Generators, witness search, benchmarks, and IO tools
-Ix/CertifiedAdapter/            Host integration allowed to depend on ordinary Ix
-Models/IxCertifiedSetTheory/    Separate Mathlib package instantiating the exact interface
-docs/ix-certified.md            Public contract, feature coverage, build and trust boundary
+```lean
+inductive Level | zero | succ | max | imax | param (i : Nat)
+
+inductive ConstRef (β)
+  | member (block : β) (i : Nat)          -- i-th member of a block
+  | ctor (block : β) (i c : Nat)          -- c-th constructor of member i
+
+inductive Expr (β)
+  | bvar (i : Nat)
+  | sort (u : Level)
+  | const (r : ConstRef β) (us : List Level)
+  | app (f a : Expr β)
+  | lam (uses : Uses) (dom body : Expr β)
+  | forallE (uses : Uses) (owned : Owned) (dom body : Expr β)
+  | letE (ty val body : Expr β)
+  | proj (r : ConstRef β) (i : Nat) (e : Expr β)
+  | natLit (n : Nat)
 ```
 
-Initially map the `ConLeche` prefix to `IxCertified`, retaining the internal
-directory organization and declaration structure. The new `Consistency.lean`
-will extract the required theorem declarations from the upstream assembly.
-It need not inherit that file's unrelated frontend imports.
+The annotated form `AExpr` adds a `PropWhen` regime condition to `lam` and
+`forallE` and nothing else. `letE` carries no annotation: its meaning is
+substitution, and the kernel zeta-reduces before any structural comparison,
+as con-leche does. Annotations never steer reduction; they are written by
+inference, compared during conversion, and read by the model.
 
-The later `Theory/` extraction can preserve the existing Ix model's distinct
-annotated syntax under `IxCertified.Theory`. Sharing the same set-theory
-foundation does not make its term semantics definitionally equal to
-con-leche's. Keep the two APIs explicit until an actual bridge is proved;
-neither API's theorem should depend on a speculative unification of them.
+`Uses` and `Owned` are Ixon v2's substructural binder modes
+(`Ix/IxonMode.lean`): usage `erased`, `linear`, `affine`, or `many` on every
+binder, and ownership `unique` or `shared` on a forall's result. They are
+carried as data so ingress and egress lose nothing. The first release
+accepts only the conservative fragment that ordinary Lean compilation
+emits, `many` and `shared`, and declines other modes; conversion compares
+modes structurally; the model ignores them. Mode checking and the
+optimizations modes license are K7.
 
-### Dependency direction
+There are no names, no binder info, no metadata, no free variables, no
+metavariables, and no string literals in the first release. Binders are
+opened by extending a context list, as in the old branch's judgments.
+Universe parameters are positional, matching Ixon `Univ.var`. The kernel is
+parametric in the reference type `β` where that costs nothing, and the
+public API fixes `β := Address`.
 
-- `IxCertified` may depend on the pinned Lean/Std foundation and its own
-  admitted modules. Add any other dependency through the same review and
-  audit as project code.
-- Its source and compiled closure must not import `Ix`, `Ix.Tc`,
-  `Ix.Kernel`, `Ix.Theory.Named`, Lean4Lean verification frontiers, or
-  ordinary Ix foreign interfaces.
-- The executable kernel and cached implementation do not import the model
-  or their correctness proofs. The proofs import the implementation.
-- Audits and tests import the library. The library never imports test or
-  audit roots.
-- Host adapters may import both `IxCertified` and `Ix`. The reverse edge is
-  forbidden. Their claims are limited to the connections actually proved.
-- Mathlib stays in the separate model package. The ordinary certified
-  checker and its abstract consistency theorem do not depend on Mathlib.
+### 3.2 Declarations and environment
 
-A separate `lean_lib` in the same Lake package does not enforce these
-boundaries. Use an import-graph gate and a checked-declaration dependency
-audit. A future package split is available if useful, but is not required to
-obtain the first complete theorem.
+Declarations mirror Ixon constant shapes: axiom, definition/theorem/opaque,
+quotient primitive, inductive with constructors, recursor with rules, and a
+block (`muts`) of members that may refer to each other by index. Ixon
+projection constants (`iPrj`, `cPrj`, `rPrj`, `dPrj`) are consumed at
+ingress to build an alias map from their addresses to `ConstRef` values;
+the kernel checks blocks, and a reference whose address is neither a block
+nor an alias rejects. Production ingress reconstructs projection addresses
+by hashing; the certified ingress requires them to be supplied and only
+looks them up.
 
-Define `lean_lib IxCertified` without `moreLinkObjs := #[ix_rs]`, legacy
-verification `dynlibs`, or dependencies on ordinary Ix test executables.
-Use explicit roots/globs so unrelated host tools and unfinished experiments
-are not included. Keep the certified target independently buildable even
-though the repository also contains the existing default `Ix` target.
+The environment is an ordered, `Address`-keyed finite map: a list of
+installed blocks with their addresses and an index for lookup. Checking
+folds over the input in the order supplied. A reference to an address that
+is not yet installed rejects; a duplicate address rejects. Dependency order
+is a property of the supplied list, not of hashes, so acceptance needs no
+acyclicity proof and no collision assumption. Within a block, members refer
+to each other by index and are checked together.
 
-An unimported package requirement in the root Lake manifest is not a proof
-dependency. Verify separately which packages are fetched, which modules are
-elaborated, and which objects are linked; do not claim that a separate target
-automatically eliminates all dependency-download work.
+### 3.3 Semantics and model
 
-## 4. Source selection and migration policy
+Port the old branch's `Ix.Theory.Model` as `Ix.Kernel.Model`:
+
+- `SetTheory V` and the derived constructions (`SetModel`: pairs, graphs,
+  dependent products `piR`/`lamR` by regime, universes, numerals).
+- The total interpretation `interp constants levels env : AExpr → V` with
+  the separate hereditary predicate `WellDenoted`. A total function replaces
+  con-leche's `Denotes` relation; functionality is by definition.
+- `Environment`, `ConstantEntry` (universes, type, optional body, published
+  equations, facts), `Realizes`, `Assignment`, and `Extends`.
+- The semantic judgments `TypingClaim` and `ConversionClaim`, quantified over
+  every compatible assignment, with their proved rule theorems (sort, bvar,
+  const, app, lam, forallE, conversion, beta, eta, proof irrelevance, delta,
+  equation, literal) and the projection and equation facts published by the
+  admission constructions.
+
+Add the `letE` clause (interpretation by substitution) and its lemmas.
+
+### 3.4 Checker
+
+The checker is a reference algorithm in the shape of `Ix.Tc` and nanoda,
+written for proof:
+
+- `whnf`: beta, zeta, delta with reducibility hints only as a heuristic,
+  iota through stored recursor rules, projection, Nat literal successor
+  reading, level instantiation. Fuel-bounded; no caches.
+- `infer`: returns the annotated term together with its type. Binder
+  annotations are computed here from the inferred codomain sort. This merges
+  con-leche's unverified annotate pass and validation sweep, and the old
+  branch's `AnnotationTree` witnesses and `readAnnotations?`, into one
+  certified operation: the theorem says the annotated output erases to the
+  input and inhabits the returned type.
+- `isDefEq`: structural comparison on annotated terms with level
+  equivalence, lazy delta by hints, eta for functions, proof irrelevance,
+  Nat literal handling, projection and structure eta where the profile
+  admits it. Annotation disagreement declines; it never redirects work.
+- `checkDecl`: universe parameter checks, type is a sort, body has the
+  declared type, theorem types are propositions, standard axioms only,
+  inductive validation and recursor validation (3.5), installation.
+
+Two drivers sit on top of `checkDecl`, both pure. The closed fold checks a
+list in order and is the subject of `check_has_model`. The subject driver
+takes an assumed environment whose model is a hypothesis and a list of
+subjects in dependency order, and returns the extended environment; it is
+the claim-shaped entry point behind `checkDecls_has_model`. A parallel
+driver is con-leche's install/check split: install the prefixes first, then
+run the same `checkDecl` on each declaration's own prefix concurrently, so
+its verdict equals the sequential fold's by construction. The four
+operations the compiler's auxiliary generator uses today through
+`Ix.Tc.Knot` (`whnf`, `infer` with `ensureSort`, `isDefEq`,
+`isLargeEliminator`) are exported as pure functions.
+
+Soundness is extrinsic and mirrors con-leche's style: for each function a
+theorem in the shape `infer Γ e = some (e', A) → TypingClaim Γ e' A`,
+`whnf e = some e' → ConversionClaim Γ e e'` under the typing of `e`, and
+`isDefEq a b = true → ConversionClaim Γ a b` under typing of both. The
+proofs consume the rule theorems of 3.3; those are exactly the lemmas the
+old branch's witness validator applied one witness node at a time.
+
+`partial` is not used in certified code. Termination is by fuel or by
+structural recursion; fuel exhaustion declines.
+
+### 3.5 Inductive types and pinned blocks
+
+The kernel validates an inductive declaration (universe and parameter
+agreement across the block, manifest return types, strict positivity, field
+sort bounds, elimination level) and computes the recursor it expects. A
+stored recursor is accepted only if it is structurally equal to the
+computed one. The model side is a construction per shape class, ported from
+the old branch's admission routes:
+
+| Profile item | Model construction (old branch source) | Release |
+| --- | --- | --- |
+| Ordinary strictly positive families: ordinary fields, then recursive fields whose domains and indices do not depend on other recursive fields | `Certified/Ordinary` (carriers, eliminators, rule equations, large elimination) | K2 |
+| Structures with projections, eta, and the `Prop` field restriction | `Certified/Structure` | K2 |
+| `Nat`: structural pin of zero and successor, numerals, literal typing | `Certified/Natural` | K2 |
+| `Eq`: admitted as an ordinary indexed family; its meaning as set equality and K-like reduction through proof irrelevance | `Certified/Ordinary`, `Certified/Basis/Equality`, `Certified/Standard/Realization` | K2 |
+| Quotient primitives and `Quot.sound` | `Certified/Quotient` | K2 |
+| `propext`, `Classical.choice` | `Certified/Standard` | K2 |
+| Constructor-free inductives (`False`, `Empty`) | follows from the ordinary construction | K2 |
+| Mutual and nested blocks | `Certified/Modeled` uses checked companions; treat as a later promotion, not a first-release route | K6 |
+| K for other families, reflexive blocks, string literals | none yet | K6 |
+
+Pins exist only where a reduction rule must identify a block: `Nat` for
+literals in the first release, `Bool`/`String` later. A pin is a structural
+comparison of the stored block with the pinned declaration; the address is
+only the lookup key. Nothing in the consistency theorem depends on a pin.
+Unsupported shapes decline with the class named.
+
+### 3.6 Simplifications and why each preserves the theorem
+
+| Simplification | What it removes | Why consistency is preserved |
+| --- | --- | --- |
+| Addresses and `ConstRef` instead of names | `Name`, prefix scoping, reserved names, shadowing rules, "installed under its own name" theorems, name-injectivity encodings | The model indexes constants by reference; a reference resolves by key or rejects |
+| Positional universe parameters | Named `LevelParam`, `substFn`, capture reasoning | Level assignments are lists; evaluation is unchanged |
+| Ordered environment, order supplied by the host | Dependency walks with proved decreasing ranks, hash-based acyclicity | Acceptance requires every reference to be installed earlier |
+| Total `interp` with `WellDenoted` | The `Denotes` relation and `Denotes_functional` | Same denotations; rewriting works directly |
+| Annotations produced by `infer` | Unverified annotate pass plus validation; annotation witnesses and readers | The same theorem certifies the annotations it outputs |
+| Direct checker soundness | `TypingWitness`/`ConversionWitness` trees, witness search, reject-on-search-failure | The witness rules are the rule theorems; the checker applies them in the proof |
+| One fold, no cached tier | `Cached/` and its simulation proofs | The executed function is the theorem's subject |
+| No parser in the closure | `Frontend/`, chunked byte theorems | Bytes get their own contract in K4 |
+| Generated recursors and direct model constructions per shape class | Generated `_model` families, opaque installs, projection-function rewriting, companions | Each class has a proved model extension; other classes decline |
+| No-False from constructor-free inductives | Pinned `False` basis block with a `false_empty` model field | The ordinary construction interprets a constructor-free inductive as the empty set |
+| Structural pins, `Nat` only | Hardcoded address tables for dispatch, name-based basis pins | Pins identify content; addresses stay keys |
+| Zeta by substitution | Let annotations, lazy zeta machinery | The regime is read on binders only |
+| Strings and Nat acceleration deferred | `strLitToConstructor`, `NatOpPinSet`, division certificates | Coverage changes, soundness does not |
+| Pure BLAKE3 outside the kernel | FFI hashing on certified paths and a refinement obligation against it | The kernel never hashes; hashing theorems are about a Lean function |
+
+Kept deliberately: the `SetTheory` interface, the `PropWhen` regime on
+binders, the collapse of definitional to propositional equality, and
+level-polymorphic constants as functions of level assignments. The old
+branch's refutation `CheckedTyping.annotations_not_determined` still
+applies: identical erased syntax does not license interchangeable
+annotations, which is why the kernel compares annotations in conversion
+instead of assuming them.
+
+### 3.7 Why addresses help the proof
+
+- Lookup is a total function on keys. There is no resolution, no scope, and
+  no rename; the environment invariant is a list invariant.
+- Mutual blocks and constructors are structural positions. Block ownership
+  and constructor membership are bounds checks, not name conventions.
+- Content addressing gives the host a canonical dependency order for free,
+  and the kernel only has to check it.
+- The identity the rest of Ix certifies, `KId.addr`, subject roots,
+  assumption trees, and claim payloads, is the same key the kernel's theorem
+  is stated over. K3 to K5 compose without a translation layer.
+- The old branch's model, judgments, and admission constructions were built
+  over `ConstRef β` for exactly this reason and port without redesign.
+
+## 4. Layout, layering and the certification ledger
+
+### Module layout
+
+```text
+Ix/Kernel.lean                 Public API and theorem imports
+Ix/Kernel/
+  Level.lean                   Positional levels, equivalence, normalization
+  Ref.lean                     ConstRef
+  Expr.lean                    VExpr, AExpr, lift/inst/instL, scope
+  Const.lean                   Declarations and blocks
+  Env.lean                     Ordered Address-keyed environment
+  Whnf.lean  Infer.lean  DefEq.lean  Inductive.lean  Check.lean
+  Model/                       SetTheory, SetModel, Interpret, Judgment,
+                               Environment, Inductive constructions
+  Verify/                      Soundness proofs; imports the implementation
+  Consistency.lean             check_has_model, no_proof_of_False
+  Audit/                       Axiom, import, runtime, provenance audits
+  Ingress.lean                 K3: Ixon constants to kernel declarations
+Ix/Address/Core.lean           Pure address key (K0 split, see below)
+Ix/Ixon/Types.lean             K3: pure Ixon data types split from codecs
+Tests/Ix/Kernel/               Fixtures, soundness tests, audit controls
+Models/SetTheory/              Mathlib instance package (ported)
+docs/kernel.md                 Public contract, coverage, trust boundary
+```
+
+`Tests/Ix/Kernel/` already holds the Rust kernel's FFI harnesses
+(`CheckEnv`, `Arena`, and others). They keep that role, stay outside the
+certified gate, and new modules take distinct names.
+
+### Two small refactors on `main`
+
+1. `Ix.Address` imports `Blake3.Rust`, whose package loads precompiled
+   shared objects into any elaborating process. Add `Ix.Address.Core` with
+   the structure, `BEq`, `DecidableEq`, `Ord`, `Hashable`, and hex
+   conversion; keep `Ix.Address` as the existing API that re-exports `Core`
+   and defines `Address.blake3`, the `ToExpr` instances, and the existing
+   `Inhabited` value (blake3 of the empty input, unchanged: the kernel needs
+   no default address). The kernel imports only `Core`. In the
+   same change, bump the Blake3 pin to the pure-implementation revision and
+   add `Address.blake3Pure`, defined by `Blake3.Pure.hash` in a module that
+   imports only `Blake3.Pure`, with a test comparing it to the Rust backend
+   on the fixture corpora. Host code keeps calling the Rust backend.
+2. `Ix.Ixon` defines the Ixon data types alongside codecs and imports
+   `Ix.Environment` (Blake3 name hashing) and `Ix.Merkle`. K3 moves the
+   data types to `Ix.Ixon.Types`, importable by the kernel's ingress.
+
+Both are mechanical, reviewed separately, and change no behavior.
+
+### Layering rules
+
+- `Ix.Kernel.*` imports Lean, Std, Batteries where needed, `Ix.Address.Core`,
+  and from K3 `Ix.Ixon.Types`. Nothing else under `Ix`, no `Blake3`, no
+  `lean4lean`, no `Ix.Tc`.
+- Implementation modules do not import `Model` or `Verify`. Proofs import the
+  implementation. Audits and tests import the library; the library never
+  imports them.
+- Everything else in `Ix` may import `Ix.Kernel`.
+- Mathlib stays in `Models/SetTheory`.
+
+A `lean_lib` does not enforce these rules. An import-graph audit with an
+explicit allowlist and negative controls does. The runtime audit inventories
+`@[extern]`, `implemented_by`, `unsafe`, `partial`, computed fields, and
+`csimp` replacements reachable from the public operations.
+
+### Lake targets
+
+```lean
+lean_lib IxKernel where
+  globs := #[.submodules `Ix.Kernel]
+```
+
+No `moreLinkObjs`, no `dynlibs`. `Ix.lean` may import `Ix.Kernel` for the
+host; the default `ix` build then compiles the kernel, but the strict gate
+is `lake build --wfail IxKernel` on this target alone. A `check-kernel`
+script runs the build, audits, tests, and provenance checks, with
+`--with-model` adding the Mathlib package.
+
+### The Ix certification ledger
+
+Every component of `Ix` has a status: certified (theorem and audit), specified
+(contract stated, proof pending), or host (execution boundary, explicitly
+outside). The ledger lives in `docs/kernel.md` and is updated at every
+checkpoint. Initial entries:
+
+| Component | Modules | Status now | Route |
+| --- | --- | --- | --- |
+| Certified kernel | `Ix.Kernel.*` | to be built | K0 to K2 |
+| Address key | `Ix.Address.Core` | pure data | K0 |
+| BLAKE3 | `Blake3.Pure` (package), `Address.blake3Pure` | certified function once the pin is bumped and our runtime audit confirms its closure | K0 pin bump; used from K4 and K5; the C and Rust backends stay host accelerators |
+| Ixon data types | `Ix.Ixon` types | host | K3 split, then certified data |
+| Ixon codecs | `Ix.Ixon` encoders and decoders | host | K4, supported subset |
+| Ixon to kernel ingress | `Ix.Tc.Ingress` today | host | K3 certified reading relation |
+| Claims, assumption trees, Merkle roots, commitments | `Ix.Claim`, `Ix.AssumptionTree`, `Ix.Merkle`, `Ix.Commit` | host | K5, with explicit cryptographic assumptions |
+| Lean reference checker | `Ix.Tc` | host; replaced by `Ix.Kernel` in K6 | every consumer migrates, then `Ix.Tc` is deleted |
+| Rust kernel | `crates/kernel`, `Ix.KernelCheck` | host fast path | differential parity against `Ix.Kernel`; verdicts are not certified |
+| In-circuit kernel | `Ix.IxVM.Kernel` (Aiur program) | separate implementation | refinement to `Ix.Kernel` is the long-term composition point; out of scope here |
+| Lean4lean-based verification | `Ix.Tc.Verify`, `lean4lean` dependency | outside the closure | deleted with `Ix.Tc`; its audit helper moves to `Ix.Kernel.Audit` |
+| Auxiliary generation | `Ix.AuxGen` | host consumer of the kernel's four operations | migrates to `Ix.Kernel` in K6 |
+| Compiler and decompiler | `Ix.CompileM`, `Ix.CondenseM`, `Ix.GraphM`, `Ix.CanonM`, `Ix.Sharing`, `Ix.EnvScope`, `Ix.DecompileM`, `Ix.Environment` | host; `Ix.Compile.Verify` currently admits native-decision axioms for BLAKE3 and name hashing | source-fidelity contracts later; the pure BLAKE3 offers a way to drop those axioms |
+| Transport and IO | `Ix.ImportIxe`, `Ix.Catalog`, `Ix.Replay`, `Ix.Watchdog`, `Ix.Iroh`, `Ix.Cli` | host | stays host |
+| Proof systems | `Ix.Aiur`, `Ix.IxVM`, `Ix.MultiStark`, `Ix.Aggr` | separate obligations | out of scope |
+
+## 5. Source selection and migration policy
+
+### From the old branch
+
+| Component | Treatment |
+| --- | --- |
+| `Ix/Theory/{Ref,VLevel,VLevelLemmas,Expr,ExprSubstitution,Const,Store,Rename,Quot}.lean` | Port as `Ix.Kernel.{Ref,Level,Expr,Const,...}`; add `letE` |
+| `Ix/Theory/Model/*` including `SetTheory/`, `SetModel/`, `Inductive/` | Port as `Ix.Kernel.Model.*` with the namespace map recorded |
+| `Ix/Theory/Certified/{Ordinary,Structure,Natural,Quotient,Standard,Basis}` | Port the model-extension constructions and shape checks; the kernel's inductive validation drives them instead of witnesses |
+| `Ix/Theory/Certified/{Checker,Accept,Store,Admission,Signature,Source,Claims,ClaimComposition,Operations}` | Not carried as an API. Mine them for lemmas; the witness datatypes and the search-facing acceptance functions are not deliverables |
+| `Ix/Theory/Certified/Modeled` | Reference for K6 mutual/nested work |
+| `Ix/Theory/Certificate/*` | Excluded: witness search |
+| `Ix/Theory/Named/*`, `Ix/Kernel/Verify/*`, `Ix/Certified/*` host adapters, execution histories | Excluded from the certified closure; `Ix/Certified/Ingress.lean` and `Store.lean` are reference material for K3 and K5 |
+| `Models/SetTheory` | Port the package; retarget `carneiro_implies_ix` to `Ix.Kernel.Model.SetTheory`; keep the audit |
+| `Tests/Theory/*` | Port fixtures that exercise the model and the admission constructions |
+| The audit helper `Ix.Kernel.Verify.Audit.AxiomAudit` imported by `Ix.Theory` | Reimplement under `Ix.Kernel.Audit` |
 
 ### From con-leche
 
-Compute and record the transitive closure of the selected theorem and
-execution roots. Include semantic and implementation helpers actually needed
-by those roots, private declarations, meta imports required for elaboration,
-and generated data required by `include_str`.
+Techniques and evidence, each recorded with its origin:
 
-Retain the annotation discipline, scoped environments, declaration-prefix
-checking, verified-mode checks, inductive admission routes, cached checker
-simulation, and Nat-operation certificate validation as a unit. The current
-Ix checker representations and algorithms do not constrain this first port.
+- The extrinsic verification style: certifying variants of `infer`, `whnf`,
+  and `isDefEq` that follow the executable definitions clause by clause.
+- The two annotation laws: annotations never steer reduction; a mismatch
+  declines, never rejects.
+- The decline/reject distinction and the exit-code discipline.
+- The layering fence with negative tests, and the trust-surface allowlist.
+- The iteration protocol: start from a kernel that rejects everything with
+  the theorem proved, add one feature at a time, keep the theorem green.
+- The measured lesson that no union-find conversion cache is sound with a
+  non-transitive conversion; relevant to `Ix.Tc.Equiv` and to K6.
+- Later, the `Nat.div`/`Nat.mod` well-founded-definition certificates and
+  the interned-arena and memo designs, as source material for K6 promotions.
+- Regression fixtures from the lean kernel arena tutorial set, re-encoded
+  through the Ix compiler.
 
-Keep the pin-list parameter general. At the pinned revision the theorem is
-valid for every `List NatOpPinSet`; the empty list may reduce coverage, but
-does not justify a weaker soundness claim. Ship a documented pin selection
-and verify its positive coverage independently.
+No con-leche Lean module is copied into the certified closure in K0 to K2.
+If a specific lemma is later copied, it enters through the provenance
+record like any other import.
 
-Copy the relevant committed pin data and preserve its source identity. The
-core's `Kernel/CheckerBase.lean` imports `Kernel/NatOpPins.lean`, whose meta
-loader and relative `include_str` paths also need to be handled. Moving only
-`.lean` files is insufficient. Toolchain-specific regeneration and freshness
-checks must use the toolchain the data describes.
+### From `main`
 
-Do not import `ConLeche.Challenge`: it deliberately contains `sorry` and is
-outside the original theorem's closure. Historical experiments, arena
-artifacts, upstream task journals, and unrelated tool frontends are not
-library dependencies.
-
-The upstream main-theorem assembly imports frontend modules for its file
-corollary. Extracting the declaration-level results first avoids bringing
-the parser, projection rewriting, and model generators into the public
-certified boundary before their exact contracts have been classified.
-
-### From `jcb/ix-kernel-consistency`
-
-| Component | Intended treatment | Qualification needed |
-| --- | --- | --- |
-| `Ix/Theory/Model/SetTheory`, `SetModel` | Compare with the new foundation and reuse matching definitions/proofs | Verify source revisions and definitions; no silent second meaning of `SetTheory` |
-| `Models/SetTheory` | Adapt the concrete construction to the exact new foundation | Audit the new bridge and retain the explicit cardinal hypothesis |
-| `Ix/Theory/Certified`, required syntax/model modules | Port a complete pure validator and its theorem closure | Construct models from actual validation; preserve accepted-input and annotation correspondence |
-| `Ix/Theory/Certificate` search/builders | Separate proposal generation from validation | Generator output is checked; generator completeness is not implied |
-| Context, substitution, level, Nat, quotient, and inductive lemmas | Reuse when they directly support an admitted component | Match actual definitions and assumptions; unused proof infrastructure is not mandatory |
-| `Ix/Certified` receipts, source meaning, claims | Split pure contracts from existing Ix representations and host execution | Port only after the relevant source/codec/data dependencies qualify |
-| `Ix/Kernel/Certified*` wrappers | Reimplement small adapters to the new public API where useful | Legacy module location does not make production checker success a premise of certification |
-| `Ix/Compile/Verify` | Review later for reusable translation/codec proofs | Require the exact source/target specification and complete transitive proof closure |
-| Provenance, axiom/runtime audits, frozen fixtures | Reuse their mechanisms and relevant evidence | Recompute for the new namespace and roots; test the audit machinery itself |
-| General production `Verify/Consistency` contracts and histories | Leave on the old branch | They are unnecessary for the con-leche acceptance theorem |
-| `Ix.Theory.Named`, old sorry frontiers, VM pilots | Exclude from the certified closure | Any later use needs its own completed contract and explicit scope |
-
-The old branch's `CheckedTyping.annotations_not_determined` and
-`sameRaw_not_conversion` results are architectural lessons: checked formation
-or identical erased syntax does not imply interchangeable binder annotations.
-Preserve the annotations justified by the new checker's actual operations.
-Do not reinstate the refuted uniform annotation premise under a new name.
+- `Ix.Tc` is the behavioral reference for reduction order, inductive checks,
+  and recursor generation, and the oracle for differential testing. Its
+  verdicts are never certified evidence.
+- `Ix.Tc.Ingress` is the reference for share expansion, table resolution,
+  and projection reconstruction in K3; `Ix.Tc.CanonicalCheck` for the
+  kernel-side canonical block order validation in K4; `Ix.Tc.Knot` for the
+  public operation set; `Ix.Tc.ParCheck` for the parallel driver's
+  reporting and worker layout.
+- `Tests/Ix/Tc` holds the differential and scale tests (`AnonDiff`,
+  `AccelDiff`, `TutorialTc`, `InitScale`, `Roundtrip`) that become the
+  parity corpus for K6.
+- `Ix.Ixon` types define the input shapes; `docs/Ixon.md` is the format
+  specification for K4.
+- The compiled fixture corpora under `Tests/` supply Ixon inputs.
 
 ### Provenance and transformation discipline
 
-For each imported file record the repository, full revision, original path,
-source SHA-256, destination path, destination SHA-256, license, and a short
-description of transformations. Record non-source assets and generators too.
-Maintain separate entries for imported and newly authored modules.
+For each imported file record the repository, revision, original path,
+source SHA-256, destination path, destination SHA-256, license, and the
+transformations applied. Keep separate entries for imported and newly
+authored modules. Preserve the con-leche Apache-2.0 attribution carried by
+`Models/SetTheory` and by any copied lemma. The old branch's set theory came
+from con-leche `86cd20a65660d757cedc81561a44579099b565d0`; do not claim a
+newer origin.
 
-Preserve con-leche's Apache-2.0 license and attribution and the existing Ix
-port notices and licenses. The old Ix foundation came from con-leche
-`86cd20a65660d757cedc81561a44579099b565d0`, not the new pinned revision;
-compare those definitions before deduplicating or claiming identical origin.
+Separate mechanical namespace and import changes from semantic changes into
+reviewable checkpoints. Record theorem statements before and after each
+semantic change. A namespace rewrite must not touch payload data such as
+fixture bytes or pinned declarations.
 
-Separate mechanical namespace/import/path changes, toolchain compatibility
-changes, and algorithm changes into reviewable checkpoints. Record the
-theorem statements and assumptions before and after each semantic change.
-Distinguish Lean module/declaration names from names represented as data inside
-the checked language or serialized pins. A namespace rewrite must not silently
-rewrite those payloads or change the declarations the certificates describe.
-Avoid importing the entire old branch or carrying its unrelated changes to
-main into the fresh workspace.
+## 6. Milestones
 
-## 5. Milestones and dependencies
+| Milestone | Outcome | Depends on |
+| --- | --- | --- |
+| K0 | Scaffold, audits with controls, ported model, trivial kernel with the public theorems proved | workspace |
+| K1 | Definitions, theorems, opaques, axioms, universes, conversion core; theorem for the real fold | K0 |
+| K2 | Inductive profile of 3.5; first release with the Mathlib model | K1 |
+| K3 | Ixon ingress with a proved reading relation; `checkEnv` over Ixon-shaped input | K2 |
+| K4 | Ixon byte decoding for the supported subset with round-trip and framing theorems | K3 |
+| K5 | Claims, subject roots, receipts, and host commands routed through the kernel | K3, K4 |
+| K6 | Optimize `Ix.Kernel` and replace `Ix.Tc` completely | K3, K4 |
+| K7 | Substructural binder modes and the optimizations they license | K6 |
 
-| Milestone | Outcome | Depends on | Status |
-| --- | --- | --- | --- |
-| P0 | Reproducible source inventory and build/audit scaffold | Existing fresh workspace | Not started |
-| P1 | Complete ported checker acceptance and no-False theorems | P0 | Not started |
-| P2 | Stable public API, concrete model, and first certified release | P1 | Not started |
-| P3 | Closed Ix certificate theory and validators | P2 | Not started |
-| P4 | Verified Ix representations and source translation | P2; selected P3 results as useful | Not started |
-| P5 | Verified Ixon schema and serialization | P4 data definitions | Not started |
-| P6 | Source/claim adapters with composed acceptance meaning | P3–P5 for the selected API | Not started |
-| P7 | Additional components and performance improvements | Relevant preceding component | Not started; recurring after P2 |
+### K0: scaffold and foundation
 
-The first delivery is P0–P2. P3–P7 extend a library that already has its
-headline theorem. Work on independent later components may overlap, but no
-later milestone is allowed to make the initial theorem contingent on it.
+1. Write the port manifest with the pinned revisions; verify the old
+   branch's working copy against the pin.
+2. Land the `Ix.Address.Core` split, the Blake3 pin bump, and
+   `Address.blake3Pure`.
+3. Port the old branch's syntax and `Model` modules to `Ix.Kernel.Model`
+   under the recorded namespace map. Build with `--wfail`. Port the model
+   fixtures from `Tests/Theory`.
+4. Add `lean_lib IxKernel`, the `check-kernel` script, and the audits:
+   per-root axiom sets over types, bodies, and constructor fields; import
+   allowlist; runtime closure inventory; provenance hashes. Each audit gets
+   a negative control that introduces the forbidden thing and observes the
+   failure. Missing required roots fail.
+5. Port `Models/SetTheory`, retarget it, and run its audit.
+6. Define the environment, `Config`, `Error`, the public API, and a kernel
+   that declines every declaration. Prove `checkDecls_has_model`,
+   `check_has_model`, and `no_proof_of_False` for it. From here on the
+   theorems must never be removed, weakened, or given new hypotheses.
 
-### P0 — Establish reproducible inputs and the gates
+Exit: clean-checkout build of `IxKernel` and the model package; every audit
+fails on its control and passes on the tree; the public theorem statements
+are fixed.
 
-1. Record the source checkpoints above in a machine-readable port manifest.
-   Verify the source trees and distinguish committed input from local edits.
-2. In a disposable checkout of con-leche, reproduce the selected upstream
-   build, axiom guards, proof-dependency report, and relevant verified-mode
-   fixtures on `v4.33.0`. Preserve logs and exact commands. Existing source
-   guards are evidence to reproduce, not a substitute for this baseline run.
-3. Inventory the closures of `model_exists`, `Denotes_functional`,
-   `checkDecls_sound`, the environment/input no-False roots, and relevant
-   declaration-fidelity results. Inventory runtime and generated-data inputs
-   independently of proof dependencies.
-4. Add the `IxCertified` Lake target, explicit module selection, test and
-   audit targets, and a dedicated gate. Keep Rust and legacy verification
-   targets outside its dependency graph.
-5. Establish source/provenance checks, exact axiom and theorem-type reports,
-   import rules, and compiled-dependency reporting. Initially incomplete
-   required root sets must fail; an empty scaffold is not a certified release.
-6. Reproduce the selected core on the destination `v4.33.1` toolchain during
-   P1. Keep the source baseline and the compatibility changes distinguishable.
+### K1: definitions and conversion core
 
-The imported audit scripts need review. In the pinned upstream
-`tests/layering.sh`, the model classifier returns `model`, while the base-edge
-predicate compares against `P`. Reusing that predicate unchanged would miss
-its intended class of violations. Implement the intended classification and
-add a test that deliberately introduces a forbidden edge and observes failure.
-Similarly test missing theorem roots, unexpected axioms, constructor-field
-dependencies, private dependencies, and runtime replacements. Audit scripts
-can have bugs even when the theorems they inspect are sound.
+1. Levels: evaluation, equivalence, normalization, instantiation, and their
+   soundness lemmas (port `VLevelLemmas`). Trim the import closure measured
+   at K0: `VLevelLemmas` imports `Lean.Level` for one comparison lemma and
+   `Std.Basic` imports `Batteries.Data.List.Basic` for `List.Forall₂`, which
+   together pull the elaborator into the closure; both are recorded
+   transformations of ported files with manifest updates.
+2. `whnf` with beta, zeta, delta, projection, and literal successor reading;
+   `infer` with annotation output; `isDefEq` with structural, lazy-delta,
+   eta, proof-irrelevance, and level-equivalence cases.
+3. `checkDecl` for definitions, theorems, opaques, and the standard axioms
+   `propext`, `Classical.choice`, and `Quot.sound` as declared constants
+   whose realization is admitted in K2; until then they decline.
+4. Soundness proofs for each function, then the fold theorem.
+   `no_proof_of_False` keeps its statement; it is vacuous until K2 installs
+   inductives, because non-standard axioms decline.
+5. Fixtures built directly in Lean: accepted polymorphic definitions,
+   dependent binders, lets, eta, proof irrelevance; rejections for ill-typed
+   bodies, non-propositional theorems, forward references, duplicate
+   addresses, universe arity mismatches, annotation mismatches, and
+   non-conservative binder modes, which decline.
 
-**Exit criteria:** reproducible source selection and baseline evidence; an
-independent build target; functioning negative tests of the audits; no
-unexplained imported modules or executable dependencies. The source baseline
-must be measured before freezing the destination's expected reports.
+Exit: the theorem covers the executed fold; positive fixtures accept; the
+runtime audit reaches no foreign symbol.
 
-### P1 — Port the complete checker and its proof
+### K2: inductive profile and first release
 
-1. Port the selected kernel, cached implementation, set foundation, semantics,
-   model, and verification modules in dependency order. Start with namespace,
-   import, module visibility, and asset-path changes.
-2. Preserve the upstream representations and algorithms, including binder
-   annotations and certification checks. Keep definitions, theorems, opaques,
-   inductive admission, quotient handling, and enabled primitive reductions
-   within the same proved configuration.
-3. Bring over the cached-to-core simulation and the installed/fully-checked
-   environment correspondence. The public theorem must cover the executable
-   cached fold, not just a slower reference function with an unproved bridge.
-4. Assemble `IxCertified.Consistency` with the complete model-existence,
-   denotation-functionality, environment no-False, and input no-False roots.
-   Extract the declaration-level proof from the upstream assembly without
-   importing its file-oriented frontend solely to reuse a module name.
-5. Preserve the relevant input-to-installed-declaration results, including
-   declared type and universe information and the handling of source axioms.
-6. Port representative positive and adversarial declaration fixtures.
-   Exercise the actual verified cached fold and pin configuration. Include
-   accepted definitions/theorems, dependent binders, universe instances,
-   supported inductives, quotient cases, primitive reductions, and rejection
-   of malformed declarations, illicit axioms, and invalid annotations.
-7. Run the strict build and all proof/import/runtime/provenance audits. Compare
-   statements and behavior with the pinned source, explaining any divergence.
+1. Inductive validation and recursor computation; structural comparison with
+   stored recursors; iota in `whnf`; large-elimination and `Prop`
+   restrictions.
+2. Port and connect the constructions of 3.5 in this order: ordinary
+   families, structures, `Nat`, `Eq`, quotients, standard axioms.
+3. Prove model extension for each accepted block and compose with K1.
+4. Fixtures: `False`, `True`, `And`, `Or`, `Nat`, `List`, indexed families,
+   `Eq` with K-like reduction, structures with projections and eta,
+   quotients; rejections for non-positive occurrences, universe violations,
+   wrong recursors, and unsupported shapes declining by name.
+5. Differential run against `Ix.Tc` on the accepted corpus, through a
+   test-only untrusted converter from Ixon until K3 lands; disagreements
+   are investigated, never resolved by trusting `Ix.Tc`.
+6. Write `docs/kernel.md`: contract, profile, restrictions, fuel, trust
+   boundary, ledger, and baseline timings. CI runs `check-kernel` on a
+   fresh checkout and the model package separately.
 
-Keep `.trusted` out of the certified public entrypoint. If preserving the
-upstream internal mode datatype is the least disruptive port, the public
-wrapper fixes `.verified`, and every certified result is indexed by that
-choice. No claim extends to the unchecked mode merely because it shares code.
+Exit: `lake build --wfail IxKernel` and `check-kernel` pass on a clean
+checkout; the theorem applies to the fixtures; the release is usable
+without Ixon bytes, `Ix.Tc`, or claims.
 
-**Exit criteria:** success of the actual new checker constructs a model and
-rules out an input theorem of pinned `False`; there are no caller-supplied
-subroutine soundness or annotation-coherence premises. Required theorem roots
-exist, use only their recorded logical axioms, and pass nonvacuity examples.
-No project FFI or legacy checker is reached by the certified execution path.
+### K3: Ixon ingress
 
-### P2 — Publish the initial library and concrete model
+1. Land the `Ix.Ixon.Types` split.
+2. `Ix.Kernel.Ingress`: expand `share`, resolve `refs` and `univs` tables,
+   map projection constants to `ConstRef`, read Nat blobs to `Nat`, reject
+   strings and unsupported binder modes, check reference bounds and block
+   ownership.
+3. State the reading relation between an Ixon constant and the kernel
+   declaration; prove ingress success establishes it, including declared
+   types, universe counts, mutual identities, and binder modes. Add the
+   egress back to an Ixon constant with `egress (ingress c) = c` on the
+   supported subset; this replaces the kernel round-trip phases of
+   `ix validate-lean`.
+4. `checkEnv` over a list of address-to-constant pairs and the blob bytes
+   behind literals, composed with `check`; theorem for the Ixon-shaped
+   in-memory input. The host supplies the order, the pairs, and the blobs;
+   the kernel treats addresses as keys.
+5. Tests on environments compiled by `Ix.CompileM` from the tutorial corpus,
+   loaded by the ordinary host loader, which remains untrusted.
 
-1. Add a small public API with an unambiguous verified acceptance operation.
-   Make the distinction between unchecked declarations, checker results, and
-   evidence of acceptance visible in the API and documentation.
-2. Expose the public semantics and no-False theorem without making users
-   understand internal simulation or environment-invariant structures.
-   Preserve stronger internal theorems for later library development.
-3. Adapt the existing Mathlib construction into
-   `Models/IxCertifiedSetTheory`. Instantiate the exact imported set-theory
-   interface and audit the result under `OmegaInaccessibles`. Resolve version
-   differences explicitly; a model of a similarly named interface is not enough.
-4. Add checked examples that create declarations directly in Lean, run the
-   public function, and connect an accepted result to the theorem. Document
-   supported declaration forms, restrictions, errors, fuel, pin selection,
-   and the source/runtime boundaries.
-5. Add CI for a strict clean certified build, audits, tests, and the separate
-   concrete model. Verify the build from a fresh checkout with no sibling
-   repositories or copied build products available.
-6. Record the initial feature matrix, proof roots, assumptions, execution
-   inventory, source manifest, and baseline timings in the release docs.
+Exit: acceptance of Ixon-shaped input establishes the meaning of the
+selected declarations; unsupported input declines explicitly.
 
-**Exit criteria:** `lake build --wfail IxCertified` and the dedicated gate
-work on the new repository checkout; the public theorem applies to executable
-positive examples; the concrete model package builds against the exact API.
-The library is useful at this point without Ixon, the old Ix checker, or a
-future certificate-theory migration.
+### K4: Ixon bytes
 
-### P3 — Recover the closed Ix certificate results
+Port the earlier plan's serialization milestone against the split types:
+schema and version, pure encoders and bounded decoders for the supported
+subset, `decode (encode x) = .ok x`, decode validity, canonical re-encoding,
+full-input consumption, and adversarial mutation tests with the Rust codec
+as a differential oracle. Compose with K3 so the statement names which
+declarations the bytes describe. Port `Ix.Tc.CanonicalCheck` as the
+canonical block order validation with its own contract: a stored mutual
+block is accepted only in the order the kernel recomputes, so a permuted
+block is rejected without trusting compiler metadata. With the certified
+encoder and `Address.blake3Pure`, ingress may reconstruct projection
+addresses exactly as production does instead of requiring them supplied.
+Fuel and size limits are documented coverage boundaries.
 
-The objective is to preserve the already completed certified Ix API, not to
-recreate the unfinished proof about arbitrary production checker runs.
+### K5: claims and receipts
 
-1. Extract the dependency closures of
-   `Ix.Theory.Certified.accepted_has_model`, `accepted_proof_sound`,
-   `no_proof_of_False`, and the required store/admission results into
-   `IxCertified.Theory`. Preserve the generic reference type where possible;
-   importing `Ix.Address` would prematurely import the Blake3 Rust backend.
-2. Import the pure syntax, model, witnesses, validators, and admission rules
-   those theorems actually use. Start from specific roots rather than the old
-   umbrella, which also collects certificate search/building code.
-3. Compare the old and new set-theory foundations. Reuse identical definitions
-   through aliases where that preserves elaborated statements, or prove the
-   small explicit interface adapter needed by the existing model. Keep
-   independently audited term interpretations when their syntax differs.
-4. Expose the pure certificate validator under `IxCertified.Certificate`.
-   Acceptance must inspect its witnesses and construct the model; users must
-   not have to trust the witness generator or supply a model of new declarations.
-5. Port the completed admission coverage and associated tests, including the
-   supported ordinary, standard-axiom, natural, quotient, structure, and
-   modeled-inductive profiles. Record the exact supported cases and conditions.
-6. Keep open-frontier model-extension theorems explicit. Derive the closed
-   corollary from a checked initial interface. Preserve the logical-axiom
-   policy separately: an empty structural frontier does not mean that no
-   approved logical axioms were used.
-7. Re-run the new audits and selected frozen fixtures. Preserve the old
-   statements' meaning and assumptions under the documented namespace map.
+Port the earlier plan's claim milestone against the kernel: `CheckClaim`
+subjects, assumption trees, subject roots, and receipts that bind checker,
+format, and profile versions. The theorem for a claim states the exact
+hypothesis under which an address stands for its bytes; the kernel result
+is about the constants it was given. Host commands report certified success
+only from the kernel's success. Cryptographic collision assumptions are
+named, finite, and separate from the mathematical result.
 
-Do not automatically import all lemmas proved during the old production
-bridge. A lemma is worth porting when it supports an admitted component or
-provides a useful independently specified operation. Leave old execution
-histories, hash-key resources, and partial method contracts in the old tree
-when the new architecture has no use for them.
+### K6: optimize `Ix.Kernel` and replace `Ix.Tc`
 
-**Exit criteria:** a useful pure Ix certificate validator has its own complete
-acceptance, model-construction, and no-False theorems within the new library.
-Its proof and execution closure contains no legacy checker or foreign Ix
-representation dependency. The con-leche checker theorem remains independent
-of this API. No theorem asserting equivalence of the two validators is needed.
+`Ix.Tc` is a pure-Lean mirror of the Rust kernel. Its recorded runs
+(`BENCHMARKS.md`, `ix check-lean` against `ix check-rs`, full verdict
+parity) are the yardstick:
 
-### P4 — Add verified Ix data and source translation
+| Environment | Constants | Lean `check-lean` | Rust `check-rs` | Ratio |
+| --- | --- | --- | --- | --- |
+| InitStd | 105,492 | 64.8 s | 24.1 s | 2.7x |
+| Lean | 188,999 | 78.1 s | 35.0 s | 2.2x |
+| Mathlib, anon, 16 workers, caches cleared every 50 items | 640,658 | 1,014.7 s at about 42 GB | 234.0 s | 4.3x |
 
-Preserve con-leche's native names and annotated expressions for the initial
-checker. Add Ix-facing data and partial translations around that core before
-considering a change to its representation.
+Meta mode exceeds memory at Mathlib scale. `Ix.Tc` is therefore not a
+production checker; its value is formalization and specification, and that
+is exactly what `Ix.Kernel` provides with a proof. The decision is to
+replace `Ix.Tc` completely, not to keep two Lean kernels. The Rust kernel
+stays the production fast path and is differentially tested against
+`Ix.Kernel`; the IxVM kernel stays the in-circuit implementation.
 
-1. Identify the smallest pure data types needed by the next consumer:
-   reference identifiers, byte strings, universe encodings, declaration
-   records, and dependency stores. Introduce them under `IxCertified.Data`
-   with the relevant invariants and operations.
-2. Define an explicit reading relation between an Ix-facing declaration and
-   the declaration the certified checker receives. Account for names or
-   anonymous identifiers, level parameters, binder scope, applications,
-   projections, literal expansion, sharing, and declared types.
-3. Implement a partial translator and prove that success establishes this
-   reading relation. Preserve each requested subject and its declared type;
-   successful checking of a different generated statement is not source fidelity.
-4. Treat name assignment for content identifiers as a structural encoding
-   problem. Preserve reserved primitive names, distinct declarations,
-   dependency references, and mutual-block identities. Prove any injectivity
-   required of this encoding using the represented data itself.
-5. Check dependency closure, reference bounds, and block ownership. Reject
-   missing references and unsupported cycles. Support legitimate mutual or
-   nested inductive groups through an already proved admission route.
-6. Keep annotations computed or validated by the certified checker. An erased
-   source term cannot supply unchecked annotations merely by sharing the same
-   raw syntax as another checked term.
-7. Compose translation correctness with checker soundness into a theorem for
-   the selected Ix-facing in-memory input. State any remaining representational
-   preconditions and make the actual adapter check them where feasible.
+Replacement is complete when every consumer runs on `Ix.Kernel` and the
+parity corpus agrees:
 
-Content hashes are not globally injective. Do not add an axiom asserting that
-equal BLAKE3 digests imply equal arbitrary values or byte arrays. Use structural
-equality, compare stored bytes where required, or state a precise finite
-collision assumption for a separately labeled authentication result. Keep the
-mathematical meaning of the actual checked payload independent of an implicit
-cryptographic assumption.
-
-**Exit criteria:** success of the new adapter establishes meaning for the
-specified input declarations and subjects. Tests include distinct identities,
-malformed references, shadowing/reserved-name attempts, universe mismatches,
-incorrect block ownership, and positive shared-dependency examples. Any
-unsupported input shape declines explicitly.
-
-### P5 — Formalize and promote Ixon serialization
-
-Port codecs in useful increments, each with a precise byte-level contract.
-Begin with the data needed by one complete certified use case; expand to full
-environment serialization after the component codecs compose.
-
-1. Write down the supported wire schema and version. Specify tags, lengths,
-   integers, byte order, strings where applicable, references, sharing,
-   recursive groups, and complete-input framing.
-2. Implement or extract pure Lean encoders and total/appropriately bounded
-   decoders over the qualified data types. Existing foreign serialization or
-   byte-conversion code remains a host implementation until its own refinement
-   is proved. Reuse existing codec lemmas only against the exact definitions.
-3. Prove encoder/decoder agreement for every supported well-formed value:
-   `decode (encode x) = .ok x`, with explicit bounds if the format imposes them.
-4. Prove successful decoding establishes the format's structural invariants.
-   Prove canonical re-encoding where canonical input is required; reject
-   noncanonical alternatives or specify their normalization explicitly.
-5. Prove full-input consumption. Handle truncation, out-of-range tags,
-   overflowing lengths, invalid references, duplicate or inconsistent entries,
-   and trailing data according to the documented format.
-6. Compose the decoded structure's reading relation with P4 and the checker.
-   The result must state which declaration, type, and requested subject the
-   bytes describe, in addition to the decoder round trip.
-7. Compare against frozen compatible Ixon bytes and adversarial mutations.
-   Use the existing Rust encoder/decoder for differential evidence where
-   useful, while keeping that testing role distinct from a refinement proof.
-8. Move the completed pure modules to `IxCertified.Codec.Ixon`. Ordinary Ix
-   may then call those implementations, retain an external optimized backend,
-   or provide compatibility wrappers, according to their proved contracts.
-
-Fuel and parser limits may reject otherwise valid encodings; document that
-coverage boundary. Successful decoding must not require the caller to assume
-that an unchecked parser read the intended value. Resource-limit and error
-handling changes must preserve the non-accepting outcome on failure.
-
-**Exit criteria:** the selected Ixon format has proved structural and
-byte-level contracts, executable accepted/rejected examples, and a composed
-statement connecting accepted bytes to their checked declaration meaning.
-Only the completed codec subset is included in the certified public API.
-The remaining serialization features stay ordinary Ix components.
-
-### P6 — Rebuild source receipts, claims, and host integration
-
-1. Extract the pure receipt and claim structures and their meanings from
-   `Ix.Certified`. Port membership, revelation, and logical claims only under
-   their respective proved contracts. Evaluation claims remain separate work.
-2. Port validators using the new data, source, and codec APIs. Preserve source
-   subject coverage, original declared types, dependency closure, the exact
-   primitive profile, checked model companions, and the logical-axiom manifest.
-3. Require claim envelopes to bind the applicable format/checker/profile
-   versions and the exact interpreted payload. Check version compatibility;
-   do not accept an envelope under a different policy by accident.
-4. Recover the equivalents of `closed_subject_meaning`, `LogicalReceipt.no_False`,
-   and the pure command's acceptance-to-receipt theorem. Trace every premise
-   through the actual validator, rather than assuming a receipt supplied by
-   the host is authentic or semantically valid.
-5. Add byte-oriented acceptance composition using the P5 codecs. Distinguish
-   the theorem about actual bytes from any external claim that a digest
-   uniquely identifies them. A hashing specification, backend refinement,
-   and cryptographic collision assumptions are different obligations.
-6. Place IO, filesystem access, legacy lazy stores, witness search, and any
-   remaining FFI in `Tools/IxCertified` or `Ix/CertifiedAdapter`. Check every
-   supplied object required by the pure API; cached or loaded state must not
-   manufacture certified acceptance without validation.
-7. Port the relevant frozen source/claim corpora and adversarial tests. Retain
-   source-byte comparisons, substituted statements, forged witnesses,
-   malformed groups, wrong versions, wrong identifiers, and dependency cycles
-   within the claimed input profile. Run the actual host command when its
-   command-level behavior is part of the deliverable.
-
-The existing `ClaimCommand.run_meaning` theorem is useful source material, but
-its current closure includes ordinary Ix data and the BLAKE3 foreign interface.
-That closure cannot simply be relabeled as the new isolated library. Rebuild
-the theorem against the qualified pure interfaces and document the remaining
-host execution boundary.
-
-**Exit criteria:** the pure source/claim API has a complete chain from decoded
-input through validation to the advertised receipt meaning and closed
-no-False corollary. Host commands report success only from that API's success.
-Document exactly which IO and cryptographic properties remain outside the
-formal result. No host fallback expands the certified acceptance profile.
-
-### P7 — Grow the library and improve performance
-
-Continue by promoting independently specified components: reusable data
-structures, additional serialization cases, source transformations, primitive
-operations, declaration profiles, and optimized execution.
-
-Prefer replacing an expensive implementation with one that has an equality,
-simulation, or successful-result refinement theorem against the certified
-operation. That theorem must cover the actual state and configuration used by
-the caller. For caches, establish the origin and validity of entries through
-their operations; do not assume arbitrary populated caches are correct.
-
-Keep proof-oriented annotations and extra checks until their removal is
-justified. Removing a check can change accepted programs even when it improves
-benchmarks. Prove the new successful-acceptance theorem, then measure coverage
-and performance independently.
-
-For hashing and memoization, preserve structural identity or make the exact
-finite collision condition explicit. For primitive accelerations, establish
-the admitted operation's defining equations before enabling the shortcut.
-For a foreign or VM implementation, prove the relevant refinement before
-giving it the pure operation's certification claim.
-
-Measure accepted workloads, rejection workloads, memory use, and cold/warm
-cache behavior. Use retained baseline inputs and record configuration. A speed
-improvement is not a reason to enlarge the logical or runtime trust boundary.
-
-**Exit criterion for each addition:** its applicable promotion contract below
-is complete, the public theorem still builds and applies, audits have no
-unexplained changes, and tests cover the new externally observable behavior.
-
-## 6. Promotion requirements
-
-Certification attaches to a defined operation and its specification. It does
-not follow from a directory name, absence of local `sorry`, or a count of
-proved lemmas. Low-level components need their relevant correctness property;
-they do not each need a separate logical consistency theorem.
-
-| Component | Required mathematical contract |
+| Consumer | What it needs from `Ix.Kernel` |
 | --- | --- |
-| Data representation and operations | State/representation invariants and the advertised operation semantics |
-| Equality or lookup used for checking | Successful equality/lookup identifies the intended object; hash equality alone is insufficient |
-| Cache or optimized operation | Preservation/simulation relative to the certified operation and its admitted state invariant |
-| Encoder/decoder | Supported-value round trip, successful decode validity, framing/canonicality as required, and source reading when used for acceptance |
-| Source translator or compiler fragment | Successful translation preserves the stated source-to-target relation, including declared types, scopes, references, and subjects |
-| Declaration/certificate validator | Successful execution constructs the required checked object and model or model extension |
-| Witness/model generator | Outputs are treated as proposals; move the generator itself only when its advertised separate contract is proved |
-| Claim validator | Accepted receipts establish the exact claim meaning under the recorded policy and assumptions |
-| Foreign/backend implementation | A proved correspondence to the operation used in the mathematical theorem; otherwise an explicitly external backend |
+| `ix check-lean` (`Ix.Cli.CheckLeanCmd`) | K3 ingress, the subject driver over an assumed prefix, the install/check parallel driver, progress and fail-out reporting, labels from a name sidecar kept outside the kernel |
+| `ix validate-lean` phases 3 and 4 | The K3 round trip for anon; the meta round trip is metadata plumbing and moves to the metadata modules, not into the kernel |
+| `Ix.AuxGen.Kernel` | The four exported operations over kernel terms; provisional addresses are ordinary keys; the name bridge stays in `Ix.AuxGen` |
+| `Ix.IxVM.ClaimHarness` | The primitive address table, re-homed as `Ix.Kernel.Primitive` |
+| `Ix.Compile.Verify.Audit` | The audit helper, re-homed as `Ix.Kernel.Audit` |
+| `Tests/Ix/Tc`, `Tests/Ix/Kernel/PrimAddrs` | Ported to `Tests/Ix/Kernel`; the differential tests run against `check-rs` |
+| `Ix.lean` | Imports `Ix.Kernel` |
 
-Every promotion record contains:
+One parity caveat is deliberate. `check-lean` trusts every referenced
+constant's declared type regardless of order, so an environment with a
+reference cycle would be accepted by it and by the Rust kernel; the ordered
+fold rejects the forward reference. Real environments have no cycles, and
+the difference is the correct direction.
 
-1. The component's public API, supported inputs, and exact correctness theorem.
-2. Its implementation and proof roots and their transitive dependencies.
-3. Its explicit mathematical, representation, configuration, and runtime
-   assumptions, and where executable validation establishes preconditions.
-4. Provenance and the difference from any upstream implementation.
-5. Relevant positive and adversarial verification results.
-6. The composition point into the existing public semantics or acceptance API.
+Optimizations land in this order, each with the contract from section 7
+and measured on the retained workloads:
 
-Library-internal helpers can be justified as part of their enclosing proved
-algorithm; separate tautological theorems for every helper are unnecessary.
-An exported new behavior needs a meaningful contract. Unfinished experiments
-stay outside the certified module inventory and public imports.
+1. Interning and hash-consing with structural keys, as con-leche's arena;
+   simulation against the reference operations.
+2. Memo tables for `whnf`, `infer`, and `isDefEq` keyed by structural
+   identity, with the state invariant that every entry came from an
+   execution; no union-find conversion cache.
+3. Lazy delta by reducibility hints and same-head shortcuts, with the
+   verdict-preservation proof.
+4. Nat and literal acceleration, each operation enabled only after its
+   defining equations are proved in the model; con-leche's division
+   certificates are the source for `Nat.div` and `Nat.mod`.
+5. The install/check parallel driver and bounded per-worker memory, so
+   Mathlib-scale anon runs fit without cache clearing tricks.
+6. String literals, mutual and nested inductives, K beyond `Eq`, reflexive
+   blocks, so the accepted corpus matches `Ix.Tc`'s.
 
-## 7. Verification and continuous integration
+The first target is `Ix.Tc` parity on the three recorded workloads with
+bounded memory. After that, the Rust gap is narrowed with the same
+discipline. When every consumer is migrated and the differential corpus
+agrees, `Ix.Tc`, `Ix.Tc.Verify`, and the `lean4lean` dependency are
+deleted in one change with the ledger updated.
 
-Introduce the following targets and commands during implementation. They are
-planned interfaces, not commands available in the fresh workspace today.
+### K7: binder modes and the optimizations they license
 
-| Proposed command | Purpose |
+Ixon v2 carries usage and ownership on binders, and Ix's annotation
+extensions to Lean are expected to surface them in source. The kernel
+carries them from K1; this milestone gives them meaning and uses them:
+
+1. Mode checking: usage accounting with the `Uses` algebra and `covers`,
+   ownership on results, and a stated contract for what an accepted mode
+   assignment guarantees. The set model ignores modes unless a mode-aware
+   semantics is adopted; that choice is recorded here.
+2. Optimizations licensed by checked modes, each a promotion with a
+   verdict-preservation proof: skipping erased arguments in reduction and
+   conversion where the model justifies irrelevance, and in-place update
+   of uniquely owned data in the kernel's evaluator.
+3. Using the same extensions in `Ix.Kernel`'s own implementation for better
+   generated code where the Lean-level semantics is unchanged; a modified
+   compiler is part of the execution boundary and is recorded as such.
+
+Measure accepted workloads, rejection workloads, memory, and cold behavior on
+retained baseline inputs. Speed never enlarges the trust boundary.
+
+## 7. Promotion requirements
+
+Certification attaches to a defined operation and its specification, not to
+a directory name or the absence of `sorry`.
+
+| Component | Required contract |
 | --- | --- |
-| `lake build --wfail IxCertified` | Build the admitted library and public theorem roots strictly |
-| `lake build --wfail IxCertifiedAudit IxCertifiedTests` | Build declaration/import/runtime audits and selected proof/executable tests |
-| `lake run check-ix-certified` | Run the required certified build, audits, provenance checks, and supported regression suites |
-| `lake run check-ix-certified --with-model` | Also build the separate Mathlib model package and its axiom guard |
+| Data representation and operations | Invariants and the advertised operation semantics |
+| Equality or lookup used in checking | Successful lookup identifies the intended object; digest equality alone is insufficient |
+| Cache or optimized operation | Simulation relative to the reference operation and its admitted state invariant |
+| Encoder or decoder | Round trip, decode validity, framing and canonicality, reading relation when used for acceptance |
+| Source translator | Successful translation preserves declared types, scopes, references, and subjects |
+| Declaration or inductive validator | Success constructs the checked object and its model extension |
+| Generator or search | Outputs are proposals; the generator moves inside only with its own proved contract |
+| Claim validator | Accepted receipts establish the exact claim meaning under the recorded policy and named assumptions |
+| Foreign or backend implementation | A proved correspondence to the operation in the theorem; otherwise an explicitly external backend |
+| Hash function | The pure Lean definition is the specification; a native backend needs differential evidence; a theorem needing uniqueness names its collision assumption |
 
-Keep the spelling distinct from the old branch's `check-certified` adapter
-gate. The new gate is about the new library's actual roots and cannot delegate
-its success to an unrelated legacy target.
+Every promotion record contains the public API and supported inputs, the
+exact theorem, the implementation and proof roots with transitive
+dependencies, explicit assumptions, provenance, positive and adversarial
+results, and the composition point into the public theorems. Library-internal
+helpers are justified by their enclosing proved algorithm.
 
-### Required evidence
+## 8. Verification and continuous integration
 
-- **Checked statements and logical dependencies:** every required root exists;
-  record its elaborated type and exact axiom set. Traverse definitions and
-  constructor fields as well as proof bodies. Include prerequisite predicates
-  whose fields could hide a semantic assumption.
-- **Module boundaries:** measure transitive imports, including public/private,
-  meta, and `import all` forms. Reject the forbidden legacy dependencies and
-  verify implementation/proof/test layering. Use parsed or elaborated module
-  information where practical; a source scanner must have negative tests.
-- **Runtime closure:** inventory compiler workers, computed fields, `csimp`
-  replacements, `implemented_by`, unsafe/opaque execution, and foreign symbols
-  reached by the actual public operations. Distinguish inherited Lean runtime
-  mechanisms from new project execution dependencies.
-- **Provenance and generated assets:** check complete source inventories,
-  source/destination hashes, licenses, pin data, generator versions, and
-  embedded file paths. A missing source or asset fails the gate.
-- **Behavior:** run accepted controls and relevant rejections through the
-  actual exposed operation. Include configuration/default-mode checks, pin
-  variants, primitive declarations, annotations, and adversarial witnesses.
-- **Concrete model:** check the exact foundation interface and retain the
-  cardinal hypothesis in the theorem type.
-- **Reproducibility:** run a clean checkout build at major milestones. Normal
-  incremental builds must not rely on oleans, absolute source paths, or assets
-  left in either sibling workspace.
+| Command | Purpose |
+| --- | --- |
+| `lake build --wfail IxKernel` | Strict build of the certified closure and public roots |
+| `lake run check-kernel` | Build, audits, provenance, fixtures, differential tests |
+| `lake run check-kernel --with-model` | Also build and audit `Models/SetTheory` |
 
-Freeze expected reports only after inspecting measured results. Dependency
-additions and removals both require an explained update; automatically
-regenerating a manifest to make a failing gate pass defeats the audit. Preserve
-exact theorem assumptions when moving or renaming roots. Root counts measure
-inventory, not proof completion.
+Required evidence at every checkpoint:
 
-Use focused checks while developing a component and run the complete relevant
-gate at each checkpoint. Broaden host regression testing when changing shared
-data, Lake configuration, codecs, or host adapters. The initial isolated port
-does not require repeated execution of the old unfinished checker proof gate.
+- Every required root exists; its elaborated type and exact axiom set are
+  recorded; the traversal covers definitions and constructor fields.
+- Transitive imports of the certified closure match the allowlist; the
+  scanner has negative tests.
+- The runtime closure of the public operations lists every extern,
+  `implemented_by`, unsafe, partial, computed field, and `csimp` reached,
+  distinguishing inherited Lean mechanisms from project code.
+- Provenance hashes and licenses for every imported file and asset.
+- Accepted controls and rejections through the exposed operation, including
+  configuration defaults and annotation mismatches.
+- The model package's axiom guard with the cardinal hypothesis in the type.
+- A clean-checkout build at K0, K2, and each release.
 
-## 8. Managing changes and scope
+Freeze expected reports only after inspecting measured results. Regenerating
+a manifest to make a gate pass defeats the audit.
+
+## 9. Managing changes
 
 ### Checkpoint contents
 
-Each completed checkpoint should record:
+The revision and manifest; the exact new public behavior; theorem
+statements and assumptions; commands and final results; import, axiom,
+runtime, and asset inventory changes; remaining limitations and the next
+milestone; ledger updates.
 
-- The revision and source manifest, plus the exact new public behavior.
-- The theorem statements, assumptions, and component coverage established.
-- The commands and authoritative final results used to verify it.
-- Import, axiom, execution, and generated-data inventory changes.
-- Remaining limitations and the next specific milestone.
-
-Keep the branch based on main and integrate later main changes selectively
-when needed. Preserve the original `ix` consistency workspace as reference
-material. Do not rewrite its historical checkpoints to make the new library
-appear to have completed the abandoned production-refinement objective.
-
-The repository ignores `plans/` by default. Keep this roadmap versioned with
-a narrow ignore exception; keep transient logs and scratch artifacts ignored.
-Place durable public contracts and release instructions in `docs/` as the
-implementation reaches them.
+Keep the branch based on `main` and integrate later `main` changes
+selectively. Preserve the old consistency workspace as reference material
+and do not rewrite its history. The repository ignores `plans/` except this
+file; durable contracts go to `docs/`.
 
 ### Responses to common problems
 
 | Problem | Response |
 | --- | --- |
-| A mechanical port fails on Lean `v4.33.1` | Isolate the compatibility fix, retain theorem statements, and compare with the source-toolchain baseline |
-| A source file pulls in a large frontend or unverified tool | Select narrower theorem roots or split the assembly; preserve complete proof dependencies |
-| An old Ix component imports legacy checker/FFI code | Separate its pure interface and proofs first; leave the host component outside the library |
-| Two models use similar names with different definitions | Keep their interpretations explicit; reuse only through definitional equality or a proved adapter |
-| A proposed optimization requires new metatheory | Retain the existing proved implementation and defer the optimization |
-| An audit passes despite a known forbidden dependency | Repair the audit and add a failing control before accepting its report |
-| A theorem needs an unproved callback/invariant premise | Keep the feature outside the closed acceptance API until that premise is derived |
-| A wire format or source transformation lacks full fidelity | Expose only its completed subset and make unsupported cases decline |
-| A host command can report success through another path | Route certified success through the public validator and prove/check that connection |
+| A ported model module fails to build | Isolate the fix, keep statements, record the difference from the pin |
+| An old-branch lemma assumes witness data | Restate it over the checker's output or reprove it; do not import the witness type |
+| A production behavior of `Ix.Tc` has no simple sound counterpart | The kernel declines that input; record it as a coverage gap |
+| A feature needs new metatheory | Keep the reference implementation and defer the feature |
+| An audit passes despite a known violation | Repair the audit and add the failing control first |
+| A theorem needs a callback or invariant premise | Keep the feature outside the public API until the premise is derived |
+| A host command can succeed by another path | Route certified success through the kernel and check the connection |
+| An optimization wants a hash assumption | Use structural identity, or state a finite collision condition on a separately labeled result |
 
-Feature restrictions are acceptable when accurately stated. Weakening the
-meaning of the public acceptance theorem to make a feature fit is not a
-completion strategy. Preserve a working certified release while larger work
-continues outside its boundary.
+Weakening the public theorem to fit a feature is never a completion
+strategy.
 
 ### Decisions fixed by this plan
 
-- Work in `~/projects/ix-certified` on `jcb/ix-certified`, starting from main.
-- Use a top-level `IxCertified` library with enforced dependency rules.
-- Port the con-leche implementation and its complete proof together.
-- Keep representations and certification checks stable for the initial port.
-- Keep the mathematical set-theory assumption explicit and provide its
-  separate concrete relative construction.
-- Reuse completed Ix results selectively, without resuming the old full-checker
-  refinement project as a prerequisite.
-- Promote only the completed, specified portions of Ixon and other components.
+- The certified checker lives at `Ix.Kernel`; no `IxCertified` namespace or
+  library exists.
+- Kernel data is Ix-native: `Address` keys, `ConstRef`, positional levels,
+  de Bruijn terms, Ixon declaration shapes.
+- The semantic model is the old branch's set model, ported; con-leche is a
+  source of techniques and evidence, not of code.
+- One reference checker is the theorem's subject. Witness trees, certificate
+  search, and a certificate API are not deliverables.
+- Addresses are opaque keys inside the kernel; hash binding is a host
+  property stated explicitly where a claim needs it.
+- `Ix.Kernel` replaces `Ix.Tc` completely (K6). The Rust kernel remains the
+  production fast path, differentially tested against `Ix.Kernel`; the IxVM
+  kernel remains the in-circuit implementation. `Ix.Tc.Verify` and the
+  lean4lean dependency leave with `Ix.Tc`.
+- BLAKE3 is `Blake3.Pure.hash` wherever a certified operation hashes; the C
+  and Rust backends are host accelerators.
+- Standard logical axioms only; `SetTheory` explicit; the Mathlib instance
+  in its own package.
 
-### Decisions resolved during the relevant milestone
+### Decisions resolved during milestones
 
-- Exact imported file closure and any necessary library subdivision: P0–P1.
-- Required toolchain compatibility edits and supported pin variants: P0–P1.
-- Public naming of the two certified acceptance APIs: P2–P3.
-- Definitional sharing or explicit adapters between their foundations: P3.
-- The first useful Ix input profile and identifier representation: P4.
-- The first supported Ixon wire subset and canonicality policy: P5.
-- Optional host backends, cryptographic assumptions, and performance targets:
-  P6–P7.
+- `letE` in kernel syntax versus zeta at ingress, and annotation comparison
+  in conversion: K1.
+- The exact inductive shape class, elimination modes, and structure eta
+  rules: K2.
+- The Ixon subset, binder-mode handling, and canonicality policy: K3, K4.
+- Cache designs, the Nat acceleration set, and where meta-mode round trips
+  and name labels live after `Ix.Tc`: K6.
+- The semantics of binder modes in the model: K7.
 
-These are bounded implementation choices to record when evidence is available.
-They do not require solving general Lean metatheory or imposing an early
-equivalence proof between all existing Ix and con-leche representations.
+## 10. Immediate execution sequence
 
-## 9. Immediate execution sequence
+1. Record the pins and write the port manifest; compare the old branch's
+   working copy with its pin.
+2. Land `Ix.Address.Core`, the Blake3 pin bump, and `Address.blake3Pure`.
+3. Port `Ix.Theory` model and syntax modules to `Ix.Kernel.Model`; build
+   strictly; port the model fixtures.
+4. Add the Lake target, the `check-kernel` script, and the audits with
+   negative controls; port and retarget `Models/SetTheory`.
+5. Define the API and the declining kernel; prove the public theorems; freeze
+   their statements.
+6. Proceed through K1 and K2 one feature at a time, keeping the theorems
+   green, then publish the first release before starting K3.
+7. After K3 and K4, run K6 to `Ix.Tc` parity, migrate every consumer,
+   delete `Ix.Tc`, then start K7.
 
-When implementation begins:
-
-1. Record and reproduce the pinned con-leche baseline and selected root types.
-2. Inventory the full theorem/execution closure and generated assets.
-3. Add the independent Lake and audit scaffold with meaningful failure controls.
-4. Port one coherent dependency-ordered closure through the actual cached
-   checker, model construction, and declaration-level no-False theorem.
-5. Establish the public API, concrete model instance, and clean-build release
-   gate. Publish the P2 checkpoint before expanding into Ix representation work.
-6. Extract the already closed Ix certificate theory, then qualify the data,
-   serialization, source, and claim components in the order above.
-
-Success for the first delivery is a usable `IxCertified` library whose actual
+Success for the first release is a usable `Ix.Kernel` whose actual
 acceptance function has a complete model-existence and relative-consistency
-theorem. Success for subsequent deliveries is a larger useful API with that
-same standard of proof, an explicit source/execution boundary, and no new
-unproved semantic seam hidden in the public contract.
+theorem over Ix-native declarations. Success afterwards is a growing part of
+`Ix` with that standard of proof and an explicit, audited boundary around
+what remains host code.

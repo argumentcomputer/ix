@@ -1,0 +1,11 @@
+Set-theory model construction
+
+Copied from con-leche revision 86cd20a65660d757cedc81561a44579099b565d0,
+bridge/lean4lean-model/ConLecheBridge/Carneiro.lean.
+Original SHA-256:
+389b5fff365cf47a5040e6eac540d6ddedde4b95d9f4176c3c08f675f586c1c4
+
+The countable-inaccessibles hypothesis was transcribed by con-leche from
+Mario Carneiro's Lean4LeanModel/Consistency.lean. Namespaces, imports, and
+documentation were adapted for Ix; the mathematical construction is retained.
+Con-leche's Apache-2.0 license is preserved in LICENSE-CON-LECHE.
