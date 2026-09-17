@@ -682,7 +682,10 @@ Prerequisites on this box before any lane runs:
   count with `--max-ram 230 --exec-jobs 3` under the same
   `AIUR_TRACE_SHARD_MAX_CELLS`, §7 item 4;
   re-sharding changes the tree and every claim, so prefer the copy if the
-  point is to compare against 2:45:22).
+  point is to compare against 2:45:22). For Anthropic FLT the inputs are
+  `anthropic-flt.ixe` and `anthropic-flt-572.ixes`; the count is the
+  Mathlib cut scaled by serialized block bytes rather than the seed, see
+  `bench/flt-shard-plan-2026-09-17/README.md`.
 
 The run is one command from a run directory holding the inputs, under a
 cgroup cap for the whole process (one process now holds every worker):

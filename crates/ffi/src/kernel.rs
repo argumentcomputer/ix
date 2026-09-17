@@ -2481,13 +2481,13 @@ pub extern "C" fn rs_shard_env_static(
     let tenths =
       u32::try_from(share.saturating_mul(10) >> 30).unwrap_or(u32::MAX);
     let share_gib = f64::from(tenths) / 10.0;
-    let score = ix_kernel::shard::static_env_score(&profile);
+    let bytes = ix_kernel::shard::static_env_bytes(&profile);
     let n = ix_kernel::shard::gpu_seed_shards(&profile, share_gib);
     eprintln!(
-      "[shard] trace-shard seed (cuda build): score={score:.3e}; round({} x (score/{:.3e}) x ({} GiB / {share_gib:.1} GiB record share: {ram_gib} GiB per worker, {cells} cells, {exec_ahead} executions ahead)) -> {n} shard(s) (heuristic; the record cap names any shard over its share)",
+      "[shard] trace-shard seed (cuda build): bytes={bytes:.4e}; round({} x (bytes/{:.4e}) x ({} GiB / {share_gib:.1} GiB record share: {ram_gib} GiB per worker, {cells} cells, {exec_ahead} executions ahead)) -> {n} shard(s) (heuristic; the record cap names any shard over its share)",
       ix_kernel::shard::GPU_SEED_REFERENCE_SHARDS,
-      ix_kernel::shard::GPU_SEED_REFERENCE_SCORE,
-      ix_kernel::shard::GPU_SEED_REFERENCE_MAX_RECORD_GIB,
+      ix_kernel::shard::GPU_SEED_REFERENCE_BYTES,
+      ix_kernel::shard::GPU_SEED_REFERENCE_SHARE_GIB,
     );
     n
   } else {

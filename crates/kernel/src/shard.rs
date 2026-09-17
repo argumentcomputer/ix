@@ -1744,31 +1744,44 @@ pub const STATIC_SEED_SCORE_EXPONENT: f64 = 1.10;
 pub const STATIC_SEED_BUDGET_EXPONENT: f64 = 1.20;
 
 /// Reference point for the shard-count seed of the trace-shard prover
-/// (the CUDA build). There the prover's own peak is bounded by its cell
-/// budget whatever the env shard's size, and the one thing an env shard
-/// must fit is its execution record within one execution's share of the
-/// record budget. Mathlib's static owned-side score for the 128-way cut
-/// proven on 2026-09-14 (four RTX PRO 6000, `--max-ram 230`, three
-/// executions ahead of each prover, 1.5e9 cells: a 41 GiB share).
-pub const GPU_SEED_REFERENCE_SCORE: f64 = 1.271e14;
+/// (the CUDA build): Mathlib's serialized block bytes and its 78-way cut
+/// proven on four RTX PRO 6000 on 2026-09-15 (`--max-ram 230`, three
+/// executions ahead of each prover, 1.5e9 cells: a 41.4 GiB record
+/// share). 78 is the p90-scaled candidate of the 111-shard seed, and its
+/// own run confirmed it: claim records mean 29.3 GiB, p90 33.9 GiB at a
+/// 36.5 GiB initial reservation, no growth waits.
+pub const GPU_SEED_REFERENCE_BYTES: f64 = 1_468_041_216.0;
 /// Shards of the reference cut.
-pub const GPU_SEED_REFERENCE_SHARDS: f64 = 128.0;
-/// The largest execution record among the reference cut's 128 shards,
-/// GiB (38.44 GB; the mean was 18.95 GiB): what a share has to hold.
-pub const GPU_SEED_REFERENCE_MAX_RECORD_GIB: f64 = 35.8;
+pub const GPU_SEED_REFERENCE_SHARDS: f64 = 78.0;
+/// Record share of the reference calibration, GiB.
+pub const GPU_SEED_REFERENCE_SHARE_GIB: f64 = 41.4;
 
-/// Seed count for the trace-shard prover when each execution may hold a
-/// record of `share_gib`: the reference count scaled with the score and
-/// against the share, so the largest record of a cut like the reference
-/// lands at the share. Linear in both: a record is the execution's query
-/// map, which grows with the owned bytes, and one calibration point fits
-/// no exponent. Like [`static_seed_shards`] it is a seed, not a bound;
-/// the record cap names any shard whose record exceeds its share.
+/// Seed count for the trace-shard prover: the reference count scaled by
+/// serialized block bytes and inversely by the record share, so the
+/// seed owns the reference's bytes per shard at the reference share.
+///
+/// A claim's execution record is close to linear in the bytes its shard
+/// owns, about 1,700 bytes of record per serialized byte, from Mathlib's
+/// ordinary shards (18.8 MB, 29.3 GiB) to Anthropic FLT's single-constant
+/// outliers (58.5 MB, 89.5 GiB), so matching bytes per shard reproduces
+/// the reference's record distribution. The static score's per-block
+/// `size^1.5` term is deliberately left out: it dominates environments
+/// with multi-megabyte proof bodies (93% of FLT's score) while their
+/// measured records stay linear, and would seed them several times too
+/// fine. Like [`static_seed_shards`] it is a seed, not a bound; the
+/// record cap names any shard whose record exceeds its share, and atomic
+/// blocks above the share are isolated by the balance-weight cap.
 pub fn gpu_seed_shards(profile: &BlockProfile, share_gib: f64) -> usize {
   let scaled = GPU_SEED_REFERENCE_SHARDS
-    * (static_env_score(profile) / GPU_SEED_REFERENCE_SCORE)
-    * (GPU_SEED_REFERENCE_MAX_RECORD_GIB / share_gib.max(f64::EPSILON));
+    * (static_env_bytes(profile) / GPU_SEED_REFERENCE_BYTES)
+    * (GPU_SEED_REFERENCE_SHARE_GIB / share_gib.max(f64::EPSILON));
   (scaled.round().max(1.0) as usize).min(profile.num_blocks().max(1))
+}
+
+/// Serialized bytes over every block: what the trace-shard seed scales
+/// with, and the balance weight the static cut distributes.
+pub fn static_env_bytes(profile: &BlockProfile) -> f64 {
+  profile.blocks().iter().map(|b| f64::from(b.serialized_size)).sum()
 }
 
 /// Predicted owned-side cost of one block under the static model.
