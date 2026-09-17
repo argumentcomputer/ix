@@ -102,14 +102,66 @@ def CompileInput.prepare (input : CompileInput) :
   let resolved ← input.resolve.mapError toString
   resolved.decorate
 
+/-- Detect either reserved contract namespace, including malformed markers.
+This checks presence only; resolution and validation still run for marked input. -/
+def hasContractMetadata (source : Lean.ConstantInfo) : Bool :=
+  let hasContracts (expr : Lean.Expr) := (expr.find? fun
+    | .mdata data _ => data.entries.any fun (key, _) =>
+        sourceAnnotationKey.isPrefixOf key || Ix.SemanticContract.key.isPrefixOf key
+    | _ => false).isSome
+  hasContracts source.type || ((sourceBody? source).map hasContracts).getD false ||
+    match source with
+    | .recInfo info => info.rules.any (hasContracts ·.rhs)
+    | _ => false
+
+/-- Scan small inputs directly and large inputs in independent batches. -/
+def hasAnyContractMetadata
+    (constants : List (Lean.Name × Lean.ConstantInfo)) : Bool := Id.run do
+  if constants.length ≤ 1024 then
+    return constants.any (hasContractMetadata ·.2)
+  -- Presence is independent for each immutable declaration. Use bounded
+  -- batches on Lean's worker pool so a whole imported environment does not
+  -- require a serial expression scan before the parallel Rust compiler.
+  let mut tasks : Array (Task Bool) := #[]
+  let mut batch : Array Lean.ConstantInfo := Array.emptyWithCapacity 1024
+  for (_, source) in constants do
+    batch := batch.push source
+    if batch.size == 1024 then
+      tasks := tasks.push <| Task.spawn fun _ => batch.any hasContractMetadata
+      batch := Array.emptyWithCapacity 1024
+  if !batch.isEmpty then
+    tasks := tasks.push <| Task.spawn fun _ => batch.any hasContractMetadata
+  return tasks.any (·.get)
+
+/-- Ordinary declarations need no occurrence resolution or decoration. Check
+both reserved namespaces in one shared-expression walk, retaining the input
+name/uniqueness checks even when there are no contracts to resolve. Any selected
+registration or metadata marker uses the full validation path below. -/
+def checkOrdinaryConstants (constants : List (Lean.Name × Lean.ConstantInfo))
+    (registered : Lean.Name → Bool) : Except String Bool := do
+  let mut selected : Std.HashSet Lean.Name := {}
+  for (name, source) in constants do
+    if name != source.name then
+      throw (toString <| SourceContractError.declarationNameMismatch name source.name)
+    if selected.contains name then
+      throw (toString <| SourceContractError.duplicateDeclaration name)
+    selected := selected.insert name
+    if registered name then return false
+  return !hasAnyContractMetadata constants
+
 def prepareSourceConstants (constants : List (Lean.Name × Lean.ConstantInfo)) :
     Except String (List (Lean.Name × Lean.ConstantInfo)) := do
+  if ← checkOrdinaryConstants constants (fun _ => false) then return constants
   let input ← (CompileInput.fromAnnotations constants).mapError toString
   input.prepare
 
 def prepareRegisteredConstants (env : Lean.Environment)
     (constants : List (Lean.Name × Lean.ConstantInfo)) :
     Except String (List (Lean.Name × Lean.ConstantInfo)) := do
+  let registry := sourceContractExtension.getState env
+  let hints := sourceMeasureExtension.getState env
+  if ← checkOrdinaryConstants constants (fun name => registry.contains name || hints.contains name) then
+    return constants
   let input ← (compileInputFromEnv env constants).mapError toString
   input.prepare
 

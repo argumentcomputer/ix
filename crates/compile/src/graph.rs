@@ -57,6 +57,8 @@ pub struct SetupScan {
   pub ind_groups: FxHashMap<Name, Vec<Name>>,
   /// Source contracts that the current conservative emitter cannot preserve.
   pub source_contracts: Vec<Name>,
+  /// Semantic declarations validated during the same lazy decode as the graph.
+  pub semantic_sources: Result<Vec<Name>, ixon::CompileError>,
 }
 
 /// Fused whole-env setup pass: one decode per constant feeding the ref
@@ -78,6 +80,8 @@ pub fn setup_scan(env: &Env) -> SetupScan {
     ungrounded: FxHashMap<Name, crate::ground::GroundError>,
     ind_groups: FxHashMap<Name, Vec<Name>>,
     source_contracts: Vec<Name>,
+    semantic_sources: Vec<Name>,
+    semantic_error: Option<ixon::CompileError>,
   }
 
   let names: Vec<&Name> = env.keys().collect();
@@ -87,6 +91,11 @@ pub fn setup_scan(env: &Env) -> SetupScan {
       let Some(constant) = env.get(name) else {
         return acc;
       };
+      match crate::semantic_contract::inspect_constant(&constant) {
+        Ok(true) => acc.semantic_sources.push(name.clone()),
+        Ok(false) => {},
+        Err(error) => acc.semantic_error = Some(error),
+      }
       let (deps, annotated) = inspect_constant_references(&constant);
       if annotated {
         acc.source_contracts.push(name.clone());
@@ -117,6 +126,8 @@ pub fn setup_scan(env: &Env) -> SetupScan {
       l.in_refs = merge_ref_maps(l.in_refs, r.in_refs);
       l.ungrounded.extend(r.ungrounded);
       l.source_contracts.extend(r.source_contracts);
+      l.semantic_sources.extend(r.semantic_sources);
+      l.semantic_error = l.semantic_error.or(r.semantic_error);
       for (k, v) in r.ind_groups {
         l.ind_groups.entry(k).or_insert(v);
       }
@@ -128,6 +139,10 @@ pub fn setup_scan(env: &Env) -> SetupScan {
     immediate_ungrounded: acc.ungrounded,
     ind_groups: acc.ind_groups,
     source_contracts: acc.source_contracts,
+    semantic_sources: match acc.semantic_error {
+      Some(error) => Err(error),
+      None => Ok(acc.semantic_sources),
+    },
   }
 }
 
@@ -427,6 +442,40 @@ mod tests {
   }
 
   #[test]
+  fn setup_scan_preserves_semantic_validation() {
+    use crate::semantic_contract::{Contract, Kind};
+    use ixon::contract::{BinderContract, LetKind, ValueContract};
+    let contract = Contract {
+      kind: Kind::All,
+      binder: BinderContract::default(),
+      result: ValueContract::shared(),
+      let_kind: LetKind::Value,
+    };
+    let name = n("Semantic");
+    let mut env = Env::default();
+    let axiom = |typ| {
+      ConstantInfo::AxiomInfo(AxiomVal {
+        cnst: ConstantVal { name: name.clone(), level_params: vec![], typ },
+        is_unsafe: false,
+      })
+    };
+    env.insert(
+      name.clone(),
+      axiom(contract.attach(Expr::all(
+        n("x"),
+        sort0(),
+        sort0(),
+        BinderInfo::Default,
+      ))),
+    );
+    assert_eq!(setup_scan(&env).semantic_sources.unwrap(), vec![name.clone()]);
+    // A well-formed frame attached to the wrong expression must still fail
+    // before compilation, even though validation now shares the graph decode.
+    env.insert(name.clone(), axiom(contract.attach(sort0())));
+    assert!(setup_scan(&env).semantic_sources.is_err());
+  }
+
+  #[test]
   fn source_contract_guard_preserves_native_borrow_metadata() {
     use crate::compile::{CompileOptions, compile_env_with_options};
     use std::sync::Arc;
@@ -467,6 +516,7 @@ mod tests {
       immediate_ungrounded: FxHashMap::default(),
       ind_groups: FxHashMap::default(),
       source_contracts: Vec::new(),
+      semantic_sources: Ok(Vec::new()),
     };
     let names: Vec<_> = env.keys().collect();
     names

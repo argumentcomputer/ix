@@ -61,6 +61,7 @@ use ix_compile::decompile::decompile_env;
 use ix_compile::kernel_egress::{ixon_egress, lean_egress};
 use ix_kernel::env::KEnv;
 use ix_kernel::error::TcError;
+#[cfg(feature = "test-ffi")]
 use ix_kernel::id::KId;
 use ix_kernel::ingress::{
   IxonIngressLookups, build_ixon_ingress_lookups,
@@ -68,7 +69,7 @@ use ix_kernel::ingress::{
 };
 #[cfg(feature = "test-ffi")]
 use ix_kernel::ingress::{ixon_ingress, lean_ingress};
-use ix_kernel::mode::{Anon, CheckDupLevelParams, KernelMode, Meta};
+use ix_kernel::mode::{CheckDupLevelParams, KernelMode, Meta};
 use ix_kernel::profile::{BlockProfile, OpCounts, ProfileBuilder, ProfileSink};
 use ix_kernel::tc::TypeChecker;
 use ixon::constant::ConstantInfo as IxonCI;
@@ -1331,7 +1332,7 @@ fn resolve_kernel_check_workers_from(
 // Companion to `run_checks_parallel_on_large_stacks` for the metadata-free
 // anon path. Iterates `env.consts` exactly once to enumerate work items
 // (block or standalone), then dispatches to workers each running
-// `TypeChecker::<Anon>::new_with_lazy_anon` against its own `KEnv<Anon>`.
+// `IxonChecker` owns each worker's kernel state and lazy Ixon ingress.
 // The lazy ingress mechanism (in `tc.rs`) handles cross-block faults
 // without consulting metadata.
 
@@ -1461,7 +1462,7 @@ fn run_anon_checks_parallel(
       .name(format!("ix-kernel-check-anon-{worker_idx}"))
       .stack_size(KERNEL_CHECK_STACK_SIZE)
       .spawn(move || {
-        let mut kenv = KEnv::<Anon>::new();
+        let mut checker = ix_kernel::ixon_checker::IxonChecker::new(&env);
         let clear_every = kernel_check_clear_every();
         let mut checks_since_clear = clear_every;
         loop {
@@ -1472,9 +1473,9 @@ fn run_anon_checks_parallel(
           let item = &work[work_idx];
           if checks_since_clear >= clear_every {
             if retain_capacity == 0 {
-              kenv.clear_releasing_memory();
+              checker.clear_releasing_memory();
             } else {
-              kenv.clear_with_capacity_limit(retain_capacity);
+              checker.clear_with_capacity_limit(retain_capacity);
             }
             checks_since_clear = 0;
           }
@@ -1491,18 +1492,13 @@ fn run_anon_checks_parallel(
           progress_worker.begin(worker_idx, &prefix);
 
           let tc_start = Instant::now();
-          let kid = KId::<Anon>::new(primary_addr.clone(), ());
           if record_per_const {
             // Reset this worker's op counters so the post-check read
             // attributes exactly this item (incl. TC setup + lazy ingress).
             let _ = ix_kernel::profile::take_op_counts();
           }
-          let (check_res, item_fuel) = {
-            let mut tc =
-              TypeChecker::<Anon>::new_with_lazy_anon(&mut kenv, &env);
-            let res = tc.check_const(&kid);
-            (res, tc.fuel_used())
-          };
+          let check_res = checker.check_const(&primary_addr);
+          let item_fuel = checker.last_check().fuel_used;
           let elapsed = tc_start.elapsed();
           if record_per_const {
             let ops = ix_kernel::profile::take_op_counts();
@@ -1635,8 +1631,7 @@ fn run_anon_checks_parallel(
 ///   projection constants (`IPrj`/`CPrj`/`RPrj`/`DPrj`); Muts blocks
 ///   become block work items whose member + ctor projection addresses
 ///   are reconstructed deterministically via `Constant::commit`.
-/// - Workers each get their own `KEnv<Anon>` and a
-///   `LazyAnonIngress`-backed `TypeChecker<Anon>`. Deep refs fault in
+/// - Workers each get their own `IxonChecker`. Deep refs fault in
 ///   lazily via the anon-mode shallow ingress (`ingress_anon_addr_shallow`).
 /// - Returns `Array (Option CheckError)`, one slot per kernel-checkable
 ///   address discovered during enumeration.
@@ -2811,8 +2806,8 @@ fn run_anon_profile_parallel(
       .name(format!("ix-kernel-profile-{worker_idx}"))
       .stack_size(KERNEL_CHECK_STACK_SIZE)
       .spawn(move || {
-        let mut kenv = KEnv::<Anon>::new();
-        kenv.profile_sink = Some(ProfileSink::new(isolate));
+        let mut checker = ix_kernel::ixon_checker::IxonChecker::new(&env);
+        checker.set_profile_sink(ProfileSink::new(isolate));
         let clear_every = kernel_check_clear_every();
         let mut checks_since_clear = clear_every;
         loop {
@@ -2823,24 +2818,14 @@ fn run_anon_profile_parallel(
           // `clear_releasing_memory` preserves `profile_sink`, so recording
           // accumulates across scheduled-block boundaries.
           if checks_since_clear >= clear_every {
-            kenv.clear_releasing_memory();
+            checker.clear_releasing_memory();
             checks_since_clear = 0;
           }
           let primary_addr = match &work[work_idx] {
             AnonWorkItem::Standalone { addr, .. } => addr.clone(),
             AnonWorkItem::Block { primary_addr, .. } => primary_addr.clone(),
           };
-          let kid = KId::<Anon>::new(primary_addr, ());
-          let res = {
-            let mut tc =
-              TypeChecker::<Anon>::new_with_lazy_anon(&mut kenv, &env);
-            let r = tc.check_const(&kid);
-            // The TypeChecker is recreated per work item, so the final
-            // constant's record would never be flushed by a trailing reset —
-            // flush it explicitly.
-            tc.finish_constant_accounting();
-            r
-          };
+          let res = checker.check_const(&primary_addr);
           if res.is_ok() {
             passed.fetch_add(1, Ordering::Relaxed);
           } else {
@@ -2848,7 +2833,7 @@ fn run_anon_profile_parallel(
           }
           checks_since_clear += 1;
         }
-        if let Some(sink) = kenv.profile_sink.take() {
+        if let Some(sink) = checker.take_profile_sink() {
           sinks.lock().unwrap().push(sink);
         }
       })

@@ -41,10 +41,9 @@ sp1_zkvm::entrypoint!(main);
 
 use ix_common::address::Address;
 use ix_kernel::anon_work::{AnonWorkItem, build_anon_work};
-use ix_kernel::env::KEnv;
 use ix_kernel::id::KId;
 use ix_kernel::ingress::ixon_ingress_owned;
-use ix_kernel::mode::{Anon, Meta};
+use ix_kernel::mode::Meta;
 use ix_kernel::tc::TypeChecker;
 use ixon::env::Env as IxonEnv;
 use ixon::merkle::{merkle_root_canonical, zero_address};
@@ -160,14 +159,12 @@ pub fn main() {
         .collect()
     };
 
-    let mut kenv = KEnv::<Anon>::new();
     let mut failures: u32 = 0;
     let mut checked_covered: Vec<Address> = Vec::new();
     tic!("check_const_loop");
-    let mut tc = TypeChecker::<Anon>::new_with_lazy_anon(&mut kenv, &env);
+    let mut checker = ix_kernel::ixon_checker::IxonChecker::new(&env);
     for item in &items_to_check {
-      let kid = KId::<Anon>::new(item.primary().clone(), ());
-      if tc.check_const(&kid).is_err() {
+      if checker.check_const(item.primary()).is_err() {
         failures = failures.saturating_add(1);
       }
       // Certify in `consts`-key space (block addr + projections) — the same

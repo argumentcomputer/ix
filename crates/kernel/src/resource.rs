@@ -2,10 +2,14 @@
 //! Kernel typechecking on its own makes no resource promise.
 
 use crate::anon_work::build_anon_work;
+#[cfg(test)]
 use crate::env::KEnv;
+#[cfg(test)]
 use crate::id::KId;
+#[cfg(test)]
 use crate::mode::Anon;
 use crate::primitive::PrimAddrs;
+#[cfg(test)]
 use crate::tc::TypeChecker;
 use ixon::env::Env;
 use ixon::resource::addressed::{AddressedProgram, Profile, check_resources};
@@ -49,11 +53,9 @@ pub fn validate(
   check_literal_profile(profile)?;
   let resolved = check_resources(env, profile)?;
   let work = build_anon_work(env)?;
-  let mut kernel = KEnv::<Anon>::new();
+  let mut checker = crate::ixon_checker::IxonChecker::new(env);
   for item in work {
-    let id = KId { addr: item.primary().clone(), name: () };
-    let mut checker = TypeChecker::new_with_lazy_anon(&mut kernel, env);
-    checker.check_const(&id).map_err(|error| {
+    checker.check_const(item.primary()).map_err(|error| {
       format!(
         "resource validator: erased typing failed at {}: {error:?}",
         item.primary().hex()
@@ -61,7 +63,7 @@ pub fn validate(
     })?;
     // Retain structural declarations but keep reduction caches local to one
     // work item, as in the existing anonymous driver.
-    kernel.clear_reduction_caches();
+    checker.clear_reduction_caches();
   }
   Ok(resolved)
 }

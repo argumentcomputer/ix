@@ -24,11 +24,7 @@
 ziskos::entrypoint!(main);
 
 use ix_common::address::Address;
-use ix_kernel::anon_work::{build_anon_work, AnonWorkItem};
-use ix_kernel::env::KEnv;
-use ix_kernel::id::KId;
-use ix_kernel::mode::Anon;
-use ix_kernel::tc::TypeChecker;
+use ix_kernel::anon_work::{AnonWorkItem, build_anon_work};
 use ixon::env::Env as IxonEnv;
 use ixon::merkle::{merkle_root_canonical, zero_address};
 
@@ -60,7 +56,8 @@ fn main() {
   // layer (content-addressed: same constant ⇒ same primary across envs).
   let check_slice: &[u8] = ziskos::io::read_input_slice();
 
-  let env = IxonEnv::get_anon(&mut &env_bytes[..]).expect("invalid Ixon environment");
+  let env =
+    IxonEnv::get_anon(&mut &env_bytes[..]).expect("invalid Ixon environment");
   let work = build_anon_work(&env).expect("build_anon_work");
   let total = work.len() as u32;
 
@@ -78,19 +75,19 @@ fn main() {
       // `Address` orders by raw bytes, so sort + binary_search is correct.
       let mut want: Vec<Address> = Address::unpack(check_slice).collect();
       want.sort_unstable();
-      let items: Vec<&AnonWorkItem> =
-        work.iter().filter(|it| want.binary_search(it.primary()).is_ok()).collect();
+      let items: Vec<&AnonWorkItem> = work
+        .iter()
+        .filter(|it| want.binary_search(it.primary()).is_ok())
+        .collect();
       (items, 0, 0) // field_a filled in below once checked_count is known
     };
   let reuse_mode = !check_slice.is_empty();
 
-  let mut kenv = KEnv::<Anon>::new();
   let mut failures: u32 = 0;
   let mut checked_targets: Vec<Address> = Vec::new();
-  let mut tc = TypeChecker::<Anon>::new_with_lazy_anon(&mut kenv, &env);
+  let mut checker = ix_kernel::ixon_checker::IxonChecker::new(&env);
   for item in &items_to_check {
-    let kid = KId::<Anon>::new(item.primary().clone(), ());
-    if tc.check_const(&kid).is_err() {
+    if checker.check_const(item.primary()).is_err() {
       failures = failures.saturating_add(1);
     }
     // Certify in `consts`-key space (block addr + projections), matching
@@ -129,7 +126,8 @@ fn main() {
   for t in &checked_targets {
     if let Some(c) = env.get_const(t) {
       for r in &c.refs {
-        if checked_sorted.binary_search(r).is_err() && env.get_blob(r).is_none() {
+        if checked_sorted.binary_search(r).is_err() && env.get_blob(r).is_none()
+        {
           assumptions.push(r.clone());
         }
       }

@@ -8,7 +8,7 @@
 //! typechecking: it matches `rs_kernel_check_anon` in
 //! `crates/ffi/src/kernel.rs` and is what an Aiur-style verifier
 //! commits to. Callers iterate the returned `Vec<AnonWorkItem>` and
-//! invoke `TypeChecker::check_const` on each item's `primary` address;
+//! invoke `IxonChecker::check_const` on each item's `primary` address;
 //! the kernel's internal block coordination handles checking every
 //! member + ctor of `Block` items.
 //!

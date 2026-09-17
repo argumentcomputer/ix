@@ -242,6 +242,21 @@ impl LazyConstant {
     Ok(Arc::new(parsed))
   }
 
+  /// Materialize at an explicitly verified content address. Loaded entries
+  /// reuse the deferred check; in-memory entries must also bind their bytes
+  /// to the map key before kernel ingress may trust the block graph.
+  pub fn get_at(&self, expected: &Address) -> Result<Arc<Constant>, String> {
+    if self.pending_addr.as_ref() != Some(expected)
+      && !self.verify_address(expected)
+    {
+      return Err(format!(
+        "LazyConstant::get_at: bytes do not match {}",
+        expected.hex()
+      ));
+    }
+    self.get()
+  }
+
   /// Identify the `ConstantInfo` variant by reading just the outer
   /// `Tag4` head byte — no allocation, no body parse.
   ///
@@ -335,6 +350,19 @@ mod tests {
   use crate::constant::{Axiom, ConstantInfo, DefKind, Definition};
   use crate::expr::Expr;
   use ix_common::env::DefinitionSafety;
+
+  #[test]
+  fn explicit_address_check_does_not_reuse_another_keys_verdict() {
+    let c = axiom_constant();
+    let mut bytes = Vec::new();
+    c.put(&mut bytes);
+    let addr = Address::hash(&bytes);
+    let lazy = LazyConstant::from_bytes_deferred(bytes.into(), addr.clone());
+    lazy.get_at(&addr).unwrap();
+    assert!(lazy.was_verified());
+    assert!(lazy.get_at(&Address::hash(b"another key")).is_err());
+    lazy.get_at(&addr).unwrap();
+  }
 
   fn axiom_constant() -> Constant {
     Constant::new(ConstantInfo::Axio(Axiom {
