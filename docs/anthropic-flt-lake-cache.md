@@ -42,6 +42,35 @@ The surrounding Ix benchmark workspace overrides Mathlib to
 workspace therefore differs from building Anthropic's original dependency set.
 The recipe below uses a separate working checkout and the original pins.
 
+## Toolchain
+
+Every `lean` and `lake` command in this guide expects Lean `v4.33.1` on `PATH`
+with no per-command toolchain selector. Either setup works:
+
+- **Nix dev shell.** From the Ix checkout, `nix develop` puts `lean`, `lake`,
+  and `leantar` for `v4.33.1` on `PATH`. There is exactly one toolchain, so
+  nothing else needs pinning.
+- **User-wide elan.** Put `~/.elan/bin` on `PATH` and pin the toolchain for the
+  shell session:
+
+  ```bash
+  export PATH="$HOME/.elan/bin:$PATH"
+  export ELAN_TOOLCHAIN=leanprover/lean4:v4.33.1
+  ```
+
+  `ELAN_TOOLCHAIN` takes precedence over any `lean-toolchain` file, which
+  matters when Lake is pointed at a dependency directory with `-d`: the
+  original Mathlib pin's `lean-toolchain` names `v4.33.0`, and without the
+  pin elan would switch to it. The equivalent per-command form is
+  `lake +leanprover/lean4:v4.33.1`.
+
+Verify before continuing:
+
+```bash
+lean --version   # Lean (version 4.33.1, x86_64-unknown-linux-gnu, ...)
+ls "$(lean --print-prefix)/bin/leantar"
+```
+
 ## Which cache command?
 
 | Command | Purpose |
@@ -155,7 +184,6 @@ Ix's managed dependency checkout as source references.
 
 ```bash
 set -euo pipefail
-export PATH="$HOME/.elan/bin:$PATH"
 export FLT_REV=aa2d8b34692b16c70f699536de0d8e75b9a3e9ef
 export FLT_WORK="$HOME/repos/forks/fermats-last-theorem"
 FLT_SOURCE="$HOME/repos/ix/Benchmarks/Compile/.lake/packages/flt_e2e"
@@ -181,16 +209,16 @@ export LAKE_ARTIFACT_CACHE=true
 export LAKE_RESTORE_ARTIFACTS=true
 export MATHLIB_NO_CACHE_ON_UPDATE=1
 
-lake +leanprover/lean4:v4.33.1 --version
-lake +leanprover/lean4:v4.33.1 resolve-deps
+lake --version
+lake resolve-deps
 mkdir -p .lake/cache
 df -h "$FLT_WORK"
 ```
 
 `resolve-deps` materializes the committed dependency manifest. Do not run
 `lake update` for this recipe: it can change dependency pins or the toolchain.
-The explicit toolchain argument below also ensures that commands targeting
-Mathlib still use Lean 4.33.1.
+The toolchain pin from the [Toolchain](#toolchain) section also ensures that
+commands targeting Mathlib's directory still use Lean 4.33.1.
 
 ### Reuse the same dependencies when changing the root package
 
@@ -234,8 +262,7 @@ mathlib Mathlib
 EOF
 
 flt_lake() {
-  lake +leanprover/lean4:v4.33.1 \
-    --packages="$FLT_WORK/.lake/cache/overrides.json" "$@"
+  lake --packages="$FLT_WORK/.lake/cache/overrides.json" "$@"
 }
 ```
 
@@ -277,7 +304,7 @@ export FLT_CACHE_SCOPE="anthropic-flt/$FLT_REV/lean-4.33.1/x86_64-unknown-linux-
 flt_lake cache services
 ```
 
-Use the platform printed by `lean +leanprover/lean4:v4.33.1 --version` in place
+Use the platform printed by `lean --version` in place
 of `x86_64-unknown-linux-gnu` on another platform. Publisher and downloader must
 use the same scope and matching build inputs. Use a new scope for builds with
 changed pins or options, including Ix's Mathlib override.
@@ -595,9 +622,9 @@ workspace's resolved sources, through a path-override manifest derived from
 section 1):
 
 ```bash
-lake +leanprover/lean4:v4.33.1 -d .lake/packages/flt_e2e --packages=.lake/cache/overrides.json \
+lake -d .lake/packages/flt_e2e --packages=.lake/cache/overrides.json \
   build FinalCheck --no-build -o .lake/cache/flt_e2e.jsonl
-lake +leanprover/lean4:v4.33.1 -d .lake/packages/flt_e2e --packages=.lake/cache/overrides.json \
+lake -d .lake/packages/flt_e2e --packages=.lake/cache/overrides.json \
   cache stage .lake/cache/flt_e2e.jsonl .lake/cache/staged/flt_e2e
 ```
 
@@ -611,9 +638,11 @@ by pairing each `.trace` file's `depHash` with the mapping.
 
 ### Restore on another machine
 
-Prerequisites: an `argumentcomputer/ix` checkout, elan with
-`leanprover/lean4:v4.33.1`, Python 3, and the AWS CLI configured with IAM
-credentials that can read the bucket. Then, from `Benchmarks/Compile`:
+Prerequisites: an `argumentcomputer/ix` checkout, a Lean `v4.33.1` toolchain
+set up as in the [Toolchain](#toolchain) section, Python 3, and the AWS CLI
+configured with IAM credentials that can read the bucket. The script checks the
+Lean version and finds `leantar` through `lean --print-prefix`, so it runs the
+same way in the dev shell and under elan. Then, from `Benchmarks/Compile`:
 
 ```bash
 lake exe cache get      # clones the dependency sources; restores Mathlib and its deps
@@ -622,53 +651,15 @@ bash restore-flt-cache.sh
 
 The script downloads the prefix into `~/.cache/flt_e2e` (override with
 `FLT_CACHE_DIR`), unpacks every module into
-`.lake/packages/flt_e2e/.lake/build`, and finishes with
-`lake build CompileAnthropicFLT --no-build`, which must report all targets up
-to date. `leantar` skips modules whose trace already carries the expected
-hash, so rerunning the script only fills gaps. The script is also stored in the
-bucket next to the archives:
-
-```bash
-#!/bin/bash
-# Restore the Anthropic FLT (flt_e2e) build artifacts from S3 into Benchmarks/Compile,
-# the way Mathlib's `lake exe cache get` does it: download the .ltar archives, unpack them
-# all with a single multithreaded leantar call, then let Lake verify the traces.
-#
-# Prerequisites (run from Benchmarks/Compile):
-#   lake exe cache get        # clones deps and restores Mathlib + its 7 deps from Mathlib's cache
-#   aws configure             # IAM credentials that can read the bucket
-set -euo pipefail
-export PATH="$HOME/.elan/bin:$PATH"
-TC=leanprover/lean4:v4.33.1
-PREFIX="s3://argument-lake-cache-063002298335-us-east-1-an/staged/anthropic-flt/aa2d8b34692b16c70f699536de0d8e75b9a3e9ef/lean-4.33.1/x86_64-unknown-linux-gnu/flt_e2e"
-DEST="${FLT_CACHE_DIR:-$HOME/.cache/flt_e2e}"
-PKG="$PWD/.lake/packages/flt_e2e"
-
-grep -q 'name = "Compile"' lakefile.toml 2>/dev/null || { echo "run from Benchmarks/Compile" >&2; exit 1; }
-test "$(cat "$PKG/lean-toolchain" 2>/dev/null)" = "$TC" || { echo "flt_e2e not checked out; run 'lake exe cache get' first" >&2; exit 1; }
-LEANTAR="$(lean +$TC --print-prefix)/bin/leantar"
-
-echo "Downloading archives to $DEST"
-aws s3 sync "$PREFIX/" "$DEST/" --region us-east-1 --size-only --only-show-errors
-
-echo "Unpacking $(wc -l < "$DEST/modules.jsonl") modules into $PKG/.lake/build"
-python3 - "$DEST" "$PKG" <<'PY' | "$LEANTAR" -x -j - --jobs "$(nproc)"
-import json, sys, os
-dest, pkg = sys.argv[1:3]
-lib, ir = f"{pkg}/.lake/build/lib/lean", f"{pkg}/.lake/build/ir"
-entries = []
-for line in open(f"{dest}/modules.jsonl"):
-    mod, h, ltar = json.loads(line)
-    sub = os.path.dirname(mod.replace(".", "/"))
-    for d in (f"{lib}/{sub}", f"{ir}/{sub}"):
-        os.makedirs(d, exist_ok=True)
-    entries.append({"file": f"{dest}/{ltar}", "base": [f"{lib}/{sub}", f"{ir}/{sub}"], "hash": h})
-print(json.dumps(entries))
-PY
-
-echo "Verifying with Lake"
-lake +$TC build CompileAnthropicFLT --no-build
-```
+`.lake/packages/flt_e2e/.lake/build`, then verifies the cached package with
+`lake build flt_e2e/FinalCheck --no-build`, which must report all targets up
+to date (69,181 jobs), and finally compiles `CompileAnthropicFLT`. That driver
+is a one-line local module importing `FinalCheck`; it is not part of the
+cache, so it is the only module Lake compiles on a fresh machine. `leantar`
+skips modules whose trace already carries the expected hash, so rerunning the
+script only fills gaps. The script lives at
+[`Benchmarks/Compile/restore-flt-cache.sh`](../Benchmarks/Compile/restore-flt-cache.sh)
+and is also stored in the bucket next to the archives.
 
 Lake's traces are validated by hash, so the restore needs the same source
 revisions, toolchain, and platform as the build. It does not need
