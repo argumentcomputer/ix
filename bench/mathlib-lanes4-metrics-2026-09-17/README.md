@@ -1,4 +1,4 @@
-# Mathlib on four GPUs with lightweight metrics, after the coset cache and resident seeds
+# Mathlib on four GPUs with lightweight metrics: coset cache, resident seeds, four executions per lane, sppark
 
 **Result (2026-09-17):** Mathlib proven end to end in **40:02 wall, 2,396 s
 prover end to end**, on four RTX PRO 6000 Blackwell in one process
@@ -87,6 +87,49 @@ as the candidate of 85 at the 30.4 GiB reservation also says. The proofs
 themselves are unchanged (59 s claims, 28 s joins), so proof cost is
 independent of execution concurrency at this level.
 
+## Third run: transforms through sppark
+
+Same inputs and flags as the second run, on the tree that adds the sppark
+transform backend (ix `0746a259`: upstream `c8a5a7b2` merged, multi-stark
+`b14e623d`, the sppark fork at `176af27`), built with `IX_CUDA_SPPARK=1`
+and run with `MULTI_STARK_CUDA_NTT=sppark`, which routes transforms of
+2^18 rows and up through sppark with the default 4 GiB panel budget.
+Same root, verified, composed verdict OK.
+
+| Quantity | first-party kernels | sppark |
+|---|---:|---:|
+| Wall, `/usr/bin/time` | 37:59 | **36:00** |
+| Prover end to end | 2,274 s | **2,154 s** (−5.3%) |
+| Last claim proven | +1,793 s | +1,696 s |
+| Root dispatched / proven | +2,115 s / +2,273 s | +2,001 s / +2,154 s |
+| Claim execution mean / max | 235 s / 440 s | 243 s / 454 s |
+| Claim proof mean / max / total | 59.3 s / 95.9 s / 4,623 s | **54.5 s / 88.6 s / 4,249 s** (−8%) |
+| Join proof mean / total | 28.2 s / 2,253 s | **25.5 s / 2,041 s** (−9%) |
+| Prover work per GPU, occupancy | 1,719 s, 76% | 1,572 s, 73% |
+| Mean sampled GPU utilization | 53 to 57% | 45 to 48% |
+| Peak sampled device memory | 68.7 to 69.2 GiB | 71.5 to 71.9 GiB |
+| Peak process RSS | 733 GiB | 697 GiB |
+| Record pool peak grant | 726.8 of 731 GiB | 725.8 of 731 GiB, 0 waits |
+| p90-scaled candidate | 85 | 85 |
+
+**Reading.** Proofs got 8 to 9% cheaper on the same records, in line with
+the Init measurements (the proving union 4 to 14% below first-party as
+the milestones landed), and the whole run 5%, because execution still
+sets the pace: the claim phase is execution-bound at 16 executions and
+the mean claim execution rose 3% again with the busier host. The GPUs
+now do 1,572 s of work each over a 2,154 s run and sample 45 to 48%
+busy, so there is more GPU headroom than before; the next gains are on
+the execution side, or from more shards to let more executions fit the
+pool. sppark's panel scratch adds about 3 GiB of device memory at peak,
+71.9 of 96 GiB. No sppark diagnostics or aborts appeared in a run whose
+transforms cover every claim and join shape in Mathlib, which answers the
+plan's open question for the default on a whole environment.
+
+Against the 2026-09-15 reference on the same manifest the prover is now
+30% faster (2,154 s against 3,084 s), from the generated traces, the
+coset cache and upload ring, the resident seeds, the fourth execution
+per lane and sppark together.
+
 ## The staging lease bug
 
 `crates/aiur/cuda/trace_runtime.cu` stages seed uploads through a ring of
@@ -119,7 +162,8 @@ fails with status 400 before the fix and passes after; the whole
 
 Files: `mathlib78-lanes4-meta.txt`, `mathlib78-lanes4-summary.txt`,
 `mathlib78-lanes4-exec4-meta.txt`, `mathlib78-lanes4-exec4-summary.txt`,
-`run-lanes4.sh` (`EXEC_JOBS` selects the executions per lane). Raw logs, the metrics file, the GPU samples and the
+`mathlib78-lanes4-exec4-sppark-meta.txt`,
+`mathlib78-lanes4-exec4-sppark-summary.txt`, `run-lanes4.sh` (`EXEC_JOBS` selects the executions per lane). Raw logs, the metrics file, the GPU samples and the
 lanes cache are in `~/benchdata/mathlib/runs/mathlib78-lanes4-metrics-2/`
 on the four-GPU box; the aborted first attempt is beside it without the
 `-2`.

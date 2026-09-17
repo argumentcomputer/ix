@@ -22,7 +22,7 @@ unset AIUR_PROFILE AIUR_CUDA_PROFILE CUDA_INJECTION64_PATH RUST_LOG MULTI_STARK_
   echo "thp $(cat /sys/kernel/mm/transparent_hugepage/enabled) / $(cat /sys/kernel/mm/transparent_hugepage/defrag)"
   echo "cpus $(nproc)  mem $(free -g | awk 'NR==2{print $2}') GiB"
   echo "flags --lanes 4 --exec-jobs $EXEC_JOBS --max-ram 230 $*  cap 920G"
-  env | grep '^AIUR_' | sort
+  env | grep '^AIUR_\|^MULTI_STARK_' | sort
 } > "$OUT/meta.txt"
 nvidia-smi --query-gpu=timestamp,index,memory.used,utilization.gpu --format=csv,noheader,nounits --loop-ms=1000 > "$OUT/gpu.csv" 2>/dev/null &
 SMI=$!
