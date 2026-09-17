@@ -117,14 +117,20 @@ a 64-bit division each and strided accesses. After, with tiled transposes
 and a one-column-per-grid-row expansion: gather 8, inverse 13, restore 15,
 forward 58, scatter 63.
 
-The plan's fused expansion (bit-reversed coefficients spread with the coset
-powers straight into a forward RN transform, the row permutation folded
-into the scatter) was implemented and measured against the restoring path
-with the same glue (`expansion-restoring.csv`, `expansion-fused.csv`,
-`MULTI_STARK_SPPARK_FUSED`): 284 against 289 ms on the BLAKE3 shape,
-62 against 73 ms on 2^24 x 6, 202 against 238 ms on 2^24 x 17. The
-reversing scatter costs what the restoring pass saves, so the restoring
-path is the default and the fused one stays available as evidence.
+The ordering half of the plan's fused expansion, bit-reversed coefficients
+spread with the coset powers into a forward RN transform and the row
+permutation folded into the scatter, was implemented and measured against
+the restoring path with the same glue (`expansion-restoring.csv`,
+`expansion-fused.csv`, `MULTI_STARK_SPPARK_FUSED`): 284 against 289 ms on
+the BLAKE3 shape, 62 against 73 ms on 2^24 x 6, 202 against 238 ms on
+2^24 x 17. The reversing scatter costs what the restoring pass saves, so
+the restoring path is the default and the other stays available as
+evidence. The plan's full fusion, the expansion's loads, shift and virtual
+zeros inside the transform's first pass, is not implemented and this
+measurement does not rule on it: it would remove the spread's write of the
+expanded panel and the first pass's read of it, which the stage split
+bounds at about 15 of the BLAKE3 shape's 284 ms and 9 of 2^24 x 6's 62 ms,
+and it needs a change to upstream's first-stage kernels in the fork.
 
 Final medians (`glue-legacy.csv`, `glue-sppark.csv`; `glue-before-sppark.csv`
 is the batched build before the glue rewrite), all shapes through sppark:
@@ -145,7 +151,9 @@ is the batched build before the glue rewrite), all shapes through sppark:
 | 24, 17, 4 | 215.3 | 201.1 | 1.07 |
 
 Below 2^18 input rows the first-party kernels win (0.60 to 0.91x), which
-sets the default `MULTI_STARK_SPPARK_MIN_LOG_HEIGHT` at 18.
+sets the default `MULTI_STARK_SPPARK_MIN_LOG_HEIGHT` at 18. From 2^18 up
+every benchmarked shape is at or ahead of the first-party kernels except
+2^20 x 8 x2 at 0.95x, within the run-to-run spread of that shape.
 
 Building `ix` against the local fork: the ix worktree's `.cargo/config.toml`
 needs a `[patch]` for `https://github.com/argumentcomputer/sppark` pointing

@@ -578,7 +578,7 @@ against the first-party kernels.
 
 Fork patch record (`argumentcomputer/sppark`, branch `dev`, from upstream
 `17278d7`): `6c5d826` and `13b6226` the `SPPARK_NO_CXX_RUNTIME` build mode,
-`8b624cd` the batched entry. Attribution: the batched entry adds a grid
+`8b624cd` the batched entry, `176af27` the record of both in its README. Attribution: the batched entry adds a grid
 dimension and a stride to upstream's kernels and launchers, arithmetic
 unchanged.
 
@@ -596,13 +596,18 @@ measurements, and `8a1f9f9` rewrites the panel glue: the gather and scatter
 are tiled transposes (row-per-thread kernels for matrices narrower than
 eight columns) and the restoring expansion runs one column per grid row;
 the per-element kernels with a 64-bit division each had taken two thirds
-of the BLAKE3 shape's LDE. The fused expansion was implemented behind
-`MULTI_STARK_SPPARK_FUSED` and measured: equal on the wide shape, 15 to
-18 percent behind on the tall ones, so the restoring path is the default
-and the evidence is in `bench/sppark-lde-2026-09-17/README.md`. Final
-resident LDE ratios against the first-party kernels: 1.36x on the BLAKE3
-shape, 2.7x and 2.2x on the tall narrow ones, 1.07 to 1.22x from 2^18 up;
-every proof shape from 2^18 rows takes sppark.
+of the BLAKE3 shape's LDE. The ordering half of the fused expansion, the
+bit-reversed feed with the row permutation in the scatter, was implemented
+behind `MULTI_STARK_SPPARK_FUSED` and measured: equal on the wide shape,
+15 to 18 percent behind on the tall ones, so the restoring path is the
+default and the evidence is in `bench/sppark-lde-2026-09-17/README.md`.
+The full fusion, the expansion inside the transform's first pass, is not
+implemented; the stage split bounds what it could still save at about 5
+percent of the wide shape's LDE and 15 percent of a tall narrow one's,
+against a change to upstream's first-stage kernels. Final resident LDE
+ratios against the first-party kernels: 1.36x on the BLAKE3 shape, 2.7x
+and 2.2x on the tall narrow ones, 1.07 to 1.22x from 2^18 up with one
+shape, 2^20 x 8, at 0.95x; every proof shape from 2^18 rows takes sppark.
 
 Whole units and the whole proof with this build
 (`bench/sppark-lde-2026-09-17/README.md`, milestone 4 section): claim 1
@@ -618,3 +623,22 @@ questions are the default (opt-in until the Mathlib measurement, since
 upstream's fail-fast mode aborts on a CUDA error where the Rust side
 panics) and the pins. Fork tip to pin: `176af27` (the patch record in its
 README on top of `8b624cd`).
+
+### Second audit (2026-09-17, later)
+
+A second audit of the batched build found the batched host entry's
+unchecked word count and stride narrowing, the reversed-powers buffer
+outside the panel budget, host twiddle tables still built for transforms
+that go through sppark and uploaded by the generic entries, the generic
+entries' spans, and that the expansion measured above is the ordering
+half of the plan's fusion, not the in-pass one. Fixed in multi-stark
+`b14e623`: the Rust side decides a transform's backend once and builds the
+first-party tables only for the first-party path, the kernels take sppark
+exactly when no table was handed to them (which also closes the race a
+backend switch could open between the two sides), the generic entries
+label their backend, the batch entry checks its arithmetic and the adapter
+its stride, and the reversed powers exist only for the bit-reversed feed
+and count against the budget. The record above states the fusion's status
+and bound. The change is dispatch plumbing; the milestone-4 replays and
+Init run stand as measured with the previous build, and the
+compatibility digest and the resident LDE timings reproduce on it.
