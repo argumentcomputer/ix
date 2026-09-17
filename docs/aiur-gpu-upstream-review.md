@@ -6,6 +6,11 @@ The local comparison is ix `d3b039ea293bfaa1460b2a7a9a56668d7f081359`
 (the memory-budget execution scheduler) and multi-stark
 `ac144be2eb670aa081ec3800614454f3c036b7b5`.
 
+**NTT update, 2026-09-17:** the
+[sppark integration plan](aiur-gpu-sppark-ntt-plan.md) supersedes this review's
+NTT implementation guidance. The earlier priorities and source observations
+below retain their historical measurement context.
+
 **Current priority, revised after reviewing the branch profiles:**
 
 1. Finish the current scheduler's correctness and validation work. Use cold
@@ -47,121 +52,18 @@ Evidence: `~/benchdata/trace-shards-gpu/v2-r1_cuda_gpu_kern_sum.csv`,
 `init-gpu-v3-single.log`, `init-gpu-v7-dist8-keep-ahead8.log`, and
 `multi-stark/src/cuda/pcs.rs` around `CUDA_LDE_WAVE`.
 
-**Deferred experiment: concrete handoff for the implementation agent.**
+**Current NTT implementation plan (2026-09-17).**
 
-When scheduled, run one bounded sppark integration experiment on the
-main-trace resident LDE path. Do not add an ICICLE/open-icicle dependency or port its
-CUDA backend on this branch. Continue improving our own Blake3 implementation.
-Keep the existing execution scheduler and record budget as the baseline.
+The [sppark NTT/LDE integration plan](aiur-gpu-sppark-ntt-plan.md) replaces the
+previous main-trace-only experiment and its vendoring instructions. It uses a
+pinned direct Cargo dependency, preserves the complete upstream Goldilocks NTT
+stack initially, and covers main, lookup, quotient and general DFT/LDE paths.
+Measured upstream changes are consumed through a pinned dependency fork.
 
-The first deliverable is an optional `cuda-sppark` build feature in multi-stark,
-depending on `cuda`, plus a measured keep/remove decision. It selects the
-experimental main-trace path for comparison; there is no new runtime backend
-selector, tile-size flag, autotuner, or scheduling policy. Existing CUDA
-remains the default until the experiment demonstrates a repeatable benefit.
-
-| Proposed change | Scope |
-| --- | --- |
-| `cuda/vendor/sppark/` | Pin `17278d74295392f9813f009300b257a688422b7a`; retain licenses and a record of local adaptations. Include the Goldilocks NTT dependencies only. |
-| `cuda/sppark_ntt.cu` and a small private header | Device-buffer adapter, reusable scratch, layout conversion, explicit stream and per-device NTT parameters. |
-| `build.rs`, `Cargo.toml` | Compile the adapter only under the experimental feature, using the existing compiler/architecture settings and static-link arrangement. |
-| `cuda/kernels.cu` | Route `multi_stark_cuda_coset_lde_create` through the alternative LDE helper. Keep its existing resident handle, trace storage and error cleanup. |
-| `src/cuda/mod.rs`, `src/cuda/pcs.rs` | Account for adapter scratch and parameters; avoid generating/uploading unused full inverse/forward twiddle tables for the selected path. Preserve shift powers needed by the chosen implementation. |
-| Existing CUDA tests | Exercise the experimental resident path against CPU outputs and existing commitment/proof checks. |
-
-`multi_stark_cuda_coset_lde_create` is the correct first boundary. A global
-replacement of `launch_dif` would also alter lookup, quotient and FRI paths
-with different layouts and normalization contracts. Expand to those only
-after this experiment succeeds. The ordinary host-returning `CudaDft`
-interface is also insufficient: the actual prover uses resident handles.
-
-Use sppark's NTT arithmetic and kernels, with a narrow host adaptation to take
-our explicit `cudaStream_t` and NTT parameter context. Keep kernel bodies as
-close to upstream as possible initially. Do not bring in its complete GPU
-runtime: upstream `stream_t` owns newly created streams, `all_gpus.cpp`
-enumerates devices, and every `gpu_t` constructs a CPU thread pool. We need
-none of that for an NTT inside an already scheduled shard. SP1's modified
-sppark is a reference for accepting a caller's stream, not the source of a
-new prover runtime. Initialize parameters lazily for the selected CUDA device
-and make their readiness/lifetime explicit across callers.
-
-The helper's contract should be:
-
-- Input: an already resident, natural-order, row-major trace, its actual
-  height/width/blowup/coset, the caller's stream, and accounted workspace.
-- Output: our existing resident LDE allocation in **row-major, bit-reversed
-  evaluation order**, with canonical Goldilocks values.
-- Execution: enqueue work on the caller's stream. Preserve the current outer
-  FFI completion boundary; avoid per-column host synchronization and all full
-  host round trips.
-
-A concrete first implementation uses one reusable column-tile buffer:
-
-1. Gather a tile of trace columns into contiguous polynomial storage and
-   canonicalize inputs. Each column has room for the extended height.
-2. Run sppark's inverse NTT in `NR` order on each column's original height.
-3. Restore natural coefficient order, apply the actual coset powers, and
-   zero the extension. Combine these operations where straightforward.
-4. Run the forward NTT in `NR` order at the extended height.
-5. Scatter columns into the existing row-major LDE, preserving the resulting
-   bit-reversed row order and canonicalizing stored field values.
-
-This keeps the inverse and forward transforms in the same scratch layout,
-requiring one gather and one scatter for the whole LDE operation instead of
-transposing around each transform separately. The input trace stays resident
-for lookup construction, just as it does today.
-
-Scratch for `tile_columns` requires
-`8 * extended_height * tile_columns` bytes, plus parameter/kernel workspace.
-Derive the tile width from the available, explicitly reserved workspace and
-matrix width. Include that reservation in PCS placement/admission; do not
-choose it from a raw free-memory snapshot that ignores the rest of the shard.
-If even one column cannot fit, keep the original CUDA implementation for that
-shape and report the fallback. Do not make the comparison silently use host
-spill. Record the tile width and scratch bytes in the experiment results.
-
-Three compatibility requirements are already established by reading source:
-
-- **Inverse normalization:** sppark's inverse kernels apply `1/N`. Our current
-  inverse `launch_dif` does not; `bit_reverse_scale_and_shift` applies it later.
-  In the sppark path, that later operation must use a scale of one. Applying
-  both scalings produces the wrong LDE.
-- **Root convention:** sppark's default Goldilocks forward-root table matches
-  the table in our pinned Plonky3 revision `3152b14`. Do not define
-  `GOLDILOCKS_PLONKY2`, which selects a different table. Test arbitrary cosets,
-  not only the multiplicative generator seven.
-- **Representation and limits:** start with canonical Goldilocks arithmetic;
-  leave the optional partial-reduction modes disabled. Validate dimensions
-  before launch, including the compiled maximum domain. Derive that maximum
-  from Goldilocks' two-adicity (32) rather than the current Init piece cap.
-  Treat height-one transforms as no-ops before entering upstream kernels.
-
-For an ix comparison build, forward the optional feature through
-`crates/aiur/Cargo.toml` and `crates/ffi/Cargo.toml` as needed. The normal
-`IX_CUDA=1` build currently enables `cuda` via `lakefile.lean`; do not assume
-adding a feature in multi-stark automatically enables it in the measured ix
-binary. Use a clearly identified experimental build and record its features.
-
-**Keep/remove criterion.** First extend the existing
-`resident_coset_lde_matches_cpu_storage` and
-`resident_ldes_feed_mixed_merkle_without_host_round_trip` coverage. Include
-non-generator cosets, padding, field edge values, tile remainders and heights
-that exercise the large mixed-radix kernels. Ensure these calls actually take
-the sppark path; a CPU/original-CUDA fallback is not validation of the adapter.
-Then run the existing batch/native-verification checks for the changed path.
-
-Measure the actual matrix shapes and frequencies in the current Init plan:
-NTT time, gather/scatter time, complete main commitment time, scratch/VRAM peak,
-and whole `ix prove` wall time. Use the same shard plan, host budget and
-execution settings; separate cold initialization from steady-state timings.
-The latest budget scheduler is the baseline, not an older queue's differently
-configured result. Document whether any paths fell back to existing CUDA.
-
-Keep the feature only if complete commitments and the proving workload show
-a repeatable improvement without a residency regression. An isolated NTT win
-is insufficient. If transposes dominate, retain the evidence and consider a
-separate row-major mixed-radix kernel change; do not immediately launch an
-ICICLE port or add shape thresholds to rescue the experiment.
+That document defines the stream/event integration, matrix workspace budget,
+numerical contracts, implementation milestones and claim/join acceptance
+measurements. Its decisions supersede the NTT integration guidance retained
+in the historical source review below. Proofman remains an ideas-only reference.
 
 For **ICICLE**, the integration recommendation is **none at present**. Its
 stream/residency API and open-icicle's column-batched kernels remain design

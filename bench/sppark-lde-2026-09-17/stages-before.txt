@@ -1,0 +1,6 @@
+sppark lde height=1048576 width=23 added_bits=2 gather=0.313 inverse=0.569 shift=0.714 forward=4.918 scatter=7.867
+sppark lde height=16777216 width=6 added_bits=2 gather=2.670 inverse=5.209 shift=22.279 forward=35.676 scatter=9.381
+sppark lde height=16777216 width=5 added_bits=2 gather=1.218 inverse=4.815 shift=18.028 forward=26.403 scatter=32.464
+sppark lde height=4194304 width=2 added_bits=2 gather=1.286 inverse=0.181 shift=0.184 forward=0.915 scatter=0.368
+sppark lde height=262144 width=128 added_bits=1 gather=0.585 inverse=0.658 shift=0.581 forward=1.760 scatter=1.540
+sppark lde height=65536 width=925 added_bits=1 gather=1.996 inverse=1.165 shift=3.520 forward=4.898 scatter=4.243

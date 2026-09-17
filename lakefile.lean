@@ -57,16 +57,22 @@ section FFI
 /-- Build args for `cargo build --release` with opt-in feature overrides.
 Cargo output is visible with `lake -v build`. -/
 def cargoArgs (testFfi : Bool := false) (net : Bool := false) : IO (Array String) := do
-  -- IX_NO_PAR=1 disables parallel; IX_CUDA=1/true/yes enables CUDA.
+  -- IX_NO_PAR=1 disables parallel; IX_CUDA=1/true/yes enables CUDA;
+  -- IX_CUDA_TRACE_CODEGEN=1 the generated trace kernels; IX_CUDA_SPPARK=1
+  -- the sppark transform backend (both imply CUDA on the Cargo side).
   let ixNoPar ← IO.getEnv "IX_NO_PAR"
   let ixCuda ← IO.getEnv "IX_CUDA"
   let ixTraceCodegen ← IO.getEnv "IX_CUDA_TRACE_CODEGEN"
+  let ixSppark ← IO.getEnv "IX_CUDA_SPPARK"
   let mut features : Array String := #[]
   if ixNoPar != some "1" then features := features.push "parallel"
   if ixCuda == some "1" || ixCuda == some "true" || ixCuda == some "yes" then
     features := features.push "cuda"
   if ixTraceCodegen == some "1" || ixTraceCodegen == some "true" || ixTraceCodegen == some "yes" then
     features := features.push "cuda-trace-codegen"
+  -- IX_CUDA_SPPARK=1 adds sppark's NTT engine as the comparison backend.
+  if ixSppark == some "1" || ixSppark == some "true" || ixSppark == some "yes" then
+    features := features.push "cuda-sppark"
   if net && !System.Platform.isOSX then features := features.push "net"
   if testFfi then features := features.push "test-ffi"
   IO.println s!"Ix Rust features: {if features.isEmpty then "none" else ",".intercalate features.toList}"

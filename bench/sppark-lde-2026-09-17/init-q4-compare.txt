@@ -1,0 +1,31 @@
+run                                 wall s   cpu s  rss GiB  gpu %  prove_planned  stage1_commit lookup_constru       quotient       fri_open        witness    cpu_witness  codegen_seeds codegen_device   execute_ixvm
+q4-coset-generated                   418.5    2051     91.0   43.6          223.6          115.6           48.7           35.3           16.4           57.0           41.7           43.9           22.9          329.4
+q4-m3-legacy-generated               418.3    2047     91.0   44.5          223.0          115.0           48.7           35.4           16.4           56.9           42.0           44.3           22.6          330.3
+q4-sppark-generated                  408.0    2028     89.7   37.9          201.1          105.5           41.5           30.0           16.4           57.4           42.1           44.6           22.8          331.7
+q4-m4-sppark-generated               404.7    2028     89.0   36.3          192.3           98.5           39.8           29.9           16.4           57.5           43.3           44.7           22.5          333.5
+spans n:
+q4-coset-generated                                                            10            142             71             71             71            142          20068            382          38292             10
+q4-m3-legacy-generated                                                        10            142             71             71             71            142          20068            382          38292             10
+q4-sppark-generated                                                           10            142             71             71             71            142          20068            382          38292             10
+q4-m4-sppark-generated                                                        10            142             71             71             71            142          20068            382          38292             10
+== q4-m3-legacy-generated
+[aggregate] root wrap proven in 16.7s (query-record peak 65.4 GiB): 7 shard(s) verified into 3
+[aggregate] root wrap proven in 9.2s (query-record peak 62.0 GiB): 3 shard(s) verified into 2
+[aggregate] root wrap proven in 7.5s (query-record peak 59.4 GiB): 2 shard(s) verified into 1
+[lanes] root cef56bca82bd3d5fb10c162e174c6f26550b3eaff51d92570d7bce7ba92d5f0e verified; composed verdict OK; end to end 415s
+Elapsed (wall clock) time (h:mm:ss or m:ss): 6:58.31
+Maximum resident set size (kbytes): 95413640
+== q4-sppark-generated
+[aggregate] root wrap proven in 16.3s (query-record peak 65.4 GiB): 7 shard(s) verified into 3
+[aggregate] root wrap proven in 8.9s (query-record peak 62.0 GiB): 3 shard(s) verified into 2
+[aggregate] root wrap proven in 7.1s (query-record peak 59.4 GiB): 2 shard(s) verified into 1
+[lanes] root cef56bca82bd3d5fb10c162e174c6f26550b3eaff51d92570d7bce7ba92d5f0e verified; composed verdict OK; end to end 405s
+Elapsed (wall clock) time (h:mm:ss or m:ss): 6:47.96
+Maximum resident set size (kbytes): 94081672
+== q4-m4-sppark-generated
+[aggregate] root wrap proven in 15.6s (query-record peak 65.4 GiB): 7 shard(s) verified into 3
+[aggregate] root wrap proven in 8.8s (query-record peak 62.0 GiB): 3 shard(s) verified into 2
+[aggregate] root wrap proven in 7.1s (query-record peak 59.4 GiB): 2 shard(s) verified into 1
+[lanes] root cef56bca82bd3d5fb10c162e174c6f26550b3eaff51d92570d7bce7ba92d5f0e verified; composed verdict OK; end to end 402s
+Elapsed (wall clock) time (h:mm:ss or m:ss): 6:44.71
+Maximum resident set size (kbytes): 93370584

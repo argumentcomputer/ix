@@ -32,6 +32,7 @@ default = []
 parallel = ["multi-stark/parallel"]
 cuda = ["multi-stark/cuda"]
 cuda-trace-codegen = ["cuda"]
+cuda-sppark = ["cuda", "multi-stark/cuda-sppark"]
 
 [lints]
 workspace = true

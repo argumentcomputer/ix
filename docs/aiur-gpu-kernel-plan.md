@@ -33,26 +33,25 @@ Estimates are derived from the shares above and the kernel shapes read in
 `cuda/kernels.cu`; none has been measured. Each item is gated by the CUPTI
 profile's kernel-family seconds and by identical proof bytes.
 
-### K1. Fused shared-memory NTT
+### K1. Sppark NTT/LDE integration
 
-`launch_dif` runs one global-memory pass per radix-8 stage, eight passes for
-a height of 2^24, each streaming the whole matrix in and out, then a separate
-`bit_reverse_scale_and_shift` pass. Widths below eight (the width-2 quotient
-and FRI codewords) fall to radix-2 passes: 4,096 launches and 1.5 s in the
-join, 9,665 launches and 6.2 s in the claim. Goldilocks NTT is
-memory-bound, so passes are the cost.
+Revised 2026-09-17: follow the
+[sppark NTT/LDE integration plan](aiur-gpu-sppark-ntt-plan.md). Use a pinned
+direct dependency for the complete Goldilocks NTT stack, with matrix and
+stream integration in multi-stark. Any measured changes to upstream kernels
+belong in a pinned dependency fork. Proofman supplies ideas only.
 
-Do: a kernel that keeps 2^10 to 2^12 rows of a column group in shared memory
-and runs all their butterfly stages before writing back, so a 2^24 height
-takes two or three passes; radix-8 fused stages for narrow widths by mapping
-columns across lanes; fold the bit-reversal, scale and coset shift into the
-first or last pass; and in the coset LDE's forward transform skip the three
-quarters of zero-padded inputs in the first stage, or run it as four
-size-`n` coset transforms with per-coset twiddle scaling.
+The project covers wide traces and narrow codewords across main commitments,
+lookup LDEs, quotient transforms and general DFT/LDE interfaces. Its target is
+approximately 2x faster workload-weighted complete NTT/LDE operations,
+including conversion and synchronization. The September 17 Init profile puts
+radix-2/4/8 stages at approximately 30% of both claim and join proof time;
+halving those stages alone models approximately 15% shorter proofs if the
+saved time remains on the critical path. Neither figure is a measured gain.
 
-Estimate: 2 to 3x on 44 to 49% of kernel time, so 15 to 25% of kernel time.
-Cost: one to two weeks including a randomized test against the CPU DFT at
-every height and width the prover uses. Highest value, highest effort.
+The detailed plan specifies numerical and ownership tests, matrix batching
+and LDE-fusion work, bounded hardware tuning and controlled proof comparisons.
+A main-trace adapter is an intermediate milestone, not completion of K1.
 
 ### K2. Merkle leaf hashing at full lane utilization
 
@@ -150,6 +149,10 @@ the peaks staggered. Estimate: up to the remaining idle fraction, which the
 other items shrink first. Cost: a week; measurement-dependent.
 
 ## Sequence
+
+The ordering below records the September 16 cross-project proposal. The
+current NTT project and its milestones are specified in the
+[sppark plan](aiur-gpu-sppark-ntt-plan.md).
 
 1. K4 in a day, to calibrate estimates against the profile.
 2. K5 and K6, pipeline work with no kernel algorithm risk.
