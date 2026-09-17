@@ -447,11 +447,17 @@ binary resolves `libstdc++.so.6` there and `ix --help` runs
 (`bench/prover-profile-init-2026-09-17/README.md` has the environment).
 Resolved by the dependency fork instead: `argumentcomputer/sppark`, whose `dev`
 branch is where its changes land, adds a `SPPARK_NO_CXX_RUNTIME` build mode in
-which `CUDA_OK` records the first failing CUDA call in a thread-local
-status that `sppark_take_cuda_error()` returns, `gpu_t` carries no thread
-pool, and the three container error hooks libstdc++'s headers call are
-defined weakly to abort. multi-stark compiles the sppark units with that
-mode and the adapter reads the status after each transform. With it the
+which `CUDA_OK` ends the process with the expression, location and CUDA
+error instead of throwing, `gpu_t` carries no thread pool, and the three
+container error hooks libstdc++'s headers call are defined weakly to
+abort. Recording the failure and continuing was tried first and rejected
+in review: upstream's code after a `CUDA_OK` assumes success, so a failed
+stream creation or table upload would have left a bad handle in use or
+cached. Stopping matches the Rust side, whose `check_cuda` panics on any
+status. The adapter resolves the caller's CUDA ordinal to upstream's
+logical index, since upstream lists only the devices it supports, and
+keeps its private stream until the caller's stream waits on the
+transform, draining it if that wait cannot be installed. With it the
 archive references nothing from libstdc++: `ix` relinks with Lake's
 unchanged response file, no added flags, starts, and `ldd` shows no
 libstdc++ at all. The contract tests and the full suite pass against the
