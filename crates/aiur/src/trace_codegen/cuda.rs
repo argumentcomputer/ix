@@ -216,8 +216,8 @@ impl BoundCudaProgram<'_> {
         return Err(error(function, None, "seed exceeds the upload limit"));
       }
       let live: Vec<usize> = {
-        let _filter = tracing::info_span!("aiur/codegen_filter", function)
-          .entered();
+        let _filter =
+          tracing::info_span!("aiur/codegen_filter", function).entered();
         (lo..hi)
           .filter(|&query| {
             queries.get_index(query).unwrap().1.multiplicity != G::ZERO
@@ -250,6 +250,16 @@ impl BoundCudaProgram<'_> {
         let _widen =
           tracing::info_span!("aiur/codegen_widen", function).entered();
         chunks.par_iter_mut().for_each(|chunk| chunk.widen(schema));
+      }
+      if tracing::enabled!(target: "prover_metrics", tracing::Level::INFO) {
+        let canonical =
+          chunks.first().is_some_and(|c| c.encoding == SeedEncoding::Canonical);
+        tracing::info!(target: "prover_metrics", metric = "seed_pack",
+          circuit, function, rows = live.len(), scanned_rows = hi - lo,
+          seed_bytes = chunks.iter().map(|c| c.bytes.len()).sum::<usize>(),
+          canonical_seed_bytes = live.len().saturating_mul(SeedEncoding::Canonical.stride(schema)),
+          encoding = if canonical { "canonical" } else { "typed" },
+          widened_runs = usize::from(typed_first && canonical), chunks = chunks.len());
       }
       let _concat =
         tracing::info_span!("aiur/codegen_concat", function).entered();
@@ -433,6 +443,7 @@ pub struct CudaTrace {
 struct DeviceSeeds {
   device: i32,
   base: *mut u8,
+  hits: usize,
 }
 
 // SAFETY: the pointer is a device allocation the CUDA runtime hands out
@@ -443,6 +454,20 @@ unsafe impl Send for DeviceSeeds {}
 /// [`seed_cache_limit`].
 static SEED_CACHE_BYTES: [AtomicUsize; 64] =
   [const { AtomicUsize::new(0) }; 64];
+static SEED_CACHE_REFUSALS: [AtomicUsize; 64] =
+  [const { AtomicUsize::new(0) }; 64];
+
+/// Current retained bytes and cumulative refused cache requests per device.
+/// Snapshots can overlap work from concurrent proofs on the same device.
+pub fn seed_cache_snapshot() -> Vec<(usize, usize, usize)> {
+  (0..64)
+    .filter_map(|device| {
+      let bytes = SEED_CACHE_BYTES[device].load(Ordering::Relaxed);
+      let refused = SEED_CACHE_REFUSALS[device].load(Ordering::Relaxed);
+      (bytes != 0 || refused != 0).then_some((device, bytes, refused))
+    })
+    .collect()
+}
 
 /// The most seed bytes kept resident per device, `AIUR_GPU_SEED_CACHE_BYTES`
 /// or 16 GiB. The backend releases caches before it spills any LDE, so the
@@ -514,7 +539,9 @@ impl CudaTrace {
       return None;
     }
     let mut cached = self.device_seeds.lock().unwrap();
-    if let Some(seeds) = cached.iter().find(|seeds| seeds.device == device) {
+    if let Some(seeds) = cached.iter_mut().find(|seeds| seeds.device == device)
+    {
+      seeds.hits += 1;
       return Some(seeds.base);
     }
     let counter = SEED_CACHE_BYTES.get(usize::try_from(device).ok()?)?;
@@ -526,6 +553,10 @@ impl CudaTrace {
       .is_err()
     {
       tracing::debug!(device, bytes, "seed cache limit reached");
+      // Refusals can recur per tile; count them without emitting tile events.
+      if tracing::enabled!(target: "prover_metrics", tracing::Level::INFO) {
+        SEED_CACHE_REFUSALS[device as usize].fetch_add(1, Ordering::Relaxed);
+      }
       return None;
     }
     let pointers: Vec<*const u8> =
@@ -546,6 +577,8 @@ impl CudaTrace {
     if status != 0 {
       counter.fetch_sub(bytes, Ordering::AcqRel);
       tracing::debug!(device, bytes, status, "seed cache upload failed");
+      tracing::info!(target: "prover_metrics", metric = "seed_cache",
+        device, action = "upload_failed", bytes);
       return None;
     }
     tracing::debug!(
@@ -556,7 +589,9 @@ impl CudaTrace {
     );
     #[cfg(test)]
     SEED_CACHE_UPLOADS.fetch_add(1, Ordering::AcqRel);
-    cached.push(DeviceSeeds { device, base });
+    tracing::info!(target: "prover_metrics", metric = "seed_cache",
+      device, action = "upload", bytes, spans = pointers.len());
+    cached.push(DeviceSeeds { device, base, hits: 0 });
     Some(base)
   }
 
@@ -580,6 +615,8 @@ impl CudaTrace {
       {
         counter.fetch_sub(self.seed_bytes(), Ordering::AcqRel);
       }
+      tracing::info!(target: "prover_metrics", metric = "seed_cache",
+        device = seeds.device, action = "release", bytes = self.seed_bytes(), hits = seeds.hits);
       false
     });
   }

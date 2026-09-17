@@ -657,7 +657,14 @@ impl AiurSystem {
               vec![]
             };
             locate.push((*r, s));
-            let _g = tracing::info_span!("aiur/witness").entered();
+            let _g = tracing::info_span!(
+              "aiur/witness",
+              shard = locate.len() - 1,
+              record = *r,
+              record_shard = s,
+              round = 1
+            )
+            .entered();
             let witness = self.prepared_shard_witness(
               supplied.record(),
               supplied.io(),
@@ -732,7 +739,14 @@ impl AiurSystem {
           loaded = Some((r, supplied));
         }
         let supplied = &loaded.as_ref().expect("loaded above").1;
-        let _g = tracing::info_span!("aiur/witness").entered();
+        let _g = tracing::info_span!(
+          "aiur/witness",
+          shard = k,
+          record = r,
+          record_shard = s,
+          round = 2
+        )
+        .entered();
         self.prepared_shard_witness(
           supplied.record(),
           supplied.io(),
@@ -814,7 +828,12 @@ impl AiurSystem {
     let messages = Self::boundary_messages(plan);
     let index = self.row_index(&query_record, plan);
     let build = |shard: usize, round: BatchRound| {
-      let _g = tracing::info_span!("aiur/witness", shard).entered();
+      let round_number = match round {
+        BatchRound::One => 1,
+        BatchRound::Two => 2,
+      };
+      let _g = tracing::info_span!("aiur/witness", shard, round = round_number)
+        .entered();
       self.prepared_shard_witness(
         &query_record,
         io_buffer,
@@ -1196,7 +1215,9 @@ impl AiurSystem {
     proof: &AiurProof,
   ) -> Result<(), AiurVerificationError> {
     if !self.toplevel.valid_claim_shape(claim) {
-      return Err(AiurVerificationError::Stark(VerificationError::InvalidClaim));
+      return Err(AiurVerificationError::Stark(
+        VerificationError::InvalidClaim,
+      ));
     }
     // Every shard's header must describe a proof this system could have
     // produced: fixed circuits at their exact heights, every trace matrix

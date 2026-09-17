@@ -67,6 +67,7 @@ use std::ops::Range;
 use multi_stark::{
   batch::{BatchMessage, BatchPreamble, BatchProof, Retention},
   p3_field::{Field, PrimeCharacteristicRing, PrimeField64},
+  p3_matrix::Matrix,
   system::SystemWitness,
 };
 use rayon::iter::{
@@ -392,10 +393,12 @@ impl AiurSystem {
     assert_eq!(ranges.len(), circuit_types.len(), "plan/system circuit count");
     // A record with no queries: the source of a zero-multiplicity byte table.
     let zero_record = QueryRecord::new(self.toplevel());
+    let witness_span = tracing::Span::current();
     let witness_data = circuit_types
       .into_par_iter()
       .enumerate()
       .map(|(circuit_idx, circuit_type)| {
+        let _witness = witness_span.enter();
         let slot_arg_widths = self.slot_arg_widths(circuit_idx);
         let range = ranges[circuit_idx].clone();
         #[cfg(feature = "cuda")]
@@ -414,6 +417,10 @@ impl AiurSystem {
                 range.len(),
                 round == BatchRound::Two,
               ) {
+                tracing::info!(target: "prover_metrics", metric = "trace",
+                  circuit = circuit_idx, provider = "generated", kind = "function",
+                  rows = range.len(), height = prepared.0.height(), width = prepared.0.width(),
+                  padded_cells = prepared.0.height().saturating_mul(prepared.0.width()));
                 return prepared;
               }
             },
@@ -424,6 +431,10 @@ impl AiurSystem {
                 &slot_arg_widths,
                 range.clone(),
               ) {
+                tracing::info!(target: "prover_metrics", metric = "trace",
+                  circuit = circuit_idx, provider = "generated", kind = "memory",
+                  rows = range.len(), height = prepared.0.height(), width = prepared.0.width(),
+                  padded_cells = prepared.0.height().saturating_mul(prepared.0.width()));
                 return prepared;
               }
             },
@@ -443,6 +454,7 @@ impl AiurSystem {
           rows = range.len()
         )
         .entered();
+        let real_rows = range.len();
         let (trace, lookups) = match circuit_type {
           CircuitType::Function { idx } => {
             let (start, end) = index.queries(circuit_idx, &range);
@@ -471,6 +483,10 @@ impl AiurSystem {
             Bytes2.witness_data(source, &slot_arg_widths)
           },
         };
+        tracing::info!(target: "prover_metrics", metric = "trace",
+          circuit = circuit_idx, provider = "cpu", kind,
+          rows = real_rows, height = trace.height(), width = trace.width(),
+          padded_cells = trace.height().saturating_mul(trace.width()));
         (multi_stark::witness::TraceSource::Host(trace), lookups)
       })
       .collect::<Vec<_>>();

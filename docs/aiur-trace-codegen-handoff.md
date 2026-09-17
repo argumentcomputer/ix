@@ -147,6 +147,7 @@ and the bind step checks the emitted offsets against the widths.
 | `AIUR_GPU_SEED_CACHE_BYTES=<bytes>` | Most seed bytes kept resident per device for round-two sources, default 16 GiB; the backend releases caches before it spills any LDE, and after each LDE's lookup job |
 | `AIUR_GPU_TRACE_MEMORY=1` | With `generated`: build memory-table rows on the device too; off by default because it moved no fewer bytes and cost 5 s on Init |
 | `AIUR_PROFILE=<new .jsonl>` | Timestamped span events; `aiur/cpu_circuit` (circuit, kind, rows) and `aiur/codegen_seeds` give per-circuit witness time |
+| `AIUR_METRICS=<new .jsonl>` | Lightweight per-piece summaries; [collection commands and field definitions](aiur-lightweight-metrics.md) |
 
 Registration happens once per `AiurSystem` and is shared across the
 per-device clones. A library whose fingerprint matches no generated program
