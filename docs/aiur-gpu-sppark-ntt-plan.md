@@ -464,3 +464,80 @@ libstdc++ at all. The contract tests and the full suite pass against the
 fork. What remains is administrative: push the fork branch and pin its
 revision in multi-stark's `Cargo.toml` and lockfile, which today name the
 fork's main at the upstream revision with a local path override.
+
+## Milestones 2 and 3 (2026-09-17)
+
+Milestone 2, the resident main LDE baseline, is multi-stark `89d3112` and
+`06043c6` on `sb/sppark-ntt`: `coset_lde_create` hands the whole
+gather, inverse, un-bit-reverse and shift, forward, scatter sequence to
+`multi_stark_sppark_coset_lde` in `cuda/sppark_ntt.cu`, which works on
+column panels of up to `MULTI_STARK_SPPARK_PANEL_BYTES` (4 GiB) and runs
+upstream's transform once per column on a private stream fenced to the
+caller's. The commit loop's admission adds the panel scratch to a source's
+need. `MULTI_STARK_CUDA_NTT=sppark` selects the path for inputs of at least
+`MULTI_STARK_SPPARK_MIN_LOG_HEIGHT` (20) rows, where the unbatched baseline
+already wins; below it the first-party kernels stay, since one upstream
+launch sequence per short column is launch-bound (0.43 to 0.88x on the
+2^16 to 2^18 shapes). The metrics snapshot counts taken and declined
+dispatches and keeps transform shapes per backend. Exit evidence:
+`bench/sppark-lde-2026-09-17/README.md` (2.15 to 2.38x on the tall narrow
+shapes, 1.23x on the BLAKE3 piece, 168 shapes bit for bit against the
+first-party kernels, raw representatives included).
+
+Milestone 3, every prover transform, is multi-stark `2a8acb5` and
+`312cbbe`. The lookup LDEs (graph, direct and the partitioned finish), the
+quotient's two forward transforms, the general `dft_batch` and the host
+`coset_lde_batch` dispatch through two helpers in `kernels.cu`,
+`coset_lde_in_place` and `forward_in_place`, so the backend rule lives in
+one place; the adapter gained `multi_stark_sppark_forward` (gather, forward
+per column, scatter) for the quotient and the general DFT, and an ungated
+transform counter. The quotient keeps its two forward transforms with
+forward tables and its scaling in the slice step, as the inventory
+required. Evidence:
+
+- multi-stark tests: the general DFT and the host coset LDE agree bit for
+  bit with the first-party kernels over their shapes; a batch proof over
+  the u32-add system produces identical bytes on the first-party kernels
+  and on sppark at every height, with the adapter counter proving the
+  transforms went through sppark; `examples/proof_compatibility` writes
+  digest `25564a01d1d352b1…` on all three settings; 87 tests pass with
+  `parallel,cuda,cuda-sppark`, clippy clean with and without the feature.
+- Replays of the two representative units on one RTX PRO 6000, the
+  `ix` binary relinked against the milestone-3 archive (fork `dev` at
+  `13b6226`, no libstdc++), same environment as
+  `bench/prover-profile-init-2026-09-17`, no CUPTI (the join once each way,
+  the claim four times each way):
+
+  | Unit | first-party | sppark above 2^20 | dispatch counts (sppark run) |
+  | --- | ---: | ---: | --- |
+  | join 5, execute+prove | 50.80 s | 49.41 s | 163 taken, 371 declined |
+  | join 5, end to end | 51.69 s | 50.30 s | proof hash identical both ways |
+  | claim 1, wall clock | 2:23.6 to 2:23.8 (4 runs) | 2:18.8 to 2:19.0 (4 runs) | 379 taken, 723 declined |
+  | claim 1, batch round one | 11 s | 10 s | |
+  | claim 1, batch round two | 28 s | 24 s | |
+
+  The join's declined transforms are the short shapes (heights 2^1 to
+  2^19, most of them in the aggregation circuits' many small tables); the
+  taken ones are every shape from 2^20 up, main traces, lookups and
+  quotients alike. The `[aggregate] replay slot 5` proof hash is the same
+  on both runs, so the whole join proof, not only the multi-stark test
+  systems, is byte-identical through sppark.
+
+What the numbers say: the resident baseline converts the tall transforms
+and the proof stays identical, but the end-to-end gain is 3 to 4 percent,
+not the 2x the tall narrow microbenchmarks show, because the transforms
+are a minority of each unit (the claim's round two is dominated by trace
+regeneration and lookup construction, round one by uploads and Merkle
+hashing) and because the per-column baseline gives back part of the
+kernel win on the wide shapes. Milestone 4's column batching and fused
+expansion are where the transform share itself shrinks; milestone 5's
+decision needs those numbers, not these.
+
+Administrative, still open: push the fork's `dev` and pin `13b6226` in
+multi-stark's `Cargo.toml` and lockfile in place of the upstream revision
+and the local path override; push multi-stark `sb/sppark-ntt`; bump the
+ix pin. The `ix` prove entry now initializes the tracing subscriber like
+the aggregate entries do, so `RUST_LOG=prover_metrics=info AIUR_METRICS=1`
+prints the backend counters for a claim as well as a join; `--texray`
+installs its own subscriber first and silences them, so a counted claim
+runs without it.

@@ -1113,6 +1113,7 @@ extern "C" fn rs_aiur_system_shard_prove_with_env(
   retention: LeanNat<LeanBorrowed<'_>>,
 ) -> LeanExcept<LeanOwned> {
   ffi_catch_unwind_except("AiurSystem.shardProveWithEnv", || {
+    crate::profile::init();
     let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
     let max_ram_bytes = lean_unbox_nat_as_usize(max_ram_bytes.inner());
     let retention = match lean_unbox_nat_as_usize(retention.inner()) {

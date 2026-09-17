@@ -45,3 +45,12 @@ What it says:
   first-party path.
 - 2^24 x 17 is even: the panel traffic offsets the pass reduction at that
   width.
+
+## Whole-unit replays at milestone 3
+
+`docs/aiur-gpu-sppark-ntt-plan.md`, "Milestones 2 and 3", has the table:
+claim 1 and join 5 of the Init proof replayed with the `ix` binary linked
+against multi-stark `312cbbe`, once on the first-party kernels and once
+with `MULTI_STARK_CUDA_NTT=sppark`, no CUPTI. `replay-join5.txt` and
+`replay-claim1.txt` hold the runs' final metrics snapshots (dispatch counts
+and transform shapes per backend) and timings.
