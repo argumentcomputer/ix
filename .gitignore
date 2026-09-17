@@ -16,3 +16,8 @@ refs
 # TruthMines corpus artifacts: a .ixc is a self-contained directory
 # (manifest + pieces + build cache) — never checked in.
 *.ixc/
+
+# Version the certified library roadmap; keep other plans and scratch files local.
+!/plans/
+/plans/*
+!/plans/ix-certified-roadmap.md
