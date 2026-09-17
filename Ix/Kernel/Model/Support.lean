@@ -2,7 +2,9 @@
 Ported from Ix branch jcb/ix-kernel-consistency at ad60e5f6dd23655da79cf9898d2b6b3fefbe8658.
 Source: Ix/Theory/Model/Support.lean
 Transformations: `Ix.Theory` renamed to `Ix.Kernel` in module names, imports,
-namespaces, qualified names, and documentation paths; this header added.
+namespaces, qualified names, and documentation paths; this header added;
+K2: the `ConstantFact.recursor`, `ConstantFact.structure`, and quotient fact cases; `natLit`
+carries the reference of its family, which its references list.
 -/
 /-
 Copyright (c) 2026 Argument Computer Corporation.
@@ -21,9 +23,11 @@ variable {β : Type u} {V : Type v} [SetTheory V]
 namespace AExpr
 
 def references : AExpr β → List (ConstRef β)
-  | .bvar _ | .sort _ | .natLit _ => []
+  | .bvar _ | .sort _ => []
+  | .natLit r _ => [r]
   | .const r _ => [r]
   | .app f a | .lam _ f a | .forallE _ f a => f.references ++ a.references
+  | .letE t v b => t.references ++ v.references ++ b.references
   | .proj r _ e => r :: e.references
 
 def ReferencesIn (entries : Environment β) (e : AExpr β) : Prop :=
@@ -37,10 +41,18 @@ end AExpr
 def ConstantFact.Scope (n : Nat) : ConstantFact β → Prop
   | .typed e type => e.Scope n 0 ∧ type.Scope n 0
   | .natural .. => n = 0
+  | .recursor .. => True
+  | .structure .. => True
+  | .quotient _ => True
+  | .quotientLift _ => True
 
 def ConstantFact.references : ConstantFact β → List (ConstRef β)
   | .typed e type => e.references ++ type.references
   | .natural zero succ => [zero, succ]
+  | .recursor .. => []
+  | .structure .. => []
+  | .quotient _ => []
+  | .quotientLift eq => [eq]
 
 def ConstantFact.ReferencesIn (entries : Environment β) (fact : ConstantFact β) : Prop :=
   ∀ r ∈ fact.references, (entries r).isSome = true
@@ -69,6 +81,10 @@ theorem interp_congr_constants (e : AExpr β) (constants constants' : Assignment
     exact hb (fun r hr => h r (List.mem_append_right _ hr)) _
   | proj r i e ih =>
     simp only [interp, ih (fun q hq => h q (List.mem_cons_of_mem _ hq)) env]
+  | letE t v b ht hv hb =>
+    have hv' := hv (fun r hr => h r (List.mem_append_left _ (List.mem_append_right _ hr))) env
+    simp only [interp, hv']
+    exact hb (fun r hr => h r (List.mem_append_right _ hr)) _
   | _ => rfl
 
 theorem wellDenoted_congr_constants (e : AExpr β) (constants constants' : Assignment β V)
@@ -87,6 +103,11 @@ theorem wellDenoted_congr_constants (e : AExpr β) (constants constants' : Assig
     simp only [WellDenoted, hA hAr, hb hbr, interp_congr_constants _ _ _ hAr,
       interp_congr_constants _ _ _ hbr]
   | proj r i e ih => exact ih (fun q hq => h q (List.mem_cons_of_mem _ hq)) env
+  | letE t v b ht hv hb =>
+    have htr := fun r hr => h r (List.mem_append_left _ (List.mem_append_left _ hr))
+    have hvr := fun r hr => h r (List.mem_append_left _ (List.mem_append_right _ hr))
+    have hbr := fun r hr => h r (List.mem_append_right _ hr)
+    simp only [WellDenoted, ht htr, hv hvr, hb hbr, interp_congr_constants _ _ _ hvr]
   | _ => rfl
 
 theorem interp_congr_env (e : AExpr β) (constants : Assignment β V)
@@ -106,6 +127,13 @@ theorem interp_congr_env (e : AExpr β) (constants : Assignment β V)
     | zero => rfl
     | succ i => exact h i (by omega)
   | proj r i e ih => simp only [interp, ih hs env env' h]
+  | letE t v b ht hv hb =>
+    simp only [interp, hv hs.2.1 env env' h]
+    apply hb hs.2.2
+    intro i hi
+    cases i with
+    | zero => rfl
+    | succ i => exact h i (by omega)
   | _ => rfl
 
 theorem interp_closed (e : AExpr β) (constants : Assignment β V)

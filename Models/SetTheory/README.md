@@ -20,13 +20,12 @@ constructor fields and permits exactly `propext`, `Classical.choice`, and
 `Quot.sound`. Inaccessible cardinals remain an explicit theorem hypothesis.
 
 The package imports the actual Ix interface by a path dependency on the
-repository root. Mathlib is confined to this package; ordinary Ix and
-`Ix.Theory` builds do not depend on it. This construction supplies the
-set-theoretic assumption used by the [consistency model](../../docs/theory.md).
-The [production fragment](../../docs/kernel-verification.md#production-environment-fragment)
-uses this assumption to preserve models of source axioms. Full checker
-refinement and a converse from the interface to inaccessible cardinals are
-separate proof obligations.
+`IxKernel` package, which builds `Ix.Kernel` from the repository sources with
+no other dependencies. Mathlib is confined to this package; ordinary Ix and
+`Ix.Kernel` builds do not depend on it. This construction supplies the
+set-theoretic assumption used by the [certified kernel roadmap](../../plans/ix-certified-roadmap.md).
+A converse from the interface to inaccessible cardinals is a separate proof
+obligation.
 
 ## Build
 

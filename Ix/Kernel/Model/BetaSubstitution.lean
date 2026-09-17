@@ -2,7 +2,11 @@
 Ported from Ix branch jcb/ix-kernel-consistency at ad60e5f6dd23655da79cf9898d2b6b3fefbe8658.
 Source: Ix/Theory/Model/BetaSubstitution.lean
 Transformations: `Ix.Theory` renamed to `Ix.Kernel` in module names, imports,
-namespaces, qualified names, and documentation paths; this header added.
+namespaces, qualified names, and documentation paths; this header added;
+K2: `natLit` carries the reference of its natural-number family, on raw and
+annotated syntax alike, with its cases.
+`letE` added (2026-09-17): the let-binding constructor, interpreted by
+substitution, with its cases in every definition and proof here.
 -/
 /-
 Copyright (c) 2026 Argument Computer Corporation.
@@ -71,6 +75,9 @@ theorem liftN_liftN_comm (term : AExpr β) (count first second cutoff : Nat)
   | lam condition domain body ihDomain ihBody | forallE condition domain body ihDomain ihBody =>
       simp only [liftN, ihDomain first cutoff ordered,
         ihBody (first + 1) (cutoff + 1) (by omega), Nat.add_assoc]
+  | letE type value body ihType ihValue ihBody =>
+      simp only [liftN, ihType first cutoff ordered, ihValue first cutoff ordered,
+        ihBody (first + 1) (cutoff + 1) (by omega), Nat.add_assoc]
   | _ => simp_all [liftN]
 
 /-- Weakening commutes with substitution at an earlier variable. -/
@@ -97,6 +104,8 @@ theorem liftN_inst (term argument : AExpr β) (count cutoff depth : Nat) :
             omega
   | lam condition domain body ihDomain ihBody | forallE condition domain body ihDomain ihBody =>
       simp only [inst, liftN, ihDomain, ihBody, Nat.add_assoc]
+  | letE type value body ihType ihValue ihBody =>
+      simp only [inst, liftN, ihType, ihValue, ihBody, Nat.add_assoc]
   | _ => simp_all [inst, liftN]
 
 theorem liftN_inst_zero (term argument : AExpr β) (count cutoff : Nat) :
@@ -115,6 +124,9 @@ theorem liftN_liftN_merge (term : AExpr β) (first second lower upper : Nat)
           Nat.add_assoc, Nat.add_left_comm]
   | lam condition domain body ihDomain ihBody | forallE condition domain body ihDomain ihBody =>
       simp only [liftN, ihDomain lower upper ordered inside,
+        ihBody (lower + 1) (upper + 1) (by omega) (by omega)]
+  | letE type value body ihType ihValue ihBody =>
+      simp only [liftN, ihType lower upper ordered inside, ihValue lower upper ordered inside,
         ihBody (lower + 1) (upper + 1) (by omega) (by omega)]
   | _ => simp_all [liftN]
 
@@ -143,6 +155,10 @@ theorem inst_liftN (term argument : AExpr β) (count lower upper : Nat)
       simp only [liftN, inst, ihDomain lower upper ordered,
         show count + upper + 1 = count + (upper + 1) by omega,
         ihBody (lower + 1) (upper + 1) (by omega)]
+  | letE type value body ihType ihValue ihBody =>
+      simp only [liftN, inst, ihType lower upper ordered, ihValue lower upper ordered,
+        show count + upper + 1 = count + (upper + 1) by omega,
+        ihBody (lower + 1) (upper + 1) (by omega)]
   | _ => simp_all [liftN, inst]
 
 /-- Removing any variable in an inserted block leaves a block with one
@@ -159,6 +175,9 @@ theorem inst_liftN_within (term argument : AExpr β) (count cutoff removed : Nat
           show count + 1 + index ≠ removed by omega]
   | lam condition domain body ihDomain ihBody | forallE condition domain body ihDomain ihBody =>
       simp only [liftN, inst, ihDomain cutoff removed lower upper,
+        ihBody (cutoff + 1) (removed + 1) (by omega) (by omega)]
+  | letE type value body ihType ihValue ihBody =>
+      simp only [liftN, inst, ihType cutoff removed lower upper, ihValue cutoff removed lower upper,
         ihBody (cutoff + 1) (removed + 1) (by omega) (by omega)]
   | _ => simp_all [liftN, inst]
 
@@ -193,6 +212,8 @@ theorem inst_inst (term first second : AExpr β) (cutoff depth : Nat) :
                 show ¬ index - 1 < depth by omega, show index - 1 ≠ depth by omega]
   | lam condition domain body ihDomain ihBody | forallE condition domain body ihDomain ihBody =>
       simp only [inst, ihDomain, ihBody, Nat.add_assoc]
+  | letE type value body ihType ihValue ihBody =>
+      simp only [inst, ihType, ihValue, ihBody, Nat.add_assoc]
   | _ => simp_all [inst]
 
 theorem inst_inst_zero (term first second : AExpr β) (cutoff : Nat) :
@@ -212,6 +233,9 @@ theorem inst_liftN_top (term argument : AExpr β) (count cutoff : Nat) :
   | lam condition domain body ihDomain ihBody | forallE condition domain body ihDomain ihBody =>
       simp only [liftN, inst, ihDomain, show count + cutoff + 1 = count + (cutoff + 1) by omega,
         ihBody]
+  | letE type value body ihType ihValue ihBody =>
+      simp only [liftN, inst, ihType, ihValue,
+        show count + cutoff + 1 = count + (cutoff + 1) by omega, ihBody]
   | _ => simp_all [liftN, inst]
 
 /-- Simultaneous substitution above a fixed number of retained binders. -/
@@ -246,8 +270,8 @@ theorem instRevAt_zero (term : AExpr β) (arguments : List (AExpr β)) :
   | nil => rfl
   | cons argument arguments ih => simpa only [instRevAt, inst] using ih
 
-@[simp] theorem instRevAt_natLit (value : Nat) (arguments : List (AExpr β)) (cutoff : Nat) :
-    (natLit value).instRevAt arguments cutoff = natLit value := by
+@[simp] theorem instRevAt_natLit (family : ConstRef β) (value : Nat) (arguments : List (AExpr β)) (cutoff : Nat) :
+    (natLit family value).instRevAt arguments cutoff = natLit family value := by
   induction arguments with
   | nil => rfl
   | cons argument arguments ih => simpa only [instRevAt, inst] using ih
@@ -359,6 +383,9 @@ theorem ClosedN.liftN {term : VExpr β} {depth : Nat} (closed : term.ClosedN dep
   | lam domain body ihDomain ihBody | forallE domain body ihDomain ihBody =>
       exact ⟨ihDomain closed.1 cutoff, by
         simpa only [Nat.add_assoc] using ihBody closed.2 (cutoff + 1)⟩
+  | letE type value body ihType ihValue ihBody =>
+      exact ⟨ihType closed.1 cutoff, ihValue closed.2.1 cutoff, by
+        simpa only [Nat.add_assoc] using ihBody closed.2.2 (cutoff + 1)⟩
   | _ => simp_all [VExpr.liftN, ClosedN]
 
 /-- Substitution removes one binder while retaining the binders below the
@@ -380,6 +407,10 @@ theorem ClosedN.inst {term argument : VExpr β} {depth cutoff : Nat}
       exact ⟨ihDomain bodyClosed.1, by
         simpa only [Nat.add_assoc] using ihBody (cutoff := cutoff + 1)
           (by simpa only [Nat.add_assoc] using bodyClosed.2)⟩
+  | letE type value body ihType ihValue ihBody =>
+      exact ⟨ihType bodyClosed.1, ihValue bodyClosed.2.1, by
+        simpa only [Nat.add_assoc] using ihBody (cutoff := cutoff + 1)
+          (by simpa only [Nat.add_assoc] using bodyClosed.2.2)⟩
   | _ => simp_all [VExpr.inst, ClosedN]
 
 /-- The raw substitution laws follow from structural erasure, independently

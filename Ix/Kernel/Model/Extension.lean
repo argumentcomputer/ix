@@ -2,7 +2,9 @@
 Ported from Ix branch jcb/ix-kernel-consistency at ad60e5f6dd23655da79cf9898d2b6b3fefbe8658.
 Source: Ix/Theory/Model/Extension.lean
 Transformations: `Ix.Theory` renamed to `Ix.Kernel` in module names, imports,
-namespaces, qualified names, and documentation paths; this header added.
+namespaces, qualified names, and documentation paths; this header added;
+K2: the `ConstantFact.recursor`, `ConstantFact.structure`, and quotient fact cases, and the
+transfer of `NaturalMeaning.succApp` under agreeing assignments.
 -/
 /-
 Copyright (c) 2026 Argument Computer Corporation.
@@ -193,6 +195,21 @@ theorem Assignment.AgreesOn.factMeaning {entries : Environment β}
     · intro x; rw [h r entry hr []]; exact hm.2.complete x
     · rw [hz]; exact hm.2.zeroValue
     · intro n; rw [hs]; exact hm.2.succValue n
+    · intro n
+      obtain ⟨v, A, B, hf, ha, hb⟩ := hm.2.succApp n
+      exact ⟨v, A, B, hs ▸ hf, ha, hb⟩
+  | recursor _ _ _ _ => trivial
+  | «structure» _ _ => trivial
+  | quotient kind =>
+    cases kind with
+    | type => simp only [ConstantFact.Meaning] at hm ⊢; rw [h r entry hr levels]; exact hm
+    | ctor => simp only [ConstantFact.Meaning] at hm ⊢; rw [h r entry hr levels]; exact hm
+    | lift => trivial
+    | ind => trivial
+  | quotientLift eq =>
+    simp only [ConstantFact.Meaning] at hm ⊢
+    rw [h r entry hr levels, hm]
+    exact (Quotient.liftValue_congr (heq eq (by simp [ConstantFact.references]) _)).symm
 
 omit [DecidableEq β] in
 theorem Realizes.of_agrees {entries : Environment β} {constants constants' : Assignment β V}

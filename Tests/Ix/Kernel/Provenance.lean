@@ -66,6 +66,7 @@ def main (args : List String) : IO UInt32 := do
       | _ => fail "usage: kernel-provenance [--source <old-ix-workspace>]"; pure none
     let files := ((← (FilePath.mk "Ix/Kernel").walkDir).filter (·.extension == some "lean")).map (·.toString)
     let files := if ← (FilePath.mk "Ix/Kernel.lean").pathExists then files.push "Ix/Kernel.lean" else files
+    let files := if ← (FilePath.mk "Ix/Address/Core.lean").pathExists then files.push "Ix/Address/Core.lean" else files
     sameFiles "Ix/Kernel source" files (ported.map (·.target) ++ authored)
     for row in ported do checkRow row true
     for row in licenses do checkRow row false

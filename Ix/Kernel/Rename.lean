@@ -2,7 +2,10 @@
 Ported from Ix branch jcb/ix-kernel-consistency at ad60e5f6dd23655da79cf9898d2b6b3fefbe8658.
 Source: Ix/Theory/Rename.lean
 Transformations: `Ix.Theory` renamed to `Ix.Kernel` in module names, imports,
-namespaces, qualified names, and documentation paths; this header added.
+namespaces, qualified names, and documentation paths; this header added;
+K2: `natLit` carries the reference of its natural-number family, with its cases.
+`letE` added (2026-09-17): the let-binding constructor, interpreted by
+substitution, with its cases in every definition and proof here.
 -/
 /-
 Copyright (c) 2026 Argument Computer Corporation.
@@ -143,9 +146,11 @@ def rename (mapping : β → γ) : VExpr β → VExpr γ
   | .lam domain body => .lam (domain.rename mapping) (body.rename mapping)
   | .forallE domain body =>
       .forallE (domain.rename mapping) (body.rename mapping)
+  | .letE type value body =>
+      .letE (type.rename mapping) (value.rename mapping) (body.rename mapping)
   | .proj ref field major =>
       .proj (ref.rename mapping) field (major.rename mapping)
-  | .natLit value => .natLit value
+  | .natLit r value => .natLit (r.rename mapping) value
 
 @[simp] theorem rename_id (expression : VExpr β) :
     expression.rename id = expression := by

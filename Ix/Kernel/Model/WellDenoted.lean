@@ -2,7 +2,11 @@
 Ported from Ix branch jcb/ix-kernel-consistency at ad60e5f6dd23655da79cf9898d2b6b3fefbe8658.
 Source: Ix/Theory/Model/WellDenoted.lean
 Transformations: `Ix.Theory` renamed to `Ix.Kernel` in module names, imports,
-namespaces, qualified names, and documentation paths; this header added.
+namespaces, qualified names, and documentation paths; this header added;
+K2: `natLit` carries the reference of its natural-number family, on raw and
+annotated syntax alike, with its cases.
+`letE` added (2026-09-17): the let-binding constructor, interpreted by
+substitution, with its cases in every definition and proof here.
 -/
 /-
 Copyright (c) 2026 Argument Computer Corporation.
@@ -52,8 +56,11 @@ def WellDenoted (constants : Assignment β V) (levels : List Nat)
       ∃ v : Nat, (regime p levels = 0 ↔ v = 0) ∧
         ∀ x, x ∈ˢ interp constants levels env A →
           interp constants levels (Valuation.cons x env) B ∈ˢ univ v
+  | .letE t v b =>
+    WellDenoted constants levels env t ∧ WellDenoted constants levels env v ∧
+      WellDenoted constants levels (Valuation.cons (interp constants levels env v) env) b
   | .proj _ _ e => WellDenoted constants levels env e
-  | .natLit _ => True
+  | .natLit _ _ => True
 
 theorem wellDenoted_liftN (e : AExpr β) (constants : Assignment β V)
     (levels : List Nat) (env : Nat → V) (n k : Nat) :
@@ -107,6 +114,13 @@ theorem wellDenoted_inst (e a : AExpr β) (constants : Assignment β V)
       simpa only [interp_inst, Valuation.skip_succ_cons, Valuation.insert_cons] using
         hB x (by simpa only [interp_inst] using hx)
   | proj _ _ e ih => exact ih env k ha he
+  | letE t v b ht hv hb =>
+    rcases he with ⟨htw, hvw, hbw⟩
+    refine ⟨ht env k ha htw, hv env k ha hvw, ?_⟩
+    apply hb (Valuation.cons _ env) (k + 1)
+    · simpa only [Valuation.skip_succ_cons] using ha
+    · simp only [Valuation.skip_succ_cons, Valuation.insert_cons, interp_inst]
+      exact hbw
   | _ => exact he
 
 theorem wellDenoted_instL (e : AExpr β) (constants : Assignment β V)

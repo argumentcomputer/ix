@@ -3,6 +3,8 @@ Ported from Ix branch jcb/ix-kernel-consistency at ad60e5f6dd23655da79cf9898d2b6
 Source: Ix/Theory/ExprSubstitution.lean
 Transformations: `Ix.Theory` renamed to `Ix.Kernel` in module names, imports,
 namespaces, qualified names, and documentation paths; this header added.
+`letE` added (2026-09-17): the let-binding constructor, interpreted by
+substitution, with its cases in every definition and proof here.
 -/
 /-
 Copyright (c) 2026 Argument Computer Corporation.
@@ -44,6 +46,9 @@ theorem liftN_combine {e : VExpr β} {n₁ n₂ k₁ k₂ : Nat}
   | lam _ _ hA hb | forallE _ _ hA hb =>
       simp only [liftN, hA lower upper,
         hb (k₁ := k₁ + 1) (k₂ := k₂ + 1) (by omega) (by omega)]
+  | letE _ _ _ ht hv hb =>
+      simp only [liftN, ht lower upper, hv lower upper,
+        hb (k₁ := k₁ + 1) (k₂ := k₂ + 1) (by omega) (by omega)]
   | _ => simp_all [liftN]
 
 theorem liftN_comm (e : VExpr β) (n₁ n₂ k₁ k₂ : Nat) (order : k₂ ≤ k₁) :
@@ -54,6 +59,9 @@ theorem liftN_comm (e : VExpr β) (n₁ n₂ k₁ k₂ : Nat) (order : k₂ ≤ 
       split <;> split <;> (try split) <;> (try split) <;> omega
   | lam _ _ hA hb | forallE _ _ hA hb =>
       simp only [liftN, hA k₁ k₂ order, Nat.add_assoc,
+        hb (k₁ + 1) (k₂ + 1) (by omega)]
+  | letE _ _ _ ht hv hb =>
+      simp only [liftN, ht k₁ k₂ order, hv k₁ k₂ order, Nat.add_assoc,
         hb (k₁ + 1) (k₂ + 1) (by omega)]
   | _ => simp_all [liftN]
 
@@ -79,6 +87,8 @@ theorem liftN_inst_lo (n : Nat) (e a : VExpr β) (j k : Nat) (order : k ≤ j) :
   | bvar i => exact liftN_instVar_lo n a i j k order
   | lam _ _ hA hb | forallE _ _ hA hb =>
       simp only [inst, liftN, hA j k order, hb (j + 1) (k + 1) (by omega), Nat.add_assoc]
+  | letE _ _ _ ht hv hb =>
+      simp only [inst, liftN, ht j k order, hv j k order, hb (j + 1) (k + 1) (by omega), Nat.add_assoc]
   | _ => simp_all [inst, liftN]
 
 theorem liftN_instVar_hi (i : Nat) (a : VExpr β) (n k j : Nat) :
@@ -107,6 +117,8 @@ theorem liftN_inst_hi_at (e a : VExpr β) (n k j : Nat) :
   | bvar i => exact liftN_instVar_hi i a n k j
   | lam _ _ hA hb | forallE _ _ hA hb =>
       simp only [inst, liftN, hA, Nat.add_assoc, hb]
+  | letE _ _ _ ht hv hb =>
+      simp only [inst, liftN, ht, hv, Nat.add_assoc, hb]
   | _ => simp_all [inst, liftN]
 
 theorem liftN_inst_hi (e a : VExpr β) (n k : Nat) :
@@ -157,6 +169,8 @@ theorem inst_inst_hi (e a b : VExpr β) (k j : Nat) :
   | bvar i => exact inst_instVar_hi i a b k j
   | lam _ _ hA hb | forallE _ _ hA hb =>
       simp only [inst, hA, Nat.add_assoc, hb]
+  | letE _ _ _ ht hv hb =>
+      simp only [inst, ht, hv, Nat.add_assoc, hb]
   | _ => simp_all [inst]
 
 theorem inst0_inst_hi (e a b : VExpr β) (j : Nat) :

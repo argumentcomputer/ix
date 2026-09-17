@@ -3,6 +3,8 @@ Ported from Ix branch jcb/ix-kernel-consistency at ad60e5f6dd23655da79cf9898d2b6
 Source: Ix/Theory/Model/Substitution.lean
 Transformations: `Ix.Theory` renamed to `Ix.Kernel` in module names, imports,
 namespaces, qualified names, and documentation paths; this header added.
+`letE` added (2026-09-17): the let-binding constructor, interpreted by
+substitution, with its cases in every definition and proof here.
 -/
 /-
 Copyright (c) 2026 Argument Computer Corporation.
@@ -61,6 +63,12 @@ theorem wellDenoted_of_inst (term argument : AExpr β) (constants : Assignment �
         simpa only [interp_inst, Valuation.skip_succ_cons, Valuation.insert_cons] using
           members x (by simpa only [interp_inst] using member)
   | proj ref field major ih => exact ih env cutoff valid
+  | letE type value body ihType ihValue ihBody =>
+      obtain ⟨typeValid, valueValid, bodyValid⟩ := valid
+      refine ⟨ihType env cutoff typeValid, ihValue env cutoff valueValid, ?_⟩
+      have inner := ihBody (Valuation.cons (interp constants levels env (value.inst argument cutoff)) env)
+        (cutoff + 1) bodyValid
+      simpa only [interp_inst, Valuation.skip_succ_cons, Valuation.insert_cons] using inner
   | _ => trivial
 
 theorem wellDenoted_inst_iff (term argument : AExpr β) (constants : Assignment β V)

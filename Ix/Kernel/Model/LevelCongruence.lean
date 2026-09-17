@@ -2,7 +2,11 @@
 Ported from Ix branch jcb/ix-kernel-consistency at ad60e5f6dd23655da79cf9898d2b6b3fefbe8658.
 Source: Ix/Theory/Model/LevelCongruence.lean
 Transformations: `Ix.Theory` renamed to `Ix.Kernel` in module names, imports,
-namespaces, qualified names, and documentation paths; this header added.
+namespaces, qualified names, and documentation paths; this header added;
+K2: `natLit` carries the reference of its natural-number family, on raw and
+annotated syntax alike, with its cases.
+`letE` added (2026-09-17): the let-binding constructor, interpreted by
+substitution, with its cases in every definition and proof here.
 -/
 /-
 Copyright (c) 2026 Argument Computer Corporation.
@@ -64,9 +68,11 @@ inductive LevelEquivalent : VExpr β → VExpr β → Prop
       LevelEquivalent (.lam A b) (.lam A' b')
   | forallE {A A' B B'} (domain : LevelEquivalent A A') (body : LevelEquivalent B B') :
       LevelEquivalent (.forallE A B) (.forallE A' B')
+  | letE {t t' v v' b b'} (type : LevelEquivalent t t') (value : LevelEquivalent v v')
+      (body : LevelEquivalent b b') : LevelEquivalent (.letE t v b) (.letE t' v' b')
   | proj (ref index) {e e'} (major : LevelEquivalent e e') :
       LevelEquivalent (.proj ref index e) (.proj ref index e')
-  | natLit (value) : LevelEquivalent (.natLit value) (.natLit value)
+  | natLit (family) (value) : LevelEquivalent (.natLit family value) (.natLit family value)
 
 namespace LevelEquivalent
 
@@ -78,8 +84,9 @@ theorem refl (e : VExpr β) : LevelEquivalent e e := by
   | app _ _ hf ha => exact .app hf ha
   | lam _ _ hA hb => exact .lam hA hb
   | forallE _ _ hA hB => exact .forallE hA hB
+  | letE _ _ _ ht hv hb => exact .letE ht hv hb
   | proj r i _ he => exact .proj r i he
-  | natLit n => exact .natLit n
+  | natLit r n => exact .natLit r n
 
 theorem liftN {e e' : VExpr β} (h : LevelEquivalent e e') (n k : Nat) :
     LevelEquivalent (e.liftN n k) (e'.liftN n k) := by
@@ -90,8 +97,9 @@ theorem liftN {e e' : VExpr β} (h : LevelEquivalent e e') (n k : Nat) :
   | app _ _ hf ha => exact .app (hf k) (ha k)
   | lam _ _ hA hb => exact .lam (hA k) (hb (k + 1))
   | forallE _ _ hA hB => exact .forallE (hA k) (hB (k + 1))
+  | letE _ _ _ ht hv hb => exact .letE (ht k) (hv k) (hb (k + 1))
   | proj r i _ he => exact .proj r i (he k)
-  | natLit n => exact .natLit n
+  | natLit r n => exact .natLit r n
 
 theorem inst {e e' a a' : VExpr β} (h : LevelEquivalent e e')
     (ha : LevelEquivalent a a') (k : Nat := 0) :
@@ -108,8 +116,9 @@ theorem inst {e e' a a' : VExpr β} (h : LevelEquivalent e e')
   | app _ _ hf hb => exact .app (hf k) (hb k)
   | lam _ _ hA hb => exact .lam (hA k) (hb (k + 1))
   | forallE _ _ hA hB => exact .forallE (hA k) (hB (k + 1))
+  | letE _ _ _ ht hv hb => exact .letE (ht k) (hv k) (hb (k + 1))
   | proj r i _ he => exact .proj r i (he k)
-  | natLit n => exact .natLit n
+  | natLit r n => exact .natLit r n
 
 end LevelEquivalent
 
@@ -131,7 +140,7 @@ theorem instL_inst (e a : VExpr β) (levels : List VLevel) (k : Nat := 0) :
 theorem LevelWF.instL_nil {e : VExpr β} (scope : e.LevelWF 0) :
     e.instL [] = e := by
   induction e with
-  | bvar _ | natLit _ => rfl
+  | bvar _ | natLit _ _ => rfl
   | sort l =>
       exact congrArg VExpr.sort (VLevel.inst_id scope)
   | const r ls =>
@@ -141,6 +150,7 @@ theorem LevelWF.instL_nil {e : VExpr β} (scope : e.LevelWF 0) :
   | app _ _ hf ha => simp only [VExpr.instL, hf scope.1, ha scope.2]
   | lam _ _ hA hb => simp only [VExpr.instL, hA scope.1, hb scope.2]
   | forallE _ _ hA hB => simp only [VExpr.instL, hA scope.1, hB scope.2]
+  | letE _ _ _ ht hv hb => simp only [VExpr.instL, ht scope.1, hv scope.2.1, hb scope.2.2]
   | proj r i _ he => exact congrArg (VExpr.proj r i) (he scope)
 
 end VExpr
@@ -150,10 +160,11 @@ namespace AExpr
 
 /-- The binder conditions at their exact expression occurrences. -/
 def annotations : AExpr β → AnnotationTree
-  | .bvar _ | .sort _ | .const _ _ | .natLit _ => .leaf
+  | .bvar _ | .sort _ | .const _ _ | .natLit _ _ => .leaf
   | .app f a => .app f.annotations a.annotations
   | .lam p A b => .lam p.toRaw A.annotations b.annotations
   | .forallE p A B => .forallE p.toRaw A.annotations B.annotations
+  | .letE t v b => .letE t.annotations v.annotations b.annotations
   | .proj _ _ e => .proj e.annotations
 
 /-- Raw syntax and occurrence annotations uniquely determine a reading. -/
@@ -185,6 +196,11 @@ theorem eq_of_erase_annotations {left right : AExpr β}
       next r' i' e' =>
         obtain ⟨rfl, rfl, equal⟩ := shape
         exact congrArg (AExpr.proj r i) (he equal (AnnotationTree.proj.inj conditions))
+  | letE t v b ht hv hb =>
+      cases right <;> simp [erase] at shape
+      next t' v' b' =>
+        simp only [annotations, AnnotationTree.letE.injEq] at conditions
+        rw [ht shape.1 conditions.1, hv shape.2.1 conditions.2.1, hb shape.2.2 conditions.2.2]
   | _ => cases right <;> simp_all [erase]
 
 theorem Scope.instL {e : AExpr β} {n depth target : Nat} {levels : List VLevel}
@@ -198,7 +214,7 @@ theorem Scope.instL {e : AExpr β} {n depth target : Nat} {levels : List VLevel}
     apply Certified.zeroCondition_wf
     exact VLevel.WF.inst (l := .param i) arguments
   induction e generalizing depth with
-  | bvar _ | natLit _ => exact scope
+  | bvar _ | natLit _ _ => exact scope
   | sort _ => exact VLevel.WF.inst arguments
   | const r ls =>
       intro level member
@@ -207,6 +223,7 @@ theorem Scope.instL {e : AExpr β} {n depth target : Nat} {levels : List VLevel}
   | app _ _ hf ha => exact ⟨hf scope.1, ha scope.2⟩
   | lam p _ _ hA hb | forallE p _ _ hA hb =>
       exact ⟨condition p scope.1, hA scope.2.1, hb scope.2.2⟩
+  | letE _ _ _ ht hv hb => exact ⟨ht scope.1, hv scope.2.1, hb scope.2.2⟩
   | proj _ _ _ he => exact he scope
 
 theorem references_instL (e : AExpr β) (levels : List VLevel) :
@@ -230,9 +247,11 @@ inductive LevelEquivalent : AExpr β → AExpr β → Prop
   | forallE (condition) {A A' B B'}
       (domain : LevelEquivalent A A') (body : LevelEquivalent B B') :
       LevelEquivalent (.forallE condition A B) (.forallE condition A' B')
+  | letE {t t' v v' b b'} (type : LevelEquivalent t t') (value : LevelEquivalent v v')
+      (body : LevelEquivalent b b') : LevelEquivalent (.letE t v b) (.letE t' v' b')
   | proj (ref index) {e e'} (major : LevelEquivalent e e') :
       LevelEquivalent (.proj ref index e) (.proj ref index e')
-  | natLit (value) : LevelEquivalent (.natLit value) (.natLit value)
+  | natLit (family) (value) : LevelEquivalent (.natLit family value) (.natLit family value)
 
 /-- Copy occurrence annotations to a structurally congruent expression. -/
 theorem reannotate_levels (e : AExpr β) {source : VExpr β}
@@ -260,12 +279,19 @@ theorem reannotate_levels (e : AExpr β) {source : VExpr β}
           obtain ⟨A', rfl, eA⟩ := hA sA
           obtain ⟨B', rfl, eB⟩ := hB sB
           exact ⟨.forallE p A' B', rfl, .forallE p eA eB⟩
+  | letE t v b ht hv hb =>
+      cases same with
+      | letE st sv sb =>
+          obtain ⟨t', rfl, et⟩ := ht st
+          obtain ⟨v', rfl, ev⟩ := hv sv
+          obtain ⟨b', rfl, eb⟩ := hb sb
+          exact ⟨.letE t' v' b', rfl, .letE et ev eb⟩
   | proj r i e ih =>
       cases same with
       | proj _ _ se =>
           obtain ⟨e', rfl, ee⟩ := ih se
           exact ⟨.proj r i e', rfl, .proj r i ee⟩
-  | natLit n => cases same; exact ⟨.natLit n, rfl, .natLit n⟩
+  | natLit r n => cases same; exact ⟨.natLit r n, rfl, .natLit r n⟩
 
 namespace LevelEquivalent
 
@@ -282,19 +308,22 @@ theorem erase {e e' : AExpr β} (same : LevelEquivalent e e') :
   | app _ _ hf ha => exact .app hf ha
   | lam _ _ _ hA hb => exact .lam hA hb
   | forallE _ _ _ hA hb => exact .forallE hA hb
+  | letE _ _ _ ht hv hb => exact .letE ht hv hb
   | proj r i _ he => exact .proj r i he
-  | natLit n => exact .natLit n
+  | natLit r n => exact .natLit r n
 
 /-- Equivalent levels need not have the same scope: the actual target levels
 must separately be well scoped. Indices and binder annotations are preserved. -/
 theorem scope {e e' : AExpr β} {n depth : Nat} (same : LevelEquivalent e e')
     (source : e.Scope n depth) (levels : e'.erase.LevelWF n) : e'.Scope n depth := by
   induction same generalizing depth with
-  | bvar _ | natLit _ => exact source
+  | bvar _ | natLit _ _ => exact source
   | sort _ | const _ _ => exact levels
   | app _ _ hf ha => exact ⟨hf source.1 levels.1, ha source.2 levels.2⟩
   | lam _ _ _ hA hb | forallE _ _ _ hA hb =>
       exact ⟨source.1, hA source.2.1 levels.1, hb source.2.2 levels.2⟩
+  | letE _ _ _ ht hv hb =>
+      exact ⟨ht source.1 levels.1, hv source.2.1 levels.2.1, hb source.2.2 levels.2.2⟩
   | proj _ _ _ he => exact he source levels
 
 theorem references {e e' : AExpr β} (same : LevelEquivalent e e') :
@@ -315,7 +344,7 @@ theorem interp {e e' : AExpr β} (same : LevelEquivalent e e')
     (levels : List Nat) (env : Nat → V) :
     Model.interp constants levels env e = Model.interp constants levels env e' := by
   induction same generalizing env with
-  | bvar _ | natLit _ => rfl
+  | bvar _ | natLit _ _ => rfl
   | sort h => exact congrArg SetTheory.univ (VLevel.equiv_def.mp h levels)
   | const r h => exact congrArg (constants r) (h levels)
   | app _ _ hf ha => simp only [Model.interp, hf, ha]
@@ -324,6 +353,7 @@ theorem interp {e e' : AExpr β} (same : LevelEquivalent e e')
       congr 1
       funext x
       exact hb _
+  | letE _ _ _ ht hv hb => simp only [Model.interp, hv, hb]
   | proj r i _ he => exact congrArg (projectValue i) (he env)
 
 theorem wellDenoted {e e' : AExpr β} (same : LevelEquivalent e e')
@@ -331,11 +361,13 @@ theorem wellDenoted {e e' : AExpr β} (same : LevelEquivalent e e')
     (levels : List Nat) (env : Nat → V) :
     WellDenoted constants levels env e ↔ WellDenoted constants levels env e' := by
   induction same generalizing env with
-  | bvar _ | sort _ | const _ _ | natLit _ => rfl
+  | bvar _ | sort _ | const _ _ | natLit _ _ => rfl
   | app sf sa hf ha =>
       simp only [WellDenoted, hf, ha, sf.interp constants levels, sa.interp constants levels]
   | lam p sA sb hA hb | forallE p sA sb hA hb =>
       simp only [WellDenoted, hA, hb, sA.interp constants levels, sb.interp constants levels]
+  | letE st sv sb ht hv hb =>
+      simp only [WellDenoted, ht, hv, hb, sv.interp constants levels]
   | proj r i se he => exact he env
 
 /-- Type transport uses hereditary validity, not just equality of denotations. -/

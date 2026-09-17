@@ -2,7 +2,8 @@
 Ported from Ix branch jcb/ix-kernel-consistency at ad60e5f6dd23655da79cf9898d2b6b3fefbe8658.
 Source: Ix/Theory/StringLiteral.lean
 Transformations: `Ix.Theory` renamed to `Ix.Kernel` in module names, imports,
-namespaces, qualified names, and documentation paths; this header added.
+namespaces, qualified names, and documentation paths; this header added;
+K2: `natLit` carries the reference of its natural-number family, with its cases.
 -/
 import Ix.Kernel.Expr
 
@@ -34,6 +35,8 @@ structure StringRefs (β : Type u) where
   char : ConstRef β
   /-- `Char.ofNat` -/
   charOfNat : ConstRef β
+  /-- The natural-number family the character codes name. -/
+  natural : ConstRef β
   /-- `String.ofList` -/
   stringOfList : ConstRef β
   /-- `List.nil` -/
@@ -50,7 +53,7 @@ def charType : VExpr β := .const refs.char []
 
 /-- `Char.ofNat n` with the code point as a native literal. -/
 def charLit (c : Char) : VExpr β :=
-  .app (.const refs.charOfNat []) (.natLit c.toNat)
+  .app (.const refs.charOfNat []) (.natLit refs.natural c.toNat)
 
 /-- `List.nil.{0} Char`. -/
 def nil : VExpr β := .app (.const refs.listNil [.zero]) refs.charType
@@ -68,15 +71,16 @@ source-ordered character list. -/
 def stringLiteral (s : String) : VExpr β :=
   .app (.const refs.stringOfList []) (refs.charList s.toList)
 
-/-- Resolve the five expansion constants from their content addresses.  The
+/-- Resolve the six expansion constants from their content addresses.  The
 kernel side instantiates `resolve` with its store resolution and the addresses
 with the corresponding `Ix.Tc.PrimAddrs` fields (the production checker's primitive table). -/
 def ofResolve? {α : Type v} (resolve : α → Option (ConstRef β))
-    (char charOfNat stringOfList listNil listCons : α) :
+    (char charOfNat natural stringOfList listNil listCons : α) :
     Option (StringRefs β) := do
   return {
     char := ← resolve char
     charOfNat := ← resolve charOfNat
+    natural := ← resolve natural
     stringOfList := ← resolve stringOfList
     listNil := ← resolve listNil
     listCons := ← resolve listCons }

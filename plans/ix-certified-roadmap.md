@@ -1,12 +1,31 @@
 # Ix.Kernel: certified kernel roadmap
 
-Date: 2026-09-16, status updated 2026-09-17. K0 is implemented on
-`jcb/ix-certified`: the model is ported to `Ix.Kernel.Model`, the address
-split and Blake3 pin bump are in, the declining kernel has its three public
-theorems with frozen statements, and `lake run check-kernel` passes (strict
-build, axiom, import, and runtime audits with negative controls, provenance
-with source hashes). Still open in K0: building the ported `Models/SetTheory`
-package against Mathlib and a clean-checkout build.
+Date: 2026-09-16, status updated 2026-09-17. K0 and K1 are complete and K2
+is under way on `jcb/ix-certified`. K0: the model is ported to
+`Ix.Kernel.Model`, the address split and Blake3 pin bump are in, the kernel
+builds as a dependency-free package (`IxKernel/`) whose import closure is
+Lean core plus the kernel, the syntax carries `letE`, and `Models/SetTheory`
+builds against that package with Mathlib. K1: single definitions, theorems,
+and opaques are checked by a proof-carrying inference, reduction, and
+conversion core (`Ix.Kernel.Infer`) and installed with their model
+extension. K2 so far: ordinary inductive blocks (a family with its
+constructors and recursor, in Ixon's `muts` layout) are read, validated,
+installed with the ported set-theoretic construction, and their recursors
+reduce (iota) through published typed rules; `False`, `True`, `And`, `Or`,
+`Nat`, `List`, and `Eq` are fixtures, with `Nat.rec` computing `1 + 1 = 2`
+under `Eq.refl`; structures (`Prod`, `And`, a dependent subtype) publish
+projection facts with eta and iota equations, so projections type, reduce
+on constructors, and constructor applications convert to their eta
+expansions; the `Nat` block is recognized by its shape and published with the
+`natural` fact, so literals (which name their family) type at it, convert
+with the constructors, and drive recursor iota. The three public theorems
+keep their K0 statements. K-like reduction for `Eq` synthesizes the
+constructor from the recursor's parameters; the quotient primitives are
+installed one by one with their computation rules derived from published
+facts at reduction time; `propext` and `Classical.choice` are admitted over
+the `Eq`, `Iff`, and `Nonempty` interfaces. Every K2 route is connected and
+`lake run check-kernel --with-model` passes. Next: the differential run
+against `Ix.Tc`, `docs/kernel.md`, and CI, then K3.
 
 ## Revision note
 
@@ -159,6 +178,9 @@ root. Reject `sorryAx`, `Lean.ofReduceBool`, new project axioms, and unnamed
 semantic premises from the certified closure. Audit checked theorem types,
 definition bodies, and inductive constructor types; an axiom list alone does
 not reveal an impossible or overly strong hypothesis.
+The executable entry points carry erased proof components and therefore
+report the same three axioms; the compiler's computability check is what
+guarantees that none sits in a computational position.
 
 ### Execution boundary
 
@@ -224,6 +246,12 @@ inductive Expr (β)
   | natLit (n : Nat)
 ```
 
+A natural-number literal names the reference of its family (`natLit r n`,
+on raw and annotated syntax alike): with content addresses the `Nat` block
+is unique, and the host that produces the literal knows its address.
+Typing a literal requires that family to carry the `natural` fact, which
+only the exact zero/successor block receives.
+
 The annotated form `AExpr` adds a `PropWhen` regime condition to `lam` and
 `forallE` and nothing else. `letE` carries no annotation: its meaning is
 substitution, and the kernel zeta-reduces before any structural comparison,
@@ -283,48 +311,106 @@ Port the old branch's `Ix.Theory.Model` as `Ix.Kernel.Model`:
   equation, literal) and the projection and equation facts published by the
   admission constructions.
 
-Add the `letE` clause (interpretation by substitution) and its lemmas.
+The `letE` clause (interpretation by substitution) with its rules
+`TypingClaim.letE` and `ConversionClaim.zeta` is in (`Ix.Kernel.Model.LetRules`).
 
 ### 3.4 Checker
 
 The checker is a reference algorithm in the shape of `Ix.Tc` and nanoda,
-written for proof:
+written for proof. K1 built its core (`Ix.Kernel.Infer`) in a
+proof-carrying style: each operation returns its result together with a
+proof of the semantic claim about it, the claims are propositions erased at
+run time, and the public theorems are assembled from them rather than
+proved about the functions afterwards.
 
-- `whnf`: beta, zeta, delta with reducibility hints only as a heuristic,
-  iota through stored recursor rules, projection, Nat literal successor
-  reading, level instantiation. Fuel-bounded; no caches.
-- `infer`: returns the annotated term together with its type. Binder
-  annotations are computed here from the inferred codomain sort. This merges
-  con-leche's unverified annotate pass and validation sweep, and the old
-  branch's `AnnotationTree` witnesses and `readAnnotations?`, into one
-  certified operation: the theorem says the annotated output erases to the
-  input and inhabits the returned type.
-- `isDefEq`: structural comparison on annotated terms with level
-  equivalence, lazy delta by hints, eta for functions, proof irrelevance,
-  Nat literal handling, projection and structure eta where the profile
-  admits it. Annotation disagreement declines; it never redirects work.
-- `checkDecl`: universe parameter checks, type is a sort, body has the
-  declared type, theorem types are propositions, standard axioms only,
-  inductive validation and recursor validation (3.5), installation.
+- `annotate` (unverified, `Ix.Kernel.Annotate`): raw terms carry no binder
+  regimes; this pass computes the zero condition of every binder's inferred
+  codomain sort bottom up by calling the certified operations on the
+  already annotated subterms. Nothing depends on its correctness: its
+  output is validated by `inferA`, so a wrong annotation is rejected, never
+  accepted. This is con-leche's arrangement, an unverified annotate pass
+  under a verified validator, with the validator merged into inference.
+- `inferA`: infers the type of an annotated term and returns
+  `TypingClaim Γ e A`. Binder cases check that the recorded regime equals
+  the zero condition of the inferred codomain sort.
+- `whnf`/`step`: beta, zeta, delta by unfolding stored bodies, and
+  reduction under an application head, returning `ReductionClaim`. Beta is
+  typed: the argument is re-inferred and converted to the binder's domain
+  before the redex fires, because the set model licenses substitution only
+  when the argument denotes a member of the domain, and denotational typing
+  cannot recover the domain of a function in the `Prop` regime. Fuel-bounded;
+  no caches; no reducibility hints. K6 may annotate applications with their
+  domains so that the re-inference becomes a lookup.
+  Iota (K2): a recursor applied to a constructor reduces through the rule
+  the inductive route published as an equation with typed endpoints; the
+  target is converted to the typed instance of the left side (which checks
+  the constructor's parameters and the indices against the recursor's by
+  conversion), and the equation takes it to the typed instance of the right
+  side. The arities come from a `ConstantFact.recursor` on the entry.
+  Structures (K2): the family entry of a structure carries a
+  `ConstantFact.structure` with its arities, one typed projection fact per
+  field, and the eta and iota equations. `inferA` types `proj` by applying
+  the field's projection fact to the parameters and the major; `whnf`
+  reduces a projection of a constructor application through the iota
+  equation; `isDefEq` converts a constructor application to a term of the
+  structure's type through the eta equation. For structures the rule
+  endpoints are typed by inference at reduction time rather than read from
+  facts.
+  Literals (K2): `inferA` types `natLit r n` at `r` when `r` carries the
+  `natural` fact; `isDefEq` unfolds a literal against a constructor
+  application one step (`0` to `zero`, `n + 1` to `succ n`), and recursor
+  iota unfolds a literal major the same way. Whole literals stay literals
+  in normal forms.
+- `isDefEq`: syntactic equality, then `whnf` on both sides, then structural
+  comparison (`sort` by level equivalence through `LevelEq.normalize`,
+  `const` by reference and level lists, `bvar`, `app`, `lam`, `forallE`),
+  eta on either side, and proof irrelevance for terms whose type is a
+  proposition; returns `ConvClaim`. Regimes are compared syntactically;
+  `PropWhen` is canonical (`PropWhen.eq_of_holds`), so this is semantic
+  equality of conditions. Since every annotation is computed internally, a
+  regime disagreement is a conversion failure like any other and can never
+  redirect work.
+- `checkDeclC`: for a single-member block holding a safe definition,
+  theorem, or opaque: the address is fresh, the term forms are supported,
+  every reference is installed, the annotated type and body are closed in
+  their universe parameters and variables, the type is a sort, the body has
+  the declared type, and a theorem's type is a proposition. It installs the
+  entry with its body and returns the environment with `StepClaim`, the
+  proof that every model of the input environment extends
+  (`extend_definition` with `Environment.WF.insert`). Unsupported inputs
+  decline by name: unsafe or partial definitions, non-definitions,
+  multi-member blocks, projections and literals, fuel exhaustion.
+  For a block holding an inductive and its recursor (K2), an unverified
+  reader (`Ix.Kernel.Certified.Ordinary.Read`) recovers the `Shape`; the
+  block is accepted only if it equals the block generated from that shape
+  and `checkBlock` establishes formation, elimination mode, and rule
+  typing; installation adds the family, constructors, and recursor with
+  its rule equations and typed rule facts, and the model extension comes
+  from the ported construction (`Ix.Kernel.Inductive.Ordinary`).
 
-Two drivers sit on top of `checkDecl`, both pure. The closed fold checks a
-list in order and is the subject of `check_has_model`. The subject driver
-takes an assumed environment whose model is a hypothesis and a list of
-subjects in dependency order, and returns the extended environment; it is
-the claim-shaped entry point behind `checkDecls_has_model`. A parallel
-driver is con-leche's install/check split: install the prefixes first, then
-run the same `checkDecl` on each declaration's own prefix concurrently, so
-its verdict equals the sequential fold's by construction. The four
-operations the compiler's auxiliary generator uses today through
-`Ix.Tc.Knot` (`whnf`, `infer` with `ensureSort`, `isDefEq`,
-`isLargeEliminator`) are exported as pure functions.
+Two drivers sit on top of `checkDeclC`, both pure and both erasing the
+proof component for the public API: the closed fold `check` is the subject
+of `check_has_model`; `checkDecls` takes an assumed environment, whose model
+is a hypothesis, and is the claim-shaped entry point behind
+`checkDecls_has_model`. Because the executables carry proofs about models
+in `Type v`, they take that universe as a parameter (`check.{u,v}`); it
+does not affect computation, and `checkAddressed` fixes `v := 1`, the
+universe of the `ZFSet.{0}` model. A parallel driver is con-leche's
+install/check split: install the prefixes first, then run the same
+`checkDeclC` on each declaration's own prefix concurrently, so its verdict
+equals the sequential fold's by construction. The four operations the
+compiler's auxiliary generator uses today through `Ix.Tc.Knot` (`whnf`,
+`infer` with `ensureSort`, `isDefEq`, `isLargeEliminator`) are exported as
+pure functions at K6.
 
-Soundness is extrinsic and mirrors con-leche's style: for each function a
-theorem in the shape `infer Γ e = some (e', A) → TypingClaim Γ e' A`,
-`whnf e = some e' → ConversionClaim Γ e e'` under the typing of `e`, and
-`isDefEq a b = true → ConversionClaim Γ a b` under typing of both. The
-proofs consume the rule theorems of 3.3; those are exactly the lemmas the
-old branch's witness validator applied one witness node at a time.
+Soundness is intrinsic, not extrinsic: con-leche proves theorems of the
+shape `infer Γ e = some (e', A) → TypingClaim Γ e' A` after the fact, while
+here the functions construct those claims as they run, consuming the rule
+theorems of 3.3; `Ix.Kernel.Claims` packages them as `FormedClaim`,
+`ConvClaim`, and `ReductionClaim` with the closure rules the checker needs.
+The choice was made at K1 because it keeps each rule application next to
+the code that relies on it and removes a second, parallel definition of
+every operation.
 
 `partial` is not used in certified code. Termination is by fuel or by
 structural recursion; fuel exhaustion declines.
@@ -350,6 +436,32 @@ the old branch's admission routes:
 | Mutual and nested blocks | `Certified/Modeled` uses checked companions; treat as a later promotion, not a first-release route | K6 |
 | K for other families, reflexive blocks, string literals | none yet | K6 |
 
+Status (2026-09-17): the ordinary route is implemented and connected
+(`Ix.Kernel.Certified.Ordinary`, `Ix.Kernel.Inductive.Ordinary`), with the
+recursor at member 1 of the family's block as Ixon's `muts` layout has it;
+the K flag is accepted for a singleton proposition without fields, and K-like
+reduction synthesizes the constructor from the recursor's parameters,
+converting the major to it by proof irrelevance. The structure route is implemented
+(`Ix.Kernel.Certified.Structure`, `Ix.Kernel.Inductive.Structure`): an
+ordinary block with one constructor, no indices, and no recursive fields
+whose fields are propositions whenever the family is one gets projections,
+eta, and iota; otherwise it stays a plain inductive without projections, as
+`Exists` does in Lean. The `Nat` route is implemented (`Ix.Kernel.Certified.Natural`,
+`Ix.Kernel.Inductive.Natural`): a block whose shape is exactly zero and
+successor gets the `natural` fact, whose meaning now includes that the
+successor is a function on the carrier, which literal unfolding needs. The
+quotient route is implemented (`Ix.Kernel.Certified.Quotient`): the former,
+the constructor, the lift, and the eliminator are installed one by one from
+their exact generated declarations, each publishing a `quotient` fact that
+pins its value; no computation rule is published, since the lift's rule is
+derived at reduction time from the published facts and the admitted `Eq`
+interface and the eliminator's holds outright; `Quot.sound` is an axiom over
+the admitted interfaces. The standard axioms are implemented
+(`Ix.Kernel.Certified.Standard`): `propext` and `Classical.choice` are
+admitted at their exact types once the `Eq`, `Iff`, and `Nonempty`
+interfaces are installed as ordinary blocks, and realized by the point and
+by a choice function. Every row of the table is implemented.
+
 Pins exist only where a reduction rule must identify a block: `Nat` for
 literals in the first release, `Bool`/`String` later. A pin is a structural
 comparison of the stored block with the pinned declaration; the address is
@@ -364,7 +476,7 @@ Unsupported shapes decline with the class named.
 | Positional universe parameters | Named `LevelParam`, `substFn`, capture reasoning | Level assignments are lists; evaluation is unchanged |
 | Ordered environment, order supplied by the host | Dependency walks with proved decreasing ranks, hash-based acyclicity | Acceptance requires every reference to be installed earlier |
 | Total `interp` with `WellDenoted` | The `Denotes` relation and `Denotes_functional` | Same denotations; rewriting works directly |
-| Annotations produced by `infer` | Unverified annotate pass plus validation; annotation witnesses and readers | The same theorem certifies the annotations it outputs |
+| Annotations computed by an unverified pass and validated by certified inference | Annotation witnesses and readers | Acceptance depends only on the validated annotations; a wrong one is rejected |
 | Direct checker soundness | `TypingWitness`/`ConversionWitness` trees, witness search, reject-on-search-failure | The witness rules are the rule theorems; the checker applies them in the proof |
 | One fold, no cached tier | `Cached/` and its simulation proofs | The executed function is the theorem's subject |
 | No parser in the closure | `Frontend/`, chunked byte theorems | Bytes get their own contract in K4 |
@@ -418,8 +530,9 @@ Ix/Kernel/
   Ingress.lean                 K3: Ixon constants to kernel declarations
 Ix/Address/Core.lean           Pure address key (K0 split, see below)
 Ix/Ixon/Types.lean             K3: pure Ixon data types split from codecs
-Tests/Ix/Kernel/               Fixtures, soundness tests, audit controls
-Models/SetTheory/              Mathlib instance package (ported)
+IxKernel/lakefile.lean         The kernel as a dependency-free package over the sources above
+Tests/Ix/Kernel/               Fixtures, soundness tests, audit controls, provenance
+Models/SetTheory/              Mathlib instance package (ported), depends on IxKernel only
 docs/kernel.md                 Public contract, coverage, trust boundary
 ```
 
@@ -448,9 +561,11 @@ Both are mechanical, reviewed separately, and change no behavior.
 
 ### Layering rules
 
-- `Ix.Kernel.*` imports Lean, Std, Batteries where needed, `Ix.Address.Core`,
-  and from K3 `Ix.Ixon.Types`. Nothing else under `Ix`, no `Blake3`, no
-  `lean4lean`, no `Ix.Tc`.
+- `Ix.Kernel.*` imports Lean core (`Init`) and `Ix.Address.Core`, and from
+  K3 `Ix.Ixon.Types`. Nothing else: no `Std`, `Lean`, or `Batteries`
+  module, nothing else under `Ix`, no `Blake3`, no `lean4lean`, no `Ix.Tc`.
+  The standalone package build enforces this structurally; the import audit
+  records the exact closure.
 - Implementation modules do not import `Model` or `Verify`. Proofs import the
   implementation. Audits and tests import the library; the library never
   imports them.
@@ -462,18 +577,21 @@ explicit allowlist and negative controls does. The runtime audit inventories
 `@[extern]`, `implemented_by`, `unsafe`, `partial`, computed fields, and
 `csimp` replacements reachable from the public operations.
 
-### Lake targets
+### Lake packages
 
-```lean
-lean_lib IxKernel where
-  globs := #[.submodules `Ix.Kernel]
-```
-
-No `moreLinkObjs`, no `dynlibs`. `Ix.lean` may import `Ix.Kernel` for the
-host; the default `ix` build then compiles the kernel, but the strict gate
-is `lake build --wfail IxKernel` on this target alone. A `check-kernel`
-script runs the build, audits, tests, and provenance checks, with
-`--with-model` adding the Mathlib package.
+The kernel is built for certification by its own Lake package, `IxKernel/`,
+which reads the shared sources (`srcDir := ".."`, roots `Ix.Kernel` and
+`Ix.Address.Core`) and requires nothing beyond the Lean toolchain. The root
+`ix` package builds the same modules for its host consumers through its `Ix`
+library; it does not require the kernel package, because Lake resolves
+modules root-first by name prefix, so two packages cannot own `Ix.*`
+modules in one workspace. `lake -d IxKernel build --wfail` is the strict
+gate: a kernel module that imports anything outside the kernel fails there
+even if it would build inside the root workspace. `Models/SetTheory`
+depends on the kernel package only, so its workspace holds Mathlib and the
+kernel. The root `check-kernel` script runs the standalone build, the
+host-side tests, and provenance, with `--with-model` adding the Mathlib
+package.
 
 ### The Ix certification ledger
 
@@ -484,7 +602,7 @@ checkpoint. Initial entries:
 
 | Component | Modules | Status now | Route |
 | --- | --- | --- | --- |
-| Certified kernel | `Ix.Kernel.*` | to be built | K0 to K2 |
+| Certified kernel | `Ix.Kernel.*` | K1: definitions, theorems, and opaques certified; inductives at K2 | K0 to K2 |
 | Address key | `Ix.Address.Core` | pure data | K0 |
 | BLAKE3 | `Blake3.Pure` (package), `Address.blake3Pure` | certified function once the pin is bumped and our runtime audit confirms its closure | K0 pin bump; used from K4 and K5; the C and Rust backends stay host accelerators |
 | Ixon data types | `Ix.Ixon` types | host | K3 split, then certified data |
@@ -494,7 +612,7 @@ checkpoint. Initial entries:
 | Lean reference checker | `Ix.Tc` | host; replaced by `Ix.Kernel` in K6 | every consumer migrates, then `Ix.Tc` is deleted |
 | Rust kernel | `crates/kernel`, `Ix.KernelCheck` | host fast path | differential parity against `Ix.Kernel`; verdicts are not certified |
 | In-circuit kernel | `Ix.IxVM.Kernel` (Aiur program) | separate implementation | refinement to `Ix.Kernel` is the long-term composition point; out of scope here |
-| Lean4lean-based verification | `Ix.Tc.Verify`, `lean4lean` dependency | outside the closure | deleted with `Ix.Tc`; its audit helper moves to `Ix.Kernel.Audit` |
+| Lean4lean-based verification | `Ix.Tc.Verify`, `Ix.Compile.Verify`, `Benchmarks/Lean4Lean*`, one TruthMines driver, and the `lean4lean` dependency with its `IxTcVerify`, `IxCompileVerify`, `Lean4LeanBench`, `bench-lean4lean`, and `ix_native_decide_dynlib` targets | outside the closure | the dependency is removed from the repository entirely with these consumers, no later than K6; the audit helper `Ix.Tc.Verify.Audit.Basic` moves to `Ix.Kernel.Audit` first |
 | Auxiliary generation | `Ix.AuxGen` | host consumer of the kernel's four operations | migrates to `Ix.Kernel` in K6 |
 | Compiler and decompiler | `Ix.CompileM`, `Ix.CondenseM`, `Ix.GraphM`, `Ix.CanonM`, `Ix.Sharing`, `Ix.EnvScope`, `Ix.DecompileM`, `Ix.Environment` | host; `Ix.Compile.Verify` currently admits native-decision axioms for BLAKE3 and name hashing | source-fidelity contracts later; the pure BLAKE3 offers a way to drop those axioms |
 | Transport and IO | `Ix.ImportIxe`, `Ix.Catalog`, `Ix.Replay`, `Ix.Watchdog`, `Ix.Iroh`, `Ix.Cli` | host | stays host |
@@ -521,10 +639,13 @@ checkpoint. Initial entries:
 
 Techniques and evidence, each recorded with its origin:
 
-- The extrinsic verification style: certifying variants of `infer`, `whnf`,
-  and `isDefEq` that follow the executable definitions clause by clause.
-- The two annotation laws: annotations never steer reduction; a mismatch
-  declines, never rejects.
+- The unverified annotate pass under a verified validator. Con-leche's
+  extrinsic verification style (certifying variants of `infer`, `whnf`,
+  and `isDefEq` proved after the fact) was considered and not adopted;
+  the K1 checker is proof-carrying (3.4).
+- The annotation law that annotations never steer reduction. Con-leche's
+  second law, that a mismatch declines, is moot here: annotations are
+  internal (3.4), so a regime disagreement is an ordinary conversion failure.
 - The decline/reject distinction and the exit-code discipline.
 - The layering fence with negative tests, and the trust-surface allowlist.
 - The iteration protocol: start from a kernel that rejects everything with
@@ -609,50 +730,96 @@ Exit: clean-checkout build of `IxKernel` and the model package; every audit
 fails on its control and passes on the tree; the public theorem statements
 are fixed.
 
-### K1: definitions and conversion core
+### K1: definitions and conversion core (complete, 2026-09-17)
 
-1. Levels: evaluation, equivalence, normalization, instantiation, and their
-   soundness lemmas (port `VLevelLemmas`). Trim the import closure measured
-   at K0: `VLevelLemmas` imports `Lean.Level` for one comparison lemma and
-   `Std.Basic` imports `Batteries.Data.List.Basic` for `List.Forall₂`, which
-   together pull the elaborator into the closure; both are recorded
-   transformations of ported files with manifest updates.
-2. `whnf` with beta, zeta, delta, projection, and literal successor reading;
-   `infer` with annotation output; `isDefEq` with structural, lazy-delta,
-   eta, proof-irrelevance, and level-equivalence cases.
-3. `checkDecl` for definitions, theorems, opaques, and the standard axioms
-   `propext`, `Classical.choice`, and `Quot.sound` as declared constants
-   whose realization is admitted in K2; until then they decline.
-4. Soundness proofs for each function, then the fold theorem.
-   `no_proof_of_False` keeps its statement; it is vacuous until K2 installs
-   inductives, because non-standard axioms decline.
-5. Fixtures built directly in Lean: accepted polymorphic definitions,
-   dependent binders, lets, eta, proof irrelevance; rejections for ill-typed
-   bodies, non-propositional theorems, forward references, duplicate
-   addresses, universe arity mismatches, annotation mismatches, and
-   non-conservative binder modes, which decline.
+1. Levels (`Ix.Kernel.Level`): equivalence and the zero test by
+   `LevelEq.normalize`, with soundness lemmas; `VLevelLemmas` ported. The
+   import trim measured at K0 is done: `Lean.Level` and
+   `Batteries.Data.List.Basic` are gone (a local `Ix.Kernel.Forall₂`
+   replaces `List.Forall₂`), so the closure of `Ix.Kernel` is Lean core
+   plus the kernel.
+2. Claims (`Ix.Kernel.Claims`): `FormedClaim`, `ConvClaim`, and
+   `ReductionClaim` over the model's `TypingClaim`, with the closure rules
+   the checker uses: congruences, eta, proof irrelevance, typed beta, delta,
+   zeta.
+3. The proof-carrying core (`Ix.Kernel.Infer`): `step`, `whnf`, `inferA`,
+   `isDefEqCore`, and `isDefEq` as one fuel-bounded mutual block, and the
+   unverified `annotate` (`Ix.Kernel.Annotate`) that feeds it. Beta, zeta,
+   and delta; structural conversion with level equivalence, eta, and proof
+   irrelevance. Projections, literals, lazy delta by hints, and caches are
+   not in K1.
+4. `checkDeclC` for single safe definitions, theorems, and opaques with
+   installation and the `StepClaim` model extension; `Model` carries the
+   environment's well-formedness (`Environment.WF`) so the extension
+   theorem's hypotheses come from the checker's decidable checks. The
+   standard axioms are not installable yet: as planned they decline until
+   K2 admits their realization. `no_proof_of_False` keeps its statement and
+   is vacuous until K2 installs inductives.
+5. Fixtures (`Tests/Ix/Kernel/Fixtures.lean`, run by `check-kernel`):
+   accepted polymorphic definitions, a theorem, dependent binders, `let`,
+   universe instantiation with level equivalence, beta of an applied
+   definition, delta of a declared type, an opaque; rejections for
+   non-propositional theorems, ill-typed types and bodies, mismatched
+   bodies, missing references, duplicate addresses, open universe
+   parameters, open variables, wrong universe arity; declines for unsafe
+   definitions, non-definitions, multi-member blocks, literals, and fuel
+   exhaustion. Eta and proof-irrelevance fixtures need `Prop`-valued
+   constants and move to K2. Annotation mismatches are no longer an input
+   category, since annotations are internal. Binder modes arrive with K3.
+6. Audits: the executables' axiom sets are the standard three, entering
+   through erased proofs; the runtime audit walks compiled IR, so its
+   closure is the code that executes (145 compiled functions and four
+   inherited `Nat` externs at K1) rather than the proof terms embedded in
+   definitions, and every audited root must have compiled code.
 
-Exit: the theorem covers the executed fold; positive fixtures accept; the
-runtime audit reaches no foreign symbol.
+Exit met: the theorem covers the executed fold; positive fixtures accept;
+the compiled-code audit reaches no foreign symbol; the K0 statements are
+unchanged.
 
-### K2: inductive profile and first release
+### K2: inductive profile and first release (routes complete, 2026-09-17)
 
-1. Inductive validation and recursor computation; structural comparison with
-   stored recursors; iota in `whnf`; large-elimination and `Prop`
-   restrictions.
-2. Port and connect the constructions of 3.5 in this order: ordinary
-   families, structures, `Nat`, `Eq`, quotients, standard axioms.
-3. Prove model extension for each accepted block and compose with K1.
-4. Fixtures: `False`, `True`, `And`, `Or`, `Nat`, `List`, indexed families,
-   `Eq` with K-like reduction, structures with projections and eta,
-   quotients; rejections for non-positive occurrences, universe violations,
-   wrong recursors, and unsupported shapes declining by name.
-5. Differential run against `Ix.Tc` on the accepted corpus, through a
-   test-only untrusted converter from Ixon until K3 lands; disagreements
-   are investigated, never resolved by trusting `Ix.Tc`.
-6. Write `docs/kernel.md`: contract, profile, restrictions, fuel, trust
-   boundary, ledger, and baseline timings. CI runs `check-kernel` on a
-   fresh checkout and the model package separately.
+1. Done for the ordinary class: shape reading, formation (telescopes, index
+   fit, universe bounds, strict positivity by the shape), elimination mode
+   with the singleton exception, recursor and rule typing, exact comparison
+   with the stored block, iota in `whnf` through published typed rules, and
+   the `Prop` restriction; structures with projections, eta, iota, and the
+   `Prop` field restriction; `Nat` literals through the `natural` fact.
+   `Prop` field restriction; `Nat` literals through the `natural` fact;
+   K-like reduction for `Eq`; the quotient primitives with `Quot.sound`;
+   `propext` and `Classical.choice`.
+2. Constructions connected in order: ordinary families, structures, and
+   `Nat`, `Eq` with K, quotients, and the standard axioms (done).
+3. Model extension for every accepted declaration composed with K1 (done):
+   inductive routes publish facts and equations, quotient primitives and
+   the standard axioms are installed one entry at a time.
+4. Fixtures (`Tests/Ix/Kernel/Inductives.lean`): `False`, `True`, `And`,
+   `Or`, `Nat`, `List`, indexed `Eq`, generated from shapes, and `Nat`
+   encoded by hand in Lean's recursor layout, which must equal the generated
+   block; `False.rec`, constructor applications, `Eq.refl`, and `Nat.rec`
+   arithmetic (`add 1 1 = 2` by `Eq.refl`); rejections for a negative
+   occurrence, a universe violation, a duplicate address, large elimination
+   from a two-constructor proposition, and a mismatched arithmetic theorem;
+   a tampered recursor and an unsafe block decline. Structures
+   (`Tests/Ix/Kernel/Structures.lean`): `Prod`, `And`, a dependent subtype,
+   and a proposition with a data field that stays ordinary; projection
+   typing including a dependent field, projection iota, structure eta, a
+   projection out of a non-structure and a bad field index rejected, a wrong
+   iota theorem rejected. Literals (`Tests/Ix/Kernel/Literals.lean`): a
+   literal at `Nat`, `3 = succ 2` and `0 = zero` by `Eq.refl`, `add 2 2 = 4`
+   through iota on literal majors, wrong equations rejected, a literal naming
+   an uninstalled family a missing reference, one naming a non-`Nat` family
+   ill-typed. `Eq` with K-like reduction (`kSubst` in `Inductives.lean`).
+   Quotients (`Tests/Ix/Kernel/Quotients.lean`): the five primitives in
+   order, `Quot.lift f h (Quot.mk a) = f a` by `Eq.refl`, the eliminator at
+   a constructor application; a primitive before what it refers to, a
+   duplicate, `f a` against `f b`, and soundness over a non-equality
+   rejected; a non-primitive former and a non-standard axiom declined.
+   Axioms (`Tests/Ix/Kernel/Axioms.lean`): `propext` over `Eq` and `Iff`,
+   `Classical.choice` over `Nonempty`, each used; an axiom before its
+   interfaces, an `Iff` with a small eliminator, and a duplicate rejected;
+   other axioms decline.
+5. Differential run against `Ix.Tc` on the accepted corpus (pending).
+6. `docs/kernel.md` and CI (pending).
 
 Exit: `lake build --wfail IxKernel` and `check-kernel` pass on a clean
 checkout; the theorem applies to the fixtures; the release is usable
@@ -817,7 +984,7 @@ helpers are justified by their enclosing proved algorithm.
 
 | Command | Purpose |
 | --- | --- |
-| `lake build --wfail IxKernel` | Strict build of the certified closure and public roots |
+| `lake -d IxKernel build --wfail` | Strict standalone build of the certified closure, its audits, and the public roots |
 | `lake run check-kernel` | Build, audits, provenance, fixtures, differential tests |
 | `lake run check-kernel --with-model` | Also build and audit `Models/SetTheory` |
 
@@ -827,9 +994,10 @@ Required evidence at every checkpoint:
   recorded; the traversal covers definitions and constructor fields.
 - Transitive imports of the certified closure match the allowlist; the
   scanner has negative tests.
-- The runtime closure of the public operations lists every extern,
-  `implemented_by`, unsafe, partial, computed field, and `csimp` reached,
-  distinguishing inherited Lean mechanisms from project code.
+- The compiled-code closure of the public operations, walked over the IR
+  the code generator emits, lists every extern, `implemented_by`, unsafe,
+  and `csimp` reached, distinguishing inherited Lean mechanisms from
+  project code; a root without compiled code fails the audit.
 - Provenance hashes and licenses for every imported file and asset.
 - Accepted controls and rejections through the exposed operation, including
   configuration defaults and annotation mismatches.
@@ -887,13 +1055,74 @@ strategy.
   lean4lean dependency leave with `Ix.Tc`.
 - BLAKE3 is `Blake3.Pure.hash` wherever a certified operation hashes; the C
   and Rust backends are host accelerators.
+- The kernel is certified as its own dependency-free Lake package
+  (`IxKernel/`) over the shared `Ix/` sources, and `Models/SetTheory`
+  depends on that package only.
+- The `lean4lean` dependency is removed from the repository entirely,
+  together with its consumers (`Ix.Tc.Verify`, `Ix.Compile.Verify`, the
+  Lean4Lean benchmarks and test runner, and their Lake targets), no later
+  than the K6 deletion of `Ix.Tc`; nothing new may depend on it.
 - Standard logical axioms only; `SetTheory` explicit; the Mathlib instance
   in its own package.
 
 ### Decisions resolved during milestones
 
-- `letE` in kernel syntax versus zeta at ingress, and annotation comparison
-  in conversion: K1.
+- `letE` is in the kernel syntax (decided 2026-09-17: interpreted by
+  substitution, no regime annotation, typing rule `TypingClaim.letE`,
+  unconditional zeta conversion). Annotation comparison in conversion
+  (K1): syntactic equality of `PropWhen`, which is canonical.
+- K1 (2026-09-17): the checker core is proof-carrying (intrinsic) rather
+  than extrinsically verified; binder regimes come from an unverified
+  `annotate` pass validated by `inferA`; beta re-infers the argument
+  against the binder's domain; the executables take the model universe as
+  a phantom parameter and `checkAddressed` fixes it to `1`; the runtime
+  audit walks compiled IR; unsupported term forms and missing references
+  are prechecked on raw terms so they decline or reject by name.
+- K2, ordinary route (2026-09-17): an inductive block is the family with
+  its recursor at member 1 (Ixon's `muts` layout), read by an unverified
+  reader and accepted only when it equals the block generated from the read
+  shape, otherwise declined; the old branch's witness validation is
+  replaced by inference and its input store by the block; iota reduces
+  through the published rule equation with typed endpoints
+  (`ConstantFact.typed`) and arities (`ConstantFact.recursor`, a fact with
+  trivial meaning), the constructor's parameters and indices being
+  converted against the recursor's rather than trusted; the runtime
+  closure inherits Lean's `Array`-backed `List.zipIdx` and `List.flatMap`.
+- K2, structures (2026-09-17): a structure-like block (one constructor, no
+  indices, no recursive fields) takes the structure route when its fields
+  satisfy the `Prop` restriction and falls back to the plain ordinary route
+  otherwise; the family entry publishes a `ConstantFact.structure` with the
+  arities, the projection facts, and the eta and iota equations (eta first),
+  and every rule is typed in the published environment; projection
+  reduction and structure eta type the rule endpoints by inference at use;
+  `annotate` reports fuel exhaustion and ill-typedness separately, so an
+  ill-typed subterm rejects and only exhausted fuel declines; projections
+  pass the supported-form precheck, literals still decline.
+- K2, `Nat` (2026-09-17): literals name their family on raw and annotated
+  syntax, so no pin lives in `Config` (which is not parametric in the
+  address type and appears in the frozen statements) or in `Env`; the
+  `natural` fact's meaning gains the successor's function membership
+  (`NaturalMeaning.succApp`), proved from the constructor's realization,
+  because unfolding `n + 1` to `succ n` must yield a well-denoted term; the
+  supported-form precheck is gone since every form is checked.
+- K2, `Eq` K, quotients, standard axioms (2026-09-17): K-like reduction
+  fires when a recursor has a single rule without fields and its major is
+  not a constructor application; the constructor is synthesized from the
+  recursor's parameters and the major converts to it by proof
+  irrelevance, which holds exactly when their types convert. Quotient
+  primitives are installed one by one from their exact generated
+  declarations (the former, the constructor, the lift, the eliminator,
+  then `Quot.sound` as an axiom), each publishing a `quotient` fact that
+  pins its value in the model; no computation rule is published: the
+  lift's rule is derived at reduction time from the published facts and
+  the admitted `Eq` interface (`liftRule_claim`), the eliminator's holds
+  outright, so the kernel core imports the quotient syntax and readings,
+  and the equality basis is split into a model-only module and its link
+  to checked blocks. `propext` and `Classical.choice` are admitted from a
+  `Spec` naming the `Eq`, `Iff`, and `Nonempty` blocks (family at member
+  0, constructor 0, recursor at member 1), checked inline through the
+  decidable interfaces and `checkSort`, and realized by the point and by
+  a choice function; other axioms decline.
 - The exact inductive shape class, elimination modes, and structure eta
   rules: K2.
 - The Ixon subset, binder-mode handling, and canonicality policy: K3, K4.

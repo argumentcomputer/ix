@@ -2,7 +2,11 @@
 Ported from Ix branch jcb/ix-kernel-consistency at ad60e5f6dd23655da79cf9898d2b6b3fefbe8658.
 Source: Ix/Theory/Model/Annotated.lean
 Transformations: `Ix.Theory` renamed to `Ix.Kernel` in module names, imports,
-namespaces, qualified names, and documentation paths; this header added.
+namespaces, qualified names, and documentation paths; this header added;
+K2: `natLit` carries the reference of its natural-number family, on raw and
+annotated syntax alike, with its cases.
+`letE` added (2026-09-17): the let-binding constructor, interpreted by
+substitution, with its cases in every definition and proof here.
 -/
 /-
 Copyright (c) 2026 Argument Computer Corporation.
@@ -34,8 +38,9 @@ inductive AExpr (β : Type u) where
   | app (fn arg : AExpr β)
   | lam (condition : PropWhen) (domain body : AExpr β)
   | forallE (condition : PropWhen) (domain body : AExpr β)
+  | letE (type value body : AExpr β)
   | proj (ref : ConstRef β) (field : Nat) (major : AExpr β)
-  | natLit (value : Nat)
+  | natLit (family : ConstRef β) (value : Nat)
 deriving DecidableEq
 
 namespace AExpr
@@ -47,8 +52,9 @@ def erase : AExpr β → VExpr β
   | .app f a => .app f.erase a.erase
   | .lam _ a b => .lam a.erase b.erase
   | .forallE _ a b => .forallE a.erase b.erase
+  | .letE t v b => .letE t.erase v.erase b.erase
   | .proj r i e => .proj r i e.erase
-  | .natLit v => .natLit v
+  | .natLit r v => .natLit r v
 
 /-- Every raw expression has a structural annotation. This says nothing
 about the validity of the chosen binder conditions. -/
@@ -58,7 +64,7 @@ theorem erase_surjective : Function.Surjective (erase : AExpr β → VExpr β) :
   | bvar index => exact ⟨.bvar index, rfl⟩
   | sort level => exact ⟨.sort level, rfl⟩
   | const ref levels => exact ⟨.const ref levels, rfl⟩
-  | natLit value => exact ⟨.natLit value, rfl⟩
+  | natLit family value => exact ⟨.natLit family value, rfl⟩
   | app fn arg ihFn ihArg =>
       obtain ⟨f, rfl⟩ := ihFn
       obtain ⟨a, rfl⟩ := ihArg
@@ -67,6 +73,11 @@ theorem erase_surjective : Function.Surjective (erase : AExpr β → VExpr β) :
       obtain ⟨A, rfl⟩ := ihDomain
       obtain ⟨b, rfl⟩ := ihBody
       first | exact ⟨.lam .always A b, rfl⟩ | exact ⟨.forallE .always A b, rfl⟩
+  | letE type value body ihType ihValue ihBody =>
+      obtain ⟨t, rfl⟩ := ihType
+      obtain ⟨v, rfl⟩ := ihValue
+      obtain ⟨b, rfl⟩ := ihBody
+      exact ⟨.letE t v b, rfl⟩
   | proj ref field major ih =>
       obtain ⟨value, rfl⟩ := ih
       exact ⟨.proj ref field value, rfl⟩
@@ -83,8 +94,9 @@ def Scope (universes depth : Nat) : AExpr β → Prop
   | .app f a => f.Scope universes depth ∧ a.Scope universes depth
   | .lam p a b | .forallE p a b =>
     p.WF universes ∧ a.Scope universes depth ∧ b.Scope universes (depth + 1)
+  | .letE t v b => t.Scope universes depth ∧ v.Scope universes depth ∧ b.Scope universes (depth + 1)
   | .proj _ _ e => e.Scope universes depth
-  | .natLit _ => True
+  | .natLit _ _ => True
 
 instance decidableScope {n k : Nat} : ∀ {e : AExpr β}, Decidable (e.Scope n k)
   | .bvar i => inferInstanceAs (Decidable (i < k))
@@ -94,8 +106,10 @@ instance decidableScope {n k : Nat} : ∀ {e : AExpr β}, Decidable (e.Scope n k
   | .lam p A b | .forallE p A b =>
     @instDecidableAnd _ _ (inferInstanceAs (Decidable (p.WF n)))
       (@instDecidableAnd _ _ (decidableScope (e := A)) (decidableScope (e := b)))
+  | .letE t v b => @instDecidableAnd _ _ (decidableScope (e := t))
+      (@instDecidableAnd _ _ (decidableScope (e := v)) (decidableScope (e := b)))
   | .proj _ _ e => decidableScope (e := e)
-  | .natLit _ => instDecidableTrue
+  | .natLit _ _ => instDecidableTrue
 
 theorem Scope.erase {u k : Nat} {e : AExpr β} (h : e.Scope u k) :
     e.erase.LevelWF u ∧ e.erase.ClosedN k := by
@@ -108,7 +122,9 @@ theorem Scope.erase {u k : Nat} {e : AExpr β} (h : e.Scope u k) :
   | lam p a b ha hb | forallE p a b ha hb =>
     exact ⟨⟨(ha h.2.1).1, (hb h.2.2).1⟩, ⟨(ha h.2.1).2, (hb h.2.2).2⟩⟩
   | proj r i e ih => exact ih h
-  | natLit v => exact ⟨trivial, trivial⟩
+  | letE t v b ht hv hb =>
+    exact ⟨⟨(ht h.1).1, (hv h.2.1).1, (hb h.2.2).1⟩, ⟨(ht h.1).2, (hv h.2.1).2, (hb h.2.2).2⟩⟩
+  | natLit _ v => exact ⟨trivial, trivial⟩
 
 def liftN (count : Nat) : AExpr β → (cutoff : Nat := 0) → AExpr β
   | .bvar i, k => .bvar (liftVar count i k)
@@ -117,8 +133,9 @@ def liftN (count : Nat) : AExpr β → (cutoff : Nat := 0) → AExpr β
   | .app f a, k => .app (f.liftN count k) (a.liftN count k)
   | .lam p a b, k => .lam p (a.liftN count k) (b.liftN count (k + 1))
   | .forallE p a b, k => .forallE p (a.liftN count k) (b.liftN count (k + 1))
+  | .letE t v b, k => .letE (t.liftN count k) (v.liftN count k) (b.liftN count (k + 1))
   | .proj r i e, k => .proj r i (e.liftN count k)
-  | .natLit v, _ => .natLit v
+  | .natLit r v, _ => .natLit r v
 
 @[simp] theorem erase_liftN (e : AExpr β) (n k : Nat) :
     (e.liftN n k).erase = e.erase.liftN n k := by
@@ -134,8 +151,9 @@ def inst : AExpr β → AExpr β → (cutoff : Nat := 0) → AExpr β
   | .app f a, e, k => .app (f.inst e k) (a.inst e k)
   | .lam p a b, e, k => .lam p (a.inst e k) (b.inst e (k + 1))
   | .forallE p a b, e, k => .forallE p (a.inst e k) (b.inst e (k + 1))
+  | .letE t v b, e, k => .letE (t.inst e k) (v.inst e k) (b.inst e (k + 1))
   | .proj r i e, a, k => .proj r i (e.inst a k)
-  | .natLit v, _, _ => .natLit v
+  | .natLit r v, _, _ => .natLit r v
 
 @[simp] theorem erase_inst (e a : AExpr β) (k : Nat) :
     (e.inst a k).erase = e.erase.inst a.erase k := by
@@ -154,8 +172,9 @@ def instL (levels : List VLevel) : AExpr β → AExpr β
   | .app f a => .app (f.instL levels) (a.instL levels)
   | .lam p a b => .lam (instCondition levels p) (a.instL levels) (b.instL levels)
   | .forallE p a b => .forallE (instCondition levels p) (a.instL levels) (b.instL levels)
+  | .letE t v b => .letE (t.instL levels) (v.instL levels) (b.instL levels)
   | .proj r i e => .proj r i (e.instL levels)
-  | .natLit v => .natLit v
+  | .natLit r v => .natLit r v
 
 @[simp] theorem erase_instL (e : AExpr β) (ls : List VLevel) :
     (e.instL ls).erase = e.erase.instL ls := by
@@ -173,8 +192,9 @@ def rename (mapping : β → γ) : AExpr β → AExpr γ
   | .app f a => .app (f.rename mapping) (a.rename mapping)
   | .lam p a b => .lam p (a.rename mapping) (b.rename mapping)
   | .forallE p a b => .forallE p (a.rename mapping) (b.rename mapping)
+  | .letE t v b => .letE (t.rename mapping) (v.rename mapping) (b.rename mapping)
   | .proj r i e => .proj (r.rename mapping) i (e.rename mapping)
-  | .natLit v => .natLit v
+  | .natLit r v => .natLit (r.rename mapping) v
 
 @[simp] theorem erase_rename (e : AExpr β) (mapping : β → γ) :
     (e.rename mapping).erase = e.erase.rename mapping := by
@@ -189,6 +209,7 @@ inductive AnnotationTree where
   | app (fn arg : AnnotationTree)
   | lam (condition : Option (List Nat)) (domain body : AnnotationTree)
   | forallE (condition : Option (List Nat)) (domain body : AnnotationTree)
+  | letE (type value body : AnnotationTree)
   | proj (major : AnnotationTree)
 deriving DecidableEq, Repr
 
@@ -242,7 +263,14 @@ def readAnnotations? (n k : Nat) (source : VExpr β) (tree : AnnotationTree) :
   | .proj r i e, .proj te => do
     let e' ← readAnnotations? n k e te
     return ⟨.proj r i e'.val, by simp [AExpr.erase, e'.property.1], e'.property.2⟩
-  | .natLit v, .leaf => some ⟨.natLit v, rfl, trivial⟩
+  | .letE t v b, .letE tt tv tb => do
+    let t' ← readAnnotations? n k t tt
+    let v' ← readAnnotations? n k v tv
+    let b' ← readAnnotations? n (k + 1) b tb
+    return ⟨.letE t'.val v'.val b'.val,
+      by simp [AExpr.erase, t'.property.1, v'.property.1, b'.property.1],
+      t'.property.2, v'.property.2, b'.property.2⟩
+  | .natLit r v, .leaf => some ⟨.natLit r v, rfl, trivial⟩
   | _, _ => none
 
 end Ix.Kernel.Model

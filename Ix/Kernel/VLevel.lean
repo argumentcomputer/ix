@@ -3,6 +3,7 @@ Ported from Ix branch jcb/ix-kernel-consistency at ad60e5f6dd23655da79cf9898d2b6
 Source: Ix/Theory/VLevel.lean
 Transformations: `Ix.Theory` renamed to `Ix.Kernel` in module names, imports,
 namespaces, qualified names, and documentation paths; this header added.
+Import trim (2026-09-17): `List.Forall₂` replaced by the local `Ix.Kernel.Forall₂`.
 -/
 /-
 Copyright (c) 2026 Argument Computer Corporation.
@@ -122,7 +123,7 @@ theorem WF.inst {l : VLevel} (H : ∀ l ∈ ls, l.WF n) : (l.inst ls).WF n := by
     | none => trivial
     | some => exact H _ (List.mem_of_getElem? e)
 
-theorem inst_congr {l : VLevel} (h1 : l ≈ l') (h2 : List.Forall₂ (·≈·) ls ls') :
+theorem inst_congr {l : VLevel} (h1 : l ≈ l') (h2 : Forall₂ (·≈·) ls ls') :
     l.inst ls ≈ l'.inst ls' := by
   simp [equiv_def, eval_inst, ← equiv_def.1 h1]
   intro ns; congr 1
@@ -131,4 +132,4 @@ theorem inst_congr {l : VLevel} (h1 : l ≈ l') (h2 : List.Forall₂ (·≈·) l
   | cons h2 => simp [*, equiv_def.1 h2]
 
 theorem inst_congr_l {l : VLevel} (h1 : l ≈ l') : l.inst ls ≈ l'.inst ls :=
-  inst_congr h1 <| Ix.Kernel.List.Forall₂.rfl fun _ _ => rfl
+  inst_congr h1 <| Ix.Kernel.Forall₂.rfl fun _ _ => rfl

@@ -363,23 +363,22 @@ end Scripts
 
 section IxKernel
 
-/- The certified kernel: `Ix.Kernel` and everything under it (the ported set
-model, the reference checker, its soundness proofs, the public theorems, and
-the elaboration-time audits). No link objects and no dynlibs: the certified
-closure reaches no foreign code, and the strict gate is
-`lake build --wfail IxKernel` on this target alone. See
+/- The certified kernel, `Ix.Kernel`, lives in this repository's `Ix/` tree but
+is built for certification by the separate `IxKernel/` package, which reads the
+same sources with no dependencies beyond the Lean toolchain:
+`lake -d IxKernel build --wfail` is the strict gate. The root package builds the
+same modules for its host consumers through the `Ix` library. See
 `plans/ix-certified-roadmap.md`. -/
-lean_lib IxKernel where
-  globs := #[.andSubmodules `Ix.Kernel]
 
 /- Provenance check for the ported model: file inventory, exact content
 hashes, port headers, and license files, against
-`Tests/Ix/Kernel/ImportManifest.lean`. Pass the old workspace's path to also
-verify the recorded source hashes. -/
+`Tests/Ix/Kernel/ImportManifest.lean`. Pass `--source <old-ix-workspace>` to
+also verify the recorded source hashes. -/
 lean_exe «kernel-provenance» where
   root := `Tests.Ix.Kernel.Provenance
 
-/-- Run the certified kernel gate: strict build, audits, and provenance. -/
+/-- Run the certified kernel gate: the standalone strict build with its audits,
+the host-side tests, and provenance. -/
 script "check-kernel" (args) := do
   unless args.isEmpty || args == ["--with-model"] do
     IO.eprintln "usage: lake run check-kernel [--with-model]"
@@ -389,7 +388,8 @@ script "check-kernel" (args) := do
     let code ← child.wait
     unless code == 0 do
       throw <| IO.userError s!"{cmd} {args} failed with exit code {code}"
-  run "lake" #["build", "--wfail", "IxKernel", "kernel-provenance", "Tests.Ix.Kernel.AddressPure"]
+  run "lake" #["-d", "IxKernel", "build", "--wfail"]
+  run "lake" #["build", "--wfail", "kernel-provenance", "Tests.Ix.Kernel.AddressPure", "Tests.Ix.Kernel.Fixtures", "Tests.Ix.Kernel.Inductives", "Tests.Ix.Kernel.Structures", "Tests.Ix.Kernel.Literals", "Tests.Ix.Kernel.Quotients", "Tests.Ix.Kernel.Axioms"]
   run ".lake/build/bin/kernel-provenance" #[]
   if args == ["--with-model"] then
     run "lake" #["-d", "Models/SetTheory", "build", "--wfail"]

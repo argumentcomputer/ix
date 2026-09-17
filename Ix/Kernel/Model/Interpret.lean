@@ -2,7 +2,11 @@
 Ported from Ix branch jcb/ix-kernel-consistency at ad60e5f6dd23655da79cf9898d2b6b3fefbe8658.
 Source: Ix/Theory/Model/Interpret.lean
 Transformations: `Ix.Theory` renamed to `Ix.Kernel` in module names, imports,
-namespaces, qualified names, and documentation paths; this header added.
+namespaces, qualified names, and documentation paths; this header added;
+K2: `natLit` carries the reference of its natural-number family, on raw and
+annotated syntax alike, with its cases.
+`letE` added (2026-09-17): the let-binding constructor, interpreted by
+substitution, with its cases in every definition and proof here.
 -/
 /-
 Copyright (c) 2026 Argument Computer Corporation.
@@ -92,8 +96,10 @@ noncomputable def interp (constants : Assignment β V) (levels : List Nat)
     (fun x => interp constants levels (Valuation.cons x env) b)
   | .forallE p a b => piR (regime p levels) (interp constants levels env a)
     (fun x => interp constants levels (Valuation.cons x env) b)
+  | .letE _ v b =>
+    interp constants levels (Valuation.cons (interp constants levels env v) env) b
   | .proj _ i e => projectValue i (interp constants levels env e)
-  | .natLit n => Numeral.value n
+  | .natLit _ n => Numeral.value n
 
 theorem interp_liftN (e : AExpr β) (constants : Assignment β V) (levels : List Nat)
     (env : Nat → V) (n k : Nat) :

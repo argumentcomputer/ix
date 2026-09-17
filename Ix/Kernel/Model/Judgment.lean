@@ -2,7 +2,9 @@
 Ported from Ix branch jcb/ix-kernel-consistency at ad60e5f6dd23655da79cf9898d2b6b3fefbe8658.
 Source: Ix/Theory/Model/Judgment.lean
 Transformations: `Ix.Theory` renamed to `Ix.Kernel` in module names, imports,
-namespaces, qualified names, and documentation paths; this header added.
+namespaces, qualified names, and documentation paths; this header added;
+K2: `natLit` carries the reference of its natural-number family, on raw and
+annotated syntax alike, with its cases.
 -/
 /-
 Copyright (c) 2026 Argument Computer Corporation.
@@ -139,7 +141,7 @@ theorem fact {r : ConstRef β} {entry : ConstantEntry β} {e A : AExpr β} {ls :
 theorem natLit {r zero succ : ConstRef β} {entry : ConstantEntry β}
     (hr : entries r = some entry) (hf : .natural zero succ ∈ entry.facts)
     (hn : entry.universes = 0) (value : Nat) :
-    TypingClaim.{u,v} entries Γ (.natLit value) (.const r []) := by
+    TypingClaim.{u,v} entries Γ (.natLit r value) (.const r []) := by
   intro V _ constants hM _ env _
   have hh := hM.factMeaning r entry hr (.natural zero succ) hf [] (by simpa using hn.symm) env
   exact ⟨trivial, trivial, hh.2.member value⟩
@@ -161,16 +163,16 @@ end TypingClaim
 
 namespace ConversionClaim
 
-theorem natZero {r zero succ : ConstRef β} {entry : ConstantEntry β}
+theorem natZero {f r zero succ : ConstRef β} {entry : ConstantEntry β}
     (hr : entries r = some entry) (hf : .natural zero succ ∈ entry.facts) (hn : entry.universes = 0) :
-    ConversionClaim.{u,v} entries Γ (.natLit 0) (.const zero []) := by
+    ConversionClaim.{u,v} entries Γ (.natLit f 0) (.const zero []) := by
   intro V _ constants hM _ env _
   have hh := hM.factMeaning r entry hr (.natural zero succ) hf [] (by simpa using hn.symm) env
   exact hh.2.zeroValue.symm
 
-theorem natSucc {r zero succ : ConstRef β} {entry : ConstantEntry β}
+theorem natSucc {f r zero succ : ConstRef β} {entry : ConstantEntry β}
     (hr : entries r = some entry) (hf : .natural zero succ ∈ entry.facts) (hn : entry.universes = 0) (value : Nat) :
-    ConversionClaim.{u,v} entries Γ (.natLit (value + 1)) (.app (.const succ []) (.natLit value)) := by
+    ConversionClaim.{u,v} entries Γ (.natLit f (value + 1)) (.app (.const succ []) (.natLit f value)) := by
   intro V _ constants hM _ env _
   have hh := hM.factMeaning r entry hr (.natural zero succ) hf [] (by simpa using hn.symm) env
   exact (hh.2.succValue value).symm

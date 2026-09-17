@@ -27,12 +27,18 @@ uses `Address` (`Ix.Address.Core`), an opaque 32-byte key. The kernel never
 hashes: the binding between bytes and addresses is a host property, stated
 explicitly where a claim needs it.
 
+The executables carry their model extension as an erased proof component,
+so they take the universe `v` of the set theories the attached theorems
+speak about (`check.{u,v}`). The computation does not depend on `v`; a use
+site that is not a theorem instantiates it. `checkAddressed` fixes `v := 1`,
+the universe of the `ZFSet.{0}` model supplied by `Models/SetTheory`.
+
 Roadmap: `plans/ix-certified-roadmap.md`. -/
 
 namespace Ix.Kernel
 
 /-- The public instantiation of the closed check at content addresses. -/
 abbrev checkAddressed (cfg : Config) (decls : List (Decl Address)) : Except Error (Env Address) :=
-  check cfg decls
+  check.{0,1} cfg decls
 
 end Ix.Kernel

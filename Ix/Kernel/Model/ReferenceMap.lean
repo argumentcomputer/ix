@@ -2,7 +2,11 @@
 Ported from Ix branch jcb/ix-kernel-consistency at ad60e5f6dd23655da79cf9898d2b6b3fefbe8658.
 Source: Ix/Theory/Model/ReferenceMap.lean
 Transformations: `Ix.Theory` renamed to `Ix.Kernel` in module names, imports,
-namespaces, qualified names, and documentation paths; this header added.
+namespaces, qualified names, and documentation paths; this header added;
+K2: `natLit` carries the reference of its natural-number family, on raw and
+annotated syntax alike, with its cases.
+`letE` added (2026-09-17): the let-binding constructor, interpreted by
+substitution, with its cases in every definition and proof here.
 -/
 /-
 Copyright (c) 2026 Argument Computer Corporation.
@@ -27,8 +31,9 @@ def VExpr.mapRefs (mapping : ConstRef β → ConstRef γ) : VExpr β → VExpr �
   | .app f a => .app (f.mapRefs mapping) (a.mapRefs mapping)
   | .lam type body => .lam (type.mapRefs mapping) (body.mapRefs mapping)
   | .forallE type body => .forallE (type.mapRefs mapping) (body.mapRefs mapping)
+  | .letE type value body => .letE (type.mapRefs mapping) (value.mapRefs mapping) (body.mapRefs mapping)
   | .proj ref index major => .proj (mapping ref) index (major.mapRefs mapping)
-  | .natLit n => .natLit n
+  | .natLit r n => .natLit (mapping r) n
 
 namespace Model
 
@@ -39,8 +44,9 @@ def AExpr.mapRefs (mapping : ConstRef β → ConstRef γ) : AExpr β → AExpr �
   | .app f a => .app (f.mapRefs mapping) (a.mapRefs mapping)
   | .lam condition type body => .lam condition (type.mapRefs mapping) (body.mapRefs mapping)
   | .forallE condition type body => .forallE condition (type.mapRefs mapping) (body.mapRefs mapping)
+  | .letE type value body => .letE (type.mapRefs mapping) (value.mapRefs mapping) (body.mapRefs mapping)
   | .proj ref index major => .proj (mapping ref) index (major.mapRefs mapping)
-  | .natLit n => .natLit n
+  | .natLit r n => .natLit (mapping r) n
 
 @[simp] theorem AExpr.erase_mapRefs (e : AExpr β) (mapping : ConstRef β → ConstRef γ) :
     (e.mapRefs mapping).erase = e.erase.mapRefs mapping := by
@@ -88,6 +94,12 @@ theorem AExpr.mapRefs_congr (e : AExpr β) (first second : ConstRef β → Const
       ha (fun ref hr => h ref (List.mem_append_right _ hr))]
   | proj ref index major ih =>
     simp only [AExpr.mapRefs, h ref (List.mem_cons_self), ih (fun ref hr => h ref (List.mem_cons_of_mem _ hr))]
+  | natLit r n => simp [AExpr.mapRefs, h r (by simp [AExpr.references])]
+  | letE t v b ht hv hb =>
+    simp only [AExpr.mapRefs,
+      ht (fun ref hr => h ref (List.mem_append_left _ (List.mem_append_left _ hr))),
+      hv (fun ref hr => h ref (List.mem_append_left _ (List.mem_append_right _ hr))),
+      hb (fun ref hr => h ref (List.mem_append_right _ hr))]
   | _ => rfl
 
 /-- Restoration needs an inverse only on the references actually used by

@@ -3,6 +3,8 @@ Ported from Ix branch jcb/ix-kernel-consistency at ad60e5f6dd23655da79cf9898d2b6
 Source: Ix/Theory/Model/Instantiation.lean
 Transformations: `Ix.Theory` renamed to `Ix.Kernel` in module names, imports,
 namespaces, qualified names, and documentation paths; this header added.
+`letE` added (2026-09-17): the let-binding constructor, interpreted by
+substitution, with its cases in every definition and proof here.
 -/
 /-
 Copyright (c) 2026 Argument Computer Corporation.
@@ -92,6 +94,14 @@ theorem wellDenoted_congr_env (e : AExpr β) (constants : Assignment β V)
     simp only [WellDenoted, hA hs.2.1 env env' h, interp_congr_env A constants levels hs.2.1 env env' h,
       hb hs.2.2 _ _ (hcons _), interp_congr_env b constants levels hs.2.2 _ _ (hcons _)]
   | proj _ _ e ih => exact ih hs env env' h
+  | letE t v b ht hv hb =>
+    have hcons (x : V) : ∀ i, i < k + 1 → Valuation.cons x env i = Valuation.cons x env' i := by
+      intro i hi
+      cases i with
+      | zero => rfl
+      | succ i => exact h i (by omega)
+    simp only [WellDenoted, ht hs.1 env env' h, hv hs.2.1 env env' h,
+      interp_congr_env v constants levels hs.2.1 env env' h, hb hs.2.2 _ _ (hcons _)]
   | _ => rfl
 
 theorem wellDenoted_closed (e : AExpr β) (constants : Assignment β V)

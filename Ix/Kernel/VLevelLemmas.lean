@@ -3,13 +3,14 @@ Ported from Ix branch jcb/ix-kernel-consistency at ad60e5f6dd23655da79cf9898d2b6
 Source: Ix/Theory/VLevelLemmas.lean
 Transformations: `Ix.Theory` renamed to `Ix.Kernel` in module names, imports,
 namespaces, qualified names, and documentation paths; this header added.
+Import trim (2026-09-17): `Lean.Level` import and the unused lemma
+`natIMax_eq_core` (agreement with `Lean.Nat.imax`) removed.
 -/
 /-
 Copyright (c) 2026 Argument Computer Corporation.
 SPDX-License-Identifier: MIT OR Apache-2.0
 -/
 
-import Lean.Level
 import Ix.Kernel.VLevel
 
 /-!
@@ -78,8 +79,3 @@ theorem IsNeverZero.imax_eq_max (h : IsNeverZero b) : imax a b ≈ max a b := by
 theorem id_WF : ∀ l ∈ (List.range u).map param, l.WF u := by simp [WF]
 
 end Ix.Kernel.VLevel
-
-/-- The internal universe operation agrees definitionally with Lean's
-natural-number operation used by the reference implementation proofs. -/
-@[simp] theorem Ix.Kernel.VLevel.natIMax_eq_core (a b : Nat) :
-    Ix.Kernel.VLevel.natIMax a b = Lean.Nat.imax a b := rfl
