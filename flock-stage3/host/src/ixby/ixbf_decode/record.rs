@@ -356,7 +356,7 @@ impl Reader {
   fn header(&mut self, magic: &[u8; 4], enabled: usize) {
     let bytes = self.fixed(12, enabled);
     let expected: Vec<_> =
-      magic.iter().copied().chain([1, 0, 0, 0, 0, 0, 0, 0]).collect();
+      magic.iter().copied().chain([1, 0, 0, 0, 2, 0, 0, 0]).collect();
     for (byte, value) in bytes.as_chunks::<8>().0.iter().zip(expected) {
       let good = self.b.eq_const(byte, u64::from(value));
       self.b.require(enabled, good);
@@ -450,7 +450,7 @@ fn build_plan(kind: RecordKind) -> BooleanR1csPlan {
     },
     RecordKind::Value => {
       fields[0] = r.fixed(1, enabled);
-      let tags = r.tags(enabled, &fields[0], 4);
+      let tags = r.tags(enabled, &fields[0], 5);
       let block = r.fixed(32, tags[1]);
       fields[1] = block[..128].to_vec();
       fields[2] = block[128..].to_vec();
@@ -463,9 +463,11 @@ fn build_plan(kind: RecordKind) -> BooleanR1csPlan {
         .zip(function)
         .map(|(a, b)| r.b.sum(&[*a, b]))
         .collect();
-      let children = r.b.sum(&[tags[1], tags[2]]);
+      let object = r.b.sum(&[tags[1], tags[2]]);
+      let children = r.b.sum(&[object, tags[4]]);
       fields[5] = r.natural(children);
-      r.le(children, &fields[5], &r.bound(0));
+      r.le(object, &fields[5], &r.bound(0));
+      r.lt(tags[4], &fields[5], &r.b.constant(128, 1 << 32));
       r.le(children, &fields[5], &r.bound(2));
       r.count(children, &fields[5]);
     },
@@ -509,7 +511,7 @@ fn build_plan(kind: RecordKind) -> BooleanR1csPlan {
       fields[0] = r.fixed(1, enabled);
       let tags = r.tags(enabled, &fields[0], 8);
       fields[1] = r.fixed(1, tags[1]);
-      let primitives = r.tags(tags[1], &fields[1], 47);
+      let primitives = r.tags(tags[1], &fields[1], 58);
       fields[4] = (0..128)
         .map(|bit| {
           let sources: Vec<_> = primitives
@@ -539,12 +541,14 @@ fn build_plan(kind: RecordKind) -> BooleanR1csPlan {
   r.finish(&fields)
 }
 
-// Kept explicit in circuit synthesis. Tests compare all 47 entries against
+// Kept explicit in circuit synthesis. Tests compare all 58 entries against
 // the independent functional opcode registry; this is not a native-opcode map.
 fn primitive_arity(opcode: u8) -> u8 {
   match opcode {
-    8 | 21 | 22 | 23 | 27 | 29 | 30 | 34 | 37 | 38 | 39 | 44 | 45 | 46 => 1,
-    42 => 3,
+    49 | 54 => 0,
+    8 | 21 | 22 | 23 | 27 | 29 | 30 | 34 | 37 | 38 | 39 | 44 | 45 | 46 | 47
+    | 48 | 50 | 56 | 57 => 1,
+    42 | 52 => 3,
     _ => 2,
   }
 }
@@ -597,7 +601,7 @@ impl NativeReader {
   }
   fn header(&mut self, magic: &[u8; 4], enabled: bool) {
     let expected: Vec<_> =
-      magic.iter().copied().chain([1, 0, 0, 0, 0, 0, 0, 0]).collect();
+      magic.iter().copied().chain([1, 0, 0, 0, 2, 0, 0, 0]).collect();
     let bytes = self.fixed(12, enabled);
     self.bad |= enabled && bytes != expected;
   }
@@ -702,7 +706,7 @@ pub(super) fn evaluate(
       count = Some(fields[0]);
     },
     RecordKind::Value => {
-      let tag = r.tag(enabled, 4);
+      let tag = r.tag(enabled, 5);
       fields[0] = u128::from(tag);
       if enabled && tag == 1 {
         fields[1] = r.number(16, true);
@@ -713,9 +717,11 @@ pub(super) fn evaluate(
         fields[1] = r.integer(true);
         r.bad |= fields[1] >= bounds[1];
       }
-      if enabled && (tag == 1 || tag == 2) {
+      if enabled && (tag == 1 || tag == 2 || tag == 4) {
         fields[5] = r.integer(true);
-        r.bad |= fields[5] > bounds[0] || fields[5] > bounds[2];
+        r.bad |= (tag != 4 && fields[5] > bounds[0])
+          || fields[5] > bounds[2]
+          || (tag == 4 && fields[5] >= 1 << 32);
       }
       count = Some(fields[5]);
     },
@@ -752,8 +758,8 @@ pub(super) fn evaluate(
       let tag = r.tag(enabled, 8);
       fields[0] = u128::from(tag);
       if enabled && tag == 1 {
-        fields[1] = u128::from(r.tag(true, 47));
-        fields[4] = if fields[1] < 47 {
+        fields[1] = u128::from(r.tag(true, 58));
+        fields[4] = if fields[1] < 58 {
           u128::from(primitive_arity(fields[1] as u8))
         } else {
           0

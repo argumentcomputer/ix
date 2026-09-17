@@ -4,8 +4,8 @@ use crate::{
   goldilocks::GOLDILOCKS_MODULUS as P,
   ixby::{
     bits::{fill_words, read_words},
-    decode::{PrimitiveSet, scalar_primitive_arity},
     io::LayoutEmitter,
+    primitive::registry::{PrimitiveSet, scalar_primitive_arity},
     value::{EXT_TAG, FIELD_TAG, ValueWords, bool_words, word32_words},
   },
   sizing::{CountedGate, CountingEmitter},

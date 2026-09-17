@@ -149,6 +149,12 @@ def validateInputValues (limits : Limits) (program : Program) :
         scalar.validate limits
         pure #[]
       | .erased => pure #[]
+      | .array elements => do
+        if elements.size ≥ 2 ^ 32 then throw .invalidValue
+        pure elements
+      | .byteBuilder bytes => do
+        (Scalar.bytes bytes).validate limits
+        pure #[]
       | .ctor id fields => do
         let some ctor := program.findConstructor id | throw .invalidValue
         if fields.size != ctor.fields then throw .invalidValue

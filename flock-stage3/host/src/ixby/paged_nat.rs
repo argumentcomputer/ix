@@ -96,8 +96,9 @@ impl GateType for Nat128Gate {
   fn eval(&self, input: &[F128], _: &(), outputs: &mut Vec<F128>) -> Nat128Row {
     let input: [F128; INPUTS] = input.try_into().unwrap();
     let a = integer(input[2]);
-    let b = integer(input[4]);
-    let division = matches!(input[0].lo, 4 | 5);
+    let b =
+      if input[0].lo == 11 { 0xffff_ffff_0000_0001 } else { integer(input[4]) };
+    let division = matches!(input[0].lo, 4 | 5 | 11);
     let (q, r) = if division {
       (a.checked_div(b).unwrap_or(0), a.checked_rem(b).unwrap_or(a))
     } else {
@@ -152,25 +153,34 @@ impl Nat128Slot {
 fn native(row: &Nat128Row) -> Option<[F128; 3]> {
   let input = row.input;
   let control = input[0].lo;
-  if input[0].hi != 0 || control > 9 {
+  if input[0].hi != 0 || control > 11 {
     return None;
   }
   if control == 0 {
     return (input[1..] == [F128::ZERO; 4]).then_some([F128::ZERO; 3]);
   }
   if control >= 8 {
-    let tag = if control == 8 { 8 } else { 2 };
+    let tag = match control {
+      8 | 11 => 8,
+      9 => 2,
+      10 => 3,
+      _ => unreachable!(),
+    };
+    let a = integer(input[2]);
     if input[1] != F128::new(tag, 0)
       || input[3..] != [F128::ZERO; 2]
-      || (control == 9 && integer(input[2]) > u128::from(u32::MAX))
+      || (control == 9 && a > u128::from(u32::MAX))
+      || (control == 10 && a >= 0xffff_ffff_0000_0001)
     {
       return None;
     }
-    return Some([
-      F128::new(if control == 8 { 2 } else { 8 }, 0),
-      F128::new(input[2].lo & u64::from(u32::MAX), 0),
-      F128::ZERO,
-    ]);
+    let (tag, result) = match control {
+      8 => (2, a & u128::from(u32::MAX)),
+      9 | 10 => (8, a),
+      11 => (3, a % 0xffff_ffff_0000_0001),
+      _ => unreachable!(),
+    };
+    return Some([F128::new(tag, 0), word(result), F128::ZERO]);
   }
   if input[1] != F128::new(8, 0) || input[3] != F128::new(8, 0) {
     return None;
@@ -207,7 +217,7 @@ fn build() -> BooleanR1csPlan {
   let one = b.alloc_constant_one();
   let zero = b.xor(&[one, one], one);
   let control_bits = 4;
-  let flags = (0..=9)
+  let flags = (0..=11)
     .map(|i| equal_constant(&mut b, one, &range(0, control_bits), i))
     .collect::<Vec<_>>();
   let mut bad = range(control_bits, 128 - control_bits);
@@ -220,7 +230,9 @@ fn build() -> BooleanR1csPlan {
     require(&mut b, one, &mut bad, binary, tag);
     require_zero(&mut b, one, &mut bad, binary, &range(at + 64, 64));
   }
-  for (flag, tag) in [(flags[8], 8), (flags[9], 2)] {
+  for (flag, tag) in
+    [(flags[8], 8), (flags[9], 2), (flags[10], 3), (flags[11], 8)]
+  {
     let typed = equal_constant(&mut b, one, &range(128, 64), tag);
     require(&mut b, one, &mut bad, flag, typed);
     require_zero(&mut b, one, &mut bad, flag, &range(192, 64));
@@ -228,10 +240,29 @@ fn build() -> BooleanR1csPlan {
   }
   require_zero(&mut b, one, &mut bad, flags[9], &range(288, 96));
   let a = range(256, 128);
-  let rhs = range(512, 128);
+  let p = (0..128)
+    .map(|i| {
+      if i < 64 && 0xffff_ffff_0000_0001u64 & (1 << i) != 0 {
+        one
+      } else {
+        zero
+      }
+    })
+    .collect::<Vec<_>>();
+  require_zero(&mut b, one, &mut bad, flags[10], &a[64..]);
+  let canonical = subtract(&mut b, one, zero, &a, &p).1;
+  require(&mut b, one, &mut bad, flags[10], canonical);
+  let rhs = range(512, 128)
+    .iter()
+    .zip(&p)
+    .map(|(&v, &p)| {
+      let constant = b.and(flags[11], p);
+      b.xor(&[v, constant], one)
+    })
+    .collect::<Vec<_>>();
   let q = range(QUOTIENT, 128);
   let r = range(REMAINDER, 128);
-  let dividing = b.xor(&[flags[4], flags[5]], one);
+  let dividing = b.xor(&[flags[4], flags[5], flags[11]], one);
   let not_dividing = not(&mut b, one, dividing);
   require_zero(&mut b, one, &mut bad, not_dividing, &range(QUOTIENT, 256));
   let (sum, carry) = add(&mut b, one, zero, &a, &rhs);
@@ -285,11 +316,11 @@ fn build() -> BooleanR1csPlan {
   let comparison_less = b.and(flags[7], borrow);
   let comparison = b.xor(&[comparison_equal, comparison_less], one);
   let mut integer_flags = flags[1..=5].to_vec();
-  integer_flags.push(flags[9]);
+  integer_flags.extend_from_slice(&flags[9..=10]);
   let integer_result = b.xor(&integer_flags, one);
   let boolean_result = b.xor(&flags[6..=7], one);
-  b.write_xor(INPUTS * 128, &[boolean_result], one);
-  b.write_xor(INPUTS * 128 + 1, &[flags[8]], one);
+  b.write_xor(INPUTS * 128, &[boolean_result, flags[11]], one);
+  b.write_xor(INPUTS * 128 + 1, &[flags[8], flags[11]], one);
   b.write_xor(INPUTS * 128 + 3, &[integer_result], one);
   for bit in 0..128 {
     let mut terms =
@@ -304,6 +335,10 @@ fn build() -> BooleanR1csPlan {
       terms.push(b.and(flags[8], a[bit]));
       terms.push(b.and(flags[9], a[bit]));
     }
+    if bit < 64 {
+      terms.push(b.and(flags[10], a[bit]));
+    }
+    terms.push(b.and(flags[11], r[bit]));
     b.write_xor((INPUTS + 1) * 128 + bit, &terms, one);
   }
   let violation = any(&mut b, one, &bad);
@@ -397,7 +432,7 @@ mod tests {
         }
       }
     }
-    for control in 10..16 {
+    for control in 12..16 {
       let row = gate.eval(
         &[
           F128::new(control, 0),
@@ -420,6 +455,61 @@ mod tests {
     bits.resize(table.n(), false);
     assert!(table.satisfies(&bits));
     out
+  }
+  #[test]
+  fn field_conversions_bind_canonical_values_and_modular_certificates() {
+    let gate = Nat128Gate::new(3).unwrap();
+    let table = gate.r1cs();
+    let p = 0xffff_ffff_0000_0001u128;
+    for control in [10, 11] {
+      for a in [0, 1, (1 << 32) - 1, p - 1, p, p + 1, 1 << 65, u128::MAX] {
+        let input = [
+          word(control),
+          word(if control == 10 { 3 } else { 8 }),
+          word(a),
+          F128::ZERO,
+          F128::ZERO,
+        ];
+        let mut out = Vec::new();
+        let row = gate.eval(&input, &(), &mut out);
+        let constrained = checked(&gate, &row);
+        if control == 10 && a >= p {
+          assert_eq!(constrained[2], F128::ONE);
+          continue;
+        }
+        assert_eq!(constrained, out);
+        assert_eq!(
+          out,
+          [word(if control == 10 { 8 } else { 3 }), word(a % p), F128::ZERO]
+        );
+        let mut bits = vec![false; table.n()];
+        gate.plan().fill_row(&mut bits[..gate.plan().k()], |b| fill(&row, b));
+        for bit in INPUTS * 128..(INPUTS + OUTPUTS) * 128 {
+          bits[bit] ^= true;
+          assert!(
+            !table.satisfies(&bits),
+            "control {control}, output bit {bit}"
+          );
+          bits[bit] ^= true;
+        }
+        for bit in 0..128 {
+          for at in [1, 3, 4] {
+            let mut bad = row.clone();
+            bad.input[at] += word(1 << bit);
+            assert_eq!(checked(&gate, &bad)[2], F128::ONE);
+          }
+          for quotient in [true, false] {
+            let mut bad = row.clone();
+            if quotient {
+              bad.quotient += word(1 << bit);
+            } else {
+              bad.remainder += word(1 << bit);
+            }
+            assert_eq!(checked(&gate, &bad)[2], F128::ONE);
+          }
+        }
+      }
+    }
   }
   #[test]
   fn nat128_matches_exact_integer_semantics_including_zero_divisors_and_overflow()

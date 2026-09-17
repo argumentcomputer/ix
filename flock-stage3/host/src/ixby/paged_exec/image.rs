@@ -9,7 +9,7 @@ use crate::{
     ixbf::{self, DecodeLimits, ValueKind},
     paged_code::{PackedProgram, scalar, small},
     paged_frame::{FrameState, HEAP, LOCALS},
-    paged_value::INPUT_BYTES,
+    paged_value::{FLAT_ARRAY, INPUT_BYTES},
   },
 };
 use anyhow::{Context, Result, ensure};
@@ -77,18 +77,23 @@ impl NativeImage {
       let value = match &node.kind {
         ValueKind::Scalar(value) => scalar(input.source(), INPUT_BYTES, value)?,
         ValueKind::Erased => [F128::new(5, 0), F128::ZERO],
-        ValueKind::Constructor(_) | ValueKind::PartialApplication(_) => {
+        ValueKind::Constructor(_)
+        | ValueKind::PartialApplication(_)
+        | ValueKind::Array => {
           let (tag, reference) = match &node.kind {
             ValueKind::Constructor(id) => (
               7,
               *constructors.get(id).context("input constructor declaration")?,
             ),
             ValueKind::PartialApplication(function) => (9, *function),
+            ValueKind::Array => (11, node.children.len()),
             _ => unreachable!(),
           };
           let count = node.children.len() as u64;
           ensure!(
-            count <= 64 && heap + count <= 1 << 36,
+            (tag == 11 || count <= 64)
+              && count < 1 << 32
+              && heap + count <= 1 << 36,
             "paged input heap capacity"
           );
           let pointer = if count == 0 { 0 } else { HEAP + heap };
@@ -101,7 +106,14 @@ impl NativeImage {
             destinations[child] = Some(HEAP + heap);
             heap += 1;
           }
-          [F128::new(tag, reference as u64), F128::new(pointer, count)]
+          if tag == 11 {
+            [
+              F128::new(tag, count),
+              F128::new(if count == 0 { 0 } else { pointer | FLAT_ARRAY }, 0),
+            ]
+          } else {
+            [F128::new(tag, reference as u64), F128::new(pointer, count)]
+          }
         },
       };
       cells

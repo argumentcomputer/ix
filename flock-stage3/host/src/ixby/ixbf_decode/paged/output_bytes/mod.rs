@@ -22,7 +22,7 @@ pub const NU: usize = 10;
 pub const SOURCE_DEPTH: usize = 14;
 pub const PUBLIC_WORDS: usize = 9;
 pub const DOMAIN: &[u8] =
-  b"IxBy/Flock/paged-output:bytes:d14:steps32:cells40:parents255:v0";
+  b"IxBy/Flock/paged-output:bytes:d14:steps32:cells40:parents255:v1";
 fn capacity() -> MultiCapacity {
   MultiCapacity::new(CELLS, PARENTS).unwrap()
 }

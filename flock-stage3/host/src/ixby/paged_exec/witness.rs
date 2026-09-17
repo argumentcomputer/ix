@@ -7,7 +7,6 @@ use crate::{
   hash::{Blake3Gate, IV, pack8},
   ixby::{
     auth_memory::SparseMemory,
-    decode::PrimitiveSet,
     memory_log::{AccessAdvice, MemoryBatch},
     paged_code::{
       CONSTRUCTORS, CodeGate, CodeGateKind, FUNCTIONS, block_address,
@@ -15,6 +14,7 @@ use crate::{
     paged_frame::{CONTINUATIONS, FrameGate, LOCALS, Phase, SCRATCH},
     paged_nat::Nat128Gate,
     paged_primitive::PrimitiveRouteGate,
+    primitive::registry::PrimitiveSet,
     primitive::{PrimitiveFinishGate, PrimitivePrepareGate},
   },
 };
@@ -53,7 +53,7 @@ fn run<G: GateType<Hint = ()>>(gate: &G, input: &[F128]) -> Result<Vec<F128>> {
   output.pop();
   Ok(output)
 }
-fn records(words: &[F128]) -> Vec<AccessAdvice> {
+pub(super) fn records(words: &[F128]) -> Vec<AccessAdvice> {
   words
     .as_chunks::<4>()
     .0
@@ -104,7 +104,11 @@ impl NativeMachine {
     machine.micro(MicroKind::Parameters, &parameters)?;
     Ok(machine)
   }
-  fn micro(&self, kind: MicroKind, input: &[F128]) -> Result<Vec<F128>> {
+  pub(super) fn micro(
+    &self,
+    kind: MicroKind,
+    input: &[F128],
+  ) -> Result<Vec<F128>> {
     let gate = self.micro.iter().find(|g| g.kind() == kind).unwrap();
     if let Some(out) = fast_advice::micro(kind, input) {
       #[cfg(test)]
@@ -134,7 +138,7 @@ impl NativeMachine {
     run(gate, input)
   }
   pub fn next_chip(&self) -> Result<Option<Chip>> {
-    Ok(Some(match self.state[CONTROL].lo as u8 {
+    Ok(Some(match self.state[CONTROL].lo & 255 {
       0 => match self.state[0].lo as u8 {
         x if x == Phase::Eval as u8 => Chip::Fetch,
         x if x == Phase::Return as u8 || x == Phase::Copy as u8 => Chip::Resume,
@@ -149,7 +153,9 @@ impl NativeMachine {
         let op = (h.lo >> 16) as u8;
         match (instruction, op) {
           (0, 1) => {
-            if bytes::is_byte((h.lo >> 24) as u8) {
+            if collections::is_collection((h.lo >> 24) as u8) {
+              Chip::CollectionStart
+            } else if bytes::is_byte((h.lo >> 24) as u8) {
               Chip::ByteStart
             } else {
               Chip::Numeric
@@ -192,6 +198,12 @@ impl NativeMachine {
         }
       },
       10 => Chip::ByteEmit,
+      collections::ARRAY_DOWN => Chip::ArrayStep,
+      collections::ARRAY_UP => Chip::ArrayAscend,
+      collections::FINISH => Chip::CollectionFinish,
+      collections::BUILDER_NODE => Chip::BuilderNode,
+      collections::BUILDER_COPY => Chip::BuilderCopy,
+      collections::BUILDER_EMIT => Chip::BuilderEmit,
       p => bail!("pending implementation: paged micro phase {p}"),
     }))
   }
@@ -223,7 +235,7 @@ impl NativeMachine {
       value.try_into().unwrap()
     })
   }
-  fn byte_window(
+  pub(super) fn byte_window(
     &self,
     memory: &MemoryBatch<'_>,
     prefix: &[F128],
@@ -251,7 +263,7 @@ impl NativeMachine {
     Blake3Gate { nu: 3 }.eval(&input, &(), &mut out);
     out[..2].try_into().unwrap()
   }
-  fn complete(
+  pub(super) fn complete(
     &self,
     prefix: &[F128],
     action: &[F128],
@@ -306,6 +318,19 @@ impl NativeMachine {
     let advice;
     let after;
     match chip {
+      Chip::CollectionStart
+      | Chip::ArrayStep
+      | Chip::ArrayAscend
+      | Chip::CollectionFinish
+      | Chip::BuilderNode
+      | Chip::BuilderCopy
+      | Chip::BuilderEmit => {
+        let (values, next, records) =
+          self.collection_step(chip, before, memory)?;
+        advice = values;
+        after = next;
+        accesses = records;
+      },
       Chip::Fetch => {
         let cell = memory.value(block_address(function, block))?;
         advice = cell.to_vec();

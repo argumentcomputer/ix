@@ -33,7 +33,7 @@ use std::{
 };
 
 const IDENTITY: &[u8] = &[
-  b'I', b'X', b'B', b'F', 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 1, 0, 8, 0x80,
+  b'I', b'X', b'B', b'F', 1, 0, 0, 0, 2, 0, 0, 0, 1, 0, 1, 1, 1, 0, 8, 0x80,
   0x20, 64, 64, 24, 0, 0, 1, 1, 0, 1, 1, 1, 0, 0,
 ];
 const COUNTS: [usize; 11] = [1; 11];
@@ -56,7 +56,7 @@ impl Cache {
       });
     std::fs::create_dir_all(&directory).unwrap();
     let marker = directory.join("fixture-format");
-    let expected = b"IxBy/original-identity-recursive-proof-fixture/v0\n";
+    let expected = b"IxBy/original-identity-recursive-proof-fixture/v2\n";
     if marker.exists() {
       assert_eq!(std::fs::read(&marker).unwrap(), expected);
     } else {
@@ -150,10 +150,10 @@ fn native_statement(
 
 fn leaves(cache: &Cache) -> (Vec<PagedNodeProof>, EndpointAdvice) {
   let payload = b"complete original-format execution";
-  let mut input = b"IXFI\x01\0\0\0\0\0\0\0\x01\0\x06".to_vec();
+  let mut input = b"IXFI\x01\0\0\0\x02\0\0\0\x01\0\x06".to_vec();
   input.push(u8::try_from(payload.len()).unwrap());
   input.extend(payload);
-  let mut output = b"IXFO\x01\0\0\0\0\0\0\0\0\x06".to_vec();
+  let mut output = b"IXFO\x01\0\0\0\x02\0\0\0\0\x06".to_vec();
   output.push(u8::try_from(payload.len()).unwrap());
   output.extend(payload);
   let mut memory = SparseMemory::new(MemoryDepth::new(40).unwrap());
@@ -419,22 +419,30 @@ fn fresh_verify(expected: [F128; 2], proof: &[u8]) {
 #[ignore = "fresh receiver supplied only an approved setup, S and a root proof"]
 fn complete_root_receiver() {
   assert!(std::env::var_os("IXBY_COMPLETE_ROOT_RECEIVER").is_some());
-  check_root_receiver(profile(), BatchClass::Small);
+  check_root_receiver(profile(), BatchClass::Small, COUNTS);
 }
 
 #[test]
-#[ignore = "fresh receiver for the semantics-1 conversion CLI fixture; stdin contains only S and the root proof"]
-fn conversion_root_receiver() {
-  assert!(std::env::var_os("IXBY_CONVERSION_ROOT_RECEIVER").is_some());
+#[ignore = "fresh receiver for the runtime-v2 fixture; stdin contains only S and the root proof"]
+fn runtime_v2_root_receiver() {
+  assert!(std::env::var_os("IXBY_RUNTIME_V2_ROOT_RECEIVER").is_some());
   let profile =
-    FunctionalProfile::new([1, 0, 6, 6, 2, 0, 8, 128, 0, 64], 7).unwrap();
-  check_root_receiver(profile, BatchClass::Bytes);
+    FunctionalProfile::new([1, 0, 14, 14, 3, 0, 8, 128, 0, 128], 15).unwrap();
+  check_root_receiver(
+    profile,
+    BatchClass::Bytes,
+    [1, 3, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+  );
 }
 
-fn check_root_receiver(profile: FunctionalProfile, class: BatchClass) {
+fn check_root_receiver(
+  profile: FunctionalProfile,
+  class: BatchClass,
+  counts: [usize; 11],
+) {
   let started = Instant::now();
   // This entire setup is fixed before the receiver reads any proof bytes.
-  let mut compiler = PagedTreeCompiler::new(profile, class, COUNTS).unwrap();
+  let mut compiler = PagedTreeCompiler::new(profile, class, counts).unwrap();
   let verifier = compiler.verifier().unwrap();
   drop(compiler);
   eprintln!(
@@ -482,6 +490,7 @@ fn check_root_receiver(profile: FunctionalProfile, class: BatchClass) {
   let mut bad = proof.to_vec();
   bad.push(0);
   assert!(verifier.verify(expected, &bad).is_err());
+  eprintln!("fresh receiver rejected all 11 statement/proof mutations");
 }
 
 #[test]

@@ -1,5 +1,7 @@
 # State-selected original-wire dispatch
 
+> Current contract: [runtime revision 2](CompilatrixRuntimeV2Handoff.md), with format-1/semantics-2 headers, 58 opcodes, and five wire-value kinds. This report preserves component milestone measurements and their original setup identities; its remaining-work sections describe that milestone. Current complete admission and execution are documented in [paged execution](IxbyFlockPagedExecution.md).
+
 `flock-stage3/host/src/ixby/ixbf_decode/dispatch/` connects the existing
 header, thirteen record decoders, canonical naturals, guest Nat limits,
 payload cursors, strict UTF-8 and complete grammar control in a fixed circuit

@@ -127,6 +127,15 @@ impl ExecutionSlots {
       prefix.iter().copied().chain(values.iter().copied()).collect::<Vec<_>>()
     };
     match chip {
+      Chip::CollectionStart
+      | Chip::ArrayStep
+      | Chip::ArrayAscend
+      | Chip::CollectionFinish
+      | Chip::BuilderNode
+      | Chip::BuilderCopy
+      | Chip::BuilderEmit => {
+        self.collection_step(b, chip, enabled, state, advice, parameters)
+      },
       Chip::Fetch => {
         let read =
           self.code.block(b, enabled, state[0], advice.try_into().unwrap());

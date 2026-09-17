@@ -9,7 +9,6 @@ public import Ix.Ixby.Codec
 public import Ix.Ixby.Commitment
 public import Ix.Ixby.Claim
 
-/-! Functional IxBy semantics, experimental crypto codecs and commitments.
-The first proving backend is a separate `Ix.Ixby.Aiur` import so this logical
-surface stays independent of the proving FFI. This is not a production IxVM
-claim implementation or a certified Compilatrix target. -/
+/-! Functional IxBy semantics, the current IXBF codec, and execution
+commitments. Source certificates and native constraint refinement are separate
+obligations; no retired IXBY/IXBP backend is imported by this surface. -/

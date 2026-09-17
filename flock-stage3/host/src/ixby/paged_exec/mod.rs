@@ -8,6 +8,12 @@ mod byte_slots;
 #[cfg(test)]
 mod byte_tests;
 mod bytes;
+mod collection_native;
+mod collection_slots;
+#[cfg(test)]
+mod collection_tests;
+mod collection_witness;
+mod collections;
 mod fast_advice;
 mod gate;
 mod image;
@@ -29,6 +35,7 @@ mod witness;
 
 pub use batch::{BatchAdvice, BatchClass, BatchEmission, emit_batch};
 pub use bytes::ByteKind;
+pub use collections::CollectionKind;
 use flock_prover::field::F128;
 pub use gate::{MicroGate, MicroKind, MicroRow};
 pub use image::NativeImage;
@@ -119,9 +126,16 @@ pub enum Chip {
   HashCombine = 21,
   HashPush = 22,
   HashSkip = 23,
+  CollectionStart = 24,
+  ArrayStep = 25,
+  ArrayAscend = 26,
+  CollectionFinish = 27,
+  BuilderNode = 28,
+  BuilderCopy = 29,
+  BuilderEmit = 30,
 }
 impl Chip {
-  pub const ALL: [Self; 24] = [
+  pub const ALL: [Self; 31] = [
     Self::Fetch,
     Self::Resolve,
     Self::Numeric,
@@ -146,10 +160,20 @@ impl Chip {
     Self::HashCombine,
     Self::HashPush,
     Self::HashSkip,
+    Self::CollectionStart,
+    Self::ArrayStep,
+    Self::ArrayAscend,
+    Self::CollectionFinish,
+    Self::BuilderNode,
+    Self::BuilderCopy,
+    Self::BuilderEmit,
   ];
   pub fn advice_words(self) -> usize {
     match self {
       Self::Resolve | Self::Project => 4,
+      Self::CollectionStart | Self::BuilderCopy => 6,
+      Self::ArrayStep | Self::ArrayAscend => 2,
+      Self::BuilderNode => 4,
       Self::Numeric | Self::ByteStart | Self::ByteRead | Self::HashBlock => 6,
       Self::ByteAppend | Self::ByteEq => 12,
       Self::Case => 5,
@@ -158,12 +182,17 @@ impl Chip {
       | Self::ByteEmit
       | Self::HashPush
       | Self::HashSkip => 0,
+      Self::CollectionFinish | Self::BuilderEmit => 0,
       _ => 2,
     }
   }
   pub fn accesses(self) -> usize {
     match self {
       Self::Fetch => 1,
+      Self::CollectionStart => 5,
+      Self::ArrayStep | Self::CollectionFinish | Self::BuilderCopy => 3,
+      Self::ArrayAscend | Self::BuilderNode => 2,
+      Self::BuilderEmit => 1,
       Self::Resolve => 3,
       Self::Numeric => 6,
       Self::Control | Self::Call => 4,

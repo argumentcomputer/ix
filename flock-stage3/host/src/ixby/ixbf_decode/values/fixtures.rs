@@ -23,6 +23,7 @@ pub(super) enum Value {
   Scalar(Scalar),
   Constructor(usize, Vec<Value>),
   Pap(usize, Vec<Value>),
+  Array(Vec<Value>),
   Erased,
 }
 #[derive(Clone)]
@@ -138,6 +139,7 @@ impl Fixture {
       assert_eq!(rec[CHILDREN], word(children.len() as u128));
       match &node.kind {
         ixbf::ValueKind::Erased => assert_eq!(rec[KIND], word(3)),
+        ixbf::ValueKind::Array => assert_eq!(rec[KIND], word(4)),
         ixbf::ValueKind::Constructor(id) => {
           assert_eq!(rec[KIND], word(1));
           assert_eq!(
@@ -210,7 +212,7 @@ pub(super) fn encode(
 ) -> Fixture {
   let mut bytes =
     if kind == GrammarKind::Input { b"IXFI" } else { b"IXFO" }.to_vec();
-  bytes.extend(b"\x01\0\0\0\0\0\0\0");
+  bytes.extend(b"\x01\0\0\0\x02\0\0\0");
   if kind == GrammarKind::Input {
     nat(&mut bytes, values.len() as u128);
   }
@@ -264,6 +266,11 @@ fn encode_value(
       nat(bytes, *i as u128);
       record[KIND] = word(2);
       record[REFERENCE] = word(*i as u128);
+      Some(children)
+    },
+    Value::Array(children) => {
+      bytes.push(4);
+      record[KIND] = word(4);
       Some(children)
     },
     Value::Scalar(s) => {
@@ -393,6 +400,11 @@ pub(super) fn corpus(
     ),
     ("chain", Constructor(0, vec![Constructor(0, vec![Pap(0, vec![Erased])])])),
     ("pap", Pap(1, vec![])),
+    ("empty-array", Array(vec![])),
+    (
+      "nested-array",
+      Array(vec![Array(vec![Scalar(S::Nat(vec![37]))]), Erased]),
+    ),
   ];
   let mut out: Vec<_> = values
     .into_iter()

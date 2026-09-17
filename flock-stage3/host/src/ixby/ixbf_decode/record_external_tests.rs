@@ -634,6 +634,10 @@ fn forest(
         fields[5] = node.children.len() as u128;
       },
       ixbf::ValueKind::Erased => fields[0] = 3,
+      ixbf::ValueKind::Array => {
+        fields[0] = 4;
+        fields[5] = node.children.len() as u128;
+      },
     }
     check.record(
       RecordKind::Value,
@@ -661,7 +665,7 @@ fn forest(
       ixbf::ValueKind::PartialApplication(function) => {
         check.arity(*function, node.children.len(), true)
       },
-      ixbf::ValueKind::Erased => {},
+      ixbf::ValueKind::Erased | ixbf::ValueKind::Array => {},
     }
   }
   assert_eq!(check.cursor, source.len());
@@ -697,7 +701,7 @@ fn original_compiler_corpus_and_full_init_body_records_match_constraints() {
     external_tests::read(&external_tests::path("IXBY_IXBF_STAGE2_IMAGE"));
   assert_eq!(
     blake3::hash(&image).to_hex().as_str(),
-    crate::ixby::test_support::INIT_PROGRAM_V1_BLAKE3
+    crate::ixby::test_support::INIT_PROGRAM_V2_BLAKE3
   );
   let mut init = Census::default();
   program(&image, &tables, &mut init);
@@ -745,15 +749,9 @@ fn original_identity_and_init_transport_value_records_match_constraints() {
     };
     if init {
       for (bytes, hash) in [
-        (&program, crate::ixby::test_support::INIT_PROGRAM_V1_BLAKE3),
-        (
-          &input,
-          "713a6a0b72dbaad673192c38c6e10115b1386482394cc22a945837c1a03f11c8",
-        ),
-        (
-          &output,
-          "3e6cb8264cfb6d253c41f22aa05221805a58f857d73877305adfed0781115a28",
-        ),
+        (&program, crate::ixby::test_support::INIT_PROGRAM_V2_BLAKE3),
+        (&input, crate::ixby::test_support::INIT_INPUT_V2_BLAKE3),
+        (&output, crate::ixby::test_support::INIT_OUTPUT_V2_BLAKE3),
       ] {
         assert_eq!(blake3::hash(bytes).to_hex().as_str(), hash);
       }

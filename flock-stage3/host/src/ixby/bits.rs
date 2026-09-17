@@ -161,22 +161,6 @@ pub(super) fn require_zero(
   violations.push(b.and(enabled, nonzero));
 }
 
-/// Full-width bounded count and live-prefix flags. No truncated addressing.
-pub(super) fn bounded_prefix(
-  b: &mut BooleanR1csBuilder,
-  one: usize,
-  violations: &mut Vec<usize>,
-  count: &[usize],
-  capacity: usize,
-) -> Vec<usize> {
-  let matches: Vec<_> = (0..=capacity)
-    .map(|value| equal_constant(b, one, count, value as u64))
-    .collect();
-  let valid = b.xor(&matches, one);
-  require(b, one, violations, one, valid);
-  (0..capacity).map(|index| b.xor(&matches[index + 1..], one)).collect()
-}
-
 /// Little-endian addition with the carry retained separately. The two carry
 /// products are mutually exclusive, so their XOR is the ordinary carry bit.
 pub(super) fn add(

@@ -70,9 +70,9 @@ fn rich_program() -> Vec<u8> {
 }
 
 // Independently hand-encoded identity program. Functional format 1, semantics
-// 1; one function, arity 1, one block, return local 0. Not IXBY profile bytes.
+// 2; one function, arity 1, one block, return local 0. Not IXBY profile bytes.
 const IDENTITY: &[u8] = &[
-  b'I', b'X', b'B', b'F', 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 1, 0, 8, 0x80,
+  b'I', b'X', b'B', b'F', 1, 0, 0, 0, 2, 0, 0, 0, 1, 0, 1, 1, 1, 0, 8, 0x80,
   0x20, 64, 64, 24, 0, 0, 1, 1, 0, 1, 1, 1, 0, 0,
 ];
 
@@ -87,11 +87,11 @@ fn independently_encoded_identity_roundtrips_with_original_ranges() {
 }
 
 #[test]
-fn conversion_opcodes_are_unary_and_require_program_semantics_one() {
-  for opcode in [45, 46] {
+fn conversion_opcodes_are_unary_and_require_current_semantics() {
+  for opcode in [45, 46, 47, 48] {
     // Independent complete program: arity one, apply the unary opcode, return.
     let mut program = vec![
-      b'I', b'X', b'B', b'F', 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2, 2, 2, 0, 8, 128,
+      b'I', b'X', b'B', b'F', 1, 0, 0, 0, 2, 0, 0, 0, 1, 0, 2, 2, 2, 0, 8, 128,
       1, 0, 64, 3, 0, 0, 1, 1, 0, 2, 1, 0, 1, opcode, 1, 0, 0, 1, 2, 1, 0, 1,
     ];
     let artifact = decode_program(&program, DecodeLimits::default()).unwrap();
@@ -111,7 +111,7 @@ fn conversion_opcodes_are_unary_and_require_program_semantics_one() {
   reject_program(&old);
   let artifact = decode_program(IDENTITY, DecodeLimits::default()).unwrap();
   let mut input = scalar_input(Scalar::Nat(n(1)));
-  assert_eq!(&input[8..12], &[0; 4]);
+  assert_eq!(&input[8..12], &[2, 0, 0, 0]);
   input[8] = 1;
   assert!(decode_input(&artifact, &input, DecodeLimits::default()).is_err());
 }
@@ -126,12 +126,14 @@ fn functional_opcode_names_map_explicitly_without_aliases() {
       Some(opcode) => {
         assert!(native.insert(opcode));
         assert_eq!(
-          super::super::decode::primitive_arity(opcode),
+          super::super::primitive::registry::primitive_arity(opcode),
           Some(primitive.arity())
         );
       },
       None => assert!(
-        (7..=9).contains(&primitive.opcode()) || primitive.is_conversion()
+        (7..=9).contains(&primitive.opcode())
+          || primitive.is_conversion()
+          || primitive.opcode() >= 49
       ),
     }
   }
@@ -139,9 +141,41 @@ fn functional_opcode_names_map_explicitly_without_aliases() {
     native.into_iter().collect::<Vec<_>>(),
     (0..42).collect::<Vec<_>>()
   );
-  for opcode in 47..=u8::MAX {
+  for opcode in 58..=u8::MAX {
     assert_eq!(Primitive::from_opcode(opcode), None);
   }
+}
+
+#[test]
+fn arrays_use_shared_node_budgets_and_distinct_canonical_tags() {
+  let artifact = decode_program(IDENTITY, DecodeLimits::default()).unwrap();
+  // One array root, an empty child array, and one Nat child.
+  let bytes = b"IXFI\x01\0\0\0\x02\0\0\0\x01\x04\x02\x04\0\0\0\x25";
+  let input = decode_input(&artifact, bytes, DecodeLimits::default()).unwrap();
+  assert_eq!(input.encode(), bytes);
+  let nodes = input.values().nodes();
+  assert!(matches!(nodes[0].kind, ValueKind::Array));
+  assert_eq!(nodes[0].children, [1, 2]);
+  assert!(matches!(nodes[1].kind, ValueKind::Array));
+  assert_eq!(input.values().depth(), 2);
+  for end in 0..bytes.len() {
+    assert!(
+      decode_input(&artifact, &bytes[..end], DecodeLimits::default()).is_err()
+    );
+  }
+  for tag in [5, 12, 255] {
+    let mut bad = bytes.to_vec();
+    bad[13] = tag;
+    assert!(decode_input(&artifact, &bad, DecodeLimits::default()).is_err());
+  }
+  let small = modified(|a| a.limits.input_nodes = n(2));
+  let small = decode_program(&small, DecodeLimits::default()).unwrap();
+  assert!(decode_input(&small, bytes, DecodeLimits::default()).is_err());
+  let large = modified(|a| a.limits.input_nodes = n(1) << 40);
+  let large = decode_program(&large, DecodeLimits::default()).unwrap();
+  let mut hostile = bytes[..14].to_vec();
+  hostile.extend([0x80, 0x80, 0x80, 0x80, 0x10]); // 2^32 children
+  assert!(decode_input(&large, &hostile, DecodeLimits::default()).is_err());
 }
 
 #[test]
@@ -680,7 +714,7 @@ fn byte_arrays_borrow_the_canonical_buffer_and_output_cannot_select_its_arity()
   assert!(
     decode_input(&artifact, &wrong_domain, DecodeLimits::default()).is_err()
   );
-  let mut output = b"IXFO\x01\0\0\0\0\0\0\0".to_vec();
+  let mut output = b"IXFO\x01\0\0\0\x02\0\0\0".to_vec();
   output.push(3);
   assert!(decode_output(&artifact, &output, DecodeLimits::default()).is_ok());
   output.push(3);

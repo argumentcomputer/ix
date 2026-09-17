@@ -1,25 +1,24 @@
 # Complete functional binary intake
 
-`flock-stage3/host/src/ixby/ixbf` reads **IXBF format 1, semantics 1** programs
-and format-1/semantics-0 IXFI/IXFO transports. It is a host-side foundation
-for witness generation and sizing, not a constrained decoder or a Flock
-proving-profile adapter. No native Exec factory consumes its acceptance bit,
-decoded tables, or inventory. Existing IXBY/IXBI/IXBO codecs and keys are
-unchanged.
+`flock-stage3/host/src/ixby/ixbf` reads **format 1, semantics 2** for
+IXBF programs and IXFI/IXFO transports. The reader validates canonical bytes
+and supplies witness-generation models; its acceptance is not proof
+verification. The [paged admission](IxbyFlockPagedAdmission.md) and
+[execution](IxbyFlockPagedExecution.md) paths constrain the original bytes.
 
-The program revision is breaking: semantics-0 programs reject. Opcodes `45`
-and `46` add unary Nat → Word32 and Word32 → Nat conversions. The
-[compiler handoff](CompilatrixNatWord32Handoff.md) specifies their limits,
-encoding, compiler integration, and current validation. Earlier measurements
-below describe the semantics-0 milestone and its original artifacts.
+The [runtime handoff](CompilatrixRuntimeV2Handoff.md) defines all 58 primitives,
+array values, internal builders, scalar conversions, and physical bounds.
+Older functional revisions and the retired IXBY formats reject. Earlier
+measurements below retain their original artifact/setup identities.
 
 ## Exact boundary
 
 The reader covers every functional scalar, operand, operation, instruction,
-primitive, constructor identity, and closure/PAP value. Explicit opcode-name
+primitive, constructor identity, closure/PAP, and array value. Explicit opcode-name
 mapping covers all 42 native crypto/Nat operations; the three String operations
-and two conversions have no opcode in that older native registry. The paged
-execution backend implements the conversions directly. Mapping names does not
+and eleven new revision-2 primitives plus the two revision-1 conversions
+have no opcode in that internal arithmetic registry. The paged execution
+backend implements the conversions and collections directly. Mapping names does not
 prove their correspondence.
 
 All scalar naturals and potentially unbounded metadata retain arbitrary
@@ -39,7 +38,7 @@ The admitted model exposes immutable access to its original byte buffer and
 typed syntax. Large byte/string payloads borrow the buffer. Values use flat,
 decoder-owned preorder nodes and an explicit parse stack; both parsing and
 destruction avoid recursive ownership. One shared node budget covers every
-root, constructor child, and PAP capture.
+root, constructor child, and PAP capture, and array element.
 
 Caller-selected loader defaults are 64 MiB per file, 8,192 bytes per LEB128
 integer, 1,048,576 syntax nodes, 1,048,576 value nodes, and depth 1,024. The
@@ -78,8 +77,8 @@ bounds, malformed/truncated/nonminimal data, dead-code validation, whole-forest
 fuel, and a 2,048-deep value with an explicit loader upgrade. Two additional
 opt-in tests check an independent compiler corpus and pinned real Init files.
 The original exported corpus passed for 81 programs and its structured I/O
-fixture. The current coverage check requires all **47** primitives, seven
-scalars, eight operations, and eight instruction kinds. Re-export it after
+fixture. The current coverage check requires all **58** primitives, seven
+scalars, five wire-value kinds, eight operations, and eight instruction kinds. Re-export it after
 the compiler integration; the old 45-primitive corpus is insufficient.
 
 ```sh
@@ -99,18 +98,17 @@ The independently built Compilatrix `check-ixby-binary <export-directory>`
 command produces the corpus. The real-artifact test requires the exact retained
 hashes and claim; it does not silently accept a substitute fixture.
 
-The retained Init parser fixture now uses semantics 1: change only byte 8 of
-the original 1,002,355-byte program from `0` to `1`. Its exact raw BLAKE3 is
-`ad104d099c9e7dbf2ac6466d8aa8d55bc06c18d90bcb0083ed9f66153c492db4`.
-The original semantics-0 hash was
-`a661dfede7c18bfb915d031393ffb258e65c21940d48039cdf44ab16428fe301`.
-The I/O hashes, body, offsets, and census remain fixed. This fixture exercises
-the current parser; it is not an optimized compiler image or a reuse of an old
-execution proof. Production intake performs no header migration.
+The retained Init parser regression changes only byte 8 from `0` to `2` in
+all three original artifacts. Their bodies, lengths, offsets, and claim stay
+fixed. Exact current raw BLAKE3 pins are:
 
-The [constrained codec components](IxbyFunctionalCodec.md) now check original
-header metadata, natural payloads and ByteArray ranges, with isolated component
-proofs. They do not yet establish whole-image admission or the identity bridge.
-The remaining constrained decoder/identity bridge, streaming execution witness,
-scalable memory/code access, full-state segment composition, and formal
-correspondence remain separate work. See the [scaling plan](IxbyStage3ScalePlan.md).
+| Artifact | BLAKE3 |
+| --- | --- |
+| Program | `e2bf515b731c1a00110e19e2ab8478bcf4be002eb3f60de94c0b73775777fea7` |
+| Input | `a69ff49c0fcb870029ac92911748cd1ac8c66c2678ca38d3d9ad3a884c21bf8c` |
+| Output | `971b7e63a5363c71bc4bf30421b7f06088a02329755473b8e751173beb11719a` |
+
+These are explicit test fixtures, not a new compiler export or a transfer of
+an old proof to a new statement. Production intake performs no header migration.
+Compiler integration must export new artifacts and a complete current corpus.
+The native circuit-to-reference refinement remains a separate obligation.

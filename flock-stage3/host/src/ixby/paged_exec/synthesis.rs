@@ -41,6 +41,9 @@ fn copy_output(
   }
 }
 pub(super) fn build(kind: MicroKind) -> BooleanR1csPlan {
+  if let MicroKind::Collection(kind) = kind {
+    return collections::build(kind);
+  }
   if let MicroKind::Object(kind) = kind {
     return objects::build(kind);
   }
@@ -340,7 +343,10 @@ pub(super) fn build(kind: MicroKind) -> BooleanR1csPlan {
           *value = vec![zero; 128];
         }
       },
-      MicroKind::Parameters | MicroKind::Object(_) | MicroKind::Byte(_) => {
+      MicroKind::Parameters
+      | MicroKind::Object(_)
+      | MicroKind::Byte(_)
+      | MicroKind::Collection(_) => {
         unreachable!()
       },
     }

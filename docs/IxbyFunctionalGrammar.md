@@ -1,5 +1,7 @@
 # Constrained original-wire grammar control
 
+> Current contract: [runtime revision 2](CompilatrixRuntimeV2Handoff.md), with format-1/semantics-2 headers, 58 opcodes, and five wire-value kinds. This report preserves component milestone measurements and their original setup identities; its remaining-work sections describe that milestone. Current complete admission and execution are documented in [paged execution](IxbyFlockPagedExecution.md).
+
 `GrammarStepGate` adds the control relation for the complete IXBF program
 grammar and IXFI/IXFO preorder value forests. It selects the required decoder
 event and bounds, threads all parser state, accounts for outstanding records

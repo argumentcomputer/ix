@@ -15,11 +15,11 @@ private def statement : Commitment.Statement := ⟨digest 1, digest 2, digest 3,
 private def publicExpected : PublicStatement := publicStatement statement
 
 private def execGolden : Bytes :=
-  #[0x49, 0x58, 0x42, 0x45, 0, 0, 0, 0] ++
+  #[0x49, 0x58, 0x42, 0x45, 1, 0, 0, 0, 2, 0, 0, 0] ++
     Array.replicate 32 1 ++ Array.replicate 32 2 ++
     Array.replicate 32 3 ++ Array.replicate 32 4
 private def publicGolden : Bytes :=
-  #[0x49, 0x58, 0x42, 0x52, 0, 0, 0, 0] ++
+  #[0x49, 0x58, 0x42, 0x52, 1, 0, 0, 0, 2, 0, 0, 0] ++
     Array.replicate 32 1 ++ Array.replicate 32 2 ++ Array.replicate 32 4
 
 private def identity : Program := { functions := #[{
@@ -49,8 +49,8 @@ private def checks : IO (List Check) := do
   return [
     ("full Exec golden wire", okIs (encodeExec statement) execGolden),
     ("public result golden wire", okIs (encodePublic publicExpected) publicGolden),
-    ("full Exec size is 136", execGolden.size == execWireBytes),
-    ("public result size is 104", publicGolden.size == publicWireBytes),
+    ("full Exec size is 140", execGolden.size == execWireBytes),
+    ("public result size is 108", publicGolden.size == publicWireBytes),
     ("full Exec round trip", match decodeExec execGolden with
       | .ok decoded => decoded.value == statement | _ => false),
     ("public result round trip", match decodePublic publicGolden with
@@ -61,8 +61,8 @@ private def checks : IO (List Check) := do
       (fun size => rejects (decodePublic (publicGolden.extract 0 size)))),
     ("full Exec trailing data rejected", rejects (decodeExec (execGolden.push 0))),
     ("public result trailing data rejected", rejects (decodePublic (publicGolden.push 0))),
-    ("full Exec version rejected", rejects (decodeExec (execGolden.set! 4 1))),
-    ("public result version rejected", rejects (decodePublic (publicGolden.set! 4 1))),
+    ("full Exec version rejected", rejects (decodeExec (execGolden.set! 4 0))),
+    ("public result version rejected", rejects (decodePublic (publicGolden.set! 4 0))),
     ("full Exec wrong domain rejected", rejects (decodeExec (execGolden.set! 3 0x52))),
     ("public result wrong domain rejected", rejects (decodePublic (publicGolden.set! 3 0x45))),
     ("Exec and public codecs cannot be substituted", rejects (decodeExec publicGolden) &&
@@ -110,6 +110,9 @@ private def checks : IO (List Check) := do
     ("wrong guest changes expected statement", different (expected 7)
       (IxonAdapter.expected {} trueCode (claim 7))),
     ("wrong profile changes expected statement", different (expected 7)
+      (IxonAdapter.expected { maxSteps := 100 }
+        (bytesOf (Codec.encodeProgram { maxSteps := 100 } identity)) (claim 7))),
+    ("program must agree with the committed profile", rejects
       (IxonAdapter.expected { maxSteps := 100 } code (claim 7))),
     ("malformed guest cannot produce an approved statement", rejects
       (IxonAdapter.expected {} (code.push 0) (claim 7))),

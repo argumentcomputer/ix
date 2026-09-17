@@ -22,7 +22,7 @@ pub(super) fn input(bytes: &[u8], length: u64) -> Vec<F128> {
 }
 
 pub(super) fn bytes(fields: &[u128; HEADER_FIELDS], body: &[u8]) -> Vec<u8> {
-  let mut bytes = b"IXBF\x01\0\0\0\x01\0\0\0".to_vec();
+  let mut bytes = b"IXBF\x01\0\0\0\x02\0\0\0".to_vec();
   for field in fields {
     bytes.extend(tests::natural_bytes(&BigUint::from(*field)));
   }

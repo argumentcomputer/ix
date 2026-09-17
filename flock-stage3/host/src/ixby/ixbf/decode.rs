@@ -346,6 +346,11 @@ impl<'a> Reader<'a> {
           (ValueKind::PartialApplication(function), count)
         },
         3 => (ValueKind::Erased, 0),
+        4 => {
+          let count = self.count(&artifact.limits.input_nodes)?;
+          ensure!(count < 1usize << 32, "functional array length");
+          (ValueKind::Array, count)
+        },
         tag => bail!("invalid functional value tag {tag}"),
       };
       let node = forest.nodes.len();

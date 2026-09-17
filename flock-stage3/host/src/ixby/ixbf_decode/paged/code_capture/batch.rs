@@ -21,7 +21,7 @@ pub const DEPTH: usize = 14;
 pub const NU: usize = 10;
 pub const PUBLIC_WORDS: usize = 81;
 pub const DOMAIN: &[u8] =
-  b"IxBy/Flock/paged-code-capture:d14:steps32:nat128:cells32:parents255:v1";
+  b"IxBy/Flock/paged-code-capture:d14:steps32:nat128:cells32:parents255:v2";
 fn config() -> DispatchConfig {
   DispatchConfig {
     kind: GrammarKind::Program,

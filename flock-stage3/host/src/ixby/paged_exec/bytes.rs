@@ -100,7 +100,7 @@ fn byte_vector(s: &mut S, pointer: &[usize], length: &[usize]) -> Bits {
 fn length(s: &S, v: &[usize]) -> Bits {
   s.wide(&v[64..100], 64)
 }
-fn byte_span(s: &mut S, e: usize, v: &[usize], allocated: &[usize]) {
+pub(super) fn byte_span(s: &mut S, e: usize, v: &[usize], allocated: &[usize]) {
   s.zeros(e, &v[45..64]);
   s.zeros(e, &v[100..]);
   let empty = s.eqc(&v[64..100], 0);

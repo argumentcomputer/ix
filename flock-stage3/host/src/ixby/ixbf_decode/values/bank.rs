@@ -106,7 +106,7 @@ pub(super) fn finish(b: &mut Builder, g: &ValueGate) {
       b.b.and(on, absent)
     };
     same(b, last, &span[64..], &cursor[..64]);
-    let kinds: Vec<_> = (0..4).map(|k| eqc(b, &word(at + KIND), k)).collect();
+    let kinds: Vec<_> = (0..5).map(|k| eqc(b, &word(at + KIND), k)).collect();
     let valid = b.any(&kinds);
     b.require(on, valid);
     let scalar = b.b.and(on, kinds[0]);
@@ -116,7 +116,10 @@ pub(super) fn finish(b: &mut Builder, g: &ValueGate) {
     let refs = b.b.and(on, refs);
     let no_ref = b.not(refs);
     b.require_zero(no_ref, &word(at + REFERENCE));
-    b.require_zero(no_ref, &word(at + CHILDREN));
+    let aggregate = b.any(&[kinds[1], kinds[2], kinds[4]]);
+    let aggregate = b.b.and(on, aggregate);
+    let leaf = b.not(aggregate);
+    b.require_zero(leaf, &word(at + CHILDREN));
     for (kind, cap) in [
       (1, g.config.registry.constructors()),
       (2, g.config.registry.functions()),

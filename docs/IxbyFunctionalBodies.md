@@ -1,5 +1,7 @@
 # Source-bound typed executable bodies
 
+> Current contract: [runtime revision 2](CompilatrixRuntimeV2Handoff.md), with format-1/semantics-2 headers, 58 opcodes, and five wire-value kinds. This report preserves component milestone measurements and their original setup identities; its remaining-work sections describe that milestone. Current complete admission and execution are documented in [paged execution](IxbyFlockPagedExecution.md).
+
 `flock-stage3/host/src/ixby/ixbf_decode/bodies/` materializes complete typed
 original-wire IXBF function and block bodies. Every operand, scalar payload,
 operation, callee, projection, successor and constructor alternative comes
@@ -47,7 +49,7 @@ completed declaration registry and captured bodies. It requires Done/EOF,
 exhausted obligations, empty current state, exact function/block coverage,
 header equality, ordered complete block spans and contiguous function spans
 ending at EOF. It checks canonical instruction fields, exact operand counts,
-all 47 functional primitive arities, ordered operand/alternative prefixes, local
+all 58 functional primitive arities, ordered operand/alternative prefixes, local
 and target bounds, unique alternatives, scalar canonicality and Nat high bits.
 Existing reference checks supply constructor/callee arities and successor frames.
 

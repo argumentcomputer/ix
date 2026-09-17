@@ -6,6 +6,7 @@
 
 mod finish;
 mod prepare;
+pub mod registry;
 #[cfg(test)]
 pub(crate) mod tests;
 mod word;

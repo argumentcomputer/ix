@@ -4,12 +4,16 @@ use crate::sizing::CountedGate;
 pub(super) fn build(b: &mut Builder, g: &ValueGate) {
   let (commit, tags) = events(b, 0, 1);
   let value = b.b.and(commit, tags[9]);
-  let kinds: Vec<_> = (0..4).map(|i| eqc(b, &word(2), i)).collect();
+  let kinds: Vec<_> = (0..5).map(|i| eqc(b, &word(2), i)).collect();
   let valid = b.any(&kinds);
   b.require(value, valid);
   let ctor = b.b.and(value, kinds[1]);
   let pap = b.b.and(value, kinds[2]);
   let refs = b.any(&[ctor, pap]);
+  let array = b.b.and(value, kinds[4]);
+  for i in 3..7 {
+    b.require_zero(array, &word(i));
+  }
   let leaf = b.any(&[kinds[0], kinds[3]]);
   let leaf = b.b.and(value, leaf);
   for i in 3..8 {

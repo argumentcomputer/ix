@@ -10,7 +10,7 @@ fn records(words: &[Wire]) -> Vec<AccessWires> {
     .collect()
 }
 impl ExecutionSlots {
-  fn byte_window(
+  pub(super) fn byte_window(
     &self,
     b: &mut impl CircuitEmitter,
     prefix: &[Wire],

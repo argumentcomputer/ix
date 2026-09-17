@@ -139,6 +139,7 @@ pub enum ValueKind<'a> {
   Constructor(ConstructorId),
   PartialApplication(usize),
   Erased,
+  Array,
 }
 
 /// Flat, decoder-owned preorder storage avoids recursive parse/drop stacks.

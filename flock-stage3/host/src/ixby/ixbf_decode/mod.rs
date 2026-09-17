@@ -76,7 +76,7 @@ pub use utf8::{Utf8ChunkGate, Utf8ChunkRow, Utf8ChunkSlot, Utf8ChunkWires};
 
 /// Component semantics revision; this is not the IXBF format version, an
 /// IXBP profile revision, or authorization to use these codecs in Exec.
-pub const CODEC_REVISION: u32 = 1;
+pub const CODEC_REVISION: u32 = 2;
 
 /// Explicit local codec capacity, not an implicit change to a guest's limits.
 pub const MAX_NAT_BITS: usize = 4096;

@@ -15,7 +15,7 @@ pub(super) fn plan(op: OutputBytesOp) -> crate::boolean::BooleanR1csPlan {
     let length = word(2)[64..128].to_vec();
     bound(b, b.one, &length, 1 << 24);
     let source = [word(3), word(4)].concat();
-    let fixed = *b"IXFO\x01\0\0\0\0\0\0\0\0\x06";
+    let fixed = *b"IXFO\x01\0\0\0\x02\0\0\0\0\x06";
     for (i, byte) in fixed.into_iter().enumerate() {
       same(b, b.one, &source[8 * i..8 * i + 8], &b.constant(8, byte as u64));
     }

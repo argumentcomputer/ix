@@ -5,7 +5,6 @@ use crate::{
   hash::Blake3Gate,
   ixby::{
     auth_memory::{MemoryGate, multi::MultiGate},
-    decode::PrimitiveSet,
     execution_order::OrderGate,
     ixbf_decode::paged::proof_support::{Driver, driver},
     memory_log::{AuditGate, BooleanSwitchGate, RecordPackingGate},
@@ -13,6 +12,7 @@ use crate::{
     paged_frame::FrameGate,
     paged_nat::Nat128Gate,
     paged_primitive::PrimitiveRouteGate,
+    primitive::registry::PrimitiveSet,
     primitive::{PrimitiveFinishGate, PrimitivePrepareGate},
     select::SelectWordsGate,
     wide_fuel::Fuel64StepGate,

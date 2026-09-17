@@ -21,7 +21,7 @@ use crate::ixby::{
 use flock_prover::circuit::builder::GateType;
 
 const IDENTITY: &[u8] = &[
-  b'I', b'X', b'B', b'F', 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 1, 0, 8, 0x80,
+  b'I', b'X', b'B', b'F', 1, 0, 0, 0, 2, 0, 0, 0, 1, 0, 1, 1, 1, 0, 8, 0x80,
   0x20, 64, 64, 24, 0, 0, 1, 1, 0, 1, 1, 1, 0, 0,
 ];
 fn profile() -> FunctionalProfile {
@@ -30,10 +30,10 @@ fn profile() -> FunctionalProfile {
 // Join independently emitted actual statements. This helper checks every
 // component circuit; it is never part of the endpoint or recursive verifier.
 fn fixture(payload: &[u8]) -> EndpointAdvice {
-  let mut input = b"IXFI\x01\0\0\0\0\0\0\0\x01\0\x06".to_vec();
+  let mut input = b"IXFI\x01\0\0\0\x02\0\0\0\x01\0\x06".to_vec();
   input.push(payload.len() as u8);
   input.extend(payload);
-  let mut output = b"IXFO\x01\0\0\0\0\0\0\0\0\x06".to_vec();
+  let mut output = b"IXFO\x01\0\0\0\x02\0\0\0\0\x06".to_vec();
   output.push(payload.len() as u8);
   output.extend(payload);
   let mut memory = SparseMemory::new(MemoryDepth::new(40).unwrap());

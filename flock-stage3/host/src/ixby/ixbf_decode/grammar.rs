@@ -764,7 +764,7 @@ fn build_plan(kind: GrammarKind) -> BooleanR1csPlan {
     RecordKind::Value,
     [state[LIMITS + 4].clone(), state[FUNCTIONS].clone(), remaining],
   );
-  let tags = e.tags(enabled, 0, 4);
+  let tags = e.tags(enabled, 0, 5);
   let pending = e.minus(enabled, &state[PENDING], &one);
   let pending = e.plus(enabled, &pending, &f[5]);
   let committed = e.plus(enabled, &pending, &seen);

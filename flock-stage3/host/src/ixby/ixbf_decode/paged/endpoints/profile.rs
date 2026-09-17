@@ -1,7 +1,7 @@
 use anyhow::{Result, ensure};
 use flock_prover::field::F128;
 
-/// Explicit original-format profile, distinct from the earlier IXBP codec.
+/// Current complete-functional execution profile.
 /// Limits are in original IXBF order. Physical Nat128, memory and instruction
 /// capacities belong to the proving setup; this does not broaden those limits.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -23,7 +23,7 @@ impl FunctionalProfile {
   pub fn max_steps(&self) -> u64 {
     self.max_steps
   }
-  /// IXFP, profile revision 0, original format 1, semantics 1, ten u128
+  /// IXFP, profile revision 0, artifact format 1, semantics 2, ten u128
   /// little-endian limits, then the u64 fuel budget: exactly 184 bytes.
   pub fn encode(&self) -> [u8; 184] {
     let mut out = [0; 184];

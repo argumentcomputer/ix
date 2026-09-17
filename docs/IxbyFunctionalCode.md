@@ -1,5 +1,7 @@
 # Authenticated typed code access
 
+> Current contract: [runtime revision 2](CompilatrixRuntimeV2Handoff.md), with format-1/semantics-2 headers, 58 opcodes, and five wire-value kinds. This report preserves component milestone measurements and their original setup identities; its remaining-work sections describe that milestone. Current complete admission and execution are documented in [paged execution](IxbyFlockPagedExecution.md).
+
 `flock-stage3/host/src/ixby/ixbf_decode/code/` hashes the actual completed
 typed Program records and reads them through authenticated BLAKE3 chunks.
 Consumers carry a requested record and its chunk handles, without carrying

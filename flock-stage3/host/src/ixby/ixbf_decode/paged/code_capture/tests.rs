@@ -93,7 +93,7 @@ pub(in crate::ixby::ixbf_decode::paged) fn sample() -> Vec<u8> {
     ret.extend(scalar);
     functions.push(vec![(1, ret)]);
   }
-  let mut source = b"IXBF\x01\0\0\0\x01\0\0\0".to_vec();
+  let mut source = b"IXBF\x01\0\0\0\x02\0\0\0".to_vec();
   for n in [
     1024, 256, 256, 128, 64, 1024, 65536, 4096, 16777216, 16777216, 100000, 0,
     2,

@@ -1361,7 +1361,7 @@ fn codec_record_domains_tags_and_fixed_public_templates_are_distinct() {
 }
 
 const GRAMMAR_IDENTITY: &[u8] = &[
-  b'I', b'X', b'B', b'F', 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 1, 0, 8, 0x80,
+  b'I', b'X', b'B', b'F', 1, 0, 0, 0, 2, 0, 0, 0, 1, 0, 1, 1, 1, 0, 8, 0x80,
   0x20, 64, 64, 24, 0, 0, 1, 1, 0, 1, 1, 1, 0, 0,
 ];
 
@@ -1418,7 +1418,7 @@ fn grammar_forest_fixture() -> (Vec<F128>, Vec<F128>) {
   program[18] = 3;
   let artifact =
     ixbf::decode_program(&program, ixbf::DecodeLimits::default()).unwrap();
-  let source = b"IXFI\x01\0\0\0\0\0\0\0\x02\x02\0\x01\x03\x03";
+  let source = b"IXFI\x01\0\0\0\x02\0\0\0\x02\x02\0\x01\x03\x03";
   let input_model =
     ixbf::decode_input(&artifact, source, ixbf::DecodeLimits::default())
       .unwrap();
@@ -1502,7 +1502,7 @@ fn grammar_scalar_fixture(string: bool) -> (Vec<F128>, Vec<F128>) {
     ixbf::decode_program(&program, ixbf::DecodeLimits::default()).unwrap();
   let prefix = header_tests::input(&program, program.len() as u64);
   let header = external_tests::expected_header(&artifact);
-  let mut source = b"IXFO\x01\0\0\0\0\0\0\0\0".to_vec();
+  let mut source = b"IXFO\x01\0\0\0\x02\0\0\0\0".to_vec();
   source.push(u8::from(string));
   let natural = (BigUint::from(1u8) << 64usize) + 17u8;
   let mut text = vec![b'a'; 31];
@@ -1764,7 +1764,7 @@ fn retained_init_call_and_callee_records_verify_in_isolation() {
     external_tests::read(&external_tests::path("IXBY_IXBF_STAGE2_IMAGE"));
   assert_eq!(
     blake3::hash(&bytes).to_hex().as_str(),
-    crate::ixby::test_support::INIT_PROGRAM_V1_BLAKE3
+    crate::ixby::test_support::INIT_PROGRAM_V2_BLAKE3
   );
   let artifact =
     ixbf::decode_program(&bytes, ixbf::DecodeLimits::default()).unwrap();
@@ -1972,7 +1972,7 @@ fn retained_init_prefix_and_decoded_budget_verify_in_isolation() {
     external_tests::read(&external_tests::path("IXBY_IXBF_STAGE2_IMAGE"));
   assert_eq!(
     blake3::hash(&bytes).to_hex().as_str(),
-    crate::ixby::test_support::INIT_PROGRAM_V1_BLAKE3
+    crate::ixby::test_support::INIT_PROGRAM_V2_BLAKE3
   );
   let artifact = crate::ixby::ixbf::decode_program(
     &bytes,
@@ -1999,7 +1999,7 @@ fn retained_init_byte_spans_and_program_limit_verify_in_isolation() {
     external_tests::read(&external_tests::path("IXBY_IXBF_STAGE2_IMAGE"));
   assert_eq!(
     blake3::hash(&program).to_hex().as_str(),
-    crate::ixby::test_support::INIT_PROGRAM_V1_BLAKE3
+    crate::ixby::test_support::INIT_PROGRAM_V2_BLAKE3
   );
   let artifact =
     ixbf::decode_program(&program, ixbf::DecodeLimits::default()).unwrap();
@@ -2009,11 +2009,11 @@ fn retained_init_byte_spans_and_program_limit_verify_in_isolation() {
     external_tests::read(&external_tests::path("IXBY_IXBF_INIT_OUTPUT"));
   assert_eq!(
     blake3::hash(&input).to_hex().as_str(),
-    "713a6a0b72dbaad673192c38c6e10115b1386482394cc22a945837c1a03f11c8"
+    crate::ixby::test_support::INIT_INPUT_V2_BLAKE3
   );
   assert_eq!(
     blake3::hash(&output).to_hex().as_str(),
-    "3e6cb8264cfb6d253c41f22aa05221805a58f857d73877305adfed0781115a28"
+    crate::ixby::test_support::INIT_OUTPUT_V2_BLAKE3
   );
   let input_values =
     ixbf::decode_input(&artifact, &input, ixbf::DecodeLimits::default())

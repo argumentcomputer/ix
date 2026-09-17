@@ -1,9 +1,6 @@
 # Constrained functional records and reference checks
 
-The current program revision admits 47 primitive opcodes, including the unary
-conversions `45` and `46`. See the [compiler handoff](CompilatrixNatWord32Handoff.md).
-Input/output headers remain at semantics 0. Milestone measurements below
-describe their original revisions and must not be read as current setup pins.
+> Current contract: [runtime revision 2](CompilatrixRuntimeV2Handoff.md), with format-1/semantics-2 headers, 58 opcodes, and five wire-value kinds. This report preserves component milestone measurements and their original setup identities; its remaining-work sections describe that milestone. Current complete admission and execution are documented in [paged execution](IxbyFlockPagedExecution.md).
 
 The `ixby::ixbf_decode` record components extend the
 [original-wire codecs](IxbyFunctionalCodec.md) toward IXBF/IXFI/IXFO body and
@@ -31,9 +28,9 @@ validity residual. Every unused field and padding bit is zero.
 | `Function` | Arity, entry block and block count; operand/local/block limits, valid entry index, remaining bytes |
 | `Block` | Local-frame size and one of the eight instruction tags |
 | `Alternative` | Constructor and successor indices, each checked against its supplied count |
-| `Input` | IXFI format 1/semantics 0 at offset zero; root count, entry arity, operand/node limits |
-| `Output` | IXFO format 1/semantics 0 at offset zero; one implicit root and sufficient node/byte budget |
-| `Value` | Scalar/constructor/PAP/erased prefix; full constructor identity or function index, child count and supplied budgets |
+| `Input` | IXFI format 1/semantics 2 at offset zero; root count, entry arity, operand/node limits |
+| `Output` | IXFO format 1/semantics 2 at offset zero; one implicit root and sufficient node/byte budget |
+| `Value` | Scalar/constructor/PAP/erased/array prefix; full constructor identity or function index, child count and supplied budgets |
 | `Operand` | Local/literal/erased prefix; exact local reference when present |
 | `Scalar` | Scalar tag, canonical Bool/u32/Goldilocks/extension payload when fixed-size |
 | `Operation` | Operation prefix, original primitive tag/arity or leading constructor/function index and argument count |

@@ -21,7 +21,7 @@ fn function(b: &mut Builder, on: usize, x: &[usize]) {
 }
 fn span(b: &mut Builder, on: usize, x: &[usize], heap: &[usize]) -> usize {
   b.require_zero(on, &x[40..64]);
-  bound(b, on, &x[64..], 64);
+  bound(b, on, &x[64..], 65536);
   let nonempty = b.any(&x[64..]);
   let live = b.b.and(on, nonempty);
   let empty = b.not(nonempty);
@@ -102,7 +102,7 @@ pub(super) fn plan() -> BooleanR1csPlan {
     b.require_zero(phases[8], &word(i));
   }
   b.require_zero(phases[1], &word(SCALAR));
-  let kinds = [0, 1, 2, 3].map(|i| eqc(b, &field(0), i));
+  let kinds = [0, 1, 2, 3, 4].map(|i| eqc(b, &field(0), i));
   let valid = b.any(&kinds);
   b.require(value, valid);
   b.require(value, live);
@@ -110,7 +110,9 @@ pub(super) fn plan() -> BooleanR1csPlan {
   let ctor = b.b.and(value, kinds[1]);
   let pap = b.b.and(value, kinds[2]);
   let erased = b.b.and(value, kinds[3]);
+  let array = b.b.and(value, kinds[4]);
   let object = b.any(&[ctor, pap]);
+  let aggregate = b.any(&[object, array]);
   let notctor = b.not(ctor);
   b.require_zero(notctor, &word(RESOLVED));
   let good = lt(b, &word(RESOLVED), &word(2));
@@ -118,6 +120,7 @@ pub(super) fn plan() -> BooleanR1csPlan {
   let good = lt(b, &field(1), &word(3));
   b.require(pap, good);
   bound(b, object, &field(5), 64);
+  bound(b, array, &field(5), 65536);
   let reply = std::array::from_fn::<_, 4, _>(|i| {
     [word(REPLIES + 2 * i), word(REPLIES + 2 * i + 1)]
   });
@@ -136,13 +139,13 @@ pub(super) fn plan() -> BooleanR1csPlan {
   let under = lt(b, &field(5), &arity);
   b.require(pap, under);
   let (pending, scalar_emit, scalar_cell) = scalar_value(b, &on, commit, begin);
-  let emit = b.any(&[object, erased, scalar_emit]);
+  let emit = b.any(&[aggregate, erased, scalar_emit]);
   b.require(emit, live);
-  let children = mask(b, object, &field(5));
+  let children = mask(b, aggregate, &field(5));
   let has_children = b.any(&children);
   let descend = b.b.and(emit, has_children);
-  let next_heap = plus(b, object, &word(HEAP), &children);
-  bound(b, object, &next_heap, 1 << 36);
+  let next_heap = plus(b, aggregate, &word(HEAP), &children);
+  bound(b, aggregate, &next_heap, 1 << 36);
   let mut pointer = word(HEAP)[..64].to_vec();
   pointer[36] = b.one;
   pointer[37] = b.one;
@@ -153,12 +156,17 @@ pub(super) fn plan() -> BooleanR1csPlan {
   ctor_header[64..].copy_from_slice(&word(RESOLVED)[..64]);
   let mut pap_header = b.constant(128, 9);
   pap_header[64..].copy_from_slice(&field(1)[..64]);
+  let mut array_header = b.constant(128, 11);
+  array_header[64..].copy_from_slice(&children[..64]);
+  let mut array_payload = [pointer.clone(), b.constant(64, 0)].concat();
+  array_payload[40] = has_children;
   let cell = [
     select(
       b,
       &[
         (ctor, ctor_header),
         (pap, pap_header),
+        (array, array_header),
         (erased, b.constant(128, 5)),
         (scalar_emit, scalar_cell[0].clone()),
       ],
@@ -168,6 +176,7 @@ pub(super) fn plan() -> BooleanR1csPlan {
       b,
       &[
         (object, object_payload.clone()),
+        (array, array_payload),
         (scalar_emit, scalar_cell[1].clone()),
       ],
       128,

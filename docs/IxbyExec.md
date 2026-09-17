@@ -1,13 +1,12 @@
 # Experimental IxBy Exec contract
 
 Status: execution statements, public-claim binding, setup interfaces, and
-conditional composition are implemented. The optional Stage 2 specialization
-now composes the independent source refinement. Direct native Flock proofs of
-the small scalar/control, byte-capable, immutable-constructor and exact-Nat
-interpreters are implemented. An explicit application setup now also supports
-closures/PAPs and higher-order control. Native refinement, the larger crypto
-guest profile, complete terminal relation
-and Compilatrix certificate remain unfinished.
+conditional composition are implemented. The reference contract uses
+[current runtime revision 2](CompilatrixRuntimeV2Handoff.md). The paged backend
+proves complete byte-to-byte Bytes executions; its general native refinement
+and the Compilatrix source certificate remain separate obligations. The former
+fixed-arena scalar/control, byte, object, Nat, and application adapters have
+been retired.
 
 ## Statements and public claims
 

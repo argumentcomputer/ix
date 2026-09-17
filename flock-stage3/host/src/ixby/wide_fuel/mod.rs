@@ -1,11 +1,8 @@
-//! Checked 64-bit global fuel for a future segmented execution path.
+//! Checked 64-bit logical fuel for segmented execution.
 //!
-//! The existing physical interpreter and IXBP wire retain their u32 fuel and
-//! keys. This separate component neither upgrades those setups nor proves an
-//! IXBF execution. A future interpreter must wire the actual pre-step control
-//! metadata and the admitted program budget, and authenticate the complete
-//! state at segment boundaries. Supplying a host-selected control kind or
-//! checking this ledger alone is not an execution proof.
+//! A surrounding execution relation must wire actual pre-step control metadata,
+//! the admitted program budget, and authenticated state boundaries. Checking
+//! this ledger alone does not prove an execution.
 
 #[cfg(test)]
 mod proof_tests;

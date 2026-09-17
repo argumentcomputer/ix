@@ -12,9 +12,19 @@ pub(super) fn micro(kind: MicroKind, input: &[F128]) -> Option<Vec<F128>> {
   if input.len() != kind.inputs() || input.first() != Some(&F128::ONE) {
     return None;
   }
+  if let MicroKind::Collection(kind) = kind {
+    return super::collection_native::evaluate(
+      kind,
+      &input[1..1 + STATE_WORDS],
+      &input[1 + STATE_WORDS..],
+    );
+  }
   if matches!(
     kind,
-    MicroKind::Parameters | MicroKind::Object(_) | MicroKind::Byte(_)
+    MicroKind::Parameters
+      | MicroKind::Object(_)
+      | MicroKind::Byte(_)
+      | MicroKind::Collection(_)
   ) {
     return None;
   }
@@ -142,7 +152,10 @@ pub(super) fn micro(kind: MicroKind, input: &[F128]) -> Option<Vec<F128>> {
       out[10..].fill(F128::ZERO);
       out
     },
-    MicroKind::Parameters | MicroKind::Object(_) | MicroKind::Byte(_) => {
+    MicroKind::Parameters
+    | MicroKind::Object(_)
+    | MicroKind::Byte(_)
+    | MicroKind::Collection(_) => {
       unreachable!()
     },
   })

@@ -1,12 +1,9 @@
 //! Strict host-side intake for the complete functional `IXBF` format.
 //!
-//! This is NOT the constrained `IXBY` decoder and does not admit a Flock
-//! execution proof. It preserves the original bytes and arbitrary-precision
-//! naturals for witness generation, differential tests, and capacity planning.
-//! No acceptance bit or decoded table from this module is trusted by `exec`.
-//! Format/semantic revisions and primitive tags remain separate from the
-//! existing proving-profile wire. A native constraint/codec correspondence
-//! proof is still required before connecting this intake to a proving path.
+//! It preserves original bytes and arbitrary-precision naturals for witness
+//! generation, differential tests, and capacity planning. Its acceptance bit
+//! and decoded tables are untrusted advice. The paged constrained admission
+//! path independently checks the original bytes and execution memory.
 
 mod decode;
 mod encode;
@@ -29,9 +26,9 @@ pub use model::{
 pub use primitive::Primitive;
 
 pub const FORMAT_VERSION: u32 = 1;
-pub const SEMANTICS_VERSION: u32 = 0;
-/// Breaking program-language revision. Typed IXFI/IXFO values remain at zero.
-pub const PROGRAM_SEMANTICS_VERSION: u32 = 1;
+pub const SEMANTICS_VERSION: u32 = 2;
+/// Programs and typed IO share one current semantic revision.
+pub const PROGRAM_SEMANTICS_VERSION: u32 = SEMANTICS_VERSION;
 
 /// Parse and validate every declaration, including unreachable instructions.
 /// Host loader limits are independent of the semantic limits inside the file.

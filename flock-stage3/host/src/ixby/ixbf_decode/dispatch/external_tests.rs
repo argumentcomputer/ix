@@ -110,7 +110,7 @@ fn original_corpus_and_full_init_dispatch_without_an_ast_schedule() {
   let image = fixtures::read(&fixtures::path("IXBY_IXBF_STAGE2_IMAGE"));
   assert_eq!(
     blake3::hash(&image).to_hex().as_str(),
-    crate::ixby::test_support::INIT_PROGRAM_V1_BLAKE3
+    crate::ixby::test_support::INIT_PROGRAM_V2_BLAKE3
   );
   let parsed = check_program(&model, &image);
   assert_eq!(parsed.events[3], 146);
@@ -133,12 +133,12 @@ fn original_corpus_and_full_init_dispatch_without_an_ast_schedule() {
     (
       GrammarKind::Input,
       "IXBY_IXBF_INIT_INPUT",
-      "713a6a0b72dbaad673192c38c6e10115b1386482394cc22a945837c1a03f11c8",
+      crate::ixby::test_support::INIT_INPUT_V2_BLAKE3,
     ),
     (
       GrammarKind::Output,
       "IXBY_IXBF_INIT_OUTPUT",
-      "3e6cb8264cfb6d253c41f22aa05221805a58f857d73877305adfed0781115a28",
+      crate::ixby::test_support::INIT_OUTPUT_V2_BLAKE3,
     ),
   ] {
     let bytes = fixtures::read(&fixtures::path(variable));

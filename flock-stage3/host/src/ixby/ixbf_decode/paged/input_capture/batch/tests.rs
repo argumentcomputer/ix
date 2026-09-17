@@ -38,7 +38,7 @@ pub(super) fn id(out: &mut Vec<u8>, i: usize) {
   nat(out, (1 << 127) + i as u128);
 }
 pub(super) fn program(arity: usize) -> Vec<u8> {
-  let mut out = b"IXBF\x01\0\0\0\x01\0\0\0".to_vec();
+  let mut out = b"IXBF\x01\0\0\0\x02\0\0\0".to_vec();
   for n in [
     1024, 256, 256, 128, 64, 1024, 65536, 4096, 16777216, 16777216, 100000, 0,
     4,
@@ -62,6 +62,7 @@ pub(super) enum Value {
   Scalar(Vec<u8>),
   Constructor(usize, Vec<Value>),
   Pap(Vec<Value>),
+  Array(Vec<Value>),
   Erased,
 }
 impl Value {
@@ -87,11 +88,18 @@ impl Value {
           child.encode(out);
         }
       },
+      Self::Array(children) => {
+        out.push(4);
+        nat(out, children.len() as u128);
+        for child in children {
+          child.encode(out);
+        }
+      },
     }
   }
 }
 pub(super) fn input(values: &[Value]) -> Vec<u8> {
-  let mut out = b"IXFI\x01\0\0\0\0\0\0\0".to_vec();
+  let mut out = b"IXFI\x01\0\0\0\x02\0\0\0".to_vec();
   nat(&mut out, values.len() as u128);
   for v in values {
     v.encode(&mut out);
@@ -274,6 +282,18 @@ fn complete_input_materialization_matches_native_preorder_values_and_clears_fron
   batches(
     &program(1),
     &input(&[Value::Constructor(3, vec![Value::Erased; 64])]),
+    &setup,
+  );
+  // Array lengths use the input-node budget, independent of operand arity.
+  batches(
+    &program(2),
+    &input(&[
+      Value::Array(vec![Value::Scalar(vec![0, 37]); 65]),
+      Value::Array(vec![
+        Value::Array(vec![]),
+        Value::Constructor(1, vec![Value::Array(vec![Value::Erased])]),
+      ]),
+    ]),
     &setup,
   );
 }

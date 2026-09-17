@@ -65,13 +65,14 @@ fn link(c: ValueConfig, input: &[F128], bad: &mut bool) -> Vec<F128> {
   let (commit, tag) = events(input, 0, 1, bad);
   let active = commit && tag == 9;
   let kind = value(input[2]);
-  *bad |= active && kind >= 4;
+  *bad |= active && kind >= 5;
   let ctor = active && kind == 1;
   let pap = active && kind == 2;
   *bad |= active
     && matches!(kind, 0 | 3)
     && input[3..8].iter().any(|w| *w != F128::ZERO);
   *bad |= pap && input[4..7].iter().any(|w| *w != F128::ZERO);
+  *bad |= active && kind == 4 && input[3..7].iter().any(|w| *w != F128::ZERO);
   *bad |= active && input[8..LINK_BANK].iter().any(|w| *w != F128::ZERO);
   let mut found = 0;
   let mut index = 0;
@@ -166,10 +167,10 @@ fn node(c: ValueConfig, input: &[F128], bad: &mut bool) -> Vec<F128> {
   *bad |= commit && cursor.lo >= next.lo;
   *bad |= (done && (cursor != next || pending)) || (value && pending);
   let kind = v(FIELDS);
-  *bad |= value && kind >= 4;
+  *bad |= value && kind >= 5;
   let begin = value && kind == 0;
   let aggregate = value && matches!(kind, 1 | 2);
-  let non_scalar = value && matches!(kind, 1..=3);
+  let non_scalar = value && matches!(kind, 1..=4);
   *bad |= !aggregate && v(RESOLVED) != 0;
   *bad |= value && kind == 2 && input[RESOLVED] != input[FIELDS + 1];
   *bad |= scalar && (kind >= 7 || !pending || v(acc + 2) != 7);
@@ -225,6 +226,8 @@ fn node(c: ValueConfig, input: &[F128], bad: &mut bool) -> Vec<F128> {
   }
   if aggregate {
     r[REFERENCE] = input[RESOLVED];
+  }
+  if aggregate || (value && kind == 4) {
     r[CHILDREN] = input[FIELDS + 5];
   }
   if emit {
@@ -321,10 +324,10 @@ fn finish(c: ValueConfig, input: &[F128], bad: &mut bool) -> Vec<F128> {
     let tag = value(rec[SCALAR]);
     let scalar = on && kind == 0;
     let refs = on && matches!(kind, 1 | 2);
-    *bad |= on && kind >= 4;
+    *bad |= on && kind >= 5;
     *bad |= !scalar && tag != 0;
-    *bad |=
-      !refs && (rec[REFERENCE] != F128::ZERO || rec[CHILDREN] != F128::ZERO);
+    *bad |= (!refs && rec[REFERENCE] != F128::ZERO)
+      || (!refs && !(on && kind == 4) && rec[CHILDREN] != F128::ZERO);
     *bad |= on
       && kind == 1
       && value(rec[REFERENCE]) >= c.registry.constructors() as u128;

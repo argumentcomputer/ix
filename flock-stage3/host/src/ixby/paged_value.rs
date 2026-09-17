@@ -16,6 +16,11 @@ pub const PROGRAM_BYTES: u64 = 8 << 36;
 pub const INPUT_BYTES: u64 = 9 << 36;
 pub const DYNAMIC_BYTES: u64 = 10 << 36;
 pub const STRING_TAG: u64 = 10;
+pub const ARRAY_TAG: u64 = 11;
+pub const BUILDER_TAG: u64 = 12;
+/// Flat input arrays share their immutable field vector. Tree updates retain
+/// untouched flat spans and copy only the path to the changed element.
+pub const FLAT_ARRAY: u64 = 1 << 40;
 
 fn constant(one: usize, zero: usize, length: usize, value: u64) -> Vec<usize> {
   (0..length).map(|i| if value & (1 << i) == 0 { zero } else { one }).collect()
@@ -28,19 +33,19 @@ pub(super) fn cell(
   enabled: usize,
   bits: &[usize],
   literal_only: bool,
-) -> [usize; 10] {
+) -> [usize; 12] {
   assert_eq!(bits.len(), 256);
   let zero = b.xor(&[one, one], one);
   let disabled = not(b, one, enabled);
   require_zero(b, one, violations, disabled, bits);
-  let tags = (1..=10)
+  let tags = (1..=12)
     .map(|tag| equal_constant(b, one, &bits[..64], tag))
     .collect::<Vec<_>>();
   let valid = b.xor(&tags, one);
   require(b, one, violations, enabled, valid);
   let flags = tags.iter().map(|&tag| b.and(enabled, tag)).collect::<Vec<_>>();
   if literal_only {
-    violations.extend([flags[6], flags[8]]);
+    violations.extend([flags[6], flags[8], flags[10], flags[11]]);
   }
   let scalar = b.xor(&flags[..5], one);
   let masked = bits.iter().map(|&bit| b.and(scalar, bit)).collect::<Vec<_>>();
@@ -96,5 +101,25 @@ pub(super) fn cell(
   let end_low = any(b, one, &end[..36]);
   let over = b.and(end[36], end_low);
   violations.push(b.and(object_live, over));
+
+  // Arrays carry a u32 length and builders a 36-bit byte length. Their
+  // payload names immutable heap storage; neither exposes pointer identity.
+  for (flag, width, flat) in [(flags[10], 32, true), (flags[11], 36, false)] {
+    require_zero(b, one, violations, flag, &bits[64 + width..128]);
+    require_zero(
+      b,
+      one,
+      violations,
+      flag,
+      &bits[if flat { 169 } else { 168 }..],
+    );
+    let empty = equal_constant(b, one, &bits[64..128], 0);
+    let nonempty = not(b, one, empty);
+    let live = b.and(flag, nonempty);
+    let empty = b.and(flag, empty);
+    require_zero(b, one, violations, empty, &bits[128..]);
+    let heap = equal_constant(b, one, &bits[164..168], HEAP >> 36);
+    require(b, one, violations, live, heap);
+  }
   flags.try_into().unwrap()
 }

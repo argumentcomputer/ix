@@ -44,7 +44,7 @@ fn compiler_corpus_covers_complete_functional_wire() {
   let mut scalars = [0usize; 7];
   let mut instructions = [0usize; 8];
   let mut operations = [0usize; 8];
-  let mut primitives = [0usize; 47];
+  let mut primitives = [0usize; 58];
   for path in &files {
     let bytes = read(path);
     let artifact = decode_program(&bytes, DecodeLimits::default()).unwrap();
@@ -86,10 +86,20 @@ fn compiler_corpus_covers_complete_functional_wire() {
   let output =
     decode_output(&artifact, &output_bytes, DecodeLimits::default()).unwrap();
   assert_eq!(input.values().nodes(), output.values().nodes());
-  assert_eq!(input.values().depth(), 3);
-  assert_eq!(input.values().nodes().len(), 4);
+  assert!(input.values().depth() >= 3, "structured value nesting");
+  let mut kinds = [false; 5];
+  for node in input.values().nodes() {
+    kinds[match node.kind {
+      ValueKind::Scalar(_) => 0,
+      ValueKind::Constructor(_) => 1,
+      ValueKind::PartialApplication(_) => 2,
+      ValueKind::Erased => 3,
+      ValueKind::Array => 4,
+    }] = true;
+  }
+  assert!(kinds.into_iter().all(|seen| seen), "incomplete wire-value corpus");
   eprintln!(
-    "independent IXBF corpus: {} programs; all 47 primitives, 7 scalar kinds, 8 operations and 8 instructions; structured I/O",
+    "independent IXBF corpus: {} programs; all 58 primitives, 7 scalar kinds, 5 value kinds, 8 operations and 8 instructions; structured I/O",
     files.len()
   );
 }
@@ -100,7 +110,7 @@ fn retained_stage2_init_artifacts_match_exact_pins() {
   let bytes = read(&path("IXBY_IXBF_STAGE2_IMAGE"));
   assert_eq!(
     blake3::hash(&bytes).to_hex().as_str(),
-    crate::ixby::test_support::INIT_PROGRAM_V1_BLAKE3
+    crate::ixby::test_support::INIT_PROGRAM_V2_BLAKE3
   );
   let artifact = decode_program(&bytes, DecodeLimits::default()).unwrap();
   let census = artifact.inventory();
@@ -138,11 +148,11 @@ fn retained_stage2_init_artifacts_match_exact_pins() {
   let output_bytes = read(&path("IXBY_IXBF_INIT_OUTPUT"));
   assert_eq!(
     blake3::hash(&input_bytes).to_hex().as_str(),
-    "713a6a0b72dbaad673192c38c6e10115b1386482394cc22a945837c1a03f11c8"
+    crate::ixby::test_support::INIT_INPUT_V2_BLAKE3
   );
   assert_eq!(
     blake3::hash(&output_bytes).to_hex().as_str(),
-    "3e6cb8264cfb6d253c41f22aa05221805a58f857d73877305adfed0781115a28"
+    crate::ixby::test_support::INIT_OUTPUT_V2_BLAKE3
   );
   let input =
     decode_input(&artifact, &input_bytes, DecodeLimits::default()).unwrap();

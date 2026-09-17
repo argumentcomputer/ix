@@ -1,5 +1,7 @@
 # Source-bound declaration and header registries
 
+> Current contract: [runtime revision 2](CompilatrixRuntimeV2Handoff.md), with format-1/semantics-2 headers, 58 opcodes, and five wire-value kinds. This report preserves component milestone measurements and their original setup identities; its remaining-work sections describe that milestone. Current complete admission and execution are documented in [paged execution](IxbyFlockPagedExecution.md).
+
 `flock-stage3/host/src/ixby/ixbf_decode/registry/` materializes constructor
 declarations, function headers and owned block headers from the actual
 [original-wire dispatcher](IxbyFunctionalDispatch.md). Insertion addresses

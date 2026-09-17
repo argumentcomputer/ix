@@ -1,9 +1,8 @@
 module
 public import Ix.Ixby.Profile
 
-/-! Bounded, strict binary IO for the experimental IxBy crypto codec. All
-lengths and indices are explicit little-endian integers, never native sizes.
-These helpers are not standalone program/value admission boundaries. -/
+/-! Bounded, strict binary IO for the current IXBF revision. Naturals use
+minimal unsigned LEB128; fixed-width integers use little endian. -/
 
 public section
 @[expose] section
@@ -11,8 +10,8 @@ public section
 namespace Ix.Ixby.Codec
 
 abbrev Bytes := Array UInt8
-abbrev wireVersion : Nat := 0
-abbrev semanticVersion : Nat := 0
+abbrev wireVersion : Nat := 1
+abbrev semanticVersion : Nat := 2
 
 inductive Error where
   | profile (error : ProfileError)
@@ -20,6 +19,8 @@ inductive Error where
   | version
   | tag (value : Nat)
   | integerRange
+  | integerLimit
+  | internalValue
   | nonCanonical
   | truncated
   | trailing
@@ -58,12 +59,20 @@ def writeNat (width n : Nat) : Encoder Unit := do
 
 def writeU32 (n : Nat) : Encoder Unit := writeNat 4 n
 
+def writeNatural (n : Nat) : Encoder Unit := do
+  let width := n.log2 / 7 + 1
+  let mut n := n
+  for i in [:width] do
+    writeByte (n % 128 + if i + 1 < width then 128 else 0).toUInt8
+    n := n / 128
+
 def writeHeader (magic : String) (version : Nat := wireVersion) : Encoder Unit := do
   writeBytes magic.toUTF8.data
   writeU32 version
+  writeU32 semanticVersion
 
 def writeVector {α : Type} (write : α → Encoder Unit) (values : Array α) : Encoder Unit := do
-  writeU32 values.size
+  writeNatural values.size
   for value in values do write value
 
 def writeNode : Encoder Unit := do
@@ -101,19 +110,35 @@ def readByte : Decoder UInt8 := do
 def readNat (width : Nat) : Decoder Nat := return natOfBytesLE (← readBytes width)
 def readU32 : Decoder Nat := readNat 4
 
+/-- A loader bound, independent of the declared semantic Nat capacity. -/
+def readNatural : Decoder Nat := do
+  let mut value := 0
+  let mut weight := 1
+  for i in [:8192] do
+    let byte := (← readByte).toNat
+    let digit := byte % 128
+    value := value + digit * weight
+    if byte < 128 then
+      if i > 0 && digit == 0 then throw .nonCanonical
+      return value
+    weight := weight * 128
+  throw .integerLimit
+
 def readHeader (magic : String) (version : Nat := wireVersion) : Decoder Unit := do
   unless (← readBytes magic.utf8ByteSize) == magic.toUTF8.data do throw .header
   unless (← readU32) == version do throw .version
+  unless (← readU32) == semanticVersion do throw .version
 
 def readCount (bound : Nat) : Decoder Nat := do
-  let count ← readU32
+  let count ← readNatural
   if count > bound then throw .countLimit
   return count
 
 /-- Never preallocate from a hostile count. Bounds are checked before the loop,
 and missing bytes abort as soon as a required element cannot be read. -/
 def readVector {α : Type} (bound : Nat) (read : Decoder α) : Decoder (Array α) := do
-  let count ← readCount bound
+  let state ← get
+  let count ← readCount (min bound (state.bytes.size - state.offset))
   let mut values := #[]
   for _ in [0:count] do values := values.push (← read)
   return values

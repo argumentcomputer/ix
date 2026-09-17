@@ -140,7 +140,7 @@ impl S {
   pub(super) fn bound(&mut self, f: usize, a: &[usize], max: u64) {
     self.le(f, a, &self.c(a.len(), max));
   }
-  pub(super) fn value(&mut self, f: usize, a: &[usize]) -> [usize; 10] {
+  pub(super) fn value(&mut self, f: usize, a: &[usize]) -> [usize; 12] {
     paged_value::cell(&mut self.b, self.one, &mut self.bad, f, a, false)
   }
   pub(super) fn vector(&mut self, pointer: &[usize], count: &[usize]) -> Bits {

@@ -75,7 +75,7 @@ fn block_fetch_derives_address_and_checks_the_complete_instruction_header() {
       }
     }
   }
-  for primitive in [47, 127, 255] {
+  for primitive in [58, 127, 255] {
     let mut header = h;
     header.primitive = primitive;
     let mut wrong = vec![F128::ONE, frame()];

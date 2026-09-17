@@ -1,12 +1,23 @@
 # Paged execution consumers
 
-These components are part of the full functional Stage 3 implementation in
-progress. They do not yet provide an original-CSLib execution proof. The
-current complete-functional interface uses IXBF format 1, semantics 1. The
-[conversion revision](CompilatrixNatWord32Handoff.md) adds direct Nat/Word32
-primitives, updates IXFP's program semantics, and changes the execution,
-parser/capture, and endpoint setups. Regenerate their proofs and statements.
-Measurements below retain the identities of their original revisions.
+The current complete-functional interface uses **format 1, semantics 2** for
+IXBF/IXFI/IXFO and the matching IXFP profile. The
+[runtime handoff](CompilatrixRuntimeV2Handoff.md) documents scalar conversions,
+persistent arrays, immutable builders, zero-copy byte slices, and exact limits.
+The execution relation has 31 chip families and 53 microstep kinds. Packed
+state transport now carries all collection scratch registers at full width.
+Changed parser, execution, capture, and endpoint setups have new identities.
+
+All measurements below describe their explicitly pinned earlier revisions.
+They do not establish revision-2 CSLib performance or a complete CSLib proof.
+The removed fixed-arena IXBY backend is not an alternative admission path.
+
+The [revision-2 validation record](../flock-stage4/census/paged-execution-runtime-v2.json)
+contains a 517,843-byte complete proof of a 15-step fixture covering every new
+opcode, nested array updates, builders, and slicing. Independent Lean execution
+matches its output. A fresh verifier accepts the root and rejects eleven
+tampered statement/proof variants. This is a small correctness fixture;
+compiler integration and a new CSLib measurement remain pending.
 
 ## Frames and continuations
 
@@ -166,7 +177,7 @@ program digests, and the endpoint circuit computes both the profile hash and
 `S = H(4, P || B || I || O)` with constrained BLAKE3.
 
 The explicit `FunctionalProfile` encoding is **IXFP revision 0**, original
-format 1, semantics 1. Its 184 bytes contain four little-endian header words,
+format 1, semantics 2. Its 184 bytes contain four little-endian header words,
 ten 128-bit limits in original IXBF order, and a 64-bit fuel budget. Setup owns
 these bytes; the captured program must have exactly the same limits and fuel.
 It is a new descriptor, distinct from the earlier IXBP fixed-capacity codec.

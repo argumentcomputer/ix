@@ -56,6 +56,13 @@ inductive Value where
   | ctor (id : CtorId) (fields : Array Value)
   | pap (function : FunctionId) (captured : Array Value)
   | erased
+  /-- A persistent indexed sequence. Updates return a new array and preserve
+  all existing aliases. The logical length is strictly below `2^32`. -/
+  | array (elements : Array Value)
+  /-- An immutable accumulator for bytes. Append preserves previous builders;
+  freeze exposes the accumulated bytes. Builders are internal runtime values
+  and must be frozen before crossing the byte IO boundary. -/
+  | byteBuilder (bytes : Array UInt8)
   deriving BEq, Repr, Inhabited
 
 inductive Operand where
@@ -85,13 +92,22 @@ inductive Primitive where
   | natToWord32
   /-- Exact nonnegative integer represented by a Word32. -/
   | word32ToNat
+  /-- The canonical representative in `[0, goldilocksModulus)`. -/
+  | fieldToNat
+  /-- Explicit reduction modulo the Goldilocks modulus. -/
+  | natToField
+  | arrayEmpty | arrayLength | arrayGet | arraySet | arrayPush
+  | byteBuilderEmpty | byteBuilderAppend | byteBuilderFreeze | byteBuilderLength
   deriving BEq, DecidableEq, Repr, Inhabited
 
 def Primitive.arity : Primitive → Nat
+  | .arrayEmpty | .byteBuilderEmpty => 0
   | .strLength | .word32ToBytes | .bytesToWord32 | .word32ToField
   | .fieldInverse | .fieldToBytes | .bytesToField | .extInverse | .extFst | .extSnd
-  | .bytesLength | .blake3 | .natToWord32 | .word32ToNat => 1
-  | .bytesSlice => 3
+  | .bytesLength | .blake3 | .natToWord32 | .word32ToNat
+  | .fieldToNat | .natToField | .arrayLength | .byteBuilderFreeze
+  | .byteBuilderLength => 1
+  | .bytesSlice | .arraySet => 3
   | _ => 2
 
 inductive Op where

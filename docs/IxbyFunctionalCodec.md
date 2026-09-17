@@ -1,8 +1,10 @@
 # Constrained functional codec components
 
+> Current contract: [runtime revision 2](CompilatrixRuntimeV2Handoff.md), with format-1/semantics-2 headers, 58 opcodes, and five wire-value kinds. This report preserves component milestone measurements and their original setup identities; its remaining-work sections describe that milestone. Current complete admission and execution are documented in [paged execution](IxbyFlockPagedExecution.md).
+
 `flock-stage3/host/src/ixby/ixbf_decode` starts the constrained correspondence
-to the **IXBF format 1, semantics 1** bytes. It is separate from both
-the complete host reader and the existing IXBY native Exec decoder. The new
+to the **IXBF format 1, semantics 2** bytes. It is separate from both
+the complete host reader and the retired IXBY decoder. The new
 components do not admit an IXBF program to Exec or prove the Init run.
 The later [record and reference-check components](IxbyFunctionalRecords.md)
 extend this layer toward body and value parsing, with the same explicit
@@ -11,10 +13,6 @@ The subsequent [grammar-control layer](IxbyFunctionalGrammar.md) adds complete
 ordered traversal and EOF, but not whole-file source/registry authentication.
 The later [scalar payload layer](IxbyFunctionalScalars.md) adds checked packing,
 the declared Nat-bit limit and streaming strict UTF-8 with decoder/state wiring.
-
-The [conversion revision](CompilatrixNatWord32Handoff.md) changes the program
-header and the inactive dispatcher header to semantics 1. Its current proof
-setups must be regenerated. The historical measurements below used semantics 0.
 
 ## Component relations
 
@@ -39,7 +37,7 @@ guest-specific Nat limit smaller than its setup capacity. The later
 `NaturalLimitGate` supplies that separate check using the actual magnitude
 and declared-limit wires.
 
-The header checks `IXBF`, format 1 and semantics 1, then decodes the ten
+The header checks `IXBF`, format 1 and semantics 2, then decodes the ten
 execution limits, `maxSteps`, entry index, and constructor-vector count in
 their original order. It checks that the count fits its declared limit and
 remaining file bytes, and returns the exact constructor-table offset. Bytes

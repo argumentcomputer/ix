@@ -76,13 +76,15 @@ pub(super) fn build(b: &mut Builder, g: &ValueGate) {
   same(b, done, &cursor, &next);
   b.require_zero(done, &[pending]);
   b.require_zero(value, &[pending]);
-  let kinds: Vec<_> = (0..4).map(|i| eqc(b, &word(FIELDS), i)).collect();
+  let kinds: Vec<_> = (0..5).map(|i| eqc(b, &word(FIELDS), i)).collect();
   let valid = b.any(&kinds);
   b.require(value, valid);
   let begin = b.b.and(value, kinds[0]);
   let aggregate = b.any(&[kinds[1], kinds[2]]);
   let aggregate = b.b.and(value, aggregate);
-  let non_scalar = b.any(&[kinds[1], kinds[2], kinds[3]]);
+  let children = b.any(&[kinds[1], kinds[2], kinds[4]]);
+  let children = b.b.and(value, children);
+  let non_scalar = b.any(&[kinds[1], kinds[2], kinds[3], kinds[4]]);
   let non_scalar = b.b.and(value, non_scalar);
   let no_ref = b.not(aggregate);
   b.require_zero(no_ref, &word(RESOLVED));
@@ -144,7 +146,7 @@ pub(super) fn build(b: &mut Builder, g: &ValueGate) {
   record[SCALAR] =
     select(b, &[(fixed, word(FIELDS)), (later, word(acc + 2))], 128);
   record[REFERENCE] = mask(b, aggregate, &word(RESOLVED));
-  record[CHILDREN] = mask(b, aggregate, &word(FIELDS + 5));
+  record[CHILDREN] = mask(b, children, &word(FIELDS + 5));
   let start = select(
     b,
     &[

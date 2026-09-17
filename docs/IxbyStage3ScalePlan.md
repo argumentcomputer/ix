@@ -260,6 +260,13 @@ current-status section below.
     I/O encoding stays at semantics 0. A seven-step conversion program has a
     complete 499,443-byte execution proof. Compiler adoption and the resulting
     CSLib trace and performance measurement remain pending.
+30. [Runtime revision 2](CompilatrixRuntimeV2Handoff.md): unboxed numeric ABI,
+    direct Field/Nat conversions, persistent arrays, immutable byte builders,
+    and shared byte slices. All functional artifacts use semantics 2; the old
+    fixed-arena IXBY/IXBP backends are retired. A 15-step independent fixture
+    exercising every new opcode has a 517,843-byte complete root, accepted by
+    a fresh receiver that rejects eleven tampered variants. Compiler
+    integration and the new CSLib trace remain pending.
 
 ## Current integration and next measurements
 
@@ -278,8 +285,8 @@ measurements and exclude native replay, admission, output and aggregation.
 The current paged path streams bounded execution segments over depth-40
 authenticated memory and accepts original artifacts up to 16 MiB. Its physical
 numeric representation is Nat128; the original observed maximum is 65 bits.
-These are separate, explicit factories from the retained 64-step legacy Exec
-classes. The original binary, functional limits, input and canonical output
+The older fixed-capacity Exec classes have been removed. The original
+binary, functional limits, input and canonical output
 remain bound by admission, initialization, finalization and commitments.
 
 1. **Reduce runtime work and remaining routing costs.** Boolean routing,
@@ -288,9 +295,9 @@ remain bound by admission, initialization, finalization and commitments.
    the linked class's useful field data. The
    [runtime profile](IxbyPerformance.md) prioritizes direct numeric conversions,
    simpler numeric representations, native persistent-array operations and
-   byte builders. Direct Nat/Word32 primitives are available; their compiler
-   integration and the other runtime changes require further work and a newly
-   bound compiled image. Workload-specific proof classes remain another
+   byte builders. All these runtime operations are available in revision 2;
+   compiler integration requires further work and a newly bound compiled
+   image. Workload-specific proof classes remain another
    target. ByteStart/ByteFinish or Resume quotas already end some measured
    batches before their Fetch quota fills. Preserve complete state, memory
    and fuel checks, and compare time and peak memory per logical step,

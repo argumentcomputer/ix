@@ -1,5 +1,7 @@
 # Compilatrix handoff: direct Nat ↔ Word32 conversions
 
+> Historical revision-1 handoff. The [runtime revision-2 handoff](CompilatrixRuntimeV2Handoff.md) supersedes its formats and current compiler contract. Measurements below retain their original pins.
+
 ## Scope
 
 Ixby now provides two unary primitives in its Lean reference semantics and

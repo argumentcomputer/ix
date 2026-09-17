@@ -1,4 +1,4 @@
-use super::{ByteKind, ObjectKind, STATE_WORDS};
+use super::{ByteKind, CollectionKind, ObjectKind, STATE_WORDS};
 use crate::{
   boolean::{BooleanR1csPlan, generate_boolean_witness_into},
   ixby::bits::{evaluate_words, fill_words},
@@ -29,9 +29,10 @@ pub enum MicroKind {
   Complete,
   Object(ObjectKind),
   Byte(ByteKind),
+  Collection(CollectionKind),
 }
 impl MicroKind {
-  pub const ALL: [Self; 42] = [
+  pub const ALL: [Self; 53] = [
     Self::Parameters,
     Self::Fetch,
     Self::ResolveRequest,
@@ -74,11 +75,23 @@ impl MicroKind {
     Self::Byte(ByteKind::HashMergeFinish),
     Self::Byte(ByteKind::HashPush),
     Self::Byte(ByteKind::HashSkip),
+    Self::Collection(CollectionKind::Start),
+    Self::Collection(CollectionKind::ArrayRequest),
+    Self::Collection(CollectionKind::ArrayStep),
+    Self::Collection(CollectionKind::AscendRequest),
+    Self::Collection(CollectionKind::Ascend),
+    Self::Collection(CollectionKind::Finish),
+    Self::Collection(CollectionKind::BuilderRequest),
+    Self::Collection(CollectionKind::BuilderNode),
+    Self::Collection(CollectionKind::CopyRequest),
+    Self::Collection(CollectionKind::Copy),
+    Self::Collection(CollectionKind::Emit),
   ];
   pub fn inputs(self) -> usize {
     match self {
       Self::Object(kind) => 1 + STATE_WORDS + kind.extra_inputs(),
       Self::Byte(kind) => 1 + STATE_WORDS + kind.extra_inputs(),
+      Self::Collection(kind) => 1 + STATE_WORDS + kind.extra_inputs(),
       Self::Parameters => 3,
       Self::Fetch
       | Self::ResolveFinish
@@ -95,6 +108,7 @@ impl MicroKind {
     match self {
       Self::Object(kind) => kind.outputs() + 1,
       Self::Byte(kind) => kind.outputs() + 1,
+      Self::Collection(kind) => kind.outputs() + 1,
       Self::Parameters | Self::Resume => 1,
       Self::Fetch | Self::Complete => STATE_WORDS + 1,
       Self::ResolveRequest => 3,

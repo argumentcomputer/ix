@@ -1,11 +1,20 @@
 # Experimental Stage 4 native core
 
-Current complete-functional execution uses **IXBF format 1, semantics 1** and
-the matching IXFP program revision. See the
-[Nat/Word32 compiler handoff](../docs/CompilatrixNatWord32Handoff.md) for the
-breaking format change and `fixtures/paged-execution-conversions.py` for an
-independent end-to-end fixture. Older measurement records keep their original
-revision pins.
+Current complete-functional execution uses **format 1, semantics 2** for
+IXBF/IXFI/IXFO and the matching IXFP profile. See the
+[runtime compiler handoff](../docs/CompilatrixRuntimeV2Handoff.md) and the
+[independent fixture](fixtures/paged-execution-runtime-v2.py).
+The `exec` crate retains generic Flock verifier replay and table blueprints;
+the fixed-arena `CompiledExec` adapter was removed. The `recursive` crate and
+`paged-execution` CLI implement the current complete execution proof path.
+The [runtime-v2 validation record](census/paged-execution-runtime-v2.json)
+records the independently bound 517,843-byte root and fresh-process verification.
+
+The sections below preserve earlier component milestones, measurements, and
+setup identities. Sections about fixed-arena Exec setup adapters are historical;
+their sources remain at the
+[revision-1 archive](https://github.com/argumentcomputer/ix/blob/d4405b3ceb82e6d4cce19e48186f3272f8482e04/flock-stage4/README.md).
+Use the runtime handoff for current formats, commands, and validation.
 
 This independent Cargo workspace contains the reusable trace, R1CS circuit,
 and KZG-FFLONK components imported from `jcb/flock-stage4` at `8fdb3eab`.

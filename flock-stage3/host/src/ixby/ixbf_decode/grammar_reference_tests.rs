@@ -316,7 +316,7 @@ pub(super) fn step(
     },
     Phase::Value => {
       event = GrammarEvent::Record(RecordKind::Value);
-      ensure!(f[0] < 4, "value tag");
+      ensure!(f[0] < 5, "value tag");
       s[SEEN] = add(s[SEEN], 1)?;
       bounds = [s[LIMITS + 4], s[FUNCTIONS], sub(s[LIMITS + 6], s[SEEN])?];
       s[PENDING] = add(sub(s[PENDING], 1)?, f[5])?;

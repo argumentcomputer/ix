@@ -658,7 +658,7 @@ fn complete_body_shape_matches_native_records_for_every_instruction_operation_an
     .collect();
   let mut instructions = [false; 8];
   let mut operations = [false; 8];
-  let mut primitives = [false; 47];
+  let mut primitives = [false; 58];
   let mut scalars = [false; 7];
   let fixtures = fixtures::corpus(body_capacity());
   for f in &fixtures {
@@ -703,7 +703,7 @@ fn complete_body_shape_matches_native_records_for_every_instruction_operation_an
   }
   assert_eq!(instructions, [true; 8]);
   assert_eq!(operations, [true; 8]);
-  assert_eq!(primitives, [true; 47]);
+  assert_eq!(primitives, [true; 58]);
   assert_eq!(scalars, [true; 7]);
   let union = UnionInstance::new(&s.shape.registry, s.shape.counts.clone());
   eprintln!(

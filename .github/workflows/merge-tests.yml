@@ -35,13 +35,12 @@ jobs:
             kind: lake
             runner: warp-ubuntu-latest-x64-32x
             test_args: --ignored decompile
-          - name: Lake ignored tests (IxBy proving)
+          - name: Lake ignored tests (Aiur and Stage 2 proving)
             kind: lake
             runner: warp-ubuntu-latest-x64-16x
             test_args: >-
               --ignored
-              aiur-hoisting-prove ixby-aiur-prove
-              ixby-control-prove ixby-objects-prove stage2-codec-real stage2-wrapper-real
+              aiur-hoisting-prove stage2-codec-real stage2-wrapper-real
           - name: Lake ignored tests (misc)
             kind: lake
             runner: warp-ubuntu-latest-x64-32x

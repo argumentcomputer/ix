@@ -162,6 +162,19 @@ fn numeric_primitive_wires_match_nat_word_and_field_oracles() {
         vec![word32_words(u32::MAX)],
         [F128::new(8, 0), F128::new(u64::from(u32::MAX), 0)],
       )
+    } else if p == Primitive::FieldToNat {
+      (
+        vec![[F128::new(3, 0), F128::new(0xffff_ffff_0000_0000, 0)]],
+        [F128::new(8, 0), F128::new(0xffff_ffff_0000_0000, 0)],
+      )
+    } else if p == Primitive::NatToField {
+      (
+        vec![[F128::new(8, 0), F128::new(u64::MAX, u64::MAX)]],
+        [
+          F128::new(3, 0),
+          F128::new((u128::MAX % 0xffff_ffff_0000_0001) as u64, 0),
+        ],
+      )
     } else {
       let code = p.native_opcode().unwrap();
       let (a, c) = (0xffff_ffffu32, 37u32);

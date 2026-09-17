@@ -537,7 +537,7 @@ mod tests {
     let directory =
       PathBuf::from(std::env::var_os("IXBY_CSLIB_FRAME_DIR").unwrap());
     let root = ::blake3::Hash::from_hex(
-      "96ed4322c7e4db289b876848e885d02afd2958f829135d5108b565ce9d493c05",
+      "f2f6da19991985ba4575773a62943b213d94f3678c5b95f85fb9af1025fd26d1",
     )
     .unwrap();
     let length = 1_016_587;

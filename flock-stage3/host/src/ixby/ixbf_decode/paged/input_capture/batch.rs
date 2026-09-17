@@ -20,7 +20,7 @@ pub const DEPTH: usize = 14;
 pub const NU: usize = 10;
 pub const PUBLIC_WORDS: usize = 77;
 pub const DOMAIN: &[u8] =
-  b"IxBy/Flock/paged-input-capture:d14:steps32:nat128:cells32:parents255:v0";
+  b"IxBy/Flock/paged-input-capture:d14:steps32:nat128:cells32:parents255:v1";
 fn config() -> DispatchConfig {
   DispatchConfig {
     kind: GrammarKind::Input,

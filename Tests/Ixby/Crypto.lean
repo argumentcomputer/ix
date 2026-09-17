@@ -123,20 +123,14 @@ private def checks : IO (List Check) := do
     ("byte append output capacity",
       match Primitive.eval { byteArrayBytes := 1 } .bytesAppend [b #[1], b #[2]] with
       | .error (.limit .byteArrayBytes) => true | _ => false),
-    ("profile excludes Nat operations",
-      match Profile.validateProgram {} (program .natAdd) with
-      | .error .unsupportedInstruction => true | _ => false),
-    ("profile excludes even Nat zero inputs",
-      match Profile.validateValues {} (program .word32ToBytes) #[.scalar (.nat 0)] with
-      | .error .unsupportedScalar => true | _ => false),
-    ("profile excludes strings",
-      match Profile.validateValues {} (program .word32ToBytes) #[.scalar (.str "")] with
-      | .error .unsupportedScalar => true | _ => false),
-    ("profile rejects wide configuration",
-      match Profile.validate { maxSteps := 2 ^ 32 } with
+    ("current profile admits Nat operations", (Profile.validateProgram {} (program .natAdd)).isOk),
+    ("current profile admits typed Nat zero", (Profile.validateValues {} (program .word32ToBytes)
+      #[.scalar (.nat 0)]).isOk),
+    ("current profile admits strings", (Profile.validateValues {} (program .word32ToBytes)
+      #[.scalar (.str "")]).isOk),
+    ("profile rejects fuel exceeding u64", match Profile.validate { maxSteps := 2 ^ 64 } with
       | .error .configuration => true | _ => false),
-    ("profile cannot enable Nat by raising capacity",
-      match Profile.validate { limits := { natBits := 32, stringBytes := 0 } } with
+    ("profile rejects capacities exceeding u128", match Profile.validate { limits := { natBits := 2 ^ 128 } } with
       | .error .configuration => true | _ => false),
     ("profile step bound",
       match Profile.execute { maxSteps := 2 } (program .word32Add) #[w 1, w 2] 3 with
@@ -145,9 +139,10 @@ private def checks : IO (List Check) := do
       match Profile.validateValues { valueDepth := 0 } (program .word32ToBytes) #[w 0] with
       | .error .depth => true | _ => false),
     ("every crypto primitive has a unique round-tripping opcode",
-      (cryptoPrimitives.toList.zipIdx).all (fun (op, i) => op.cryptoOpcode == some i)),
+      (Codec.primitives.toList.zipIdx).all (fun (op, i) => Codec.primitiveOpcode op == i)),
     ("all crypto primitive arities checked",
-      cryptoPrimitives.toList.all (fun op => rejects op [] (.arityMismatch op.arity 0))),
+      Codec.primitives.toList.all (fun op => rejects op (List.replicate (op.arity + 1) .erased)
+        (.arityMismatch op.arity (op.arity + 1)))),
     ("nontrivial extension inverses",
       (List.range 31).all fun i =>
         let a : ExtGoldilocks := ⟨Goldilocks.reduce (i + 1), Goldilocks.reduce (2 * i + 3)⟩

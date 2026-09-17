@@ -4,8 +4,10 @@ use super::{
 };
 use crate::{
   ixby::{
-    decode::{EXTRA_WORD_PRIMITIVES, PrimitiveSet, primitive_arity},
     io::LayoutEmitter,
+    primitive::registry::{
+      EXTRA_WORD_PRIMITIVES, PrimitiveSet, primitive_arity,
+    },
     value::{bool_words, word32_words},
   },
   sizing::{CountedGate, CountingEmitter},

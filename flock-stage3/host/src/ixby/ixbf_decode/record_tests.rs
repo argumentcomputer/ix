@@ -127,12 +127,12 @@ pub(super) fn fixture(kind: RecordKind) -> Fixture {
     RecordKind::Input => {
       bounds = [4, 2, 8];
       fields[0] = 2;
-      b"IXFI\x01\0\0\0\0\0\0\0\x02".to_vec()
+      b"IXFI\x01\0\0\0\x02\0\0\0\x02".to_vec()
     },
     RecordKind::Output => {
       bounds[0] = 8;
       fields[0] = 1;
-      b"IXFO\x01\0\0\0\0\0\0\0".to_vec()
+      b"IXFO\x01\0\0\0\x02\0\0\0".to_vec()
     },
     RecordKind::Value => {
       bounds = [8, 10, 7];
@@ -285,7 +285,7 @@ fn record_semantic_bounds_bad_tags_and_noncanonical_metadata_reject() {
     (RecordKind::Scalar, vec![7], [0; 3]),
     (RecordKind::Scalar, vec![2, 2], [0; 3]),
     (RecordKind::Operation, vec![8], [8, 4, 10]),
-    (RecordKind::Operation, vec![1, 47, 2, 2, 2], [8, 4, 10]),
+    (RecordKind::Operation, vec![1, 58, 2, 2, 2], [8, 4, 10]),
     (RecordKind::Operation, vec![1, 42, 2, 2, 2], [8, 4, 10]),
     (RecordKind::Operation, vec![1, 0, 3, 2, 2, 2], [8, 4, 10]),
     (RecordKind::Operation, vec![2, 4, 0], [8, 4, 10]),

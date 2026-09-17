@@ -1,5 +1,7 @@
 # Source-bound instruction and reference checks
 
+> Current contract: [runtime revision 2](CompilatrixRuntimeV2Handoff.md), with format-1/semantics-2 headers, 58 opcodes, and five wire-value kinds. This report preserves component milestone measurements and their original setup identities; its remaining-work sections describe that milestone. Current complete admission and execution are documented in [paged execution](IxbyFlockPagedExecution.md).
+
 `flock-stage3/host/src/ixby/ixbf_decode/references/` connects every actual
 Program dispatcher event to the completed
 [declaration/header registry](IxbyFunctionalRegistry.md). It checks direct
@@ -61,7 +63,7 @@ limit. Full constructor uniqueness is already enforced by registry completion,
 so distinct alternative indices identify distinct constructors.
 
 The existing decoder and grammar constraints continue to check local operand
-bounds, all 47 primitive tags and their arities, operation/operand counts,
+bounds, all 58 primitive tags and their arities, operation/operand counts,
 canonical scalars, Nat limits and UTF-8. Copy, projection, application and
 return add no static registry-arity check beyond their existing operand checks.
 Runtime operand types and dynamic application behavior belong to execution.

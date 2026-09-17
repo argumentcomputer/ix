@@ -38,33 +38,33 @@ pub enum BatchClass {
 impl BatchClass {
   pub fn transcript_domain(self) -> &'static [u8] {
     match self {
-      Self::Small => b"IxBy/Flock/paged-execution:small:v3",
-      Self::Objects => b"IxBy/Flock/paged-execution:objects:v2",
-      Self::Compact => b"IxBy/Flock/paged-execution:compact:v2",
-      Self::Bytes => b"IxBy/Flock/paged-execution:bytes:v1",
-      Self::SharedCompact => b"IxBy/Flock/paged-execution:shared-compact:v1",
-      Self::Shared => b"IxBy/Flock/paged-execution:shared:v1",
+      Self::Small => b"IxBy/Flock/paged-execution:small:v4",
+      Self::Objects => b"IxBy/Flock/paged-execution:objects:v3",
+      Self::Compact => b"IxBy/Flock/paged-execution:compact:v3",
+      Self::Bytes => b"IxBy/Flock/paged-execution:bytes:v2",
+      Self::SharedCompact => b"IxBy/Flock/paged-execution:shared-compact:v2",
+      Self::Shared => b"IxBy/Flock/paged-execution:shared:v2",
       Self::SharedCompactBoolean => {
-        b"IxBy/Flock/paged-execution:shared-compact-boolean:v1"
+        b"IxBy/Flock/paged-execution:shared-compact-boolean:v2"
       },
-      Self::SharedBoolean => b"IxBy/Flock/paged-execution:shared-boolean:v1",
-      Self::Shared1024 => b"IxBy/Flock/paged-execution:shared-1024:v1",
+      Self::SharedBoolean => b"IxBy/Flock/paged-execution:shared-boolean:v2",
+      Self::Shared1024 => b"IxBy/Flock/paged-execution:shared-1024:v2",
       Self::SharedCompactPacked => {
-        b"IxBy/Flock/paged-execution:shared-compact-packed:v1"
+        b"IxBy/Flock/paged-execution:shared-compact-packed:v2"
       },
       Self::SharedPacked1024 => {
-        b"IxBy/Flock/paged-execution:shared-packed-1024:v1"
+        b"IxBy/Flock/paged-execution:shared-packed-1024:v2"
       },
       Self::SharedCompactLinked => {
-        b"IxBy/Flock/paged-execution:shared-compact-linked:v1"
+        b"IxBy/Flock/paged-execution:shared-compact-linked:v2"
       },
       Self::SharedLinked1024 => {
-        b"IxBy/Flock/paged-execution:shared-linked-1024:v1"
+        b"IxBy/Flock/paged-execution:shared-linked-1024:v2"
       },
     }
   }
-  pub fn quotas(self) -> [usize; 24] {
-    match self {
+  pub fn quotas(self) -> [usize; 31] {
+    let old = match self {
       Self::Small => {
         [6, 8, 2, 3, 2, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
       },
@@ -79,9 +79,10 @@ impl BatchClass {
       | Self::SharedCompactLinked => {
         [2, 4, 1, 2, 1, 3, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]
       },
-      Self::Shared | Self::SharedBoolean => {
-        Self::SharedCompact.quotas().map(|quota| quota * 16)
-      },
+      Self::Shared | Self::SharedBoolean => Self::SharedCompact.quotas()[..24]
+        .try_into()
+        .map(|x: [usize; 24]| x.map(|quota| quota * 16))
+        .unwrap(),
       Self::Shared1024 | Self::SharedPacked1024 | Self::SharedLinked1024 => [
         1024, 2048, 384, 512, 256, 1024, 128, 64, 64, 256, 256, 256, 768, 512,
         32, 64, 64, 64, 32, 64, 64, 64, 64, 64,
@@ -90,7 +91,18 @@ impl BatchClass {
         20, 36, 4, 4, 2, 8, 0, 0, 0, 0, 0, 0, 0, 0, 16, 8, 8, 4, 16, 8, 20, 8,
         8, 8,
       ],
-    }
+    };
+    let extra = match self {
+      Self::Small => [0; 7],
+      Self::Objects => [8, 32, 32, 8, 0, 0, 0],
+      Self::Bytes => [12, 24, 24, 12, 8, 12, 8],
+      Self::Shared1024 | Self::SharedPacked1024 | Self::SharedLinked1024 => {
+        [128, 512, 512, 128, 256, 512, 256]
+      },
+      Self::Shared | Self::SharedBoolean => [16, 32, 32, 16, 16, 32, 16],
+      _ => [1, 2, 2, 1, 1, 2, 1],
+    };
+    old.into_iter().chain(extra).collect::<Vec<_>>().try_into().unwrap()
   }
   pub fn cells(self) -> usize {
     match self {
@@ -181,10 +193,14 @@ pub(super) fn state_record_layout() -> RecordLayout {
   ]
   .map(RecordLayout::low_bits)
   .to_vec();
+  // Collection continuations contain complete values and a 256-bit copy
+  // buffer. Preserve every bit through packed state linking.
+  for mask in &mut masks[2 + 10..] {
+    *mask = u128::MAX;
+  }
   // The frame header reserves bits 40..48 between locals and depth.
   masks[2] &= !(RecordLayout::low_bits(8) << 40);
-  // BLAKE3 merge level in bits 0..8, final-chunk flag in bit 64.
-  masks[2 + 20] = RecordLayout::low_bits(8) | (1 << 64);
+
   RecordLayout::new(masks).unwrap()
 }
 pub struct BatchEmission {

@@ -7,8 +7,8 @@ mod gate;
 mod tests;
 use crate::{
   ixby::{
-    decode::PrimitiveSet,
     paged_nat::Nat128Slot,
+    primitive::registry::PrimitiveSet,
     primitive::{PrimitivePrepareGate, ScalarPrimitiveSlots},
     select::{SelectWordsGate, SelectWordsSlot},
   },

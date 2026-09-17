@@ -9,7 +9,7 @@ use crate::{
 };
 use flock_prover::{circuit::builder::GateType, union::UnionInstance};
 fn header(length: u64) -> Vec<u8> {
-  let mut bytes = b"IXFO\x01\0\0\0\0\0\0\0\0\x06".to_vec();
+  let mut bytes = b"IXFO\x01\0\0\0\x02\0\0\0\0\x06".to_vec();
   let mut n = length;
   loop {
     let byte = (n & 127) as u8;

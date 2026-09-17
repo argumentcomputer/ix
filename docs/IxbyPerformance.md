@@ -1,5 +1,10 @@
 # IxBy performance priorities
 
+The [revision-2 runtime](CompilatrixRuntimeV2Handoff.md) now provides unboxed
+numeric scalars and conversions, persistent arrays, immutable byte builders,
+and zero-copy slices. Compiler adoption and a new CSLib measurement remain
+pending. All counts below refer to the earlier compiled image.
+
 The completed CSLib reference run executes **2,268,502,805 logical
 transitions**. Eleven compiler-runtime helpers account for **56.0%** of them.
 Changing the work expressed by the program is therefore a substantial
@@ -30,7 +35,7 @@ also uses constructor wrappers containing a Nat and its cached low Word32,
 or a raw Nat, or a field value. `natural` selects a representation and extracts
 its mathematical value. Its entry block executes 110,214,432 times.
 
-The runtime currently implements some conversions by consuming four bits at
+The profiled compiler image implements some conversions by consuming four bits at
 a time and using a balanced comparison tree to cross scalar representations.
 The four conversion helpers in the table execute 240.5 million transitions.
 This is a good first target because the replacement operations have small,
@@ -40,11 +45,10 @@ precise specifications:
 - Word32 to Nat: the exact nonnegative integer value.
 - Field to Nat, where needed: the canonical representative.
 
-The Nat/Word32 primitives, reference semantics, binary revision and constrained
-implementations are now available. The
-[compiler handoff](CompilatrixNatWord32Handoff.md) describes the runtime and
-certificate changes still needed in Compilatrix. Field-to-Nat remains a
-proposal. Boundary cases include
+Nat/Word32 and Nat/Field primitives, reference semantics, and constrained
+implementations are available. The
+[compiler handoff](CompilatrixRuntimeV2Handoff.md) describes the representation
+and certificate changes still needed in Compilatrix. Boundary cases include
 zero, `2^32 - 1`, `2^32`, and larger Nats; the reference run observes 65-bit
 Nats, so a blanket replacement of Nat with Word32 would change this workload.
 
@@ -53,16 +57,16 @@ reserve wrappers for boundaries that need them. That can also reduce
 constructor allocation, case dispatch and memory traffic. Its benefit needs
 a new compiled-image trace.
 
-## Next: native persistent array operations
+## Native persistent array operations
 
 `treeGet` alone executes 335 million transitions. Each tree level runs generic
 comparisons, branches, division by two, projections and tail calls. `treeSet`
 adds another 145 million transitions while rebuilding persistent paths.
 
-Give indexed reads and persistent updates explicit operations and constrained
-path traversal. Bounds checks and the correspondence between the path, index
-and returned value remain proof obligations. Updates should retain structural
-sharing so their implementation does not copy an entire array on each write.
+Revision 2 implements explicit indexed reads and persistent updates with
+constrained path traversal. Updates share unchanged spans and tree paths;
+they do not copy an entire array on each write. Compiler representation
+certificates and general circuit-to-reference refinement remain obligations.
 This targets both interpreter overhead and the number of state/memory records
 that reach the proving circuit.
 
@@ -72,19 +76,18 @@ The current rope representation saves copying but expresses height checks,
 node construction and balancing as interpreted functions. Those four helpers
 account for 329 million transitions.
 
-An explicit byte builder or persistent byte-sequence operations can perform
-that management in constrained operations. Preserve sharing, checked ranges,
-the exact output bytes and BLAKE3 behavior. Appending should not repeatedly
-materialize the whole accumulated prefix. Measure bytes traversed and copied,
+Revision 2 implements immutable append/freeze builders and checked shared
+slices. Append retains chunks; freeze copies each byte once. Native tests
+check exact byte output, aliases, allocation counts, and BLAKE3 behavior.
+Compiler integration must preserve the source byte-sequence semantics.
+Measure bytes traversed and copied,
 as well as logical transitions, on the replacement representation.
 
 ## Validation and current scope
 
-Direct Nat/Word32 conversion support is implemented in Ixby; compiler adoption
-and its measured CSLib benefit remain pending. The representation, array and
-byte changes remain proposals. They require coordinated changes to IxBy
-semantics, the compiler and the proof backend, followed by a new reference run
-and matching output. A recompiled program has a new program commitment;
+The IxBy semantics and proof backend implement the runtime changes. Compiler
+adoption and the measured CSLib benefit remain pending. Integration requires
+a new reference run and matching output. A recompiled program has a new program commitment;
 its admission proof and expected statement must bind that image explicitly.
 
 The current [state-linking optimization](IxbyFlockPagedExecution.md#direct-state-linking)

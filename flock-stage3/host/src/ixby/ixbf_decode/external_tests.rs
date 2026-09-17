@@ -223,7 +223,7 @@ fn independent_corpus_and_real_init_headers_and_nat_literals_match_constraints()
   let bytes = read(&path("IXBY_IXBF_STAGE2_IMAGE"));
   assert_eq!(
     blake3::hash(&bytes).to_hex().as_str(),
-    crate::ixby::test_support::INIT_PROGRAM_V1_BLAKE3
+    crate::ixby::test_support::INIT_PROGRAM_V2_BLAKE3
   );
   assert_eq!(check(&bytes, &header, &header_r1cs, &nat, &nat_r1cs), 608);
   eprintln!(
@@ -239,15 +239,9 @@ fn original_init_literal_input_and_output_byte_ranges_match_constraints() {
   let input = read(&path("IXBY_IXBF_INIT_INPUT"));
   let output = read(&path("IXBY_IXBF_INIT_OUTPUT"));
   for (bytes, hash) in [
-    (&program, crate::ixby::test_support::INIT_PROGRAM_V1_BLAKE3),
-    (
-      &input,
-      "713a6a0b72dbaad673192c38c6e10115b1386482394cc22a945837c1a03f11c8",
-    ),
-    (
-      &output,
-      "3e6cb8264cfb6d253c41f22aa05221805a58f857d73877305adfed0781115a28",
-    ),
+    (&program, crate::ixby::test_support::INIT_PROGRAM_V2_BLAKE3),
+    (&input, crate::ixby::test_support::INIT_INPUT_V2_BLAKE3),
+    (&output, crate::ixby::test_support::INIT_OUTPUT_V2_BLAKE3),
   ] {
     assert_eq!(blake3::hash(bytes).to_hex().as_str(), hash);
   }

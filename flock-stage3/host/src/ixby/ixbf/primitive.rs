@@ -49,10 +49,21 @@ pub enum Primitive {
   Blake3,
   NatToWord32,
   Word32ToNat,
+  FieldToNat,
+  NatToField,
+  ArrayEmpty,
+  ArrayLength,
+  ArrayGet,
+  ArraySet,
+  ArrayPush,
+  ByteBuilderEmpty,
+  ByteBuilderAppend,
+  ByteBuilderFreeze,
+  ByteBuilderLength,
 }
 
 impl Primitive {
-  pub const ALL: [Self; 47] = [
+  pub const ALL: [Self; 58] = [
     Self::NatAdd,
     Self::NatSub,
     Self::NatMul,
@@ -100,10 +111,27 @@ impl Primitive {
     Self::Blake3,
     Self::NatToWord32,
     Self::Word32ToNat,
+    Self::FieldToNat,
+    Self::NatToField,
+    Self::ArrayEmpty,
+    Self::ArrayLength,
+    Self::ArrayGet,
+    Self::ArraySet,
+    Self::ArrayPush,
+    Self::ByteBuilderEmpty,
+    Self::ByteBuilderAppend,
+    Self::ByteBuilderFreeze,
+    Self::ByteBuilderLength,
   ];
 
   pub fn is_conversion(self) -> bool {
-    matches!(self, Self::NatToWord32 | Self::Word32ToNat)
+    matches!(
+      self,
+      Self::NatToWord32
+        | Self::Word32ToNat
+        | Self::FieldToNat
+        | Self::NatToField
+    )
   }
 
   pub fn from_opcode(opcode: u8) -> Option<Self> {
@@ -116,6 +144,7 @@ impl Primitive {
 
   pub fn arity(self) -> usize {
     match self {
+      Self::ArrayEmpty | Self::ByteBuilderEmpty => 0,
       Self::StringLength
       | Self::Word32ToBytes
       | Self::BytesToWord32
@@ -129,8 +158,13 @@ impl Primitive {
       | Self::BytesLength
       | Self::Blake3
       | Self::NatToWord32
-      | Self::Word32ToNat => 1,
-      Self::BytesSlice => 3,
+      | Self::Word32ToNat
+      | Self::FieldToNat
+      | Self::NatToField
+      | Self::ArrayLength
+      | Self::ByteBuilderFreeze
+      | Self::ByteBuilderLength => 1,
+      Self::BytesSlice | Self::ArraySet => 3,
       _ => 2,
     }
   }
@@ -138,7 +172,7 @@ impl Primitive {
   /// Name correspondence only. This does NOT certify primitive semantics,
   /// translate an image, or authorize any native setup/profile upgrade.
   pub fn native_opcode(self) -> Option<u8> {
-    const OPCODES: [Option<u8>; 47] = [
+    const OPCODES: [Option<u8>; 58] = [
       Some(35),
       Some(36),
       Some(37),
@@ -184,6 +218,17 @@ impl Primitive {
       Some(32),
       Some(33),
       Some(34),
+      None,
+      None,
+      None,
+      None,
+      None,
+      None,
+      None,
+      None,
+      None,
+      None,
+      None,
       None,
       None,
     ];

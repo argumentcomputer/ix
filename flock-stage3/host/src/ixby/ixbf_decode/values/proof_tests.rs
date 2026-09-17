@@ -673,7 +673,7 @@ fn complete_value_shapes_match_native_forests_scalars_and_independent_encodings(
     assert_eq!(emission.public, s.emission.public);
     let identity = s.shape.circuit.digest();
     let mut scalar_tags = [false; 7];
-    let mut value_tags = [false; 4];
+    let mut value_tags = [false; 5];
     for (name, fixture) in fixtures::corpus(kind, config(kind).arena) {
       fixture.check_native(config(kind).arena);
       eprintln!("value witness {kind:?} {name}");
@@ -695,7 +695,7 @@ fn complete_value_shapes_match_native_forests_scalars_and_independent_encodings(
       assert_eq!(s.shape.circuit.digest(), identity);
     }
     assert_eq!(scalar_tags, [true; 7]);
-    assert_eq!(value_tags, [true; 4]);
+    assert_eq!(value_tags, [true; 5]);
     let union = UnionInstance::new(&s.shape.registry, s.shape.counts.clone());
     eprintln!(
       "value census {kind:?}: tables={} M={} private={} public={}",

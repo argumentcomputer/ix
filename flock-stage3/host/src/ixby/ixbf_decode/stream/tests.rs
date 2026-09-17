@@ -19,7 +19,7 @@ pub(super) fn natural(bytes: &mut Vec<u8>, mut value: u128) {
   }
 }
 pub(super) fn program(scalar: Option<&[u8]>, arity: u128) -> Vec<u8> {
-  let mut bytes = b"IXBF\x01\0\0\0\x01\0\0\0".to_vec();
+  let mut bytes = b"IXBF\x01\0\0\0\x02\0\0\0".to_vec();
   for value in [
     8,
     8,
@@ -54,7 +54,7 @@ pub(super) fn program(scalar: Option<&[u8]>, arity: u128) -> Vec<u8> {
 pub(super) fn transport(kind: GrammarKind, scalars: &[Vec<u8>]) -> Vec<u8> {
   let mut bytes =
     if kind == GrammarKind::Input { b"IXFI" } else { b"IXFO" }.to_vec();
-  bytes.extend_from_slice(b"\x01\0\0\0\0\0\0\0");
+  bytes.extend_from_slice(b"\x01\0\0\0\x02\0\0\0");
   if kind == GrammarKind::Input {
     natural(&mut bytes, scalars.len() as u128);
   } else {

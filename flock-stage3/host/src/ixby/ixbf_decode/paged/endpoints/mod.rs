@@ -19,7 +19,7 @@ pub const FACT_WORDS: usize = 283;
 pub const PUBLIC_WORDS: usize = FACT_WORDS + 2;
 pub const NU: usize = 5;
 pub const DOMAIN: &[u8] =
-  b"IxBy/Flock/paged-endpoints:IXFP0:original1:semantics1:nat128:bytes:v1";
+  b"IxBy/Flock/paged-endpoints:IXFP0:original1:semantics2:nat128:bytes:v2";
 
 /// The order is protocol-owned, including three distinct commitment domains.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]

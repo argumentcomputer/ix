@@ -9,7 +9,7 @@ use crate::{
       add, any, equal, equal_constant, fill_words, not, or, read_words,
       require, require_zero, subtract,
     },
-    decode::{EXTRA_WORD_PRIMITIVES, PrimitiveSet},
+    primitive::registry::{EXTRA_WORD_PRIMITIVES, PrimitiveSet},
     value::{BOOL_TAG, EXT_TAG, FIELD_TAG, WORD32_TAG, scalar_cell},
   },
   multiplication::goldilocks_mul,

@@ -9,13 +9,13 @@ use crate::{
 };
 use flock_prover::circuit::builder::ShapeBuilder;
 
-// Independently encoded format-1, semantics-1 identity: arity 1, return local 0.
+// Independently encoded format-1, semantics-2 identity: arity 1, return local 0.
 const IDENTITY: &[u8] = &[
-  b'I', b'X', b'B', b'F', 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 1, 0, 8, 0x80,
+  b'I', b'X', b'B', b'F', 1, 0, 0, 0, 2, 0, 0, 0, 1, 0, 1, 1, 1, 0, 8, 0x80,
   0x20, 64, 64, 24, 0, 0, 1, 1, 0, 1, 1, 1, 0, 0,
 ];
 fn input(value: &[u8]) -> Vec<u8> {
-  b"IXFI\x01\0\0\0\0\0\0\0\x01".iter().chain(value).copied().collect()
+  b"IXFI\x01\0\0\0\x02\0\0\0\x01".iter().chain(value).copied().collect()
 }
 fn natural(mut n: u128) -> Vec<u8> {
   let mut out = Vec::new();
@@ -33,7 +33,7 @@ fn natural(mut n: u128) -> Vec<u8> {
 fn direct_conversions_execute_with_exact_fuel_and_authenticated_code() {
   // Independent three-block program: Nat -> Word32 -> Nat -> return.
   let program = [
-    b'I', b'X', b'B', b'F', 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3, 3, 1, 0, 8, 128,
+    b'I', b'X', b'B', b'F', 1, 0, 0, 0, 2, 0, 0, 0, 1, 0, 3, 3, 1, 0, 8, 128,
     1, 0, 64, 4, 0, 0, 1, 1, 0, 3, 1, 0, 1, 45, 1, 0, 0, 1, 2, 0, 1, 46, 1, 0,
     1, 2, 3, 1, 0, 2,
   ];
@@ -617,7 +617,7 @@ fn packed_state_layout_covers_instruction_object_byte_and_hash_states() {
   use crate::ixby::memory_log::RecordPackingGate;
   use flock_prover::circuit::builder::GateType;
   let layout = batch::state_record_layout();
-  assert_eq!((layout.words(), layout.packed_words()), (26, 15));
+  assert_eq!((layout.words(), layout.packed_words()), (26, 21));
   let pack = RecordPackingGate::new(3, layout.clone(), false).unwrap();
   let unpack = RecordPackingGate::new(3, layout, true).unwrap();
   for fixture in [

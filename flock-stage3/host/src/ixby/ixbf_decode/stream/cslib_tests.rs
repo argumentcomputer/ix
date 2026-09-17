@@ -1,4 +1,6 @@
-//! Opt-in retained CSLib workload. Source files are used only by the prover
+//! Opt-in retained CSLib workload, with byte 8 of each artifact changed from
+//! semantics 0 to 2. Bodies are unchanged; old proofs must be regenerated.
+//! Source files are used only by the prover
 //! and native differential; the independent chain verifier needs only proofs.
 use super::*;
 use crate::ixby::ixbf;
@@ -11,11 +13,11 @@ use std::{
 
 const PROGRAM_BYTES: usize = 1_016_587;
 const PROGRAM_HASH: &str =
-  "96ed4322c7e4db289b876848e885d02afd2958f829135d5108b565ce9d493c05";
+  "f2f6da19991985ba4575773a62943b213d94f3678c5b95f85fb9af1025fd26d1";
 const INPUT_HASH: &str =
-  "e0e8fbc9e0c68246b93ce8128c4ed3229029e5b06fc6185fe8a18d48f1018769";
+  "84418860c872d76e77c9b7fa466d091a6f995cd1ed7a1872fb5349131aea17c3";
 const OUTPUT_HASH: &str =
-  "efafe68f5f11d9701e88d02b0cf78de1a3c116d33a3ca8fedd82ae2eb6d90bcf";
+  "246c11e011f9a481b944ee3cdc7dc14d57b28f467e9bb6f442c30baa433a0766";
 
 fn path(variable: &str) -> PathBuf {
   std::env::var_os(variable)

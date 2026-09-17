@@ -12,8 +12,8 @@ namespace Ix.Ixby.Claim
 open Commitment (Digest Statement)
 open Codec (Bytes)
 
-abbrev execWireBytes : Nat := 136
-abbrev publicWireBytes : Nat := 104
+abbrev execWireBytes : Nat := 140
+abbrev publicWireBytes : Nat := 108
 
 namespace Internal
 

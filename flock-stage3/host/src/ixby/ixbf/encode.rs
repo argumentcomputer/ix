@@ -202,6 +202,10 @@ impl Writer {
           self.count(node.children.len());
         },
         ValueKind::Erased => self.byte(3),
+        ValueKind::Array => {
+          self.byte(4);
+          self.count(node.children.len());
+        },
       }
     }
   }

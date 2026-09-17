@@ -1,0 +1,1189 @@
+{
+  "binaries": {
+    "fresh_verifier": {
+      "blake3": "4599cd4440a8181f80871d353422ff4ed0716fb39a90363f0f4b900cfd61a430",
+      "bytes": 22083184,
+      "sha256": "ab03d3b7cbc3cc8ea3ac14e1f0280ff13775d8c5f05e0f1be70483cac3e7114c"
+    },
+    "producer": {
+      "blake3": "600221187182889e6608202776176dd789fc464c41c416a8cc3a8b69a31d65c8",
+      "bytes": 20631016,
+      "sha256": "cfb9a00f0a2f6173998ecd927663385ec8bc20874004283d1af5f60f0b2dadf4"
+    }
+  },
+  "environment": {
+    "cpu": "AMD Ryzen 9 7950X3D 16-Core Processor",
+    "flock_commit": "b310f35f35f68095537150a1c8c0a43caca9a29e",
+    "lean": "4.33.1",
+    "memory_max_gib": 84,
+    "rust": "1.98.1",
+    "rustflags": "-Ctarget-cpu=native",
+    "swap_max_bytes": 0,
+    "virtual_memory_max_gib": 768
+  },
+  "final_reviewed_sources_sha256": {
+    "Ix/Ixby.lean": "9453a68a373ddaf27d3ed10aea055c1becf374d7491d15b3a18cf07965111727",
+    "Ix/Ixby/Audit.lean": "15adeba41404810e5d197c3d5ed1d2d2c80cd82a8be350115262e5ae0a808197",
+    "Ix/Ixby/Basic.lean": "7b5414fe8417aeeb5e8b03372bc2448c1d36bf1dd5ce766f082150381e9dd24b",
+    "Ix/Ixby/Claim/Codec.lean": "de80f224c5d5cf0d218843ebad85c99d05c119f7a02503bb0998c6a47e461c7d",
+    "Ix/Ixby/Codec/Common.lean": "86a3b1a39917d9e7cb8245993af74a9b37a66d89ce71abf879b56d025e6e99b1",
+    "Ix/Ixby/Codec/Decode.lean": "0c89b416bdeb99b6aaae9a18306d363424f626eca61ca3ec020cc2fac72e27af",
+    "Ix/Ixby/Codec/Encode.lean": "aec2d8f934cd16c494f7017353096fa1b1ce5b019bf8f14c04e1f42c19523033",
+    "Ix/Ixby/Primitive.lean": "3aa5dc059b824168c35776df53f6c1526a87ab2c69781585cd7b7d1a1afac32e",
+    "Ix/Ixby/Profile.lean": "c54c269cd7e27c78b72682a9dce3de68f6d93a3573d95047b5adec590591e484",
+    "Ix/Ixby/Validate.lean": "acca0336d56ebbb3f1179f74d018e19c719e1443affd783d98aa85db05cbdb04",
+    "Tests/Ixby.lean": "3176d48d052d2a65094d63713ceeb511c73b21b1fa093a7e17aa932dd8ef5c58",
+    "Tests/Ixby/Claim.lean": "6b0521f0bd5d3be70152927bc6265434bba41e909e1b16490e108f13ad9ee69c",
+    "Tests/Ixby/Codec.lean": "9a0056f24c1caf76b319076ecc6ea54ba52c67d3771cbc4f05569bc9138ef483",
+    "Tests/Ixby/Collections.lean": "fe9a68c330df411f62ff4a5200268ecb3553656c8e08f14efc62cd7e29e7298e",
+    "Tests/Ixby/Crypto.lean": "deb13f011799b383821ba00ed3b10ceb926b4de689fce012e696835f8172fbad",
+    "Tests/Ixby/Fixture.lean": "43a23cdcd26f4c51bfdcaf83458c7d6ed1e06dd1140f23ca1de6996cd1585c16",
+    "Tests/Ixby/Main.lean": "e94f30ce85dedc503f83237ccd6d7a495e8f4a5acfcc7c10ff18e65b18f43b7b",
+    "Tests/Main.lean": "0b32a193b35fe983b8b75e701ccaf6cfe826a193755dba341ed65524745f8def",
+    "flock-stage3/host/src/ixby/bits.rs": "ce63262d44248e569d1db966416b1552472d43057e183017a12934b0a3cdba08",
+    "flock-stage3/host/src/ixby/ixbf/decode.rs": "41b057f24cface76fcbd43d0a22fd41bebf08053884ce7f87d19aee132d29399",
+    "flock-stage3/host/src/ixby/ixbf/encode.rs": "102a65f0c3433a76c2bd51d46cfc178a563a3abbdb3ba94cfdba1e310ff0eb13",
+    "flock-stage3/host/src/ixby/ixbf/external_tests.rs": "24fb0e5ca58cb33940764b8d61fb11cd62f1a6b3585713144f31e7109e8956db",
+    "flock-stage3/host/src/ixby/ixbf/inventory.rs": "1791084f14a55f96f5f6bd4e44567a5992f231505d456f1f1931c6cf6d7ef234",
+    "flock-stage3/host/src/ixby/ixbf/mod.rs": "5ea60d16c6e25f1faaf15dff2f63cc3a38899700a67f3217a3b348db0716f713",
+    "flock-stage3/host/src/ixby/ixbf/model.rs": "4e8280496bf46454b360cbedf12fcd65c75490175cd4593656370a706622745e",
+    "flock-stage3/host/src/ixby/ixbf/primitive.rs": "b9043a9b28a73af76376e2bd18280589dece4c710397760fea23c70f24c95078",
+    "flock-stage3/host/src/ixby/ixbf/tests.rs": "a7a3f7e52ded45ed61faebad4c9fd3cff64fc5004894e83ae084dd7f2fcfe883",
+    "flock-stage3/host/src/ixby/ixbf_decode/bodies/proof_tests.rs": "8d01a719b83d3826c53eef4941d25ed7e3d8c2c42672be16f745e633da4373d3",
+    "flock-stage3/host/src/ixby/ixbf_decode/dispatch/external_tests.rs": "b8c85fbaea4796858eddf8c9403b93440b6a0fec24c098f217fcde3ebd58b855",
+    "flock-stage3/host/src/ixby/ixbf_decode/dispatch/model_tests.rs": "6749db268fae57a0f254103f755eeb6040ff45ca04bf39265bd7bcf1f9a548dd",
+    "flock-stage3/host/src/ixby/ixbf_decode/dispatch/routing.rs": "e50838fb0a55d8a062c00f621ac947ef759b0a07c76b5afd0cb93fe0327acec7",
+    "flock-stage3/host/src/ixby/ixbf_decode/external_tests.rs": "b9b9a9f22cf9109cb1b945a3d5465650f4b3f818c350ba62c5118fda55d67085",
+    "flock-stage3/host/src/ixby/ixbf_decode/grammar.rs": "b4267fd20699540e1eb89fce4f219896c3ff332c6302b4b6df83e14221fc87df",
+    "flock-stage3/host/src/ixby/ixbf_decode/grammar_reference_tests.rs": "54a4a37051a118cf1f25fd74066f4ddbe1b93084eea2b48580f950d80b238098",
+    "flock-stage3/host/src/ixby/ixbf_decode/header.rs": "ad0f87acb63ef46507d416c2a3f05d7b9441c5ed45871dae95dc6b8d495b47db",
+    "flock-stage3/host/src/ixby/ixbf_decode/header_tests.rs": "6a272d28f9bc8ed3ab61f80bf76307f9ab1bfcd3dfc1eea61787666e8942d72d",
+    "flock-stage3/host/src/ixby/ixbf_decode/mod.rs": "516a5e944796385e3ea59df167ebbcc5865f4b1a184698145fb73c44533356b2",
+    "flock-stage3/host/src/ixby/ixbf_decode/paged/code_capture/batch.rs": "b2fadde1ae8dec58a38c6589842d2d6685eab8d0153ef0ba315c9ede11556761",
+    "flock-stage3/host/src/ixby/ixbf_decode/paged/code_capture/tests.rs": "ad8123e0a68f24a34987cc3a13580831acab99462faf7d0f6824ff221b87fa7e",
+    "flock-stage3/host/src/ixby/ixbf_decode/paged/endpoints/mod.rs": "d2983f1f214cd89278e6c1b2e57fd427ee850bc8336140776e212ed76fe8a4d3",
+    "flock-stage3/host/src/ixby/ixbf_decode/paged/endpoints/profile.rs": "55af89edd88b360a677f00b4e3a61473bc0268b8df771b6b6a3307a16e216fa5",
+    "flock-stage3/host/src/ixby/ixbf_decode/paged/endpoints/tests.rs": "5394458c2e3797a511127b21291d35ca60b214edb20e3d21bc8d589a35a3f45f",
+    "flock-stage3/host/src/ixby/ixbf_decode/paged/input_capture/batch.rs": "e7521dda80e29892700719a563796692c70eb24467bd7b968d311a8c38778af6",
+    "flock-stage3/host/src/ixby/ixbf_decode/paged/input_capture/batch/tests.rs": "44672b48d92f05543cc34c5224edf284d4c3ee1ab84241a8cb668caac4847733",
+    "flock-stage3/host/src/ixby/ixbf_decode/paged/input_capture/relation.rs": "ff5088cf5b56c50f184190399630a0dccf65366d9b25bad0e8f71365164fae79",
+    "flock-stage3/host/src/ixby/ixbf_decode/paged/output_bytes/mod.rs": "11386c04f7b1647fee9ce15cdef39fe85d0b5f39463a1b934e1dcb83f417113d",
+    "flock-stage3/host/src/ixby/ixbf_decode/paged/output_bytes/relation.rs": "ca03fd86b7ba64e0fd8ec061dcbb2b8e7f22db356e16708daf061e97704b1b13",
+    "flock-stage3/host/src/ixby/ixbf_decode/paged/output_bytes/tests.rs": "6f64c02ef56b250a389a182b72c171bbe9d1e03d622fd89b83742819e4f4495a",
+    "flock-stage3/host/src/ixby/ixbf_decode/proof_tests.rs": "0ffff48b9811969dc43aeaac53fe0dc41d90b302c9382572b0da381b3aeaf641",
+    "flock-stage3/host/src/ixby/ixbf_decode/record.rs": "b0db37eec1a6f746a71ca4d46db89960f09822b4827fe8223705bab88aba59d6",
+    "flock-stage3/host/src/ixby/ixbf_decode/record_external_tests.rs": "aa6c350f7a5ce27c0399d5493573de6beaeb482e7daa352bbebcee206356d66e",
+    "flock-stage3/host/src/ixby/ixbf_decode/record_tests.rs": "a4ca917c9ea30ae04735ba8370494a3ca8a33f1c1cbbb29dd3d63894710a67bf",
+    "flock-stage3/host/src/ixby/ixbf_decode/registry/fixtures.rs": "bb8b5c342560eaf032fb683d52bc1c112b67835f2bfa9fc41b36ee3a5b8d3b5e",
+    "flock-stage3/host/src/ixby/ixbf_decode/stream/batch.rs": "fbf746e56f8f0ef6bff8434c8ce6276feeac23bfc5252548b459dff426251c93",
+    "flock-stage3/host/src/ixby/ixbf_decode/stream/cslib_tests.rs": "37542ed1eef7dc760e4e519bb13671d05ca1b600b99de1eefd22779772419063",
+    "flock-stage3/host/src/ixby/ixbf_decode/stream/tests.rs": "c44526890bddff3634bded48e0ba47f276af8a72a53ebed4118c4fd6b9a9e3fc",
+    "flock-stage3/host/src/ixby/ixbf_decode/values/bank.rs": "3e94d841d2b2ffac60fac448a40fa6e3b61128c09c1dee9920ce409b1f37172c",
+    "flock-stage3/host/src/ixby/ixbf_decode/values/evaluate.rs": "23e2398a2a33d95380f2e891ef4c58602c3739c6fb6d9142147904c84d0dc7e3",
+    "flock-stage3/host/src/ixby/ixbf_decode/values/fixtures.rs": "56ac63c0fee70892211fc12512e30c1110aa9824de46914e85589171fe955caa",
+    "flock-stage3/host/src/ixby/ixbf_decode/values/link.rs": "7d15721e7f4469c1619ddeb00fdcaae7523728a0eee5125914424fc18db5b114",
+    "flock-stage3/host/src/ixby/ixbf_decode/values/node.rs": "977528166e5507e6261c6aae48601e3416b59b8072db8a649c5001b20a214137",
+    "flock-stage3/host/src/ixby/ixbf_decode/values/proof_tests.rs": "450d7939dcbd2c6f6171a2e560e6c49c7b7589e08c81c5c6aa835f663103782d",
+    "flock-stage3/host/src/ixby/mod.rs": "22b2572dd44b695e67ce014ffb082f06f64a7c9621ddf85e40a3b831c2c11b9b",
+    "flock-stage3/host/src/ixby/paged_code/tests.rs": "0a688ebb063bd3770eaf1c5627726e93fdf6a42cf9a58d4828f8e216e0d9d01e",
+    "flock-stage3/host/src/ixby/paged_exec/batch.rs": "2741b04959edbd104048f3c0d32c1381c3cd5cd647e28859ac791e708840917c",
+    "flock-stage3/host/src/ixby/paged_exec/byte_slots.rs": "d61fdad7c628a32346c8223e169f4629b39cdb3a12fed09df1e8742755e0f7c4",
+    "flock-stage3/host/src/ixby/paged_exec/bytes.rs": "21486e71f33e0024ffe7303d223b2fed3f062bf50872357d7aacd5c112fc74b9",
+    "flock-stage3/host/src/ixby/paged_exec/collection_native.rs": "9aedbff8a2c3f3a3c00b82eefe1333db239185ca17e6b2425e2eff05765511d7",
+    "flock-stage3/host/src/ixby/paged_exec/collection_slots.rs": "82692935f4366bd5450cd070615c2017f7662837c179fe6987f2d0b6b4715c77",
+    "flock-stage3/host/src/ixby/paged_exec/collection_tests.rs": "f469813a11038db6fe5ab97d62b1cc7cbd0d1ab8d2f4f92792f57f61b7622200",
+    "flock-stage3/host/src/ixby/paged_exec/collection_witness.rs": "8cca0674553a036e4650c62aab7242566284741a78f018e72294f2d292d0ef17",
+    "flock-stage3/host/src/ixby/paged_exec/collections.rs": "4674ed3497823e3d0c4439ccf33ade87a933b65b67fd1c6443e981a7b5d0d6f0",
+    "flock-stage3/host/src/ixby/paged_exec/fast_advice.rs": "b04d739f8784ab23afa3363da79c9741b98170d18199da747a2ebc930029e20c",
+    "flock-stage3/host/src/ixby/paged_exec/gate.rs": "dbc961eb6541a3e34e8678755f2150a88bc4d16bcfd1cab25f56e7fa260e6ce7",
+    "flock-stage3/host/src/ixby/paged_exec/image.rs": "30d22067a6c9c732df5fb31b072d5d34bb7c278d48670dc6712f601f92451da0",
+    "flock-stage3/host/src/ixby/paged_exec/image_tests.rs": "ce0a400096fc7bb6c4d13b860541380294136a826b4f3338eb828fe658942145",
+    "flock-stage3/host/src/ixby/paged_exec/mod.rs": "d6e54c5589142e163d195f4eff4719a5b6851ce4b0230823b3d9401bce11e57f",
+    "flock-stage3/host/src/ixby/paged_exec/objects.rs": "d26b70923ae143beff3ca4b37abbe8cd87c63f7fff281e336711cee403a2c2c9",
+    "flock-stage3/host/src/ixby/paged_exec/proof_drivers.rs": "45f62adab562b9d0e5eb90fb1f279f9e0eee68901ce7599179426967ceeb4be0",
+    "flock-stage3/host/src/ixby/paged_exec/proof_tests.rs": "76a995561dc172078b235da2c5a3600f49ca02bf4f45e6a3ef50fcff18e68041",
+    "flock-stage3/host/src/ixby/paged_exec/slots.rs": "248ff0546d00ff6a22f60b43d2238824b2373a02ecc7b62fede9fc5b2fe0bf36",
+    "flock-stage3/host/src/ixby/paged_exec/synthesis.rs": "95500d95bdbe224bca6c11f2e2ab78a536414b53740651d23f32a09ed81f67a6",
+    "flock-stage3/host/src/ixby/paged_exec/witness.rs": "8d37ee4135c0cd6a2bb6d414390ab5a404130216918679965fd77b68dc3ad872",
+    "flock-stage3/host/src/ixby/paged_nat.rs": "5842e2edc48b4cbd888c134e547848abaa5fb7bf5914ef34d01f9795ee480dda",
+    "flock-stage3/host/src/ixby/paged_primitive/gate.rs": "4be64ec291ea2a649f3e5792a32746303fb3164498c3acb05af9a05e3090ad16",
+    "flock-stage3/host/src/ixby/paged_primitive/mod.rs": "f6fadf99dac2e75668a324852c9f98ccfca725077ec25f2d0495e03c7d674bfa",
+    "flock-stage3/host/src/ixby/paged_primitive/tests.rs": "c389dcbf8d275ed025fcd4a79b28f3463f6c8b605c5a4e375b2e1d6ed4fa01bb",
+    "flock-stage3/host/src/ixby/paged_value.rs": "c5b2ee7e3952d25a186c13f8ed8fba9b4c430f76afd013683899ef5a2e9d759f",
+    "flock-stage3/host/src/ixby/primitive/mod.rs": "c114c3985928f069511ee5a1407e6e332741ff5c7c77a1136486e5405cc0d736",
+    "flock-stage3/host/src/ixby/primitive/prepare.rs": "58530dc47c0539b19c6ffe6f0b26aa2ba7a2c28d1a173525576fdf2bef981a8f",
+    "flock-stage3/host/src/ixby/primitive/registry.rs": "7d8e963308b709234f2f0727c83ab6aceb8295a8892076106a894b530c315936",
+    "flock-stage3/host/src/ixby/primitive/tests.rs": "59f75208897010ebb873d768e2ee3b20a66a8550f24b705ec379681dbd67f02c",
+    "flock-stage3/host/src/ixby/primitive/word_tests.rs": "0aa3597fec16c92f8104cb99eae19d15270c3cc85490279032a1758c0281848e",
+    "flock-stage3/host/src/ixby/test_support.rs": "10daba19e3c18ae2b5482002f655a40447610e8890682f102f352b842b05dcb9",
+    "flock-stage3/host/src/ixby/value.rs": "48b67985454763d99754243de15d65ed8c98e094f3b685451d9254a90f76cf01",
+    "flock-stage3/host/src/ixby/wide_fuel/mod.rs": "1ff5ee72d60edb60b53c9dc0d3b0b8a013b390883695afda707dc303571ac0db",
+    "flock-stage4/exec/src/batch_replay.rs": "65498e46a0d584717edbcb84d2b92006235c6e6ea0187d3885649692c8ddf735",
+    "flock-stage4/exec/src/blueprint/mod.rs": "8381c5fb09a0f047c57fbe5b522d5f73f6f005c1aec29f44b1773768c9c8b8e7",
+    "flock-stage4/exec/src/lib.rs": "ae4c862b8af7ae9d3a18213803d3fdeaa8df859d2bb5a38f7f7864248d31c810",
+    "flock-stage4/exec/src/replay.rs": "5e7884bda52d2912947f2877086ac943d64c153e35c91c7866fb7cd2b3f3b392",
+    "flock-stage4/fixtures/paged-execution-runtime-v2.py": "a51718184ce98985a690fd356266304556ba66edde806b48ebdbb0a903a481b1",
+    "flock-stage4/recursive/src/execution_tree/tests/fixture.rs": "54e9398d755755ebf7e0d815afdee7417513f233e30f295892e4fe59851ed181",
+    "flock-stage4/recursive/src/pair/tests.rs": "0f28891abfd76d9edc1635e362725ec18ed43529b19e7e945b2156d4f095c925",
+    "flock-stage4/recursive/src/proof.rs": "0a10ec1c1d0744439a2d7264781239303c90d58f66bc601a45839a5328fccf05",
+    "flock-stage4/recursive/src/tree/tests.rs": "3f4861579512285d06ad430d0413c38cfdf4b21301cd88fb7ecfb49b5d5fa889",
+    "lakefile.lean": "818958add5317605e81ee570a1e982364bdf379403030b5171652a88c31d6932"
+  },
+  "fixture": {
+    "allocated_byte_cells": 3,
+    "artifacts": {
+      "input.ixbi": {
+        "blake3": "3248d23a30a37303e87b679244acaa80baa83b0be99dcb60c09a4795a26b6f97",
+        "bytes": 21,
+        "hex": "495846490100000002000000010402000007000009",
+        "sha256": "afdac2587f662d4cd3e98b84f4cf65cd43d4bc85810ce4f209405f98ff949a67"
+      },
+      "output.ixbo": {
+        "blake3": "9a16f9bb94631d84fcd547c14f6561dcc5e69c47969573b0c3baf5632a4c45fe",
+        "bytes": 78,
+        "hex": "4958464f010000000200000000063f0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e838a91989fa6adb4bbc2c9d0d7dee5ecf3fa01080f161d242b323940474e555c63",
+        "sha256": "0d77bb5ee4e60b3f6a9bc263bf76108e097fc9fc560b5f012b7ce95dd25b6b78"
+      },
+      "profile.ixfp": {
+        "blake3": "6f40b3ec39601b87730bc40b6b4e4e64d6bfd1b8b9d0f2c222ee9f9eea60c2bc",
+        "bytes": 184,
+        "hex": "4958465000000000010000000200000001000000000000000000000000000000000000000000000000000000000000000e0000000000000000000000000000000e0000000000000000000000000000000300000000000000000000000000000000000000000000000000000000000000080000000000000000000000000000008000000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000f00000000000000",
+        "sha256": "62875aaf8693f555de83b09414df0ee027400de6f837f36e6c578993f4538714"
+      },
+      "program.ixby": {
+        "blake3": "e70a4cf3cf228ce7a7fd90ea3103cee452d8d811c3ecb8b7530fd2f277908335",
+        "bytes": 248,
+        "hex": "49584246010000000200000001000e0e03000880010080010f00000101000e0100013100010200013502000101002502030001340300000100010002030400013302000301000104050001320100040506000130010100ffffffffffffffffffffffffffffffffffff03060700012f010006070800013600080900013702000801061f000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e090a000137020009010622838a91989fa6adb4bbc2c9d0d7dee5ecf3fa01080f161d242b323940474e555c636a0a0b00013901000a0b0c00013801000a0c0d00012a03000c01030100000001033f0000000d0e01000d",
+        "sha256": "71f1fc7bc1fe23ba231457ddd324c92048481b5569b80f03ffdcbb6f05bd8919"
+      }
+    },
+    "final_heap_cells": 9,
+    "fuel": 15,
+    "generator": "flock-stage4/fixtures/paged-execution-runtime-v2.py",
+    "initial_heap_cells": 2,
+    "input": "one array [Nat 7, Nat 9]",
+    "limits": [
+      1,
+      0,
+      14,
+      14,
+      3,
+      0,
+      8,
+      128,
+      0,
+      128
+    ],
+    "logical_steps": 15,
+    "micro_steps": 75,
+    "opcodes": [
+      49,
+      53,
+      52,
+      51,
+      50,
+      48,
+      47,
+      54,
+      55,
+      55,
+      57,
+      56,
+      42
+    ],
+    "operations": "empty array, push 37, nested set/get, length, full Nat128-to-Field reduction and canonical Field-to-Nat, empty builder, append 31 bytes and 34 bytes, length, freeze, slice 63 bytes at offset 1"
+  },
+  "format": "ixby-paged-execution-runtime/v2",
+  "fresh_verification": {
+    "accepted": true,
+    "inputs": "32-byte independently calculated S and root proof only; cleared environment outside the worktree",
+    "malloc_arena_max": 2,
+    "negative_checks": {
+      "changed_proof_bytes": 4,
+      "changed_root_advice": 1,
+      "changed_statement_low_high_bits": 4,
+      "trailing_byte": 1,
+      "truncation": 1
+    },
+    "process": {
+      "command": "timeout 900 env -i RAYON_NUM_THREADS=2 MALLOC_ARENA_MAX=2 IXBY_RUNTIME_V2_ROOT_RECEIVER=1 ./verify --ignored --exact execution_tree::tests::fixture::runtime_v2_root_receiver --test-threads=1 --nocapture",
+      "exit_status": 0,
+      "maximum_rss_kib": 63934872,
+      "system_seconds": 36.44,
+      "user_seconds": 165.96,
+      "wall_time": "3:23.57"
+    },
+    "profile_class_and_counts_fixed_before_stdin": true,
+    "rayon_threads": 2,
+    "same_setup_identity_as_producer": true,
+    "setup_seconds": 173.305207336,
+    "verification_seconds": 24.491332409
+  },
+  "independent_statement": {
+    "B": "9e266c1ad7ede9bb2db2a29a85be211de68134c9c4eb09c170a8587e2c188a0e",
+    "I": "bfcdbac03620faa49a63ad7274492acd9a6d8767323f1454169849afefcd9260",
+    "O": "cbf602472f20d5a4ee541659e8152518eefed2a0f1bd3efd54d5228ef8321539",
+    "P": "0eae68b6e3c3be617a40654add125e38a5382189757bf284dca2277e62fd5d78",
+    "S": "f400d5a93a4d6fb68520ccc322316c2872f1b5f0767f5ac0cf44b51dc81736bb",
+    "algorithm": "BLAKE3 b3sum 1.8.2, independent of the proof CLI"
+  },
+  "limitations": [
+    "No Compilatrix implementation changes in this patch.",
+    "No new compiler-generated CSLib reference trace or measured CSLib speedup.",
+    "No full CSLib execution proof.",
+    "Native constraint-to-Lean refinement and compiler representation certificates are separate formal obligations.",
+    "Complete paged execution currently supports Bytes terminal output and physical Nat128; array wire output is available in the reference codec."
+  ],
+  "parent_commit": "d4405b3ceb82e6d4cce19e48186f3272f8482e04",
+  "proof": {
+    "class": "bytes",
+    "component_counts": [
+      1,
+      3,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1
+    ],
+    "endpoint_proofs": 1,
+    "endpoint_receipt": {
+      "blake3": "f1655c16f0369c3a77554df2300e29c6bed674159e3473609a36862631a0368c",
+      "bytes": 132891,
+      "sha256": "16b78ee66ff698b62aa4817ceef76864ce2dc82575999615f6778675d6b36d93"
+    },
+    "execution_statement_hex": "0e0000000000000000000000000000000f000000000000000000000000000000800000000000000080000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000f000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000aada0240499eca6eaa7d05d3f14d260be544e4fcb58194d933b685d9f23c1d2c4b00000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000600000000000000000000000000000001000000001400003f000000000000000000000000000000000000000000000000000000000000000f00000000000000090000000000000000000000000000000300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000c25203481184fe6a467d2a07f76dc45143e28503f401cfe2529a704d062f261d",
+    "geometry": {
+      "application_words": 2,
+      "arithmetic_operations": 918956,
+      "blake3_compressions": 45498,
+      "children": [
+        13,
+        1
+      ],
+      "dense_variables": 31,
+      "leaves": 14,
+      "packing_rows": 53272,
+      "root_advice_words": 10919,
+      "root_families": 341,
+      "row_variables": 16,
+      "variables": 4923303
+    },
+    "identity": "3fcc2e3d943c6e41e7826e3f0b93ed6ca726ff0f903aff0ba743f4d9ffbcd4f0",
+    "leaf_receipts": {
+      "leaves/00/0000000/0000000000.flock": {
+        "blake3": "e91d96c3b82b30f6c28b78f96cb5aaea4a1c2cf79efba755e73f5bfd78356b58",
+        "bytes": 393532,
+        "sha256": "bddf106c1084408335b5a1c7b59f3bde2dbd1c9e5b0bd44973bd3f751c3192fe"
+      },
+      "leaves/01/0000000/0000000000.flock": {
+        "blake3": "df71ce3a64419222a55d64c9b288c02e4d48ba1809b6702351c5c835a3f8547c",
+        "bytes": 452899,
+        "sha256": "80be582b39015967e24dc49192fbd13cd7fe75e4808719a20f9e7ee6270bd753"
+      },
+      "leaves/01/0000000/0000000001.flock": {
+        "blake3": "8d348aa273f7d34a962639572aa399662aec5adef323f7006b64e4c68bb7028d",
+        "bytes": 452899,
+        "sha256": "4a030bbff31e7d671e578085496ad0fb17dd6decec0f52c831f973d7c934426c"
+      },
+      "leaves/01/0000000/0000000002.flock": {
+        "blake3": "25c9b09a53908f5bbc7f8ba93f2b18d283ca83e520bdcfb41ccf61426c503fea",
+        "bytes": 452899,
+        "sha256": "ac199f6e50805c89a015511696fc3dfa58437f53874e6523b8cbf9ce45c8c1ef"
+      },
+      "leaves/02/0000000/0000000000.flock": {
+        "blake3": "be5a63a7ec59cba65cae9d91b3f735718e6f2204cf252bce1a4078032971c1c3",
+        "bytes": 335443,
+        "sha256": "662ae594527e6b80bb5d8e9f2941ca8d275ae11bb0c98b8e45cb83abf3385927"
+      },
+      "leaves/03/0000000/0000000000.flock": {
+        "blake3": "d5f488f073a155fd09e142c758c59a199c9cb7e21a212814eab1d459d1e7d208",
+        "bytes": 298019,
+        "sha256": "e03aec54c52c0e1e012d470b74e1c3962791cf557eb7fd336f8ab61c4016cf28"
+      },
+      "leaves/04/0000000/0000000000.flock": {
+        "blake3": "9bafd87787da44a2b5d23794b31b4d87a9c9500bd4c5e47ecedf2b0d6472c84d",
+        "bytes": 393532,
+        "sha256": "5cc67e43d86334abd208f834fe435e7202e2437fcca5671f0cd8a3bd0e5a4bfa"
+      },
+      "leaves/05/0000000/0000000000.flock": {
+        "blake3": "e34bb7fe9e7ccf1da0331b5510e6cd508e48df163bc0f4e2885518eb49e489fa",
+        "bytes": 452891,
+        "sha256": "708986e16f1e2094986f1acabf0ab8324da0f1c85ee9c18b8e2e8b7a935e78da"
+      },
+      "leaves/06/0000000/0000000000.flock": {
+        "blake3": "a979741e419c87641a5e01a31aa61cba87362038553a31c45b016972973fb896",
+        "bytes": 411675,
+        "sha256": "ec1370b467696ca497f55420de262108cdc9c616d889c1cd568caaa1ca7fd224"
+      },
+      "leaves/07/0000000/0000000000.flock": {
+        "blake3": "cd20efa8ea981ccba0e2eff6488f62e6c6b7b826602e7cc4c0ec9983cd814f25",
+        "bytes": 351259,
+        "sha256": "f175df66bde4762b568ac312be108f893e4e4041306337212b437cd95fd5255f"
+      },
+      "leaves/08/0000000/0000000000.flock": {
+        "blake3": "2225300da0183a0db3b93dc4d39788f2f54ca6b38906221ee868590e98acd255",
+        "bytes": 282612,
+        "sha256": "660346a4e8de27e638b054033488b9d3b94710bf492a2c9affe41c5b4c2c3cdf"
+      },
+      "leaves/09/0000000/0000000000.flock": {
+        "blake3": "b60c3c6e734d6b3b833a98eb9a8c137564c0412ea9bb8358b1fb953c31109a32",
+        "bytes": 282612,
+        "sha256": "12bf888442dba68e3fe2e25fb78c43f6e664cbeefece190d9f59c1d1e6f9552b"
+      },
+      "leaves/10/0000000/0000000000.flock": {
+        "blake3": "b30864b2b316e22f325d4e03552dcf07d076180e1f6a1421e0a35e6d841a5aa3",
+        "bytes": 282612,
+        "sha256": "bf0a45da47de23f748af8355306b1a008cdf04150213cad026d54cc2380eb0dc"
+      }
+    },
+    "root": {
+      "blake3": "04dca0524ff0fabd6250774ae107414cf2df0ba4760f0144b5351d50b009127e",
+      "bytes": 517843,
+      "sha256": "9ebe5b706aae512bc0bd22efe4bd2c2944e55b3499ceea7306ae2f93903160bc"
+    }
+  },
+  "proving": {
+    "initial_combined_attempt": {
+      "completed": false,
+      "events": [
+        {
+          "bytes": 393532,
+          "event": "proved",
+          "name": "leaves/00/0000000/0000000000",
+          "seconds": 0.353114978
+        },
+        {
+          "bytes": 452899,
+          "event": "proved",
+          "name": "leaves/01/0000000/0000000000",
+          "seconds": 0.718530017
+        },
+        {
+          "bytes": 452899,
+          "event": "proved",
+          "name": "leaves/01/0000000/0000000001",
+          "seconds": 0.42631076
+        },
+        {
+          "bytes": 452899,
+          "event": "proved",
+          "name": "leaves/01/0000000/0000000002",
+          "seconds": 0.434791087
+        },
+        {
+          "bytes": 335443,
+          "event": "proved",
+          "name": "leaves/02/0000000/0000000000",
+          "seconds": 0.326148086
+        },
+        {
+          "bytes": 298019,
+          "event": "proved",
+          "name": "leaves/03/0000000/0000000000",
+          "seconds": 0.590585772
+        },
+        {
+          "bytes": 393532,
+          "event": "proved",
+          "name": "leaves/04/0000000/0000000000",
+          "seconds": 0.324706441
+        },
+        {
+          "bytes": 452891,
+          "event": "proved",
+          "name": "leaves/05/0000000/0000000000",
+          "seconds": 0.67546586
+        },
+        {
+          "bytes": 411675,
+          "event": "proved",
+          "name": "leaves/06/0000000/0000000000",
+          "seconds": 3.276397078
+        },
+        {
+          "bytes": 351259,
+          "event": "proved",
+          "name": "leaves/07/0000000/0000000000",
+          "seconds": 0.3803901
+        },
+        {
+          "bytes": 282612,
+          "event": "proved",
+          "name": "leaves/08/0000000/0000000000",
+          "seconds": 0.301694609
+        },
+        {
+          "bytes": 282612,
+          "event": "proved",
+          "name": "leaves/09/0000000/0000000000",
+          "seconds": 0.268463421
+        },
+        {
+          "bytes": 282612,
+          "event": "proved",
+          "name": "leaves/10/0000000/0000000000",
+          "seconds": 0.334325692
+        },
+        {
+          "bytes": 132891,
+          "event": "proved",
+          "name": "endpoints",
+          "seconds": 0.25272284
+        },
+        {
+          "event": "complete_setup",
+          "geometry": {
+            "application_words": 2,
+            "arithmetic_operations": 918956,
+            "blake3_compressions": 45498,
+            "children": [
+              13,
+              1
+            ],
+            "dense_variables": 31,
+            "leaves": 14,
+            "packing_rows": 53272,
+            "root_advice_words": 10919,
+            "root_families": 341,
+            "row_variables": 16,
+            "variables": 4923303
+          },
+          "identity": "3fcc2e3d943c6e41e7826e3f0b93ed6ca726ff0f903aff0ba743f4d9ffbcd4f0",
+          "seconds": 150.811402224
+        },
+        {
+          "component": 1,
+          "event": "chain_setup",
+          "geometry": {
+            "application_words": 81,
+            "arithmetic_operations": 1034068,
+            "blake3_compressions": 37931,
+            "children": [
+              1,
+              1
+            ],
+            "dense_variables": 31,
+            "leaves": 2,
+            "packing_rows": 30882,
+            "root_advice_words": 2630,
+            "root_families": 90,
+            "row_variables": 16,
+            "variables": 2925650
+          },
+          "leaves": 2,
+          "seconds": 7.288428339
+        },
+        {
+          "bytes": 364275,
+          "event": "proved",
+          "name": "nodes/01/0000000002/0000000/0000000000",
+          "seconds": 8.057686203
+        },
+        {
+          "bytes": 358131,
+          "event": "proved",
+          "name": "nodes/01/0000000003/0000000/0000000000",
+          "seconds": 18.89803179
+        },
+        {
+          "event": "facts_setup",
+          "geometry": {
+            "application_words": 90,
+            "arithmetic_operations": 833193,
+            "blake3_compressions": 28146,
+            "children": [
+              1,
+              3
+            ],
+            "dense_variables": 31,
+            "leaves": 4,
+            "packing_rows": 28980,
+            "root_advice_words": 3069,
+            "root_families": 102,
+            "row_variables": 15,
+            "variables": 2657826
+          },
+          "name": "facts-00-02",
+          "seconds": 6.884758497
+        },
+        {
+          "bytes": 354939,
+          "event": "proved",
+          "name": "facts-00-02",
+          "seconds": 24.455931942
+        },
+        {
+          "event": "facts_setup",
+          "geometry": {
+            "application_words": 14,
+            "arithmetic_operations": 838896,
+            "blake3_compressions": 21453,
+            "children": [
+              1,
+              1
+            ],
+            "dense_variables": 31,
+            "leaves": 2,
+            "packing_rows": 25279,
+            "root_advice_words": 769,
+            "root_families": 26,
+            "row_variables": 15,
+            "variables": 2102762
+          },
+          "name": "facts-02-04",
+          "seconds": 6.276318495
+        },
+        {
+          "bytes": 308619,
+          "event": "proved",
+          "name": "facts-02-04",
+          "seconds": 5.544459368
+        },
+        {
+          "event": "facts_setup",
+          "geometry": {
+            "application_words": 104,
+            "arithmetic_operations": 919035,
+            "blake3_compressions": 28951,
+            "children": [
+              4,
+              2
+            ],
+            "dense_variables": 31,
+            "leaves": 6,
+            "packing_rows": 29306,
+            "root_advice_words": 3592,
+            "root_families": 116,
+            "row_variables": 15,
+            "variables": 2851709
+          },
+          "name": "facts-00-04",
+          "seconds": 6.23501105
+        }
+      ],
+      "rayon_threads": 4,
+      "reason": "cgroup kernel OOM kill at the 84 GiB cap after all 13 component leaves and the endpoint proof; recorded by systemd journal",
+      "reported_memory_peak": "84G",
+      "scope_wall_time_seconds": 323.907
+    },
+    "measurement_note": "Local correctness runs overlapped builds and tests. Aggregation reused verified cached nodes after the OOM. No end-to-end performance comparison or CSLib speedup is claimed.",
+    "resumed_aggregation": {
+      "accepted": true,
+      "cached_proofs_verified_before_reuse": true,
+      "events": [
+        {
+          "event": "complete_setup",
+          "geometry": {
+            "application_words": 2,
+            "arithmetic_operations": 918956,
+            "blake3_compressions": 45498,
+            "children": [
+              13,
+              1
+            ],
+            "dense_variables": 31,
+            "leaves": 14,
+            "packing_rows": 53272,
+            "root_advice_words": 10919,
+            "root_families": 341,
+            "row_variables": 16,
+            "variables": 4923303
+          },
+          "identity": "3fcc2e3d943c6e41e7826e3f0b93ed6ca726ff0f903aff0ba743f4d9ffbcd4f0",
+          "seconds": 150.239312415
+        },
+        {
+          "component": 1,
+          "event": "chain_setup",
+          "geometry": {
+            "application_words": 81,
+            "arithmetic_operations": 1034068,
+            "blake3_compressions": 37931,
+            "children": [
+              1,
+              1
+            ],
+            "dense_variables": 31,
+            "leaves": 2,
+            "packing_rows": 30882,
+            "root_advice_words": 2630,
+            "root_families": 90,
+            "row_variables": 16,
+            "variables": 2925650
+          },
+          "leaves": 2,
+          "seconds": 6.69003503
+        },
+        {
+          "event": "reused",
+          "name": "nodes/01/0000000002/0000000/0000000000",
+          "seconds": 0.290235492
+        },
+        {
+          "event": "reused",
+          "name": "nodes/01/0000000003/0000000/0000000000",
+          "seconds": 2.35575254
+        },
+        {
+          "event": "facts_setup",
+          "geometry": {
+            "application_words": 90,
+            "arithmetic_operations": 833193,
+            "blake3_compressions": 28146,
+            "children": [
+              1,
+              3
+            ],
+            "dense_variables": 31,
+            "leaves": 4,
+            "packing_rows": 28980,
+            "root_advice_words": 3069,
+            "root_families": 102,
+            "row_variables": 15,
+            "variables": 2657826
+          },
+          "name": "facts-00-02",
+          "seconds": 6.668865191
+        },
+        {
+          "event": "reused",
+          "name": "facts-00-02",
+          "seconds": 4.465188889
+        },
+        {
+          "event": "facts_setup",
+          "geometry": {
+            "application_words": 14,
+            "arithmetic_operations": 838896,
+            "blake3_compressions": 21453,
+            "children": [
+              1,
+              1
+            ],
+            "dense_variables": 31,
+            "leaves": 2,
+            "packing_rows": 25279,
+            "root_advice_words": 769,
+            "root_families": 26,
+            "row_variables": 15,
+            "variables": 2102762
+          },
+          "name": "facts-02-04",
+          "seconds": 5.886536319
+        },
+        {
+          "event": "reused",
+          "name": "facts-02-04",
+          "seconds": 0.25782089
+        },
+        {
+          "event": "facts_setup",
+          "geometry": {
+            "application_words": 104,
+            "arithmetic_operations": 919035,
+            "blake3_compressions": 28951,
+            "children": [
+              4,
+              2
+            ],
+            "dense_variables": 31,
+            "leaves": 6,
+            "packing_rows": 29306,
+            "root_advice_words": 3592,
+            "root_families": 116,
+            "row_variables": 15,
+            "variables": 2851709
+          },
+          "name": "facts-00-04",
+          "seconds": 6.14769602
+        },
+        {
+          "bytes": 367115,
+          "event": "proved",
+          "name": "facts-00-04",
+          "seconds": 32.030174544
+        },
+        {
+          "event": "facts_setup",
+          "geometry": {
+            "application_words": 86,
+            "arithmetic_operations": 892146,
+            "blake3_compressions": 32307,
+            "children": [
+              1,
+              1
+            ],
+            "dense_variables": 31,
+            "leaves": 2,
+            "packing_rows": 30435,
+            "root_advice_words": 2827,
+            "root_families": 96,
+            "row_variables": 15,
+            "variables": 2750760
+          },
+          "name": "facts-04-06",
+          "seconds": 6.213201018
+        },
+        {
+          "bytes": 356779,
+          "event": "proved",
+          "name": "facts-04-06",
+          "seconds": 7.721263651
+        },
+        {
+          "event": "facts_setup",
+          "geometry": {
+            "application_words": 66,
+            "arithmetic_operations": 1187514,
+            "blake3_compressions": 45182,
+            "children": [
+              1,
+              1
+            ],
+            "dense_variables": 31,
+            "leaves": 2,
+            "packing_rows": 41261,
+            "root_advice_words": 5619,
+            "root_families": 179,
+            "row_variables": 16,
+            "variables": 3966463
+          },
+          "name": "facts-06-08",
+          "seconds": 7.225502049
+        },
+        {
+          "bytes": 431139,
+          "event": "proved",
+          "name": "facts-06-08",
+          "seconds": 21.547210721
+        },
+        {
+          "event": "facts_setup",
+          "geometry": {
+            "application_words": 152,
+            "arithmetic_operations": 1001527,
+            "blake3_compressions": 42116,
+            "children": [
+              2,
+              2
+            ],
+            "dense_variables": 31,
+            "leaves": 4,
+            "packing_rows": 43030,
+            "root_advice_words": 7912,
+            "root_families": 252,
+            "row_variables": 16,
+            "variables": 4189772
+          },
+          "name": "facts-04-08",
+          "seconds": 7.682314886
+        },
+        {
+          "bytes": 462115,
+          "event": "proved",
+          "name": "facts-04-08",
+          "seconds": 33.946801706
+        },
+        {
+          "event": "facts_setup",
+          "geometry": {
+            "application_words": 256,
+            "arithmetic_operations": 1100101,
+            "blake3_compressions": 47806,
+            "children": [
+              6,
+              4
+            ],
+            "dense_variables": 31,
+            "leaves": 10,
+            "packing_rows": 47207,
+            "root_advice_words": 9246,
+            "root_families": 287,
+            "row_variables": 16,
+            "variables": 4683757
+          },
+          "name": "facts-00-08",
+          "seconds": 8.054359028
+        },
+        {
+          "bytes": 492979,
+          "event": "proved",
+          "name": "facts-00-08",
+          "seconds": 65.600395089
+        },
+        {
+          "event": "facts_setup",
+          "geometry": {
+            "application_words": 18,
+            "arithmetic_operations": 570237,
+            "blake3_compressions": 16531,
+            "children": [
+              1,
+              1
+            ],
+            "dense_variables": 30,
+            "leaves": 2,
+            "packing_rows": 22574,
+            "root_advice_words": 751,
+            "root_families": 25,
+            "row_variables": 15,
+            "variables": 1697503
+          },
+          "name": "facts-08-10",
+          "seconds": 5.470628246
+        },
+        {
+          "bytes": 322251,
+          "event": "proved",
+          "name": "facts-08-10",
+          "seconds": 4.98068945
+        },
+        {
+          "event": "facts_setup",
+          "geometry": {
+            "application_words": 27,
+            "arithmetic_operations": 705547,
+            "blake3_compressions": 18683,
+            "children": [
+              2,
+              1
+            ],
+            "dense_variables": 30,
+            "leaves": 3,
+            "packing_rows": 21494,
+            "root_advice_words": 942,
+            "root_families": 30,
+            "row_variables": 15,
+            "variables": 1859520
+          },
+          "name": "facts-08-11",
+          "seconds": 6.146577799
+        },
+        {
+          "bytes": 336731,
+          "event": "proved",
+          "name": "facts-08-11",
+          "seconds": 11.603839579
+        },
+        {
+          "event": "facts_setup",
+          "geometry": {
+            "application_words": 283,
+            "arithmetic_operations": 1066831,
+            "blake3_compressions": 48152,
+            "children": [
+              10,
+              3
+            ],
+            "dense_variables": 31,
+            "leaves": 13,
+            "packing_rows": 49295,
+            "root_advice_words": 10087,
+            "root_families": 311,
+            "row_variables": 16,
+            "variables": 4857867
+          },
+          "name": "facts-00-11",
+          "seconds": 8.24412218
+        },
+        {
+          "bytes": 508339,
+          "event": "proved",
+          "name": "facts-00-11",
+          "seconds": 77.572414167
+        },
+        {
+          "bytes": 517843,
+          "event": "proved",
+          "name": "root",
+          "seconds": 81.425435812
+        }
+      ],
+      "final_verification_seconds": 22.399102645,
+      "malloc_arena_max": 2,
+      "process": {
+        "command": "timeout 1800 env MALLOC_ARENA_MAX=2 /tmp/ixby-runtime-v2-20260916/paged-execution-native-v2 aggregate --profile /tmp/ixby-runtime-v2-20260916/fixture/profile.ixfp --class bytes --threads 2 --counts 1,3,1,1,1,1,1,1,1,1,1 --statement /tmp/ixby-runtime-v2-20260916/proof/expected.statement --dir /tmp/ixby-runtime-v2-20260916/proof",
+        "exit_status": 0,
+        "maximum_rss_kib": 74694620,
+        "system_seconds": 52.47,
+        "user_seconds": 613.18,
+        "wall_time": "10:18.11"
+      },
+      "rayon_threads": 2,
+      "seconds_including_setup_and_verification": 606.679398841
+    }
+  },
+  "recorded_at_utc": "2026-09-17T00:06:39.853172+00:00",
+  "retained_logs_directory": "/tmp/ixby-runtime-v2-20260916",
+  "retained_parser_fixture_pins": {
+    "cslib": {
+      "cslib.ixbi": {
+        "blake3": "84418860c872d76e77c9b7fa466d091a6f995cd1ed7a1872fb5349131aea17c3",
+        "bytes": 4813238
+      },
+      "cslib.ixbo": {
+        "blake3": "246c11e011f9a481b944ee3cdc7dc14d57b28f467e9bb6f442c30baa433a0766",
+        "bytes": 49
+      },
+      "cslib.ixby": {
+        "blake3": "f2f6da19991985ba4575773a62943b213d94f3678c5b95f85fb9af1025fd26d1",
+        "bytes": 1016587
+      }
+    },
+    "init": {
+      "init.ixbi": {
+        "blake3": "a69ff49c0fcb870029ac92911748cd1ac8c66c2678ca38d3d9ad3a884c21bf8c",
+        "bytes": 9611120,
+        "original_semantics": "00000000"
+      },
+      "init.ixbo": {
+        "blake3": "971b7e63a5363c71bc4bf30421b7f06088a02329755473b8e751173beb11719a",
+        "bytes": 49,
+        "original_semantics": "00000000"
+      },
+      "stage2.ixby": {
+        "blake3": "e2bf515b731c1a00110e19e2ab8478bcf4be002eb3f60de94c0b73775777fea7",
+        "bytes": 1002355,
+        "original_semantics": "00000000"
+      }
+    },
+    "note": "Only byte 8 changes from semantics 0 to 2 in each artifact. This is a parser regression fixture, not compiler integration or proof reuse."
+  },
+  "scope": "Complete native Flock proof of an independently encoded fixture exercising every new runtime-v2 opcode; compiler adoption and full CSLib execution remain pending.",
+  "source_note": "Final reviewed source hashes. After the producer build, only test fixtures/oracles, documentation, formatting, and internal error wording changed; the fresh verifier confirms the identical complete setup identity.",
+  "validation": {
+    "affected_rust_distinct_tests_passed": 187,
+    "affected_rust_opt_in_tests_not_run_in_main_suite": 67,
+    "affected_rust_test_names": [
+      "ixby::ixbf::tests::all_host_loader_budgets_fail_closed",
+      "ixby::ixbf::tests::all_operation_forms_and_primitive_arities_admit_structurally",
+      "ixby::ixbf::tests::arrays_use_shared_node_budgets_and_distinct_canonical_tags",
+      "ixby::ixbf::tests::byte_arrays_borrow_the_canonical_buffer_and_output_cannot_select_its_arity",
+      "ixby::ixbf::tests::case_nat_and_branch_have_distinct_tags_and_frame_contracts",
+      "ixby::ixbf::tests::constructor_cases_check_all_alternatives_and_appended_fields",
+      "ixby::ixbf::tests::conversion_opcodes_are_unary_and_require_current_semantics",
+      "ixby::ixbf::tests::deep_values_use_an_explicit_stack_and_exact_depth_bound",
+      "ixby::ixbf::tests::every_scalar_kind_roundtrips_and_payloads_remain_distinct",
+      "ixby::ixbf::tests::every_truncated_program_prefix_wrong_domain_and_version_rejects",
+      "ixby::ixbf::tests::functional_opcode_names_map_explicitly_without_aliases",
+      "ixby::ixbf::tests::independently_encoded_identity_roundtrips_with_original_ranges",
+      "ixby::ixbf::tests::natural_metadata_above_u64_and_u32_is_preserved_exactly",
+      "ixby::ixbf::tests::nested_constructor_and_pap_forest_roundtrips_without_recursive_ownership",
+      "ixby::ixbf::tests::node_fuel_is_shared_across_all_roots_and_children",
+      "ixby::ixbf::tests::noncanonical_scalars_and_invalid_utf8_reject",
+      "ixby::ixbf::tests::nonminimal_unterminated_and_hostile_large_counts_reject",
+      "ixby::ixbf::tests::scalar_capacity_and_nat_zero_boundary_follow_reference",
+      "ixby::ixbf::tests::tail_forms_and_arbitrary_precision_local_contracts_are_preserved",
+      "ixby::ixbf::tests::unread_paps_and_constructor_values_are_still_validated",
+      "ixby::ixbf::tests::whole_image_validation_includes_dead_code_and_unique_identities",
+      "ixby::ixbf::tests::wrong_calls_closures_primitive_arities_and_resume_frames_reject",
+      "ixby::ixbf_decode::bodies::proof_tests::complete_bodies_reject_invalid_references_and_physical_operand_overflow",
+      "ixby::ixbf_decode::bodies::proof_tests::complete_body_shape_matches_native_records_for_every_instruction_operation_and_scalar",
+      "ixby::ixbf_decode::bodies::tests::body_outputs_padding_and_lazy_count_shapes_are_constrained",
+      "ixby::ixbf_decode::bodies::tests::body_reads_reject_missing_records_full_width_addresses_and_disabled_advice",
+      "ixby::ixbf_decode::bodies::tests::body_tables_match_integer_model_for_full_width_state_records_and_controls",
+      "ixby::ixbf_decode::bodies::tests::completed_bodies_bind_full_spans_ownership_frames_and_exact_operand_order",
+      "ixby::ixbf_decode::byte_span_tests::byte_array_headers_produce_exact_ranges_without_copying_payloads",
+      "ixby::ixbf_decode::byte_span_tests::byte_array_outputs_padding_and_count_emission_are_fully_bound",
+      "ixby::ixbf_decode::byte_span_tests::byte_array_range_limit_truncation_overflow_and_noncanonical_lengths_reject",
+      "ixby::ixbf_decode::byte_span_tests::byte_array_u128_limits_and_following_data_remain_distinct_from_file_padding",
+      "ixby::ixbf_decode::code::proof_tests::complete_code_shape_matches_native_images_and_reuses_authenticated_chunks",
+      "ixby::ixbf_decode::code::tests::code_access_shapes_scale_with_path_depth_and_keep_counting_lazy",
+      "ixby::ixbf_decode::code::tests::code_relations_cover_full_width_indices_controls_and_record_outputs",
+      "ixby::ixbf_decode::code::tests::code_requests_reject_aliasing_bounds_overflow_and_disabled_advice",
+      "ixby::ixbf_decode::code::tests::reused_code_handles_reject_other_roots_addresses_and_missing_records",
+      "ixby::ixbf_decode::code::tests::single_chunk_code_reads_bind_root_flags_and_final_padding",
+      "ixby::ixbf_decode::dispatch::model_tests::state_selected_whole_grammars_cover_scalars_streaming_and_exact_completion",
+      "ixby::ixbf_decode::dispatch::proof_tests::whole_buffer_constraints_require_genuine_start_eof_context_and_step_capacity",
+      "ixby::ixbf_decode::dispatch::proof_tests::whole_buffer_dispatch_is_data_independent_and_counted_before_witnessing",
+      "ixby::ixbf_decode::dispatch::tests::control_plans_build_for_all_kinds_and_natural_capacities",
+      "ixby::ixbf_decode::dispatch::tests::controls_match_independent_integer_evaluation_including_reserved_bits_and_underflows",
+      "ixby::ixbf_decode::dispatch::tests::dispatch_output_columns_padding_recycled_buffers_and_lazy_counts_are_bound",
+      "ixby::ixbf_decode::dispatch::tests::every_natural_terminator_is_derived_and_following_records_are_not_payload_padding",
+      "ixby::ixbf_decode::grammar_tests::grammar_every_output_padding_bit_and_fixed_count_stripe_is_bound",
+      "ixby::ixbf_decode::grammar_tests::grammar_every_production_and_malformed_advice_match_independent_integers",
+      "ixby::ixbf_decode::grammar_tests::grammar_forest_completion_matches_an_independent_stack_exhaustively",
+      "ixby::ixbf_decode::grammar_tests::grammar_full_width_carries_exhaustion_and_eof_never_wrap",
+      "ixby::ixbf_decode::grammar_tests::grammar_minimal_program_and_empty_input_reach_exact_eof",
+      "ixby::ixbf_decode::header_tests::every_header_output_and_unused_column_is_bound",
+      "ixby::ixbf_decode::header_tests::functional_header_preserves_u128_metadata_and_exact_constructor_cursor",
+      "ixby::ixbf_decode::header_tests::functional_header_rejects_noncanonical_versions_truncation_wide_overflow_and_counts",
+      "ixby::ixbf_decode::header_tests::header_padding_is_exact_but_following_body_bytes_are_not_padding",
+      "ixby::ixbf_decode::link_tests::decoded_record_links_check_full_indices_arity_frames_and_constructor_identity",
+      "ixby::ixbf_decode::link_tests::every_constructor_identity_bit_and_all_frame_carries_are_checked",
+      "ixby::ixbf_decode::link_tests::record_links_have_lazy_count_parity_and_fully_initialized_witness_buffers",
+      "ixby::ixbf_decode::paged::code_capture::batch::tests::source_parser_code_and_memory_batches_match_the_complete_packed_image",
+      "ixby::ixbf_decode::paged::code_capture::tests::actual_parser_events_capture_every_instruction_scalar_and_full_identifier",
+      "ixby::ixbf_decode::paged::code_capture::tests::capture_r1cs_outputs_and_recycled_padding_are_constrained",
+      "ixby::ixbf_decode::paged::code_capture::tests::capture_rejects_aliases_duplicate_cases_and_invalid_pending_state",
+      "ixby::ixbf_decode::paged::commitment_bridge::tests::bridge_controls_and_transformed_words_have_exact_rows_and_padding",
+      "ixby::ixbf_decode::paged::commitment_bridge::tests::bridge_covers_empty_padding_and_prefix_shift_at_every_chunk_boundary",
+      "ixby::ixbf_decode::paged::constructor_ids::tests::fixed_readonly_tree_and_exact_sort_admit_all_counts_and_reject_duplicates",
+      "ixby::ixbf_decode::paged::constructor_ids::tests::identifier_comparison_uses_every_bit_and_source_padding_is_canonical",
+      "ixby::ixbf_decode::paged::endpoints::tests::actual_components_bind_complete_initialization_halt_and_commitments",
+      "ixby::ixbf_decode::paged::endpoints::tests::empty_bytes_preserve_the_virtual_output_window_in_the_complete_chain",
+      "ixby::ixbf_decode::paged::endpoints::tests::endpoint_integer_gates_constrain_exact_eof_and_nonwrapping_progress",
+      "ixby::ixbf_decode::paged::endpoints::tests::functional_profile_encoding_is_explicit_canonical_and_full_width",
+      "ixby::ixbf_decode::paged::finalize::tests::finalization_requires_halt_exact_fuel_and_the_actual_allocated_bytes",
+      "ixby::ixbf_decode::paged::initialize::tests::exact_initial_state_parameters_and_limits_are_constrained",
+      "ixby::ixbf_decode::paged::input_capture::batch::tests::complete_input_materialization_matches_native_preorder_values_and_clears_frontier",
+      "ixby::ixbf_decode::paged::input_capture::batch::tests::input_capture_padding_references_frontier_and_all_output_words_are_bound",
+      "ixby::ixbf_decode::paged::output_bytes::tests::output_bytes_cover_empty_unaligned_boundaries_and_reject_private_changes",
+      "ixby::ixbf_decode::paged::output_bytes::tests::output_header_and_windows_have_exact_canonical_rows_and_padding",
+      "ixby::ixbf_decode::paged::proof_support::tests::prover_driver_rejects_a_different_grammar_before_proving",
+      "ixby::ixbf_decode::paged::references::tests::complete_walk_covers_all_functions_blocks_and_alternatives",
+      "ixby::ixbf_decode::paged::references::tests::reference_rows_reject_invalid_arities_frames_aliases_and_constrain_padding",
+      "ixby::ixbf_decode::paged::source_bytes::tests::authenticated_source_chains_match_native_memory_and_reject_private_changes",
+      "ixby::ixbf_decode::paged::source_bytes::tests::copy_outputs_addresses_padding_and_recycled_rows_are_constrained",
+      "ixby::ixbf_decode::paged::source_bytes::tests::source_control_covers_exact_length_and_all_high_bits",
+      "ixby::ixbf_decode::proof_tests::codec_record_domains_tags_and_fixed_public_templates_are_distinct",
+      "ixby::ixbf_decode::proof_tests::grammar_decoder_chains_have_independent_endpoints_and_fixed_setup_templates",
+      "ixby::ixbf_decode::proof_tests::scalar_payload_decoder_chains_have_independent_endpoints_and_fixed_templates",
+      "ixby::ixbf_decode::record_tests::all_record_kinds_preserve_original_fields_cursors_and_following_bytes",
+      "ixby::ixbf_decode::record_tests::every_functional_primitive_and_scalar_prefix_has_its_exact_abi",
+      "ixby::ixbf_decode::record_tests::metadata_widths_file_overflow_and_arbitrary_advice_never_truncate",
+      "ixby::ixbf_decode::record_tests::record_count_emission_is_lazy_and_recycled_buffers_are_fully_overwritten",
+      "ixby::ixbf_decode::record_tests::record_outputs_disabled_rows_reserved_bits_and_source_padding_are_bound",
+      "ixby::ixbf_decode::record_tests::record_semantic_bounds_bad_tags_and_noncanonical_metadata_reject",
+      "ixby::ixbf_decode::references::proof_tests::complete_reference_checks_reject_grammar_valid_bad_arities_frames_and_duplicate_alternatives",
+      "ixby::ixbf_decode::references::proof_tests::complete_reference_shape_is_source_independent_and_covers_all_instruction_forms",
+      "ixby::ixbf_decode::references::tests::checks_reject_arity_errors_full_width_overflow_and_disabled_advice",
+      "ixby::ixbf_decode::references::tests::reference_outputs_lazy_shapes_and_recycled_padding_are_constrained",
+      "ixby::ixbf_decode::references::tests::request_matches_integer_model_for_every_control_byte_and_full_width_state",
+      "ixby::ixbf_decode::references::tests::requests_bind_owner_tail_callee_and_all_duplicate_alternatives",
+      "ixby::ixbf_decode::registry::proof_tests::complete_registry_rejects_grammar_valid_duplicate_missing_owner_and_bad_entry_records",
+      "ixby::ixbf_decode::registry::proof_tests::complete_registry_shape_is_proof_free_and_independent_of_image_and_read_requests",
+      "ixby::ixbf_decode::registry::tests::capture_requires_append_order_derived_owner_and_exact_carried_records",
+      "ixby::ixbf_decode::registry::tests::completion_requires_exact_coverage_unique_full_identities_and_entry_frames",
+      "ixby::ixbf_decode::registry::tests::registry_capacities_are_explicit_and_bounded",
+      "ixby::ixbf_decode::registry::tests::registry_integer_relations_match_every_control_byte_and_full_width_mutations",
+      "ixby::ixbf_decode::registry::tests::registry_outputs_padding_and_lazy_count_shape_are_fully_constrained",
+      "ixby::ixbf_decode::registry::tests::registry_reads_reject_absent_full_width_indices_owners_and_noncanonical_padding",
+      "ixby::ixbf_decode::scalar_payload_tests::natural_guest_bit_limit_checks_every_4096_basis_bit_and_full_u128_limits",
+      "ixby::ixbf_decode::scalar_payload_tests::payload_cursor_checks_all_u64_carries_lengths_and_control_padding",
+      "ixby::ixbf_decode::scalar_payload_tests::scalar_payload_outputs_recycled_padding_and_lazy_count_emission_are_bound",
+      "ixby::ixbf_decode::scalar_payload_tests::utf8_chunks_preserve_split_characters_extent_padding_and_disabled_state",
+      "ixby::ixbf_decode::scalar_payload_tests::utf8_every_dfa_transition_and_unicode_boundary_matches_strict_oracle",
+      "ixby::ixbf_decode::source::proof_tests::source_expected_layout_and_header_consumer_are_image_independent",
+      "ixby::ixbf_decode::source::tests::chunk_and_path_parameters_match_constraints_at_boundaries_and_full_u64_width",
+      "ixby::ixbf_decode::source::tests::malformed_source_controls_padding_and_all_output_bits_are_bound",
+      "ixby::ixbf_decode::source::tests::native_chunk_paths_reproduce_standard_hashes_for_every_leaf_of_uneven_trees",
+      "ixby::ixbf_decode::source::tests::source_counting_is_lazy_capacity_owned_and_matches_the_complete_reader",
+      "ixby::ixbf_decode::source::tests::source_witness_drivers_clear_recycled_padding",
+      "ixby::ixbf_decode::source::tests::windows_select_original_bytes_across_every_chunk_offset_and_zero_exact_padding",
+      "ixby::ixbf_decode::stream::proof_tests::batch_setup_is_counted_and_independent_of_original_file_and_schedule",
+      "ixby::ixbf_decode::stream::tests::actual_batch_wiring_rejects_wrong_cache_length_count_bytes_and_padding",
+      "ixby::ixbf_decode::stream::tests::cache_read_and_padding_controls_match_constraints_at_full_word_boundaries",
+      "ixby::ixbf_decode::stream::tests::control_outputs_and_recycled_padding_are_fully_constrained",
+      "ixby::ixbf_decode::stream::tests::witness_batches_preserve_utf8_obligations_and_skip_only_opaque_byte_payloads",
+      "ixby::ixbf_decode::tests::all_4096_magnitude_basis_bits_and_every_output_bit_are_constrained",
+      "ixby::ixbf_decode::tests::canonical_naturals_preserve_every_bit_through_the_explicit_capacity",
+      "ixby::ixbf_decode::tests::codec_count_pass_is_lazy_and_matches_capacity_only_emission",
+      "ixby::ixbf_decode::tests::natural_and_header_witness_drivers_clear_recycled_padding_and_constant_stripes",
+      "ixby::ixbf_decode::tests::natural_payload_lengths_continuations_minimality_overflow_and_padding_reject",
+      "ixby::ixbf_decode::values::access::proof_tests::complete_value_access_matches_native_images_and_reuses_manifest_root_chunks",
+      "ixby::ixbf_decode::values::access::proof_tests::value_sealing_connects_the_actual_code_registry_and_transport_context",
+      "ixby::ixbf_decode::values::access::tests::access_rejects_bounds_overflow_missing_nodes_bad_tree_metadata_and_disabled_advice",
+      "ixby::ixbf_decode::values::access::tests::access_relations_bind_full_width_queries_locators_and_all_output_bits",
+      "ixby::ixbf_decode::values::access::tests::cached_values_reject_cross_root_handles_and_authenticate_locator_candidates",
+      "ixby::ixbf_decode::values::access::tests::large_value_access_counts_stay_lazy_and_scale_with_path_depth",
+      "ixby::ixbf_decode::values::access::tests::single_chunk_value_reads_bind_final_byte_length_flags_and_padding",
+      "ixby::ixbf_decode::values::proof_tests::complete_value_checks_reject_bad_references_and_enforce_physical_capacity",
+      "ixby::ixbf_decode::values::proof_tests::complete_value_shapes_match_native_forests_scalars_and_independent_encodings",
+      "ixby::ixbf_decode::values::tests::constructor_identity_and_partial_application_reads_use_all_reference_bits",
+      "ixby::ixbf_decode::values::tests::finished_forests_bind_topology_byte_partition_depth_roots_and_scalar_ranges",
+      "ixby::ixbf_decode::values::tests::typed_reads_reject_missing_children_roots_and_noncanonical_disabled_requests",
+      "ixby::ixbf_decode::values::tests::value_outputs_lazy_shapes_and_recycled_padding_are_constrained",
+      "ixby::ixbf_decode::values::tests::value_tables_match_integer_model_for_full_width_controls_and_carried_words",
+      "ixby::paged_code::tests::block_fetch_derives_address_and_checks_the_complete_instruction_header",
+      "ixby::paged_code::tests::declaration_and_alternative_fetches_check_full_indices_and_ranges",
+      "ixby::paged_code::tests::operand_reads_bind_code_position_local_prefix_and_full_128_bit_values",
+      "ixby::paged_exec::byte_tests::byte_append_splices_full_cells_and_resumes_partial_allocations",
+      "ixby::paged_exec::byte_tests::byte_instructions_and_unaligned_chunk_tree_hash_use_authenticated_cells",
+      "ixby::paged_exec::byte_tests::byte_limits_slice_get_and_field_canonicality_reject_invalid_operations",
+      "ixby::paged_exec::byte_tests::byte_windows_select_all_unaligned_lengths_and_reject_pointer_and_count_aliases",
+      "ixby::paged_exec::byte_tests::every_inactive_byte_table_is_canonical_including_recycled_padding",
+      "ixby::paged_exec::byte_tests::hash_batches_carry_chunk_counters_pending_merges_and_the_final_root_digest",
+      "ixby::paged_exec::byte_tests::shared_memory_batches_preserve_unaligned_hash_windows_and_tree_merges",
+      "ixby::paged_exec::byte_tests::streaming_blake3_matches_reference_across_empty_blocks_chunks_and_tree_shapes",
+      "ixby::paged_exec::collection_tests::array_bounds_types_fuel_and_builder_capacity_fail_closed",
+      "ixby::paged_exec::collection_tests::builders_freeze_unaligned_chunks_without_recopying_prefixes_or_mutating_aliases",
+      "ixby::paged_exec::collection_tests::collection_batches_bind_all_microstate_outputs_and_shared_memory",
+      "ixby::paged_exec::collection_tests::every_collection_gate_has_canonical_inactive_padding",
+      "ixby::paged_exec::collection_tests::field_conversions_use_canonical_representatives_and_full_nat128_reduction",
+      "ixby::paged_exec::collection_tests::flat_input_arrays_share_spans_on_update_and_accept_arbitrary_values",
+      "ixby::paged_exec::collection_tests::persistent_arrays_cross_every_tree_boundary_and_preserve_old_versions",
+      "ixby::paged_exec::image_tests::direct_conversions_execute_with_exact_fuel_and_authenticated_code",
+      "ixby::paged_exec::image_tests::native_loading_rejects_truncation_and_unrepresentable_functional_values",
+      "ixby::paged_exec::image_tests::nested_constructor_and_partial_application_input_runs_in_actual_batch",
+      "ixby::paged_exec::image_tests::original_scalar_payloads_and_byte_ranges_survive_native_loading",
+      "ixby::paged_exec::image_tests::packed_state_layout_covers_instruction_object_byte_and_hash_states",
+      "ixby::paged_exec::image_tests::production_execution_setups_validate_every_driver_and_complete_boundaries",
+      "ixby::paged_exec::object_tests::constructors_closures_partial_exact_excess_and_tail_application_share_authenticated_execution",
+      "ixby::paged_exec::object_tests::fixed_batches_resume_pending_allocations_and_argument_splices_without_losing_state",
+      "ixby::paged_exec::object_tests::heap_capacity_zero_fields_full_vectors_and_empty_apply_follow_integer_boundaries",
+      "ixby::paged_exec::object_tests::immutable_reservations_reject_unallocated_spans_wrong_fields_and_skipped_copies",
+      "ixby::paged_exec::object_tests::object_rows_and_recycled_padding_match_complete_matrices",
+      "ixby::paged_exec::object_tests::shared_memory_batches_preserve_object_application_and_copy_boundaries",
+      "ixby::paged_exec::tests::control_actions_enforce_reference_branch_case_nat_and_tail_call_semantics",
+      "ixby::paged_exec::tests::instructions_fetch_resolve_compute_call_copy_return_and_halt_in_one_authenticated_batch",
+      "ixby::paged_nat::tests::conversions_preserve_low_bits_and_constrain_types_padding_and_outputs",
+      "ixby::paged_nat::tests::field_conversions_bind_canonical_values_and_modular_certificates",
+      "ixby::paged_nat::tests::nat128_advice_and_padding_match_the_complete_matrices",
+      "ixby::paged_nat::tests::nat128_matches_exact_integer_semantics_including_zero_divisors_and_overflow",
+      "ixby::paged_nat::tests::quotient_remainder_and_high_product_bits_are_constrained",
+      "ixby::paged_primitive::tests::numeric_primitive_wires_match_nat_word_and_field_oracles",
+      "ixby::paged_primitive::tests::routing_uses_functional_tags_and_exact_arity_without_truncating_nat",
+      "ixby::primitive::tests::all_scalar_opcodes_and_boundary_values_use_one_fixed_arithmetic_network",
+      "ixby::primitive::tests::primitive_count_emit_and_both_recycled_witness_drivers_agree",
+      "ixby::primitive::tests::recomputed_inverse_advice_requires_the_full_product_and_zero_convention",
+      "ixby::primitive::tests::runtime_dispatch_rejects_wrong_types_arity_registry_and_noncanonical_cells",
+      "ixby::primitive::word_tests::complete_crypto_registry_is_explicit_and_all_arities_are_closed",
+      "ixby::primitive::word_tests::extended_word_network_count_emit_and_recycled_padding_agree",
+      "ixby::primitive::word_tests::remaining_word_ops_cover_carries_every_basis_bit_and_full_shift_counts",
+      "ixby::primitive::word_tests::word_constraints_reject_bad_dispatch_cells_and_every_forged_result_bit"
+    ],
+    "array_fixture_correction": "After adding empty and nested arrays to the shared wire fixtures, updated the independent grammar oracle from four value tags to five. All affected tests passed after the correction.",
+    "clippy_stage3_and_stage4_all_targets_warnings_denied": true,
+    "explicit_additional_checks": [
+      "retained Init intake with semantics-2 headers and exact unchanged body pins",
+      "retained CSLib host intake with semantics-2 headers and unchanged body pins",
+      "fresh runtime-v2 root receiver with eleven rejection cases"
+    ],
+    "generic_replay_ordinary_tests": 8,
+    "lean_runtime_checks": 339,
+    "lean_source_theorem_frontier": 711,
+    "lean_theorem_roots_audited": 19,
+    "main_lean_test_module_build_jobs": 1034,
+    "new_independent_compiler_corpus_58_primitives": "Pending compiler integration; checks require all 58 opcodes and all five wire-value kinds.",
+    "recursion_opt_in_tests_not_run_in_ordinary_suite": 16,
+    "recursion_ordinary_tests": 4,
+    "slice_allocation_check": "Expanded the builder test to slice frozen output and create an empty slice; byte allocation remains exactly the two freeze outputs plus the BLAKE3 result."
+  },
+  "wire": {
+    "array_value_tag": 4,
+    "artifacts": {
+      "input": "IXFI",
+      "output": "IXFO",
+      "program": "IXBF"
+    },
+    "byte_builders_serializable": false,
+    "format": 1,
+    "legacy_IXBY_IXBP_backends_retained": false,
+    "old_functional_semantics_accepted": false,
+    "primitive_opcodes": 58,
+    "profile": {
+      "bytes": 184,
+      "format": 1,
+      "magic": "IXFP",
+      "revision": 0,
+      "semantics": 2
+    },
+    "semantics": 2
+  }
+}

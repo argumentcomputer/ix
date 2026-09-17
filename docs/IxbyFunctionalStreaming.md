@@ -1,5 +1,7 @@
 # Streaming proofs of the original file grammars
 
+> Current contract: [runtime revision 2](CompilatrixRuntimeV2Handoff.md), with format-1/semantics-2 headers, 58 opcodes, and five wire-value kinds. This report preserves component milestone measurements and their original setup identities; its remaining-work sections describe that milestone. Current complete admission and execution are documented in [paged execution](IxbyFlockPagedExecution.md).
+
 `flock-stage3/host/src/ixby/ixbf_decode/stream/` connects the existing
 state-selected dispatcher to reusable authenticated source chunks. The
 complete original [CSLib guest](IxbyStage2CSLib.md) now has a verified Program
@@ -16,6 +18,18 @@ obligations. The semantic materializers still have their small-file capacity
 bounds. The [native aggregate](IxbyFlockRecursion.md) compresses the complete
 Program chain into one 360,907-byte proof; its claim remains grammar parsing.
 No existing Exec setup, key, capacity, dependency pin or security profile changes.
+
+## Current retained regression pins
+
+Opt-in retained CSLib tests use copies with only byte 8 changed from `0` to `2`
+in the program, input, and output. This updates parser fixtures without
+claiming compiler integration; old proof chains must be regenerated.
+
+| Artifact | Bytes | Current raw BLAKE3 |
+| --- | ---: | --- |
+| Program | 1,016,587 | `f2f6da19991985ba4575773a62943b213d94f3678c5b95f85fb9af1025fd26d1` |
+| Input | 4,813,238 | `84418860c872d76e77c9b7fa466d091a6f995cd1ed7a1872fb5349131aea17c3` |
+| Output | 49 | `246c11e011f9a481b944ee3cdc7dc14d57b28f467e9bb6f442c30baa433a0766` |
 
 ## Checked batches and source reuse
 

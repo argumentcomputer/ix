@@ -17,7 +17,7 @@ pub(super) fn route(config: DispatchConfig, input: &[F128]) -> Vec<F128> {
     out.push(if tag == 13 {
       input[9 + index]
     } else if index == 0 {
-      F128::new(0x0000_0001_4642_5849, 1)
+      F128::new(0x0000_0001_4642_5849, 2)
     } else {
       F128::ZERO
     });
@@ -54,7 +54,7 @@ pub(super) fn route_plan(g: &DispatchGate) -> BooleanR1csPlan {
     let mut dummy =
       b.constant(128, if index == 0 { 0x0000_0001_4642_5849 } else { 0 });
     if index == 0 {
-      dummy[64] = b.one; // IXBF program semantics 1, including inactive rows.
+      dummy[65] = b.one; // IXBF program semantics 2, including inactive rows.
     }
     let bits = choose_bits(&mut b, flags[13], &word(9 + index), &dummy);
     b.write(start + HEADER_PORT + 1 + index, &bits);
