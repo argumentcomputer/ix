@@ -1,5 +1,6 @@
 import Lean
 import Ix.Ixby
+import Compilatrix.Ixby.Lean.Replacement
 
 /-! Construction of ordinary Ixby functions. This module is used by the
 experimental typed frontend; it makes no source-refinement claim. -/
@@ -23,6 +24,8 @@ structure BuildState where
   constructorNames : Std.HashMap Name Nat := {}
   projections : Std.HashMap Name (Array Name) := {}
   pending : Array Name := #[]
+  sourceReplacements : Array LeanFrontend.SourceReplacement := #[]
+  sourceReplacementRejection : Option String := none
   remaining : Nat := 1000000
 
 abbrev BuildM := StateT BuildState (ExceptT String CoreM)

@@ -261,6 +261,7 @@
   "Compilatrix.Ixby.Inline.Substitution",
   "Compilatrix.Ixby.Inline.Syntax",
   "Compilatrix.Ixby.Lean",
+  "Compilatrix.Ixby.Lean.Replacement",
   "Compilatrix.Ixby.LeanSound",
   "Compilatrix.Ixby.Lower",
   "Compilatrix.Ixby.Report",
@@ -379,6 +380,8 @@
   "Compilatrix.Ixby.Runtime.Words",
   "Compilatrix.Ixby.Source",
   "Compilatrix.Ixby.SourceSound",
+  "Compilatrix.Ixby.Stage2.Fri",
+  "Compilatrix.Ixby.Stage2.FriSound",
   "Compilatrix.Ixby.SymbolicCertificate",
   "Compilatrix.Ixby.SymbolicData",
   "Compilatrix.Ixby.SymbolicExamples",
@@ -698,6 +701,7 @@
   "CompilatrixTests.Fences.AiurStatic",
   "CompilatrixTests.Fences.AiurWire",
   "CompilatrixTests.Fences.IxbyArrayRead",
+  "CompilatrixTests.Fences.IxbyFri",
   "CompilatrixTests.Fences.IxbyInline",
   "CompilatrixTests.Fences.IxbyNative",
   "CompilatrixTests.Fences.IxonV3",
@@ -710,5 +714,5 @@
   "CompilatrixTests.Pipeline.Integration"],
  "baseline": "6beaf5d0: complete required CI before factoring",
  "axiom_sha256":
- "f443c844c1c98f420fa98be960ce2005a596f5a3f5de0aa078f1ff7bc7d79c28",
- "axiom_count": 2767}
+ "be93f60b41f4c3ad636481f18a3c3b1d7358b12dc674ed6b7a622902742ceb45",
+ "axiom_count": 2771}

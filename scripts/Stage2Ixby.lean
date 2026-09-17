@@ -4,6 +4,7 @@ import Compilatrix.Ixby.Runtime.Wire
 import Compilatrix.Ixby.Runtime.Field
 import Compilatrix.Ixby.Binary
 import Compilatrix.Ixby.Runtime.Report
+import Compilatrix.Ixby.Stage2.FriSound
 import Compilatrix.Tools.Check
 import Compilatrix.Ixon.Hash
 import Ix.MultiStark.Verify.Source
@@ -37,7 +38,7 @@ private def frozenGuest (ixvm aggregate : Array UInt8) : BuildM Unit := do
       (`Option.none, 0, fun _ => ret .erased),
       (`Option.some, 1, fun fields => tailCall `Ixby.Runtime.toBytes [fields[0]!])]
 
-private def buildImage (directory : System.FilePath) : IO Image := do
+private def buildImage (directory : System.FilePath) (fuseFri : Bool) : IO Image := do
   let ixvm ← IO.FS.readBinFile (directory / "ixvm.vk")
   let aggregate ← IO.FS.readBinFile (directory / "aggr.vk")
   need (ixvm.size == 744159 && (Compilatrix.Ixon.Address.blake3 ixvm).toHex ==
@@ -45,9 +46,11 @@ private def buildImage (directory : System.FilePath) : IO Image := do
   need (aggregate.size == 181630 && (Compilatrix.Ixon.Address.blake3 aggregate).toHex ==
     "75452941bc0dbe4a861c88c792067f34d7864f0460f305858a0a004ec409406e") "fixed aggregate key differs"
   initSearchPath (← findSysroot)
-  let env ← importModules #[{ module := `Ix.MultiStark.Verify.Source }] {}
+  let env ← importModules #[{ module := `Ix.MultiStark.Verify.Source },
+    { module := `Compilatrix.Ixby.Stage2.FriSound }] {}
   let job : CoreM (Except String Image) := do
     let result ← compile `MultiStark.Verify.claimBytesWrapper limits (setup := buildWire)
+      (sourceEqualities := if fuseFri then #[``Compilatrix.Ixby.Stage2.Fri.reducePoints_eq] else #[])
     match result with
     | .error message => return .error message
     | .ok image =>
@@ -59,6 +62,13 @@ private def buildImage (directory : System.FilePath) : IO Image := do
     { fileName := "Stage2 typed Ixby compilation", fileMap := default, maxRecDepth := 32768, maxHeartbeats := 0 }
     { env }
   let image ← checked result
+  need image.state.sourceReplacementRejection.isNone "FRI source replacement was rejected"
+  need (image.state.sourceReplacements.size == if fuseFri then 1 else 0)
+    "FRI source replacement count differs"
+  for replacement in image.state.sourceReplacements do
+    let target := image.state.functionNames[replacement.target]?
+    need (target.isSome && image.state.functionNames[replacement.source]? == target)
+      "FRI source replacement was not used by compilation"
   discard <| checked image.certifyWireRuntime
   return image
 
@@ -66,13 +76,13 @@ def main (args : List String) : IO UInt32 := cli "stage2-ixby" do
   let (directory, name, path) ← match args with
     | [directory, name] => pure (directory, name, none)
     | [directory, name, path] => pure (directory, name, some path)
-    | _ => throw (IO.userError "usage: stage2-ixby <fixture-directory> <compile|compile-baseline|case> [program.ixby]")
+    | _ => throw (IO.userError "usage: stage2-ixby <fixture-directory> <compile|compile-no-fri|compile-baseline|case> [program.ixby]")
   let directory : System.FilePath := directory
   let programPath : System.FilePath := path.getD (directory / "stage2.ixby").toString
-  if name == "compile" || name == "compile-baseline" then
-    let original ← buildImage directory
+  if name == "compile" || name == "compile-no-fri" || name == "compile-baseline" then
+    let original ← buildImage directory (name == "compile")
     let policy : Compilatrix.Ixby.Inline.Policy := {
-      enabled := name == "compile", protectedPrefix := 108 }
+      enabled := name != "compile-baseline", protectedPrefix := 108 }
     let selected ← checked (Compilatrix.Ixby.Inline.optimizeImage original policy)
     let image := selected.image
     discard <| checked image.certifyWireRuntime
@@ -102,7 +112,13 @@ def main (args : List String) : IO UInt32 := cli "stage2-ixby" do
       ("max_work", toJson policy.maxWork),
       ("original_binary_blake3", toJson (Compilatrix.Ixon.Address.blake3 ⟨baseline⟩).toHex),
       ("decoded_program_certificate_checked", toJson true)]
-    let report := Json.mkObj (("artifact", metadata) :: ("optimization", optimization) :: fields.toList)
+    let sourceOptimizations := image.state.sourceReplacements.map fun replacement => Json.mkObj [
+      ("source", toJson replacement.source.toString),
+      ("target", toJson replacement.target.toString),
+      ("equality", toJson replacement.equality.toString),
+      ("scope", toJson "kernel-source-equality; LCNF lowering remains experimental")]
+    let report := Json.mkObj (("artifact", metadata) :: ("optimization", optimization) ::
+      ("source_optimizations", toJson sourceOptimizations) :: fields.toList)
     IO.FS.writeFile (programPath.toString ++ ".json") (report.pretty ++ "\n")
     IO.println s!"stage2-ixby compiled: {image.program.functions.size} functions; {encoded.size} binary bytes; {programPath}"
     return

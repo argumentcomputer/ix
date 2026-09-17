@@ -525,6 +525,13 @@ explicitly for eliminated fuel and continuation overhead.
 complete-body certificate retains the original helper contracts and adds
 kernel proofs for reduced stack requirements, writer reads and error ordering.
 
+[FRI coordinate loop fusion](ixby-fri-fusion.md) reduces Stage2–CSLib further
+to 254,245,163 transitions (8.10%) and the singleton smoke fixture to
+500,247,577 (8.18%), preserving exact outputs. Kernel proofs equate the fused
+source function with the unchanged pinned verifier; checked source selection,
+all runtime certificates, and the inliner's separate image proof remain in
+place. General LCNF source/image refinement and full native proving remain open.
+
 The [compiler entry-point table](compiler-design.md#compiler-entry-points)
 identifies the checked APIs. `Pipeline.compileValidated` supplies source
 certification; the broader `Pipeline.compile` does not.

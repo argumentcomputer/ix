@@ -93,6 +93,7 @@
   "check-ixby-stage2": {"roots": ["CheckIxbyStage2"], "kind": "lean_exe"},
   "check-ixby-lean": {"roots": ["CheckIxbyLean"], "kind": "lean_exe"},
   "check-ixby-inline": {"roots": ["CheckIxbyInline"], "kind": "lean_exe"},
+  "check-ixby-fri": {"roots": ["CheckIxbyFri"], "kind": "lean_exe"},
   "check-ixby-binary": {"roots": ["CheckIxbyBinary"], "kind": "lean_exe"},
   "check-ixby": {"roots": ["CheckIxby"], "kind": "lean_exe"},
   "check-build-graph": {"roots": ["CheckBuildGraph"], "kind": "lean_exe"},
@@ -144,6 +145,7 @@
     "Compilatrix.Ixby.Runtime.Field",
     "Compilatrix.Ixby.Binary",
     "Compilatrix.Ixby.Runtime.Report",
+    "Compilatrix.Ixby.Stage2.FriSound",
     "Compilatrix.Tools.Check",
     "Compilatrix.Ixon.Hash",
     "Ix.MultiStark.Verify.Source"]},
@@ -865,6 +867,21 @@
   "CompilatrixTests.Ixby.Inline.Checking":
   {"path": "CompilatrixTests/Ixby/Inline/Checking.lean",
    "imports": ["CompilatrixTests.Ixby.Inline.Support"]},
+  "CompilatrixTests.Ixby.Fri.Main":
+  {"path": "CompilatrixTests/Ixby/Fri/Main.lean",
+   "imports": ["CompilatrixTests.Ixby.Fri.Execution"]},
+  "CompilatrixTests.Ixby.Fri.Execution":
+  {"path": "CompilatrixTests/Ixby/Fri/Execution.lean",
+   "imports":
+   ["CompilatrixTests.Ixby.Fri.Checking", "Compilatrix.Ixby.Inline.Image"]},
+  "CompilatrixTests.Ixby.Fri.Examples":
+  {"path": "CompilatrixTests/Ixby/Fri/Examples.lean",
+   "imports": ["Compilatrix.Ixby.Stage2.FriSound"]},
+  "CompilatrixTests.Ixby.Fri.Checking":
+  {"path": "CompilatrixTests/Ixby/Fri/Checking.lean",
+   "imports":
+   ["CompilatrixTests.Ixby.Fri.Examples",
+    "CompilatrixTests.Ixby.Native.Support"]},
   "CompilatrixTests.Ixby.Conversions":
   {"path": "CompilatrixTests/Ixby/Conversions.lean",
    "imports": ["Compilatrix.Ixby.Binary", "Compilatrix.Tools.Check"]},
@@ -1064,6 +1081,9 @@
   "CompilatrixTests.Fences.IxbyInline":
   {"path": "CompilatrixTests/Fences/IxbyInline.lean",
    "imports": ["Compilatrix.Ixby.Inline.ImageSound"]},
+  "CompilatrixTests.Fences.IxbyFri":
+  {"path": "CompilatrixTests/Fences/IxbyFri.lean",
+   "imports": ["Compilatrix.Ixby.Stage2.FriSound"]},
   "CompilatrixTests.Fences.IxbyArrayRead":
   {"path": "CompilatrixTests/Fences/IxbyArrayRead.lean",
    "imports":
@@ -1324,6 +1344,7 @@
     "CompilatrixTests.Fences.IxbyNative",
     "CompilatrixTests.Fences.IxbyArrayRead",
     "CompilatrixTests.Fences.IxbyInline",
+    "CompilatrixTests.Fences.IxbyFri",
     "CompilatrixTests.Fences.Ixon",
     "CompilatrixTests.Fences.IxonV3",
     "CompilatrixTests.Fences.IxonV3Typing",
@@ -2888,6 +2909,12 @@
    ["Compilatrix.Ixby.Arguments",
     "Compilatrix.Ixby.Certificate",
     "Compilatrix.Ixby.SymbolicTargetSound"]},
+  "Compilatrix.Ixby.Stage2.FriSound":
+  {"path": "Compilatrix/Ixby/Stage2/FriSound.lean",
+   "imports": ["Compilatrix.Ixby.Stage2.Fri"]},
+  "Compilatrix.Ixby.Stage2.Fri":
+  {"path": "Compilatrix/Ixby/Stage2/Fri.lean",
+   "imports": ["Ix.MultiStark.Verify.Fri.Inputs"]},
   "Compilatrix.Ixby.Stage2":
   {"path": "Compilatrix/Ixby/Stage2.lean",
    "imports": ["Compilatrix.Ixby.Catalog"]},
@@ -3306,7 +3333,7 @@
    "imports": ["Compilatrix.Ixby.Runtime.Number"]},
   "Compilatrix.Ixby.Runtime.Builder":
   {"path": "Compilatrix/Ixby/Runtime/Builder.lean",
-   "imports": ["Lean", "Ix.Ixby"]},
+   "imports": ["Lean", "Ix.Ixby", "Compilatrix.Ixby.Lean.Replacement"]},
   "Compilatrix.Ixby.Runtime.ArrayTrees":
   {"path": "Compilatrix/Ixby/Runtime/ArrayTrees.lean",
    "imports": ["Compilatrix.Ixby.Runtime.ArrayTreeSource"]},
@@ -3389,6 +3416,8 @@
     "Compilatrix.Ixby.Runtime.NatLoops",
     "Compilatrix.Ixby.Runtime.Words",
     "Compilatrix.Ixby.Runtime.ArrayTrees"]},
+  "Compilatrix.Ixby.Lean.Replacement":
+  {"path": "Compilatrix/Ixby/Lean/Replacement.lean", "imports": ["Lean"]},
   "Compilatrix.Ixby.Lean":
   {"path": "Compilatrix/Ixby/Lean.lean",
    "imports":
@@ -4734,10 +4763,15 @@
   "CheckIxbyLean":
   {"path": "scripts/CheckIxbyLean.lean",
    "imports":
-   ["CompilatrixTests.Ixby.Native.Main", "CompilatrixTests.Ixby.Inline.Main"]},
+   ["CompilatrixTests.Ixby.Native.Main",
+    "CompilatrixTests.Ixby.Inline.Main",
+    "CompilatrixTests.Ixby.Fri.Main"]},
   "CheckIxbyInline":
   {"path": "scripts/CheckIxbyInline.lean",
    "imports": ["CompilatrixTests.Ixby.Inline.Main"]},
+  "CheckIxbyFri":
+  {"path": "scripts/CheckIxbyFri.lean",
+   "imports": ["CompilatrixTests.Ixby.Fri.Main"]},
   "CheckIxbyBinary":
   {"path": "scripts/CheckIxbyBinary.lean",
    "imports":

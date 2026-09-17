@@ -9,7 +9,8 @@ speedup claims.
 
 These measurements describe the inlining change at revision `1eaa245`.
 The subsequent [single-dispatch array-read change](ixby-array-read.md) retains
-these inlining certificates and further reduces the current workload counts.
+these inlining certificates. [FRI source fusion](ixby-fri-fusion.md) follows it
+and retains the inliner's separate complete-image certificate.
 
 ## Checked transformation
 

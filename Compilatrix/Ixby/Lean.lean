@@ -32,7 +32,7 @@ private def applyNamed (name : Name) (arity : Nat) (args : List Operand) : CodeM
     if args.length == arity then return value
     emit (.apply value (args.drop arity))
 
-private def ensureFunction (name : Name) : BuildM Nat := do
+private def ensureDeclaration (name : Name) : BuildM Nat := do
   if let some id := (← get).functionNames[name]? then return (← get).functions[id]!.arity
   let env ← getEnv
   if let some (.ctorInfo info) := env.find? name then
@@ -53,6 +53,15 @@ private def ensureFunction (name : Name) : BuildM Nat := do
   discard <| reserveFunction name decl.params.size
   modify fun state => { state with pending := state.pending.push name }
   return decl.params.size
+
+private def ensureFunction (source : Name) : BuildM Nat := do
+  let replacement := (← get).sourceReplacements.find? (·.source == source)
+  let target := replacement.map (·.target) |>.getD source
+  let arity ← ensureDeclaration target
+  if source != target then
+    let id ← functionId target
+    modify fun state => { state with functionNames := state.functionNames.insert source id }
+  return arity
 
 private structure Join where
   name : Name
@@ -212,7 +221,8 @@ structure Image where
 /-- This API deliberately returns no source certificate. It cannot be used as
 an `IxonCompilation` or as a Stage2 byte-execution refinement. -/
 def compile (entry : Name) (limits : Limits := {}) (depth : Nat := 10000)
-    (setup : BuildM Unit := pure ()) : CoreM (Except String Image) := do
+    (setup : BuildM Unit := pure ()) (sourceEqualities : Array Name := #[]) :
+    CoreM (Except String Image) := do
   if limits.byteArrayBytes ≥ 2 ^ 32 then
     return .error "typed Ixby packed byte capacity must fit Word32 indices"
   let build : BuildM Program := do
@@ -220,6 +230,10 @@ def compile (entry : Name) (limits : Limits := {}) (depth : Nat := 10000)
     buildArrays
     buildFields
     setup
+    let selection ← selectSourceReplacements sourceEqualities ((← get).functions.map (·.name))
+    match selection with
+    | .ok replacements => modify fun state => { state with sourceReplacements := replacements }
+    | .error message => modify fun state => { state with sourceReplacementRejection := some message }
     discard <| ensureFunction entry
     let mut next := 0
     while next < (← get).pending.size do

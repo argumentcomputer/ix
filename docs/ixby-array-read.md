@@ -8,6 +8,10 @@ successful read. The retained CSLib execution drops from **299,248,427 to
 49-byte output. Together with [leaf-call inlining](ixby-inline.md), this is
 23.22% below the 360,337,913-transition runtime revision 2 baseline.
 
+These measurements describe the array-read change at revision `e048fa0`.
+The subsequent [FRI fusion](ixby-fri-fusion.md) preserves these helper bodies
+and contracts while further reducing both Stage2 workloads.
+
 ## Behavior and certification
 
 The [emitter](../Compilatrix/Ixby/Runtime/Array.lean) keeps full Nat bounds

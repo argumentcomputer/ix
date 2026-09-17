@@ -145,6 +145,15 @@ Only function 62 changes in the fresh Stage2 and CSLib images. The upstream
 reference, all other helper certificates and the inliner proof scope remain
 unchanged; the typed source-refinement boundary remains open.
 
+[FRI array-loop fusion](ixby-fri-fusion.md) adds four exact fences proving
+source equality against the unchanged pinned verifier. Optional replacements
+must name closed safe-definition equalities using only the existing ordinary
+Lean axiom basis; missing bodies, arity changes, overlap, protected helpers,
+and oversized requests retain the original compilation. All 2,767 prior
+fences, helper theorem premises and 107 runtime/wire certificates remain.
+This adds source equality evidence without closing general LCNF lowering or
+whole-verifier source-to-image refinement. No native or reference interface changes.
+
 ## Active native interface: BLAKE3 Rust
 
 | Field | Ledger value |
