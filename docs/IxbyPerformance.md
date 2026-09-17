@@ -4,7 +4,10 @@ The compiler's new CSLib verifier is [copied into IxBy](../flock-stage4/fixtures
 **1,005,374 program bytes, 672 functions, and 360,337,913 logical transitions**
 to the exact expected output. It uses the runtime-v2 array, byte-builder, and
 unboxed numeric primitives. The [first profiling and batch-tuning increment](IxbyCslibTuning.md)
-is implemented and measured. This document ranks the remaining opportunities.
+is implemented and measured. The subsequent
+[recursive table-evaluation optimization](IxbyRecursiveTuning.md) reduces the
+same two joins from 300.26 to 36.61 seconds while preserving both proof bytes.
+This document ranks the remaining opportunities.
 
 The [complete reference census](../flock-stage3/profile/cslib-runtime-v2-reference.json),
 [exclusive function costs](../flock-stage3/profile/cslib-runtime-v2-costs.json),
@@ -17,7 +20,7 @@ the expected output, fuel and all 5,816 block counts through **1,703,268,652
 physical microsteps**. A complete CSLib Flock proof is still open; the new
 proof comparison covers the same 20,000 physical steps with both classes.
 
-## Scale and the optimization target
+## Historical scale illustration and the optimization target
 
 The [batch experiment](IxbyBatchTuning.md#longer-executions-and-join-costs)
 models the complete 73,731-step synthetic arithmetic fixture at **21.57 logical
@@ -25,6 +28,7 @@ steps/s** with arithmetic 4K leaves, one worker, two threads, and cached setups.
 Applying that rate to 360,337,913 steps gives **193 days**. This is a scale
 illustration, not a CSLib prediction: its instruction mix differs, higher
 recursive levels are modeled, and admission, closing, setup, and I/O are excluded.
+That model also predates the optimized recursive fixed-table evaluator.
 
 | Illustrative completion target | Required aggregate logical steps/s | Multiple of that model |
 | --- | ---: | ---: |
@@ -44,7 +48,7 @@ time = setup + admission + native_replay + B * leaf_cost
 ```
 
 Leaf cost includes witness generation, proving, and verification. Use measured
-costs at the relevant tree levels. The current 4K arithmetic
+costs at the relevant tree levels. The earlier 4K arithmetic
 anchor spends **70.7%** of modeled online time in joins: about 52.69 seconds per
 leaf, 155.19 seconds per raw-leaf pair, and 113.43 seconds for the measured
 recursive pair. Even eliminating leaf cost entirely would improve this
@@ -129,8 +133,8 @@ copying fills first. Measure leaf plus join cost for the same work. Later,
 allow a small verifier-selected set of classes within one chain, with each
 child's setup identity bound into recursion; current executions use one class.
 
-**First check:** full-phase occupancy census, then a bounded genuine proof tree
-for the best two candidates. This is the nearest implementation opportunity.
+**Next check:** replay any new candidate against the full-phase captures, then
+compare a bounded genuine proof tree with the current `cslib-2048` class.
 
 ### 2. Replace expensive switching networks with cheaper consistency arguments
 
@@ -157,10 +161,17 @@ including recursive verification. This is a major architectural opportunity.
 
 ### 3. Make recursive aggregation cheaper
 
-Profile the recursive verifier replay by table and wall time: transcript
-hashing, commitment openings, shared matrix claims, and statement handling.
-Reduce duplicated work where the approved child setups share structure. Keep
-compiled setups reusable across nodes and measure their memory footprint.
+The [first recursive profile and optimization](IxbyRecursiveTuning.md) identifies
+native circuit-structure table evaluation as the dominant previous cost.
+Walking live entries and summing constant planes directly reduces its fold
+work from about 231 seconds to 1.7 seconds on the matched two-join tree.
+Both proofs, setup identities and constraint counts remain identical.
+
+Continue with Flock proof kernels, child-advice generation, transcript hashing
+and commitment openings. In the first node, public-vector hashing accounts for
+23,956 of 91,834 compression constraints; most child public words are fixed
+setup data. Specializing those fixed parts is a concrete circuit experiment.
+Keep compiled setups reusable across nodes and measure their memory footprint.
 
 Compare binary joins with four/eight-child joins. Fewer nodes alone is
 insufficient: a node must check more children and can cross a padding boundary.
@@ -168,13 +179,14 @@ Folding or a different accumulation protocol is a larger research option,
 requiring an explicit integration and soundness design.
 
 **First check:** actual equal-work trees at several depths, including mixed
-leaf/node joins and cached-setup memory. Join cost is already the largest
-measured term in the long-run model.
+leaf/node joins and cached-setup memory. The optimized two-join segment now
+spends about 71% of its cached total in unchanged leaf production. The earlier
+long-run model's join dominance predates this evaluator change.
 
 ### 4. Fuse interpreter microsteps and keep temporary values off the memory log
 
-`Fetch`, `Resolve`, and `Resume` account for **73.1% of the first 200,000 native
-microsteps**. Today an operand can be read into scratch memory and then read
+`Fetch`, `Resolve`, and `Resume` account for **64.55% of the complete native
+run's microsteps**. Today an operand can be read into scratch memory and then read
 again by its consumer; entering a function copies resolved arguments cell by
 cell. Caller locals already stay in their existing bank across a call.
 
@@ -268,14 +280,16 @@ admission and output/closing work in the final benchmark.
 
 ## Suggested order of work
 
-1. Use the completed physical census and equal-work batch comparison as the
-   baseline. Test small wrapper/codec compiler changes against the exact output,
-   block counts and physical traffic.
-2. Prototype one cheaper routing/memory argument and profile recursive replay.
-   These address the largest current proof costs.
-3. Fuse operand and argument-copy microsteps, preserving semantic fuel and
-   authenticated boundaries. Evaluate a small approved set of phase-specific
-   classes within one recursive chain.
+1. Use the complete physical census, tuned batches and faster recursive table
+   evaluation as the baseline. Leaf production now dominates the measured
+   segment. Fuse operand and argument-copy microsteps while preserving semantic
+   fuel and authenticated boundaries; test compiler wrapper/codec changes
+   against the exact output, block counts and physical traffic.
+2. Prototype one cheaper routing/memory argument, including its recursive cost.
+   This remains a major leaf-circuit opportunity.
+3. Specialize fixed public data in recursive verification and measure further
+   reductions in hashing and opening costs. Evaluate a small approved set of
+   phase-specific execution classes within one recursive chain.
 4. Revisit larger batches and worker scaling as those costs change. Require
    measured end-to-end improvement at each step.
 

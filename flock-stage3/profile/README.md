@@ -2,6 +2,12 @@
 
 ## Current runtime-v2 CSLib workload
 
+The [recursive evaluator comparison](cslib-runtime-v2-recursion.json) records
+both same-proof trees, phase/family timings and unchanged setup identities.
+It reduces the two measured joins from 300.26 to 36.61 seconds; see the
+[results](../../docs/IxbyRecursiveTuning.md) and
+[reproduction bundle](recursive-tuning-v0/README.md).
+
 The [complete native census](cslib-runtime-v2-native.json) covers
 1,703,268,652 physical steps and matches every compiler block count, fuel and
 expected output. The [batch/proof comparison](cslib-runtime-v2-tuning.json)

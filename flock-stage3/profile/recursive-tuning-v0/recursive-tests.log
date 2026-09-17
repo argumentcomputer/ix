@@ -1,0 +1,27 @@
+
+running 23 tests
+test execution_tree::layout::tests::component_layouts_and_closing_order_are_protocol_owned ... ok
+test execution_tree::matrices::tests::identity_binds_every_sparse_entry_row_dimension_and_variable ... ok
+test execution_tree::tests::complete_execution_setup_geometry ... ignored, proof-free complete original-format execution setup census
+test execution_tree::tests::countdown::execution_chain_rejects_repeated_reversed_and_skipped_valid_segments ... ignored, requires IXBY_COUNTDOWN_PROOFS from the original-format countdown CLI fixture
+test execution_tree::tests::fixture::complete_root_receiver ... ignored, fresh receiver supplied only an approved setup, S and a root proof
+test execution_tree::tests::fixture::original_bytes_identity_proves_one_execution_digest ... ignored, all genuine Stage 3 leaves and one complete recursive execution proof
+test execution_tree::tests::fixture::runtime_v2_root_receiver ... ignored, fresh receiver for the runtime-v2 fixture; stdin contains only S and the root proof
+test execution_tree::tests::fixture::source_chain_links_all_boundaries_through_two_recursive_levels ... ignored, three actual source batches, two recursive levels, and valid nonadjacent children
+test execution_tree::tests::large_execution::execution_batch_shape_chain_proves_fresh ... ignored, four execution segment proofs; selected batch class, leaf and recursive joins, fresh receiver
+test execution_tree::tests::large_execution::execution_range_chain_proves_fresh ... ignored, caller-selected 2..256 adjacent execution proofs; exact range, every join, fresh receiver
+test execution_tree::tests::large_execution::original_1024_execution_chain_proves_fresh ... ignored, requires three original 1,024-fetch execution proofs; two recursive levels, boundary attacks, fresh receiver
+test execution_tree::tests::large_execution::original_linked_1024_execution_chain_proves_fresh ... ignored, requires three original linked 1,024-fetch proofs; two recursive levels, boundary attacks, fresh receiver
+test execution_tree::tests::large_execution::original_packed_1024_execution_chain_proves_fresh ... ignored, requires three original packed 1,024-fetch proofs; two recursive levels, boundary attacks, fresh receiver
+test execution_tree::tests::invalid_execution_counts_are_rejected_before_setup_or_advice ... ok
+test pair::tests::retained_pair_native_constraints_and_roots ... ignored, requires retained CSLib frames in IXBY_CSLIB_FRAME_DIR
+test proof::tests::retained_pair_proves_one_flock_root ... ignored, requires retained CSLib frames and IXBY_PAIR_PROOF_OUT
+test proof::tests::retained_parent_has_proof_free_mixed_replay ... ignored, requires IXBY_PAIR_ROOT and IXBY_PAIR_EXPECTED retained artifacts
+test proof::tests::root_receiver ... ignored, fresh process receiver: only root proof and externally expected statement
+test gates::tests::native_tables_constrain_results_bits_packing_and_padding ... ok
+test tree::tests::grammar_tree_setup_geometry ... ignored, proof-free geometry census, IXBY_TREE_LEAVES selects the approved count
+test tree::tests::retained_five_batches_fold_across_three_levels ... ignored, requires five retained CSLib frames and IXBY_TREE_PROOF_OUT
+test tree::tests::root_receiver ... ignored, fresh receiver: only final root, expected statement and expected leaf count
+test structure::tests::marginals_match_pinned_table_for_all_planes_and_partial_rows ... ok
+
+test result: ok. 5 passed; 0 failed; 18 ignored; 0 measured; 0 filtered out; finished in 9.21s

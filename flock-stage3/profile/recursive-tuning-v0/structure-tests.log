@@ -1,0 +1,8 @@
+   Compiling ix-flock-recursion v0.1.0 (/tmp/ixby-publish.yueY3c/flock-stage4/recursive)
+    Finished `release` profile [optimized] target(s) in 5.66s
+     Running unittests src/lib.rs (flock-stage4/target/release/deps/ix_flock_recursion-719bb8df4c32d9ae)
+
+running 1 test
+test structure::tests::marginals_match_pinned_table_for_all_planes_and_partial_rows ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 22 filtered out; finished in 6.91s

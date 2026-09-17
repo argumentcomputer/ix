@@ -257,6 +257,7 @@ pub(crate) fn prove_native(
   advice: crate::backend::NativeBuilder,
   domain: &[u8],
 ) -> Result<(R1csProofCircuitMerged, Commitment, Vec<F128>)> {
+  let mut profile = crate::profile::Profile::new("native_proof");
   let outputs = advice
     .graph
     .published
@@ -267,6 +268,7 @@ pub(crate) fn prove_native(
   let witness = shape.run(&advice.values, &[]);
   ensure!(witness.public == expected, "recursive witness public vector");
   drop(advice);
+  profile.mark("witness");
   let rows = witness.rows::<Blake3Gate>(slots.blake);
   let boolean = UnionSlotProverInput::in_place(
     move |mut dst| {
@@ -304,6 +306,7 @@ pub(crate) fn prove_native(
     element,
     &mut ch,
   );
+  profile.mark("flock_prove");
   Ok((proof, commitment, outputs))
 }
 

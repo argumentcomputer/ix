@@ -1,0 +1,1152 @@
+{
+  "format": "IxBy/recursive-tuning/v0",
+  "binary": {
+    "bytes": 22361272,
+    "sha256": "5820173aa0c5143ba56607ddaeb2a53ebe8af819c56b2562602c4e7519be7910"
+  },
+  "leaf_measurement": {
+    "report": {
+      "bytes": 1401848,
+      "sha256": "0fbcba12e19f5f1f292faffe7ebd02c2103ffe448675444d3f6471bfcfc60765"
+    },
+    "class": "cslib-2048",
+    "clock_range": [
+      0,
+      20000
+    ],
+    "fuel_range": [
+      0,
+      4598
+    ],
+    "leaf_count": 3,
+    "leaf_seconds": 87.613496137,
+    "leaves": [
+      {
+        "index": 0,
+        "microsteps": 6094,
+        "logical_steps": 1280,
+        "witness_seconds": 2.561823528,
+        "prove_seconds": 27.469026248,
+        "verify_seconds": 0.311447431,
+        "proof": {
+          "bytes": 620187,
+          "sha256": "648b8c18554fa76aa7416dad76e7da49bcfbc24b833c00407fe4e0f5891c21ab"
+        },
+        "statement": {
+          "bytes": 912,
+          "sha256": "5165fafba41720c9571b1b4b4b1d227d0be44d9e34b19856fdfa87b87f8167a3"
+        }
+      },
+      {
+        "index": 1,
+        "microsteps": 5841,
+        "logical_steps": 1335,
+        "witness_seconds": 2.548373604,
+        "prove_seconds": 26.239023084,
+        "verify_seconds": 0.311928333,
+        "proof": {
+          "bytes": 620187,
+          "sha256": "d81ad71ae57314a06b3b3d7546c340827898b5c6b6311d38ce24a86e6d8e87a0"
+        },
+        "statement": {
+          "bytes": 912,
+          "sha256": "d466548900a819c2b062a35cd3fdf57cbbcdae2598abaa44a29d95b320e9329d"
+        }
+      },
+      {
+        "index": 2,
+        "microsteps": 8065,
+        "logical_steps": 1983,
+        "witness_seconds": 2.566889422,
+        "prove_seconds": 25.293646568,
+        "verify_seconds": 0.311337919,
+        "proof": {
+          "bytes": 620187,
+          "sha256": "f6373cafbabe22702a3e07beb9dccc1a29b896aaeed383848224971256cf9abd"
+        },
+        "statement": {
+          "bytes": 912,
+          "sha256": "029a5f5d19fd08d88ee82061e827c00580fe3d77f4a8b8435749425836192174"
+        }
+      }
+    ],
+    "leaf_process": {
+      "command": "/tmp/ixby-cslib-tuning-20260917/profile-tests-v7 ixby::paged_exec::benchmark_tests::original_execution_proof_throughput --exact --ignored --nocapture",
+      "wall_seconds": 213.48,
+      "user_seconds": 257.72,
+      "system_seconds": 43.57,
+      "max_rss_kib": 32678468,
+      "swaps": 0,
+      "exit_code": 0,
+      "receipt": {
+        "bytes": 886,
+        "sha256": "42c348dd852e9f51d4e52415b4073a5f1b6bf4611c8292894c323bf6dbf70de0"
+      }
+    }
+  },
+  "runs": [
+    {
+      "name": "reference",
+      "class": "cslib-2048",
+      "log": {
+        "bytes": 88576,
+        "sha256": "cbb4292148577c63e5ef58d0e1654adb420c3017770b058fe6729b860946f251"
+      },
+      "process": {
+        "command": "/tmp/ixby-recursion-tuning-20260917/optimized-tests-v2 execution_tree::tests::large_execution::execution_range_chain_proves_fresh --exact --ignored --nocapture",
+        "wall_seconds": 613.89,
+        "user_seconds": 586.29,
+        "system_seconds": 39.42,
+        "max_rss_kib": 36163552,
+        "swaps": 0,
+        "exit_code": 0,
+        "receipt": {
+          "bytes": 897,
+          "sha256": "c51a7a3dc57c85f04ae0d784240ed102cb5383b9560f666e3ae76ceaa40ffc86"
+        }
+      },
+      "join_seconds": 300.261151701,
+      "cached_leaf_plus_join_seconds": 387.874647838,
+      "root_statement": {
+        "bytes": 912,
+        "sha256": "38d0625620cbdd5c11c8686d024093a7a8339a8add88b69696566e0be15d7705"
+      },
+      "root_proof": {
+        "bytes": 404083,
+        "sha256": "740e4e4ed6e444f162ce959c8e98c6aeeae3bf1f1a20864be87c435f1a5251bf"
+      },
+      "breakdown": {
+        "prove_seconds": {
+          "replay_left": 1.03172008,
+          "replay_right": 1.5241323640000002,
+          "children": 7.358216504,
+          "folds": 236.115343458,
+          "check_advice": 0.13350816,
+          "native_proof": 18.297216658,
+          "encode": 0.001196251
+        },
+        "verify_seconds": {
+          "decode": 0.0014866369999999999,
+          "flock_verify": 0.175021928,
+          "fixed_tables": 35.618308434
+        },
+        "native_proof_seconds": {
+          "witness": 1.491356986,
+          "flock_prove": 16.585520444
+        },
+        "fold_seconds": {
+          "native_sumchecks": 234.979186175,
+          "transcript": 1.0725914269999999,
+          "algebra": 0.042801034
+        }
+      },
+      "setups": [
+        {
+          "class": "cslib-2048",
+          "event": "chain_setup",
+          "geometry": {
+            "application_words": 57,
+            "arithmetic_operations": 2201133,
+            "blake3_compressions": 91834,
+            "children": [
+              1,
+              1
+            ],
+            "dense_variables": 32,
+            "leaves": 2,
+            "packing_rows": 44198,
+            "root_advice_words": 5627,
+            "root_families": 181,
+            "row_variables": 17,
+            "variables": 5472654
+          },
+          "identity": "70ecf14b686a450e777ebca1353d8076473ce1a375ec7eb960e37a29fc31f38a",
+          "leaves": 2,
+          "seconds": 143.315273006,
+          "graph_counts": {
+            "arithmetic": 2201133,
+            "compressions": 91834,
+            "equalities": 557198,
+            "packing": 44198,
+            "variables": 5472654
+          },
+          "constraint_phases": {
+            "child/statement_allocate": {
+              "arithmetic": 0,
+              "compressions": 0,
+              "equalities": 0,
+              "packing": 0,
+              "variables": 90192
+            },
+            "child/transcript": {
+              "arithmetic": 0,
+              "compressions": 11254,
+              "equalities": 3362,
+              "packing": 4636,
+              "variables": 449724
+            },
+            "child/statement_bind": {
+              "arithmetic": 0,
+              "compressions": 23956,
+              "equalities": 102,
+              "packing": 0,
+              "variables": 95876
+            },
+            "child/wiring": {
+              "arithmetic": 594626,
+              "compressions": 0,
+              "equalities": 90146,
+              "packing": 0,
+              "variables": 594674
+            },
+            "child/boolean_algebra": {
+              "arithmetic": 20696,
+              "compressions": 0,
+              "equalities": 4,
+              "packing": 0,
+              "variables": 21188
+            },
+            "child/element_algebra": {
+              "arithmetic": 0,
+              "compressions": 0,
+              "equalities": 0,
+              "packing": 0,
+              "variables": 0
+            },
+            "child/opening_frontend": {
+              "arithmetic": 22576,
+              "compressions": 0,
+              "equalities": 9290,
+              "packing": 1024,
+              "variables": 88624
+            },
+            "child/opening_multipoint": {
+              "arithmetic": 515692,
+              "compressions": 0,
+              "equalities": 297158,
+              "packing": 0,
+              "variables": 516850
+            },
+            "child/opening_inner": {
+              "arithmetic": 516778,
+              "compressions": 21700,
+              "equalities": 72904,
+              "packing": 20752,
+              "variables": 1334111
+            },
+            "child/application": {
+              "arithmetic": 0,
+              "compressions": 0,
+              "equalities": 0,
+              "packing": 0,
+              "variables": 0
+            },
+            "fold/native_sumchecks": {
+              "arithmetic": 0,
+              "compressions": 0,
+              "equalities": 0,
+              "packing": 0,
+              "variables": 0
+            },
+            "fold/transcript": {
+              "arithmetic": 0,
+              "compressions": 34924,
+              "equalities": 11254,
+              "packing": 17786,
+              "variables": 1745554
+            },
+            "fold/algebra": {
+              "arithmetic": 530603,
+              "compressions": 0,
+              "equalities": 72946,
+              "packing": 0,
+              "variables": 535645
+            }
+          },
+          "compile_seconds": {
+            "child_replay_plans": 0.106703184,
+            "children": 3.582967857,
+            "fold_plan": 0.003697207,
+            "fold_graph": 0.684250971,
+            "count": 0.790631695,
+            "shape": 4.229507871,
+            "identity": 1.549411595
+          }
+        },
+        {
+          "class": "cslib-2048",
+          "event": "chain_setup",
+          "geometry": {
+            "application_words": 57,
+            "arithmetic_operations": 1637169,
+            "blake3_compressions": 66042,
+            "children": [
+              2,
+              1
+            ],
+            "dense_variables": 32,
+            "leaves": 3,
+            "packing_rows": 40445,
+            "root_advice_words": 5722,
+            "root_families": 183,
+            "row_variables": 17,
+            "variables": 4592294
+          },
+          "identity": "cd6edcdbe427fc44005ee4d095a4fa1a27d6aa93c72312af65b46c0e976af625",
+          "leaves": 3,
+          "seconds": 10.510481787,
+          "graph_counts": {
+            "arithmetic": 1637169,
+            "compressions": 66042,
+            "equalities": 330781,
+            "packing": 40445,
+            "variables": 4592294
+          },
+          "constraint_phases": {
+            "child/statement_allocate": {
+              "arithmetic": 0,
+              "compressions": 0,
+              "equalities": 0,
+              "packing": 0,
+              "variables": 57345
+            },
+            "child/transcript": {
+              "arithmetic": 0,
+              "compressions": 7700,
+              "equalities": 3144,
+              "packing": 4170,
+              "variables": 390616
+            },
+            "child/statement_bind": {
+              "arithmetic": 0,
+              "compressions": 15232,
+              "equalities": 59,
+              "packing": 0,
+              "variables": 60939
+            },
+            "child/wiring": {
+              "arithmetic": 385165,
+              "compressions": 0,
+              "equalities": 51669,
+              "packing": 0,
+              "variables": 391653
+            },
+            "child/boolean_algebra": {
+              "arithmetic": 12652,
+              "compressions": 0,
+              "equalities": 4,
+              "packing": 0,
+              "variables": 12834
+            },
+            "child/element_algebra": {
+              "arithmetic": 6997,
+              "compressions": 0,
+              "equalities": 3,
+              "packing": 0,
+              "variables": 7106
+            },
+            "child/opening_frontend": {
+              "arithmetic": 14078,
+              "compressions": 0,
+              "equalities": 5045,
+              "packing": 1024,
+              "variables": 80126
+            },
+            "child/opening_multipoint": {
+              "arithmetic": 509137,
+              "compressions": 0,
+              "equalities": 159687,
+              "packing": 0,
+              "variables": 509145
+            },
+            "child/opening_inner": {
+              "arithmetic": 397927,
+              "compressions": 17328,
+              "equalities": 55264,
+              "packing": 17170,
+              "variables": 1065226
+            },
+            "child/application": {
+              "arithmetic": 0,
+              "compressions": 0,
+              "equalities": 0,
+              "packing": 0,
+              "variables": 0
+            },
+            "fold/native_sumchecks": {
+              "arithmetic": 0,
+              "compressions": 0,
+              "equalities": 0,
+              "packing": 0,
+              "variables": 0
+            },
+            "fold/transcript": {
+              "arithmetic": 0,
+              "compressions": 25782,
+              "equalities": 11444,
+              "packing": 18081,
+              "variables": 1705926
+            },
+            "fold/algebra": {
+              "arithmetic": 311132,
+              "compressions": 0,
+              "equalities": 44431,
+              "packing": 0,
+              "variables": 311270
+            }
+          },
+          "compile_seconds": {
+            "child_replay_plans": 0.045626521,
+            "children": 3.717732086,
+            "fold_plan": 0.001866471,
+            "fold_graph": 0.500786255,
+            "count": 0.736599569,
+            "shape": 3.5060253340000003,
+            "identity": 1.5027336409999998
+          }
+        }
+      ],
+      "joins": [
+        {
+          "bytes": 421603,
+          "class": "cslib-2048",
+          "event": "chain_proof",
+          "first_leaf": 0,
+          "geometry": {
+            "application_words": 57,
+            "arithmetic_operations": 2201133,
+            "blake3_compressions": 91834,
+            "children": [
+              1,
+              1
+            ],
+            "dense_variables": 32,
+            "leaves": 2,
+            "packing_rows": 44198,
+            "root_advice_words": 5627,
+            "root_families": 181,
+            "row_variables": 17,
+            "variables": 5472654
+          },
+          "leaves": 2,
+          "seconds": 159.246776117,
+          "statement": {
+            "bytes": 912,
+            "sha256": "c6ebd75c97abbc6960b7f33e8ca3d27941af65b298f935a2b91de63b6221b1b3"
+          },
+          "proof": {
+            "bytes": 421603,
+            "sha256": "e24159d84855830e2e409b710e17eb73a5fddff9b5a187bd03738f51c6e84eee"
+          },
+          "setup_identity": "70ecf14b686a450e777ebca1353d8076473ce1a375ec7eb960e37a29fc31f38a",
+          "prove_seconds": {
+            "replay_left": 0.771862528,
+            "replay_right": 0.755165488,
+            "children": 3.419102706,
+            "folds": 128.014919942,
+            "check_advice": 0.07215964,
+            "native_proof": 10.312410677,
+            "encode": 0.000466137
+          },
+          "verify_seconds": {
+            "decode": 0.00077036,
+            "flock_verify": 0.094198429,
+            "fixed_tables": 15.801922235
+          },
+          "native_proof_seconds": {
+            "witness": 0.780912904,
+            "flock_prove": 9.426737436
+          },
+          "fold_seconds": {
+            "native_sumchecks": 127.35072901,
+            "transcript": 0.624891199,
+            "algebra": 0.026499773
+          },
+          "fold_families": {
+            "structure": {
+              "count": 1,
+              "seconds": 125.109625056
+            },
+            "jagged": {
+              "count": 1,
+              "seconds": 0.716234424
+            },
+            "boolean": {
+              "count": 179,
+              "seconds": 1.4809557559999995
+            }
+          },
+          "flock_kernel_log": [
+            "[prove_union] witgen (padded 2^28, FreshZeroed): 1044.27 ms",
+            "[prove_union] compact q (2^25 dense):  100.74 ms",
+            "[prove_union] commit: 1533.80 ms",
+            "[prove_union] bind statement:    0.19 ms",
+            "[prove_union] element a/b copies (2^27 words, LIVE spans):  193.32 ms",
+            "[prove_union] s_hat_v_ab fold (z_vec 2^14):   0.06 ms",
+            "[prove_union] boolean zerocheck + lincheck (M_bool = 31) \u2225 wiring: 2005.16 ms",
+            "[prove_union] element region PIOP (2^27 words):  627.12 ms",
+            "[prove_union] wiring GKR + gather (\u03bc = 26, 396 claims):    0.00 ms",
+            "[prove_union] claim assembly:    0.02 ms  (heights 0.01 + z_claims 0.00 + element pd 0.00 + wiring pd 0.01)",
+            "[prove_union] witness buffer give-back (2^28 words, zero dirty spans):  86.00 ms",
+            "[prove_union] open (rs\u00d72, pd\u00d7398): 3396.53 ms",
+            "[prove_union] TOTAL 9318.96 ms === done (element: true) ==="
+          ],
+          "unaccounted_seconds": 0.003797974999969256
+        },
+        {
+          "bytes": 404083,
+          "class": "cslib-2048",
+          "event": "chain_proof",
+          "first_leaf": 0,
+          "geometry": {
+            "application_words": 57,
+            "arithmetic_operations": 1637169,
+            "blake3_compressions": 66042,
+            "children": [
+              2,
+              1
+            ],
+            "dense_variables": 32,
+            "leaves": 3,
+            "packing_rows": 40445,
+            "root_advice_words": 5722,
+            "root_families": 183,
+            "row_variables": 17,
+            "variables": 4592294
+          },
+          "leaves": 3,
+          "seconds": 141.014375584,
+          "statement": {
+            "bytes": 912,
+            "sha256": "38d0625620cbdd5c11c8686d024093a7a8339a8add88b69696566e0be15d7705"
+          },
+          "proof": {
+            "bytes": 404083,
+            "sha256": "740e4e4ed6e444f162ce959c8e98c6aeeae3bf1f1a20864be87c435f1a5251bf"
+          },
+          "setup_identity": "cd6edcdbe427fc44005ee4d095a4fa1a27d6aa93c72312af65b46c0e976af625",
+          "prove_seconds": {
+            "replay_left": 0.259857552,
+            "replay_right": 0.768966876,
+            "children": 3.939113798,
+            "folds": 108.100423516,
+            "check_advice": 0.06134852,
+            "native_proof": 7.984805981,
+            "encode": 0.000730114
+          },
+          "verify_seconds": {
+            "decode": 0.000716277,
+            "flock_verify": 0.080823499,
+            "fixed_tables": 19.816386199
+          },
+          "native_proof_seconds": {
+            "witness": 0.710444082,
+            "flock_prove": 7.158783008
+          },
+          "fold_seconds": {
+            "native_sumchecks": 107.628457165,
+            "transcript": 0.447700228,
+            "algebra": 0.016301261
+          },
+          "fold_families": {
+            "structure": {
+              "count": 2,
+              "seconds": 105.53093791799999
+            },
+            "jagged": {
+              "count": 2,
+              "seconds": 0.517759816
+            },
+            "boolean": {
+              "count": 179,
+              "seconds": 1.557603242
+            }
+          },
+          "flock_kernel_log": [
+            "[prove_union] witgen (padded 2^28, FreshZeroed):  311.77 ms",
+            "[prove_union] compact q (2^25 dense):  104.22 ms",
+            "[prove_union] commit: 1286.23 ms",
+            "[prove_union] bind statement:    0.19 ms",
+            "[prove_union] element a/b copies (2^27 words, LIVE spans):   40.89 ms",
+            "[prove_union] s_hat_v_ab fold (z_vec 2^14):   0.06 ms",
+            "[prove_union] boolean zerocheck + lincheck (M_bool = 31) \u2225 wiring: 1671.87 ms",
+            "[prove_union] element region PIOP (2^27 words):  492.98 ms",
+            "[prove_union] wiring GKR + gather (\u03bc = 26, 396 claims):    0.00 ms",
+            "[prove_union] claim assembly:    0.02 ms  (heights 0.01 + z_claims 0.00 + element pd 0.00 + wiring pd 0.01)",
+            "[prove_union] witness buffer give-back (2^28 words, zero dirty spans):  87.04 ms",
+            "[prove_union] open (rs\u00d72, pd\u00d7398): 2994.07 ms",
+            "[prove_union] TOTAL 7074.26 ms === done (element: true) ==="
+          ],
+          "unaccounted_seconds": 0.001203251999982058
+        }
+      ],
+      "receiver_setup": {
+        "class": "cslib-2048",
+        "event": "chain_receiver_setup",
+        "geometry": {
+          "application_words": 57,
+          "arithmetic_operations": 1637169,
+          "blake3_compressions": 66042,
+          "children": [
+            2,
+            1
+          ],
+          "dense_variables": 32,
+          "leaves": 3,
+          "packing_rows": 40445,
+          "root_advice_words": 5722,
+          "root_families": 183,
+          "row_variables": 17,
+          "variables": 4592294
+        },
+        "identity": "cd6edcdbe427fc44005ee4d095a4fa1a27d6aa93c72312af65b46c0e976af625",
+        "seconds": 149.576555255
+      },
+      "receiver": {
+        "bytes": 404083,
+        "class": "cslib-2048",
+        "event": "chain_receiver_accepted",
+        "seconds": 0.641210904
+      }
+    },
+    {
+      "name": "optimized",
+      "class": "cslib-2048",
+      "log": {
+        "bytes": 88557,
+        "sha256": "f5a6192995b1bbe45c4cb06e33b2ac58450939c5164fd318c926325377430629"
+      },
+      "process": {
+        "command": "/tmp/ixby-recursion-tuning-20260917/optimized-tests-v2 execution_tree::tests::large_execution::execution_range_chain_proves_fresh --exact --ignored --nocapture",
+        "wall_seconds": 366.44,
+        "user_seconds": 342.87,
+        "system_seconds": 38.53,
+        "max_rss_kib": 36223804,
+        "swaps": 0,
+        "exit_code": 0,
+        "receipt": {
+          "bytes": 895,
+          "sha256": "be8b639d72a28433b57d6563888f6b836b477296e97f038d44e089fbff31e519"
+        }
+      },
+      "join_seconds": 36.605830989,
+      "cached_leaf_plus_join_seconds": 124.219327126,
+      "root_statement": {
+        "bytes": 912,
+        "sha256": "38d0625620cbdd5c11c8686d024093a7a8339a8add88b69696566e0be15d7705"
+      },
+      "root_proof": {
+        "bytes": 404083,
+        "sha256": "740e4e4ed6e444f162ce959c8e98c6aeeae3bf1f1a20864be87c435f1a5251bf"
+      },
+      "breakdown": {
+        "prove_seconds": {
+          "replay_left": 1.003306333,
+          "replay_right": 1.467418501,
+          "children": 7.206462784,
+          "folds": 7.1973254099999995,
+          "check_advice": 0.130206772,
+          "native_proof": 18.41901128,
+          "encode": 0.00154807
+        },
+        "verify_seconds": {
+          "decode": 0.001619383,
+          "flock_verify": 0.17534196600000002,
+          "fixed_tables": 0.998653361
+        },
+        "native_proof_seconds": {
+          "witness": 1.514306381,
+          "flock_prove": 16.691568626
+        },
+        "fold_seconds": {
+          "native_sumchecks": 6.056304342,
+          "transcript": 1.07637912,
+          "algebra": 0.042624245000000005
+        }
+      },
+      "setups": [
+        {
+          "class": "cslib-2048",
+          "event": "chain_setup",
+          "geometry": {
+            "application_words": 57,
+            "arithmetic_operations": 2201133,
+            "blake3_compressions": 91834,
+            "children": [
+              1,
+              1
+            ],
+            "dense_variables": 32,
+            "leaves": 2,
+            "packing_rows": 44198,
+            "root_advice_words": 5627,
+            "root_families": 181,
+            "row_variables": 17,
+            "variables": 5472654
+          },
+          "identity": "70ecf14b686a450e777ebca1353d8076473ce1a375ec7eb960e37a29fc31f38a",
+          "leaves": 2,
+          "seconds": 145.847138931,
+          "graph_counts": {
+            "arithmetic": 2201133,
+            "compressions": 91834,
+            "equalities": 557198,
+            "packing": 44198,
+            "variables": 5472654
+          },
+          "constraint_phases": {
+            "child/statement_allocate": {
+              "arithmetic": 0,
+              "compressions": 0,
+              "equalities": 0,
+              "packing": 0,
+              "variables": 90192
+            },
+            "child/transcript": {
+              "arithmetic": 0,
+              "compressions": 11254,
+              "equalities": 3362,
+              "packing": 4636,
+              "variables": 449724
+            },
+            "child/statement_bind": {
+              "arithmetic": 0,
+              "compressions": 23956,
+              "equalities": 102,
+              "packing": 0,
+              "variables": 95876
+            },
+            "child/wiring": {
+              "arithmetic": 594626,
+              "compressions": 0,
+              "equalities": 90146,
+              "packing": 0,
+              "variables": 594674
+            },
+            "child/boolean_algebra": {
+              "arithmetic": 20696,
+              "compressions": 0,
+              "equalities": 4,
+              "packing": 0,
+              "variables": 21188
+            },
+            "child/element_algebra": {
+              "arithmetic": 0,
+              "compressions": 0,
+              "equalities": 0,
+              "packing": 0,
+              "variables": 0
+            },
+            "child/opening_frontend": {
+              "arithmetic": 22576,
+              "compressions": 0,
+              "equalities": 9290,
+              "packing": 1024,
+              "variables": 88624
+            },
+            "child/opening_multipoint": {
+              "arithmetic": 515692,
+              "compressions": 0,
+              "equalities": 297158,
+              "packing": 0,
+              "variables": 516850
+            },
+            "child/opening_inner": {
+              "arithmetic": 516778,
+              "compressions": 21700,
+              "equalities": 72904,
+              "packing": 20752,
+              "variables": 1334111
+            },
+            "child/application": {
+              "arithmetic": 0,
+              "compressions": 0,
+              "equalities": 0,
+              "packing": 0,
+              "variables": 0
+            },
+            "fold/native_sumchecks": {
+              "arithmetic": 0,
+              "compressions": 0,
+              "equalities": 0,
+              "packing": 0,
+              "variables": 0
+            },
+            "fold/transcript": {
+              "arithmetic": 0,
+              "compressions": 34924,
+              "equalities": 11254,
+              "packing": 17786,
+              "variables": 1745554
+            },
+            "fold/algebra": {
+              "arithmetic": 530603,
+              "compressions": 0,
+              "equalities": 72946,
+              "packing": 0,
+              "variables": 535645
+            }
+          },
+          "compile_seconds": {
+            "child_replay_plans": 0.100076941,
+            "children": 3.423349659,
+            "fold_plan": 0.003891714,
+            "fold_graph": 0.657469813,
+            "count": 0.802186206,
+            "shape": 3.881232391,
+            "identity": 1.4945245759999999
+          }
+        },
+        {
+          "class": "cslib-2048",
+          "event": "chain_setup",
+          "geometry": {
+            "application_words": 57,
+            "arithmetic_operations": 1637169,
+            "blake3_compressions": 66042,
+            "children": [
+              2,
+              1
+            ],
+            "dense_variables": 32,
+            "leaves": 3,
+            "packing_rows": 40445,
+            "root_advice_words": 5722,
+            "root_families": 183,
+            "row_variables": 17,
+            "variables": 4592294
+          },
+          "identity": "cd6edcdbe427fc44005ee4d095a4fa1a27d6aa93c72312af65b46c0e976af625",
+          "leaves": 3,
+          "seconds": 10.469140349,
+          "graph_counts": {
+            "arithmetic": 1637169,
+            "compressions": 66042,
+            "equalities": 330781,
+            "packing": 40445,
+            "variables": 4592294
+          },
+          "constraint_phases": {
+            "child/statement_allocate": {
+              "arithmetic": 0,
+              "compressions": 0,
+              "equalities": 0,
+              "packing": 0,
+              "variables": 57345
+            },
+            "child/transcript": {
+              "arithmetic": 0,
+              "compressions": 7700,
+              "equalities": 3144,
+              "packing": 4170,
+              "variables": 390616
+            },
+            "child/statement_bind": {
+              "arithmetic": 0,
+              "compressions": 15232,
+              "equalities": 59,
+              "packing": 0,
+              "variables": 60939
+            },
+            "child/wiring": {
+              "arithmetic": 385165,
+              "compressions": 0,
+              "equalities": 51669,
+              "packing": 0,
+              "variables": 391653
+            },
+            "child/boolean_algebra": {
+              "arithmetic": 12652,
+              "compressions": 0,
+              "equalities": 4,
+              "packing": 0,
+              "variables": 12834
+            },
+            "child/element_algebra": {
+              "arithmetic": 6997,
+              "compressions": 0,
+              "equalities": 3,
+              "packing": 0,
+              "variables": 7106
+            },
+            "child/opening_frontend": {
+              "arithmetic": 14078,
+              "compressions": 0,
+              "equalities": 5045,
+              "packing": 1024,
+              "variables": 80126
+            },
+            "child/opening_multipoint": {
+              "arithmetic": 509137,
+              "compressions": 0,
+              "equalities": 159687,
+              "packing": 0,
+              "variables": 509145
+            },
+            "child/opening_inner": {
+              "arithmetic": 397927,
+              "compressions": 17328,
+              "equalities": 55264,
+              "packing": 17170,
+              "variables": 1065226
+            },
+            "child/application": {
+              "arithmetic": 0,
+              "compressions": 0,
+              "equalities": 0,
+              "packing": 0,
+              "variables": 0
+            },
+            "fold/native_sumchecks": {
+              "arithmetic": 0,
+              "compressions": 0,
+              "equalities": 0,
+              "packing": 0,
+              "variables": 0
+            },
+            "fold/transcript": {
+              "arithmetic": 0,
+              "compressions": 25782,
+              "equalities": 11444,
+              "packing": 18081,
+              "variables": 1705926
+            },
+            "fold/algebra": {
+              "arithmetic": 311132,
+              "compressions": 0,
+              "equalities": 44431,
+              "packing": 0,
+              "variables": 311270
+            }
+          },
+          "compile_seconds": {
+            "child_replay_plans": 0.050046295,
+            "children": 3.704995564,
+            "fold_plan": 0.002275046,
+            "fold_graph": 0.490161017,
+            "count": 0.756635282,
+            "shape": 3.471608601,
+            "identity": 1.506646044
+          }
+        }
+      ],
+      "joins": [
+        {
+          "bytes": 421603,
+          "class": "cslib-2048",
+          "event": "chain_proof",
+          "first_leaf": 0,
+          "geometry": {
+            "application_words": 57,
+            "arithmetic_operations": 2201133,
+            "blake3_compressions": 91834,
+            "children": [
+              1,
+              1
+            ],
+            "dense_variables": 32,
+            "leaves": 2,
+            "packing_rows": 44198,
+            "root_advice_words": 5627,
+            "root_families": 181,
+            "row_variables": 17,
+            "variables": 5472654
+          },
+          "leaves": 2,
+          "seconds": 19.60510534,
+          "statement": {
+            "bytes": 912,
+            "sha256": "c6ebd75c97abbc6960b7f33e8ca3d27941af65b298f935a2b91de63b6221b1b3"
+          },
+          "proof": {
+            "bytes": 421603,
+            "sha256": "e24159d84855830e2e409b710e17eb73a5fddff9b5a187bd03738f51c6e84eee"
+          },
+          "setup_identity": "70ecf14b686a450e777ebca1353d8076473ce1a375ec7eb960e37a29fc31f38a",
+          "prove_seconds": {
+            "replay_left": 0.745691069,
+            "replay_right": 0.723292581,
+            "children": 3.298851496,
+            "folds": 3.74250552,
+            "check_advice": 0.071340589,
+            "native_proof": 10.454993436,
+            "encode": 0.000802258
+          },
+          "verify_seconds": {
+            "decode": 0.000795254,
+            "flock_verify": 0.095584106,
+            "fixed_tables": 0.467588781
+          },
+          "native_proof_seconds": {
+            "witness": 0.800340948,
+            "flock_prove": 9.545683113
+          },
+          "fold_seconds": {
+            "native_sumchecks": 3.081720526,
+            "transcript": 0.621466483,
+            "algebra": 0.026091922
+          },
+          "fold_families": {
+            "structure": {
+              "count": 1,
+              "seconds": 0.853351514
+            },
+            "jagged": {
+              "count": 1,
+              "seconds": 0.703216928
+            },
+            "boolean": {
+              "count": 179,
+              "seconds": 1.4852135869999998
+            }
+          },
+          "flock_kernel_log": [
+            "[prove_union] witgen (padded 2^28, FreshZeroed): 1027.12 ms",
+            "[prove_union] compact q (2^25 dense):   97.38 ms",
+            "[prove_union] commit: 1512.41 ms",
+            "[prove_union] bind statement:    0.18 ms",
+            "[prove_union] element a/b copies (2^27 words, LIVE spans):  193.61 ms",
+            "[prove_union] s_hat_v_ab fold (z_vec 2^14):   0.06 ms",
+            "[prove_union] boolean zerocheck + lincheck (M_bool = 31) \u2225 wiring: 2071.01 ms",
+            "[prove_union] element region PIOP (2^27 words):  621.05 ms",
+            "[prove_union] wiring GKR + gather (\u03bc = 26, 396 claims):    0.00 ms",
+            "[prove_union] claim assembly:    0.02 ms  (heights 0.01 + z_claims 0.00 + element pd 0.00 + wiring pd 0.01)",
+            "[prove_union] witness buffer give-back (2^28 words, zero dirty spans):  86.66 ms",
+            "[prove_union] open (rs\u00d72, pd\u00d7398): 3476.66 ms",
+            "[prove_union] TOTAL 9440.28 ms === done (element: true) ==="
+          ],
+          "unaccounted_seconds": 0.0036602499999993654
+        },
+        {
+          "bytes": 404083,
+          "class": "cslib-2048",
+          "event": "chain_proof",
+          "first_leaf": 0,
+          "geometry": {
+            "application_words": 57,
+            "arithmetic_operations": 1637169,
+            "blake3_compressions": 66042,
+            "children": [
+              2,
+              1
+            ],
+            "dense_variables": 32,
+            "leaves": 3,
+            "packing_rows": 40445,
+            "root_advice_words": 5722,
+            "root_families": 183,
+            "row_variables": 17,
+            "variables": 4592294
+          },
+          "leaves": 3,
+          "seconds": 17.000725649,
+          "statement": {
+            "bytes": 912,
+            "sha256": "38d0625620cbdd5c11c8686d024093a7a8339a8add88b69696566e0be15d7705"
+          },
+          "proof": {
+            "bytes": 404083,
+            "sha256": "740e4e4ed6e444f162ce959c8e98c6aeeae3bf1f1a20864be87c435f1a5251bf"
+          },
+          "setup_identity": "cd6edcdbe427fc44005ee4d095a4fa1a27d6aa93c72312af65b46c0e976af625",
+          "prove_seconds": {
+            "replay_left": 0.257615264,
+            "replay_right": 0.74412592,
+            "children": 3.907611288,
+            "folds": 3.45481989,
+            "check_advice": 0.058866183,
+            "native_proof": 7.964017844,
+            "encode": 0.000745812
+          },
+          "verify_seconds": {
+            "decode": 0.000824129,
+            "flock_verify": 0.07975786,
+            "fixed_tables": 0.53106458
+          },
+          "native_proof_seconds": {
+            "witness": 0.713965433,
+            "flock_prove": 7.145885513
+          },
+          "fold_seconds": {
+            "native_sumchecks": 2.974583816,
+            "transcript": 0.454912637,
+            "algebra": 0.016532323
+          },
+          "fold_families": {
+            "structure": {
+              "count": 2,
+              "seconds": 0.841081976
+            },
+            "jagged": {
+              "count": 2,
+              "seconds": 0.519331085
+            },
+            "boolean": {
+              "count": 179,
+              "seconds": 1.584159505
+            }
+          },
+          "flock_kernel_log": [
+            "[prove_union] witgen (padded 2^28, FreshZeroed):  312.32 ms",
+            "[prove_union] compact q (2^25 dense):   97.56 ms",
+            "[prove_union] commit: 1285.44 ms",
+            "[prove_union] bind statement:    0.19 ms",
+            "[prove_union] element a/b copies (2^27 words, LIVE spans):   40.88 ms",
+            "[prove_union] s_hat_v_ab fold (z_vec 2^14):   0.06 ms",
+            "[prove_union] boolean zerocheck + lincheck (M_bool = 31) \u2225 wiring: 1662.12 ms",
+            "[prove_union] element region PIOP (2^27 words):  497.71 ms",
+            "[prove_union] wiring GKR + gather (\u03bc = 26, 396 claims):    0.00 ms",
+            "[prove_union] claim assembly:    0.02 ms  (heights 0.01 + z_claims 0.00 + element pd 0.00 + wiring pd 0.01)",
+            "[prove_union] witness buffer give-back (2^28 words, zero dirty spans):  85.26 ms",
+            "[prove_union] open (rs\u00d72, pd\u00d7398): 2989.79 ms",
+            "[prove_union] TOTAL 7057.69 ms === done (element: true) ==="
+          ],
+          "unaccounted_seconds": 0.0012768789999988428
+        }
+      ],
+      "receiver_setup": {
+        "class": "cslib-2048",
+        "event": "chain_receiver_setup",
+        "geometry": {
+          "application_words": 57,
+          "arithmetic_operations": 1637169,
+          "blake3_compressions": 66042,
+          "children": [
+            2,
+            1
+          ],
+          "dense_variables": 32,
+          "leaves": 3,
+          "packing_rows": 40445,
+          "root_advice_words": 5722,
+          "root_families": 183,
+          "row_variables": 17,
+          "variables": 4592294
+        },
+        "identity": "cd6edcdbe427fc44005ee4d095a4fa1a27d6aa93c72312af65b46c0e976af625",
+        "seconds": 163.486126683
+      },
+      "receiver": {
+        "bytes": 404083,
+        "class": "cslib-2048",
+        "event": "chain_receiver_accepted",
+        "seconds": 0.624875012
+      }
+    }
+  ],
+  "speedups_vs_first": {
+    "optimized": {
+      "joins": 8.202549801184082,
+      "cached_leaf_plus_join": 3.122498380985152,
+      "tree_process_wall": 1.675281082851217
+    }
+  },
+  "limits": [
+    "Conditional 20,000-microstep / 4,598-logical-step execution segment; no complete CSLib proof-time forecast.",
+    "Leaf timings and the identical leaf proofs are reused from the prior pinned run; each tree measures every recursive join again.",
+    "Cached totals exclude setup, admission, complete-run closing and I/O. Tree process records include actual setup and fresh reception.",
+    "Nested timing scopes and Flock kernel logs overlap and must not be added to their parent scopes.",
+    "Fresh receivers clear the environment and use the optimized default in both runs. The reference switch selects the producer's folds and in-process root checks.",
+    "One matched run per evaluator; ordinary checks overlapped optimized setup compilation, and no large proof jobs overlapped."
+  ]
+}

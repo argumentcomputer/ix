@@ -1,0 +1,588 @@
+
+running 1 test
+test execution_tree::tests::large_execution::execution_range_chain_proves_fresh has been running for over 60 seconds
+{"counts":null,"event":"recursion_profile","id":0,"pid":515275,"scope":"node_compile","seconds":0.100076941,"shape_only":null,"stage":"child_replay_plans"}
+{"counts":{"arithmetic":0,"compressions":0,"equalities":0,"packing":0,"variables":45096},"event":"recursion_profile","id":2,"pid":515275,"scope":"child","seconds":0.036983373,"shape_only":true,"stage":"statement_allocate"}
+{"counts":{"arithmetic":0,"compressions":5627,"equalities":1681,"packing":2318,"variables":224904},"event":"recursion_profile","id":2,"pid":515275,"scope":"child","seconds":0.097276938,"shape_only":true,"stage":"transcript"}
+{"counts":{"arithmetic":0,"compressions":11978,"equalities":51,"packing":0,"variables":47964},"event":"recursion_profile","id":2,"pid":515275,"scope":"child","seconds":0.00480433,"shape_only":true,"stage":"statement_bind"}
+{"counts":{"arithmetic":297313,"compressions":0,"equalities":45073,"packing":0,"variables":297359},"event":"recursion_profile","id":2,"pid":515275,"scope":"child","seconds":0.572443972,"shape_only":true,"stage":"wiring"}
+{"counts":{"arithmetic":10348,"compressions":0,"equalities":2,"packing":0,"variables":10660},"event":"recursion_profile","id":2,"pid":515275,"scope":"child","seconds":0.037548996,"shape_only":true,"stage":"boolean_algebra"}
+{"counts":{"arithmetic":0,"compressions":0,"equalities":0,"packing":0,"variables":0},"event":"recursion_profile","id":2,"pid":515275,"scope":"child","seconds":0.13492445,"shape_only":true,"stage":"element_algebra"}
+{"counts":{"arithmetic":11288,"compressions":0,"equalities":4645,"packing":512,"variables":44312},"event":"recursion_profile","id":2,"pid":515275,"scope":"child","seconds":0.147937318,"shape_only":true,"stage":"opening_frontend"}
+{"counts":{"arithmetic":257846,"compressions":0,"equalities":148579,"packing":0,"variables":259001},"event":"recursion_profile","id":2,"pid":515275,"scope":"child","seconds":0.110393731,"shape_only":true,"stage":"opening_multipoint"}
+{"counts":{"arithmetic":258389,"compressions":10850,"equalities":36452,"packing":10376,"variables":667074},"event":"recursion_profile","id":2,"pid":515275,"scope":"child","seconds":0.24801346,"shape_only":true,"stage":"opening_inner"}
+{"counts":{"arithmetic":0,"compressions":0,"equalities":0,"packing":0,"variables":0},"event":"recursion_profile","id":2,"pid":515275,"scope":"child","seconds":0.0000586,"shape_only":true,"stage":"application"}
+{"counts":{"arithmetic":0,"compressions":0,"equalities":0,"packing":0,"variables":45096},"event":"recursion_profile","id":3,"pid":515275,"scope":"child","seconds":0.043863364,"shape_only":true,"stage":"statement_allocate"}
+{"counts":{"arithmetic":0,"compressions":5627,"equalities":1681,"packing":2318,"variables":224820},"event":"recursion_profile","id":3,"pid":515275,"scope":"child","seconds":0.047964252,"shape_only":true,"stage":"transcript"}
+{"counts":{"arithmetic":0,"compressions":11978,"equalities":51,"packing":0,"variables":47912},"event":"recursion_profile","id":3,"pid":515275,"scope":"child","seconds":0.004236072,"shape_only":true,"stage":"statement_bind"}
+{"counts":{"arithmetic":297313,"compressions":0,"equalities":45073,"packing":0,"variables":297315},"event":"recursion_profile","id":3,"pid":515275,"scope":"child","seconds":0.51489296,"shape_only":true,"stage":"wiring"}
+{"counts":{"arithmetic":10348,"compressions":0,"equalities":2,"packing":0,"variables":10528},"event":"recursion_profile","id":3,"pid":515275,"scope":"child","seconds":0.01538614,"shape_only":true,"stage":"boolean_algebra"}
+{"counts":{"arithmetic":0,"compressions":0,"equalities":0,"packing":0,"variables":0},"event":"recursion_profile","id":3,"pid":515275,"scope":"child","seconds":0.059385028,"shape_only":true,"stage":"element_algebra"}
+{"counts":{"arithmetic":11288,"compressions":0,"equalities":4645,"packing":512,"variables":44312},"event":"recursion_profile","id":3,"pid":515275,"scope":"child","seconds":0.140568045,"shape_only":true,"stage":"opening_frontend"}
+{"counts":{"arithmetic":257846,"compressions":0,"equalities":148579,"packing":0,"variables":257849},"event":"recursion_profile","id":3,"pid":515275,"scope":"child","seconds":0.100373658,"shape_only":true,"stage":"opening_multipoint"}
+{"counts":{"arithmetic":258389,"compressions":10850,"equalities":36452,"packing":10376,"variables":667037},"event":"recursion_profile","id":3,"pid":515275,"scope":"child","seconds":0.270872861,"shape_only":true,"stage":"opening_inner"}
+{"counts":{"arithmetic":0,"compressions":0,"equalities":0,"packing":0,"variables":0},"event":"recursion_profile","id":3,"pid":515275,"scope":"child","seconds":0.000089629,"shape_only":true,"stage":"application"}
+{"counts":{"arithmetic":1670530,"compressions":56910,"equalities":472998,"packing":26412,"variables":3191455},"event":"recursion_profile","id":1,"pid":515275,"scope":"node_graph","seconds":3.423244522,"shape_only":true,"stage":"children"}
+{"counts":null,"event":"recursion_profile","id":0,"pid":515275,"scope":"node_compile","seconds":3.423349659,"shape_only":null,"stage":"children"}
+{"counts":null,"event":"recursion_profile","id":0,"pid":515275,"scope":"node_compile","seconds":0.003891714,"shape_only":null,"stage":"fold_plan"}
+{"counts":{"arithmetic":0,"compressions":0,"equalities":0,"packing":0,"variables":0},"event":"recursion_profile","id":4,"pid":515275,"scope":"fold","seconds":0.000081342,"shape_only":true,"stage":"native_sumchecks"}
+{"counts":{"arithmetic":0,"compressions":34924,"equalities":11254,"packing":17786,"variables":1745554},"event":"recursion_profile","id":4,"pid":515275,"scope":"fold","seconds":0.615954142,"shape_only":true,"stage":"transcript"}
+{"counts":{"arithmetic":530603,"compressions":0,"equalities":72946,"packing":0,"variables":535645},"event":"recursion_profile","id":4,"pid":515275,"scope":"fold","seconds":0.027534352,"shape_only":true,"stage":"algebra"}
+{"counts":{"arithmetic":530603,"compressions":34924,"equalities":84200,"packing":17786,"variables":2281199},"event":"recursion_profile","id":1,"pid":515275,"scope":"node_graph","seconds":0.661402784,"shape_only":true,"stage":"folds"}
+{"counts":null,"event":"recursion_profile","id":0,"pid":515275,"scope":"node_compile","seconds":0.657469813,"shape_only":null,"stage":"fold_graph"}
+{"counts":null,"event":"recursion_profile","id":0,"pid":515275,"scope":"node_compile","seconds":0.802186206,"shape_only":null,"stage":"count"}
+{"counts":null,"event":"recursion_profile","id":0,"pid":515275,"scope":"node_compile","seconds":3.881232391,"shape_only":null,"stage":"shape"}
+{"counts":null,"event":"recursion_profile","id":0,"pid":515275,"scope":"node_compile","seconds":1.4945245759999999,"shape_only":null,"stage":"identity"}
+{"class":"cslib-2048","event":"chain_setup","geometry":{"application_words":57,"arithmetic_operations":2201133,"blake3_compressions":91834,"children":[1,1],"dense_variables":32,"leaves":2,"packing_rows":44198,"root_advice_words":5627,"root_families":181,"row_variables":17,"variables":5472654},"identity":"70ecf14b686a450e777ebca1353d8076473ce1a375ec7eb960e37a29fc31f38a","leaves":2,"seconds":145.847138931}
+{"counts":null,"event":"recursion_profile","id":5,"pid":515275,"scope":"node_prove","seconds":0.745691069,"shape_only":null,"stage":"replay_left"}
+{"counts":null,"event":"recursion_profile","id":5,"pid":515275,"scope":"node_prove","seconds":0.723292581,"shape_only":null,"stage":"replay_right"}
+{"counts":{"arithmetic":0,"compressions":0,"equalities":0,"packing":0,"variables":45096},"event":"recursion_profile","id":7,"pid":515275,"scope":"child","seconds":0.038734734,"shape_only":false,"stage":"statement_allocate"}
+{"counts":{"arithmetic":0,"compressions":5627,"equalities":1681,"packing":2318,"variables":224904},"event":"recursion_profile","id":7,"pid":515275,"scope":"child","seconds":0.09676697,"shape_only":false,"stage":"transcript"}
+{"counts":{"arithmetic":0,"compressions":11978,"equalities":51,"packing":0,"variables":47964},"event":"recursion_profile","id":7,"pid":515275,"scope":"child","seconds":0.004594475,"shape_only":false,"stage":"statement_bind"}
+{"counts":{"arithmetic":297313,"compressions":0,"equalities":45073,"packing":0,"variables":297359},"event":"recursion_profile","id":7,"pid":515275,"scope":"child","seconds":0.535216921,"shape_only":false,"stage":"wiring"}
+{"counts":{"arithmetic":10348,"compressions":0,"equalities":2,"packing":0,"variables":10660},"event":"recursion_profile","id":7,"pid":515275,"scope":"child","seconds":0.037655957,"shape_only":false,"stage":"boolean_algebra"}
+{"counts":{"arithmetic":0,"compressions":0,"equalities":0,"packing":0,"variables":0},"event":"recursion_profile","id":7,"pid":515275,"scope":"child","seconds":0.128932676,"shape_only":false,"stage":"element_algebra"}
+{"counts":{"arithmetic":11288,"compressions":0,"equalities":4645,"packing":512,"variables":44312},"event":"recursion_profile","id":7,"pid":515275,"scope":"child","seconds":0.141386154,"shape_only":false,"stage":"opening_frontend"}
+{"counts":{"arithmetic":257846,"compressions":0,"equalities":148579,"packing":0,"variables":259001},"event":"recursion_profile","id":7,"pid":515275,"scope":"child","seconds":0.102441705,"shape_only":false,"stage":"opening_multipoint"}
+{"counts":{"arithmetic":258389,"compressions":10850,"equalities":36452,"packing":10376,"variables":667074},"event":"recursion_profile","id":7,"pid":515275,"scope":"child","seconds":0.260665076,"shape_only":false,"stage":"opening_inner"}
+{"counts":{"arithmetic":0,"compressions":0,"equalities":0,"packing":0,"variables":0},"event":"recursion_profile","id":7,"pid":515275,"scope":"child","seconds":0.000062027,"shape_only":false,"stage":"application"}
+{"counts":{"arithmetic":0,"compressions":0,"equalities":0,"packing":0,"variables":45096},"event":"recursion_profile","id":8,"pid":515275,"scope":"child","seconds":0.044283413,"shape_only":false,"stage":"statement_allocate"}
+{"counts":{"arithmetic":0,"compressions":5627,"equalities":1681,"packing":2318,"variables":224820},"event":"recursion_profile","id":8,"pid":515275,"scope":"child","seconds":0.052204882,"shape_only":false,"stage":"transcript"}
+{"counts":{"arithmetic":0,"compressions":11978,"equalities":51,"packing":0,"variables":47912},"event":"recursion_profile","id":8,"pid":515275,"scope":"child","seconds":0.004530335,"shape_only":false,"stage":"statement_bind"}
+{"counts":{"arithmetic":297313,"compressions":0,"equalities":45073,"packing":0,"variables":297315},"event":"recursion_profile","id":8,"pid":515275,"scope":"child","seconds":0.463748573,"shape_only":false,"stage":"wiring"}
+{"counts":{"arithmetic":10348,"compressions":0,"equalities":2,"packing":0,"variables":10528},"event":"recursion_profile","id":8,"pid":515275,"scope":"child","seconds":0.014484665,"shape_only":false,"stage":"boolean_algebra"}
+{"counts":{"arithmetic":0,"compressions":0,"equalities":0,"packing":0,"variables":0},"event":"recursion_profile","id":8,"pid":515275,"scope":"child","seconds":0.050413415,"shape_only":false,"stage":"element_algebra"}
+{"counts":{"arithmetic":11288,"compressions":0,"equalities":4645,"packing":512,"variables":44312},"event":"recursion_profile","id":8,"pid":515275,"scope":"child","seconds":0.142881804,"shape_only":false,"stage":"opening_frontend"}
+{"counts":{"arithmetic":257846,"compressions":0,"equalities":148579,"packing":0,"variables":257849},"event":"recursion_profile","id":8,"pid":515275,"scope":"child","seconds":0.100982342,"shape_only":false,"stage":"opening_multipoint"}
+{"counts":{"arithmetic":258389,"compressions":10850,"equalities":36452,"packing":10376,"variables":667037},"event":"recursion_profile","id":8,"pid":515275,"scope":"child","seconds":0.274834408,"shape_only":false,"stage":"opening_inner"}
+{"counts":{"arithmetic":0,"compressions":0,"equalities":0,"packing":0,"variables":0},"event":"recursion_profile","id":8,"pid":515275,"scope":"child","seconds":0.000075582,"shape_only":false,"stage":"application"}
+{"counts":{"arithmetic":1670530,"compressions":56910,"equalities":472998,"packing":26412,"variables":3191455},"event":"recursion_profile","id":6,"pid":515275,"scope":"node_graph","seconds":3.298760945,"shape_only":false,"stage":"children"}
+{"counts":null,"event":"recursion_profile","id":5,"pid":515275,"scope":"node_prove","seconds":3.298851496,"shape_only":null,"stage":"children"}
+{"counts":null,"event":"recursion_profile","id":10,"pid":515275,"scope":"fold_family","seconds":0.853351514,"shape_only":null,"stage":"structure"}
+{"counts":null,"event":"recursion_profile","id":11,"pid":515275,"scope":"fold_family","seconds":0.703216928,"shape_only":null,"stage":"jagged"}
+{"counts":null,"event":"recursion_profile","id":12,"pid":515275,"scope":"fold_family","seconds":0.009508192,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":13,"pid":515275,"scope":"fold_family","seconds":0.009380472,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":14,"pid":515275,"scope":"fold_family","seconds":0.010476741,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":15,"pid":515275,"scope":"fold_family","seconds":0.011524972,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":16,"pid":515275,"scope":"fold_family","seconds":0.000816736,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":17,"pid":515275,"scope":"fold_family","seconds":0.009469759,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":18,"pid":515275,"scope":"fold_family","seconds":0.000103545,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":19,"pid":515275,"scope":"fold_family","seconds":0.000165551,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":20,"pid":515275,"scope":"fold_family","seconds":0.009443259,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":21,"pid":515275,"scope":"fold_family","seconds":0.009687298,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":22,"pid":515275,"scope":"fold_family","seconds":0.000371589,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":23,"pid":515275,"scope":"fold_family","seconds":0.011140439,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":24,"pid":515275,"scope":"fold_family","seconds":0.00065967,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":25,"pid":515275,"scope":"fold_family","seconds":0.00244724,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":26,"pid":515275,"scope":"fold_family","seconds":0.012304267,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":27,"pid":515275,"scope":"fold_family","seconds":0.00976285,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":28,"pid":515275,"scope":"fold_family","seconds":0.000369926,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":29,"pid":515275,"scope":"fold_family","seconds":0.001233829,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":30,"pid":515275,"scope":"fold_family","seconds":0.009687618,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":31,"pid":515275,"scope":"fold_family","seconds":0.009476863,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":32,"pid":515275,"scope":"fold_family","seconds":0.010791734,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":33,"pid":515275,"scope":"fold_family","seconds":0.000673345,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":34,"pid":515275,"scope":"fold_family","seconds":0.012484195,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":35,"pid":515275,"scope":"fold_family","seconds":0.002516259,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":36,"pid":515275,"scope":"fold_family","seconds":0.010091107,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":37,"pid":515275,"scope":"fold_family","seconds":0.01093349,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":38,"pid":515275,"scope":"fold_family","seconds":0.011069005,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":39,"pid":515275,"scope":"fold_family","seconds":0.000393269,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":40,"pid":515275,"scope":"fold_family","seconds":0.010307063,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":41,"pid":515275,"scope":"fold_family","seconds":0.010659044,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":42,"pid":515275,"scope":"fold_family","seconds":0.010956303,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":43,"pid":515275,"scope":"fold_family","seconds":0.000422614,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":44,"pid":515275,"scope":"fold_family","seconds":0.010447857,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":45,"pid":515275,"scope":"fold_family","seconds":0.000105849,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":46,"pid":515275,"scope":"fold_family","seconds":0.010998853,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":47,"pid":515275,"scope":"fold_family","seconds":0.010637655,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":48,"pid":515275,"scope":"fold_family","seconds":0.010405097,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":49,"pid":515275,"scope":"fold_family","seconds":0.010374931,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":50,"pid":515275,"scope":"fold_family","seconds":0.010655718,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":51,"pid":515275,"scope":"fold_family","seconds":0.009615533,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":52,"pid":515275,"scope":"fold_family","seconds":0.000343486,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":53,"pid":515275,"scope":"fold_family","seconds":0.009649507,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":54,"pid":515275,"scope":"fold_family","seconds":0.009247892,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":55,"pid":515275,"scope":"fold_family","seconds":0.002449153,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":56,"pid":515275,"scope":"fold_family","seconds":0.010372626,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":57,"pid":515275,"scope":"fold_family","seconds":0.010959048,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":58,"pid":515275,"scope":"fold_family","seconds":0.005300192,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":59,"pid":515275,"scope":"fold_family","seconds":0.002673675,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":60,"pid":515275,"scope":"fold_family","seconds":0.011247099,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":61,"pid":515275,"scope":"fold_family","seconds":0.00128708,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":62,"pid":515275,"scope":"fold_family","seconds":0.000326354,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":63,"pid":515275,"scope":"fold_family","seconds":0.000584027,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":64,"pid":515275,"scope":"fold_family","seconds":0.009977623,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":65,"pid":515275,"scope":"fold_family","seconds":0.000617481,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":66,"pid":515275,"scope":"fold_family","seconds":0.040679419,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":67,"pid":515275,"scope":"fold_family","seconds":0.009533829,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":68,"pid":515275,"scope":"fold_family","seconds":0.009421197,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":69,"pid":515275,"scope":"fold_family","seconds":0.022598515,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":70,"pid":515275,"scope":"fold_family","seconds":0.010245157,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":71,"pid":515275,"scope":"fold_family","seconds":0.011101616,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":72,"pid":515275,"scope":"fold_family","seconds":0.01058784,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":73,"pid":515275,"scope":"fold_family","seconds":0.009611936,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":74,"pid":515275,"scope":"fold_family","seconds":0.005054269,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":75,"pid":515275,"scope":"fold_family","seconds":0.00999707,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":76,"pid":515275,"scope":"fold_family","seconds":0.001236343,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":77,"pid":515275,"scope":"fold_family","seconds":0.009824727,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":78,"pid":515275,"scope":"fold_family","seconds":0.022198794,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":79,"pid":515275,"scope":"fold_family","seconds":0.005112219,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":80,"pid":515275,"scope":"fold_family","seconds":0.000364164,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":81,"pid":515275,"scope":"fold_family","seconds":0.009462967,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":82,"pid":515275,"scope":"fold_family","seconds":0.010150959,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":83,"pid":515275,"scope":"fold_family","seconds":0.009675526,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":84,"pid":515275,"scope":"fold_family","seconds":0.01233801,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":85,"pid":515275,"scope":"fold_family","seconds":0.010681527,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":86,"pid":515275,"scope":"fold_family","seconds":0.010544058,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":87,"pid":515275,"scope":"fold_family","seconds":0.010954049,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":88,"pid":515275,"scope":"fold_family","seconds":0.058942907,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":89,"pid":515275,"scope":"fold_family","seconds":0.000178235,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":90,"pid":515275,"scope":"fold_family","seconds":0.000350008,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":91,"pid":515275,"scope":"fold_family","seconds":0.010601736,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":92,"pid":515275,"scope":"fold_family","seconds":0.020120949,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":93,"pid":515275,"scope":"fold_family","seconds":0.000621198,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":94,"pid":515275,"scope":"fold_family","seconds":0.001146916,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":95,"pid":515275,"scope":"fold_family","seconds":0.009644387,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":96,"pid":515275,"scope":"fold_family","seconds":0.010500386,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":97,"pid":515275,"scope":"fold_family","seconds":0.010185714,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":98,"pid":515275,"scope":"fold_family","seconds":0.009790712,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":99,"pid":515275,"scope":"fold_family","seconds":0.00122384,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":100,"pid":515275,"scope":"fold_family","seconds":0.009875401,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":101,"pid":515275,"scope":"fold_family","seconds":0.00036693,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":102,"pid":515275,"scope":"fold_family","seconds":0.011009292,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":103,"pid":515275,"scope":"fold_family","seconds":0.009347248,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":104,"pid":515275,"scope":"fold_family","seconds":0.009458818,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":105,"pid":515275,"scope":"fold_family","seconds":0.009698399,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":106,"pid":515275,"scope":"fold_family","seconds":0.000634112,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":107,"pid":515275,"scope":"fold_family","seconds":0.01033756,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":108,"pid":515275,"scope":"fold_family","seconds":0.010586237,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":109,"pid":515275,"scope":"fold_family","seconds":0.011713987,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":110,"pid":515275,"scope":"fold_family","seconds":0.010235288,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":111,"pid":515275,"scope":"fold_family","seconds":0.000344467,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":112,"pid":515275,"scope":"fold_family","seconds":0.002651243,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":113,"pid":515275,"scope":"fold_family","seconds":0.000359626,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":114,"pid":515275,"scope":"fold_family","seconds":0.009690844,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":115,"pid":515275,"scope":"fold_family","seconds":0.010076851,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":116,"pid":515275,"scope":"fold_family","seconds":0.010403214,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":117,"pid":515275,"scope":"fold_family","seconds":0.009975669,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":118,"pid":515275,"scope":"fold_family","seconds":0.002517501,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":119,"pid":515275,"scope":"fold_family","seconds":0.009962425,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":120,"pid":515275,"scope":"fold_family","seconds":0.011748682,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":121,"pid":515275,"scope":"fold_family","seconds":0.01157682,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":122,"pid":515275,"scope":"fold_family","seconds":0.010403694,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":123,"pid":515275,"scope":"fold_family","seconds":0.00981126,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":124,"pid":515275,"scope":"fold_family","seconds":0.009483264,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":125,"pid":515275,"scope":"fold_family","seconds":0.009420707,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":126,"pid":515275,"scope":"fold_family","seconds":0.010011237,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":127,"pid":515275,"scope":"fold_family","seconds":0.009482032,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":128,"pid":515275,"scope":"fold_family","seconds":0.009414215,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":129,"pid":515275,"scope":"fold_family","seconds":0.009671939,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":130,"pid":515275,"scope":"fold_family","seconds":0.0091562,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":131,"pid":515275,"scope":"fold_family","seconds":0.010587199,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":132,"pid":515275,"scope":"fold_family","seconds":0.009144177,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":133,"pid":515275,"scope":"fold_family","seconds":0.00117558,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":134,"pid":515275,"scope":"fold_family","seconds":0.009346888,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":135,"pid":515275,"scope":"fold_family","seconds":0.008984386,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":136,"pid":515275,"scope":"fold_family","seconds":0.008957497,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":137,"pid":515275,"scope":"fold_family","seconds":0.045351842,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":138,"pid":515275,"scope":"fold_family","seconds":0.009493734,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":139,"pid":515275,"scope":"fold_family","seconds":0.00238347,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":140,"pid":515275,"scope":"fold_family","seconds":0.008834335,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":141,"pid":515275,"scope":"fold_family","seconds":0.019989011,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":142,"pid":515275,"scope":"fold_family","seconds":0.009158695,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":143,"pid":515275,"scope":"fold_family","seconds":0.008994425,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":144,"pid":515275,"scope":"fold_family","seconds":0.009014764,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":145,"pid":515275,"scope":"fold_family","seconds":0.009021236,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":146,"pid":515275,"scope":"fold_family","seconds":0.009027428,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":147,"pid":515275,"scope":"fold_family","seconds":0.000342804,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":148,"pid":515275,"scope":"fold_family","seconds":0.009696134,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":149,"pid":515275,"scope":"fold_family","seconds":0.00240478,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":150,"pid":515275,"scope":"fold_family","seconds":0.001157445,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":151,"pid":515275,"scope":"fold_family","seconds":0.001106079,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":152,"pid":515275,"scope":"fold_family","seconds":0.009140139,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":153,"pid":515275,"scope":"fold_family","seconds":0.008969829,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":154,"pid":515275,"scope":"fold_family","seconds":0.000603505,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":155,"pid":515275,"scope":"fold_family","seconds":0.009051553,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":156,"pid":515275,"scope":"fold_family","seconds":0.00948104,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":157,"pid":515275,"scope":"fold_family","seconds":0.009230179,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":158,"pid":515275,"scope":"fold_family","seconds":0.009210692,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":159,"pid":515275,"scope":"fold_family","seconds":0.008943911,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":160,"pid":515275,"scope":"fold_family","seconds":0.002493076,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":161,"pid":515275,"scope":"fold_family","seconds":0.009043227,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":162,"pid":515275,"scope":"fold_family","seconds":0.001194305,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":163,"pid":515275,"scope":"fold_family","seconds":0.000591782,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":164,"pid":515275,"scope":"fold_family","seconds":0.009094193,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":165,"pid":515275,"scope":"fold_family","seconds":0.00894343,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":166,"pid":515275,"scope":"fold_family","seconds":0.008826249,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":167,"pid":515275,"scope":"fold_family","seconds":0.001231133,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":168,"pid":515275,"scope":"fold_family","seconds":0.011216923,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":169,"pid":515275,"scope":"fold_family","seconds":0.010140028,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":170,"pid":515275,"scope":"fold_family","seconds":0.008995277,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":171,"pid":515275,"scope":"fold_family","seconds":0.009032277,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":172,"pid":515275,"scope":"fold_family","seconds":0.008902382,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":173,"pid":515275,"scope":"fold_family","seconds":0.000652697,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":174,"pid":515275,"scope":"fold_family","seconds":0.009117898,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":175,"pid":515275,"scope":"fold_family","seconds":0.009413033,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":176,"pid":515275,"scope":"fold_family","seconds":0.027256059,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":177,"pid":515275,"scope":"fold_family","seconds":0.001222067,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":178,"pid":515275,"scope":"fold_family","seconds":0.009095495,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":179,"pid":515275,"scope":"fold_family","seconds":0.008982633,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":180,"pid":515275,"scope":"fold_family","seconds":0.009216102,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":181,"pid":515275,"scope":"fold_family","seconds":0.002323037,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":182,"pid":515275,"scope":"fold_family","seconds":0.009115554,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":183,"pid":515275,"scope":"fold_family","seconds":0.009355945,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":184,"pid":515275,"scope":"fold_family","seconds":0.002423115,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":185,"pid":515275,"scope":"fold_family","seconds":0.002288351,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":186,"pid":515275,"scope":"fold_family","seconds":0.009094002,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":187,"pid":515275,"scope":"fold_family","seconds":0.001180519,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":188,"pid":515275,"scope":"fold_family","seconds":0.004675238,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":189,"pid":515275,"scope":"fold_family","seconds":0.000347553,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":190,"pid":515275,"scope":"fold_family","seconds":0.009235929,"shape_only":null,"stage":"boolean"}
+{"counts":{"arithmetic":0,"compressions":0,"equalities":0,"packing":0,"variables":0},"event":"recursion_profile","id":9,"pid":515275,"scope":"fold","seconds":3.081720526,"shape_only":false,"stage":"native_sumchecks"}
+{"counts":{"arithmetic":0,"compressions":34924,"equalities":11254,"packing":17786,"variables":1745554},"event":"recursion_profile","id":9,"pid":515275,"scope":"fold","seconds":0.621466483,"shape_only":false,"stage":"transcript"}
+{"counts":{"arithmetic":530603,"compressions":0,"equalities":72946,"packing":0,"variables":535645},"event":"recursion_profile","id":9,"pid":515275,"scope":"fold","seconds":0.026091922,"shape_only":false,"stage":"algebra"}
+{"counts":{"arithmetic":530603,"compressions":34924,"equalities":84200,"packing":17786,"variables":2281199},"event":"recursion_profile","id":6,"pid":515275,"scope":"node_graph","seconds":3.742479561,"shape_only":false,"stage":"folds"}
+{"counts":null,"event":"recursion_profile","id":5,"pid":515275,"scope":"node_prove","seconds":3.74250552,"shape_only":null,"stage":"folds"}
+{"counts":null,"event":"recursion_profile","id":5,"pid":515275,"scope":"node_prove","seconds":0.071340589,"shape_only":null,"stage":"check_advice"}
+{"counts":null,"event":"recursion_profile","id":191,"pid":515275,"scope":"native_proof","seconds":0.800340948,"shape_only":null,"stage":"witness"}
+  [prove_union] witgen (padded 2^28, FreshZeroed): 1027.12 ms
+  [prove_union] compact q (2^25 dense):   97.38 ms
+  [prove_union] commit: 1512.41 ms
+  [prove_union] bind statement:    0.18 ms
+  [prove_union] element a/b copies (2^27 words, LIVE spans):  193.61 ms
+  [prove_union] s_hat_v_ab fold (z_vec 2^14):   0.06 ms
+  [prove_union] boolean zerocheck + lincheck (M_bool = 31) ∥ wiring: 2071.01 ms
+  [prove_union] element region PIOP (2^27 words):  621.05 ms
+  [prove_union] wiring GKR + gather (μ = 26, 396 claims):    0.00 ms
+  [prove_union] claim assembly:    0.02 ms  (heights 0.01 + z_claims 0.00 + element pd 0.00 + wiring pd 0.01)
+    [rs::prove_batched] build_eq dense×0 (split) + sparse×2 (0 built):   0.00 ms
+    [rs::prove_batched] fold_1b_rows dense(k=0)+sparse(k=2):   0.00 ms
+    [rs::prove_batched] per-opening tail ×2:   0.52 ms
+  [open_merged] ring_switch:   0.55 ms
+  [open_merged] W build + round-0 prime (2^25 words): 422.94 ms
+  [open_merged] merged sumcheck (25 rounds): 207.90 ms
+    [frobenius] linearized_coefficients (x2):   0.12 ms
+  [open_batch] ring_switch::prove_batched ×0:   0.00 ms
+    [multipoint] 256 + 2 values (compute):  77.81 ms
+  [open_batch] combine (seeded EqPoint + lookahead, L=33554432): 380.50 ms
+    [multipoint] rs path: dense VIRTUAL weight (half materializes at fold 0) (n=17 k=11 area=25156030 of 2^25); columns 541 used, 0 full(2^17), 0 pow2; heights 91834x92 44198x129 34393x320
+    [multipoint] weight passes (2^25, 2 products — group DENSE, support 17717476 words, round-0 fused): 1153.65 ms  (rs 525.20 | group 628.44)
+    [multipoint] two-product sumcheck (25 rounds): 1178.73 ms  (folds: rs 674.16 | group 453.32)
+    [frobenius] statements + suffix rows (x4, 9246 low + 724 shared blocks vs 14688 dense):   1.43 ms
+    [frobenius] v + rounds:   1.13 ms
+    [multipoint] anchor assist (x2 + x2):   2.68 ms
+  [open_batch] ligerito::recursive_prover_with_basis: 2322.91 ms
+  [open_batch] TOTAL: 2703.48 ms
+  [open_merged] coeffs + (multipoint assist ∥ inner open): 2703.71 ms (join wall 2703.57 ms = max of the two branches)
+  [open_merged] TOTAL: 3389.95 ms
+  [prove_union] witness buffer give-back (2^28 words, zero dirty spans):  86.66 ms
+  [prove_union] open (rs×2, pd×398): 3476.66 ms
+  [prove_union] TOTAL 9440.28 ms === done (element: true) ===
+{"counts":null,"event":"recursion_profile","id":191,"pid":515275,"scope":"native_proof","seconds":9.545683113,"shape_only":null,"stage":"flock_prove"}
+{"counts":null,"event":"recursion_profile","id":5,"pid":515275,"scope":"node_prove","seconds":10.454993436,"shape_only":null,"stage":"native_proof"}
+{"counts":null,"event":"recursion_profile","id":5,"pid":515275,"scope":"node_prove","seconds":0.000802258,"shape_only":null,"stage":"encode"}
+{"counts":null,"event":"recursion_profile","id":192,"pid":515275,"scope":"node_verify","seconds":0.000795254,"shape_only":null,"stage":"decode"}
+{"counts":null,"event":"recursion_profile","id":192,"pid":515275,"scope":"node_verify","seconds":0.095584106,"shape_only":null,"stage":"flock_verify"}
+{"counts":null,"event":"recursion_profile","id":192,"pid":515275,"scope":"node_verify","seconds":0.467588781,"shape_only":null,"stage":"fixed_tables"}
+{"bytes":421603,"class":"cslib-2048","event":"chain_proof","first_leaf":0,"geometry":{"application_words":57,"arithmetic_operations":2201133,"blake3_compressions":91834,"children":[1,1],"dense_variables":32,"leaves":2,"packing_rows":44198,"root_advice_words":5627,"root_families":181,"row_variables":17,"variables":5472654},"leaves":2,"seconds":19.60510534}
+{"counts":null,"event":"recursion_profile","id":193,"pid":515275,"scope":"node_compile","seconds":0.050046295,"shape_only":null,"stage":"child_replay_plans"}
+{"counts":{"arithmetic":0,"compressions":0,"equalities":0,"packing":0,"variables":12249},"event":"recursion_profile","id":195,"pid":515275,"scope":"child","seconds":0.003813578,"shape_only":true,"stage":"statement_allocate"}
+{"counts":{"arithmetic":0,"compressions":2073,"equalities":1463,"packing":1852,"variables":165796},"event":"recursion_profile","id":195,"pid":515275,"scope":"child","seconds":0.023486895,"shape_only":true,"stage":"transcript"}
+{"counts":{"arithmetic":0,"compressions":3254,"equalities":8,"packing":0,"variables":13027},"event":"recursion_profile","id":195,"pid":515275,"scope":"child","seconds":0.001284675,"shape_only":true,"stage":"statement_bind"}
+{"counts":{"arithmetic":87852,"compressions":0,"equalities":6596,"packing":0,"variables":94338},"event":"recursion_profile","id":195,"pid":515275,"scope":"child","seconds":0.141919286,"shape_only":true,"stage":"wiring"}
+{"counts":{"arithmetic":2304,"compressions":0,"equalities":2,"packing":0,"variables":2306},"event":"recursion_profile","id":195,"pid":515275,"scope":"child","seconds":0.002384101,"shape_only":true,"stage":"boolean_algebra"}
+{"counts":{"arithmetic":6997,"compressions":0,"equalities":3,"packing":0,"variables":7106},"event":"recursion_profile","id":195,"pid":515275,"scope":"child","seconds":0.007203038,"shape_only":true,"stage":"element_algebra"}
+{"counts":{"arithmetic":2790,"compressions":0,"equalities":400,"packing":512,"variables":35814},"event":"recursion_profile","id":195,"pid":515275,"scope":"child","seconds":0.008158605,"shape_only":true,"stage":"opening_frontend"}
+{"counts":{"arithmetic":251291,"compressions":0,"equalities":11108,"packing":0,"variables":251296},"event":"recursion_profile","id":195,"pid":515275,"scope":"child","seconds":0.057914845,"shape_only":true,"stage":"opening_multipoint"}
+{"counts":{"arithmetic":139538,"compressions":6478,"equalities":18812,"packing":6794,"variables":398189},"event":"recursion_profile","id":195,"pid":515275,"scope":"child","seconds":0.147638565,"shape_only":true,"stage":"opening_inner"}
+{"counts":{"arithmetic":0,"compressions":0,"equalities":0,"packing":0,"variables":0},"event":"recursion_profile","id":195,"pid":515275,"scope":"child","seconds":0.00215485,"shape_only":true,"stage":"application"}
+{"counts":{"arithmetic":0,"compressions":0,"equalities":0,"packing":0,"variables":45096},"event":"recursion_profile","id":196,"pid":515275,"scope":"child","seconds":0.043256924,"shape_only":true,"stage":"statement_allocate"}
+{"counts":{"arithmetic":0,"compressions":5627,"equalities":1681,"packing":2318,"variables":224820},"event":"recursion_profile","id":196,"pid":515275,"scope":"child","seconds":0.050666881,"shape_only":true,"stage":"transcript"}
+{"counts":{"arithmetic":0,"compressions":11978,"equalities":51,"packing":0,"variables":47912},"event":"recursion_profile","id":196,"pid":515275,"scope":"child","seconds":0.004078996,"shape_only":true,"stage":"statement_bind"}
+{"counts":{"arithmetic":297313,"compressions":0,"equalities":45073,"packing":0,"variables":297315},"event":"recursion_profile","id":196,"pid":515275,"scope":"child","seconds":0.475596923,"shape_only":true,"stage":"wiring"}
+{"counts":{"arithmetic":10348,"compressions":0,"equalities":2,"packing":0,"variables":10528},"event":"recursion_profile","id":196,"pid":515275,"scope":"child","seconds":0.014662399,"shape_only":true,"stage":"boolean_algebra"}
+{"counts":{"arithmetic":0,"compressions":0,"equalities":0,"packing":0,"variables":0},"event":"recursion_profile","id":196,"pid":515275,"scope":"child","seconds":0.037306761,"shape_only":true,"stage":"element_algebra"}
+{"counts":{"arithmetic":11288,"compressions":0,"equalities":4645,"packing":512,"variables":44312},"event":"recursion_profile","id":196,"pid":515275,"scope":"child","seconds":0.084303654,"shape_only":true,"stage":"opening_frontend"}
+{"counts":{"arithmetic":257846,"compressions":0,"equalities":148579,"packing":0,"variables":257849},"event":"recursion_profile","id":196,"pid":515275,"scope":"child","seconds":0.108253499,"shape_only":true,"stage":"opening_multipoint"}
+{"counts":{"arithmetic":258389,"compressions":10850,"equalities":36452,"packing":10376,"variables":667037},"event":"recursion_profile","id":196,"pid":515275,"scope":"child","seconds":0.309110352,"shape_only":true,"stage":"opening_inner"}
+{"counts":{"arithmetic":0,"compressions":0,"equalities":0,"packing":0,"variables":0},"event":"recursion_profile","id":196,"pid":515275,"scope":"child","seconds":0.000152467,"shape_only":true,"stage":"application"}
+{"counts":{"arithmetic":1326037,"compressions":40260,"equalities":274906,"packing":22364,"variables":2575098},"event":"recursion_profile","id":194,"pid":515275,"scope":"node_graph","seconds":3.704862093,"shape_only":true,"stage":"children"}
+{"counts":null,"event":"recursion_profile","id":193,"pid":515275,"scope":"node_compile","seconds":3.704995564,"shape_only":null,"stage":"children"}
+{"counts":null,"event":"recursion_profile","id":193,"pid":515275,"scope":"node_compile","seconds":0.002275046,"shape_only":null,"stage":"fold_plan"}
+{"counts":{"arithmetic":0,"compressions":0,"equalities":0,"packing":0,"variables":0},"event":"recursion_profile","id":197,"pid":515275,"scope":"fold","seconds":0.000047419,"shape_only":true,"stage":"native_sumchecks"}
+{"counts":{"arithmetic":0,"compressions":25782,"equalities":11444,"packing":18081,"variables":1705926},"event":"recursion_profile","id":197,"pid":515275,"scope":"fold","seconds":0.465330697,"shape_only":true,"stage":"transcript"}
+{"counts":{"arithmetic":311132,"compressions":0,"equalities":44431,"packing":0,"variables":311270},"event":"recursion_profile","id":197,"pid":515275,"scope":"fold","seconds":0.016593168,"shape_only":true,"stage":"algebra"}
+{"counts":{"arithmetic":311132,"compressions":25782,"equalities":55875,"packing":18081,"variables":2017196},"event":"recursion_profile","id":194,"pid":515275,"scope":"node_graph","seconds":0.492532876,"shape_only":true,"stage":"folds"}
+{"counts":null,"event":"recursion_profile","id":193,"pid":515275,"scope":"node_compile","seconds":0.490161017,"shape_only":null,"stage":"fold_graph"}
+{"counts":null,"event":"recursion_profile","id":193,"pid":515275,"scope":"node_compile","seconds":0.756635282,"shape_only":null,"stage":"count"}
+{"counts":null,"event":"recursion_profile","id":193,"pid":515275,"scope":"node_compile","seconds":3.471608601,"shape_only":null,"stage":"shape"}
+{"counts":null,"event":"recursion_profile","id":193,"pid":515275,"scope":"node_compile","seconds":1.506646044,"shape_only":null,"stage":"identity"}
+{"class":"cslib-2048","event":"chain_setup","geometry":{"application_words":57,"arithmetic_operations":1637169,"blake3_compressions":66042,"children":[2,1],"dense_variables":32,"leaves":3,"packing_rows":40445,"root_advice_words":5722,"root_families":183,"row_variables":17,"variables":4592294},"identity":"cd6edcdbe427fc44005ee4d095a4fa1a27d6aa93c72312af65b46c0e976af625","leaves":3,"seconds":10.469140349}
+{"counts":null,"event":"recursion_profile","id":198,"pid":515275,"scope":"node_prove","seconds":0.257615264,"shape_only":null,"stage":"replay_left"}
+{"counts":null,"event":"recursion_profile","id":198,"pid":515275,"scope":"node_prove","seconds":0.74412592,"shape_only":null,"stage":"replay_right"}
+{"counts":{"arithmetic":0,"compressions":0,"equalities":0,"packing":0,"variables":12249},"event":"recursion_profile","id":200,"pid":515275,"scope":"child","seconds":0.011520283,"shape_only":false,"stage":"statement_allocate"}
+{"counts":{"arithmetic":0,"compressions":2073,"equalities":1463,"packing":1852,"variables":165796},"event":"recursion_profile","id":200,"pid":515275,"scope":"child","seconds":0.022051357,"shape_only":false,"stage":"transcript"}
+{"counts":{"arithmetic":0,"compressions":3254,"equalities":8,"packing":0,"variables":13027},"event":"recursion_profile","id":200,"pid":515275,"scope":"child","seconds":0.001173686,"shape_only":false,"stage":"statement_bind"}
+{"counts":{"arithmetic":87852,"compressions":0,"equalities":6596,"packing":0,"variables":94338},"event":"recursion_profile","id":200,"pid":515275,"scope":"child","seconds":0.132447964,"shape_only":false,"stage":"wiring"}
+{"counts":{"arithmetic":2304,"compressions":0,"equalities":2,"packing":0,"variables":2306},"event":"recursion_profile","id":200,"pid":515275,"scope":"child","seconds":0.002126587,"shape_only":false,"stage":"boolean_algebra"}
+{"counts":{"arithmetic":6997,"compressions":0,"equalities":3,"packing":0,"variables":7106},"event":"recursion_profile","id":200,"pid":515275,"scope":"child","seconds":0.015170724,"shape_only":false,"stage":"element_algebra"}
+{"counts":{"arithmetic":2790,"compressions":0,"equalities":400,"packing":512,"variables":35814},"event":"recursion_profile","id":200,"pid":515275,"scope":"child","seconds":0.016709477,"shape_only":false,"stage":"opening_frontend"}
+{"counts":{"arithmetic":251291,"compressions":0,"equalities":11108,"packing":0,"variables":251296},"event":"recursion_profile","id":200,"pid":515275,"scope":"child","seconds":0.063506214,"shape_only":false,"stage":"opening_multipoint"}
+{"counts":{"arithmetic":139538,"compressions":6478,"equalities":18812,"packing":6794,"variables":398189},"event":"recursion_profile","id":200,"pid":515275,"scope":"child","seconds":0.157428417,"shape_only":false,"stage":"opening_inner"}
+{"counts":{"arithmetic":0,"compressions":0,"equalities":0,"packing":0,"variables":0},"event":"recursion_profile","id":200,"pid":515275,"scope":"child","seconds":0.005156121,"shape_only":false,"stage":"application"}
+{"counts":{"arithmetic":0,"compressions":0,"equalities":0,"packing":0,"variables":45096},"event":"recursion_profile","id":201,"pid":515275,"scope":"child","seconds":0.039345423,"shape_only":false,"stage":"statement_allocate"}
+{"counts":{"arithmetic":0,"compressions":5627,"equalities":1681,"packing":2318,"variables":224820},"event":"recursion_profile","id":201,"pid":515275,"scope":"child","seconds":0.081851335,"shape_only":false,"stage":"transcript"}
+{"counts":{"arithmetic":0,"compressions":11978,"equalities":51,"packing":0,"variables":47912},"event":"recursion_profile","id":201,"pid":515275,"scope":"child","seconds":0.00455409,"shape_only":false,"stage":"statement_bind"}
+{"counts":{"arithmetic":297313,"compressions":0,"equalities":45073,"packing":0,"variables":297315},"event":"recursion_profile","id":201,"pid":515275,"scope":"child","seconds":0.52618612,"shape_only":false,"stage":"wiring"}
+{"counts":{"arithmetic":10348,"compressions":0,"equalities":2,"packing":0,"variables":10528},"event":"recursion_profile","id":201,"pid":515275,"scope":"child","seconds":0.038060948,"shape_only":false,"stage":"boolean_algebra"}
+{"counts":{"arithmetic":0,"compressions":0,"equalities":0,"packing":0,"variables":0},"event":"recursion_profile","id":201,"pid":515275,"scope":"child","seconds":0.127132493,"shape_only":false,"stage":"element_algebra"}
+{"counts":{"arithmetic":11288,"compressions":0,"equalities":4645,"packing":512,"variables":44312},"event":"recursion_profile","id":201,"pid":515275,"scope":"child","seconds":0.138334969,"shape_only":false,"stage":"opening_frontend"}
+{"counts":{"arithmetic":257846,"compressions":0,"equalities":148579,"packing":0,"variables":257849},"event":"recursion_profile","id":201,"pid":515275,"scope":"child","seconds":0.100524482,"shape_only":false,"stage":"opening_multipoint"}
+{"counts":{"arithmetic":258389,"compressions":10850,"equalities":36452,"packing":10376,"variables":667037},"event":"recursion_profile","id":201,"pid":515275,"scope":"child","seconds":0.284894056,"shape_only":false,"stage":"opening_inner"}
+{"counts":{"arithmetic":0,"compressions":0,"equalities":0,"packing":0,"variables":0},"event":"recursion_profile","id":201,"pid":515275,"scope":"child","seconds":0.000109856,"shape_only":false,"stage":"application"}
+{"counts":{"arithmetic":1326037,"compressions":40260,"equalities":274906,"packing":22364,"variables":2575098},"event":"recursion_profile","id":199,"pid":515275,"scope":"node_graph","seconds":3.907527801,"shape_only":false,"stage":"children"}
+{"counts":null,"event":"recursion_profile","id":198,"pid":515275,"scope":"node_prove","seconds":3.907611288,"shape_only":null,"stage":"children"}
+{"counts":null,"event":"recursion_profile","id":203,"pid":515275,"scope":"fold_family","seconds":0.196658863,"shape_only":null,"stage":"structure"}
+{"counts":null,"event":"recursion_profile","id":204,"pid":515275,"scope":"fold_family","seconds":0.644423113,"shape_only":null,"stage":"structure"}
+{"counts":null,"event":"recursion_profile","id":205,"pid":515275,"scope":"fold_family","seconds":0.021759989,"shape_only":null,"stage":"jagged"}
+{"counts":null,"event":"recursion_profile","id":206,"pid":515275,"scope":"fold_family","seconds":0.497571096,"shape_only":null,"stage":"jagged"}
+{"counts":null,"event":"recursion_profile","id":207,"pid":515275,"scope":"fold_family","seconds":0.01060891,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":208,"pid":515275,"scope":"fold_family","seconds":0.010057975,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":209,"pid":515275,"scope":"fold_family","seconds":0.01016228,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":210,"pid":515275,"scope":"fold_family","seconds":0.010807313,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":211,"pid":515275,"scope":"fold_family","seconds":0.000712008,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":212,"pid":515275,"scope":"fold_family","seconds":0.010394968,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":213,"pid":515275,"scope":"fold_family","seconds":0.000106521,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":214,"pid":515275,"scope":"fold_family","seconds":0.000183004,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":215,"pid":515275,"scope":"fold_family","seconds":0.010065549,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":216,"pid":515275,"scope":"fold_family","seconds":0.010508871,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":217,"pid":515275,"scope":"fold_family","seconds":0.00039899,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":218,"pid":515275,"scope":"fold_family","seconds":0.010183881,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":219,"pid":515275,"scope":"fold_family","seconds":0.000702941,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":220,"pid":515275,"scope":"fold_family","seconds":0.002584147,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":221,"pid":515275,"scope":"fold_family","seconds":0.010258461,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":222,"pid":515275,"scope":"fold_family","seconds":0.010179543,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":223,"pid":515275,"scope":"fold_family","seconds":0.000398439,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":224,"pid":515275,"scope":"fold_family","seconds":0.001322245,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":225,"pid":515275,"scope":"fold_family","seconds":0.010194211,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":226,"pid":515275,"scope":"fold_family","seconds":0.010003543,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":227,"pid":515275,"scope":"fold_family","seconds":0.010125351,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":228,"pid":515275,"scope":"fold_family","seconds":0.000709293,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":229,"pid":515275,"scope":"fold_family","seconds":0.009866335,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":230,"pid":515275,"scope":"fold_family","seconds":0.002638079,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":231,"pid":515275,"scope":"fold_family","seconds":0.010345806,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":232,"pid":515275,"scope":"fold_family","seconds":0.009985418,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":233,"pid":515275,"scope":"fold_family","seconds":0.010053125,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":234,"pid":515275,"scope":"fold_family","seconds":0.000394311,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":235,"pid":515275,"scope":"fold_family","seconds":0.009850264,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":236,"pid":515275,"scope":"fold_family","seconds":0.009968586,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":237,"pid":515275,"scope":"fold_family","seconds":0.009857478,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":238,"pid":515275,"scope":"fold_family","seconds":0.000400723,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":239,"pid":515275,"scope":"fold_family","seconds":0.00998075,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":240,"pid":515275,"scope":"fold_family","seconds":0.000104105,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":241,"pid":515275,"scope":"fold_family","seconds":0.010122286,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":242,"pid":515275,"scope":"fold_family","seconds":0.010094373,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":243,"pid":515275,"scope":"fold_family","seconds":0.010604362,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":244,"pid":515275,"scope":"fold_family","seconds":0.010239756,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":245,"pid":515275,"scope":"fold_family","seconds":0.010617867,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":246,"pid":515275,"scope":"fold_family","seconds":0.010072031,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":247,"pid":515275,"scope":"fold_family","seconds":0.000406654,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":248,"pid":515275,"scope":"fold_family","seconds":0.010022908,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":249,"pid":515275,"scope":"fold_family","seconds":0.009928772,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":250,"pid":515275,"scope":"fold_family","seconds":0.002620776,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":251,"pid":515275,"scope":"fold_family","seconds":0.010063766,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":252,"pid":515275,"scope":"fold_family","seconds":0.010027037,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":253,"pid":515275,"scope":"fold_family","seconds":0.005112028,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":254,"pid":515275,"scope":"fold_family","seconds":0.002651274,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":255,"pid":515275,"scope":"fold_family","seconds":0.010024061,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":256,"pid":515275,"scope":"fold_family","seconds":0.001356951,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":257,"pid":515275,"scope":"fold_family","seconds":0.000378782,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":258,"pid":515275,"scope":"fold_family","seconds":0.000680629,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":259,"pid":515275,"scope":"fold_family","seconds":0.010185655,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":260,"pid":515275,"scope":"fold_family","seconds":0.000682162,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":261,"pid":515275,"scope":"fold_family","seconds":0.053110324,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":262,"pid":515275,"scope":"fold_family","seconds":0.010252971,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":263,"pid":515275,"scope":"fold_family","seconds":0.01010335,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":264,"pid":515275,"scope":"fold_family","seconds":0.020804574,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":265,"pid":515275,"scope":"fold_family","seconds":0.011132654,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":266,"pid":515275,"scope":"fold_family","seconds":0.010365743,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":267,"pid":515275,"scope":"fold_family","seconds":0.010228364,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":268,"pid":515275,"scope":"fold_family","seconds":0.010053136,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":269,"pid":515275,"scope":"fold_family","seconds":0.005222165,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":270,"pid":515275,"scope":"fold_family","seconds":0.010946775,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":271,"pid":515275,"scope":"fold_family","seconds":0.001348224,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":272,"pid":515275,"scope":"fold_family","seconds":0.010506979,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":273,"pid":515275,"scope":"fold_family","seconds":0.023268675,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":274,"pid":515275,"scope":"fold_family","seconds":0.005238486,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":275,"pid":515275,"scope":"fold_family","seconds":0.000358434,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":276,"pid":515275,"scope":"fold_family","seconds":0.010088782,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":277,"pid":515275,"scope":"fold_family","seconds":0.01073129,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":278,"pid":515275,"scope":"fold_family","seconds":0.010137364,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":279,"pid":515275,"scope":"fold_family","seconds":0.010128157,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":280,"pid":515275,"scope":"fold_family","seconds":0.01098699,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":281,"pid":515275,"scope":"fold_family","seconds":0.011828823,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":282,"pid":515275,"scope":"fold_family","seconds":0.010634108,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":283,"pid":515275,"scope":"fold_family","seconds":0.052649238,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":284,"pid":515275,"scope":"fold_family","seconds":0.000195988,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":285,"pid":515275,"scope":"fold_family","seconds":0.00038841,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":286,"pid":515275,"scope":"fold_family","seconds":0.011301472,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":287,"pid":515275,"scope":"fold_family","seconds":0.021781509,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":288,"pid":515275,"scope":"fold_family","seconds":0.000956017,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":289,"pid":515275,"scope":"fold_family","seconds":0.00129788,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":290,"pid":515275,"scope":"fold_family","seconds":0.010327321,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":291,"pid":515275,"scope":"fold_family","seconds":0.010274963,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":292,"pid":515275,"scope":"fold_family","seconds":0.010376934,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":293,"pid":515275,"scope":"fold_family","seconds":0.011073443,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":294,"pid":515275,"scope":"fold_family","seconds":0.001280948,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":295,"pid":515275,"scope":"fold_family","seconds":0.011082059,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":296,"pid":515275,"scope":"fold_family","seconds":0.000502324,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":297,"pid":515275,"scope":"fold_family","seconds":0.011112507,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":298,"pid":515275,"scope":"fold_family","seconds":0.010361735,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":299,"pid":515275,"scope":"fold_family","seconds":0.010270023,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":300,"pid":515275,"scope":"fold_family","seconds":0.010394558,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":301,"pid":515275,"scope":"fold_family","seconds":0.000688534,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":302,"pid":515275,"scope":"fold_family","seconds":0.010240046,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":303,"pid":515275,"scope":"fold_family","seconds":0.010215491,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":304,"pid":515275,"scope":"fold_family","seconds":0.010878567,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":305,"pid":515275,"scope":"fold_family","seconds":0.01037462,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":306,"pid":515275,"scope":"fold_family","seconds":0.000413998,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":307,"pid":515275,"scope":"fold_family","seconds":0.002640083,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":308,"pid":515275,"scope":"fold_family","seconds":0.000238438,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":309,"pid":515275,"scope":"fold_family","seconds":0.010831689,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":310,"pid":515275,"scope":"fold_family","seconds":0.011255766,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":311,"pid":515275,"scope":"fold_family","seconds":0.010649145,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":312,"pid":515275,"scope":"fold_family","seconds":0.010928741,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":313,"pid":515275,"scope":"fold_family","seconds":0.002942019,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":314,"pid":515275,"scope":"fold_family","seconds":0.010273731,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":315,"pid":515275,"scope":"fold_family","seconds":0.011048497,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":316,"pid":515275,"scope":"fold_family","seconds":0.0117527,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":317,"pid":515275,"scope":"fold_family","seconds":0.011988433,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":318,"pid":515275,"scope":"fold_family","seconds":0.010920977,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":319,"pid":515275,"scope":"fold_family","seconds":0.011094332,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":320,"pid":515275,"scope":"fold_family","seconds":0.010719979,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":321,"pid":515275,"scope":"fold_family","seconds":0.011468105,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":322,"pid":515275,"scope":"fold_family","seconds":0.010781404,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":323,"pid":515275,"scope":"fold_family","seconds":0.010525513,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":324,"pid":515275,"scope":"fold_family","seconds":0.011758341,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":325,"pid":515275,"scope":"fold_family","seconds":0.011411158,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":326,"pid":515275,"scope":"fold_family","seconds":0.011384017,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":327,"pid":515275,"scope":"fold_family","seconds":0.010625542,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":328,"pid":515275,"scope":"fold_family","seconds":0.001490271,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":329,"pid":515275,"scope":"fold_family","seconds":0.010755235,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":330,"pid":515275,"scope":"fold_family","seconds":0.011238463,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":331,"pid":515275,"scope":"fold_family","seconds":0.011144137,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":332,"pid":515275,"scope":"fold_family","seconds":0.054552935,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":333,"pid":515275,"scope":"fold_family","seconds":0.010963396,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":334,"pid":515275,"scope":"fold_family","seconds":0.002887808,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":335,"pid":515275,"scope":"fold_family","seconds":0.010727243,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":336,"pid":515275,"scope":"fold_family","seconds":0.023787189,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":337,"pid":515275,"scope":"fold_family","seconds":0.010831899,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":338,"pid":515275,"scope":"fold_family","seconds":0.010320128,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":339,"pid":515275,"scope":"fold_family","seconds":0.010872506,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":340,"pid":515275,"scope":"fold_family","seconds":0.010623046,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":341,"pid":515275,"scope":"fold_family","seconds":0.010685895,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":342,"pid":515275,"scope":"fold_family","seconds":0.00040423,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":343,"pid":515275,"scope":"fold_family","seconds":0.010650648,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":344,"pid":515275,"scope":"fold_family","seconds":0.002621096,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":345,"pid":515275,"scope":"fold_family","seconds":0.001290295,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":346,"pid":515275,"scope":"fold_family","seconds":0.001291868,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":347,"pid":515275,"scope":"fold_family","seconds":0.010376684,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":348,"pid":515275,"scope":"fold_family","seconds":0.009949521,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":349,"pid":515275,"scope":"fold_family","seconds":0.000695176,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":350,"pid":515275,"scope":"fold_family","seconds":0.010100184,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":351,"pid":515275,"scope":"fold_family","seconds":0.010516125,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":352,"pid":515275,"scope":"fold_family","seconds":0.010352468,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":353,"pid":515275,"scope":"fold_family","seconds":0.010133025,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":354,"pid":515275,"scope":"fold_family","seconds":0.010031865,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":355,"pid":515275,"scope":"fold_family","seconds":0.002608102,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":356,"pid":515275,"scope":"fold_family","seconds":0.010154686,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":357,"pid":515275,"scope":"fold_family","seconds":0.001345499,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":358,"pid":515275,"scope":"fold_family","seconds":0.000691249,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":359,"pid":515275,"scope":"fold_family","seconds":0.010297615,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":360,"pid":515275,"scope":"fold_family","seconds":0.010181035,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":361,"pid":515275,"scope":"fold_family","seconds":0.010576039,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":362,"pid":515275,"scope":"fold_family","seconds":0.001296927,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":363,"pid":515275,"scope":"fold_family","seconds":0.010388686,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":364,"pid":515275,"scope":"fold_family","seconds":0.010788277,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":365,"pid":515275,"scope":"fold_family","seconds":0.010112768,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":366,"pid":515275,"scope":"fold_family","seconds":0.009977533,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":367,"pid":515275,"scope":"fold_family","seconds":0.010966963,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":368,"pid":515275,"scope":"fold_family","seconds":0.000684216,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":369,"pid":515275,"scope":"fold_family","seconds":0.010390309,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":370,"pid":515275,"scope":"fold_family","seconds":0.011413814,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":371,"pid":515275,"scope":"fold_family","seconds":0.033861955,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":372,"pid":515275,"scope":"fold_family","seconds":0.001333186,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":373,"pid":515275,"scope":"fold_family","seconds":0.010281624,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":374,"pid":515275,"scope":"fold_family","seconds":0.010067432,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":375,"pid":515275,"scope":"fold_family","seconds":0.010228566,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":376,"pid":515275,"scope":"fold_family","seconds":0.002697701,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":377,"pid":515275,"scope":"fold_family","seconds":0.010280343,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":378,"pid":515275,"scope":"fold_family","seconds":0.010478826,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":379,"pid":515275,"scope":"fold_family","seconds":0.002647086,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":380,"pid":515275,"scope":"fold_family","seconds":0.002510508,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":381,"pid":515275,"scope":"fold_family","seconds":0.010471512,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":382,"pid":515275,"scope":"fold_family","seconds":0.001312728,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":383,"pid":515275,"scope":"fold_family","seconds":0.005151803,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":384,"pid":515275,"scope":"fold_family","seconds":0.000397968,"shape_only":null,"stage":"boolean"}
+{"counts":null,"event":"recursion_profile","id":385,"pid":515275,"scope":"fold_family","seconds":0.010112096,"shape_only":null,"stage":"boolean"}
+{"counts":{"arithmetic":0,"compressions":0,"equalities":0,"packing":0,"variables":0},"event":"recursion_profile","id":202,"pid":515275,"scope":"fold","seconds":2.974583816,"shape_only":false,"stage":"native_sumchecks"}
+{"counts":{"arithmetic":0,"compressions":25782,"equalities":11444,"packing":18081,"variables":1705926},"event":"recursion_profile","id":202,"pid":515275,"scope":"fold","seconds":0.454912637,"shape_only":false,"stage":"transcript"}
+{"counts":{"arithmetic":311132,"compressions":0,"equalities":44431,"packing":0,"variables":311270},"event":"recursion_profile","id":202,"pid":515275,"scope":"fold","seconds":0.016532323,"shape_only":false,"stage":"algebra"}
+{"counts":{"arithmetic":311132,"compressions":25782,"equalities":55875,"packing":18081,"variables":2017196},"event":"recursion_profile","id":199,"pid":515275,"scope":"node_graph","seconds":3.454787078,"shape_only":false,"stage":"folds"}
+{"counts":null,"event":"recursion_profile","id":198,"pid":515275,"scope":"node_prove","seconds":3.45481989,"shape_only":null,"stage":"folds"}
+{"counts":null,"event":"recursion_profile","id":198,"pid":515275,"scope":"node_prove","seconds":0.058866183,"shape_only":null,"stage":"check_advice"}
+{"counts":null,"event":"recursion_profile","id":386,"pid":515275,"scope":"native_proof","seconds":0.713965433,"shape_only":null,"stage":"witness"}
+  [prove_union] witgen (padded 2^28, FreshZeroed):  312.32 ms
+  [prove_union] compact q (2^25 dense):   97.56 ms
+  [prove_union] commit: 1285.44 ms
+  [prove_union] bind statement:    0.19 ms
+  [prove_union] element a/b copies (2^27 words, LIVE spans):   40.88 ms
+  [prove_union] s_hat_v_ab fold (z_vec 2^14):   0.06 ms
+  [prove_union] boolean zerocheck + lincheck (M_bool = 31) ∥ wiring: 1662.12 ms
+  [prove_union] element region PIOP (2^27 words):  497.71 ms
+  [prove_union] wiring GKR + gather (μ = 26, 396 claims):    0.00 ms
+  [prove_union] claim assembly:    0.02 ms  (heights 0.01 + z_claims 0.00 + element pd 0.00 + wiring pd 0.01)
+    [rs::prove_batched] build_eq dense×0 (split) + sparse×2 (0 built):   0.00 ms
+    [rs::prove_batched] fold_1b_rows dense(k=0)+sparse(k=2):   0.00 ms
+    [rs::prove_batched] per-opening tail ×2:   0.47 ms
+  [open_merged] ring_switch:   0.51 ms
+  [open_merged] W build + round-0 prime (2^25 words): 341.62 ms
+  [open_merged] merged sumcheck (25 rounds): 164.72 ms
+    [frobenius] linearized_coefficients (x2):   0.12 ms
+  [open_batch] ring_switch::prove_batched ×0:   0.00 ms
+    [multipoint] 256 + 2 values (compute):  76.56 ms
+  [open_batch] combine (seeded EqPoint + lookahead, L=33554432): 364.06 ms
+    [multipoint] rs path: dense VIRTUAL weight (half materializes at fold 0) (n=17 k=11 area=19479189 of 2^25); columns 541 used, 0 full(2^17), 0 pow2; heights 66042x92 40445x129 25581x320
+    [multipoint] weight passes (2^25, 2 products — group DENSE, support 14129787 words, round-0 fused): 904.71 ms  (rs 398.15 | group 506.56)
+    [multipoint] two-product sumcheck (25 rounds): 913.01 ms  (folds: rs 531.99 | group 333.53)
+    [frobenius] statements + suffix rows (x4, 9177 low + 596 shared blocks vs 14688 dense):   1.41 ms
+    [frobenius] v + rounds:   0.77 ms
+    [multipoint] anchor assist (x2 + x2):   2.28 ms
+  [open_batch] ligerito::recursive_prover_with_basis: 1992.26 ms
+  [open_batch] TOTAL: 2356.41 ms
+  [open_merged] coeffs + (multipoint assist ∥ inner open): 2356.66 ms (join wall 2356.51 ms = max of the two branches)
+  [open_merged] TOTAL: 2904.48 ms
+  [prove_union] witness buffer give-back (2^28 words, zero dirty spans):  85.26 ms
+  [prove_union] open (rs×2, pd×398): 2989.79 ms
+  [prove_union] TOTAL 7057.69 ms === done (element: true) ===
+{"counts":null,"event":"recursion_profile","id":386,"pid":515275,"scope":"native_proof","seconds":7.145885513,"shape_only":null,"stage":"flock_prove"}
+{"counts":null,"event":"recursion_profile","id":198,"pid":515275,"scope":"node_prove","seconds":7.964017844,"shape_only":null,"stage":"native_proof"}
+{"counts":null,"event":"recursion_profile","id":198,"pid":515275,"scope":"node_prove","seconds":0.000745812,"shape_only":null,"stage":"encode"}
+{"counts":null,"event":"recursion_profile","id":387,"pid":515275,"scope":"node_verify","seconds":0.000824129,"shape_only":null,"stage":"decode"}
+{"counts":null,"event":"recursion_profile","id":387,"pid":515275,"scope":"node_verify","seconds":0.07975786,"shape_only":null,"stage":"flock_verify"}
+{"counts":null,"event":"recursion_profile","id":387,"pid":515275,"scope":"node_verify","seconds":0.53106458,"shape_only":null,"stage":"fixed_tables"}
+{"bytes":404083,"class":"cslib-2048","event":"chain_proof","first_leaf":0,"geometry":{"application_words":57,"arithmetic_operations":1637169,"blake3_compressions":66042,"children":[2,1],"dense_variables":32,"leaves":3,"packing_rows":40445,"root_advice_words":5722,"root_families":183,"row_variables":17,"variables":4592294},"leaves":3,"seconds":17.000725649}
+
+running 1 test
+test execution_tree::tests::large_execution::execution_range_chain_proves_fresh ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 22 filtered out; finished in 167.73s
+
+{"class":"cslib-2048","event":"chain_receiver_setup","geometry":{"application_words":57,"arithmetic_operations":1637169,"blake3_compressions":66042,"children":[2,1],"dense_variables":32,"leaves":3,"packing_rows":40445,"root_advice_words":5722,"root_families":183,"row_variables":17,"variables":4592294},"identity":"cd6edcdbe427fc44005ee4d095a4fa1a27d6aa93c72312af65b46c0e976af625","seconds":163.486126683}
+{"bytes":404083,"class":"cslib-2048","event":"chain_receiver_accepted","seconds":0.624875012}
+chain receiver rejected all 114 public-word mutations, truncation and trailing data
+
+test execution_tree::tests::large_execution::execution_range_chain_proves_fresh ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 22 filtered out; finished in 365.08s

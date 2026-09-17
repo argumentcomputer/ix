@@ -323,6 +323,7 @@ pub struct PagedExecutionVerifier {
 
 impl CompiledPagedNode {
   fn compile(relation: Relation, setups: [Arc<ChildSetup>; 2]) -> Result<Self> {
+    let mut profile = crate::profile::Profile::new("node_compile");
     let layout = relation.layout(setups[0].layout(), setups[1].layout())?;
     let leaves = setups[0]
       .leaves()
@@ -336,23 +337,32 @@ impl CompiledPagedNode {
     }
     let [left, right] = setups.map(compile_flock_replay);
     let children = [left?, right?];
+    profile.mark("child_replay_plans");
     let mut b = NativeBuilder::new(true);
+    let mut graph_profile = crate::profile::Profile::graph("node_graph", &b);
     let (application, groups) =
       emit_children(&mut b, relation, &children, None)?;
+    graph_profile.stage("children", &b);
+    profile.mark("children");
     ensure!(
       application.len() == layout.width(),
       "paged node application width"
     );
     let folds = FoldPlan::compile(&groups)?;
+    profile.mark("fold_plan");
     let roots = folds.emit(&mut b, &groups)?;
     let roots = publish_roots(&mut b, application, roots)?;
+    graph_profile.stage("folds", &b);
+    profile.mark("fold_graph");
     let tables =
       groups.into_iter().map(|(k, (t, _))| (k, t)).collect::<BTreeMap<_, _>>();
     let (counter, nu, params) = count(&b.graph)?;
+    profile.mark("count");
     let mut shape = ShapeBuilder::new(nu);
     let (slots, public) = emit_stable(&mut shape, &b.graph, nu)?;
     let shape =
       shape.finish().map_err(|e| anyhow::anyhow!("paged tree shape: {e:?}"))?;
+    profile.mark("shape");
     counter.ensure_matches(&shape)?;
     let (registry, counts) = counter.registry(nu);
     ensure!(
@@ -404,6 +414,7 @@ impl CompiledPagedNode {
       outputs: b.graph.published.len(),
       lincheck,
     });
+    profile.mark("identity");
     Ok(Self { core, relation, children, graph: b.graph, folds, slots, nu })
   }
   pub fn identity(&self) -> [u8; 32] {
@@ -429,23 +440,32 @@ impl CompiledPagedNode {
     statements: [&[F128]; 2],
     proofs: [&[u8]; 2],
   ) -> Result<PagedNodeProof> {
+    let mut profile = crate::profile::Profile::new("node_prove");
     let left = replay_child(&self.children[0], statements[0], proofs[0])?;
+    profile.mark("replay_left");
     let right = replay_child(&self.children[1], statements[1], proofs[1])?;
+    profile.mark("replay_right");
     let mut b = NativeBuilder::new(false);
+    let mut graph_profile = crate::profile::Profile::graph("node_graph", &b);
     let (application, groups) = emit_children(
       &mut b,
       self.relation,
       &self.children,
       Some([&left, &right]),
     )?;
+    graph_profile.stage("children", &b);
+    profile.mark("children");
     let roots = self.folds.emit(&mut b, &groups)?;
     let roots = publish_roots(&mut b, application, roots)?;
+    graph_profile.stage("folds", &b);
+    profile.mark("folds");
     ensure!(
       b.graph == self.graph && roots == self.core.roots,
       "paged tree advice graph differs from setup"
     );
     b.check()
       .map_err(|e| anyhow::anyhow!("paged tree advice constraints: {e}"))?;
+    profile.mark("check_advice");
     let (proof, commitment, outputs) = prove_native(
       &self.core.shape,
       &self.slots,
@@ -456,6 +476,7 @@ impl CompiledPagedNode {
       b,
       &self.core.domain,
     )?;
+    profile.mark("native_proof");
     let width = self.core.layout.width();
     let bundle = Bundle {
       magic: MAGIC,
@@ -470,6 +491,7 @@ impl CompiledPagedNode {
       proof.len() as u64 <= MAX_PAGED_TREE_BYTES,
       "paged tree proof size"
     );
+    profile.mark("encode");
     Ok(PagedNodeProof { statement: outputs[..width].to_vec(), proof })
   }
   pub fn verify(&self, expected: &[F128], bytes: &[u8]) -> Result<()> {
@@ -534,7 +556,9 @@ impl Core {
     Ok((bundle, public, outputs))
   }
   fn verify(&self, expected: &[F128], bytes: &[u8]) -> Result<()> {
+    let mut profile = crate::profile::Profile::new("node_verify");
     let (bundle, public, outputs) = self.decode(expected, bytes)?;
+    profile.mark("decode");
     let union =
       UnionInstance::new(&self.shape.registry, self.shape.counts.clone());
     let mut ch = FsChallenger::with_chained_blake3(&self.domain);
@@ -549,6 +573,7 @@ impl Core {
       &mut ch,
     )
     .map_err(|e| anyhow::anyhow!("paged tree Flock proof rejected: {e:?}"))?;
+    profile.mark("flock_verify");
     for (i, root) in self.roots.iter().enumerate() {
       let claim = MatrixClaim {
         row: Weight::eq(root.row.iter().map(|&i| outputs[i]).collect()),
@@ -560,6 +585,7 @@ impl Core {
         "paged tree root family {i} rejected"
       );
     }
+    profile.mark("fixed_tables");
     Ok(())
   }
 }

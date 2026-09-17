@@ -5,7 +5,7 @@ use crate::{backend::NativeBuilder, constrain_chained_blake3_transcript};
 use anyhow::{Result, ensure};
 use flock_prover::{
   challenger::{Challenger, FsChallenger},
-  circuit::{Circuit, SigmaAssertion},
+  circuit::Circuit,
   field::F128,
   matrix_fold::{
     self, FoldGrinding, FoldMatrix, JaggedClaim, JaggedRowWeight, JaggedTable,
@@ -105,7 +105,17 @@ impl StaticTable {
           F128MatrixSideV1::B => &ty.b_0,
         })
       },
-      Self::Structure(circuit) => f(&SigmaAssertion::matrix(circuit)),
+      Self::Structure(circuit) => {
+        // Reproduction of the pre-optimization native evaluator is test-only.
+        // Both paths expose the same complete fixed table to the same fold.
+        #[cfg(test)]
+        if std::env::var("IXBY_RECURSION_REFERENCE_STRUCTURE")
+          .is_ok_and(|v| v == "1")
+        {
+          return f(&flock_prover::circuit::SigmaAssertion::matrix(circuit));
+        }
+        f(&crate::structure::StructureMatrix::new(circuit))
+      },
       Self::Jagged(_) => {
         unreachable!("jagged tables use the sparse pair-space fold")
       },
@@ -327,6 +337,7 @@ impl FoldPlan {
     b: &mut NativeBuilder,
     inputs: &Groups,
   ) -> Result<Vec<(TableKey, Claim)>> {
+    let mut profile = crate::profile::Profile::graph("fold", b);
     ensure!(
       inputs.len() == self.groups.len(),
       "recursive fold family coverage"
@@ -345,6 +356,7 @@ impl FoldPlan {
       let mut ch =
         RecordingChallenger::new(FsChallenger::with_chained_blake3(DOMAIN));
       for plan in &self.groups {
+        let mut family_profile = crate::profile::Profile::new("fold_family");
         let claims = &inputs[&plan.key].1;
         ch.observe_bytes(&plan.key.encode());
         match &plan.table {
@@ -374,9 +386,15 @@ impl FoldPlan {
             });
           },
         }
+        family_profile.mark(match &plan.table {
+          StaticTable::Boolean { .. } => "boolean",
+          StaticTable::Structure(_) => "structure",
+          StaticTable::Jagged(_) => "jagged",
+        });
       }
       Some(self.transcript.witness(&ch)?)
     };
+    profile.stage("native_sumchecks", b);
     let observed = witness
       .as_ref()
       .map(|w| w.observed_values().to_vec())
@@ -402,6 +420,7 @@ impl FoldPlan {
       &payloads,
       &challenges,
     )?;
+    profile.stage("transcript", b);
     let observed =
       transcript.observed_values.iter().map(|v| v.word(b)).collect::<Vec<_>>();
     let challenges =
@@ -496,6 +515,7 @@ impl FoldPlan {
       b.equal(row_running, expected);
       roots.push((plan.key.clone(), Claim::plain(b, row, column, value)));
     }
+    profile.stage("algebra", b);
     Ok(roots)
   }
 }

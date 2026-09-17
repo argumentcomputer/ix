@@ -299,6 +299,11 @@ current-status section below.
     The new `cslib-2048` class is checked against 341 captured windows and
     measured over the same 20,000-microstep segment as the linked baseline,
     including every recursive join and fresh-root verification.
+34. [Recursive fixed-table evaluation](IxbyRecursiveTuning.md): per-phase and
+    per-family profiling identifies repeated scans of the padded structure
+    table. Exact live-cell marginals reduce the matched two joins from 300.26
+    to 36.61 seconds. Both proofs, public statements and setup identities are
+    byte-identical; differential table checks and fresh receivers pass.
 
 ## Current integration and next measurements
 
@@ -306,7 +311,9 @@ The [current performance report](IxbyPerformance.md) ranks optimization work
 for the copied 360,337,913-transition workload. The
 [semantics-2 batch report](IxbyBatchTuning.md) supplies measured leaf and join
 costs on earlier workloads. The [current CSLib tuning report](IxbyCslibTuning.md)
-adds complete native profiling and a bounded proof comparison. The earlier
+adds complete native profiling and a bounded proof comparison. The
+[recursive follow-up](IxbyRecursiveTuning.md) measures faster aggregation
+using identical leaf and node proofs. The earlier
 arithmetic long-run model illustrates the scale problem; it does not predict
 runtime-v2 CSLib proof time.
 

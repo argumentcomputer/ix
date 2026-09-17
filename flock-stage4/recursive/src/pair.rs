@@ -305,6 +305,7 @@ pub(crate) fn emit_child<S: FlockVerifierSetup>(
   replay: &CompiledFlockReplay<S>,
   advice: Option<&GrammarBatchReplayWitness>,
 ) -> Result<ChildWires> {
+  let mut profile = profile::Profile::graph("child", b);
   let setup = replay.setup();
   let public_values =
     advice.map(|v| v.public_values().to_vec()).unwrap_or_else(|| {
@@ -322,6 +323,7 @@ pub(crate) fn emit_child<S: FlockVerifierSetup>(
     .into_iter()
     .map(|v| alloc_f128_private(b, v, ConstraintPhase::Statement))
     .collect::<Result<Vec<_>, _>>()?;
+  profile.stage("statement_allocate", b);
   let observed = advice
     .map(|v| v.transcript().observed_values().to_vec())
     .unwrap_or_else(|| vec![[0; 16]; replay.observed_values()]);
@@ -342,6 +344,7 @@ pub(crate) fn emit_child<S: FlockVerifierSetup>(
     &payloads,
     &challenges,
   )?;
+  profile.stage("transcript", b);
   let constants = [
     (0, setup.verifier_shape().registry.digest().to_vec()),
     (
@@ -363,6 +366,7 @@ pub(crate) fn emit_child<S: FlockVerifierSetup>(
     let actual = b.pack(transcript.byte_payloads[4][i].bit_expressions());
     b.equal(actual, word);
   }
+  profile.stage("statement_bind", b);
   let wiring_private = advice
     .map(|v| v.wiring().private_values().to_vec())
     .unwrap_or_else(|| vec![[0; 16]; 2]);
@@ -376,6 +380,7 @@ pub(crate) fn emit_child<S: FlockVerifierSetup>(
       private_values: &wiring_private,
     },
   )?;
+  profile.stage("wiring", b);
   let boolean_private = advice
     .map(|v| v.transcript().f128_private_values().to_vec())
     .unwrap_or_else(|| {
@@ -395,6 +400,7 @@ pub(crate) fn emit_child<S: FlockVerifierSetup>(
       private_values: &boolean_private,
     },
   )?;
+  profile.stage("boolean_algebra", b);
   let mut packed_direct = Vec::new();
   if let Some(trace) = replay.element() {
     let inputs = F128AlgebraCircuitInputsV1 {
@@ -432,6 +438,7 @@ pub(crate) fn emit_child<S: FlockVerifierSetup>(
     }
   }
   packed_direct.extend(wiring.gather_claims.iter().cloned());
+  profile.stage("element_algebra", b);
   let frontend = constrain_f128_merged_pcs_frontend(
     b,
     replay.merged_pcs(),
@@ -445,6 +452,7 @@ pub(crate) fn emit_child<S: FlockVerifierSetup>(
       packed_direct_claims: &packed_direct,
     },
   )?;
+  profile.stage("opening_frontend", b);
   let multipoint_private =
     advice.map(|v| v.multipoint().private_values().to_vec()).unwrap_or_else(
       || vec![[0; 16]; replay.multipoint().jagged_claim_private_values.len()],
@@ -459,6 +467,7 @@ pub(crate) fn emit_child<S: FlockVerifierSetup>(
       frontend: &frontend,
     },
   )?;
+  profile.stage("opening_multipoint", b);
   let inner_census = replay.inner().census();
   let inner_values =
     advice.map(|v| v.inner().private_values().to_vec()).unwrap_or_else(|| {
@@ -488,6 +497,7 @@ pub(crate) fn emit_child<S: FlockVerifierSetup>(
       frontend: &frontend,
     },
   )?;
+  profile.stage("opening_inner", b);
   let mut application =
     vec![public[0].clone(); setup.public_template().outputs()];
   for (word, value) in setup.public_template().words().iter().zip(&public) {
@@ -495,6 +505,7 @@ pub(crate) fn emit_child<S: FlockVerifierSetup>(
       application[*index] = value.clone();
     }
   }
+  profile.stage("application", b);
   Ok(ChildWires { application, algebra, wiring, multipoint })
 }
 
