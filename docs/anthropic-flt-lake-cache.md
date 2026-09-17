@@ -5,6 +5,13 @@ and uploads/downloads its Lean artifacts using Lake's built-in cache format.
 Uploads go to your own storage account: use `lake cache put` for R2's S3 API or
 the AWS CLI alternative for Amazon S3. Downloads use `lake cache get`.
 
+> [!NOTE]
+> **Status (2026-09-17):** the library has been built through Ix's benchmark
+> workspace and published to a private S3 bucket as Lake `.ltar` archives.
+> Sections 2 to 5 describe the general Lake cache workflow with a public read
+> endpoint; that endpoint was not created. For the cache that actually exists,
+> see [Published cache: private S3 restore](#published-cache-private-s3-restore).
+
 ## Versions and the existing checkout
 
 The following versions were checked on 2026-09-15:
@@ -114,6 +121,26 @@ Individual modules can need up to 36 GB RAM. The examples use two jobs; expect
 a much longer build and allow additional disk space for the artifact cache.
 These are upstream measurements, not estimates for this host.
 [Upstream resource measurements](https://github.com/anthropics/fermats-last-theorem/blob/aa2d8b34692b16c70f699536de0d8e75b9a3e9ef/README.md#check-it-yourself).
+
+Measured on a 64-core, 495 GB host with Lake 4.33.1 (2026-09-17): the build of
+all 60,474 modules took about 4.5 hours at 64 jobs, peaked near 100 GB RAM, and
+left 57 GB under `flt_e2e/.lake/build` (49.7 GB `.olean`, 6.9 GB `.ilean`,
+1.9 GB `.c`). The large transient cost is not C: Lake writes one
+`.setup.json` per module under `.lake/build/ir/`, listing absolute paths for
+the whole import closure, at roughly 6.5 MB each. Over 60k modules that is
+more than 390 GB. Lake reads the file only while `lean --setup` runs and
+rewrites it on any rebuild; it is not part of the input hash, the artifact
+cache, the `.ltar` archives, or `cache put`. Deleting a module's `.setup.json`
+once its `.olean` exists is safe (a `--no-build` build stays up to date with an
+identical trace). Run a sweeper alongside the build, for example every 60 s:
+
+```bash
+B=Benchmarks/Compile/.lake/packages/flt_e2e/.lake/build
+find "$B/ir" -name '*.setup.json' -mmin +2 -print0 | while IFS= read -r -d '' f; do
+  mod=${f#$B/ir/}; mod=${mod%.setup.json}
+  [ -f "$B/lib/lean/$mod.olean" ] && [ "$B/lib/lean/$mod.olean" -nt "$f" ] && rm -f -- "$f"
+done
+```
 
 Use Linux or macOS, Bash, Git, Elan, Python 3, and curl. Node.js/npm may also be
 needed to build ProofWidgets' JavaScript assets. Building an `olean` facet still
@@ -510,6 +537,149 @@ not repeat an independent kernel audit of imported artifacts.
   `--max-revs=1 --force-download` for that retry. In 4.33.1, the explicit
   `--rev` path does not forward the force flag to the mapping lookup. This
   workaround also redownloads artifacts. [CLI lookup implementation](https://github.com/leanprover/lean4/blob/v4.33.1/src/lake/Lake/CLI/Main.lean#L496).
+
+## Published cache: private S3 restore
+
+This section documents the cache that was published on 2026-09-17 and how to
+restore it. It was produced from Ix's benchmark workspace
+(`Benchmarks/Compile`, Mathlib overridden to `v4.33.1`), not from the
+standalone checkout of section 1, with:
+
+```bash
+cd Benchmarks/Compile
+lake exe cache get
+LAKE_ARTIFACT_CACHE=true LAKE_RESTORE_ARTIFACTS=true lake build CompileAnthropicFLT
+```
+
+`FinalCheck` reported `flt_mathlib` depends on `propext`, `Classical.choice`,
+and `Quot.sound`, and `lake build CompileAnthropicFLT --no-build` reported all
+69,183 jobs up to date.
+
+### Why not `lake cache get`
+
+Lake 4.33.1 signs only uploads: its `cache put` uses curl's `--aws-sigv4`, but
+`cache get` sends plain unsigned GET requests, so a consumer can only use it
+against a bucket that allows anonymous reads. To avoid paying egress for
+anyone who discovers the bucket, it stays private and readers authenticate
+with their own IAM credentials through the AWS CLI. The `a0`/`r0` key layout
+of section 4B is therefore not used. Instead the restore mirrors Mathlib's
+`lake exe cache get`: download the per-module `.ltar` archives, unpack them
+all with one multithreaded `leantar` invocation, and let Lake verify the traces.
+Mathlib's own tool cannot do this for FLT because it hardcodes the module
+namespaces it handles (`Mathlib`, `Batteries`, `Aesop`, ... ) and filters
+`Definitions`, `Theorems`, `P2M`, and `FinalCheck` out.
+
+### Bucket layout
+
+```text
+s3://argument-lake-cache-063002298335-us-east-1-an/staged/anthropic-flt/aa2d8b34692b16c70f699536de0d8e75b9a3e9ef/lean-4.33.1/x86_64-unknown-linux-gnu/
+  flt_e2e/
+    <content-hash>.ltar     60,475 archives, 2.7 GB in total (about 12x compression)
+    outputs.jsonl           Lake's `-o` mapping: input hash -> archive
+    modules.jsonl           one line per module: [module name, input hash, archive]
+    restore-flt-cache.sh    the script below
+  batteries/ Qq/ aesop/ proofwidgets/ importGraph/ LeanSearchClient/ plausible/ mathlib/
+                            the same `lake cache stage` layout for the dependencies
+```
+
+Each archive is what `lake build -o` packs for one module: the trace, the
+`.olean`, `.ilean`, and `.c` files, stripped of the dependency hash (`-s`),
+which `modules.jsonl` supplies again at unpack time. The dependency prefixes are
+redundant for the restore below, because `lake exe cache get` provides
+Mathlib and its seven dependencies with the traces FLT was built against; they
+are kept for `lake cache unstage` users.
+
+The mappings were generated with each package as the Lake root but the
+workspace's resolved sources, through a path-override manifest derived from
+`Benchmarks/Compile/lake-manifest.json` (the `overrides.json` recipe of
+section 1):
+
+```bash
+lake +leanprover/lean4:v4.33.1 -d .lake/packages/flt_e2e --packages=.lake/cache/overrides.json \
+  build FinalCheck --no-build -o .lake/cache/flt_e2e.jsonl
+lake +leanprover/lean4:v4.33.1 -d .lake/packages/flt_e2e --packages=.lake/cache/overrides.json \
+  cache stage .lake/cache/flt_e2e.jsonl .lake/cache/staged/flt_e2e
+```
+
+`--no-build` guarantees the pass only packs; it never compiles. Packing the
+60k FLT modules took about two hours, dominated by Lake's per-module work
+rather than compression. Mathlib and the other dependencies took minutes. For
+`ProofWidgets` and `ImportGraph`, only the modules in FLT's import closure are
+built (13 of 43 and 10 of 24), so their mappings were produced with explicit
+`+Module` targets instead of the library target. `modules.jsonl` was derived
+by pairing each `.trace` file's `depHash` with the mapping.
+
+### Restore on another machine
+
+Prerequisites: an `argumentcomputer/ix` checkout, elan with
+`leanprover/lean4:v4.33.1`, Python 3, and the AWS CLI configured with IAM
+credentials that can read the bucket. Then, from `Benchmarks/Compile`:
+
+```bash
+lake exe cache get      # clones the dependency sources; restores Mathlib and its deps
+bash restore-flt-cache.sh
+```
+
+The script downloads the prefix into `~/.cache/flt_e2e` (override with
+`FLT_CACHE_DIR`), unpacks every module into
+`.lake/packages/flt_e2e/.lake/build`, and finishes with
+`lake build CompileAnthropicFLT --no-build`, which must report all targets up
+to date. `leantar` skips modules whose trace already carries the expected
+hash, so rerunning the script only fills gaps. The script is also stored in the
+bucket next to the archives:
+
+```bash
+#!/bin/bash
+# Restore the Anthropic FLT (flt_e2e) build artifacts from S3 into Benchmarks/Compile,
+# the way Mathlib's `lake exe cache get` does it: download the .ltar archives, unpack them
+# all with a single multithreaded leantar call, then let Lake verify the traces.
+#
+# Prerequisites (run from Benchmarks/Compile):
+#   lake exe cache get        # clones deps and restores Mathlib + its 7 deps from Mathlib's cache
+#   aws configure             # IAM credentials that can read the bucket
+set -euo pipefail
+export PATH="$HOME/.elan/bin:$PATH"
+TC=leanprover/lean4:v4.33.1
+PREFIX="s3://argument-lake-cache-063002298335-us-east-1-an/staged/anthropic-flt/aa2d8b34692b16c70f699536de0d8e75b9a3e9ef/lean-4.33.1/x86_64-unknown-linux-gnu/flt_e2e"
+DEST="${FLT_CACHE_DIR:-$HOME/.cache/flt_e2e}"
+PKG="$PWD/.lake/packages/flt_e2e"
+
+grep -q 'name = "Compile"' lakefile.toml 2>/dev/null || { echo "run from Benchmarks/Compile" >&2; exit 1; }
+test "$(cat "$PKG/lean-toolchain" 2>/dev/null)" = "$TC" || { echo "flt_e2e not checked out; run 'lake exe cache get' first" >&2; exit 1; }
+LEANTAR="$(lean +$TC --print-prefix)/bin/leantar"
+
+echo "Downloading archives to $DEST"
+aws s3 sync "$PREFIX/" "$DEST/" --region us-east-1 --size-only --only-show-errors
+
+echo "Unpacking $(wc -l < "$DEST/modules.jsonl") modules into $PKG/.lake/build"
+python3 - "$DEST" "$PKG" <<'PY' | "$LEANTAR" -x -j - --jobs "$(nproc)"
+import json, sys, os
+dest, pkg = sys.argv[1:3]
+lib, ir = f"{pkg}/.lake/build/lib/lean", f"{pkg}/.lake/build/ir"
+entries = []
+for line in open(f"{dest}/modules.jsonl"):
+    mod, h, ltar = json.loads(line)
+    sub = os.path.dirname(mod.replace(".", "/"))
+    for d in (f"{lib}/{sub}", f"{ir}/{sub}"):
+        os.makedirs(d, exist_ok=True)
+    entries.append({"file": f"{dest}/{ltar}", "base": [f"{lib}/{sub}", f"{ir}/{sub}"], "hash": h})
+print(json.dumps(entries))
+PY
+
+echo "Verifying with Lake"
+lake +$TC build CompileAnthropicFLT --no-build
+```
+
+Lake's traces are validated by hash, so the restore needs the same source
+revisions, toolchain, and platform as the build. It does not need
+`LAKE_ARTIFACT_CACHE`; the artifacts land directly in the build directory, the
+same way Mathlib's cache does. Alternatively, `lake cache unstage <dir> <pkg>`
+from `Benchmarks/Compile` imports a downloaded package directory into the
+local Lake artifact cache, after which
+`LAKE_ARTIFACT_CACHE=true LAKE_RESTORE_ARTIFACTS=true lake build CompileAnthropicFLT --no-build`
+restores from it; this was verified on the `plausible` package only, and it
+goes through Lake's per-module cache path, which is slower than the single
+`leantar` call above.
 
 ## Using FLT through Ix instead
 
