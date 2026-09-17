@@ -50,6 +50,7 @@ default = []
 parallel = ["aiur/parallel"]
 cuda = ["aiur/cuda"]
 cuda-trace-codegen = ["cuda", "aiur/cuda-trace-codegen"]
+cuda-sppark = ["cuda", "aiur/cuda-sppark"]
 test-ffi = []
 net = ["bytes", "tokio", "iroh", "iroh-base", "n0-error", "getrandom", "bincode", "serde"]
 
