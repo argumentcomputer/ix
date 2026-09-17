@@ -1,5 +1,11 @@
 # CI builds and required coverage
 
+Hosted GitHub runs are currently disabled: the GitHub-hosted runner cannot
+complete the shared compiler, program, and proof build within its budget, so
+the [workflow](../.github/workflows/ci.yml) triggers only on manual dispatch.
+Until a capable runner is available, `nix flake check` on a development
+machine is the required validation surface, and each change records its run.
+
 `nix flake check` runs the complete required surface. GitHub runs the same
 checks in groups defined in [`nix/ci-groups.json`](../nix/ci-groups.json).
 [`nix/groups.nix`](../nix/groups.nix) requires every check to appear exactly

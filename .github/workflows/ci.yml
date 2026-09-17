@@ -1,8 +1,10 @@
 name: CI
 
+# Hosted runs are disabled: the GitHub-hosted runner cannot complete the
+# shared compiler, program, and proof build within its budget. The workflow
+# remains available for manual dispatch; `nix flake check` on a capable
+# machine is the required validation surface (see docs/ci.md).
 on:
-  push:
-  pull_request:
   workflow_dispatch:
 
 permissions:
