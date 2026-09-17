@@ -47,6 +47,44 @@ struct ValidationTiming {
   univ: Duration,
 }
 
+// Bound dependency traversal independently of type-inference fuel.
+const MAX_DEFINITION_DEPENDENCY_STEPS: usize = 1_000_000;
+
+enum DefinitionDependencyTask<M: KernelMode> {
+  Enter(KId<M>),
+  Finish(KId<M>, KConst<M>),
+}
+
+/// References in both the type and value, including projection heads. The
+/// expression worklist visits shared syntax once without host-stack recursion.
+fn definition_dependencies<M: KernelMode>(c: &KConst<M>) -> Vec<KId<M>> {
+  let KConst::Defn { ty, val, .. } = c else { return vec![] };
+  let mut pending = vec![val, ty];
+  let mut seen: FxHashSet<Addr> = FxHashSet::default();
+  let mut refs = vec![];
+  while let Some(expr) = pending.pop() {
+    if !seen.insert(expr.hash_key()) {
+      continue;
+    }
+    match expr.data() {
+      ExprData::Const(id, ..) => refs.push(id.clone()),
+      ExprData::App(fun, arg, _) => pending.extend([arg, fun]),
+      ExprData::Lam(_, _, dom, body, _) | ExprData::All(_, _, dom, body, _) => {
+        pending.extend([body, dom])
+      },
+      ExprData::Let(_, ty, val, body, _, _) => {
+        pending.extend([body, val, ty]);
+      },
+      ExprData::Prj(id, _, major, _) => {
+        refs.push(id.clone());
+        pending.push(major);
+      },
+      _ => {},
+    }
+  }
+  refs
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum CheckBlockKind {
   Defn,
@@ -660,6 +698,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         if let (Some(t), Some(start)) = (timing.as_deref_mut(), val_start) {
           t.val += start.elapsed();
         }
+        self.check_definition_dependencies(c)?;
       },
       KConst::Recr { rules, .. } => {
         let rules_start = timing.as_ref().map(|_| Instant::now());
@@ -681,6 +720,61 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       | KConst::Ctor { .. } => {},
     }
     Ok(())
+  }
+
+  /// A reference's declared type does not justify a circular definition.
+  /// Follow every reachable definition, while treating declarations with their
+  /// own admission rules (axioms, inductives, constructors, recursors) as leaves.
+  fn check_definition_dependencies(
+    &mut self,
+    c: &KConst<M>,
+  ) -> Result<(), TcError<M>> {
+    if !matches!(c, KConst::Defn { safety: DefinitionSafety::Safe, .. }) {
+      return Ok(());
+    }
+    let mut pending: Vec<_> = definition_dependencies(c)
+      .into_iter()
+      .rev()
+      .map(DefinitionDependencyTask::Enter)
+      .collect();
+    let mut active: FxHashSet<Address> = FxHashSet::default();
+    let mut finished: FxHashSet<Address> = FxHashSet::default();
+    for _ in 0..MAX_DEFINITION_DEPENDENCY_STEPS {
+      let Some(task) = pending.pop() else { return Ok(()) };
+      match task {
+        DefinitionDependencyTask::Enter(id) => {
+          if finished.contains(&id.addr) {
+            continue;
+          }
+          if active.contains(&id.addr) {
+            return Err(TcError::Other(format!(
+              "cyclic definition dependency at {id}"
+            )));
+          }
+          let declaration = self.get_const(&id)?;
+          let dependencies = definition_dependencies(&declaration);
+          active.insert(id.addr.clone());
+          pending.push(DefinitionDependencyTask::Finish(id, declaration));
+          pending.extend(
+            dependencies.into_iter().rev().map(DefinitionDependencyTask::Enter),
+          );
+        },
+        DefinitionDependencyTask::Finish(id, declaration) => {
+          if finished.contains(&id.addr)
+            || !definition_dependencies(&declaration)
+              .iter()
+              .all(|dependency| finished.contains(&dependency.addr))
+          {
+            return Err(TcError::Other(format!(
+              "incomplete definition dependencies at {id}"
+            )));
+          }
+          active.remove(&id.addr);
+          finished.insert(id.addr);
+        },
+      }
+    }
+    Err(TcError::MaxRecDepth)
   }
 
   fn phase_timing_label_matches(&self, id: &KId<M>) -> bool {
@@ -1801,6 +1895,195 @@ mod tests {
         block,
       },
     );
+  }
+
+  fn dependency_def(
+    id: &KId<Anon>,
+    ty: AE,
+    val: AE,
+    safety: DefinitionSafety,
+    kind: DefKind,
+  ) -> KConst<Anon> {
+    KConst::Defn {
+      name: (),
+      level_params: (),
+      kind,
+      safety,
+      hints: ReducibilityHints::Regular(0),
+      lvls: 0,
+      ty,
+      val,
+      lean_all: (),
+      block: id.clone(),
+    }
+  }
+
+  fn insert_proposition(env: &mut KEnv<Anon>) -> AE {
+    let id = mk_id("P");
+    env.insert(
+      id.clone(),
+      KConst::Axio {
+        name: (),
+        level_params: (),
+        is_unsafe: false,
+        lvls: 0,
+        ty: sort0(),
+      },
+    );
+    AE::cnst(id, Box::new([]))
+  }
+
+  #[test]
+  fn definition_dependency_rejects_self_justifying_theorem() {
+    let mut env = KEnv::<Anon>::new();
+    let prop = insert_proposition(&mut env);
+    let id = mk_id("loop");
+    env.insert(
+      id.clone(),
+      dependency_def(
+        &id,
+        prop,
+        AE::cnst(id.clone(), Box::new([])),
+        DefinitionSafety::Safe,
+        DefKind::Theorem,
+      ),
+    );
+    let error = TypeChecker::new(&mut env).check_const(&id).unwrap_err();
+    assert!(error.to_string().contains("cyclic definition dependency"));
+  }
+
+  #[test]
+  fn definition_dependency_rejects_mutual_cycles_in_every_safe_kind() {
+    for kind in [DefKind::Definition, DefKind::Theorem, DefKind::Opaque] {
+      let mut env = KEnv::<Anon>::new();
+      let prop = insert_proposition(&mut env);
+      let left = mk_id("left");
+      let right = mk_id("right");
+      for (id, target) in [(&left, &right), (&right, &left)] {
+        env.insert(
+          id.clone(),
+          dependency_def(
+            id,
+            prop.clone(),
+            AE::cnst(target.clone(), Box::new([])),
+            DefinitionSafety::Safe,
+            kind,
+          ),
+        );
+      }
+      let mut tc = TypeChecker::new(&mut env);
+      for id in [&left, &right] {
+        let error = tc.check_const(id).unwrap_err();
+        assert!(error.to_string().contains("cyclic definition dependency"));
+      }
+    }
+  }
+
+  #[test]
+  fn definition_dependency_checks_types_and_hidden_values() {
+    let id = mk_id("hidden_cycle");
+    let self_ref = AE::cnst(id.clone(), Box::new([]));
+    let cases = [
+      (self_ref.clone(), sort0()),
+      (sort0(), AE::lam((), (), sort0(), self_ref.clone())),
+      (sort0(), AE::let_((), sort0(), self_ref.clone(), sort0(), true)),
+      (sort0(), AE::all((), (), self_ref.clone(), sort0())),
+      (sort0(), AE::app(self_ref.clone(), self_ref)),
+    ];
+    for (ty, val) in cases {
+      let mut env = KEnv::<Anon>::new();
+      env.insert(
+        id.clone(),
+        dependency_def(
+          &id,
+          ty,
+          val,
+          DefinitionSafety::Safe,
+          DefKind::Definition,
+        ),
+      );
+      let error = TypeChecker::new(&mut env).check_const(&id).unwrap_err();
+      assert!(error.to_string().contains("cyclic definition dependency"));
+    }
+  }
+
+  #[test]
+  fn definition_dependency_preserves_partial_and_unsafe_policy() {
+    for safety in [DefinitionSafety::Partial, DefinitionSafety::Unsafe] {
+      let mut env = KEnv::<Anon>::new();
+      let prop = insert_proposition(&mut env);
+      let id = mk_id("nonlogical_loop");
+      env.insert(
+        id.clone(),
+        dependency_def(
+          &id,
+          prop,
+          AE::cnst(id.clone(), Box::new([])),
+          safety,
+          DefKind::Definition,
+        ),
+      );
+      TypeChecker::new(&mut env).check_const(&id).unwrap();
+    }
+  }
+
+  #[test]
+  fn definition_dependency_accepts_acyclic_forward_shared_dependencies() {
+    let mut env = KEnv::<Anon>::new();
+    let prop = insert_proposition(&mut env);
+    let witness = mk_id("p");
+    env.insert(
+      witness.clone(),
+      KConst::Axio {
+        name: (),
+        level_params: (),
+        is_unsafe: false,
+        lvls: 0,
+        ty: prop.clone(),
+      },
+    );
+    let left = mk_id("left");
+    let right = mk_id("right");
+    let shared = mk_id("shared");
+    let block = mk_id("acyclic_block");
+    for (id, value) in [
+      (&left, AE::cnst(right.clone(), Box::new([]))),
+      (&right, AE::cnst(shared.clone(), Box::new([]))),
+      (&shared, AE::cnst(witness, Box::new([]))),
+    ] {
+      let mut declaration = dependency_def(
+        id,
+        prop.clone(),
+        value,
+        DefinitionSafety::Safe,
+        DefKind::Theorem,
+      );
+      if let KConst::Defn { block: target, .. } = &mut declaration {
+        *target = block.clone();
+      }
+      env.insert(id.clone(), declaration);
+    }
+    env.insert_block(block, vec![left.clone(), right.clone(), shared.clone()]);
+    let mut tc = TypeChecker::new(&mut env);
+    for id in [&left, &shared, &right, &left] {
+      tc.check_const(id).unwrap();
+    }
+  }
+
+  #[test]
+  fn definition_dependency_collects_projection_heads() {
+    let id = mk_id("root");
+    let head = mk_id("projection_head");
+    let major = mk_id("major");
+    let declaration = dependency_def(
+      &id,
+      sort0(),
+      AE::prj(head.clone(), 0, AE::cnst(major.clone(), Box::new([]))),
+      DefinitionSafety::Safe,
+      DefKind::Definition,
+    );
+    let refs = super::definition_dependencies(&declaration);
+    assert_eq!(refs, vec![head, major]);
   }
 
   #[test]
