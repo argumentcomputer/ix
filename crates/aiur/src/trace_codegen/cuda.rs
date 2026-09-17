@@ -1,6 +1,9 @@
 //! CUDA rows from owned, immutable, encoded seeds.
 
-use std::sync::Arc;
+use std::sync::{
+  Arc, Mutex, OnceLock,
+  atomic::{AtomicUsize, Ordering},
+};
 
 use rayon::prelude::*;
 
@@ -157,6 +160,11 @@ impl BoundCudaProgram<'_> {
   /// The finalized record and I/O stay borrowed until packing finishes. The
   /// returned source owns its seeds; dropping or regenerating another batch
   /// cannot change these rows.
+  ///
+  /// With `retain_device_seeds`, the first device tile the source serves
+  /// uploads every seed span once and later tiles, such as the lookup pass's
+  /// regeneration of a committed trace, run from that copy; the backend
+  /// frees it after the lookup or under memory pressure.
   pub fn prepare(
     &self,
     circuit: usize,
@@ -167,6 +175,7 @@ impl BoundCudaProgram<'_> {
     end: QueryPosition,
     row_count: usize,
     check_aliases: bool,
+    retain_device_seeds: bool,
   ) -> TraceResult<(TraceSource<G>, LookupValues<G>)> {
     let _span =
       tracing::info_span!("aiur/codegen_seeds", circuit, rows = row_count)
@@ -284,8 +293,13 @@ impl BoundCudaProgram<'_> {
     let height = count
       .checked_next_power_of_two()
       .ok_or_else(|| error(0, None, "trace height overflow"))?;
-    let source =
-      CudaTrace { spans, height, real: count, width: c.layout.width() };
+    let source = CudaTrace::new(
+      spans,
+      height,
+      count,
+      c.layout.width(),
+      retain_device_seeds,
+    );
     tracing::debug!(
       circuit,
       rows = count,
@@ -395,13 +409,172 @@ pub struct CudaTrace {
   height: usize,
   real: usize,
   width: usize,
+  /// Byte offset of each span in the device copy of all seeds, then the
+  /// total, so a span's device seeds are `base + offsets[span]`.
+  offsets: Vec<usize>,
+  retain_device_seeds: bool,
+  device_seeds: Mutex<Vec<DeviceSeeds>>,
 }
 
+/// One device's copy of every seed span of a source.
+struct DeviceSeeds {
+  device: i32,
+  base: *mut u8,
+}
+
+// SAFETY: the pointer is a device allocation the CUDA runtime hands out
+// and frees; no host thread dereferences it.
+unsafe impl Send for DeviceSeeds {}
+
+/// Device seed bytes held per device across the process, against
+/// [`seed_cache_limit`].
+static SEED_CACHE_BYTES: [AtomicUsize; 64] =
+  [const { AtomicUsize::new(0) }; 64];
+
+/// The most seed bytes kept resident per device, `AIUR_GPU_SEED_CACHE_BYTES`
+/// or 16 GiB. The backend releases caches before it spills any LDE, so the
+/// limit bounds the footprint rather than protecting admission.
+fn seed_cache_limit() -> usize {
+  static LIMIT: OnceLock<usize> = OnceLock::new();
+  *LIMIT.get_or_init(|| {
+    std::env::var("AIUR_GPU_SEED_CACHE_BYTES")
+      .ok()
+      .and_then(|value| value.parse().ok())
+      .unwrap_or(16 << 30)
+  })
+}
+
+/// Seed bytes currently resident on `device` across every source.
+#[cfg(test)]
+pub(crate) fn seed_cache_bytes(device: i32) -> usize {
+  SEED_CACHE_BYTES[usize::try_from(device).unwrap()].load(Ordering::Acquire)
+}
+
+/// Seed cache uploads so far in the process.
+#[cfg(test)]
+pub(crate) static SEED_CACHE_UPLOADS: AtomicUsize = AtomicUsize::new(0);
+
 impl CudaTrace {
+  fn new(
+    spans: Vec<SeedSpan>,
+    height: usize,
+    real: usize,
+    width: usize,
+    retain_device_seeds: bool,
+  ) -> Self {
+    let mut offsets = Vec::with_capacity(spans.len() + 1);
+    let mut total = 0;
+    for span in &spans {
+      offsets.push(total);
+      total += span.bytes.len();
+    }
+    offsets.push(total);
+    Self {
+      spans,
+      height,
+      real,
+      width,
+      offsets,
+      retain_device_seeds,
+      device_seeds: Mutex::new(Vec::new()),
+    }
+  }
+
+  fn span_index(&self, row: usize) -> usize {
+    self.spans.partition_point(|s| s.first <= row).saturating_sub(1)
+  }
+
   fn span(&self, row: usize) -> &SeedSpan {
-    let index =
-      self.spans.partition_point(|s| s.first <= row).saturating_sub(1);
-    &self.spans[index]
+    &self.spans[self.span_index(row)]
+  }
+
+  fn seed_bytes(&self) -> usize {
+    *self.offsets.last().unwrap_or(&0)
+  }
+
+  /// The device copy of all seed spans on `device`, uploaded on first use
+  /// within the cache limit; `None` serves the tile from the host instead.
+  /// The copy is one allocation, so the spans are uploaded together and
+  /// released together.
+  fn resident_seeds(&self, device: i32) -> Option<*const u8> {
+    if !self.retain_device_seeds || self.spans.is_empty() {
+      return None;
+    }
+    let mut cached = self.device_seeds.lock().unwrap();
+    if let Some(seeds) = cached.iter().find(|seeds| seeds.device == device) {
+      return Some(seeds.base);
+    }
+    let counter = SEED_CACHE_BYTES.get(usize::try_from(device).ok()?)?;
+    let bytes = self.seed_bytes();
+    if counter
+      .fetch_update(Ordering::AcqRel, Ordering::Acquire, |held| {
+        (held + bytes <= seed_cache_limit()).then_some(held + bytes)
+      })
+      .is_err()
+    {
+      tracing::debug!(device, bytes, "seed cache limit reached");
+      return None;
+    }
+    let pointers: Vec<*const u8> =
+      self.spans.iter().map(|span| span.bytes.as_ptr()).collect();
+    let lengths: Vec<usize> =
+      self.spans.iter().map(|span| span.bytes.len()).collect();
+    let mut base: *mut u8 = std::ptr::null_mut();
+    let status = unsafe {
+      aiur_trace_seed_cache_upload(
+        device,
+        pointers.as_ptr(),
+        lengths.as_ptr(),
+        pointers.len(),
+        bytes,
+        &mut base,
+      )
+    };
+    if status != 0 {
+      counter.fetch_sub(bytes, Ordering::AcqRel);
+      tracing::debug!(device, bytes, status, "seed cache upload failed");
+      return None;
+    }
+    tracing::debug!(
+      device,
+      bytes,
+      spans = pointers.len(),
+      "seed cache uploaded"
+    );
+    #[cfg(test)]
+    SEED_CACHE_UPLOADS.fetch_add(1, Ordering::AcqRel);
+    cached.push(DeviceSeeds { device, base });
+    Some(base)
+  }
+
+  fn free_device_seeds(&self, keep: impl Fn(i32) -> bool) {
+    let mut cached = self.device_seeds.lock().unwrap();
+    cached.retain(|seeds| {
+      if keep(seeds.device) {
+        return true;
+      }
+      let status =
+        unsafe { aiur_trace_seed_cache_free(seeds.device, seeds.base) };
+      if status != 0 {
+        tracing::warn!(
+          device = seeds.device,
+          status,
+          "seed cache release failed"
+        );
+      }
+      if let Some(counter) =
+        usize::try_from(seeds.device).ok().and_then(|d| SEED_CACHE_BYTES.get(d))
+      {
+        counter.fetch_sub(self.seed_bytes(), Ordering::AcqRel);
+      }
+      false
+    });
+  }
+}
+
+impl Drop for CudaTrace {
+  fn drop(&mut self) {
+    self.free_device_seeds(|_| false);
   }
 }
 
@@ -463,10 +636,12 @@ impl TraceGenerator<G> for CudaTrace {
     if output.width() != self.width {
       return Err("CUDA trace width mismatch".into());
     }
+    let resident = self.resident_seeds(output.device_id());
     let mut done = 0;
     let mut first = output.first_row() % self.height;
     while done < output.rows() {
-      let span = self.span(first.min(self.real - 1));
+      let index = self.span_index(first.min(self.real - 1));
+      let span = &self.spans[index];
       let remaining =
         (output.rows() - done).min(self.height - first).min(MAX_ROWS);
       let (rows, real, seeds) = if first >= self.real {
@@ -474,7 +649,11 @@ impl TraceGenerator<G> for CudaTrace {
       } else {
         let rows = remaining.min(span.first + span.rows - first);
         let offset = (first - span.first) * span.stride;
-        (rows, rows, span.bytes[offset..].as_ptr())
+        let seeds = match resident {
+          Some(base) => unsafe { base.add(self.offsets[index] + offset) },
+          None => span.bytes[offset..].as_ptr(),
+        };
+        (rows, rows, seeds)
       };
       let encoding = match span.encoding {
         SeedEncoding::Canonical => 0,
@@ -504,9 +683,21 @@ impl TraceGenerator<G> for CudaTrace {
     }
     Ok(())
   }
+  fn release_device(&self, device_id: i32) {
+    self.free_device_seeds(|device| device != device_id);
+  }
 }
 
 unsafe extern "C" {
+  fn aiur_trace_seed_cache_upload(
+    device: i32,
+    spans: *const *const u8,
+    lengths: *const usize,
+    count: usize,
+    total: usize,
+    cached: *mut *mut u8,
+  ) -> i32;
+  fn aiur_trace_seed_cache_free(device: i32, cached: *mut u8) -> i32;
   fn aiur_trace_memory(
     device: i32,
     seeds: *const u8,

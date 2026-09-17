@@ -19,7 +19,7 @@ use crate::{
   gadgets::{AiurGadget, bytes1::Bytes1, bytes2::Bytes2},
   lookup_budget::lookup_query_bound,
   memory::Memory,
-  shard::{RowIndex, ShardPlan},
+  shard::{BatchRound, RowIndex, ShardPlan},
   trace_heights::{fixed_trace_heights, trace_cap_coverage},
 };
 
@@ -664,6 +664,7 @@ impl AiurSystem {
               plan,
               &indexes[*r],
               s,
+              BatchRound::One,
             );
             return Some((claims, witness));
           }
@@ -738,6 +739,7 @@ impl AiurSystem {
           &plans[r],
           &indexes[r],
           s,
+          BatchRound::Two,
         )
       });
     Ok((claim, proof))
@@ -811,14 +813,23 @@ impl AiurSystem {
       .collect();
     let messages = Self::boundary_messages(plan);
     let index = self.row_index(&query_record, plan);
-    let build = |shard: usize| {
+    let build = |shard: usize, round: BatchRound| {
       let _g = tracing::info_span!("aiur/witness", shard).entered();
-      self.prepared_shard_witness(&query_record, io_buffer, plan, &index, shard)
+      self.prepared_shard_witness(
+        &query_record,
+        io_buffer,
+        plan,
+        &index,
+        shard,
+        round,
+      )
     };
     let proof = match retention {
+      // A retained stage 1 is committed once and serves round two's lookups.
       Retention::Retain => {
-        let mut witnesses: Vec<_> =
-          (0..plan.num_shards()).map(|shard| Some(build(shard))).collect();
+        let mut witnesses: Vec<_> = (0..plan.num_shards())
+          .map(|shard| Some(build(shard, BatchRound::Two)))
+          .collect();
         drop(query_record);
         self.system.prove_batch_with(
           &self.key,
@@ -828,9 +839,17 @@ impl AiurSystem {
           |shard| witnesses[shard].take().expect("each shard is built once"),
         )
       },
-      Retention::Regenerate => self
-        .system
-        .prove_batch_with(&self.key, &claims, messages, retention, build),
+      Retention::Regenerate => {
+        let barrier = self.system.batch_round_one(
+          (0..plan.num_shards()).map(|shard| {
+            (claims[shard].clone(), build(shard, BatchRound::One))
+          }),
+          Retention::Regenerate,
+        );
+        self.system.batch_round_two(&self.key, barrier, messages, |shard| {
+          build(shard, BatchRound::Two)
+        })
+      },
     };
     (claim, proof)
   }
@@ -1313,14 +1332,16 @@ mod tests {
     claim.extend(input);
     claim.extend(output);
     let claims = vec![vec![claim.clone()], vec![]];
-    let build = |shard: usize, generated: bool| -> PreparedWitness<G> {
-      if generated {
-        system.prepared_shard_witness(&record, &io, &plan, &index, shard)
-      } else {
-        system.shard_witness(&record, &io, &plan, &index, shard).into()
+    let build = |shard: usize,
+                 round: Option<BatchRound>|
+     -> PreparedWitness<G> {
+      match round {
+        Some(round) => system
+          .prepared_shard_witness(&record, &io, &plan, &index, shard, round),
+        None => system.shard_witness(&record, &io, &plan, &index, shard).into(),
       }
     };
-    let witness = build(0, true);
+    let witness = build(0, Some(BatchRound::Two));
     let TraceSource::Generated(source) = &witness.traces[0] else {
       panic!("missing GPU source")
     };
@@ -1337,11 +1358,17 @@ mod tests {
       &claims,
       vec![],
       Retention::Regenerate,
-      |shard| build(shard, false),
+      |shard| build(shard, None),
     );
     system.verify(&claim, &reference).unwrap();
-    let witnesses: Vec<_> =
-      (0..claims.len()).map(|shard| build(shard, true)).collect();
+    // Round one keeps no seeds on the device; round two's two generated
+    // sources upload theirs once each and the lookup pass releases them.
+    use crate::trace_codegen::cuda::{SEED_CACHE_UPLOADS, seed_cache_bytes};
+    use std::sync::atomic::Ordering;
+    let uploads = SEED_CACHE_UPLOADS.load(Ordering::Acquire);
+    let witnesses: Vec<_> = (0..claims.len())
+      .map(|shard| build(shard, Some(BatchRound::One)))
+      .collect();
     let sources: Vec<_> = witnesses
       .iter()
       .flat_map(|witness| &witness.traces)
@@ -1360,10 +1387,13 @@ mod tests {
       sources.iter().all(|source| source.upgrade().is_none()),
       "round one retained a generated source or LDE across the barrier"
     );
+    assert_eq!(SEED_CACHE_UPLOADS.load(Ordering::Acquire), uploads);
     let proof =
       system.system.batch_round_two(&system.key, barrier, vec![], |shard| {
-        build(shard, true)
+        build(shard, Some(BatchRound::Two))
       });
+    assert_eq!(SEED_CACHE_UPLOADS.load(Ordering::Acquire), uploads + 2);
+    assert_eq!(seed_cache_bytes(0), 0, "round two released its seeds");
     system.verify(&claim, &proof).unwrap();
     assert_eq!(
       proof.to_bytes().unwrap(),
@@ -1371,7 +1401,7 @@ mod tests {
       "GPU generation changed proof bytes"
     );
     let corrupt = || {
-      let mut witness = build(0, true);
+      let mut witness = build(0, Some(BatchRound::Two));
       let source = witness.traces.remove(0);
       let mut trace = source.materialize();
       let row = (0..trace.height())
@@ -1392,12 +1422,12 @@ mod tests {
       claims
         .iter()
         .enumerate()
-        .map(|(shard, c)| (c.clone(), build(shard, true))),
+        .map(|(shard, c)| (c.clone(), build(shard, Some(BatchRound::One)))),
       Retention::Regenerate,
     );
     let bad = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
       system.system.batch_round_two(&system.key, barrier, vec![], |shard| {
-        if shard == 0 { corrupt() } else { build(shard, true) }
+        if shard == 0 { corrupt() } else { build(shard, Some(BatchRound::Two)) }
       })
     }));
     assert!(bad.is_err(), "round two must reject corrupted regenerated values");

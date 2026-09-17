@@ -8,7 +8,7 @@ use multi_stark::{
   witness::{TraceGenerator, TraceSource},
 };
 
-use crate::trace_codegen::cuda::prepare_memory;
+use crate::trace_codegen::cuda::{prepare_memory, seed_cache_bytes};
 
 pub(super) fn parity(program: &Toplevel, record: &QueryRecord, io: &IOBuffer) {
   let bound = generated_cuda::CUDA.bind(&generated::PROGRAM, program).unwrap();
@@ -44,10 +44,23 @@ pub(super) fn parity(program: &Toplevel, record: &QueryRecord, io: &IOBuffer) {
     let width = circuit.layout.width();
     expected.resize(height * width, 0);
     // Alias checking forces the canonical codec; without it the typed codec
-    // is used wherever the guards pass. Both must reproduce the oracle.
-    for check_aliases in [true, false] {
+    // is used wherever the guards pass. Both must reproduce the oracle, from
+    // seeds staged per tile and from seeds kept resident on the device.
+    for (check_aliases, retain) in
+      [(true, false), (false, false), (false, true)]
+    {
       let (source, _) = bound
-        .prepare(index, record, io, &[], (0, 0), end, rows, check_aliases)
+        .prepare(
+          index,
+          record,
+          io,
+          &[],
+          (0, 0),
+          end,
+          rows,
+          check_aliases,
+          retain,
+        )
         .unwrap();
       let TraceSource::Generated(source) = source else { unreachable!() };
       let mut host = vec![G::ZERO; expected.len()];
@@ -59,6 +72,11 @@ pub(super) fn parity(program: &Toplevel, record: &QueryRecord, io: &IOBuffer) {
       );
       for (first, rows) in [(0, height), (height - 1, height + 1)] {
         let actual = dft.generated_trace_rows(source.clone(), first, rows);
+        assert_eq!(
+          seed_cache_bytes(0) > 0,
+          retain,
+          "circuit {index}: seeds resident only when retained"
+        );
         // Goldilocks is repr(transparent) over u64. Reading raw words
         // catches noncanonical device output that field equality would
         // otherwise hide.
@@ -79,6 +97,8 @@ pub(super) fn parity(program: &Toplevel, record: &QueryRecord, io: &IOBuffer) {
           assert!(word < G::ORDER_U64);
         }
       }
+      source.release_device(0);
+      assert_eq!(seed_cache_bytes(0), 0, "circuit {index}: cache released");
     }
   }
 }
@@ -98,8 +118,9 @@ fn regrouping_and_frozen_seeds() {
   }
   parity(&program, &record, &io);
   let bound = generated_cuda::CUDA.bind(&generated::PROGRAM, &program).unwrap();
-  let (source, _) =
-    bound.prepare(0, &record, &io, &[], (0, 0), (3, 0), 3, true).unwrap();
+  let (source, _) = bound
+    .prepare(0, &record, &io, &[], (0, 0), (3, 0), 3, true, false)
+    .unwrap();
   drop(record);
   drop(io);
   let TraceSource::Generated(source) = source else { unreachable!() };
@@ -223,7 +244,7 @@ fn blake3_generated_timing() {
   };
   let prepare = || {
     compiled
-      .prepare(0, &record, &io, &[], (0, 0), (0, ROWS), ROWS, false)
+      .prepare(0, &record, &io, &[], (0, 0), (0, ROWS), ROWS, false, false)
       .unwrap()
   };
   let (source, _) = prepare();
@@ -338,7 +359,7 @@ fn generated_sources_and_commitments_stay_on_their_device() {
   assert_eq!(count, 8, "one query per BLAKE3 stage");
   let compiled = blake3_cuda::CUDA.bind(&blake3::PROGRAM, &program).unwrap();
   let (source, _) = compiled
-    .prepare(0, &record, &io, &[], (0, 0), (0, count), count, false)
+    .prepare(0, &record, &io, &[], (0, 0), (0, count), count, false, false)
     .unwrap();
   let devices: Vec<i32> = std::env::var("AIUR_TEST_GPU_DEVICES")
     .unwrap_or_else(|_| "0".into())
@@ -378,7 +399,7 @@ fn maximum_tile_and_wrapped_halo() {
   let (program, record, io) = synthetic_blake3(65537);
   let compiled = blake3_cuda::CUDA.bind(&blake3::PROGRAM, &program).unwrap();
   let (source, _) = compiled
-    .prepare(0, &record, &io, &[], (0, 0), (0, 65537), 65537, false)
+    .prepare(0, &record, &io, &[], (0, 0), (0, 65537), 65537, false, false)
     .unwrap();
   let TraceSource::Generated(source) = source else { unreachable!() };
   let dft = CudaDft::new(0);
@@ -395,6 +416,50 @@ fn maximum_tile_and_wrapped_halo() {
 }
 
 #[test]
+fn resident_seeds_serve_tiles_until_released() {
+  const ROWS: usize = 300_000;
+  let (program, record, io) = synthetic_blake3(ROWS);
+  let compiled = blake3_cuda::CUDA.bind(&blake3::PROGRAM, &program).unwrap();
+  let prepare = |retain| {
+    let (source, _) = compiled
+      .prepare(0, &record, &io, &[], (0, 0), (0, ROWS), ROWS, false, retain)
+      .unwrap();
+    let TraceSource::Generated(source) = source else { unreachable!() };
+    source
+  };
+  let staged = prepare(false);
+  let resident = prepare(true);
+  let dft = CudaDft::new(0);
+  let height = ROWS.next_power_of_two();
+  assert_eq!(seed_cache_bytes(0), 0);
+  // The rows fill five spans, so the resident copy is one allocation
+  // staged through the pinned ring many times over; the first tile uploads
+  // it, the rest reuse it.
+  for (first, rows) in
+    [(0, 65536), (65536, 65537), (ROWS - 3, 65537), (height - 1, 2)]
+  {
+    let expected = dft.generated_trace_rows(staged.clone(), first, rows);
+    let actual = dft.generated_trace_rows(resident.clone(), first, rows);
+    assert_eq!(actual.values, expected.values, "tile at {first}");
+    assert!(seed_cache_bytes(0) >= ROWS * 176, "seeds resident after {first}");
+  }
+  let held = seed_cache_bytes(0);
+  resident.release_device(1);
+  assert_eq!(seed_cache_bytes(0), held, "another device's release is a no-op");
+  resident.release_device(0);
+  assert_eq!(seed_cache_bytes(0), 0);
+  let expected = dft.generated_trace_rows(staged.clone(), 7, 9);
+  let actual = dft.generated_trace_rows(resident.clone(), 7, 9);
+  assert_eq!(
+    actual.values, expected.values,
+    "tiles are served after a release"
+  );
+  assert_eq!(seed_cache_bytes(0), held, "and the seeds are resident again");
+  drop(resident);
+  assert_eq!(seed_cache_bytes(0), 0, "dropping the source frees its seeds");
+}
+
+#[test]
 fn concurrent_uploads_keep_frozen_seeds() {
   let devices: Vec<i32> = std::env::var("AIUR_TEST_GPU_DEVICES")
     .unwrap_or_else(|_| "0".into())
@@ -403,8 +468,9 @@ fn concurrent_uploads_keep_frozen_seeds() {
     .collect();
   let (program, record, io) = synthetic_blake3(33);
   let bound = blake3_cuda::CUDA.bind(&blake3::PROGRAM, &program).unwrap();
-  let (source, _) =
-    bound.prepare(0, &record, &io, &[], (0, 0), (0, 33), 33, false).unwrap();
+  let (source, _) = bound
+    .prepare(0, &record, &io, &[], (0, 0), (0, 33), 33, false, false)
+    .unwrap();
   let TraceSource::Generated(source) = source else { unreachable!() };
   let barrier = std::sync::Barrier::new(8);
   std::thread::scope(|scope| {
@@ -545,6 +611,7 @@ fn wide_rows_widen_the_member_span_once() {
       (member, 1024),
       1024,
       false,
+      false,
     )
     .unwrap();
   let TraceSource::Generated(source) = source else { unreachable!() };
@@ -613,6 +680,7 @@ fn wide_row_in_a_later_chunk_widens_earlier_chunks() {
       (member, 0),
       (member, ROWS as usize),
       live.len(),
+      false,
       false,
     )
     .unwrap();

@@ -123,7 +123,17 @@ mod tests {
       }
       let count = record.function_queries[function].len();
       let (source, _) = provider
-        .prepare(&top, circuit, &record, &io, &[], (0, 0), (0, count), count)
+        .prepare(
+          &top,
+          circuit,
+          &record,
+          &io,
+          &[],
+          (0, 0),
+          (0, count),
+          count,
+          false,
+        )
         .unwrap();
       let mut expected: Vec<_> = (0..count)
         .flat_map(|row| {
@@ -156,12 +166,12 @@ mod tests {
         (0..top.circuits.len()).find(|&c| !covered.contains(&c)).unwrap();
       assert!(
         provider
-          .prepare(&top, uncovered, &record, &io, &[], (0, 0), (0, 1), 1)
+          .prepare(&top, uncovered, &record, &io, &[], (0, 0), (0, 1), 1, false)
           .is_none()
       );
       assert!(
         provider
-          .prepare(&top, circuit, &record, &io, &[], (0, 0), (0, 0), 0)
+          .prepare(&top, circuit, &record, &io, &[], (0, 0), (0, 0), 0, false)
           .is_none()
       );
       let mut stale = (generated.expected)();

@@ -169,6 +169,16 @@ fn committed_cells(rows: usize, committed_width: usize) -> usize {
   if rows == 0 { 0 } else { rows.next_power_of_two() * committed_width }
 }
 
+/// The batch round a prepared witness feeds. Round one only commits stage
+/// one. Round two commits it again and then evaluates the lookups on the
+/// device, so a generated source built for it keeps its seeds resident
+/// between the commitment and the lookup pass.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BatchRound {
+  One,
+  Two,
+}
+
 impl AiurSystem {
   /// The single-shard plan: every row in shard 0.
   pub fn single_shard_plan(&self, record: &QueryRecord) -> ShardPlan {
@@ -334,7 +344,7 @@ impl AiurSystem {
     shard: usize,
   ) -> SystemWitness<G> {
     let witness =
-      self.prepare_shard_witness(record, io_buffer, plan, index, shard, false);
+      self.prepare_shard_witness(record, io_buffer, plan, index, shard, None);
     SystemWitness {
       traces: witness
         .traces
@@ -345,7 +355,8 @@ impl AiurSystem {
     }
   }
 
-  /// Prepares host traces and compact accelerator sources without allocating on the GPU.
+  /// Prepares host traces and compact accelerator sources without allocating
+  /// on the GPU, for the batch round the witness feeds.
   pub fn prepared_shard_witness(
     &self,
     record: &QueryRecord,
@@ -353,10 +364,20 @@ impl AiurSystem {
     plan: &ShardPlan,
     index: &RowIndex,
     shard: usize,
+    round: BatchRound,
   ) -> multi_stark::witness::PreparedWitness<G> {
-    self.prepare_shard_witness(record, io_buffer, plan, index, shard, true)
+    self.prepare_shard_witness(
+      record,
+      io_buffer,
+      plan,
+      index,
+      shard,
+      Some(round),
+    )
   }
 
+  /// `generated` is the round a witness with device sources feeds; `None`
+  /// builds every circuit on the host.
   fn prepare_shard_witness(
     &self,
     record: &QueryRecord,
@@ -364,7 +385,7 @@ impl AiurSystem {
     plan: &ShardPlan,
     index: &RowIndex,
     shard: usize,
-    _generated: bool,
+    _generated: Option<BatchRound>,
   ) -> multi_stark::witness::PreparedWitness<G> {
     let circuit_types = self.circuit_types();
     let ranges = &plan.shards[shard].rows;
@@ -378,7 +399,7 @@ impl AiurSystem {
         let slot_arg_widths = self.slot_arg_widths(circuit_idx);
         let range = ranges[circuit_idx].clone();
         #[cfg(feature = "cuda")]
-        if _generated {
+        if let Some(round) = _generated {
           match circuit_type {
             CircuitType::Function { idx } => {
               let (start, end) = index.queries(circuit_idx, &range);
@@ -391,6 +412,7 @@ impl AiurSystem {
                 start,
                 end,
                 range.len(),
+                round == BatchRound::Two,
               ) {
                 return prepared;
               }
