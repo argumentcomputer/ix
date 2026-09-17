@@ -74,3 +74,26 @@ libc lacks. Both binaries were built with a temporary Cargo config that
 pointed multi-stark at the local checkout and, unintentionally, replaced
 the repository's `-Ctarget-cpu=native` rustflag; the two runs share that, and
 the cache-off run still reproduces the recorded `ix-new6` figures.
+
+## Coset cache and double-buffered upload, same fixture (2026-09-17, later)
+
+multi-stark `dedfb5e` caches the FRI coset per process and per device and
+double-buffers the staged upload of host-built traces with a four-thread
+host copy. One run, `ix-coset` (`36883a2b…`, ix `caf15901` plus that
+multi-stark), generated traces with the seed cache on, against the
+`q4-cache2-generated` run above. Same root, same verdict.
+
+| Quantity | before | after |
+| --- | ---: | ---: |
+| Wall / end to end | 433.8 / 431 s | 418.5 / 416 s |
+| `aiur/prove_planned` union | 250.6 s | 223.6 s |
+| `stark/stage1_commit` union | 128.1 s | 115.6 s |
+| `stark/fri_open` union | 30.9 s | 16.4 s |
+| `stark/lookup_construction` union | 48.6 s | 48.7 s |
+| CPU user s / peak RSS | 2078 / 93.0 GiB | 2051 / 91.0 GiB |
+
+On the profiled claim (`bench/prover-profile-init-2026-09-17/claim1f`) the
+proof went from 44.9 s to 40.3 s: FRI opening 5.7 s to 2.9 s, with the
+preparation step 3.2 s to 0.4 s, and host-source commit idle 5.8 s to
+4.2 s; kernels busy 71% of the proof against 64%. On the join, 24.0 s to
+22.1 s. `compare-coset.txt` is the two-run table.

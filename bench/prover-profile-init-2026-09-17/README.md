@@ -138,3 +138,10 @@ sppark at `17278d7` compiles and links for sm_120 with CUDA 13.3:
 <sppark>/util/all_gpus.cpp` and round-trips a 2^20 transform through
 `NTT::Base_dev_ptr` with no mismatches. The crate resolves as a git
 dependency with the `cuda` feature and exports `DEP_SPPARK_ROOT`.
+
+## After the coset cache and upload ring
+
+`claim1f/` is the same claim on multi-stark `dedfb5e`: proof 40.3 s, kernel
+busy 71%, stage-one commit 21.7 s with 8.2 s idle, FRI opening 2.9 s with
+0.7 s idle of which preparation is 0.4 s. `phases.txt` holds the sub-phase
+table. The join (`join5f`, not archived) went from 24.0 s to 22.1 s.
