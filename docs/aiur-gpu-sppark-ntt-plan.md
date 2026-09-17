@@ -642,3 +642,18 @@ and count against the budget. The record above states the fusion's status
 and bound. The change is dispatch plumbing; the milestone-4 replays and
 Init run stand as measured with the previous build, and the
 compatibility digest and the resident LDE timings reproduce on it.
+
+### The collector crash (2026-09-17, later)
+
+Investigated from a minimal transform up: the host-buffer transforms ran
+under the CUPTI collector, every resident panel LDE did not, at any size,
+and a collector variant with a fault handler placed the crash inside
+CUPTI's hook of `cuMemFreeAsync`. A standalone program
+(`bench/sppark-lde-2026-09-17/cupti-freeasync-repro.cu`) isolates it:
+CUPTI 2026.2.1 faults when its `MEMORY2` activity kind is on and an async
+free is given memory from `cudaMalloc` instead of a pool. The adapter's
+scratch now comes from the stream's pool, which is also a device
+synchronization fewer per LDE; the collector records the sppark path, and
+its first kernel split names the tiled scatter as the next kernel to tune
+(60 of 157 ms on the BLAKE3 shape). The adapter's stage timer stays for
+quick reads; whole-proof profiles go through the collector again.

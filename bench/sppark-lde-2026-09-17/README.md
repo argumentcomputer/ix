@@ -183,3 +183,25 @@ end 3 percent, since the single GPU worker waits on executions and joins
 for much of the run. The transforms are now a small share of each unit,
 which is why the resident LDE gains of 1.4 to 2.7x move the units by only
 a few percent more than milestone 3 did.
+
+## The collector on the sppark path (2026-09-17, later)
+
+The CUPTI collector (`bench/prover-profile-2026-09-15`) segfaulted on every
+resident sppark LDE while the host-buffer transforms ran clean under it.
+`cupti-freeasync-repro.cu` reproduces it without sppark or multi-stark:
+CUPTI 2026.2.1 (CUDA 13.3) faults inside its hook of `cuMemFreeAsync` when
+the `MEMORY2` activity kind is enabled and the freed memory came from
+`cudaMalloc` rather than a memory pool (a legal pairing); the stream,
+the per-thread default-stream flag and the other activity kinds do not
+matter, and pool memory freed the same way is fine. The adapter allocated
+its panel scratch with `cudaMalloc` and freed it asynchronously;
+multi-stark `1fcb7d5` allocates it from the stream's pool, which also removes a
+device synchronization per LDE (2^24 x 6 x4 61 to 55 ms, 2^22 x 2 x4 4.1
+to 3.5 ms; `glue-sppark.csv` predates this).
+
+`cupti-kernels-20-533-2.txt` is the first kernel-level split of the path:
+per LDE of the BLAKE3 shape, 157 ms of kernels with no overlap between
+them, of which the tiled scatter is 60 ms, the batched forward stages 59,
+the inverse stages 15, the restoring pass 15 and the gather 7. The scatter
+moves 36 GB in those 60 ms, a third of what the gather achieves per byte,
+so it is the next kernel to tune.

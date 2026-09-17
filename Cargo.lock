@@ -2124,7 +2124,7 @@ dependencies = [
 [[package]]
 name = "multi-stark"
 version = "0.1.0"
-source = "git+https://github.com/argumentcomputer/multi-stark.git?rev=b14e623d1dad8d0ee9e1c3504f2429a31b8e9fef#b14e623d1dad8d0ee9e1c3504f2429a31b8e9fef"
+source = "git+https://github.com/argumentcomputer/multi-stark.git?rev=1fcb7d527ea2636b30c6e60625957d6bb1b1a53d#1fcb7d527ea2636b30c6e60625957d6bb1b1a53d"
 dependencies = [
  "bincode",
  "itertools 0.14.0",
