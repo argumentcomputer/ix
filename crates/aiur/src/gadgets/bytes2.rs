@@ -6,23 +6,21 @@ use multi_stark::{
 };
 
 use crate::{
-  G, execute::QueryRecord, gadgets::AiurGadget, u8_add_channel, u8_and_channel,
-  u8_less_than_channel, u8_mul_channel, u8_or_channel, u8_range_check_channel,
-  u8_sub_channel, u8_xor_channel, u8_xor_split4_channel, u8_xor_split7_channel,
+  G, execute::QueryRecord, gadgets::AiurGadget, u8_add_channel, u8_mul_channel,
+  u8_range_check_channel, u8_sub_channel, u8_xor_channel,
+  u8_xor_split4_channel, u8_xor_split7_channel, u16_range_check_channel,
 };
 
 /// Number of columns in the trace with multiplicities for
 /// - xor
 /// - overflowing add
 /// - overflowing sub
-/// - and
-/// - or
-/// - less_than
 /// - range_check
 /// - mul
 /// - xor_split7
 /// - xor_split4
-const TRACE_WIDTH: usize = 10;
+/// - scalar u16 range_check
+const TRACE_WIDTH: usize = 8;
 
 /// Number of columns in the preprocessed trace:
 /// - first raw byte value
@@ -32,16 +30,18 @@ const TRACE_WIDTH: usize = 10;
 ///   `(x + y - z) / 256`, so it needs no column or lookup)
 /// - sub result (low byte only; the borrow is derived in-circuit as
 ///   `(z + y - x) / 256`, so it needs no column or lookup)
-/// - and result
-/// - or result
-/// - less_than result
 /// - mul low byte
 /// - mul high byte
 /// - xor_split7 high and shifted-low outputs
 /// - xor_split4 high and shifted-low outputs
-const PREPROCESSED_TRACE_WIDTH: usize = 14;
+const PREPROCESSED_TRACE_WIDTH: usize = 11;
 
 /// AIR implementer for arity 2 byte-related lookups.
+///
+/// AND and OR reuse XOR through `a + b - 2*and` and `2*or - a - b`.
+/// Comparison reuses subtraction through `a - b + 256*less_than`.
+/// The caller keeps its original output column; these derived arguments
+/// need neither additional witnesses nor separate table multiplicities.
 pub struct Bytes2;
 
 pub enum Bytes2Op {
@@ -93,15 +93,6 @@ impl AiurGadget for Bytes2 {
 
         // Sub low byte (borrow derived in-circuit, no column)
         trace_values.push(G::from_u8(i.wrapping_sub(j)));
-
-        // And
-        trace_values.push(G::from_u8(i & j));
-
-        // Or
-        trace_values.push(G::from_u8(i | j));
-
-        // Less than
-        trace_values.push(G::from_bool(i < j));
 
         // Mul (low byte, high byte)
         let p = u16::from(i) * u16::from(j);
@@ -175,25 +166,21 @@ impl AiurGadget for Bytes2 {
     let xor_channel = Expr::constant(u8_xor_channel());
     let add_channel = Expr::constant(u8_add_channel());
     let sub_channel = Expr::constant(u8_sub_channel());
-    let and_channel = Expr::constant(u8_and_channel());
-    let or_channel = Expr::constant(u8_or_channel());
-    let less_than_channel = Expr::constant(u8_less_than_channel());
     let range_check_channel = Expr::constant(u8_range_check_channel());
     let mul_channel = Expr::constant(u8_mul_channel());
     let xor_split7_channel = Expr::constant(u8_xor_split7_channel());
     let xor_split4_channel = Expr::constant(u8_xor_split4_channel());
+    let u16_range_channel = Expr::constant(u16_range_check_channel());
 
     // Multiplicity columns
     let xor_multiplicity = Expr::main(0);
     let add_multiplicity = Expr::main(1);
     let sub_multiplicity = Expr::main(2);
-    let and_multiplicity = Expr::main(3);
-    let or_multiplicity = Expr::main(4);
-    let less_than_multiplicity = Expr::main(5);
-    let range_check_multiplicity = Expr::main(6);
-    let mul_multiplicity = Expr::main(7);
-    let xor_split7_multiplicity = Expr::main(8);
-    let xor_split4_multiplicity = Expr::main(9);
+    let range_check_multiplicity = Expr::main(3);
+    let mul_multiplicity = Expr::main(4);
+    let xor_split7_multiplicity = Expr::main(5);
+    let xor_split4_multiplicity = Expr::main(6);
+    let u16_range_multiplicity = Expr::main(7);
 
     // Preprocessed columns
     let i = Expr::preprocessed(0);
@@ -201,15 +188,12 @@ impl AiurGadget for Bytes2 {
     let xor = Expr::preprocessed(2);
     let add_r = Expr::preprocessed(3);
     let sub_r = Expr::preprocessed(4);
-    let and = Expr::preprocessed(5);
-    let or = Expr::preprocessed(6);
-    let less_than = Expr::preprocessed(7);
-    let mul_lo = Expr::preprocessed(8);
-    let mul_hi = Expr::preprocessed(9);
-    let xor_split7_hi = Expr::preprocessed(10);
-    let xor_split7_lo = Expr::preprocessed(11);
-    let xor_split4_hi = Expr::preprocessed(12);
-    let xor_split4_lo = Expr::preprocessed(13);
+    let mul_lo = Expr::preprocessed(5);
+    let mul_hi = Expr::preprocessed(6);
+    let xor_split7_hi = Expr::preprocessed(7);
+    let xor_split7_lo = Expr::preprocessed(8);
+    let xor_split4_hi = Expr::preprocessed(9);
+    let xor_split4_lo = Expr::preprocessed(10);
 
     // pull = negated multiplicity.
     let pull_xor = Lookup {
@@ -225,21 +209,6 @@ impl AiurGadget for Bytes2 {
     let pull_sub = Lookup {
       multiplicity: -sub_multiplicity,
       args: vec![sub_channel, i.clone(), j.clone(), sub_r],
-    };
-
-    let pull_and = Lookup {
-      multiplicity: -and_multiplicity,
-      args: vec![and_channel, i.clone(), j.clone(), and],
-    };
-
-    let pull_or = Lookup {
-      multiplicity: -or_multiplicity,
-      args: vec![or_channel, i.clone(), j.clone(), or],
-    };
-
-    let pull_less_than = Lookup {
-      multiplicity: -less_than_multiplicity,
-      args: vec![less_than_channel, i.clone(), j.clone(), less_than],
     };
 
     let pull_mul = Lookup {
@@ -264,20 +233,31 @@ impl AiurGadget for Bytes2 {
     };
     let pull_xor_split4 = Lookup {
       multiplicity: -xor_split4_multiplicity,
-      args: vec![xor_split4_channel, i, j, xor_split4_hi, xor_split4_lo],
+      args: vec![
+        xor_split4_channel,
+        i.clone(),
+        j.clone(),
+        xor_split4_hi,
+        xor_split4_lo,
+      ],
+    };
+
+    // The preprocessed row enumerates exactly one integer in 0..2^16.
+    // Keep this separate from the two independent byte-range arguments.
+    let pull_u16_range = Lookup {
+      multiplicity: -u16_range_multiplicity,
+      args: vec![u16_range_channel, i * Expr::constant(G::from_u16(256)) + j],
     };
 
     vec![
       pull_xor,
       pull_add,
       pull_sub,
-      pull_and,
-      pull_or,
-      pull_less_than,
       pull_range_check,
       pull_mul,
       pull_xor_split7,
       pull_xor_split4,
+      pull_u16_range,
     ]
   }
 
@@ -287,101 +267,45 @@ impl AiurGadget for Bytes2 {
     slot_arg_widths: &[usize],
   ) -> (RowMajorMatrix<G>, LookupValues<G>) {
     let mut rows = vec![G::ZERO; 256 * 256 * TRACE_WIDTH];
-
-    // There are `TRACE_WIDTH` lookups per row, one for each multiplicity.
     let mut builder = LookupValues::builder(256 * 256, slot_arg_widths);
     let mut row_writers = builder.rows_mut();
-
-    let xor_channel = u8_xor_channel();
-    let add_channel = u8_add_channel();
-    let sub_channel = u8_sub_channel();
-    let and_channel = u8_and_channel();
-    let or_channel = u8_or_channel();
-    let less_than_channel = u8_less_than_channel();
-    let range_check_channel = u8_range_check_channel();
-    let mul_channel = u8_mul_channel();
-    let xor_split7_channel = u8_xor_split7_channel();
-    let xor_split4_channel = u8_xor_split4_channel();
-
-    rows
+    for (((row_idx, row), counts), row_lookups) in rows
       .as_chunks_mut::<TRACE_WIDTH>()
       .0
       .iter_mut()
       .enumerate()
       .zip(&record.bytes2_queries.0)
       .zip(row_writers.iter_mut())
-      .for_each(
-        |(
-          (
-            (row_idx, row),
-            &[
-              xor,
-              add,
-              sub,
-              and,
-              or,
-              less_than,
-              range_check,
-              mul,
-              xor_split7,
-              xor_split4,
-            ],
-          ),
-          row_lookups,
-        )| {
-          let i = G::from_usize(row_idx / 256);
-          let j = G::from_usize(row_idx % 256);
+    {
+      let [xor, add, sub, range_check, mul, xor_split7, xor_split4, u16_range] =
+        *counts;
+      let i = G::from_usize(row_idx / 256);
+      let j = G::from_usize(row_idx % 256);
+      row.copy_from_slice(counts);
 
-          row[0] = xor;
-          row[1] = add;
-          row[2] = sub;
-          row[3] = and;
-          row[4] = or;
-          row[5] = less_than;
-          row[6] = range_check;
-          row[7] = mul;
-          row[8] = xor_split7;
-          row[9] = xor_split4;
-
-          // Pull xor.
-          row_lookups.pull(0, xor, &[xor_channel, i, j, Self::xor(&i, &j)]);
-
-          // Pull add (low byte only; carry derived in-circuit).
-          let (r, _o) = Self::add(&i, &j);
-          row_lookups.pull(1, add, &[add_channel, i, j, r]);
-
-          // Pull sub (low byte only; borrow derived in-circuit).
-          let (r, _u) = Self::sub(&i, &j);
-          row_lookups.pull(2, sub, &[sub_channel, i, j, r]);
-
-          // Pull and.
-          row_lookups.pull(3, and, &[and_channel, i, j, Self::and(&i, &j)]);
-
-          // Pull or.
-          row_lookups.pull(4, or, &[or_channel, i, j, Self::or(&i, &j)]);
-
-          // Pull less_than.
-          row_lookups.pull(
-            5,
-            less_than,
-            &[less_than_channel, i, j, Self::less_than(&i, &j)],
-          );
-          // Pull range_check.
-          row_lookups.pull(6, range_check, &[range_check_channel, i, j]);
-
-          // Pull mul.
-          let (lo, hi) = Self::mul(&i, &j);
-          row_lookups.pull(7, mul, &[mul_channel, i, j, lo, hi]);
-
-          // Pull xor_split7.
-          let (hi, lo) = Self::xor_split7(&i, &j);
-          row_lookups.pull(8, xor_split7, &[xor_split7_channel, i, j, hi, lo]);
-
-          // Pull xor_split4.
-          let (hi, lo) = Self::xor_split4(&i, &j);
-          row_lookups.pull(9, xor_split4, &[xor_split4_channel, i, j, hi, lo]);
-        },
+      // AND and OR queries also pull XOR; comparisons also pull subtraction.
+      row_lookups.pull(0, xor, &[u8_xor_channel(), i, j, Self::xor(&i, &j)]);
+      let (r, _) = Self::add(&i, &j);
+      row_lookups.pull(1, add, &[u8_add_channel(), i, j, r]);
+      let (r, _) = Self::sub(&i, &j);
+      row_lookups.pull(2, sub, &[u8_sub_channel(), i, j, r]);
+      row_lookups.pull(
+        Self::RANGE_CHECK_COLUMN,
+        range_check,
+        &[u8_range_check_channel(), i, j],
       );
+      let (lo, hi) = Self::mul(&i, &j);
+      row_lookups.pull(4, mul, &[u8_mul_channel(), i, j, lo, hi]);
+      let (hi, lo) = Self::xor_split7(&i, &j);
+      row_lookups.pull(5, xor_split7, &[u8_xor_split7_channel(), i, j, hi, lo]);
+      let (hi, lo) = Self::xor_split4(&i, &j);
+      row_lookups.pull(6, xor_split4, &[u8_xor_split4_channel(), i, j, hi, lo]);
+      row_lookups.pull(
+        Self::U16_RANGE_CHECK_COLUMN,
+        u16_range,
+        &[u16_range_check_channel(), G::from_usize(row_idx)],
+      );
+    }
     drop(row_writers);
     (RowMajorMatrix::new(rows, TRACE_WIDTH), builder.finish())
   }
@@ -409,31 +333,36 @@ impl Bytes2Queries {
   }
 
   pub(crate) fn bump_and(&mut self, i: &G, j: &G) {
-    self.bump_multiplicity_for(i, j, 3)
+    self.bump_xor(i, j)
   }
 
   pub(crate) fn bump_or(&mut self, i: &G, j: &G) {
-    self.bump_multiplicity_for(i, j, 4)
+    self.bump_xor(i, j)
   }
 
   pub(crate) fn bump_less_than(&mut self, i: &G, j: &G) {
-    self.bump_multiplicity_for(i, j, 5)
+    self.bump_sub(i, j)
   }
 
   pub fn bump_range_check(&mut self, i: &G, j: &G) {
-    self.bump_multiplicity_for(i, j, 6)
+    self.bump_multiplicity_for(i, j, Bytes2::RANGE_CHECK_COLUMN)
+  }
+
+  /// Record a scalar u16 query on its distinct range channel.
+  pub fn bump_u16_range_check(&mut self, limb: u16) {
+    self.0[usize::from(limb)][Bytes2::U16_RANGE_CHECK_COLUMN] += G::ONE;
   }
 
   pub(crate) fn bump_mul(&mut self, i: &G, j: &G) {
-    self.bump_multiplicity_for(i, j, 7)
+    self.bump_multiplicity_for(i, j, 4)
   }
 
   pub(crate) fn bump_xor_split7(&mut self, i: &G, j: &G) {
-    self.bump_multiplicity_for(i, j, 8)
+    self.bump_multiplicity_for(i, j, 5)
   }
 
   pub(crate) fn bump_xor_split4(&mut self, i: &G, j: &G) {
-    self.bump_multiplicity_for(i, j, 9)
+    self.bump_multiplicity_for(i, j, 6)
   }
 
   pub(crate) fn bump_multiplicity_for(&mut self, i: &G, j: &G, col: usize) {
@@ -445,6 +374,11 @@ impl Bytes2Queries {
 }
 
 impl Bytes2 {
+  /// Shared row and lookup-slot index of the byte-pair range channel.
+  pub(crate) const RANGE_CHECK_COLUMN: usize = 3;
+  /// Shared row and lookup-slot index of the scalar u16 range channel.
+  pub(crate) const U16_RANGE_CHECK_COLUMN: usize = 7;
+
   #[inline]
   pub fn xor(i: &G, j: &G) -> G {
     let i: u8 = i.as_canonical_u64().try_into().unwrap();

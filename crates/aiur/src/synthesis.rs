@@ -1,12 +1,14 @@
 use multi_stark::{
+  config::StarkGenericConfig,
   expr::Expr,
-  lookup::Lookup,
-  p3_field::PrimeCharacteristicRing,
+  lookup::{Lookup, LookupRowMut},
+  p3_field::{BasedVectorSpace, PrimeCharacteristicRing},
   p3_matrix::dense::RowMajorMatrix,
   prover::Proof,
   system::{CircuitInputs, ProverKey, System, SystemWitness},
   types::{
-    CommitmentParameters, FriParameters, GoldilocksBlake3Config, PcsError,
+    CommitmentParameters, ExtVal, FriParameters, GoldilocksBlake3Config,
+    PcsError,
   },
   verifier::VerificationError,
 };
@@ -21,6 +23,7 @@ use crate::{
   function_channel,
   gadgets::{AiurGadget, bytes1::Bytes1, bytes2::Bytes2},
   lookup_budget::lookup_query_bound,
+  lookup_shapes::{ClaimShape, valid_claim_shape},
   memory::Memory,
   trace_heights::{fixed_trace_heights, trace_cap_coverage},
 };
@@ -45,7 +48,7 @@ pub struct PeakProveBytes {
 // Across the 168 completed Mathlib shard proofs at multi-stark 2892243e,
 // measured RSS / analytic peak had median 1.0678 and maximum under-prediction
 // 1.0714. A 7.5% envelope covers the full sample with a small margin. The
-// workspace now pins a8aab731; retain this historical guard, but re-calibrate
+// workspace now pins 9a906122; retain this historical guard, but re-calibrate
 // before treating it as a full-scale safety bound for the new prover.
 const PROVER_RSS_CALIBRATION_NUMERATOR: usize = 43;
 const PROVER_RSS_CALIBRATION_DENOMINATOR: usize = 40;
@@ -76,6 +79,7 @@ pub enum GatedProve {
 
 pub struct AiurSystem {
   toplevel: Toplevel,
+  claim_shapes: Vec<Option<ClaimShape>>,
   // perhaps remove the key from the system in verifier only mode?
   key: ProverKey<AiurConfig>,
   /// The parameters the system's config was built from, kept for the
@@ -109,19 +113,26 @@ pub struct CircuitShape {
   pub preprocessed_height: usize,
 }
 
-/// Raw row count of a circuit under `record`, ceil-divided into `parts`
-/// even shares — `parts = 1` is the record's exact heights. The byte
-/// gadgets keep their fixed heights: they are the same size in every
+/// Conservative row count of a circuit under `record`, ceil-divided into
+/// `parts` even shares. Sum member-function rows before dividing; circuit
+/// indices are not function indices. Unlike witness generation, this count
+/// includes zero-multiplicity hint rows. The byte gadgets keep their fixed
+/// heights: they are the same size in every
 /// shard and are most of the peak model's floor, which dividing cannot
 /// shrink.
-fn raw_of(
-  record: &QueryRecord,
+fn raw_of<'a>(
+  toplevel: &'a Toplevel,
+  record: &'a QueryRecord,
   parts: usize,
-) -> impl Fn(usize, &CircuitType) -> usize + '_ {
+) -> impl Fn(usize, &CircuitType) -> usize + 'a {
   move |_, ct| match ct {
-    CircuitType::Function { idx } => {
-      record.function_queries[*idx].len().div_ceil(parts)
-    },
+    CircuitType::Function { idx } => toplevel.circuits[*idx]
+      .members
+      .iter()
+      .fold(0usize, |rows, &member| {
+        rows.saturating_add(record.function_queries[member].len())
+      })
+      .div_ceil(parts),
     CircuitType::Memory { width } => {
       record.memory_queries.get(width).map_or(0, |m| m.len().div_ceil(parts))
     },
@@ -136,7 +147,8 @@ impl AiurSystem {
     commitment_parameters: CommitmentParameters,
     fri_parameters: FriParameters,
   ) -> Self {
-    toplevel.validate_lookup_shapes().expect("invalid Aiur lookup shapes");
+    let claim_shapes =
+      toplevel.checked_claim_shapes().expect("invalid Aiur lookup shapes");
     toplevel.validate_row_counts().expect("invalid Aiur control counts");
     let mut circuit_inputs: Vec<CircuitInputs<G>> = Vec::new();
     let mut slot_widths: Vec<Vec<usize>> = Vec::new();
@@ -164,9 +176,9 @@ impl AiurSystem {
       // A branchless circuit's lookup arguments are sent raw (degree 1;
       // see `ConstraintState::gate`), so two lookups fit in one chained
       // accumulator step at degree 3 — within the degree the selector-gated
-      // constraints already pay for. Branching circuits keep k = 1: their
-      // superposed arguments are degree 2, and grouping would push the
-      // logUp constraints past the quotient budget.
+      // constraints already pay for. This is the conservative baseline;
+      // after compilation, retune against actual message degrees and the
+      // configured quotient budget, including the FFT cost of raising it.
       let group_size =
         if toplevel.circuit_is_branchless(i) && lookups.len() >= 2 {
           2
@@ -189,7 +201,7 @@ impl AiurSystem {
     // Gadgets. The byte chips' lookup arguments are preprocessed columns
     // and their multiplicities main columns (all degree 1), so their
     // lookups also group 2 per chained step at degree 3 — halving the
-    // stage-2 accumulators (Bytes2: 10 → 5 at height 65536).
+    // stage-2 accumulators (Bytes2: 8 → 4 at height 65536).
     push_circuit(
       Bytes1.main_width(),
       Bytes1.preprocessed(),
@@ -206,11 +218,20 @@ impl AiurSystem {
     );
 
     let config = AiurConfig::new(commitment_parameters, fri_parameters);
-    let (system, key) = System::new(config, circuit_inputs);
+    let (mut system, key) = System::new(config, circuit_inputs);
+    let blowup = system.config.max_quotient_degree();
+    for circuit in &mut system.circuits {
+      crate::lookup_groups::retune(
+        circuit,
+        blowup,
+        <ExtVal as BasedVectorSpace<G>>::DIMENSION,
+      );
+    }
     AiurSystem {
       system,
       key,
       toplevel,
+      claim_shapes,
       commitment_parameters,
       fri_parameters,
       slot_widths,
@@ -261,7 +282,7 @@ impl AiurSystem {
   /// Predicted peak prover resident bytes for a record, from circuit
   /// shapes alone — the analytic counterpart of an empirical GiB-per-fft
   /// line. The terms mirror the allocation schedule originally calibrated at
-  /// multi-stark rev `2892243e`. The workspace now pins `a8aab731`, so the
+  /// multi-stark rev `2892243e`. The workspace now pins `9a906122`, so the
   /// model remains useful for relative shard sizing but needs a measured
   /// full-scale re-calibration before its absolute bound is relied upon:
   ///
@@ -284,7 +305,7 @@ impl AiurSystem {
   /// which per-fft models blur.
   pub fn peak_prove_bytes(&self, record: &QueryRecord) -> PeakProveBytes {
     self.peak_prove_bytes_by(
-      raw_of(record, 1),
+      raw_of(&self.toplevel, record, 1),
       crate::execute::record_retained_bytes(record),
     )
   }
@@ -321,11 +342,21 @@ impl AiurSystem {
       }
       let n = raw.next_power_of_two();
       let c = &self.system.circuits[i];
-      let d = c.stage_2_width / (1 + c.num_lookups); // extension degree
+      // Grouped accumulator width does not determine the extension degree.
+      let d = <ExtVal as BasedVectorSpace<G>>::DIMENSION;
       let args: usize = self.slot_widths[i].iter().sum();
       let q = c.quotient_degree();
-      witness +=
-        S * n * c.main_width + S * n * (c.num_lookups + args) + 40 * raw;
+      let metadata = match ct {
+        CircuitType::Function { idx } => crate::trace::witness_metadata_bytes(
+          self.toplevel.circuits[*idx].members.len(),
+          raw,
+        ),
+        _ => 0,
+      };
+      witness += S * n * c.main_width
+        + S * n * (c.num_lookups + args)
+        + size_of::<LookupRowMut<'_, G>>() * n
+        + metadata;
       s1_lde += S * b * n * c.main_width;
       lookup_w += S * n * (c.num_lookups + args);
       msgs += 2 * S * d * n * c.num_lookups;
@@ -375,7 +406,10 @@ impl AiurSystem {
     // count; stop rather than search forever.
     while parts < (1 << 20) {
       let peak = self
-        .peak_prove_bytes_by(raw_of(record, parts), record_bytes / parts)
+        .peak_prove_bytes_by(
+          raw_of(&self.toplevel, record, parts),
+          record_bytes / parts,
+        )
         .peak;
       if peak <= max_bytes {
         break;
@@ -578,7 +612,7 @@ impl AiurSystem {
     claim: &[G],
     proof: &AiurProof,
   ) -> Result<(), VerificationError<PcsError>> {
-    if !self.toplevel.valid_claim_shape(claim) {
+    if !valid_claim_shape(&self.claim_shapes, claim) {
       return Err(VerificationError::InvalidClaim);
     }
     if !fixed_trace_heights(
@@ -623,10 +657,15 @@ impl AiurSystem {
 mod tests {
   mod acceptance;
   mod branchless;
+  mod byte_consolidation;
   mod byte_shapes;
+  mod host_timings;
   mod lookup_budget;
+  mod lookup_groups;
   mod lookup_shapes;
   mod mmcs;
+  mod peak;
+  mod u32_compare;
 
   use super::*;
   use crate::{
@@ -1018,7 +1057,7 @@ mod tests {
     // height doubles as the committed trace height.
     assert_eq!(shapes[3].preprocessed_width, 11);
     assert_eq!(shapes[3].preprocessed_height, 256);
-    assert_eq!(shapes[4].preprocessed_width, 14);
+    assert_eq!(shapes[4].preprocessed_width, 11);
     assert_eq!(shapes[4].preprocessed_height, 65536);
   }
 }

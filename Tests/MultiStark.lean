@@ -102,12 +102,10 @@ def selfTestSuite : IO UInt32 := do
 -- `recursive-verifier`: prove factorial(5)=120, verify it, reject tampering
 -- ════════════════════════════════════════════════════════════════════════════
 
-/-- A tiny Aiur program: a BRANCHLESS entrypoint (single selector, no match)
-that routes its argument through store/load before calling `factorial`. Its
-circuit has 4 lookups (return, store, load, call) with raw degree-1
-arguments, so synthesis groups them 2 per chained-accumulator step
-(`lookup_group_size = 2`) — the recursive verifier's grouped logUp fold is
-exercised end-to-end alongside the k = 1 branching/memory circuits. -/
+/-- A branching entrypoint with eighteen gated store/load/call/return lookups for
+synthesis to choose two messages per accumulator at quotient degree four.
+The smaller factorial and memory circuits retain quotient degree two, so
+recursive verification exercises both degrees within the same proof. -/
 def factorialProgram : Source.Toplevel := ⟦
   pub fn factorial(n: G) -> G {
     match n {
@@ -117,7 +115,26 @@ def factorialProgram : Source.Toplevel := ⟦
   }
 
   pub fn fact_entry(n: G) -> G {
-    factorial(load(store(n)))
+    match n {
+      0 => 1,
+      _ =>
+        let a = load(store(n));
+        let b = load(store(n + 1));
+        let c = load(store(n + 2));
+        let d = load(store(n + 3));
+        let e = load(store(n + 4));
+        let f = load(store(n + 5));
+        let g = load(store(n + 6));
+        let h = load(store(n + 7));
+        assert_eq!(b, a + 1);
+        assert_eq!(c, a + 2);
+        assert_eq!(d, a + 3);
+        assert_eq!(e, a + 4);
+        assert_eq!(f, a + 5);
+        assert_eq!(g, a + 6);
+        assert_eq!(h, a + 7);
+        factorial(a),
+    }
   }
 ⟧
 
@@ -163,6 +180,8 @@ def endToEndSuite : IO UInt32 := do
     | .ok result => pure result
     | .error e => IO.eprintln s!"factorial prove failed: {e}"; return 1
   let expectedClaim := buildClaim facIdx input #[Aiur.G.ofNat 120]
+  let mixedQuotients := facSystem.circuitShapes.any (·.quotientDegree == 4) &&
+    facSystem.circuitShapes.any (·.quotientDegree == 2)
   -- Verify and serialize the proof transport consumed in-circuit.
   let proofBytes ← match facSystem.proofToAdviceBytes claim proof with
     | .ok bytes => pure bytes
@@ -237,6 +256,7 @@ def endToEndSuite : IO UInt32 := do
     vCompiled.bytecode.executeMultiStark vIdx badClaimInput proofBytes vkBytes badClaimBytes
   lspecIO (.ofList [("recursive-verifier", [
     test "factorial(5) claim = #[functionChannel, facIdx, 5, 120]" (claim == expectedClaim),
+    test s!"inner proof exercises quotient degrees two and four (main/stage2/quotient: {facSystem.circuitShapes.map fun s => (s.mainWidth, s.stage2Width, s.quotientDegree)})" mixedQuotients,
     expectOk "inner factorial proof verifies" innerVerify,
     expectOk "verifier accepts honest proof (vk digest bound + OOD + FRI)" honest,
     test "codegen'd verifier matches interpreter (output + query counts)" parity,

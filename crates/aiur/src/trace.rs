@@ -20,11 +20,11 @@ use crate::{
   function_channel,
   gadgets::{bytes1::Bytes1, bytes2::Bytes2},
   memory::Memory,
-  querymap::QueryRef,
-  u8_add_channel, u8_and_channel, u8_bit_decomposition_channel,
-  u8_less_than_channel, u8_mul_channel, u8_or_channel, u8_range_check_channel,
-  u8_shift_left_channel, u8_shift_right_channel, u8_sub_channel,
-  u8_xor_channel, u8_xor_split4_channel, u8_xor_split7_channel,
+  querymap::QueryMap,
+  u8_add_channel, u8_bit_decomposition_channel, u8_mul_channel,
+  u8_range_check_channel, u8_shift_left_channel, u8_shift_right_channel,
+  u8_sub_channel, u8_xor_channel, u8_xor_split4_channel, u8_xor_split7_channel,
+  u16_range_check_channel,
 };
 
 struct ColumnIndex {
@@ -101,15 +101,25 @@ struct TraceContext<'a> {
   query_record: &'a QueryRecord,
 }
 
-/// One row of a circuit trace: the member function it belongs to, the
-/// member's selector offset within the circuit, its function index, and the
-/// recorded query.
-struct RowMeta<'a> {
+/// Shared by all queried rows of one member of a circuit.
+struct MemberMeta<'a> {
   function: &'a Function,
   sel_offset: usize,
   function_index: G,
-  inputs: &'a [G],
-  result: QueryRef<'a>,
+  queries: &'a QueryMap,
+}
+
+/// Query slices and function metadata stay in their original storage.
+/// Only these two indices are repeated per active row.
+struct RowMeta {
+  member: usize,
+  query: usize,
+}
+
+/// Function witness metadata, excluding the lookup row writers shared by
+/// every circuit type. The estimator may conservatively include advice rows.
+pub(crate) fn witness_metadata_bytes(members: usize, rows: usize) -> usize {
+  members * size_of::<MemberMeta<'_>>() + rows * size_of::<RowMeta>()
 }
 
 impl Toplevel {
@@ -124,26 +134,32 @@ impl Toplevel {
     let layout = &circuit.layout;
     let width = layout.width();
     // Concatenate the members' queried rows, in member order.
-    let mut rows_meta = Vec::new();
+    let mut members_meta = Vec::with_capacity(circuit.members.len());
     let mut sel_offset = 0;
     for &member in &circuit.members {
       let function = &self.functions[member];
-      let function_index = G::from_usize(member);
-      rows_meta.extend(
-        query_record.function_queries[member]
-          .iter()
-          .filter(|(_, res)| !res.multiplicity.is_zero())
-          .map(|(inputs, result)| RowMeta {
-            function,
-            sel_offset,
-            function_index,
-            inputs,
-            result,
-          }),
-      );
+      members_meta.push(MemberMeta {
+        function,
+        sel_offset,
+        function_index: G::from_usize(member),
+        queries: &query_record.function_queries[member],
+      });
       sel_offset += function.layout.selectors;
     }
-    let height_no_padding = rows_meta.len();
+    // Count before allocating: no geometric growth or metadata for advice.
+    fn active_queries(queries: &QueryMap) -> impl Iterator<Item = usize> + '_ {
+      (0..queries.len()).filter(|&i| !queries.mult_at(i).is_zero())
+    }
+    let height_no_padding = members_meta
+      .iter()
+      .map(|member| active_queries(member.queries).count())
+      .sum();
+    let mut rows_meta = Vec::with_capacity(height_no_padding);
+    for (member, meta) in members_meta.iter().enumerate() {
+      rows_meta.extend(
+        active_queries(meta.queries).map(|query| RowMeta { member, query }),
+      );
+    }
     // An unqueried circuit yields an EMPTY trace (not a padded height-1 one):
     // the prover deactivates it, so it is neither committed nor opened.
     let height = if height_no_padding == 0 {
@@ -162,7 +178,10 @@ impl Toplevel {
       .zip(row_writers[..height_no_padding].par_iter_mut())
       .enumerate()
       .for_each(|(i, (row, lookups))| {
-        let meta = &rows_meta[i];
+        let row_meta = &rows_meta[i];
+        let meta = &members_meta[row_meta.member];
+        let (inputs, result) =
+          meta.queries.get_index(row_meta.query).expect("recorded query");
         let index = &mut ColumnIndex {
           auxiliary: 0,
           // we skip the first lookup, which is reserved for return
@@ -177,9 +196,9 @@ impl Toplevel {
         );
         let context = TraceContext {
           function_index: meta.function_index,
-          inputs: meta.inputs,
-          multiplicity: meta.result.multiplicity,
-          output: meta.result.output,
+          inputs,
+          multiplicity: result.multiplicity,
+          output: result.output,
           query_record,
         };
         meta.function.populate_row(index, slice, context, io_buffer);
@@ -558,7 +577,11 @@ impl Op {
         let and = Bytes2::and(&i, &j);
         map.push((and, 1));
         slice.push_auxiliary(index, and);
-        slice.push_lookup(index, G::ONE, &[u8_and_channel(), i, j, and]);
+        slice.push_lookup(
+          index,
+          G::ONE,
+          &[u8_xor_channel(), i, j, i + j - G::TWO * and],
+        );
       },
       Op::U8Or(i, j) => {
         let (i, _) = map[*i];
@@ -566,7 +589,11 @@ impl Op {
         let or = Bytes2::or(&i, &j);
         map.push((or, 1));
         slice.push_auxiliary(index, or);
-        slice.push_lookup(index, G::ONE, &[u8_or_channel(), i, j, or]);
+        slice.push_lookup(
+          index,
+          G::ONE,
+          &[u8_xor_channel(), i, j, G::TWO * or - i - j],
+        );
       },
       Op::U8LessThan(i, j) => {
         let (i, _) = map[*i];
@@ -577,7 +604,7 @@ impl Op {
         slice.push_lookup(
           index,
           G::ONE,
-          &[u8_less_than_channel(), i, j, less_than],
+          &[u8_sub_channel(), i, j, i - j + G::from_u16(256) * less_than],
         );
       },
       Op::U8XorSplit7(i, j) => {
@@ -611,37 +638,21 @@ impl Op {
         let (b, _) = map[*y_idx];
         let a_u32 = u32::try_from(a.as_canonical_u64()).unwrap();
         let b_u32 = u32::try_from(b.as_canonical_u64()).unwrap();
-        let x_bytes: [u8; 4] = a_u32.to_le_bytes();
-        let z_bytes: [u8; 4] = b_u32.to_le_bytes();
-        // Witness: c = if a < b then b - a - 1 else 2^32 + b - a - 1
-        let c_u32 = b_u32.wrapping_sub(a_u32).wrapping_sub(1);
-        let y_bytes: [u8; 4] = c_u32.to_le_bytes();
-
-        // Push 12 byte auxiliaries: x (a bytes), y (c bytes), z (b bytes)
-        for &byte in x_bytes.iter().chain(y_bytes.iter()).chain(z_bytes.iter())
-        {
-          slice.push_auxiliary(index, G::from_u8(byte));
+        let c_u32 = a_u32.wrapping_sub(b_u32);
+        // Six auxiliaries and scalar queries, ordered as a, c, b, low first.
+        // Execution already recorded these multiplicities.
+        for word in [a_u32, c_u32, b_u32] {
+          for shift in [0, 16] {
+            let limb = G::from_u16(((word >> shift) & 0xffff) as u16);
+            slice.push_auxiliary(index, limb);
+            slice.push_lookup(
+              index,
+              G::ONE,
+              &[u16_range_check_channel(), limb],
+            );
+          }
         }
-
-        // Range-check byte pairs via Bytes2 lookups
-        let rc_channel = u8_range_check_channel();
-        for (i, j) in [
-          (x_bytes[0], x_bytes[1]),
-          (x_bytes[2], x_bytes[3]),
-          (y_bytes[0], y_bytes[1]),
-          (y_bytes[2], y_bytes[3]),
-          (z_bytes[0], z_bytes[1]),
-          (z_bytes[2], z_bytes[3]),
-        ] {
-          slice.push_lookup(
-            index,
-            G::ONE,
-            &[rc_channel, G::from_u8(i), G::from_u8(j)],
-          );
-        }
-
-        let result = G::from_bool(a_u32 < b_u32);
-        map.push((result, 1));
+        map.push((G::from_bool(a_u32 < b_u32), 1));
       },
       Op::U8RangeCheck(i, j) => {
         // No `map.push`: the `u8` outputs alias the inputs. Just require the

@@ -3,6 +3,7 @@ pub mod constraints;
 pub mod execute;
 pub mod gadgets;
 mod lookup_budget;
+mod lookup_groups;
 mod lookup_shapes;
 pub mod memory;
 pub mod querymap;
@@ -59,6 +60,9 @@ pub fn u8_sub_channel() -> G {
   G::from_u8(7)
 }
 
+// Legacy AND/OR/comparison channel IDs remain reserved. Their operations
+// now use affine arguments on the XOR/subtraction channels; Bytes2 does not
+// provide these three channels. Keep later channel IDs unchanged.
 #[inline]
 pub fn u8_and_channel() -> G {
   G::from_u8(8)
@@ -92,4 +96,10 @@ pub fn u8_xor_split7_channel() -> G {
 #[inline]
 pub fn u8_xor_split4_channel() -> G {
   G::from_u8(14)
+}
+
+/// Scalar u16 range checks have a distinct channel from byte pairs.
+#[inline]
+pub fn u16_range_check_channel() -> G {
+  G::from_u8(15)
 }

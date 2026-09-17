@@ -13,10 +13,10 @@ use crate::{
     bytes1::{Bytes1, Bytes1Op},
     bytes2::{Bytes2, Bytes2Op},
   },
-  memory_channel, u8_add_channel, u8_and_channel, u8_bit_decomposition_channel,
-  u8_less_than_channel, u8_mul_channel, u8_or_channel, u8_range_check_channel,
-  u8_shift_left_channel, u8_shift_right_channel, u8_sub_channel,
-  u8_xor_channel, u8_xor_split4_channel, u8_xor_split7_channel,
+  memory_channel, u8_add_channel, u8_bit_decomposition_channel, u8_mul_channel,
+  u8_range_check_channel, u8_shift_left_channel, u8_shift_right_channel,
+  u8_sub_channel, u8_xor_channel, u8_xor_split4_channel, u8_xor_split7_channel,
+  u16_range_check_channel,
 };
 
 type Expr = multi_stark::expr::Expr<G>;
@@ -119,6 +119,16 @@ impl ConstraintState {
   fn next_auxiliary(&mut self) -> Expr {
     self.column += 1;
     var(self.column - 1)
+  }
+
+  fn range_u16(&mut self, sel: &Expr, limb: Expr) {
+    let args = vec![
+      self.gate(sel, konst(u16_range_check_channel())),
+      self.gate(sel, limb),
+    ];
+    let lookup = self.next_lookup();
+    combine_lookup_args(lookup, args);
+    lookup.multiplicity = lookup.multiplicity.clone() + sel.clone();
   }
 
   fn save(&mut self) -> SharedState {
@@ -661,30 +671,39 @@ impl Op {
         state.map.push((z, 1));
         state.map.push((borrow, x_deg.max(y_deg).max(1)));
       },
-      Op::U8And(i, j) => bytes2_constraints(
-        *i,
-        *j,
-        &Bytes2Op::And,
-        u8_and_channel(),
-        sel.clone(),
-        state,
-      ),
-      Op::U8Or(i, j) => bytes2_constraints(
-        *i,
-        *j,
-        &Bytes2Op::Or,
-        u8_or_channel(),
-        sel.clone(),
-        state,
-      ),
-      Op::U8LessThan(i, j) => bytes2_constraints(
-        *i,
-        *j,
-        &Bytes2Op::LessThan,
-        u8_less_than_channel(),
-        sel.clone(),
-        state,
-      ),
+      Op::U8And(i, j) | Op::U8Or(i, j) | Op::U8LessThan(i, j) => {
+        let x = state.map[*i].0.clone();
+        let y = state.map[*j].0.clone();
+        let output = state.next_auxiliary();
+        // The table binds x and y to bytes. Each affine result uniquely
+        // determines the original output over Goldilocks (2 and 256 are
+        // nonzero), without a new column or polynomial constraint.
+        let (channel, result) = match self {
+          Op::U8And(..) => (
+            u8_xor_channel(),
+            x.clone() + y.clone() - konst(G::TWO) * output.clone(),
+          ),
+          Op::U8Or(..) => (
+            u8_xor_channel(),
+            konst(G::TWO) * output.clone() - x.clone() - y.clone(),
+          ),
+          Op::U8LessThan(..) => (
+            u8_sub_channel(),
+            x.clone() - y.clone() + konst(G::from_u16(256)) * output.clone(),
+          ),
+          _ => unreachable!(),
+        };
+        let args = vec![
+          state.gate(sel, konst(channel)),
+          state.gate(sel, x),
+          state.gate(sel, y),
+          state.gate(sel, result),
+        ];
+        let lookup = state.next_lookup();
+        combine_lookup_args(lookup, args);
+        lookup.multiplicity = lookup.multiplicity.clone() + sel.clone();
+        state.map.push((output, 1));
+      },
       Op::U8XorSplit7(i, j) => bytes2_constraints(
         *i,
         *j,
@@ -716,78 +735,40 @@ impl Op {
         lookup.multiplicity = lookup.multiplicity.clone() + sel.clone();
       },
       Op::U32LessThan(x_idx, y_idx) => {
-        // u32 less-than via addition carry chain.
-        //
-        // Goal: constrain output = 1 if a < b, 0 otherwise, where a and b are
-        // u32 values (< 2^32) represented as Goldilocks field elements.
-        //
-        // Approach: find witness c (non-deterministic) such that
-        //     a + c + 1 = b + carry · 2^32
-        // The +1 ensures strict less-than (not ≤). Then a < b ⟺ carry = 0.
-        //
-        // Decompose a, c, b into 4 little-endian bytes each (x_k, y_k, z_k).
-        // The carry chain is computed as polynomial expressions:
-        //     c_k = (x_k + y_k + prev - z_k) / 256
-        // where prev = 1 for k=0, prev = c_{k-1} for k>0.
-        // Each c_k is constrained to be boolean (assert_bool).
-        //
-        // All 12 bytes are range-checked via 6 Bytes2 range-check lookups
-        // (2 bytes per lookup).
-        //
-        // Resources: 12 auxiliaries, 6 lookups, 6 polynomial constraints
-        // (2 decomposition + 4 assert_bool).
+        // Bound a, b and the witness c to u32 values with two u16 limbs each.
+        // The whole-word carry establishes the integer relation
+        //     b + c = a + carry * 2^32.
+        // With c = (a - b) mod 2^32, a < b iff the carry is one; equality
+        // gives c = carry = 0. The bounded integer relation cannot wrap p.
+        // Six scalar range lookups use the shared table's u16 channel.
         let a = state.map[*x_idx].0.clone();
         let b = state.map[*y_idx].0.clone();
-
-        // Byte decomposition auxiliaries
-        let x_bytes: [Expr; 4] = array::from_fn(|_| state.next_auxiliary());
-        let y_bytes: [Expr; 4] = array::from_fn(|_| state.next_auxiliary());
-        let z_bytes: [Expr; 4] = array::from_fn(|_| state.next_auxiliary());
-
-        // Decomposition constraints: a = Σ x_k * 256^k, b = Σ z_k * 256^k
-        let base =
-          |k: usize| G::from_u64(256u64.pow(u32::try_from(k).unwrap()));
-        let recompose = |bytes: &[Expr; 4]| {
-          bytes.iter().enumerate().fold(konst(G::ZERO), |acc, (k, b)| {
-            acc + b.clone() * konst(base(k))
-          })
+        let a_limbs: [Expr; 2] = array::from_fn(|_| state.next_auxiliary());
+        let c_limbs: [Expr; 2] = array::from_fn(|_| state.next_auxiliary());
+        let b_limbs: [Expr; 2] = array::from_fn(|_| state.next_auxiliary());
+        let recompose = |limbs: &[Expr; 2]| {
+          limbs[0].clone() + limbs[1].clone() * konst(G::from_u32(65536))
         };
-        state.constraints.zeros.push(sel.clone() * (a - recompose(&x_bytes)));
-        state.constraints.zeros.push(sel.clone() * (b - recompose(&z_bytes)));
+        state
+          .constraints
+          .zeros
+          .push(sel.clone() * (a.clone() - recompose(&a_limbs)));
+        state
+          .constraints
+          .zeros
+          .push(sel.clone() * (b.clone() - recompose(&b_limbs)));
 
-        // Carry chain: a + c + 1 = b + carry * 2^32
-        let mut carry = konst(G::ONE); // initial carry = 1 for strict less-than
-        for k in 0..4 {
-          let sum = x_bytes[k].clone() + y_bytes[k].clone() + carry;
-          carry = (sum - z_bytes[k].clone()) * konst(*INV_256);
-          state.constraints.zeros.push(
-            sel.clone() * (carry.clone() * (carry.clone() - konst(G::ONE))),
-          );
+        // Inputs are affine after multiplication materialization. Use the
+        // whole words directly: this carry is an expression, not a column.
+        let carry = (b + recompose(&c_limbs) - a) * INV_2_POW_32_EXPR.clone();
+        state
+          .constraints
+          .zeros
+          .push(sel.clone() * carry.clone() * (carry.clone() - konst(G::ONE)));
+        for limb in a_limbs.into_iter().chain(c_limbs).chain(b_limbs) {
+          state.range_u16(sel, limb);
         }
-
-        // Range-check byte pairs via Bytes2 lookups
-        let rc_channel = u8_range_check_channel();
-        for pair in [
-          (&x_bytes[0], &x_bytes[1]),
-          (&x_bytes[2], &x_bytes[3]),
-          (&y_bytes[0], &y_bytes[1]),
-          (&y_bytes[2], &y_bytes[3]),
-          (&z_bytes[0], &z_bytes[1]),
-          (&z_bytes[2], &z_bytes[3]),
-        ] {
-          let lookup_args = vec![
-            state.gate(sel, konst(rc_channel)),
-            state.gate(sel, pair.0.clone()),
-            state.gate(sel, pair.1.clone()),
-          ];
-          let lookup = state.next_lookup();
-          combine_lookup_args(lookup, lookup_args);
-          lookup.multiplicity = lookup.multiplicity.clone() + sel.clone();
-        }
-
-        // Output: 1 - carry
-        let output = konst(G::ONE) - carry;
-        state.map.push((output, 1));
+        state.map.push((carry, 1));
       },
       Op::IOSetInfo(..) | Op::IOWrite(..) | Op::Debug(..) => (),
       Op::UnconstrainedBigUintDivMod(_, _) => {
