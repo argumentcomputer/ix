@@ -69,6 +69,9 @@ their strengthened contracts are in the same required proof aggregate.
 The [FRI fusion gate](ixby-fri-fusion.md) is `lake exe check-ixby-fri`; it also
 runs through `check-ixby-lean` and the required `ixby-lean` Nix check. Its
 source equality proofs and exact fences remain in `CompilatrixTests.Proofs`.
+The [row-hash helpers](ixby-row-hash.md) run through `check-ixby-lean`, including
+oracle, resource, exact-fuel, mutation and source suites; their body
+certificates and ten exact fences are in `CompilatrixTests.Proofs`.
 
 Compiler-comparison and measurement runners are built separately with
 `lake -d benchmarks/comparisons build`. Their [optional environment and commands](../benchmarks/comparisons/README.md)

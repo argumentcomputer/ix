@@ -82,7 +82,7 @@ def main (args : List String) : IO UInt32 := cli "stage2-ixby" do
   if name == "compile" || name == "compile-no-fri" || name == "compile-baseline" then
     let original ← buildImage directory (name == "compile")
     let policy : Compilatrix.Ixby.Inline.Policy := {
-      enabled := name != "compile-baseline", protectedPrefix := 108 }
+      enabled := name != "compile-baseline", protectedPrefix := 110 }
     let selected ← checked (Compilatrix.Ixby.Inline.optimizeImage original policy)
     let image := selected.image
     discard <| checked image.certifyWireRuntime

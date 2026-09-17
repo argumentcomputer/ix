@@ -2,7 +2,7 @@
 
 The typed frontend emits a complete format-1, semantics-2 [Ixby binary](ixby-binary.md).
 The retained [Stage2 artifact](../fixtures/ixby-stage2/stage2.ixby) includes both
-fixed keys and the verifier code: 990,986 bytes, 669 functions, 5,811 blocks,
+fixed keys and the verifier code: 990,915 bytes, 669 functions, 5,807 blocks,
 140 constructor layouts, and entry function 668. A separate `ixby-exec`
 process loads the binary without a compiler environment or Lean source.
 Its chunked executor is kernel-proved equivalent to the pinned reference,
@@ -12,13 +12,19 @@ including errors and exact logical fuel.
 Lean's proof erasure and specialization. Every emitted block passes reference
 whole-program validation. Unknown runtime externs reject; packed-byte capacity
 must be below `2^32`. [Runtime certificates](ixby-representation.md) bind all 97
-scalar/collection/field helpers and ten optional wire helpers to their complete
-bodies before Stage2 export.
+scalar/collection/field helpers and twelve optional wire and row-hash helpers
+to their complete bodies before Stage2 export.
 
 Stage2 selects [FRI array-loop fusion](ixby-fri-fusion.md) using a kernel theorem
 equating the pinned source function with its replacement. Optional source
 requests are checked against the actual theorem declarations and calling
 arity; rejected requests preserve the original compiler behavior.
+
+Stage2 also binds [the MMCS row hash](ixby-row-hash.md) to a certified
+builder loop that writes each canonical field's eight little-endian bytes and
+freezes once per row. Its complete-body certificate hashes exactly the pinned
+source preimage; the source fold and its per-field appends are no longer
+compiled.
 
 Stage2 export additionally applies [certified ordinary leaf-call inlining](ixby-inline.md)
 and checks the decoded binary against the original image. The pass preserves
@@ -53,7 +59,9 @@ encoding retains an internal writer buffer across writes, checks the source
 byte limit, and freezes before returning. Direct writer calls retain their
 ordinary source array representation. Subranges use checked `bytesSlice`;
 field I/O preserves canonicality, source error, and read-offset behavior.
-Calls, PAPs, oversaturation, joins, and tail calls use reference instructions.
+Native field rows are serialized through one builder and hashed after a single
+freeze. Calls, PAPs, oversaturation, joins, and tail calls use reference
+instructions.
 
 The format supports seven scalars, 58 primitives, persistent array values,
 and every operation/instruction. Serialization recursively rejects internal
@@ -65,19 +73,20 @@ replaces the retired semantic modes.
 The Stage2 adapter embeds 925,789 original key bytes, entrypoints 755/243,
 and fixed source configuration. Inputs are public claim Bytes and private
 native proof Bytes. Success returns the exact 34-byte claim; rejection returns
-erased. The singleton smoke fixture takes **500,247,577 logical transitions**
-after fusion, inlining and single-dispatch reads, versus 711,293,203 in the
-runtime revision 2 baseline. This measurement covers the singleton proof;
-full Init verification remains separate.
+erased. The singleton smoke fixture takes **458,512,092 logical transitions**
+after certified row hashing, fusion, inlining and single-dispatch reads, versus
+711,293,203 in the runtime revision 2 baseline. This measurement covers the
+singleton proof; full Init verification remains separate.
 All eight cases remain separate required Nix checks: valid, changed claim,
 empty/truncated/malformed proof, trailing public/proof bytes, and wrong claim
 kind. Step exhaustion fails the gate; the image permits 16 billion transitions.
 
 The independently keyed CSLib image is recompiled and compared with its
-retained expected output. It takes **254,245,163 logical transitions** after
-fusion, inlining and single-dispatch reads, versus 360,337,913 in runtime revision 2
-and 2,033,412,182 in revision 1. The [FRI fusion record](ixby-fri-fusion.md)
-documents the latest proof scope and measurements, following the
+retained expected output. It takes **227,780,761 logical transitions** after
+certified row hashing, fusion, inlining and single-dispatch reads, versus
+360,337,913 in runtime revision 2 and 2,033,412,182 in revision 1. The
+[row-hash record](ixby-row-hash.md) documents the latest proof scope and
+measurements, following the [FRI fusion record](ixby-fri-fusion.md), the
 [array-read record](ixby-array-read.md) and
 [inlining record](ixby-inline.md).
 The earlier [integration record](ixby-runtime-v2.md)
@@ -106,10 +115,10 @@ Case mode loads the supplied binary and never recompiles. Standalone execution:
 
 The FRI gate adds 420 source cases through original, fused, and inlined images,
 plus source-replacement rejection/fallback checks. The helper suite includes
-40,839 independent result cases, complete body
-mutations, caller/resource checks, and exact fuel formulas. The retained 4,585
+40,947 independent result cases, complete body
+mutations, caller/resource checks, and exact fuel formulas. The retained 4,593
 source comparisons cover large Nat, fields/extensions, closures, persistent
-arrays, byte aliases, wire outputs/errors, and 10,000 tail-call iterations
+arrays, byte aliases, wire outputs/errors, row hashes, and 10,000 tail-call iterations
 under eight continuations. Two compiler rejections retain unsupported Float
 extern and byte-index capacity checks. See the [proof/coverage mapping](ixby-representation.md).
 

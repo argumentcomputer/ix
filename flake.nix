@@ -186,6 +186,7 @@
             ./docs/ixby-inline.md
             ./docs/ixby-array-read.md
             ./docs/ixby-fri-fusion.md
+            ./docs/ixby-row-hash.md
             ./docs/aiur-wire.md
             ./docs/aiur-semantics.md
             ./docs/aiur-static.md

@@ -17,6 +17,8 @@ The baseline is revision `e048fa0a4783f1b773b454e3d036c66f06511d22`, including
 ordinary leaf-call inlining and single-dispatch array reads.
 Artifact identities and execution evidence are in
 [fri-fusion.json](../fixtures/ixby-stage2/fri-fusion.json).
+The subsequent [certified row hash](ixby-row-hash.md) retains this source
+equality and its selection checks while further reducing both workloads.
 
 ## Source equality and selection
 

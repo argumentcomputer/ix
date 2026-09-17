@@ -58,6 +58,10 @@ private def numberList (image : Image) (values : List Nat) : Except String Ix.Ix
   let cons ← image.ctorId `List.cons
   values.foldrM (fun n tail => do return .ctor cons #[← image.number n, tail]) (.ctor nil #[])
 
+private def numberArray (image : Image) (values : Array Nat) : Except String Ix.Ixby.Value := do
+  let array ← image.ctorId `Ixby.Runtime.Array
+  return .ctor array #[.array (← values.mapM image.number)]
+
 def run (certify : Image → IO Unit) (transform : Image → IO Image := pure) : IO Nat := do
   initSearchPath (← findSysroot)
   let env ← importModules #[{ module := `Compilatrix.Ixby.Runtime.Examples }] {}
@@ -211,6 +215,12 @@ def run (certify : Image → IO Unit) (transform : Image → IO Image := pure) :
           runBytes image #[← checked (image.number n), ← checked (image.bytes initial),
             ← checked (image.number limit)] (source n initial limit)
           count := count + 1
+  for wire in #[false, true] do
+    let image ← compileImage env ``rowHash wire
+    for values in #[#[], #[0], #[1, Ix.Ixby.goldilocksModulus - 1, Ix.Ixby.goldilocksModulus, 2 ^ 80 + 17],
+        (Array.range 65).map (· * 1000003)] do
+      runBytes image #[← checked (numberArray image values)] (rowHash values)
+      count := count + 1
   let image ← compileImage env ``tailSum
   -- A small continuation limit detects accidental calls in tail position.
   let image := { image with state := { image.state with limits := { image.state.limits with continuations := 8 } } }

@@ -154,6 +154,14 @@ fences, helper theorem premises and 107 runtime/wire certificates remain.
 This adds source equality evidence without closing general LCNF lowering or
 whole-verifier source-to-image refinement. No native or reference interface changes.
 
+[Certified row hashing](ixby-row-hash.md) binds the pinned MMCS row hash to a
+builder-based runtime body with ten exact ordinary-logical fences: the hashed
+bytes are the source preimage by definition, the loop and complete helper
+contracts are kernel proofs against the reference machine, and byte views
+trap. All 2,771 prior fences, helper theorem premises, and the 107 earlier
+body certificates remain; two certified bodies are added and the inliner
+protects the 110-function prefix. No native or reference interface changes.
+
 ## Active native interface: BLAKE3 Rust
 
 | Field | Ledger value |

@@ -1,5 +1,6 @@
 import Ix.Ixby.Blake3
 import Ix.MultiStark.Verify.Codec.Wire
+import Ix.MultiStark.Verify.Mmcs.Basic
 
 namespace Compilatrix.Ixby.Runtime.Examples
 
@@ -125,5 +126,8 @@ def extensionStorage (a b : Nat) : Nat :=
 @[noinline] def tailSum : Nat → Nat → Nat
   | 0, acc => acc
   | n + 1, acc => tailSum n (acc + n)
+
+def rowHash (values : Array Nat) : Array UInt8 :=
+  (MultiStark.Verify.Mmcs.hashRow (values.map Ix.Ixby.Goldilocks.reduce)).bytes
 
 end Compilatrix.Ixby.Runtime.Examples

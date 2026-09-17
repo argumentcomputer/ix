@@ -124,19 +124,21 @@ obligations remain separate from this working compilation path.
 | Fixed source, keys, entrypoints, limits and complete Ixon closure | Retained and pinned |
 | Complete catalog admission under explicit Stage2 compiler budgets | Passed |
 | Native execution of the unchanged source verifier | Exact claim acceptance; seven rejections |
-| Complete executable Ixby binary | Retained; 990,986 bytes; format 1, semantics 2; reproducible fresh compilation with source-proved FRI fusion, certified leaf inlining and single-dispatch array reads |
+| Complete executable Ixby binary | Retained; 990,915 bytes; format 1, semantics 2; reproducible fresh compilation with certified row hashing, source-proved FRI fusion, certified leaf inlining and single-dispatch array reads |
 | Serialized execution and input/output transport | Standalone loader; exact claim acceptance; seven rejections |
 | Native field, extension, word, byte and BLAKE3 lowering | Emitted and tested against the source |
 | Source-to-image reflection | Still open for this frontend |
 | Proving executor integration | Separate downstream work |
 
 The [binary inventory](../fixtures/ixby-stage2/reference-inventory.json)
-contains 669 functions, 5,811 blocks, and 140 constructor layouts, with entry
+contains 669 functions, 5,807 blocks, and 140 constructor layouts, with entry
 668. It records the artifact SHA-256, complete function and constructor
 inventories, primitive and instruction counts, explicit execution limits,
 and static frame maxima. An independent decoder reconstructs its structural
 fields from the binary. The [FRI fusion record](ixby-fri-fusion.md) separates
 its source equality proof from the remaining whole-verifier refinement gap.
+The [row-hash record](ixby-row-hash.md) binds the MMCS row hash to a certified
+runtime body without closing that gap.
 
 ## Required input and output ABI
 
@@ -173,7 +175,7 @@ guest's runtime input inspection. A structural simulation or compositional
 checker would need to cover branches, parsing, recursive calls, and the exact
 bytes/erased observation for every admitted input.
 The [runtime representation proofs](ixby-representation.md) bind all 97
-scalar/collection/field helpers and ten wire helpers to complete revision 2
+scalar/collection/field helpers and twelve wire and row-hash helpers to complete revision 2
 bodies. They cover unboxed scalar conversions, Nat/word/field arithmetic,
 complete numeric loops, native array representation/access/update/append,
 packed byte views, immutable builders, and writer-buffer composition. USize

@@ -1,4 +1,5 @@
 import CompilatrixTests.Ixby.Native.Support
+import Ix.MultiStark.Verify.Mmcs.Basic
 
 namespace CompilatrixTests.Ixby.Native
 
@@ -70,5 +71,22 @@ def wireCases (image : Image) (check : Check) : IO Unit := do
       (← okay (← pair unit (state (writer joined) 9)))
     check 106 #[natural value.val, state (writer #[0xaa]) 8]
       (← error `MultiStark.Verify.DecodeError.byteLimit)
+  -- Row hashing: native field rows, arbitrary builder prefixes, suffix ranges,
+  -- and rejection of the byte views that cannot represent a field row.
+  let fieldValues : Array Nat := #[0, 1, 255, 256, 2 ^ 32 - 1, 2 ^ 32, 2 ^ 63,
+    goldilocksModulus - 2, goldilocksModulus - 1]
+  for width in #[0, 1, 2, 3, 4, 8, 9, 33, 64] do
+    for seed in #[0, 1, 7919] do
+      let fields := (Array.range width).map fun i =>
+        Goldilocks.reduce (fieldValues[(i + seed) % fieldValues.size]! + i * seed * 1000003)
+      let row := fields.map fun value => natural value.val
+      check 109 #[.ctor arrayId #[.array row]] (packed (MultiStark.Verify.Mmcs.hashRow fields).bytes)
+      for start in #[0, width / 2, width] do
+        check 108 #[.array row, natural start, natural width, .byteBuilder #[0x12, 0x34]]
+          (.scalar (.bytes (#[0x12, 0x34] ++ (fields.extract start width).flatMap fun value =>
+            MultiStark.Verify.Codec.Wire.littleEndian 8 value.val)))
+    let bytes := (Array.range (8 * width)).map Nat.toUInt8
+    for view in #[packed bytes, writer bytes] do
+      expect image 109 #[view] (.error .notConstructor)
 
 end CompilatrixTests.Ixby.Native

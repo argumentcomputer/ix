@@ -345,6 +345,7 @@
   "Compilatrix.Ixby.Runtime.Native.Machine",
   "Compilatrix.Ixby.Runtime.Native.NatLoops",
   "Compilatrix.Ixby.Runtime.Native.PackedArray",
+  "Compilatrix.Ixby.Runtime.Native.RowHash",
   "Compilatrix.Ixby.Runtime.Native.Scalars",
   "Compilatrix.Ixby.Runtime.Native.Sequence",
   "Compilatrix.Ixby.Runtime.Native.USize",
@@ -704,6 +705,7 @@
   "CompilatrixTests.Fences.IxbyFri",
   "CompilatrixTests.Fences.IxbyInline",
   "CompilatrixTests.Fences.IxbyNative",
+  "CompilatrixTests.Fences.IxbyRowHash",
   "CompilatrixTests.Fences.IxonV3",
   "CompilatrixTests.Fences.IxonV3Catalog",
   "CompilatrixTests.Fences.IxonV3Typing",
@@ -714,5 +716,5 @@
   "CompilatrixTests.Pipeline.Integration"],
  "baseline": "6beaf5d0: complete required CI before factoring",
  "axiom_sha256":
- "be93f60b41f4c3ad636481f18a3c3b1d7358b12dc674ed6b7a622902742ceb45",
- "axiom_count": 2771}
+ "aceee9c8a369ce159e8fb7d3774a513ceb37e29c8b1e28ad8111bfd578c8f331",
+ "axiom_count": 2781}

@@ -532,6 +532,13 @@ source function with the unchanged pinned verifier; checked source selection,
 all runtime certificates, and the inliner's separate image proof remain in
 place. General LCNF source/image refinement and full native proving remain open.
 
+[Certified row hashing](ixby-row-hash.md) reduces Stage2–CSLib further to
+227,780,761 transitions (10.41%) and the singleton smoke fixture to
+458,512,092 (8.34%), with identical outputs. The pinned MMCS row hash is bound
+to a builder-based runtime body whose complete-body certificate hashes exactly
+the source preimage; source equality, inlining, and all earlier helper
+certificates remain in place.
+
 The [compiler entry-point table](compiler-design.md#compiler-entry-points)
 identifies the checked APIs. `Pipeline.compileValidated` supplies source
 certification; the broader `Pipeline.compile` does not.

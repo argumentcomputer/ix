@@ -92,6 +92,23 @@ def resourceCases (image : Image) : IO Nat := do
     (.error (.limit .byteArrayBytes))
   run { locals := 2, byteArrayBytes := 0 } 51 #[packed] (.error (.limit .locals))
   run { locals := 3, byteArrayBytes := 0 } 51 #[packed] (.ok (.scalar (.bytes #[1, 2, 3])))
+  let fieldRow : Array Value := #[natural 7, natural (goldilocksModulus - 1)]
+  let rowBytes : Array UInt8 := #[7, 0, 0, 0, 0, 0, 0, 0] ++
+    MultiStark.Verify.Codec.Wire.littleEndian 8 (goldilocksModulus - 1)
+  let rowDigest : Value := .ctor bytesId #[.scalar (.bytes (Ix.Ixby.Blake3.hash rowBytes)), natural 32]
+  let row : Value := .ctor arrayId #[.array fieldRow]
+  let loopArgs : Array Value := #[.array fieldRow, natural 0, natural 2, .byteBuilder #[]]
+  run { locals := 10, continuations := 0, natBits := 64, byteArrayBytes := 16 } 108 loopArgs
+    (.ok (.scalar (.bytes rowBytes)))
+  run { locals := 9, natBits := 64 } 108 loopArgs (.error (.limit .locals))
+  run { natBits := 63 } 108 loopArgs (.error (.limit .natBits))
+  run { natBits := 64, byteArrayBytes := 15 } 108 loopArgs (.error (.limit .byteArrayBytes))
+  run { locals := 10, continuations := 1, natBits := 64, byteArrayBytes := 32 } 109 #[row] (.ok rowDigest)
+  run { locals := 10, continuations := 0, natBits := 64 } 109 #[row] (.error (.limit .continuations))
+  run { locals := 9, continuations := 1, natBits := 64 } 109 #[row] (.error (.limit .locals))
+  run { natBits := 64, byteArrayBytes := 31 } 109 #[row] (.error (.limit .byteArrayBytes))
+  run {} 109 #[packed] (.error .notConstructor)
+  run {} 109 #[writer] (.error .notConstructor)
   IO.println s!"native resources: {← count.get} exact local, continuation, byte, scalar and fuel cases"
   return ← count.get
 

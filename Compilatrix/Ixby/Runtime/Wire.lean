@@ -1,11 +1,12 @@
 import Compilatrix.Ixby.Runtime.Array
 import Ix.MultiStark.Verify.Codec.Wire
 
-/-! Optional lowering of the pinned Stage2 wire helpers. These produce ordinary
-Ixby instructions and retain the source writer's admission checks. Like the
-typed frontend, this lowering currently has differential tests, not a refinement
-certificate. The byte comparison is specific to the source's `Array UInt8`
-instantiation; polymorphic array comparisons still compile from source. -/
+/-! Optional lowering of the pinned Stage2 wire helpers and the MMCS row hash.
+These produce ordinary Ixby instructions and retain the source writer's
+admission checks. Like the typed frontend, this lowering currently has
+differential tests, not a refinement certificate. The byte comparison is
+specific to the source's `Array UInt8` instantiation; polymorphic array
+comparisons still compile from source. -/
 
 namespace Compilatrix.Ixby.Runtime
 
@@ -48,7 +49,8 @@ def buildWire : BuildM Unit := do
       (`MultiStark.Verify.Codec.Wire.writeByte, 2),
       (`MultiStark.Verify.Codec.Wire.readField, 1),
       (`MultiStark.Verify.Codec.Wire.writeField, 2),
-      (`Array.instDecidableEqImpl._at_.MultiStark.Verify.Codec.Wire.canonicalize.spec_0, 2)] do
+      (`Array.instDecidableEqImpl._at_.MultiStark.Verify.Codec.Wire.canonicalize.spec_0, 2),
+      (`Ixby.Runtime.rowBytesLoop, 4), (`MultiStark.Verify.Mmcs.hashRow, 1)] do
     discard <| reserveFunction name arity
   let define (name : Name) (arity : Nat) (body : CodeM Unit) : BuildM Unit :=
     discard <| defineFunction name arity body
@@ -161,5 +163,27 @@ def buildWire : BuildM Unit := do
     let left ← call `Ixby.Runtime.toBytes [.local 0]
     let right ← call `Ixby.Runtime.toBytes [.local 1]
     ret (← primitive .bytesEq [left, right])
+  -- Row hashing writes each canonical field's eight little-endian bytes into
+  -- one immutable builder and freezes once per row before the hash primitive.
+  -- Erased `Fin` fields are Nat scalars, so packed and writer byte views are
+  -- ill-typed for a field row and trap like an unreachable branch.
+  define `Ixby.Runtime.rowBytesLoop 4 do
+    branch (← primitive .natLt [.local 1, .local 2])
+      (do
+        let value ← primitive .arrayGet [.local 0, .local 1]
+        let encoded ← primitive .fieldToBytes [← primitive .natToField [value]]
+        let builder ← primitive .byteBuilderAppend [.local 3, encoded]
+        let next ← primitive .natAdd [.local 1, rawNat 1]
+        tailCall `Ixby.Runtime.rowBytesLoop [.local 0, next, .local 2, builder])
+      (do ret (← primitive .byteBuilderFreeze [.local 3]))
+  define `MultiStark.Verify.Mmcs.hashRow 1 do
+    caseCtor (.local 0) #[
+      (`Ixby.Runtime.Bytes, 2, fun _ => trap),
+      (`Ixby.Runtime.Array, 1, fun fields => do
+        let size ← primitive .arrayLength [fields[0]!]
+        let builder ← primitive .byteBuilderEmpty []
+        let data ← call `Ixby.Runtime.rowBytesLoop [fields[0]!, rawNat 0, size, builder]
+        ret (← pack (← primitive .blake3 [data]) (rawNat 32))),
+      (`Ixby.Runtime.WriterBuffer, 1, fun _ => trap)]
 
 end Compilatrix.Ixby.Runtime

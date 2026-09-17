@@ -219,6 +219,37 @@ def Array_instDecidableEqImpl__at__MultiStark_Verify_Codec_Wire_canonicalize_spe
     ⟨4, .letOp (.primitive .bytesEq [.local 2, .local 3]) 3⟩,
     ⟨5, .ret (.local 4)⟩] }
 
+/-- `Ixby.Runtime.rowBytesLoop`, private function 108. -/
+def Ixby_Runtime_rowBytesLoop : Function := {
+  arity := 4
+  entry := 0
+  blocks := #[
+    ⟨4, .letOp (.primitive .natLt [.local 1, .local 2]) 1⟩,
+    ⟨5, .branch (.local 4) 2 3⟩,
+    ⟨5, .letOp (.primitive .arrayGet [.local 0, .local 1]) 4⟩,
+    ⟨5, .letOp (.primitive .byteBuilderFreeze [.local 3]) 9⟩,
+    ⟨6, .letOp (.primitive .natToField [.local 5]) 5⟩,
+    ⟨7, .letOp (.primitive .fieldToBytes [.local 6]) 6⟩,
+    ⟨8, .letOp (.primitive .byteBuilderAppend [.local 3, .local 7]) 7⟩,
+    ⟨9, .letOp (.primitive .natAdd [.local 1, .literal (.nat 1)]) 8⟩,
+    ⟨10, .tailCall 108 [.local 0, .local 9, .local 2, .local 8]⟩,
+    ⟨6, .ret (.local 5)⟩] }
+
+/-- `MultiStark.Verify.Mmcs.hashRow`, private function 109. -/
+def MultiStark_Verify_Mmcs_hashRow : Function := {
+  arity := 1
+  entry := 0
+  blocks := #[
+    ⟨1, .caseCtor (.local 0) [⟨0, 1⟩, ⟨1, 2⟩, ⟨2, 3⟩]⟩,
+    ⟨3, .caseCtor .erased []⟩,
+    ⟨2, .letOp (.primitive .arrayLength [.local 1]) 4⟩,
+    ⟨2, .caseCtor .erased []⟩,
+    ⟨3, .letOp (.primitive .byteBuilderEmpty []) 5⟩,
+    ⟨4, .letOp (.call 108 [.local 1, .literal (.nat 0), .local 2, .local 3]) 6⟩,
+    ⟨5, .letOp (.primitive .blake3 [.local 4]) 7⟩,
+    ⟨6, .letOp (.construct 0 [.local 5, .literal (.nat 32)]) 8⟩,
+    ⟨7, .ret (.local 6)⟩] }
+
 def wireEntries : Array Entry := #[
   ⟨98, `Ixby.Runtime.wireLittleLoop, Ixby_Runtime_wireLittleLoop⟩,
   ⟨99, `Ixby.Runtime.wireFromLoop, Ixby_Runtime_wireFromLoop⟩,
@@ -229,6 +260,8 @@ def wireEntries : Array Entry := #[
   ⟨104, `MultiStark.Verify.Codec.Wire.writeByte, MultiStark_Verify_Codec_Wire_writeByte⟩,
   ⟨105, `MultiStark.Verify.Codec.Wire.readField, MultiStark_Verify_Codec_Wire_readField⟩,
   ⟨106, `MultiStark.Verify.Codec.Wire.writeField, MultiStark_Verify_Codec_Wire_writeField⟩,
-  ⟨107, `Array.instDecidableEqImpl._at_.MultiStark.Verify.Codec.Wire.canonicalize.spec_0, Array_instDecidableEqImpl__at__MultiStark_Verify_Codec_Wire_canonicalize_spec_0⟩]
+  ⟨107, `Array.instDecidableEqImpl._at_.MultiStark.Verify.Codec.Wire.canonicalize.spec_0, Array_instDecidableEqImpl__at__MultiStark_Verify_Codec_Wire_canonicalize_spec_0⟩,
+  ⟨108, `Ixby.Runtime.rowBytesLoop, Ixby_Runtime_rowBytesLoop⟩,
+  ⟨109, `MultiStark.Verify.Mmcs.hashRow, MultiStark_Verify_Mmcs_hashRow⟩]
 
 end Compilatrix.Ixby.Runtime.Native.Code

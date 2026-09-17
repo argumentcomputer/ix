@@ -1,4 +1,5 @@
 import CompilatrixTests.Ixby.Native.Support
+import Ix.MultiStark.Verify.Mmcs.Basic
 
 namespace CompilatrixTests.Ixby.Native
 
@@ -47,6 +48,12 @@ def fuelCases (image : Image) : IO Nat := do
     check 58 #[.erased, array xs] (natural n) 4
     check 58 #[.erased, packed bytes] (natural n) 3
     check 51 #[array xs] (.scalar (.bytes bytes)) (8 * n + 9)
+    let fields := (Array.range n).map fun i => Goldilocks.reduce (i * 1000003 + 17)
+    let row := fields.map fun value => natural value.val
+    check 108 #[.array row, natural 0, natural n, .byteBuilder #[42]]
+      (.scalar (.bytes (#[42] ++ fields.flatMap fun value =>
+        MultiStark.Verify.Codec.Wire.littleEndian 8 value.val))) (8 * n + 5)
+    check 109 #[array row] (packed (MultiStark.Verify.Mmcs.hashRow fields).bytes) (8 * n + 13)
     check 51 #[packed bytes] (.scalar (.bytes bytes)) 3
     check 50 #[.array xs, natural 0, natural n, .byteBuilder #[42]]
       (.scalar (.bytes (#[42] ++ bytes))) (8 * n + 5)

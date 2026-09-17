@@ -100,6 +100,9 @@ append and source byte-limit rejection while preserving other state fields.
 [WireEncode](../Compilatrix/Ixby/Runtime/Native/WireEncode.lean) composes a writer's
 specified result with initialization and final freezing. Internal builders
 never cross a serialized boundary.
+[RowHash](../Compilatrix/Ixby/Runtime/Native/RowHash.lean) proves that the MMCS
+row hash serializes a native field row through one builder, freezes once, and
+hashes exactly the pinned source preimage; packed and writer views trap.
 
 The checker also binds list/replicate/pop, representation widening,
 little-endian, field-reader/writer, hash, and byte-equality bodies. These have
@@ -111,8 +114,8 @@ the native-body certificate, while its call target is bound.
 
 [Certificate](../Compilatrix/Ixby/Runtime/Native/Certificate.lean) checks all 97
 scalar, collection, and field helpers against complete templates.
-[WireCertificate](../Compilatrix/Ixby/Runtime/Native/WireCertificate.lean) adds ten
-wire helpers and constructor declarations. Image checking binds names and
+[WireCertificate](../Compilatrix/Ixby/Runtime/Native/WireCertificate.lean) adds twelve
+wire and row-hash helpers and constructor declarations. Image checking binds names and
 function slots. Equality covers arity, entry, every block/local/instruction/
 operand, and unreachable blocks. Acceptance retains propositional equality
 to the actual program; structural admission alone does not establish this.
@@ -156,25 +159,26 @@ byte/element iterations; the append formulas use nonempty `a` and `b`.
 | Packed append, empty left / empty right | 12 / 14 |
 | Little-endian builder loop of width `w` | `8*((w-1)/4) + 10` |
 | Little-endian decoding loop | `8*n + 4` |
+| Row serialization loop of `n` fields / complete row hash | `8*n + 5` / `8*n + 13` |
 | Public Nat log2 | `5*n.log2 + 5` |
 
 Shift-loop cost is 3 at zero count, 5 for zero input and positive count, and
 otherwise 7 plus the recursive cost at `(n/2, count-1)`. Power-loop cost is 3
 at exponent zero, 10 at one, and otherwise 10 for an even exponent or 11 for
 an odd exponent, plus the cost at half the exponent. Public wrappers add two.
-The [fuel suite](../CompilatrixTests/Ixby/Native/Fuel.lean) checks 501 instances
+The [fuel suite](../CompilatrixTests/Ixby/Native/Fuel.lean) checks 525 instances
 against both executors and exhaustion with one less step. Correctness theorems
 establish finite paths; this table is not a universal closed-form cost theorem
 for every helper. Native array/copy microsteps consume no guest fuel.
 
 ## Required validation and retained coverage
 
-`lake exe check-ixby-lean` runs 40,839 independent helper-oracle cases, 900
-bounds rejections, 107 caller cases, 90 resource cases, 501 fuel cases, and the
-retained 4,585 source comparisons. It rejects 2,258 body/layout/binding
-mutations, including 1,416 structurally admitted programs. Another 22,680
+`lake exe check-ixby-lean` runs 40,947 independent helper-oracle cases, 900
+bounds rejections, 109 caller cases, 100 resource cases, 525 fuel cases, and the
+retained 4,593 source comparisons. It rejects 2,325 body/layout/binding
+mutations, including 1,460 structurally admitted programs. Another 22,680
 array-read cases compare the previous complete helper body and both evaluators.
-The inlined source suite repeats all 4,585 source comparisons. Every current
+The inlined source suite repeats all 4,593 source comparisons. Every current
 image and Stage2 export obtains the current certificates.
 
 All 2,414 previous exact axiom assertions remain unchanged. Former boxed
@@ -191,5 +195,7 @@ corpus remains intact in [SourceRuntime](../CompilatrixTests/Ixby/SourceRuntime.
 roots using subsets of `propext`, `Classical.choice`, and `Quot.sound`.
 [IxbyArrayRead](../CompilatrixTests/Fences/IxbyArrayRead.lean) adds seven roots
 on the same basis, preserving the prior helper and inliner assertions.
+[IxbyRowHash](../CompilatrixTests/Fences/IxbyRowHash.lean) adds ten roots for the
+row-hash preimage, loop, complete helper, and trap contracts.
 The required proof aggregate, trust audit, binary gate, fresh artifact checks,
 and all eight serialized Stage2 executions include the new modules.
