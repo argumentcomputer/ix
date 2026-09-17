@@ -37,8 +37,10 @@ def fuelCases (image : Image) : IO Nat := do
     count.modify (· + 1)
   let arrayId ← checked (image.ctorId `Ixby.Runtime.Array)
   let bytesId ← checked (image.ctorId `Ixby.Runtime.Bytes)
+  let writerId ← checked (image.ctorId `Ixby.Runtime.WriterBuffer)
   let array (xs : Array Value) := Value.ctor arrayId #[.array xs]
   let packed (xs : Array UInt8) := Value.ctor bytesId #[.scalar (.bytes xs), natural xs.size]
+  let writer (xs : Array UInt8) := Value.ctor writerId #[.byteBuilder xs]
   for n in #[0, 1, 2, 3, 7, 8, 15, 31, 32, 33, 65, 257] do
     let bytes := (List.range n).toArray.map Nat.toUInt8
     let xs := bytes.map (fun b => word b.toUInt32)
@@ -53,13 +55,18 @@ def fuelCases (image : Image) : IO Nat := do
     for start in #[0, n / 2, n, n + 1] do
       let slice := xs.extract start n
       check 72 #[array xs, natural start, natural n] (array slice)
-        (if start < n then 22 * (n - start) + 20 else 13)
+        (if start < n then 18 * (n - start) + 20 else 13)
       check 72 #[packed bytes, natural start, natural n]
         (if start < n then packed (bytes.extract start n) else array #[])
         (if start < n then 16 else 12)
     if n > 0 then
-      check 62 #[.erased, array xs, natural (n - 1), .erased] xs[n - 1]! 11
-      check 62 #[.erased, packed bytes, natural (n - 1), .erased] xs[n - 1]! 11
+      check 62 #[.erased, array xs, natural (n - 1), .erased] xs[n - 1]! 7
+      check 62 #[.erased, packed bytes, natural (n - 1), .erased] xs[n - 1]! 7
+      check 62 #[.erased, writer bytes, natural (n - 1), .erased] xs[n - 1]! 9
+      for id in #[63, 64, 65] do
+        check id #[.erased, array xs, natural (n - 1), .erased] xs[n - 1]! 8
+        check id #[.erased, packed bytes, natural (n - 1), .erased] xs[n - 1]! 8
+        check id #[.erased, writer bytes, natural (n - 1), .erased] xs[n - 1]! 10
       check 69 #[.erased, array xs, natural (n - 1), word 37] (array (xs.set! (n - 1) (word 37))) 12
     check 69 #[.erased, array xs, natural n, word 37] (array xs) 9
     check 68 #[.erased, array xs, word 37] (array (xs.push (word 37))) 5
@@ -67,7 +74,7 @@ def fuelCases (image : Image) : IO Nat := do
       let tailBytes := (List.range m).toArray.map (fun i => (i + 100).toUInt8)
       let tailValues := tailBytes.map (fun b => word b.toUInt32)
       check 74 #[array xs, array tailValues] (array (xs ++ tailValues))
-        (if n == 0 then 14 else if m == 0 then 16 else 22 * m + 24)
+        (if n == 0 then 14 else if m == 0 then 16 else 18 * m + 24)
       check 74 #[packed bytes, packed tailBytes] (packed (bytes ++ tailBytes))
         (if n == 0 then 12 else if m == 0 then 14 else 25)
   for n in #[0, 1, 2, 3, 7, 256, 2 ^ 64, 2 ^ 256] do

@@ -25,31 +25,40 @@ variable {program : Program} (certificate : Certificate program) (limits : Limit
 
 include certificate
 
+/-- Packed reads need nine locals and no continuation slot. -/
+theorem Certificate.packedGet_withoutStack (room : 9 ≤ limits.locals) (typeValue proofValue : Value)
+    (bytes : Array UInt8) (bound : bytes.size < 2 ^ 32) (capacity : bytes.size ≤ limits.byteArrayBytes)
+    (index : Nat) (inside : index < bytes.size) (sizeValid : NatValid limits bytes.size)
+    (indexValid : NatValid limits index) (continuation : Array Continuation) :
+    Reaches limits program (frameState 62 0 #[typeValue, packedValue bytes, natural index, proofValue] continuation)
+      (returned (byteWord bytes[index]) continuation) := by
+  have code := (certificate.function 62).code
+  change program.getFunction 62 = .ok Code.Array_getInternal at code
+  have compare := eval_natLt limits index bytes.size indexValid sizeValid
+  have converted := eval_natToWord32 limits index indexValid
+  have getEval := eval_bytesGet_nat limits bytes index capacity (by omega) inside
+  simp only [word, byteWord] at getEval
+  have localRoom : ∀ k, k ≤ 9 → ¬limits.locals < k := by omega
+  apply reaches_of_chunk (fuel := 6) (count := 0)
+  iterate 6
+    rw [runChunk]
+    simp [step, stepEval, Frame.check, code, Code.Array_getInternal,
+      frameState, returned, certificate.bytesCtor, selectCase, packedValue, bytesId,
+      Frame.read, Frame.readOperands, Frame.transfer, evalOp, getEval,
+      converted, compare, natural, inside, localRoom,
+      bind, Except.bind, pure, Except.pure]
+  rfl
+
+/-- Compatibility contract: the earlier premises remain sufficient. -/
 theorem Certificate.packedGet_returns (room : 10 ≤ limits.locals) (typeValue proofValue : Value)
     (bytes : Array UInt8) (bound : bytes.size < 2 ^ 32) (capacity : bytes.size ≤ limits.byteArrayBytes)
     (index : Nat) (inside : index < bytes.size) (sizeValid : NatValid limits bytes.size)
     (indexValid : NatValid limits index) (continuation : Array Continuation)
     (stack : continuation.size < limits.continuations) :
     Reaches limits program (frameState 62 0 #[typeValue, packedValue bytes, natural index, proofValue] continuation)
-      (returned (byteWord bytes[index]) continuation) := by
-  have code := (certificate.function 62).code
-  have sizeCode := (certificate.function 58).code
-  change program.getFunction 62 = .ok Code.Array_getInternal at code
-  change program.getFunction 58 = .ok Code.Array_size at sizeCode
-  have compare := eval_natLt limits index bytes.size indexValid sizeValid
-  have converted := eval_natToWord32 limits index indexValid
-  have getEval := eval_bytesGet_nat limits bytes index capacity (by omega) inside
-  simp only [word, byteWord] at getEval
-  have localRoom : ∀ k, k ≤ 10 → ¬limits.locals < k := by omega
-  apply reaches_of_chunk (fuel := 10) (count := 0)
-  iterate 10
-    rw [runChunk]
-    simp [step, stepEval, Frame.check, code, sizeCode, Code.Array_getInternal, Code.Array_size,
-      frameState, returned, certificate.bytesCtor, selectCase, packedValue, bytesId,
-      State.push, enter, Frame.read, Frame.readOperands, Frame.transfer, evalOp, getEval,
-      converted, compare, natural, inside, localRoom, Nat.not_le.mpr stack,
-      bind, Except.bind, pure, Except.pure]
-  rfl
+      (returned (byteWord bytes[index]) continuation) :=
+  certificate.packedGet_withoutStack limits (by omega) typeValue proofValue bytes bound capacity
+    index inside sizeValid indexValid continuation
 
 theorem Certificate.packedExtractRed_returns (room : 13 ≤ limits.locals) (natCapacity : 32 ≤ limits.natBits)
     (bytes : Array UInt8) (bound : bytes.size < 2 ^ 32) (capacity : bytes.size ≤ limits.byteArrayBytes)

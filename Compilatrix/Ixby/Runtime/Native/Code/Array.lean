@@ -156,21 +156,27 @@ def Array_getInternal : Function := {
   arity := 4
   entry := 0
   blocks := #[
-    ⟨4, .letOp (.call 58 [.erased, .local 1]) 1⟩,
-    ⟨5, .letOp (.primitive .natLt [.local 2, .local 4]) 2⟩,
-    ⟨6, .branch (.local 5) 3 4⟩,
-    ⟨6, .caseCtor (.local 1) [⟨0, 5⟩, ⟨1, 6⟩, ⟨2, 7⟩]⟩,
-    ⟨6, .caseCtor (.erased) []⟩,
-    ⟨8, .letOp (.primitive .natToWord32 [.local 2]) 8⟩,
-    ⟨7, .letOp (.primitive .arrayGet [.local 6, .local 2]) 10⟩,
-    ⟨7, .letOp (.primitive .byteBuilderFreeze [.local 6]) 11⟩,
-    ⟨9, .letOp (.primitive .bytesGet [.local 6, .local 8]) 9⟩,
-    ⟨10, .ret (.local 9)⟩,
+    ⟨4, .caseCtor (.local 1) [⟨0, 1⟩, ⟨1, 2⟩, ⟨2, 3⟩]⟩,
+    ⟨6, .letOp (.primitive .natLt [.local 2, .local 5]) 4⟩,
+    ⟨5, .letOp (.primitive .arrayLength [.local 4]) 9⟩,
+    ⟨5, .letOp (.primitive .byteBuilderLength [.local 4]) 14⟩,
+    ⟨7, .branch (.local 6) 5 6⟩,
+    ⟨7, .letOp (.primitive .natToWord32 [.local 2]) 7⟩,
+    ⟨7, .caseCtor (.erased) []⟩,
+    ⟨8, .letOp (.primitive .bytesGet [.local 4, .local 7]) 8⟩,
+    ⟨9, .ret (.local 8)⟩,
+    ⟨6, .letOp (.primitive .natLt [.local 2, .local 5]) 10⟩,
+    ⟨7, .branch (.local 6) 11 12⟩,
+    ⟨7, .letOp (.primitive .arrayGet [.local 4, .local 2]) 13⟩,
+    ⟨7, .caseCtor (.erased) []⟩,
     ⟨8, .ret (.local 7)⟩,
-    ⟨8, .letOp (.primitive .byteBuilderLength [.local 6]) 12⟩,
-    ⟨9, .letOp (.primitive .natToWord32 [.local 2]) 13⟩,
-    ⟨10, .letOp (.primitive .bytesGet [.local 7, .local 9]) 14⟩,
-    ⟨11, .ret (.local 10)⟩] }
+    ⟨6, .letOp (.primitive .natLt [.local 2, .local 5]) 15⟩,
+    ⟨7, .branch (.local 6) 16 17⟩,
+    ⟨7, .letOp (.primitive .byteBuilderFreeze [.local 4]) 18⟩,
+    ⟨7, .caseCtor (.erased) []⟩,
+    ⟨8, .letOp (.primitive .natToWord32 [.local 2]) 19⟩,
+    ⟨9, .letOp (.primitive .bytesGet [.local 7, .local 8]) 20⟩,
+    ⟨10, .ret (.local 9)⟩] }
 
 /-- `Array.getInternalBorrowed`, private function 63. -/
 def Array_getInternalBorrowed : Function := {

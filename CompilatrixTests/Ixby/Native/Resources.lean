@@ -61,8 +61,26 @@ def resourceCases (image : Image) : IO Nat := do
   run { natBits := 1 } 58 #[.erased, array] (.error (.limit .natBits))
   run { natBits := 2 } 58 #[.erased, array] (.ok (natural 2))
   run { continuations := 0 } 62 #[.erased, array, natural 0, .erased]
-    (.error (.limit .continuations))
+    (.ok (natural 7))
   run { continuations := 1 } 62 #[.erased, array, natural 1, .erased] (.ok (natural 9))
+  for (input, result, locals, fuel) in #[(array, natural 7, 8, 7),
+      (packed, word 1, 9, 7), (writer, word 1, 10, 9)] do
+    run { locals, continuations := 0 } 62 #[.erased, input, natural 0, .erased] (.ok result) fuel
+    run { locals := locals - 1, continuations := 0 } 62 #[.erased, input, natural 0, .erased]
+      (.error (.limit .locals))
+    for index in #[3, 2 ^ 32, 2 ^ 32 + 1, 2 ^ 256] do
+      run { locals := 7, continuations := 0 } 62 #[.erased, input, natural index, .erased]
+        (.error .notConstructor)
+  run { natBits := 1 } 62 #[.erased, array, natural 0, .erased] (.error (.limit .natBits))
+  run { natBits := 2 } 62 #[.erased, array, natural 0, .erased] (.error (.limit .natBits))
+  run { byteArrayBytes := 2 } 62 #[.erased, writer, word 0, .erased]
+    (.error (.limit .byteArrayBytes))
+  run { natBits := 1 } 62 #[.erased, writer, word 0, .erased] (.error (.limit .natBits))
+  run { byteArrayBytes := 0 } 62 #[.erased, packed, natural 3, .erased] (.error .notConstructor)
+  run { byteArrayBytes := 0 } 62 #[.erased, packed, natural 0, .erased]
+    (.error (.limit .byteArrayBytes))
+  run { byteArrayBytes := 0 } 62 #[.erased, writer, natural 3, .erased]
+    (.error (.limit .byteArrayBytes))
   run {} 69 #[.erased, array, natural (2 ^ 256), natural 1] (.ok array)
   run {} 62 #[.erased, array, natural (2 ^ 256), .erased] (.error .notConstructor)
   run { byteArrayBytes := 2 } 51 #[writer] (.error (.limit .byteArrayBytes))

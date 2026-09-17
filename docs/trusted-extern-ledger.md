@@ -137,6 +137,14 @@ explicit fuel/continuation reflection are kernel proofs. Selected and decoded
 images retain all 107 runtime/wire body certificates. No upstream reference,
 native interface, or source-refinement assumption changes.
 
+The [single-dispatch array-read implementation](ixby-array-read.md) reproves
+the existing native/packed read contracts against the complete new helper
+body. Seven additional ordinary-logical fences cover lower resource premises,
+writer reads and rejection ordering; all 2,760 prior assertions remain exact.
+Only function 62 changes in the fresh Stage2 and CSLib images. The upstream
+reference, all other helper certificates and the inliner proof scope remain
+unchanged; the typed source-refinement boundary remains open.
+
 ## Active native interface: BLAKE3 Rust
 
 | Field | Ledger value |

@@ -14,6 +14,7 @@ import CompilatrixTests.Fences.IxIR1
 import CompilatrixTests.Fences.IxIR2
 import CompilatrixTests.Fences.Ixby
 import CompilatrixTests.Fences.IxbyNative
+import CompilatrixTests.Fences.IxbyArrayRead
 import CompilatrixTests.Fences.IxbyInline
 import CompilatrixTests.Fences.Ixon
 import CompilatrixTests.Fences.IxonV3

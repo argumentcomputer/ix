@@ -9,6 +9,7 @@ import Compilatrix.Ixby.Runtime.Native.ArrayAppend
 import Compilatrix.Ixby.Runtime.Native.ArrayExtract
 import Compilatrix.Ixby.Runtime.Native.ByteLoops
 import Compilatrix.Ixby.Runtime.Native.PackedArray
+import Compilatrix.Ixby.Runtime.Native.ArrayRead
 import Compilatrix.Ixby.Runtime.Native.WireWrite
 import Compilatrix.Ixby.Runtime.Native.WireEncode
 

@@ -2,7 +2,7 @@
 
 The typed frontend emits a complete format-1, semantics-2 [Ixby binary](ixby-binary.md).
 The retained [Stage2 artifact](../fixtures/ixby-stage2/stage2.ixby) includes both
-fixed keys and the verifier code: 991,043 bytes, 672 functions, 5,816 blocks,
+fixed keys and the verifier code: 991,082 bytes, 672 functions, 5,822 blocks,
 140 constructor layouts, and entry function 671. A separate `ixby-exec`
 process loads the binary without a compiler environment or Lean source.
 Its chunked executor is kernel-proved equivalent to the pinned reference,
@@ -39,6 +39,8 @@ Packed byte views retain scalar Bytes and length. Invalid `set!` keeps the
 original array, checked access fails, and default access preserves its
 fallback. Guards use full Nat indices. Packed updates can widen to generic
 arrays while preserving earlier values.
+[Array reads dispatch once](ixby-array-read.md), saving four transitions per
+successful read while retaining the certified helper contracts and bounds.
 
 Byte serialization accumulates immutable chunks and freezes once. Wire
 encoding retains an internal writer buffer across writes, checks the source
@@ -57,16 +59,18 @@ replaces the retired semantic modes.
 The Stage2 adapter embeds 925,789 original key bytes, entrypoints 755/243,
 and fixed source configuration. Inputs are public claim Bytes and private
 native proof Bytes. Success returns the exact 34-byte claim; rejection returns
-erased. Its valid execution takes **593,867,713 logical transitions** after
-inlining, versus 711,293,203 in the runtime revision 2 baseline.
+erased. Its valid execution takes **544,834,777 logical transitions** after
+inlining and single-dispatch reads, versus 711,293,203 in the runtime revision 2 baseline.
 All eight cases remain separate required Nix checks: valid, changed claim,
 empty/truncated/malformed proof, trailing public/proof bytes, and wrong claim
 kind. Step exhaustion fails the gate; the image permits 16 billion transitions.
 
 The independently keyed CSLib image is recompiled and compared with its
-retained expected output. It takes **299,248,427 logical transitions** after
-inlining, versus 360,337,913 in runtime revision 2 and 2,033,412,182 in revision 1.
-The [inlining record](ixby-inline.md) documents the new certificate and measurements.
+retained expected output. It takes **276,667,563 logical transitions** after
+inlining and single-dispatch reads, versus 360,337,913 in runtime revision 2
+and 2,033,412,182 in revision 1. The [array-read record](ixby-array-read.md)
+documents the latest contracts and measurements, following the
+[inlining record](ixby-inline.md).
 The earlier [integration record](ixby-runtime-v2.md)
 contains artifacts, commitments, the helper census, measurement conditions,
 and native fixture verification. A complete CSLib native proof has not been

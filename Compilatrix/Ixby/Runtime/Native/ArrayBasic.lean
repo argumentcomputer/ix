@@ -65,6 +65,31 @@ theorem Certificate.arrayPush_returns (room : 6 ≤ limits.locals) (typeValue : 
       bind, Except.bind, pure, Except.pure]
   rfl
 
+/-- A read needs no continuation slot, even when the caller's stack is full. -/
+theorem Certificate.arrayGet_withoutStack (room : 8 ≤ limits.locals) (typeValue proofValue : Value)
+    (values : Array Value) (index : Nat) (value : Value) (bound : values.size < 2 ^ 32)
+    (sizeValid : NatValid limits values.size) (indexValid : NatValid limits index)
+    (inside : index < values.size) (found : values[index]? = some value)
+    (result : ResultValid limits value) (continuation : Array Continuation) :
+    Reaches limits program (frameState 62 0 #[typeValue, arrayValue values, natural index, proofValue] continuation)
+      (returned value continuation) := by
+  have code := (certificate.function 62).code
+  change program.getFunction 62 = .ok Code.Array_getInternal at code
+  have sizeEval := eval_arrayLength limits values bound sizeValid
+  have compare := eval_natLt limits index values.size indexValid sizeValid
+  have getEval := eval_arrayGet limits values index value bound indexValid found result
+  simp only [natural] at getEval
+  have localRoom : ∀ k, k ≤ 8 → ¬limits.locals < k := by omega
+  apply reaches_of_chunk (fuel := 6) (count := 0)
+  iterate 6
+    rw [runChunk]
+    simp [step, stepEval, Frame.check, code, Code.Array_getInternal,
+      frameState, returned, certificate.bytesCtor, certificate.arrayCtor, selectCase, arrayValue, arrayId,
+      Frame.read, Frame.readOperands, Frame.transfer, evalOp, sizeEval, getEval,
+      compare, natural, inside, localRoom, bind, Except.bind, pure, Except.pure]
+  rfl
+
+/-- Compatibility contract: the earlier premises remain sufficient. -/
 theorem Certificate.arrayGet_returns (room : 8 ≤ limits.locals) (typeValue proofValue : Value)
     (values : Array Value) (index : Nat) (value : Value) (bound : values.size < 2 ^ 32)
     (sizeValid : NatValid limits values.size) (indexValid : NatValid limits index)
@@ -72,24 +97,9 @@ theorem Certificate.arrayGet_returns (room : 8 ≤ limits.locals) (typeValue pro
     (result : ResultValid limits value) (continuation : Array Continuation)
     (stack : continuation.size < limits.continuations) :
     Reaches limits program (frameState 62 0 #[typeValue, arrayValue values, natural index, proofValue] continuation)
-      (returned value continuation) := by
-  have code := (certificate.function 62).code
-  have sizeCode := (certificate.function 58).code
-  change program.getFunction 62 = .ok Code.Array_getInternal at code
-  change program.getFunction 58 = .ok Code.Array_size at sizeCode
-  have sizeEval := eval_arrayLength limits values bound sizeValid
-  have compare := eval_natLt limits index values.size indexValid sizeValid
-  have getEval := eval_arrayGet limits values index value bound indexValid found result
-  simp only [natural] at getEval
-  have localRoom : ∀ k, k ≤ 8 → ¬limits.locals < k := by omega
-  apply reaches_of_chunk (fuel := 10) (count := 0)
-  iterate 10
-    rw [runChunk]
-    simp [step, stepEval, Frame.check, code, sizeCode, Code.Array_getInternal, Code.Array_size,
-      frameState, returned, certificate.bytesCtor, certificate.arrayCtor, selectCase, arrayValue, arrayId,
-      State.push, enter, Frame.read, Frame.readOperands, Frame.transfer, evalOp, sizeEval, getEval,
-      compare, natural, inside, localRoom, Nat.not_le.mpr stack, bind, Except.bind, pure, Except.pure]
-  rfl
+      (returned value continuation) :=
+  certificate.arrayGet_withoutStack limits room typeValue proofValue values index value bound
+    sizeValid indexValid inside found result continuation
 
 theorem Certificate.arraySet_returns (room : 9 ≤ limits.locals) (typeValue : Value)
     (values : Array Value) (index : Nat) (value : Value) (bound : values.size < 2 ^ 32)

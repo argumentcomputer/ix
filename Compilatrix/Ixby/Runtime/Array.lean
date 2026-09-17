@@ -54,12 +54,22 @@ def buildArrays : BuildM Unit := do
   for name in #[`Array.emptyWithCapacity, `Array.mkEmpty] do
     define name 2 do ret (← array (← primitive .arrayEmpty []))
   define `Array.getInternal 4 do
-    let size ← call `Array.size [.erased, .local 1]
-    branch (← primitive .natLt [.local 2, size])
-      (onArray (.local 1)
-        (fun fields => do ret (← primitive .bytesGet [fields[0]!, ← lowWord (.local 2)]))
-        (fun fields => do ret (← primitive .arrayGet [fields[0]!, .local 2])))
-      trap
+    -- Dispatch once, retaining the full Nat guard before byte addressing.
+    -- Writer buffers are frozen only after the length and bounds checks.
+    caseCtor (.local 1) #[
+      (`Ixby.Runtime.Bytes, 2, fun fields => do
+        branch (← primitive .natLt [.local 2, fields[1]!])
+          (do ret (← primitive .bytesGet [fields[0]!, ← lowWord (.local 2)])) trap),
+      (`Ixby.Runtime.Array, 1, fun fields => do
+        let size ← primitive .arrayLength [fields[0]!]
+        branch (← primitive .natLt [.local 2, size])
+          (do ret (← primitive .arrayGet [fields[0]!, .local 2])) trap),
+      (`Ixby.Runtime.WriterBuffer, 1, fun fields => do
+        let size ← primitive .byteBuilderLength [fields[0]!]
+        branch (← primitive .natLt [.local 2, size])
+          (do
+            let data ← primitive .byteBuilderFreeze [fields[0]!]
+            ret (← primitive .bytesGet [data, ← lowWord (.local 2)])) trap)]
   for name in #[`Array.getInternalBorrowed, `Array.uget, `Array.ugetBorrowed] do
     define name 4 (tailCall `Array.getInternal [.erased, .local 1, .local 2, .erased])
   for name in #[`Array.get!Internal, `Array.get!InternalBorrowed] do

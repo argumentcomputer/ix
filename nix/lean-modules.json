@@ -829,6 +829,7 @@
     "CompilatrixTests.Ixby.Native.ScalarCases",
     "CompilatrixTests.Ixby.Native.WordCases",
     "CompilatrixTests.Ixby.Native.ArrayCases",
+    "CompilatrixTests.Ixby.Native.ArrayReadCases",
     "CompilatrixTests.Ixby.Native.WireCases",
     "CompilatrixTests.Ixby.Native.Resources",
     "CompilatrixTests.Ixby.Native.Fuel"]},
@@ -839,6 +840,9 @@
   {"path": "CompilatrixTests/Ixby/Native/Certificates.lean",
    "imports":
    ["CompilatrixTests.Ixby.Native.Support", "Compilatrix.Ixby.Binary"]},
+  "CompilatrixTests.Ixby.Native.ArrayReadCases":
+  {"path": "CompilatrixTests/Ixby/Native/ArrayReadCases.lean",
+   "imports": ["CompilatrixTests.Ixby.Native.Support"]},
   "CompilatrixTests.Ixby.Native.ArrayCases":
   {"path": "CompilatrixTests/Ixby/Native/ArrayCases.lean",
    "imports": ["CompilatrixTests.Ixby.Native.Support"]},
@@ -1060,6 +1064,11 @@
   "CompilatrixTests.Fences.IxbyInline":
   {"path": "CompilatrixTests/Fences/IxbyInline.lean",
    "imports": ["Compilatrix.Ixby.Inline.ImageSound"]},
+  "CompilatrixTests.Fences.IxbyArrayRead":
+  {"path": "CompilatrixTests/Fences/IxbyArrayRead.lean",
+   "imports":
+   ["Compilatrix.Ixby.Runtime.Native.ArrayBasic",
+    "Compilatrix.Ixby.Runtime.Native.ArrayRead"]},
   "CompilatrixTests.Fences.Ixby":
   {"path": "CompilatrixTests/Fences/Ixby.lean",
    "imports":
@@ -1313,6 +1322,7 @@
     "CompilatrixTests.Fences.IxIR2",
     "CompilatrixTests.Fences.Ixby",
     "CompilatrixTests.Fences.IxbyNative",
+    "CompilatrixTests.Fences.IxbyArrayRead",
     "CompilatrixTests.Fences.IxbyInline",
     "CompilatrixTests.Fences.Ixon",
     "CompilatrixTests.Fences.IxonV3",
@@ -3095,6 +3105,9 @@
    "imports":
    ["Compilatrix.Ixby.Runtime.Native.ByteWords",
     "Compilatrix.Ixby.Runtime.Native.Sequence"]},
+  "Compilatrix.Ixby.Runtime.Native.ArrayRead":
+  {"path": "Compilatrix/Ixby/Runtime/Native/ArrayRead.lean",
+   "imports": ["Compilatrix.Ixby.Runtime.Native.PackedArray"]},
   "Compilatrix.Ixby.Runtime.Native.ArrayLoops":
   {"path": "Compilatrix/Ixby/Runtime/Native/ArrayLoops.lean",
    "imports":
@@ -3128,6 +3141,7 @@
     "Compilatrix.Ixby.Runtime.Native.ArrayExtract",
     "Compilatrix.Ixby.Runtime.Native.ByteLoops",
     "Compilatrix.Ixby.Runtime.Native.PackedArray",
+    "Compilatrix.Ixby.Runtime.Native.ArrayRead",
     "Compilatrix.Ixby.Runtime.Native.WireWrite",
     "Compilatrix.Ixby.Runtime.Native.WireEncode"]},
   "Compilatrix.Ixby.Runtime.NatSub":

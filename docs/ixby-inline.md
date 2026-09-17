@@ -7,6 +7,10 @@ logical transitions (16.95%)**, from 360,337,913 to **299,248,427**, with identi
 smaller. These are logical execution counts, not native proving or wall-time
 speedup claims.
 
+These measurements describe the inlining change at revision `1eaa245`.
+The subsequent [single-dispatch array-read change](ixby-array-read.md) retains
+these inlining certificates and further reduces the current workload counts.
+
 ## Checked transformation
 
 [`Inline.optimize`](../Compilatrix/Ixby/Inline/Optimize.lean) proposes a

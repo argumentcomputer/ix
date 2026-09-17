@@ -63,6 +63,9 @@ does not aggregate them. After changing imports or Lake roots, run
 The focused Ixby optimizer gate is `lake exe check-ixby-inline`; it also runs
 inside `check-ixby-lean` and the required `ixby-lean` Nix check. Its kernel
 contracts and exact axiom fences are included in `CompilatrixTests.Proofs`.
+The [single-dispatch array-read checks](ixby-array-read.md) run through
+`check-ixby-lean`, including previous-body comparisons and exact resource costs;
+their strengthened contracts are in the same required proof aggregate.
 
 Compiler-comparison and measurement runners are built separately with
 `lake -d benchmarks/comparisons build`. Their [optional environment and commands](../benchmarks/comparisons/README.md)

@@ -2,6 +2,7 @@ import CompilatrixTests.Ixby.Native.Certificates
 import CompilatrixTests.Ixby.Native.ScalarCases
 import CompilatrixTests.Ixby.Native.WordCases
 import CompilatrixTests.Ixby.Native.ArrayCases
+import CompilatrixTests.Ixby.Native.ArrayReadCases
 import CompilatrixTests.Ixby.Native.WireCases
 import CompilatrixTests.Ixby.Native.Resources
 import CompilatrixTests.Ixby.Native.Fuel
@@ -52,6 +53,7 @@ def run : IO Unit := do
   discard <| callers image (← cases.get)
   discard <| resourceCases image
   discard <| fuelCases image
+  arrayReadCases image
   discard <| SourceRuntime.run certify
 
 end CompilatrixTests.Ixby.Native

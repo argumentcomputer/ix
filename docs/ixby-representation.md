@@ -74,6 +74,10 @@ size, empty, lookup, default lookup, push, `set!`, and `uset` paths. Guards use
 full-width Nat indices. Invalid `set!` returns the original array without
 inspecting its replacement; checked lookup and `uset` fail; default lookup
 returns its fallback. Length stays below `2^32`, independently of operand limits.
+The [single-dispatch read](ixby-array-read.md) retains these contracts, uses
+no spare continuation slot, and lowers packed reads to nine locals.
+[ArrayRead](../Compilatrix/Ixby/Runtime/Native/ArrayRead.lean) adds writer reads,
+full-Nat rejection paths, and length-before-index validation contracts.
 
 [ArrayLoops](../Compilatrix/Ixby/Runtime/Native/ArrayLoops.lean),
 [ArrayAppend](../Compilatrix/Ixby/Runtime/Native/ArrayAppend.lean), and
@@ -139,13 +143,14 @@ byte/element iterations; the append formulas use nonempty `a` and `b`.
 | Weighted `toWord` / `fromWordLoop` | 5 |
 | Direct unary/binary scalar helper | 3 |
 | Native / packed array size | 4 / 3 |
-| Native push / valid get / valid set | 5 / 11 / 12 |
+| Native push / valid get / valid set | 5 / 7 / 12 |
+| Packed / writer valid get | 7 / 9 |
 | Invalid native `set!` | 9 |
 | Native `toBytes` / internal byte loop | `8*n + 9` / `8*n + 5` |
-| Native nonempty extract | `22*n + 20` |
+| Native nonempty extract | `18*n + 20` |
 | Native empty/reversed extract | 13 |
 | Packed nonempty / empty extract | 16 / 12 |
-| Native append, both nonempty | `22*b.size + 24` |
+| Native append, both nonempty | `18*b.size + 24` |
 | Native append, empty left / empty right | 14 / 16 |
 | Packed append, both nonempty | 25 |
 | Packed append, empty left / empty right | 12 / 14 |
@@ -157,7 +162,7 @@ Shift-loop cost is 3 at zero count, 5 for zero input and positive count, and
 otherwise 7 plus the recursive cost at `(n/2, count-1)`. Power-loop cost is 3
 at exponent zero, 10 at one, and otherwise 10 for an even exponent or 11 for
 an odd exponent, plus the cost at half the exponent. Public wrappers add two.
-The [fuel suite](../CompilatrixTests/Ixby/Native/Fuel.lean) checks 391 instances
+The [fuel suite](../CompilatrixTests/Ixby/Native/Fuel.lean) checks 501 instances
 against both executors and exhaustion with one less step. Correctness theorems
 establish finite paths; this table is not a universal closed-form cost theorem
 for every helper. Native array/copy microsteps consume no guest fuel.
@@ -165,9 +170,11 @@ for every helper. Native array/copy microsteps consume no guest fuel.
 ## Required validation and retained coverage
 
 `lake exe check-ixby-lean` runs 40,839 independent helper-oracle cases, 900
-bounds rejections, 107 caller cases, 65 resource cases, 391 fuel cases, and the
-retained 4,585 source comparisons. It rejects 2,240 body/layout/binding
-mutations, including 1,404 structurally admitted programs. Every compared
+bounds rejections, 107 caller cases, 90 resource cases, 501 fuel cases, and the
+retained 4,585 source comparisons. It rejects 2,258 body/layout/binding
+mutations, including 1,416 structurally admitted programs. Another 22,680
+array-read cases compare the previous complete helper body and both evaluators.
+The inlined source suite repeats all 4,585 source comparisons. Every current
 image and Stage2 export obtains the current certificates.
 
 All 2,414 previous exact axiom assertions remain unchanged. Former boxed
@@ -182,5 +189,7 @@ corpus remains intact in [SourceRuntime](../CompilatrixTests/Ixby/SourceRuntime.
 
 [IxbyNative](../CompilatrixTests/Fences/IxbyNative.lean) adds 235 exact theorem
 roots using subsets of `propext`, `Classical.choice`, and `Quot.sound`.
+[IxbyArrayRead](../CompilatrixTests/Fences/IxbyArrayRead.lean) adds seven roots
+on the same basis, preserving the prior helper and inliner assertions.
 The required proof aggregate, trust audit, binary gate, fresh artifact checks,
 and all eight serialized Stage2 executions include the new modules.

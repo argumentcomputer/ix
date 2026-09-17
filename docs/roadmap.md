@@ -520,6 +520,11 @@ CSLib run to 299,248,427 transitions, 16.95% below the runtime revision 2
 baseline. Complete-image certificates preserve successful results and account
 explicitly for eliminated fuel and continuation overhead.
 
+[Single-dispatch array reads](ixby-array-read.md) reduce that run to
+276,667,563 transitions, another 7.55%, with identical output. The updated
+complete-body certificate retains the original helper contracts and adds
+kernel proofs for reduced stack requirements, writer reads and error ordering.
+
 The [compiler entry-point table](compiler-design.md#compiler-entry-points)
 identifies the checked APIs. `Pipeline.compileValidated` supplies source
 certification; the broader `Pipeline.compile` does not.
