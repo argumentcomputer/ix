@@ -379,22 +379,48 @@ impl AiurSystem {
         let range = ranges[circuit_idx].clone();
         #[cfg(feature = "cuda")]
         if _generated {
-          if let CircuitType::Function { idx } = circuit_type {
-            let (start, end) = index.queries(circuit_idx, &range);
-            if let Some(prepared) = self.trace_provider.prepare(
-              self.toplevel(),
-              idx,
-              record,
-              io_buffer,
-              &slot_arg_widths,
-              start,
-              end,
-              range.len(),
-            ) {
-              return prepared;
-            }
+          match circuit_type {
+            CircuitType::Function { idx } => {
+              let (start, end) = index.queries(circuit_idx, &range);
+              if let Some(prepared) = self.trace_provider.prepare(
+                self.toplevel(),
+                idx,
+                record,
+                io_buffer,
+                &slot_arg_widths,
+                start,
+                end,
+                range.len(),
+              ) {
+                return prepared;
+              }
+            },
+            CircuitType::Memory { width } if !range.is_empty() => {
+              if let Some(prepared) = self.trace_provider.prepare_memory(
+                record,
+                width,
+                &slot_arg_widths,
+                range.clone(),
+              ) {
+                return prepared;
+              }
+            },
+            _ => {},
           }
         }
+        let kind = match circuit_type {
+          CircuitType::Function { .. } => "function",
+          CircuitType::Memory { .. } => "memory",
+          CircuitType::Bytes1 => "bytes1",
+          CircuitType::Bytes2 => "bytes2",
+        };
+        let _g = tracing::info_span!(
+          "aiur/cpu_circuit",
+          circuit = circuit_idx,
+          kind,
+          rows = range.len()
+        )
+        .entered();
         let (trace, lookups) = match circuit_type {
           CircuitType::Function { idx } => {
             let (start, end) = index.queries(circuit_idx, &range);

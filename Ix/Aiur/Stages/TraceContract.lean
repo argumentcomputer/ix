@@ -88,7 +88,7 @@ def bytes (top : Toplevel) : ByteArray := Id.run do
       layout f.layout; byte (if f.entry then 1 else 0); byte (if f.constrained then 1 else 0)
       block f.body) top.functions
     indices top.memorySizes
-  return (write.run "aiur-trace-library-v1/seed-v1/writer-v1\x00".toUTF8).2
+  return (write.run "aiur-trace-library-v1/seed-v2/writer-v2\x00".toUTF8).2
 
 def fingerprint (top : Toplevel) : ByteArray := (Blake3.Rust.hash (bytes top)).val
 

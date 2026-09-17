@@ -179,12 +179,123 @@ def preparationTests : TestSeq :=
       definition 1 { ops := #[.call 1 #[0] 1 true], ctrl := .return 0 #[1] },
       identityFunction]) (fun plan =>
       plan.layout.lookups == 1 && plan.layout.auxiliaries == 2 && plan.seedWords == 3) ++
-  accepts "129 inputs and 32 aliased outputs have the BLAKE3 seed-size bounds"
+  accepts "129 inputs and 32 aliased outputs have the BLAKE3 seed-word count"
     (singletonProgram #[definition 129 {
       ops := #[.call 0 (Array.range 129) 32 false],
       ctrl := .return 0 (Array.range' 129 32) }]) (fun plan =>
-      plan.seedWords == 162 && plan.canonicalSeedBytes == 1296 &&
-      plan.guardedU8SeedBytes == 176)
+      plan.seedWords == 162 && plan.canonicalSeedBytes == 1296)
+
+private def programPlan (top : Bytecode.Toplevel) (index : Nat) : Option FunctionPlan :=
+  match Aiur.TracePlan.program top with
+  | .ok plan => plan.functions[index]?.join
+  | .error _ => none
+
+private def widths (plan : FunctionPlan) : Array SeedWidth := plan.seedSchema.widths
+
+private def exhaustiveThenFallback : Bytecode.Function := definition 2 {
+  ops := #[], ctrl := .match 0
+    #[(0, { ops := #[], ctrl := .return 0 #[] }),
+      (300, {
+        ops := #[], ctrl := .match 1
+          #[(1, { ops := #[], ctrl := .return 1 #[] })]
+          (some { ops := #[], ctrl := .return 2 #[] }) })] none }
+
+private def yieldsIntoByteUse : Bytecode.Function := definition 2 {
+  ops := #[], ctrl := .matchContinue 0
+    #[(0, { ops := #[], ctrl := .yield 0 #[1] })]
+    (some { ops := #[.const 5], ctrl := .yield 1 #[2] })
+    1 1 0 { ops := #[.u8Xor 2 2], ctrl := .return 2 #[3] } }
+
+private def recursiveBytes : Bytecode.Function := definition 2 {
+  ops := #[], ctrl := .match 0
+    #[(7, { ops := #[.u8Xor 1 1], ctrl := .return 0 #[2] })]
+    (some { ops := #[.const 1, .add 0 2, .call 0 #[3, 1] 1 false], ctrl := .return 1 #[4] }) }
+
+private def boundedArithmetic : Bytecode.Function := definition 1 {
+  ops := #[.u8Xor 0 0, .const 200, .add 1 2, .mul 3 3, .mul 4 4],
+  ctrl := .return 0 #[3, 4, 5] }
+
+private def callsBoundedArithmetic : Bytecode.Function := definition 1 {
+  ops := #[.call 1 #[0] 3 false], ctrl := .return 0 #[1, 2, 3] }
+
+private def byteIdentity : Bytecode.Function := definition 1 {
+  ops := #[.u8Xor 0 0], ctrl := .return 0 #[1] }
+
+private def callsByteIdentity : Bytecode.Function := definition 1 {
+  ops := #[.call 1 #[0] 1 false, .mul 1 1], ctrl := .return 0 #[2] }
+
+private def callsUnconstrained : Bytecode.Function := definition 1 {
+  ops := #[.call 1 #[0] 1 true], ctrl := .return 0 #[1] }
+
+/-- Singleton circuits for the constrained functions only. -/
+private def library (functions : Array Bytecode.Function) : Bytecode.Toplevel :=
+  { functions, memorySizes := #[],
+    circuits := (functions.zipIdx.filter (·.1.constrained)).map fun (f, index) =>
+      { name := s!"function_{index}", members := #[index], layout := f.layout } }
+
+private def programWidths (name : String) (functions : Array Bytecode.Function)
+    (expected : Array SeedWidth) (bytes : Nat) (memorySizes : Array Nat := #[]) : TestSeq :=
+  test name ((match programPlan { library functions with memorySizes } 0 with
+    | some plan => widths plan == expected && plan.typedSeedBytes == bytes
+    | none => false) : Bool)
+
+/-- Stores a byte and a field element, then loads the pair back. -/
+private def storeThenLoad : Bytecode.Function := definition 2 {
+  ops := #[.u8Xor 0 0, .store #[2, 1], .load 2 3], ctrl := .return 0 #[4, 5] }
+
+/-- Loads from a table nothing in the library stores into. -/
+private def loadUnstored : Bytecode.Function := definition 1 {
+  ops := #[.load 2 0], ctrl := .return 0 #[1, 2] }
+
+/-- Stores a wide value into the slot another function stores a byte into. -/
+private def storeWide : Bytecode.Function := definition 1 {
+  ops := #[.store #[0, 0]], ctrl := .return 0 #[1] }
+
+/-- Loads through a continuation merge of input 1, after an arm-local
+constant, so the pointer's bytecode index (2) is not its value id (3). -/
+private def loadThroughMerge : Bytecode.Function := definition 2 {
+  ops := #[], ctrl := .matchContinue 0
+    #[(0, { ops := #[.const 7], ctrl := .yield 0 #[1] })]
+    (some { ops := #[], ctrl := .yield 1 #[1] })
+    1 1 0 { ops := #[.load 1 2], ctrl := .return 2 #[3] } }
+
+def schemaTests : TestSeq :=
+  test "typed layout stores wider words first, aligned, padded to eight"
+    (let schema := SeedSchema.ofWidths #[.full, .u8, .u32, .u16, .full, .u8]
+     schema.offsets == #[0, 22, 16, 20, 8, 23] && schema.bytes == 24) ++
+  test "an all-full schema is the canonical encoding"
+    ((SeedSchema.canonical 3).isCanonical && (SeedSchema.canonical 3).bytes == 24) ++
+  accepts "byte operations narrow the inputs they consume"
+    (singletonProgram #[arithmetic]) (fun plan =>
+      widths plan == #[.full, .u8, .u8] && plan.typedSeedBytes == 16) ++
+  accepts "an exhaustive match bounds its discriminant, a fallback does not"
+    (singletonProgram #[exhaustiveThenFallback]) (fun plan =>
+      widths plan == #[.full, .u16, .full] && plan.typedSeedBytes == 24) ++
+  accepts "a byte use on one arm speculatively narrows the word on every arm"
+    (singletonProgram #[definition 2 (branchBody 4)]) (fun plan =>
+      widths plan == #[.full, .full, .u8]) ++
+  accepts "continuation uses bound the values every arm yields"
+    (singletonProgram #[yieldsIntoByteUse]) (fun plan =>
+      widths plan == #[.full, .full, .u8]) ++
+  -- The callee's byte use narrows the argument; 255 + 200 < 2^16, its square
+  -- is below 2^32, and the square of that is wide.
+  programWidths "constants and byte results bound sums and products through call results"
+    #[callsBoundedArithmetic, boundedArithmetic] #[.full, .u8, .u16, .u32, .full] 24 ++
+  programWidths "call results take callee output bounds and arguments take callee input bounds"
+    #[callsByteIdentity, byteIdentity] #[.full, .u8, .u8] 16 ++
+  programWidths "recursive returns reach the least fixpoint instead of staying wide"
+    #[recursiveBytes] #[.full, .full, .u8, .u8] 24 ++
+  programWidths "unconstrained callees contribute no bounds"
+    #[callsUnconstrained, { byteIdentity with constrained := false }] #[.full, .full, .full] 24 ++
+  -- Seed: multiplicity, the two inputs, the store pointer, the two loaded words.
+  programWidths "loads take the join of every store into their table; pointers are u32"
+    #[storeThenLoad] #[.full, .u8, .full, .u32, .u8, .full] 32 #[2] ++
+  programWidths "a wide store elsewhere in the library widens the loaded slot"
+    #[storeThenLoad, storeWide] #[.full, .u8, .full, .u32, .full, .full] 40 #[2] ++
+  programWidths "a table with no store site loads unknown values but its pointer is u32"
+    #[loadUnstored] #[.full, .u32, .full, .full] 32 #[2] ++
+  programWidths "pointer bounds follow resolved operands through merges"
+    #[loadThroughMerge] #[.full, .full, .u32, .full] 32 #[1]
 
 def malformedTests : TestSeq :=
   rejects "invalid value index"
@@ -287,8 +398,8 @@ def reportTests : TestSeq :=
   test "one-selector match with an empty arm is not branchless"
     ((match oneSelectorMatchIsBranchless with | .ok branchless => !branchless | .error _ => false) : Bool)
 
-def tests : TestSeq := allocationTests ++ preparationTests ++ malformedTests ++
-  groupingTests ++ reportTests
+def tests : TestSeq := allocationTests ++ preparationTests ++ schemaTests ++
+  malformedTests ++ groupingTests ++ reportTests
 
 end AiurTests.TracePlan
 

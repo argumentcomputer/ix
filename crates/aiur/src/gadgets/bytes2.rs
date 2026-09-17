@@ -286,7 +286,21 @@ impl AiurGadget for Bytes2 {
     record: &QueryRecord,
     slot_arg_widths: &[usize],
   ) -> (RowMajorMatrix<G>, LookupValues<G>) {
-    let mut rows = vec![G::ZERO; 256 * 256 * TRACE_WIDTH];
+    let mut rows = G::zero_vec(256 * 256 * TRACE_WIDTH);
+    for (row, multiplicities) in rows
+      .as_chunks_mut::<TRACE_WIDTH>()
+      .0
+      .iter_mut()
+      .zip(&record.bytes2_queries.0)
+    {
+      *row = *multiplicities;
+    }
+    if crate::trace::trace_only_lookups() {
+      return (
+        RowMajorMatrix::new(rows, TRACE_WIDTH),
+        LookupValues::shape_only(256 * 256, slot_arg_widths),
+      );
+    }
 
     // There are `TRACE_WIDTH` lookups per row, one for each multiplicity.
     let mut builder = LookupValues::builder(256 * 256, slot_arg_widths);
@@ -304,16 +318,15 @@ impl AiurGadget for Bytes2 {
     let xor_split4_channel = u8_xor_split4_channel();
 
     rows
-      .as_chunks_mut::<TRACE_WIDTH>()
+      .as_chunks::<TRACE_WIDTH>()
       .0
-      .iter_mut()
+      .iter()
       .enumerate()
-      .zip(&record.bytes2_queries.0)
       .zip(row_writers.iter_mut())
       .for_each(
         |(
           (
-            (row_idx, row),
+            row_idx,
             &[
               xor,
               add,
@@ -331,17 +344,6 @@ impl AiurGadget for Bytes2 {
         )| {
           let i = G::from_usize(row_idx / 256);
           let j = G::from_usize(row_idx % 256);
-
-          row[0] = xor;
-          row[1] = add;
-          row[2] = sub;
-          row[3] = and;
-          row[4] = or;
-          row[5] = less_than;
-          row[6] = range_check;
-          row[7] = mul;
-          row[8] = xor_split7;
-          row[9] = xor_split4;
 
           // Pull xor.
           row_lookups.pull(0, xor, &[xor_channel, i, j, Self::xor(&i, &j)]);

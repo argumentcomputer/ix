@@ -282,14 +282,14 @@ impl Toplevel {
     } else {
       height_no_padding.next_power_of_two()
     };
+    // A zeroed allocation: pages materialize when rows are written, so the
+    // padding rows cost nothing and no fill pass touches the whole matrix.
     let mut rows = {
-      let _g = tracing::info_span!("aiur/witness_zero", height, width).entered();
-      vec![G::ZERO; height * width]
+      let _g =
+        tracing::info_span!("aiur/witness_zero", height, width).entered();
+      G::zero_vec(height * width)
     };
     let rows_no_padding = &mut rows[0..height_no_padding * width];
-    // Builder rows start zeroed (`Lookup::empty()` in every slot), so padding
-    // rows need no writes at all.
-    let mut builder = LookupValues::builder(height, slot_arg_widths);
     let populate =
       |i: usize, row: &mut [G], lookups: Option<&mut LookupRowMut<'_, G>>| {
         let meta = &rows_meta[i];
@@ -322,6 +322,9 @@ impl Toplevel {
       let trace = RowMajorMatrix::new(rows, width);
       return (trace, LookupValues::shape_only(height, slot_arg_widths));
     }
+    // Builder rows start zeroed (`Lookup::empty()` in every slot), so padding
+    // rows need no writes at all.
+    let mut builder = LookupValues::builder(height, slot_arg_widths);
     let mut row_writers = builder.rows_mut();
     rows_no_padding
       .par_chunks_mut(width)

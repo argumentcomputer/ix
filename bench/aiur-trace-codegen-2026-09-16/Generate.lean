@@ -19,7 +19,7 @@ def main (args : List String) : IO UInt32 := do
         (s!"crates/aiur/src/trace_codegen/tests/{stem}.rs", ← Aiur.TraceCodegen.emit top "crate"),
         (s!"crates/aiur/src/trace_codegen/tests/{stem}_cuda.rs", ← Aiur.TraceCuda.registry top unit "crate"),
         (s!"crates/aiur/{path}", cuda)]
-    let manifest := Lean.Json.mkObj [("abi", Lean.toJson (1 : Nat)), ("units", Lean.Json.arr units)]
+    let manifest := Lean.Json.mkObj [("abi", Lean.toJson (2 : Nat)), ("units", Lean.Json.arr units)]
     pure (files.push ("crates/aiur/cuda/trace-manifest.json", manifest.pretty ++ "\n"))
   let files ← match files with
     | .ok files => pure files

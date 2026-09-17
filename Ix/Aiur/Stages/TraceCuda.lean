@@ -158,34 +158,69 @@ mutual
       pure (source ++ (← emitBlock plan continuation target depth))
 end
 
+private def loader : SeedWidth → String
+  | .u8 => "load_u8" | .u16 => "load_u16" | .u32 => "load_u32" | .full => "load_u64"
+
 private def emitFunction (plan : FunctionPlan) (unit : String) : Except String String := do
   let name := s!"{unit}_{plan.index}"
+  let schema := plan.seedSchema
   let (body, state) ← (emitBlock plan plan.body none 1).run {}
   let mut source := "".intercalate state.tables.toList
-  source := source ++ s!"template<bool Packed> __device__ __forceinline__ uint32_t row_{name}(Seed<Packed> seed, Layout layout, uint64_t* row) " ++ "{\n"
+  -- Call sites pass literal indices, so the switch folds to one typed load.
+  source := source ++ s!"template<bool Typed> struct Seed_{name} " ++ "{\n  const uint8_t* data;\n" ++
+    "  __device__ __forceinline__ uint64_t word(size_t index) const {\n" ++
+    "    if constexpr (!Typed) return reinterpret_cast<const uint64_t*>(data)[index];\n" ++
+    "    switch (index) {\n"
+  for i in [:schema.widths.size] do
+    source := source ++ s!"      case {i}: return {loader schema.widths[i]!}(data + {schema.offsets[i]!});\n"
+  source := source ++ "      default: return 0;\n    }\n  }\n};\n"
+  source := source ++ s!"template<bool Typed> __device__ __forceinline__ uint32_t row_{name}(Seed_{name}<Typed> seed, Layout layout, uint64_t* row) " ++ "{\n"
   for i in [:plan.layout.inputSize] do
     source := source ++ line 1 s!"const uint64_t v_{i} = seed.word({i+1});"
     source := source ++ line 1 s!"row[{i}] = v_{i};"
   source := source ++ body ++ "}\n"
-  source := source ++ s!"template<bool Packed> __global__ void kernel_{name}(const uint8_t* __restrict__ seeds, size_t real, size_t rows, Layout layout, uint64_t* __restrict__ output, uint32_t* error) " ++ "{\n" ++
+  source := source ++ s!"template<bool Typed> __global__ void kernel_{name}(const uint8_t* __restrict__ seeds, size_t real, size_t rows, Layout layout, uint64_t* __restrict__ output, uint32_t* error) " ++ "{\n" ++
     "  const size_t r = size_t(blockIdx.x) * blockDim.x + threadIdx.x;\n" ++
-    "  if (r >= rows) return;\n" ++
-    "  uint64_t* row = output + r * layout.width;\n" ++
-    "  for (size_t col = 0; col < layout.width; ++col) row[col] = 0;\n" ++
     "  if (r >= real) return;\n" ++
-    s!"  constexpr size_t stride = Packed ? {plan.guardedU8SeedBytes} : {plan.canonicalSeedBytes};\n" ++
-    "  const Seed<Packed> seed{seeds + r * stride};\n" ++
+    "  uint64_t* row = output + r * layout.width;\n" ++
+    s!"  constexpr size_t stride = Typed ? {plan.typedSeedBytes} : {plan.canonicalSeedBytes};\n" ++
+    s!"  const Seed_{name}<Typed> seed" ++ "{seeds + r * stride};\n" ++
     "  row[layout.auxiliaries] = seed.word(0);\n" ++
     s!"  const uint32_t status = row_{name}(seed, layout, row);\n" ++
     "  if (status) atomicCAS(error, 0U, status);\n}\n"
   source := source ++ s!"cudaError_t launch_{name}(const uint8_t* seeds, uint32_t encoding, size_t real, size_t rows, Layout layout, uint64_t* output, uint32_t* error) " ++ "{\n" ++
-    s!"  if (encoding == 1) kernel_{name}<true><<<unsigned((rows+127)/128), 128, 0, cudaStreamPerThread>>>(seeds, real, rows, layout, output, error);\n" ++
-    s!"  else kernel_{name}<false><<<unsigned((rows+127)/128), 128, 0, cudaStreamPerThread>>>(seeds, real, rows, layout, output, error);\n" ++
+    s!"  if (encoding == 1) kernel_{name}<true><<<unsigned((real+127)/128), 128, 0, cudaStreamPerThread>>>(seeds, real, rows, layout, output, error);\n" ++
+    s!"  else kernel_{name}<false><<<unsigned((real+127)/128), 128, 0, cudaStreamPerThread>>>(seeds, real, rows, layout, output, error);\n" ++
     "  return cudaGetLastError();\n}\n"
   source := source ++ s!"extern \"C\" int aiur_trace_{name}(int device, const uint8_t* seeds, uint32_t encoding, size_t real, size_t rows, size_t width, size_t selectors, size_t auxiliaries, uint64_t* output) " ++ "{\n" ++
     s!"  if (selectors < {plan.layout.inputSize} || auxiliaries < selectors || auxiliaries - selectors < {plan.layout.selectors} || width < auxiliaries || width - auxiliaries < {plan.layout.auxiliaries}) return int(cudaErrorInvalidValue);\n" ++
-    s!"  return upload(device, seeds, encoding, {plan.seedWords}, real, rows, " ++ "{width, selectors, auxiliaries}, " ++ s!"output, launch_{name});\n" ++ "}\n\n"
+    s!"  const size_t stride = encoding == 1 ? {plan.typedSeedBytes} : encoding == 0 ? {plan.canonicalSeedBytes} : 0;\n" ++
+    "  return upload(device, seeds, encoding, stride, real, rows, {width, selectors, auxiliaries}, " ++ s!"output, launch_{name});\n" ++ "}\n\n"
   pure source
+
+/-- Byte encoding of the selected functions' seed schemas, hashed into the
+compiled unit's schema contract. The runtime recomputes it from the Rust
+writers' schemas at bind, so a CUDA unit and a seed packer generated from
+different compiler revisions cannot agree by total size alone. Little-endian
+u64 fields; widths as their byte counts. -/
+private def schemaContract (plan : ProgramPlan) (selected : Option (Array FunIdx)) : ByteArray := Id.run do
+  let word := fun (bytes : ByteArray) (n : Nat) => Id.run do
+    let mut bytes := bytes
+    for i in [:8] do bytes := bytes.push ((n >>> (8*i)) &&& 255).toUInt8
+    return bytes
+  let mut bytes := "aiur-trace-schema-v1\x00".toUTF8
+  for entry in plan.functions do
+    if let some f := entry then
+      if (selected.map (·.contains f.index)).getD true then
+        bytes := word bytes f.index
+        bytes := word bytes f.seedWords
+        bytes := word bytes f.seedSchema.bytes
+        for width in f.seedSchema.widths do bytes := bytes.push width.bytes.toUInt8
+        for offset in f.seedSchema.offsets do bytes := word bytes offset
+  return bytes
+
+private def schemaContractLiteral (plan : ProgramPlan) (selected : Option (Array FunIdx)) : String :=
+  ", ".intercalate ((Blake3.Rust.hash (schemaContract plan selected)).val.data.toList.map toString)
 
 def validUnit (unit : String) : Bool :=
   !unit.isEmpty && unit.toList.all (fun c => c.isAlphanum && c.toNat < 128 || c == '_') &&
@@ -202,13 +237,15 @@ def emit (top : Toplevel) (unit : String) (selected : Option (Array FunIdx) := n
       if seen.contains index then throw s!"duplicate CUDA function {index}"
       seen := seen.push index
   let mut source := "// Generated by Aiur.TraceCuda; regenerate from Aiur bytecode.\n" ++
-    "#include \"trace_primitives.cuh\"\nstatic_assert(aiur_trace::ABI_VERSION == 1, \"trace writer ABI mismatch\");\n" ++ s!"namespace trace_{unit} " ++ "{\nusing namespace aiur_trace;\n\n"
+    "#include \"trace_primitives.cuh\"\nstatic_assert(aiur_trace::ABI_VERSION == 2, \"trace writer ABI mismatch\");\n" ++ s!"namespace trace_{unit} " ++ "{\nusing namespace aiur_trace;\n\n"
   for entry in plan.functions do
     if let some function := entry then
       if (selected.map (·.contains function.index)).getD true then
         source := source ++ (← emitFunction function unit)
   pure (source ++ s!"extern \"C\" const uint8_t* aiur_trace_{unit}_contract() " ++ "{\n" ++
-    "  static const uint8_t hash[32] = {" ++ TraceContract.fingerprintLiteral top ++ "};\n  return hash;\n}\n}\n")
+    "  static const uint8_t hash[32] = {" ++ TraceContract.fingerprintLiteral top ++ "};\n  return hash;\n}\n" ++
+    s!"extern \"C\" const uint8_t* aiur_trace_{unit}_schema() " ++ "{\n" ++
+    "  static const uint8_t hash[32] = {" ++ schemaContractLiteral plan selected ++ "};\n  return hash;\n}\n}\n")
 
 /-- Rust registration for the CUDA unit; absent entries remain explicit. -/
 def registry (top : Toplevel) (unit : String) (cratePath : String := "aiur")
@@ -224,11 +261,14 @@ def registry (top : Toplevel) (unit : String) (cratePath : String := "aiur")
       seen := seen.push index
   let mut source := "// Generated by Aiur.TraceCuda; regenerate from Aiur bytecode.\n" ++
     s!"use {cratePath}::trace_codegen::cuda::CudaLibrary;\nunsafe extern \"C\" " ++ "{\n" ++
-    s!"  fn aiur_trace_{unit}_contract() -> *const u8;\n"
+    s!"  fn aiur_trace_{unit}_contract() -> *const u8;\n" ++
+    s!"  fn aiur_trace_{unit}_schema() -> *const u8;\n"
   let mut entries := #[]
   let mut words := #[]
+  let mut typed := #[]
   for entry in plan.functions do
     words := words.push (toString ((entry.map (·.seedWords)).getD 0))
+    typed := typed.push (toString ((entry.map (·.typedSeedBytes)).getD 0))
     match entry with
     | some f =>
       if (selected.map (·.contains f.index)).getD true then
@@ -239,7 +279,8 @@ def registry (top : Toplevel) (unit : String) (cratePath : String := "aiur")
     | none => entries := entries.push "None"
   pure (source ++ "}\n" ++
     "pub static CUDA: CudaLibrary = unsafe { CudaLibrary::new([" ++ TraceContract.fingerprintLiteral top ++
-    s!"], aiur_trace_{unit}_contract, &[\n" ++ ",\n".intercalate entries.toList ++ "\n], &[" ++ ", ".intercalate words.toList ++ "]) };\n")
+    s!"], aiur_trace_{unit}_contract, aiur_trace_{unit}_schema, &[\n" ++ ",\n".intercalate entries.toList ++ "\n], &[" ++ ", ".intercalate words.toList ++
+    "], &[" ++ ", ".intercalate typed.toList ++ "]) };\n")
 
 end Aiur.TraceCuda
 

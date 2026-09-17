@@ -112,8 +112,25 @@ def traceReportTarget (target : Target) : Except String Lean.Json := do
   let grouped ← compiled.groupFunctions target.groups
   TraceReport.program target.label grouped
 
-/-- The production selection is intentionally small; every selected writer is
-generated from the same bytecode library as its host seed packer. -/
+/-- Circuits generated beyond the static rule, by circuit name per target.
+These are the IxVM circuits with the most host trace-building time in the
+Init proof measured in `bench/aiur-trace-init-2026-09-16`: small rows in the
+tens of millions, whose typed seeds are 0.3 to 0.85 of the row. Row weights
+come from that one environment; revisit the list when a heavier one is
+measured. -/
+def weightedCircuits : List (String × Array String) := [
+  ("ixvm", #[
+    "blake3_compress_chunks", "get_tag4", "get_u64_le", "g_list_has", "list_snoc.G",
+    "expr_glb_walk", "expr_inst_many_walk", "get_app_telescope", "expr_glb", "expr_lower",
+    "get_expr", "expr_lbr", "k_infer_app_spine_loop", "list_drop.G", "expr_inst_many_bvar",
+    "expr_lower_walk", "bytes_to_block", "expr_inst_many", "get_expr_list", "collect_spine",
+    "list_concat.G", "apply_spine", "list_lookup.Ptr.KExprNode", "ixvm_group_24"])]
+
+/-- The production selection: `blake3_compress`, every circuit whose members
+pack into at most half their canonical seeds
+(`ProgramPlan.compactCircuitFunctions`), and the measured `weightedCircuits`.
+Every selected writer is generated from the same bytecode library as its
+host seed packer. -/
 def traceBundle : Except String (Array (String × String)) := do
   let mut files := #[]
   let mut units := #[]
@@ -123,7 +140,19 @@ def traceBundle : Except String (Array (String × String)) := do
     let grouped ← compiled.groupFunctions target.groups
     let some function := compiled.getFuncIdx `blake3_compress
       | throw s!"{target.label}: missing blake3_compress"
-    let selected := some #[function]
+    let plan ← (TracePlan.program grouped.bytecode).mapError fun error => s!"{target.label}: {error}"
+    let mut chosen := plan.compactCircuitFunctions.push function
+    -- A weighted name is a function (any of its aliases; its whole circuit
+    -- is taken) or a group circuit's name.
+    for name in (weightedCircuits.lookup target.label).getD #[] do
+      let circuit := match compiled.getFuncIdx (String.toName name) with
+        | some index =>
+          grouped.bytecode.circuits.find? fun (c : Bytecode.Circuit) => c.members.contains index
+        | none => grouped.bytecode.circuits.find? fun (c : Bytecode.Circuit) => c.name == name
+      let some circuit := circuit
+        | throw s!"{target.label}: no function or circuit named {name} in the weighted selection"
+      chosen := chosen ++ circuit.members
+    let selected := some ((chosen.toList.eraseDups.toArray).qsort (· < ·))
     let unit := target.label.replace "-" "_"
     let cuda ← TraceCuda.emit grouped.bytecode unit selected
     let path := s!"cuda/generated/production/{unit}.cu"
@@ -133,7 +162,7 @@ def traceBundle : Except String (Array (String × String)) := do
       (s!"crates/aiur/src/trace_codegen/programs/{unit}.rs", ← TraceCodegen.emit grouped.bytecode "crate" selected),
       (s!"crates/aiur/src/trace_codegen/programs/{unit}_cuda.rs", ← TraceCuda.registry grouped.bytecode unit "crate" selected),
       (s!"crates/aiur/{path}", cuda)]
-  let manifest := Lean.Json.mkObj [("abi", Lean.toJson (1 : Nat)), ("units", Lean.Json.arr units)]
+  let manifest := Lean.Json.mkObj [("abi", Lean.toJson (2 : Nat)), ("units", Lean.Json.arr units)]
   pure (files.push ("crates/aiur/cuda/generated/production/trace-manifest.json", manifest.pretty ++ "\n"))
 
 def emitTraceBundle (checkOnly : Bool) : IO UInt32 := do

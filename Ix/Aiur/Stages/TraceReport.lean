@@ -103,8 +103,8 @@ private def functionJson (aliases : Array String) (plan : FunctionPlan) : Json :
     ("singleton_main_bytes_per_real_row", toJson (8 * plan.layout.width)),
     ("canonical_seed_words", toJson plan.seedWords),
     ("canonical_seed_bytes", toJson plan.canonicalSeedBytes),
-    ("guarded_u8_seed_bytes", toJson plan.guardedU8SeedBytes),
-    ("guarded_u8_requires_payload_checks", toJson true),
+    ("typed_seed_bytes", toJson plan.typedSeedBytes),
+    ("typed_seed_word_bits", toJson (plan.seedSchema.widths.map fun width => 8 * width.bytes)),
     ("values", Json.arr <| plan.values.map fun value => Json.mkObj [
       ("degree", toJson value.degree), ("producer", toJson value.producer),
       ("input", toJson value.input), ("row_inputs", toJson value.rowInputs),
@@ -172,7 +172,7 @@ def document (programs : Array Json) : Json :=
     ("schema_version", toJson (1 : Nat)),
     ("field_modulus", toJson (toString gSize.toNat)),
     ("seed_encoding", toJson "canonical_u64"),
-    ("compact_encoding", toJson "guarded_u8_estimate_only"),
+    ("compact_encoding", toJson "typed_schema_guarded"),
     ("row_weights", Json.null),
     ("programs", Json.arr programs)]
 

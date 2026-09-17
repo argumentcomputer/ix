@@ -200,20 +200,233 @@ pub struct RowOffsets {
   pub auxiliaries: usize,
 }
 
-/// A guarded byte payload. Out-of-range words set the guard before their low
-/// byte is written; callers must discard that payload and use canonical words.
-pub struct PackedSeed<'a> {
-  bytes: &'a mut [u8],
-  high_bits: u64,
+/// Storage of one seed word in the typed encoding.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SeedWidth {
+  U8,
+  U16,
+  U32,
+  Full,
 }
 
-impl PackedSeed<'_> {
+impl SeedWidth {
+  pub const fn bytes(self) -> usize {
+    match self {
+      Self::U8 => 1,
+      Self::U16 => 2,
+      Self::U32 => 4,
+      Self::Full => 8,
+    }
+  }
+
+  /// Whether a canonical value is representable at this width.
+  pub fn fits(self, value: u64) -> bool {
+    self == Self::Full || value >> (8 * self.bytes()) == 0
+  }
+}
+
+/// The compiler's per-word widths and byte offsets for one function's typed
+/// seed. Word 0, the multiplicity, is full width at offset zero; wider words
+/// precede narrower ones so every word is naturally aligned.
+pub struct SeedSchema {
+  pub widths: &'static [SeedWidth],
+  pub offsets: &'static [usize],
+  pub bytes: usize,
+}
+
+#[derive(Clone, Copy)]
+struct InputRun {
+  first: usize,
+  len: usize,
+  width: SeedWidth,
+  offset: usize,
+}
+
+impl SeedSchema {
+  /// Whether the offsets are the layout these widths dictate.
+  pub fn is_consistent(&self) -> bool {
+    if self.widths.len() != self.offsets.len()
+      || self.widths.first() != Some(&SeedWidth::Full)
+    {
+      return false;
+    }
+    let mut cursor = 0;
+    for width in
+      [SeedWidth::Full, SeedWidth::U32, SeedWidth::U16, SeedWidth::U8]
+    {
+      for (&candidate, &offset) in self.widths.iter().zip(self.offsets) {
+        if candidate == width {
+          if offset != cursor {
+            return false;
+          }
+          cursor += width.bytes();
+        }
+      }
+    }
+    self.bytes == cursor.div_ceil(8) * 8
+  }
+
+  /// Whether the typed encoding is byte-for-byte the canonical one.
+  pub fn is_canonical(&self) -> bool {
+    self.widths.iter().all(|&width| width == SeedWidth::Full)
+  }
+
+  /// Maximal runs of consecutive inputs sharing a width at contiguous
+  /// offsets. Each run packs as one loop, which vectorizes; per-word stores
+  /// with a width dispatch cost more than the record lookups they precede.
+  fn input_runs(&self, inputs: usize) -> Vec<InputRun> {
+    let mut runs: Vec<InputRun> = Vec::new();
+    for input in 0..inputs {
+      let (width, offset) = (self.widths[1 + input], self.offsets[1 + input]);
+      if let Some(run) = runs.last_mut()
+        && run.width == width
+        && run.offset + run.len * width.bytes() == offset
+      {
+        run.len += 1;
+        continue;
+      }
+      runs.push(InputRun { first: input, len: 1, width, offset });
+    }
+    runs
+  }
+
+  fn store(bytes: &mut [u8], offset: usize, width: SeedWidth, value: u64) {
+    let le = value.to_le_bytes();
+    bytes[offset..offset + width.bytes()].copy_from_slice(&le[..width.bytes()]);
+  }
+
+  fn load(bytes: &[u8], offset: usize, width: SeedWidth) -> u64 {
+    let mut le = [0; 8];
+    le[..width.bytes()].copy_from_slice(&bytes[offset..offset + width.bytes()]);
+    u64::from_le_bytes(le)
+  }
+
+  /// Fails when a word exceeds its width; the caller then packs full width.
+  pub fn encode(
+    &self,
+    words: &[u64],
+    bytes: &mut [u8],
+  ) -> Result<(), &'static str> {
+    if words.len() != self.widths.len() || bytes.len() != self.bytes {
+      return Err("typed seed width mismatch");
+    }
+    if words.iter().any(|&word| word >= G::ORDER_U64) {
+      return Err("seed words must be canonical");
+    }
+    bytes.fill(0);
+    for ((&word, &width), &offset) in
+      words.iter().zip(self.widths).zip(self.offsets)
+    {
+      if !width.fits(word) {
+        return Err("seed word exceeds its typed width");
+      }
+      Self::store(bytes, offset, width, word);
+    }
+    Ok(())
+  }
+
+  pub fn decode(
+    &self,
+    bytes: &[u8],
+    words: &mut [u64],
+  ) -> Result<(), &'static str> {
+    if words.len() != self.widths.len() || bytes.len() != self.bytes {
+      return Err("typed seed width mismatch");
+    }
+    let mut used = 0;
+    for ((word, &width), &offset) in
+      words.iter_mut().zip(self.widths).zip(self.offsets)
+    {
+      *word = Self::load(bytes, offset, width);
+      used = used.max(offset + width.bytes());
+    }
+    if bytes[used..].iter().any(|&byte| byte != 0) {
+      return Err("nonzero seed padding");
+    }
+    if words.iter().any(|&word| word >= G::ORDER_U64) {
+      return Err("seed words must be canonical");
+    }
+    Ok(())
+  }
+}
+
+/// A typed seed under construction. Narrow setters record any value that
+/// exceeds its width; the caller must then discard the payload and pack the
+/// row full width instead. The generated packer calls these with literal
+/// offsets, so each is one store and one shift.
+pub struct TypedSeed<'a> {
+  bytes: &'a mut [u8],
+  overflow: u64,
+}
+
+#[allow(clippy::cast_possible_truncation)]
+impl TypedSeed<'_> {
   #[inline]
-  pub fn set(&mut self, index: usize, value: G) {
-    assert!(index > 0, "multiplicity is a full-width word");
+  pub fn u8(&mut self, offset: usize, value: G) {
     let value = value.as_canonical_u64();
-    self.high_bits |= value;
-    self.bytes[index + 7] = value as u8;
+    self.overflow |= value >> 8;
+    self.bytes[offset] = value as u8;
+  }
+
+  #[inline]
+  pub fn u16(&mut self, offset: usize, value: G) {
+    let value = value.as_canonical_u64();
+    self.overflow |= value >> 16;
+    self.bytes[offset..offset + 2]
+      .copy_from_slice(&(value as u16).to_le_bytes());
+  }
+
+  #[inline]
+  pub fn u32(&mut self, offset: usize, value: G) {
+    let value = value.as_canonical_u64();
+    self.overflow |= value >> 32;
+    self.bytes[offset..offset + 4]
+      .copy_from_slice(&(value as u32).to_le_bytes());
+  }
+
+  #[inline]
+  pub fn full(&mut self, offset: usize, value: G) {
+    self.bytes[offset..offset + 8]
+      .copy_from_slice(&value.as_canonical_u64().to_le_bytes());
+  }
+
+  fn run(&mut self, run: InputRun, inputs: &[G]) {
+    let values = &inputs[run.first..run.first + run.len];
+    let bytes =
+      &mut self.bytes[run.offset..run.offset + run.len * run.width.bytes()];
+    let mut overflow = 0;
+    match run.width {
+      SeedWidth::U8 => {
+        for (dst, value) in bytes.iter_mut().zip(values) {
+          let value = value.as_canonical_u64();
+          overflow |= value >> 8;
+          *dst = value as u8;
+        }
+      },
+      SeedWidth::U16 => {
+        for (dst, value) in bytes.as_chunks_mut::<2>().0.iter_mut().zip(values)
+        {
+          let value = value.as_canonical_u64();
+          overflow |= value >> 16;
+          dst.copy_from_slice(&(value as u16).to_le_bytes());
+        }
+      },
+      SeedWidth::U32 => {
+        for (dst, value) in bytes.as_chunks_mut::<4>().0.iter_mut().zip(values)
+        {
+          let value = value.as_canonical_u64();
+          overflow |= value >> 32;
+          dst.copy_from_slice(&(value as u32).to_le_bytes());
+        }
+      },
+      SeedWidth::Full => {
+        for (dst, value) in bytes.as_chunks_mut::<8>().0.iter_mut().zip(values)
+        {
+          dst.copy_from_slice(&value.as_canonical_u64().to_le_bytes());
+        }
+      },
+    }
+    self.overflow |= overflow;
   }
 }
 
@@ -222,8 +435,9 @@ pub struct FunctionWriter {
   pub layout: FunctionLayout,
   pub output_size: usize,
   pub seed_words: usize,
+  pub schema: &'static SeedSchema,
   pub pack: fn(&SeedContext<'_>, &mut [u64]) -> TraceResult<()>,
-  pub pack_u8: fn(&SeedContext<'_>, &mut PackedSeed<'_>) -> TraceResult<()>,
+  pub pack_typed: fn(&SeedContext<'_>, &mut TypedSeed<'_>) -> TraceResult<()>,
   pub pack_checked: fn(&SeedContext<'_>, &mut [u64]) -> TraceResult<()>,
   pub write: fn(&[u64], RowOffsets, &mut [u64]) -> TraceResult<()>,
 }
@@ -244,6 +458,18 @@ pub struct BoundFunction<'a> {
   index: usize,
   writer: &'a FunctionWriter,
   bytecode: &'a Toplevel,
+  input_runs: Vec<InputRun>,
+}
+
+impl<'a> BoundFunction<'a> {
+  fn new(
+    index: usize,
+    writer: &'a FunctionWriter,
+    bytecode: &'a Toplevel,
+  ) -> Self {
+    let input_runs = writer.schema.input_runs(writer.layout.input_size);
+    Self { index, writer, bytecode, input_runs }
+  }
 }
 
 fn same_block(a: &Block, b: &Block) -> bool {
@@ -305,9 +531,11 @@ impl GeneratedProgram {
     for (function, writer) in bytecode.functions.iter().zip(self.functions) {
       if (self.complete && function.constrained && writer.is_none())
         || (!function.constrained && writer.is_some())
-        || writer
-          .as_ref()
-          .is_some_and(|writer| writer.layout != function.layout)
+        || writer.as_ref().is_some_and(|writer| {
+          writer.layout != function.layout
+            || writer.schema.widths.len() != writer.seed_words
+            || !writer.schema.is_consistent()
+        })
       {
         return Err(
           "generated trace descriptors differ from the bytecode program",
@@ -320,17 +548,21 @@ impl GeneratedProgram {
 
 impl BoundProgram<'_> {
   pub fn function(&self, index: usize) -> Option<BoundFunction<'_>> {
-    Some(BoundFunction {
+    Some(BoundFunction::new(
       index,
-      writer: self.generated.functions.get(index)?.as_ref()?,
-      bytecode: self.bytecode,
-    })
+      self.generated.functions.get(index)?.as_ref()?,
+      self.bytecode,
+    ))
   }
 }
 
 impl BoundFunction<'_> {
   pub fn seed_words(&self) -> usize {
     self.writer.seed_words
+  }
+
+  pub fn schema(&self) -> &'static SeedSchema {
+    self.writer.schema
   }
 
   pub fn pack_row(
@@ -382,15 +614,19 @@ impl BoundFunction<'_> {
     })
   }
 
-  pub fn pack_u8_row(
+  /// Packs one row in the typed encoding and reports whether every narrowed
+  /// word fit. When one did not, the bytes are unusable and the row must be
+  /// packed full width.
+  pub fn pack_typed_row(
     &self,
     record: &QueryRecord,
     io: &IOBuffer,
     query: usize,
     bytes: &mut [u8],
   ) -> TraceResult<bool> {
-    if SeedEncoding::U8Payload.stride(self.seed_words()) != Some(bytes.len()) {
-      return Err(error(self.index, None, "packed seed width mismatch"));
+    let schema = self.writer.schema;
+    if bytes.len() != schema.bytes {
+      return Err(error(self.index, None, "typed seed width mismatch"));
     }
     let (inputs, result) = record
       .function_queries
@@ -410,9 +646,9 @@ impl BoundFunction<'_> {
     bytes.fill(0);
     bytes[..8]
       .copy_from_slice(&result.multiplicity.as_canonical_u64().to_le_bytes());
-    let mut seed = PackedSeed { bytes, high_bits: 0 };
-    for (i, &input) in inputs.iter().enumerate() {
-      seed.set(1 + i, input);
+    let mut seed = TypedSeed { bytes, overflow: 0 };
+    for &run in &self.input_runs {
+      seed.run(run, inputs);
     }
     let context = SeedContext {
       inputs,
@@ -422,11 +658,11 @@ impl BoundFunction<'_> {
       io,
       function: self.index,
     };
-    (self.writer.pack_u8)(&context, &mut seed).map_err(|mut error| {
+    (self.writer.pack_typed)(&context, &mut seed).map_err(|mut error| {
       error.query = Some(query);
       error
     })?;
-    Ok(seed.high_bits <= 255)
+    Ok(seed.overflow == 0)
   }
 
   pub fn write_row(
@@ -476,90 +712,70 @@ impl BoundFunction<'_> {
   }
 }
 
-/// Encoding is metadata for a row or a homogeneous batch, never inferred from
-/// byte length. Multiplicities stay full-width, including negative field values.
+/// Encoding is metadata for a homogeneous span, never inferred from byte
+/// length. Multiplicities stay full width in both, including negative values.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SeedEncoding {
   Canonical,
-  U8Payload,
+  Typed,
 }
 
 impl SeedEncoding {
-  pub fn for_words(words: &[u64]) -> Result<Self, &'static str> {
-    if words.is_empty() || words.iter().any(|&word| word >= G::ORDER_U64) {
-      return Err("seed words must be nonempty and canonical");
-    }
-    Ok(if words[1..].iter().all(|&word| word <= 255) {
-      Self::U8Payload
-    } else {
-      Self::Canonical
-    })
-  }
-
-  pub fn stride(self, words: usize) -> Option<usize> {
-    if words == 0 {
-      return None;
-    }
+  pub fn stride(self, schema: &SeedSchema) -> usize {
     match self {
-      Self::Canonical => words.checked_mul(8),
-      Self::U8Payload => words.checked_add(14).map(|size| (size / 8) * 8),
+      Self::Canonical => 8 * schema.widths.len(),
+      Self::Typed => schema.bytes,
     }
   }
 
   pub fn encode(
     self,
+    schema: &SeedSchema,
     words: &[u64],
     bytes: &mut [u8],
   ) -> Result<(), &'static str> {
-    let smallest = Self::for_words(words)?;
-    if self.stride(words.len()) != Some(bytes.len())
-      || (self == Self::U8Payload && smallest != self)
-    {
-      return Err("seed encoding width or byte guard mismatch");
-    }
-    bytes.fill(0);
     match self {
       Self::Canonical => {
+        if words.len() != schema.widths.len()
+          || bytes.len() != self.stride(schema)
+        {
+          return Err("seed encoding width mismatch");
+        }
+        if words.iter().any(|&word| word >= G::ORDER_U64) {
+          return Err("seed words must be canonical");
+        }
         for (word, bytes) in words.iter().zip(bytes.chunks_exact_mut(8)) {
           bytes.copy_from_slice(&word.to_le_bytes());
         }
+        Ok(())
       },
-      Self::U8Payload => {
-        bytes[..8].copy_from_slice(&words[0].to_le_bytes());
-        for (byte, &word) in bytes[8..].iter_mut().zip(&words[1..]) {
-          *byte = u8::try_from(word).expect("byte guard checked");
-        }
-      },
+      Self::Typed => schema.encode(words, bytes),
     }
-    Ok(())
   }
 
   pub fn decode(
     self,
+    schema: &SeedSchema,
     bytes: &[u8],
     words: &mut [u64],
   ) -> Result<(), &'static str> {
-    if self.stride(words.len()) != Some(bytes.len()) {
-      return Err("seed encoding width mismatch");
-    }
     match self {
       Self::Canonical => {
+        if words.len() != schema.widths.len()
+          || bytes.len() != self.stride(schema)
+        {
+          return Err("seed encoding width mismatch");
+        }
         for (word, bytes) in words.iter_mut().zip(bytes.chunks_exact(8)) {
           *word = u64::from_le_bytes(bytes.try_into().expect("eight bytes"));
         }
-      },
-      Self::U8Payload => {
-        words[0] =
-          u64::from_le_bytes(bytes[..8].try_into().expect("eight bytes"));
-        for (word, &byte) in words[1..].iter_mut().zip(&bytes[8..]) {
-          *word = u64::from(byte);
+        if words.iter().any(|&word| word >= G::ORDER_U64) {
+          return Err("seed words must be canonical");
         }
-        if bytes[7 + words.len()..].iter().any(|&byte| byte != 0) {
-          return Err("nonzero seed padding");
-        }
+        Ok(())
       },
+      Self::Typed => schema.decode(bytes, words),
     }
-    Self::for_words(words).map(|_| ())
   }
 }
 

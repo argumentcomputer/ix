@@ -2,6 +2,8 @@
 
 use std::sync::Arc;
 
+use rayon::prelude::*;
+
 use multi_stark::{
   cuda::DeviceTraceView,
   lookup::LookupValues,
@@ -29,22 +31,50 @@ type Kernel = unsafe extern "C" fn(
 pub struct CudaLibrary {
   fingerprint: [u8; 32],
   contract: unsafe extern "C" fn() -> *const u8,
+  schema: unsafe extern "C" fn() -> *const u8,
   functions: &'static [Option<Kernel>],
   seed_words: &'static [usize],
+  typed_bytes: &'static [usize],
+}
+
+/// The seed layouts the compiled unit was generated with, as the unit hashes
+/// them: the same encoding `Aiur.TraceCuda` emits into `aiur_trace_*_schema`,
+/// recomputed here from the Rust writers so the kernels' typed loads and the
+/// packers' typed stores are proven to agree at bind, not assumed from a
+/// shared generation run.
+pub fn schema_contract(functions: &[Option<FunctionWriter>]) -> [u8; 32] {
+  let mut hasher = blake3::Hasher::new();
+  hasher.update(b"aiur-trace-schema-v1\0");
+  for (index, writer) in functions.iter().enumerate() {
+    let Some(writer) = writer else { continue };
+    for word in [index, writer.seed_words, writer.schema.bytes] {
+      hasher.update(&(word as u64).to_le_bytes());
+    }
+    for &width in writer.schema.widths {
+      hasher.update(&[width.bytes() as u8]);
+    }
+    for &offset in writer.schema.offsets {
+      hasher.update(&(offset as u64).to_le_bytes());
+    }
+  }
+  *hasher.finalize().as_bytes()
 }
 
 impl CudaLibrary {
   /// # Safety
-  /// The contract must return 32 readable immutable bytes. Every kernel must
-  /// implement the generated seed/writer ABI for its function index, validate
-  /// output dimensions, and finish all accesses before returning.
+  /// The contract and schema functions must return 32 readable immutable
+  /// bytes. Every kernel must implement the generated seed/writer ABI for its
+  /// function index, validate output dimensions, and finish all accesses
+  /// before returning.
   pub const unsafe fn new(
     fingerprint: [u8; 32],
     contract: unsafe extern "C" fn() -> *const u8,
+    schema: unsafe extern "C" fn() -> *const u8,
     functions: &'static [Option<Kernel>],
     seed_words: &'static [usize],
+    typed_bytes: &'static [usize],
   ) -> Self {
-    Self { fingerprint, contract, functions, seed_words }
+    Self { fingerprint, contract, schema, functions, seed_words, typed_bytes }
   }
 
   pub fn bind<'a>(
@@ -58,14 +88,25 @@ impl CudaLibrary {
       || compiled != self.fingerprint
       || self.functions.len() != generated.functions.len()
       || self.seed_words.len() != self.functions.len()
+      || self.typed_bytes.len() != self.functions.len()
     {
       return Err("CUDA unit differs from the generated seed/writer contract");
     }
-    for ((kernel, writer), &words) in
-      self.functions.iter().zip(generated.functions).zip(self.seed_words)
+    let schemas = unsafe { std::slice::from_raw_parts((self.schema)(), 32) };
+    if schemas != schema_contract(generated.functions) {
+      return Err("CUDA unit was compiled for different seed layouts");
+    }
+    for (((kernel, writer), &words), &typed) in self
+      .functions
+      .iter()
+      .zip(generated.functions)
+      .zip(self.seed_words)
+      .zip(self.typed_bytes)
     {
       if kernel.is_some()
-        && writer.as_ref().is_none_or(|writer| writer.seed_words != words)
+        && writer.as_ref().is_none_or(|writer| {
+          writer.seed_words != words || writer.schema.bytes != typed
+        })
       {
         return Err("CUDA kernel has no matching seed writer");
       }
@@ -151,8 +192,7 @@ impl BoundCudaProgram<'_> {
       if member < start.0 || member > end.0 {
         continue;
       }
-      let bound =
-        BoundFunction { index: function, writer, bytecode: self.bytecode };
+      let bound = BoundFunction::new(function, writer, self.bytecode);
       let queries = record
         .function_queries
         .get(function)
@@ -162,83 +202,80 @@ impl BoundCudaProgram<'_> {
       if lo > hi || hi > queries.len() {
         return Err(error(function, None, "invalid query span"));
       }
-      let mut seed = vec![0; writer.seed_words];
-      let mut packed =
-        vec![
-          0;
-          SeedEncoding::U8Payload
-            .stride(writer.seed_words)
-            .ok_or_else(|| error(function, None, "seed width overflow"))?
-        ];
-      for query in lo..hi {
-        if queries.get_index(query).unwrap().1.multiplicity == G::ZERO {
-          continue;
-        }
-        let compact = !check_aliases
-          && bound.pack_u8_row(record, io, query, &mut packed)?;
-        let encoding = if compact {
-          SeedEncoding::U8Payload
-        } else {
-          bound.pack_row(record, io, query, check_aliases, &mut seed)?;
-          SeedEncoding::for_words(&seed)
-            .map_err(|e| error(function, None, e))?
-        };
-        let stride = encoding
-          .stride(writer.seed_words)
-          .filter(|&n| n <= MAX_SEED_BYTES)
-          .ok_or_else(|| {
-            error(function, None, "seed exceeds the upload limit")
-          })?;
-        let continues = spans.last().is_some_and(|s| {
-          s.function == function
-            && s.encoding == encoding
-            && s.rows < MAX_ROWS
-            && s.bytes.len() <= MAX_SEED_BYTES - stride
-        });
-        if !continues {
-          let changed_encoding = spans
-            .last()
-            .is_some_and(|s| s.function == function && s.encoding != encoding);
-          // Finished spans retain at most twice their encoded size; only the
-          // current span may reserve up to one tile ahead of its actual rows.
-          if let Some(previous) = spans.last_mut() {
-            if previous.bytes.capacity()
-              > previous.bytes.len().saturating_mul(2)
-            {
-              previous.bytes.shrink_to_fit();
-            }
-          }
-          let reserve_rows = if changed_encoding { 1 } else { hi - query };
-          spans.push(SeedSpan {
-            first: count,
-            rows: 0,
-            function,
-            writer,
-            kernel: self.library.functions[function].unwrap(),
-            offsets,
-            encoding,
-            stride,
-            bytes: Vec::with_capacity(
-              reserve_rows
-                .min(row_count - count)
-                .min(MAX_ROWS)
-                .min(MAX_SEED_BYTES / stride)
-                * stride,
-            ),
+      let schema = writer.schema;
+      if SeedEncoding::Canonical.stride(schema) > MAX_SEED_BYTES {
+        return Err(error(function, None, "seed exceeds the upload limit"));
+      }
+      let live: Vec<usize> = (lo..hi)
+        .filter(|&query| {
+          queries.get_index(query).unwrap().1.multiplicity != G::ZERO
+        })
+        .collect();
+      if live.is_empty() {
+        continue;
+      }
+      // Chunks pack in parallel. A chunk is typed while every narrowed word
+      // fits and turns full width at its first wide row, re-encoding its
+      // earlier rows from their typed bytes. A member run then takes one
+      // codec: if any chunk turned, the others are widened the same way, so
+      // no row is ever packed twice and no span mixes encodings.
+      let typed_first = !check_aliases && !schema.is_canonical();
+      let mut chunks = live
+        .par_chunks(CHUNK_ROWS)
+        .map(|rows| {
+          pack_chunk(&bound, record, io, rows, typed_first, check_aliases)
+        })
+        .collect::<TraceResult<Vec<_>>>()?;
+      if typed_first
+        && chunks.iter().any(|chunk| chunk.encoding == SeedEncoding::Canonical)
+      {
+        chunks.par_iter_mut().for_each(|chunk| chunk.widen(schema));
+      }
+      // Every chunk of the run now shares one encoding, so a span's final
+      // size is known when it opens: the rest of the run, within the tile and
+      // staging limits.
+      let mut run_remaining: usize =
+        chunks.iter().map(|chunk| chunk.rows).sum();
+      for chunk in chunks {
+        let stride = chunk.encoding.stride(schema);
+        let mut offset = 0;
+        let mut remaining = chunk.rows;
+        while remaining > 0 {
+          let open = spans.last().is_some_and(|s| {
+            s.function == function
+              && s.encoding == chunk.encoding
+              && s.rows < MAX_ROWS
+              && s.bytes.len() + stride <= MAX_SEED_BYTES
           });
+          if !open {
+            spans.push(SeedSpan {
+              first: count,
+              rows: 0,
+              function,
+              writer,
+              kernel: self.library.functions[function].unwrap(),
+              offsets,
+              encoding: chunk.encoding,
+              stride,
+              bytes: Vec::with_capacity(
+                run_remaining.min(MAX_ROWS).min(MAX_SEED_BYTES / stride)
+                  * stride,
+              ),
+            });
+          }
+          let span = spans.last_mut().unwrap();
+          let take = remaining
+            .min(MAX_ROWS - span.rows)
+            .min((MAX_SEED_BYTES - span.bytes.len()) / stride);
+          span
+            .bytes
+            .extend_from_slice(&chunk.bytes[offset..offset + take * stride]);
+          span.rows += take;
+          count += take;
+          offset += take * stride;
+          remaining -= take;
+          run_remaining -= take;
         }
-        let span = spans.last_mut().unwrap();
-        let offset = span.bytes.len();
-        span.bytes.resize(offset + stride, 0);
-        if compact {
-          span.bytes[offset..].copy_from_slice(&packed);
-        } else {
-          encoding
-            .encode(&seed, &mut span.bytes[offset..])
-            .map_err(|e| error(function, None, e))?;
-        }
-        span.rows += 1;
-        count += 1;
       }
     }
     if count != row_count {
@@ -275,6 +312,82 @@ struct SeedSpan {
   encoding: SeedEncoding,
   stride: usize,
   bytes: Vec<u8>,
+}
+
+/// Rows packed together by one worker; see `prepare`.
+const CHUNK_ROWS: usize = 4096;
+
+struct PackedChunk {
+  rows: usize,
+  encoding: SeedEncoding,
+  bytes: Vec<u8>,
+}
+
+impl PackedChunk {
+  /// Typed bytes decode exactly, so widening never packs a row again.
+  fn widen(&mut self, schema: &SeedSchema) {
+    if self.encoding == SeedEncoding::Typed {
+      self.bytes = widen_bytes(&self.bytes, schema);
+      self.encoding = SeedEncoding::Canonical;
+    }
+  }
+}
+
+fn widen_bytes(typed: &[u8], schema: &SeedSchema) -> Vec<u8> {
+  let typed_stride = schema.bytes;
+  let canonical_stride = SeedEncoding::Canonical.stride(schema);
+  let rows = typed.len() / typed_stride;
+  let mut words = vec![0; schema.widths.len()];
+  let mut canonical = vec![0; rows * canonical_stride];
+  for row in 0..rows {
+    schema
+      .decode(&typed[row * typed_stride..(row + 1) * typed_stride], &mut words)
+      .expect("typed rows were validated");
+    SeedEncoding::Canonical
+      .encode(
+        schema,
+        &words,
+        &mut canonical[row * canonical_stride..(row + 1) * canonical_stride],
+      )
+      .expect("decoded words are canonical");
+  }
+  canonical
+}
+
+fn pack_chunk(
+  bound: &BoundFunction<'_>,
+  record: &QueryRecord,
+  io: &IOBuffer,
+  rows: &[usize],
+  typed_first: bool,
+  check_aliases: bool,
+) -> TraceResult<PackedChunk> {
+  let schema = bound.schema();
+  let typed_stride = schema.bytes;
+  let canonical_stride = SeedEncoding::Canonical.stride(schema);
+  let mut encoding =
+    if typed_first { SeedEncoding::Typed } else { SeedEncoding::Canonical };
+  let mut bytes = Vec::with_capacity(rows.len() * encoding.stride(schema));
+  let mut seed = vec![0; bound.seed_words()];
+  for &query in rows {
+    if encoding == SeedEncoding::Typed {
+      let offset = bytes.len();
+      bytes.resize(offset + typed_stride, 0);
+      if bound.pack_typed_row(record, io, query, &mut bytes[offset..])? {
+        continue;
+      }
+      bytes.truncate(offset);
+      bytes = widen_bytes(&bytes, schema);
+      encoding = SeedEncoding::Canonical;
+    }
+    bound.pack_row(record, io, query, check_aliases, &mut seed)?;
+    let offset = bytes.len();
+    bytes.resize(offset + canonical_stride, 0);
+    SeedEncoding::Canonical
+      .encode(schema, &seed, &mut bytes[offset..])
+      .map_err(|e| error(bound.index, None, e))?;
+  }
+  Ok(PackedChunk { rows: rows.len(), encoding, bytes })
 }
 
 pub struct CudaTrace {
@@ -316,7 +429,11 @@ impl TraceGenerator<G> for CudaTrace {
         let offset = (index - span.first) * span.stride;
         span
           .encoding
-          .decode(&span.bytes[offset..offset + span.stride], &mut seed)
+          .decode(
+            span.writer.schema,
+            &span.bytes[offset..offset + span.stride],
+            &mut seed,
+          )
           .expect("validated seed");
         canonical.fill(0);
         canonical[..span.writer.layout.input_size]
@@ -361,7 +478,7 @@ impl TraceGenerator<G> for CudaTrace {
       };
       let encoding = match span.encoding {
         SeedEncoding::Canonical => 0,
-        SeedEncoding::U8Payload => 1,
+        SeedEncoding::Typed => 1,
       };
       let status = unsafe {
         (span.kernel)(
@@ -380,6 +497,204 @@ impl TraceGenerator<G> for CudaTrace {
         return Err(format!(
           "generated CUDA function {}, row {first}: status {status}",
           span.function
+        ));
+      }
+      done += rows;
+      first = (first + rows) % self.height;
+    }
+    Ok(())
+  }
+}
+
+unsafe extern "C" {
+  fn aiur_trace_memory(
+    device: i32,
+    seeds: *const u8,
+    values: usize,
+    real: usize,
+    rows: usize,
+    output: *mut u64,
+  ) -> i32;
+}
+
+/// One memory table range as `[multiplicity, 1, pointer, values]` rows, built
+/// on the device from `[multiplicity, pointer, values]` seeds. The seeds are
+/// canonical words copied out of the record, so no packer runs; every table
+/// row is real, zero multiplicities included, exactly as the CPU builder
+/// emits them.
+pub struct MemoryTrace {
+  values: usize,
+  spans: Vec<MemorySpan>,
+  height: usize,
+  real: usize,
+}
+
+struct MemorySpan {
+  first: usize,
+  rows: usize,
+  bytes: Vec<u8>,
+}
+
+impl MemoryTrace {
+  fn stride(&self) -> usize {
+    8 * (self.values + 2)
+  }
+
+  fn span(&self, row: usize) -> &MemorySpan {
+    let index =
+      self.spans.partition_point(|s| s.first <= row).saturating_sub(1);
+    &self.spans[index]
+  }
+}
+
+/// The width-`size` table's rows at table indices `range`, row `i` carrying
+/// pointer `record.pointer_base + range.start + i`. An empty range is the CPU
+/// builder's case: it yields an empty trace that the prover deactivates.
+pub fn prepare_memory(
+  record: &QueryRecord,
+  size: usize,
+  slots: &[usize],
+  range: std::ops::Range<usize>,
+) -> TraceResult<(TraceSource<G>, LookupValues<G>)> {
+  let _span =
+    tracing::info_span!("aiur/codegen_memory_seeds", size, rows = range.len())
+      .entered();
+  let queries = record.memory_queries.get(&size).ok_or_else(|| {
+    error(0, None, "record has no memory table of this width")
+  })?;
+  if range.is_empty() || range.end > queries.len() {
+    return Err(error(0, None, "invalid memory table range"));
+  }
+  let stride = 8 * (size + 2);
+  if stride > MAX_SEED_BYTES {
+    return Err(error(0, None, "memory seed exceeds the upload limit"));
+  }
+  let per_span = MAX_ROWS.min(MAX_SEED_BYTES / stride);
+  let count = range.len();
+  let spans: Vec<MemorySpan> = (0..count)
+    .step_by(per_span)
+    .collect::<Vec<_>>()
+    .into_par_iter()
+    .map(|first| {
+      let rows = per_span.min(count - first);
+      let mut bytes = vec![0; rows * stride];
+      for (i, seed) in bytes.chunks_exact_mut(stride).enumerate() {
+        let index = range.start + first + i;
+        let (values, result) =
+          queries.get_index(index).expect("table index in range");
+        let pointer = G::from_usize(record.pointer_base + index);
+        seed[..8].copy_from_slice(
+          &result.multiplicity.as_canonical_u64().to_le_bytes(),
+        );
+        seed[8..16].copy_from_slice(&pointer.as_canonical_u64().to_le_bytes());
+        for (dst, value) in seed[16..].chunks_exact_mut(8).zip(values) {
+          dst.copy_from_slice(&value.as_canonical_u64().to_le_bytes());
+        }
+      }
+      MemorySpan { first, rows, bytes }
+    })
+    .collect();
+  let height = count
+    .checked_next_power_of_two()
+    .ok_or_else(|| error(0, None, "trace height overflow"))?;
+  tracing::debug!(
+    size,
+    rows = count,
+    seed_bytes = count * stride,
+    seed_spans = spans.len(),
+    "prepared generated memory trace"
+  );
+  Ok((
+    TraceSource::Generated(Arc::new(MemoryTrace {
+      values: size,
+      spans,
+      height,
+      real: count,
+    })),
+    LookupValues::shape_only(height, slots),
+  ))
+}
+
+impl TraceGenerator<G> for MemoryTrace {
+  fn height(&self) -> usize {
+    self.height
+  }
+  fn width(&self) -> usize {
+    self.values + 3
+  }
+  fn host_bytes(&self) -> usize {
+    self.spans.capacity() * size_of::<MemorySpan>()
+      + self.spans.iter().map(|s| s.bytes.capacity()).sum::<usize>()
+  }
+  fn write_rows(&self, first: usize, output: &mut [G]) {
+    let width = self.width();
+    assert_eq!(output.len() % width, 0);
+    let stride = self.stride();
+    let mut index = first % self.height;
+    for row in output.chunks_exact_mut(width) {
+      row.fill(G::ZERO);
+      if index < self.real {
+        let span = self.span(index);
+        let offset = (index - span.first) * stride;
+        let seed = &span.bytes[offset..offset + stride];
+        let word = |i: usize| {
+          G::from_u64(u64::from_le_bytes(
+            seed[8 * i..8 * i + 8].try_into().expect("eight bytes"),
+          ))
+        };
+        row[0] = word(0);
+        row[1] = G::ONE;
+        row[2] = word(1);
+        for (i, cell) in row[3..].iter_mut().enumerate() {
+          *cell = word(2 + i);
+        }
+      }
+      index = (index + 1) % self.height;
+    }
+  }
+  fn write_device_rows(
+    &self,
+    output: DeviceTraceView<'_>,
+  ) -> Result<(), String> {
+    let _span = tracing::info_span!(
+      "aiur/codegen_memory_rows",
+      device = output.device_id(),
+      first = output.first_row(),
+      rows = output.rows(),
+      width = self.width()
+    )
+    .entered();
+    if output.width() != self.width() {
+      return Err("memory trace width mismatch".into());
+    }
+    let stride = self.stride();
+    let mut done = 0;
+    let mut first = output.first_row() % self.height;
+    while done < output.rows() {
+      let span = self.span(first.min(self.real - 1));
+      let remaining =
+        (output.rows() - done).min(self.height - first).min(MAX_ROWS);
+      let (rows, real, seeds) = if first >= self.real {
+        (remaining, 0, std::ptr::null())
+      } else {
+        let rows = remaining.min(span.first + span.rows - first);
+        let offset = (first - span.first) * stride;
+        (rows, rows, span.bytes[offset..].as_ptr())
+      };
+      let status = unsafe {
+        aiur_trace_memory(
+          output.device_id(),
+          seeds,
+          self.values,
+          real,
+          rows,
+          output.as_mut_ptr().add(done * self.width()),
+        )
+      };
+      if status != 0 {
+        return Err(format!(
+          "generated memory table of width {}, row {first}: status {status}",
+          self.values
         ));
       }
       done += rows;

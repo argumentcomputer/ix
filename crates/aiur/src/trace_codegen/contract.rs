@@ -177,7 +177,7 @@ impl Encoder {
 /// merged circuits without changing its function-library identity.
 pub fn fingerprint(top: &Toplevel) -> [u8; 32] {
   let mut e = Encoder(blake3::Hasher::new());
-  e.0.update(b"aiur-trace-library-v1/seed-v1/writer-v1\0");
+  e.0.update(b"aiur-trace-library-v1/seed-v2/writer-v2\0");
   e.index(top.functions.len());
   for function in &top.functions {
     e.layout(&function.layout);

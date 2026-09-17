@@ -14,9 +14,9 @@ fn pack_0(
 }
 
 
-fn pack_0_u8(
+fn pack_0_typed(
   context: &SeedContext<'_>,
-  seed: &mut PackedSeed<'_>,
+  seed: &mut TypedSeed<'_>,
 ) -> TraceResult<()> {
   let v_0 = context.inputs[0];
   let v_1 = context.inputs[1];
@@ -67,6 +67,8 @@ fn write_0(
 }
 
 
+static SCHEMA_0: SeedSchema = SeedSchema { widths: &[SeedWidth::Full, SeedWidth::Full, SeedWidth::Full], offsets: &[0, 8, 16], bytes: 24 };
+
 fn pack_1(
   context: &SeedContext<'_>,
   seed: &mut [u64],
@@ -77,9 +79,9 @@ fn pack_1(
 }
 
 
-fn pack_1_u8(
+fn pack_1_typed(
   context: &SeedContext<'_>,
-  seed: &mut PackedSeed<'_>,
+  seed: &mut TypedSeed<'_>,
 ) -> TraceResult<()> {
   let v_0 = context.inputs[0];
   let v_1 = context.inputs[1];
@@ -150,6 +152,8 @@ fn write_1(
 }
 
 
+static SCHEMA_1: SeedSchema = SeedSchema { widths: &[SeedWidth::Full, SeedWidth::U8, SeedWidth::U8], offsets: &[0, 8, 9], bytes: 16 };
+
 fn pack_2(
   context: &SeedContext<'_>,
   seed: &mut [u64],
@@ -170,9 +174,9 @@ fn pack_2(
 }
 
 
-fn pack_2_u8(
+fn pack_2_typed(
   context: &SeedContext<'_>,
-  seed: &mut PackedSeed<'_>,
+  seed: &mut TypedSeed<'_>,
 ) -> TraceResult<()> {
   let v_0 = context.inputs[0];
   let v_1 = context.inputs[1];
@@ -260,6 +264,8 @@ fn write_2(
 }
 
 
+static SCHEMA_2: SeedSchema = SeedSchema { widths: &[SeedWidth::Full, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8], offsets: &[0, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19], bytes: 24 };
+
 fn pack_3(
   context: &SeedContext<'_>,
   seed: &mut [u64],
@@ -270,9 +276,9 @@ fn pack_3(
 }
 
 
-fn pack_3_u8(
+fn pack_3_typed(
   context: &SeedContext<'_>,
-  seed: &mut PackedSeed<'_>,
+  seed: &mut TypedSeed<'_>,
 ) -> TraceResult<()> {
   let v_0 = context.inputs[0];
   let v_1 = context.inputs[1];
@@ -330,6 +336,8 @@ fn write_3(
 }
 
 
+static SCHEMA_3: SeedSchema = SeedSchema { widths: &[SeedWidth::Full, SeedWidth::Full, SeedWidth::U8], offsets: &[0, 8, 16], bytes: 24 };
+
 fn pack_4(
   context: &SeedContext<'_>,
   seed: &mut [u64],
@@ -347,19 +355,19 @@ fn pack_4(
 }
 
 
-fn pack_4_u8(
+fn pack_4_typed(
   context: &SeedContext<'_>,
-  seed: &mut PackedSeed<'_>,
+  seed: &mut TypedSeed<'_>,
 ) -> TraceResult<()> {
   let v_0 = context.inputs[0];
   let [v_1]: [G; 1] = [(v_0 * v_0)];
   let [v_2]: [G; 1] = context.store(1, &[v_0, v_1])?;
-  seed.set(2, v_2);
+  seed.u32(32, v_2);
   let [v_3]: [G; 1] = context.call::<1>(2, 5, &[v_2])?;
-  seed.set(3, v_3);
+  seed.u32(36, v_3);
   let [v_4, v_5]: [G; 2] = context.load::<2>(3, v_3)?;
-  seed.set(4, v_4);
-  seed.set(5, v_5);
+  seed.full(16, v_4);
+  seed.full(24, v_5);
   return Ok(());
 }
 
@@ -401,6 +409,8 @@ fn write_4(
 }
 
 
+static SCHEMA_4: SeedSchema = SeedSchema { widths: &[SeedWidth::Full, SeedWidth::Full, SeedWidth::U32, SeedWidth::U32, SeedWidth::Full, SeedWidth::Full], offsets: &[0, 8, 32, 36, 16, 24], bytes: 40 };
+
 fn pack_5(
   context: &SeedContext<'_>,
   seed: &mut [u64],
@@ -410,9 +420,9 @@ fn pack_5(
 }
 
 
-fn pack_5_u8(
+fn pack_5_typed(
   context: &SeedContext<'_>,
-  seed: &mut PackedSeed<'_>,
+  seed: &mut TypedSeed<'_>,
 ) -> TraceResult<()> {
   let v_0 = context.inputs[0];
   return Ok(());
@@ -439,6 +449,8 @@ fn write_5(
 }
 
 
+static SCHEMA_5: SeedSchema = SeedSchema { widths: &[SeedWidth::Full, SeedWidth::Full], offsets: &[0, 8], bytes: 16 };
+
 fn pack_6(
   context: &SeedContext<'_>,
   seed: &mut [u64],
@@ -450,13 +462,13 @@ fn pack_6(
 }
 
 
-fn pack_6_u8(
+fn pack_6_typed(
   context: &SeedContext<'_>,
-  seed: &mut PackedSeed<'_>,
+  seed: &mut TypedSeed<'_>,
 ) -> TraceResult<()> {
   let v_0 = context.inputs[0];
   let [v_2]: [G; 1] = context.returned::<1>(1)?;
-  seed.set(2, v_2);
+  seed.full(16, v_2);
   return Ok(());
 }
 
@@ -488,6 +500,8 @@ fn write_6(
 }
 
 
+static SCHEMA_6: SeedSchema = SeedSchema { widths: &[SeedWidth::Full, SeedWidth::Full, SeedWidth::Full], offsets: &[0, 8, 16], bytes: 24 };
+
 fn pack_7(
   context: &SeedContext<'_>,
   seed: &mut [u64],
@@ -504,18 +518,18 @@ fn pack_7(
 }
 
 
-fn pack_7_u8(
+fn pack_7_typed(
   context: &SeedContext<'_>,
-  seed: &mut PackedSeed<'_>,
+  seed: &mut TypedSeed<'_>,
 ) -> TraceResult<()> {
   let v_0 = context.inputs[0];
   let v_1 = context.inputs[1];
   let [v_2, v_3]: [G; 2] = context.io_info(1, v_0, &[v_1])?;
-  seed.set(3, v_2);
-  seed.set(4, v_3);
+  seed.u32(40, v_2);
+  seed.u32(44, v_3);
   let [v_4, v_5]: [G; 2] = context.io_read::<2>(2, v_0, v_2)?;
-  seed.set(5, v_4);
-  seed.set(6, v_5);
+  seed.full(24, v_4);
+  seed.full(32, v_5);
   return Ok(());
 }
 
@@ -554,6 +568,8 @@ fn write_7(
 }
 
 
+static SCHEMA_7: SeedSchema = SeedSchema { widths: &[SeedWidth::Full, SeedWidth::Full, SeedWidth::Full, SeedWidth::U32, SeedWidth::U32, SeedWidth::Full, SeedWidth::Full], offsets: &[0, 8, 16, 40, 44, 24, 32], bytes: 48 };
+
 fn pack_8(
   context: &SeedContext<'_>,
   seed: &mut [u64],
@@ -575,9 +591,9 @@ fn pack_8(
 }
 
 
-fn pack_8_u8(
+fn pack_8_typed(
   context: &SeedContext<'_>,
-  seed: &mut PackedSeed<'_>,
+  seed: &mut TypedSeed<'_>,
 ) -> TraceResult<()> {
   let v_0 = context.inputs[0];
   let [v_1]: [G; 1] = [(v_0 * v_0)];
@@ -591,7 +607,7 @@ fn pack_8_u8(
 }
  };
   let [v_2]: [G; 1] = context.load::<1>(1, v_0)?;
-  seed.set(2, v_2);
+  seed.full(8, v_2);
   return Ok(());
 }
 
@@ -644,6 +660,8 @@ fn write_8(
 }
 
 
+static SCHEMA_8: SeedSchema = SeedSchema { widths: &[SeedWidth::Full, SeedWidth::U32, SeedWidth::Full], offsets: &[0, 16, 8], bytes: 24 };
+
 fn pack_9(
   context: &SeedContext<'_>,
   seed: &mut [u64],
@@ -672,9 +690,9 @@ fn pack_9(
 }
 
 
-fn pack_9_u8(
+fn pack_9_typed(
   context: &SeedContext<'_>,
-  seed: &mut PackedSeed<'_>,
+  seed: &mut TypedSeed<'_>,
 ) -> TraceResult<()> {
   let v_0 = context.inputs[0];
   let []: [G; 0] = 'yield_0: { match v_0.as_canonical_u64() {
@@ -695,7 +713,7 @@ fn pack_9_u8(
 }
  };
   let [v_2]: [G; 1] = context.load::<1>(1, v_0)?;
-  seed.set(2, v_2);
+  seed.full(8, v_2);
   return Ok(());
 }
 
@@ -764,6 +782,8 @@ fn write_9(
 }
 
 
+static SCHEMA_9: SeedSchema = SeedSchema { widths: &[SeedWidth::Full, SeedWidth::U32, SeedWidth::Full], offsets: &[0, 16, 8], bytes: 24 };
+
 fn pack_10(
   context: &SeedContext<'_>,
   seed: &mut [u64],
@@ -791,9 +811,9 @@ fn pack_10(
 }
 
 
-fn pack_10_u8(
+fn pack_10_typed(
   context: &SeedContext<'_>,
-  seed: &mut PackedSeed<'_>,
+  seed: &mut TypedSeed<'_>,
 ) -> TraceResult<()> {
   let v_0 = context.inputs[0];
   let v_1 = context.inputs[1];
@@ -801,19 +821,19 @@ fn pack_10_u8(
   let [v_6]: [G; 1] = 'yield_0: { match v_0.as_canonical_u64() {
   0u64 => {
     let [v_3]: [G; 1] = context.io_read::<1>(1, v_1, v_2)?;
-    seed.set(3, v_3);
+    seed.full(24, v_3);
     break 'yield_0 [v_3];
   },
   _ => {
     let [v_4, v_5]: [G; 2] = context.io_read::<2>(2, v_1, v_2)?;
-    seed.set(3, v_4);
-    seed.set(4, v_5);
+    seed.full(24, v_4);
+    seed.u32(40, v_5);
     break 'yield_0 [v_5];
   },
 }
  };
   let [v_7]: [G; 1] = context.io_read::<1>(3, v_1, v_6)?;
-  seed.set(5, v_7);
+  seed.full(32, v_7);
   return Ok(());
 }
 
@@ -877,6 +897,8 @@ fn write_10(
 }
 
 
+static SCHEMA_10: SeedSchema = SeedSchema { widths: &[SeedWidth::Full, SeedWidth::Full, SeedWidth::Full, SeedWidth::Full, SeedWidth::U32, SeedWidth::Full], offsets: &[0, 8, 16, 24, 40, 32], bytes: 48 };
+
 fn pack_11(
   context: &SeedContext<'_>,
   seed: &mut [u64],
@@ -901,26 +923,26 @@ fn pack_11(
 }
 
 
-fn pack_11_u8(
+fn pack_11_typed(
   context: &SeedContext<'_>,
-  seed: &mut PackedSeed<'_>,
+  seed: &mut TypedSeed<'_>,
 ) -> TraceResult<()> {
   let v_0 = context.inputs[0];
   let v_1 = context.inputs[1];
   let [v_2, v_3]: [G; 2] = context.big_uint(0, v_0, v_1)?;
-  seed.set(3, v_2);
-  seed.set(4, v_3);
+  seed.u32(104, v_2);
+  seed.u32(108, v_3);
   let [v_4, v_5, v_6, v_7, v_8, v_9, v_10, v_11, v_12, v_13]: [G; 10] = context.load::<10>(1, v_2)?;
-  seed.set(5, v_4);
-  seed.set(6, v_5);
-  seed.set(7, v_6);
-  seed.set(8, v_7);
-  seed.set(9, v_8);
-  seed.set(10, v_9);
-  seed.set(11, v_10);
-  seed.set(12, v_11);
-  seed.set(13, v_12);
-  seed.set(14, v_13);
+  seed.full(24, v_4);
+  seed.full(32, v_5);
+  seed.full(40, v_6);
+  seed.full(48, v_7);
+  seed.full(56, v_8);
+  seed.full(64, v_9);
+  seed.full(72, v_10);
+  seed.full(80, v_11);
+  seed.full(88, v_12);
+  seed.full(96, v_13);
   return Ok(());
 }
 
@@ -975,6 +997,8 @@ fn write_11(
 }
 
 
+static SCHEMA_11: SeedSchema = SeedSchema { widths: &[SeedWidth::Full, SeedWidth::Full, SeedWidth::Full, SeedWidth::U32, SeedWidth::U32, SeedWidth::Full, SeedWidth::Full, SeedWidth::Full, SeedWidth::Full, SeedWidth::Full, SeedWidth::Full, SeedWidth::Full, SeedWidth::Full, SeedWidth::Full, SeedWidth::Full], offsets: &[0, 8, 16, 104, 108, 24, 32, 40, 48, 56, 64, 72, 80, 88, 96], bytes: 112 };
+
 fn pack_12(
   context: &SeedContext<'_>,
   seed: &mut [u64],
@@ -983,9 +1007,9 @@ fn pack_12(
 }
 
 
-fn pack_12_u8(
+fn pack_12_typed(
   context: &SeedContext<'_>,
-  seed: &mut PackedSeed<'_>,
+  seed: &mut TypedSeed<'_>,
 ) -> TraceResult<()> {
   return Ok(());
 }
@@ -1009,6 +1033,8 @@ fn write_12(
 }
 
 
+static SCHEMA_12: SeedSchema = SeedSchema { widths: &[SeedWidth::Full], offsets: &[0], bytes: 8 };
+
 fn pack_14(
   context: &SeedContext<'_>,
   seed: &mut [u64],
@@ -1020,13 +1046,13 @@ fn pack_14(
 }
 
 
-fn pack_14_u8(
+fn pack_14_typed(
   context: &SeedContext<'_>,
-  seed: &mut PackedSeed<'_>,
+  seed: &mut TypedSeed<'_>,
 ) -> TraceResult<()> {
   let v_0 = context.inputs[0];
   let [v_1]: [G; 1] = context.returned::<1>(0)?;
-  seed.set(2, v_1);
+  seed.full(16, v_1);
   return Ok(());
 }
 
@@ -1055,6 +1081,8 @@ fn write_14(
 }
 
 
+static SCHEMA_14: SeedSchema = SeedSchema { widths: &[SeedWidth::Full, SeedWidth::Full, SeedWidth::Full], offsets: &[0, 8, 16], bytes: 24 };
+
 fn pack_15(
   context: &SeedContext<'_>,
   seed: &mut [u64],
@@ -1064,9 +1092,9 @@ fn pack_15(
 }
 
 
-fn pack_15_u8(
+fn pack_15_typed(
   context: &SeedContext<'_>,
-  seed: &mut PackedSeed<'_>,
+  seed: &mut TypedSeed<'_>,
 ) -> TraceResult<()> {
   let v_0 = context.inputs[0];
   return Ok(());
@@ -1095,6 +1123,8 @@ fn write_15(
 }
 
 
+static SCHEMA_15: SeedSchema = SeedSchema { widths: &[SeedWidth::Full, SeedWidth::U32], offsets: &[0, 8], bytes: 16 };
+
 fn pack_16(
   context: &SeedContext<'_>,
   seed: &mut [u64],
@@ -1103,9 +1133,9 @@ fn pack_16(
 }
 
 
-fn pack_16_u8(
+fn pack_16_typed(
   context: &SeedContext<'_>,
-  seed: &mut PackedSeed<'_>,
+  seed: &mut TypedSeed<'_>,
 ) -> TraceResult<()> {
   return Ok(());
 }
@@ -1128,6 +1158,8 @@ fn write_16(
   return Ok(());
 }
 
+
+static SCHEMA_16: SeedSchema = SeedSchema { widths: &[SeedWidth::Full], offsets: &[0], bytes: 8 };
 
 fn pack_17(
   context: &SeedContext<'_>,
@@ -1306,9 +1338,9 @@ fn pack_17(
 }
 
 
-fn pack_17_u8(
+fn pack_17_typed(
   context: &SeedContext<'_>,
-  seed: &mut PackedSeed<'_>,
+  seed: &mut TypedSeed<'_>,
 ) -> TraceResult<()> {
   let v_0 = context.inputs[0];
   let v_1 = context.inputs[1];
@@ -1445,38 +1477,38 @@ fn pack_17_u8(
     },
     _ => {
       let [v_707, v_708, v_709, v_710, v_711, v_712, v_713, v_714, v_715, v_716, v_717, v_718, v_719, v_720, v_721, v_722, v_723, v_724, v_725, v_726, v_727, v_728, v_729, v_730, v_731, v_732, v_733, v_734, v_735, v_736, v_737, v_738]: [G; 32] = context.returned::<32>(482)?;
-      seed.set(130, v_707);
-      seed.set(131, v_708);
-      seed.set(132, v_709);
-      seed.set(133, v_710);
-      seed.set(134, v_711);
-      seed.set(135, v_712);
-      seed.set(136, v_713);
-      seed.set(137, v_714);
-      seed.set(138, v_715);
-      seed.set(139, v_716);
-      seed.set(140, v_717);
-      seed.set(141, v_718);
-      seed.set(142, v_719);
-      seed.set(143, v_720);
-      seed.set(144, v_721);
-      seed.set(145, v_722);
-      seed.set(146, v_723);
-      seed.set(147, v_724);
-      seed.set(148, v_725);
-      seed.set(149, v_726);
-      seed.set(150, v_727);
-      seed.set(151, v_728);
-      seed.set(152, v_729);
-      seed.set(153, v_730);
-      seed.set(154, v_731);
-      seed.set(155, v_732);
-      seed.set(156, v_733);
-      seed.set(157, v_734);
-      seed.set(158, v_735);
-      seed.set(159, v_736);
-      seed.set(160, v_737);
-      seed.set(161, v_738);
+      seed.u8(144, v_707);
+      seed.u8(145, v_708);
+      seed.u8(146, v_709);
+      seed.u8(147, v_710);
+      seed.u8(148, v_711);
+      seed.u8(149, v_712);
+      seed.u8(150, v_713);
+      seed.u8(151, v_714);
+      seed.u8(152, v_715);
+      seed.u8(153, v_716);
+      seed.u8(154, v_717);
+      seed.u8(155, v_718);
+      seed.u8(156, v_719);
+      seed.u8(157, v_720);
+      seed.u8(158, v_721);
+      seed.u8(159, v_722);
+      seed.u8(160, v_723);
+      seed.u8(161, v_724);
+      seed.u8(162, v_725);
+      seed.u8(163, v_726);
+      seed.u8(164, v_727);
+      seed.u8(165, v_728);
+      seed.u8(166, v_729);
+      seed.u8(167, v_730);
+      seed.u8(168, v_731);
+      seed.u8(169, v_732);
+      seed.u8(170, v_733);
+      seed.u8(171, v_734);
+      seed.u8(172, v_735);
+      seed.u8(173, v_736);
+      seed.u8(174, v_737);
+      seed.u8(175, v_738);
       return Ok(());
     },
   }
@@ -2947,6 +2979,8 @@ fn write_17(
 }
 
 
+static SCHEMA_17: SeedSchema = SeedSchema { widths: &[SeedWidth::Full, SeedWidth::Full, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8], offsets: &[0, 8, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148, 149, 150, 151, 152, 153, 154, 155, 156, 157, 158, 159, 160, 161, 162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172, 173, 174, 175], bytes: 176 };
+
 fn pack_18(
   context: &SeedContext<'_>,
   seed: &mut [u64],
@@ -2982,9 +3016,9 @@ fn pack_18(
 }
 
 
-fn pack_18_u8(
+fn pack_18_typed(
   context: &SeedContext<'_>,
-  seed: &mut PackedSeed<'_>,
+  seed: &mut TypedSeed<'_>,
 ) -> TraceResult<()> {
   let v_0 = context.inputs[0];
   let v_1 = context.inputs[1];
@@ -3012,7 +3046,7 @@ fn pack_18_u8(
 }
  };
   let [v_9]: [G; 1] = context.io_read::<1>(4, v_1, v_8)?;
-  seed.set(4, v_9);
+  seed.full(32, v_9);
   return Ok(());
 }
 
@@ -3097,6 +3131,8 @@ fn write_18(
 }
 
 
+static SCHEMA_18: SeedSchema = SeedSchema { widths: &[SeedWidth::Full, SeedWidth::Full, SeedWidth::Full, SeedWidth::Full, SeedWidth::Full], offsets: &[0, 8, 16, 24, 32], bytes: 40 };
+
 fn pack_19(
   context: &SeedContext<'_>,
   seed: &mut [u64],
@@ -3106,9 +3142,9 @@ fn pack_19(
 }
 
 
-fn pack_19_u8(
+fn pack_19_typed(
   context: &SeedContext<'_>,
-  seed: &mut PackedSeed<'_>,
+  seed: &mut TypedSeed<'_>,
 ) -> TraceResult<()> {
   let v_0 = context.inputs[0];
   return Ok(());
@@ -3142,6 +3178,8 @@ fn write_19(
 }
 
 
+static SCHEMA_19: SeedSchema = SeedSchema { widths: &[SeedWidth::Full, SeedWidth::U8], offsets: &[0, 8], bytes: 16 };
+
 fn pack_20(
   context: &SeedContext<'_>,
   seed: &mut [u64],
@@ -3162,9 +3200,9 @@ fn pack_20(
 }
 
 
-fn pack_20_u8(
+fn pack_20_typed(
   context: &SeedContext<'_>,
-  seed: &mut PackedSeed<'_>,
+  seed: &mut TypedSeed<'_>,
 ) -> TraceResult<()> {
   let v_0 = context.inputs[0];
   let v_1 = context.inputs[1];
@@ -3236,6 +3274,8 @@ fn write_20(
 }
 
 
+static SCHEMA_20: SeedSchema = SeedSchema { widths: &[SeedWidth::Full, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8, SeedWidth::U8], offsets: &[0, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19], bytes: 24 };
+
 fn pack_21(
   context: &SeedContext<'_>,
   seed: &mut [u64],
@@ -3260,9 +3300,9 @@ fn pack_21(
 }
 
 
-fn pack_21_u8(
+fn pack_21_typed(
   context: &SeedContext<'_>,
-  seed: &mut PackedSeed<'_>,
+  seed: &mut TypedSeed<'_>,
 ) -> TraceResult<()> {
   let v_0 = context.inputs[0];
   let v_1 = context.inputs[1];
@@ -3504,6 +3544,8 @@ fn write_21(
 }
 
 
+static SCHEMA_21: SeedSchema = SeedSchema { widths: &[SeedWidth::Full, SeedWidth::Full, SeedWidth::Full, SeedWidth::Full, SeedWidth::Full, SeedWidth::Full, SeedWidth::Full, SeedWidth::Full, SeedWidth::Full, SeedWidth::Full, SeedWidth::Full, SeedWidth::Full, SeedWidth::Full, SeedWidth::Full, SeedWidth::Full, SeedWidth::Full, SeedWidth::Full], offsets: &[0, 8, 16, 24, 32, 40, 48, 56, 64, 72, 80, 88, 96, 104, 112, 120, 128], bytes: 136 };
+
 #[inline(never)]
 fn expected_function_0() -> Function {
   Function { body: Block { ops: vec![Op::Add(0, 1), Op::Sub(0, 1), Op::Mul(0, 1), Op::Const(G::from_u64(7)), Op::Mul(4, 5), Op::EqZero(6), Op::EqZero(0), Op::UnconstrainedGInverse(0), Op::UnconstrainedGToBytes(0)], ctrl: Ctrl::Return(0, vec![]) }, layout: FunctionLayout { input_size: 2, selectors: 1, auxiliaries: 15, lookups: 1 }, entry: true, constrained: true }
@@ -3617,27 +3659,27 @@ fn expected_function_21() -> Function {
 fn expected_program() -> Toplevel {
   Toplevel { functions: vec![expected_function_0(), expected_function_1(), expected_function_2(), expected_function_3(), expected_function_4(), expected_function_5(), expected_function_6(), expected_function_7(), expected_function_8(), expected_function_9(), expected_function_10(), expected_function_11(), expected_function_12(), expected_function_13(), expected_function_14(), expected_function_15(), expected_function_16(), expected_function_17(), expected_function_18(), expected_function_19(), expected_function_20(), expected_function_21()], memory_sizes: vec![0, 1, 2, 10], circuits: vec![Circuit { members: vec![0, 3, 12], layout: FunctionLayout { input_size: 2, selectors: 6, auxiliaries: 15, lookups: 2 } }, Circuit { members: vec![1], layout: FunctionLayout { input_size: 2, selectors: 1, auxiliaries: 24, lookups: 14 } }, Circuit { members: vec![2], layout: FunctionLayout { input_size: 12, selectors: 1, auxiliaries: 22, lookups: 7 } }, Circuit { members: vec![4], layout: FunctionLayout { input_size: 1, selectors: 1, auxiliaries: 6, lookups: 4 } }, Circuit { members: vec![5], layout: FunctionLayout { input_size: 1, selectors: 1, auxiliaries: 1, lookups: 1 } }, Circuit { members: vec![6], layout: FunctionLayout { input_size: 1, selectors: 1, auxiliaries: 3, lookups: 2 } }, Circuit { members: vec![7], layout: FunctionLayout { input_size: 2, selectors: 1, auxiliaries: 5, lookups: 1 } }, Circuit { members: vec![8], layout: FunctionLayout { input_size: 1, selectors: 3, auxiliaries: 4, lookups: 2 } }, Circuit { members: vec![9], layout: FunctionLayout { input_size: 1, selectors: 4, auxiliaries: 4, lookups: 2 } }, Circuit { members: vec![10], layout: FunctionLayout { input_size: 2, selectors: 3, auxiliaries: 6, lookups: 1 } }, Circuit { members: vec![11], layout: FunctionLayout { input_size: 2, selectors: 1, auxiliaries: 13, lookups: 2 } }, Circuit { members: vec![14], layout: FunctionLayout { input_size: 1, selectors: 1, auxiliaries: 2, lookups: 1 } }, Circuit { members: vec![15], layout: FunctionLayout { input_size: 1, selectors: 1, auxiliaries: 2, lookups: 3 } }, Circuit { members: vec![16], layout: FunctionLayout { input_size: 0, selectors: 1, auxiliaries: 1, lookups: 1 } }, Circuit { members: vec![17], layout: FunctionLayout { input_size: 129, selectors: 2, auxiliaries: 402, lookups: 194 } }, Circuit { members: vec![18], layout: FunctionLayout { input_size: 3, selectors: 5, auxiliaries: 5, lookups: 1 } }, Circuit { members: vec![19], layout: FunctionLayout { input_size: 1, selectors: 1, auxiliaries: 1, lookups: 1 } }, Circuit { members: vec![20], layout: FunctionLayout { input_size: 12, selectors: 1, auxiliaries: 10, lookups: 1 } }, Circuit { members: vec![21], layout: FunctionLayout { input_size: 16, selectors: 1, auxiliaries: 73, lookups: 22 } }] }
 }
-pub static PROGRAM: GeneratedProgram = GeneratedProgram { fingerprint: [233, 230, 189, 104, 12, 247, 211, 54, 222, 59, 231, 186, 188, 149, 125, 54, 14, 111, 74, 230, 192, 254, 98, 8, 117, 27, 125, 55, 25, 105, 64, 162], complete: true, expected: expected_program, functions: &[
-Some(FunctionWriter { layout: FunctionLayout { input_size: 2, selectors: 1, auxiliaries: 15, lookups: 1 }, output_size: 0, seed_words: 3, pack: pack_0, pack_u8: pack_0_u8, pack_checked: pack_0_checked, write: write_0 }),
-Some(FunctionWriter { layout: FunctionLayout { input_size: 2, selectors: 1, auxiliaries: 24, lookups: 14 }, output_size: 0, seed_words: 3, pack: pack_1, pack_u8: pack_1_u8, pack_checked: pack_1_checked, write: write_1 }),
-Some(FunctionWriter { layout: FunctionLayout { input_size: 12, selectors: 1, auxiliaries: 22, lookups: 7 }, output_size: 5, seed_words: 13, pack: pack_2, pack_u8: pack_2_u8, pack_checked: pack_2_checked, write: write_2 }),
-Some(FunctionWriter { layout: FunctionLayout { input_size: 2, selectors: 4, auxiliaries: 7, lookups: 2 }, output_size: 1, seed_words: 3, pack: pack_3, pack_u8: pack_3_u8, pack_checked: pack_3_checked, write: write_3 }),
-Some(FunctionWriter { layout: FunctionLayout { input_size: 1, selectors: 1, auxiliaries: 6, lookups: 4 }, output_size: 1, seed_words: 6, pack: pack_4, pack_u8: pack_4_u8, pack_checked: pack_4_checked, write: write_4 }),
-Some(FunctionWriter { layout: FunctionLayout { input_size: 1, selectors: 1, auxiliaries: 1, lookups: 1 }, output_size: 1, seed_words: 2, pack: pack_5, pack_u8: pack_5_u8, pack_checked: pack_5_checked, write: write_5 }),
-Some(FunctionWriter { layout: FunctionLayout { input_size: 1, selectors: 1, auxiliaries: 3, lookups: 2 }, output_size: 1, seed_words: 3, pack: pack_6, pack_u8: pack_6_u8, pack_checked: pack_6_checked, write: write_6 }),
-Some(FunctionWriter { layout: FunctionLayout { input_size: 2, selectors: 1, auxiliaries: 5, lookups: 1 }, output_size: 2, seed_words: 7, pack: pack_7, pack_u8: pack_7_u8, pack_checked: pack_7_checked, write: write_7 }),
-Some(FunctionWriter { layout: FunctionLayout { input_size: 1, selectors: 3, auxiliaries: 4, lookups: 2 }, output_size: 0, seed_words: 3, pack: pack_8, pack_u8: pack_8_u8, pack_checked: pack_8_checked, write: write_8 }),
-Some(FunctionWriter { layout: FunctionLayout { input_size: 1, selectors: 4, auxiliaries: 4, lookups: 2 }, output_size: 0, seed_words: 3, pack: pack_9, pack_u8: pack_9_u8, pack_checked: pack_9_checked, write: write_9 }),
-Some(FunctionWriter { layout: FunctionLayout { input_size: 2, selectors: 3, auxiliaries: 6, lookups: 1 }, output_size: 1, seed_words: 6, pack: pack_10, pack_u8: pack_10_u8, pack_checked: pack_10_checked, write: write_10 }),
-Some(FunctionWriter { layout: FunctionLayout { input_size: 2, selectors: 1, auxiliaries: 13, lookups: 2 }, output_size: 2, seed_words: 15, pack: pack_11, pack_u8: pack_11_u8, pack_checked: pack_11_checked, write: write_11 }),
-Some(FunctionWriter { layout: FunctionLayout { input_size: 0, selectors: 1, auxiliaries: 1, lookups: 1 }, output_size: 0, seed_words: 1, pack: pack_12, pack_u8: pack_12_u8, pack_checked: pack_12_checked, write: write_12 }),
+pub static PROGRAM: GeneratedProgram = GeneratedProgram { fingerprint: [185, 46, 44, 106, 194, 110, 24, 238, 32, 218, 147, 115, 110, 121, 40, 100, 10, 129, 190, 93, 243, 89, 245, 217, 166, 109, 177, 53, 190, 114, 215, 95], complete: true, expected: expected_program, functions: &[
+Some(FunctionWriter { layout: FunctionLayout { input_size: 2, selectors: 1, auxiliaries: 15, lookups: 1 }, output_size: 0, seed_words: 3, schema: &SCHEMA_0, pack: pack_0, pack_typed: pack_0_typed, pack_checked: pack_0_checked, write: write_0 }),
+Some(FunctionWriter { layout: FunctionLayout { input_size: 2, selectors: 1, auxiliaries: 24, lookups: 14 }, output_size: 0, seed_words: 3, schema: &SCHEMA_1, pack: pack_1, pack_typed: pack_1_typed, pack_checked: pack_1_checked, write: write_1 }),
+Some(FunctionWriter { layout: FunctionLayout { input_size: 12, selectors: 1, auxiliaries: 22, lookups: 7 }, output_size: 5, seed_words: 13, schema: &SCHEMA_2, pack: pack_2, pack_typed: pack_2_typed, pack_checked: pack_2_checked, write: write_2 }),
+Some(FunctionWriter { layout: FunctionLayout { input_size: 2, selectors: 4, auxiliaries: 7, lookups: 2 }, output_size: 1, seed_words: 3, schema: &SCHEMA_3, pack: pack_3, pack_typed: pack_3_typed, pack_checked: pack_3_checked, write: write_3 }),
+Some(FunctionWriter { layout: FunctionLayout { input_size: 1, selectors: 1, auxiliaries: 6, lookups: 4 }, output_size: 1, seed_words: 6, schema: &SCHEMA_4, pack: pack_4, pack_typed: pack_4_typed, pack_checked: pack_4_checked, write: write_4 }),
+Some(FunctionWriter { layout: FunctionLayout { input_size: 1, selectors: 1, auxiliaries: 1, lookups: 1 }, output_size: 1, seed_words: 2, schema: &SCHEMA_5, pack: pack_5, pack_typed: pack_5_typed, pack_checked: pack_5_checked, write: write_5 }),
+Some(FunctionWriter { layout: FunctionLayout { input_size: 1, selectors: 1, auxiliaries: 3, lookups: 2 }, output_size: 1, seed_words: 3, schema: &SCHEMA_6, pack: pack_6, pack_typed: pack_6_typed, pack_checked: pack_6_checked, write: write_6 }),
+Some(FunctionWriter { layout: FunctionLayout { input_size: 2, selectors: 1, auxiliaries: 5, lookups: 1 }, output_size: 2, seed_words: 7, schema: &SCHEMA_7, pack: pack_7, pack_typed: pack_7_typed, pack_checked: pack_7_checked, write: write_7 }),
+Some(FunctionWriter { layout: FunctionLayout { input_size: 1, selectors: 3, auxiliaries: 4, lookups: 2 }, output_size: 0, seed_words: 3, schema: &SCHEMA_8, pack: pack_8, pack_typed: pack_8_typed, pack_checked: pack_8_checked, write: write_8 }),
+Some(FunctionWriter { layout: FunctionLayout { input_size: 1, selectors: 4, auxiliaries: 4, lookups: 2 }, output_size: 0, seed_words: 3, schema: &SCHEMA_9, pack: pack_9, pack_typed: pack_9_typed, pack_checked: pack_9_checked, write: write_9 }),
+Some(FunctionWriter { layout: FunctionLayout { input_size: 2, selectors: 3, auxiliaries: 6, lookups: 1 }, output_size: 1, seed_words: 6, schema: &SCHEMA_10, pack: pack_10, pack_typed: pack_10_typed, pack_checked: pack_10_checked, write: write_10 }),
+Some(FunctionWriter { layout: FunctionLayout { input_size: 2, selectors: 1, auxiliaries: 13, lookups: 2 }, output_size: 2, seed_words: 15, schema: &SCHEMA_11, pack: pack_11, pack_typed: pack_11_typed, pack_checked: pack_11_checked, write: write_11 }),
+Some(FunctionWriter { layout: FunctionLayout { input_size: 0, selectors: 1, auxiliaries: 1, lookups: 1 }, output_size: 0, seed_words: 1, schema: &SCHEMA_12, pack: pack_12, pack_typed: pack_12_typed, pack_checked: pack_12_checked, write: write_12 }),
 None,
-Some(FunctionWriter { layout: FunctionLayout { input_size: 1, selectors: 1, auxiliaries: 2, lookups: 1 }, output_size: 1, seed_words: 3, pack: pack_14, pack_u8: pack_14_u8, pack_checked: pack_14_checked, write: write_14 }),
-Some(FunctionWriter { layout: FunctionLayout { input_size: 1, selectors: 1, auxiliaries: 2, lookups: 3 }, output_size: 0, seed_words: 2, pack: pack_15, pack_u8: pack_15_u8, pack_checked: pack_15_checked, write: write_15 }),
-Some(FunctionWriter { layout: FunctionLayout { input_size: 0, selectors: 1, auxiliaries: 1, lookups: 1 }, output_size: 0, seed_words: 1, pack: pack_16, pack_u8: pack_16_u8, pack_checked: pack_16_checked, write: write_16 }),
-Some(FunctionWriter { layout: FunctionLayout { input_size: 129, selectors: 2, auxiliaries: 402, lookups: 194 }, output_size: 32, seed_words: 162, pack: pack_17, pack_u8: pack_17_u8, pack_checked: pack_17_checked, write: write_17 }),
-Some(FunctionWriter { layout: FunctionLayout { input_size: 3, selectors: 5, auxiliaries: 5, lookups: 1 }, output_size: 1, seed_words: 5, pack: pack_18, pack_u8: pack_18_u8, pack_checked: pack_18_checked, write: write_18 }),
-Some(FunctionWriter { layout: FunctionLayout { input_size: 1, selectors: 1, auxiliaries: 1, lookups: 1 }, output_size: 0, seed_words: 2, pack: pack_19, pack_u8: pack_19_u8, pack_checked: pack_19_checked, write: write_19 }),
-Some(FunctionWriter { layout: FunctionLayout { input_size: 12, selectors: 1, auxiliaries: 10, lookups: 1 }, output_size: 3, seed_words: 13, pack: pack_20, pack_u8: pack_20_u8, pack_checked: pack_20_checked, write: write_20 }),
-Some(FunctionWriter { layout: FunctionLayout { input_size: 16, selectors: 1, auxiliaries: 73, lookups: 22 }, output_size: 16, seed_words: 17, pack: pack_21, pack_u8: pack_21_u8, pack_checked: pack_21_checked, write: write_21 })
+Some(FunctionWriter { layout: FunctionLayout { input_size: 1, selectors: 1, auxiliaries: 2, lookups: 1 }, output_size: 1, seed_words: 3, schema: &SCHEMA_14, pack: pack_14, pack_typed: pack_14_typed, pack_checked: pack_14_checked, write: write_14 }),
+Some(FunctionWriter { layout: FunctionLayout { input_size: 1, selectors: 1, auxiliaries: 2, lookups: 3 }, output_size: 0, seed_words: 2, schema: &SCHEMA_15, pack: pack_15, pack_typed: pack_15_typed, pack_checked: pack_15_checked, write: write_15 }),
+Some(FunctionWriter { layout: FunctionLayout { input_size: 0, selectors: 1, auxiliaries: 1, lookups: 1 }, output_size: 0, seed_words: 1, schema: &SCHEMA_16, pack: pack_16, pack_typed: pack_16_typed, pack_checked: pack_16_checked, write: write_16 }),
+Some(FunctionWriter { layout: FunctionLayout { input_size: 129, selectors: 2, auxiliaries: 402, lookups: 194 }, output_size: 32, seed_words: 162, schema: &SCHEMA_17, pack: pack_17, pack_typed: pack_17_typed, pack_checked: pack_17_checked, write: write_17 }),
+Some(FunctionWriter { layout: FunctionLayout { input_size: 3, selectors: 5, auxiliaries: 5, lookups: 1 }, output_size: 1, seed_words: 5, schema: &SCHEMA_18, pack: pack_18, pack_typed: pack_18_typed, pack_checked: pack_18_checked, write: write_18 }),
+Some(FunctionWriter { layout: FunctionLayout { input_size: 1, selectors: 1, auxiliaries: 1, lookups: 1 }, output_size: 0, seed_words: 2, schema: &SCHEMA_19, pack: pack_19, pack_typed: pack_19_typed, pack_checked: pack_19_checked, write: write_19 }),
+Some(FunctionWriter { layout: FunctionLayout { input_size: 12, selectors: 1, auxiliaries: 10, lookups: 1 }, output_size: 3, seed_words: 13, schema: &SCHEMA_20, pack: pack_20, pack_typed: pack_20_typed, pack_checked: pack_20_checked, write: write_20 }),
+Some(FunctionWriter { layout: FunctionLayout { input_size: 16, selectors: 1, auxiliaries: 73, lookups: 22 }, output_size: 16, seed_words: 17, schema: &SCHEMA_21, pack: pack_21, pack_typed: pack_21_typed, pack_checked: pack_21_checked, write: write_21 })
 ] };

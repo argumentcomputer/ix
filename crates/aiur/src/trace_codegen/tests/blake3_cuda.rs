@@ -2,8 +2,9 @@
 use crate::trace_codegen::cuda::CudaLibrary;
 unsafe extern "C" {
   fn aiur_trace_blake3_contract() -> *const u8;
+  fn aiur_trace_blake3_schema() -> *const u8;
   pub(super) fn aiur_trace_blake3_0(device: i32, seeds: *const u8, encoding: u32, real: usize, rows: usize, width: usize, selectors: usize, auxiliaries: usize, output: *mut u64) -> i32;
 }
-pub static CUDA: CudaLibrary = unsafe { CudaLibrary::new([244, 15, 191, 184, 67, 8, 78, 20, 119, 70, 132, 166, 36, 38, 181, 21, 154, 23, 223, 26, 42, 131, 221, 16, 233, 63, 222, 10, 252, 23, 145, 179], aiur_trace_blake3_contract, &[
+pub static CUDA: CudaLibrary = unsafe { CudaLibrary::new([131, 194, 79, 74, 172, 87, 214, 254, 54, 35, 217, 21, 53, 12, 243, 119, 144, 96, 204, 186, 228, 108, 103, 148, 83, 122, 40, 55, 201, 242, 24, 70], aiur_trace_blake3_contract, aiur_trace_blake3_schema, &[
 Some(aiur_trace_blake3_0)
-], &[162]) };
+], &[162], &[176]) };

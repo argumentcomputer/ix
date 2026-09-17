@@ -78,7 +78,7 @@ mod tests {
 
   #[test]
   fn production_registration_and_dispatch_match_oracle() {
-    let fixture = crate::gpu_trace::tests::toplevel();
+    let fixture = (crate::trace_codegen::tests::blake3::PROGRAM.expected)();
     let mut io = IOBuffer { data: Default::default(), map: Default::default() };
     let mut input = vec![G::ZERO];
     input.extend((0..128).map(|i| G::from_usize((i * 37 + 19) % 256)));
@@ -92,22 +92,28 @@ mod tests {
         .enumerate()
         .filter_map(|(i, f)| f.as_ref().map(|_| i))
         .collect();
-      assert_eq!(selected.len(), 1, "{name}");
-      let function = selected[0];
+      // The selection is whole circuits, so every member of a covered
+      // circuit is generated and no generated function is left uncovered.
+      let registered = register(top.clone()).unwrap();
+      let covered: Vec<_> = (0..top.circuits.len())
+        .filter(|&c| registered.bound().supports(c))
+        .collect();
+      let mut covered_functions: Vec<_> =
+        covered.iter().flat_map(|&c| top.circuits[c].members.clone()).collect();
+      covered_functions.sort_unstable();
+      assert_eq!(covered_functions, selected, "{name}: partial circuit");
+      // BLAKE3 is the member whose rows the fixture record supplies.
+      let function = selected
+        .iter()
+        .copied()
+        .find(|&f| top.functions[f].layout == fixture.functions[0].layout)
+        .expect("blake3_compress is selected");
       let circuit = top
         .circuits
         .iter()
         .position(|c| c.members.contains(&function))
         .unwrap();
       assert_eq!(top.circuits[circuit].members, [function]);
-      assert!(crate::gpu_trace::supported(&top, circuit));
-      let registered = register(top.clone()).unwrap();
-      assert_eq!(
-        (0..top.circuits.len())
-          .filter(|&c| registered.bound().supports(c))
-          .count(),
-        1
-      );
       let provider = TraceProvider::Generated(registered);
       let mut record = QueryRecord::new(&top);
       for (input, result) in fixture_record.function_queries[0].iter() {
@@ -146,7 +152,8 @@ mod tests {
           "{name}: cell {i}"
         );
       }
-      let uncovered = (0..top.circuits.len()).find(|&c| c != circuit).unwrap();
+      let uncovered =
+        (0..top.circuits.len()).find(|&c| !covered.contains(&c)).unwrap();
       assert!(
         provider
           .prepare(&top, uncovered, &record, &io, &[], (0, 0), (0, 1), 1)

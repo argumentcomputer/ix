@@ -11,8 +11,15 @@ namespace Aiur.TraceCodegen
 open Bytecode TracePlan Codegen
 
 private inductive Mode where
-  | row | pack | packed | checked
+  | row | pack | typed | checked
   deriving BEq
+
+private def setter : SeedWidth → String
+  | .u8 => "u8" | .u16 => "u16" | .u32 => "u32" | .full => "full"
+
+private def widthLiteral : SeedWidth → String
+  | .u8 => "SeedWidth::U8" | .u16 => "SeedWidth::U16"
+  | .u32 => "SeedWidth::U32" | .full => "SeedWidth::Full"
 
 private def number (n : Nat) : RustExpr := .lit (toString n)
 private def valueExpr (id : ValueId) : RustExpr := .var s!"v_{id}"
@@ -28,13 +35,13 @@ private def ok : RustStmt := .returnStmt (call "Ok" #[.lit "()"])
 private def Mode.operations (mode : Mode) (plan : FunctionPlan) : Array Nat :=
   match mode with
   | .row => plan.rowOperations
-  | .pack | .packed => plan.preparationOperations
+  | .pack | .typed => plan.preparationOperations
   | .checked => plan.aliasCheckOperations
 
 private def Mode.values (mode : Mode) (plan : FunctionPlan) : Array ValueId :=
   match mode with
   | .row => plan.rowValues
-  | .pack | .packed => plan.preparationValues
+  | .pack | .typed => plan.preparationValues
   | .checked => plan.aliasCheckValues
 
 private def rowWrite (region : String) (index : Nat) (value : RustExpr) : RustStmt :=
@@ -57,7 +64,7 @@ private def readExpression (mode : Mode) (op : Operation) (read : ExternalRead) 
   | .ioValues _ => call (name "io_read") #[site, args[0]!, args[1]!]
   | .bigUintResults => call "context.big_uint" #[site, args[0]!, args[1]!]
 
-private def emitOperation (mode : Mode) (op : Operation) : Except String (Array RustStmt) := do
+private def emitOperation (plan : FunctionPlan) (mode : Mode) (op : Operation) : Except String (Array RustStmt) := do
   let inputs := op.inputs.map valueExpr
   let a := inputs[0]?.getD gZero
   let b := inputs[1]?.getD gZero
@@ -128,8 +135,11 @@ private def emitOperation (mode : Mode) (op : Operation) : Except String (Array 
       stmts := stmts.push (rowWrite "auxiliaries" (op.auxiliaries.start + i) columns[i]!)
   else if let some read := op.externalRead then
     for i in [:op.outputs.size] do
-      if mode == .packed then
-        stmts := stmts.push (.exprStmt (call "seed.set" #[number (read.seed.start + i), valueExpr op.outputs[i]!]))
+      if mode == .typed then
+        let slot := read.seed.start + i
+        let width := plan.seedSchema.widths[slot]?.getD .full
+        let offset := plan.seedSchema.offsets[slot]?.getD (8 * slot)
+        stmts := stmts.push (.exprStmt (call s!"seed.{setter width}" #[number offset, valueExpr op.outputs[i]!]))
       else
         stmts := stmts.push (.assign (indexExpr "seed" (read.seed.start + i)) (canonical (valueExpr op.outputs[i]!)))
   pure stmts
@@ -145,7 +155,7 @@ mutual
     for index in block.operations do
       if (mode.operations plan).contains index then
         let some operation := plan.operations[index]? | throw "missing planned operation"
-        result := result ++ (← emitOperation mode operation)
+        result := result ++ (← emitOperation plan mode operation)
     pure (result ++ (← emitControl plan mode block.control target depth))
 
   private partial def emitArms (plan : FunctionPlan) (mode : Mode) (discriminant : ValueId)
@@ -201,8 +211,8 @@ private def emitFunction (plan : FunctionPlan) (mode : Mode) : Except String Str
   body := body ++ (← emitBlock plan mode plan.body none 0)
   let (name, params) := if mode == .row then
     (s!"write_{plan.index}", #[("seed", "&[u64]"), ("offsets", "RowOffsets"), ("row", "&mut [u64]")])
-    else (s!"pack_{plan.index}" ++ (if mode == .checked then "_checked" else if mode == .packed then "_u8" else ""),
-      #[("context", "&SeedContext<'_>"), ("seed", if mode == .packed then "&mut PackedSeed<'_>" else "&mut [u64]")])
+    else (s!"pack_{plan.index}" ++ (if mode == .checked then "_checked" else if mode == .typed then "_typed" else ""),
+      #[("context", "&SeedContext<'_>"), ("seed", if mode == .typed then "&mut TypedSeed<'_>" else "&mut [u64]")])
   pure (RustItem.function name params "TraceResult<()>" body).toStr
 
 private def vector (xs : Array String) : String := "vec![" ++ ", ".intercalate xs.toList ++ "]"
@@ -305,9 +315,13 @@ def emit (top : Bytecode.Toplevel) (cratePath : String := "aiur")
       if !(selected.map (·.contains f.index)).getD true then
         descriptors := descriptors.push "None"
         continue
-      for mode in #[Mode.pack, .packed, .checked, .row] do source := source ++ (← emitFunction f mode) ++ "\n"
+      for mode in #[Mode.pack, .typed, .checked, .row] do source := source ++ (← emitFunction f mode) ++ "\n"
+      source := source ++ s!"static SCHEMA_{f.index}: SeedSchema = SeedSchema " ++ "{ widths: &[" ++
+        ", ".intercalate (f.seedSchema.widths.toList.map widthLiteral) ++ "], offsets: &[" ++
+        ", ".intercalate (f.seedSchema.offsets.toList.map toString) ++ s!"], bytes: {f.seedSchema.bytes} " ++ "};\n\n"
       descriptors := descriptors.push ("Some(FunctionWriter { layout: " ++ layout f.layout ++
-        s!", output_size: {f.outputSize.getD 0}, seed_words: {f.seedWords}, pack: pack_{f.index}, pack_u8: pack_{f.index}_u8, " ++
+        s!", output_size: {f.outputSize.getD 0}, seed_words: {f.seedWords}, schema: &SCHEMA_{f.index}, " ++
+        s!"pack: pack_{f.index}, pack_typed: pack_{f.index}_typed, " ++
         s!"pack_checked: pack_{f.index}_checked, write: write_{f.index}" ++ " })")
   source := source ++ expected top
   pure (source ++ "pub static PROGRAM: GeneratedProgram = GeneratedProgram { fingerprint: [" ++ TraceContract.fingerprintLiteral top ++ s!"], complete: {selected.isNone}, expected: expected_program, functions: &[\n" ++

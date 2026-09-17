@@ -38,6 +38,10 @@ jobs:
         run: lake lint -- --wfail -v
       - name: Check codegen'd IxVM kernel is up to date
         run: lake exe ix codegen --check
+      # A stale generated trace module is otherwise caught only when the
+      # generated GPU provider registers at proving time.
+      - name: Check generated trace writers, CUDA units and manifest are up to date
+        run: lake exe ix codegen --trace-bundle --check
       - name: Check Lean versions match for Ix and compiler bench
         run: diff lean-toolchain Benchmarks/Compile/lean-toolchain
       # `Nat.add_comm`'s transitive-dependency closure (~40 kB, ~40 constants)

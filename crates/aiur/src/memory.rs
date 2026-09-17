@@ -128,12 +128,8 @@ impl Memory {
       height_no_padding.next_power_of_two()
     };
 
-    let mut rows = vec![G::ZERO; height * width];
+    let mut rows = G::zero_vec(height * width);
     let rows_no_padding = &mut rows[0..height_no_padding * width];
-
-    // Builder rows start zeroed (`Lookup::empty()`), so padding rows need no
-    // writes at all.
-    let mut builder = LookupValues::builder(height, slot_arg_widths);
 
     if height_no_padding > 0 {
       let queries = record.memory_queries.get(&size).expect("Invalid size");
@@ -160,26 +156,31 @@ impl Memory {
             &Self::memseg_args(size_g, row[2] + G::ONE),
           );
         };
-      if crate::trace::trace_only_lookups() {
+      if crate::trace::trace_only_lookups() || slot_arg_widths.is_empty() {
         rows_no_padding
           .par_chunks_mut(width)
           .enumerate()
           .for_each(|(i, row)| populate(i, row, None));
         let trace = RowMajorMatrix::new(rows, width);
         return (trace, LookupValues::shape_only(height, slot_arg_widths));
-      } else {
-        let mut row_writers = builder.rows_mut();
-        rows_no_padding
-          .par_chunks_mut(width)
-          .zip(row_writers[..height_no_padding].par_iter_mut())
-          .enumerate()
-          .for_each(|(i, (row, row_lookups))| {
-            populate(i, row, Some(row_lookups))
-          });
       }
+      // Builder rows start zeroed (`Lookup::empty()`), so padding rows need
+      // no writes at all.
+      let mut builder = LookupValues::builder(height, slot_arg_widths);
+      let mut row_writers = builder.rows_mut();
+      rows_no_padding
+        .par_chunks_mut(width)
+        .zip(row_writers[..height_no_padding].par_iter_mut())
+        .enumerate()
+        .for_each(|(i, (row, row_lookups))| {
+          populate(i, row, Some(row_lookups))
+        });
+      drop(row_writers);
+      let trace = RowMajorMatrix::new(rows, width);
+      return (trace, builder.finish());
     }
 
     let trace = RowMajorMatrix::new(rows, width);
-    (trace, builder.finish())
+    (trace, LookupValues::shape_only(height, slot_arg_widths))
   }
 }

@@ -10,7 +10,6 @@ use std::process::Command;
 
 fn main() {
   println!("cargo:rerun-if-changed=build.rs");
-  println!("cargo:rerun-if-changed=cuda/blake3_trace.cu");
   println!("cargo:rerun-if-env-changed=NVCC");
   println!("cargo:rerun-if-env-changed=CUDA_HOME");
   println!("cargo:rerun-if-env-changed=CUDA_PATH");
@@ -37,19 +36,21 @@ fn main() {
   let library = out_dir.join("libaiur_trace_cuda.a");
   let architectures = cuda_architectures(&nvcc);
 
-  let mut sources = vec![PathBuf::from("cuda/blake3_trace.cu")];
-  let mut includes = vec![PathBuf::from("cuda")];
-  let mut headers = Vec::new();
-  if env::var_os("CARGO_FEATURE_CUDA_TRACE_CODEGEN").is_some() {
-    let include = env::var_os("DEP_MULTI_STARK_CUDA_INCLUDE")
-      .expect("cuda-trace-codegen requires multi-stark's shared CUDA field header metadata");
-    includes.push(PathBuf::from(&include));
-    headers.extend([
-      PathBuf::from("cuda/trace_runtime.cuh"),
-      PathBuf::from("cuda/trace_primitives.cuh"),
-      PathBuf::from(include).join("goldilocks.cuh"),
-    ]);
-    sources.push(PathBuf::from("cuda/trace_runtime.cu"));
+  // Every aiur CUDA source belongs to the generated trace writers; the bare
+  // `cuda` feature only enables multi-stark's device backend.
+  if env::var_os("CARGO_FEATURE_CUDA_TRACE_CODEGEN").is_none() {
+    return;
+  }
+  let include = env::var_os("DEP_MULTI_STARK_CUDA_INCLUDE")
+    .expect("cuda-trace-codegen requires multi-stark's shared CUDA field header metadata");
+  let includes = vec![PathBuf::from("cuda"), PathBuf::from(&include)];
+  let headers = [
+    PathBuf::from("cuda/trace_runtime.cuh"),
+    PathBuf::from("cuda/trace_primitives.cuh"),
+    PathBuf::from(include).join("goldilocks.cuh"),
+  ];
+  let mut sources = vec![PathBuf::from("cuda/trace_runtime.cu")];
+  {
     for manifest_path in [
       "cuda/trace-manifest.json",
       "cuda/generated/production/trace-manifest.json",
@@ -61,7 +62,7 @@ fn main() {
       .expect("invalid trace manifest");
       assert_eq!(
         manifest["abi"].as_u64(),
-        Some(1),
+        Some(2),
         "unsupported trace manifest ABI"
       );
       for unit in manifest["units"].as_array().expect("manifest units") {

@@ -2,6 +2,7 @@
 use crate::trace_codegen::cuda::CudaLibrary;
 unsafe extern "C" {
   fn aiur_trace_fixtures_contract() -> *const u8;
+  fn aiur_trace_fixtures_schema() -> *const u8;
   pub(super) fn aiur_trace_fixtures_0(device: i32, seeds: *const u8, encoding: u32, real: usize, rows: usize, width: usize, selectors: usize, auxiliaries: usize, output: *mut u64) -> i32;
   pub(super) fn aiur_trace_fixtures_1(device: i32, seeds: *const u8, encoding: u32, real: usize, rows: usize, width: usize, selectors: usize, auxiliaries: usize, output: *mut u64) -> i32;
   pub(super) fn aiur_trace_fixtures_2(device: i32, seeds: *const u8, encoding: u32, real: usize, rows: usize, width: usize, selectors: usize, auxiliaries: usize, output: *mut u64) -> i32;
@@ -24,7 +25,7 @@ unsafe extern "C" {
   pub(super) fn aiur_trace_fixtures_20(device: i32, seeds: *const u8, encoding: u32, real: usize, rows: usize, width: usize, selectors: usize, auxiliaries: usize, output: *mut u64) -> i32;
   pub(super) fn aiur_trace_fixtures_21(device: i32, seeds: *const u8, encoding: u32, real: usize, rows: usize, width: usize, selectors: usize, auxiliaries: usize, output: *mut u64) -> i32;
 }
-pub static CUDA: CudaLibrary = unsafe { CudaLibrary::new([233, 230, 189, 104, 12, 247, 211, 54, 222, 59, 231, 186, 188, 149, 125, 54, 14, 111, 74, 230, 192, 254, 98, 8, 117, 27, 125, 55, 25, 105, 64, 162], aiur_trace_fixtures_contract, &[
+pub static CUDA: CudaLibrary = unsafe { CudaLibrary::new([185, 46, 44, 106, 194, 110, 24, 238, 32, 218, 147, 115, 110, 121, 40, 100, 10, 129, 190, 93, 243, 89, 245, 217, 166, 109, 177, 53, 190, 114, 215, 95], aiur_trace_fixtures_contract, aiur_trace_fixtures_schema, &[
 Some(aiur_trace_fixtures_0),
 Some(aiur_trace_fixtures_1),
 Some(aiur_trace_fixtures_2),
@@ -47,4 +48,4 @@ Some(aiur_trace_fixtures_18),
 Some(aiur_trace_fixtures_19),
 Some(aiur_trace_fixtures_20),
 Some(aiur_trace_fixtures_21)
-], &[3, 3, 13, 3, 6, 2, 3, 7, 3, 3, 6, 15, 1, 0, 3, 2, 1, 162, 5, 2, 13, 17]) };
+], &[3, 3, 13, 3, 6, 2, 3, 7, 3, 3, 6, 15, 1, 0, 3, 2, 1, 162, 5, 2, 13, 17], &[24, 16, 24, 24, 40, 16, 24, 48, 24, 24, 48, 112, 8, 0, 24, 16, 8, 176, 40, 16, 24, 136]) };

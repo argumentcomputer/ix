@@ -1276,49 +1276,28 @@ mod tests {
     assert_eq!(calibrate_prover_rss(usize::MAX), usize::MAX);
   }
 
-  #[cfg(feature = "cuda")]
-  #[test]
-  fn gpu_blake3_regenerated_batch_matches_cpu() {
-    blake3_regenerated_batch(false);
-  }
-
   #[cfg(feature = "cuda-trace-codegen")]
   #[test]
   fn codegen_blake3_regenerated_batch_matches_cpu() {
-    blake3_regenerated_batch(true);
-  }
-
-  #[cfg(feature = "cuda")]
-  fn blake3_regenerated_batch(codegen: bool) {
     use multi_stark::p3_matrix::Matrix;
     use multi_stark::witness::{PreparedWitness, TraceSource};
     let (cp, fp) = test_parameters();
-    let mut system =
-      AiurSystem::build(crate::gpu_trace::tests::toplevel(), cp, fp);
-    let provider = crate::gpu_trace::TraceProvider::Blake3;
-    #[cfg(feature = "cuda-trace-codegen")]
-    let provider = if codegen {
-      crate::gpu_trace::TraceProvider::Generated(
-        crate::trace_codegen::tests::blake3_cuda::CUDA
-          .register(
-            &crate::trace_codegen::tests::blake3::PROGRAM,
-            system.toplevel.clone(),
-          )
-          .unwrap(),
-      )
-    } else {
-      provider
-    };
-    #[cfg(not(feature = "cuda-trace-codegen"))]
-    assert!(!codegen);
+    let program = (crate::trace_codegen::tests::blake3::PROGRAM.expected)();
+    let mut system = AiurSystem::build(program, cp, fp);
+    let provider = crate::gpu_trace::TraceProvider::Generated(
+      crate::trace_codegen::tests::blake3_cuda::CUDA
+        .register(
+          &crate::trace_codegen::tests::blake3::PROGRAM,
+          system.toplevel.clone(),
+        )
+        .unwrap(),
+    );
     system.trace_provider = std::sync::Arc::new(provider);
-    if codegen {
-      let other = system.on_device(0);
-      assert!(std::sync::Arc::ptr_eq(
-        &system.trace_provider,
-        &other.trace_provider,
-      ));
-    }
+    let other = system.on_device(0);
+    assert!(std::sync::Arc::ptr_eq(
+      &system.trace_provider,
+      &other.trace_provider,
+    ));
     let mut io = empty_io_buffer();
     let mut input = vec![G::ZERO];
     input.extend((0..128).map(|i| G::from_usize((i * 37 + 19) % 256)));

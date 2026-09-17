@@ -65,18 +65,28 @@ fn parity(program: &Toplevel, record: &QueryRecord, io: &IOBuffer) -> usize {
         seed, strict,
         "function {index}, query {query}: strict seed differs"
       );
-      let encoding = SeedEncoding::for_words(&seed).unwrap();
-      let mut packed = vec![0xff; encoding.stride(seed.len()).unwrap()];
-      encoding.encode(&seed, &mut packed).unwrap();
-      let mut direct =
-        vec![0xff; SeedEncoding::U8Payload.stride(seed.len()).unwrap()];
-      let fits = writer.pack_u8_row(record, io, query, &mut direct).unwrap();
-      assert_eq!(fits, encoding == SeedEncoding::U8Payload);
+      let schema = writer.schema();
+      assert!(schema.is_consistent());
+      let mut direct = vec![0xff; schema.bytes];
+      let fits = writer.pack_typed_row(record, io, query, &mut direct).unwrap();
+      assert_eq!(
+        fits,
+        seed.iter().zip(schema.widths).all(|(&word, width)| width.fits(word)),
+        "function {index}, query {query}: typed guard"
+      );
+      let encoding =
+        if fits { SeedEncoding::Typed } else { SeedEncoding::Canonical };
+      let mut packed = vec![0xff; encoding.stride(schema)];
+      encoding.encode(schema, &seed, &mut packed).unwrap();
       if fits {
-        assert_eq!(direct, packed, "direct packed seed differs");
+        assert_eq!(direct, packed, "direct typed seed differs");
+      } else {
+        assert!(
+          SeedEncoding::Typed.encode(schema, &seed, &mut direct).is_err()
+        );
       }
       let mut decoded = vec![0; seed.len()];
-      encoding.decode(&packed, &mut decoded).unwrap();
+      encoding.decode(schema, &packed, &mut decoded).unwrap();
       assert_eq!(seed, decoded);
       let expected =
         program.main_row_for_test(circuit, index, query, record, io);
@@ -301,7 +311,12 @@ fn current_blake3_bytecode_all_stages_and_negative_multiplicities() {
   let bound = generated::PROGRAM.bind(&program).unwrap();
   let writer = bound.function(17).unwrap();
   assert_eq!(writer.seed_words(), 162);
-  assert_eq!(SeedEncoding::U8Payload.stride(writer.seed_words()), Some(176));
+  // Multiplicity and the stage word stay full width; the 128 message bytes
+  // and 32 aliased output bytes narrow, so the typed seed matches the
+  // handwritten provider's 176 bytes without a function-name special case.
+  assert_eq!(writer.schema().bytes, 176);
+  assert_eq!(writer.schema().widths[1], SeedWidth::Full);
+  assert!(writer.schema().widths[2..].iter().all(|&w| w == SeedWidth::U8));
   for sample in 0..4 {
     let mut state = 0x12345678_u64 + sample;
     let mut args = vec![G::ZERO];
@@ -371,37 +386,93 @@ fn library_binding_rejects_changed_callees_and_grouping() {
 
 #[test]
 fn seed_codec_guards_and_wide_fallback() {
-  for words in [
-    vec![G::ORDER_U64 - 1, 0, 255],
-    vec![1 << 40, 256, 1 << 32],
-    vec![1, G::ORDER_U64 - 1],
-  ] {
-    let encoding = SeedEncoding::for_words(&words).unwrap();
-    assert_eq!(
-      encoding,
-      if words[1..].iter().all(|&w| w < 256) {
-        SeedEncoding::U8Payload
-      } else {
-        SeedEncoding::Canonical
-      }
-    );
-    let mut bytes = vec![0; encoding.stride(words.len()).unwrap()];
-    encoding.encode(&words, &mut bytes).unwrap();
+  use SeedWidth::*;
+  // Wider words first, in index order, so every word is naturally aligned.
+  static MIXED: SeedSchema = SeedSchema {
+    widths: &[Full, U8, U32, U16, Full, U8],
+    offsets: &[0, 22, 16, 20, 8, 23],
+    bytes: 24,
+  };
+  assert!(MIXED.is_consistent());
+  assert!(!MIXED.is_canonical());
+  static SKEWED: SeedSchema =
+    SeedSchema { widths: &[Full, U8], offsets: &[0, 9], bytes: 16 };
+  assert!(!SKEWED.is_consistent());
+  static PAYLOAD_FIRST: SeedSchema =
+    SeedSchema { widths: &[U8, Full], offsets: &[0, 8], bytes: 16 };
+  assert!(!PAYLOAD_FIRST.is_consistent());
+
+  let words = [G::ORDER_U64 - 1, 255, u64::from(u32::MAX), 65535, 1 << 40, 0];
+  for encoding in [SeedEncoding::Typed, SeedEncoding::Canonical] {
+    let mut bytes = vec![0xff; encoding.stride(&MIXED)];
+    encoding.encode(&MIXED, &words, &mut bytes).unwrap();
     let mut decoded = vec![0; words.len()];
-    encoding.decode(&bytes, &mut decoded).unwrap();
-    assert_eq!(words, decoded);
+    encoding.decode(&MIXED, &bytes, &mut decoded).unwrap();
+    assert_eq!(words, decoded[..]);
   }
-  assert!(SeedEncoding::U8Payload.encode(&[1, 256], &mut [0; 16]).is_err());
-  assert!(SeedEncoding::for_words(&[G::ORDER_U64]).is_err());
-  assert!(SeedEncoding::for_words(&[]).is_err());
+  let mut typed = vec![0; 24];
+  SeedEncoding::Typed.encode(&MIXED, &words, &mut typed).unwrap();
+  assert_eq!(&typed[..8], &(G::ORDER_U64 - 1).to_le_bytes());
+  assert_eq!(&typed[8..16], &(1u64 << 40).to_le_bytes());
+  assert_eq!(&typed[16..20], &u32::MAX.to_le_bytes());
+  assert_eq!(&typed[20..22], &u16::MAX.to_le_bytes());
+  assert_eq!(&typed[22..], &[255, 0]);
+
+  // Each narrowed word guards its own bound; the wide fallback takes anything.
+  for (index, wide) in [(1, 256), (2, 1 << 32), (3, 65536), (5, 1)] {
+    let mut words = words;
+    words[index] = wide;
+    assert_eq!(
+      SeedEncoding::Typed.encode(&MIXED, &words, &mut typed).is_err(),
+      index != 5
+    );
+    let mut canonical = vec![0; 48];
+    SeedEncoding::Canonical.encode(&MIXED, &words, &mut canonical).unwrap();
+  }
   assert!(
-    SeedEncoding::Canonical
-      .decode(&G::ORDER_U64.to_le_bytes(), &mut [0])
+    SeedEncoding::Typed
+      .encode(&MIXED, &[G::ORDER_U64, 0, 0, 0, 0, 0], &mut typed)
       .is_err()
   );
+  assert!(SeedEncoding::Typed.encode(&MIXED, &words[..5], &mut typed).is_err());
+  assert!(
+    SeedEncoding::Canonical.decode(&MIXED, &[0; 48], &mut [0; 5]).is_err()
+  );
+  let mut noncanonical = [0; 48];
+  noncanonical[..8].copy_from_slice(&G::ORDER_U64.to_le_bytes());
+  assert!(
+    SeedEncoding::Canonical.decode(&MIXED, &noncanonical, &mut [0; 6]).is_err()
+  );
+  static PADDED: SeedSchema =
+    SeedSchema { widths: &[Full, U8], offsets: &[0, 8], bytes: 16 };
   let mut padded = [0; 16];
   padded[15] = 1;
-  assert!(SeedEncoding::U8Payload.decode(&padded, &mut [0; 2]).is_err());
+  assert!(SeedEncoding::Typed.decode(&PADDED, &padded, &mut [0; 2]).is_err());
+  padded[15] = 0;
+  padded[8] = 9;
+  let mut decoded = [0; 2];
+  SeedEncoding::Typed.decode(&PADDED, &padded, &mut decoded).unwrap();
+  assert_eq!(decoded, [0, 9]);
+}
+
+#[test]
+fn typed_guard_failure_leaves_the_span_full_width() {
+  // Function 3 narrows its value input to a byte because one arm adds it as
+  // a byte, but the multiply arm accepts any field element. Rows taking that
+  // arm with a wide value must fail the guard and pack full width.
+  let program = (generated::PROGRAM.expected)();
+  let mut io = io();
+  let (record, _) =
+    program.execute(3, vec![G::ZERO, G::from_u64(1 << 32)], &mut io).unwrap();
+  let bound = generated::PROGRAM.bind(&program).unwrap();
+  let writer = bound.function(3).unwrap();
+  assert_eq!(writer.schema().widths[2], SeedWidth::U8);
+  let mut typed = vec![0; writer.schema().bytes];
+  assert!(!writer.pack_typed_row(&record, &io, 0, &mut typed).unwrap());
+  let mut seed = vec![0; writer.seed_words()];
+  writer.pack_row(&record, &io, 0, false, &mut seed).unwrap();
+  assert_eq!(seed[2], 1 << 32);
+  assert_eq!(parity(&program, &record, &io), 1);
 }
 
 #[test]

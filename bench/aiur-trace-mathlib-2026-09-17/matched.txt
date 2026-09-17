@@ -1,0 +1,14 @@
+phase, same 11 claims             cpu      gen    delta
+proof                           599.8    586.0    -13.8
+stark/stage1_commit             327.5    288.1    -39.4
+stark/lookup_construction        82.4    118.2    +35.8
+stark/quotient                   86.1     85.8     -0.3
+stark/fri_open                   79.5     80.2     +0.7
+aiur/witness                    278.4    160.1   -118.3
+aiur/codegen_seeds                0.0    138.6   +138.6
+aiur/codegen_device_rows          0.0     73.5    +73.5
+same joins: ['join 2', 'join 4', 'join 7', 'join 9', 'join 13']
+proof                           161.3    140.4    -20.8
+stark/stage1_commit              99.6     72.7    -26.9
+stark/lookup_construction        23.8     31.1     +7.3
+aiur/witness                     44.3     23.7    -20.5

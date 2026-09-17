@@ -1,5 +1,12 @@
 # GPU BLAKE3 trace generation
 
+**Historical.** This describes the handwritten BLAKE3 provider
+(`AIUR_GPU_TRACE=blake3`), which has been removed: the generated provider
+compiled from bytecode reproduces its proofs and preparation time, and
+`AIUR_GPU_TRACE` now selects `cpu` or `generated`. See the
+[trace codegen handoff](aiur-trace-codegen-handoff.md) for the current
+pipeline. The measurements below remain valid for the revisions they name.
+
 GPU generation is opt-in and runs inside the resident GPU workers. The
 Merkle-tree cache has been removed from ix and the local multi-stark
 checkout. The [retention experiment](../bench/tree-cache-2026-09-15/README.md)
