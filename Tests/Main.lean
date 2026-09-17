@@ -4,6 +4,7 @@ import Tests.Ix.IxonCorpus
 import Tests.Ix.IxonSyntax
 import Tests.Ix.IxVM
 import Tests.Ix.IxVM.Exploits
+import Tests.Ix.IxVM.DefinitionDependencies
 import Tests.Ix.Claim
 import Tests.Ix.Merkle
 import Tests.Ix.AssumptionTree
@@ -213,6 +214,12 @@ def primaryRunners : List (String × IO UInt32) := [
 
 /-- Ignored test runners - expensive, deferred IO actions run only when explicitly requested -/
 def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
+  ("kernel-dependencies", do
+    match AiurTestEnv.build IxVM.ixVM IxVM.functionGroups with
+    | .error e => IO.eprintln s!"IxVM setup failed: {e}"; return 1
+    | .ok vm =>
+      let tests ← Tests.Ix.IxVM.DefinitionDependencies.tests vm.compiled
+      LSpec.lspecIO (.ofList [("kernel-dependencies", [tests])]) []),
   ("ixvm", do
     let kernelChecks ← kernelChecks env
     -- the kernel CheckEnv smokes .
@@ -245,6 +252,7 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
       -- reach. Each case pins the kernel's verdict, which is REJECT
       -- except where accepting is the specified claim semantics.
       let exploitSeq ← Tests.Ix.IxVM.Exploits.exploitTests env vmEnv.compiled
+      let dependencySeq ← Tests.Ix.IxVM.DefinitionDependencies.tests vmEnv.compiled
       let aiurSeq := (kernelChecks ++
           [envFull, envFrontier, checkAsm,
            revealFields, revealExpr, revealModes, revealCPrj, containsTc]).foldl
@@ -285,7 +293,7 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
               (actual = 7_072_190_269))
       LSpec.lspecIO
         (.ofList [("ixvm",
-          [fullSeq, aiurSeq, arenaSeq, exploitSeq, paritySeq, shardSeq])]) []),
+          [fullSeq, aiurSeq, arenaSeq, exploitSeq, dependencySeq, paritySeq, shardSeq])]) []),
   ("validate-aux", runCompileValidateAux env),
   -- Cross-compiler differential over the same fixture corpus: pure-Lean
   -- Ix.CompileM per-block vs Rust, root-cause classified (see
