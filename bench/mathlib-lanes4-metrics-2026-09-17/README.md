@@ -173,6 +173,41 @@ themselves, or in the per-shard overheads of execution and joins, not in
 the schedule. Memory was never the limit at either setting; the fourth
 run's pool peaked at 742 of 785 GiB and RSS at 711 of 999 GiB.
 
+## Fifth run: the sppark-only backend
+
+Same inputs and flags as the third run (78 shards, four executions per
+lane, 230 GiB per lane), on the tree where sppark is the only CUDA
+transform backend (ix `7bd17307`: upstream `2ba81a1b` merged, multi-stark
+`59df87a4`, the first-party NTT removed, no selector or height threshold;
+built with `IX_CUDA=1 IX_CUDA_TRACE_CODEGEN=1` alone). Same root, verified,
+composed verdict OK, no growth waits.
+
+| Quantity | sppark opt-in above 2^18 | sppark only |
+|---|---:|---:|
+| Wall, `/usr/bin/time` | 36:00 | **35:12** |
+| Prover end to end | 2,154 s | **2,106 s** (−2.2%) |
+| Last claim proven | +1,696 s | +1,639 s |
+| Root dispatched / proven | +2,001 s / +2,154 s | +1,952 s / +2,105 s |
+| Claim execution mean / max | 243 s / 454 s | 244 s / 459 s |
+| Claim proof mean / max / total | 54.5 s / 88.6 s / 4,249 s | **52.4 s / 88.5 s / 4,087 s** (−4%) |
+| Join proof mean / total | 25.5 s / 2,041 s | **24.4 s / 1,951 s** (−4%) |
+| Prover work per GPU, occupancy | 1,572 s, 73% | 1,510 s, 72% |
+| Mean sampled GPU utilization | 45 to 48% | 45 to 48% |
+| Peak sampled device memory | 71.5 to 71.9 GiB | 68.1 to 68.6 GiB |
+| Peak process RSS | 697 GiB | 641 GiB |
+| Record pool peak grant | 725.8 of 731 GiB | 729.1 of 731 GiB |
+
+**Reading.** Routing the transforms below 2^18 rows through sppark as
+well takes another 4% off every proof, and the run 2%, with the claim
+phase still execution-bound at 244 s per claim against 52 s of proof.
+Device memory peaked 3.5 GiB lower than with both backends resident.
+The proof side has now more than halved since the 2026-09-15 reference
+(86 s to 52 s per claim, 41 s to 24 s per join) while execution has moved
+from 247 s to 244 s; with four executions ahead of each prover the GPU
+is fed only when execution averages under 4 × 52 = 208 s per claim, so
+execution is the whole of the remaining gap. Against the reference the
+prover is 32% faster: 2,106 s against 3,084 s.
+
 ## The staging lease bug
 
 `crates/aiur/cuda/trace_runtime.cu` stages seed uploads through a ring of
@@ -208,7 +243,9 @@ Files: `mathlib78-lanes4-meta.txt`, `mathlib78-lanes4-summary.txt`,
 `mathlib78-lanes4-exec4-sppark-meta.txt`,
 `mathlib78-lanes4-exec4-sppark-summary.txt`,
 `mathlib102-lanes4-exec5-sppark-meta.txt`,
-`mathlib102-lanes4-exec5-sppark-summary.txt`, `run-lanes4.sh` (`EXEC_JOBS`, `MAX_RAM`, `MEM_MAX` and `IXES` select the
+`mathlib102-lanes4-exec5-sppark-summary.txt`,
+`mathlib78-lanes4-exec4-sppark-only-meta.txt`,
+`mathlib78-lanes4-exec4-sppark-only-summary.txt`, `run-lanes4.sh` (`EXEC_JOBS`, `MAX_RAM`, `MEM_MAX` and `IXES` select the
 executions per lane, the per-lane budget, the scope cap and the manifest). Raw logs, the metrics file, the GPU samples and the
 lanes cache are in `~/benchdata/mathlib/runs/mathlib78-lanes4-metrics-2/`
 on the four-GPU box; the aborted first attempt is beside it without the
