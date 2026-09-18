@@ -37,12 +37,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 
 [[package]]
-name = "arrayref"
-version = "0.3.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "76a2e8124351fda1ef8aaaa3bbd7ebbcb486bbcd4225aca0aa0d84bb2db8fecb"
-
-[[package]]
 name = "arrayvec"
 version = "0.7.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -97,10 +91,10 @@ dependencies = [
 
 [[package]]
 name = "blake3"
-version = "1.8.5"
-source = "git+https://github.com/argumentcomputer/BLAKE3?rev=d36366f7badbff9be8e2522868dddd14561638f3#d36366f7badbff9be8e2522868dddd14561638f3"
+version = "1.8.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6d9e454fc11f76977dc803893aff6304ed33d6a26efae8696573bea74baa27ae"
 dependencies = [
- "arrayref",
  "arrayvec",
  "cc",
  "cfg-if",
@@ -125,9 +119,9 @@ checksum = "1fd0f2584146f6f2ef48085050886acf353beff7305ebd1ae69500e27c67f64b"
 
 [[package]]
 name = "cc"
-version = "1.4.4"
+version = "1.4.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0ad534f4357a5264cce5019c989cf66a4f0dc4e0d1b1d15f8aacec0ff7360273"
+checksum = "54413ede23c2daf518f35156dfde027feb2374004d63bd497f983c8db9c0e313"
 dependencies = [
  "find-msvc-tools",
  "shlex",
@@ -135,9 +129,9 @@ dependencies = [
 
 [[package]]
 name = "cfg-if"
-version = "1.0.4"
+version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
+checksum = "4e7648175b45a9a48536d676f68d918270699102aa8dab5496df06904c914600"
 
 [[package]]
 name = "chacha20"
@@ -188,9 +182,9 @@ checksum = "790eea4361631c5e7d22598ecd5723ff611904e3344ce8720784c93e3d83d40b"
 
 [[package]]
 name = "crossbeam-deque"
-version = "0.8.7"
+version = "0.8.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5181e0de7b61eb03a81e347d6dd8797bae9da5146707b51077e2d71a54ec0ceb"
+checksum = "622f3fc73690be383c7214310406f28a90e6edeadc3cea882f9d71e495b9711a"
 dependencies = [
  "crossbeam-epoch",
  "crossbeam-utils",
@@ -198,18 +192,18 @@ dependencies = [
 
 [[package]]
 name = "crossbeam-epoch"
-version = "0.9.20"
+version = "0.9.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2d6914041f254d6e9176c01941b21115dcfb7089e55135a35411081bd106ef3f"
+checksum = "dc74980687109a3b14c72fd458107bf0baa1da1a1a805e178d15501ba9b86d9d"
 dependencies = [
  "crossbeam-utils",
 ]
 
 [[package]]
 name = "crossbeam-utils"
-version = "0.8.22"
+version = "0.8.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "61803da095bee82a81bb1a452ecc25d3b2f1416d1897eb86430c6159ef717c17"
+checksum = "a31eee39dddec8330830986fcd7625edb5a24ec90ea038215273bbc3adb08ac6"
 
 [[package]]
 name = "crunchy"
@@ -297,9 +291,9 @@ dependencies = [
 
 [[package]]
 name = "find-msvc-tools"
-version = "0.1.11"
+version = "0.1.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d45db016d36b838f563236e9193d0ee6ce38f3f68b6c94e914b4929c96bbb890"
+checksum = "ef25905e51abafe4dcea6c15fec58c57b601cdbd0ee53d22ea1d3016c587d39b"
 
 [[package]]
 name = "foldhash"
@@ -377,9 +371,9 @@ checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 
 [[package]]
 name = "indexmap"
-version = "2.14.1"
+version = "2.14.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "07aa2048142242915a31d35844fb311e0e53fcca590c3a0a40dcf1b841fa09eb"
+checksum = "cc4e190f5d26ca7051642629da2c52fc03bde85a03197c99408dcd291734c855"
 dependencies = [
  "equivalent",
  "hashbrown 0.17.1",
@@ -1114,7 +1108,7 @@ checksum = "e7a5d71263a5a7d47b41f6b3f06ba276f10cc18b0931f1799f710578e2309348"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 3.0.4",
+ "syn 3.0.6",
 ]
 
 [[package]]
@@ -1150,7 +1144,7 @@ checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 [[package]]
 name = "slop-algebra"
 version = "6.6.0"
-source = "git+https://github.com/argumentcomputer/sp1?rev=7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a#7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a"
+source = "git+https://github.com/succinctlabs/sp1?tag=v6.6.0#f5a5bbf6a1cf6007315b410d88678d96fb399fb5"
 dependencies = [
  "itertools 0.14.0",
  "p3-field 0.4.3-succinct",
@@ -1160,7 +1154,7 @@ dependencies = [
 [[package]]
 name = "slop-bn254"
 version = "6.6.0"
-source = "git+https://github.com/argumentcomputer/sp1?rev=7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a#7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a"
+source = "git+https://github.com/succinctlabs/sp1?tag=v6.6.0#f5a5bbf6a1cf6007315b410d88678d96fb399fb5"
 dependencies = [
  "ff",
  "p3-bn254-fr",
@@ -1174,7 +1168,7 @@ dependencies = [
 [[package]]
 name = "slop-challenger"
 version = "6.6.0"
-source = "git+https://github.com/argumentcomputer/sp1?rev=7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a#7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a"
+source = "git+https://github.com/succinctlabs/sp1?tag=v6.6.0#f5a5bbf6a1cf6007315b410d88678d96fb399fb5"
 dependencies = [
  "p3-challenger 0.4.3-succinct",
  "serde",
@@ -1185,7 +1179,7 @@ dependencies = [
 [[package]]
 name = "slop-koala-bear"
 version = "6.6.0"
-source = "git+https://github.com/argumentcomputer/sp1?rev=7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a#7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a"
+source = "git+https://github.com/succinctlabs/sp1?tag=v6.6.0#f5a5bbf6a1cf6007315b410d88678d96fb399fb5"
 dependencies = [
  "lazy_static",
  "p3-koala-bear",
@@ -1199,7 +1193,7 @@ dependencies = [
 [[package]]
 name = "slop-poseidon2"
 version = "6.6.0"
-source = "git+https://github.com/argumentcomputer/sp1?rev=7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a#7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a"
+source = "git+https://github.com/succinctlabs/sp1?tag=v6.6.0#f5a5bbf6a1cf6007315b410d88678d96fb399fb5"
 dependencies = [
  "p3-poseidon2 0.4.3-succinct",
 ]
@@ -1207,12 +1201,12 @@ dependencies = [
 [[package]]
 name = "slop-primitives"
 version = "6.6.0"
-source = "git+https://github.com/argumentcomputer/sp1?rev=7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a#7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a"
+source = "git+https://github.com/succinctlabs/sp1?tag=v6.6.0#f5a5bbf6a1cf6007315b410d88678d96fb399fb5"
 
 [[package]]
 name = "slop-symmetric"
 version = "6.6.0"
-source = "git+https://github.com/argumentcomputer/sp1?rev=7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a#7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a"
+source = "git+https://github.com/succinctlabs/sp1?tag=v6.6.0#f5a5bbf6a1cf6007315b410d88678d96fb399fb5"
 dependencies = [
  "p3-symmetric 0.4.3-succinct",
 ]
@@ -1230,7 +1224,7 @@ dependencies = [
 [[package]]
 name = "sp1-lib"
 version = "6.6.0"
-source = "git+https://github.com/argumentcomputer/sp1?rev=7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a#7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a"
+source = "git+https://github.com/succinctlabs/sp1?tag=v6.6.0#f5a5bbf6a1cf6007315b410d88678d96fb399fb5"
 dependencies = [
  "bincode 1.3.3",
  "serde",
@@ -1240,7 +1234,7 @@ dependencies = [
 [[package]]
 name = "sp1-primitives"
 version = "6.6.0"
-source = "git+https://github.com/argumentcomputer/sp1?rev=7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a#7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a"
+source = "git+https://github.com/succinctlabs/sp1?tag=v6.6.0#f5a5bbf6a1cf6007315b410d88678d96fb399fb5"
 dependencies = [
  "bincode 1.3.3",
  "blake3",
@@ -1263,7 +1257,7 @@ dependencies = [
 [[package]]
 name = "sp1-zkvm"
 version = "6.6.0"
-source = "git+https://github.com/argumentcomputer/sp1?rev=7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a#7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a"
+source = "git+https://github.com/succinctlabs/sp1?tag=v6.6.0#f5a5bbf6a1cf6007315b410d88678d96fb399fb5"
 dependencies = [
  "cfg-if",
  "critical-section",
@@ -1316,9 +1310,9 @@ dependencies = [
 
 [[package]]
 name = "syn"
-version = "3.0.4"
+version = "3.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e6275cddf4610d1775e6d1fe9469b2e77d0f39fd98fb7450901b821e0c53649f"
+checksum = "8593e8e72159ed2257d083c7a454a85cbf854f37a0966d8d483aff8c8a3ebcee"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1348,7 +1342,7 @@ checksum = "bc04cd3e1236dd4a98afca4569f2deb3f120e5422a4023be2cb683f8486292af"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 3.0.4",
+ "syn 3.0.6",
 ]
 
 [[package]]
@@ -1399,9 +1393,9 @@ checksum = "b6f5e870be6c3b371b77fe0ee0bafb859fa4964b4404c27de1d380043c4dda20"
 
 [[package]]
 name = "unicode-ident"
-version = "1.0.24"
+version = "1.0.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e6e4313cd5fcd3dad5cafa179702e2b244f760991f45397d14d4ebf38247da75"
+checksum = "d245f478577f809a851594d02313b640fb437e0bb33866753cff937863096954"
 
 [[package]]
 name = "unty"
@@ -1453,18 +1447,18 @@ dependencies = [
 
 [[package]]
 name = "zerocopy"
-version = "0.8.56"
+version = "0.8.57"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "556764e583adb45a9f8d413c2a147fa7e8d821e48e12b14fd560b607998b75eb"
+checksum = "d35102a9f36d089ccae9e4c6802bc118be4487b80aaffc0ab4e0cf5ce92d2873"
 dependencies = [
  "zerocopy-derive",
 ]
 
 [[package]]
 name = "zerocopy-derive"
-version = "0.8.56"
+version = "0.8.57"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f2ab42fc20575779bd240faa45f94a74256f755c0fa9e89f0ede20d91d0cdfc1"
+checksum = "146c01f5ab44258da43cf276c74a2763db2ff3969c9c652c3f2de07041d0b2bc"
 dependencies = [
  "proc-macro2",
  "quote",

@@ -66,6 +66,12 @@ async fn main() -> Result<()> {
     .flat_map(|value| value.as_canonical_u64().to_le_bytes())
     .collect();
   let proof_bytes = proof.to_bytes().context("encode smoke proof")?;
-  run_sp1(vk_bytes, claim_bytes, proof_bytes, &fri, Mode::Execute, None, None)
-    .await
+  // `SMOKE_MODE` selects an SP1 stage (default execute), so the terminal's
+  // proving tail can be exercised on this small proof.
+  let mode = std::env::var("SMOKE_MODE")
+    .ok()
+    .map(|mode| mode.parse::<Mode>().map_err(anyhow::Error::msg))
+    .transpose()?
+    .unwrap_or(Mode::Execute);
+  run_sp1(vk_bytes, claim_bytes, proof_bytes, &fri, mode, None, None).await
 }

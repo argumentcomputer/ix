@@ -25,7 +25,14 @@ the repeated guest check is what the SP1 proof attests to.
 ## Integrated command
 
 The repository's `sp1` Nix shell supplies `protoc` and the Succinct Rust
-toolchain used by `sp1-build`. Run the CLI with the optional connector on an
+toolchain used by `sp1-build`. The host links gnark natively
+(`sp1-sdk/native-gnark`), which needs Go 1.24+ and libclang at build time and
+no Docker at run time. Do not switch the host back to SP1's Docker backend for
+Plonk: in SP1 v6.x its Plonk verify wrapper forwards `proof_nonce` and
+`vk_root` in swapped order (`crates/recursion/gnark-ffi/src/ffi/docker.rs`,
+`verify_plonk_bn254`), so a correct Plonk proof is rejected right after it is
+produced; the Groth16 wrapper and the native backend are correct, and
+upstream CI exercises Plonk only natively. Run the CLI with the optional connector on an
 aggregate proof address from the Ix store. Keep `IX_SP1=1` (or
 `IX_SP1_CUDA=1`) on every `lake` invocation: Lake rebuilds the Rust archive as
 part of `lake exe`.
@@ -41,20 +48,21 @@ nix develop .#sp1 --command cargo run --release \
 nix develop .#sp1 --command env IX_SP1=1 \
   lake exe ix compress-root ROOT_ADDRESS --mode execute
 
-# Final Groth16 proof. The SDK artifact retains public values and can be
+# Final Plonk proof. The SDK artifact retains public values and can be
 # re-verified by SP1; the raw file is the onchain proof encoding.
-nix develop .#sp1 --command env IX_SP1_CUDA=1 \
-  WITHOUT_VK_VERIFICATION=1 SP1_PROVER=cuda \
-  lake exe ix compress-root ROOT_ADDRESS --mode groth16 \
-    --output root.sp1 --onchain-output root.groth16
+nix develop .#sp1 --command env IX_SP1_CUDA=1 SP1_PROVER=cuda \
+  lake exe ix compress-root ROOT_ADDRESS --mode plonk \
+    --output root.sp1 --onchain-output root.plonk
 ```
 
-`WITHOUT_VK_VERIFICATION=1` is currently required for proof generation because
-the repository's SP1 fork adds Blake3 recursion shapes not yet present in its
-distributed vk map. Execute mode does not need the bypass. The command always
-natively verifies the aggregate root before starting SP1, verifies the final
-SP1 proof after proving, and checks the guest public values against an
-independent host reconstruction.
+The connector uses upstream SP1: the guest hashes with Blake3 in software, so
+the stock recursion key map and Succinct's published Plonk and Groth16
+circuits apply and nothing custom is trusted. Plonk is the production
+target: its circuit is built on the universal Aztec Ignition SRS, whereas
+Groth16's per-circuit setup is only as trustworthy as Succinct's ceremony.
+The command always natively verifies the aggregate root before starting SP1,
+verifies the final SP1 proof after proving, and checks the guest public
+values against an independent host reconstruction.
 
 The synthetic smoke above passed on 2026-08-30 at 4,272,596 instructions
 (3,987,232 gas), including 891 `blake3_compress` precompile calls. Those
@@ -62,11 +70,17 @@ numbers validate the connector only; they are not an estimate for the much
 larger production `ix_aggr` verifier key and proof.
 
 The `sp1-compress/guest` and root Cargo dependencies deliberately pin the same
-`multi-stark` revision, and the SP1 crates are pinned to fork commit
-`7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a` (SP1 v6.6 plus the Blake3
-precompile). The guest links only under the Succinct toolchain of that SP1
+`multi-stark` revision, and the SP1 crates are pinned to upstream tag
+`v6.6.0`. The guest links only under the Succinct toolchain of that SP1
 release (`sp1up --version v6.6.0`, rustc 1.94.0-dev); the toolchain shipped
-with SP1 v6.8 fails the link with undefined `__atomic_*` builtins. The guest's SP1-aware Blake3 is
-likewise pinned at `d36366f7badbff9be8e2522868dddd14561638f3`. Proof and
+with SP1 v6.8 fails the link with undefined `__atomic_*` builtins. Proof and
 verifying-key encodings are revision-sensitive; do not update one without the
 others.
+
+The Blake3 precompile of the `argumentcomputer/sp1` fork saves 19% of the
+guest's cycles (580 M against 691 M for a production root, measured
+2026-09-18) but changes every recursion program: its key map must be
+regenerated (191,670 shapes, about 50 hours on 64 cores) and its Plonk and
+Groth16 circuits rebuilt for the resulting wrap key before any proof it makes
+is sound. The `guest-mathlib-2026-09-03` compatibility guest keeps its fork
+pin.

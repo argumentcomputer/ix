@@ -750,7 +750,7 @@ Status as of the `sb/aiur-trace-sharding-design` branch (ix) and
 | 2. Aiur `memseg` lookups, selector-gated pull multiplicities, row-range witnesses, planner, `AiurProof = BatchProof`, batch policy | landed; 21 tests incl. the audits' counterexamples as rejections |
 | 3. Lean verifier: `read_batch`, batch/shard Fiat–Shamir, header agreement, residual sum, policy, `verify_batch_at` | landed; `multi-stark`, `recursive-verifier` suites |
 | 4. `ix_aggr` and legacy join circuits verify children as batches | landed; `aggregate-first`, `ix-aggr` suites; codegen regenerated |
-| 5. Downstream verifiers adopt the contract | open (no in-tree compressor consumes the root yet) |
+| 5. Downstream verifiers adopt the contract | landed: the SP1 terminal (`sp1-compress/`, from PR #602) verifies the root as a batch through `AiurVerifyingKey::verify`, the same `verify_against` the native verifier runs; the FLT and Mathlib GPU roots execute at 691 M cycles on upstream SP1 (`bench/root-sp1-compress-2026-09-18`) |
 | 6. CLI / pipeline (`ix prove --trace-shards`, budget-to-plan search, per-shard spans; sharded aggregate wraps on GPU) | leaf path landed: `plan_shards_within` sizes the batch from `--max-ram` and `ix prove --trace-shards` proves it under Regenerate (§14); the aggregate wrap still proves unsharded |
 | 7. Tests | landed for 1–4 as listed |
 | 8. Benchmarks (`--trace-shards K`, VRAM calibration, recompute overhead) | open |

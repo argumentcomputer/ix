@@ -259,6 +259,11 @@ async fn run_sp1_program(
     blake3::hash(&guest_elf).to_hex()
   );
 
+  // Worker-task failures surface only through tracing; `RUST_LOG` opts in.
+  if std::env::var_os("RUST_LOG").is_some() {
+    sp1_sdk::utils::setup_logger();
+  }
+
   let mut stdin = SP1Stdin::new();
   stdin.write_vec(vk_bytes.clone());
   stdin.write_vec(fri_bytes.clone());
@@ -285,6 +290,20 @@ async fn run_sp1_program(
     }
     println!("{report}");
     return Ok(());
+  }
+
+  // The final-SNARK task downloads Succinct's circuit artifacts on first
+  // use, and the worker controller retries a task that overruns its budget,
+  // releasing the wrap proof the retry then needs. Install them up front.
+  if let Some(system) = match mode {
+    Mode::Plonk => Some("plonk"),
+    Mode::Groth16 => Some("groth16"),
+    _ => None,
+  } {
+    let build_dir = sp1_sdk::install::try_install_circuit_artifacts(system)
+      .await
+      .with_context(|| format!("installing SP1 {system} circuit artifacts"))?;
+    println!("SP1 {system} circuit artifacts: {}", build_dir.display());
   }
 
   let pk = client.setup(guest_elf).await.context("SP1 setup failed")?;

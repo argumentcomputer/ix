@@ -341,21 +341,24 @@ the [SP1 docs](https://docs.succinct.xyz/docs/sp1/getting-started/install).
 
 #### Compressing an Aiur aggregate root
 
-`ix compress-root` verifies a closed Stage 2 Aiur-FRI root inside a dedicated
-SP1 guest and can run SP1's recursion tail through a Groth16 or Plonk proof.
+`ix compress-root` verifies a closed Stage 2 Aiur root, a batch of trace-shard
+proofs as `ix prove --trace-shards` produces on GPUs, inside a dedicated SP1
+guest and can run SP1's recursion tail through a Plonk or Groth16 proof.
 Build the connector explicitly, then name the root object already present in
 the Ix store:
 
 ```console
 IX_SP1=1 lake build ix
 lake exe ix compress-root ROOT_ADDRESS --mode execute
-WITHOUT_VK_VERIFICATION=1 lake exe ix compress-root ROOT_ADDRESS --mode groth16 \
-  --output root.sp1 --onchain-output root.groth16
+SP1_PROVER=cpu lake exe ix compress-root ROOT_ADDRESS --mode plonk \
+  --output root.sp1 --onchain-output root.plonk
 ```
 
 The default `--protocol current` deterministically rebuilds the current
 `ix_aggr` verifying key and checks the proof natively before entering SP1.
-Modes are `execute`, `core`, `compressed`, `groth16`, and `plonk`.
+Modes are `execute`, `core`, `compressed`, `plonk`, and `groth16`; the guest
+runs on upstream SP1 with its stock recursion key map and published circuits,
+and Plonk is the production target (`sp1-compress/README.md`).
 
 The fully audited Mathlib root produced on 2026-09-03 predates the current
 Multi-STARK wire protocol. It has a deliberately separate compatibility guest:

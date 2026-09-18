@@ -1,6 +1,8 @@
 /-
 `ix compress-root ROOT_ADDRESS` turns one closed, persisted `ix_aggr` root
-into an SP1 proof and, by default, a final Groth16 SNARK.
+into an SP1 proof and, by default, a final Plonk SNARK: its circuit rests on
+the universal Ignition SRS, where Groth16's per-circuit setup rests on a
+ceremony.
 
 The default protocol rebuilds the deterministic recursion backend,
 reconstructs the uniform 18-word outer claim from the wrapper's `CheckEnv`,
@@ -95,7 +97,7 @@ def runCompressRootCmd (p : Cli.Parsed) : IO UInt32 := do
     | [root] => pure root
     | [] => p.printError "error: expected one aggregate root address"; return 1
     | _ => p.printError "error: expected exactly one aggregate root address"; return 1
-  let mode := (p.flag? "mode").map (·.as! String) |>.getD "groth16"
+  let mode := (p.flag? "mode").map (·.as! String) |>.getD "plonk"
   let protocolName :=
     (p.flag? "protocol").map (·.as! String) |>.getD "current"
   let protocol ← match parseProtocol protocolName with
@@ -158,10 +160,10 @@ end Ix.Cli.CompressRootCmd
 open Ix.Cli.CompressRootCmd in
 def compressRootCmd : Cli.Cmd := `[Cli|
   "compress-root" VIA runCompressRootCmd;
-  "Compress one closed ix_aggr root through SP1 to a final SNARK (build with IX_SP1=1)"
+  "Compress one closed ix_aggr root through SP1 to a final Plonk SNARK (build with IX_SP1=1)"
 
   FLAGS:
-    "mode" : String;           "SP1 stage: execute | core | compressed | groth16 | plonk (default: groth16)."
+    "mode" : String;           "SP1 stage: execute | core | compressed | plonk | groth16 (default: plonk)."
     "protocol" : String;       "Verifier protocol: current | mathlib-2026-09-03 (default: current)."
     "output" : String;         "Save the verified SP1 SDK proof container at this path."
     "onchain-output" : String; "For groth16/plonk, save the raw onchain proof bytes at this path."
