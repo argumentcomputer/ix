@@ -98,6 +98,9 @@ structure CompilerState where
   ops : Array Bytecode.Op
   selIdx : Bytecode.SelIdx
   degrees : Array Nat
+  /-- Values computed in the current straight-line block only. Branches restore
+  this with the rest of the state; block boundaries discard it. -/
+  available : Std.HashMap Bytecode.Op (Array Bytecode.ValIdx) := {}
   deriving Inhabited
 
 abbrev CompileM := EStateM String CompilerState
@@ -115,16 +118,35 @@ def pushOpDegree (degrees : Array Nat) (op : Bytecode.Op) (size : Nat) : Array N
   | .eqZero a => degrees.push (if (degrees[a]?.getD 0) == 0 then 0 else 1)
   | _ => degrees.push 1
 
+/-- Only reuse deterministic field operations and immutable, content-addressed
+memory. In particular, calls may perform IO, and unconstrained hints must not
+be treated as constrained equalities. Keep their occurrences independent. -/
+def reusableOp : Bytecode.Op → Bool
+  | .const _ | .add .. | .sub .. | .mul .. | .eqZero _ | .store _ | .load .. => true
+  | _ => false
+
 def pushOp (op : Bytecode.Op) (size : Nat := 1) : CompileM (Array Bytecode.ValIdx) :=
-  modifyGet (fun s =>
+  modifyGet (fun s => Id.run do
+    if reusableOp op then
+      if let some values := s.available[op]? then
+        return (values, s)
     let valIdx := s.valIdx
-    (Array.range' valIdx size, { s with
+    let values := Array.range' valIdx size
+    let mut available := s.available
+    if reusableOp op then
+      available := available.insert op values
+    -- The retained store already proves this pointer's contents. Forward a
+    -- subsequent load without introducing another memory lookup or columns.
+    if let .store fields := op then
+      available := available.insert (.load fields.size valIdx) fields
+    return (values, { s with
       valIdx := valIdx + size,
       ops := s.ops.push op,
-      degrees := pushOpDegree s.degrees op size }))
+      degrees := pushOpDegree s.degrees op size,
+      available }))
 
 def extractOps : CompileM (Array Bytecode.Op) :=
-  modifyGet fun s => (s.ops, {s with ops := #[]})
+  modifyGet fun s => (s.ops, {s with ops := #[], available := {}})
 
 open Concrete in
 mutual
@@ -521,7 +543,7 @@ def Concrete.Term.compile
   | .ret _ _ term => do
     let idxs ← toIndex layoutMap bindings term
     let state ← get
-    let state := { state with selIdx := state.selIdx + 1 }
+    let state := { state with selIdx := state.selIdx + 1, available := {} }
     set state
     let ops := state.ops
     let id := state.selIdx
@@ -529,7 +551,7 @@ def Concrete.Term.compile
   | _ => do
     let idxs ← toIndex layoutMap bindings term
     let state ← get
-    let state := { state with selIdx := state.selIdx + 1 }
+    let state := { state with selIdx := state.selIdx + 1, available := {} }
     set state
     let ops := state.ops
     let id := state.selIdx
