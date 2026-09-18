@@ -7,6 +7,7 @@
   ```rust
   fn aiur_fn_N(
     inp: [G; INPUT_SIZE],
+    input_hash: u64,
     record: &mut QueryRecord,
     io_buffer: &mut IOBuffer,
     unconstrained: bool,
@@ -37,6 +38,10 @@
   - `bytes1_queries` / `bytes2_queries` updates from `U8*` ops in
     constrained mode, suppressed when `unconstrained == true`.
   - `io_buffer` ops preserve order.
+
+  `input_hash` is the hash of the immutable `inp` key from the caller's
+  lookup (or computed at entry). Return registration reuses it but still
+  looks up the full key again after executing the body.
 
   # `unconstrained` propagation
 
@@ -406,10 +411,10 @@ private def emitCall (out : Nat) (callee : FunIdx) (args : Array ValIdx)
   let blockExpr : String :=
     s!"\{ let __args: [G; IN_{callee}] = {argsStr};" ++
     s!" let __cu = {cuExpr};" ++
-    s!" let __hit = record.function_queries[{callee}].get_index_of(&__args[..]);" ++
+    s!" let (__hash, __hit) = record.function_queries[{callee}].lookup(&__args[..]);" ++
     s!" match __hit \{ Some(__i) if {hitGuard} => \{" ++
     bumpStmt ++ retExpr ++ " }," ++
-    s!" _ => aiur_fn_{callee}(__args, record, io_buffer, __cu)? } }"
+    s!" _ => aiur_fn_{callee}(__args, __hash, record, io_buffer, __cu)? } }"
   let mut stmts : Array RustStmt := #[
     .letStmt false "__r_arr" (some s!"[G; OUT_{callee}]") (.lit blockExpr)
   ]
@@ -435,12 +440,13 @@ private def emitStore (out : Nat) (values : Array ValIdx)
   let blockExpr : String :=
     s!"\{ let __values: [G; {size}] = {valsStr};" ++
     s!" let __mq = {memoryQuery memorySizes size};" ++
-    s!" if let Some(__i) = __mq.get_index_of(&__values[..]) \{" ++
+    s!" let (__hash, __hit) = __mq.lookup(&__values[..]);" ++
+    s!" if let Some(__i) = __hit \{" ++
     s!" if !unconstrained \{ __mq.bump_multiplicity(__i); }" ++
     s!" __mq.output_at(__i)[0]" ++
     s!" } else \{" ++
     s!" let __ptr = G::from_usize(__mq.len());" ++
-    s!" __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained));" ++
+    s!" __mq.insert_hashed(&__values[..], &[__ptr], G::from_bool(!unconstrained), __hash);" ++
     s!" __ptr } }"
   #[.letStmt false s!"__v_{out}" (some "G") (.lit blockExpr)]
 
@@ -833,7 +839,7 @@ partial def emitCtrl (funIdx : FunIdx) (mcLabel? : Option String)
       .letStmt false "__ret" (some s!"[G; OUT_{funIdx}]")
         (.arrayLit (outs.map valVar))
     let insertCall : RustStmt := .exprStmt (.lit <|
-      s!"record.function_queries[{funIdx}].finish(&inp[..], &__ret[..], !unconstrained)")
+      s!"record.function_queries[{funIdx}].finish_hashed(&inp[..], &__ret[..], !unconstrained, input_hash)")
     -- Wrap in Ok(...) since fn now returns Result<[G; OUT_N], ExecError>.
     return #[outArr, insertCall,
       .returnStmt (.call (.var "Ok") #[.var "__ret"])]
@@ -944,6 +950,7 @@ def emitFunction (funIdx : FunIdx) (f : Function)
   let fnText : String :=
     s!"fn aiur_fn_{funIdx}(\n" ++
     s!"  inp: [G; IN_{funIdx}],\n" ++
+    s!"  input_hash: u64,\n" ++
     s!"  record: &mut QueryRecord,\n" ++
     s!"  io_buffer: &mut IOBuffer,\n" ++
     s!"  unconstrained: bool,\n" ++
@@ -1025,7 +1032,7 @@ def emitDispatch (tl : Toplevel) : RustItem := Id.run do
       .letStmt false "__inp" (some s!"[G; IN_{funIdx}]")
         (.lit "args.try_into().expect(\"input size mismatch\")"),
       .letStmt false "__out" none
-        (.lit s!"aiur_fn_{funIdx}(__inp, record, io_buffer, false)?"),
+        (.lit s!"aiur_fn_{funIdx}(__inp, __input_hash, record, io_buffer, false)?"),
       .returnStmt (.call (.var "Ok")
         #[.call (.field (.var "__out") "to_vec") #[]])
     ]
@@ -1047,6 +1054,8 @@ def emitDispatch (tl : Toplevel) : RustItem := Id.run do
     let size := tl.memorySizes[slot]!
     body := body.push (.exprStmt (.lit
       s!"if record.memory_queries.get_index({slot}).map(|(size, _)| *size) != Some({size}) \{ return Err(ExecError::InvalidMemorySize({size})); }"))
+  body := body.push (.letStmt false "__input_hash" none
+    (.lit "aiur::querymap::hash_g_slice(args)"))
   body := body.push (.matchStmt (.lit "fun_idx as u64") arms)
   let lbrace := "{"
   let rbrace := "}"
