@@ -13,9 +13,11 @@ imports them. That is what supplies the BLAKE3 backend to Lean's native evaluato
 for the `native_decide` proofs in `IxTcVerify`, so this pin must stay at or after
 the revision that turned precompilation on. Before it, Blake3 exposed a
 `blake3_rs_shared` cdylib that `ix_native_decide_dynlib` had to fetch and link;
-that target no longer exists. -/
+that target no longer exists. The pin is now at or after `18b4b1c8`, which
+adds `Blake3.Pure`, the total pure Lean implementation that certified paths
+use through `Ix.Address.Pure`; it imports neither FFI backend. -/
 require Blake3 from git
-  "https://github.com/argumentcomputer/Blake3.lean" @ "78f5bc4b22de1172af8a5d91e7039128084fad3a"
+  "https://github.com/argumentcomputer/Blake3.lean" @ "18b4b1c8937e32f88463bb8f5ee16a7b5f24fcc1"
 
 require Cli from git
   "https://github.com/leanprover/lean4-cli" @ "v4.33.0"
@@ -374,3 +376,40 @@ script "build-all" (args) := do
   return 0
 
 end Scripts
+
+section IxKernel
+
+/- The certified kernel, `Ix.Kernel`, lives in this repository's `Ix/` tree but
+is built for certification by the separate `IxKernel/` package, which reads the
+same sources with no dependencies beyond the Lean toolchain:
+`lake -d IxKernel build --wfail` is the strict gate. The root package builds the
+same modules for its host consumers through the `Ix` library. See
+`plans/ix-certified-roadmap.md`. -/
+
+/- Provenance check for the ported model: file inventory, exact content
+hashes, port headers, and license files, against
+`Tests/Ix/Kernel/ImportManifest.lean`. Pass `--source <old-ix-workspace>` to
+also verify the recorded source hashes. -/
+lean_exe «kernel-provenance» where
+  root := `Tests.Ix.Kernel.Provenance
+
+/-- Run the certified kernel gate: the standalone strict build with its audits,
+the host-side tests, and provenance. -/
+script "check-kernel" (args) := do
+  unless args.isEmpty || args == ["--with-model"] do
+    IO.eprintln "usage: lake run check-kernel [--with-model]"
+    return 2
+  let run (cmd : String) (args : Array String) : ScriptM Unit := do
+    let child ← IO.Process.spawn { cmd, args, stdout := .inherit, stderr := .inherit }
+    let code ← child.wait
+    unless code == 0 do
+      throw <| IO.userError s!"{cmd} {args} failed with exit code {code}"
+  run "lake" #["-d", "IxKernel", "build", "--wfail"]
+  run "lake" #["build", "--wfail", "kernel-provenance", "Tests.Ix.Kernel.AddressPure", "Tests.Ix.Kernel.Fixtures", "Tests.Ix.Kernel.Inductives", "Tests.Ix.Kernel.Structures", "Tests.Ix.Kernel.Literals", "Tests.Ix.Kernel.Quotients", "Tests.Ix.Kernel.Axioms"]
+  run ".lake/build/bin/kernel-provenance" #[]
+  if args == ["--with-model"] then
+    run "lake" #["-d", "Models/SetTheory", "build", "--wfail"]
+  IO.println "Certified kernel checks passed."
+  return 0
+
+end IxKernel
