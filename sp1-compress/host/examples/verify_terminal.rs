@@ -1,8 +1,9 @@
-//! Re-verify a saved Plonk terminal proof the way a third party would: with
-//! SP1's pure-Rust verifier and its published Plonk verifying key, no SDK
-//! prover, gnark or Docker involved. Then decode the 224-byte statement.
+//! Re-verify a saved terminal proof (Plonk or Groth16) the way a third party
+//! would: with SP1's pure-Rust verifier and its published verifying key for
+//! that system, no SDK prover, gnark or Docker involved. Then decode the
+//! 224-byte statement.
 //!
-//! `cargo run --release --example verify_plonk -- root.sp1 [GUEST_VKEY_HASH]`
+//! `cargo run --release --example verify_terminal -- root.sp1 [GUEST_VKEY_HASH]`
 //!
 //! Without the second argument the guest's key hash is derived from the ELF
 //! compiled into this host, which is the hash a verifier must pin.
@@ -11,8 +12,10 @@ use anyhow::{Context, Result, bail};
 use sp1_compress_host::{
   CURRENT_GUEST_ELF, OUTER_CLAIM_ELEMENTS, PUBLIC_VALUES_DOMAIN,
 };
-use sp1_sdk::{ProverClient, SP1ProofWithPublicValues, prelude::*};
-use sp1_verifier::{PLONK_VK_BYTES, PlonkVerifier};
+use sp1_sdk::{ProverClient, SP1Proof, SP1ProofWithPublicValues, prelude::*};
+use sp1_verifier::{
+  GROTH16_VK_BYTES, Groth16Verifier, PLONK_VK_BYTES, PlonkVerifier,
+};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -32,10 +35,35 @@ async fn main() -> Result<()> {
     .with_context(|| format!("loading {path}"))?;
   let public_values = proof.public_values.to_vec();
   let onchain = proof.bytes();
-  PlonkVerifier::verify(&onchain, &public_values, &vkey_hash, &PLONK_VK_BYTES)
-    .map_err(|error| anyhow::anyhow!("Plonk verification failed: {error:?}"))?;
+  let system = match &proof.proof {
+    SP1Proof::Plonk(_) => {
+      PlonkVerifier::verify(
+        &onchain,
+        &public_values,
+        &vkey_hash,
+        &PLONK_VK_BYTES,
+      )
+      .map_err(|error| {
+        anyhow::anyhow!("Plonk verification failed: {error:?}")
+      })?;
+      "Plonk"
+    },
+    SP1Proof::Groth16(_) => {
+      Groth16Verifier::verify(
+        &onchain,
+        &public_values,
+        &vkey_hash,
+        &GROTH16_VK_BYTES,
+      )
+      .map_err(|error| {
+        anyhow::anyhow!("Groth16 verification failed: {error:?}")
+      })?;
+      "Groth16"
+    },
+    other => bail!("not a terminal proof: {other:?}"),
+  };
   println!(
-    "Plonk proof verified: {} bytes, guest vkey {vkey_hash}",
+    "{system} proof verified: {} bytes, guest vkey {vkey_hash}",
     onchain.len()
   );
 

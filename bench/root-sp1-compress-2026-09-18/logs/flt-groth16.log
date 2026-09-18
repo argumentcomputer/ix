@@ -1,0 +1,50 @@
+Fri Sep 18 20:57:38 UTC 2026
+ℹ [808/810] Built ix/ix_rs (1.3s)
+Compressing aggregate root 7d44c48ee47c2ad9d5f1ae939bbbec7e6036e6ac8ce4511a9428e5adafe55dc0 with SP1 (groth16)
+  protocol: current
+  bundled claim: CheckEnv(7b48cff43d033c1020dde0a9468d08834eff617c9892ed62913bacb71142ecaf, none)
+  recursion vk: 29319a45e19bc36494f05cb5701ae1673357fe76da6b3589e23e8bf001488dc2
+native preflight: aggregate root verifies (proof=6025626 bytes, vk=227799 bytes)
+SP1 guest (current): 459952 bytes, blake3 36950ace0e9e279b8c9b369203afc1d111b9bfe5028389fe807f2bfcf894dbb4
+2026-09-18T20:57:49.179985Z  INFO initializing cpu prover
+2026-09-18T20:57:55.925417Z  INFO [sp1] groth16 circuit artifacts are already installed at /home/ubuntu/.sp1/circuits/groth16/v6.1.0. if you want to re-download them, delete the directory
+SP1 groth16 circuit artifacts: /home/ubuntu/.sp1/circuits/groth16/v6.1.0
+2026-09-18T20:57:56.332604Z  INFO starting proof generation mode=Groth16
+2026-09-18T20:57:56.929316Z  INFO ┌╴decode-vk
+2026-09-18T20:57:57.053044Z  INFO └╴7,631,218 cycles
+2026-09-18T20:57:57.053059Z  INFO ┌╴decode-proof
+2026-09-18T20:57:58.650038Z  INFO └╴89,266,181 cycles
+2026-09-18T20:57:58.650068Z  INFO ┌╴verify-root
+2026-09-18T21:01:21.117113Z  INFO └╴582,256,995 cycles
+2026-09-18T21:31:47.134916Z  INFO prove shrink: close time.busy=350ms time.idle=2.98s
+2026-09-18T21:32:45.144158Z  INFO prove wrap: close time.busy=11.3s time.idle=34.7s
+2026-09-18T21:32:45.625470Z  INFO [sp1] groth16 circuit artifacts are already installed at /home/ubuntu/.sp1/circuits/groth16/v6.1.0. if you want to re-download them, delete the directory
+Setting environment variables took 15.194µs
+Reading R1CS took 14.398022214s
+Reading proving key took 2.921538271s
+Reading witness file took 872.687µs
+Deserializing JSON data took 16.222108ms
+Generating witness took 639.186104ms
+21:33:08 DBG constraint system solver done nbConstraints=15972262 took=4798.968058
+21:33:13 DBG prover done acceleration=none backend=groth16 curve=bn254 nbConstraints=15972262 took=5551.865298
+Generating proof took 10.351378614s
+21:33:13 WRN ignoring uninitialized slice slice name=Vars slice type=[]frontend.Variable
+21:33:13 WRN ignoring uninitialized slice slice name=Vars slice type=[]frontend.Variable
+21:33:13 WRN ignoring uninitialized slice slice name=Vars slice type=[]frontend.Variable
+21:33:13 DBG verifier done backend=groth16 curve=bn254 took=0.915722
+2026-09-18T21:33:13.967949Z  INFO prove groth16: close time.busy=11.4µs time.idle=28.3s
+2026-09-18T21:33:13.968771Z  INFO prove: close time.busy=1.06ms time.idle=2118s mode=Groth16
+SP1 proof verified; SDK artifact: 1917 bytes
+SP1 program vkey: 0x001d846fdfa783032fb347ccda1a1e10da908d581d0d1556fd47e93dfba5a187
+Aiur recursion vk digest: 29319a45e19bc36494f05cb5701ae1673357fe76da6b3589e23e8bf001488dc2
+public values: 0x4958524f4f54303129319a45e19bc36494f05cb5701ae1673357fe76da6b3589e23e8bf001488dc200000000000000000100000000000000640000000000000000000000000000001400000000000000000000000000000025010000000000001c8c8e710000000033c4856c0000000092d4e6510000000061344dbc000000002fd5ecce00000000aa2c077000000000d985864a00000000482d4cf400000000462e3ac900000000de40e85e00000000d933a0340000000046ace4880000000
+onchain proof: 356 bytes, 0x4388a21c0000000000000000000000000000000000000000000000000000000000000000002f850ee998974d6cc00e50cd0814b098c05bfade466d28573240d057f2535200000000000000000000000000000000000000000000000000000000000000000e6e3cdbdf921abbfa825716e28930d8ed9461c7ac653cd4f1636ca373c17ecb2f7d18b640dadcfbd8f742b963fc27ab78be9b442731bbc37ebc363af1acdeae225f5b610ef98d7bd85fe881aa11da120ba380021bc2
+onchain proof saved to /tmp/claude-1000/-home-ubuntu-ix/df9cceae-b6f0-4cd3-98aa-17bb3dbd92ee/scratchpad/flt-groth16-root.groth16
+SP1 proof saved to /tmp/claude-1000/-home-ubuntu-ix/df9cceae-b6f0-4cd3-98aa-17bb3dbd92ee/scratchpad/flt-groth16-root.sp1
+ok: SP1 groth16 accepted aggregate root 7d44c48ee47c2ad9d5f1ae939bbbec7e6036e6ac8ce4511a9428e5adafe55dc0 under protocol current
+	Command being timed: "env IX_SP1=1 SP1_PROVER=cpu RUST_LOG=info lake exe ix compress-root 7d44c48ee47c2ad9d5f1ae939bbbec7e6036e6ac8ce4511a9428e5adafe55dc0 --mode groth16 --output /tmp/claude-1000/-home-ubuntu-ix/df9cceae-b6f0-4cd3-98aa-17bb3dbd92ee/scratchpad/flt-groth16-root.sp1 --onchain-output /tmp/claude-1000/-home-ubuntu-ix/df9cceae-b6f0-4cd3-98aa-17bb3dbd92ee/scratchpad/flt-groth16-root.gro
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 35:37.63
+	Maximum resident set size (kbytes): 108014084
+	Exit status: 0
+exit 0
+Fri Sep 18 21:33:15 UTC 2026

@@ -17,6 +17,17 @@ open (`docs/aiur-trace-sharding.md` §11).
 | FLT, 572 shards | `7d44c48e…dc0` | 690,987,002 | 37 min 19 s | 108 GB | 964 B | 4,293 B |
 | Mathlib, 78 shards | `026c8d38…c3d` | 692,240,636 | 38 min 47 s | 106 GB | 964 B | 4,293 B |
 
+## Groth16
+
+| Root | Core→Groth16 wall | Peak RSS | Onchain proof | SDK container |
+|---|---:|---:|---:|---:|
+| FLT, 572 shards | 35 min 38 s | 108 GB | 356 B | 1,917 B |
+
+Same path with `--mode groth16` and Succinct's published Groth16 circuit
+(`proofs/flt-root-7d44c48e.groth16{,.sp1}`, `logs/flt-groth16.log`); the
+gnark step is under a minute against 2.4 min for Plonk. Its setup is
+circuit-specific (see below), which is why Plonk is the default.
+
 Guest program key hash (what a verifier pins):
 `0x001d846fdfa783032fb347ccda1a1e10da908d581d0d1556fd47e93dfba5a187`.
 The proofs are in `proofs/`: `<root>.sp1` is the SDK container (proof plus
@@ -24,10 +35,11 @@ public values), `<root>.plonk` the raw onchain encoding, `<root>.public` the
 224 public-value bytes that must accompany it. `proofs/` files verify with
 
 ```console
-cargo run --release --manifest-path sp1-compress/Cargo.toml --example verify_plonk -- proofs/flt-root-7d44c48e.sp1
+cargo run --release --manifest-path sp1-compress/Cargo.toml --example verify_terminal -- proofs/flt-root-7d44c48e.sp1
 ```
 
-which uses `sp1-verifier` and its bundled Plonk key, not the SDK prover.
+which uses `sp1-verifier` and its bundled Plonk or Groth16 key, not the SDK
+prover.
 
 ### The statement
 
@@ -77,9 +89,8 @@ is 15 cycles per byte.
   5,808 sizes + 6) must be built. Measured 0.93 s per shape at 24 prover
   workers, CPU-bound at ~62 cores, 74 GB peak: about 50 hours on this box.
   Stopped after the first batch.
-- **Groth16** works over stock SP1 exactly like Plonk (`--mode groth16`;
-  the synthetic smoke gives a 356-byte onchain proof, gnark step under a
-  minute against 2.4 min for Plonk) but rests on a circuit-specific setup:
+- **Groth16** works over stock SP1 exactly like Plonk (table above) but
+  rests on a circuit-specific setup:
   Succinct's 18-contributor ceremony (Etherealize, Polygon, OP Labs, Alpen
   Labs, Offchain Labs, Coinbase, Across, Succinct; Semaphore tooling), whose
   security depends on every participant discarding their toxic waste, and
@@ -113,6 +124,6 @@ minutes; the gnark Plonk prove is CPU-bound either way (about 2.4 min here).
 
 Files: `logs/*-execute.log` (CLI output with the executor's cycle, opcode
 and syscall report), `logs/flt-plonk.log`, `logs/mathlib-plonk.log`,
-`logs/flt-groth16-stock-circuit.log` (the fork's proof against the stock
-Groth16 circuit, unsatisfied constraint), `proofs/`,
+`logs/flt-groth16.log`, `logs/flt-groth16-stock-circuit.log` (the fork's
+proof against the stock Groth16 circuit, unsatisfied constraint), `proofs/`,
 `sp1-docker-plonk-verify-bug.md`.
