@@ -59,6 +59,31 @@ def toplevel : Source.Toplevel := ⟦
     load(p)
   }
 
+  fn scrut_value(x: G) -> G { x * x + 1 }
+  pub fn match_scrut_call(x: G) -> G {
+    match scrut_value(x) {
+      1 => 3,
+      n => n + n,
+    }
+  }
+  fn scrut_assert(x: G) -> G { assert_eq!(x, 0); x }
+  pub fn match_scrut_wildcard(x: G) -> G {
+    match scrut_assert(x) { _ => 7, }
+  }
+  pub fn match_scrut_nested(x: G) -> G {
+    match scrut_value(x) {
+      1 => 3,
+      n => match scrut_value(n) { 5 => n, m => n + m, },
+    }
+  }
+  fn scrut_emit(x: G) -> G { io_write(0, [x]); x }
+  pub fn match_scrut_effect(x: G) -> G {
+    match scrut_emit(x) { 0 => 1, n => n + n, }
+  }
+  pub fn match_scrut_unused(x: G) -> G {
+    match scrut_emit(x) { _ => 7, }
+  }
+
   -- Function calls
   fn helper(x: G) -> G { x * x }
   pub fn call_helper(x: G) -> G { helper(x) + 1 }
@@ -1449,7 +1474,27 @@ private def hoistPatternRejections : TestSeq :=
       | .error (.differentBindings _ _) => true | _ => false
     test "mismatched or-pattern binders remain invalid" (rejects = true))
 
+/-- The variable fallback must alias the already-evaluated scrutinee, not
+contain a second call. This guards bytecode shape even when runtime memoization
+would conceal the duplicate computation in an output-only test. -/
+def matchScrutineeTests : TestSeq :=
+  withExceptOk "match scrutinee compilation succeeds" toplevel.compile fun compiled =>
+    let f := compiled.bytecode.functions[compiled.getFuncIdx `match_scrut_call |>.get!]!
+    test "call scrutinee is emitted exactly once"
+      ((Bytecode.collectCalleesBlock f.body).size == 1)
+
 def tests : TestSeq :=
+  matchScrutineeTests ++
+  runAgreement "match_scrut_call(0)" "match_scrut_call" [0] ++
+  runAgreement "match_scrut_call(7)" "match_scrut_call" [7] ++
+  runAgreement "match_scrut_nested(0)" "match_scrut_nested" [0] ++
+  runAgreement "match_scrut_nested(1)" "match_scrut_nested" [1] ++
+  runAgreement "match_scrut_nested(2)" "match_scrut_nested" [2] ++
+  runAgreement "match_scrut_wildcard(0)" "match_scrut_wildcard" [0] ++
+  runAgreement "match_scrut_effect(0)" "match_scrut_effect" [0] ++
+  runAgreement "match_scrut_effect(7)" "match_scrut_effect" [7] ++
+  runAgreement "match_scrut_unused(7)" "match_scrut_unused" [7] ++
+  runFailureAgreement "wildcard still evaluates its scrutinee" "match_scrut_wildcard" [1] ++
   hoistPatternRejections ++
   -- Arithmetic + simple control flow
   runAgreement "add_one(41)" "add_one" [41] ++
