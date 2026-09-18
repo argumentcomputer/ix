@@ -349,7 +349,9 @@
             # Lean test suite. The suite reads fixtures and writes scratch
             # files by paths relative to the working dir, so run it from a
             # writable copy of the source tree, as if from a checkout.
-            ix-tests = pkgs.runCommand "ix-tests" { } ''
+            ix-tests = pkgs.runCommandCC "ix-tests" {
+              nativeBuildInputs = [ rustToolchain ];
+            } ''
               cp -r ${./.} src
               chmod -R u+w src
               # IxTests depends on the ix target, so its wrapped output already
