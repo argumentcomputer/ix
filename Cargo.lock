@@ -6021,6 +6021,7 @@ dependencies = [
  "sha2 0.10.9",
  "sp1-build",
  "sp1-sdk",
+ "sp1-verifier",
  "tokio",
 ]
 
