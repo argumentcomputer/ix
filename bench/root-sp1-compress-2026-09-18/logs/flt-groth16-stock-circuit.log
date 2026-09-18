@@ -1,0 +1,61 @@
+Fri Sep 18 15:11:34 UTC 2026
+Compressing aggregate root 7d44c48ee47c2ad9d5f1ae939bbbec7e6036e6ac8ce4511a9428e5adafe55dc0 with SP1 (groth16)
+  protocol: current
+  bundled claim: CheckEnv(7b48cff43d033c1020dde0a9468d08834eff617c9892ed62913bacb71142ecaf, none)
+  recursion vk: 29319a45e19bc36494f05cb5701ae1673357fe76da6b3589e23e8bf001488dc2
+native preflight: aggregate root verifies (proof=6025626 bytes, vk=227799 bytes)
+SP1 guest (current): 454880 bytes, blake3 c5259d165ddd631478ca2db61949f4a5cc1493b61163342f4626924a3066a34e
+[sp1] downloaded https://sp1-circuits.s3-us-east-2.amazonaws.com/v6.1.0-groth16.tar.gz to /home/ubuntu/.sp1/circuits/groth16/v6.1.0.incomplete.Yfqx9J
+thread 'tokio-rt-worker' (67230) panicked at /home/ubuntu/.cargo/git/checkouts/sp1-541c366d6f2f54a9/7a1cefe/crates/recursion/gnark-ffi/src/ffi/docker.rs:98:61:
+failed to prove with docker: Docker command failed 
+ --- stdout: --- 
+Setting environment variables took 10.575µs
+Reading R1CS took 14.394134475s
+Reading proving key took 2.823160873s
+Reading witness file took 766.648µs
+Deserializing JSON data took 15.650842ms
+Generating witness took 638.665288ms
+15:49:11 ERR error="constraint #1317536 is not satisfied: [assertIsEqual] 2550345908837867159739144891112686690646290086721025146677998311065838493186 == 11156161241355681620827118910603447759802926141988686092027521286997447151728\nr1cs.(*builder[...]).AssertIsEqual\n\t/root/go/pkg/mod/github.com/p4u/gnark@v0.0.0-20251217225531-cd7874155e26/frontend/cs/r1cs/api_assertions.go:34\nsp1.(*Circuit).De
+Error: constraint #1317536 is not satisfied: [assertIsEqual] 2550345908837867159739144891112686690646290086721025146677998311065838493186 == 11156161241355681620827118910603447759802926141988686092027521286997447151728
+r1cs.(*builder[...]).AssertIsEqual
+	/root/go/pkg/mod/github.com/p4u/gnark@v0.0.0-20251217225531-cd7874155e26/frontend/cs/r1cs/api_assertions.go:34
+sp1.(*Circuit).Define
+	/sp1/crates/recursion/gnark-ffi/go/sp1/sp1.go:182
+ --- stderr: --- 
+panic: constraint #1317536 is not satisfied: [assertIsEqual] 2550345908837867159739144891112686690646290086721025146677998311065838493186 == 11156161241355681620827118910603447759802926141988686092027521286997447151728
+	r1cs.(*builder[...]).AssertIsEqual
+		/root/go/pkg/mod/github.com/p4u/gnark@v0.0.0-20251217225531-cd7874155e26/frontend/cs/r1cs/api_assertions.go:34
+	sp1.(*Circuit).Define
+		/sp1/crates/recursion/gnark-ffi/go/sp1/sp1.go:182
+goroutine 17 [running, locked to thread]:
+github.com/succinctlabs/sp1-recursion-gnark/sp1.ProveGroth16({0x1804f2ab68a0, 0x8}, {0x1804f2ab68a8, 0x8})
+	/sp1/crates/recursion/gnark-ffi/go/sp1/prove_groth16.go:99 +0xd30
+main.ProveGroth16Bn254(0x0?, 0x570146d736f0)
+	/sp1/crates/recursion/gnark-ffi/go/main.go:123 +0x65
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+Command exited with non-zero status 134
+	Command being timed: "env IX_SP1=1 WITHOUT_VK_VERIFICATION=1 SP1_PROVER=cpu RUST_LOG=info lake exe ix compress-root 7d44c48ee47c2ad9d5f1ae939bbbec7e6036e6ac8ce4511a9428e5adafe55dc0 --mode groth16 --output /tmp/claude-1000/-home-ubuntu-ix/df9cceae-b6f0-4cd3-98aa-17bb3dbd92ee/scratchpad/flt-root.sp1 --onchain-output /tmp/claude-1000/-home-ubuntu-ix/df9cceae-b6f0-4cd3-98aa-17bb3dbd92ee/scratchpad/fl
+	User time (seconds): 103987.71
+	System time (seconds): 15303.64
+	Percent of CPU this job got: 5280%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 37:39.29
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 109191836
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 1383851202
+	Voluntary context switches: 47579200
+	Involuntary context switches: 115739628
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 30292424
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 134
+exit 134
+Fri Sep 18 15:49:13 UTC 2026

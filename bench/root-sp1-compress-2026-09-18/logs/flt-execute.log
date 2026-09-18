@@ -1,0 +1,85 @@
+ℹ [808/810] Replayed ix/ix_rs
+info: stdout/stderr:
+Ix Rust features: parallel,sp1
+ℹ [809/810] Ran ix/ix_rs_net
+info: stdout/stderr:
+Ix Rust features: parallel,net,sp1
+Compressing aggregate root 7d44c48ee47c2ad9d5f1ae939bbbec7e6036e6ac8ce4511a9428e5adafe55dc0 with SP1 (execute)
+  protocol: current
+  bundled claim: CheckEnv(7b48cff43d033c1020dde0a9468d08834eff617c9892ed62913bacb71142ecaf, none)
+  recursion vk: 29319a45e19bc36494f05cb5701ae1673357fe76da6b3589e23e8bf001488dc2
+native preflight: aggregate root verifies (proof=6025626 bytes, vk=227799 bytes)
+SP1 guest (current): 454880 bytes, blake3 c5259d165ddd631478ca2db61949f4a5cc1493b61163342f4626924a3066a34e
+SP1 execute accepted the root
+total cycles: 580142190
+profile decode-proof: 89266181 cycles (1 invocation(s))
+profile decode-vk: 7631218 cycles (1 invocation(s))
+profile verify-root: 476003531 cycles (1 invocation(s))
+gas: 567601528
+opcode counts (580142190 total instructions):
+    88335807 addi
+    70694560 add
+    59384011 sd
+    41566142 sll
+    38611613 ld
+    35632715 beq
+    31121201 sltu
+    29900534 srl
+    27124917 sub
+    19113300 and
+    18900900 lbu
+    18849606 mulhu
+    16852547 mul
+    16184094 subw
+    14371273 bgeu
+    14192793 bne
+    13229490 sb
+     7840199 or
+     4851727 bltu
+     3538356 jalr
+     2343275 auipc
+     2109468 jal
+     1871448 lui
+     1021997 lwu
+      934422 sw
+      640583 xor
+      422975 lw
+      147118 sh
+      140681 lhu
+       91331 ecall
+       59460 divu
+       58498 srlw
+        3550 sra
+        1227 addw
+         151 lh
+          85 slt
+          64 lb
+          50 blt
+          22 bge
+syscall counts (91299 total syscall instructions):
+    91299 blake3_compress
+
+ok: SP1 execute accepted aggregate root 7d44c48ee47c2ad9d5f1ae939bbbec7e6036e6ac8ce4511a9428e5adafe55dc0 under protocol current
+	Command being timed: "env IX_SP1=1 lake exe ix compress-root 7d44c48ee47c2ad9d5f1ae939bbbec7e6036e6ac8ce4511a9428e5adafe55dc0 --mode execute"
+	User time (seconds): 96.55
+	System time (seconds): 5.17
+	Percent of CPU this job got: 310%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:32.76
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 9966616
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 1349669
+	Voluntary context switches: 20644
+	Involuntary context switches: 62541
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 1724624
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0

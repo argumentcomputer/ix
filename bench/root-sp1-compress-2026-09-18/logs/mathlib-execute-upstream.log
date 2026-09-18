@@ -1,0 +1,85 @@
+ℹ [808/810] Built ix/ix_rs (69s)
+info: stdout/stderr:
+Ix Rust features: parallel,sp1
+ℹ [809/810] Ran ix/ix_rs_net
+info: stdout/stderr:
+Ix Rust features: parallel,net,sp1
+✔ [810/810] Built ix:exe (1.8s)
+Compressing aggregate root 026c8d3841c6e62a95e1fbc66264e95dc9c6bf636c654501604b51855df7cc3d with SP1 (execute)
+  protocol: current
+  bundled claim: CheckEnv(84c8fd844470286ade6c1ac8a8dc091b30de1e115dbf10f6706c21217047685b, none)
+  recursion vk: 29319a45e19bc36494f05cb5701ae1673357fe76da6b3589e23e8bf001488dc2
+native preflight: aggregate root verifies (proof=6028602 bytes, vk=227799 bytes)
+SP1 guest (current): 459952 bytes, blake3 36950ace0e9e279b8c9b369203afc1d111b9bfe5028389fe807f2bfcf894dbb4
+SP1 execute accepted the root
+total cycles: 692240636
+profile decode-proof: 89295941 cycles (1 invocation(s))
+profile decode-vk: 7631218 cycles (1 invocation(s))
+profile verify-root: 583480869 cycles (1 invocation(s))
+gas: 642078578
+opcode counts (692240636 total instructions):
+    101257350 add
+     88056586 addi
+     61801379 sll
+     57228555 sd
+     42430045 ld
+     35659119 beq
+     31091281 sltu
+     29808744 srl
+     28347909 or
+     27031187 sub
+     21947102 xor
+     20630210 srlw
+     18857863 and
+     18757470 mulhu
+     17492646 lbu
+     16849239 mul
+     16092413 subw
+     14233808 bne
+     14099124 bgeu
+     13258721 sb
+      3361074 jalr
+      3309048 bltu
+      2255100 auipc
+      2115397 jal
+      2056961 lui
+      1469472 lb
+      1158894 lw
+       938971 sw
+       292045 lwu
+       147364 sh
+       140681 lhu
+        59759 divu
+         3554 sra
+         1225 addw
+          151 lh
+           85 slt
+           50 blt
+           32 ecall
+           22 bge
+syscall counts (0 total syscall instructions):
+
+ok: SP1 execute accepted aggregate root 026c8d3841c6e62a95e1fbc66264e95dc9c6bf636c654501604b51855df7cc3d under protocol current
+	Command being timed: "env IX_SP1=1 lake exe ix compress-root 026c8d3841c6e62a95e1fbc66264e95dc9c6bf636c654501604b51855df7cc3d --mode execute"
+	User time (seconds): 1155.19
+	System time (seconds): 34.81
+	Percent of CPU this job got: 625%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 3:10.18
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 9532944
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 1703
+	Minor (reclaiming a frame) page faults: 11950947
+	Voluntary context switches: 62698
+	Involuntary context switches: 946683
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 11475128
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0

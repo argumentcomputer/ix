@@ -1,0 +1,44 @@
+Fri Sep 18 19:40:43 UTC 2026
+ℹ [808/810] Built ix/ix_rs (1.3s)
+Compressing aggregate root 7d44c48ee47c2ad9d5f1ae939bbbec7e6036e6ac8ce4511a9428e5adafe55dc0 with SP1 (plonk)
+  protocol: current
+  bundled claim: CheckEnv(7b48cff43d033c1020dde0a9468d08834eff617c9892ed62913bacb71142ecaf, none)
+  recursion vk: 29319a45e19bc36494f05cb5701ae1673357fe76da6b3589e23e8bf001488dc2
+native preflight: aggregate root verifies (proof=6025626 bytes, vk=227799 bytes)
+SP1 guest (current): 459952 bytes, blake3 36950ace0e9e279b8c9b369203afc1d111b9bfe5028389fe807f2bfcf894dbb4
+2026-09-18T19:40:54.787481Z  INFO initializing cpu prover
+2026-09-18T19:41:01.513898Z  INFO [sp1] plonk circuit artifacts are already installed at /home/ubuntu/.sp1/circuits/plonk/v6.1.0. if you want to re-download them, delete the directory
+SP1 plonk circuit artifacts: /home/ubuntu/.sp1/circuits/plonk/v6.1.0
+2026-09-18T19:41:01.922219Z  INFO starting proof generation mode=Plonk
+2026-09-18T19:41:02.509389Z  INFO ┌╴decode-vk
+2026-09-18T19:41:02.633361Z  INFO └╴7,631,218 cycles
+2026-09-18T19:41:02.633375Z  INFO ┌╴decode-proof
+2026-09-18T19:41:04.227099Z  INFO └╴89,266,181 cycles
+2026-09-18T19:41:04.227128Z  INFO ┌╴verify-root
+2026-09-18T19:44:31.068403Z  INFO └╴582,256,995 cycles
+2026-09-18T20:14:55.659126Z  INFO prove shrink: close time.busy=351ms time.idle=2.85s
+2026-09-18T20:16:00.167897Z  INFO prove wrap: close time.busy=11.3s time.idle=41.3s
+2026-09-18T20:16:00.648534Z  INFO [sp1] plonk circuit artifacts are already installed at /home/ubuntu/.sp1/circuits/plonk/v6.1.0. if you want to re-download them, delete the directory
+20:16:29 DBG constraint system solver done nbConstraints=27576375 took=5735.342675
+20:18:00 DBG prover done backend=plonk curve=bn254 nbConstraints=27576375 took=103883.172179
+20:18:00 DBG verifier done backend=plonk curve=bn254 took=2.192666
+20:18:00 WRN ignoring uninitialized slice slice name=Vars slice type=[]frontend.Variable
+20:18:00 WRN ignoring uninitialized slice slice name=Vars slice type=[]frontend.Variable
+20:18:00 WRN ignoring uninitialized slice slice name=Vars slice type=[]frontend.Variable
+20:18:00 DBG verifier done backend=plonk curve=bn254 took=1.354609
+2026-09-18T20:18:00.257470Z  INFO prove plonk: close time.busy=10.0µs time.idle=120s
+2026-09-18T20:18:00.258475Z  INFO prove: close time.busy=1.22ms time.idle=2218s mode=Plonk
+SP1 proof verified; SDK artifact: 4293 bytes
+SP1 program vkey: 0x001d846fdfa783032fb347ccda1a1e10da908d581d0d1556fd47e93dfba5a187
+Aiur recursion vk digest: 29319a45e19bc36494f05cb5701ae1673357fe76da6b3589e23e8bf001488dc2
+public values: 0x4958524f4f54303129319a45e19bc36494f05cb5701ae1673357fe76da6b3589e23e8bf001488dc200000000000000000100000000000000640000000000000000000000000000001400000000000000000000000000000025010000000000001c8c8e710000000033c4856c0000000092d4e6510000000061344dbc000000002fd5ecce00000000aa2c077000000000d985864a00000000482d4cf400000000462e3ac900000000de40e85e00000000d933a0340000000046ace4880000000
+onchain proof: 964 bytes, 0x5a093a2f0000000000000000000000000000000000000000000000000000000000000000002f850ee998974d6cc00e50cd0814b098c05bfade466d28573240d057f2535200000000000000000000000000000000000000000000000000000000000000002e3c6816c389bbd656bcad37f3213d049ce9a60b7f53c88d57c22c1c15589f45247ee42627e97614d0e8fe39092e5fc5ae261e0f6cbdda11738aa5d10ca1db7b295174ad4d36e6cd28345718e3728ac65558098d2afe
+onchain proof saved to /tmp/claude-1000/-home-ubuntu-ix/df9cceae-b6f0-4cd3-98aa-17bb3dbd92ee/scratchpad/flt-root.plonk
+SP1 proof saved to /tmp/claude-1000/-home-ubuntu-ix/df9cceae-b6f0-4cd3-98aa-17bb3dbd92ee/scratchpad/flt-root.sp1
+ok: SP1 plonk accepted aggregate root 7d44c48ee47c2ad9d5f1ae939bbbec7e6036e6ac8ce4511a9428e5adafe55dc0 under protocol current
+	Command being timed: "env IX_SP1=1 SP1_PROVER=cpu RUST_LOG=info lake exe ix compress-root 7d44c48ee47c2ad9d5f1ae939bbbec7e6036e6ac8ce4511a9428e5adafe55dc0 --mode plonk --output /tmp/claude-1000/-home-ubuntu-ix/df9cceae-b6f0-4cd3-98aa-17bb3dbd92ee/scratchpad/flt-root.sp1 --onchain-output /tmp/claude-1000/-home-ubuntu-ix/df9cceae-b6f0-4cd3-98aa-17bb3dbd92ee/scratchpad/flt-root.plonk"
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 37:19.45
+	Maximum resident set size (kbytes): 107802016
+	Exit status: 0
+exit 0
+Fri Sep 18 20:18:03 UTC 2026
