@@ -136,6 +136,35 @@ counts every one. The same asymmetry sends the two singleton leaves the
 other way: cheap for the kernel, large for the record because their bytes
 are ingressed and hashed in circuit.
 
+### Best fit over the profile's counters
+
+Exhaustive search over subsets of up to four of fourteen per-leaf features
+(bytes, frontier bytes, block count, `Σ size^1.5`, the six kernel counters,
+and unfolded-producer bytes and delta-edge counts from the profile's
+delta graph), non-negative least squares, leave-one-out over the 572
+leaves (`best_fit.py`, on top of `record_model.py`):
+
+| Model | LOO r | median error | p90 error | heaviest 20 in predicted top 40 |
+|---|---:|---:|---:|---:|
+| bytes | 0.57 | 3.7 GiB | 10.1 GiB | |
+| bytes + `nat_arith` | 0.79 | 3.7 GiB | 9.9 GiB | 12 |
+| bytes + frontier + `subst` + `nat_arith` | **0.82** | **3.1 GiB** | **9.1 GiB** | 10 |
+
+The four-term fit is 1,205 record bytes per serialized byte, 570 per
+frontier byte, 502 per `subst` and 2,487 per `nat_arith`. Heartbeats,
+`whnf`, `def_eq`, `intern`, block count, the superlinear term and the
+delta-graph features add nothing once these are in. It places leaf 570
+first (169 against 174 GiB) and 557, 357, 500 and 404 in the top five. It
+misses one family: leaves 160, 476, 440, 287 and 472, measured 60 to
+75 GiB, predicted 29 to 45. Leaf 160 is `P2MW` Drinfeld-curve and
+algebraic-curve lemmas (`leaf160-names.txt`) and its record is dominated
+by function circuits 112, 156, 110, 109 and 111, a mix no other leaf has;
+naming those circuits from the IxVM toplevel's function order would name
+the counter the profile lacks. Until then the model under-predicts about
+one leaf in a hundred by a factor of two, which is what a margin on the
+ceiling is for. For flagging, `bytes + 2.1 × nat_arith` over three times
+the median marks a leaf to split or isolate before the run.
+
 The profiled cut, `ix shard --profile`, balances on heartbeats today.
 Balancing on `bytes × 1,770 + nat_arith × 2,452` instead would have spread
 the Vélu cluster and the singletons across leaves in the first cut.
@@ -157,7 +186,9 @@ were not reused: they predate the sppark and multi-stark changes.
 
 Files: `flt572-lanes4-exec3-meta.txt`, `flt572-lanes4-exec3-summary.txt`,
 `leaf570-velu-names.txt`, `run-lanes4.sh`, `profile.log`,
-`profile_vs_records.py` (reads the `.ixprof`, the manifest and the lanes
-logs; the `.ixprof` is in `~/benchdata/flt/`). Raw logs, both metrics files,
+`profile_vs_records.py`, `record_model.py`, `best_fit.py` (read the
+`.ixprof`, the manifest, the lanes logs and the metrics; the `.ixprof` is
+in `~/benchdata/flt/` and regenerates from the `.ixe` in 11 minutes),
+`leaf160-names.txt`. Raw logs, both metrics files,
 GPU samples and the lanes cache are in
 `~/benchdata/flt/runs/flt572-lanes4-exec3/` on the four-GPU box.
