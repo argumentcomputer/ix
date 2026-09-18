@@ -794,6 +794,13 @@ def toplevel := ⟦
   pub fn calls_grouped(t: G, a: G, b: G) -> G {
     grouped_pick(t, a, b) + grouped_sum_range(a)
   }
+
+  pub fn match_scrut_call(x: G) -> G {
+    match id(x) {
+      0 => 7,
+      n => n + n,
+    }
+  }
 ⟧
 
 /-- The PROVING suite: every case runs the full prove+verify pipeline
@@ -806,6 +813,8 @@ def toplevel := ⟦
     differ only in which path is active, only a minimal covering set of
     proofs is kept — the other paths run in `aiur-cross`. -/
 def aiurTestCases : List AiurTestCase := [
+    .prove `match_scrut_call #[0] #[7] (label := "match scrutinee explicit"),
+    .prove `match_scrut_call #[3] #[6] (label := "match scrutinee variable fallback"),
     -- Match: 1 explicit case + default, prove both paths (each side gates
     -- the other's constraints)
     .prove `match_mul #[0] #[0] (label := "match_mul(0)"),

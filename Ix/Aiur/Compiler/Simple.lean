@@ -31,7 +31,7 @@ abbrev tmpVar : Local := .idx 0
 `let pat = (let w = e in rest) in b` ⤳ `let w = e in let pat = rest in b`.
 
 The match compiler hoists a non-variable `match` scrutinee into a `let`
-(`MatchCompiler.switch`), so `let x = match foo(bar) {..}` simplifies to
+(`MatchCompiler.compile`), so `let x = match foo(bar) {..}` simplifies to
 `let x = (let w = foo(bar) in match w {..})`. That buries the `match` one
 `let` deep, where `Lower`'s non-tail-match detector (which only fires when a
 `match` is the *immediate* `letVar`/`letWild` RHS) can't see it. Floating the
