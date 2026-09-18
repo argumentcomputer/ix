@@ -86,11 +86,59 @@ follow:
    for it; use 256 for FLT.
 2. Admit on measured occupancy, and stop admitting once any record passes
    a soft threshold, so a large record grows without draining the box.
-3. Cut with measured costs. `ix profile` and `ix check-rs --per-const`
-   run the kernel out of circuit and attribute cost per constant; the
-   profiled `ix shard --profile` strategy cuts on those weights and would
-   have spread the Vélu cluster across leaves. The 572 measured records
-   from this run are the calibration set for that model.
+3. Cut with measured costs. `ix profile` run afterwards ranks this leaf
+   first at a predicted 172 GiB (next section); a profiled cut weighted
+   by bytes and `nat_arith` would have spread the Vélu cluster across
+   leaves.
+
+## Would the out-of-circuit profile have caught it?
+
+Yes. `ix profile anthropic-flt.ixe` (the Rust kernel over every constant,
+96 workers, caches dropped) took 11:21 wall, 457 s of it the parallel
+pass, 116 GiB peak RSS, and wrote a 361 MB `.ixprof` with per-block
+heartbeats, serialized size and the kernel's `subst`, `whnf`, `def_eq`,
+`nat_arith` and `intern` counters. Summed per leaf of the 572-shard
+manifest and set against the 572 records the run measured
+(`profile_vs_records.py`):
+
+| Predictor of a leaf's record | Correlation over 572 leaves | Leaf 570's rank |
+|---|---:|---:|
+| serialized bytes | 0.57 | 337 |
+| heartbeats | 0.25 | 16 |
+| `whnf` | 0.27 | 7 |
+| `nat_arith` | 0.56 | **1** |
+| bytes + `nat_arith`, least squares | **0.79** | **1** |
+
+The two-term fit is 1,770 record bytes per serialized byte plus 2,452
+record bytes per `nat_arith` operation. The first term is the byte model
+the cut was seeded with; the second is what it lacked. Under it:
+
+| Leaf | Predicted | Measured |
+|---:|---:|---:|
+| 570 | 172.2 GiB | 174.2 GiB |
+| 357 | 96.6 GiB | 89.5 GiB |
+| 557 | 93.2 GiB | 88.0 GiB |
+| 404 | 72.8 GiB | 71.4 GiB |
+| median / p90 | 29.9 / 42.6 GiB | 30.2 / 44.1 GiB |
+
+The top four and the body of the distribution are right; leaves 160, 472
+and 287 (75, 75 and 64 GiB measured) are under-predicted at 29 to 44 GiB,
+so a third term is missing for part of the tail. But the question was
+whether the profile flags the leaf that broke the run, and it does, as the
+single most expensive leaf by a factor of 1.8, at a predicted record above
+the 128 GiB ceiling, eleven minutes after the environment was compiled.
+
+Why `nat_arith`: the Vélu lemmas evaluate polynomial coefficients as
+natural-number arithmetic that the Rust kernel does natively and cheaply,
+which is why heartbeats rank the leaf only 16th, while the IxVM proves
+each such operation through its byte and memory gadgets, and the record
+counts every one. The same asymmetry sends the two singleton leaves the
+other way: cheap for the kernel, large for the record because their bytes
+are ingressed and hashed in circuit.
+
+The profiled cut, `ix shard --profile`, balances on heartbeats today.
+Balancing on `bytes × 1,770 + nat_arith × 2,452` instead would have spread
+the Vélu cluster and the singletons across leaves in the first cut.
 
 ## Inputs, build and commands
 
@@ -108,6 +156,8 @@ The five outlier leaves proven earlier on one GPU (`../flt-shard-plan-2026-09-17
 were not reused: they predate the sppark and multi-stark changes.
 
 Files: `flt572-lanes4-exec3-meta.txt`, `flt572-lanes4-exec3-summary.txt`,
-`leaf570-velu-names.txt`, `run-lanes4.sh`. Raw logs, both metrics files,
+`leaf570-velu-names.txt`, `run-lanes4.sh`, `profile.log`,
+`profile_vs_records.py` (reads the `.ixprof`, the manifest and the lanes
+logs; the `.ixprof` is in `~/benchdata/flt/`). Raw logs, both metrics files,
 GPU samples and the lanes cache are in
 `~/benchdata/flt/runs/flt572-lanes4-exec3/` on the four-GPU box.

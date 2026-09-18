@@ -1,0 +1,7 @@
+[rs_kernel_profile] loaded 1330204 consts in 5.0s
+[rs_kernel_profile] profiling 1310054 work item(s) with 96 worker(s), isolate=true...
+[rs_kernel_profile] checked 1310054/1310054 (0 failed) in 457.2s
+[rs_kernel_profile] wrote anthropic-flt.ixprof: 1310054 blocks, 58853073 delta edges, 361177508 bytes
+[rs_kernel_profile] done: 1321973 targets, 1310054 blocks, 58853073 edges, 0 failed
+Elapsed (wall clock) time (h:mm:ss or m:ss): 11:21.41
+Maximum resident set size (kbytes): 121448660
