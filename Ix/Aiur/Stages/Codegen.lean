@@ -5,12 +5,11 @@
   Rust fn per Aiur function:
 
   ```rust
-  fn aiur_fn_N(
+  fn aiur_fn_N<const UNCONSTRAINED: bool>(
     inp: [G; INPUT_SIZE],
     input_hash: u64,
     record: &mut QueryRecord,
     io_buffer: &mut IOBuffer,
-    unconstrained: bool,
   ) -> [G; OUTPUT_SIZE]
   ```
 
@@ -45,7 +44,8 @@
 
   # `unconstrained` propagation
 
-  `unconstrained: bool` is the fn-local flag. Once `true`, stays `true`.
+  `UNCONSTRAINED` is a const-generic flag, aliased locally as `unconstrained`
+  for op emission. Once `true`, stays `true`.
   Each `Op::Call(callee, args, _, op_unconstrained)` invokes the callee
   with `unconstrained || op_unconstrained`.
 
@@ -389,6 +389,7 @@ private def emitCall (out : Nat) (callee : FunIdx) (args : Array ValIdx)
   -- always skipped; when opUn = false both expressions collapse to
   -- just `unconstrained`.
   let cuExpr : String := if opUn then "true" else "unconstrained"
+  let cuParam : String := if opUn then "true" else "UNCONSTRAINED"
   -- On a constrained hit, bump the entry's multiplicity.
   let bumpStmt : String :=
     if opUn then ""
@@ -414,7 +415,7 @@ private def emitCall (out : Nat) (callee : FunIdx) (args : Array ValIdx)
     s!" let (__hash, __hit) = record.function_queries[{callee}].lookup(&__args[..]);" ++
     s!" match __hit \{ Some(__i) if {hitGuard} => \{" ++
     bumpStmt ++ retExpr ++ " }," ++
-    s!" _ => aiur_fn_{callee}(__args, __hash, record, io_buffer, __cu)? } }"
+    s!" _ => aiur_fn_{callee}::<{cuParam}>(__args, __hash, record, io_buffer)? } }"
   let mut stmts : Array RustStmt := #[
     .letStmt false "__r_arr" (some s!"[G; OUT_{callee}]") (.lit blockExpr)
   ]
@@ -937,7 +938,8 @@ def emitFunction (funIdx : FunIdx) (f : Function)
   -- nextVal starts at inSize (the next free ValIdx after the inputs).
   let initState : EmitState := { nextVal := inSize, nextLabel := 0, memorySizes }
   let (bodyStmts, _) := (emitBlock funIdx none f.body).run initState
-  let body := bindInputs ++ bodyStmts
+  let body := #[RustStmt.letStmt false "unconstrained" none (.var "UNCONSTRAINED")] ++
+    bindInputs ++ bodyStmts
   -- Wrap the whole body in `stacker::maybe_grow` so deep Aiur
   -- recursion grows the stack on demand instead of overflowing.
   -- Red zone 64KB / new stack 4MB — when the current thread has
@@ -948,12 +950,11 @@ def emitFunction (funIdx : FunIdx) (f : Function)
   let rbrace := "}"
   let bodyText : String := stmtsToStr 2 body
   let fnText : String :=
-    s!"fn aiur_fn_{funIdx}(\n" ++
+    s!"fn aiur_fn_{funIdx}<const UNCONSTRAINED: bool>(\n" ++
     s!"  inp: [G; IN_{funIdx}],\n" ++
     s!"  input_hash: u64,\n" ++
     s!"  record: &mut QueryRecord,\n" ++
     s!"  io_buffer: &mut IOBuffer,\n" ++
-    s!"  unconstrained: bool,\n" ++
     s!") -> Result<[G; OUT_{funIdx}], ExecError> {lbrace}\n" ++
     s!"  stacker::maybe_grow(64 * 1024, 4 * 1024 * 1024, || {lbrace}\n" ++
     bodyText ++
@@ -1032,7 +1033,7 @@ def emitDispatch (tl : Toplevel) : RustItem := Id.run do
       .letStmt false "__inp" (some s!"[G; IN_{funIdx}]")
         (.lit "args.try_into().expect(\"input size mismatch\")"),
       .letStmt false "__out" none
-        (.lit s!"aiur_fn_{funIdx}(__inp, __input_hash, record, io_buffer, false)?"),
+        (.lit s!"aiur_fn_{funIdx}::<false>(__inp, __input_hash, record, io_buffer)?"),
       .returnStmt (.call (.var "Ok")
         #[.call (.field (.var "__out") "to_vec") #[]])
     ]
