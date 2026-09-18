@@ -108,6 +108,7 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("aux-gen-unit", Tests.AuxGen.ExprUtils.suite ++ Tests.AuxGen.Levels.suite ++ Tests.AuxGen.Recursor.suite ++ Tests.AuxGen.Surgery.suite),
   ("ground-unit", Tests.Ground.suite),
   ("aiur-cross", [AiurTests.Cross.tests]),
+  ("aiur-codegen", [AiurTests.Codegen.tests]),
   ("aiur-cost", [AiurTests.Cost.tests]),
   ("prim-addrs", Tests.Ix.Kernel.PrimAddrs.suite),
   ("primitive-address-parity", Tests.Ix.Kernel.BuildPrimitives.paritySuite

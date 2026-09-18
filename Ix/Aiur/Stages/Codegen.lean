@@ -417,14 +417,24 @@ private def emitCall (out : Nat) (callee : FunIdx) (args : Array ValIdx)
     stmts := stmts.push (declVal (out + k) (.index (.var "__r_arr") (.lit (toString k))))
   return stmts
 
+/-- Use the fixed table slot validated by `execute_generated`. Standalone op
+    emission (without a toplevel layout) retains the width-keyed lookup. -/
+private def memoryQuery (memorySizes : Array Nat) (size : Nat) : String :=
+  match memorySizes.findIdx? (· == size) with
+  | some slot =>
+    s!"record.memory_queries.get_index_mut({slot}).map(|(_, q)| q).ok_or(ExecError::InvalidMemorySize({size}))?"
+  | none =>
+    s!"record.memory_queries.get_mut(&{size}).ok_or(ExecError::InvalidMemorySize({size}))?"
+
 /-- `Op::Store`: mirror execute.rs lines 306-326. Insert hit/miss into
     `record.memory_queries[size]`; output is the allocated/cached ptr. -/
-private def emitStore (out : Nat) (values : Array ValIdx) : Array RustStmt :=
+private def emitStore (out : Nat) (values : Array ValIdx)
+    (memorySizes : Array Nat) : Array RustStmt :=
   let size := values.size
   let valsStr : String := (argsAsArray values).toStr
   let blockExpr : String :=
     s!"\{ let __values: [G; {size}] = {valsStr};" ++
-    s!" let __mq = record.memory_queries.get_mut(&{size}).ok_or(ExecError::InvalidMemorySize({size}))?;" ++
+    s!" let __mq = {memoryQuery memorySizes size};" ++
     s!" if let Some(__i) = __mq.get_index_of(&__values[..]) \{" ++
     s!" if !unconstrained \{ __mq.bump_multiplicity(__i); }" ++
     s!" __mq.output_at(__i)[0]" ++
@@ -436,9 +446,10 @@ private def emitStore (out : Nat) (values : Array ValIdx) : Array RustStmt :=
 
 /-- `Op::Load`: mirror execute.rs lines 328-345. Look up by pointer
     index, bump multiplicity if constrained, splat `size` outputs. -/
-private def emitLoad (out : Nat) (size : Nat) (ptr : ValIdx) : Array RustStmt := Id.run do
+private def emitLoad (out : Nat) (size : Nat) (ptr : ValIdx)
+    (memorySizes : Array Nat) : Array RustStmt := Id.run do
   let blockExpr : String :=
-    s!"\{ let __mq = record.memory_queries.get_mut(&{size}).ok_or(ExecError::InvalidMemorySize({size}))?;" ++
+    s!"\{ let __mq = {memoryQuery memorySizes size};" ++
     s!" let __ptr_u64 = __v_{ptr}.as_canonical_u64();" ++
     s!" let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?;" ++
     s!" if __ptr_usize >= __mq.len() \{ return Err(ExecError::UnboundPointer \{ ptr: __ptr_u64, size: {size} }); }" ++
@@ -704,7 +715,7 @@ private def emitDebug (label : String) (args : Option (Array ValIdx)) : Array Ru
 
 /-- Top-level op dispatch. `out` = the first ValIdx for outputs;
     callers must advance their counter by `Op.outputCount`. -/
-def emitOp (out : Nat) (op : Op) : Array RustStmt :=
+def emitOp (out : Nat) (op : Op) (memorySizes : Array Nat := #[]) : Array RustStmt :=
   match op with
   | .const c => emitConst out c
   | .add a b => emitBinop out "+" a b
@@ -712,8 +723,8 @@ def emitOp (out : Nat) (op : Op) : Array RustStmt :=
   | .mul a b => emitBinop out "*" a b
   | .eqZero a => emitEqZero out a
   | .call callee args outSz opUn => emitCall out callee args outSz opUn
-  | .store vs => emitStore out vs
-  | .load size ptr => emitLoad out size ptr
+  | .store vs => emitStore out vs memorySizes
+  | .load size ptr => emitLoad out size ptr memorySizes
   | .assertEq xs ys msg => emitAssertEq xs ys msg
   | .ioGetInfo ch key => emitIOGetInfo out ch key
   | .ioSetInfo ch key idx len => emitIOSetInfo ch key idx len
@@ -769,6 +780,7 @@ where
 structure EmitState where
   nextVal : Nat
   nextLabel : Nat
+  memorySizes : Array Nat := #[]
   deriving Inhabited
 
 abbrev EmitM (α : Type) := StateM EmitState α
@@ -805,7 +817,7 @@ partial def emitBlock (funIdx : FunIdx) (mcLabel? : Option String)
   let mut stmts : Array RustStmt := #[]
   for op in b.ops do
     let outBase ← allocVals (Op.outputCount op)
-    stmts := stmts ++ emitOp outBase op
+    stmts := stmts ++ emitOp outBase op (← get).memorySizes
   let ctrlStmts ← emitCtrl funIdx mcLabel? b.ctrl
   return stmts ++ ctrlStmts
 
@@ -903,7 +915,8 @@ end
 
 /-! ## Function & toplevel emission -/
 
-def emitFunction (funIdx : FunIdx) (f : Function) : Array RustItem := Id.run do
+def emitFunction (funIdx : FunIdx) (f : Function)
+    (memorySizes : Array Nat := #[]) : Array RustItem := Id.run do
   let inSize := f.layout.inputSize
   let outSize := (findReturnArity f.body).getD 0
   let inputSizeConst := RustItem.constUsize s!"INPUT_SIZE_{funIdx}" inSize
@@ -916,7 +929,7 @@ def emitFunction (funIdx : FunIdx) (f : Function) : Array RustItem := Id.run do
     bindInputs := bindInputs.push
       (.letStmt false s!"__v_{i}" (some "G") (.index (.var "inp") (.lit (toString i))))
   -- nextVal starts at inSize (the next free ValIdx after the inputs).
-  let initState : EmitState := { nextVal := inSize, nextLabel := 0 }
+  let initState : EmitState := { nextVal := inSize, nextLabel := 0, memorySizes }
   let (bodyStmts, _) := (emitBlock funIdx none f.body).run initState
   let body := bindInputs ++ bodyStmts
   -- Wrap the whole body in `stacker::maybe_grow` so deep Aiur
@@ -1026,7 +1039,15 @@ def emitDispatch (tl : Toplevel) : RustItem := Id.run do
   -- Emit raw text for the dispatch fn so we can prefix `pub(crate)`
   -- without extending RustItem. The body is built via stmtsToStr at
   -- the right indentation.
-  let body : Array RustStmt := #[.matchStmt (.lit "fun_idx as u64") arms]
+  -- QueryRecord::new preserves memory_sizes order. Validate that ABI once
+  -- before any query mutation; generated code never inserts/removes tables,
+  -- only rows within them, so the slots remain valid throughout execution.
+  let mut body : Array RustStmt := #[]
+  for slot in [0 : tl.memorySizes.size] do
+    let size := tl.memorySizes[slot]!
+    body := body.push (.exprStmt (.lit
+      s!"if record.memory_queries.get_index({slot}).map(|(size, _)| *size) != Some({size}) \{ return Err(ExecError::InvalidMemorySize({size})); }"))
+  body := body.push (.matchStmt (.lit "fun_idx as u64") arms)
   let lbrace := "{"
   let rbrace := "}"
   .raw (s!"pub(crate) fn execute_generated(\n" ++
@@ -1044,7 +1065,7 @@ def emitDispatch (tl : Toplevel) : RustItem := Id.run do
 def emit (tl : Toplevel) : String := Id.run do
   let mut items : Array RustItem := #[]
   for funIdx in [0 : tl.functions.size] do
-    items := items ++ emitFunction funIdx tl.functions[funIdx]!
+    items := items ++ emitFunction funIdx tl.functions[funIdx]! tl.memorySizes
   items := items.push (emitDispatch tl)
   let mut bodyStr := ""
   for it in items do
