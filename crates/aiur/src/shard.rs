@@ -60,7 +60,7 @@
 //! pointers, i.e. two shards claiming them). The verifier does not need to
 //! know which widths or intervals the records use: a missing pair leaves
 //! the batch unbalanced, and a pair no shard fills balances only as the
-//! zero contribution `A_j = B_j` (see [`AiurSystem::check_batch_policy`]).
+//! zero contribution `A_j = B_j` (see [`check_batch_policy`]).
 
 use std::ops::Range;
 
@@ -494,101 +494,6 @@ impl AiurSystem {
     multi_stark::witness::PreparedWitness { traces, lookups }
   }
 
-  /// Checks the batch-level policy that makes a [`BatchProof`] the proof of
-  /// one execution. Besides the claim, it constrains the batch messages to
-  /// the shape of the `memseg` closure and bounds the batch's rows:
-  ///
-  /// - exactly one claim across all shards, equal to `claim`;
-  /// - the messages are consecutive pairs `pull (memseg, w, a)`,
-  ///   `push (memseg, w, b)` with `a ≤ b` — nothing else — sorted by width
-  ///   and, within a width, by disjoint intervals (`b` of one pair at most
-  ///   `a` of the next), all compared as the integers the canonical field
-  ///   elements are;
-  /// - the padded heights of every active circuit of every shard sum to
-  ///   less than the field characteristic.
-  ///
-  /// The verifier need not know which widths or intervals the records use:
-  /// a missing pair leaves an interval's end points unmatched and the batch
-  /// unbalanced, and a pair no shard fills balances only at `a = b`, where
-  /// it is the zero contribution. What must be excluded is two pairs whose
-  /// intervals overlap (two paths through the same pointers, i.e. two
-  /// shards claiming them), a pair of any other shape, and a message on
-  /// any other channel; the height bound is what lets the tiling argument
-  /// treat `ptr + 1` as an integer increment (see the module docs).
-  pub(crate) fn check_batch_policy(
-    &self,
-    claim: &[G],
-    preamble: &BatchPreamble<AiurConfig>,
-  ) -> Result<(), String> {
-    let num_shards = preamble.headers.len();
-    if num_shards == 0 || num_shards > MAX_SHARDS {
-      return Err(format!("batch has {num_shards} shards"));
-    }
-    let num_circuits = self.system.circuits.len();
-    let mut claims = preamble.headers.iter().flat_map(|h| h.claims.iter());
-    match (claims.next(), claims.next()) {
-      (Some(only), None) if only.as_slice() == claim => {},
-      (Some(_), None) => return Err("batch carries a different claim".into()),
-      (None, _) => return Err("batch carries no claim".into()),
-      (Some(_), Some(_)) => {
-        return Err("batch carries more than one claim".into());
-      },
-    }
-
-    let mut height_sum: u128 = 0;
-    for header in &preamble.headers {
-      if header.active.len() != num_circuits {
-        return Err("shard activation bitmap has the wrong length".into());
-      }
-      let active = header.active.iter().filter(|&&a| a).count();
-      if header.log_degrees.len() != active {
-        return Err("shard header heights do not match its activation".into());
-      }
-      for &log_degree in &header.log_degrees {
-        height_sum += 1u128 << log_degree.min(127);
-      }
-    }
-    if height_sum >= GOLDILOCKS_ORDER {
-      return Err("batch rows exceed the field characteristic".into());
-    }
-
-    if !preamble.messages.len().is_multiple_of(2) {
-      return Err("batch messages do not pair up".into());
-    }
-    let memseg = memseg_channel();
-    // The previous pair's width and end; every width is at least one, so
-    // `(0, 0)` precedes any first pair.
-    let mut previous = (0u64, 0u64);
-    for [pull, push] in preamble.messages.as_chunks::<2>().0 {
-      let well_formed = pull.multiplicity == G::NEG_ONE
-        && push.multiplicity == G::ONE
-        && pull.args.len() == 3
-        && push.args.len() == 3
-        && pull.args[0] == memseg
-        && push.args[0] == memseg
-        && pull.args[1] == push.args[1];
-      if !well_formed {
-        return Err("batch messages are not memseg closure pairs".into());
-      }
-      let width = pull.args[1].as_canonical_u64();
-      let start = pull.args[2].as_canonical_u64();
-      let end = push.args[2].as_canonical_u64();
-      if start > end {
-        return Err("memseg closure interval ends before it starts".into());
-      }
-      let (previous_width, previous_end) = previous;
-      let ordered = previous_width < width
-        || (previous_width == width && previous_end <= start);
-      if !ordered {
-        return Err(
-          "memseg closure intervals are not sorted and disjoint".into(),
-        );
-      }
-      previous = (width, end);
-    }
-    Ok(())
-  }
-
   /// The projected prover peak of shard `shard` of `plan` with the record
   /// (`record_bytes` retained) resident for the shard's whole proof, as it
   /// is under `Retention::Regenerate`: the phase model over the shard's
@@ -812,6 +717,100 @@ impl AiurSystem {
     }
     messages
   }
+}
+
+/// Checks the batch-level policy that makes a [`BatchProof`] the proof of
+/// one execution of a system with `num_circuits` circuits. Besides the claim, it constrains the batch messages to
+/// the shape of the `memseg` closure and bounds the batch's rows:
+///
+/// - exactly one claim across all shards, equal to `claim`;
+/// - the messages are consecutive pairs `pull (memseg, w, a)`,
+///   `push (memseg, w, b)` with `a ≤ b` — nothing else — sorted by width
+///   and, within a width, by disjoint intervals (`b` of one pair at most
+///   `a` of the next), all compared as the integers the canonical field
+///   elements are;
+/// - the padded heights of every active circuit of every shard sum to
+///   less than the field characteristic.
+///
+/// The verifier need not know which widths or intervals the records use:
+/// a missing pair leaves an interval's end points unmatched and the batch
+/// unbalanced, and a pair no shard fills balances only at `a = b`, where
+/// it is the zero contribution. What must be excluded is two pairs whose
+/// intervals overlap (two paths through the same pointers, i.e. two
+/// shards claiming them), a pair of any other shape, and a message on
+/// any other channel; the height bound is what lets the tiling argument
+/// treat `ptr + 1` as an integer increment (see the module docs).
+pub(crate) fn check_batch_policy(
+  num_circuits: usize,
+  claim: &[G],
+  preamble: &BatchPreamble<AiurConfig>,
+) -> Result<(), String> {
+  let num_shards = preamble.headers.len();
+  if num_shards == 0 || num_shards > MAX_SHARDS {
+    return Err(format!("batch has {num_shards} shards"));
+  }
+  let mut claims = preamble.headers.iter().flat_map(|h| h.claims.iter());
+  match (claims.next(), claims.next()) {
+    (Some(only), None) if only.as_slice() == claim => {},
+    (Some(_), None) => return Err("batch carries a different claim".into()),
+    (None, _) => return Err("batch carries no claim".into()),
+    (Some(_), Some(_)) => {
+      return Err("batch carries more than one claim".into());
+    },
+  }
+
+  let mut height_sum: u128 = 0;
+  for header in &preamble.headers {
+    if header.active.len() != num_circuits {
+      return Err("shard activation bitmap has the wrong length".into());
+    }
+    let active = header.active.iter().filter(|&&a| a).count();
+    if header.log_degrees.len() != active {
+      return Err("shard header heights do not match its activation".into());
+    }
+    for &log_degree in &header.log_degrees {
+      height_sum += 1u128 << log_degree.min(127);
+    }
+  }
+  if height_sum >= GOLDILOCKS_ORDER {
+    return Err("batch rows exceed the field characteristic".into());
+  }
+
+  if !preamble.messages.len().is_multiple_of(2) {
+    return Err("batch messages do not pair up".into());
+  }
+  let memseg = memseg_channel();
+  // The previous pair's width and end; every width is at least one, so
+  // `(0, 0)` precedes any first pair.
+  let mut previous = (0u64, 0u64);
+  for [pull, push] in preamble.messages.as_chunks::<2>().0 {
+    let well_formed = pull.multiplicity == G::NEG_ONE
+      && push.multiplicity == G::ONE
+      && pull.args.len() == 3
+      && push.args.len() == 3
+      && pull.args[0] == memseg
+      && push.args[0] == memseg
+      && pull.args[1] == push.args[1];
+    if !well_formed {
+      return Err("batch messages are not memseg closure pairs".into());
+    }
+    let width = pull.args[1].as_canonical_u64();
+    let start = pull.args[2].as_canonical_u64();
+    let end = push.args[2].as_canonical_u64();
+    if start > end {
+      return Err("memseg closure interval ends before it starts".into());
+    }
+    let (previous_width, previous_end) = previous;
+    let ordered = previous_width < width
+      || (previous_width == width && previous_end <= start);
+    if !ordered {
+      return Err(
+        "memseg closure intervals are not sorted and disjoint".into(),
+      );
+    }
+    previous = (width, end);
+  }
+  Ok(())
 }
 
 /// The `memseg` channel identifier, exposed for hosts that assemble or audit

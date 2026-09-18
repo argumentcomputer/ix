@@ -15,7 +15,7 @@ num-bigint = { workspace = true }
 rayon = { workspace = true }
 rustc-hash = { workspace = true }
 tracing = { workspace = true }
-tracing-texray = { workspace = true }
+tracing-texray = { workspace = true, optional = true }
 
 [build-dependencies]
 blake3 = { workspace = true }
@@ -28,10 +28,11 @@ p3-commit = { git = "https://github.com/Plonky3/Plonky3", rev = "3152b14a89067c8
 p3-symmetric = { git = "https://github.com/Plonky3/Plonky3", rev = "3152b14a89067c83775a8076cc262ffc48a1fd7c" }
 
 [features]
-default = []
+default = ["texray"]
 parallel = ["multi-stark/parallel"]
 cuda = ["multi-stark/cuda"]
 cuda-trace-codegen = ["cuda"]
+texray = ["dep:tracing-texray"]
 
 [lints]
 workspace = true

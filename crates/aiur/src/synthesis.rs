@@ -19,7 +19,7 @@ use crate::{
   gadgets::{AiurGadget, bytes1::Bytes1, bytes2::Bytes2},
   lookup_budget::lookup_query_bound,
   memory::Memory,
-  shard::{BatchRound, RowIndex, ShardPlan},
+  shard::{BatchRound, RowIndex, ShardPlan, check_batch_policy},
   trace_heights::{fixed_trace_heights, trace_cap_coverage},
 };
 
@@ -37,7 +37,7 @@ pub use multi_stark::batch::Retention as ShardRetention;
 pub enum AiurVerificationError {
   /// The batch violates Aiur's policy over multi-stark's batch protocol:
   /// the claim, or the `memseg` closure messages, are not what one
-  /// execution's proof carries (see `AiurSystem::check_batch_policy`).
+  /// execution's proof carries (see [`crate::shard::check_batch_policy`]).
   Policy(String),
   /// The multi-stark batch itself failed to verify.
   Stark(VerificationError<PcsError>),
@@ -47,6 +47,48 @@ impl From<VerificationError<PcsError>> for AiurVerificationError {
   fn from(error: VerificationError<PcsError>) -> Self {
     Self::Stark(error)
   }
+}
+
+/// Verifies `proof` of `claim` with nothing but the verifying key: every
+/// shard header must describe a proof `system` could have produced (fixed
+/// circuits at their exact heights, every trace matrix under the Merkle cap,
+/// the lookup query count within bound), the batch must satisfy Aiur's
+/// policy (one claim, canonical `memseg` closure — see [`crate::shard`]),
+/// and the multi-stark batch must verify. [`AiurSystem::verify`] adds the
+/// claim-shape check against the bytecode; a decoded
+/// [`crate::vk_codec::AiurVerifyingKey`] carries no bytecode and verifies
+/// exactly this.
+pub(crate) fn verify_against(
+  system: &System<AiurConfig>,
+  commitment_parameters: CommitmentParameters,
+  claim: &[G],
+  proof: &AiurProof,
+) -> Result<(), AiurVerificationError> {
+  for header in &proof.preamble.headers {
+    let well_shaped = fixed_trace_heights(
+      system.circuits.iter().map(|circuit| circuit.preprocessed_height),
+      &header.active,
+      &header.log_degrees,
+    ) && trace_cap_coverage(
+      commitment_parameters.log_blowup,
+      commitment_parameters.cap_height,
+      &header.log_degrees,
+    ) && lookup_query_bound(
+      system.circuits.iter().map(|circuit| circuit.num_lookups),
+      &header.active,
+      &header.log_degrees,
+    )
+    .is_some();
+    if !well_shaped {
+      return Err(AiurVerificationError::Stark(
+        VerificationError::InvalidProofShape,
+      ));
+    }
+  }
+  check_batch_policy(system.circuits.len(), claim, &proof.preamble)
+    .map_err(AiurVerificationError::Policy)?;
+  system.verify_batch(proof)?;
+  Ok(())
 }
 
 /// The prover RAM model's phase breakdown; `peak` is the number the
@@ -340,6 +382,12 @@ impl AiurSystem {
     let config =
       AiurConfig::with_device(commitment_parameters, fri_parameters, device_id);
     let (system, key) = System::new(config, circuit_inputs);
+    debug_assert!(
+      slot_widths.iter().zip(&system.circuits).all(|(slots, circuit)| {
+        slots.len() == circuit.num_lookups
+      }),
+      "a circuit's lookup slots are its compiled lookups"
+    );
     AiurSystem {
       system,
       key,
@@ -621,6 +669,7 @@ impl AiurSystem {
     O: FnOnce() -> Vec<G>,
     S: FnMut(usize) -> Result<Supplied<'a>, String>,
   {
+    #[cfg(feature = "texray")]
     tracing_texray::examine_current();
     if count == 0 {
       return Err("no records to prove".into());
@@ -880,6 +929,7 @@ impl AiurSystem {
     input: &[G],
     io_buffer: &mut IOBuffer,
   ) -> (Vec<G>, AiurProof) {
+    #[cfg(feature = "texray")]
     tracing_texray::examine_current();
 
     // Execute the Aiur bytecode.
@@ -973,6 +1023,7 @@ impl AiurSystem {
       &mut IOBuffer,
     ) -> Result<(QueryRecord, Vec<G>), ExecError>,
   {
+    #[cfg(feature = "texray")]
     tracing_texray::examine_current();
     let prepared = match self.prepare_ixvm_within_budget(
       fun_idx,
@@ -1207,8 +1258,8 @@ impl AiurSystem {
     (claim, proof, peak)
   }
 
-  /// Verifies a proof of `claim`: Aiur's batch policy (one claim, canonical
-  /// `memseg` closure — see [`crate::shard`]), then the multi-stark batch.
+  /// Verifies a proof of `claim`: the claim's shape against the bytecode,
+  /// then everything [`verify_against`] checks from the verifying key alone.
   pub fn verify(
     &self,
     claim: &[G],
@@ -1219,35 +1270,7 @@ impl AiurSystem {
         VerificationError::InvalidClaim,
       ));
     }
-    // Every shard's header must describe a proof this system could have
-    // produced: fixed circuits at their exact heights, every trace matrix
-    // under the Merkle cap, and the lookup query count within bound.
-    for header in &proof.preamble.headers {
-      let well_shaped = fixed_trace_heights(
-        self.system.circuits.iter().map(|circuit| circuit.preprocessed_height),
-        &header.active,
-        &header.log_degrees,
-      ) && trace_cap_coverage(
-        self.commitment_parameters.log_blowup,
-        self.commitment_parameters.cap_height,
-        &header.log_degrees,
-      ) && lookup_query_bound(
-        self.slot_widths.iter().map(Vec::len),
-        &header.active,
-        &header.log_degrees,
-      )
-      .is_some();
-      if !well_shaped {
-        return Err(AiurVerificationError::Stark(
-          VerificationError::InvalidProofShape,
-        ));
-      }
-    }
-    self
-      .check_batch_policy(claim, &proof.preamble)
-      .map_err(AiurVerificationError::Policy)?;
-    self.system.verify_batch(proof)?;
-    Ok(())
+    verify_against(&self.system, self.commitment_parameters, claim, proof)
   }
 
   /// Verify and serialize the native Plonky3 multiproof for the in-circuit
@@ -1566,6 +1589,23 @@ mod tests {
       ]
     );
     system.verify(&claim, &proof).expect("xor split outputs must verify");
+
+    // The terminal zkVM receives only the serialized verifier key, not the
+    // prover-side `AiurSystem`. Exercise that exact path against a real proof
+    // so codec round trips alone cannot mask a transcript/config mismatch.
+    let vk_bytes = crate::vk_codec::aiur_system_to_bytes(&system)
+      .expect("encode verifier key");
+    let vk = crate::vk_codec::AiurVerifyingKey::from_bytes(&vk_bytes)
+      .expect("decode verifier key");
+    assert_eq!(vk.to_bytes(), vk_bytes, "verifier key is canonical");
+    vk.verify(&claim, &proof).expect("decoded verifier key must verify");
+
+    let mut tampered_claim = claim.clone();
+    tampered_claim[2] += G::ONE;
+    assert!(
+      vk.verify(&tampered_claim, &proof).is_err(),
+      "decoded verifier key must bind the outer claim"
+    );
   }
 
   /// Hand-build a toplevel exercising the two migrated integration paths that
@@ -2340,7 +2380,7 @@ mod tests {
           preamble.messages.push(pull);
           preamble.messages.push(push);
         }
-        system.check_batch_policy(&claim, &preamble)
+        check_batch_policy(system.system.circuits.len(), &claim, &preamble)
       };
     // The proof closes width 1 over `[0, 1)`. A later disjoint interval of
     // the same width, an empty one, and a wider width are all canonical.

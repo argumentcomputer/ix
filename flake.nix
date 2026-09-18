@@ -371,6 +371,25 @@
                 valgrind
               ];
             };
+
+            # SP1 shell for `sp1/` and `sp1-compress/`: host Rust plus the
+            # Lean/Lake CLI and Succinct compiler from sp1.nix. `sp1-build`
+            # invokes Cargo directly, so the cargo-prove CLI is not required
+            # here. `rustup-shim` dispatches `rustc` to the Succinct compiler
+            # when `RUSTUP_TOOLCHAIN=succinct`; the plain host compiler does
+            # not know the zkVM target. `sp1-prover-types` also needs `protoc`.
+            sp1 = pkgs.mkShell {
+              name = "sp1";
+              LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
+              packages = with pkgs; [
+                pkg-config
+                openssl
+                protobuf
+                clang
+                lean
+                (sp1.packages.${system}.rustup-shim.override { inherit rustToolchain; })
+              ];
+            };
           }
           // pkgs.lib.optionalAttrs (system == "x86_64-linux") {
             # CUDA stays separate so CPU development does not fetch NVIDIA's
@@ -415,31 +434,12 @@
             };
           };
 
-          # TODO: Re-enable the zkVM shells once they build in CI.
+          # TODO: Re-enable the Zisk shell once it builds in CI.
           # Zisk shell for `zisk-guest/` (cargo-zisk, ziskemu, RISC-V toolchain).
           # Kept separate from `default`: merging cross-pollinates NIX_CFLAGS_COMPILE
           # between zisk.nix's and this flake's nixpkgs, which breaks bindgen on
           # `lean.h`.
           # devShells.zisk = zisk.devShells.${system}.default;
-
-          # SP1 shell for `sp1/host` + `sp1/guest`: host Rust toolchain plus
-          # cargo-prove and the succinct Rust toolchain (~/.sp1) from sp1.nix.
-          # `rustup-shim` wraps the host `rustc` to dispatch to the succinct
-          # toolchain when `RUSTUP_TOOLCHAIN=succinct` (set by `sp1-build`); the
-          # plain host rustc doesn't know `riscv64im-succinct-zkvm-elf`.
-          # `sp1-prover-types`'s build script needs `protoc`.
-          # devShells.sp1 = pkgs.mkShell {
-          #   name = "sp1";
-          #   inputsFrom = [ sp1.devShells.${system}.default ];
-          #   LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
-          #   packages = with pkgs; [
-          #     pkg-config
-          #     openssl
-          #     protobuf
-          #     clang
-          #     (sp1.packages.${system}.rustup-shim.override { inherit rustToolchain; })
-          #   ];
-          # };
 
           # The treefmt wrapper around `nixfmt`, so `nix fmt .` can take a
           # directory; bare `nixfmt` only accepts individual files.

@@ -491,6 +491,59 @@ pub(crate) fn from_bytes(
   Ok((system, commitment_parameters, fri_parameters))
 }
 
+/// A verifier-only Aiur key decoded from [`aiur_system_to_bytes`].
+///
+/// This is the narrow surface used by zkVM guests: unlike [`AiurSystem`], it
+/// carries neither bytecode nor a prover key, but it can verify a serialized
+/// proof under the exact commitment and FRI parameters embedded in the key.
+pub struct AiurVerifyingKey {
+  system: System<AiurConfig>,
+  commitment_parameters: CommitmentParameters,
+  fri_parameters: FriParameters,
+}
+
+impl AiurVerifyingKey {
+  /// Decode a verifying key and require full input consumption.
+  pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
+    from_bytes(bytes).map(|(system, commitment_parameters, fri_parameters)| {
+      Self { system, commitment_parameters, fri_parameters }
+    })
+  }
+
+  /// Re-encode to the canonical Aiur verifying-key wire format.
+  pub fn to_bytes(&self) -> Vec<u8> {
+    to_bytes(&self.system, self.commitment_parameters, self.fri_parameters)
+  }
+
+  pub const fn commitment_parameters(&self) -> CommitmentParameters {
+    self.commitment_parameters
+  }
+
+  pub const fn fri_parameters(&self) -> FriParameters {
+    self.fri_parameters
+  }
+
+  pub fn num_circuits(&self) -> usize {
+    self.system.circuits.len()
+  }
+
+  /// Verifies a batch proof of `claim` under this key: shard headers, Aiur's
+  /// batch policy and the multi-stark batch (see
+  /// [`crate::synthesis::verify_against`]).
+  pub fn verify(
+    &self,
+    claim: &[Val],
+    proof: &crate::synthesis::AiurProof,
+  ) -> Result<(), crate::synthesis::AiurVerificationError> {
+    crate::synthesis::verify_against(
+      &self.system,
+      self.commitment_parameters,
+      claim,
+      proof,
+    )
+  }
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
