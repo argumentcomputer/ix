@@ -1,7 +1,7 @@
 /-
   `ix bench plots`: sync the bencher.dev dashboard plots to the benchmark
-  registry — one plot per (testbed, measure) that bench-main.yml tracks,
-  with one line per benchmark row uploaded there, plus the cross-cutting
+  registry — one plot per (workload, measure) that bench-main.yml tracks,
+  with one line per benchmark row and machine, plus the cross-cutting
   shared input-constants trend. The spec derives from the registry
   (`Ix.Cli.BenchCmd`) + the shared constant set (`Ix.BenchConstants`), so
   nothing is hand-listed, and
@@ -38,7 +38,7 @@ open Lean (Json)
 
 namespace Ix.Cli.BenchPlots
 
-/-- The registry's workload key (testbed minus runner-arch suffix) — what
+/-- The registry's workload key (testbed minus hardware suffix) — what
     the titles, skips, and ordering here are written against. -/
 def workloadOf (testbed : String) : String :=
   BenchCmd.workloadOf testbed
@@ -157,7 +157,7 @@ structure PlotSpec where
   measures : List String
   benchmarks : Array String
 
-/-- One spec per bench-main testbed: its measure slugs and the benchmark row
+/-- One spec per bench-main workload: its measure slugs and the benchmark row
     names uploaded there, both from the registry (`BackendSpec.benchmarkNames`,
     keyed off `inputs`) — env-keyed backends (compile, decompile) key one row
     per compiled env, the per-constant backends one row per primary, and ooc
@@ -335,8 +335,11 @@ def runPlotsCmd (p : Cli.Parsed) : IO UInt32 := do
     -- pending after a rename or a new backend) has no plots to sync:
     -- warn and skip it, like a not-yet-uploaded benchmark, instead of
     -- failing the whole run. Picked up on a later sync once data lands.
-    let some testbedUuid := findUuid testbeds "slug" spec.testbed
-      | IO.eprintln s!"warn: testbed '{spec.testbed}' not on bencher yet — skipped"; continue
+    let testbedUuids := BenchCmd.benchmarkMachines.toArray.filterMap fun machine =>
+      findUuid testbeds "slug" (BenchCmd.testbedOnMachine spec.testbed machine)
+    if testbedUuids.isEmpty then
+      IO.eprintln s!"warn: no testbeds for '{spec.testbed}' on bencher yet — skipped"
+      continue
     -- Benchmark names → UUIDs, dropping the not-yet-uploaded ones loudly.
     let mut benchUuids : Array String := #[]
     for n in spec.benchmarks do
@@ -356,7 +359,7 @@ def runPlotsCmd (p : Cli.Parsed) : IO UInt32 := do
         | IO.eprintln s!"warn: measure '{measure}' not on bencher yet — skipped"; continue
       let title := plotTitle workload measure
       desired := desired.push
-        { title, testbeds := #[testbedUuid], benchmarks := benchUuids,
+        { title, testbeds := testbedUuids, benchmarks := benchUuids,
           measure := measureUuid, window := windowFor title window }
 
   -- Input-constants trend over the shared constant set. The kernel
@@ -370,9 +373,10 @@ def runPlotsCmd (p : Cli.Parsed) : IO UInt32 := do
   -- dropped; only zisk's excluded names lack a line, and those have no
   -- completed upload from any backend.
   let overlay : Option DesiredPlot := do
-    let ziskTb ← findUuid testbeds "slug" "zisk-check-execute-x64-32x"
+    let ziskTb ← BenchCmd.benchmarkMachines.findSome? fun machine =>
+      findUuid testbeds "slug" (BenchCmd.testbedOnMachine "zisk-check-execute" machine)
     let consts ← findUuid measures "slug" "constants"
-    let names ← (specs.find? (·.testbed == "zisk-check-execute-x64-32x")).map
+    let names ← (specs.find? (·.testbed == "zisk-check-execute")).map
       (·.benchmarks.filterMap (findUuid benchmarks "name" ·))
     return { title := "Kernel Input Constants",
              testbeds := #[ziskTb], benchmarks := names,
@@ -413,7 +417,7 @@ end Ix.Cli.BenchPlots
 open Ix.Cli.BenchPlots in
 def benchPlotsCmd : Cli.Cmd := `[Cli|
   plots VIA runPlotsCmd;
-  "Sync the bencher.dev dashboard plots to the registry: one plot per tracked (testbed, measure) plus the shared input-constants plot. Needs the bencher CLI; writes need BENCHER_API_KEY (plot create/delete permission)."
+  "Sync the bencher.dev dashboard plots to the registry: one plot per tracked (workload, measure), comparing machine testbeds, plus the shared input-constants plot. Needs the bencher CLI; writes need BENCHER_API_KEY (plot create/delete permission)."
 
   FLAGS:
     "dry-run";         "Print the create/replace/keep decisions without writing (no key needed)"

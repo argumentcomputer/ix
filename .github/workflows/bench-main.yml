@@ -26,6 +26,17 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      machine:
+        description: EC2 instance type (default uses BENCH_MACHINE, otherwise r8i.8xlarge)
+        type: choice
+        default: default
+        options:
+          - default
+          - r8i.8xlarge
+          - r8a.8xlarge
+
+run-name: Benchmark main (${{ inputs.machine != 'default' && inputs.machine || vars.BENCH_MACHINE || 'r8i.8xlarge' }})
 
 permissions:
   contents: read
@@ -34,23 +45,26 @@ permissions:
 # and a later merge must never cancel or queue behind an in-flight run.
 
 env:
+  IX_BENCH_MACHINE: ${{ inputs.machine != 'default' && inputs.machine || vars.BENCH_MACHINE || 'r8i.8xlarge' }}
+  BENCH_CACHE: runs-on-${{ inputs.machine != 'default' && inputs.machine || vars.BENCH_MACHINE || 'r8i.8xlarge' }}-avx512-v1
   COMPILE_DIR: Benchmarks/Compile
 
 jobs:
   # Build the `ix` and `bench-typecheck` binaries once and cache them;
   # every later job restores them instead of rebuilding. They are built
-  # for the fleet's fixed AVX-512 baseline. Measured jobs stay on Warp so
-  # the benchmark testbed remains consistent.
+  # for the shared Intel/AMD AVX-512 baseline, with caches and measured
+  # results separated by the selected EC2 instance type.
   build:
-    runs-on: warp-ubuntu-latest-x64-32x
+    runs-on: runs-on=${{ github.run_id }}/cpu=32/family=${{ inputs.machine != 'default' && inputs.machine || vars.BENCH_MACHINE || 'r8i.8xlarge' }}/image=ubuntu24-full-x64/spot=false/extras=s3-cache
     steps:
+      - uses: runs-on/action@v2
       - uses: actions/checkout@v7
       - name: Mount Lake build cache
-        uses: WarpBuilds/cache@v2
+        uses: actions/cache@v6
         with:
           path: .lake
-          key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ github.sha }}
-          restore-keys: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-
+          key: ${{ env.BENCH_CACHE }}-lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ github.sha }}
+          restore-keys: ${{ env.BENCH_CACHE }}-lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-
       - name: Log build CPU
         uses: ./.github/actions/log-cpu
         with:
@@ -59,7 +73,7 @@ jobs:
       # does not recompile the Plonky3/multi-stark dependencies every run.
       - uses: ./.github/actions/setup-rust-toolchain
         with:
-          cache-provider: warpbuild
+          cache-key: ${{ env.BENCH_CACHE }}
       - uses: leanprover/lean-action@v1
         with:
           auto-config: false
@@ -72,10 +86,10 @@ jobs:
           lake build bench-typecheck
           cp .lake/build/bin/bench-typecheck ~/.local/bin/
           chmod +x ~/.local/bin/bench-typecheck
-      - uses: WarpBuilds/cache/save@v2
+      - uses: actions/cache/save@v6
         with:
           path: ~/.local/bin
-          key: bench-bins-${{ github.sha }}
+          key: ${{ env.BENCH_CACHE }}-bench-bins-${{ github.sha }}
 
   # Ask the registry which benchmarks to run. `ix bench ci matrix` prints
   # one JSON entry per (backend, env, mode) combination, each carrying its
@@ -85,16 +99,17 @@ jobs:
   plan:
     needs: build
     # The restored `ix` targets the fleet's fixed AVX-512 baseline, so keep
-    # even this registry-only invocation on compatible Warp x64 hardware.
-    runs-on: warp-ubuntu-latest-x64-8x
+    # even this registry-only invocation on the selected benchmark hardware.
+    runs-on: runs-on=${{ github.run_id }}/cpu=32/family=${{ inputs.machine != 'default' && inputs.machine || vars.BENCH_MACHINE || 'r8i.8xlarge' }}/image=ubuntu24-full-x64/spot=false/extras=s3-cache
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
+      - uses: runs-on/action@v2
       - uses: actions/checkout@v7
-      - uses: WarpBuilds/cache/restore@v2
+      - uses: actions/cache/restore@v6
         with:
           path: ~/.local/bin
-          key: bench-bins-${{ github.sha }}
+          key: ${{ env.BENCH_CACHE }}-bench-bins-${{ github.sha }}
           fail-on-cache-miss: true
       - run: echo "$HOME/.local/bin" >> $GITHUB_PATH
       # Provision the toolchain so `ix` finds libleanshared (no package build).
@@ -121,7 +136,7 @@ jobs:
     # job title.
     name: compile-${{ matrix.env }}
     needs: build
-    runs-on: warp-ubuntu-latest-x64-32x
+    runs-on: runs-on=${{ github.run_id }}/cpu=32/family=${{ inputs.machine != 'default' && inputs.machine || vars.BENCH_MACHINE || 'r8i.8xlarge' }}/image=ubuntu24-full-x64/spot=false/extras=s3-cache
     permissions:
       contents: read
       checks: write
@@ -145,13 +160,14 @@ jobs:
           - { env: Mathlib, mathlib: true }
           - { env: FLT, cache_pkg: flt, mathlib: true }
     steps:
+      - uses: runs-on/action@v2
       - uses: actions/checkout@v7
       # `lake build` below clones this package's Lake dependencies.
       - uses: ./.github/actions/authenticate-github-fetches
-      - uses: WarpBuilds/cache/restore@v2
+      - uses: actions/cache/restore@v6
         with:
           path: ~/.local/bin
-          key: bench-bins-${{ github.sha }}
+          key: ${{ env.BENCH_CACHE }}-bench-bins-${{ github.sha }}
       - name: Log compile CPU
         id: cpu
         uses: ./.github/actions/log-cpu
@@ -170,10 +186,10 @@ jobs:
           use-mathlib-cache: ${{ matrix.mathlib && 'true' || 'false' }}
       # FLT takes a few minutes to rebuild, so cache its build artifacts.
       - if: matrix.cache_pkg
-        uses: WarpBuilds/cache@v2
+        uses: actions/cache@v6
         with:
           path: ${{ env.COMPILE_DIR }}/.lake/packages/${{ matrix.cache_pkg }}/.lake/build
-          key: ${{ matrix.cache_pkg }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles(format('{0}/lean-toolchain', env.COMPILE_DIR)) }}-${{ hashFiles(format('{0}/lake-manifest.json', env.COMPILE_DIR)) }}
+          key: ${{ env.BENCH_CACHE }}-${{ matrix.cache_pkg }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles(format('{0}/lean-toolchain', env.COMPILE_DIR)) }}-${{ hashFiles(format('{0}/lake-manifest.json', env.COMPILE_DIR)) }}
       - run: lake build Compile${{ matrix.env }}
         working-directory: ${{ env.COMPILE_DIR }}
       # The measured compile: serializes the env to `<env>.ixe` at the
@@ -210,10 +226,10 @@ jobs:
       # base-side restore fall back to that workflow's compile-job key (a
       # stacked PR's base is a PR head, which never passes through here).
       - if: steps.gates.outputs.consumed == 'true'
-        uses: WarpBuilds/cache/save@v2
+        uses: actions/cache/save@v6
         with:
           path: ${{ matrix.env }}.ixe
-          key: bench-ixe-${{ github.sha }}-${{ matrix.env }}
+          key: ${{ env.BENCH_CACHE }}-bench-ixe-${{ github.sha }}-${{ matrix.env }}
       # Record the host that measured this row. Bencher stores metric rows
       # only, so bench-pr restores this note by (SHA, parameters) to label a
       # bencher-sourced base side with its own hardware. Best-effort: a
@@ -226,10 +242,10 @@ jobs:
       - name: Cache measurement hardware
         if: ${{ !cancelled() }}
         continue-on-error: true
-        uses: WarpBuilds/cache/save@v2
+        uses: actions/cache/save@v6
         with:
           path: bench-hardware.txt
-          key: bench-hardware-${{ github.sha }}-compile-${{ matrix.env }}-${{ steps.gates.outputs.mode }}
+          key: ${{ env.BENCH_CACHE }}-bench-hardware-${{ github.sha }}-compile-${{ matrix.env }}-${{ steps.gates.outputs.mode }}
       # Upload the compile metrics. Testbed, workload, and threshold flags
       # all come from the registry (the reasoning behind each bound lives
       # next to `thresholds` in Ix/Cli/BenchCmd.lean).
@@ -262,7 +278,7 @@ jobs:
   benchmark:
     name: ${{ matrix.params.label }}
     needs: [compile, plan]
-    runs-on: warp-ubuntu-latest-x64-32x
+    runs-on: runs-on=${{ github.run_id }}/cpu=32/family=${{ inputs.machine != 'default' && inputs.machine || vars.BENCH_MACHINE || 'r8i.8xlarge' }}/image=ubuntu24-full-x64/spot=false/extras=s3-cache
     permissions:
       contents: read
       checks: write
@@ -275,11 +291,12 @@ jobs:
       matrix:
         params: ${{ fromJson(needs.plan.outputs.matrix) }}
     steps:
+      - uses: runs-on/action@v2
       - uses: actions/checkout@v7
-      - uses: WarpBuilds/cache/restore@v2
+      - uses: actions/cache/restore@v6
         with:
           path: ~/.local/bin
-          key: bench-bins-${{ github.sha }}
+          key: ${{ env.BENCH_CACHE }}-bench-bins-${{ github.sha }}
       - name: Log run CPU
         id: cpu
         uses: ./.github/actions/log-cpu
@@ -296,10 +313,10 @@ jobs:
           use-github-cache: false
       # Pull the `.ixe` the compile job built — do NOT recompile here.
       # (The path list must match the compile job's save exactly.)
-      - uses: WarpBuilds/cache/restore@v2
+      - uses: actions/cache/restore@v6
         with:
           path: ${{ matrix.params.env }}.ixe
-          key: bench-ixe-${{ github.sha }}-${{ matrix.params.env }}
+          key: ${{ env.BENCH_CACHE }}-bench-ixe-${{ github.sha }}-${{ matrix.params.env }}
           fail-on-cache-miss: true
       # If the kernel rejects a constant, `ix bench run` exits 3 and this
       # step fails — that is a correctness regression, not a benchmark
@@ -318,10 +335,10 @@ jobs:
       - name: Cache per-constant attribution CSV
         if: ${{ !cancelled() && matrix.params.backend == 'ooc' }}
         continue-on-error: true
-        uses: WarpBuilds/cache/save@v2
+        uses: actions/cache/save@v6
         with:
           path: bench.json.perconst.csv
-          key: bench-perconst-${{ github.sha }}-${{ matrix.params.backend }}-${{ matrix.params.env }}-${{ matrix.params.mode }}
+          key: ${{ env.BENCH_CACHE }}-bench-perconst-${{ github.sha }}-${{ matrix.params.backend }}-${{ matrix.params.env }}-${{ matrix.params.mode }}
       # The measurement host, by (SHA, parameters), for bench-pr to label a
       # bencher-sourced base side — same best-effort contract as the CSV.
       - name: Record measurement hardware
@@ -332,10 +349,10 @@ jobs:
       - name: Cache measurement hardware
         if: ${{ !cancelled() }}
         continue-on-error: true
-        uses: WarpBuilds/cache/save@v2
+        uses: actions/cache/save@v6
         with:
           path: bench-hardware.txt
-          key: bench-hardware-${{ github.sha }}-${{ matrix.params.backend }}-${{ matrix.params.env }}-${{ matrix.params.mode }}
+          key: ${{ env.BENCH_CACHE }}-bench-hardware-${{ github.sha }}-${{ matrix.params.backend }}-${{ matrix.params.env }}-${{ matrix.params.mode }}
       # Convert rows for upload even when the run step failed: bmf drops
       # every non-ok row (rejected or OOM), so only clean measurements
       # reach bencher. bmf exits nonzero when NO ok rows survive — the

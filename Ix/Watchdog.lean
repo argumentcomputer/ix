@@ -7,8 +7,7 @@
   tool) and `lake exe truthmines build` (the corpus workspace build and
   the `ix catalog` leg).
 
-  Semantics (unchanged from the script, validated on ubuntu-latest and
-  warp runners — see ix-cpu-info's cgroup-memcap.yml):
+  Semantics:
 
   * a systemd user scope with cgroup-v2 `MemoryMax=<ceiling>G` and
     `MemorySwapMax=0`: the kernel OOM-kills at the cap — SIGKILL, exit

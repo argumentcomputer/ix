@@ -21,7 +21,7 @@ name: Bencher thresholds reset
 #     Triage+ collaborator can queue a reset by applying the label directly, and
 #     cancel by removing it before merge. Naming convention: one label per token,
 #     `bencher-thresholds-reset:<token>` where <token> is a workload (a backend
-#     testbed in Ix/Cli/BenchCmd.lean (backendSpecs) minus its runner-arch suffix:
+#     testbed stem in Ix/Cli/BenchCmd.lean (backendSpecs):
 #     `ix-compile`, `ix-decompile`, `aiur`, `zisk-check-execute`, `sp1-check-execute`, `ooc-check`) or
 #     `all` (the merge step expands an `all` label into every workload). Labeling
 #     requires Triage+, so PR authors from forks cannot self-queue a reset. The
@@ -75,7 +75,7 @@ jobs:
     steps:
       - run: |
           # Workload registry: the backend testbeds in Ix/Cli/BenchCmd.lean
-          # (backendSpecs) minus the runner-arch suffix. Static because this
+          # (backendSpecs), before its hardware suffix. Static because this
           # job runs on a cheap runner with no built `ix`; keep in sync when
           # adding a backend.
           valid="aiur aiur-sharded-env-check ix-compile ix-decompile ooc-check sp1-check-execute zisk-check-execute"

@@ -197,8 +197,9 @@ fails.
   workflows never read it directly — `ix bench ci matrix` serves the job
   matrices and `ix bench ci parse` the `!benchmark` cells, both post-build.
   (`bencher-thresholds-reset.yml` keeps a static workload list with a sync
-  note.) CI-only data stays out of it: the runner name lives with the `ci`
-  adapters. The watchdog ceiling defaults to the machine's RAM minus 15 GB
+  note.) Runner provisioning lives in the workflows; `IX_BENCH_MACHINE`
+  selects the matching Bencher testbed. The watchdog ceiling defaults to
+  the machine's RAM minus 15 GB
   (`--ceiling-gb` overrides). The heaviest compile/decompile workload is
   `ix decompile` on Mathlib and FLT, approaching 40 GB now that Pass 2
   holds its kenv rather than clearing it (compile itself peaks around half
@@ -265,10 +266,10 @@ upload via `.github/actions/bencher-track`). A kernel
 rejection exits 3 and reddens the
 run step while the clean rows still upload.
 
-**Dashboard plots**: `ix bench plots` pins one plot per (testbed, measure)
+**Dashboard plots**: `ix bench plots` pins one plot per (workload, measure)
 to <https://bencher.dev/console/projects/ix/plots> — main-branch trend
-lines, one per benchmark row the cell uploads, plus the cross-kernel
-input-constants overlay. Registry-derived like the job matrices (titles,
+lines for both Intel and AMD testbeds, one per benchmark row the cell uploads,
+plus the cross-kernel input-constants overlay. Registry-derived like the job matrices (titles,
 ordering, and skips live in `Ix/Cli/BenchPlots.lean`), so rerun the sync
 after changing the registry or the constant set — either locally
 (needs the bencher CLI and a user API key in `BENCHER_API_KEY`;
@@ -292,8 +293,42 @@ write privileges, and `comment` replaces the initial comment. Only `announce`
 and `comment` hold write tokens, and neither checks out or runs PR code. Normal
 runs may seed the run artifacts from persistent head/base-SHA caches. `fresh`
 bypasses those caches and rebuilds the measured products while retaining
-dependency caches. Benchmark runners use the fixed AVX-512 baseline and
-WarpCache for both workflow products and Cargo build artifacts.
+dependency caches.
+
+### RunsOn machines and caching
+
+Benchmark jobs run on `r8i.8xlarge` (Intel) or `r8a.8xlarge` (AMD), using
+the `ubuntu24-full-x64` image and on-demand instances. Each workflow run
+uses one machine type for its builds, compile measurements, and benchmark
+jobs. The `machine` dispatch input selects either type; `default` uses the
+repository variable `BENCH_MACHINE`, falling back to `r8i.8xlarge`. Pushes
+to main and `!benchmark` comments use that repository default. The CodeQL
+Rust job also uses the repository default.
+
+To compare the machines, dispatch `bench-main.yml` twice at the same ref
+with `machine=r8i.8xlarge` and `machine=r8a.8xlarge`. For PR comparisons,
+dispatch `bench-pr.yml` twice with identical base/head SHAs and command,
+changing only `machine`. Add `fresh` to the command to remeasure a commit
+instead of reusing its cached compile row or Bencher baseline. The selected
+machine appears in the workflow run name and PR report summary.
+
+During the trial, Rust uses the shared `x86-64-v4 +avx512vbmi2,+gfni`
+instruction set. Benchmark product caches and Cargo caches include the
+instance type and code generation namespace. Bencher testbeds also include
+both, such as `ooc-check-runs-on-r8i-8xlarge-avx512`, so baseline lookups
+never compare Intel against AMD or reuse measurements from an older runner
+class. Dashboard plots show whichever of the two testbeds have results.
+After choosing a machine, set `BENCH_MACHINE` to that instance type. A
+subsequent switch to native code generation must also change `BENCH_CACHE`
+and `testbedSuffix` so old binaries and timing histories are kept separate.
+
+[RunsOn Magic Cache](https://runs-on.com/docs/performance/caching/actions/)
+is enabled with `extras=s3-cache` and `runs-on/action@v2` before any cache or
+artifact action. `actions/cache@v6` (including restore/save) and the Rust
+setup action's standard cache use the RunsOn S3 backend without bucket names
+or AWS keys in the workflow. The RunsOn GitHub App and AWS stack must already
+be installed for this repository, in a region with the selected instance
+types available. The first S3-backed run starts with cold caches.
 
 Every job that creates a timing row logs its CPU model, instruction set,
 effective CPU count, affinity, and cgroup allocation directly in the Actions
@@ -303,8 +338,9 @@ share a host: the PR compile row is measured in the compile job, and a
 bencher-sourced base side was measured by bench-main at the base SHA, which
 caches that host next to its upload for the PR run to restore. A base run
 performed in the benchmark job is labelled with that job's runner. This is
-diagnostic only: CPU information does not participate in cache keys or
-benchmark results, and a missing note renders as "not recorded".
+diagnostic only: the selected instance type determines cache and testbed
+names, while the detected CPU description remains a report annotation. A
+missing note renders as "not recorded".
 
 ## Palomar compatibility corpus
 

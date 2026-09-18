@@ -8,13 +8,12 @@ inputs:
     description: Cargo workspaces to cache
     required: false
   use-github-cache:
-    description: Enable Cargo artifact caching through the selected provider
+    description: Enable Cargo artifact caching (S3 when RunsOn Magic Cache is enabled)
     required: false
     default: "true"
-  cache-provider:
-    description: Cache provider used by the Rust setup action
+  cache-key:
+    description: Additional Cargo cache namespace, including the benchmark machine when applicable
     required: false
-    default: github
   avx512-codegen:
     description: Enable portable AVX-512 code generation for supported x64 runners
     required: false
@@ -23,23 +22,14 @@ inputs:
 runs:
   using: composite
   steps:
-    # The AVX-512 baseline below is a property of the Warp and Namespace
-    # fleets; a portable build may run on any Linux x64 host.
     - name: Require supported Linux x64 runner
       shell: bash
       env:
-        IX_RUNNER_NAME: ${{ runner.name }}
         IX_RUNNER_OS: ${{ runner.os }}
         IX_RUNNER_ARCH: ${{ runner.arch }}
-        IX_AVX512_CODEGEN: ${{ inputs.avx512-codegen }}
       run: |
         if [[ "$IX_RUNNER_OS" != Linux || "$IX_RUNNER_ARCH" != X64 ]]; then
           echo "::error::setup-rust-toolchain requires a Linux x64 runner; got os=$IX_RUNNER_OS arch=$IX_RUNNER_ARCH"
-          exit 1
-        fi
-        if [[ "$IX_AVX512_CODEGEN" == true && \
-              "$IX_RUNNER_NAME" != warp-* && "$IX_RUNNER_NAME" != nsc-runner-* ]]; then
-          echo "::error::AVX-512 builds require a Warp or Namespace runner; got name=$IX_RUNNER_NAME"
           exit 1
         fi
 
@@ -98,10 +88,20 @@ runs:
         done
         echo "no versioned LLVM install with both clang and libclang; leaving bindgen defaults"
 
+    # Rust dependencies with C sources (mimalloc, blake3) are compiled by the
+    # `cc` crate against the host's glibc headers, then linked by Lean's
+    # bundled clang against its older bundled glibc. glibc redirects strtol
+    # and friends to `__isoc23_*` symbols whenever the C standard is C23 or
+    # newer, which GCC 15 selects by default, and the bundled glibc lacks
+    # them. Pin the standard the fleet's earlier compilers used; any CFLAGS
+    # already in the environment take precedence.
+    - name: Pin the C standard for cc-compiled dependencies
+      shell: bash
+      run: echo "CFLAGS=-std=gnu17${CFLAGS:+ $CFLAGS}" >> "$GITHUB_ENV"
+
     - uses: actions-rust-lang/setup-rust-toolchain@v1
       with:
         rustflags: ${{ inputs.avx512-codegen == 'true' && '-Ctarget-cpu=x86-64-v4 -Ctarget-feature=+avx512vbmi2,+gfni -Dwarnings' || '-Dwarnings' }}
         cache: ${{ inputs.use-github-cache }}
-        cache-provider: ${{ inputs.cache-provider }}
-        cache-key: ${{ inputs.avx512-codegen == 'true' && 'x64-avx512' || 'x64-portable' }}
+        cache-key: ${{ inputs.avx512-codegen == 'true' && 'x64-avx512' || 'x64-portable' }}-${{ inputs.cache-key }}
         cache-workspaces: ${{ inputs.cache-workspaces }}

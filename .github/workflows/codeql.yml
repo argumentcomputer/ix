@@ -74,12 +74,13 @@ jobs:
     name: Analyze (rust)
     needs: changes
     if: needs.changes.outputs.rust == 'true'
-    runs-on: warp-ubuntu-latest-x64-8x
+    runs-on: runs-on=${{ github.run_id }}/cpu=32/family=${{ vars.BENCH_MACHINE || 'r8i.8xlarge' }}/image=ubuntu24-full-x64/spot=false/extras=s3-cache
     permissions:
       contents: read
       security-events: write
       packages: read
     steps:
+      - uses: runs-on/action@v2
       - uses: actions/checkout@v7
         with:
           persist-credentials: false

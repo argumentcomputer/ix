@@ -15,6 +15,9 @@ concurrency:
 jobs:
   nix-test:
     name: Nix Tests
+    # Future RunsOn setup: use sticky disks with lazy-init to avoid provisioned
+    # snapshot-initialization charges; restored blocks may load more slowly at first.
+    # https://runs-on.com/docs/runners/capabilities/sticky-disks/
     runs-on:
       - nscloud-ubuntu-26.04-amd64-16x32-with-cache
       - nscloud-cache-size-100gb

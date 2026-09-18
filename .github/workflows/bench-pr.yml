@@ -73,6 +73,14 @@ on:
     types: [created]
   workflow_dispatch:
     inputs:
+      machine:
+        description: EC2 instance type (default uses BENCH_MACHINE, otherwise r8i.8xlarge)
+        type: choice
+        default: default
+        options:
+          - default
+          - r8i.8xlarge
+          - r8a.8xlarge
       pr:
         description: PR number (for the result comment)
         required: true
@@ -92,7 +100,11 @@ on:
         description: "The !benchmark command; single-line KEY=VALUE config, e.g. `!benchmark aiur BENCH_ENVS=InitStd,Mathlib`"
         required: true
 
-run-name: "${{ github.event_name == 'workflow_dispatch' && format('Benchmark PR #{0}', inputs.pr) || 'Relay benchmark comment' }}"
+run-name: "${{ github.event_name == 'workflow_dispatch' && format('Benchmark PR #{0} ({1})', inputs.pr, inputs.machine != 'default' && inputs.machine || vars.BENCH_MACHINE || 'r8i.8xlarge') || 'Relay benchmark comment' }}"
+
+env:
+  IX_BENCH_MACHINE: ${{ inputs.machine != 'default' && inputs.machine || vars.BENCH_MACHINE || 'r8i.8xlarge' }}
+  BENCH_CACHE: runs-on-${{ inputs.machine != 'default' && inputs.machine || vars.BENCH_MACHINE || 'r8i.8xlarge' }}-avx512-v1
 
 permissions:
   contents: read
@@ -125,6 +137,7 @@ jobs:
           gh workflow run bench-pr.yml \
             --repo "$GITHUB_REPOSITORY" \
             --ref "${{ github.event.repository.default_branch }}" \
+            -f machine="$IX_BENCH_MACHINE" \
             -f pr="$PR_NUMBER" \
             -f base-sha="${{ steps.comment-branch.outputs.base_sha }}" \
             -f base-ref="${{ steps.comment-branch.outputs.base_ref }}" \
@@ -136,14 +149,14 @@ jobs:
   # artifact for every later job. Normal runs may select a persistent
   # head-SHA cache. A cached `ix` may bootstrap command parsing, but `fresh`
   # replaces the full bundle before it is published to benchmark jobs.
-  # Built on a Warp runner like bench-main's binaries, so both sides use the
+  # Built on the selected RunsOn instance type, so both sides use the
   # same fixed AVX-512 baseline and benchmark testbed. The job ends by parsing
   # the !benchmark command with the selected `ix bench ci parse`: the registry
   # lives in Lean, so the matrix can only be computed after a binary is
   # available.
   build:
     if: github.event_name == 'workflow_dispatch'
-    runs-on: warp-ubuntu-latest-x64-32x
+    runs-on: runs-on=${{ github.run_id }}/cpu=32/family=${{ inputs.machine != 'default' && inputs.machine || vars.BENCH_MACHINE || 'r8i.8xlarge' }}/image=ubuntu24-full-x64/spot=false/extras=s3-cache
     outputs:
       revision: ${{ steps.target.outputs.revision }}
       matrix: ${{ steps.parse.outputs.matrix }}
@@ -155,6 +168,7 @@ jobs:
       # rejected; the failure comment quotes it.
       parse-error: ${{ steps.parse.outputs.parse-error }}
     steps:
+      - uses: runs-on/action@v2
       # Comment dispatch requires an org MEMBER/OWNER; manual dispatch requires
       # repo write access. Emit the validated full SHA once for every checkout.
       - name: Validate SHAs
@@ -172,16 +186,16 @@ jobs:
           # The job builds and runs PR code; never leave the token in .git.
           persist-credentials: false
       - id: bins
-        uses: WarpBuilds/cache/restore@v2
+        uses: actions/cache/restore@v6
         with:
           path: ~/.local/bin
-          key: bench-bins-${{ steps.target.outputs.revision }}
+          key: ${{ env.BENCH_CACHE }}-bench-bins-${{ steps.target.outputs.revision }}
       # A cache miss needs an `ix` before the command can be parsed. The
       # remaining binaries are built after parsing, when `fresh` is known.
       - if: steps.bins.outputs.cache-hit != 'true'
         uses: ./.github/actions/setup-rust-toolchain
         with:
-          cache-provider: warpbuild
+          cache-key: ${{ env.BENCH_CACHE }}
       # A persistent hit still needs the matching toolchain for libleanshared.
       - uses: leanprover/lean-action@v1
         with:
@@ -207,7 +221,7 @@ jobs:
       - if: steps.parse.outputs.fresh == '1' && steps.bins.outputs.cache-hit == 'true'
         uses: ./.github/actions/setup-rust-toolchain
         with:
-          cache-provider: warpbuild
+          cache-key: ${{ env.BENCH_CACHE }}
       - name: Log build CPU
         uses: ./.github/actions/log-cpu
         with:
@@ -219,10 +233,10 @@ jobs:
           cp .lake/build/bin/ix .lake/build/bin/bench-typecheck ~/.local/bin/
           chmod +x ~/.local/bin/ix ~/.local/bin/bench-typecheck
       - if: steps.parse.outputs.fresh != '1' && steps.bins.outputs.cache-hit != 'true'
-        uses: WarpBuilds/cache/save@v2
+        uses: actions/cache/save@v6
         with:
           path: ~/.local/bin
-          key: bench-bins-${{ steps.target.outputs.revision }}
+          key: ${{ env.BENCH_CACHE }}-bench-bins-${{ steps.target.outputs.revision }}
       - name: Package run binaries
         run: >-
           tar -C "$HOME/.local/bin" -cf benchmark-binaries.tar
@@ -305,13 +319,14 @@ jobs:
     name: compile-${{ matrix.env }}
     needs: build
     if: needs.build.outputs.envs != '[]'
-    runs-on: warp-ubuntu-latest-x64-32x
+    runs-on: runs-on=${{ github.run_id }}/cpu=32/family=${{ inputs.machine != 'default' && inputs.machine || vars.BENCH_MACHINE || 'r8i.8xlarge' }}/image=ubuntu24-full-x64/spot=false/extras=s3-cache
     timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
         env: ${{ fromJSON(needs.build.outputs.envs) }}
     steps:
+      - uses: runs-on/action@v2
       - name: Checkout PR
         uses: actions/checkout@v7
         with:
@@ -332,23 +347,23 @@ jobs:
       - name: Restore published .ixe
         if: needs.build.outputs.fresh != '1'
         id: pr-ixe
-        uses: WarpBuilds/cache/restore@v2
+        uses: actions/cache/restore@v6
         with:
           # The cache derives an entry's version from its path list, so
           # the list is effectively part of the key: this one path matches
           # bench-main's compile-job save, which lets a stacked PR's base
           # run reach either producer's entry from one restore.
           path: ${{ matrix.env }}.ixe
-          key: bench-pr-ixe-${{ needs.build.outputs.revision }}-${{ matrix.env }}
+          key: ${{ env.BENCH_CACHE }}-bench-pr-ixe-${{ needs.build.outputs.revision }}-${{ matrix.env }}
       - name: Restore published compile row
         if: needs.build.outputs.fresh != '1'
         id: pr-row
-        uses: WarpBuilds/cache/restore@v2
+        uses: actions/cache/restore@v6
         with:
           path: |
             compile.json
             compile-hardware.txt
-          key: bench-pr-row-${{ needs.build.outputs.revision }}-${{ matrix.env }}
+          key: ${{ env.BENCH_CACHE }}-bench-pr-row-${{ needs.build.outputs.revision }}-${{ matrix.env }}
       - name: Select compile source
         id: compile-source
         run: |
@@ -407,22 +422,22 @@ jobs:
         run: printf '%s\n' "$HARDWARE" > compile-hardware.txt
       - name: Publish .ixe
         if: needs.build.outputs.fresh != '1' && steps.pr-ixe.outputs.cache-hit != 'true'
-        uses: WarpBuilds/cache/save@v2
+        uses: actions/cache/save@v6
         with:
           # Path lists are version-significant — keep this identical to the
           # restore above and to bench-main's save.
           path: ${{ matrix.env }}.ixe
-          key: bench-pr-ixe-${{ needs.build.outputs.revision }}-${{ matrix.env }}
+          key: ${{ env.BENCH_CACHE }}-bench-pr-ixe-${{ needs.build.outputs.revision }}-${{ matrix.env }}
       # Publish the measured row too: the compile backend's benchmark run
       # reuses it as its PR side (same runner class, binaries, command).
       - name: Publish compile row
         if: needs.build.outputs.fresh != '1' && steps.pr-row.outputs.cache-hit != 'true'
-        uses: WarpBuilds/cache/save@v2
+        uses: actions/cache/save@v6
         with:
           path: |
             compile.json
             compile-hardware.txt
-          key: bench-pr-row-${{ needs.build.outputs.revision }}-${{ matrix.env }}
+          key: ${{ env.BENCH_CACHE }}-bench-pr-row-${{ needs.build.outputs.revision }}-${{ matrix.env }}
       - name: Upload run environment
         uses: actions/upload-artifact@v7
         with:
@@ -444,7 +459,7 @@ jobs:
     # compile lazily). The skipped case cannot actually arise (envs is
     # never empty) but is tolerated for robustness.
     if: ${{ !cancelled() && needs.build.result == 'success' && needs.compile.result != 'failure' && needs.compile.result != 'cancelled' }}
-    runs-on: ${{ matrix.params.runner }}
+    runs-on: runs-on=${{ github.run_id }}/cpu=32/family=${{ inputs.machine != 'default' && inputs.machine || vars.BENCH_MACHINE || 'r8i.8xlarge' }}/image=ubuntu24-full-x64/spot=false/extras=s3-cache
     # `ix bench run` saves completed rows as it goes, so a timeout keeps
     # them on disk — but the compare and upload need the job alive.
     timeout-minutes: 60
@@ -463,6 +478,7 @@ jobs:
       HEAD_SHA: ${{ needs.build.outputs.revision }}
       FRESH: ${{ needs.build.outputs.fresh }}
     steps:
+      - uses: runs-on/action@v2
       # The PR is checked out at the workspace root (the local composite
       # actions resolve from there); the base checkout, when needed, goes
       # under base/.
@@ -561,6 +577,15 @@ jobs:
             echo "run-base=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          # A PR can carry an older registry with no machine-specific
+          # testbeds. Its historical baseline is not comparable to this host.
+          if ! ix bench ci matrix | jq -e \
+            --arg suffix "-runs-on-${IX_BENCH_MACHINE//./-}-avx512" \
+            'length > 0 and all(.[]; .testbed | endswith($suffix))' >/dev/null; then
+            echo "source=base run @ ${BASE_SHA::7} (no matching machine testbed)" >> "$GITHUB_OUTPUT"
+            echo "run-base=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           # The names to fetch = pr.json's row keys. Empty when the PR run
           # produced nothing; fetch-main then exits 3 and the base run
           # covers everything.
@@ -594,20 +619,20 @@ jobs:
         id: perconst
         if: matrix.params.backend == 'ooc' && env.FRESH != '1'
         continue-on-error: true
-        uses: WarpBuilds/cache/restore@v2
+        uses: actions/cache/restore@v6
         with:
           path: bench.json.perconst.csv
-          key: bench-perconst-${{ env.BASE_SHA }}-${{ matrix.params.backend }}-${{ matrix.params.env }}-${{ matrix.params.mode }}
+          key: ${{ env.BENCH_CACHE }}-bench-perconst-${{ env.BASE_SHA }}-${{ matrix.params.backend }}-${{ matrix.params.env }}-${{ matrix.params.mode }}
       # The host that measured the base SHA's rows on main, recorded by
       # bench-main next to its bencher upload. Only a bencher-sourced base side
       # uses it; a base run in this job is labelled with this runner instead.
       - name: Restore base-side measurement hardware
         if: env.FRESH != '1'
         continue-on-error: true
-        uses: WarpBuilds/cache/restore@v2
+        uses: actions/cache/restore@v6
         with:
           path: bench-hardware.txt
-          key: bench-hardware-${{ env.BASE_SHA }}-${{ matrix.params.backend }}-${{ matrix.params.env }}-${{ matrix.params.mode }}
+          key: ${{ env.BENCH_CACHE }}-bench-hardware-${{ env.BASE_SHA }}-${{ matrix.params.backend }}-${{ matrix.params.env }}-${{ matrix.params.mode }}
       # The final base-run decision — every base-side step gates on THIS
       # step. A base run, whatever triggered it (bencher miss or partial,
       # `fresh`, or an ooc attribution-CSV cache miss), is always a FULL
@@ -641,10 +666,10 @@ jobs:
       - name: Restore base binaries (bench-bins cache)
         if: steps.decide.outputs.run-base == 'true' && env.FRESH != '1'
         id: base-bins
-        uses: WarpBuilds/cache/restore@v2
+        uses: actions/cache/restore@v6
         with:
           path: ~/.local/bin
-          key: bench-bins-${{ env.BASE_SHA }}
+          key: ${{ env.BENCH_CACHE }}-bench-bins-${{ env.BASE_SHA }}
       # Two producers compile the env at a given SHA: bench-main for main
       # commits, this workflow's compile job for PR heads. A stacked PR's
       # base is the latter, so both keys are tried from one step. This works
@@ -654,12 +679,12 @@ jobs:
       - name: Restore base .ixe (bench-main or bench-pr compile cache)
         if: steps.decide.outputs.run-base == 'true' && env.FRESH != '1'
         id: base-ixe
-        uses: WarpBuilds/cache/restore@v2
+        uses: actions/cache/restore@v6
         with:
           path: ${{ matrix.params.env }}.ixe
-          key: bench-ixe-${{ env.BASE_SHA }}-${{ matrix.params.env }}
+          key: ${{ env.BENCH_CACHE }}-bench-ixe-${{ env.BASE_SHA }}-${{ matrix.params.env }}
           restore-keys: |
-            bench-pr-ixe-${{ env.BASE_SHA }}-${{ matrix.params.env }}
+            ${{ env.BENCH_CACHE }}-bench-pr-ixe-${{ env.BASE_SHA }}-${{ matrix.params.env }}
       # Cached base binaries are only usable when both `lean-toolchain`
       # files match, and — for Mathlib — only when the `.ixe` also
       # restored (otherwise the base side would need mathlib oleans that
@@ -699,7 +724,7 @@ jobs:
         if: steps.decide.outputs.run-base == 'true' && steps.base-src.outputs.cached != 'true'
         uses: ./.github/actions/setup-rust-toolchain
         with:
-          cache-provider: warpbuild
+          cache-key: ${{ env.BENCH_CACHE }}
           cache-workspaces: base
       - name: Install the base tree's Rust toolchain
         if: steps.decide.outputs.run-base == 'true' && steps.base-src.outputs.cached != 'true'
@@ -811,8 +836,7 @@ jobs:
             --base-source "${{ steps.decide.outputs.source }}" \
             --base-label "${BASE_REF:-${BASE_SHA::7}}" \
             --out "out/table-$LABEL.md"
-          # Label each side with the host that measured it. The fleet mixes
-          # CPU models, and the two sides need not share one: the PR compile
+          # Label each side with the host that measured it. The PR compile
           # row comes from the compile job, and a bencher-sourced base side
           # from bench-main's run at the base SHA. Every other side ran here.
           if [ "$BACKEND" = compile ]; then
@@ -858,11 +882,12 @@ jobs:
     # rows. Only the build job must have succeeded (it made the binaries).
     if: always() && needs.build.result == 'success'
     # The report command uses the build job's fixed-AVX-512 `ix`, so keep it on
-    # compatible Warp x64 hardware; report assembly needs little RAM.
-    runs-on: warp-ubuntu-latest-x64-8x
+    # the same instance type as the measured jobs.
+    runs-on: runs-on=${{ github.run_id }}/cpu=32/family=${{ inputs.machine != 'default' && inputs.machine || vars.BENCH_MACHINE || 'r8i.8xlarge' }}/image=ubuntu24-full-x64/spot=false/extras=s3-cache
     permissions:
       contents: read
     steps:
+      - uses: runs-on/action@v2
       - uses: actions/checkout@v7
         with:
           ref: ${{ needs.build.outputs.revision }}

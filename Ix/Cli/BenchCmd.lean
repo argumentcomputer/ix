@@ -128,12 +128,29 @@ inductive BenchInputs
   | perConstantWithEnv
   deriving BEq
 
-/-- A testbed minus its runner-arch suffix — the workload key the threshold
+/-- EC2 instance types with separate benchmark histories. -/
+def benchmarkMachines : List String := ["r8i.8xlarge", "r8a.8xlarge"]
+
+def benchmarkMachine : IO String := do
+  let machine := (← IO.getEnv "IX_BENCH_MACHINE").getD "r8i.8xlarge"
+  unless benchmarkMachines.contains machine do
+    throw <| IO.userError s!"unsupported IX_BENCH_MACHINE: {machine}"
+  return machine
+
+/-- Hardware and code generation both determine whether timings are comparable. -/
+def testbedSuffix (machine : String) : String :=
+  s!"-runs-on-{machine.replace "." "-"}-avx512"
+
+/-- A testbed minus its hardware suffix — the workload key the threshold
     reset anchors (`refs/bencher/<workload>`), the dashboard plot titles,
     and the run metadata are written against. -/
 def workloadOf (testbed : String) : String :=
-  if testbed.endsWith "-x64-32x" then (testbed.dropEnd 8).toString
-  else testbed
+  match (benchmarkMachines.map testbedSuffix).find? (testbed.endsWith ·) with
+  | some suffix => (testbed.dropEnd suffix.length).toString
+  | none => testbed
+
+def testbedOnMachine (testbed machine : String) : String :=
+  workloadOf testbed ++ testbedSuffix machine
 
 /-- The stage qualifiers a pipeline measure may carry ahead of its base
     name — one per pipeline stage, named for what the stage proves
@@ -178,7 +195,7 @@ structure BackendSpec where
       testbed for the compare surface but never upload to bencher and get
       no dashboard plot. -/
   unscheduled : List String := []
-  /-- (mode, bencher testbed). -/
+  /-- (mode, bencher testbed stem). Hardware suffixes identify the measured host. -/
   testbeds : List (String × String)
   /-- (mode, compare-table columns), rendered in list order; the head is
       the table's row sort key. Column convention: the mode's headline
@@ -238,8 +255,8 @@ def backendSpecs : List BackendSpec := [
   -- the fast Phase-1-only signal (witness generation, no proving),
   -- `unscheduled`: a local / on-demand mode that never uploads.
   { name := "aiur", defaultMode := "prove", inputs := .perConstant,
-    testbeds := [("prove", "aiur-x64-32x"),
-                 ("execute", "aiur-execute-x64-32x")],
+    testbeds := [("prove", "aiur"),
+                 ("execute", "aiur-execute")],
     unscheduled := ["execute"],
     stages := [("prove",
       [("IxVM on FRI",
@@ -251,12 +268,11 @@ def backendSpecs : List BackendSpec := [
           "fri-verifier-throughput", "fri-verifier-peak-rss",
           "fri-verifier-proof-size", "fri-verifier-verify-time",
           "fri-verifier-fft-cost"]),
-       ("Aggregate flat join",
-         ["join-execute-time", "join-prove-time", "join-peak-rss",
-          "join-proof-size", "join-verify-time", "join-fft-cost"]),
        ("Pipeline total",
          ["total-time", "pipeline-throughput", "pipeline-peak-rss"])])],
-    metrics := [("execute", ["execute-time", "throughput", "peak-rss",
+    metrics := [("prove", ["join-execute-time", "join-prove-time", "join-peak-rss",
+                           "join-proof-size", "join-verify-time", "join-fft-cost"]),
+                ("execute", ["execute-time", "throughput", "peak-rss",
                              "fft-cost"])],
     -- ixvm-fft-cost is deterministic but only ever drops on a real Aiur
     -- win → upper-only 5% instead of a hard pin. fri-verifier-fft-cost
@@ -305,7 +321,7 @@ def backendSpecs : List BackendSpec := [
   -- upper-only pin, re-pin on a justified seed or split change.
   { name := "aiur-sharded-env", defaultMode := "execute", inputs := .perEnv,
     envs := some ["ISLB"],
-    testbeds := [("execute", "aiur-sharded-env-check-x64-32x")],
+    testbeds := [("execute", "aiur-sharded-env-check")],
     metrics := [("execute", ["check-time", "throughput", "peak-rss",
                              "constants", "shards"])],
     thresholds := [("constants", "0", "0"), ("shards", "0", "_"),
@@ -313,7 +329,7 @@ def backendSpecs : List BackendSpec := [
                    ("peak-rss", "0.10", "_")] },
   { name := "zisk", defaultMode := "execute", inputs := .perConstant,
     disabled := some "CI benchmarks disabled; covered by build/execute integration jobs",
-    testbeds := [("execute", "zisk-check-execute-x64-32x")],
+    testbeds := [("execute", "zisk-check-execute")],
     metrics := [("execute", ["execute-time", "throughput", "peak-rss",
                              "cycles", "constants", "shards"])],
     -- cycles / shards / max-shard-cycles are deterministic per guest ELF,
@@ -325,14 +341,14 @@ def backendSpecs : List BackendSpec := [
                    ("throughput", "_", "0.10")] },
   { name := "sp1", defaultMode := "execute", inputs := .perConstant,
     disabled := some "CI benchmarks disabled; covered by build/execute integration jobs",
-    testbeds := [("execute", "sp1-check-execute-x64-32x")],
+    testbeds := [("execute", "sp1-check-execute")],
     metrics := [("execute", ["execute-time", "throughput", "peak-rss",
                              "cycles"])],
     thresholds := [("constants", "0", "0"), ("cycles", "0", "_"),
                    ("execute-time", "0.10", "_"), ("peak-rss", "0.10", "_"),
                    ("throughput", "_", "0.10")] },
   { name := "ooc", defaultMode := "execute", inputs := .perConstantWithEnv,
-    testbeds := [("execute", "ooc-check-x64-32x")],
+    testbeds := [("execute", "ooc-check")],
     metrics := [("execute", ["check-time", "throughput", "peak-rss"])],
     thresholds := [("constants", "0", "0"), ("check-time", "0.10", "_"),
                    ("throughput", "_", "0.10"), ("peak-rss", "0.10", "_")] },
@@ -349,7 +365,7 @@ def backendSpecs : List BackendSpec := [
   { name := "lean4lean", defaultMode := "execute",
     inputs := .perConstantWithEnv,
     disabled := some "local-only: no bencher testbed yet",
-    testbeds := [("execute", "lean4lean-check-x64-32x")],
+    testbeds := [("execute", "lean4lean-check")],
     metrics := [("execute", ["check-time", "throughput", "peak-rss",
                              "constants"])] },
   -- AnthropicFLT remains on-demand: its from-scratch upstream build needs
@@ -357,7 +373,7 @@ def backendSpecs : List BackendSpec := [
   -- explicit `--env AnthropicFLT` or `BENCH_ENVS=AnthropicFLT` still runs it.
   { name := "compile", defaultMode := "execute", inputs := .perEnv,
     envs := some ["InitStd", "Lean", "ISLB", "Mathlib", "FLT"],
-    testbeds := [("execute", "ix-compile-x64-32x")],
+    testbeds := [("execute", "ix-compile")],
     metrics := [("execute", ["compile-time", "throughput", "peak-rss",
                              "file-size", "constants"])],
     -- file-size wiggles slightly run-to-run (the serialized env is not
@@ -375,7 +391,7 @@ def backendSpecs : List BackendSpec := [
     -- whole-env execution benchmark, and its content is Lean +
     -- Batteries — a decompile row would mostly re-measure Lean's.
     envs := some ["InitStd", "Lean", "Mathlib", "FLT"],
-    testbeds := [("execute", "ix-decompile-x64-32x")],
+    testbeds := [("execute", "ix-decompile")],
     metrics := [("execute", ["decompile-time", "throughput", "peak-rss",
                              "file-size", "constants"])],
     -- file-size (the input `.ixe`) duplicates the compile run's, so it

@@ -779,6 +779,8 @@ def runFetchMainCmd (p : Cli.Parsed) : IO UInt32 := do
       (·.testbedFor mode)
     | IO.println s!"fetch-main: no testbed for {backend}/{mode}"
       return exitUsage
+  let testbed := Ix.Cli.BenchCmd.testbedOnMachine testbed
+    (← Ix.Cli.BenchCmd.benchmarkMachine)
   let wanted : Option (Array String) ← do
     let names ← Ix.Cli.ConstsFile.gather p "consts" "names"
     if (p.flag? "consts").isNone && (p.flag? "names").isNone then pure none
@@ -894,6 +896,7 @@ def runFetchMainCmd (p : Cli.Parsed) : IO UInt32 := do
     pair, and the rendered `--threshold-*` flags, so the workflow
     hardcodes none of it. -/
 def runMatrixCmd (_ : Cli.Parsed) : IO UInt32 := do
+  let machine ← Ix.Cli.BenchCmd.benchmarkMachine
   let mut entries : Array Json := #[]
   for b in Ix.Cli.BenchCmd.backendSpecs do
     if b.disabled.isSome then continue
@@ -912,17 +915,13 @@ def runMatrixCmd (_ : Cli.Parsed) : IO UInt32 := do
         entries := entries.push <| Json.mkObj
           [("backend", Json.str b.name), ("env", Json.str env),
            ("mode", Json.str mode), ("label", Json.str label),
-           ("testbed", Json.str testbed),
+           ("testbed", Json.str (Ix.Cli.BenchCmd.testbedOnMachine testbed machine)),
            ("workload", Json.str (Ix.Cli.BenchCmd.workloadOf testbed)),
            ("thresholds", Json.str b.thresholdFlags)]
   IO.println (Json.arr entries).compress
   return 0
 
 /-! ## parse -/
-
-/-- The runner every CI benchmark run measures on — a `runs-on` field for
-    the workflows' job matrices, meaningless locally. -/
-def ciRunner : String := "warp-ubuntu-latest-x64-32x"
 
 /-- Reject the `!benchmark` command: stderr for the log, and a
     `parse-error` step output so the workflow's failure comment can quote
@@ -1189,7 +1188,6 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
       entries := entries.push <| Json.mkObj
         [("backend", Json.str b.name), ("env", Json.str e),
          ("mode", Json.str (modeFor b)),
-         ("runner", Json.str ciRunner),
          ("consts", Json.str entryConsts),
          ("label", Json.str s!"{b.name}-{e}-{modeFor b}")]
 
@@ -1205,6 +1203,7 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
     (backends.map (fun b =>
       if b.testbeds.length > 1 then s!"{b.name}={modeFor b}" else b.name)).toList
   let mut summary := s!"backends: `{modes}` · envs: `{",".intercalate allEnvs.toList}`"
+  summary := summary ++ s!" · machine: `{← Ix.Cli.BenchCmd.benchmarkMachine}`"
   if !consts.isEmpty then
     summary := summary ++ s!" · consts: `{",".intercalate consts.toList}`"
   if freshFlag then
