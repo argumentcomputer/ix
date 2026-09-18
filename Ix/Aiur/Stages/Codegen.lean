@@ -1,331 +1,83 @@
 /-
-  Aiur bytecode → Rust source codegen.
+  Aiur bytecode → structured Rust syntax → Rust source.
 
-  Next stage after `Bytecode`. Walks a `Bytecode.Toplevel` and emits one
-  Rust fn per Aiur function:
+  Emits one const-generic Rust function per Aiur function. Ordinary calls
+  inherit UNCONSTRAINED, hint calls select true, and entry dispatch selects
+  false. Real Rust locals replace the interpreter's value stack.
 
-  ```rust
-  fn aiur_fn_N(
-    inp: [G; INPUT_SIZE],
-    record: &mut QueryRecord,
-    io_buffer: &mut IOBuffer,
-    unconstrained: bool,
-  ) -> [G; OUTPUT_SIZE]
-  ```
+  Correctness invariant: native execution preserves the interpreter's
+  QueryRecord, including insertion order, multiplicities, hint promotion,
+  byte-chip queries, and IO order. Return registration happens AFTER the
+  callee body and rechecks the complete input key, reusing the caller's hash.
 
-  `INPUT_SIZE = Function.layout.inputSize`. `OUTPUT_SIZE` derived from
-  the function's `Ctrl.return` arms (Aiur fn layouts are fixed; all
-  Returns within a fn agree).
-
-  Architecture: build a structured Rust IR (`RustExpr` / `RustStmt` /
-  `RustItem`) by walking the Bytecode, then format the IR to a single
-  Rust source `String` at the end. No string interpolation during
-  codegen — collect IR, dispatch to string late.
-
-  # Correctness invariant
-
-  Generated code MUST produce a `QueryRecord` indistinguishable from
-  `crates/aiur/src/execute.rs`'s interpreter:
-
-  - `function_queries[idx].insert(args, output, mult)` MUST happen on
-    `Ctrl::Return` of the callee, AFTER the callee's body's inserts.
-  - Cache-hit `multiplicity += G::ONE` MUST trigger iff
-    `!unconstrained && !op_unconstrained` for `Op::Call`, and
-    `!unconstrained` for `Op::Store` / `Op::Load`.
-  - `memory_queries[size]` insertion order: each unique store gets a
-    pointer = `memory_queries.len()` at that moment.
-  - `bytes1_queries` / `bytes2_queries` updates from `U8*` ops in
-    constrained mode, suppressed when `unconstrained == true`.
-  - `io_buffer` ops preserve order.
-
-  # `unconstrained` propagation
-
-  `unconstrained: bool` is the fn-local flag. Once `true`, stays `true`.
-  Each `Op::Call(callee, args, _, op_unconstrained)` invokes the callee
-  with `unconstrained || op_unconstrained`.
-
-  # Status
-
-  Skeleton: Rust IR + formatter. A few Op variants (`Const`, `Add` /
-  `Sub` / `Mul`, `EqZero`) emit faithful IR. `Ctrl::Return` + `Ctrl::Match`
-  emit faithful IR.
-
-  Remaining (mechanical fill-in following the same IR shape):
-  - `Op::Call` cache-check via `ifLetSome` (needs IR extension)
-  - `Op::Store` / `Op::Load` / `Op::AssertEq`
-  - IO ops: `IOGetInfo`, `IOSetInfo`, `IORead`, `IOWrite`
-  - Byte ops: all `U8*` + `U32LessThan` (gated on `unconstrained`)
-  - `UnconstrainedBigUintDivMod`, `Debug`
-  - `Ctrl::MatchContinue` + `Ctrl::Yield` (needs `BlockResult` enum)
-
-  Parity test BEFORE wiring into the build: generate code for one small
-  Aiur fn, run both backends on the same input, diff the resulting
-  `QueryRecord` byte-for-byte. Diverging records ⇒ invalid witnesses
-  ⇒ proving fails hard.
+  Syntax and formatting live in Codegen.Rust. This module only constructs
+  syntax trees; strings here are identifiers, diagnostic text, or the fixed
+  module header, never executable Rust fragments.
 -/
 module
 public import Ix.Aiur.Stages.Bytecode
+public import Ix.Aiur.Codegen.Rust
 
 public section
-
 namespace Aiur.Codegen
-
 open Bytecode
 
-/-! ## Rust IR -/
+/-! ## Shared syntax constructors -/
 
-mutual
-
-inductive RustExpr where
-  /-- A bare identifier (e.g. `record`, `__args`). -/
-  | var (name : String)
-  /-- A literal emitted verbatim (numbers, strings, `true`, `false`). -/
-  | lit (text : String)
-  /-- Path: `G::ZERO`, `ExecError::MatchNoCase`, etc. -/
-  | path (segments : Array String)
-  /-- Function or method call: `callee(args)`. -/
-  | call (callee : RustExpr) (args : Array RustExpr)
-  /-- Indexed access: `arr[idx]`. -/
-  | index (arr : RustExpr) (idx : RustExpr)
-  /-- Field access: `e.field`. -/
-  | field (e : RustExpr) (name : String)
-  /-- Binary operator: `a op b`. The formatter parenthesises. -/
-  | binop (op : String) (a b : RustExpr)
-  /-- `*e`. -/
-  | deref (e : RustExpr)
-  /-- `&e`. -/
-  | ref (e : RustExpr)
-  /-- `vec![...]`, `[...]`, etc. — `macro!(args)`. -/
-  | macroCall (name : String) (args : Array RustExpr)
-  /-- A Rust array literal: `[a, b, c]`. -/
-  | arrayLit (elems : Array RustExpr)
-  /-- A labeled block expression: `'label: { stmts }`. Used by
-      MatchContinue: case bodies `break 'label vec![...]` to bubble
-      yielded values, the labeled block as a whole evaluates to the
-      yielded `Vec<G>`. -/
-  | labeledBlock (label : String) (stmts : Array RustStmt)
-  deriving Inhabited
-
-inductive RustStmt where
-  /-- `let [mut] name [: ty] = expr;` -/
-  | letStmt (isMut : Bool) (name : String) (ty : Option String) (val : RustExpr)
-  /-- `*target += val;` (used for multiplicity bumps). -/
-  | addAssign (target : RustExpr) (val : RustExpr)
-  /-- `expr;` -/
-  | exprStmt (e : RustExpr)
-  /-- `return expr;` -/
-  | returnStmt (e : RustExpr)
-  /-- `if cond { thenStmts } else { elseStmts? }` -/
-  | ifStmt (cond : RustExpr) (thenStmts : Array RustStmt) (elseStmts : Option (Array RustStmt))
-  /-- `if let Some(binding) = scrut { thenStmts } else { elseStmts }` —
-      the shape used for Aiur's memoization cache checks. -/
-  | ifLetSome (binding : String) (scrut : RustExpr)
-      (thenStmts : Array RustStmt) (elseStmts : Array RustStmt)
-  /-- `match scrut { pats... }` -/
-  | matchStmt (scrut : RustExpr) (arms : Array MatchArm)
-  /-- A nested block `{ stmts }` for scoping. -/
-  | block (stmts : Array RustStmt)
-  /-- `break 'label expr;` — yield a value out of an enclosing
-      labeledBlock. -/
-  | breakWith (label : String) (e : RustExpr)
-  deriving Inhabited
-
-inductive MatchPat where
-  | litU64 (n : Nat)
-  | wildcard
-  deriving Inhabited
-
-structure MatchArm where
-  pat : MatchPat
-  body : Array RustStmt
-  deriving Inhabited
-
-end
-
-/-- A generated top-level item. -/
-inductive RustItem where
-  /-- A constant: `const NAME: usize = value;` -/
-  | constUsize (name : String) (value : Nat)
-  /-- A function. -/
-  | function (name : String) (params : Array (String × String))
-      (returnTy : String) (body : Array RustStmt)
-  /-- Raw text (prelude, enum decls, etc.). -/
-  | raw (text : String)
-  deriving Inhabited
-
-/-! ## Pretty printer
-
-    Indentation: 2 spaces per nesting level. Expressions render on one
-    line; statements get their own line. Match arms are one block each.
--/
-
-@[inline] def indent (n : Nat) : String :=
-  String.ofList (List.replicate (n * 2) ' ')
-
-def MatchPat.toStr : MatchPat → String
-  | .litU64 n => s!"{n}u64"
-  | .wildcard => "_"
-
-mutual
-
-partial def RustExpr.toStr : RustExpr → String
-  | .var n => n
-  | .lit t => t
-  | .path segs => "::".intercalate segs.toList
-  | .call c args =>
-    let argList := ", ".intercalate (args.toList.map RustExpr.toStr)
-    s!"{c.toStr}({argList})"
-  | .index a i => s!"{a.toStr}[{i.toStr}]"
-  | .field e n => s!"{e.toStr}.{n}"
-  | .binop op a b => s!"({a.toStr} {op} {b.toStr})"
-  | .deref e => s!"*{e.toStr}"
-  | .ref e => s!"&{e.toStr}"
-  | .macroCall n args =>
-    let argList := ", ".intercalate (args.toList.map RustExpr.toStr)
-    s!"{n}!({argList})"
-  | .arrayLit elems =>
-    let lb := "["
-    let rb := "]"
-    let elemList := ", ".intercalate (elems.toList.map RustExpr.toStr)
-    s!"{lb}{elemList}{rb}"
-  | .labeledBlock label stmts =>
-    -- One-line approximation. Aiur case bodies are short enough.
-    let body := stmts.toList.map (RustStmt.toStr 0) |>.foldl (· ++ ·) ""
-    let lbrace := "{"
-    let rbrace := "}"
-    s!"'{label}: {lbrace} {body} {rbrace}"
-
-partial def RustStmt.toStr (d : Nat) : RustStmt → String
-  | .letStmt isMut name ty val =>
-    let mutStr := if isMut then "mut " else ""
-    let tyStr := match ty with | some t => s!": {t}" | none => ""
-    s!"{indent d}let {mutStr}{name}{tyStr} = {val.toStr};\n"
-  | .addAssign target val =>
-    s!"{indent d}{target.toStr} += {val.toStr};\n"
-  | .exprStmt e => s!"{indent d}{e.toStr};\n"
-  | .returnStmt e => s!"{indent d}return {e.toStr};\n"
-  | .ifLetSome binding scrut thenStmts elseStmts => Id.run do
-    let lbrace := "{"
-    let rbrace := "}"
-    let mut o := s!"{indent d}if let Some({binding}) = {scrut.toStr} {lbrace}\n"
-    o := o ++ stmtsToStr (d+1) thenStmts
-    o := o ++ s!"{indent d}{rbrace} else {lbrace}\n"
-    o := o ++ stmtsToStr (d+1) elseStmts
-    o := o ++ s!"{indent d}{rbrace}\n"
-    return o
-  | .ifStmt cond thenStmts elseStmts? => Id.run do
-    let lbrace := "{"
-    let rbrace := "}"
-    let mut o := s!"{indent d}if {cond.toStr} {lbrace}\n"
-    o := o ++ stmtsToStr (d+1) thenStmts
-    match elseStmts? with
-    | some elseStmts =>
-      o := o ++ s!"{indent d}{rbrace} else {lbrace}\n"
-      o := o ++ stmtsToStr (d+1) elseStmts
-      o := o ++ s!"{indent d}{rbrace}\n"
-    | none =>
-      o := o ++ s!"{indent d}{rbrace}\n"
-    return o
-  | .matchStmt scrut arms => Id.run do
-    let lbrace := "{"
-    let rbrace := "}"
-    let mut o := s!"{indent d}match {scrut.toStr} {lbrace}\n"
-    for arm in arms do
-      o := o ++ s!"{indent (d+1)}{arm.pat.toStr} => {lbrace}\n"
-      o := o ++ stmtsToStr (d+2) arm.body
-      o := o ++ s!"{indent (d+1)}{rbrace},\n"
-    o := o ++ s!"{indent d}{rbrace}\n"
-    return o
-  | .block stmts => Id.run do
-    let lbrace := "{"
-    let rbrace := "}"
-    let mut o := s!"{indent d}{lbrace}\n"
-    o := o ++ stmtsToStr (d+1) stmts
-    o := o ++ s!"{indent d}{rbrace}\n"
-    return o
-  | .breakWith label e =>
-    s!"{indent d}break '{label} {e.toStr};\n"
-
-partial def stmtsToStr (d : Nat) (stmts : Array RustStmt) : String := Id.run do
-  let mut o := ""
-  for s in stmts do
-    o := o ++ s.toStr d
-  o
-
-end
-
-def RustItem.toStr : RustItem → String
-  | .constUsize n v => s!"const {n}: usize = {v};\n"
-  | .raw text => text
-  | .function name params returnTy body => Id.run do
-    let lbrace := "{"
-    let rbrace := "}"
-    let paramList := ",\n  ".intercalate
-      (params.toList.map (fun (n, t) => s!"{n}: {t}"))
-    let mut o := s!"fn {name}(\n  {paramList},\n) -> {returnTy} {lbrace}\n"
-    o := o ++ stmtsToStr 1 body
-    o := o ++ s!"{rbrace}\n\n"
-    return o
-
-/-! ## IR helper constructors -/
+private def gTy : RustType := .named "G"
+private def gArray (n : Nat) : RustType := .array gTy (.value n)
+private def inputTy (idx : Nat) : RustType := .array gTy (.named s!"IN_{idx}")
+private def outputTy (idx : Nat) : RustType := .array gTy (.named s!"OUT_{idx}")
+private def resultTy (ty : RustType) : RustType := .app "Result" #[ty, .named "ExecError"]
+private def method (e : RustExpr) (name : String) (args : Array RustExpr := #[]) : RustExpr :=
+  .methodCall e name args
+private def staticCall (ty name : String) (args : Array RustExpr) : RustExpr :=
+  .call (.path #[ty, name]) args
+private def runtimeCall (name : String) (args : Array RustExpr) : RustExpr :=
+  .call (.path #["aiur", "execute", name]) args
+private def errorValue (name : String) (args : Array RustExpr) : RustExpr :=
+  staticCall "ExecError" name args
+private def returnError (e : RustExpr) : RustStmt := .returnStmt (.call (.var "Err") #[e])
+private def tailBlock (e : RustExpr) : RustBlock := { tail := some e }
+private def blockValue (ss : Array RustStmt) (e : RustExpr) : RustExpr :=
+  .block { stmts := ss, tail := some e }
+private def sliceRef (e : RustExpr) : RustExpr := .ref (.index e (.range none none))
+private def canonical (e : RustExpr) : RustExpr := method e "as_canonical_u64"
+private def expect (e : RustExpr) (msg : String) : RustExpr :=
+  method e "expect" #[.string msg]
+private def checkedCast (ty : String) (e : RustExpr) (error : String) : RustExpr :=
+  .tryExpr (method (method (staticCall ty "try_from" #[e]) "ok") "ok_or"
+    #[errorValue error #[e]])
+private def fixedArray (e : RustExpr) (size : Nat) : RustExpr :=
+  method (method (.index e (.range none (some (.nat size)))) "try_into") "unwrap"
 
 def gZero : RustExpr := .path #["G", "ZERO"]
-def gOne : RustExpr := .path #["G", "ONE"]
-def gFromU64 (n : Nat) : RustExpr := .call (.path #["G", "from_u64"]) #[.lit (toString n)]
-def gFromBool (cond : RustExpr) : RustExpr := .call (.path #["G", "from_bool"]) #[cond]
-def gFromUsize (n : RustExpr) : RustExpr := .call (.path #["G", "from_usize"]) #[n]
-
-/-- Local variable for Aiur ValIdx `i` — `__v_{i}`. Replaces the
-    interpreter's `map[i]` Vec lookup. -/
+def gFromU64 (n : Nat) : RustExpr := staticCall "G" "from_u64" #[.nat n]
+def gFromBool (e : RustExpr) : RustExpr := staticCall "G" "from_bool" #[e]
+def gFromUsize (e : RustExpr) : RustExpr := staticCall "G" "from_usize" #[e]
 def valVar (i : Nat) : RustExpr := .var s!"__v_{i}"
-
-/-- Emit a single-G let-binding for the next ValIdx slot. -/
-def declVal (idx : Nat) (rhs : RustExpr) : RustStmt :=
-  .letStmt false s!"__v_{idx}" (some "G") rhs
-
-/-- The `[G; n]` array literal of `valVar` for `is`. -/
-def argsAsArray (is : Array ValIdx) : RustExpr :=
-  .arrayLit (is.map valVar)
-
-/-- `record.function_queries[idx]` access. -/
+def declVal (i : Nat) (e : RustExpr) : RustStmt :=
+  .letStmt false s!"__v_{i}" (some gTy) e
+def argsAsArray (is : Array ValIdx) : RustExpr := .arrayLit (is.map valVar)
 def funQueriesAt (idx : Nat) : RustExpr :=
-  .index (.field (.var "record") "function_queries") (.lit (toString idx))
+  .index (.field (.var "record") "function_queries") (.nat idx)
+def notUnconstrained : RustExpr := .not (.var "unconstrained")
+private def whenConstrained (ss : Array RustStmt) : RustStmt :=
+  .ifStmt notUnconstrained ss none
+private def bumpMultiplicity (table idx : RustExpr) : RustStmt :=
+  .exprStmt (method table "bump_multiplicity" #[idx])
+private def lookupKey (table key : RustExpr) : RustStmt :=
+  .letPattern (.tuple #[.binding "__hash", .binding "__hit"]) none
+    (method table "lookup" #[sliceRef key])
+private def splatArray (out count : Nat) (name : String) : Array RustStmt :=
+  (Array.range count).map fun k => declVal (out + k) (.index (.var name) (.nat k))
+private def splatTuple (out count : Nat) (name : String) : Array RustStmt :=
+  (Array.range count).map fun k => declVal (out + k) (.field (.var name) (toString k))
+private def nativeCall (idx : Nat) (mode : RustExpr) (input hash : RustExpr) : RustExpr :=
+  .tryExpr (.call (.constGeneric (.var s!"aiur_fn_{idx}") #[mode])
+    #[input, hash, .var "record", .var "io_buffer"])
 
-/-- `record.memory_queries.get_mut(&SIZE)?` chain — used by Store/Load. -/
-def memQueriesGetMut (size : Nat) : RustExpr :=
-  .call (.field (.field (.var "record") "memory_queries") "get_mut")
-    #[.ref (.lit (toString size))]
-
-/-- `cond` Rust expression for `!unconstrained && !op_unconstrained` /
-    `!unconstrained` etc. We emit as `lit` to avoid building elaborate
-    AST for unary `!`. -/
-def litBool (b : Bool) : RustExpr := .lit (if b then "true" else "false")
-
-/-- `!unconstrained`. -/
-def notUnconstrained : RustExpr := .lit "!unconstrained"
-
-/-- `!unconstrained && !op_unconstrained` (or just `!unconstrained` when
-    `op_unconstrained == false`). -/
-def constrainedCond (opUn : Bool) : RustExpr :=
-  if opUn then .lit "false" else notUnconstrained
-
-/-- `unconstrained || op_unconstrained` for callee propagation. -/
-def calleeUnconstrained (opUn : Bool) : RustExpr :=
-  if opUn then .lit "true" else .var "unconstrained"
-
-/-! ## Op emission
-
-    Each emitted Op mirrors `crates/aiur/src/execute.rs`'s matching arm. The
-    interpreter's `map: Vec<G>` is gone: every Aiur ValIdx becomes a
-    real Rust local `__v_{i}: G`. Per-op output counts decide how many
-    new locals each op allocates; the counter is threaded via
-    `EmitM`.
-
-    Multi-output ops emit consecutive let-bindings; helpers that need
-    a Vec-shaped scratch (byte ops via `bytes{1,2}_execute`) build a
-    small local Vec inside a sub-block and read outputs back out as
-    G values.
--/
+/-! ## Operation emission -/
 
 /-- How many ValIdx slots an Op consumes (i.e. how much it grows
     Aiur's value-stack). MUST match `execute.rs`'s `map.push` /
@@ -358,370 +110,288 @@ def Op.outputCount : Op → Nat
   | .u32ToField _ => 1
   | .debug _ _ => 0
 
+
 private def emitConst (out : Nat) (c : Aiur.G) : Array RustStmt :=
   #[declVal out (gFromU64 c.n)]
 
-private def emitBinop (out : Nat) (op : String) (a b : ValIdx) : Array RustStmt :=
+private def emitBinop (out : Nat) (op : RustBinOp) (a b : ValIdx) : Array RustStmt :=
   #[declVal out (.binop op (valVar a) (valVar b))]
 
 private def emitEqZero (out : Nat) (a : ValIdx) : Array RustStmt :=
-  #[declVal out (gFromBool (.binop "==" (valVar a) gZero))]
+  #[declVal out (gFromBool (.binop .eq (valVar a) gZero))]
 
-/-- `Op::Call`: mirror execute.rs lines 284-305 (caller) + 625-633
-    (callee's Return inserts into `function_queries[fun_idx]`). On
-    cache hit: bump multiplicity if both sides constrained, extend map
-    with cached output. On miss: direct Rust call to the generated
-    callee. -/
+/-- Cached hints must be replayed in constrained mode to promote their whole
+    dependency tree, not just the cached row. A hit may only skip the body
+    when already constrained or when the caller also requests a hint. -/
 private def emitCall (out : Nat) (callee : FunIdx) (args : Array ValIdx)
-    (outSize : Nat) (opUn : Bool) : Array RustStmt := Id.run do
-  -- Build the inner cache-check as a Rust block expression (raw lit).
-  -- Structured IR for if-let-as-expression would need a `blockExpr`
-  -- node; deferred until after parity testing validates the shape.
-  let argsStr : String := (argsAsArray args).toStr
-  -- Constant-fold the `unconstrained || OP_UN` / `!unconstrained && !OP_UN`
-  -- patterns based on the static `opUn` flag. When opUn = true the
-  -- callee always runs unconstrained AND the multiplicity bump is
-  -- always skipped; when opUn = false both expressions collapse to
-  -- just `unconstrained`.
-  let cuExpr : String := if opUn then "true" else "unconstrained"
-  -- On a constrained hit, bump the entry's multiplicity.
-  let bumpStmt : String :=
-    if opUn then ""
-    else
-      s!" if !unconstrained \{ record.function_queries[{callee}].bump_multiplicity(__i); }"
-  -- Skip `try_into().unwrap()` on the cache hit: we statically know
-  -- the cached output has exactly `OUT_{callee}` elements (only we
-  -- ever insert into this slot via the matching aiur_fn_{callee}
-  -- `Ctrl::Return`). An unchecked array copy is sound.
-  let retExpr : String :=
-    s!" let __ret: [G; OUT_{callee}] = unsafe \{ *(record.function_queries[{callee}].output_at(__i).as_ptr() as *const [G; OUT_{callee}]) }; __ret"
-  -- A zero-multiplicity entry was computed only as an unconstrained
-  -- hint; a constrained caller replays the body (constrained: `__cu` is
-  -- false on that path) so promotion recurses through the whole
-  -- dependency tree. Mirrors execute.rs Op::Call.
-  let hitGuard : String :=
-    if opUn then "true"
-    else
-      s!"__cu || record.function_queries[{callee}].mult_at(__i) != G::ZERO"
-  let blockExpr : String :=
-    s!"\{ let __args: [G; IN_{callee}] = {argsStr};" ++
-    s!" let __cu = {cuExpr};" ++
-    s!" let __hit = record.function_queries[{callee}].get_index_of(&__args[..]);" ++
-    s!" match __hit \{ Some(__i) if {hitGuard} => \{" ++
-    bumpStmt ++ retExpr ++ " }," ++
-    s!" _ => aiur_fn_{callee}(__args, record, io_buffer, __cu)? } }"
-  let mut stmts : Array RustStmt := #[
-    .letStmt false "__r_arr" (some s!"[G; OUT_{callee}]") (.lit blockExpr)
-  ]
-  for k in [0 : outSize] do
-    stmts := stmts.push (declVal (out + k) (.index (.var "__r_arr") (.lit (toString k))))
-  return stmts
+    (outSize : Nat) (opUn : Bool) : Array RustStmt :=
+  let queries := funQueriesAt callee
+  let mode : RustExpr := if opUn then .bool true else .var "UNCONSTRAINED"
+  let guard : RustExpr := if opUn then .bool true else
+    .binop .or (.var "__cu") (.binop .ne (method queries "mult_at" #[.var "__i"]) gZero)
+  let bump := if opUn then #[] else
+    #[whenConstrained #[bumpMultiplicity queries (.var "__i")]]
+  -- Every row in this function's table has exactly OUT_N outputs. Preserve
+  -- the existing unchecked array copy, explicitly scoped as an unsafe block.
+  let cached := .unsafeBlock (tailBlock (.deref
+    (.cast (method (method queries "output_at" #[.var "__i"]) "as_ptr")
+      (.ptr false (outputTy callee)))))
+  let hit : MatchArm := {
+    pat := .constructor #["Some"] #[.binding "__i"], guard := some guard
+    body := { stmts := bump ++ #[.letStmt false "__ret" (some (outputTy callee)) cached]
+              tail := some (.var "__ret") }
+  }
+  let miss : MatchArm := {
+    pat := .wildcard
+    body := tailBlock (nativeCall callee mode (.var "__args") (.var "__hash"))
+  }
+  let rhs := blockValue #[
+    .letStmt false "__args" (some (inputTy callee)) (argsAsArray args),
+    .letStmt false "__cu" none (if opUn then .bool true else .var "unconstrained"),
+    lookupKey queries (.var "__args")
+  ] (.matchExpr (.var "__hit") #[hit, miss])
+  #[.letStmt false "__r_arr" (some (outputTy callee)) rhs] ++
+    splatArray out outSize "__r_arr"
 
-/-- `Op::Store`: mirror execute.rs lines 306-326. Insert hit/miss into
-    `record.memory_queries[size]`; output is the allocated/cached ptr. -/
-private def emitStore (out : Nat) (values : Array ValIdx) : Array RustStmt :=
-  let size := values.size
-  let valsStr : String := (argsAsArray values).toStr
-  let blockExpr : String :=
-    s!"\{ let __values: [G; {size}] = {valsStr};" ++
-    s!" let __mq = record.memory_queries.get_mut(&{size}).ok_or(ExecError::InvalidMemorySize({size}))?;" ++
-    s!" if let Some(__i) = __mq.get_index_of(&__values[..]) \{" ++
-    s!" if !unconstrained \{ __mq.bump_multiplicity(__i); }" ++
-    s!" __mq.output_at(__i)[0]" ++
-    s!" } else \{" ++
-    s!" let __ptr = G::from_usize(__mq.len());" ++
-    s!" __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained));" ++
-    s!" __ptr } }"
-  #[.letStmt false s!"__v_{out}" (some "G") (.lit blockExpr)]
+/-- Fixed table slots are validated once by entry dispatch. Standalone op
+    emission, which has no toplevel layout, uses the width-keyed fallback. -/
+private def memoryQuery (memorySizes : Array Nat) (size : Nat) : RustExpr :=
+  let tables : RustExpr := .field (.var "record") "memory_queries"
+  let query := match memorySizes.findIdx? (· == size) with
+    | some slot => method (method tables "get_index_mut" #[.nat slot]) "map"
+        #[.closure #[.tuple #[.wildcard, .binding "q"]] (.var "q")]
+    | none => method tables "get_mut" #[.ref (.nat size)]
+  .tryExpr (method query "ok_or" #[errorValue "InvalidMemorySize" #[.nat size]])
 
-/-- `Op::Load`: mirror execute.rs lines 328-345. Look up by pointer
-    index, bump multiplicity if constrained, splat `size` outputs. -/
-private def emitLoad (out : Nat) (size : Nat) (ptr : ValIdx) : Array RustStmt := Id.run do
-  let blockExpr : String :=
-    s!"\{ let __mq = record.memory_queries.get_mut(&{size}).ok_or(ExecError::InvalidMemorySize({size}))?;" ++
-    s!" let __ptr_u64 = __v_{ptr}.as_canonical_u64();" ++
-    s!" let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?;" ++
-    s!" if __ptr_usize >= __mq.len() \{ return Err(ExecError::UnboundPointer \{ ptr: __ptr_u64, size: {size} }); }" ++
-    s!" if !unconstrained \{ __mq.bump_multiplicity(__ptr_usize); }" ++
-    s!" let (__args, _) = __mq.get_index(__ptr_usize).expect(\"bounds checked above\");" ++
-    s!" let __arr: [G; {size}] = __args[..{size}].try_into().unwrap(); __arr }"
-  let mut stmts : Array RustStmt := #[
-    .letStmt false "__loaded" (some s!"[G; {size}]") (.lit blockExpr)
-  ]
-  for k in [0 : size] do
-    stmts := stmts.push (declVal (out + k) (.index (.var "__loaded") (.lit (toString k))))
-  return stmts
+private def emitStore (out : Nat) (values : Array ValIdx)
+    (memorySizes : Array Nat) : Array RustStmt :=
+  let table : RustExpr := .var "__mq"
+  let hit : MatchArm := {
+    pat := .constructor #["Some"] #[.binding "__i"]
+    body := {
+      stmts := #[whenConstrained #[bumpMultiplicity table (.var "__i")]]
+      tail := some (.index (method table "output_at" #[.var "__i"]) (.nat 0))
+    }
+  }
+  let miss : MatchArm := {
+    pat := .wildcard
+    body := {
+      stmts := #[
+        .letStmt false "__ptr" none (gFromUsize (method table "len")),
+        .exprStmt (method table "insert_hashed" #[
+          sliceRef (.var "__values"), .ref (.arrayLit #[.var "__ptr"]),
+          gFromBool notUnconstrained, .var "__hash"])
+      ]
+      tail := some (.var "__ptr")
+    }
+  }
+  #[declVal out (blockValue #[
+    .letStmt false "__values" (some (gArray values.size)) (argsAsArray values),
+    .letStmt false "__mq" none (memoryQuery memorySizes values.size),
+    lookupKey table (.var "__values")
+  ] (.matchExpr (.var "__hit") #[hit, miss]))]
 
-/-- `Op::AssertEq`: mirror execute.rs lines 346-363. -/
-private def emitAssertEq (xs ys : Array ValIdx) (msg : Option String) :
-    Array RustStmt :=
-  -- `msg` becomes the `Option<String>` on `ExecError::AssertEqMismatch`.
-  -- Escape quotes and backslashes so an arbitrary label stays a valid
-  -- Rust string literal.
-  let msgLit := match msg with
-    | some m =>
-      let esc := (m.replace "\\" "\\\\").replace "\"" "\\\""
-      s!"Some(\"{esc}\".to_string())"
-    | none => "None"
+private def emitLoad (out size : Nat) (ptr : ValIdx)
+    (memorySizes : Array Nat) : Array RustStmt :=
+  let table : RustExpr := .var "__mq"
+  let rhs := blockValue #[
+    .letStmt false "__mq" none (memoryQuery memorySizes size),
+    .letStmt false "__ptr_u64" none (canonical (valVar ptr)),
+    .letStmt false "__ptr_usize" none (checkedCast "usize" (.var "__ptr_u64") "PointerTooLarge"),
+    .ifStmt (.binop .ge (.var "__ptr_usize") (method table "len"))
+      #[returnError (.structLit #["ExecError", "UnboundPointer"]
+        #[("ptr", .var "__ptr_u64"), ("size", .nat size)])] none,
+    whenConstrained #[bumpMultiplicity table (.var "__ptr_usize")],
+    .letPattern (.tuple #[.binding "__args", .wildcard]) none
+      (expect (method table "get_index" #[.var "__ptr_usize"]) "bounds checked above"),
+    .letStmt false "__arr" (some (gArray size)) (fixedArray (.var "__args") size)
+  ] (.var "__arr")
+  #[.letStmt false "__loaded" (some (gArray size)) rhs] ++ splatArray out size "__loaded"
+
+private def emitAssertEq (xs ys : Array ValIdx) (msg : Option String) : Array RustStmt :=
+  let message : RustExpr := match msg with
+    | some m => .call (.var "Some") #[method (.string m) "to_string"]
+    | none => .var "None"
   if xs.size != ys.size then
-    #[.exprStmt (.lit s!"return Err(ExecError::AssertEqLengthMismatch \{ lhs: {xs.size}, rhs: {ys.size} })")]
-  else Id.run do
-    let mut stmts : Array RustStmt := #[]
-    for (x, y) in xs.zip ys do
-      stmts := stmts.push (.ifStmt
-        (.binop "!=" (valVar x) (valVar y))
-        #[.exprStmt (.lit s!"return Err(ExecError::AssertEqMismatch \{ lhs: __v_{x}.as_canonical_u64(), rhs: __v_{y}.as_canonical_u64(), msg: {msgLit} })")]
-        none)
-    return stmts
+    #[returnError (.structLit #["ExecError", "AssertEqLengthMismatch"]
+      #[("lhs", .nat xs.size), ("rhs", .nat ys.size)])]
+  else (xs.zip ys).map fun (x, y) =>
+    .ifStmt (.binop .ne (valVar x) (valVar y))
+      #[returnError (.structLit #["ExecError", "AssertEqMismatch"]
+        #[("lhs", canonical (valVar x)), ("rhs", canonical (valVar y)), ("msg", message)])] none
 
-/-! ### IO ops -/
+/-! ### IO -/
 
-/-- `Op::IOGetInfo`: pushes 2 outputs (idx, len). -/
-private def emitIOGetInfo (out : Nat) (channel : ValIdx) (key : Array ValIdx) :
-    Array RustStmt :=
-  let keyStr := (argsAsArray key).toStr
-  let blockIdxLen : String :=
-    s!"\{ let __key: [G; {key.size}] = {keyStr};" ++
-    s!" let __info = io_buffer.get_info(__v_{channel}, &__key[..])?;" ++
-    s!" (G::from_usize(__info.idx), G::from_usize(__info.len)) }"
-  #[
-    .letStmt false "__io_pair" (some "(G, G)") (.lit blockIdxLen),
-    declVal out (.field (.var "__io_pair") "0"),
-    declVal (out + 1) (.field (.var "__io_pair") "1")
-  ]
+private def emitIOGetInfo (out channel : Nat) (key : Array ValIdx) : Array RustStmt :=
+  #[.letStmt false "__io_pair" (some (.tuple #[gTy, gTy])) (blockValue #[
+    .letStmt false "__key" (some (gArray key.size)) (argsAsArray key),
+    .letStmt false "__info" none
+      (.tryExpr (method (.var "io_buffer") "get_info" #[valVar channel, sliceRef (.var "__key")]))
+  ] (.tuple #[gFromUsize (.field (.var "__info") "idx"),
+              gFromUsize (.field (.var "__info") "len")]))] ++ splatTuple out 2 "__io_pair"
 
-/-- `Op::IOSetInfo`: 0 outputs; side-effects io_buffer. -/
 private def emitIOSetInfo (channel : ValIdx) (key : Array ValIdx)
     (idx len : ValIdx) : Array RustStmt :=
-  let keyStr := (argsAsArray key).toStr
-  let stmt : String :=
-    s!"\{ let __key: [G; {key.size}] = {keyStr};" ++
-    s!" let __idx = usize::try_from(__v_{idx}.as_canonical_u64()).ok().ok_or(ExecError::IndexTooLarge(__v_{idx}.as_canonical_u64()))?;" ++
-    s!" let __len = usize::try_from(__v_{len}.as_canonical_u64()).ok().ok_or(ExecError::IndexTooLarge(__v_{len}.as_canonical_u64()))?;" ++
-    s!" io_buffer.set_info(__v_{channel}, __key.to_vec(), __idx, __len)?; }"
-  #[.exprStmt (.lit stmt)]
+  #[.block #[
+    .letStmt false "__key" (some (gArray key.size)) (argsAsArray key),
+    .letStmt false "__idx" none (checkedCast "usize" (canonical (valVar idx)) "IndexTooLarge"),
+    .letStmt false "__len" none (checkedCast "usize" (canonical (valVar len)) "IndexTooLarge"),
+    .exprStmt (.tryExpr (method (.var "io_buffer") "set_info"
+      #[valVar channel, method (.var "__key") "to_vec", .var "__idx", .var "__len"]))
+  ]]
 
-/-- `Op::IORead`: pushes `len` outputs (one G per byte). -/
-private def emitIORead (out : Nat) (channel : ValIdx) (idx : ValIdx) (len : Nat) :
-    Array RustStmt := Id.run do
-  let blockExpr : String :=
-    s!"\{ let __idx_u64 = __v_{idx}.as_canonical_u64();" ++
-    s!" let __idx = usize::try_from(__idx_u64).ok().ok_or(ExecError::IndexTooLarge(__idx_u64))?;" ++
-    s!" let __data = io_buffer.read(__v_{channel}, __idx, {len})?;" ++
-    s!" let __arr: [G; {len}] = __data[..{len}].try_into().unwrap(); __arr }"
-  let mut stmts : Array RustStmt := #[
-    .letStmt false "__io_read" (some s!"[G; {len}]") (.lit blockExpr)
-  ]
-  for k in [0 : len] do
-    stmts := stmts.push (declVal (out + k) (.index (.var "__io_read") (.lit (toString k))))
-  return stmts
+private def emitIORead (out channel idx len : Nat) : Array RustStmt :=
+  #[.letStmt false "__io_read" (some (gArray len)) (blockValue #[
+    .letStmt false "__idx_u64" none (canonical (valVar idx)),
+    .letStmt false "__idx" none (checkedCast "usize" (.var "__idx_u64") "IndexTooLarge"),
+    .letStmt false "__data" none
+      (.tryExpr (method (.var "io_buffer") "read" #[valVar channel, .var "__idx", .nat len])),
+    .letStmt false "__arr" (some (gArray len)) (fixedArray (.var "__data") len)
+  ] (.var "__arr"))] ++ splatArray out len "__io_read"
 
-/-- `Op::IOWrite`: 0 outputs; side-effects io_buffer. -/
 private def emitIOWrite (channel : ValIdx) (data : Array ValIdx) : Array RustStmt :=
-  let dataIter : RustExpr :=
-    .call (.field (.arrayLit (data.map valVar)) "into_iter") #[]
-  #[.exprStmt
-    (.call (.field (.var "io_buffer") "write")
-      #[valVar channel, dataIter])]
+  #[.exprStmt (method (.var "io_buffer") "write"
+    #[valVar channel, method (argsAsArray data) "into_iter"])]
 
-/-! ### Byte ops
+/-! ### Byte operations and hints -/
 
-    All `U8*` ops are gated on `unconstrained`: in constrained mode
-    they go through `bytes{1,2}_execute` helpers (which update
-    `record.bytes{1,2}_queries`); in unconstrained mode they take a
-    pure arithmetic shortcut and skip the byte-chip queries.
+/-- Helper paths are explicit in the tree, not inferred by searching source.
+    The constrained helper records queries; the hint computes only values. -/
+private def byteResult (chip shortcut helper : String) (args : Array ValIdx) : RustExpr :=
+  .ifExpr (.var "unconstrained")
+    (tailBlock (.call (.path #["aiur", "execute", chip, shortcut])
+      (args.map fun i => .ref (valVar i))))
+    (tailBlock (runtimeCall helper ((args.map valVar).push (.var "record"))))
 
-    For codegen simplicity, the constrained path is emitted as a raw
-    helper call; the unconstrained shortcut is the pure variant of
-    the same op. The execute.rs interpreter does the same dispatch.
--/
-
-/-- Bytes1 op. No scratch Vec — the constrained branch calls
-    `bytes1_*_value` (defined in `aiur::execute`) which
-    bumps the byte-chip queries and returns the gadget output by
-    value; the unconstrained branch calls the pure `Bytes1::*`
-    helper directly. -/
-private def emitU8Bytes1 (out : Nat) (valueHelper : String)
-    (unconShortcut : String) (byte : ValIdx) (outCount : Nat) :
-    Array RustStmt := Id.run do
+private def emitU8Bytes1 (out : Nat) (helper shortcut : String)
+    (byte : ValIdx) (outCount : Nat) : Array RustStmt :=
   if outCount == 1 then
-    let blockExpr : String :=
-      s!"if unconstrained \{ {unconShortcut}(&__v_{byte}) }" ++
-      s!" else \{ {valueHelper}(__v_{byte}, record) }"
-    return #[.letStmt false s!"__v_{out}" (some "G") (.lit blockExpr)]
+    #[declVal out (byteResult "CodegenBytes1" shortcut helper #[byte])]
   else
-    -- BitDecomposition returns [G; 8]; the unconstrained shortcut
-    -- is the pure `Bytes1::bit_decompose` which returns Vec<G>.
-    -- Coerce its result into [G; outCount] for unified handling.
-    let blockExpr : String :=
-      s!"if unconstrained \{ let __v: Vec<G> = {unconShortcut}(&__v_{byte}); let __a: [G; {outCount}] = __v.try_into().unwrap(); __a }" ++
-      s!" else \{ {valueHelper}(__v_{byte}, record) }"
-    let mut stmts : Array RustStmt := #[
-      .letStmt false "__b1_out" (some s!"[G; {outCount}]") (.lit blockExpr)
-    ]
-    for k in [0 : outCount] do
-      stmts := stmts.push (declVal (out + k) (.index (.var "__b1_out") (.lit (toString k))))
-    return stmts
+    -- The hint returns Vec<G>, while the constrained helper returns [G; 8].
+    let hint : RustBlock := {
+      stmts := #[
+        .letStmt false "__v" (some (.app "Vec" #[gTy]))
+          (.call (.path #["aiur", "execute", "CodegenBytes1", shortcut]) #[.ref (valVar byte)]),
+        .letStmt false "__a" (some (gArray outCount))
+          (method (method (.var "__v") "try_into") "unwrap")
+      ]
+      tail := some (.var "__a")
+    }
+    #[.letStmt false "__b1_out" (some (gArray outCount))
+      (.ifExpr (.var "unconstrained") hint
+        (tailBlock (runtimeCall helper #[valVar byte, .var "record"])))] ++
+      splatArray out outCount "__b1_out"
 
-/-- Bytes2 op. Same pattern as `emitU8Bytes1` — no scratch Vec. -/
-private def emitU8Bytes2 (out : Nat) (valueHelper : String)
-    (unconShortcut : String) (i j : ValIdx) (outCount : Nat) :
-    Array RustStmt := Id.run do
-  if outCount == 1 then
-    let blockExpr : String :=
-      s!"if unconstrained \{ Bytes2::{unconShortcut}(&__v_{i}, &__v_{j}) }" ++
-      s!" else \{ {valueHelper}(__v_{i}, __v_{j}, record) }"
-    return #[.letStmt false s!"__v_{out}" (some "G") (.lit blockExpr)]
+private def emitU8Bytes2 (out : Nat) (helper shortcut : String)
+    (i j : ValIdx) (outCount : Nat) : Array RustStmt :=
+  let rhs := byteResult "CodegenBytes2" shortcut helper #[i, j]
+  if outCount == 1 then #[declVal out rhs]
   else
-    -- Multi-output byte operations.
-    let blockExpr : String :=
-      s!"if unconstrained \{ Bytes2::{unconShortcut}(&__v_{i}, &__v_{j}) }" ++
-      s!" else \{ {valueHelper}(__v_{i}, __v_{j}, record) }"
-    let tupTy : String :=
-      "(" ++ (String.intercalate ", " (List.replicate outCount "G")) ++ ")"
-    let mut stmts : Array RustStmt := #[
-      .letStmt false "__b2_out" (some tupTy) (.lit blockExpr)
+    #[.letStmt false "__b2_out" (some (.tuple (Array.replicate outCount gTy))) rhs] ++
+      splatTuple out outCount "__b2_out"
+
+private def emitU32LessThan (out x y : Nat) : Array RustStmt :=
+  let bump (e : RustExpr) : RustStmt :=
+    .exprStmt (method (.field (.var "record") "bytes2_queries") "bump_u16_range_check"
+      #[.cast e (.named "u16")])
+  #[declVal out (blockValue #[
+    .letStmt false "__a_val" none (canonical (valVar x)),
+    .letStmt false "__b_val" none (canonical (valVar y)),
+    .letStmt false "__a_u32" none (checkedCast "u32" (.var "__a_val") "U32OutOfRange"),
+    .letStmt false "__b_u32" none (checkedCast "u32" (.var "__b_val") "U32OutOfRange"),
+    .letStmt false "__result" none (gFromBool (.binop .lt (.var "__a_u32") (.var "__b_u32"))),
+    whenConstrained #[
+      .letStmt false "__c_u32" none (method (.var "__a_u32") "wrapping_sub" #[.var "__b_u32"]),
+      .forStmt (.binding "__word") (.arrayLit #[.var "__a_u32", .var "__c_u32", .var "__b_u32"])
+        #[bump (.binop .bitAnd (.var "__word") (.nat 65535)),
+          bump (.binop .shr (.var "__word") (.nat 16))]
     ]
-    for k in [0 : outCount] do
-      stmts := stmts.push (declVal (out + k) (.field (.var "__b2_out") (toString k)))
-    return stmts
+  ] (.var "__result"))]
 
-/-- `Op::U8Add`: gadget bumps `bytes2_queries.add` and returns
-    `(low, carry)`. Codegen now calls `bytes2_add_value` ONCE in
-    the constrained branch (vs the interpreter's two `Bytes2::add`
-    calls). -/
-private def emitU8Add (out : Nat) (i j : ValIdx) : Array RustStmt :=
-  let blockExpr : String :=
-    s!"if unconstrained \{ Bytes2::add(&__v_{i}, &__v_{j}) }" ++
-    s!" else \{ bytes2_add_value(__v_{i}, __v_{j}, record) }"
+private def u32PackExpr (xs : Array ValIdx) : RustExpr :=
+  let terms := xs.mapIdx fun i idx => .binop .shl (canonical (valVar idx)) (.nat (8 * i))
+  -- Valid bytecode supplies four limbs. Zero also gives a well-formed empty fold.
+  match terms.toList with
+  | [] => .nat 0
+  | first :: rest => rest.foldl (.binop .bitOr) first
+
+private def emitUnconstrainedU32Add (out : Nat) (inputs : List (Array ValIdx)) : Array RustStmt :=
+  let terms := inputs.map fun xs => staticCall "u128" "from" #[u32PackExpr xs]
+  let sum := match terms with
+    | [] => .nat 0
+    | first :: rest => rest.foldl (.binop .add) first
   #[
-    .letStmt false "__b2_add" (some "(G, G)") (.lit blockExpr),
-    declVal out (.field (.var "__b2_add") "0"),
-    declVal (out + 1) (.field (.var "__b2_add") "1")
-  ]
-
-/-- `Op::U8Sub`: symmetric to U8Add. -/
-private def emitU8Sub (out : Nat) (i j : ValIdx) : Array RustStmt :=
-  let blockExpr : String :=
-    s!"if unconstrained \{ Bytes2::sub(&__v_{i}, &__v_{j}) }" ++
-    s!" else \{ bytes2_sub_value(__v_{i}, __v_{j}, record) }"
-  #[
-    .letStmt false "__b2_sub" (some "(G, G)") (.lit blockExpr),
-    declVal out (.field (.var "__b2_sub") "0"),
-    declVal (out + 1) (.field (.var "__b2_sub") "1")
-  ]
-
-/-- `Op::U32LessThan`: mirror the checked comparison in `execute.rs`,
-    recording six scalar u16 range queries in constrained mode. -/
-private def emitU32LessThan (out : Nat) (x y : ValIdx) : Array RustStmt :=
-  let blockExpr : String :=
-    s!"\{ let __a_val = __v_{x}.as_canonical_u64();" ++
-    s!" let __b_val = __v_{y}.as_canonical_u64();" ++
-    s!" let __a_u32 = u32::try_from(__a_val).ok().ok_or(ExecError::U32OutOfRange(__a_val))?;" ++
-    s!" let __b_u32 = u32::try_from(__b_val).ok().ok_or(ExecError::U32OutOfRange(__b_val))?;" ++
-    s!" let __result = G::from_bool(__a_u32 < __b_u32);" ++
-    s!" if !unconstrained \{" ++
-    s!" let __c_u32 = __a_u32.wrapping_sub(__b_u32);" ++
-    s!" for __word in [__a_u32, __c_u32, __b_u32] \{" ++
-    s!" record.bytes2_queries.bump_u16_range_check((__word & 0xffff) as u16);" ++
-    s!" record.bytes2_queries.bump_u16_range_check((__word >> 16) as u16);" ++
-    s!" } } __result }"
-  #[.letStmt false s!"__v_{out}" (some "G") (.lit blockExpr)]
-
-private def u32PackExpr (xs : Array ValIdx) : String :=
-  let terms := xs.toList.zipIdx.map fun (idx, i) =>
-    s!"(__v_{idx}.as_canonical_u64() << {8 * i})"
-  "(" ++ String.intercalate " | " terms ++ ")"
-
-private def emitUnconstrainedU32Add (out : Nat) (inputs : List (Array ValIdx)) : Array RustStmt := Id.run do
-  let sum := String.intercalate " + " (inputs.map fun xs => s!"u128::from({u32PackExpr xs})")
-  let mut stmts := #[.letStmt false "__u32_sum" (some "u128") (.lit sum),
-    .letStmt false "__u32_bytes" none
-      (.lit "u32::try_from(__u32_sum & 0xFFFF_FFFF).expect(\"masked\").to_le_bytes()")]
-  for i in [0 : 4] do
-    stmts := stmts.push (declVal (out + i) (.lit s!"G::from_u8(__u32_bytes[{i}])"))
-  stmts.push (declVal (out + 4)
-    (.lit "G::from_u64(u64::try_from(__u32_sum >> 32).expect(\"u32 sum overflow fits u64\"))"))
+    .letStmt false "__u32_sum" (some (.named "u128")) sum,
+    .letStmt false "__u32_bytes" none (method
+      (expect (staticCall "u32" "try_from" #[.binop .bitAnd (.var "__u32_sum") (.nat 4294967295)])
+        "masked") "to_le_bytes")
+  ] ++ (Array.range 4).map (fun i =>
+    declVal (out + i) (staticCall "G" "from_u8" #[.index (.var "__u32_bytes") (.nat i)])) ++
+  #[declVal (out + 4) (staticCall "G" "from_u64" #[
+    expect (staticCall "u64" "try_from" #[.binop .shr (.var "__u32_sum") (.nat 32)])
+      "u32 sum overflow fits u64"])]
 
 private def emitU32ToField (out : Nat) (bytes : Array ValIdx) : Array RustStmt :=
-  #[declVal out (.lit s!"G::from_u64({u32PackExpr bytes})")]
+  #[declVal out (staticCall "G" "from_u64" #[u32PackExpr bytes])]
 
-/-- `Op::U8RangeCheck`: 0 outputs; pure range-check side effect. -/
 private def emitU8RangeCheck (i j : ValIdx) : Array RustStmt :=
-  let stmt : String :=
-    s!"if !unconstrained \{" ++
-    s!" let __vi = __v_{i}; let __vj = __v_{j};" ++
-    s!" let __bi = __vi.as_canonical_u64(); let __bj = __vj.as_canonical_u64();" ++
-    s!" if __bi >= 256 \{ return Err(ExecError::U8RangeCheckFailed(__bi)); }" ++
-    s!" if __bj >= 256 \{ return Err(ExecError::U8RangeCheckFailed(__bj)); }" ++
-    s!" record.bytes2_queries.bump_range_check(&__vi, &__vj);" ++
-    s!" }"
-  #[.exprStmt (.lit stmt)]
+  #[whenConstrained #[
+    .letStmt false "__vi" none (valVar i),
+    .letStmt false "__vj" none (valVar j),
+    .letStmt false "__bi" none (canonical (.var "__vi")),
+    .letStmt false "__bj" none (canonical (.var "__vj")),
+    .ifStmt (.binop .ge (.var "__bi") (.nat 256))
+      #[returnError (errorValue "U8RangeCheckFailed" #[.var "__bi"])] none,
+    .ifStmt (.binop .ge (.var "__bj") (.nat 256))
+      #[returnError (errorValue "U8RangeCheckFailed" #[.var "__bj"])] none,
+    .exprStmt (method (.field (.var "record") "bytes2_queries") "bump_range_check"
+      #[.ref (.var "__vi"), .ref (.var "__vj")])
+  ]]
 
-/-- `Op::UnconstrainedBigUintDivMod`: BigUint hint, 2 outputs
-    (q_ptr, r_ptr). Calls the extracted `unconstrained_big_uint_div_mod_helper`
-    which returns `(G, G)` directly. -/
-private def emitUncBigUintDivMod (out : Nat) (a b : ValIdx) : Array RustStmt :=
-  let blockExpr : String :=
-    s!"unconstrained_big_uint_div_mod_helper(__v_{a}, __v_{b}, record)?"
-  #[
-    .letStmt false "__bu_qr" (some "(G, G)") (.lit blockExpr),
-    declVal out (.field (.var "__bu_qr") "0"),
-    declVal (out + 1) (.field (.var "__bu_qr") "1")
-  ]
+private def emitUncBigUintDivMod (out a b : Nat) : Array RustStmt :=
+  #[.letStmt false "__bu_qr" (some (.tuple #[gTy, gTy]))
+    (.tryExpr (runtimeCall "unconstrained_big_uint_div_mod_helper"
+      #[valVar a, valVar b, .var "record"]))] ++ splatTuple out 2 "__bu_qr"
 
-/-- `Op::UnconstrainedGToBytes`: 8 outputs — the LE bytes of the input's
-    canonical `u64` value, as unconstrained advice. -/
-private def emitUncGToBytes (out : Nat) (a : ValIdx) : Array RustStmt := Id.run do
-  let mut stmts : Array RustStmt :=
-    #[.letStmt false "__gb" (some "[u8; 8]")
-      (.lit s!"__v_{a}.as_canonical_u64().to_le_bytes()")]
-  for i in [0 : 8] do
-    stmts := stmts.push (declVal (out + i) (.lit s!"G::from_u8(__gb[{i}])"))
-  stmts
+private def emitUncGToBytes (out a : Nat) : Array RustStmt :=
+  #[.letStmt false "__gb" (some (.array (.named "u8") (.value 8)))
+    (method (canonical (valVar a)) "to_le_bytes")] ++
+    (Array.range 8).map fun i =>
+      declVal (out + i) (staticCall "G" "from_u8" #[.index (.var "__gb") (.nat i)])
 
-/-- `Op::UnconstrainedGInverse`: 1 output — the field inverse (`0 ↦ 0`), as
-    unconstrained advice. Calls the shared `g_inverse_value` helper so the
-    interpreter and codegen produce identical values. -/
-private def emitUncGInverse (out : Nat) (a : ValIdx) : Array RustStmt :=
-  #[declVal out (.lit s!"g_inverse_value(__v_{a})")]
+private def emitUncGInverse (out a : Nat) : Array RustStmt :=
+  #[declVal out (runtimeCall "g_inverse_value" #[valVar a])]
 
-/-- `Op::Debug`: 0 outputs; println side effect, mirroring the bytecode
-    interpreter's `Op::Debug` arm (crates/aiur/src/execute.rs). Production
-    kernels contain no `dbg!`, so this emits nothing there; when probing
-    with `dbg!` it makes the (much faster) codegen kernel print the same
-    lines as `--interp bytecode`. -/
 private def emitDebug (label : String) (args : Option (Array ValIdx)) : Array RustStmt :=
-  -- Escape the label for use inside a Rust format-string literal.
-  let esc := label.replace "\\" "\\\\" |>.replace "\"" "\\\""
-    |>.replace "{" "{{" |>.replace "}" "}}"
-  match args with
-  | none => #[.exprStmt (.lit s!"println!(\"{esc}\")")]
-  | some idxs =>
-    let holes := String.intercalate ", " (idxs.map (fun _ => "{}")).toList
-    let vals := String.intercalate ", " (idxs.map (s!"__v_{·}")).toList
-    #[.exprStmt (.lit s!"println!(\"{esc}: {holes}\", {vals})")]
+  -- Format-string braces and Rust string escaping are separate concerns.
+  let label := label.replace "{" "{{" |>.replace "}" "}}"
+  let (format, values) := match args with
+    | none => (label, #[])
+    | some idxs =>
+      (label ++ ": " ++ ", ".intercalate (idxs.toList.map fun _ => "{}"), idxs.map valVar)
+  #[.exprStmt (.macroCall "println" (#[.string format] ++ values))]
 
 /-- Top-level op dispatch. `out` = the first ValIdx for outputs;
     callers must advance their counter by `Op.outputCount`. -/
-def emitOp (out : Nat) (op : Op) : Array RustStmt :=
+def emitOp (out : Nat) (op : Op) (memorySizes : Array Nat := #[]) : Array RustStmt :=
   match op with
   | .const c => emitConst out c
-  | .add a b => emitBinop out "+" a b
-  | .sub a b => emitBinop out "-" a b
-  | .mul a b => emitBinop out "*" a b
+  | .add a b => emitBinop out .add a b
+  | .sub a b => emitBinop out .sub a b
+  | .mul a b => emitBinop out .mul a b
   | .eqZero a => emitEqZero out a
   | .call callee args outSz opUn => emitCall out callee args outSz opUn
-  | .store vs => emitStore out vs
-  | .load size ptr => emitLoad out size ptr
+  | .store vs => emitStore out vs memorySizes
+  | .load size ptr => emitLoad out size ptr memorySizes
   | .assertEq xs ys msg => emitAssertEq xs ys msg
   | .ioGetInfo ch key => emitIOGetInfo out ch key
   | .ioSetInfo ch key idx len => emitIOSetInfo ch key idx len
   | .ioRead ch idx len => emitIORead out ch idx len
   | .ioWrite ch data => emitIOWrite ch data
-  | .u8BitDecomposition b => emitU8Bytes1 out "bytes1_bit_decompose_value" "Bytes1::bit_decompose" b 8
-  | .u8ShiftLeft b => emitU8Bytes1 out "bytes1_shift_left_value" "Bytes1::shift_left" b 1
-  | .u8ShiftRight b => emitU8Bytes1 out "bytes1_shift_right_value" "Bytes1::shift_right" b 1
+  | .u8BitDecomposition b => emitU8Bytes1 out "bytes1_bit_decompose_value" "bit_decompose" b 8
+  | .u8ShiftLeft b => emitU8Bytes1 out "bytes1_shift_left_value" "shift_left" b 1
+  | .u8ShiftRight b => emitU8Bytes1 out "bytes1_shift_right_value" "shift_right" b 1
   | .u8Xor i j => emitU8Bytes2 out "bytes2_xor_value" "xor" i j 1
   | .u8Mul i j => emitU8Bytes2 out "bytes2_mul_value" "mul" i j 2
   | .u8And i j => emitU8Bytes2 out "bytes2_and_value" "and" i j 1
@@ -729,8 +399,8 @@ def emitOp (out : Nat) (op : Op) : Array RustStmt :=
   | .u8LessThan i j => emitU8Bytes2 out "bytes2_less_than_value" "less_than" i j 1
   | .u8XorSplit7 i j => emitU8Bytes2 out "bytes2_xor_split7_value" "xor_split7" i j 2
   | .u8XorSplit4 i j => emitU8Bytes2 out "bytes2_xor_split4_value" "xor_split4" i j 2
-  | .u8Add i j => emitU8Add out i j
-  | .u8Sub i j => emitU8Sub out i j
+  | .u8Add i j => emitU8Bytes2 out "bytes2_add_value" "add" i j 2
+  | .u8Sub i j => emitU8Bytes2 out "bytes2_sub_value" "sub" i j 2
   | .u32LessThan a b => emitU32LessThan out a b
   | .u8RangeCheck i j => emitU8RangeCheck i j
   | .unconstrainedBigUintDivMod a b => emitUncBigUintDivMod out a b
@@ -769,6 +439,7 @@ where
 structure EmitState where
   nextVal : Nat
   nextLabel : Nat
+  memorySizes : Array Nat := #[]
   deriving Inhabited
 
 abbrev EmitM (α : Type) := StateM EmitState α
@@ -805,7 +476,7 @@ partial def emitBlock (funIdx : FunIdx) (mcLabel? : Option String)
   let mut stmts : Array RustStmt := #[]
   for op in b.ops do
     let outBase ← allocVals (Op.outputCount op)
-    stmts := stmts ++ emitOp outBase op
+    stmts := stmts ++ emitOp outBase op (← get).memorySizes
   let ctrlStmts ← emitCtrl funIdx mcLabel? b.ctrl
   return stmts ++ ctrlStmts
 
@@ -818,10 +489,10 @@ partial def emitCtrl (funIdx : FunIdx) (mcLabel? : Option String)
     -- args), then Rust-return the array. Ignores `mcLabel?` because
     -- Return exits the whole fn.
     let outArr : RustStmt :=
-      .letStmt false "__ret" (some s!"[G; OUT_{funIdx}]")
+      .letStmt false "__ret" (some (outputTy funIdx))
         (.arrayLit (outs.map valVar))
-    let insertCall : RustStmt := .exprStmt (.lit <|
-      s!"record.function_queries[{funIdx}].finish(&inp[..], &__ret[..], !unconstrained)")
+    let insertCall : RustStmt := .exprStmt (method (funQueriesAt funIdx) "finish_hashed"
+      #[sliceRef (.var "inp"), sliceRef (.var "__ret"), notUnconstrained, .var "input_hash"])
     -- Wrap in Ok(...) since fn now returns Result<[G; OUT_N], ExecError>.
     return #[outArr, insertCall,
       .returnStmt (.call (.var "Ok") #[.var "__ret"])]
@@ -832,17 +503,17 @@ partial def emitCtrl (funIdx : FunIdx) (mcLabel? : Option String)
     let mut arms : Array MatchArm := #[]
     for ⟨key, blk⟩ in cases do
       let armBody ← withSavedNextVal (emitBlock funIdx mcLabel? blk)
-      arms := arms.push { pat := .litU64 key.n, body := armBody }
+      arms := arms.push { pat := .litU64 key.n, body := { stmts := armBody } }
     let dfltBody ← (match dflt? with
       | some d => withSavedNextVal (emitBlock funIdx mcLabel? d)
       | none => pure #[
           .returnStmt
             (.call (.var "Err")
               #[.call (.path #["ExecError", "MatchNoCase"])
-                #[.call (.field (valVar valIdx) "as_canonical_u64") #[]]])])
-    arms := arms.push { pat := .wildcard, body := dfltBody }
+                #[canonical (valVar valIdx)]])])
+    arms := arms.push { pat := .wildcard, body := { stmts := dfltBody } }
     return #[.matchStmt
-      (.call (.field (valVar valIdx) "as_canonical_u64") #[])
+      (canonical (valVar valIdx))
       arms]
   | .matchContinue valIdx cases dflt? outputSize _shAux _shLk continuation => do
     -- Snapshot the value-stack base for the case bodies; they all
@@ -864,32 +535,32 @@ partial def emitCtrl (funIdx : FunIdx) (mcLabel? : Option String)
     let mut arms : Array MatchArm := #[]
     for ⟨key, blk⟩ in cases do
       let armBody ← withSavedNextVal (emitBlock funIdx (some label) blk)
-      arms := arms.push { pat := .litU64 key.n, body := armBody }
+      arms := arms.push { pat := .litU64 key.n, body := { stmts := armBody } }
     let dfltBody ← (match dflt? with
       | some d => withSavedNextVal (emitBlock funIdx (some label) d)
       | none => pure #[
           .returnStmt
             (.call (.var "Err")
               #[.call (.path #["ExecError", "MatchNoCase"])
-                #[.call (.field (valVar valIdx) "as_canonical_u64") #[]]])])
-    arms := arms.push { pat := .wildcard, body := dfltBody }
+                #[canonical (valVar valIdx)]])])
+    arms := arms.push { pat := .wildcard, body := { stmts := dfltBody } }
     let matchStmt : RustStmt :=
-      .matchStmt (.call (.field (valVar valIdx) "as_canonical_u64") #[]) arms
+      .matchStmt (canonical (valVar valIdx)) arms
     -- Reserve `outputSize` slots at outer scope for the yielded values.
     let outBase ← allocVals outputSize
     let yieldedLet : RustStmt :=
-      .letStmt false s!"__mc_out_{label}" (some s!"[G; {outputSize}]")
-        (.labeledBlock label #[matchStmt])
+      .letStmt false s!"__mc_out_{label}" (some (gArray outputSize))
+        (.labeledBlock label { stmts := #[matchStmt] })
     let mut splat : Array RustStmt := #[]
     for k in [0 : outputSize] do
       splat := splat.push
         (declVal (outBase + k)
-          (.index (.var s!"__mc_out_{label}") (.lit (toString k))))
+          (.index (.var s!"__mc_out_{label}") (.nat k)))
     let contStmts ← emitBlock funIdx mcLabel? continuation
     return #[yieldedLet] ++ splat ++ contStmts
   | .yield _ outs =>
     -- Yield: bubble values to the enclosing `MatchContinue`'s labeled
-    -- block via `break '__mc_N vec![...];`. Only valid inside a
+    -- block via `break '__mc_N [...];`. Only valid inside a
     -- MatchContinue case body, so `mcLabel?` MUST be set; if it isn't,
     -- emit a panic so the failure is obvious during testing.
     match mcLabel? with
@@ -897,160 +568,111 @@ partial def emitCtrl (funIdx : FunIdx) (mcLabel? : Option String)
       return #[.breakWith label (.arrayLit (outs.map valVar))]
     | none =>
       return #[.exprStmt
-        (.lit "unreachable!(\"Ctrl::Yield outside of MatchContinue context\")")]
+        (.macroCall "unreachable" #[.string "Ctrl::Yield outside of MatchContinue context"])]
 
 end
 
-/-! ## Function & toplevel emission -/
 
-def emitFunction (funIdx : FunIdx) (f : Function) : Array RustItem := Id.run do
+/-! ## Functions and module emission -/
+
+def emitFunction (funIdx : FunIdx) (f : Function)
+    (memorySizes : Array Nat := #[]) : Array RustItem :=
   let inSize := f.layout.inputSize
   let outSize := (findReturnArity f.body).getD 0
-  let inputSizeConst := RustItem.constUsize s!"INPUT_SIZE_{funIdx}" inSize
-  let inConst := RustItem.constUsize s!"IN_{funIdx}" inSize
-  let outConst := RustItem.constUsize s!"OUT_{funIdx}" outSize
-  -- Bind inputs as `__v_0..__v_{inSize-1}` so subsequent op outputs
-  -- can reference them by ValIdx.
-  let mut bindInputs : Array RustStmt := #[]
-  for i in [0 : inSize] do
-    bindInputs := bindInputs.push
-      (.letStmt false s!"__v_{i}" (some "G") (.index (.var "inp") (.lit (toString i))))
-  -- nextVal starts at inSize (the next free ValIdx after the inputs).
-  let initState : EmitState := { nextVal := inSize, nextLabel := 0 }
-  let (bodyStmts, _) := (emitBlock funIdx none f.body).run initState
-  let body := bindInputs ++ bodyStmts
-  -- Wrap the whole body in `stacker::maybe_grow` so deep Aiur
-  -- recursion grows the stack on demand instead of overflowing.
-  -- Red zone 64KB / new stack 4MB — when the current thread has
-  -- <64KB of stack left, stacker allocates a fresh 4MB segment
-  -- and runs the closure there. Repeats as deep as the recursion
-  -- goes.
-  let lbrace := "{"
-  let rbrace := "}"
-  let bodyText : String := stmtsToStr 2 body
-  let fnText : String :=
-    s!"fn aiur_fn_{funIdx}(\n" ++
-    s!"  inp: [G; IN_{funIdx}],\n" ++
-    s!"  record: &mut QueryRecord,\n" ++
-    s!"  io_buffer: &mut IOBuffer,\n" ++
-    s!"  unconstrained: bool,\n" ++
-    s!") -> Result<[G; OUT_{funIdx}], ExecError> {lbrace}\n" ++
-    s!"  stacker::maybe_grow(64 * 1024, 4 * 1024 * 1024, || {lbrace}\n" ++
-    bodyText ++
-    s!"  {rbrace})\n" ++
-    s!"{rbrace}\n\n"
-  #[inputSizeConst, inConst, outConst, .raw fnText]
+  let bindInputs := (Array.range inSize).map fun i =>
+    declVal i (.index (.var "inp") (.nat i))
+  let initState : EmitState := { nextVal := inSize, nextLabel := 0, memorySizes }
+  let (stmts, _) := (emitBlock funIdx none f.body).run initState
+  let body : RustBlock := {
+    stmts := #[.letStmt false "unconstrained" none (.var "UNCONSTRAINED")] ++ bindInputs ++ stmts
+  }
+  -- Preserve stack growth at every function entry: 64 KiB red zone, 4 MiB segment.
+  let guarded := .call (.path #["stacker", "maybe_grow"]) #[
+    .binop .mul (.nat 64) (.nat 1024),
+    .binop .mul (.binop .mul (.nat 4) (.nat 1024)) (.nat 1024),
+    .closure #[] (.block body)]
+  #[
+    .constUsize s!"INPUT_SIZE_{funIdx}" inSize,
+    .constUsize s!"IN_{funIdx}" inSize,
+    .constUsize s!"OUT_{funIdx}" outSize,
+    .function {
+      name := s!"aiur_fn_{funIdx}"
+      constParams := #[("UNCONSTRAINED", .named "bool")]
+      params := #[
+        ("inp", inputTy funIdx), ("input_hash", .named "u64"),
+        ("record", .ref true (.named "QueryRecord")),
+        ("io_buffer", .ref true (.named "IOBuffer"))]
+      returnTy := resultTy (outputTy funIdx)
+      body := tailBlock guarded
+    }
+  ]
 
-/-- Header that's always emitted (file comments, lint allows, and the
-    fixed `use` items every generated body references). Per-op
-    helpers (`bytes2_xor_value`, etc.) are added only when the body
-    actually mentions them — see `emitConditionalImports`. -/
-def emitPreludeHeader : String :=
-  "// Auto-generated by Aiur codegen. Do not edit.\n\
-   //\n\
-   // Mirrors `crates/aiur/src/execute.rs`'s QueryRecord side effects exactly.\n\
-   //\n\
-   // Skip rustfmt — this file is huge and the codegen lays it out\n\
-   // for the compiler, not for humans.\n\
-   #![cfg_attr(rustfmt, rustfmt::skip)]\n\
-   #![allow(\n\
-   \x20\x20unused_variables, unused_assignments, unused_mut, dead_code,\n\
-   \x20\x20unused_parens, non_snake_case, clippy::all,\n\
-   \x20\x20clippy::ptr_as_ptr, clippy::match_same_arms,\n\
-   \x20\x20clippy::large_types_passed_by_value,\n\
-   )]\n\
-   \n\
-   use multi_stark::p3_field::{PrimeCharacteristicRing, PrimeField64};\n\
-   use aiur::G;\n"
-
-/-- The set of optional `aiur::execute` items the codegen
-    might emit references to. Each pair is `(rust_path, search_token)`
-    — if `search_token` appears anywhere in the body string, the item
-    is included in the generated `use` block. The token is the exact
-    identifier that appears at every call site; substring match is
-    safe because all of these names are unique within the generated
-    file (no other crate-level item has the same identifier). -/
-def optionalExecuteUses : Array (String × String) := #[
-  ("bytes1_bit_decompose_value", "bytes1_bit_decompose_value"),
-  ("bytes1_shift_left_value", "bytes1_shift_left_value"),
-  ("bytes1_shift_right_value", "bytes1_shift_right_value"),
-  ("bytes2_xor_value", "bytes2_xor_value"),
-  ("bytes2_and_value", "bytes2_and_value"),
-  ("bytes2_or_value", "bytes2_or_value"),
-  ("bytes2_less_than_value", "bytes2_less_than_value"),
-  ("bytes2_mul_value", "bytes2_mul_value"),
-  ("bytes2_add_value", "bytes2_add_value"),
-  ("bytes2_sub_value", "bytes2_sub_value"),
-  ("bytes2_xor_split7_value", "bytes2_xor_split7_value"),
-  ("bytes2_xor_split4_value", "bytes2_xor_split4_value"),
-  ("unconstrained_big_uint_div_mod_helper", "unconstrained_big_uint_div_mod_helper"),
-  ("g_inverse_value", "g_inverse_value"),
-  ("CodegenBytes1 as Bytes1", "Bytes1::"),
-  ("CodegenBytes2 as Bytes2", "Bytes2::")
-]
-
-/-- Build the `use aiur::execute::{...};` block, including only
-    items whose search token appears in `body`. -/
-def emitConditionalImports (body : String) : String := Id.run do
-  let always : Array String := #["ExecError", "IOBuffer", "QueryRecord"]
-  let mut items : Array String := always
-  for (path, token) in optionalExecuteUses do
-    if (body.splitOn token).length > 1 then
-      items := items.push path
-  let joined : String := items.toList.foldl
-    (fun acc s => if acc.isEmpty then s else acc ++ ", " ++ s) ""
-  s!"use aiur::execute::\{ {joined} };\n\n"
-
-/-- Build the dispatch entry point `pub fn execute_generated(...)`
-    that maps a `fun_idx` to the right `aiur_fn_N` invocation. Mirrors
-    the interpreter's `execute::execute` signature so callers (kernel
-    runner, tests) can swap it in. -/
+/-- Entry dispatch validates the fixed memory-table layout before any mutation.
+    Generated functions and runtime helpers only insert rows, never tables. -/
 def emitDispatch (tl : Toplevel) : RustItem := Id.run do
   let mut arms : Array MatchArm := #[]
   for funIdx in [0 : tl.functions.size] do
-    let armBody : Array RustStmt := #[
-      .letStmt false "__inp" (some s!"[G; IN_{funIdx}]")
-        (.lit "args.try_into().expect(\"input size mismatch\")"),
-      .letStmt false "__out" none
-        (.lit s!"aiur_fn_{funIdx}(__inp, record, io_buffer, false)?"),
-      .returnStmt (.call (.var "Ok")
-        #[.call (.field (.var "__out") "to_vec") #[]])
-    ]
-    arms := arms.push { pat := .litU64 funIdx, body := armBody }
+    arms := arms.push {
+      pat := .litU64 funIdx
+      body := { stmts := #[
+        .letStmt false "__inp" (some (inputTy funIdx))
+          (expect (method (.var "args") "try_into") "input size mismatch"),
+        .letStmt false "__out" none
+          (nativeCall funIdx (.bool false) (.var "__inp") (.var "__input_hash")),
+        .returnStmt (.call (.var "Ok") #[method (.var "__out") "to_vec"])
+      ] }
+    }
   arms := arms.push {
-    pat := .wildcard,
-    body := #[.returnStmt
-      (.call (.var "Err")
-        #[.call (.path #["ExecError", "InvalidFunIdx"]) #[.var "fun_idx"]])]
+    pat := .wildcard
+    body := { stmts := #[returnError (errorValue "InvalidFunIdx" #[.var "fun_idx"])] }
   }
-  -- Emit raw text for the dispatch fn so we can prefix `pub(crate)`
-  -- without extending RustItem. The body is built via stmtsToStr at
-  -- the right indentation.
-  let body : Array RustStmt := #[.matchStmt (.lit "fun_idx as u64") arms]
-  let lbrace := "{"
-  let rbrace := "}"
-  .raw (s!"pub(crate) fn execute_generated(\n" ++
-        s!"  fun_idx: usize,\n" ++
-        s!"  args: &[G],\n" ++
-        s!"  record: &mut QueryRecord,\n" ++
-        s!"  io_buffer: &mut IOBuffer,\n" ++
-        s!") -> Result<Vec<G>, ExecError> {lbrace}\n" ++
-        stmtsToStr 1 body ++
-        s!"{rbrace}\n")
+  let mut body : Array RustStmt := #[]
+  for slot in [0 : tl.memorySizes.size] do
+    let size := tl.memorySizes[slot]!
+    let actual := method
+      (method (.field (.var "record") "memory_queries") "get_index" #[.nat slot])
+      "map" #[.closure #[.tuple #[.binding "size", .wildcard]] (.deref (.var "size"))]
+    body := body.push (.ifStmt
+      (.binop .ne actual (.call (.var "Some") #[.nat size]))
+      #[returnError (errorValue "InvalidMemorySize" #[.nat size])] none)
+  body := body.push (.letStmt false "__input_hash" none
+    (.call (.path #["aiur", "querymap", "hash_g_slice"]) #[.var "args"]))
+  body := body.push (.matchStmt (.cast (.var "fun_idx") (.named "u64")) arms)
+  return .function {
+    name := "execute_generated"
+    visibility := .crate
+    params := #[
+      ("fun_idx", .named "usize"), ("args", .ref false (.slice gTy)),
+      ("record", .ref true (.named "QueryRecord")),
+      ("io_buffer", .ref true (.named "IOBuffer"))]
+    returnTy := resultTy (.app "Vec" #[gTy])
+    body := { stmts := body }
+  }
 
-/-- Emit Rust source for the whole `Bytecode.Toplevel`. Builds the
-    body first, then emits a prelude whose `use` block lists only
-    the helpers the body actually mentions. -/
-def emit (tl : Toplevel) : String := Id.run do
-  let mut items : Array RustItem := #[]
+/-- Fixed module-level boilerplate only. Runtime helper paths are carried
+    explicitly by expressions, so no rendered-source scanning is needed. -/
+def emitPreludeHeader : String :=
+  "// Auto-generated by Aiur codegen. Do not edit.\n\
+   // Mirrors crates/aiur/src/execute.rs QueryRecord side effects.\n\
+   #![cfg_attr(rustfmt, rustfmt::skip)]\n\
+   #![allow(unused_variables, unused_assignments, unused_mut, dead_code,\n\
+   unused_parens, non_snake_case, clippy::all,\n\
+   clippy::ptr_as_ptr, clippy::match_same_arms,\n\
+   clippy::large_types_passed_by_value)]\n\
+   use multi_stark::p3_field::{PrimeCharacteristicRing, PrimeField64};\n\
+   use aiur::G;\n\
+   use aiur::execute::{ExecError, IOBuffer, QueryRecord};\n\n"
+
+/-- Build syntax for the complete module before rendering any source. -/
+def emitItems (tl : Toplevel) : Array RustItem := Id.run do
+  let mut items := #[]
   for funIdx in [0 : tl.functions.size] do
-    items := items ++ emitFunction funIdx tl.functions[funIdx]!
-  items := items.push (emitDispatch tl)
-  let mut bodyStr := ""
-  for it in items do
-    bodyStr := bodyStr ++ it.toStr
-  emitPreludeHeader ++ emitConditionalImports bodyStr ++ bodyStr
+    items := items ++ emitFunction funIdx tl.functions[funIdx]! tl.memorySizes
+  return items.push (emitDispatch tl)
+
+def emit (tl : Toplevel) : String :=
+  emitPreludeHeader ++
+    (String.join ((emitItems tl).toList.map RustItem.toStr)).trimAsciiEnd.toString ++ "\n"
 
 end Aiur.Codegen
-
 end
