@@ -169,6 +169,33 @@ The profiled cut, `ix shard --profile`, balances on heartbeats today.
 Balancing on `bytes × 1,770 + nat_arith × 2,452` instead would have spread
 the Vélu cluster and the singletons across leaves in the first cut.
 
+## Before the next run: ceiling from the prediction, heaviest leaves first
+
+Two of the pre-proving steps are applied to the FLT inputs:
+
+1. **Ceiling.** The largest predicted record is 169 GiB; with a 1.5×
+   margin for the model's misses that is 256 GiB, inside the 731 GiB
+   pool. `RECORD_MAX_GIB=256` on the run script sets it.
+2. **Dispatch order.** The lanes scheduler dispatches claims in leaf-index
+   order and reads no size information, so leaf 570 started last and its
+   915 s execution and 259 s proof were pure tail. `reorder_manifest.py`
+   renumbers the manifest by predicted record descending, keeps the
+   min-cut aggregation tree by relabeling its leaf references, and writes
+   `anthropic-flt-572-ordered.ixes` (sha256 `44ba83f3…`) with
+   `anthropic-flt-572-ordered.map.csv` (new index, old index, predicted
+   GiB). The leaf contents and claim digests are unchanged, so the proofs
+   are the same claims in a different order; the first eight are old
+   leaves 570, 557, 357, 500, 404, 88, 563 and 554. Expected saving on
+   FLT: the 15 to 20 minute tail, about 5:00 to 4:40.
+
+```sh
+ENV_DIR=~/benchdata/flt IXE=anthropic-flt.ixe IXES=anthropic-flt-572-ordered.ixes \
+  EXEC_JOBS=3 RECORD_MAX_GIB=256 run-lanes4.sh flt572-ordered-lanes4-exec3
+```
+
+Not applied: splitting (nothing is predicted over half the pool share at
+this ceiling) and prediction-based admission credit (a scheduler change).
+
 ## Inputs, build and commands
 
 | Item | Value |
@@ -189,6 +216,7 @@ Files: `flt572-lanes4-exec3-meta.txt`, `flt572-lanes4-exec3-summary.txt`,
 `profile_vs_records.py`, `record_model.py`, `best_fit.py` (read the
 `.ixprof`, the manifest, the lanes logs and the metrics; the `.ixprof` is
 in `~/benchdata/flt/` and regenerates from the `.ixe` in 11 minutes),
-`leaf160-names.txt`. Raw logs, both metrics files,
+`leaf160-names.txt`, `reorder_manifest.py`,
+`anthropic-flt-572-ordered.map.csv`. Raw logs, both metrics files,
 GPU samples and the lanes cache are in
 `~/benchdata/flt/runs/flt572-lanes4-exec3/` on the four-GPU box.
