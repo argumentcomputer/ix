@@ -801,6 +801,21 @@ def toplevel := ⟦
       n => n + n,
     }
   }
+
+  -- Reused products and stores change polynomial columns and lookup counts.
+  -- Exercise both branches and a continuation with independent local values.
+  pub fn cse_constraints(tag: G, x: G) -> (G, G, G, G) {
+    let p = store(x);
+    let q = store(x);
+    assert_eq!(ptr_val(p), ptr_val(q));
+    let a = load(p);
+    let b = load(q);
+    let y = match tag {
+      0 => (x * x) + (x * x),
+      _ => (x + 1) * (x + 1),
+    };
+    (y, a + b, (x * x) + (x * x), eq_zero(x) + eq_zero(x))
+  }
 ⟧
 
 /-- The PROVING suite: every case runs the full prove+verify pipeline
@@ -813,6 +828,9 @@ def toplevel := ⟦
     differ only in which path is active, only a minimal covering set of
     proofs is kept — the other paths run in `aiur-cross`. -/
 def aiurTestCases : List AiurTestCase := [
+    .prove `cse_constraints #[0, 7] #[98, 14, 98, 0] (label := "CSE explicit branch"),
+    .prove `cse_constraints #[1, 7] #[64, 14, 98, 0] (label := "CSE default branch"),
+    .prove `cse_constraints #[0, 0] #[0, 0, 0, 2] (label := "CSE zero input"),
     .prove `match_scrut_call #[0] #[7] (label := "match scrutinee explicit"),
     .prove `match_scrut_call #[3] #[6] (label := "match scrutinee variable fallback"),
     -- Match: 1 explicit case + default, prove both paths (each side gates

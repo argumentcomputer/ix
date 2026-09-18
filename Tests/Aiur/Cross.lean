@@ -59,6 +59,71 @@ def toplevel : Source.Toplevel := ⟦
     load(p)
   }
 
+  -- Basic-block CSE must reuse values, not effects, and must not leak value
+  -- indices across sibling branches or from an arm into a continuation.
+  pub fn cse_arithmetic(x: G) -> (G, G, G, G) {
+    (x * x, x * x, eq_zero(x), eq_zero(x))
+  }
+  fn cse_load(p: &G) -> (G, G) { (load(p), load(p)) }
+  pub fn cse_memory(x: G) -> (G, G, (G, G)) {
+    let p = store(x);
+    let q = store(x);
+    assert_eq!(ptr_val(p), ptr_val(q));
+    (load(p), load(q), cse_load(p))
+  }
+  pub fn cse_memory_widths(x: G) -> (G, (G, G)) {
+    let p = store(x);
+    let q = store((x, x));
+    (load(p), load(q))
+  }
+  enum CseUnit { Mk }
+  pub fn cse_empty_memory() -> G {
+    let p = store(CseUnit.Mk);
+    let q = store(CseUnit.Mk);
+    let a = load(p);
+    let b = load(q);
+    ptr_val(p) + ptr_val(q)
+  }
+  pub fn cse_join(tag: G, x: G) -> (G, G, G) {
+    let y = match tag {
+      0 => (x * x) + (x * x),
+      1 => (x + 1) * (x + 1),
+      _ => (x + 2) * (x + 2),
+    };
+    (y, x * x, x * x)
+  }
+  pub fn cse_nested(tag: G, x: G) -> (G, G) {
+    match tag {
+      0 => let y = x * x; (y, x * x),
+      _ => let y = (x + 1) * (x + 1); (y, x * x),
+    }
+  }
+  pub fn cse_calls(x: G) -> (G, G) { (helper(x), helper(x)) }
+  pub fn cse_assertions(x: G, y: G) -> G {
+    let a = x * x;
+    assert_eq!(x, y);
+    let b = x * x;
+    assert_eq!(x, y);
+    a + b
+  }
+  pub fn cse_io(x: G) -> ((G, G), (G, G)) {
+    io_write(0, [x]);
+    io_write(0, [x]);
+    io_set_info(0, [x], 0, 1);
+    let a = io_get_info(0, [x]);
+    let b = io_get_info(0, [x]);
+    (a, b)
+  }
+  pub fn cse_duplicate_io_key(x: G) -> G {
+    io_write(0, [x]);
+    io_set_info(0, [x], 0, 1);
+    io_set_info(0, [x], 0, 1);
+    x
+  }
+  pub fn cse_hints(x: G) -> (G, G) {
+    (unconstrained_g_inverse(x), unconstrained_g_inverse(x))
+  }
+
   fn scrut_value(x: G) -> G { x * x + 1 }
   pub fn match_scrut_call(x: G) -> G {
     match scrut_value(x) {
@@ -1483,7 +1548,45 @@ def matchScrutineeTests : TestSeq :=
     test "call scrutinee is emitted exactly once"
       ((Bytecode.collectCalleesBlock f.body).size == 1)
 
+def cseStructureTests : TestSeq :=
+  withExceptOk "CSE compilation succeeds" toplevel.compile fun compiled =>
+    let ops := fun name =>
+      compiled.bytecode.functions[compiled.getFuncIdx name |>.get!]!.body.ops
+    test "repeated arithmetic has only one mul and one eqZero"
+      (ops `cse_arithmetic == #[.mul 0 0, .eqZero 0]) ++
+    test "repeated load has only one lookup"
+      (ops `cse_load == #[.load 1 0]) ++
+    test "duplicate stores share a pointer; their loads are forwarded"
+      ((ops `cse_memory).filter (fun op => match op with
+        | .store _ | .load .. => true | _ => false) == #[.store #[0]]) ++
+    test "CSE preserves both calls"
+      (((ops `cse_calls).filter (fun op => match op with
+        | .call .. => true | _ => false)).size == 2) ++
+    test "CSE preserves both assertions"
+      (((ops `cse_assertions).filter (fun op => match op with
+        | .assertEq .. => true | _ => false)).size == 2) ++
+    test "CSE preserves both unconstrained hints"
+      (ops `cse_hints == #[.unconstrainedGInverse 0, .unconstrainedGInverse 0])
+
 def tests : TestSeq :=
+  cseStructureTests ++
+  runAgreement "cse_arithmetic(0)" "cse_arithmetic" [0] ++
+  runAgreement "cse_arithmetic(7)" "cse_arithmetic" [7] ++
+  runAgreement "cse_memory(7)" "cse_memory" [7] ++
+  runAgreement "cse_memory_widths(7)" "cse_memory_widths" [7] ++
+  runAgreement "cse_empty_memory" "cse_empty_memory" [] ++
+  runFailureAgreement "CSE retains the first invalid load" "cse_load" [.pointer 1 999] ++
+  runAgreement "cse_join(0,7)" "cse_join" [0, 7] ++
+  runAgreement "cse_join(1,7)" "cse_join" [1, 7] ++
+  runAgreement "cse_join(2,7)" "cse_join" [2, 7] ++
+  runAgreement "cse_nested(0,7)" "cse_nested" [0, 7] ++
+  runAgreement "cse_nested(1,7)" "cse_nested" [1, 7] ++
+  runAgreement "cse_calls(7)" "cse_calls" [7] ++
+  runAgreement "cse_assertions(7,7)" "cse_assertions" [7, 7] ++
+  runFailureAgreement "CSE preserves rejecting assertions" "cse_assertions" [7, 8] ++
+  runAgreement "cse_io(7)" "cse_io" [7] ++
+  runFailureAgreement "CSE preserves duplicate IO key rejection" "cse_duplicate_io_key" [7] ++
+  runAgreement "cse_hints(7)" "cse_hints" [7] ++
   matchScrutineeTests ++
   runAgreement "match_scrut_call(0)" "match_scrut_call" [0] ++
   runAgreement "match_scrut_call(7)" "match_scrut_call" [7] ++
