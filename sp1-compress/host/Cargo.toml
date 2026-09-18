@@ -16,6 +16,9 @@ blake3 = "1"
 # swapped order, so every Plonk proof with a nonzero key-map root is rejected
 # after it has been produced.
 sp1-sdk = { git = "https://github.com/succinctlabs/sp1", tag = "v6.6.0", features = ["profiling", "native-gnark"] }
+# Pure-Rust verifier for the final SNARK: what an onchain or third-party
+# verifier does, independent of the SDK, gnark and Docker.
+sp1-verifier = { git = "https://github.com/succinctlabs/sp1", tag = "v6.6.0" }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 anyhow = "1"
 bincode = "1.3"
