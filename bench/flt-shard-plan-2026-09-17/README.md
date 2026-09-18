@@ -8,7 +8,8 @@ term is 93% of FLT's score and does not describe FLT's records. The
 byte-balanced 572-way cut isolates each of the five oversized
 single-constant blocks in a shard of its own, so no ceiling refinement is
 expected at run time. The five outlier leaves were proven on one GPU
-(below); the full 572-shard run has not been made.
+(below); the full run is in `../flt-lanes4-2026-09-18`: proven in about
+5 h on four GPUs, with one 711-block leaf reaching 174 GiB of record.
 
 ## Formula
 
