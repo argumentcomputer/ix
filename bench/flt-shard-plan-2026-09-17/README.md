@@ -124,8 +124,9 @@ in the 20 to 30 GiB range.
 --exec-jobs 1` on GPU 0 with generated traces: all five proven and
 persisted in 34:07 wall (544 s of environment load and setup, then a
 1,505 s prove-ahead pipeline), 163 GiB peak RSS, 6,431 s user CPU. Run
-directory `~/benchdata/flt/runs/five-singletons-gpu0` (stdout with the
-claim and proof addresses, stderr, `spans.jsonl`, `gpu.csv`).
+directory `~/benchdata/flt/runs/five-singletons-gpu0`; its stdout with the
+claim and proof addresses, stderr and GPU samples are archived gzipped in
+`logs/`.
 
 | Leaf | Block | Record | Execution | Trace shards | Proof | Per trace shard | GPU util in proof | Device peak |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |

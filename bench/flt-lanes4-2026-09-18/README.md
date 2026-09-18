@@ -211,6 +211,19 @@ this ceiling) and prediction-based admission credit (a scheduler change).
 The five outlier leaves proven earlier on one GPU (`../flt-shard-plan-2026-09-17`)
 were not reused: they predate the sppark and multi-stark changes.
 
+Archived from the box (it is decommissioned): `logs/` holds the lanes
+stderr and stdout of the original run and the restarts, the GPU samples
+and the metadata, gzipped; `proofs/` the verified 5.75 MiB root proof;
+`data/leaves.csv` one row per leaf with the profile's counters, the
+delta-graph features, and the measured record bytes, execution time, proof
+time and trace-shard count (the five hours of measurements the fits rest
+on); `data/circuit_rows_round1.csv.gz` the round-one rows per circuit for
+every claim (`export_leaf_data.py`). The `.ixe`, the manifests and the
+`.ixprof` are not archived: they regenerate from the S3 cache in about
+half an hour (`docs/anthropic-flt-lake-cache.md`, then `ix compile`,
+`ix shard --max-ram 230 --exec-jobs 3`, `ix profile`), and every hash is
+recorded above.
+
 Files: `flt572-lanes4-exec3-meta.txt`, `flt572-lanes4-exec3-summary.txt`,
 `leaf570-velu-names.txt`, `run-lanes4.sh`, `profile.log`,
 `profile_vs_records.py`, `record_model.py`, `best_fit.py` (read the

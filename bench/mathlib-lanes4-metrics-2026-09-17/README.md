@@ -238,6 +238,12 @@ fails with status 400 before the fix and passes after; the whole
 | Environment | `AIUR_GPU_TRACE=generated AIUR_TRACE_ONLY_LOOKUPS=1 AIUR_MAX_PIECE_LOG_HEIGHT=24 AIUR_TRACE_SHARD_MAX_CELLS=1500000000 AIUR_METRICS=<run>/metrics.jsonl`, `LD_PRELOAD=libcuda.so.1` (the Nix-linked binary does not search the host library path), no `AIUR_PROFILE`, `RUST_LOG` or `--texray` |
 | Command | `run-lanes4.sh <label>`: `systemd-run --user --scope -p MemoryMax=920G -- ix prove --ixe mathlib.ixe --ixes mathlib-78.ixes --trace-shards --lanes 4 --exec-jobs 3 --max-ram 230` |
 
+Archived from the box: `logs/<run>/` holds each run's lanes stderr and
+stdout, GPU samples and metadata, gzipped; `data/<run>-proofs.csv` every
+unit's proof time from the metrics file; `proofs/` the verified root
+proofs of the 78-shard runs (`026c8d38…`, identical across them) and the
+102-shard run (`b130434c…`), 5.75 MiB each.
+
 Files: `mathlib78-lanes4-meta.txt`, `mathlib78-lanes4-summary.txt`,
 `mathlib78-lanes4-exec4-meta.txt`, `mathlib78-lanes4-exec4-summary.txt`,
 `mathlib78-lanes4-exec4-sppark-meta.txt`,
