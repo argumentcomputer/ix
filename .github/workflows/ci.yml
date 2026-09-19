@@ -13,21 +13,20 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Build every regular Lake target before the test fan-out. The Namespace
-  # volume is committed only after this job succeeds, so every saved build
-  # cache contains the complete build rather than one parallel job's subset.
-  # The small `nataddcomm.ixe` fixture is passed separately to the zkVM jobs.
+  # Each job has its own sticky cache, so independent checks can run in parallel.
+  # The zkVM execution jobs depend on the `nataddcomm.ixe` artifact from build.
   build:
-    runs-on:
-      - nscloud-ubuntu-26.04-amd64-16x32-with-cache
-      - nscloud-cache-size-50gb
-      - nscloud-cache-tag-argumentcomputer-ix
+    runs-on: runs-on=${{ github.run_id }}/cpu=16/family=r8i.4xlarge/image=ubuntu24-full-x64/spot=false/sticky=ci-build-r8i-native:50gb:lazy-init/extras=s3-cache
     steps:
       - uses: actions/checkout@v7
+      - uses: runs-on/action@v2
+        with:
+          sticky_cache: |
+            rust
+            custom,path=.lake,path=target
       - uses: ./.github/actions/setup-rust-toolchain
         with:
           use-github-cache: "false"
-      - uses: ./.github/actions/setup-lake-cache
       - uses: leanprover/lean-action@v1
         with:
           build-args: "--wfail -v"
@@ -58,21 +57,18 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  # The primary Lean test tier consumes the completed build cache read-only.
-  # Within this workflow, build and rust-test are the only ordered writers.
   lean-test:
-    needs: build
-    runs-on:
-      - nscloud-ubuntu-26.04-amd64-16x32-with-cache
-      - nscloud-cache-size-50gb
-      - nscloud-cache-tag-argumentcomputer-ix
-      - nscloud-cache-exp-do-not-commit
+    runs-on: runs-on=${{ github.run_id }}/cpu=16/family=r8i.4xlarge/image=ubuntu24-full-x64/spot=false/sticky=ci-lean-test-r8i-native:50gb:lazy-init/extras=s3-cache
     steps:
       - uses: actions/checkout@v7
+      - uses: runs-on/action@v2
+        with:
+          sticky_cache: |
+            rust
+            custom,path=.lake,path=target
       - uses: ./.github/actions/setup-rust-toolchain
         with:
           use-github-cache: "false"
-      - uses: ./.github/actions/setup-lake-cache
       - uses: leanprover/lean-action@v1
         with:
           auto-config: false
@@ -85,24 +81,18 @@ jobs:
           lake exe ixon-v3-primitives
           lake exe ixon-v3-tests --primitives
 
-  # Lake and root Cargo builds both use the repository's target directory, so
-  # build and rust-test share a volume in dependency order. Namespace volumes
-  # are last-write-wins; parallel zkVM writers use dedicated tags, while CUDA
-  # consumes the primary cache without committing its feature-specific output.
-  # Namespace's remote sccache could share compatible compilation units across
-  # the zkVM volumes without serializing the jobs.
   rust-test:
-    needs: build
-    runs-on:
-      - nscloud-ubuntu-26.04-amd64-8x16-with-cache
-      - nscloud-cache-size-50gb
-      - nscloud-cache-tag-argumentcomputer-ix
+    runs-on: runs-on=${{ github.run_id }}/cpu=8/family=r8i.2xlarge/image=ubuntu24-full-x64/spot=false/sticky=ci-rust-test-r8i-native:50gb:lazy-init/extras=s3-cache
     steps:
       - uses: actions/checkout@v7
+      - uses: runs-on/action@v2
+        with:
+          sticky_cache: |
+            rust
+            custom,path=.lake,path=target
       - uses: ./.github/actions/setup-rust-toolchain
         with:
           use-github-cache: "false"
-      - uses: ./.github/actions/setup-lake-cache
       - uses: taiki-e/install-action@nextest
       # Install Lean for rust-bindgen step
       - uses: leanprover/lean-action@v1
@@ -128,19 +118,9 @@ jobs:
   # Compile and link the opt-in backend without requiring a GPU. Runtime and
   # proof-byte equivalence are covered by multi-stark's NVIDIA smoke suite.
   cuda-compile:
-    needs: build
-    runs-on:
-      - nscloud-ubuntu-26.04-amd64-8x16-with-cache
-      - nscloud-cache-size-50gb
-      - nscloud-cache-tag-argumentcomputer-ix
-      - nscloud-cache-exp-do-not-commit
+    runs-on: runs-on=${{ github.run_id }}/cpu=8/family=r8i.2xlarge/image=ubuntu24-full-x64/spot=false/extras=s3-cache
     container:
       image: nvidia/cuda:13.3.1-devel-ubuntu26.04
-      env:
-        NSC_CACHE_PATH: ${{ env.NSC_CACHE_PATH }}
-      volumes:
-        - /cache:/cache
-      options: --cap-add=SYS_ADMIN
     env:
       # This job validates feature plumbing and the Rust-staticlib-to-Lean
       # link without paying for a GPU runner. Multi-stark CI compiles the
@@ -148,6 +128,7 @@ jobs:
       # sufficient for this downstream integration gate.
       MULTI_STARK_CUDA_ARCHS: "80"
     steps:
+      - uses: runs-on/action@v2
       - uses: actions/checkout@v7
       - name: Install toolchain bootstrap dependencies
         run: |
@@ -156,8 +137,13 @@ jobs:
             build-essential ca-certificates curl git libclang-dev sudo
       - uses: ./.github/actions/setup-rust-toolchain
         with:
-          use-github-cache: "false"
-      - uses: ./.github/actions/setup-lake-cache
+          cache-key: cuda-13.3.1-ubuntu26
+      # S3 caching keeps the container independent of host bind mounts.
+      - uses: actions/cache@v6
+        with:
+          path: .lake
+          key: lake-cuda-13.3.1-ubuntu26-r8i-native-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'rust-toolchain.toml') }}-${{ github.sha }}
+          restore-keys: lake-cuda-13.3.1-ubuntu26-r8i-native-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'rust-toolchain.toml') }}-
       - uses: leanprover/lean-action@v1
         with:
           auto-config: false
@@ -183,20 +169,17 @@ jobs:
   sp1-build:
     name: SP1 host build
     needs: build
-    runs-on:
-      - nscloud-ubuntu-26.04-amd64-8x16-with-cache
-      - nscloud-cache-size-50gb
-      - nscloud-cache-tag-argumentcomputer-ix-sp1
+    runs-on: runs-on=${{ github.run_id }}/cpu=8/family=r8i.2xlarge/image=ubuntu24-full-x64/spot=false/sticky=ci-sp1-r8i-native:50gb:lazy-init/extras=s3-cache
     steps:
       - uses: actions/checkout@v7
+      - uses: runs-on/action@v2
+        with:
+          sticky_cache: |
+            rust
+            custom,path=.lake,path=target,path=sp1/target,path=sp1/guest/target
       - uses: ./.github/actions/setup-rust-toolchain
         with:
           use-github-cache: "false"
-      - uses: ./.github/actions/setup-lake-cache
-        with:
-          additional-paths: |
-            ${{ github.workspace }}/sp1/target
-            ${{ github.workspace }}/sp1/guest/target
       - uses: ./.github/actions/install-sp1
       # The precompile-aware SP1 runner-binary is auto-built from the fork git
       # dep by `sp1-core-executor-runner`'s build script — no manual override.
@@ -230,21 +213,17 @@ jobs:
   zisk-build:
     name: Zisk host build
     needs: build
-    runs-on:
-      - nscloud-ubuntu-26.04-amd64-8x16-with-cache
-      - nscloud-cache-size-50gb
-      - nscloud-cache-tag-argumentcomputer-ix-zisk
+    runs-on: runs-on=${{ github.run_id }}/cpu=8/family=r8i.2xlarge/image=ubuntu24-full-x64/spot=false/sticky=ci-zisk-r8i-native:50gb:lazy-init/extras=s3-cache
     steps:
       - uses: actions/checkout@v7
+      - uses: runs-on/action@v2
+        with:
+          sticky_cache: |
+            rust
+            custom,path=.lake,path=target,path=zisk/target,path=zisk/guest/target,path=zisk/agg-guest/target
       - uses: ./.github/actions/setup-rust-toolchain
         with:
           use-github-cache: "false"
-      - uses: ./.github/actions/setup-lake-cache
-        with:
-          additional-paths: |
-            ${{ github.workspace }}/zisk/target
-            ${{ github.workspace }}/zisk/guest/target
-            ${{ github.workspace }}/zisk/agg-guest/target
       - uses: ./.github/actions/install-zisk
         with:
           proving-key: false

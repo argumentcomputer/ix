@@ -73,14 +73,6 @@ on:
     types: [created]
   workflow_dispatch:
     inputs:
-      machine:
-        description: EC2 instance type (default uses BENCH_MACHINE, otherwise r8i.8xlarge)
-        type: choice
-        default: default
-        options:
-          - default
-          - r8i.8xlarge
-          - r8a.8xlarge
       pr:
         description: PR number (for the result comment)
         required: true
@@ -100,11 +92,11 @@ on:
         description: "The !benchmark command; single-line KEY=VALUE config, e.g. `!benchmark aiur BENCH_ENVS=InitStd,Mathlib`"
         required: true
 
-run-name: "${{ github.event_name == 'workflow_dispatch' && format('Benchmark PR #{0} ({1})', inputs.pr, inputs.machine != 'default' && inputs.machine || vars.BENCH_MACHINE || 'r8i.8xlarge') || 'Relay benchmark comment' }}"
+run-name: "${{ github.event_name == 'workflow_dispatch' && format('Benchmark PR #{0} (r8i.8xlarge)', inputs.pr) || 'Relay benchmark comment' }}"
 
 env:
-  IX_BENCH_MACHINE: ${{ inputs.machine != 'default' && inputs.machine || vars.BENCH_MACHINE || 'r8i.8xlarge' }}
-  BENCH_CACHE: runs-on-${{ inputs.machine != 'default' && inputs.machine || vars.BENCH_MACHINE || 'r8i.8xlarge' }}-avx512-v1
+  IX_BENCH_MACHINE: r8i.8xlarge
+  BENCH_CACHE: runs-on-r8i.8xlarge-native-v1
 
 permissions:
   contents: read
@@ -137,7 +129,6 @@ jobs:
           gh workflow run bench-pr.yml \
             --repo "$GITHUB_REPOSITORY" \
             --ref "${{ github.event.repository.default_branch }}" \
-            -f machine="$IX_BENCH_MACHINE" \
             -f pr="$PR_NUMBER" \
             -f base-sha="${{ steps.comment-branch.outputs.base_sha }}" \
             -f base-ref="${{ steps.comment-branch.outputs.base_ref }}" \
@@ -150,13 +141,13 @@ jobs:
   # head-SHA cache. A cached `ix` may bootstrap command parsing, but `fresh`
   # replaces the full bundle before it is published to benchmark jobs.
   # Built on the selected RunsOn instance type, so both sides use the
-  # same fixed AVX-512 baseline and benchmark testbed. The job ends by parsing
+  # same native r8i codegen and benchmark testbed. The job ends by parsing
   # the !benchmark command with the selected `ix bench ci parse`: the registry
   # lives in Lean, so the matrix can only be computed after a binary is
   # available.
   build:
     if: github.event_name == 'workflow_dispatch'
-    runs-on: runs-on=${{ github.run_id }}/cpu=32/family=${{ inputs.machine != 'default' && inputs.machine || vars.BENCH_MACHINE || 'r8i.8xlarge' }}/image=ubuntu24-full-x64/spot=false/extras=s3-cache
+    runs-on: runs-on=${{ github.run_id }}/cpu=32/family=r8i.8xlarge/image=ubuntu24-full-x64/spot=false/extras=s3-cache
     outputs:
       revision: ${{ steps.target.outputs.revision }}
       matrix: ${{ steps.parse.outputs.matrix }}
@@ -319,7 +310,7 @@ jobs:
     name: compile-${{ matrix.env }}
     needs: build
     if: needs.build.outputs.envs != '[]'
-    runs-on: runs-on=${{ github.run_id }}/cpu=32/family=${{ inputs.machine != 'default' && inputs.machine || vars.BENCH_MACHINE || 'r8i.8xlarge' }}/image=ubuntu24-full-x64/spot=false/extras=s3-cache
+    runs-on: runs-on=${{ github.run_id }}/cpu=32/family=r8i.8xlarge/image=ubuntu24-full-x64/spot=false/extras=s3-cache
     timeout-minutes: 60
     strategy:
       fail-fast: false
@@ -459,7 +450,7 @@ jobs:
     # compile lazily). The skipped case cannot actually arise (envs is
     # never empty) but is tolerated for robustness.
     if: ${{ !cancelled() && needs.build.result == 'success' && needs.compile.result != 'failure' && needs.compile.result != 'cancelled' }}
-    runs-on: runs-on=${{ github.run_id }}/cpu=32/family=${{ inputs.machine != 'default' && inputs.machine || vars.BENCH_MACHINE || 'r8i.8xlarge' }}/image=ubuntu24-full-x64/spot=false/extras=s3-cache
+    runs-on: runs-on=${{ github.run_id }}/cpu=32/family=r8i.8xlarge/image=ubuntu24-full-x64/spot=false/extras=s3-cache
     # `ix bench run` saves completed rows as it goes, so a timeout keeps
     # them on disk — but the compare and upload need the job alive.
     timeout-minutes: 60
@@ -577,10 +568,10 @@ jobs:
             echo "run-base=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          # A PR can carry an older registry with no machine-specific
-          # testbeds. Its historical baseline is not comparable to this host.
+          # A PR can carry a registry for different hardware or codegen.
+          # Only the native r8i testbed has timings comparable to this host.
           if ! ix bench ci matrix | jq -e \
-            --arg suffix "-runs-on-${IX_BENCH_MACHINE//./-}-avx512" \
+            --arg suffix "-runs-on-${IX_BENCH_MACHINE//./-}-native" \
             'length > 0 and all(.[]; .testbed | endswith($suffix))' >/dev/null; then
             echo "source=base run @ ${BASE_SHA::7} (no matching machine testbed)" >> "$GITHUB_OUTPUT"
             echo "run-base=true" >> "$GITHUB_OUTPUT"
@@ -715,11 +706,9 @@ jobs:
           echo "cached=$cached" >> "$GITHUB_OUTPUT"
           echo "base .ixe: $([ "$ixe" = true ] && echo restored from cache || echo compiling in the base run)"
           echo "base binaries: $([ "$cached" = true ] && echo restored from cache || echo building from source)"
-      # A from-scratch base build must match the PR and main binaries: the
-      # same pinned x86-64-v4 codegen (RUSTFLAGS overrides the tree's
-      # `.cargo/config.toml`, which selects `native`) and an installed
-      # toolchain. The action installs the PR checkout's toolchain; the base
-      # tree may pin a different channel, so ensure its own is present too.
+      # A from-scratch base build must use the same native codegen as the PR
+      # and main binaries. The action installs the PR checkout's toolchain;
+      # the base tree may pin a different channel, so install its own too.
       - name: Set up Rust for the base build
         if: steps.decide.outputs.run-base == 'true' && steps.base-src.outputs.cached != 'true'
         uses: ./.github/actions/setup-rust-toolchain
@@ -881,9 +870,8 @@ jobs:
     # Assemble even when benchmark runs failed — the tables carry the ❌
     # rows. Only the build job must have succeeded (it made the binaries).
     if: always() && needs.build.result == 'success'
-    # The report command uses the build job's fixed-AVX-512 `ix`, so keep it on
-    # the same instance type as the measured jobs.
-    runs-on: runs-on=${{ github.run_id }}/cpu=32/family=${{ inputs.machine != 'default' && inputs.machine || vars.BENCH_MACHINE || 'r8i.8xlarge' }}/image=ubuntu24-full-x64/spot=false/extras=s3-cache
+    # The report command restores the build job's native r8i binary.
+    runs-on: runs-on=${{ github.run_id }}/cpu=32/family=r8i.8xlarge/image=ubuntu24-full-x64/spot=false/extras=s3-cache
     permissions:
       contents: read
     steps:

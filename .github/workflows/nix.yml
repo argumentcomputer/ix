@@ -15,20 +15,19 @@ concurrency:
 jobs:
   nix-test:
     name: Nix Tests
-    # Future RunsOn setup: use sticky disks with lazy-init to avoid provisioned
-    # snapshot-initialization charges; restored blocks may load more slowly at first.
+    # Sticky disks retain Lake/Cargo files; /nix uses the larger root volume
+    # and Cachix provides its binary cache.
+    # lazy-init avoids provisioned snapshot-initialization charges, at the cost
+    # of slower first reads of restored blocks.
     # https://runs-on.com/docs/runners/capabilities/sticky-disks/
-    runs-on:
-      - nscloud-ubuntu-26.04-amd64-16x32-with-cache
-      - nscloud-cache-size-100gb
-      - nscloud-cache-tag-argumentcomputer-ix-nix
+    runs-on: runs-on=${{ github.run_id }}/cpu=16/family=r8i.4xlarge/image=ubuntu24-full-x64/spot=false/volume=150gb/sticky=nix-r8i-native:100gb:lazy-init/extras=s3-cache
     steps:
       - uses: actions/checkout@v7
-      - uses: ./.github/actions/setup-lake-cache
+      - uses: runs-on/action@v2
         with:
-          cache-modes: |
-            nix
+          sticky_cache: |
             rust
+            custom,path=.lake,path=target
       - uses: cachix/install-nix-action@v31
         with:
           nix_path: nixpkgs=channel:nixos-unstable

@@ -129,7 +129,7 @@ inductive BenchInputs
   deriving BEq
 
 /-- EC2 instance types with separate benchmark histories. -/
-def benchmarkMachines : List String := ["r8i.8xlarge", "r8a.8xlarge"]
+def benchmarkMachines : List String := ["r8i.8xlarge"]
 
 def benchmarkMachine : IO String := do
   let machine := (← IO.getEnv "IX_BENCH_MACHINE").getD "r8i.8xlarge"
@@ -139,7 +139,7 @@ def benchmarkMachine : IO String := do
 
 /-- Hardware and code generation both determine whether timings are comparable. -/
 def testbedSuffix (machine : String) : String :=
-  s!"-runs-on-{machine.replace "." "-"}-avx512"
+  s!"-runs-on-{machine.replace "." "-"}-native"
 
 /-- A testbed minus its hardware suffix — the workload key the threshold
     reset anchors (`refs/bencher/<workload>`), the dashboard plot titles,

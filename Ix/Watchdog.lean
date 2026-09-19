@@ -45,11 +45,8 @@ namespace Ix.Watchdog
 /-- The kernel's cgroup OOM kill is SIGKILL on the scope: exit 137. -/
 def oomExitCode : UInt32 := 137
 
-/-- Default RAM ceiling, one rule for every consumer: the machine's
-    total RAM minus 15 GB (the ~123 GiB CI runner lands at ~108 — above
-    Mathlib `ix compile`'s ~100 GB peak, the largest legitimate
-    workload). The 15 GB stays outside the cap for the OS, runner
-    agent, and page cache. -/
+/-- Default RAM ceiling: the machine's total RAM minus 15 GB,
+    reserved for the OS, runner agent, and page cache. -/
 def defaultCeilingGb : IO Nat := do
   let s ← try IO.FS.readFile "/proc/meminfo" catch _ => pure ""
   let kb := (s.splitOn "\n").findSome? fun l =>

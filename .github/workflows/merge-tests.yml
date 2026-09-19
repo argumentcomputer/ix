@@ -117,11 +117,7 @@ jobs:
             test_args: >-
               tc-anon-diff tc-init tc-tutorial tc-roundtrip tc-ingress-meta
               tc-pins tc-accel-diff lean4lean
-    runs-on:
-      - nscloud-ubuntu-26.04-amd64-32x64-with-cache
-      - nscloud-cache-size-50gb
-      - nscloud-cache-tag-argumentcomputer-ix
-      - nscloud-cache-exp-do-not-commit
+    runs-on: runs-on=${{ github.run_id }}/cpu=32/family=r8i.8xlarge/image=ubuntu24-full-x64/spot=false/sticky=merge-tests-r8i-native:50gb:lazy-init/extras=s3-cache
     steps:
       - name: Validate merge-test variant
         env:
@@ -147,10 +143,14 @@ jobs:
             exit 1
           fi
 
+      - uses: runs-on/action@v2
+        with:
+          sticky_cache: |
+            rust
+            custom,path=.lake,path=target
       - uses: ./.github/actions/setup-rust-toolchain
         with:
           use-github-cache: "false"
-      - uses: ./.github/actions/setup-lake-cache
       - uses: leanprover/lean-action@v1
         with:
           auto-config: false
@@ -180,7 +180,7 @@ jobs:
       (github.event_name == 'pull_request' ||
        (needs.prepare.result == 'success' &&
         (github.event_name == 'merge_group' || github.event_name == 'issue_comment')))
-    # Valgrind cannot decode the shared baseline's AVX-512, so this job builds
+    # Valgrind cannot decode all native r8i instructions, so this job builds
     # portable artifacts under its own cache key. Valgrind itself is
     # single-threaded, so a GitHub-hosted runner suffices once that build is
     # cached.
@@ -204,7 +204,7 @@ jobs:
 
       - uses: ./.github/actions/setup-rust-toolchain
         with:
-          avx512-codegen: "false"
+          native-codegen: "false"
       # `./.lake`, not `.lake`: the path string is hashed into the cache
       # entry's version, so the spelling must stay fixed for restores to hit.
       - uses: actions/cache@v6

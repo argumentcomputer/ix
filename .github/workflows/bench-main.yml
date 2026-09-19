@@ -26,17 +26,8 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
-    inputs:
-      machine:
-        description: EC2 instance type (default uses BENCH_MACHINE, otherwise r8i.8xlarge)
-        type: choice
-        default: default
-        options:
-          - default
-          - r8i.8xlarge
-          - r8a.8xlarge
 
-run-name: Benchmark main (${{ inputs.machine != 'default' && inputs.machine || vars.BENCH_MACHINE || 'r8i.8xlarge' }})
+run-name: Benchmark main (r8i.8xlarge)
 
 permissions:
   contents: read
@@ -45,17 +36,17 @@ permissions:
 # and a later merge must never cancel or queue behind an in-flight run.
 
 env:
-  IX_BENCH_MACHINE: ${{ inputs.machine != 'default' && inputs.machine || vars.BENCH_MACHINE || 'r8i.8xlarge' }}
-  BENCH_CACHE: runs-on-${{ inputs.machine != 'default' && inputs.machine || vars.BENCH_MACHINE || 'r8i.8xlarge' }}-avx512-v1
+  IX_BENCH_MACHINE: r8i.8xlarge
+  BENCH_CACHE: runs-on-r8i.8xlarge-native-v1
   COMPILE_DIR: Benchmarks/Compile
 
 jobs:
   # Build the `ix` and `bench-typecheck` binaries once and cache them;
   # every later job restores them instead of rebuilding. They are built
-  # for the shared Intel/AMD AVX-512 baseline, with caches and measured
-  # results separated by the selected EC2 instance type.
+  # with native code generation for r8i, with caches and measured results
+  # isolated from other hardware and compiler flags.
   build:
-    runs-on: runs-on=${{ github.run_id }}/cpu=32/family=${{ inputs.machine != 'default' && inputs.machine || vars.BENCH_MACHINE || 'r8i.8xlarge' }}/image=ubuntu24-full-x64/spot=false/extras=s3-cache
+    runs-on: runs-on=${{ github.run_id }}/cpu=32/family=r8i.8xlarge/image=ubuntu24-full-x64/spot=false/extras=s3-cache
     steps:
       - uses: runs-on/action@v2
       - uses: actions/checkout@v7
@@ -98,9 +89,8 @@ jobs:
   # job; only the benchmark job waits on it.
   plan:
     needs: build
-    # The restored `ix` targets the fleet's fixed AVX-512 baseline, so keep
-    # even this registry-only invocation on the selected benchmark hardware.
-    runs-on: runs-on=${{ github.run_id }}/cpu=32/family=${{ inputs.machine != 'default' && inputs.machine || vars.BENCH_MACHINE || 'r8i.8xlarge' }}/image=ubuntu24-full-x64/spot=false/extras=s3-cache
+    # The restored `ix` contains native r8i code, including its Rust library.
+    runs-on: runs-on=${{ github.run_id }}/cpu=32/family=r8i.8xlarge/image=ubuntu24-full-x64/spot=false/extras=s3-cache
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
@@ -136,7 +126,7 @@ jobs:
     # job title.
     name: compile-${{ matrix.env }}
     needs: build
-    runs-on: runs-on=${{ github.run_id }}/cpu=32/family=${{ inputs.machine != 'default' && inputs.machine || vars.BENCH_MACHINE || 'r8i.8xlarge' }}/image=ubuntu24-full-x64/spot=false/extras=s3-cache
+    runs-on: runs-on=${{ github.run_id }}/cpu=32/family=r8i.8xlarge/image=ubuntu24-full-x64/spot=false/extras=s3-cache
     permissions:
       contents: read
       checks: write
@@ -278,7 +268,7 @@ jobs:
   benchmark:
     name: ${{ matrix.params.label }}
     needs: [compile, plan]
-    runs-on: runs-on=${{ github.run_id }}/cpu=32/family=${{ inputs.machine != 'default' && inputs.machine || vars.BENCH_MACHINE || 'r8i.8xlarge' }}/image=ubuntu24-full-x64/spot=false/extras=s3-cache
+    runs-on: runs-on=${{ github.run_id }}/cpu=32/family=r8i.8xlarge/image=ubuntu24-full-x64/spot=false/extras=s3-cache
     permissions:
       contents: read
       checks: write

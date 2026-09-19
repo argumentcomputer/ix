@@ -268,7 +268,7 @@ run step while the clean rows still upload.
 
 **Dashboard plots**: `ix bench plots` pins one plot per (workload, measure)
 to <https://bencher.dev/console/projects/ix/plots> — main-branch trend
-lines for both Intel and AMD testbeds, one per benchmark row the cell uploads,
+lines on the native r8i testbed, one per benchmark row the cell uploads,
 plus the cross-kernel input-constants overlay. Registry-derived like the job matrices (titles,
 ordering, and skips live in `Ix/Cli/BenchPlots.lean`), so rerun the sync
 after changing the registry or the constant set — either locally
@@ -297,38 +297,48 @@ dependency caches.
 
 ### RunsOn machines and caching
 
-Benchmark jobs run on `r8i.8xlarge` (Intel) or `r8a.8xlarge` (AMD), using
-the `ubuntu24-full-x64` image and on-demand instances. Each workflow run
-uses one machine type for its builds, compile measurements, and benchmark
-jobs. The `machine` dispatch input selects either type; `default` uses the
-repository variable `BENCH_MACHINE`, falling back to `r8i.8xlarge`. Pushes
-to main and `!benchmark` comments use that repository default. The CodeQL
-Rust job also uses the repository default.
+All self-hosted jobs use RunsOn's `r8i` family and the `ubuntu24-full-x64`
+image, on demand. The CUDA compile job runs its toolchain in an Ubuntu 26.04
+container. Jobs that use `ubuntu-latest` remain on GitHub-hosted runners.
+The [instance sizes](https://aws.amazon.com/ec2/instance-types/memory-optimized/)
+preserve each job's vCPU count, with more RAM per vCPU:
 
-To compare the machines, dispatch `bench-main.yml` twice at the same ref
-with `machine=r8i.8xlarge` and `machine=r8a.8xlarge`. For PR comparisons,
-dispatch `bench-pr.yml` twice with identical base/head SHAs and command,
-changing only `machine`. Add `fresh` to the command to remeasure a commit
-instead of reusing its cached compile row or Bencher baseline. The selected
-machine appears in the workflow run name and PR report summary.
+| vCPUs | Instance | RAM |
+| --- | --- | --- |
+| 8 | `r8i.2xlarge` | 64 GiB |
+| 16 | `r8i.4xlarge` | 128 GiB |
+| 32 | `r8i.8xlarge` | 256 GiB |
 
-During the trial, Rust uses the shared `x86-64-v4 +avx512vbmi2,+gfni`
-instruction set. Benchmark product caches and Cargo caches include the
-instance type and code generation namespace. Bencher testbeds also include
-both, such as `ooc-check-runs-on-r8i-8xlarge-avx512`, so baseline lookups
-never compare Intel against AMD or reuse measurements from an older runner
-class. Dashboard plots show whichever of the two testbeds have results.
-After choosing a machine, set `BENCH_MACHINE` to that instance type. A
-subsequent switch to native code generation must also change `BENCH_CACHE`
-and `testbedSuffix` so old binaries and timing histories are kept separate.
+Benchmark builds, compile measurements, and runs all use `r8i.8xlarge`.
+Rust uses `-Ctarget-cpu=native`; Valgrind builds use portable code generation
+and a separate cache on `ubuntu-latest`. Benchmark product caches and Cargo
+caches include the instance family and code generation. Bencher testbeds
+include both, such as `ooc-check-runs-on-r8i-8xlarge-native`, so old binaries
+and timings from different hardware or compiler flags stay separate.
+A hardware trial must change the runner labels, sticky cache lineages,
+`IX_BENCH_MACHINE`, `BENCH_CACHE`, the Rust action's cache key, and the allowed
+`benchmarkMachines` in `Ix/Cli/BenchCmd.lean` together. Add `fresh` to a PR
+benchmark command to remeasure both commits while still reusing dependency
+caches.
+
+[RunsOn sticky disks](https://runs-on.com/docs/runners/capabilities/sticky-disks/)
+cache the Lake and Cargo directories for CI, merge tests, and Nix. Each CI
+job has a separate cache lineage and can run independently; the zkVM jobs
+wait for the build job's `nataddcomm.ixe` artifact. Merge-test partitions
+share a lineage, with each job restoring its own snapshot and the last clean
+completion advancing the cache. `lazy-init` avoids provisioned snapshot
+initialization charges, at the cost of slower first reads. Cachix remains
+the Nix store's binary cache, with `/nix` and build scratch space on a 150 GB
+root volume.
 
 [RunsOn Magic Cache](https://runs-on.com/docs/performance/caching/actions/)
 is enabled with `extras=s3-cache` and `runs-on/action@v2` before any cache or
-artifact action. `actions/cache@v6` (including restore/save) and the Rust
-setup action's standard cache use the RunsOn S3 backend without bucket names
-or AWS keys in the workflow. The RunsOn GitHub App and AWS stack must already
-be installed for this repository, in a region with the selected instance
-types available. The first S3-backed run starts with cold caches.
+artifact action. Benchmark handoffs and the CUDA container use
+`actions/cache@v6` (including restore/save) and the Rust setup action's
+standard cache with the RunsOn S3 backend. The RunsOn GitHub App and AWS
+stack must already be installed for this repository, in a region with r8i
+available. Sticky disks require RunsOn v3.2.0 or later. The first run starts
+with cold caches and a new native-codegen benchmark history.
 
 Every job that creates a timing row logs its CPU model, instruction set,
 effective CPU count, affinity, and cgroup allocation directly in the Actions

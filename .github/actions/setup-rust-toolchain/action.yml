@@ -14,8 +14,8 @@ inputs:
   cache-key:
     description: Additional Cargo cache namespace, including the benchmark machine when applicable
     required: false
-  avx512-codegen:
-    description: Enable portable AVX-512 code generation for supported x64 runners
+  native-codegen:
+    description: Optimize for the runner CPU (disable for portable tools such as Valgrind)
     required: false
     default: "true"
 
@@ -44,29 +44,6 @@ runs:
       run: |
         if [[ ! -v CARGO_NET_GIT_FETCH_WITH_CLI ]]; then
           echo "CARGO_NET_GIT_FETCH_WITH_CLI=true" >> "$GITHUB_ENV"
-        fi
-
-    # The supported fleets mix Intel and AMD hosts, and cached artifacts may
-    # be built on one CPU model and consumed on another. Neither vendor's
-    # feature set contains the other's, so `-Ctarget-cpu=native` is not
-    # portable across the fleet: Zen 5 enables SSE4A, which LLVM emits (as
-    # INSERTQ, in witness generation) and Intel traps on with #UD. Pin the
-    # measured intersection instead. x86-64-v4 covers every AVX-512 subset
-    # Plonky3 uses; +avx512vbmi2 keeps its VPSHRDQ interleave and +gfni keeps
-    # LLVM's byte-shift lowering. blake3 selects its kernels via CPUID at
-    # runtime and is unaffected. Pinning also makes codegen host-independent,
-    # so the cache key below is sound and main-vs-PR timings stay comparable.
-    - name: Require the fleet's baseline CPU features
-      if: inputs.avx512-codegen == 'true'
-      shell: bash
-      run: |
-        missing=()
-        for f in avx512f avx512bw avx512cd avx512dq avx512vl avx512_vbmi2 gfni; do
-          grep -qw "$f" /proc/cpuinfo || missing+=("$f")
-        done
-        if [ ${#missing[@]} -gt 0 ]; then
-          echo "::error::Runner CPU lacks required feature(s): ${missing[*]}. Binaries are built for x86-64-v4 +avx512vbmi2,+gfni."
-          exit 1
         fi
 
     # bindgen collects include paths from the `clang` binary on PATH and
@@ -101,7 +78,7 @@ runs:
 
     - uses: actions-rust-lang/setup-rust-toolchain@v1
       with:
-        rustflags: ${{ inputs.avx512-codegen == 'true' && '-Ctarget-cpu=x86-64-v4 -Ctarget-feature=+avx512vbmi2,+gfni -Dwarnings' || '-Dwarnings' }}
+        rustflags: ${{ inputs.native-codegen == 'true' && '-Ctarget-cpu=native -Dwarnings' || '-Dwarnings' }}
         cache: ${{ inputs.use-github-cache }}
-        cache-key: ${{ inputs.avx512-codegen == 'true' && 'x64-avx512' || 'x64-portable' }}-${{ inputs.cache-key }}
+        cache-key: ${{ inputs.native-codegen == 'true' && 'r8i-native' || 'x64-portable' }}-${{ inputs.cache-key }}
         cache-workspaces: ${{ inputs.cache-workspaces }}

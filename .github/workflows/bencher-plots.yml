@@ -2,7 +2,7 @@ name: Sync bencher dashboard plots
 
 # Manual bencher op, like bencher-thresholds-reset: `ix bench plots` syncs
 # the dashboard plots to the registry (one plot per tracked (workload,
-# measure), with both machine testbeds, plus the input-constants plot; see
+# measure), on the r8i testbed, plus the input-constants plot; see
 # Ix/Cli/BenchPlots.lean for the keep/replace semantics).
 # Dispatch it after a registry change —
 # new primary constant, measure-list edit, plot-title change — has merged
@@ -14,31 +14,23 @@ name: Sync bencher dashboard plots
 on:
   workflow_dispatch:
     inputs:
-      machine:
-        description: EC2 instance type (default uses BENCH_MACHINE, otherwise r8i.8xlarge)
-        type: choice
-        default: default
-        options:
-          - default
-          - r8i.8xlarge
-          - r8a.8xlarge
       dry-run:
         description: Preview the create/replace/keep decisions without writing
         type: boolean
         default: false
 
 env:
-  IX_BENCH_MACHINE: ${{ inputs.machine != 'default' && inputs.machine || vars.BENCH_MACHINE || 'r8i.8xlarge' }}
-  BENCH_CACHE: runs-on-${{ inputs.machine != 'default' && inputs.machine || vars.BENCH_MACHINE || 'r8i.8xlarge' }}-avx512-v1
+  IX_BENCH_MACHINE: r8i.8xlarge
+  BENCH_CACHE: runs-on-r8i.8xlarge-native-v1
 
 permissions:
   contents: read
 
 jobs:
   sync-plots:
-    # The restored `ix` targets the benchmark fleet's fixed AVX-512 baseline,
-    # so even this pure-Lean subcommand needs compatible benchmark hardware.
-    runs-on: runs-on=${{ github.run_id }}/cpu=32/family=${{ inputs.machine != 'default' && inputs.machine || vars.BENCH_MACHINE || 'r8i.8xlarge' }}/image=ubuntu24-full-x64/spot=false/extras=s3-cache
+    # The restored `ix` contains native r8i code, so this job uses the same
+    # CPU family as the benchmark builds.
+    runs-on: runs-on=${{ github.run_id }}/cpu=32/family=r8i.8xlarge/image=ubuntu24-full-x64/spot=false/extras=s3-cache
     steps:
       - uses: runs-on/action@v2
       - uses: actions/checkout@v7

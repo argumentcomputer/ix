@@ -1,7 +1,7 @@
 /-
   `ix bench plots`: sync the bencher.dev dashboard plots to the benchmark
   registry — one plot per (workload, measure) that bench-main.yml tracks,
-  with one line per benchmark row and machine, plus the cross-cutting
+  with one line per benchmark row on r8i, plus the cross-cutting
   shared input-constants trend. The spec derives from the registry
   (`Ix.Cli.BenchCmd`) + the shared constant set (`Ix.BenchConstants`), so
   nothing is hand-listed, and
@@ -417,7 +417,7 @@ end Ix.Cli.BenchPlots
 open Ix.Cli.BenchPlots in
 def benchPlotsCmd : Cli.Cmd := `[Cli|
   plots VIA runPlotsCmd;
-  "Sync the bencher.dev dashboard plots to the registry: one plot per tracked (workload, measure), comparing machine testbeds, plus the shared input-constants plot. Needs the bencher CLI; writes need BENCHER_API_KEY (plot create/delete permission)."
+  "Sync the bencher.dev dashboard plots to the registry: one plot per tracked (workload, measure) on r8i, plus the shared input-constants plot. Needs the bencher CLI; writes need BENCHER_API_KEY (plot create/delete permission)."
 
   FLAGS:
     "dry-run";         "Print the create/replace/keep decisions without writing (no key needed)"
