@@ -1,8 +1,8 @@
 module
 
 public import Tests.Aiur.Common
-public import Ix.IxVM.ByteStream
-public import Ix.IxVM.Blake3
+public import Ix.Aiur.Library.ByteStream
+public import Ix.Aiur.Library.Blake3
 public import Ix.IxVM.Sha256
 public import Tests.Sha256
 public import Blake3.Rust

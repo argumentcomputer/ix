@@ -1,7 +1,7 @@
 module
 public import Ix.Aiur.Meta
-public import Ix.IxVM.Core
-public import Ix.IxVM.ByteStream
+public import Ix.Aiur.Library.Core
+public import Ix.Aiur.Library.ByteStream
 
 /-!
 # Multi-STARK proof deserializer (Aiur)
@@ -47,7 +47,7 @@ namespace MultiStark
 def deserialize := ⟦
   -- ==========================================================================
   -- Wire-level type mirrors of `multi-stark/src/manual_codec.rs`.
-  -- `U64`/`ByteStream` come from `IxVM.byteStream`; raw Goldilocks `Val` is the
+  -- `U64`/`ByteStream` come from `Aiur.Library.byteStream`; raw Goldilocks `Val` is the
   -- non-canonical `u64`, kept here as the 8 little-endian bytes (`U64`).
   -- ==========================================================================
 

@@ -1,6 +1,6 @@
 module
 public import Ix.Aiur.Meta
-public import Ix.IxVM.Blake3
+public import Ix.Aiur.Library.Blake3
 public import Ix.MultiStark.Verifier
 
 /-!

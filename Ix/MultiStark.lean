@@ -2,9 +2,9 @@ module
 public import Blake3.Rust
 public import Ix.Aiur.Meta
 public import Ix.Aiur.Protocol
-public import Ix.IxVM.Core
-public import Ix.IxVM.ByteStream
-public import Ix.IxVM.Blake3
+public import Ix.Aiur.Library.Core
+public import Ix.Aiur.Library.ByteStream
+public import Ix.Aiur.Library.Blake3
 public import Ix.MultiStark.Goldilocks
 public import Ix.MultiStark.Wire
 public import Ix.MultiStark.Deserialize
@@ -89,10 +89,10 @@ def entrypoints := ⟦
 
 /-- Shared verifier circuits, without verification or aggregation entrypoints. -/
 def verifierBase : Except Aiur.Global Aiur.Source.Toplevel := do
-  let t ← IxVM.core.merge IxVM.byteStream
+  let t ← Aiur.Library.core.merge Aiur.Library.byteStream
   let t ← t.merge MultiStark.goldilocks
   let t ← t.merge deserialize
-  let t ← t.merge IxVM.blake3
+  let t ← t.merge Aiur.Library.blake3
   let t ← t.merge systemDeserialize
   let t ← t.merge pcs
   t.merge verifier

@@ -1,7 +1,7 @@
 module
 public import Ix.Aiur.Meta
-public import Ix.IxVM.Core
-public import Ix.IxVM.ByteStream
+public import Ix.Aiur.Library.Core
+public import Ix.Aiur.Library.ByteStream
 public import Ix.MultiStark.Deserialize
 
 /-!

@@ -44,7 +44,7 @@ def codecEntrypoints := ⟦
 ⟧
 
 def codecToplevel : Except Aiur.Global Aiur.Source.Toplevel := do
-  let vm ← IxVM.core.merge IxVM.byteStream
+  let vm ← Aiur.Library.core.merge Aiur.Library.byteStream
   let vm ← vm.merge IxVM.ixon
   let vm ← vm.merge IxVM.ixonSerialize
   let vm ← vm.merge IxVM.ixonDeserialize

@@ -22,7 +22,7 @@ The input/commit-phase commitments are a `MerkleTreeMmcs` over Blake3
   of two 32-byte child digests.
 
 `Digest` is `[U64; 4]` = the 32 Blake3 output bytes (8-byte LE groups), so the
-deserialized caps round-trip unchanged. The Blake3 gadget is `Ix/IxVM/Blake3.lean`.
+deserialized caps round-trip unchanged. The Blake3 gadget is `Ix/Aiur/Library/Blake3.lean`.
 -/
 
 public section
