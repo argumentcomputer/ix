@@ -12,14 +12,9 @@
 //! Merkle path is O(log n). This avoids the eager recursive `root`/`leaves`/
 //! `contains` traversals that made the former Lean startup super-linear.
 
-use crate::{aiur::lean_unbox_nat_as_usize, lean::LeanAiurAggregateExpected};
 use aiur::synthesis::AiurSystem;
 use ix_kernel::shard::ShardManifest;
 use ixvm_codegen::env_handle::EnvHandle;
-use lean_ffi::object::{
-  LeanBorrowed, LeanByteArray, LeanExcept, LeanExternal, LeanNat, LeanOwned,
-  LeanString,
-};
 use plan::{
   FoldPolicy, PlanIdentity, PlanOp, SlotSpec, build_specs,
   build_statement_specs, plan_replay,
@@ -37,6 +32,7 @@ use std::{
 };
 use store::{load_input_proofs, persist_wrapper, wrapper_address};
 
+mod ffi;
 mod plan;
 mod prepare;
 mod protocol;
@@ -301,96 +297,6 @@ fn panic_text(payload: &Box<dyn std::any::Any + Send>) -> &str {
     .copied()
     .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
     .unwrap_or("unknown Rust panic")
-}
-
-/// Native manifest/environment binding for `ix verify --aggregate --ixes`.
-/// The returned claim comes from the exact statement builder used by Stage 2,
-/// after a full constant/shard/assumption audit.
-#[unsafe(no_mangle)]
-extern "C" fn rs_aiur_aggregate_expected(
-  env_handle: LeanExternal<EnvHandle, LeanBorrowed<'_>>,
-  manifest_path: LeanString<LeanBorrowed<'_>>,
-  structural_above: LeanNat<LeanBorrowed<'_>>,
-) -> LeanExcept<LeanOwned> {
-  let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-    let manifest_bytes =
-      fs::read(Path::new(manifest_path.as_str())).map_err(|error| {
-        format!("read manifest {}: {error}", manifest_path.as_str())
-      })?;
-    let manifest = ShardManifest::from_bytes(&manifest_bytes)
-      .map_err(|error| format!("manifest parse failed: {error}"))?;
-    expected_from_manifest(
-      &env_handle.get().env,
-      &manifest,
-      lean_unbox_nat_as_usize(structural_above.inner()),
-    )
-  }));
-  match result {
-    Ok(Ok((statement, constant_count))) => {
-      let expected = LeanAiurAggregateExpected::alloc(0);
-      expected.set_obj(0, LeanByteArray::from_bytes(&statement.claim_bytes));
-      expected.set_obj(1, LeanOwned::box_usize(constant_count));
-      LeanExcept::ok(expected)
-    },
-    Ok(Err(error)) => LeanExcept::error_string(&error),
-    Err(payload) => LeanExcept::error_string(&format!(
-      "native aggregate verification setup panicked: {}",
-      panic_text(&payload)
-    )),
-  }
-}
-
-/// Production FFI called once after Lean has compiled the IxVM and ixAggr
-/// systems. Proof addresses are newline-separated to keep the ABI flat.
-#[unsafe(no_mangle)]
-extern "C" fn rs_aiur_stage2_aggregate(
-  ixvm_system: LeanExternal<AiurSystem, LeanBorrowed<'_>>,
-  aggr_system: LeanExternal<AiurSystem, LeanBorrowed<'_>>,
-  env_handle: LeanExternal<EnvHandle, LeanBorrowed<'_>>,
-  manifest_path: LeanString<LeanBorrowed<'_>>,
-  proof_hexes: LeanString<LeanBorrowed<'_>>,
-  verify_idx: LeanNat<LeanBorrowed<'_>>,
-  aggr_idx: LeanNat<LeanBorrowed<'_>>,
-  jobs: LeanNat<LeanBorrowed<'_>>,
-  ram_budget_bytes: LeanNat<LeanBorrowed<'_>>,
-  structural_above: LeanNat<LeanBorrowed<'_>>,
-  reprove_slot_code: LeanNat<LeanBorrowed<'_>>,
-  direct_joins: bool,
-  plan_only: bool,
-  cache_fri_bytes: LeanByteArray<LeanBorrowed<'_>>,
-  use_cache: bool,
-  write_outputs: bool,
-) -> LeanExcept<LeanOwned> {
-  let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-    let reprove_slot =
-      lean_unbox_nat_as_usize(reprove_slot_code.inner()).checked_sub(1);
-    run(RunConfig {
-      ixvm_system: ixvm_system.get(),
-      aggr_system: aggr_system.get(),
-      env_handle: env_handle.get(),
-      manifest_path: Path::new(manifest_path.as_str()),
-      proof_hexes: proof_hexes.as_str(),
-      verify_idx: lean_unbox_nat_as_usize(verify_idx.inner()),
-      aggr_idx: lean_unbox_nat_as_usize(aggr_idx.inner()),
-      jobs: lean_unbox_nat_as_usize(jobs.inner()),
-      ram_budget_bytes: lean_unbox_nat_as_usize(ram_budget_bytes.inner()),
-      structural_above: lean_unbox_nat_as_usize(structural_above.inner()),
-      reprove_slot,
-      direct_joins,
-      plan_only,
-      cache_fri_bytes: cache_fri_bytes.as_bytes(),
-      use_cache,
-      write_outputs,
-    })
-  }));
-  match result {
-    Ok(Ok(address)) => LeanExcept::ok(LeanString::new(&address)),
-    Ok(Err(error)) => LeanExcept::error_string(&error),
-    Err(payload) => LeanExcept::error_string(&format!(
-      "native Stage 2 orchestration panicked: {}",
-      panic_text(&payload)
-    )),
-  }
 }
 
 #[cfg(test)]

@@ -1,4 +1,5 @@
 module
+public import MultiStark.FFI
 public import Blake3.Rust
 public import Ix.Aiur.Meta
 public import Ix.Aiur.Protocol

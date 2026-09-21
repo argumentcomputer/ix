@@ -1,4 +1,5 @@
 module
+public import Ix.Aggr.FFI
 public import Ix.Aggr.Circuit
 public import Ix.Aggr.FunctionGroups
 public import Ix.Aggr.Host
