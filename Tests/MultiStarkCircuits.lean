@@ -1,5 +1,5 @@
 module
-public import Ix.MultiStark
+public import MultiStark
 
 /-!
 # Self-tests for the Multi-STARK recursive verifier

@@ -19,7 +19,7 @@ public import Ix.IxVM
 public import Ix.IxVM.Toplevel
 public import Ix.IxVM.ClaimHarness
 public import Ix.Aggr
-public import Ix.MultiStark
+public import MultiStark
 public import Ix.Store
 public import Ix.Cli.AggregateCmd
 public import Ix.Cli.CheckCmd

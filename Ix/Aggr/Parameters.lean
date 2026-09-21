@@ -1,5 +1,5 @@
 module
-public import Ix.MultiStark.Wire
+public import MultiStark.Wire
 
 public section
 namespace Aggr

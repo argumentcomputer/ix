@@ -5,13 +5,13 @@ public import Tests.MultiStarkCircuits
 public import Ix.Aiur.Meta
 public import Ix.Aiur.Protocol
 public import Ix.Aiur.Compiler
-public import Ix.MultiStark
+public import MultiStark
 public import Blake3.Rust
 
 /-!
 # Tests for the Multi-STARK recursive verifier
 
-These exercise `Ix/MultiStark.lean` (the in-circuit verifier) the way the former
+These exercise `MultiStark.lean` (the in-circuit verifier) the way the former
 standalone `RecursiveVerifier.lean` executable did, split into two primary
 runners (registered in `Tests/Main.lean`, both wired into `ci.yml`):
 

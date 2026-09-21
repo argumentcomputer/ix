@@ -1,7 +1,7 @@
 module
 public import Ix.Aiur.Meta
 public import Ix.Aiur.Library.Blake3
-public import Ix.MultiStark.Verifier
+public import MultiStark.Verifier
 
 /-!
 # Heterogeneous recursive aggregation circuit

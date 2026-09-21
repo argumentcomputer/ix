@@ -21,7 +21,7 @@ public import Ix.Aggr
 public import Ix.Cli.CheckCmd
 public import Ix.IxVM
 public import Ix.IxVM.ClaimHarness
-public import Ix.MultiStark
+public import MultiStark
 public import Ix.Store
 
 public section

@@ -5,7 +5,7 @@ import Ix.IxVM.ClaimHarness
 import Ix.Aiur.Protocol
 import Ix.Aiur.Compiler
 import Ix.Aiur.Statistics
-import Ix.MultiStark
+import MultiStark
 import Ix.Aggr
 import Ix.TracingTexray
 import Ix.Benchmark.Bench

@@ -5,14 +5,14 @@ public import Ix.Aiur.Protocol
 public import Ix.Aiur.Library.Core
 public import Ix.Aiur.Library.ByteStream
 public import Ix.Aiur.Library.Blake3
-public import Ix.MultiStark.Goldilocks
-public import Ix.MultiStark.Wire
-public import Ix.MultiStark.Deserialize
-public import Ix.MultiStark.Keccak
-public import Ix.MultiStark.Pcs
-public import Ix.MultiStark.SystemDeserialize
-public import Ix.MultiStark.Verifier
-public import Ix.MultiStark.VerifierFunctionGroups
+public import MultiStark.Goldilocks
+public import MultiStark.Wire
+public import MultiStark.Deserialize
+public import MultiStark.Keccak
+public import MultiStark.Pcs
+public import MultiStark.SystemDeserialize
+public import MultiStark.Verifier
+public import MultiStark.VerifierFunctionGroups
 
 /-!
 # Multi-STARK proof verifier (Aiur)

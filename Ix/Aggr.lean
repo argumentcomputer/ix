@@ -3,13 +3,13 @@ public import Ix.Aggr.Circuit
 public import Ix.Aggr.FunctionGroups
 public import Ix.Aggr.Host
 public import Ix.Aggr.Protocol
-public import Ix.MultiStark
+public import MultiStark
 
 /-!
 # The `ixAggr` toplevel
 
 `ixAggr` is the recursive aggregation system for IxVM proofs. It reuses the
-Ix-agnostic Multi-STARK verifier modules (`Ix/MultiStark/…`, unmodified) and
+Ix-agnostic Multi-STARK verifier modules (`MultiStark/…`, unmodified) and
 adds the heterogeneous `ix_aggr` entrypoint from `Ix/Aggr/Circuit.lean` — one
 circuit that wraps or joins any mix of IxVM and `ix_aggr` child proofs, with
 the shape chosen by advice. There is no separate lift stage: an IxVM proof

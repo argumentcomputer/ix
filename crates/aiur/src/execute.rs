@@ -991,7 +991,7 @@ fn read_klimbs_u64(
       format!("unbound ptr {ptr_u64} in memory[10] (walking List<U64>)")
     })?;
     let tag = key[0].as_canonical_u64();
-    // `enum ListNode { Cons, Nil }` in Ix/IxVM/Core.lean — Cons is the
+    // `enum ListNode { Cons, Nil }` in Ix/Aiur/Library/Core.lean — Cons is the
     // first variant (tag 0), Nil the second (tag 1).
     if tag == 1 {
       return Ok(limbs);

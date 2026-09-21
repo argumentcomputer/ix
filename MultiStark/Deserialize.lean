@@ -22,7 +22,7 @@ The wire format is bincode `standard().with_little_endian().with_fixed_int_encod
 * Merkle digest               : `[u64; 4]`, 32 bytes LE
 
 The proof stream is pure non-deterministic advice on IO channel 0 (never
-hashed — see `Ix/MultiStark.lean`), so the `read_proof` family reads it
+hashed — see `MultiStark.lean`), so the `read_proof` family reads it
 **directly from the IO arena by index**: every reader threads a `(channel-0)
 byte offset `i : G` and pulls fixed-size chunks with `io_read` (1/8/16/32
 bytes — `io_read`'s length is static). No per-byte `ListNode` chain is ever
@@ -36,7 +36,7 @@ bytes are digest-bound and therefore flow through blake3 as materialized
 streams anyway (`read_system`, `read_claims`).
 
 `read_proof i` builds a `Proof` object and returns the end offset;
-`Ix/MultiStark.lean` hangs the entrypoint (and full-consumption assert)
+`MultiStark.lean` hangs the entrypoint (and full-consumption assert)
 off it.
 -/
 

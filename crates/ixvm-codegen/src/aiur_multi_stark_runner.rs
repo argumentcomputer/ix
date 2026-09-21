@@ -65,7 +65,7 @@ pub fn execute_multi_stark(
 /// Build `verify_multi_stark_proof`'s IO advice directly from the raw
 /// byte blobs: channel 0 = proof, 1 = vk, 2 = claims, each registered
 /// under key `[0]` on its channel (one stream per channel). Mirrors
-/// the layout of `MultiStark.verifierInput` (`Ix/MultiStark.lean`).
+/// the layout of `MultiStark.verifierInput` (`MultiStark.lean`).
 pub fn verifier_io_buffer(proof: &[u8], vk: &[u8], claims: &[u8]) -> IOBuffer {
   // Measurement hook: dump the raw advice blobs for offline analysis
   // (vk encoding/activation studies) when IX_DUMP_RECURSION_IO is set
