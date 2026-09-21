@@ -183,6 +183,20 @@ def ratio (mainV prV : Float) (metric : String) : Option (Float × String) :=
 structure CompareSection where
   heading : String := ""
   metrics : Array String
+  /-- Restrict a stage to its workloads (e.g. aggregation pairs). `none`
+      retains every row, including failures with no measurements. -/
+  names : Option (Array String) := none
+  rowNoun : Option String := none
+
+/-- Aggregation measures a pair, while the other Aiur stages measure each
+    constant. Select by workload identity so OOM/rejected rows remain visible
+    even when they have no metrics. -/
+def scopeAiurSection (names : Array String) (sec : CompareSection) : CompareSection :=
+  let join := sec.metrics.all (·.startsWith "join-")
+  { sec with
+    names := some (names.filter fun n =>
+      Ix.Cli.BenchCmd.aiurJoinBenchmarkNames.contains n == join)
+    rowNoun := some (if join then "pair" else "constant") }
 
 /-- The stage qualifier shared by every one of a section's measures, if
     they share one. A stage table's heading already says which stage it
@@ -247,20 +261,23 @@ def renderCompare (a : CompareArgs) : String := Id.run do
   -- One rendered table per section, plus the names that regressed or
   -- improved ANYWHERE across them: the summary counts a constant once,
   -- however many stages moved.
-  let mut blocks : Array (String × Array String) := #[]
+  let mut blocks : Array (String × Array String × Nat × String) := #[]
   let mut regressedNames : Array String := #[]
   let mut improvedNames : Array String := #[]
   for sec in a.sections do
+    let sectionNames := names.filter fun n => sec.names.all (·.contains n)
+    if sectionNames.isEmpty then continue
+    let rowNoun := sec.rowNoun.getD a.rowNoun
     let drop := sectionLabelDrop sec.metrics
     let label := fun (m : String) =>
       metricLabel (if drop.isEmpty then m else (m.drop drop.length).toString)
-    let mut head := #[a.rowNoun]
+    let mut head := #[rowNoun]
     for m in sec.metrics do
       head := head ++ #[s!"{label m} ({a.baseLabel})", s!"{label m} (PR)", "Δ%"]
     let mut lines := #[
       "| " ++ " | ".intercalate head.toList ++ " |",
       "|" ++ "|".intercalate (head.toList.map fun _ => "---") ++ "|"]
-    for n in names do
+    for n in sectionNames do
       let mainStatus := rowStatus a.mainRows n
       let prStatus := rowStatus a.prRows n
       let mut rowRegressed := false
@@ -301,7 +318,7 @@ def renderCompare (a : CompareArgs) : String := Id.run do
       if rowImproved && !improvedNames.contains n then
         improvedNames := improvedNames.push n
       lines := lines.push ("| " ++ " | ".intercalate cols.toList ++ " |")
-    blocks := blocks.push (sec.heading, lines)
+    blocks := blocks.push (sec.heading, lines, sectionNames.size, rowNoun)
   let regressed := regressedNames.size
   let improved := improvedNames.size
 
@@ -330,12 +347,12 @@ def renderCompare (a : CompareArgs) : String := Id.run do
   else if (rowNames a.prRows).isEmpty then
     out := out.push "" |>.push
       "_⚠️ no PR-side results (see the workflow logs)._"
-  for (heading, lines) in blocks do
+  for (heading, lines, count, rowNoun) in blocks do
     let caption := if heading.isEmpty then "comparison table" else heading
-    if names.size > 5 then
+    if count > 5 then
       out := out ++ #["",
         s!"<details><summary>{caption} \
-          ({plural names.size a.rowNoun})</summary>", ""]
+          ({plural count rowNoun})</summary>", ""]
         ++ lines ++ #["", "</details>"]
     else
       out := out ++ (if heading.isEmpty then #[""] else #["", s!"#### {heading}", ""])
@@ -606,12 +623,18 @@ def runCompareCmd (p : Cli.Parsed) : IO UInt32 := do
   -- registry decides, splitting a pipeline mode into its stage tables.
   let spec := Ix.Cli.BenchCmd.findBackend backend
   let flagged := (p.flag? "metric").map (·.as! (Array String)) |>.getD #[]
+  let mainRows ← readRows mainPath
+  let prRows ← readRows prPath
+  let names := rowNames mainRows ++ rowNames prRows
+  let pairNames := Ix.Cli.BenchCmd.aiurJoinBenchmarkNames
   let sections : Array CompareSection :=
     if !flagged.isEmpty then #[{ metrics := flagged }]
     else match (spec.map (·.stagesFor mode)).getD [] with
       | [] => #[{ metrics := ((spec.map (·.metricsFor mode)).getD []).toArray }]
       | stages => (stages.map fun (heading, ms) =>
-          ({ heading, metrics := ms.toArray } : CompareSection)).toArray
+          let sec : CompareSection := { heading, metrics := ms.toArray }
+          if backend == "aiur" && mode == "prove" then scopeAiurSection names sec
+          else sec).toArray
   if sections.all (·.metrics.isEmpty) then
     p.printError s!"error: no metrics for {backend}/{mode}; pass --metric or fix backendSpecs"
     return exitUsage
@@ -634,13 +657,13 @@ def runCompareCmd (p : Cli.Parsed) : IO UInt32 := do
   let sortMetric := if sections.size > 1
     then (sections.back?.bind (·.metrics[0]?)).getD "" else ""
   let mut table := renderCompare {
-    mainRows := ← readRows mainPath
-    prRows := ← readRows prPath
+    mainRows, prRows
     sections, sortMetric, threshold, title, baseLabel
     phases := ((← IO.getEnv "BENCH_PHASES").getD "0") == "1"
     rowNoun :=
       if backend == "compile" then "env"
       else if backend == "ooc" then "env/constant"
+      else if backend == "aiur" && names.any pairNames.contains then "workload"
       else "constant"
   }
   -- Per-constant attribution drill-down: rendered whenever an
