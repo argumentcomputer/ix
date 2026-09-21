@@ -59,6 +59,7 @@ import Tests.FFI
 import Tests.Keccak
 import Tests.MultiStark
 import Tests.Aggr
+import Tests.AggrProof
 import Tests.AggrSemantics
 import Tests.AggrActivation
 import Tests.Cli
@@ -213,6 +214,7 @@ def primaryRunners : List (String × IO UInt32) := [
 
 /-- Ignored test runners - expensive, deferred IO actions run only when explicitly requested -/
 def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
+  ("aggregate-proof", Tests.Aggr.proofRoundTrip),
   ("kernel-dependencies", do
     match AiurTestEnv.build IxVM.ixVM IxVM.functionGroups with
     | .error e => IO.eprintln s!"IxVM setup failed: {e}"; return 1
