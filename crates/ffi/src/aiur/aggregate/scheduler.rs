@@ -25,24 +25,36 @@ pub(super) fn run_scheduler(
   jobs: usize,
   budget: usize,
 ) -> Result<Vec<Arc<Slot>>, String> {
+  run_scheduler_with(ctx.specs, jobs, budget, |index, children| {
+    prove_slot(ctx, index, children)
+  })
+}
+
+/// Run the production admission and draining loop with an injected slot worker.
+/// Tests can control completion without constructing recursive proofs.
+pub(super) fn run_scheduler_with<S: Send + Sync>(
+  specs: &[SlotSpec],
+  jobs: usize,
+  budget: usize,
+  worker: impl Fn(usize, &[Arc<S>]) -> Result<Arc<S>, String> + Copy + Send + Sync,
+) -> Result<Vec<Arc<S>>, String> {
   if budget == 0 {
     return Err("aggregate scheduler RAM budget must be positive".into());
   }
-  let max_jobs = if jobs == 0 { ctx.specs.len().max(1) } else { jobs.max(1) };
+  let max_jobs = if jobs == 0 { specs.len().max(1) } else { jobs.max(1) };
   let (sender, receiver) = mpsc::channel();
-  thread::scope(|scope| -> Result<Vec<Arc<Slot>>, String> {
-    let mut slots: Vec<Option<Arc<Slot>>> = vec![None; ctx.specs.len()];
-    let mut completed = vec![false; ctx.specs.len()];
-    let mut in_flight = vec![false; ctx.specs.len()];
+  thread::scope(|scope| -> Result<Vec<Arc<S>>, String> {
+    let mut slots: Vec<Option<Arc<S>>> = vec![None; specs.len()];
+    let mut completed = vec![false; specs.len()];
+    let mut in_flight = vec![false; specs.len()];
     let mut completed_count = 0usize;
     let mut active = 0usize;
     let mut reserved = 0usize;
     let mut failures: Vec<(usize, String)> = Vec::new();
 
-    while completed_count < ctx.specs.len() {
+    while completed_count < specs.len() {
       if failures.is_empty() && active < max_jobs {
-        let mut ready: Vec<usize> = ctx
-          .specs
+        let mut ready: Vec<usize> = specs
           .iter()
           .enumerate()
           .filter_map(|(index, spec)| {
@@ -53,21 +65,21 @@ pub(super) fn run_scheduler(
           })
           .collect();
         ready.sort_unstable_by(|left, right| {
-          ctx.specs[*right]
+          specs[*right]
             .ram_bytes
-            .cmp(&ctx.specs[*left].ram_bytes)
+            .cmp(&specs[*left].ram_bytes)
             .then_with(|| left.cmp(right))
         });
         for index in ready {
           if active >= max_jobs {
             break;
           }
-          let weight = ctx.specs[index].ram_bytes;
+          let weight = specs[index].ram_bytes;
           let fits = reserved.saturating_add(weight) <= budget;
           if !fits && active != 0 {
             continue;
           }
-          let children = match ctx.specs[index].op {
+          let children = match specs[index].op {
             PlanOp::Leaf(_) => Vec::new(),
             PlanOp::Join(left, right) => vec![
               slots[left].as_ref().expect("completed left slot").clone(),
@@ -89,7 +101,7 @@ pub(super) fn run_scheduler(
           scope.spawn(move || {
             let result =
               std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                prove_slot(ctx, index, &children)
+                worker(index, &children)
               }))
               .unwrap_or_else(|payload| {
                 Err(format!(
@@ -104,8 +116,7 @@ pub(super) fn run_scheduler(
 
       if active == 0 {
         if failures.is_empty() {
-          failures
-            .push((ctx.specs.len(), "aggregate scheduler deadlocked".into()));
+          failures.push((specs.len(), "aggregate scheduler deadlocked".into()));
         }
         break;
       }
@@ -150,7 +161,7 @@ pub(super) fn run_scheduler(
     if !failures.is_empty() {
       failures.sort_unstable_by_key(|(index, _)| *index);
       let (index, error) = failures.remove(0);
-      return Err(if index < ctx.specs.len() {
+      return Err(if index < specs.len() {
         format!("slot {index}: {error}")
       } else {
         error
