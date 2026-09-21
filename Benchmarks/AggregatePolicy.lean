@@ -26,6 +26,18 @@ open Ix.Cli.AggregateCmd
 abbrev AggregationTree := Ix.Cli.CheckCmd.AggregationTree
 abbrev FoldOp := Ix.Cli.CheckCmd.AggregationTree.FoldOp
 
+structure AggregateSlot where
+  /-- Which verifying system a parent must use for this slot. Production
+  wrap-first slots are all `.aggr`; direct-join leaf slots remain `.ixvm`. -/
+  kind : Aggr.ChildKind := .aggr
+  statement : Aggr.CheckEnvTrees
+  subjectCount : Nat
+  outerClaim : Array Aiur.G
+  proof : Aiur.Proof
+  proofAddress? : Option Address
+  /-- Serialized singleton outer-claim list consumed by a parent. -/
+  claimsBytes : ByteArray := ByteArray.empty
+
 inductive Policy where
   | wrapFirst
   | direct

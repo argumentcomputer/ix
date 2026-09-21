@@ -4,12 +4,11 @@ public import Tests.Aggr
 public import Ix.Cli.VerifyCmd
 
 /-!
-# Converged aggregate host/driver semantics
+# Aggregate statements, manifests, and verification
 
-M1-e ports the host, manifest, cache, verifier-value, and scheduler coverage
-that originally lived beside the three-entrypoint aggregate circuit onto the
-production `ix_aggr` claim and slot model. Circuit shape positives/negatives
-remain in `Tests/Aggr.lean`; this file supplies the rest of the semantic union.
+Pure statement/plan checks and cross-language manifest tests complement the
+production circuit tests in `Tests/Aggr.lean`. Native cache and scheduler
+regressions live beside the Rust controller.
 -/
 
 public section
@@ -310,41 +309,7 @@ def semanticSuite : IO UInt32 := do
     claim := left.claim
     proof := leftProof.toBytes
   }
-  let validCached := Ix.Cli.AggregateCmd.validateAggregateCacheWrapper
-    selfSystem left.claim leftOuter cachedWrapper
-  let wrongCachedStatement := Ix.Cli.AggregateCmd.validateAggregateCacheWrapper
-    selfSystem right.claim leftOuter cachedWrapper
-  let wrongCachedOuter := Ix.Cli.AggregateCmd.validateAggregateCacheWrapper
-    selfSystem left.claim rightOuter cachedWrapper
-  let badProofBytes := leftProof.toBytes.set! 0
-    (UInt8.ofNat ((leftProof.toBytes.data[0]!.toNat + 1) % 256))
-  let badCachedProof := Ix.Cli.AggregateCmd.validateAggregateCacheWrapper
-    selfSystem left.claim leftOuter { cachedWrapper with proof := badProofBytes }
-
-  let cacheRoot ← IO.FS.createTempDir
-  let cacheDir ← Ix.Cli.AggregateCmd.aggregateCacheDir (some cacheRoot)
-  let missingEntry ← Ix.Cli.AggregateCmd.readAggregateCacheAddress cacheDir leftKey
   let cachedAddress := Address.blake3 (Ixon.Proof.ser cachedWrapper)
-  Ix.Cli.AggregateCmd.writeAggregateCacheAddress cacheDir leftKey cachedAddress
-  let presentEntry ← Ix.Cli.AggregateCmd.readAggregateCacheAddress cacheDir leftKey
-  let tempEntryExists ← (cacheDir / s!"{leftKey}.tmp").pathExists
-  IO.FS.writeFile (cacheDir / toString leftKey) "corrupt-cache-entry"
-  let corruptEntry ← Ix.Cli.AggregateCmd.readAggregateCacheAddress cacheDir leftKey
-  Ix.Cli.AggregateCmd.writeAggregateCacheAddress cacheDir leftKey cachedAddress
-  let recoveredEntry ← Ix.Cli.AggregateCmd.readAggregateCacheAddress cacheDir leftKey
-  let missingIndexIsMiss : Bool := match missingEntry with
-    | .miss => true
-    | _ => false
-  let cacheIndexRoundTrip : Bool := match presentEntry with
-    | .hit address => address == cachedAddress
-    | _ => false
-  let cacheTempGone := !tempEntryExists
-  let corruptIndexRejected : Bool := match corruptEntry with
-    | .invalid _ => true
-    | _ => false
-  let corruptIndexRecovers : Bool := match recoveredEntry with
-    | .hit address => address == cachedAddress
-    | _ => false
   let cachedBytes := Ixon.Proof.ser cachedWrapper
   let wrapperContentAddressAccepted : Bool :=
     match Ix.Cli.VerifyCmd.decodeAggregateWrapperAt cachedAddress cachedBytes with
@@ -356,23 +321,6 @@ def semanticSuite : IO UInt32 := do
     match Ix.Cli.VerifyCmd.decodeAggregateWrapperAt wrongAddress cachedBytes with
     | .error _ => true
     | .ok _ => false
-  let resumed? ← match wrapSpecs with
-    | .ok specs =>
-      match specs[0]? with
-      | some spec =>
-        Ix.Cli.AggregateCmd.loadCachedAggregateProofWith
-          (fun _ => pure cachedBytes) cacheDir 0 spec selfSystem
-      | none => pure none
-    | .error _ => pure none
-  let corruptStore? ← match wrapSpecs with
-    | .ok specs =>
-      match specs[0]? with
-      | some spec =>
-        Ix.Cli.AggregateCmd.loadCachedAggregateProofWith
-          (fun _ => pure (cachedBytes.push 0xff)) cacheDir 0 spec selfSystem
-      | none => pure none
-    | .error _ => pure none
-
   -- Manifest parsing, validate-before-prune, and value-based verification.
   let manifestPlan :=
     (Ix.Cli.CheckCmd.AggregationTree.node
@@ -565,32 +513,6 @@ def semanticSuite : IO UInt32 := do
           upper.shape? == some 9 && upper.subjectCount == 5 && upper.structural
       | _, _ => false
     | .error _ => false
-  let fakeWeights : Array Nat := #[8, 3, 4, 6, 5]
-  let schedulerTrace := mixedSchedule.bind fun scheduled =>
-    Ix.Cli.AggregateCmd.simulateAggregateSchedule scheduled fakeWeights 2 10
-  let schedulerHeaviestFirst : Bool := match schedulerTrace with
-    | .ok trace => trace.admissionOrder == #[0, 3, 1, 2, 4] &&
-        trace.admissionBatches == #[#[0], #[3, 1], #[2], #[4]]
-    | .error _ => false
-  let schedulerWithinLimits : Bool := match schedulerTrace with
-    | .ok trace => trace.maxReservedBytes <= 10 &&
-        trace.admissionBatches.all (fun batch => batch.size <= 2)
-    | .error _ => false
-  let schedulerDependenciesHold : Bool := match schedulerTrace with
-    | .ok trace =>
-      let position (slot : Nat) := trace.admissionOrder.findIdx? (· == slot)
-      match position 0, position 1, position 2, position 3, position 4 with
-      | some p0, some p1, some p2, some p3, some p4 =>
-        p0 < p2 && p1 < p2 && p2 < p4 && p3 < p4
-      | _, _, _, _, _ => false
-    | .error _ => false
-  let oversizedRunsAlone : Bool := match mixedSchedule.bind fun scheduled =>
-      Ix.Cli.AggregateCmd.simulateAggregateSchedule scheduled
-        #[11, 3, 4, 6, 5] 2 10 with
-    | .ok trace => trace.admissionBatches[0]? == some #[0] &&
-        trace.admissionBatches.all fun batch =>
-          batch.size == 1 || batch.all fun slot => fakeWeights[slot]! <= 10
-    | .error _ => false
   let flatWeightAffine :=
     Ix.Cli.AggregateCmd.aggregateSlotRamBytes
       { op := .join 0 1, subjectCount := 7, structural := false } ==
@@ -602,92 +524,6 @@ def semanticSuite : IO UInt32 := do
       Ix.Cli.AggregateCmd.schedulePlan #[.join 0 1] #[] 4 with
     | .error _ => true
     | .ok _ => false
-
-  let fakeRun (scheduled : Array Ix.Cli.AggregateCmd.ScheduledFold)
-      (slotIdx : Nat) (slots : Array (Option ByteArray)) :
-      IO (Except String ByteArray) := do
-    let some item := scheduled[slotIdx]? | return .error "missing fake slot"
-    match item.op with
-    | .leaf shard => pure (.ok ⟨#[UInt8.ofNat shard, UInt8.ofNat slotIdx]⟩)
-    | .join leftIdx rightIdx =>
-      let some leftPayload := (slots[leftIdx]?).join
-        | return .error "missing fake left child"
-      let some rightPayload := (slots[rightIdx]?).join
-        | return .error "missing fake right child"
-      pure (.ok ((leftPayload ++ rightPayload).push (UInt8.ofNat slotIdx)))
-  let schedulerSerialParallelParity ← match mixedSchedule with
-    | .error _ => pure false
-    | .ok scheduled =>
-      let serial ← Ix.Cli.AggregateCmd.runAggregateDag scheduled fakeWeights
-        1 10 (fakeRun scheduled)
-      let parallel ← Ix.Cli.AggregateCmd.runAggregateDag scheduled fakeWeights
-        2 10 (fakeRun scheduled)
-      pure <| match serial, parallel with
-        | .ok serial, .ok parallel => serial == parallel
-        | _, _ => false
-  let dependentStarted ← IO.mkRef false
-  let failureRun (slotIdx : Nat) (_ : Array (Option Nat)) :
-      IO (Except String Nat) := do
-    if slotIdx == 0 then return .error "intentional leaf failure"
-    if slotIdx == 2 then dependentStarted.set true
-    pure (.ok slotIdx)
-  let schedulerStopsAfterFailure ← match mixedSchedule with
-    | .error _ => pure false
-    | .ok scheduled =>
-      let result ← Ix.Cli.AggregateCmd.runAggregateDag scheduled fakeWeights
-        2 10 failureRun
-      let started ← dependentStarted.get
-      pure <| match result with
-        | .error e => e.startsWith "slot 0: intentional leaf failure" && !started
-        | .ok _ => false
-
-  -- Exercise concurrent proof generation through the same Aiur system. Zero
-  -- query PoW has a canonical witness, so wrapper-byte equality isolates DAG
-  -- determinism rather than rayon choosing different valid grind witnesses.
-  let scheduledSystem := AiurSystem.build childCompiled.bytecode recCommitParams
-    { innerFri with queryProofOfWorkBits := 0 }
-  let scheduledVk := scheduledSystem.vkBytes
-  let scheduledAllowed := Aggr.allowedBlob ixvmVk verifyIdx scheduledVk fakeAggrIdx
-  let scheduledOuter (claim : Ix.Claim) :=
-    Ix.Cli.AggregateCmd.aggregateOuterClaim scheduledAllowed fakeAggrIdx claim
-  let scheduledProofSlot (slotIdx : Nat)
-      (slots : Array (Option ByteArray)) : IO (Except String ByteArray) := do
-    let claim := if slotIdx == 0 then left.claim
-      else if slotIdx == 1 then right.claim else flatOutput.claim
-    if slotIdx == 2 then
-      for (childIdx, childClaim) in #[(0, left.claim), (1, right.claim)] do
-        let some proofBytes := (slots[childIdx]?).join
-          | return .error s!"scheduled pair missing child {childIdx}"
-        let proof ← match Aiur.Proof.ofBytesChecked proofBytes with
-          | .error e => return .error e
-          | .ok proof => pure proof
-        match scheduledSystem.verify (scheduledOuter childClaim) proof with
-        | .ok () => pure ()
-        | .error e => return .error e
-    let claimBytes := Ix.Claim.ser claim
-    let (outer, proof, _) ← match scheduledSystem.prove fakeAggrIdx
-        (Aggr.pubInput scheduledAllowed claimBytes) default with
-      | .error e => return .error e
-      | .ok result => pure result
-    if outer != scheduledOuter claim then
-      return .error s!"scheduled slot {slotIdx} outer claim mismatch"
-    pure (.ok proof.toBytes)
-  let scheduledWrapperBytes (proofs : Array ByteArray) : Array ByteArray :=
-    proofs.mapIdx fun slotIdx proof =>
-      let claim := if slotIdx == 0 then left.claim
-        else if slotIdx == 1 then right.claim else flatOutput.claim
-      Ixon.Proof.ser { claim, proof }
-  let concurrentProofWrappersStable ← match wrapPlan with
-    | .error _ => pure false
-    | .ok scheduled =>
-      let serial ← Ix.Cli.AggregateCmd.runAggregateDag scheduled #[8, 8, 4]
-        1 16 scheduledProofSlot
-      let parallel ← Ix.Cli.AggregateCmd.runAggregateDag scheduled #[8, 8, 4]
-        2 16 scheduledProofSlot
-      pure <| match serial, parallel with
-        | .ok serial, .ok parallel =>
-          scheduledWrapperBytes serial == scheduledWrapperBytes parallel
-        | _, _ => false
 
   lspecIO (.ofList [("ix-aggr-semantics", [
     test "default recursion parameters preserve direct construction"
@@ -711,23 +547,10 @@ def semanticSuite : IO UInt32 := do
     test "wrap-first and direct policies derive the same flat root claim"
       policiesShareRootClaim,
     test "aggregate outer claims bind the exact CheckEnv value" outerClaimBindsValue,
-    expectOk "cache accepts an exactly bound valid aggregate wrapper" validCached,
-    expectErr "cache rejects a wrapper for a different CheckEnv"
-      wrongCachedStatement,
-    expectErr "cache rejects a proof under a different aggregate claim"
-      wrongCachedOuter,
-    expectErr "cache rejects corrupted aggregate proof bytes" badCachedProof,
-    test "missing cache index is a clean miss" missingIndexIsMiss,
-    test "cache index atomically round-trips a store address" cacheIndexRoundTrip,
-    test "cache atomic update leaves no temporary entry" cacheTempGone,
-    test "cache treats a corrupt index as an invalid hint" corruptIndexRejected,
-    test "cache atomically replaces a corrupt index" corruptIndexRecovers,
     test "aggregate verifier accepts a content-addressed proof wrapper"
       wrapperContentAddressAccepted,
     test "aggregate verifier rejects a wrapper stored under the wrong address"
       wrapperContentAddressRejected,
-    test "cache resumes a content-addressed verified aggregate wrapper" resumed?.isSome,
-    test "cache treats corrupt store content as a miss" corruptStore?.isNone,
     test "flat host fold constructs canonical union/discharge trees" flatHostCorrect,
     test "structural host fold constructs root-of-roots and survivors"
       structuralHostCorrect,
@@ -769,25 +592,11 @@ def semanticSuite : IO UInt32 := do
       residualAssumptionRejected,
     test "threshold scheduling is flat below and structural above monotonically"
       mixedScheduleCorrect,
-    test "RAM-gated scheduler admits ready work heaviest-first"
-      schedulerHeaviestFirst,
-    test "RAM-gated scheduler respects job and byte budgets"
-      schedulerWithinLimits,
-    test "RAM-gated scheduler waits for both pair children"
-      schedulerDependenciesHold,
-    test "an individually oversized scheduler slot is admitted alone"
-      oversizedRunsAlone,
     test "flat self-pair RAM reserve is affine in subject leaves"
       flatWeightAffine,
     test "aggregate scheduler parses MemTotal for its default budget"
       memTotalParsing,
     test "invalid non-post-order schedules are rejected" invalidScheduleRejected,
-    test "jobs=2 DAG execution is byte-identical to jobs=1"
-      schedulerSerialParallelParity,
-    test "a failed slot drains peers without starting dependent pairs"
-      schedulerStopsAfterFailure,
-    test "jobs=2 zero-PoW aggregate wrappers are byte-identical to jobs=1"
-      concurrentProofWrappersStable,
     expectOk "stand-in aggregate proof verifies under its uniform outer claim"
       (selfSystem.verify leftOuter leftProof),
     expectOk "second stand-in aggregate proof verifies independently"
