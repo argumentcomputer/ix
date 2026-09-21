@@ -160,7 +160,13 @@ pub(super) fn prove_aggregate(
 ) -> Result<(AiurProof, Option<Address>), String> {
   let replaying = ctx.reprove_slot == Some(slot_index);
   if !replaying {
-    if let Some((proof, address)) = load_cached(ctx, slot_index, spec) {
+    if let Some((proof, address)) = load_cached(
+      ctx.aggr_system,
+      ctx.store_dir,
+      ctx.cache_dir,
+      slot_index,
+      spec,
+    ) {
       return Ok((proof, Some(address)));
     }
   } else {
@@ -276,7 +282,14 @@ pub(super) fn prove_aggregate(
   if outer_claim != spec.outer_claim {
     return Err("aggregate prover returned an unexpected outer claim".into());
   }
-  let address = persist_cached(ctx, slot_index, spec, &proof);
+  let address = persist_cached(
+    ctx.store_dir,
+    ctx.cache_dir,
+    ctx.write_outputs,
+    slot_index,
+    spec,
+    &proof,
+  );
   if replaying {
     let tree_bytes: usize =
       tree_storage.iter().map(|tree| tree.bytes.len()).sum();
@@ -412,7 +425,7 @@ pub(super) fn load_replay_child(
   if spec.kind == ChildKind::Ixvm {
     return prove_slot(ctx, child_index, &[]);
   }
-  let (proof, proof_address) = load_cached(ctx, child_index, spec).ok_or_else(|| {
+  let (proof, proof_address) = load_cached(ctx.aggr_system, ctx.store_dir, ctx.cache_dir, child_index, spec).ok_or_else(|| {
     format!(
       "replay slot {target} requires cached child slot {child_index}; run Stage 2 through that child first"
     )

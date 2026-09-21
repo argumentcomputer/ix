@@ -1,10 +1,7 @@
 //! Aggregation store.
 
-use super::{
-  plan::SlotSpec, prepare::PreparedShard, prove::ProveContext,
-  statement::Statement,
-};
-use aiur::synthesis::AiurProof;
+use super::{plan::SlotSpec, prepare::PreparedShard, statement::Statement};
+use aiur::synthesis::{AiurProof, AiurSystem};
 use ix_common::address::Address;
 use ixon::Proof as IxonProof;
 use rustc_hash::FxHashMap;
@@ -129,11 +126,13 @@ pub(super) fn cache_address(
 }
 
 pub(super) fn load_cached(
-  ctx: ProveContext<'_>,
+  system: &AiurSystem,
+  store_dir: &Path,
+  cache_dir: Option<&Path>,
   slot_index: usize,
   spec: &SlotSpec,
 ) -> Option<(AiurProof, Address)> {
-  let cache_dir = ctx.cache_dir?;
+  let cache_dir = cache_dir?;
   let address = cache_address(cache_dir, &spec.cache_key)?;
   let reject = |reason: &str| {
     eprintln!(
@@ -141,7 +140,7 @@ pub(super) fn load_cached(
       address.hex()
     );
   };
-  let bytes = match read_store(ctx.store_dir, &address) {
+  let bytes = match read_store(store_dir, &address) {
     Ok(bytes) => bytes,
     Err(error) => {
       reject(&error);
@@ -170,7 +169,7 @@ pub(super) fn load_cached(
       return None;
     },
   };
-  if let Err(error) = ctx.aggr_system.verify(&spec.outer_claim, &proof) {
+  if let Err(error) = system.verify(&spec.outer_claim, &proof) {
     reject(&format!("native verification failed: {error:?}"));
     return None;
   }
@@ -208,17 +207,19 @@ pub(super) fn persist_wrapper(
 }
 
 pub(super) fn persist_cached(
-  ctx: ProveContext<'_>,
+  store_dir: &Path,
+  cache_dir: Option<&Path>,
+  write_outputs: bool,
   slot_index: usize,
   spec: &SlotSpec,
   proof: &AiurProof,
 ) -> Option<Address> {
-  if !ctx.write_outputs {
+  if !write_outputs {
     return None;
   }
-  let cache_dir = ctx.cache_dir?;
+  let cache_dir = cache_dir?;
   match (|| -> Result<Address, String> {
-    let address = persist_wrapper(ctx.store_dir, &spec.statement, proof)?;
+    let address = persist_wrapper(store_dir, &spec.statement, proof)?;
     fs::create_dir_all(cache_dir).map_err(|error| {
       format!("create aggregate cache {}: {error}", cache_dir.display())
     })?;

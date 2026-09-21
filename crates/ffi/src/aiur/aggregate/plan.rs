@@ -144,16 +144,31 @@ pub(super) fn build_statement_specs(
   Ok(specs)
 }
 
+/// Proof-system identities and cache framing shared by every slot.
+#[derive(Clone, Copy)]
+pub(super) struct PlanIdentity<'a> {
+  pub(super) verify_idx: usize,
+  pub(super) aggr_idx: usize,
+  pub(super) aggr_vk: &'a [u8],
+  pub(super) allowed: &'a [u8],
+  pub(super) cache_fri_bytes: &'a [u8],
+}
+
+/// Host folding choices; neither changes the statement's public meaning.
+#[derive(Clone, Copy)]
+pub(super) struct FoldPolicy {
+  pub(super) structural_above: usize,
+  pub(super) direct_joins: bool,
+}
+
 pub(super) fn build_specs(
   prepared: &PreparedRun,
-  verify_idx: usize,
-  aggr_idx: usize,
-  structural_above: usize,
-  direct_joins: bool,
-  aggr_vk: &[u8],
-  allowed: &[u8],
-  cache_fri_bytes: &[u8],
+  identity: PlanIdentity<'_>,
+  policy: FoldPolicy,
 ) -> Result<Vec<SlotSpec>, String> {
+  let PlanIdentity { verify_idx, aggr_idx, aggr_vk, allowed, cache_fri_bytes } =
+    identity;
+  let FoldPolicy { structural_above, direct_joins } = policy;
   let statement_specs = build_statement_specs(prepared, structural_above)?;
   let raw_leaves = direct_joins && statement_specs.len() > 1;
   let mut specs: Vec<SlotSpec> = Vec::with_capacity(statement_specs.len());

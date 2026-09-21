@@ -20,7 +20,10 @@ use lean_ffi::object::{
   LeanBorrowed, LeanByteArray, LeanExcept, LeanExternal, LeanNat, LeanOwned,
   LeanString,
 };
-use plan::{PlanOp, SlotSpec, build_specs, build_statement_specs, plan_replay};
+use plan::{
+  FoldPolicy, PlanIdentity, PlanOp, SlotSpec, build_specs,
+  build_statement_specs, plan_replay,
+};
 use prepare::{PreparedShard, prepare_run, validate_root_statement};
 use protocol::{ChildKind, allowed_blob};
 use prove::{ProveContext, run_replay};
@@ -167,13 +170,17 @@ fn run(config: RunConfig<'_>) -> Result<String, String> {
     allowed_blob(&ixvm_vk, config.verify_idx, &aggr_vk, config.aggr_idx);
   let specs = build_specs(
     &prepared,
-    config.verify_idx,
-    config.aggr_idx,
-    config.structural_above,
-    config.direct_joins,
-    &aggr_vk,
-    &allowed,
-    config.cache_fri_bytes,
+    PlanIdentity {
+      verify_idx: config.verify_idx,
+      aggr_idx: config.aggr_idx,
+      aggr_vk: &aggr_vk,
+      allowed: &allowed,
+      cache_fri_bytes: config.cache_fri_bytes,
+    },
+    FoldPolicy {
+      structural_above: config.structural_above,
+      direct_joins: config.direct_joins,
+    },
   )?;
   let replay_plan = config
     .reprove_slot

@@ -1,6 +1,6 @@
 use super::{
   expected_from_manifest,
-  plan::{ReplayPlan, build_specs, plan_replay},
+  plan::{FoldPolicy, PlanIdentity, ReplayPlan, build_specs, plan_replay},
   prepare::prepare_run,
   protocol::cache_key,
   prove::structural_path_advice,
@@ -132,13 +132,14 @@ fn native_preparation_and_structural_fold_discharge_a_frontier() {
   );
   let specs = build_specs(
     &prepared,
-    3,
-    5,
-    0,
-    false,
-    b"aggregate-vk",
-    b"allowed",
-    &[0; 40],
+    PlanIdentity {
+      verify_idx: 3,
+      aggr_idx: 5,
+      aggr_vk: b"aggregate-vk",
+      allowed: b"allowed",
+      cache_fri_bytes: &[0; 40],
+    },
+    FoldPolicy { structural_above: 0, direct_joins: false },
   )
   .expect("native specs");
   assert_eq!(specs.len(), 3);
@@ -165,13 +166,14 @@ fn native_preparation_and_structural_fold_discharge_a_frontier() {
 
   let direct_specs = build_specs(
     &prepared,
-    3,
-    5,
-    0,
-    true,
-    b"aggregate-vk",
-    b"allowed",
-    &[0; 40],
+    PlanIdentity {
+      verify_idx: 3,
+      aggr_idx: 5,
+      aggr_vk: b"aggregate-vk",
+      allowed: b"allowed",
+      cache_fri_bytes: &[0; 40],
+    },
+    FoldPolicy { structural_above: 0, direct_joins: true },
   )
   .expect("direct native specs");
   assert!(plan_replay(&direct_specs, 0).unwrap_err().contains("raw IxVM leaf"));
