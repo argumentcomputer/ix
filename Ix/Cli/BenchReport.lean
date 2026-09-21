@@ -349,7 +349,8 @@ def renderCompare (a : CompareArgs) : String := Id.run do
       "_⚠️ no PR-side results (see the workflow logs)._"
   for (heading, lines, count, rowNoun) in blocks do
     let caption := if heading.isEmpty then "comparison table" else heading
-    if count > 5 then
+    -- Keep stage tables collapsible even for a single aggregation pair.
+    if !heading.isEmpty || count > 5 then
       out := out ++ #["",
         s!"<details><summary>{caption} \
           ({plural count rowNoun})</summary>", ""]
