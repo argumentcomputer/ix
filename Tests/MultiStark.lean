@@ -369,25 +369,25 @@ def joinSmokeSuite : IO UInt32 := do
   -- Pin the new recursion-parameter seam before exercising the join protocol.
   -- The default helper must reproduce the former direct construction exactly;
   -- the stable FRI bytes are the future cache-key component from the plan.
-  let recursionDefaults := MultiStark.defaultRecursionParameters
+  let recursionDefaults := Aggr.defaultRecursionParameters
   let defaultRecursionSystem :=
-    MultiStark.buildRecursionSystem childCompiled.bytecode recursionDefaults
+    Aggr.buildRecursionSystem childCompiled.bytecode recursionDefaults
   let legacyDefaultRecursionSystem := AiurSystem.build childCompiled.bytecode
     Aiur.defaultCommitmentParameters Aiur.defaultFriParameters
   let expectedDefaultFriBytes : ByteArray :=
     ⟨u64le 0 ++ u64le 1 ++ u64le 100 ++ u64le 0 ++ u64le 20⟩
   let tunedFri : Aiur.FriParameters :=
     { recursionDefaults.fri with numQueries := 50 }
-  let tunedFriParameters : MultiStark.RecursionParameters :=
+  let tunedFriParameters : Aggr.RecursionParameters :=
     { recursionDefaults with fri := tunedFri }
   let tunedFriSystem :=
-    MultiStark.buildRecursionSystem childCompiled.bytecode tunedFriParameters
+    Aggr.buildRecursionSystem childCompiled.bytecode tunedFriParameters
   let tunedCommitment : Aiur.CommitmentParameters :=
     { recursionDefaults.commitment with logBlowup := 3 }
-  let tunedCommitmentParameters : MultiStark.RecursionParameters :=
+  let tunedCommitmentParameters : Aggr.RecursionParameters :=
     { recursionDefaults with commitment := tunedCommitment }
   let tunedCommitmentSystem :=
-    MultiStark.buildRecursionSystem childCompiled.bytecode tunedCommitmentParameters
+    Aggr.buildRecursionSystem childCompiled.bytecode tunedCommitmentParameters
   let defaultRecursionIdentityPreserved :=
     defaultRecursionSystem.vkBytes == legacyDefaultRecursionSystem.vkBytes
   let defaultFriEncodingStable :=
@@ -417,14 +417,14 @@ def joinSmokeSuite : IO UInt32 := do
   let leftAssumptions := canonicalTree #[c, d]
   let rightSubjects := canonicalTree #[c]
   let rightAssumptions := canonicalTree #[a]
-  let leftStatement : MultiStark.CheckEnvTrees :=
+  let leftStatement : Aggr.CheckEnvTrees :=
     { subjects := leftSubjects, assumptions := some leftAssumptions }
-  let rightStatement : MultiStark.CheckEnvTrees :=
+  let rightStatement : Aggr.CheckEnvTrees :=
     { subjects := rightSubjects, assumptions := some rightAssumptions }
   let outputStatement := leftStatement.join rightStatement
   let outputSubjects := outputStatement.subjects
   let outputAssumptions := outputStatement.assumptions.get!
-  let adviceTrees := MultiStark.CheckEnvTrees.adviceTrees
+  let adviceTrees := Aggr.CheckEnvTrees.adviceTrees
     leftStatement rightStatement outputStatement
   let leftClaimBytes := Ix.Claim.ser leftStatement.claim
   let rightClaimBytes := Ix.Claim.ser rightStatement.claim
@@ -458,7 +458,7 @@ def joinSmokeSuite : IO UInt32 := do
   let recursionVk := childSystem.vkBytes
   let allowed := MultiStark.allowedBlob fakeIxvmVk verifyIdx recursionVk
     liftIdx childJoinIdx childStructuralJoinIdx
-  let childRecursionParameters : MultiStark.RecursionParameters := {
+  let childRecursionParameters : Aggr.RecursionParameters := {
     commitment := recCommitParams
     fri := innerFri
   }
@@ -625,9 +625,9 @@ def joinSmokeSuite : IO UInt32 := do
   let structuralClaimBytes := Ix.Claim.ser structuralOutput.claim
   let structuralInput := MultiStark.joinPubInput allowed structuralClaimBytes
   let structuralTreesBlob := MultiStark.joinTreesBlob
-    (MultiStark.CheckEnvTrees.structuralAdviceTrees
+    (Aggr.CheckEnvTrees.structuralAdviceTrees
       leftStatement rightStatement structuralOutput)
-  let structuralPathAdvice := MultiStark.CheckEnvTrees.structuralPathAdvice
+  let structuralPathAdvice := Aggr.CheckEnvTrees.structuralPathAdvice
     leftStatement rightStatement structuralOutput
   let structuralPathsBlob := MultiStark.joinPathsBlob structuralPathAdvice
   let structuralHonest := compiled.bytecode.executeMultiStarkJoin structuralJoinIdx
@@ -684,15 +684,15 @@ def joinSmokeSuite : IO UInt32 := do
     structuralTreesBlob (MultiStark.joinPathsBlob droppedPathAdvice)
 
   -- Candidate d chooses "carried", but this output claim/list omits it.
-  let missingCarriedOutput : MultiStark.CheckEnvTrees :=
+  let missingCarriedOutput : Aggr.CheckEnvTrees :=
     { subjects := structuralOutput.subjects, assumptions := none }
   let missingCarriedBytes := Ix.Claim.ser missingCarriedOutput.claim
   let missingCarriedInput := MultiStark.joinPubInput allowed missingCarriedBytes
   let missingCarriedTrees := MultiStark.joinTreesBlob
-    (MultiStark.CheckEnvTrees.structuralAdviceTrees
+    (Aggr.CheckEnvTrees.structuralAdviceTrees
       leftStatement rightStatement missingCarriedOutput)
   let missingCarriedPaths := MultiStark.joinPathsBlob
-    (MultiStark.CheckEnvTrees.structuralPathAdvice
+    (Aggr.CheckEnvTrees.structuralPathAdvice
       leftStatement rightStatement missingCarriedOutput)
   let missingCarried := compiled.bytecode.executeMultiStarkJoin structuralJoinIdx
     missingCarriedInput leftProofAdvice rightProofAdvice recursionVk
@@ -776,10 +776,10 @@ def joinSmokeSuite : IO UInt32 := do
   let structuralParentPreimages := MultiStark.joinPreimagesBlob
     #[structuralClaimBytes, rightInnerClaims, rightClaimBytes]
   let structuralParentTrees := MultiStark.joinTreesBlob
-    (MultiStark.CheckEnvTrees.structuralAdviceTrees
+    (Aggr.CheckEnvTrees.structuralAdviceTrees
       structuralOutput rightStatement structuralParentOutput)
   let structuralParentPaths := MultiStark.joinPathsBlob
-    (MultiStark.CheckEnvTrees.structuralPathAdvice
+    (Aggr.CheckEnvTrees.structuralPathAdvice
       structuralOutput rightStatement structuralParentOutput)
   let transitiveStructural := compiled.bytecode.executeMultiStarkJoin
     structuralJoinIdx structuralParentInput structuralChildProofAdvice
@@ -794,7 +794,7 @@ def joinSmokeSuite : IO UInt32 := do
   let flatAboveStructuralInput :=
     MultiStark.joinPubInput allowed flatAboveStructuralBytes
   let flatAboveStructuralTrees := MultiStark.joinTreesBlob
-    (MultiStark.CheckEnvTrees.adviceTrees
+    (Aggr.CheckEnvTrees.adviceTrees
       structuralOutput rightStatement flatAboveStructuralOutput)
   let flatAboveStructural := compiled.bytecode.executeMultiStarkJoin joinIdx
     flatAboveStructuralInput structuralChildProofAdvice rightProofAdvice

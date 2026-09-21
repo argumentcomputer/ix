@@ -163,25 +163,25 @@ def semanticSuite : IO UInt32 := do
   let allowed := Aggr.allowedBlob ixvmVk verifyIdx selfVk fakeAggrIdx
 
   -- Recursion parameter and cache-key contract.
-  let recursionDefaults := MultiStark.defaultRecursionParameters
+  let recursionDefaults := Aggr.defaultRecursionParameters
   let defaultRecursionSystem :=
-    MultiStark.buildRecursionSystem childCompiled.bytecode recursionDefaults
+    Aggr.buildRecursionSystem childCompiled.bytecode recursionDefaults
   let directDefaultSystem := AiurSystem.build childCompiled.bytecode
     Aiur.defaultCommitmentParameters Aiur.defaultFriParameters
   let expectedDefaultFriBytes : ByteArray :=
     ⟨u64le 0 ++ u64le 1 ++ u64le 100 ++ u64le 0 ++ u64le 20⟩
   let tunedFri : Aiur.FriParameters :=
     { recursionDefaults.fri with numQueries := 50 }
-  let tunedFriParameters : MultiStark.RecursionParameters :=
+  let tunedFriParameters : Aggr.RecursionParameters :=
     { recursionDefaults with fri := tunedFri }
   let tunedFriSystem :=
-    MultiStark.buildRecursionSystem childCompiled.bytecode tunedFriParameters
+    Aggr.buildRecursionSystem childCompiled.bytecode tunedFriParameters
   let tunedCommitment : Aiur.CommitmentParameters :=
     { recursionDefaults.commitment with logBlowup := 3 }
-  let tunedCommitmentParameters : MultiStark.RecursionParameters :=
+  let tunedCommitmentParameters : Aggr.RecursionParameters :=
     { recursionDefaults with commitment := tunedCommitment }
   let tunedCommitmentSystem :=
-    MultiStark.buildRecursionSystem childCompiled.bytecode tunedCommitmentParameters
+    Aggr.buildRecursionSystem childCompiled.bytecode tunedCommitmentParameters
   let defaultRecursionIdentityPreserved :=
     defaultRecursionSystem.vkBytes == directDefaultSystem.vkBytes
   let defaultFriEncodingStable :=
@@ -215,13 +215,6 @@ def semanticSuite : IO UInt32 := do
     structuralOutput.subjects.root ==
       Ix.Merkle.nodeHash left.subjects.root right.subjects.root &&
       structuralOutput.assumptions.map (·.leaves) == some #[d]
-  let converted := Ix.Cli.AggregateCmd.toAggrCheckEnvTrees
-    (Ix.Cli.AggregateCmd.fromAggrCheckEnvTrees structuralOutput)
-  let hostConversionRoundTrip := converted.claim == structuralOutput.claim &&
-    converted.subjects.leaves == structuralOutput.subjects.leaves &&
-    converted.assumptions.map (·.leaves) ==
-      structuralOutput.assumptions.map (·.leaves)
-
   let leftBytes := Ix.Claim.ser left.claim
   let rightBytes := Ix.Claim.ser right.claim
   let flatBytes := Ix.Claim.ser flatOutput.claim
@@ -242,7 +235,7 @@ def semanticSuite : IO UInt32 := do
   let outerClaimBindsValue := leftOuter != rightOuter &&
     flatOuter == Aiur.buildClaim fakeAggrIdx (Aggr.pubInput allowed flatBytes) #[]
 
-  let childRecursionParameters : MultiStark.RecursionParameters := {
+  let childRecursionParameters : Aggr.RecursionParameters := {
     commitment := recCommitParams
     fri := innerFri
   }
@@ -259,7 +252,7 @@ def semanticSuite : IO UInt32 := do
   let cacheKeyBindsVersion := leftKey != Ix.Cli.AggregateCmd.aggregateCacheKey
     selfVk childRecursionParameters leftOuter 1
   let repeated07 : Nat := 506381209866536711
-  let cacheVectorParameters : MultiStark.RecursionParameters := {
+  let cacheVectorParameters : Aggr.RecursionParameters := {
     commitment := Aiur.defaultCommitmentParameters
     fri := {
       logFinalPolyLen := repeated07
@@ -280,9 +273,9 @@ def semanticSuite : IO UInt32 := do
   let directPlan := Ix.Cli.AggregateCmd.schedulePlan ops #[2, 1] 8 true
   let prepared : Array Ix.Cli.AggregateCmd.PreparedShard := #[
     { claim := left.claim,
-      statement := Ix.Cli.AggregateCmd.fromAggrCheckEnvTrees left },
+      statement := left },
     { claim := right.claim,
-      statement := Ix.Cli.AggregateCmd.fromAggrCheckEnvTrees right }
+      statement := right }
   ]
   let wrapSpecs := wrapPlan.bind fun plan =>
     Ix.Cli.AggregateCmd.buildAggrSlotSpecs plan prepared selfVk allowed
@@ -737,8 +730,6 @@ def semanticSuite : IO UInt32 := do
     test "flat host fold constructs canonical union/discharge trees" flatHostCorrect,
     test "structural host fold constructs root-of-roots and survivors"
       structuralHostCorrect,
-    test "driver CheckEnv conversion round-trips free-form roots"
-      hostConversionRoundTrip,
     test "manifest tree lowers to post-order binary slots"
       (manifestPlan == expectedPlan),
     test "manifest parser exposes its validated bisection tree" parsedManifestPlan,

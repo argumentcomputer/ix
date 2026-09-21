@@ -150,7 +150,7 @@ def auditAggregateConstants (env : Ixon.Env) (statement : Aggr.CheckEnvTrees) :
 /-- Build the two deterministic systems whose identities are committed by an
 aggregate root: the IxVM vk and the single-entrypoint recursion vk. -/
 private def buildAggregateBackend
-    (recursionParameters : MultiStark.RecursionParameters) :
+    (recursionParameters : Aggr.RecursionParameters) :
     IO (Except String AggregateBackend) := do
   let ixvmCompiled ← match IxVM.ixVM with
     | .error e => return .error s!"IxVM toplevel merging failed: {e}"
@@ -166,7 +166,7 @@ private def buildAggregateBackend
   let aggrIdx := aggrCompiled.getFuncIdx `ix_aggr |>.get!
   let ixvmSystem := Aiur.AiurSystem.build ixvmCompiled.bytecode
     commitmentParameters friParameters
-  let aggrSystem := MultiStark.buildRecursionSystem aggrCompiled.bytecode
+  let aggrSystem := Aggr.buildRecursionSystem aggrCompiled.bytecode
     recursionParameters
   let ixvmVk := ixvmSystem.vkBytes
   let aggrVk := aggrSystem.vkBytes
@@ -329,7 +329,7 @@ def verifyShardComposition (ixePath manifestPath : String) (shardK? : Option Nat
 
 /-- Verify with an explicit aggregate-recursion configuration. Ordinary IxVM
 proof verification remains pinned to its independent canonical parameters. -/
-def runVerifyCmdWith (recursionParameters : MultiStark.RecursionParameters)
+def runVerifyCmdWith (recursionParameters : Aggr.RecursionParameters)
     (p : Cli.Parsed) : IO UInt32 := do
   let proofs := (p.variableArgsAs! String).toList
   if p.hasFlag "aggregate" then
@@ -412,7 +412,7 @@ def runVerifyCmdWith (recursionParameters : MultiStark.RecursionParameters)
     return rc
 
 def runVerifyCmd (p : Cli.Parsed) : IO UInt32 :=
-  runVerifyCmdWith MultiStark.defaultRecursionParameters p
+  runVerifyCmdWith Aggr.defaultRecursionParameters p
 
 end Ix.Cli.VerifyCmd
 

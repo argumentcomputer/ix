@@ -232,7 +232,7 @@ structure Result where
 structure JoinArtifact where
   label : String
   constants : Nat
-  statement : MultiStark.CheckEnvTrees
+  statement : Aggr.CheckEnvTrees
   innerClaimsBytes : ByteArray
   checkEnvClaimBytes : ByteArray
   outerClaim : Array Aiur.G
@@ -797,7 +797,7 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
                   throw <| IO.userError s!"join benchmark: native shard claim for \
                     {r.name} differs from host reconstruction"
                 let statement ← IO.ofExcept <|
-                  MultiStark.CheckEnvTrees.ofClaim expectedClaim trees
+                  Aggr.CheckEnvTrees.ofClaim expectedClaim trees
                 joinArtifacts := joinArtifacts.push {
                   label := r.name
                   constants := r.constants

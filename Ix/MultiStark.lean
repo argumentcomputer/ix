@@ -8,7 +8,7 @@ public import Ix.IxVM.ByteStream
 public import Ix.IxVM.Blake3
 public import Ix.MultiStark.Goldilocks
 public import Ix.MultiStark.Aggregate
-public import Ix.MultiStark.Host
+public import Ix.MultiStark.Wire
 public import Ix.MultiStark.Deserialize
 public import Ix.MultiStark.Keccak
 public import Ix.MultiStark.Pcs
@@ -122,84 +122,6 @@ proof bytes if kept. -/
 def multiStark : Except Aiur.Global Aiur.Source.Toplevel := do
   let t ← multiStarkFull
   pure (t.prune [`verify_multi_stark_proof, `join_two, `join_two_structural])
-
-/-! ## Lean-side input assembly
-
-Callers of `verify_multi_stark_proof` (tests, benchmarks) must reproduce the
-verifier's wire formats byte-for-byte — the vk and claims are Blake3
-digest-bound. These helpers are that recipe's single home. -/
-
-/-- The 8 little-endian bytes of `n` as a `u64`. -/
-def u64le (n : Nat) : Array UInt8 :=
-  (Array.range 8).map (fun i => UInt8.ofNat ((n >>> (8 * i)) % 256))
-
-/-! ## Recursion proof parameters
-
-IxVM proofs and aggregate recursion proofs deliberately have separate host
-configuration, even while both configurations retain today's canonical values.
-Keeping the recursion pair here gives aggregation and aggregate verification a
-single construction path; a later policy change cannot silently update only one
-side.
--/
-
-/-- Commitment and FRI parameters for lift/join proofs. These parameters are
-already bound by `AiurSystem.vkBytes`; this structure is host configuration, not
-an additional circuit public input. -/
-structure RecursionParameters where
-  commitment : Aiur.CommitmentParameters
-  fri : Aiur.FriParameters
-
-/-- Compatibility default for aggregate recursion proofs. Policy changes (for
-example, reducing the query count) must be explicit updates to this value and
-must not change the canonical IxVM proof parameters. -/
-def defaultRecursionParameters : RecursionParameters := {
-  commitment := Aiur.defaultCommitmentParameters
-  fri := Aiur.defaultFriParameters
-}
-
-/-- Stable 40-byte serialization used as the `fri_params_ser` component of the
-future aggregate cache key: five `u64` little-endian fields in verifying-key
-order. Commitment parameters need no separate cache-key component because a
-change to them changes the recursion-vk digest that the key also contains. -/
-def RecursionParameters.cacheFriBytes (parameters : RecursionParameters) : ByteArray :=
-  let fri := parameters.fri
-  ⟨u64le fri.logFinalPolyLen ++ u64le fri.maxLogArity ++
-    u64le fri.numQueries ++ u64le fri.commitProofOfWorkBits ++
-    u64le fri.queryProofOfWorkBits⟩
-
-/-- Build a recursion proving/verifying system through the shared aggregate
-parameter path. Both `AggregateCmd` and `VerifyCmd` use this helper. -/
-def buildRecursionSystem (bytecode : Aiur.Bytecode.Toplevel)
-    (parameters : RecursionParameters) : Aiur.AiurSystem :=
-  Aiur.AiurSystem.build bytecode parameters.commitment parameters.fri
-
-/-- Serialize public claims to `read_claims`'s wire format (which is also what
-the prover's Fiat-Shamir transcript observes): a length-prefixed list of
-length-prefixed claims, every word a little-endian `u64`. -/
-def serializeClaims (claims : Array (Array Aiur.G)) : ByteArray := Id.run do
-  let mut out : Array UInt8 := u64le claims.size
-  for c in claims do
-    out := out ++ u64le c.size
-    for g in c do
-      out := out ++ u64le g.val.toNat
-  return ⟨out⟩
-
-/-- Assemble `verify_multi_stark_proof`'s public input from the serialized vk
-(`AiurSystem.vkBytes`) and claims (`serializeClaims`): vk digest ++ claims
-digest, each as 8 packed-4-byte field elements (the entrypoint's format). The FRI parameters are read in-circuit from the digest-bound vk, not
-passed publicly. The proof/vk/claims advice itself goes through the
-natively-built IO buffer (`executeMultiStark` / `proveMultiStark`, which take
-the raw byte blobs directly: channel 0 = the verified native proof transport
-returned by `AiurSystem.proofToAdviceBytes`, 1 = vk, 2 = claims, each under
-key `[0]`). -/
-def digestGs (bytes : ByteArray) : Array Aiur.G :=
-  let h := (Blake3.Rust.hash bytes).val.data
-  (Array.range 8).map fun i =>
-    .ofNat (h[4*i]!.toNat + 256 * h[4*i+1]!.toNat
-      + 65536 * h[4*i+2]!.toNat + 16777216 * h[4*i+3]!.toNat)
-
-def verifierPubInput (vkBytes claimBytes : ByteArray) : Array Aiur.G :=
-  digestGs vkBytes ++ digestGs claimBytes
 
 /-! ## Aggregate-first input assembly
 

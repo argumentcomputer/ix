@@ -210,13 +210,13 @@ def smokeSuite : IO UInt32 := do
     | _, _ => false
   let driverPrepared : Array Ix.Cli.AggregateCmd.PreparedShard := #[
     { claim := leftStatement.claim
-      statement := Ix.Cli.AggregateCmd.fromAggrCheckEnvTrees leftStatement },
+      statement := leftStatement },
     { claim := rightStatement.claim
-      statement := Ix.Cli.AggregateCmd.fromAggrCheckEnvTrees rightStatement },
+      statement := rightStatement },
     { claim := rightStatement.claim
-      statement := Ix.Cli.AggregateCmd.fromAggrCheckEnvTrees rightStatement }
+      statement := rightStatement }
   ]
-  let driverParameters : MultiStark.RecursionParameters := {
+  let driverParameters : Aggr.RecursionParameters := {
     commitment := recCommitParams, fri := innerFri
   }
   let defaultDriverSpecs := defaultDriverPlan.bind fun plan =>
@@ -242,7 +242,7 @@ def smokeSuite : IO UInt32 := do
   -- Kind 0 ("IxVM"): claim = [0, fake_verify_claim, digest(CheckEnv bytes)].
   let mkIxvmChild (claimBytes : ByteArray) : Except String ChildSlot := do
     let (claim, proof, _) ←
-      ixvmSystem.prove fakeVerifyIdx (Aggr.digestGs claimBytes) default
+      ixvmSystem.prove fakeVerifyIdx (MultiStark.digestGs claimBytes) default
     let proofAdviceBytes ← ixvmSystem.proofToAdviceBytes claim proof
     pure ⟨proofAdviceBytes, MultiStark.serializeClaims #[claim]⟩
   -- Kind 1 ("self"): claim = [0, fake_aggr, digest(allowed), digest(CheckEnv)].

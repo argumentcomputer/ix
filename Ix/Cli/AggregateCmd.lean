@@ -32,13 +32,13 @@ open IxVM.ClaimHarness
 
 structure PreparedShard where
   claim : Ix.Claim
-  statement : MultiStark.CheckEnvTrees
+  statement : Aggr.CheckEnvTrees
 
 structure AggregateSlot where
   /-- Which verifying system a parent must use for this slot. Production
   wrap-first slots are all `.aggr`; direct-join leaf slots remain `.ixvm`. -/
   kind : Aggr.ChildKind := .aggr
-  statement : MultiStark.CheckEnvTrees
+  statement : Aggr.CheckEnvTrees
   subjectCount : Nat
   outerClaim : Array Aiur.G
   proof : Aiur.Proof
@@ -50,7 +50,7 @@ structure AggregateSlot where
 the first cache lookup or proof. -/
 structure AggregateSlotSpec where
   kind : Aggr.ChildKind := .aggr
-  statement : MultiStark.CheckEnvTrees
+  statement : Aggr.CheckEnvTrees
   subjectCount : Nat
   outerClaim : Array Aiur.G
   cacheKey : Address
@@ -275,7 +275,7 @@ encoding. The expected outer claim commits to the single entrypoint, allowed
 blob, and output statement at every persisted node.
 -/
 def aggregateCacheKey (recursionVk : ByteArray)
-    (recursionParameters : MultiStark.RecursionParameters)
+    (recursionParameters : Aggr.RecursionParameters)
     (outerClaim : Array Aiur.G) (version : Nat := aggregateCacheVersion) : Address :=
   let recursionVkDigest := (Address.blake3 recursionVk).hash
   let outerClaimBytes := MultiStark.serializeClaims #[outerClaim]
@@ -364,18 +364,6 @@ def schedulePlan (plan : Array Ix.Cli.CheckCmd.AggregationTree.FoldOp)
 
 /-! ## Converged single-entrypoint slot derivation -/
 
-/-- Convert the old host record used by the scheduler/cache tests into the
-converged host record. Both commit to the same subject and assumption trees. -/
-def toAggrCheckEnvTrees (statement : MultiStark.CheckEnvTrees) :
-    Aggr.CheckEnvTrees :=
-  { subjects := statement.subjects, assumptions := statement.assumptions }
-
-/-- Convert a converged host fold back into the stable driver record while the
-M1-e test union still shares the pre-convergence public structures. -/
-def fromAggrCheckEnvTrees (statement : Aggr.CheckEnvTrees) :
-    MultiStark.CheckEnvTrees :=
-  { subjects := statement.subjects, assumptions := statement.assumptions }
-
 /-- Every persisted aggregate proof now has the same outer claim regardless
 of whether its witness used a wrap, flat pair, or structural pair. -/
 def aggregateOuterClaim (allowed : ByteArray) (aggrIdx : Aiur.Bytecode.FunIdx)
@@ -388,7 +376,7 @@ remain raw IxVM claims and are deliberately not cache-consumed. -/
 def buildAggrSlotSpecs (plan : Array ScheduledFold)
     (prepared : Array PreparedShard) (aggrVk allowed : ByteArray)
     (verifyIdx aggrIdx : Aiur.Bytecode.FunIdx)
-    (recursionParameters : MultiStark.RecursionParameters) :
+    (recursionParameters : Aggr.RecursionParameters) :
     Except String (Array AggregateSlotSpec) := do
   let mut specs : Array AggregateSlotSpec := #[]
   for item in plan do
@@ -426,13 +414,10 @@ def buildAggrSlotSpecs (plan : Array ScheduledFold)
         | throw s!"aggregate plan references missing right spec {rightIdx}"
       if left.subjectCount + right.subjectCount != item.subjectCount then
         throw "aggregate plan has inconsistent joined subject counts"
-      let leftAggr := toAggrCheckEnvTrees left.statement
-      let rightAggr := toAggrCheckEnvTrees right.statement
-      let outputAggr := if item.structural then
-          leftAggr.joinStructural rightAggr
+      let output := if item.structural then
+          left.statement.joinStructural right.statement
         else
-          leftAggr.join rightAggr
-      let output := fromAggrCheckEnvTrees outputAggr
+          left.statement.join right.statement
       if output.subjectCount != item.subjectCount then
         throw s!"aggregate join reconstructs {output.subjectCount} subjects, \
           but the schedule records {item.subjectCount}"
@@ -461,7 +446,7 @@ private def addrOfHex (label value : String) : Except String Address :=
 private def prepareOwnedShard (env : Ixon.Env) (owned : Array Address) :
     Except String PreparedShard := do
   let (claim, trees) ← IxVM.ClaimHarness.shardCheckEnvClaimTrees env owned
-  let statement ← MultiStark.CheckEnvTrees.ofClaim claim trees
+  let statement ← Aggr.CheckEnvTrees.ofClaim claim trees
   pure { claim, statement }
 
 /-- Reconstruct every shard statement after partitioning environment ownership
@@ -847,9 +832,9 @@ private def proveAggregateSlot (ctx : AggregateProveContext) (slotIdx : Nat)
         let pubInput := Aggr.pubInput ctx.allowed outputClaimBytes
         let leftClaimsBytes := left.claimsBytes
         let rightClaimsBytes := right.claimsBytes
-        let leftStatement := toAggrCheckEnvTrees left.statement
-        let rightStatement := toAggrCheckEnvTrees right.statement
-        let outputStatement := toAggrCheckEnvTrees output
+        let leftStatement := left.statement
+        let rightStatement := right.statement
+        let outputStatement := output
         let preimagesBlob := Aggr.preimagesBlob
           #[Ix.Claim.ser left.statement.claim, Ix.Claim.ser right.statement.claim]
         let trees := if item.structural then
@@ -912,7 +897,7 @@ compile here, in parallel with mmap-loading the environment. Once both Aiur
 systems exist, one FFI call transfers the complete data-dependent pipeline to
 Rust; no Lean statement tree or scheduler task survives on this path. -/
 private def runAggregateCmdNativeWith
-    (recursionParameters : MultiStark.RecursionParameters)
+    (recursionParameters : Aggr.RecursionParameters)
     (p : Cli.Parsed) : IO UInt32 := do
   let some ixePath := (p.flag? "ixe").map (·.as! String) | do
     p.printError "error: aggregate requires --ixe <env.ixe>"
@@ -988,7 +973,7 @@ below supplies `defaultRecursionParameters`; keeping this seam explicit lets a
 future policy or cache layer select a recursion configuration without changing
 the canonical IxVM proof parameters. -/
 private def runAggregateCmdLeanReferenceWith
-    (recursionParameters : MultiStark.RecursionParameters)
+    (recursionParameters : Aggr.RecursionParameters)
     (p : Cli.Parsed) : IO UInt32 := do
   let some ixePath := (p.flag? "ixe").map (·.as! String) | do
     p.printError "error: aggregate requires --ixe <env.ixe>"
@@ -1185,12 +1170,12 @@ private def runAggregateCmdLeanReferenceWith
 
 /-- Aggregate through the native Stage 2 controller. The retained Lean driver
 above is a protocol reference and unit-test seam; it is not on the CLI path. -/
-def runAggregateCmdWith (recursionParameters : MultiStark.RecursionParameters)
+def runAggregateCmdWith (recursionParameters : Aggr.RecursionParameters)
     (p : Cli.Parsed) : IO UInt32 :=
   runAggregateCmdNativeWith recursionParameters p
 
 def runAggregateCmd (p : Cli.Parsed) : IO UInt32 :=
-  runAggregateCmdWith MultiStark.defaultRecursionParameters p
+  runAggregateCmdWith Aggr.defaultRecursionParameters p
 
 end Ix.Cli.AggregateCmd
 
