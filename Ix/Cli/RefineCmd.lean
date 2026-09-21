@@ -17,7 +17,7 @@ module
 public import Cli
 public import Ix.Common
 public import Ix.Aiur.Protocol
-public import Ix.Cli.CheckCmd
+public import Ix.Shard.Check
 public import Ix.Shard.Environment
 public import Ix.Cli.ShardProofIndex
 public import Ix.IxVM
@@ -52,7 +52,7 @@ def runShardRefineCmd (p : Cli.Parsed) : IO UInt32 := do
     | p.printError "error: --out <refined.ixes> is required"; return 1
   let selection? ← match (p.flag? "shards").map (·.as! String) with
     | none => pure none
-    | some s => match Ix.Cli.CheckCmd.parseShardSelection s with
+    | some s => match Ix.Shard.Check.parseShardSelection s with
       | .error e => p.printError s!"error: {e}"; return 1
       | .ok ids => pure (some ids)
   let some (maxRamBytes, budgetSource) ← resolveBudget ((p.flag? "max-ram").map (·.as! Nat))
@@ -90,7 +90,7 @@ def runShardRefineCmd (p : Cli.Parsed) : IO UInt32 := do
     ++ (match jobs? with | some j => #["--jobs", toString j] | none => #[])
     ++ (match report? with | some r => #["--report", r] | none => #[])
     ++ (if p.hasFlag "no-index" then #["--no-index"] else #[])).toList
-  Ix.Cli.CheckCmd.runShardBatchNative manifest ixePath jobs? compiled false none
+  Ix.Shard.Check.runShardBatchNative manifest ixePath jobs? compiled false none
     maxRamBytes (some out)
     { selection := selection?, provenGuard := guard?, report := report?,
       emitOnFailure := true, command, budgetSource }
@@ -137,7 +137,7 @@ def runShardClaimsCmd (p : Cli.Parsed) : IO UInt32 := do
     for k in [0:shards.size] do
       let blocks := (shards[k]?).getD #[]
       let owned := (ownedAll[k]?).getD #[]
-      match Ix.Cli.CheckCmd.claimDigestOfOwned ixonEnv owned with
+      match Ix.Shard.Check.claimDigestOfOwned ixonEnv owned with
       | .error e => IO.eprintln s!"shard {k}: {e}"; rc := 1
       | .ok d =>
         IO.println s!"{k} {d} {blocks.size} {owned.size}"
