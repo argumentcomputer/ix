@@ -5,7 +5,7 @@ public import Ix.Aggr
 public import Ix.Claim
 public import Ix.AssumptionTree
 public import Ix.Cli.AggregateCmd
-public import Tests.MultiStark
+public import Tests.ProofHelpers
 
 /-!
 # Tests for the heterogeneous `ix_aggr` circuit
@@ -37,7 +37,7 @@ open LSpec Aiur
 
 namespace Tests.Aggr
 
-open Tests.MultiStark (expectOk expectErr recCommitParams innerFri)
+open Tests.ProofHelpers (expectOk expectErr recCommitParams innerFri)
 
 /-- Cheap stand-in children. `fake_verify_claim` mirrors the IxVM
 `verify_claim` claim shape (10 words), `fake_aggr` mirrors the `ix_aggr` claim
@@ -504,12 +504,17 @@ def smokeSuite : IO UInt32 := do
     (trees := Aggr.CheckEnvTrees.adviceTrees
       leftStatement rightStatement unsortedStatement)
 
-  -- Identity framing and shape dispatch are closed: shortened blobs and
+  -- Identity framing and shape dispatch are closed: malformed lengths and
   -- out-of-range shape bytes cannot select a permissive arm.
   let shortAllowed := allowed.extract 0 72
   let shortIdentity := aggrCompiled.bytecode.execute ixAggrIdx
     (Aggr.pubInput shortAllowed leftClaimBytes)
     (mkIO shortAllowed (Aggr.shapeCode (.ixvm, none)) ixvmVk aggrVk
+      #[leftIxvm])
+  let longAllowed := allowed ++ ⟨Array.replicate 16 0⟩
+  let longIdentity := aggrCompiled.bytecode.execute ixAggrIdx
+    (Aggr.pubInput longAllowed leftClaimBytes)
+    (mkIO longAllowed (Aggr.shapeCode (.ixvm, none)) ixvmVk aggrVk
       #[leftIxvm])
   let invalidShape := run 10 #[leftIxvm] leftClaimBytes
 
@@ -563,6 +568,7 @@ def smokeSuite : IO UInt32 := do
     expectErr "native pair rejects malformed keyed-blob framing"
       malformedNativeFraming,
     expectErr "ix_aggr rejects a shortened identity blob" shortIdentity,
+    expectErr "ix_aggr rejects the retired 96-byte identity layout" longIdentity,
     expectErr "ix_aggr rejects an out-of-range shape hint" invalidShape,
     expectErr "structural pair rejects a path to the wrong root" wrongRootPath,
     expectErr "structural pair rejects a tampered path sibling" tamperedPath,

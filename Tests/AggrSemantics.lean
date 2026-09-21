@@ -1,6 +1,7 @@
 module
 
 public import Tests.Aggr
+public import Ix.Cli.VerifyCmd
 
 /-!
 # Converged aggregate host/driver semantics
@@ -17,7 +18,7 @@ open LSpec Aiur
 
 namespace Tests.Aggr
 
-open Tests.MultiStark (expectOk expectErr recCommitParams innerFri u64le)
+open Tests.ProofHelpers (expectOk expectErr recCommitParams innerFri u64le)
 
 private def canonicalTree (leaves : Array Address) : Ix.AssumptionTree :=
   (Ix.AssumptionTree.canonical leaves).get!

@@ -24,10 +24,10 @@ public section
 namespace Aggr
 
 /-- The full aggregation toplevel: every Multi-STARK verifier module (via
-`MultiStark.multiStarkFull`, unmodified) plus the `ix_aggr` circuit —
+`MultiStark.verifierBase`, unmodified) plus the `ix_aggr` circuit —
 unpruned. Only tests should build on this; production uses `ixAggr`. -/
 def ixAggrFull : Except Aiur.Global Aiur.Source.Toplevel := do
-  let t ← MultiStark.multiStarkFull
+  let t ← MultiStark.verifierBase
   t.merge circuit
 
 /-- The production aggregation toplevel: `ixAggrFull` pruned to `ix_aggr`'s

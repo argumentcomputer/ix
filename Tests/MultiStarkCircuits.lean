@@ -1,5 +1,5 @@
 module
-public import Ix.Aiur.Meta
+public import Ix.MultiStark
 
 /-!
 # Self-tests for the Multi-STARK recursive verifier
@@ -7,7 +7,7 @@ public import Ix.Aiur.Meta
 The `pub fn *_test` entrypoints validating the verifier's primitives against
 Rust reference values (`multi-stark/src/types.rs` test outputs). They live in a
 SEPARATE toplevel fragment, merged on top of the production verifier toplevel
-(`MultiStark.multiStarkTests` in `Ix/MultiStark.lean`): every `pub fn` adds a
+(`MultiStark.multiStarkTests` in `Tests/MultiStarkCircuits.lean`): every `pub fn` adds a
 circuit to the compiled system, so keeping the tests out of
 `MultiStark.multiStark` keeps the production verifier's width free of
 test-only circuits.
@@ -386,6 +386,12 @@ def tests := ⟦
     r0 * r1 * r2 * r3 * r4 * r5 * r6 * r7 * r8 * r9 * r10
   }
 ⟧
+
+/-- Generic verifier circuits plus their execution-only test entrypoints. -/
+def multiStarkTests : Except Aiur.Global Aiur.Source.Toplevel := do
+  let t ← verifierBase
+  let t ← t.merge entrypoints
+  t.merge tests
 
 end MultiStark
 

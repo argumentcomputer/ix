@@ -204,7 +204,6 @@ def primaryRunners : List (String × IO UInt32) := [
   -- factorial-prove → recursive-verify → reject-tampering pipeline.
   ("multi-stark", Tests.MultiStark.selfTestSuite),
   ("recursive-verifier", Tests.MultiStark.endToEndSuite),
-  ("aggregate-first", Tests.MultiStark.joinSmokeSuite),
   -- Converged heterogeneous aggregation circuit: all ten `ix_aggr` shapes,
   -- driver/cache semantics, and one negative case per broken binding.
   ("ix-aggr", Tests.Aggr.convergedSuite),

@@ -169,22 +169,6 @@ opaque proveMultiStark (system : @& AiurSystem)
   (proofAdviceBytes vkBytes claimBytes : @& ByteArray) (useBytecode : Bool := false) :
     Except String (Array G × Proof)
 
-/-- Prove one flat or structural aggregate-first binary join over child
-proof/claim advice. Both proof blobs must come from
-`AiurSystem.proofToAdviceBytes`. The compact preimage/tree/path blobs are produced by
-`MultiStark.joinPreimagesBlob`, `MultiStark.joinTreesBlob`, and
-`MultiStark.joinPathsBlob`. Malformed
-framing is returned as an error; as with `prove`/`proveMultiStark`, callers
-must supply an accepting execution witness. The final native IO buffer is
-intentionally not marshalled back to Lean. -/
-@[extern "rs_aiur_multi_stark_join_prove"]
-opaque proveMultiStarkJoin (system : @& AiurSystem)
-  (funIdx : @& Bytecode.FunIdx) (pubInput : @& Array G)
-  (leftProofAdviceBytes rightProofAdviceBytes recursionVkBytes : @& ByteArray)
-  (leftClaimsBytes rightClaimsBytes outputClaimBytes allowedBytes : @& ByteArray)
-  (preimagesBlob treesBlob pathsBlob : @& ByteArray) (useBytecode : Bool := false) :
-    Except String (Array G × Proof)
-
 /-- Prove one `ix_aggr` execution — any shape — over raw child proof/claim
 advice. Both proof blobs must come from `AiurSystem.proofToAdviceBytes`;
 the compact preimage/tree/path blobs are produced by `Aggr.preimagesBlob`,

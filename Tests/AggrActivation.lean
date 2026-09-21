@@ -482,9 +482,9 @@ def run : IO UInt32 := do
     IO.eprintln "activation audit: height probe not found"; return 1
   let indices : Indices := { verify := verifyIdx, aggr := fakeAggrIdx }
   let ixvmSystem := Aiur.AiurSystem.build childCompiled.bytecode
-    Tests.MultiStark.recCommitParams auditFri
+    Tests.ProofHelpers.recCommitParams auditFri
   let selfSystem := Aiur.AiurSystem.build childCompiled.bytecode
-    Tests.MultiStark.recCommitParams { auditFri with numQueries := 2 }
+    Tests.ProofHelpers.recCommitParams { auditFri with numQueries := 2 }
   let ixvmVk := ixvmSystem.vkBytes
   let selfVk := selfSystem.vkBytes
   let allowed := Aggr.allowedBlob ixvmVk verifyIdx selfVk fakeAggrIdx

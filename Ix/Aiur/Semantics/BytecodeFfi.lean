@@ -176,23 +176,6 @@ opaque executeMultiStark (toplevel : @& Bytecode.Toplevel)
   (proofAdviceBytes vkBytes claimBytes : @& ByteArray) (useBytecode : Bool := false) :
     Except String (Array G × Array QueryCount)
 
-/-- Native execution of either aggregate-first join entrypoint. The two
-child proof-advice blobs (from `AiurSystem.proofToAdviceBytes`), child claims,
-and the fixed vk/output/allowed blobs are passed without
-per-byte Lean field boxing. `preimagesBlob` and `treesBlob` use the compact
-count/key/length framing produced by `MultiStark.joinPreimagesBlob` and
-`MultiStark.joinTreesBlob`; `pathsBlob` carries structural discharge choices.
-Rust expands them directly into IO channels 4–6. As with
-`executeMultiStark`, `useBytecode` selects the generic interpreter over the
-generated production verifier. -/
-@[extern "rs_aiur_multi_stark_join_execute"]
-opaque executeMultiStarkJoin (toplevel : @& Bytecode.Toplevel)
-  (funIdx : @& Bytecode.FunIdx) (pubInput : @& Array G)
-  (leftProofAdviceBytes rightProofAdviceBytes recursionVkBytes : @& ByteArray)
-  (leftClaimsBytes rightClaimsBytes outputClaimBytes allowedBytes : @& ByteArray)
-  (preimagesBlob treesBlob pathsBlob : @& ByteArray) (useBytecode : Bool := false) :
-    Except String (Array G × Array QueryCount)
-
 /-- Native execution of the `ix_aggr` aggregation entrypoint. Serialized child
 proof transport (from `AiurSystem.proofToAdviceBytes`), claims, and the fixed
 vk/output/allowed blobs are passed without
