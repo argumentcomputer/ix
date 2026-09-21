@@ -1,4 +1,8 @@
-import Ix.Cli.AggregateCmd
+import Ix.Aggr
+import Ix.Aiur.Compiler
+import Ix.IxVM
+import Ix.IxVM.Toplevel
+import Ix.Aggr.Reference
 import Ix.Benchmark.Bench
 import Ix.TracingTexray
 
@@ -21,10 +25,10 @@ open Lean (Json)
 namespace Benchmarks.AggregatePolicy
 
 open Ix
-open Ix.Cli.AggregateCmd
+open Aggr Aggr.Reference
 
-abbrev AggregationTree := Ix.Cli.CheckCmd.AggregationTree
-abbrev FoldOp := Ix.Cli.CheckCmd.AggregationTree.FoldOp
+abbrev AggregationTree := Ix.Shard.AggregationTree
+abbrev FoldOp := Ix.Shard.AggregationTree.FoldOp
 
 structure AggregateSlot where
   /-- Which verifying system a parent must use for this slot. Production
@@ -106,7 +110,7 @@ def compileToplevel (label : String)
 
 def prepareShard (env : Ixon.Env) (blocks : Array Address) :
     Except String PreparedShard := do
-  let owned := Ix.Cli.CheckCmd.ownedConstsForBlocks env blocks
+  let owned := Ix.Shard.ownedConstsForBlocks env blocks
   let (claim, trees) ← IxVM.ClaimHarness.shardCheckEnvClaimTrees env owned
   let statement ← Aggr.CheckEnvTrees.ofClaim claim trees
   pure { claim, statement }
@@ -121,7 +125,7 @@ structure Fixture where
 /-- Select four retained manifest shards and contract every other tree leaf.
 The requested-id order determines dense indices; tree topology and left/right
 orientation remain those of the manifest. -/
-def selectFixture (env : Ixon.Env) (view : Ix.Cli.CheckCmd.IxesManifestView)
+def selectFixture (env : Ixon.Env) (view : Ix.Shard.IxesManifestView)
     (counts requestedIds : Array Nat) : Except String Fixture := do
   if requestedIds.size != 4 then
     throw "internal: policy benchmark requires exactly four shards"
@@ -571,10 +575,10 @@ def main (args : List String) : IO UInt32 := do
   let env ← match Ixon.deEnvAnon ixeBytes with
     | .error error => IO.eprintln s!"deserialize {ixePath} failed: {error}"; return 1
     | .ok env => pure env
-  let rawView ← match Ix.Cli.CheckCmd.parseIxesManifest ixesBytes with
+  let rawView ← match Ix.Shard.parseIxesManifest ixesBytes with
     | .error error => IO.eprintln s!"manifest parse failed: {error}"; return 1
     | .ok view => pure view
-  if !(← Ix.Cli.CheckCmd.shardsCover env rawView.shards) then return 1
+  if !(← Ix.Shard.shardsCover env rawView.shards) then return 1
   let (view, counts) ← match rawView.pruneEmpty env with
     | .error error => IO.eprintln error; return 1
     | .ok result => pure result

@@ -18,6 +18,7 @@ public import Cli
 public import Ix.Common
 public import Ix.Aiur.Protocol
 public import Ix.Cli.CheckCmd
+public import Ix.Shard.Environment
 public import Ix.Cli.ShardProofIndex
 public import Ix.IxVM
 public import Ix.IxVM.Toplevel
@@ -127,10 +128,10 @@ def runShardClaimsCmd (p : Cli.Parsed) : IO UInt32 := do
   let ixePath := pathArg.as! String
   let some manifest := (p.flag? "ixes").map (·.as! String)
     | p.printError "error: --ixes <manifest.ixes> is required"; return 1
-  match (← Ix.Cli.CheckCmd.loadEnvAndShards manifest ixePath) with
+  match (← Ix.Shard.loadEnvAndShards manifest ixePath) with
   | .error e => IO.eprintln e; return 1
   | .ok (ixonEnv, shards) =>
-    let ownedAll := Ix.Cli.CheckCmd.ownedConstsPer ixonEnv shards
+    let ownedAll := Ix.Shard.ownedConstsPer ixonEnv shards
     let mut rows : Array Lean.Json := #[]
     let mut rc : UInt32 := 0
     for k in [0:shards.size] do

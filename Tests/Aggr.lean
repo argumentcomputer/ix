@@ -2,9 +2,10 @@ module
 
 public import LSpec
 public import Ix.Aggr
+public import Ix.Aiur.Compiler
 public import Ix.Claim
 public import Ix.AssumptionTree
-public import Ix.Cli.AggregateCmd
+public import Ix.Aggr.Reference
 public import Tests.ProofHelpers
 
 /-!
@@ -146,25 +147,25 @@ def smokeSuite : IO UInt32 := do
   -- Three leaves make the direct policy exercise both the IxVM+IxVM and
   -- aggregate+IxVM pair shapes. The threshold keeps the lower fold flat and
   -- the root structural.
-  let driverOps : Array Ix.Cli.CheckCmd.AggregationTree.FoldOp :=
+  let driverOps : Array Ix.Shard.AggregationTree.FoldOp :=
     #[.leaf 0, .leaf 1, .join 0 1, .leaf 2, .join 2 3]
-  let defaultDriverPlan := Ix.Cli.AggregateCmd.schedulePlan
+  let defaultDriverPlan := Aggr.Reference.schedulePlan
     driverOps #[2, 1, 1] 3
-  let directDriverPlan := Ix.Cli.AggregateCmd.schedulePlan
+  let directDriverPlan := Aggr.Reference.schedulePlan
     driverOps #[2, 1, 1] 3 true
-  let singletonDirectPlan := Ix.Cli.AggregateCmd.schedulePlan
+  let singletonDirectPlan := Aggr.Reference.schedulePlan
     #[.leaf 0] #[2] 0 true
   -- M1-f's four-shard box fixture is a balanced post-order fold. With every
   -- pair above the structural threshold, wrap-first proves 0×4 then 9×3;
   -- direct mode keeps leaves raw, proves two shape-6 lower pairs, then shape 9.
-  let m1fOps : Array Ix.Cli.CheckCmd.AggregationTree.FoldOp := #[
+  let m1fOps : Array Ix.Shard.AggregationTree.FoldOp := #[
     .leaf 0, .leaf 1, .join 0 1,
     .leaf 2, .leaf 3, .join 3 4,
     .join 2 5
   ]
-  let m1fWrapPlan := Ix.Cli.AggregateCmd.schedulePlan
+  let m1fWrapPlan := Aggr.Reference.schedulePlan
     m1fOps #[2500, 2500, 2500, 2500] 4096
-  let m1fDirectPlan := Ix.Cli.AggregateCmd.schedulePlan
+  let m1fDirectPlan := Aggr.Reference.schedulePlan
     m1fOps #[2500, 2500, 2500, 2500] 4096 true
   let wrapFirstShapes : Bool := match defaultDriverPlan with
     | .ok plan =>
@@ -194,21 +195,21 @@ def smokeSuite : IO UInt32 := do
     | .error _ => false
   let shapeWeightsBounded : Bool := match defaultDriverPlan, directDriverPlan with
     | .ok wraps, .ok direct =>
-      Ix.Cli.AggregateCmd.aggregateSlotRamWeights wraps == #[
-        Ix.Cli.AggregateCmd.aggregateWrapRamBytes,
-        Ix.Cli.AggregateCmd.aggregateWrapRamBytes,
-        Ix.Cli.AggregateCmd.aggregateStructuralJoinRamBytes +
-          3 * Ix.Cli.AggregateCmd.aggregateFlatJoinRamPerSubjectBytes,
-        Ix.Cli.AggregateCmd.aggregateWrapRamBytes,
-        Ix.Cli.AggregateCmd.aggregateStructuralJoinRamBytes] &&
-      Ix.Cli.AggregateCmd.aggregateSlotRamWeights direct == #[
-        Ix.Cli.AggregateCmd.aggregateRawShardRamBytes,
-        Ix.Cli.AggregateCmd.aggregateRawShardRamBytes,
-        Ix.Cli.AggregateCmd.aggregateDirectJoinRamBytes,
-        Ix.Cli.AggregateCmd.aggregateRawShardRamBytes,
-        Ix.Cli.AggregateCmd.aggregateMixedJoinRamBytes]
+      Aggr.Reference.aggregateSlotRamWeights wraps == #[
+        Aggr.Reference.aggregateWrapRamBytes,
+        Aggr.Reference.aggregateWrapRamBytes,
+        Aggr.Reference.aggregateStructuralJoinRamBytes +
+          3 * Aggr.Reference.aggregateFlatJoinRamPerSubjectBytes,
+        Aggr.Reference.aggregateWrapRamBytes,
+        Aggr.Reference.aggregateStructuralJoinRamBytes] &&
+      Aggr.Reference.aggregateSlotRamWeights direct == #[
+        Aggr.Reference.aggregateRawShardRamBytes,
+        Aggr.Reference.aggregateRawShardRamBytes,
+        Aggr.Reference.aggregateDirectJoinRamBytes,
+        Aggr.Reference.aggregateRawShardRamBytes,
+        Aggr.Reference.aggregateMixedJoinRamBytes]
     | _, _ => false
-  let driverPrepared : Array Ix.Cli.AggregateCmd.PreparedShard := #[
+  let driverPrepared : Array Aggr.Reference.PreparedShard := #[
     { claim := leftStatement.claim
       statement := leftStatement },
     { claim := rightStatement.claim
@@ -220,20 +221,20 @@ def smokeSuite : IO UInt32 := do
     commitment := recCommitParams, fri := innerFri
   }
   let defaultDriverSpecs := defaultDriverPlan.bind fun plan =>
-    Ix.Cli.AggregateCmd.buildAggrSlotSpecs plan driverPrepared aggrVk allowed
+    Aggr.Reference.buildAggrSlotSpecs plan driverPrepared aggrVk allowed
       fakeVerifyIdx fakeAggrIdx driverParameters
   let directDriverSpecs := directDriverPlan.bind fun plan =>
-    Ix.Cli.AggregateCmd.buildAggrSlotSpecs plan driverPrepared aggrVk allowed
+    Aggr.Reference.buildAggrSlotSpecs plan driverPrepared aggrVk allowed
       fakeVerifyIdx fakeAggrIdx driverParameters
   let uniformDriverClaims : Bool := match defaultDriverSpecs, directDriverSpecs with
     | .ok wraps, .ok direct => match wraps[0]?, wraps.back?, direct[0]?, direct.back? with
       | some wrappedLeaf, some wrappedRoot, some rawLeaf, some directRoot =>
-        wrappedLeaf.outerClaim == Ix.Cli.AggregateCmd.aggregateOuterClaim
+        wrappedLeaf.outerClaim == Aggr.aggregateOuterClaim
           allowed fakeAggrIdx leftStatement.claim &&
         rawLeaf.kind == .ixvm && directRoot.kind == .aggr &&
         wrappedRoot.outerClaim == directRoot.outerClaim &&
-        Ix.Cli.AggregateCmd.aggregateCacheVersion == 2 &&
-        wrappedLeaf.cacheKey != Ix.Cli.AggregateCmd.aggregateCacheKey
+        Aggr.aggregateCacheVersion == 2 &&
+        wrappedLeaf.cacheKey != Aggr.aggregateCacheKey
           aggrVk driverParameters wrappedLeaf.outerClaim 1
       | _, _, _, _ => false
     | _, _ => false

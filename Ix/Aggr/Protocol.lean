@@ -1,6 +1,7 @@
 module
 public import Ix.Aggr.Parameters
 public import Ix.AssumptionTree
+public import Ix.Claim
 
 /-! Aggregation identity, shape codes, and advice encoding. -/
 
@@ -167,6 +168,31 @@ def extendVk (io : Aiur.IOBuffer) (kind : ChildKind)
 the output digest against the child claim directly and read no output bytes. -/
 def extendOutputClaim (io : Aiur.IOBuffer) (bytes : ByteArray) : Aiur.IOBuffer :=
   io.extend 2 #[.ofNat 2] (byteGs bytes)
+
+/-- Bump when aggregate cache identity changes beyond the recursion verifying
+key. Version 2 uses uniform `ix_aggr` outer claims. Encoded as `u64`
+little-endian in every cache key. -/
+def aggregateCacheVersion : Nat := 2
+
+/--
+`blake3(version ‖ recursion_vk_digest ‖ fri_params_ser ‖ outer_claim_bytes)`.
+
+`serializeClaims #[outerClaim]` is the canonical, length-delimited outer-claim
+encoding. The expected outer claim commits to the single entrypoint, allowed
+blob, and output statement at every persisted node.
+-/
+def aggregateCacheKey (recursionVk : ByteArray)
+    (recursionParameters : Aggr.RecursionParameters)
+    (outerClaim : Array Aiur.G) (version : Nat := aggregateCacheVersion) : Address :=
+  let recursionVkDigest := (Address.blake3 recursionVk).hash
+  let outerClaimBytes := MultiStark.serializeClaims #[outerClaim]
+  Address.blake3 ⟨MultiStark.u64le version ++ recursionVkDigest.data ++
+    recursionParameters.cacheFriBytes.data ++ outerClaimBytes.data⟩
+
+/-- The public claim is uniform across wrap, flat, and structural witnesses. -/
+def aggregateOuterClaim (allowed : ByteArray) (aggrIdx : Aiur.Bytecode.FunIdx)
+    (claim : Ix.Claim) : Array Aiur.G :=
+  Aiur.buildClaim aggrIdx (Aggr.pubInput allowed (Ix.Claim.ser claim)) #[]
 
 end Aggr
 end

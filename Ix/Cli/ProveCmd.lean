@@ -30,6 +30,7 @@ public import Ix.Aiur.Compiler
 public import Ix.Aiur.Protocol
 public import Ix.Claim
 public import Ix.Cli.CheckCmd
+public import Ix.Shard.Environment
 public import Ix.Cli.ShardProofIndex
 public import Ix.Common
 public import Ix.IxVM
@@ -181,7 +182,7 @@ partial def proveBlocksWithinBudget (envHandle : Aiur.EnvHandle)
       let cut := Ix.Cli.CheckCmd.cutBlocks blocks suggestedParts
       IO.println s!"[{label}] peak {gib} GiB over budget — cutting \
         {blocks.size} blocks into {cut.size} parts"
-      let cutOwned := Ix.Cli.CheckCmd.partitionOwned ixonEnv owned cut
+      let cutOwned := Ix.Shard.partitionOwned ixonEnv owned cut
       let mut proven : Array (Array Address × Nat) := #[]
       for (i, part, po) in (cut.zip cutOwned).mapIdx
           (fun i (part, po) => (i, part, po)) do
@@ -282,14 +283,14 @@ def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
   | some ixe, some manifest, some k =>
     -- IxVM-native shard prove. Build the envHandle once + share it
     -- with the shard prove FFI.
-    match (← Ix.Cli.CheckCmd.loadEnvAndShards manifest ixe) with
+    match (← Ix.Shard.loadEnvAndShards manifest ixe) with
     | .error e => IO.eprintln e; return 1
     | .ok (ixonEnv, shards) =>
       let envHandle ← match Aiur.EnvHandle.fromIxe ixe with
         | .error e => IO.eprintln s!"EnvHandle.fromIxe {ixe}: {e}"; return 1
         | .ok h => pure h
       match ← runShardProveNative envHandle ixonEnv shards
-          (Ix.Cli.CheckCmd.ownedConstsPer ixonEnv shards) k aiurSystem
+          (Ix.Shard.ownedConstsPer ixonEnv shards) k aiurSystem
           compiled maxRamBytes execOnly indexDir? skipProven with
       | .error e => IO.eprintln e; return 1
       | .ok parts =>
@@ -304,7 +305,7 @@ def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
   | some ixe, some manifest, none =>
     -- IxVM-native all-shards prove. Same envHandle reused across
     -- every shard.
-    match (← Ix.Cli.CheckCmd.loadEnvAndShards manifest ixe) with
+    match (← Ix.Shard.loadEnvAndShards manifest ixe) with
     | .error e => IO.eprintln e; return 1
     | .ok (ixonEnv, shards) =>
       let envHandle ← match Aiur.EnvHandle.fromIxe ixe with
@@ -314,7 +315,7 @@ def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
       -- in this process, so the manifest describing them is written
       -- once at the end rather than rewritten per split. Ownership is
       -- assigned in ONE env pass here; splits inherit it.
-      let ownedPer := Ix.Cli.CheckCmd.ownedConstsPer ixonEnv shards
+      let ownedPer := Ix.Shard.ownedConstsPer ixonEnv shards
       -- `--shards SEL` restricts the run to some leaves (one env load for
       -- all of them); every other leaf is carried over unchanged.
       let selected : Array Nat ← match (p.flag? "shards").map (·.as! String) with

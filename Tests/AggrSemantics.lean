@@ -1,6 +1,7 @@
 module
 
 public import Tests.Aggr
+public import Ix.Aggr.Reference
 public import Ix.Cli.VerifyCmd
 
 /-!
@@ -112,7 +113,7 @@ private def stage2FixturePinnedAndFenced : IO Bool := do
         bytes.extract 1 33 != root.hash || bytes[33]! != 0 then
       IO.eprintln "Stage 2 fixture bytes or historical root drifted"
       return false
-    match Ix.Cli.VerifyCmd.decodeAggregateWrapperAt address bytes with
+    match Aggr.decodeAggregateWrapperAt address bytes with
     | .error "claim: unsupported object format" => pure ()
     | _ =>
       IO.eprintln "Stage 2 fixture did not reject at its format boundary"
@@ -218,11 +219,11 @@ def semanticSuite : IO UInt32 := do
   let leftBytes := Ix.Claim.ser left.claim
   let rightBytes := Ix.Claim.ser right.claim
   let flatBytes := Ix.Claim.ser flatOutput.claim
-  let leftOuter := Ix.Cli.AggregateCmd.aggregateOuterClaim
+  let leftOuter := Aggr.aggregateOuterClaim
     allowed fakeAggrIdx left.claim
-  let rightOuter := Ix.Cli.AggregateCmd.aggregateOuterClaim
+  let rightOuter := Aggr.aggregateOuterClaim
     allowed fakeAggrIdx right.claim
-  let flatOuter := Ix.Cli.AggregateCmd.aggregateOuterClaim
+  let flatOuter := Aggr.aggregateOuterClaim
     allowed fakeAggrIdx flatOutput.claim
   let (_, leftProof, _) ← match selfSystem.prove fakeAggrIdx
       (Aggr.pubInput allowed leftBytes) default with
@@ -239,17 +240,17 @@ def semanticSuite : IO UInt32 := do
     commitment := recCommitParams
     fri := innerFri
   }
-  let leftKey := Ix.Cli.AggregateCmd.aggregateCacheKey selfVk
+  let leftKey := Aggr.aggregateCacheKey selfVk
     childRecursionParameters leftOuter
-  let cacheKeyStable := leftKey == Ix.Cli.AggregateCmd.aggregateCacheKey
+  let cacheKeyStable := leftKey == Aggr.aggregateCacheKey
     selfVk childRecursionParameters leftOuter
-  let cacheKeyBindsOuter := leftKey != Ix.Cli.AggregateCmd.aggregateCacheKey
+  let cacheKeyBindsOuter := leftKey != Aggr.aggregateCacheKey
     selfVk childRecursionParameters rightOuter
-  let cacheKeyBindsFri := leftKey != Ix.Cli.AggregateCmd.aggregateCacheKey
+  let cacheKeyBindsFri := leftKey != Aggr.aggregateCacheKey
     selfVk { childRecursionParameters with fri := tunedFri } leftOuter
-  let cacheKeyBindsVk := leftKey != Ix.Cli.AggregateCmd.aggregateCacheKey
+  let cacheKeyBindsVk := leftKey != Aggr.aggregateCacheKey
     (selfVk.set! 0 (selfVk.data[0]! + 1)) childRecursionParameters leftOuter
-  let cacheKeyBindsVersion := leftKey != Ix.Cli.AggregateCmd.aggregateCacheKey
+  let cacheKeyBindsVersion := leftKey != Aggr.aggregateCacheKey
     selfVk childRecursionParameters leftOuter 1
   let repeated07 : Nat := 506381209866536711
   let cacheVectorParameters : Aggr.RecursionParameters := {
@@ -263,25 +264,25 @@ def semanticSuite : IO UInt32 := do
     }
   }
   let cacheKeyMatchesRustVector :=
-    toString (Ix.Cli.AggregateCmd.aggregateCacheKey "vk".toUTF8
+    toString (Aggr.aggregateCacheKey "vk".toUTF8
       cacheVectorParameters #[.ofNat 1, .ofNat 2, .ofNat 3]) ==
       "86ed059157e2915fe0a83f1afd58f31f7553659ad778669f6b795e1473e7afe0"
 
-  let ops : Array Ix.Cli.CheckCmd.AggregationTree.FoldOp :=
+  let ops : Array Ix.Shard.AggregationTree.FoldOp :=
     #[.leaf 0, .leaf 1, .join 0 1]
-  let wrapPlan := Ix.Cli.AggregateCmd.schedulePlan ops #[2, 1] 8
-  let directPlan := Ix.Cli.AggregateCmd.schedulePlan ops #[2, 1] 8 true
-  let prepared : Array Ix.Cli.AggregateCmd.PreparedShard := #[
+  let wrapPlan := Aggr.Reference.schedulePlan ops #[2, 1] 8
+  let directPlan := Aggr.Reference.schedulePlan ops #[2, 1] 8 true
+  let prepared : Array Aggr.Reference.PreparedShard := #[
     { claim := left.claim,
       statement := left },
     { claim := right.claim,
       statement := right }
   ]
   let wrapSpecs := wrapPlan.bind fun plan =>
-    Ix.Cli.AggregateCmd.buildAggrSlotSpecs plan prepared selfVk allowed
+    Aggr.Reference.buildAggrSlotSpecs plan prepared selfVk allowed
       verifyIdx fakeAggrIdx childRecursionParameters
   let directSpecs := directPlan.bind fun plan =>
-    Ix.Cli.AggregateCmd.buildAggrSlotSpecs plan prepared selfVk allowed
+    Aggr.Reference.buildAggrSlotSpecs plan prepared selfVk allowed
       verifyIdx fakeAggrIdx childRecursionParameters
   let wrapSpecsComplete : Bool := match wrapSpecs with
     | .ok specs => match specs[0]?, specs[1]?, specs[2]? with
@@ -312,40 +313,40 @@ def semanticSuite : IO UInt32 := do
   let cachedAddress := Address.blake3 (Ixon.Proof.ser cachedWrapper)
   let cachedBytes := Ixon.Proof.ser cachedWrapper
   let wrapperContentAddressAccepted : Bool :=
-    match Ix.Cli.VerifyCmd.decodeAggregateWrapperAt cachedAddress cachedBytes with
+    match Aggr.decodeAggregateWrapperAt cachedAddress cachedBytes with
     | .ok wrapper =>
       wrapper.claim == cachedWrapper.claim && wrapper.proof == cachedWrapper.proof
     | .error _ => false
   let wrapperContentAddressRejected : Bool :=
     let wrongAddress := Address.blake3 (cachedBytes.push 0xff)
-    match Ix.Cli.VerifyCmd.decodeAggregateWrapperAt wrongAddress cachedBytes with
+    match Aggr.decodeAggregateWrapperAt wrongAddress cachedBytes with
     | .error _ => true
     | .ok _ => false
   -- Manifest parsing, validate-before-prune, and value-based verification.
   let manifestPlan :=
-    (Ix.Cli.CheckCmd.AggregationTree.node
+    (Ix.Shard.AggregationTree.node
       (.node (.leaf 0) (.leaf 1)) (.leaf 2)).foldPlan
-  let expectedPlan : Array Ix.Cli.CheckCmd.AggregationTree.FoldOp :=
+  let expectedPlan : Array Ix.Shard.AggregationTree.FoldOp :=
     #[.leaf 0, .leaf 1, .join 0 1, .leaf 2, .join 2 3]
   let parsedManifestPlan : Bool :=
     let valid := minimalIxes (#[1, 1, 0] ++ u32le4 0 ++ #[0] ++ u32le4 1)
-    match Ix.Cli.CheckCmd.parseIxesManifest valid with
+    match Ix.Shard.parseIxesManifest valid with
     | .ok view => view.aggregationTree.foldPlan ==
         (#[.leaf 0, .leaf 1, .join 0 1] :
-          Array Ix.Cli.CheckCmd.AggregationTree.FoldOp)
+          Array Ix.Shard.AggregationTree.FoldOp)
     | .error _ => false
   let malformedManifestRejected : Bool :=
     let duplicate := minimalIxes (#[1, 1, 0] ++ u32le4 0 ++ #[0] ++ u32le4 0)
-    match Ix.Cli.CheckCmd.parseIxesManifest duplicate with
+    match Ix.Shard.parseIxesManifest duplicate with
     | .error _ => true
     | .ok _ => false
   let (singleEnv, singleAddr) := singletonIxonEnv
   let singleTreeTail := #[1, 1, 0] ++ u32le4 0 ++ #[1, 0] ++
     u32le4 1 ++ #[0] ++ u32le4 2
-  let singleManifest := Ix.Cli.CheckCmd.parseIxesManifest
+  let singleManifest := Ix.Shard.parseIxesManifest
     (minimalIxesFor #[#[], #[singleAddr], #[]] singleTreeTail)
   let singleCoverage ← match singleManifest with
-    | .ok view => Ix.Cli.CheckCmd.shardsCover singleEnv view.shards
+    | .ok view => Ix.Shard.shardsCover singleEnv view.shards
     | .error _ => pure false
   let emptyPruningCorrect : Bool := match singleManifest with
     | .ok view => match view.pruneEmpty singleEnv with
@@ -355,7 +356,7 @@ def semanticSuite : IO UInt32 := do
       | .error _ => false
     | .error _ => false
   let singletonValueRoot : Bool := match singleManifest with
-    | .ok view => match Ix.Cli.VerifyCmd.expectedFromManifest singleEnv view 0 with
+    | .ok view => match Aggr.Reference.expectedFromManifest singleEnv view 0 with
       | .ok statement =>
         statement.claim == .checkEnv (canonicalTree #[singleAddr]).root none
       | .error _ => false
@@ -389,15 +390,15 @@ def semanticSuite : IO UInt32 := do
         pure (planWorks, expectedMatches)
 
   let (pairEnv, pairLeft, pairRight) := pairIxonEnv
-  let pairManifest := Ix.Cli.CheckCmd.parseIxesManifest
+  let pairManifest := Ix.Shard.parseIxesManifest
     (minimalIxesFor #[#[pairLeft], #[pairRight]]
       (#[1, 1, 0] ++ u32le4 0 ++ #[0] ++ u32le4 1))
   let pairCoverage ← match pairManifest with
-    | .ok view => Ix.Cli.CheckCmd.shardsCover pairEnv view.shards
+    | .ok view => Ix.Shard.shardsCover pairEnv view.shards
     | .error _ => pure false
   let batchedShardPreparationCorrect : Bool := match pairManifest with
     | .ok view =>
-      match Ix.Cli.AggregateCmd.prepareShards pairEnv view.shards view.shardIds with
+      match Aggr.Reference.prepareShards pairEnv view.shards view.shardIds with
       | .ok prepared =>
         prepared.map (·.claim) == (#[(.checkEnv
             (canonicalTree #[pairLeft]).root none : Ix.Claim),
@@ -406,10 +407,10 @@ def semanticSuite : IO UInt32 := do
       | .error _ => false
     | .error _ => false
   let flatManifestValue : Option Aggr.CheckEnvTrees := match pairManifest with
-    | .ok view => (Ix.Cli.VerifyCmd.expectedFromManifest pairEnv view 8).toOption
+    | .ok view => (Aggr.Reference.expectedFromManifest pairEnv view 8).toOption
     | .error _ => none
   let structuralManifestValue : Option Aggr.CheckEnvTrees := match pairManifest with
-    | .ok view => (Ix.Cli.VerifyCmd.expectedFromManifest pairEnv view 0).toOption
+    | .ok view => (Aggr.Reference.expectedFromManifest pairEnv view 0).toOption
     | .error _ => none
   let canonicalEnvTree := canonicalTree #[pairLeft, pairRight]
   let manifestFlatIsCanonical := flatManifestValue.map (·.claim) ==
@@ -449,15 +450,15 @@ def semanticSuite : IO UInt32 := do
   -- frontier, and one verified stand-in aggregate proof then certifies exactly
   -- the three constants committed by the root statement.
   let (auditEnv, auditOwned, auditShared) := sharedClosureIxonEnv
-  let auditManifest := Ix.Cli.CheckCmd.parseIxesManifest
+  let auditManifest := Ix.Shard.parseIxesManifest
     (minimalIxesFor #[auditOwned, #[auditShared]]
       (#[1, 1, 0] ++ u32le4 0 ++ #[0] ++ u32le4 1))
   let auditStatement := auditManifest.bind fun view =>
-    Ix.Cli.VerifyCmd.expectedFromManifest auditEnv view 0
+    Aggr.Reference.expectedFromManifest auditEnv view 0
   let aggregateProofAuditsEveryConstant ← match auditStatement with
     | .error _ => pure false
     | .ok statement =>
-      let expectedOuter := Ix.Cli.AggregateCmd.aggregateOuterClaim
+      let expectedOuter := Aggr.aggregateOuterClaim
         allowed fakeAggrIdx statement.claim
       match selfSystem.prove fakeAggrIdx
           (Aggr.pubInput allowed (Ix.Claim.ser statement.claim)) default with
@@ -466,10 +467,10 @@ def semanticSuite : IO UInt32 := do
         let wrapper : Ixon.Proof := { claim := statement.claim, proof := proof.toBytes }
         let bytes := Ixon.Proof.ser wrapper
         let address := Address.blake3 bytes
-        let decoded := match Ix.Cli.VerifyCmd.decodeAggregateWrapperAt address bytes with
+        let decoded := match Aggr.decodeAggregateWrapperAt address bytes with
           | .ok decoded => decoded.claim == statement.claim && decoded.proof == proof.toBytes
           | .error _ => false
-        let audited := match Ix.Cli.VerifyCmd.auditAggregateConstants auditEnv statement with
+        let audited := match Aggr.auditAggregateConstants auditEnv statement with
           | .ok count => count == 3
           | .error _ => false
         pure <| decoded && audited && outer == expectedOuter &&
@@ -480,30 +481,30 @@ def semanticSuite : IO UInt32 := do
     | .error _ => true
     | .ok _ => false
   let missingConstantRejected :=
-    rejected (Ix.Cli.VerifyCmd.auditAggregateConstants auditEnv {
+    rejected (Aggr.auditAggregateConstants auditEnv {
       subjects := canonicalTree auditOwned
       assumptions := none
     })
   let foreignConstantRejected :=
     let foreign := Address.blake3 "aggregate-audit-foreign".toUTF8
-    rejected (Ix.Cli.VerifyCmd.auditAggregateConstants auditEnv {
+    rejected (Aggr.auditAggregateConstants auditEnv {
       subjects := canonicalTree (auditLeaves.push foreign)
       assumptions := none
     })
   let duplicateConstantRejected :=
-    rejected (Ix.Cli.VerifyCmd.auditAggregateConstants auditEnv {
+    rejected (Aggr.auditAggregateConstants auditEnv {
       subjects := .node (canonicalTree auditLeaves) (.leaf auditOwned[0]!)
       assumptions := none
     })
   let residualAssumptionRejected :=
-    rejected (Ix.Cli.VerifyCmd.auditAggregateConstants auditEnv {
+    rejected (Aggr.auditAggregateConstants auditEnv {
       subjects := canonicalTree auditLeaves
       assumptions := some (canonicalTree #[auditShared])
     })
   let productionStage2FixturePinnedAndFenced ← stage2FixturePinnedAndFenced
 
   -- Threshold policy and the RAM-gated DAG controller.
-  let mixedSchedule := Ix.Cli.AggregateCmd.schedulePlan
+  let mixedSchedule := Aggr.Reference.schedulePlan
     manifestPlan #[2, 2, 1] 4
   let mixedScheduleCorrect : Bool := match mixedSchedule with
     | .ok scheduled => match scheduled[2]?, scheduled[4]? with
@@ -514,14 +515,14 @@ def semanticSuite : IO UInt32 := do
       | _, _ => false
     | .error _ => false
   let flatWeightAffine :=
-    Ix.Cli.AggregateCmd.aggregateSlotRamBytes
+    Aggr.Reference.aggregateSlotRamBytes
       { op := .join 0 1, subjectCount := 7, structural := false } ==
-      Ix.Cli.AggregateCmd.aggregateStructuralJoinRamBytes +
-        7 * Ix.Cli.AggregateCmd.aggregateFlatJoinRamPerSubjectBytes
-  let memTotalParsing := Ix.Cli.AggregateCmd.aggregateMemTotalBytes
+      Aggr.Reference.aggregateStructuralJoinRamBytes +
+        7 * Aggr.Reference.aggregateFlatJoinRamPerSubjectBytes
+  let memTotalParsing := Aggr.aggregateMemTotalBytes
     "MemTotal:       1024 kB\nMemFree: 512 kB\n" == some (1024 * 1024)
   let invalidScheduleRejected : Bool := match
-      Ix.Cli.AggregateCmd.schedulePlan #[.join 0 1] #[] 4 with
+      Aggr.Reference.schedulePlan #[.join 0 1] #[] 4 with
     | .error _ => true
     | .ok _ => false
 
@@ -532,7 +533,7 @@ def semanticSuite : IO UInt32 := do
       defaultFriEncodingStable,
     test "FRI and commitment overrides independently change recursion identity"
       recursionParametersIndependent,
-    test "aggregate cache version is 2" (Ix.Cli.AggregateCmd.aggregateCacheVersion == 2),
+    test "aggregate cache version is 2" (Aggr.aggregateCacheVersion == 2),
     test "aggregate cache key is stable for identical inputs" cacheKeyStable,
     test "aggregate cache key binds the uniform outer claim" cacheKeyBindsOuter,
     test "aggregate cache key binds recursion FRI parameters" cacheKeyBindsFri,

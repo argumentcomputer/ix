@@ -45,5 +45,25 @@ def buildRecursionSystem (bytecode : Aiur.Bytecode.Toplevel)
   Aiur.AiurSystem.build bytecode parameters.commitment parameters.fri
 
 
+def defaultStructuralAbove : Nat := 4096
+
+def aggregateGiB : Nat := 1024 * 1024 * 1024
+
+/-- Linux `MemTotal` parser kept separate so the 92% default has a pure seam.
+The fallback only affects non-Linux hosts; admit-when-alone still guarantees
+progress without pretending the fallback is a calibrated capacity. -/
+def aggregateMemTotalBytes (contents : String) : Option Nat :=
+  (contents.splitOn "\n").findSome? fun line =>
+    if line.startsWith "MemTotal:" then
+      ((line.splitOn " ").filter (· != "") |>.drop 1).head?.bind fun kib =>
+        kib.toNat?.map (· * 1024)
+    else none
+
+def defaultAggregateRamBudgetBytes : IO Nat := do
+  let contents ← try IO.FS.readFile "/proc/meminfo" catch _ => pure ""
+  return match aggregateMemTotalBytes contents with
+    | some total => total / 100 * 92
+    | none => 16 * aggregateGiB
+
 end Aggr
 end
