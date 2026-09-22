@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+bincode = { version = "2", features = ["serde"] }
 hashbrown = { workspace = true }
 indexmap = { workspace = true }
 libc = { workspace = true }
