@@ -1,0 +1,114 @@
+{
+  "ix_base": "dcfa650564dc0d3193eda4719503771370eb7957",
+  "ix_worktree": "/tmp/ix-gpu-trace-codegen",
+  "ix_branch": "aiur-cuda-trace-codegen",
+  "backend_base": "9ba93c0b448c77b99eafe867c3078a83ee0eef2f",
+  "backend_worktree": "/tmp/multi-stark-gpu-trace-codegen",
+  "backend_branch": "aiur-trace-field-helpers",
+  "backend_patch_sha256": "f203eca2d14078ef3c163b5e759c6268af47eb90beeda1385be892ea9dd6f075",
+  "cpu_affinity": "0-7",
+  "threads": 8,
+  "gpu": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+  "gpu_tests_devices": [
+    0,
+    1,
+    2,
+    3
+  ],
+  "cuda_architectures": [
+    "120"
+  ],
+  "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+  "nvcc": "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2026 NVIDIA Corporation\nBuilt on Tue_Jun_09_02:43:40_PM_PDT_2026\nCuda compilation tools, release 13.3, V13.3.73\nBuild cuda_13.3.r13.3/compiler.38244171_0",
+  "driver": "NVRM version: NVIDIA UNIX Open Kernel Module for x86_64  595.91.07  Release Build  (dvs-builder@U22-I3-B08-02-2)  Wed Jul 29 03:01:16 UTC 2026\nGCC version:  gcc version 15.2.0 (Ubuntu 15.2.0-16ubuntu1) \n",
+  "target_dir": "/tmp/ix-trace-experiments-0_99hznm/cargo-target",
+  "lean_runner": "/tmp/ix-trace-experiments-0_99hznm/lean.py",
+  "lean_native_libraries": [
+    "/home/sam/repos/ix/.lake/packages/Blake3/.lake/build/lib/libBlake3_Blake3.so",
+    "/home/sam/repos/ix/.lake/packages/Blake3/.lake/build/lib/libBlake3_Blake3Rust.so"
+  ],
+  "captured_utc": "2026-09-16T03:51:39.026317+00:00",
+  "benchmark_run": false,
+  "test_binary": "/tmp/ix-trace-experiments-0_99hznm/aiur-cuda-production-final",
+  "test_binary_sha256": "e599b17db78276a6922e4f45788812d1359f2cef43b59ee12ca6e8028df4e7c4",
+  "production_functions": {
+    "ixvm": [
+      33
+    ],
+    "multi-stark": [
+      86
+    ],
+    "ix-aggr": [
+      86
+    ]
+  },
+  "checks": {
+    "cpu_tests": 19,
+    "gpu_tests": 26,
+    "proof_tests": 2,
+    "ignored_performance_tests": 1,
+    "cpu_missing_feature_rejected": true
+  },
+  "source_sha256": {
+    "Cargo.lock": "9c9fdef126577ef5fede02edbbcbcb9178d1c952a391b015787c5f59a77d9b03",
+    "Ix/Aiur/Stages/TraceCodegen.lean": "a47aea966e64f660c98ab541605afeb1e3bec7704e79e2164657ebad462bfc45",
+    "Ix/Aiur/Stages/TraceContract.lean": "f813d2d9fb247f0c5e6b45a93c3737a77901bf90744ef8e4b9c2cd20d3114f51",
+    "Ix/Aiur/Stages/TraceCuda.lean": "65fb69a71f3da67ee83b619011c5fabf85f36ed805da034db860131c785010cc",
+    "Ix/Aiur/Stages/TracePlan.lean": "fcb3c3c101ceaf2ccb7e2f9c3a56d39a7c89498821043b6f3ce6a79def6bc63d",
+    "Ix/Cli/CodegenCmd.lean": "8a50ab9c115b1eb1e62a24852385b372b795c122704f9a1391c210d5aae5c247",
+    "Tests/Aiur/TraceCodegen.lean": "92b15a1005fe2637a77c82db9c82ab00c39a2686d2f3617c0895da48ebdd53a8",
+    "crates/aiur/Cargo.toml": "0b06144a5ab3ad4fc69e15437faf6a846ffa7a18e87b49eef42ea675ee51d2cb",
+    "crates/aiur/build.rs": "727fa04000ade211f8757cd8a71fd3b70f509ba1901038d71660cc7c1d4753d5",
+    "crates/aiur/cuda/blake3_trace.cu": "af820c1ec9b42e42560ef2383a42a26b843379e7e603bf513dcc0ec844f5e50f",
+    "crates/aiur/cuda/generated/blake3.cu": "07fe9af1822650ec37900414395eeb96396588ba86e046dcdecb1eb37e01b09a",
+    "crates/aiur/cuda/generated/fixtures.cu": "219cd902b45aee5c1e25c1d4f600ed1837b65b62caf1f4db41fa9bfaff974d38",
+    "crates/aiur/cuda/generated/production/ix_aggr.cu": "aa8c9da114630f3f1532153a7f30b257dc2bb1602c80887175310c3b1d884d93",
+    "crates/aiur/cuda/generated/production/ixvm.cu": "7a08d125dc58c03224df0e5f962338fa542d0237ad8cb29cea16a2f891fd4aa1",
+    "crates/aiur/cuda/generated/production/multi_stark.cu": "4f8b341936d879253f5586bbe3c83a3d7a9932ca7447be9f0ba519a4f49693e1",
+    "crates/aiur/cuda/generated/production/trace-manifest.json": "e0f4ca6d0c4f7045c0de8138668f6d6e966208df446cf9f823ca43f96d1fcfff",
+    "crates/aiur/cuda/trace-manifest.json": "49e65c23b8a2f4d861120eb390b55b61102105a5fa623310a3b5e1c1de5a77d6",
+    "crates/aiur/cuda/trace_primitives.cuh": "3ce84fffff4443416e9966be75be881fbc3817bb358fcc5b955fcb38cc5be149",
+    "crates/aiur/cuda/trace_runtime.cu": "e155925d81b0e4ffd72e22dfbf1b17377e57115f12951b944290c998d9954b1b",
+    "crates/aiur/cuda/trace_runtime.cuh": "6e8580515e664698522677befcd8c605720692d349ec5a8e1b7d0f3bd38f0899",
+    "crates/aiur/src/gpu_trace/mod.rs": "8807b3bbc8d041d9d6ddff58ae5729e80a2ee9354443921642b6da0830b83812",
+    "crates/aiur/src/lib.rs": "b6aa45cf2d4c678e7fad73082c0a4f2f18408ae3b61540050dccd2b939e98e13",
+    "crates/aiur/src/shard.rs": "8cf938fa81f7810149c8b53d57db823271e4b10254534888766ba278fcdcc651",
+    "crates/aiur/src/synthesis.rs": "151aa8d700af4a991cfb51380df744ccef7031f786b87e73857469950ca5e96f",
+    "crates/aiur/src/trace.rs": "73d9d3ddf761f8ad90d90672aa6ed02f4707bf9c3bcf43c560402c04c2653660",
+    "crates/aiur/src/trace_codegen.rs": "a52d35f16f2eea860038f4564fb915be44e3dde72e8b8e9c4aeca85fa8520bfb",
+    "crates/aiur/src/trace_codegen/contract.rs": "2f99e990a454158a0b4cdd1d31351b20b162fbdb4781c8a226428b8dbdf836b6",
+    "crates/aiur/src/trace_codegen/cuda.rs": "a9dc3165241b06828ae1973ef6387c5561a027134619fc074a3aec687cb925ff",
+    "crates/aiur/src/trace_codegen/programs/ix_aggr.rs": "9eefd0c72a4b48342e7b137f1ef9b7b0bb70635d2b67b3b0cb843e71e6bca898",
+    "crates/aiur/src/trace_codegen/programs/ix_aggr_cuda.rs": "3ec69a653d4904b0d29f1eaf5c0a66117654bc37605589df9486884cefb70c7e",
+    "crates/aiur/src/trace_codegen/programs/ixvm.rs": "b09f68b08ae72d3394a87d8cedae7c3e5700b82aa4f61931eea2a03e010f4748",
+    "crates/aiur/src/trace_codegen/programs/ixvm_cuda.rs": "5730be320f15a3a980733dd9c47db61ac9ec6e1d1ad492afce6fffd8d50554c1",
+    "crates/aiur/src/trace_codegen/programs/mod.rs": "00b6260e3ff4adcbf2ad7ebc2b730372849bdc3e1fbfae77c0e16573fabd83db",
+    "crates/aiur/src/trace_codegen/programs/multi_stark.rs": "599a383c6a9d28b9b43f013a7022765a6d3e5dc2eda58423ee76999d10ca1944",
+    "crates/aiur/src/trace_codegen/programs/multi_stark_cuda.rs": "dff45e4a31ace52c027678a9bf83f45bee1603c024bb38df0976e327e8bf0275",
+    "crates/aiur/src/trace_codegen/tests.rs": "4a2935881bb5d9529f3ca8b84de6360eee01897772b2517c980bafab879b79a9",
+    "crates/aiur/src/trace_codegen/tests/blake3.rs": "c8e935e10ce879ea08a36627ebf1eb88c306b699788c43ad7f4fcc4ed11f31fb",
+    "crates/aiur/src/trace_codegen/tests/blake3_cuda.rs": "3769a2f31779f5ff3579986e8f1e65df25af48fd90f188b7085fc0c26e346f11",
+    "crates/aiur/src/trace_codegen/tests/cuda.rs": "da53eb4482be0ba6e17dae7838509cdade09c600875ce337703cf823fd105bf7",
+    "crates/aiur/src/trace_codegen/tests/generated.rs": "ef0b3b5b5da416f81eea48c2ee1d70c5339c3ad5fe3c0655a60454196f515ede",
+    "crates/aiur/src/trace_codegen/tests/generated_cuda.rs": "faf19afc6ce58889d2bf4cde977148213446c0395f20ba731124cb34d90e13b0",
+    "crates/ffi/Cargo.toml": "324630e44fe84de0756e6abc94708937bfb0d0acc1655553eaec2639318414b6",
+    "lakefile.lean": "9aa4773531cc5aa5389e71150345880eaebe428a99b2c998f7a81aa0710e497e"
+  },
+  "backend_source_sha256": {
+    "Cargo.toml": "09cd57ca55b043ff9988da0c50387dbf1a2cb044a6dbabd9b31431ee785e738b",
+    "build.rs": "11a7d220983da103f6ddf61a1d126469c364f88668bc27669619f691766bef57",
+    "cuda/kernels.cu": "b212f85a83f4ae1d27c2f454993c4be0e1a7e20b1f22242d6bc95457f283f813",
+    "cuda/goldilocks.cuh": "4daecbb931c6055b259fd4df2d15d7b33105f1ea232bb7714544ca9abbd248a5"
+  },
+  "dependency_override": "/tmp/ix-trace-experiments-0_99hznm/backend-config.toml",
+  "generated_feature": "cuda-trace-codegen",
+  "ffi_check_features": [
+    "parallel",
+    "cuda-trace-codegen"
+  ],
+  "runtime_selection": {
+    "AIUR_GPU_TRACE": "generated",
+    "AIUR_TRACE_ONLY_LOOKUPS": "1"
+  },
+  "full_cli_built": false
+}

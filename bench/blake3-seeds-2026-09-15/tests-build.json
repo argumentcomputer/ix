@@ -1,0 +1,35 @@
+{
+  "environment": {
+    "CARGO_BUILD_JOBS": "4",
+    "CARGO_NET_OFFLINE": "true",
+    "LEAN_NUM_THREADS": "4",
+    "RAYON_NUM_THREADS": "4",
+    "MULTI_STARK_CUDA_ARCHS": "120",
+    "RUSTUP_TOOLCHAIN": "1.98.1",
+    "LEAN_SYSROOT": "/home/sam/.elan/toolchains/leanprover--lean4---v4.33.1",
+    "LIBCLANG_PATH": "/usr/lib/x86_64-linux-gnu",
+    "CFLAGS": "-std=gnu17",
+    "PATH": "/home/sam/.elan/toolchains/leanprover--lean4---v4.33.1/bin:/usr/local/cuda-13.3/bin:/home/sam/.cargo/bin:/home/sam/.cargo/bin:/opt/amazon/openmpi/bin:/opt/amazon/efa/bin:/usr/local/cuda-13.3/bin:/usr/local/cuda-13.3/include:/home/sam/.codex/tmp/arg0/codex-arg0DtfPIq:/nix/store/zc6fy62c341aibk36p4ywff7rf9wn4wx-ripgrep-15.2.0/bin:/nix/store/v24sx9l1jmvvia3z8iznrd7jwhvc8kcf-bubblewrap-0.11.2/bin:/nix/store/k3wl6cg7q50zkx47af3msmg1yrg1f203-git-2.54.0/bin:/nix/store/q0pj1dw2nr57y6b4pqljklf0hy20alfj-jq-1.8.1-bin/bin:/opt/amazon/openmpi/bin:/opt/amazon/efa/bin:/usr/local/cuda-13.3/bin:/usr/local/cuda-13.3/include:/home/sam/.nix-profile/bin:/nix/var/nix/profiles/default/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin"
+  },
+  "cpu_affinity": [
+    68,
+    69,
+    70,
+    71
+  ],
+  "command": [
+    "/home/sam/.cargo/bin/cargo",
+    "test",
+    "--release",
+    "--locked",
+    "-p",
+    "aiur",
+    "--lib",
+    "--features",
+    "parallel,cuda",
+    "--no-run",
+    "--message-format=json"
+  ],
+  "sha256": "2bfa11d9ffa24c200ddc44bc3bef1f2f08e3440685e992bc11a8e50177dfca91",
+  "binary": "/home/sam/repos/ix/target/blake3-seeds-build/aiur-tests"
+}

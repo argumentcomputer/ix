@@ -1,0 +1,83 @@
+## span unions (s)
+  aiur/prove_ixvm_within_budget      136.875  n=1
+  aiur/execute_ixvm                   96.126  n=1
+  aiur/prove_planned                  40.344  n=1
+  stark/batch_round_two               28.505  n=1
+  stark/batch_round_2                 28.227  n=11
+  stark/stage1_commit                 21.678  n=22
+  stark/prove_batch_shard             17.936  n=11
+  stark/commit_source                 17.299  n=440
+  cuda/lde                            16.157  n=442
+  aiur/witness                        12.476  n=22
+  stark/batch_round_one               11.741  n=1
+  stark/batch_round_1                 11.423  n=11
+  aiur/codegen_seeds                   9.520  n=72
+  aiur/cpu_circuit                     8.887  n=4438
+  aiur/cpu_witness                     8.791  n=3998
+  stark/lookup_construction            8.161  n=11
+  stark/quotient                       6.807  n=11
+  aiur/codegen_pack                    6.687  n=90
+  cuda/quotient_lde                    6.086  n=220
+  cuda/lookup_lde                      5.641  n=220
+  aiur/codegen_device_rows             4.542  n=9672
+  stark/commit_merkle                  4.336  n=22
+  stark/fri_open                       2.937  n=11
+  stark/fri_streamed                   2.937  n=11
+  aiur/codegen_concat                  2.353  n=90
+  stark/fri_reduce                     2.171  n=11
+  stark/fri_prove                      2.152  n=11
+  stark/fri_round_commit               1.939  n=256
+  aiur/codegen_filter                  1.295  n=90
+  aiur/witness_zero                    1.009  n=3998
+  stark/fri_prepare                    0.425  n=11
+  stark/fri_interpolate                0.339  n=11
+  stark/fri_queries                    0.190  n=11
+  stark/fri_query_grind                0.145  n=11
+  aiur/row_index                       0.097  n=1
+  stark/fri_commit_phase_opening       0.023  n=256
+  stark/fri_input_openings             0.016  n=11
+  cuda/fri_fold                        0.007  n=256
+  stark/fri_commit_grind               0.002  n=256
+  stark/fri_observe_openings           0.002  n=11
+  aiur/codegen_widen                   0.000  n=2
+## per circuit, union wall (s), rows
+  aiur/cpu_circuit     "memory"   circuit=186      3.533  rows=110317972
+  aiur/cpu_circuit     "function" circuit=108      2.431  rows=2081732
+  aiur/cpu_circuit     "function" circuit=14       2.426  rows=2243422
+  aiur/cpu_circuit     "function" circuit=121      2.426  rows=765920
+  aiur/cpu_circuit     "function" circuit=125      2.422  rows=972646
+  aiur/cpu_circuit     "function" circuit=11       2.326  rows=312554
+  aiur/codegen_seeds              circuit=12       2.143  rows=50761308
+  aiur/cpu_circuit     "function" circuit=115      2.118  rows=2563150
+  aiur/cpu_circuit     "function" circuit=0        2.072  rows=315998
+  aiur/cpu_circuit     "function" circuit=182      1.986  rows=899126
+  aiur/cpu_circuit     "function" circuit=25       1.969  rows=125158
+  aiur/cpu_circuit     "function" circuit=126      1.928  rows=769112
+  aiur/cpu_circuit     "function" circuit=105      1.815  rows=943880
+  aiur/cpu_circuit     "function" circuit=37       1.772  rows=1898062
+  aiur/cpu_circuit     "function" circuit=169      1.744  rows=2628416
+  aiur/cpu_circuit     "function" circuit=81       1.739  rows=200794
+  aiur/codegen_seeds              circuit=180      1.639  rows=6800884
+  aiur/codegen_seeds              circuit=54       1.637  rows=6866978
+  aiur/codegen_seeds              circuit=88       1.630  rows=5151952
+  aiur/codegen_seeds              circuit=178      1.629  rows=7693010
+  aiur/codegen_seeds              circuit=45       1.612  rows=2985582
+  aiur/codegen_seeds              circuit=42       1.598  rows=12933678
+  aiur/cpu_circuit     "function" circuit=44       1.584  rows=634312
+  aiur/cpu_circuit     "function" circuit=166      1.584  rows=3434594
+  aiur/cpu_circuit     "function" circuit=122      1.582  rows=2873002
+  aiur/cpu_circuit     "function" circuit=132      1.582  rows=2356048
+  aiur/cpu_circuit     "memory"   circuit=195      1.581  rows=3425734
+  aiur/cpu_circuit     "function" circuit=109      1.580  rows=5837126
+  aiur/cpu_circuit     "function" circuit=167      1.578  rows=4002850
+  aiur/cpu_circuit     "function" circuit=113      1.569  rows=3127294
+  aiur/cpu_circuit     "function" circuit=123      1.566  rows=392458
+  aiur/cpu_circuit     "function" circuit=116      1.566  rows=1596574
+  aiur/cpu_circuit     "function" circuit=104      1.516  rows=448242
+  aiur/cpu_circuit     "function" circuit=114      1.494  rows=1137664
+  aiur/cpu_circuit     "function" circuit=168      1.299  rows=3117548
+  aiur/cpu_circuit     "function" circuit=97       1.280  rows=473328
+  aiur/cpu_circuit     "function" circuit=141      1.278  rows=611164
+  aiur/cpu_circuit     "function" circuit=100      1.267  rows=710576
+  aiur/cpu_circuit     "function" circuit=131      1.253  rows=835752
+  aiur/codegen_seeds              circuit=38       1.250  rows=8751496

@@ -8,10 +8,10 @@ each and how the branches relate.
 
 | Repo | Branch | Base | Worktree | Status |
 |---|---|---|---|---|
-| ix | `sb/aiur-batch-proving` (PR #643) | `main` | `~/repos/ix.batch-proving` | local tip `a17b5f47`, two commits ahead of the pushed `7421baf2` plus a merge |
-| ix | `sb/aiur-gpu-lanes` (PR 2) | `sb/aiur-batch-proving` | `~/repos/ix.gpu-lanes` | based on the old PR 1 tip `7421baf2`; needs rebasing |
-| multi-stark | `sb/batch-proving` | `main` | `~/repos/multi-stark.batch-proving` | pushed; the first eight fork commits, `6495cd8..231942a` |
-| multi-stark | `sb/trace-sharding-gpu` | `sb/batch-proving` | `~/repos/multi-stark.trace-sharding` | on the remote at `59df87a`; the PR is the 32 commits above the base |
+| ix | `sb/aiur-batch-proving` (PR #643) | `main` | `~/repos/ix.batch-proving` | merges `main` through #649; pins multi-stark `a155ee4` and texray `6d50167` |
+| ix | `sb/aiur-gpu-lanes` (PR #644) | `sb/aiur-batch-proving` | `~/repos/ix.gpu-lanes` | rebased onto #643 after its `main` merges (#640, #648, #649) |
+| multi-stark | `sb/batch-proving` | `main` | `~/repos/multi-stark.batch-proving` | merged as multi-stark #80 (`a155ee4`) |
+| multi-stark | `sb/trace-sharding-gpu` (PR #81) | `main` | `~/repos/multi-stark.trace-sharding` | rebased onto `a155ee4`; ix pins its head `7b3699b` |
 
 The scratch worktree `~/repos/ix.gpu-merge` on `tmp/pr2-merge` holds the
 merged PR 2 tree with a full Lean build; delete it when PR 2 is rebased.
@@ -138,9 +138,7 @@ builds; there is no GPU or Succinct toolchain on this host. CI's
 
 - `sb/batch-proving` merged as multi-stark #80 (`a155ee4` on `main`);
   ix pins that commit.
-- Open `sb/trace-sharding-gpu` against `main`, rebased onto `a155ee4`
-  (the squash of its base). The local `multi-stark.trace-sharding`
-  checkout was behind the remote; `git pull --ff-only` brings it to
-  `59df87a`.
+- `sb/trace-sharding-gpu` is multi-stark #81 against `main`, rebased onto
+  `a155ee4`; ix and `sp1-compress` pin its head `7b3699b`.
 - tracing-texray `sb/per-span-peak` merged as texray #4 (`6d50167` on
   `main`); ix pins that commit.

@@ -1,0 +1,43 @@
+[lanes] host budget 920.0 GiB process-wide (requested 230.0 GiB per GPU, visible cgroup limit 920.0 GiB): 730.8 GiB shared records, 24.2 GiB workspace per GPU, 92.0 GiB headroom; 12 CPU executions, 4 prepared queue slots; 36.5 GiB initial reservation, growth waits for shared capacity; 1500000000 trace cells
+[lanes] per-record ceiling 128.0 GiB; oversized environment claims are bisected automatically
+[lanes] 572 claims (0 reused from the index, 0 retired under cached joins without an indexed proof), 571 joins (0 cached)
+[lanes] claim 570: record needs 137438953501 B, above the 137438953472 B per-record ceiling; draining active work before splitting this claim
+[lanes] split claim 570 into claims [570, 572]
+[lanes] refined partition: 573 claims, saved to /home/sam/benchdata/flt/runs/flt572-lanes4-exec3/cache/refined-manifests/de18b5a0b61ea35872dfece212bc6322c812a0baaeee786323b1507e97794b61.ixes; continuing with completed proofs
+[lanes] host budget 920.0 GiB process-wide (requested 230.0 GiB per GPU, visible cgroup limit 920.0 GiB): 730.8 GiB shared records, 24.2 GiB workspace per GPU, 92.0 GiB headroom; 12 CPU executions, 4 prepared queue slots; 36.5 GiB initial reservation, growth waits for shared capacity; 1500000000 trace cells
+[lanes] per-record ceiling 128.0 GiB; oversized environment claims are bisected automatically
+[lanes] 573 claims (571 reused from the index, 0 retired under cached joins without an indexed proof), 572 joins (7 cached)
+[lanes] claim 572: record needs 137438953611 B, above the 137438953472 B per-record ceiling; draining active work before splitting this claim
+[lanes] split claim 572 into claims [572, 573]
+[lanes] refined partition: 574 claims, saved to /home/sam/benchdata/flt/runs/flt572-lanes4-exec3/cache/refined-manifests/de18b5a0b61ea35872dfece212bc6322c812a0baaeee786323b1507e97794b61.ixes; continuing with completed proofs
+[lanes] host budget 920.0 GiB process-wide (requested 230.0 GiB per GPU, visible cgroup limit 920.0 GiB): 730.8 GiB shared records, 24.2 GiB workspace per GPU, 92.0 GiB headroom; 12 CPU executions, 4 prepared queue slots; 36.5 GiB initial reservation, growth waits for shared capacity; 1500000000 trace cells
+[lanes] per-record ceiling 128.0 GiB; oversized environment claims are bisected automatically
+[lanes] 574 claims (572 reused from the index, 0 retired under cached joins without an indexed proof), 573 joins (7 cached)
+[lanes] claim 573: record needs 137438953727 B, above the 137438953472 B per-record ceiling; draining active work before splitting this claim
+[lanes] split claim 573 into claims [573, 574]
+[lanes] refined partition: 575 claims, saved to /home/sam/benchdata/flt/runs/flt572-lanes4-exec3/cache/refined-manifests/de18b5a0b61ea35872dfece212bc6322c812a0baaeee786323b1507e97794b61.ixes; continuing with completed proofs
+[lanes] host budget 920.0 GiB process-wide (requested 230.0 GiB per GPU, visible cgroup limit 920.0 GiB): 730.8 GiB shared records, 24.2 GiB workspace per GPU, 92.0 GiB headroom; 12 CPU executions, 4 prepared queue slots; 36.5 GiB initial reservation, growth waits for shared capacity; 1500000000 trace cells
+[lanes] per-record ceiling 128.0 GiB; oversized environment claims are bisected automatically
+[lanes] 575 claims (573 reused from the index, 0 retired under cached joins without an indexed proof), 574 joins (7 cached)
+[lanes] claim 574: record needs 137438953550 B, above the 137438953472 B per-record ceiling; draining active work before splitting this claim
+[lanes] split claim 574 into claims [574, 575]
+[lanes] refined partition: 576 claims, saved to /home/sam/benchdata/flt/runs/flt572-lanes4-exec3/cache/refined-manifests/de18b5a0b61ea35872dfece212bc6322c812a0baaeee786323b1507e97794b61.ixes; continuing with completed proofs
+[lanes] host budget 920.0 GiB process-wide (requested 230.0 GiB per GPU, visible cgroup limit 920.0 GiB): 730.8 GiB shared records, 24.2 GiB workspace per GPU, 92.0 GiB headroom; 12 CPU executions, 4 prepared queue slots; 36.5 GiB initial reservation, growth waits for shared capacity; 1500000000 trace cells
+[lanes] per-record ceiling 128.0 GiB; oversized environment claims are bisected automatically
+[lanes] 576 claims (574 reused from the index, 0 retired under cached joins without an indexed proof), 575 joins (7 cached)
+--- resume, original partition, AIUR_RECORD_MAX_BYTES=274877906944 ---
+[lanes] 572 claims (571 reused from the index, 0 retired under cached joins without an indexed proof), 571 joins (7 cached)
+[lanes] claim 570 dispatched at +11s
+[lanes] executor 5: claim 570 execution started at +11s
+[lanes] executor 5: claim 570 executed in 915.4s, record 187090483515 B (174.2 GiB) at +927s
+[lanes] worker 2: claim 570 proving started at +927s
+[lanes] worker 2: claim 570 proven at +1187s (0 left)
+[aggregate] root wrap proven in 38.3s (query-record peak 74.4 GiB): 20 shard(s) verified into 7
+[aggregate] root wrap proven in 15.8s (query-record peak 65.3 GiB): 7 shard(s) verified into 3
+[aggregate] root wrap proven in 8.6s (query-record peak 62.0 GiB): 3 shard(s) verified into 2
+[aggregate] root wrap proven in 7.0s (query-record peak 59.4 GiB): 2 shard(s) verified into 1
+[lanes] calibration: claims 1 executed: record mean 174.2 GiB, p50 174.2 GiB, p90 174.2 GiB, max 174.2 GiB (unit 570); execution mean 915.4s, max 915.4s
+[lanes] calibration: joins 8 executed: record mean 19.7 GiB, p50 11.4 GiB, p90 41.1 GiB, max 41.1 GiB (unit 1142); execution mean 53.6s, max 138.8s
+[lanes] calibration: shard-count candidate unavailable; measured 1 of 572 claim records in the current partition
+[lanes] record pool: peak granted 174.2 GiB, 0 growth waits (0.0s summed across executions), 0 contention retries
+[lanes] root 7d44c48ee47c2ad9d5f1ae939bbbec7e6036e6ac8ce4511a9428e5adafe55dc0 verified; composed verdict OK; end to end 1885s

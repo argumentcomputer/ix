@@ -1,0 +1,3 @@
+sppark lde height=1048576 width=23 added_bits=2 gather=0.745 inverse=0.570 spread=0.642 forward=2.487 scatter=5.375
+sppark lde height=16777216 width=6 added_bits=2 gather=1.057 inverse=2.742 spread=8.702 forward=16.033 scatter=4.974
+sppark lde height=4194304 width=2 added_bits=2 gather=0.082 inverse=0.184 spread=0.253 forward=0.952 scatter=0.366

@@ -1,0 +1,27 @@
+  main trace width 5                             0.00s
+commit sources "generated"  sum of spans   9.87s, idle inside   3.91s
+commit sources "host"       sum of spans   7.43s, idle inside   4.19s
+stark/commit_merkle              union   4.34s idle   0.02s n=22
+stark/fri_open                   union   2.94s idle   0.71s n=11
+stark/fri_streamed               union   2.94s idle   0.71s n=11
+stark/fri_prepare                union   0.42s idle   0.42s n=11
+stark/fri_interpolate            union   0.34s idle   0.05s n=11
+stark/fri_observe_openings       union   0.00s idle   0.00s n=11
+stark/fri_reduce                 union   2.17s idle   0.24s n=11
+stark/fri_prove                  union   2.15s idle   0.22s n=11
+stark/fri_round_commit           union   1.94s idle   0.01s n=256
+stark/fri_commit_grind           union   0.00s idle   0.00s n=256
+stark/fri_queries                union   0.19s idle   0.19s n=11
+stark/fri_query_grind            union   0.14s idle   0.14s n=11
+stark/fri_input_openings         union   0.02s idle   0.02s n=11
+stark/fri_commit_phase_opening   union   0.02s idle   0.02s n=256
+cuda/fri_fold                    union   0.01s idle   0.01s n=256
+stark/stage1_commit: idle 8.16s, with a CUDA API call active 1.30s, pure host 6.86s
+  cudaStreamSynchronize_ptsz_v7000           0.49s n=12000
+  cudaMemcpyAsync_ptsz_v7000                 0.25s n=29328
+  cudaMemcpy_ptds_v7000                      0.11s n=440
+  cudaMemsetAsync_ptsz_v7000                 0.09s n=21322
+  cudaMallocAsync_ptsz_v11020                0.08s n=10737
+  cudaLaunchKernel_ptsz_v7000                0.08s n=17545
+  cudaEventSynchronize_v3020                 0.08s n=8852
+  cudaEventRecord_ptsz_v7000                 0.02s n=19167

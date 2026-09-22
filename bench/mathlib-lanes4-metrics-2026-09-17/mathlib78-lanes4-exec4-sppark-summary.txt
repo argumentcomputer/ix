@@ -1,0 +1,10 @@
+[lanes] host budget 920.0 GiB process-wide (requested 230.0 GiB per GPU, visible cgroup limit 920.0 GiB): 730.8 GiB shared records, 24.2 GiB workspace per GPU, 92.0 GiB headroom; 16 CPU executions, 4 prepared queue slots; 30.4 GiB initial reservation, growth waits for shared capacity; 1500000000 trace cells
+[lanes] per-record ceiling 128.0 GiB; oversized environment claims are bisected automatically
+[aggregate] root wrap proven in 25.7s (query-record peak 68.6 GiB): 13 shard(s) verified into 5
+[aggregate] root wrap proven in 12.1s (query-record peak 63.1 GiB): 5 shard(s) verified into 2
+[aggregate] root wrap proven in 7.3s (query-record peak 60.0 GiB): 2 shard(s) verified into 1
+[lanes] calibration: claims 78 executed: record mean 28.4 GiB, p50 28.0 GiB, p90 32.9 GiB, max 44.0 GiB (unit 49); execution mean 243.0s, max 454.4s
+[lanes] calibration: joins 77 executed: record mean 16.2 GiB, p50 16.4 GiB, p90 18.9 GiB, max 25.3 GiB (unit 154); execution mean 55.3s, max 77.0s
+[lanes] calibration: 78 shards at a 30.4 GiB initial reservation (730.8 GiB shared record budget): largest claim record 144% of the initial reservation, largest join record 83%, 0 contention retry/retries; p90-scaled candidate 85 shard(s) at this initial reservation (claims measured this run only; a resumed run measures fewer)
+[lanes] record pool: peak granted 725.8 GiB, 0 growth waits (0.0s summed across executions), 0 contention retries
+[lanes] root 026c8d3841c6e62a95e1fbc66264e95dc9c6bf636c654501604b51855df7cc3d verified; composed verdict OK; end to end 2154s

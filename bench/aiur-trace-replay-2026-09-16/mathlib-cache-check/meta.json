@@ -1,0 +1,49 @@
+{
+  "command": [
+    "/tmp/ix-trace-experiments-0_99hznm/ix-aggregate-trace-replay",
+    "--ixe",
+    "/home/sam/benchdata/mathlib-gpu/mathlib.ixe",
+    "--ixes",
+    "/home/sam/benchdata/mathlib-gpu/mathlib-78.ixes",
+    "--trace-shards",
+    "--max-ram",
+    "230",
+    "--direct-joins",
+    "--jobs",
+    "1",
+    "--no-write",
+    "--reprove-slot",
+    "33"
+  ],
+  "environment": {
+    "CUDA_VISIBLE_DEVICES": "3",
+    "AIUR_GPU_TRACE": "blake3",
+    "RAYON_NUM_THREADS": "8",
+    "OMP_NUM_THREADS": "8",
+    "LEAN_NUM_THREADS": "8",
+    "AIUR_TRACE_ONLY_LOOKUPS": "1",
+    "AIUR_MAX_PIECE_LOG_HEIGHT": "24",
+    "AIUR_TRACE_SHARD_MAX_CELLS": "1500000000",
+    "AIUR_TREE_CACHE_BYTES": "0",
+    "AIUR_AGGREGATE_CACHE_DIR": "/home/sam/benchdata/mathlib-gpu/mathlib78-gpu-shared/cache/aggregate",
+    "AIUR_PROFILE": "/tmp/ix-gpu-trace-codegen/bench/aiur-trace-replay-2026-09-16/mathlib-cache-check/spans.jsonl",
+    "RUST_LOG": "aiur::gpu_trace=debug,aiur::trace_codegen=debug"
+  },
+  "cpu_affinity": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+  ],
+  "binary_sha256": "00668b1617384e6818097e40182aff443256a91413cf75401e94d38f590b3226",
+  "ixe_sha256": "d84ece558d434574f7d382d2a4c854a4a00d31958fdc08161f34d14ce5f6fde0",
+  "ixes_sha256": "2910821961999aebad1e894f0f6a2c5a8f4fc2a6aab388dd822668518f13cb0e",
+  "started_ns": 1789532341250843998,
+  "pid": 1593491,
+  "exit_code": 1,
+  "finished_ns": 1789532347137705892
+}

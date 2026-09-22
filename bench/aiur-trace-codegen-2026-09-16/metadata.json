@@ -1,0 +1,224 @@
+{
+  "date": "2026-09-16",
+  "base_commit": "dcfa650564dc0d3193eda4719503771370eb7957",
+  "branch": "aiur-cuda-trace-codegen",
+  "worktree": "/tmp/ix-gpu-trace-codegen",
+  "private_artifacts": "/tmp/ix-trace-experiments-0_99hznm",
+  "cpu_affinity": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+  ],
+  "thread_limit": 8,
+  "lean_version": "4.33.1",
+  "rust_version": "1.98.1",
+  "multi_stark_revision": "9ba93c0b448c77b99eafe867c3078a83ee0eef2f",
+  "source_sha256": {
+    "Ix/Aiur/Stages/Bytecode.lean": "7650f6fbb1ec6c64bff9df9d3892e6663baa3fce8956429b3232081e055ed4b3",
+    "Ix/Aiur/Stages/Codegen.lean": "c0e55a7bbd51bc30a9b85413211fb24787858b37bd24dd219a35223d412570e8",
+    "Ix/Aiur/Stages/TracePlan.lean": "fcb3c3c101ceaf2ccb7e2f9c3a56d39a7c89498821043b6f3ce6a79def6bc63d",
+    "Ix/Aiur/Stages/TraceReport.lean": "e097af513876f39c2bd3b091882e11d0391a2b4b33e6055426e6e7a5b104fc7c",
+    "Ix/Aiur/Stages/TraceCodegen.lean": "a469cf453acbc12a9462b12fecb564e3a4afa20c2792d3bb0685b2fc465f31e6",
+    "Ix/Cli/CodegenCmd.lean": "ed12b6e21bcb94996980fb3081c2112cdaeb87ed4e4503cc05da0a23b9d2be9d",
+    "Tests/Aiur/TracePlan.lean": "3294022bf3b70770fbbc6a40d7c3d118daa6f560bdd7f6e5a7b72b7a608283c7",
+    "Tests/Aiur/TraceCodegen.lean": "9249fe1bef0bd203f3bfc8c545505b384689a7fc87f98591e7c2f129ca168b1f",
+    "crates/aiur/src/lib.rs": "b6aa45cf2d4c678e7fad73082c0a4f2f18408ae3b61540050dccd2b939e98e13",
+    "crates/aiur/src/trace.rs": "73d9d3ddf761f8ad90d90672aa6ed02f4707bf9c3bcf43c560402c04c2653660",
+    "crates/aiur/src/trace_codegen.rs": "7ccf9257f06bc0707db5c805dfae0137ddff6671906709e3e7c1806e7b452c13",
+    "crates/aiur/src/trace_codegen/tests.rs": "6bff5207e2d7837f3e03804b3d47093c49c3b56c04422d22ca78f1efe454f3b3",
+    "crates/aiur/src/trace_codegen/tests/generated.rs": "8a5ad622286b3e16e45615f8dd3fac6bb87e23486311599d5c6b64683d4b3756",
+    "bench/aiur-trace-codegen-2026-09-16/Generate.lean": "060495115b9fe41dad507e63a88296230114ba0116c4dac4ba029daf20088690",
+    "Cargo.toml": "b379c439240fc740e34b3eb29e543075057bba77a2d60c4a345e941627e1236c",
+    "Cargo.lock": "450897a5d5b22e4495e7c23dec1f8aacbb30eb4c0a0ccfb23fba26eb41355b7f",
+    ".cargo/config.toml": "8750ae31cd0ef79d141ecd8c0c6c517a98e0b5a15704d6dd5f60554459166bbc"
+  },
+  "opcode_variants_in_fixtures": [
+    "Add",
+    "AssertEq",
+    "Call",
+    "Const",
+    "Debug",
+    "EqZero",
+    "IOGetInfo",
+    "IORead",
+    "IOSetInfo",
+    "IOWrite",
+    "Load",
+    "Mul",
+    "Store",
+    "Sub",
+    "U32LessThan",
+    "U32ToField",
+    "U8Add",
+    "U8And",
+    "U8BitDecomposition",
+    "U8LessThan",
+    "U8Mul",
+    "U8Or",
+    "U8RangeCheck",
+    "U8ShiftLeft",
+    "U8ShiftRight",
+    "U8Sub",
+    "U8Xor",
+    "U8XorSplit4",
+    "U8XorSplit7",
+    "UnconstrainedBigUintDivMod",
+    "UnconstrainedGInverse",
+    "UnconstrainedGToBytes",
+    "UnconstrainedU32Add",
+    "UnconstrainedU32Add3"
+  ],
+  "validation": [
+    {
+      "name": "rust-tests",
+      "exit_code": 0,
+      "command": [
+        "taskset",
+        "-c",
+        "0-7",
+        "cargo",
+        "test",
+        "-p",
+        "aiur",
+        "--lib",
+        "trace_codegen",
+        "--offline",
+        "--locked",
+        "-j",
+        "8",
+        "--",
+        "--test-threads=8"
+      ],
+      "note": "Final passing run after qualification cleanup; see rust-tests.log for Cargo/test timings."
+    },
+    {
+      "name": "planner-tests",
+      "seconds": 0.37279910600045696,
+      "exit_code": 0,
+      "command": [
+        "python3",
+        "/tmp/ix-trace-experiments-0_99hznm/lean.py",
+        "--run",
+        "/tmp/ix-trace-experiments-0_99hznm/RunTracePlan.lean"
+      ]
+    },
+    {
+      "name": "fixture-freshness",
+      "seconds": 2.5689891209985944,
+      "exit_code": 0,
+      "command": [
+        "python3",
+        "/tmp/ix-trace-experiments-0_99hznm/lean.py",
+        "--run",
+        "bench/aiur-trace-codegen-2026-09-16/Generate.lean",
+        "--check"
+      ]
+    },
+    {
+      "name": "execution-codegen-check",
+      "seconds": 6.108721648997744,
+      "exit_code": 0,
+      "command": [
+        "python3",
+        "/tmp/ix-trace-experiments-0_99hznm/lean.py",
+        "--run",
+        "/tmp/ix-trace-experiments-0_99hznm/RunCodegen.lean",
+        "--check"
+      ]
+    },
+    {
+      "name": "rust-format",
+      "seconds": 0.022543988001416437,
+      "exit_code": 0,
+      "command": [
+        "taskset",
+        "-c",
+        "0-7",
+        "rustfmt",
+        "--check",
+        "crates/aiur/src/trace_codegen.rs"
+      ]
+    }
+  ],
+  "rust_tests_passed": 16,
+  "planner_tests_passed": 35,
+  "generated_constrained_functions": 1220,
+  "generation": [
+    {
+      "target": "ixvm",
+      "seconds": 3.9441609060013434,
+      "bytes": 7802757,
+      "exit_code": 0,
+      "command": [
+        "python3",
+        "/tmp/ix-trace-experiments-0_99hznm/lean.py",
+        "--run",
+        "/tmp/ix-trace-experiments-0_99hznm/RunCodegen.lean",
+        "--trace-rust",
+        "--target",
+        "ixvm"
+      ]
+    },
+    {
+      "target": "multi-stark",
+      "seconds": 2.6092324659985024,
+      "bytes": 3044037,
+      "exit_code": 0,
+      "command": [
+        "python3",
+        "/tmp/ix-trace-experiments-0_99hznm/lean.py",
+        "--run",
+        "/tmp/ix-trace-experiments-0_99hznm/RunCodegen.lean",
+        "--trace-rust",
+        "--target",
+        "multi-stark"
+      ]
+    },
+    {
+      "target": "ix-aggr",
+      "seconds": 2.4778170799982036,
+      "bytes": 3089689,
+      "exit_code": 0,
+      "command": [
+        "python3",
+        "/tmp/ix-trace-experiments-0_99hznm/lean.py",
+        "--run",
+        "/tmp/ix-trace-experiments-0_99hznm/RunCodegen.lean",
+        "--trace-rust",
+        "--target",
+        "ix-aggr"
+      ]
+    }
+  ],
+  "typecheck": {
+    "seconds": 42.70838749100221,
+    "exit_code": 0,
+    "command": [
+      "taskset",
+      "-c",
+      "0-7",
+      "cargo",
+      "check",
+      "--manifest-path",
+      "/tmp/ix-trace-experiments-0_99hznm/production-check/Cargo.toml",
+      "--offline",
+      "--locked",
+      "-j",
+      "8"
+    ]
+  },
+  "typecheck_manifest": "[package]\nname = \"aiur-trace-generated-check\"\nversion = \"0.0.0\"\nedition = \"2024\"\n[lib]\npath = \"lib.rs\"\n[dependencies]\naiur = { path = \"/tmp/ix-gpu-trace-codegen/crates/aiur\" }\nmulti-stark = { git = \"https://github.com/argumentcomputer/multi-stark.git\", rev = \"9ba93c0b448c77b99eafe867c3078a83ee0eef2f\" }\n",
+  "typecheck_modules": "#[path = \"../production/ixvm.rs\"]\npub mod ixvm;\n#[path = \"../production/multi-stark.rs\"]\npub mod multi_stark;\n#[path = \"../production/ix-aggr.rs\"]\npub mod ix_aggr;\n",
+  "generated_production_sha256": {
+    "ixvm": "4b8f8b04f9e2ba1211af8689f2127962ba57475afa836bb6a1180cfc6825ee18",
+    "multi-stark": "e93c47792b331046fcab362d9b2d4980c3c6ce29a2fb2cef979d521e6b09c6f2",
+    "ix-aggr": "f7780be0cda2a1185eb2a56bb36dd41fcacf85c4612a7449afe76bf742c76c15"
+  },
+  "gpu_tests_run": false,
+  "proof_performance_measured": false
+}

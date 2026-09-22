@@ -1,0 +1,96 @@
+{
+  "base_commit": "dcfa650564dc0d3193eda4719503771370eb7957",
+  "branch": "aiur-cuda-trace-codegen",
+  "lean_toolchain": "leanprover/lean4:v4.33.1",
+  "lean_threads": 4,
+  "cpu_affinity": [
+    0,
+    1,
+    2,
+    3
+  ],
+  "cached_dependencies": "/home/sam/repos/ix/.lake",
+  "private_artifacts": "/tmp/ix-trace-experiments-0_99hznm",
+  "focused_tests_passed": 35,
+  "rust_codegen_check": {
+    "command": [
+      "python3",
+      "/tmp/ix-trace-experiments-0_99hznm/lean.py",
+      "--run",
+      "/tmp/ix-trace-experiments-0_99hznm/RunCodegen.lean",
+      "--check"
+    ],
+    "exit_code": 0,
+    "wall_seconds": 11.625155494002684,
+    "cpus": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "lean_threads": 4
+  },
+  "generated_cuda_writers": false,
+  "runtime_row_weights": null,
+  "source_sha256": {
+    "Ix/Aiur/Stages/Bytecode.lean": "7650f6fbb1ec6c64bff9df9d3892e6663baa3fce8956429b3232081e055ed4b3",
+    "Ix/Aiur/Stages/Codegen.lean": "50c0409e02f8aa24ce4ba3ce65dc0adf647dfa7572f53c2b6c172b133e2fe84e",
+    "Ix/Aiur/Stages/TracePlan.lean": "360193f3a30cbcef563324d940bb29c00a3aa00b26d53e497eb007bf67cd7345",
+    "Ix/Aiur/Stages/TraceReport.lean": "e097af513876f39c2bd3b091882e11d0391a2b4b33e6055426e6e7a5b104fc7c",
+    "Ix/Cli/CodegenCmd.lean": "9b08fff7a67c4c0eb6bd1accd8bada05721c5ba709d3e4919eb8add983e35350",
+    "Tests/Aiur/TracePlan.lean": "3294022bf3b70770fbbc6a40d7c3d118daa6f560bdd7f6e5a7b72b7a608283c7",
+    "lakefile.lean": "f9c2ef31f00e52853756d029d1643d1acf9e7d70153d36e8205712e69f5bf196",
+    "Tests/Aiur.lean": "969c3e96790b0a8b386f5e02ead483ad38a7d9feb4feaafc3d11bf6816dce1ec",
+    "Tests/Main.lean": "4f983a9a4a47b0fbcc25bedf495cca8ba33d803fae7a07e3fc06e9767652b197",
+    "bench/aiur-trace-plan-2026-09-15/Run.lean": "fbc6289b8cc220f025562e7dce7369c093d4a5555cde75480b9884355f74a199"
+  },
+  "programs": [
+    {
+      "program": "ixvm",
+      "library_functions": 798,
+      "planned_constrained_functions": 757,
+      "function_circuits": 185,
+      "grouped_circuits": 82,
+      "primitive_circuits": 20,
+      "raw_report_sha256": "c647e8f4ed528a66e813be5cd1a86483f1ab28195b993351082d32501cc81963",
+      "raw_report_bytes": 8306037,
+      "inventory_wall_seconds": 6.858402069003205,
+      "exit_code": 0
+    },
+    {
+      "program": "multi-stark",
+      "library_functions": 296,
+      "planned_constrained_functions": 223,
+      "function_circuits": 105,
+      "grouped_circuits": 20,
+      "primitive_circuits": 13,
+      "raw_report_sha256": "1cd5c4bcfeb32e3da39239a02b1b0a39129ec9d3cb71ead4104f8c43bedd5d91",
+      "raw_report_bytes": 3946179,
+      "inventory_wall_seconds": 5.185784025998146,
+      "exit_code": 0
+    },
+    {
+      "program": "ix-aggr",
+      "library_functions": 313,
+      "planned_constrained_functions": 240,
+      "function_circuits": 88,
+      "grouped_circuits": 21,
+      "primitive_circuits": 13,
+      "raw_report_sha256": "e6fe2563377f78e5ab0c4f59e60e44f263e5b142d0289cd713f45ace3a17d073",
+      "raw_report_bytes": 3911883,
+      "inventory_wall_seconds": 4.748326407003333,
+      "exit_code": 0
+    }
+  ],
+  "validation": {
+    "changed_lean_modules_compiled": true,
+    "test_registry_compiled": true,
+    "lakefile_compiled_with_lake_plugin": true,
+    "focused_tests": {
+      "passed": 35,
+      "failed": 0
+    },
+    "all_three_rust_execution_modules_unchanged": true,
+    "gpu_kernels_benchmarked": false
+  }
+}

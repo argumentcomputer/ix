@@ -1,0 +1,6 @@
+User time (seconds): 2086.23
+System time (seconds): 104.81
+Percent of CPU this job got: 502%
+Elapsed (wall clock) time (h:mm:ss or m:ss): 7:16.02
+Maximum resident set size (kbytes): 98215192
+Exit status: 0

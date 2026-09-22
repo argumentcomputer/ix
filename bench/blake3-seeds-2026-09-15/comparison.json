@@ -1,0 +1,173 @@
+{
+  "proof": "12beead9b79adc380e89315c871294470a76d7e9d574cce5e76b791e887697e2",
+  "trace_plan_sha256": "822ba9c945dd9f5979aef7e71fe2c879419ae3ca8479dde350afda52044f21ef",
+  "pieces": 7,
+  "record_bytes": 14003112192,
+  "runs": {
+    "baseline-profile": {
+      "phases_s": {
+        "aiur/prove_planned": 27.726143874,
+        "aiur/replay": 58.931100761,
+        "aiur/prepare_slot": 30.678545767,
+        "aiur/blake3_seeds": 6.614252982,
+        "aiur/blake3_device_rows": 3.798784147
+      },
+      "peak_rss_gib": 28.68939208984375,
+      "sampled_gpu_peak_gib": 64.5634765625,
+      "seed_transfers": {
+        "bytes": 27718222032,
+        "count": 334,
+        "union_s": 2.71978137
+      },
+      "transfers": [
+        {
+          "copy_kind": 1,
+          "bytes": 73223941488,
+          "count": 6003,
+          "union_s": 3.696427069
+        },
+        {
+          "copy_kind": 2,
+          "bytes": 18639456,
+          "count": 1078,
+          "union_s": 0.000873488
+        },
+        {
+          "copy_kind": 8,
+          "bytes": 91453801296,
+          "count": 210,
+          "union_s": 0.123217114
+        }
+      ],
+      "device_memory": {
+        "peak_live_bytes": 68371959672,
+        "final_live_bytes": 938971000,
+        "unmatched_frees": 0
+      },
+      "kernel_s": 16.286463825,
+      "stage1_s": 14.891304708,
+      "lookup_s": 5.683886658
+    },
+    "packed-profile": {
+      "phases_s": {
+        "aiur/prove_planned": 25.105757491,
+        "aiur/replay": 56.887009785,
+        "aiur/prepare_slot": 31.25367467,
+        "aiur/blake3_seeds": 2.791260209,
+        "aiur/blake3_device_rows": 1.328851573
+      },
+      "peak_rss_gib": 26.769935607910156,
+      "sampled_gpu_peak_gib": 64.5634765625,
+      "seed_transfers": {
+        "bytes": 3764202992,
+        "count": 334,
+        "union_s": 0.072504547
+      },
+      "transfers": [
+        {
+          "copy_kind": 1,
+          "bytes": 49269922448,
+          "count": 6003,
+          "union_s": 1.054647275
+        },
+        {
+          "copy_kind": 2,
+          "bytes": 18639456,
+          "count": 1078,
+          "union_s": 0.000874806
+        },
+        {
+          "copy_kind": 8,
+          "bytes": 91453801296,
+          "count": 210,
+          "union_s": 0.123216772
+        }
+      ],
+      "device_memory": {
+        "peak_live_bytes": 68371959672,
+        "final_live_bytes": 938971000,
+        "unmatched_frees": 0
+      },
+      "kernel_s": 16.259802214,
+      "stage1_s": 13.232248193,
+      "lookup_s": 4.77279349
+    },
+    "packed-pageable-profile": {
+      "phases_s": {
+        "aiur/prove_planned": 24.900188509,
+        "aiur/replay": 56.543306655,
+        "aiur/prepare_slot": 31.120749791,
+        "aiur/blake3_seeds": 2.840864024,
+        "aiur/blake3_device_rows": 1.390420927
+      },
+      "peak_rss_gib": 26.779518127441406,
+      "sampled_gpu_peak_gib": 64.5634765625,
+      "seed_transfers": {
+        "bytes": 3764202992,
+        "count": 334,
+        "union_s": 0.336097804
+      },
+      "transfers": [
+        {
+          "copy_kind": 1,
+          "bytes": 49269922448,
+          "count": 6003,
+          "union_s": 1.331837254
+        },
+        {
+          "copy_kind": 2,
+          "bytes": 18639456,
+          "count": 1078,
+          "union_s": 0.000875015
+        },
+        {
+          "copy_kind": 8,
+          "bytes": 91453801296,
+          "count": 210,
+          "union_s": 0.123264582
+        }
+      ],
+      "device_memory": {
+        "peak_live_bytes": 68371959672,
+        "final_live_bytes": 938971000,
+        "unmatched_frees": 0
+      },
+      "kernel_s": 16.274058153,
+      "stage1_s": 12.921357344,
+      "lookup_s": 4.90430579
+    },
+    "baseline-control": {
+      "phases_s": {
+        "aiur/prove_planned": 27.177493372,
+        "aiur/replay": 58.30064247,
+        "aiur/prepare_slot": 30.603685612,
+        "aiur/blake3_seeds": 6.600489774,
+        "aiur/blake3_device_rows": 3.80601205
+      },
+      "peak_rss_gib": 28.562305450439453,
+      "sampled_gpu_peak_gib": 64.5498046875
+    },
+    "packed-control": {
+      "phases_s": {
+        "aiur/prove_planned": 24.755649978,
+        "aiur/replay": 55.216124823,
+        "aiur/prepare_slot": 29.939766052,
+        "aiur/blake3_seeds": 2.8380169,
+        "aiur/blake3_device_rows": 1.324248861
+      },
+      "peak_rss_gib": 26.81696319580078,
+      "sampled_gpu_peak_gib": 64.5498046875
+    },
+    "packed-pageable-control": {
+      "phases_s": {
+        "aiur/prove_planned": 25.180238167,
+        "aiur/replay": 55.729950971,
+        "aiur/prepare_slot": 30.02601572,
+        "aiur/blake3_seeds": 2.807635258,
+        "aiur/blake3_device_rows": 1.387242741
+      },
+      "peak_rss_gib": 26.686298370361328,
+      "sampled_gpu_peak_gib": 64.5498046875
+    }
+  }
+}

@@ -1,0 +1,23 @@
+started 2026-09-15T17:24:59Z
+host ip-172-31-11-92 7.0.0-1011-aws
+ix dba4f7f15beb44ada66c33942dd2e99a83b3d4ed78dc8f3bda486cebe738e57c  /home/sam/repos/ix/target/shared-execution-build/ix-shared-execution
+ixe d84ece558d434574f7d382d2a4c854a4a00d31958fdc08161f34d14ce5f6fde0  mathlib.ixe
+ixes bee774da7eb9583c35a11ae5157125ec6907aeb35a12af89cc5058b9ce23c84c  mathlib-seed-230.ixes
+nvcc Build cuda_13.3.r13.3/compiler.38244171_0
+driver 595.91.07
+thp [always] madvise never / always defer [defer+madvise] madvise never
+cpus 96  mem 999 GiB
+flags --lanes 4 --exec-jobs 3 --max-ram 230  cap 920G
+AIUR_GPU_TRACE=blake3
+AIUR_LANES_CACHE_DIR=/home/sam/benchdata/mathlib-gpu/seed111-gpu-shared/cache
+AIUR_MAX_PIECE_LOG_HEIGHT=24
+AIUR_TRACE_ONLY_LOOKUPS=1
+AIUR_TRACE_SHARD_MAX_CELLS=1500000000
+AIUR_TREE_CACHE_BYTES=0
+ix git d9cb6ad9b30932407a9ed64d21a69e4a25ffb8db 24 dirty files
+multi-stark git f54b44f4cc848eb37dc0a7a05010e5a4ef3c75dc 8 dirty files
+build file 8ea9a234aef65d7de4b19e172f4aa31ebeac08d65648dfd04ba6f4edf6c0d4b5  /home/sam/repos/ix/target/shared-execution-build/build.json
+build file 58bb3add93e08a64d806253053cbc08bf9b5ccd9005a4f578aef8ece21da2976  /home/sam/repos/ix/target/shared-execution-build/ix.patch
+build file 62224488d230d8d9c680e2d32242b8f9b94b75915a8a481ab5d283f629091cc9  /home/sam/repos/ix/target/shared-execution-build/multi-stark.patch
+exit 0
+ended 2026-09-15T18:18:06Z

@@ -1,0 +1,20 @@
+unit        exec s  rec GiB  proof s  proven at
+claim 0      106.4     20.8       43        151
+claim 1      131.2     23.7       48        199
+claim 2      143.8     26.6       56        255
+claim 3      132.0     22.3       46        301
+join 2        39.0     15.2       28        329
+claim 4      161.0     26.0       57        435
+claim 5      149.0     24.6       49        378
+join 4        43.2     15.6       27        462
+claim 6      156.2     26.0       53        515
+claim 7      170.0     27.5       60        575
+join 7        44.3     17.0       30        605
+claim 8      167.2     27.7       62        667
+join 13       45.9     17.8       31        698
+claim 9      167.9     28.2       60        784
+join 9        38.6     15.1       26        724
+claim 10     155.2     25.4       53        837
+join 15       45.9     16.9       29        866
+claims proven=11 exec mean=149.1s proof mean=53.4s proof total=587s last at +837s
+joins proven=6 exec mean=42.8s proof mean=28.5s proof total=171s last at +866s

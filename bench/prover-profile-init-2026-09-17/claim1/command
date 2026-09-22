@@ -1,0 +1,1 @@
+/tmp/claude-30033/-home-sam-repos-ix/600c2770-9c8b-416f-bd8c-d410ce1560d0/scratchpad/bench/ix-profile prove --ixe /tmp/claude-30033/-home-sam-repos-ix/600c2770-9c8b-416f-bd8c-d410ce1560d0/scratchpad/bench/init.ixe --ixes /tmp/claude-30033/-home-sam-repos-ix/600c2770-9c8b-416f-bd8c-d410ce1560d0/scratchpad/bench/init-4.ixes --trace-shards --max-ram 200 --shard 1 --no-index --texray

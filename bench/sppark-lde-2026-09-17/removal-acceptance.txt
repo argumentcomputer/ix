@@ -1,0 +1,59 @@
+First-party NTT removal acceptance, 2026-09-17
+Binary SHA-256: 5354a207dc77d7a50d9281e4e5acfc67d05c3ee4218f10740bc21ef7ef38b5a5
+Backend: multi-stark 521e180; fork: sppark e10e107; ix changes based on af7d5025.
+GPU: RTX PRO 6000 Blackwell, CUDA 13.3, device 0.
+CPU: all 32 available CPUs, normal thread-pool defaults; no taskset or worker-count caps.
+AIUR_GPU_TRACE=generated AIUR_TRACE_ONLY_LOOKUPS=1
+AIUR_MAX_PIECE_LOG_HEIGHT=24 AIUR_TRACE_SHARD_MAX_CELLS=1500000000
+AIUR_METRICS only; no CUPTI, per-kernel timing or texray.
+The Init tail overlapped the rebuild for the metrics filter fix; timings are acceptance observations, not a controlled performance A/B.
+
+claim1
+Command: /home/sam/repos/ix/.lake/build/bin/ix prove --ixe /home/sam/benchdata/init-gpu/init.ixe --ixes /home/sam/benchdata/init-gpu/init-4.ixes --trace-shards --max-ram 200 --shard 1 --no-index
+Exit status: 0; wall seconds: 136.554
+Proving seconds per unit: 32.613
+	Maximum resident set size (kbytes): 43742348
+Proving shard 1 (16085 blocks, 16440 consts)
+[shard 1] prover peak 100.452983 GiB
+claim db2a99c0aa9a5829d0b35fecd47567743835597dd79da25337edc10fc822cee9
+c2bf45e4de9b5174e7ce1c690997ee58352d19cd5d4f634f71406fec21ea5111
+[prove] 1 shard(s) proven, partition unchanged
+
+join5
+Command: /home/sam/repos/ix/.lake/build/bin/ix aggregate --ixe /home/sam/benchdata/init-gpu/init.ixe --ixes /home/sam/benchdata/init-gpu/init-4.ixes --trace-shards --max-ram 200 --direct-joins --jobs 1 --no-write --reprove-slot 5 4d7031666cca1a52f1a2428603f0d5d36c7e119a6a0e5769f578166e9c19c564 92c090d29bee06ed2ecc601867f6cd7e4a7c6945ec852b21fb757835ff9e4863 c2bf45e4de9b5174e7ce1c690997ee58352d19cd5d4f634f71406fec21ea5111 76b30010a05aded3ca63659d3a51f54eb7042c951621573e75f8fff510f86202
+Exit status: 0; wall seconds: 50.489
+Proving seconds per unit: 18.100
+	Maximum resident set size (kbytes): 24889968
+[aggregate] parallel host setup: 272ms (environment 91ms, IxVM backend 271ms, ixAggr backend 265ms)
+6aaff85641805f0b44a900f2b8a73c9f1376a4342e53d32c9321b0f4cc29b1ca
+
+init
+Command: /home/sam/repos/ix/.lake/build/bin/ix prove --ixe /home/sam/benchdata/init-gpu/init.ixe --ixes /home/sam/benchdata/init-gpu/init-4.ixes --trace-shards --max-ram 200 --lanes 1 --exec-jobs 2
+Exit status: 0; wall seconds: 398.599
+Proving seconds per unit: 33.347, 31.432, 26.933, 30.238, 19.454, 17.528, 14.743, 6.364, 3.386, 2.813
+[lanes] root cef56bca82bd3d5fb10c162e174c6f26550b3eaff51d92570d7bce7ba92d5f0e verified; composed verdict OK; end to end 396s
+	Maximum resident set size (kbytes): 92851504
+
+CPU/CUDA fixture: 17213 bytes, identical.
+SHA-256: 25564a01d1d352b1ec2de56b019b641d24acc81083133e79274a86829b2a5dd5
+84 CUDA library tests passed; clippy --all-targets --features parallel,cuda -- -D warnings passed.
+Raw run artifacts: /tmp/ntt-removal/acceptance/
+
+Lightweight-only snapshot check (multi-stark 55a5b6e)
+Binary SHA-256: 70aad06d452e7a9e79c46404a301b2a71ea4457399b932f35520747df3914cb0
+Join 5 replay: exit 0; wall 51.074 seconds.
+AIUR_METRICS set; RUST_LOG, AIUR_PROFILE, AIUR_CUDA_PROFILE and CUDA_INJECTION64_PATH unset.
+Observed 748 NTT snapshot records and 16 device snapshot records across the piece boundaries.
+The snapshots are cumulative per device, not independent transform totals.
+NTT shapes have no backend label/bucket. Join proof address unchanged.
+Raw artifacts: /tmp/ntt-removal/metrics-check/
+
+Review guards: multi-stark 59df87a.
+85 CUDA library tests pass, including mismatched FFI shape/plan rejection.
+Release clippy --all-targets --features parallel,cuda -- -D warnings passes.
+The complete guarded CUDA proof remains 17213 bytes and matches the CPU digest above.
+Claim/join/Init replays were performed before these guards; they do not change successful transforms.
+
+Published-pin integration: remote heads match multi-stark 59df87a and sppark e10e107.
+cargo check --release --offline --locked -p ix-ffi --features parallel,cuda-trace-codegen passes without path overrides.
+lake env true passes with the updated feature configuration.

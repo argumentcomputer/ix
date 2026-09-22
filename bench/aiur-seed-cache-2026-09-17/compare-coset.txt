@@ -1,0 +1,6 @@
+run                                 wall s   cpu s  rss GiB  gpu %  prove_planned  stage1_commit lookup_constru       quotient       fri_open        witness    cpu_witness  codegen_seeds codegen_device   execute_ixvm
+q4-cache2-generated                  433.8    2078     93.0   42.3          250.6          128.1           48.6           35.3           30.9           57.3           43.3           46.6           21.8          330.6
+q4-coset-generated                   418.5    2051     91.0   43.6          223.6          115.6           48.7           35.3           16.4           57.0           41.7           43.9           22.9          329.4
+spans n:
+q4-cache2-generated                                                           10            142             71             71             71            142          20068            382          38292             10
+q4-coset-generated                                                            10            142             71             71             71            142          20068            382          38292             10

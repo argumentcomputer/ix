@@ -1,0 +1,19 @@
+   100136 /tmp/claude-30033/-home-sam-repos-ix/600c2770-9c8b-416f-bd8c-d410ce1560d0/scratchpad/bench/profiles/claim1e/spans.jsonl
+   973567 total
+commit sources "host"       sum of spans   9.00s, idle inside   5.76s
+stark/commit_merkle              union   4.33s idle   0.03s n=22
+stark/fri_open                   union   5.76s idle   3.53s n=11
+stark/fri_streamed               union   5.76s idle   3.53s n=11
+stark/fri_prepare                union   3.21s idle   3.21s n=11
+stark/fri_interpolate            union   0.34s idle   0.05s n=11
+stark/fri_observe_openings       union   0.00s idle   0.00s n=11
+stark/fri_reduce                 union   2.18s idle   0.24s n=11
+stark/fri_prove                  union   2.16s idle   0.23s n=11
+stark/fri_round_commit           union   1.94s idle   0.01s n=256
+stark/fri_commit_grind           union   0.00s idle   0.00s n=256
+stark/fri_queries                union   0.19s idle   0.19s n=11
+stark/fri_query_grind            union   0.15s idle   0.15s n=11
+stark/fri_input_openings         union   0.02s idle   0.01s n=11
+stark/fri_commit_phase_opening   union   0.02s idle   0.02s n=256
+cuda/fri_fold                    union   0.01s idle   0.00s n=256
+

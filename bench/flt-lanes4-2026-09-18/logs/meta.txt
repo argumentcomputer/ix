@@ -1,0 +1,24 @@
+started 2026-09-17T23:35:28Z
+host ip-172-31-28-92 7.0.0-1012-aws
+ix bf1d675352d4533af98e2f7ed38e799baf9ef6eb067b9b3b7446ddd7b1af3fd4
+ixe 5251edf00c0050d766702cd32d777b30889c167f4e0021b5ba89496abbb2f4d8  anthropic-flt.ixe
+ixes 1207ceb0bddd165ac263f94e6e79dc3e7a8dfb04a1cf598da20e6c7be3ee2d6b  anthropic-flt-572.ixes
+ix git 3fccb7fd 0 dirty files
+multi-stark pin 59df87a
+driver 595.91.07
+thp [always] madvise never / always defer [defer+madvise] madvise never
+cpus 96  mem 999 GiB
+flags --lanes 4 --exec-jobs 3 --max-ram 230   cap 920G
+AIUR_GPU_TRACE=generated
+AIUR_LANES_CACHE_DIR=/home/sam/benchdata/flt/runs/flt572-lanes4-exec3/cache
+AIUR_MAX_PIECE_LOG_HEIGHT=24
+AIUR_METRICS=/home/sam/benchdata/flt/runs/flt572-lanes4-exec3/metrics.jsonl
+AIUR_METRICS_RUN_ID=flt572-lanes4-exec3
+AIUR_TRACE_ONLY_LOOKUPS=1
+AIUR_TRACE_SHARD_MAX_CELLS=1500000000
+exit 143
+ended 2026-09-18T04:49:58Z
+resume started 2026-09-18T04:50:15Z ceiling 512 GiB
+resume exit 143 2026-09-18T04:51:25Z
+resume256 started 2026-09-18T04:51:46Z: original partition, ceiling 256 GiB, refined checkpoint set aside
+resume256 exit 0 2026-09-18T05:23:20Z

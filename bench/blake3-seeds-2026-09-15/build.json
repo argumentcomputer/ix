@@ -1,0 +1,96 @@
+{
+  "baseline": {
+    "environment": {
+      "CARGO_BUILD_JOBS": "4",
+      "CARGO_NET_OFFLINE": "true",
+      "LEAN_NUM_THREADS": "4",
+      "RAYON_NUM_THREADS": "4",
+      "MULTI_STARK_CUDA_ARCHS": "120",
+      "RUSTUP_TOOLCHAIN": "1.98.1",
+      "LEAN_SYSROOT": "/home/sam/.elan/toolchains/leanprover--lean4---v4.33.1",
+      "LIBCLANG_PATH": "/usr/lib/x86_64-linux-gnu",
+      "CFLAGS": "-std=gnu17"
+    },
+    "sha256": "f95521bda42d53336af5782a5251841650640da4d194fdd810350bc7a9af40ec",
+    "instrumentation.patch_sha256": "e722178918ab6bc4ee785595fd7d5660c50289ef7907aabec8e56e0b5becd19d",
+    "source/ix/crates/ffi/src/profile.rs_sha256": "5bf48d5bd931bf7732763579cacf9f28af96e2c83c03d41962702ceb6913221b",
+    "frozen_build": "target/shared-execution-build/build.json",
+    "scope": "Frozen Rust sources plus instrumentation; existing compiled Lean objects; networking disabled"
+  },
+  "changed_source_sha256": {
+    "crates/aiur/src/gpu_trace/mod.rs": "698d54d6869a0ec0067b473b5b73448a2302eb252be8105be78c5d459b6fb77c",
+    "crates/aiur/src/gpu_trace/tests.rs": "b2dc6b299bea1befb13ee28b5a4096b3f19ba0602dd20062910d52cc6ce9b449",
+    "crates/aiur/cuda/blake3_trace.cu": "af820c1ec9b42e42560ef2383a42a26b843379e7e603bf513dcc0ec844f5e50f"
+  },
+  "scope": "Frozen instrumented source plus the three GPU seed files; existing compiled Lean objects; unchanged multi-stark source.",
+  "packed": {
+    "environment": {
+      "CARGO_BUILD_JOBS": "4",
+      "CARGO_NET_OFFLINE": "true",
+      "LEAN_NUM_THREADS": "4",
+      "RAYON_NUM_THREADS": "4",
+      "MULTI_STARK_CUDA_ARCHS": "120",
+      "RUSTUP_TOOLCHAIN": "1.98.1",
+      "LEAN_SYSROOT": "/home/sam/.elan/toolchains/leanprover--lean4---v4.33.1",
+      "LIBCLANG_PATH": "/usr/lib/x86_64-linux-gnu",
+      "CFLAGS": "-std=gnu17",
+      "PATH": "/home/sam/.elan/toolchains/leanprover--lean4---v4.33.1/bin:/usr/local/cuda-13.3/bin:/home/sam/.cargo/bin:/home/sam/.cargo/bin:/opt/amazon/openmpi/bin:/opt/amazon/efa/bin:/usr/local/cuda-13.3/bin:/usr/local/cuda-13.3/include:/home/sam/.codex/tmp/arg0/codex-arg0DtfPIq:/nix/store/zc6fy62c341aibk36p4ywff7rf9wn4wx-ripgrep-15.2.0/bin:/nix/store/v24sx9l1jmvvia3z8iznrd7jwhvc8kcf-bubblewrap-0.11.2/bin:/nix/store/k3wl6cg7q50zkx47af3msmg1yrg1f203-git-2.54.0/bin:/nix/store/q0pj1dw2nr57y6b4pqljklf0hy20alfj-jq-1.8.1-bin/bin:/opt/amazon/openmpi/bin:/opt/amazon/efa/bin:/usr/local/cuda-13.3/bin:/usr/local/cuda-13.3/include:/home/sam/.nix-profile/bin:/nix/var/nix/profiles/default/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin"
+    },
+    "cpu_affinity": [
+      68,
+      69,
+      70,
+      71
+    ],
+    "command": [
+      "/home/sam/.cargo/bin/cargo",
+      "build",
+      "--release",
+      "--locked",
+      "-p",
+      "ix-ffi",
+      "--features",
+      "parallel,cuda"
+    ],
+    "sha256": "4b101547427a7f53bdeff38cdcf079c8a6004862697a70e5e8dd9b1d566e47d2",
+    "binary": "/home/sam/repos/ix/target/blake3-seeds-build/ix-packed"
+  },
+  "packed_pageable": {
+    "environment": {
+      "CARGO_BUILD_JOBS": "4",
+      "CARGO_NET_OFFLINE": "true",
+      "LEAN_NUM_THREADS": "4",
+      "RAYON_NUM_THREADS": "4",
+      "MULTI_STARK_CUDA_ARCHS": "120",
+      "RUSTUP_TOOLCHAIN": "1.98.1",
+      "LEAN_SYSROOT": "/home/sam/.elan/toolchains/leanprover--lean4---v4.33.1",
+      "LIBCLANG_PATH": "/usr/lib/x86_64-linux-gnu",
+      "CFLAGS": "-std=gnu17",
+      "PATH": "/home/sam/.elan/toolchains/leanprover--lean4---v4.33.1/bin:/usr/local/cuda-13.3/bin:/home/sam/.cargo/bin:/home/sam/.cargo/bin:/opt/amazon/openmpi/bin:/opt/amazon/efa/bin:/usr/local/cuda-13.3/bin:/usr/local/cuda-13.3/include:/home/sam/.codex/tmp/arg0/codex-arg0DtfPIq:/nix/store/zc6fy62c341aibk36p4ywff7rf9wn4wx-ripgrep-15.2.0/bin:/nix/store/v24sx9l1jmvvia3z8iznrd7jwhvc8kcf-bubblewrap-0.11.2/bin:/nix/store/k3wl6cg7q50zkx47af3msmg1yrg1f203-git-2.54.0/bin:/nix/store/q0pj1dw2nr57y6b4pqljklf0hy20alfj-jq-1.8.1-bin/bin:/opt/amazon/openmpi/bin:/opt/amazon/efa/bin:/usr/local/cuda-13.3/bin:/usr/local/cuda-13.3/include:/home/sam/.nix-profile/bin:/nix/var/nix/profiles/default/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin"
+    },
+    "cpu_affinity": [
+      68,
+      69,
+      70,
+      71
+    ],
+    "compile_command": [
+      "/usr/local/cuda-13.3/bin/nvcc",
+      "--compile",
+      "--std=c++17",
+      "--cudart=static",
+      "--default-stream=per-thread",
+      "-O3",
+      "-lineinfo",
+      "--compiler-options=-fPIC",
+      "-gencode=arch=compute_120,code=sm_120",
+      "-o",
+      "/home/sam/repos/ix/target/blake3-seeds-build/tmpxft_000002c7_00000000-9_blake3_trace.o",
+      "/home/sam/repos/ix/target/blake3-seeds-build/packed-pageable.cu"
+    ],
+    "binary": "/home/sam/repos/ix/target/blake3-seeds-build/ix-packed-pageable",
+    "sha256": "ecd91735624f2cfe0f7b760d146d3554baee75611039ad426014506270942b14",
+    "source_sha256": "375869a67f0a0bd43712a1e4a229f3fc521f846f8e3e25a408e16824aeb46101",
+    "archive_member_replaced": "tmpxft_000002c7_00000000-9_blake3_trace.o"
+  }
+}

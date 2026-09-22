@@ -1,0 +1,60 @@
+## span unions (s)
+  aiur/execute_ixvm                  348.263  n=10
+  aiur/prove_planned                 275.998  n=10
+  stark/batch_round_two              187.958  n=10
+  stark/batch_round_2                180.842  n=71
+  stark/stage1_commit                156.485  n=142
+  aiur/witness                       107.420  n=142
+  aiur/prepare_slot                  105.193  n=3
+  stark/prove_batch_shard            104.257  n=71
+  aiur/cpu_circuit                   102.993  n=22870
+  aiur/cpu_witness                   102.986  n=20450
+  stark/batch_round_one               87.582  n=10
+  stark/batch_round_1                 79.909  n=71
+  aiur/finish_slot                    79.788  n=3
+  stark/lookup_construction           38.249  n=71
+  stark/quotient                      35.576  n=71
+  stark/fri_open                      30.415  n=71
+  aiur/witness_zero                    7.503  n=20450
+  aiur/row_index                       0.453  n=10
+## per circuit, union wall (s), rows
+  aiur/cpu_circuit     "function" circuit=20      29.672  rows=60648376
+  aiur/cpu_circuit     "function" circuit=12      23.913  rows=199336866
+  aiur/cpu_circuit     "function" circuit=36      14.839  rows=51868856
+  aiur/cpu_circuit     "function" circuit=33      13.957  rows=59641582
+  aiur/cpu_circuit     "memory"   circuit=186     13.884  rows=422882928
+  aiur/cpu_circuit     "function" circuit=37      11.960  rows=8923328
+  aiur/cpu_circuit     "function" circuit=25      11.281  rows=1331164
+  aiur/cpu_circuit     "function" circuit=16      11.024  rows=27493022
+  aiur/cpu_circuit     "function" circuit=0       10.958  rows=7167428
+  aiur/cpu_circuit     "function" circuit=11      10.355  rows=2555198
+  aiur/cpu_circuit     "function" circuit=170     10.212  rows=95060172
+  aiur/cpu_circuit     "function" circuit=107     10.146  rows=55872884
+  aiur/cpu_circuit     "function" circuit=111     10.128  rows=45995760
+  aiur/cpu_circuit     "function" circuit=177      9.999  rows=48634984
+  aiur/cpu_circuit     "function" circuit=101      9.187  rows=50912856
+  aiur/cpu_circuit     "function" circuit=42       9.094  rows=50693800
+  aiur/cpu_circuit     "function" circuit=38       8.994  rows=34594936
+  aiur/cpu_circuit     "function" circuit=106      8.974  rows=57402610
+  aiur/cpu_circuit     "function" circuit=119      8.964  rows=79746808
+  aiur/cpu_circuit     "function" circuit=32       8.765  rows=44737122
+  aiur/cpu_circuit     "function" circuit=88       8.530  rows=20124962
+  aiur/cpu_circuit     "function" circuit=113      8.515  rows=12935438
+  aiur/cpu_circuit     "function" circuit=166      8.498  rows=13057162
+  aiur/cpu_circuit     "function" circuit=45       8.394  rows=11918944
+  aiur/cpu_circuit     "function" circuit=9        8.374  rows=24665172
+  aiur/cpu_circuit     "function" circuit=44       8.306  rows=2360268
+  aiur/cpu_circuit     "function" circuit=34       8.082  rows=9193288
+  aiur/cpu_circuit     "function" circuit=117      8.016  rows=103447778
+  aiur/cpu_circuit     "function" circuit=112      7.999  rows=44018510
+  aiur/cpu_circuit     "function" circuit=178      7.964  rows=30962484
+  aiur/cpu_circuit     "function" circuit=122      7.925  rows=11673200
+  aiur/cpu_circuit     "function" circuit=118      7.795  rows=25967242
+  aiur/cpu_circuit     "function" circuit=54       7.756  rows=26288930
+  aiur/cpu_circuit     "function" circuit=183      7.392  rows=55485340
+  aiur/cpu_circuit     "function" circuit=14       7.362  rows=7672808
+  aiur/cpu_circuit     "function" circuit=179      7.282  rows=22258040
+  aiur/cpu_circuit     "function" circuit=180      7.123  rows=26590218
+  aiur/cpu_circuit     "function" circuit=109      6.941  rows=22468940
+  aiur/cpu_circuit     "function" circuit=5        6.860  rows=3752716
+  aiur/cpu_circuit     "function" circuit=115      6.850  rows=10889916

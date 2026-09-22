@@ -1,0 +1,10 @@
+[lanes] record budget 207.3 GiB per worker: 41.4 GiB per execution with 3 ahead; an execution over its share reruns alone
+[lanes] 111 claims (0 reused from the index, 0 retired under cached joins without an indexed proof), 110 joins (0 cached)
+[lanes] worker 2: claim 70 executed in 363.6s, record 41023987035 B (38.2 GiB, 92% of its 41.4 GiB cap)
+[lanes] worker 0: root at +2997s
+[lanes] worker 0: root executed in 66.8s, record 26856989193 B (25.0 GiB, 60% of its 41.4 GiB cap)
+[lanes] worker 0: root proven at +3164s
+[lanes] calibration: claims 111 executed: record mean 21.3 GiB, p50 21.0 GiB, p90 25.4 GiB, max 38.2 GiB (unit 70); execution mean 167.3s, max 363.6s
+[lanes] calibration: joins 110 executed: record mean 13.6 GiB, p50 13.7 GiB, p90 15.3 GiB, max 25.0 GiB (unit 220); execution mean 43.8s, max 72.3s
+[lanes] calibration: 111 shards at a 41.4 GiB share (207.3 GiB record budget): largest claim record 92% of the share, largest join record 60%, 0 rerun(s) alone; the seed re-anchored on this cut is 102 shard(s) at this share (claims measured this run only; a resumed run measures fewer)
+[lanes] root feb2e6c687a010f915a01808f11806d37ddbd7b81a4694e2434a402eb0196b80 verified; composed verdict OK; end to end 3164s
