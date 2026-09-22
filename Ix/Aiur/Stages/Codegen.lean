@@ -117,6 +117,8 @@ inductive RustStmt where
   | exprStmt (e : RustExpr)
   /-- `return expr;` -/
   | returnStmt (e : RustExpr)
+  /-- `expr` without a semicolon: the value of the enclosing block. -/
+  | tailExpr (e : RustExpr)
   /-- `if cond { thenStmts } else { elseStmts? }` -/
   | ifStmt (cond : RustExpr) (thenStmts : Array RustStmt) (elseStmts : Option (Array RustStmt))
   /-- `if let Some(binding) = scrut { thenStmts } else { elseStmts }` —
@@ -175,9 +177,9 @@ partial def RustExpr.toStr : RustExpr → String
   | .lit t => t
   | .path segs => "::".intercalate segs.toList
   | .call c args =>
-    let argList := ", ".intercalate (args.toList.map RustExpr.toStr)
+    let argList := ", ".intercalate (args.toList.map RustExpr.toStrBare)
     s!"{c.toStr}({argList})"
-  | .index a i => s!"{a.toStr}[{i.toStr}]"
+  | .index a i => s!"{a.toStr}[{i.toStrBare}]"
   | .field e n => s!"{e.toStr}.{n}"
   | .binop op a b => s!"({a.toStr} {op} {b.toStr})"
   | .deref e => s!"*{e.toStr}"
@@ -198,6 +200,12 @@ partial def RustExpr.toStr : RustExpr → String
     let rbrace := "}"
     s!"'{label}: {lbrace} {body} {rbrace}"
 
+/-- An expression where the grammar already delimits it (a call argument,
+    an index), so a binary operator needs no parentheses of its own. -/
+partial def RustExpr.toStrBare : RustExpr → String
+  | .binop op a b => s!"{a.toStr} {op} {b.toStr}"
+  | e => e.toStr
+
 partial def RustStmt.toStr (d : Nat) : RustStmt → String
   | .letStmt isMut name ty val =>
     let mutStr := if isMut then "mut " else ""
@@ -209,6 +217,7 @@ partial def RustStmt.toStr (d : Nat) : RustStmt → String
     s!"{indent d}{target.toStr} = {val.toStr};\n"
   | .exprStmt e => s!"{indent d}{e.toStr};\n"
   | .returnStmt e => s!"{indent d}return {e.toStr};\n"
+  | .tailExpr e => s!"{indent d}{e.toStr}\n"
   | .ifLetSome binding scrut thenStmts elseStmts => Id.run do
     let lbrace := "{"
     let rbrace := "}"
@@ -267,7 +276,8 @@ def RustItem.toStr : RustItem → String
     let rbrace := "}"
     let paramList := ",\n  ".intercalate
       (params.toList.map (fun (n, t) => s!"{n}: {t}"))
-    let mut o := s!"fn {name}(\n  {paramList},\n) -> {returnTy} {lbrace}\n"
+    let arrow := if returnTy.isEmpty then "" else s!"-> {returnTy} "
+    let mut o := s!"fn {name}(\n  {paramList},\n) {arrow}{lbrace}\n"
     o := o ++ stmtsToStr 1 body
     o := o ++ s!"{rbrace}\n\n"
     return o

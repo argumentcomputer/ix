@@ -1,0 +1,349 @@
+{
+  "proof_s": 27.726143874,
+  "kernel_s": 16.286463825,
+  "kernel_busy_fraction": 0.5874045773913954,
+  "transfer_only_s": 3.819613542,
+  "phases": {
+    "aiur/blake3_device_rows": {
+      "count": 336,
+      "entries": 336,
+      "union_s": 3.798784147,
+      "inside_proof_s": 3.798784147,
+      "no_kernel_s": 2.931077267,
+      "kernel_s": 0.86770688
+    },
+    "aiur/blake3_seeds": {
+      "count": 14,
+      "entries": 14,
+      "union_s": 6.614252982,
+      "inside_proof_s": 6.614252982,
+      "no_kernel_s": 4.662842404,
+      "kernel_s": 1.951410578
+    },
+    "aiur/cpu_witness": {
+      "count": 1218,
+      "entries": 1218,
+      "union_s": 5.698614786,
+      "inside_proof_s": 5.698614786,
+      "no_kernel_s": 4.483511907,
+      "kernel_s": 1.215102879
+    },
+    "aiur/execute_ixvm": {
+      "count": 1,
+      "entries": 1,
+      "union_s": 30.213073929,
+      "inside_proof_s": 0.0,
+      "no_kernel_s": 0.0,
+      "kernel_s": 0.0
+    },
+    "aiur/finish_slot": {
+      "count": 1,
+      "entries": 1,
+      "union_s": 27.778785736,
+      "inside_proof_s": 27.726143874,
+      "no_kernel_s": 11.439680049,
+      "kernel_s": 16.286463825
+    },
+    "aiur/prepare_slot": {
+      "count": 1,
+      "entries": 1,
+      "union_s": 30.678545767,
+      "inside_proof_s": 0.0,
+      "no_kernel_s": 0.0,
+      "kernel_s": 0.0
+    },
+    "aiur/prove_planned": {
+      "count": 1,
+      "entries": 1,
+      "union_s": 27.726143874,
+      "inside_proof_s": 27.726143874,
+      "no_kernel_s": 11.439680049,
+      "kernel_s": 16.286463825
+    },
+    "aiur/replay": {
+      "count": 1,
+      "entries": 1,
+      "union_s": 58.931100761,
+      "inside_proof_s": 27.726143874,
+      "no_kernel_s": 11.439680049,
+      "kernel_s": 16.286463825
+    },
+    "aiur/row_index": {
+      "count": 1,
+      "entries": 1,
+      "union_s": 0.024062478,
+      "inside_proof_s": 0.024062478,
+      "no_kernel_s": 0.024062478,
+      "kernel_s": 0.0
+    },
+    "aiur/witness": {
+      "count": 14,
+      "entries": 14,
+      "union_s": 8.082270863,
+      "inside_proof_s": 8.082270863,
+      "no_kernel_s": 5.789084893,
+      "kernel_s": 2.29318597
+    },
+    "aiur/witness_zero": {
+      "count": 1218,
+      "entries": 1218,
+      "union_s": 3.360715366,
+      "inside_proof_s": 3.360715366,
+      "no_kernel_s": 2.784420828,
+      "kernel_s": 0.576294538
+    },
+    "stark/batch_round_1": {
+      "count": 7,
+      "entries": 7,
+      "union_s": 7.967866303,
+      "inside_proof_s": 7.967866303,
+      "no_kernel_s": 3.800643166,
+      "kernel_s": 4.167223137
+    },
+    "stark/batch_round_2": {
+      "count": 7,
+      "entries": 7,
+      "union_s": 17.894921306,
+      "inside_proof_s": 17.894921306,
+      "no_kernel_s": 5.775680618,
+      "kernel_s": 12.119240688
+    },
+    "stark/batch_round_one": {
+      "count": 1,
+      "entries": 2,
+      "union_s": 8.901650594,
+      "inside_proof_s": 8.901650594,
+      "no_kernel_s": 4.734427457,
+      "kernel_s": 4.167223137
+    },
+    "stark/batch_round_two": {
+      "count": 1,
+      "entries": 2,
+      "union_s": 18.800331834,
+      "inside_proof_s": 18.800331834,
+      "no_kernel_s": 6.681091146,
+      "kernel_s": 12.119240688
+    },
+    "stark/fri_open": {
+      "count": 7,
+      "entries": 7,
+      "union_s": 2.456953956,
+      "inside_proof_s": 2.456953956,
+      "no_kernel_s": 1.048725416,
+      "kernel_s": 1.40822854
+    },
+    "stark/lookup_construction": {
+      "count": 7,
+      "entries": 7,
+      "union_s": 5.683886658,
+      "inside_proof_s": 5.683886658,
+      "no_kernel_s": 1.789444403,
+      "kernel_s": 3.894442255
+    },
+    "stark/prove_batch_shard": {
+      "count": 7,
+      "entries": 7,
+      "union_s": 10.902644921,
+      "inside_proof_s": 10.902644921,
+      "no_kernel_s": 2.934665132,
+      "kernel_s": 7.967979789
+    },
+    "stark/quotient": {
+      "count": 7,
+      "entries": 7,
+      "union_s": 2.700462185,
+      "inside_proof_s": 2.700462185,
+      "no_kernel_s": 0.035153191,
+      "kernel_s": 2.665308994
+    },
+    "stark/stage1_commit": {
+      "count": 14,
+      "entries": 14,
+      "union_s": 14.891304708,
+      "inside_proof_s": 14.891304708,
+      "no_kernel_s": 6.572820672,
+      "kernel_s": 8.318484036
+    }
+  },
+  "activity_summary": {
+    "kind": "summary",
+    "records": 256963,
+    "dropped": 0,
+    "invalid": 0
+  },
+  "device_memory": {
+    "peak_live_bytes": 68371959672,
+    "final_live_bytes": 938971000,
+    "unmatched_frees": 0
+  },
+  "transfers": [
+    {
+      "copy_kind": 1,
+      "bytes": 73223941488,
+      "count": 6003,
+      "union_s": 3.696427069
+    },
+    {
+      "copy_kind": 2,
+      "bytes": 18639456,
+      "count": 1078,
+      "union_s": 0.000873488
+    },
+    {
+      "copy_kind": 8,
+      "bytes": 91453801296,
+      "count": 210,
+      "union_s": 0.123217114
+    }
+  ],
+  "outside_stages_s": 1.993536367,
+  "outside_stages_no_kernel_s": 1.993536367,
+  "outside_stages_witness_s": 1.838330891,
+  "blake3_seed_transfers": {
+    "bytes": 27718222032,
+    "count": 334,
+    "union_s": 2.71978137
+  },
+  "top_apis": [
+    {
+      "kind": "runtime",
+      "name": "cudaMemcpyAsync_ptsz_v7000",
+      "count": 1774,
+      "union_s": 3.380621057,
+      "no_kernel_s": 2.946883423
+    },
+    {
+      "kind": "runtime",
+      "name": "cudaStreamSynchronize_ptsz_v7000",
+      "count": 1548,
+      "union_s": 10.779280369,
+      "no_kernel_s": 0.657449808
+    },
+    {
+      "kind": "runtime",
+      "name": "cudaMemcpy_ptds_v7000",
+      "count": 5518,
+      "union_s": 5.954438389,
+      "no_kernel_s": 0.517977873
+    },
+    {
+      "kind": "runtime",
+      "name": "cudaHostRegister_v4000",
+      "count": 46,
+      "union_s": 0.255860012,
+      "no_kernel_s": 0.255856135
+    },
+    {
+      "kind": "runtime",
+      "name": "cudaHostUnregister_v4000",
+      "count": 46,
+      "union_s": 0.199517454,
+      "no_kernel_s": 0.199517454
+    },
+    {
+      "kind": "runtime",
+      "name": "cudaMallocAsync_ptsz_v11020",
+      "count": 8123,
+      "union_s": 0.119570244,
+      "no_kernel_s": 0.106464287
+    },
+    {
+      "kind": "runtime",
+      "name": "cudaMemGetInfo_v3020",
+      "count": 935,
+      "union_s": 0.032540367,
+      "no_kernel_s": 0.032540367
+    },
+    {
+      "kind": "runtime",
+      "name": "cudaLaunchKernel_ptsz_v7000",
+      "count": 49473,
+      "union_s": 0.272416391,
+      "no_kernel_s": 0.031921579
+    },
+    {
+      "kind": "runtime",
+      "name": "cudaMallocHost_v3020",
+      "count": 1,
+      "union_s": 0.023738635,
+      "no_kernel_s": 0.023738635
+    },
+    {
+      "kind": "runtime",
+      "name": "cudaMalloc_v3020",
+      "count": 80,
+      "union_s": 0.023545733,
+      "no_kernel_s": 0.023400777
+    },
+    {
+      "kind": "runtime",
+      "name": "cudaFreeAsync_ptsz_v11020",
+      "count": 8123,
+      "union_s": 0.014672006,
+      "no_kernel_s": 0.009881446
+    },
+    {
+      "kind": "runtime",
+      "name": "cudaSetDevice_v3020",
+      "count": 4214,
+      "union_s": 0.00494987,
+      "no_kernel_s": 0.00481298
+    },
+    {
+      "kind": "runtime",
+      "name": "cudaMemsetAsync_ptsz_v7000",
+      "count": 210,
+      "union_s": 0.002230505,
+      "no_kernel_s": 0.002230505
+    },
+    {
+      "kind": "runtime",
+      "name": "cudaMemset_ptds_v7000",
+      "count": 256,
+      "union_s": 0.002006494,
+      "no_kernel_s": 0.00145285
+    },
+    {
+      "kind": "driver",
+      "name": "cuKernelGetName",
+      "count": 49473,
+      "union_s": 0.006312519,
+      "no_kernel_s": 0.001353868
+    },
+    {
+      "kind": "runtime",
+      "name": "cudaGetLastError_v3020",
+      "count": 49774,
+      "union_s": 0.005105598,
+      "no_kernel_s": 0.000684305
+    },
+    {
+      "kind": "runtime",
+      "name": "cudaMemPoolGetAttribute_v11020",
+      "count": 1870,
+      "union_s": 0.000633504,
+      "no_kernel_s": 0.000633504
+    },
+    {
+      "kind": "runtime",
+      "name": "cudaDeviceGetDefaultMemPool_v11020",
+      "count": 936,
+      "union_s": 0.000396884,
+      "no_kernel_s": 0.000396884
+    },
+    {
+      "kind": "runtime",
+      "name": "cudaGetDevice_v3020",
+      "count": 653,
+      "union_s": 0.00031583,
+      "no_kernel_s": 0.000239978
+    },
+    {
+      "kind": "driver",
+      "name": "cuLibraryLoadData",
+      "count": 2,
+      "union_s": 0.000165861,
+      "no_kernel_s": 0.000165861
+    }
+  ]
+}

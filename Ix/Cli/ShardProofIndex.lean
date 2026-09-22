@@ -40,9 +40,11 @@ def readAddress (dir : System.FilePath) (digest : Address) : IO (Option Address)
     pure (Address.fromString raw.trimAscii.toString)
   catch _ => pure none
 
-/-- Atomically replace one index entry. -/
+/-- Atomically replace one index entry. The temporary name carries the pid
+    so concurrent writers of one digest never share it. -/
 def writeAddress (dir : System.FilePath) (digest addr : Address) : IO Unit := do
-  let tmp := dir / s!"{digest}.tmp"
+  let pid ← IO.Process.getPID
+  let tmp := dir / s!"{digest}.tmp.{pid}"
   IO.FS.writeFile tmp s!"{addr}\n"
   IO.FS.rename tmp (dir / toString digest)
 

@@ -1,0 +1,10 @@
+Kernel time per resident LDE of 2^20 x 533, blowup 4, through sppark, from the CUPTI collector (bench/prover-profile-2026-09-15), four LDEs
+kernels 157.2 ms, host upload memcpy 90.9 ms
+   60.11 ms     6x  _ZN46_GLOBAL__N__22f21ffc_13_sppark_ntt_cu_e1b3e47913scatter_tilesEPKmmmmmmjbPm
+   59.39 ms   346x  _Z7_GS_NTTILi4ELb1E6gl64_tEvPT1_jjjPA128_KS1_PA1024_S3_PS3_bS1_j
+   15.22 ms   173x  _Z7_GS_NTTILi4ELb0E6gl64_tEvPT1_jjjPA128_KS1_PA1024_S3_PS3_bS1_j
+   15.17 ms     6x  _ZN46_GLOBAL__N__22f21ffc_13_sppark_ntt_cu_e1b3e47913shift_columnsEPKmS1_mjmPm
+    7.27 ms     6x  _ZN46_GLOBAL__N__22f21ffc_13_sppark_ntt_cu_e1b3e47912gather_tilesEPKmmmmmmPm
+    0.00 ms     0x  _Z26generate_plus_one_twiddlesI6gl64_tEvPA1024_T_S1_
+    0.00 ms     1x  _Z25generate_partial_twiddlesI6gl64_tEvPA128_T_S1_
+    0.00 ms     0x  _Z23generate_inner_twiddlesI6gl64_tEvPT_S1_

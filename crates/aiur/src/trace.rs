@@ -147,6 +147,49 @@ pub(crate) fn witness_metadata_bytes(members: usize, rows: usize) -> usize {
 pub type QueryPosition = (usize, usize);
 
 impl Toplevel {
+  #[cfg(test)]
+  pub(crate) fn main_row_for_test(
+    &self,
+    circuit_index: usize,
+    member: usize,
+    query: usize,
+    record: &QueryRecord,
+    io: &IOBuffer,
+  ) -> Vec<G> {
+    let circuit = &self.circuits[circuit_index];
+    let function = &self.functions[member];
+    let offset: usize = circuit
+      .members
+      .iter()
+      .take_while(|&&i| i != member)
+      .map(|&i| self.functions[i].layout.selectors)
+      .sum();
+    assert!(circuit.members.contains(&member));
+    let (inputs, result) =
+      record.function_queries[member].get_index(query).unwrap();
+    let mut row = vec![G::ZERO; circuit.layout.width()];
+    let mut slice = ColumnMutSlice::from_slice(
+      function,
+      &circuit.layout,
+      offset,
+      &mut row,
+      None,
+    );
+    function.populate_row(
+      &mut ColumnIndex { auxiliary: 0, lookup: 1 },
+      &mut slice,
+      TraceContext {
+        function_index: G::from_usize(member),
+        multiplicity: result.multiplicity,
+        inputs,
+        output: result.output,
+        query_record: record,
+      },
+      io,
+    );
+    row
+  }
+
   /// The number of rows function circuit `circuit_index` contributes: its
   /// members' queries with a nonzero multiplicity, in member order then
   /// record order. The unit [`Self::witness_data_range`] indexes.

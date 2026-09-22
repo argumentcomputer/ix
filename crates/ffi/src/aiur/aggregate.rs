@@ -51,8 +51,8 @@ use ixvm_codegen::{
   env_handle::EnvHandle,
 };
 use lean_ffi::object::{
-  LeanBorrowed, LeanByteArray, LeanExcept, LeanExternal, LeanNat, LeanOwned,
-  LeanString,
+  LeanArray, LeanBorrowed, LeanByteArray, LeanExcept, LeanExternal, LeanNat,
+  LeanOwned, LeanString,
 };
 use multi_stark::{
   p3_field::{PrimeCharacteristicRing, PrimeField64},
@@ -63,6 +63,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 
 use super::lean_unbox_nat_as_usize;
 
+pub mod lanes;
 use crate::lean::LeanAiurAggregateExpected;
 
 const CACHE_VERSION: u64 = 2;
@@ -2631,6 +2632,7 @@ fn print_plan(
 }
 
 fn run(config: RunConfig<'_>) -> Result<String, String> {
+  crate::profile::init();
   if config.cache_fri_bytes.len() != 40 {
     return Err(format!(
       "aggregate cache FRI serialization is {} bytes, expected 40",
@@ -3011,6 +3013,164 @@ extern "C" fn rs_aiur_aggregate_expected(
   }
 }
 
+/// Leaves under every slot of a post-order plan.
+fn leaves_under(ops: &[PlanOp]) -> Vec<usize> {
+  let mut leaves = vec![0usize; ops.len()];
+  for (index, op) in ops.iter().enumerate() {
+    leaves[index] = match *op {
+      PlanOp::Leaf(_) => 1,
+      PlanOp::Join(left, right) => leaves[left] + leaves[right],
+    };
+  }
+  leaves
+}
+
+/// Splits frontier node `at` into its children when it is a join. A child
+/// that is a raw leaf becomes a one-leaf subtree: its claim proof is its
+/// published proof, and the join above it verifies that raw leaf beside
+/// its cached sibling. Returns whether it split.
+fn split_frontier(
+  ops: &[PlanOp],
+  frontier: &mut Vec<usize>,
+  at: usize,
+) -> bool {
+  let PlanOp::Join(left, right) = ops[frontier[at]] else {
+    return false;
+  };
+  frontier.swap_remove(at);
+  frontier.push(left);
+  frontier.push(right);
+  true
+}
+
+/// The plan cut into subtrees for dynamic scheduling: the tree is split from
+/// the root while any frontier node holds more leaves than
+/// `ceil(leaves / subtrees)`. Returns the frontier (the subtrees, post-order;
+/// a subtree may be a single raw leaf) and every join above it (post-order,
+/// so each appears after its children). A subtree of several leaves is
+/// proven as one `--subtree` task once its leaves' claims exist; a
+/// one-leaf subtree is published by its claim proof alone; an upper join
+/// once both children are published; whichever device is free takes the
+/// next ready task, so no packing is decided ahead of time.
+pub(crate) fn subtree_plan(
+  ops: &[PlanOp],
+  max_leaves: usize,
+) -> (Vec<usize>, Vec<usize>) {
+  let Some(root) = ops.len().checked_sub(1) else {
+    return (Vec::new(), Vec::new());
+  };
+  let leaves = leaves_under(ops);
+  let target = max_leaves.max(1);
+  let mut frontier = vec![root];
+  while let Some(at) = (0..frontier.len())
+    .filter(|&at| leaves[frontier[at]] > target)
+    .max_by_key(|&at| leaves[frontier[at]])
+  {
+    if !split_frontier(ops, &mut frontier, at) {
+      break;
+    }
+  }
+  frontier.sort_unstable();
+  // Everything above the frontier: the ancestors of frontier nodes.
+  let mut above = vec![false; ops.len()];
+  let mut in_frontier = vec![false; ops.len()];
+  for &slot in &frontier {
+    in_frontier[slot] = true;
+  }
+  for index in 0..ops.len() {
+    if let PlanOp::Join(left, right) = ops[index]
+      && (in_frontier[left]
+        || in_frontier[right]
+        || above[left]
+        || above[right])
+    {
+      above[index] = true;
+    }
+  }
+  let upper: Vec<usize> = (0..ops.len()).filter(|&i| above[i]).collect();
+  (frontier, upper)
+}
+
+/// `AiurSystem.aggregateSubtreePlan`: the plan cut into `subtrees` for
+/// `ix prove --lanes`. Rows in post-order: `[0, slot, ids…]` for a subtree
+/// (its root slot, then the manifest ids of the shards under it, sorted;
+/// one id when the subtree is a raw leaf) and `[1, slot, left, right]` for
+/// each join above the frontier, the root last. A tree too small to cut
+/// into `subtrees` simply yields fewer.
+#[unsafe(no_mangle)]
+extern "C" fn rs_aiur_aggregate_subtree_plan(
+  env_handle: LeanExternal<EnvHandle, LeanBorrowed<'_>>,
+  manifest_path: LeanString<LeanBorrowed<'_>>,
+  structural_above: LeanNat<LeanBorrowed<'_>>,
+  subtree_size: LeanNat<LeanBorrowed<'_>>,
+) -> LeanExcept<LeanOwned> {
+  let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+    let subtree_size = lean_unbox_nat_as_usize(subtree_size.inner());
+    if subtree_size == 0 {
+      return Err("the subtree size must be at least one leaf".to_string());
+    }
+    let manifest_bytes =
+      fs::read(Path::new(manifest_path.as_str())).map_err(|error| {
+        format!("read manifest {}: {error}", manifest_path.as_str())
+      })?;
+    let manifest = ShardManifest::from_bytes(&manifest_bytes)
+      .map_err(|error| format!("manifest parse failed: {error}"))?;
+    let prepared = prepare_run(&env_handle.get().env, &manifest)?;
+    let specs = build_statement_specs(
+      &prepared,
+      lean_unbox_nat_as_usize(structural_above.inner()),
+    )?;
+    let ops: Vec<PlanOp> = specs.iter().map(|spec| spec.op).collect();
+    let (frontier, upper) = subtree_plan(&ops, subtree_size);
+    let mut rows: Vec<Vec<usize>> =
+      Vec::with_capacity(frontier.len() + upper.len());
+    for &slot in &frontier {
+      let mut ids = Vec::new();
+      let mut stack = vec![slot];
+      while let Some(index) = stack.pop() {
+        match ops[index] {
+          PlanOp::Leaf(shard) => {
+            ids.push(prepared.shards[shard].original_id as usize);
+          },
+          PlanOp::Join(left, right) => {
+            stack.push(left);
+            stack.push(right);
+          },
+        }
+      }
+      ids.sort_unstable();
+      let mut row = vec![0, slot];
+      row.extend(ids);
+      rows.push(row);
+    }
+    for &slot in &upper {
+      let PlanOp::Join(left, right) = ops[slot] else {
+        unreachable!("upper nodes are joins")
+      };
+      rows.push(vec![1, slot, left, right]);
+    }
+    Ok(rows)
+  }));
+  match result {
+    Ok(Ok(rows)) => {
+      let outer = LeanArray::alloc(rows.len());
+      for (at, row) in rows.iter().enumerate() {
+        let inner = LeanArray::alloc(row.len());
+        for (index, value) in row.iter().enumerate() {
+          inner.set(index, LeanOwned::box_usize(*value));
+        }
+        outer.set(at, inner);
+      }
+      LeanExcept::ok(outer)
+    },
+    Ok(Err(error)) => LeanExcept::error_string(&error),
+    Err(payload) => LeanExcept::error_string(&format!(
+      "native subtree planning panicked: {}",
+      panic_text(&payload)
+    )),
+  }
+}
+
 /// Production FFI called once after Lean has compiled the IxVM and ixAggr
 /// systems. Proof addresses are newline-separated to keep the ABI flat.
 #[unsafe(no_mangle)]
@@ -3131,6 +3291,98 @@ mod tests {
       let path = joined.merkle_proof(leaf, owner).expect("member path");
       assert!(ixon::merkle::verify_merkle_proof(&joined.root, leaf, &path));
     }
+  }
+
+  /// A post-order plan from a nested leaf-count shape: `(a, b)` joins the
+  /// plans of `a` and `b`; a number is that many balanced leaves.
+  fn plan_of(shape: &str) -> Vec<PlanOp> {
+    fn go(chars: &[u8], at: &mut usize, out: &mut Vec<PlanOp>) -> usize {
+      if chars[*at] == b'(' {
+        *at += 1;
+        let left = go(chars, at, out);
+        assert_eq!(chars[*at], b',');
+        *at += 1;
+        let right = go(chars, at, out);
+        assert_eq!(chars[*at], b')');
+        *at += 1;
+        out.push(PlanOp::Join(left, right));
+      } else {
+        let start = *at;
+        while *at < chars.len() && chars[*at].is_ascii_digit() {
+          *at += 1;
+        }
+        let count: usize =
+          std::str::from_utf8(&chars[start..*at]).unwrap().parse().unwrap();
+        let ids: Vec<u32> = (0..u32::try_from(count).unwrap()).collect();
+        fn balanced(ids: &[u32], out: &mut Vec<PlanOp>) -> usize {
+          if ids.len() == 1 {
+            out.push(PlanOp::Leaf(ids[0] as usize));
+          } else {
+            let (l, r) = ids.split_at(ids.len() / 2);
+            let left = balanced(l, out);
+            let right = balanced(r, out);
+            out.push(PlanOp::Join(left, right));
+          }
+          out.len() - 1
+        }
+        balanced(&ids, out);
+      }
+      out.len() - 1
+    }
+    let mut out = Vec::new();
+    go(shape.as_bytes(), &mut 0, &mut out);
+    out
+  }
+
+  #[test]
+  fn subtree_plan_cuts_to_the_target_and_lists_the_joins_above() {
+    let sizes = |ops: &[PlanOp], slots: &[usize]| -> Vec<usize> {
+      let leaves = leaves_under(ops);
+      slots.iter().map(|&s| leaves[s]).collect()
+    };
+    // Balanced: a size of eight keeps the root whole; a size of two cuts
+    // to the depth-2 nodes, with the two depth-1 joins and the root above.
+    let ops = plan_of("8");
+    let (frontier, upper) = subtree_plan(&ops, 8);
+    assert_eq!(frontier, vec![ops.len() - 1]);
+    assert!(upper.is_empty());
+    let (frontier, upper) = subtree_plan(&ops, 2);
+    assert_eq!(sizes(&ops, &frontier), vec![2, 2, 2, 2]);
+    assert_eq!(upper.len(), 3);
+    assert_eq!(*upper.last().unwrap(), ops.len() - 1);
+    // Mathlib's 128-way shape at the top: root = (70, 58), 70 = (38, 32),
+    // 58 = (32, 26). A size of eight leaves nothing larger than that.
+    let ops = plan_of("((38,32),(32,26))");
+    let (frontier, upper) = subtree_plan(&ops, 8);
+    let leaves = sizes(&ops, &frontier);
+    assert_eq!(leaves.iter().sum::<usize>(), 128);
+    assert!(leaves.iter().all(|n| (2..=8).contains(n)));
+    // Post-order: every upper join comes after its children.
+    let position = |slot: usize| upper.iter().position(|&s| s == slot);
+    for &slot in &upper {
+      let PlanOp::Join(left, right) = ops[slot] else { panic!("join") };
+      for child in [left, right] {
+        if let Some(at) = position(child) {
+          assert!(at < position(slot).unwrap());
+        } else {
+          assert!(frontier.contains(&child));
+        }
+      }
+    }
+    // A lone leaf beside a subtree: the tree (1 + 32) + 16 has 49 leaves;
+    // a size of four means the 33-leaf node must be cut even though one of
+    // its children is a raw leaf, which then stands as a one-leaf subtree.
+    let ops = plan_of("((1,32),16)");
+    let (frontier, _) = subtree_plan(&ops, 4);
+    let leaves = sizes(&ops, &frontier);
+    assert_eq!(leaves.iter().sum::<usize>(), 1 + 32 + 16);
+    assert!(leaves.iter().all(|&n| n <= 4));
+    assert_eq!(leaves.iter().filter(|&&n| n == 1).count(), 1);
+    // A two-leaf tree at size one: two one-leaf subtrees under the root join.
+    let ops = plan_of("2");
+    let (frontier, upper) = subtree_plan(&ops, 1);
+    assert_eq!(sizes(&ops, &frontier), vec![1, 1]);
+    assert_eq!(upper, vec![ops.len() - 1]);
   }
 
   #[test]

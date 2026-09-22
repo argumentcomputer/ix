@@ -1,0 +1,881 @@
+{
+  "proof_s": 44.885338646,
+  "kernel_s": 28.685031941,
+  "kernel_busy_fraction": 0.6390735328351208,
+  "transfer_only_s": 2.734616139,
+  "phases": {
+    "aiur/codegen_concat": {
+      "count": 90,
+      "entries": 90,
+      "union_s": 2.24851893,
+      "inside_proof_s": 2.24851893,
+      "no_kernel_s": 1.401380626,
+      "kernel_s": 0.847138304
+    },
+    "aiur/codegen_device_rows": {
+      "count": 9672,
+      "entries": 9672,
+      "union_s": 4.733846211,
+      "inside_proof_s": 4.733846211,
+      "no_kernel_s": 3.7479926,
+      "kernel_s": 0.985853611
+    },
+    "aiur/codegen_filter": {
+      "count": 90,
+      "entries": 90,
+      "union_s": 1.251947084,
+      "inside_proof_s": 1.251947084,
+      "no_kernel_s": 1.115186383,
+      "kernel_s": 0.136760701
+    },
+    "aiur/codegen_pack": {
+      "count": 90,
+      "entries": 90,
+      "union_s": 6.638885974,
+      "inside_proof_s": 6.638885974,
+      "no_kernel_s": 3.840132733,
+      "kernel_s": 2.798753241
+    },
+    "aiur/codegen_seeds": {
+      "count": 72,
+      "entries": 72,
+      "union_s": 9.323568279,
+      "inside_proof_s": 9.323568279,
+      "no_kernel_s": 5.57442765,
+      "kernel_s": 3.749140629
+    },
+    "aiur/codegen_widen": {
+      "count": 2,
+      "entries": 2,
+      "union_s": 5.238e-06,
+      "inside_proof_s": 5.238e-06,
+      "no_kernel_s": 5.238e-06,
+      "kernel_s": 0.0
+    },
+    "aiur/cpu_circuit": {
+      "count": 4438,
+      "entries": 4438,
+      "union_s": 8.957896164,
+      "inside_proof_s": 8.957896164,
+      "no_kernel_s": 5.270698943,
+      "kernel_s": 3.687197221
+    },
+    "aiur/cpu_witness": {
+      "count": 3998,
+      "entries": 3998,
+      "union_s": 8.912822664,
+      "inside_proof_s": 8.912822664,
+      "no_kernel_s": 5.22609856,
+      "kernel_s": 3.686724104
+    },
+    "aiur/execute_ixvm": {
+      "count": 1,
+      "entries": 1,
+      "union_s": 98.498646399,
+      "inside_proof_s": 0.0,
+      "no_kernel_s": 0.0,
+      "kernel_s": 0.0
+    },
+    "aiur/prove_ixvm_within_budget": {
+      "count": 1,
+      "entries": 1,
+      "union_s": 143.790767796,
+      "inside_proof_s": 44.885338646,
+      "no_kernel_s": 16.200306705,
+      "kernel_s": 28.685031941
+    },
+    "aiur/prove_planned": {
+      "count": 1,
+      "entries": 1,
+      "union_s": 44.885338646,
+      "inside_proof_s": 44.885338646,
+      "no_kernel_s": 16.200306705,
+      "kernel_s": 28.685031941
+    },
+    "aiur/row_index": {
+      "count": 1,
+      "entries": 1,
+      "union_s": 0.074473078,
+      "inside_proof_s": 0.074473078,
+      "no_kernel_s": 0.074473078,
+      "kernel_s": 0.0
+    },
+    "aiur/witness": {
+      "count": 22,
+      "entries": 22,
+      "union_s": 12.441999887,
+      "inside_proof_s": 12.441999887,
+      "no_kernel_s": 7.033635205,
+      "kernel_s": 5.408364682
+    },
+    "aiur/witness_zero": {
+      "count": 3998,
+      "entries": 3998,
+      "union_s": 0.997964901,
+      "inside_proof_s": 0.997964901,
+      "no_kernel_s": 0.747699098,
+      "kernel_s": 0.250265803
+    },
+    "stark/batch_round_1": {
+      "count": 11,
+      "entries": 11,
+      "union_s": 12.196854994,
+      "inside_proof_s": 12.196854994,
+      "no_kernel_s": 5.429122696,
+      "kernel_s": 6.767732298
+    },
+    "stark/batch_round_2": {
+      "count": 11,
+      "entries": 11,
+      "union_s": 32.010932847,
+      "inside_proof_s": 32.010932847,
+      "no_kernel_s": 10.093633204,
+      "kernel_s": 21.917299643
+    },
+    "stark/batch_round_one": {
+      "count": 1,
+      "entries": 2,
+      "union_s": 12.511580492,
+      "inside_proof_s": 12.511580492,
+      "no_kernel_s": 5.743848194,
+      "kernel_s": 6.767732298
+    },
+    "stark/batch_round_two": {
+      "count": 1,
+      "entries": 2,
+      "union_s": 32.299092424,
+      "inside_proof_s": 32.299092424,
+      "no_kernel_s": 10.381792781,
+      "kernel_s": 21.917299643
+    },
+    "stark/fri_open": {
+      "count": 11,
+      "entries": 11,
+      "union_s": 5.742736406,
+      "inside_proof_s": 5.742736406,
+      "no_kernel_s": 3.516685685,
+      "kernel_s": 2.226050721
+    },
+    "stark/lookup_construction": {
+      "count": 11,
+      "entries": 11,
+      "union_s": 8.161503193,
+      "inside_proof_s": 8.161503193,
+      "no_kernel_s": 1.936707707,
+      "kernel_s": 6.224795486
+    },
+    "stark/prove_batch_shard": {
+      "count": 11,
+      "entries": 11,
+      "union_s": 20.752274099,
+      "inside_proof_s": 20.752274099,
+      "no_kernel_s": 5.577888243,
+      "kernel_s": 15.174385856
+    },
+    "stark/quotient": {
+      "count": 11,
+      "entries": 11,
+      "union_s": 6.794443374,
+      "inside_proof_s": 6.794443374,
+      "no_kernel_s": 0.070903725,
+      "kernel_s": 6.723539649
+    },
+    "stark/stage1_commit": {
+      "count": 22,
+      "entries": 22,
+      "union_s": 23.418294708,
+      "inside_proof_s": 23.418294708,
+      "no_kernel_s": 9.907648623,
+      "kernel_s": 13.510646085
+    }
+  },
+  "activity_summary": {
+    "kind": "summary",
+    "records": 873429,
+    "dropped": 0,
+    "invalid": 0
+  },
+  "device_memory": {
+    "peak_live_bytes": 68321088424,
+    "final_live_bytes": 939522856,
+    "unmatched_frees": 0
+  },
+  "transfers": [
+    {
+      "copy_kind": 1,
+      "bytes": 95948565656,
+      "count": 27949,
+      "union_s": 2.543127282
+    },
+    {
+      "copy_kind": 2,
+      "bytes": 28265744,
+      "count": 16446,
+      "union_s": 0.008019389
+    },
+    {
+      "copy_kind": 8,
+      "bytes": 138631339584,
+      "count": 442,
+      "union_s": 0.18396121
+    }
+  ],
+  "outside_stages_s": 0.768360965,
+  "outside_stages_no_kernel_s": 0.768360965,
+  "outside_stages_witness_s": 0.601593533,
+  "blake3_seed_transfers": {
+    "bytes": 0,
+    "count": 0,
+    "union_s": 0.0
+  },
+  "top_kernels": [
+    {
+      "name": "_ZN43_GLOBAL__N__1ea943d6_10_kernels_cu_9237c49b16radix8_dif_stageEPmmmmPKm",
+      "count": 6283,
+      "union_s": 8.25649377
+    },
+    {
+      "name": "_ZN43_GLOBAL__N__1ea943d6_10_kernels_cu_9237c49b16radix2_dif_stageEPmmmmPKm",
+      "count": 9252,
+      "union_s": 4.781865361
+    },
+    {
+      "name": "_ZN43_GLOBAL__N__1ea943d6_10_kernels_cu_9237c49b17evaluate_quotientEPmPKNS_14ConstraintNodeEmmPKjmPKNS_16ConstraintLookupEmS5_mNS_14QuotientMatrixES9_S9_PKmSB_SB_SB_mmmS0_mmb",
+      "count": 220,
+      "union_s": 3.800204115
+    },
+    {
+      "name": "_ZN43_GLOBAL__N__1ea943d6_10_kernels_cu_9237c49b29blake3_hash_short_rows_kernelEPhPKhmm",
+      "count": 14994,
+      "union_s": 2.478870282
+    },
+    {
+      "name": "_ZN43_GLOBAL__N__1ea943d6_10_kernels_cu_9237c49b23blake3_hash_rows_kernelEPhPKhmm",
+      "count": 8706,
+      "union_s": 2.351795676
+    },
+    {
+      "name": "_ZN43_GLOBAL__N__1ea943d6_10_kernels_cu_9237c49b26accumulate_reduced_openingEPNS_4Ext2EPKNS_11ResidentLdeEPKS0_S6_mS0_S0_m",
+      "count": 1144,
+      "union_s": 1.443533924
+    },
+    {
+      "name": "_ZN43_GLOBAL__N__1ea943d6_10_kernels_cu_9237c49b31blake3_hash_digest_pairs_kernelEPhPKhS2_mb",
+      "count": 4822,
+      "union_s": 1.377906435
+    },
+    {
+      "name": "_ZN43_GLOBAL__N__1ea943d6_10_kernels_cu_9237c49b21lookup_messages_graphEPNS_4Ext2EPmS2_PKNS_14ConstraintNodeEmmPKNS_16ConstraintLookupEmPKjPKNS_11ResidentLdeEPKmmbS0_S0_mmmmS2_",
+      "count": 5703,
+      "union_s": 1.220259969
+    },
+    {
+      "name": "_ZN43_GLOBAL__N__1ea943d6_10_kernels_cu_9237c49b25gather_resident_lde_groupEPmPKPKmS2_mmm",
+      "count": 23700,
+      "union_s": 0.654363375
+    },
+    {
+      "name": "_ZN43_GLOBAL__N__1ea943d6_10_kernels_cu_9237c49b16radix4_dif_stageEPmmmmPKm",
+      "count": 362,
+      "union_s": 0.387134619
+    },
+    {
+      "name": "_ZN43_GLOBAL__N__1ea943d6_10_kernels_cu_9237c49b27bit_reverse_scale_and_shiftEPmmmjmPKm",
+      "count": 662,
+      "union_s": 0.337530093
+    },
+    {
+      "name": "_ZN43_GLOBAL__N__1ea943d6_10_kernels_cu_9237c49b38initialize_coset_selector_denominatorsEPmmmmmmmm",
+      "count": 220,
+      "union_s": 0.300125648
+    },
+    {
+      "name": "_ZN43_GLOBAL__N__1ea943d6_10_kernels_cu_9237c49b25batch_inverse_norm_blocksEPmPKmS2_m",
+      "count": 12434,
+      "union_s": 0.233554502
+    },
+    {
+      "name": "_ZN43_GLOBAL__N__1ea943d6_10_kernels_cu_9237c49b23canonicalize_goldilocksEPmm",
+      "count": 220,
+      "union_s": 0.211633409
+    },
+    {
+      "name": "_ZN43_GLOBAL__N__1ea943d6_10_kernels_cu_9237c49b22interpolate_lde_blocksEPKNS_22InterpolationBlockDescEm",
+      "count": 682,
+      "union_s": 0.186819041
+    },
+    {
+      "name": "_ZN10trace_ixvm14kernel_ixvm_33ILb1EEEvPKhmmN10aiur_trace6LayoutEPmPj",
+      "count": 322,
+      "union_s": 0.130474942
+    },
+    {
+      "name": "_ZN43_GLOBAL__N__1ea943d6_10_kernels_cu_9237c49b16scan_ext2_blocksEPNS_4Ext2ES1_PKS0_m",
+      "count": 625,
+      "union_s": 0.052816975
+    },
+    {
+      "name": "_ZN43_GLOBAL__N__1ea943d6_10_kernels_cu_9237c49b22add_scan_block_offsetsEPNS_4Ext2EPKS0_m",
+      "count": 405,
+      "union_s": 0.051132239
+    },
+    {
+      "name": "_ZN43_GLOBAL__N__1ea943d6_10_kernels_cu_9237c49b19norm_block_productsEPmPKmm",
+      "count": 6192,
+      "union_s": 0.047946993
+    },
+    {
+      "name": "_ZN43_GLOBAL__N__1ea943d6_10_kernels_cu_9237c49b27lookup_group_deltas_batchedEPNS_4Ext2EPKmPKS0_S3_mmmm",
+      "count": 5703,
+      "union_s": 0.046168244
+    }
+  ],
+  "top_apis": [
+    {
+      "kind": "runtime",
+      "name": "cudaStreamSynchronize_ptsz_v7000",
+      "count": 19327,
+      "union_s": 19.693502306,
+      "no_kernel_s": 1.290452677
+    },
+    {
+      "kind": "runtime",
+      "name": "cudaMemcpy_ptds_v7000",
+      "count": 11203,
+      "union_s": 10.027809433,
+      "no_kernel_s": 1.021533434
+    },
+    {
+      "kind": "runtime",
+      "name": "cudaHostRegister_v4000",
+      "count": 124,
+      "union_s": 0.80553556,
+      "no_kernel_s": 0.805528338
+    },
+    {
+      "kind": "runtime",
+      "name": "cudaMemcpyAsync_ptsz_v7000",
+      "count": 33635,
+      "union_s": 1.155583188,
+      "no_kernel_s": 0.419559162
+    },
+    {
+      "kind": "runtime",
+      "name": "cudaHostUnregister_v4000",
+      "count": 124,
+      "union_s": 0.263242476,
+      "no_kernel_s": 0.263242476
+    },
+    {
+      "kind": "runtime",
+      "name": "cudaMallocAsync_ptsz_v11020",
+      "count": 36492,
+      "union_s": 0.180628241,
+      "no_kernel_s": 0.158780331
+    },
+    {
+      "kind": "runtime",
+      "name": "cudaLaunchKernel_ptsz_v7000",
+      "count": 119482,
+      "union_s": 0.503290228,
+      "no_kernel_s": 0.138078829
+    },
+    {
+      "kind": "runtime",
+      "name": "cudaMemsetAsync_ptsz_v7000",
+      "count": 31837,
+      "union_s": 0.118732845,
+      "no_kernel_s": 0.10367683
+    },
+    {
+      "kind": "runtime",
+      "name": "cudaEventSynchronize_v3020",
+      "count": 6970,
+      "union_s": 0.065905834,
+      "no_kernel_s": 0.065905834
+    },
+    {
+      "kind": "runtime",
+      "name": "cudaFreeAsync_ptsz_v11020",
+      "count": 36492,
+      "union_s": 0.047988643,
+      "no_kernel_s": 0.02897748
+    },
+    {
+      "kind": "runtime",
+      "name": "cudaMallocHost_v3020",
+      "count": 1,
+      "union_s": 0.021701723,
+      "no_kernel_s": 0.021701723
+    },
+    {
+      "kind": "runtime",
+      "name": "cudaMemGetInfo_v3020",
+      "count": 2346,
+      "union_s": 0.021448617,
+      "no_kernel_s": 0.021448617
+    },
+    {
+      "kind": "runtime",
+      "name": "cudaMalloc_v3020",
+      "count": 131,
+      "union_s": 0.018380286,
+      "no_kernel_s": 0.018189999
+    },
+    {
+      "kind": "runtime",
+      "name": "cudaEventRecord_ptsz_v7000",
+      "count": 16529,
+      "union_s": 0.017259858,
+      "no_kernel_s": 0.017259858
+    },
+    {
+      "kind": "runtime",
+      "name": "cudaSetDevice_v3020",
+      "count": 25089,
+      "union_s": 0.014753525,
+      "no_kernel_s": 0.013543333
+    },
+    {
+      "kind": "runtime",
+      "name": "cudaPointerGetAttributes_v4000",
+      "count": 14412,
+      "union_s": 0.01358214,
+      "no_kernel_s": 0.01259277
+    },
+    {
+      "kind": "runtime",
+      "name": "cudaFree_v3020",
+      "count": 36,
+      "union_s": 0.0077984,
+      "no_kernel_s": 0.0077984
+    },
+    {
+      "kind": "runtime",
+      "name": "cudaHostAlloc_v3020",
+      "count": 1,
+      "union_s": 0.006911109,
+      "no_kernel_s": 0.006911109
+    },
+    {
+      "kind": "driver",
+      "name": "cuKernelGetName",
+      "count": 119482,
+      "union_s": 0.015455703,
+      "no_kernel_s": 0.005580584
+    },
+    {
+      "kind": "runtime",
+      "name": "cudaGetLastError_v3020",
+      "count": 120190,
+      "union_s": 0.012487148,
+      "no_kernel_s": 0.003052985
+    }
+  ],
+  "cpu_circuits": [
+    {
+      "circuit": "14",
+      "count": 22,
+      "union_s": 2.504854831,
+      "no_kernel_s": 1.372088215
+    },
+    {
+      "circuit": "11",
+      "count": 22,
+      "union_s": 2.38836614,
+      "no_kernel_s": 1.276270419
+    },
+    {
+      "circuit": "37",
+      "count": 22,
+      "union_s": 2.273556138,
+      "no_kernel_s": 1.20333974
+    },
+    {
+      "circuit": "43",
+      "count": 22,
+      "union_s": 2.041833747,
+      "no_kernel_s": 1.171911189
+    },
+    {
+      "circuit": "150",
+      "count": 22,
+      "union_s": 1.982045474,
+      "no_kernel_s": 1.028265455
+    },
+    {
+      "circuit": "81",
+      "count": 22,
+      "union_s": 1.944579476,
+      "no_kernel_s": 1.168120186
+    },
+    {
+      "circuit": "25",
+      "count": 22,
+      "union_s": 1.862820774,
+      "no_kernel_s": 1.113247723
+    },
+    {
+      "circuit": "115",
+      "count": 22,
+      "union_s": 1.839082609,
+      "no_kernel_s": 0.929847389
+    },
+    {
+      "circuit": "97",
+      "count": 22,
+      "union_s": 1.790278888,
+      "no_kernel_s": 0.882097658
+    },
+    {
+      "circuit": "121",
+      "count": 22,
+      "union_s": 1.781058707,
+      "no_kernel_s": 1.026873506
+    },
+    {
+      "circuit": "137",
+      "count": 22,
+      "union_s": 1.761333934,
+      "no_kernel_s": 0.954549201
+    },
+    {
+      "circuit": "108",
+      "count": 22,
+      "union_s": 1.713482242,
+      "no_kernel_s": 0.857956131
+    },
+    {
+      "circuit": "151",
+      "count": 22,
+      "union_s": 1.627547214,
+      "no_kernel_s": 0.774518115
+    },
+    {
+      "circuit": "132",
+      "count": 22,
+      "union_s": 1.60616371,
+      "no_kernel_s": 1.111532078
+    },
+    {
+      "circuit": "122",
+      "count": 22,
+      "union_s": 1.605094488,
+      "no_kernel_s": 1.11045745
+    },
+    {
+      "circuit": "166",
+      "count": 22,
+      "union_s": 1.604969892,
+      "no_kernel_s": 1.110352194
+    },
+    {
+      "circuit": "44",
+      "count": 22,
+      "union_s": 1.604791757,
+      "no_kernel_s": 1.110223595
+    },
+    {
+      "circuit": "109",
+      "count": 22,
+      "union_s": 1.60455456,
+      "no_kernel_s": 1.109986398
+    },
+    {
+      "circuit": "167",
+      "count": 22,
+      "union_s": 1.60322938,
+      "no_kernel_s": 1.108661218
+    },
+    {
+      "circuit": "113",
+      "count": 22,
+      "union_s": 1.60250075,
+      "no_kernel_s": 1.107932588
+    }
+  ],
+  "longest_gaps": [
+    {
+      "start_s": 0.0,
+      "duration_s": 0.477616124,
+      "phases": {
+        "aiur/row_index": 0.074473078,
+        "aiur/witness_zero": 0.01585503,
+        "aiur/cpu_witness": 0.11886187,
+        "aiur/cpu_circuit": 0.118909497,
+        "aiur/codegen_filter": 0.103960969,
+        "aiur/codegen_pack": 0.161135967,
+        "aiur/codegen_concat": 0.159666417,
+        "aiur/codegen_seeds": 0.37241375,
+        "aiur/witness": 0.402877809,
+        "aiur/codegen_device_rows": 0.012745485,
+        "stark/stage1_commit": 0.088901981,
+        "stark/batch_round_1": 0.088946499,
+        "stark/batch_round_one": 0.403059673,
+        "aiur/prove_planned": 0.477616124,
+        "aiur/prove_ixvm_within_budget": 0.477616124
+      }
+    },
+    {
+      "start_s": 32.819256391,
+      "duration_s": 0.369017846,
+      "phases": {
+        "stark/fri_open": 0.368942823,
+        "stark/prove_batch_shard": 0.369017846,
+        "stark/batch_round_2": 0.369017846,
+        "stark/batch_round_two": 0.369017846,
+        "aiur/prove_planned": 0.369017846,
+        "aiur/prove_ixvm_within_budget": 0.369017846
+      }
+    },
+    {
+      "start_s": 23.650176904,
+      "duration_s": 0.368283499,
+      "phases": {
+        "stark/fri_open": 0.368207061,
+        "stark/prove_batch_shard": 0.368283499,
+        "stark/batch_round_2": 0.368283499,
+        "stark/batch_round_two": 0.368283499,
+        "aiur/prove_planned": 0.368283499,
+        "aiur/prove_ixvm_within_budget": 0.368283499
+      }
+    },
+    {
+      "start_s": 14.729530667,
+      "duration_s": 0.366769175,
+      "phases": {
+        "stark/fri_open": 0.366691226,
+        "stark/prove_batch_shard": 0.366769175,
+        "stark/batch_round_2": 0.366769175,
+        "stark/batch_round_two": 0.366769175,
+        "aiur/prove_planned": 0.366769175,
+        "aiur/prove_ixvm_within_budget": 0.366769175
+      }
+    },
+    {
+      "start_s": 29.294815923,
+      "duration_s": 0.362687011,
+      "phases": {
+        "stark/fri_open": 0.362617241,
+        "stark/prove_batch_shard": 0.362687011,
+        "stark/batch_round_2": 0.362687011,
+        "stark/batch_round_two": 0.362687011,
+        "aiur/prove_planned": 0.362687011,
+        "aiur/prove_ixvm_within_budget": 0.362687011
+      }
+    },
+    {
+      "start_s": 1.818125462,
+      "duration_s": 0.362240391,
+      "phases": {
+        "aiur/codegen_concat": 0.207625963,
+        "aiur/codegen_seeds": 0.208116479,
+        "aiur/witness": 0.208178138,
+        "stark/stage1_commit": 0.362240391,
+        "stark/batch_round_1": 0.362240391,
+        "stark/batch_round_one": 0.362240391,
+        "aiur/prove_planned": 0.362240391,
+        "aiur/prove_ixvm_within_budget": 0.362240391
+      }
+    },
+    {
+      "start_s": 20.27741217,
+      "duration_s": 0.361887534,
+      "phases": {
+        "stark/fri_open": 0.36181805,
+        "stark/prove_batch_shard": 0.361887534,
+        "stark/batch_round_2": 0.361887534,
+        "stark/batch_round_two": 0.361887534,
+        "aiur/prove_planned": 0.361887534,
+        "aiur/prove_ixvm_within_budget": 0.361887534
+      }
+    },
+    {
+      "start_s": 26.335909481,
+      "duration_s": 0.360260244,
+      "phases": {
+        "stark/fri_open": 0.360187407,
+        "stark/prove_batch_shard": 0.360260244,
+        "stark/batch_round_2": 0.360260244,
+        "stark/batch_round_two": 0.360260244,
+        "aiur/prove_planned": 0.360260244,
+        "aiur/prove_ixvm_within_budget": 0.360260244
+      }
+    },
+    {
+      "start_s": 36.739162623,
+      "duration_s": 0.360118722,
+      "phases": {
+        "stark/fri_open": 0.360043757,
+        "stark/prove_batch_shard": 0.360118722,
+        "stark/batch_round_2": 0.360118722,
+        "stark/batch_round_two": 0.360118722,
+        "aiur/prove_planned": 0.360118722,
+        "aiur/prove_ixvm_within_budget": 0.360118722
+      }
+    },
+    {
+      "start_s": 40.388523015,
+      "duration_s": 0.357342107,
+      "phases": {
+        "stark/fri_open": 0.357272383,
+        "stark/prove_batch_shard": 0.357342107,
+        "stark/batch_round_2": 0.357342107,
+        "stark/batch_round_two": 0.357342107,
+        "aiur/prove_planned": 0.357342107,
+        "aiur/prove_ixvm_within_budget": 0.357342107
+      }
+    },
+    {
+      "start_s": 12.585769224,
+      "duration_s": 0.32321578,
+      "phases": {
+        "aiur/witness_zero": 0.020564226,
+        "aiur/cpu_witness": 0.064487382,
+        "aiur/cpu_circuit": 0.064562221,
+        "aiur/codegen_filter": 0.080384567,
+        "aiur/codegen_pack": 0.146780865,
+        "aiur/codegen_concat": 0.135065523,
+        "aiur/codegen_seeds": 0.319591065,
+        "aiur/witness": 0.322681195,
+        "aiur/codegen_device_rows": 0.031419182,
+        "stark/stage1_commit": 0.035164429,
+        "stark/batch_round_2": 0.035183619,
+        "stark/batch_round_two": 0.322808454,
+        "aiur/prove_planned": 0.32321578,
+        "aiur/prove_ixvm_within_budget": 0.32321578
+      }
+    },
+    {
+      "start_s": 15.674801495,
+      "duration_s": 0.295545624,
+      "phases": {
+        "aiur/codegen_pack": 0.056323163,
+        "aiur/codegen_concat": 0.22321801,
+        "aiur/codegen_seeds": 0.279596092,
+        "aiur/witness": 0.279656847,
+        "stark/stage1_commit": 0.295545624,
+        "stark/batch_round_2": 0.295545624,
+        "stark/batch_round_two": 0.295545624,
+        "aiur/prove_planned": 0.295545624,
+        "aiur/prove_ixvm_within_budget": 0.295545624
+      }
+    },
+    {
+      "start_s": 6.696790788,
+      "duration_s": 0.271949294,
+      "phases": {
+        "aiur/cpu_witness": 0.271612438,
+        "aiur/cpu_circuit": 0.271629717,
+        "aiur/codegen_pack": 0.270410431,
+        "aiur/codegen_concat": 0.001526188,
+        "aiur/codegen_seeds": 0.271949294,
+        "aiur/witness": 0.271949294,
+        "stark/stage1_commit": 0.271949294,
+        "stark/batch_round_1": 0.271949294,
+        "stark/batch_round_one": 0.271949294,
+        "aiur/prove_planned": 0.271949294,
+        "aiur/prove_ixvm_within_budget": 0.271949294
+      }
+    },
+    {
+      "start_s": 21.142302149,
+      "duration_s": 0.241222089,
+      "phases": {
+        "aiur/cpu_witness": 0.134876896,
+        "aiur/cpu_circuit": 0.134889367,
+        "aiur/codegen_pack": 0.163763716,
+        "aiur/codegen_concat": 0.106834406,
+        "aiur/codegen_seeds": 0.241222089,
+        "aiur/witness": 0.241222089,
+        "aiur/codegen_device_rows": 0.238402513,
+        "stark/stage1_commit": 0.241222089,
+        "stark/batch_round_2": 0.241222089,
+        "stark/batch_round_two": 0.241222089,
+        "aiur/prove_planned": 0.241222089,
+        "aiur/prove_ixvm_within_budget": 0.241222089
+      }
+    },
+    {
+      "start_s": 8.129183258,
+      "duration_s": 0.216851436,
+      "phases": {
+        "aiur/cpu_witness": 0.216851436,
+        "aiur/cpu_circuit": 0.216851436,
+        "aiur/codegen_pack": 0.216851436,
+        "aiur/codegen_seeds": 0.216851436,
+        "aiur/witness": 0.216851436,
+        "stark/stage1_commit": 0.216851436,
+        "stark/batch_round_1": 0.216851436,
+        "stark/batch_round_one": 0.216851436,
+        "aiur/prove_planned": 0.216851436,
+        "aiur/prove_ixvm_within_budget": 0.216851436
+      }
+    },
+    {
+      "start_s": 8.557012697,
+      "duration_s": 0.201526589,
+      "phases": {
+        "aiur/cpu_witness": 0.196572075,
+        "aiur/cpu_circuit": 0.201526589,
+        "aiur/codegen_pack": 0.196090347,
+        "aiur/codegen_concat": 0.005625966,
+        "aiur/codegen_seeds": 0.201526589,
+        "aiur/witness": 0.201526589,
+        "stark/stage1_commit": 0.201526589,
+        "stark/batch_round_1": 0.201526589,
+        "stark/batch_round_one": 0.201526589,
+        "aiur/prove_planned": 0.201526589,
+        "aiur/prove_ixvm_within_budget": 0.201526589
+      }
+    },
+    {
+      "start_s": 16.681327911,
+      "duration_s": 0.171521937,
+      "phases": {
+        "stark/lookup_construction": 0.171521937,
+        "stark/prove_batch_shard": 0.171521937,
+        "stark/batch_round_2": 0.171521937,
+        "stark/batch_round_two": 0.171521937,
+        "aiur/prove_planned": 0.171521937,
+        "aiur/prove_ixvm_within_budget": 0.171521937
+      }
+    },
+    {
+      "start_s": 0.879131988,
+      "duration_s": 0.159170227,
+      "phases": {
+        "aiur/codegen_device_rows": 0.003999006,
+        "stark/stage1_commit": 0.159170227,
+        "stark/batch_round_1": 0.159170227,
+        "stark/batch_round_one": 0.159170227,
+        "aiur/prove_planned": 0.159170227,
+        "aiur/prove_ixvm_within_budget": 0.159170227
+      }
+    },
+    {
+      "start_s": 17.954279932,
+      "duration_s": 0.156530776,
+      "phases": {
+        "stark/fri_open": 0.15645744,
+        "stark/prove_batch_shard": 0.156530776,
+        "stark/batch_round_2": 0.156530776,
+        "stark/batch_round_two": 0.156530776,
+        "aiur/prove_planned": 0.156530776,
+        "aiur/prove_ixvm_within_budget": 0.156530776
+      }
+    },
+    {
+      "start_s": 44.152696123,
+      "duration_s": 0.153383984,
+      "phases": {
+        "stark/fri_open": 0.153313055,
+        "stark/prove_batch_shard": 0.153383984,
+        "stark/batch_round_2": 0.153383984,
+        "stark/batch_round_two": 0.153383984,
+        "aiur/prove_planned": 0.153383984,
+        "aiur/prove_ixvm_within_budget": 0.153383984
+      }
+    }
+  ]
+}

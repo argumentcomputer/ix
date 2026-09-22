@@ -1,0 +1,33 @@
+[package]
+name = "sp1-compress-host"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+aiur = { path = "../../crates/aiur", features = ["parallel"] }
+# Keep this identical to the root workspace and the guest.
+multi-stark = { git = "https://github.com/argumentcomputer/multi-stark.git", rev = "59df87a454461c27904af3e5afbcd7bcacc1f37c", features = ["parallel"] }
+blake3 = "1"
+# `native-gnark` links gnark through Go at build time (Go 1.24+ and libclang
+# for bindgen) instead of calling the `sp1-gnark` Docker image. Besides
+# dropping the Docker dependency, it avoids a bug in the Docker backend of
+# SP1 v6.x: its Plonk verify wrapper forwards `proof_nonce` and `vk_root` in
+# swapped order, so every Plonk proof with a nonzero key-map root is rejected
+# after it has been produced.
+sp1-sdk = { git = "https://github.com/succinctlabs/sp1", tag = "v6.6.0", features = ["profiling", "native-gnark"] }
+# Pure-Rust verifier for the final SNARK: what an onchain or third-party
+# verifier does, independent of the SDK, gnark and Docker.
+sp1-verifier = { git = "https://github.com/succinctlabs/sp1", tag = "v6.6.0" }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+anyhow = "1"
+bincode = "1.3"
+hex = "0.4"
+sha2 = "0.10"
+
+[build-dependencies]
+sp1-build = { git = "https://github.com/succinctlabs/sp1", tag = "v6.6.0" }
+
+[features]
+default = []
+cuda = ["sp1-sdk/cuda"]

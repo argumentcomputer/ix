@@ -1,0 +1,30 @@
+{
+  "binary": "/tmp/ix-trace-experiments-0_99hznm/ix-aggregate-trace-replay",
+  "binary_sha256": "00668b1617384e6818097e40182aff443256a91413cf75401e94d38f590b3226",
+  "frontend": "Replay.lean calls the production aggregateCmd directly",
+  "rust_features": [
+    "parallel",
+    "cuda-trace-codegen"
+  ],
+  "cpu_affinity": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+  ],
+  "backend_config": "/tmp/ix-trace-experiments-0_99hznm/backend-config.toml",
+  "native_modules": 130,
+  "source_and_artifact_checks": 390,
+  "rebuilt_lean_modules": [
+    "Ix.Aiur.Stages.Bytecode",
+    "Replay"
+  ],
+  "ix_base": "dcfa650564dc0d3193eda4719503771370eb7957",
+  "backend_base": "9ba93c0b448c77b99eafe867c3078a83ee0eef2f",
+  "benchmark_status": "completed one paired FLT join replay; identical verified proof and trace plan",
+  "comparison": "comparison.json"
+}

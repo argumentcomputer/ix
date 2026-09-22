@@ -1,0 +1,23 @@
+## span unions (s)
+  aiur/execute_ixvm                  338.080  n=10
+  aiur/prove_planned                 275.173  n=10
+  stark/batch_round_two              188.843  n=10
+  stark/batch_round_2                179.371  n=71
+  stark/stage1_commit                138.363  n=142
+  aiur/witness                       122.460  n=142
+  aiur/cpu_witness                   118.811  n=20360
+  stark/prove_batch_shard            111.082  n=71
+  aiur/prepare_slot                   99.841  n=3
+  stark/batch_round_one               85.879  n=10
+  aiur/finish_slot                    73.159  n=3
+  stark/batch_round_1                 70.336  n=71
+  aiur/witness_zero                   58.668  n=20360
+  stark/lookup_construction           44.456  n=71
+  stark/quotient                      35.576  n=71
+  stark/fri_open                      30.804  n=71
+  aiur/codegen_seeds                  19.373  n=90
+  aiur/codegen_device_rows             8.348  n=1944
+  aiur/row_index                       0.446  n=10
+## per circuit, union wall (s), rows
+  aiur/codegen_seeds              circuit=20      13.266  rows=55500032
+  aiur/codegen_seeds              circuit=16       6.108  rows=27492544

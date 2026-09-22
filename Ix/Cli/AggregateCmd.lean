@@ -998,7 +998,7 @@ private def runAggregateCmdNativeWith
   | .error e => IO.eprintln s!"aggregate failed: {e}"; return 1
   | .ok address =>
     -- The root (or subtree root) proof address, alone on stdout, is what
-    -- a driver reads; the log lines are on stderr.
+    -- a driver such as `ix prove --lanes` reads; the log lines are on stderr.
     if !address.isEmpty then
       IO.println address
       (← IO.getStdout).flush

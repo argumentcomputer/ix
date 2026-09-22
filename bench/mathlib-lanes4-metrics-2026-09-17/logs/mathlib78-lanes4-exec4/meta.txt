@@ -1,0 +1,20 @@
+started 2026-09-17T19:09:58Z
+host ip-172-31-28-92 7.0.0-1012-aws
+ix 23c09d58ce531828122bba2af0acbababc9b0dad4373cc959b22d2f46cedef9d
+ixe d84ece558d434574f7d382d2a4c854a4a00d31958fdc08161f34d14ce5f6fde0  mathlib.ixe
+ixes 2910821961999aebad1e894f0f6a2c5a8f4fc2a6aab388dd822668518f13cb0e  mathlib-78.ixes
+ix git e70cac79 0 dirty files
+multi-stark pin f00b7a1
+driver 595.91.07
+thp [always] madvise never / always defer [defer+madvise] madvise never
+cpus 96  mem 999 GiB
+flags --lanes 4 --exec-jobs 4 --max-ram 230   cap 920G
+AIUR_GPU_TRACE=generated
+AIUR_LANES_CACHE_DIR=/home/sam/benchdata/mathlib/runs/mathlib78-lanes4-exec4/cache
+AIUR_MAX_PIECE_LOG_HEIGHT=24
+AIUR_METRICS=/home/sam/benchdata/mathlib/runs/mathlib78-lanes4-exec4/metrics.jsonl
+AIUR_METRICS_RUN_ID=mathlib78-lanes4-exec4
+AIUR_TRACE_ONLY_LOOKUPS=1
+AIUR_TRACE_SHARD_MAX_CELLS=1500000000
+exit 0
+ended 2026-09-17T19:48:06Z

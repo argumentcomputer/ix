@@ -1,0 +1,52 @@
+{
+  "samples_per_mode": 1,
+  "proof": "418bb309dd431b581f19a1f77725acc75d4479348eb7a5d1fac4c89e72e6069f",
+  "slot": 19,
+  "binary_sha256": "00668b1617384e6818097e40182aff443256a91413cf75401e94d38f590b3226",
+  "record_bytes": 11275541816,
+  "pieces": 6,
+  "trace_plan_sha256": "da5ba6db537be02ed6b24a0f3871d2b8d1fd5fa4da2bb654ab90b59d39730cc2",
+  "runs": {
+    "blake3": {
+      "directory": "flt19-handwritten-structural",
+      "phases_s": {
+        "proving": 23.493620768,
+        "replay": 48.436273659,
+        "execution_and_planning": 24.49146704,
+        "seed_preparation": 2.332278417,
+        "device_callback": 1.126359906,
+        "cpu_witness": 8.438770489,
+        "stage1_commit": 12.339634151,
+        "lookup_construction": 4.057870023,
+        "quotient": 2.338298837,
+        "fri_open": 2.277479778
+      },
+      "peak_rss_gib": 32.78282165527344,
+      "sampled_gpu_peak_gib": 64.4951171875,
+      "seed_bytes_prepared": 2079176704,
+      "seed_preparations": 12,
+      "device_callbacks": 288
+    },
+    "generated": {
+      "directory": "flt19-generated-structural",
+      "phases_s": {
+        "proving": 23.545385608,
+        "replay": 48.168705103,
+        "execution_and_planning": 24.143154279,
+        "seed_preparation": 2.77906717,
+        "device_callback": 1.204499355,
+        "cpu_witness": 8.442903209,
+        "stage1_commit": 12.290844309,
+        "lookup_construction": 4.136933073,
+        "quotient": 2.339025196,
+        "fri_open": 2.29409247
+      },
+      "peak_rss_gib": 33.2859992980957,
+      "sampled_gpu_peak_gib": 64.4931640625,
+      "seed_bytes_prepared": 2079176704,
+      "seed_preparations": 12,
+      "device_callbacks": 288
+    }
+  },
+  "generated_proving_change_percent": 0.22033572649859945
+}
