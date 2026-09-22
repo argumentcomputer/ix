@@ -11,7 +11,7 @@ public import Tests.MultiStark
 # Tests for the heterogeneous `ix_aggr` circuit
 
 `ix-aggr` — `smokeSuite`. Executes the production `ix_aggr` entrypoint (the
-pure-Lean interpreter over a Lean-built IO buffer) across all ten shapes, with
+pure-Lean interpreter over a Lean-built IO buffer) across all thirteen shapes, with
 real Multi-STARK child proofs from two cheap stand-in systems:
 
 * a "fake IxVM" system whose `fake_verify_claim` reproduces `verify_claim`'s
@@ -511,7 +511,76 @@ def smokeSuite : IO UInt32 := do
     (Aggr.pubInput shortAllowed leftClaimBytes)
     (mkIO shortAllowed (Aggr.shapeCode (.ixvm, none)) ixvmVk aggrVk
       #[leftIxvm])
-  let invalidShape := run 10 #[leftIxvm] leftClaimBytes
+  let invalidShape := run 13 #[leftIxvm] leftClaimBytes
+
+  -- ── range-sum recursion (shapes 10–12) over one IxVM batch ─────────────
+  -- `prove` yields a one-shard batch, so its ranges are `[0, 0)` and
+  -- `[0, 1)`: a leaf for each, a join adding them into `[0, 1)`, and a root
+  -- closing the batch and emitting the wrap's statement.
+  let rangeBatch ← match ixvmSystem.prove fakeVerifyIdx
+      (Aggr.digestGs leftClaimBytes) default with
+    | .error e => IO.eprintln s!"range batch proof failed: {e}"; return 1
+    | .ok (_, proof, _) => pure proof
+  let (preamble, fullProofs, fullResidual) ← match rangeBatch.rangeAdvice 0 1 with
+    | .error e => IO.eprintln s!"range advice failed: {e}"; return 1
+    | .ok advice => pure advice
+  let (_, emptyProofs, emptyResidual) ← match rangeBatch.rangeAdvice 0 0 with
+    | .error e => IO.eprintln s!"empty range advice failed: {e}"; return 1
+    | .ok advice => pure advice
+  let fullStmt := Aggr.rangeStatement preamble 0 1 fullResidual
+  let emptyStmt := Aggr.rangeStatement preamble 0 0 emptyResidual
+  let tamperedResidual := fullResidual.set! 0 (fullResidual.data[0]! ^^^ 1)
+  let tamperedStmt := Aggr.rangeStatement preamble 0 1 tamperedResidual
+  let preambleSlot : ChildSlot := ⟨preamble, ByteArray.empty⟩
+  let leafSlots (proofs : ByteArray) : Array ChildSlot :=
+    #[preambleSlot, ⟨proofs, ByteArray.empty⟩]
+  let rangeLeaf := run Aggr.rangeLeafShape (leafSlots fullProofs) fullStmt
+    (outClaim? := some fullStmt)
+  let emptyRangeLeaf := run Aggr.rangeLeafShape (leafSlots emptyProofs)
+    emptyStmt (outClaim? := some emptyStmt)
+  let leafWrongResidual := run Aggr.rangeLeafShape (leafSlots fullProofs)
+    tamperedStmt (outClaim? := some tamperedStmt)
+  let leafCountMismatch := run Aggr.rangeLeafShape (leafSlots fullProofs)
+    emptyStmt (outClaim? := some emptyStmt)
+  let reversedStmt := Aggr.rangeStatement preamble 1 0 emptyResidual
+  let leafReversed := run Aggr.rangeLeafShape (leafSlots emptyProofs)
+    reversedStmt (outClaim? := some reversedStmt)
+  let leafWrongBatch := run Aggr.rangeLeafShape
+    #[⟨preamble.set! 0 (preamble.data[0]! ^^^ 1), ByteArray.empty⟩,
+      ⟨fullProofs, ByteArray.empty⟩] fullStmt (outClaim? := some fullStmt)
+  let emptyRange ← match mkSelfChild allowed emptyStmt with
+    | .error e => IO.eprintln s!"empty range self proof failed: {e}"; return 1
+    | .ok child => pure child
+  let fullRange ← match mkSelfChild allowed fullStmt with
+    | .error e => IO.eprintln s!"full range self proof failed: {e}"; return 1
+    | .ok child => pure child
+  let rangeJoin := run Aggr.rangeJoinShape #[emptyRange, fullRange] fullStmt
+    (outClaim? := some fullStmt) (preimages := #[emptyStmt, fullStmt])
+  let joinNotAdjacent := run Aggr.rangeJoinShape #[fullRange, fullRange]
+    fullStmt (outClaim? := some fullStmt) (preimages := #[fullStmt])
+  let joinWrongSum := run Aggr.rangeJoinShape #[emptyRange, fullRange]
+    tamperedStmt (outClaim? := some tamperedStmt)
+    (preimages := #[emptyStmt, fullStmt])
+  let rangeRoot := run Aggr.rangeRootShape #[fullRange, preambleSlot]
+    leftClaimBytes (preimages := #[fullStmt])
+  let rootPartial := run Aggr.rangeRootShape #[emptyRange, preambleSlot]
+    leftClaimBytes (preimages := #[emptyStmt])
+  let rootClaimLie := run Aggr.rangeRootShape #[fullRange, preambleSlot]
+    rightClaimBytes (preimages := #[fullStmt])
+  -- A range statement is not a `CheckEnv` claim: a pair cannot open it.
+  let rangeAsCheckEnv := run (pairShape .aggr .ixvm) #[fullRange, rightIxvm]
+    outputClaimBytes (outClaim? := some outputClaimBytes)
+    (preimages := #[fullStmt, rightClaimBytes]) (trees := adviceTrees)
+  let nativeRangeLeaf := aggrCompiled.bytecode.executeIxAggr ixAggrIdx
+    (Aggr.pubInput allowed fullStmt) Aggr.rangeLeafShape
+    preamble fullProofs ixvmVk aggrVk ByteArray.empty ByteArray.empty
+    fullStmt allowed (Aggr.preimagesBlob #[]) (Aggr.treesBlob #[])
+    (Aggr.pathsBlob #[])
+  let nativeRangeRoot := aggrCompiled.bytecode.executeIxAggr ixAggrIdx
+    (Aggr.pubInput allowed leftClaimBytes) Aggr.rangeRootShape
+    fullRange.proofAdviceBytes preamble ixvmVk aggrVk
+    fullRange.claimsBytes ByteArray.empty leftClaimBytes allowed
+    (Aggr.preimagesBlob #[fullStmt]) (Aggr.treesBlob #[]) (Aggr.pathsBlob #[])
 
   lspecIO (.ofList [("ix-aggr", [
     test "ixAggr prunes the Ix-agnostic lift entrypoint" liftPruned,
@@ -575,6 +644,26 @@ def smokeSuite : IO UInt32 := do
       flatHintOnStructuralOutput,
     expectErr "flat pair rejects a genuinely structural child subject root"
       flatFedStructuralChild,
+    expectOk "range leaf over the whole one-shard batch accepts" rangeLeaf,
+    expectOk "range leaf over an empty range accepts" emptyRangeLeaf,
+    expectOk "range join of adjacent ranges accepts" rangeJoin,
+    expectOk "range root over the whole batch emits the wrap's statement"
+      rangeRoot,
+    test "codegen'd range leaf matches interpreter (output + query counts)"
+      (sameCounts nativeRangeLeaf rangeLeaf),
+    test "codegen'd range root matches interpreter (output + query counts)"
+      (sameCounts nativeRangeRoot rangeRoot),
+    expectErr "range leaf rejects a wrong residual sum" leafWrongResidual,
+    expectErr "range leaf rejects a proof count differing from the range"
+      leafCountMismatch,
+    expectErr "range leaf rejects a range ending before it starts" leafReversed,
+    expectErr "range leaf rejects a preamble not hashing to the batch digest"
+      leafWrongBatch,
+    expectErr "range join rejects non-adjacent ranges" joinNotAdjacent,
+    expectErr "range join rejects a wrong residual sum" joinWrongSum,
+    expectErr "range root rejects a range not covering the batch" rootPartial,
+    expectErr "range root rejects a claim other than the batch's" rootClaimLie,
+    expectErr "a range statement is not a CheckEnv claim" rangeAsCheckEnv,
   ])]) []
 
 end Tests.Aggr

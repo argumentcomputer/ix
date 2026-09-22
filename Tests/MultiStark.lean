@@ -215,16 +215,32 @@ def endToEndSuite : IO UInt32 := do
     | none => IO.eprintln "verify_multi_stark_proof entrypoint not found"; return 1
 
   -- ── negative-test inputs ────────────────────────────────────────────────────
-  -- Tampered proof advice: locate the first stage-1 commitment byte after the
-  -- native proof's `Vec<bool>` activation bitmap and cap-length prefix. This
-  -- keeps the proof structurally parseable while forcing Fiat-Shamir and the
-  -- Merkle checks away from the proof that was actually produced.
+  -- Tampered proof advice: locate the first byte of the stage-1 commitment
+  -- in the batch's first shard header — after the `u64` shard count, the
+  -- header's `Vec<bool>` activation bitmap and the cap-length prefix. This
+  -- keeps the batch structurally parseable while making the header disagree
+  -- with the proof it describes (and moving the lookup challenges away from
+  -- the ones the proof was produced under).
   let activeLen := (List.range 8).foldl (fun n i =>
-    n ||| (proofBytes.data[i]!.toUInt64 <<< (i * 8).toUInt64)) 0
-  let firstCommitByte := 8 + activeLen.toNat + 8
+    n ||| (proofBytes.data[8 + i]!.toUInt64 <<< (i * 8).toUInt64)) 0
+  let firstCommitByte := 8 + 8 + activeLen.toNat + 8
   let badProofBytes :=
     proofBytes.set! firstCommitByte
       (UInt8.ofNat ((proofBytes.data[firstCommitByte]!.toNat + 1) % 256))
+  -- Widened opened row: the last stage-2 row of the last shard's last active
+  -- circuit — the tail of the stream, a `u64` count then that many extension
+  -- elements of two limbs — gains one zero column. The stream still parses
+  -- to its end, but the row no longer has the width the verifying key gives
+  -- the circuit, which `ood_loop` pins before the PCS runs.
+  let widenedProofBytes :=
+    let n := proofBytes.size
+    let u64At (p : Nat) : Nat := (List.range 8).foldl (fun a i =>
+      a + (proofBytes.data[p + i]!.toNat <<< (8 * i))) 0
+    match (List.range 256).find? (fun c => c > 0 && u64At (n - 16 * c - 8) == c) with
+    | some c =>
+      proofBytes.set! (n - 16 * c - 8) (UInt8.ofNat (c + 1)) ++
+        ByteArray.mk #[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    | none => proofBytes
   -- Tampered claim (with a matching keccak digest): 120 → 121. Feeds a different
   -- value into Fiat-Shamir (→ different ζ) and the lookup accumulator, so the
   -- composition/quotient identity no longer holds even though the binding passes.
@@ -254,6 +270,8 @@ def endToEndSuite : IO UInt32 := do
     vCompiled.bytecode.executeMultiStark vIdx pubInput badProofBytes vkBytes claimBytes
   let tamperedClaim :=
     vCompiled.bytecode.executeMultiStark vIdx badClaimInput proofBytes vkBytes badClaimBytes
+  let widenedRow :=
+    vCompiled.bytecode.executeMultiStark vIdx pubInput widenedProofBytes vkBytes claimBytes
   lspecIO (.ofList [("recursive-verifier", [
     test "factorial(5) claim = #[functionChannel, facIdx, 5, 120]" (claim == expectedClaim),
     test s!"inner proof exercises quotient degrees two and four (main/stage2/quotient: {facSystem.circuitShapes.map fun s => (s.mainWidth, s.stage2Width, s.quotientDegree)})" mixedQuotients,
@@ -262,6 +280,9 @@ def endToEndSuite : IO UInt32 := do
     test "codegen'd verifier matches interpreter (output + query counts)" parity,
     expectErr "tampered proof advice rejected (verification checks)" tamperedProof,
     expectErr "tampered claim rejected (OOD/accumulator mismatch)" tamperedClaim,
+    test "widened opened row still parses to the stream's end"
+      (widenedProofBytes.size == proofBytes.size + 16),
+    expectErr "opened row wider than the verifying key's width rejected" widenedRow,
   ])]) []
 
 -- ════════════════════════════════════════════════════════════════════════════

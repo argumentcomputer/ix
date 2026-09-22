@@ -98,6 +98,35 @@ structural form. -/
 def structuralShapeCode (left right : ChildKind) : Nat :=
   6 + 2 * left.code + right.code
 
+/-! ## Range-sum recursion
+
+Shapes `10`–`12` verify one IxVM batch across several recursion proofs: a
+leaf verifies shards `[lo, hi)`, a join adds two adjacent ranges, and the
+root checks that one range covers the whole batch, balances it against the
+preamble messages, and emits the batch's `CheckEnv` digest exactly as a wrap
+would. Their statements are `rangeStatement` bytes, opened on channel 4 like
+`CheckEnv` preimages. -/
+
+def rangeLeafShape : Nat := 10
+def rangeJoinShape : Nat := 11
+def rangeRootShape : Nat := 12
+
+/-- The byte that opens every range statement; no `Ix.Claim` starts with it,
+so a range statement never parses as a `CheckEnv` claim. -/
+def rangeStatementTag : UInt8 := 0x52
+
+/-- A range node's output statement:
+
+`0x52 ‖ blake3(preamble)(32) ‖ lo(u64 LE) ‖ hi(u64 LE) ‖ residual(16)`,
+
+where `preamble` is the batch's serialized headers and messages and
+`residual` is the range's residual sum as two little-endian `u64` limbs (a
+canonical extension-field element). -/
+def rangeStatement (preamble : ByteArray) (lo hi : Nat)
+    (residual : ByteArray) : ByteArray :=
+  ⟨#[rangeStatementTag] ++ (Blake3.Rust.hash preamble).val.data ++
+    MultiStark.u64le lo ++ MultiStark.u64le hi ++ residual.data⟩
+
 /-! ## Native-FFI advice framing
 
 `executeIxAggr` / `proveIxAggr` take the digest-addressed advice as compact

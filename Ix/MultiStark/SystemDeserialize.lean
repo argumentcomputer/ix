@@ -82,7 +82,10 @@ def systemDeserialize := ⟦
   -- A compiled lookup: multiplicity node id + argument node ids (all into
   -- the graph's lookup prefix). Drives the direct logUp evaluation.
   enum SysLookup { Mk(G, List‹G›) }
-  enum SysCircuit { Mk(List‹SysNode›, G, List‹G›, G, List‹SysLookup›, G) }   -- nodes, node_count, zeros, max_constraint_degree, lookups, lookup_group_size
+  -- nodes, node_count, zeros, max_constraint_degree, lookups,
+  -- lookup_group_size, main_width, preprocessed_width, stage_2_width: the
+  -- three widths pin every opened row of the circuit to the verifying key.
+  enum SysCircuit { Mk(List‹SysNode›, G, List‹G›, G, List‹SysLookup›, G, G, G, G) }
 
   -- log_blowup, cap_height, log_final_poly_len, max_log_arity, num_queries,
   -- commit_proof_of_work_bits, query_proof_of_work_bits — the commitment + FRI
@@ -374,10 +377,11 @@ def systemDeserialize := ⟦
     -- `read_sys_circuits_n` (a let-bound match here tripped the inliner).
     let groups = lookup_groups_count(lcount, 0, k);
     let gslots = groups + eq_zero(groups);
-    let ccl = @gl_to_bytes(zcount + gslots + gslots);
-    let s2wl = @gl_to_bytes(gslots + gslots);
+    let s2w = gslots + gslots;
+    let ccl = @gl_to_bytes(zcount + s2w);
+    let s2wl = @gl_to_bytes(s2w);
     let kl = @gl_to_bytes(k);
-    (SysCircuit.Mk(nodes, ncount, zeros, md, lks, k),
+    (SysCircuit.Mk(nodes, ncount, zeros, md, lks, k, mw, pw, s2w),
      [ccl, mdl, phl, pwl, mwl, s2wl, kl], c10)
   }
   fn cons_shape7(l: [U64; 7], tail: List‹U64›) -> List‹U64› {
