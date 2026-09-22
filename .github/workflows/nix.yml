@@ -17,10 +17,8 @@ jobs:
     name: Nix Tests
     # Sticky disks retain Lake/Cargo files; /nix uses the larger root volume
     # and Cachix provides its binary cache.
-    # lazy-init avoids provisioned snapshot-initialization charges, at the cost
-    # of slower first reads of restored blocks.
     # https://runs-on.com/docs/runners/capabilities/sticky-disks/
-    runs-on: runs-on=${{ github.run_id }}-nix-test-${{ github.run_attempt }}/cpu=16/family=r8i.4xlarge/image=ubuntu24-full-x64/volume=150gb/sticky=nix-r8i-native:100gb:lazy-init/extras=s3-cache
+    runs-on: runs-on=${{ github.run_id }}-nix-test-${{ github.run_attempt }}/cpu=16/family=r8i.4xlarge/image=ubuntu24-full-x64/volume=150gb/sticky=nix-r8i-native:100gb/extras=s3-cache
     steps:
       - uses: actions/checkout@v7
       - uses: runs-on/action@v2

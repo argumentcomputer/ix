@@ -15,6 +15,9 @@ Every RunsOn label sets `volume=` explicitly. The `ubuntu24-full-x64` image
 leaves about 10 GiB free on its default root volume, which toolchains, apt
 packages, and container images exhaust; sticky disks hold only the declared
 cache paths. Jobs use `volume=100gb`, and the Nix job `volume=150gb`.
+Sticky disks restore with provisioned snapshot initialization; `lazy-init`
+makes first reads of cached binaries and oleans slow enough to dominate jobs
+that only run them.
 
 ## Required checks
 

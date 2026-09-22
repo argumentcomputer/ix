@@ -344,10 +344,11 @@ cache the Lake and Cargo directories for CI, merge tests, and Nix. Each CI
 job has a separate cache lineage and can run independently; the zkVM jobs
 wait for the build job's `nataddcomm.ixe` artifact. Merge-test partitions
 share a lineage, with each job restoring its own snapshot and the last clean
-completion advancing the cache. `lazy-init` avoids provisioned snapshot
-initialization charges, at the cost of slower first reads. Cachix remains
-the Nix store's binary cache, with `/nix` and build scratch space on a 150 GB
-root volume.
+completion advancing the cache. Snapshots restore with provisioned
+initialization: `lazy-init` saves that charge but turns every first read of a
+cached binary or olean into a slow page fault, which dominates test jobs
+that compile nothing. Cachix remains the Nix store's binary cache, with
+`/nix` and build scratch space on a 150 GB root volume.
 
 [RunsOn Magic Cache](https://runs-on.com/docs/performance/caching/actions/)
 is enabled with `extras=s3-cache` and `runs-on/action@v2` before any cache or
