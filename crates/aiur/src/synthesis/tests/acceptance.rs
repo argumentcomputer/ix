@@ -158,7 +158,11 @@ fn inactive_return_cannot_supply_claim() {
     })
     .collect();
   let witness = SystemWitness::from_stage_1(traces, &system.system);
-  let proof = system.system.prove(&system.key, &claim, witness);
+  let proof = system.system.prove_batch(
+    &system.key,
+    vec![ShardInput { claims: vec![claim.clone()], witness }],
+    vec![],
+  );
   assert!(
     system.verify(&claim, &proof).is_err(),
     "an inactive function row supplied an incorrect public result"

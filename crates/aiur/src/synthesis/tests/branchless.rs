@@ -107,7 +107,11 @@ fn empty_branch_cannot_redirect_a_call_to_memory() {
     })
     .collect();
   let witness = SystemWitness::from_stage_1(traces, &system.system);
-  let proof = system.system.prove(&system.key, &claim, witness);
+  let proof = system.system.prove_batch(
+    &system.key,
+    vec![ShardInput { claims: vec![claim.clone()], witness }],
+    vec![],
+  );
   assert!(
     system.verify(&claim, &proof).is_err(),
     "an inactive empty branch redirected a call to memory and supplied a false public result"

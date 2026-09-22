@@ -266,22 +266,36 @@ impl AiurGadget for Bytes2 {
     record: &QueryRecord,
     slot_arg_widths: &[usize],
   ) -> (RowMajorMatrix<G>, LookupValues<G>) {
-    let mut rows = vec![G::ZERO; 256 * 256 * TRACE_WIDTH];
-    let mut builder = LookupValues::builder(256 * 256, slot_arg_widths);
-    let mut row_writers = builder.rows_mut();
-    for (((row_idx, row), counts), row_lookups) in rows
+    let mut rows = G::zero_vec(256 * 256 * TRACE_WIDTH);
+    for (row, multiplicities) in rows
       .as_chunks_mut::<TRACE_WIDTH>()
       .0
       .iter_mut()
-      .enumerate()
       .zip(&record.bytes2_queries.0)
+    {
+      *row = *multiplicities;
+    }
+    if crate::trace::trace_only_lookups() {
+      return (
+        RowMajorMatrix::new(rows, TRACE_WIDTH),
+        LookupValues::shape_only(256 * 256, slot_arg_widths),
+      );
+    }
+
+    // There are `TRACE_WIDTH` lookups per row, one for each multiplicity.
+    let mut builder = LookupValues::builder(256 * 256, slot_arg_widths);
+    let mut row_writers = builder.rows_mut();
+    for ((row_idx, counts), row_lookups) in rows
+      .as_chunks::<TRACE_WIDTH>()
+      .0
+      .iter()
+      .enumerate()
       .zip(row_writers.iter_mut())
     {
       let [xor, add, sub, range_check, mul, xor_split7, xor_split4, u16_range] =
         *counts;
       let i = G::from_usize(row_idx / 256);
       let j = G::from_usize(row_idx % 256);
-      row.copy_from_slice(counts);
 
       // AND and OR queries also pull XOR; comparisons also pull subtraction.
       row_lookups.pull(0, xor, &[u8_xor_channel(), i, j, Self::xor(&i, &j)]);

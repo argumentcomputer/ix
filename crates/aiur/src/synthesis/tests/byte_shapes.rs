@@ -41,22 +41,25 @@ fn public_verify_checks_fixed_byte_heights_before_openings() {
     system.prove(0, &[G::ONE, G::ONE], &mut empty_io_buffer());
   system.verify(&claim, &proof).unwrap();
   let mut position = 0;
-  for (circuit, &active) in system.system.circuits.iter().zip(&proof.active) {
+  let active_map = proof.preamble.headers[0].active.clone();
+  for (circuit, &active) in system.system.circuits.iter().zip(&active_map) {
     if active {
-      let original = proof.log_degrees[position];
+      let original = proof.preamble.headers[0].log_degrees[position];
       if circuit.preprocessed_height != 0 {
         for changed in [original - 1, original + 1] {
-          proof.log_degrees[position] = changed;
+          proof.preamble.headers[0].log_degrees[position] = changed;
           // The generic shape check has no direct fixed-height condition.
           // Aiur must establish it before relying on fixed byte-table rows.
-          system.system.verify_shape(&proof).unwrap();
+          system.system.verify_shape(&proof.proofs[0]).unwrap();
           assert!(matches!(
             system.verify(&claim, &proof),
-            Err(VerificationError::InvalidProofShape)
+            Err(AiurVerificationError::Stark(
+              VerificationError::InvalidProofShape
+            ))
           ));
         }
       }
-      proof.log_degrees[position] = original;
+      proof.preamble.headers[0].log_degrees[position] = original;
       position += 1;
     }
   }
@@ -88,14 +91,17 @@ fn public_verify_checks_fixed_byte_activity_before_openings() {
   // makes the required activity explicit before entering that verifier.
   witness.traces[1].values.clear();
   witness.lookups[1] =
-    multi_stark::lookup::LookupValues::builder(0, &system.slot_arg_widths(1))
-      .finish();
-  let proof = system.system.prove(&system.key, &claim, witness);
-  assert_eq!(proof.active, vec![true, false, true]);
-  assert_eq!(proof.log_degrees, vec![2, 16]);
-  system.system.verify_shape(&proof).unwrap();
+    LookupValues::builder(0, &system.slot_arg_widths(1)).finish();
+  let proof = system.system.prove_batch(
+    &system.key,
+    vec![ShardInput { claims: vec![claim.to_vec()], witness }],
+    vec![],
+  );
+  assert_eq!(proof.preamble.headers[0].active, vec![true, false, true]);
+  assert_eq!(proof.preamble.headers[0].log_degrees, vec![2, 16]);
+  system.system.verify_shape(&proof.proofs[0]).unwrap();
   assert!(matches!(
     system.verify(&claim, &proof),
-    Err(VerificationError::InvalidProofShape)
+    Err(AiurVerificationError::Stark(VerificationError::InvalidProofShape))
   ));
 }

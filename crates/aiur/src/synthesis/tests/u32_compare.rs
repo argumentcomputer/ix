@@ -195,7 +195,8 @@ fn u32_compare_proofs_and_decoded_keys_cover_boundaries_and_partitions() {
     cp.log_blowup = 2;
     let system = AiurSystem::build(comparison_toplevel(grouped), cp, fp);
     let encoded = crate::vk_codec::aiur_system_to_bytes(&system).unwrap();
-    let (decoded, _, _) = crate::vk_codec::from_bytes(&encoded).unwrap();
+    let decoded =
+      crate::vk_codec::AiurVerifyingKey::from_bytes(&encoded).unwrap();
     for member in 0..2 {
       for (a, b) in
         [(0, u32::MAX), (u32::MAX, 0), (65535, 65536), (u32::MAX, u32::MAX)]
@@ -315,7 +316,8 @@ fn u32_compare_supplied_out_of_range_limbs_fail_lookup_verification() {
         G::from_bool(output),
       ];
       let witness = SystemWitness::from_stage_1(traces, &system.system);
-      let proof = system.system.prove(&system.key, &claim, witness);
+      let shards = vec![ShardInput { claims: vec![claim.to_vec()], witness }];
+      let proof = system.system.prove_batch(&system.key, shards, vec![]);
       assert!(system.verify(&claim, &proof).is_err());
     }
   }

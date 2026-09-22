@@ -37,12 +37,16 @@ fn public_output_cannot_be_supplied_by_zero_padding() {
     })
     .collect();
   let witness = SystemWitness::from_stage_1(traces, &system.system);
-  let proof = system.system.prove(&system.key, &claim, witness);
-  system.system.verify(&claim, &proof).unwrap();
+  let proof = system.system.prove_batch(
+    &system.key,
+    vec![ShardInput { claims: vec![claim.to_vec()], witness }],
+    vec![],
+  );
+  system.system.verify_batch(&proof).unwrap();
   assert!(
     matches!(
       system.verify(&claim, &proof),
-      Err(VerificationError::InvalidClaim)
+      Err(AiurVerificationError::Stark(VerificationError::InvalidClaim))
     ),
     "zero padding was accepted as a function output"
   );
