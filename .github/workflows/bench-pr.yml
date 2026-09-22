@@ -3,7 +3,7 @@
 # The base is the PR's own base branch — main for an unstacked PR, the
 # parent PR's head for a stacked one — and the report is labelled with it.
 #
-#   !benchmark ([aiur] [ooc] [compile] [decompile] | all) [execute]
+#   !benchmark ([aiur] [zisk] [sp1] [ooc] [compile] [decompile] | all) [execute]
 #   BENCH_ENVS=InitStd,Mathlib     # which compiled envs (case-insensitive, any registry env;
 #                                  #  defaults to every env for compile/decompile, InitStd
 #                                  #  for the rest)
@@ -522,6 +522,23 @@ jobs:
         with:
           name: benchmark-env-${{ matrix.params.env }}
       # ---------- PR side ----------
+      # zkVM runs build their Rust host in-run, so they need the Rust
+      # toolchain plus the backend's own toolchain and system deps.
+      - name: Set up zkVM Rust toolchain
+        if: matrix.params.backend == 'zisk' || matrix.params.backend == 'sp1'
+        uses: ./.github/actions/setup-rust-toolchain
+        with:
+          cache-workspaces: ${{ matrix.params.backend }}
+          cache-key: ${{ matrix.params.backend }}
+      - name: Install SP1
+        if: matrix.params.backend == 'sp1'
+        uses: ./.github/actions/install-sp1
+      - name: Install Zisk
+        if: matrix.params.backend == 'zisk'
+        uses: ./.github/actions/install-zisk
+        with:
+          proving-key: false
+
       # The PR side runs first: `ix bench run` selects its constants from
       # the shared set (Ix/BenchConstants.lean), and pr.json's row names
       # become the canonical name list this run measures — the base-side
@@ -534,6 +551,11 @@ jobs:
         # the job, after the table upload.
         continue-on-error: true
         run: |
+          if [ "$BACKEND" = zisk ]; then
+            # ZisK's ASM microservices mmap with MAP_LOCKED: raise the memlock
+            # hard limit in this shell so the spawned tools inherit it.
+            sudo prlimit --pid $$ --memlock=unlimited:unlimited
+          fi
           if [ "$BACKEND" = compile ]; then
             # The compile job already measured this env's compile (same
             # runner class, binaries, and command) — reuse its row instead
@@ -777,6 +799,9 @@ jobs:
           # Cached base .ixe when the restore above hit; else the base run
           # compiles it fresh (no flag).
           [ -f "base/$BENV.ixe" ] && flags="$flags --ixe base/$BENV.ixe"
+          if [ "$BACKEND" = zisk ]; then
+            sudo prlimit --pid $$ --memlock=unlimited:unlimited
+          fi
           ix bench run --backend "$BACKEND" --env "$BENV" --mode "$MODE" \
             --repo base \
             --out "$GITHUB_WORKSPACE/base.json" $flags

@@ -341,8 +341,7 @@ caches.
 
 [RunsOn sticky disks](https://runs-on.com/docs/runners/capabilities/sticky-disks/)
 cache the Lake and Cargo directories for CI, merge tests, and Nix. Each CI
-job has a separate cache lineage and can run independently; the zkVM jobs
-wait for the build job's `nataddcomm.ixe` artifact. Merge-test partitions
+job has a separate cache lineage and runs independently. Merge-test partitions
 share a lineage, with each job restoring its own snapshot and the last clean
 completion advancing the cache. Snapshots restore with provisioned
 initialization: `lazy-init` saves that charge but turns every first read of a
@@ -418,8 +417,9 @@ the same artifacts.
 
 ## Not yet covered
 
-- **Zisk and SP1 benchmark cells** — intentionally disabled in benchmark CI;
-  regular CI retains their build and keyless-execution integration jobs.
+- **Zisk and SP1 benchmarks** — on demand only: `!benchmark zisk` or
+  `!benchmark sp1` on a PR, or `ix bench run` locally. No CI job schedules,
+  builds, or uploads them, and `all` leaves them out.
 - **zkVM prove** — the hosts prove, but local proving requires suitable GPU
   infrastructure.
 - **aiur prove numbers for the biggest closures** — every constant in the

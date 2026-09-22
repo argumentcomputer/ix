@@ -190,10 +190,10 @@ structure BackendSpec where
   /-- `some reason` ⇒ `parse` skips the backend with the note in the
       config summary. -/
   disabled : Option String := none
-  /-- Modes present for local / on-demand `ix bench run --mode` only —
-      scheduled by no CI job (too heavy for the CI host), so they carry a
-      testbed for the compare surface but never upload to bencher and get
-      no dashboard plot. -/
+  /-- Modes present for local / on-demand runs only (`ix bench run --mode`,
+      an explicit `!benchmark` backend) — scheduled by no CI job, so they
+      carry a testbed for the compare surface but never upload to bencher
+      and get no dashboard plot. -/
   unscheduled : List String := []
   /-- (mode, bencher testbed stem). Hardware suffixes identify the measured host. -/
   testbeds : List (String × String)
@@ -328,8 +328,11 @@ def backendSpecs : List BackendSpec := [
     thresholds := [("constants", "0", "0"), ("shards", "0", "_"),
                    ("check-time", "0.10", "_"), ("throughput", "_", "0.10"),
                    ("peak-rss", "0.10", "_")] },
+  -- zisk / sp1: on demand only (`!benchmark zisk`, `ix bench run`). No CI
+  -- job schedules them, so nothing uploads to bencher or plots, and `all`
+  -- leaves them out.
   { name := "zisk", defaultMode := "execute", inputs := .perConstant,
-    disabled := some "CI benchmarks disabled; covered by build/execute integration jobs",
+    unscheduled := ["execute"],
     testbeds := [("execute", "zisk-check-execute")],
     metrics := [("execute", ["execute-time", "throughput", "peak-rss",
                              "cycles", "constants", "shards"])],
@@ -341,7 +344,7 @@ def backendSpecs : List BackendSpec := [
                    ("execute-time", "0.10", "_"), ("peak-rss", "0.10", "_"),
                    ("throughput", "_", "0.10")] },
   { name := "sp1", defaultMode := "execute", inputs := .perConstant,
-    disabled := some "CI benchmarks disabled; covered by build/execute integration jobs",
+    unscheduled := ["execute"],
     testbeds := [("execute", "sp1-check-execute")],
     metrics := [("execute", ["execute-time", "throughput", "peak-rss",
                              "cycles"])],

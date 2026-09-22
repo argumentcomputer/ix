@@ -969,8 +969,10 @@ def parseError (msg : String) : IO UInt32 := do
     Grammar (an unknown command-line token, or an unknown env in
     BENCH_ENVS, rejects the command — exit 2 and a `parse-error` output):
 
-      !benchmark ([aiur] [ooc] [compile] [decompile] | all)
+      !benchmark ([aiur] [zisk] [sp1] [ooc] [compile] [decompile] | all)
                  [execute] [fresh] [KEY=VALUE …]
+      (`all` covers the scheduled backends; zisk and sp1 are on demand
+       and run only when named)
       BENCH_ENVS=InitStd,Mathlib   (case-insensitive, any registry env;
                                     defaults to every env for the
                                     env-keyed backends (compile,
@@ -1042,8 +1044,11 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
     if t == "fresh" then
       freshFlag := true
       continue
+    -- `all` is the scheduled surface; a backend whose default mode is
+    -- unscheduled (zisk, sp1) runs only when named.
     let requested := if t == "all"
-      then Ix.Cli.BenchCmd.backendSpecs.filter (·.disabled.isNone)
+      then Ix.Cli.BenchCmd.backendSpecs.filter fun b =>
+        b.disabled.isNone && b.scheduledModes.contains b.defaultMode
       else (Ix.Cli.BenchCmd.findBackend t).toList
     -- Everything after `!benchmark` on the command line must parse: a
     -- typo'd backend silently running the default would report numbers
