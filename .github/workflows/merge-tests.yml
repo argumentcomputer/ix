@@ -88,7 +88,7 @@ jobs:
     needs: prepare
     if: ${{ github.event_name == 'merge_group' || github.event_name == 'issue_comment' }}
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix:
         include:
           - name: Lake ignored tests (compile pipeline)
@@ -117,7 +117,7 @@ jobs:
             test_args: >-
               tc-anon-diff tc-init tc-tutorial tc-roundtrip tc-ingress-meta
               tc-pins tc-accel-diff lean4lean
-    runs-on: runs-on=${{ github.run_id }}/cpu=32/family=r8i.8xlarge/image=ubuntu24-full-x64/spot=false/sticky=merge-tests-r8i-native:50gb:lazy-init/extras=s3-cache
+    runs-on: runs-on=${{ github.run_id }}-merge-tests-${{ github.run_attempt }}-${{ strategy.job-index }}/cpu=32/family=r8i.8xlarge/image=ubuntu24-full-x64/sticky=merge-tests-r8i-native:50gb:lazy-init/extras=s3-cache
     steps:
       - name: Validate merge-test variant
         env:
@@ -236,35 +236,51 @@ jobs:
             --suppressions=.github/valgrind.supp \
             .lake/build/bin/IxTests ffi
 
-  merge-tests-result:
-    name: Merge tests
+  merge-gate:
     if: >-
       always() &&
       github.event_name != 'pull_request' &&
       (github.event_name != 'issue_comment' || needs.prepare.result != 'skipped')
     needs: [prepare, merge-tests, valgrind]
+    permissions:
+      actions: read
+      checks: read
+    uses: runs-on/spot-retry-gate/.github/workflows/merge-queue.yml@v1
+    with:
+      job_results: ${{ toJSON(needs) }}
+
+  report-merge-tests:
+    name: Report merge tests
+    if: >-
+      always() &&
+      github.event_name == 'issue_comment' &&
+      needs.prepare.result == 'success'
+    needs: [prepare, merge-tests, valgrind, merge-gate]
     runs-on: ubuntu-latest
     permissions:
       issues: write
       pull-requests: write
     steps:
-      - name: Compose final comment
-        if: github.event_name == 'issue_comment' && needs.prepare.result == 'success'
+      - name: Compose result comment
         env:
           MERGE_SHA: ${{ needs.prepare.outputs.revision }}
           PR_NUMBER: ${{ needs.prepare.outputs.pr }}
           TEST_RESULT: ${{ needs.merge-tests.result }}
           VALGRIND_RESULT: ${{ needs.valgrind.result }}
+          GATE_RESULT: ${{ needs.merge-gate.result }}
         run: |
-          if [ "$TEST_RESULT" = success ] && [ "$VALGRIND_RESULT" = success ]; then
+          if [ "$GATE_RESULT" = success ] && [ "$TEST_RESULT" = success ] && [ "$VALGRIND_RESULT" = success ]; then
             heading="## ✅ Merge tests passed"
-            summary="All ignored test partitions passed"
-          elif [ "$TEST_RESULT" = cancelled ] || [ "$VALGRIND_RESULT" = cancelled ]; then
+            summary="All ignored test partitions and Valgrind passed"
+          elif [ "$GATE_RESULT" = success ]; then
+            heading="## ⏳ Merge tests awaiting Spot retry"
+            summary="RunsOn will retry the failed jobs"
+          elif [ "$GATE_RESULT" = cancelled ]; then
             heading="## ⚪ Merge tests cancelled"
-            summary="The ignored test run was cancelled"
+            summary="The merge-test gate was cancelled"
           else
             heading="## ❌ Merge tests failed"
-            summary="At least one ignored test partition failed"
+            summary="Tests failed or the merge-test gate could not verify their result"
           fi
           {
             echo "$heading"
@@ -275,7 +291,6 @@ jobs:
           } > comment-body.md
 
       - name: Update result comment
-        if: github.event_name == 'issue_comment' && needs.prepare.result == 'success'
         uses: peter-evans/create-or-update-comment@v5
         with:
           token: ${{ github.token }}
@@ -283,10 +298,3 @@ jobs:
           comment-id: ${{ needs.prepare.outputs.comment-id }}
           edit-mode: replace
           body-path: comment-body.md
-
-      - name: Propagate merge-test failure
-        if: >-
-          needs.prepare.result != 'success' ||
-          needs.merge-tests.result != 'success' ||
-          needs.valgrind.result != 'success'
-        run: exit 1

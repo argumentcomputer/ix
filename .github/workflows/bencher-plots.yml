@@ -30,7 +30,7 @@ jobs:
   sync-plots:
     # The restored `ix` contains native r8i code, so this job uses the same
     # CPU family as the benchmark builds.
-    runs-on: runs-on=${{ github.run_id }}/cpu=32/family=r8i.8xlarge/image=ubuntu24-full-x64/spot=false/extras=s3-cache
+    runs-on: runs-on=${{ github.run_id }}-sync-plots-${{ github.run_attempt }}/cpu=32/family=r8i.8xlarge/image=ubuntu24-full-x64/extras=s3-cache
     steps:
       - uses: runs-on/action@v2
       - uses: actions/checkout@v7

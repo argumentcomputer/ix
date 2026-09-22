@@ -20,7 +20,7 @@ jobs:
     # lazy-init avoids provisioned snapshot-initialization charges, at the cost
     # of slower first reads of restored blocks.
     # https://runs-on.com/docs/runners/capabilities/sticky-disks/
-    runs-on: runs-on=${{ github.run_id }}/cpu=16/family=r8i.4xlarge/image=ubuntu24-full-x64/spot=false/volume=150gb/sticky=nix-r8i-native:100gb:lazy-init/extras=s3-cache
+    runs-on: runs-on=${{ github.run_id }}-nix-test-${{ github.run_attempt }}/cpu=16/family=r8i.4xlarge/image=ubuntu24-full-x64/volume=150gb/sticky=nix-r8i-native:100gb:lazy-init/extras=s3-cache
     steps:
       - uses: actions/checkout@v7
       - uses: runs-on/action@v2
@@ -53,3 +53,13 @@ jobs:
       # TODO: Re-enable once the zkVM shells build in CI.
       # - run: nix develop --print-build-logs --accept-flake-config .#zisk --command cargo-zisk --version
       # - run: nix develop --print-build-logs --accept-flake-config .#sp1 --command cargo prove --version
+
+  nix-gate:
+    if: ${{ always() }}
+    needs: [nix-test]
+    permissions:
+      actions: read
+      checks: read
+    uses: runs-on/spot-retry-gate/.github/workflows/merge-queue.yml@v1
+    with:
+      job_results: ${{ toJSON(needs) }}

@@ -147,7 +147,7 @@ jobs:
   # available.
   build:
     if: github.event_name == 'workflow_dispatch'
-    runs-on: runs-on=${{ github.run_id }}/cpu=32/family=r8i.8xlarge/image=ubuntu24-full-x64/spot=false/extras=s3-cache
+    runs-on: runs-on=${{ github.run_id }}-build-${{ github.run_attempt }}/cpu=32/family=r8i.8xlarge/image=ubuntu24-full-x64/extras=s3-cache
     outputs:
       revision: ${{ steps.target.outputs.revision }}
       matrix: ${{ steps.parse.outputs.matrix }}
@@ -310,7 +310,7 @@ jobs:
     name: compile-${{ matrix.env }}
     needs: build
     if: needs.build.outputs.envs != '[]'
-    runs-on: runs-on=${{ github.run_id }}/cpu=32/family=r8i.8xlarge/image=ubuntu24-full-x64/spot=false/extras=s3-cache
+    runs-on: runs-on=${{ github.run_id }}-compile-${{ github.run_attempt }}-${{ strategy.job-index }}/cpu=32/family=r8i.8xlarge/image=ubuntu24-full-x64/extras=s3-cache
     timeout-minutes: 60
     strategy:
       fail-fast: false
@@ -438,8 +438,8 @@ jobs:
             compile.json
             compile-hardware.txt
           if-no-files-found: error
-          retention-days: 1
           overwrite: true
+          retention-days: 1
 
   benchmark:
     # Explicit name — the default would append every matrix value; the
@@ -450,7 +450,7 @@ jobs:
     # compile lazily). The skipped case cannot actually arise (envs is
     # never empty) but is tolerated for robustness.
     if: ${{ !cancelled() && needs.build.result == 'success' && needs.compile.result != 'failure' && needs.compile.result != 'cancelled' }}
-    runs-on: runs-on=${{ github.run_id }}/cpu=32/family=r8i.8xlarge/image=ubuntu24-full-x64/spot=false/extras=s3-cache
+    runs-on: runs-on=${{ github.run_id }}-benchmark-${{ github.run_attempt }}-${{ strategy.job-index }}/cpu=32/family=r8i.8xlarge/image=ubuntu24-full-x64/extras=s3-cache
     # `ix bench run` saves completed rows as it goes, so a timeout keeps
     # them on disk — but the compare and upload need the job alive.
     timeout-minutes: 60
@@ -852,6 +852,7 @@ jobs:
           name: table-${{ env.LABEL }}
           path: out/table-${{ env.LABEL }}.md
           if-no-files-found: warn
+          overwrite: true
       # A PR-side rejection is a correctness regression: re-raise the run
       # step's failure now that the table is uploaded, so the job goes red
       # while the comment still posts with the constant's ❌ row.
@@ -871,7 +872,7 @@ jobs:
     # rows. Only the build job must have succeeded (it made the binaries).
     if: always() && needs.build.result == 'success'
     # The report command restores the build job's native r8i binary.
-    runs-on: runs-on=${{ github.run_id }}/cpu=32/family=r8i.8xlarge/image=ubuntu24-full-x64/spot=false/extras=s3-cache
+    runs-on: runs-on=${{ github.run_id }}-assemble-${{ github.run_attempt }}/cpu=32/family=r8i.8xlarge/image=ubuntu24-full-x64/extras=s3-cache
     permissions:
       contents: read
     steps:
@@ -919,6 +920,7 @@ jobs:
         with:
           name: comment-body
           path: comment-body.md
+          overwrite: true
 
   # Replace the announce comment with the assembled results — or with an
   # error note when a stage failed: a rejected command or broken run must

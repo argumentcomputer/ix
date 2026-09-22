@@ -311,8 +311,13 @@ dependency caches.
 ### RunsOn machines and caching
 
 All self-hosted jobs use RunsOn's `r8i` family and the `ubuntu24-full-x64`
-image, on demand. The CUDA compile job runs its toolchain in an Ubuntu 26.04
-container. Jobs that use `ubuntu-latest` remain on GitHub-hosted runners.
+image with the default Spot policy, including CPU benchmarks. RunsOn can fall
+back to on-demand capacity and automatically retry interrupted jobs. There
+are no GPU benchmarks; future GPU benchmarks should use `spot=false`. The
+CUDA compile job runs its toolchain in an Ubuntu 26.04 container on a CPU
+runner. Jobs that use `ubuntu-latest` remain on GitHub-hosted runners. See
+[CI and merge queue configuration](ci.md) for the required checks and retry
+behavior.
 The [instance sizes](https://aws.amazon.com/ec2/instance-types/memory-optimized/)
 preserve each job's vCPU count, with more RAM per vCPU:
 
