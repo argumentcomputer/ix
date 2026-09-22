@@ -1,0 +1,22 @@
+[workspace]
+
+[profile.release]
+codegen-units = 1
+lto = "fat"
+
+[package]
+name = "sp1-compress-guest"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+# Host-only span reporting does not build for the zkVM target.
+aiur = { path = "../../crates/aiur", default-features = false }
+# Proof and verifying-key wire formats are revision-sensitive. Keep this pin
+# byte-identical to the root workspace.
+multi-stark = { git = "https://github.com/argumentcomputer/multi-stark.git", rev = "59df87a454461c27904af3e5afbcd7bcacc1f37c" }
+blake3 = "1"
+# Upstream SP1: Blake3 runs in software inside the guest, so the stock
+# recursion key map and the published Plonk circuit apply unchanged.
+sp1-zkvm = { git = "https://github.com/succinctlabs/sp1", tag = "v6.6.0" }
