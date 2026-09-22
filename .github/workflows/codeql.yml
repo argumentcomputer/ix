@@ -74,7 +74,7 @@ jobs:
     name: Analyze (rust)
     needs: changes
     if: needs.changes.outputs.rust == 'true'
-    runs-on: runs-on=${{ github.run_id }}-analyze-rust-${{ github.run_attempt }}/cpu=32/family=r8i.8xlarge/image=ubuntu24-full-x64/extras=s3-cache
+    runs-on: runs-on=${{ github.run_id }}-analyze-rust-${{ github.run_attempt }}/cpu=32/family=r8i.8xlarge/image=ubuntu24-full-x64/volume=100gb/extras=s3-cache
     permissions:
       contents: read
       security-events: write

@@ -16,7 +16,7 @@ jobs:
   # Each job has its own sticky cache, so independent checks can run in parallel.
   # The zkVM execution jobs depend on the `nataddcomm.ixe` artifact from build.
   build:
-    runs-on: runs-on=${{ github.run_id }}-build-${{ github.run_attempt }}/cpu=16/family=r8i.4xlarge/image=ubuntu24-full-x64/sticky=ci-build-r8i-native:50gb:lazy-init/extras=s3-cache
+    runs-on: runs-on=${{ github.run_id }}-build-${{ github.run_attempt }}/cpu=16/family=r8i.4xlarge/image=ubuntu24-full-x64/volume=100gb/sticky=ci-build-r8i-native:50gb:lazy-init/extras=s3-cache
     steps:
       - uses: actions/checkout@v7
       - uses: runs-on/action@v2
@@ -59,7 +59,7 @@ jobs:
           overwrite: true
 
   lean-test:
-    runs-on: runs-on=${{ github.run_id }}-lean-test-${{ github.run_attempt }}/cpu=16/family=r8i.4xlarge/image=ubuntu24-full-x64/sticky=ci-lean-test-r8i-native:50gb:lazy-init/extras=s3-cache
+    runs-on: runs-on=${{ github.run_id }}-lean-test-${{ github.run_attempt }}/cpu=16/family=r8i.4xlarge/image=ubuntu24-full-x64/volume=100gb/sticky=ci-lean-test-r8i-native:50gb:lazy-init/extras=s3-cache
     steps:
       - uses: actions/checkout@v7
       - uses: runs-on/action@v2
@@ -83,7 +83,7 @@ jobs:
           lake exe ixon-v3-tests --primitives
 
   rust-test:
-    runs-on: runs-on=${{ github.run_id }}-rust-test-${{ github.run_attempt }}/cpu=8/family=r8i.2xlarge/image=ubuntu24-full-x64/sticky=ci-rust-test-r8i-native:50gb:lazy-init/extras=s3-cache
+    runs-on: runs-on=${{ github.run_id }}-rust-test-${{ github.run_attempt }}/cpu=8/family=r8i.2xlarge/image=ubuntu24-full-x64/volume=100gb/sticky=ci-rust-test-r8i-native:50gb:lazy-init/extras=s3-cache
     steps:
       - uses: actions/checkout@v7
       - uses: runs-on/action@v2
@@ -119,7 +119,7 @@ jobs:
   # Compile and link the opt-in backend without requiring a GPU. Runtime and
   # proof-byte equivalence are covered by multi-stark's NVIDIA smoke suite.
   cuda-compile:
-    runs-on: runs-on=${{ github.run_id }}-cuda-compile-${{ github.run_attempt }}/cpu=8/family=r8i.2xlarge/image=ubuntu24-full-x64/extras=s3-cache
+    runs-on: runs-on=${{ github.run_id }}-cuda-compile-${{ github.run_attempt }}/cpu=8/family=r8i.2xlarge/image=ubuntu24-full-x64/volume=100gb/extras=s3-cache
     container:
       image: nvidia/cuda:13.3.1-devel-ubuntu26.04
     env:
@@ -170,7 +170,7 @@ jobs:
   sp1-build:
     name: SP1 host build
     needs: build
-    runs-on: runs-on=${{ github.run_id }}-sp1-build-${{ github.run_attempt }}/cpu=8/family=r8i.2xlarge/image=ubuntu24-full-x64/sticky=ci-sp1-r8i-native:50gb:lazy-init/extras=s3-cache
+    runs-on: runs-on=${{ github.run_id }}-sp1-build-${{ github.run_attempt }}/cpu=8/family=r8i.2xlarge/image=ubuntu24-full-x64/volume=100gb/sticky=ci-sp1-r8i-native:50gb:lazy-init/extras=s3-cache
     steps:
       - uses: actions/checkout@v7
       - uses: runs-on/action@v2
@@ -214,7 +214,7 @@ jobs:
   zisk-build:
     name: Zisk host build
     needs: build
-    runs-on: runs-on=${{ github.run_id }}-zisk-build-${{ github.run_attempt }}/cpu=8/family=r8i.2xlarge/image=ubuntu24-full-x64/sticky=ci-zisk-r8i-native:50gb:lazy-init/extras=s3-cache
+    runs-on: runs-on=${{ github.run_id }}-zisk-build-${{ github.run_attempt }}/cpu=8/family=r8i.2xlarge/image=ubuntu24-full-x64/volume=100gb/sticky=ci-zisk-r8i-native:50gb:lazy-init/extras=s3-cache
     steps:
       - uses: actions/checkout@v7
       - uses: runs-on/action@v2

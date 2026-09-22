@@ -11,6 +11,11 @@ matrix jobs, the job index. This keeps concurrent jobs and recovery attempts
 from claiming another job's matching runner. Matrix jobs use
 `fail-fast: false` so an interrupted partition does not cancel its siblings.
 
+Every RunsOn label sets `volume=` explicitly. The `ubuntu24-full-x64` image
+leaves about 10 GiB free on its default root volume, which toolchains, apt
+packages, and container images exhaust; sticky disks hold only the declared
+cache paths. Jobs use `volume=100gb`, and the Nix job `volume=150gb`.
+
 ## Required checks
 
 The branch protection or ruleset for `main` must require these aggregate

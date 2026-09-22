@@ -117,7 +117,7 @@ jobs:
             test_args: >-
               tc-anon-diff tc-init tc-tutorial tc-roundtrip tc-ingress-meta
               tc-pins tc-accel-diff lean4lean
-    runs-on: runs-on=${{ github.run_id }}-merge-tests-${{ github.run_attempt }}-${{ strategy.job-index }}/cpu=32/family=r8i.8xlarge/image=ubuntu24-full-x64/sticky=merge-tests-r8i-native:50gb:lazy-init/extras=s3-cache
+    runs-on: runs-on=${{ github.run_id }}-merge-tests-${{ github.run_attempt }}-${{ strategy.job-index }}/cpu=32/family=r8i.8xlarge/image=ubuntu24-full-x64/volume=100gb/sticky=merge-tests-r8i-native:50gb:lazy-init/extras=s3-cache
     steps:
       - name: Validate merge-test variant
         env:
