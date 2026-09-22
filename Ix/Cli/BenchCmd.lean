@@ -218,8 +218,8 @@ structure BackendSpec where
 def backendSpecs : List BackendSpec := [
   -- aiur: the proof-pipeline benchmark (bench-typecheck --recursive) —
   -- every stage of the pipeline, per constant, plus the total. The optional
-  -- `bench-typecheck --join` W0 diagnostic contributes a separate pair row;
-  -- it is not part of the scheduled one-constant CI invocation. The ixvm
+  -- `bench-typecheck --join` contributes a separate pair row, measured in
+  -- its own process after the per-constant runs. The ixvm
   -- stage proves the constant's IxVM typecheck; the fri-verifier stage
   -- executes the in-circuit multi-stark verifier over that fresh proof
   -- and proves THAT execution; the KZG stages will join as stages 3/4
@@ -439,13 +439,17 @@ def BackendSpec.envNames (b : BackendSpec) : List String :=
       b.scheduledModes.any fun m =>
         !(selectNames env b.name m).isEmpty
 
-/-- Stable pair rows produced by the opt-in aggregate W0 diagnostic. These are
-    registered for dashboard filtering even though the scheduled aiur cell
-    remains one process per constant and therefore does not produce them. Keep
-    the order synchronized with the documented `bench-typecheck --join`
-    invocation: pair-row identity is deliberately order-sensitive. -/
+/-- The fixed InitStd aggregation workload. Order determines the pair row's
+    identity; keep the invocation and dashboard registration together. -/
+def aiurJoinConstants : Array String := #["Nat.add_comm", "String.append"]
+
 def aiurJoinBenchmarkNames : Array String :=
-  #["Nat.add_comm + String.append"]
+  #[" + ".intercalate aiurJoinConstants.toList]
+
+/-- Targeted runs only owe the join when both of its inputs were selected. -/
+def aiurJoinNames (env mode : String) (names : Array String) : Array String :=
+  if env == "InitStd" && mode == "prove" && aiurJoinConstants.all names.contains
+  then aiurJoinBenchmarkNames else #[]
 
 /-- The benchmark row names this backend uploads — the bencher slugs the
     dashboard plots and compare table key on — from its `inputs`: env-keyed
@@ -597,6 +601,40 @@ def runPerConstant (out : String) (names : Array String)
         IO.eprintln s!"[bench] '{name}' killed (exit {exit}); recording {status}"
         markKilled out name status
     mergeSpans out name
+
+/-- The join tool also emits singleton-shard child measurements, which must
+    not overwrite the full-closure rows measured by the ordinary pipeline.
+    Import only the pair row, preserving partial measurements on a kill.
+    Unlike a capacity kill, a missing/incomplete successful row is an error. -/
+def runAiurJoin (out : String) (spawn : String → IO UInt32) : IO Unit := do
+  let pair := aiurJoinBenchmarkNames[0]!
+  let pairOut := out ++ ".join.json"
+  if ← FilePath.pathExists pairOut then IO.FS.removeFile pairOut
+  if ← FilePath.pathExists (pairOut ++ ".spans") then
+    IO.FS.removeFile (pairOut ++ ".spans")
+  let exit ← spawn pairOut
+  if exit == exitRejected then
+    markKilled pairOut pair "rejected"
+  else if exit >= 128 && exit != 255 then
+    let rows ← readRows pairOut
+    let complete := ((rows.getObjVal? pair).toOption.bind
+      fun r => (r.getObjVal? "join-verify-time").toOption).isSome
+    if !complete then markKilled pairOut pair (killStatus exit)
+  mergeSpans pairOut pair
+  let rows ← readRows pairOut
+  if let some row := (rows.getObjVal? pair).toOption then
+    writeEntry out pair row
+  if exit != 0 && exit != exitRejected && (exit < 128 || exit == 255) then
+    throw <| IO.userError s!"aggregation benchmark failed (exit {exit}); see {pairOut}"
+  let some row := (rows.getObjVal? pair).toOption
+    | throw <| IO.userError s!"aggregation benchmark produced no pair row; see {pairOut}"
+  let status := ((row.getObjVal? "status").toOption.bind (·.getStr?.toOption)).getD "ok"
+  if status == "ok" then
+    for metric in ["join-execute-time", "join-prove-time", "join-peak-rss",
+                   "join-proof-size", "join-verify-time", "join-fft-cost"] do
+      unless ((row.getObjVal? metric).toOption.any fun v =>
+          match v with | .num _ => true | _ => false) do
+        throw <| IO.userError s!"aggregation benchmark missing {metric}; see {pairOut}"
 
 /-- Resolve the env's `.ixe`: an explicit `--ixe` path is used as-is (and
     must exist — no silent recompile of a mistyped path); otherwise the
@@ -840,6 +878,11 @@ is not a benchmark run"
       runGuarded watchdog ceilingGb bt
         (#["--ixe", ixe, "--consts", name, "--json", out, "--texray"]
           ++ modeArgs)
+    if !(aiurJoinNames env mode names).isEmpty then
+      runAiurJoin out fun pairOut =>
+        runGuarded watchdog ceilingGb bt
+          #["--ixe", ixe, "--consts", ",".intercalate aiurJoinConstants.toList,
+            "--json", pairOut, "--texray", "--recursive", "--join"]
   | "zisk" | "sp1" =>
     if mode != "execute" then
       p.printError s!"error: {backend} supports only execute mode"
@@ -892,6 +935,7 @@ is not a benchmark run"
     | "compile" => #[info.name]
     | "decompile" => #[info.name]
     | "ooc" | "lean4lean" => #[info.name] ++ names
+    | "aiur" => names ++ aiurJoinNames env mode names
     | _ => names
   let code ← gate out expected
   if code == 0 || code == exitRejected then
