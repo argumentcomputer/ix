@@ -1,0 +1,429 @@
+--- a/crates/aiur/src/gpu_trace/mod.rs
++++ b/crates/aiur/src/gpu_trace/mod.rs
+@@ -18,7 +18,28 @@
+ };
+ 
+ pub const WIDTH: usize = 533;
+-const SEED_WORDS: usize = 162;
++
++#[derive(Clone)]
++#[repr(C)]
++struct Blake3Seed {
++  multiplicity: u64,
++  stage: u8,
++  input: [u8; 128],
++  output: [u8; 32],
++  // Explicit padding keeps every byte initialized when the seed is uploaded.
++  padding: [u8; 7],
++}
++
++const _: () = {
++  assert!(size_of::<Blake3Seed>() == 176);
++  assert!(align_of::<Blake3Seed>() == 8);
++  assert!(std::mem::offset_of!(Blake3Seed, multiplicity) == 0);
++  assert!(std::mem::offset_of!(Blake3Seed, stage) == 8);
++  assert!(std::mem::offset_of!(Blake3Seed, input) == 9);
++  assert!(std::mem::offset_of!(Blake3Seed, output) == 137);
++  assert!(std::mem::offset_of!(Blake3Seed, padding) == 169);
++};
++
+ const LAYOUT: FunctionLayout = FunctionLayout {
+   input_size: 129,
+   selectors: 2,
+@@ -68,7 +89,8 @@
+   }
+   let member = top.circuits[circuit].members[0];
+   let queries = &record.function_queries[member];
+-  let _g = tracing::info_span!("aiur/blake3_seeds", circuit, rows = row_count).entered();
++  let _g = tracing::info_span!("aiur/blake3_seeds", circuit, rows = row_count)
++    .entered();
+   let lo = if start.0 == 0 { start.1 } else { queries.len() };
+   let hi = if end.0 == 0 { end.1 } else { queries.len() };
+   let mut seeds = Vec::with_capacity(row_count);
+@@ -90,12 +112,15 @@
+       );
+       return None;
+     }
+-    let mut seed = [0; SEED_WORDS];
+-    for (to, from) in seed.iter_mut().zip(input.iter().chain(result.output)) {
+-      *to = from.as_canonical_u64();
+-    }
+-    seed[161] = result.multiplicity.as_canonical_u64();
+-    seeds.push(seed);
++    seeds.push(Blake3Seed {
++      multiplicity: result.multiplicity.as_canonical_u64(),
++      stage: input[0].as_canonical_u64() as u8,
++      input: std::array::from_fn(|i| input[i + 1].as_canonical_u64() as u8),
++      output: std::array::from_fn(|i| {
++        result.output[i].as_canonical_u64() as u8
++      }),
++      padding: [0; 7],
++    });
+   }
+   assert_eq!(seeds.len(), row_count, "BLAKE3 query span row count");
+   let height = row_count.next_power_of_two();
+@@ -103,7 +128,7 @@
+     circuit,
+     row_count,
+     height,
+-    seed_bytes = row_count * SEED_WORDS * 8,
++    seed_bytes = row_count * size_of::<Blake3Seed>(),
+     main_bytes = height * WIDTH * 8,
+     "prepared GPU BLAKE3 trace"
+   );
+@@ -114,7 +139,7 @@
+ }
+ 
+ pub struct Blake3Trace {
+-  seeds: Vec<[u64; SEED_WORDS]>,
++  seeds: Vec<Blake3Seed>,
+   height: usize,
+ }
+ 
+@@ -126,7 +151,7 @@
+     WIDTH
+   }
+   fn host_bytes(&self) -> usize {
+-    self.seeds.capacity() * SEED_WORDS * 8
++    self.seeds.capacity() * size_of::<Blake3Seed>()
+   }
+ 
+   fn write_rows(&self, first: usize, output: &mut [G]) {
+@@ -143,18 +168,17 @@
+     &self,
+     output: multi_stark::cuda::DeviceTraceView<'_>,
+   ) -> Result<(), String> {
+-    let _g = tracing::info_span!("aiur/blake3_device_rows", rows = output.rows()).entered();
++    let _g =
++      tracing::info_span!("aiur/blake3_device_rows", rows = output.rows())
++        .entered();
+     assert_eq!(output.width(), WIDTH);
+     let mut done = 0;
+     while done < output.rows() {
+       let first = (output.first_row() + done) % self.height;
+       let rows = (output.rows() - done).min(self.height - first);
+       let real = rows.min(self.seeds.len().saturating_sub(first));
+-      let seeds = if real == 0 {
+-        std::ptr::null()
+-      } else {
+-        self.seeds[first..].as_ptr().cast()
+-      };
++      let seeds =
++        if real == 0 { std::ptr::null() } else { self.seeds[first..].as_ptr() };
+       let status = unsafe {
+         aiur_blake3_trace(
+           output.device_id(),
+@@ -176,18 +200,19 @@
+ unsafe extern "C" {
+   fn aiur_blake3_trace(
+     device: i32,
+-    seeds: *const u64,
++    seeds: *const Blake3Seed,
+     real: usize,
+     rows: usize,
+     output: *mut u64,
+   ) -> i32;
+ }
+ 
+-fn write_row(seed: &[u64; SEED_WORDS], row: &mut [G]) {
+-  for (to, &from) in row[..129].iter_mut().zip(seed) {
+-    *to = G::from_u64(from);
+-  }
+-  row[131] = G::from_u64(seed[161]);
++fn write_row(seed: &Blake3Seed, row: &mut [G]) {
++  row[0] = G::from_u8(seed.stage);
++  for (to, &from) in row[1..129].iter_mut().zip(&seed.input) {
++    *to = G::from_u8(from);
++  }
++  row[131] = G::from_u64(seed.multiplicity);
+   let mut at = 132;
+   let mut emit = |v: u64| {
+     row[at] = G::from_u64(v);
+@@ -195,15 +220,16 @@
+   };
+   let mut state = [0u32; 32];
+   for (i, word) in state.iter_mut().enumerate() {
+-    *word = (0..4).map(|b| (seed[1 + i * 4 + b] as u32) << (8 * b)).sum();
+-  }
+-  if seed[0] == 7 {
++    *word =
++      u32::from_le_bytes(seed.input[i * 4..i * 4 + 4].try_into().unwrap());
++  }
++  if seed.stage == 7 {
+     for i in 0..8 {
+       emit_word(&mut emit, state[i] ^ state[i + 8]);
+     }
+     row[129] = G::ONE;
+   } else {
+-    emit((G::from_u64(seed[0]) - G::from_u8(7)).inverse().as_canonical_u64());
++    emit((G::from_u8(seed.stage) - G::from_u8(7)).inverse().as_canonical_u64());
+     for [a, b, c, d, x, y] in [
+       [0, 4, 8, 12, 16, 17],
+       [1, 5, 9, 13, 18, 19],
+@@ -227,8 +253,8 @@
+       state[c] = add2(&mut emit, state[c], state[d]);
+       state[b] = xor_rotate(&mut emit, state[b], state[c], 7);
+     }
+-    for &v in &seed[129..161] {
+-      emit(v);
++    for &v in &seed.output {
++      emit(u64::from(v));
+     }
+     assert_eq!(at, WIDTH);
+     row[130] = G::ONE;
+--- a/crates/aiur/src/gpu_trace/tests.rs
++++ b/crates/aiur/src/gpu_trace/tests.rs
+@@ -28,6 +28,26 @@
+   assert!(supported(&top, 0));
+   top.functions[0].body.ops.push(crate::bytecode::Op::Const(G::ONE));
+   assert!(!supported(&top, 0));
++}
++
++#[test]
++fn seeds_reject_values_that_would_be_truncated() {
++  let top = toplevel();
++  for (index, value, output_value, output_len) in [
++    (0, G::from_u8(8), G::ZERO, 32),
++    (1, G::from_u16(256), G::ZERO, 32),
++    (128, G::NEG_ONE, G::ZERO, 32),
++    (0, G::ZERO, G::from_u16(256), 32),
++    (0, G::ZERO, G::NEG_ONE, 32),
++    (0, G::ZERO, G::ZERO, 31),
++  ] {
++    let mut input = vec![G::ZERO; 129];
++    input[index] = value;
++    let output = vec![output_value; output_len];
++    let mut record = QueryRecord::new(&top);
++    record.function_queries[0].insert(&input, &output, G::ONE).unwrap();
++    assert!(prepare(&top, 0, &record, &[], (0, 0), (0, 1), 1).is_none());
++  }
+ }
+ 
+ #[test]
+@@ -133,6 +153,61 @@
+     assert_eq!(halo.values, expected, "wrapped lookup halo differs");
+   }
+   assert!(prepare(&top, 0, &record, &slots, (0, 0), (0, 0), 0).is_none());
++}
++
++fn patterned_source(rows: usize, salt: usize) -> Arc<dyn TraceGenerator<G>> {
++  Arc::new(Blake3Trace {
++    seeds: (0..rows)
++      .map(|r| Blake3Seed {
++        multiplicity: (G::NEG_ONE - G::from_usize(r + salt)).as_canonical_u64(),
++        stage: ((r + salt) % 8) as u8,
++        input: std::array::from_fn(|i| ((r * 37 + i + salt) % 256) as u8),
++        output: std::array::from_fn(|i| ((r + i * 19 + salt) % 256) as u8),
++        padding: [0; 7],
++      })
++      .collect(),
++    height: rows.next_power_of_two(),
++  })
++}
++
++#[test]
++fn maximum_seed_tile_and_padding_match_scalar() {
++  let source = patterned_source(65537, 0);
++  let dft = multi_stark::cuda::CudaDft::new(0);
++  for (first, rows) in [(0, 65537), (65536, 3), (131071, 2)] {
++    let actual = dft.generated_trace_rows(Arc::clone(&source), first, rows);
++    let mut expected = vec![G::ZERO; rows * WIDTH];
++    source.write_rows(first, &mut expected);
++    assert_eq!(actual.values, expected, "tile starting at {first}");
++  }
++}
++
++#[test]
++fn concurrent_seed_uploads_keep_distinct_contents() {
++  let devices: Vec<i32> = std::env::var("AIUR_TEST_GPU_DEVICES")
++    .unwrap_or_else(|_| "0".into())
++    .split(',')
++    .map(|s| s.parse().unwrap())
++    .collect();
++  let ready = std::sync::Barrier::new(8);
++  std::thread::scope(|scope| {
++    for worker in 0..8 {
++      let ready = &ready;
++      let device = devices[worker % devices.len()];
++      scope.spawn(move || {
++        let source = patterned_source(4095, worker * 13);
++        let dft = multi_stark::cuda::CudaDft::new(device);
++        ready.wait();
++        for first in [0, 1, 4095, 23] {
++          let mut expected = vec![G::ZERO; 4096 * WIDTH];
++          source.write_rows(first, &mut expected);
++          let actual =
++            dft.generated_trace_rows(Arc::clone(&source), first, 4096);
++          assert_eq!(actual.values, expected, "worker {worker}, first {first}");
++        }
++      });
++    }
++  });
+ }
+ 
+ #[test]
+--- a/crates/aiur/cuda/blake3_trace.cu
++++ b/crates/aiur/cuda/blake3_trace.cu
+@@ -1,10 +1,72 @@
+ #include <cuda_runtime.h>
+ #include <cstddef>
+ #include <cstdint>
++#include <cstring>
++#include <pthread.h>
+ 
+ namespace {
+ constexpr size_t WIDTH = 533;
+-constexpr size_t SEED_WORDS = 162;
++constexpr size_t MAX_ROWS = 65537;
++
++struct Blake3Seed {
++    uint64_t multiplicity;
++    uint8_t stage;
++    uint8_t input[128];
++    uint8_t output[32];
++    uint8_t padding[7];
++};
++static_assert(sizeof(Blake3Seed) == 176 && alignof(Blake3Seed) == 8);
++static_assert(offsetof(Blake3Seed, multiplicity) == 0);
++static_assert(offsetof(Blake3Seed, stage) == 8);
++static_assert(offsetof(Blake3Seed, input) == 9);
++static_assert(offsetof(Blake3Seed, output) == 137);
++static_assert(offsetof(Blake3Seed, padding) == 169);
++
++// Portable slots are shared across devices and retained for the process lifetime.
++// Four maximum-size tiles bound pinned memory to just over 44 MiB.
++struct PinnedSeedSlot {
++    void* data = nullptr;
++    bool busy = false;
++};
++PinnedSeedSlot pinned_seeds[4];
++pthread_mutex_t pinned_mutex = PTHREAD_MUTEX_INITIALIZER;
++pthread_cond_t pinned_ready = PTHREAD_COND_INITIALIZER;
++
++class PinnedSeedLease {
++    PinnedSeedSlot* slot_ = nullptr;
++public:
++    PinnedSeedLease() = default;
++    PinnedSeedLease(const PinnedSeedLease&) = delete;
++    PinnedSeedLease& operator=(const PinnedSeedLease&) = delete;
++    ~PinnedSeedLease() {
++        if (!slot_) return;
++        pthread_mutex_lock(&pinned_mutex);
++        slot_->busy = false;
++        pthread_cond_signal(&pinned_ready);
++        pthread_mutex_unlock(&pinned_mutex);
++    }
++    cudaError_t acquire() {
++        pthread_mutex_lock(&pinned_mutex);
++        while (!slot_) {
++            for (auto& slot : pinned_seeds) {
++                if (!slot.busy) {
++                    slot.busy = true;
++                    slot_ = &slot;
++                    break;
++                }
++            }
++            if (!slot_) pthread_cond_wait(&pinned_ready, &pinned_mutex);
++        }
++        pthread_mutex_unlock(&pinned_mutex);
++        if (slot_->data) return cudaSuccess;
++        const cudaError_t status = cudaHostAlloc(&slot_->data,
++            MAX_ROWS * sizeof(Blake3Seed), cudaHostAllocPortable);
++        if (status != cudaSuccess) slot_->data = nullptr;
++        return status;
++    }
++    void* data() const { return slot_->data; }
++};
++
+ __device__ __constant__ uint64_t stage_inverse[7] = {15811494916641072275ULL, 3074457344902430720ULL, 3689348813882916864ULL, 4611686017353646080ULL, 6148914689804861440ULL, 9223372034707292160ULL, 18446744069414584320ULL};
+ 
+ struct Writer {
+@@ -46,30 +108,31 @@
+     }
+ };
+ 
+-__global__ void generate(const uint64_t* seeds, size_t real, size_t rows, uint64_t* output) {
++__global__ void generate(const Blake3Seed* seeds, size_t real, size_t rows, uint64_t* output) {
+     const size_t r = size_t(blockIdx.x) * blockDim.x + threadIdx.x;
+     if (r >= rows) return;
+     uint64_t* row = output + r * WIDTH;
+     for (size_t col = 0; col < WIDTH; ++col) row[col] = 0;
+     if (r >= real) return;
+-    const uint64_t* seed = seeds + r * SEED_WORDS;
+-    for (size_t col = 0; col < 129; ++col) row[col] = seed[col];
+-    row[131] = seed[161];
++    const Blake3Seed& seed = seeds[r];
++    row[0] = seed.stage;
++    for (size_t col = 0; col < 128; ++col) row[col + 1] = seed.input[col];
++    row[131] = seed.multiplicity;
+     uint32_t state[32];
+     #pragma unroll
+     for (int word = 0; word < 32; ++word) {
+         uint32_t value = 0;
+         #pragma unroll
+-        for (int byte = 0; byte < 4; ++byte) value |= uint32_t(seed[1 + 4 * word + byte]) << (8 * byte);
++        for (int byte = 0; byte < 4; ++byte) value |= uint32_t(seed.input[4 * word + byte]) << (8 * byte);
+         state[word] = value;
+     }
+     Writer writer{row};
+-    if (seed[0] == 7) {
++    if (seed.stage == 7) {
+         row[129] = 1;
+         for (int word = 0; word < 8; ++word) writer.word(state[word] ^ state[word + 8]);
+     } else {
+         row[130] = 1;
+-        writer.emit(stage_inverse[seed[0]]);
++        writer.emit(stage_inverse[seed.stage]);
+         writer.mix(state, 0,4,8,12,16,17);
+         writer.mix(state, 1,5,9,13,18,19);
+         writer.mix(state, 2,6,10,14,20,21);
+@@ -78,28 +141,39 @@
+         writer.mix(state, 1,6,11,12,26,27);
+         writer.mix(state, 2,7,8,13,28,29);
+         writer.mix(state, 3,4,9,14,30,31);
+-        for (size_t col = 129; col < 161; ++col) writer.emit(seed[col]);
++        for (size_t col = 0; col < 32; ++col) writer.emit(seed.output[col]);
+     }
+ }
+ }
+ 
+-extern "C" int aiur_blake3_trace(int device, const uint64_t* seeds,
++extern "C" int aiur_blake3_trace(int device, const Blake3Seed* seeds,
+     size_t real, size_t rows, uint64_t* output) {
+-    if (!output || !rows || real > rows || (real && !seeds) || rows > 65537)
++    if (!output || !rows || real > rows || (real && !seeds) || rows > MAX_ROWS)
+         return int(cudaErrorInvalidValue);
+     cudaError_t status = cudaSetDevice(device);
+-    uint64_t* device_seeds = nullptr;
+-    const size_t bytes = real * SEED_WORDS * sizeof(uint64_t);
++    if (status != cudaSuccess) return int(status);
++    PinnedSeedLease staging;
++    if (real) status = staging.acquire();
++    Blake3Seed* device_seeds = nullptr;
++    const size_t bytes = real * sizeof(Blake3Seed);
+     if (status == cudaSuccess && real) status = cudaMallocAsync(
+         reinterpret_cast<void**>(&device_seeds), bytes, cudaStreamPerThread);
+-    if (status == cudaSuccess && real) status = cudaMemcpyAsync(device_seeds, seeds, bytes,
+-        cudaMemcpyHostToDevice, cudaStreamPerThread);
++    if (status == cudaSuccess && real) {
++        std::memcpy(staging.data(), seeds, bytes);
++        status = cudaMemcpyAsync(device_seeds, staging.data(), bytes,
++            cudaMemcpyHostToDevice, cudaStreamPerThread);
++    }
+     if (status == cudaSuccess) {
+         generate<<<unsigned((rows + 127) / 128), 128, 0, cudaStreamPerThread>>>(device_seeds, real, rows, output);
+         status = cudaGetLastError();
+     }
+-    // The caller owns output; it may move to another thread immediately.
+-    if (status == cudaSuccess) status = cudaStreamSynchronize(cudaStreamPerThread);
+-    if (device_seeds) cudaFreeAsync(device_seeds, cudaStreamPerThread);
++    if (device_seeds) {
++        const cudaError_t freed = cudaFreeAsync(device_seeds, cudaStreamPerThread);
++        if (status == cudaSuccess) status = freed;
++    }
++    // Output may move to another thread and the staging slot may be reused.
++    // Drain even on launch failure, since the upload may already be in flight.
++    const cudaError_t synced = cudaStreamSynchronize(cudaStreamPerThread);
++    if (status == cudaSuccess) status = synced;
+     return int(status);
+ }

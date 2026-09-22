@@ -736,7 +736,7 @@ paths over smaller trees), and the per-proof fixed overhead
 (commitments, PoW, final polynomial, the two flag columns per memory
 circuit) is negligible at these sizes. K itself follows from the §7.1
 budget and must be re-derived once the device calibration exists. The
-FRI parameter bench in `HANDOFF-recursion-fri-params.md` (q=50-class
+FRI parameter bench in `docs/recursion-fri-params-handoff.md` (q=50-class
 recursion parameters) halves all of these numbers if adopted.
 
 ## 11. Implementation plan and status

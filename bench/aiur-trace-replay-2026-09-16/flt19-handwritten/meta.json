@@ -1,0 +1,49 @@
+{
+  "command": [
+    "/tmp/ix-trace-experiments-0_99hznm/ix-aggregate-trace-replay",
+    "--ixe",
+    "/home/sam/benchdata/flt/anthropic-flt.ixe",
+    "--ixes",
+    "/home/sam/benchdata/flt/anthropic-flt-900.ixes",
+    "--trace-shards",
+    "--max-ram",
+    "230",
+    "--direct-joins",
+    "--jobs",
+    "1",
+    "--no-write",
+    "--reprove-slot",
+    "19"
+  ],
+  "environment": {
+    "CUDA_VISIBLE_DEVICES": "3",
+    "AIUR_GPU_TRACE": "blake3",
+    "RAYON_NUM_THREADS": "8",
+    "OMP_NUM_THREADS": "8",
+    "LEAN_NUM_THREADS": "8",
+    "AIUR_TRACE_ONLY_LOOKUPS": "1",
+    "AIUR_MAX_PIECE_LOG_HEIGHT": "24",
+    "AIUR_TRACE_SHARD_MAX_CELLS": "1500000000",
+    "AIUR_TREE_CACHE_BYTES": "0",
+    "AIUR_AGGREGATE_CACHE_DIR": "/home/sam/benchdata/flt/flt900-gpu/cache/aggregate",
+    "AIUR_PROFILE": "/tmp/ix-gpu-trace-codegen/bench/aiur-trace-replay-2026-09-16/flt19-handwritten/spans.jsonl",
+    "RUST_LOG": "aiur::gpu_trace=debug,aiur::trace_codegen=debug"
+  },
+  "cpu_affinity": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+  ],
+  "binary_sha256": "00668b1617384e6818097e40182aff443256a91413cf75401e94d38f590b3226",
+  "ixe_sha256": "5251edf00c0050d766702cd32d777b30889c167f4e0021b5ba89496abbb2f4d8",
+  "ixes_sha256": "df30ed6815c37e3b3baaea0a3acd759f6e2b85d283d05f17f7fb5ca7ec74cc66",
+  "started_ns": 1789532597938774439,
+  "pid": 1594165,
+  "exit_code": 1,
+  "finished_ns": 1789532634472869266
+}

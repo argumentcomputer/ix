@@ -1,0 +1,21 @@
+started 2026-09-17T21:59:41Z
+host ip-172-31-28-92 7.0.0-1012-aws
+ix bdef2e402f6366f70b1c5d991b13602ce692fe84142b356a1e2baa4f1d385193
+ixe d84ece558d434574f7d382d2a4c854a4a00d31958fdc08161f34d14ce5f6fde0  mathlib.ixe
+ixes b5433790a6bd9c12976ebdfc3b587594168341755e5013e32beea2324dd61860  mathlib-seed-245-5.ixes
+ix git 19cffab2 0 dirty files
+multi-stark pin b14e623
+driver 595.91.07
+thp [always] madvise never / always defer [defer+madvise] madvise never
+cpus 96  mem 999 GiB
+flags --lanes 4 --exec-jobs 5 --max-ram 245   cap 980G
+AIUR_GPU_TRACE=generated
+AIUR_LANES_CACHE_DIR=/home/sam/benchdata/mathlib/runs/mathlib102-lanes4-exec5-sppark/cache
+AIUR_MAX_PIECE_LOG_HEIGHT=24
+AIUR_METRICS=/home/sam/benchdata/mathlib/runs/mathlib102-lanes4-exec5-sppark/metrics.jsonl
+AIUR_METRICS_RUN_ID=mathlib102-lanes4-exec5-sppark
+AIUR_TRACE_ONLY_LOOKUPS=1
+AIUR_TRACE_SHARD_MAX_CELLS=1500000000
+MULTI_STARK_CUDA_NTT=sppark
+exit 0
+ended 2026-09-17T22:36:10Z

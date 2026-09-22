@@ -1,0 +1,18 @@
+{
+  "environment": {
+    "CARGO_BUILD_JOBS": "4",
+    "CARGO_NET_OFFLINE": "true",
+    "LEAN_NUM_THREADS": "4",
+    "RAYON_NUM_THREADS": "4",
+    "MULTI_STARK_CUDA_ARCHS": "120",
+    "RUSTUP_TOOLCHAIN": "1.98.1",
+    "LEAN_SYSROOT": "/home/sam/.elan/toolchains/leanprover--lean4---v4.33.1",
+    "LIBCLANG_PATH": "/usr/lib/x86_64-linux-gnu",
+    "CFLAGS": "-std=gnu17"
+  },
+  "sha256": "f95521bda42d53336af5782a5251841650640da4d194fdd810350bc7a9af40ec",
+  "instrumentation.patch_sha256": "e722178918ab6bc4ee785595fd7d5660c50289ef7907aabec8e56e0b5becd19d",
+  "source/ix/crates/ffi/src/profile.rs_sha256": "5bf48d5bd931bf7732763579cacf9f28af96e2c83c03d41962702ceb6913221b",
+  "frozen_build": "target/shared-execution-build/build.json",
+  "scope": "Frozen Rust sources plus instrumentation; existing compiled Lean objects; networking disabled"
+}
