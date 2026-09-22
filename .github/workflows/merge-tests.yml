@@ -4,10 +4,6 @@ on:
   merge_group:
   issue_comment:
     types: [created]
-  # Only the valgrind job runs on pull requests, as a trial of the
-  # GitHub-hosted runner's build and cache times before it takes that role
-  # in the queue permanently.
-  pull_request:
 
 run-name: "${{ github.event_name == 'issue_comment' && format('Merge tests for PR #{0}', github.event.issue.number) || 'Merge tests' }}"
 
@@ -173,13 +169,7 @@ jobs:
   valgrind:
     name: Valgrind FFI
     needs: prepare
-    # `prepare` is skipped on pull_request, so `!cancelled()` keeps this job
-    # eligible there; the other events still require `prepare` to succeed.
-    if: >-
-      !cancelled() &&
-      (github.event_name == 'pull_request' ||
-       (needs.prepare.result == 'success' &&
-        (github.event_name == 'merge_group' || github.event_name == 'issue_comment')))
+    if: ${{ github.event_name == 'merge_group' || github.event_name == 'issue_comment' }}
     # Valgrind cannot decode all native r8i instructions, so this job builds
     # portable artifacts under its own cache key. Valgrind itself is
     # single-threaded, so a GitHub-hosted runner suffices once that build is
@@ -188,11 +178,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.event_name == 'pull_request' && github.sha || (github.event_name == 'issue_comment' && format('refs/pull/{0}/merge', needs.prepare.outputs.pr) || needs.prepare.outputs.revision) }}
+          ref: ${{ github.event_name == 'issue_comment' && format('refs/pull/{0}/merge', needs.prepare.outputs.pr) || needs.prepare.outputs.revision }}
           persist-credentials: false
 
       - name: Verify test revision
-        if: github.event_name != 'pull_request'
         env:
           TEST_REVISION: ${{ needs.prepare.outputs.revision }}
         run: |
@@ -239,7 +228,6 @@ jobs:
   merge-gate:
     if: >-
       always() &&
-      github.event_name != 'pull_request' &&
       (github.event_name != 'issue_comment' || needs.prepare.result != 'skipped')
     needs: [prepare, merge-tests, valgrind]
     permissions:

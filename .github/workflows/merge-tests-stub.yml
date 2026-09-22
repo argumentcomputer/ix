@@ -1,4 +1,4 @@
-name: Merge tests (pull request)
+name: Merge tests
 
 # Ignored suites run against merge-group commits. Pull requests publish the
 # same gate name so they can enter the queue before those suites run. This
