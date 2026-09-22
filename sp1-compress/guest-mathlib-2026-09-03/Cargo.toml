@@ -1,0 +1,24 @@
+[workspace]
+
+[profile.release]
+codegen-units = 1
+lto = "fat"
+
+[package]
+name = "sp1-compress-guest-mathlib-2026-09-03"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+# This guest is a compatibility verifier for one dated production artifact.
+# 8846eed is the producer-compatible connector revision: it retains the
+# artifact's 2892243e wire format while making host-only tracing optional so
+# the verifier can compile for the zkVM target.
+aiur = { git = "https://github.com/argumentcomputer/ix.git", rev = "8846eed2a79e062c41b47131272dff41536d5cdb", default-features = false }
+multi-stark = { git = "https://github.com/argumentcomputer/multi-stark.git", rev = "2892243e674f9a0b3aca9004a8d00c79a23beec1" }
+blake3 = "1"
+sp1-zkvm = { git = "https://github.com/argumentcomputer/sp1", rev = "7a1cefe5ff8aba1c9dc5a69d3687a57aa5991e0a" }
+
+[patch.crates-io]
+blake3 = { git = "https://github.com/argumentcomputer/BLAKE3", rev = "d36366f7badbff9be8e2522868dddd14561638f3" }
