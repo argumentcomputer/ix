@@ -676,12 +676,6 @@ def runCompareCmd (p : Cli.Parsed) : IO UInt32 := do
     && (← System.FilePath.pathExists ⟨prAttrib⟩)
   then
     table := table ++ "\n\n" ++ (← renderPerConstMovers mainAttrib prAttrib baseLabel)
-  if let some path := (p.flag? "warning-file").map (·.as! String) then
-    if ← System.FilePath.pathExists ⟨path⟩ then
-      let warning := (← IO.FS.readFile path).trimAscii.toString
-      if !warning.isEmpty then
-        let lines := (warning.splitOn "\n").map fun line => "> " ++ line
-        table := "> [!WARNING]\n" ++ "\n".intercalate lines ++ "\n\n" ++ table
   match p.flag? "out" with
   | some f => IO.FS.writeFile (f.as! String) (table ++ "\n")
   | none => IO.println table
@@ -809,6 +803,8 @@ def runFetchMainCmd (p : Cli.Parsed) : IO UInt32 := do
       (·.testbedFor mode)
     | IO.println s!"fetch-main: no testbed for {backend}/{mode}"
       return exitUsage
+  let testbed := Ix.Cli.BenchCmd.testbedOnMachine testbed
+    (← Ix.Cli.BenchCmd.benchmarkMachine)
   let wanted : Option (Array String) ← do
     let names ← Ix.Cli.ConstsFile.gather p "consts" "names"
     if (p.flag? "consts").isNone && (p.flag? "names").isNone then pure none
@@ -924,6 +920,7 @@ def runFetchMainCmd (p : Cli.Parsed) : IO UInt32 := do
     pair, and the rendered `--threshold-*` flags, so the workflow
     hardcodes none of it. -/
 def runMatrixCmd (_ : Cli.Parsed) : IO UInt32 := do
+  let machine ← Ix.Cli.BenchCmd.benchmarkMachine
   let mut entries : Array Json := #[]
   for b in Ix.Cli.BenchCmd.backendSpecs do
     if b.disabled.isSome then continue
@@ -942,17 +939,13 @@ def runMatrixCmd (_ : Cli.Parsed) : IO UInt32 := do
         entries := entries.push <| Json.mkObj
           [("backend", Json.str b.name), ("env", Json.str env),
            ("mode", Json.str mode), ("label", Json.str label),
-           ("testbed", Json.str testbed),
+           ("testbed", Json.str (Ix.Cli.BenchCmd.testbedOnMachine testbed machine)),
            ("workload", Json.str (Ix.Cli.BenchCmd.workloadOf testbed)),
            ("thresholds", Json.str b.thresholdFlags)]
   IO.println (Json.arr entries).compress
   return 0
 
 /-! ## parse -/
-
-/-- The runner every CI benchmark run measures on — a `runs-on` field for
-    the workflows' job matrices, meaningless locally. -/
-def ciRunner : String := "warp-ubuntu-latest-x64-32x"
 
 /-- Reject the `!benchmark` command: stderr for the log, and a
     `parse-error` step output so the workflow's failure comment can quote
@@ -976,7 +969,7 @@ def parseError (msg : String) : IO UInt32 := do
     Grammar (an unknown command-line token, or an unknown env in
     BENCH_ENVS, rejects the command — exit 2 and a `parse-error` output):
 
-      !benchmark ([aiur] [zisk] [sp1] [ooc] [compile] | all)
+      !benchmark ([aiur] [ooc] [compile] [decompile] | all)
                  [execute] [fresh] [KEY=VALUE …]
       BENCH_ENVS=InitStd,Mathlib   (case-insensitive, any registry env;
                                     defaults to every env for the
@@ -1050,7 +1043,7 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
       freshFlag := true
       continue
     let requested := if t == "all"
-      then Ix.Cli.BenchCmd.backendSpecs
+      then Ix.Cli.BenchCmd.backendSpecs.filter (·.disabled.isNone)
       else (Ix.Cli.BenchCmd.findBackend t).toList
     -- Everything after `!benchmark` on the command line must parse: a
     -- typo'd backend silently running the default would report numbers
@@ -1058,7 +1051,8 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
     if requested.isEmpty then
       return ← parseError s!"unknown token `{t}` in the benchmark command \
         (expected a backend — \
-        {", ".intercalate (Ix.Cli.BenchCmd.backendSpecs.map (·.name))} — \
+        {", ".intercalate ((Ix.Cli.BenchCmd.backendSpecs.filter
+          (·.disabled.isNone)).map (·.name))} — \
         or `all` / `execute` / `fresh`)"
     for b in requested do
       if b.disabled.isSome then
@@ -1066,6 +1060,10 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
       else if backends.all (·.name != b.name) then
         backends := backends.push b
   if backends.isEmpty then
+    if !skipped.isEmpty then
+      let reasons := ", ".intercalate <| skipped.toList.map fun b =>
+        s!"{b.name} ({b.disabled.getD "disabled in CI"})"
+      return ← parseError s!"no requested benchmark backend is enabled in CI: {reasons}"
     backends := (Ix.Cli.BenchCmd.findBackend "aiur").toList.toArray
 
   -- KEY=VALUE config: the inline command-line tokens (strict — an
@@ -1214,7 +1212,6 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
       entries := entries.push <| Json.mkObj
         [("backend", Json.str b.name), ("env", Json.str e),
          ("mode", Json.str (modeFor b)),
-         ("runner", Json.str ciRunner),
          ("consts", Json.str entryConsts),
          ("label", Json.str s!"{b.name}-{e}-{modeFor b}")]
 
@@ -1230,6 +1227,7 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
     (backends.map (fun b =>
       if b.testbeds.length > 1 then s!"{b.name}={modeFor b}" else b.name)).toList
   let mut summary := s!"backends: `{modes}` · envs: `{",".intercalate allEnvs.toList}`"
+  summary := summary ++ s!" · machine: `{← Ix.Cli.BenchCmd.benchmarkMachine}`"
   if !consts.isEmpty then
     summary := summary ++ s!" · consts: `{",".intercalate consts.toList}`"
   if freshFlag then
@@ -1277,7 +1275,6 @@ def benchCompareCmd : Cli.Cmd := `[Cli|
     title         : String; "Table title (default: derived from the run)"
     "base-source" : String; "Where the base side came from, for the title"
     "base-label"  : String; "Name the base side in headers (default: main)"
-    "warning-file" : String; "Markdown warning file to prepend when present"
     out           : String; "Write the table here instead of stdout"
 ]
 
