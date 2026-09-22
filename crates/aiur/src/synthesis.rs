@@ -166,8 +166,12 @@ pub struct PreparedProve {
 }
 
 pub struct AiurSystem {
-  toplevel: Toplevel,
+  /// Shared with the systems [`Self::on_device`] derives for other GPUs,
+  /// so the bytecode crosses the FFI once and is never copied.
+  toplevel: std::sync::Arc<Toplevel>,
   claim_shapes: Vec<Option<ClaimShape>>,
+  #[cfg(feature = "cuda")]
+  pub(crate) trace_provider: std::sync::Arc<crate::gpu_trace::TraceProvider>,
   // perhaps remove the key from the system in verifier only mode?
   key: ProverKey<AiurConfig>,
   /// The parameters the system's config was built from, kept for the
@@ -265,9 +269,54 @@ impl AiurSystem {
     commitment_parameters: CommitmentParameters,
     fri_parameters: FriParameters,
   ) -> Self {
+    #[cfg(not(feature = "cuda"))]
+    assert!(
+      std::env::var("AIUR_GPU_TRACE").as_deref() != Ok("generated"),
+      "AIUR_GPU_TRACE=generated requires the cuda-trace-codegen feature (IX_CUDA_TRACE_CODEGEN=1)"
+    );
+    Self::build_on_device(
+      std::sync::Arc::new(toplevel),
+      commitment_parameters,
+      fri_parameters,
+      None,
+      #[cfg(feature = "cuda")]
+      None,
+    )
+  }
+
+  /// The same system with its prover on CUDA device `device_id`, sharing
+  /// this one's bytecode; only the device-bound parts (the configuration,
+  /// the prover key, the circuit system) are rebuilt. What lets one
+  /// process hold a prover per GPU.
+  pub fn on_device(&self, device_id: i32) -> Self {
+    Self::build_on_device(
+      std::sync::Arc::clone(&self.toplevel),
+      self.commitment_parameters,
+      self.fri_parameters,
+      Some(device_id),
+      #[cfg(feature = "cuda")]
+      Some(std::sync::Arc::clone(&self.trace_provider)),
+    )
+  }
+
+  fn build_on_device(
+    toplevel: std::sync::Arc<Toplevel>,
+    commitment_parameters: CommitmentParameters,
+    fri_parameters: FriParameters,
+    device_id: Option<i32>,
+    #[cfg(feature = "cuda")] trace_provider: Option<
+      std::sync::Arc<crate::gpu_trace::TraceProvider>,
+    >,
+  ) -> Self {
     let claim_shapes =
       toplevel.checked_claim_shapes().expect("invalid Aiur lookup shapes");
     toplevel.validate_row_counts().expect("invalid Aiur control counts");
+    #[cfg(feature = "cuda")]
+    let trace_provider = trace_provider.unwrap_or_else(|| {
+      std::sync::Arc::new(crate::gpu_trace::TraceProvider::from_env(
+        toplevel.clone(),
+      ))
+    });
     let mut circuit_inputs: Vec<CircuitInputs<G>> = Vec::new();
     let mut slot_widths: Vec<Vec<usize>> = Vec::new();
 
@@ -335,7 +384,8 @@ impl AiurSystem {
       2,
     );
 
-    let config = AiurConfig::new(commitment_parameters, fri_parameters);
+    let config =
+      AiurConfig::with_device(commitment_parameters, fri_parameters, device_id);
     let (mut system, key) = System::new(config, circuit_inputs);
     let blowup = system.config.max_quotient_degree();
     for circuit in &mut system.circuits {
@@ -357,6 +407,8 @@ impl AiurSystem {
       key,
       toplevel,
       claim_shapes,
+      #[cfg(feature = "cuda")]
+      trace_provider,
       commitment_parameters,
       fri_parameters,
       slot_widths,
@@ -641,6 +693,7 @@ impl AiurSystem {
     O: FnOnce() -> Vec<G>,
     S: FnMut(usize) -> Result<Supplied<'a>, String>,
   {
+    #[cfg(feature = "texray")]
     tracing_texray::examine_current();
     if count == 0 {
       return Err("no records to prove".into());
@@ -685,12 +738,13 @@ impl AiurSystem {
               round = 1
             )
             .entered();
-            let witness = self.shard_witness(
+            let witness = self.prepared_shard_witness(
               supplied.record(),
               supplied.io(),
               plan,
               &indexes[*r],
               s,
+              BatchRound::One,
             );
             return Some((claims, witness));
           }
@@ -766,12 +820,13 @@ impl AiurSystem {
           round = 2
         )
         .entered();
-        self.shard_witness(
+        self.prepared_shard_witness(
           supplied.record(),
           supplied.io(),
           &plans[r],
           &indexes[r],
           s,
+          BatchRound::Two,
         )
       });
     Ok((claim, proof))
@@ -852,7 +907,14 @@ impl AiurSystem {
       };
       let _g = tracing::info_span!("aiur/witness", shard, round = round_number)
         .entered();
-      self.shard_witness(&query_record, io_buffer, plan, &index, shard)
+      self.prepared_shard_witness(
+        &query_record,
+        io_buffer,
+        plan,
+        &index,
+        shard,
+        round,
+      )
     };
     let proof = match retention {
       // A retained stage 1 is committed once and serves round two's lookups.
@@ -891,6 +953,7 @@ impl AiurSystem {
     input: &[G],
     io_buffer: &mut IOBuffer,
   ) -> (Vec<G>, AiurProof) {
+    #[cfg(feature = "texray")]
     tracing_texray::examine_current();
 
     // Execute the Aiur bytecode.
@@ -984,6 +1047,7 @@ impl AiurSystem {
       &mut IOBuffer,
     ) -> Result<(QueryRecord, Vec<G>), ExecError>,
   {
+    #[cfg(feature = "texray")]
     tracing_texray::examine_current();
     let prepared = match self.prepare_ixvm_within_budget(
       fun_idx,
@@ -1312,6 +1376,144 @@ mod tests {
     assert_eq!(calibrate_prover_rss(usize::MAX), usize::MAX);
   }
 
+  #[cfg(feature = "cuda-trace-codegen")]
+  #[test]
+  fn codegen_blake3_regenerated_batch_matches_cpu() {
+    use multi_stark::p3_matrix::Matrix;
+    use multi_stark::witness::{PreparedWitness, TraceSource};
+    let (cp, fp) = test_parameters();
+    let program = (crate::trace_codegen::tests::blake3::PROGRAM.expected)();
+    let mut system = AiurSystem::build(program, cp, fp);
+    let provider = crate::gpu_trace::TraceProvider::Generated(
+      crate::trace_codegen::tests::blake3_cuda::CUDA
+        .register(
+          &crate::trace_codegen::tests::blake3::PROGRAM,
+          system.toplevel.clone(),
+        )
+        .unwrap(),
+    );
+    system.trace_provider = std::sync::Arc::new(provider);
+    let other = system.on_device(0);
+    assert!(std::sync::Arc::ptr_eq(
+      &system.trace_provider,
+      &other.trace_provider,
+    ));
+    let mut io = empty_io_buffer();
+    let mut input = vec![G::ZERO];
+    input.extend((0..128).map(|i| G::from_usize((i * 37 + 19) % 256)));
+    let (record, output) =
+      system.toplevel().execute(0, input.clone(), &mut io).unwrap();
+    let mut plan = system.plan_shards(&record, None);
+    assert_eq!(plan.num_shards(), 1);
+    assert_eq!(plan.shards[0].rows[0], 0..8);
+    plan.shards[0].rows[0] = 0..4;
+    plan.shards.push(ShardRows { rows: vec![4..8, 0..0, 0..0] });
+    let index = system.row_index(&record, &plan);
+    let mut claim = vec![function_channel(), G::ZERO];
+    claim.extend(input);
+    claim.extend(output);
+    let claims = vec![vec![claim.clone()], vec![]];
+    let build = |shard: usize,
+                 round: Option<BatchRound>|
+     -> PreparedWitness<G> {
+      match round {
+        Some(round) => system
+          .prepared_shard_witness(&record, &io, &plan, &index, shard, round),
+        None => system.shard_witness(&record, &io, &plan, &index, shard).into(),
+      }
+    };
+    let witness = build(0, Some(BatchRound::Two));
+    let TraceSource::Generated(source) = &witness.traces[0] else {
+      panic!("missing GPU source")
+    };
+    let weak_source = std::sync::Arc::downgrade(source);
+    let stage1 = system.system.prove_stage_1(witness);
+    drop(stage1);
+    assert!(
+      weak_source.upgrade().is_none(),
+      "released stage one retained a generated source or LDE"
+    );
+
+    let reference = system.system.prove_batch_with(
+      &system.key,
+      &claims,
+      vec![],
+      Retention::Regenerate,
+      |shard| build(shard, None),
+    );
+    system.verify(&claim, &reference).unwrap();
+    // Round one keeps no seeds on the device; round two's two generated
+    // sources upload theirs once each and the lookup pass releases them.
+    use crate::trace_codegen::cuda::{SEED_CACHE_UPLOADS, seed_cache_bytes};
+    use std::sync::atomic::Ordering;
+    let uploads = SEED_CACHE_UPLOADS.load(Ordering::Acquire);
+    let witnesses: Vec<_> = (0..claims.len())
+      .map(|shard| build(shard, Some(BatchRound::One)))
+      .collect();
+    let sources: Vec<_> = witnesses
+      .iter()
+      .flat_map(|witness| &witness.traces)
+      .filter_map(|trace| match trace {
+        TraceSource::Generated(source) => {
+          Some(std::sync::Arc::downgrade(source))
+        },
+        TraceSource::Host(_) => None,
+      })
+      .collect();
+    let barrier = system.system.batch_round_one(
+      claims.iter().cloned().zip(witnesses),
+      Retention::Regenerate,
+    );
+    assert!(
+      sources.iter().all(|source| source.upgrade().is_none()),
+      "round one retained a generated source or LDE across the barrier"
+    );
+    assert_eq!(SEED_CACHE_UPLOADS.load(Ordering::Acquire), uploads);
+    let proof =
+      system.system.batch_round_two(&system.key, barrier, vec![], |shard| {
+        build(shard, Some(BatchRound::Two))
+      });
+    assert_eq!(SEED_CACHE_UPLOADS.load(Ordering::Acquire), uploads + 2);
+    assert_eq!(seed_cache_bytes(0), 0, "round two released its seeds");
+    system.verify(&claim, &proof).unwrap();
+    assert_eq!(
+      proof.to_bytes().unwrap(),
+      reference.to_bytes().unwrap(),
+      "GPU generation changed proof bytes"
+    );
+    let corrupt = || {
+      let mut witness = build(0, Some(BatchRound::Two));
+      let source = witness.traces.remove(0);
+      let mut trace = source.materialize();
+      let row = (0..trace.height())
+        .find(|&r| trace.values[r * 533] != G::from_u8(7))
+        .unwrap();
+      // This auxiliary supplies both the recursive call and its returned value.
+      trace.values[row * 533 + 501] += G::ONE;
+      witness.traces.insert(0, TraceSource::Host(trace));
+      witness
+    };
+    let fresh = system.system.prove_stage_1(corrupt());
+    assert_ne!(
+      fresh.stage_1_trace_commit, reference.preamble.headers[0].stage_1_trace,
+      "independent commitment must detect incorrect regeneration"
+    );
+    drop(fresh);
+    let barrier = system.system.batch_round_one(
+      claims
+        .iter()
+        .enumerate()
+        .map(|(shard, c)| (c.clone(), build(shard, Some(BatchRound::One)))),
+      Retention::Regenerate,
+    );
+    let bad = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+      system.system.batch_round_two(&system.key, barrier, vec![], |shard| {
+        if shard == 0 { corrupt() } else { build(shard, Some(BatchRound::Two)) }
+      })
+    }));
+    assert!(bad.is_err(), "round two must reject corrupted regenerated values");
+  }
+
   /// Small FRI parameters mirroring `vk_codec`'s test config: cheap to prove
   /// while still exercising the full FRI pipeline (log_blowup 1, 64 queries,
   /// no proof-of-work).
@@ -1557,6 +1759,68 @@ mod tests {
       system.verify(&bad_claim, &proof).is_err(),
       "verification must reject a tampered claim"
     );
+  }
+
+  #[cfg(feature = "cuda")]
+  #[test]
+  fn record_pool_workspace_excludes_shape_only_lookup_payloads() {
+    let (cp, fp) = test_parameters();
+    let system = AiurSystem::build(call_and_memory_toplevel(), cp, fp);
+    let record = QueryRecord::new(system.toplevel());
+    let mut plan = system.single_shard_plan(&record);
+    plan.shards[0].rows[0] = 0..(1 << 20);
+    let full = system.shard_host_workspace(&plan, 0, true);
+    let shape_only = system.shard_host_workspace(&plan, 0, false);
+    assert!(shape_only < 512 << 20, "shape-only workspace: {shape_only}");
+    assert!(full > 512 << 20, "materialized lookup workspace: {full}");
+  }
+
+  #[cfg(feature = "cuda")]
+  #[test]
+  #[ignore = "requires two CUDA devices"]
+  fn record_pool_prepared_moves_between_devices() {
+    use crate::execute::bind_record_reservation;
+    use crate::record_pool::{ProverBudget, RecordPool};
+    let (cp, fp) = test_parameters();
+    let system = AiurSystem::build(call_and_memory_toplevel(), cp, fp);
+    let producer = system.on_device(0);
+    let consumer = system.on_device(1);
+    assert_eq!(
+      crate::vk_codec::aiur_system_to_bytes(&producer).unwrap(),
+      crate::vk_codec::aiur_system_to_bytes(&consumer).unwrap()
+    );
+    let pool = RecordPool::for_provers(
+      4096,
+      4096,
+      ProverBudget { trace_cells: 1_000_000, host_workspace: 1 << 30 },
+    );
+    let reservation = pool.try_admit().unwrap().unwrap();
+    let binding = bind_record_reservation(&reservation);
+    let input = [G::from_u64(3), G::from_u64(5)];
+    let prepared = producer
+      .prepare_ixvm_within_budget(
+        0,
+        &input,
+        &mut empty_io_buffer(),
+        |top, fun, input, io| top.execute(fun, input, io),
+        Some(1),
+        true,
+        None,
+      )
+      .unwrap_or_else(|_| {
+        panic!("pooled planning used the obsolete per-record ceiling")
+      });
+    let retained = crate::execute::record_retained_bytes(&prepared.record);
+    assert_eq!(pool.stats().reserved, retained);
+    drop(binding);
+    drop(reservation);
+    assert_eq!(pool.stats().reserved, retained);
+    let (claim, proof, _) =
+      std::thread::spawn(move || consumer.prove_prepared(prepared))
+        .join()
+        .unwrap();
+    assert_eq!(pool.stats().reserved, 0);
+    system.verify(&claim, &proof).unwrap();
   }
 
   /// Exercise promotion of a cached unconstrained call through nested calls.

@@ -2468,7 +2468,7 @@ pub extern "C" fn rs_shard_env_static(
     requested_shards
   } else if cfg!(feature = "cuda") {
     // The trace-shard prover: seed against one execution's record share,
-    // computed as `ix prove --exec-jobs` computes it.
+    // computed as `ix prove --lanes` computes it.
     let cells = crate::aiur::protocol::trace_shard_max_cells();
     let budget = usize::try_from(ram_gib << 30).unwrap_or(usize::MAX);
     let share =

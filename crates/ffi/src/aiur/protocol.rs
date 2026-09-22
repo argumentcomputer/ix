@@ -1113,6 +1113,7 @@ extern "C" fn rs_aiur_system_shard_prove_with_env(
   retention: LeanNat<LeanBorrowed<'_>>,
 ) -> LeanExcept<LeanOwned> {
   ffi_catch_unwind_except("AiurSystem.shardProveWithEnv", || {
+    crate::profile::init();
     let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
     let max_ram_bytes = lean_unbox_nat_as_usize(max_ram_bytes.inner());
     let retention = match lean_unbox_nat_as_usize(retention.inner()) {
@@ -2711,6 +2712,7 @@ fn ffi_catch_unwind(
   context: &str,
   f: impl FnOnce() -> LeanOwned,
 ) -> LeanExcept<LeanOwned> {
+  crate::profile::init();
   match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
     Ok(value) => LeanExcept::ok(value),
     Err(payload) => {
@@ -2728,6 +2730,7 @@ fn ffi_catch_unwind_except(
   context: &str,
   f: impl FnOnce() -> LeanExcept<LeanOwned>,
 ) -> LeanExcept<LeanOwned> {
+  crate::profile::init();
   match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
     Ok(result) => result,
     Err(payload) => {
@@ -2847,3 +2850,104 @@ fn decode_io_buffer_map(
 // =============================================================================
 // SP1 aggregate-root terminal (feature `sp1`)
 // =============================================================================
+
+/// `Aiur.sp1CompressAggregateRoot` verifies one `ix_aggr` root inside SP1 and
+/// optionally runs the stock SP1 recursion tail through Groth16/Plonk.
+/// Default builds retain this symbol as a checked feature-disabled stub.
+#[unsafe(no_mangle)]
+extern "C" fn rs_sp1_compress_aggregate_root(
+  vk_bytes: LeanByteArray<LeanBorrowed<'_>>,
+  claim_bytes: LeanByteArray<LeanBorrowed<'_>>,
+  proof_bytes: LeanByteArray<LeanBorrowed<'_>>,
+  fri_parameters: LeanAiurFriParameters<LeanBorrowed<'_>>,
+  mode: LeanString<LeanBorrowed<'_>>,
+  output: LeanString<LeanBorrowed<'_>>,
+  onchain_output: LeanString<LeanBorrowed<'_>>,
+) -> LeanExcept<LeanOwned> {
+  #[cfg(feature = "sp1")]
+  {
+    let fri = decode_fri_parameters(&fri_parameters);
+    let mode = match mode.as_str().parse::<sp1_compress_host::Mode>() {
+      Ok(mode) => mode,
+      Err(error) => return LeanExcept::error_string(&error),
+    };
+    let output = match output.as_str() {
+      "" => None,
+      path => Some(std::path::PathBuf::from(path)),
+    };
+    let onchain_output = match onchain_output.as_str() {
+      "" => None,
+      path => Some(std::path::PathBuf::from(path)),
+    };
+    match sp1_compress_host::run_sp1_blocking(
+      vk_bytes.as_bytes().to_vec(),
+      claim_bytes.as_bytes().to_vec(),
+      proof_bytes.as_bytes().to_vec(),
+      &fri,
+      mode,
+      output.as_deref(),
+      onchain_output.as_deref(),
+    ) {
+      Ok(()) => LeanExcept::ok(LeanOwned::box_usize(0)),
+      Err(error) => LeanExcept::error_string(&format!("{error:#}")),
+    }
+  }
+  #[cfg(not(feature = "sp1"))]
+  {
+    let _ = (
+      &vk_bytes,
+      &claim_bytes,
+      &proof_bytes,
+      &fri_parameters,
+      &mode,
+      &output,
+      &onchain_output,
+    );
+    LeanExcept::error_string(
+      "ix was built without SP1 compression; rebuild with IX_SP1=1",
+    )
+  }
+}
+
+/// Explicit compatibility terminal for the audited 2026-09-03 Mathlib root.
+/// Its historical verifier inputs and guest are pinned by `sp1-compress-host`;
+/// this symbol cannot be reached as a fallback from the current protocol.
+#[unsafe(no_mangle)]
+extern "C" fn rs_sp1_compress_mathlib_2026_09_03(
+  proof_bytes: LeanByteArray<LeanBorrowed<'_>>,
+  mode: LeanString<LeanBorrowed<'_>>,
+  output: LeanString<LeanBorrowed<'_>>,
+  onchain_output: LeanString<LeanBorrowed<'_>>,
+) -> LeanExcept<LeanOwned> {
+  #[cfg(feature = "sp1")]
+  {
+    let mode = match mode.as_str().parse::<sp1_compress_host::Mode>() {
+      Ok(mode) => mode,
+      Err(error) => return LeanExcept::error_string(&error),
+    };
+    let output = match output.as_str() {
+      "" => None,
+      path => Some(std::path::PathBuf::from(path)),
+    };
+    let onchain_output = match onchain_output.as_str() {
+      "" => None,
+      path => Some(std::path::PathBuf::from(path)),
+    };
+    match sp1_compress_host::run_sp1_mathlib_2026_09_03_blocking(
+      proof_bytes.as_bytes().to_vec(),
+      mode,
+      output.as_deref(),
+      onchain_output.as_deref(),
+    ) {
+      Ok(()) => LeanExcept::ok(LeanOwned::box_usize(0)),
+      Err(error) => LeanExcept::error_string(&format!("{error:#}")),
+    }
+  }
+  #[cfg(not(feature = "sp1"))]
+  {
+    let _ = (&proof_bytes, &mode, &output, &onchain_output);
+    LeanExcept::error_string(
+      "ix was built without SP1 compression; rebuild with IX_SP1=1",
+    )
+  }
+}

@@ -239,6 +239,32 @@ opaque aggregateStage2 (ixvmSystem aggrSystem : @& AiurSystem)
   (subtreeCode : @& Nat) :
     Except String String
 
+/-- The Stage 2 plan cut for `ix prove --lanes`: the tree is split from the
+root while any frontier node holds more than `subtreeSize` leaves (a lone
+leaf may then stand as a subtree of its own). Rows in post-order:
+`#[0, slot, ids…]` for a subtree (its root slot, as `ix aggregate --subtree`
+numbers slots, then the manifest ids of the shards under it, sorted) and
+`#[1, slot, left, right]` for each join above the frontier, the root
+last. -/
+@[extern "rs_aiur_aggregate_subtree_plan"]
+opaque aggregateSubtreePlan (envHandle : @& EnvHandle) (manifestPath : @& String)
+  (structuralAbove subtreeSize : @& Nat) : Except String (Array (Array Nat))
+
+/-- `ix prove --lanes`: the whole multi-device run in this process, one
+resident prover per GPU built from these two systems (`AiurSystem.on_device`
+in Rust; nothing is copied across the FFI), every claim and join scheduled
+over them as their inputs become ready, the root wrapped, and every claim
+proof verified natively at the end. `maxRamBytes` is one worker's host
+budget (0 detects); `execJobs` the claim executions ahead of each prover.
+Oversized environment claims are bisected and checkpointed; completed
+proofs are reused. A nonempty `outManifest` receives the final partition.
+Returns the verified root address; progress is printed on stderr. -/
+@[extern "rs_aiur_prove_lanes"]
+opaque proveLanes (ixvmSystem aggrSystem : @& AiurSystem)
+  (envHandle : @& EnvHandle) (manifestPath : @& String)
+  (verifyIdx aggrIdx lanes maxRamBytes execJobs structuralAbove : @& Nat)
+  (cacheFriBytes : @& ByteArray) (outManifest : @& String) : Except String String
+
 /-- Reconstruct and audit the manifest-relative aggregate root entirely in
 Rust, using the same ownership, frontier, pruning, and statement-fold code as
 `aggregateStage2`. This is the native orchestration path for `ix verify` and
@@ -563,6 +589,25 @@ abbrev functionChannel : G := .ofNat 0
 
 def buildClaim (funIdx : Bytecode.FunIdx) (input output : Array G) :=
   #[functionChannel, .ofNat funIdx] ++ input ++ output
+
+/-- Verify one Aiur recursion proof inside the SP1 aggregate-root guest and
+run the selected SP1 terminal stage. The public statement is the
+domain-separated recursion-vk digest, FRI parameters, and exact 18-word outer
+claim. `output` receives the SDK proof container; `onchainOutput` receives raw
+Groth16/Plonk bytes. Without the Cargo `sp1` feature this binding returns a
+descriptive error while remaining linkable. -/
+@[extern "rs_sp1_compress_aggregate_root"]
+opaque sp1CompressAggregateRoot : @& ByteArray → @& ByteArray → @& ByteArray →
+  @& FriParameters → @& String → @& String → @& String → Except String Unit
+
+/-- Verify and compress the fully audited 2026-09-03 Mathlib aggregate root
+with its version-pinned Aiur-FRI verifier guest. The historical verifying key,
+outer claim, and FRI parameters are compiled into the host; only the exact
+dated proof payload is accepted. This is an explicit compatibility entrypoint,
+never a fallback from `sp1CompressAggregateRoot`. -/
+@[extern "rs_sp1_compress_mathlib_2026_09_03"]
+opaque sp1CompressMathlib20260903 : @& ByteArray → @& String → @& String →
+  @& String → Except String Unit
 
 end Aiur
 

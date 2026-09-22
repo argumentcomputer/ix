@@ -291,6 +291,48 @@ def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
   let ixePath : Option String := (p.flag? "ixe").map (·.as! String)
   let claimHex : Option String := (p.flag? "claim").map (·.as! String)
   let names := (p.variableArgsAs! String).toList
+  -- N GPUs: one child process per device over its share of the Stage 2
+  -- plan, then the final joins (see `Ix.Cli.Lanes`). Dispatched before
+  -- any prover system is built, so this process opens no device.
+  if let some lanes := (p.flag? "lanes").map (·.as! Nat) then
+    let some ixe := ixePath | IO.eprintln "--lanes requires --ixe"; return 1
+    let some manifest := (p.flag? "ixes").map (·.as! String)
+      | IO.eprintln "--lanes requires --ixes"; return 1
+    if !traceShards then
+      IO.eprintln "--lanes requires --trace-shards"; return 1
+    if p.hasFlag "shards" || p.hasFlag "shard" || p.hasFlag "distributed" || execOnly then
+      IO.eprintln "--lanes cannot be combined with --shard, --shards, --distributed or --exec-only"
+      return 1
+    let envHandle ← match Aiur.EnvHandle.fromIxe ixe with
+      | .error e => IO.eprintln s!"EnvHandle.fromIxe {ixe}: {e}"; return 1
+      | .ok h => pure h
+    -- Both prover systems are built once here; Rust derives a resident
+    -- pair per GPU from them without copying the bytecode again.
+    let ixvmCompiled ← match IxVM.ixVM with
+      | .error e => IO.eprintln s!"toplevel merging failed: {e}"; return 1
+      | .ok t => match t.compileWithGroups IxVM.functionGroups with
+        | .error e => IO.eprintln s!"compilation failed: {e}"; return 1
+        | .ok c => pure c
+    let aggrCompiled ← match Aggr.ixAggr with
+      | .error e => IO.eprintln s!"ixAggr toplevel merge failed: {e}"; return 1
+      | .ok t => match t.compileWithGroups Aggr.functionGroups with
+        | .error e => IO.eprintln s!"ixAggr compilation failed: {e}"; return 1
+        | .ok c => pure c
+    let rp := MultiStark.defaultRecursionParameters
+    let ixvmSystem := Aiur.AiurSystem.build ixvmCompiled.bytecode commitmentParameters friParameters
+    let aggrSystem := Aiur.AiurSystem.build aggrCompiled.bytecode rp.commitment rp.fri
+    let some verifyIdx := ixvmCompiled.getFuncIdx `verify_claim
+      | IO.eprintln "compiled toplevel has no `verify_claim` entry"; return 1
+    let some aggrIdx := aggrCompiled.getFuncIdx `ix_aggr
+      | IO.eprintln "compiled ixAggr has no `ix_aggr` entry"; return 1
+    let result ← IO.lazyPure fun _ =>
+      Aiur.AiurSystem.proveLanes ixvmSystem aggrSystem envHandle manifest
+        verifyIdx aggrIdx lanes maxRamBytes
+        (((p.flag? "exec-jobs").map (·.as! Nat)).getD 0) 0 rp.cacheFriBytes
+        (outIxes.getD "")
+    match result with
+    | .error e => IO.eprintln s!"[lanes] {e}"; return 1
+    | .ok root => IO.println root; return 0
   let toplevel ← match IxVM.ixVM with
     | .error e => IO.eprintln s!"toplevel merging failed: {e}"; return 1
     | .ok t => pure t
@@ -497,7 +539,8 @@ def proveCmd : Cli.Cmd := `[Cli|
     "retention" : String; "With --trace-shards: what the batch keeps between its two rounds — `retain` (every shard's stage 1, nothing recomputed), `regenerate` (headers only; each shard rebuilt for round two), or `auto` (default: retain when the RAM model says the retained batch fits --max-ram). Fixing it lets one plan be measured under both policies."
     "distributed";      "With --ixes and no --shard: prove the WHOLE environment as one `CheckEnv` claim, with one worker record per chunk — each shard of the manifest is one worker's chunk, the constants it owns — executing in parallel (calls into other workers' constants cross records through the lookup argument) and every record's trace shards in one batch. Writes one proof; no manifest is refined."
     "cells" : Nat;      "With --distributed: per-shard committed-cell budget each worker record is planned to (e.g. 1800000000 for a 96 GB device). 0 (default) proves each record as one shard."
-    "exec-jobs" : Nat;  "With --ixes and --trace-shards: how many shards execute at once ahead of the prover (default 0: one per core); peak host memory is the prover's budget plus the records in flight. With --distributed: how many workers execute at once (default 0: one per core). Workers are proven in an order that lets each commit as soon as its callers have executed; a committed record is dropped and re-executed for its second round."
+    "lanes" : Nat;      "With --ixes and --trace-shards: prove on N GPUs using a shared execution pool. --max-ram and --exec-jobs are per-GPU values. Environment claims exceeding the 128 GiB record ceiling (AIUR_RECORD_MAX_BYTES overrides it) are bisected automatically. Rerunning resumes the checkpointed partition and completed proofs. --out-ixes writes the final partition. Prints the verified root address on stdout."
+    "exec-jobs" : Nat;  "With --ixes and --trace-shards: how many shards execute at once ahead of the prover (default 0: one per core, or each worker's share of the cores with --lanes); peak host memory is the prover's budget plus the records in flight. With --distributed: how many workers execute at once (default 0: one per core). Workers are proven in an order that lets each commit as soon as its callers have executed; a committed record is dropped and re-executed for its second round."
     "plan-only";        "With --distributed: report the static caller graph, the commit order and the largest group of mutually calling workers (how many records the first round holds at once) for this manifest, and stop before executing anything. The way to compare layouts without a run."
     "skip-proven";      "With --ixes: before executing a leaf, look its claim up in the shard-proof index (`~/.ix/cache/shard-proofs/<claim-digest>`); a recorded proof that decodes, bundles exactly that claim and verifies natively is reused — its address printed, nothing executed — instead of proving again. How a partially proved partition resumes after a refinement."
     "no-index";         "Neither read nor write the shard-proof index (every persisted proof is normally recorded there under its claim digest)."
