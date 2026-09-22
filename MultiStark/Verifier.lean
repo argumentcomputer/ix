@@ -1,17 +1,17 @@
 module
 public import Ix.Aiur.Meta
-public import Ix.IxVM.Core
-public import Ix.IxVM.ByteStream
-public import Ix.MultiStark.Deserialize
-public import Ix.MultiStark.Keccak
-public import Ix.MultiStark.Pcs
-public import Ix.MultiStark.SystemDeserialize
+public import Ix.Aiur.Library.Core
+public import Ix.Aiur.Library.ByteStream
+public import MultiStark.Deserialize
+public import MultiStark.Keccak
+public import MultiStark.Pcs
+public import MultiStark.SystemDeserialize
 
 /-!
 # Multi-STARK verifier (Aiur)
 
 Reimplementation of `multi-stark/src/verifier.rs` (`System::verify_multiple_claims`)
-over the deserialized `Proof` (`Ix/MultiStark/Deserialize.lean`).
+over the deserialized `Proof` (`MultiStark/Deserialize.lean`).
 
 The Rust verifier runs these steps:
 
@@ -21,7 +21,7 @@ The Rust verifier runs these steps:
    lookup pushes/pulls cancel).
 3. **Fiat-Shamir replay** — reconstruct the challenger: observe
    commitments / trace heights / claims, sample (lookup, fingerprint, α, ζ).
-4. **PCS verification** — FRI opening proofs (see `Ix/MultiStark/Pcs.lean`).
+4. **PCS verification** — FRI opening proofs (see `MultiStark/Pcs.lean`).
 5. **OOD evaluation** — recompute the composition polynomial at ζ and check
    `composition(ζ) · inv_vanishing(ζ) == quotient(ζ)`.
 
@@ -50,7 +50,7 @@ The Rust verifier runs these steps:
   test runner, `Tests/MultiStark.lean`): the verifier accepts the honest proof
   and rejects a tampered claim.
 
-* Step 4: the PCS/FRI opening proof (`pcs_fri_verify`, `Ix/MultiStark/Pcs.lean`)
+* Step 4: the PCS/FRI opening proof (`pcs_fri_verify`, `MultiStark/Pcs.lean`)
   — Merkle `verify_batch`, the challenger continuation, the FRI fold chain, and
   the final-polynomial check.
 

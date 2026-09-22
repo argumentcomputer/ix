@@ -13,9 +13,8 @@ public section
 
 namespace MultiStark
 
--- 20 groups over 139 circuits, cost-aware greedy merging
--- over the ix_aggr join and two standalone-verifier profiles (average 2%,
--- max 4% modelled cost increase per workload).
+-- Retain the measured verifier groups, removing members reachable only
+-- from the retired join entrypoints. Group names remain stable.
 def verifierFunctionGroups : Array (String × Array String) := #[
   ("verifier_group_00", #[
     "memo_u32_less_than",
@@ -30,10 +29,6 @@ def verifierFunctionGroups : Array (String × Array String) := #[
     "rows_at_round",
     "limbs_onto",
     "from_ext_basis"
-  ]),
-  ("verifier_group_01", #[
-    "address_eq_tail",
-    "address_eq"
   ]),
   ("verifier_group_02", #[
     "read_u8",
@@ -71,7 +66,6 @@ def verifierFunctionGroups : Array (String × Array String) := #[
     "read_batch_opening_vec_n",
     "read_commit_phase_step_vec_n",
     "read_preprocessed",
-    "bytes_to_addr",
     "mmcs_compress",
     "pcs_betas",
     "verify_query",
@@ -115,8 +109,7 @@ def verifierFunctionGroups : Array (String × Array String) := #[
     "exp_by_bits",
     "points_onto",
     "round_onto",
-    "log_degrees_onto",
-    "list_concat.Ptr.U8_32"
+    "log_degrees_onto"
   ]),
   ("verifier_group_09", #[
     "read_ext_vec_n",
@@ -165,8 +158,7 @@ def verifierFunctionGroups : Array (String × Array String) := #[
   ]),
   ("verifier_group_14", #[
     "compress_ordered",
-    "ood_fold",
-    "list_is_empty.Ptr.U8_32"
+    "ood_fold"
   ]),
   ("verifier_group_15", #[
     "select_rows_le",
@@ -186,10 +178,6 @@ def verifierFunctionGroups : Array (String × Array String) := #[
     "open_prep",
     "fold_roots",
     "logup_fingerprint"
-  ]),
-  ("verifier_group_18", #[
-    "list_lookup.U8_8",
-    "list_drop.U8_8"
   ]),
   ("verifier_group_19", #[
     "list_lookup.BatchOpening",

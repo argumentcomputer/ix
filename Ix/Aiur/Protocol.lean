@@ -4,9 +4,9 @@ public import Ix.Aiur.Semantics.BytecodeFfi
 /-!
 AiurSystem, Proof, FRI params, and `buildClaim` — the "prove & verify" FFI surface.
 
-The bytecode-execution FFI that used to live here has moved to
-`Ix/Aiur/Bytecode/ExecuteFfi.lean` so that `Bytecode/Eval.lean` can be built
-without pulling in the proving backend.
+Bytecode execution lives in `Ix/Aiur/Semantics/BytecodeFfi.lean`.
+Domain-specific verifier and aggregation entrypoints live in
+`MultiStark/FFI.lean` and `Ix/Aggr/FFI.lean`.
 -/
 
 public section
@@ -95,14 +95,6 @@ structure ProveEnvResult where
   ioMap : Array ((G × Array G) × IOKeyInfo)
   deriving Nonempty
 
-/-- Manifest-bound aggregate root reconstructed and audited by the native
-Stage 2 controller. `claimBytes` is the exact root `Ix.Claim` wire encoding;
-`constantCount` is the number of environment constants proven to occur once. -/
-structure AggregateExpected where
-  claimBytes : ByteArray
-  constantCount : Nat
-  deriving Nonempty
-
 namespace AiurSystem
 
 @[extern "rs_aiur_system_build"]
@@ -151,83 +143,6 @@ def proveIxVM (system : @& AiurSystem)
     Except String (Array G × Proof × IOBuffer) :=
   (proveIxVM' system funIdx args ioBuffer.data.toArray ioBuffer.map.toArray).map
     fun r => (r.claim, r.proof, .ofArrays r.ioData r.ioMap)
-
-/-- Prove the MultiStark recursive verifier over proof-advice/vk/claims
-byte blobs. `proofAdviceBytes` must come from
-`AiurSystem.proofToAdviceBytes`, which verifies and serializes the native
-proof transport. The IO advice buffer is built natively in Rust (see
-    `Bytecode.Toplevel.executeMultiStark`); the execute step inside
-    the prove routes through the codegen'd verifier
-    (`crates/ixvm-codegen/src/aiur_multi_stark.rs`) unless
-    `useBytecode` is set. Only valid when `system` was built from the
-    production `MultiStark.multiStark` bytecode. Returns the claim
-    (`#[functionChannel, funIdx] ++ pubInput ++ output`) and the
-    `Proof`; the final buffer is not returned. -/
-@[extern "rs_aiur_multi_stark_prove"]
-opaque proveMultiStark (system : @& AiurSystem)
-  (funIdx : @& Bytecode.FunIdx) (pubInput : @& Array G)
-  (proofAdviceBytes vkBytes claimBytes : @& ByteArray) (useBytecode : Bool := false) :
-    Except String (Array G × Proof)
-
-/-- Prove one flat or structural aggregate-first binary join over child
-proof/claim advice. Both proof blobs must come from
-`AiurSystem.proofToAdviceBytes`. The compact preimage/tree/path blobs are produced by
-`MultiStark.joinPreimagesBlob`, `MultiStark.joinTreesBlob`, and
-`MultiStark.joinPathsBlob`. Malformed
-framing is returned as an error; as with `prove`/`proveMultiStark`, callers
-must supply an accepting execution witness. The final native IO buffer is
-intentionally not marshalled back to Lean. -/
-@[extern "rs_aiur_multi_stark_join_prove"]
-opaque proveMultiStarkJoin (system : @& AiurSystem)
-  (funIdx : @& Bytecode.FunIdx) (pubInput : @& Array G)
-  (leftProofAdviceBytes rightProofAdviceBytes recursionVkBytes : @& ByteArray)
-  (leftClaimsBytes rightClaimsBytes outputClaimBytes allowedBytes : @& ByteArray)
-  (preimagesBlob treesBlob pathsBlob : @& ByteArray) (useBytecode : Bool := false) :
-    Except String (Array G × Proof)
-
-/-- Prove one `ix_aggr` execution — any shape — over raw child proof/claim
-advice. Both proof blobs must come from `AiurSystem.proofToAdviceBytes`;
-the compact preimage/tree/path blobs are produced by `Aggr.preimagesBlob`,
-`Aggr.treesBlob`, and `Aggr.pathsBlob`; wrap and flat shapes pass empty
-right-child blobs. Malformed framing is returned as an error; as with
-`prove`/`proveMultiStark`, callers must supply an accepting execution
-witness. Only valid when `system` was built from the production
-`Aggr.ixAggr` bytecode (unless `useBytecode` is set). The final native IO
-buffer is intentionally not marshalled back to Lean. -/
-@[extern "rs_aiur_ix_aggr_prove"]
-opaque proveIxAggr (system : @& AiurSystem)
-  (funIdx : @& Bytecode.FunIdx) (pubInput : @& Array G) (shape : @& Nat)
-  (leftProofAdviceBytes rightProofAdviceBytes ixvmVkBytes selfVkBytes : @& ByteArray)
-  (leftClaimsBytes rightClaimsBytes outputClaimBytes allowedBytes : @& ByteArray)
-  (preimagesBlob treesBlob pathsBlob : @& ByteArray) (useBytecode : Bool := false) :
-    Except String (Array G × Proof)
-
-/-- Run the production aggregate-first Stage 2 pipeline natively after Lean
-has compiled the IxVM and `ix_aggr` systems. Rust owns all data-dependent
-orchestration: manifest/environment binding, shard-claim reconstruction,
-statement folding, cache validation, dependency scheduling, recursive advice,
-proving, and persistence. `proofHexes` is one store address per line;
-`cacheFriBytes` is the stable 40-byte recursion-FRI cache identity.
-`reproveSlotCode` is zero for a full run and `slot + 1` for a targeted replay;
-the latter loads and verifies only the target's immediate cached children.
-When `writeOutputs` is false, proofs are hashed but neither the store nor cache
-is changed. Returns the root or replayed proof address. -/
-@[extern "rs_aiur_stage2_aggregate"]
-opaque aggregateStage2 (ixvmSystem aggrSystem : @& AiurSystem)
-  (envHandle : @& EnvHandle) (manifestPath proofHexes : @& String)
-  (verifyIdx aggrIdx jobs ramBudgetBytes structuralAbove reproveSlotCode : @& Nat)
-  (directJoins planOnly : Bool) (cacheFriBytes : @& ByteArray)
-  (useCache writeOutputs : Bool) :
-    Except String String
-
-/-- Reconstruct and audit the manifest-relative aggregate root entirely in
-Rust, using the same ownership, frontier, pruning, and statement-fold code as
-`aggregateStage2`. This is the native orchestration path for `ix verify` and
-does not construct shard statements or schedule Lean tasks. -/
-@[extern "rs_aiur_aggregate_expected"]
-opaque aggregateExpected (envHandle : @& EnvHandle)
-  (manifestPath : @& String) (structuralAbove : @& Nat) :
-    Except String AggregateExpected
 
 @[extern "rs_aiur_system_prove_addr_with_env"]
 private opaque proveAddrWithEnv' : @& AiurSystem →

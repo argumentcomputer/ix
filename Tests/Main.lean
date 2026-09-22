@@ -59,6 +59,7 @@ import Tests.FFI
 import Tests.Keccak
 import Tests.MultiStark
 import Tests.Aggr
+import Tests.AggrProof
 import Tests.AggrSemantics
 import Tests.AggrActivation
 import Tests.Cli
@@ -186,11 +187,11 @@ def primaryRunners : List (String × IO UInt32) := [
   ("aiur-hashes", do
     IO.println "aiur-hashes"
     let .ok blake3Env := AiurTestEnv.build (do
-        let t ← IxVM.core.merge IxVM.byteStream; t.merge IxVM.blake3)
+        let t ← Aiur.Library.core.merge Aiur.Library.byteStream; t.merge Aiur.Library.blake3)
       | IO.eprintln "Blake3 setup failed"; return 1
     let r1 ← LSpec.lspecEachIO blake3TestCases fun tc => pure (blake3Env.runTestCase tc)
     let .ok sha256Env := AiurTestEnv.build (do
-        let t ← IxVM.core.merge IxVM.byteStream; t.merge IxVM.sha256)
+        let t ← Aiur.Library.core.merge Aiur.Library.byteStream; t.merge IxVM.sha256)
       | IO.eprintln "SHA256 setup failed"; return 1
     let r2 ← LSpec.lspecEachIO sha256TestCases fun tc => pure (sha256Env.runTestCase tc)
     return if r1 == 0 && r2 == 0 then 0 else 1),
@@ -204,7 +205,6 @@ def primaryRunners : List (String × IO UInt32) := [
   -- factorial-prove → recursive-verify → reject-tampering pipeline.
   ("multi-stark", Tests.MultiStark.selfTestSuite),
   ("recursive-verifier", Tests.MultiStark.endToEndSuite),
-  ("aggregate-first", Tests.MultiStark.joinSmokeSuite),
   -- Converged heterogeneous aggregation circuit: all ten `ix_aggr` shapes,
   -- driver/cache semantics, and one negative case per broken binding.
   ("ix-aggr", Tests.Aggr.convergedSuite),
@@ -214,6 +214,7 @@ def primaryRunners : List (String × IO UInt32) := [
 
 /-- Ignored test runners - expensive, deferred IO actions run only when explicitly requested -/
 def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
+  ("aggregate-proof", Tests.Aggr.proofRoundTrip),
   ("kernel-dependencies", do
     match AiurTestEnv.build IxVM.ixVM IxVM.functionGroups with
     | .error e => IO.eprintln s!"IxVM setup failed: {e}"; return 1

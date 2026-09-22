@@ -3,7 +3,7 @@ public import Ix.Aiur.Meta
 
 public section
 
-namespace IxVM
+namespace Aiur.Library
 
 def byteStream := ⟦
   type ByteStream = List‹U8›
@@ -317,6 +317,6 @@ def byteStream := ⟦
   }
 ⟧
 
-end IxVM
+end Aiur.Library
 
 end

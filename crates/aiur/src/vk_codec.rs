@@ -17,7 +17,7 @@
 //! packed into the tag byte, a small/big constant split, and u16 zeros and
 //! lookup references. The logUp constraints are never serialized — they are
 //! evaluated directly by both verifiers from the compiled lookups.
-//! The Lean mirror is `Ix/MultiStark/SystemDeserialize.lean`; the two must
+//! The Lean mirror is `MultiStark/SystemDeserialize.lean`; the two must
 //! stay byte-identical.
 //!
 //! # Wire format (v5, dense)

@@ -1,7 +1,7 @@
 module
 public import Ix.Aiur.Meta
-public import Ix.MultiStark.Deserialize
-public import Ix.MultiStark.Keccak
+public import MultiStark.Deserialize
+public import MultiStark.Keccak
 
 /-!
 # PCS (FRI) verification
@@ -22,7 +22,7 @@ The input/commit-phase commitments are a `MerkleTreeMmcs` over Blake3
   of two 32-byte child digests.
 
 `Digest` is `[U64; 4]` = the 32 Blake3 output bytes (8-byte LE groups), so the
-deserialized caps round-trip unchanged. The Blake3 gadget is `Ix/IxVM/Blake3.lean`.
+deserialized caps round-trip unchanged. The Blake3 gadget is `Ix/Aiur/Library/Blake3.lean`.
 -/
 
 public section
@@ -631,7 +631,7 @@ def pcs := ⟦
                 -- consumed in its own FRI arithmetic, would go unauthenticated
                 -- (Plonky3 `verify_batch_pruned`'s `InconsistentGroupOpening`;
                 -- pointer equality is admissible inside `assert_eq!` — see
-                -- `IxVM.Core`). Transitive across pairwise merges, so the whole
+                -- `Aiur.Library.Core`). Transitive across pairwise merges, so the whole
                 -- group is pinned.
                 assert_eq!(ptr_val(select_rows_le(ar, lhs, next_lh)),
                            ptr_val(select_rows_le(br, lhs, next_lh)));

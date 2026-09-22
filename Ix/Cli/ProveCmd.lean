@@ -21,7 +21,7 @@
   persists the claim alongside the proof so `ix verify` can stand
   alone with just the proof hex.
 
-  Driven by the shared `Ix.Cli.CheckCmd.forEachClaim`: the only
+  Driven by the shared `Ix.Check.forEachClaim`: the only
   prove-specific surface is `runOne = proveOne aiurSystem compiled`.
 -/
 module
@@ -29,7 +29,8 @@ public import Cli
 public import Ix.Aiur.Compiler
 public import Ix.Aiur.Protocol
 public import Ix.Claim
-public import Ix.Cli.CheckCmd
+public import Ix.Shard.Check
+public import Ix.Shard.Environment
 public import Ix.Cli.ShardProofIndex
 public import Ix.Common
 public import Ix.IxVM
@@ -58,7 +59,7 @@ def proveOne (aiurSystem : Aiur.AiurSystem)
     (compiled : Aiur.CompiledToplevel)
     (claim : Ix.Claim)
     (envHandle? : Option Aiur.EnvHandle)
-    (target : Ix.Cli.CheckCmd.Target)
+    (target : Ix.Check.Target)
     (label : String) : IO UInt32 := do
   IO.println s!"Proving {label}"
   (← IO.getStdout).flush
@@ -178,10 +179,10 @@ partial def proveBlocksWithinBudget (envHandle : Aiur.EnvHandle)
       if blocks.size <= 1 then
         return .error s!"{label}: projected prover peak {gib} GiB exceeds \
           the budget and the shard is a single block — raise --max-ram"
-      let cut := Ix.Cli.CheckCmd.cutBlocks blocks suggestedParts
+      let cut := Ix.Shard.Check.cutBlocks blocks suggestedParts
       IO.println s!"[{label}] peak {gib} GiB over budget — cutting \
         {blocks.size} blocks into {cut.size} parts"
-      let cutOwned := Ix.Cli.CheckCmd.partitionOwned ixonEnv owned cut
+      let cutOwned := Ix.Shard.partitionOwned ixonEnv owned cut
       let mut proven : Array (Array Address × Nat) := #[]
       for (i, part, po) in (cut.zip cutOwned).mapIdx
           (fun i (part, po) => (i, part, po)) do
@@ -264,8 +265,8 @@ def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
       (failures : Nat) : IO Unit := do
     if let some out := outIxes then
       let (refinements, measured) :=
-        Ix.Cli.CheckCmd.refinementsOfRuns numShards runs
-      let _ ← Ix.Cli.CheckCmd.emitRefinedManifest "prove" envHandle
+        Ix.Shard.Check.refinementsOfRuns numShards runs
+      let _ ← Ix.Shard.Check.emitRefinedManifest "prove" envHandle
         sourcePath out refinements measured failures
   let ixePath : Option String := (p.flag? "ixe").map (·.as! String)
   let claimHex : Option String := (p.flag? "claim").map (·.as! String)
@@ -282,14 +283,14 @@ def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
   | some ixe, some manifest, some k =>
     -- IxVM-native shard prove. Build the envHandle once + share it
     -- with the shard prove FFI.
-    match (← Ix.Cli.CheckCmd.loadEnvAndShards manifest ixe) with
+    match (← Ix.Shard.loadEnvAndShards manifest ixe) with
     | .error e => IO.eprintln e; return 1
     | .ok (ixonEnv, shards) =>
       let envHandle ← match Aiur.EnvHandle.fromIxe ixe with
         | .error e => IO.eprintln s!"EnvHandle.fromIxe {ixe}: {e}"; return 1
         | .ok h => pure h
       match ← runShardProveNative envHandle ixonEnv shards
-          (Ix.Cli.CheckCmd.ownedConstsPer ixonEnv shards) k aiurSystem
+          (Ix.Shard.ownedConstsPer ixonEnv shards) k aiurSystem
           compiled maxRamBytes execOnly indexDir? skipProven with
       | .error e => IO.eprintln e; return 1
       | .ok parts =>
@@ -304,7 +305,7 @@ def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
   | some ixe, some manifest, none =>
     -- IxVM-native all-shards prove. Same envHandle reused across
     -- every shard.
-    match (← Ix.Cli.CheckCmd.loadEnvAndShards manifest ixe) with
+    match (← Ix.Shard.loadEnvAndShards manifest ixe) with
     | .error e => IO.eprintln e; return 1
     | .ok (ixonEnv, shards) =>
       let envHandle ← match Aiur.EnvHandle.fromIxe ixe with
@@ -314,12 +315,12 @@ def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
       -- in this process, so the manifest describing them is written
       -- once at the end rather than rewritten per split. Ownership is
       -- assigned in ONE env pass here; splits inherit it.
-      let ownedPer := Ix.Cli.CheckCmd.ownedConstsPer ixonEnv shards
+      let ownedPer := Ix.Shard.ownedConstsPer ixonEnv shards
       -- `--shards SEL` restricts the run to some leaves (one env load for
       -- all of them); every other leaf is carried over unchanged.
       let selected : Array Nat ← match (p.flag? "shards").map (·.as! String) with
         | none => pure (Array.range shards.size)
-        | some s => match Ix.Cli.CheckCmd.parseShardSelection s with
+        | some s => match Ix.Shard.Check.parseShardSelection s with
           | .error e => IO.eprintln s!"error: {e}"; return 1
           | .ok ids =>
             if let some k := ids.find? (· ≥ shards.size) then
@@ -354,7 +355,7 @@ def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
       emitRefined envHandle manifest shards.size runs failed.size
       return if failed.isEmpty then 0 else 1
   | _, _, _ =>
-    Ix.Cli.CheckCmd.forEachClaim ixePath claimHex names keepGoing "prove" false runOne
+    Ix.Check.forEachClaim ixePath claimHex names keepGoing "prove" false runOne
 
 end Ix.Cli.ProveCmd
 
