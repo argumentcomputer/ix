@@ -95,6 +95,7 @@ inductive RustExpr where
   | deref (e : RustExpr)
   /-- `&e`. -/
   | ref (e : RustExpr)
+  | tryExpr (e : RustExpr)
   /-- `vec![...]`, `[...]`, etc. — `macro!(args)`. -/
   | macroCall (name : String) (args : Array RustExpr)
   /-- A Rust array literal: `[a, b, c]`. -/
@@ -111,6 +112,7 @@ inductive RustStmt where
   | letStmt (isMut : Bool) (name : String) (ty : Option String) (val : RustExpr)
   /-- `*target += val;` (used for multiplicity bumps). -/
   | addAssign (target : RustExpr) (val : RustExpr)
+  | assign (target : RustExpr) (val : RustExpr)
   /-- `expr;` -/
   | exprStmt (e : RustExpr)
   /-- `return expr;` -/
@@ -180,6 +182,7 @@ partial def RustExpr.toStr : RustExpr → String
   | .binop op a b => s!"({a.toStr} {op} {b.toStr})"
   | .deref e => s!"*{e.toStr}"
   | .ref e => s!"&{e.toStr}"
+  | .tryExpr e => s!"{e.toStr}?"
   | .macroCall n args =>
     let argList := ", ".intercalate (args.toList.map RustExpr.toStr)
     s!"{n}!({argList})"
@@ -202,6 +205,8 @@ partial def RustStmt.toStr (d : Nat) : RustStmt → String
     s!"{indent d}let {mutStr}{name}{tyStr} = {val.toStr};\n"
   | .addAssign target val =>
     s!"{indent d}{target.toStr} += {val.toStr};\n"
+  | .assign target val =>
+    s!"{indent d}{target.toStr} = {val.toStr};\n"
   | .exprStmt e => s!"{indent d}{e.toStr};\n"
   | .returnStmt e => s!"{indent d}return {e.toStr};\n"
   | .ifLetSome binding scrut thenStmts elseStmts => Id.run do
@@ -327,37 +332,6 @@ def calleeUnconstrained (opUn : Bool) : RustExpr :=
     G values.
 -/
 
-/-- How many ValIdx slots an Op consumes (i.e. how much it grows
-    Aiur's value-stack). MUST match `execute.rs`'s `map.push` /
-    `map.extend` totals exactly per arm — else local-variable names
-    drift from the bytecode's expected ValIdx layout and subsequent
-    ops index the wrong values. -/
-def Op.outputCount : Op → Nat
-  | .const _ => 1
-  | .add _ _ | .sub _ _ | .mul _ _ | .eqZero _ => 1
-  | .call _ _ outSize _ => outSize
-  | .store _ => 1
-  | .load size _ => size
-  | .assertEq _ _ _ => 0
-  | .ioGetInfo _ _ => 2
-  | .ioSetInfo _ _ _ _ => 0
-  | .ioRead _ _ len => len
-  | .ioWrite _ _ => 0
-  | .u8BitDecomposition _ => 8
-  | .u8ShiftLeft _ | .u8ShiftRight _ => 1
-  | .u8Xor _ _ | .u8And _ _ | .u8Or _ _ | .u8LessThan _ _ => 1
-  | .u8Mul _ _ => 2
-  | .u8Add _ _ | .u8Sub _ _ => 2
-  | .u8XorSplit7 _ _ | .u8XorSplit4 _ _ => 2
-  | .u32LessThan _ _ => 1
-  | .u8RangeCheck _ _ => 0
-  | .unconstrainedBigUintDivMod _ _ => 2
-  | .unconstrainedGToBytes _ => 8
-  | .unconstrainedGInverse _ => 1
-  | .unconstrainedU32Add _ _ | .unconstrainedU32Add3 _ _ _ => 5
-  | .u32ToField _ => 1
-  | .debug _ _ => 0
-
 private def emitConst (out : Nat) (c : Aiur.G) : Array RustStmt :=
   #[declVal out (gFromU64 c.n)]
 
@@ -403,13 +377,21 @@ private def emitCall (out : Nat) (callee : FunIdx) (args : Array ValIdx)
     if opUn then "true"
     else
       s!"__cu || record.function_queries[{callee}].mult_at(__i) != G::ZERO"
+  -- A constrained call another record answers is deferred: the caller's
+  -- row pushes it and nothing runs (mirrors execute.rs `Op::Call`; only a
+  -- callee without outputs is ever deferrable, so the empty array is its
+  -- whole result).
+  let deferGuard : String :=
+    if opUn then "false"
+    else s!"!unconstrained && record.defer_call({callee}, &__args[..])?"
   let blockExpr : String :=
     s!"\{ let __args: [G; IN_{callee}] = {argsStr};" ++
     s!" let __cu = {cuExpr};" ++
+    s!" if {deferGuard} \{ let __ret: [G; OUT_{callee}] = [G::ZERO; OUT_{callee}]; __ret } else \{" ++
     s!" let __hit = record.function_queries[{callee}].get_index_of(&__args[..]);" ++
     s!" match __hit \{ Some(__i) if {hitGuard} => \{" ++
     bumpStmt ++ retExpr ++ " }," ++
-    s!" _ => aiur_fn_{callee}(__args, record, io_buffer, __cu)? } }"
+    s!" _ => aiur_fn_{callee}(__args, record, io_buffer, __cu)? } } }"
   let mut stmts : Array RustStmt := #[
     .letStmt false "__r_arr" (some s!"[G; OUT_{callee}]") (.lit blockExpr)
   ]
@@ -429,21 +411,24 @@ private def emitStore (out : Nat) (values : Array ValIdx) : Array RustStmt :=
     s!" if !unconstrained \{ __mq.bump_multiplicity(__i); }" ++
     s!" __mq.output_at(__i)[0]" ++
     s!" } else \{" ++
-    s!" let __ptr = G::from_usize(__mq.len());" ++
-    s!" __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained));" ++
+    s!" aiur::execute::check_store(&record.budget, __mq, {size})?;" ++
+    s!" let __ptr = G::from_usize(record.pointer_base + __mq.len());" ++
+    s!" __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained))?;" ++
     s!" __ptr } }"
   #[.letStmt false s!"__v_{out}" (some "G") (.lit blockExpr)]
 
-/-- `Op::Load`: mirror execute.rs lines 328-345. Look up by pointer
-    index, bump multiplicity if constrained, splat `size` outputs. -/
+/-- `Op::Load`: mirror execute.rs `Op::Load`. Look up by pointer index
+    (the pointer less the record's base), bump multiplicity if constrained,
+    splat `size` outputs. -/
 private def emitLoad (out : Nat) (size : Nat) (ptr : ValIdx) : Array RustStmt := Id.run do
   let blockExpr : String :=
-    s!"\{ let __mq = record.memory_queries.get_mut(&{size}).ok_or(ExecError::InvalidMemorySize({size}))?;" ++
+    s!"\{ let __base = record.pointer_base;" ++
+    s!" let __mq = record.memory_queries.get_mut(&{size}).ok_or(ExecError::InvalidMemorySize({size}))?;" ++
     s!" let __ptr_u64 = __v_{ptr}.as_canonical_u64();" ++
-    s!" let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?;" ++
-    s!" if __ptr_usize >= __mq.len() \{ return Err(ExecError::UnboundPointer \{ ptr: __ptr_u64, size: {size} }); }" ++
-    s!" if !unconstrained \{ __mq.bump_multiplicity(__ptr_usize); }" ++
-    s!" let (__args, _) = __mq.get_index(__ptr_usize).expect(\"bounds checked above\");" ++
+    s!" let __idx = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?" ++
+    s!".checked_sub(__base).filter(|&__i| __i < __mq.len()).ok_or(ExecError::UnboundPointer \{ ptr: __ptr_u64, size: {size} })?;" ++
+    s!" if !unconstrained \{ __mq.bump_multiplicity(__idx); }" ++
+    s!" let (__args, _) = __mq.get_index(__idx).expect(\"bounds checked above\");" ++
     s!" let __arr: [G; {size}] = __args[..{size}].try_into().unwrap(); __arr }"
   let mut stmts : Array RustStmt := #[
     .letStmt false "__loaded" (some s!"[G; {size}]") (.lit blockExpr)
@@ -821,7 +806,7 @@ partial def emitCtrl (funIdx : FunIdx) (mcLabel? : Option String)
       .letStmt false "__ret" (some s!"[G; OUT_{funIdx}]")
         (.arrayLit (outs.map valVar))
     let insertCall : RustStmt := .exprStmt (.lit <|
-      s!"record.function_queries[{funIdx}].finish(&inp[..], &__ret[..], !unconstrained)")
+      s!"record.function_queries[{funIdx}].finish(&inp[..], &__ret[..], !unconstrained)?")
     -- Wrap in Ok(...) since fn now returns Result<[G; OUT_N], ExecError>.
     return #[outArr, insertCall,
       .returnStmt (.call (.var "Ok") #[.var "__ret"])]
@@ -936,6 +921,9 @@ def emitFunction (funIdx : FunIdx) (f : Function) : Array RustItem := Id.run do
     s!"  unconstrained: bool,\n" ++
     s!") -> Result<[G; OUT_{funIdx}], ExecError> {lbrace}\n" ++
     s!"  stacker::maybe_grow(64 * 1024, 4 * 1024 * 1024, || {lbrace}\n" ++
+    -- Entry checks propagate cancellation even through memoized calls
+    -- that allocate no new query rows.
+    s!"    aiur::execute::check_record_cap(&record.budget)?;\n" ++
     bodyText ++
     s!"  {rbrace})\n" ++
     s!"{rbrace}\n\n"

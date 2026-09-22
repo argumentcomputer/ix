@@ -1,5 +1,6 @@
+use ix_common::address::Address;
 use multi_stark::{
-  p3_field::PrimeField64,
+  p3_field::{PrimeCharacteristicRing, PrimeField64},
   types::{CommitmentParameters, FriParameters},
 };
 use rustc_hash::{FxBuildHasher, FxHashMap};
@@ -16,13 +17,16 @@ use crate::{
     LeanAiurCircuitShape, LeanAiurCommitmentParameters, LeanAiurExecuteResult,
     LeanAiurFriParameters, LeanAiurIOKeyInfo, LeanAiurProveEnvResult,
     LeanAiurProveResult, LeanAiurQueryCount, LeanAiurShardProveResult,
-    LeanAiurShardResult, LeanAiurToplevel,
+    LeanAiurShardProvenAhead, LeanAiurShardResult, LeanAiurToplevel,
   },
 };
 use aiur::{
   G,
   execute::{IOBuffer, IOKeyInfo, QueryRecord},
-  synthesis::{AiurProof, AiurSystem, CircuitShape, GatedProve},
+  synthesis::{
+    AiurProof, AiurSystem, CircuitShape, GatedProve,
+    ShardRetention as Retention,
+  },
 };
 
 // =============================================================================
@@ -180,6 +184,45 @@ extern "C" fn rs_aiur_proof_to_advice_bytes(
     Ok(bytes) => LeanExcept::ok(LeanByteArray::from_bytes(&bytes)),
     Err(err) => LeanExcept::error_string(&err),
   }
+}
+
+/// `Aiur.Proof.rangeAdvice : @& Proof → @& Nat → @& Nat →
+/// Except String (ByteArray × ByteArray × ByteArray)`
+///
+/// The advice of a range-sum recursion node over shards `[lo, hi)`: the
+/// batch preamble, the range's proofs, and the range's residual sum.
+#[unsafe(no_mangle)]
+extern "C" fn rs_aiur_proof_range_advice(
+  proof_obj: LeanExternal<AiurProof, LeanBorrowed<'_>>,
+  lo: LeanNat<LeanBorrowed<'_>>,
+  hi: LeanNat<LeanBorrowed<'_>>,
+) -> LeanExcept<LeanOwned> {
+  let proof = proof_obj.get();
+  let lo = lean_unbox_nat_as_usize(lo.inner());
+  let hi = lean_unbox_nat_as_usize(hi.inner());
+  if lo > hi || hi > proof.proofs.len() {
+    return LeanExcept::error_string(&format!(
+      "shard range {lo}..{hi} is not within the batch's {} shards",
+      proof.proofs.len()
+    ));
+  }
+  let preamble = match aiur::range::preamble_bytes(proof) {
+    Ok(bytes) => bytes,
+    Err(err) => return LeanExcept::error_string(&err),
+  };
+  let proofs = match aiur::range::proofs_slice_bytes(proof, lo, hi) {
+    Ok(bytes) => bytes,
+    Err(err) => return LeanExcept::error_string(&err),
+  };
+  let residual =
+    aiur::range::ext_bytes(aiur::range::range_residual(proof, lo, hi));
+  LeanExcept::ok(LeanProd::new(
+    LeanByteArray::from_bytes(&preamble),
+    LeanProd::new(
+      LeanByteArray::from_bytes(&proofs),
+      LeanByteArray::from_bytes(&residual),
+    ),
+  ))
 }
 
 /// `Bytecode.Toplevel.execute`: runs execution only (no proof) and returns
@@ -414,7 +457,7 @@ fn build_prove_env_result(
 /// Helper: decode a 32-byte address from a `LeanByteArray`.
 fn decode_addr(
   addr_bytes: &LeanByteArray<LeanBorrowed<'_>>,
-) -> Result<ix_common::address::Address, String> {
+) -> Result<Address, String> {
   let slice = addr_bytes.as_bytes();
   if slice.len() != 32 {
     return Err(format!(
@@ -422,16 +465,13 @@ fn decode_addr(
       slice.len()
     ));
   }
-  Ok(
-    ix_common::address::Address::from_slice(slice)
-      .expect("32-byte slice already length-checked"),
-  )
+  Ok(Address::from_slice(slice).expect("32-byte slice already length-checked"))
 }
 
 /// Helper: decode a flat 32-byte-block owned blob into `Vec<Address>`.
 fn decode_owned_blob(
   owned_blob: &LeanByteArray<LeanBorrowed<'_>>,
-) -> Result<Vec<ix_common::address::Address>, String> {
+) -> Result<Vec<Address>, String> {
   let bytes = owned_blob.as_bytes();
   if !bytes.len().is_multiple_of(32) {
     return Err(format!(
@@ -444,7 +484,7 @@ fn decode_owned_blob(
       .as_chunks::<32>()
       .0
       .iter()
-      .map(|c| ix_common::address::Address::from_slice(c).unwrap())
+      .map(|c| Address::from_slice(c).unwrap())
       .collect(),
   )
 }
@@ -621,7 +661,7 @@ extern "C" fn rs_aiur_toplevel_check_addrs_with_env(
 /// batch, the manifest emit).
 pub(crate) fn decode_addr_lists(
   bytes: &[u8],
-) -> Result<Vec<Vec<ix_common::address::Address>>, String> {
+) -> Result<Vec<Vec<Address>>, String> {
   let mut lists = Vec::new();
   let mut off = 0usize;
   while off < bytes.len() {
@@ -634,9 +674,7 @@ pub(crate) fn decode_addr_lists(
     if off + n * 32 > bytes.len() {
       return Err("addr lists: truncated addresses".into());
     }
-    lists.push(
-      ix_common::address::Address::unpack(&bytes[off..off + n * 32]).collect(),
-    );
+    lists.push(Address::unpack(&bytes[off..off + n * 32]).collect());
     off += n * 32;
   }
   Ok(lists)
@@ -726,11 +764,48 @@ extern "C" fn rs_aiur_detected_ram_budget()
 /// [`ix_kernel::shard::RAM_USABLE_FRAC`] of `MemAvailable`, reserving
 /// the rest for the OS. `None` (no gate) when meminfo is unreadable —
 /// disabling the check beats guessing at it.
+/// The trace-shard cell budget the prover plans to, from
+/// `AIUR_TRACE_SHARD_MAX_CELLS`; 0 when unset.
+pub(crate) fn trace_shard_max_cells() -> usize {
+  std::env::var("AIUR_TRACE_SHARD_MAX_CELLS")
+    .ok()
+    .and_then(|v| v.parse::<usize>().ok())
+    .unwrap_or(0)
+}
+
+/// What records may occupy within one prover's host budget: the budget
+/// less the prover's own working set (two shard witnesses at the cell
+/// budget, one being proven and one prepared ahead, plus the upload
+/// staging).
+pub(crate) fn record_budget(max_ram_bytes: usize, cells: usize) -> usize {
+  max_ram_bytes.saturating_sub(2 * 8 * cells + (256 << 20))
+}
+
+/// One execution's equal share of [`record_budget`] when `in_flight`
+/// executions and prepared items hold records at once: the hard cap each
+/// execution runs under.
+pub(crate) fn record_share(
+  max_ram_bytes: usize,
+  cells: usize,
+  in_flight: usize,
+) -> usize {
+  record_budget(max_ram_bytes, cells) / in_flight.max(1)
+}
+
 #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
 #[allow(clippy::cast_sign_loss)] // MemAvailable and the fraction are positive
-fn detected_ram_budget() -> Option<usize> {
+pub(crate) fn detected_ram_budget() -> Option<usize> {
   available_ram_bytes()
     .map(|b| (b as f64 * ix_kernel::shard::RAM_USABLE_FRAC) as usize)
+}
+
+/// This process's resident set from `/proc/self/status`, in bytes; `None`
+/// where it is unreadable.
+fn process_rss_bytes() -> Option<usize> {
+  let s = std::fs::read_to_string("/proc/self/status").ok()?;
+  let rest = s.lines().find_map(|l| l.strip_prefix("VmRSS:"))?;
+  let kib: usize = rest.trim().trim_end_matches("kB").trim().parse().ok()?;
+  Some(kib * 1024)
 }
 
 /// `MemAvailable` from `/proc/meminfo`, in bytes (Linux; includes
@@ -1011,6 +1086,14 @@ extern "C" fn rs_aiur_system_prove_addr_with_env(
 /// either way, and `suggestedParts` is 1 exactly when the peak fits —
 /// the split loop runs on executions alone, no STARK ever starts.
 ///
+/// `trace_shards` lets an over-budget record be proven as a batch of
+/// trace shards instead of being split into parts, whenever some shard
+/// count fits the budget; `peakBytes` is then the heaviest shard's
+/// projection and `suggestedParts` stays 1. `retention` overrides what the
+/// batch keeps across its barrier: 1 retains every shard's stage 1, 2
+/// regenerates each shard for round two, anything else lets the RAM model
+/// choose (retain when the retained batch fits the budget).
+///
 /// Returns `(claimBytes, proof?, peakBytes, suggestedParts)`. The final IO buffer is
 /// deliberately NOT returned: it is the shard's whole ingested byte
 /// scope, both Lean callers discarded it, and marshalling it back is
@@ -1026,10 +1109,17 @@ extern "C" fn rs_aiur_system_shard_prove_with_env(
   owned_blob: LeanByteArray<LeanBorrowed<'_>>,
   max_ram_bytes: LeanNat<LeanBorrowed<'_>>,
   exec_only: bool,
+  trace_shards: bool,
+  retention: LeanNat<LeanBorrowed<'_>>,
 ) -> LeanExcept<LeanOwned> {
   ffi_catch_unwind_except("AiurSystem.shardProveWithEnv", || {
     let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
     let max_ram_bytes = lean_unbox_nat_as_usize(max_ram_bytes.inner());
+    let retention = match lean_unbox_nat_as_usize(retention.inner()) {
+      1 => Some(Retention::Retain),
+      2 => Some(Retention::Regenerate),
+      _ => None,
+    };
     let owned = match decode_owned_blob(&owned_blob) {
       Ok(v) => v,
       Err(e) => return LeanExcept::error_string(&e),
@@ -1064,6 +1154,8 @@ extern "C" fn rs_aiur_system_shard_prove_with_env(
       },
       budget,
       exec_only,
+      trace_shards,
+      retention,
     );
     let (proof, peak, parts) = match proved {
       GatedProve::Proved { proof, peak, .. } => (
@@ -1073,18 +1165,1092 @@ extern "C" fn rs_aiur_system_shard_prove_with_env(
       ),
       GatedProve::Split { peak, parts } => (LeanOption::none(), peak, parts),
       GatedProve::Measured { peak } => (LeanOption::none(), peak, 1),
+      GatedProve::Failed(error) => {
+        return LeanExcept::error_string(&format!("execution failed: {error}"));
+      },
     };
     drop(io_buffer);
 
     let mut claim_bytes: Vec<u8> = Vec::new();
     claim.put(&mut claim_bytes);
     let result = LeanAiurShardProveResult::alloc(0);
+    result.set_obj(4, LeanByteArray::from_bytes(&[]));
     result.set_obj(0, LeanByteArray::from_bytes(&claim_bytes));
     result.set_obj(1, proof);
     result.set_obj(2, LeanOwned::box_usize(peak));
     result.set_obj(3, LeanOwned::box_usize(parts));
     LeanExcept::ok(result)
   })
+}
+
+/// `AiurSystem.shardProveAheadWithEnv`: several shard claims proven in
+/// manifest order, each from one execution, with the executions running
+/// ahead of the prover on threads — `exec_jobs` at once (`0`: one per
+/// core). `owners_blob` is the layout of [`decode_owners_blob`], one
+/// owned set per shard; `labels_blob` holds each shard's manifest index
+/// as a `u32`, for the lines it prints. Every proof is planned as trace
+/// shards within `max_ram_bytes` (`0`: detect). A finished proof and its
+/// claim are written to the store under `store_dir` and, unless
+/// `index_dir` is empty, recorded in the shard-proof index under the
+/// claim digest before the next shard is proven, so a killed run keeps
+/// every proof it finished. Returns, per shard: the claim's wire bytes,
+/// the proof wrapper's store address (hex) and the heaviest shard's
+/// projected peak.
+#[unsafe(no_mangle)]
+extern "C" fn rs_aiur_system_shard_prove_ahead_with_env(
+  aiur_system_obj: LeanExternal<AiurSystem, LeanBorrowed<'_>>,
+  fun_idx: LeanNat<LeanBorrowed<'_>>,
+  env_handle: LeanExternal<
+    ixvm_codegen::env_handle::EnvHandle,
+    LeanBorrowed<'_>,
+  >,
+  owners_blob: LeanByteArray<LeanBorrowed<'_>>,
+  labels_blob: LeanByteArray<LeanBorrowed<'_>>,
+  max_ram_bytes: LeanNat<LeanBorrowed<'_>>,
+  retention: LeanNat<LeanBorrowed<'_>>,
+  exec_jobs: LeanNat<LeanBorrowed<'_>>,
+  store_dir: LeanString<LeanBorrowed<'_>>,
+  index_dir: LeanString<LeanBorrowed<'_>>,
+) -> LeanExcept<LeanOwned> {
+  ffi_catch_unwind_except("AiurSystem.shardProveAheadWithEnv", || {
+    let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
+    let max_ram_bytes = lean_unbox_nat_as_usize(max_ram_bytes.inner());
+    let exec_jobs = lean_unbox_nat_as_usize(exec_jobs.inner());
+    let retention = match lean_unbox_nat_as_usize(retention.inner()) {
+      1 => Some(Retention::Retain),
+      2 => Some(Retention::Regenerate),
+      _ => None,
+    };
+    let owners = match decode_owners_blob(&owners_blob) {
+      Ok(owners) => owners,
+      Err(e) => return LeanExcept::error_string(&e),
+    };
+    let labels: Vec<u32> = labels_blob
+      .as_bytes()
+      .as_chunks::<4>()
+      .0
+      .iter()
+      .map(|c| u32::from_le_bytes(*c))
+      .collect();
+    if labels.len() != owners.len() {
+      return LeanExcept::error_string("one label per shard expected");
+    }
+    let index_dir: String = index_dir.as_str().to_owned();
+    let store_dir: String = store_dir.as_str().to_owned();
+    let index_path = std::path::PathBuf::from(&index_dir);
+    let store_path = std::path::PathBuf::from(&store_dir);
+    let proven = prove_shards_ahead(
+      aiur_system_obj.get(),
+      &env_handle.get().env,
+      fun_idx,
+      &owners,
+      &labels,
+      max_ram_bytes,
+      retention,
+      exec_jobs,
+      &store_path,
+      (!index_dir.is_empty()).then_some(index_path.as_path()),
+    );
+    let proven = match proven {
+      Ok(proven) => proven,
+      Err(e) => return LeanExcept::error_string(&e),
+    };
+    let arr = LeanArray::alloc(proven.len());
+    for (i, (claim_bytes, address, peak)) in proven.iter().enumerate() {
+      let row = LeanAiurShardProvenAhead::alloc(0);
+      row.set_obj(0, LeanByteArray::from_bytes(claim_bytes));
+      row.set_obj(1, LeanString::new(&address.hex()));
+      row.set_obj(2, LeanOwned::box_usize(*peak));
+      arr.set(i, row);
+    }
+    LeanExcept::ok(arr)
+  })
+}
+
+/// One shard's execution, planned to trace shards within the budget and
+/// ready to prove.
+type Prepared = (ixon::Claim, Vec<u8>, aiur::synthesis::PreparedProve);
+
+/// Why a shard did not prepare: its record outgrew the byte cap it ran
+/// under (answered by a rerun with a larger cap), or anything else.
+enum PrepareFailure {
+  OverRecordBudget { bytes: usize, cap: usize },
+  Other(String),
+}
+
+/// Proves `owners`' shard claims in order with executions running ahead:
+/// shard `k + 1..` execute on threads (`exec_jobs` at once) while shard
+/// `k` proves, and each proof is persisted as soon as it exists. Peak host
+/// memory is the prover's budget plus the records in flight, so
+/// `exec_jobs` is the memory knob; the cgroup cap the run goes under is
+/// the backstop.
+#[allow(clippy::too_many_arguments)]
+fn prove_shards_ahead(
+  system: &AiurSystem,
+  env: &ixon::env::Env,
+  fun_idx: usize,
+  owners: &[Vec<Address>],
+  labels: &[u32],
+  max_ram_bytes: usize,
+  retention: Option<Retention>,
+  exec_jobs: usize,
+  store_dir: &std::path::Path,
+  index_dir: Option<&std::path::Path>,
+) -> Result<Vec<(Vec<u8>, Address, usize)>, String> {
+  let count = owners.len();
+  let cores = std::thread::available_parallelism().map_or(1, usize::from);
+  let jobs =
+    if exec_jobs == 0 { cores } else { exec_jobs }.clamp(1, count.max(1));
+  let budget =
+    if max_ram_bytes > 0 { Some(max_ram_bytes) } else { detected_ram_budget() };
+  eprintln!(
+    "[prove-ahead] {count} shards, {jobs} executing at a time ahead of the prover"
+  );
+  // The record budget is the host budget less the prover's own working
+  // set (two shard witnesses at the cell budget, one proving and one
+  // prepared ahead, plus upload staging). Every execution ahead gets an
+  // equal share of it as a hard cap on its record, enforced as the record
+  // grows; one that reaches its share stops cleanly and reruns alone with
+  // the whole record budget once nothing else executes. Nothing about a
+  // record's size is predicted or remembered.
+  let cells = trace_shard_max_cells();
+  let record_budget = budget.map(|b| record_budget(b, cells));
+  let share = budget.map(|b| record_share(b, cells, jobs + 1));
+  if let (Some(record_budget), Some(share)) = (record_budget, share) {
+    eprintln!(
+      "[prove-ahead] record budget {} GiB: {} GiB per execution with {jobs} ahead; an execution over its share reruns alone",
+      super::aggregate::format_gib(record_budget),
+      super::aggregate::format_gib(share)
+    );
+  }
+  let run_started = std::time::Instant::now();
+  let prepare = |k: usize| -> Result<Prepared, PrepareFailure> {
+    let label = labels[k];
+    let started = std::time::Instant::now();
+    let (claim, input, mut io) =
+      ixvm_codegen::aiur_ixvm_witness::build_shard_check_env_witness(
+        env, &owners[k],
+      )
+      .map_err(|e| {
+        PrepareFailure::Other(format!("shard {label}: witness build: {e}"))
+      })?;
+    let prepared = system.prepare_ixvm_within_budget(
+      fun_idx,
+      &input,
+      &mut io,
+      |toplevel, fun_idx, input, io_buffer| {
+        ixvm_codegen::aiur_ixvm_runner::execute_ixvm(
+          toplevel, fun_idx, input, io_buffer,
+        )
+      },
+      budget,
+      true,
+      retention,
+    );
+    let prepared = match prepared {
+      Ok(prepared) => prepared,
+      Err(GatedProve::Split { peak, .. }) => {
+        return Err(PrepareFailure::Other(format!(
+          "shard {label}: no trace-shard count fits the budget (whole-execution peak {} B) — raise --max-ram",
+          peak
+        )));
+      },
+      Err(GatedProve::Failed(
+        aiur::execute::ExecError::RecordBudgetExceeded { bytes, cap },
+      )) => {
+        return Err(PrepareFailure::OverRecordBudget { bytes, cap });
+      },
+      Err(GatedProve::Failed(error)) => {
+        return Err(PrepareFailure::Other(format!(
+          "shard {label}: execution failed: {error}"
+        )));
+      },
+      Err(_) => {
+        return Err(PrepareFailure::Other(format!(
+          "shard {label}: execution did not prepare a proof"
+        )));
+      },
+    };
+    let mut claim_bytes = Vec::new();
+    claim.put(&mut claim_bytes);
+    eprintln!(
+      "[prove-ahead] shard {label}: executed in {:.1}s (at +{:.1}s), {} trace shards, {} B record",
+      started.elapsed().as_secs_f64(),
+      run_started.elapsed().as_secs_f64(),
+      prepared.plan.num_shards(),
+      aiur::execute::record_retained_bytes(&prepared.record)
+    );
+    Ok((claim, claim_bytes, prepared))
+  };
+  // Executors report on a channel and the prover takes whichever record
+  // is ready, so a slow shard never holds the GPU while others wait.
+  let (done_tx, done_rx) = std::sync::mpsc::channel::<(
+    usize,
+    bool,
+    Result<Prepared, PrepareFailure>,
+  )>();
+  let mut proven: Vec<Option<(Vec<u8>, Address, usize)>> =
+    (0..count).map(|_| None).collect();
+  std::thread::scope(|scope| -> Result<(), String> {
+    let mut next = 0usize;
+    let mut in_flight = 0usize;
+    let mut done = 0usize;
+    // Shards that outgrew their share, to rerun alone once the lane is
+    // empty; while one is pending, nothing new starts ahead, so the lane
+    // drains for it.
+    let mut alone: std::collections::VecDeque<usize> =
+      std::collections::VecDeque::new();
+    let mut alone_running = false;
+    let prepare = &prepare;
+    let done_tx = &done_tx;
+    let spawn = |k: usize, cap: Option<usize>, is_alone: bool| {
+      let done_tx = done_tx.clone();
+      scope.spawn(move || {
+        aiur::execute::set_record_byte_cap(cap);
+        let result = prepare(k);
+        let _ = done_tx.send((k, is_alone, result));
+      });
+    };
+    // Admission: an alone rerun waits for an empty lane and runs by
+    // itself; otherwise up to `jobs` executions run ahead at their share.
+    // Run before each proof as well as at the start, so a slot freed by a
+    // record the prover takes is refilled while that record proves.
+    macro_rules! admit {
+      () => {
+        if !alone_running {
+          if in_flight == 0 && !alone.is_empty() {
+            let k = alone.pop_front().expect("nonempty");
+            eprintln!(
+              "[prove-ahead] shard {}: executing alone with the whole record budget",
+              labels[k]
+            );
+            spawn(k, record_budget, true);
+            in_flight += 1;
+            alone_running = true;
+          } else if alone.is_empty() {
+            while next < count && in_flight < jobs {
+              spawn(next, share, false);
+              next += 1;
+              in_flight += 1;
+            }
+          }
+        }
+      };
+    }
+    admit!();
+    while done < count {
+      let (k, was_alone, prepared) =
+        done_rx.recv().map_err(|e| format!("execution channel closed: {e}"))?;
+      in_flight -= 1;
+      if was_alone {
+        alone_running = false;
+      }
+      let (claim, claim_bytes, prepared) = match prepared {
+        Ok(prepared) => prepared,
+        Err(PrepareFailure::OverRecordBudget { bytes, cap }) if !was_alone => {
+          eprintln!(
+            "[prove-ahead] shard {}: record reached {bytes} B, over its {cap} B share; queued to rerun alone",
+            labels[k]
+          );
+          alone.push_back(k);
+          admit!();
+          continue;
+        },
+        Err(PrepareFailure::OverRecordBudget { bytes, cap }) => {
+          return Err(format!(
+            "shard {}: record reached {bytes} B, over the whole record budget of {cap} B even alone; cut this shard finer or raise --max-ram",
+            labels[k]
+          ));
+        },
+        Err(PrepareFailure::Other(error)) => return Err(error),
+      };
+      // The next execution starts before this proof does.
+      admit!();
+      let label = labels[k];
+      let started = std::time::Instant::now();
+      let (_, proof, peak) = system.prove_prepared(prepared);
+      let proof_bytes = proof
+        .to_bytes()
+        .map_err(|e| format!("shard {label}: proof serialization: {e}"))?;
+      let wrapper = ixon::Proof::new(claim, proof_bytes);
+      let mut wrapper_bytes = Vec::new();
+      wrapper.put(&mut wrapper_bytes);
+      super::aggregate::write_store(store_dir, &claim_bytes)?;
+      let address = super::aggregate::write_store(store_dir, &wrapper_bytes)?;
+      let digest = Address::hash(&claim_bytes);
+      if let Some(dir) = index_dir {
+        let temporary =
+          dir.join(format!("{}.tmp.{}", digest.hex(), std::process::id()));
+        std::fs::write(&temporary, format!("{}\n", address.hex()))
+          .and_then(|()| std::fs::rename(&temporary, dir.join(digest.hex())))
+          .map_err(|e| format!("shard {label}: shard-proof index: {e}"))?;
+      }
+      eprintln!(
+        "[prove-ahead] shard {label}: proven in {:.1}s (at +{:.1}s), heaviest shard peak {} B",
+        started.elapsed().as_secs_f64(),
+        run_started.elapsed().as_secs_f64(),
+        peak
+      );
+      println!("claim {}", digest.hex());
+      println!("{}", address.hex());
+      proven[k] = Some((claim_bytes, address, peak));
+      done += 1;
+    }
+    Ok(())
+  })?;
+  proven
+    .into_iter()
+    .enumerate()
+    .map(|(k, row)| {
+      row.ok_or_else(|| format!("shard {} was not proven", labels[k]))
+    })
+    .collect()
+}
+
+/// `AiurSystem.proveEnvDistributed`: the whole environment as ONE claim,
+/// `CheckEnv(root, none)`, proven from several worker records
+/// (trace-sharding design §13.3). `owners_blob` is a `u32` worker count,
+/// then a `u32` address count per worker, then every worker's owned
+/// addresses (32 bytes each) in worker order. Worker 0 runs `verify_claim`
+/// and defers every `check_owned` call for a constant it does not own;
+/// worker `r` runs `check_owned` over its chunk (the constants it owns),
+/// in pointer namespace `r`. The workers execute in parallel, the deferred calls'
+/// counts are absorbed by their owners, and the records are proven as one
+/// batch, each planned to `max_cells` committed cells (`0`: one shard per
+/// record). `plan_only` stops after the static caller graph and the commit
+/// order, reporting each worker's owned constants, byte scope and callers
+/// and the largest group of mutually calling workers, which is how many
+/// records the first round holds at once; `exec_only` stops after execution
+/// and the absorption of the deferred calls, reporting each record's size.
+/// Both leave `proof` `none`. Same result shape as `shardProveWithEnv`, with
+/// `peakBytes` 0 and `suggestedParts` 1.
+#[unsafe(no_mangle)]
+extern "C" fn rs_aiur_system_prove_env_distributed(
+  aiur_system_obj: LeanExternal<AiurSystem, LeanBorrowed<'_>>,
+  verify_idx: LeanNat<LeanBorrowed<'_>>,
+  check_owned_idx: LeanNat<LeanBorrowed<'_>>,
+  env_handle: LeanExternal<
+    ixvm_codegen::env_handle::EnvHandle,
+    LeanBorrowed<'_>,
+  >,
+  owners_blob: LeanByteArray<LeanBorrowed<'_>>,
+  max_cells: LeanNat<LeanBorrowed<'_>>,
+  plan_only: bool,
+  exec_only: bool,
+  exec_jobs: LeanNat<LeanBorrowed<'_>>,
+  max_ram_bytes: LeanNat<LeanBorrowed<'_>>,
+  measured_blob: LeanByteArray<LeanBorrowed<'_>>,
+) -> LeanExcept<LeanOwned> {
+  ffi_catch_unwind_except("AiurSystem.proveEnvDistributed", || {
+    let verify_idx = lean_unbox_nat_as_usize(verify_idx.inner());
+    let check_owned_idx = lean_unbox_nat_as_usize(check_owned_idx.inner());
+    let max_cells = lean_unbox_nat_as_usize(max_cells.inner());
+    let exec_jobs = lean_unbox_nat_as_usize(exec_jobs.inner());
+    let max_ram_bytes = lean_unbox_nat_as_usize(max_ram_bytes.inner());
+    let measured: Vec<usize> = measured_blob
+      .as_bytes()
+      .as_chunks::<8>()
+      .0
+      .iter()
+      .map(|c| {
+        usize::try_from(u64::from_le_bytes(*c)).expect("measured size fits")
+      })
+      .collect();
+    let owners = match decode_owners_blob(&owners_blob) {
+      Ok(owners) => owners,
+      Err(e) => return LeanExcept::error_string(&e),
+    };
+    let proved = prove_env_distributed(
+      aiur_system_obj.get(),
+      &env_handle.get().env,
+      verify_idx,
+      check_owned_idx,
+      &owners,
+      max_cells,
+      plan_only,
+      exec_only,
+      exec_jobs,
+      max_ram_bytes,
+      &measured,
+    );
+    let (claim_bytes, proof, worker_bytes) = match proved {
+      Ok(proved) => proved,
+      Err(e) => return LeanExcept::error_string(&e),
+    };
+    let result = LeanAiurShardProveResult::alloc(0);
+    let mut blob = Vec::with_capacity(8 * worker_bytes.len());
+    for bytes in &worker_bytes {
+      blob.extend_from_slice(&bytes.to_le_bytes());
+    }
+    result.set_obj(4, LeanByteArray::from_bytes(&blob));
+    result.set_obj(0, LeanByteArray::from_bytes(&claim_bytes));
+    result.set_obj(
+      1,
+      match proof {
+        Some(proof) => {
+          LeanOption::some(LeanExternal::alloc(&AIUR_PROOF_CLASS, proof))
+        },
+        None => LeanOption::none(),
+      },
+    );
+    result.set_obj(2, LeanOwned::box_usize(0));
+    result.set_obj(3, LeanOwned::box_usize(1));
+    LeanExcept::ok(result)
+  })
+}
+
+/// `u32 W`, `u32` counts, then the addresses (see
+/// `rs_aiur_system_prove_env_distributed`).
+fn decode_owners_blob(
+  blob: &LeanByteArray<LeanBorrowed<'_>>,
+) -> Result<Vec<Vec<Address>>, String> {
+  let bytes = blob.as_bytes();
+  let word = |at: usize| -> Result<usize, String> {
+    let chunk: [u8; 4] = bytes
+      .get(at..at + 4)
+      .and_then(|c| c.try_into().ok())
+      .ok_or_else(|| "owners_blob: truncated header".to_string())?;
+    Ok(u32::from_le_bytes(chunk) as usize)
+  };
+  let workers = word(0)?;
+  let counts: Vec<usize> =
+    (0..workers).map(|w| word(4 + 4 * w)).collect::<Result<_, _>>()?;
+  let mut at = 4 + 4 * workers;
+  let mut owners = Vec::with_capacity(workers);
+  for count in counts {
+    let end = at + 32 * count;
+    let slice = bytes
+      .get(at..end)
+      .ok_or_else(|| "owners_blob: truncated addresses".to_string())?;
+    owners.push(
+      slice
+        .as_chunks::<32>()
+        .0
+        .iter()
+        .map(|c| Address::from_slice(c).expect("32-byte chunk is an address"))
+        .collect(),
+    );
+    at = end;
+  }
+  if at != bytes.len() {
+    return Err("owners_blob: trailing bytes".into());
+  }
+  Ok(owners)
+}
+
+/// What a worker's execution produced: its record and IO buffer while they
+/// are kept, and always its deferred calls and its output.
+struct Executed {
+  record: Option<(Box<QueryRecord>, Box<IOBuffer>)>,
+  /// Host bytes the record and its IO retain.
+  bytes: usize,
+  deferred: FxHashMap<Vec<G>, u64>,
+  output: Vec<G>,
+}
+
+/// The order records are committed in, callers before callees: the workers
+/// that may call into a worker (`callers`) must have executed before it
+/// commits, so its rows carry the calls' multiplicities. Strongly connected
+/// groups of mutually calling workers execute together and commit one after
+/// the other; between groups one record at a time is in flight.
+fn commit_order(callers: &[Vec<usize>]) -> Vec<Vec<usize>> {
+  // Tarjan's components over the edges `caller -> callee`.
+  let n = callers.len();
+  let mut callees: Vec<Vec<usize>> = vec![Vec::new(); n];
+  for (callee, cs) in callers.iter().enumerate() {
+    for &caller in cs {
+      callees[caller].push(callee);
+    }
+  }
+  struct Tarjan<'a> {
+    callees: &'a [Vec<usize>],
+    index: Vec<Option<usize>>,
+    low: Vec<usize>,
+    on_stack: Vec<bool>,
+    stack: Vec<usize>,
+    next: usize,
+    components: Vec<Vec<usize>>,
+  }
+  impl Tarjan<'_> {
+    fn visit(&mut self, v: usize) {
+      self.index[v] = Some(self.next);
+      self.low[v] = self.next;
+      self.next += 1;
+      self.stack.push(v);
+      self.on_stack[v] = true;
+      for &w in &self.callees[v] {
+        match self.index[w] {
+          None => {
+            self.visit(w);
+            self.low[v] = self.low[v].min(self.low[w]);
+          },
+          Some(index) if self.on_stack[w] => {
+            self.low[v] = self.low[v].min(index);
+          },
+          Some(_) => {},
+        }
+      }
+      if self.low[v] == self.index[v].expect("indexed") {
+        let mut component = Vec::new();
+        loop {
+          let w = self.stack.pop().expect("stack holds v");
+          self.on_stack[w] = false;
+          component.push(w);
+          if w == v {
+            break;
+          }
+        }
+        component.sort_unstable();
+        self.components.push(component);
+      }
+    }
+  }
+  let mut tarjan = Tarjan {
+    callees: &callees,
+    index: vec![None; n],
+    low: vec![0; n],
+    on_stack: vec![false; n],
+    stack: Vec::new(),
+    next: 0,
+    components: Vec::new(),
+  };
+  for v in 0..n {
+    if tarjan.index[v].is_none() {
+      tarjan.visit(v);
+    }
+  }
+  // Tarjan emits components in reverse topological order of `callees`
+  // edges: a callee's component before its callers'. Reverse for callers
+  // first.
+  tarjan.components.reverse();
+  tarjan.components
+}
+
+fn prove_env_distributed(
+  system: &AiurSystem,
+  env: &ixon::Env,
+  verify_idx: usize,
+  check_owned_idx: usize,
+  owners: &[Vec<Address>],
+  max_cells: usize,
+  plan_only: bool,
+  exec_only: bool,
+  exec_jobs: usize,
+  max_ram_bytes: usize,
+  measured: &[usize],
+) -> Result<(Vec<u8>, Option<AiurProof>, Vec<u64>), String> {
+  use aiur::execute::{Ownership, pointer_stride};
+  use ixvm_codegen::aiur_ixvm_runner::execute_ixvm_in;
+  use ixvm_codegen::aiur_ixvm_witness::{
+    EnvCheckStatement, addr_key, worker_callers, worker_scopes,
+  };
+  use rustc_hash::FxHashSet;
+
+  if owners.is_empty() {
+    return Err("no workers".into());
+  }
+  let statement = EnvCheckStatement::new(env)?;
+  let mut claim_bytes: Vec<u8> = Vec::new();
+  statement.claim.put(&mut claim_bytes);
+  let input = statement.digest_key.clone();
+  let toplevel = system.toplevel();
+  let owned_keys: Vec<FxHashSet<Vec<G>>> =
+    owners.iter().map(|owned| owned.iter().map(addr_key).collect()).collect();
+  let mut owner_of: FxHashMap<Vec<G>, usize> = FxHashMap::default();
+  for (worker, keys) in owned_keys.iter().enumerate() {
+    for key in keys {
+      if owner_of.insert(key.clone(), worker).is_some() {
+        return Err("a constant is owned by two workers".into());
+      }
+    }
+  }
+  let workers = owners.len();
+  let cores = std::thread::available_parallelism().map_or(1, usize::from);
+  let jobs = if exec_jobs == 0 { cores } else { exec_jobs }.min(workers);
+  let scopes = worker_scopes(env, owners);
+  let callers = worker_callers(owners, &scopes);
+  let groups = commit_order(&callers);
+  let order: Vec<usize> = groups.iter().flatten().copied().collect();
+  eprintln!(
+    "[distributed] {workers} workers in {} groups, committed in order {order:?}, {jobs} executing at a time",
+    groups.len()
+  );
+  if plan_only {
+    for worker in 0..workers {
+      eprintln!(
+        "[distributed] plan: worker {worker} owns {} constants, scope {} constants, callers {:?}",
+        owners[worker].len(),
+        scopes[worker].len(),
+        callers[worker]
+      );
+    }
+    let largest = groups.iter().map(Vec::len).max().unwrap_or(0);
+    eprintln!(
+      "[distributed] plan: {} groups {:?}; the largest holds {largest} records at once in round one, plus one prefetched",
+      groups.len(),
+      groups.iter().map(Vec::len).collect::<Vec<_>>()
+    );
+    return Ok((claim_bytes, None, Vec::new()));
+  }
+
+  // One execution of worker `worker`: worker 0 the claimed entry, the
+  // others their own chunk, each in its own pointer namespace, over a
+  // fresh IO buffer. Deterministic, so a record can be re-executed for
+  // its second round; the batch checks the headers agree.
+  let run_started = std::time::Instant::now();
+  let execute = |worker: usize, round: &str| -> Result<Executed, String> {
+    let started = std::time::Instant::now();
+    let mut io = statement.worker_io(env, owners, worker);
+    let mut record = QueryRecord::with_pointer_base(
+      toplevel,
+      worker * pointer_stride(workers),
+    );
+    record.ownership = Some(Ownership {
+      callee: check_owned_idx,
+      owned: owned_keys[worker].clone(),
+    });
+    let mut output = Vec::new();
+    if worker == 0 {
+      output =
+        execute_ixvm_in(toplevel, verify_idx, &input, &mut io, &mut record)
+          .map_err(|e| format!("worker 0: {e}"))?;
+    } else {
+      // The chunk's constants run as entries; each registers a
+      // multiplicity no claim pulls, taken off only once every one has
+      // run: a zeroed entry would read as a hint to a later constant's
+      // walk and be replayed, double-counting its callees.
+      let mut entries: Vec<Vec<G>> = Vec::new();
+      for addr in &owners[worker] {
+        let key = addr_key(addr);
+        let queries = &record.function_queries[check_owned_idx];
+        // Reached already through another owned constant's walk.
+        if queries
+          .get_index_of(&key)
+          .is_some_and(|i| queries.mult_at(i) != G::ZERO)
+        {
+          continue;
+        }
+        execute_ixvm_in(toplevel, check_owned_idx, &key, &mut io, &mut record)
+          .map_err(|e| format!("worker {worker}: {e}"))?;
+        entries.push(key);
+      }
+      let queries = &mut record.function_queries[check_owned_idx];
+      for key in entries {
+        let i = queries.get_index_of(&key).expect("executed as an entry");
+        let (_, multiplicity) =
+          queries.get_index_mut(i).expect("index just found");
+        *multiplicity -= G::ONE;
+      }
+    }
+    // Every table must stay inside the worker's pointer namespace, or its
+    // pointers collide with the next worker's.
+    let stride = pointer_stride(workers);
+    for (width, table) in &record.memory_queries {
+      if table.len() > stride {
+        return Err(format!(
+          "worker {worker}: width-{width} table of {} entries exceeds the \
+           pointer namespace of {stride}",
+          table.len()
+        ));
+      }
+    }
+    let function_rows: usize =
+      record.function_queries.iter().map(|q| q.len()).sum();
+    let memory_rows: usize =
+      record.memory_queries.iter().map(|(_, m)| m.len()).sum();
+    let io_bytes: usize = io.data.values().map(|arena| 8 * arena.len()).sum();
+    eprintln!(
+      "[distributed] worker {worker}: executed for {round} in {:.1?} (done at +{:.1?}); {function_rows} function queries, {memory_rows} memory entries, {} B retained, {io_bytes} B of IO, {} deferred calls",
+      started.elapsed(),
+      run_started.elapsed(),
+      aiur::execute::record_retained_bytes(&record),
+      record.deferred.len()
+    );
+    let deferred = record.deferred.clone();
+    let bytes = aiur::execute::record_retained_bytes(&record) + io_bytes;
+    Ok(Executed {
+      record: Some((Box::new(record), Box::new(io))),
+      bytes,
+      deferred,
+      output,
+    })
+  };
+  // What records may occupy on the host: the budget less the prover's own
+  // working set (two shard witnesses at the cell budget, one being proven
+  // and one prepared ahead, plus the upload staging), or unbounded when no
+  // budget is known.
+  let budget = match max_ram_bytes {
+    0 => detected_ram_budget(),
+    given => Some(given),
+  }
+  .map_or(usize::MAX, |budget| record_budget(budget, max_cells));
+  let measured: Vec<usize> = if measured.len() == workers {
+    measured.to_vec()
+  } else {
+    vec![0; workers]
+  };
+  let mut position = vec![0usize; workers];
+  for (at, &worker) in order.iter().enumerate() {
+    position[worker] = at;
+  }
+  eprintln!(
+    "[distributed] record budget {:.1} GiB ({} executing at most)",
+    f64::from(u32::try_from(budget >> 20).unwrap_or(u32::MAX)) / 1024.0,
+    jobs
+  );
+  std::thread::scope(|scope| {
+    let mut pool = Workers {
+      scope,
+      execute: &execute,
+      jobs,
+      order: &order,
+      position: &position,
+      callers: &callers,
+      owner_of: &owner_of,
+      check_owned_idx,
+      executed: (0..workers).map(|_| None).collect(),
+      resident: (0..workers).map(|_| None).collect(),
+      charged: vec![0; workers],
+      served: vec![0; workers],
+      in_flight: Vec::new(),
+      budget,
+      used: 0,
+      max_ram: match max_ram_bytes {
+        0 => detected_ram_budget().unwrap_or(usize::MAX),
+        given => given,
+      },
+      measured: &measured,
+      largest: 0,
+    };
+    if exec_only {
+      let started = std::time::Instant::now();
+      pool.fill(usize::MAX, None)?;
+      for (at, &worker) in order.iter().enumerate() {
+        drop(pool.supply(at)?);
+        // Executed and measured; nothing more is asked of it.
+        pool.served[worker] = 2;
+        pool.release(worker);
+      }
+      eprintln!(
+        "[distributed] {workers} workers executed and absorbed in {:.1?}",
+        started.elapsed()
+      );
+      let sizes: Vec<u64> = (0..workers)
+        .map(|w| pool.executed[w].as_ref().map_or(0, |e| e.bytes as u64))
+        .collect();
+      return Ok((claim_bytes, None, sizes));
+    }
+
+    // Worker 0's output is the claim's; its walk calls into every worker,
+    // so it executes first, with the window open behind it.
+    pool.fill(usize::MAX, None)?;
+    pool.ensure(0, "round one")?;
+    let output = pool.output();
+    let (_, proof) = system.prove_record_supplier(
+      verify_idx,
+      &input,
+      move || output,
+      workers,
+      |at| pool.supply(at),
+      (max_cells > 0).then_some(max_cells),
+    )?;
+    Ok((claim_bytes, Some(proof), Vec::new()))
+  })
+}
+
+/// A record the driver holds: as executed, or absorbed and shared with the
+/// prover, retained for its second round.
+enum Resident {
+  Raw(Box<QueryRecord>, Box<IOBuffer>),
+  Absorbed(std::sync::Arc<(Box<QueryRecord>, Box<IOBuffer>)>),
+}
+
+/// The workers' executions, owned by the driver. Executions run ahead of
+/// the prover in commit order, at most `jobs` at once and as far as a host
+/// budget for records allows once their sizes are known,
+/// each record is handed to the prover when its turn comes, and a record
+/// stays resident for its second round while the budget has room — evicting
+/// the one whose next use is furthest when an execution needs the space —
+/// so a worker executes twice only when memory forces it. An execution the
+/// prover needs is never refused: it runs even when the budget is spent,
+/// which keeps the pipeline ordered and makes the budget a bound on what
+/// runs *ahead*, not a guarantee.
+struct Workers<'scope, 'env> {
+  scope: &'scope std::thread::Scope<'scope, 'env>,
+  execute:
+    &'env (dyn Fn(usize, &'static str) -> Result<Executed, String> + Sync),
+  /// How many workers execute at once.
+  jobs: usize,
+  /// The commit order, and each worker's place in it.
+  order: &'env [usize],
+  position: &'env [usize],
+  /// The workers that may call into each worker.
+  callers: &'env [Vec<usize>],
+  owner_of: &'env FxHashMap<Vec<G>, usize>,
+  check_owned_idx: usize,
+  /// Each worker's execution result (the record itself moves to
+  /// `resident`).
+  executed: Vec<Option<Executed>>,
+  /// Records held by the driver.
+  resident: Vec<Option<Resident>>,
+  /// Bytes charged against the budget for each in-flight or resident record.
+  charged: Vec<usize>,
+  /// How many times the prover has asked for each worker's record.
+  served: Vec<u8>,
+  /// Executions started ahead of their turn.
+  in_flight: Vec<(
+    usize,
+    std::thread::ScopedJoinHandle<'scope, Result<Executed, String>>,
+  )>,
+  /// Host bytes records may occupy at once, and how many they do.
+  budget: usize,
+  used: usize,
+  /// The whole host budget, which the process's resident size must stay
+  /// under for an execution to run ahead.
+  max_ram: usize,
+  /// Each worker's record size as the manifest measured it (0 when it
+  /// has not been), and the largest record measured in this run, which
+  /// stands in for an unmeasured one once anything has been.
+  measured: &'env [usize],
+  largest: usize,
+}
+
+impl Workers<'_, '_> {
+  /// The bytes to charge for `worker`'s record before this run measures
+  /// it: the manifest's measurement, else the largest record measured so
+  /// far, else nothing (until something is measured only the concurrency
+  /// ceiling bounds what runs ahead).
+  fn charge_for(&self, worker: usize) -> usize {
+    if self.measured[worker] > 0 { self.measured[worker] } else { self.largest }
+  }
+
+  /// Which run `worker` needs next, if any: its first, or its second when
+  /// the first was handed over and the record not retained.
+  fn needs(&self, worker: usize) -> Option<&'static str> {
+    if self.resident[worker].is_some()
+      || self.in_flight.iter().any(|(w, _)| *w == worker)
+    {
+      return None;
+    }
+    match self.served[worker] {
+      0 => self.executed[worker].is_none().then_some("round one"),
+      1 => Some("round two"),
+      _ => None,
+    }
+  }
+
+  /// Starts `worker`'s execution for `round`, charging its estimate.
+  fn start(&mut self, worker: usize, round: &'static str) {
+    let charge = self.charge_for(worker);
+    self.used += charge;
+    self.charged[worker] = charge;
+    let execute = self.execute;
+    self
+      .in_flight
+      .push((worker, self.scope.spawn(move || execute(worker, round))));
+  }
+
+  /// Waits for `worker`'s in-flight execution and keeps its record,
+  /// correcting the charge to the measured size.
+  fn settle(&mut self, worker: usize) -> Result<(), String> {
+    let Some(at) = self.in_flight.iter().position(|(w, _)| *w == worker) else {
+      return Ok(());
+    };
+    let (_, handle) = self.in_flight.remove(at);
+    let mut done = handle.join().expect("worker thread panicked")?;
+    let (record, io) =
+      done.record.take().expect("a fresh execution keeps its record");
+    self.used = self.used - self.charged[worker] + done.bytes;
+    self.charged[worker] = done.bytes;
+    self.largest = self.largest.max(done.bytes);
+    if done.bytes > self.budget {
+      eprintln!(
+        "[distributed] worker {worker}: record of {} B exceeds the record budget of {} B on its own; use smaller chunks",
+        done.bytes, self.budget
+      );
+    }
+    self.resident[worker] = Some(Resident::Raw(record, io));
+    self.executed[worker] = Some(done);
+    Ok(())
+  }
+
+  /// Makes `worker`'s record resident for `round`: already there, or in
+  /// flight, or executed now.
+  fn ensure(
+    &mut self,
+    worker: usize,
+    round: &'static str,
+  ) -> Result<(), String> {
+    if self.resident[worker].is_none() {
+      if !self.in_flight.iter().any(|(w, _)| *w == worker) {
+        // A required execution runs regardless, but retained records
+        // used after it make room first.
+        let step = self.next_use(worker);
+        let charge = self.charge_for(worker);
+        self.make_room(charge, step, None);
+        self.start(worker, round);
+      }
+      self.settle(worker)?;
+    }
+    Ok(())
+  }
+
+  /// Drops `worker`'s resident record and its charge.
+  fn release(&mut self, worker: usize) {
+    if self.resident[worker].take().is_some() {
+      self.used -= self.charged[worker];
+      self.charged[worker] = 0;
+    }
+  }
+
+  /// The commit-order step at which a resident record is next used.
+  fn next_use(&self, worker: usize) -> usize {
+    match self.served[worker] {
+      0 => self.position[worker],
+      _ => self.position[worker] + self.order.len(),
+    }
+  }
+
+  /// Moves the records of executions that have finished in, so their
+  /// slots are free and their charges are their measured sizes.
+  fn harvest(&mut self) -> Result<(), String> {
+    let done: Vec<usize> = self
+      .in_flight
+      .iter()
+      .filter(|(_, handle)| handle.is_finished())
+      .map(|(worker, _)| *worker)
+      .collect();
+    for worker in done {
+      self.settle(worker)?;
+    }
+    Ok(())
+  }
+
+  /// Releases retained records, furthest next use first, until `charge`
+  /// more bytes fit both the record budget and the process's resident
+  /// size beside `--max-ram`; only records used after step `step` and
+  /// other than `handed` are released. False when nothing more can be.
+  fn make_room(
+    &mut self,
+    charge: usize,
+    step: usize,
+    handed: Option<usize>,
+  ) -> bool {
+    let count = self.order.len();
+    loop {
+      let over_budget = self.used + charge > self.budget;
+      let over_rss =
+        process_rss_bytes().is_some_and(|rss| rss + charge > self.max_ram);
+      if !over_budget && !over_rss {
+        return true;
+      }
+      let evict = (0..count)
+        .filter(|&w| self.resident[w].is_some() && Some(w) != handed)
+        .filter(|&w| self.next_use(w) > step)
+        .max_by_key(|&w| self.next_use(w));
+      match evict {
+        Some(w) => self.release(w),
+        None => return false,
+      }
+    }
+  }
+
+  /// Starts executions for the workers after step `at` in commit order —
+  /// wrapping into the second round after the last — while at most `jobs`
+  /// run and the budget has room, releasing resident records used later
+  /// than the candidate when that makes room. `handed` is the worker whose
+  /// record the prover holds and must not be evicted; `at` is `usize::MAX`
+  /// before the first step.
+  fn fill(&mut self, at: usize, handed: Option<usize>) -> Result<(), String> {
+    self.harvest()?;
+    let count = self.order.len();
+    let from = at.wrapping_add(1);
+    for step in from..2 * count {
+      if self.in_flight.len() >= self.jobs {
+        break;
+      }
+      let next = self.order[step % count];
+      let round = if step < count { "round one" } else { "round two" };
+      let Some(needed) = self.needs(next) else { continue };
+      if needed != round {
+        continue;
+      }
+      let charge = self.charge_for(next);
+      if !self.make_room(charge, step, handed) {
+        return Ok(());
+      }
+      self.start(next, round);
+    }
+    Ok(())
+  }
+
+  /// The record at step `at` of the commit order, as the prover needs it:
+  /// its callers executed (their deferred calls absorbed into it), resident
+  /// or executed now, then the window refilled behind it. The record is
+  /// retained for its second round while the budget allows.
+  fn supply(
+    &mut self,
+    at: usize,
+  ) -> Result<aiur::synthesis::Supplied<'static>, String> {
+    let worker = self.order[at];
+    let first = self.served[worker] == 0;
+    let round = if first { "round one" } else { "round two" };
+    if first {
+      for caller in self.callers[worker].clone() {
+        if self.executed[caller].is_none() {
+          self.ensure(caller, "round one")?;
+        }
+      }
+    }
+    self.ensure(worker, round)?;
+    self.served[worker] += 1;
+    let supplied = match self.resident[worker].take().expect("ensured above") {
+      Resident::Raw(mut record, io) => {
+        let mut into: FxHashMap<Vec<G>, u64> = FxHashMap::default();
+        for (caller, done) in self.executed.iter().enumerate() {
+          let Some(done) = done else { continue };
+          for (args, &count) in &done.deferred {
+            let Some(&owner) = self.owner_of.get(args) else {
+              return Err(format!(
+                "worker {caller} deferred a constant no worker owns"
+              ));
+            };
+            if owner == worker {
+              *into.entry(args.clone()).or_insert(0) += count;
+            }
+          }
+        }
+        record
+          .absorb_deferred(self.check_owned_idx, &into)
+          .map_err(|e| format!("worker {worker}: {e}"))?;
+        if first {
+          let shared = std::sync::Arc::new((record, io));
+          self.resident[worker] = Some(Resident::Absorbed(shared.clone()));
+          aiur::synthesis::Supplied::Shared(shared)
+        } else {
+          self.used -= self.charged[worker];
+          self.charged[worker] = 0;
+          aiur::synthesis::Supplied::Owned(record, io)
+        }
+      },
+      Resident::Absorbed(shared) => {
+        if first {
+          self.resident[worker] = Some(Resident::Absorbed(shared.clone()));
+        } else {
+          self.used -= self.charged[worker];
+          self.charged[worker] = 0;
+        }
+        aiur::synthesis::Supplied::Shared(shared)
+      },
+    };
+    self.fill(at, Some(worker))?;
+    Ok(supplied)
+  }
+
+  /// Worker 0's output, the claim's.
+  fn output(&self) -> Vec<G> {
+    self.executed[0].as_ref().expect("worker 0 executed first").output.clone()
+  }
 }
 
 /// `AiurSystem.proveIxVM`: IxVM-native prove path. Same return shape
@@ -1677,3 +2843,7 @@ fn decode_io_buffer_map(
   }
   map
 }
+
+// =============================================================================
+// SP1 aggregate-root terminal (feature `sp1`)
+// =============================================================================

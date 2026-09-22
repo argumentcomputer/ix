@@ -181,7 +181,8 @@ def primaryRunners : List (String × IO UInt32) := [
       | .ok genv => do
         let r2 ← LSpec.lspecEachIO groupedTestCases fun tc => pure (genv.runTestCase tc)
         let r3 ← LSpec.lspecIO
-          (.ofList [("aiur-grouping", [groupingStructureChecks genv.compiled])]) []
+          (.ofList [("aiur-grouping", [groupingStructureChecks genv.compiled]),
+            ("aiur-inline-order", [assertOrderChecks env.compiled])]) []
         return if r1 == 0 && r2 == 0 && r3 == 0 then 0 else 1),
   ("aiur-hashes", do
     IO.println "aiur-hashes"
@@ -205,7 +206,7 @@ def primaryRunners : List (String × IO UInt32) := [
   ("multi-stark", Tests.MultiStark.selfTestSuite),
   ("recursive-verifier", Tests.MultiStark.endToEndSuite),
   ("aggregate-first", Tests.MultiStark.joinSmokeSuite),
-  -- Converged heterogeneous aggregation circuit: all ten `ix_aggr` shapes,
+  -- Converged heterogeneous aggregation circuit: all thirteen `ix_aggr` shapes,
   -- driver/cache semantics, and one negative case per broken binding.
   ("ix-aggr", Tests.Aggr.convergedSuite),
   -- `.ixes` manifest parser: trailing tree/peaks sections and strictness.
@@ -289,8 +290,8 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
             let actual :=
               (Aiur.computeStats vmEnv.compiled qc vmEnv.shapes).totalFftCost.round.toUInt64.toNat
             pure (LSpec.test
-              s!"Shard pipeline FFT matches: expected 6_434_780_974, got {actual}"
-              (actual = 6_434_780_974))
+              s!"Shard pipeline FFT matches: expected 6_674_844_589, got {actual}"
+              (actual = 6_674_844_589))
       LSpec.lspecIO
         (.ofList [("ixvm",
           [fullSeq, aiurSeq, arenaSeq, exploitSeq, dependencySeq, paritySeq, shardSeq])]) []),
