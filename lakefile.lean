@@ -57,15 +57,26 @@ section FFI
 /-- Build args for `cargo build --release` with opt-in feature overrides.
 Cargo output is visible with `lake -v build`. -/
 def cargoArgs (testFfi : Bool := false) (net : Bool := false) : IO (Array String) := do
-  -- IX_NO_PAR=1 disables parallel; IX_CUDA=1/true/yes enables CUDA.
+  -- IX_NO_PAR=1 disables parallel; IX_CUDA=1/true/yes enables CUDA;
+  -- IX_CUDA_TRACE_CODEGEN=1 enables generated trace kernels and implies CUDA.
   let ixNoPar ← IO.getEnv "IX_NO_PAR"
   let ixCuda ← IO.getEnv "IX_CUDA"
+  let ixTraceCodegen ← IO.getEnv "IX_CUDA_TRACE_CODEGEN"
+  -- IX_SP1=1 builds `ix compress-root`; IX_SP1_CUDA=1 also compiles the
+  -- runtime-selectable CUDA prover. Both require the SP1/Succinct toolchain.
+  let ixSp1 ← IO.getEnv "IX_SP1"
+  let ixSp1Cuda ← IO.getEnv "IX_SP1_CUDA"
   let mut features : Array String := #[]
   if ixNoPar != some "1" then features := features.push "parallel"
   if ixCuda == some "1" || ixCuda == some "true" || ixCuda == some "yes" then
     features := features.push "cuda"
+  if ixTraceCodegen == some "1" || ixTraceCodegen == some "true" || ixTraceCodegen == some "yes" then
+    features := features.push "cuda-trace-codegen"
   if net && !System.Platform.isOSX then features := features.push "net"
   if testFfi then features := features.push "test-ffi"
+  if ixSp1 == some "1" || ixSp1Cuda == some "1" then
+    features := features.push "sp1"
+  if ixSp1Cuda == some "1" then features := features.push "sp1-cuda"
   IO.println s!"Ix Rust features: {if features.isEmpty then "none" else ",".intercalate features.toList}"
   let buildArgs := #["build", "--release", "-p", "ix-ffi"]
   if features.isEmpty then return buildArgs
@@ -78,13 +89,34 @@ archive from a previous invocation. -/
 def buildRustStatic (pkg : Package) (args : Array String) (tag : String) :
     SpawnM (Job FilePath) := do
   let sources ← inputDir (pkg.dir / "crates") true fun path =>
-    path.extension == some "rs" || path.fileName == "Cargo.toml"
+    path.extension == some "rs" || path.extension == some "cu" ||
+    path.extension == some "cuh" || path.extension == some "h" ||
+    path.extension == some "hpp" || path.fileName == "Cargo.toml" ||
+    path.fileName == "trace-manifest.json"
   let manifests := Job.collectArray #[
     ← inputTextFile (pkg.dir / "Cargo.toml"),
     ← inputTextFile (pkg.dir / "Cargo.lock")
   ]
+  let sp1SourceDirs := Job.collectArray #[
+    ← inputDir (pkg.dir / "sp1-compress" / "host" / "src") true fun path =>
+      path.extension == some "rs",
+    ← inputDir (pkg.dir / "sp1-compress" / "guest" / "src") true fun path =>
+      path.extension == some "rs"
+  ]
+  let sp1Manifests := Job.collectArray #[
+    ← inputTextFile (pkg.dir / "sp1-compress" / "host" / "Cargo.toml"),
+    ← inputTextFile (pkg.dir / "sp1-compress" / "host" / "build.rs"),
+    ← inputTextFile (pkg.dir / "sp1-compress" / "guest" / "Cargo.toml"),
+    ← inputTextFile (pkg.dir / "sp1-compress" / "guest" / "Cargo.lock"),
+    ← inputTextFile (pkg.dir / "sp1-compress" / "Cargo.toml"),
+    ← inputTextFile (pkg.dir / "sp1-compress" / "Cargo.lock")
+  ]
   let deps := sources.zipWith (fun sourceFiles manifestFiles =>
     (sourceFiles, manifestFiles)) manifests
+  let deps := deps.zipWith (fun rustSources sp1Files =>
+    (rustSources, sp1Files)) sp1SourceDirs
+  let deps := deps.zipWith (fun rustSources sp1Files =>
+    (rustSources, sp1Files)) sp1Manifests
   let output := pkg.buildDir / "lib" / s!"libix_ffi_{tag}.a"
   buildFileAfterDep output deps (fun _ => do
     proc { cmd := "cargo", args, cwd := pkg.dir } (quiet := true)
