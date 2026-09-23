@@ -113,7 +113,11 @@ jobs:
             test_args: >-
               tc-anon-diff tc-init tc-tutorial tc-roundtrip tc-ingress-meta
               tc-pins tc-accel-diff lean4lean
-    runs-on: runs-on=${{ github.run_id }}-merge-tests-${{ github.run_attempt }}-${{ strategy.job-index }}/cpu=32/family=r7i+r8i+r7a+r8a/image=ubuntu26-full-x64/volume=100gb/sticky=merge-tests-x86-64-v4:50gb/extras=s3-cache
+    # On-demand rather than Spot: a reclaimed partition restarts from scratch
+    # only after the whole attempt finishes, and the longest partitions
+    # already run close to the merge queue's status-check timeout, so one
+    # reclaim is enough to dequeue the PR.
+    runs-on: runs-on=${{ github.run_id }}-merge-tests-${{ github.run_attempt }}-${{ strategy.job-index }}/cpu=32/family=r7i+r8i+r7a+r8a/spot=false/image=ubuntu26-full-x64/volume=100gb/sticky=merge-tests-x86-64-v4:50gb/extras=s3-cache
     steps:
       - name: Validate merge-test variant
         env:
