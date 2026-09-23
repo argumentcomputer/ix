@@ -221,18 +221,10 @@
               Blake3 = blake3-lean.packages.${system}.rust;
             };
           };
-          # One Lake build of the library and every executable. Copying the
-          # library's `.lake` into a second derivation costs as much as the
-          # link it enables, so the CLI, the test binary, and the prover are
-          # facets of this derivation rather than packages of their own.
-          ixBuild = lake2nix.mkPackage {
-            inherit lakeDeps;
-            src = leanSrc;
-            name = "Ix";
-            # Crane builds the Rust side, so the lakefile's Cargo runs are
-            # disabled and each feature selection's snapshot is copied from
-            # its own Crane archive, symlinked below where the patched
-            # targets look for it.
+          # Crane builds the Rust side, so the lakefile's Cargo runs are
+          # disabled and each feature selection's snapshot is copied from
+          # its own Crane archive, symlinked where the patched targets look.
+          lakePatches = {
             postPatch = ''
               substituteInPlace lakefile.lean \
                 --replace-fail 'proc { cmd := "cargo"' '--proc { cmd := "cargo"'
@@ -254,23 +246,63 @@
               lean
               pkgs.rsync
             ];
-            buildPhase = ''
-              runHook preBuild
-              lake build Ix ix IxTests Apps.ZKVoting.Prover
-              lake build Ix:shared Ix:static
-              runHook postBuild
-            '';
           };
+          # The library: every `Ix` module compiled plus the shared and static
+          # facets, exported as a plain `.lake` for downstream Lake projects.
+          # It is also the artifact layer the executables build on, the way
+          # Crane's dependency artifacts feed its package builds. Fixup would
+          # only strip and patchelf thousands of intermediate objects.
+          ixLib = lake2nix.mkPackage (
+            lakePatches
+            // {
+              inherit lakeDeps;
+              src = leanSrc;
+              name = "Ix";
+              buildLibrary = true;
+              dontFixup = true;
+            }
+          );
+          # Every executable in one derivation on top of the library's
+          # artifacts. `lake build Ix` covers only the modules `Ix.lean` imports,
+          # so the CLI, kernel, and test modules compile here while the
+          # library's replay.
+          # The output carries the binaries and the oleans LEAN_PATH loads at
+          # runtime that the library does not already export; the intermediate
+          # `.lake` is not exported again.
+          ixExes = lake2nix.mkPackage (
+            lakePatches
+            // {
+              inherit lakeDeps;
+              src = leanSrc;
+              name = "ix-exes";
+              lakeArtifacts = ixLib;
+              installArtifacts = false;
+              buildPhase = ''
+                runHook preBuild
+                lake build ix IxTests Apps.ZKVoting.Prover
+                runHook postBuild
+              '';
+              postInstall = ''
+                mkdir -p $out/lib/lean
+                cp -R .lake/build/bin $out/bin
+                rsync -a --checksum --prune-empty-dirs --compare-dest="${ixLib}/.lake/build/lib/lean/" \
+                  --exclude='*.hash' --include='*/' --include='*.olean' --include='*.olean.*' \
+                  --include='*.ilean' --exclude='*' \
+                  .lake/build/lib/lean/ "$out/lib/lean/"
+              '';
+            }
+          );
           # Binaries that import Ix.Meta load .olean files at runtime via LEAN_PATH.
           leanPath = pkgs.lib.concatStringsSep ":" (
-            map (d: "${d}/.lake/build/lib/lean") ([ ixBuild ] ++ builtins.attrValues lakeDeps)
+            [ "${ixExes}/lib/lean" ]
+            ++ map (d: "${d}/.lake/build/lib/lean") ([ ixLib ] ++ builtins.attrValues lakeDeps)
           );
           wrapBins =
             name: bins:
             pkgs.runCommand name { nativeBuildInputs = [ pkgs.makeWrapper ]; } ''
               mkdir -p $out/bin
               for b in ${pkgs.lib.concatStringsSep " " bins}; do
-                makeWrapper "${ixBuild}/bin/$b" "$out/bin/$b" \
+                makeWrapper "${ixExes}/bin/$b" "$out/bin/$b" \
                   --set LEAN_SYSROOT "${lean}" \
                   --set LEAN_PATH "${leanPath}"
               done
@@ -286,7 +318,7 @@
         in
         {
           packages = {
-            default = ixBuild;
+            default = ixLib;
             ix = ixCLI;
             # `checks` are built by `nix flake check`; exposing this derivation
             # as a package keeps the ignored suite available on demand without
