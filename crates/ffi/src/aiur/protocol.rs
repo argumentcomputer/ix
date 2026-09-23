@@ -54,6 +54,14 @@ extern "C" fn rs_aiur_proof_to_bytes(
   LeanByteArray::from_bytes(&bytes)
 }
 
+/// `Aiur.Proof.shardCount : @& Proof → Nat`
+#[unsafe(no_mangle)]
+extern "C" fn rs_aiur_proof_shard_count(
+  proof_obj: LeanExternal<AiurProof, LeanBorrowed<'_>>,
+) -> LeanOwned {
+  LeanOwned::box_usize(proof_obj.get().preamble.headers.len())
+}
+
 /// `Aiur.Proof.ofBytes : @& ByteArray → Proof`
 #[unsafe(no_mangle)]
 extern "C" fn rs_aiur_proof_of_bytes(

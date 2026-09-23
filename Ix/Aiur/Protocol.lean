@@ -26,6 +26,11 @@ opaque toBytes : @& Proof → ByteArray
 @[extern "rs_aiur_proof_of_bytes"]
 opaque ofBytes : @& ByteArray → Proof
 
+/-- The trace shards this batch holds: one for an unbudgeted prove, more
+when a budget split the execution's rows. -/
+@[extern "rs_aiur_proof_shard_count"]
+opaque shardCount : @& Proof → Nat
+
 /-- Decode an untrusted serialized proof without aborting the process. Store
 and network boundaries must use this variant; `ofBytes` remains for callers
 whose bytes were produced in-process or already validated. -/

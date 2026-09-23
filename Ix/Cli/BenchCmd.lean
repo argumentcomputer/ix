@@ -245,7 +245,7 @@ def backendSpecs : List BackendSpec := [
       [("IxVM on FRI",
          ["ixvm-execute-time", "ixvm-prove-time", "ixvm-throughput",
           "ixvm-peak-rss", "ixvm-proof-size", "ixvm-verify-time",
-          "ixvm-fft-cost"]),
+          "ixvm-fft-cost", "ixvm-trace-shards"]),
        ("FRI verifier on FRI",
          ["fri-verifier-execute-time", "fri-verifier-prove-time",
           "fri-verifier-throughput", "fri-verifier-peak-rss",
