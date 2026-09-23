@@ -273,6 +273,11 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
       let _ = env.set_prims(prims);
     }
     let mut tc = Self::new(env);
+    // Every declaration this checker sees arrives through Ixon ingress,
+    // which rejects local definition cycles before publishing a block, and
+    // external references are content addressed; the per-check dependency
+    // traversal is therefore redundant here, as it is for `IxonChecker`.
+    tc.ixon_ingress = true;
     tc.lazy_ixon = Some(LazyIxonIngress {
       ixon_env,
       lookups,
