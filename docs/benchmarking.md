@@ -332,7 +332,7 @@ offers the same shapes:
 Benchmark builds, compile measurements, and runs all use `r8i.8xlarge` with
 `-Ctarget-cpu=native`. CI jobs pin `x86-64-v4` plus `avx512vbmi2` and `gfni`,
 the baseline shared by every family they may land on; Valgrind builds without
-AVX-512 on its own sticky lineage. Benchmark product caches and Cargo
+AVX-512 into the S3-backed actions cache under its own key. Benchmark product caches and Cargo
 caches include the instance family and code generation. Bencher testbeds
 include both, such as `ooc-check-runs-on-r8i-8xlarge-native`, so old binaries
 and timings from different hardware or compiler flags stay separate.

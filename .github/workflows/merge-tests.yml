@@ -171,9 +171,10 @@ jobs:
     name: Valgrind FFI
     needs: prepare
     if: ${{ github.event_name == 'merge_group' || github.event_name == 'issue_comment' }}
-    # Valgrind cannot decode AVX-512, so its generic build keeps a sticky disk
-    # separate from the x86-64-v4 merge-test partitions.
-    runs-on: runs-on=${{ github.run_id }}-valgrind-${{ github.run_attempt }}/cpu=8/family=r7i+r8i+r7a+r8a/image=ubuntu24-full-x64/volume=100gb/sticky=valgrind-x64-generic:50gb/extras=s3-cache
+    # Valgrind cannot decode AVX-512, so this job builds generic artifacts and
+    # keeps them in the S3-backed actions cache under their own key rather
+    # than sharing a sticky disk with the x86-64-v4 partitions.
+    runs-on: runs-on=${{ github.run_id }}-valgrind-${{ github.run_attempt }}/cpu=8/family=r7i+r8i+r7a+r8a/image=ubuntu24-full-x64/volume=100gb/extras=s3-cache
     steps:
       - uses: actions/checkout@v7
         with:
@@ -191,14 +192,16 @@ jobs:
           fi
 
       - uses: runs-on/action@v2
-        with:
-          sticky_cache: |
-            rust
-            custom,path=.lake,path=target
       - uses: ./.github/actions/setup-rust-toolchain
         with:
           codegen: generic
-          use-github-cache: "false"
+      # `./.lake`, not `.lake`: the path string is hashed into the cache
+      # entry's version, so the spelling must stay fixed for restores to hit.
+      - uses: actions/cache@v6
+        with:
+          path: ./.lake
+          key: lake-valgrind-x64-generic-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'rust-toolchain.toml') }}-${{ github.sha }}
+          restore-keys: lake-valgrind-x64-generic-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'rust-toolchain.toml') }}-
       - uses: leanprover/lean-action@v1
         with:
           auto-config: false

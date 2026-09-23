@@ -12,7 +12,7 @@ alone had no Spot capacity. Their Rust builds use the `portable` codegen mode
 of the toolchain action, `x86-64-v4` plus `avx512vbmi2` and `gfni`, the
 feature set every listed family shares, and their sticky lineages carry that
 name so native artifacts never mix in. Valgrind builds `generic`, without
-AVX-512, on its own lineage. Benchmarks stay on exact `r8i.8xlarge` with
+AVX-512, into the S3-backed actions cache under its own key. Benchmarks stay on exact `r8i.8xlarge` with
 `native` codegen so their timings remain comparable.
 
 Runner labels include the workflow run ID, job ID, run attempt, and, for
