@@ -46,7 +46,7 @@ jobs:
   # with native code generation for r8i, with caches and measured results
   # isolated from other hardware and compiler flags.
   build:
-    runs-on: runs-on=${{ github.run_id }}-build-${{ github.run_attempt }}/cpu=32/family=r8i.8xlarge/image=ubuntu24-full-x64/volume=100gb/extras=s3-cache
+    runs-on: runs-on=${{ github.run_id }}-build-${{ github.run_attempt }}/cpu=32/family=r8i.8xlarge/image=ubuntu26-full-x64/volume=100gb/extras=s3-cache
     steps:
       - uses: runs-on/action@v2
       - uses: actions/checkout@v7
@@ -90,7 +90,7 @@ jobs:
   plan:
     needs: build
     # The restored `ix` contains native r8i code, including its Rust library.
-    runs-on: runs-on=${{ github.run_id }}-plan-${{ github.run_attempt }}/cpu=32/family=r8i.8xlarge/image=ubuntu24-full-x64/volume=100gb/extras=s3-cache
+    runs-on: runs-on=${{ github.run_id }}-plan-${{ github.run_attempt }}/cpu=32/family=r8i.8xlarge/image=ubuntu26-full-x64/volume=100gb/extras=s3-cache
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
@@ -126,7 +126,7 @@ jobs:
     # job title.
     name: compile-${{ matrix.env }}
     needs: build
-    runs-on: runs-on=${{ github.run_id }}-compile-${{ github.run_attempt }}-${{ strategy.job-index }}/cpu=32/family=r8i.8xlarge/image=ubuntu24-full-x64/volume=100gb/extras=s3-cache
+    runs-on: runs-on=${{ github.run_id }}-compile-${{ github.run_attempt }}-${{ strategy.job-index }}/cpu=32/family=r8i.8xlarge/image=ubuntu26-full-x64/volume=100gb/extras=s3-cache
     permissions:
       contents: read
       checks: write
@@ -268,7 +268,7 @@ jobs:
   benchmark:
     name: ${{ matrix.params.label }}
     needs: [compile, plan]
-    runs-on: runs-on=${{ github.run_id }}-benchmark-${{ github.run_attempt }}-${{ strategy.job-index }}/cpu=32/family=r8i.8xlarge/image=ubuntu24-full-x64/volume=100gb/extras=s3-cache
+    runs-on: runs-on=${{ github.run_id }}-benchmark-${{ github.run_attempt }}-${{ strategy.job-index }}/cpu=32/family=r8i.8xlarge/image=ubuntu26-full-x64/volume=100gb/extras=s3-cache
     permissions:
       contents: read
       checks: write

@@ -20,10 +20,10 @@ matrix jobs, the job index. This keeps concurrent jobs and recovery attempts
 from claiming another job's matching runner. Matrix jobs use
 `fail-fast: false` so an interrupted partition does not cancel its siblings.
 
-Every RunsOn label sets `volume=` explicitly. The `ubuntu24-full-x64` image
-leaves about 10 GiB free on its default root volume, which toolchains, apt
-packages, and container images exhaust; sticky disks hold only the declared
-cache paths. Jobs use `volume=100gb`, and the Nix job `volume=150gb`.
+Every RunsOn label uses the `ubuntu26-full-x64` image and sets `volume=`
+explicitly so the root volume has room for toolchains, apt packages, and
+container images; sticky disks hold only the declared cache paths. Jobs use
+`volume=100gb`, and the Nix job `volume=150gb`.
 Sticky disks restore with provisioned snapshot initialization; `lazy-init`
 makes first reads of cached binaries and oleans slow enough to dominate jobs
 that only run them.

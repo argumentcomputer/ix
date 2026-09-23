@@ -312,7 +312,7 @@ dependency caches.
 
 Benchmark jobs use exact `r8i` instance types; CI jobs request the
 `r7i+r8i+r7a+r8a` families so Spot has several pools to fill from. All use
-the `ubuntu24-full-x64` image with the default Spot policy. RunsOn can fall
+the `ubuntu26-full-x64` image with the default Spot policy. RunsOn can fall
 back to on-demand capacity and automatically retry interrupted jobs. There
 are no GPU benchmarks; future GPU benchmarks should use `spot=false`. The
 CUDA compile job runs its toolchain in an Ubuntu 26.04 container on a CPU

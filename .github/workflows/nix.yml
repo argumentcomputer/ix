@@ -23,7 +23,7 @@ jobs:
     # Sticky disks retain Lake/Cargo files; /nix uses the larger root volume
     # and Cachix provides its binary cache.
     # https://runs-on.com/docs/runners/capabilities/sticky-disks/
-    runs-on: runs-on=${{ github.run_id }}-nix-test-${{ github.run_attempt }}/cpu=16/family=r7i+r8i+r7a+r8a/image=ubuntu24-full-x64/volume=150gb/sticky=nix-x86-64-v4:100gb/extras=s3-cache
+    runs-on: runs-on=${{ github.run_id }}-nix-test-${{ github.run_attempt }}/cpu=16/family=r7i+r8i+r7a+r8a/image=ubuntu26-full-x64/volume=150gb/sticky=nix-x86-64-v4:100gb/extras=s3-cache
     steps:
       - uses: actions/checkout@v7
       - uses: runs-on/action@v2

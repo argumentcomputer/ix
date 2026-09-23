@@ -113,7 +113,7 @@ jobs:
             test_args: >-
               tc-anon-diff tc-init tc-tutorial tc-roundtrip tc-ingress-meta
               tc-pins tc-accel-diff lean4lean
-    runs-on: runs-on=${{ github.run_id }}-merge-tests-${{ github.run_attempt }}-${{ strategy.job-index }}/cpu=32/family=r7i+r8i+r7a+r8a/image=ubuntu24-full-x64/volume=100gb/sticky=merge-tests-x86-64-v4:50gb/extras=s3-cache
+    runs-on: runs-on=${{ github.run_id }}-merge-tests-${{ github.run_attempt }}-${{ strategy.job-index }}/cpu=32/family=r7i+r8i+r7a+r8a/image=ubuntu26-full-x64/volume=100gb/sticky=merge-tests-x86-64-v4:50gb/extras=s3-cache
     steps:
       - name: Validate merge-test variant
         env:
@@ -174,7 +174,7 @@ jobs:
     # Valgrind cannot decode AVX-512, so this job builds generic artifacts and
     # keeps them in the S3-backed actions cache under their own key rather
     # than sharing a sticky disk with the x86-64-v4 partitions.
-    runs-on: runs-on=${{ github.run_id }}-valgrind-${{ github.run_attempt }}/cpu=8/family=r7i+r8i+r7a+r8a/image=ubuntu24-full-x64/volume=100gb/extras=s3-cache
+    runs-on: runs-on=${{ github.run_id }}-valgrind-${{ github.run_attempt }}/cpu=8/family=r7i+r8i+r7a+r8a/image=ubuntu26-full-x64/volume=100gb/extras=s3-cache
     steps:
       - uses: actions/checkout@v7
         with:
