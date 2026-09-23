@@ -247,28 +247,32 @@
               pkgs.rsync
             ];
           };
-          # The library: every `Ix` module compiled plus the shared and static
-          # facets, exported as a plain `.lake` for downstream Lake projects.
-          # It is also the artifact layer the executables build on, the way
-          # Crane's dependency artifacts feed its package builds. Fixup would
-          # only strip and patchelf thousands of intermediate objects.
+          # The library is the artifact layer, the way Crane's dependency
+          # artifacts feed its package builds: every module any executable
+          # imports is compiled here, through the module targets of the CLI,
+          # test, and prover roots so nothing links, plus the `Ix` facets, and
+          # exported as a plain `.lake` for downstream Lake projects. Fixup
+          # would only strip and patchelf thousands of intermediate objects.
           ixLib = lake2nix.mkPackage (
             lakePatches
             // {
               inherit lakeDeps;
               src = leanSrc;
               name = "Ix";
-              buildLibrary = true;
               dontFixup = true;
+              buildPhase = ''
+                runHook preBuild
+                lake build Ix +Main +Tests.Main +Apps.ZKVoting.Prover
+                lake build Ix:shared Ix:static
+                runHook postBuild
+              '';
             }
           );
           # Every executable in one derivation on top of the library's
-          # artifacts. `lake build Ix` covers only the modules `Ix.lean` imports,
-          # so the CLI, kernel, and test modules compile here while the
-          # library's replay.
-          # The output carries the binaries and the oleans LEAN_PATH loads at
-          # runtime that the library does not already export; the intermediate
-          # `.lake` is not exported again.
+          # artifacts: the modules replay, so only object compilation and the
+          # three links happen here.
+          # Only the binaries are exported; every olean LEAN_PATH loads at
+          # runtime is already in the library.
           ixExes = lake2nix.mkPackage (
             lakePatches
             // {
@@ -282,20 +286,11 @@
                 lake build ix IxTests Apps.ZKVoting.Prover
                 runHook postBuild
               '';
-              postInstall = ''
-                mkdir -p $out/lib/lean
-                cp -R .lake/build/bin $out/bin
-                rsync -a --checksum --prune-empty-dirs --compare-dest="${ixLib}/.lake/build/lib/lean/" \
-                  --exclude='*.hash' --include='*/' --include='*.olean' --include='*.olean.*' \
-                  --include='*.ilean' --exclude='*' \
-                  .lake/build/lib/lean/ "$out/lib/lean/"
-              '';
             }
           );
           # Binaries that import Ix.Meta load .olean files at runtime via LEAN_PATH.
           leanPath = pkgs.lib.concatStringsSep ":" (
-            [ "${ixExes}/lib/lean" ]
-            ++ map (d: "${d}/.lake/build/lib/lean") ([ ixLib ] ++ builtins.attrValues lakeDeps)
+            map (d: "${d}/.lake/build/lib/lean") ([ ixLib ] ++ builtins.attrValues lakeDeps)
           );
           wrapBins =
             name: bins:
