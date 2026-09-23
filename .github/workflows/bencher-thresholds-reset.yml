@@ -21,7 +21,7 @@ name: Bencher thresholds reset
 #     Triage+ collaborator can queue a reset by applying the label directly, and
 #     cancel by removing it before merge. Naming convention: one label per token,
 #     `bencher-thresholds-reset:<token>` where <token> is a workload (a backend
-#     testbed in Ix/Cli/BenchCmd.lean (backendSpecs) minus its runner-arch suffix:
+#     testbed stem in Ix/Cli/BenchCmd.lean (backendSpecs):
 #     `ix-compile`, `ix-decompile`, `aiur`, `zisk-check-execute`, `sp1-check-execute`, `ooc-check`) or
 #     `all` (the merge step expands an `all` label into every workload). Labeling
 #     requires Triage+, so PR authors from forks cannot self-queue a reset. The
@@ -53,17 +53,18 @@ on:
   issue_comment:
     types: [created]
 
-permissions:
-  contents: write
-  pull-requests: write
-  issues: write # ack creates/applies the bencher-thresholds-reset:<workload> label
+permissions: {}
 
 jobs:
   reset:
     if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
     env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_TOKEN: ${{ github.token }}
       REPO: ${{ github.repository }}
       EVENT: ${{ github.event_name }}
       INPUT_WORKLOAD: ${{ inputs.workload }}
@@ -74,7 +75,7 @@ jobs:
     steps:
       - run: |
           # Workload registry: the backend testbeds in Ix/Cli/BenchCmd.lean
-          # (backendSpecs) minus the runner-arch suffix. Static because this
+          # (backendSpecs), before its hardware suffix. Static because this
           # job runs on a cheap runner with no built `ix`; keep in sync when
           # adding a backend.
           valid="aiur aiur-sharded-env-check ix-compile ix-decompile ooc-check sp1-check-execute zisk-check-execute"
@@ -122,8 +123,11 @@ jobs:
   ack:
     if: github.event_name == 'issue_comment' && github.event.issue.pull_request && github.event.issue.state == 'open' && github.event.comment.user.type != 'Bot' && contains(github.event.comment.body, '!bencher-thresholds-reset') && (github.event.comment.author_association == 'OWNER' || github.event.comment.author_association == 'MEMBER' || github.event.comment.author_association == 'COLLABORATOR')
     runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
     env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_TOKEN: ${{ github.token }}
       REPO: ${{ github.repository }}
       PR: ${{ github.event.issue.number }}
       BODY: ${{ github.event.comment.body }}

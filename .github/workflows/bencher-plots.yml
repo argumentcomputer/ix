@@ -1,8 +1,8 @@
 name: Sync bencher dashboard plots
 
 # Manual bencher op, like bencher-thresholds-reset: `ix bench plots` syncs
-# the dashboard plots to the registry (one plot per tracked (testbed,
-# measure) plus the cross-cutting input-constants plot; see
+# the dashboard plots to the registry (one plot per tracked (workload,
+# measure), on the r8i testbed, plus the input-constants plot; see
 # Ix/Cli/BenchPlots.lean for the keep/replace semantics).
 # Dispatch it after a registry change —
 # new primary constant, measure-list edit, plot-title change — has merged
@@ -19,15 +19,20 @@ on:
         type: boolean
         default: false
 
+env:
+  IX_BENCH_MACHINE: r8i.8xlarge
+  BENCH_CACHE: runs-on-r8i.8xlarge-native-v1
+
 permissions:
   contents: read
 
 jobs:
   sync-plots:
-    # The restored `ix` uses native target features selected on the benchmark
-    # build runner, even though this subcommand itself is pure Lean.
-    runs-on: warp-ubuntu-latest-x64-8x
+    # The restored `ix` contains native r8i code, so this job uses the same
+    # CPU family as the benchmark builds.
+    runs-on: runs-on=${{ github.run_id }}-sync-plots-${{ github.run_attempt }}/cpu=32/family=r8i.8xlarge/spot=false/image=ubuntu26-full-x64/volume=100gb/extras=s3-cache
     steps:
+      - uses: runs-on/action@v2
       - uses: actions/checkout@v7
       # The staged binaries from bench-main's build job: this main tip's
       # exact cache when bench-main has finished its build, else the newest
@@ -36,8 +41,8 @@ jobs:
       - uses: actions/cache/restore@v6
         with:
           path: ~/.local/bin
-          key: bench-bins-${{ github.sha }}
-          restore-keys: bench-bins-
+          key: ${{ env.BENCH_CACHE }}-bench-bins-${{ github.sha }}
+          restore-keys: ${{ env.BENCH_CACHE }}-bench-bins-
           fail-on-cache-miss: true
       - run: echo "$HOME/.local/bin" >> $GITHUB_PATH
       # Provision the toolchain so `ix` finds libleanshared (no build).
@@ -46,7 +51,7 @@ jobs:
           auto-config: false
           build: false
           use-github-cache: false
-      - uses: bencherdev/bencher@v0.6.11
+      - uses: bencherdev/bencher@v0.6.12
       # Plot create/delete needs those permissions on the ix project: a
       # user-scoped `bencher_user_*` key (the report-upload token the bench
       # workflows use may be run-scoped and unable to manage plots).

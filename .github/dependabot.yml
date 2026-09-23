@@ -19,7 +19,11 @@ updates:
     open-pull-requests-limit: 10
 
   - package-ecosystem: "github-actions"
-    directory: "/"
+    # "/" is a special case meaning `.github/workflows/`; composite action
+    # directories must be listed separately for their dependencies to be seen
+    directories:
+      - "/"
+      - "/.github/actions/*"
     schedule:
       interval: "weekly"
     groups:

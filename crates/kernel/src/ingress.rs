@@ -1837,22 +1837,27 @@ fn ingress_standalone<M: KernelMode>(
     KId::new(addr.clone(), M::meta_field(const_name.clone()));
 
   match &constant.info {
-    IxonCI::Defn(def) => ingress_defn(
-      def,
-      self_id.clone(),
-      meta,
-      ixon_env,
-      names,
-      name_to_addr,
-      &constant.sharing,
-      &constant.refs,
-      &constant.univs,
-      self_id,
-      intern,
-      stats,
-      None,
-      None,
-    ),
+    IxonCI::Defn(def) => {
+      let mut local_dependencies = LocalDefnDependencies::default();
+      let entries = ingress_defn(
+        def,
+        self_id.clone(),
+        meta,
+        ixon_env,
+        names,
+        name_to_addr,
+        &constant.sharing,
+        &constant.refs,
+        &constant.univs,
+        self_id,
+        intern,
+        stats,
+        None,
+        Some(&mut local_dependencies),
+      )?;
+      local_dependencies.validate()?;
+      Ok(entries)
+    },
 
     IxonCI::Axio(ax) => {
       let mut cache: ExprCache<M> = FxHashMap::default();
@@ -2184,6 +2189,7 @@ fn ingress_muts_block<M: KernelMode>(
   };
 
   let mut results: Vec<(KId<M>, KConst<M>)> = Vec::new();
+  let mut local_dependencies = LocalDefnDependencies::default();
 
   for (i, member) in members.iter().enumerate() {
     // `all[i][0]` is the name-hash address of this member's canonical Lean
@@ -2262,11 +2268,12 @@ fn ingress_muts_block<M: KernelMode>(
           intern,
           stats,
           None,
-          None,
+          Some(&mut local_dependencies),
         )?);
       },
     }
   }
+  local_dependencies.validate()?;
 
   // Canonicity validation for Indc-only blocks.
   //
@@ -5205,6 +5212,85 @@ mod tests {
     };
     assert!(err.contains("eager_reduce"), "{err}");
     assert!(err.contains("refs[0]"), "{err}");
+  }
+
+  /// Meta-mode ingress must reject a local definition cycle before any member
+  /// is published: `TypeChecker::new_with_lazy_ixon` relies on that admission
+  /// check instead of walking definition dependencies on every check.
+  #[test]
+  fn ixon_ingress_meta_rejects_local_definition_cycles() {
+    use ix_common::env::DefinitionSafety;
+    use ixon::constant::{
+      Constant, ConstantInfo, DefKind, Definition, MutConst, defn_proj_constant,
+    };
+    use ixon::env::Named;
+    use ixon::metadata::{ConstantMeta, ConstantMetaInfo, ExprMeta};
+    use ixon::univ::Univ;
+    let definition = |value: IxonExpr| Definition {
+      kind: DefKind::Definition,
+      safety: DefinitionSafety::Safe,
+      lvls: 0,
+      typ: Arc::new(IxonExpr::Sort(1)),
+      value: Arc::new(value),
+    };
+    for cyclic in [false, true] {
+      let env = IxonEnv::new();
+      let mut block = Constant::new(ConstantInfo::Muts(vec![
+        MutConst::Defn(definition(IxonExpr::Rec(1, vec![]))),
+        MutConst::Defn(definition(if cyclic {
+          IxonExpr::Rec(0, vec![])
+        } else {
+          IxonExpr::Sort(0)
+        })),
+      ]));
+      block.univs = vec![Univ::zero(), Univ::succ(Univ::zero())];
+      let block_addr = block.commit().0;
+      env.store_const(block_addr.clone(), block);
+      let member_names = [mk_name("Cycle.f"), mk_name("Cycle.g")];
+      let name_addrs: Vec<Address> = member_names
+        .iter()
+        .map(|n| Address::hash(n.pretty().as_bytes()))
+        .collect();
+      let mut names: FxHashMap<Address, Name> = FxHashMap::default();
+      let mut name_to_addr: FxHashMap<Name, Address> = FxHashMap::default();
+      for (i, name) in member_names.iter().enumerate() {
+        let proj = defn_proj_constant(i as u64, block_addr.clone());
+        let proj_addr = proj.commit().0;
+        env.store_const(proj_addr.clone(), proj);
+        let meta = ConstantMeta::new(ConstantMetaInfo::Def {
+          name: name_addrs[i].clone(),
+          lvls: vec![],
+          all: name_addrs.clone(),
+          ctx: name_addrs.clone(),
+          arena: ExprMeta::default(),
+          type_root: 0,
+          value_root: 0,
+        });
+        env.register_name(name.clone(), Named::new(proj_addr.clone(), meta));
+        names.insert(name_addrs[i].clone(), name.clone());
+        name_to_addr.insert(name.clone(), proj_addr);
+      }
+      let all: Vec<Vec<Address>> =
+        name_addrs.iter().map(|a| vec![a.clone()]).collect();
+      let mut intern = InternTable::<Meta>::new();
+      let mut stats = ConvertStats::new(false);
+      let result = ingress_muts_block::<Meta>(
+        &mk_name("Cycle"),
+        &block_addr,
+        &all,
+        &env,
+        &names,
+        &name_to_addr,
+        &mut intern,
+        &mut stats,
+      );
+      if cyclic {
+        let err = result.unwrap_err();
+        assert!(err.contains("cyclic definition dependency"), "{err}");
+      } else {
+        assert!(!result.unwrap().is_empty());
+      }
+    }
   }
 
   // ---- lean_expr_to_zexpr: variant coverage ----
