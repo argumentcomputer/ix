@@ -287,9 +287,13 @@ def roundtripOn (leanEnv : Lean.Environment) (label : String)
     | some anon, some metaErr => some s!"anon: {anon}; meta: {metaErr}"
   return (anonRows, metaReport, err?)
 
-/-- Load the fixture environment once, then check every focused closure and
-    the whole environment.  Loading the same olean graph separately for each
-    closure is pure setup duplication.  External `.ixe` files use
+/-- Coverage is {anon, meta} × {seed closures, whole environment}: every
+    entry of `seedSets` and all constants in `fixtureEnv` run through both
+    roundtrip modes. An error in either mode or any scope fails the suite.
+
+    One test action shares the loaded fixture environment across scopes and
+    one Rust compilation per scope across modes. The reported check count
+    includes both anon rows and meta comparisons. External `.ixe` files use
     `ix roundtrip-tc <path>`. -/
 def integrationSuite : TestSeq :=
   .individualIO "anon/meta roundtrip closures and whole environment" none (do

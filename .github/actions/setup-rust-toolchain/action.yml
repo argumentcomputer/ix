@@ -111,9 +111,14 @@ runs:
           exit 1
         fi
 
-    - uses: actions-rust-lang/setup-rust-toolchain@v1
+    - uses: actions-rust-lang/setup-rust-toolchain@v2
       with:
-        rustflags: ${{ inputs.codegen == 'native' && '-Ctarget-cpu=native -Dwarnings' || (inputs.codegen == 'portable' && '-Ctarget-cpu=x86-64-v4 -Ctarget-feature=+avx512vbmi2,+gfni -Dwarnings' || '-Dwarnings') }}
+        # Warnings are denied by the action's build.warnings default
+        # (CARGO_BUILD_WARNINGS=deny), not through RUSTFLAGS. Every branch
+        # must still set RUSTFLAGS: an unset value lets the
+        # `-Ctarget-cpu=native` in .cargo/config.toml through, which would
+        # hand `generic` AVX-512 code that Valgrind cannot decode.
+        rustflags: ${{ inputs.codegen == 'native' && '-Ctarget-cpu=native' || (inputs.codegen == 'portable' && '-Ctarget-cpu=x86-64-v4 -Ctarget-feature=+avx512vbmi2,+gfni' || '-Ctarget-cpu=x86-64') }}
         cache: ${{ inputs.use-github-cache }}
         cache-key: ${{ inputs.codegen == 'native' && 'r8i-native' || (inputs.codegen == 'portable' && 'x86-64-v4' || 'x64-generic') }}-${{ inputs.cache-key }}
         cache-workspaces: ${{ inputs.cache-workspaces }}
