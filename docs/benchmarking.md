@@ -310,8 +310,9 @@ dependency caches.
 
 ### RunsOn machines and caching
 
-All self-hosted jobs use RunsOn's `r8i` family and the `ubuntu24-full-x64`
-image with the default Spot policy, including CPU benchmarks. RunsOn can fall
+Benchmark jobs use exact `r8i` instance types; CI jobs request the
+`r7i+r8i+r7a+r8a` families so Spot has several pools to fill from. All use
+the `ubuntu24-full-x64` image with the default Spot policy. RunsOn can fall
 back to on-demand capacity and automatically retry interrupted jobs. There
 are no GPU benchmarks; future GPU benchmarks should use `spot=false`. The
 CUDA compile job runs its toolchain in an Ubuntu 26.04 container on a CPU
@@ -319,17 +320,19 @@ runner. Jobs that use `ubuntu-latest` remain on GitHub-hosted runners. See
 [CI and merge queue configuration](ci.md) for the required checks and retry
 behavior.
 The [instance sizes](https://aws.amazon.com/ec2/instance-types/memory-optimized/)
-preserve each job's vCPU count, with more RAM per vCPU:
+preserve each job's vCPU count, with more RAM per vCPU; every listed r-family
+offers the same shapes:
 
-| vCPUs | Instance | RAM |
+| vCPUs | Size | RAM |
 | --- | --- | --- |
-| 8 | `r8i.2xlarge` | 64 GiB |
-| 16 | `r8i.4xlarge` | 128 GiB |
-| 32 | `r8i.8xlarge` | 256 GiB |
+| 8 | `2xlarge` | 64 GiB |
+| 16 | `4xlarge` | 128 GiB |
+| 32 | `8xlarge` | 256 GiB |
 
-Benchmark builds, compile measurements, and runs all use `r8i.8xlarge`.
-Rust uses `-Ctarget-cpu=native`; Valgrind builds use portable code generation
-and a separate sticky cache on `r8i.2xlarge`. Benchmark product caches and Cargo
+Benchmark builds, compile measurements, and runs all use `r8i.8xlarge` with
+`-Ctarget-cpu=native`. CI jobs pin `x86-64-v4` plus `avx512vbmi2` and `gfni`,
+the baseline shared by every family they may land on; Valgrind builds without
+AVX-512 on its own sticky lineage. Benchmark product caches and Cargo
 caches include the instance family and code generation. Bencher testbeds
 include both, such as `ooc-check-runs-on-r8i-8xlarge-native`, so old binaries
 and timings from different hardware or compiler flags stay separate.

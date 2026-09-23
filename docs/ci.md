@@ -6,6 +6,15 @@ which does not run on a GPU. Future GPU benchmarks should explicitly request
 `spot=false`. RunsOn may fall back to on-demand capacity when Spot is
 unavailable or when provisioning an automatic recovery attempt.
 
+CI jobs request the `r7i+r8i+r7a+r8a` families and let RunsOn pick the size
+from `cpu=`, so a Spot request can draw from several pools; exact r8i types
+alone had no Spot capacity. Their Rust builds use the `portable` codegen mode
+of the toolchain action, `x86-64-v4` plus `avx512vbmi2` and `gfni`, the
+feature set every listed family shares, and their sticky lineages carry that
+name so native artifacts never mix in. Valgrind builds `generic`, without
+AVX-512, on its own lineage. Benchmarks stay on exact `r8i.8xlarge` with
+`native` codegen so their timings remain comparable.
+
 Runner labels include the workflow run ID, job ID, run attempt, and, for
 matrix jobs, the job index. This keeps concurrent jobs and recovery attempts
 from claiming another job's matching runner. Matrix jobs use

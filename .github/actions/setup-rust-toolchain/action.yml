@@ -14,10 +14,14 @@ inputs:
   cache-key:
     description: Additional Cargo cache namespace, including the benchmark machine when applicable
     required: false
-  native-codegen:
-    description: Optimize for the runner CPU (disable for portable tools such as Valgrind)
+  codegen:
+    description: >-
+      Rust code generation: `native` for the runner CPU (benchmarks on one
+      exact instance type), `portable` for the x86-64-v4 baseline shared by
+      every CI instance family, `generic` for tools such as Valgrind that
+      cannot decode AVX-512.
     required: false
-    default: "true"
+    default: native
 
 runs:
   using: composite
@@ -76,9 +80,40 @@ runs:
       shell: bash
       run: echo "CFLAGS=-std=gnu17${CFLAGS:+ $CFLAGS}" >> "$GITHUB_ENV"
 
+    - name: Validate codegen mode
+      shell: bash
+      env:
+        IX_CODEGEN: ${{ inputs.codegen }}
+      run: |
+        case "$IX_CODEGEN" in
+          native|portable|generic) ;;
+          *) echo "::error::codegen must be native, portable, or generic; got $IX_CODEGEN"; exit 1 ;;
+        esac
+
+    # CI jobs draw from several instance families (Intel Sapphire, Emerald,
+    # and Granite Rapids; AMD Zen 4 and 5) so Spot has more than one pool to
+    # fill from, and a binary built on one may run on another from the same
+    # sticky cache. Neither vendor's native feature set contains the other's
+    # (Zen emits SSE4A, which Intel traps on), so `portable` pins the measured
+    # intersection: x86-64-v4 covers every AVX-512 subset Plonky3 uses,
+    # +avx512vbmi2 keeps its VPSHRDQ interleave and +gfni LLVM's byte-shift
+    # lowering. Fail fast if RunsOn hands out a host below that baseline.
+    - name: Require the portable baseline CPU features
+      if: inputs.codegen == 'portable'
+      shell: bash
+      run: |
+        missing=()
+        for f in avx512f avx512bw avx512cd avx512dq avx512vl avx512_vbmi2 gfni; do
+          grep -qw "$f" /proc/cpuinfo || missing+=("$f")
+        done
+        if [ ${#missing[@]} -gt 0 ]; then
+          echo "::error::Runner CPU lacks required feature(s): ${missing[*]}. Portable binaries target x86-64-v4 +avx512vbmi2,+gfni."
+          exit 1
+        fi
+
     - uses: actions-rust-lang/setup-rust-toolchain@v1
       with:
-        rustflags: ${{ inputs.native-codegen == 'true' && '-Ctarget-cpu=native -Dwarnings' || '-Dwarnings' }}
+        rustflags: ${{ inputs.codegen == 'native' && '-Ctarget-cpu=native -Dwarnings' || (inputs.codegen == 'portable' && '-Ctarget-cpu=x86-64-v4 -Ctarget-feature=+avx512vbmi2,+gfni -Dwarnings' || '-Dwarnings') }}
         cache: ${{ inputs.use-github-cache }}
-        cache-key: ${{ inputs.native-codegen == 'true' && 'r8i-native' || 'x64-portable' }}-${{ inputs.cache-key }}
+        cache-key: ${{ inputs.codegen == 'native' && 'r8i-native' || (inputs.codegen == 'portable' && 'x86-64-v4' || 'x64-generic') }}-${{ inputs.cache-key }}
         cache-workspaces: ${{ inputs.cache-workspaces }}

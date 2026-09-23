@@ -113,7 +113,7 @@ jobs:
             test_args: >-
               tc-anon-diff tc-init tc-tutorial tc-roundtrip tc-ingress-meta
               tc-pins tc-accel-diff lean4lean
-    runs-on: runs-on=${{ github.run_id }}-merge-tests-${{ github.run_attempt }}-${{ strategy.job-index }}/cpu=32/family=r8i.8xlarge/image=ubuntu24-full-x64/volume=100gb/sticky=merge-tests-r8i-native:50gb/extras=s3-cache
+    runs-on: runs-on=${{ github.run_id }}-merge-tests-${{ github.run_attempt }}-${{ strategy.job-index }}/cpu=32/family=r7i+r8i+r7a+r8a/image=ubuntu24-full-x64/volume=100gb/sticky=merge-tests-x86-64-v4:50gb/extras=s3-cache
     steps:
       - name: Validate merge-test variant
         env:
@@ -146,6 +146,7 @@ jobs:
             custom,path=.lake,path=target
       - uses: ./.github/actions/setup-rust-toolchain
         with:
+          codegen: portable
           use-github-cache: "false"
       - uses: leanprover/lean-action@v1
         with:
@@ -170,9 +171,9 @@ jobs:
     name: Valgrind FFI
     needs: prepare
     if: ${{ github.event_name == 'merge_group' || github.event_name == 'issue_comment' }}
-    # Valgrind cannot decode all native r8i instructions, so portable builds
-    # must use a separate sticky disk from the native merge-test partitions.
-    runs-on: runs-on=${{ github.run_id }}-valgrind-${{ github.run_attempt }}/cpu=8/family=r8i.2xlarge/image=ubuntu24-full-x64/volume=100gb/sticky=valgrind-r8i-portable:50gb/extras=s3-cache
+    # Valgrind cannot decode AVX-512, so its generic build keeps a sticky disk
+    # separate from the x86-64-v4 merge-test partitions.
+    runs-on: runs-on=${{ github.run_id }}-valgrind-${{ github.run_attempt }}/cpu=8/family=r7i+r8i+r7a+r8a/image=ubuntu24-full-x64/volume=100gb/sticky=valgrind-x64-generic:50gb/extras=s3-cache
     steps:
       - uses: actions/checkout@v7
         with:
@@ -196,7 +197,7 @@ jobs:
             custom,path=.lake,path=target
       - uses: ./.github/actions/setup-rust-toolchain
         with:
-          native-codegen: "false"
+          codegen: generic
           use-github-cache: "false"
       - uses: leanprover/lean-action@v1
         with:
