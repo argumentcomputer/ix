@@ -5,7 +5,7 @@ import Ix.IxVM.ClaimHarness
 import Ix.Aiur.Protocol
 import Ix.Aiur.Compiler
 import Ix.Aiur.Statistics
-import Ix.MultiStark
+import MultiStark
 import Ix.Aggr
 import Ix.TracingTexray
 import Ix.Benchmark.Bench
@@ -232,7 +232,7 @@ structure Result where
 structure JoinArtifact where
   label : String
   constants : Nat
-  statement : MultiStark.CheckEnvTrees
+  statement : Aggr.CheckEnvTrees
   innerClaimsBytes : ByteArray
   checkEnvClaimBytes : ByteArray
   outerClaim : Array Aiur.G
@@ -412,8 +412,8 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
   -- Recursive: after each constant's prove, execute AND prove the in-circuit
   -- multi-stark verifier over the fresh proof (Phase 3).
   let recursive := p.hasFlag "recursive"
-  -- Join: retain exactly two successful recursive lifts, then benchmark one
-  -- production flat join over their singleton-CheckEnv statements.
+  -- Join: retain two verified IxVM proofs, then benchmark one production
+  -- direct flat join over their singleton-CheckEnv statements.
   let join := p.hasFlag "join"
   if recursive && executeOnly then
     IO.eprintln "error: --recursive measures the prove path; drop --execute-only"
@@ -797,7 +797,7 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
                   throw <| IO.userError s!"join benchmark: native shard claim for \
                     {r.name} differs from host reconstruction"
                 let statement ← IO.ofExcept <|
-                  MultiStark.CheckEnvTrees.ofClaim expectedClaim trees
+                  Aggr.CheckEnvTrees.ofClaim expectedClaim trees
                 joinArtifacts := joinArtifacts.push {
                   label := r.name
                   constants := r.constants
@@ -886,6 +886,14 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
         if useTexray then Aiur.printStats stats
         pure (some stats.totalFftCost)
     if let some joinFftCost := joinFftCost then
+      -- Persist the cheap phase before proving, so a watchdog kill still
+      -- reports the join's execution time and FFT cost.
+      if let some path := jsonOut then
+        Ix.Benchmark.Results.writeEntry path pairName <| Json.mkObj
+          [("status", Json.str "ok"),
+           ("constants", Lean.toJson (left.constants + right.constants)),
+           ("join-execute-time", jsonRound 6 joinExecuteSec),
+           ("join-fft-cost", jsonRound 0 joinFftCost)]
       IO.println s!"  proving join {pairName} …"
       (← IO.getStdout).flush
       TracingTexray.resetPeakTreeRss
@@ -949,7 +957,7 @@ def typecheckCmd : Cli.Cmd := `[Cli|
     "skip-deps";          "Check only each target itself (verify_const, trusting its deps) instead of re-checking its whole transitive closure (verify_claim). Same flag as `zisk-host --skip-deps`."
     "execute-only";       "Execute only (Phase 1: constants / fft-cost / execute-time) and skip proving. The fast per-PR `execute`-mode signal."
     "recursive";          "After each prove, execute and then prove the in-circuit multi-stark verifier over the fresh proof (the fri-verifier-* metrics; see the module docstring). Uses recursion-tuned FRI parameters. Conflicts with --execute-only."
-    "join";               "With --recursive and exactly two resolved constants, prove each as a singleton CheckEnv shard, lift both, then execute/prove/verify one flat aggregate join. Emits a dedicated `left + right` row with join-* metrics. Conflicts with --skip-deps, --execute-only, and --interp."
+    "join";               "With --recursive and exactly two resolved constants, prove each as a singleton CheckEnv shard, then execute/prove/verify one direct flat aggregate join (ix_aggr shape 2). Emits a dedicated `left + right` row with join-* metrics. Conflicts with --skip-deps, --execute-only, and --interp."
     "interp";             "Route execution through the generic Aiur bytecode interpreter instead of the codegen'd IxVM kernel - no `lake exe ix codegen` + cargo rebuild needed after `Ix/IxVM/*.lean` edits. Applies to Phase 1, the prove's witness generation, and both --recursive steps. Slower; execute-time rows are not comparable to codegen-mode runs (fft-cost is)."
     "queries"   : Nat;    "Override the positive FRI query count of the selected parameter set (default 100, or 50 with --recursive; applies to inner and outer proof alike)."
     texray;               "Enable the tracing-texray timeline + RAM breakdown (per-prove spans on stderr). Combined with --json, per-phase span timings are additionally written to `<json>.spans` as JSON Lines for the CI drill-down. Off by default."

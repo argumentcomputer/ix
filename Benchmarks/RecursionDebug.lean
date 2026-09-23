@@ -5,7 +5,7 @@ import Ix.Aiur.Protocol
 import Ix.Aiur.Compiler
 import Ix.Aiur.Interpret
 import Ix.Aiur.Statistics
-import Ix.MultiStark
+import MultiStark
 import Ix.Cli.NameResolve
 
 /-!

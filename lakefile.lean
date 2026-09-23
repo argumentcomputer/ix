@@ -132,6 +132,9 @@ target ix_ffi_dyn pkg : FilePath := do
 
 end FFI
 
+lean_lib MultiStark where
+  moreLinkObjs := #[ix_rs]
+
 @[default_target]
 lean_lib Ix where
   moreLinkObjs := #[ix_rs]

@@ -3,7 +3,7 @@ public import Ix.Aiur.Meta
 
 public section
 
-namespace IxVM
+namespace Aiur.Library
 
 def core := ⟦
   enum ListNode‹T› {
@@ -238,6 +238,6 @@ def core := ⟦
   }
 ⟧
 
-end IxVM
+end Aiur.Library
 
 end

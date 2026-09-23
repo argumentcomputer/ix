@@ -3,7 +3,7 @@ public import Ix.Aiur.Meta
 
 public section
 
-namespace IxVM
+namespace Aiur.Library
 
 def blake3 := ⟦
   /- # Test entrypoints -/
@@ -480,6 +480,6 @@ def blake3 := ⟦
   }
 ⟧
 
-end IxVM
+end Aiur.Library
 
 end

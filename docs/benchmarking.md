@@ -70,10 +70,14 @@ ix bench run --backend aiur --env InitStd --mode execute \
 ix bench run --backend aiur --env InitStd --mode prove \
   --consts Nat.add_comm --ixe InitStd.ixe --ceiling-gb 50
 
-# Optional aggregate W0 diagnostic: prove two singleton CheckEnv shards,
-# lift both, then benchmark one flat join. This direct tool invocation emits
-# the two child rows plus `Nat.add_comm + String.append` with join-* metrics;
-# it is deliberately not part of the scheduled one-constant CI cell.
+# Run the scheduled aggregation workload alongside these two full-closure
+# pipelines, under the same RAM watchdog used by CI:
+ix bench run --backend aiur --env InitStd --mode prove \
+  --consts Nat.add_comm,String.append --ixe InitStd.ixe
+
+# Direct diagnostic: prove two singleton CheckEnv shards, then benchmark
+# one ix_aggr shape-2 flat join. This emits the singleton child rows plus
+# `Nat.add_comm + String.append` with join-* metrics.
 bench-typecheck --ixe InitStd.ixe \
   --consts Nat.add_comm,String.append --recursive --join --json join.json
 
@@ -96,11 +100,20 @@ ix bench compare --backend lean4lean --env InitStd
 resolve from `<dir>/.lake/build/bin` first, so one `ix` can drive a base and
 a PR tree and compare them — exactly what the PR workflow does.
 
+The default Aiur `InitStd` prove run includes the aggregation pair after the
+per-constant pipelines. A `--consts` override includes it only when both
+`Nat.add_comm` and `String.append` are selected. Pair setup and child metrics
+remain in `<out>.join.json`; only the pair's `join-*` measurements enter the
+main results, so singleton-shard setup cannot overwrite full-closure results.
+The comparison renders the pair in its own table. A missing or incomplete
+successful join is a run failure; a watchdog kill preserves any execution
+measurements and marks the unfinished pair `OOM`.
+
 ## Backends
 
 | backend | what it measures | tool |
 |---|---|---|
-| `aiur`    | the Aiur proof pipeline, per constant: the `ixvm` stage proves the IxVM typecheck, the `fri-verifier` stage executes and proves the in-circuit multi-stark verifier over that fresh proof (the KZG stages fold in as they land, each with its own measure prefix), closed by the pipeline ledger (total-time, pipeline-throughput, pipeline-peak-rss). Each stage's measures carry its prefix (`ixvm-prove-time`, `fri-verifier-fft-cost`, …). The whole system runs under the recursion-tuned FRI parameters. A second mode, execute, is the fast Phase-1-only signal (fft-cost, execute-time, throughput, peak-rss) — unscheduled, local/on-demand only (`!benchmark aiur execute`). The direct `--recursive --join` diagnostic takes exactly two constants as singleton `CheckEnv` shards and appends one pair row carrying `join-{execute-time,fft-cost,prove-time,peak-rss,proof-size,verify-time}`; it remains unscheduled until a runner can carry W0. | `bench-typecheck --recursive` |
+| `aiur`    | the Aiur proof pipeline, per constant: the `ixvm` stage proves the IxVM typecheck, the `fri-verifier` stage executes and proves the in-circuit multi-stark verifier over that fresh proof (the KZG stages fold in as they land, each with its own measure prefix), closed by the pipeline ledger (total-time, pipeline-throughput, pipeline-peak-rss). Each stage's measures carry its prefix (`ixvm-prove-time`, `fri-verifier-fft-cost`, …). The whole system runs under the recursion-tuned FRI parameters. A second mode, execute, is the fast Phase-1-only signal (fft-cost, execute-time, throughput, peak-rss) — unscheduled, local/on-demand only (`!benchmark aiur execute`). The direct `--recursive --join` diagnostic takes exactly two constants as singleton `CheckEnv` shards and appends one pair row carrying `join-{execute-time,fft-cost,prove-time,peak-rss,proof-size,verify-time}`; the InitStd prove cell schedules this pair in a separate process after the per-constant runs. | `bench-typecheck --recursive` |
 | `zisk`    | ZisK VM execute: cycles, execute-time, throughput, peak-rss, constants (pre-shard closure count, same universe as aiur's), shards (the runtime-planned partition size; 1 when the closure fits) | `zisk-host` |
 | `sp1`     | SP1 VM execute (currently disabled in the registry) | `sp1-host` |
 | `ooc`     | out-of-circuit Rust kernel: whole-env row + one full-closure row per constant (`check-time` wraps only the check — the env loads once, outside every row's timed window) | `ix check-rs --json` |

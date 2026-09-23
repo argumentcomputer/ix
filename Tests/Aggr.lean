@@ -2,10 +2,11 @@ module
 
 public import LSpec
 public import Ix.Aggr
+public import Ix.Aiur.Compiler
 public import Ix.Claim
 public import Ix.AssumptionTree
-public import Ix.Cli.AggregateCmd
-public import Tests.MultiStark
+public import Ix.Aggr.Reference
+public import Tests.ProofHelpers
 
 /-!
 # Tests for the heterogeneous `ix_aggr` circuit
@@ -37,7 +38,7 @@ open LSpec Aiur
 
 namespace Tests.Aggr
 
-open Tests.MultiStark (expectOk expectErr recCommitParams innerFri)
+open Tests.ProofHelpers (expectOk expectErr recCommitParams innerFri)
 
 /-- Cheap stand-in children. `fake_verify_claim` mirrors the IxVM
 `verify_claim` claim shape (10 words), `fake_aggr` mirrors the `ix_aggr` claim
@@ -146,25 +147,25 @@ def smokeSuite : IO UInt32 := do
   -- Three leaves make the direct policy exercise both the IxVM+IxVM and
   -- aggregate+IxVM pair shapes. The threshold keeps the lower fold flat and
   -- the root structural.
-  let driverOps : Array Ix.Cli.CheckCmd.AggregationTree.FoldOp :=
+  let driverOps : Array Ix.Shard.AggregationTree.FoldOp :=
     #[.leaf 0, .leaf 1, .join 0 1, .leaf 2, .join 2 3]
-  let defaultDriverPlan := Ix.Cli.AggregateCmd.schedulePlan
+  let defaultDriverPlan := Aggr.Reference.schedulePlan
     driverOps #[2, 1, 1] 3
-  let directDriverPlan := Ix.Cli.AggregateCmd.schedulePlan
+  let directDriverPlan := Aggr.Reference.schedulePlan
     driverOps #[2, 1, 1] 3 true
-  let singletonDirectPlan := Ix.Cli.AggregateCmd.schedulePlan
+  let singletonDirectPlan := Aggr.Reference.schedulePlan
     #[.leaf 0] #[2] 0 true
   -- M1-f's four-shard box fixture is a balanced post-order fold. With every
   -- pair above the structural threshold, wrap-first proves 0×4 then 9×3;
   -- direct mode keeps leaves raw, proves two shape-6 lower pairs, then shape 9.
-  let m1fOps : Array Ix.Cli.CheckCmd.AggregationTree.FoldOp := #[
+  let m1fOps : Array Ix.Shard.AggregationTree.FoldOp := #[
     .leaf 0, .leaf 1, .join 0 1,
     .leaf 2, .leaf 3, .join 3 4,
     .join 2 5
   ]
-  let m1fWrapPlan := Ix.Cli.AggregateCmd.schedulePlan
+  let m1fWrapPlan := Aggr.Reference.schedulePlan
     m1fOps #[2500, 2500, 2500, 2500] 4096
-  let m1fDirectPlan := Ix.Cli.AggregateCmd.schedulePlan
+  let m1fDirectPlan := Aggr.Reference.schedulePlan
     m1fOps #[2500, 2500, 2500, 2500] 4096 true
   let wrapFirstShapes : Bool := match defaultDriverPlan with
     | .ok plan =>
@@ -194,46 +195,46 @@ def smokeSuite : IO UInt32 := do
     | .error _ => false
   let shapeWeightsBounded : Bool := match defaultDriverPlan, directDriverPlan with
     | .ok wraps, .ok direct =>
-      Ix.Cli.AggregateCmd.aggregateSlotRamWeights wraps == #[
-        Ix.Cli.AggregateCmd.aggregateWrapRamBytes,
-        Ix.Cli.AggregateCmd.aggregateWrapRamBytes,
-        Ix.Cli.AggregateCmd.aggregateStructuralJoinRamBytes +
-          3 * Ix.Cli.AggregateCmd.aggregateFlatJoinRamPerSubjectBytes,
-        Ix.Cli.AggregateCmd.aggregateWrapRamBytes,
-        Ix.Cli.AggregateCmd.aggregateStructuralJoinRamBytes] &&
-      Ix.Cli.AggregateCmd.aggregateSlotRamWeights direct == #[
-        Ix.Cli.AggregateCmd.aggregateRawShardRamBytes,
-        Ix.Cli.AggregateCmd.aggregateRawShardRamBytes,
-        Ix.Cli.AggregateCmd.aggregateDirectJoinRamBytes,
-        Ix.Cli.AggregateCmd.aggregateRawShardRamBytes,
-        Ix.Cli.AggregateCmd.aggregateMixedJoinRamBytes]
+      Aggr.Reference.aggregateSlotRamWeights wraps == #[
+        Aggr.Reference.aggregateWrapRamBytes,
+        Aggr.Reference.aggregateWrapRamBytes,
+        Aggr.Reference.aggregateStructuralJoinRamBytes +
+          3 * Aggr.Reference.aggregateFlatJoinRamPerSubjectBytes,
+        Aggr.Reference.aggregateWrapRamBytes,
+        Aggr.Reference.aggregateStructuralJoinRamBytes] &&
+      Aggr.Reference.aggregateSlotRamWeights direct == #[
+        Aggr.Reference.aggregateRawShardRamBytes,
+        Aggr.Reference.aggregateRawShardRamBytes,
+        Aggr.Reference.aggregateDirectJoinRamBytes,
+        Aggr.Reference.aggregateRawShardRamBytes,
+        Aggr.Reference.aggregateMixedJoinRamBytes]
     | _, _ => false
-  let driverPrepared : Array Ix.Cli.AggregateCmd.PreparedShard := #[
+  let driverPrepared : Array Aggr.Reference.PreparedShard := #[
     { claim := leftStatement.claim
-      statement := Ix.Cli.AggregateCmd.fromAggrCheckEnvTrees leftStatement },
+      statement := leftStatement },
     { claim := rightStatement.claim
-      statement := Ix.Cli.AggregateCmd.fromAggrCheckEnvTrees rightStatement },
+      statement := rightStatement },
     { claim := rightStatement.claim
-      statement := Ix.Cli.AggregateCmd.fromAggrCheckEnvTrees rightStatement }
+      statement := rightStatement }
   ]
-  let driverParameters : MultiStark.RecursionParameters := {
+  let driverParameters : Aggr.RecursionParameters := {
     commitment := recCommitParams, fri := innerFri
   }
   let defaultDriverSpecs := defaultDriverPlan.bind fun plan =>
-    Ix.Cli.AggregateCmd.buildAggrSlotSpecs plan driverPrepared aggrVk allowed
+    Aggr.Reference.buildAggrSlotSpecs plan driverPrepared aggrVk allowed
       fakeVerifyIdx fakeAggrIdx driverParameters
   let directDriverSpecs := directDriverPlan.bind fun plan =>
-    Ix.Cli.AggregateCmd.buildAggrSlotSpecs plan driverPrepared aggrVk allowed
+    Aggr.Reference.buildAggrSlotSpecs plan driverPrepared aggrVk allowed
       fakeVerifyIdx fakeAggrIdx driverParameters
   let uniformDriverClaims : Bool := match defaultDriverSpecs, directDriverSpecs with
     | .ok wraps, .ok direct => match wraps[0]?, wraps.back?, direct[0]?, direct.back? with
       | some wrappedLeaf, some wrappedRoot, some rawLeaf, some directRoot =>
-        wrappedLeaf.outerClaim == Ix.Cli.AggregateCmd.aggregateOuterClaim
+        wrappedLeaf.outerClaim == Aggr.aggregateOuterClaim
           allowed fakeAggrIdx leftStatement.claim &&
         rawLeaf.kind == .ixvm && directRoot.kind == .aggr &&
         wrappedRoot.outerClaim == directRoot.outerClaim &&
-        Ix.Cli.AggregateCmd.aggregateCacheVersion == 2 &&
-        wrappedLeaf.cacheKey != Ix.Cli.AggregateCmd.aggregateCacheKey
+        Aggr.aggregateCacheVersion == 2 &&
+        wrappedLeaf.cacheKey != Aggr.aggregateCacheKey
           aggrVk driverParameters wrappedLeaf.outerClaim 1
       | _, _, _, _ => false
     | _, _ => false
@@ -242,7 +243,7 @@ def smokeSuite : IO UInt32 := do
   -- Kind 0 ("IxVM"): claim = [0, fake_verify_claim, digest(CheckEnv bytes)].
   let mkIxvmChild (claimBytes : ByteArray) : Except String ChildSlot := do
     let (claim, proof, _) ←
-      ixvmSystem.prove fakeVerifyIdx (Aggr.digestGs claimBytes) default
+      ixvmSystem.prove fakeVerifyIdx (MultiStark.digestGs claimBytes) default
     let proofAdviceBytes ← ixvmSystem.proofToAdviceBytes claim proof
     pure ⟨proofAdviceBytes, MultiStark.serializeClaims #[claim]⟩
   -- Kind 1 ("self"): claim = [0, fake_aggr, digest(allowed), digest(CheckEnv)].
@@ -504,12 +505,17 @@ def smokeSuite : IO UInt32 := do
     (trees := Aggr.CheckEnvTrees.adviceTrees
       leftStatement rightStatement unsortedStatement)
 
-  -- Identity framing and shape dispatch are closed: shortened blobs and
+  -- Identity framing and shape dispatch are closed: malformed lengths and
   -- out-of-range shape bytes cannot select a permissive arm.
   let shortAllowed := allowed.extract 0 72
   let shortIdentity := aggrCompiled.bytecode.execute ixAggrIdx
     (Aggr.pubInput shortAllowed leftClaimBytes)
     (mkIO shortAllowed (Aggr.shapeCode (.ixvm, none)) ixvmVk aggrVk
+      #[leftIxvm])
+  let longAllowed := allowed ++ ⟨Array.replicate 16 0⟩
+  let longIdentity := aggrCompiled.bytecode.execute ixAggrIdx
+    (Aggr.pubInput longAllowed leftClaimBytes)
+    (mkIO longAllowed (Aggr.shapeCode (.ixvm, none)) ixvmVk aggrVk
       #[leftIxvm])
   let invalidShape := run 13 #[leftIxvm] leftClaimBytes
 
@@ -518,7 +524,7 @@ def smokeSuite : IO UInt32 := do
   -- `[0, 1)`: a leaf for each, a join adding them into `[0, 1)`, and a root
   -- closing the batch and emitting the wrap's statement.
   let rangeBatch ← match ixvmSystem.prove fakeVerifyIdx
-      (Aggr.digestGs leftClaimBytes) default with
+      (MultiStark.digestGs leftClaimBytes) default with
     | .error e => IO.eprintln s!"range batch proof failed: {e}"; return 1
     | .ok (_, proof, _) => pure proof
   let (preamble, fullProofs, fullResidual) ← match rangeBatch.rangeAdvice 0 1 with
@@ -632,6 +638,7 @@ def smokeSuite : IO UInt32 := do
     expectErr "native pair rejects malformed keyed-blob framing"
       malformedNativeFraming,
     expectErr "ix_aggr rejects a shortened identity blob" shortIdentity,
+    expectErr "ix_aggr rejects the retired 96-byte identity layout" longIdentity,
     expectErr "ix_aggr rejects an out-of-range shape hint" invalidShape,
     expectErr "structural pair rejects a path to the wrong root" wrongRootPath,
     expectErr "structural pair rejects a tampered path sibling" tamperedPath,

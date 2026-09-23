@@ -1,5 +1,5 @@
-import Ix.IxVM.Core
-import Ix.IxVM.ByteStream
+import Ix.Aiur.Library.Core
+import Ix.Aiur.Library.ByteStream
 import Ix.IxVM.Sha256
 import Ix.Aiur.Protocol
 import Ix.Aiur.Compiler
@@ -24,7 +24,7 @@ def friParameters : Aiur.FriParameters := {
 }
 
 def mergedToplevel : Except Aiur.Global Aiur.Source.Toplevel := do
-  let tl ← IxVM.core.merge IxVM.byteStream
+  let tl ← Aiur.Library.core.merge Aiur.Library.byteStream
   tl.merge IxVM.sha256
 
 def sha256Bench : IO $ Array BenchReport := do
