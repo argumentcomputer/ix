@@ -10,6 +10,15 @@ open Lean
 
 open System (FilePath)
 
+/-- Spawn env for nested `lake` invocations: drop LD_LIBRARY_PATH. `lake exe`
+    and `lake test` prepend the Lean toolchain's lib dir there, and the
+    toolchain bundles its own libLLVM. Under a system LLVM of the same major
+    version, cargo build scripts spawned by the nested lake would then load
+    the system libclang against Lean's libLLVM and fail on missing symbols.
+    lake and lean locate their own libraries through RUNPATH. -/
+def lakeSpawnEnv : Array (String × Option String) :=
+  #[("LD_LIBRARY_PATH", none)]
+
 /-- Initialize Lean's module search path.
 
 When `cwd` is provided, query `lake env printenv LEAN_PATH` from that directory
@@ -21,7 +30,7 @@ def initLeanSearchPath (cwd : Option FilePath := none) : IO Unit := do
   -- If a target cwd is supplied, always query that cwd's LEAN_PATH.
   -- Otherwise, trust the inherited LEAN_PATH when present.
   if cwd.isSome || (← IO.getEnv "LEAN_PATH").isNone then
-    let out ← IO.Process.output { cmd := "lake", args := #["env", "printenv", "LEAN_PATH"], cwd }
+    let out ← IO.Process.output { cmd := "lake", args := #["env", "printenv", "LEAN_PATH"], cwd, env := lakeSpawnEnv }
     let paths := out.stdout.trimAscii.toString.splitOn ":" |>.map FilePath.mk
     initSearchPath (← findSysroot) paths
   else
@@ -174,6 +183,7 @@ def fetchMathlibCache (cwd : Option FilePath) : IO Unit := do
       cmd := "lake"
       args := #["exe", "cache", "get"]
       cwd := cwd
+      env := lakeSpawnEnv
       stdout := .inherit
       stderr := .inherit
     }
@@ -208,6 +218,7 @@ def buildFile (path : FilePath) : IO Unit := do
     cmd := "lake"
     args := #["build", moduleName]
     cwd := root
+    env := lakeSpawnEnv
     stdout := .inherit
     stderr := .inherit
   }
