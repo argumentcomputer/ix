@@ -221,95 +221,72 @@
               Blake3 = blake3-lean.packages.${system}.rust;
             };
           };
-          # Shared Lake build args: patches out the Cargo build (Crane handles it)
-          mkLakeBuildArgs = rustLib: {
+          # One Lake build of the library and every executable. Copying the
+          # library's `.lake` into a second derivation costs as much as the
+          # link it enables, so the CLI, the test binary, and the prover are
+          # facets of this derivation rather than packages of their own.
+          ixBuild = lake2nix.mkPackage {
             inherit lakeDeps;
             src = leanSrc;
-            # Don't build the `ix_rs` static lib with Lake, since we build it with Crane
+            name = "Ix";
+            # Crane builds the Rust side, so the lakefile's Cargo runs are
+            # disabled and each feature selection's snapshot is copied from
+            # its own Crane archive, symlinked below where the patched
+            # targets look for it.
             postPatch = ''
-              substituteInPlace lakefile.lean --replace-fail 'proc { cmd := "cargo"' '--proc { cmd := "cargo"'
+              substituteInPlace lakefile.lean \
+                --replace-fail 'proc { cmd := "cargo"' '--proc { cmd := "cargo"'
+              sed -i '/^target ix_rs_test pkg/,/^target ix_rs_net pkg/ s|nameToStaticLib "ix_ffi"|"libix_ffi_test.a"|' lakefile.lean
+              sed -i '/^target ix_rs_net pkg/,/^target ix_ffi_dyn pkg/ s|nameToStaticLib "ix_ffi"|"libix_ffi_net.a"|' lakefile.lean
+              for tag in test net; do
+                [ "$(grep -c "\"target\" / \"release\" / \"libix_ffi_$tag.a\"" lakefile.lean)" = 1 ] \
+                  || { echo "lakefile.lean: expected one patched $tag archive path"; exit 1; }
+              done
             '';
-            # Symlink the Crane-built static lib to where Lake expects it
             postConfigure = ''
               mkdir -p target/release
-              ln -s ${rustLib}/lib/libix_ffi.a target/release/
+              ln -s ${rustPkgRelease}/lib/libix_ffi.a target/release/libix_ffi.a
+              ln -s ${rustPkgNet}/lib/libix_ffi.a target/release/libix_ffi_net.a
+              ln -s ${rustPkgTest}/lib/libix_ffi.a target/release/libix_ffi_test.a
             '';
             buildInputs = [
               pkgs.gmp
               lean
               pkgs.rsync
             ];
+            buildPhase = ''
+              runHook preBuild
+              lake build Ix ix IxTests Apps.ZKVoting.Prover
+              lake build Ix:shared Ix:static
+              runHook postBuild
+            '';
           };
-
-          # Release build args (no test-ffi symbols)
-          lakeBuildArgs = mkLakeBuildArgs rustPkgRelease;
-          # CLI build args (net symbols for `ix serve` / `ix connect`)
-          lakeNetBuildArgs = mkLakeBuildArgs rustPkgNet;
-          # Test build args (includes test-ffi symbols)
-          lakeTestBuildArgs = mkLakeBuildArgs rustPkgTest;
-
-          ixLib = lake2nix.mkPackage (
-            lakeBuildArgs
-            // {
-              name = "Ix";
-              buildLibrary = true;
-            }
-          );
-          lakeBinArgs = lakeBuildArgs // {
-            lakeArtifacts = ixLib;
-            # Binaries that import Ix.Meta need .olean files at runtime via LEAN_PATH
-            installArtifacts = true;
-          };
+          # Binaries that import Ix.Meta load .olean files at runtime via LEAN_PATH.
           leanPath = pkgs.lib.concatStringsSep ":" (
-            map (d: "${d}/.lake/build/lib/lean") ([ ixLib ] ++ builtins.attrValues lakeDeps)
+            map (d: "${d}/.lake/build/lib/lean") ([ ixBuild ] ++ builtins.attrValues lakeDeps)
           );
-          wrapBin =
-            drv:
-            pkgs.runCommand drv.name { nativeBuildInputs = [ pkgs.makeWrapper ]; } ''
+          wrapBins =
+            name: bins:
+            pkgs.runCommand name { nativeBuildInputs = [ pkgs.makeWrapper ]; } ''
               mkdir -p $out/bin
-              for f in ${drv}/bin/*; do
-                [ -x "$f" ] || continue
-                makeWrapper "$f" "$out/bin/$(basename "$f")" \
+              for b in ${pkgs.lib.concatStringsSep " " bins}; do
+                makeWrapper "${ixBuild}/bin/$b" "$out/bin/$b" \
                   --set LEAN_SYSROOT "${lean}" \
-                  --set LEAN_PATH "${drv}/.lake/build/lib/lean:${leanPath}"
+                  --set LEAN_PATH "${leanPath}"
               done
             '';
-          # The CLI links rustPkgNet (lakefile: `ix` uses `ix_rs_net`), reusing
-          # ixLib's oleans.
-          ixCLI = wrapBin (
-            lake2nix.mkPackage (
-              lakeNetBuildArgs
-              // {
-                lakeArtifacts = ixLib;
-                installArtifacts = true;
-                name = "ix";
-              }
-            )
-          );
-          # Test binary links rustPkg (with test-ffi) instead of rustPkgRelease
-          ixTest = wrapBin (
-            lake2nix.mkPackage (
-              lakeTestBuildArgs
-              // {
-                lakeArtifacts = ixLib;
-                name = "IxTests";
-                installArtifacts = true;
-              }
-            )
-          );
-          ZKVotingProver = wrapBin (
-            lake2nix.mkPackage (
-              lakeBinArgs
-              // {
-                name = "Apps.ZKVoting.Prover";
-                installArtifacts = true;
-              }
-            )
-          );
+          ixCLI = wrapBins "ix" [ "ix" ];
+          # The CLI tests exercise the checkout-relative `ix`, so the test
+          # wrapper carries both binaries.
+          ixTest = wrapBins "IxTests" [
+            "IxTests"
+            "ix"
+          ];
+          ZKVotingProver = wrapBins "Apps.ZKVoting.Prover" [ "Apps-ZKVoting-Prover" ];
         in
         {
           packages = {
-            default = ixLib;
+            default = ixBuild;
             ix = ixCLI;
             # `checks` are built by `nix flake check`; exposing this derivation
             # as a package keeps the ignored suite available on demand without
