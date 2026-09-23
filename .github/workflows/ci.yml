@@ -16,8 +16,8 @@ jobs:
   # Each job has its own sticky cache, so the checks run independently. Lean
   # builds and tests share one job and one cache: the tests only execute what
   # the all-targets build already compiled.
-  build:
-    runs-on: runs-on=${{ github.run_id }}-build-${{ github.run_attempt }}/cpu=16/family=r8i.4xlarge/image=ubuntu24-full-x64/volume=100gb/sticky=ci-build-r8i-native:50gb/extras=s3-cache
+  lean-test:
+    runs-on: runs-on=${{ github.run_id }}-lean-test-${{ github.run_attempt }}/cpu=16/family=r8i.4xlarge/image=ubuntu24-full-x64/volume=100gb/sticky=ci-build-r8i-native:50gb/extras=s3-cache
     steps:
       - uses: actions/checkout@v7
       - uses: runs-on/action@v2
@@ -129,7 +129,7 @@ jobs:
 
   ci-gate:
     if: ${{ always() }}
-    needs: [build, rust-test, cuda-compile]
+    needs: [lean-test, rust-test, cuda-compile]
     permissions:
       actions: read
       checks: read

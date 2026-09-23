@@ -170,11 +170,9 @@ jobs:
     name: Valgrind FFI
     needs: prepare
     if: ${{ github.event_name == 'merge_group' || github.event_name == 'issue_comment' }}
-    # Valgrind cannot decode all native r8i instructions, so this job builds
-    # portable artifacts under its own cache key. Valgrind itself is
-    # single-threaded, so a GitHub-hosted runner suffices once that build is
-    # cached.
-    runs-on: ubuntu-latest
+    # Valgrind cannot decode all native r8i instructions, so portable builds
+    # must use a separate sticky disk from the native merge-test partitions.
+    runs-on: runs-on=${{ github.run_id }}-valgrind-${{ github.run_attempt }}/cpu=8/family=r8i.2xlarge/image=ubuntu24-full-x64/volume=100gb/sticky=valgrind-r8i-portable:50gb/extras=s3-cache
     steps:
       - uses: actions/checkout@v7
         with:
@@ -191,16 +189,15 @@ jobs:
             exit 1
           fi
 
+      - uses: runs-on/action@v2
+        with:
+          sticky_cache: |
+            rust
+            custom,path=.lake,path=target
       - uses: ./.github/actions/setup-rust-toolchain
         with:
           native-codegen: "false"
-      # `./.lake`, not `.lake`: the path string is hashed into the cache
-      # entry's version, so the spelling must stay fixed for restores to hit.
-      - uses: actions/cache@v6
-        with:
-          path: ./.lake
-          key: lake-valgrind-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ github.sha }}
-          restore-keys: lake-valgrind-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-
+          use-github-cache: "false"
       - uses: leanprover/lean-action@v1
         with:
           auto-config: false

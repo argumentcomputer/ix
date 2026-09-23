@@ -329,7 +329,7 @@ preserve each job's vCPU count, with more RAM per vCPU:
 
 Benchmark builds, compile measurements, and runs all use `r8i.8xlarge`.
 Rust uses `-Ctarget-cpu=native`; Valgrind builds use portable code generation
-and a separate cache on `ubuntu-latest`. Benchmark product caches and Cargo
+and a separate sticky cache on `r8i.2xlarge`. Benchmark product caches and Cargo
 caches include the instance family and code generation. Bencher testbeds
 include both, such as `ooc-check-runs-on-r8i-8xlarge-native`, so old binaries
 and timings from different hardware or compiler flags stay separate.
