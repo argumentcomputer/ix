@@ -4,11 +4,20 @@ public import Ix.Ixon
 
 /- Integration tests for the Ix CLI -/
 
+/-- Spawn env for nested `lake` invocations: drop the LD_LIBRARY_PATH that
+    `lake test` set for this process. It puts the Lean toolchain's lib dir,
+    with its bundled libLLVM, ahead of the system libraries, so cargo build
+    scripts in a nested build load the system libclang against the wrong
+    libLLVM when both share a major version. lake finds its own libraries
+    through RUNPATH. -/
+private def Tests.Cli.spawnEnv : Array (String × Option String) :=
+  #[("LD_LIBRARY_PATH", none)]
+
 def Tests.Cli.run (buildCmd: String) (buildArgs : Array String) (buildDir : Option System.FilePath) : IO Unit := do
   let proc : IO.Process.SpawnArgs :=
     match buildDir with
-    | some bd => { cmd := buildCmd, args := buildArgs, cwd := bd }
-    | none => { cmd := buildCmd, args := buildArgs }
+    | some bd => { cmd := buildCmd, args := buildArgs, cwd := bd, env := Tests.Cli.spawnEnv }
+    | none => { cmd := buildCmd, args := buildArgs, env := Tests.Cli.spawnEnv }
   let out ← IO.Process.output proc
   if out.exitCode ≠ 0 then
     IO.eprintln out.stderr
