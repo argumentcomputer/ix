@@ -50,6 +50,7 @@ dependencies = [
 name = "aiur"
 version = "0.1.0"
 dependencies = [
+ "bincode",
  "hashbrown 0.15.5",
  "indexmap",
  "libc",
@@ -2106,7 +2107,7 @@ dependencies = [
 [[package]]
 name = "multi-stark"
 version = "0.1.0"
-source = "git+https://github.com/argumentcomputer/multi-stark.git?rev=9a90612286625b6cec59516532d4501677cf468c#9a90612286625b6cec59516532d4501677cf468c"
+source = "git+https://github.com/argumentcomputer/multi-stark.git?rev=231942a092945d4fccd302d13a3bdc607337cc4d#231942a092945d4fccd302d13a3bdc607337cc4d"
 dependencies = [
  "bincode",
  "itertools 0.14.0",
@@ -4082,7 +4083,7 @@ dependencies = [
 [[package]]
 name = "tracing-texray"
 version = "0.2.0"
-source = "git+https://github.com/argumentcomputer/tracing-texray?rev=465bbca0bea4721e58419c11cabd8cce21757822#465bbca0bea4721e58419c11cabd8cce21757822"
+source = "git+https://github.com/argumentcomputer/tracing-texray?rev=fedd785ba02f16042f041fb8b0db9014955c6460#fedd785ba02f16042f041fb8b0db9014955c6460"
 dependencies = [
  "loom",
  "parking_lot",

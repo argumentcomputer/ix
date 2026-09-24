@@ -41,3 +41,18 @@ pub fn execute_ixvm(
   let output = execute_generated(fun_idx, &args, &mut record, io_buffer)?;
   Ok((record, output))
 }
+
+/// [`execute_ixvm`] into an existing record, memoizing against what it
+/// already holds (see `Toplevel::execute_in`).
+pub fn execute_ixvm_in(
+  toplevel: &Toplevel,
+  fun_idx: FunIdx,
+  args: &[G],
+  io_buffer: &mut IOBuffer,
+  record: &mut QueryRecord,
+) -> Result<Vec<G>, ExecError> {
+  if !toplevel.functions[fun_idx].entry {
+    return Err(ExecError::NotEntryFunction(fun_idx));
+  }
+  execute_generated(fun_idx, args, record, io_buffer)
+}

@@ -22,7 +22,8 @@ use tracing_subscriber::{
 /// - `name_prefixes`: comma-separated list of span-name prefixes to render
 ///   (e.g. `"aiur/,stark/"`). Empty string disables filtering and renders
 ///   everything, including upstream library spans.
-/// - `track_ram`: sample VmRSS/VmHWM per span. Linux-only; zeros elsewhere.
+/// - `track_ram`: sample VmRSS at span entry and exit and the tree-RSS
+///   sampler's peak while the span is open. Linux-only; zeros elsewhere.
 /// - `streaming`: emit per-span `[texray] <name>: <dur>  ── RAM Δ +X peak Y`
 ///   plus a `[texray] <name> peak-rss-bytes=<N> (<X.YZ MiB>)` companion on
 ///   stderr as each span closes. The texray graph prints either way when

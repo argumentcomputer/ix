@@ -24,7 +24,7 @@ pub(super) fn read_store(
   fs::read(&path).map_err(|error| format!("read {}: {error}", path.display()))
 }
 
-pub(super) fn write_store(
+pub(crate) fn write_store(
   root: &Path,
   bytes: &[u8],
 ) -> Result<Address, String> {
@@ -33,8 +33,22 @@ pub(super) fn write_store(
   let parent = path.parent().ok_or("store path has no parent")?;
   fs::create_dir_all(parent)
     .map_err(|error| format!("create {}: {error}", parent.display()))?;
-  fs::write(&path, bytes)
-    .map_err(|error| format!("write {}: {error}", path.display()))?;
+  // Published by rename so a reader never sees a partial object, and
+  // several writers of one object (other threads, other processes) each
+  // rename their own complete copy into place.
+  static WRITES: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+  let temporary = parent.join(format!(
+    "{}.tmp.{}.{}",
+    address.hex(),
+    std::process::id(),
+    WRITES.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+  ));
+  fs::write(&temporary, bytes)
+    .map_err(|error| format!("write {}: {error}", temporary.display()))?;
+  fs::rename(&temporary, &path).map_err(|error| {
+    format!("publish {} -> {}: {error}", temporary.display(), path.display())
+  })?;
   Ok(address)
 }
 
@@ -47,17 +61,25 @@ pub(super) fn decode_wrapper(bytes: &[u8]) -> Result<IxonProof, String> {
   Ok(proof)
 }
 
+/// Loads the shard proofs a run needs: exactly one for every shard whose
+/// `required` flag is set (every shard of a full run; the leaves under
+/// the selected subtree otherwise), each bound to its shard by claim
+/// digest. Shards outside the selection stay `None`.
 pub(super) fn load_input_proofs(
   proof_hexes: &str,
   store_dir: &Path,
   prepared: &[PreparedShard],
-) -> Result<Vec<Arc<IxonProof>>, String> {
+  required: &[bool],
+) -> Result<Vec<Option<Arc<IxonProof>>>, String> {
+  if required.len() != prepared.len() {
+    return Err("shard requirement mask does not match the manifest".into());
+  }
+  let expected = required.iter().filter(|flag| **flag).count();
   let values: Vec<&str> =
     proof_hexes.lines().filter(|line| !line.is_empty()).collect();
-  if values.len() != prepared.len() {
+  if values.len() < expected {
     return Err(format!(
-      "aggregate requires exactly {} shard proofs; got {}",
-      prepared.len(),
+      "aggregate requires {expected} shard proofs; got {}",
       values.len()
     ));
   }
@@ -90,6 +112,11 @@ pub(super) fn load_input_proofs(
     let shard = by_digest.get(&digest).copied().ok_or_else(|| {
       format!("proof {} matches no manifest shard", address.hex())
     })?;
+    if !required[shard] {
+      // A lane proving several subtrees passes all its claim proofs to
+      // each; one outside this selection is ignored, not rejected.
+      continue;
+    }
     if wrapper.claim != prepared[shard].statement.claim {
       return Err(format!(
         "proof {} hit a claim-digest collision for shard {}",
@@ -105,15 +132,15 @@ pub(super) fn load_input_proofs(
     }
     proofs[shard] = Some(Arc::new(wrapper));
   }
-  proofs
-    .into_iter()
-    .enumerate()
-    .map(|(index, proof)| {
-      proof.ok_or_else(|| {
-        format!("no proof supplied for shard {}", prepared[index].original_id)
-      })
-    })
-    .collect()
+  if let Some(missing) = (0..prepared.len())
+    .find(|shard| required[*shard] && proofs[*shard].is_none())
+  {
+    return Err(format!(
+      "no proof supplied for shard {}",
+      prepared[missing].original_id
+    ));
+  }
+  Ok(proofs)
 }
 
 pub(super) fn cache_address(
@@ -206,6 +233,10 @@ pub(super) fn persist_wrapper(
   write_store(store_dir, &wrapper_bytes(statement, proof)?)
 }
 
+/// Persists a slot's proof and publishes its cache entry. `Ok(None)` when
+/// the run writes nothing or has no cache; a failure is an error, since a
+/// run's success promises that its proofs are where a later run (a resume,
+/// or the final run after subtree lanes) will look for them.
 pub(super) fn persist_cached(
   store_dir: &Path,
   cache_dir: Option<&Path>,
@@ -213,11 +244,13 @@ pub(super) fn persist_cached(
   slot_index: usize,
   spec: &SlotSpec,
   proof: &AiurProof,
-) -> Option<Address> {
+) -> Result<Option<Address>, String> {
   if !write_outputs {
-    return None;
+    return Ok(None);
   }
-  let cache_dir = cache_dir?;
+  let Some(cache_dir) = cache_dir else {
+    return Ok(None);
+  };
   match (|| -> Result<Address, String> {
     let address = persist_wrapper(store_dir, &spec.statement, proof)?;
     fs::create_dir_all(cache_dir).map_err(|error| {
@@ -247,13 +280,10 @@ pub(super) fn persist_cached(
         "[aggregate] slot {slot_index}: cached proof {}",
         address.hex()
       );
-      Some(address)
+      Ok(Some(address))
     },
     Err(error) => {
-      eprintln!(
-        "[aggregate] slot {slot_index}: warning: could not persist cache entry: {error}"
-      );
-      None
+      Err(format!("slot {slot_index}: could not persist its proof: {error}"))
     },
   }
 }

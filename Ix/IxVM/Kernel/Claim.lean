@@ -471,14 +471,96 @@ def claim := ⟦
   -- being well-typed, so every constant the claim covers must be
   -- reached by this walk or assumed via the frontier.
   fn run_check_env(env_root: Addr, asm: Option‹Addr›) {
-    let owned = load_assumption_tree(env_root);
-    let asm_leaves = match asm {
-      Option.None => store(ListNode.Nil),
-      Option.Some(r) => load_assumption_tree(r),
-    };
-    let owned_set = addr_set_build(owned, RBTreeMap.Nil);
-    let asm_set = addr_set_build(asm_leaves, RBTreeMap.Nil);
-    env_walk_leaves(owned, owned_set, asm_set)
+    match asm {
+      Option.None =>
+        -- The whole environment: every constant under `env_root` is
+        -- checked through `check_owned`, whose argument is the constant's
+        -- address BYTES rather than its interned pointer. That is what lets
+        -- one execution be split across records (trace-sharding design,
+        -- §13.3): a record that does not own a constant pushes the call
+        -- and executes nothing, and the owner's `check_owned` row pulls it
+        -- — pointers are per record, bytes are not. No ownership is
+        -- constrained: a call no record answers leaves the batch
+        -- unbalanced, and a constant two records both check is two
+        -- balanced rows. This walk has no owned-membership rule: a
+        -- constant reachable from the tree but outside it is checked too
+        -- (the sharded walk below aborts instead), so a claim without
+        -- assumptions proves every constant its tree reaches, not only
+        -- those it lists. For an environment's tree the two coincide.
+        walk_leaves_owned(load_assumption_tree(env_root)),
+      Option.Some(r) =>
+        let owned = load_assumption_tree(env_root);
+        let owned_set = addr_set_build(owned, RBTreeMap.Nil);
+        let asm_set = addr_set_build(load_assumption_tree(r), RBTreeMap.Nil);
+        env_walk_leaves(owned, owned_set, asm_set),
+    }
+  }
+
+  fn walk_leaves_owned(leaves: List‹Addr›) {
+    match load(leaves) {
+      ListNode.Nil => (),
+      ListNode.Cons(a, rest) =>
+        check_owned(load(a));
+        walk_leaves_owned(rest),
+    }
+  }
+
+  -- Check the constant with address `bytes` and, transitively, everything
+  -- it references (the unsharded walk of `env_walk`, without the owned and
+  -- assumption sets). An entry, so that a worker record can run it over
+  -- the leaves it owns; a caller in another record reaches the same row
+  -- through the executor's deferred call.
+  pub fn check_owned(bytes: [U8; 32]) {
+    env_walk_all(store(bytes))
+  }
+
+  fn env_walk_all(addr: Addr) {
+    let c = load_verified_constant(addr);
+    match c {
+      Constant.Mk(info, _, refs, _) =>
+        match info {
+          ConstantInfo.Muts(members) =>
+            check_muts_all(addr, members, members, 0),
+          ConstantInfo.DPrj(dprj) =>
+            match dprj {
+              DefinitionProj.Mk(_, block_addr) =>
+                run_check(addr);
+                check_owned(load(block_addr)),
+            },
+          ConstantInfo.IPrj(iprj) =>
+            match iprj {
+              InductiveProj.Mk(_, block_addr) =>
+                run_check(addr);
+                check_owned(load(block_addr)),
+            },
+          ConstantInfo.CPrj(cprj) =>
+            match cprj {
+              ConstructorProj.Mk(_, _, block_addr) =>
+                run_check(addr);
+                check_owned(load(block_addr)),
+            },
+          ConstantInfo.RPrj(rprj) =>
+            match rprj {
+              RecursorProj.Mk(_, block_addr) =>
+                run_check(addr);
+                check_owned(load(block_addr)),
+            },
+          _ => run_check(addr),
+        };
+        env_walk_refs_all(refs, const_idxs_of(c), 0),
+    }
+  }
+
+  fn env_walk_refs_all(refs: List‹Addr›, consts: List‹G›, i: G) {
+    match load(refs) {
+      ListNode.Nil => (),
+      ListNode.Cons(a, rest) =>
+        match g_list_has(consts, i) {
+          1 => check_owned(load(a)),
+          _ => (),
+        };
+        env_walk_refs_all(rest, consts, i + 1),
+    }
   }
 
   -- Option<Address> deserializer, mirror (Kernel/Claim.lean:109).

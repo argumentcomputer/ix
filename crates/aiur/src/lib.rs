@@ -7,7 +7,10 @@ mod lookup_groups;
 mod lookup_shapes;
 pub mod memory;
 pub mod querymap;
+pub mod range;
+pub mod record_pool;
 mod row_counts;
+pub mod shard;
 pub mod synthesis;
 pub mod trace;
 mod trace_heights;
@@ -102,4 +105,14 @@ pub fn u8_xor_split4_channel() -> G {
 #[inline]
 pub fn u16_range_check_channel() -> G {
   G::from_u8(15)
+}
+
+/// Memory segment boundaries. Every real memory row pushes its own pointer
+/// and pulls its successor on this channel, so a contiguous pointer run
+/// `[a, b)` contributes exactly one push of `a` and one pull of `b`; the
+/// batch verifier closes the channel with one pull of `0` and one push of the
+/// table's total length per memory width (see `shard.rs`).
+#[inline]
+pub fn memseg_channel() -> G {
+  G::from_u8(16)
 }

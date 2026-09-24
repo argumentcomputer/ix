@@ -6,6 +6,12 @@ use multi_stark::p3_field::{PrimeCharacteristicRing, PrimeField64};
 
 pub(super) const CACHE_VERSION: u64 = 2;
 
+/// The range-sum recursion shapes of `ix_aggr` (`Aggr.rangeLeafShape` and
+/// friends in `Ix/Aggr/Protocol.lean`).
+pub(super) const RANGE_LEAF_SHAPE: u8 = 10;
+pub(super) const RANGE_JOIN_SHAPE: u8 = 11;
+pub(super) const RANGE_ROOT_SHAPE: u8 = 12;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum ChildKind {
   Ixvm,

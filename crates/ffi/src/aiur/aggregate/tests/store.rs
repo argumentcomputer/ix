@@ -113,6 +113,7 @@ impl Fixture {
       &self.proof,
     )
     .unwrap()
+    .unwrap()
   }
 
   fn replace_wrapper(&self, wrapper: &ixon::Proof) {
@@ -210,6 +211,7 @@ fn no_write_and_disabled_cache_leave_no_artifacts() {
       &fixture.spec,
       &fixture.proof
     )
+    .unwrap()
     .is_none()
   );
   assert!(
@@ -221,6 +223,7 @@ fn no_write_and_disabled_cache_leave_no_artifacts() {
       &fixture.spec,
       &fixture.proof
     )
+    .unwrap()
     .is_none()
   );
   assert!(!fixture.store.exists());

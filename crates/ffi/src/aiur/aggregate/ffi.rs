@@ -78,10 +78,17 @@ extern "C" fn rs_aiur_stage2_aggregate(
   cache_fri_bytes: LeanByteArray<LeanBorrowed<'_>>,
   use_cache: bool,
   write_outputs: bool,
+  trace_shards: bool,
+  range_width: LeanNat<LeanBorrowed<'_>>,
+  wrap_root: bool,
+  exec_ahead: LeanNat<LeanBorrowed<'_>>,
+  verify_only: bool,
+  subtree_code: LeanNat<LeanBorrowed<'_>>,
 ) -> LeanExcept<LeanOwned> {
   let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
     let reprove_slot =
       lean_unbox_nat_as_usize(reprove_slot_code.inner()).checked_sub(1);
+    let subtree = lean_unbox_nat_as_usize(subtree_code.inner()).checked_sub(1);
     run(RunConfig {
       ixvm_system: ixvm_system.get(),
       aggr_system: aggr_system.get(),
@@ -99,6 +106,12 @@ extern "C" fn rs_aiur_stage2_aggregate(
       cache_fri_bytes: cache_fri_bytes.as_bytes(),
       use_cache,
       write_outputs,
+      trace_shards,
+      range_width: lean_unbox_nat_as_usize(range_width.inner()),
+      wrap_root,
+      exec_ahead: lean_unbox_nat_as_usize(exec_ahead.inner()),
+      verify_only,
+      subtree,
     })
   }));
   match result {

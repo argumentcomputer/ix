@@ -89,6 +89,7 @@ fn larger_lookup_groups_verify_and_roundtrip_with_the_degree_budget() {
     );
     let bytes = crate::vk_codec::aiur_system_to_bytes(&system).unwrap();
     let (decoded, cp, fp) = crate::vk_codec::from_bytes(&bytes).unwrap();
+    let vk = crate::vk_codec::AiurVerifyingKey::from_bytes(&bytes).unwrap();
     assert_eq!(crate::vk_codec::to_bytes(&decoded, cp, fp), bytes);
     let back = &decoded.circuits[0];
     assert_eq!(back.lookup_group_size, group);
@@ -101,10 +102,10 @@ fn larger_lookup_groups_verify_and_roundtrip_with_the_degree_budget() {
       let expected: u64 = (1..=u64::from(n)).map(|i| 16 * i * i).sum();
       assert_eq!(claim.last(), Some(&G::from_u64(expected)));
       system.verify(&claim, &proof).unwrap();
-      decoded.verify(&claim, &proof).unwrap();
+      vk.verify(&claim, &proof).unwrap();
       *claim.last_mut().unwrap() += G::ONE;
       assert!(system.verify(&claim, &proof).is_err());
-      assert!(decoded.verify(&claim, &proof).is_err());
+      assert!(vk.verify(&claim, &proof).is_err());
     }
   }
 }
