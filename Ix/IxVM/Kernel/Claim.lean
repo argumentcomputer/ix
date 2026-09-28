@@ -327,7 +327,10 @@ def claim := ⟦
   fn load_assumption_tree(root: Addr) -> List‹Addr› {
     let raw = load(root);
     let (idx, len) = io_get_info(1, raw);
-    let bytes = #read_byte_stream(1, idx, len);
+    -- The free-form tree parser has no count that bounds its recursion.
+    -- Establish finiteness before parsing: a Merkle-root equality cannot
+    -- bind arbitrary returns from a cyclic lookup chain.
+    let bytes = read_finite_byte_stream(1, idx, len);
     let (tag, s) = get_tag4(bytes);
     let (flag, size) = tag;
     assert_eq!(flag, 0xE, "assumption tree: wrong tag4 flag");
