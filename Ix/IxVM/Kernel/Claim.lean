@@ -1203,7 +1203,7 @@ def claim := ⟦
     -- `digest` is the packed-4-byte public claim digest; the ch-0 key uses
     -- the same packed form (io keys are execution-side only — no columns).
     let (idx, len) = io_get_info(0, digest);
-    let bytes = #read_byte_stream(0, idx, len);
+    let bytes = read_finite_byte_stream(0, idx, len);
     -- Binding: the claim bytes must hash to the PUBLIC digest. Packed
     -- comparison (8 wiring-packed words), no byte-form digest needed.
     let h = @blake3(bytes);

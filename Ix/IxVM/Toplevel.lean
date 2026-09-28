@@ -57,7 +57,7 @@ def entrypoints := ⟦
       _ =>
         let n_minus_1 = n - 1;
         let (idx, len) = io_get_info(0, [n_minus_1]);
-        let bytes = #read_byte_stream(0, idx, len);
+        let bytes = read_finite_byte_stream(0, idx, len);
         let (const, rest) = get_constant(bytes);
         assert_eq!(load(rest), ListNode.Nil,
           "ixon deserialization left trailing bytes");

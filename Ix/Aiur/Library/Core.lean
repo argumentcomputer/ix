@@ -156,6 +156,28 @@ def core := ⟦
     }
   }
 
+  -- Scalar u32 successor with overflow forbidden. Reuse the shared comparison
+  -- so its range checks are memoized across all callers.
+  fn checked_depth_succ(depth: G) -> G {
+    assert_eq!(memo_u32_less_than(depth, 0xFFFFFFFF), 1,
+      "list depth exceeds u32");
+    depth + 1
+  }
+
+  -- A constrained termination certificate for a prover-supplied list. Every
+  -- recursive edge decreases a u32 depth, so even adversarial memory cannot
+  -- close a cycle. Check BEFORE incrementing: field/wrapping addition alone
+  -- is not a well-founded rank. The scalar comparison is memoized across
+  -- lists, keeping its range-check columns out of each list-walk row.
+  fn list_depth_checked‹T›(list: List‹T›) -> G {
+    match load(list) {
+      ListNode.Nil => 0,
+      ListNode.Cons(_, rest) =>
+        let depth = list_depth_checked(rest);
+        checked_depth_succ(depth),
+    }
+  }
+
   fn list_length_u64‹T›(list: List‹T›) -> U64 {
     match load(list) {
       ListNode.Nil => [0u8; 8],
