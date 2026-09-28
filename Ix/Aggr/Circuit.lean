@@ -339,6 +339,10 @@ def circuit := ⟦
       "aggr: trailing bytes after AssumptionTree");
     assert_eq!(list_is_empty(leaves), 0,
       "aggr: a present tree must contain at least one leaf");
+    -- Strictly increasing address keys cannot form a cycle. This establishes
+    -- finite leaves independently of the advised parser's return; recomputing
+    -- the root from that list then binds the set used by every fold below.
+    -- The serialized tree shape itself is only advice, not the statement.
     aggr_assert_strict_sorted(leaves);
     let expected = aggr_canonical_root(leaves);
     assert_eq!(address_eq(expected, root), 1,
@@ -530,6 +534,8 @@ def circuit := ⟦
   }
 
   -- Strictly decode one complete `Claim::CheckEnv` byte string.
+  -- The fixed sequence (36 or 68 bytes) and final Nil check rule out cycles
+  -- in preimages and output claims without a separate depth traversal.
   fn aggr_parse_check_env(bytes: ByteStream) -> (Addr, Option‹Addr›) {
     let (tag, s) = aggr_read_byte(bytes);
     assert_eq!(tag, 0xE5u8, "aggr: claim is not CheckEnv");
@@ -599,6 +605,8 @@ def circuit := ⟦
 
   fn aggr_load_sys(kind: G, ixvm_vk_digest: [G; 8], self_vk_digest: [G; 8])
       -> Sys {
+    -- Constrained countdown decoding plus the final Nil check establishes
+    -- finite bytes; read_system also checks expression-graph acyclicity.
     let (sidx, slen) = io_get_info(1, [kind]);
     let sbytes = #read_byte_stream(1, sidx, slen);
     let digest = @b3_pack(@blake3(sbytes));
@@ -616,6 +624,8 @@ def circuit := ⟦
   -- Verify one child proof against `sys`. The verified proof's lookup
   -- accumulator and Fiat-Shamir transcript bind `cbytes` directly, so child
   -- claims need no standalone public digest.
+  -- read_claims uses constrained countdowns; the final Nil check rules out
+  -- cyclic cbytes before they can enter the Fiat-Shamir transcript.
   fn aggr_verify_child(sys: Sys, key: G) -> List‹List‹U64›› {
     let (idx, len) = io_get_info(0, [key]);
     let (proof, stop) = @read_proof(idx);
