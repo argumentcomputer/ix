@@ -207,12 +207,12 @@ opaque rsEnvExtractFFI :
 @[extern "rs_shard_env_static"]
 opaque rsShardEnvStaticFFI :
     @& String →                          -- .ixe path
-    @& String →                          -- num_shards (N; "0" = score seed)
-    @& String →                          -- max RAM GiB (used when N = 0)
-    @& String →                          -- balance percent
+    USize →                              -- num_shards (N; 0 = score seed)
+    UInt64 →                             -- max RAM GiB (used when N = 0)
+    UInt64 →                             -- balance percent
     @& String →                          -- layout: "mincut" or "ordered"
     @& String →                          -- .ixes output path ("" = skip)
-    @& String →                          -- executions ahead of each prover (trace-shard seed)
+    USize →                              -- executions ahead of each prover (trace-shard seed)
     IO Unit
 
 /-- FFI: dump the static block-level reference graph of a `.ixe` as text:

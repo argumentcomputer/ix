@@ -37,10 +37,13 @@ pub struct QueryRecord {
   pub bytes1_queries: Bytes1Queries,
   pub bytes2_queries: Bytes2Queries,
   /// The pointer of every memory table's first entry: entry `i` of a table
-  /// has pointer `pointer_base + i`. Records proven together in one batch
-  /// take distinct bases so their pointers never coincide
-  /// ([`pointer_stride`] apart), which is what lets a load in one record
-  /// be served by a memory row in another.
+  /// has pointer `pointer_base + i`, whatever the table's width. Records
+  /// proven together in one batch take distinct bases so their pointers
+  /// never coincide, which is what lets a load in one record be served by
+  /// a memory row in another. The bases are a fixed split of the pointer
+  /// space ([`pointer_stride`] apart): no table's height enters, and a base
+  /// per width would gain nothing, since the width is part of every memory
+  /// message.
   pub pointer_base: usize,
   /// The calls this record leaves to other records, if any.
   pub ownership: Option<Ownership>,

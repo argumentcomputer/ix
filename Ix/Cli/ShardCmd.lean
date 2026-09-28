@@ -167,15 +167,15 @@ def runShardCmd (p : Cli.Parsed) : IO UInt32 := do
         p.printError "error: --shards must be positive"; return 1
       IO.println s!"Sharding {envPath} into {n} shards \
         (static strategy, {layout} layout, balance ±{balancePct}%)"
-      rsShardEnvStaticFFI envPath (toString n) "0" (toString balancePct) layout
-        outPath (toString execJobs)
+      rsShardEnvStaticFFI envPath n.toUSize 0 balancePct.toUInt64 layout
+        outPath execJobs.toUSize
     | none, some gib =>
       if gib == 0 then
         p.printError "error: --max-ram must be positive"; return 1
       IO.println s!"Sharding {envPath} for a {gib} GiB prover budget \
         (static block-shape seed, {layout} layout, balance ±{balancePct}%)"
-      rsShardEnvStaticFFI envPath "0" (toString gib) (toString balancePct) layout
-        outPath (toString execJobs)
+      rsShardEnvStaticFFI envPath 0 gib.toUInt64 balancePct.toUInt64 layout
+        outPath execJobs.toUSize
     | none, none =>
       p.printError "error: the static strategy (no --profile) requires \
         --shards N or --max-ram G"

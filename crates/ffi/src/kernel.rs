@@ -2419,12 +2419,12 @@ fn static_block_dependencies(
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_shard_env_static(
   env_path: LeanString<LeanBorrowed<'_>>,
-  num_shards: LeanString<LeanBorrowed<'_>>,
-  ram_gib: LeanString<LeanBorrowed<'_>>,
-  balance_pct: LeanString<LeanBorrowed<'_>>,
+  requested_shards: usize,
+  ram_gib: u64,
+  balance_pct: u64,
   layout: LeanString<LeanBorrowed<'_>>,
   out_path: LeanString<LeanBorrowed<'_>>,
-  exec_ahead: LeanString<LeanBorrowed<'_>>,
+  exec_ahead: usize,
 ) -> LeanIOResult<LeanOwned> {
   let path = env_path.to_string();
   let layout = layout.to_string();
@@ -2433,16 +2433,12 @@ pub extern "C" fn rs_shard_env_static(
       "rs_shard_env_static: unknown layout `{layout}` (mincut or ordered)"
     ));
   }
-  let exec_ahead = exec_ahead.to_string().parse::<usize>().unwrap_or(0);
-  let requested_shards = num_shards.to_string().parse::<usize>().unwrap_or(0);
-  let ram_gib = ram_gib.to_string().parse::<u64>().unwrap_or(0);
   if requested_shards == 0 && ram_gib == 0 {
     return LeanIOResult::error_string(
       "rs_shard_env_static: pass a positive shard count or RAM budget",
     );
   }
-  let balance =
-    (balance_pct.to_string().parse::<u64>().unwrap_or(5) as f64) / 100.0;
+  let balance = (balance_pct as f64) / 100.0;
   let out = out_path.to_string();
   let out_opt = if out.is_empty() { None } else { Some(out.as_str()) };
   let t0 = Instant::now();
