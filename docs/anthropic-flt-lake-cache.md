@@ -604,7 +604,7 @@ s3://argument-lake-cache-063002298335-us-east-1-an/staged/anthropic-flt/aa2d8b34
     <content-hash>.ltar     60,475 archives, 2.7 GB in total (about 12x compression)
     outputs.jsonl           Lake's `-o` mapping: input hash -> archive
     modules.jsonl           one line per module: [module name, input hash, archive]
-    restore-flt-cache.sh    the script below
+    restore-flt-cache.sh    the restore script (next section)
   batteries/ Qq/ aesop/ proofwidgets/ importGraph/ LeanSearchClient/ plausible/ mathlib/
                             the same `lake cache stage` layout for the dependencies
 ```
@@ -640,26 +640,35 @@ by pairing each `.trace` file's `depHash` with the mapping.
 
 Prerequisites: an `argumentcomputer/ix` checkout, a Lean `v4.33.1` toolchain
 set up as in the [Toolchain](#toolchain) section, Python 3, and the AWS CLI
-configured with IAM credentials that can read the bucket. The script checks the
-Lean version and finds `leantar` through `lean --print-prefix`, so it runs the
-same way in the dev shell and under elan. Then, from `Benchmarks/Compile`:
+configured with IAM credentials that can read the bucket. The restore script
+is kept in the bucket next to the archives, not in this repository. From
+`Benchmarks/Compile`:
 
 ```bash
 lake exe cache get      # clones the dependency sources; restores Mathlib and its deps
+PREFIX=s3://argument-lake-cache-063002298335-us-east-1-an/staged/anthropic-flt/aa2d8b34692b16c70f699536de0d8e75b9a3e9ef/lean-4.33.1/x86_64-unknown-linux-gnu/flt_e2e
+aws s3 cp "$PREFIX/restore-flt-cache.sh" . --region us-east-1
 bash restore-flt-cache.sh
 ```
 
-The script downloads the prefix into `~/.cache/flt_e2e` (override with
-`FLT_CACHE_DIR`), unpacks every module into
-`.lake/packages/flt_e2e/.lake/build`, then verifies the cached package with
-`lake build flt_e2e/FinalCheck --no-build`, which must report all targets up
-to date (69,181 jobs), and finally compiles `CompileAnthropicFLT`. That driver
-is a one-line local module importing `FinalCheck`; it is not part of the
-cache, so it is the only module Lake compiles on a fresh machine. `leantar`
-skips modules whose trace already carries the expected hash, so rerunning the
-script only fills gaps. The script lives at
-[`Benchmarks/Compile/restore-flt-cache.sh`](../Benchmarks/Compile/restore-flt-cache.sh)
-and is also stored in the bucket next to the archives.
+The script checks the Lean version and finds `leantar` through
+`lean --print-prefix`, so it runs the same way in the dev shell and under
+elan. It performs these steps, which can also be run by hand:
+
+1. `aws s3 sync "$PREFIX/" ~/.cache/flt_e2e/ --region us-east-1 --size-only`
+   downloads the archives (override the directory with `FLT_CACHE_DIR`).
+2. One `leantar -x -j -` call unpacks every module into
+   `.lake/packages/flt_e2e/.lake/build`. Its stdin is a JSON list built from
+   `modules.jsonl`: per module, the archive path, the `lib/lean` and `ir`
+   directories of the module's namespace, and its input hash.
+3. `lake build flt_e2e/FinalCheck --no-build` verifies the cached package; it
+   must report all targets up to date (69,181 jobs).
+4. `lake build CompileAnthropicFLT` compiles the driver. That driver is a
+   one-line local module importing `FinalCheck`; it is not part of the cache,
+   so it is the only module Lake compiles on a fresh machine.
+
+`leantar` skips modules whose trace already carries the expected hash, so
+rerunning the restore only fills gaps.
 
 Lake's traces are validated by hash, so the restore needs the same source
 revisions, toolchain, and platform as the build. It does not need

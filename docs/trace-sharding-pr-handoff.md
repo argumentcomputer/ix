@@ -52,10 +52,9 @@ To do, in order:
    - Overall question, "fully migrate to the batch approach?": yes.
      `AiurProof` is `BatchProof`; a plain prove is a one-shard batch and
      `AiurSystem::verify` accepts nothing else.
-   - `Benchmarks/Compile/restore-flt-cache.sh`: tracked on purpose,
-     `docs/anthropic-flt-lake-cache.md` links it. It is the one unrelated
-     commit in PR 1; drop `7421baf2`'s script and guide into PR 2's docs
-     commit if the reviewer prefers.
+   - `Benchmarks/Compile/restore-flt-cache.sh`: removed from the tree; the
+     bucket keeps a copy and `docs/anthropic-flt-lake-cache.md` documents
+     the restore.
    - `acceptance.rs` and the other tests forging through `prove_batch`
      only: follows from the first point, since a single `system.system.prove`
      proof can no longer be handed to `AiurSystem::verify`. The single-proof
