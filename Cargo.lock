@@ -847,7 +847,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2107,7 +2107,7 @@ dependencies = [
 [[package]]
 name = "multi-stark"
 version = "0.1.0"
-source = "git+https://github.com/argumentcomputer/multi-stark.git?rev=231942a092945d4fccd302d13a3bdc607337cc4d#231942a092945d4fccd302d13a3bdc607337cc4d"
+source = "git+https://github.com/argumentcomputer/multi-stark.git?rev=a155ee47687e3a9b7e94f158eeff9d710a8262d5#a155ee47687e3a9b7e94f158eeff9d710a8262d5"
 dependencies = [
  "bincode",
  "itertools 0.14.0",
@@ -2381,7 +2381,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3359,7 +3359,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3429,7 +3429,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5b55fb86dfd3a2f5f76ea78310a88f96c4ea21a3031f8d212443d56123fd0521"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3758,7 +3758,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "230a1b821ccbd75b185820a1f1ff7b14d21da1e442e22c0863ea5f08771a8874"
 dependencies = [
  "rustix",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4083,7 +4083,7 @@ dependencies = [
 [[package]]
 name = "tracing-texray"
 version = "0.2.0"
-source = "git+https://github.com/argumentcomputer/tracing-texray?rev=fedd785ba02f16042f041fb8b0db9014955c6460#fedd785ba02f16042f041fb8b0db9014955c6460"
+source = "git+https://github.com/argumentcomputer/tracing-texray?rev=6d5016724e7ec3c471df76dc2f19b5a990ee47c2#6d5016724e7ec3c471df76dc2f19b5a990ee47c2"
 dependencies = [
  "loom",
  "parking_lot",

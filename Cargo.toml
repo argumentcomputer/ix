@@ -57,7 +57,7 @@ log = "0.4"
 memmap2 = "0.9"
 # Bundle v3.5.1 to fix large-arena failures (microsoft/mimalloc#1309).
 mimalloc = { git = "https://github.com/argumentcomputer/mimalloc_rust.git", rev = "616cc1f130d9ea2a1111a46b4e98c140e078f882", default-features = false }
-multi-stark = { git = "https://github.com/argumentcomputer/multi-stark.git", rev = "231942a092945d4fccd302d13a3bdc607337cc4d" }
+multi-stark = { git = "https://github.com/argumentcomputer/multi-stark.git", rev = "a155ee47687e3a9b7e94f158eeff9d710a8262d5" }
 nom = "7.1.3"
 num-bigint = "0.4.6"
 quickcheck = "1.0.3"
@@ -70,7 +70,7 @@ smallvec = "1.15.1"
 tiny-keccak = { version = "2", features = ["keccak"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-tracing-texray = { git = "https://github.com/argumentcomputer/tracing-texray", rev = "fedd785ba02f16042f041fb8b0db9014955c6460" }
+tracing-texray = { git = "https://github.com/argumentcomputer/tracing-texray", rev = "6d5016724e7ec3c471df76dc2f19b5a990ee47c2" }
 
 [workspace.lints.rust]
 invalid_reference_casting = "warn"

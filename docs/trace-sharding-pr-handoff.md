@@ -137,10 +137,11 @@ builds; there is no GPU or Succinct toolchain on this host. CI's
 
 ## multi-stark
 
-- `sb/batch-proving` is pushed; open its PR against `main` if not done.
-- Open `sb/trace-sharding-gpu` against `sb/batch-proving`; retarget to
-  `main` after the first merges. The local `multi-stark.trace-sharding`
+- `sb/batch-proving` merged as multi-stark #80 (`a155ee4` on `main`);
+  ix pins that commit.
+- Open `sb/trace-sharding-gpu` against `main`, rebased onto `a155ee4`
+  (the squash of its base). The local `multi-stark.trace-sharding`
   checkout was behind the remote; `git pull --ff-only` brings it to
   `59df87a`.
-- tracing-texray `sb/per-span-peak` (`fedd785`) is pushed and pinned by ix
-  only; it needs its own PR against texray's main.
+- tracing-texray `sb/per-span-peak` merged as texray #4 (`6d50167` on
+  `main`); ix pins that commit.

@@ -1170,9 +1170,9 @@ below exists on the branch; the box only runs it.
 
 1. Pin the kernel and set up the box as in the metal-48xl handoff
    (`apt-mark hold`, cgroup caps).
-2. Check out `sb/aiur-trace-sharding-design` (ix). Its `Cargo.toml`
-   pins the multi-stark branch `sb/trace-sharding` and the texray branch
-   `sb/per-span-peak` by commit, so nothing else needs to be checked out.
+2. Check out `sb/aiur-batch-proving` (ix). Its `Cargo.toml` pins
+   multi-stark and tracing-texray on their `main` branches by commit, so
+   nothing else needs to be checked out.
 3. `lake build ix`.
 4. Compile the env and a one-shard manifest (the whole env as one
    claim; `--shards 1` overrides the static planner's budget sizing):
@@ -1224,7 +1224,7 @@ Record, from `init-trace-shards.log` and `time -v`:
 | Quantity | Where |
 |---|---|
 | K, record bytes, projected heaviest shard | `[trace-shards]` line |
-| per-shard round-1 and round-2 wall, RAM Δ and peak | `[texray] stark/batch_round_1`, `stark/batch_round_2` (in emission order: every shard's round 1, then every shard's round 2). Both the Δ and the `peak` are the span's own: the peak is the tree-RSS sampler's maximum while the span was open (texray fork `sb/per-span-peak`; the pinned release reported the process high-water mark there) |
+| per-shard round-1 and round-2 wall, RAM Δ and peak | `[texray] stark/batch_round_1`, `stark/batch_round_2` (in emission order: every shard's round 1, then every shard's round 2). Both the Δ and the `peak` are the span's own: the peak is the tree-RSS sampler's maximum while the span was open (tracing-texray #4; releases before it reported the process high-water mark there) |
 | witness builds per shard (two under Regenerate) | `[texray] aiur/witness` count |
 | whole-run wall and peak RSS | `time -v` (`Maximum resident set size`) |
 | proof bytes | the stored wrapper's size |
