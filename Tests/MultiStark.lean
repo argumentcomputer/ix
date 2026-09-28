@@ -86,11 +86,17 @@ def selfTestSuite : IO UInt32 := do
 -- `recursive-verifier`: prove factorial(5)=120, verify it, reject tampering
 -- ════════════════════════════════════════════════════════════════════════════
 
-/-- A branching entrypoint with eighteen gated store/load/call/return lookups for
+/-- A branching entrypoint with eighteen gated store/call/return lookups for
 synthesis to choose two messages per accumulator at quotient degree four.
 The smaller factorial and memory circuits retain quotient degree two, so
-recursive verification exercises both degrees within the same proof. -/
+recursive verification exercises both degrees within the same proof. Loads
+are behind a call boundary so local store/load forwarding cannot remove the
+lookups that this coverage fixture deliberately needs. -/
 def factorialProgram : Source.Toplevel := ⟦
+  fn read_cell(ptr: &G) -> G {
+    load(ptr)
+  }
+
   pub fn factorial(n: G) -> G {
     match n {
       0 => 1,
@@ -102,14 +108,14 @@ def factorialProgram : Source.Toplevel := ⟦
     match n {
       0 => 1,
       _ =>
-        let a = load(store(n));
-        let b = load(store(n + 1));
-        let c = load(store(n + 2));
-        let d = load(store(n + 3));
-        let e = load(store(n + 4));
-        let f = load(store(n + 5));
-        let g = load(store(n + 6));
-        let h = load(store(n + 7));
+        let a = read_cell(store(n));
+        let b = read_cell(store(n + 1));
+        let c = read_cell(store(n + 2));
+        let d = read_cell(store(n + 3));
+        let e = read_cell(store(n + 4));
+        let f = read_cell(store(n + 5));
+        let g = read_cell(store(n + 6));
+        let h = read_cell(store(n + 7));
         assert_eq!(b, a + 1);
         assert_eq!(c, a + 2);
         assert_eq!(d, a + 3);

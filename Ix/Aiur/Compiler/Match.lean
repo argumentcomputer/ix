@@ -301,16 +301,22 @@ def compileRows (rows : Array Row) : CompilerM Decision :=
 
 def compile (term : Term) (rules : List (Pattern × Term)) : CompilerM (Decision × Diagnostics) := do
   let id ← newId
+  -- All patterns must refer to the SAME evaluated scrutinee. In particular,
+  -- a variable fallback must not bind the original expression again after
+  -- `switch` has already evaluated it to choose the branch.
+  let scrut := match term with
+    | .var .. => term
+    | _ => .var term.typ false (.idx id)
   let rows ← rules.foldlM (init := #[]) fun acc rule => do
-    let newRows ← fromRule id rule
+    let (pat, bod) := rule
+    let newRows ← dnfProd [(pat, (id, scrut))] ⟨#[], bod⟩
     pure $ acc ++ newRows
   let tree ← compileRows rows
+  let tree := match term with
+    | .var .. => tree
+    | _ => .let (.idx id) term tree
   let diagnostics ← Compiler.diagnostics <$> get
   pure (tree, diagnostics)
-where
-  fromRule id rule :=
-    let (pat, bod) := rule
-    dnfProd [(pat, (id, term))] ⟨#[], bod⟩
 
 def runWithNewCompiler (decls : Source.Decls) (f : CompilerM α) : α :=
   StateT.run' f ⟨0, decls, ⟨false, []⟩⟩

@@ -29,10 +29,10 @@
     forever — the cap never fires. An empty list skips handler
     registration so fatal signals keep their default disposition.
     Harmless for tools that don't link Open MPI.
-  * a user systemd instance must exist: the best-effort linger call
-    boots one on CI (passwordless sudo); it no-ops locally, where a
-    desktop session already provides the user manager. `available`
-    probes the whole path end to end.
+  * a user systemd instance must exist: reuse a reachable manager or
+    bootstrap the effective UID's manager on CI (passwordless sudo).
+    Wait for startup and report bootstrap errors. `available` probes
+    the whole path end to end.
 -/
 module
 
@@ -66,38 +66,46 @@ private def oomGroupThenExec : String :=
 
 /-- `IO.Process.output` that reports spawn failure as a nonzero exit
     instead of throwing (probing must not abort the caller). -/
-private def commandOutput (cmd : String) (args : Array String) :
+private def commandOutput (cmd : String) (args : Array String)
+    (env : Array (String × Option String) := #[]) :
     IO IO.Process.Output := do
   try
-    IO.Process.output { cmd, args }
-  catch _ =>
-    pure { exitCode := 1, stdout := "", stderr := "" }
+    IO.Process.output { cmd, args, env }
+  catch e =>
+    pure { exitCode := 1, stdout := "", stderr := toString e }
 
-/-- Best-effort user-manager bootstrap: enable linger on CI runners
-    (passwordless sudo); silently a no-op wherever a session manager
-    already runs or sudo is absent. -/
-private def ensureUserManager : IO Unit := do
-  let user ← match ← IO.getEnv "USER" with
-    | some user => pure user
-    | none =>
-      let out ← commandOutput "id" #["-un"]
-      pure out.stdout.trimAscii.toString
-  if user.isEmpty then return
-  let _ ← commandOutput "sudo" #["-n", "loginctl", "enable-linger", user]
-  return
+/-- Bootstrap the actual process user's manager, not the possibly inherited
+    `$USER`. Starting the unit explicitly waits for readiness; enabling linger
+    alone is not a readiness check. Scope execution still fails closed if this
+    best-effort bootstrap cannot establish a working manager. -/
+private def ensureUserManager (uid : Nat) : IO Unit := do
+  for args in #[#["-n", "loginctl", "enable-linger", toString uid],
+      #["-n", "systemctl", "start", s!"user@{uid}.service"]] do
+    let out ← commandOutput "sudo" args
+    if out.exitCode != 0 then
+      IO.eprintln s!"watchdog: sudo {String.intercalate " " args.toList} failed \
+(exit {out.exitCode}): {out.stderr.trimAscii}"
 
-/-- Environment for the scope: the Open MPI signal-handler opt-out, and
-    a default `XDG_RUNTIME_DIR` where the caller's environment lacks one
-    (headless shells; `systemd-run --user` needs it to find the bus). -/
+/-- Preserve a working session, but recover from missing/stale session
+    environment on headless runners using the effective UID's runtime directory.
+    Check connectivity before sudo so normal desktop runs need no bootstrap. -/
 private def scopeEnv : IO (Array (String × Option String)) := do
-  let mut env : Array (String × Option String) :=
+  let base : Array (String × Option String) :=
     #[("OMPI_MCA_opal_signal", some "")]
-  if (← IO.getEnv "XDG_RUNTIME_DIR").isNone then
-    let out ← commandOutput "id" #["-u"]
-    if out.exitCode == 0 then
-      let uid := out.stdout.trimAscii.toString
-      unless uid.isEmpty do
-        env := env.push ("XDG_RUNTIME_DIR", some s!"/run/user/{uid}")
+  let out ← commandOutput "id" #["-u"]
+  let some uid := out.stdout.trimAscii.toString.toNat? | return base
+  if out.exitCode != 0 then return base
+  let runtime := s!"/run/user/{uid}"
+  let inherited := (← IO.getEnv "XDG_RUNTIME_DIR").getD runtime
+  let session := base.push ("XDG_RUNTIME_DIR", some inherited)
+  if (← commandOutput "systemctl" #["--user", "show-environment"] session).exitCode == 0 then
+    return session
+  let env := base ++ #[("XDG_RUNTIME_DIR", some runtime),
+    ("DBUS_SESSION_BUS_ADDRESS", none)]
+  if inherited != runtime then
+    if (← commandOutput "systemctl" #["--user", "show-environment"] env).exitCode == 0 then
+      return env
+  ensureUserManager uid
   return env
 
 /-- Process arguments for a command inside the memory-capped scope. Keeping
@@ -106,7 +114,6 @@ private def scopeEnv : IO (Array (String × Option String)) := do
 private def scopeArgs (ceilingGb : Nat) (cmd : String) (args : Array String)
     (cwd : Option System.FilePath)
     (env : Array (String × Option String)) : IO IO.Process.SpawnArgs := do
-  ensureUserManager
   return {
     cmd := "systemd-run"
     args := #["--user", "--scope", "--quiet",
