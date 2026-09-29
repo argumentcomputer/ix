@@ -1,6 +1,6 @@
 import Compilatrix.Ixon.Uses
 
-/-! Ixon v3 contracts, adapted from ix `2afb4eac340cd4cbe94ed9e507561f3ad8375ebd`
+/-! Ixon v3 contracts, adapted from ix `0a31c8dbc63755924c645bf1afedc563e395e88a`
 `Ix/IxonContract.lean`. Usage, input ownership, and relative locality are
 independent. The existing finite Uses/Owned types supply their bit encodings;
 the legacy v2 ownership checker is not a validator for these contracts. -/

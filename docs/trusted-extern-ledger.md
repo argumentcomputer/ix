@@ -325,7 +325,7 @@ trusted primitive.
 ## Ix frontend / Ixon v3 source boundary
 
 The [v3 source adapter](ixon-v3.md) is pinned independently to ix
-`2afb4eac340cd4cbe94ed9e507561f3ad8375ebd`. It preserves independent usage,
+`0a31c8dbc63755924c645bf1afedc563e395e88a`. It preserves independent usage,
 ownership, relative locality, arrow results, and borrow lets. Pure resource
 algorithms and selected state invariants are adapted from that snapshot;
 canonical bytes, source roots, profile identities and native resource claim

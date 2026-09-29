@@ -1,7 +1,7 @@
 # Frozen ix frontend handoff
 
-Unchanged files from `argumentcomputer/ix`, branch `jcb/aiur-frontend`, commit
-`2afb4eac340cd4cbe94ed9e507561f3ad8375ebd`, directory
+Unchanged files from `argumentcomputer/ix`, branch `jcb/ix-compilatrix`, commit
+`0a31c8dbc63755924c645bf1afedc563e395e88a`, directory
 `Tests/Fixtures/ixon-v3/`. `README.md` and the copied license notices are
 Compilatrix packaging additions. Do not regenerate expected bytes from the
 consumer codec. The upstream handoff manifest records the original BLAKE3

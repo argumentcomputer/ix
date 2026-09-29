@@ -4,7 +4,7 @@ import Compilatrix.Ixon.V3.Env
 /-!
 # Addressed resource interfaces
 
-Adapted from ix `2afb4eac340cd4cbe94ed9e507561f3ad8375ebd`:
+Adapted from ix `0a31c8dbc63755924c645bf1afedc563e395e88a`:
 imports/namespaces use the local v3 AST, fixed-width addresses, strict bounded
 constant decoder, and raw-byte environment (there is no decoded cache).
 

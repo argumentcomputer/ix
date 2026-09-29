@@ -1,10 +1,10 @@
 {
-  "source_revision": "2afb4eac340cd4cbe94ed9e507561f3ad8375ebd",
+  "source_revision": "0a31c8dbc63755924c645bf1afedc563e395e88a",
   "source_generator": "Tests/IxonV3Primitives.lean",
-  "source_environment_sha256": "b1c195362fd3ad612d63996a143a4035cf3bab4baf1e5dee008f01b9cffb33d8",
-  "producer_binary_sha256": "994152e6bf6d42a1ed9b5c874a3a5e641c23eb84756717a413a4ca41e52947d0",
-  "producer_version": "4.33.1|0.0.1",
-  "producer_build": "Pre-existing local executable and primitive environment; not rebuilt for this extraction. The exported primitive inventory is byte-identical to the committed v3 fixture.",
+  "source_environment_sha256": "11eaab0193c274caf3b7d8477dd7fdee50fadbc92c9073f13297dbbc37dd113f",
+  "producer_binary_sha256": "8b485aaa5bbb0f092507c4f2c0299bd669d986debbe668048b324b0b9df57e6d",
+  "producer_version": "4.34.0|0.0.1",
+  "producer_build": "Built with Lake from an unmodified jcb/ix-compilatrix workspace at the recorded revision; not a Nix build. The regenerated primitive environment and all four bundles are byte-identical to the previous extraction, and the exported primitive inventory equals the committed v3 fixture.",
   "extraction": "ix pack --anon --out OUTPUT.ixe SOURCE.ixe NAME",
   "reference_check": "ix check-rs --anon --workers 1 OUTPUT.ixe",
   "files": {

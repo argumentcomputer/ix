@@ -1,6 +1,6 @@
 import Compilatrix.Ixon.V3.Resource.State
 
-/-! Adapted from ix `2afb4eac340cd4cbe94ed9e507561f3ad8375ebd`.
+/-! Adapted from ix `0a31c8dbc63755924c645bf1afedc563e395e88a`.
 Only the import, expression namespace, and surrounding namespace are changed.
 This resource check retains the upstream erased-typing prerequisite. -/
 

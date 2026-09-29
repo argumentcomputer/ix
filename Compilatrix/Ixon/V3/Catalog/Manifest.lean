@@ -1,6 +1,6 @@
 import Compilatrix.Ixon.V3.Catalog.Basic
 
-/-! Bounded manifest-v2 parser, from ix 2afb4eac340cd4cbe94ed9e507561f3ad8375ebd
+/-! Bounded manifest-v2 parser, from ix 0a31c8dbc63755924c645bf1afedc563e395e88a
 Ix/Catalog.lean and crates/ixon/src/catalog.rs. Fixed-width little-endian
 integers are distinct from the environment's canonical Tag0 encoding. -/
 

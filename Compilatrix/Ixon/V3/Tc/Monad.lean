@@ -4,7 +4,7 @@ import Compilatrix.Ixon.V3.Tc.Primitive
 import Compilatrix.Ixon.V3.Tc.Subst
 import Compilatrix.Ixon.V3.Tc.Lctx
 
-/-! Adapted from ix `2afb4eac340cd4cbe94ed9e507561f3ad8375ebd`, `Ix/Tc/Monad.lean`.
+/-! Adapted from ix `0a31c8dbc63755924c645bf1afedc563e395e88a`, `Ix/Tc/Monad.lean`.
 The anonymous checker uses the local v3 byte decoder and existing BLAKE3 interface.
 See docs/ixon-v3.md for the adaptation and validation boundary. -/
 

@@ -1,10 +1,11 @@
 # Ix frontend and Ixon v3
 
-Compilatrix's new source boundary consumes ix `jcb/aiur-frontend` at
-`2afb4eac340cd4cbe94ed9e507561f3ad8375ebd`. The producer implements a shared
-Lean frontend with usage, ownership, relative locality and scoped shared
-borrowing. Aiur is one consumer. Compilatrix consumes the resulting binary
-objects; it does not introduce another parser or elaborator.
+Compilatrix's new source boundary consumes ix `jcb/ix-compilatrix` at
+`0a31c8dbc63755924c645bf1afedc563e395e88a`: ix `main` at `b413cd93` plus the
+Lean 4.34.0 update. The producer implements a shared Lean frontend with
+usage, ownership, relative locality and scoped shared borrowing. Aiur is one
+consumer. Compilatrix consumes the resulting binary objects; it does not
+introduce another parser or elaborator.
 
 This source pin is independent of the Aiur target snapshot in
 [`vendor/aiur/README.md`](../vendor/aiur/README.md). That target contains the

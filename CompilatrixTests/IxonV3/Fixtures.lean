@@ -1,7 +1,7 @@
 import Compilatrix.Ixon.V3.Resource.Admit
 
 /-! The explicit fixture program paired with the unchanged ix resource.tsv
-corpus at 2afb4eac. Its external interfaces are test assumptions only. -/
+corpus at 0a31c8db. Its external interfaces are test assumptions only. -/
 
 namespace CompilatrixTests.IxonV3.Fixtures
 

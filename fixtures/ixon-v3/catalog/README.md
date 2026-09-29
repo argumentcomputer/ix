@@ -5,15 +5,14 @@ Both catalogs commit the same three original anonymous environments, ordered
 includes Nat's four constants; the union has 23. The source bytes are the
 existing [`typing/` bundles](../typing/README.md).
 
-`fat.ixc/` was assembled on 2026-09-16 by the pre-existing upstream `ix`
-binary (version `4.33.1|0.0.1`), whose SHA-256 is recorded in `provenance.json`.
-The producer checkout's parent revision was
-`2afb4eac340cd4cbe94ed9e507561f3ad8375ebd`. This is not a fresh authenticated
-build of that revision. Its command was:
+`fat.ixc/` was assembled on 2026-09-29 by the upstream `ix` binary (version
+`4.34.0|0.0.1`), built with Lake from an unmodified `jcb/ix-compilatrix`
+workspace at `0a31c8dbc63755924c645bf1afedc563e395e88a`. Its SHA-256 is recorded
+in `provenance.json`. This is not a Nix build. Its command was:
 
 ```sh
-ix catalog assemble --labels Nat,Nat.add,Quot.lift --toolchains 4.33.1 \
-  --pins 2afb4eac340cd4cbe94ed9e507561f3ad8375ebd --deps '1:0' \
+ix catalog assemble --labels Nat,Nat.add,Quot.lift --toolchains 4.34.0 \
+  --pins 0a31c8dbc63755924c645bf1afedc563e395e88a --deps '1:0' \
   fat.ixc ../typing/Nat.ixe ../typing/Nat.add.ixe ../typing/Quot.lift.ixe
 ix catalog verify --deep fat.ixc
 ```
@@ -27,7 +26,9 @@ omitted original constants as assumptions. No constant or blob preimage was
 regenerated. The producer Rust `ix catalog verify --deep chunked.ixc` accepts
 all files and the same 23-constant union. This check does not establish full
 original member coverage or erased typing; the consumer tests establish those
-additional executed checks.
+additional executed checks. Its member toolchain and pin fields match
+`fat.ixc/`; the chunk files and `members.json` are unchanged since their
+2026-09-16 construction.
 
 `members.json` is a consumer witness containing the full 4/18/5 original
 address sets, not the 4/14/5 owner slices. Tests authenticate every list against

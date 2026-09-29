@@ -9,7 +9,7 @@ independent wire oracle. -/
 namespace Compilatrix.Ixon.V3
 
 def wireFormatId : String := "ixon-v3"
-def upstreamRevision : String := "2afb4eac340cd4cbe94ed9e507561f3ad8375ebd"
+def upstreamRevision : String := "0a31c8dbc63755924c645bf1afedc563e395e88a"
 
 inductive Expr where
   | sort : UInt64 → Expr

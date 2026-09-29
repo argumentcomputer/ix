@@ -8,7 +8,7 @@ bytes; this is not a validator of the full metadata serialization. -/
 
 namespace Compilatrix.Ixon.V3
 
-def producerRevision : String := "2afb4eac340cd4cbe94ed9e507561f3ad8375ebd"
+def producerRevision : String := "0a31c8dbc63755924c645bf1afedc563e395e88a"
 
 structure Env where
   consts : Std.HashMap Address ByteArray := {}

@@ -1,7 +1,7 @@
 import Compilatrix.Ixon.V3.Tc.Const
 import Compilatrix.Ixon.V3.Tc.Error
 
-/-! Adapted from ix `2afb4eac340cd4cbe94ed9e507561f3ad8375ebd`, `Ix/Tc/CanonicalCheck.lean`.
+/-! Adapted from ix `0a31c8dbc63755924c645bf1afedc563e395e88a`, `Ix/Tc/CanonicalCheck.lean`.
 The anonymous checker uses the local v3 byte decoder and existing BLAKE3 interface.
 See docs/ixon-v3.md for the adaptation and validation boundary. -/
 
