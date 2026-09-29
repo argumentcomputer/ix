@@ -340,7 +340,7 @@ emission and an initial readable caller return slot outside the arena.
 The proof derives preservation of that slot and actual physical return.
 
 The integrity-pinned stream/object gate checks 14 complete streams, 50
-branch objects, 15 stream corruptions, 1,010 object mutations/truncations,
+branch objects, 15 stream corruptions, 1,002 object mutations/truncations,
 10 relocation cases, six stack contracts and a physical caller-slot fault.
 It also executes one actual source-selected N2 object pair for all eight
 runtime inputs (6,512 byte steps), checking registers, every arena byte,
