@@ -34,8 +34,9 @@ K3's pure production types, exact ingress readings, separate physical
 inductive/recursor admission, `checkEnv`, and layout-preserving egress are now
 implemented with 26 compiler ingress and byte-exact egress cases. K4 now has
 isolated production codecs, the retained all-variant inverse proofs,
-exact constant framing, and bounded universe decoding with exact expansion
-accounting and production-decoder agreement. D01 is complete: both
+exact constant framing, aggregate universe bounds over complete records,
+executable wire validation, and canonical record decoding with an exact
+successful-domain theorem. D01 is complete: both
 lean4ix/Lean4Lean dependency paths, the old verification trees, and their build/benchmark/CI consumers
 have been removed and validated in a fresh jj workspace and through Nix.
 The remaining K4 byte-admission work and measured core improvements in
@@ -649,7 +650,7 @@ checkpoint. Initial entries:
 | Address key | `Ix.Address.Core` | pure data | K0 |
 | BLAKE3 | `Blake3.Pure` (package), `Address.blake3Pure` | certified function once the pin is bumped and our runtime audit confirms its closure | K0 pin bump; used from K4 and K5; the C and Rust backends stay host accelerators |
 | Ixon data types | `Ix.Ixon.Types` | pure production data in the standalone audited closure | K3 split complete |
-| Ixon codecs | `Ix.Ixon.Codec`, `Wire`, `Bounded.Universe`, `Verify` | pure production grammar, all-variant inverse proofs, exact constant framing, and bounded universe decoding | K4 bounds/validity for complete records, canonicality, and byte admission remain |
+| Ixon codecs | `Ix.Ixon.Codec`, `Wire`, `WireCheck`, `Bounded`, `Canonical`, `Verify` | production grammar and inverses, complete-record byte/universe limits, exact wire validation, and canonical re-encoding | K4 further resource bounds, mutual-block order, and byte admission remain |
 | Ixon to kernel ingress and egress | `Ix.Kernel.Ingress`, `Ix.Kernel.Egress` | exact readings, physical-reference fidelity, model theorem for accepted in-memory input, and exact reconstruction with retained layout | K3 complete; byte contracts remain K4 |
 | Claims, assumption trees, Merkle roots, commitments | `Ix.Claim`, `Ix.AssumptionTree`, `Ix.Merkle`, `Ix.Commit` | host | K5, with explicit cryptographic assumptions |
 | Lean reference checker | `Ix.Tc` | host; replaced by `Ix.Kernel` in K6 | every consumer migrates, then `Ix.Tc` is deleted |
@@ -930,7 +931,7 @@ for family-only inputs; it makes no measured speedup claim.
 Exit: acceptance of Ixon-shaped input establishes the meaning of the
 selected declarations; unsupported input declines explicitly.
 
-### K4: Ixon bytes (codecs, inverse/framing proofs, and universe bounds implemented)
+### K4: Ixon bytes (bounded and canonical record codecs implemented)
 
 Implemented: production anonymous encoders/decoders moved unchanged into
 `Ix.Ixon.Codec`, reexported by the host; structural count/address predicates
@@ -955,12 +956,30 @@ include a ten-byte `UInt64.max` successor claim, rejected before reading its
 base or constructing the chain. These are byte/tree-size limits, not a
 runtime heap or wall-clock bound.
 
-Remaining: resource bounds and decode validity for complete constant records,
-canonical re-encoding, mutual-block order, and composition with K3. Thread
-the universe budget through the entire table instead of restarting it per
-entry, and establish the bounds for the other readers. Existing host callers
-still use the original decoders. No byte-admission theorem is claimed at
-this checkpoint.
+Complete records now use `getConstantWithUnivs`, a shared production grammar
+whose equivalence to the old decoder is proved for all inputs and states.
+`Bounded.Constant` threads one expansion budget through the entire universe
+table using a tail loop without allocating the claimed array capacity.
+Its exact successful domain is the production exact decoder intersected
+with the input-byte and aggregate universe-node limits. All constant
+variants retain round trips and nonempty-suffix rejection.
+
+`WireCheck` checks exactly `Constant.wireWF`; its expression/universe results
+carry telescope counts so recursive validation does not rescan tails.
+`Canonical.deConstant` composes bounded decoding, wire validation, and
+equality with production re-encoding. Its iff theorem characterizes success
+as a wire-well-formed constant whose serialization is exactly the input and
+which fits both limits. Canonicality here concerns byte spelling; it does
+not establish mutual-block member order or typing. Directed controls reject
+nonminimal integer tags, split successor prefixes, ignored universe-tag
+sizes, and non-Boolean axiom flags that the production decoder accepts.
+
+Remaining: structural/work bounds for the other production readers,
+canonical mutual-block order, and composition with K3. The byte adapter must
+preserve the kernel's core-only import boundary; the broad inverse proofs
+and their Std bit-vector tooling belong in the separate codec proof closure.
+Existing host callers still use the original decoders. No byte-admission
+theorem is claimed at this checkpoint.
 
 Port the earlier plan's serialization milestone against the split types:
 schema and version, pure encoders and bounded decoders for the supported
@@ -1381,6 +1400,18 @@ Implementation checkpoint (2026-09-29):
   Core/ingress/egress theorem statements and execution closures are unchanged.
   Provenance covers 97 ported, 55 authored/reorganized modules and four
   license files. Evidence is in `plans/review/k4-universe-bounds/summary.json`.
+- K4's bounded/canonical record checkpoint passes the incremental full gate:
+  172 standalone, 181 host fixture/provenance, 539 runner, and 975 model
+  jobs; 38 differential and 26 compiler ingress/exact-egress cases. The host
+  codec suite includes generated aggregate-budget and canonical record
+  checks against Rust serialization. Ten new exact axiom checks cover the
+  grammar equivalence, table budgets, bounded domain, full wire validator,
+  and canonical domain/round-trip/framing contracts. The codec runtime
+  closure is 331 functions and 52 inherited externs; the added extern is
+  Init's byte-array decidable equality. Unsafe/replacement counts and the
+  core/ingress/egress boundaries remain unchanged. Provenance covers 97
+  ported, 61 authored/reorganized modules and four license files. Evidence
+  is in `plans/review/k4-canonical-records/summary.json`.
 - P04–P12 and the remaining K4–K7 work stay open; whole-corpus parity has
   not been run. D02's runtime consumer cutover and deletion of Ix.Tc remain
   required.

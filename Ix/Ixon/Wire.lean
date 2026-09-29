@@ -6,7 +6,10 @@ Extracted from Ix/Compile/Verify/Catalog.lean and Codec.lean at Ix revision
 b067697b9d97552c6f52b2f72c892f84e4c7170f.
 -/
 
-import Ix.Ixon.Codec
+module
+public import Ix.Ixon.Codec
+
+public section
 
 /-! Structural wire representability, without compiler or source-language
 semantics. These predicates describe lossless counts and address widths;

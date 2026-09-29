@@ -20,6 +20,7 @@ system. It does not certify the Lean-to-Ixon compiler, Rust checker, or IxVM.
 | `Egress.Record`, expression/declaration layouts | Raw payloads plus the sharing, table, and let-spelling choices needed to reconstruct the source | Checked writer readings and `records_roundtrip`, with exact list equality |
 | `Ix.Ixon.Codec`, `Ix.Ixon.Wire`, `Ix.Ixon.Verify` | Production anonymous byte grammar, representable counts/address widths, and cursor/append laws | All-variant serializer inverses, exact constant framing, and separate codec audits |
 | `Ix.Ixon.Bounded.Universe` | Universe decoding with explicit byte and expanded-constructor limits | Exact budget accounting, production-decoder agreement, round trips within limits, and wire validity below the wire count capacity |
+| `Ix.Ixon.Bounded.Constant`, `WireCheck`, `Canonical` | Complete-record input/expansion limits, wire validity, and canonical byte spelling | Success iff the record is wire-well-formed, re-encodes to the supplied bytes, and fits both limits |
 | `AExpr`, `PropWhen` | A reading with a condition at each binder describing when its codomain is a proposition | `annotate_erase` proves exact erasure; separate scope checks include annotation conditions |
 | `Typed`, `TypedSort`, `Reduced`, `Conv` | Search results with erased semantic evidence for this environment and context | `inferA`, normalization, conversion, and the declaration checkers |
 | Admission candidate | An ordinary inductive shape, structure description, or standard primitive interface | A reader proposes it; validation and exact generated-block comparison justify installation |
@@ -188,10 +189,11 @@ the whole buffer, with round-trip and nonempty-suffix rejection theorems.
 The pure codec/data import closure uses only Lean core. The proof closure
 additionally uses Lean/Std tactics, including checked bit-vector proofs;
 it imports no host code or Lean4Lean. `Ix.Ixon.Audit` freezes theorem types,
-axiom sets, both import boundaries, and the codec's execution closure: 282
-compiled functions, 51 inherited externs, two inherited unsafe array
+axiom sets, both import boundaries, and the codec's execution closure: 331
+compiled functions, 52 inherited externs, two inherited unsafe array
 accessors, and no `implemented_by`, `csimp`, or project replacement. The
-existing kernel and egress closures remain unchanged.
+new extern is Init's `ByteArray.decEq` (`lean_sarray_dec_eq`), used for exact
+re-encoding equality. The existing kernel and egress closures remain unchanged.
 
 `Ix.Ixon.Bounded.Universe` adds a separate universe entry point with a byte
 limit and a shared budget for expanded constructors. It reserves the tag's
@@ -210,11 +212,26 @@ budget sharing, truncation, suffixes, and a ten-byte encoding that requests
 reading the base or constructing the chain. The host suite also checks
 generated values with the existing Rust serialization oracle.
 
-K4 remains open for resource bounds and decoding validity over complete
-constant records, canonical re-encoding and mutual-block order, and
-composition with K3's admission theorem. Existing host callers still use
-the original decoders; the bounded universe entry point is the first piece
-of the new byte boundary. No
+`Bounded.Constant` now spends one universe budget across the whole table.
+The shared `getConstantWithUnivs` grammar preserves the production decoder
+on every input and state. The bounded record API accepts exactly its
+successful full-buffer reads that fit the byte and aggregate universe-node
+limits, with all-variant round trips and suffix rejection.
+
+`WireCheck.validConstant` decides the complete `Constant.wireWF` predicate.
+Its recursive checks carry telescope counts, avoiding repeated scans of
+long application, binder, and successor chains. `Canonical.deConstant`
+combines the bounded parser, this validator, and exact re-encoding equality.
+Its successful-domain theorem is an iff: the result must be wire-well-formed,
+serialize to precisely the input bytes, and fit both limits. Tests exercise
+alternate spellings accepted by the production decoder, large truncated
+counts, aggregate budget exhaustion, 4,096-entry tables and application
+spines, and generated values compared against Rust serialization.
+
+K4 remains open for structural/work bounds over the other readers, canonical
+mutual-block order, and composition with K3's admission theorem. The canonical
+record API establishes byte spelling, not mutual member order or typing.
+Existing host callers still use the original decoders. No
 byte-to-accepted-environment theorem, address authentication, claims, or
 receipt contract is asserted yet. K5 will connect authenticated subjects
 and receipts.

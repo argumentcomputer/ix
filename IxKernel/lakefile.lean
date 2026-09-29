@@ -21,10 +21,11 @@ package «ix-kernel» where
 lean_lib IxKernel where
   srcDir := ".."
   roots := #[`Ix.Kernel, `Ix.Address.Core, `Ix.Ixon.Types, `Ix.Ixon.Codec, `Ix.Ixon.Wire,
-    `Ix.Ixon.Bounded.Universe, `Ix.Ixon.Verify, `Ix.Ixon.Audit]
+    `Ix.Ixon.WireCheck, `Ix.Ixon.Bounded.Universe, `Ix.Ixon.Bounded.Constant,
+    `Ix.Ixon.Canonical, `Ix.Ixon.Verify, `Ix.Ixon.Audit]
   globs := #[.andSubmodules `Ix.Kernel, .one `Ix.Address.Core, .andSubmodules `Ix.Ixon.Types,
-    .one `Ix.Ixon.Codec, .one `Ix.Ixon.Wire, .one `Ix.Ixon.Bounded.Universe,
-    .andSubmodules `Ix.Ixon.Verify, .one `Ix.Ixon.Audit]
+    .one `Ix.Ixon.Codec, .one `Ix.Ixon.Wire, .one `Ix.Ixon.WireCheck, .submodules `Ix.Ixon.Bounded,
+    .one `Ix.Ixon.Canonical, .andSubmodules `Ix.Ixon.Verify, .one `Ix.Ixon.Audit]
 
 /-- Certified fixtures also run without the host package's dependencies. -/
 def kernelFixtureRoots : Array Lean.Name := #[

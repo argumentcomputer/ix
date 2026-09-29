@@ -1011,21 +1011,26 @@ def putConstant (c : Constant) : PutM Unit := do
   putTag0 ⟨c.univs.size.toUInt64⟩
   for u in c.univs do putUniv u
 
-def getConstant : GetM Constant := do
+/-- Read a counted array by consuming each entry before appending it. -/
+def getArray (getm : GetM α) (count : Nat) : GetM (Array α) := do
+  let mut values := #[]
+  for _ in [0:count] do
+    values := values.push (← getm)
+  return values
+
+/-- Shared constant grammar with an explicit universe-table reader. This
+keeps the record prefix identical for production and bounded decoding. -/
+def getConstantWithUnivs (readUnivs : Nat → GetM (Array Univ)) : GetM Constant := do
   let info ← getConstantInfo
   let numSharing := (← getTag0).size.toNat
-  let mut sharing := #[]
-  for _ in [0:numSharing] do
-    sharing := sharing.push (← getExpr)
+  let sharing ← getArray getExpr numSharing
   let numRefs := (← getTag0).size.toNat
-  let mut refs := #[]
-  for _ in [0:numRefs] do
-    refs := refs.push (← Serialize.get)
+  let refs ← getArray Serialize.get numRefs
   let numUnivs := (← getTag0).size.toNat
-  let mut univs := #[]
-  for _ in [0:numUnivs] do
-    univs := univs.push (← getUniv)
+  let univs ← readUnivs numUnivs
   return ⟨info, sharing, refs, univs⟩
+
+def getConstant : GetM Constant := getConstantWithUnivs (getArray getUniv)
 
 instance : Serialize Constant where
   put := putConstant

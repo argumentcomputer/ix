@@ -25,11 +25,103 @@ def exactUniv (value : Ixon.Univ) : Bool :=
   | .ok decoded => decoded == value
   | .error _ => false
 
+def exactBoundedConstant (value : Ixon.Constant) : Bool :=
+  let bytes := Ixon.serConstant value
+  let nodes := Ixon.Bounded.univNodes value.univs
+  match Ixon.Bounded.deConstant bytes.size nodes bytes with
+  | .ok decoded => decoded == value
+  | .error _ => false
+
+def exactCanonicalConstant (value : Ixon.Constant) : Bool :=
+  let bytes := Ixon.serConstant value
+  match Ixon.Canonical.deConstant bytes.size (Ixon.Bounded.univNodes value.univs) bytes with
+  | .ok decoded => decoded == value
+  | .error _ => false
+
 #guard variants.all fun (_, value) => exactConstant value
 #guard falseStore.all fun (_, value) => exactConstant value
 #guard separatedFalse.all fun (_, value) => exactConstant value
 #guard exactConstant sharedIdentity
 #guard exactConstant ⟨.muts #[], #[], #[], #[]⟩
+#guard variants.all fun (_, value) => exactBoundedConstant value
+#guard falseStore.all fun (_, value) => exactBoundedConstant value
+#guard separatedFalse.all fun (_, value) => exactBoundedConstant value
+#guard exactBoundedConstant sharedIdentity
+#guard exactBoundedConstant ⟨.muts #[], #[], #[], #[]⟩
+#guard exactBoundedConstant ⟨.muts #[], #[], #[], Array.replicate 4096 .zero⟩
+#guard variants.all fun (_, value) => exactCanonicalConstant value
+#guard falseStore.all fun (_, value) => exactCanonicalConstant value
+#guard separatedFalse.all fun (_, value) => exactCanonicalConstant value
+#guard exactCanonicalConstant sharedIdentity
+#guard exactCanonicalConstant ⟨.muts #[], #[], #[], #[]⟩
+
+-- Malformed address widths are outside the wire domain regardless of typing.
+#guard !Ixon.WireCheck.validConstant ⟨.muts #[], #[], #[⟨⟨#[0]⟩⟩], #[]⟩
+#guard !Ixon.WireCheck.validConstant ⟨.iPrj ⟨0, ⟨⟨#[0]⟩⟩⟩, #[], #[], #[]⟩
+#guard Ixon.WireCheck.validExpr
+  ((List.range 4096).foldl (fun e i => .app e (.var i.toUInt64)) (.var 0))
+
+def sharedUniverseBudget : Ixon.Constant :=
+  ⟨.muts #[], #[], #[], #[.addSucc 15 .zero, .addSucc 15 .zero]⟩
+
+#guard exactBoundedConstant sharedUniverseBudget
+-- Each entry fits 16 nodes, but the table requires 32. Resetting the budget
+-- at each entry would incorrectly accept either of these insufficient limits.
+#guard [16, 31].all fun budget =>
+  !(Ixon.Bounded.deConstant 256 budget (Ixon.serConstant sharedUniverseBudget)).isOk
+#guard match Ixon.Bounded.deConstant 256 32 (Ixon.serConstant sharedUniverseBudget) with
+  | .ok value => value == sharedUniverseBudget
+  | .error _ => false
+
+def recordUnivsPayload (count : UInt64) (payload : ByteArray) : ByteArray :=
+  Ixon.runPut do
+    Ixon.putConstantInfo (.muts #[])
+    Ixon.putTag0 ⟨0⟩
+    Ixon.putTag0 ⟨0⟩
+    Ixon.putTag0 ⟨count⟩
+    Ixon.putBytes payload
+
+def nonminimalSharingCount : ByteArray := Ixon.runPut do
+  Ixon.putConstantInfo (.muts #[])
+  Ixon.putBytes ⟨#[0x80, 0]⟩
+  Ixon.putTag0 ⟨0⟩
+  Ixon.putTag0 ⟨0⟩
+
+def nonBooleanAxiom : ByteArray := Ixon.runPut do
+  Ixon.putTag4 ⟨Ixon.Constant.FLAG, Ixon.ConstantInfo.CONST_AXIO⟩
+  Ixon.putU8 2
+  Ixon.putTag0 ⟨0⟩
+  Ixon.putExpr (.sort 0)
+  Ixon.putTag0 ⟨0⟩
+  Ixon.putTag0 ⟨0⟩
+  Ixon.putTag0 ⟨0⟩
+
+-- Production decoding accepts these alternate spellings. Canonical decoding
+-- rejects nonminimal integers, nonmaximal successor chains, ignored universe
+-- tag sizes, and non-Boolean axiom flags rather than normalizing their bytes.
+def alternateSpellings : List ByteArray := [
+  nonminimalSharingCount,
+  recordUnivsPayload 1 ⟨#[1, 1, 0]⟩,
+  recordUnivsPayload 1 ⟨#[0x41, 0, 0]⟩,
+  recordUnivsPayload 1 ⟨#[0xE0, 0]⟩,
+  nonBooleanAxiom]
+
+#guard alternateSpellings.all fun bytes =>
+  (Ixon.Bounded.deConstant 256 64 bytes).isOk &&
+    match Ixon.Canonical.deConstant 256 64 bytes with
+    | .ok _ => false
+    | .error reason => reason == "getConstantCanonical: noncanonical wire encoding"
+
+-- Claimed lengths are consumed as streaming loops, not preallocations.
+#guard !(Ixon.Bounded.deConstant 256 64
+  (recordUnivsPayload 18446744073709551615 ⟨#[]⟩)).isOk
+#guard !(Ixon.Bounded.deConstant 256 64 (Ixon.runPut do
+  Ixon.putConstantInfo (.muts #[])
+  Ixon.putTag0 ⟨18446744073709551615⟩)).isOk
+#guard !(Ixon.Bounded.deConstant 256 64 (Ixon.runPut do
+  Ixon.putConstantInfo (.muts #[])
+  Ixon.putTag0 ⟨0⟩
+  Ixon.putTag0 ⟨18446744073709551615⟩)).isOk
 
 def wordBoundaries : List UInt64 :=
   [0, 1, 7, 8, 31, 32, 127, 128, 255, 256, 65535, 65536, 18446744073709551615]
@@ -62,6 +154,15 @@ def boundedUniverses : List Ixon.Univ :=
 -- Ten bytes can request UInt64.max successor nodes. Rejection must happen
 -- before successor construction, even when the encoded base is present.
 def successorBomb : ByteArray := ⟨#[0x27, 255, 255, 255, 255, 255, 255, 255, 255, 0]⟩
+
+#guard match Ixon.Bounded.deConstant 256 64 (recordUnivsPayload 1 successorBomb) with
+  | .error reason => reason == "getUnivBounded: expanded-node budget exhausted"
+  | .ok _ => false
+#guard match Ixon.Bounded.deConstant 256 64
+    (recordUnivsPayload 2 (Ixon.serUniv .zero ++ successorBomb)) with
+  | .error reason => reason == "getUnivBounded: expanded-node budget exhausted"
+  | .ok _ => false
+#guard !(Ixon.Canonical.deConstant 256 64 (recordUnivsPayload 1 successorBomb)).isOk
 
 #guard match Ixon.Bounded.deUniv successorBomb.size 64 successorBomb with
   | .error reason => reason == "getUnivBounded: expanded-node budget exhausted"
@@ -106,8 +207,34 @@ def successorBomb : ByteArray := ⟨#[0x27, 255, 255, 255, 255, 255, 255, 255, 2
 #guard (List.range (Ixon.serConstant variedBlock).size).all fun n =>
   !(Ixon.deConstantExact ((Ixon.serConstant variedBlock).extract 0 n)).isOk
 
+#guard variants.all fun (_, value) =>
+  let bytes := Ixon.serConstant value
+  let nodes := Ixon.Bounded.univNodes value.univs
+  !(Ixon.Bounded.deConstant (bytes.size - 1) nodes bytes).isOk &&
+    !(Ixon.Bounded.deConstant (bytes.size + 1) nodes (bytes ++ ⟨#[0]⟩)).isOk &&
+    (List.range bytes.size).all (fun n =>
+      !(Ixon.Bounded.deConstant bytes.size nodes (bytes.extract 0 n)).isOk)
+
+#guard variants.all fun (_, value) =>
+  let bytes := Ixon.serConstant value
+  let nodes := Ixon.Bounded.univNodes value.univs
+  !(Ixon.Canonical.deConstant (bytes.size - 1) nodes bytes).isOk &&
+    !(Ixon.Canonical.deConstant (bytes.size + 1) nodes (bytes ++ ⟨#[0]⟩)).isOk &&
+    (List.range bytes.size).all (fun n =>
+      !(Ixon.Canonical.deConstant bytes.size nodes (bytes.extract 0 n)).isOk)
+
 example (value : Ixon.Constant) (h : value.wireWF) :
     Ixon.deConstantExact (Ixon.serConstant value) = .ok value :=
   Ix.Ixon.Verify.deConstantExact_serConstant value h
+
+example (value : Ixon.Constant) (h : value.wireWF) :
+    Ixon.Bounded.deConstant (Ixon.serConstant value).size
+      (Ixon.Bounded.univNodes value.univs) (Ixon.serConstant value) = .ok value :=
+  Ix.Ixon.Verify.BoundedConstant.deConstant_serConstant value h _ _ (by omega) (by omega)
+
+example (value : Ixon.Constant) (h : value.wireWF) :
+    Ixon.Canonical.deConstant (Ixon.serConstant value).size
+      (Ixon.Bounded.univNodes value.univs) (Ixon.serConstant value) = .ok value :=
+  Ix.Ixon.Verify.Canonical.deConstant_serConstant value h _ _ (by omega) (by omega)
 
 end Tests.Ix.Kernel.Codec

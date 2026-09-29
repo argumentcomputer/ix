@@ -322,7 +322,9 @@ def getConstantAfterInfo (info : Ixon.ConstantInfo) :
 
 theorem getConstant_eq :
     Ixon.getConstant = (Ixon.getConstantInfo >>= getConstantAfterInfo) := by
-  rfl
+  unfold Ixon.getConstant Ixon.getConstantWithUnivs Ixon.getArray
+    getConstantAfterInfo getConstantRefs getConstantUnivs
+  simp
 
 theorem putConstant_writes_core_empty (info : Ixon.ConstantInfo)
     (h : CoreInfoWireWF info) :
