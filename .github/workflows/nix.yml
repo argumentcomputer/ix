@@ -30,11 +30,18 @@ jobs:
     runs-on: runs-on=${{ github.run_id }}-nix-test-${{ github.run_attempt }}/cpu=16/family=r7i+r8i+r7a+r8a/image=ubuntu26-full-x64/volume=150gb/sticky=nix-x86-64-v4:100gb/extras=s3-cache
     steps:
       - uses: actions/checkout@v7
+      # sccache serves only the `nix develop` build below: `nix build` and
+      # `nix flake check` compile inside Nix's sandbox, which sees neither
+      # the wrapper nor the network, and rely on Cachix instead. The dev
+      # shell inherits RUSTC_WRAPPER and keeps the outer PATH, so the
+      # binary the sccache action installs resolves there (see ci.yml).
       - uses: runs-on/action@v2
         with:
+          sccache: s3
           sticky_cache: |
             rust
             custom,path=.lake,path=target
+      - uses: mozilla-actions/sccache-action@v0.0.11
       - uses: cachix/install-nix-action@v31
         with:
           nix_path: nixpkgs=channel:nixos-unstable
