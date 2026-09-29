@@ -92,11 +92,7 @@ fn public_verify_checks_fixed_byte_activity_before_openings() {
   witness.traces[1].values.clear();
   witness.lookups[1] =
     LookupValues::builder(0, &system.slot_arg_widths(1)).finish();
-  let proof = system.system.prove_batch(
-    &system.key,
-    vec![ShardInput { claims: vec![claim.to_vec()], witness }],
-    vec![],
-  );
+  let proof = system.prove_witness(&claim, witness);
   assert_eq!(proof.preamble.headers[0].active, vec![true, false, true]);
   assert_eq!(proof.preamble.headers[0].log_degrees, vec![2, 16]);
   system.system.verify_shape(&proof.proofs[0]).unwrap();

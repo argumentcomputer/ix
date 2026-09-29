@@ -1245,6 +1245,45 @@ impl AiurSystem {
   }
 }
 
+/// Proofs over supplied witnesses, and per-shard verdicts, for tests that
+/// forge what an honest execution never produces.
+#[cfg(test)]
+impl AiurSystem {
+  /// A one-shard batch over `witness`, claiming `claim`.
+  pub(crate) fn prove_witness(
+    &self,
+    claim: &[G],
+    witness: multi_stark::system::SystemWitness<G>,
+  ) -> AiurProof {
+    let shard =
+      multi_stark::batch::ShardInput { claims: vec![claim.to_vec()], witness };
+    self.prove_witnesses(vec![shard], vec![])
+  }
+
+  /// A batch over supplied shards and public messages.
+  pub(crate) fn prove_witnesses(
+    &self,
+    shards: Vec<multi_stark::batch::ShardInput<AiurConfig>>,
+    messages: Vec<multi_stark::batch::BatchMessage<AiurConfig>>,
+  ) -> AiurProof {
+    self.system.prove_batch(&self.key, shards, messages)
+  }
+
+  /// Shard `shard` of `proof` against its preamble alone: the verdict
+  /// before the batch's residuals are summed, so a failure here is the
+  /// shard's own and not a balance the rest of the batch might supply.
+  pub(crate) fn verify_shard(
+    &self,
+    proof: &AiurProof,
+    shard: usize,
+  ) -> Result<(), VerificationError<PcsError>> {
+    self
+      .system
+      .verify_batch_shard(&proof.preamble, shard, &proof.proofs[shard])
+      .map(|_| ())
+  }
+}
+
 fn trace_retention(requested: Retention) -> Retention {
   if crate::trace::trace_only_lookups() && requested == Retention::Retain {
     Retention::Regenerate
@@ -2259,9 +2298,22 @@ mod tests {
     let io_buffer = empty_io_buffer();
     let (claim, witness) =
       forged_entry_witness(&system, &io_buffer, G::from_u64(999));
-    let shards = vec![ShardInput { claims: vec![claim.clone()], witness }];
-    let proof = system.system.prove_batch(&system.key, shards, vec![]);
-    assert!(system.verify(&claim, &proof).is_err(), "forged claim verified");
+    let proof = system.prove_witness(&claim, witness);
+    // The selector gates the pull, so the shard's own constraints reject
+    // the row before the batch balance is consulted.
+    assert!(
+      matches!(
+        system.verify_shard(&proof, 0),
+        Err(VerificationError::OodEvaluationMismatch)
+      ),
+      "forged claim verified"
+    );
+    assert!(matches!(
+      system.verify(&claim, &proof),
+      Err(AiurVerificationError::Stark(
+        VerificationError::OodEvaluationMismatch
+      ))
+    ));
   }
 
   // The CUDA backend derives lookup messages from the committed trace
@@ -2312,11 +2364,22 @@ mod tests {
     claim.extend(&output);
     let shards = vec![ShardInput { claims: vec![claim.clone()], witness }];
     let messages = AiurSystem::boundary_messages(&plan);
-    let proof = system.system.prove_batch(&system.key, shards, messages);
+    let proof = system.prove_witnesses(shards, messages);
+    // The padding rows' multiplicities cancel, so the batch would balance;
+    // the shard's own constraints are what reject them.
     assert!(
-      system.verify(&claim, &proof).is_err(),
+      matches!(
+        system.verify_shard(&proof, 0),
+        Err(VerificationError::OodEvaluationMismatch)
+      ),
       "padding rows carried multiplicities"
     );
+    assert!(matches!(
+      system.verify(&claim, &proof),
+      Err(AiurVerificationError::Stark(
+        VerificationError::OodEvaluationMismatch
+      ))
+    ));
   }
 
   #[test]

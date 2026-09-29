@@ -316,9 +316,17 @@ fn u32_compare_supplied_out_of_range_limbs_fail_lookup_verification() {
         G::from_bool(output),
       ];
       let witness = SystemWitness::from_stage_1(traces, &system.system);
-      let shards = vec![ShardInput { claims: vec![claim.to_vec()], witness }];
-      let proof = system.system.prove_batch(&system.key, shards, vec![]);
-      assert!(system.verify(&claim, &proof).is_err());
+      let proof = system.prove_witness(&claim, witness);
+      // The row is well-formed; only the range table disagrees with it,
+      // so the rejection is the unanswered lookup, not a constraint.
+      system.verify_shard(&proof, 0).unwrap();
+      assert!(
+        matches!(
+          system.verify(&claim, &proof),
+          Err(AiurVerificationError::Stark(VerificationError::UnbalancedBatch))
+        ),
+        "a range table balanced a wrong comparison"
+      );
     }
   }
 }

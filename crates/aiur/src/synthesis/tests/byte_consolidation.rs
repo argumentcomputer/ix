@@ -254,9 +254,19 @@ fn forged_consolidated_outputs_and_nonbyte_inputs_fail_lookup_verification() {
           claimed_output,
         ];
         let witness = SystemWitness::from_stage_1(traces, &system.system);
-        let shards = vec![ShardInput { claims: vec![claim.clone()], witness }];
-        let proof = system.system.prove_batch(&system.key, shards, vec![]);
-        assert!(system.verify(&claim, &proof).is_err());
+        let proof = system.prove_witness(&claim, witness);
+        // The row is well-formed; only the byte table disagrees with it,
+        // so the rejection is the unanswered lookup, not a constraint.
+        system.verify_shard(&proof, 0).unwrap();
+        assert!(
+          matches!(
+            system.verify(&claim, &proof),
+            Err(AiurVerificationError::Stark(
+              VerificationError::UnbalancedBatch
+            ))
+          ),
+          "a byte table balanced a wrong output"
+        );
       }
     }
   }
