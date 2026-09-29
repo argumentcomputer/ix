@@ -1,5 +1,6 @@
 import Compilatrix.Ixon.V3
 import Compilatrix.X86.Basic
+import Compilatrix.X86.Constructors
 import Compilatrix.X86.BlockSharing
 import Compilatrix.X86.ByteBranch
 import Compilatrix.X86.ByteCall
@@ -47,12 +48,19 @@ import Compilatrix.X86.StreamRun
 import Compilatrix.X86.StreamSpec
 import Compilatrix.X86.StreamTrace
 import Compilatrix.X86.StreamValidate
+import Compilatrix.X86.State
+import Compilatrix.X86.Table.Exec
+import Compilatrix.X86.Table.Index
+import Compilatrix.X86.Table.Op
+import Compilatrix.X86.Table.Rows
+import Compilatrix.X86.Types
 import Compilatrix.X86.WordRegion
 import Compilatrix.X86.WordRegionExecution
 import Compilatrix.X86.WordRegionSafeCalls
 import Compilatrix.X86.WordRegionSafeControl
 import Compilatrix.X86.WordRegionSafeMacros
 import Compilatrix.X86.WordRegionSafeTrace
+import Compilatrix.X86.Width
 import Compilatrix.Aiur
 
 /-! Production API: Ixon v3 ingress, the x86 target model with its certified

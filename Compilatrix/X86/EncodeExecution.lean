@@ -1,111 +1,121 @@
 import Compilatrix.X86.EncodeLength
 import Compilatrix.X86.ByteFlags
 
-/-! Per-form execution agreement with the existing typed evaluator, including
-its modeled memory faults. Symbolic control addresses and external calls have
-separate local contracts below; a complete linked stream relation is E2. -/
+/-! E1 execution agreement, generic over rows. Both machines run a linear
+row through `Op.exec`, so its semantic function, operand reads and writes,
+and memory faults are shared. A linear row declares no input flags, so the
+typed machine (no flags) and the byte machine (its current flags) compute
+the same core; only the byte machine keeps the merged flags. -/
 
 namespace Compilatrix.X86.Encode
 
 attribute [local simp] pure Except.pure Functor.map Except.map bind Except.bind
 
+/-- Typed instructions executed by one linear row. Calls are separate
+control laws. -/
 def linearInstruction : Instr → Bool
+  | .op o _ => o.linear && (desc o).flagsIn.isEmpty
   | .call _ | .callRuntime _ => false
-  | _ => true
+
+/-- Every listed linear row declares no input flags. -/
+theorem table_flagsFree : Op.rows.all (fun o => !o.linear || (desc o).flagsIn.isEmpty) = true := by decide
+
+theorem linear_of_wellFormed {instruction : Instr} (wf : instruction.wellFormed = true)
+    (notCall : ∀ target, instruction ≠ .call target) (notRuntime : ∀ intrinsic, instruction ≠ .callRuntime intrinsic) :
+    linearInstruction instruction = true := by
+  cases instruction with
+  | op o args =>
+      obtain ⟨row, linear, _⟩ := wellFormed_op wf
+      have free := List.all_eq_true.mp table_flagsFree o row
+      simp only [linear, Bool.not_true, Bool.false_or] at free
+      simp [linearInstruction, linear, free]
+  | call target => exact absurd rfl (notCall target)
+  | callRuntime intrinsic => exact absurd rfl (notRuntime intrinsic)
+
+/-- A row that declares no input flags computes the same core from any flags. -/
+theorem exec_flagsFree {o : Op} (free : (desc o).flagsIn = []) (args : List Arg) (core : Core)
+    (flags : ByteEval.Flags) :
+    o.exec args core flags =
+      (o.run args core {}).map fun result => (result.1, flags.merge (desc o).flagsOut result.2.flags) := by
+  unfold Op.exec
+  rw [free, ByteEval.restrict_nil]
+  cases o.run args core {} <;> rfl
+
+theorem execute_linear {o : Op} (linear : o.linear = true) (args : List Arg) (length : Nat)
+    (state : ByteEval.State) :
+    ByteEval.execute ⟨.op o args, length⟩ state =
+      match o.exec args state.core state.flags with
+      | .ok (core, flags) => .ok { core, rip := state.rip + UInt64.ofNat length, flags }
+      | .error fault => .error (ByteEval.Fault.ofExec fault) := by
+  unfold ByteEval.execute
+  cases hmn : o.mn <;> simp only [Op.linear, hmn, Bool.false_eq_true] at linear
+  all_goals
+    simp only [hmn]
+    cases o.exec args state.core state.flags <;> rfl
 
 def LinearAgreement (before after : Machine) : Except ByteEval.Fault ByteEval.State → Prop
   | .ok state => after = before.advanceWith state.core
   | .error (.memory fault) => after = before.trap (.memoryFault fault)
-  | .error _ => False
+  | .error (.undefinedCondition condition) => after = before.trap (.semantic (.undefinedCondition condition))
+  | .error (.decode _) => False
 
-theorem moveOperand_write (width : Width) (destination : GPR) (source : MoveSource) (core : Core) :
-    core.writeReg width destination (ByteEval.operand (moveOperand width source) core) =
-      core.writeReg width destination (source.eval core) := by
-  cases source <;> simp [moveOperand, ByteEval.operand, MoveSource.eval, writeReg_truncate]
+/-- One generic execution law for every linear row: the byte machine's
+step and the typed step agree on the core or raise the same fault. RIP,
+length and the byte machine's flags are arbitrary. -/
+theorem row_execution {o : Op} (linear : o.linear = true) (free : (desc o).flagsIn = []) (args : List Arg)
+    (runtime : Runtime) (checked : Checked) (machine : Machine)
+    (rip : Word) (flags : ByteEval.Flags) (length : Nat) :
+    LinearAgreement machine (executeInstr runtime checked (.op o args) machine)
+      (ByteEval.execute ⟨.op o args, length⟩ ⟨machine.core, rip, flags⟩) := by
+  rw [execute_linear linear]
+  simp only [executeInstr]
+  rw [exec_flagsFree free, exec_flagsFree free]
+  cases o.run args machine.core {} with
+  | ok result => rfl
+  | error fault =>
+      cases fault with
+      | memory fault => rfl
+      | semantic fault =>
+          cases fault
+          rfl
 
-theorem aluOperand_low (width : Width) (source : AluSource) (core : Core) :
-    width.truncate (ByteEval.operand (aluOperand width source) core) =
-      width.truncate (source.eval core) := by
-  cases source <;> simp [aluOperand, ByteEval.operand, AluSource.eval, normalizedImmediate_truncate]
-
-theorem aluOperand_write (operation : AluOp) (width : Width) (destination : GPR)
-    (source : AluSource) (core : Core) :
-    core.writeReg width destination
-      (operation.eval (core.readReg destination) (ByteEval.operand (aluOperand width source) core)) =
-    core.writeReg width destination (operation.eval (core.readReg destination) (source.eval core)) :=
-  writeReg_congr _ _ _ _ _ (alu_congr_right _ _ _ _ _ (aluOperand_low width source core))
-
-/-- Length, RIP and prior flags are arbitrary here: each emitted linear form
-has the same register/memory effect or the same precise memory fault. -/
 theorem instruction_execution (instruction : Instr) (linear : linearInstruction instruction = true)
     (runtime : Runtime) (checked : Checked) (machine : Machine)
     (rip : Word) (flags : ByteEval.Flags) (length : Nat) :
     LinearAgreement machine (executeInstr runtime checked instruction machine)
       (ByteEval.execute ⟨instructionOperation instruction, length⟩ ⟨machine.core, rip, flags⟩) := by
   cases instruction with
-  | mov width destination source =>
-    simp [instructionOperation, ByteEval.execute, LinearAgreement, executeInstr, moveOperand_write]
-  | load width destination address =>
-    simp only [instructionOperation, ByteEval.execute, normalizedAddress_eval, executeInstr]
-    cases machine.core.loadReg? width destination (address.eval machine.core) <;>
-      simp [LinearAgreement, Except.mapError]
-  | store width address source =>
-    simp only [instructionOperation, ByteEval.execute, normalizedAddress_eval, executeInstr]
-    cases machine.core.storeReg? width (address.eval machine.core) source <;>
-      simp [LinearAgreement, Except.mapError]
-  | lea destination address =>
-    simp [instructionOperation, ByteEval.execute, LinearAgreement, executeInstr]
-  | alu operation width destination source =>
-    simp [instructionOperation, ByteEval.execute, LinearAgreement, executeInstr, aluOperand_write]
-  | imul width destination source =>
-    simp [instructionOperation, ByteEval.execute, LinearAgreement, executeInstr]
-  | push source =>
-    simp only [instructionOperation, ByteEval.execute, executeInstr]
-    cases machine.core.memory.write64? (machine.core.readReg .rsp - 8) (machine.core.readReg source) <;>
-      simp [LinearAgreement, Except.mapError]
-  | pop destination =>
-    simp only [instructionOperation, ByteEval.execute, executeInstr]
-    cases machine.core.memory.read64? (machine.core.readReg .rsp) <;>
-      simp [LinearAgreement, Except.mapError]
-  | allocFrame size | freeFrame size =>
-    simp [instructionOperation, ByteEval.execute, LinearAgreement, executeInstr,
-      ByteEval.operand, Core.writeReg, AluOp.eval]
-  | spill slot source =>
-    simp only [instructionOperation, ByteEval.execute, spillAddress_eval, executeInstr]
-    cases machine.core.storeReg? .w64 (machine.core.readReg .rbp - slot.displacement) source <;>
-      simp [LinearAgreement, Except.mapError]
-  | reload destination slot =>
-    simp only [instructionOperation, ByteEval.execute, spillAddress_eval, executeInstr]
-    cases machine.core.loadReg? .w64 destination (machine.core.readReg .rbp - slot.displacement) <;>
-      simp [LinearAgreement, Except.mapError]
+  | op o args =>
+      simp only [linearInstruction, Bool.and_eq_true, List.isEmpty_iff] at linear
+      exact row_execution linear.1 linear.2 args runtime checked machine rip flags length
   | call target | callRuntime intrinsic => simp [linearInstruction] at linear
 
 /-- The execution theorem consumes the actual encoder bytes, surrounded by
 arbitrary bytes. The explicit boundary is a premise for this local E1 result. -/
 theorem encoded_instruction_execution (instruction : Instr)
-    (linear : linearInstruction instruction = true) (before after : ByteArray)
+    (linear : linearInstruction instruction = true) (wf : instruction.wellFormed = true)
+    (before after : ByteArray)
     (runtime : Runtime) (checked : Checked) (machine : Machine) (flags : ByteEval.Flags)
     (textBase rip : Word) (boundary : (rip - textBase).toNat = before.size) :
     LinearAgreement machine (executeInstr runtime checked instruction machine)
       (ByteEval.step (before ++ (encodeInstr instruction).bytes ++ after) textBase
         ⟨machine.core, rip, flags⟩) := by
-  rw [ByteEval.step, boundary, instruction_decodeAt]
+  rw [ByteEval.step, boundary, instruction_decodeAt instruction wf]
   exact instruction_execution instruction linear runtime checked machine rip flags _
 
-theorem condition_congr (condition : Condition) (width : Width) (left first second : Word)
-    (equal : width.truncate first = width.truncate second) :
-    condition.holds width left first = condition.holds width left second := by
-  cases condition <;> simp [Condition.holds, Width.signedValue, equal]
-
+/-- The emitted `cmp` row leaves the core unchanged and produces flags
+under which the condition tests to the typed comparison's outcome. -/
 theorem compare_execution (comparison : Compare) (condition : Condition)
     (state : ByteEval.State) (length : Nat) :
-    let next := ByteEval.execute
-      ⟨.compare comparison.width comparison.left (aluOperand comparison.width comparison.right), length⟩ state
+    let next := ByteEval.execute ⟨.op comparison.row.1 comparison.row.2, length⟩ state
     ∃ after, next = .ok after ∧ after.core = state.core ∧
       after.rip = state.rip + UInt64.ofNat length ∧
       after.flags.test condition = some (comparison.holds condition state.core) := by
-  refine ⟨_, rfl, rfl, rfl, ?_⟩
-  rw [ByteEval.compare_flags]
-  exact congrArg some (condition_congr _ _ _ _ _ (aluOperand_low _ _ _))
+  have linear : comparison.row.1.linear = true := by
+    cases comparison with
+    | mk width left right => cases right <;> rfl
+  refine ⟨⟨state.core, state.rip + UInt64.ofNat length, comparison.flags state.core⟩,
+    by rw [execute_linear linear, Compare.exec_eq, Compare.flags_eq], rfl, rfl, ?_⟩
+  exact Compare.flags_test comparison condition state.core
 
 end Compilatrix.X86.Encode

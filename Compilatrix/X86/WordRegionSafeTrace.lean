@@ -5,18 +5,24 @@ namespace Compilatrix.X86.WordRegion
 
 theorem Effect.linear {layout : Layout} {instruction : Instr} {before after : State}
     (effect : Effect layout instruction before after) : Encode.linearInstruction instruction = true := by
-  cases effect <;> rfl
+  cases effect with
+  | mov _ _ source => cases source <;> rfl
+  | alu _ operation _ source => cases operation <;> cases source <;> rfl
+  | _ => rfl
 
 theorem operationSafe_memory (instruction : Instr) (state : State) (memory : Memory)
     (holes : Stream.Holes) (returns : List ReturnFrame) :
     Stream.OperationSafe holes returns (Encode.instructionOperation instruction) (state.core memory) =
       Stream.OperationSafe holes returns (Encode.instructionOperation instruction) (state.core Memory.unmapped) := by
-  cases instruction <;> rfl
+  simp only [Stream.OperationSafe, Stream.operationReads_registers (first := state.core memory)
+    (second := state.core Memory.unmapped) rfl, Stream.operationWrites_registers (first := state.core memory)
+    (second := state.core Memory.unmapped) rfl]
 
 theorem nextHoles_memory (instruction : Instr) (state : State) (memory : Memory) (holes : Stream.Holes) :
     Stream.nextHoles holes (Encode.instructionOperation instruction) (state.core memory) =
       Stream.nextHoles holes (Encode.instructionOperation instruction) (state.core Memory.unmapped) := by
-  cases instruction <;> rfl
+  simp only [Stream.nextHoles, Stream.operationWrites_registers (first := state.core memory)
+    (second := state.core Memory.unmapped) rfl]
 
 inductive SafeTrace (layout : Layout) (returns : List ReturnFrame) :
     List Instr → State → Stream.Holes → State → Stream.Holes → Prop where

@@ -1,6 +1,7 @@
 import Compilatrix.X86.ByteControl
 
-/-! The emitted CMP/Jcc/JMP recipe executes from its actual bytes. -/
+/-! The emitted CMP/Jcc/JMP recipe executes from its actual bytes. The
+comparison is the `cmp` row the typed branch evaluates. -/
 
 namespace Compilatrix.X86.Encode
 
@@ -10,19 +11,29 @@ def branchBytes (comparison : Compare) (condition : Condition) (yes no : Imm32) 
   encodeCompare comparison ++ (bytes [0x0f, nearOpcode condition] ++ imm32Bytes yes) ++
     (byte 0xe9 ++ imm32Bytes no)
 
+theorem jcc_placeholder_bytes (condition : Condition) :
+    encodeOp (Op.jccRel32 condition) [.imm 0] = bytes [0x0f, nearOpcode condition] ++ imm32Bytes 0 := by
+  have list := branch_bytes condition 0
+  simp only [signExtend32_zero] at list
+  simp [encodeOp, list, imm32Bytes, littleEndian, bytes_append]
+
+theorem jmp_placeholder_bytes : encodeOp Op.jmpRel32 [.imm 0] = byte 0xe9 ++ imm32Bytes 0 := by
+  have list := rel_bytes Op.jmpRel32 rfl rfl 0
+  simp only [signExtend32_zero] at list
+  simp [encodeOp, list, imm32Bytes, littleEndian, bytes_append, byte]
+  rfl
+
 theorem branchBytes_origin (comparison : Compare) (condition : Condition) (yes no : BlockId) :
     (encodeTerminator (.branch comparison condition yes no)).bytes = branchBytes comparison condition 0 0 := by
-  simp [encodeTerminator, Chunk.append, Chunk.raw, rel32, branchBytes, imm32_zero_bytes,
-    ByteArray.append_assoc]
+  simp [encodeTerminator, Chunk.append, Chunk.raw, rel32_bytes, branchBytes, jcc_placeholder_bytes,
+    jmp_placeholder_bytes, ByteArray.append_assoc]
 
 theorem branchBytes_compare (comparison : Compare) (condition : Condition) (yes no : Imm32) :
     Decode.decodeAt (branchBytes comparison condition yes no) 0 =
-      some ⟨.compare comparison.width comparison.left (aluOperand comparison.width comparison.right),
-        (encodeCompare comparison).size⟩ := by
+      some ⟨.op comparison.row.1 comparison.row.2, (encodeCompare comparison).size⟩ := by
   have decoded := decodeAt_of_one (encodeCompare comparison) ByteArray.empty
     ((bytes [0x0f, nearOpcode condition] ++ imm32Bytes yes) ++ (byte 0xe9 ++ imm32Bytes no))
-    _ (compare_decode comparison _) (compare_size comparison).1
-    (Nat.le_trans (compare_size comparison).2 (by decide))
+    _ (encodeCompare_decode comparison _) (compare_size comparison).1 (compare_size comparison).2
   simpa [branchBytes, ByteArray.append_assoc] using decoded
 
 theorem branchBytes_branch (comparison : Compare) (condition : Condition) (yes no : Imm32) :
@@ -39,19 +50,26 @@ theorem branchBytes_jump (comparison : Compare) (condition : Condition) (yes no 
 def comparedState (comparison : Compare) (state : ByteEval.State) : ByteEval.State :=
   { state with
     rip := state.rip + UInt64.ofNat (encodeCompare comparison).size
-    flags := ByteEval.aluFlags .sub comparison.width (state.core.readReg comparison.left)
-      (ByteEval.operand (aluOperand comparison.width comparison.right) state.core) }
+    flags := comparison.flags state.core }
 
 @[simp] theorem comparedState_test (comparison : Compare) (condition : Condition) (state : ByteEval.State) :
-    (comparedState comparison state).flags.test condition = some (comparison.holds condition state.core) := by
-  rw [comparedState, ByteEval.compare_flags]
-  exact congrArg some (condition_congr _ _ _ _ _ (aluOperand_low _ _ _))
+    (comparedState comparison state).flags.test condition = some (comparison.holds condition state.core) :=
+  Compare.flags_test comparison condition state.core
+
+theorem compare_step (comparison : Compare) (length : Nat) (state : ByteEval.State) :
+    ByteEval.execute ⟨.op comparison.row.1 comparison.row.2, length⟩ state =
+      .ok { state with rip := state.rip + UInt64.ofNat length, flags := comparison.flags state.core } := by
+  have linear : comparison.row.1.linear = true := by
+    cases comparison with
+    | mk width left right => cases right <;> rfl
+  rw [execute_linear linear, Compare.exec_eq, Compare.flags_eq]
 
 theorem branch_step_compare (comparison : Compare) (condition : Condition) (yes no : Imm32)
     (state : ByteEval.State) :
     ByteEval.step (branchBytes comparison condition yes no) state.rip state =
       .ok (comparedState comparison state) := by
-  simp [ByteEval.step, branchBytes_compare, ByteEval.execute, comparedState]
+  simp only [ByteEval.step, UInt64.sub_self, UInt64.toNat_zero, branchBytes_compare, compare_step]
+  rfl
 
 theorem offset_after (rip : Word) (count : Nat) (bound : count < UInt64.size) :
     (rip + UInt64.ofNat count - rip).toNat = count := by
@@ -69,7 +87,8 @@ theorem branch_step_branch (comparison : Compare) (condition : Condition) (yes n
     simp only [UInt64.size]; omega)
   simp only [ByteEval.step, comparedState] at offset ⊢
   rw [offset, branchBytes_branch]
-  simp only [ByteEval.execute]
+  dsimp only
+  rw [execute_branch]
   change (match (comparedState comparison state).flags.test condition with
     | none => _ | some take => _) = _
   rw [comparedState_test]
@@ -93,6 +112,8 @@ theorem branch_step_jump (comparison : Compare) (condition : Condition) (yes no 
   rw [show state.rip + UInt64.ofNat (encodeCompare comparison).size + 6 =
     state.rip + (UInt64.ofNat (encodeCompare comparison).size + 6) by rw [UInt64.add_assoc]]
   rw [offset, branchBytes_jump]
+  dsimp only
+  rw [execute_jump]
   rfl
 
 /-- Taken branches use CMP/Jcc; untaken branches additionally execute JMP.

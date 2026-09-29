@@ -79,8 +79,14 @@ theorem ret_pair (checked : Checked) (machine : Machine) (frame : ReturnFrame) (
 
 /-- Named runtime calls use the same physical CALL form. Their typed atomic
 invocation is still an external procedure contract, outside local encoding. -/
+theorem call_placeholder_bytes : encodeOp Op.callRel32 [.imm 0] = byte 0xe8 ++ imm32Bytes 0 := by
+  have list := rel_bytes Op.callRel32 rfl rfl 0
+  simp only [signExtend32_zero] at list
+  simp [encodeOp, list, imm32Bytes, littleEndian, bytes_append, byte]
+  rfl
+
 theorem runtime_call_form (intrinsic : Intrinsic) :
     (encodeInstr (.callRuntime intrinsic)).bytes = byte 0xe8 ++ imm32Bytes 0 := by
-  simp [encodeInstr, rel32, imm32_zero_bytes]
+  simp [encodeInstr, rel32_bytes, call_placeholder_bytes]
 
 end Compilatrix.X86.Encode

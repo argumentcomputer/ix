@@ -68,7 +68,8 @@ theorem safe_progress {checked : Checked} {output : Encode.Output} {externals : 
         obtain ⟨after, executed, next⟩ := paired_linear_progress valid runtime machine base holes state related
           found foundInstruction linear access nextRunning
         exact ⟨1, after, by decide, by decide, by simp [ByteEval.run, executed], changed.symm ▸ next⟩
-      · cases instruction <;> simp only [Encode.linearInstruction, not_true_eq_false] at linear
+      · cases instruction
+        case op o args => exact absurd (checked_linear found foundInstruction) linear
         case call target =>
           simp only [SafeAt, found, foundInstruction] at safe
           obtain ⟨after, executed, next⟩ := call_progress valid runtime machine base holes state related
@@ -100,7 +101,7 @@ theorem instruction_not_halted (runtime : Runtime) (checked : Checked) (machine 
     (running : machine.status = .running) (instruction : Instr) (result : Word) :
     (executeInstr runtime checked instruction machine).status ≠ .halted result := by
   intro halted
-  cases next : machine.pc.next? <;> cases instruction <;> simp only [executeInstr] at halted
+  cases next : machine.pc.next? <;> cases instruction <;> simp only [executeInstr, Machine.afterRow] at halted
   all_goals (repeat' split at halted) <;> simp_all [Machine.advanceWith, Machine.trap]
 
 theorem halting_shape {checked : Checked} (runtime : Runtime) (machine : Machine)
@@ -170,7 +171,7 @@ theorem final_ret {checked : Checked} {output : Encode.Output} {externals : Exte
   let after : ByteEval.State := ⟨state.core.setReg .rsp (state.core.readReg .rsp + 8), returnAddress, state.flags⟩
   refine ⟨after, ?_, rfl, ?_⟩
   · rw [one]
-    simp [ByteEval.execute, physicalRead, Except.mapError, after]
+    simp [Encode.execute_ret, physicalRead, Except.mapError, after]
   · change CoreRelated _ _ _ _ _ (state.core.setReg .rsp (state.core.readReg .rsp + 8))
     rw [coreEqual, ← related.core.readReg .rsp, ← returns]
     exact related.core.setReg .rsp _

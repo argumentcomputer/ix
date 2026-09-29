@@ -5,6 +5,7 @@ namespace Compilatrix.X86.WordRegion
 
 theorem State.compare_core (state : State) (memory : Memory) (comparison : Compare) (condition : Condition) :
     comparison.holds condition (state.core memory) = comparison.holds condition (state.core Memory.unmapped) := by
+  rw [Compare.holds_eq, Compare.holds_eq]
   cases comparison.right <;> rfl
 
 theorem SafeTrace.jump {layout : Layout} {returns : List ReturnFrame} {instructions : List Instr}

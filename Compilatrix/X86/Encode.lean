@@ -1,17 +1,22 @@
 import Compilatrix.X86.Basic
 
 /-!
-# Staged x86-64 v0 encoder
+# Table-driven x86-64 encoder
 
-This module is intentionally downstream of the typed target AST and has no
-dependency on IxIR₂ or instruction selection.  It emits fixed-shape encodings
-with rel32 placeholders, resolves block-local relocations after layout, and
-retains named runtime calls as explicit object-writer relocations.
+`encodeOp` encodes any table row from its encoding descriptor: an optional
+operand-size prefix, a REX prefix only when a field needs it (W, an extended
+register, or a byte register SPL–DIL), the opcode map and byte (with a
+register in its low bits for `O`/`OI` rows), ModRM/SIB with the shortest
+displacement (none, disp8 or disp32), and the immediate. The encoder never
+enumerates instruction forms. Control transfers are emitted with rel32
+placeholders; block-local relocations are resolved after layout, and named
+runtime calls stay object-writer relocations.
 
-The E1 modules prove local per-form decode/execution agreement with the
-independent Decode/ByteEval model. Complete stream layout, symbolic-PC/byte-RIP
-correspondence and object relocation composition remain E2 obligations;
-agreement with an external ISA reference remains the separate S2 boundary.
+The E1 modules prove per encoding class that the independent decoder
+recovers the row and its operands, and that the byte machine executes them
+as the typed machine does. Complete stream layout, symbolic-PC/byte-RIP
+correspondence and relocation composition are E2 obligations; agreement
+with the processor is tested by the hardware and LLVM gates.
 -/
 
 namespace Compilatrix.X86.Encode
@@ -23,9 +28,16 @@ def bytes (values : List UInt8) : ByteArray :=
 
 def byte (value : UInt8) : ByteArray := bytes [value]
 
+/-- The low `count` little-endian bytes of a natural number. -/
+def leNat : Nat → Nat → List UInt8
+  | 0, _ => []
+  | count + 1, value => UInt8.ofNat value :: leNat count (value / 256)
+
+/-- The low `count` little-endian bytes of a word. -/
+def le (count : Nat) (value : Word) : List UInt8 := leNat count value.toNat
+
 def littleEndian (count : Nat) (value : Word) : ByteArray :=
-  ByteArray.mk <| (List.range count).toArray.map fun index =>
-    (value >>> UInt64.ofNat (8 * index)).toUInt8
+  bytes (le count value)
 
 def imm32Bytes (value : Imm32) : ByteArray :=
   littleEndian 4 value.toUInt64
@@ -69,27 +81,56 @@ def scaleBits : Scale → Nat
   | .four => 2
   | .eight => 3
 
-/-- Legacy operand-size prefix followed by an always-present REX prefix.
-Always emitting REX keeps byte-register selection structural (`spl`, `bpl`,
-`sil`, `dil` rather than the legacy high-byte registers). -/
-def prefixes (operand16 rexW rexR rexX rexB : Bool) : ByteArray :=
-  let legacy := if operand16 then byte 0x66 else ByteArray.empty
-  let rex : UInt8 := UInt8.ofNat <|
-    0x40 + (if rexW then 8 else 0) + (if rexR then 4 else 0) +
-      (if rexX then 2 else 0) + (if rexB then 1 else 0)
-  legacy ++ byte rex
+def rexByte (w r x b : Bool) : UInt8 :=
+  UInt8.ofNat (0x40 + (if w then 8 else 0) + (if r then 4 else 0) +
+    (if x then 2 else 0) + (if b then 1 else 0))
 
-def widthPrefixes (width : Width) (rexR rexX rexB : Bool) : ByteArray :=
-  prefixes (width == .w16) (width == .w64) rexR rexX rexB
+/-! ## Operand fields -/
 
-structure MemoryTail where
-  rexX : Bool
-  rexB : Bool
-  bytes : ByteArray
+/-- Where a row's operands go: the ModRM.reg or opcode register, the
+ModRM.rm operand and the immediate. -/
+structure Fields where
+  reg : Option GPR := none
+  rm : Option Arg := none
+  imm : Option Word := none
 
-def memoryTail (regField : UInt8) (address : MemAddr) : MemoryTail :=
-  let displacement := imm32Bytes address.displacement
-  let regLow := registerLow regField
+def fields (form : OpEn) (args : List Arg) : Fields :=
+  match form, args with
+  | .MR, [rm, .reg reg] => { reg := some reg, rm := some rm }
+  | .RM, [.reg reg, rm] => { reg := some reg, rm := some rm }
+  | .MI, [rm, .imm value] | .MI8, [rm, .imm value] => { rm := some rm, imm := some value }
+  | .OI, [.reg reg, .imm value] => { reg := some reg, imm := some value }
+  | .O, [.reg reg] => { reg := some reg }
+  | .RMI, [.reg reg, rm, .imm value] | .RMI8, [.reg reg, rm, .imm value] =>
+      { reg := some reg, rm := some rm, imm := some value }
+  | .D32, [.imm value] => { imm := some value }
+  | _, _ => {}
+
+/-- Bytes after the opcode that address the r/m operand, with the REX bits
+they need. -/
+structure Tail where
+  rexX : Bool := false
+  rexB : Bool := false
+  bytes : List UInt8 := []
+
+/-- A displacement fits disp8 when it sign-extends from its low byte. -/
+def fitsDisp8 (displacement : Imm32) : Bool :=
+  (signExtend8 displacement.toUInt8).toUInt32 == displacement
+
+/-- ModRM mode: no displacement when it is zero (RBP/R13 bases excepted,
+whose mode-0 encodings mean something else), disp8 when it fits, else
+disp32. -/
+def dispMode (baseLow : Nat) (displacement : Imm32) : Nat :=
+  if displacement == 0 && baseLow != 5 then 0
+  else if fitsDisp8 displacement then 1
+  else 2
+
+def dispBytes (mode : Nat) (displacement : Imm32) : List UInt8 :=
+  if mode == 0 then []
+  else if mode == 1 then le 1 displacement.toUInt64
+  else le 4 displacement.toUInt64
+
+def memoryTail (regField : Nat) (address : MemAddr) : Tail :=
   let indexCode := address.index.map indexRegCode
   let indexLow := match indexCode with
     | none => 4
@@ -100,147 +141,90 @@ def memoryTail (regField : UInt8) (address : MemAddr) : MemoryTail :=
   match address.base with
   | none =>
       { rexX
-        rexB := false
-        bytes := bytes [modRM 0 regLow 4,
-          sib (scaleBits address.scale) indexLow 5] ++ displacement }
+        bytes := [modRM 0 regField 4, sib (scaleBits address.scale) indexLow 5] ++
+          le 4 address.displacement.toUInt64 }
   | some base =>
       let baseCode := gprCode base
       let baseLow := registerLow baseCode
-      let useSib := address.index.isSome || baseLow == 4
-      if useSib then
+      let mode := dispMode baseLow address.displacement
+      if address.index.isSome || baseLow == 4 then
         { rexX
           rexB := registerExtended baseCode
-          bytes := bytes [modRM 2 regLow 4,
-            sib (scaleBits address.scale) indexLow baseLow] ++ displacement }
+          bytes := [modRM mode regField 4, sib (scaleBits address.scale) indexLow baseLow] ++
+            dispBytes mode address.displacement }
       else
-        { rexX := false
-          rexB := registerExtended baseCode
-          bytes := byte (modRM 2 regLow baseLow) ++ displacement }
+        { rexB := registerExtended baseCode
+          bytes := modRM mode regField baseLow :: dispBytes mode address.displacement }
 
-def encodeMemory (operand16 rexW : Bool) (opcode : ByteArray)
-    (regField : UInt8) (address : MemAddr) : ByteArray :=
-  let tail := memoryTail regField address
-  prefixes operand16 rexW (registerExtended regField) tail.rexX tail.rexB ++
-    opcode ++ tail.bytes
+def rmTail (regField : Nat) : Arg → Tail
+  | .reg register =>
+      { rexB := registerExtended (gprCode register)
+        bytes := [modRM 3 regField (registerLow (gprCode register))] }
+  | .mem address => memoryTail regField address
+  | .imm _ => {}
 
-def encodeRegReg (width : Width) (opcode : UInt8)
-    (regField rm : GPR) : ByteArray :=
-  widthPrefixes width (registerExtended (gprCode regField)) false
-      (registerExtended (gprCode rm)) ++
-    bytes [opcode, modRM 3 (registerLow (gprCode regField))
-      (registerLow (gprCode rm))]
+/-- The ModRM.reg field: the opcode extension or the register's low bits. -/
+def regField (enc : EncDesc) (fields : Fields) : Nat :=
+  match enc.modrm with
+  | .digit value => value
+  | .none | .reg => match fields.reg with
+    | some register => registerLow (gprCode register)
+    | none => 0
 
-def moveOpcode : Width → UInt8
-  | .w8 => 0x88
-  | .w16 | .w32 | .w64 => 0x89
+def tail (enc : EncDesc) (fields : Fields) : Tail :=
+  match enc.modrm with
+  | .none =>
+      { rexB := enc.emb == .regLow3 && fields.reg.any fun register => registerExtended (gprCode register) }
+  | .reg | .digit _ =>
+      match fields.rm with
+      | some rm => rmTail (regField enc fields) rm
+      | none => {}
 
-def aluOpcode (operation : AluOp) (width : Width) : UInt8 :=
-  let wide : UInt8 := match operation with
-    | .add => 0x01
-    | .or => 0x09
-    | .and => 0x21
-    | .sub => 0x29
-    | .xor => 0x31
-  if width == .w8 then wide - 1 else wide
+def rexR (enc : EncDesc) (fields : Fields) : Bool :=
+  enc.modrm == .reg && fields.reg.any fun register => registerExtended (gprCode register)
 
-def aluExtension : AluOp → Nat
-  | .add => 0
-  | .or => 1
-  | .and => 4
-  | .sub => 5
-  | .xor => 6
+/-- A byte-register operand with code 4–7 needs a REX prefix to mean
+SPL–DIL rather than AH–BH. -/
+def byteForce (enc : EncDesc) (fields : Fields) : Bool :=
+  (enc.byteReg && fields.reg.any GPR.highByteCode) ||
+    (enc.byteRM && match fields.rm with
+      | some (.reg register) => register.highByteCode
+      | _ => false)
 
-def immediateBytes (width : Width) (value : Word) : ByteArray :=
-  match width with
-  | .w8 => littleEndian 1 value
-  | .w16 => littleEndian 2 value
-  | .w32 => littleEndian 4 value
-  | .w64 => littleEndian 8 value
+def rexPrefix (enc : EncDesc) (fields : Fields) : List UInt8 :=
+  let t := tail enc fields
+  if enc.rexW || rexR enc fields || t.rexX || t.rexB || byteForce enc fields then
+    [rexByte enc.rexW (rexR enc fields) t.rexX t.rexB]
+  else []
 
-def groupImmediateBytes (width : Width) (value : Imm32) : ByteArray :=
-  match width with
-  | .w8 => littleEndian 1 value.toUInt64
-  | .w16 => littleEndian 2 value.toUInt64
-  | .w32 | .w64 => imm32Bytes value
+def opcodeBytes (enc : EncDesc) (fields : Fields) : List UInt8 :=
+  let opcode := match enc.emb with
+    | .regLow3 => enc.opcode + UInt8.ofNat (match fields.reg with
+        | some register => registerLow (gprCode register)
+        | none => 0)
+    | .none => enc.opcode
+  (if enc.map == .x0F then [0x0f] else []) ++ [opcode]
 
-def encodeMov (width : Width) (destination : GPR)
-    (source : MoveSource) : ByteArray :=
-  match source with
-  | .reg source => encodeRegReg width (moveOpcode width) source destination
-  | .imm value =>
-      widthPrefixes width false false (registerExtended (gprCode destination)) ++
-        byte (UInt8.ofNat (0xb8 + registerLow (gprCode destination) -
-          (if width == .w8 then 8 else 0))) ++
-        immediateBytes width value
+def immBytes (kind : ImmKind) : Option Word → List UInt8
+  | some value => le kind.bytes value
+  | none => []
 
-def encodeLoad (width : Width) (destination : GPR)
-    (source : MemAddr) : ByteArray :=
-  match width with
-  | .w8 => encodeMemory false true (bytes [0x0f, 0xb6])
-      (gprCode destination) source
-  | .w16 => encodeMemory false true (bytes [0x0f, 0xb7])
-      (gprCode destination) source
-  | .w32 => encodeMemory false false (byte 0x8b) (gprCode destination) source
-  | .w64 => encodeMemory false true (byte 0x8b) (gprCode destination) source
+/-- The bytes of one row applied to its operands. -/
+def encodeList (o : Op) (args : List Arg) : List UInt8 :=
+  let enc := (desc o).enc
+  let f := fields o.form args
+  (if enc.p66 then [0x66] else []) ++ rexPrefix enc f ++ opcodeBytes enc f ++
+    (tail enc f).bytes ++ immBytes enc.imm f.imm
 
-def encodeStore (width : Width) (destination : MemAddr)
-    (source : GPR) : ByteArray :=
-  encodeMemory (width == .w16) (width == .w64)
-    (byte (if width == .w8 then 0x88 else 0x89)) (gprCode source) destination
+def encodeOp (o : Op) (args : List Arg) : ByteArray := bytes (encodeList o args)
 
-def encodeLea (destination : GPR) (source : MemAddr) : ByteArray :=
-  encodeMemory false true (byte 0x8d) (gprCode destination) source
-
-def encodeAlu (operation : AluOp) (width : Width) (destination : GPR)
-    (source : AluSource) : ByteArray :=
-  match source with
-  | .reg source =>
-      encodeRegReg width (aluOpcode operation width) source destination
-  | .imm value =>
-      widthPrefixes width false false
-          (registerExtended (gprCode destination)) ++
-        bytes [if width == .w8 then 0x80 else 0x81,
-          modRM 3 (aluExtension operation)
-            (registerLow (gprCode destination))] ++
-        groupImmediateBytes width value
-
-def encodeImul (width : MulWidth) (destination source : GPR) : ByteArray :=
-  encodeRegReg width.width 0xaf destination source |>
-    fun encoded =>
-      -- `encodeRegReg` accepts one opcode byte; insert the mandatory 0x0f
-      -- escape immediately before its final opcode/modRM pair.
-      let prefixSize := encoded.size - 2
-      encoded.extract 0 prefixSize ++ bytes [0x0f, 0xaf] ++
-        encoded.extract (prefixSize + 1) encoded.size
-
-def encodePush (source : GPR) : ByteArray :=
-  let rexPrefix := if registerExtended (gprCode source) then byte 0x41
-    else ByteArray.empty
-  rexPrefix ++ byte (UInt8.ofNat (0x50 + registerLow (gprCode source)))
-
-def encodePop (destination : GPR) : ByteArray :=
-  let rexPrefix := if registerExtended (gprCode destination) then byte 0x41
-    else ByteArray.empty
-  rexPrefix ++ byte (UInt8.ofNat (0x58 + registerLow (gprCode destination)))
-
-def frameBytes (subtract : Bool) (size : FrameSize) : ByteArray :=
-  bytes [0x48, 0x81, if subtract then 0xec else 0xc4] ++
-    littleEndian 4 size.bytes
-
-def spillAddress (slot : StackSlot) : MemAddr :=
-  { base := some .rbp
-    displacement := (0 - slot.displacement).toUInt32 }
-
-def encodeSpill (slot : StackSlot) (source : GPR) : ByteArray :=
-  encodeStore .w64 (spillAddress slot) source
-
-def encodeReload (destination : GPR) (slot : StackSlot) : ByteArray :=
-  encodeLoad .w64 destination (spillAddress slot)
+/-! ## Chunks and control -/
 
 inductive FixupTarget where
   | block (target : BlockId)
   | intrinsic (target : Intrinsic)
   deriving BEq, ReflBEq, LawfulBEq, DecidableEq, Repr, Inhabited
+
 
 structure Fixup where
   offset : Nat
@@ -262,63 +246,34 @@ def Chunk.append (left right : Chunk) : Chunk :=
     fixups := left.fixups ++ right.fixups.map fun fixup =>
       { fixup with offset := left.bytes.size + fixup.offset } }
 
-def rel32 (opcode : ByteArray) (target : FixupTarget) : Chunk :=
-  { bytes := opcode ++ bytes [0, 0, 0, 0]
-    fixups := #[{ offset := opcode.size, target }] }
+
+/-- A control row with a zero rel32 field and its fixup. -/
+def rel32 (o : Op) (target : FixupTarget) : Chunk :=
+  let encoded := encodeOp o [.imm 0]
+  { bytes := encoded
+    fixups := #[{ offset := encoded.size - 4, target }] }
 
 def encodeInstr : Instr → Chunk
-  | .mov width destination source => .raw (encodeMov width destination source)
-  | .load width destination source => .raw (encodeLoad width destination source)
-  | .store width destination source => .raw (encodeStore width destination source)
-  | .lea destination source => .raw (encodeLea destination source)
-  | .alu operation width destination source =>
-      .raw (encodeAlu operation width destination source)
-  | .imul width destination source => .raw (encodeImul width destination source)
-  | .push source => .raw (encodePush source)
-  | .pop destination => .raw (encodePop destination)
-  | .allocFrame size => .raw (frameBytes true size)
-  | .freeFrame size => .raw (frameBytes false size)
-  | .spill slot source => .raw (encodeSpill slot source)
-  | .reload destination slot => .raw (encodeReload destination slot)
-  | .call target => rel32 (byte 0xe8) (.block target)
-  | .callRuntime intrinsic => rel32 (byte 0xe8) (.intrinsic intrinsic)
+  | .op o args => .raw (encodeOp o args)
+  | .call target => rel32 Op.callRel32 (.block target)
+  | .callRuntime intrinsic => rel32 Op.callRel32 (.intrinsic intrinsic)
 
-def cmpOpcode : Width → UInt8
-  | .w8 => 0x38
-  | .w16 | .w32 | .w64 => 0x39
-
+/-- The `cmp` row of a compare-and-branch. -/
 def encodeCompare (comparison : Compare) : ByteArray :=
-  match comparison.right with
-  | .reg right =>
-      encodeRegReg comparison.width (cmpOpcode comparison.width)
-        right comparison.left
-  | .imm value =>
-      widthPrefixes comparison.width false false
-          (registerExtended (gprCode comparison.left)) ++
-        bytes [if comparison.width == .w8 then 0x80 else 0x81,
-          modRM 3 7 (registerLow (gprCode comparison.left))] ++
-        groupImmediateBytes comparison.width value
+  encodeOp comparison.row.1 comparison.row.2
 
-def nearOpcode : Condition → UInt8
-  | .eq => 0x84
-  | .ne => 0x85
-  | .unsignedLt => 0x82
-  | .unsignedLe => 0x86
-  | .unsignedGt => 0x87
-  | .unsignedGe => 0x83
-  | .signedLt => 0x8c
-  | .signedLe => 0x8e
-  | .signedGt => 0x8f
-  | .signedGe => 0x8d
+/-- The second opcode byte of `jcc rel32`. -/
+def nearOpcode (condition : Condition) : UInt8 :=
+  (desc (Op.jccRel32 condition)).enc.opcode
 
 def encodeTerminator : Terminator → Chunk
-  | .jump target => rel32 (byte 0xe9) (.block target)
+  | .jump target => rel32 Op.jmpRel32 (.block target)
   | .branch comparison condition ifTrue ifFalse =>
       (Chunk.raw (encodeCompare comparison)).append
-        ((rel32 (bytes [0x0f, nearOpcode condition]) (.block ifTrue)).append
-          (rel32 (byte 0xe9) (.block ifFalse)))
-  | .tailCall target => rel32 (byte 0xe9) (.block target)
-  | .ret => Chunk.raw (byte 0xc3)
+        ((rel32 (Op.jccRel32 condition) (.block ifTrue)).append
+          (rel32 Op.jmpRel32 (.block ifFalse)))
+  | .tailCall target => rel32 Op.jmpRel32 (.block target)
+  | .ret => Chunk.raw (encodeOp Op.retZO [])
 
 def encodeBlock (block : Block) : Chunk :=
   let instructions := block.instructions.foldl

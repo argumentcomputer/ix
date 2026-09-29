@@ -8,6 +8,50 @@ namespace Compilatrix.X86.Encode
 
 attribute [local simp] pure Except.pure Functor.map Except.map bind Except.bind
 
+/-! ## Control rows on the byte machine -/
+
+theorem restrict_test (flags : ByteEval.Flags) (condition : Condition) :
+    (flags.restrict condition.reads).test condition = flags.test condition := by
+  cases condition <;> rfl
+
+/-- `jcc` takes its branch exactly when its condition holds on the current
+flags, and faults when a flag it reads is undefined. -/
+theorem execute_branch (condition : Condition) (displacement : Imm32) (length : Nat)
+    (state : ByteEval.State) :
+    ByteEval.execute ⟨.branch condition displacement, length⟩ state =
+      match state.flags.test condition with
+      | none => .error (.undefinedCondition condition)
+      | some take => .ok { state with
+          rip := if take then ByteEval.relative (state.rip + UInt64.ofNat length) displacement
+            else state.rip + UInt64.ofNat length } := by
+  simp only [ByteEval.execute, Decode.Operation.branch, Op.jccRel32, desc, Table.jccDesc, Table.jccSem,
+    restrict_test]
+  cases state.flags.test condition with
+  | none => rfl
+  | some take => cases take <;> rfl
+
+theorem execute_jump (displacement : Imm32) (length : Nat) (state : ByteEval.State) :
+    ByteEval.execute ⟨.jump displacement, length⟩ state =
+      .ok { state with rip := ByteEval.relative (state.rip + UInt64.ofNat length) displacement } := rfl
+
+theorem execute_call (displacement : Imm32) (length : Nat) (state : ByteEval.State) :
+    ByteEval.execute ⟨.call displacement, length⟩ state =
+      match state.core.memory.write64? (state.core.readReg .rsp - 8) (state.rip + UInt64.ofNat length) with
+      | .error fault => .error (.memory fault)
+      | .ok memory => .ok {
+          core := { state.core.setReg .rsp (state.core.readReg .rsp - 8) with memory }
+          rip := ByteEval.relative (state.rip + UInt64.ofNat length) displacement, flags := state.flags } := by
+  simp only [ByteEval.execute, Decode.Operation.call, Op.callRel32]
+  cases state.core.memory.write64? (state.core.readReg .rsp - 8) (state.rip + UInt64.ofNat length) <;> rfl
+
+theorem execute_ret (length : Nat) (state : ByteEval.State) :
+    ByteEval.execute ⟨.ret, length⟩ state =
+      match state.core.memory.read64? (state.core.readReg .rsp) with
+      | .error fault => .error (.memory fault)
+      | .ok target => .ok { state with core := state.core.setReg .rsp (state.core.readReg .rsp + 8), rip := target } := by
+  simp only [ByteEval.execute, Decode.Operation.ret, Op.retZO]
+  cases state.core.memory.read64? (state.core.readReg .rsp) <;> rfl
+
 theorem call_decodeAt (displacement : Imm32) (before after : ByteArray) :
     Decode.decodeAt (before ++ (byte 0xe8 ++ imm32Bytes displacement) ++ after) before.size =
       some ⟨.call displacement, 5⟩ := by
@@ -55,9 +99,9 @@ theorem call_bytes_execution (displacement : Imm32) (state : ByteEval.State) :
           rip := ByteEval.relative (state.rip + 5) displacement, flags := state.flags } := by
   have decode := call_decodeAt displacement ByteArray.empty ByteArray.empty
   simp only [ByteArray.empty_append, ByteArray.append_empty, ByteArray.size_empty] at decode
-  simp only [ByteEval.step, UInt64.sub_self, UInt64.toNat_zero, decode, ByteEval.execute]
+  simp only [ByteEval.step, UInt64.sub_self, UInt64.toNat_zero, decode, ByteEval.execute, Decode.Operation.call, Op.callRel32]
   cases state.core.memory.write64? (state.core.readReg .rsp - 8) (state.rip + 5) <;>
-    simp [Except.mapError]
+    simp [Except.mapError, ByteEval.relative]
 
 theorem ret_bytes_execution (state : ByteEval.State) :
     ByteEval.step (byte 0xc3) state.rip state =
@@ -66,7 +110,7 @@ theorem ret_bytes_execution (state : ByteEval.State) :
       | .ok target => .ok { state with core := state.core.setReg .rsp (state.core.readReg .rsp + 8), rip := target } := by
   have decode := ret_decodeAt ByteArray.empty ByteArray.empty
   simp only [ByteArray.empty_append, ByteArray.append_empty, ByteArray.size_empty] at decode
-  simp only [ByteEval.step, UInt64.sub_self, UInt64.toNat_zero, decode, ByteEval.execute]
+  simp only [ByteEval.step, UInt64.sub_self, UInt64.toNat_zero, decode, ByteEval.execute, Decode.Operation.ret, Op.retZO]
   cases state.core.memory.read64? (state.core.readReg .rsp) <;> simp [Except.mapError]
 
 theorem jump_bytes_execution (displacement : Imm32) (state : ByteEval.State) :
@@ -74,6 +118,6 @@ theorem jump_bytes_execution (displacement : Imm32) (state : ByteEval.State) :
       .ok { state with rip := ByteEval.relative (state.rip + 5) displacement } := by
   have decode := jump_decodeAt displacement ByteArray.empty ByteArray.empty
   simp only [ByteArray.empty_append, ByteArray.append_empty, ByteArray.size_empty] at decode
-  simp [ByteEval.step, decode, ByteEval.execute]
+  simp [ByteEval.step, decode, ByteEval.execute, Decode.Operation.jump, Op.jmpRel32, ByteEval.relative]
 
 end Compilatrix.X86.Encode

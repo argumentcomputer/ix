@@ -39,11 +39,11 @@ theorem paired_linear_progress {checked : Checked} {output : Encode.Output} {ext
       ⟨machine.core, state.rip, state.flags⟩ with
   | error fault =>
       cases fault with
-      | memory fault =>
+      | memory fault | undefinedCondition fault =>
           simp only [logicalStep, LinearResult] at agreement
           rw [agreement] at nextRunning
           contradiction
-      | decode rip | undefinedCondition condition => simp [logicalStep, LinearResult] at agreement
+      | decode rip => simp [logicalStep, LinearResult] at agreement
   | ok logicalAfter =>
       simp only [logicalStep, LinearResult] at agreement
       cases physicalStep : ByteEval.execute ⟨Encode.instructionOperation instruction, instructionSize instruction⟩ state with
@@ -66,7 +66,7 @@ theorem CoreRelated.comparison {program : Program} {base : Word} {holes : Holes}
     comparison.holds condition logical = comparison.holds condition physical := by
   have source : comparison.right.eval logical = comparison.right.eval physical := by
     cases comparison.right <;> simp [AluSource.eval, related.readReg]
-  simp only [Compare.holds, related.readReg, source]
+  rw [Compare.holds_eq, Compare.holds_eq, source, related.readReg]
 
 theorem paired_control_progress {checked : Checked} {output : Encode.Output} {externals : ExternalTargets}
     (valid : Valid checked.program output externals) (runtime : Runtime) (machine : Machine)
@@ -208,7 +208,7 @@ theorem ret_progress {checked : Checked} {output : Encode.Output} {externals : E
   let after : ByteEval.State := ⟨state.core.setReg .rsp (frame.returnSlot + 8), base + UInt64.ofNat offset, state.flags⟩
   have executed : ByteEval.step output.text base state = .ok after := by
     rw [one]
-    simp [ByteEval.execute, ← related.core.readReg .rsp, stack, physicalRead, Except.mapError, after]
+    simp [Encode.execute_ret, ← related.core.readReg .rsp, stack, physicalRead, Except.mapError, after]
   refine ⟨after, executed, ?_⟩
   rw [sourceStep]
   refine ⟨?_, related.running, offset, continuation, rfl⟩

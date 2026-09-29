@@ -46,10 +46,10 @@ private def sameBytes (left right : Memory) (addresses : List Word) : Bool :=
 
 private def touched (instruction : Instr) (core : Core) : Word :=
   match instruction with
-  | .load _ _ address | .store _ address _ | .lea _ address => address.eval core
-  | .push _ => core.readReg .rsp - 8
-  | .pop _ => core.readReg .rsp
-  | .spill slot _ | .reload _ slot => core.readReg .rbp - slot.displacement
+  | .op o args =>
+      match o.reads args core ++ o.writes args core with
+      | access :: _ => access.address
+      | [] => (args.findSome? fun | .mem address => some (address.eval core) | _ => none).getD 0
   | _ => 0
 
 private def instructionCase (target : Checked) (instruction : Instr) (core : Core) : Except String Unit := do

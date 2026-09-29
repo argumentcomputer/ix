@@ -1,32 +1,36 @@
-import Compilatrix.X86.Basic
+import Compilatrix.X86.Table.Index
 
-/-! Independent decoding of the emitted x86-64 forms. The parser reads actual
-opcode, REX, ModRM, SIB, displacement, and immediate fields. It imports neither
-the encoder nor the typed evaluator. Unsupported or truncated forms reject.
-Typed pseudo-operations decode to their ordinary machine instructions. -/
+/-! Independent decoding of emitted x86-64 instructions. The parser reads
+the actual legacy prefix, REX, opcode map, opcode, ModRM, SIB, displacement
+and immediate fields, finds the row in the table's decoder index, and checks
+the operands against the row's slot kinds. It imports neither the encoder
+nor the typed evaluator. Unsupported, non-canonical-prefix or truncated
+forms reject. -/
 
 namespace Compilatrix.X86.Decode
 
-inductive Operand where
-  | reg (register : GPR)
-  | imm (value : Word)
+/-- A decoded instruction: one table row and its operands. -/
+inductive Operation where
+  | op (o : Op) (args : List Arg)
   deriving BEq, ReflBEq, LawfulBEq, DecidableEq, Repr, Inhabited
 
-inductive Operation where
-  | mov (width : Width) (destination : GPR) (source : Operand)
-  | load (width : Width) (destination : GPR) (source : MemAddr)
-  | store (width : Width) (destination : MemAddr) (source : GPR)
-  | lea (destination : GPR) (source : MemAddr)
-  | alu (operation : AluOp) (width : Width) (destination : GPR) (source : Operand)
-  | imul (width : MulWidth) (destination source : GPR)
-  | compare (width : Width) (left : GPR) (right : Operand)
-  | push (source : GPR)
-  | pop (destination : GPR)
-  | call (displacement : Imm32)
-  | jump (displacement : Imm32)
-  | branch (condition : Condition) (displacement : Imm32)
-  | ret
-  deriving BEq, ReflBEq, LawfulBEq, DecidableEq, Repr, Inhabited
+/-- A byte parser. Every choice it makes depends only on bytes it has
+already consumed, so a decoded prefix is independent of what follows. -/
+abbrev Parser := StateT (List UInt8) Option
+
+def byte : Parser UInt8 := fun
+  | head :: tail => some (head, tail)
+  | [] => none
+
+def fail : Parser α := fun _ => none
+
+/-- A little-endian unsigned field of `count` bytes. -/
+def readLE : Nat → Parser Nat
+  | 0 => pure 0
+  | count + 1 => do
+      let head ← byte
+      let value ← readLE count
+      pure (head.toNat + 256 * value)
 
 def register (extended : Bool) : Nat → Option GPR
   | 0 => some (if extended then .r8 else .rax)
@@ -56,192 +60,174 @@ def scale : Nat → Option Scale
   | 0 => some .one | 1 => some .two | 2 => some .four | 3 => some .eight
   | _ => none
 
-def readLE : Nat → List UInt8 → Option (Word × List UInt8)
-  | 0, input => some (0, input)
-  | _ + 1, [] => none
-  | count + 1, head :: tail => do
-      let (value, rest) ← readLE count tail
-      return (head.toUInt64 ||| (value <<< 8), rest)
+def lift : Option α → Parser α
+  | some value => pure value
+  | none => fail
 
-structure Prefix where
-  operand16 : Bool
+structure Rex where
   w : Bool
   r : Bool
   x : Bool
   b : Bool
   deriving BEq, ReflBEq, LawfulBEq, DecidableEq, Repr, Inhabited
 
-def rex (operand16 : Bool) (byte : UInt8) : Option Prefix :=
+def rex? (byte : UInt8) : Option Rex :=
   if 0x40 ≤ byte.toNat && byte.toNat < 0x50 then
-    some {
-      operand16, w := byte.toNat / 8 % 2 == 1
-      r := byte.toNat / 4 % 2 == 1, x := byte.toNat / 2 % 2 == 1, b := byte.toNat % 2 == 1 }
+    some ⟨byte.toNat / 8 % 2 == 1, byte.toNat / 4 % 2 == 1, byte.toNat / 2 % 2 == 1,
+      byte.toNat % 2 == 1⟩
   else none
 
-def Prefix.wide (pref : Prefix) : Option Width :=
-  if pref.w then if pref.operand16 then none else some .w64
-  else some (if pref.operand16 then .w16 else .w32)
-
-def Prefix.width (pref : Prefix) (byte : Bool) : Option Width :=
-  if byte then if pref.operand16 || pref.w then none else some .w8
-  else pref.wide
-
-def Prefix.mulWidth (pref : Prefix) : Option MulWidth := do
-  match ← pref.wide with
-  | .w16 => some .w16 | .w32 => some .w32 | .w64 => some .w64 | .w8 => none
+/-- REX bits of an optional prefix; absent means all clear. -/
+def Rex.bits (rex : Option Rex) : Rex := rex.getD ⟨false, false, false, false⟩
 
 def modMode (byte : UInt8) : Nat := byte.toNat / 64
 def modReg (byte : UInt8) : Nat := byte.toNat / 8 % 8
 def modRM (byte : UInt8) : Nat := byte.toNat % 8
 
-def memory (pref : Prefix) (modrm : UInt8) (input : List UInt8) :
-    Option (MemAddr × List UInt8) := do
+/-- Displacement of ModRM mode 0 (none), 1 (disp8) or 2 (disp32), as the
+32-bit two's-complement pattern of `MemAddr`. -/
+def displacement (mode : Nat) : Parser Imm32 :=
+  if mode == 0 then pure 0
+  else if mode == 1 then do
+    let value ← readLE 1
+    pure (signExtend8 (UInt8.ofNat value)).toUInt32
+  else if mode == 2 then do
+    let value ← readLE 4
+    pure (UInt32.ofNat value)
+  else fail
+
+/-- A memory operand after its ModRM byte. RIP-relative addressing (mode 0,
+rm 5 without SIB) and the mode-0 R13 base hole are rejected. -/
+def memory (rex : Rex) (modrm : UInt8) : Parser MemAddr := do
   let mode := modMode modrm
-  let rm := modRM modrm
-  if rm == 4 then
-    let sib :: tail := input | none
-    let index ← index pref.x (modReg sib)
-    let scale ← scale (modMode sib)
-    let base ← if mode == 0 && modRM sib == 5 && !pref.b then some none
-      else if mode == 2 then (register pref.b (modRM sib)).map some
-      else none
-    let (displacement, rest) ← readLE 4 tail
-    return ({
-      base, index, scale := if index.isSome then scale else .one
-      displacement := displacement.toUInt32 }, rest)
-  else
-    if mode != 2 || pref.x then none else do
-      let base ← register pref.b rm
-      let (displacement, rest) ← readLE 4 input
-      return ({ base := some base, displacement := displacement.toUInt32 }, rest)
-
-def registers (pref : Prefix) (modrm : UInt8) : Option (GPR × GPR) := do
-  if modMode modrm != 3 || pref.x then none else do
-    let reg ← register pref.r (modReg modrm)
-    let rm ← register pref.b (modRM modrm)
-    return (reg, rm)
-
-def memoryOperation (pref : Prefix) (make : GPR → MemAddr → Operation)
-    (input : List UInt8) : Option (Operation × List UInt8) := do
-  let modrm :: input := input | none
-  let register ← register pref.r (modReg modrm)
-  let (address, rest) ← memory pref modrm input
-  return (make register address, rest)
-
-def immediateBytes : Width → Nat
-  | .w8 => 1 | .w16 => 2 | .w32 => 4 | .w64 => 8
-
-def sign32 (value : Word) : Word :=
-  if value < 0x80000000 then value else value ||| 0xffffffff00000000
-
-def groupImmediate (width : Width) (input : List UInt8) : Option (Word × List UInt8) := do
-  let (value, rest) ← readLE (if width == .w64 then 4 else immediateBytes width) input
-  return (if width == .w64 then sign32 value else value, rest)
-
-def aluRegisterOpcode : UInt8 → Option (AluOp × Bool)
-  | 0x00 => some (.add, true) | 0x01 => some (.add, false)
-  | 0x08 => some (.or, true) | 0x09 => some (.or, false)
-  | 0x20 => some (.and, true) | 0x21 => some (.and, false)
-  | 0x28 => some (.sub, true) | 0x29 => some (.sub, false)
-  | 0x30 => some (.xor, true) | 0x31 => some (.xor, false)
-  | _ => none
-
-def aluGroup : Nat → Option AluOp
-  | 0 => some .add | 1 => some .or | 4 => some .and | 5 => some .sub | 6 => some .xor
-  | _ => none
-
-def nearCondition : UInt8 → Option Condition
-  | 0x84 => some .eq | 0x85 => some .ne
-  | 0x82 => some .unsignedLt | 0x86 => some .unsignedLe
-  | 0x87 => some .unsignedGt | 0x83 => some .unsignedGe
-  | 0x8c => some .signedLt | 0x8e => some .signedLe
-  | 0x8f => some .signedGt | 0x8d => some .signedGe
-  | _ => none
-
-def prefixed (pref : Prefix) (input : List UInt8) : Option (Operation × List UInt8) := do
-  let opcode :: input := input | none
-  if 0xb0 ≤ opcode.toNat && opcode.toNat < 0xc0 then
-    if pref.r || pref.x then none else do
-      let narrow := opcode.toNat < 0xb8
-      let width ← pref.width narrow
-      let destination ← register pref.b (opcode.toNat % 8)
-      let (value, rest) ← readLE (immediateBytes width) input
-      return (.mov width destination (.imm value), rest)
+  if mode == 3 then fail
+  else if modRM modrm == 4 then
+    let sib ← byte
+    let index ← lift (index rex.x (modReg sib))
+    let scale ← lift (scale (modMode sib))
+    let scale := if index.isSome then scale else .one
+    if mode == 0 && modRM sib == 5 then
+      if rex.b then fail
+      else do
+        let value ← readLE 4
+        pure { base := none, index, scale, displacement := UInt32.ofNat value }
+    else do
+      let base ← lift (register rex.b (modRM sib))
+      let displacement ← displacement mode
+      pure { base := some base, index, scale, displacement }
+  else if rex.x then fail
+  else if mode == 0 && modRM modrm == 5 then fail
   else do
-    let opcode2 :: input := input | none
-    if opcode == 0x0f then
-      let modrm :: input := input | none
-      if opcode2 == 0xaf then
-        let width ← pref.mulWidth
-        let (destination, source) ← registers pref modrm
-        return (.imul width destination source, input)
-      else if (opcode2 == 0xb6 || opcode2 == 0xb7) && pref.w && !pref.operand16 then
-        memoryOperation pref (.load (if opcode2 == 0xb6 then .w8 else .w16)) (modrm :: input)
-      else none
-    else
-      let modrm := opcode2
-      if opcode == 0x88 || opcode == 0x89 then
-        let width ← pref.width (opcode == 0x88)
-        if modMode modrm == 3 then
-          let (source, destination) ← registers pref modrm
-          return (.mov width destination (.reg source), input)
-        else
-          memoryOperation pref (fun source address => .store width address source) (modrm :: input)
-      else if opcode == 0x8b || opcode == 0x8d then
-        if pref.operand16 then none else do
-          if opcode == 0x8d then
-            if pref.w then memoryOperation pref .lea (modrm :: input) else none
-          else memoryOperation pref (.load (if pref.w then .w64 else .w32)) (modrm :: input)
-      else if opcode == 0x80 || opcode == 0x81 then
-        if pref.r then none else do
-          let width ← pref.width (opcode == 0x80)
-          let (_, destination) ← registers pref modrm
-          let (value, rest) ← groupImmediate width input
-          if modReg modrm == 7 then some (.compare width destination (.imm value), rest)
-          else do
-            let operation ← aluGroup (modReg modrm)
-            return (.alu operation width destination (.imm value), rest)
-      else if opcode == 0x38 || opcode == 0x39 then
-        let width ← pref.width (opcode == 0x38)
-        let (right, left) ← registers pref modrm
-        return (.compare width left (.reg right), input)
-      else
-        let (operation, narrow) ← aluRegisterOpcode opcode
-        let width ← pref.width narrow
-        let (source, destination) ← registers pref modrm
-        return (.alu operation width destination (.reg source), input)
+    let base ← lift (register rex.b (modRM modrm))
+    let displacement ← displacement mode
+    pure { base := some base, displacement }
 
-def stack (extended : Bool) (opcode : UInt8) (rest : List UInt8) : Option (Operation × List UInt8) := do
-  let register ← register extended (opcode.toNat % 8)
-  if 0x50 ≤ opcode.toNat && opcode.toNat < 0x58 then some (.push register, rest)
-  else if 0x58 ≤ opcode.toNat && opcode.toNat < 0x60 then some (.pop register, rest)
-  else none
+/-- An immediate field, sign-extended to its canonical 64-bit value. -/
+def immediate : ImmKind → Parser (Option Word)
+  | .none => pure none
+  | kind => do
+      let value ← readLE kind.bytes
+      pure (some (kind.norm (UInt64.ofNat value)))
 
-def one : List UInt8 → Option (Operation × List UInt8)
-  | [] => none
-  | 0xc3 :: rest => some (.ret, rest)
-  | 0xe8 :: rest => do
-      let (displacement, rest) ← readLE 4 rest
-      return (.call displacement.toUInt32, rest)
-  | 0xe9 :: rest => do
-      let (displacement, rest) ← readLE 4 rest
-      return (.jump displacement.toUInt32, rest)
-  | 0x0f :: opcode :: rest => do
-      let condition ← nearCondition opcode
-      let (displacement, rest) ← readLE 4 rest
-      return (.branch condition displacement.toUInt32, rest)
-  | 0x66 :: pref :: rest => do
-      let pref ← rex true pref
-      prefixed pref rest
-  | head :: tail =>
-      if head == 0x41 then
-        match tail with
-        | opcode :: rest =>
-            if 0x50 ≤ opcode.toNat && opcode.toNat < 0x60 then stack true opcode rest
-            else do let pref ← rex false head; prefixed pref tail
-        | [] => none
-      else if 0x50 ≤ head.toNat && head.toNat < 0x60 then stack false head tail
-      else do let pref ← rex false head; prefixed pref tail
+/-- Operands in slot order from the fields the class places them in. -/
+def assemble (form : OpEn) (reg : Option GPR) (rm : Option Arg) (imm : Option Word) : Option (List Arg) :=
+  match form, reg, rm, imm with
+  | .MR, some reg, some rm, none => some [rm, .reg reg]
+  | .RM, some reg, some rm, none => some [.reg reg, rm]
+  | .MI, none, some rm, some imm | .MI8, none, some rm, some imm => some [rm, .imm imm]
+  | .OI, some reg, none, some imm => some [.reg reg, .imm imm]
+  | .O, some reg, none, none => some [.reg reg]
+  | .RMI, some reg, some rm, some imm | .RMI8, some reg, some rm, some imm =>
+      some [.reg reg, rm, .imm imm]
+  | .D32, none, none, some imm => some [.imm imm]
+  | .ZO, none, none, none => some []
+  | _, _, _, _ => none
+
+def byteRegistersOk (enc : EncDesc) (rexPresent : Bool) (reg : Option GPR) (rm : Option Arg) : Bool :=
+  rexPresent ||
+    (!(enc.byteReg && reg.any GPR.highByteCode) &&
+      !(enc.byteRM && match rm with | some (.reg register) => register.highByteCode | _ => false))
+
+/-- The ModRM.rm operand: a register (mode 3) or a memory address. -/
+def rmOperand (rex : Rex) (modrm : UInt8) : Parser Arg :=
+  if modMode modrm == 3 then
+    if rex.x then fail
+    else do
+      let register ← lift (register rex.b (modRM modrm))
+      pure (.reg register)
+  else do
+    let address ← memory rex modrm
+    pure (.mem address)
+
+/-- Register and r/m fields of a row with a ModRM byte. The REX.R bit must
+be clear when ModRM.reg is an opcode extension. -/
+def modrmFields (use : ModRMUse) (rex : Rex) (modrm : UInt8) : Parser (Option GPR × Option Arg) := do
+  let reg ← match use with
+    | .reg => do
+        let register ← lift (register rex.r (modReg modrm))
+        pure (some register)
+    | .none | .digit _ => if rex.r then fail else pure none
+  let rm ← rmOperand rex modrm
+  pure (reg, some rm)
+
+/-- Register field of a row without ModRM: the opcode's low bits when the
+row embeds a register. Unused REX bits reject. -/
+def opcodeFields (emb : Emb) (rex : Rex) (opcode : UInt8) : Parser (Option GPR × Option Arg) :=
+  if rex.r || rex.x then fail
+  else match emb with
+    | .regLow3 => do
+        let register ← lift (register rex.b (opcode.toNat % 8))
+        pure (some register, none)
+    | .none => if rex.b then fail else pure (none, none)
+
+/-- Parse a row's operands. `preread` is the ModRM byte when the digit
+lookup already consumed it. -/
+def operands (o : Op) (rexByte : Option Rex) (opcode : UInt8) (preread : Option UInt8) : Parser Operation := do
+  let enc := (desc o).enc
+  let rex := Rex.bits rexByte
+  let fields ← match enc.modrm with
+    | .none => opcodeFields enc.emb rex opcode
+    | .reg | .digit _ => do
+        let modrm ← match preread with
+          | some modrm => pure modrm
+          | none => byte
+        modrmFields enc.modrm rex modrm
+  let imm ← immediate enc.imm
+  let args ← lift (assemble o.form fields.1 fields.2 imm)
+  if o.argsOk args && byteRegistersOk enc rexByte.isSome fields.1 fields.2 then pure (.op o args) else fail
+
+/-- Find the row from the parsed prefix, map and opcode (and, for group
+opcodes, the ModRM digit), then parse its operands. -/
+def body (p66 : Bool) (rexByte : Option Rex) (map : OpMap) (opcode : UInt8) : Parser Operation :=
+  match Table.lookup (Table.key p66 (Rex.bits rexByte).w map opcode 8) with
+  | some o => operands o rexByte opcode none
+  | none => do
+      let modrm ← byte
+      let o ← lift (Table.lookup (Table.key p66 (Rex.bits rexByte).w map opcode (modReg modrm)))
+      operands o rexByte opcode (some modrm)
+
+/-- The opcode map escape, given the first byte after the prefixes. -/
+def opcodeStage (p66 : Bool) (rexByte : Option Rex) (first : UInt8) : Parser Operation :=
+  if first == 0x0f then do
+    let opcode ← byte
+    body p66 rexByte .x0F opcode
+  else body p66 rexByte .legacy first
+
+/-- An optional REX prefix, given the first byte after `66`. -/
+def rexStage (p66 : Bool) (first : UInt8) : Parser Operation :=
+  match rex? first with
+  | some rex => do
+      let next ← byte
+      opcodeStage p66 (some rex) next
+  | none => opcodeStage p66 none first
+
+/-- Decode one instruction: `[66] [REX] [0F] opcode ...`. -/
+def one : Parser Operation := do
+  let first ← byte
+  if first == 0x66 then do
+    let next ← byte
+    rexStage true next
+  else rexStage false first
 
 /-- Decode an explicitly bounded instruction recipe, preserving its suffix. -/
 def sequence : Nat → List UInt8 → Option (List Operation × List UInt8)

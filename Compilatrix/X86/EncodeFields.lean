@@ -60,17 +60,26 @@ theorem low_lt (code : UInt8) : registerLow code < 8 := Nat.mod_lt _ (by decide)
 @[simp] theorem scale_mod (scale : Scale) : scaleBits scale % 4 = scaleBits scale := by
   cases scale <;> rfl
 
-theorem registers_decode (operand16 w : Bool) (reg rm : GPR) :
-    Decode.registers
-      ⟨operand16, w, registerExtended (gprCode reg), false, registerExtended (gprCode rm)⟩
-      (modRM 3 (registerLow (gprCode reg)) (registerLow (gprCode rm))) = some (reg, rm) := by
-  simp [Decode.registers]
+@[simp] theorem rex_rexByte (w r x b : Bool) : Decode.rex? (rexByte w r x b) = some ⟨w, r, x, b⟩ := by
+  cases w <;> cases r <;> cases x <;> cases b <;> rfl
 
-theorem one_prefixes (operand16 w r x b : Bool) (opcode : UInt8) (rest : List UInt8)
-    (notStack : (0x50 ≤ opcode.toNat && opcode.toNat < 0x60) = false) :
-    Decode.one ((prefixes operand16 w r x b).data.toList ++ opcode :: rest) =
-      Decode.prefixed ⟨operand16, w, r, x, b⟩ (opcode :: rest) := by
-  cases operand16 <;> cases w <;> cases r <;> cases x <;> cases b <;>
-    simp [prefixes, byte, Decode.one, Decode.rex, notStack]
+@[simp] theorem rexByte_ne_escape (w r x b : Bool) : (rexByte w r x b == 0x66) = false := by
+  cases w <;> cases r <;> cases x <;> cases b <;> rfl
+
+@[simp] theorem rex_escape : Decode.rex? 0x0f = none := rfl
+
+@[simp] theorem rex_rexByte_eta (rex : Decode.Rex) :
+    Decode.rex? (rexByte rex.w rex.r rex.x rex.b) = some rex := by
+  cases rex with
+  | mk w r x b => exact rex_rexByte w r x b
+
+@[simp] theorem rexByte_not_escape (w r x b : Bool) : rexByte w r x b ≠ 0x66 := by
+  cases w <;> cases r <;> cases x <;> cases b <;> decide
+
+theorem registerLow_gpr (register : GPR) : registerLow (gprCode register) = (gprCode register).toNat % 8 := rfl
+
+theorem highByte_code (register : GPR) (extended : registerExtended (gprCode register) = false) :
+    register.highByteCode = decide (4 ≤ registerLow (gprCode register)) := by
+  cases register <;> simp_all [registerExtended, gprCode, registerLow, GPR.highByteCode]
 
 end Compilatrix.X86.Encode

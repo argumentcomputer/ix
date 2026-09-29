@@ -19,10 +19,10 @@ open Encode (bytes)
     (fun state => state.core.readReg .r9) == some 0x80000000
 
 -- R12 is a valid extended SIB index; code four without REX.X means no index.
-#guard Decode.one [0x4e, 0x8d, 0x8c, 0xe5, 0xff, 0xff, 0xff, 0xff] ==
-  some (.lea .r9 { base := some .rbp, index := some .r12, scale := .eight, displacement := 0xffffffff }, [])
-#guard Decode.one [0x4c, 0x8d, 0x0c, 0x25, 0xff, 0xff, 0xff, 0xff] ==
-  some (.lea .r9 { displacement := 0xffffffff }, [])
+#guard Decode.one [0x4e, 0x8d, 0x8c, 0xe5, 0xff, 0xff, 0xff, 0xff] == some (Encode.instructionOperation
+  (.lea .r9 { base := some .rbp, index := some .r12, scale := .eight, displacement := 0xffffffff }), [])
+#guard Decode.one [0x4c, 0x8d, 0x0c, 0x25, 0xff, 0xff, 0xff, 0xff] == some (Encode.instructionOperation
+  (.lea .r9 { displacement := 0xffffffff }), [])
 
 -- The sign of the subtraction result alone gives the wrong signed answer.
 #guard (ByteEval.aluFlags .sub .w64 0x8000000000000000 1).overflow == some true

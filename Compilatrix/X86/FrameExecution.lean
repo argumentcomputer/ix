@@ -79,32 +79,32 @@ theorem push (core : Core) (source : GPR)
       { core.setReg .rsp (core.readReg .rsp - 8) with
         memory := core.memory.write64 (core.readReg .rsp - 8) (core.readReg source) } := by
   intro runtime checked machine equal
-  simp [executeInstr, equal, Memory.write64?, Memory.write?, Width.bytes, allowed, Memory.write64]
+  simp [equal, Memory.write64?, Memory.write?, Width.bytes, allowed, Memory.write64]
 
 theorem pop (core : Core) (destination : GPR) (value : Word)
     (allowed : Memory.rangeAllowed core.memory.readable (core.readReg .rsp) 8 = true)
     (loaded : core.memory.read64 (core.readReg .rsp) = value) :
     Effect (.pop destination) core ((core.setReg .rsp (core.readReg .rsp + 8)).setReg destination value) := by
   intro runtime checked machine equal
-  simp [executeInstr, equal, Memory.read64?, Memory.read?, Width.bytes, allowed, Memory.read64] at *
+  simp [equal, Memory.read64?, Memory.read?, Width.bytes, allowed, Memory.read64] at *
   exact congrArg machine.advanceWith (by rw [loaded])
 
 theorem allocFrame (core : Core) (size : FrameSize) :
     Effect (.allocFrame size) core (core.setReg .rsp (core.readReg .rsp - size.bytes)) := by
   intro runtime checked machine equal
-  simp [executeInstr, equal]
+  simp [equal]
 
 theorem freeFrame (core : Core) (size : FrameSize) :
     Effect (.freeFrame size) core (core.setReg .rsp (core.readReg .rsp + size.bytes)) := by
   intro runtime checked machine equal
-  simp [executeInstr, equal]
+  simp [equal]
 
 theorem spill (core : Core) (slot : StackSlot) (source : GPR)
     (allowed : Memory.rangeAllowed core.memory.writable (core.readReg .rbp - slot.displacement) 8 = true) :
     Effect (.spill slot source) core
       { core with memory := core.memory.write64 (core.readReg .rbp - slot.displacement) (core.readReg source) } := by
   intro runtime checked machine equal
-  simp [executeInstr, equal, Core.storeReg?, Memory.write?, Width.bytes, allowed, Memory.write64] <;> rfl
+  simp [equal, Core.storeReg?, Memory.write?, Width.bytes, allowed, Memory.write64] <;> rfl
 
 theorem reload (core : Core) (destination : GPR) (slot : StackSlot) (value : Word)
     (allowed : Memory.rangeAllowed core.memory.readable (core.readReg .rbp - slot.displacement) 8 = true)
@@ -112,7 +112,7 @@ theorem reload (core : Core) (destination : GPR) (slot : StackSlot) (value : Wor
     Effect (.reload destination slot) core (core.setReg destination value) := by
   intro runtime checked machine equal
   change core.memory.read .w64 (core.readReg .rbp - slot.displacement) = value at loaded
-  simp [executeInstr, equal, Core.loadReg?, Memory.read?, Width.bytes, allowed,
+  simp [equal, Core.loadReg?, Memory.read?, Width.bytes, allowed,
     loaded] <;> rfl
 
 end Straight.Effect

@@ -40,7 +40,7 @@ private def terminatorIndexed (program : Program) (layout : Index) (text : ByteA
   | .ret => decodesIndexed text offset .ret 1
   | .branch comparison condition yes no =>
       let size := (Encode.encodeCompare comparison).size
-      decodesIndexed text offset (.compare comparison.width comparison.left (Encode.aluOperand comparison.width comparison.right)) size &&
+      decodesIndexed text offset (.op comparison.row.1 comparison.row.2) size &&
         targetsIndexed program layout text (offset + size) (.branch condition) 6 yes &&
         targetsIndexed program layout text (offset + size + 6) .jump 5 no
 

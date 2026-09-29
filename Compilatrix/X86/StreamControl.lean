@@ -52,11 +52,11 @@ theorem branch_at {program : Program} {text : ByteArray} {offset : Nat}
   simp only [terminatorMatches, Bool.and_eq_true, and_assoc] at accepted
   obtain ⟨compareAccepted, yesAccepted, noAccepted⟩ := accepted
   have compareFetched : Decode.decodeAt text offset = some
-      ⟨.compare comparison.width comparison.left (Encode.aluOperand comparison.width comparison.right),
+      ⟨.op comparison.row.1 comparison.row.2,
         (Encode.encodeCompare comparison).size⟩ := by
     simpa [decodes, beq_iff_eq] using compareAccepted
   have first : ByteEval.step text base state = .ok (Encode.comparedState comparison state) := by
-    rw [step_decoded address (by omega) compareFetched]
+    rw [step_decoded address (by omega) compareFetched, Encode.compare_step]
     rfl
   have compareAddress : (Encode.comparedState comparison state).rip =
       base + UInt64.ofNat (offset + (Encode.encodeCompare comparison).size) := by
@@ -70,14 +70,11 @@ theorem branch_at {program : Program} {text : ByteArray} {offset : Nat}
         rip := if comparison.holds condition state.core then
           base + UInt64.ofNat (blockOffset program yes.toNat)
         else base + UInt64.ofNat (offset + (Encode.encodeCompare comparison).size + 6) } := by
-    rw [second]
-    simp only [ByteEval.execute]
-    rw [Encode.comparedState_test]
+    rw [second, Encode.execute_branch, Encode.comparedState_test]
     have nextAddress : (Encode.comparedState comparison state).rip + UInt64.ofNat 6 =
         base + UInt64.ofNat (offset + (Encode.encodeCompare comparison).size + 6) := by
       simp [compareAddress, UInt64.ofNat_add, UInt64.add_assoc]
     simp only [nextAddress, displacement, resolved]
-    rfl
   have third := jump_at noAccepted base
     ({ Encode.comparedState comparison state with
       rip := base + UInt64.ofNat (offset + (Encode.encodeCompare comparison).size + 6) }) rfl bound

@@ -40,7 +40,7 @@ def terminatorMatches (program : Program) (text : ByteArray) (offset : Nat) : Te
   | .ret => decodes text offset .ret 1
   | .branch comparison condition yes no =>
       let size := (Encode.encodeCompare comparison).size
-      decodes text offset (.compare comparison.width comparison.left (Encode.aluOperand comparison.width comparison.right)) size &&
+      decodes text offset (.op comparison.row.1 comparison.row.2) size &&
         targets program text (offset + size) (.branch condition) 6 yes &&
         targets program text (offset + size + 6) .jump 5 no
 

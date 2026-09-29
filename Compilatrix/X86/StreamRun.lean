@@ -34,9 +34,14 @@ theorem callFree_sound {program : Program} (accepted : callFree program = true) 
 theorem linear_returns (runtime : Runtime) (checked : Checked) (machine : Machine)
     (instruction : Instr) (linear : Encode.linearInstruction instruction = true) :
     (executeInstr runtime checked instruction machine).returns = machine.returns := by
-  cases instruction <;> simp_all only [Encode.linearInstruction, Bool.false_eq_true]
-  all_goals simp only [executeInstr]
-  all_goals first | exact advance_returns _ _ | (split <;> simp [Machine.trap])
+  cases instruction with
+  | op o args =>
+      simp only [executeInstr, Machine.afterRow]
+      split
+      · exact advance_returns _ _
+      · rfl
+      · rfl
+  | call target | callRuntime intrinsic => simp [Encode.linearInstruction] at linear
 
 structure RunningAt (program : Program) (base : Word) (machine : Machine) (state : ByteEval.State) : Prop where
   core : state.core = machine.core
@@ -69,11 +74,11 @@ theorem linear_progress {checked : Checked} {output : Encode.Output} {externals 
       exact ⟨after, rfl, agreement.1.symm, agreement.2.1, returns, agreement.2.2⟩
   | error fault =>
       cases fault with
-      | memory fault =>
+      | memory fault | undefinedCondition fault =>
           simp only [evaluated, LinearResult] at agreement
           rw [agreement] at nextRunning
           contradiction
-      | decode rip | undefinedCondition condition => simp [evaluated, LinearResult] at agreement
+      | decode rip => simp [evaluated, LinearResult] at agreement
 
 theorem control_progress {checked : Checked} {output : Encode.Output} {externals : ExternalTargets}
     (valid : Valid checked.program output externals) (runtime : Runtime) (machine : Machine)
@@ -159,11 +164,11 @@ theorem halting_ret {checked : Checked} {output : Encode.Output} {externals : Ex
       | ok after => simp only [evaluated, LinearResult] at agreement; rw [agreement.2.1] at halted; contradiction
       | error fault =>
           cases fault with
-          | memory fault =>
+          | memory fault | undefinedCondition fault =>
               simp only [evaluated, LinearResult] at agreement
               rw [agreement] at halted
               contradiction
-          | decode rip | undefinedCondition condition => simp [evaluated, LinearResult] at agreement
+          | decode rip => simp [evaluated, LinearResult] at agreement
   | none =>
       have position : machine.pc.offset.toNat = block.instructions.size := by
         have missing := Array.getElem?_eq_none_iff.mp foundInstruction
@@ -241,7 +246,7 @@ theorem run_to_return {checked : Checked} {output : Encode.Output} {externals : 
           let finalState : ByteEval.State :=
             ⟨after.core.setReg .rsp (after.core.readReg .rsp + 8), returnAddress, state.flags⟩
           have last : ByteEval.step output.text base state = .ok finalState := by
-            simp [ByteEval.step, fetched, ByteEval.execute, stateCore, slot, Except.mapError, finalState]
+            simp [ByteEval.step, fetched, Encode.execute_ret, stateCore, slot, Except.mapError, finalState]
           exact ⟨1, finalState, by decide, by omega, by simp [ByteEval.run, last], rfl, rfl⟩
 
 end Compilatrix.X86.Stream

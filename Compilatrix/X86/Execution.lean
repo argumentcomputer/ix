@@ -1,4 +1,5 @@
 import Compilatrix.X86.Memory
+import Compilatrix.X86.Constructors
 
 /-! Finite execution and straight-line composition for the existing typed
 x86 evaluator. Instruction effects below are propositions about `executeInstr`;
@@ -153,18 +154,18 @@ theorem Sequence.append {left right : List Instr} {before middle after : Core}
 theorem Effect.mov (core : Core) (destination : GPR) (source : MoveSource) :
     Effect (.mov .w64 destination source) core (core.setReg destination (source.eval core)) := by
   intro runtime checked machine equal
-  simp [executeInstr, equal, Core.writeReg]
+  simp [equal, Core.writeReg]
 
 theorem Effect.lea (core : Core) (destination : GPR) (source : MemAddr) :
     Effect (.lea destination source) core (core.setReg destination (source.eval core)) := by
   intro runtime checked machine equal
-  simp [executeInstr, equal]
+  simp [equal]
 
 theorem Effect.alu (core : Core) (operation : AluOp) (destination : GPR) (source : AluSource) :
     Effect (.alu operation .w64 destination source) core
       (core.setReg destination (operation.eval (core.readReg destination) (source.eval core))) := by
   intro runtime checked machine equal
-  simp [executeInstr, equal, Core.writeReg]
+  simp [equal, Core.writeReg]
 
 @[simp] theorem truncate_w64 (value : Word) : Width.truncate .w64 value = value := by
   apply UInt64.toBitVec_inj.mp
@@ -177,7 +178,7 @@ theorem Effect.load (core : Core) (destination : GPR) (source : MemAddr) (value 
     Effect (.load .w64 destination source) core (core.setReg destination value) := by
   intro runtime checked machine equal
   change core.memory.read .w64 (source.eval core) = value at loaded
-  simp [executeInstr, equal, Core.loadReg?, Memory.read?, Width.bytes, allowed,
+  simp [equal, Core.loadReg?, Memory.read?, Width.bytes, allowed,
     loaded] <;> rfl
 
 theorem Effect.store (core : Core) (destination : MemAddr) (source : GPR)
@@ -185,7 +186,7 @@ theorem Effect.store (core : Core) (destination : MemAddr) (source : GPR)
     Effect (.store .w64 destination source) core
       { core with memory := core.memory.write64 (destination.eval core) (core.readReg source) } := by
   intro runtime checked machine equal
-  simp [executeInstr, equal, Core.storeReg?, Memory.write?, Width.bytes, allowed, Memory.write64] <;> rfl
+  simp [equal, Core.storeReg?, Memory.write?, Width.bytes, allowed, Memory.write64] <;> rfl
 
 /-- Consecutive instruction lookup, independent of any prefix/suffix syntax. -/
 def Segment (checked : Checked) (block : BlockId) (offset : Nat) (instructions : List Instr) : Prop :=

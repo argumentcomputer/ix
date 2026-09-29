@@ -2,9 +2,11 @@ import Compilatrix.X86.Encode
 import Compilatrix.X86.EvalExamples
 
 /-!
-Golden E0 encoder checks.  These byte strings are also decoded independently
-by `scripts/CheckX86Encoder.lean`; keeping the Lean expectations here makes
-every ordinary build catch local encoder drift before the external check.
+Golden encoder checks for the table-driven encoder.  These byte strings are
+also decoded independently by `scripts/CheckX86Encoder.lean`; keeping the
+Lean expectations here makes every ordinary build catch encoder drift before
+the external check.  Memory operands use the shortest displacement, and REX
+appears only when a field needs it.
 -/
 
 namespace Compilatrix.X86.Encode.Examples
@@ -14,68 +16,72 @@ open Compilatrix.X86.Encode
 
 def expected (values : Array UInt8) : ByteArray := ByteArray.mk values
 
-#guard encodeMov .w64 .rax (.imm 42) ==
+def instr (instruction : Instr) : ByteArray := (encodeInstr instruction).bytes
+
+#guard instr (.mov .w64 .rax (.imm 42)) ==
   expected #[0x48, 0xb8, 0x2a, 0, 0, 0, 0, 0, 0, 0]
 
-#guard encodeMov .w8 .rsi (.imm 7) ==
-  expected #[0x40, 0xb6, 0x07]
+-- REX selects SIL rather than DH.
+#guard instr (.mov .w8 .rsi (.imm 7)) == expected #[0x40, 0xb6, 0x07]
 
-#guard encodeMov .w64 .r9 (.reg .r10) ==
-  expected #[0x4d, 0x89, 0xd1]
+#guard instr (.mov .w64 .r9 (.reg .r10)) == expected #[0x4d, 0x89, 0xd1]
 
-#guard encodeLoad .w8 .r9
-    { base := some .r12, index := some .r13, scale := .eight,
-      displacement := 16 } ==
-  expected #[0x4f, 0x0f, 0xb6, 0x8c, 0xec, 0x10, 0, 0, 0]
+-- disp8, SIB, REX.X and REX.B; `movzx r32, r/m8` zero-extends to 64 bits.
+#guard instr (.load .w8 .r9
+    { base := some .r12, index := some .r13, scale := .eight, displacement := 16 }) ==
+  expected #[0x47, 0x0f, 0xb6, 0x4c, 0xec, 0x10]
 
-#guard encodeLoad .w16 .rax { base := some .rbx, displacement := 4 } ==
-  expected #[0x48, 0x0f, 0xb7, 0x83, 0x04, 0, 0, 0]
+-- No REX at all.
+#guard instr (.load .w16 .rax { base := some .rbx, displacement := 4 }) ==
+  expected #[0x0f, 0xb7, 0x43, 0x04]
 
-#guard encodeLoad .w32 .r8 { base := none, displacement := 0x100 } ==
+-- An absolute address keeps SIB with disp32.
+#guard instr (.load .w32 .r8 { base := none, displacement := 0x100 }) ==
   expected #[0x44, 0x8b, 0x04, 0x25, 0, 0x01, 0, 0]
 
-#guard encodeStore .w64 { base := some .rbp, displacement := 0xfffffff8 }
-    .r12 ==
-  expected #[0x4c, 0x89, 0xa5, 0xf8, 0xff, 0xff, 0xff]
+#guard instr (.store .w64 { base := some .rbp, displacement := 0xfffffff8 } .r12) ==
+  expected #[0x4c, 0x89, 0x65, 0xf8]
 
-#guard encodeLea .r10
-    { base := some .rbx, index := some .r9, scale := .four,
-      displacement := 32 } ==
-  expected #[0x4e, 0x8d, 0x94, 0x8b, 0x20, 0, 0, 0]
+-- A zero displacement is omitted, except from RBP/R13 bases (mode 1, disp8 0).
+#guard instr (.store .w64 { base := some .rbx } .rax) == expected #[0x48, 0x89, 0x03]
+#guard instr (.store .w64 { base := some .r13 } .rax) == expected #[0x49, 0x89, 0x45, 0x00]
+#guard instr (.store .w64 { base := some .rsp } .rax) == expected #[0x48, 0x89, 0x04, 0x24]
+#guard instr (.store .w64 { base := some .r12, displacement := 0x80 } .rax) ==
+  expected #[0x49, 0x89, 0x84, 0x24, 0x80, 0, 0, 0]
 
-#guard encodeAlu .add .w64 .rax (.imm 2) ==
-  expected #[0x48, 0x81, 0xc0, 0x02, 0, 0, 0]
+#guard instr (.lea .r10
+    { base := some .rbx, index := some .r9, scale := .four, displacement := 32 }) ==
+  expected #[0x4e, 0x8d, 0x54, 0x8b, 0x20]
 
-#guard encodeAlu .sub .w8 .rsi (.imm 1) ==
-  expected #[0x40, 0x80, 0xee, 0x01]
+#guard instr (.alu .add .w64 .rax (.imm 2)) == expected #[0x48, 0x81, 0xc0, 0x02, 0, 0, 0]
 
-#guard encodeAlu .xor .w32 .r9 (.reg .r10) ==
-  expected #[0x45, 0x31, 0xd1]
+#guard instr (.alu .sub .w8 .rsi (.imm 1)) == expected #[0x40, 0x80, 0xee, 0x01]
 
-#guard encodeImul .w64 .r9 .r10 ==
-  expected #[0x4d, 0x0f, 0xaf, 0xca]
+#guard instr (.alu .xor .w32 .r9 (.reg .r10)) == expected #[0x45, 0x31, 0xd1]
 
-#guard encodePush .r12 == expected #[0x41, 0x54]
-#guard encodePop .r12 == expected #[0x41, 0x5c]
+#guard instr (.alu .add .w32 .rax (.reg .rcx)) == expected #[0x01, 0xc8]
 
-#guard frameBytes true { units16 := 1 } ==
-  expected #[0x48, 0x81, 0xec, 0x10, 0, 0, 0]
+#guard instr (.imul .w64 .r9 .r10) == expected #[0x4d, 0x0f, 0xaf, 0xca]
 
-#guard frameBytes false { units16 := 1 } ==
-  expected #[0x48, 0x81, 0xc4, 0x10, 0, 0, 0]
+#guard instr (.push .r12) == expected #[0x41, 0x54]
+#guard instr (.pop .r12) == expected #[0x41, 0x5c]
+#guard instr (.push .rbp) == expected #[0x55]
 
-#guard encodeSpill { index := 0 } .r12 ==
-  expected #[0x4c, 0x89, 0xa5, 0xf8, 0xff, 0xff, 0xff]
+#guard instr (.allocFrame { units16 := 1 }) == expected #[0x48, 0x81, 0xec, 0x10, 0, 0, 0]
 
-#guard encodeReload .r12 { index := 0 } ==
-  expected #[0x4c, 0x8b, 0xa5, 0xf8, 0xff, 0xff, 0xff]
+#guard instr (.freeFrame { units16 := 1 }) == expected #[0x48, 0x81, 0xc4, 0x10, 0, 0, 0]
 
-#guard encodeCompare
-    { width := .w64, left := .rax, right := .imm 42 } ==
+#guard instr (.spill { index := 0 } .r12) == expected #[0x4c, 0x89, 0x65, 0xf8]
+
+#guard instr (.reload .r12 { index := 0 }) == expected #[0x4c, 0x8b, 0x65, 0xf8]
+
+#guard instr (.spill { index := 0x7fff } .r12) ==
+  expected #[0x4c, 0x89, 0xa5, 0, 0, 0xfc, 0xff]
+
+#guard encodeCompare { width := .w64, left := .rax, right := .imm 42 } ==
   expected #[0x48, 0x81, 0xf8, 0x2a, 0, 0, 0]
 
-#guard encodeCompare
-    { width := .w32, left := .r9, right := .reg .r10 } ==
+#guard encodeCompare { width := .w32, left := .r9, right := .reg .r10 } ==
   expected #[0x45, 0x39, 0xd1]
 
 def directCallPlaceholderAccepted : Bool :=

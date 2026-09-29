@@ -29,25 +29,14 @@ theorem linear_rip (instruction : Instr) (linear : Encode.linearInstruction inst
     (evaluated : ByteEval.execute ⟨Encode.instructionOperation instruction, length⟩ state = .ok after) :
     after.rip = state.rip + UInt64.ofNat length := by
   cases instruction with
-  | load width destination address =>
-      cases memoryResult : state.core.loadReg? width destination (address.eval state.core) <;>
-        simp_all [Encode.instructionOperation, ByteEval.execute, Except.mapError] <;> cases evaluated <;> rfl
-  | store width address source =>
-      cases memoryResult : state.core.storeReg? width (address.eval state.core) source <;>
-        simp_all [Encode.instructionOperation, ByteEval.execute, Except.mapError] <;> cases evaluated <;> rfl
-  | push source =>
-      cases memoryResult : state.core.memory.write64? (state.core.readReg .rsp - 8) (state.core.readReg source) <;>
-        simp_all [Encode.instructionOperation, ByteEval.execute, Except.mapError] <;> cases evaluated <;> rfl
-  | pop destination =>
-      cases memoryResult : state.core.memory.read64? (state.core.readReg .rsp) <;>
-        simp_all [Encode.instructionOperation, ByteEval.execute, Except.mapError] <;> cases evaluated <;> rfl
-  | spill slot source =>
-      cases memoryResult : state.core.storeReg? .w64 (state.core.readReg .rbp - slot.displacement) source <;>
-        simp_all [Encode.instructionOperation, ByteEval.execute, Except.mapError] <;> cases evaluated <;> rfl
-  | reload destination slot =>
-      cases memoryResult : state.core.loadReg? .w64 destination (state.core.readReg .rbp - slot.displacement) <;>
-        simp_all [Encode.instructionOperation, ByteEval.execute, Except.mapError] <;> cases evaluated <;> rfl
-  | _ => simp_all [Encode.linearInstruction, Encode.instructionOperation, ByteEval.execute] <;> cases evaluated <;> rfl
+  | op o args =>
+      simp only [Encode.linearInstruction, Bool.and_eq_true] at linear
+      simp only [Encode.instructionOperation, Encode.execute_linear linear.1] at evaluated
+      split at evaluated
+      · cases evaluated
+        rfl
+      · contradiction
+  | call target | callRuntime intrinsic => simp [Encode.linearInstruction] at linear
 
 /-- Fetch uses the complete certified text and its actual byte RIP. -/
 theorem fetch_linear {checked : Checked} {output : Encode.Output} {externals : ExternalTargets}
@@ -70,7 +59,8 @@ def LinearResult (program : Program) (base : Word) (before after : Machine) :
     Except ByteEval.Fault ByteEval.State → Prop
   | .ok state => after.core = state.core ∧ after.status = .running ∧ AtPC program base after.pc state.rip
   | .error (.memory fault) => after = before.trap (.memoryFault fault)
-  | .error _ => False
+  | .error (.undefinedCondition condition) => after = before.trap (.semantic (.undefinedCondition condition))
+  | .error (.decode _) => False
 
 theorem linear_step {checked : Checked} {output : Encode.Output} {externals : ExternalTargets}
     (valid : Valid checked.program output externals) (runtime : Runtime) (machine : Machine)
@@ -94,8 +84,9 @@ theorem linear_step {checked : Checked} {output : Encode.Output} {externals : Ex
       ⟨machine.core, rip, flags⟩ with
   | error fault =>
       cases fault with
-      | memory fault => exact (by simpa [LinearResult, Encode.LinearAgreement, evaluated] using agreement)
-      | decode address | undefinedCondition condition => simp [Encode.LinearAgreement, evaluated] at agreement
+      | memory fault | undefinedCondition fault =>
+          exact (by simpa [LinearResult, Encode.LinearAgreement, evaluated] using agreement)
+      | decode address => simp [Encode.LinearAgreement, evaluated] at agreement
   | ok after =>
       simp only [evaluated, Encode.LinearAgreement, Machine.advanceWith, next.1] at agreement
       rw [agreement]

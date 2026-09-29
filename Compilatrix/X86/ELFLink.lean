@@ -160,8 +160,8 @@ theorem runtime_call_transfer {checked : Checked} {output : Encode.Output} {symb
   have effect : ByteEval.relative (state.rip + 5)
       (Stream.externalDisplacement (Stream.blockOffset checked.program pc.block.toNat + Stream.instructionOffset block pc.offset.toNat + 5) target) =
       address base target := by rw [nextAddress]; exact resolves
-  simp only [ByteEval.execute]
-  cases state.core.memory.write64? (state.core.readReg .rsp - 8) (state.rip + 5) <;>
-    simp [Except.mapError, effect]
+  rw [Encode.execute_call]
+  cases state.core.memory.write64? (state.core.readReg .rsp - 8) (state.rip + UInt64.ofNat 5) <;>
+    simp [effect]
 
 end Compilatrix.X86.ELFLink

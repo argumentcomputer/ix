@@ -37,13 +37,21 @@ instance (frames : List ReturnFrame) (address : Word) (count : Nat) :
 instance (holes : Holes) [DecidablePred holes] (frames : List ReturnFrame)
     (operation : Decode.Operation) (core : Core) : Decidable (OperationSafe holes frames operation core) := by
   unfold OperationSafe
-  repeat' split
-  all_goals infer_instance
+  infer_instance
+
+def clearAccessesDecidable (holes : Holes) [DecidablePred holes] :
+    (accesses : List Access) → DecidablePred (clearAccesses holes accesses)
+  | [] => inferInstanceAs (DecidablePred holes)
+  | access :: accesses =>
+      clearAccessesDecidable (clearRange holes access.address access.bytes) accesses
+
+instance (holes : Holes) [DecidablePred holes] (accesses : List Access) :
+    DecidablePred (clearAccesses holes accesses) := clearAccessesDecidable holes accesses
 
 instance (holes : Holes) [DecidablePred holes] (operation : Decode.Operation) (core : Core) :
     DecidablePred (nextHoles holes operation core) := by
   unfold nextHoles
-  split <;> infer_instance
+  infer_instance
 
 instance (program : Program) (machine : Machine) (holes : Holes) [DecidablePred holes] :
     DecidablePred (holeStep program machine holes) := by

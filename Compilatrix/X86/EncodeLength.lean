@@ -1,92 +1,86 @@
-import Compilatrix.X86.EncodeForms
+import Compilatrix.X86.EncodeControl
 
 /-! Instruction lengths and exact decoding at a supplied byte boundary. -/
 
 namespace Compilatrix.X86.Encode
 
-@[simp] theorem bytes_size (values : List UInt8) : (bytes values).size = values.length := by
-  simp [bytes, ByteArray.size]
-
-@[simp] theorem byte_size (value : UInt8) : (byte value).size = 1 := by simp [byte]
-
 @[simp] theorem littleEndian_size (count : Nat) (value : Word) : (littleEndian count value).size = count := by
-  simp [littleEndian, ByteArray.size]
+  simp [littleEndian]
 
 @[simp] theorem imm32Bytes_size (value : Imm32) : (imm32Bytes value).size = 4 := by simp [imm32Bytes]
 
-@[simp] theorem prefixes_size (operand16 w r x b : Bool) :
-    (prefixes operand16 w r x b).size = if operand16 then 2 else 1 := by
-  cases operand16 <;> simp [prefixes]
+theorem dispBytes_length (mode : Nat) (displacement : Imm32) : (dispBytes mode displacement).length ≤ 4 := by
+  unfold dispBytes
+  split
+  · simp
+  · split <;> simp
 
-@[simp] theorem widthPrefixes_size (width : Width) (r x b : Bool) :
-    (widthPrefixes width r x b).size = if width == .w16 then 2 else 1 := by
-  simp [widthPrefixes]
+theorem memoryTail_length (regField : Nat) (address : MemAddr) : (memoryTail regField address).bytes.length ≤ 6 := by
+  unfold memoryTail
+  split
+  · simp
+  · rename_i base _
+    have disp := dispBytes_length (dispMode (registerLow (gprCode base)) address.displacement) address.displacement
+    dsimp only
+    split <;> simp <;> omega
 
-theorem memoryTail_size (reg : UInt8) (address : MemAddr) :
-    5 ≤ (memoryTail reg address).bytes.size ∧ (memoryTail reg address).bytes.size ≤ 6 := by
-  cases address with
-  | mk base index scale displacement =>
-    cases base with
-    | none => simp [memoryTail, imm32Bytes]
-    | some base =>
-      by_cases useSib : index.isSome || registerLow (gprCode base) == 4 <;>
-        simp [memoryTail, useSib, imm32Bytes]
+theorem tail_length (enc : EncDesc) (f : Fields) :
+    (tail enc f).bytes.length ≤ if enc.modrm == .none then 0 else 6 := by
+  unfold tail
+  cases hmodrm : enc.modrm with
+  | none => simp
+  | reg | digit _ =>
+      simp only [reduceCtorEq, beq_iff_eq, if_false]
+      split
+      · rename_i rm _
+        cases rm with
+        | reg register => simp [rmTail]
+        | mem address => exact memoryTail_length _ address
+        | imm value => simp [rmTail]
+      · simp
 
-@[simp] theorem immediateBytes_size (width : Width) (value : Word) :
-    (immediateBytes width value).size = width.bytes := by
-  cases width <;> simp [immediateBytes, Width.bytes]
+theorem immBytes_length (kind : ImmKind) (value : Option Word) : (immBytes kind value).length ≤ kind.bytes := by
+  cases value <;> simp [immBytes]
 
-@[simp] theorem groupImmediateBytes_size (width : Width) (value : Imm32) :
-    (groupImmediateBytes width value).size = if width == .w64 then 4 else width.bytes := by
-  cases width <;> simp [groupImmediateBytes, imm32Bytes, Width.bytes]
+theorem rexPrefix_length (enc : EncDesc) (f : Fields) : (rexPrefix enc f).length ≤ 1 := by
+  unfold rexPrefix
+  dsimp only
+  split <;> simp
 
-@[simp] theorem imul_size (width : MulWidth) (destination source : GPR) :
-    (encodeImul width destination source).size = if width == .w16 then 5 else 4 := by
-  have size := congrArg List.length (imul_list width destination source)
-  simp only [List.length_append, List.length_cons, List.length_nil, Array.length_toList,
-    ByteArray.size_data] at size
-  cases width <;> simpa [MulWidth.width] using size
+theorem encodeList_length_le (o : Op) (args : List Arg) : (encodeList o args).length ≤ Table.maxLength o := by
+  have tailBound := tail_length (desc o).enc (fields o.form args)
+  have immBound := immBytes_length (desc o).enc.imm (fields o.form args).imm
+  have rexBound := rexPrefix_length (desc o).enc (fields o.form args)
+  unfold encodeList Table.maxLength
+  simp only [List.length_append, opcodeBytes, List.length_cons, List.length_nil]
+  split <;> split <;> simp_all <;> omega
 
-theorem instruction_size (instruction : Instr) :
-    0 < (encodeInstr instruction).bytes.size ∧ (encodeInstr instruction).bytes.size ≤ 10 := by
+theorem encodeList_length_pos (o : Op) (args : List Arg) : 0 < (encodeList o args).length := by
+  unfold encodeList
+  simp [opcodeBytes]
+  omega
+
+theorem encodeList_bounded {o : Op} (row : o ∈ Op.rows) (args : List Arg) : (encodeList o args).length ≤ 15 := by
+  have bound := List.all_eq_true.mp table_bounded o row
+  simp only [decide_eq_true_eq] at bound
+  exact Nat.le_trans (encodeList_length_le o args) bound
+
+theorem instruction_size_pos (instruction : Instr) : 0 < (encodeInstr instruction).bytes.size := by
+  cases instruction <;> simp [encodeInstr, Chunk.raw, rel32_bytes, encodeOp, encodeList_length_pos]
+
+theorem instruction_size (instruction : Instr) (wf : instruction.wellFormed = true) :
+    0 < (encodeInstr instruction).bytes.size ∧ (encodeInstr instruction).bytes.size ≤ 15 := by
+  refine ⟨instruction_size_pos instruction, ?_⟩
   cases instruction with
-  | mov width destination source =>
-    cases source <;> cases width <;>
-      simp [encodeInstr, Chunk.raw, encodeMov, encodeRegReg, Width.bytes]
-  | load width destination address =>
-    have bounds := memoryTail_size (gprCode destination) address
-    cases width <;> simp_all [encodeInstr, Chunk.raw, encodeLoad, encodeMemory] <;> omega
-  | store width address source =>
-    have bounds := memoryTail_size (gprCode source) address
-    cases width <;> simp_all [encodeInstr, Chunk.raw, encodeStore, encodeMemory] <;> omega
-  | lea destination address =>
-    have bounds := memoryTail_size (gprCode destination) address
-    simp_all [encodeInstr, Chunk.raw, encodeLea, encodeMemory] <;> omega
-  | alu operation width destination source =>
-    cases source <;> cases width <;>
-      simp [encodeInstr, Chunk.raw, encodeAlu, encodeRegReg, Width.bytes]
-  | imul width destination source =>
-    cases width <;> simp [encodeInstr, Chunk.raw]
-  | push source =>
-    simp only [encodeInstr, Chunk.raw, encodePush]
-    split <;> simp
-  | pop destination =>
-    simp only [encodeInstr, Chunk.raw, encodePop]
-    split <;> simp
-  | allocFrame size | freeFrame size => simp [encodeInstr, Chunk.raw, frameBytes]
-  | spill slot source =>
-    have bounds := memoryTail_size (gprCode source) (spillAddress slot)
-    simp_all [encodeInstr, Chunk.raw, encodeSpill, encodeStore, encodeMemory] <;> omega
-  | reload destination slot =>
-    have bounds := memoryTail_size (gprCode destination) (spillAddress slot)
-    simp_all [encodeInstr, Chunk.raw, encodeReload, encodeLoad, encodeMemory] <;> omega
-  | call target | callRuntime intrinsic => simp [encodeInstr, rel32]
+  | op o args =>
+      simpa [encodeInstr, Chunk.raw, encodeOp] using encodeList_bounded (wellFormed_op wf).1 args
+  | call target | callRuntime intrinsic =>
+      simpa [encodeInstr, rel32_bytes, encodeOp] using encodeList_bounded control_rows.1 [.imm 0]
 
 theorem compare_size (comparison : Compare) :
-    0 < (encodeCompare comparison).size ∧ (encodeCompare comparison).size ≤ 7 := by
-  cases comparison with
-  | mk width left right =>
-    cases right <;> cases width <;> simp [encodeCompare, encodeRegReg, Width.bytes]
+    0 < (encodeCompare comparison).size ∧ (encodeCompare comparison).size ≤ 15 := by
+  simp only [encodeCompare, encodeOp, bytes_size]
+  exact ⟨encodeList_length_pos _ _, encodeList_bounded (Compare.row_ok comparison).1 _⟩
 
 /-- A local boundary theorem: arbitrary prefix and suffix bytes are allowed.
 Complete stream boundary discovery and layout correspondence belong to E2. -/
@@ -99,10 +93,11 @@ theorem decodeAt_of_one (encoded before after : ByteArray) (operation : Decode.O
   simp [Decode.decodeAt, ← ByteArray.size_data, decoded]
   omega
 
-theorem instruction_decodeAt (instruction : Instr) (before after : ByteArray) :
+theorem instruction_decodeAt (instruction : Instr) (wf : instruction.wellFormed = true)
+    (before after : ByteArray) :
     Decode.decodeAt (before ++ (encodeInstr instruction).bytes ++ after) before.size =
       some ⟨instructionOperation instruction, (encodeInstr instruction).bytes.size⟩ :=
-  decodeAt_of_one _ before after _ (instruction_decode instruction after.data.toList)
-    (instruction_size instruction).1 (Nat.le_trans (instruction_size instruction).2 (by decide))
+  decodeAt_of_one _ before after _ (instruction_decode instruction wf after.data.toList)
+    (instruction_size instruction wf).1 (instruction_size instruction wf).2
 
 end Compilatrix.X86.Encode

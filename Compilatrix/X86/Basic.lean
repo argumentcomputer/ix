@@ -1,194 +1,31 @@
-import Std
+import Compilatrix.X86.Table.Rows
 
 /-!
 # Typed x86-64 v0 target syntax
 
-This is the proof-facing target boundary for the first native wedge.  It is
-deliberately not an encoder: branch and call destinations are bounded symbolic
-block identifiers, and every constructor denotes only an instruction form in
-the reviewed sequential System V subset.  Byte layout and relocation belong
-to the later encoder/object layer.
+This is the proof-facing target boundary for the first native wedge. Every
+non-control instruction is one row of the instruction table (`X86.Table`)
+applied to operands of that row's slot kinds; validation checks the row and
+the operands. Branch and call destinations are bounded symbolic block
+identifiers, and byte layout and relocation belong to the encoder and object
+layer.
 
-The AST combines compare-and-branch into one target operation.  This keeps
-EFLAGS local by construction while still allowing the encoder to emit the
-usual `cmp`/`jcc` pair.  Memory operands also separate index registers from
-general registers, excluding the x86 `rsp`-as-index encoding hole by type.
+The AST combines compare-and-branch into one target operation. This keeps
+EFLAGS local by construction while the encoder emits the usual `cmp`/`jcc`
+pair. Memory operands separate index registers from general registers,
+excluding the x86 `rsp`-as-index encoding hole by type.
+
+The former per-form constructors (`mov`, `load`, `alu`, `spill`, ...) remain
+as definitions choosing a row; they are how programs are written.
 -/
 
 namespace Compilatrix.X86
 
-abbrev Word := UInt64
-abbrev Imm32 := UInt32
-abbrev BlockId := UInt32
-
-/-- The sixteen integer registers in 64-bit mode. -/
-inductive GPR where
-  | rax | rcx | rdx | rbx | rsp | rbp | rsi | rdi
-  | r8 | r9 | r10 | r11 | r12 | r13 | r14 | r15
-  deriving BEq, ReflBEq, LawfulBEq, DecidableEq, Repr, Inhabited
-
-/-- Registers accepted in the SIB index position.  `rsp` has no constructor:
-the corresponding encoding means "no index" on x86-64. -/
-inductive IndexReg where
-  | rax | rcx | rdx | rbx | rbp | rsi | rdi
-  | r8 | r9 | r10 | r11 | r12 | r13 | r14 | r15
-  deriving BEq, ReflBEq, LawfulBEq, DecidableEq, Repr, Inhabited
-
-def IndexReg.gpr : IndexReg → GPR
-  | .rax => .rax
-  | .rcx => .rcx
-  | .rdx => .rdx
-  | .rbx => .rbx
-  | .rbp => .rbp
-  | .rsi => .rsi
-  | .rdi => .rdi
-  | .r8 => .r8
-  | .r9 => .r9
-  | .r10 => .r10
-  | .r11 => .r11
-  | .r12 => .r12
-  | .r13 => .r13
-  | .r14 => .r14
-  | .r15 => .r15
-
-inductive Width where
-  | w8 | w16 | w32 | w64
-  deriving BEq, ReflBEq, LawfulBEq, DecidableEq, Repr, Inhabited
-
-def Width.bits : Width → Nat
-  | .w8 => 8
-  | .w16 => 16
-  | .w32 => 32
-  | .w64 => 64
-
-def Width.bytes : Width → Nat
-  | .w8 => 1
-  | .w16 => 2
-  | .w32 => 4
-  | .w64 => 8
-
-def Width.mask : Width → Word
-  | .w8 => 0xff
-  | .w16 => 0xffff
-  | .w32 => 0xffffffff
-  | .w64 => 0xffffffffffffffff
-
-/-- Widths with a two-operand integer `imul` encoding.  Byte multiplication
-has a different implicit-register shape and is outside this AST form. -/
-inductive MulWidth where
-  | w16 | w32 | w64
-  deriving BEq, ReflBEq, LawfulBEq, DecidableEq, Repr, Inhabited
-
-def MulWidth.width : MulWidth → Width
-  | .w16 => .w16
-  | .w32 => .w32
-  | .w64 => .w64
-
-inductive Scale where
-  | one | two | four | eight
-  deriving BEq, ReflBEq, LawfulBEq, DecidableEq, Repr, Inhabited
-
-def Scale.word : Scale → Word
-  | .one => 1
-  | .two => 2
-  | .four => 4
-  | .eight => 8
-
-/-- An encodable x86 base/index/scale/signed-disp32 address.  `displacement`
-is the two's-complement bit pattern of the signed 32-bit displacement. -/
-structure MemAddr where
-  base : Option GPR := none
-  index : Option IndexReg := none
-  scale : Scale := .one
-  displacement : Imm32 := 0
-  deriving BEq, ReflBEq, LawfulBEq, DecidableEq, Repr, Inhabited
-
-/-- Stack allocation is intrinsically 16-byte aligned and bounded. -/
-structure FrameSize where
-  units16 : UInt16
-  deriving BEq, ReflBEq, LawfulBEq, DecidableEq, Repr, Inhabited
-
-def FrameSize.bytes (size : FrameSize) : Word :=
-  size.units16.toUInt64 * 16
-
-/-- A spill slot is an eight-byte cell below `rbp`.  The `UInt16` index keeps
-its negative displacement well inside the signed-disp32 encoding range. -/
-structure StackSlot where
-  index : UInt16
-  deriving BEq, ReflBEq, LawfulBEq, DecidableEq, Repr, Inhabited
-
-def StackSlot.displacement (slot : StackSlot) : Word :=
-  (slot.index.toUInt64 + 1) * 8
-
-inductive MoveSource where
-  | reg (source : GPR)
-  | imm (value : Word)
-  deriving BEq, ReflBEq, LawfulBEq, DecidableEq, Repr, Inhabited
-
-inductive AluSource where
-  | reg (source : GPR)
-  /-- A sign-extended imm32 when used at width 64. -/
-  | imm (value : Imm32)
-  deriving BEq, ReflBEq, LawfulBEq, DecidableEq, Repr, Inhabited
-
-inductive AluOp where
-  | add | sub | and | or | xor
-  deriving BEq, ReflBEq, LawfulBEq, DecidableEq, Repr, Inhabited
-
-inductive Condition where
-  | eq | ne
-  | unsignedLt | unsignedLe | unsignedGt | unsignedGe
-  | signedLt | signedLe | signedGt | signedGe
-  deriving BEq, ReflBEq, LawfulBEq, DecidableEq, Repr, Inhabited
-
-structure Compare where
-  width : Width
-  left : GPR
-  right : AluSource
-  deriving BEq, ReflBEq, LawfulBEq, DecidableEq, Repr, Inhabited
-
-/-- The named runtime surface reachable from v0 target code.  General division
-is deliberately a runtime call rather than an x86 `div` instruction. -/
-inductive Intrinsic where
-  | allocate
-  | reserve
-  | reuse
-  | releaseReservation
-  | retainShared
-  | releaseShared
-  | memcpy
-  | unsignedDiv
-  deriving BEq, ReflBEq, LawfulBEq, DecidableEq, Repr, Inhabited
-
-def Intrinsic.arity : Intrinsic → Nat
-  | .allocate => 2
-  | .reserve => 2
-  | .reuse => 3
-  | .releaseReservation => 1
-  | .retainShared => 1
-  | .releaseShared => 1
-  | .memcpy => 3
-  | .unsignedDiv => 2
-
-/-- Non-control target operations.  Operand restrictions are represented by
-the constructors: there is no memory-to-memory ALU form, no arbitrary runtime
-symbol, no indirect call, and no raw byte escape hatch. -/
+/-- Target operations. A linear operation is one table row; `call` and
+`callRuntime` are control rows with symbolic targets. There is no arbitrary
+runtime symbol, no indirect call and no raw byte escape hatch. -/
 inductive Instr where
-  | mov (width : Width) (destination : GPR) (source : MoveSource)
-  /-- Narrow loads are zero-extending (`movzx`); w32 follows the architectural
-  zero-extension rule and w64 is a normal move. -/
-  | load (width : Width) (destination : GPR) (source : MemAddr)
-  | store (width : Width) (destination : MemAddr) (source : GPR)
-  | lea (destination : GPR) (source : MemAddr)
-  | alu (operation : AluOp) (width : Width) (destination : GPR)
-      (source : AluSource)
-  | imul (width : MulWidth) (destination source : GPR)
-  | push (source : GPR)
-  | pop (destination : GPR)
-  | allocFrame (size : FrameSize)
-  | freeFrame (size : FrameSize)
-  | spill (slot : StackSlot) (source : GPR)
-  | reload (destination : GPR) (slot : StackSlot)
+  | op (o : Op) (args : List Arg)
   | call (target : BlockId)
   | callRuntime (intrinsic : Intrinsic)
   deriving BEq, ReflBEq, LawfulBEq, DecidableEq, Repr, Inhabited
@@ -216,36 +53,86 @@ structure Program where
   entry : BlockId
   deriving BEq, ReflBEq, LawfulBEq, DecidableEq, Repr, Inhabited
 
-/-! ## System V register convention -/
+/-! ## Choosing rows -/
 
-namespace SysV
+/-- Scale bits have no effect without an index; drop them. -/
+def MemAddr.normalize (address : MemAddr) : MemAddr :=
+  { address with scale := if address.index.isSome then address.scale else .one }
 
-def argumentRegisters : Array GPR :=
-  #[.rdi, .rsi, .rdx, .rcx, .r8, .r9]
+def AluOp.mnemonic : AluOp → Mnemonic
+  | .add => .add
+  | .sub => .sub
+  | .and => .and
+  | .or => .or
+  | .xor => .xor
 
-def resultRegister : GPR := .rax
-def stackPointer : GPR := .rsp
-def framePointer : GPR := .rbp
+/-- An ALU or compare row with an immediate operand. `value` is the
+immediate's sign-extended 64-bit value; only its low `width` bits matter. -/
+def aluImmRow (mn : Mnemonic) (width : Width) (target : Arg) (value : Word) : Op × List Arg :=
+  ({ mn, w := width, form := .MI }, [target, .imm ((Table.fullImm width).norm value)])
 
-/-- System V function entry observes the return address already pushed. -/
-def functionEntryAligned (stack : Word) : Bool := stack % 16 == 8
+/-- The row a comparison executes. -/
+def Compare.row (comparison : Compare) : Op × List Arg :=
+  match comparison.right with
+  | .reg right => ({ mn := .cmp, w := comparison.width, form := .MR }, [.reg comparison.left, .reg right])
+  | .imm value => aluImmRow .cmp comparison.width (.reg comparison.left) (signExtend32 value)
 
-/-- Immediately before `call`, the caller has restored 16-byte alignment. -/
-def callSiteAligned (stack : Word) : Bool := stack % 16 == 0
+namespace Instr
 
-def calleeSaved : Array GPR :=
-  #[.rbx, .rbp, .r12, .r13, .r14, .r15]
+def ofRow (row : Op × List Arg) : Instr := .op row.1 row.2
 
-def callerSaved : Array GPR :=
-  #[.rax, .rcx, .rdx, .rsi, .rdi, .r8, .r9, .r10, .r11]
+/-- `mov r, r` or `mov r, imm`. -/
+def mov (width : Width) (destination : GPR) : MoveSource → Instr
+  | .reg source => .op { mn := .mov, w := width, form := .MR } [.reg destination, .reg source]
+  | .imm value =>
+      .op { mn := .mov, w := width, form := .OI }
+        [.reg destination, .imm ((Table.moveImm width).norm value)]
 
-def argumentRegister? (index : Nat) : Option GPR :=
-  argumentRegisters[index]?
+/-- Narrow loads zero-extend (`movzx`); w32 follows the architectural
+zero-extension rule and w64 is a normal move. -/
+def load (width : Width) (destination : GPR) (source : MemAddr) : Instr :=
+  match width with
+  | .w8 => .op { mn := .movzx, w := .w32, form := .RM, src := .w8 } [.reg destination, .mem source.normalize]
+  | .w16 => .op { mn := .movzx, w := .w32, form := .RM, src := .w16 } [.reg destination, .mem source.normalize]
+  | .w32 => .op { mn := .mov, w := .w32, form := .RM } [.reg destination, .mem source.normalize]
+  | .w64 => .op { mn := .mov, w := .w64, form := .RM } [.reg destination, .mem source.normalize]
 
-def isCallerSaved (register : GPR) : Bool :=
-  callerSaved.contains register
+def store (width : Width) (destination : MemAddr) (source : GPR) : Instr :=
+  .op { mn := .mov, w := width, form := .MR } [.mem destination.normalize, .reg source]
 
-end SysV
+def lea (destination : GPR) (source : MemAddr) : Instr :=
+  .op { mn := .lea, w := .w64, form := .RM } [.reg destination, .mem source.normalize]
+
+/-- `op r, r` or `op r, imm`; the immediate is sign-extended at width 64. -/
+def alu (operation : AluOp) (width : Width) (destination : GPR) : AluSource → Instr
+  | .reg source =>
+      .op { mn := operation.mnemonic, w := width, form := .MR } [.reg destination, .reg source]
+  | .imm value => ofRow (aluImmRow operation.mnemonic width (.reg destination) (signExtend32 value))
+
+def imul (width : MulWidth) (destination source : GPR) : Instr :=
+  .op { mn := .imul, w := width.width, form := .RM } [.reg destination, .reg source]
+
+def push (source : GPR) : Instr := .op { mn := .push, w := .w64, form := .O } [.reg source]
+def pop (destination : GPR) : Instr := .op { mn := .pop, w := .w64, form := .O } [.reg destination]
+
+/-- `sub rsp, size`. -/
+def allocFrame (size : FrameSize) : Instr := ofRow (aluImmRow .sub .w64 (.reg .rsp) size.bytes)
+/-- `add rsp, size`. -/
+def freeFrame (size : FrameSize) : Instr := ofRow (aluImmRow .add .w64 (.reg .rsp) size.bytes)
+
+end Instr
+
+/-- A spill slot's address `[rbp - 8(i+1)]`. -/
+def spillAddress (slot : StackSlot) : MemAddr :=
+  { base := some .rbp
+    displacement := (0 - slot.displacement).toUInt32 }
+
+namespace Instr
+
+def spill (slot : StackSlot) (source : GPR) : Instr := store .w64 (spillAddress slot) source
+def reload (destination : GPR) (slot : StackSlot) : Instr := load .w64 destination (spillAddress slot)
+
+end Instr
 
 /-! ## Closed-fragment theorem -/
 
@@ -265,16 +152,22 @@ def Form.InV0 : Form → Prop
   | .scalarDivision | .float | .simd | .atomic | .indirectCall | .syscall
   | .tls => False
 
+/-- The fragment vocabulary of a table mnemonic. The table has no division,
+floating-point, vector, atomic, indirect-call, system-call or TLS rows. -/
+def Mnemonic.form : Mnemonic → Form
+  | .add | .or | .and | .sub | .xor | .cmp => .arithmetic
+  | .mov => .move
+  | .movzx => .load
+  | .lea => .address
+  | .imul => .multiply
+  | .push | .pop => .stack
+  | .call => .directCall
+  | .jmp => .jump
+  | .jcc _ => .compareBranch
+  | .ret => .ret
+
 def Instr.form : Instr → Form
-  | .mov .. => .move
-  | .load .. => .load
-  | .store .. => .store
-  | .lea .. => .address
-  | .alu .. => .arithmetic
-  | .imul .. => .multiply
-  | .push .. | .pop .. | .allocFrame .. | .freeFrame .. => .stack
-  | .spill .. => .spill
-  | .reload .. => .reload
+  | .op o _ => o.mn.form
   | .call .. => .directCall
   | .callRuntime .. => .runtimeCall
 
@@ -284,9 +177,16 @@ def Terminator.form : Terminator → Form
   | .tailCall .. => .tailCall
   | .ret => .ret
 
+/-- The table's mnemonics are all inside the v0 fragment. -/
+theorem Mnemonic.inV0 (mn : Mnemonic) : mn.form.InV0 := by
+  cases mn <;> trivial
+
 /-- Unsupported ISA forms cannot be constructed as v0 instructions. -/
 theorem Instr.inV0 (instruction : Instr) : instruction.form.InV0 := by
-  cases instruction <;> trivial
+  cases instruction with
+  | op o args => exact o.mn.inV0
+  | call target => trivial
+  | callRuntime intrinsic => trivial
 
 /-- Unsupported ISA forms cannot be constructed as v0 terminators. -/
 theorem Terminator.inV0 (terminator : Terminator) : terminator.form.InV0 := by
@@ -308,7 +208,7 @@ theorem Program.inV0 (program : Program) : program.InV0 := by
     exact instruction.inV0
   · exact block.terminator.inV0
 
-/-! ## Bounded control validation -/
+/-! ## Validation -/
 
 def Program.hasBlock (program : Program) (target : BlockId) : Bool :=
   decide (target.toNat < program.blocks.size)
@@ -330,12 +230,21 @@ def Block.targetsValid (program : Program) (block : Block) : Bool :=
 def Block.offsetsFit (block : Block) : Bool :=
   decide (block.instructions.size < 2 ^ 32)
 
+/-- A linear operation is a listed, non-control row with operands of its
+slot kinds. -/
+def Instr.wellFormed : Instr → Bool
+  | .op o args => Op.rows.contains o && o.linear && o.argsOk args
+  | .call _ | .callRuntime _ => true
+
+def Block.instructionsValid (block : Block) : Bool :=
+  block.instructions.all Instr.wellFormed
+
 def Program.wellFormed (program : Program) : Bool :=
   !program.blocks.isEmpty &&
     decide (program.blocks.size < 2 ^ 32) &&
     program.hasBlock program.entry &&
     program.blocks.all fun block =>
-      block.offsetsFit && block.targetsValid program
+      block.offsetsFit && block.targetsValid program && block.instructionsValid
 
 structure Checked where
   program : Program
@@ -343,13 +252,16 @@ structure Checked where
 
 inductive ValidationError where
   | malformedControl
+  | malformedInstruction
   deriving BEq, ReflBEq, LawfulBEq, DecidableEq, Repr, Inhabited
 
 def Program.check (program : Program) : Except ValidationError Checked :=
   if valid : program.wellFormed = true then
     .ok ⟨program, valid⟩
-  else
+  else if program.blocks.all Block.instructionsValid then
     .error .malformedControl
+  else
+    .error .malformedInstruction
 
 /-- Validation adds control-bounds evidence but cannot change the closed ISA
 fragment established by the typed program. -/

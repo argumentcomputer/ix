@@ -68,4 +68,72 @@ theorem compare_flags (condition : Condition) (width : Width) (left right : Word
     (aluFlags .sub width left right).test condition = some (condition.holds width left right) := by
   rw [aluFlags, sub_test, condition_agrees]
 
+theorem merge_allSet (before computed : Flags) : before.merge Table.allSet computed = computed := by
+  cases computed
+  rfl
+
+theorem restrict_nil (flags : Flags) : flags.restrict [] = {} := by
+  cases flags
+  rfl
+
 end Compilatrix.X86.ByteEval
+
+namespace Compilatrix.X86
+
+attribute [local simp] pure Except.pure Functor.map Except.map bind Except.bind
+
+theorem condition_congr (condition : Condition) (width : Width) (left first second : Word)
+    (equal : width.truncate first = width.truncate second) :
+    condition.holds width left first = condition.holds width left second := by
+  cases condition <;> simp [Condition.holds, Width.signedValue, equal]
+
+/-- The value a comparison's row compares against: its register, or its
+immediate at the row's canonical width. -/
+def Compare.operand (comparison : Compare) (core : Core) : Word :=
+  match comparison.right with
+  | .reg register => core.readReg register
+  | .imm value => (Table.fullImm comparison.width).norm (signExtend32 value)
+
+theorem Compare.operand_low (comparison : Compare) (core : Core) :
+    comparison.width.truncate (comparison.operand core) = comparison.width.truncate (comparison.right.eval core) := by
+  cases comparison with
+  | mk width left right =>
+    cases right with
+    | reg register => rfl
+    | imm value => exact Encode.fullImm_truncate width value
+
+/-- The `cmp` row reads its operands, leaves the core unchanged and sets
+the four flags of the subtraction. -/
+theorem Compare.exec_eq (comparison : Compare) (core : Core) (flags : ByteEval.Flags) :
+    comparison.row.1.exec comparison.row.2 core flags =
+      .ok (core, ByteEval.aluFlags .sub comparison.width (core.readReg comparison.left) (comparison.operand core)) := by
+  cases comparison with
+  | mk width left right =>
+    cases right with
+    | reg register =>
+        simp [Compare.row, Compare.operand, Op.exec, Op.run, Op.inputs, Op.stage, desc, Table.arithDesc, Table.cmpArith, Table.Arith.sem,
+          Table.Arith.role, Table.rmSlot, Table.regSlot, Table.cmpSem, readSlots, writeSlots, Arg.load,
+          ByteEval.merge_allSet, Except.mapError]
+    | imm value =>
+        simp [Compare.row, aluImmRow, Compare.operand, Op.exec, Op.run, Op.inputs, Op.stage, desc, Table.arithDesc, Table.cmpArith,
+          Table.Arith.sem, Table.Arith.role, Table.rmSlot, Table.immSlot, Table.cmpSem, readSlots, writeSlots,
+          Arg.load, ByteEval.merge_allSet, Except.mapError]
+
+theorem Compare.flags_eq (comparison : Compare) (core : Core) :
+    comparison.flags core =
+      ByteEval.aluFlags .sub comparison.width (core.readReg comparison.left) (comparison.operand core) := by
+  simp [Compare.flags, Compare.exec_eq]
+
+/-- The table semantics of compare-and-branch is the mathematical condition
+on the operands' low `width` bits. -/
+theorem Compare.holds_eq (comparison : Compare) (condition : Condition) (core : Core) :
+    comparison.holds condition core =
+      condition.holds comparison.width (core.readReg comparison.left) (comparison.right.eval core) := by
+  rw [Compare.holds, Compare.flags_eq, ByteEval.compare_flags, Option.getD_some]
+  exact condition_congr _ _ _ _ _ (Compare.operand_low comparison core)
+
+theorem Compare.flags_test (comparison : Compare) (condition : Condition) (core : Core) :
+    (comparison.flags core).test condition = some (comparison.holds condition core) := by
+  rw [Compare.holds, Compare.flags_eq, ByteEval.compare_flags, Option.getD_some]
+
+end Compilatrix.X86

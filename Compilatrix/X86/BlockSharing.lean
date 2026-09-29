@@ -8,7 +8,7 @@ namespace Compilatrix.X86
 
 deriving instance Hashable for GPR, IndexReg, Width, MulWidth, Scale, MemAddr,
   FrameSize, StackSlot, MoveSource, AluSource, AluOp, Condition, Compare,
-  Intrinsic, Instr, Terminator, Block
+  Intrinsic, Mnemonic, OpEn, Op, Arg, Instr, Terminator, Block
 
 namespace BlockSharing
 

@@ -2,113 +2,101 @@ import Compilatrix.X86.Encode
 import Compilatrix.X86.Decode
 import Compilatrix.X86.Memory
 
-/-! Kernel-checked byte-field laws for the actual encoder. -/
+/-! Kernel-checked byte-field laws for the table encoder and the independent
+parser: little-endian fields, canonical immediates and displacements, and
+the parser's evaluation rules. -/
 
 namespace Compilatrix.X86.Encode
 
 @[simp] theorem bytes_list (values : List UInt8) : (bytes values).data.toList = values := by
   simp [bytes]
 
-theorem littleEndian_list (count : Nat) (value : Word) :
-    (littleEndian count value).data.toList =
-      (List.range count).map (fun index => (value >>> UInt64.ofNat (8 * index)).toUInt8) := by
-  simp [littleEndian]
+@[simp] theorem bytes_size (values : List UInt8) : (bytes values).size = values.length := by
+  simp [bytes, ByteArray.size]
 
-theorem packByte (value : Word) : value.toUInt8.toUInt64 = Width.w8.truncate value := by
-  apply UInt64.toBitVec_inj.mp
-  simp only [Width.truncate, UInt64.toBitVec_and, UInt64.toBitVec_toUInt8,
-    UInt8.toBitVec_toUInt64]
-  change (value.toBitVec.setWidth 8).setWidth 64 =
-    value.toBitVec &&& (BitVec.allOnes 8).setWidth 64
-  apply BitVec.eq_of_getLsbD_eq
-  intro index bound
-  simp only [BitVec.getLsbD_setWidth, BitVec.getLsbD_and, BitVec.getLsbD_allOnes,
-    decide_eq_true bound, Bool.true_and, Bool.and_comm]
+@[simp] theorem byte_size (value : UInt8) : (byte value).size = 1 := by simp [byte]
 
-theorem mask_bits (width : Width) :
-    width.mask.toBitVec = (BitVec.allOnes width.bits).setWidth 64 := by
-  cases width <;> rfl
+/-! ## Running the parser -/
 
-theorem read_immediate (width : Width) (value : Word) (rest : List UInt8) :
-    Decode.readLE (Decode.immediateBytes width) ((immediateBytes width value).data.toList ++ rest) =
-      some (width.truncate value, rest) := by
-  cases width <;>
-    simp [immediateBytes, Decode.immediateBytes, littleEndian_list, List.range_succ,
-      Decode.readLE, Width.truncate, -UInt64.toUInt64_toUInt8]
-  all_goals
-    apply UInt64.toBitVec_inj.mp
-    apply BitVec.eq_of_getLsbD_eq
-    intro index bound
-    simp only [UInt64.toBitVec_or, UInt64.toBitVec_and, UInt64.toBitVec_shiftLeft,
-      UInt64.toBitVec_shiftRight, UInt64.toBitVec_toUInt8, UInt8.toBitVec_toUInt64,
-      mask_bits, UInt64.toBitVec_ofNat, BitVec.shiftLeft_eq', BitVec.ushiftRight_eq',
-      BitVec.toNat_umod, BitVec.toNat_ofNat, BitVec.getLsbD_or, BitVec.getLsbD_and,
-      BitVec.getLsbD_shiftLeft, BitVec.getLsbD_ushiftRight, BitVec.getLsbD_setWidth,
-      BitVec.getLsbD_allOnes, Width.bits]
-    have ranges : index < 8 ∨ (8 ≤ index ∧ index < 16) ∨ (16 ≤ index ∧ index < 24) ∨
-        (24 ≤ index ∧ index < 32) ∨ (32 ≤ index ∧ index < 40) ∨
-        (40 ≤ index ∧ index < 48) ∨ (48 ≤ index ∧ index < 56) ∨
-        (56 ≤ index ∧ index < 64) := by omega
-    rcases ranges with h | h | h | h | h | h | h | h <;>
-      simp (discharger := omega) [decide_eq_true, decide_eq_false, Bool.and_comm] <;>
-      congr 1 <;> omega
+@[simp] theorem parse_bind (parser : Decode.Parser α) (next : α → Decode.Parser β) (input : List UInt8) :
+    (parser >>= next) input = (parser input).bind fun result => next result.1 result.2 := rfl
 
-theorem truncate_bits (width : Width) (value : Word) :
-    (width.truncate value).toBitVec = (value.toBitVec.setWidth width.bits).setWidth 64 := by
-  apply BitVec.eq_of_getLsbD_eq
-  intro index bound
-  simp only [Width.truncate, UInt64.toBitVec_and, mask_bits, BitVec.getLsbD_and,
-    BitVec.getLsbD_setWidth, BitVec.getLsbD_allOnes, decide_eq_true bound,
-    Bool.true_and, Bool.and_comm]
+@[simp] theorem parse_pure (value : α) (input : List UInt8) :
+    (pure value : Decode.Parser α) input = some (value, input) := rfl
 
-@[simp] theorem truncate32 (value : Imm32) : Width.w32.truncate value.toUInt64 = value.toUInt64 := by
-  apply UInt64.toBitVec_inj.mp
-  simp [truncate_bits, UInt32.toBitVec_toUInt64, Width.bits]
+@[simp] theorem byte_cons (head : UInt8) (tail : List UInt8) :
+    Decode.byte (head :: tail) = some (head, tail) := rfl
 
-@[simp] theorem truncate64 (value : Word) : Width.w64.truncate value = value := by
-  apply UInt64.toBitVec_inj.mp
-  simp [truncate_bits, Width.bits]
+@[simp] theorem byte_nil : Decode.byte [] = none := rfl
 
-theorem read_imm32 (value : Imm32) (rest : List UInt8) :
-    Decode.readLE 4 ((imm32Bytes value).data.toList ++ rest) = some (value.toUInt64, rest) := by
-  simpa [imm32Bytes, immediateBytes, Decode.immediateBytes] using
-    read_immediate .w32 value.toUInt64 rest
+@[simp] theorem fail_apply (input : List UInt8) : (Decode.fail : Decode.Parser α) input = none := rfl
 
-theorem imm32_zero_bytes : imm32Bytes 0 = bytes [0, 0, 0, 0] := by
-  apply ByteArray.ext
-  simp [imm32Bytes, littleEndian, bytes, List.range_succ]
+@[simp] theorem lift_some (value : α) (input : List UInt8) :
+    Decode.lift (some value) input = some (value, input) := rfl
 
-@[simp] theorem sign32_decode (value : Imm32) : Decode.sign32 value.toUInt64 = signExtend32 value := by
-  simp [Decode.sign32, signExtend32, UInt32.lt_iff_toNat_lt, UInt64.lt_iff_toNat_lt]
+@[simp] theorem lift_none (input : List UInt8) : Decode.lift (none : Option α) input = none := rfl
 
-def normalizedImmediate (width : Width) (value : Imm32) : Word :=
-  if width == .w64 then signExtend32 value else width.truncate value.toUInt64
+@[simp] theorem parse_map (f : α → β) (parser : Decode.Parser α) (input : List UInt8) :
+    (f <$> parser) input = (parser input).bind fun result => some (f result.1, result.2) := rfl
 
-theorem read_groupImmediate (width : Width) (value : Imm32) (rest : List UInt8) :
-    Decode.groupImmediate width ((groupImmediateBytes width value).data.toList ++ rest) =
-      some (normalizedImmediate width value, rest) := by
-  have byte := read_immediate .w8 value.toUInt64 rest
-  have short := read_immediate .w16 value.toUInt64 rest
-  cases width <;>
-    simp_all [Decode.groupImmediate, groupImmediateBytes, normalizedImmediate, read_imm32,
-      Decode.immediateBytes, immediateBytes]
+/-! ## Little-endian fields -/
 
-theorem truncate_nat (width : Width) (value : Word) :
-    (width.truncate value).toNat = value.toNat % 2 ^ width.bits := by
-  have bits := congrArg BitVec.toNat (truncate_bits width value)
-  cases width <;>
-    simp only [Width.bits, BitVec.toNat_setWidth, UInt64.toNat_toBitVec, Nat.reducePow] at bits ⊢ <;>
-    omega
+@[simp] theorem leNat_length (count value : Nat) : (leNat count value).length = count := by
+  induction count generalizing value with
+  | zero => rfl
+  | succ count ih => simp [leNat, ih]
 
-theorem truncate32_of_small (value : Word) (bound : value.toNat < 2 ^ 32) :
-    Width.w32.truncate value = value := by
-  apply UInt64.toNat_inj.mp
-  rw [truncate_nat]
-  exact Nat.mod_eq_of_lt bound
+@[simp] theorem le_length (count : Nat) (value : Word) : (le count value).length = count := by
+  simp [le]
 
-theorem read_word32 (value : Word) (bound : value.toNat < 2 ^ 32) (rest : List UInt8) :
-    Decode.readLE 4 ((littleEndian 4 value).data.toList ++ rest) = some (value, rest) := by
-  simpa [Decode.immediateBytes, immediateBytes, truncate32_of_small value bound] using
-    read_immediate .w32 value rest
+theorem readLE_leNat (count value : Nat) (rest : List UInt8) :
+    Decode.readLE count (leNat count value ++ rest) = some (value % 256 ^ count, rest) := by
+  induction count generalizing value with
+  | zero => simp [leNat, Decode.readLE, Nat.mod_one]
+  | succ count ih =>
+      simp only [leNat, List.cons_append, Decode.readLE, parse_bind, byte_cons, Option.bind_some, ih,
+        parse_pure, Option.some.injEq, Prod.mk.injEq, and_true]
+      rw [Nat.pow_succ, Nat.mul_comm (256 ^ count) 256, Nat.mod_mul]
+      simp [UInt8.toNat_ofNat']
+
+theorem readLE_le (count : Nat) (value : Word) (rest : List UInt8) :
+    Decode.readLE count (le count value ++ rest) = some (value.toNat % 256 ^ count, rest) :=
+  readLE_leNat count value.toNat rest
+
+/-! ## Canonical immediates and displacements -/
+
+@[simp] theorem uint8_ofNat_mod32 (value : UInt32) : UInt8.ofNat (value.toNat % 256) = value.toUInt8 := by
+  apply UInt8.toNat_inj.mp
+  simp [UInt8.toNat_ofNat', UInt32.toNat_toUInt8]
+
+@[simp] theorem uint8_ofNat_mod64 (value : UInt64) : UInt8.ofNat (value.toNat % 256) = value.toUInt8 := by
+  apply UInt8.toNat_inj.mp
+  simp [UInt8.toNat_ofNat', UInt64.toNat_toUInt8]
+
+@[simp] theorem uint16_ofNat_mod64 (value : UInt64) :
+    UInt16.ofNat (value.toNat % 65536) = value.toUInt16 := by
+  apply UInt16.toNat_inj.mp
+  simp [UInt16.toNat_ofNat', UInt64.toNat_toUInt16]
+
+@[simp] theorem uint32_ofNat_mod64 (value : UInt64) :
+    UInt32.ofNat (value.toNat % 4294967296) = value.toUInt32 := by
+  apply UInt32.toNat_inj.mp
+  simp [UInt32.toNat_ofNat', UInt64.toNat_toUInt32]
+
+theorem imm_decode (kind : ImmKind) (value : Word) (present : kind ≠ .none) :
+    kind.norm (UInt64.ofNat (value.toNat % 256 ^ kind.bytes)) = kind.norm value := by
+  cases kind <;> simp_all [ImmKind.norm, ImmKind.bytes]
+
+theorem disp32_decode (displacement : Imm32) :
+    UInt32.ofNat (displacement.toUInt64.toNat % 256 ^ 4) = displacement := by
+  simp
+
+theorem disp8_decode (displacement : Imm32) (fits : fitsDisp8 displacement = true) :
+    (signExtend8 (UInt8.ofNat (displacement.toUInt64.toNat % 256 ^ 1))).toUInt32 = displacement := by
+  simpa [fitsDisp8] using fits
+
+theorem imm32_zero_list : le 4 0 = [0, 0, 0, 0] := rfl
+
+theorem imm32_zero_bytes : imm32Bytes 0 = bytes [0, 0, 0, 0] := rfl
 
 end Compilatrix.X86.Encode

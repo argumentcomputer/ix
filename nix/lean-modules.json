@@ -148,6 +148,9 @@
   {"path": "CompilatrixTests/Fences/X86.lean",
    "imports":
    ["Compilatrix.X86.Basic",
+    "Compilatrix.X86.Table.Index",
+    "Compilatrix.X86.Constructors",
+    "Compilatrix.X86.StreamEffects",
     "Compilatrix.X86.ByteBranch",
     "Compilatrix.X86.ByteCall",
     "Compilatrix.X86.ByteControl",
@@ -373,6 +376,22 @@
   "Compilatrix.X86.WordRegion":
   {"path": "Compilatrix/X86/WordRegion.lean",
    "imports": ["Compilatrix.X86.Execution"]},
+  "Compilatrix.X86.Width":
+  {"path": "Compilatrix/X86/Width.lean", "imports": ["Compilatrix.X86.Basic"]},
+  "Compilatrix.X86.Types":
+  {"path": "Compilatrix/X86/Types.lean", "imports": ["Std"]},
+  "Compilatrix.X86.Table.Rows":
+  {"path": "Compilatrix/X86/Table/Rows.lean",
+   "imports": ["Compilatrix.X86.Table.Op"]},
+  "Compilatrix.X86.Table.Op":
+  {"path": "Compilatrix/X86/Table/Op.lean",
+   "imports": ["Compilatrix.X86.State"]},
+  "Compilatrix.X86.Table.Index":
+  {"path": "Compilatrix/X86/Table/Index.lean",
+   "imports": ["Compilatrix.X86.Table.Rows"]},
+  "Compilatrix.X86.Table.Exec":
+  {"path": "Compilatrix/X86/Table/Exec.lean",
+   "imports": ["Compilatrix.X86.Table.Rows"]},
   "Compilatrix.X86.StreamValidate":
   {"path": "Compilatrix/X86/StreamValidate.lean",
    "imports": ["Compilatrix.X86.StreamIndexed"]},
@@ -424,6 +443,8 @@
   "Compilatrix.X86.StreamCalls":
   {"path": "Compilatrix/X86/StreamCalls.lean",
    "imports": ["Compilatrix.X86.StreamEffects"]},
+  "Compilatrix.X86.State":
+  {"path": "Compilatrix/X86/State.lean", "imports": ["Compilatrix.X86.Types"]},
   "Compilatrix.X86.SafeStepsObject":
   {"path": "Compilatrix/X86/SafeStepsObject.lean",
    "imports": ["Compilatrix.X86.SafeSteps", "Compilatrix.X86.ObjectExecution"]},
@@ -446,7 +467,7 @@
    "imports": ["Compilatrix.X86.FrameExecution"]},
   "Compilatrix.X86.Execution":
   {"path": "Compilatrix/X86/Execution.lean",
-   "imports": ["Compilatrix.X86.Memory"]},
+   "imports": ["Compilatrix.X86.Memory", "Compilatrix.X86.Constructors"]},
   "Compilatrix.X86.ExactNat":
   {"path": "Compilatrix/X86/ExactNat.lean",
    "imports": ["Compilatrix.X86.Execution"]},
@@ -454,13 +475,14 @@
   {"path": "Compilatrix/X86/EvalExamples.lean",
    "imports": ["Compilatrix.X86.Eval"]},
   "Compilatrix.X86.Eval":
-  {"path": "Compilatrix/X86/Eval.lean", "imports": ["Compilatrix.X86.Basic"]},
+  {"path": "Compilatrix/X86/Eval.lean",
+   "imports": ["Compilatrix.X86.Basic", "Compilatrix.X86.Table.Exec"]},
   "Compilatrix.X86.EncodeWord":
   {"path": "Compilatrix/X86/EncodeWord.lean",
-   "imports": ["Compilatrix.X86.EncodeControl"]},
+   "imports": ["Compilatrix.X86.EncodeBytes", "Compilatrix.X86.Width"]},
   "Compilatrix.X86.EncodeRegisters":
   {"path": "Compilatrix/X86/EncodeRegisters.lean",
-   "imports": ["Compilatrix.X86.EncodeFields"]},
+   "imports": ["Compilatrix.X86.EncodeMemory"]},
   "Compilatrix.X86.EncodePatch":
   {"path": "Compilatrix/X86/EncodePatch.lean",
    "imports": ["Compilatrix.X86.EncodeLength", "Compilatrix.X86.EncodeWord"]},
@@ -469,10 +491,10 @@
    "imports": ["Compilatrix.X86.EncodeFields"]},
   "Compilatrix.X86.EncodeLength":
   {"path": "Compilatrix/X86/EncodeLength.lean",
-   "imports": ["Compilatrix.X86.EncodeForms"]},
+   "imports": ["Compilatrix.X86.EncodeControl"]},
   "Compilatrix.X86.EncodeForms":
   {"path": "Compilatrix/X86/EncodeForms.lean",
-   "imports": ["Compilatrix.X86.EncodeControl"]},
+   "imports": ["Compilatrix.X86.EncodeRegisters"]},
   "Compilatrix.X86.EncodeFields":
   {"path": "Compilatrix/X86/EncodeFields.lean",
    "imports": ["Compilatrix.X86.EncodeBytes"]},
@@ -485,7 +507,9 @@
   "Compilatrix.X86.EncodeControl":
   {"path": "Compilatrix/X86/EncodeControl.lean",
    "imports":
-   ["Compilatrix.X86.EncodeRegisters", "Compilatrix.X86.EncodeMemory"]},
+   ["Compilatrix.X86.EncodeForms",
+    "Compilatrix.X86.EncodeWord",
+    "Compilatrix.X86.ByteEval"]},
   "Compilatrix.X86.EncodeBytes":
   {"path": "Compilatrix/X86/EncodeBytes.lean",
    "imports":
@@ -516,7 +540,11 @@
   {"path": "Compilatrix/X86/DecodeWindow.lean",
    "imports": ["Compilatrix.X86.Decode"]},
   "Compilatrix.X86.Decode":
-  {"path": "Compilatrix/X86/Decode.lean", "imports": ["Compilatrix.X86.Basic"]},
+  {"path": "Compilatrix/X86/Decode.lean",
+   "imports": ["Compilatrix.X86.Table.Index"]},
+  "Compilatrix.X86.Constructors":
+  {"path": "Compilatrix/X86/Constructors.lean",
+   "imports": ["Compilatrix.X86.Eval", "Compilatrix.X86.Width"]},
   "Compilatrix.X86.ByteFlags":
   {"path": "Compilatrix/X86/ByteFlags.lean",
    "imports": ["Compilatrix.X86.ByteEval", "Compilatrix.X86.EncodeWord"]},
@@ -540,7 +568,8 @@
   {"path": "Compilatrix/X86/BlockSharing.lean",
    "imports": ["Compilatrix.X86.Basic"]},
   "Compilatrix.X86.Basic":
-  {"path": "Compilatrix/X86/Basic.lean", "imports": ["Std"]},
+  {"path": "Compilatrix/X86/Basic.lean",
+   "imports": ["Compilatrix.X86.Table.Rows"]},
   "Compilatrix.Tools.X86Check":
   {"path": "Compilatrix/Tools/X86Check.lean",
    "imports": ["Compilatrix.Tools.Check"]},
@@ -1050,6 +1079,7 @@
    "imports":
    ["Compilatrix.Ixon.V3",
     "Compilatrix.X86.Basic",
+    "Compilatrix.X86.Constructors",
     "Compilatrix.X86.BlockSharing",
     "Compilatrix.X86.ByteBranch",
     "Compilatrix.X86.ByteCall",
@@ -1097,12 +1127,19 @@
     "Compilatrix.X86.StreamSpec",
     "Compilatrix.X86.StreamTrace",
     "Compilatrix.X86.StreamValidate",
+    "Compilatrix.X86.State",
+    "Compilatrix.X86.Table.Exec",
+    "Compilatrix.X86.Table.Index",
+    "Compilatrix.X86.Table.Op",
+    "Compilatrix.X86.Table.Rows",
+    "Compilatrix.X86.Types",
     "Compilatrix.X86.WordRegion",
     "Compilatrix.X86.WordRegionExecution",
     "Compilatrix.X86.WordRegionSafeCalls",
     "Compilatrix.X86.WordRegionSafeControl",
     "Compilatrix.X86.WordRegionSafeMacros",
     "Compilatrix.X86.WordRegionSafeTrace",
+    "Compilatrix.X86.Width",
     "Compilatrix.Aiur"]},
   "CheckX86Streams":
   {"path": "scripts/CheckX86Streams.lean",
