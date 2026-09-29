@@ -3,8 +3,8 @@
 `Ix.Kernel.check` checks an ordered list of anonymous declarations and returns
 an environment only when it can construct its model extension. The three
 public consistency theorems apply to this executed function. `Ix.Kernel` is
-being developed to replace `Ix.Tc`; the runtime consumer migration and the
-removal of lean4ix are still pending.
+being developed to replace `Ix.Tc`; the runtime consumer migration remains
+pending. D01 removed lean4ix and the legacy verification machinery.
 
 The implementation sequence and remaining gates are in
 [`plans/ix-certified-roadmap.md`](../plans/ix-certified-roadmap.md). This page
@@ -19,6 +19,7 @@ system. It does not certify the Lean-to-Ixon compiler, Rust checker, or IxVM.
 | `Ix.Ixon.Types`, `Ingress.Context`, `ExprReads`, `BlockReads` | Pure production Ixon data and its exact reading after table, projection, sharing, and literal resolution | `readExpr_reading`, `readBlock_reading`, and reading determinism |
 | `Egress.Record`, expression/declaration layouts | Raw payloads plus the sharing, table, and let-spelling choices needed to reconstruct the source | Checked writer readings and `records_roundtrip`, with exact list equality |
 | `Ix.Ixon.Codec`, `Ix.Ixon.Wire`, `Ix.Ixon.Verify` | Production anonymous byte grammar, representable counts/address widths, and cursor/append laws | All-variant serializer inverses, exact constant framing, and separate codec audits |
+| `Ix.Ixon.Bounded.Universe` | Universe decoding with explicit byte and expanded-constructor limits | Exact budget accounting, production-decoder agreement, round trips within limits, and wire validity below the wire count capacity |
 | `AExpr`, `PropWhen` | A reading with a condition at each binder describing when its codomain is a proposition | `annotate_erase` proves exact erasure; separate scope checks include annotation conditions |
 | `Typed`, `TypedSort`, `Reduced`, `Conv` | Search results with erased semantic evidence for this environment and context | `inferA`, normalization, conversion, and the declaration checkers |
 | Admission candidate | An ordinary inductive shape, structure description, or standard primitive interface | A reader proposes it; validation and exact generated-block comparison justify installation |
@@ -187,15 +188,33 @@ the whole buffer, with round-trip and nonempty-suffix rejection theorems.
 The pure codec/data import closure uses only Lean core. The proof closure
 additionally uses Lean/Std tactics, including checked bit-vector proofs;
 it imports no host code or Lean4Lean. `Ix.Ixon.Audit` freezes theorem types,
-axiom sets, both import boundaries, and the codec's execution closure: 269
+axiom sets, both import boundaries, and the codec's execution closure: 282
 compiled functions, 51 inherited externs, two inherited unsafe array
 accessors, and no `implemented_by`, `csimp`, or project replacement. The
 existing kernel and egress closures remain unchanged.
 
-K4 remains open for resource-bounded decoding, decoder validity, canonical
-re-encoding and mutual-block order, and composition with K3's admission
-theorem. Totality and exact framing alone are not resource bounds: a short
-compressed universe can request a very large successor expansion. No
+`Ix.Ixon.Bounded.Universe` adds a separate universe entry point with a byte
+limit and a shared budget for expanded constructors. It reserves the tag's
+charge before reading children or constructing a compressed successor chain;
+binary children spend the same budget sequentially. Success preserves the
+production value and cursor and spends exactly the expanded node count.
+Conversely, every successful production read whose node count fits also
+succeeds with that budget. Full-buffer round trips and suffix rejection are
+proved; a node limit below `UInt64.size` establishes the universe wire
+invariant. The limits count input bytes and tree constructors, not runtime
+heap bytes or elapsed time.
+
+The strict standalone fixtures cover exact/insufficient limits, binary
+budget sharing, truncation, suffixes, and a ten-byte encoding that requests
+`UInt64.max` successors. The latter is rejected at the end of its tag, before
+reading the base or constructing the chain. The host suite also checks
+generated values with the existing Rust serialization oracle.
+
+K4 remains open for resource bounds and decoding validity over complete
+constant records, canonical re-encoding and mutual-block order, and
+composition with K3's admission theorem. Existing host callers still use
+the original decoders; the bounded universe entry point is the first piece
+of the new byte boundary. No
 byte-to-accepted-environment theorem, address authentication, claims, or
 receipt contract is asserted yet. K5 will connect authenticated subjects
 and receipts.

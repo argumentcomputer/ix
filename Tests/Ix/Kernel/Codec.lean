@@ -40,6 +40,47 @@ def wordBoundaries : List UInt64 :=
 #guard wordBoundaries.all fun n => exactUniv (.var n)
 #guard [0, 1, 31, 32, 255, 256].all fun n =>
   exactUniv (.addSucc n (.max (.var 18446744073709551615) (.imax .zero (.var 1))))
+
+def boundedUniverses : List Ixon.Univ :=
+  [.zero, .var 18446744073709551615, .max .zero (.var 0),
+    .imax (.succ .zero) (.max (.var 1) (.succ (.var 2))),
+    .max (.addSucc 31 .zero) (.addSucc 31 .zero)] ++
+    [0, 1, 31, 32, 255, 256].map fun n =>
+      .addSucc n (.max (.var 18446744073709551615) (.imax .zero (.var 1)))
+
+-- Both exact and surplus budgets preserve valid inputs. Each limit is
+-- independently enforced, including a budget shared by binary children.
+#guard boundedUniverses.all fun value =>
+  let bytes := Ixon.serUniv value
+  [0, 1, 16].all (fun surplus =>
+    match Ixon.Bounded.deUniv (bytes.size + surplus) (value.nodeCount + surplus) bytes with
+    | .ok decoded => decoded == value
+    | .error _ => false) &&
+  !(Ixon.Bounded.deUniv (bytes.size - 1) value.nodeCount bytes).isOk &&
+  !(Ixon.Bounded.deUniv bytes.size (value.nodeCount - 1) bytes).isOk
+
+-- Ten bytes can request UInt64.max successor nodes. Rejection must happen
+-- before successor construction, even when the encoded base is present.
+def successorBomb : ByteArray := ⟨#[0x27, 255, 255, 255, 255, 255, 255, 255, 255, 0]⟩
+
+#guard match Ixon.Bounded.deUniv successorBomb.size 64 successorBomb with
+  | .error reason => reason == "getUnivBounded: expanded-node budget exhausted"
+  | .ok _ => false
+
+-- Cursor evidence distinguishes preallocation rejection from a decoder
+-- that reads or expands the base before checking the claimed chain size.
+#guard match Ixon.Bounded.getUniv 64 { bytes := successorBomb } with
+  | .error reason state =>
+    reason == "getUnivBounded: expanded-node budget exhausted" && state.idx == 9
+  | .ok _ _ => false
+
+#guard !(Ixon.runGet (Ixon.Bounded.getUnivFuel 1 64) (Ixon.serUniv (.succ .zero))).isOk
+#guard boundedUniverses.all fun value =>
+  let bytes := Ixon.serUniv value
+  !(Ixon.Bounded.deUniv (bytes.size + 1) value.nodeCount (bytes ++ ⟨#[0]⟩)).isOk &&
+    (List.range bytes.size).all (fun n =>
+      !(Ixon.Bounded.deUniv bytes.size value.nodeCount (bytes.extract 0 n)).isOk)
+
 #guard [Ixon.Uses.erased, .linear, .affine, .many].all fun uses =>
   [Ixon.Owned.shared, .unique].all fun owned =>
     exactExpr (.all uses owned (.sort 0)

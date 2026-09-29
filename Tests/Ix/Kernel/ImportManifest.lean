@@ -63,6 +63,7 @@ def authored : Array String := #[
   "Ix/Ixon/Verify/Constant.lean", "Ix/Ixon/Verify/ConstantTables.lean",
   "Ix/Ixon/Verify/NonrecursiveConstant.lean", "Ix/Ixon/Verify/RecursorConstant.lean",
   "Ix/Ixon/Verify/MutualConstant.lean", "Ix/Ixon/Verify/Framing.lean",
+  "Ix/Ixon/Bounded/Universe.lean", "Ix/Ixon/Verify/BoundedUniverse.lean",
   "Ix/Kernel/Ingress.lean", "Ix/Kernel/Ingress/Reading.lean",
   "Ix/Kernel/Ingress/Expr.lean", "Ix/Kernel/Ingress/Constant.lean",
   "Ix/Kernel/Ingress/Declarations.lean", "Ix/Kernel/Certified/Ordinary/Stage.lean",

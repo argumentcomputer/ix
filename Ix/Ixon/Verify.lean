@@ -7,6 +7,7 @@ b067697b9d97552c6f52b2f72c892f84e4c7170f.
 -/
 
 import Ix.Ixon.Verify.Framing
+import Ix.Ixon.Verify.BoundedUniverse
 
 /-! Preserved production codec contracts, independent of Lean4Lean.
 The universe/expression entry points consume the whole buffer. The

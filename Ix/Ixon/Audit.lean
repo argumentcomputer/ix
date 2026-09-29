@@ -17,10 +17,12 @@ namespace Ix.Ixon.Audit
 def operations : Array Lean.Name :=
   #[``_root_.Ixon.serUniv, ``_root_.Ixon.deUniv,
     ``_root_.Ixon.serExpr, ``_root_.Ixon.deExpr,
-    ``_root_.Ixon.serConstant, ``_root_.Ixon.deConstant, ``_root_.Ixon.deConstantExact]
+    ``_root_.Ixon.serConstant, ``_root_.Ixon.deConstant, ``_root_.Ixon.deConstantExact,
+    ``_root_.Ixon.Bounded.deUniv]
 
 def dataImports : Array Lean.Name :=
-  #[`Init, `Ix.Address.Core, `Ix.Ixon.Types, `Ix.Ixon.Codec, `Ix.Ixon.Wire]
+  #[`Init, `Ix.Address.Core, `Ix.Ixon.Types, `Ix.Ixon.Codec, `Ix.Ixon.Wire,
+    `Ix.Ixon.Bounded]
 
 def proofImports : Array Lean.Name := dataImports ++ #[`Lean, `Std, `Ix.Ixon.Verify]
 
@@ -32,9 +34,16 @@ end Ix.Ixon.Audit
 #guard_kernel_axioms Ix.Ixon.Verify.deConstantExact_serConstant [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.Verify.deConstantExact_noTrailing [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Ixon.Verify.runGetExact_complete [propext]
+#guard_kernel_axioms Ix.Ixon.Verify.BoundedUniverse.getUnivFuel_spec [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.Verify.BoundedUniverse.getUnivFuel_complete [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.Verify.BoundedUniverse.deUniv_serUniv [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.Verify.BoundedUniverse.deUniv_spec [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.Verify.BoundedUniverse.deUniv_noTrailing [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Ixon.Verify.BoundedUniverse.deUniv_wireWF [propext, Classical.choice, Quot.sound]
 
 #guard_msgs (drop info) in
-run_cmd Ix.Kernel.Audit.checkImports #[`Ix.Ixon.Codec, `Ix.Ixon.Wire] Ix.Ixon.Audit.dataImports
+run_cmd Ix.Kernel.Audit.checkImports #[`Ix.Ixon.Codec, `Ix.Ixon.Wire,
+  `Ix.Ixon.Bounded.Universe] Ix.Ixon.Audit.dataImports
 
 #guard_msgs (drop info) in
 run_cmd Ix.Kernel.Audit.checkImports #[`Ix.Ixon.Verify] Ix.Ixon.Audit.proofImports
@@ -44,7 +53,7 @@ bit operations and conversions, array iteration, numeric formatting for
 errors, and the inherited panic primitive in checked indexing helpers.
 These were measured before freezing; no project FFI or hash is reached. -/
 /-- info: runtime closure of [Ixon.serUniv, Ixon.deUniv, Ixon.serExpr, Ixon.deExpr,
-Ixon.serConstant, Ixon.deConstant, Ixon.deConstantExact]: 269 compiled functions;
+Ixon.serConstant, Ixon.deConstant, Ixon.deConstantExact, Ixon.Bounded.deUniv]: 282 compiled functions;
 inherited externs 51, implemented_by 0, unsafe 2, csimp 0 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntime Ix.Ixon.Audit.operations #[`Init, `Std]
@@ -74,3 +83,23 @@ run_cmd Ix.Kernel.Audit.checkRuntime Ix.Ixon.Audit.operations #[`Init, `Std]
     ∀ (suffix : ByteArray), suffix.size ≠ 0 → (Ixon.deConstantExact (Ixon.serConstant constant ++ suffix)).isOk = false -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Ixon.Verify.deConstantExact_noTrailing
+
+/-- info: Ix.Ixon.Verify.BoundedUniverse.deUniv_serUniv : ∀ (u : Ixon.Univ),
+  u.wireWF → ∀ (maxBytes maxNodes : Nat),
+  (Ixon.serUniv u).size ≤ maxBytes → u.nodeCount ≤ maxNodes →
+  Ixon.Bounded.deUniv maxBytes maxNodes (Ixon.serUniv u) = Except.ok u -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Ixon.Verify.BoundedUniverse.deUniv_serUniv
+
+/-- info: Ix.Ixon.Verify.BoundedUniverse.deUniv_spec : ∀ (maxBytes maxNodes : Nat)
+  (bytes : ByteArray) (u : Ixon.Univ),
+  Ixon.Bounded.deUniv maxBytes maxNodes bytes = Except.ok u →
+  bytes.size ≤ maxBytes ∧ u.nodeCount ≤ maxNodes ∧ Ixon.deUniv bytes = Except.ok u -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Ixon.Verify.BoundedUniverse.deUniv_spec
+
+/-- info: Ix.Ixon.Verify.BoundedUniverse.deUniv_wireWF : ∀ (maxBytes maxNodes : Nat)
+  (bytes : ByteArray) (u : Ixon.Univ),
+  maxNodes < UInt64.size → Ixon.Bounded.deUniv maxBytes maxNodes bytes = Except.ok u → u.wireWF -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Ixon.Verify.BoundedUniverse.deUniv_wireWF
