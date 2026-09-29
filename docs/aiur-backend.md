@@ -167,7 +167,7 @@ boundary is not replaced by these checkers.
 The upstream frontend handoff does not change that order: Compilatrix will
 read addressed mode bytes and primitive identities, validate required typed
 facts before erasure, and then recognize the admitted monadic DSL over
-IxIR₀. Optional hints can guide checks but cannot authorize lowering or
+the erased source IR. Optional hints can guide checks but cannot authorize lowering or
 establish trace acyclicity on their own.
 
 ## Validation

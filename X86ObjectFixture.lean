@@ -1,7 +1,5 @@
 import Compilatrix.X86.ELFValidate
 import Compilatrix.X86.EvalExamples
-import Compilatrix.X86.Select
-import Compilatrix.X86.ValidatedScalar
 
 /-! Operational fixture generator for the external ELF/binutils gate. -/
 
@@ -10,10 +8,9 @@ open Compilatrix.X86
 open Compilatrix.Ixon
 
 private def usage : String :=
-  "usage: lake exe x86-object-fixture (arithmetic|direct-call|runtime|selected-scalar|validated-scalar) <output.o> [natural for validated-scalar]"
+  "usage: lake exe x86-object-fixture (arithmetic|direct-call|runtime) <output.o>"
 
-/-- Default provenance for the hand-written target and IxIR₂ fixtures.
-The validated Ixon fixture replaces it with its actual addressed IxIR₁ root. -/
+/-- Provenance for the hand-written target fixtures. -/
 private def fixtureProvenance : X86.ELF.Provenance :=
   .ixir1Policy (Address.replicate 0x42) 1 1
 
@@ -24,40 +21,7 @@ private structure Fixture where
   sourceRoot : Option Address := none
   provenance : X86.ELF.Provenance := fixtureProvenance
 
-private def selectedScalarFixture : Except String Fixture := do
-  let source := X86.Select.scalarMoveProgram 42
-  let selected ← match X86.Select.select source with
-    | .ok output => pure output
-    | .error error => throw s!"IxIR₂ selection failed: {repr error}"
-  let sourceRun ←
-    match IxIR2.Eval.runMain (X86.Select.sourceContext 42) .physical source 3 0 with
-    | .ok result => pure result
-    | .error error => throw s!"IxIR₂ execution failed: {repr error}"
-  let sourceWord ← match sourceRun.value with
-    | .lit (.nat number) =>
-        let word := UInt64.ofNat number
-        if word.toNat == number then pure word
-        else throw "IxIR₂ result exceeded the selected 64-bit scalar range"
-    | _ => throw "IxIR₂ scalar fixture returned a non-Nat value"
-  if sourceWord != selected.word then
-    throw "IxIR₂ and selected target observations disagree"
-  else
-    pure { program := selected.target.program
-           runtime := Runtime.rejecting
-           sourceResult := some sourceWord }
-
-private def validatedScalarFixture (number : Nat) : Except String Fixture := do
-  let compiled ← match X86.ValidatedScalar.compile number with
-    | .ok compiled => pure compiled
-    | .error error => throw s!"validated source compilation failed: {repr error}"
-  let sourceWord ← compiled.observe
-  return { program := compiled.selected.target.program
-           runtime := Runtime.rejecting
-           sourceResult := some sourceWord
-           sourceRoot := some compiled.sourceRoot
-           provenance := compiled.provenance }
-
-private def fixture? (number : Nat) : String → Except String Fixture
+private def fixture? : String → Except String Fixture
   | "arithmetic" =>
       pure { program := X86.Examples.arithmeticProgram
              runtime := Runtime.rejecting }
@@ -67,20 +31,13 @@ private def fixture? (number : Nat) : String → Except String Fixture
   | "runtime" =>
       pure { program := X86.Examples.runtimeProgram
              runtime := X86.Examples.fixtureRuntime }
-  | "selected-scalar" => selectedScalarFixture
-  | "validated-scalar" => validatedScalarFixture number
   | _ => .error usage
 
 def main (args : List String) : IO UInt32 := do
-  let some (fixture, outputPath, number) :=
-      (match args with
-       | [fixture, outputPath] => some (fixture, outputPath, 42)
-       | ["validated-scalar", outputPath, number] =>
-           number.toNat?.map fun number => ("validated-scalar", outputPath, number)
-       | _ => none)
+  let [fixture, outputPath] := args
     | IO.eprintln usage
       return 2
-  let selectedFixture ← match fixture? number fixture with
+  let selectedFixture ← match fixture? fixture with
     | .ok selected => pure selected
     | .error error =>
         IO.eprintln error

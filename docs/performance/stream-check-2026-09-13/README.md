@@ -123,7 +123,7 @@ This is **retained-seed replay**, not a fresh Lean/compiler rebuild.
 [Validation evidence](validation.json).
 
 Commands and the measurement-format contract are in the
-[native graph protocol](../../../benchmarks/native-graph.md). After extracting
+[native graph protocol](https://github.com/argumentcomputer/Compilatr.ix/blob/jcb/ixby-archive/benchmarks/native-graph.md). After extracting
 the archive, its `collect.py replay --repo PATH --raw EXTRACTED-RAW-DIRECTORY`
 repeats the recorded replay using the retained seed and recorded tool paths.
 Those Nix runtime/tool store paths must still be present.

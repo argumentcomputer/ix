@@ -15,7 +15,6 @@
     "lakefile.lean"
     "lake-manifest.json"
     "lean-toolchain"
-    "native/hpt_cache_sync.c"
   ];
   source = roots:
     lib.fileset.toSource {

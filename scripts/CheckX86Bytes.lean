@@ -2,16 +2,11 @@ import Compilatrix.Tools.Check
 import Compilatrix.X86.ByteBranch
 import Compilatrix.X86.ByteCall
 import Compilatrix.X86.EvalExamples
-import Compilatrix.UniqueReuse.RuntimeNative
-import Compilatrix.UniqueReuse.NativeObservations
-import Compilatrix.X86.RuntimeExecution
-import Compilatrix.X86.RuntimeInput
 import Compilatrix.X86.DecodeWindow
 
 /-! Finite regression evidence for the independent decoder and byte evaluator.
-The universal local laws live in EncodeExecution/ByteBranch/ByteCall. This gate
-also executes the actual source-selected runtime text; the separate GNU and
-linked-native gates remain external oracles. -/
+The universal local laws live in EncodeExecution/ByteBranch/ByteCall. The
+separate GNU and linked-native gates remain external oracles. -/
 
 open Compilatrix Compilatrix.X86
 open Compilatrix.Tools.Check (checked cli)
@@ -237,47 +232,6 @@ private def smallPrograms : Except String Unit := do
     need (typed.status == .halted 42 && result.core.readReg .rax == 42 && result.core.readReg .rsp == 0x8010 &&
       sameRegisters typed.core (result.core.setReg .rsp 0x8008)) "complete arithmetic/stack/call/tail stream mismatch"
 
-private def runtimePrograms : Except String Nat := do
-  let source ← UniqueReuse.Runtime.source
-  let compilation ← UniqueReuse.Runtime.compile source.constants source.entry
-  let .native output := UniqueReuse.Runtime.Native.select compilation | throw "runtime native selection failed"
-  let main ← output.emit .main
-  let release ← output.emit .release
-  need (main.encoded.relocations.isEmpty && release.encoded.relocations.isEmpty) "runtime text has unresolved externals"
-  let mut steps := 0
-  for (name, values) in UniqueReuse.Native.Examples.cases do
-    let words ← UniqueReuse.Runtime.Native.ofNats values
-    let bound : PLift (words.length ≤ UniqueABI.maxLength) ←
-      if h : words.length ≤ UniqueABI.maxLength then pure ⟨h⟩ else throw "runtime input bound lost"
-    let layout := RuntimeExecution.canonicalLayout words bound.down
-    let stack : Memory := { Memory.unmapped with
-      readable := fun address => 0x7f00 ≤ address && address < 0x8100
-      writable := fun address => 0x7f00 ≤ address && address < 0x8100 }
-    let core : Core := {
-      registers := ((Registers.zero.set .rsp 0x8008).set .rdi layout.base).set .rsi (UInt64.ofNat words.length)
-      memory := RuntimeExecution.inputMemory layout words (stack.write64 0x8008 sentinel) }
-    let typed := runFrom Runtime.rejecting RuntimeTarget.checked (RuntimeTarget.controlCost words.length) core
-    let (result, count) ← runUntilReturn main.encoded.text (3 * RuntimeTarget.controlCost words.length)
-      (← entry main.encoded RuntimeTarget.checked core)
-    steps := steps + count
-    need (typed.status == .halted (layout.cell 1) && result.core.readReg .rsp == 0x8010 &&
-      sameRegisters typed.core (result.core.setReg .rsp 0x8008)) s!"runtime return registers: {name}"
-    let probes := (List.range (8 * layout.slots)).map fun index => layout.base + UInt64.ofNat index
-    need (sameBytes typed.core.memory result.core.memory probes) s!"runtime returned arena: {name}"
-    let observed ← UniqueReuse.Native.Examples.nativeList layout result.core.memory words.length (result.core.readReg .rax)
-    need (observed == values.reverse) s!"runtime byte reversal: {name}"
-    let typedDrop := runFrom Runtime.rejecting RuntimeTarget.releaseChecked (UniqueTarget.releaseCost words.length) typed.core
-    let releaseCore := result.core.setReg .rsp 0x8008
-    let (dropped, count) ← runUntilReturn release.encoded.text (3 * UniqueTarget.releaseCost words.length)
-      (← entry release.encoded RuntimeTarget.releaseChecked releaseCore)
-    steps := steps + count
-    need (typedDrop.status == .halted 0 && dropped.core.readReg .rsp == 0x8010 &&
-      sameRegisters typedDrop.core (dropped.core.setReg .rsp 0x8008) && sameBytes typedDrop.core.memory dropped.core.memory probes)
-      s!"runtime release registers/arena: {name}"
-    let header := UniqueReuse.Native.Examples.headerValues layout dropped.core.memory
-    need (header[2]! == header[3]! && header[5]! == 0 && header[7]! == 0 && header[9]! == 0) s!"runtime byte release leaked: {name}"
-  return steps
-
 def main : IO UInt32 := cli "x86 byte execution check failed" do
   let target ← checked (Examples.arithmeticProgram.check.mapError reprStr)
   let forms ← checked (instructionMatrix target)
@@ -285,5 +239,4 @@ def main : IO UInt32 := cli "x86 byte execution check failed" do
   let windows ← checked windowCases
   checked (failureCases target)
   checked smallPrograms
-  let runtimeSteps ← checked runtimePrograms
-  IO.println s!"x86 byte execution check ok: {forms} instruction cases, {branches} patched branches, {windows} bounded-window cases, truncation/fault/corruption checks, four complete streams, eight source-selected runtime main/release inputs ({runtimeSteps} byte steps)"
+  IO.println s!"x86 byte execution check ok: {forms} instruction cases, {branches} patched branches, {windows} bounded-window cases, truncation/fault/corruption checks, four complete streams"

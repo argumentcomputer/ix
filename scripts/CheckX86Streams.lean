@@ -1,11 +1,8 @@
 import Compilatrix.Tools.Check
 import Compilatrix.X86.StreamExamples
-import Compilatrix.UniqueReuse.RuntimeObjectSim
-import Compilatrix.UniqueReuse.NativeObservations
-import Compilatrix.X86.RuntimeInput
 
 /-! Complete-stream and serialized-object regressions. The universal laws
-live in StreamTrace, ObjectExecution and RuntimeObjectSim. Mutations below
+live in StreamTrace and ObjectExecution. Mutations below
 alter concrete instruction and ELF fields, independently of the writers. -/
 
 open Compilatrix Compilatrix.X86
@@ -302,44 +299,6 @@ private def contractCases : Except String Nat := do
     "partial store cleared the wrong return-slot bytes"
   return 6
 
-private def runtimeObjects : Except String Nat := do
-  let source ← UniqueReuse.Runtime.source
-  let compilation ← UniqueReuse.Runtime.compile source.constants source.entry
-  let .native output := UniqueReuse.Runtime.Native.select compilation | throw "runtime native selection failed"
-  let main ← output.emit .main
-  let release ← output.emit .release
-  let mut steps := 0
-  for (name, values) in UniqueReuse.Native.Examples.cases do
-    let words ← UniqueReuse.Runtime.Native.ofNats values
-    let bound : PLift (words.length ≤ UniqueABI.maxLength) ←
-      if h : words.length ≤ UniqueABI.maxLength then pure ⟨h⟩ else throw "runtime input exceeds ABI"
-    let layout := RuntimeExecution.canonicalLayout words bound.down
-    let stack : Memory := { Memory.unmapped with
-      readable := fun address => 0x7f00 ≤ address && address < 0x8100
-      writable := fun address => 0x7f00 ≤ address && address < 0x8100 }
-    let core : Core := {
-      registers := ((Registers.zero.set .rsp 0x8008).set .rdi layout.base).set .rsi (UInt64.ofNat words.length)
-      memory := RuntimeExecution.inputMemory layout words (stack.write64 0x8008 sentinel) }
-    let typed := runFrom Runtime.rejecting RuntimeTarget.checked (RuntimeTarget.controlCost words.length) core
-    let (result, count) ← runObject main.bytes main.role.symbol textBase (3 * RuntimeTarget.controlCost words.length) core
-    steps := steps + count
-    need (typed.status == .halted (layout.cell 1) && result.core.readReg .rsp == 0x8010 &&
-      sameRegisters typed.core (result.core.setReg .rsp 0x8008)) s!"runtime object return: {name}"
-    let probes := (List.range (8 * layout.slots)).map fun index => layout.base + UInt64.ofNat index
-    need (sameBytes typed.core.memory result.core.memory probes) s!"runtime object arena: {name}"
-    let observed ← UniqueReuse.Native.Examples.nativeList layout result.core.memory words.length (result.core.readReg .rax)
-    need (observed == values.reverse) s!"runtime object reversal: {name}"
-    let typedDrop := runFrom Runtime.rejecting RuntimeTarget.releaseChecked (UniqueTarget.releaseCost words.length) typed.core
-    let (dropped, count) ← runObject release.bytes release.role.symbol textBase (3 * UniqueTarget.releaseCost words.length)
-      (result.core.setReg .rsp 0x8008)
-    steps := steps + count
-    need (typedDrop.status == .halted 0 && dropped.core.readReg .rsp == 0x8010 &&
-      sameRegisters typedDrop.core (dropped.core.setReg .rsp 0x8008) && sameBytes typedDrop.core.memory dropped.core.memory probes)
-      s!"runtime object release: {name}"
-    let header := UniqueReuse.Native.Examples.headerValues layout dropped.core.memory
-    need (header[2]! == header[3]! && header[5]! == 0 && header[7]! == 0 && header[9]! == 0) s!"runtime object leaked: {name}"
-  return steps
-
 def main : IO UInt32 := cli "x86 stream/object check failed" do
   let streams ← checked completePrograms
   let branches ← checked branchCases
@@ -349,5 +308,4 @@ def main : IO UInt32 := cli "x86 stream/object check failed" do
   let relocations ← checked relocationCases
   checked returnFault
   let contracts ← checked contractCases
-  let runtimeSteps ← checked runtimeObjects
-  IO.println s!"x86 stream/object check ok: {streams} complete streams, {branches} branch objects, {streamNegatives} stream corruptions, {layouts} indexed layout cases, {objectNegatives} object corruptions/truncations, {relocations} relocation cases, {contracts} stack contracts, caller-slot fault, eight actual runtime object pairs ({runtimeSteps} byte steps)"
+  IO.println s!"x86 stream/object check ok: {streams} complete streams, {branches} branch objects, {streamNegatives} stream corruptions, {layouts} indexed layout cases, {objectNegatives} object corruptions/truncations, {relocations} relocation cases, {contracts} stack contracts, caller-slot fault"

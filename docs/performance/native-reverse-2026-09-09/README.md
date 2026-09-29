@@ -38,7 +38,7 @@ Entry timing includes the call and bounded output handoff. Fresh inputs are
 prepared and fully checked/released between timed chunks. Lifecycle includes
 list construction, reversal, an order-sensitive result digest, and normal
 memory management. Immutable scalar datasets are prepared before either
-profile. These boundaries are specified in the [protocol](../../../benchmarks/protocol.md).
+profile. These boundaries are specified in the [protocol](https://github.com/argumentcomputer/Compilatr.ix/blob/jcb/ixby-archive/benchmarks/protocol.md).
 
 The paired baseline/Compilatrix ratios at length 64 are:
 
@@ -167,7 +167,7 @@ ISA bridge, and system linker/loader behavior remain separate obligations.
 
 `captureClosed` keeps its checked physical fallback (`capturedPap`). Addition,
 recursion and the Std slice retain the source-certification boundaries in
-[source coverage](../../source-coverage.md); equal erased-block reuse does not
+[source coverage](https://github.com/argumentcomputer/Compilatr.ix/blob/jcb/ixby-archive/docs/source-coverage.md); equal erased-block reuse does not
 claim their eventual source acceptance.
 
 ## Follow-up decision
@@ -237,7 +237,7 @@ proof/project sources. See [reproduction.json](reproduction.json).
 ## Retention and replay
 
 The full bundle is retained locally at
-[`benchmarks/runs/c76bfd89e1388bda877e020d4a415473a9aeb7cb0a323b7886317e6c06ebebac.tar.gz`](../../../benchmarks/runs/c76bfd89e1388bda877e020d4a415473a9aeb7cb0a323b7886317e6c06ebebac.tar.gz),
+[`benchmarks/runs/c76bfd89e1388bda877e020d4a415473a9aeb7cb0a323b7886317e6c06ebebac.tar.gz`](https://github.com/argumentcomputer/Compilatr.ix/blob/jcb/ixby-archive/benchmarks/runs/c76bfd89e1388bda877e020d4a415473a9aeb7cb0a323b7886317e6c06ebebac.tar.gz),
 SHA-256 **`c76bfd89e1388bda877e020d4a415473a9aeb7cb0a323b7886317e6c06ebebac`**, **566812498 bytes**.
 Copy that complete archive when moving the reference to another storage service.
 Its retained runner, raw process records, source/toolchain inventories, original
@@ -262,7 +262,7 @@ supplementary dependency query are in `reference/validation/nix-closure.txt`
 and `nix-closure-query.json`; the original sandbox-unavailable query is preserved
 under `build/`. CakeML's compiler and basis bridge are retained in the archive.
 The source archive contains `flake.lock`, the compiler lock and bootstrap
-retrieval instructions. The [protocol](../../../benchmarks/protocol.md) documents
+retrieval instructions. The [protocol](https://github.com/argumentcomputer/Compilatr.ix/blob/jcb/ixby-archive/benchmarks/protocol.md) documents
 building the runner and a new artifact set.
 
 To collect a new full session against the retained artifacts on this host,

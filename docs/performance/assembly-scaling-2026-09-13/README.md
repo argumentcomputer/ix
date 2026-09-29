@@ -12,7 +12,7 @@ interfaces. Lean proves the indexed audits equal the original predicates for
 arbitrary inputs, including malformed results. The builder preserves the
 existing dependency/member order and exact-preimage collision checks; the
 suite compares its complete output with the retained list builder.
-[Implementation and proof scope](../../modular-source.md#indexed-assembly-checks).
+[Implementation and proof scope](https://github.com/argumentcomputer/Compilatr.ix/blob/jcb/ixby-archive/docs/modular-source.md#indexed-assembly-checks).
 
 ## Identical before/after workload
 
@@ -89,7 +89,7 @@ checks for measurement. Do not sum all sixteen phases. Indexed addressing
 runs before reference addressing; explicit indexed/reference audits follow,
 then ordinary assembly. The fixed order and shared immutable inputs can
 affect caches. There is no per-stage warm-up or randomization. The
-[protocol](../../../benchmarks/assembly-scaling.md) specifies all clock scopes.
+[protocol](https://github.com/argumentcomputer/Compilatr.ix/blob/jcb/ixby-archive/benchmarks/assembly-scaling.md) specifies all clock scopes.
 
 ## Correctness and process observations
 
@@ -164,6 +164,6 @@ taskset -c 0 env LEAN_NUM_THREADS=1 MALLOC_ARENA_MAX=1 LC_ALL=C \
   "$assembly_bundle/profile-1" "$assembly_output"
 ```
 
-The [benchmark protocol](../../../benchmarks/assembly-scaling.md) provides
+The [benchmark protocol](https://github.com/argumentcomputer/Compilatr.ix/blob/jcb/ixby-archive/benchmarks/assembly-scaling.md) provides
 fresh build/producer/checker commands. Source and seed hashes and the exact
 collection plan are retained in [provenance.json](provenance.json).

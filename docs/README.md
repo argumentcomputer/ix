@@ -1,90 +1,50 @@
-# Documentation
+# Documentation guide
 
-Compilatr.ix compiles content-addressed Ixon through ownership-aware IRs to
-selected native programs. Start with the [project overview](../README.md) for
-scope and build commands.
+This guide indexes current contracts, plans and evidence. The compiler is
+being rebuilt (2026-09-29). Documents for the retired pipeline, the Ixby
+backend and the Stage2 fixture are on branch `jcb/ixby-archive`.
 
-## Reading paths
+## Direction and process
 
-| Task | Start here |
-| --- | --- |
-| Understand the architecture | [Compiler design](compiler-design.md) |
-| Find current work and acceptance gates | [Roadmap](roadmap.md) |
-| Make and validate a change | [Development and validation](development-plan.md) |
-| Follow a preservation proof | [Simulation strategy](simulation-strategy.md), then the relevant source-family contract below |
-| Evaluate performance | [Results](performance/README.md), [optional comparison build](../benchmarks/comparisons/README.md), [implemented protocol](../benchmarks/protocol.md), and [benchmark design](benchmark-plan.md) |
-| Audit an assumption or limit | [Trust ledger](trusted-extern-ledger.md), [resource budgets](resource-budgets.md), and [lowering restrictions](lowering-restrictions.md) |
+- [Roadmap](roadmap.md): mission, current state, phases, benchmark rungs and
+  decisions.
+- [Compiler design](compiler-design.md): the pipeline being built, its
+  semantics, ownership and runtime design, backend, and trust obligations.
+- [Development and validation](development-plan.md): landing work,
+  validation commands and documentation maintenance.
+- [CI builds and required coverage](ci.md): the current check surface and
+  its coverage-change record.
 
-The roadmap owns priorities and delivery state. Design documents explain
-decisions; specifications define contracts; source-family pages record the
-accepted domain, public theorem, and regression gate. Dated reviews and
-performance reports preserve evidence from their recorded revisions.
+## Source boundary
 
-## Source, identity, and analysis
+- [Ixon v3](ixon-v3.md): the ix producer pin, contract encoding, strict
+  decoding, catalog-v2 admission, erased typing, resource admission and
+  claims.
 
-| Reference | Contents |
-| --- | --- |
-| [Ix frontend / Ixon v3](ixon-v3.md) | Independent usage, ownership, locality, scoped loans, addressed/typed admission, catalog-v2 unions and pinned producer handoff |
-| [Frozen Ixon v2 wire format](ixon-v2-wire.md) | Encoding, strict decoding, ingress checks, and codec laws |
-| [Canonical sharing](canonical-sharing.md) | Sharing structure, exact compressor images, evaluator coherence, and semantic identity |
-| [Sharing policy](sharing-policy.md) | Frozen producer policy, pins, vectors, and change procedure |
-| [Catalog ingress](catalog-ingress.md) | Frozen catalog-v1 / Ixon-v2 manifests, anonymous expressions, roots, coherence, and aggregate limits |
-| [Corpus contact](corpus-contact.md) | Pinned production Std catalog and its current acceptance boundary |
-| [IR content addressing](ixir-content-addressing.md) | Declaration/mutual-block preimages, readdressing, and provenance |
-| [IxIR₂ snapshot identity](ixir2-wire.md) | Versioned complete-body preimages, bounded strict codec, finite-context ingress, and source roundtrip proofs |
-| [HPT certificates](hpt-certificates.md) | Result-shape analysis, checked consumers, bounded production, and persistent caches |
-| [Optimizer harness](optimizer-harness.md) | Pass policy, semantic attachment, reports, and fallback |
-| [Resource budgets](resource-budgets.md) | Ingress, compilation, evidence, and cache limits |
-| [Well-moded generator](well-moded-generator.md) | Seeded positive/negative cases, replay, and shrinking |
+## x86 target
 
-## Ownership and source compilation
+- [Encoded instructions (E1)](x86-encoded-instructions.md): per-form
+  encoder, decoder and byte-execution laws.
+- [Streams and ELF objects (E2)](x86-stream-objects.md): complete-stream
+  validation, relocations and object execution.
+- [Stream checking](stream-checking.md): validation of production emission.
+- [Reference model](x86-reference-model.md) and its
+  [machine-readable pin](x86-reference-model.json): the Sail x86 candidate and
+  the plan for agreement.
 
-| Reference | Contents |
-| --- | --- |
-| [IxIR₂ specification](ixir2-spec.md) | CFG syntax, capabilities, borrowing, credits, semantics, and checked lowering |
-| [Credit refinement](credit-refinement.md) | Logical/physical execution, reservations, counters, and reclamation |
-| [Source coverage](source-coverage.md) | Accepted upstream/synthetic inputs, stage failures, and artifact reproducibility |
-| [Lowering restrictions](lowering-restrictions.md) | Exact supported fragment and conditions for extending it |
-| [Recursion recovery](source-recursion.md) | Eager-list fold recognition, checked replacement, and source/resource proofs |
-| [Reuse across calls](source-call-reuse.md) | Shared maps and reservations suspended across direct calls |
-| [Unique reversal](source-unique-reuse.md) | Consuming emission, static reuse, and exact resource laws |
-| [Borrowed calls](source-borrow.md) | Closed-program caller/callee rewriting and finite execution certificates |
-| [Runtime borrowing](source-borrow-runtime.md) | Structural function proofs, lender lifetimes, and open-input costs |
+## Aiur target
 
-## Native code and trust
+- [Backend overview](aiur-backend.md),
+  [wire format](aiur-wire.md), [semantics](aiur-semantics.md),
+  [static checks](aiur-static.md), [counter analysis](aiur-counter-analysis.md),
+  [memory AIR](aiur-memory-air.md) and [rank AIR](aiur-rank-air.md).
 
-| Reference | Contents |
-| --- | --- |
-| [Emitted instructions](x86-encoded-instructions.md) | Independent decoding and local execution agreement (E1) |
-| [Streams and ELF objects](x86-stream-objects.md) | Byte PCs, calls, stack returns, parsing, provenance, and relocation (E2) |
-| [Reference ISA model](x86-reference-model.md) | Pinned model, coverage, and remaining adapter/agreement work |
-| [Closed native reversal](source-native-unique.md) | Source-selected bounded arena code and complete release |
-| [Runtime native reversal](source-native-runtime.md) | Parameterized list ABI, source-to-object proof, and checked counter folding |
-| [Allocating native helper](source-native-allocating.md) | Live caller reservation, finite heap/stack, actual ELF execution and full release |
-| [Upstream native computations](source-native-upstream.md) | Unchanged source exports, structural selection, and fallback |
-| [Runtime scalar functions](source-native-scalar.md) | Exact arithmetic, branches, helpers, finite stack, and overflow behavior |
-| [Physical scalar CFGs](source-native-physical-scalar.md) | Compositional instruction/edge/call selection, source export binding, and physical-to-ELF preservation |
-| [Allocating physical CFGs](source-native-heap.md) | Leaf allocation/reuse across calls and joins, fixed spills, complete snapshots, finite heap/stack source-to-ELF preservation, and reclamation |
-| [Captured scalar exports](source-native-captured-scalar.md) | Checked closed initialization, one static Word capture, unary runtime application, complete reclamation, and source-to-ELF proof |
-| [Trust ledger](trusted-extern-ledger.md) | Native interfaces, seed/build trust, specification boundaries, and change control |
-| [Aiur backend foundation](aiur-backend.md) | Pinned target vocabulary, checked logical traces, witness memory, mixed counter/rank derivations, and remaining AIR/source boundaries |
-| [Aiur bytecode wire format](aiur-wire.md) | Complete canonical bytecode, bounded addressed ingress, component-check evidence, frozen fixtures, and the ix exporter contract |
-| [Aiur witness-heap execution](aiur-semantics.md) | Bounded bytecode replay, explicit advice, concrete memory/gadget meanings, and validated public executions under the static row certificate |
-| [Aiur checked static assignments](aiur-static.md) | Program-bound counter/rank assignments and public execution from ordinary trace, rank, and replay data |
-| [Aiur counter-analyzer soundness](aiur-counter-analysis.md) | Universal soundness of the pinned counter search against local bytecode replay, all four directions, and short-cycle exclusion |
-| [Aiur memory AIR extraction](aiur-memory-air.md) | Exact memory polynomials and lookups, pointer uniqueness across wraparound, checked heap extraction, and frozen Rust graph conformance |
-| [Aiur rank AIR extraction](aiur-rank-air.md) | Scalar-u16 range balance, natural rank increase, complete physical rank binding, checked edges, and Rust graph/table conformance |
+## Trust and measurement
 
-The [machine-readable trust ledger](trusted-externs.json) and
-[reference-model pin](x86-reference-model.json) support the corresponding prose
-contracts. Update integrity-pinned inputs through their documented checks.
-
-## Measurements and historical review
-
-[Performance reports](performance/README.md) retain timings, raw-result
-identities, limitations, and replay instructions. [Counter-level thesis
-evidence](thesis-counter-evidence.md) records deterministic interpreter counts.
-The [2026-09-09 code and documentation review](review-2026-09-09.md) is a
-historical snapshot; use the roadmap and focused specifications for current
-status.
-
+- [Trusted-extern ledger](trusted-extern-ledger.md) and its
+  [machine-readable form](trusted-externs.json): native interfaces,
+  specification assumptions and the build and seed supply chain.
+- [Benchmark design](benchmark-plan.md): comparison rules and rows.
+- [Performance reports](performance/README.md): historical measurements of
+  the retired pipeline.
+- [2026-09-09 review](review-2026-09-09.md): a historical snapshot.

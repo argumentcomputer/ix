@@ -1,22 +1,61 @@
-import Compilatrix.Ixon.CatalogIO
-import Compilatrix.Ixon.Sharing.Indexed
-import Compilatrix.IxIR0.Decode
-import Compilatrix.IxIR1.Decode
-import Compilatrix.Pipeline
-import Compilatrix.Modular.Build
-import Compilatrix.Modular.Wire
-import Compilatrix.IxIR2.Pipeline
-import Compilatrix.IxIR2.WireIO
-import Compilatrix.X86.ScalarSourceObject
-import Compilatrix.X86.PhysicalScalarSourceObject
-import Compilatrix.X86.PhysicalScalarCapturedSourceObject
-import Compilatrix.X86.PhysicalHeapSourceObject
-import Compilatrix.UniqueReuse.NativeObject
-import Compilatrix.UniqueReuse.RuntimeObjectSpace
-import Compilatrix.UniqueReuse.AllocatingObjectSpace
-import Compilatrix.Borrow.RuntimeInput
 import Compilatrix.Ixon.V3
+import Compilatrix.X86.Basic
+import Compilatrix.X86.BlockSharing
+import Compilatrix.X86.ByteBranch
+import Compilatrix.X86.ByteCall
+import Compilatrix.X86.ByteControl
+import Compilatrix.X86.ByteEval
+import Compilatrix.X86.ByteFlags
+import Compilatrix.X86.Decode
+import Compilatrix.X86.DecodeWindow
+import Compilatrix.X86.ELF
+import Compilatrix.X86.ELFLink
+import Compilatrix.X86.ELFRead
+import Compilatrix.X86.ELFValidate
+import Compilatrix.X86.Encode
+import Compilatrix.X86.EncodeBytes
+import Compilatrix.X86.EncodeControl
+import Compilatrix.X86.EncodeExecution
+import Compilatrix.X86.EncodeFields
+import Compilatrix.X86.EncodeForms
+import Compilatrix.X86.EncodeLength
+import Compilatrix.X86.EncodeMemory
+import Compilatrix.X86.EncodePatch
+import Compilatrix.X86.EncodeRegisters
+import Compilatrix.X86.EncodeWord
+import Compilatrix.X86.Eval
+import Compilatrix.X86.ExactNat
+import Compilatrix.X86.Execution
+import Compilatrix.X86.FrameCalls
+import Compilatrix.X86.FrameExecution
+import Compilatrix.X86.Memory
+import Compilatrix.X86.ObjectExecution
+import Compilatrix.X86.SafeControl
+import Compilatrix.X86.SafeSteps
+import Compilatrix.X86.SafeStepsObject
+import Compilatrix.X86.StreamCalls
+import Compilatrix.X86.StreamControl
+import Compilatrix.X86.StreamDecidable
+import Compilatrix.X86.StreamEffects
+import Compilatrix.X86.StreamIndex
+import Compilatrix.X86.StreamIndexed
+import Compilatrix.X86.StreamLayout
+import Compilatrix.X86.StreamLinear
+import Compilatrix.X86.StreamMemory
+import Compilatrix.X86.StreamPermissions
+import Compilatrix.X86.StreamRun
+import Compilatrix.X86.StreamSpec
+import Compilatrix.X86.StreamTrace
+import Compilatrix.X86.StreamValidate
+import Compilatrix.X86.WordRegion
+import Compilatrix.X86.WordRegionExecution
+import Compilatrix.X86.WordRegionSafeCalls
+import Compilatrix.X86.WordRegionSafeControl
+import Compilatrix.X86.WordRegionSafeMacros
+import Compilatrix.X86.WordRegionSafeTrace
 import Compilatrix.Aiur
 
-/-! Production compiler API. The complete regression and proof collection is
-built explicitly through `CompilatrixTests` and `CompilatrixTests.Proofs`. -/
+/-! Production API: Ixon v3 ingress, the x86 target model with its certified
+encoder (E1) and stream/ELF layer (E2), and the Aiur target. The compiler
+pipeline is being rebuilt; see `docs/roadmap.md`. The complete regression and
+proof collection is built explicitly through `CompilatrixTests.Proofs`. -/

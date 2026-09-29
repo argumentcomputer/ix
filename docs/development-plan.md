@@ -3,7 +3,7 @@
 Use the [roadmap](roadmap.md) to choose a work package and the
 [design reference](compiler-design.md) for its architectural constraints.
 This guide covers implementation, validation, and documentation maintenance.
-The [benchmark protocol](../benchmarks/protocol.md) owns measurement commands.
+The [benchmark design](benchmark-plan.md) owns comparison rules.
 
 ## Landing a work package
 
@@ -60,9 +60,9 @@ your change, validate it directly:
 The former complete surface, including every family gate and its command,
 is documented on branch `jcb/ixby-archive`.
 
-Compiler-comparison and measurement runners are built separately with
-`lake -d benchmarks/comparisons build`. Their [optional environment and commands](../benchmarks/comparisons/README.md)
-include CakeML and CompCert; those toolchains are outside the CI check closure.
+Compiler-comparison and measurement runners live in an optional package outside
+the root flake; they are being rebuilt for the new benchmark ladder. CakeML
+and CompCert stay outside the CI check closure.
 
 Elaboration-time guards run in the build. Compiled gates check native ABI and
 object behavior, complete fresh-process artifacts, independent corruption

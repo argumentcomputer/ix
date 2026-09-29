@@ -1,42 +1,8 @@
 {"targets":
  {"x86-object-fixture": {"roots": ["X86ObjectFixture"], "kind": "lean_exe"},
-  "tests-pipeline":
-  {"roots": ["CompilatrixTests.Pipeline.Main"], "kind": "lean_exe"},
   "tests-ixon-v3":
   {"roots": ["CompilatrixTests.IxonV3.Main"], "kind": "lean_exe"},
-  "tests-ixon": {"roots": ["CompilatrixTests.Ixon.Main"], "kind": "lean_exe"},
-  "tests-hpt": {"roots": ["CompilatrixTests.HPT.Main"], "kind": "lean_exe"},
   "tests-aiur": {"roots": ["CompilatrixTests.Aiur.Main"], "kind": "lean_exe"},
-  "tests-addressing":
-  {"roots": ["CompilatrixTests.Addressing.Main"], "kind": "lean_exe"},
-  "tests": {"roots": ["Tests"], "kind": "lean_exe"},
-  "source-unique-reuse": {"roots": ["SourceUniqueReuse"], "kind": "lean_exe"},
-  "source-space": {"roots": ["SourceSpace"], "kind": "lean_exe"},
-  "source-recursion": {"roots": ["SourceRecursion"], "kind": "lean_exe"},
-  "source-native-upstream":
-  {"roots": ["SourceNativeUpstream"], "kind": "lean_exe"},
-  "source-native-unique": {"roots": ["SourceNativeUnique"], "kind": "lean_exe"},
-  "source-native-scalar": {"roots": ["SourceNativeScalar"], "kind": "lean_exe"},
-  "source-native-runtime":
-  {"roots": ["SourceNativeRuntime"], "kind": "lean_exe"},
-  "source-native-physical-scalar":
-  {"roots": ["SourceNativePhysicalScalar"], "kind": "lean_exe"},
-  "source-native-heap": {"roots": ["SourceNativeHeap"], "kind": "lean_exe"},
-  "source-native-captured-scalar":
-  {"roots": ["SourceNativeCapturedScalar"], "kind": "lean_exe"},
-  "source-native-allocating":
-  {"roots": ["SourceNativeAllocating"], "kind": "lean_exe"},
-  "source-modular": {"roots": ["SourceModular"], "kind": "lean_exe"},
-  "source-evidence": {"roots": ["SourceEvidence"], "kind": "lean_exe"},
-  "source-coverage": {"roots": ["SourceCoverage"], "kind": "lean_exe"},
-  "source-call-reuse": {"roots": ["SourceCallReuse"], "kind": "lean_exe"},
-  "source-borrow-runtime":
-  {"roots": ["SourceBorrowRuntime"], "kind": "lean_exe"},
-  "source-borrow": {"roots": ["SourceBorrow"], "kind": "lean_exe"},
-  "native-sharing": {"roots": ["NativeSharing"], "kind": "lean_exe"},
-  "native-graph": {"roots": ["NativeGraph"], "kind": "lean_exe"},
-  "ixir2-fixture": {"roots": ["IxIR2Fixture"], "kind": "lean_exe"},
-  "heap-snapshot-object": {"roots": ["HeapSnapshotObject"], "kind": "lean_exe"},
   "check-x86-streams": {"roots": ["CheckX86Streams"], "kind": "lean_exe"},
   "check-x86-object": {"roots": ["CheckX86Object"], "kind": "lean_exe"},
   "check-x86-encoder": {"roots": ["CheckX86Encoder"], "kind": "lean_exe"},
@@ -44,162 +10,20 @@
   "check-trusted-externs":
   {"roots": ["CheckTrustedExterns"], "kind": "lean_exe"},
   "check-tools-tests": {"roots": ["CheckToolsTests"], "kind": "lean_exe"},
-  "check-source-unique-reuse":
-  {"roots": ["CheckSourceUniqueReuse"], "kind": "lean_exe"},
-  "check-source-space": {"roots": ["CheckSourceSpace"], "kind": "lean_exe"},
-  "check-source-recursion":
-  {"roots": ["CheckSourceRecursion"], "kind": "lean_exe"},
-  "check-source-native-upstream":
-  {"roots": ["CheckSourceNativeUpstream"], "kind": "lean_exe"},
-  "check-source-native-unique":
-  {"roots": ["CheckSourceNativeUnique"], "kind": "lean_exe"},
-  "check-source-native-scalar":
-  {"roots": ["CheckSourceNativeScalar"], "kind": "lean_exe"},
-  "check-source-native-runtime":
-  {"roots": ["CheckSourceNativeRuntime"], "kind": "lean_exe"},
-  "check-source-native-physical-scalar":
-  {"roots": ["CheckSourceNativePhysicalScalar"], "kind": "lean_exe"},
-  "check-source-native-heap":
-  {"roots": ["CheckSourceNativeHeap"], "kind": "lean_exe"},
-  "check-source-native-captured-scalar":
-  {"roots": ["CheckSourceNativeCapturedScalar"], "kind": "lean_exe"},
-  "check-source-native-allocating":
-  {"roots": ["CheckSourceNativeAllocating"], "kind": "lean_exe"},
-  "check-source-modular": {"roots": ["CheckSourceModular"], "kind": "lean_exe"},
-  "check-source-evidence":
-  {"roots": ["CheckSourceEvidence"], "kind": "lean_exe"},
-  "check-source-coverage":
-  {"roots": ["CheckSourceCoverage"], "kind": "lean_exe"},
-  "check-source-call-reuse":
-  {"roots": ["CheckSourceCallReuse"], "kind": "lean_exe"},
-  "check-source-borrow-runtime":
-  {"roots": ["CheckSourceBorrowRuntime"], "kind": "lean_exe"},
-  "check-source-borrow": {"roots": ["CheckSourceBorrow"], "kind": "lean_exe"},
-  "check-native-sharing": {"roots": ["CheckNativeSharing"], "kind": "lean_exe"},
-  "check-native-graph": {"roots": ["CheckNativeGraph"], "kind": "lean_exe"},
   "check-ixon-v3-catalog":
   {"roots": ["CheckIxonV3Catalog"], "kind": "lean_exe"},
   "check-ixon-v3": {"roots": ["CheckIxonV3"], "kind": "lean_exe"},
-  "check-ixir2": {"roots": ["CheckIxIR2"], "kind": "lean_exe"},
   "check-build-graph": {"roots": ["CheckBuildGraph"], "kind": "lean_exe"},
-  "check-assembly-scaling":
-  {"roots": ["CheckAssemblyScaling"], "kind": "lean_exe"},
   "check-aiur": {"roots": ["CheckAiur"], "kind": "lean_exe"},
-  "catalog-contact": {"roots": ["CatalogContact"], "kind": "lean_exe"},
-  "assembly-scaling": {"roots": ["AssemblyScaling"], "kind": "lean_exe"},
   "CompilatrixTests": {"roots": ["CompilatrixTests"], "kind": "lean_lib"},
   "Compilatrix": {"roots": ["Compilatrix"], "kind": "lean_lib"},
-  "Benchmark":
-  {"roots":
-   ["Benchmark.Assembly",
-    "Benchmark.NativeGraph",
-    "Benchmark.NativeSharing",
-    "Benchmark.ScalingJoinInput",
-    "Benchmark.ScalingJoins",
-    "Benchmark.ScalingSources",
-    "Benchmark.ScalingVerify",
-    "Benchmark.ScalingWorker",
-    "Benchmark.SourceEvidence"],
-   "kind": "lean_lib"},
   "AiurReference":
   {"roots": ["Ix.Aiur", "Ix.IndexMap", "Ix.Lib"], "kind": "lean_lib"}},
  "schema_version": 1,
  "modules":
  {"X86ObjectFixture":
   {"path": "X86ObjectFixture.lean",
-   "imports":
-   ["Compilatrix.X86.ELFValidate",
-    "Compilatrix.X86.EvalExamples",
-    "Compilatrix.X86.Select",
-    "Compilatrix.X86.ValidatedScalar"]},
-  "Tests": {"path": "Tests.lean", "imports": ["CompilatrixTests.Runtime"]},
-  "SourceUniqueReuse":
-  {"path": "SourceUniqueReuse.lean",
-   "imports": ["Compilatrix.UniqueReuse.Rejections"]},
-  "SourceSpace":
-  {"path": "SourceSpace.lean",
-   "imports": ["Compilatrix.CallReuse.SpaceObservations"]},
-  "SourceRecursion":
-  {"path": "SourceRecursion.lean",
-   "imports": ["Compilatrix.Recursion.Rejections"]},
-  "SourceNativeUpstream":
-  {"path": "SourceNativeUpstream.lean",
-   "imports": ["Compilatrix.Coverage.UpstreamNative"]},
-  "SourceNativeUnique":
-  {"path": "SourceNativeUnique.lean",
-   "imports": ["Compilatrix.UniqueReuse.NativeObservations"]},
-  "SourceNativeScalar":
-  {"path": "SourceNativeScalar.lean",
-   "imports":
-   ["Compilatrix.X86.ScalarSources",
-    "Compilatrix.X86.ScalarSourceObject",
-    "Compilatrix.Coverage.Snapshot",
-    "Compilatrix.Tools.Check"]},
-  "SourceNativeRuntime":
-  {"path": "SourceNativeRuntime.lean",
-   "imports": ["Compilatrix.UniqueReuse.RuntimeObservations"]},
-  "SourceNativePhysicalScalar":
-  {"path": "SourceNativePhysicalScalar.lean",
-   "imports":
-   ["Compilatrix.X86.PhysicalScalarSources",
-    "Compilatrix.X86.PhysicalScalarSourceObject",
-    "Compilatrix.X86.PhysicalScalarExamples",
-    "Compilatrix.X86.ScalarNat",
-    "Compilatrix.Coverage.Snapshot",
-    "Compilatrix.Tools.Check"]},
-  "SourceNativeHeap":
-  {"path": "SourceNativeHeap.lean",
-   "imports":
-   ["Compilatrix.X86.PhysicalHeapSources",
-    "Compilatrix.X86.PhysicalHeapRejections",
-    "Compilatrix.X86.PhysicalHeapSourceObject",
-    "Compilatrix.X86.HeapReject",
-    "Compilatrix.X86.HeapGraphTests",
-    "Compilatrix.Coverage.Snapshot",
-    "Compilatrix.IxIR2.WireJson",
-    "Compilatrix.Tools.Check"]},
-  "SourceNativeCapturedScalar":
-  {"path": "SourceNativeCapturedScalar.lean",
-   "imports":
-   ["Compilatrix.X86.PhysicalScalarSources",
-    "Compilatrix.X86.PhysicalScalarCapturedSourceObject",
-    "Compilatrix.X86.PhysicalScalarExamples",
-    "Compilatrix.X86.ScalarNat",
-    "Compilatrix.Coverage.Snapshot",
-    "Compilatrix.Tools.Check"]},
-  "SourceNativeAllocating":
-  {"path": "SourceNativeAllocating.lean",
-   "imports": ["Compilatrix.UniqueReuse.AllocatingObservations"]},
-  "SourceModular":
-  {"path": "SourceModular.lean", "imports": ["Compilatrix.Modular.Report"]},
-  "SourceEvidence":
-  {"path": "benchmarks/SourceEvidence.lean",
-   "imports": ["Benchmark.SourceEvidence"]},
-  "SourceCoverage":
-  {"path": "SourceCoverage.lean",
-   "imports":
-   ["Compilatrix.Coverage.Report", "Compilatrix.Coverage.UpstreamNative"]},
-  "SourceCallReuse":
-  {"path": "SourceCallReuse.lean",
-   "imports": ["Compilatrix.CallReuse.Rejections"]},
-  "SourceBorrowRuntime":
-  {"path": "SourceBorrowRuntime.lean",
-   "imports":
-   ["Compilatrix.Borrow.RuntimeReport",
-    "Compilatrix.IxIR2.Borrow.OpenExamples"]},
-  "SourceBorrow":
-  {"path": "SourceBorrow.lean", "imports": ["Compilatrix.Borrow.Report"]},
-  "NativeSharing":
-  {"path": "benchmarks/NativeSharing.lean",
-   "imports": ["Benchmark.NativeSharing"]},
-  "NativeGraph":
-  {"path": "benchmarks/NativeGraph.lean", "imports": ["Benchmark.NativeGraph"]},
-  "IxIR2Fixture":
-  {"path": "IxIR2Fixture.lean",
-   "imports":
-   ["Compilatrix.IxIR2.WireTests",
-    "Compilatrix.IxIR2.WireIO",
-    "Compilatrix.Tools.Check"]},
+   "imports": ["Compilatrix.X86.ELFValidate", "Compilatrix.X86.EvalExamples"]},
   "Ix.Lib":
   {"path": "vendor/aiur/Ix/Lib.lean",
    "imports": ["Std.Data.HashMap.Basic", "Std.Data.HashMap.Lemmas"]},
@@ -236,206 +60,28 @@
   "Ix.Aiur":
   {"path": "vendor/aiur/Ix/Aiur.lean",
    "imports": ["Ix.Aiur.Stages.Bytecode", "Ix.Aiur.Compiler.CallOrder"]},
-  "HeapSnapshotObject":
-  {"path": "HeapSnapshotObject.lean",
-   "imports":
-   ["Compilatrix.X86.PhysicalHeapExport",
-    "Compilatrix.IxIR2.WireIO",
-    "Compilatrix.Tools.Check"]},
-  "CompilatrixTests.Support.Lowering":
-  {"path": "CompilatrixTests/Support/Lowering.lean",
-   "imports": ["Compilatrix.IxIR1.Lower", "Compilatrix.IxIR0.Examples"]},
-  "CompilatrixTests.Support":
-  {"path": "CompilatrixTests/Support.lean",
-   "imports": ["Compilatrix.Ixon.Address"]},
-  "CompilatrixTests.Runtime":
-  {"path": "CompilatrixTests/Runtime.lean",
-   "imports":
-   ["CompilatrixTests.Addressing.Run",
-    "CompilatrixTests.Pipeline.Run",
-    "CompilatrixTests.HPT.Run",
-    "CompilatrixTests.Ixon.Run",
-    "CompilatrixTests.IxonV3.Run"]},
   "CompilatrixTests.Proofs":
   {"path": "CompilatrixTests/Proofs.lean",
    "imports":
-   ["Compilatrix",
-    "Compilatrix.Fuel",
-    "Compilatrix.X86.NatCallsSim",
-    "Compilatrix.X86.NatCallsExamples",
-    "Compilatrix.Ixon.Serialize",
+   ["Compilatrix.Ixon.Serialize",
     "Compilatrix.Ixon.Uses",
     "Compilatrix.Ixon.Address",
     "Compilatrix.Ixon.Univ",
     "Compilatrix.Ixon.Expr",
     "Compilatrix.Ixon.Const",
-    "Compilatrix.Ixon.Work",
-    "Compilatrix.Ixon.Sharing",
-    "Compilatrix.Ixon.DecodeCheck",
-    "Compilatrix.Ixon.UsageCheck",
-    "Compilatrix.Ixon.Eval",
-    "Compilatrix.Ixon.Sharing.Eval",
     "Compilatrix.Ixon.Hash",
     "Compilatrix.Ixon.Merkle",
-    "Compilatrix.Ixon.Catalog",
-    "Compilatrix.Ixon.CatalogIO",
-    "Compilatrix.DurableSync",
-    "Compilatrix.AddressEnv",
     "Compilatrix.IxIR.Encoding",
     "Compilatrix.IxIR.Decode",
-    "Compilatrix.IxIR0.Basic",
-    "Compilatrix.IxIR0.Serialize",
-    "Compilatrix.IxIR0.Decode",
-    "Compilatrix.IxIR0.MutualBlock",
-    "Compilatrix.IxIR0.Readdress",
-    "Compilatrix.IxIR0.Eval",
-    "Compilatrix.IxIR0.ReaddressSim",
-    "Compilatrix.IxIR0.ProjectionSafe",
-    "Compilatrix.IxIR0.ProjectionFree",
-    "Compilatrix.IxIR0.DynamicCost",
-    "Compilatrix.IxIR0.ReaddressProjectionSafe",
-    "Compilatrix.IxIR0.ReaddressOracle",
-    "Compilatrix.IxIR0.Examples",
-    "Compilatrix.IxIR0.ReaddressOracleExamples",
-    "Compilatrix.IxIR0.Mono",
-    "Compilatrix.Erase",
-    "Compilatrix.EraseAddressed",
-    "Compilatrix.EraseAddressedSim",
-    "Compilatrix.Sim",
-    "Compilatrix.EraseValidator",
-    "Compilatrix.SimInstance",
-    "Compilatrix.UsageSound",
-    "Compilatrix.IxIR1.Basic",
-    "Compilatrix.IxIR1.Serialize",
-    "Compilatrix.IxIR1.Decode",
-    "Compilatrix.IxIR1.Readdress",
-    "Compilatrix.IxIR1.MutualBlock",
-    "Compilatrix.IxIR1.ReaddressAll",
-    "Compilatrix.IxIR1.ReaddressSim",
-    "Compilatrix.IxIR1.ReaddressOwnership",
-    "Compilatrix.IxIR1.ReaddressAllSim",
-    "Compilatrix.IxIR1.Eval",
-    "Compilatrix.IxIR1.HPT",
-    "Compilatrix.IxIR1.HPTSound",
-    "Compilatrix.IxIR1.HPTProduce",
-    "Compilatrix.IxIR1.HPTCache",
-    "Compilatrix.IxIR1.HPTCacheIO",
-    "Compilatrix.IxIR1.HPTCacheDirIO",
-    "Compilatrix.IxIR1.HPTCasePrune",
-    "Compilatrix.IxIR1.HPTCasePruneProgram",
-    "Compilatrix.IxIR1.HPTPAPFuse",
-    "Compilatrix.IxIR1.Reachability",
-    "Compilatrix.IxIR1.HPTPAPFuseProgram",
-    "Compilatrix.IxIR1.Optimizer",
-    "Compilatrix.IxIR1.Mono",
-    "Compilatrix.IxIR1.EvalHistory",
-    "Compilatrix.IxIR1.Progress",
-    "Compilatrix.IxIR1.Reclamation",
-    "Compilatrix.IxIR1.Examples",
-    "Compilatrix.IxIR1.Lower",
-    "Compilatrix.IxIR1.LowerAddressed",
-    "Compilatrix.IxIR1.LowerFullyAddressed",
-    "Compilatrix.IxIR1.LowerFullyAddressedSim",
-    "Compilatrix.IxIR1.WellModedGen",
-    "Compilatrix.IxIR1.ThesisBench",
-    "Compilatrix.IxIR1.Sim",
-    "Compilatrix.IxIR1.EvalIso",
-    "Compilatrix.IxIR1.LowerSim",
-    "Compilatrix.IxIR1.LowerStateSim",
-    "Compilatrix.IxIR1.NoReuse",
-    "Compilatrix.IxIR1.NoReuseAddressed",
-    "Compilatrix.IxIR1.CostInstance",
-    "Compilatrix.IxIR1.CostModel",
-    "Compilatrix.IxIR1.CostTrace",
-    "Compilatrix.IxIR1.LowerProgress",
-    "Compilatrix.IxIR1.LowerAddressedSim",
-    "Compilatrix.IxIR1.LowerMutualAddressedSim",
-    "Compilatrix.IxIR1.LowerMutualAddressedProgress",
-    "Compilatrix.IxIR2.Basic",
-    "Compilatrix.IxIR2.Decode",
-    "Compilatrix.IxIR2.WireBorrow",
-    "Compilatrix.IxIR2.WireIO",
-    "Compilatrix.IxIR2.Validate",
-    "Compilatrix.IxIR2.ValidateExamples",
-    "Compilatrix.IxIR2.Liveness",
-    "Compilatrix.IxIR2.LivenessExamples",
-    "Compilatrix.IxIR2.Eval",
-    "Compilatrix.IxIR2.EvalFuel",
-    "Compilatrix.IxIR2.CreditFree",
-    "Compilatrix.IxIR2.Interpretation",
-    "Compilatrix.IxIR2.EvalCounter",
-    "Compilatrix.IxIR2.EvalExamples",
-    "Compilatrix.IxIR2.Lower",
-    "Compilatrix.IxIR2.LowerExamples",
-    "Compilatrix.IxIR2.LowerSim",
-    "Compilatrix.Pipeline",
-    "Compilatrix.Modular.Wire",
-    "Compilatrix.IxIR2.Pipeline",
-    "Compilatrix.IxIR2.PipelineSim",
-    "Compilatrix.IxIR2.PipelinePhysical",
-    "Compilatrix.IxIR2.Reuse",
-    "Compilatrix.IxIR2.ReuseSim",
-    "Compilatrix.IxIR2.ReuseLiveSim",
-    "Compilatrix.IxIR2.ReuseSimExamples",
-    "Compilatrix.IxIR2.ReuseExamples",
     "Compilatrix.X86.Basic",
     "Compilatrix.X86.Eval",
     "Compilatrix.X86.EvalExamples",
-    "Compilatrix.X86.ScalarApply",
-    "Compilatrix.X86.Select",
-    "Compilatrix.X86.PipelineSim",
-    "Compilatrix.X86.ValidatedScalar",
-    "Compilatrix.X86.ScalarSourceObject",
-    "Compilatrix.X86.ScalarSources",
-    "Compilatrix.X86.PhysicalScalarExport",
-    "Compilatrix.X86.PhysicalScalarSourceObject",
-    "Compilatrix.X86.PhysicalScalarCapturedSourceObject",
-    "Compilatrix.X86.PhysicalScalarSources",
-    "Compilatrix.X86.PhysicalScalarExamples",
-    "Compilatrix.X86.PhysicalHeapSourceObject",
-    "Compilatrix.X86.HeapReject",
-    "Compilatrix.X86.PhysicalHeapSources",
-    "Compilatrix.X86.PhysicalHeapRejections",
-    "Compilatrix.Coverage.StdContact",
-    "Compilatrix.X86.SelectExamples",
     "Compilatrix.X86.Encode",
     "Compilatrix.X86.EncodeExamples",
     "Compilatrix.X86.ByteExamples",
     "Compilatrix.X86.StreamExamples",
     "Compilatrix.X86.ELF",
     "Compilatrix.X86.ELFExamples",
-    "Compilatrix.PipelineSound",
-    "Compilatrix.IxIR0.Recursion",
-    "Compilatrix.IxIR0.RecursionSim",
-    "Compilatrix.Recursion.Pipeline",
-    "Compilatrix.Recursion.Sim",
-    "Compilatrix.Recursion.PhysicalSim",
-    "Compilatrix.Recursion.Resources",
-    "Compilatrix.Recursion.Allocation",
-    "Compilatrix.Recursion.Costs",
-    "Compilatrix.Recursion.Rejections",
-    "Compilatrix.CallReuse.Sim",
-    "Compilatrix.CallReuse.MapSim",
-    "Compilatrix.CallReuse.Rejections",
-    "Compilatrix.CallReuse.SpaceSim",
-    "Compilatrix.CallReuse.SpaceObservations",
-    "Compilatrix.UniqueReuse.PipelineSim",
-    "Compilatrix.UniqueReuse.Rejections",
-    "Compilatrix.UniqueReuse.NativeSim",
-    "Compilatrix.UniqueReuse.NativeObject",
-    "Compilatrix.UniqueReuse.RuntimeNativeSim",
-    "Compilatrix.UniqueReuse.RuntimeObjectSim",
-    "Compilatrix.UniqueReuse.AllocatingObjectSpace",
-    "Compilatrix.UniqueReuse.RuntimeObjectSpace",
-    "Compilatrix.X86.RuntimeReject",
-    "Compilatrix.IxIR2.CreditRefinement",
-    "Compilatrix.IxIR2.CreditExamples",
-    "Compilatrix.Borrow.Pipeline",
-    "Compilatrix.IxIR2.Borrow.Examples",
-    "Compilatrix.Borrow.RuntimeSim",
-    "Compilatrix.Borrow.RuntimeInput",
-    "Compilatrix.IxIR2.Borrow.OpenExamples",
-    "Compilatrix.Fence",
     "Compilatrix.Ixon.V3.Resource.StateProofs",
     "CompilatrixTests.Aiur.Proofs",
     "CompilatrixTests.Aiur.WireProofs",
@@ -444,31 +90,7 @@
     "CompilatrixTests.Aiur.CounterAnalysis.Proofs",
     "CompilatrixTests.Aiur.MemoryAIR.Proofs",
     "CompilatrixTests.Aiur.RankAIR.Proofs",
-    "CompilatrixTests.IxIR1.Lower",
-    "CompilatrixTests.Pipeline.Integration"]},
-  "CompilatrixTests.Pipeline.Run":
-  {"path": "CompilatrixTests/Pipeline/Run.lean",
-   "imports":
-   ["CompilatrixTests.Pipeline.Integration",
-    "CompilatrixTests.Pipeline.Fixtures",
-    "Compilatrix.X86.ValidatedScalar",
-    "Compilatrix.Recursion.Rejections",
-    "Compilatrix.CallReuse.Rejections",
-    "Compilatrix.UniqueReuse.Rejections",
-    "Compilatrix.IxIR2.ReuseExamples",
-    "Compilatrix.IxIR2.LivenessExamples"]},
-  "CompilatrixTests.Pipeline.Main":
-  {"path": "CompilatrixTests/Pipeline/Main.lean",
-   "imports": ["CompilatrixTests.Pipeline.Run"]},
-  "CompilatrixTests.Pipeline.Integration":
-  {"path": "CompilatrixTests/Pipeline/Integration.lean",
-   "imports": ["Compilatrix.Pipeline"]},
-  "CompilatrixTests.Pipeline.Fixtures":
-  {"path": "CompilatrixTests/Pipeline/Fixtures.lean",
-   "imports":
-   ["CompilatrixTests.Support",
-    "CompilatrixTests.Addressing.Fixtures",
-    "Compilatrix.IxIR2.Pipeline"]},
+    "CompilatrixTests.Fences"]},
   "CompilatrixTests.IxonV3.TypingFixtures":
   {"path": "CompilatrixTests/IxonV3/TypingFixtures.lean",
    "imports": ["Compilatrix.Ixon.V3.Validate"]},
@@ -516,57 +138,10 @@
   "CompilatrixTests.IxonV3.Catalog.Admission":
   {"path": "CompilatrixTests/IxonV3/Catalog/Admission.lean",
    "imports": ["CompilatrixTests.IxonV3.Catalog.Fixtures"]},
-  "CompilatrixTests.Ixon.Run":
-  {"path": "CompilatrixTests/Ixon/Run.lean",
-   "imports": ["CompilatrixTests.Ixon.Fixtures", "Compilatrix.Pipeline"]},
-  "CompilatrixTests.Ixon.Main":
-  {"path": "CompilatrixTests/Ixon/Main.lean",
-   "imports": ["CompilatrixTests.Ixon.Run"]},
-  "CompilatrixTests.Ixon.Fixtures":
-  {"path": "CompilatrixTests/Ixon/Fixtures.lean",
-   "imports":
-   ["CompilatrixTests.Support",
-    "Compilatrix.Ixon.Sharing",
-    "Compilatrix.Ixon.DecodeCheck",
-    "Compilatrix.Ixon.Merkle",
-    "Compilatrix.Ixon.CatalogIO",
-    "Compilatrix.Coverage.StdContact"]},
-  "CompilatrixTests.IxIR1.WellModedGen":
-  {"path": "CompilatrixTests/IxIR1/WellModedGen.lean",
-   "imports": ["CompilatrixTests.Support.Lowering"]},
-  "CompilatrixTests.IxIR1.ThesisBench":
-  {"path": "CompilatrixTests/IxIR1/ThesisBench.lean",
-   "imports": ["CompilatrixTests.Support.Lowering"]},
-  "CompilatrixTests.IxIR1.Lower":
-  {"path": "CompilatrixTests/IxIR1/Lower.lean",
-   "imports": ["CompilatrixTests.Support.Lowering"]},
-  "CompilatrixTests.HPT.Run":
-  {"path": "CompilatrixTests/HPT/Run.lean",
-   "imports": ["CompilatrixTests.HPT.Fixtures"]},
-  "CompilatrixTests.HPT.Main":
-  {"path": "CompilatrixTests/HPT/Main.lean",
-   "imports": ["CompilatrixTests.HPT.Run"]},
-  "CompilatrixTests.HPT.Fixtures":
-  {"path": "CompilatrixTests/HPT/Fixtures.lean",
-   "imports":
-   ["CompilatrixTests.Support",
-    "CompilatrixTests.Addressing.Fixtures",
-    "Compilatrix.IxIR1.HPTCacheDirIO",
-    "Compilatrix.IxIR1.HPTCacheIO",
-    "Compilatrix.IxIR1.HPTPAPFuseProgram",
-    "Compilatrix.IxIR1.HPTFetchForward",
-    "Compilatrix.IxIR1.HPTDestroy",
-    "Compilatrix.IxIR1.Reachability",
-    "Compilatrix.Pipeline"]},
   "CompilatrixTests.Fences.X86":
   {"path": "CompilatrixTests/Fences/X86.lean",
    "imports":
-   ["Compilatrix.X86.AllocatingCall",
-    "Compilatrix.X86.AllocatingExecution",
-    "Compilatrix.X86.AllocatingFirst",
-    "Compilatrix.X86.AllocatingMemory",
-    "Compilatrix.X86.ArenaSpace",
-    "Compilatrix.X86.Basic",
+   ["Compilatrix.X86.Basic",
     "Compilatrix.X86.ByteBranch",
     "Compilatrix.X86.ByteCall",
     "Compilatrix.X86.ByteControl",
@@ -579,55 +154,9 @@
     "Compilatrix.X86.EncodePatch",
     "Compilatrix.X86.Eval",
     "Compilatrix.X86.ExactNat",
-    "Compilatrix.X86.HeapCalls",
-    "Compilatrix.X86.HeapCopies",
-    "Compilatrix.X86.HeapGraph",
-    "Compilatrix.X86.HeapObject",
-    "Compilatrix.X86.HeapReject",
-    "Compilatrix.X86.HeapTarget",
     "Compilatrix.X86.Memory",
-    "Compilatrix.X86.NatCallsCapture",
-    "Compilatrix.X86.NatCallsCheck",
-    "Compilatrix.X86.NatCallsSim",
     "Compilatrix.X86.ObjectExecution",
-    "Compilatrix.X86.PhysicalHeapCallSimulation",
-    "Compilatrix.X86.PhysicalHeapFunctions",
-    "Compilatrix.X86.PhysicalHeapGraphSelect",
-    "Compilatrix.X86.PhysicalHeapObject",
-    "Compilatrix.X86.PhysicalHeapRoot",
-    "Compilatrix.X86.PhysicalHeapSourceObject",
-    "Compilatrix.X86.PhysicalScalarCapturedExport",
-    "Compilatrix.X86.PhysicalScalarCapturedHeap",
-    "Compilatrix.X86.PhysicalScalarCapturedInit",
-    "Compilatrix.X86.PhysicalScalarCapturedSourceApply",
-    "Compilatrix.X86.PhysicalScalarCapturedSourceObject",
-    "Compilatrix.X86.PhysicalScalarContracts",
-    "Compilatrix.X86.PhysicalScalarControl",
-    "Compilatrix.X86.PhysicalScalarExport",
-    "Compilatrix.X86.PhysicalScalarObject",
-    "Compilatrix.X86.PhysicalScalarSim",
-    "Compilatrix.X86.PhysicalScalarSourceApply",
-    "Compilatrix.X86.PhysicalScalarSourceHeap",
-    "Compilatrix.X86.PhysicalScalarSourceObject",
-    "Compilatrix.X86.PhysicalScalarValues",
-    "Compilatrix.X86.PipelineSim",
-    "Compilatrix.X86.RuntimeExecution",
-    "Compilatrix.X86.RuntimeInput",
-    "Compilatrix.X86.RuntimeReject",
-    "Compilatrix.X86.RuntimeScan",
-    "Compilatrix.X86.RuntimeTarget",
     "Compilatrix.X86.SafeStepsObject",
-    "Compilatrix.X86.ScalarApply",
-    "Compilatrix.X86.ScalarBind",
-    "Compilatrix.X86.ScalarCapacity",
-    "Compilatrix.X86.ScalarObject",
-    "Compilatrix.X86.ScalarSimulation",
-    "Compilatrix.X86.ScalarSourceApply",
-    "Compilatrix.X86.ScalarSourceObject",
-    "Compilatrix.X86.ScalarSourceSelect",
-    "Compilatrix.X86.ScalarSourceSim",
-    "Compilatrix.X86.ScalarTotal",
-    "Compilatrix.X86.Select",
     "Compilatrix.X86.StreamCalls",
     "Compilatrix.X86.StreamControl",
     "Compilatrix.X86.StreamExamples",
@@ -637,62 +166,7 @@
     "Compilatrix.X86.StreamPermissions",
     "Compilatrix.X86.StreamRun",
     "Compilatrix.X86.StreamSpec",
-    "Compilatrix.X86.StreamTrace",
-    "Compilatrix.X86.UniqueCounterFold",
-    "Compilatrix.X86.UniqueResult",
-    "Compilatrix.X86.UniqueSafeControl",
-    "Compilatrix.X86.UniqueSafeLoop"]},
-  "CompilatrixTests.Fences.UniqueReuse":
-  {"path": "CompilatrixTests/Fences/UniqueReuse.lean",
-   "imports":
-   ["Compilatrix.UniqueReuse.AllocatingNative",
-    "Compilatrix.UniqueReuse.AllocatingObjectSim",
-    "Compilatrix.UniqueReuse.AllocatingObjectSpace",
-    "Compilatrix.UniqueReuse.AllocatingSourceSim",
-    "Compilatrix.UniqueReuse.Heap",
-    "Compilatrix.UniqueReuse.LowerSim",
-    "Compilatrix.UniqueReuse.NativeSim",
-    "Compilatrix.UniqueReuse.PipelineSim",
-    "Compilatrix.UniqueReuse.Reclamation",
-    "Compilatrix.UniqueReuse.RuntimeNative",
-    "Compilatrix.UniqueReuse.RuntimeNativeSim",
-    "Compilatrix.UniqueReuse.RuntimeObjectSim",
-    "Compilatrix.UniqueReuse.RuntimeObjectSpace",
-    "Compilatrix.UniqueReuse.RuntimeSourceSim",
-    "Compilatrix.UniqueReuse.RuntimeTarget",
-    "Compilatrix.UniqueReuse.SourceSim",
-    "Compilatrix.UniqueReuse.TargetHeap",
-    "Compilatrix.UniqueReuse.TargetLoop",
-    "Compilatrix.UniqueReuse.TargetMain",
-    "Compilatrix.UniqueReuse.TargetResources",
-    "Compilatrix.UniqueReuse.TargetSim"]},
-  "CompilatrixTests.Fences.Recursion":
-  {"path": "CompilatrixTests/Fences/Recursion.lean",
-   "imports":
-   ["Compilatrix.Recursion.Allocation",
-    "Compilatrix.Recursion.Costs",
-    "Compilatrix.Recursion.PhysicalSim",
-    "Compilatrix.Recursion.Resources",
-    "Compilatrix.Recursion.Sim",
-    "Compilatrix.Recursion.Trace"]},
-  "CompilatrixTests.Fences.Modular":
-  {"path": "CompilatrixTests/Fences/Modular.lean",
-   "imports":
-   ["Compilatrix.Modular.Assemble",
-    "Compilatrix.Modular.Check",
-    "Compilatrix.Modular.SourceCheck",
-    "Compilatrix.Modular.Transport"]},
-  "CompilatrixTests.Fences.Lowering":
-  {"path": "CompilatrixTests/Fences/Lowering.lean",
-   "imports":
-   ["Compilatrix.IxIR1.Lower",
-    "Compilatrix.IxIR1.LowerAddressedSim",
-    "Compilatrix.IxIR1.LowerFullyAddressedSim",
-    "Compilatrix.IxIR1.LowerMutualAddressedProgress",
-    "Compilatrix.IxIR1.LowerMutualAddressedSim",
-    "Compilatrix.IxIR1.LowerProgress",
-    "Compilatrix.IxIR1.LowerSim",
-    "Compilatrix.IxIR1.LowerStateSim"]},
+    "Compilatrix.X86.StreamTrace"]},
   "CompilatrixTests.Fences.IxonV3Typing":
   {"path": "CompilatrixTests/Fences/IxonV3Typing.lean",
    "imports": ["Compilatrix.Ixon.V3.Validate"]},
@@ -703,158 +177,6 @@
   {"path": "CompilatrixTests/Fences/IxonV3.lean",
    "imports":
    ["Compilatrix.Ixon.V3.Resource.StateProofs", "Compilatrix.Ixon.V3.Source"]},
-  "CompilatrixTests.Fences.Ixon":
-  {"path": "CompilatrixTests/Fences/Ixon.lean",
-   "imports":
-   ["Compilatrix.Ixon.Address",
-    "Compilatrix.Ixon.Const",
-    "Compilatrix.Ixon.Eval",
-    "Compilatrix.Ixon.Expr",
-    "Compilatrix.Ixon.Sharing.Indexed",
-    "Compilatrix.Ixon.Univ",
-    "Compilatrix.Ixon.UsageCheck"]},
-  "CompilatrixTests.Fences.IxIR2":
-  {"path": "CompilatrixTests/Fences/IxIR2.lean",
-   "imports":
-   ["Compilatrix.IxIR2.AllocationEvents",
-    "Compilatrix.IxIR2.Borrow.OpenHeap",
-    "Compilatrix.IxIR2.Borrow.OpenResources",
-    "Compilatrix.IxIR2.Borrow.Replay",
-    "Compilatrix.IxIR2.Borrow.Rewrite",
-    "Compilatrix.IxIR2.CallEval",
-    "Compilatrix.IxIR2.CallEvalFuel",
-    "Compilatrix.IxIR2.CallResources",
-    "Compilatrix.IxIR2.CallReuse",
-    "Compilatrix.IxIR2.CallReuseMain",
-    "Compilatrix.IxIR2.CallReuseSimulation",
-    "Compilatrix.IxIR2.CostObservations",
-    "Compilatrix.IxIR2.CostSteps",
-    "Compilatrix.IxIR2.CreditFree",
-    "Compilatrix.IxIR2.CreditReclamation",
-    "Compilatrix.IxIR2.CreditRefinement",
-    "Compilatrix.IxIR2.CreditResources",
-    "Compilatrix.IxIR2.CreditSimulation",
-    "Compilatrix.IxIR2.CreditSteps",
-    "Compilatrix.IxIR2.Decode",
-    "Compilatrix.IxIR2.Eval",
-    "Compilatrix.IxIR2.EvalCounter",
-    "Compilatrix.IxIR2.EvalFuel",
-    "Compilatrix.IxIR2.Interpretation",
-    "Compilatrix.IxIR2.Liveness",
-    "Compilatrix.IxIR2.LivenessExamples",
-    "Compilatrix.IxIR2.Lower",
-    "Compilatrix.IxIR2.LowerSim",
-    "Compilatrix.IxIR2.Pipeline",
-    "Compilatrix.IxIR2.PipelineAllocation",
-    "Compilatrix.IxIR2.PipelineCallReuse",
-    "Compilatrix.IxIR2.PipelineCosts",
-    "Compilatrix.IxIR2.PipelineInvoke",
-    "Compilatrix.IxIR2.PipelinePhysical",
-    "Compilatrix.IxIR2.PipelineResources",
-    "Compilatrix.IxIR2.PipelineSim",
-    "Compilatrix.IxIR2.ReservationSteps",
-    "Compilatrix.IxIR2.Resources",
-    "Compilatrix.IxIR2.Reuse",
-    "Compilatrix.IxIR2.ReuseAllocation",
-    "Compilatrix.IxIR2.ReuseCost",
-    "Compilatrix.IxIR2.ReuseExamples",
-    "Compilatrix.IxIR2.ReuseLiveSim",
-    "Compilatrix.IxIR2.ReuseResources",
-    "Compilatrix.IxIR2.ReuseSim",
-    "Compilatrix.IxIR2.ReuseSimExamples",
-    "Compilatrix.IxIR2.Serialize",
-    "Compilatrix.IxIR2.SourcePipelineSim",
-    "Compilatrix.IxIR2.SpaceExecution",
-    "Compilatrix.IxIR2.SpaceHeap",
-    "Compilatrix.IxIR2.SpaceLayout",
-    "Compilatrix.IxIR2.WireBorrow",
-    "Compilatrix.IxIR2.WireCheck",
-    "Compilatrix.IxIR2.WirePipeline"]},
-  "CompilatrixTests.Fences.IxIR1":
-  {"path": "CompilatrixTests/Fences/IxIR1.lean",
-   "imports":
-   ["Compilatrix.IxIR1.CostInstance",
-    "Compilatrix.IxIR1.CostModel",
-    "Compilatrix.IxIR1.CostTrace",
-    "Compilatrix.IxIR1.Decode",
-    "Compilatrix.IxIR1.Eval",
-    "Compilatrix.IxIR1.EvalHistory",
-    "Compilatrix.IxIR1.EvalIso",
-    "Compilatrix.IxIR1.EvalRewrite",
-    "Compilatrix.IxIR1.MutualBlock",
-    "Compilatrix.IxIR1.NoReuse",
-    "Compilatrix.IxIR1.NoReuseAddressed",
-    "Compilatrix.IxIR1.OptimizerReclamation",
-    "Compilatrix.IxIR1.RcPotential",
-    "Compilatrix.IxIR1.Reachability",
-    "Compilatrix.IxIR1.ReaddressAll",
-    "Compilatrix.IxIR1.ReaddressAllSim",
-    "Compilatrix.IxIR1.ReaddressIndex",
-    "Compilatrix.IxIR1.ReaddressOwnership",
-    "Compilatrix.IxIR1.ReaddressSim",
-    "Compilatrix.IxIR1.Reclamation",
-    "Compilatrix.IxIR1.Sim"]},
-  "CompilatrixTests.Fences.IxIR0":
-  {"path": "CompilatrixTests/Fences/IxIR0.lean",
-   "imports":
-   ["Compilatrix.IxIR0.Decode",
-    "Compilatrix.IxIR0.DynamicCost",
-    "Compilatrix.IxIR0.MapRecoverySim",
-    "Compilatrix.IxIR0.MutualBlock",
-    "Compilatrix.IxIR0.NatArithmetic",
-    "Compilatrix.IxIR0.NatRecursors",
-    "Compilatrix.IxIR0.ProjectionFree",
-    "Compilatrix.IxIR0.Readdress",
-    "Compilatrix.IxIR0.ReaddressOracle",
-    "Compilatrix.IxIR0.ReaddressOracleExamples",
-    "Compilatrix.IxIR0.ReaddressProjectionSafe",
-    "Compilatrix.IxIR0.ReaddressSim",
-    "Compilatrix.IxIR0.RecursionSim",
-    "Compilatrix.IxIR0.RecursorModes",
-    "Compilatrix.IxIR0.UniqueReverseSim"]},
-  "CompilatrixTests.Fences.HPT":
-  {"path": "CompilatrixTests/Fences/HPT.lean",
-   "imports":
-   ["Compilatrix.IxIR1.HPT",
-    "Compilatrix.IxIR1.HPTCache",
-    "Compilatrix.IxIR1.HPTCasePrune",
-    "Compilatrix.IxIR1.HPTCasePruneProgram",
-    "Compilatrix.IxIR1.HPTDestroy",
-    "Compilatrix.IxIR1.HPTFetchForward",
-    "Compilatrix.IxIR1.HPTPAPFuse",
-    "Compilatrix.IxIR1.HPTPAPFuseProgram",
-    "Compilatrix.IxIR1.HPTProduce",
-    "Compilatrix.IxIR1.HPTSound"]},
-  "CompilatrixTests.Fences.Erasure":
-  {"path": "CompilatrixTests/Fences/Erasure.lean",
-   "imports":
-   ["Compilatrix.AddressEnv",
-    "Compilatrix.EraseAddressed",
-    "Compilatrix.EraseAddressedSim",
-    "Compilatrix.IxIR.Bounded",
-    "Compilatrix.LoweredCompilationSim",
-    "Compilatrix.Pipeline",
-    "Compilatrix.PipelineApply",
-    "Compilatrix.PipelineErasure",
-    "Compilatrix.PipelineSound",
-    "Compilatrix.Sim",
-    "Compilatrix.SimApply",
-    "Compilatrix.SimInstance",
-    "Compilatrix.UsageSound"]},
-  "CompilatrixTests.Fences.CallReuse":
-  {"path": "CompilatrixTests/Fences/CallReuse.lean",
-   "imports":
-   ["Compilatrix.CallReuse.MapSim",
-    "Compilatrix.CallReuse.Sim",
-    "Compilatrix.CallReuse.SpaceSim"]},
-  "CompilatrixTests.Fences.Borrow":
-  {"path": "CompilatrixTests/Fences/Borrow.lean",
-   "imports":
-   ["Compilatrix.Borrow.Pipeline",
-    "Compilatrix.Borrow.Runtime",
-    "Compilatrix.Borrow.RuntimeInput",
-    "Compilatrix.Borrow.RuntimeSim",
-    "Compilatrix.Borrow.RuntimeSource"]},
   "CompilatrixTests.Fences.AiurWire":
   {"path": "CompilatrixTests/Fences/AiurWire.lean",
    "imports": ["CompilatrixTests.Aiur.WireProofs"]},
@@ -887,28 +209,16 @@
   "CompilatrixTests.Fences":
   {"path": "CompilatrixTests/Fences.lean",
    "imports":
-   ["CompilatrixTests.Fences.Borrow",
-    "CompilatrixTests.Fences.Aiur",
+   ["CompilatrixTests.Fences.Aiur",
     "CompilatrixTests.Fences.AiurWire",
     "CompilatrixTests.Fences.AiurExecution",
     "CompilatrixTests.Fences.AiurStatic",
     "CompilatrixTests.Fences.AiurCounterAnalysis",
     "CompilatrixTests.Fences.AiurMemoryAIR",
     "CompilatrixTests.Fences.AiurRankAIR",
-    "CompilatrixTests.Fences.CallReuse",
-    "CompilatrixTests.Fences.Erasure",
-    "CompilatrixTests.Fences.HPT",
-    "CompilatrixTests.Fences.IxIR0",
-    "CompilatrixTests.Fences.IxIR1",
-    "CompilatrixTests.Fences.IxIR2",
-    "CompilatrixTests.Fences.Ixon",
     "CompilatrixTests.Fences.IxonV3",
     "CompilatrixTests.Fences.IxonV3Typing",
     "CompilatrixTests.Fences.IxonV3Catalog",
-    "CompilatrixTests.Fences.Lowering",
-    "CompilatrixTests.Fences.Modular",
-    "CompilatrixTests.Fences.Recursion",
-    "CompilatrixTests.Fences.UniqueReuse",
     "CompilatrixTests.Fences.X86"]},
   "CompilatrixTests.Aiur.WireRun":
   {"path": "CompilatrixTests/Aiur/WireRun.lean",
@@ -1035,31 +345,8 @@
   "CompilatrixTests.Aiur.CounterAnalysis.Fixtures":
   {"path": "CompilatrixTests/Aiur/CounterAnalysis/Fixtures.lean",
    "imports": ["CompilatrixTests.Aiur.Static.Fixtures"]},
-  "CompilatrixTests.Addressing.Run":
-  {"path": "CompilatrixTests/Addressing/Run.lean",
-   "imports":
-   ["CompilatrixTests.Addressing.Fixtures",
-    "Compilatrix.IxIR1.ReaddressIndexTests",
-    "Compilatrix.Modular.PreparationTests",
-    "Compilatrix.IxIR1.WellModedGen"]},
-  "CompilatrixTests.Addressing.Main":
-  {"path": "CompilatrixTests/Addressing/Main.lean",
-   "imports": ["CompilatrixTests.Addressing.Run"]},
-  "CompilatrixTests.Addressing.Fixtures":
-  {"path": "CompilatrixTests/Addressing/Fixtures.lean",
-   "imports":
-   ["CompilatrixTests.Support.Lowering",
-    "CompilatrixTests.Support",
-    "Compilatrix.IxIR0.Examples",
-    "Compilatrix.IxIR0.ReaddressOracleExamples",
-    "Compilatrix.IxIR1.LowerFullyAddressed",
-    "Compilatrix.IxIR1.NoReuseAddressed",
-    "Compilatrix.EraseAddressedSim",
-    "Compilatrix.IxIR2.Pipeline",
-    "Compilatrix.IxIR2.Eval"]},
   "CompilatrixTests":
-  {"path": "CompilatrixTests.lean",
-   "imports": ["CompilatrixTests.Runtime", "CompilatrixTests.Proofs"]},
+  {"path": "CompilatrixTests.lean", "imports": ["CompilatrixTests.Proofs"]},
   "Compilatrix.X86.WordRegionSafeTrace":
   {"path": "Compilatrix/X86/WordRegionSafeTrace.lean",
    "imports":
@@ -1080,57 +367,6 @@
   "Compilatrix.X86.WordRegion":
   {"path": "Compilatrix/X86/WordRegion.lean",
    "imports": ["Compilatrix.X86.Execution"]},
-  "Compilatrix.X86.ValidatedScalar":
-  {"path": "Compilatrix/X86/ValidatedScalar.lean",
-   "imports":
-   ["Compilatrix.IxIR2.Pipeline",
-    "Compilatrix.Ixon.Sharing",
-    "Compilatrix.X86.Select",
-    "Compilatrix.X86.ELF"]},
-  "Compilatrix.X86.UniqueTarget":
-  {"path": "Compilatrix/X86/UniqueTarget.lean",
-   "imports": ["Compilatrix.X86.UniqueABI"]},
-  "Compilatrix.X86.UniqueSafeLoop":
-  {"path": "Compilatrix/X86/UniqueSafeLoop.lean",
-   "imports":
-   ["Compilatrix.X86.UniqueLoop", "Compilatrix.X86.UniqueSafeControl"]},
-  "Compilatrix.X86.UniqueSafeControl":
-  {"path": "Compilatrix/X86/UniqueSafeControl.lean",
-   "imports":
-   ["Compilatrix.X86.RuntimeInspect", "Compilatrix.X86.SafeControl"]},
-  "Compilatrix.X86.UniqueResult":
-  {"path": "Compilatrix/X86/UniqueResult.lean",
-   "imports": ["Compilatrix.X86.UniqueRelease"]},
-  "Compilatrix.X86.UniqueRelease":
-  {"path": "Compilatrix/X86/UniqueRelease.lean",
-   "imports": ["Compilatrix.X86.UniqueMain"]},
-  "Compilatrix.X86.UniqueMain":
-  {"path": "Compilatrix/X86/UniqueMain.lean",
-   "imports": ["Compilatrix.X86.UniqueLoop"]},
-  "Compilatrix.X86.UniqueMacros":
-  {"path": "Compilatrix/X86/UniqueMacros.lean",
-   "imports": ["Compilatrix.X86.UniqueExecution"]},
-  "Compilatrix.X86.UniqueLoop":
-  {"path": "Compilatrix/X86/UniqueLoop.lean",
-   "imports": ["Compilatrix.X86.UniqueControl"]},
-  "Compilatrix.X86.UniqueInvariant":
-  {"path": "Compilatrix/X86/UniqueInvariant.lean",
-   "imports": ["Compilatrix.X86.UniqueHeap"]},
-  "Compilatrix.X86.UniqueHeap":
-  {"path": "Compilatrix/X86/UniqueHeap.lean",
-   "imports": ["Compilatrix.X86.UniqueMacros"]},
-  "Compilatrix.X86.UniqueExecution":
-  {"path": "Compilatrix/X86/UniqueExecution.lean",
-   "imports": ["Compilatrix.X86.Execution", "Compilatrix.X86.UniqueTarget"]},
-  "Compilatrix.X86.UniqueCounterFold":
-  {"path": "Compilatrix/X86/UniqueCounterFold.lean",
-   "imports": ["Compilatrix.X86.UniqueHeap"]},
-  "Compilatrix.X86.UniqueControl":
-  {"path": "Compilatrix/X86/UniqueControl.lean",
-   "imports": ["Compilatrix.X86.UniqueInvariant"]},
-  "Compilatrix.X86.UniqueABI":
-  {"path": "Compilatrix/X86/UniqueABI.lean",
-   "imports": ["Compilatrix.X86.Memory"]},
   "Compilatrix.X86.StreamValidate":
   {"path": "Compilatrix/X86/StreamValidate.lean",
    "imports": ["Compilatrix.X86.StreamIndexed"]},
@@ -1182,110 +418,6 @@
   "Compilatrix.X86.StreamCalls":
   {"path": "Compilatrix/X86/StreamCalls.lean",
    "imports": ["Compilatrix.X86.StreamEffects"]},
-  "Compilatrix.X86.SelectExamples":
-  {"path": "Compilatrix/X86/SelectExamples.lean",
-   "imports": ["Compilatrix.X86.Select", "Compilatrix.X86.Encode"]},
-  "Compilatrix.X86.Select":
-  {"path": "Compilatrix/X86/Select.lean",
-   "imports":
-   ["Compilatrix.IxIR2.Validate",
-    "Compilatrix.IxIR2.Eval",
-    "Compilatrix.X86.Eval",
-    "Compilatrix.X86.ScalarApply",
-    "Compilatrix.IxIR2.EvalFuel"]},
-  "Compilatrix.X86.ScalarTotal":
-  {"path": "Compilatrix/X86/ScalarTotal.lean",
-   "imports": ["Compilatrix.X86.ScalarSimulation"]},
-  "Compilatrix.X86.ScalarTarget":
-  {"path": "Compilatrix/X86/ScalarTarget.lean",
-   "imports": ["Compilatrix.X86.Scalar", "Compilatrix.X86.FrameExecution"]},
-  "Compilatrix.X86.ScalarStack":
-  {"path": "Compilatrix/X86/ScalarStack.lean",
-   "imports":
-   ["Compilatrix.X86.ScalarTarget",
-    "Compilatrix.X86.WordRegionExecution",
-    "Compilatrix.X86.FrameCalls"]},
-  "Compilatrix.X86.ScalarSources":
-  {"path": "Compilatrix/X86/ScalarSources.lean",
-   "imports":
-   ["Compilatrix.X86.ScalarSourceSelect", "Compilatrix.Coverage.Sources"]},
-  "Compilatrix.X86.ScalarSourceSyntax":
-  {"path": "Compilatrix/X86/ScalarSourceSyntax.lean",
-   "imports": ["Compilatrix.X86.ScalarNat", "Compilatrix.IxIR0.NatRecursors"]},
-  "Compilatrix.X86.ScalarSourceSim":
-  {"path": "Compilatrix/X86/ScalarSourceSim.lean",
-   "imports": ["Compilatrix.X86.ScalarSourceSyntax"]},
-  "Compilatrix.X86.ScalarSourceSelect":
-  {"path": "Compilatrix/X86/ScalarSourceSelect.lean",
-   "imports": ["Compilatrix.X86.ScalarSourceSim"]},
-  "Compilatrix.X86.ScalarSourceObject":
-  {"path": "Compilatrix/X86/ScalarSourceObject.lean",
-   "imports":
-   ["Compilatrix.X86.ScalarSourceApply", "Compilatrix.IxIR1.Optimizer"]},
-  "Compilatrix.X86.ScalarSourceApply":
-  {"path": "Compilatrix/X86/ScalarSourceApply.lean",
-   "imports":
-   ["Compilatrix.X86.ScalarSourceSelect",
-    "Compilatrix.Pipeline",
-    "Compilatrix.SimApply"]},
-  "Compilatrix.X86.ScalarSimulation":
-  {"path": "Compilatrix/X86/ScalarSimulation.lean",
-   "imports": ["Compilatrix.X86.ScalarCalls"]},
-  "Compilatrix.X86.ScalarSafety":
-  {"path": "Compilatrix/X86/ScalarSafety.lean",
-   "imports":
-   ["Compilatrix.X86.ScalarFrames", "Compilatrix.X86.WordRegionSafeTrace"]},
-  "Compilatrix.X86.ScalarSafeFrames":
-  {"path": "Compilatrix/X86/ScalarSafeFrames.lean",
-   "imports":
-   ["Compilatrix.X86.ScalarSafety", "Compilatrix.X86.WordRegionSafeMacros"]},
-  "Compilatrix.X86.ScalarPrimitives":
-  {"path": "Compilatrix/X86/ScalarPrimitives.lean",
-   "imports":
-   ["Compilatrix.X86.ScalarContracts",
-    "Compilatrix.X86.WordRegionSafeControl"]},
-  "Compilatrix.X86.ScalarObject":
-  {"path": "Compilatrix/X86/ScalarObject.lean",
-   "imports":
-   ["Compilatrix.X86.ScalarCapacity", "Compilatrix.X86.SafeStepsObject"]},
-  "Compilatrix.X86.ScalarNat":
-  {"path": "Compilatrix/X86/ScalarNat.lean",
-   "imports": ["Compilatrix.X86.ScalarObject"]},
-  "Compilatrix.X86.ScalarInstructions":
-  {"path": "Compilatrix/X86/ScalarInstructions.lean",
-   "imports":
-   ["Compilatrix.X86.ScalarSafeFrames", "Compilatrix.X86.SafeControl"]},
-  "Compilatrix.X86.ScalarFunctions":
-  {"path": "Compilatrix/X86/ScalarFunctions.lean",
-   "imports": ["Compilatrix.X86.ScalarComposition"]},
-  "Compilatrix.X86.ScalarFrames":
-  {"path": "Compilatrix/X86/ScalarFrames.lean",
-   "imports": ["Compilatrix.X86.ScalarStack"]},
-  "Compilatrix.X86.ScalarContracts":
-  {"path": "Compilatrix/X86/ScalarContracts.lean",
-   "imports": ["Compilatrix.X86.ScalarInstructions"]},
-  "Compilatrix.X86.ScalarComposition":
-  {"path": "Compilatrix/X86/ScalarComposition.lean",
-   "imports": ["Compilatrix.X86.ScalarPrimitives"]},
-  "Compilatrix.X86.ScalarCapacity":
-  {"path": "Compilatrix/X86/ScalarCapacity.lean",
-   "imports": ["Compilatrix.X86.ScalarTotal"]},
-  "Compilatrix.X86.ScalarCalls":
-  {"path": "Compilatrix/X86/ScalarCalls.lean",
-   "imports":
-   ["Compilatrix.X86.ScalarArguments", "Compilatrix.X86.WordRegionSafeCalls"]},
-  "Compilatrix.X86.ScalarBind":
-  {"path": "Compilatrix/X86/ScalarBind.lean",
-   "imports": ["Compilatrix.X86.ScalarObject"]},
-  "Compilatrix.X86.ScalarArguments":
-  {"path": "Compilatrix/X86/ScalarArguments.lean",
-   "imports": ["Compilatrix.X86.ScalarFunctions"]},
-  "Compilatrix.X86.ScalarApply":
-  {"path": "Compilatrix/X86/ScalarApply.lean",
-   "imports": ["Compilatrix.IxIR2.Eval"]},
-  "Compilatrix.X86.Scalar":
-  {"path": "Compilatrix/X86/Scalar.lean",
-   "imports": ["Compilatrix.X86.ExactNat"]},
   "Compilatrix.X86.SafeStepsObject":
   {"path": "Compilatrix/X86/SafeStepsObject.lean",
    "imports": ["Compilatrix.X86.SafeSteps", "Compilatrix.X86.ObjectExecution"]},
@@ -1295,372 +427,11 @@
   "Compilatrix.X86.SafeControl":
   {"path": "Compilatrix/X86/SafeControl.lean",
    "imports": ["Compilatrix.X86.SafeSteps"]},
-  "Compilatrix.X86.RuntimeTarget":
-  {"path": "Compilatrix/X86/RuntimeTarget.lean",
-   "imports":
-   ["Compilatrix.X86.UniqueControl", "Compilatrix.X86.UniqueCounterFold"]},
-  "Compilatrix.X86.RuntimeScan":
-  {"path": "Compilatrix/X86/RuntimeScan.lean",
-   "imports": ["Compilatrix.X86.RuntimeHeader"]},
-  "Compilatrix.X86.RuntimeReject":
-  {"path": "Compilatrix/X86/RuntimeReject.lean",
-   "imports": ["Compilatrix.X86.RuntimeInput"]},
-  "Compilatrix.X86.RuntimeInspect":
-  {"path": "Compilatrix/X86/RuntimeInspect.lean",
-   "imports": ["Compilatrix.X86.RuntimeTarget"]},
-  "Compilatrix.X86.RuntimeInput":
-  {"path": "Compilatrix/X86/RuntimeInput.lean",
-   "imports": ["Compilatrix.X86.RuntimeExecution"]},
-  "Compilatrix.X86.RuntimeHeader":
-  {"path": "Compilatrix/X86/RuntimeHeader.lean",
-   "imports": ["Compilatrix.X86.RuntimeGuards"]},
-  "Compilatrix.X86.RuntimeGuards":
-  {"path": "Compilatrix/X86/RuntimeGuards.lean",
-   "imports":
-   ["Compilatrix.X86.UniqueSafeControl", "Compilatrix.X86.UniqueMain"]},
-  "Compilatrix.X86.RuntimeExecution":
-  {"path": "Compilatrix/X86/RuntimeExecution.lean",
-   "imports": ["Compilatrix.X86.RuntimeScan", "Compilatrix.X86.UniqueResult"]},
-  "Compilatrix.X86.PipelineSim":
-  {"path": "Compilatrix/X86/PipelineSim.lean",
-   "imports": ["Compilatrix.IxIR2.PipelinePhysical", "Compilatrix.X86.Select"]},
-  "Compilatrix.X86.PhysicalScalarValues":
-  {"path": "Compilatrix/X86/PhysicalScalarValues.lean",
-   "imports": ["Compilatrix.X86.PhysicalScalar"]},
-  "Compilatrix.X86.PhysicalScalarSources":
-  {"path": "Compilatrix/X86/PhysicalScalarSources.lean",
-   "imports": ["Compilatrix.Coverage.Sources"]},
-  "Compilatrix.X86.PhysicalScalarSourceObject":
-  {"path": "Compilatrix/X86/PhysicalScalarSourceObject.lean",
-   "imports": ["Compilatrix.X86.PhysicalScalarSourceApply"]},
-  "Compilatrix.X86.PhysicalScalarSourceHeap":
-  {"path": "Compilatrix/X86/PhysicalScalarSourceHeap.lean",
-   "imports":
-   ["Compilatrix.X86.PhysicalScalarExport",
-    "Compilatrix.PipelineApply",
-    "Compilatrix.IxIR2.PipelineInvoke"]},
-  "Compilatrix.X86.PhysicalScalarSourceApply":
-  {"path": "Compilatrix/X86/PhysicalScalarSourceApply.lean",
-   "imports": ["Compilatrix.X86.PhysicalExportSourceApply"]},
-  "Compilatrix.X86.PhysicalScalarSim":
-  {"path": "Compilatrix/X86/PhysicalScalarSim.lean",
-   "imports": ["Compilatrix.X86.PhysicalScalarControl"]},
-  "Compilatrix.X86.PhysicalScalarSelect":
-  {"path": "Compilatrix/X86/PhysicalScalarSelect.lean",
-   "imports": ["Compilatrix.X86.PhysicalScalar"]},
-  "Compilatrix.X86.PhysicalScalarObject":
-  {"path": "Compilatrix/X86/PhysicalScalarObject.lean",
-   "imports":
-   ["Compilatrix.X86.PhysicalScalarContracts",
-    "Compilatrix.X86.ScalarObject",
-    "Compilatrix.IxIR2.Pipeline",
-    "Compilatrix.IxIR1.Optimizer"]},
-  "Compilatrix.X86.PhysicalScalarExport":
-  {"path": "Compilatrix/X86/PhysicalScalarExport.lean",
-   "imports": ["Compilatrix.X86.PhysicalScalarObject"]},
-  "Compilatrix.X86.PhysicalScalarExamples":
-  {"path": "Compilatrix/X86/PhysicalScalarExamples.lean",
-   "imports": ["Compilatrix.X86.PhysicalScalarExport"]},
-  "Compilatrix.X86.PhysicalScalarControl":
-  {"path": "Compilatrix/X86/PhysicalScalarControl.lean",
-   "imports": ["Compilatrix.X86.PhysicalScalarValues"]},
-  "Compilatrix.X86.PhysicalScalarContracts":
-  {"path": "Compilatrix/X86/PhysicalScalarContracts.lean",
-   "imports":
-   ["Compilatrix.X86.PhysicalScalarSelect",
-    "Compilatrix.X86.PhysicalScalarSim"]},
-  "Compilatrix.X86.PhysicalScalarCapturedSourceObject":
-  {"path": "Compilatrix/X86/PhysicalScalarCapturedSourceObject.lean",
-   "imports": ["Compilatrix.X86.PhysicalScalarCapturedSourceApply"]},
-  "Compilatrix.X86.PhysicalScalarCapturedSourceApply":
-  {"path": "Compilatrix/X86/PhysicalScalarCapturedSourceApply.lean",
-   "imports":
-   ["Compilatrix.X86.PhysicalScalarCapturedExport",
-    "Compilatrix.IxIR2.SourcePipelineSim"]},
-  "Compilatrix.X86.PhysicalScalarCapturedInit":
-  {"path": "Compilatrix/X86/PhysicalScalarCapturedInit.lean",
-   "imports": ["Compilatrix.X86.PhysicalScalarCapturedHeap"]},
-  "Compilatrix.X86.PhysicalScalarCapturedHeap":
-  {"path": "Compilatrix/X86/PhysicalScalarCapturedHeap.lean",
-   "imports": ["Compilatrix.X86.PhysicalScalarSourceHeap"]},
-  "Compilatrix.X86.PhysicalScalarCapturedExport":
-  {"path": "Compilatrix/X86/PhysicalScalarCapturedExport.lean",
-   "imports":
-   ["Compilatrix.X86.PhysicalScalarCapturedInit",
-    "Compilatrix.X86.ScalarBind"]},
-  "Compilatrix.X86.PhysicalScalar":
-  {"path": "Compilatrix/X86/PhysicalScalar.lean",
-   "imports": ["Compilatrix.X86.Scalar", "Compilatrix.IxIR2.EvalFuel"]},
-  "Compilatrix.X86.PhysicalHeapVectors":
-  {"path": "Compilatrix/X86/PhysicalHeapVectors.lean",
-   "imports":
-   ["Compilatrix.X86.PhysicalHeapPrimitiveEval", "Compilatrix.IxIR2.LowerSim"]},
-  "Compilatrix.X86.PhysicalHeapTransferCode":
-  {"path": "Compilatrix/X86/PhysicalHeapTransferCode.lean",
-   "imports": ["Compilatrix.X86.PhysicalHeapPrimitiveCode"]},
-  "Compilatrix.X86.PhysicalHeapStatistics":
-  {"path": "Compilatrix/X86/PhysicalHeapStatistics.lean",
-   "imports":
-   ["Compilatrix.X86.PhysicalHeapReservations",
-    "Compilatrix.X86.PhysicalHeapPrimitiveAlloc",
-    "Compilatrix.X86.PhysicalHeapOwners"]},
-  "Compilatrix.X86.PhysicalHeapSources":
-  {"path": "Compilatrix/X86/PhysicalHeapSources.lean",
-   "imports": ["Compilatrix.Coverage.Sources"]},
-  "Compilatrix.X86.PhysicalHeapSourceObject":
-  {"path": "Compilatrix/X86/PhysicalHeapSourceObject.lean",
-   "imports": ["Compilatrix.X86.PhysicalHeapExport"]},
-  "Compilatrix.X86.PhysicalHeapSelect":
-  {"path": "Compilatrix/X86/PhysicalHeapSelect.lean",
-   "imports": ["Compilatrix.X86.PhysicalHeapCode"]},
-  "Compilatrix.X86.PhysicalHeapScopeUpdate":
-  {"path": "Compilatrix/X86/PhysicalHeapScopeUpdate.lean",
-   "imports": ["Compilatrix.X86.PhysicalHeapScope"]},
-  "Compilatrix.X86.PhysicalHeapScope":
-  {"path": "Compilatrix/X86/PhysicalHeapScope.lean",
-   "imports": ["Compilatrix.X86.PhysicalHeapMemory"]},
-  "Compilatrix.X86.PhysicalHeapRoot":
-  {"path": "Compilatrix/X86/PhysicalHeapRoot.lean",
-   "imports": ["Compilatrix.X86.PhysicalHeapInitial"]},
-  "Compilatrix.X86.PhysicalHeapReuse":
-  {"path": "Compilatrix/X86/PhysicalHeapReuse.lean",
-   "imports": ["Compilatrix.X86.PhysicalHeapFree"]},
-  "Compilatrix.X86.PhysicalHeapReservations":
-  {"path": "Compilatrix/X86/PhysicalHeapReservations.lean",
-   "imports": ["Compilatrix.X86.PhysicalHeapReleaseEval"]},
-  "Compilatrix.X86.PhysicalHeapReleaseEval":
-  {"path": "Compilatrix/X86/PhysicalHeapReleaseEval.lean",
-   "imports": ["Compilatrix.X86.PhysicalHeapPrimitiveFree"]},
-  "Compilatrix.X86.PhysicalHeapRejections":
-  {"path": "Compilatrix/X86/PhysicalHeapRejections.lean",
-   "imports": ["Compilatrix.X86.PhysicalHeapExamples"]},
-  "Compilatrix.X86.PhysicalHeapPrimitiveReuse":
-  {"path": "Compilatrix/X86/PhysicalHeapPrimitiveReuse.lean",
-   "imports": ["Compilatrix.X86.PhysicalHeapPrimitiveReserve"]},
-  "Compilatrix.X86.PhysicalHeapPrimitiveReserve":
-  {"path": "Compilatrix/X86/PhysicalHeapPrimitiveReserve.lean",
-   "imports": ["Compilatrix.X86.PhysicalHeapPrimitiveFetch"]},
-  "Compilatrix.X86.PhysicalHeapPrimitiveFree":
-  {"path": "Compilatrix/X86/PhysicalHeapPrimitiveFree.lean",
-   "imports": ["Compilatrix.X86.PhysicalHeapPrimitiveReuse"]},
-  "Compilatrix.X86.PhysicalHeapPrimitiveFetch":
-  {"path": "Compilatrix/X86/PhysicalHeapPrimitiveFetch.lean",
-   "imports": ["Compilatrix.X86.PhysicalHeapCapture"]},
-  "Compilatrix.X86.PhysicalHeapPrimitiveEval":
-  {"path": "Compilatrix/X86/PhysicalHeapPrimitiveEval.lean",
-   "imports": ["Compilatrix.X86.PhysicalHeapStatistics"]},
-  "Compilatrix.X86.PhysicalHeapPrimitiveCode":
-  {"path": "Compilatrix/X86/PhysicalHeapPrimitiveCode.lean",
-   "imports": ["Compilatrix.X86.PhysicalHeap"]},
-  "Compilatrix.X86.PhysicalHeapPrimitiveAlloc":
-  {"path": "Compilatrix/X86/PhysicalHeapPrimitiveAlloc.lean",
-   "imports": ["Compilatrix.X86.PhysicalHeapFields"]},
-  "Compilatrix.X86.PhysicalHeapOwners":
-  {"path": "Compilatrix/X86/PhysicalHeapOwners.lean",
-   "imports": ["Compilatrix.X86.PhysicalHeapTransferCode"]},
-  "Compilatrix.X86.PhysicalHeapObserve":
-  {"path": "Compilatrix/X86/PhysicalHeapObserve.lean",
-   "imports": ["Compilatrix.X86.PhysicalHeapAlloc"]},
-  "Compilatrix.X86.PhysicalHeapObject":
-  {"path": "Compilatrix/X86/PhysicalHeapObject.lean",
-   "imports":
-   ["Compilatrix.X86.PhysicalHeapRoot",
-    "Compilatrix.X86.HeapGraph",
-    "Compilatrix.IxIR2.WirePipeline"]},
-  "Compilatrix.X86.PhysicalHeapMemoryUpdate":
-  {"path": "Compilatrix/X86/PhysicalHeapMemoryUpdate.lean",
-   "imports":
-   ["Compilatrix.X86.PhysicalHeapScopeUpdate",
-    "Compilatrix.IxIR2.HeapAccounting"]},
-  "Compilatrix.X86.PhysicalHeapMemory":
-  {"path": "Compilatrix/X86/PhysicalHeapMemory.lean",
-   "imports":
-   ["Compilatrix.X86.HeapObject",
-    "Compilatrix.X86.PhysicalScalarValues",
-    "Compilatrix.IxIR2.ReservationOwnership"]},
-  "Compilatrix.X86.PhysicalHeapInitial":
-  {"path": "Compilatrix/X86/PhysicalHeapInitial.lean",
-   "imports":
-   ["Compilatrix.X86.PhysicalHeapFunctions",
-    "Compilatrix.X86.PhysicalScalarSourceHeap",
-    "Init.Data.List.Nat.Sum"]},
-  "Compilatrix.X86.PhysicalHeapGraphStep":
-  {"path": "Compilatrix/X86/PhysicalHeapGraphStep.lean",
-   "imports": ["Compilatrix.X86.PhysicalHeapGraph"]},
-  "Compilatrix.X86.PhysicalHeapGraphSelect":
-  {"path": "Compilatrix/X86/PhysicalHeapGraphSelect.lean",
-   "imports":
-   ["Compilatrix.X86.PhysicalHeapSelect",
-    "Compilatrix.X86.PhysicalHeapGraphBuild"]},
-  "Compilatrix.X86.PhysicalHeapGraphCheck":
-  {"path": "Compilatrix/X86/PhysicalHeapGraphCheck.lean",
-   "imports": ["Compilatrix.X86.PhysicalHeapGraphStep"]},
-  "Compilatrix.X86.PhysicalHeapGraphBuild":
-  {"path": "Compilatrix/X86/PhysicalHeapGraphBuild.lean",
-   "imports": ["Compilatrix.X86.PhysicalHeapGraphCheck"]},
-  "Compilatrix.X86.PhysicalHeapGraph":
-  {"path": "Compilatrix/X86/PhysicalHeapGraph.lean",
-   "imports": ["Compilatrix.X86.PhysicalHeapCode"]},
-  "Compilatrix.X86.PhysicalHeapFunctions":
-  {"path": "Compilatrix/X86/PhysicalHeapFunctions.lean",
-   "imports": ["Compilatrix.X86.PhysicalHeapCallSimulation"]},
-  "Compilatrix.X86.PhysicalHeapFree":
-  {"path": "Compilatrix/X86/PhysicalHeapFree.lean",
-   "imports": ["Compilatrix.X86.PhysicalHeapObserve"]},
-  "Compilatrix.X86.PhysicalHeapFrames":
-  {"path": "Compilatrix/X86/PhysicalHeapFrames.lean",
-   "imports": ["Compilatrix.X86.PhysicalHeapCopies"]},
-  "Compilatrix.X86.PhysicalHeapFields":
-  {"path": "Compilatrix/X86/PhysicalHeapFields.lean",
-   "imports": ["Compilatrix.X86.PhysicalHeapReuse"]},
-  "Compilatrix.X86.PhysicalHeapExport":
-  {"path": "Compilatrix/X86/PhysicalHeapExport.lean",
-   "imports":
-   ["Compilatrix.X86.PhysicalHeapObject",
-    "Compilatrix.X86.PhysicalExportSourceApply"]},
-  "Compilatrix.X86.PhysicalHeapExecution":
-  {"path": "Compilatrix/X86/PhysicalHeapExecution.lean",
-   "imports":
-   ["Compilatrix.X86.PhysicalHeapFrames", "Compilatrix.IxIR2.CallResources"]},
-  "Compilatrix.X86.PhysicalHeapExamples":
-  {"path": "Compilatrix/X86/PhysicalHeapExamples.lean",
-   "imports": ["Compilatrix.X86.PhysicalHeapObject"]},
-  "Compilatrix.X86.PhysicalHeapCopies":
-  {"path": "Compilatrix/X86/PhysicalHeapCopies.lean",
-   "imports": ["Compilatrix.X86.PhysicalHeapVectors"]},
-  "Compilatrix.X86.PhysicalHeapControl":
-  {"path": "Compilatrix/X86/PhysicalHeapControl.lean",
-   "imports": ["Compilatrix.X86.PhysicalHeapExecution"]},
-  "Compilatrix.X86.PhysicalHeapConstructor":
-  {"path": "Compilatrix/X86/PhysicalHeapConstructor.lean",
-   "imports": ["Compilatrix.X86.PhysicalHeapMemoryUpdate"]},
-  "Compilatrix.X86.PhysicalHeapCode":
-  {"path": "Compilatrix/X86/PhysicalHeapCode.lean",
-   "imports": ["Compilatrix.X86.PhysicalHeapTransferCode"]},
-  "Compilatrix.X86.PhysicalHeapCapture":
-  {"path": "Compilatrix/X86/PhysicalHeapCapture.lean",
-   "imports": ["Compilatrix.X86.PhysicalHeapPrimitiveAlloc"]},
-  "Compilatrix.X86.PhysicalHeapCallSimulation":
-  {"path": "Compilatrix/X86/PhysicalHeapCallSimulation.lean",
-   "imports": ["Compilatrix.X86.PhysicalHeapBranches"]},
-  "Compilatrix.X86.PhysicalHeapBranches":
-  {"path": "Compilatrix/X86/PhysicalHeapBranches.lean",
-   "imports": ["Compilatrix.X86.PhysicalHeapControl"]},
-  "Compilatrix.X86.PhysicalHeapAlloc":
-  {"path": "Compilatrix/X86/PhysicalHeapAlloc.lean",
-   "imports": ["Compilatrix.X86.PhysicalHeapConstructor"]},
-  "Compilatrix.X86.PhysicalHeap":
-  {"path": "Compilatrix/X86/PhysicalHeap.lean",
-   "imports": ["Compilatrix.X86.PhysicalScalar"]},
-  "Compilatrix.X86.PhysicalExportSourceApply":
-  {"path": "Compilatrix/X86/PhysicalExportSourceApply.lean",
-   "imports":
-   ["Compilatrix.X86.PhysicalScalarSourceHeap",
-    "Compilatrix.IxIR2.SourcePipelineSim"]},
   "Compilatrix.X86.ObjectExecution":
   {"path": "Compilatrix/X86/ObjectExecution.lean",
    "imports": ["Compilatrix.X86.ELFLink"]},
-  "Compilatrix.X86.NatCallsSyntax":
-  {"path": "Compilatrix/X86/NatCallsSyntax.lean",
-   "imports": ["Compilatrix.IxIR2.Validate", "Compilatrix.X86.Basic"]},
-  "Compilatrix.X86.NatCallsSim":
-  {"path": "Compilatrix/X86/NatCallsSim.lean",
-   "imports":
-   ["Compilatrix.X86.NatCallsCheck", "Compilatrix.IxIR2.SourcePipelineSim"]},
-  "Compilatrix.X86.NatCallsExamples":
-  {"path": "Compilatrix/X86/NatCallsExamples.lean",
-   "imports": ["Compilatrix.X86.NatCallsCheck", "Compilatrix.X86.Select"]},
-  "Compilatrix.X86.NatCallsCheck":
-  {"path": "Compilatrix/X86/NatCallsCheck.lean",
-   "imports":
-   ["Compilatrix.X86.NatCalls",
-    "Compilatrix.IxIR2.EvalFuel",
-    "Compilatrix.X86.ObjectExecution",
-    "Compilatrix.X86.StreamDecidable"]},
-  "Compilatrix.X86.NatCallsCapture":
-  {"path": "Compilatrix/X86/NatCallsCapture.lean",
-   "imports": ["Compilatrix.X86.NatCallsSyntax"]},
-  "Compilatrix.X86.NatCalls":
-  {"path": "Compilatrix/X86/NatCalls.lean",
-   "imports": ["Compilatrix.X86.NatCallsCapture"]},
   "Compilatrix.X86.Memory":
   {"path": "Compilatrix/X86/Memory.lean", "imports": ["Compilatrix.X86.Eval"]},
-  "Compilatrix.X86.HeapWorkspace":
-  {"path": "Compilatrix/X86/HeapWorkspace.lean",
-   "imports": ["Compilatrix.X86.HeapSimulation"]},
-  "Compilatrix.X86.HeapTarget":
-  {"path": "Compilatrix/X86/HeapTarget.lean",
-   "imports":
-   ["Compilatrix.X86.PhysicalHeapSelect",
-    "Compilatrix.X86.HeapArena",
-    "Compilatrix.X86.BlockSharing"]},
-  "Compilatrix.X86.HeapSimulation":
-  {"path": "Compilatrix/X86/HeapSimulation.lean",
-   "imports": ["Compilatrix.X86.HeapCalls"]},
-  "Compilatrix.X86.HeapRuns":
-  {"path": "Compilatrix/X86/HeapRuns.lean",
-   "imports": ["Compilatrix.X86.HeapFunctionCode"]},
-  "Compilatrix.X86.HeapReject":
-  {"path": "Compilatrix/X86/HeapReject.lean",
-   "imports": ["Compilatrix.X86.PhysicalHeapObject"]},
-  "Compilatrix.X86.HeapPrimitives":
-  {"path": "Compilatrix/X86/HeapPrimitives.lean",
-   "imports": ["Compilatrix.X86.HeapMacros"]},
-  "Compilatrix.X86.HeapPrimitiveTrace":
-  {"path": "Compilatrix/X86/HeapPrimitiveTrace.lean",
-   "imports": ["Compilatrix.X86.HeapPrimitives"]},
-  "Compilatrix.X86.HeapPreservation":
-  {"path": "Compilatrix/X86/HeapPreservation.lean",
-   "imports": ["Compilatrix.X86.HeapPrimitiveTrace"]},
-  "Compilatrix.X86.HeapObject":
-  {"path": "Compilatrix/X86/HeapObject.lean",
-   "imports": ["Compilatrix.X86.HeapAdapter", "Compilatrix.X86.ScalarObject"]},
-  "Compilatrix.X86.HeapMacros":
-  {"path": "Compilatrix/X86/HeapMacros.lean",
-   "imports": ["Compilatrix.X86.HeapCopies"]},
-  "Compilatrix.X86.HeapHeader":
-  {"path": "Compilatrix/X86/HeapHeader.lean",
-   "imports": ["Compilatrix.X86.HeapWorkspace"]},
-  "Compilatrix.X86.HeapGraphTests":
-  {"path": "Compilatrix/X86/HeapGraphTests.lean",
-   "imports":
-   ["Compilatrix.X86.PhysicalHeapExamples", "Compilatrix.Tools.Check"]},
-  "Compilatrix.X86.HeapGraphPlan":
-  {"path": "Compilatrix/X86/HeapGraphPlan.lean",
-   "imports":
-   ["Compilatrix.X86.HeapTarget", "Compilatrix.X86.PhysicalHeapGraphSelect"]},
-  "Compilatrix.X86.HeapGraphEmit":
-  {"path": "Compilatrix/X86/HeapGraphEmit.lean",
-   "imports": ["Compilatrix.X86.HeapGraphPlan"]},
-  "Compilatrix.X86.HeapGraph":
-  {"path": "Compilatrix/X86/HeapGraph.lean",
-   "imports": ["Compilatrix.X86.HeapGraphEmit"]},
-  "Compilatrix.X86.HeapFunctionCode":
-  {"path": "Compilatrix/X86/HeapFunctionCode.lean",
-   "imports":
-   ["Compilatrix.X86.HeapPreservation", "Compilatrix.X86.ScalarCalls"]},
-  "Compilatrix.X86.HeapEntryState":
-  {"path": "Compilatrix/X86/HeapEntryState.lean",
-   "imports": ["Compilatrix.X86.HeapHeader"]},
-  "Compilatrix.X86.HeapEntryCode":
-  {"path": "Compilatrix/X86/HeapEntryCode.lean",
-   "imports": ["Compilatrix.X86.HeapEntryState"]},
-  "Compilatrix.X86.HeapCopies":
-  {"path": "Compilatrix/X86/HeapCopies.lean",
-   "imports":
-   ["Compilatrix.X86.HeapTarget", "Compilatrix.X86.ScalarInstructions"]},
-  "Compilatrix.X86.HeapCalls":
-  {"path": "Compilatrix/X86/HeapCalls.lean",
-   "imports": ["Compilatrix.X86.HeapCallFrames"]},
-  "Compilatrix.X86.HeapCallFrames":
-  {"path": "Compilatrix/X86/HeapCallFrames.lean",
-   "imports": ["Compilatrix.X86.HeapRuns"]},
-  "Compilatrix.X86.HeapArena":
-  {"path": "Compilatrix/X86/HeapArena.lean",
-   "imports": ["Compilatrix.X86.ScalarSafeFrames"]},
-  "Compilatrix.X86.HeapAdapter":
-  {"path": "Compilatrix/X86/HeapAdapter.lean",
-   "imports": ["Compilatrix.X86.HeapEntryCode"]},
   "Compilatrix.X86.FrameExecution":
   {"path": "Compilatrix/X86/FrameExecution.lean",
    "imports": ["Compilatrix.X86.Execution"]},
@@ -1764,285 +535,23 @@
    "imports": ["Compilatrix.X86.Basic"]},
   "Compilatrix.X86.Basic":
   {"path": "Compilatrix/X86/Basic.lean", "imports": ["Std"]},
-  "Compilatrix.X86.ArenaSpace":
-  {"path": "Compilatrix/X86/ArenaSpace.lean",
-   "imports":
-   ["Compilatrix.X86.RuntimeExecution", "Compilatrix.X86.RuntimeReject"]},
-  "Compilatrix.X86.AllocatingTarget":
-  {"path": "Compilatrix/X86/AllocatingTarget.lean",
-   "imports": ["Compilatrix.X86.AllocatingCall"]},
-  "Compilatrix.X86.AllocatingMemory":
-  {"path": "Compilatrix/X86/AllocatingMemory.lean",
-   "imports":
-   ["Compilatrix.X86.UniqueSafeControl",
-    "Compilatrix.X86.WordRegion",
-    "Compilatrix.X86.StreamPermissions"]},
-  "Compilatrix.X86.AllocatingFirst":
-  {"path": "Compilatrix/X86/AllocatingFirst.lean",
-   "imports": ["Compilatrix.X86.RuntimeExecution"]},
-  "Compilatrix.X86.AllocatingExecution":
-  {"path": "Compilatrix/X86/AllocatingExecution.lean",
-   "imports":
-   ["Compilatrix.X86.AllocatingTarget",
-    "Compilatrix.X86.AllocatingFirst",
-    "Compilatrix.X86.UniqueSafeLoop",
-    "Compilatrix.X86.RuntimeInput"]},
-  "Compilatrix.X86.AllocatingCall":
-  {"path": "Compilatrix/X86/AllocatingCall.lean",
-   "imports": ["Compilatrix.X86.AllocatingMemory"]},
-  "Compilatrix.UsageSound":
-  {"path": "Compilatrix/UsageSound.lean",
-   "imports": ["Compilatrix.Ixon.UsageCheck", "Compilatrix.EraseValidator"]},
-  "Compilatrix.UniqueReuse.TargetSteps":
-  {"path": "Compilatrix/UniqueReuse/TargetSteps.lean",
-   "imports": ["Compilatrix.UniqueReuse.TargetHeap"]},
-  "Compilatrix.UniqueReuse.TargetSim":
-  {"path": "Compilatrix/UniqueReuse/TargetSim.lean",
-   "imports":
-   ["Compilatrix.UniqueReuse.TargetResources",
-    "Compilatrix.UniqueReuse.LowerSim",
-    "Compilatrix.UniqueReuse.SourceSim"]},
-  "Compilatrix.UniqueReuse.TargetResources":
-  {"path": "Compilatrix/UniqueReuse/TargetResources.lean",
-   "imports":
-   ["Compilatrix.UniqueReuse.TargetMain",
-    "Compilatrix.IxIR2.ReservationSteps",
-    "Compilatrix.IxIR2.Resources",
-    "Compilatrix.IxIR2.CostSteps"]},
-  "Compilatrix.UniqueReuse.TargetMain":
-  {"path": "Compilatrix/UniqueReuse/TargetMain.lean",
-   "imports":
-   ["Compilatrix.UniqueReuse.TargetInput",
-    "Compilatrix.UniqueReuse.Reclamation"]},
-  "Compilatrix.UniqueReuse.TargetLoop":
-  {"path": "Compilatrix/UniqueReuse/TargetLoop.lean",
-   "imports": ["Compilatrix.UniqueReuse.TargetSteps"]},
-  "Compilatrix.UniqueReuse.TargetInput":
-  {"path": "Compilatrix/UniqueReuse/TargetInput.lean",
-   "imports": ["Compilatrix.UniqueReuse.TargetLoop"]},
-  "Compilatrix.UniqueReuse.TargetHeap":
-  {"path": "Compilatrix/UniqueReuse/TargetHeap.lean",
-   "imports":
-   ["Compilatrix.UniqueReuse.Heap",
-    "Compilatrix.IxIR2.UniqueLower",
-    "Compilatrix.IxIR2.ReservationHeap",
-    "Compilatrix.IxIR2.CostObservations"]},
-  "Compilatrix.UniqueReuse.Sources":
-  {"path": "Compilatrix/UniqueReuse/Sources.lean",
-   "imports":
-   ["Compilatrix.Coverage.Sources",
-    "Compilatrix.Ixon.RecursorUsage",
-    "Compilatrix.PipelineErasure"]},
-  "Compilatrix.UniqueReuse.SourceSim":
-  {"path": "Compilatrix/UniqueReuse/SourceSim.lean",
-   "imports":
-   ["Compilatrix.UniqueReuse.ModeCheck", "Compilatrix.IxIR0.UniqueReverseSim"]},
-  "Compilatrix.UniqueReuse.RuntimeTarget":
-  {"path": "Compilatrix/UniqueReuse/RuntimeTarget.lean",
-   "imports":
-   ["Compilatrix.UniqueReuse.Runtime", "Compilatrix.UniqueReuse.TargetMain"]},
-  "Compilatrix.UniqueReuse.RuntimeSourceSim":
-  {"path": "Compilatrix/UniqueReuse/RuntimeSourceSim.lean",
-   "imports":
-   ["Compilatrix.UniqueReuse.Runtime",
-    "Compilatrix.IxIR0.UniqueReverseSim",
-    "Compilatrix.SimApply"]},
-  "Compilatrix.UniqueReuse.RuntimeSource":
-  {"path": "Compilatrix/UniqueReuse/RuntimeSource.lean",
-   "imports":
-   ["Compilatrix.UniqueReuse.Sources", "Compilatrix.UniqueReuse.ModeCheck"]},
-  "Compilatrix.UniqueReuse.RuntimeObservations":
-  {"path": "Compilatrix/UniqueReuse/RuntimeObservations.lean",
-   "imports":
-   ["Compilatrix.UniqueReuse.RuntimeNativeSim",
-    "Compilatrix.UniqueReuse.NativeObservations",
-    "Compilatrix.X86.RuntimeReject"]},
-  "Compilatrix.UniqueReuse.RuntimeObjectSpace":
-  {"path": "Compilatrix/UniqueReuse/RuntimeObjectSpace.lean",
-   "imports":
-   ["Compilatrix.UniqueReuse.RuntimeObjectSim", "Compilatrix.X86.ArenaSpace"]},
-  "Compilatrix.UniqueReuse.RuntimeObjectSim":
-  {"path": "Compilatrix/UniqueReuse/RuntimeObjectSim.lean",
-   "imports":
-   ["Compilatrix.UniqueReuse.RuntimeNativeSim",
-    "Compilatrix.X86.ObjectExecution",
-    "Compilatrix.X86.StreamPermissions"]},
-  "Compilatrix.UniqueReuse.RuntimeNativeSim":
-  {"path": "Compilatrix/UniqueReuse/RuntimeNativeSim.lean",
-   "imports":
-   ["Compilatrix.UniqueReuse.RuntimeNative",
-    "Compilatrix.UniqueReuse.RuntimeSourceSim",
-    "Compilatrix.UniqueReuse.RuntimeTarget",
-    "Compilatrix.X86.RuntimeInput"]},
-  "Compilatrix.UniqueReuse.RuntimeNative":
-  {"path": "Compilatrix/UniqueReuse/RuntimeNative.lean",
-   "imports":
-   ["Compilatrix.UniqueReuse.Runtime",
-    "Compilatrix.X86.RuntimeTarget",
-    "Compilatrix.X86.ELFValidate"]},
-  "Compilatrix.UniqueReuse.Runtime":
-  {"path": "Compilatrix/UniqueReuse/Runtime.lean",
-   "imports":
-   ["Compilatrix.UniqueReuse.RuntimeSource",
-    "Compilatrix.UniqueReuse.Provenance"]},
-  "Compilatrix.UniqueReuse.Rejections":
-  {"path": "Compilatrix/UniqueReuse/Rejections.lean",
-   "imports": ["Compilatrix.UniqueReuse.Observations"]},
-  "Compilatrix.UniqueReuse.Reclamation":
-  {"path": "Compilatrix/UniqueReuse/Reclamation.lean",
-   "imports":
-   ["Compilatrix.UniqueReuse.Heap",
-    "Compilatrix.IxIR1.Mono",
-    "Compilatrix.IxIR2.HeapAccounting",
-    "Compilatrix.IxIR2.LowerSim"]},
-  "Compilatrix.UniqueReuse.Provenance":
-  {"path": "Compilatrix/UniqueReuse/Provenance.lean",
-   "imports":
-   ["Compilatrix.UniqueReuse.Pipeline", "Compilatrix.IxIR1.Optimizer"]},
-  "Compilatrix.UniqueReuse.PipelineSim":
-  {"path": "Compilatrix/UniqueReuse/PipelineSim.lean",
-   "imports":
-   ["Compilatrix.UniqueReuse.Pipeline", "Compilatrix.UniqueReuse.TargetSim"]},
-  "Compilatrix.UniqueReuse.Pipeline":
-  {"path": "Compilatrix/UniqueReuse/Pipeline.lean",
-   "imports": ["Compilatrix.IxIR2.UniqueLower"]},
-  "Compilatrix.UniqueReuse.Observations":
-  {"path": "Compilatrix/UniqueReuse/Observations.lean",
-   "imports":
-   ["Compilatrix.UniqueReuse.Sources",
-    "Compilatrix.UniqueReuse.Provenance",
-    "Compilatrix.Coverage.HeapSnapshot",
-    "Compilatrix.IxIR2.ReservationOwnership"]},
-  "Compilatrix.UniqueReuse.NativeSim":
-  {"path": "Compilatrix/UniqueReuse/NativeSim.lean",
-   "imports":
-   ["Compilatrix.UniqueReuse.Native",
-    "Compilatrix.UniqueReuse.PipelineSim",
-    "Compilatrix.X86.UniqueResult"]},
-  "Compilatrix.UniqueReuse.NativeObservations":
-  {"path": "Compilatrix/UniqueReuse/NativeObservations.lean",
-   "imports":
-   ["Compilatrix.UniqueReuse.NativeObject",
-    "Compilatrix.UniqueReuse.NativeSim",
-    "Compilatrix.UniqueReuse.Observations"]},
-  "Compilatrix.UniqueReuse.NativeObject":
-  {"path": "Compilatrix/UniqueReuse/NativeObject.lean",
-   "imports":
-   ["Compilatrix.UniqueReuse.Native",
-    "Compilatrix.UniqueReuse.Provenance",
-    "Compilatrix.X86.ELFValidate"]},
-  "Compilatrix.UniqueReuse.Native":
-  {"path": "Compilatrix/UniqueReuse/Native.lean",
-   "imports":
-   ["Compilatrix.UniqueReuse.Pipeline", "Compilatrix.X86.UniqueTarget"]},
-  "Compilatrix.UniqueReuse.ModeCheck":
-  {"path": "Compilatrix/UniqueReuse/ModeCheck.lean",
-   "imports":
-   ["Compilatrix.PipelineErasure", "Compilatrix.IxIR0.UniqueReverse"]},
-  "Compilatrix.UniqueReuse.LowerSim":
-  {"path": "Compilatrix/UniqueReuse/LowerSim.lean",
-   "imports":
-   ["Compilatrix.UniqueReuse.Heap", "Compilatrix.IxIR1.EvalHistory"]},
-  "Compilatrix.UniqueReuse.Lower":
-  {"path": "Compilatrix/UniqueReuse/Lower.lean",
-   "imports":
-   ["Compilatrix.UniqueReuse.ModeCheck",
-    "Compilatrix.IxIR1.Serialize",
-    "Compilatrix.IxIR1.ReaddressAll"]},
-  "Compilatrix.UniqueReuse.Heap":
-  {"path": "Compilatrix/UniqueReuse/Heap.lean",
-   "imports":
-   ["Compilatrix.UniqueReuse.Lower",
-    "Compilatrix.IxIR0.UniqueReverseSim",
-    "Compilatrix.IxIR1.Reclamation"]},
-  "Compilatrix.UniqueReuse.AllocatingSourceSim":
-  {"path": "Compilatrix/UniqueReuse/AllocatingSourceSim.lean",
-   "imports":
-   ["Compilatrix.UniqueReuse.AllocatingObjectSim",
-    "Compilatrix.UniqueReuse.RuntimeObjectSpace"]},
-  "Compilatrix.UniqueReuse.AllocatingObservations":
-  {"path": "Compilatrix/UniqueReuse/AllocatingObservations.lean",
-   "imports":
-   ["Compilatrix.UniqueReuse.AllocatingObjectSpace",
-    "Compilatrix.UniqueReuse.NativeObservations",
-    "Compilatrix.X86.RuntimeReject"]},
-  "Compilatrix.UniqueReuse.AllocatingObjectSpace":
-  {"path": "Compilatrix/UniqueReuse/AllocatingObjectSpace.lean",
-   "imports": ["Compilatrix.UniqueReuse.AllocatingSourceSim"]},
-  "Compilatrix.UniqueReuse.AllocatingObjectSim":
-  {"path": "Compilatrix/UniqueReuse/AllocatingObjectSim.lean",
-   "imports":
-   ["Compilatrix.UniqueReuse.AllocatingNative",
-    "Compilatrix.UniqueReuse.RuntimeObjectSim",
-    "Compilatrix.X86.AllocatingExecution",
-    "Compilatrix.X86.SafeStepsObject"]},
-  "Compilatrix.UniqueReuse.AllocatingNative":
-  {"path": "Compilatrix/UniqueReuse/AllocatingNative.lean",
-   "imports":
-   ["Compilatrix.UniqueReuse.RuntimeNative",
-    "Compilatrix.X86.AllocatingTarget"]},
   "Compilatrix.Tools.X86Check":
   {"path": "Compilatrix/Tools/X86Check.lean",
    "imports": ["Compilatrix.Tools.Check"]},
-  "Compilatrix.Tools.UpstreamNativeCheck":
-  {"path": "Compilatrix/Tools/UpstreamNativeCheck.lean",
-   "imports": ["Compilatrix.Tools.UniqueCheck", "Compilatrix.Tools.X86Check"]},
-  "Compilatrix.Tools.UniqueCheck":
-  {"path": "Compilatrix/Tools/UniqueCheck.lean",
-   "imports": ["Compilatrix.Tools.Check", "Blake3.Rust"]},
   "Compilatrix.Tools.TrustLedger":
   {"path": "Compilatrix/Tools/TrustLedger.lean",
    "imports": ["Compilatrix.Tools.SourceScan", "Lake.Toml.Load"]},
-  "Compilatrix.Tools.SpaceCheck":
-  {"path": "Compilatrix/Tools/SpaceCheck.lean",
-   "imports": ["Compilatrix.Tools.CallReuseCheck"]},
   "Compilatrix.Tools.SourceScan":
   {"path": "Compilatrix/Tools/SourceScan.lean",
    "imports": ["Compilatrix.Tools.Check"]},
-  "Compilatrix.Tools.ScalarNativeCheck":
-  {"path": "Compilatrix/Tools/ScalarNativeCheck.lean",
-   "imports": ["Compilatrix.Tools.UpstreamNativeCheck"]},
-  "Compilatrix.Tools.PhysicalScalarNativeCheck":
-  {"path": "Compilatrix/Tools/PhysicalScalarNativeCheck.lean",
-   "imports": ["Compilatrix.Tools.ScalarNativeCheck"]},
-  "Compilatrix.Tools.NativeSharingCheck":
-  {"path": "Compilatrix/Tools/NativeSharingCheck.lean",
-   "imports":
-   ["Compilatrix.Tools.HeapNativeCheck", "Compilatrix.Tools.X86Check"]},
   "Compilatrix.Tools.IxonV3Catalog":
   {"path": "Compilatrix/Tools/IxonV3Catalog.lean",
    "imports": ["Compilatrix.Ixon.V3.Catalog", "Compilatrix.Tools.Check"]},
-  "Compilatrix.Tools.IxIR2Check":
-  {"path": "Compilatrix/Tools/IxIR2Check.lean",
-   "imports":
-   ["Compilatrix.Tools.Check",
-    "Compilatrix.Tools.UniqueCheck",
-    "Compilatrix.Ixon.Hash"]},
-  "Compilatrix.Tools.HeapNativeCheck":
-  {"path": "Compilatrix/Tools/HeapNativeCheck.lean",
-   "imports":
-   ["Compilatrix.Tools.PhysicalScalarNativeCheck",
-    "Compilatrix.Tools.IxIR2Check"]},
   "Compilatrix.Tools.Check":
   {"path": "Compilatrix/Tools/Check.lean", "imports": ["Lean"]},
-  "Compilatrix.Tools.CapturedScalarNativeCheck":
-  {"path": "Compilatrix/Tools/CapturedScalarNativeCheck.lean",
-   "imports": ["Compilatrix.Tools.PhysicalScalarNativeCheck"]},
-  "Compilatrix.Tools.CallReuseCheck":
-  {"path": "Compilatrix/Tools/CallReuseCheck.lean",
-   "imports": ["Compilatrix.Tools.Check"]},
   "Compilatrix.Tools.BuildGraph":
   {"path": "Compilatrix/Tools/BuildGraph.lean",
    "imports": ["Compilatrix.Tools.TrustLedger"]},
-  "Compilatrix.Tools.BorrowRuntimeCheck":
-  {"path": "Compilatrix/Tools/BorrowRuntimeCheck.lean",
-   "imports": ["Compilatrix.Tools.BorrowExecution"]},
-  "Compilatrix.Tools.BorrowExecution":
-  {"path": "Compilatrix/Tools/BorrowExecution.lean",
-   "imports": ["Compilatrix.Tools.BorrowCheck"]},
-  "Compilatrix.Tools.BorrowCheck":
-  {"path": "Compilatrix/Tools/BorrowCheck.lean",
-   "imports": ["Compilatrix.Tools.Check", "Blake3.Rust"]},
   "Compilatrix.Tools.AiurWireCheck":
   {"path": "Compilatrix/Tools/AiurWireCheck.lean",
    "imports":
@@ -2061,150 +570,6 @@
   "Compilatrix.Tools.AiurCheck":
   {"path": "Compilatrix/Tools/AiurCheck.lean",
    "imports": ["Compilatrix.Tools.Check"]},
-  "Compilatrix.SimInstance":
-  {"path": "Compilatrix/SimInstance.lean",
-   "imports":
-   ["Compilatrix.EraseValidator",
-    "Compilatrix.IxIR1.LowerProgress",
-    "Compilatrix.IxIR1.CostTrace",
-    "Compilatrix.IxIR0.Mono",
-    "Compilatrix.IxIR0.ProjectionFree"]},
-  "Compilatrix.SimApply":
-  {"path": "Compilatrix/SimApply.lean", "imports": ["Compilatrix.Sim"]},
-  "Compilatrix.Sim.Segment":
-  {"path": "Compilatrix/Sim/Segment.lean", "imports": ["Compilatrix.Erase"]},
-  "Compilatrix.Sim":
-  {"path": "Compilatrix/Sim.lean",
-   "imports":
-   ["Compilatrix.Ixon.Sharing.Eval",
-    "Compilatrix.IxIR0.Mono",
-    "Compilatrix.IxIR0.ProjectionSafe",
-    "Compilatrix.Sim.Segment"]},
-  "Compilatrix.Recursion.Trace":
-  {"path": "Compilatrix/Recursion/Trace.lean",
-   "imports":
-   ["Compilatrix.IxIR0.RecursionSim", "Compilatrix.IxIR0.ProjectionFree"]},
-  "Compilatrix.Recursion.Sources":
-  {"path": "Compilatrix/Recursion/Sources.lean",
-   "imports": ["Compilatrix.Coverage.Sources"]},
-  "Compilatrix.Recursion.Sim":
-  {"path": "Compilatrix/Recursion/Sim.lean",
-   "imports":
-   ["Compilatrix.Recursion.Pipeline", "Compilatrix.IxIR0.RecursionSim"]},
-  "Compilatrix.Recursion.Resources":
-  {"path": "Compilatrix/Recursion/Resources.lean",
-   "imports":
-   ["Compilatrix.Recursion.PhysicalSim",
-    "Compilatrix.IxIR2.PipelineResources"]},
-  "Compilatrix.Recursion.Rejections":
-  {"path": "Compilatrix/Recursion/Rejections.lean",
-   "imports": ["Compilatrix.Recursion.Observations"]},
-  "Compilatrix.Recursion.Pipeline":
-  {"path": "Compilatrix/Recursion/Pipeline.lean",
-   "imports":
-   ["Compilatrix.Pipeline",
-    "Compilatrix.IxIR0.Recursion",
-    "Compilatrix.IxIR2.Pipeline",
-    "Compilatrix.IxIR2.Reuse"]},
-  "Compilatrix.Recursion.PhysicalSim":
-  {"path": "Compilatrix/Recursion/PhysicalSim.lean",
-   "imports":
-   ["Compilatrix.Recursion.Sim",
-    "Compilatrix.Recursion.Trace",
-    "Compilatrix.LoweredCompilationSim",
-    "Compilatrix.IxIR2.PipelinePhysical",
-    "Compilatrix.IxIR2.ReuseLiveSim"]},
-  "Compilatrix.Recursion.Observations":
-  {"path": "Compilatrix/Recursion/Observations.lean",
-   "imports":
-   ["Compilatrix.Recursion.Sources",
-    "Compilatrix.Recursion.Pipeline",
-    "Compilatrix.Coverage.HeapSnapshot"]},
-  "Compilatrix.Recursion.Costs":
-  {"path": "Compilatrix/Recursion/Costs.lean",
-   "imports":
-   ["Compilatrix.Recursion.Allocation", "Compilatrix.IxIR2.PipelineCosts"]},
-  "Compilatrix.Recursion.Allocation":
-  {"path": "Compilatrix/Recursion/Allocation.lean",
-   "imports":
-   ["Compilatrix.Recursion.Resources", "Compilatrix.IxIR2.PipelineAllocation"]},
-  "Compilatrix.PipelineSound":
-  {"path": "Compilatrix/PipelineSound.lean",
-   "imports":
-   ["Compilatrix.Pipeline",
-    "Compilatrix.IxIR1.LowerMutualAddressedProgress",
-    "Compilatrix.IxIR1.NoReuseAddressed",
-    "Compilatrix.IxIR1.CostTrace",
-    "Compilatrix.IxIR1.OptimizerReclamation"]},
-  "Compilatrix.PipelineErasure":
-  {"path": "Compilatrix/PipelineErasure.lean",
-   "imports": ["Compilatrix.Pipeline", "Compilatrix.Ixon.RecursorUsage"]},
-  "Compilatrix.PipelineApply":
-  {"path": "Compilatrix/PipelineApply.lean",
-   "imports": ["Compilatrix.PipelineSound", "Compilatrix.SimApply"]},
-  "Compilatrix.Pipeline":
-  {"path": "Compilatrix/Pipeline.lean",
-   "imports":
-   ["Compilatrix.Ixon.UsageCheck",
-    "Compilatrix.Ixon.Work",
-    "Compilatrix.EraseAddressed",
-    "Compilatrix.EraseValidator",
-    "Compilatrix.IxIR1.LowerFullyAddressed",
-    "Compilatrix.IxIR1.HPTCacheDirIO",
-    "Compilatrix.IxIR1.Optimizer"]},
-  "Compilatrix.Modular.Wire":
-  {"path": "Compilatrix/Modular/Wire.lean",
-   "imports": ["Compilatrix.Modular.Build"]},
-  "Compilatrix.Modular.Transport":
-  {"path": "Compilatrix/Modular/Transport.lean",
-   "imports": ["Compilatrix.EraseValidator"]},
-  "Compilatrix.Modular.SourceCheck":
-  {"path": "Compilatrix/Modular/SourceCheck.lean",
-   "imports": ["Compilatrix.Modular.Basic"]},
-  "Compilatrix.Modular.Report":
-  {"path": "Compilatrix/Modular/Report.lean",
-   "imports":
-   ["Compilatrix.Modular.Regressions",
-    "Compilatrix.Coverage.Snapshot",
-    "Compilatrix.Tools.Check"]},
-  "Compilatrix.Modular.Regressions":
-  {"path": "Compilatrix/Modular/Regressions.lean",
-   "imports": ["Compilatrix.Modular.Fixtures"]},
-  "Compilatrix.Modular.PreparationTests":
-  {"path": "Compilatrix/Modular/PreparationTests.lean",
-   "imports": ["Compilatrix.Modular.Fixtures", "Compilatrix.Tools.Check"]},
-  "Compilatrix.Modular.Fixtures":
-  {"path": "Compilatrix/Modular/Fixtures.lean",
-   "imports":
-   ["Compilatrix.Modular.Wire",
-    "Compilatrix.Coverage.Sources",
-    "Compilatrix.X86.ValidatedScalar"]},
-  "Compilatrix.Modular.Check":
-  {"path": "Compilatrix/Modular/Check.lean",
-   "imports": ["Compilatrix.Modular.SourceCheck"]},
-  "Compilatrix.Modular.Build":
-  {"path": "Compilatrix/Modular/Build.lean",
-   "imports": ["Compilatrix.Modular.Assemble"]},
-  "Compilatrix.Modular.Basic":
-  {"path": "Compilatrix/Modular/Basic.lean",
-   "imports":
-   ["Compilatrix.Modular.Transport",
-    "Compilatrix.Pipeline",
-    "Compilatrix.IxIR.Bounded"]},
-  "Compilatrix.Modular.Assemble":
-  {"path": "Compilatrix/Modular/Assemble.lean",
-   "imports": ["Compilatrix.Modular.Check", "Compilatrix.PipelineSound"]},
-  "Compilatrix.LoweredCompilationSim":
-  {"path": "Compilatrix/LoweredCompilationSim.lean",
-   "imports":
-   ["Compilatrix.LoweredCompilation",
-    "Compilatrix.PipelineSound",
-    "Compilatrix.IxIR1.ReaddressOwnership"]},
-  "Compilatrix.LoweredCompilation":
-  {"path": "Compilatrix/LoweredCompilation.lean",
-   "imports": ["Compilatrix.Pipeline", "Compilatrix.EraseAddressedSim"]},
-  "Compilatrix.Ixon.Work":
-  {"path": "Compilatrix/Ixon/Work.lean", "imports": ["Compilatrix.Ixon.Const"]},
   "Compilatrix.Ixon.V3.Validate":
   {"path": "Compilatrix/Ixon/V3/Validate.lean",
    "imports": ["Compilatrix.Ixon.V3.Source", "Compilatrix.Ixon.V3.Tc.Driver"]},
@@ -2352,45 +717,14 @@
    "imports": ["Compilatrix.Ixon.V3.Validate", "Compilatrix.Ixon.V3.Catalog"]},
   "Compilatrix.Ixon.Uses":
   {"path": "Compilatrix/Ixon/Uses.lean", "imports": []},
-  "Compilatrix.Ixon.UsageCheck":
-  {"path": "Compilatrix/Ixon/UsageCheck.lean",
-   "imports": ["Compilatrix.Ixon.Const"]},
   "Compilatrix.Ixon.Univ":
   {"path": "Compilatrix/Ixon/Univ.lean",
    "imports": ["Compilatrix.Ixon.Serialize"]},
-  "Compilatrix.Ixon.Sharing.Indexed":
-  {"path": "Compilatrix/Ixon/Sharing/Indexed.lean",
-   "imports":
-   ["Compilatrix.Ixon.Sharing.Compress",
-    "Std.Data.HashMap.Lemmas",
-    "Std.Data.HashSet.Lemmas",
-    "Std.Data.DHashMap.Lemmas"]},
-  "Compilatrix.Ixon.Sharing.Eval":
-  {"path": "Compilatrix/Ixon/Sharing/Eval.lean",
-   "imports": ["Compilatrix.Ixon.Eval", "Compilatrix.Ixon.Sharing"]},
-  "Compilatrix.Ixon.Sharing.Compress":
-  {"path": "Compilatrix/Ixon/Sharing/Compress.lean",
-   "imports":
-   ["Compilatrix.Ixon.Hash",
-    "Compilatrix.Ixon.Sharing.Basic",
-    "Compilatrix.Ixon.Work"]},
   "Compilatrix.Ixon.Sharing.Basic":
   {"path": "Compilatrix/Ixon/Sharing/Basic.lean",
    "imports": ["Compilatrix.Ixon.Expr"]},
-  "Compilatrix.Ixon.Sharing":
-  {"path": "Compilatrix/Ixon/Sharing.lean",
-   "imports":
-   ["Compilatrix.Ixon.Sharing.Basic",
-    "Compilatrix.Ixon.Sharing.Compress",
-    "Compilatrix.Ixon.Sharing.Indexed",
-    "Compilatrix.Ixon.Const",
-    "Compilatrix.Ixon.DecodeCheck",
-    "Compilatrix.Ixon.Work"]},
   "Compilatrix.Ixon.Serialize":
   {"path": "Compilatrix/Ixon/Serialize.lean", "imports": ["Std"]},
-  "Compilatrix.Ixon.RecursorUsage":
-  {"path": "Compilatrix/Ixon/RecursorUsage.lean",
-   "imports": ["Compilatrix.Ixon.UsageCheck"]},
   "Compilatrix.Ixon.Merkle":
   {"path": "Compilatrix/Ixon/Merkle.lean",
    "imports": ["Compilatrix.Ixon.Hash"]},
@@ -2401,12 +735,6 @@
   "Compilatrix.Ixon.Expr":
   {"path": "Compilatrix/Ixon/Expr.lean",
    "imports": ["Compilatrix.Ixon.Serialize", "Compilatrix.Ixon.Uses"]},
-  "Compilatrix.Ixon.Eval":
-  {"path": "Compilatrix/Ixon/Eval.lean",
-   "imports": ["Compilatrix.Fuel", "Compilatrix.Ixon.Const"]},
-  "Compilatrix.Ixon.DecodeCheck":
-  {"path": "Compilatrix/Ixon/DecodeCheck.lean",
-   "imports": ["Compilatrix.Ixon.Work"]},
   "Compilatrix.Ixon.Const":
   {"path": "Compilatrix/Ixon/Const.lean",
    "imports":
@@ -2415,691 +743,9 @@
     "Compilatrix.Ixon.Univ",
     "Compilatrix.Ixon.Expr",
     "Compilatrix.Ixon.Sharing.Basic"]},
-  "Compilatrix.Ixon.CatalogIO":
-  {"path": "Compilatrix/Ixon/CatalogIO.lean",
-   "imports": ["Compilatrix.Ixon.Catalog"]},
-  "Compilatrix.Ixon.Catalog":
-  {"path": "Compilatrix/Ixon/Catalog.lean",
-   "imports":
-   ["Compilatrix.Ixon.Merkle",
-    "Compilatrix.Ixon.Sharing",
-    "Compilatrix.AddressEnv"]},
   "Compilatrix.Ixon.Address":
   {"path": "Compilatrix/Ixon/Address.lean",
    "imports": ["Compilatrix.Ixon.Serialize"]},
-  "Compilatrix.IxIR2.WireTests":
-  {"path": "Compilatrix/IxIR2/WireTests.lean",
-   "imports": ["Compilatrix.IxIR2.WireFixtures"]},
-  "Compilatrix.IxIR2.WirePipeline":
-  {"path": "Compilatrix/IxIR2/WirePipeline.lean",
-   "imports":
-   ["Compilatrix.IxIR2.WireCheck",
-    "Compilatrix.IxIR2.Pipeline",
-    "Compilatrix.IxIR2.CallReuse"]},
-  "Compilatrix.IxIR2.WireJson":
-  {"path": "Compilatrix/IxIR2/WireJson.lean",
-   "imports": ["Compilatrix.IxIR2.Wire", "Lean"]},
-  "Compilatrix.IxIR2.WireIO":
-  {"path": "Compilatrix/IxIR2/WireIO.lean",
-   "imports": ["Compilatrix.IxIR2.WireCheck"]},
-  "Compilatrix.IxIR2.WireFixtures":
-  {"path": "Compilatrix/IxIR2/WireFixtures.lean",
-   "imports":
-   ["Compilatrix.IxIR2.WireBorrow",
-    "Compilatrix.IxIR2.WireJson",
-    "Compilatrix.CallReuse.Observations",
-    "Compilatrix.Borrow.Sources"]},
-  "Compilatrix.IxIR2.WireCheck":
-  {"path": "Compilatrix/IxIR2/WireCheck.lean",
-   "imports": ["Compilatrix.IxIR2.Decode", "Std.Data.HashSet"]},
-  "Compilatrix.IxIR2.WireBorrow":
-  {"path": "Compilatrix/IxIR2/WireBorrow.lean",
-   "imports":
-   ["Compilatrix.IxIR2.WirePipeline", "Compilatrix.Borrow.Pipeline"]},
-  "Compilatrix.IxIR2.Wire":
-  {"path": "Compilatrix/IxIR2/Wire.lean",
-   "imports": ["Compilatrix.IxIR2.Validate"]},
-  "Compilatrix.IxIR2.ValidateExamples":
-  {"path": "Compilatrix/IxIR2/ValidateExamples.lean",
-   "imports": ["Compilatrix.IxIR2.Validate"]},
-  "Compilatrix.IxIR2.Validate":
-  {"path": "Compilatrix/IxIR2/Validate.lean",
-   "imports": ["Compilatrix.IxIR2.CreditPolicy", "Std.Data.HashMap"]},
-  "Compilatrix.IxIR2.UniqueLower":
-  {"path": "Compilatrix/IxIR2/UniqueLower.lean",
-   "imports":
-   ["Compilatrix.UniqueReuse.Lower",
-    "Compilatrix.IxIR2.Pipeline",
-    "Compilatrix.IxIR2.Reuse"]},
-  "Compilatrix.IxIR2.SpaceLayout":
-  {"path": "Compilatrix/IxIR2/SpaceLayout.lean",
-   "imports": ["Compilatrix.IxIR2.SpaceHeap"]},
-  "Compilatrix.IxIR2.SpaceHeap":
-  {"path": "Compilatrix/IxIR2/SpaceHeap.lean",
-   "imports":
-   ["Compilatrix.IxIR2.CallResources", "Compilatrix.IxIR2.ReservationSteps"]},
-  "Compilatrix.IxIR2.SpaceExecution":
-  {"path": "Compilatrix/IxIR2/SpaceExecution.lean",
-   "imports": ["Compilatrix.IxIR2.SpaceLayout"]},
-  "Compilatrix.IxIR2.SourcePipelineSim":
-  {"path": "Compilatrix/IxIR2/SourcePipelineSim.lean",
-   "imports": ["Compilatrix.IxIR2.PipelinePhysical"]},
-  "Compilatrix.IxIR2.Serialize":
-  {"path": "Compilatrix/IxIR2/Serialize.lean",
-   "imports": ["Compilatrix.IxIR2.Wire", "Compilatrix.IxIR.Encoding"]},
-  "Compilatrix.IxIR2.ReuseSimExamples":
-  {"path": "Compilatrix/IxIR2/ReuseSimExamples.lean",
-   "imports": ["Compilatrix.IxIR2.ReuseSim"]},
-  "Compilatrix.IxIR2.ReuseSim":
-  {"path": "Compilatrix/IxIR2/ReuseSim.lean",
-   "imports": ["Compilatrix.IxIR1.EvalIso", "Compilatrix.IxIR2.Reuse"]},
-  "Compilatrix.IxIR2.ReuseResources":
-  {"path": "Compilatrix/IxIR2/ReuseResources.lean",
-   "imports": ["Compilatrix.IxIR2.Resources", "Compilatrix.IxIR2.ReuseSim"]},
-  "Compilatrix.IxIR2.ReuseLiveSim":
-  {"path": "Compilatrix/IxIR2/ReuseLiveSim.lean",
-   "imports":
-   ["Compilatrix.IxIR2.ReuseSim",
-    "Compilatrix.IxIR2.PipelineSim",
-    "Compilatrix.IxIR1.EvalHistory",
-    "Compilatrix.IxIR2.AllocationEvents",
-    "Compilatrix.IxIR2.ReuseCost"]},
-  "Compilatrix.IxIR2.ReuseHeapMapResults":
-  {"path": "Compilatrix/IxIR2/ReuseHeapMapResults.lean",
-   "imports":
-   ["Compilatrix.IxIR2.ReuseHeapMapOps", "Compilatrix.IxIR2.ReuseCost"]},
-  "Compilatrix.IxIR2.ReuseHeapMapOps":
-  {"path": "Compilatrix/IxIR2/ReuseHeapMapOps.lean",
-   "imports": ["Compilatrix.IxIR2.ReuseHeapMap", "Compilatrix.IxIR1.EvalIso"]},
-  "Compilatrix.IxIR2.ReuseHeapMap":
-  {"path": "Compilatrix/IxIR2/ReuseHeapMap.lean",
-   "imports": ["Compilatrix.IxIR2.ReservationHeap"]},
-  "Compilatrix.IxIR2.ReuseExamples":
-  {"path": "Compilatrix/IxIR2/ReuseExamples.lean",
-   "imports":
-   ["Compilatrix.IxIR1.Lower",
-    "Compilatrix.IxIR2.Lower",
-    "Compilatrix.IxIR2.Reuse"]},
-  "Compilatrix.IxIR2.ReuseCost":
-  {"path": "Compilatrix/IxIR2/ReuseCost.lean",
-   "imports": ["Compilatrix.IxIR2.CostSteps", "Compilatrix.IxIR2.ReuseSim"]},
-  "Compilatrix.IxIR2.ReuseAllocation":
-  {"path": "Compilatrix/IxIR2/ReuseAllocation.lean",
-   "imports":
-   ["Compilatrix.IxIR2.ReuseCost",
-    "Compilatrix.IxIR2.AllocationEvents",
-    "Compilatrix.IxIR2.ReuseResources"]},
-  "Compilatrix.IxIR2.Reuse":
-  {"path": "Compilatrix/IxIR2/Reuse.lean",
-   "imports": ["Compilatrix.IxIR2.EvalCounter", "Compilatrix.IxIR2.Liveness"]},
-  "Compilatrix.IxIR2.Resources":
-  {"path": "Compilatrix/IxIR2/Resources.lean",
-   "imports": ["Compilatrix.IxIR2.HeapAccounting"]},
-  "Compilatrix.IxIR2.ReservationSteps":
-  {"path": "Compilatrix/IxIR2/ReservationSteps.lean",
-   "imports": ["Compilatrix.IxIR2.ReservationOwnership"]},
-  "Compilatrix.IxIR2.ReservationOwnership":
-  {"path": "Compilatrix/IxIR2/ReservationOwnership.lean",
-   "imports":
-   ["Compilatrix.IxIR2.ReservationHeap", "Compilatrix.IxIR2.CallResources"]},
-  "Compilatrix.IxIR2.ReservationHeap":
-  {"path": "Compilatrix/IxIR2/ReservationHeap.lean",
-   "imports": ["Compilatrix.IxIR2.HeapAccounting"]},
-  "Compilatrix.IxIR2.PipelineSim":
-  {"path": "Compilatrix/IxIR2/PipelineSim.lean",
-   "imports":
-   ["Compilatrix.IxIR2.LowerSim",
-    "Compilatrix.IxIR2.Pipeline",
-    "Compilatrix.IxIR1.EvalHistory",
-    "Compilatrix.IxIR1.ReaddressOwnership",
-    "Compilatrix.LoweredCompilationSim"]},
-  "Compilatrix.IxIR2.PipelineResources":
-  {"path": "Compilatrix/IxIR2/PipelineResources.lean",
-   "imports":
-   ["Compilatrix.IxIR2.PipelinePhysical",
-    "Compilatrix.IxIR2.ReuseLiveSim",
-    "Compilatrix.IxIR2.ReuseResources",
-    "Compilatrix.IxIR2.EvalFuel"]},
-  "Compilatrix.IxIR2.PipelinePhysical":
-  {"path": "Compilatrix/IxIR2/PipelinePhysical.lean",
-   "imports":
-   ["Compilatrix.IxIR2.PipelineSim", "Compilatrix.IxIR2.Interpretation"]},
-  "Compilatrix.IxIR2.PipelineInvoke":
-  {"path": "Compilatrix/IxIR2/PipelineInvoke.lean",
-   "imports": ["Compilatrix.IxIR2.PipelinePhysical"]},
-  "Compilatrix.IxIR2.PipelineCosts":
-  {"path": "Compilatrix/IxIR2/PipelineCosts.lean",
-   "imports": ["Compilatrix.IxIR2.PipelineAllocation"]},
-  "Compilatrix.IxIR2.PipelineCallReuse":
-  {"path": "Compilatrix/IxIR2/PipelineCallReuse.lean",
-   "imports":
-   ["Compilatrix.IxIR2.PipelineCosts",
-    "Compilatrix.IxIR2.CallReuseMain",
-    "Compilatrix.IxIR2.CallResources"]},
-  "Compilatrix.IxIR2.PipelineAllocation":
-  {"path": "Compilatrix/IxIR2/PipelineAllocation.lean",
-   "imports":
-   ["Compilatrix.IxIR2.PipelineResources",
-    "Compilatrix.IxIR2.ReuseAllocation"]},
-  "Compilatrix.IxIR2.Pipeline":
-  {"path": "Compilatrix/IxIR2/Pipeline.lean",
-   "imports":
-   ["Compilatrix.Pipeline",
-    "Compilatrix.LoweredCompilation",
-    "Compilatrix.IxIR2.Lower",
-    "Compilatrix.Ixon.Hash",
-    "Compilatrix.IxIR1.Serialize",
-    "Compilatrix.IxIR1.NoReuse"]},
-  "Compilatrix.IxIR2.LowerSim":
-  {"path": "Compilatrix/IxIR2/LowerSim.lean",
-   "imports":
-   ["Compilatrix.IxIR1.NoReuse",
-    "Compilatrix.IxIR2.Eval",
-    "Compilatrix.IxIR2.Lower"]},
-  "Compilatrix.IxIR2.LowerExamples":
-  {"path": "Compilatrix/IxIR2/LowerExamples.lean",
-   "imports":
-   ["Compilatrix.IxIR1.Eval",
-    "Compilatrix.IxIR2.Eval",
-    "Compilatrix.IxIR2.Lower"]},
-  "Compilatrix.IxIR2.Lower":
-  {"path": "Compilatrix/IxIR2/Lower.lean",
-   "imports": ["Compilatrix.IxIR2.Validate", "Compilatrix.IxIR2.CreditFree"]},
-  "Compilatrix.IxIR2.LivenessExamples":
-  {"path": "Compilatrix/IxIR2/LivenessExamples.lean",
-   "imports": ["Compilatrix.IxIR2.Liveness"]},
-  "Compilatrix.IxIR2.Liveness":
-  {"path": "Compilatrix/IxIR2/Liveness.lean",
-   "imports": ["Compilatrix.IxIR2.Validate"]},
-  "Compilatrix.IxIR2.Interpretation":
-  {"path": "Compilatrix/IxIR2/Interpretation.lean",
-   "imports": ["Compilatrix.IxIR2.CreditFree", "Compilatrix.IxIR2.Eval"]},
-  "Compilatrix.IxIR2.HeapAccounting":
-  {"path": "Compilatrix/IxIR2/HeapAccounting.lean",
-   "imports":
-   ["Compilatrix.IxIR2.Eval",
-    "Compilatrix.IxIR1.Reclamation",
-    "Init.Data.Array.Count"]},
-  "Compilatrix.IxIR2.EvalFuel":
-  {"path": "Compilatrix/IxIR2/EvalFuel.lean",
-   "imports": ["Compilatrix.IxIR2.Eval"]},
-  "Compilatrix.IxIR2.EvalExamples":
-  {"path": "Compilatrix/IxIR2/EvalExamples.lean",
-   "imports": ["Compilatrix.IxIR2.EvalCounter"]},
-  "Compilatrix.IxIR2.EvalCounter":
-  {"path": "Compilatrix/IxIR2/EvalCounter.lean",
-   "imports": ["Compilatrix.IxIR1.Sim", "Compilatrix.IxIR2.Eval"]},
-  "Compilatrix.IxIR2.Eval":
-  {"path": "Compilatrix/IxIR2/Eval.lean",
-   "imports": ["Compilatrix.IxIR1.Eval", "Compilatrix.IxIR2.Validate"]},
-  "Compilatrix.IxIR2.Decode":
-  {"path": "Compilatrix/IxIR2/Decode.lean",
-   "imports":
-   ["Compilatrix.IxIR2.Serialize",
-    "Compilatrix.IxIR.Bounded",
-    "Compilatrix.IxIR0.Decode"]},
-  "Compilatrix.IxIR2.CreditTerminators":
-  {"path": "Compilatrix/IxIR2/CreditTerminators.lean",
-   "imports": ["Compilatrix.IxIR2.CreditInstructions"]},
-  "Compilatrix.IxIR2.CreditSteps":
-  {"path": "Compilatrix/IxIR2/CreditSteps.lean",
-   "imports": ["Compilatrix.IxIR2.CreditTerminators"]},
-  "Compilatrix.IxIR2.CreditSimulation":
-  {"path": "Compilatrix/IxIR2/CreditSimulation.lean",
-   "imports": ["Compilatrix.IxIR2.CreditResources"]},
-  "Compilatrix.IxIR2.CreditResources":
-  {"path": "Compilatrix/IxIR2/CreditResources.lean",
-   "imports": ["Compilatrix.IxIR2.CreditSteps"]},
-  "Compilatrix.IxIR2.CreditRelation":
-  {"path": "Compilatrix/IxIR2/CreditRelation.lean",
-   "imports":
-   ["Compilatrix.IxIR2.ReuseHeapMapResults",
-    "Compilatrix.IxIR2.EvalCounter",
-    "Compilatrix.IxIR2.ReservationSteps"]},
-  "Compilatrix.IxIR2.CreditRefinement":
-  {"path": "Compilatrix/IxIR2/CreditRefinement.lean",
-   "imports":
-   ["Compilatrix.IxIR2.CreditReclamation", "Compilatrix.IxIR2.CallEvalFuel"]},
-  "Compilatrix.IxIR2.CreditReclamation":
-  {"path": "Compilatrix/IxIR2/CreditReclamation.lean",
-   "imports":
-   ["Compilatrix.IxIR2.CreditSimulation", "Compilatrix.IxIR2.LowerSim"]},
-  "Compilatrix.IxIR2.CreditPolicy":
-  {"path": "Compilatrix/IxIR2/CreditPolicy.lean",
-   "imports": ["Compilatrix.IxIR2.Basic"]},
-  "Compilatrix.IxIR2.CreditInstructions":
-  {"path": "Compilatrix/IxIR2/CreditInstructions.lean",
-   "imports": ["Compilatrix.IxIR2.CreditApply"]},
-  "Compilatrix.IxIR2.CreditHeapObservations":
-  {"path": "Compilatrix/IxIR2/CreditHeapObservations.lean",
-   "imports": ["Compilatrix.IxIR2.CreditRelation"]},
-  "Compilatrix.IxIR2.CreditHeap":
-  {"path": "Compilatrix/IxIR2/CreditHeap.lean",
-   "imports":
-   ["Compilatrix.IxIR2.CreditHeapObservations",
-    "Compilatrix.IxIR2.CallReuseOrder"]},
-  "Compilatrix.IxIR2.CreditFree":
-  {"path": "Compilatrix/IxIR2/CreditFree.lean",
-   "imports": ["Compilatrix.IxIR2.Basic"]},
-  "Compilatrix.IxIR2.CreditExamples":
-  {"path": "Compilatrix/IxIR2/CreditExamples.lean",
-   "imports": ["Compilatrix.IxIR2.CreditRefinement"]},
-  "Compilatrix.IxIR2.CreditControl":
-  {"path": "Compilatrix/IxIR2/CreditControl.lean",
-   "imports": ["Compilatrix.IxIR2.CreditRelation"]},
-  "Compilatrix.IxIR2.CreditApply":
-  {"path": "Compilatrix/IxIR2/CreditApply.lean",
-   "imports":
-   ["Compilatrix.IxIR2.CreditControl", "Compilatrix.IxIR2.CreditHeap"]},
-  "Compilatrix.IxIR2.CostSteps":
-  {"path": "Compilatrix/IxIR2/CostSteps.lean",
-   "imports": ["Compilatrix.IxIR2.CostObservations"]},
-  "Compilatrix.IxIR2.CostObservations":
-  {"path": "Compilatrix/IxIR2/CostObservations.lean",
-   "imports":
-   ["Compilatrix.IxIR1.RcPotential", "Compilatrix.IxIR2.AllocationEvents"]},
-  "Compilatrix.IxIR2.CallReuseTransition":
-  {"path": "Compilatrix/IxIR2/CallReuseTransition.lean",
-   "imports": ["Compilatrix.IxIR2.CallReuseCalls"]},
-  "Compilatrix.IxIR2.CallReuseTerminators":
-  {"path": "Compilatrix/IxIR2/CallReuseTerminators.lean",
-   "imports": ["Compilatrix.IxIR2.CallReuseInstructions"]},
-  "Compilatrix.IxIR2.CallReuseSimulation":
-  {"path": "Compilatrix/IxIR2/CallReuseSimulation.lean",
-   "imports": ["Compilatrix.IxIR2.CallReuseProgress"]},
-  "Compilatrix.IxIR2.CallReuseShape":
-  {"path": "Compilatrix/IxIR2/CallReuseShape.lean",
-   "imports": ["Compilatrix.IxIR2.CallReuseTerminators"]},
-  "Compilatrix.IxIR2.CallReuseProgress":
-  {"path": "Compilatrix/IxIR2/CallReuseProgress.lean",
-   "imports": ["Compilatrix.IxIR2.CallReusePrefix"]},
-  "Compilatrix.IxIR2.CallReusePrefixTrace":
-  {"path": "Compilatrix/IxIR2/CallReusePrefixTrace.lean",
-   "imports": ["Compilatrix.IxIR2.CallReuseBody"]},
-  "Compilatrix.IxIR2.CallReusePrefixHeap":
-  {"path": "Compilatrix/IxIR2/CallReusePrefixHeap.lean",
-   "imports": ["Compilatrix.IxIR2.CallReusePrefixTrace"]},
-  "Compilatrix.IxIR2.CallReusePrefix":
-  {"path": "Compilatrix/IxIR2/CallReusePrefix.lean",
-   "imports": ["Compilatrix.IxIR2.CallReusePrefixHeap"]},
-  "Compilatrix.IxIR2.CallReuseOrder":
-  {"path": "Compilatrix/IxIR2/CallReuseOrder.lean",
-   "imports": ["Compilatrix.IxIR2.ReuseHeapMapResults"]},
-  "Compilatrix.IxIR2.CallReuseMain":
-  {"path": "Compilatrix/IxIR2/CallReuseMain.lean",
-   "imports":
-   ["Compilatrix.IxIR2.CallReuseSimulation", "Compilatrix.IxIR2.CallEvalFuel"]},
-  "Compilatrix.IxIR2.CallReuseInstructions":
-  {"path": "Compilatrix/IxIR2/CallReuseInstructions.lean",
-   "imports": ["Compilatrix.IxIR2.CallReuseApply"]},
-  "Compilatrix.IxIR2.CallReuseHeapShape":
-  {"path": "Compilatrix/IxIR2/CallReuseHeapShape.lean",
-   "imports": ["Compilatrix.IxIR2.CallReuseOrder"]},
-  "Compilatrix.IxIR2.CallReuseControl":
-  {"path": "Compilatrix/IxIR2/CallReuseControl.lean",
-   "imports":
-   ["Compilatrix.IxIR2.CallReuse",
-    "Compilatrix.IxIR2.CallReuseHeapShape",
-    "Compilatrix.IxIR2.ReservationSteps"]},
-  "Compilatrix.IxIR2.CallReuseCalls":
-  {"path": "Compilatrix/IxIR2/CallReuseCalls.lean",
-   "imports": ["Compilatrix.IxIR2.CallReuseControl"]},
-  "Compilatrix.IxIR2.CallReuseBody":
-  {"path": "Compilatrix/IxIR2/CallReuseBody.lean",
-   "imports": ["Compilatrix.IxIR2.CallReuseShape"]},
-  "Compilatrix.IxIR2.CallReuseApply":
-  {"path": "Compilatrix/IxIR2/CallReuseApply.lean",
-   "imports": ["Compilatrix.IxIR2.CallReuseTransition"]},
-  "Compilatrix.IxIR2.CallReuse":
-  {"path": "Compilatrix/IxIR2/CallReuse.lean",
-   "imports":
-   ["Compilatrix.IxIR2.Reuse",
-    "Compilatrix.IxIR2.CallEval",
-    "Compilatrix.IxIR2.CreditFree"]},
-  "Compilatrix.IxIR2.CallResources":
-  {"path": "Compilatrix/IxIR2/CallResources.lean",
-   "imports":
-   ["Compilatrix.IxIR2.CallEval",
-    "Compilatrix.IxIR2.Resources",
-    "Compilatrix.IxIR2.CostSteps",
-    "Compilatrix.IxIR2.EvalFuel"]},
-  "Compilatrix.IxIR2.CallEvalFuel":
-  {"path": "Compilatrix/IxIR2/CallEvalFuel.lean",
-   "imports": ["Compilatrix.IxIR2.CallEval", "Compilatrix.IxIR2.EvalFuel"]},
-  "Compilatrix.IxIR2.CallEval":
-  {"path": "Compilatrix/IxIR2/CallEval.lean",
-   "imports": ["Compilatrix.IxIR2.Eval"]},
-  "Compilatrix.IxIR2.Borrow.Rewrite":
-  {"path": "Compilatrix/IxIR2/Borrow/Rewrite.lean",
-   "imports": ["Compilatrix.IxIR2.Validate", "Compilatrix.Ixon.Hash"]},
-  "Compilatrix.IxIR2.Borrow.Replay":
-  {"path": "Compilatrix/IxIR2/Borrow/Replay.lean",
-   "imports": ["Compilatrix.IxIR2.Borrow.Rewrite", "Compilatrix.IxIR2.Eval"]},
-  "Compilatrix.IxIR2.Borrow.OpenSim":
-  {"path": "Compilatrix/IxIR2/Borrow/OpenSim.lean",
-   "imports": ["Compilatrix.IxIR2.Borrow.OpenControl"]},
-  "Compilatrix.IxIR2.Borrow.OpenShape":
-  {"path": "Compilatrix/IxIR2/Borrow/OpenShape.lean",
-   "imports": ["Compilatrix.IxIR2.Borrow.Rewrite", "Compilatrix.IxIR2.Eval"]},
-  "Compilatrix.IxIR2.Borrow.OpenResources":
-  {"path": "Compilatrix/IxIR2/Borrow/OpenResources.lean",
-   "imports":
-   ["Compilatrix.IxIR2.Borrow.OpenCheck",
-    "Compilatrix.IxIR2.CreditReclamation"]},
-  "Compilatrix.IxIR2.Borrow.OpenHeap":
-  {"path": "Compilatrix/IxIR2/Borrow/OpenHeap.lean",
-   "imports": ["Compilatrix.IxIR2.Borrow.OpenShape", "Compilatrix.IxIR1.Sim"]},
-  "Compilatrix.IxIR2.Borrow.OpenExamples":
-  {"path": "Compilatrix/IxIR2/Borrow/OpenExamples.lean",
-   "imports":
-   ["Compilatrix.IxIR2.Borrow.OpenResources",
-    "Compilatrix.IxIR2.Borrow.Examples"]},
-  "Compilatrix.IxIR2.Borrow.OpenControl":
-  {"path": "Compilatrix/IxIR2/Borrow/OpenControl.lean",
-   "imports": ["Compilatrix.IxIR2.Borrow.OpenHeap"]},
-  "Compilatrix.IxIR2.Borrow.OpenCheck":
-  {"path": "Compilatrix/IxIR2/Borrow/OpenCheck.lean",
-   "imports": ["Compilatrix.IxIR2.Borrow.OpenSim"]},
-  "Compilatrix.IxIR2.Borrow.Examples":
-  {"path": "Compilatrix/IxIR2/Borrow/Examples.lean",
-   "imports": ["Compilatrix.IxIR2.Borrow.Replay"]},
-  "Compilatrix.IxIR2.Basic":
-  {"path": "Compilatrix/IxIR2/Basic.lean",
-   "imports": ["Compilatrix.IxIR1.Basic"]},
-  "Compilatrix.IxIR2.AllocationEvents":
-  {"path": "Compilatrix/IxIR2/AllocationEvents.lean",
-   "imports":
-   ["Compilatrix.IxIR2.HeapAccounting", "Compilatrix.IxIR1.EvalIso"]},
-  "Compilatrix.IxIR1.WellModedGen":
-  {"path": "Compilatrix/IxIR1/WellModedGen.lean",
-   "imports": ["CompilatrixTests.IxIR1.WellModedGen"]},
-  "Compilatrix.IxIR1.ThesisBench":
-  {"path": "Compilatrix/IxIR1/ThesisBench.lean",
-   "imports": ["CompilatrixTests.IxIR1.ThesisBench"]},
-  "Compilatrix.IxIR1.Sim":
-  {"path": "Compilatrix/IxIR1/Sim.lean",
-   "imports": ["Compilatrix.IxIR1.Eval", "Compilatrix.IxIR0.Eval"]},
-  "Compilatrix.IxIR1.Serialize":
-  {"path": "Compilatrix/IxIR1/Serialize.lean",
-   "imports":
-   ["Compilatrix.IxIR.Encoding",
-    "Compilatrix.IxIR0.Serialize",
-    "Compilatrix.IxIR1.Basic"]},
-  "Compilatrix.IxIR1.Reclamation":
-  {"path": "Compilatrix/IxIR1/Reclamation.lean",
-   "imports": ["Compilatrix.IxIR1.Progress"]},
-  "Compilatrix.IxIR1.ReaddressSim":
-  {"path": "Compilatrix/IxIR1/ReaddressSim.lean",
-   "imports": ["Compilatrix.IxIR1.Eval", "Compilatrix.IxIR1.Readdress"]},
-  "Compilatrix.IxIR1.ReaddressOwnership":
-  {"path": "Compilatrix/IxIR1/ReaddressOwnership.lean",
-   "imports": ["Compilatrix.IxIR1.Sim", "Compilatrix.IxIR1.ReaddressSim"]},
-  "Compilatrix.IxIR1.ReaddressIndexTests":
-  {"path": "Compilatrix/IxIR1/ReaddressIndexTests.lean",
-   "imports": ["Compilatrix.Coverage.Snapshot", "Compilatrix.Tools.Check"]},
-  "Compilatrix.IxIR1.ReaddressIndex":
-  {"path": "Compilatrix/IxIR1/ReaddressIndex.lean",
-   "imports": ["Compilatrix.IxIR1.Readdress", "Std.Data.HashSet.Lemmas"]},
-  "Compilatrix.IxIR1.ReaddressAllSim":
-  {"path": "Compilatrix/IxIR1/ReaddressAllSim.lean",
-   "imports":
-   ["Compilatrix.IxIR1.ReaddressAll", "Compilatrix.IxIR1.ReaddressSim"]},
-  "Compilatrix.IxIR1.ReaddressAll":
-  {"path": "Compilatrix/IxIR1/ReaddressAll.lean",
-   "imports":
-   ["Compilatrix.IxIR1.MutualBlock", "Compilatrix.IxIR1.ReaddressIndex"]},
-  "Compilatrix.IxIR1.Readdress":
-  {"path": "Compilatrix/IxIR1/Readdress.lean",
-   "imports": ["Compilatrix.IxIR1.Serialize"]},
-  "Compilatrix.IxIR1.Reachability":
-  {"path": "Compilatrix/IxIR1/Reachability.lean",
-   "imports": ["Compilatrix.IxIR1.EvalRewrite", "Compilatrix.IxIR1.Serialize"]},
-  "Compilatrix.IxIR1.RcPotential":
-  {"path": "Compilatrix/IxIR1/RcPotential.lean",
-   "imports": ["Compilatrix.IxIR1.Sim"]},
-  "Compilatrix.IxIR1.Progress":
-  {"path": "Compilatrix/IxIR1/Progress.lean",
-   "imports": ["Compilatrix.IxIR1.Sim", "Compilatrix.IxIR1.Mono"]},
-  "Compilatrix.IxIR1.OptimizerReclamation":
-  {"path": "Compilatrix/IxIR1/OptimizerReclamation.lean",
-   "imports":
-   ["Compilatrix.IxIR1.Optimizer", "Compilatrix.IxIR1.NoReuseAddressed"]},
-  "Compilatrix.IxIR1.Optimizer":
-  {"path": "Compilatrix/IxIR1/Optimizer.lean",
-   "imports":
-   ["Compilatrix.IxIR1.HPTCache", "Compilatrix.IxIR1.HPTPAPFuseProgram"]},
-  "Compilatrix.IxIR1.NoReuseAddressed":
-  {"path": "Compilatrix/IxIR1/NoReuseAddressed.lean",
-   "imports":
-   ["Compilatrix.IxIR1.NoReuse", "Compilatrix.IxIR1.LowerFullyAddressedSim"]},
-  "Compilatrix.IxIR1.NoReuse":
-  {"path": "Compilatrix/IxIR1/NoReuse.lean",
-   "imports":
-   ["Compilatrix.IxIR1.Reclamation", "Compilatrix.IxIR1.LowerStateSim"]},
-  "Compilatrix.IxIR1.MutualBlock":
-  {"path": "Compilatrix/IxIR1/MutualBlock.lean",
-   "imports": ["Compilatrix.IxIR1.Decode", "Compilatrix.IxIR1.Readdress"]},
-  "Compilatrix.IxIR1.Mono":
-  {"path": "Compilatrix/IxIR1/Mono.lean",
-   "imports": ["Compilatrix.Fuel", "Compilatrix.IxIR1.Eval"]},
-  "Compilatrix.IxIR1.LowerStateSim":
-  {"path": "Compilatrix/IxIR1/LowerStateSim.lean",
-   "imports": ["Compilatrix.IxIR1.LowerSim"]},
-  "Compilatrix.IxIR1.LowerStateBase":
-  {"path": "Compilatrix/IxIR1/LowerStateBase.lean",
-   "imports": ["Compilatrix.IxIR1.Lower"]},
-  "Compilatrix.IxIR1.LowerSim":
-  {"path": "Compilatrix/IxIR1/LowerSim.lean",
-   "imports":
-   ["Compilatrix.IxIR1.LowerStateBase",
-    "Compilatrix.IxIR1.Sim",
-    "Compilatrix.IxIR1.Mono",
-    "Compilatrix.IxIR1.Reclamation",
-    "Compilatrix.IxIR0.Mono"]},
-  "Compilatrix.IxIR1.LowerProgress":
-  {"path": "Compilatrix/IxIR1/LowerProgress.lean",
-   "imports":
-   ["Compilatrix.IxIR1.LowerStateSim",
-    "Compilatrix.IxIR1.Progress",
-    "Compilatrix.IxIR0.ProjectionSafe",
-    "Compilatrix.Sim",
-    "Compilatrix.EraseValidator"]},
-  "Compilatrix.IxIR1.LowerMutualAddressedSim":
-  {"path": "Compilatrix/IxIR1/LowerMutualAddressedSim.lean",
-   "imports":
-   ["Compilatrix.EraseAddressedSim",
-    "Compilatrix.IxIR1.LowerAddressedSim",
-    "Compilatrix.IxIR1.LowerFullyAddressedSim"]},
-  "Compilatrix.IxIR1.LowerMutualAddressedProgress":
-  {"path": "Compilatrix/IxIR1/LowerMutualAddressedProgress.lean",
-   "imports":
-   ["Compilatrix.EraseAddressedSim",
-    "Compilatrix.IxIR1.LowerAddressedSim",
-    "Compilatrix.IxIR1.LowerMutualAddressedSim",
-    "Compilatrix.IxIR1.LowerProgress"]},
-  "Compilatrix.IxIR1.LowerFullyAddressedSim":
-  {"path": "Compilatrix/IxIR1/LowerFullyAddressedSim.lean",
-   "imports":
-   ["Compilatrix.IxIR1.LowerAddressedSim",
-    "Compilatrix.IxIR1.LowerFullyAddressed",
-    "Compilatrix.IxIR1.ReaddressAllSim"]},
-  "Compilatrix.IxIR1.LowerFullyAddressed":
-  {"path": "Compilatrix/IxIR1/LowerFullyAddressed.lean",
-   "imports": ["Compilatrix.IxIR1.Lower", "Compilatrix.IxIR1.ReaddressAll"]},
-  "Compilatrix.IxIR1.LowerAddressedSim":
-  {"path": "Compilatrix/IxIR1/LowerAddressedSim.lean",
-   "imports":
-   ["Compilatrix.IxIR1.LowerAddressed",
-    "Compilatrix.IxIR1.LowerSim",
-    "Compilatrix.IxIR1.ReaddressSim"]},
-  "Compilatrix.IxIR1.LowerAddressed":
-  {"path": "Compilatrix/IxIR1/LowerAddressed.lean",
-   "imports": ["Compilatrix.IxIR1.Lower", "Compilatrix.IxIR1.Readdress"]},
-  "Compilatrix.IxIR1.Lower":
-  {"path": "Compilatrix/IxIR1/Lower.lean",
-   "imports": ["Compilatrix.IxIR1.Eval", "Compilatrix.IxIR0.Eval"]},
-  "Compilatrix.IxIR1.HPTSound":
-  {"path": "Compilatrix/IxIR1/HPTSound.lean",
-   "imports": ["Compilatrix.IxIR1.HPT"]},
-  "Compilatrix.IxIR1.HPTProduce":
-  {"path": "Compilatrix/IxIR1/HPTProduce.lean",
-   "imports": ["Compilatrix.IxIR1.HPTSound"]},
-  "Compilatrix.IxIR1.HPTPAPFuseProgram":
-  {"path": "Compilatrix/IxIR1/HPTPAPFuseProgram.lean",
-   "imports":
-   ["Compilatrix.IxIR1.HPTCasePruneProgram",
-    "Compilatrix.IxIR1.HPTDestroy",
-    "Compilatrix.IxIR1.Reachability"]},
-  "Compilatrix.IxIR1.HPTPAPFuse":
-  {"path": "Compilatrix/IxIR1/HPTPAPFuse.lean",
-   "imports": ["Compilatrix.IxIR1.EvalRewrite", "Compilatrix.IxIR1.HPTSound"]},
-  "Compilatrix.IxIR1.HPTFetchForward":
-  {"path": "Compilatrix/IxIR1/HPTFetchForward.lean",
-   "imports": ["Compilatrix.IxIR1.HPTPAPFuse"]},
-  "Compilatrix.IxIR1.HPTDestroy":
-  {"path": "Compilatrix/IxIR1/HPTDestroy.lean",
-   "imports": ["Compilatrix.IxIR1.HPTFetchForward"]},
-  "Compilatrix.IxIR1.HPTCasePruneProgram":
-  {"path": "Compilatrix/IxIR1/HPTCasePruneProgram.lean",
-   "imports":
-   ["Compilatrix.IxIR1.HPTCasePrune",
-    "Compilatrix.IxIR1.EvalRewrite",
-    "Compilatrix.IxIR1.ReaddressAllSim"]},
-  "Compilatrix.IxIR1.HPTCasePrune":
-  {"path": "Compilatrix/IxIR1/HPTCasePrune.lean",
-   "imports": ["Compilatrix.IxIR1.HPTSound"]},
-  "Compilatrix.IxIR1.HPTCacheIO":
-  {"path": "Compilatrix/IxIR1/HPTCacheIO.lean",
-   "imports": ["Compilatrix.IxIR1.HPTCache", "Compilatrix.DurableSync"]},
-  "Compilatrix.IxIR1.HPTCacheDirIO":
-  {"path": "Compilatrix/IxIR1/HPTCacheDirIO.lean",
-   "imports": ["Compilatrix.IxIR1.HPTCacheIO"]},
-  "Compilatrix.IxIR1.HPTCache":
-  {"path": "Compilatrix/IxIR1/HPTCache.lean",
-   "imports": ["Compilatrix.IxIR1.HPTProduce", "Compilatrix.IxIR.Decode"]},
-  "Compilatrix.IxIR1.HPT":
-  {"path": "Compilatrix/IxIR1/HPT.lean",
-   "imports":
-   ["Compilatrix.IxIR1.ReaddressAll",
-    "Compilatrix.IxIR1.Eval",
-    "Compilatrix.Ixon.Merkle"]},
-  "Compilatrix.IxIR1.Examples":
-  {"path": "Compilatrix/IxIR1/Examples.lean",
-   "imports": ["Compilatrix.IxIR1.Eval"]},
-  "Compilatrix.IxIR1.EvalRewrite":
-  {"path": "Compilatrix/IxIR1/EvalRewrite.lean",
-   "imports": ["Compilatrix.IxIR1.EvalIso"]},
-  "Compilatrix.IxIR1.EvalIso":
-  {"path": "Compilatrix/IxIR1/EvalIso.lean",
-   "imports":
-   ["Compilatrix.IxIR1.Mono",
-    "Compilatrix.IxIR1.Reclamation",
-    "Compilatrix.IxIR1.Sim"]},
-  "Compilatrix.IxIR1.EvalHistory":
-  {"path": "Compilatrix/IxIR1/EvalHistory.lean",
-   "imports": ["Compilatrix.IxIR1.Mono", "Compilatrix.IxIR1.EvalRewrite"]},
-  "Compilatrix.IxIR1.Eval":
-  {"path": "Compilatrix/IxIR1/Eval.lean",
-   "imports": ["Compilatrix.IxIR1.Basic"]},
-  "Compilatrix.IxIR1.Decode":
-  {"path": "Compilatrix/IxIR1/Decode.lean",
-   "imports": ["Compilatrix.IxIR0.Decode", "Compilatrix.IxIR1.Serialize"]},
-  "Compilatrix.IxIR1.CostTrace":
-  {"path": "Compilatrix/IxIR1/CostTrace.lean",
-   "imports":
-   ["Compilatrix.IxIR1.RcPotential",
-    "Compilatrix.IxIR0.DynamicCost",
-    "Compilatrix.IxIR1.LowerFullyAddressedSim",
-    "Compilatrix.IxIR1.LowerSim",
-    "Compilatrix.IxIR1.NoReuse"]},
-  "Compilatrix.IxIR1.CostModel":
-  {"path": "Compilatrix/IxIR1/CostModel.lean",
-   "imports": ["Compilatrix.IxIR1.CostInstance"]},
-  "Compilatrix.IxIR1.CostInstance":
-  {"path": "Compilatrix/IxIR1/CostInstance.lean",
-   "imports": ["Compilatrix.IxIR1.NoReuse"]},
-  "Compilatrix.IxIR1.Basic":
-  {"path": "Compilatrix/IxIR1/Basic.lean",
-   "imports": ["Compilatrix.IxIR0.Basic"]},
-  "Compilatrix.IxIR0.UniqueReverseSim":
-  {"path": "Compilatrix/IxIR0/UniqueReverseSim.lean",
-   "imports":
-   ["Compilatrix.IxIR0.UniqueReverse", "Compilatrix.IxIR0.RecursionSim"]},
-  "Compilatrix.IxIR0.UniqueReverse":
-  {"path": "Compilatrix/IxIR0/UniqueReverse.lean",
-   "imports":
-   ["Compilatrix.IxIR0.RecursorModes", "Compilatrix.IxIR0.Recursion"]},
-  "Compilatrix.IxIR0.Serialize":
-  {"path": "Compilatrix/IxIR0/Serialize.lean",
-   "imports": ["Compilatrix.IxIR.Encoding", "Compilatrix.IxIR0.Basic"]},
-  "Compilatrix.IxIR0.RecursorModes":
-  {"path": "Compilatrix/IxIR0/RecursorModes.lean",
-   "imports": ["Compilatrix.IxIR0.Serialize"]},
-  "Compilatrix.IxIR0.RecursionSim":
-  {"path": "Compilatrix/IxIR0/RecursionSim.lean",
-   "imports": ["Compilatrix.IxIR0.Recursion", "Compilatrix.IxIR0.Mono"]},
-  "Compilatrix.IxIR0.Recursion":
-  {"path": "Compilatrix/IxIR0/Recursion.lean",
-   "imports": ["Compilatrix.IxIR0.Serialize", "Compilatrix.IxIR0.Eval"]},
-  "Compilatrix.IxIR0.ReaddressSim":
-  {"path": "Compilatrix/IxIR0/ReaddressSim.lean",
-   "imports": ["Compilatrix.IxIR0.Eval", "Compilatrix.IxIR0.Readdress"]},
-  "Compilatrix.IxIR0.ReaddressProjectionSafe":
-  {"path": "Compilatrix/IxIR0/ReaddressProjectionSafe.lean",
-   "imports":
-   ["Compilatrix.IxIR0.ProjectionSafe", "Compilatrix.IxIR0.ReaddressSim"]},
-  "Compilatrix.IxIR0.ReaddressOracleExamples":
-  {"path": "Compilatrix/IxIR0/ReaddressOracleExamples.lean",
-   "imports":
-   ["Compilatrix.IxIR0.Examples", "Compilatrix.IxIR0.ReaddressOracle"]},
-  "Compilatrix.IxIR0.ReaddressOracle":
-  {"path": "Compilatrix/IxIR0/ReaddressOracle.lean",
-   "imports": ["Compilatrix.IxIR0.ReaddressProjectionSafe"]},
-  "Compilatrix.IxIR0.Readdress":
-  {"path": "Compilatrix/IxIR0/Readdress.lean",
-   "imports": ["Compilatrix.IxIR0.MutualBlock"]},
-  "Compilatrix.IxIR0.ProjectionSafe":
-  {"path": "Compilatrix/IxIR0/ProjectionSafe.lean",
-   "imports": ["Compilatrix.IxIR0.Eval"]},
-  "Compilatrix.IxIR0.ProjectionFree":
-  {"path": "Compilatrix/IxIR0/ProjectionFree.lean",
-   "imports": ["Compilatrix.IxIR0.ProjectionSafe"]},
-  "Compilatrix.IxIR0.NatRecursors":
-  {"path": "Compilatrix/IxIR0/NatRecursors.lean",
-   "imports": ["Compilatrix.IxIR0.NatArithmetic"]},
-  "Compilatrix.IxIR0.NatArithmetic":
-  {"path": "Compilatrix/IxIR0/NatArithmetic.lean",
-   "imports": ["Compilatrix.IxIR0.RecursionSim"]},
-  "Compilatrix.IxIR0.MutualBlock":
-  {"path": "Compilatrix/IxIR0/MutualBlock.lean",
-   "imports": ["Compilatrix.IxIR0.Decode"]},
-  "Compilatrix.IxIR0.Mono":
-  {"path": "Compilatrix/IxIR0/Mono.lean",
-   "imports": ["Compilatrix.Fuel", "Compilatrix.IxIR0.Eval"]},
-  "Compilatrix.IxIR0.MapRecoverySim":
-  {"path": "Compilatrix/IxIR0/MapRecoverySim.lean",
-   "imports":
-   ["Compilatrix.IxIR0.MapRecovery",
-    "Compilatrix.IxIR0.RecursionSim",
-    "Compilatrix.IxIR0.ProjectionFree"]},
-  "Compilatrix.IxIR0.MapRecovery":
-  {"path": "Compilatrix/IxIR0/MapRecovery.lean",
-   "imports": ["Compilatrix.IxIR0.Recursion"]},
-  "Compilatrix.IxIR0.Examples":
-  {"path": "Compilatrix/IxIR0/Examples.lean",
-   "imports": ["Compilatrix.IxIR0.Eval"]},
-  "Compilatrix.IxIR0.Eval":
-  {"path": "Compilatrix/IxIR0/Eval.lean",
-   "imports": ["Compilatrix.IxIR0.Basic"]},
-  "Compilatrix.IxIR0.DynamicCost":
-  {"path": "Compilatrix/IxIR0/DynamicCost.lean",
-   "imports": ["Compilatrix.IxIR0.ProjectionSafe"]},
-  "Compilatrix.IxIR0.Decode":
-  {"path": "Compilatrix/IxIR0/Decode.lean",
-   "imports": ["Compilatrix.IxIR.Decode", "Compilatrix.IxIR0.Serialize"]},
-  "Compilatrix.IxIR0.Basic":
-  {"path": "Compilatrix/IxIR0/Basic.lean",
-   "imports": ["Compilatrix.Ixon.Uses", "Compilatrix.AddressEnv"]},
   "Compilatrix.IxIR.Encoding":
   {"path": "Compilatrix/IxIR/Encoding.lean",
    "imports": ["Compilatrix.Ixon.Hash"]},
@@ -3109,141 +755,6 @@
   "Compilatrix.IxIR.Bounded":
   {"path": "Compilatrix/IxIR/Bounded.lean",
    "imports": ["Compilatrix.IxIR.Decode"]},
-  "Compilatrix.Fuel": {"path": "Compilatrix/Fuel.lean", "imports": []},
-  "Compilatrix.Fence":
-  {"path": "Compilatrix/Fence.lean", "imports": ["CompilatrixTests.Fences"]},
-  "Compilatrix.EraseValidator":
-  {"path": "Compilatrix/EraseValidator.lean", "imports": ["Compilatrix.Sim"]},
-  "Compilatrix.EraseAddressedSim":
-  {"path": "Compilatrix/EraseAddressedSim.lean",
-   "imports":
-   ["Compilatrix.EraseAddressed", "Compilatrix.IxIR0.ReaddressOracle"]},
-  "Compilatrix.EraseAddressed":
-  {"path": "Compilatrix/EraseAddressed.lean",
-   "imports": ["Compilatrix.Erase", "Compilatrix.IxIR0.Readdress"]},
-  "Compilatrix.Erase":
-  {"path": "Compilatrix/Erase.lean",
-   "imports": ["Compilatrix.Ixon.Eval", "Compilatrix.IxIR0.Eval"]},
-  "Compilatrix.DurableSync":
-  {"path": "Compilatrix/DurableSync.lean", "imports": []},
-  "Compilatrix.Coverage.UpstreamNative":
-  {"path": "Compilatrix/Coverage/UpstreamNative.lean",
-   "imports": ["Compilatrix.Coverage.Upstream", "Compilatrix.X86.NatCallsSim"]},
-  "Compilatrix.Coverage.Upstream":
-  {"path": "Compilatrix/Coverage/Upstream.lean",
-   "imports":
-   ["Compilatrix.Coverage.Run",
-    "Compilatrix.Coverage.HeapSnapshot",
-    "Compilatrix.Coverage.StdContact"]},
-  "Compilatrix.Coverage.StdContact":
-  {"path": "Compilatrix/Coverage/StdContact.lean",
-   "imports": ["Compilatrix.Ixon.Catalog", "Compilatrix.Pipeline"]},
-  "Compilatrix.Coverage.Sources":
-  {"path": "Compilatrix/Coverage/Sources.lean",
-   "imports": ["Compilatrix.X86.ValidatedScalar"]},
-  "Compilatrix.Coverage.Snapshot":
-  {"path": "Compilatrix/Coverage/Snapshot.lean",
-   "imports":
-   ["Lean", "Compilatrix.Coverage.Sources", "Compilatrix.IxIR1.HPTCache"]},
-  "Compilatrix.Coverage.Run":
-  {"path": "Compilatrix/Coverage/Run.lean",
-   "imports": ["Compilatrix.Coverage.Snapshot", "Compilatrix.X86.ELFValidate"]},
-  "Compilatrix.Coverage.Report":
-  {"path": "Compilatrix/Coverage/Report.lean",
-   "imports":
-   ["Compilatrix.Coverage.Run",
-    "Compilatrix.Coverage.StdContact",
-    "Compilatrix.Coverage.Upstream",
-    "Compilatrix.IxIR1.WellModedGen"]},
-  "Compilatrix.Coverage.HeapSnapshot":
-  {"path": "Compilatrix/Coverage/HeapSnapshot.lean",
-   "imports": ["Compilatrix.Coverage.Snapshot"]},
-  "Compilatrix.CallReuse.SpaceSim":
-  {"path": "Compilatrix/CallReuse/SpaceSim.lean",
-   "imports":
-   ["Compilatrix.CallReuse.MapSim", "Compilatrix.IxIR2.SpaceExecution"]},
-  "Compilatrix.CallReuse.SpaceObservations":
-  {"path": "Compilatrix/CallReuse/SpaceObservations.lean",
-   "imports":
-   ["Compilatrix.CallReuse.Observations",
-    "Compilatrix.CallReuse.SpaceSim",
-    "Compilatrix.X86.ArenaSpace"]},
-  "Compilatrix.CallReuse.Sources":
-  {"path": "Compilatrix/CallReuse/Sources.lean",
-   "imports":
-   ["Compilatrix.Coverage.Sources", "Compilatrix.CallReuse.MapPipeline"]},
-  "Compilatrix.CallReuse.Sim":
-  {"path": "Compilatrix/CallReuse/Sim.lean",
-   "imports":
-   ["Compilatrix.CallReuse.Pipeline",
-    "Compilatrix.LoweredCompilationSim",
-    "Compilatrix.IxIR2.PipelineCallReuse"]},
-  "Compilatrix.CallReuse.Rejections":
-  {"path": "Compilatrix/CallReuse/Rejections.lean",
-   "imports": ["Compilatrix.CallReuse.PolicyExamples"]},
-  "Compilatrix.CallReuse.Provenance":
-  {"path": "Compilatrix/CallReuse/Provenance.lean",
-   "imports":
-   ["Compilatrix.CallReuse.Pipeline",
-    "Compilatrix.CallReuse.MapPipeline",
-    "Compilatrix.IxIR1.Optimizer"]},
-  "Compilatrix.CallReuse.PolicyExamples":
-  {"path": "Compilatrix/CallReuse/PolicyExamples.lean",
-   "imports": ["Compilatrix.CallReuse.Observations"]},
-  "Compilatrix.CallReuse.Pipeline":
-  {"path": "Compilatrix/CallReuse/Pipeline.lean",
-   "imports": ["Compilatrix.IxIR2.Pipeline", "Compilatrix.IxIR2.CallReuse"]},
-  "Compilatrix.CallReuse.Observations":
-  {"path": "Compilatrix/CallReuse/Observations.lean",
-   "imports":
-   ["Compilatrix.CallReuse.Sources",
-    "Compilatrix.CallReuse.Provenance",
-    "Compilatrix.Coverage.HeapSnapshot",
-    "Compilatrix.IxIR2.ReservationOwnership"]},
-  "Compilatrix.CallReuse.MapSim":
-  {"path": "Compilatrix/CallReuse/MapSim.lean",
-   "imports":
-   ["Compilatrix.CallReuse.MapPipeline",
-    "Compilatrix.IxIR0.MapRecoverySim",
-    "Compilatrix.Recursion.Resources",
-    "Compilatrix.IxIR2.PipelineCallReuse"]},
-  "Compilatrix.CallReuse.MapPipeline":
-  {"path": "Compilatrix/CallReuse/MapPipeline.lean",
-   "imports":
-   ["Compilatrix.CallReuse.Pipeline", "Compilatrix.IxIR0.MapRecovery"]},
-  "Compilatrix.Borrow.Sources":
-  {"path": "Compilatrix/Borrow/Sources.lean",
-   "imports": ["Compilatrix.Coverage.Sources"]},
-  "Compilatrix.Borrow.RuntimeSource":
-  {"path": "Compilatrix/Borrow/RuntimeSource.lean",
-   "imports":
-   ["Compilatrix.Borrow.Sources",
-    "Compilatrix.IxIR0.RecursionSim",
-    "Compilatrix.IxIR2.Borrow.OpenResources"]},
-  "Compilatrix.Borrow.RuntimeSim":
-  {"path": "Compilatrix/Borrow/RuntimeSim.lean",
-   "imports": ["Compilatrix.Borrow.Runtime", "Compilatrix.SimApply"]},
-  "Compilatrix.Borrow.RuntimeReport":
-  {"path": "Compilatrix/Borrow/RuntimeReport.lean",
-   "imports": ["Compilatrix.Borrow.RuntimeInput", "Compilatrix.Borrow.Report"]},
-  "Compilatrix.Borrow.RuntimeInput":
-  {"path": "Compilatrix/Borrow/RuntimeInput.lean",
-   "imports": ["Compilatrix.Borrow.RuntimeSim"]},
-  "Compilatrix.Borrow.Runtime":
-  {"path": "Compilatrix/Borrow/Runtime.lean",
-   "imports": ["Compilatrix.Borrow.RuntimeSource"]},
-  "Compilatrix.Borrow.Report":
-  {"path": "Compilatrix/Borrow/Report.lean",
-   "imports":
-   ["Compilatrix.Borrow.Pipeline",
-    "Compilatrix.Borrow.Sources",
-    "Compilatrix.IxIR2.Borrow.Examples",
-    "Compilatrix.Coverage.Run",
-    "Compilatrix.Coverage.HeapSnapshot"]},
-  "Compilatrix.Borrow.Pipeline":
-  {"path": "Compilatrix/Borrow/Pipeline.lean",
-   "imports":
-   ["Compilatrix.IxIR2.Pipeline", "Compilatrix.IxIR2.Borrow.Replay"]},
   "Compilatrix.Aiur.Wire.TreeProofs":
   {"path": "Compilatrix/Aiur/Wire/TreeProofs.lean",
    "imports": ["Compilatrix.Aiur.Wire.Tree", "Compilatrix.Aiur.Wire.OpProofs"]},
@@ -3525,39 +1036,68 @@
     "Compilatrix.Aiur.Static",
     "Compilatrix.Aiur.AIR.Memory",
     "Compilatrix.Aiur.AIR.Rank"]},
-  "Compilatrix.AddressEnv":
-  {"path": "Compilatrix/AddressEnv.lean",
-   "imports": ["Compilatrix.Ixon.Address", "Std.Data.HashMap.Lemmas"]},
   "Compilatrix":
   {"path": "Compilatrix.lean",
    "imports":
-   ["Compilatrix.Ixon.CatalogIO",
-    "Compilatrix.Ixon.Sharing.Indexed",
-    "Compilatrix.IxIR0.Decode",
-    "Compilatrix.IxIR1.Decode",
-    "Compilatrix.Pipeline",
-    "Compilatrix.Modular.Build",
-    "Compilatrix.Modular.Wire",
-    "Compilatrix.IxIR2.Pipeline",
-    "Compilatrix.IxIR2.WireIO",
-    "Compilatrix.X86.ScalarSourceObject",
-    "Compilatrix.X86.PhysicalScalarSourceObject",
-    "Compilatrix.X86.PhysicalScalarCapturedSourceObject",
-    "Compilatrix.X86.PhysicalHeapSourceObject",
-    "Compilatrix.UniqueReuse.NativeObject",
-    "Compilatrix.UniqueReuse.RuntimeObjectSpace",
-    "Compilatrix.UniqueReuse.AllocatingObjectSpace",
-    "Compilatrix.Borrow.RuntimeInput",
-    "Compilatrix.Ixon.V3",
+   ["Compilatrix.Ixon.V3",
+    "Compilatrix.X86.Basic",
+    "Compilatrix.X86.BlockSharing",
+    "Compilatrix.X86.ByteBranch",
+    "Compilatrix.X86.ByteCall",
+    "Compilatrix.X86.ByteControl",
+    "Compilatrix.X86.ByteEval",
+    "Compilatrix.X86.ByteFlags",
+    "Compilatrix.X86.Decode",
+    "Compilatrix.X86.DecodeWindow",
+    "Compilatrix.X86.ELF",
+    "Compilatrix.X86.ELFLink",
+    "Compilatrix.X86.ELFRead",
+    "Compilatrix.X86.ELFValidate",
+    "Compilatrix.X86.Encode",
+    "Compilatrix.X86.EncodeBytes",
+    "Compilatrix.X86.EncodeControl",
+    "Compilatrix.X86.EncodeExecution",
+    "Compilatrix.X86.EncodeFields",
+    "Compilatrix.X86.EncodeForms",
+    "Compilatrix.X86.EncodeLength",
+    "Compilatrix.X86.EncodeMemory",
+    "Compilatrix.X86.EncodePatch",
+    "Compilatrix.X86.EncodeRegisters",
+    "Compilatrix.X86.EncodeWord",
+    "Compilatrix.X86.Eval",
+    "Compilatrix.X86.ExactNat",
+    "Compilatrix.X86.Execution",
+    "Compilatrix.X86.FrameCalls",
+    "Compilatrix.X86.FrameExecution",
+    "Compilatrix.X86.Memory",
+    "Compilatrix.X86.ObjectExecution",
+    "Compilatrix.X86.SafeControl",
+    "Compilatrix.X86.SafeSteps",
+    "Compilatrix.X86.SafeStepsObject",
+    "Compilatrix.X86.StreamCalls",
+    "Compilatrix.X86.StreamControl",
+    "Compilatrix.X86.StreamDecidable",
+    "Compilatrix.X86.StreamEffects",
+    "Compilatrix.X86.StreamIndex",
+    "Compilatrix.X86.StreamIndexed",
+    "Compilatrix.X86.StreamLayout",
+    "Compilatrix.X86.StreamLinear",
+    "Compilatrix.X86.StreamMemory",
+    "Compilatrix.X86.StreamPermissions",
+    "Compilatrix.X86.StreamRun",
+    "Compilatrix.X86.StreamSpec",
+    "Compilatrix.X86.StreamTrace",
+    "Compilatrix.X86.StreamValidate",
+    "Compilatrix.X86.WordRegion",
+    "Compilatrix.X86.WordRegionExecution",
+    "Compilatrix.X86.WordRegionSafeCalls",
+    "Compilatrix.X86.WordRegionSafeControl",
+    "Compilatrix.X86.WordRegionSafeMacros",
+    "Compilatrix.X86.WordRegionSafeTrace",
     "Compilatrix.Aiur"]},
   "CheckX86Streams":
   {"path": "scripts/CheckX86Streams.lean",
-   "imports":
-   ["Compilatrix.Tools.Check",
-    "Compilatrix.X86.StreamExamples",
-    "Compilatrix.UniqueReuse.RuntimeObjectSim",
-    "Compilatrix.UniqueReuse.NativeObservations",
-    "Compilatrix.X86.RuntimeInput"]},
+   "imports": ["Compilatrix.Tools.Check", "Compilatrix.X86.StreamExamples"]},
   "CheckX86Object":
   {"path": "scripts/CheckX86Object.lean",
    "imports": ["Compilatrix.Tools.X86Check"]},
@@ -3571,10 +1111,6 @@
     "Compilatrix.X86.ByteBranch",
     "Compilatrix.X86.ByteCall",
     "Compilatrix.X86.EvalExamples",
-    "Compilatrix.UniqueReuse.RuntimeNative",
-    "Compilatrix.UniqueReuse.NativeObservations",
-    "Compilatrix.X86.RuntimeExecution",
-    "Compilatrix.X86.RuntimeInput",
     "Compilatrix.X86.DecodeWindow"]},
   "CheckTrustedExterns":
   {"path": "scripts/CheckTrustedExterns.lean",
@@ -3585,126 +1121,18 @@
    ["Compilatrix.Tools.TrustLedger",
     "Compilatrix.Tools.X86Check",
     "Compilatrix.Tools.BuildGraph"]},
-  "CheckSourceUniqueReuse":
-  {"path": "scripts/CheckSourceUniqueReuse.lean",
-   "imports": ["Compilatrix.Tools.UniqueCheck"]},
-  "CheckSourceSpace":
-  {"path": "scripts/CheckSourceSpace.lean",
-   "imports": ["Compilatrix.Tools.SpaceCheck"]},
-  "CheckSourceRecursion":
-  {"path": "scripts/CheckSourceRecursion.lean",
-   "imports": ["Compilatrix.Tools.Check"]},
-  "CheckSourceNativeUpstream":
-  {"path": "scripts/CheckSourceNativeUpstream.lean",
-   "imports": ["Compilatrix.Tools.UpstreamNativeCheck"]},
-  "CheckSourceNativeUnique":
-  {"path": "scripts/CheckSourceNativeUnique.lean",
-   "imports": ["Compilatrix.Tools.UniqueCheck", "Compilatrix.Tools.X86Check"]},
-  "CheckSourceNativeScalar":
-  {"path": "scripts/CheckSourceNativeScalar.lean",
-   "imports":
-   ["Compilatrix.Tools.ScalarNativeCheck", "Compilatrix.Tools.X86Check"]},
-  "CheckSourceNativeRuntime":
-  {"path": "scripts/CheckSourceNativeRuntime.lean",
-   "imports": ["Compilatrix.Tools.UniqueCheck", "Compilatrix.Tools.X86Check"]},
-  "CheckSourceNativePhysicalScalar":
-  {"path": "scripts/CheckSourceNativePhysicalScalar.lean",
-   "imports":
-   ["Compilatrix.Tools.PhysicalScalarNativeCheck",
-    "Compilatrix.Tools.X86Check"]},
-  "CheckSourceNativeHeap":
-  {"path": "scripts/CheckSourceNativeHeap.lean",
-   "imports":
-   ["Compilatrix.Tools.HeapNativeCheck", "Compilatrix.Tools.X86Check"]},
-  "CheckSourceNativeCapturedScalar":
-  {"path": "scripts/CheckSourceNativeCapturedScalar.lean",
-   "imports":
-   ["Compilatrix.Tools.CapturedScalarNativeCheck",
-    "Compilatrix.Tools.X86Check"]},
-  "CheckSourceNativeAllocating":
-  {"path": "scripts/CheckSourceNativeAllocating.lean",
-   "imports": ["Compilatrix.Tools.UniqueCheck", "Compilatrix.Tools.X86Check"]},
-  "CheckSourceModular":
-  {"path": "scripts/CheckSourceModular.lean",
-   "imports": ["Compilatrix.Tools.Check"]},
-  "CheckSourceEvidence":
-  {"path": "scripts/CheckSourceEvidence.lean",
-   "imports": ["Compilatrix.Tools.Check"]},
-  "CheckSourceCoverage":
-  {"path": "scripts/CheckSourceCoverage.lean",
-   "imports":
-   ["Compilatrix.Tools.X86Check", "Compilatrix.Tools.UpstreamNativeCheck"]},
-  "CheckSourceCallReuse":
-  {"path": "scripts/CheckSourceCallReuse.lean",
-   "imports": ["Compilatrix.Tools.CallReuseCheck"]},
-  "CheckSourceBorrowRuntime":
-  {"path": "scripts/CheckSourceBorrowRuntime.lean",
-   "imports": ["Compilatrix.Tools.BorrowRuntimeCheck"]},
-  "CheckSourceBorrow":
-  {"path": "scripts/CheckSourceBorrow.lean",
-   "imports": ["Compilatrix.Tools.BorrowExecution"]},
-  "CheckNativeSharing":
-  {"path": "scripts/CheckNativeSharing.lean",
-   "imports": ["Compilatrix.Tools.NativeSharingCheck"]},
-  "CheckNativeGraph":
-  {"path": "scripts/CheckNativeGraph.lean",
-   "imports": ["Compilatrix.Tools.NativeSharingCheck"]},
   "CheckIxonV3Catalog":
   {"path": "CheckIxonV3Catalog.lean",
    "imports": ["Compilatrix.Tools.IxonV3Catalog"]},
   "CheckIxonV3":
   {"path": "CheckIxonV3.lean", "imports": ["Compilatrix.Ixon.V3"]},
-  "CheckIxIR2":
-  {"path": "scripts/CheckIxIR2.lean",
-   "imports": ["Compilatrix.Tools.IxIR2Check"]},
   "CheckBuildGraph":
   {"path": "scripts/CheckBuildGraph.lean",
    "imports": ["Compilatrix.Tools.BuildGraph"]},
-  "CheckAssemblyScaling":
-  {"path": "scripts/CheckAssemblyScaling.lean",
-   "imports": ["Compilatrix.Tools.Check"]},
   "CheckAiur":
   {"path": "scripts/CheckAiur.lean",
    "imports":
    ["Compilatrix.Tools.AiurCheck",
     "Compilatrix.Tools.AiurWireCheck",
     "Compilatrix.Tools.AiurMemoryCheck",
-    "Compilatrix.Tools.AiurRankCheck"]},
-  "CatalogContact": {"path": "CatalogContact.lean", "imports": ["Compilatrix"]},
-  "Benchmark.SourceEvidence":
-  {"path": "benchmarks/Benchmark/SourceEvidence.lean",
-   "imports":
-   ["Compilatrix.Modular.Report", "Compilatrix.Modular.PreparationTests"]},
-  "Benchmark.ScalingWorker":
-  {"path": "benchmarks/Benchmark/ScalingWorker.lean",
-   "imports":
-   ["Benchmark.ScalingSources",
-    "Compilatrix.Coverage.Snapshot",
-    "Compilatrix.X86.PhysicalHeapExport",
-    "Compilatrix.IxIR2.WireJson",
-    "Compilatrix.Tools.Check"]},
-  "Benchmark.ScalingVerify":
-  {"path": "benchmarks/Benchmark/ScalingVerify.lean",
-   "imports": ["Benchmark.ScalingJoins"]},
-  "Benchmark.ScalingSources":
-  {"path": "benchmarks/Benchmark/ScalingSources.lean",
-   "imports": ["Compilatrix.X86.PhysicalHeapSources"]},
-  "Benchmark.ScalingJoins":
-  {"path": "benchmarks/Benchmark/ScalingJoins.lean",
-   "imports": ["Benchmark.ScalingWorker", "Benchmark.ScalingJoinInput"]},
-  "Benchmark.ScalingJoinInput":
-  {"path": "benchmarks/Benchmark/ScalingJoinInput.lean",
-   "imports": ["Compilatrix.IxIR2.WirePipeline"]},
-  "Benchmark.NativeSharing":
-  {"path": "benchmarks/Benchmark/NativeSharing.lean",
-   "imports": ["Benchmark.ScalingVerify"]},
-  "Benchmark.NativeGraph":
-  {"path": "benchmarks/Benchmark/NativeGraph.lean",
-   "imports": ["Benchmark.NativeSharing", "Compilatrix.X86.HeapGraphTests"]},
-  "Benchmark.Assembly":
-  {"path": "benchmarks/Benchmark/Assembly.lean",
-   "imports":
-   ["Compilatrix.Modular.Report", "Compilatrix.IxIR1.ReaddressIndexTests"]},
-  "AssemblyScaling":
-  {"path": "benchmarks/AssemblyScaling.lean",
-   "imports": ["Benchmark.Assembly"]}}}
+    "Compilatrix.Tools.AiurRankCheck"]}}}

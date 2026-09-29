@@ -1,68 +1,55 @@
 # Compilatr.ix
 
 A certified compiler for [ix](https://github.com/argumentcomputer/ix),
-implemented in Lean 4. The long-term goal is a self-hosting toolchain from
-Ixon source objects to native and zk targets, bootstrapped from upstream Lean.
-Compilatrix is the project's Lean namespace.
+implemented in Lean 4. It compiles Ixon v3, ix's content-addressed Lean
+kernel terms, to x86-64. The goal is certified native code that competes
+with Lean → Clang. Compilatrix is the project's Lean namespace.
 
-The design combines two ideas:
+The design combines three ideas:
 
-- **Explicit ownership.** Ixon binders record erased, linear, affine, or
-  unrestricted use; function results record unique or shared ownership. These
-  contracts guide erasure, reference counting, borrowing, and in-place reuse.
-- **Content-addressed compilation.** Canonical source and IR objects carry
-  dependency identities. Analyses and optimization proposals pass bounded Lean
-  checkers before changing an artifact, supporting incremental compilation
-  without trusting the analysis producer.
+- **Explicit contracts.** Ixon v3 binders and results record usage,
+  ownership, locality and borrowing. The compiler honours them exactly, and
+  may prove stronger guarantees where a checker certifies them. They drive
+  erasure, reference counting, borrowing and in-place reuse.
+- **Kernel-anchored correctness.** Compiled results are meant to equal the
+  Lean definition's value in every model of the checked environment.
+  Recursion and library replacements go through kernel-checked equation
+  theorems.
+- **Untrusted heuristics, proved checkers.** Register allocation, reference-
+  count placement, inlining and relevance analysis are proposals validated by
+  proved checkers, with checked fallbacks.
 
-## What works
+## Status
 
-The validated pipeline compiles the supported Ixon fragment to owned IxIR₁.
-Checked attachments extend it to IxIR₂ and selected x86-64 programs.
+The compiler is being rebuilt (2026-09-29); see the
+[roadmap](docs/roadmap.md). Main currently holds:
+- [Ixon v3 ingress](docs/ixon-v3.md);
+- the x86 target model with its certified
+  [encoder](docs/x86-encoded-instructions.md) and
+  [stream/ELF layer](docs/x86-stream-objects.md);
+- the [Aiur target](docs/aiur-backend.md).
 
-| Area | Current scope |
-| --- | --- |
-| Source and identity | Strict Ixon codecs, bounded catalog ingress, [modular source certificates](docs/modular-source.md), cycle-safe IxIR₀/IxIR₁ addressing, and canonical [IxIR₂ snapshots](docs/ixir2-wire.md) |
-| Ownership and optimization | Checked shape analysis, shrinking passes, shared and unique reuse, borrowed calls, and resource/reclamation proofs |
-| Native code | Source-to-ELF proofs for selected families and physical scalar/allocating CFGs, including static Word captures, runtime application, reclamation, branches, joins, direct calls, and finite heap/stack proofs |
-| Validation | Axiom fences, independent artifact/ABI checks, malformed-input tests, fresh-process reproducibility, and retained performance experiments |
-
-Native support is still bounded. Runtime reversal accepts at most 64 exact
-64-bit payloads; physical IxIR₂ selection covers scalars and
-[bounded leaf allocation/reuse](docs/source-native-heap.md) across calls and joins,
-with [shared selection and native certificates](docs/native-graph.md) and selectable tree baselines.
-Broader recursion, general shared native heaps, and self-hosting remain open. Theorems
-retain their stated source, ownership, and environment premises. Reference ISA agreement and
-system linker/loader behavior remain explicit assumptions.
-
-See the [roadmap](docs/roadmap.md) for current priorities and delivery scope,
-and the [trust ledger](docs/trusted-extern-ledger.md) for remaining assumptions.
+The earlier pipeline, the Ixby backend and their measurements are on branch
+`jcb/ixby-archive`.
 
 ## Build and check
 
 ```sh
-nix build                          # library and elaboration-time tests
-nix flake check                    # required checks (none while rebuilding; docs/ci.md)
+nix build                          # production library
+nix flake check                    # required checks (being re-added; docs/ci.md)
 nix develop -c lake build          # local development build
-lake exe catalog-contact -- DIR    # load a bounded ix catalog
 ```
 
 The repository pins Lean in `lean-toolchain` and its dependencies in the Nix
-flake. See [development and validation](docs/development-plan.md) for individual
-checks, platform coverage, and build troubleshooting.
+flake. See [development and validation](docs/development-plan.md) for
+individual checks and build troubleshooting.
 
 ## Documentation
 
-Start with the [documentation guide](docs/README.md), then choose a path:
-
-- [Compiler design](docs/compiler-design.md): architecture, ownership, identity,
-  and proof boundaries.
-- [Roadmap](docs/roadmap.md): active work, acceptance criteria, and conditional
-  extensions.
-- [Performance](docs/performance/README.md): native comparisons with Lean 4,
-  CakeML, CompCert, GCC, and Clang, checked counter folding, and compiler scaling.
-- [Benchmark protocol](benchmarks/protocol.md): build, check, measure, and
-  reproduce the implemented suite.
+Start with the [documentation guide](docs/README.md):
+- [Roadmap](docs/roadmap.md): mission, phases, benchmark rungs and decisions.
+- [Compiler design](docs/compiler-design.md): the pipeline being built.
+- [Trust ledger](docs/trusted-extern-ledger.md): remaining assumptions.
 
 Pre-alpha research software: interfaces, encodings, and hashes may change
 without notice.

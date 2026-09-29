@@ -15,7 +15,7 @@ dependencies, usage, literals, ownership, and resource checks still run.
 Lean proves equality with the full fresh result, including rejection behavior.
 Retained records reconstruct canonical evidence afresh. The existing eraser,
 coverage validation, and source-preservation certificates remain in place.
-[Implementation and proof scope](../../modular-source.md#checked-cache-and-retained-records).
+[Implementation and proof scope](https://github.com/argumentcomputer/Compilatr.ix/blob/jcb/ixby-archive/docs/modular-source.md#checked-cache-and-retained-records).
 
 ## Identical before/after workload
 
@@ -105,7 +105,7 @@ checks; subsequent calls repeat selected operations. Fresh preparation precedes
 preparation with canonical facts; fresh checking precedes prepared checking.
 There is no per-stage warm-up or randomization, and shared inputs can affect
 caches. Ordinary assembly is repeated separately. The
-[protocol](../../../benchmarks/source-evidence.md) defines the exact scopes.
+[protocol](https://github.com/argumentcomputer/Compilatr.ix/blob/jcb/ixby-archive/benchmarks/source-evidence.md) defines the exact scopes.
 
 ## Correctness and process observations
 
@@ -183,6 +183,6 @@ taskset -c 0 env LEAN_NUM_THREADS=1 MALLOC_ARENA_MAX=1 LC_ALL=C \
   "$source_bundle/profile-1" "$source_output"
 ```
 
-The [benchmark protocol](../../../benchmarks/source-evidence.md) supplies fresh
+The [benchmark protocol](https://github.com/argumentcomputer/Compilatr.ix/blob/jcb/ixby-archive/benchmarks/source-evidence.md) supplies fresh
 build, producer, checker, and replay commands. Exact source and seed identities
 and the fixed collection plan are in [provenance.json](provenance.json).

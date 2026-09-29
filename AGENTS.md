@@ -23,7 +23,8 @@ tree still contains monolithic test and proof modules that need migration.
 ## Modules, namespaces, and dependencies
 
 - Keep production declarations under `Compilatrix.<Area>`, following the
-  existing Ixon, IxIR₀, IxIR₁, IxIR₂, and target responsibilities. Match
+  pipeline areas in docs/compiler-design.md (Ixon, Src, Lam, Anf, Fir, Own,
+  Cfg, Lir, X86) and the Aiur target. Match
   module paths to their area and purpose; avoid unrelated global declarations.
 - Put new test-only modules under `CompilatrixTests.<Area>`, with shared test
   utilities in `CompilatrixTests.Support`. Give them explicit Lake library and
@@ -71,8 +72,8 @@ tree still contains monolithic test and proof modules that need migration.
   full corpora, stress tests, and performance measurements. Give slow gates
   explicit targets, runtime budgets, and CI jobs/triggers. Record any change
   from required to manual or scheduled coverage as a coverage change.
-- Keep compiler comparisons and their toolchains in the optional
-  [comparison package](benchmarks/comparisons/README.md). Production CI must
+- Keep compiler comparisons and their toolchains in an optional package
+  outside the root flake (see docs/benchmark-plan.md). Production CI must
   not acquire CakeML, CompCert, or measurement runners through an import,
   default target, or Nix dependency. Native compiler correctness checks remain
   part of the required validation surface.

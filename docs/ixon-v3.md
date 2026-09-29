@@ -114,12 +114,12 @@ on the existing native BLAKE3 boundary and the pinned checker's correctness.
 A whole-checker semantic soundness theorem is not provided by the adapter.
 IxVM Resource proofs remain unsupported.
 
-The existing native compiler entry points retain their frozen v2
-source types and proof scope. V3 does not implicitly project into them:
-v2 linear/affine inputs imply uniqueness, while v3 usage and ownership are
-independent. A contract-preserving, source-bound backend simulation is still
-required before v3 lowering can grant ownership/locality
-optimizations. Aiur Ixon/DSL lowering remains a later target milestone.
+No compiler stage consumes v3 yet; the rebuilt pipeline ([compiler
+design](compiler-design.md)) starts from this boundary. Its ownership
+checker re-establishes every contract on the compiled program, so resource
+admission is an early, diagnosable gate rather than a proof premise, and
+stronger guarantees are granted only by that checker. Aiur Ixon/DSL
+lowering remains a later target milestone.
 
 ## Catalog-v2 admission
 

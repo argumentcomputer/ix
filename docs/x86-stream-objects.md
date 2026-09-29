@@ -123,26 +123,17 @@ execution from the text and exported symbol parsed from actual object bytes.
 Its `run_from_typed` and `run_with_calls` theorems lift the corresponding
 complete-stream results through serialized ELF interpretation.
 
-[`RuntimeObjectSim.lean`](../Compilatrix/UniqueReuse/RuntimeObjectSim.lean)
-composes the actual N2 source compiler and successful object emission.
-`Output.sourceRefinesObjects` preserves the existing source, graph, cost,
-ownership, and complete-reclamation conclusions for every admitted runtime
-Word list. Both objects' parsed provenance records the selected source graph,
-lowering version, and role policy. A readable initial caller return slot
-outside the arena is enough: the proof derives its preservation through
-main and release, including read permissions. The harness enters each export
-with its normal initial RSP; each physical RET advances it by eight.
-
-The new endpoint retains N2's existing source-argument, sharing/oracle,
-successful-application, bounded-ABI, and emission-success premises. It
-neither broadens the selected source family nor proves a total compiler.
+The earlier source-to-object composition for runtime list reversal
+(`RuntimeObjectSim.lean`) left main with the legacy pipeline; it remains on
+branch `jcb/ixby-archive`. New source compilers attach through the same
+`run_from_typed` and `run_with_calls` theorems.
 
 ## Evidence and remaining boundaries
 
 [`StreamExamples.lean`](../Compilatrix/X86/StreamExamples.lean) uses kernel
 evaluation for accepted streams, typed returns, and complete nested/reused
 call safety. The public interface axioms are pinned in
-[`Fence.lean`](../Compilatrix/Fence.lean). Generic stream/object proofs use
+[`Fences/X86.lean`](../CompilatrixTests/Fences/X86.lean). Generic stream/object proofs use
 ordinary logical axioms; the indexed source endpoint retains the existing
 addressed-source BLAKE3 boundary. No new native reflection or ISA axiom is
 introduced.
@@ -152,10 +143,9 @@ all branch conditions, a nonzero entry, wrapping byte addresses, nested and
 reused call slots, partial overwrites, rejected unsafe stack observations,
 corrupted instructions and relocation metadata, ELF field mutations and every
 truncated prefix, positive/negative relocation endpoints and overflow, and
-physical caller-slot faults. It compiles one actual N2 object pair and runs
-all eight retained inputs through parsed text, checking registers, every
-arena byte, reversed pointer graphs, and complete release. This finite gate
-supplements the universal theorems and the existing GNU/linked-native gates.
+physical caller-slot faults. This finite gate supplements the universal
+theorems and the existing GNU/linked-native gates. (A test running the
+retired N2 reversal object pair left with the legacy pipeline.)
 
 The 2026-09-09 validation passed the 760-job Lake build, all fifteen compiled
 regression gates, and all seventeen Nix checks on x86_64 Linux.

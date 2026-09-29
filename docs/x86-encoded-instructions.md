@@ -50,7 +50,7 @@ Named runtime calls emit ordinary CALL bytes (`runtime_call_form`). Their
 typed atomic invocation still denotes an external procedure contract. E1
 does not equate a single physical CALL with execution of an external body.
 
-The public laws are audited in [`Fence.lean`](../Compilatrix/Fence.lean).
+The public laws are audited in [`Fences/X86.lean`](../CompilatrixTests/Fences/X86.lean).
 They depend only on `propext`, `Classical.choice` and `Quot.sound` (the patch
 splice needs only the first and last). They add no hashing, native decision,
 ISA axiom, or assumed step-simulation callback.
@@ -72,17 +72,11 @@ The compiled [`check-x86-bytes`](../scripts/CheckX86Bytes.lean) gate covers:
 - Denied memory bytes, control-stack faults, undefined flags, unsupported
   prefixes/forms, patch bounds, signed rel32 endpoints and corruptions.
 - Four complete arithmetic, stack/spill, direct-call and tail-call streams.
-- The actual source-selected N2 runtime main/release text, compiled once and
-  executed for all eight runtime inputs. Its 6,512 byte steps agree with the
-  typed runs on all registers and every arena byte, return the reversed list
-  and reclaim the heap fully. The caller supplies a mapped physical return
-  slot; the final RET's extra eight-byte RSP advance is checked explicitly.
 
-These are finite regressions, not universal stream proofs. The N2 source
-fixtures separately retain baseline/logical/physical comparisons; there is
-no native consuming fallback added here. The existing GNU objdump gate,
-ELF checks and linked native source tests remain mandatory external evidence.
-The new Nix check is `x86-byte-execution`.
+These are finite regressions, not universal stream proofs. The existing GNU
+objdump gate, ELF checks and linked native tests remain mandatory external
+evidence. (A byte-level run of the retired N2 reversal text left with the
+legacy pipeline.)
 
 ```sh
 lake build Compilatrix check-x86-bytes
@@ -94,8 +88,8 @@ lake build Compilatrix check-x86-bytes
 E1 discharges the local per-form portion of the encoder assumption.
 [E2](x86-stream-objects.md) composes certified complete streams, symbolic
 PC/return-token correspondence, internal and external fixups, and independent
-ELF text, symbol, entry and provenance interpretation. It also connects the
-actual N2 source compiler to execution of its emitted object pair.
+ELF text, symbol, entry and provenance interpretation. It also covers
+execution from parsed object text, the attachment point for new compilers.
 
 The byte model still uses the local ISA specification. Effective addresses
 and RIP arithmetic wrap at 64 bits; canonical mapped user addresses and the
