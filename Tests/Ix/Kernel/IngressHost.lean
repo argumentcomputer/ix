@@ -5,6 +5,7 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 
 import Ix.Kernel.Ingress
 import Ix.Kernel.Egress
+import Ix.Ixon.Admission
 import Ix.CompileDriver
 import Ix.Meta
 import Tests.Ix.Kernel.TutorialDefs
@@ -13,7 +14,9 @@ import Tests.Ix.Kernel.TutorialDefs
 `Ix.CompileM`, serialize and load them with the ordinary host codec, then
 submit their dependency-ordered records to `Ix.Kernel.checkEnv`. The loader,
 ordering, compiler, and names are untrusted producers of in-memory input.
-The verdict always comes from the certified checker. Every case separately
+Every case also submits canonical record bytes to `Ix.Ixon.Admission.checkBytes`
+and checks exact decoding plus the same verdict and reason as in-memory
+admission. Both verdicts come from the certified checker. Each case separately
 round-trips through the certified reader/writer and the production encoder.
 -/
 
@@ -127,6 +130,17 @@ def egressRoundtrip (input : Ingress.Constants) (blobs : Ingress.Blobs)
   let reencoded := output.map fun (address, source) => (address, Ixon.serConstant source)
   unless reencoded == encoded do throw "egress changed production Ixon bytes"
 
+def byteLimits : Ix.Ixon.Admission.Limits :=
+  ⟨1024, 1024, 16 * 1024 * 1024, 4 * 1024 * 1024, 1024 * 1024⟩
+
+def referenceJson : ConstRef Address → Lean.Json
+  | .member address index => Lean.Json.mkObj [
+    ("kind", Lean.toJson "member"), ("block", Lean.toJson (toString address)),
+    ("member", Lean.toJson index)]
+  | .ctor address index ctor => Lean.Json.mkObj [
+    ("kind", Lean.toJson "ctor"), ("block", Lean.toJson (toString address)),
+    ("member", Lean.toJson index), ("constructor", Lean.toJson ctor)]
+
 def run (leanEnv : Lean.Environment) (test : Case) : IO Bool := do
   let (input, blobs, family) ← prepare leanEnv test
   let input ← match test.mutateRecursor with
@@ -143,28 +157,51 @@ def run (leanEnv : Lean.Environment) (test : Case) : IO Bool := do
       unless changed == 1 do
         throw (IO.userError s!"{test.label}: mutation requires exactly one standalone recursor; found {changed}")
       pure output.toList
-  let result := checkEnv.{1} {} input blobs family
+  let cfg : Config := {}
+  let result := checkEnv.{1} cfg input blobs family
   let (outcome, reason) := match result with
     | .ok _ => ("accept", "")
     | .error (.rejected reason) => ("reject", reason)
     | .error (.declined reason) => ("decline", reason)
+  let records := input.map fun (address, source) => (address, Ixon.serConstant source)
+  let byteDecodeExact := match Ix.Ixon.Admission.decodeRecords byteLimits records with
+    | .ok decoded => decoded == input
+    | .error _ => false
+  let (byteOutcome, byteReason) := match Ix.Ixon.Admission.checkBytes.{1} byteLimits cfg records blobs family with
+    | .ok _ => ("accept", "")
+    | .error (.kernel (.rejected reason)) => ("reject", reason)
+    | .error (.kernel (.declined reason)) => ("decline", reason)
+    | .error (.limit resource) => ("limit", reprStr resource)
+    | .error (.decode position address reason) => ("decode", s!"record {position} at {address}: {reason}")
   let (egressExact, egressReason) := match egressRoundtrip input blobs family with
     | .ok _ => (true, "")
     | .error reason => (false, reason)
-  let passed := outcome == test.expected && egressExact
-  let constantJson := input.map fun (address, source) => Lean.Json.mkObj [
+  let bytesAgree := byteOutcome == outcome && byteReason == reason && byteDecodeExact
+  let passed := outcome == test.expected && bytesAgree && egressExact
+  let constantJson := records.map fun (address, bytes) => Lean.Json.mkObj [
     ("address", Lean.toJson (toString address)),
-    ("ixonHex", Lean.toJson (hexOfBytes (Ixon.serConstant source)))]
+    ("ixonHex", Lean.toJson (hexOfBytes bytes))]
   let blobJson := blobs.map fun (address, bytes) => Lean.Json.mkObj [
     ("address", Lean.toJson (toString address)), ("hex", Lean.toJson (hexOfBytes bytes))]
   IO.println (Lean.Json.mkObj [
     ("case", Lean.toJson test.label), ("expected", Lean.toJson test.expected),
+    ("fuel", Lean.toJson cfg.fuel), ("literalFamily", family.elim Lean.Json.null referenceJson),
     ("outcome", Lean.toJson outcome), ("reason", Lean.toJson reason),
+    ("byteOutcome", Lean.toJson byteOutcome), ("byteReason", Lean.toJson byteReason),
+    ("byteDecodeExact", Lean.toJson byteDecodeExact),
+    ("byteLimits", Lean.Json.mkObj [
+      ("maxRecords", Lean.toJson byteLimits.maxRecords),
+      ("maxBlobs", Lean.toJson byteLimits.maxBlobs),
+      ("maxTotalBytes", Lean.toJson byteLimits.maxTotalBytes),
+      ("maxRecordBytes", Lean.toJson byteLimits.maxRecordBytes),
+      ("maxRecordUnivNodes", Lean.toJson byteLimits.maxRecordUnivNodes)]),
     ("egressExact", Lean.toJson egressExact), ("egressReason", Lean.toJson egressReason),
     ("passed", Lean.toJson passed), ("leanVersion", Lean.toJson Lean.versionString),
     ("constants", Lean.toJson constantJson), ("blobs", Lean.toJson blobJson)]).compress
   if outcome != test.expected then
     IO.eprintln s!"{test.label}: expected {test.expected}, got {outcome}: {reason}"
+  if !bytesAgree then
+    IO.eprintln s!"{test.label}: byte admission disagrees: {byteOutcome}: {byteReason}; exact decoding: {byteDecodeExact}"
   if !egressExact then IO.eprintln s!"{test.label}: egress failed: {egressReason}"
   return passed
 
@@ -173,7 +210,7 @@ def main : IO UInt32 := do
   let mut failed := 0
   for test in cases do
     unless ← run leanEnv test do failed := failed + 1
-  IO.eprintln s!"Certified Ixon ingress and exact egress: {cases.length - failed}/{cases.length} host cases passed."
+  IO.eprintln s!"Certified Ixon ingress, byte admission, and exact egress: {cases.length - failed}/{cases.length} host cases passed."
   return if failed == 0 then 0 else 1
 
 end Tests.Ix.Kernel.IngressHost

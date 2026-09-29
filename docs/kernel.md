@@ -21,6 +21,7 @@ system. It does not certify the Lean-to-Ixon compiler, Rust checker, or IxVM.
 | `Ix.Ixon.Codec`, `Ix.Ixon.Wire`, `Ix.Ixon.Verify` | Production anonymous byte grammar, representable counts/address widths, and cursor/append laws | All-variant serializer inverses, exact constant framing, and separate codec audits |
 | `Ix.Ixon.Bounded.Universe` | Universe decoding with explicit byte and expanded-constructor limits | Exact budget accounting, production-decoder agreement, round trips within limits, and wire validity below the wire count capacity |
 | `Ix.Ixon.Bounded.Constant`, `WireCheck`, `Canonical` | Complete-record input/expansion limits, wire validity, and canonical byte spelling | Success iff the record is wire-well-formed, re-encodes to the supplied bytes, and fits both limits |
+| `Ix.Ixon.Admission`, `Verify.Admission.RecordsRead` | Ordered canonical record bytes, unchanged address keys, exact literal blobs, and batch limits | Exact decoding/acceptance domains, installed readings, model existence, and preservation of kernel outcomes |
 | `AExpr`, `PropWhen` | A reading with a condition at each binder describing when its codomain is a proposition | `annotate_erase` proves exact erasure; separate scope checks include annotation conditions |
 | `Typed`, `TypedSort`, `Reduced`, `Conv` | Search results with erased semantic evidence for this environment and context | `inferA`, normalization, conversion, and the declaration checkers |
 | Admission candidate | An ordinary inductive shape, structure description, or standard primitive interface | A reader proposes it; validation and exact generated-block comparison justify installation |
@@ -46,7 +47,9 @@ it requires a formed intermediate term.
 The current checked input is a list of `Decl β`, for any `β` with decidable
 equality. `checkAddressed` specializes it to opaque `Address` keys.
 `checkEnv` reads ordered production Ixon constant pairs and literal blobs
-through the pure `Ix.Ixon.Types` boundary.
+through the pure `Ix.Ixon.Types` boundary. `Ix.Ixon.Admission.checkBytes`
+accepts ordered canonical record bytes with explicit input limits and uses
+the same checker; host transport framing and scheduling remain outside it.
 
 | Input | Current behavior |
 | --- | --- |
@@ -228,13 +231,42 @@ alternate spellings accepted by the production decoder, large truncated
 counts, aggregate budget exhaustion, 4,096-entry tables and application
 spines, and generated values compared against Rust serialization.
 
+`Ix.Ixon.Admission.checkBytes` connects canonical records to `checkEnv`.
+Before decoding, a short-circuiting preflight checks separate record/blob
+counts and one total payload-byte budget shared by both lists. Address keys
+and outer transport framing are excluded from that byte count. Explicit
+per-record limits cap bytes and the entire universe table; together with
+the record-count limit they bound aggregate universe expansion. The
+tail-recursive decoder preserves every key, record position, and side table.
+Decode failures identify the original zero-based position and address;
+kernel failures retain their exact rejection/decline reason.
+
+`Verify.Admission.RecordsRead` describes each canonical payload without
+referring to a decoder. `decodeRecords_ok_iff` proves its exact successful
+domain; `checkBytes_ok_iff` composes it with the actual checker at the same
+configuration and literal family. `checkBytes_of_reading` preserves all
+kernel outcomes on bounded canonical input. `checkBytes_reading` ties that
+same ordered reading to the installed declarations, and
+`checkBytes_has_model` establishes the accepted environment's model.
+Uniqueness of both key lists is proved from successful byte admission.
+Literal blobs retain their exact supplied bytes and the existing natural
+number interpretation; this does not require a canonical spelling of blobs.
+
+The adapter lives outside `Ix.Kernel` and imports no verification modules.
+Its independent `Admission.Audit` checks data/proof import closures, exact
+axiom sets and theorem statements, and 1,250 compiled functions reaching
+56 inherited externs, two inherited unsafe array accessors, and no project
+replacement. A set-difference check confirms that these primitives all
+already occur in the kernel/codec closures. Their narrower allowlists and
+existing public contracts remain unchanged.
+
 K4 remains open for structural/work bounds over the other readers, canonical
-mutual-block order, and composition with K3's admission theorem. The canonical
-record API establishes byte spelling, not mutual member order or typing.
-Existing host callers still use the original decoders. No
-byte-to-accepted-environment theorem, address authentication, claims, or
-receipt contract is asserted yet. K5 will connect authenticated subjects
-and receipts.
+mutual-block order, and pure projection-address reconstruction. The canonical
+record API establishes byte spelling; semantic admission still has K3's
+supported profile. Existing production callers use the original decoders
+pending D02. Address keys are not authenticated hashes, and the theorem does
+not certify the compiler or host container loader. K5 will connect
+authenticated subjects and receipts.
 
 ## Validation
 
@@ -247,7 +279,7 @@ lake run check-kernel --with-model
 The standalone package reads the repository's kernel sources and has no
 external packages. Its default strict build checks all kernel modules,
 frozen audits (including negative controls), the isolated codec proof chain,
-and eleven fixture modules.
+and twelve fixture modules, including byte-admission adversarial controls.
 Provenance validates the port inventory, inspected target hashes, source
 pins, headers, and license files. `--source PATH` additionally checks the
 old source checkout against the recorded source hashes.
@@ -264,16 +296,25 @@ of a certified theorem.
 
 The host-only `kernel-ingress` executable compiles tutorial declarations with
 `Ix.CompileM`, serializes and reloads them through the production codec, and
-runs `checkEnv`. Its 26 cases cover eight ordinary families, definition and
+runs both `checkEnv` and `Ix.Ixon.Admission.checkBytes`. Its 26 cases cover eight ordinary families, definition and
 reduction examples, family-only dependencies, and mutations of recursor
 rules, field counts, metadata, and K flags. The compiler, loader, and host
-ordering remain untrusted producers. Each case also passes through the
+ordering remain untrusted producers. Each case checks that canonical record
+decoding preserves the complete ordered input and that byte admission has
+the same outcome and reason as in-memory admission. It also passes through the
 certified reader and writer, comparing complete records and exact production
 Ixon bytes; this includes cases whose declarations are declined or rejected.
 Pure egress fixtures cover layout duplication, unused entries, sharing,
 projection variants, numeric overflow, count mismatches, and changed raw
 payloads behind retained table slots. Exact Ixon bytes and outcomes are
-retained in `.lake/build/kernel-ingress.jsonl`.
+retained in `.lake/build/kernel-ingress.jsonl`, together with byte limits,
+checker fuel, the literal-family reference, byte outcomes/reasons, and the
+exact-decoding result. Pure byte-admission
+fixtures cover preflight rejection before decoding, zero-byte entries,
+shared total budgets across records and blobs, exact/insufficient limits,
+duplicate keys, order-sensitive references, fuel exhaustion, noncanonical
+encodings, successor expansion bombs, every proper record prefix, and every
+single-byte suffix.
 
 The host-only `kernel-codec` runner executes the existing production codec
 unit/property suite, including Rust serialization comparisons for universes,
@@ -300,6 +341,20 @@ operation counts are documented in
 [`Benchmarks/Kernel/README.md`](../Benchmarks/Kernel/README.md). Diagnostic
 tracing runs in disposable source copies and is excluded from the certified
 runtime. Timings use uninstrumented native executables.
+
+The K4 byte-admission checkpoint passed the incremental full gate on
+2026-09-29: 176 standalone jobs, 184 host fixture/provenance jobs, 541 runner
+build jobs, and 975 model jobs. All 38 differential cases and all 26 compiler
+ingress/byte-admission/exact-egress cases passed, as did the codec suite.
+The byte route preserved 20 accepted, five declined, and one rejected outcome,
+including their exact reasons. Twelve new exact axiom checks cover batch
+accounting, exact byte readings, aggregate expansion, admission fidelity,
+key uniqueness, model existence, and the executable entry point. Provenance
+covers 97 ported and 64 authored/reorganized modules plus four license files.
+The retained inputs include every byte-admission argument. Evidence is in
+`plans/review/k4-byte-admission/summary.json`; its tested source is
+`d8f5ca265ed496b060c197dfaedf87a77cd4ce47`. This was an incremental run, not
+whole-corpus parity or the D02 runtime cutover.
 
 ## Removal ledger: lean4ix and Ix.Tc
 

@@ -22,10 +22,12 @@ lean_lib IxKernel where
   srcDir := ".."
   roots := #[`Ix.Kernel, `Ix.Address.Core, `Ix.Ixon.Types, `Ix.Ixon.Codec, `Ix.Ixon.Wire,
     `Ix.Ixon.WireCheck, `Ix.Ixon.Bounded.Universe, `Ix.Ixon.Bounded.Constant,
-    `Ix.Ixon.Canonical, `Ix.Ixon.Verify, `Ix.Ixon.Audit]
+    `Ix.Ixon.Canonical, `Ix.Ixon.Verify, `Ix.Ixon.Audit,
+    `Ix.Ixon.Admission, `Ix.Ixon.Admission.Audit]
   globs := #[.andSubmodules `Ix.Kernel, .one `Ix.Address.Core, .andSubmodules `Ix.Ixon.Types,
     .one `Ix.Ixon.Codec, .one `Ix.Ixon.Wire, .one `Ix.Ixon.WireCheck, .submodules `Ix.Ixon.Bounded,
-    .one `Ix.Ixon.Canonical, .andSubmodules `Ix.Ixon.Verify, .one `Ix.Ixon.Audit]
+    .one `Ix.Ixon.Canonical, .andSubmodules `Ix.Ixon.Verify, .one `Ix.Ixon.Audit,
+    .andSubmodules `Ix.Ixon.Admission]
 
 /-- Certified fixtures also run without the host package's dependencies. -/
 def kernelFixtureRoots : Array Lean.Name := #[
@@ -33,7 +35,8 @@ def kernelFixtureRoots : Array Lean.Name := #[
   `Tests.Ix.Kernel.Structures, `Tests.Ix.Kernel.Literals,
   `Tests.Ix.Kernel.Quotients, `Tests.Ix.Kernel.Axioms,
   `Tests.Ix.Kernel.SearchOutcomes, `Tests.Ix.Kernel.Fidelity,
-  `Tests.Ix.Kernel.Ingress, `Tests.Ix.Kernel.Egress, `Tests.Ix.Kernel.Codec]
+  `Tests.Ix.Kernel.Ingress, `Tests.Ix.Kernel.Egress, `Tests.Ix.Kernel.Codec,
+  `Tests.Ix.Kernel.ByteAdmission]
 
 @[default_target]
 lean_lib KernelFixtures where

@@ -35,11 +35,13 @@ inductive/recursor admission, `checkEnv`, and layout-preserving egress are now
 implemented with 26 compiler ingress and byte-exact egress cases. K4 now has
 isolated production codecs, the retained all-variant inverse proofs,
 exact constant framing, aggregate universe bounds over complete records,
-executable wire validation, and canonical record decoding with an exact
-successful-domain theorem. D01 is complete: both
+executable wire validation, canonical record decoding, and byte admission
+with exact reading/acceptance domains, installed declarations, and model
+guarantees. D01 is complete: both
 lean4ix/Lean4Lean dependency paths, the old verification trees, and their build/benchmark/CI consumers
 have been removed and validated in a fresh jj workspace and through Nix.
-The remaining K4 byte-admission work and measured core improvements in
+The remaining K4 reader bounds, canonical block order, projection-address
+reconstruction, and measured core improvements in
 section 10 are next. D02's final runtime Ix.Tc cutover remains required.
 
 ## Revision note
@@ -610,6 +612,11 @@ Both are mechanical, reviewed separately, and change no behavior.
   tooling, without host code, Lean4Lean, or foreign execution replacements.
   `Ix.Ixon.Audit` checks these separate boundaries; the kernel's narrower
   allowlist is unchanged.
+- `Ix.Ixon.Admission` composes the pure codecs with `Ix.Kernel.Ingress`
+  outside the kernel tree. Its implementation imports neither `Verify` nor
+  host modules; `Verify.Admission` proves the byte contract separately.
+  `Admission.Audit` checks its own closure without widening the kernel or
+  codec allowlists.
 - Implementation modules do not import `Model` or `Verify`. Proofs import the
   implementation. Audits and tests import the library; the library never
   imports them.
@@ -650,8 +657,9 @@ checkpoint. Initial entries:
 | Address key | `Ix.Address.Core` | pure data | K0 |
 | BLAKE3 | `Blake3.Pure` (package), `Address.blake3Pure` | certified function once the pin is bumped and our runtime audit confirms its closure | K0 pin bump; used from K4 and K5; the C and Rust backends stay host accelerators |
 | Ixon data types | `Ix.Ixon.Types` | pure production data in the standalone audited closure | K3 split complete |
-| Ixon codecs | `Ix.Ixon.Codec`, `Wire`, `WireCheck`, `Bounded`, `Canonical`, `Verify` | production grammar and inverses, complete-record byte/universe limits, exact wire validation, and canonical re-encoding | K4 further resource bounds, mutual-block order, and byte admission remain |
-| Ixon to kernel ingress and egress | `Ix.Kernel.Ingress`, `Ix.Kernel.Egress` | exact readings, physical-reference fidelity, model theorem for accepted in-memory input, and exact reconstruction with retained layout | K3 complete; byte contracts remain K4 |
+| Ixon codecs | `Ix.Ixon.Codec`, `Wire`, `WireCheck`, `Bounded`, `Canonical`, `Verify` | production grammar and inverses, complete-record byte/universe limits, exact wire validation, and canonical re-encoding | K4 further resource bounds and mutual-block order remain |
+| Ixon to kernel ingress and egress | `Ix.Kernel.Ingress`, `Ix.Kernel.Egress` | exact readings, physical-reference fidelity, model theorem for accepted in-memory input, and exact reconstruction with retained layout | K3 complete |
+| Byte admission | `Ix.Ixon.Admission`, `Verify.Admission`, `Admission.Audit` | exact ordered canonical-byte reading, aggregate input limits, installed declarations, and model theorem for the executed checker | K4 implemented; projection-address reconstruction remains |
 | Claims, assumption trees, Merkle roots, commitments | `Ix.Claim`, `Ix.AssumptionTree`, `Ix.Merkle`, `Ix.Commit` | host | K5, with explicit cryptographic assumptions |
 | Lean reference checker | `Ix.Tc` | host; replaced by `Ix.Kernel` in K6 | every consumer migrates, then `Ix.Tc` is deleted |
 | Rust kernel | `crates/kernel`, `Ix.KernelCheck` | host fast path | differential parity against `Ix.Kernel`; verdicts are not certified |
@@ -931,7 +939,7 @@ for family-only inputs; it makes no measured speedup claim.
 Exit: acceptance of Ixon-shaped input establishes the meaning of the
 selected declarations; unsupported input declines explicitly.
 
-### K4: Ixon bytes (bounded and canonical record codecs implemented)
+### K4: Ixon bytes (canonical decoding and byte admission implemented)
 
 Implemented: production anonymous encoders/decoders moved unchanged into
 `Ix.Ixon.Codec`, reexported by the host; structural count/address predicates
@@ -974,12 +982,33 @@ not establish mutual-block member order or typing. Directed controls reject
 nonminimal integer tags, split successor prefixes, ignored universe-tag
 sizes, and non-Boolean axiom flags that the production decoder accepts.
 
+`Ix.Ixon.Admission.checkBytes` now composes canonical record decoding with
+K3's actual checker. A short-circuiting preflight enforces record count, blob
+count, and a total payload-byte limit shared across both lists before any
+decoding. Per-record byte and universe limits are explicit, with one node
+budget across each entire universe table. Tail-recursive decoding preserves
+keys and order. Errors distinguish batch limits, record decoding at its
+original position/address, and unchanged kernel rejection/decline outcomes.
+
+`Verify.Admission` proves the preflight and decoder's exact successful
+domains. Its `RecordsRead` relation names every complete canonical payload,
+including unused side tables, without assuming a host decoding result.
+`checkBytes_ok_iff` composes this reading with the same in-memory checker;
+`checkBytes_of_reading` preserves every kernel outcome at the same fuel.
+The reading and model theorems establish which declarations the bytes
+describe and install, and successful admission proves both key lists unique.
+Literal blobs retain their supplied bytes and K3 interpretation; no canonical
+blob spelling or content-hash authentication is assumed.
+
+The adapter lives outside `Ix.Kernel`. Its implementation imports no proof
+module; the broad inverse proofs and Std bit-vector tooling stay in the
+separate proof closure. `Admission.Audit` freezes the adapter independently
+without widening either existing import allowlist. All 26 compiler fixtures
+exercise both byte and in-memory admission and compare exact decoded inputs,
+outcomes, and reasons. Production consumer migration remains D02.
+
 Remaining: structural/work bounds for the other production readers,
-canonical mutual-block order, and composition with K3. The byte adapter must
-preserve the kernel's core-only import boundary; the broad inverse proofs
-and their Std bit-vector tooling belong in the separate codec proof closure.
-Existing host callers still use the original decoders. No byte-admission
-theorem is claimed at this checkpoint.
+canonical mutual-block order, and pure projection-address reconstruction.
 
 Port the earlier plan's serialization milestone against the split types:
 schema and version, pure encoders and bounded decoders for the supported
@@ -1376,7 +1405,7 @@ Implementation checkpoint (2026-09-29):
   two inherited array accessors, and no project replacements; kernel/ingress/
   egress closures and public theorem statements are unchanged. The selected
   D00 codec contracts are preserved, so D01 can proceed independently of the
-  remaining K4 byte-admission work.
+  K4 byte-admission work that was still pending at that checkpoint.
 - D01 removes both lean4ix/Lean4Lean dependency paths, the two old proof
   trees, the proof-only FFI crate, replay benchmark/runner, backend dispatch,
   and obsolete Lake/CI/Nix targets. TruthMines source/output and all four
@@ -1412,6 +1441,23 @@ Implementation checkpoint (2026-09-29):
   core/ingress/egress boundaries remain unchanged. Provenance covers 97
   ported, 61 authored/reorganized modules and four license files. Evidence
   is in `plans/review/k4-canonical-records/summary.json`.
+- K4's byte-admission checkpoint passes the incremental full gate:
+  176 standalone, 184 host fixture/provenance, 541 runner, and 975 model
+  jobs; 38 differential and 26 compiler ingress/byte-admission/exact-egress
+  cases, plus the codec suite. Canonical byte admission preserves all 20
+  accepted, five declined, and one rejected compiler-fixture outcomes and
+  their exact reasons. Recorded inputs include ordered record/blob bytes,
+  all limits, checker fuel, and the literal-family reference. Twelve new
+  exact axiom checks cover batch accounting, exact readings, aggregate
+  expansion, acceptance and outcome fidelity, key uniqueness, model
+  existence, and the executable operation. The independent adapter runtime
+  has 1,250 compiled functions, 56 inherited externs, and two inherited
+  unsafe array accessors, all already present in the kernel/codec closures;
+  there are no project replacements. The narrower existing import and
+  runtime boundaries remain unchanged. Provenance passes with 97 ported,
+  64 authored/reorganized modules, and four license files. Tested source:
+  `d8f5ca265ed496b060c197dfaedf87a77cd4ce47`; evidence:
+  `plans/review/k4-byte-admission/summary.json`.
 - P04–P12 and the remaining K4–K7 work stay open; whole-corpus parity has
   not been run. D02's runtime consumer cutover and deletion of Ix.Tc remain
   required.
