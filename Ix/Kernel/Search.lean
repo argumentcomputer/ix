@@ -13,6 +13,13 @@ and retain the most informative cause when every path fails.
 
 namespace Ix.Kernel
 
+/-- Recover the successful input of a proof-erasing result map. -/
+theorem Except.map_eq_ok {ε α γ : Type _} {f : α → γ} {x : Except ε α} {y : γ}
+    (h : x.map f = .ok y) : ∃ a, x = .ok a ∧ f a = y := by
+  cases x with
+  | error e => simp [Except.map] at h
+  | ok a => exact ⟨a, rfl, Except.ok.inj h⟩
+
 inductive SearchFailure where
   | exhausted
   | unsupported (reason : String)

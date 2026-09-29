@@ -41,13 +41,6 @@ def Env.EmptyType (env : Env β) (universes : Nat) (A : AExpr β) : Prop :=
     levels.length = universes → ∀ valuation : Nat → V,
       interp m.constants levels valuation A = SetTheory.empty
 
-omit [DecidableEq β] in
-theorem Except.map_eq_ok {ε α γ : Type _} {f : α → γ} {x : Except ε α} {y : γ}
-    (h : x.map f = .ok y) : ∃ a, x = .ok a ∧ f a = y := by
-  cases x with
-  | error e => simp [Except.map] at h
-  | ok a => exact ⟨a, rfl, Except.ok.inj h⟩
-
 /-- An accepted fold carries its model extension. -/
 theorem checkDecls_step {cfg : Config} {env env' : Env β} {decls : List (Decl β)}
     (h : checkDecls.{u,v} cfg env decls = .ok env') : StepClaim.{u,v} env env' := by

@@ -68,11 +68,21 @@ def publicOperations : Array Name :=
 
 /-- K3's Ixon entry points additionally reach Lean's byte/array access and
 UInt conversions and physical declaration association. Their separate closure
-is frozen below: 961 functions,
-23 inherited externs, and two inherited unsafe array accessors. -/
+is frozen below: 962 functions,
+23 inherited externs, and two inherited unsafe array accessors. Factoring
+`referenceSource` for the egress projection check adds one function. -/
 def ingressOperations : Array Name :=
   #[``Ix.Kernel.checkEnv, ``Ix.Kernel.Ingress.readExpr,
     ``Ix.Kernel.Ingress.readBlock, ``Ix.Kernel.Ingress.reference]
+
+/-- Exact layout-preserving readers/writers, independent of admission.
+The measured closure has 202 functions, 21 inherited externs, and two
+inherited unsafe array accessors. It additionally uses `UInt64.ofNat` to
+reconstruct bounded indexes and metadata, with an explicit overflow check.
+It reaches no project execution replacement, hashing, or host codec. -/
+def egressOperations : Array Name :=
+  #[``Ix.Kernel.Egress.readRecords, ``Ix.Kernel.Egress.writeRecords,
+    ``Ix.Kernel.Egress.writeExpr, ``Ix.Kernel.Egress.writeProjection]
 
 /-- Module prefixes the certified import closure may use: Lean core, the
 kernel itself, the pure address key, and the pure Ixon types. Measured after the K0 import trim,
@@ -110,6 +120,21 @@ end Ix.Kernel.Audit
 #guard_kernel_axioms Ix.Kernel.checkEnv_reading [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.checkEnv_has_model [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.checkEnv [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Egress.writeExpr_reading [propext, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Egress.writeExpr_roundtrip [propext, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Egress.writeBlock_reading [propext, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Egress.writeBlock_roundtrip [propext, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Egress.writeProjection_reading [propext]
+#guard_kernel_axioms Ix.Kernel.Egress.writeProjection_roundtrip [propext]
+#guard_kernel_axioms Ix.Kernel.Egress.readRecord_reading [propext, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Egress.writeRecord_reading [propext, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Egress.writeRecord_source [propext, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Egress.record_roundtrip [propext, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Egress.readRecords_reading [propext, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Egress.writeRecords_reading [propext, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Egress.records_roundtrip [propext, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Egress.readRecords [propext, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Egress.writeRecords [propext, Quot.sound]
 
 /-! ## Import and runtime closures -/
 
@@ -123,10 +148,16 @@ implemented_by 0, unsafe 1, csimp 0 -/
 run_cmd Ix.Kernel.Audit.checkRuntime Ix.Kernel.Audit.publicOperations Ix.Kernel.Audit.runtimeAllowlist
 
 /-- info: runtime closure of [Ix.Kernel.checkEnv, Ix.Kernel.Ingress.readExpr,
-Ix.Kernel.Ingress.readBlock, Ix.Kernel.Ingress.reference]: 961 compiled functions;
+Ix.Kernel.Ingress.readBlock, Ix.Kernel.Ingress.reference]: 962 compiled functions;
 inherited externs 23, implemented_by 0, unsafe 2, csimp 0 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntime Ix.Kernel.Audit.ingressOperations Ix.Kernel.Audit.runtimeAllowlist
+
+/-- info: runtime closure of [Ix.Kernel.Egress.readRecords, Ix.Kernel.Egress.writeRecords,
+Ix.Kernel.Egress.writeExpr, Ix.Kernel.Egress.writeProjection]: 202 compiled functions;
+inherited externs 21, implemented_by 0, unsafe 2, csimp 0 -/
+#guard_msgs (whitespace := lax) in
+run_cmd Ix.Kernel.Audit.checkRuntime Ix.Kernel.Audit.egressOperations Ix.Kernel.Audit.runtimeAllowlist
 
 /-! ## Frozen statements -/
 

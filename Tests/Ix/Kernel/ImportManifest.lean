@@ -59,6 +59,8 @@ def authored : Array String := #[
   "Ix/Kernel/Ingress.lean", "Ix/Kernel/Ingress/Reading.lean",
   "Ix/Kernel/Ingress/Expr.lean", "Ix/Kernel/Ingress/Constant.lean",
   "Ix/Kernel/Ingress/Declarations.lean", "Ix/Kernel/Certified/Ordinary/Stage.lean",
+  "Ix/Kernel/Egress.lean", "Ix/Kernel/Egress/Layout.lean", "Ix/Kernel/Egress/Expr.lean",
+  "Ix/Kernel/Egress/Constant.lean", "Ix/Kernel/Egress/Projection.lean",
   "Ix/Kernel.lean", "Ix/Kernel/Model.lean", "Ix/Kernel/Env.lean", "Ix/Kernel/Check.lean",
   "Ix/Kernel/Consistency.lean", "Ix/Kernel/Audit/Axioms.lean", "Ix/Kernel/Audit/Imports.lean",
   "Ix/Kernel/Audit/Runtime.lean", "Ix/Kernel/Audit/Roots.lean", "Ix/Address/Core.lean",

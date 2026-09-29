@@ -31,8 +31,8 @@ in a fresh jj workspace on 2026-09-29, including 38 host differential cases
 and the Mathlib model audit. This is supported-profile coverage with the
 explicit policies in `docs/kernel.md`, not whole-corpus Lean parity.
 K3's pure production types, exact ingress readings, separate physical
-inductive/recursor admission, and `checkEnv` are now implemented with 26
-compiler ingress cases. Egress is still open. Next: the remaining K3/K4 work
+inductive/recursor admission, `checkEnv`, and layout-preserving egress are now
+implemented with 26 compiler ingress and byte-exact egress cases. Next: K4
 and the measured core improvements in section 10. Section 11 makes
 removal of `lean4ix` (the
 dependency named `lean4lean` by Lake) and the old verification machinery
@@ -637,7 +637,7 @@ checkpoint. Initial entries:
 | BLAKE3 | `Blake3.Pure` (package), `Address.blake3Pure` | certified function once the pin is bumped and our runtime audit confirms its closure | K0 pin bump; used from K4 and K5; the C and Rust backends stay host accelerators |
 | Ixon data types | `Ix.Ixon.Types` | pure production data in the standalone audited closure | K3 split complete |
 | Ixon codecs | `Ix.Ixon` encoders and decoders | host | K4, supported subset |
-| Ixon to kernel ingress | `Ix.Kernel.Ingress` | exact readings, physical-reference fidelity, and model theorem for accepted in-memory input | K3 ingress complete; egress open |
+| Ixon to kernel ingress and egress | `Ix.Kernel.Ingress`, `Ix.Kernel.Egress` | exact readings, physical-reference fidelity, model theorem for accepted in-memory input, and exact reconstruction with retained layout | K3 complete; byte contracts remain K4 |
 | Claims, assumption trees, Merkle roots, commitments | `Ix.Claim`, `Ix.AssumptionTree`, `Ix.Merkle`, `Ix.Commit` | host | K5, with explicit cryptographic assumptions |
 | Lean reference checker | `Ix.Tc` | host; replaced by `Ix.Kernel` in K6 | every consumer migrates, then `Ix.Tc` is deleted |
 | Rust kernel | `crates/kernel`, `Ix.KernelCheck` | host fast path | differential parity against `Ix.Kernel`; verdicts are not certified |
@@ -861,7 +861,7 @@ Exit: `lake -d IxKernel build --wfail` and `check-kernel` pass on a clean
 checkout; the theorem applies to the fixtures; the release is usable
 without Ixon bytes, `Ix.Tc`, or claims.
 
-### K3: Ixon ingress (ingress implemented; egress open)
+### K3: Ixon ingress and exact egress (implemented)
 
 1. Land the `Ix.Ixon.Types` split (done, `xztqxzxr`). Production codecs and
    the standalone kernel use the same pure data definitions. Hash-dependent
@@ -874,11 +874,17 @@ without Ixon bytes, `Ix.Tc`, or claims.
    declaration; prove ingress success establishes it, including declared
    types, universe counts, mutual identities, and binder modes (done, with
    deterministic expression readings and exact installed primary records).
-   Egress remains: prove `egress (ingress c) = c` on an explicitly supported
-   canonical domain, or retain and check the layout needed to reconstruct
-   `c`. Expanded raw terms alone do not determine sharing, table order,
-   unused entries, or let hints. Do not claim an unrestricted inverse. This
-   replaces the kernel round-trip phases of `ix validate-lean`.
+   Egress is implemented with retained layout: `record_roundtrip` and
+   `records_roundtrip` prove exact source recovery after successful reading
+   at the same fuel/context. Expanded raw terms alone do not determine
+   sharing, table order, unused entries, or let hints; layout retains those
+   choices. The writer rebuilds payloads from raw terms and validates their
+   complete reading, checks numeric bounds and exact list lengths, and
+   validates reconstructed projection variants and owners. It uses a blank
+   `Context.source`, with source tables retained in the layout. These are
+   serialization contracts, independent of typing, key uniqueness, wire
+   canonicality, and hashes. The CLI round-trip replacement uses these
+   operations during the D02 consumer cutover.
 4. `checkEnv` over a list of address-to-constant pairs and the blob bytes
    behind literals, composed with certified admission; theorem for the
    Ixon-shaped in-memory input (done: `checkEnv_reading` and
@@ -887,7 +893,8 @@ without Ixon bytes, `Ix.Tc`, or claims.
 5. Tests on environments compiled by `Ix.CompileM` from the tutorial corpus,
    loaded by the ordinary host loader, which remains untrusted (done: 26
    cases including altered rules, field counts, header counts, and K flags;
-   CI retains exact inputs and outcomes).
+   all also round-trip through the certified reader/writer with exact record
+   and production-byte equality; CI retains exact inputs and outcomes).
 
 The production-layout investigation corrected the K2 fixture assumption:
 Ixon keeps inductives and recursors in separate records. `Ix.Tc.Ingress` and
@@ -1284,8 +1291,19 @@ Implementation checkpoint (2026-09-29):
   array/byte accessors. Provenance covers 97 ported, 35 authored modules and
   four license files. The physical-layout correction and family-only stage
   are part of K3, not a claim of general mutual/nested support.
-- P04–P12, K3 egress, and K4–K7 remain open; whole-corpus parity has not been run.
-  K3/K4 may proceed next to unlock the mandatory D01 removal. D01/D02 remain
+- K3 egress retains layout and proves complete record/list round trips at
+  the same fuel/context, with writer fidelity independent of admission.
+  The full incremental gate passes: 150 standalone, 160 host fixture/provenance,
+  467 runner build, and 975 model jobs; 38 differential and 26 compiler
+  ingress/byte-exact egress cases. Ten pure fixture modules include adversarial
+  layout, projection, numeric-bound, and list-length controls. The public
+  theorem statements are unchanged. Runtime is 920 core, 962 ingress, and
+  202 reader/writer functions; the extra ingress helper resolves actual
+  supplied records, and egress additionally uses bounded `UInt64.ofNat`.
+  No project execution replacements are reached. Provenance covers 97
+  ported, 40 authored modules and four license files.
+- P04–P12 and K4–K7 remain open; whole-corpus parity has not been run.
+  K4 is next to unlock the mandatory D01 removal. D01/D02 remain
   required: neither dependency retirement nor runtime cutover is claimed
   by the K2 gate.
 

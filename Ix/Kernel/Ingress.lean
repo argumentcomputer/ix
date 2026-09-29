@@ -17,10 +17,6 @@ checker. No byte decoding, hashing, or host-checker verdict enters this path.
 
 namespace Ix.Kernel.Ingress
 
-def isProjection : Ixon.ConstantInfo → Bool
-  | .dPrj _ | .iPrj _ | .rPrj _ | .cPrj _ => true
-  | _ => false
-
 def context (constants : Constants) (blobs : Blobs) (family : Option (ConstRef Address))
     (pair : Address × Ixon.Constant) : Context :=
   ⟨constants, blobs, pair.1, pair.2, family⟩
@@ -33,7 +29,7 @@ inductive DeclarationsRead (constants : Constants) (blobs : Blobs)
   | declaration : BlockReads (context constants blobs family pair) block →
       DeclarationsRead constants blobs family rest decls →
       DeclarationsRead constants blobs family (pair :: rest) (⟨pair.1, block⟩ :: decls)
-  | projection : isProjection pair.2.info = true → reference constants pair.1 = some ref →
+  | projection : isProjection pair.2.info = true → referenceSource constants pair.1 pair.2 = some ref →
       DeclarationsRead constants blobs family rest decls →
       DeclarationsRead constants blobs family (pair :: rest) decls
 
@@ -64,7 +60,7 @@ def readDeclarationsC (constants : Constants) (blobs : Blobs)
   | [] => .ok ⟨[], .nil⟩
   | pair :: rest => do
     if hp : isProjection pair.2.info = true then
-      match hr : reference constants pair.1 with
+      match hr : referenceSource constants pair.1 pair.2 with
       | none => throw (.malformed "projection record has invalid tables, owner, kind, or position")
       | some _ref =>
         let decls ← readDeclarationsC constants blobs family fuel rest

@@ -4,6 +4,7 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 -/
 
 import Ix.Kernel.Ingress
+import Ix.Kernel.Egress
 import Ix.CompileDriver
 import Ix.Meta
 import Tests.Ix.Kernel.TutorialDefs
@@ -12,7 +13,8 @@ import Tests.Ix.Kernel.TutorialDefs
 `Ix.CompileM`, serialize and load them with the ordinary host codec, then
 submit their dependency-ordered records to `Ix.Kernel.checkEnv`. The loader,
 ordering, compiler, and names are untrusted producers of in-memory input.
-The verdict always comes from the certified checker.
+The verdict always comes from the certified checker. Every case separately
+round-trips through the certified reader/writer and the production encoder.
 -/
 
 open Ix.Kernel
@@ -116,6 +118,15 @@ def prepare (leanEnv : Lean.Environment) (test : Case) : IO (Ingress.Constants �
     Ingress.reference input named.addr
   return (input, loaded.blobs.toList, family)
 
+def egressRoundtrip (input : Ingress.Constants) (blobs : Ingress.Blobs)
+    (family : Option (ConstRef Address)) : Except String Unit := do
+  let records ← (Egress.readRecords input blobs family ({} : Config).fuel input).mapError reprStr
+  let output ← (Egress.writeRecords input blobs family ({} : Config).fuel records).mapError reprStr
+  unless output == input do throw "egress changed an address, record position, or constant field"
+  let encoded := input.map fun (address, source) => (address, Ixon.serConstant source)
+  let reencoded := output.map fun (address, source) => (address, Ixon.serConstant source)
+  unless reencoded == encoded do throw "egress changed production Ixon bytes"
+
 def run (leanEnv : Lean.Environment) (test : Case) : IO Bool := do
   let (input, blobs, family) ← prepare leanEnv test
   let input ← match test.mutateRecursor with
@@ -137,7 +148,10 @@ def run (leanEnv : Lean.Environment) (test : Case) : IO Bool := do
     | .ok _ => ("accept", "")
     | .error (.rejected reason) => ("reject", reason)
     | .error (.declined reason) => ("decline", reason)
-  let passed := outcome == test.expected
+  let (egressExact, egressReason) := match egressRoundtrip input blobs family with
+    | .ok _ => (true, "")
+    | .error reason => (false, reason)
+  let passed := outcome == test.expected && egressExact
   let constantJson := input.map fun (address, source) => Lean.Json.mkObj [
     ("address", Lean.toJson (toString address)),
     ("ixonHex", Lean.toJson (hexOfBytes (Ixon.serConstant source)))]
@@ -146,9 +160,12 @@ def run (leanEnv : Lean.Environment) (test : Case) : IO Bool := do
   IO.println (Lean.Json.mkObj [
     ("case", Lean.toJson test.label), ("expected", Lean.toJson test.expected),
     ("outcome", Lean.toJson outcome), ("reason", Lean.toJson reason),
+    ("egressExact", Lean.toJson egressExact), ("egressReason", Lean.toJson egressReason),
     ("passed", Lean.toJson passed), ("leanVersion", Lean.toJson Lean.versionString),
     ("constants", Lean.toJson constantJson), ("blobs", Lean.toJson blobJson)]).compress
-  if !passed then IO.eprintln s!"{test.label}: expected {test.expected}, got {outcome}: {reason}"
+  if outcome != test.expected then
+    IO.eprintln s!"{test.label}: expected {test.expected}, got {outcome}: {reason}"
+  if !egressExact then IO.eprintln s!"{test.label}: egress failed: {egressReason}"
   return passed
 
 def main : IO UInt32 := do
@@ -156,7 +173,7 @@ def main : IO UInt32 := do
   let mut failed := 0
   for test in cases do
     unless ← run leanEnv test do failed := failed + 1
-  IO.eprintln s!"Certified Ixon ingress: {cases.length - failed}/{cases.length} host cases passed."
+  IO.eprintln s!"Certified Ixon ingress and exact egress: {cases.length - failed}/{cases.length} host cases passed."
   return if failed == 0 then 0 else 1
 
 end Tests.Ix.Kernel.IngressHost

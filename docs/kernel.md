@@ -17,6 +17,7 @@ system. It does not certify the Lean-to-Ixon compiler, Rust checker, or IxVM.
 | --- | --- | --- |
 | `Decl`, `Block`, `Const`, `VExpr`, `VLevel`, `ConstRef` | The supplied declarations, member/constructor positions, terms, and positional universes | Input data, without a typing assumption |
 | `Ix.Ixon.Types`, `Ingress.Context`, `ExprReads`, `BlockReads` | Pure production Ixon data and its exact reading after table, projection, sharing, and literal resolution | `readExpr_reading`, `readBlock_reading`, and reading determinism |
+| `Egress.Record`, expression/declaration layouts | Raw payloads plus the sharing, table, and let-spelling choices needed to reconstruct the source | Checked writer readings and `records_roundtrip`, with exact list equality |
 | `AExpr`, `PropWhen` | A reading with a condition at each binder describing when its codomain is a proposition | `annotate_erase` proves exact erasure; separate scope checks include annotation conditions |
 | `Typed`, `TypedSort`, `Reduced`, `Conv` | Search results with erased semantic evidence for this environment and context | `inferA`, normalization, conversion, and the declaration checkers |
 | Admission candidate | An ordinary inductive shape, structure description, or standard primitive interface | A reader proposes it; validation and exact generated-block comparison justify installation |
@@ -91,6 +92,24 @@ point. Nat payloads are little-endian; strings and nonstandard binder modes
 decline. Address authentication, wire canonicality, and unused table entries
 are outside this reading contract.
 
+`Egress.readRecords` retains the layout choices that expanded raw terms lose.
+`Egress.writeRecords` reconstructs declaration payloads from those terms,
+checks their complete readings against the retained tables, and validates
+each reconstructed projection's actual variant and owner. It preserves every
+address, record position, declaration field, sharing node, repeated or unused
+table slot, and let nondependency hint. Numeric reconstruction rejects values
+outside `UInt64`; constructor and rule lists cannot silently truncate.
+
+`Egress.records_roundtrip` proves exact source recovery after any successful
+read at the same fuel and with the same reference/blob context. The writer
+uses a blank `Context.source`; it does not copy the original primary record.
+Its retained sharing and universe tables still carry source layout. The
+reading/writing operations do not establish typing, dependency order, key
+uniqueness, byte canonicality, or address authentication; use `checkEnv` for
+declaration admission. Unused table entries remain outside validation. The
+serializer profile includes all declaration variants with ordinary Lean
+expression modes; the admission profile remains the smaller one above.
+
 The certified environment retains the checked body of every definition-like
 declaration, including theorem and opaque declarations. Delta reduction can
 unfold such a stored body. This is the current kernel transparency policy;
@@ -150,15 +169,16 @@ are listed and explained in
 [`Ix/Kernel/Audit/Roots.lean`](../Ix/Kernel/Audit/Roots.lean). No project FFI,
 Rust checker, or BLAKE3 operation is reached by the certified checker. An
 address is only a key inside this boundary; it is never hashed there. The
-Ixon ingress closure contains 961 compiled functions, 23 inherited externs,
+Ixon ingress closure contains 962 compiled functions, 23 inherited externs,
 two inherited unsafe array accessors, and no `implemented_by` or `csimp`.
+The separate reader/writer closure contains 202 compiled functions, 21
+inherited externs, and the same two array accessors, also without project
+replacements. Its bounded conversions additionally use `UInt64.ofNat`.
 
 Byte decoding, canonicality, address reconstruction, claims, and receipts
-have no acceptance theorem at this checkpoint. K3's exact Ixon readings and
-admission are implemented; egress remains open. Expanding sharing and table
-indexes loses layout information, so an inverse from raw terms alone cannot
-recover arbitrary source encodings. The egress contract must retain layout
-or restrict and prove a canonical domain. K4 will connect supported bytes and pure serialization/decoding;
+have no acceptance theorem at this checkpoint. K3's exact Ixon readings,
+admission, and layout-preserving egress are implemented. K4 will connect
+supported bytes and pure serialization/decoding;
 K5 will connect authenticated subjects and receipts. A theorem about an
 accepted raw environment does not by itself prove any of those contracts.
 
@@ -172,7 +192,7 @@ lake run check-kernel --with-model
 
 The standalone package reads the repository's kernel sources and has no
 external packages. Its default strict build checks all kernel modules,
-frozen audits (including negative controls), and nine fixture modules.
+frozen audits (including negative controls), and ten fixture modules.
 Provenance validates the port inventory, inspected target hashes, source
 pins, headers, and license files. `--source PATH` additionally checks the
 old source checkout against the recorded source hashes.
@@ -192,7 +212,12 @@ The host-only `kernel-ingress` executable compiles tutorial declarations with
 runs `checkEnv`. Its 26 cases cover eight ordinary families, definition and
 reduction examples, family-only dependencies, and mutations of recursor
 rules, field counts, metadata, and K flags. The compiler, loader, and host
-ordering remain untrusted producers. Exact Ixon bytes and outcomes are
+ordering remain untrusted producers. Each case also passes through the
+certified reader and writer, comparing complete records and exact production
+Ixon bytes; this includes cases whose declarations are declined or rejected.
+Pure egress fixtures cover layout duplication, unused entries, sharing,
+projection variants, numeric overflow, count mismatches, and changed raw
+payloads behind retained table slots. Exact Ixon bytes and outcomes are
 retained in `.lake/build/kernel-ingress.jsonl`.
 
 `lake run check-kernel` writes exact raw input trees, outcomes and reasons

@@ -9,6 +9,7 @@ import Ix.Kernel.Env
 import Ix.Kernel.Check
 import Ix.Kernel.Consistency
 import Ix.Kernel.Ingress
+import Ix.Kernel.Egress
 
 /-! # Ix.Kernel
 

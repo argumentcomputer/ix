@@ -19,6 +19,10 @@ namespace Ix.Kernel.Ingress
 abbrev Constants := List (Address × Ixon.Constant)
 abbrev Blobs := List (Address × ByteArray)
 
+def isProjection : Ixon.ConstantInfo → Bool
+  | .dPrj _ | .iPrj _ | .rPrj _ | .cPrj _ => true
+  | _ => false
+
 /-- First lookup in the supplied finite store. The environment driver checks
 key uniqueness before reading declarations. -/
 def lookup (store : List (Address × α)) (address : Address) : Option α :=
@@ -43,13 +47,13 @@ def natural (bytes : ByteArray) : Nat :=
 def emptyTables (source : Ixon.Constant) : Bool :=
   source.sharing.isEmpty && source.refs.isEmpty && source.univs.isEmpty
 
-/-- Resolve one supplied address, checking the projection's owner, variant,
-member position, and constructor position. A mutual block itself is not a
-constant reference. No projection address is reconstructed by hashing. -/
-def reference (store : Constants) (address : Address) : Option (ConstRef Address) := do
-  let source ← lookup store address
+/-- Resolve a supplied record, checking its projection owner, variant, member
+position, and constructor position. The source need not already be in the
+store; the writer uses this to validate newly reconstructed projections. -/
+def referenceSource (store : Constants) (address : Address) (source : Ixon.Constant) :
+    Option (ConstRef Address) :=
   match source.info with
-  | .defn _ | .recr _ | .axio _ | .quot _ => return .member address 0
+  | .defn _ | .recr _ | .axio _ | .quot _ => some (.member address 0)
   | .muts _ => none
   | .dPrj p => do
     if !emptyTables source then none else do
@@ -77,6 +81,12 @@ def reference (store : Constants) (address : Address) : Option (ConstRef Address
     let ctor ← ind.ctors[p.cidx.toNat]?
     if ctor.cidx = p.cidx then return .ctor p.block p.idx.toNat p.cidx.toNat
     else none
+
+/-- Resolve one stored address. A mutual block itself is not a constant
+reference. No projection address is reconstructed by hashing. -/
+def reference (store : Constants) (address : Address) : Option (ConstRef Address) := do
+  let source ← lookup store address
+  referenceSource store address source
 
 /-- Tables and finite input stores for one declaration. The literal family is
 an explicit choice; the kernel subsequently checks its natural-number fact. -/
