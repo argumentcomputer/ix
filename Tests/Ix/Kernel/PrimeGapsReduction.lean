@@ -86,6 +86,9 @@ emit_prime_gaps_erase_table
 
 /-! The two reducer-facing folds, copied without simplification. -/
 
+-- Keeps the upstream generator's exact `Bool.and'`/`or'`/`not'` terms, which Lean
+-- 4.34 deprecates in favour of the unprimed functions.
+set_option linter.deprecated false in
 noncomputable def dataCheck (S n maxNib aBound sigEnc eraseEnc labelEnc : Nat) : Bool :=
   Nat.rec (motive := fun _ => Nat → Nat → Bool)
     (fun _ uT =>

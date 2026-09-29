@@ -5,7 +5,7 @@ package ix where
   version := v!"0.1.0"
 
 require LSpec from git
-  "https://github.com/argumentcomputer/LSpec" @ "ab4d5eb461941837f48eb891be755c8c73e89fdd"
+  "https://github.com/argumentcomputer/LSpec" @ "369c09df268d7077dfea04a136abbd168351a6b4"
 
 /- Blake3 precompiles its libraries, so Lake loads their shared objects -- which
 bundle the C and Rust FFI objects -- into any process elaborating a module that
@@ -15,13 +15,13 @@ the revision that turned precompilation on. Before it, Blake3 exposed a
 `blake3_rs_shared` cdylib that `ix_native_decide_dynlib` had to fetch and link;
 that target no longer exists. -/
 require Blake3 from git
-  "https://github.com/argumentcomputer/Blake3.lean" @ "78f5bc4b22de1172af8a5d91e7039128084fad3a"
+  "https://github.com/argumentcomputer/Blake3.lean" @ "c32002eeed36c520dfb73de32ef53483652e3aa5"
 
 require Cli from git
-  "https://github.com/leanprover/lean4-cli" @ "v4.33.0"
+  "https://github.com/leanprover/lean4-cli" @ "v4.34.0"
 
 require batteries from git
-  "https://github.com/leanprover-community/batteries" @ "v4.33.0"
+  "https://github.com/leanprover-community/batteries" @ "v4.34.0"
 
 /- Reference Lean4-in-Lean4 theory and checker. `IxTcVerify` imports its
 Theory/Verify specification surface, while `bench-lean4lean` and the ignored
@@ -32,10 +32,10 @@ fork of digama0/lean4lean: this revision carries the upstream v4.32/v4.33
 kernel hardening — including the `checkNoMVarNoFVar` check on an opaque's
 value (leanprover/lean4#14498), which the replay path in
 `Benchmarks/Lean4Lean.lean` reaches — on top of that line's certified
-inductive-environment and projection development, and tracks Lean v4.33.1 as
+inductive-environment and projection development, and tracks Lean v4.34.0 as
 this package does. -/
 require lean4lean from git
-  "https://github.com/argumentcomputer/lean4ix" @ "a4188d7c2979378d85c6bb41fdd96c3a48a71371"
+  "https://github.com/argumentcomputer/lean4ix" @ "85cabd2dce350f2689eade5e7b1c890f8b6f209b"
 
 /-! ## FFI
 

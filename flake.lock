@@ -33,17 +33,17 @@
         ]
       },
       "locked": {
-        "lastModified": 1788716740,
-        "narHash": "sha256-S1nQ6SBqwAQk0U838a3GyqVOudJcgnQfhxLiPuEIjCk=",
+        "lastModified": 1790191633,
+        "narHash": "sha256-PILmDbF+0EYlxksIYkSHsp41jh4gBOh5oWiC+yYUT98=",
         "owner": "argumentcomputer",
         "repo": "Blake3.lean",
-        "rev": "78f5bc4b22de1172af8a5d91e7039128084fad3a",
+        "rev": "c32002eeed36c520dfb73de32ef53483652e3aa5",
         "type": "github"
       },
       "original": {
         "owner": "argumentcomputer",
         "repo": "Blake3.lean",
-        "rev": "78f5bc4b22de1172af8a5d91e7039128084fad3a",
+        "rev": "c32002eeed36c520dfb73de32ef53483652e3aa5",
         "type": "github"
       }
     },
@@ -271,11 +271,11 @@
         "nixpkgs": "nixpkgs"
       },
       "locked": {
-        "lastModified": 1787412565,
-        "narHash": "sha256-M1y7JYDUzvOSYv0DWcCCmkL2DqDfQZePsKDrQf/Or6U=",
+        "lastModified": 1790187117,
+        "narHash": "sha256-/OTAjmwL0vZlQ5BDbT94W2X3iuNvr8VYtqtN5Ov1egA=",
         "owner": "argumentcomputer",
         "repo": "lean4-nix",
-        "rev": "1ecad9d6f99cf3255a858861c9a2e6966cdd0290",
+        "rev": "c8bce66594bbf62073d0097ca5ddc44321f2d14e",
         "type": "github"
       },
       "original": {
