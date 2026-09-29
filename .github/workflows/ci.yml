@@ -87,6 +87,36 @@ jobs:
       - name: Test Ix CLI
         run: lake test --wfail -- cli
 
+  # A fresh package build keeps host dependencies out of the certified import
+  # closure. Mathlib is confined to its separate model package; its cache only
+  # supplies pinned dependency objects, not this checkout's kernel or fixtures.
+  certified-kernel:
+    name: Certified Lean kernel
+    runs-on: warp-ubuntu-latest-x64-16x
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-rust-toolchain
+      - uses: leanprover/lean-action@v1
+        with:
+          auto-config: false
+          use-github-cache: false
+      - name: Fetch pinned set-theory dependencies
+        run: |
+          MATHLIB_NO_CACHE_ON_UPDATE=1 lake -d Models/SetTheory update
+          lake -d Models/SetTheory exe cache get \
+            Mathlib.SetTheory.Cardinal.Regular \
+            Mathlib.SetTheory.ZFC.VonNeumann \
+            Mathlib.SetTheory.ZFC.Cardinal
+      - name: Check certified kernel, host differential, provenance, and model
+        run: lake run check-kernel --with-model
+      - name: Retain differential inputs and verdicts
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: certified-kernel-differential
+          path: .lake/build/kernel-differential.jsonl
+          if-no-files-found: warn
+
   rust-test:
     runs-on: warp-ubuntu-latest-x64-8x
     steps:

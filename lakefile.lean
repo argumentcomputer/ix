@@ -380,6 +380,13 @@ also verify the recorded source hashes. -/
 lean_exe «kernel-provenance» where
   root := `Tests.Ix.Kernel.Provenance
 
+/-- Host-only comparison with the temporary Ix.Tc oracle. -/
+lean_exe «kernel-differential» where
+  root := `Tests.Ix.Kernel.Differential
+  -- Resolve the host allocator from ix_ffi before Blake3's Rust archive,
+  -- as for bench-aggregate-policy. Neither archive enters IxKernel/.
+  moreLinkObjs := #[ix_rs]
+
 /-- Run the certified kernel gate: the standalone strict build with its audits,
 the host-side tests, and provenance. -/
 script "check-kernel" (args) := do
@@ -394,6 +401,12 @@ script "check-kernel" (args) := do
   run "lake" #["-d", "IxKernel", "build", "--wfail"]
   run "lake" #["build", "--wfail", "kernel-provenance", "Tests.Ix.Kernel.AddressPure", "Tests.Ix.Kernel.Fixtures", "Tests.Ix.Kernel.Inductives", "Tests.Ix.Kernel.Structures", "Tests.Ix.Kernel.Literals", "Tests.Ix.Kernel.Quotients", "Tests.Ix.Kernel.Axioms", "Tests.Ix.Kernel.SearchOutcomes", "Tests.Ix.Kernel.Fidelity"]
   run ".lake/build/bin/kernel-provenance" #[]
+  run "lake" #["build", "--wfail", "kernel-differential"]
+  let differential ← IO.Process.output { cmd := ".lake/build/bin/kernel-differential" }
+  IO.FS.writeFile ".lake/build/kernel-differential.jsonl" differential.stdout
+  IO.eprint differential.stderr
+  unless differential.exitCode == 0 do
+    throw <| IO.userError "kernel-differential failed; see .lake/build/kernel-differential.jsonl"
   if args == ["--with-model"] then
     run "lake" #["-d", "Models/SetTheory", "build", "--wfail"]
   IO.println "Certified kernel checks passed."

@@ -1,7 +1,8 @@
 # Ix.Kernel: certified kernel roadmap
 
-Date: 2026-09-16, implementation plan updated 2026-09-29. K0 and K1 are complete and K2
-is under way on `jcb/ix-certified`. K0: the model is ported to
+Date: 2026-09-16, implementation plan updated 2026-09-29. K0, K1, and the
+supported-profile K2 release gate are complete on `jcb/ix-certified`.
+K0: the model is ported to
 `Ix.Kernel.Model`, the address split and Blake3 pin bump are in, the kernel
 builds as a dependency-free package (`IxKernel/`) whose import closure is
 Lean core plus the kernel, the syntax carries `letE`, and `Models/SetTheory`
@@ -25,10 +26,12 @@ installed one by one with their computation rules derived from published
 facts at reduction time; `propext` and `Classical.choice` are admitted over
 the `Eq`, `Iff`, and `Nonempty` interfaces. Every K2 route is connected and
 `lake run check-kernel --with-model` was recorded as passing on 2026-09-17.
-The 2026-09-29 review re-ran the strict standalone build (123 jobs), but
-did not re-run the host gate, the Mathlib model, or corpus parity. Next:
-the contract repairs and K2 release gate in section 10, then K3 and the
-measured core improvements. Section 11 makes removal of `lean4ix` (the
+The subsequent implementation completed P00–P03 and ran the full K2 gate
+in a fresh jj workspace on 2026-09-29, including 38 host differential cases
+and the Mathlib model audit. This is supported-profile coverage with the
+explicit policies in `docs/kernel.md`, not whole-corpus Lean parity. Next:
+K3/K4 and the measured core improvements in section 10. Section 11 makes
+removal of `lean4ix` (the
 dependency named `lean4lean` by Lake) and the old verification machinery
 an explicit deliverable, independent of speculative optimization work.
 
@@ -803,7 +806,7 @@ Exit met: the theorem covers the executed fold; positive fixtures accept;
 the compiled-code audit reaches no foreign symbol; the K0 statements are
 unchanged.
 
-### K2: inductive profile and first release (routes complete, 2026-09-17)
+### K2: inductive profile and first release (release gate complete, 2026-09-29)
 
 1. Done for the ordinary class: shape reading, formation (telescopes, index
    fit, universe bounds, strict positivity by the shape), elimination mode
@@ -829,28 +832,29 @@ unchanged.
    (`Tests/Ix/Kernel/Structures.lean`): `Prod`, `And`, a dependent subtype,
    and a proposition with a data field that stays ordinary; projection
    typing including a dependent field, projection iota, structure eta, a
-   projection out of a non-structure and a bad field index rejected, a wrong
-   iota theorem rejected. Literals (`Tests/Ix/Kernel/Literals.lean`): a
+   projection out of a non-structure declined and a bad field index rejected,
+   a wrong iota theorem declined by conversion search. Literals (`Tests/Ix/Kernel/Literals.lean`): a
    literal at `Nat`, `3 = succ 2` and `0 = zero` by `Eq.refl`, `add 2 2 = 4`
-   through iota on literal majors, wrong equations rejected, a literal naming
+   through iota on literal majors, wrong equations declined, a literal naming
    an uninstalled family a missing reference, one naming a non-`Nat` family
    ill-typed. `Eq` with K-like reduction (`kSubst` in `Inductives.lean`).
    Quotients (`Tests/Ix/Kernel/Quotients.lean`): the five primitives in
    order, `Quot.lift f h (Quot.mk a) = f a` by `Eq.refl`, the eliminator at
    a constructor application; a primitive before what it refers to, a
-   duplicate, `f a` against `f b`, and soundness over a non-equality
-   rejected; a non-primitive former and a non-standard axiom declined.
+   duplicate, and soundness over a non-equality rejected; `f a` against
+   `f b`, a non-primitive former, and a non-standard axiom declined.
    Axioms (`Tests/Ix/Kernel/Axioms.lean`): `propext` over `Eq` and `Iff`,
    `Classical.choice` over `Nonempty`, each used; an axiom before its
    interfaces, an `Iff` with a small eliminator, and a duplicate rejected;
    other axioms decline.
-5. Differential run against `Ix.Tc` on the accepted corpus (pending): the
-   test-only bridge and categorized comparisons in section 10, without
-   waiting for certified Ixon ingress.
-6. `docs/kernel.md` and CI (pending), including P01's corrected failure
+5. Differential run against `Ix.Tc` (done): 38 categorized shared-input
+   comparisons, including positive K2 routes, corruptions, and explicit
+   policy differences. Raw input trees and verdicts are retained as JSONL;
+   the test bridge is not certified Ixon ingress.
+6. `docs/kernel.md` and CI (done), including P01's corrected failure
    contract, P02's fidelity statements, and the section 11 removal ledger.
 
-Exit: `lake build --wfail IxKernel` and `check-kernel` pass on a clean
+Exit: `lake -d IxKernel build --wfail` and `check-kernel` pass on a clean
 checkout; the theorem applies to the fixtures; the release is usable
 without Ixon bytes, `Ix.Tc`, or claims.
 
@@ -1169,7 +1173,8 @@ strategy.
 
 ## 10. Concrete implementation sequence from the review
 
-All packets below are planned. The reviewed baseline is `ade9216d` in the
+The checkpoint below distinguishes completed work from planned packets.
+The reviewed baseline is `ade9216d` in the
 Git-backed jj workspace `~/projects/ix-certified`. Use a small jj change
 for each coherent implementation/proof/test unit; the larger packets need
 several changes. Keep mechanical moves separate from behavioral changes.
@@ -1177,8 +1182,8 @@ Each change description records its packet, contract, validation, and
 measured effect. The local review and experiments live under ignored
 `plans/`; the implementation and its durable contracts must be tracked.
 
-The default next stack is P00 → P01 → P02 → P03, followed by the K2 release
-gate. Then follow P04–P11 in order, allowing the independent K3/K4 work to
+P00 → P01 → P02 → P03 and the K2 release gate are complete. Follow
+P04–P11 in order, allowing the independent K3/K4 work to
 proceed after K2. P12 and the K6 consumer cutover use those results. D00–D02
 in section 11 remove the obsolete verification system as soon as their
 replacement contracts are ready; they do not depend on caches or interning.
@@ -1233,10 +1238,19 @@ Implementation checkpoint (2026-09-29):
   native comparisons accept; small admission probes improve about 5–9%, with
   mixed larger-input timings and no separate context-sharing speedup claim.
   The full counts, timing ranges, and RSS are documented in the benchmark README.
-- P04–P12, the K2 release gate, and K3–K7 remain open. The host and
-  corpus parity gates have not been rerun at this checkpoint. D00–D02
-  remain required: neither dependency retirement nor runtime cutover is
-  claimed by the standalone checks.
+- The K2 release gate and D00 ledger are implemented in `ulwuykwl`.
+  `lake run check-kernel --with-model` passes in a fresh jj workspace with
+  no project Lean artifacts (134 standalone, 144 host, 342 differential
+  build, and 975 model jobs), reusing pinned dependency caches and unchanged
+  Rust artifacts. All 38 differential cases pass with explicit outcomes,
+  including the K-flag and opaque-transparency policies in `docs/kernel.md`.
+  CI runs the same gate and retains exact raw inputs and verdicts as JSONL.
+  D00 identifies the pure codec roots to preserve and the `Catalog` import
+  that must be split before removing Lean4Lean transitively.
+- P04–P12 and K3–K7 remain open; whole-corpus parity has not been run.
+  K3/K4 may proceed next to unlock the mandatory D01 removal. D01/D02 remain
+  required: neither dependency retirement nor runtime cutover is claimed
+  by the K2 gate.
 
 ### Ontology and contracts to preserve
 
