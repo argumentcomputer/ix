@@ -156,7 +156,7 @@ theorem store_related {program : Program} {base : Word} {holes : Holes} {frames 
       | false =>
           simp [Memory.write?, ← permissions, allowed, CoreStep]
       | true =>
-          simp only [Memory.write?, ← permissions, allowed, if_true, bind, Except.bind, pure, Except.pure,
+          simp only [Memory.write?, ← permissions, allowed, ite_true, bind, Except.bind, pure, Except.pure,
             CoreStep, clearAccesses]
           exact related.write _ _ _ (width_bytes_le width)
             (disjoint ⟨address.eval before, width.bytes⟩ (by simp [Arg.access]))
@@ -206,11 +206,11 @@ theorem stage_related {program : Program} {base : Word} {holes : Holes} {frames 
       have permissions := related.memory.writable
       simp only [Memory.write64?, Memory.write?, ← related.readReg .rsp, ← permissions, Width.bytes]
       by_cases allowed : Memory.rangeAllowed logical.memory.writable (logical.readReg .rsp - 8) 8 = true
-      · simp only [allowed, if_true, bind, Except.bind, pure, Except.pure, CoreStep, clearAccesses]
+      · simp only [allowed, ite_true, bind, Except.bind, pure, Except.pure, CoreStep, clearAccesses]
         have written := related.write (logical.readReg .rsp - 8) (out.results.headD 0) 8 (by decide)
           (disjoint ⟨logical.readReg .rsp - 8, 8⟩ (by simp))
         exact written.setReg .rsp (logical.readReg .rsp - 8)
-      · simp only [allowed, Bool.false_eq_true, if_false, bind, Except.bind, CoreStep]
+      · simp only [allowed, Bool.false_eq_true, ite_false, bind, Except.bind, CoreStep]
 
 /-! ## Rows -/
 
@@ -237,7 +237,7 @@ theorem run_pair {program : Program} {base : Word} {holes : Holes} {frames : Lis
   unfold Op.run
   rw [inputs_related related o args reads]
   cases hinputs : o.inputs args physical with
-  | error fault => simp [Except.mapError, RunPair, hinputs]
+  | error fault => simp [Except.mapError, RunPair]
   | ok inputs =>
       cases hsem : (desc o).sem ⟨inputs, observed⟩ with
       | error fault => simp [Except.mapError, RunPair, hsem]

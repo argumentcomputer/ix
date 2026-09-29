@@ -171,7 +171,7 @@ theorem final_ret {checked : Checked} {output : Encode.Output} {externals : Exte
   let after : ByteEval.State := ⟨state.core.setReg .rsp (state.core.readReg .rsp + 8), returnAddress, state.flags⟩
   refine ⟨after, ?_, rfl, ?_⟩
   · rw [one]
-    simp [Encode.execute_ret, physicalRead, Except.mapError, after]
+    simp [Encode.execute_ret, physicalRead, after]
   · change CoreRelated _ _ _ _ _ (state.core.setReg .rsp (state.core.readReg .rsp + 8))
     rw [coreEqual, ← related.core.readReg .rsp, ← returns]
     exact related.core.setReg .rsp _

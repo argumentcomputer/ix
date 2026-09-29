@@ -35,7 +35,7 @@ theorem frame_imm (size : FrameSize) : (Table.fullImm .w64).norm size.bytes = si
     rw [UInt32.lt_iff_toNat_lt, UInt64.toNat_toUInt32]
     simp only [UInt32.reduceToNat]
     omega
-  simp only [low, if_true]
+  simp only [low, ↓reduceIte]
   apply UInt64.toNat_inj.mp
   simp only [UInt32.toNat_toUInt64, UInt64.toNat_toUInt32]
   omega
@@ -120,7 +120,7 @@ variable (runtime : Runtime) (checked : Checked) (machine : Machine)
       simp only [Instr.alu, executeInstr, Machine.afterRow, Op.exec, Op.run, Op.inputs, Op.stage, desc_alu,
         Table.arithDesc, AluOp.arith_sem, AluOp.arith_role, Table.rmSlot, Table.regSlot, Table.aluSem,
         readSlots, writeSlots, Arg.load, Arg.store, Except.mapError, AluSource.eval, bind, Except.bind, pure,
-        Except.pure, List.headD_cons, List.tail_cons]
+        Except.pure, List.headD_cons]
   | imm value =>
       obtain ⟨form, imm, form_ok, row, low⟩ := aluImmRow_spec operation.mnemonic width (.reg destination)
         (signExtend32 value) (Encode.fullImm_truncate _ _)
@@ -129,7 +129,7 @@ variable (runtime : Runtime) (checked : Checked) (machine : Machine)
       simp only [executeInstr, Machine.afterRow, Op.exec, Op.run, Op.inputs,
         Op.stage, desc_alu, Table.arithDesc, AluOp.arith_sem, AluOp.arith_role, Table.rmSlot, Table.immSlot,
         Table.aluSem, readSlots, writeSlots, Arg.load, Arg.store, Except.mapError, bind,
-        Except.bind, pure, Except.pure, List.headD_cons, List.tail_cons] <;>
+        Except.bind, pure, Except.pure, List.headD_cons] <;>
       exact congrArg machine.advanceWith (Encode.writeReg_congr _ _ _ _ _
         (Encode.alu_congr_right _ _ _ _ _ low))
 

@@ -208,7 +208,7 @@ theorem ret_progress {checked : Checked} {output : Encode.Output} {externals : E
   let after : ByteEval.State := ⟨state.core.setReg .rsp (frame.returnSlot + 8), base + UInt64.ofNat offset, state.flags⟩
   have executed : ByteEval.step output.text base state = .ok after := by
     rw [one]
-    simp [Encode.execute_ret, ← related.core.readReg .rsp, stack, physicalRead, Except.mapError, after]
+    simp [Encode.execute_ret, ← related.core.readReg .rsp, stack, physicalRead, after]
   refine ⟨after, executed, ?_⟩
   rw [sourceStep]
   refine ⟨?_, related.running, offset, continuation, rfl⟩

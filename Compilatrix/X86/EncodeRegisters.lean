@@ -26,8 +26,8 @@ theorem rexPrefix_view (enc : EncDesc) (f : Fields) :
   unfold rexPrefix rexView rexPresent rexBits
   by_cases present : (enc.rexW || rexR enc f || (tail enc f).rexX || (tail enc f).rexB ||
       byteForce enc f) = true
-  · simp only [present, if_true]
-  · simp only [present, if_false, Bool.false_eq_true]
+  · simp only [present, ite_true]
+  · simp only [present, ite_false, Bool.false_eq_true]
 
 theorem rexView_bits (enc : EncDesc) (f : Fields) : Decode.Rex.bits (rexView enc f) = rexBits enc f := by
   unfold rexView Decode.Rex.bits rexBits
@@ -48,8 +48,6 @@ def opcodeByte (enc : EncDesc) (f : Fields) : UInt8 :=
 theorem opcodeBytes_split (enc : EncDesc) (f : Fields) :
     opcodeBytes enc f = (if enc.map == .x0F then [0x0f] else []) ++ [opcodeByte enc f] := rfl
 
-theorem escape_ne : ((0x0f : UInt8) == 0x66) = false := rfl
-
 theorem stages_decode (enc : EncDesc) (f : Fields) (after : List UInt8)
     (clear : Table.opcodeClear enc.map (opcodeByte enc f) = true) :
     Decode.one ((if enc.p66 then [0x66] else []) ++ rexPrefix enc f ++ opcodeBytes enc f ++ after) =
@@ -60,10 +58,10 @@ theorem stages_decode (enc : EncDesc) (f : Fields) (after : List UInt8)
       cases hview : rexView enc f with
       | some rex =>
           cases hp : enc.p66 <;>
-            simp [Decode.one, Decode.rexStage, Decode.opcodeStage, escape_ne]
+            simp [Decode.one, Decode.rexStage, Decode.opcodeStage]
       | none =>
           cases hp : enc.p66 <;>
-            simp [Decode.one, Decode.rexStage, Decode.opcodeStage, escape_ne]
+            simp [Decode.one, Decode.rexStage, Decode.opcodeStage]
   | legacy =>
       simp only [Table.opcodeClear, hmap, Bool.and_eq_true, bne_iff_ne, ne_eq, Bool.not_eq_true',
         Bool.and_eq_false_iff, decide_eq_false_iff_not, Nat.not_le, Nat.not_lt] at clear
@@ -80,7 +78,7 @@ theorem stages_decode (enc : EncDesc) (f : Fields) (after : List UInt8)
       cases hview : rexView enc f with
       | some rex =>
           cases hp : enc.p66 <;>
-            simp [Decode.one, Decode.rexStage, Decode.opcodeStage, noRex, notEscape, notMap]
+            simp [Decode.one, Decode.rexStage, Decode.opcodeStage, notMap]
       | none =>
           cases hp : enc.p66 <;>
             simp [Decode.one, Decode.rexStage, Decode.opcodeStage, noRex, notEscape, notMap]

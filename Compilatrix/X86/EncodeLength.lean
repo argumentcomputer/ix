@@ -30,7 +30,7 @@ theorem tail_length (enc : EncDesc) (f : Fields) :
   cases hmodrm : enc.modrm with
   | none => simp
   | reg | digit _ =>
-      simp only [reduceCtorEq, beq_iff_eq, if_false]
+      simp only [reduceCtorEq, beq_iff_eq, ite_false]
       split
       · rename_i rm _
         cases rm with

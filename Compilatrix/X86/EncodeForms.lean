@@ -257,13 +257,7 @@ theorem fieldsOk {o : Op} {args : List Arg} (row : o ∈ Op.rows) (ok : o.argsOk
         simp [himm, fields, hform, immediate_none]
     | _ :: _, shape => simp at shape
 
-
 /-! ## Operands per ModRM use -/
-
-theorem opcode_low (base : UInt8) (low : Nat) (aligned : base.toNat % 8 = 0) (small : base.toNat < 248)
-    (bound : low < 8) : (base + UInt8.ofNat low).toNat % 8 = low := by
-  rw [UInt8.toNat_add, UInt8.toNat_ofNat']
-  omega
 
 theorem operands_opcode {o : Op} {args : List Arg} (row : o ∈ Op.rows) (ok : o.argsOk args = true)
     (use : (desc o).enc.modrm = .none) (rest : List UInt8) :
@@ -300,7 +294,7 @@ theorem operands_opcode {o : Op} {args : List Arg} (row : o ∈ Op.rows) (ok : o
         rw [hemb] at regUse
         simp [Decode.opcodeFields, regUse, tail, use, hemb]
   simp only [Decode.operands, use, parse_bind, parsed, Option.bind_some, fok.imm, fok.assembled, lift_some,
-    ok, byteRegistersOk_view, Bool.and_self, if_true, parse_pure]
+    ok, byteRegistersOk_view, Bool.and_self, ite_true, parse_pure]
 
 theorem operands_modrm {o : Op} {args : List Arg} (row : o ∈ Op.rows) (ok : o.argsOk args = true)
     (use : (desc o).enc.modrm = .reg) (rest : List UInt8) :
@@ -332,7 +326,7 @@ theorem operands_modrm {o : Op} {args : List Arg} (row : o ∈ Op.rows) (ok : o.
     simp only [Decode.modrmFields, parse_bind, field, low_mod, bits] at parsedRm ⊢
     simp [parsedRm]
   simp only [Decode.operands, use, parse_bind, List.cons_append, byte_cons, Option.bind_some, fieldsParsed,
-    fok.imm, ← hreg, ← hrm, fok.assembled, lift_some, ok, byteRegistersOk_view, Bool.and_self, if_true,
+    fok.imm, ← hreg, ← hrm, fok.assembled, lift_some, ok, byteRegistersOk_view, Bool.and_self, ite_true,
     parse_pure]
 
 theorem operands_digit {o : Op} {args : List Arg} (row : o ∈ Op.rows) (ok : o.argsOk args = true)
@@ -361,14 +355,14 @@ theorem operands_digit {o : Op} {args : List Arg} (row : o ∈ Op.rows) (ok : o.
       modrm (more ++ immBytes (desc o).enc.imm (fields o.form args).imm ++ rest) =
       some ((none, some arg), immBytes (desc o).enc.imm (fields o.form args).imm ++ rest) := by
     rw [List.append_assoc]
-    simp only [Decode.modrmFields, parse_bind, bits] at parsedRm ⊢
+    simp only [Decode.modrmFields, bits] at parsedRm ⊢
     simp [parsedRm]
   simp only [Decode.operands, use, parse_bind, parse_pure, Option.bind_some, fieldsParsed,
-    fok.imm, ← regNone, ← hrm, fok.assembled, lift_some, ok, byteRegistersOk_view, Bool.and_self, if_true]
+    fok.imm, ← regNone, ← hrm, fok.assembled, lift_some, ok, byteRegistersOk_view, Bool.and_self, ite_true]
 
 /-! ## Rows -/
 
-theorem opcodeByte_member {o : Op} {args : List Arg} (row : o ∈ Op.rows) (ok : o.argsOk args = true) :
+theorem opcodeByte_member (o : Op) (args : List Arg) :
     opcodeByte (desc o).enc (fields o.form args) ∈ (desc o).enc.opcodes := by
   unfold opcodeByte EncDesc.opcodes
   cases hemb : (desc o).enc.emb with
@@ -379,12 +373,12 @@ theorem opcodeByte_member {o : Op} {args : List Arg} (row : o ∈ Op.rows) (ok :
       | none => exact ⟨0, by decide, rfl⟩
       | some register => exact ⟨_, low_lt _, rfl⟩
 
-theorem opcodeByte_clear {o : Op} {args : List Arg} (row : o ∈ Op.rows) (ok : o.argsOk args = true) :
+theorem opcodeByte_clear {o : Op} (row : o ∈ Op.rows) (args : List Arg) :
     Table.opcodeClear (desc o).enc.map (opcodeByte (desc o).enc (fields o.form args)) = true := by
   have shape := Op.shaped_of_row row
   unfold Table.shaped at shape
   simp only [Bool.and_eq_true] at shape
-  exact List.all_eq_true.mp shape.1.1 _ (opcodeByte_member row ok)
+  exact List.all_eq_true.mp shape.1.1 _ (opcodeByte_member o args)
 
 /-- E1 round trip, for every row of every encoding class: the independent
 decoder recovers the row and its operands from the encoder's bytes, and
@@ -396,20 +390,20 @@ theorem row_decode (o : Op) (args : List Arg) (row : o ∈ Op.rows) (ok : o.args
   simp only [List.append_assoc]
   have stages := stages_decode (desc o).enc (fields o.form args)
     ((tail (desc o).enc (fields o.form args)).bytes ++ immBytes (desc o).enc.imm (fields o.form args).imm ++ rest)
-    (opcodeByte_clear row ok)
+    (opcodeByte_clear row args)
   simp only [List.append_assoc] at stages
   rw [stages]
   cases hmodrm : (desc o).enc.modrm with
   | none =>
       have empty : (tail (desc o).enc (fields o.form args)).bytes = [] := by simp [tail, hmodrm]
-      rw [body_plain row _ (opcodeByte_member row ok) (by simp [hmodrm]), empty, List.nil_append]
+      rw [body_plain row _ (opcodeByte_member o args) (by simp [hmodrm]), empty, List.nil_append]
       exact operands_opcode row ok hmodrm rest
   | reg =>
-      rw [body_plain row _ (opcodeByte_member row ok) (by simp [hmodrm]), ← List.append_assoc]
+      rw [body_plain row _ (opcodeByte_member o args) (by simp [hmodrm]), ← List.append_assoc]
       exact operands_modrm row ok hmodrm rest
   | digit digit =>
       obtain ⟨modrm, more, shape, field, parsed⟩ := operands_digit row ok hmodrm rest
-      rw [shape, List.cons_append, body_group row _ (opcodeByte_member row ok) hmodrm modrm field,
+      rw [shape, List.cons_append, body_group row _ (opcodeByte_member o args) hmodrm modrm field,
         ← List.append_assoc]
       exact parsed
 

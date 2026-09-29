@@ -76,7 +76,7 @@ theorem memoryTail_decode (rex : Decode.Rex) (regField : Nat) (address : MemAddr
           refine ⟨modRM 0 regField 4,
             sib (scaleBits scale) (registerLow (indexRegCode index)) 5 :: le 4 displacement.toUInt64,
             rfl, by simp, by simp, ?_⟩
-          simp [Decode.memory, scaleZero, hx, hb, readLE_le]
+          simp [Decode.memory, hx, hb, readLE_le]
     | some base =>
       have modeBound := dispMode_lt (registerLow (gprCode base)) displacement
       have modeZero := @dispMode_zero (registerLow (gprCode base)) displacement
@@ -90,21 +90,21 @@ theorem memoryTail_decode (rex : Decode.Rex) (regField : Nat) (address : MemAddr
         | none =>
             simp only [MemAddr.canonical, Option.isSome_none, Bool.false_or, beq_iff_eq] at canonical
             subst canonical
-            simp only [memoryTail, useSib, if_true, Option.map_none] at hx hb
+            simp only [memoryTail, useSib, ite_true, Option.map_none] at hx hb
             refine ⟨modRM (dispMode (registerLow (gprCode base)) displacement) regField 4,
               sib 0 4 (registerLow (gprCode base)) ::
                 dispBytes (dispMode (registerLow (gprCode base)) displacement) displacement,
-              by simp only [memoryTail, useSib, if_true, Option.map_none]; rfl,
+              by simp only [memoryTail, useSib, ite_true, Option.map_none]; rfl,
               by rw [modeOf]; exact notThree, by simp, ?_⟩
             simp [Decode.memory, scaleZero, hx, hb, modeOf, notThree, notAbsent, displacement_decode]
         | some index =>
-            simp only [memoryTail, useSib, if_true, Option.map_some] at hx hb
+            simp only [memoryTail, useSib, ite_true, Option.map_some] at hx hb
             refine ⟨modRM (dispMode (registerLow (gprCode base)) displacement) regField 4,
               sib (scaleBits scale) (registerLow (indexRegCode index)) (registerLow (gprCode base)) ::
                 dispBytes (dispMode (registerLow (gprCode base)) displacement) displacement,
-              by simp only [memoryTail, useSib, if_true, Option.map_some]; rfl,
+              by simp only [memoryTail, useSib, ite_true, Option.map_some]; rfl,
               by rw [modeOf]; exact notThree, by simp, ?_⟩
-            simp [Decode.memory, scaleZero, hx, hb, modeOf, notThree, notAbsent, displacement_decode]
+            simp [Decode.memory, hx, hb, modeOf, notThree, notAbsent, displacement_decode]
       · have useSib' := useSib
         simp only [Bool.or_eq_true, beq_iff_eq, not_or, Bool.not_eq_true, Option.isSome_eq_false_iff,
           Option.isNone_iff_eq_none] at useSib'
@@ -112,11 +112,11 @@ theorem memoryTail_decode (rex : Decode.Rex) (regField : Nat) (address : MemAddr
         subst noIndex
         simp only [MemAddr.canonical, Option.isSome_none, Bool.false_or, beq_iff_eq] at canonical
         subst canonical
-        simp only [memoryTail, useSib, Bool.false_eq_true, if_false] at hx hb
+        simp only [memoryTail, useSib, Bool.false_eq_true, ite_false] at hx hb
         refine ⟨modRM (dispMode (registerLow (gprCode base)) displacement) regField (registerLow (gprCode base)),
           dispBytes (dispMode (registerLow (gprCode base)) displacement) displacement,
-          by simp only [memoryTail, useSib, Bool.false_eq_true, if_false],
+          by simp only [memoryTail, useSib, Bool.false_eq_true, ite_false],
           by rw [modeOf]; exact notThree, by simp, ?_⟩
-        simp [Decode.memory, scaleZero, hx, hb, modeOf, notThree, notFour, notAbsent, displacement_decode]
+        simp [Decode.memory, hx, hb, modeOf, notThree, notFour, notAbsent, displacement_decode]
 
 end Compilatrix.X86.Encode

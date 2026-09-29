@@ -246,7 +246,7 @@ theorem run_to_return {checked : Checked} {output : Encode.Output} {externals : 
           let finalState : ByteEval.State :=
             ⟨after.core.setReg .rsp (after.core.readReg .rsp + 8), returnAddress, state.flags⟩
           have last : ByteEval.step output.text base state = .ok finalState := by
-            simp [ByteEval.step, fetched, Encode.execute_ret, stateCore, slot, Except.mapError, finalState]
+            simp [ByteEval.step, fetched, Encode.execute_ret, stateCore, slot, finalState]
           exact ⟨1, finalState, by decide, by omega, by simp [ByteEval.run, last], rfl, rfl⟩
 
 end Compilatrix.X86.Stream
